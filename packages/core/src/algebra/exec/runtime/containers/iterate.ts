@@ -1046,6 +1046,55 @@ function forInKeyLive(key: Abs, recv: Abs): boolean {
   return true;
 }
 
+/**
+ * Bug 248：数组（tuple）接收者的 **live 迭代视图**——原生 Array Iterator 语义：
+ * `next()` 每步**重读** `LengthOfArrayLike(O)` 并现读 `Get(O, index)` ⇒
+ * - 迭代期间的 `push` / `unshift`（长度增长）**可见**；
+ * - `shift` / `pop`（长度收缩）**可见**（收缩后越过新末尾即结束）；
+ * - 体内改写元素值**可见**（`for (const v of a) { a[1] = 9 }` 原生第二次迭代取 9）；
+ * - hole 位按 Get 语义产出 `undefined`（**不跳过**——与 forEach 家族的
+ *   HasProperty 口径相反）。
+ *
+ * 引擎的数组 mutator（`$arrMutContainer` → `writeInPlace`）与下标写
+ * （`$idxSet`）都是**就地改写**（Abs 身份不变、shape 换新）⇒ 每步重读
+ * `arr.shape` 即接收者当前内容。
+ */
+function arrayLiveForOf(
+  arr: Abs,
+  initial: Abs[],
+): { take: () => Abs | undefined; rest: () => number } {
+  const state = { i: 0 };
+  const cur = (): { elements?: Abs[]; holes?: number[] } | undefined => {
+    const s = arr.shape as { k: string; elements?: Abs[]; holes?: number[] };
+    if (s.k !== "tuple") return undefined;
+    return s;
+  };
+  return {
+    take: (): Abs | undefined => {
+      const s = cur();
+      if (!s) {
+        // 容器被降级为抽象 arr（长度不可知——原生仍是数组、长度未变）⇒ 回落
+        // 进体前快照的剩余位（保守：不再因降级而提前结束迭代）。
+        const v = initial[state.i];
+        if (v === undefined) return undefined;
+        state.i++;
+        return v;
+      }
+      const els = s.elements ?? [];
+      if (state.i >= els.length) return undefined; // 长度重读 ⇒ 收缩可见
+      const i = state.i;
+      state.i++;
+      const holes = s.holes ?? [];
+      return holes.includes(i) ? undef() : els[i]!;
+    },
+    rest: (): number => {
+      const s = cur();
+      if (!s) return Math.max(0, initial.length - state.i);
+      return Math.max(0, (s.elements ?? []).length - state.i);
+    },
+  };
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
@@ -1176,6 +1225,12 @@ export function $forOf(
   // 引擎快照口径只有 "a"）。表不干净 ⇒ 无 live 视图 ⇒ 沿用快照口径。
   const liveColl =
     isMapAbs(iterable) || isSetAbs(iterable) ? collectionLiveEntries(iterable) : undefined;
+  // Bug 248：数组接收者的 live 视图（原生 Array Iterator 每步重读长度）——
+  // 迭代期间的 push/shift 与元素改写可见；快照口径只看得到进体前的内容。
+  const liveArr =
+    shape.k === "tuple"
+      ? arrayLiveForOf(iterable, (shape as { elements: Abs[] }).elements)
+      : undefined;
 
   // N5：0 次出口臂（空容器/首元素前退出——同迭代后出口路径）
   if (unbounded) {
@@ -1193,7 +1248,8 @@ export function $forOf(
   const concreteCap = Math.max(maxIters, MAX_CONCRETE_LOOP_ITERS);
   // live 集合（Bug 198）：条目数可随迭代增长（新增条目被访问）⇒ 迭代上界
   // 用硬上限（concreteCap），耗尽由 live 驱动的 take() 返回 undefined 判定。
-  const n = liveColl
+  // Bug 248：live 数组同理——长度可随迭代增长（push 可见）。
+  const n = liveColl || liveArr
     ? concreteCap
     : knownLen !== undefined
       ? Math.min(knownLen, concreteCap)
@@ -1207,6 +1263,11 @@ export function $forOf(
     if (liveColl) {
       // live 视图：每轮重读接收者当前条目表（删除的跳过、新增的进入）
       const e = liveColl.take();
+      if (e === undefined) break; // 迭代耗尽（原生 done）
+      item = e;
+    } else if (liveArr) {
+      // Bug 248：live 数组——每轮重读当前长度与当前元素（原生 Array Iterator）
+      const e = liveArr.take();
       if (e === undefined) break; // 迭代耗尽（原生 done）
       item = e;
     } else {
@@ -1269,6 +1330,12 @@ export function $forOf(
   }
   if (liveColl && liveColl.rest().length > 0) {
     // Bug 198：live 集合迭代到硬上限仍未耗尽 ⇒ 截断观测（与具体迭代超限同口径）
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    if (pack && unpack) unpack(confPartialPacked(pack()));
+    return;
+  }
+  if (liveArr && liveArr.rest() > 0) {
+    // Bug 248：live 数组迭代到硬上限仍未耗尽 ⇒ 截断观测（同 live 集合口径）
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (pack && unpack) unpack(confPartialPacked(pack()));
     return;

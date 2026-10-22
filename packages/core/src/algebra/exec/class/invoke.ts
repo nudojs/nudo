@@ -15,9 +15,9 @@
  *   接收者跳过（派发按成员各读一次，预读会重复触发 getter）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, litValue, strLit } from "../../abs.ts";
+import { abs, unknown, litValue, strLit, isBigPrim } from "../../abs.ts";
 import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
-import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain } from "../runtime/members.ts";
+import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain, BUILTIN_BRAND_METHODS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
@@ -25,7 +25,7 @@ import { $get, $lit, namespaceNameOf, callAtFunctionBoundary } from "../runtime.
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
-import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
+import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../../abs-fn.ts";
 import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic, collectionIteratorAbs, abstractSeqIteratorAbs, protoBrandAbs } from "../../builtins.ts";
 import { isErrorCtorName } from "../../builtins/error.ts";
 import {
@@ -36,7 +36,7 @@ import { privateNameGuard } from "../runtime/containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
 // setter 是本模块提升函数声明）。barrel 间接层会在此处拿到 undefined。
-import { setProtoMethodDispatch } from "../runtime/containers/member.ts";
+import { setProtoMethodDispatch, type ClassMethodOrigin } from "../runtime/containers/member.ts";
 import {
   noteEvalCallRecord,
 } from "../calls.ts";
@@ -49,6 +49,12 @@ import {
   definitelyUncallableMember,
   BIGINT_PROTO_METHODS,
   OBJECT_PROTO_NAMES,
+  ARRAY_PROTO_METHOD_NAMES,
+  recordMemberDiag,
+  STRING_METHODS,
+  NUMBER_PROTO_METHODS,
+  BOOLEAN_PROTO_METHODS,
+  SYMBOL_PROTO_METHODS,
 } from "../member-diag.ts";
 import { errorTypeAbs, throwPayloadOf, recordMayThrow } from "../may-throw.ts";
 import { isNullishLitAbs } from "../../surface.ts";
@@ -57,11 +63,22 @@ import { NudoThrow, $collectionForEach } from "../runtime.ts";
 import { callAbsMethod } from "../../methods.ts";
 import {
   classNameOfValue,
+  ensureFnParentName,
   getEvalClass,
+  registerEvalClass,
 } from "../class-registry.ts";
 
 import { invokeArrMethod } from "./invoke-arr.ts";
-import { findMethod, findStaticMethod, instanceOwnFaceHasMember, chainHasStaticMember } from "./declare.ts";
+import {
+  findMethod,
+  findStaticMethod,
+  instanceOwnFaceHasMember,
+  chainHasStaticMember,
+  fnAbsCtorProtoOf,
+  constructClass,
+  markBindCtorFacet,
+  bindCtorFacetOf,
+} from "./declare.ts";
 import { runtimeAssignObject } from "./assign.ts";
 import { execRegexBrand, stringRegexMethod } from "../class-regex.ts";
 
@@ -326,7 +343,31 @@ function $invokeInner(
           const lenAbs = getSlot(s.slots, "length")?.value;
           if (!lenAbs || isNullishLitAbs(lenAbs)) return [];
           const lv = litValue(lenAbs);
-          if (lv.ok && lv.value === 0) return [];
+          if (lv.ok) {
+            // Bug 258：原生 CreateListFromArrayLike 按 **length** 取实参
+            // （ToLength → 逐下标 Get）——此前 array-like 实参一律只折
+            // **1 个**未知实参（`f.apply(null,{length:2,0:1,1:2})` 原生传
+            // 2 个，引擎只传 1 个 ⇒ 实参面塌陷）。
+            // length 是字面量 ⇒ 按槽面逐项读（下标缺席 = undefined，原生
+            // Get 缺席属性同）；length 抽象 ⇒ 不可判 → [unknown] 保守。
+            const raw = lv.value;
+            const n = typeof raw === "number" ? raw : Number(raw);
+            if (typeof n === "number" && Number.isFinite(n) && n >= 0) {
+              const count = Math.trunc(n);
+              const out: Abs[] = [];
+              for (let i = 0; i < count; i++) {
+                const slot = getSlot(s.slots, String(i));
+                if (slot && !slot.optional) {
+                  out.push(slot.value);
+                } else {
+                  // 缺席下标：原生 Get → undefined；open 槽面（索引域未知）
+                  // → 不可判 ⇒ unknown
+                  out.push(s.index ? unknown : undef());
+                }
+              }
+              return out;
+            }
+          }
         }
         return [unknown];
       }
@@ -368,7 +409,7 @@ function $invokeInner(
       const bound = args.slice(1);
       // Bug 9：bind 产物可构造性随目标（目标可构造 → bound 可构造）
       const hostFacet = hostFnCtorFacet(thisVal);
-      return absFunction(
+      const hostBoundFn = absFunction(
         boundFnParams(thisVal, bound.length),
         {
           apply: (callArgs) => {
@@ -380,10 +421,35 @@ function $invokeInner(
         },
         hostFacet !== undefined ? { ctor: hostFacet } : undefined,
       );
+      // Bug 253：bind 产物的 [[Construct]]——原生 `new (f.bind(thisArg,
+      // ...bound))()` 走**目标的 [[Construct]]**：以 newTarget.prototype 建
+      // 新实例、绑定实参前置、this = 新实例（**忽略**绑定的 thisArg）。
+      // 引擎此前 bind 产物只带 apply 钩子 ⇒ $new 复用 apply ⇒ 目标构造器在
+      // this === boundThis（常为 null）上执行 ⇒ `new B()` 假抛 TypeError。
+      // 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共类型
+      // AbsFnImpl——它在 algebra/index.ts / core/src/index.ts 导出）。
+      markBindCtorFacet(hostBoundFn, {
+        instName: () => {
+          const n = (thisVal as { name?: string }).name || "Object";
+          // 与 $new 的宿主函数分支同口径：铸实例 brand 前注册链键
+          // （instanceof / 原型槽沿链解析）。
+          if (!getEvalClass(n)) registerEvalClass({ name: n });
+          return n;
+        },
+        proto: () => protoBrandAbs((thisVal as { name?: string }).name || "Object"),
+        construct: (instance, callArgs) =>
+          callAtFunctionBoundary(() => fn.apply(instance as never, [...bound, ...callArgs])),
+      });
+      return hostBoundFn;
     }
     if (thisVal && typeof thisVal === "object" && "shape" in thisVal) {
       const fnImpl = getFnImpl(thisVal);
       const isCallable = thisVal.shape.k === "fn" || fnImpl !== undefined;
+      // Bug 253：类值（class A）也可 bind —— 原生 `A.bind(null, 3)` 走
+      // Function.prototype.bind（类值是构造器，产物**可构造**：`new B()` 造
+      // 的是 A 的实例）。引擎此前类值不落在 isCallable 面 ⇒ `A.bind` 读面
+      // 折 undefined ⇒ `new B()` 假抛 TypeError。
+      const isClassValue = thisVal.shape.k === "brand" && thisVal.shape.ctor === true;
       if (isCallable) {
         // Bug 46：thisArg 统一经 $call 第三参传递——bindThis impl（对象方法）
         // 由 $call 派发注入首参；普通 fn 经 apply 钩子进宿主 this。
@@ -394,13 +460,15 @@ function $invokeInner(
         if (method === "apply") {
           return $call(thisVal, expandApplyArgs(args[1]), args[0]);
         }
+      }
+      if (isCallable || isClassValue) {
         const boundThis = args[0];
         const bound = args.slice(1);
         // Bug 9：bind 产物可构造性随目标（fn facet 传播；类 brand 可构造）
         const tShape = (thisVal as Abs).shape;
         const boundCtor =
           tShape.k === "fn" ? tShape.ctor : tShape.k === "brand" ? true : undefined;
-        return absFunction(
+        const absBoundFn = absFunction(
           boundFnParams(thisVal, bound.length),
           {
             apply: (callArgs) =>
@@ -410,6 +478,46 @@ function $invokeInner(
           },
           boundCtor !== undefined ? { ctor: boundCtor } : undefined,
         );
+        // Bug 253：bind 产物的 [[Construct]]（同宿主函数臂——facet 走 declare.ts
+        // 的模块级 WeakMap 侧表）：原生 new bound() 造的是**目标**的实例
+        // （this = 新实例、绑定实参前置、忽略绑定的 thisArg）。
+        const targetName =
+          tShape.k === "brand" || tShape.k === "fn" ? tShape.name : undefined;
+        markBindCtorFacet(absBoundFn, {
+          instName: () => {
+            if (tShape.k === "brand") {
+              return classNameOfValue(thisVal) ?? targetName ?? "Anonymous";
+            }
+            return targetName ?? ensureFnParentName(thisVal);
+          },
+          proto: () => {
+            if (tShape.k === "brand") {
+              const cn = classNameOfValue(thisVal) ?? targetName;
+              return cn ? protoBrandAbs(cn) : undefined;
+            }
+            return fnAbsCtorProtoOf(thisVal, targetName ?? ensureFnParentName(thisVal));
+          },
+          construct: (instance, callArgs) => {
+            // bind 套 bind：委托内层 facet（绑定实参前置）
+            const inner = bindCtorFacetOf(thisVal);
+            if (inner) return inner.construct(instance, [...bound, ...callArgs]);
+            const targetImpl = getFnImpl(thisVal);
+            if (targetImpl?.apply) {
+              const r = targetImpl.apply(
+                targetImpl.bindThis
+                  ? [instance, ...bound, ...callArgs]
+                  : [...bound, ...callArgs],
+                instance,
+              );
+              return isAbsApplyResult(r) ? r.abs : r;
+            }
+            // 类值目标：走类构造链（原生 new bound() 造的是目标类的实例）
+            const cn = classNameOfValue(thisVal);
+            if (cn) return constructClass(cn, instance, [...bound, ...callArgs]);
+            return $call(thisVal, [...bound, ...callArgs], instance);
+          },
+        });
+        return absBoundFn;
       }
     }
   }
@@ -419,7 +527,31 @@ function $invokeInner(
     if (ns === "Object" && method === "assign") {
       return runtimeAssignObject(args);
     }
-    return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
+    const r = ns ? evalNamespaceCall(ns, method, args) : undefined;
+    if (r !== undefined) return r;
+    // Bug 264：命名空间对象上调用**不存在**的静态方法 ⇒ 原生确定抛
+    // TypeError（`Math.clamp is not a function` / `JSON.foo is not a
+    // function`）——此前回落 unknown 且**不记 throws** ⇒ L2 门禁假绿
+    // （引擎声称「不可能抛」，原生恒抛）。
+    // 判据用宿主对象自身的属性查找（含原型链）：成员**缺席** ⇒ 定抛；
+    // 成员在场但**不是函数**（`Math.PI()`）⇒ 原生同抛 ⇒ 定抛；
+    // 成员在场且是函数但引擎未建模 ⇒ 保守回落 unknown（不假抛）。
+    // 宿主命名空间对象既有普通对象（Math / JSON / Reflect）也有**函数**
+    // （Object / Number / Symbol / BigInt / Promise …）⇒ 两种 typeof 都要认。
+    if (
+      ns !== undefined &&
+      thisVal !== null &&
+      (typeof thisVal === "object" || typeof thisVal === "function")
+    ) {
+      const host = thisVal as unknown as Record<string, unknown>;
+      if (!(method in host)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      if (typeof host[method] !== "function") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+    }
+    return unknown;
   }
   // Bug 208：内建原型对象上的**自有写**优先于内建方法表（原生 own → prototype
   // 查找序：原型对象上的自有数据属性遮住内建方法面）——`Array.prototype.push
@@ -440,12 +572,24 @@ function $invokeInner(
     const pr = evalPromiseMethod(method, thisVal, args);
     if (pr !== undefined) return pr;
   }
-  // union：只在「声称支持」该方法的成员上派发，再 join（string|Buffer.split
+  // union：只在「持有该方法」的成员上派发，再 join（string|Buffer.split
   // 不应因 Buffer 分支无 split 而整体 unknown）
+  //
+  // Bug 263：成员判据按**方法名**（memberLikelyHasMethod）⇒ number 侧
+  // 的 toFixed / toPrecision 等不再被提前排除（值域不再塌成 unknown）；
+  // 被判「确定没有该方法」的成员（prim 原型方法表外，如 string 上的
+  // toFixed）⇒ 原生调用 undefined ⇒ **该分支定抛 TypeError** ⇒ 记
+  // may-throw（soft，catch 可吸收）并跳过该成员（该分支不贡献值）。
   if (thisVal.shape.k === "sum") {
-    const results = thisVal.shape.members
-      .filter((m) => memberLikelyHasMethod(m, method))
-      .map((m) => $invoke(m, method, args, loc));
+    const results: Abs[] = [];
+    for (const m of thisVal.shape.members) {
+      if (memberLikelyHasMethod(m, method)) {
+        results.push($invoke(m, method, args, loc));
+        continue;
+      }
+      // 该成员确定没有此方法 ⇒ 原生该分支抛 TypeError（记 throws 域）
+      notePrimMemberMissing(m, method, "method", loc);
+    }
     if (results.length === 0) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
   }
@@ -548,33 +692,26 @@ function $invokeInner(
       const r = $collectionForEach(thisVal, args[0]);
       if (r !== undefined) return r;
     }
-    const m = findMethod(brandName, method);
-    if (m) {
-      // 类实例方法调用点收集（T5）：`Class.method`
-      let result: Abs = unknown;
-      let threw = false;
-      try {
-        result = m(thisVal, ...args);
-        return result;
-      } catch (e) {
-        threw = true;
-        result = throwPayloadOf(e);
-        throw e;
-      } finally {
-        noteEvalCallRecord({
-          fnName: `${brandName}.${method}`,
-          args,
-          result,
-          callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
-          threw,
-        });
+    // Bug 1035：**类值接收者**（`A.m()`）的派发**先查静态面**。
+    //
+    // 原生：类值是构造器函数，`A.m` 沿构造器 [[Prototype]] 链解析（= 静态
+    // 方法面）；**实例方法面不在其链上**（实例方法挂 A.prototype）。此前
+    // 先查实例方法表 ⇒ 同名 static + 实例方法并存时跑错方法体
+    // （`A.m()` 跑实例体）⇒ 抛错方向**双向反转**：该抛不抛（类值上无该
+    // 静态成员时原生 `A.m is not a function` 定抛，引擎却跑实例体不抛）
+    // / 不该抛却抛。
+    const isClassValueRecv = classNameOfValue(thisVal as object) === brandName;
+    if (isClassValueRecv) {
+      // 类值**自有槽**（静态字段 / 动态写 `A.f = fn`）——原生静态成员挂
+      // 构造器**自身**（own）⇒ own 优先于原型链（静态字段遮住继承来的
+      // 静态方法）。值可调用 ⇒ 按原生调用（this = 类值）；不可调用 ⇒
+      // 原生 `A.f is not a function` 定抛。
+      const ownSlot = classValueOwnSlot(thisVal, method);
+      if (ownSlot !== undefined) {
+        if (!isCallableValue(ownSlot)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        return $call(ownSlot, args, thisVal);
       }
-    }
-    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）。
-    // N2：只对类值接收者派发——实例接收者的 [[Prototype]] 是 X.prototype，
-    // 静态成员不在其链上（原生 a.staticM() 定抛 TypeError，此前误派发成
-    // 静态结果）。
-    if (classNameOfValue(thisVal as object) === brandName) {
+      // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）。
       const sm = findStaticMethod(brandName, method);
       if (sm) {
         let result: Abs = unknown;
@@ -607,6 +744,56 @@ function $invokeInner(
         const prop = $get(sup.host as Abs, method);
         if (prop && prop.shape.k === "fn") {
           return $call(prop, args, thisVal);
+        }
+      }
+      // 静态**访问器**（static get m(){}）——成员存在（原生 `A.m` 走 getter
+      // 读到值再调用）⇒ 不得判缺席 ⇒ 交回通用派发面（成员读 + 调用：
+      // 通用面用预读值 preRead，不重复触发 getter ⇒ 访问器先于实参的
+      // 求值序保持）。
+      if (findStaticClassAccessor(brandName, method) !== undefined) {
+        // 存在 → 落通用派发面（**不**走实例方法表）
+      } else if (!CLASS_VALUE_INHERITED_NAMES.has(method)) {
+        // 类值上无此成员 ⇒ 原生 `A.m is not a function` ⇒ 定抛 TypeError
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+    } else {
+      // Bug 244：实例 / 原型上的**方法写**（monkey-patch）优先于注册表
+      // 方法体——原生查找序 own → prototype。写侧（$set / $thisSet /
+      // Object.defineProperty）把值落进 brand 内层 obj 槽面（实例 = 实例
+      // brand 的内层 obj；原型对象 = protoBrandAbs(name) 的内层 obj），
+      // 读面（chainProtoSlotOf）看得见，但**派发面此前只查注册表** ⇒
+      // `A.prototype.m = fn` / `a.m = fn` / `this.m = fn` 全部失效
+      // （跑的还是注册表里的旧方法体 ⇒ monkey-patch 静默无效）。写成
+      // 非函数 ⇒ 原生定抛 TypeError（`a.m is not a function`）。
+      // 域限**注册用户类**（内建 brand 的原型写语义归 Bug 208 的
+      // builtinProtoOwnWrite；内建实例自有写的缺口不在本片）。
+      if (getEvalClass(brandName) !== undefined) {
+        const written = userClassWrittenMember(thisVal, brandName, method);
+        if (written !== undefined) {
+          if (!isCallableValue(written)) throw new NudoThrow(errorTypeAbs("TypeError"));
+          return $call(written, args, thisVal);
+        }
+      }
+      const m = findMethod(brandName, method);
+      if (m) {
+        // 类实例方法调用点收集（T5）：`Class.method`
+        let result: Abs = unknown;
+        let threw = false;
+        try {
+          result = m(thisVal, ...args);
+          return result;
+        } catch (e) {
+          threw = true;
+          result = throwPayloadOf(e);
+          throw e;
+        } finally {
+          noteEvalCallRecord({
+            fnName: `${brandName}.${method}`,
+            args,
+            result,
+            callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+            threw,
+          });
         }
       }
     }
@@ -645,12 +832,29 @@ function $invokeInner(
       if (method === "valueOf") return thisVal;
       // toLocaleString：BigInt 原型真方法（M3 白名单成员）——宿主 ICU 真执行
       //（千分位随 locale 精确；此前落通用路径折 "[object BigInt]" 假精确）；
-      // 实参不参与（ICU 路径不转换，symbol 实参原生不抛——Number 口径同）
+      // 实参参与（Bug 251）：locales 走宿主 CanonicalizeLocaleList 校验——
+      // null → TypeError、非法 language tag → RangeError；number/bool/
+      // bigint/symbol 实参原生被忽略（默认 locale）——与 Number 臂同口径
       if (method === "toLocaleString") {
+        const argAbs = args[0];
+        // symbol 实参宿主忽略（ToObject 路径，不抛）⇒ 不记 may
+        if (argAbs !== undefined && argAbs.term?.op !== "lit" && !isSymbolAbs(argAbs)) {
+          // Bug 251：locales 不可判 —— 可能是非法 language tag → may RangeError
+          recordMayThrow({
+            kind: "RangeError",
+            cause: "BigInt.prototype.toLocaleString locales may be an invalid language tag",
+          });
+          return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+        }
+        const avR = argAbs === undefined ? undefined : litValue(argAbs);
+        const av = avR?.ok ? avR.value : undefined;
         try {
           const impl = BigInt.prototype as unknown as Record<string, (...a: unknown[]) => string>;
-          return strLit(impl.toLocaleString.call(bv));
-        } catch {
+          const hostArgs: unknown[] = argAbs !== undefined ? [av] : [];
+          return strLit(Reflect.apply(impl.toLocaleString, bv, hostArgs) as string);
+        } catch (e) {
+          if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
           return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
         }
       }
@@ -747,18 +951,33 @@ function $invokeInner(
           return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
         }
       }
-      if (argAbs !== undefined && argAbs.term?.op !== "lit") {
+      if (argAbs !== undefined && argAbs.term?.op !== "lit" && !isSymbolAbs(argAbs)) {
+        // Bug 251：locales 实参不可判 —— 可能是非法 language tag
+        // （`(1.5).toLocaleString(tag)` 原生 RangeError）⇒ may RangeError
+        // （symbol 实参宿主忽略 ⇒ 不记 may）
+        if (method === "toLocaleString") {
+          recordMayThrow({
+            kind: "RangeError",
+            cause: "Number.prototype.toLocaleString locales may be an invalid language tag",
+          });
+        }
         return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       }
       const avR = argAbs === undefined ? undefined : litValue(argAbs);
       const av = avR?.ok ? avR.value : undefined;
       try {
         const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
-        // toLocaleString 的 ICU 路径不转换实参（(1.5).toLocaleString(1n) →
-        // "1.5"）——重定向宿主 toString 时必须丢实参（此前透传 av 让字面量
-        // bigint/symbol 折假 never）
-        const hostArgs = method === "toLocaleString" ? [] : av === undefined ? [] : [av];
-        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, ...hostArgs));
+        if (method === "toLocaleString") {
+          // Bug 251：走**宿主 toLocaleString**（ICU）——此前重定向宿主 toString
+          // ⇒ 值错（丢千分位 / -0 / 指数形态：1234567.5 → "1234567.5"，
+          // 原生 "1,234,567.5"）。locales 实参透传 ⇒ 宿主
+          // CanonicalizeLocaleList 校验（null → TypeError、非法 tag →
+          // RangeError；number/bool/bigint/symbol 原生被忽略 ⇒ 默认 locale）。
+          const localeArgs: unknown[] = argAbs !== undefined ? [av] : [];
+          return strLit(Reflect.apply(impl.toLocaleString!, nv, localeArgs) as string);
+        }
+        const radixArgs: unknown[] = av === undefined ? [] : [av];
+        return strLit(Reflect.apply(impl.toString!, nv, radixArgs) as string);
       } catch (e) {
         if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
@@ -883,6 +1102,14 @@ function $invokeInner(
   if (callSiteHasNoCallableTarget(thisVal, method, prop)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
+  // Bug 265：**非 prim / 非 obj** 接收者（数组元组 / 内建 brand）上调用
+  // 确实不存在的方法 ⇒ 原生恒抛 TypeError。缺失方法终判链此前只覆盖
+  // prim / obj / 注册用户类实例（callSiteHasNoCallableTarget）⇒ 这两类
+  // 接收者一律折 unknown 且**不记 may-throw** ⇒ L2 门禁假绿。
+  // 与 P4a 分支**同口径**（都记 hard throw，catch 可吸收）。
+  if (knownSurfaceMemberAbsent(thisVal, method, loc)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // bigint prim 接收者的原型外方法（M3）：BigInt.prototype 自有方法集是
   // **封闭**的 {toString, toLocaleString, valueOf}（规范全列，无宿主扩展
   // 面）——方法调用确定 TypeError（`(5n).toFixed(1)` 原生同抛）。与
@@ -910,6 +1137,72 @@ function $invokeInner(
   return unknown;
 }
 
+/**
+ * Bug 265：已知形状接收者上的「确定不存在」方法 → 原生 TypeError。
+ *
+ * 「缺失方法终判」链此前只覆盖 prim（notePrimMemberMissing，soft）/ obj
+ * （definitelyUncallableMember）/ 注册用户类实例（callSiteHasNoCallableTarget）
+ * ——**非 prim / 非 obj** 的两类已知形状接收者此前一律折 unknown 且不记
+ * may-throw（原生恒抛 TypeError）⇒ L2 门禁假绿。
+ *
+ * 缺席可证的形状（**封闭**的原型可调用面——表外名即原生不存在）：
+ * - tuple / arr：Array.prototype 的可调用自有名是封闭的 38 个（node v26
+ *   `Object.getOwnPropertyNames(Array.prototype)` 实测，与
+ *   ARRAY_PROTO_METHOD_NAMES 逐名相等）⇒ 表外名确定不存在；
+ * - 内建 brand：BUILTIN_BRAND_METHODS 是该 brand 原型可调用面的全列
+ *   （node v26 对拍：各 brand 原型可调用名 ⊆ 表内，差集仅 "constructor"
+ *   ——已由 OBJECT_PROTO_NAMES 覆盖）⇒ 表外名确定不存在。
+ *
+ * 保守边界（命中即不抛，缺席不可证）：
+ * - 注册用户类实例：域不同（callSiteHasNoCallableTarget 判，且要求继承链
+ *   每环都是注册用户类）——不在此重复判定；
+ * - 表外内建 brand（原型面不完备）/ 继承链有洞（classChainHasHole）；
+ * - 接收者自有面在场（instanceOwnFaceHasMember：ctor `this.m = fn` 写入
+ *   的承载者 / 实例字段——字段值可能是函数）；
+ * - Object.prototype 上的用户 monkey-patch（引擎已建模的自有写）。
+ */
+function knownSurfaceMemberAbsent(
+  recv: Abs,
+  method: string,
+  loc?: [number, number],
+): boolean {
+  const s = recv.shape;
+  if (s.k === "tuple" || s.k === "arr") {
+    if (OBJECT_PROTO_NAMES.has(method)) return false;
+    if (ARRAY_PROTO_METHOD_NAMES.has(method)) return false;
+    if (builtinProtoOwnSlot("Object", method) !== undefined) return false;
+    recordMemberDiag({
+      kind: "method",
+      name: method,
+      receiver: "array",
+      line: loc?.[0],
+      column: loc?.[1],
+    });
+    return true;
+  }
+  if (s.k === "brand") {
+    const brandName = s.name;
+    // 注册用户类：域不同（callSiteHasNoCallableTarget）——不在此重复判定
+    if (getEvalClass(brandName) !== undefined) return false;
+    // 表外内建 brand：原型面不完备 → 缺席不可证
+    if (BUILTIN_BRAND_METHODS[brandName] === undefined) return false;
+    if (classChainHasHole(brandName)) return false;
+    if (brandHasProtoMember(brandName, method)) return false;
+    if (OBJECT_PROTO_NAMES.has(method)) return false;
+    if (instanceOwnFaceHasMember(recv, brandName, method)) return false;
+    if (builtinProtoOwnSlot("Object", method) !== undefined) return false;
+    recordMemberDiag({
+      kind: "method",
+      name: method,
+      receiver: brandName,
+      line: loc?.[0],
+      column: loc?.[1],
+    });
+    return true;
+  }
+  return false;
+}
+
 /** 首次/后续方法调用后，把观测结果 join 进 fn.returnType 槽（展示用，不回写分析） */
 export function refineFnReturnType(fn: Abs, result: Abs): void {
   if (!fn || typeof fn !== "object" || !("shape" in fn)) return;
@@ -926,10 +1219,106 @@ export function refineFnReturnType(fn: Abs, result: Abs): void {
   }
 }
 
-/** union 成员是否可能持有该方法（避免 Buffer 无 split 拖垮 string 分支） */
+/**
+ * Bug 263：union 成员是否持有该方法（**按方法名**判定，不再只认 string）。
+ *
+ * 原判据 `memberLikelyHasMethod` 的 `method` 形参**根本没被使用**：判据实际
+ * 是「这个形态大概有方法」而不是「这个形态有【这个】方法」⇒
+ * - number / boolean / bigint / symbol 成员上的方法（toFixed / toPrecision /
+ *   toExponential / toString(radix) / toLocaleString…）在 union 上一律被判
+ *   「missing」⇒ 成员被**提前排除**⇒ 值域塌成 unknown（且 L2 门禁把「成员
+ *   不支持该方法」误报成「成员缺方法」——误导诊断点名的是 string 侧）；
+ * - string 成员被**无条件放行**⇒ string 上根本不存在的方法（如 toFixed）
+ *   也被判「有」⇒ 派发到 string 成员 ⇒ 报「missing on string receiver」。
+ *
+ * 新判据：prim 成员按**该类型原型的真实方法表**（member-diag.ts 的
+ * STRING_METHODS / NUMBER_PROTO_METHODS / …）判定；表外名 ⇒ 该成员**确定**
+ * 没有此方法 ⇒ 原生调用 undefined ⇒ 该分支定抛 TypeError（调用方据此同时
+ * 记 may-throw 并跳过该成员——该分支不贡献值）。判据不足（表未覆盖的形态 /
+ * 非 prim 形态）⇒ **保守放行**（让 $invoke 自己判），不提前排除。
+ */
+/**
+ * Bug 263：prim 原型的**真实**方法表（按 prim 类型）——union 成员判定用。
+ * 表源与 notePrimMemberMissing 同源（member-diag.ts）⇒ 读面「确定缺失」
+ * 判定与 union 派发判定**同口径**（不出现两套方法名清单）。
+ */
+const PRIM_PROTO_METHODS: Record<string, ReadonlySet<string>> = {
+  string: STRING_METHODS,
+  number: NUMBER_PROTO_METHODS,
+  boolean: BOOLEAN_PROTO_METHODS,
+  symbol: SYMBOL_PROTO_METHODS,
+  bigint: BIGINT_PROTO_METHODS,
+};
+
+/**
+ * Bug 244：注册用户类实例上的**成员写**（自有槽 → 原型链数据槽）。
+ *
+ * 原生属性查找序 own → prototype ⇒ 写在实例 / 原型上的成员**遮住**类
+ * 注册表里的方法体（注册表 = 引擎对原型对象方法面的模型；用户写上去的
+ * 是原型对象 / 实例上的**自有属性**，优先级更高）。
+ *
+ * - 自有槽：实例 brand 的内层 obj 槽（`a.m = fn` / ctor `this.m = fn`）；
+ * - 原型链数据槽：`A.prototype.m = fn` 落 protoBrandAbs("A") 的内层 obj，
+ *   祖先类原型上的写同样生效（原生沿 [[Prototype]] 链上溯）。
+ *
+ * 缺席返回 undefined（走注册表方法体）。
+ */
+function userClassWrittenMember(
+  recv: Abs,
+  brandName: string,
+  method: string,
+): Abs | undefined {
+  const s = recv.shape;
+  if (s.k === "brand") {
+    const inner = s.shape;
+    if (inner?.shape.k === "obj") {
+      const own = getSlot(inner.shape.slots, method);
+      if (own && !own.optional) return own.value;
+    }
+  }
+  const proto = chainProtoSlotOf(brandName, method, 0);
+  if (proto !== undefined) return proto;
+  return undefined;
+}
+
+/**
+ * Bug 1035：类值（构造器）**自有槽**上的成员——静态字段 / 动态写
+ * `A.f = fn`（原生静态成员挂构造器自身 = own ⇒ own 优先于原型链）。
+ * 缺席返回 undefined。
+ */
+function classValueOwnSlot(recv: Abs, method: string): Abs | undefined {
+  const s = recv.shape;
+  if (s.k !== "brand") return undefined;
+  const inner = s.shape;
+  if (inner?.shape.k !== "obj") return undefined;
+  const slot = getSlot(inner.shape.slots, method);
+  if (slot && !slot.optional) return slot.value;
+  return undefined;
+}
+
+/**
+ * Bug 1035：类值沿 [[Prototype]] 链恒可得的成员（Function.prototype +
+ * Object.prototype）——`A.call` / `A.apply` / `A.bind` / `A.toString` /
+ * `A.hasOwnProperty` / `A.valueOf` …。这些名**不得**判「缺席」（原生沿
+ * 构造器链可得）⇒ 不定抛 TypeError。
+ */
+const CLASS_VALUE_INHERITED_NAMES: ReadonlySet<string> = new Set([
+  ...OBJECT_PROTO_NAMES,
+  "call",
+  "apply",
+  "bind",
+  "@@hasInstance",
+]);
+
 function memberLikelyHasMethod(m: Abs, method: string): boolean {
   const k = m.shape.k;
-  if (k === "prim" && m.shape.type === "string") return true;
+  if (k === "prim") {
+    // Object.prototype 名经装箱恒有（(1).toString / "a".hasOwnProperty）
+    if (OBJECT_PROTO_NAMES.has(method)) return true;
+    const table = PRIM_PROTO_METHODS[(m.shape as { type?: string }).type ?? ""];
+    if (!table) return true; // 判据不足 → 保守放行
+    return table.has(method);
+  }
   if (k === "brand" || k === "obj") return true;
   if (k === "arr" || k === "tuple") return true;
   if (k === "eff") return true;
@@ -948,10 +1337,24 @@ function memberLikelyHasMethod(m: Abs, method: string): boolean {
 //   ["a","b","c"]）；不可物化形态 → unknown（不折假值）。
 // ---------------------------------------------------------------------------
 // Bug 108：brand-checking 内建原型表 + 借用调用接收者 brand 判定
+//
+// Bug 256（ES2023 §22.1.3）：`String.prototype` 上**只有** `toString` /
+// `valueOf` 要品牌检查（thisStringValue），其余 30 个方法都是 **generic**
+// （RequireObjectCoercible + ToString）⇒ 整条把 "String" 列进本表会让借用
+// 调用定抛 TypeError（原生 `String.prototype.toUpperCase.call(1)` → "1"）。
+// ⇒ 表分两层：BRAND_CHECK_PROTOS（整个原型都要品牌）+ BRAND_CHECK_METHODS
+// （只有列出的方法要品牌；未列方法按 generic 走）。
+//
+// Bug 261：`Error.prototype.toString` 是**普通方法**（无品牌检查——只读
+// this.name / this.message）⇒ Error 家族**不进**品牌检查面。
 const BRAND_CHECK_PROTOS = new Set([
-  "Number", "String", "Boolean", "Symbol", "BigInt",
+  "Number", "Boolean", "Symbol", "BigInt",
   "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet",
 ]);
+/** 方法级品牌检查（proto 名 → 要品牌的方法名集合；未列方法 = generic） */
+const BRAND_CHECK_METHODS: Record<string, ReadonlySet<string>> = {
+  String: new Set(["toString", "valueOf"]),
+};
 /** prim 型 home（member.ts :832 的 protoMethodValueAbs(type, key)）→ brand 名 */
 const PRIM_HOME_BRAND: Record<string, string> = {
   number: "Number",
@@ -960,10 +1363,30 @@ const PRIM_HOME_BRAND: Record<string, string> = {
   bigint: "BigInt",
   symbol: "Symbol",
 };
-/** Array.prototype 写方法（prim 接收者上原生定抛；读方法走物化泛型） */
+/**
+ * (home, method) 是否走品牌检查；是则返回**期望的接收者 brand 名**。
+ *
+ * 表驱动（Bug 256 / 261）：原型级表 → 方法级表 → prim home 映射。
+ * 表外的 home（Object / Array / Error 家族 / 用户类）一律**不**品牌检查。
+ */
+function brandCheckBrandOf(home: string, name: string): string | undefined {
+  if (BRAND_CHECK_PROTOS.has(home)) return home;
+  if (BRAND_CHECK_METHODS[home]?.has(name)) return home;
+  const mapped = PRIM_HOME_BRAND[home];
+  if (mapped === undefined) return undefined;
+  if (BRAND_CHECK_PROTOS.has(mapped)) return mapped;
+  if (BRAND_CHECK_METHODS[mapped]?.has(name)) return mapped;
+  return undefined;
+}
+/** Array.prototype 写方法（**字符串**接收者上原生定抛；读方法走物化泛型） */
 const ARRAY_MUTATOR_METHODS = new Set([
   "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin",
 ]);
+/**
+ * Array.prototype 的「就地操作并返回 this」方法（Bug 267）——与「返回新数组」
+ * 的方法（slice / map / filter / concat / with / toSorted…）分族。
+ */
+const ARRAY_INPLACE_METHODS = new Set(["sort", "reverse", "fill", "copyWithin"]);
 /** 接收者 brand；不可判（any/unknown/sum/Proxy 陷阱壳）→ undefined（不抛）。
  *  nullish 字面量 → "nullish"（与一切 brand 不匹配，定抛）。 */
 function borrowedRecvBrandOf(recv: Abs): string | undefined {
@@ -976,6 +1399,92 @@ function borrowedRecvBrandOf(recv: Abs): string | undefined {
   if (s.k === "obj") return "Object";
   if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
   return undefined;
+}
+
+/**
+ * Bug 256：generic String 方法的接收者 **ToString** 投影（ES2023 §22.1.3：
+ * RequireObjectCoercible(this) + ToString(this)）。
+ *
+ * - string prim → 自身；
+ * - number / boolean / bigint **字面量** → 精确字符串（`toUpperCase.call(1)`
+ *   原生 "1"）；
+ * - symbol prim → ToString 恒抛 TypeError（原生同）；
+ * - 其它（对象 / 抽象 prim）→ ToPrimitive 结果不可判 ⇒ 抽象 string prim。
+ */
+function genericStringRecv(recv: Abs): Abs {
+  const s = recv.shape;
+  if (s.k === "prim") {
+    const t = (s as { type?: string }).type;
+    if (t === "string") return recv;
+    if (t === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+    const lv = litValue(recv);
+    if (lv.ok && lv.value !== null && lv.value !== undefined) {
+      const v = lv.value;
+      if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
+        return strLit(String(v));
+      }
+    }
+  }
+  return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 261：`Error.prototype.toString` 的 **generic** 语义（ES2023 §20.5.2.2）——
+ * 无品牌检查：只读 this.name / this.message（缺省 "Error" / ""）⇒ 可借用给
+ * 任意**对象**接收者（原生 `Error.prototype.toString.call({name:"X",message:"y"})`
+ * → "X: y"）。
+ *
+ * 原始值接收者原生定抛 TypeError（V8 / node：`Error.prototype.toString called on
+ * incompatible receiver`——该方法要求 this 是对象）。
+ *
+ * @param part 单个属性的取值投影：string = 精确值；null = 缺席 / undefined
+ *   （走缺省）；undefined = 不可判（抽象值）。
+ */
+function errorToStringPart(part: Abs | undefined): string | null | undefined {
+  if (part === undefined) return null;
+  const lv = litValue(part);
+  if (!lv.ok) return undefined;
+  const v = lv.value;
+  if (v === undefined) return null;
+  if (v === null) return "null";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
+    return String(v);
+  }
+  return undefined;
+}
+
+/** Bug 261：generic Error.prototype.toString 的实现（只读 name / message 两槽）。 */
+function genericErrorToString(recv: Abs): Abs {
+  if (recv.shape.k === "prim" || isNullishLitAbs(recv)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  const namePart = errorToStringPart($get(recv, "name", { silent: true }));
+  const msgPart = errorToStringPart($get(recv, "message", { silent: true }));
+  if (namePart === undefined || msgPart === undefined) {
+    // 抽象取值 → 不可判 ⇒ 抽象 string（不折假值）
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  }
+  const name = namePart === null ? "Error" : namePart;
+  const msg = msgPart === null ? "" : msgPart;
+  // ES2021+ / V8：名空 → 只回消息；消息空 → 只回名；否则 "name: msg"
+  if (name === "") return strLit(msg);
+  if (msg === "") return strLit(name);
+  return strLit(`${name}: ${msg}`);
+}
+
+/** Error 家族实例（brand）——沿既有 brand 面（"Error: m"），不走 generic 路。 */
+function isErrorBrandRecv(recv: Abs): boolean {
+  return recv.shape.k === "brand" && isErrorCtorName(recv.shape.name);
+}
+
+/**
+ * 接收者是否**数组 exotic**（IsArray(O) 为真）——Bug 262：`concat` 只在
+ * IsArray(O) 为真时才展开 this；`Array.prototype` 本身是数组 exotic
+ * （其 length 为 0）⇒ 走数组派发而非「整体作为元素」。
+ */
+function isArrayExoticRecv(recv: Abs): boolean {
+  return recv.shape.k === "brand" && recv.shape.name === "Array.prototype";
 }
 
 // ---------------------------------------------------------------------------
@@ -999,12 +1508,21 @@ function userClassMethodBody(
   home: string,
   name: string,
   recv: Abs,
+  origin?: ClassMethodOrigin,
 ): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   if (!getEvalClass(home)) return undefined;
   const instBody = findMethod(home, name);
   const statBody = findStaticMethod(home, name);
   if (!instBody && !statBody) return undefined;
   if (instBody && statBody) {
+    // Bug 1041：同名 static + 实例方法并存时，**方法值的来源侧**是决定
+    // 依据（原生：`A.m` 取到的是构造器上的**静态**方法、`a.m` 取到的是
+    // 原型上的**实例**方法——两个不同函数对象）。来源侧随方法值传到派发
+    // 面（member.ts 的 classMethodValueAbs → protoMethodDispatch 的
+    // origin 参数）⇒ 摘下调用（接收者恒 undefined）不再「不可判」
+    // ⇒ 此前一律折「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。
+    if (origin === "static") return statBody;
+    if (origin === "inst") return instBody;
     const clsName = classNameOfValue(recv as object);
     if (clsName !== undefined) return statBody; // 类值接收者 → 静态体
     if (recv.shape.k === "brand") return instBody; // 实例接收者 → 实例体
@@ -1169,7 +1687,7 @@ function builtinProtoOwnWrite(recv: Abs, method: string): Abs | undefined {
   return undefined;
 }
 
-setProtoMethodDispatch((home, name, thisVal, args) => {
+setProtoMethodDispatch((home, name, thisVal, args, origin) => {
   const recv: Abs = thisVal ?? $lit(undefined);
   // Bug 193/196：用户类方法值（classMethodValueAbs 产物）的摘下 / 借用调用
   // ——按**方法体 + this = 接收者**执行（原生：方法值是函数，调用它就跑那个
@@ -1177,7 +1695,7 @@ setProtoMethodDispatch((home, name, thisVal, args) => {
   // 的成员表反查被调用者（$invoke(recv,name,args)）⇒ 非本类实例的接收者
   // 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。
   {
-    const body = userClassMethodBody(home, name, recv);
+    const body = userClassMethodBody(home, name, recv, origin);
     if (body) {
       // 私有名（#m）：接收者 brand 校验（原生 PrivateCall——接收者须是
       // 声明类实例）
@@ -1211,31 +1729,103 @@ setProtoMethodDispatch((home, name, thisVal, args) => {
   // Number.prototype.valueOf.call("5") 折 "5" 是假精确）。Object.prototype
   // （任意接收者合法）与 Array.prototype（上方物化 array-like）保持泛型。
   // Proxy 接收者（get/apply 陷阱可换壳）与 any/unknown/sum 不可判 → 不抛。
+  // Bug 256 / 261：**表驱动**（brandCheckBrandOf）——String.prototype 上只有
+  // toString / valueOf 要品牌（其余 30 个是 generic）；Error 家族不进品牌面
+  // （Error.prototype.toString 是普通方法）。
   {
-    const homeBrand = BRAND_CHECK_PROTOS.has(home)
-      ? home
-      : BRAND_CHECK_PROTOS.has(PRIM_HOME_BRAND[home] ?? "")
-        ? PRIM_HOME_BRAND[home]!
-        : isErrorCtorName(home)
-          ? "Error"
-          : undefined;
+    const homeBrand = brandCheckBrandOf(home, name);
     if (homeBrand !== undefined) {
       const recvBrand = borrowedRecvBrandOf(recv);
-      const ok =
-        recvBrand === undefined ||
-        recvBrand === homeBrand ||
-        (homeBrand === "Error" ? isErrorCtorName(recvBrand) : false);
+      const ok = recvBrand === undefined || recvBrand === homeBrand;
       if (!ok) throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
+  // Bug 256：String.prototype 的 **generic** 方法（ES2023 §22.1.3）——
+  // RequireObjectCoercible(this) + ToString(this) ⇒ 可借用给任何非 nullish
+  // 接收者（原生 `String.prototype.toUpperCase.call(1)` → "1"；整条品牌检查
+  // ⇒ 定抛 TypeError 假红）。品牌方法（toString / valueOf）已在上面定抛。
+  if (
+    (home === "String" || home === "string") &&
+    !BRAND_CHECK_METHODS["String"]!.has(name)
+  ) {
+    const rs = recv.shape;
+    const recvIsStr = rs.k === "prim" && (rs as { type?: string }).type === "string";
+    if (!recvIsStr) {
+      // nullish → RequireObjectCoercible 定抛（原生 TypeError）
+      if (isNullishLitAbs(recv)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      // brand 接收者（装箱 String / 用户类实例 / Error 实例…）沿既有 brand 面
+      if (rs.k !== "brand") {
+        return $invoke(genericStringRecv(recv), name, args);
+      }
+    }
+  }
+  // Bug 261：Error.prototype.toString 是 **generic** 方法（无品牌检查）——
+  // 只读 this.name / this.message ⇒ 借用给任意对象接收者（原生
+  // `Error.prototype.toString.call({name:"X",message:"y"})` → "X: y"；
+  // 此前整族进品牌检查面 ⇒ 定抛 TypeError 假红）。Error 实例沿既有 brand 面
+  //（"Error: m"）。
+  if (isErrorCtorName(home) && name === "toString" && !isErrorBrandRecv(recv)) {
+    return genericErrorToString(recv);
+  }
   if (home === "Array" && recv.shape.k !== "tuple" && recv.shape.k !== "arr") {
-    // Bug 108 邻接面：mutator（push/pop/…）在 prim 接收者上原生定抛
-    //（CreateDataProperty/DeleteProperty on primitive——node 实测
-    // Array.prototype.push.call("ab",1) → TypeError）。此前字符串接收者
-    // 被 Bug 51 物化通道吞成「拷贝元组上成功」的假不抛。读方法（slice/
-    // join/at/…）保持物化泛型。
-    if (recv.shape.k === "prim" && ARRAY_MUTATOR_METHODS.has(name)) {
+    const recvIsStrPrim =
+      recv.shape.k === "prim" && (recv.shape as { type?: string }).type === "string";
+    // Bug 259：mutator（push/pop/…）只在**字符串**接收者上原生定抛
+    //（ToObject("ab") 的 length 不可写——node 实测
+    // Array.prototype.push.call("ab",1) → TypeError: Cannot assign to read
+    // only property 'length'）。其它原始值（number / boolean / bigint /
+    // symbol）ToObject 后是**普通可扩展对象**（length 0）⇒ mutator 正常
+    // 成功（node 实测 push.call(5,1) → 1、pop.call(5) → undefined）——此前
+    // 一刀切定抛 ⇒ 假抛（L2 门禁假红）。读方法（slice/join/at/…）保持泛型。
+    if (recvIsStrPrim && ARRAY_MUTATOR_METHODS.has(name)) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // Bug 254（端到端接线）：mutator（push/pop/shift/…）在**数组样对象**接收者
+    // （`{length, 0: …}`）上，原生是**就地改接收者**（写 length 与索引槽），
+    // 返回值按数组语义算。此前本臂把接收者**物化成副本**再派发 ⇒ 写落副本 ⇒
+    // `push.call({length:0},5)` 之后 `o.length` 仍 0、`o[0]` 仍 undefined。
+    // ⇒ mutator 走**原接收者**（invokeArrMethod 的泛型接收者臂 → $arrMutContainer
+    // → mutateArrayLike 就地写），其余读方法保持物化通道。
+    if (ARRAY_MUTATOR_METHODS.has(name) && recv.shape.k === "obj") {
+      const direct = invokeArrMethod(recv, name, args);
+      if (direct !== undefined) return direct;
+    }
+    // Bug 267：sort / reverse / fill / copyWithin 是「就地操作并返回 this」
+    // ⇒ 非数组接收者上**返回接收者本身**（原生 `Array.prototype.sort.call({a:1})`
+    // → {a:1}）；此前走物化通道 ⇒ 折成**空数组**（内容 + 身份全丢）。
+    // 原始值接收者：原生返回 ToObject(prim) 包装对象（引擎无该形态）⇒ unknown。
+    if (ARRAY_INPLACE_METHODS.has(name)) {
+      if (recv.shape.k === "prim") return unknown;
+      return recv;
+    }
+    // Bug 262：concat **不是**泛型数组算法——规范只把 this 的元素拷进结果，
+    // 且前提是 IsArray(O) 为真；否则 this **整体作为第一个元素**追加
+    //（原生 `Array.prototype.concat.call("ab")` → ["ab"]（长度 1）；此前按
+    // 数组展开 → 长度 2、首元素 "a" ⇒ 元素数 / 首元素全错）。
+    if (name === "concat" && !isArrayExoticRecv(recv)) {
+      const seed = abs({ k: "tuple", elements: [recv] }, undefined, undefined, "exact");
+      return $invoke(seed, name, args);
+    }
+    // Bug 268：with 在**原始值**接收者上原生定抛 RangeError（ToObject(prim)
+    // 的 length = 0 ⇒ 下标必越界；node 实测 with.call(1,0,2) → RangeError:
+    // Invalid index : 0；with.call(1,-1,2) → RangeError: Invalid index : -1
+    // ——RelativeIndex 负值钳到 0（max(len+index, 0)）⇒ 任何下标都越界）——
+    // 此前落 `return unknown`（不记抛 ⇒ L2 门禁假绿）。
+    if (name === "with" && recv.shape.k === "prim" && !recvIsStrPrim) {
+      const idx = args[0];
+      if (idx !== undefined && (isSymbolAbs(idx) || isBigPrim(idx))) {
+        // ToIntegerOrInfinity(symbol / bigint) 原生定抛 TypeError
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const lv = idx === undefined ? undefined : litValue(idx);
+      if (lv === undefined || !lv.ok) {
+        recordMayThrow({
+          kind: "RangeError",
+          cause: "Array.prototype.with index may be out of range on a primitive receiver",
+        });
+        return unknown;
+      }
+      throw new NudoThrow(errorTypeAbs("RangeError"));
     }
     // 字面量字符串 → code unit 字符 tuple（Array.prototype 借用算法按
     // length+索引读——code unit，非 code point；slice.call('abc') →
@@ -1251,6 +1841,14 @@ setProtoMethodDispatch((home, name, thisVal, args) => {
         "exact",
       );
       return $invoke(chars, name, args);
+    }
+    // 其它原始值接收者（number / boolean / bigint / symbol）→ ToObject(prim)：
+    // length 0 的**普通可扩展对象**（mutator 正常成功；写落到临时包装对象
+    // 后即丢——原生同）。此前落 `return unknown`（连 push.call(5,1) → 1 都
+    // 折不出来）。
+    if (recv.shape.k === "prim") {
+      const boxed = abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      return $invoke(boxed, name, args);
     }
     const materialized = evalArrayStatic("from", [recv]);
     if (

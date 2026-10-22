@@ -24,9 +24,10 @@ import { errorTypeAbs } from "../may-throw.ts";
 import { NudoThrow } from "../runtime.ts";
 import {
   getEvalClass,
+  lookupClassValue,
 } from "../class-registry.ts";
 
-import { findMethod, findStaticMethod, constructClass, applyInstanceFields } from "./declare.ts";
+import { findMethod, findStaticMethod, constructClass, applyInstanceFields, markSuperCalled, superCalledFor } from "./declare.ts";
 import { $setKey } from "./this-member.ts";
 
 /**
@@ -35,6 +36,15 @@ import { $setKey } from "./this-member.ts";
  */
 export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   const child = getEvalClass(childName);
+  // Bug 245：派生构造器**只能调一次** super()——第二次定抛 ReferenceError
+  // （"Super constructor may only be called once"）。状态在 declare.ts 的
+  // 模块级 WeakMap 侧表（markSuperCalled / superCalledFor）——键 = 实例
+  // Abs 身份 + **本层子类名**（同一实例沿继承链逐层传递，内层的 super()
+  // 不得误判外层的「已调」）。
+  if (superCalledFor(thisVal, childName)) {
+    throw new NudoThrow(errorTypeAbs("ReferenceError"));
+  }
+  markSuperCalled(thisVal, childName);
   // Bug 11：extends null 的显式 super()：原生 TypeError
   // （Super constructor null of … is not a constructor）
   if (child?.superNull) {
@@ -47,13 +57,18 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   if (child) after = applyInstanceFields(child, after);
   if (after && after.shape.k === "brand") {
     // 保持子类 brand 名
-    return abs(
+    const next = abs(
       { k: "brand", name: childName, shape: after.shape.shape },
       after.term,
       after.pred,
       after.conf,
     );
+    // Bug 245：$super 返回**新** brand Abs（内层 obj 共享）——「已调 super」
+    // 标记随实例传递到出参，第二次 super() 才拦得住。
+    markSuperCalled(next, childName);
+    return next;
   }
+  if (after && typeof after === "object") markSuperCalled(after, childName);
   return after ?? thisVal;
 }
 
@@ -97,6 +112,20 @@ export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
     seen.add(cur);
     const spec = getEvalClass(cur);
     if (!spec) return unknown; // 宿主/未注册基类：原型面不可枚举 → 链开
+    // Bug 266：`super.constructor` = **父类构造器本身**（原生父类原型上的
+    // "constructor" 自有属性 ⇒ 父类值；ClassDefinitionEvaluation 装它时
+    // 覆盖类体里同名访问器）。引擎此前只在 spec.methods 里找 "constructor"
+    // ⇒ 找不到 ⇒ 回落内置 `Object` ⇒ `Sub.who() => "Object"`、
+    // `super.constructor === Base` 假 false（确定错值）。
+    // 取法：类值注册表（lookupClassValue）——注册表存的就是 $class 产出的
+    // 类值 Abs 本身（与源码里的 `Base` 绑定同一引用 ⇒ === 恒真）。
+    if (k === "constructor") {
+      const ctorVal = lookupClassValue(cur);
+      if (ctorVal) return ctorVal;
+      // 父类已注册但**无类值**（宿主函数声明 / 手写 spec）⇒ 构造器值不可
+      // 表示 ⇒ 诚实 unknown（不得回落内置 Object——那是确定错值）。
+      return unknown;
+    }
     const acc = spec.accessors?.[k];
     // 访问器挡链（含 setter-only：读止步于此 → undefined）
     if (acc) return acc.get ? acc.get(thisVal) : undef();

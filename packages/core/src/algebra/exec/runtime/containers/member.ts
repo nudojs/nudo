@@ -656,14 +656,31 @@ function builtinSymbolMemberAbs(
 /* var（非 let）：exec/class.ts 模块加载期经循环 import 回调本 setter 时，
  * let 声明仍在 TDZ（eval-empty-sum-reduce / env-shadow-parity 加载序崩溃）；
  * var 提升初始化为 undefined，注册先于本模块体完成也安全。 */
+/** Bug 1041：用户类方法值的**来源侧**（"static" = 构造器上的静态方法 /
+ *  "inst" = 原型上的实例方法）——同名 static + 实例方法并存时，摘下调用
+ *  （接收者恒 undefined）靠它定夺跑哪个方法体（原生：`A.m` 与 `a.m` 是
+ *  两个不同函数对象）。未标（内建原型方法值）⇒ undefined（不可判）。 */
+export type ClassMethodOrigin = "static" | "inst";
 var protoMethodDispatch:
-  | ((home: string, name: string, thisVal: Abs | undefined, args: Abs[]) => Abs)
+  | ((
+      home: string,
+      name: string,
+      thisVal: Abs | undefined,
+      args: Abs[],
+      origin?: ClassMethodOrigin,
+    ) => Abs)
   | undefined;
 
 /** exec/class.ts 模块加载时注册（调用派发实现；与 state.ts 的
  *  setHostGlobalFnCall 桥同款注册式注入，避免 containers↔class import 环） */
 export function setProtoMethodDispatch(
-  d: (home: string, name: string, thisVal: Abs | undefined, args: Abs[]) => Abs,
+  d: (
+    home: string,
+    name: string,
+    thisVal: Abs | undefined,
+    args: Abs[],
+    origin?: ClassMethodOrigin,
+  ) => Abs,
 ): void {
   protoMethodDispatch = d;
 }
@@ -717,11 +734,15 @@ function classMethodValueAbs(
   // 由调用位给出）。kind:"protoMethod" 抑制 $invokeInner 尾部「属性上的
   // 可调用值」的无 receiver 再入（apply 已按接收者派发，回环会在
   // undefined 接收者上假定抛）。直接 c.m() 不经此值（registry 派发先行）。
+  // Bug 1041：来源侧（kind = "static" / "inst"）随值下传——同名 static +
+  // 实例方法并存时，摘下调用（接收者恒 undefined）靠它定夺跑哪个方法体
+  // （原生：`A.m` 是构造器上的静态方法、`a.m` 是原型上的实例方法——两个
+  // 不同函数对象）。
   const fn = markFreshInstance(
     absFunction(params ?? [], {
       body: noBody,
       apply: (args, thisVal) =>
-        protoMethodDispatch?.(spec.name, key, thisVal, args) ?? unknown,
+        protoMethodDispatch?.(spec.name, key, thisVal, args, kind) ?? unknown,
       kind: "protoMethod",
       // Bug 325：类方法的**函数种类**戳（async × generator 四象限）——
       // 原生类方法标签面随种类变（"[object AsyncFunction]" 等）。种类从

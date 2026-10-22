@@ -15,13 +15,16 @@
  *   抛 TypeError；空数组 / 空洞位 / preventExtensions（nonext）不抛。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, unknown, type Confidence } from "../../../abs.ts";
+import { abs, confJoin, litValue, numLit, unknown, type Confidence } from "../../../abs.ts";
 import { lit } from "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
 import {
+  getSlot,
   joinAbs,
+  setSlot,
 } from "../../../objects.ts";
+import { accessorKeysOf } from "../../../accessors.ts";
 import {
   extStateOf,
   isSymbolAbs,
@@ -80,6 +83,35 @@ export function toIOI(v: Abs | undefined): number | null | undefined {
     return Math.trunc(n);
   }
   return null; // bigint/symbol/抽象 → 不可判定
+}
+
+/**
+ * Bug 270 / 1051：ToIntegerOrInfinity 实参的**四态**（缺省 / 显式 undefined /
+ * 数值 / 不可判定）。
+ *
+ * `toIOI` 只回答「数值是多少」，把「实参缺省」与「显式 undefined 实参」都折成
+ * undefined——但原生两者语义**不同**：
+ * - `Array.prototype.lastIndexOf(x)` 起始下标 = `len-1`；`lastIndexOf(x, undefined)`
+ *   = 0（`ToIntegerOrInfinity(undefined) = 0`）⇒ 前者扫全表、后者只扫第 0 位；
+ * - `toSpliced()` 零实参 ⇒ start 缺省 ⇒ **不删**；`toSpliced(0, undefined)` ⇒
+ *   skipCount 在场（undefined ⇒ 0）⇒ **不删**；`toSpliced(0)` ⇒ skipCount 缺省
+ *   ⇒ 删到尾。
+ *
+ * 本函数在 `toIOI` 的数值判定之上只补「实参在不在 + 显式 undefined ⇒ 0」这一维
+ * （`toIOI` 仍是数值判定的单一事实源，不重造 ToIntegerOrInfinity）。
+ */
+export type ToIOIArg =
+  | { kind: "absent" }
+  | { kind: "num"; n: number }
+  | { kind: "unknown" };
+
+export function toIOIArg(v: Abs | undefined): ToIOIArg {
+  if (v === undefined) return { kind: "absent" };
+  const ioi = toIOI(v);
+  if (ioi === null) return { kind: "unknown" };
+  // toIOI 对「显式 undefined 字面量」返回 undefined ⇒ ToIntegerOrInfinity(undefined) = 0
+  if (ioi === undefined) return { kind: "num", n: 0 };
+  return { kind: "num", n: ioi };
 }
 
 /** 规范窗口（len 相对化 + clamp）；target≥len 或空窗 → null（no-op） */
@@ -178,7 +210,11 @@ export function fillTuple(
   // 不校验——原生存储不转换（fill(Symbol()) 合法）
   validateIndexArg(vals[1], "fill start may not be convertible to a number");
   validateIndexArg(vals[2], "fill end may not be convertible to a number");
-  const v = vals[0] ?? unknown;
+  // Bug 255：value 实参**缺省** ⇒ 原生 `fill(undefined)`——填的是「确定
+  // undefined」（lit undefined），**不是**裸 unknown：裸 unknown 的元素域
+  // 含任意值 ⇒ 下游 join 会误报「元素可能是 symbol ⇒ ToString 抛」
+  // （L2 entry-may-throw 假红）。
+  const v = vals[0] ?? undef();
   const s = toIOI(vals[1]);
   const e = toIOI(vals[2]);
   if (shape.k === "tuple") {
@@ -471,13 +507,209 @@ export function sortTupleAbs(
   return degrade();
 }
 
+/**
+ * Bug 254：mutator 家族的**泛型接收者**写面（数组样对象 `{length, 0: …}`）。
+ *
+ * 原生 `Array.prototype.push/pop/shift/unshift/splice` 只要求接收者
+ * `ToObject(O)` 后有**可写的 length** 与索引属性——数组样对象（array-like）
+ * 与字符串包装走同一条实现（规范：`Set(O, "length", n)` /
+ * `CreateDataPropertyOrThrow(O, k, v)` / `DeletePropertyOrThrow(O, k)`）。
+ * 此前 `$arrMutContainer` 对非 tuple/arr 形状**早退**（原样返回接收者）⇒ 写入
+ * 被静默丢弃：长度不变、元素不变、不记 may-throw、不标 open（假绿）。
+ *
+ * 口径（可判定时精确，不可判定时诚实降级）：
+ * - 接收者须是**闭 obj**（slots 可写；open obj / 抽象 index 槽 / 带访问器侧表
+ *   ⇒ 写面不可建模 ⇒ 记 may-throw 后不写）；
+ * - `length` 槽经 ToLength 折叠（number/string/bool/null/undefined；bigint/symbol
+ *   → 确定 TypeError；抽象 length → 记 may-throw 后不写）；
+ * - 索引槽按规范写/删（**就地改 slots**——Abs 身份与 shape 身份都不变 ⇒ 别名
+ *   （`const b = o`）与成员槽同步可见）。
+ */
+function mutateArrayLike(arr: Abs, method: string, args: Abs[]): Abs {
+  const shape = arr.shape as {
+    k: string;
+    slots?: Record<string, { value: Abs }>;
+    open?: boolean;
+    index?: unknown;
+  };
+  if (shape.k !== "obj" || !shape.slots || shape.open || shape.index) {
+    // 形态不可判（open obj / 抽象 index 槽 / 非 obj）⇒ 记 may-throw + 不写
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `${method} on a non-array receiver may write an unknown length`,
+    });
+    return arr;
+  }
+  if (accessorKeysOf(arr).length > 0) {
+    // 访问器侧表（getter/setter）——写面不可建模（setter 派发 / getter 语义）
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `${method} on an array-like receiver with accessors may write through a setter`,
+    });
+    return arr;
+  }
+  const slots = shape.slots;
+  const len = arrayLikeLengthOf(slots);
+  if (len === undefined) return arr;
+  const vals = args.map((a) => asAbsVal(a));
+  const readIdx = (i: number): Abs | undefined => getSlot(slots, String(i))?.value;
+  const writeIdx = (i: number, v: Abs): void => {
+    setSlot(slots, String(i), { value: v });
+  };
+  const delIdx = (i: number): void => {
+    delete slots[String(i)];
+  };
+  const setLen = (n: number): void => {
+    setSlot(slots, "length", { value: numLit(n) });
+  };
+  if (method === "push") {
+    for (let i = 0; i < vals.length; i++) writeIdx(len + i, vals[i]!);
+    setLen(len + vals.length);
+    return arr;
+  }
+  if (method === "unshift") {
+    const n = vals.length;
+    for (let k = len - 1; k >= 0; k--) {
+      const v = readIdx(k);
+      if (v !== undefined) writeIdx(k + n, v);
+      else delIdx(k + n);
+    }
+    for (let i = 0; i < n; i++) writeIdx(i, vals[i]!);
+    setLen(len + n);
+    return arr;
+  }
+  if (method === "pop") {
+    if (len === 0) {
+      setLen(0);
+      return arr;
+    }
+    delIdx(len - 1);
+    setLen(len - 1);
+    return arr;
+  }
+  if (method === "shift") {
+    if (len === 0) {
+      setLen(0);
+      return arr;
+    }
+    for (let k = 1; k < len; k++) {
+      const v = readIdx(k);
+      if (v !== undefined) writeIdx(k - 1, v);
+      else delIdx(k - 1);
+    }
+    delIdx(len - 1);
+    setLen(len - 1);
+    return arr;
+  }
+  if (method === "splice") {
+    // 规范 Array.prototype.splice（ES2023 22.1.3.26）：删 actualStart 起的
+    // actualDeleteCount 个、items 插到 actualStart、length = len - del + items。
+    validateIndexArg(args[0], "splice start may not be convertible to a number");
+    validateIndexArg(args[1], "splice deleteCount may not be convertible to a number");
+    const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
+    if (win === "unknown") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "splice on an array-like receiver with an abstract window",
+      });
+      return arr;
+    }
+    const { a, skip } = win;
+    const items = vals.slice(2);
+    // 规范 Array.prototype.splice（ES2023 22.1.3.26）：结果 = 头段 + items +
+    // 尾段，写回接收者并把 length 设为 len - skip + items.length。
+    // 逐位物化（头段 + items + 尾段）——避免搬移时互相覆盖。
+    const next: (Abs | undefined)[] = [];
+    for (let k = 0; k < a; k++) next.push(readIdx(k));
+    for (const it of items) next.push(it);
+    for (let k = a + skip; k < len; k++) next.push(readIdx(k));
+    for (let k = 0; k < next.length; k++) {
+      const v = next[k];
+      if (v !== undefined) writeIdx(k, v);
+      else delIdx(k);
+    }
+    for (let k = next.length; k < len; k++) delIdx(k);
+    setLen(next.length);
+    return arr;
+  }
+  // reverse / sort / copyWithin / fill：原地数组算法在泛型接收者上无对应写面
+  // （规范要求可写 length + 索引属性，但算法语义依赖数组内部序）⇒ 记 may-throw
+  recordMayThrow({
+    kind: "TypeError",
+    cause: `${method} on a non-array receiver has no modelled write surface`,
+  });
+  return arr;
+}
+
+/** 数组样接收者的 `length` 槽 → ToLength；undefined = 不可判定（已记 may-throw） */
+function arrayLikeLengthOf(slots: Record<string, { value: Abs }>): number | undefined {
+  const lenAbs = getSlot(slots, "length")?.value;
+  if (lenAbs === undefined) return 0; // 无 length 槽 ⇒ ToLength(undefined) = 0
+  const lvR = litValue(lenAbs);
+  const lv = lvR.ok ? lvR.value : undefined;
+  if (lv === undefined) {
+    if (lenAbs.term?.op === "lit") return 0; // lit undefined ⇒ ToLength = 0
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "array-like length is not a concrete number",
+    });
+    return undefined;
+  }
+  if (typeof lv === "bigint" || typeof lv === "symbol") {
+    // ToNumber(bigint/symbol) 确定 TypeError
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  const n = typeof lv === "number" ? lv : Number(lv); // string / boolean / null
+  if (Number.isNaN(n)) return 0;
+  return Math.min(Math.max(Math.trunc(n), 0), Number.MAX_SAFE_INTEGER);
+}
+
+/**
+ * Bug 270：ES2023 `splice` / `toSpliced` 的**删除窗口**（同一 spec 规则的
+ * 单一实现——两臂共用，杜绝分叉）。
+ *
+ * 原生规则（ES2023 Array.prototype.splice / toSpliced）：
+ * - `splice()` **零实参** ⇒ 实际参数个数为 0 ⇒ `actualDeleteCount = 0`
+ *   （**不删**）；`toSpliced()` **start 缺省** ⇒ `actualSkipCount = 0`
+ *   （**不删**）；
+ * - start 在场、skipCount **缺省** ⇒ 删到尾（`len - actualStart`）；
+ * - skipCount **在场**（含显式 `undefined` ⇒ `ToIntegerOrInfinity(undefined) = 0`）
+ *   ⇒ 夹到 `[0, len - actualStart]`。
+ *
+ * 此前两臂都把「skipCount 缺省」与「skipCount 显式 undefined」混为一谈
+ * （`toIOI` 对两者都返回 undefined）⇒ `toSpliced()` / `toSpliced(0, undefined)`
+ * 把整个数组删空（原生**原样保留**）。
+ *
+ * @param zeroArgs 实参个数为 0（仅 `splice()` 命中——toSpliced 的「start 缺省」
+ *        由 `start.kind === "absent"` 表达）
+ */
+export function spliceWindow(
+  len: number,
+  start: ToIOIArg,
+  skip: ToIOIArg,
+  zeroArgs: boolean,
+): { a: number; skip: number } | "unknown" {
+  if (start.kind === "unknown" || skip.kind === "unknown") return "unknown";
+  const s = start.kind === "absent" ? 0 : start.n;
+  const a = s < 0 ? Math.max(len + s, 0) : Math.min(s, len);
+  // start 缺省 ⇒ 不删（splice 零实参 / toSpliced 零实参）
+  if (zeroArgs || start.kind === "absent") return { a, skip: 0 };
+  const skipCount =
+    skip.kind === "absent" ? len - a : Math.max(0, Math.min(skip.n, len - a));
+  return { a, skip: skipCount };
+}
+
 /** 数组/元组方法（push/pop/shift/unshift/splice/reverse/sort/copyWithin/fill）
  *  的就地 mutator：Abs 身份不变（JS 引用语义——`const b = a; b.push(4)` 对 a
  *  可见）。$invoke 的 mutator 分支在**调用点**即刻执行本函数（表达式求值
  *  顺序正确，Bug 49/51），别名 / 成员槽 / Map 条目经共享 Abs 同步可见。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
-  if (shape.k !== "tuple" && shape.k !== "arr") return arr;
+  if (shape.k !== "tuple" && shape.k !== "arr") {
+    // Bug 254：泛型接收者（数组样对象）——原生 mutator 家族只要求接收者有
+    // 可写的 length 与索引属性 ⇒ 走同一写面（此前早退 ⇒ 写入被静默丢弃）。
+    return mutateArrayLike(arr, method, args);
+  }
   const st = extStateOf(arr);
   // frozen：任何 mutator 原生 TypeError（strict 硬抛）；
   // sealed/nonext：结构性扩展（push/unshift/splice 加元素）TypeError
