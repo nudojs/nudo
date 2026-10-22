@@ -183,7 +183,7 @@ function unannotatedHeavy(x) {
 
 ## @nudo:sample — 循环采样（保留，无效果）
 
-`@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
+`@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer-orchestrate-uncached.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
 
 ### 语法
 

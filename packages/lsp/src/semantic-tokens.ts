@@ -12,7 +12,7 @@ import {
  * 与 LSP server capabilities 里声明的 legend 必须逐字对齐——server.ts 直接
  * 导入本常量注册，保证「提取端索引」与「客户端图例」单一来源。
  * 顺序沿用 lsp 包原 legend（function/variable/parameter/property 在前），
- * 末尾追加 method（对象字面量方法键）与 interface 档 modifier（A7），
+ * 末尾追加 method（对象字面量方法键）、class（类名）与 interface 档 modifier（A7），
  * 只追加不重排，客户端索引稳定。
  */
 export const SEMANTIC_TOKEN_TYPES = [
@@ -27,6 +27,7 @@ export const SEMANTIC_TOKEN_TYPES = [
   "comment",
   "decorator",
   "method",
+  "class",
 ] as const;
 
 export const SEMANTIC_TOKEN_MODIFIERS = [
@@ -74,6 +75,7 @@ const TYPE_VARIABLE = SEMANTIC_TOKEN_TYPES.indexOf("variable");
 const TYPE_PARAMETER = SEMANTIC_TOKEN_TYPES.indexOf("parameter");
 const TYPE_PROPERTY = SEMANTIC_TOKEN_TYPES.indexOf("property");
 const TYPE_METHOD = SEMANTIC_TOKEN_TYPES.indexOf("method");
+const TYPE_CLASS = SEMANTIC_TOKEN_TYPES.indexOf("class");
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
 const MOD_CONTRACT = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("contract");
 const MOD_GENERATED = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("generated");
@@ -115,7 +117,10 @@ export type BuildSemanticTokensOpts = InterfaceTierOpts & {
  * - 顶层 const/let/var 声明的绑定名：推断为函数绑定 → function，否则 variable
  *   （函数体内部的声明不做 env 反查——外层同名绑定会串味，统一 variable）；
  * - 函数声明/函数表达式的名字 → function；所有函数的参数 → parameter；
- * - 对象字面量的键：值为函数 → method，否则 property。
+ * - 类名 → class；类方法键 → method、类字段键 → property；类方法形参 → parameter；
+ * - 解构绑定（对象 / 数组模式）→ variable（绑定名，不是属性键）；
+ * - 对象字面量的键：值为函数 → method，否则 property；简写 `{ x }` 是对变量的
+ *   **引用** → variable（不带 declaration modifier）。
  *
  * A7：本地 named export 的函数绑定额外带 interface 档 modifier
  * （contract / generated / derived），与 CodeLens `● interface` 同源。
@@ -178,16 +183,52 @@ export function buildSemanticTokens(
   };
 
   const tokens: SemanticToken[] = [];
-  const pushIdentifier = (id: Node, typeIndex: number, extraMod = 0): void => {
-    const loc = (id as { loc?: { start: { line: number; column: number } } }).loc;
+  /**
+   * 推一个标识符 token。
+   *
+   * - **length 用源码跨度**（`loc.end.column - loc.start.column`）：Babel 的
+   *   `Identifier.name` 是**解码后**的名字（`abc`），而 `const \u0061bc = 1`
+   *   这种转义写法的源码跨度是 8 ⇒ 用 `name.length` 会让 token 只盖住转义
+   *   序列的前半截（Bug 723）。`loc.end` 不可用时回退源码偏移区间，最后才
+   *   回退 `name.length`（仅当源码写法与名字一致时才等长）。
+   * - char / length 均为 **UTF-16 code unit**（Babel 的 column 口径）。
+   * - `declaration = false` ⇒ 该 token 是**引用位**（如对象字面量简写
+   *   `{ x }`），不带 declaration modifier（Bug 721）。
+   */
+  const pushIdentifier = (
+    id: Node,
+    typeIndex: number,
+    extraMod = 0,
+    declaration = true,
+  ): void => {
+    const loc = (
+      id as {
+        loc?: {
+          start: { line: number; column: number };
+          end?: { line: number; column: number };
+        };
+      }
+    ).loc;
     const name = (id as { name?: string }).name;
     if (!loc || typeof name !== "string") return;
+    const startColumn = loc.start.column;
+    const endColumn = loc.end?.column;
+    const nodeStart = (id as { start?: number }).start;
+    const nodeEnd = (id as { end?: number }).end;
+    const sourceSpan =
+      typeof nodeStart === "number" && typeof nodeEnd === "number" && nodeEnd > nodeStart
+        ? nodeEnd - nodeStart
+        : undefined;
+    const length =
+      typeof endColumn === "number" && endColumn > startColumn
+        ? endColumn - startColumn
+        : (sourceSpan ?? name.length);
     tokens.push({
       line: loc.start.line - 1,
-      char: loc.start.column,
-      length: name.length,
+      char: startColumn,
+      length,
       typeIndex,
-      modifierBitmask: MOD_DECLARATION | extraMod,
+      modifierBitmask: (declaration ? MOD_DECLARATION : 0) | extraMod,
     });
   };
 
@@ -205,7 +246,7 @@ export function buildSemanticTokens(
 
   const isFunctionValue = (name: string): boolean => functionNames.has(name);
 
-  const visit = (node: unknown): void => {
+  const visit = (node: unknown, parent?: Node): void => {
     if (!node || typeof node !== "object") return;
     const n = node as Record<string, unknown>;
 
@@ -243,6 +284,27 @@ export function buildSemanticTokens(
       case "ArrowFunctionExpression":
         collectParams((n.params as Node[] | undefined) ?? []);
         break;
+      // 类名 → class 档（Bug 701）
+      case "ClassDeclaration":
+      case "ClassExpression": {
+        const id = n.id as Node | undefined;
+        if (id?.type === "Identifier") pushIdentifier(id, TYPE_CLASS);
+        break;
+      }
+      // 类方法键 → method 档；方法形参 → parameter 档（Bug 701）
+      case "ClassMethod":
+      case "ClassPrivateMethod": {
+        const key = n.key as Node | undefined;
+        if (key?.type === "Identifier" && !n.computed) pushIdentifier(key, TYPE_METHOD);
+        collectParams((n.params as Node[] | undefined) ?? []);
+        break;
+      }
+      // 类字段键 → property 档（Bug 701）
+      case "ClassProperty": {
+        const key = n.key as Node | undefined;
+        if (key?.type === "Identifier" && !n.computed) pushIdentifier(key, TYPE_PROPERTY);
+        break;
+      }
       case "ObjectMethod": {
         const key = n.key as Node | undefined;
         if (key?.type === "Identifier" && !n.computed) pushIdentifier(key, TYPE_METHOD);
@@ -252,10 +314,43 @@ export function buildSemanticTokens(
       case "ObjectProperty": {
         const key = n.key as Node | undefined;
         const value = n.value as Node | undefined;
+        // 解构绑定（父节点是 ObjectPattern）⇒ 绑定名是 **value** 侧，不是属性键
+        if (parent?.type === "ObjectPattern") {
+          const bound =
+            value?.type === "AssignmentPattern" ? (value as { left?: Node }).left : value;
+          if (bound?.type === "Identifier") pushIdentifier(bound, TYPE_VARIABLE);
+          break;
+        }
         if (key?.type === "Identifier" && !n.computed) {
+          // 简写 `{ x }` ⇒ 对变量的**引用**（不是属性定义）⇒ variable 且不带
+          // declaration modifier（Bug 721）
+          if (n.shorthand === true) {
+            pushIdentifier(key, TYPE_VARIABLE, 0, false);
+            break;
+          }
           const isFn =
             value?.type === "FunctionExpression" || value?.type === "ArrowFunctionExpression";
           pushIdentifier(key, isFn ? TYPE_METHOD : TYPE_PROPERTY);
+        }
+        break;
+      }
+      // 数组解构的元素 ⇒ variable 绑定（Bug 701）
+      case "ArrayPattern": {
+        for (const el of (n.elements as Node[] | undefined) ?? []) {
+          if (!el) continue;
+          if (el.type === "Identifier") {
+            pushIdentifier(el, TYPE_VARIABLE);
+          } else if (
+            el.type === "AssignmentPattern" &&
+            (el as { left?: Node }).left?.type === "Identifier"
+          ) {
+            pushIdentifier((el as { left: Node }).left, TYPE_VARIABLE);
+          } else if (
+            el.type === "RestElement" &&
+            (el as { argument?: Node }).argument?.type === "Identifier"
+          ) {
+            pushIdentifier((el as { argument: Node }).argument, TYPE_VARIABLE);
+          }
         }
         break;
       }
@@ -267,11 +362,11 @@ export function buildSemanticTokens(
       if (Array.isArray(child)) {
         for (const item of child) {
           if (item && typeof item === "object" && typeof (item as { type?: unknown }).type === "string") {
-            visit(item);
+            visit(item, node as Node);
           }
         }
       } else if (child && typeof child === "object" && typeof (child as { type?: unknown }).type === "string") {
-        visit(child);
+        visit(child, node as Node);
       }
     }
   };

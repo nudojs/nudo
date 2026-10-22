@@ -9,6 +9,7 @@
  * SurfaceReuse——直接 import 叶子模块）。
  */
 import { formatAbs, formatShape, type Abs } from "@nudojs/core";
+import { maskCommentsAndStrings } from "@nudojs/core/internal";
 import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   builtinProtoMember,
@@ -60,7 +61,9 @@ export function getCompletionsAtPosition(
   }
   try {
     const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
-    const binds = collectAbsBindingsFromGraph(source, filePath, {
+    // 绑定解析输入也走消毒文本：编辑中间态（尾随 `x.`）原文语法非法，
+    // 直接喂给 collectAbsBindingsFromGraph 会抛 ⇒ 成员补全清零（Bug 698）。
+    const binds = collectAbsBindingsFromGraph(sanitizeSourceForParsing(source), filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,
     });
@@ -77,8 +80,103 @@ export function getCompletionsAtPosition(
   return [];
 }
 
-function sanitizeSourceForParsing(source: string): string {
+/**
+ * 解析用消毒：把「尾随点号」改写成合法成员访问（`x.` → `x._ `）。
+ *
+ * 编辑中间态（用户刚敲下 `.`）buffer 文本必然语法非法，而 parse 不容错 ⇒
+ * 分析/绑定解析直接抛。分析输入与绑定解析输入**共用**本消毒器
+ * （Bug 698）。注意：消毒会改变文本长度，故消毒结果**不得**当原文进缓存。
+ */
+export function sanitizeSourceForParsing(source: string): string {
   return source.replace(/(\w+)\.\s*$/gm, "$1._ ");
+}
+
+/** 光标所在的词法上下文。 */
+export type LexicalContext = "code" | "comment" | "string";
+
+/**
+ * 光标的词法上下文（code / comment / string）。
+ *
+ * 判定基于 core 的 `maskCommentsAndStrings`：它把**注释与字符串整段**掩成
+ * 等长空格（行号/列对齐），代码区原样保留 ⇒ 掩码里的「空白段」= 注释段 ∪ 字符串段。
+ * 段类型看**原文**：注释段必以 `//` 或 `/*` 起，字符串段以引号/反引号起；
+ * 跨行块注释逐行回溯到段首那一行再判。
+ *
+ * 用途（Bug 708）：指令补全**只在光标确实落在注释里**时才出——
+ * `x * `（乘号）、字符串字面量里的 `@nudo:` 都不是注释。
+ */
+export function cursorLexicalContext(
+  source: string,
+  line: number,
+  character: number,
+): LexicalContext {
+  const masked = maskCommentsAndStrings(source);
+  const lineStarts = lineStartOffsets(source);
+  const offset = offsetOfPosition(source, lineStarts, line, character);
+  if (offset <= 0) return "code";
+  const ctx = offset - 1;
+  // 掩码里非空白 ⇒ 代码区（注释/字符串被整段掩成空格）
+  if (masked[ctx] !== " ") return "code";
+
+  // 定位光标所在的空白段（行内；换行不是空白段的一部分）
+  let segStart = ctx;
+  while (segStart > 0 && masked[segStart - 1] === " ") segStart--;
+  let segEnd = ctx + 1;
+  while (segEnd < masked.length && masked[segEnd] === " ") segEnd++;
+
+  const lineEnd = (l: number): number =>
+    l + 1 < lineStarts.length ? lineStarts[l + 1]! - 1 : source.length;
+
+  let curLine = line;
+  let curSegStart = segStart;
+  let curSegEnd = segEnd;
+  for (let guard = 0; guard < 10_000; guard++) {
+    const text = source.slice(curSegStart, curSegEnd).trimStart();
+    if (text.startsWith("//") || text.startsWith("/*")) return "comment";
+    if (
+      text.startsWith('"') ||
+      text.startsWith("'") ||
+      text.startsWith("`") ||
+      text.startsWith("}")
+    ) {
+      return "string";
+    }
+    // 空白段（代码里的空白 / 段已结束）⇒ 不是注释
+    if (text === "") return "code";
+    // 跨行块注释：只有「本段一直延伸到行尾」才可能续到上一行
+    if (curSegEnd !== lineEnd(curLine)) return "code";
+    if (curLine === 0) return "code";
+    curLine -= 1;
+    const prevStart = lineStarts[curLine]!;
+    const prevEnd = lineEnd(curLine);
+    let p = prevEnd - 1;
+    while (p >= prevStart && masked[p] === " ") p--;
+    curSegStart = p + 1;
+    curSegEnd = prevEnd;
+  }
+  return "code";
+}
+
+/** 每行起始偏移（UTF-16 code unit）——第 i 项是第 i 行的行首。 */
+function lineStartOffsets(source: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === "\n") starts.push(i + 1);
+  }
+  return starts;
+}
+
+/** LSP 位置（0 基行 / UTF-16 列）→ 源码绝对偏移（UTF-16 code unit）。 */
+function offsetOfPosition(
+  source: string,
+  lineStarts: number[],
+  line: number,
+  character: number,
+): number {
+  if (line < 0 || line >= lineStarts.length) return source.length;
+  const start = lineStarts[line]!;
+  const end = line + 1 < lineStarts.length ? lineStarts[line + 1]! - 1 : source.length;
+  return start + Math.min(Math.max(character, 0), end - start);
 }
 
 function getTextBeforePosition(source: string, line: number, column: number): string {
@@ -99,19 +197,28 @@ function getVariableCompletions(
       if (name.startsWith("__export_")) continue;
       completions.push({
         label: name,
-        kind: info.abs.shape.k === "fn" ? "method" : "variable",
+        // 顶层 fn 绑定 = **函数**（不是某对象的成员）⇒ "function" 档
+        // （"method" 只留给成员函数）——Bug 717。
+        kind: info.abs.shape.k === "fn" ? "function" : "variable",
         detail: absDetail(info.abs),
       });
     }
     if (completions.length > 0) return completions;
     return [];
   }
-  const ast = parse(source);
+  // 解析输入同样走消毒文本：编辑中间态（尾随 `x.`）原文语法非法 ⇒
+  // 裸 parse 直接抛 ⇒ 变量补全整面清零（Bug 698）。
+  let ast;
+  try {
+    ast = parse(sanitizeSourceForParsing(source));
+  } catch {
+    ast = parse(source);
+  }
 
   // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）
   try {
     const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
-    const binds = collectAbsBindingsFromGraph(source, filePath, {
+    const binds = collectAbsBindingsFromGraph(sanitizeSourceForParsing(source), filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,
     });
@@ -121,7 +228,7 @@ function getVariableCompletions(
         if (name.startsWith("__export_")) continue;
         completions.push({
           label: name,
-          kind: absVal.shape.k === "fn" ? "method" : "variable",
+          kind: absVal.shape.k === "fn" ? "function" : "variable",
           detail: absDetail(absVal),
         });
       }

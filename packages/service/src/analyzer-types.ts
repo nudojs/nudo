@@ -121,7 +121,17 @@ export type AnalysisResult = {
 
 export type CompletionItem = {
   label: string;
-  kind: "property" | "method" | "variable";
+  /**
+   * 补全项类别：
+   * - "function"：**顶层**函数绑定（模块级 fn）——LSP `CompletionItemKind.Function`
+   * - "method"：**成员**函数（`obj.m` / 内置原型方法）
+   * - "property"：成员属性
+   * - "variable"：非函数绑定
+   *
+   * "function" 与 "method" 必须分开：模块级函数不是任何对象的成员，
+   * 标成 Method 会让 IDE 把它渲染成「方法」并与成员方法混同（Bug 717）。
+   */
+  kind: "property" | "method" | "variable" | "function";
   detail?: string;
 };
 

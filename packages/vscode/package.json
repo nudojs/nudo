@@ -31,6 +31,10 @@
         "title": "Nudo: Select Case"
       },
       {
+        "command": "nudo.trace",
+        "title": "Nudo: Trace Observation (entry@ / call@)"
+      },
+      {
         "command": "nudo.contract",
         "title": "Nudo: Show Contract"
       },

@@ -26,8 +26,10 @@ import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   collectAbsBindingsFromGraph,
   mockDirectivesToAbsSeeds,
+  type AnalysisResult,
   type LoadModule,
 } from "@nudojs/service";
+import { formatThrowsAbs } from "@nudojs/core/internal";
 import { flowFactsAt } from "./facts.ts";
 import { narrowByDiscriminant } from "./narrowing.ts";
 import {
@@ -61,6 +63,12 @@ export type HoverInfo = {
   signature?: string;
   /** CodeLens `● interface` 同源档位（A7）；仅本地 named export */
   interfaceSource?: InterfaceSource;
+  /**
+   * interface 档当前是否**激活**（观察选择器状态；724）。
+   * 与 CodeLens 的 `lens.active` 同源：该函数正观察某个 case ⇒
+   * 契约档转 `○`（`false`）；否则契约档 `●`（`true`）。
+   */
+  interfaceActive?: boolean;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
   interfaceDisplay?: string;
   /**
@@ -74,6 +82,35 @@ export type HoverInfo = {
 
 /** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
 export type HoverInterfaceOpts = InterfaceTierOpts;
+
+/**
+ * 见证面 throws 证据 → 展示名（911：与 `nudo check` 签名行同口径）。
+ *
+ * check 面的签名尾缀 `throws X` 来自入口求值的 hard throw ∪ soft
+ * may-throw 效果（core `formatThrowsAbs`）；IDE 侧同一份证据在 service
+ * 的 `CaseResult.throwsAbs`（未抛 = never）⇒ 展示名同源。
+ *
+ * - entry@ 见证优先（check 的入口求值口径）；无 entry@ 时回落该函数
+ *   全部见证的并集（指令 case / 调用点见证里的显式 throw）。
+ * - 无证据 ⇒ undefined（**不写 `throws never`**）。
+ */
+function throwsDisplayOf(
+  result: AnalysisResult | undefined,
+  fnName: string,
+): string | undefined {
+  if (!result) return undefined;
+  const fn = result.functions.find((f) => f.name === fnName);
+  if (!fn) return undefined;
+  const entry = fn.cases.find((c) => c.name.startsWith("entry@"));
+  const pool = entry ? [entry] : fn.cases;
+  const names = new Set<string>();
+  for (const c of pool) {
+    const n = formatThrowsAbs(c.throwsAbs);
+    if (n !== undefined && n !== "") names.add(n);
+  }
+  if (names.size === 0) return undefined;
+  return [...names].sort().join(" | ");
+}
 
 /**
  * LSP hover：优先无损 Abs（类型即计算本体）。
@@ -120,6 +157,18 @@ export function getHoverAtPosition(
       ? interfaceTierOf(source, fnName, filePath, opts ?? {})
       : undefined;
 
+  // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数当前
+  // 正观察某个 case ⇒ 契约档 ○（否则 ●）。与 computeInterfaceLenses 的
+  // `contractActive = !(activeCases?.has(fn.name) ?? false)` 同一公式。
+  const interfaceActive = fnName !== undefined ? !(activeCases?.has(fnName) ?? false) : true;
+
+  // throws 证据（911）：只在**导出**函数上取（tier 在场 ⇔ 本地 named
+  // export，与 check 的 isEntry 同口径——CLI 的 L2 throws 只对 entry 生效）。
+  const throwsDisplay =
+    tier !== undefined && fnName !== undefined
+      ? throwsDisplayOf(reuse?.result, fnName)
+      : undefined;
+
   // intension 候选：先算、不早退，最后合并进 evaluator/TypeValue 结果
   let gDisplay: string | undefined;
   let gAbs: string | undefined;
@@ -143,10 +192,9 @@ export function getHoverAtPosition(
         gAbs = formatAbs(g.symbolic);
         gMulti = formatAbsMultiline(g.symbolic, fnName);
         // check 同口径签名（check-signatures formatEntrySigLine
-        // 同公式：formalParamSignatureNames + formatShape；throws
-        // 归 check 门禁面）。契约参数优先展示声明形态
-        // （entryReqs.display——判别联合的 formatShape 展开
-        // 可达数万字符）；无契约参数保持推断 shape
+        // 同公式：formalParamSignatureNames + formatShape）。契约参数
+        // 优先展示声明形态（entryReqs.display——判别联合的
+        // formatShape 展开可达数万字符）；无契约参数保持推断 shape
         const reqByParam = new Map(
           (g.entryReqs ?? []).map((r) => [r.param, r.display]),
         );
@@ -162,7 +210,14 @@ export function getHoverAtPosition(
             return `${p}: ${shown}`;
           })
           .join(", ");
-        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic, { maxDepth: 4 })}`;
+        // 返回类型与 check 同预算（951）：`formatShape(g.symbolic)` 走共享
+        // 投影预算 PROJECTION_MAX_DEPTH（check-signatures formatEntrySigLine
+        // 同款）——hover 单方面 maxDepth 4 会让同一 Abs 在产品内渲染成
+        // 三种形态（check 签名行 / inlayHint / hover 签名块）。
+        // throws 尾缀同 check 签名行（911）：见证面 throws 证据（导出函数
+        // 才有——CLI 的 L2 throws 只对 entry 生效）；无证据则省略。
+        const throwsSuffix = throwsDisplay ? `  throws ${throwsDisplay}` : "";
+        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic)}${throwsSuffix}`;
       }
     } catch {
       // ignore
@@ -173,6 +228,9 @@ export function getHoverAtPosition(
     return {
       ...info,
       interfaceSource: tier.source,
+      // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数
+      // 正观察某个 case ⇒ 契约档 ○；否则契约档 ●。
+      interfaceActive,
       ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
     };
   };

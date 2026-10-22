@@ -376,8 +376,10 @@ export function hoverTool(
       /** CodeLens `● interface` 同源档（A7）；非导出 / 无档 → null */
       interfaceSource: hover?.interfaceSource ?? null,
       interfaceDisplay: hover?.interfaceDisplay ?? null,
+      // 724：激活态与 CodeLens 同源（选中 case ⇒ 契约档 ○）——不传 active
+      // 会走默认 true（恒 ●），与同一文件的 CodeLens 打架。
       interfaceLine: hover?.interfaceSource
-        ? formatInterfaceTierLine(hover.interfaceSource)
+        ? formatInterfaceTierLine(hover.interfaceSource, hover.interfaceActive ?? true)
         : null,
     };
     if (params.includeInlays) {

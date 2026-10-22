@@ -12,8 +12,10 @@
  *   workspaceRoots 参数化；各测试的发布收集逻辑（sent/revalidated 闭包）留在
  *   调用处逐字不动。
  * - withTempDir：mkdtemp + try/finally rmSync 的 tmpdir 脚手架。
+ * - withLspServer：真 server（mock connection）+ didOpen 的协议面脚手架——
+ *   协议回归钉（rename / references / definition）拿到的就是协议响应本身。
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LspDiagnostic, ValidateTextDeps } from "../validation.ts";
@@ -171,6 +173,56 @@ export function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   try {
     return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 真 LSP server 脚手架（协议面回归钉）
+// ---------------------------------------------------------------------------
+
+/**
+ * 真 LSP server 脚手架：建临时目录 → 落文件 → 起 server（mock connection）→
+ * didOpen 全部文件 → 交出协议请求入口。
+ *
+ * 协议面回归钉（rename / references / definition / documentSymbol …）走这条
+ * 路径：拿到的是**协议响应本身**，不是内部函数的推断。
+ */
+export async function withLspServer(
+  files: Record<string, string>,
+  fn: (ctx: {
+    req: (method: string) => (params: any) => any;
+    uri: (name: string) => string;
+    dir: string;
+  }) => Promise<void>,
+  prefix = "nudo-lsp-server-",
+): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    for (const [name, text] of Object.entries(files)) {
+      writeFileSync(join(dir, name), text, "utf-8");
+    }
+    const mock = createMockConnection();
+    const { createNudoServer } = await import("../server.ts");
+    createNudoServer(mock as unknown as never);
+    for (const [name, text] of Object.entries(files)) {
+      mock.notifications.get("textDocument/didOpen")!({
+        textDocument: {
+          uri: `file://${join(dir, name)}`,
+          languageId: "javascript",
+          version: 1,
+          text,
+        },
+      });
+    }
+    // 等分析缓存就绪
+    await new Promise((r) => setTimeout(r, 300));
+    await fn({
+      req: (method: string) => mock.requests.get(method)!,
+      uri: (name: string) => `file://${join(dir, name)}`,
+      dir,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

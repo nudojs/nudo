@@ -249,6 +249,30 @@ export async function activate(context: ExtensionContext): Promise<void> {
     ),
   );
 
+  // 725：观察透镜（`entry@` / `call@` CodeLens）派发的 `nudo.trace` 是
+  // **客户端命令名**——扩展必须注册同名命令，否则点击报
+  // 「command 'nudo.trace' not found」（透镜 100% 死链）。
+  // CodeLens 传位置参数 [uri, functionName] ⇒ 转发到服务端
+  // `nudo/trace` slash 请求（对象入参：{ file, functionName }）。
+  context.subscriptions.push(
+    commands.registerCommand(
+      "nudo.trace",
+      async (uri?: string, functionName?: string) => {
+        if (!client) return;
+        const file = uri ?? window.activeTextEditor?.document.uri.toString();
+        if (!file || !functionName) {
+          void window.showWarningMessage(
+            "Nudo: trace needs a file and a function name (use the CodeLens)",
+          );
+          return;
+        }
+        const result = await sendNudoRequest("nudo/trace", { file, functionName });
+        if (result === undefined) return;
+        showNudoOutput(`trace ${functionName}`, extractToolText(result));
+      },
+    ),
+  );
+
   context.subscriptions.push(
     commands.registerCommand("nudo.contract", async (uri?: string, functionName?: string) => {
       if (!client) return;
