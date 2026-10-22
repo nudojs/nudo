@@ -763,8 +763,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; cases: CaseResult[]; combinedAbs?:...` |
 | <a id="generatedts"></a>`generateDts` | fn | — | `generateDts(result: AnalysisResult): string` |
 | <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | — | `generateFunctionDtsLines( fn: FunctionAnalysis, contract?: DtsContractFace, ): string[]` |
-| <a id="generateguardfunction"></a>`generateGuardFunction` | fn | 兼容别名：Abs 路径唯一 | `generateGuardFunction(name: string, abs: Abs): string` |
-| <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | 守卫源码：`export function <name>(value: unknown): boolean { … }`。 | `generateGuardFunctionFromAbs(name: string, abs: Abs): string` |
+| <a id="generateguardfunction"></a>`generateGuardFunction` | fn | 兼容别名：Abs 路径唯一（`used` 语义同上）。 | `generateGuardFunction(name: string, abs: Abs, used?: Set<string>): string` |
+| <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | 守卫源码：`export function <name>(value: unknown): boolean { … }`。 | `generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<string>): string` |
 | <a id="getabsmodulecachesize"></a>`getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
 | <a id="getanalysisfilecachesize"></a>`getAnalysisFileCacheSize` | fn | — | `getAnalysisFileCacheSize(): number` |
 | <a id="getanalysissession"></a>`getAnalysisSession` | fn | 进程内默认 AnalysisSession（LSP server / CLI watch / agent tools 共用） | `getAnalysisSession(): AnalysisSession` |
@@ -849,8 +849,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |
 | <a id="stablepathkey"></a>`stablePathKey` | const | — | — |
 | <a id="stablepathkeygraph"></a>`stablePathKeyGraph` | const | — | — |
-| <a id="standardschemafunctionspec"></a>`StandardSchemaFunctionSpec` | type | 标准面**函数级**装配描述（入参面 + 返回面）。 | `StandardSchemaFunctionSpec = { fn: string; inputs?: ReadonlyArray<{ name: string; abs: Abs }>; formals?: ReadonlyArray<FormalParam>; retu...` |
-| <a id="standardschemainputentry"></a>`StandardSchemaInputEntry` | type | 标准面入参条目：整参（`param`）或**解构形参的字段**（`field`）。 | `StandardSchemaInputEntry = \| { kind: "param"; name: string; abs: Abs } \| { kind: "field"; name: string; abs: Abs }` |
+| <a id="standardschemafunctionspec"></a>`StandardSchemaFunctionSpec` | type | 标准面**函数级**装配描述（入参面 + 返回面）。 | `StandardSchemaFunctionSpec = { fn: string; inputs?: ReadonlyArray<{ name: string; abs: Abs; optional?: boolean }>; formals?: ReadonlyArra...` |
+| <a id="standardschemainputentry"></a>`StandardSchemaInputEntry` | type | 标准面入参条目：整参（`param`）或**解构形参的字段**（`field`）。 | `StandardSchemaInputEntry = \| { kind: "param"; name: string; abs: Abs; optional?: boolean } \| { kind: "field"; name: string; abs: Abs; opt...` |
 | <a id="standardschemaissue"></a>`StandardSchemaIssue` | type | — | `StandardSchemaIssue = { message: string; path?: ReadonlyArray<PropertyKey>; }` |
 | <a id="standardschemamoduleprojection"></a>`StandardSchemaModuleProjection` | type | — | `StandardSchemaModuleProjection = { source: string; dropped: string[]; }` |
 | <a id="standardschemaresult"></a>`StandardSchemaResult` | type | — | `StandardSchemaResult = \| { value: unknown; issues?: undefined } \| { issues: ReadonlyArray<StandardSchemaIssue>; value?: undefined }` |
