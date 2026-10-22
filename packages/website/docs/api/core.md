@@ -332,7 +332,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator" }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[] }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
@@ -418,7 +418,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="bitnotabs"></a>`bitnotAbs` | fn | ~ —— ToInt32 后按位取反（bigint 无符号截断） | `bitnotAbs(a: Abs): Abs` |
 | <a id="bitorabs"></a>`bitorAbs` | fn | \| —— ToInt32 两侧后按位或 | `bitorAbs(a: Abs, b: Abs): Abs` |
 | <a id="bitxorabs"></a>`bitxorAbs` | fn | ^ —— ToInt32 两侧后按位异或 | `bitxorAbs(a: Abs, b: Abs): Abs` |
-| <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, ): Abs[]` |
+| <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, bounds?: ReadonlyMap<string, Pred>, ): Abs[]` |
 | <a id="builtinctorabs"></a>`builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | <a id="builtinctornameof"></a>`builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
 | <a id="callabsmethod"></a>`callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
@@ -499,7 +499,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="falseconstraint"></a>`falseConstraint` | fn | — | `falseConstraint(c: Abs): Pred \| undefined` |
 | <a id="fnabs"></a>`FnAbs` | type | — | `FnAbs = Abs & { shape: { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs; }; }` |
 | <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
-| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string } \| { kind: "default"; name: string; index: number; tsType?: s...` |
+| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; optional?: boolean; } \| { kind: "default"; name: string; inde...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes(params: AstParam[] \| undefined \| null): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
@@ -644,7 +644,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="primtotypeof"></a>`primToTypeof` | fn | abs prim 标签 → typeof 标签（恒等嵌入）。abs prim 仍是 PrimName 子集。 | `primToTypeof(p: PrimName): TypeofName` |
 | <a id="projectflatmapresult"></a>`projectFlatMapResult` | fn | flatMap 统一结果：展开后的元素 join 成 arr(γ)。 | `projectFlatMapResult( arrConf: Confidence, mapped: Abs[], ): Abs` |
 | <a id="promoteparamshape"></a>`promoteParamShape` | fn | 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。 | `promoteParamShape( env: AstEnv, param: string, promotedShape: Shape, opts?: { loc?: { line: number; column: number }; recordSite?: boolean }, ): boolean` |
-| <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
+| <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
 | <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string): Abs` |
 | <a id="protoofrecv"></a>`protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |
