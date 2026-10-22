@@ -419,7 +419,16 @@ function assertImpliesSingle(
   }
 
   // --- fn 契约：Phase 1 只展示不执法 ---
-  if (constraint.fn) return proved();
+  // Bug 351：旧口径直接 `return proved()` —— fn 形态的返回义务被**整条判为
+  // 「已证明」**（零诊断假绿：「无法执法」≠「已证明」）。现在判 unprovable：
+  // 无法证明 ≠ 已证明 ⇒ 消费方出 warning（nudo:unproven-return），门禁不假装绿。
+  // （正常路径下 fn 形态已在 refine.ts 的 return 段提取里拆成 `fn.returns`
+  //   ——与侧车口径一致——这里只是「万一还有 fn 形态漏到证明通道」的兜底。）
+  if (constraint.fn) {
+    return unprovable(
+      "fn-shaped return contract cannot be enforced (declare the returned value as the fn's returns constraint)",
+    );
+  }
 
   // --- 标量：prim + Pred 蕴含（统一证明通道）---
   return assertScalar(arm, constraint, phi);

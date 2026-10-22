@@ -25,8 +25,9 @@ import {
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { locateContractParam, type FormalParam } from "./param-surface.ts";
-import { numLit, litValue, anyAbs } from "./abs.ts";
+import { numLit, litValue, anyAbs, absLit } from "./abs.ts";
 import type { Abs } from "./abs.ts";
+import type { LiteralValue } from "./term.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
@@ -71,6 +72,31 @@ function isExactUndef(a: Abs): boolean {
     a.term?.op === "lit" &&
     ((a.term.value as unknown) === undefined || (a.term.value as unknown) === null)
   );
+}
+
+/**
+ * 实参的 nullish 身份（Bug 965）：`null` / `undefined` / 非 nullish。
+ *
+ * `isExactUndef` 把 null 与 undefined 合成一档（判「确定 undefined」）——
+ * 判**值域**时必须分档：`lit(null)` 契约只收 null，`lit(undefined)` 契约
+ * 只收 undefined，两者是不同的域。
+ */
+function nullishKindOf(a: Abs): "null" | "undefined" | undefined {
+  if (a.term?.op !== "lit") return undefined;
+  if (a.term.value === null) return "null";
+  if (a.term.value === undefined) return "undefined";
+  return undefined;
+}
+
+/**
+ * 数组实参的元素个数（Bug 922：`array(number()).min(3)` 的长度界）。
+ *
+ * tuple 形态带**逐元素**槽 ⇒ 长度可判；arr 形态只有 join 过的元素类型 ⇒
+ * 长度不可判（undefined ⇒ 长度界不猜）。
+ */
+function arrayLengthOf(a: Abs): number | undefined {
+  if (a.shape.k !== "tuple") return undefined;
+  return a.shape.elements.length;
 }
 
 /** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
@@ -252,14 +278,33 @@ export function scanLiteralCalls(
   };
 
   /**
+   * eq(var, lit null/undefined) 的 nullish 字面量端（Bug 965）；非该形态 → undefined。
+   *
+   * 用 tagged 形态返回：`undefined` 既是「字面量值 undefined」又是「非该形态」
+   * 的哨兵，裸值表达不了 ⇒ 装进对象里区分。
+   */
+  const predEqNullish = (p: Pred): { value: null | undefined } | undefined => {
+    if (p.op !== "eq") return undefined;
+    let lit: LiteralValue;
+    if (p.a.op === "var" && p.b.op === "lit") lit = p.b.value;
+    else if (p.b.op === "var" && p.a.op === "lit") lit = p.a.value;
+    else return undefined;
+    if (lit === null || lit === undefined) return { value: lit };
+    return undefined;
+  };
+
+  /**
    * 字面量可判定的原子谓词 → true/false；不可判定（非字面量端 / 非
    * number 值上的数值界）→ undefined。or 分支聚合用：任一 true 即过，
    * 全可判定且全 false 才报，含 undefined 不猜。
+   *
+   * `argLen`：length 通道的实参长度（字符串字数 / 数组元素个数；不可判 ⇒
+   * undefined）——Bug 922 起长度界不再只对字符串求值。
    */
   const judgeLiteralPred = (
     p: Pred,
     lv: number | string | boolean,
-    strLen: number | undefined,
+    argLen: number | undefined,
   ): boolean | undefined => {
     if (p.op === "eq") {
       const v = predEqLiteral(p);
@@ -271,11 +316,11 @@ export function scanLiteralCalls(
     if (p.b.op !== "lit" || typeof p.b.value !== "number") return undefined;
     const n = p.b.value;
     if (p.a.op === "app" && p.a.fn === "length") {
-      if (strLen === undefined) return undefined;
-      if (p.op === "gt") return strLen > n;
-      if (p.op === "ge") return strLen >= n;
-      if (p.op === "lt") return strLen < n;
-      return strLen <= n;
+      if (argLen === undefined) return undefined;
+      if (p.op === "gt") return argLen > n;
+      if (p.op === "ge") return argLen >= n;
+      if (p.op === "lt") return argLen < n;
+      return argLen <= n;
     }
     if (typeof lv !== "number") return undefined;
     if (p.op === "gt") return lv > n;
@@ -328,7 +373,10 @@ export function scanLiteralCalls(
       const lvR = litValue(arg);
       const lv = lvR.ok ? lvR.value : undefined;
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
-      const strLen = typeof lv === "string" ? lv.length : undefined;
+      // length 通道：字符串取字面量长度；**数组**取元素个数（Bug 922：
+      // `array(number()).min(3)` 的长度界此前只在字符串上求值 ⇒ 数组实参的
+      // 长度界整条被跳过 ⇒ 门禁假绿）。
+      const argLen = typeof lv === "string" ? lv.length : arrayLengthOf(arg);
       // 确定 undefined：不进 positive/nonEmpty 等 typed 域（any 仍放行）
       const argIsUndef = isExactUndef(arg);
       for (const p of flattenPred(pred)) {
@@ -363,6 +411,32 @@ export function scanLiteralCalls(
           }
           continue;
         }
+        // nullish 字面量域（lit(null) / lit(undefined)）：值域只有那**一个**
+        // nullish 值（Bug 965）。此前 eq 通道只认 number/string/boolean ⇒
+        // lit(null) / lit(undefined) 契约整条不执法（假绿：f(2) 被放行），
+        // 而 dts / zod / standard 三面都把这条契约当真 ⇒ 四面互相矛盾。
+        // 排在「确定 undefined」分支**之前**：null 与 undefined 是两个域，
+        // 实参恰为该 nullish 值时**满足**契约（不该报违例）。
+        if (p.op === "eq") {
+          const nv = predEqNullish(p);
+          if (nv !== undefined) {
+            const want = nv.value === null ? "null" : "undefined";
+            if (nullishKindOf(arg) !== want) {
+              out.push({
+                severity: "error",
+                code: DIAG.constraintViolated,
+                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
+                actual: formatAbs(arg),
+                expected: predToString(p),
+                suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+                fn: displayName,
+                line: loc?.start.line,
+                column: loc?.start.column,
+              });
+            }
+            continue;
+          }
+        }
         // 确定 undefined 对数值界 / eq / or 同样不满足（undefined ⊭ positive）
         if (argIsUndef) {
           if (
@@ -380,6 +454,39 @@ export function scanLiteralCalls(
               actual: formatAbs(arg),
               expected: predToString(p),
               suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+              fn: displayName,
+              line: loc?.start.line,
+              column: loc?.start.column,
+            });
+          }
+          continue;
+        }
+        // length 界通道（string().min/max 与 array(...).min/max）：只看长度，
+        // 与标量字面量无关 ⇒ 必须排在「lv 不可判定」的短路**之前**（数组实参
+        // 没有标量字面量，但长度可判——Bug 922）。
+        if (
+          (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
+          p.b.op === "lit" &&
+          typeof p.b.value === "number" &&
+          p.a.op === "app" &&
+          p.a.fn === "length" &&
+          argLen !== undefined
+        ) {
+          const n = p.b.value;
+          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[p.op];
+          let ok = true;
+          if (p.op === "gt") ok = argLen > n;
+          if (p.op === "ge") ok = argLen >= n;
+          if (p.op === "lt") ok = argLen < n;
+          if (p.op === "le") ok = argLen <= n;
+          if (!ok) {
+            out.push({
+              severity: "error",
+              code: DIAG.constraintViolated,
+              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
+              actual: formatAbs(arg),
+              expected: `length(${paramName}) ${opSym} ${n}`,
+              suggestion: `use a value whose length is ${opSym} ${n}, or relax the precondition on ${paramName}`,
               fn: displayName,
               line: loc?.start.line,
               column: loc?.start.column,
@@ -413,7 +520,7 @@ export function scanLiteralCalls(
             let pass = false;
             let unknown = false;
             for (const q of p.args) {
-              const r = judgeLiteralPred(q, lv, strLen);
+              const r = judgeLiteralPred(q, lv, argLen);
               if (r === true) {
                 pass = true;
                 break;
@@ -442,29 +549,8 @@ export function scanLiteralCalls(
           typeof p.b.value === "number"
         ) {
           const n = p.b.value;
-          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[p.op];
-          // length(t) 形式（string().min/max）
-          if (p.a.op === "app" && p.a.fn === "length" && strLen !== undefined) {
-            let ok = true;
-            if (p.op === "gt") ok = strLen > n;
-            if (p.op === "ge") ok = strLen >= n;
-            if (p.op === "lt") ok = strLen < n;
-            if (p.op === "le") ok = strLen <= n;
-            if (!ok) {
-              out.push({
-                severity: "error",
-                code: DIAG.constraintViolated,
-                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(arg),
-                expected: `length(${paramName}) ${opSym} ${n}`,
-                suggestion: `use a value whose length is ${opSym} ${n}, or relax the precondition on ${paramName}`,
-                fn: displayName,
-                line: loc?.start.line,
-                column: loc?.start.column,
-              });
-            }
-            continue;
-          }
+          // length(t) 形式已在**上面的 length 通道**判完（字符串 / 数组）⇒
+          // 走到这里的是普通数值界。
           // boolean/null 不进数值域（includes/every/some 返回 boolean 误当收窄）
           if (typeof lv === "boolean" || lv === null) {
             out.push({
@@ -887,7 +973,21 @@ export function scanLiteralCalls(
           conf: "exact",
         });
         hasInfo = true;
+      } else if (a.type === "NullLiteral") {
+        // `null` 字面量（Bug 965）：此前只抽 Numeric/String ⇒ `f(null)` **根本没有
+        // 实参 Abs** ⇒ 调用点前置条件整条不查（`lit(null)` / `lit(undefined)`
+        // 契约对 null 实参永远不报违例 = 假绿）。null 与 undefined 是**两个域**，
+        // 实参 Abs 必须能区分（`absLit` 用 `lit` term 承载这个区别）。
+        absArgs.push(absLit(null));
+        hasInfo = true;
       } else if (a.type === "Identifier" && typeof a.name === "string") {
+        if (a.name === "undefined") {
+          // `undefined` 是**全局绑定**（不是局部变量）⇒ 实参确实可判 ⇒ 同样要抽
+          // （否则 `f(undefined)` 的实参是 unknown ⇒ 调用点检查整条被跳过）。
+          absArgs.push(absLit(undefined));
+          hasInfo = true;
+          continue;
+        }
         const abs = varAbs.get(a.name);
         absArgs.push(abs ?? absUnknown());
         note(abs);
@@ -1147,12 +1247,17 @@ export function scanLiteralCalls(
     args: Array<Record<string, unknown>>,
     loc?: { start: { line: number; column: number } },
     displayName?: string,
-    /** 跨文件时 ext 定义文件路径（保留签名，供未来侧车相关检查）；同文件忽略 */
-    _interfaceFromFile?: string,
+    /** 跨文件时 ext 定义文件路径（refine/侧车解析的文件基准）；同文件忽略 */
+    interfaceFromFile?: string,
   ): void => {
     let gFn: ReturnType<typeof generalizeFromAst>;
     try {
       const sameFile = fnSource === source;
+      // **refine 的文件基准必须与源码同源**：跨文件被调方的源码配**调用方**的
+      // fromFile ⇒ 被调方的契约解析会去读**调用方**的侧车（同名契约错配、
+      // 孤儿导出误报）。跨文件时用 ext 的定义文件路径。
+      const refineFromFile =
+        !sameFile && interfaceFromFile ? interfaceFromFile : (opts?.fromFile ?? "");
       gFn = generalizeFromAst(
         fnName,
         fnSource,
@@ -1162,7 +1267,7 @@ export function scanLiteralCalls(
           // refine→error 路径永远打不开（source 永远是 warning）。
           refine: {
             loadModule: opts?.loadModule,
-            fromFile: opts?.fromFile ?? "",
+            fromFile: refineFromFile,
             ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
             ...(opts?.projectDir !== undefined
               ? { projectDir: opts.projectDir }

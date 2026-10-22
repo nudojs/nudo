@@ -102,6 +102,27 @@ export function isDefaultExportName(source: string, fnName: string): boolean {
   return re.test(source);
 }
 
+/**
+ * 入口形参位 → 展示串（Bug 348 / 965）。
+ *
+ * - `shape.k === "unknown"`：term 是 nullish 字面量（lit null / lit undefined）
+ *   ⇒ 印它自己的名字（`null` / `undefined`），不得与「真 unknown」混淆
+ *   （design §2：真 unknown 不伪装成 any）；否则照旧印 `unknown`。
+ * - 其余：pred 把该项钉死成单个字面量（`eq(self, lit(v))`）时印 `lit(v)`
+ *   ——字面量只活在 **pred** 里（shape 无字面量位），只读 shape 的渲染面
+ *   看不见它（契约面 `(x: lit(1))` / dts / zod / standard 三面都看得见）。
+ */
+export function formatEntryParamShape(t: Abs): string {
+  if (t.shape.k === "unknown") {
+    const term = t.term;
+    if (term?.op === "lit" && (term.value === null || term.value === undefined)) {
+      return formatShape(t);
+    }
+    return "unknown";
+  }
+  return formatShape(t, { showLits: true });
+}
+
 export function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
   const names =
     g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
@@ -109,7 +130,7 @@ export function formatEntrySigLine(name: string, g: PolyFn, throws: string): str
     .map((p, i) => {
       const t = g.typeParams[i]?.value;
       // design §2：无约束 any；真 unknown 不得伪装
-      const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
+      const shown = !t ? "any" : formatEntryParamShape(t);
       return `${p}: ${shown}`;
     })
     .join(", ");

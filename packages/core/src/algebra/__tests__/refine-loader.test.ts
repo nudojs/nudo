@@ -138,7 +138,9 @@ export const top = midPos;
     const exp = execNudoModule(root, { loadModule, fromFile: "/t/root.nudo.js" });
     expect(Object.keys(exp)).toEqual(["top"]);
     expect(isNudoConstraint(exp.top)).toBe(true);
-    expect(predToString(instantiateConstraint(exp.top as NudoConstraint, "x"))).toBe("x > 0");
+    expect(predToString(instantiateConstraint(exp.top as NudoConstraint, "x"))).toBe(
+      'typeof x = "number" ∧ x > 0',
+    );
     expect(takeRefineDiags()).toEqual([]);
   });
 
@@ -304,12 +306,12 @@ function f(x) { return x; }
     const opts = { loadModule, fromFile: "/t/demo.js" };
     const p1 = extractRefinesFromSource(src, "f", opts);
     expect(p1.length).toBe(1);
-    expect(predToString(p1[0]!.pred)).toBe("x > 0");
+    expect(predToString(p1[0]!.pred)).toBe('typeof x = "number" ∧ x > 0');
 
     depSrc = `export const positive = number().gt(10);`;
     const p2 = extractRefinesFromSource(src, "f", opts);
     expect(p2.length).toBe(1);
-    expect(predToString(p2[0]!.pred)).toBe("x > 10"); // 单文件 src 键会命中陈旧导出
+    expect(predToString(p2[0]!.pred)).toBe('typeof x = "number" ∧ x > 10'); // 单文件 src 键会命中陈旧导出
   });
 
   it("dep 未变时命中缓存（约束对象复用）", () => {

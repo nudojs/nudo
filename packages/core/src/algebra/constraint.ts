@@ -197,8 +197,18 @@ function makeBuilder(
       int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
       min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(finiteBoundArg("min", n)))),
       max: (n: number) => add(le(lenTerm(selfTerm()), termLit(finiteBoundArg("max", n)))),
-      length: (n: number) =>
-        add(pAnd(ge(lenTerm(selfTerm()), termLit(n)), le(lenTerm(selfTerm()), termLit(n)))),
+      length: (n: number) => {
+        // 有限数值界护栏（Bug 336 / 341）：与 gt/ge/lt/le/min/max 同源。
+        // 缺护栏时 length(NaN) 造出恒假契约（每个合法字符串都判违规 = 假红），
+        // length("3") 这类笔误把整条契约静默废掉（门禁零诊断 = 假绿）。
+        const bound = finiteBoundArg("length", n);
+        return add(
+          pAnd(
+            ge(lenTerm(selfTerm()), termLit(bound)),
+            le(lenTerm(selfTerm()), termLit(bound)),
+          ),
+        );
+      },
       shift: (n: number) => {
         finiteBoundArg("shift", n);
         if (fields || element || members || fnSlot || lazySlot)
@@ -253,10 +263,21 @@ export function any(): ConstraintBuilder {
   return makeBuilder(undefined, []);
 }
 
-/** array(item) —— 数组，元素满足 item；item 亦可为具体字面量（指令文法） */
+/**
+ * array(item) —— 数组，元素满足 item；item 亦可为具体字面量（指令文法）。
+ *
+ * 元素约束**必填**（Bug 354）：少传元素时旧实现把 `undefined` 交给
+ * asNestedConstraint ⇒ 静默变成 `lit(undefined)` ⇒ 契约变成「元素必须是
+ * undefined」⇒ 任何合法数组实参都被判违反（假红），且零诊断说明缺参。
+ * 「元素可为 undefined」有显式写法：`array(lit(undefined))`。
+ */
 export function array(
   item: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
 ): ConstraintBuilder {
+  if (item === undefined)
+    throw new Error(
+      "nudo array(): an element constraint is required (e.g. array(number())); write array(lit(undefined)) to allow undefined elements",
+    );
   return makeBuilder(undefined, [], {
     element: asNestedConstraint(item, "array(item)"),
   });
@@ -268,6 +289,11 @@ export function array(
  *   shape({ id: number().gt(0), name: string() })
  *
  * 字段值亦可为具体字面量（指令文法）。
+ *
+ * 实参守卫（Bug 352 / 353）：缺参 ⇒ 点名构造器 + 说明缺参；非对象 ⇒ 点名
+ * 构造器 + 实际类型。旧实现把实参直接交给 `Object.entries`：`shape(42)` ⇒
+ * `[]` ⇒ 整条参数契约退化成空 shape（域放宽到任意对象 = 假绿）；`shape()`
+ * ⇒ 宿主 TypeError「Cannot convert undefined or null to object」原文进诊断。
  */
 export function shape(
   fields: Record<
@@ -275,15 +301,56 @@ export function shape(
     NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined
   >,
 ): ConstraintBuilder {
-  const mapped: Record<string, NudoField> = {};
-  for (const [k, v] of Object.entries(fields)) {
+  const source = requireFieldsObject("shape", fields);
+  // 无原型字段表（Bug 1027）：普通对象上 `mapped["__proto__"] = …` 触发
+  // Object.prototype.__proto__ 的 setter ⇒ 字段被写成原型而非自有键 ⇒
+  // 契约被静默削弱成空 shape（门禁假绿 + 契约面 / dts / zod 三面丢字段）。
+  const mapped: Record<string, NudoField> = Object.create(null);
+  for (const [k, v] of Object.entries(source)) {
     const constraint = asNestedConstraint(v, `shape 字段 '${k}'`);
     mapped[k] = {
       constraint,
       ...(constraint.isOptional ? { optional: true } : {}),
     };
   }
+  assertFieldTableIntact("shape", Object.keys(source).length, mapped);
   return makeBuilder(undefined, [], { fields: mapped });
+}
+
+/**
+ * 对象型构造器实参守卫（Bug 352 / 353）——**切片① 的共用校验**，
+ * S2 切片的 `fn()` 实参守卫可直接复用（本函数在同文件内可见）。
+ *
+ * 缺参 ⇒ 点名构造器 + 说明缺参；非对象 ⇒ 点名构造器 + 实际类型。
+ * 宿主的 "Cannot convert undefined or null to object" 原文不进产品诊断。
+ */
+function requireFieldsObject(ctor: string, arg: unknown): Record<string, unknown> {
+  if (arg === undefined)
+    throw new Error(
+      `nudo ${ctor}(): a fields object is required (e.g. ${ctor}({ id: number() }))`,
+    );
+  if (arg === null || typeof arg !== "object" || Array.isArray(arg))
+    throw new Error(
+      `nudo ${ctor}(): the fields argument must be an object of field constraints, got ${describeValue(arg)}`,
+    );
+  return arg as Record<string, unknown>;
+}
+
+/**
+ * 字段表装配完整性断言（Bug 1027）：装配后自有键数必须等于**应有**键数。
+ * 键数不符 ⇒ 某个字段名被原型访问器吞掉（写侧回退成普通对象的症状）
+ * ⇒ **明确报错**，而不是静默降级成一个更宽的契约。
+ */
+function assertFieldTableIntact(
+  who: string,
+  expected: number,
+  table: Record<string, NudoField>,
+): void {
+  const got = Object.keys(table).length;
+  if (got !== expected)
+    throw new Error(
+      `nudo ${who}(): the field table lost ${expected - got} field(s) while being assembled — a field name collided with a prototype accessor`,
+    );
 }
 
 /** 归一化为纯数据约束（剥掉 builder 方法——成员快照不可再链式改写） */
@@ -453,6 +520,11 @@ export function constraintAdmitsNullish(
  * fn(params, returns?, { throws? })：一等函数约束。
  * Phase 1 只展示不执法：参数位 instantiate 恒真（pTrue），
  * 逐参约束经 fnConstraintToEntryReqs 消费。
+ *
+ * 第三实参（opts）做**形态校验**（Bug 357）：
+ * - opts 必须是对象 —— 否则整条 throws 申报被静默丢弃（零诊断假红）；
+ * - opts.throws 归一后必须能抽出至少一个错误名（throwConstraintToKinds 非
+ *   undefined）—— 否则 throws 义务无声消失，用户已申报却仍报 may-throw。
  */
 export function fn(
   params: Record<string, NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined>,
@@ -463,15 +535,30 @@ export function fn(
   for (const [k, v] of Object.entries(params)) {
     normalized[k] = asNestedConstraint(v, `fn param '${k}'`);
   }
+  let throwsSlot: NudoConstraint | undefined;
+  if (opts !== undefined) {
+    if (typeof opts !== "object" || opts === null || Array.isArray(opts)) {
+      throw new Error(
+        `nudo fn(): the third argument must be an options object ({ throws: … }), got ${describeValue(opts)}`,
+      );
+    }
+    if (opts.throws !== undefined) {
+      const declared = asNestedConstraint(opts.throws, "fn throws");
+      if (throwConstraintToKinds(declared) === undefined) {
+        throw new Error(
+          'nudo fn(): the throws declaration does not name an error kind — use lit("TypeError"), "TypeError", or a union of them (a numeric / nullish literal carries no error name)',
+        );
+      }
+      throwsSlot = declared;
+    }
+  }
   return makeBuilder(undefined, [], {
     fn: {
       params: normalized,
       ...(returns !== undefined
         ? { returns: asNestedConstraint(returns, "fn return value") }
         : {}),
-      ...(opts?.throws !== undefined
-        ? { throws: asNestedConstraint(opts.throws, "fn throws") }
-        : {}),
+      ...(throwsSlot !== undefined ? { throws: throwsSlot } : {}),
     },
   });
 }
@@ -514,24 +601,69 @@ export function andC(
   });
 }
 
-/** partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层） */
+/**
+ * partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层）。
+ *
+ * 写侧用**无原型字段表**（Bug 1027）：partial 是「读旧表 ⇒ 写新表」，
+ * 若新表是普通对象，字段名 `__proto__` 会被原型 setter 吞掉 ⇒ 经 partial
+ * 转一道仍二次吞键 ⇒ 契约被削弱成空 shape。
+ */
 export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
   if (!isConstraint(c))
     throw new Error("nudo partial(): only shape(...) constraints are accepted");
   const d = derefConstraint(c);
   if (!d.fields)
     throw new Error("nudo partial(): only shape(...) constraints are accepted");
-  const fields: Record<string, NudoField> = {};
+  const fields: Record<string, NudoField> = Object.create(null);
   for (const [k, f] of Object.entries(d.fields)) {
     fields[k] = {
       constraint: { ...toPlainConstraint(f.constraint), isOptional: true },
       optional: true,
     };
   }
+  assertFieldTableIntact("partial", Object.keys(d.fields).length, fields);
   return makeBuilder(d.prim, d.preds, { fields });
 }
 
-/** pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层） */
+/** 值的可读描述（DSL 诊断用；不外泄宿主原文） */
+function describeValue(v: unknown): string {
+  if (typeof v === "string") return JSON.stringify(v);
+  if (v === null) return "null";
+  if (v === undefined) return "undefined";
+  if (Array.isArray(v)) return `an array (${v.length} item(s))`;
+  return typeof v;
+}
+
+/**
+ * keys 实参形态校验（Bug 358）：必须是**字符串数组**。
+ * 字符串可迭代 ⇒ `for...of` / `new Set(keys)` 会把它当字符列表逐字迭代：
+ * pick 把契约**放松成空**（假绿），omit 让约束**变严**（假红），两向都错且零诊断。
+ * 这里显式 throw，给出 Nudo 原生诊断（不是宿主的 "is not iterable" TypeError）。
+ */
+function assertKeysArray(who: string, keys: unknown): string[] {
+  if (!Array.isArray(keys)) {
+    throw new Error(
+      `nudo ${who}(): keys must be an array of strings, got ${describeValue(keys)} (a bare string is iterated character by character)`,
+    );
+  }
+  for (const k of keys) {
+    if (typeof k !== "string") {
+      throw new Error(
+        `nudo ${who}(): keys must be an array of strings, got ${describeValue(k)} inside the array`,
+      );
+    }
+  }
+  return keys as string[];
+}
+
+/**
+ * pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层）。
+ *
+ * 字段读取用**自有属性**判定（Bug 347）：`d.fields[k]` 沿原型链读，
+ * "constructor" / "toString" 会命中 Object.prototype 成员并被当成字段塞进
+ * 新字段表 ⇒ 后续读 `f.constraint` 拿到 undefined ⇒ contract / export 面裸崩、
+ * check 面静默作废整条契约。
+ */
 export function pick(
   c: NudoConstraint | ConstraintBuilder,
   keys: string[],
@@ -541,15 +673,29 @@ export function pick(
   const d = derefConstraint(c);
   if (!d.fields)
     throw new Error("nudo pick(): only shape(...) constraints are accepted");
-  const fields: Record<string, NudoField> = {};
-  for (const k of keys) {
+  const wanted = assertKeysArray("pick", keys);
+  // 无原型字段表（Bug 1027）：pick 是「读旧表 ⇒ 写新表」，新表若是普通
+  // 对象，字段名 `__proto__` 会被原型 setter 吞掉 ⇒ 契约被削弱成空 shape。
+  const fields: Record<string, NudoField> = Object.create(null);
+  let kept = 0;
+  for (const k of wanted) {
+    if (!Object.hasOwn(d.fields, k)) continue;
     const f = d.fields[k];
-    if (f) fields[k] = f;
+    if (!f) continue;
+    fields[k] = f;
+    kept++;
   }
+  assertFieldTableIntact("pick", kept, fields);
   return makeBuilder(d.prim, d.preds, { fields });
 }
 
-/** omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层） */
+/**
+ * omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层）。
+ *
+ * 写侧用**无原型字段表**（Bug 1027）：omit 是「读旧表 ⇒ 写新表」，
+ * 若新表是普通对象，字段名 `__proto__` 会被原型 setter 吞掉 ⇒ 经 omit
+ * 转一道仍二次吞键 ⇒ 契约被削弱成空 shape。
+ */
 export function omit(
   c: NudoConstraint | ConstraintBuilder,
   keys: string[],
@@ -559,11 +705,15 @@ export function omit(
   const d = derefConstraint(c);
   if (!d.fields)
     throw new Error("nudo omit(): only shape(...) constraints are accepted");
-  const drop = new Set(keys);
-  const fields: Record<string, NudoField> = {};
+  const drop = new Set(assertKeysArray("omit", keys));
+  const fields: Record<string, NudoField> = Object.create(null);
+  let kept = 0;
   for (const [k, f] of Object.entries(d.fields)) {
-    if (!drop.has(k)) fields[k] = f;
+    if (drop.has(k)) continue;
+    fields[k] = f;
+    kept++;
   }
+  assertFieldTableIntact("omit", kept, fields);
   return makeBuilder(d.prim, d.preds, { fields });
 }
 
@@ -611,17 +761,38 @@ export const CONSTRAINT_EXPR_RE: RegExp = new RegExp(
   `^(${CONSTRAINT_BUILDER_NAMES.join("|")})\\s*\\(`,
 );
 
-function substTerm(t: Term, paramName: string): Term {
-  if (t.op === "var" && t.id === SELF) return termVar(paramName);
-  if (t.op === "app" && t.fn === "get" && t.args.length === 2) {
-    return getTerm(substTerm(t.args[0]!, paramName), String(
-      t.args[1]!.op === "lit" ? t.args[1]!.value : "",
-    ));
+/**
+ * 把模板项里的 SELF 占位符递归换成目标项（Bug 337）。
+ *
+ * 旧实现只认 `var SELF` 与 `app("get", …)` 两种形态，`app("length", [SELF])`
+ * 这类**应用项的实参**不递归 ⇒ `__nudo_self__` 原样进入实例化谓词与产品
+ * `expected` 文本（内部占位符泄漏进用户可见输出）。
+ */
+function substSelf(t: Term, target: Term): Term {
+  if (t.op === "var" && t.id === SELF) return target;
+  if (t.op === "app") {
+    if (t.fn === "get" && t.args.length === 2) {
+      return getTerm(
+        substSelf(t.args[0]!, target),
+        String(t.args[1]!.op === "lit" ? t.args[1]!.value : ""),
+      );
+    }
+    if (t.args.length === 0) return t;
+    return termApp(t.fn, t.args.map((a) => substSelf(a, target)));
   }
   return t;
 }
 
-function substPred(p: Pred, paramName: string): Pred {
+/** 把模板项里的 SELF 占位符换成参数名项 */
+function substTerm(t: Term, paramName: string): Term {
+  return substSelf(t, termVar(paramName));
+}
+
+/**
+ * 谓词里的 SELF 占位符替换（递归进 and / or / not 分支）。
+ * or / not 分支此前整体跳过 ⇒ union 契约实例化时分支里的 SELF 同样泄漏。
+ */
+function substPredOn(p: Pred, target: Term): Pred {
   switch (p.op) {
     case "gt":
     case "ge":
@@ -629,16 +800,28 @@ function substPred(p: Pred, paramName: string): Pred {
     case "le":
     case "eq":
     case "ne": {
-      return { op: p.op, a: substTerm(p.a, paramName), b: substTerm(p.b, paramName) };
+      return {
+        op: p.op,
+        a: substSelf(p.a, target),
+        b: substSelf(p.b, target),
+      };
     }
     case "typeof": {
-      return { op: "typeof", t: substTerm(p.t, paramName), type: p.type };
+      return { op: "typeof", t: substSelf(p.t, target), type: p.type };
     }
     case "and":
-      return pAnd(...p.args.map((x) => substPred(x, paramName)));
+      return pAnd(...p.args.map((x) => substPredOn(x, target)));
+    case "or":
+      return { op: "or", args: p.args.map((x) => substPredOn(x, target)) };
+    case "not":
+      return { op: "not", arg: substPredOn(p.arg, target) };
     default:
       return p;
   }
+}
+
+function substPred(p: Pred, paramName: string): Pred {
+  return substPredOn(p, termVar(paramName));
 }
 
 /** 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred（lazy 按 depth 预算展开） */
@@ -684,9 +867,13 @@ export function instantiateConstraint(
   }
 
   const preds = c.preds.map((p) => substPred(p, paramName));
-  // prim 可作为 typeof 约束补上（optional）
-  if (c.prim && c.preds.length === 0) {
-    return ptypeof(termVar(paramName), primToTypeof(c.prim));
+  // prim 的类型义务与界**合取**（Bug 333/335）：旧口径是「有 preds 就不补
+  // typeof」——「prim + 界」契约（number().gt(0) / string().max(3)）实例化后
+  // 只剩界，类型义务整条丢失 ⇒ 类型错配的实参被静默放行（假绿），
+  // 且报错时给出误导性 expected（把数字当长度比）。
+  if (c.prim) {
+    const typePred = ptypeof(termVar(paramName), primToTypeof(c.prim));
+    return preds.length === 0 ? typePred : pAnd(typePred, ...preds);
   }
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
@@ -702,28 +889,8 @@ export function instantiateOnTerm(
     if (depth <= 0) return pTrue;
     return instantiateOnTerm(derefConstraint(c), t, depth - 1);
   }
-  const subst = (p: Pred): Pred => {
-    switch (p.op) {
-      case "gt":
-      case "ge":
-      case "lt":
-      case "le":
-      case "eq":
-      case "ne": {
-        const a = p.a.op === "var" && p.a.id === SELF ? t : p.a;
-        const b = p.b.op === "var" && p.b.id === SELF ? t : p.b;
-        return { op: p.op, a, b };
-      }
-      case "typeof": {
-        const tt = p.t.op === "var" && p.t.id === SELF ? t : p.t;
-        return { op: "typeof", t: tt, type: p.type };
-      }
-      case "and":
-        return pAnd(...p.args.map(subst));
-      default:
-        return p;
-    }
-  };
+  // SELF 占位符替换（递归进 app 实参 / or / not 分支——同 instantiateConstraint）
+  const subst = (p: Pred): Pred => substPredOn(p, t);
   if (c.fields) {
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
@@ -745,6 +912,12 @@ export function instantiateOnTerm(
     return own.length === 0 ? pTrue : pAnd(...own);
   }
   const preds = c.preds.map(subst);
+  // prim 的类型义务：只在**无其它谓词**时补 typeof（与改前口径一致）。
+  // 这里**不能**改成「有 preds 也补 typeof」：
+  // - union 成员的实例化走本函数，补了 typeof 会把成员谓词变成 "and"，
+  //   执法侧 or 分支的 judgeLiteralPred 遇 "and" 返回 unknown ⇒ 整条 union
+  //   约束被跳过 ⇒ 假绿（union(lit(1), lit(2)) 的 f(5) 违例丢失）；
+  // - shape 字段的类型义务由执法侧的字段 prim 检查单独兜住，不靠本谓词。
   if (c.prim && c.preds.length === 0) return ptypeof(t, primToTypeof(c.prim));
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
@@ -844,6 +1017,24 @@ function samePrimLiteralUnionAbs(
   return abs({ k: "prim", type: prim }, t, disj, "path");
 }
 
+/**
+ * int 标志 → 整性 pred（Bug 342）。
+ *
+ * 编码口径 = 投影层解码器 `projection.ts` 的 `isIntZeroModOne`：
+ * `eq(self % 1, 0)`（app 项 fn = "%"）。解码器**早于**本编码存在，生产路径上
+ * 一直命中不了——整性在 Abs 面上没有任何承载位。
+ */
+function intPredOnTerm(t: Term): Pred {
+  return eq(termApp("%", [t, termLit(1)]), termLit(0));
+}
+
+/** 两个 pred 合取（缺省侧不算约束）；两侧都在 → and */
+function andPreds(a: Pred | undefined, b: Pred | undefined): Pred | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return pAnd(a, b);
+}
+
 function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
   // lazy（issue #120）：预算内解一层递归；值位预算耗尽 → any
   // （参数项保留，conf=path——守卫可继续收窄）
@@ -908,10 +1099,24 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {
     const elem = constraintOnTermAbs(c.element, termVar("x[]"), depth);
-    return abs({ k: "arr", element: elem }, t, undefined, "path");
+    // 数组**自身**的长度界（`array(number()).min(3)` → ge(length(self), 3)）
+    // 不能随元素投影一起蒸发（Bug 922）：pred 槽承载它（与 prim 分支同款）
+    // ⇒ 契约面 / 产物面看得见这条界，执法面也能按数组长度判。
+    const arrPred = instantiateOnTerm(c, t, depth);
+    return abs(
+      { k: "arr", element: elem },
+      t,
+      arrPred.op === "true" ? undefined : arrPred,
+      "path",
+    );
   }
   const pred = instantiateOnTerm(c, t, depth);
-  const predOut = pred.op === "true" ? undefined : pred;
+  // int 标志 → 整性 pred（Bug 342）：`.int()` 是**数据标志**，不产 pred ⇒
+  // 约束 → Abs 投影把整性整条蒸发 ⇒ zod / standard 产物面静默放行 3.5，
+  // 而门禁（读约束）仍判红 ⇒ 两道门对同一事实给出相反裁决。编码口径与投影层
+  // 解码器 `projection.ts` 的 isIntZeroModOne 一致：eq(self % 1, 0)。
+  const intPred = isIntFlag(c) ? intPredOnTerm(t) : undefined;
+  const predOut = andPreds(pred.op === "true" ? undefined : pred, intPred);
   if (c.prim) {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");
   }
@@ -942,9 +1147,11 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
         break;
       }
     }
-    // term 即字面量本身（值域完全确定）；pred eq(参数项, null) 锚定的是 t，
-    // 与 lit term 不一致，不再随行。
-    return abs({ k: "unknown" }, termLit(nullish), undefined, "path");
+    // term 即字面量本身（值域完全确定，渲染面靠它把「null」与「真 unknown」
+    // 区分开）；pred 锚定参数项 t（eq(t, null)）——**不再丢弃**（Bug 965）：
+    // 整条约束随 pred 槽一起蒸发 ⇒ 形参退化成 unknown、调用点前置条件不再
+    // 执法（假绿），而 dts / zod / standard 三个面各说各话。
+    return abs({ k: "unknown" }, termLit(nullish), predOut, "path");
   }
   // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）
   if (c.preds.length > 0) {

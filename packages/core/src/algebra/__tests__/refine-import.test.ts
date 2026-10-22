@@ -29,7 +29,9 @@ describe("@nudo:contract <param> <constraint>", () => {
   it("number().gt(0) instantiates to param > 0", () => {
     const c = number().gt(0);
     expect(isNudoConstraint(c)).toBe(true);
-    expect(predToString(instantiateConstraint(c, "ms"))).toBe("ms > 0");
+    expect(predToString(instantiateConstraint(c, "ms"))).toBe(
+      'typeof ms = "number" ∧ ms > 0',
+    );
   });
 
   it("chains bounds", () => {
@@ -100,7 +102,7 @@ function setDelay(ms) {
     });
     expect(reqs.length).toBe(1);
     expect(reqs[0]!.param).toBe("ms");
-    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+    expect(predToString(reqs[0]!.pred)).toBe('typeof ms = "number" ∧ ms > 0');
   });
 
   it("check catches violation from template", () => {
@@ -158,7 +160,7 @@ function setDelay(ms) {
     });
     expect(reqs.length).toBe(1);
     expect(reqs[0]!.param).toBe("ms");
-    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+    expect(predToString(reqs[0]!.pred)).toBe('typeof ms = "number" ∧ ms > 0');
 
     const ret = extractRefineReturnFromSource(src, "setDelay", {
       loadModule,
@@ -188,7 +190,7 @@ function needsPositive(x) {
     });
     expect(reqs.length).toBe(1);
     expect(reqs[0]!.param).toBe("x");
-    expect(predToString(reqs[0]!.pred)).toBe("x > 0");
+    expect(predToString(reqs[0]!.pred)).toBe('typeof x = "number" ∧ x > 0');
     expect(takeRefineDiags()).toEqual([]);
   });
 
@@ -208,7 +210,7 @@ function f(ms, n) {
       fromFile: "/t/mix.js",
     });
     expect(reqs.map((r) => r.param)).toEqual(["ms", "n"]);
-    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+    expect(predToString(reqs[0]!.pred)).toBe('typeof ms = "number" ∧ ms > 0');
     expect(takeRefineDiags()).toEqual([]);
   });
 

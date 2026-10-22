@@ -46,12 +46,37 @@ export function formatShapeSlot(a: Abs): string {
   return formatShapeSlotB(a, new ProjectionBudget());
 }
 
-function formatShapeSlotB(a: Abs, budget: ProjectionBudget, ind: string = ""): string {
+/**
+ * fn 契约槽位的**内部占位名**（constraint.ts 生成：`x${i}` / `ret`）——不是用户
+ * 面信息。Bug 349：回显出来长成 TS 默认参数 `(number = x0) => number = ret`，
+ * 与用户源码无关。关系 fn 槽位的 α 名（A1/B1…）**照旧回显**（hof-relation
+ * 的既有口径：relation 槽位带 α 身份是有意义的）。
+ */
+function isFnSlotPlaceholderTerm(id: string): boolean {
+  return id === "ret" || /^x\d+$/.test(id);
+}
+
+function formatShapeSlotB(
+  a: Abs,
+  budget: ProjectionBudget,
+  ind: string = "",
+  suppressTerm: boolean = false,
+): string {
   const base = formatShapeB(a, budget, ind);
   if (!a.term || a.term.op === "lit") return base;
   // 关系在 paramTypes/returnType 或 element 里，外层 term 是形参 α 身份，不重复展示
   // （否则 items: arr(A1) 会变成 arr(A1) = A1）
   if (a.shape.k === "fn" || a.shape.k === "arr") return base;
+  // Bug 349：fn 形状的**内层槽位**（paramTypes / returnType）不回显内部占位
+  // term——契约 fn 的槽位 term 是 constraint.ts 的占位名（`x${i}` / `ret`），
+  // 回显出来像 TS 默认参数。只压占位名，α 名（A1/B1）保留。
+  if (
+    suppressTerm &&
+    a.term.op === "var" &&
+    isFnSlotPlaceholderTerm(a.term.id)
+  ) {
+    return base;
+  }
   // any + var → 直接打 term id（A1，而不是 any = A1）
   if (a.shape.k === "any" && a.term.op === "var") return termToString(a.term);
   return `${base} = ${termToString(a.term)}`;
@@ -136,6 +161,18 @@ function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean 
   return slot.internal === true && canonicalArrayIndex(k) === undefined;
 }
 
+/**
+ * 字面量值 → JS 字面量拼法（`JSON.stringify` 对 bigint **直接抛**、
+ * 对 NaN / ±Infinity 印成 `null`、对 -0 抹成 `0`）——渲染面不能崩，
+ * 也不能把「另一个值」印出来（Bug 361）。
+ */
+function formatLitValue(v: LiteralValue): string {
+  if (typeof v === "bigint") return `${String(v)}n`;
+  if (typeof v === "number" && !Number.isFinite(v)) return String(v);
+  if (typeof v === "number" && Object.is(v, -0)) return "-0";
+  return JSON.stringify(v) ?? "undefined";
+}
+
 function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string {
   const s = a.shape;
   switch (s.k) {
@@ -165,7 +202,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       if (lvR.ok) return JSON.stringify(lv);
       if (budget.showLits) {
         const plv = litPredValue(a);
-        if (plv !== undefined) return `lit(${JSON.stringify(plv)})`;
+        if (plv !== undefined) return `lit(${formatLitValue(plv)})`;
       }
       return s.type;
     }
@@ -184,7 +221,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
           let val = formatShapeB(slotAbs, budget, `${ind}  `);
           if (budget.showLits) {
             const plv = litPredValue(slotAbs);
-            if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
+            if (plv !== undefined) val = `lit(${formatLitValue(plv)})`;
           }
           return `${key}${opt}: ${val}`;
         });
@@ -218,8 +255,10 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       return `[${parts.join(", ")}]`;
     }
     case "fn": {
+      // Bug 349：fn 的内层槽位（paramTypes / returnType）不回显 term——
+      // 契约 fn 的槽位 term 是内部占位名（`x${i}` / `ret`），不是用户面信息。
       const ret =
-        s.returnType !== undefined ? formatShapeSlotB(s.returnType, budget, ind) : "?";
+        s.returnType !== undefined ? formatShapeSlotB(s.returnType, budget, ind, true) : "?";
       const labels = s.params ?? [];
       const paramTypes = s.paramTypes;
       const hasMarkers = labels.some(
@@ -234,7 +273,8 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
         for (let i = 0; i < n; i++) {
           const label = labels[i];
           const type = paramTypes?.[i];
-          const typeText = type !== undefined ? formatShapeSlotB(type, budget, ind) : undefined;
+          const typeText =
+            type !== undefined ? formatShapeSlotB(type, budget, ind, true) : undefined;
           if (label?.startsWith("...")) {
             ps.push(typeText ? `...${label.slice(3)}: ${typeText}` : label);
           } else if (label?.endsWith("?")) {
@@ -252,7 +292,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
         return `(${renderLabeled().join(", ")}) => ${ret}`;
       }
       if (paramTypes && paramTypes.length > 0) {
-        const ps = paramTypes.map((p) => formatShapeSlotB(p, budget, ind));
+        const ps = paramTypes.map((p) => formatShapeSlotB(p, budget, ind, true));
         return `(${ps.join(", ")}) => ${ret}`;
       }
       return `(${labels.join(", ")}) => ${ret}`;

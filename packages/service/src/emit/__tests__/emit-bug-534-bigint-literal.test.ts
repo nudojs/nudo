@@ -107,7 +107,10 @@ describe("Bug 534 — bigint 字面量契约不得让契约面崩溃", () => {
     const cold = await runWithCache(file, cacheDir);
     expect(cold.lines).toHaveLength(1);
     expect(cold.lines[0]).toContain("g");
-    expect(cold.lines[0]).toContain("n: lit(10)");
+    // bigint 保 `n` 后缀（Bug 361）：`lit(10)` 与 `lit(10n)` 在诊断文本里必须
+    // 可区分 —— 否则「expected:」陈述的是**另一条契约**（抄回侧车即得相反契约）。
+    // 本用例的诉求是「不崩」，渲染形态按 361 走。
+    expect(cold.lines[0]).toContain("n: lit(10n)");
 
     // 热跑（缓存命中）同样不崩、显示一致
     const hot = await runWithCache(file, cacheDir);

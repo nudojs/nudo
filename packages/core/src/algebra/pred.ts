@@ -2,6 +2,7 @@
 
 import type { Term } from "./term.ts";
 import { termEquals, termToString, lit } from "./term.ts";
+import { conjAtoms } from "./conj.ts";
 import {
   createScopedSlot,
   registerCollectorScopeParticipant,
@@ -419,7 +420,9 @@ export function implies(phi: Phi, pred: Pred): boolean {
   if (pred.op === "false") return false;
   if (phi.op === "false") return true;
   if (predEquals(phi, pred)) return true;
-  if (phi.op === "and" && phi.args.some((c) => predEquals(c, pred))) return true;
+  // 合取原子**展平**后逐个比对（族 06）：`and(and(A,B),C)` 里的 A/B 与
+  // `and(A,B,C)` 里的 A/B 等价——只扫顶层会把嵌套 conjunct 藏起来。
+  if (conjAtoms(phi).some((c) => predEquals(c, pred))) return true;
 
   // 合取目标：Φ ⊢ A∧B  iff 逐支
   if (pred.op === "and") {
@@ -440,11 +443,9 @@ export function implies(phi: Phi, pred: Pred): boolean {
     if (phi.op === "not") {
       return implies(pred.arg, phi.arg);
     }
-    if (phi.op === "and") {
-      for (const c of phi.args) {
-        if (c.op === "not" && implies(pred.arg, c.arg)) return true;
-        if (dual && predEquals(c, dual)) return true;
-      }
+    for (const c of conjAtoms(phi)) {
+      if (c.op === "not" && implies(pred.arg, c.arg)) return true;
+      if (dual && predEquals(c, dual)) return true;
     }
     if (dual && predEquals(phi, dual)) return true;
     // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)（展开为 or 后的兜底）
@@ -486,7 +487,7 @@ function impliesNotTypeof(
   phi: Phi,
   want: { t: Term; type: TypeofName },
 ): boolean {
-  const conjs = phi.op === "and" ? phi.args : [phi];
+  const conjs = conjAtoms(phi);
   for (const c of conjs) {
     if (c.op === "typeof" && termEquals(c.t, want.t) && c.type !== want.type) {
       return true;
@@ -940,7 +941,9 @@ function buildCtx(phi: Phi): Ctx {
     atoms: new Map(),
     finite: new Set(),
   };
-  const conjs: Pred[] = phi.op === "and" ? phi.args : [phi];
+  // 合取原子展平（族 06）：嵌套 `and` 里的原子对上下文同样可见——
+  // 合取可结合，`and(and(A,B),C)` ≡ `and(A,B,C)`。
+  const conjs: Pred[] = conjAtoms(phi);
   const eqAtoms: Array<[string, string]> = [];
   const neFacts: Array<{ key: string; n: number }> = [];
   /** typeof t=number 的项 key（自动导出有限时用） */

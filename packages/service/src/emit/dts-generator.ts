@@ -698,16 +698,26 @@ function tsLiteralType(v: LiteralValue): string {
  * 观测返回位（case 观测 / combined）沿用调用面 widen 口径（顶层字面量 →
  * 基类型）——那条路径的 widen 是**有意为之**（.d.ts 是调用面而非 case 台账）。
  */
+/**
+ * 契约位（形参 / 返回）的**字面量域** → TS 类型串；非字面量域 → undefined。
+ *
+ * 手写契约的 `lit(42)` 在 Abs 里是「prim + eq(self, lit(42)) pred」（字面量
+ * 在 **pred** 里，term 是参数项）⇒ 只看 term / shape 的 widen 路径永远看不到
+ * 它（`lit(42)` → `number`）。契约面是**声明级证据**（用户申报的调用域，
+ * 权威）⇒ 形参位与返回位同口径保形（Bug 348：形参位此前不接这条 ⇒ dts 面
+ * 对「x 必须是字面量 1」零表达，而 zod / standard 面都当真 ⇒ 双门禁对撞）。
+ */
+function contractLiteralTSType(a: Abs): string | undefined {
+  if (a.term === undefined) return undefined;
+  const set = predLiteralSet(a.pred, a.term);
+  if (set === undefined || set.length === 0) return undefined;
+  const parts = [...new Set(set.map(tsLiteralType))];
+  if (parts.length === 1) return parts[0]!;
+  return parts.join(" | ");
+}
+
 function contractReturnTSType(a: Abs): string {
-  if (a.term !== undefined) {
-    const set = predLiteralSet(a.pred, a.term);
-    if (set !== undefined && set.length > 0) {
-      const parts = [...new Set(set.map(tsLiteralType))];
-      if (parts.length === 1) return parts[0]!;
-      return parts.join(" | ");
-    }
-  }
-  return absToTSType(widenTopLevelAbs(a));
+  return contractLiteralTSType(a) ?? absToTSType(widenTopLevelAbs(a));
 }
 
 function restParamType(widened: Abs, isRest: boolean): string {
@@ -835,7 +845,21 @@ function contractParamMap(contract: DtsContractFace | undefined): Map<string, Co
 }
 
 /** 契约参数位 → 参数位 TS 串（逆变 widen：与 case-widen 同口径） */
+/**
+ * 契约参数位 → 参数位 TS 串。
+ *
+ * 契约面的**字面量**保持形（Bug 348）：`lit(1)` 的字面量只活在 pred 里 ⇒
+ * 逆变 widen 会把它剥成 `number` ⇒ dts 面零表达（消费方 tsc 放行违反契约的
+ * 调用，而同一份代码 nudo check 判红 ⇒ 双门禁对撞）。口径与返回位
+ * `contractReturnTSType` 同源（`predLiteralSet`）。
+ *
+ * rest 位不接字面量（rest 必须是数组类型——TS2370）。
+ */
 function contractParamType(a: Abs, isRest: boolean): string {
+  if (!isRest) {
+    const lit = contractLiteralTSType(a);
+    if (lit !== undefined) return lit;
+  }
   return restParamType(widenParamAbs(a), isRest);
 }
 

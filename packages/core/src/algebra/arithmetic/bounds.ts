@@ -10,6 +10,7 @@ import type { Term } from "../term.ts";
 import { termEquals, termToString } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
 import { pTrue } from "../pred.ts";
+import { conjAtoms } from "../conj.ts";
 import type { Abs } from "../abs.ts";
 import { isNumPrim } from "../abs.ts";
 
@@ -153,7 +154,7 @@ function collectBoundsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
 
 function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
   const isTarget = (t: Term): boolean => t.op === "var" && t.id === id;
-  const conjs = phi.op === "and" ? phi.args : [phi];
+  const conjs = conjAtoms(phi);
   for (const p of conjs) {
     noteBoundFromRel(p, isTarget, acc);
   }
@@ -203,7 +204,7 @@ function collectExclusionsFromPred(pred: Pred, term: Term, acc: NumBounds): void
 
 function collectExclusionsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
   const isTarget = (t: Term): boolean => t.op === "var" && t.id === id;
-  const conjs = phi.op === "and" ? phi.args : [phi];
+  const conjs = conjAtoms(phi);
   for (const p of conjs) {
     noteStrictExclusion(p, isTarget, acc);
   }
@@ -255,7 +256,7 @@ export function isNonNaN(a: Abs, phi: Phi): boolean {
   if (hasNonNaNFact(a.pred)) return true;
   if (a.term?.op === "var") {
     const id = (a.term as { id: string }).id;
-    const conjs = phi.op === "and" ? phi.args : [phi];
+    const conjs = conjAtoms(phi);
     for (const p of conjs) {
       if (p.op === "assumeFinite" && p.t.op === "var" && (p.t as { id: string }).id === id) {
         return true;

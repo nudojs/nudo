@@ -561,6 +561,12 @@ export type NudoImportRecord = {
 };
 
 /**
+ * `@nudo:import` 载荷里的标识符文法（Unicode 合法，如 `命名空间` / `$x`）。
+ * Bug 350：旧口径 `\w+` 只收 ASCII ⇒ Unicode 绑定名被判 malformed。
+ */
+const IMPORT_IDENT = "[\\p{ID_Start}$_][\\p{ID_Continue}$]*";
+
+/**
  * `@nudo:import` 载荷：named `{ a, b as c }` / namespace `* as ns`。
  * default 等未识别形态返回 `malformed`（由消费方发诊断）。
  * import 绑定语义 local ← imported：`a as b` 两个名字都保留——只留 local
@@ -589,11 +595,19 @@ export function parseNudoImportPayload(
     }
     return { names, importedOfLocal, spec: named[2]! };
   }
-  const ns = s.match(/^\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']$/);
+  const ns = new RegExp(
+    `^\\*\\s+as\\s+(${IMPORT_IDENT})\\s+from\\s*["']([^"']+)["']$`,
+    "u",
+  ).exec(s);
   if (ns) {
     return { names: [`*${ns[1]}`], importedOfLocal: {}, spec: ns[2]! };
   }
-  if (/^[\w$]+\s+from\b/.test(s) || /^[\w$]+\s*,/.test(s)) return "malformed-default";
+  if (
+    new RegExp(`^${IMPORT_IDENT}\\s+from\\b`, "u").test(s) ||
+    new RegExp(`^${IMPORT_IDENT}\\s*,`, "u").test(s)
+  ) {
+    return "malformed-default";
+  }
   return "malformed";
 }
 

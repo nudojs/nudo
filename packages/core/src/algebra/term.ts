@@ -97,6 +97,11 @@ export function termToString(t: Term): string {
     if (typeof t.value === "string") return JSON.stringify(t.value);
     // -0 与 0 可观察不同（Object.is / 1/x）；键化口径见 litKeyString
     if (typeof t.value === "number") return litKeyString(t.value);
+    // bigint 保 n 后缀（与 format.ts 的 prim bigint 渲染同口径）：String(10n)
+    // = "10"，展示面读起来就是 number 字面量 10 ⇒ `lit(10)` 与 `lit(10n)`
+    // 在诊断文本里不可区分（Bug 361）。键通道（litKeyString）不动——那里
+    // bigint 靠 typeof 前缀分开。
+    if (typeof t.value === "bigint") return `${String(t.value)}n`;
     return String(t.value);
   }
   if (t.op === "var") return t.id;

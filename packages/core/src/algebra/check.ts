@@ -65,7 +65,11 @@ import {
   type FnContractFaces,
 } from "./contract-face.ts";
 import { resolveDepPath } from "./sidecar-path.ts";
-import { contractParamNameSet, formalParamSignatureNames } from "./param-surface.ts";
+import {
+  contractParamNameSet,
+  formalParamSignatureNames,
+  type FormalParam,
+} from "./param-surface.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
@@ -92,6 +96,7 @@ import {
   estimateEntryParamCount,
   isDefaultExportName,
   formatEntrySigLine,
+  formatEntryParamShape,
   findFnLoc,
   formatSigCached,
 } from "./check-signatures.ts";
@@ -271,7 +276,7 @@ function checkSourceInScope(
       makeSameFileFaceResolver(callOpts, filePath, source, file),
     );
     try {
-      attachCrossModuleContractFaces(callOpts, filePath);
+      const crossModuleIssues = attachCrossModuleContractFaces(callOpts, filePath);
       const report = checkSourceInner(
         filePath,
         source,
@@ -299,7 +304,7 @@ function checkSourceInScope(
       // 「文件不存在」）。严重级 error：依赖读不到 ⇒ 其类型面不可信，
       // 门禁须 fail-closed。
       const loadIssues = loadReadFailureIssues(loadReadFailures);
-      const allIssues = [...diagIssues, ...loadIssues];
+      const allIssues = [...diagIssues, ...loadIssues, ...crossModuleIssues];
       if (allIssues.length > 0) {
         report.issues.push(...allIssues);
         const errors = report.issues.filter((i) => i.severity === "error").length;
@@ -393,34 +398,98 @@ function makeSameFileFaceResolver(
 }
 
 /**
+ * 契约形参名 ∉ 形参表面（C4.5 口径）：展示名 ∪ 契约面名（解构顶层绑定名 /
+ * rest 裸名 / 嵌套点路径）之外的契约形参名 = 对不上的名字。冲突位（合取
+ * 不可满足）不算对不上——它由 nudo:interface-conflict 报。
+ *
+ * **同文件路径与跨模块桥接路径共用这一段计算**（Bug 1023）⇒ 两边口径不再
+ * 分叉：跨模块不得「一边报 mismatch 一边静默丢义务」。
+ */
+function unmatchedContractParams(
+  eff: EffectiveInterface,
+  formalDisplay: string[],
+  formals: FormalParam[],
+): string[] {
+  const contractNames = contractParamNameSet(formals);
+  const display = new Set(formalDisplay);
+  const conflictNames = new Set(eff.conflict?.params ?? []);
+  return eff.params
+    .map((p) => p.param)
+    .filter(
+      (p) =>
+        p &&
+        !display.has(p) &&
+        !contractNames.has(p) &&
+        !conflictNames.has(p),
+    );
+}
+
+/** nudo:interface-param-mismatch 诊断（同文件 / 跨模块共用文案与 severity） */
+function paramMismatchIssue(
+  name: string,
+  unknownParams: string[],
+  formalDisplay: string[],
+  formals: FormalParam[],
+): CheckIssue {
+  const contractNames = contractParamNameSet(formals);
+  const surface = [...contractNames]
+    .filter((n) => !n.startsWith("_p") && n !== "_")
+    .join(", ");
+  return {
+    severity: "error",
+    code: DIAG.interfaceParamMismatch,
+    message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
+    actual: unknownParams.join(", "),
+    expected: surface || formalDisplay.join(", ") || "(no params)",
+    suggestion: `rename the @nudo:contract / sidecar binding parameter to one of: ${
+      surface || formalDisplay.join(", ") || "(function has no params)"
+    }`,
+    fn: name,
+  };
+}
+
+/**
  * 跨模块桥接面：注入模块表（opts.modules ∪ opts.inject.modules）里的
  * fn Abs 逐个按「说明符 → 依赖源码（loadModule）→ 依赖侧车（定义文件
  * 路径 ambient 绑定）」解析契约并 attach。每次 check 现算现挂（覆盖旧面，
  * 进程内长会话不滞留）；loadModule miss（表非 fs 装配）→ 该说明符无面。
+ *
+ * Bug 1023：跨模块路径与同文件路径**同口径**——契约形参名对不上形参表时
+ * 报 nudo:interface-param-mismatch（返回给调用方的诊断列表），不再静默
+ * 丢参数面（那会让该形参的义务在调用方**蒸发** ⇒ 调用点假绿）。
  */
-function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): void {
+function attachCrossModuleContractFaces(
+  opts: CheckOptions,
+  filePath: string,
+): CheckIssue[] {
   const loadModule = opts.loadModule;
   const fromFile = opts.fromFile ?? filePath;
-  if (!loadModule) return;
+  if (!loadModule) return [];
   const tables: Array<Record<string, unknown>> = [];
   for (const t of [opts.modules, opts.inject?.modules]) {
     if (t && typeof t === "object" && !tables.includes(t)) tables.push(t as Record<string, unknown>);
   }
-  if (tables.length === 0) return;
+  if (tables.length === 0) return [];
   const autoBind = opts.autoBind;
   const projectDir = opts.projectDir;
-  const facesCache = new Map<string, FnContractFaces | undefined>();
+  const mismatchIssues: CheckIssue[] = [];
+  const facesCache = new Map<
+    string,
+    { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined }
+  >();
   const facesFor = (
     depSource: string,
     depPath: string,
     name: string,
     paramNames: string[],
-  ): FnContractFaces | undefined => {
+  ): { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined } => {
     const key = `${depPath}\0${name}`;
-    if (facesCache.has(key)) return facesCache.get(key);
+    const hit = facesCache.get(key);
+    if (hit) return hit;
     let faces: FnContractFaces | undefined;
+    let eff: EffectiveInterface | undefined;
     try {
-      const eff = effectiveInterface(depSource, name, {
+      eff = effectiveInterface(depSource, name, {
         loadModule,
         fromFile: depPath,
         ...(autoBind !== undefined ? { autoBind } : {}),
@@ -429,25 +498,40 @@ function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): v
       if (eff) faces = contractFacesFromEffectiveInterface(eff, paramNames);
     } catch {
       faces = undefined;
+      eff = undefined;
     }
-    facesCache.set(key, faces);
-    return faces;
+    const out = { faces, eff };
+    facesCache.set(key, out);
+    return out;
   };
   const attachFnAbs = (v: unknown, depSource: string, depPath: string, name: string): void => {
     if (!v || typeof v !== "object" || !("shape" in (v as object))) return;
     const shape = (v as Abs).shape as { k?: string };
     if (shape.k !== "fn") return;
     // 形参名从依赖源码解析（extractFn）：桥接 Abs 的 shape.params 对
-    // `export function` 声明回退 argN（topLevelFnParams 的既有行为），
-    // 名锚定契约（a/b）对不上位会静默丢参数面。
-    let paramNames: string[];
+    // `export function` 声明回退 argN（topLevelFnParams 的既有行为）。
+    // 名锚定契约（a/b）对不上位时**报 param-mismatch**（同文件路径同口径），
+    // 不再静默丢参数面。
+    let paramNames: string[] = [];
+    let formals: FormalParam[] = [];
     try {
-      paramNames = extractFn(depSource, name)?.params ?? [];
+      const meta = extractFn(depSource, name);
+      paramNames = meta?.params ?? [];
+      formals = meta?.formals ?? [];
     } catch {
       paramNames = [];
+      formals = [];
     }
-    const faces = facesFor(depSource, depPath, name, paramNames);
+    const { faces, eff } = facesFor(depSource, depPath, name, paramNames);
     if (faces) attachContractFaces(v as object, faces);
+    if (eff?.source === "handwritten") {
+      const unknownParams = unmatchedContractParams(eff, paramNames, formals);
+      if (unknownParams.length > 0) {
+        mismatchIssues.push(
+          paramMismatchIssue(name, unknownParams, paramNames, formals),
+        );
+      }
+    }
   };
   for (const table of tables) {
     for (const [spec, mod] of Object.entries(table)) {
@@ -469,6 +553,7 @@ function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): v
       if (def !== undefined) attachFnAbs(def, depSource, depPath, "default");
     }
   }
+  return mismatchIssues;
 }
 
 /**
@@ -923,7 +1008,10 @@ function checkSourceInner(
     const paramTypes = g.typeParams.map((t) => {
       if (!t.value) return "any";
       if (t.value.shape.k === "unknown") return "unknown";
-      return formatShape(t.value);
+      // 契约面的字面量保形（Bug 348）：`lit(1)` 的字面量只活在 pred 里 ⇒
+      // 走 widen 路径永远看不见它（`x: number`）⇒ check 签名面与 dts 面
+      // （`x: 1`）与契约面（`x: lit(1)`）三面互相矛盾。
+      return formatEntryParamShape(t.value);
     });
     signatures.push({
       name,
@@ -988,33 +1076,13 @@ function checkSourceInner(
       const eff = effectiveInterfaceCached(name);
       if (eff?.source === "handwritten") {
         // C4.1：契约面 = formals（默认参名 / rest 裸名 / 解构顶层绑定名）
-        const contractNames = contractParamNameSet(g.formals ?? []);
-        const formalDisplay = new Set(g.params);
-        const conflictNames = new Set(eff.conflict?.params ?? []);
-        const unknownParams = eff.params
-          .map((p) => p.param)
-          .filter(
-            (p) =>
-              p &&
-              !formalDisplay.has(p) &&
-              !contractNames.has(p) &&
-              !conflictNames.has(p),
-          );
+        // 形参名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）
+        // ——与跨模块桥接路径共用 unmatchedContractParams（Bug 1023 同口径）
+        const unknownParams = unmatchedContractParams(eff, g.params, g.formals ?? []);
         if (unknownParams.length > 0) {
-          const surface = [...contractNames]
-            .filter((n) => !n.startsWith("_p") && n !== "_")
-            .join(", ");
-          issues.push({
-            severity: "error",
-            code: DIAG.interfaceParamMismatch,
-            message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
-            actual: unknownParams.join(", "),
-            expected: surface || g.params.join(", ") || "(no params)",
-            suggestion: `rename the @nudo:contract / sidecar binding parameter to one of: ${
-              surface || g.params.join(", ") || "(function has no params)"
-            }`,
-            fn: name,
-          });
+          issues.push(
+            paramMismatchIssue(name, unknownParams, g.params, g.formals ?? []),
+          );
         }
       }
       if (eff?.conflict) {

@@ -32,47 +32,49 @@ function inst(c: Parameters<typeof instantiateConstraint>[0], name: string): str
 
 describe("shift(n)：数值常数界平移", () => {
   it("gt: x>0 shift(1) → x>1", () => {
-    expect(inst(number().gt(0).shift(1), "ms")).toBe("ms > 1");
+    expect(inst(number().gt(0).shift(1), "ms")).toBe('typeof ms = "number" ∧ ms > 1');
   });
 
   it("ge: x≥0 shift(2) → x≥2", () => {
-    expect(inst(number().ge(0).shift(2), "ms")).toBe("ms ≥ 2");
+    expect(inst(number().ge(0).shift(2), "ms")).toBe('typeof ms = "number" ∧ ms ≥ 2');
   });
 
   it("lt: x<10 shift(3) → x<13", () => {
-    expect(inst(number().lt(10).shift(3), "ms")).toBe("ms < 13");
+    expect(inst(number().lt(10).shift(3), "ms")).toBe('typeof ms = "number" ∧ ms < 13');
   });
 
   it("le: x≤100 shift(5) → x≤105", () => {
-    expect(inst(number().le(100).shift(5), "ms")).toBe("ms ≤ 105");
+    expect(inst(number().le(100).shift(5), "ms")).toBe('typeof ms = "number" ∧ ms ≤ 105');
   });
 
   it("链上多个界同时平移", () => {
-    expect(inst(number().ge(0).le(100).shift(5), "n")).toBe("n ≥ 5 ∧ n ≤ 105");
+    expect(inst(number().ge(0).le(100).shift(5), "n")).toBe(
+      'typeof n = "number" ∧ n ≥ 5 ∧ n ≤ 105',
+    );
   });
 
   it("int 标志保留", () => {
     const c = number().int().gt(0).shift(1);
     // builder 上 int 恒为链式方法（幂等可重复调用）；标志经 isIntFlag 统一读取
     expect(isIntFlag(c)).toBe(true);
-    expect(inst(c, "ms")).toBe("ms > 1");
+    expect(inst(c, "ms")).toBe('typeof ms = "number" ∧ ms > 1');
   });
 
   it(".int() 重复调用幂等（方法遮蔽时期曾 TypeError）", () => {
     const c = number().int().int().gt(0);
     expect(isIntFlag(c)).toBe(true);
     // int 位不进实例化 pred（toPlainConstraint 归一后仍是单一 gt 界）
-    expect(inst(c, "x")).toBe("x > 0");
+    expect(inst(c, "x")).toBe('typeof x = "number" ∧ x > 0');
   });
 
   it("不可变：原约束不受 shift 影响", () => {
     const c = number().gt(0);
     c.shift(1);
-    expect(inst(c, "ms")).toBe("ms > 0");
+    expect(inst(c, "ms")).toBe('typeof ms = "number" ∧ ms > 0');
   });
 
   it("负向平移", () => {
-    expect(inst(number().gt(10).shift(-3), "ms")).toBe("ms > 7");
+    expect(inst(number().gt(10).shift(-3), "ms")).toBe('typeof ms = "number" ∧ ms > 7');
   });
 
   it("length 界 → throw", () => {
@@ -109,19 +111,19 @@ describe("litC(v)：字面量契约", () => {
     const c = litC(42);
     expect(isNudoConstraint(c)).toBe(true);
     expect(c.prim).toBe("number");
-    expect(inst(c, "x")).toBe("x = 42");
+    expect(inst(c, "x")).toBe('typeof x = "number" ∧ x = 42');
   });
 
   it("string 编码", () => {
     const c = litC("a");
     expect(c.prim).toBe("string");
-    expect(inst(c, "x")).toBe('x = "a"');
+    expect(inst(c, "x")).toBe('typeof x = "string" ∧ x = "a"');
   });
 
   it("boolean 编码", () => {
     const c = litC(true);
     expect(c.prim).toBe("boolean");
-    expect(inst(c, "x")).toBe("x = true");
+    expect(inst(c, "x")).toBe('typeof x = "boolean" ∧ x = true');
   });
 
   it("null 编码：无 prim + eq(self, null)", () => {
@@ -233,7 +235,7 @@ describe("fn(params, returns?, { throws? })：一等函数约束", () => {
     const c = fn(
       { x: number().gt(0), y: string() },
       number().le(10),
-      { throws: string().min(1) },
+      { throws: litC("TypeError") },
     );
     expect(isNudoConstraint(c)).toBe(true);
     expect(c.fn!.params.x!.prim).toBe("number");
@@ -279,18 +281,18 @@ describe("andC(...cs)：标量合取", () => {
   it("prim 一致 → preds 拼接", () => {
     const c = andC(number().gt(0), number().lt(10));
     expect(c.prim).toBe("number");
-    expect(inst(c, "n")).toBe("n > 0 ∧ n < 10");
+    expect(inst(c, "n")).toBe('typeof n = "number" ∧ n > 0 ∧ n < 10');
   });
 
   it("lit 参与合取（prim 同为 number）", () => {
     const c = andC(number().gt(0), litC(5));
-    expect(inst(c, "n")).toBe("n > 0 ∧ n = 5");
+    expect(inst(c, "n")).toBe('typeof n = "number" ∧ n > 0 ∧ n = 5');
   });
 
   it("无 prim 标量（litC(null)）不与显式 prim 冲突", () => {
     const c = andC(litC(null), number().gt(0));
     expect(c.prim).toBe("number");
-    expect(inst(c, "n")).toBe("n = null ∧ n > 0");
+    expect(inst(c, "n")).toBe('typeof n = "number" ∧ n = null ∧ n > 0');
   });
 
   it("不可变：操作数不受影响", () => {
@@ -376,8 +378,10 @@ describe("partial / pick / omit：shape 字段操作", () => {
 
 describe("既有构建器回归（新形态不改变原语义）", () => {
   it("number/string/array/shape 原样", () => {
-    expect(inst(number().gt(0), "ms")).toBe("ms > 0");
-    expect(inst(number().ge(0).le(100), "n")).toBe("n ≥ 0 ∧ n ≤ 100");
+    expect(inst(number().gt(0), "ms")).toBe('typeof ms = "number" ∧ ms > 0');
+    expect(inst(number().ge(0).le(100), "n")).toBe(
+      'typeof n = "number" ∧ n ≥ 0 ∧ n ≤ 100',
+    );
     expect(inst(string(), "s")).toBe('typeof s = "string"');
     expect(inst(shape({ id: number().gt(0) }), "u")).toBe("u.id > 0");
     // array 约束不经 pred 执法（既有行为）：实例化恒真

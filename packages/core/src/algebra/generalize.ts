@@ -15,7 +15,7 @@ import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
-import { pTrue, predToString } from "./pred.ts";
+import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
@@ -1112,11 +1112,16 @@ function generalizeFromAstUncached(
       : typeParams.map((t, i) => (i === restIdx ? makeSymbolicRestAbs() : t.value));
   const symbolic = run(
     symbolicArgs,
-    // 入口契约进 Φ，让 body 内的单调性可传播
+    // 入口契约进 Φ，让 body 内的单调性可传播。
+    // 用 and() 合成（族 06）：每条形参谓词本身可能是合取
+    // （`and(typeof x, ge(x,0))`），裸 `{op:"and",args:[…]}` 会把它们
+    // **嵌套**一层 ⇒ 合取读侧（buildCtx 等）看不到内层原子 ⇒ Φ 里的
+    // 事实（如 `ge(max,1)`）被静默丢弃 ⇒ 死臂剪不掉（签名退化成
+    // `1 | number`）。and() 展平一层 ⇒ Φ 顶层即原子。
     entryReqs && entryReqs.length > 0
       ? entryReqs.length === 1
         ? entryReqs[0]!.pred
-        : { op: "and", args: entryReqs.map((r) => r.pred) }
+        : and(...entryReqs.map((r) => r.pred))
       : pTrue,
   );
 

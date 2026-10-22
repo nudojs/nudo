@@ -36,7 +36,9 @@ describe("nudo contract — bigint 字面量契约不得崩溃（Bug 534）", ()
       expect(r.status).toBe(0);
       expect(r.stderr).not.toContain("Do not know how to serialize a BigInt");
       expect(r.stdout).toContain("g");
-      expect(r.stdout).toContain("lit(10)");
+      // bigint 保 `n` 后缀（Bug 361）：`lit(10)` 与 `lit(10n)` 必须可区分，
+      // 否则「expected:」陈述的是另一条契约。本用例的诉求是「不崩」。
+      expect(r.stdout).toContain("lit(10n)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
