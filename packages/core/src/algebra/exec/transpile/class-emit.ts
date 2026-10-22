@@ -270,6 +270,13 @@ export function classSpecOf(
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
       const id = p as { type?: string; name?: string };
+      // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——Babel 的
+      // TS 插件把它解析成普通 `Identifier("this")` ⇒ 此前进了宿主方法签名
+      // `(__this, this, a) => {…}` ⇒ `this` 不是合法形参名 ⇒ 产物语法非法
+      // ⇒ `new Function` 抛 ⇒ **整个模块装载失败**。
+      // ⇒ 落成占位 `_`（与「非 Identifier 形参」同处理）⇒ `paramList` 过滤
+      //   `_` 时把它剔除 ⇒ 该形参**不占实参位**（原生 `this` 标注不占位）。
+      if (id?.type === "Identifier" && id.name === "this") return "_";
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 

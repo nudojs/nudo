@@ -54,6 +54,10 @@ import {
   getSlot,
   setSlot,
   propertyKeyOf,
+  isImmutableProtoAbs,
+  protoChainContains,
+  markKeySetOpenAbs,
+  keySetIncompleteAbs,
   type ObjShape,
 } from "../../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
@@ -118,6 +122,15 @@ import {
  * eval-value-read-reflect.test.ts 已 pin）。
  */
 export function protoChangeAllowed(t0: Abs, p0: Abs): boolean {
+  // Bug 386：不可变原型对象（Object.prototype）——[[SetPrototypeOf]] 一律拒绝
+  // （原生：Object.setPrototypeOf 抛 TypeError: Immutable prototype object
+  // 'Object.prototype' cannot have their prototype set；Reflect 返 false）。
+  // 规范 + V8 实测：仅 Object.prototype 是不可变原型，其余内建原型可改。
+  if (isImmutableProtoAbs(t0)) return false;
+  // Bug 385：原型环——新原型的 [[Prototype]] 链上溯已含 t0 ⇒ 拒绝
+  // （原生：Object.setPrototypeOf 抛 TypeError: Cyclic __proto__ value；
+  // Reflect 返 false）。修前引擎**静默建出活原型环**（native 不存在该状态）。
+  if (protoChainContains(p0, t0)) return false;
   if (extStateOf(t0) === undefined) return true;
   const curIsNull = isNullProtoObj(t0);
   const p0IsNull = p0.term?.op === "lit" && p0.term.value === null;
@@ -151,22 +164,19 @@ function isProxyAbs(o: Abs): boolean {
  * 的对象也用它（Object.create(<obj>) 的空槽产品——动态继承不建模 ⇒ 缺槽
  * 读保守 unknown；它的自有键集确为空，原生 keys = []，Bug 41 pin）⇒ 用
  * open 判会把那一族也折 partial（既有测试 pin）。
+ *
+ * Bug 383：标记位与判定搬进 objects.ts（叶子模块）——**单一事实源**，本模块
+ * 与 exec/runtime/containers/arr-index.ts（抽象键写面）共用同一标记位。
  */
-const KEY_SET_OPEN_MARK = "@@nudoKeySetOpen";
 
 /** 标记「自有键集不完备」（组键运行时决定、静态不可知的那一族） */
 function markKeySetOpen(o: Abs): Abs {
-  setPropFlags(o, KEY_SET_OPEN_MARK, {
-    writable: false,
-    enumerable: false,
-    configurable: false,
-  });
-  return o;
+  return markKeySetOpenAbs(o);
 }
 
 /** 该对象的自有键集是否不完备（⇒ 键家族折 partial） */
 function keySetIncomplete(o: Abs): boolean {
-  return getPropFlags(o)?.has(KEY_SET_OPEN_MARK) === true;
+  return keySetIncompleteAbs(o);
 }
 
 /**

@@ -11,7 +11,13 @@ import { readFileSync } from "node:fs";
 import { resolve, basename, dirname } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
-import { effectiveInterface, type Abs } from "@nudojs/core";
+import {
+  effectiveInterface,
+  abs as makeAbs,
+  anyAbs,
+  type Abs,
+  type FormalParam,
+} from "@nudojs/core";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import {
   SCHEMA_DIALECTS,
@@ -29,7 +35,7 @@ import {
   selectExportFunctions,
   selectPublicFunctions,
 } from "./export/selection.ts";
-import { unifiedParamFace, unifiedReturnFace } from "./export/contract-face.ts";
+import { unifiedParamFace, unifiedReturnFace, type ParamFace } from "./export/contract-face.ts";
 import { renderZodModule, zodFaceEntries } from "./export/zod-face.ts";
 import { standardFaceChunk } from "./export/standard-face.ts";
 import { guardFaceChunk } from "./export/guard-face.ts";
@@ -54,6 +60,103 @@ import { printExportStdout } from "./export/stdout.ts";
 // ---------------------------------------------------------------------------
 // export — 投影：dts | guard | schema (dialect) | standard | all
 // ---------------------------------------------------------------------------
+
+/**
+ * 一个声明形参在**统一参数面**里可能占用的槽名。
+ *
+ * 槽名与 `unifiedParamFace` 的产出同名：标识 / 默认 / 剩余参数位取形参名
+ * （剩余参数另取带 `...` 的展示名）；解构位取**整参契约名**（占位名 / `_`）
+ * 或**字段级**条目名（顶层绑定名 / 点路径首段）。
+ */
+function formalSlotNames(formal: FormalParam): Set<string> {
+  switch (formal.kind) {
+    case "id":
+    case "default":
+      return new Set([formal.name]);
+    case "rest":
+      return new Set([formal.name, formal.display]);
+    case "pattern":
+      return new Set([formal.placeholder, "_", ...formal.bound]);
+  }
+}
+
+/**
+ * Bug 394：数组解构形参的**输入面**必须是**数组 / 元组**形态。
+ *
+ * 侧车契约按**绑定名**声明（`fn({ a: number() })` 对 `[a, b]` 来说 `a` 是
+ * **下标 0 的元素**，不是属性键）⇒ 统一参数面把它摊成对象槽
+ * （`z.object({ a: … })`）⇒ 产物的输入面与真实形参形态**完全颠倒**：
+ * 合法的数组调用被判红、非法的对象调用被放行。
+ *
+ * 修法（产物面兜底）：把该形参的**字段级**槽合成**一个元组槽**——元素位
+ * 按**下标**寻址（`FormalParam.boundIndex`，core 形参表面模型的扩展）；
+ * 未契约的元素位留 `any`（**无约束**，不是 `unknown`——unknown 表示引擎
+ * 推导失败；契约没写的元素位是「没约束」⇒ any，与入口无约束参数同口径）；
+ * 元组长度 = 模式的**位置数**（声明级 ⇒ 不被单次观测裁剪）。
+ */
+function arrayPatternTupleFace(
+  formal: Extract<FormalParam, { kind: "pattern" }>,
+  own: readonly ParamFace[],
+): ParamFace | undefined {
+  // 只处理**字段级**槽（名字是绑定名）；整参契约（占位名 / `_`）与无契约
+  // 回落（观测面）都已经是**整个实参**形态 ⇒ 原样保留。
+  // 整参契约与字段级契约**同时**存在时也保留原样（用户的整参申报优先）。
+  const fieldLevel = own.filter(
+    (e) => formal.bound.includes(e.name) && e.name !== formal.placeholder && e.name !== "_",
+  );
+  if (fieldLevel.length === 0) return undefined;
+  const indexOf = (name: string): number =>
+    formal.boundIndex?.[name] ?? formal.bound.indexOf(name);
+  const lastIndex = formal.bound.reduce((acc, b) => Math.max(acc, indexOf(b)), -1);
+  const elements: Abs[] = [];
+  for (let i = 0; i <= lastIndex; i++) elements.push(anyAbs);
+  for (const e of fieldLevel) {
+    const idx = indexOf(e.name);
+    if (idx < 0 || idx > lastIndex) continue;
+    elements[idx] = e.abs;
+  }
+  return {
+    name: formal.placeholder,
+    abs: makeAbs({ k: "tuple", elements }, undefined, undefined, "exact"),
+    optional: false,
+  };
+}
+
+/**
+ * Bug 394：把数组解构形参的字段级槽**合成元组槽**（见
+ * {@link arrayPatternTupleFace}）。其余形参原样保留。
+ */
+function arrayPatternParamFaces(
+  fn: FunctionAnalysis,
+  paramExps: readonly ParamFace[],
+): ParamFace[] {
+  const formals = fn.formals ?? [];
+  if (!formals.some((f) => f.kind === "pattern" && f.patternKind === "array")) {
+    return [...paramExps];
+  }
+  const out: ParamFace[] = [];
+  let pi = 0;
+  for (const formal of formals) {
+    // 统一参数面按形参顺序产出 ⇒ 逐形参认领属于自己的槽
+    const names = formalSlotNames(formal);
+    const own: ParamFace[] = [];
+    while (pi < paramExps.length && names.has(paramExps[pi]!.name)) {
+      own.push(paramExps[pi]!);
+      pi++;
+    }
+    if (formal.kind === "pattern" && formal.patternKind === "array") {
+      const tuple = arrayPatternTupleFace(formal, own);
+      if (tuple) {
+        out.push(tuple);
+        continue;
+      }
+    }
+    out.push(...own);
+  }
+  // 契约名与声明形参表对不上的孤儿槽（Bug 607：按契约原样保留）
+  out.push(...paramExps.slice(pi));
+  return out;
+}
 
 async function runExport(
   file: string,
@@ -150,7 +253,7 @@ async function runExport(
       filePath,
       ...(evalMocks ? { mocks: evalMocks } : {}),
     };
-    const paramExps = unifiedParamFace(fn, eff, caseResults);
+    const paramExps = arrayPatternParamFaces(fn, unifiedParamFace(fn, eff, caseResults));
     const outputAbs = unifiedReturnFace(fn, eff, caseResults, faceCtx);
 
     if (wantsSchema(format)) {

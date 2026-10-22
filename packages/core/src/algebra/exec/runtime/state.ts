@@ -321,7 +321,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator" },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[] },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -351,6 +351,9 @@ export function $fnVal(
       // Bug 325：函数**种类**戳（async × generator 四象限）——与 kind 分开
       // （kind 是派发角色维度）
       ...(opts?.fnKind !== undefined ? { fnKind: opts.fnKind } : {}),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）⇒ 必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选 ⇒ 假红）
+      ...(opts?.optionalParams ? { optionalParams: opts.optionalParams } : {}),
     },
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),

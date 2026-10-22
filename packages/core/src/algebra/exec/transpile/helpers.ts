@@ -23,6 +23,25 @@ export function paramDisplayNames(params: unknown[] | undefined): string[] {
 }
 
 /**
+ * Bug 399：逐位「可省略」标记（与 `paramDisplayNames` **同下标同长度**）。
+ *
+ * 用途：默认形参（`f(a, b = 1)`）在形参表面只是**光秃秃的名字**（`b`）
+ * ⇒ 必选元数按名字后缀判时会被计成必选 ⇒ `nudo:assign-mismatch` 假红
+ * （JS 语义下 `(x = 1) => x` 的 `length` 是 0 ⇒ 可零参调用）。
+ *
+ * ⚠ **不能用原生 `fn.length` 代替**：`length` 是「首个默认值/rest **前**的
+ * 形参数」⇒ `f(a, b = 1, c)` 的 length = 1，但 `c` 仍**必选**
+ * （TS 语义：可选参数之后的参数仍必选）⇒ 必选元数 ≠ length。
+ *
+ * 与 `paramDisplayNames` 同源（同一个 `formalParamsFromNodes`）⇒ 下标天然对齐。
+ */
+export function paramOptionalFlags(params: unknown[] | undefined): boolean[] {
+  return formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]).map(
+    (f) => f.optional === true,
+  );
+}
+
+/**
  * Bug 69：原生 fn.length 边界——首个默认值（AssignmentPattern）或 rest
  * 形参**前**的形参数。解构形参无默认值时计入（原生不截断）；transpile 侧
  * 记入 $fnVal 的 length 通道（$len 的 fn 分支折 exact），宿主函数的解糖

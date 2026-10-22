@@ -574,6 +574,15 @@ export function emitParamBinding(
   bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     if (p.type === "Identifier") {
+      // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——Babel 的
+      // TS 插件把它解析成普通 `Identifier("this")`（不是 TSParameterProperty）。
+      // 此前直接 `sig.push("this")` ⇒ 产物是 `function f(this, a) { … }`
+      // ⇒ `this` **不是合法形参名**（strict / sloppy 皆 SyntaxError）⇒
+      // `new Function` 抛 ⇒ **整个模块装载失败** ⇒ 求值面（case@ / entry@ /
+      // call@）全折 unknown。
+      // ⇒ 跳过（与 core 模型层 `formalParamsFromNodes` 同口径）。
+      // `this` 是 JS 保留字，不可能有同名真形参 ⇒ 名字判定即可。
+      if (p.name === "this") return;
       sig.push(p.name);
       return;
     }
@@ -592,7 +601,11 @@ export function emitParamBinding(
     const ph = safeTmpName(`_p${i}`, userInfo);
     sig.push(ph);
     if (p.type === "AssignmentPattern") {
-      defaulted.push(i);
+      // `defaulted` 的语义是 **sig 下标**（见上方注释「sig 下标里默认参
+      // （AssignmentPattern）占位的位置」）。此前用**形参下标** `i`——
+      // 二者此前恰好相等，但跳过 `this` 形参（Bug 397）后两者会错位一位
+      // ⇒ 宿主签名的 `= void 0` 落错位置 ⇒ 默认参语义被挪到别的形参上。
+      defaulted.push(sig.length - 1);
       const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
         // Bug 161：默认参绑定可变（原生 `function f(a = 1) { a = 5; }` 合法）
@@ -635,6 +648,10 @@ export function emitParamBindingFromArgs(
   const userInfo = userIdentInfo(opts.source);
   bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
+    // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——它**不占
+    // 实参位**（原生 `function f(this: T, a)` 的首参就是 `a`）⇒ 既不进
+    // 形参绑定，也不进 `namedCount`。
+    if (p.type === "Identifier" && p.name === "this") return;
     if (p.type === "RestElement") {
       if (p.argument.type === "Identifier") {
         rest = p.argument.name;
@@ -649,7 +666,10 @@ export function emitParamBindingFromArgs(
       return;
     }
     namedCount++;
-    const idxSrc = `$idx(${argsSrc}, $lit(${i}))`;
+    // 实参位 = **实参数组**的下标 ⇒ 用 `namedCount - 1`（本形参之前的实参
+    // 个数），**不是**形参下标 `i`——跳过 `this` 形参（Bug 397）后两者会
+    // 错位一位 ⇒ 实参会被绑到错的形参上。
+    const idxSrc = `$idx(${argsSrc}, $lit(${namedCount - 1}))`;
     if (p.type === "Identifier") {
       prologue.push(`${pad}let ${p.name} = ${idxSrc};`);
       return;

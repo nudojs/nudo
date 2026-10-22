@@ -76,18 +76,31 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(ra.value) + Number(rb.value));
   }
+  // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
+  //（不得落进 number|string 并集——数组侧不会产出 number）
+  //
+  // **必须先于 bigint 臂**（Bug 946）：`+` 的第一步是 ToPrimitive，数组侧恒
+  // string ⇒ `1n + []` 走字符串拼接得 "1"（原生从不抛）。bigint 臂在前会把
+  // ToPrimitive 的字符串分支短路进数值面 ⇒ 硬抛 TypeError ⇒ 折 never + L2 假红。
+  if (a.shape.k === "tuple" || a.shape.k === "arr" || b.shape.k === "tuple" || b.shape.k === "arr") {
+    // 数组侧恒 string，但对面抽象操作数可能为 Symbol（`[] + Symbol()` 原生 TypeError）
+    noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
+    // 抽象 bigint 面（无字面量项）⊗ 数组：ToString(bigint) 是十进制串 ⇒ 结果恒
+    // string（原生 `x + []`（x: bigint）得字符串，从不抛）。concatString 对
+    // bigint prim 无 ToString 投影会落 unknown —— 此处补 string 面
+    // （conf: path —— 值域确为 string、值由计算路径得出，与同族的
+    // `x: string` ⊗ 数组的 concatString 口径一致）。
+    const bigSide = isBigPrim(a) ? a : isBigPrim(b) ? b : undefined;
+    if (bigSide !== undefined && !litValue(bigSide).ok) {
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    }
+    return concatString(a, b);
+  }
+
   const big = foldBigintBinOp(a, b, (x, y) => x + y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
-  }
-
-  // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
-  //（不得落进 number|string 并集——数组侧不会产出 number）
-  if (a.shape.k === "tuple" || a.shape.k === "arr" || b.shape.k === "tuple" || b.shape.k === "arr") {
-    // 数组侧恒 string，但对面抽象操作数可能为 Symbol（`[] + Symbol()` 原生 TypeError）
-    noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
-    return concatString(a, b);
   }
 
   // 双方 number prim：数值加法 + 约束传播

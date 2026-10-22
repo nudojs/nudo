@@ -84,7 +84,23 @@ export function extractFormals(node: Node): FormalParam[] {
     const t = (params?.[i] as { nudoTypeText?: string } | undefined)?.nudoTypeText;
     if (typeof t === "string" && t.length > 0) f.tsType = t;
   }
-  return formals;
+  // Bug 397（core 侧缺口的服务侧兜底）：TS 的 `this: T` 是**接收者标注**，不是
+  // 运行时形参 —— Babel 的 TS 插件把它解析成普通 `Identifier("this")`（不是
+  // TSParameterProperty）⇒ 与真形参在 AST 层无法区分。
+  //
+  // core `param-surface.ts` 现已在 Identifier 分支跳过名字为 `this` 的形参，
+  // 本兜底在 core 修好后**自动退化为 no-op**；保留以防 core 侧回退。
+  //
+  // 为什么要兜：形参表多一槽 ⇒ **四个产物面同时错位** ——
+  //  dts 多一个形参 ⇒ 消费方吃 TS2554 假红；
+  //  zod 多一个字面量槽 "this" ⇒ 对每一个真实调用值报假红；
+  //  standard 多一个幽灵导出 `<fn>_this`；
+  //  case 的实参整体错位一格（`(1)` 被绑到 `this` 上 ⇒ 真实形参拿不到值）。
+  //
+  // 过滤后必须**重排 index**（index 是形参表内的位置 ⇒ 实参位靠它对齐）。
+  const withoutThis = formals.filter((f) => !(f.kind === "id" && f.name === "this"));
+  if (withoutThis.length === formals.length) return formals;
+  return withoutThis.map((f, i) => (f.index === i ? f : { ...f, index: i }));
 }
 
 export function extractParamNames(node: Node): string[] {

@@ -25,6 +25,7 @@ import {
   staticKeyOf,
   symbolKeyOf,
   paramDisplayNames,
+  paramOptionalFlags,
   nativeParamArity,
   methodBindNames,
   collectForkBindingNames,
@@ -118,6 +119,9 @@ export function transpileObjectExpr(
           // 不得进 $obj({ "__proto__": … })——宿主对象字面量会当 proto 设定丢键。
           const isProtoKey = mkey === '"__proto__"';
           const displayNames = paramDisplayNames(prop.params);
+          // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+          // 不再靠名字后缀猜（与 `displayNames` 同源同长度 ⇒ 下标对齐）
+          const optionalFlags = paramOptionalFlags(prop.params);
           const bindNames = methodBindNames(prop.params);
           // 方法体是新的函数边界：inLoop/inTry 必须归零；直接/嵌套箭头引用
           // arguments（含参数默认值）时建槽
@@ -248,7 +252,7 @@ export function transpileObjectExpr(
           // Bug 325：方法简写也带**函数种类**戳（async / generator / async
           // generator）——原生 `{async m(){}}` 的标签是 "[object
           // AsyncFunction]"，此前整族折 "[object Function]"。
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}${fnKindSrc(prop)} })`;
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}${fnKindSrc(prop)}, optionalParams: [${optionalFlags.join(", ")}] })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
             // Bug 143：方法名 __proto__ 是自有**数据**属性（覆盖同键访问器）
@@ -333,6 +337,9 @@ export function transpileObjectExpr(
           };
           if (!fn.generator) {
             const displayNames = paramDisplayNames(fn.params);
+            // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——与
+            // `displayNames` 同源同长度 ⇒ 下标对齐
+            const optionalFlags = paramOptionalFlags(fn.params);
             const bindNames = methodBindNames(fn.params);
             const mHasArgs = fnBodyHasOwnArguments({
               body: fn.body,
@@ -367,7 +374,7 @@ export function transpileObjectExpr(
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
             // Bug 325：函数种类戳（async / generator）
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}${fnKindSrc(fn)} })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}${fnKindSrc(fn)}, optionalParams: [${optionalFlags.join(", ")}] })`,
             );
             // Bug 143：同键后写覆盖先写（数据属性覆盖先写的访问器）
             accDefs.set(key, { kind: "data" });

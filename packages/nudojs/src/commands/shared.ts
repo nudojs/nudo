@@ -691,6 +691,17 @@ export async function runAbsView(
   const source = readFileSync(filePath, "utf8");
   let phi = algebra.pTrue;
   const assumeIds = new Set<string>();
+  // Bug 976（CLI 半）：`--assume` 的**界**必须落到**形参自己的前提**上。
+  // core 的 `buildArgsFromAssume` 此前只拿到 id 集合 ⇒ 把被假设形参的 pred
+  // **写死**成 `x > 0`（core 半已改成收「形参名 → 界」的映射）⇒ 用户写
+  // `--assume 'x>-5'` 时，写死的 `x>0` 反而**更强**（`x>-5 ∧ x>0` ⇒ `x>0`）
+  // ⇒ 引擎按 `x>0` 剪枝，`x=-1` 的分支被当成不可达 ⇒ 观察面给出比用户声明
+  // **更窄**的结果（说谎）。
+  //
+  // CLI 半的修法：把**用户声明的界**（按形参名归并、同一形参多条取合取）
+  // 落进形参的前提（**替换**那个写死的默认，不是与它合取 —— 合取仍然是写死
+  // 的界更强 ⇒ 剪枝照旧）。
+  const assumeBounds = new Map<string, import("@nudojs/core").Pred>();
   const assumeLines: string[] = [];
   const badAssume: string[] = [];
   for (const a of opts.assume ?? []) {
@@ -704,6 +715,12 @@ export async function runAbsView(
     // 用 core 既有导出 algebra.and（公共 API 冻结面不新增导出）。
     phi = phi === algebra.pTrue ? parsed.pred : algebra.and(phi, parsed.pred);
     assumeIds.add(parsed.id);
+    // 同一形参的多条界同样**合取**（`--assume 'x>0' --assume 'x<10'` ⇒ `0<x<10`）
+    const prev = assumeBounds.get(parsed.id);
+    assumeBounds.set(
+      parsed.id,
+      prev === undefined ? parsed.pred : algebra.and(prev, parsed.pred),
+    );
     // 回显打印**实际构造出来的谓词**（运算符来自同一处分派 ⇒ 与引擎一致）
     assumeLines.push(`${parsed.id} ${parsed.op} ${parsed.n}`);
   }
@@ -782,18 +799,34 @@ export async function runAbsView(
       console.log("");
       continue;
     }
-    const args = algebra.buildArgsFromAssume(source, name, assumeIds);
+    // Bug 976（CLI 半）：把**用户声明的界**交给 core 落进形参自己的前提
+    // （core 半：`buildArgsFromAssume` 的第 4 参 `bounds`，形参名 → 界）。
+    const args = algebra.buildArgsFromAssume(source, name, assumeIds, assumeBounds);
+    // 兜底（core 半缺席时也正确）：把**用户声明的界**写进形参自己的前提
+    // （**替换** core 写死的 `x>0` 默认，不是与它合取 —— 合取仍然是写死的界
+    // 更强 ⇒ 剪枝照旧）。与 core 半**幂等**（core 半已落时是同一个 pred）。
+    const formals = algebra.extractFn(source, name)?.params ?? [];
+    for (let i = 0; i < args.length; i++) {
+      const bound = assumeBounds.get(formals[i] ?? "");
+      if (!bound) continue;
+      args[i] = { ...args[i]!, pred: bound };
+    }
     // 契约约束的形参：constraintToEntryAbs（core 既有导出，与 check 的签名表
     // 同一入口 Abs 语义）覆盖 assume 推导出的入口 Abs。
     const eff = contractOf(algebra, source, name, filePath, loadModule, autoBind, projectDir);
     if (eff) {
-      const formals = algebra.extractFn(source, name)?.params ?? [];
       const byParam = new Map(
         eff.params.map((p) => [p.param, algebra.constraintToEntryAbs(p.constraint, p.param)]),
       );
       for (let i = 0; i < args.length; i++) {
         const c = byParam.get(formals[i] ?? "");
-        if (c) args[i] = c;
+        if (!c) continue;
+        // 契约的义务与用户的假设**并存**（契约 pred ∧ 用户界）⇒ 契约不被削弱，
+        // 用户的界也不被写死的默认顶掉。
+        const bound = assumeBounds.get(formals[i] ?? "");
+        args[i] = bound
+          ? { ...c, pred: algebra.and(c.pred ?? algebra.pTrue, bound) }
+          : c;
       }
     }
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）

@@ -227,23 +227,81 @@ function expectedPrim(expected: Abs): TypeofName | undefined {
 }
 
 /**
- * 实际值是否满足期望（结构面 leqAbs + 值面谓词）。
+ * Bug 396：期望判定用**严格变体**——`leqAbs` 的「同 prim 字面量视为可赋」捷径
+ * （core `packages/core/src/algebra/leq.ts` 的 `leqWithPred` **对象分支**：同 prim
+ * 的两个字面量槽直接 `continue`，连值相等性都不比）在**对象槽**里 ⇒
+ * `shape({ a: lit(2) })` 这类**期望**永不被执法
+ * （`@nudo:case` 期望恒 `[ok]`、`nudo:case-expected` 零诊断 ⇒ 假绿），
+ * 而同一份契约在手写侧车面走**逐字段约束树**能抓到 ⇒ 两面自相矛盾。
+ *
+ * core 那一行**不许改**（gold `assign-compatible` / `wider` 依赖该口径：
+ * 可赋值关系本就该宽松）⇒ 修法落在**消费侧**：这里补一道「期望槽里的字面量
+ * 按值比较」，**只**作用于期望判定，`leqAbs` 的既有语义一字不动。
+ *
+ * 只加严**对象槽**这一种形态（顶层字面量走 `leq.ts` 的 lit 项比较、数组 / 元组
+ * 元素走 element 比较，两处本来就比值）⇒ 不影响既有判定口径。
+ */
+function expectedSlotLiteralsHold(actual: Abs, expected: Abs, depth: number): boolean {
+  if (depth > 16) return true;
+  const e = expected.shape;
+  if (e.k !== "obj") return true;
+  const a = actual.shape;
+  const aSlots =
+    a.k === "obj"
+      ? a.slots
+      : a.k === "brand" && a.shape.shape.k === "obj"
+        ? a.shape.shape.slots
+        : undefined;
+  // 实际值不是对象 ⇒ 形态不合（由 `leqAbs` 判定），此处不重复加严
+  if (!aSlots) return true;
+  for (const [key, slot] of Object.entries(e.slots)) {
+    const srcSlot = aSlots[key];
+    // 缺槽 ⇒ 缺槽判定归 `leqAbs`（optional 槽不算缺失）
+    if (!srcSlot) continue;
+    // 期望槽是**字面量** ⇒ 实际槽必须逐值相等（core 的对象槽捷径会放过）
+    const ev = litValue(slot.value);
+    if (ev.ok) {
+      const av = litValue(srcSlot.value);
+      // 实际槽不是字面量 ⇒ core 的捷径本就没走（`leqAbs` 已另行判定），不重复加严
+      if (!av.ok) continue;
+      if (!sameLiteralValue(av.value, ev.value)) return false;
+      continue;
+    }
+    // 期望槽是**对象** ⇒ 递归（嵌套对象同样漏网）
+    if (!expectedSlotLiteralsHold(srcSlot.value, slot.value, depth + 1)) return false;
+  }
+  return true;
+}
+
+/** 字面量同一性（SameValue 口径：`NaN` 与 `NaN` 同一，`-0` 与 `0` 不同）。 */
+function sameLiteralValue(a: unknown, b: unknown): boolean {
+  return Object.is(a, b);
+}
+
+/**
+ * 实际值是否满足期望（结构面 leqAbs + 对象槽字面量严格面 + 值面谓词）。
  * 实际值不是字面量（unknown / 结构值）时**不**做值级判定（判不了 ⇒ 不满足）。
  */
 export function caseExpectedSatisfied(actual: Abs, expected: Abs): boolean {
   const pred = expected.pred;
-  if (!pred || pred.op === "true") return leqAbs(actual, expected).ok;
+  if (!pred || pred.op === "true") return expectedStructurallySatisfied(actual, expected);
   const anchored = anchorPredOnSelf(pred, expectedSelfIds(expected));
-  if (!anchored) return leqAbs(actual, expected).ok;
+  if (!anchored) return expectedStructurallySatisfied(actual, expected);
   const lv = litValue(actual);
-  if (!lv.ok) return leqAbs(actual, expected).ok;
+  if (!lv.ok) return expectedStructurallySatisfied(actual, expected);
   // bigint 字面量不在 core 域判定的标量子集内（判不了 ⇒ 不满足）
-  if (typeof lv.value === "bigint") return leqAbs(actual, expected).ok;
+  if (typeof lv.value === "bigint") return expectedStructurallySatisfied(actual, expected);
   const constraint: NudoConstraint = {
     prim: expectedPrim(expected),
     preds: [anchored],
   } as NudoConstraint;
   return literalMeetsConstraint(lv.value, constraint);
+}
+
+/** 期望的结构面判定：`leqAbs` + 对象槽字面量严格面（Bug 396）。 */
+function expectedStructurallySatisfied(actual: Abs, expected: Abs): boolean {
+  if (!leqAbs(actual, expected).ok) return false;
+  return expectedSlotLiteralsHold(actual, expected, 0);
 }
 
 /** 期望值的可读文本（带谓词）：`number (> 0)` / `number`。 */

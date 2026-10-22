@@ -17,7 +17,8 @@
  *
  * node 实测 ground truth：
  *   String(Object.create(null)) → TypeError（Cannot convert object to primitive）
- *   String({toString(){throw}}) → 用户 throw 传播（静态面记 may TypeError）
+ *   String({toString(){throw}}) → 用户 throw 传播（Bug 381 起钩子体真调用 ⇒
+ *     **定抛**（throws 面 = 用户的 Error），不再折 may TypeError）
  *   new Function(Symbol()) → TypeError（Cannot convert a Symbol value to a string）
  *   queueMicrotask(1/null/undefined/true/1n/Symbol()/{} ) → TypeError
  *   queueMicrotask(() => {}) / setTimeout(x, 0) → 不抛
@@ -92,12 +93,21 @@ describe("Bug 24: String(x) 补 ToPrimitive 校验", () => {
     );
     expect(isNever(coer.result)).toBe(false);
     expect(coer.effects).toContain("TypeError");
-    // {toString(){throw}}：ToPrimitive 可能抛（用户 coercer 体）——may
+    // {toString(){throw}}：Bug 381 起**钩子体真调用**（不再只探存在性）⇒
+    // 钩子体抛错**必然传播**（原生同款：用户的 Error 直接抛出，用户 try/catch
+    // 可捕）⇒ 结果 never + throws 面 = 用户的 Error（不再是 may TypeError
+    // 的抽象臂——旧 pin 记录的是「钩子体从不执行」时代的折法）。
     const obj = evalAbs(
       `export function f() { return String({ toString() { throw new Error("boom"); } }); }`,
     );
-    expect(obj.effects).toContain("TypeError");
-    expect(isNever(obj.result)).toBe(false);
+    expect(obj.effects).toEqual([]);
+    expect(isNever(obj.result)).toBe(true);
+    expect(
+      (obj.throws as { shape?: { k?: string; name?: string } })?.shape?.k,
+    ).toBe("brand");
+    expect(
+      (obj.throws as { shape?: { k?: string; name?: string } })?.shape?.name,
+    ).toBe("Error");
     // {a:1}：无自有 coercer → 走 Object.prototype.toString ⇒ 原生折
     // "[object Object]" **不抛**（node 实测 total）。Bug 331：ToString 面
     // 与 ToNumber 面分档——闭普通对象不记 may（此前与 Number(x) 抽象 obj

@@ -1047,7 +1047,12 @@ function checkSourceInner(
     );
     const budgetExplained =
       truncated.has(name) ||
-      g.symbolic?.conf === "opaque" ||
+      // Bug 389：`conf=opaque` 通常意味着「路径没覆盖」⇒ 已解释；但**因 env
+      // 门禁而 opaque**（源码声明了 `@nudo:env` 而那个 env 没解析出全局 ⇒
+      // 函数体 fail-closed）不是「已解释」——那正是「推断没成功」，唯一能提示
+      // 它的 `nudo:unknown-inference` 不能被吞（否则用户把 env 名写错的那一刻，
+      // 唯一的失败信号恰好消失）。
+      (g.symbolic?.conf === "opaque" && !g.envGated) ||
       (g.symbolic?.shape?.k === "sum" &&
         g.symbolic.shape.members.every((m) => m.shape.k === "unknown" || m.shape.k === "any"));
     const symbolicTrueUnknown =
@@ -1145,7 +1150,12 @@ function checkSourceInner(
 
     // generalize 的 symbolic 已同源求过 body——opaque 判定直接用其 conf
     // （fail-closed：不再重复 analyzeFn；求值失败面由 B 回落观测承担）
-    if (g.symbolic.conf === "opaque" && !truncated.has(name)) {
+    //
+    // Bug 389：**因 env 门禁而 opaque** 不报这条 info——门禁的含义是「那个 env
+    // 没解析出来，函数体没跑」⇒ 正确信号是 `nudo:unknown-inference`（warning，
+    // 「推断失败了」），不是「conf=opaque，加个 @nudo:case 或调用点」（把用户
+    // 引向错误方向）。
+    if (g.symbolic.conf === "opaque" && !truncated.has(name) && !g.envGated) {
       issues.push({
         severity: "info",
         code: DIAG.opaqueResult,

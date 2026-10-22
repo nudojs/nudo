@@ -10,16 +10,55 @@
  *
  * Bug 479：`tsType` 携带**源码里的 TS 声明类型文本**（剥除 pass 留下的旁路
  * `nudoTypeText`）——`.ts` 源的形参据此不是「无约束 any」。
+ *
+ * Bug 388：`kind: "pattern"` 同时覆盖 `ObjectPattern` 与 `ArrayPattern`
+ * ⇒ 模型层**记录模式种类**（`patternKind`），渲染层（签名面）与执法层
+ * （契约寻址）才能区分「按属性键寻址」与「按下标寻址」。
+ *
+ * Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参（Babel AST 里
+ * 就是 `Identifier("this")`）⇒ 不进形参表、不占实参位。
+ *
+ * Bug 399：默认形参**可省略** ⇒ 形参表带 `optional` 标记（消费侧据此算
+ * 必选元数，不再靠名字后缀猜）。
  */
 
 export type FormalParam =
-  | { kind: "id"; name: string; index: number; tsType?: string }
-  | { kind: "default"; name: string; index: number; tsType?: string }
-  | { kind: "rest"; name: string; display: string; index: number; tsType?: string }
+  | {
+      kind: "id";
+      name: string;
+      index: number;
+      tsType?: string;
+      /** 该形参位可省略（Bug 399）：true = 不计入必选元数 */
+      optional?: boolean;
+    }
+  | {
+      kind: "default";
+      name: string;
+      index: number;
+      tsType?: string;
+      /** 默认形参恒可省略（Bug 399） */
+      optional?: boolean;
+    }
+  | {
+      kind: "rest";
+      name: string;
+      display: string;
+      index: number;
+      tsType?: string;
+      /** rest 形参恒可省略（Bug 399） */
+      optional?: boolean;
+    }
   | {
       kind: "pattern";
       /** 求值/签名占位名（generalize 与 dts 用） */
       placeholder: string;
+      /**
+       * 模式种类（Bug 388）：
+       * - `"object"` = 对象解构（契约面按**属性键**寻址）
+       * - `"array"` = 数组解构（契约面按**元素下标**寻址）
+       * 缺省 = `"object"`（历史口径）。
+       */
+      patternKind?: "object" | "array";
       /** 顶层可表达绑定名（侧车契约面） */
       bound: string[];
       /**
@@ -27,6 +66,11 @@ export type FormalParam =
        * 投影必须用属性键 a（Abs 对象只有 slot a）。
        */
       propKey: Record<string, string>;
+      /**
+       * 数组解构：绑定名 → **元素下标**（`[a, b]` ⇒ a→0、b→1）。
+       * 对象解构不用这张表（对象解构按属性键寻址，见 `propKey`）。
+       */
+      boundIndex?: Record<string, number>;
       /** 仅嵌套内出现、顶层不可单独表达的名（降级用） */
       nested: string[];
       /**
@@ -37,6 +81,8 @@ export type FormalParam =
       index: number;
       /** TS 声明类型文本（.ts 源；缺省 = 无注解） */
       tsType?: string;
+      /** 带默认值的解构形参（`{ a } = {}`）可省略（Bug 399） */
+      optional?: boolean;
     };
 
 type AstParam = {
@@ -73,6 +119,11 @@ function collectPatternNames(
   prefix: string[],
   /** #137：嵌套点路径契约面（'card.grade'）收集袋 */
   nestedPaths: string[],
+  /**
+   * Bug 388：数组解构的**元素下标**表（绑定名 → 下标）。
+   * 只在**顶层**数组模式（depth === 0）填——嵌套数组的元素不是顶层契约面。
+   */
+  boundIndex: Record<string, number>,
 ): void {
   if (!p) return;
   if (p.type === "Identifier" && p.name) {
@@ -82,18 +133,18 @@ function collectPatternNames(
   }
   if (p.type === "AssignmentPattern") {
     // #137：默认值包装层不是路径段——.left 同 prefix 直通
-    collectPatternNames(p.left as AstParam, top, nested, depth, propKey, prefix, nestedPaths);
+    collectPatternNames(p.left as AstParam, top, nested, depth, propKey, prefix, nestedPaths, boundIndex);
     return;
   }
   if (p.type === "RestElement") {
-    collectPatternNames(p.argument as AstParam, top, nested, depth, propKey, prefix, nestedPaths);
+    collectPatternNames(p.argument as AstParam, top, nested, depth, propKey, prefix, nestedPaths, boundIndex);
     return;
   }
   if (p.type === "ObjectPattern") {
     for (const prop of p.properties ?? []) {
       // RestElement（Babel：{a, ...rest}）字段是 argument，不是 value/key
       if (prop.type === "RestElement" || prop.argument) {
-        collectPatternNames(prop.argument as AstParam, top, nested, depth, propKey, prefix, nestedPaths);
+        collectPatternNames(prop.argument as AstParam, top, nested, depth, propKey, prefix, nestedPaths, boundIndex);
         continue;
       }
       const keyName =
@@ -163,9 +214,10 @@ function collectPatternNames(
             propKey,
             prefix.concat(keyName ? [keyName] : []),
             nestedPaths,
+            boundIndex,
           );
         } else {
-          collectPatternNames(v, top, nested, depth, propKey, prefix, nestedPaths);
+          collectPatternNames(v, top, nested, depth, propKey, prefix, nestedPaths, boundIndex);
         }
       } else if (v.type === "ObjectPattern" || v.type === "ArrayPattern") {
         // 嵌套 pattern：键规则 + 带 prefix P+[K] 递归（depth+1，内层名 → nested）
@@ -178,25 +230,35 @@ function collectPatternNames(
           propKey,
           prefix.concat(keyName ? [keyName] : []),
           nestedPaths,
+          boundIndex,
         );
       } else {
-        collectPatternNames(v, top, nested, depth + 1, propKey, prefix, nestedPaths);
+        collectPatternNames(v, top, nested, depth + 1, propKey, prefix, nestedPaths, boundIndex);
       }
     }
     return;
   }
   if (p.type === "ArrayPattern") {
-    for (const el of p.elements ?? []) {
+    // Bug 388：数组解构的元素是**下标**寻址，不是属性键 ⇒ 记下标表
+    const elems = p.elements ?? [];
+    for (let i = 0; i < elems.length; i++) {
+      const el = elems[i];
       if (!el) continue;
       // #137：数组元素无数字段、不做路径寻址——元素子树重置 prefix（fail-closed）
       if (el.type === "Identifier" && el.name) {
-        if (depth === 0) top.push(el.name);
-        else nested.push(el.name);
+        if (depth === 0) {
+          top.push(el.name);
+          boundIndex[el.name] = i;
+        } else nested.push(el.name);
       } else if (el.type === "AssignmentPattern") {
         // `[a = 1]` 的 a 仍是本层绑定名
-        collectPatternNames(el, top, nested, depth, propKey, [], nestedPaths);
+        const left = el.left as AstParam | undefined;
+        if (depth === 0 && left?.type === "Identifier" && left.name) {
+          boundIndex[left.name] = i;
+        }
+        collectPatternNames(el, top, nested, depth, propKey, [], nestedPaths, boundIndex);
       } else {
-        collectPatternNames(el, top, nested, depth + 1, propKey, [], nestedPaths);
+        collectPatternNames(el, top, nested, depth + 1, propKey, [], nestedPaths, boundIndex);
       }
     }
   }
@@ -213,32 +275,59 @@ function tsTypeOf(p: AstParam | undefined): { tsType?: string } {
 
 export function formalParamsFromNodes(params: AstParam[] | undefined | null): FormalParam[] {
   const list = params ?? [];
-  return list.map((p, index): FormalParam => {
+  const out: FormalParam[] = [];
+  for (const p of list) {
+    // index = **形参表内**的位置（与 formalParamDisplayNames / generalize 的
+    // params 数组同序）——`this` 标注被跳过后，后续形参的位置要跟着前移。
+    const index = out.length;
     if (p?.type === "Identifier" && p.name) {
-      return { kind: "id", name: p.name, index, ...tsTypeOf(p) };
+      /**
+       * Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——
+       * Babel 的 TS 插件把它解析成普通 `Identifier("this")`（不是
+       * TSParameterProperty），与真形参在 AST 层无法区分。
+       *
+       * 判据用标识符文本即可：`this` 是 JS 保留字，不可能有同名真形参
+       * （`function f(this) {}` 是语法错误）⇒ 名字是 `this` ⇒ 接收者标注。
+       * 与 harvester 路径（Bug 794，TypeScript 编译器 API）同口径。
+       *
+       * 跳过 ⇒ 不进形参表、不占实参位（形参表少一槽 ⇒ dts / zod /
+       * standard / case 四个产物面同时对齐）。
+       */
+      if (p.name === "this") continue;
+      out.push({ kind: "id", name: p.name, index, optional: false, ...tsTypeOf(p) });
+      continue;
     }
     if (p?.type === "AssignmentPattern") {
       const left = p.left as AstParam | undefined;
       if (left?.type === "Identifier" && left.name) {
         // 默认值的类型注解挂在 left（`b: number = 1`）
-        return { kind: "default", name: left.name, index, ...tsTypeOf(left) };
+        // Bug 399：默认形参可省略 ⇒ optional 标记
+        out.push({ kind: "default", name: left.name, index, optional: true, ...tsTypeOf(left) });
+        continue;
       }
       // 默认 + pattern：按 pattern 处理，占位 `_p{i}`
       const top: string[] = [];
       const nested: string[] = [];
       const propKey: Record<string, string> = {};
       const nestedPaths: string[] = [];
-      if (left) collectPatternNames(left, top, nested, 0, propKey, [], nestedPaths);
-      return {
+      const boundIndex: Record<string, number> = {};
+      if (left) collectPatternNames(left, top, nested, 0, propKey, [], nestedPaths, boundIndex);
+      out.push({
         kind: "pattern",
         placeholder: `_p${index}`,
+        // Bug 388：默认 + pattern 时模式种类看 left（`[a] = []` ⇒ array）
+        patternKind: left?.type === "ArrayPattern" ? "array" : "object",
         bound: top,
         propKey,
+        boundIndex,
         nested,
         nestedPaths,
         index,
+        // Bug 399：带默认值的解构形参可省略
+        optional: true,
         ...tsTypeOf(p),
-      };
+      });
+      continue;
     }
     if (p?.type === "RestElement") {
       const arg = p.argument as AstParam | undefined;
@@ -249,30 +338,40 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
       // 旧实现只读内层 ⇒ rest 形参恒丢声明类型（Bug 479 的 rest 缺口）。
       // 两处都读：先节点（当前 Babel 口径），再内层（老口径兜底）。
       const tsType = tsTypeOf(p);
-      return {
+      out.push({
         kind: "rest",
         name,
         display: `...${name}`,
         index,
+        // Bug 399：rest 形参恒可省略
+        optional: true,
         ...(tsType.tsType ? tsType : tsTypeOf(arg)),
-      };
+      });
+      continue;
     }
     const top: string[] = [];
     const nested: string[] = [];
     const propKey: Record<string, string> = {};
     const nestedPaths: string[] = [];
-    if (p) collectPatternNames(p, top, nested, 0, propKey, [], nestedPaths);
-    return {
+    const boundIndex: Record<string, number> = {};
+    if (p) collectPatternNames(p, top, nested, 0, propKey, [], nestedPaths, boundIndex);
+    out.push({
       kind: "pattern",
       placeholder: `_p${index}`,
+      // Bug 388：模式种类（对象解构按属性键寻址 / 数组解构按下标寻址）
+      patternKind: p?.type === "ArrayPattern" ? "array" : "object",
       bound: top,
       propKey,
+      boundIndex,
       nested,
       nestedPaths,
       index,
+      // 无默认值的解构形参必填
+      optional: false,
       ...tsTypeOf(p),
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /** 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） */
@@ -294,6 +393,9 @@ export function formalParamDisplayNames(formals: FormalParam[]): string[] {
  * 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`，
  * 不落回求值占位 `_p0`——否则读签名的人以为没有契约。
  * 求值/内部键仍用 formalParamDisplayNames（`_p0`）。
+ *
+ * Bug 388：数组解构渲染为 `[ x, y ]`（与源码的解构形态一致）——
+ * 此前对象/数组解构一律渲染 `{ … }`，数组解构的签名面**看得出是对象**。
  */
 export function formalParamSignatureNames(formals: FormalParam[]): string[] {
   return formals.map((f) => {
@@ -304,7 +406,11 @@ export function formalParamSignatureNames(formals: FormalParam[]): string[] {
       case "rest":
         return f.display;
       case "pattern":
-        return f.bound.length > 0 ? `{ ${f.bound.join(", ")} }` : f.placeholder;
+        if (f.bound.length === 0) return f.placeholder;
+        // Bug 388：数组解构按下标寻址 ⇒ 渲染成数组形态
+        return f.patternKind === "array"
+          ? `[ ${f.bound.join(", ")} ]`
+          : `{ ${f.bound.join(", ")} }`;
     }
   });
 }
@@ -337,12 +443,24 @@ export function contractParamNameSet(formals: FormalParam[]): Set<string> {
  *   多段（field 为展示用点连接串）。平铺精确匹配必须先于任何点路径解析：
  *   源键 'a.b' 与路径 'a.b' 不可歧义——平铺胜。
  * - 未命中 → undefined（C4.5 param-mismatch）
+ *
+ * Bug 388 / 392：命中**数组解构**的顶层 bound 名时，契约面按**元素下标**
+ * 寻址（`[a, b]` 的 `a` 是下标 0 的元素），**不是**属性键 ⇒ 返回
+ * `fieldIndex`（下标）且**不给** `fieldPath`（fieldPath 是对象 slot 投影路径，
+ * 对数组无意义）。执法侧按 `fieldIndex` 投影实参的元素。
  */
 export function locateContractParam(
   formals: FormalParam[],
   contractName: string,
 ):
-  | { index: number; field?: string; fieldPath?: string[]; rest?: boolean }
+  | {
+      index: number;
+      field?: string;
+      fieldPath?: string[];
+      rest?: boolean;
+      /** 数组解构：契约命中的**元素下标**（对象解构无此字段） */
+      fieldIndex?: number;
+    }
   | undefined {
   for (const f of formals) {
     if (f.kind === "id" || f.kind === "default") {
@@ -356,6 +474,13 @@ export function locateContractParam(
         return { index: f.index };
       }
       if (f.bound.includes(contractName)) {
+        if (f.patternKind === "array") {
+          // 数组解构：按下标寻址（不是属性键）——field 只作展示名
+          const fieldIndex = f.boundIndex?.[contractName];
+          return fieldIndex === undefined
+            ? { index: f.index, field: contractName }
+            : { index: f.index, field: contractName, fieldIndex };
+        }
         // rename `{a: b}`：投影必须用属性键 a，不是绑定名 b
         const field = f.propKey?.[contractName] ?? contractName;
         return { index: f.index, field, fieldPath: [field] };

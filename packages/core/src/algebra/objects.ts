@@ -10,8 +10,13 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
-import { enumOwnKeys } from "./builtins/invariants.ts";
+import { enumOwnKeys, setPropFlags, getPropFlags } from "./builtins/invariants.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
+import { getFnImpl, isAbsApplyResult } from "./abs-fn.ts";
+import { recordMayThrow, formatThrowsAbs } from "./may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { enterCall, exitCall, callBudgetKey, stableCallId, truncatedAbs } from "./call-budget.ts";
+import { classInstanceInnerOf, getEvalClass } from "./exec/class-registry.ts";
 
 /**
  * Bug 84：internal 标记私有槽（私有字段 "#x" 混淆键落实例内层 obj）。
@@ -50,15 +55,255 @@ export function canonicalArrayIndex(v: unknown): number | undefined {
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Bug 381 / 383：用户转换钩子（ToPrimitive / ToPropertyKey / JSON toJSON）
+// 的**调用面**（`$invoke` 基建）——单一事实源，381 与 383 共用。
+//
+// 修前：隐式强转路径只对钩子槽做**存在性判定**（isNullProtoWithoutCoercer
+// / template.ts 的「钩子存在 → 不折默认标签」闸门）⇒ 钩子体**从不执行** ⇒
+// 钩子体的副作用（计数器 / 捕获变量写）与它的 throw 域一并丢失 ⇒ 引擎把
+// 「钩子体确定抛错」折成**确定不抛**（假阴性）。
+//
+// 修后：钩子体**真调用**——副作用与 throw 域随之而来（钩子体抛错 → NudoThrow
+// 传播 → 用户 try/catch 可吸收 ⇒ 原生同款）。值面仍保守（抽象）：钩子返回值
+// 不参与值域折叠（除非调用点显式取用），保持 sound。
+// ---------------------------------------------------------------------------
+
+/** 用户转换钩子名（@@toPrimitive 的 symbol 键按 Bug 82 投影为 "@@toPrimitive" 槽） */
+export type CoercionHookName = "valueOf" | "toString" | "@@toPrimitive" | "toJSON";
+
 /**
- * ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、
+ * ToPrimitive 的 hint——决定 OrdinaryToPrimitive 的钩子顺序：
+ * - "default" / "number"：valueOf 先、toString 后（`+` 运算符 / Number()）
+ * - "string"：toString 先、valueOf 后（模板 / String() / ToPropertyKey）
+ */
+export type CoercionHint = "default" | "string" | "number";
+
+/** 钩子调用面（拿到即可调用：副作用 + throw 域随之而来） */
+export type CoercionHook = {
+  /** 钩子名（诊断用） */
+  name: CoercionHookName;
+  /** 调用钩子体（this = 接收者；args = 钩子实参） */
+  call: (args: Abs[]) => Abs;
+};
+
+/** 钩子槽探测深度上限（原型链兜底——防病态链） */
+const HOOK_LOOKUP_MAX_DEPTH = 16;
+
+/**
+ * obj 接收者上的钩子槽探测（自有槽 → 原型链 protoTable）。
+ * 返回 undefined = 该名上没有钩子槽。
+ */
+function hookSlotAbs(recv: Abs, name: string, depth: number): Abs | undefined {
+  if (depth > HOOK_LOOKUP_MAX_DEPTH) return undefined;
+  const s = recv.shape;
+  if (s.k !== "obj") return undefined;
+  const slots = s.slots;
+  if (slots && Object.prototype.hasOwnProperty.call(slots, name)) {
+    const v = slots[name]!.value;
+    if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+    return undefined;
+  }
+  const proto = getProtoAbs(recv);
+  if (proto && proto !== recv) return hookSlotAbs(proto, name, depth + 1);
+  return undefined;
+}
+
+/** 钩子值是否为可调用 fn（对象字面量方法 / 方法型函数表达式 → $fnVal Abs） */
+function isCallableHookAbs(v: Abs | undefined): boolean {
+  return !!v && v.shape.k === "fn" && getFnImpl(v)?.apply !== undefined;
+}
+
+/**
+ * 用户转换钩子的调用面探测（obj 自有槽 → 原型链 → 类实例内层 → 类原型方法）。
+ * 返回 undefined = 接收者没有该钩子（走默认 ToPrimitive）。
+ */
+export function coercionHookOf(recv: Abs, name: CoercionHookName): CoercionHook | undefined {
+  if (recv.shape.k === "obj") {
+    const v = hookSlotAbs(recv, name, 0);
+    if (v && isCallableHookAbs(v)) {
+      return { name, call: (args) => callHookFn(v, args, recv, name) };
+    }
+    return undefined;
+  }
+  if (recv.shape.k === "brand") {
+    // 类实例：内层闭 obj 的自有槽 → 类原型方法（spec.methods）
+    const inner = classInstanceInnerOf(recv);
+    if (inner) {
+      const v = hookSlotAbs(inner, name, 0);
+      if (v && isCallableHookAbs(v)) {
+        return { name, call: (args) => callHookFn(v, args, recv, name) };
+      }
+    }
+    const spec = getEvalClass(recv.shape.name);
+    const m = spec?.methods?.[name];
+    if (m) return { name, call: (args) => m(recv, ...args) };
+  }
+  return undefined;
+}
+
+/**
+ * 钩子体调用（fn Abs → apply 派发）。
+ * - bindThis（对象方法 / 类方法）：receiver 经首参注入（与 $call 同口径）
+ * - throws 通道：apply 返回 AbsApplyResult 时按 $call 的 routeApplyThrows
+ *   口径路由（always-throw → NudoThrow；may-throw → 记 may-throw）
+ * - 调用预算：enterCall/exitCall（递归自调用按 cycle/depth 截断，不炸栈）
+ */
+function callHookFn(fnAbs: Abs, args: Abs[], thisVal: Abs, name: string): Abs {
+  const impl = getFnImpl(fnAbs);
+  if (!impl || !impl.apply) return unknown;
+  let a = args;
+  let t: Abs | undefined = thisVal;
+  if (impl.bindThis) {
+    a = [thisVal, ...args];
+    t = undefined;
+  }
+  const key = callBudgetKey("coerce-hook", stableCallId(fnAbs as object), a);
+  if (!enterCall(key, `coercion hook ${name}`)) return truncatedAbs();
+  try {
+    const r = impl.apply(a, t);
+    if (isAbsApplyResult(r)) {
+      if (r.throws.shape.k !== "never") {
+        if (r.abs.shape.k === "never") throw new NudoThrow(r.throws);
+        recordMayThrow({
+          kind: formatThrowsAbs(r.throws) ?? "Error",
+          cause: `user coercion hook ${name} may throw`,
+        });
+      }
+      return r.abs;
+    }
+    return r;
+  } finally {
+    exitCall();
+  }
+}
+
+/** 钩子返回值是否为原语（ToPrimitive 的「是原语」判定） */
+function isPrimitiveResult(r: Abs): boolean {
+  const t = r.term;
+  if (t?.op === "lit") {
+    const v = t.value;
+    return v === null || v === undefined || (typeof v !== "object" && typeof v !== "function");
+  }
+  return r.shape.k === "prim";
+}
+
+/**
+ * ToPrimitive 的**钩子调用面**（Bug 381）：按 hint 顺序调用用户的
+ * @@toPrimitive / valueOf / toString 钩子。
+ * - 返回 undefined = 没有用户钩子（走默认 ToPrimitive：Object.prototype 的
+ *   valueOf/toString 恒 total 且无副作用 ⇒ 不调用）
+ * - 返回值非原语（钩子返回对象）→ 继续试下一个钩子（原生同款）；全部非原语
+ *   → undefined（调用方按「不可判」保守）
+ */
+export function invokeToPrimitiveHook(recv: Abs, hint: CoercionHint): Abs | undefined {
+  // 原生 ToPrimitive 步骤 1：@@toPrimitive 优先（实参 = hint 字符串）
+  const exotic = coercionHookOf(recv, "@@toPrimitive");
+  if (exotic) {
+    const r = exotic.call([strLit(hint)]);
+    return isPrimitiveResult(r) ? r : undefined;
+  }
+  if (hint === "string") {
+    // OrdinaryToPrimitive(string)：toString 先。**缺省** toString
+    // （Object.prototype.toString）恒返回原语 ⇒ 原生**不再**回退 valueOf
+    // （`String({valueOf(){n++}})` 原生不调 valueOf）。
+    const h = coercionHookOf(recv, "toString");
+    if (!h) return undefined;
+    const r = h.call([]);
+    if (isPrimitiveResult(r)) return r;
+    // 用户 toString 返回非原语 → 原生回退 valueOf
+    const hv = coercionHookOf(recv, "valueOf");
+    if (!hv) return undefined;
+    const rv = hv.call([]);
+    return isPrimitiveResult(rv) ? rv : undefined;
+  }
+  // OrdinaryToPrimitive(number/default)：valueOf 先。缺省 valueOf 返回**对象**
+  // （非原语）⇒ 继续试 toString（原生同款次序）。
+  const hv = coercionHookOf(recv, "valueOf");
+  if (hv) {
+    const rv = hv.call([]);
+    if (isPrimitiveResult(rv)) return rv;
+  }
+  const h = coercionHookOf(recv, "toString");
+  if (!h) return undefined;
+  const r = h.call([]);
+  return isPrimitiveResult(r) ? r : undefined;
+}
+
+/**
+ * 钩子调用（Bug 381 的 `$invoke` 面）：返回 undefined = 无该钩子。
+ * 钩子体抛错 → NudoThrow 传播（调用点的 try/catch 可吸收 ⇒ 原生同款）。
+ */
+export function invokeCoercionHook(
+  recv: Abs,
+  name: CoercionHookName,
+  args: Abs[] = [],
+): Abs | undefined {
+  const hook = coercionHookOf(recv, name);
+  if (!hook) return undefined;
+  return hook.call(args);
+}
+
+/**
+ * 默认 Object.prototype.toString 标签（ToString 缺省面）：
+ * "[object Object]"（@@toStringTag 覆写优先——与 template.ts 同口径）。
+ * 仅闭 obj 走此面（open/index 形不可判 → undefined）。
+ */
+function defaultObjectTagOf(a: Abs): string | undefined {
+  if (a.shape.k !== "obj") return undefined;
+  const s = a.shape as { slots?: Record<string, Slot>; open?: boolean; index?: unknown };
+  if (s.open || s.index) return undefined;
+  const acc = lookupObjAccessor(a, "@@toStringTag");
+  if (acc?.get) {
+    const lr = litValue(acc.get(a));
+    return lr.ok && typeof lr.value === "string" ? lr.value : undefined;
+  }
+  const slots = s.slots;
+  if (slots && Object.prototype.hasOwnProperty.call(slots, "@@toStringTag")) {
+    const lr = litValue(slots["@@toStringTag"]!.value);
+    return lr.ok && typeof lr.value === "string" ? lr.value : undefined;
+  }
+  return "Object";
+}
+
+/**
+ * ES ToPropertyKey 的折叠：null→"null"、undefined→"undefined"、
  * true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。
  * 必须看 term——litValue 把 lit(undefined) 吞成哨兵 undefined。
  * 抽象 / symbol 返回 undefined（调用方保守处理）。
+ *
+ * Bug 383：**对象键**也走 ToPropertyKey（ToPrimitive(string) → ToString）——
+ * 钩子**真调用**（与 Bug 381 的钩子调用面同口径：副作用与 throw 域随之而来）。
+ * 修前只认字面量 term ⇒ 对象键落「抽象键」臂 ⇒ 写被静默丢弃、键的强制
+ * 转换副作用全丢。
  */
 export function propertyKeyOf(a: Abs | undefined): string | undefined {
   if (a === undefined) return undefined;
-  if (a.term?.op !== "lit") return undefined;
+  // 非 Abs 实参（部分调用点传裸 JS 值——如 $del 的键）→ 不可判，保守返回
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return undefined;
+  if (a.term?.op !== "lit") {
+    // 对象键（obj / brand 接收者）→ ToPropertyKey；其余（抽象 var/app 等）
+    // 不可判 → undefined（调用方按抽象键处理）
+    if (a.shape.k !== "obj" && a.shape.k !== "brand") return undefined;
+    // 抽象 term（var / app）不是具体对象 → 不得调钩子（不可判）
+    if (a.term?.op === "var" || a.term?.op === "app") return undefined;
+    // ToPrimitive(string) → ToString（钩子真调用）
+    const prim = invokeToPrimitiveHook(a, "string");
+    if (prim !== undefined) {
+      const lv = litValue(prim);
+      if (!lv.ok) return undefined;
+      const v = lv.value;
+      if (typeof v === "symbol") return undefined;
+      if (v === null) return "null";
+      if (v === undefined) return "undefined";
+      if (typeof v === "object" || typeof v === "function") return undefined;
+      return String(v);
+    }
+    // 无用户钩子 → 默认 Object.prototype.toString（"[object Object]"）
+    const tag = defaultObjectTagOf(a);
+    if (tag === undefined) return undefined;
+    return `[object ${tag}]`;
+  }
   const v = a.term.value;
   if (typeof v === "symbol") return undefined;
   return String(v);
@@ -154,17 +399,71 @@ export function setInstanceProto(o: Abs, proto: Abs): void {
 }
 
 /**
+ * 不可变原型对象（原生 ImmutablePrototypeExoticObject）：[[SetPrototypeOf]]
+ * 一律拒绝（抛 TypeError / Reflect 返 false）。
+ *
+ * 规范 + V8 实测（node）：**仅 `Object.prototype`** 是不可变原型——
+ * `Object.setPrototypeOf(Object.prototype, {})` → TypeError: Immutable
+ * prototype object 'Object.prototype' cannot have their prototype set；
+ * 其余内建原型（Array/Function/String/… .prototype）**可**改。
+ *
+ * 判定按 brand 名（与 builtins/ctor.ts 的 isObjectProtoBrand 同口径——
+ * Object.prototype 单例的 brand 名恒为 "Object.prototype"）。
+ */
+export function isImmutableProtoAbs(o: Abs): boolean {
+  const s = o.shape;
+  return s.k === "brand" && s.name === "Object.prototype";
+}
+
+/**
+ * 原型链环检测（Bug 385）：沿**新原型**的 [[Prototype]] 链上溯，若已到达
+ * `target` ⇒ 设定会建出活原型环 ⇒ 原生拒绝（`Object.setPrototypeOf` 抛
+ * TypeError: Cyclic __proto__ value；`Reflect.setPrototypeOf` 返 false）。
+ *
+ * 走 protoTable（obj 接收者）+ instanceProtoTable（brand 接收者的
+ * [[Prototype]]）——两者都是 setPrototypeOf / 构造期记的真实原型边。
+ */
+export function protoChainContains(proto: Abs, target: Abs): boolean {
+  const seen = new Set<object>();
+  let cur: Abs | undefined = proto;
+  while (cur && !seen.has(cur as object)) {
+    if (cur === target) return true;
+    seen.add(cur as object);
+    cur = getProtoAbs(cur) ?? getInstanceProto(cur);
+  }
+  return false;
+}
+
+/**
  * 对象字面量非计算 `__proto__: v` / `Object.setPrototypeOf(o, v)` / `o.__proto__ = v`
  * 的原型设定（保守建模）：
  * - v 为 null → null-proto（无 Object.prototype 回退）
  * - v 为 object → 保守 open（继承读不折 exact undefined；原型细节不建模）
  * - v 为 primitive → 原生忽略（对象字面量）；setter 路径由调用方决定是否 TypeError
+ *
+ * Bug 385 / 386：**不可变原型**（Object.prototype）与**原型环**在写入前拒绝
+ * （原生 [[SetPrototypeOf]] 返 false / Object.setPrototypeOf 抛 TypeError）——
+ * 引擎此前**静默接受**非法写入并建出 native 不存在的活原型环（后续所有原型
+ * 链观察都跑在环上，产出与 native 不可比的值）。
  */
 export function setProtoAbs(o: Abs, proto: Abs): Abs {
   const pvR = litValue(proto);
   const pv = pvR.ok ? pvR.value : undefined;
   if (pv === null) return markNullProtoObj(o);
   if (proto.term?.op === "lit" && (pv === undefined || typeof pv !== "object")) {
+    return o;
+  }
+  // Bug 386：不可变原型对象——[[SetPrototypeOf]] 一律拒绝（不写、不改标记）
+  if (isImmutableProtoAbs(o)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "Object.setPrototypeOf on immutable prototype object (Object.prototype)",
+    });
+    return o;
+  }
+  // Bug 385：原型环——新原型链上溯已含 o ⇒ 拒绝建环
+  if (protoChainContains(proto, o)) {
+    recordMayThrow({ kind: "TypeError", cause: "Object.setPrototypeOf would create a prototype cycle" });
     return o;
   }
   if (isObj(o)) {
@@ -678,13 +977,46 @@ export function isNullProtoObj(o: Abs): boolean {
   return nullProtoMarks.has(o as object);
 }
 
-/** 闭 null-proto 对象且无自有 ToPrimitive coercer（toString / valueOf /
+/**
+ * ToPrimitive 前置闸门（Bug 381）：**null-proto 无 coercer 判定** +
+ * **用户转换钩子真调用**。
+ *
+ * 修前本函数只探**存在性**（钩子槽在不在）⇒ 钩子体从不执行 ⇒ 钩子的副作用
+ * 与 throw 域一并丢失（Bug 381：`valueOfCounter() => 0`；钩子体确定抛错被
+ * 折成确定 `no-throw`）。修后按 hint "default"（`+` 运算符 / Number() 的
+ * OrdinaryToPrimitive 口径：valueOf 先、toString 后）**调用一次**钩子：
+ * 副作用发生；钩子体抛错 → NudoThrow 传播（用户 try/catch 可吸收 ⇒ 原生同款）。
+ *
+ * 调用点（既有 import 面不变）：
+ * - arithmetic/addsub.ts 的 `+` 臂（两个操作数各一次 ⇒ `o + o` 调两次，与原生一致）
+ * - builtins/global.ts 的 String() 面
+ * - template.ts 的 concatString 走**纯判定**版（同一次强转只调一次钩子）
+ */
+export function isNullProtoWithoutCoercer(a: Abs): boolean {
+  if (a.shape.k === "obj" && isNullProtoObj(a) && isNullProtoWithoutCoercerSlot(a)) {
+    // null-proto 且**无**自有 coercer → ToPrimitive 无路可走 ⇒ 定抛
+    // TypeError（原生同款）
+    return true;
+  }
+  // 非 null-proto（null-proto 但**有** coercer / 普通对象 / brand）：按
+  // ToPrimitive(default) 调一次用户钩子（副作用 + throw 域）
+  invokeToPrimitiveHook(a, "default");
+  return false;
+}
+
+/**
+ * 闭 null-proto 对象且无自有 ToPrimitive coercer（toString / valueOf /
  *  @@toPrimitive 槽——symbol 键写按 "@@X" 投影落地，Bug 73）→ ToPrimitive
  * 无 coercer 可走，原生定抛 TypeError（"Cannot convert object to primitive
  * value"）。open / index 形未知成员可能含 coercer，不得判缺（返回 false 落
  * 上层 may）。Bug 24（global.ts String()）同源；供 arithmetic/template 的
- * `+` 拼接臂复用。 */
-export function isNullProtoWithoutCoercer(a: Abs): boolean {
+ * `+` 拼接臂复用。
+ *
+ * **纯判定**（不调用任何钩子）——Bug 381：钩子调用面与本判定拆开，
+ * `concatString` 等「已在别处做过 ToPrimitive」的调用点用本函数（避免同一
+ * 次强转重复调用钩子：原生每次 ToPrimitive 只调一次钩子）。
+ */
+export function isNullProtoWithoutCoercerSlot(a: Abs): boolean {
   if (a.shape.k !== "obj" || !isNullProtoObj(a)) return false;
   const so = a.shape as { open?: boolean; index?: unknown; slots?: Record<string, unknown> };
   if (so.open || so.index) return false;
@@ -697,4 +1029,36 @@ export function isNullProtoWithoutCoercer(a: Abs): boolean {
 export function migrateNullProto(from: Abs, to: Abs): Abs {
   if (nullProtoMarks.has(from as object)) nullProtoMarks.set(to as object, true);
   return to;
+}
+
+// ---------------------------------------------------------------------------
+// Bug 383：**自有键集不完备**标记（抽象键写的诚实面）
+//
+// 修前：计算键不可判（对象键 / 抽象键）时，写被**静默丢弃**，接收者只被
+// 标 `open`——而 `Object.keys` / `Object.values` / `Object.entries` 仍折
+// **exact 空元组**（自信的确切错值：native `Object.keys(o)` = ["[object
+// Object]"] vs 引擎 []）。
+//
+// 修后：抽象键写同时打上「键集不完备」标记（Bug 326 的同一标记位——键家族
+// 据此折 partial，不得折 exact 空元组）。标记位与判定**单一事实源**放在
+// 本模块（objects.ts 是叶子）：builtins/object/methods.ts 的键家族面与
+// exec/runtime/containers/arr-index.ts 的写面共用。
+// ---------------------------------------------------------------------------
+
+/** 「自有键集不完备」标记位（prop flags 侧表键——不进槽表，对枚举面零副作用） */
+const KEY_SET_OPEN_MARK = "@@nudoKeySetOpen";
+
+/** 标记「自有键集不完备」（键家族据此折 partial，不得折 exact 空元组） */
+export function markKeySetOpenAbs(o: Abs): Abs {
+  setPropFlags(o, KEY_SET_OPEN_MARK, {
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  return o;
+}
+
+/** 该对象的自有键集是否不完备（⇒ 键家族折 partial） */
+export function keySetIncompleteAbs(o: Abs): boolean {
+  return getPropFlags(o)?.has(KEY_SET_OPEN_MARK) === true;
 }

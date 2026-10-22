@@ -15,7 +15,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown, litValue } from "../abs.ts";
-import { getSlot, setSlot } from "../objects.ts";
+import { getSlot, setSlot, coercionHookOf } from "../objects.ts";
 import { undefAbs, applyCallbackAbs } from "../hof.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { getFnImpl } from "../abs-fn.ts";
@@ -776,6 +776,16 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       if (inner && brandName !== undefined && !classChainHasJsonUserFace(brandName)) {
         jsonArg = inner;
       }
+    }
+    // Bug 381：toJSON 步（原生 SerializeJSONProperty 步骤 2）——用户 toJSON
+    // 钩子**真调用**（与 Bug 381 的钩子调用面同口径）：钩子体的副作用
+    // （计数器 / 捕获变量写）与 throw 域随之而来；钩子体抛错 → NudoThrow
+    // 传播 ⇒ 用户 try/catch 可吸收（原生同款：必抛的 toJSON 必抛）。
+    // 原生顺序：toJSON **先于** replacer（步骤 2 先于步骤 3）——故此处
+    // （replacer 分支之前）替换被序列化的值。根键为 ""（原生同）。
+    const userToJson = coercionHookOf(a0Abs, "toJSON");
+    if (userToJson) {
+      jsonArg = userToJson.call([strLit("")]);
     }
     // Bug 59：callable replacer（fn 形）——原生对每个键（含根 ""）先调
     // replacer 再序列化其返回值；预提取（absToJsonNative）会先于 replacer

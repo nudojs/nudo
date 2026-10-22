@@ -23,7 +23,7 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, strLit, bool, unknown } from "../../abs.ts";
-import { objOf, getSlot } from "../../objects.ts";
+import { objOf, getSlot, invokeToPrimitiveHook } from "../../objects.ts";
 import { classifyCanBeHeldWeakly } from "../../collections.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
@@ -87,6 +87,18 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
   }
   if (messageArg.shape.k === "prim" && messageArg.shape.type === "string") {
     return messageArg;
+  }
+  // Bug 381（Error 扩围）：对象实参走 ToString(obj) ⇒ 用户的 toString 钩子
+  // **真调用**（原生必抛的钩子体 → 原生必抛）。修前此处**连钩子存在性都不
+  // 探**，直接落 `str()`（确定的 string 域）⇒ 假绿 + 错值。
+  const prim = invokeToPrimitiveHook(messageArg, "string");
+  if (prim !== undefined) {
+    const pv = prim.term?.op === "lit" ? prim.term.value : undefined;
+    if (typeof pv === "string") return strLit(pv);
+    if (typeof pv === "number" || typeof pv === "boolean" || typeof pv === "bigint") {
+      return strLit(String(pv));
+    }
+    return str();
   }
   return str();
 }

@@ -245,7 +245,17 @@ setApplyCallbackHost((cb, args, env, _phi, _budget, thisVal) => {
     if (bound) return $call(bound, args, thisVal);
     const f = e?.fns?.get(node.name);
     if (f) {
-      return $call(absFunction(f.params, { body: f.body, async: f.async, env: e }), args, thisVal);
+      return $call(
+        absFunction(f.params, {
+          body: f.body,
+          async: f.async,
+          env: e,
+          // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
+          ...(f.optionalParams ? { optionalParams: f.optionalParams } : {}),
+        }),
+        args,
+        thisVal,
+      );
     }
     return unknown;
   }

@@ -203,18 +203,30 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
     }
     return numLit(va / vb);
   }
-  // issue #170：`0 / x`（+0 字面量分子，x 可证非零且非 NaN）= +0。
+  // issue #170：`0 / x`（+0 字面量分子，x 可证非零且非 NaN）= ±0。
   // 叉积 sum 的字面量 0 臂（`d = cond ? 0 : …; d / max`）无项可匹配
   // assume 引理 / 单调性界，join 后污染整体上界；分母界一旦排除 0
   // （端点严格或整体在同号半轴）即可字面量折叠。界存在本身排除 NaN
   // （比较 pred 对 NaN 全假）；-0 分子不折（-0/x = -0，lit 归一化会丢负零）。
+  //
+  // Bug 959：**分母符号要参与折叠** —— IEEE 的 `0 / x` 取 x 的符号
+  // （原生 `0 / -5` 是 `-0`，`Object.is(0 / -5, -0)` 为 true）。此前只判
+  // 「分母可证非零」就折 `+0`，把负分母的 `-0` 折成 `+0`（下游 `1 / (0 / x)`
+  // 再折成 `+Infinity`，原生是 `-Infinity`）。lit 侧保真负零（term.ts 的 lit
+  // 不归一 -0）⇒ 负半轴分母直接折 `numLit(-0)`。
   if (va === 0 && !Object.is(va, -0)) {
     const bb = numericBounds(b, phi);
-    const excludesZero =
+    // 分母恒正（x > 0）⇒ 0/x = +0；分母恒负（x < 0）⇒ 0/x = -0。
+    const posDen =
       bb !== undefined &&
-      ((bb.lo !== undefined && (bb.lo.value > 0 || (bb.lo.value === 0 && bb.lo.strict))) ||
-        (bb.hi !== undefined && (bb.hi.value < 0 || (bb.hi.value === 0 && bb.hi.strict))));
-    if (excludesZero) return numLit(0);
+      bb.lo !== undefined &&
+      (bb.lo.value > 0 || (bb.lo.value === 0 && bb.lo.strict));
+    const negDen =
+      bb !== undefined &&
+      bb.hi !== undefined &&
+      (bb.hi.value < 0 || (bb.hi.value === 0 && bb.hi.strict));
+    if (posDen) return numLit(0);
+    if (negDen) return numLit(-0);
   }
   if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(va) / Number(vb));

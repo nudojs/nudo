@@ -78,6 +78,8 @@ function fnToAbs(env: AstEnv, name: string): Abs | undefined {
     body: impl.body,
     async: impl.async,
     env,
+    // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
+    ...(impl.optionalParams ? { optionalParams: impl.optionalParams } : {}),
   });
 }
 

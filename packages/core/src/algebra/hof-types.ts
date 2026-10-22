@@ -50,7 +50,20 @@ export type HofCollectCtx = {
 export type AstEnv = {
   vars: Map<string, Abs>;
   /** 用户函数：name → { params, body } */
-  fns: Map<string, { params: string[]; body: Node; async?: boolean; kind?: string }>;
+  fns: Map<
+    string,
+    {
+      params: string[];
+      body: Node;
+      async?: boolean;
+      kind?: string;
+      /**
+       * Bug 399：逐位「可省略」标记（与 `params` 同下标，`true` = 该位有
+       * 默认值 / 带 `?` / 是 rest）⇒ 必选元数不再靠名字后缀猜。
+       */
+      optionalParams?: boolean[];
+    }
+  >;
   /** class 表（旁路，withVar 必须保留） */
   classes?: Map<string, unknown>;
   /** 当前正在求值的方法所属类名（super.x() 从它的父类派发） */

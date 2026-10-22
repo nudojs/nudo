@@ -25,8 +25,8 @@ import {
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { locateContractParam, type FormalParam } from "./param-surface.ts";
-import { numLit, litValue, anyAbs, absLit } from "./abs.ts";
-import type { Abs } from "./abs.ts";
+import { numLit, litValue, anyAbs, absLit, confJoin } from "./abs.ts";
+import type { Abs, Confidence } from "./abs.ts";
 import type { LiteralValue } from "./term.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -64,6 +64,19 @@ function hofFnArgOk(src: Abs, tgt: Abs): boolean {
 
 export function absUnknown(): Abs {
   return { shape: { k: "unknown" }, conf: "partial" };
+}
+
+/**
+ * Bug 400：rest 形参的值 = 该位之后**全部实参**聚成的数组（不是第 i 个实参）。
+ *
+ * 形如 `sum(...nums)` 的 rest 形参吃的是「余下所有实参」⇒ 契约面
+ * （`array(number().gt(0))`）要与**聚合值**比，而不是与首个实参比。聚合值用
+ * **精确元组**（tuple）：元素逐个可判 ⇒ 元素契约逐元素查；conf 取元素里最差
+ * 的那个（全 exact ⇒ exact）。
+ */
+function restArgAbs(tail: Abs[]): Abs {
+  const conf = tail.reduce<Confidence>((c, a) => confJoin(c, a.conf), "exact");
+  return { shape: { k: "tuple", elements: tail }, conf };
 }
 
 /** 确定 undefined / null 字面量（term lit；区别于「无 lit」的 unknown） */
@@ -222,24 +235,34 @@ export function scanLiteralCalls(
     return cur;
   };
 
-  /** effectiveInterface → [paramIdx, RefineEntry, fieldPath?]（C4.1：解构契约带
+  /** effectiveInterface → [paramIdx, RefineEntry, fieldPath?, rest?]（C4.1：解构契约带
    *  字段投影；#137：fieldPath 为多段路径，展示用点连接串 = fieldPath.join(".")）
-   *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / interface.ts conflict 注释） */
+   *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / interface.ts conflict 注释）
+   *
+   *  Bug 400：第 4 位 = **rest 形参**标记。`locateContractParam` 明明算出了
+   *  `hit.rest`，此前在 `entries.push` 里被**丢掉** ⇒ 下游（执法侧）无从知道
+   *  「这个形参吃的是该位之后的**全部**实参」⇒ rest 形参拿到的是**首个**实参
+   *  ⇒ 合法调用被误判（「实参 1 ⊭ array 约束」）。 */
   const interfaceToIndexed = (
     ei: EffectiveInterface,
     paramNames: string[],
     formals?: FormalParam[],
-  ): Array<[number, RefineEntry, string[] | undefined]> => {
+  ): Array<[number, RefineEntry, string[] | undefined, boolean | undefined]> => {
     const conflict = new Set(ei.conflict?.params ?? []);
-    const entries: Array<[number, RefineEntry, string[] | undefined]> = [];
+    const entries: Array<
+      [number, RefineEntry, string[] | undefined, boolean | undefined]
+    > = [];
     for (const { param, constraint } of ei.params) {
       if (!param || conflict.has(param)) continue;
       const idx = paramNames.indexOf(param);
       if (idx >= 0) {
+        // 展示名直接命中：若该位是 rest 形参（展示名带 "..." 前缀），同样标 rest
+        const fp = formals?.[idx];
         entries.push([
           idx,
           { param, pred: instantiateConstraint(constraint, param), constraint },
           undefined,
+          fp?.kind === "rest" ? true : undefined,
         ]);
         continue;
       }
@@ -252,6 +275,7 @@ export function scanLiteralCalls(
             hit.index,
             { param, pred: instantiateConstraint(constraint, param), constraint },
             hit.fieldPath ?? (hit.field !== undefined ? [hit.field] : undefined),
+            hit.rest === true ? true : undefined,
           ]);
         }
       }
@@ -331,18 +355,28 @@ export function scanLiteralCalls(
 
   const checkReqs = (
     displayName: string,
-    reqs: Array<[number, import("./pred.ts").Pred, string[] | undefined, string | undefined]>,
+    reqs: Array<
+      [
+        number,
+        import("./pred.ts").Pred,
+        string[] | undefined,
+        string | undefined,
+        boolean | undefined,
+      ]
+    >,
     paramNames: string[],
     absArgs: Abs[],
     /** target 参下标 → 实参下标；缺省恒等 */
     argIndexOf: (reqIdx: number) => number | undefined,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    for (const [idx, pred, fieldPath, contractParam] of reqs) {
+    for (const [idx, pred, fieldPath, contractParam, rest] of reqs) {
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
       let arg = absArgs[argIdx];
       if (!arg) continue;
+      // Bug 400：rest 形参 → 值 = 该位之后**全部实参**聚成的数组（不是第 i 个）
+      if (rest) arg = restArgAbs(absArgs.slice(argIdx));
       // C4.1：解构契约展示名优先用契约面（x），不回落到求值占位 _p0
       const paramName = contractParam || paramNames[idx] || `arg${idx}`;
       // C4.1：解构契约字段投影后再判 pred；缺字段不能静默跳过（FN）
@@ -662,7 +696,11 @@ export function scanLiteralCalls(
     }
   };
 
-  /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度 */
+  /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度
+   *
+   *  Bug 400：`actualOf` = **报告用实参**（默认 = 被检字段本身）。rest 形参
+   *  的契约面是「该位之后全部实参聚成的数组」⇒ 元素违例要报**整个聚合值**
+   *  （`[1, -2]`），不是那个元素（`-2`）。 */
   const checkFieldConstraint = (
     displayName: string,
     paramName: string,
@@ -670,6 +708,7 @@ export function scanLiteralCalls(
     fieldAbs: Abs,
     fieldPath: string,
     loc?: { start: { line: number; column: number } },
+    actualOf?: Abs,
   ): void => {
     if (fieldAbs.shape.k === "unknown" && !fieldAbs.term) return;
 
@@ -681,7 +720,7 @@ export function scanLiteralCalls(
           severity: "error",
           code: DIAG.constraintViolated,
           message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(fieldAbs),
+          actual: formatAbs(actualOf ?? fieldAbs),
           expected: `typeof ${fieldPath} = "${constraint.prim}"`,
           suggestion: `change ${fieldPath} to ${constraint.prim}`,
           fn: displayName,
@@ -701,7 +740,7 @@ export function scanLiteralCalls(
           severity: "error",
           code: DIAG.constraintViolated,
           message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(fieldAbs),
+          actual: formatAbs(actualOf ?? fieldAbs),
           expected: `${fieldPath} is int`,
           suggestion: `change ${fieldPath} to an integer`,
           fn: displayName,
@@ -726,6 +765,7 @@ export function scanLiteralCalls(
           (fieldAbs.shape as { element: Abs }).element,
           `${fieldPath}[]`,
           loc,
+          actualOf,
         );
       } else if (fieldAbs.shape.k === "tuple") {
         const els = (fieldAbs.shape as { elements: Abs[] }).elements;
@@ -737,6 +777,7 @@ export function scanLiteralCalls(
             el,
             `${fieldPath}[${i}]`,
             loc,
+            actualOf,
           );
         });
       }
@@ -770,7 +811,7 @@ export function scanLiteralCalls(
                 severity: "error",
                 code: DIAG.constraintViolated,
                 message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(fieldAbs),
+                actual: formatAbs(actualOf ?? fieldAbs),
                 expected: `length(${fieldPath}) ${opSym} ${n}`,
                 suggestion: `use a ${fieldPath} whose length is ${opSym} ${n}`,
                 fn: displayName,
@@ -792,7 +833,7 @@ export function scanLiteralCalls(
               severity: "error",
               code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(fieldAbs),
+              actual: formatAbs(actualOf ?? fieldAbs),
               expected: `${fieldPath} ${opSym} ${n}`,
               suggestion: `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
               fn: displayName,
@@ -821,7 +862,7 @@ export function scanLiteralCalls(
         severity: "error",
         code: DIAG.constraintViolated,
         message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-        actual: formatAbs(fieldAbs),
+        actual: formatAbs(actualOf ?? fieldAbs),
         expected: `${fieldPath} ∈ ${formatConstraint(constraint)}`,
         suggestion: `use a ${fieldPath} satisfying ${formatConstraint(constraint)}`,
         fn: displayName,
@@ -834,19 +875,25 @@ export function scanLiteralCalls(
   /** 对带 shape / array / int / prim 的 refine 做结构检查 */
   const checkShapeReqs = (
     displayName: string,
-    reqs: Array<[number, RefineEntry, string[] | undefined]>,
+    reqs: Array<[number, RefineEntry, string[] | undefined, boolean | undefined]>,
     paramNames: string[],
     absArgs: Abs[],
     argIndexOf: (reqIdx: number) => number | undefined,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    for (const [idx, entry, fieldPath] of reqs) {
+    for (const [idx, entry, fieldPath, rest] of reqs) {
       const c = entry.constraint;
       if (!c.fields && !c.element && !isIntFlag(c) && !c.prim) continue;
       const argIdx = argIndexOf(idx);
       if (argIdx === undefined) continue;
       let arg = absArgs[argIdx];
       if (!arg) continue;
+      // Bug 400：rest 形参 → 值 = 该位之后**全部实参**聚成的数组（不是第 i 个）
+      let restAgg: Abs | undefined;
+      if (rest) {
+        restAgg = restArgAbs(absArgs.slice(argIdx));
+        arg = restAgg;
+      }
       const paramName = entry.param || paramNames[idx] || `arg${idx}`;
       // C4.1：解构契约 → 投影到字段再查；缺字段报 violation（与 checkReqs 同口径）
       // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
@@ -887,6 +934,7 @@ export function scanLiteralCalls(
             (arg.shape as { element: Abs }).element,
             `${paramName}[]`,
             loc,
+            restAgg,
           );
         } else if (arg.shape.k === "tuple") {
           const els = (arg.shape as { elements: Abs[] }).elements;
@@ -898,6 +946,7 @@ export function scanLiteralCalls(
               el,
               `${paramName}[${i}]`,
               loc,
+              restAgg,
             );
           });
         } else if (
@@ -1089,7 +1138,16 @@ export function scanLiteralCalls(
       checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
       checkReqs(
         fnName,
-        ownFull.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string[] | undefined, string | undefined]),
+        ownFull.map(
+          ([i, e, f, r]) =>
+            [i, e.pred, f, e.param, r] as [
+              number,
+              Pred,
+              string[] | undefined,
+              string | undefined,
+              boolean | undefined,
+            ],
+        ),
         paramNames,
         absArgs,
         (i) => i,
@@ -1112,7 +1170,16 @@ export function scanLiteralCalls(
         checkShapeReqs(`${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
         checkReqs(
           `${fnName}→${fwd.target}`,
-          tFull.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string[] | undefined, string | undefined]),
+          tFull.map(
+            ([i, e, f, r]) =>
+              [i, e.pred, f, e.param, r] as [
+                number,
+                Pred,
+                string[] | undefined,
+                string | undefined,
+                boolean | undefined,
+              ],
+          ),
           tParams,
           absArgs,
           mapArg,
@@ -1140,7 +1207,7 @@ export function scanLiteralCalls(
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
-    let full: Array<[number, RefineEntry, string[] | undefined]> = [];
+    let full: Array<[number, RefineEntry, string[] | undefined, boolean | undefined]> = [];
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
@@ -1173,7 +1240,16 @@ export function scanLiteralCalls(
     checkShapeReqs(displayName, full, paramNames, absArgs, (i) => i, loc);
     checkReqs(
       displayName,
-      full.map(([i, e, f]) => [i, e.pred, f, e.param] as [number, Pred, string[] | undefined, string | undefined]),
+      full.map(
+        ([i, e, f, r]) =>
+          [i, e.pred, f, e.param, r] as [
+            number,
+            Pred,
+            string[] | undefined,
+            string | undefined,
+            boolean | undefined,
+          ],
+      ),
       paramNames,
       absArgs,
       (i) => i,

@@ -26,6 +26,7 @@ import {
   getSlot,
   canonicalArrayIndex,
   propertyKeyOf,
+  markKeySetOpenAbs,
 } from "../../../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
@@ -359,6 +360,13 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   if (sk === "obj") {
     if (iv === undefined) {
       // 抽象键：无槽位模型——标记 open（缺失键读不再折 undefined 假精确）
+      // Bug 383：键**不可判**（对象键的 ToString 结果不可判——如函数键的
+      // 源码文本 / 抽象 var 键）⇒ 写被丢弃 ⇒ 该对象的**自有键集不完备**
+      // （native 侧该键确实存在）⇒ 键家族（Object.keys / values / entries）
+      // 据此折 partial，**不得**折 exact 空元组（自信的确切错值：native
+      // `Object.keys(o).length` = 1 vs 引擎 0）。修前只标 open（键集面读
+      // 不到该语义）⇒ 键家族仍折 exact 空元组。
+      markKeySetOpenAbs(a);
       a.shape = { ...a.shape, open: true };
       a.conf = confJoin(a.conf, "path");
       clearStaleTermPred(a);

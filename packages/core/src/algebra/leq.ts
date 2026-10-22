@@ -48,6 +48,41 @@ export function requiredFnArity(params: readonly string[] | undefined): number {
   return n;
 }
 
+/**
+ * Bug 399：fn shape 的**必选元数**——优先读 shape 自带的 `optionalParams`
+ * 标记数组（与 `params` 同下标，true = 该位可省略），缺省回退
+ * `requiredFnArity`（名字后缀兼容：`...rest` / `x?`）。
+ *
+ * 为什么不能只靠名字后缀：默认形参（`f(a, b = 1)`）在形参表面被渲染成
+ * **光秃秃的名字**（`b`，既非 `...` 也非 `?`）⇒ 被计成必选元数 ⇒
+ * `f = (x = 1) => x` 被判「需要 1 个参数」⇒ `nudo:assign-mismatch` 假红
+ * （JS 语义下 `(x = 1) => x` 的 `length` 是 0）。
+ *
+ * `requiredFnArity` 的**公开签名与既有行为一字不改**（名字后缀判据只作为
+ * 「无标记」时的回退）——既有钉 `__tests__/leq.test.ts` 仍绿。
+ */
+function fnRequiredArity(shape: { params: string[]; optionalParams?: boolean[] }): number {
+  const opt = shape.optionalParams;
+  if (!opt) return requiredFnArity(shape.params);
+  let n = 0;
+  for (let i = 0; i < shape.params.length; i++) {
+    if (opt[i] === true) continue;
+    const p = shape.params[i];
+    if (!p || p.startsWith("...") || p.endsWith("?")) continue;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * 字面量文本（诊断用）——`String(-0)` 是 `"0"`，会把 `-0` 与 `0` 渲染成
+ * 同一个串（Bug 398 的失败原因就在这个不可区分性上）。
+ */
+function litText(value: unknown): string {
+  if (typeof value === "number" && Object.is(value, -0)) return "-0";
+  return String(value);
+}
+
 export function leqAbs(
   src: Abs,
   tgt: Abs,
@@ -71,17 +106,19 @@ function leqWithPred(
 
   // 字面量同一性：litValue 哨兵把 lit(undefined) 折成「无字面量」，必须直接看
   // term。null/undefined 字面量的 shape 是 unknown，不得再走「unknown 目标放宽」。
-  // SameValue：NaN 可赋给 NaN（=== 对 NaN 为 false，赋值同一性不可用 ===）
+  //
+  // Bug 398：按注释宣称的 **SameValue** 口径（`Object.is`）判定。原先用
+  // `===` ⇒ `0` 与 `-0` 被判成同一个值 ⇒ `lit(-0)` 满足 `lit(0)` 目标
+  // （native `Object.is(0, -0) === false`，`0 === -0` 才是 true 的那个）⇒
+  // 精确期望被**静默放宽**。SameValue 同时覆盖 NaN ≡ NaN
+  // （`===` 对 NaN 为 false，赋值同一性不可用 `===`）。
   const srcLitTerm = src.term?.op === "lit" ? src.term : undefined;
   const tgtLitTerm = tgt.term?.op === "lit" ? tgt.term : undefined;
   if (tgtLitTerm && srcLitTerm) {
     const sv = srcLitTerm.value;
     const tv = tgtLitTerm.value;
-    const sameLit =
-      sv === tv ||
-      (typeof sv === "number" && typeof tv === "number" && Number.isNaN(sv) && Number.isNaN(tv));
-    if (sameLit) return ok();
-    return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
+    if (Object.is(sv, tv)) return ok();
+    return fail(`lit ${litText(sv)} ⊭ lit ${litText(tv)}`);
   }
   if (tgtLitTerm && !srcLitTerm) {
     // 目标是具体字面量（含 null/undefined），源不是同一字面量：
@@ -299,8 +336,11 @@ function leqShape(
     // TS-like: source assignable iff it does not require more params than the
     // target always provides. Rest src → required tgt is OK; required src →
     // rest tgt fails when source.required > 0 (target may be called with 0 args).
-    const sReq = requiredFnArity(s.params);
-    const tReq = requiredFnArity(t.params);
+    //
+    // Bug 399：必选元数读 fn shape 的 `optionalParams` 标记（默认形参可省），
+    // 缺省回退名字后缀判据（`requiredFnArity` 行为不变）。
+    const sReq = fnRequiredArity(s);
+    const tReq = fnRequiredArity(t);
     if (sReq > tReq) {
       return fail(
         `fn arity required ${sReq} ⊭ target required ${tReq} (params ${s.params.length} / ${t.params.length})`,

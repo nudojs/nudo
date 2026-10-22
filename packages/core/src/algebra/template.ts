@@ -17,7 +17,7 @@ function litStrOf(a: Parameters<typeof litValue>[0]): string {
 }
 import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
-import { isNullProtoObj, isNullProtoWithoutCoercer } from "./objects.ts";
+import { isNullProtoObj, isNullProtoWithoutCoercerSlot } from "./objects.ts";
 import { lookupObjAccessor } from "./accessors.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs } from "./may-throw.ts";
@@ -313,7 +313,12 @@ export function isTemplateLike(a: Abs): boolean {
 export function concatString(a: Abs, b: Abs): Abs {
   // 闭 null-proto 无 coercer → ToString 前的 ToPrimitive 定抛 TypeError
   //（'x'.concat(o) 等非运算符入口；`+`/模板运算符面由 add() 前置同判）
-  if (isNullProtoWithoutCoercer(a) || isNullProtoWithoutCoercer(b)) {
+  //
+  // Bug 381：用**纯判定**版（不调用钩子）——`+` / 模板运算符面已在 add() 的
+  // ToPrimitive 前置闸门（objects.isNullProtoWithoutCoercer）调过一次钩子；
+  // 原生每次 ToPrimitive 只调一次钩子 ⇒ 此处再调会多算一次副作用
+  // （`o + ""` 的 toString 计数器 native 1 / 引擎 2）。
+  if (isNullProtoWithoutCoercerSlot(a) || isNullProtoWithoutCoercerSlot(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // 双字面量

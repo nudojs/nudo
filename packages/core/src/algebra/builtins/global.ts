@@ -4,7 +4,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
-import { objOf, isNullProtoObj, isNullProtoWithoutCoercer } from "../objects.ts";
+import { objOf, isNullProtoObj, isNullProtoWithoutCoercer, invokeToPrimitiveHook } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim, mayCoerceThrowOperand, mayToStringThrowOperand, isBigintPrimAbs } from "./shared.ts";
@@ -275,6 +275,17 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (args[0] && args[0].shape.k === "brand") {
         const folded = builtinBrandToPrimitive(args[0], "number");
         if (folded) return evalGlobalFn("Number", [folded]);
+      }
+      // Bug 381：ToNumeric → ToPrimitive(number hint) —— **用户钩子真调用**
+      // （`Number(o)` 此前从不调 `o.valueOf` ⇒ 钩子的副作用与 throw 域全丢，
+      // 且 `Number({valueOf(){return 1n}})` 折 number 而不是 bigint）。
+      // 钩子不在时返回 undefined ⇒ 落既有抽象臂（保守 numPrim）。
+      if (args[0]) {
+        const prim = invokeToPrimitiveHook(args[0], "number");
+        if (prim) {
+          const lv = litValue(prim);
+          if (lv.ok) return evalGlobalFn("Number", [prim]);
+        }
       }
       if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
       if (!args[0]) return numLit(0);

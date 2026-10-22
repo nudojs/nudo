@@ -424,6 +424,12 @@ export function implies(phi: Phi, pred: Pred): boolean {
   // `and(A,B,C)` 里的 A/B 等价——只扫顶层会把嵌套 conjunct 藏起来。
   if (conjAtoms(phi).some((c) => predEquals(c, pred))) return true;
 
+  // Bug 387：等式 ⇒ 序关系 / 对称（`===` 排除 NaN ⇒ 等值即序关系成立）
+  if (eqFactImpliesOrder(phi, pred)) return true;
+
+  // Bug 1004：同项比较的**格点（lattice）步进**
+  if (sameTermLatticeImplies(phi, pred)) return true;
+
   // 合取目标：Φ ⊢ A∧B  iff 逐支
   if (pred.op === "and") {
     return pred.args.every((a) => implies(phi, a));
@@ -491,6 +497,77 @@ function impliesNotTypeof(
   for (const c of conjs) {
     if (c.op === "typeof" && termEquals(c.t, want.t) && c.type !== want.type) {
       return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Bug 387：等式事实 ⇒ 序关系 / 对称。
+ *
+ * `===` 排除 NaN ⇒ `x === y` 时 `x <= y` ∧ `x >= y` 恒成立（等值必然不小于
+ * 也不大于），`x === x` 是重言式（x 非 NaN ⇒ `x <= x`）。`implies` 原先只有
+ * 序关系之间的传递/代数恒等式，**没有**「等式蕴含序关系」这条规则 ⇒
+ * `a === b` 前提无法消解 `a <= b` 的分支可达性 ⇒ 恒假分支被算成可达
+ * （签名多出一个可能值，如 `f(a, b) => 1 | 2 | 3` 应为 `1 | 3`）。
+ *
+ * 口径：等式事实与目标**同一对项**（无序匹配——`x === y` 同时给出
+ * `x <= y` 与 `y <= x`）。**不含** `lt` / `gt`：等值不蕴含严格序
+ * （`x === y` 时 `x < y` 为假）。
+ */
+function eqFactImpliesOrder(phi: Phi, pred: Pred): boolean {
+  if (pred.op !== "le" && pred.op !== "ge" && pred.op !== "eq") return false;
+  for (const c of conjAtoms(phi)) {
+    if (c.op !== "eq") continue;
+    const same = termEquals(c.a, pred.a) && termEquals(c.b, pred.b);
+    const swapped = termEquals(c.a, pred.b) && termEquals(c.b, pred.a);
+    if (!same && !swapped) continue;
+    // x === y ⇒ x <= y ∧ x >= y ∧ x === y（对称性一并给出）
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Bug 1004：同项比较的**格点（lattice）步进**。
+ *
+ * 事实与目标**同一个项**时，事实端点已带 IEEE 离散信息：
+ * - 严格事实 `t > L` ⟺ `t >= nextUp(L)`（double 上 L 与 nextUp(L) 之间
+ *   没有别的 double ⇒ 严格蕴含非严格，且「可省的严格性」正好是一格）
+ * - 非严格事实 `t >= L` ⟺ `t >= L`（**不**格点步进——`t = L` 合法）
+ * 目标 `ge(t, B)` / `gt(t, B)` / `le(t, B)` / `lt(t, B)` 直接比端点。
+ *
+ * 为什么必须落在**谓词层**（而不是区间层）：`gt(x + 1, nextDown(1))` 这条
+ * **和**的事实被线性化到原子 `x` 时会丢掉格点步进（只得到 `x > -2^-53`），
+ * 再线性化回来最多只剩 1 ULP 的格点信息 ⇒ `ge(x + 1, 1)` 证不出
+ * （Bug 1004 的假红：IEEE 下 `x > 0 ⇒ x + 1 >= 1` 恒真）。
+ *
+ * 为什么不能靠「去掉区间层的二次放松」来补：区间层 `linInterval` 的
+ * `nextDown` 放松是**保真**所需——`x>0 ∧ y>=1 ⊬ x+y>1`（`fl(MIN+1) === 1`）
+ * 这条既有钉就靠它才不假证；去掉 ⇒ 引擎把 `x+y > 1` 证成真（假证）。
+ * 两处放松的「合成」只在**谓词同项**时可还原，谓词层是唯一正确的落点。
+ */
+function sameTermLatticeImplies(phi: Phi, pred: Pred): boolean {
+  if (pred.op !== "ge" && pred.op !== "gt" && pred.op !== "le" && pred.op !== "lt") {
+    return false;
+  }
+  const pb = pred.b;
+  if (pb.op !== "lit" || typeof pb.value !== "number") return false;
+  for (const c of conjAtoms(phi)) {
+    if (c.op !== "ge" && c.op !== "gt" && c.op !== "le" && c.op !== "lt") continue;
+    if (!termEquals(c.a, pred.a)) continue;
+    const cb = c.b;
+    if (cb.op !== "lit" || typeof cb.value !== "number") continue;
+    // 事实端点的格点读法（严格事实才步进一格）
+    const lower = c.op === "gt" ? nextUp(cb.value) : c.op === "ge" ? cb.value : undefined;
+    const upper = c.op === "lt" ? nextDown(cb.value) : c.op === "le" ? cb.value : undefined;
+    if (lower !== undefined) {
+      if (pred.op === "ge" && lower >= pb.value) return true;
+      if (pred.op === "gt" && lower > pb.value) return true;
+    }
+    if (upper !== undefined) {
+      if (pred.op === "le" && upper <= pb.value) return true;
+      if (pred.op === "lt" && upper < pb.value) return true;
     }
   }
   return false;

@@ -8,6 +8,7 @@ import {
   parseSource,
   termEquals,
   unknown,
+  anyAbs,
 } from "@nudojs/core";
 import {
   isTemplateLike,
@@ -890,8 +891,16 @@ type DeclaredParam = {
   isRest: boolean;
   /** 解构形参（pattern） */
   isPattern: boolean;
+  /**
+   * Bug 394：解构**种类**——`"array"` 时契约按**元素下标**寻址
+   * （`[a, b]` 的 `a` 是下标 0 的元素，不是属性键）⇒ 输入面必须是
+   * **数组 / 元组**形态，不能摊成对象。
+   */
+  patternKind?: "object" | "array";
   /** pattern 的顶层绑定名（`{ a, b }` → `["a","b"]`） */
   bound: string[];
+  /** 数组解构：绑定名 → **元素下标**（`[a, b]` → a→0、b→1） */
+  boundIndex: Record<string, number>;
   /** 契约名 → 源属性键（rename `{a: b}` → propKey.b = "a"） */
   propKey: Record<string, string>;
 };
@@ -909,6 +918,7 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
             isRest: false,
             isPattern: false,
             bound: [],
+            boundIndex: {},
             propKey: {},
           };
         case "default":
@@ -918,6 +928,7 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
             isRest: false,
             isPattern: false,
             bound: [],
+            boundIndex: {},
             propKey: {},
           };
         case "rest":
@@ -927,6 +938,7 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
             isRest: true,
             isPattern: false,
             bound: [],
+            boundIndex: {},
             propKey: {},
           };
         case "pattern":
@@ -935,7 +947,9 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
             hasDefault: false,
             isRest: false,
             isPattern: true,
+            patternKind: f.patternKind ?? "object",
             bound: [...f.bound],
+            boundIndex: { ...(f.boundIndex ?? {}) },
             propKey: { ...f.propKey },
           };
       }
@@ -949,6 +963,7 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
     isRest: n.startsWith("..."),
     isPattern: false,
     bound: [],
+    boundIndex: {},
     propKey: {},
   }));
 }
@@ -1000,6 +1015,34 @@ function lookupContractSlot(
     if (hit.optional === true) optional = true;
   }
   if (keys.length === 0) return { keys: [] };
+  // Bug 394：**数组解构**的字段级契约按**元素下标**寻址（`[a, b]` 的 `a` 是
+  // 下标 0 的元素，不是属性键）⇒ 聚合成**元组**，不是对象。摊成对象会产出
+  // 与真实形参形态**相反**的输入面（合法数组调用被判红、非法对象调用放行）。
+  if (decl.patternKind === "array") {
+    // 元组长度 = 模式的**位置数**（最高下标 + 1）——未契约的位置留 `any`
+    // （**无约束**，不是 unknown——unknown 表示引擎推导失败；契约没写的元素位
+    // 是「没约束」⇒ any，与入口无约束参数同口径）；契约只覆盖部分位置时，
+    // 元组长度不得塌成单元素（单元素元组会被 widen 成 `T[]` ⇒ 把
+    // 「下标 0 是 number」误写成「每个元素都是 number」⇒ 合法调用被判红）。
+    const lastIndex = decl.bound.reduce(
+      (acc, b) => Math.max(acc, decl.boundIndex[b] ?? decl.bound.indexOf(b)),
+      -1,
+    );
+    const elements: Abs[] = [];
+    for (let i = 0; i <= lastIndex; i++) elements.push(anyAbs);
+    for (const b of decl.bound) {
+      const hit = contractByParam.get(b);
+      if (!hit) continue;
+      const idx = decl.boundIndex[b] ?? decl.bound.indexOf(b);
+      if (idx < 0 || idx > lastIndex) continue;
+      elements[idx] = hit.abs;
+    }
+    return {
+      abs: makeAbs({ k: "tuple", elements }, undefined, undefined, "path"),
+      optional,
+      keys,
+    };
+  }
   return {
     abs: makeAbs({ k: "obj", slots }, undefined, undefined, "path"),
     optional,
@@ -1118,7 +1161,12 @@ function computeMainSignature(
       decl.bound.every((b) => patternKeys.includes(decl.propKey[b] ?? b));
     let name: string;
     if (boundCovered) {
-      name = `{ ${decl.bound.join(", ")} }`;
+      // Bug 394：数组解构渲染成**数组形态** `[ a, b ]`（与源码一致）——
+      // 此前一律 `{ a, b }` ⇒ 声明面看得出是对象，与真实形参形态相反。
+      name =
+        decl?.patternKind === "array"
+          ? `[ ${decl.bound.join(", ")} ]`
+          : `{ ${decl.bound.join(", ")} }`;
     } else {
       name = rawName;
       const bare = isRest ? name.slice(3) : name;

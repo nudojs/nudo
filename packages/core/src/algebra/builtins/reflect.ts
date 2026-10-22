@@ -692,6 +692,11 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // 单一事实源——ES2024 OrdinarySetPrototypeOf step 3+4，SameValue 先于
       // extensible 检查：原型未变时原生返 true；Object.setPrototypeOf 据此
       // 抛 TypeError，此处返 boolean）。
+      // Bug 385 / 386：**恒**走 protoChangeAllowed——原型环（native: false）
+      // 与不可变原型 Object.prototype（native: false）都在此拒绝。
+      // Reflect 口径是**返 boolean 不抛**（node 实测：
+      // Reflect.setPrototypeOf(Object.prototype, {}) → false；
+      // Reflect.setPrototypeOf(b, a)（a→b 已成环）→ false）。
       const t0 = args[0]!;
       // Bug 124：setPrototypeOf 陷阱优先——返回 ToBoolean(陷阱结果)（falsy
       // 字面量 → false 不抛，Reflect 口径），且不落侧表（原型设定责任在陷阱）
@@ -700,9 +705,7 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         if (trapR === "opaque") return boolPrim();
         if (trapR !== undefined) return trapR;
       }
-      if (extStateOf(t0) !== undefined) {
-        return boolLit(protoChangeAllowed(t0, p0));
-      }
+      if (!protoChangeAllowed(t0, p0)) return boolLit(false);
       setProtoAbs(t0, p0);
       return boolLit(true);
     }

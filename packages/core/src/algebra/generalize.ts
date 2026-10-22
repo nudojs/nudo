@@ -425,6 +425,15 @@ export type PolyFn = {
   entryShapes?: Map<string, { abs: Abs; source: import("./hof.ts").RelSource }>;
   /** body 内对该形参的应用点（check/hover/dts 用） */
   hofSites?: import("./hof.ts").HofSite[];
+  /**
+   * Bug 389：本次求值被 **env 门禁**挡下（源码声明了 `@nudo:env`，但那个 env
+   * **没解析出全局** ⇒ 无注入 ⇒ 函数体 fail-closed ⇒ 符号面 conf=opaque）。
+   *
+   * 门禁本身是对的（不注入就跑 ⇒ 宿主调用会假抛），但「因门禁而 opaque」**不
+   * 是**「路径没覆盖」⇒ 诊断层不得把它当成「已解释」（否则唯一能提示「推断
+   * 失败」的 `nudo:unknown-inference` 恰好在用户把 env 名写错时被吞掉）。
+   */
+  envGated?: boolean;
 };
 
 export function extractFn(
@@ -449,6 +458,9 @@ export function extractFn(
       const formals = formalParamsFromNodes(decl.params as never);
       env.fns.set(decl.id.name, {
         params: formalParamDisplayNames(formals),
+        // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+        // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+        optionalParams: formals.map((f) => f.optional === true),
         body: decl.body,
         async: decl.async === true,
       });
@@ -485,6 +497,9 @@ export function extractFn(
         const formals = formalParamsFromNodes((mem.params ?? []) as never);
         env.fns.set(fullName, {
           params: formalParamDisplayNames(formals),
+          // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+          // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+          optionalParams: formals.map((f) => f.optional === true),
           body: mem.body,
           async: mem.async === true,
         });
@@ -507,6 +522,9 @@ export function extractFn(
           const formals = formalParamsFromNodes(init.params as never);
           env.fns.set(d.id.name, {
             params: formalParamDisplayNames(formals),
+            // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+            // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+            optionalParams: formals.map((f) => f.optional === true),
             body: init.body,
             async: init.async === true,
           });
@@ -529,6 +547,9 @@ export function extractFn(
       const formals = formalParamsFromNodes(init.params as never);
       env.fns.set("default", {
         params: formalParamDisplayNames(formals),
+        // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+        // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+        optionalParams: formals.map((f) => f.optional === true),
         body: init.body,
         async: init.async === true,
       });
@@ -554,6 +575,9 @@ export function extractFn(
     const formals = formalParamsFromNodes((node.params ?? []) as never);
     env.fns.set(key, {
       params: formalParamDisplayNames(formals),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+      optionalParams: formals.map((f) => f.optional === true),
       body: node.body,
       async: node.async === true,
     });
@@ -690,6 +714,9 @@ export function extractFn(
     const formals = formalParamsFromNodes((n.params ?? []) as never);
     env.fns.set(scope.name, {
       params: formalParamDisplayNames(formals),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+      optionalParams: formals.map((f) => f.optional === true),
       body: n.body,
       async: n.async === true,
     });
@@ -876,6 +903,22 @@ function generalizeFromAstUncached(
               abs: snapshotAbs(entryAbs),
               source: "refine",
             });
+          }
+        }
+        // Bug 401：`patternFields` 只收**契约命中的字段** ⇒ 未契约的兄弟绑定
+        // 从头到尾不进这个袋子 ⇒ `buildPatternObjAbs` 合成出的形参形状是
+        // **闭对象** ⇒ 读兄弟绑定得 **exact `undefined`**（自信的错值；native
+        // 是实值）。按「闭对象 → unknown」的语义补：把该 pattern 的**全部
+        // 顶层绑定**都放进袋子（未契约的用 `unknown`），形状才是「开对象」。
+        // 槽键 = **源属性键**（rename `{a: alpha}` ⇒ 键是 a；`propKey` 缺项的
+        // 绑定——对象 rest 兄弟——按绑定名落键）。
+        for (const [pIdx, bag] of patternFields) {
+          const fp = formals[pIdx];
+          if (!fp || fp.kind !== "pattern") continue;
+          for (const name of fp.bound) {
+            const key = fp.propKey[name] ?? name;
+            if (bag[key] !== undefined) continue;
+            bag[key] = { abs: abs({ k: "unknown" }, undefined, undefined, "partial") };
           }
         }
         // 解构字段合成 obj Abs（签名上屏 `{ grade: string, … }`，不再是 any）
@@ -1185,6 +1228,8 @@ function generalizeFromAstUncached(
     ...(fnRels ? { fnRels } : {}),
     ...(entryShapes ? { entryShapes } : {}),
     ...(hofSites ? { hofSites } : {}),
+    // Bug 389：env 门禁的事实要让诊断层看得见（否则「推断失败」信号被吞）
+    ...(envGated ? { envGated: true } : {}),
   };
 }
 
@@ -1316,23 +1361,27 @@ export function listFunctionNames(source: string): string[] {
 /**
  * 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any
  * （design-cli-semantics §2：入口无约束 = any，不是 unknown）。
+ *
+ * Bug 976（core 半）：被 assume 的形参的 pred 此前被**写死**成 `x > 0`——
+ * 用户写 `--assume 'x>-5'` 时，写死的界**更强**（`x>-5 ∧ x>0 ⇒ x>0`）⇒
+ * 引擎按 `x>0` 剪枝 ⇒ 观察面给出比用户声明**更窄**的结果（说谎）。
+ * 现在：**用户声明的界**（`bounds`：形参名 → Pred）直接落进形参的 pred；
+ * 没有声明界时**不写界**（不替用户发明一个更强的默认界）——Φ（CLI 侧）
+ * 是界的唯一来源。
  */
 export function buildArgsFromAssume(
   source: string,
   fnName: string,
   assumeIds: Set<string>,
+  /** 用户声明的界（形参名 → Pred）；缺省 = 不写界 */
+  bounds?: ReadonlyMap<string, Pred>,
 ): Abs[] {
   const extracted = extractFn(source, fnName);
   if (!extracted) return [];
   return extracted.params.map((p) => {
     if (assumeIds.has(p)) {
-      // 默认假设 >0；更细的 assume 由 CLI 拼 Phi
-      return abs(
-        { k: "prim", type: "number" },
-        termVar(p),
-        { op: "gt", a: termVar(p), b: { op: "lit", value: 0 } },
-        "path",
-      );
+      // 界只来自用户声明（bounds）；没有声明就不写——不发明默认界。
+      return abs({ k: "prim", type: "number" }, termVar(p), bounds?.get(p), "path");
     }
     return abs({ k: "any" }, undefined, undefined, "path");
   });

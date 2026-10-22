@@ -199,12 +199,16 @@ describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
       exec(`class A { get x() { return "G"; } pub = 2; } return JSON.stringify(new A());`),
     ).toBe('{"pub":2}');
   });
-  it("JSON.stringify with toJSON method stays abstract (native calls it via proto lookup)", () => {
+  it("JSON.stringify with toJSON method folds exactly (Bug 381: toJSON hook really called)", () => {
+    // Bug 381 起 toJSON 步**真调用**（原生 SerializeJSONProperty 步骤 2：经原型
+    // 查找取 toJSON 并以 key "" 调用）⇒ 引擎与原生同款折精确值（native 返回
+    // "T"，序列化文本为 "\"T\""）。修前：toJSON 槽只被**探测**（不执行）⇒ 折
+    // 抽象（abs=…）——那是「钩子从不调用」时代的保守折法。
     const r = exec(
       `class A { toJSON() { return "T"; } pub = 2; } return JSON.stringify(new A());`,
     );
     expect(typeof r).toBe("string");
-    expect(r).toMatch(/^abs=/); // 保守不折（原生返回 "T"）
+    expect(r).toBe('"T"');
   });
   it("JSON.stringify with dynamic defineProperty getter folds via accessor dispatch", () => {
     // 动态访问器：内层占位槽 + 侧表派发 getter（Bug 57 口径）→ 精确
