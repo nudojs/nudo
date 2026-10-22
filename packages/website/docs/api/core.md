@@ -627,12 +627,12 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="objectprotobrand"></a>`objectProtoBrand` | fn | Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用）。 | `objectProtoBrand(): Abs` |
 | <a id="objectprotomethodabs"></a>`objectProtoMethodAbs` | fn | Object.prototype.X 一等函数（bindThis：call/apply 把 receiver 注入首参） | `objectProtoMethodAbs(name: string): Abs` |
 | <a id="objof"></a>`objOf` | fn | — | `objOf( slots: Record<string, Slot>, opts?: { index?: { key: Abs; value: Abs }; open?: boolean }, ): Abs` |
-| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层） | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层）。 | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="or"></a>`or` | fn | — | `or(...preds: Pred[]): Pred` |
-| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层） | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
+| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层）。 | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
 | <a id="pfalse"></a>`pFalse` | const | — | `const pFalse` |
 | <a id="phiand"></a>`phiAnd` | const | — | `const phiAnd` |
-| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层） | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层）。 | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="polyfn"></a>`PolyFn` | type | — | `PolyFn = { name: string; params: string[]; typeParams: TypeParam[]; instantiate: (args: Abs[], phi?: Phi) => Abs; symbolic: Abs; display:...` |
 | <a id="popcollectionarm"></a>`popCollectionArm` | fn | — | `popCollectionArm(): ArmOverlay \| undefined` |
 | <a id="popphi"></a>`popPhi` | fn | — | `popPhi(): void` |
