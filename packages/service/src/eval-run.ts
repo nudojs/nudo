@@ -5,7 +5,7 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl, namespaceAbsOf } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
 import { parse, type FileDirective } from "@nudojs/parser";
 import { existsSync, readFileSync } from "node:fs";
@@ -128,7 +128,28 @@ export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   }
 }
 
-/** @nudo:env modules（path / node:path / fs…）→ AbsModuleExports */
+/**
+ * @nudo:env modules（path / node:path / fs…）→ AbsModuleExports
+ *
+ * Bug 282：env 模块是 **CJS 互操作**模块——Node 的 `node:fs` 的默认导出就是
+ * 模块对象本身（具名导出挂在它上面）⇒ ESM **默认导入**
+ * （`import fs from "node:fs"`）必须绑到**命名空间**。
+ *
+ * 此前 env 表**只有 named、没有 default 槽** ⇒ core 的 `bindImport` 在
+ * `name === "default"` 分支取不到值 ⇒ 折 `unknown` ⇒ 该文件的导出函数
+ * 全量降级 `unknown` + 追加一条**误导性**的 `nudo:unknown-inference`
+ * （真实原因是绑定没接上，不是推断失败）+ 门禁**假绿**（exit 0）；
+ * 而**同一模块**的命名空间导入（`import * as fs`）却正常执法
+ * （`nudo:entry-may-throw` 判红）⇒ 同一种导入语义两种门禁结论。
+ *
+ * 口径：default 槽 = 该模块的**命名空间 Abs**（全部具名导出），
+ * 与 `mock-module.ts` 的「仅有 named 时合成 default 命名空间」同惯例；
+ * 同时打 `interopDefault` 标记（CJS 互操作模块 ⇒ default = 模块对象本身）
+ * ——core 的默认导入绑定（`defaultImportBindingOf`）据此回退，两条口径同源。
+ * 只装在 **env 表**上——用户模块表不动 ⇒ 用户模块缺 default 仍是
+ * `unknown`（Bug 990 口径：模块表有该 mod 但没有 default ⇒ 就是没有
+ * default，不得回退到命名空间）。
+ */
 export function collectEnvModules(envNames: string[]): Record<string, AbsModuleExports> {
   if (envNames.length === 0) return {};
   const env = createEnvironment();
@@ -141,7 +162,13 @@ export function collectEnvModules(envNames: string[]): Record<string, AbsModuleE
   }
   const out: Record<string, AbsModuleExports> = {};
   for (const [spec, named] of Object.entries(mods)) {
-    out[spec] = { named: { ...named } };
+    const namedTable = { ...named };
+    out[spec] = {
+      named: namedTable,
+      // CJS 互操作：default = 模块对象本身（= 命名空间）
+      default: namespaceAbsOf({ named: namedTable }),
+      interopDefault: true,
+    };
   }
   return out;
 }
@@ -309,6 +336,10 @@ export function mergeHarvestUnderEnv(
     const named = liveNamedTable([envExports.named, existing.named]);
     const defaultSrc = envExports.default !== undefined ? envExports : existing;
     out[mod] = copyModuleExports(existing, named, defaultSrc, false);
+    // Bug 282：互操作标记随 env 侧走（keepFlags=false 会丢标记位 ⇒ env 模块的
+    // 「default = 模块对象本身」语义在合并后丢失）。default 槽本身已由
+    // defaultSrc 带上（env 侧 default 优先），此处只补标记。
+    if (envExports.interopDefault) out[mod].interopDefault = true;
   }
   return out;
 }
@@ -584,10 +615,19 @@ export function tryRunEval(
           source,
         );
         const pureFns = pureFnNamesOfAst(ast);
-        const envGlobals = {
-          ...collectEnvGlobals(opts.envNames ?? []),
-          ...(opts.mocks ?? {}),
-        };
+        // Bug 274（service 侧剩余半边）：mock 与 env **分表传**。
+        //
+        // 此前 mock 被并进 `envGlobals` 一张表 ⇒ core 收到时**分不清哪些是
+        // mock** ⇒ core 注入面的「不遮蔽宿主内建」跳过表（ENV_SHADOW_SKIP，
+        // 只该作用于 env 全局）把名单内的 mock 一并吞掉 ⇒
+        // `@nudo:mock Math` / `JSON` / `Date` 静默 no-op（跑的是宿主内建）。
+        //
+        // 口径：env 全局只装 env；mock 走 `mocks` 形参（core 按两张表分别
+        // 过滤）。**优先级不变**——core 的 `__nudoEnv` 读面是
+        // `{ ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) }` ⇒ 同名时
+        // mock 覆盖 env（与此前「合并表里 mock 在后」逐字等价）。
+        const envGlobals = collectEnvGlobals(opts.envNames ?? []);
+        const mocks = opts.mocks ?? {};
         const exports = runTranspiled(source, {
           modules: modules as never,
           maxLoopIters: opts.maxLoopIters,
@@ -597,6 +637,7 @@ export function tryRunEval(
           asOverrideTargets: asTargets.length ? asTargets : undefined,
           asOverrides: asTargets.length ? asValues : undefined,
           envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+          mocks: Object.keys(mocks).length ? mocks : undefined,
           lenientGlobals: opts.lenientGlobals,
         });
         // 纯度标记落在**刚诞生的这个实例**上（Bug 462 + 分片 J 的 fresh

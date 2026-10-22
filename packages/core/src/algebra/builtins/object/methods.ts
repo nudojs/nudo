@@ -103,7 +103,11 @@ import {
   validateDescriptorObject,
   wellKnownSymbolSlotKey,
 } from "./descriptor.ts";
-import { proxyPartsOf } from "../../exec/match-iter.ts";
+import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
+// Bug 284：Proxy 的 isExtensible 陷阱派发需要 $call（陷阱实参 (target)，
+// this = handler）——exec/call.ts 已在本模块的依赖图内（exec/runtime/members.ts
+// 引入），此处只是显式直连。
+import { $call } from "../../exec/call.ts";
 import {
   boxedStringEnumEntries,
   builtinBrandNoEnumKeys,
@@ -340,6 +344,53 @@ function proxySetIntegrity(o: Abs, level: "frozen" | "sealed"): void {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
+}
+
+/**
+ * Bug 284：Proxy 的 [[IsExtensible]]（ES2024 10.5.4）——
+ * 1. GetMethod(handler, "isExtensible")；缺席 ⇒ 回退**靶**的 [[IsExtensible]]；
+ * 2. ToBoolean(陷阱结果) 与靶的实际可扩展性**不一致** ⇒ TypeError
+ *    （原生 'isExtensible' on proxy: trap result did not reflect extensibility
+ *    of proxy target）。
+ *
+ * 此前本模块**无派发点**（陷阱名并集里没有 isExtensible ⇒ 取陷阱恒「不存在」）
+ * ⇒ Object.isExtensible(proxy) 恒折 true：假绿（原生必抛 TypeError）＋
+ * 陷阱副作用（副作用面）整体丢失。
+ *
+ * 靶的**实际**可扩展性：引擎的可扩展性标记落在**代理**自身
+ * （Object.preventExtensions / freeze / seal(proxy) ⇒ markExtState(proxy)），
+ * 而原生是**靶**被冻结 ⇒ 代理自身带标记 ⇔ 靶已不可扩展——但仅当 handler
+ * **没有** preventExtensions 陷阱时成立（陷阱自己负责冻结靶，引擎只看靶的
+ * 实际标记）。
+ */
+function proxyIsExtensible(o: Abs): Abs | undefined {
+  const parts = proxyPartsOf(o);
+  if (!parts) return undefined; // 无 Proxy 侧表 ⇒ 落通用口径
+  const targetExtensible =
+    extStateOf(parts.target) === undefined &&
+    !(
+      extStateOf(o) !== undefined &&
+      proxyTrapOf(parts.handler, "preventExtensions").k === "absent"
+    );
+  const trap = proxyTrapOf(parts.handler, "isExtensible");
+  if (trap.k === "absent") return boolLit(targetExtensible); // 规范 step 4：回退靶语义
+  if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (trap.k === "opaque") {
+    recordMayThrow({ kind: "TypeError", cause: "Proxy isExtensible trap result unknown" });
+    return boolPrim();
+  }
+  const r = $call(trap.fn, [parts.target], parts.handler);
+  const rv = litValue(r);
+  if (!rv.ok) {
+    // 抽象结果：ToBoolean 不可判 ⇒ 不变量不可判（may）⇒ 保守 boolean 域
+    recordMayThrow({ kind: "TypeError", cause: "Proxy isExtensible trap result is abstract" });
+    return boolPrim();
+  }
+  const trapExtensible = Boolean(rv.value);
+  if (trapExtensible !== targetExtensible) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  return boolLit(trapExtensible);
 }
 
 /**
@@ -1388,6 +1439,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const t = args[0];
       // ES：非对象恒不可扩展——不抛
       if (isPrimLike(t)) return boolLit(false);
+      // Bug 284：Proxy 走 [[IsExtensible]]（派发 isExtensible 陷阱 + 可扩展性
+      // 不变量校验）——此前无派发点 ⇒ 恒折 true（假绿 + 陷阱副作用丢失）。
+      if (isProxyAbs(t!)) {
+        const r = proxyIsExtensible(t!);
+        if (r !== undefined) return r;
+      }
       return boolLit(extStateOf(t!) === undefined);
     }
     case "defineProperty": {

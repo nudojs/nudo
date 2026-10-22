@@ -182,7 +182,16 @@ export function proxyTrapOf(
     // Bug 300：[[GetOwnProperty]] 陷阱（getOwnPropertyDescriptor）——此前
     // 陷阱名并集里没有它 ⇒ 陷阱**从不派发**（handler 提供的描述符被无视，
     // 描述符面退化成「靶面 | undefined」并定抛）。
-    | "getOwnPropertyDescriptor",
+    | "getOwnPropertyDescriptor"
+    // Bug 279：[[Call]] 陷阱（apply）——此前陷阱名并集里没有它 ⇒ 代理调用
+    // **从不派发** apply 陷阱（陷阱副作用整体丢失）。
+    | "apply"
+    // Bug 284：[[IsExtensible]] 陷阱（isExtensible）——此前无派发点
+    // （Object.isExtensible(proxy) 恒折 true，原生必抛 TypeError）。
+    | "isExtensible"
+    // Bug 285：[[OwnPropertyKeys]] 陷阱（ownKeys）——for…in 面无视该陷阱
+    // （枚举出靶对象的键，而非陷阱返回的键）。
+    | "ownKeys",
 ): ProxyTrap {
   if (!handler) return { k: "opaque" };
   const s = handler.shape;

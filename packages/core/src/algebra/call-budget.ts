@@ -5,7 +5,8 @@
  */
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
-import { termToString } from "./term.ts";
+import { litKeyString, termToString } from "./term.ts";
+import { predToString } from "./pred.ts";
 import {
   createScopedSlot,
   registerCollectorScopeParticipant,
@@ -214,9 +215,30 @@ export function truncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
 
+/** @nudo:pure 记忆化通道的 kind（callBudgetKey 的分流标记） */
+const PURE_MEMO_KEY_KIND = "pure";
+
 /** 调用指纹：命名函数用 name+arg shapes；一等函数用对象身份。
- *  实参可能是裸 JS 值（B run 里模块函数作实参）——不得裸读 shape。 */
+ *  实参可能是裸 JS 值（B run 里模块函数作实参）——不得裸读 shape。
+ *
+ * ⚠ **两种口径**（勿混用，勿互相替代）：
+ * - 本函数 = **调用身份**键（shape 种类 + term 的**变量身份**）⇒ 服务
+ *   **调用预算 / 环检测**：同一递归点必须撞出同键（term 相同 ⇒ 同键）。
+ * - pureValueKey = **值**键（形状内容 + 字面量值）⇒ 服务 **@nudo:pure
+ *   记忆化**：按**值**承诺 ⇒ 同值必须同键（变量身份不同但值相同 ⇒ 同键）。
+ *
+ * @nudo:pure 记忆化通道（kind = "pure" 且 id 为空 —— 两个 pure memo 站点
+ * 「$call 路径」与「$callNamed 宿主路径」的唯一调用形态）在此**分流**到值
+ * 基键：记忆化键若带**变量身份**，同一变量重绑定为不同值后仍命中旧缓存
+ * ⇒ **陈旧结果**（Bug 281）。预算/环检测通道（kind = absfn / absbody /
+ * coerce-hook / 命名调用名，且 id 非空）**口径不变**。
+ */
 export function callBudgetKey(kind: string, id: string, args: unknown[]): string {
+  if (kind === PURE_MEMO_KEY_KIND && id === "") {
+    // 不可比较的实参 ⇒ 每次调用一个**新**键 ⇒ 永不命中（宁可不算命中，
+    // 也不能算出错误的命中——错误的命中 = 陈旧值 = Bug 281 的根因）
+    return pureValueKey(args) ?? `${PURE_MEMO_KEY_KIND}v|uncomparable|${++_pureValueOpaqueSeq}`;
+  }
   const parts = args.map((a) => {
     const sh = (a as { shape?: { k?: string }; term?: never } | null | undefined)?.shape;
     if (!sh) return `js:${typeof a}`;
@@ -224,6 +246,169 @@ export function callBudgetKey(kind: string, id: string, args: unknown[]): string
     return `${sh.k}:${t}`;
   });
   return `${kind}|${id}|${parts.join(",")}`;
+}
+
+/** 值基键的展开上限（防病态对象图无限展开：内存 / 超时） */
+const PURE_VALUE_MAX_DEPTH = 8;
+const PURE_VALUE_MAX_NODES = 256;
+
+/** 不可比较实参的序号（每次调用一个新键 ⇒ 永不命中） */
+let _pureValueOpaqueSeq = 0;
+
+/**
+ * @nudo:pure 记忆化的**值基**键（Bug 281）。
+ *
+ * 与 callBudgetKey 的口径**不同**（见 callBudgetKey 的注释）：
+ * - callBudgetKey = **调用身份**（term 的变量身份）⇒ 预算 / 环检测；
+ * - 本函数 = **值**（形状内容 + 字面量值）⇒ 记忆化（按值承诺）。
+ *
+ * 旧实现（pureMemoKey = callBudgetKey("pure", "", args)）把**变量身份**
+ * 当记忆化键 ⇒ 同一变量重绑定为不同值后仍命中旧缓存 ⇒ 陈旧结果。
+ *
+ * 返回 `undefined` = **实参不可比较** ⇒ 调用方**不得缓存**：宁可不算
+ * 命中，也不能算出**错误的命中**（错误的命中 = 陈旧值 = 本条 bug 根因）。
+ */
+export function pureValueKey(args: unknown[]): string | undefined {
+  const ctx: PureValueCtx = { path: new Set<object>(), nodes: 0 };
+  const parts: string[] = [];
+  for (const a of args) {
+    if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+      // 裸 JS 实参（宿主值）：不可比较
+      return undefined;
+    }
+    const vk = pureValueKeyOf(a as Abs, 0, ctx);
+    if (vk === undefined) return undefined;
+    parts.push(vk);
+  }
+  return `purev|${parts.join(";")}`;
+}
+
+type PureValueCtx = {
+  /** 当前路径上的 Abs（环检测：同一 Abs 出现在路径上 ⇒ 值不可判） */
+  path: Set<object>;
+  /** 已展开节点数（预算） */
+  nodes: number;
+};
+
+/**
+ * 项身份片段（只给**值不可判**的形状用：unknown / any / never）。
+ *
+ * 这三个形状的 denotation 是「全体」⇒ 值本身不可判 ⇒ 只能按**项身份**
+ * 区分（保守：只有同一项才可能同结果）。无项时（引擎的 unknown 令牌）
+ * ⇒ 空片段 ⇒ 同一抽象值 ⇒ 可命中（既有语义不变）。
+ */
+function termPart(t: Abs["term"]): string {
+  if (!t) return "";
+  return `:V:${termToString(t)}`;
+}
+
+/**
+ * Abs ⇒ 值基键片段；**不可比较**时返回 undefined（不猜）。
+ *
+ * 判据（保守优先）：只有**值可判**的 Abs 才进键；不可判的一律退路
+ * （不命中）——宁可不算命中，也不能算出错误的命中。
+ */
+function pureValueKeyOf(a: Abs, depth: number, ctx: PureValueCtx): string | undefined {
+  if (depth > PURE_VALUE_MAX_DEPTH) return undefined;
+  if (++ctx.nodes > PURE_VALUE_MAX_NODES) return undefined;
+  const id = a as unknown as object;
+  if (ctx.path.has(id)) return undefined; // 环：值不可判
+  ctx.path.add(id);
+  try {
+    return pureValueKeyInner(a, depth, ctx);
+  } finally {
+    ctx.path.delete(id);
+  }
+}
+
+function pureValueKeyInner(a: Abs, depth: number, ctx: PureValueCtx): string | undefined {
+  const conf = a.conf;
+  const pred = a.pred ? predToString(a.pred) : "";
+  const t = a.term;
+  // ① 字面量项：值就是字面量本身（-0 与 0 分开、bigint 带 n、NaN 天然区分）
+  if (t && t.op === "lit") {
+    const v = t.value;
+    const ty = typeof v;
+    // symbol / 对象 / 函数不是可比较的字面量：两个不同的 Symbol("a") 的
+    // String() 相同 ⇒ 按内容比会撞出**错误的命中** ⇒ 退路（不缓存）
+    if (ty === "symbol" || ty === "function" || (ty === "object" && v !== null)) return undefined;
+    return `lit:${ty}:${litKeyString(v)}|${pred}|${conf}`;
+  }
+  switch (a.shape.k) {
+    case "never":
+      return `never${termPart(t)}|${pred}|${conf}`;
+    case "any":
+      return `any${termPart(t)}|${pred}|${conf}`;
+    case "unknown":
+      // unknown / any 的**值**不可判（denotation = 全体）⇒ 只能按项身份
+      // 区分（保守：同项才可能同结果）。无项时（引擎的 unknown 令牌）⇒
+      // 同一抽象值 ⇒ 可命中（既有语义不变）。
+      return `unknown${termPart(t)}|${pred}|${conf}`;
+    case "prim":
+      // 非字面量项的 prim：值不可判（var 项只是**变量身份**，且结果会带
+      // 该项 ⇒ 跨 id 命中会把**项**串到别的变量上）
+      return undefined;
+    case "obj": {
+      const s = a.shape;
+      // 开放对象：额外属性不可判 ⇒ 值不可判
+      if (s.open) return undefined;
+      const parts: string[] = [];
+      for (const k of Object.keys(s.slots).sort()) {
+        const slot = s.slots[k]!;
+        const vk = pureValueKeyOf(slot.value, depth + 1, ctx);
+        if (vk === undefined) return undefined;
+        const flags = `${slot.optional ? "?" : ""}${slot.readonly ? "r" : ""}${slot.internal ? "i" : ""}${slot.symbolKey ? "s" : ""}${slot.inherited ? "h" : ""}`;
+        parts.push(`${k}${flags}=${vk}`);
+      }
+      if (s.index) {
+        const kk = pureValueKeyOf(s.index.key, depth + 1, ctx);
+        const vv = pureValueKeyOf(s.index.value, depth + 1, ctx);
+        if (kk === undefined || vv === undefined) return undefined;
+        parts.push(`idx=${kk}=>${vv}`);
+      }
+      // **不含 a.term**：对象的值在槽里，term 是**变量身份**（Bug 281 根因）
+      return `obj{${parts.join(",")}}|${pred}|${conf}`;
+    }
+    case "tuple": {
+      const s = a.shape;
+      const parts: string[] = [];
+      for (const el of s.elements) {
+        const vk = pureValueKeyOf(el, depth + 1, ctx);
+        if (vk === undefined) return undefined;
+        parts.push(vk);
+      }
+      let rest = "";
+      if (s.rest) {
+        const vk = pureValueKeyOf(s.rest, depth + 1, ctx);
+        if (vk === undefined) return undefined;
+        rest = `...${vk}`;
+      }
+      const holes =
+        s.holes && s.holes.length > 0 ? `holes=${[...s.holes].sort((x, y) => x - y).join(".")}` : "";
+      return `tup[${parts.join(",")}]${rest}${holes}|${pred}|${conf}`;
+    }
+    case "sum": {
+      const parts: string[] = [];
+      for (const m of a.shape.members) {
+        const vk = pureValueKeyOf(m, depth + 1, ctx);
+        if (vk === undefined) return undefined;
+        parts.push(vk);
+      }
+      return `sum[${parts.join("|")}]|${pred}|${conf}`;
+    }
+    case "arr":
+      // 长度未知 ⇒ 两个同元素域的数组值仍可能不同（元素个数不同）
+      return undefined;
+    case "fn":
+      // 函数值 = 身份 ⇒ 不可比
+      return undefined;
+    case "brand":
+      // 类实例：可变态 + 身份语义 ⇒ 不按内容比
+      return undefined;
+    case "eff":
+      // promise / generator：有状态 ⇒ 不可比
+      return undefined;
+  }
 }
 
 /** 截断观测 collector（作用域化：runWithCollectorScope 内各分析互不串台；

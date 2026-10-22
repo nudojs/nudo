@@ -44,7 +44,7 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
-import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
@@ -127,6 +127,11 @@ function ctorParamCountOf(
       const decl = stmt.type === "ExportNamedDeclaration"
         ? (stmt as { declaration?: unknown }).declaration
         : stmt;
+      // Bug 1031：`export { q };` 是**说明符语句**（ExportNamedDeclaration 且
+      // declaration === null），不是声明语句 ⇒ 不可解引用 `decl.type`（空指针
+      // TypeError ⇒ 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒ 契约
+      // 违规从 error 降级成 warning ⇒ check 假绿）。这里显式跳过 null。
+      if (!decl || typeof decl !== "object") continue;
       const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
       if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
         for (const m of c.body?.body ?? []) {
@@ -1110,8 +1115,15 @@ function generalizeFromAstUncached(
         }
         return callTranspiledExportFull(evalRun, slot.key, evalArgs, { phi }).result;
       }
-    } catch {
-      /* B 失败 fail-closed */
+    } catch (e) {
+      // Bug 1031：这里**不是**「B run 本身失败」（那条路径是 evalRun 为
+      // undefined ⇒ 上一分支已 return undefined），而是**桥内部异常**（引擎
+      // 缺陷）。两者混为一谈 ⇒ 内部空指针被静默降级成 unknown + 误导的
+      // nudo:opaque-result ⇒ 契约违规从 error 降级成 warning ⇒ check 假绿。
+      // 现在区分二者：仍 fail-closed（签名退 unknown，不当干净成功），但把
+      // 内部异常记进 eval-fallback 统计（nudo health 的 internal_fallbacks
+      // 暴露它），不再静默。
+      noteEvalFallback(e);
       return undefined;
     }
   };

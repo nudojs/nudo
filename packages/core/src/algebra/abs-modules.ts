@@ -25,6 +25,20 @@ export type AbsModuleExports = {
    * 据此返回 default（= module.exports 值）；缺省按命名空间对象口径。
    */
   cjsMain?: boolean;
+  /**
+   * CJS 互操作模块：ESM **默认导入**（`import fs from "node:fs"`）解析到
+   * **模块对象本身**（= 命名空间 Abs），而不是「没有 default ⇒ unknown」。
+   *
+   * Bug 282：env 模块（node:fs / node:path…）是 CJS 内建互操作模块——Node
+   * 的默认导出就是模块对象本身（具名导出挂在它上面）。env 表此前只有具名
+   * 导出、没有 default 槽 ⇒ 默认导入折 unknown ⇒ 导出函数全量降级
+   * unknown + **假** `nudo:unknown-inference` + 门禁**假绿**（同一模块的
+   * 命名空间导入却判红 ⇒ 同一种导入语义两种门禁结论）。
+   *
+   * 口径：只对**显式标记**的互操作模块生效——用户模块缺 default 仍是
+   * unknown（模块表有该 mod 但没有 default ⇒ 就是没有 default）。
+   */
+  interopDefault?: boolean;
 };
 
 /**
@@ -38,6 +52,29 @@ export function namespaceAbsOf(mod: AbsModuleExports): Abs {
   for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
   if (mod.default) slots["default"] = { value: mod.default };
   return abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
+}
+
+/**
+ * ESM **默认导入**的绑定值（`import d from "spec"`）——单一事实源。
+ *
+ * - 有 default 槽 ⇒ 用它（具名 default 导出 / 已物化的互操作 default）
+ * - 无 default 槽但标记了 `interopDefault`（CJS 互操作模块）⇒ **命名空间
+ *   Abs**（模块对象本身）——Bug 282：env 模块（node:fs…）的默认导出就是
+ *   模块对象本身，此前 env 表没有 default 槽 ⇒ 默认导入折 unknown ⇒
+ *   全量降级 + 假 `nudo:unknown-inference` + 假绿
+ * - 否则 ⇒ unknown（用户模块缺 default ⇒ 就是没有 default，Bug 990 口径：
+ *   模块表有该 mod 但没有 default，不得回退到命名空间）
+ *
+ * 消费方：`bindImports`（AST env 绑定）/ exec `bindImport`（求值绑定）——
+ * 两条路径同口径 ⇒ 同一模块的默认导入与命名空间导入给出同一个类型。
+ */
+export function defaultImportBindingOf(mod: AbsModuleExports): Abs {
+  const d = mod.default;
+  if (d !== undefined) return d;
+  if (mod.interopDefault && mod.named && Object.keys(mod.named).length > 0) {
+    return namespaceAbsOf(mod);
+  }
+  return unknown;
 }
 
 /** 把 import 说明符绑定进 env（宿主已求值依赖） */
@@ -59,11 +96,24 @@ export function bindImports(
   }
   for (const s of node.specifiers) {
     if (s.type === "ImportDefaultSpecifier") {
-      env.vars.set(s.local.name, mod.default ?? unknown);
+      // Bug 282：默认导入的绑定值走单一事实源（defaultImportBindingOf）——
+      // CJS 互操作模块（env 模块）的 default = 模块对象本身（= 命名空间）。
+      env.vars.set(s.local.name, defaultImportBindingOf(mod));
     } else if (s.type === "ImportSpecifier") {
       const imported = s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
       // 自有属性读：依赖未导出 toString 等名时裸读会把 Object.prototype 方法漏进 Abs 域
-      const named = Object.hasOwn(mod.named, imported) ? mod.named[imported] : undefined;
+      // Bug 990：`import { default as d } from "./m.js"` 是**具名 default 导入的
+      // 唯一写法**，与 `import d from "./m.js"` 是 ESM 规范下的同一个导入 ⇒ 必须
+      // 查 `mod.default`（同 ImportDefaultSpecifier 口径）；此前只查 `mod.named`
+      // ⇒ 两者不等价（一个 number、一个 unknown）。
+      // Bug 282：default 槽缺失时按**互操作标记**回退到命名空间（口径同
+      // ImportDefaultSpecifier ⇒ 两个写法仍严格等价）。
+      const named =
+        imported === "default"
+          ? defaultImportBindingOf(mod)
+          : Object.hasOwn(mod.named, imported)
+            ? mod.named[imported]
+            : undefined;
       env.vars.set(s.local.name, named ?? unknown);
     } else if (s.type === "ImportNamespaceSpecifier") {
       env.vars.set(s.local.name, namespaceAbsOf(mod));
@@ -108,11 +158,19 @@ export function collectAbsExports(
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration") {
       // re-export：`export { a, b as c } from "mod"` / `export * as ns from "mod"`
-      if (stmt.source && modules) {
+      // Bug 990：分支条件只看「**有没有 source**」，不看 modules 表在不在——
+      // `modules` 缺席时落回下面的**本地** specifier 分支 ⇒ 把 re-export 误当
+      // 本地导出 ⇒ 凭空登记 named 槽 / 凭空造出 default 槽（default 槽的
+      // **存在性**被伪造 ⇒ 协议层非法值：消费方据此生成 `import d from
+      // "./m.js"` ⇒ 运行时 SyntaxError）。来源不可达（modules 缺席 / mod 不在
+      // 表里）⇒ 整条 stmt 不产生任何导出槽（与「可达但缺名」区分：后者留
+      // unknown 槽）。
+      if (stmt.source) {
         // 自有属性读（同 bindImports）：原型名 spec 走 miss 分支
-        const mod = Object.hasOwn(modules, stmt.source.value)
-          ? modules[stmt.source.value]
-          : undefined;
+        const mod =
+          modules && Object.hasOwn(modules, stmt.source.value)
+            ? modules[stmt.source.value]
+            : undefined;
         if (mod) {
           for (const spec of stmt.specifiers) {
             if (spec.type === "ExportNamespaceSpecifier") {

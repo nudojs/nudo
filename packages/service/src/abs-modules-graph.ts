@@ -1162,7 +1162,12 @@ export function collectAbsBindingsFromGraph(
     const run = tryRunTranspiled(source, {
       mode: "analyze",
       modules,
-      envGlobals: Object.keys(mocks).length ? mocks : undefined,
+      // Bug 274（service 侧剩余半边）：seed 造的 mock 走 `mocks` 形参，
+      // **不再**混进 `envGlobals`——core 的注入面按两张表分别过滤，
+      // 「不遮蔽宿主内建」跳过表只作用于 env 全局 ⇒ 宿主内建名的 mock
+      // 不再被静默丢弃（env 全局里若也有同名，mock 仍然赢：core 的
+      // `__nudoEnv` 读面 = { ...envGlobals, ...mocks }）。
+      mocks: Object.keys(mocks).length ? mocks : undefined,
       ...inj,
     });
     if (!run) return out;

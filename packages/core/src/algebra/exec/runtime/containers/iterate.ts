@@ -99,6 +99,15 @@ import { $get } from "./member.ts";
 // 同理置于最后：members.ts（类链/链洞工具）依赖 builtins.ts，导入序保持
 // builtins → member → members 的既有求值次序（函数级调用，无模块期求值）。
 import { evalClassChain, classChainHasHole } from "../members.ts";
+// Bug 285：for-in 的 Proxy 臂复用 [[OwnPropertyKeys]] / [[GetOwnProperty]] 的
+// 单一实现（builtins/object/descriptor.ts）——该模块已在本文件的依赖图内
+// （builtins 桶 → object.ts → object/methods.ts → object/descriptor.ts），
+// 此处只是把同一实现直连过来（不新增依赖边）。
+import {
+  proxyGetOwnPropDescTrap,
+  proxyOwnKeysTrapKeys,
+  proxyTargetEnumerableStringKeys,
+} from "../../../builtins/object/descriptor.ts";
 
 /** 数组 rest：`const [a, ...rest] = arr` → rest = 从 start 起的尾段 */
 export function $arrRest(a: Abs, start: number): Abs {
@@ -833,12 +842,74 @@ const isArrayIndexKey = (k: string): boolean => {
   );
 };
 
+/**
+ * Bug 285：Proxy 的 for…in 键序列（ES2024 13.7.5.9 + 10.5.5）——
+ * 1. [[OwnPropertyKeys]] → ownKeys 陷阱（proxyOwnKeysTrapKeys：**单一实现**，
+ *    含规范不变量校验——重复名 / 非字符串键 / 漏靶的不可配置自有键 ⇒ TypeError）；
+ * 2. 每个键按 [[GetOwnProperty]] 判**可枚举性**（代理的 getOwnPropertyDescriptor
+ *    陷阱优先；无该陷阱 ⇒ 靶的自有描述符）——不可枚举 / 靶上不存在 ⇒ 不进结果；
+ * 3. 键序 = **陷阱结果的顺序**（原生 for-in 不重排整数键——与普通对象路径的
+ *    「整数键升序在前」不同）。
+ *
+ * 返回 undefined = **无 ownKeys 陷阱** ⇒ 调用方落**靶**语义（原生规范 step 6）。
+ */
+function proxyForInKeys(o: Abs): Abs | undefined {
+  const outcome = proxyOwnKeysTrapKeys(o);
+  if (outcome.k === "absent") return undefined;
+  if (outcome.k === "opaque") {
+    // 键面不可判 ⇒ 抽象字符串键（体 0..N 次——不得折空）
+    return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+  }
+  const targetEnum = proxyTargetEnumerableStringKeys(outcome.target);
+  const names: string[] = [];
+  for (const k of outcome.keys) {
+    const kv = litValue(k);
+    // 抽象键 / 非字符串键：规范不变量已由 proxyOwnKeysTrapKeys 校验（不可判面
+    // 不抛）——此处跳过（键面不可判 ⇒ 整段降级为抽象字符串键）
+    if (!kv.ok || typeof kv.value !== "string") {
+      return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
+    const name = kv.value;
+    const desc = proxyGetOwnPropDescTrap(o, $lit(name));
+    if (desc.k === "opaque") {
+      return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
+    if (desc.k === "desc") {
+      const slots =
+        desc.desc.shape.k === "obj"
+          ? (desc.desc.shape as { slots: Record<string, { value: Abs }> }).slots
+          : undefined;
+      const en = slots ? getSlot(slots, "enumerable")?.value : undefined;
+      const elv = en ? litValue(en) : undefined;
+      if (!elv || !elv.ok) {
+        return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+      }
+      if (Boolean(elv.value)) names.push(name);
+      continue;
+    }
+    // 无 getOwnPropertyDescriptor 陷阱 ⇒ 靶的 [[GetOwnProperty]]：靶上不存在 /
+    // 不可枚举 ⇒ 不进结果
+    if (targetEnum === undefined) {
+      return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
+    if (targetEnum.includes(name)) names.push(name);
+  }
+  return $arr(names.map((k) => $lit(k)));
+}
+
 export function $forInKeys(o: Abs): Abs {
   const shape = o.shape;
   if (shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const members = shape.members.map((m) => $forInKeys(m));
     return members.length ? members.reduce((a, b) => joinAbs(a, b)) : unknown;
+  }
+  // Bug 285：Proxy 的 for…in 必须走 [[OwnPropertyKeys]]（ownKeys 陷阱）——
+  // 此前**无 Proxy 分支**（直接枚举**靶**的自有可枚举键）⇒ 枚举出精确错值
+  // （原生：ownKeys 陷阱结果 ∩ 可枚举性）。无陷阱 ⇒ 落靶语义（规范 step 6）。
+  if (shape.k === "brand" && (shape as { name?: string }).name === "Proxy") {
+    const pk = proxyForInKeys(o);
+    if (pk !== undefined) return pk;
   }
   if (shape.k === "obj") {
     // Bug 18：open obj（Object.create(proto) / setPrototypeOf / spread 开面

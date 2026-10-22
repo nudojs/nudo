@@ -12,7 +12,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import type { Node } from "@babel/types";
+import type { File, Node } from "@babel/types";
 import {
   generalizeFromAst,
   termToString,
@@ -84,12 +84,40 @@ export function absModulesOk(source: string, envNames: string[]): boolean {
 
 
 
+/**
+ * import 本地绑定面：本地名 → (模块绝对路径, 导出名)。
+ *
+ * `exportName === "*"` = **命名空间绑定**（ESM `import * as ns` / CJS
+ * `const ns = require(...)`）——成员调用 `ns.helper` 的成员名即模块导出名。
+ */
+export type AbsImportLocal = {
+  /** import 到的模块（绝对路径；裸包说明符原样） */
+  modulePath: string;
+  /** 导入的导出名（`*` = 命名空间绑定） */
+  exportName: string;
+  /**
+   * 命名空间绑定被**直接**调用时的解析名（CJS `const ms = require("ms");
+   * ms(5000)` ⇒ 被调方是 module.exports 本身 ⇒ 归到 default 槽）。ESM
+   * 命名空间对象不可调用（运行时 TypeError）⇒ 该形态只对 CJS 成立。
+   * 缺省 = 用 `exportName` 本身（ESM 命名空间 ⇒ `"*"`）。
+   */
+  directExportName?: string;
+  /**
+   * Bug 286：命名空间绑定的**成员调用点**索引。
+   * key = 调用表达式起点 `"行:列"`（Babel 0 基列；与 eval 侧 `callLoc`
+   * 同一坐标面）；value = 成员名。用来给调用记录补**接收者限定**
+   * （`ns.helper`）——否则记录只带成员名（`helper`），归因侧的点号拆分
+   * 永远走不到 ⇒ targetModule/targetExport 空 ⇒ 记录整条被丢弃。
+   */
+  nsCallSites?: Map<string, string>;
+};
+
 /** 入口 import 局部绑定 → 解析后的模块路径 + 导出名 */
 export function buildAbsImportLocalMap(
   source: string,
   fromFile: string,
-): Map<string, { modulePath: string; exportName: string }> {
-  const out = new Map<string, { modulePath: string; exportName: string }>();
+): Map<string, AbsImportLocal> {
+  const out = new Map<string, AbsImportLocal>();
   try {
     const file = parse(source);
     for (const stmt of file.program.body) {
@@ -141,15 +169,134 @@ export function buildAbsImportLocalMap(
               out.set(p.value.name, { modulePath, exportName: p.key.name });
             }
           } else if (d.id.type === "Identifier") {
-            out.set(d.id.name, { modulePath, exportName: "default" });
+            // Bug 286：CJS `const ns = require("./m.js")` 是**命名空间绑定**
+            // （require 拿到的是 module.exports 对象），不是 default 导入 ⇒
+            // exportName 必须是 "*"。此前登记成 "default" ⇒ 归因侧的基名
+            // 匹配（exportName === "*"）永远走不到 ⇒ `ns.helper(...)` 的
+            // 调用点证据整条丢弃（domain-exceeds 门禁假绿）。
+            // directExportName：命名空间被**直接**调用时（`ns(...)`）被调方
+            // 是 module.exports 本身 ⇒ 仍归 default 槽（保持既有行为）。
+            out.set(d.id.name, {
+              modulePath,
+              exportName: "*",
+              directExportName: "default",
+            });
           }
         }
       }
     }
+    indexNamespaceCallSites(file, out);
   } catch {
     /* ignore */
   }
   return out;
+}
+
+/**
+ * Bug 286：命名空间绑定的**成员调用点**索引（`ns.helper(...)` 的位置 → 成员名）。
+ *
+ * eval 侧只记**成员名**（`helper`），不带接收者 ⇒ 归因侧（点号拆分）拿不到
+ * 基名 ⇒ targetModule / targetExport 空 ⇒ 匹配侧整条丢弃 ⇒ error 级
+ * `nudo:interface-domain-exceeds` 永不触发（假绿）。这里在**源码面**把
+ * 「调用点位置 → 接收者绑定名 + 成员名」钉住，供调用记录补接收者限定。
+ *
+ * 只认**标识符接收者**（`ns.helper(...)`）：接收者是表达式（`ns.a.b(...)`）
+ * 时不猜——留原样（成员名），行为不变。
+ */
+function indexNamespaceCallSites(file: File, out: Map<string, AbsImportLocal>): void {
+  const nsBindings = new Set<string>();
+  for (const [local, entry] of out) {
+    if (entry.exportName === "*") nsBindings.add(local);
+  }
+  if (nsBindings.size === 0) return;
+  /** 接收者绑定名 → (调用点位置 → 成员名) */
+  const byReceiver = new Map<string, Map<string, string>>();
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const o = n as {
+      type?: string;
+      callee?: unknown;
+      loc?: { start?: { line?: number; column?: number } } | null;
+      [k: string]: unknown;
+    };
+    if (o.type === "CallExpression") {
+      const callee = o.callee as
+        | {
+            type?: string;
+            computed?: boolean;
+            object?: { type?: string; name?: string };
+            property?: { type?: string; name?: string; value?: unknown };
+          }
+        | undefined;
+      if (
+        callee?.type === "MemberExpression" &&
+        callee.object?.type === "Identifier" &&
+        nsBindings.has(callee.object.name ?? "")
+      ) {
+        const objName = callee.object.name ?? "";
+        const member = memberNameOf(callee);
+        const start = o.loc?.start;
+        if (member !== undefined && start?.line !== undefined && start.column !== undefined) {
+          let sites = byReceiver.get(objName);
+          if (!sites) {
+            sites = new Map<string, string>();
+            byReceiver.set(objName, sites);
+          }
+          sites.set(`${start.line}:${start.column}`, member);
+        }
+      }
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(file.program);
+  for (const [local, entry] of out) {
+    const sites = byReceiver.get(local);
+    if (sites && sites.size > 0) entry.nsCallSites = sites;
+  }
+}
+
+/** 成员表达式的成员名（`ns.helper` / `ns["helper"]`）；动态键 ⇒ undefined */
+function memberNameOf(callee: {
+  computed?: boolean;
+  property?: { type?: string; name?: string; value?: unknown };
+}): string | undefined {
+  const p = callee.property;
+  if (!p) return undefined;
+  if (p.type === "Identifier" && callee.computed !== true) return p.name;
+  if (p.type === "StringLiteral") return typeof p.value === "string" ? p.value : undefined;
+  return undefined;
+}
+
+/**
+ * Bug 286：给**命名空间成员调用**的记录名补接收者限定（`helper` → `ns.helper`）。
+ *
+ * 与类成员调用（`Brand.method`）同形：接收者的**本地绑定名** + `.` + 成员名。
+ * 依据 = 源码面的成员调用点索引（位置 + 成员名双对得上才补；不猜）。
+ * 已带点号的记录（类方法 `Brand.method`）不动。
+ */
+function qualifyNamespaceMemberName(
+  fnName: string,
+  callLoc: { line: number; column: number } | undefined,
+  impMap: Map<string, AbsImportLocal> | undefined,
+): string {
+  if (!impMap || !callLoc) return fnName;
+  if (fnName.includes(".")) return fnName;
+  const key = `${callLoc.line}:${callLoc.column}`;
+  for (const [local, entry] of impMap) {
+    const member = entry.nsCallSites?.get(key);
+    if (member === undefined) continue;
+    if (member !== fnName) continue;
+    return `${local}.${fnName}`;
+  }
+  return fnName;
 }
 
 export function resolveImportAbs(spec: string, fromFile: string): string | null {
@@ -593,7 +740,7 @@ export function callRecordFromAbsCall(
      * 执法见 EvalCallRecord.threw 必填） */
     threw?: boolean;
   },
-  impMap?: Map<string, { modulePath: string; exportName: string }>,
+  impMap?: Map<string, AbsImportLocal>,
 ): CallRecord {
   const argAbs = r.args.map(safeAbsOrUnknown);
   const threw = r.threw === true;
@@ -604,8 +751,13 @@ export function callRecordFromAbsCall(
   // never 作 throws」的组合）
   const threwUnknown = r.threw === undefined;
   const thrownOrResult = safeAbsOrUnknown(r.result);
+  // Bug 286：命名空间成员调用（`ns.helper(...)`）的 eval 记录只带**成员名**
+  // （`helper`）⇒ 归因侧点号拆分永远走不到 ⇒ targetModule/targetExport 空 ⇒
+  // 匹配侧整条丢弃 ⇒ error 级 nudo:interface-domain-exceeds 永不触发（假绿）。
+  // 这里补**接收者限定**（`ns.helper`，与类成员调用 `Brand.method` 同形）。
+  const fnName = qualifyNamespaceMemberName(r.fnName, r.callLoc, impMap);
   const rec: CallRecord = {
-    fnName: r.fnName,
+    fnName,
     argAbs,
     resultAbs: threw ? neverAbs : thrownOrResult,
     throwsAbs: threw
@@ -615,7 +767,7 @@ export function callRecordFromAbsCall(
         : neverAbs,
     callLoc: r.callLoc,
   };
-  const imp = resolveCalleeImport(r.fnName, impMap);
+  const imp = resolveCalleeImport(fnName, impMap);
   if (imp) {
     // 归因到**真正定义该绑定的模块**（穿透再导出链）——中间 barrel 不是
     // 定义文件，认它会让跨文件调用点证据永远配不上被检查文件。
@@ -638,9 +790,9 @@ type CalleeImport = {
 
 /** import 面上按**导出名**反查（`import { C as S }`：本地名 ≠ 导出名） */
 function findImportByExportName(
-  impMap: Map<string, { modulePath: string; exportName: string }>,
+  impMap: Map<string, AbsImportLocal>,
   exportName: string,
-): { modulePath: string; exportName: string } | undefined {
+): AbsImportLocal | undefined {
   for (const v of impMap.values()) {
     if (v.exportName === exportName) return v;
   }
@@ -650,7 +802,7 @@ function findImportByExportName(
 /**
  * 被调名 → import 归因。
  * - 整名命中（`area`）：直接取该本地绑定的 import。
- * - 点号名（`ns.helper` / `Class.method`）：拆首段基名。
+ * - 点号名（`ns.helper` / `Class.method`）：按**最后一个点**拆基名 / 成员名。
  *   · 基名是**命名空间导入**（exportName === "*"）→ 成员名即模块导出名。
  *   · 基名是**具名导入**（`import { C }` / `import { C as S }`）→ 被调方是
  *     该类的方法：定义位点 = 类所在模块，记录名 = 完整点号名（`C.run`）。
@@ -658,17 +810,20 @@ function findImportByExportName(
  */
 function resolveCalleeImport(
   fnName: string,
-  impMap?: Map<string, { modulePath: string; exportName: string }>,
+  impMap?: Map<string, AbsImportLocal>,
 ): CalleeImport | undefined {
   if (!impMap) return undefined;
   const direct = impMap.get(fnName);
   if (direct) {
     return {
       modulePath: direct.modulePath,
-      resolveName: direct.exportName,
+      // 命名空间绑定被**直接**调用（CJS `const ms = require("ms"); ms(5000)`）：
+      // 被调方是 module.exports 本身 ⇒ 归到 default 槽（directExportName）。
+      resolveName: direct.directExportName ?? direct.exportName,
     };
   }
-  const dot = fnName.indexOf(".");
+  // 最后一个点：接收者绑定名（本地标识符，无点）+ 成员名（导出名，无点）
+  const dot = fnName.lastIndexOf(".");
   if (dot <= 0) return undefined;
   const baseName = fnName.slice(0, dot);
   const member = fnName.slice(dot + 1);
