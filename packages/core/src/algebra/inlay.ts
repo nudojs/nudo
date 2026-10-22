@@ -20,6 +20,7 @@ import { termToString } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
+import type { RunTranspiledOptions } from "./exec/run.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -44,6 +45,17 @@ export type CollectAbsInlaysOpts = InterfaceTierOpts & {
    * generalizeFromAst 看不到跨模块 import → 调用塌缩 unknown（inlay 假空）。
    */
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+  /**
+   * B run 注入包（modules / mocks / envGlobals / replacements / as）——
+   * 透传给 generalizeFromAst（与 CLI `buildCheckInjection` 产出的 inject
+   * 同型）。
+   *
+   * **缺省 = 行内指令全部缺席**（Bug 786）：`@nudo:mock` 的依赖变成未绑定名、
+   * `@nudo:as` / `@nudo:replace` 的覆盖表为空、env 全局未绑定 ⇒ 推导链塌缩成
+   * `unknown`（Nudo 词汇里 = 「推断失败」）⇒ IDE 显示 unknown 而 CLI 门禁
+   * 显示 number（跨产品面自相矛盾）。调用方（LSP）须与 CLI 同源装配 inject。
+   */
+  inject?: RunTranspiledOptions;
 };
 
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
@@ -235,6 +247,9 @@ export function collectAbsInlays(
       g = generalizeFromAst(name, source, {
         ...(refineOpts ? { refine: refineOpts } : {}),
         ...(opts?.modules ? { modules: opts.modules } : {}),
+        // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
+        // env 全局缺席 ⇒ 推导链塌缩 unknown（与 CLI 面分叉）。
+        ...(opts?.inject ? { inject: opts.inject } : {}),
       });
     } catch {
       continue;

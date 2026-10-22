@@ -30,6 +30,7 @@ import {
   type LoadModule,
 } from "@nudojs/service";
 import { formatThrowsAbs } from "@nudojs/core/internal";
+import type { RunTranspiledOptions } from "@nudojs/core/exec";
 import { flowFactsAt } from "./facts.ts";
 import { narrowByDiscriminant } from "./narrowing.ts";
 import {
@@ -81,7 +82,19 @@ export type HoverInfo = {
 };
 
 /** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
-export type HoverInterfaceOpts = InterfaceTierOpts;
+export type HoverInterfaceOpts = InterfaceTierOpts & {
+  /**
+   * B run 注入包（`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局）
+   * —— 透传给 hover 的三处 `generalizeFromAst`（Bug 786）。
+   *
+   * **缺省 = 行内指令全部缺席** ⇒ 被 mock 的依赖变成未绑定名、被 replace
+   * 的变量取其字面量原值 ⇒ 推导链塌缩成 `unknown`（Nudo 词汇里 = 「推断
+   * 失败」）⇒ IDE 显示 `unknown` 而 `nudo check` 显示 `number`（跨产品面
+   * 自相矛盾）。装配器在 LSP 侧（`agent-tools.ts` 的 `buildLspInjection`，
+   * 与 CLI 的 `buildCheckInjection` 同口径）——**core 不新增导出**。
+   */
+  inject?: RunTranspiledOptions;
+};
 
 /**
  * 见证面 throws 证据 → 展示名（911：与 `nudo check` 签名行同口径）。
@@ -186,6 +199,9 @@ export function getHoverAtPosition(
           ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         },
         ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
+        // env 全局缺席 ⇒ 推导链塌缩 unknown（与 `nudo check` 面分叉）。
+        ...(opts?.inject ? { inject: opts.inject } : {}),
       });
       if (g) {
         gDisplay = g.display;
@@ -193,21 +209,19 @@ export function getHoverAtPosition(
         gMulti = formatAbsMultiline(g.symbolic, fnName);
         // check 同口径签名（check-signatures formatEntrySigLine
         // 同公式：formalParamSignatureNames + formatShape）。契约参数
-        // 优先展示声明形态（entryReqs.display——判别联合的
-        // formatShape 展开可达数万字符）；无契约参数保持推断 shape
-        const reqByParam = new Map(
-          (g.entryReqs ?? []).map((r) => [r.param, r.display]),
-        );
+        // 的展示口径见 contractParamTextOf（Bug 775）
         const names =
           g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
         const ps = names
           .map((p, i) => {
-            const display = reqByParam.get(p);
-            if (display !== undefined) return `${p}: ${display}`;
             const t = g.typeParams[i]?.value;
-            // design §2：无约束 any；真 unknown 不得伪装
-            const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
-            return `${p}: ${shown}`;
+            // 契约参数：union 保留声明形态，其余走 check 同口径推断 shape
+            // （Bug 775）；无契约参数：design §2 无约束 any / 真 unknown
+            const text =
+              contractParamTextOf(g, p, t) ??
+              // design §2：无约束 any；真 unknown 不得伪装
+              (!t ? "any" : formatEntryParamShapeLike(t));
+            return `${p}: ${text}`;
           })
           .join(", ");
         // 返回类型与 check 同预算（951）：`formatShape(g.symbolic)` 走共享
@@ -338,6 +352,8 @@ export function getHoverAtPosition(
               ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
             },
             ...(reuse?.modules ? { modules: reuse.modules } : {}),
+            // 注入包透传（Bug 786）——同函数名面
+            ...(opts?.inject ? { inject: opts.inject } : {}),
           });
         } catch {
           // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
@@ -509,6 +525,8 @@ export function getHoverAtPosition(
             ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
           },
           ...(reuse?.modules ? { modules: reuse.modules } : {}),
+          // 注入包透传（Bug 786）——同函数名面
+          ...(opts?.inject ? { inject: opts.inject } : {}),
         });
       } catch {
         // fail-closed：generalize 失败 → 无重放（不拖垮 hover）
@@ -554,12 +572,67 @@ export function getHoverAtPosition(
 }
 
 /**
+ * check 同口径的形参类型文本（core `check-signatures.formatEntryParamShape`
+ * 同公式——core 不新增导出，LSP 侧同口径实现）：
+ * - `shape.k === "unknown"`：term 是 nullish 字面量 ⇒ 印它自己的名字
+ *   （`null` / `undefined`），**不得**与「真 unknown = 推断失败」混淆
+ *   （design §2 / Bug 348 同纪律）；否则 `unknown`；
+ * - 其余走 `formatShape(t, { showLits: true })`——契约面的字面量保形
+ *   （`lit(1)` ⇒ `1`，与 dts 面 / check 签名面一致）。
+ */
+function formatEntryParamShapeLike(t: Abs): string {
+  if (t.shape.k === "unknown") {
+    const term = t.term;
+    if (
+      term?.op === "lit" &&
+      (term.value === null || term.value === undefined)
+    ) {
+      return formatShape(t);
+    }
+    return "unknown";
+  }
+  return formatShape(t, { showLits: true });
+}
+
+/**
+ * 契约形参的展示文本（Bug 775：hover 与 `nudo check` 对同一函数给同一套
+ * 参数类型文本）。
+ *
+ * - **union（和类型）契约参数** ⇒ 保留**声明形态**（`entryReqs.display`
+ *   ——判别联合的 `formatShape` 展开可达数万字符，且臂的身份只由用户
+ *   自己的类型名承载 ⇒ 折叠的原始意图；类型值变量链接也挂这条文本上，
+ *   流窄化（`stripNullableWrappers` / `narrowByDiscriminant`）也在这条
+ *   文本上做）。
+ * - **其余契约参数**（prim / obj / 字面量）⇒ 用 **check 同口径**的推断
+ *   shape ⇒ 不再「IDE 一套侧车 DSL 原文、CLI 一套推断类型」。
+ *
+ * 无契约 ⇒ undefined（调用方回落 design §2 的无约束 `any`）。
+ */
+function contractParamTextOf(
+  g: PolyFn,
+  param: string,
+  inferred: Abs | undefined,
+): string | undefined {
+  const display = g.entryReqs?.find((r) => r.param === param)?.display;
+  if (display === undefined) return undefined;
+  if (inferred !== undefined && inferred.shape.k !== "sum") {
+    return formatEntryParamShapeLike(inferred);
+  }
+  return display;
+}
+
+/**
  * 参数声明形态折叠（名称匹配 + 流窄化）：ident 是形参名且
  * entryReqs 有声明形态（display——侧车表达式原文 / 指令
  * 约束名）时返回 display，替代投影面的判别联合无损展开
  * （可达数万字符单行——lazy 自引用指数展开）。无 display
  * （派生形参 / 无契约 / 解构子属性点路径不匹配）→
  * undefined，回落投影面（诚实降级）。
+ *
+ * **非 union 契约参数改用 check 同口径的推断 shape（Bug 775）**：union
+ * 保留声明形态（判别联合的展开不可读 + 流窄化在这条文本上做），其余
+ * 契约参数（prim / obj / 字面量）用推断 shape ⇒ hover 与 `nudo check`
+ * 对同一函数给同一套参数类型文本。
  *
  * 体内引用位叠加流窄化事实（有界规则集）：
  * - 成员访问对象（`node.x`，非可选链）：访问成立即排除
@@ -587,6 +660,13 @@ function paramDisplayOf(
 ): string | undefined {
   const req = g.entryReqs?.find((r) => r.param === ident);
   if (req?.display === undefined) return undefined;
+  // 非 union 契约参数：check 同口径的推断 shape（Bug 775）
+  const inferred =
+    g.entryShapes?.get(ident)?.abs ??
+    g.typeParams[(g.params ?? []).indexOf(ident)]?.value;
+  if (inferred !== undefined && inferred.shape.k !== "sum") {
+    return formatEntryParamShapeLike(inferred);
+  }
   const facts = flowFactsAt(fnNode, file, ident, line, column);
   let display = req.display;
   if (facts.nonNullish) display = stripNullableWrappers(display);

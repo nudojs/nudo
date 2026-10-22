@@ -55,7 +55,12 @@ function checkIssuesToDiagnostics(id: string, code: string): CheckProjection {
     });
     return {
       diagnostics: report.issues
-        .filter((i) => i.severity === "error" || i.severity === "warning")
+        // info **不**在此处砍掉（Bug 779）：噪声档取舍归
+        // `filterDiagnosticsByLevel`（`verbose` 才放行 info；`default`/
+        // `errors`/`off` 各自过滤）。先砍 info ⇒ 档位过滤器永远看不到 info
+        // ⇒ `nudo.analysis.diagnostics: "verbose"` 对 check 诊断是**空操作**，
+        // 且 `nudo:assume-relied` / `nudo:invariant-relied` /
+        // `nudo:opaque-result` 在构建日志里永不上屏（与 LSP 面同款分裂）。
         .map((i) => {
           const line = i.line ?? 1;
           const column = i.column ?? 0;
@@ -65,7 +70,9 @@ function checkIssuesToDiagnostics(id: string, code: string): CheckProjection {
           if (i.suggestion) parts.push(i.suggestion);
           if (i.code) parts.push(`(${i.code})`);
           return {
-            severity: i.severity === "error" ? ("error" as const) : ("warning" as const),
+            // severity 三档原样带出（error / warning / info）——档位由
+            // `filterDiagnosticsByLevel` 统一裁决，转换层不预判。
+            severity: i.severity,
             message: parts.join(" · "),
             code: i.code,
             range: {
@@ -267,6 +274,12 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
             }
           } else if (diag.severity === "warning") {
             this.warn(msg);
+          } else if (diag.severity === "info") {
+            // info 级走 vite 的 info 通道（**不**混进 warn 流）——
+            // 与 LSP 面的 Information 档同语义（Bug 779：verbose 档下
+            // `nudo:assume-relied` / `nudo:opaque-result` 等信息类诊断
+            // 必须上屏，但不得冒充 warning 污染构建日志的告警流）。
+            if (typeof this.info === "function") this.info(msg);
           }
         }
         // check 管线崩溃：默认 warn（不静默、不 fail 构建）；failOnError
@@ -294,7 +307,11 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
       if (totalDiags > 0) {
         const errorCount = Array.from(analysisCache.values())
           .reduce((sum, r) => sum + r.diagnostics.filter((d) => d.severity === "error").length, 0);
-        const warnCount = totalDiags - errorCount;
+        // warning 计数只算 warning（info 级走 vite info 通道，不是告警——
+        // 摘要行格式 `[nudo] Analysis complete: X error(s), Y warning(s)`
+        // 已被文档承诺，info 不得计入 Y）。
+        const warnCount = Array.from(analysisCache.values())
+          .reduce((sum, r) => sum + r.diagnostics.filter((d) => d.severity === "warning").length, 0);
         logAnalysisSummary(errorCount, warnCount);
       }
     },

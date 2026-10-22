@@ -20,6 +20,7 @@ import { traverseEsm } from "../traverse-esm.ts";
 import {
   and,
   callTranspiledExportFull,
+  generalizeFromAst,
   joinAbs,
   leqAbs,
   runTranspiled,
@@ -41,6 +42,7 @@ import {
   collectEnvNames,
   mockDirectivesToAbsSeeds,
   type AnalysisResult,
+  type LoadModule,
 } from "@nudojs/service";
 import {
   findEnclosingFunction,
@@ -543,4 +545,161 @@ function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; co
   };
   walk(fnNode);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// 作用域绑定面（Bug 789 · 绑定下沉）
+// ---------------------------------------------------------------------------
+
+/**
+ * 作用域感知的绑定查询（Bug 789 · 绑定下沉）。
+ *
+ * 成员补全面要拿到**接收者**的 Abs 才能投影成员表，而接收者 Abs 的唯一
+ * 来源是 `reuseBinding`（模块级 `result.bindings`）⇒ 该表由 service 的
+ * `collectBindings` 填充，**只遍历顶层语句**（函数体内不递归）⇒ 函数局部
+ * 量 / 形参**不在表里** ⇒ 成员面一律零候选（连 `string` 局部量也是 0 项）
+ * ⇒ 「决定补全成败的不是接收者什么类型，而是它声明在不在模块顶层」。
+ *
+ * 本查询按**光标所在作用域**解析名字：
+ * - **形参**：契约种子 Abs（`generalizeFromAst` 的 `entryShapes`）——与 hover
+ *   的「A 参数面」同源；无契约 ⇒ 形参无约束 ⇒ 不给 Abs（不猜）。
+ * - **局部量**：引擎节点级 Abs 重放（`recordPositions` 插桩在**声明位**记录
+ *   初始化求值态 Abs）——与模块级绑定面同口径（都是「声明值」）。
+ *
+ * fail-closed：解析 / 求值失败 ⇒ undefined（调用方回落模块级绑定面）。
+ *
+ * 作用域 = **光标所在的最内层 enclosing 函数**（`findEnclosingFunction`，行粒度
+ * 判定——与 hover 求值面同口径）；闭包变量（声明在外层函数）不在本查询口径内
+ * ⇒ 落回模块级绑定面。
+ *
+ * `parseText` 必须是**消毒后**的源码（尾随点改写成合法成员访问）——与
+ * 重放用的文本同一份 ⇒ AST 位置与插桩记录键同坐标系。
+ */
+export function lookupScopedBinding(
+  filePath: string,
+  parseText: string,
+  line: number,
+  column: number,
+  name: string,
+  reuse: SurfaceReuse | undefined,
+  opts?: { loadModule?: LoadModule; autoBind?: boolean },
+): Abs | undefined {
+  const ast = scopeAst(parseText);
+  if (!ast) return undefined;
+  const enc = findEnclosingFunction(ast, line, column);
+  if (!enc) return undefined;
+  const decl = scopeDeclaration(enc.node, name);
+  if (!decl) return undefined;
+  const params = (enc.node as { params?: Node[] }).params ?? [];
+  // 无参函数不需要泛化（契约种子只在有形参时才有意义）⇒ 免掉侧车指纹 I/O
+  const g =
+    params.length > 0
+      ? generalizeScoped(enc.name, parseText, ast, filePath, reuse, opts)
+      : undefined;
+  if (decl.kind === "param") return g?.entryShapes?.get(name)?.abs;
+  const nodes = scopedReplayNodes(filePath, parseText, enc, g, reuse);
+  return nodes?.get(`${decl.line}:${decl.column}`);
+}
+
+/** 作用域分析的 AST（parseText 已是消毒文本——消毒不改标识符位置）。 */
+function scopeAst(parseText: string): File | undefined {
+  try {
+    return parse(parseText);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 作用域内的名字声明：形参 / 局部量（局部量带**声明位**——重放的记录键）。 */
+type ScopeDecl = { kind: "param" } | { kind: "local"; line: number; column: number };
+
+/**
+ * enclosing 函数作用域内的声明（形参 + 体内局部量）。
+ *
+ * 体内局部量：不下钻嵌套函数作用域（嵌套函数有自己的作用域——hover 闭包内
+ * 标识符时 enclosing 即闭包自身）。
+ */
+function scopeDeclaration(fnNode: Node, name: string): ScopeDecl | undefined {
+  const params = (fnNode as { params?: Node[] }).params ?? [];
+  for (const p of params) {
+    if (p.type === "Identifier" && p.name === name) return { kind: "param" };
+  }
+  let hit: ScopeDecl | undefined;
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as {
+      type?: string;
+      id?: { type?: string; name?: string; loc?: { start: { line: number; column: number } } };
+    };
+    if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.id.name === name) {
+      const start = n.id.loc?.start;
+      if (start) hit = { kind: "local", line: start.line, column: start.column };
+    }
+    if (n !== fnNode && typeof n.type === "string" && NESTED_SCOPE_TYPES.has(n.type)) return;
+    for (const k of Object.keys(node)) {
+      if (k === "loc" || k === "start" || k === "end" || k.endsWith("Comments")) continue;
+      const v = (node as Record<string, unknown>)[k];
+      if (Array.isArray(v)) {
+        for (const c of v) walk(c);
+      } else if (v && typeof v === "object" && typeof (v as { type?: string }).type === "string") {
+        walk(v);
+      }
+    }
+  };
+  walk(fnNode);
+  return hit;
+}
+
+/**
+ * 契约泛化（形参种子 / 入口 Φ）——与 hover 求值面同源（generalizeFromAst）。
+ * fail-closed：泛化失败 ⇒ undefined（无契约种子 ⇒ 形参按 any 处理）。
+ */
+function generalizeScoped(
+  fnName: string,
+  parseText: string,
+  ast: File,
+  filePath: string,
+  reuse: SurfaceReuse | undefined,
+  opts?: { loadModule?: LoadModule; autoBind?: boolean },
+): PolyFn | undefined {
+  try {
+    return generalizeFromAst(fnName, parseText, {
+      file: ast,
+      refine: {
+        fromFile: filePath,
+        ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+        ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      },
+      ...(reuse?.modules ? { modules: reuse.modules } : {}),
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 作用域重放的位置表（(file, fn, 源文本) 缓存——与 hover 的重放缓存**分开
+ * 命名空间**：两端口径不同（种子 / 源文本），共用一个键会互相挤掉）。
+ */
+function scopedReplayNodes(
+  filePath: string,
+  parseText: string,
+  enc: EnclosingFn,
+  g: PolyFn | undefined,
+  reuse: SurfaceReuse | undefined,
+): Map<string, Abs> | undefined {
+  const cacheKey = `${filePath}#scope:${enc.name}`;
+  const cached = replayCacheGet(cacheKey);
+  if (cached && cached.source === parseText) return cached.nodes;
+  const args = g ? g.typeParams.map((t) => t.value) : [];
+  const reqs = g?.entryReqs;
+  const phi = reqs && reqs.length > 0 ? and(...reqs.map((r) => r.pred)) : undefined;
+  const nodes = replayFnAbsNodes(parseText, {
+    fnName: enc.name,
+    args,
+    ...(phi ? { phi } : {}),
+    ...(reuse?.modules ? { modules: reuse.modules } : {}),
+  });
+  replayCachePut(cacheKey, { source: parseText, nodes });
+  return nodes;
 }

@@ -18,7 +18,13 @@ import {
   getHoverAtPosition,
   getCompletionsAtPosition,
 } from "./lsp-surface.ts";
-import { cursorLexicalContext, sanitizeSourceForParsing } from "./lsp-surface/completions.ts";
+import {
+  cursorLexicalContext,
+  sanitizeSourceForParsing,
+  completionBranchAt,
+  type CompletionContext,
+} from "./lsp-surface/completions.ts";
+import { lookupScopedBinding, reuseBinding } from "./lsp-surface/replay.ts";
 import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
   isNudoTargetPath,
@@ -206,12 +212,21 @@ export function attachCompletion(deps: IdeDeps): void {
     const line = params.position.line + 1;
     const column = params.position.character;
 
+    // 词法上下文（code / comment / string）——**单次计算**，指令面与成员 /
+    // 变量面共用同一份（Bug 952：光标落在字符串 / 模板字面量**内部**时照样
+    // 弹候选，接受任一项即把标识符写进字面量内部 ⇒ 静默改写运行时值）。
+    const lexical = cursorLexicalContext(source, params.position.line, params.position.character);
+    // 补全面分支（member = 成员面 / variable = 变量面）——与
+    // getCompletionsAtPosition 同一份触发点文法（片 A 的 completionBranchAt）：
+    // 只有成员面需要作用域感知的接收者绑定（绑定下沉）。
+    const branch = completionBranchAt(source, line, column);
+
     // 指令面优先：**光标确实落在注释里**（词法上下文，见 cursorLexicalContext）
     // 且光标前是 `@nudo[:…]` 前缀。旧口径是「前面出现过 `*` 或 `nudo`」的子串
     // 匹配 ⇒ 乘号之后 / 字符串字面量里也弹指令项（Bug 708）。
     const curLine = source.split("\n")[params.position.line] ?? "";
     const before = curLine.slice(0, params.position.character);
-    const inComment = cursorLexicalContext(source, params.position.line, params.position.character) === "comment";
+    const inComment = lexical === "comment";
     const directivePrefix = /@nudo:?[\w-]*$/.exec(before)?.[0] ?? "";
     // 注释标记后（`// ` / ` * `）⇒ 给出指令全集；`@nudo[:partial]` ⇒ 前缀过滤
     const atCommentMarker = /(\/\/|\/\*|\*)\s*$/.test(before);
@@ -237,6 +252,11 @@ export function attachCompletion(deps: IdeDeps): void {
         textEdit: { range, newText: d.insert ?? d.label },
       }));
     }
+
+    // 词法闸：光标不在代码位（字符串 / 模板字面量内部、注释里）⇒ 成员面与
+    // 变量面**都不出候选**——那些位置的候选接受即改写字面量 / 注释内容
+    // （Bug 952）。
+    if (lexical !== "code") return [];
 
     try {
       // P-IDE1：completion 走同源 analysisCache——接收者/变量绑定直接读
@@ -265,7 +285,26 @@ export function attachCompletion(deps: IdeDeps): void {
           "none",
         );
       }
-      const items = getCompletionsAtPosition(filePath, source, line, column, { result });
+      const context: CompletionContext = { lexical };
+      if (branch === "member") {
+        // 绑定下沉（Bug 789）：接收者 Abs 先查**光标所在作用域**（函数体内
+        // 的局部量 / 形参）⇒ 作用域里查不到才回落模块级绑定面。作用域面用
+        // **消毒后**的源码（与引擎重放的插桩记录同坐标系——消毒不改标识符
+        // 位置）。
+        const parseText = sanitizeSourceForParsing(source);
+        const analysisModules = evalAnalysisModules(filePath, source);
+        const scopedReuse = {
+          result,
+          ...(analysisModules ? { modules: analysisModules } : {}),
+        };
+        const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+        context.lookupBinding = (name) =>
+          lookupScopedBinding(filePath, parseText, line, column, name, scopedReuse, {
+            loadModule: activeLoadModule,
+            ...(autoBind === false ? { autoBind: false } : {}),
+          }) ?? reuseBinding(scopedReuse, name);
+      }
+      const items = getCompletionsAtPosition(filePath, source, line, column, { result }, context);
       return items.map((item): LspCompletionItem => ({
         label: item.label,
         kind:

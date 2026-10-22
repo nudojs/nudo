@@ -31,7 +31,7 @@ import {
   type EmitDerivedResult,
   type CaseJson,
 } from "@nudojs/service/emit";
-import { getHoverAtPosition, getCasesForFile } from "./lsp-surface.ts";
+import { getHoverAtPosition, getCasesForFile, type HoverInterfaceOpts } from "./lsp-surface.ts";
 import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
@@ -52,7 +52,13 @@ import {
   type CallRecord,
   type PathError,
 } from "@nudojs/service";
-import { parse, programBody, getClassMembers, classMemberKeyName } from "@nudojs/parser";
+import {
+  parse,
+  programBody,
+  getClassMembers,
+  classMemberKeyName,
+  extractDirectives,
+} from "@nudojs/parser";
 import {
   abs,
   num,
@@ -71,8 +77,11 @@ import {
   isNodeModulesPath,
   sidecarPathOf,
   takeInterfaceDiagsSince,
+  extractFileEnvNames,
   type Abs,
+  type AbsModuleExports,
   type InterfaceSource,
+  type RunTranspiledOptions,
 } from "@nudojs/core";
 import type { CheckJson, CheckJsonMulti } from "@nudojs/core";
 import { collectAbsInlays, DIAG } from "@nudojs/core/internal";
@@ -81,6 +90,14 @@ import {
   injectBindings,
   typeExprToDirective,
   type TypeBinding,
+} from "@nudojs/service";
+import {
+  applyMockModuleDirectivesFromSource,
+  collectEnvGlobals,
+  collectEnvModules,
+  collectEvalReplacements,
+  mockDirectivesToAbsSeeds,
+  mockSeedsToAbsMocks,
 } from "@nudojs/service";
 
 export { injectBindings, typeExprToDirective, type TypeBinding };
@@ -360,6 +377,111 @@ export type CheckToolParams = {
 };
 
 /**
+ * IDE 面**注入装配器**（Bug 785 / 786 的唯一装配点）。
+ *
+ * **为什么必须有**：CLI 的 `buildCheckInjection`
+ * （`packages/nudojs/src/commands/check.ts:494-559`）把行内指令
+ * （`@nudo:as` / `@nudo:replace`）与 `@nudo:mock` / env 全局装进
+ * `RunTranspiledOptions`（= core 的 `inject` 通道）再交给 `checkSource` /
+ * `generalizeFromAst`；**LSP 侧此前一次都没调用收集器**
+ * （`collectEvalReplacements` 在 `packages/lsp/src/` 零命中）⇒ IDE 跑的
+ * 不是同一份注入 ⇒ 同一文件 **CLI 绿 / IDE 红**（Bug 785 假红），
+ * 且 hover / inlayHint 签名面显示 `unknown`（Nudo 词汇里 = 「推断失败」）
+ * 而 CLI 显示 `number`（Bug 786）。
+ *
+ * **落点约束**：CLI 是产品包、LSP 是库 ⇒ **不许从 lsp 反向 import nudojs**。
+ * 本函数用 service / core 已导出的装配件（`collectEvalReplacements` /
+ * `mockDirectivesToAbsSeeds` / `mockSeedsToAbsMocks` / `collectEnvGlobals` /
+ * `collectEnvModules` / `applyMockModuleDirectivesFromSource`）复刻
+ * `buildCheckInjection` 的口径 ⇒ **零新增 core / service 导出**。
+ *
+ * **返回语义**：core 的 `inject` 包（`RunTranspiledOptions`）——
+ * - `modules`：跨模块导出表 + env 模块 + `@nudo:mock-module` 覆盖；
+ * - `mocks`：`@nudo:mock` 覆盖表（带作用域覆盖表 ⇒ 与 CLI 同款 mock 语义）；
+ * - `envGlobals`：命名 env（`es` / `node` / `web`…）与项目级 env 的全局；
+ * - `replacements` + `replacementTargets`：`@nudo:replace`；
+ * - `asOverrides` + `asOverrideTargets`：`@nudo:as`。
+ *
+ * **空表不入包** ⇒ 无行内指令的文件得到 `{}`
+ * （`Object.keys(inject).length === 0`）⇒ 调用方可据此判断「无需注入」。
+ *
+ * **传递协议**（三处消费面统一，缺 `inject` 即行内指令缺席）：
+ * - 门禁面：`checkSource(file, source, pTrue, { ..., inject })`；
+ * - 签名面：`generalizeFromAst(name, source, { ..., inject })`；
+ * - inlay 面：`collectAbsInlays(source, { ..., inject })`。
+ */
+export function buildLspInjection(
+  filePath: string,
+  source: string,
+  opts?: {
+    /** buffer-aware 侧车/依赖装载（LSP 注入；缺省 service 默认装载器） */
+    loadModule?: (spec: string, fromFile: string) => string | undefined;
+    /**
+     * 预解析的 eval 模块图（调用方已算好时传入，避免重复求值）。
+     * 缺省时按 LSP 既有口径现场求值（`evalAnalysisModules`：检出环 ⇒ 不注入图）。
+     */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+  },
+): RunTranspiledOptions {
+  const loadModule = opts?.loadModule;
+  // env 名单：文件级 `@nudo:env`（文本扫描，不 parse ⇒ 语法错文件也不炸）
+  // ∪ 项目级 package.json#nudo.env —— 与 CLI `allEnvNames` 同口径。
+  const projEnv = findProjectConfig(dirname(filePath))?.config.env;
+  const projectEnvNames = Array.isArray(projEnv) ? projEnv : [];
+  const envNames = [
+    ...new Set([...projectEnvNames, ...extractFileEnvNames(source)]),
+  ];
+  const envGlobals = collectEnvGlobals(envNames);
+  const envMods = collectEnvModules(envNames);
+  // 模块图：调用方给了就复用（同一文件一次求值），否则现场求值
+  const baseModules =
+    opts?.modules ??
+    evalAnalysisModules(filePath, source) ??
+    undefined;
+  // mock-module 覆盖的基底是**窄型**导出表（service 的
+  // applyMockModuleDirectivesFromSource 签名）；LSP 侧的图类型更宽
+  // （`AbsModuleExports | Record<string, unknown>`），运行期取值仍是
+  // AbsModuleExports ⇒ 窄化只发生在类型层。
+  let mergedMods: Record<string, AbsModuleExports> = {
+    ...((baseModules ?? {}) as Record<string, AbsModuleExports>),
+    ...(Object.keys(envMods).length > 0 ? envMods : {}),
+  };
+  // `@nudo:mock-module`：覆盖 import 说明符导出（全量/局部）
+  mergedMods = applyMockModuleDirectivesFromSource(source, mergedMods, {
+    fromFile: filePath,
+  }).modules;
+  // `@nudo:mock`：函数级 mock 覆盖表（含同函数作用域表）
+  // 语法错文件 ⇒ parse 抛 ⇒ mock 表留空（**不**让装配器把整个工具打挂：
+  // hover 面对语法错文件是「无 hover」而不是「工具报错」；门禁面仍由
+  // checkSource 自己抛语法错 ⇒ 错误照常上屏）。
+  let mocks: Record<string, Abs> = {};
+  try {
+    const ast = parse(source);
+    mocks = mockSeedsToAbsMocks(
+      mockDirectivesToAbsSeeds(extractDirectives(ast), {
+        fromFile: filePath,
+        ...(loadModule ? { loadModule } : {}),
+      }),
+    );
+  } catch {
+    mocks = {};
+  }
+  // 行内指令：`@nudo:replace` / `@nudo:as` 的覆盖表
+  const reps = collectEvalReplacements(source);
+  return {
+    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
+    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
+    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
+    ...(reps.targets.length > 0
+      ? { replacements: reps.values, replacementTargets: reps.targets }
+      : {}),
+    ...(reps.asTargets.length > 0
+      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
+      : {}),
+  };
+}
+
+/**
  * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI `nudo check --json` 同构）。
  * 数据源：checkSource + serializeCheckJson；autoBind 与 CLI runCheck 同口径。
  *
@@ -408,10 +530,19 @@ export function checkTool(
     // 同文件干净，agent 面分叉——E5 同源契约）
     const analysisModules = evalAnalysisModules(filePath, source);
     const loadModule = params.loadModule ?? deps.loadModule ?? lspLoadModule;
+    // 注入装配（Bug 785）：与 CLI `buildCheckInjection` 同源 —— 行内指令
+    // （`@nudo:as` / `@nudo:replace`）+ `@nudo:mock` + env 全局必须进包，
+    // 否则 IDE 与 CLI 对同一文件给出**相反**的门禁结论（IDE 假红：
+    // 用户声明过 `raw` 是 number，IDE 仍按 string 判 `raw.toFixed` 不存在）。
+    const inject = buildLspInjection(filePath, source, {
+      loadModule,
+      ...(analysisModules ? { modules: analysisModules } : {}),
+    });
     const report = checkSource(filePath, source, pTrue, {
       loadModule,
       fromFile: filePath,
       ...(analysisModules ? { modules: analysisModules } : {}),
+      ...(Object.keys(inject).length > 0 ? { inject } : {}),
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(projectDir ? { projectDir } : {}),
       entryThrows: cCfg.entryThrows,
@@ -560,13 +691,31 @@ export function hoverTool(
     // 模块图（与 LSP hover 同源）：缺图时跨模块调用塌缩
     // unknown（intension `(_p0: A1) => unknown`——E5 同源契约）
     const analysisModules = evalAnalysisModules(filePath, source);
-    const hover = getHoverAtPosition(filePath, source, line, column, undefined, {
+    // 注入装配（Bug 786）：行内指令 / @nudo:mock / env 全局缺席 ⇒ 推导链
+    // 塌缩 unknown（Nudo 词汇里 = 「推断失败」）而 CLI 面显示 number。
+    // 传递协议：inject 随 opts 进 hover 的 generalizeFromAst（hover.ts 由
+    // 片 C 接线：`HoverInterfaceOpts.inject`），随 opts 进 collectAbsInlays。
+    const inject = buildLspInjection(filePath, source, {
+      loadModule,
+      ...(analysisModules ? { modules: analysisModules } : {}),
+    });
+    const hoverOpts: HoverInterfaceOpts & { inject?: RunTranspiledOptions } = {
       loadModule,
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(resolveDraftProjectDir(filePath)
         ? { projectDir: resolveDraftProjectDir(filePath)! }
         : {}),
-    }, analysisModules ? { modules: analysisModules } : undefined);
+      ...(Object.keys(inject).length > 0 ? { inject } : {}),
+    };
+    const hover = getHoverAtPosition(
+      filePath,
+      source,
+      line,
+      column,
+      undefined,
+      hoverOpts,
+      analysisModules ? { modules: analysisModules } : undefined,
+    );
     const payload: Record<string, unknown> = {
       file: filePath,
       line,
@@ -591,6 +740,8 @@ export function hoverTool(
         fromFile: filePath,
         ...(analysisModules ? { modules: analysisModules } : {}),
         ...(autoBind === false ? { autoBind: false } : {}),
+        // 注入包透传（Bug 786）：缺 inject ⇒ inlay 显示 unknown（= 推断失败）
+        ...(Object.keys(inject).length > 0 ? { inject } : {}),
       });
     }
     return textResult(JSON.stringify(payload, null, 2));
@@ -903,13 +1054,36 @@ export async function whatIf(
 }
 
 export type FunctionToolParams = {
-  file: string;
+  /**
+   * 目标文件（绝对路径或 `file://` URI）。
+   *
+   * **可缺省**（Bug 780）：`uri` 形态（LSP 内部自产的一律是 uri）此前
+   * 落到 `params.file === undefined` ⇒ `normalizeFilePath(undefined)` 抛
+   * TypeError ⇒ 工具 100% 失败。`file` 与 `uri` 二选一，缺省时报
+   * 「file is required …」（与 `normalizeFilePath` 的共用入口闸同款）。
+   */
+  file?: string;
+  /** LSP uri 形态（`file://…`）——与 `file` 二选一（Bug 780） */
+  uri?: string;
   functionName: string;
   /** Pre-read source (tests / callers that already hold the text). */
   source?: string;
   /** buffer-aware loadModule（E5）；缺省 deps.loadModule */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
+
+/**
+ * 工具入参的文件定位：`file` ∨ `uri` → 绝对路径（Bug 780）。
+ *
+ * LSP 内部自产的一律是 `file://…` uri 形态（`uriForFileOrUri` 口径），
+ * 兄弟命令（`nudo.selectCase` / `nudo.contract*`）都收 uri 形态；此前
+ * `nudo.trace` 只读 `params.file` ⇒ uri 形态 ⇒ 参数缺失 ⇒ TypeError。
+ * 缺省（两者皆无）⇒ 抛**共用入口闸**的 TypeError（`file is required …`），
+ * 不让裸 TypeError 当工具文案回给客户端。
+ */
+function resolveToolFile(params: { file?: string; uri?: string }): string {
+  return normalizeFilePath(params.file ?? params.uri ?? "");
+}
 
 /**
  * Suggest @nudo:case directives for a function (ported from MCP).
@@ -923,7 +1097,7 @@ export async function suggestCase(
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
-    const filePath = normalizeFilePath(params.file);
+    const filePath = resolveToolFile(params);
     const source = params.source ?? readSource(filePath, deps);
     const result = await analyzeFileAsync(
       filePath,
@@ -992,7 +1166,7 @@ export async function trace(
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
-    const filePath = normalizeFilePath(params.file);
+    const filePath = resolveToolFile(params);
     const source = params.source ?? readSource(filePath, deps);
     const result = await analyzeFileAsync(
       filePath,
@@ -1021,6 +1195,33 @@ export async function trace(
   } catch (err) {
     return analysisError(err, deps);
   }
+}
+
+/**
+ * executeCommand 位置参数桥接：`nudo.trace [uri, functionName]`（Bug 780）。
+ *
+ * IDE 的 `entry@` / `call@` 观察透镜用**位置参数**发命令（`[uri, fn]`），
+ * 与 `nudo.contract*` 同款形态（`contractPositionalArgs` /
+ * `contractEmitPositionalArgs`）。此前 `nudo.trace` **没有**桥 ⇒ 位置参数
+ * 落到服务端兜底分支（把 uri 字符串当参数对象传下去）⇒ `params.file` 是
+ * `undefined` ⇒ 工具 100% 抛 TypeError（每次点击观察透镜都只得到错误）。
+ *
+ * 返回 `{ uri, functionName }`（uri 形态即 IDE 自产形态，`trace` 工具
+ * 已收 `uri` 键）。形态不合法（缺 functionName / 非字符串）⇒ 返回
+ * `undefined`，由调用方（server 的命令桥）报**协议层参数形态错误**，
+ * 不把字符串当对象传下去。
+ */
+export function tracePositionalArgs(
+  args: unknown[],
+): FunctionToolParams | undefined {
+  if (
+    args.length >= 2 &&
+    typeof args[0] === "string" &&
+    typeof args[1] === "string"
+  ) {
+    return { uri: args[0], functionName: args[1] };
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

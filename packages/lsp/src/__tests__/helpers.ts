@@ -14,6 +14,8 @@
  * - withTempDir：mkdtemp + try/finally rmSync 的 tmpdir 脚手架。
  * - withLspServer：真 server（mock connection）+ didOpen 的协议面脚手架——
  *   协议回归钉（rename / references / definition）拿到的就是协议响应本身。
+ * - mock 的 `workspace` 特性面 + `fireWorkspaceFoldersChanged`：工作区文件夹
+ *   变更通知的协议面入口（Bug 783）。
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,6 +45,9 @@ export function createMockConnection() {
 
   const byName = register(requests);
   const byNotification = register(notifications);
+
+  /** `workspace/didChangeWorkspaceFolders` 监听器（Bug 783 的协议面入口）。 */
+  const workspaceFolderListeners: AnyHandler[] = [];
 
   const mock = {
     onInitialize: (h: AnyHandler) => byName("initialize", h),
@@ -83,6 +88,20 @@ export function createMockConnection() {
         on: (h: AnyHandler) => byName("textDocument/semanticTokens/full", h),
       },
     },
+    // 真实 Connection 的 `workspace` 特性面（工作区文件夹变更通知）。
+    // server 侧订阅 `onDidChangeWorkspaceFolders`（Bug 783）⇒ mock 必须
+    // 提供同一入口，否则订阅面在测试里根本不存在。
+    workspace: {
+      onDidChangeWorkspaceFolders: (h: AnyHandler) => {
+        workspaceFolderListeners.push(h);
+        return {
+          dispose: () => {
+            const i = workspaceFolderListeners.indexOf(h);
+            if (i >= 0) workspaceFolderListeners.splice(i, 1);
+          },
+        };
+      },
+    },
     sendDiagnostics: (params: any) => {
       sentDiagnostics.push(params);
     },
@@ -107,6 +126,17 @@ export function createMockConnection() {
     sentDiagnostics,
     sentRequests,
     consoleErrors,
+    /**
+     * 触发 `workspace/didChangeWorkspaceFolders`（Bug 783）：server 订阅的
+     * 监听器被调用——等价于客户端真的发了这条通知。
+     */
+    fireWorkspaceFoldersChanged: (event: {
+      added?: { uri: string; name: string }[];
+      removed?: { uri: string; name: string }[];
+    }) => {
+      const payload = { added: event.added ?? [], removed: event.removed ?? [] };
+      for (const h of [...workspaceFolderListeners]) h(payload);
+    },
     get listened() {
       return listened;
     },

@@ -175,8 +175,17 @@ function applyStmtFact(s: Node, paramName: string, facts: FlowFacts): void {
     return;
   }
   if (s.type !== "IfStatement") return;
-  const ifS = s as unknown as { test: Node; consequent: Node };
+  const ifS = s as unknown as {
+    test: Node;
+    consequent: Node;
+    alternate?: Node | null;
+  };
   if (!isNullishGuardOn(ifS.test, paramName)) return;
+  // **早退守卫只在没有 else（或 else 也不落到后面）时蕴含「其后非空」**
+  // （Bug 773）：带 else 时 else 分支会继续往下走 ⇒ 该路径上 p 仍可能
+  // 是 nullish；此前只看 then 分支的 return/throw ⇒ hover 窄化出**不成立**
+  // 的非空类型（与 `nudo check` 的签名/诊断自相矛盾）。
+  if (ifS.alternate && !endsWithReturnThrow(ifS.alternate)) return;
   if (endsWithReturnThrow(ifS.consequent)) facts.nonNullish = true;
 }
 
