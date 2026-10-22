@@ -31,12 +31,36 @@ export function evidencePathOf(hasContract: boolean): EvidencePath {
 }
 
 /**
- * 入口 filter：只导出**有 case 见证**的函数（无见证 ⇒ 无观测面 ⇒ 无可投影面）。
+ * 入口 filter：导出**分析面**的函数。
+ *
+ * - 有 case 见证（call@ / entry@ 合成 + `@nudo:case`）⇒ 有观测面；
+ * - `@nudo:skip` 函数按设计**不合成** entry@ 见证（零 case）⇒ 必须**显式**
+ *   放行：否则这条 filter 把它静默丢掉 ⇒ 导出面少一块，且 dts 生成器专为 skip
+ *   建的 `contractOnlySignature` 路径**永不可达**（Bug 600）。
+ *
  * case 档 "all"：@nudo:case 见证参与投影面（无指令文件不受影响——call@/entry@
  * 合成与档位无关）。
  */
 export function selectExportFunctions(result: AnalysisResult): FunctionAnalysis[] {
-  return result.functions.filter((f) => f.cases.length > 0);
+  return result.functions.filter((f) => f.cases.length > 0 || f.skipped === true);
+}
+
+/**
+ * 导出面裁剪（模块**公开面**）：四个产物面**同一个**判据。
+ *
+ * dts 面按导出面裁剪（导出名 / `default` / `Class.member` 的 Class 前缀在导出
+ * 面），而 zod / standard / guard 三面此前**不裁剪** ⇒ 同一次导出里「哪些函数
+ * 算公开」有**四套口径**：源模块一个导出都没有时，三面照样产出内部实现的
+ * 运行时校验器，`.d.ts` 却静默缺席（Bug 621）。
+ *
+ * 本函数是那道闸门的**唯一安装点**：四个面共用一份过滤结果（判据由调用方从
+ * dts 面同源的 `localNamedExports` 口径给出）。
+ */
+export function selectPublicFunctions(
+  functions: readonly FunctionAnalysis[],
+  onExportFace: (name: string) => boolean,
+): FunctionAnalysis[] {
+  return functions.filter((f) => onExportFace(f.name));
 }
 
 /**

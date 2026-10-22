@@ -99,18 +99,29 @@ function guardValueType(a: Abs): string {
  *
  * 被检查值在体内以 `data` 承接（`const data = value as <T>`）——`data` 这个
  * 名字是守卫体的既有约定（成员访问 / 比较都落在它上面）。
+ *
+ * `used`（可选）：**模块内去重集合**——与 zod 面 `safeExportIdent(name, used)`
+ * 同一套口径（`isA_bOutput` / `isA_bOutput_2`）。
+ *
+ * Bug 608：守卫名只过字符清洗（`A.b` → `isA_bOutput`）⇒ **两个不同的源函数
+ * 清洗后同名** ⇒ 同一个守卫模块里出现两个 `export function isA_bOutput`
+ * （node 下 `SyntaxError: Identifier 'isA_bOutput' has already been declared`、
+ * tsc 下 TS2323 / TS2393）。调用方**按模块**（一份守卫产物 = 一个源文件）
+ * 传同一个 `used` 集合即可消歧——集合由本函数写入（`safeExportIdent` 的语义）。
+ *
+ * 不传 `used` 时行为与旧版一致（只清洗、不去重）。
  */
-export function generateGuardFunctionFromAbs(name: string, abs: Abs): string {
+export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<string>): string {
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
   // （否则守卫写成 `data === 1`，把「一次兜底观测」钉成出口域）。
   const widened = widenUncertainLiteral(abs);
   const src = widened ?? abs;
   const body = denoteGuard(src, "data");
   const valueType = guardValueType(src);
-  return `export function ${safeExportIdent(name)}(value: unknown): boolean {\n  const data = value as ${valueType};\n  return ${body};\n}`;
+  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  const data = value as ${valueType};\n  return ${body};\n}`;
 }
 
-/** 兼容别名：Abs 路径唯一 */
-export function generateGuardFunction(name: string, abs: Abs): string {
-  return generateGuardFunctionFromAbs(name, abs);
+/** 兼容别名：Abs 路径唯一（`used` 语义同上）。 */
+export function generateGuardFunction(name: string, abs: Abs, used?: Set<string>): string {
+  return generateGuardFunctionFromAbs(name, abs, used);
 }

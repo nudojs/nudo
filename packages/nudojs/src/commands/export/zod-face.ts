@@ -16,9 +16,16 @@ export type ZodInputSlots = Record<string, { value: Abs; optional?: boolean }>;
  *
  * 契约级**顶层形参可选性**（Bug 536）：可选位在 zod 面是 `.optional()`，
  * 缺省即必填（契约是用户申报的调用域，权威）。
+ *
+ * **Bug 606**：槽表用**无原型对象**（`Object.create(null)`）装配——普通对象带
+ * `Object.prototype.__proto__` 的 **setter** ⇒ 形参名 `__proto__` 的赋值被
+ * 原型 setter 吞掉（该键永不成自有属性）⇒ `Object.entries()` 看不到它 ⇒
+ * `obj(slots)` 拿不到该槽 ⇒ **zod 面丢形参**（dts 面走另一条路径，是对的）
+ * ⇒ 跨产物面自相矛盾。无原型对象没有该 setter ⇒ `__proto__` 落为普通自有键
+ * （`constructor` / `toString` 等继承键同理）。
  */
 export function zodInputSlots(paramExps: readonly ParamFace[]): ZodInputSlots {
-  const slots: ZodInputSlots = {};
+  const slots = Object.create(null) as ZodInputSlots;
   for (const p of paramExps) {
     slots[p.name] = {
       value: p.abs,

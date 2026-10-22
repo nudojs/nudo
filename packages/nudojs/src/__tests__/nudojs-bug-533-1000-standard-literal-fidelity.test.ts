@@ -59,7 +59,10 @@ describe("nudojs Bug 533 / 1000: standard 产物的字面量保真", () => {
     writeFileSync(file, "export function bigAdd(a) { return a; }\n", "utf-8");
     writeFileSync(
       join(dir, "big.nudo.js"),
-      'import { fn, lit } from "@nudojs/core";\nexport const bigAdd = fn({ n: lit(10n) }, lit(10n));\n',
+      // 侧车的契约形参名必须与函数形参表一致（`bigAdd(a)` ⇒ `a`）：写成 `n` 时
+      // `nudo check` 判 `nudo:interface-param-mismatch`（error）⇒ 导出面按契约
+      // 一致性闸门拒绝发布产物（Bug 607）。
+      'import { fn, lit } from "@nudojs/core";\nexport const bigAdd = fn({ a: lit(10n) }, lit(10n));\n',
       "utf-8",
     );
     const out = join(dir, "out");

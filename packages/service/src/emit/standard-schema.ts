@@ -23,6 +23,10 @@
  *   抛）——产物里的 lit 值必须与 Abs 一致（Bug 533 / 1000）。
  * - **入参面口径与 zod 面对齐**：`<fn>Input` 校验「整个入参对象」；解构形参的
  *   **字段**不提升为顶层整参校验器（Bug 539）。
+ * - **返回面恒名**：`<fn>Output`（与 zod 面同名同义）——名字**不随符号来源翻转**
+ *   （Bug 614：曾「有契约返回 ⇒ `<fn>Return`、走观测 ⇒ `<fn>Output`」）。
+ * - **顶层形参可选性保真**：可选位（契约级 / 声明级）的整参校验器**接受
+ *   `undefined`**（Bug 627）。
  */
 
 import type { Abs, FormalParam } from "@nudojs/core";
@@ -639,39 +643,62 @@ export type StandardSchemaModuleProjection = {
  * `a` / `b`），不是函数的形参。把字段级类型提升成顶层**整参**校验器 ⇒ 字段级
  * 校验器冒充整参（`act_a.validate({a:1,b:2})` 拒正确入参、`act_a.validate(1)`
  * 放行错误入参，双向都错）——Bug 539。
+ *
+ * `optional`：**顶层形参可选性**（Bug 627）——契约级（`number().optional()`）或
+ * 声明级（默认形参）。缺省（undefined）= 必填。
  */
 export type StandardSchemaInputEntry =
-  | { kind: "param"; name: string; abs: Abs }
-  | { kind: "field"; name: string; abs: Abs };
+  | { kind: "param"; name: string; abs: Abs; optional?: boolean }
+  | { kind: "field"; name: string; abs: Abs; optional?: boolean };
 
 /**
  * 标准面**函数级**装配描述（入参面 + 返回面）。
  *
- * - `inputs`：契约 / 证据的入参条目（名字 + Abs）
+ * - `inputs`：契约 / 证据的入参条目（名字 + Abs + 可选性标记）
  * - `formals`：形参表面（解构形参的判据；缺省 = 全部当整参）
- * - `returns` / `output`：返回面（`<fn>Return` / `<fn>Output`）
+ * - `returns` / `output`：返回面（**恒名** `<fn>Output`——见下）
  */
 export type StandardSchemaFunctionSpec = {
   /** 函数名（导出名前缀） */
   fn: string;
-  /** 入参条目（契约 / 证据） */
-  inputs?: ReadonlyArray<{ name: string; abs: Abs }>;
+  /**
+   * 入参条目（契约 / 证据）。
+   *
+   * `optional`：**顶层形参可选性**（Bug 627）——契约级可选（`constraint.isOptional`
+   * 的直传，同 dts 面的 `DtsContractFace.params[].optional` 口径）。`constraintToEntryAbs`
+   * 对标量契约**丢掉** isOptional（entry Abs 里没有该信息）⇒ 可选性必须由
+   * 契约面显式带过来；缺省（undefined）= 该位必填。
+   */
+  inputs?: ReadonlyArray<{ name: string; abs: Abs; optional?: boolean }>;
   /** 形参表面（`{ a, b }` 这类 pattern 形参的绑定名 = 字段判据） */
   formals?: ReadonlyArray<FormalParam>;
-  /** 契约返回约束 → `<fn>Return` */
+  /** 契约返回约束（内容来源；导出名恒为 `<fn>Output`） */
   returns?: Abs;
-  /** 观测 / 推导的返回 Abs → `<fn>Output`（无 Return 时才出） */
+  /** 观测 / 推导的返回 Abs（内容来源；导出名恒为 `<fn>Output`） */
   output?: Abs;
 };
+
+/**
+ * 声明级可选性：默认形参（`function f(a, b = 2)`）可省略 ⇒ 该位可选。
+ *
+ * 与 dts 面同口径（dts 的 `?` 由「契约级 > 声明级 > 观测级」三来源决定）——
+ * 声明级这一路在 standard 面此前**整条缺失**（Bug 627）。
+ */
+function declarationOptional(formals: ReadonlyArray<FormalParam> | undefined, name: string): boolean {
+  return (formals ?? []).some((f) => f.kind === "default" && f.name === name);
+}
 
 /**
  * 契约条目 → 整参 / 解构字段的分类。
  *
  * 判据 = 形参表面：pattern 形参（`{ a, b }`）的顶层绑定名（`bound`）与属性键
  * （`propKey`）——契约里以这些名字出现的条目是**字段级**，不是函数的形参。
+ *
+ * 可选性（Bug 627）两来源合并：**契约级**（`inputs[].optional`）∪ **声明级**
+ * （默认形参）——任一为真即该位可选。
  */
 function classifyStandardSchemaInputs(
-  inputs: ReadonlyArray<{ name: string; abs: Abs }>,
+  inputs: ReadonlyArray<{ name: string; abs: Abs; optional?: boolean }>,
   formals: ReadonlyArray<FormalParam> | undefined,
 ): StandardSchemaInputEntry[] {
   const patterns = (formals ?? []).filter(
@@ -681,10 +708,23 @@ function classifyStandardSchemaInputs(
     const isField = patterns.some(
       (f) => f.bound.includes(i.name) || Object.hasOwn(f.propKey, i.name),
     );
+    const optional = i.optional === true || declarationOptional(formals, i.name);
     return isField
-      ? { kind: "field", name: i.name, abs: i.abs }
-      : { kind: "param", name: i.name, abs: i.abs };
+      ? { kind: "field", name: i.name, abs: i.abs, optional }
+      : { kind: "param", name: i.name, abs: i.abs, optional };
   });
+}
+
+/**
+ * 可选位 → 允许 `undefined` 的节点（`T | undefined`）。
+ *
+ * Bug 627：顶层形参的导出走的是**独立值节点**（不是对象槽）⇒ 结构上**无处挂
+ * `optional`** ⇒ 契约允许的 `undefined` 被运行时拒收（`act_x.validate(undefined)`
+ * ⇒ REJECT）。这里把可选位包成「并集（节点 + `undefined`）」——与 zod 面
+ * `.optional()`（= `T | undefined`）**同判据**。
+ */
+function optionalNode(node: SchemaNode): SchemaNode {
+  return { k: "union", members: [node, { k: "lit", value: undefined }] };
 }
 
 /** 模块装配（banner + helper + 导出体）——两个入口共用。 */
@@ -727,13 +767,23 @@ export function absToStandardSchemaModule(
 /**
  * Abs → Standard Schema v1 **函数级**模块源码（入参面 + 返回面）。
  *
- * 导出名口径（与 zod 面对齐，`<fn>Input` 同名同义）：
+ * 导出名口径（与 zod 面对齐，`<fn>Input` / `<fn>Output` 同名同义）：
  * - `<fn>_<param>`：**整参**校验器（一个形参一个）
  * - `<fn>Input`：**整个入参对象**的校验器（入参条目的对象投影）
- * - `<fn>Return`（契约返回）/ `<fn>Output`（观测返回，无 Return 时才出）
+ * - `<fn>Output`：**返回面**校验器（**恒名**——内容取契约返回，否则取观测返回）
+ *
+ * Bug 614：返回面的**符号名**曾与**符号来源**耦合（有契约返回叫 `<fn>Return`，
+ * 走观测叫 `<fn>Output`）⇒ 同一函数在不同源码状态下拿到**不同名字**，
+ * 下游 `import { <fn>Output } from "*.nudo.standard"` 直接报错（而同一次导出的
+ * zod 面恒叫 `<fn>Output` ⇒ 两面同物异名）。名字与来源解耦 ⇒ **恒叫
+ * `<fn>Output`**（内容仍按「契约返回优先」取值）。
  *
  * **解构形参的字段不提升为顶层整参校验器**（Bug 539）：字段级校验器与整参校验器
  * 同名同形、语义却不同，消费方必然误用；字段只进 `<fn>Input`。
+ *
+ * **顶层形参的可选性保真**（Bug 627）：可选位（契约级 `number().optional()` 或
+ * 声明级默认形参）的整参校验器**接受 `undefined`**（`T | undefined`，与 zod 面
+ * `.optional()` 同判据），`<fn>Input` 的对应槽位带 `optional`（键可缺席）。
  */
 export function absToStandardSchemaFunction(
   spec: StandardSchemaFunctionSpec,
@@ -750,26 +800,36 @@ export function absToStandardSchemaFunction(
     const { node, dropped: d } = absToSchemaNode(e.abs);
     const notes = d.map((n) => `${spec.fn}_${e.name}: ${n}`);
     dropped.push(...notes);
-    bodies.push(makeStandardSchemaSource(`${spec.fn}_${e.name}`, node, notes, used));
+    bodies.push(
+      makeStandardSchemaSource(
+        `${spec.fn}_${e.name}`,
+        e.optional === true ? optionalNode(node) : node,
+        notes,
+        used,
+      ),
+    );
   }
 
   // 入参对象：`<fn>Input`（与 zod 面同口径：入参条目的对象投影）
   if (entries.length > 0) {
-    const slots: Array<{ key: string; node: SchemaNode }> = [];
+    const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
     for (const e of entries) {
       const { node, dropped: d } = absToSchemaNode(e.abs);
       dropped.push(...d.map((n) => `${spec.fn}Input: ${e.name}: ${n}`));
-      slots.push({ key: e.name, node });
+      slots.push(
+        e.optional === true ? { key: e.name, node, optional: true } : { key: e.name, node },
+      );
     }
     bodies.push(makeStandardSchemaSource(`${spec.fn}Input`, { k: "obj", slots }, [], used));
   }
 
-  // 返回面：契约返回优先（`<fn>Return`），否则观测返回（`<fn>Output`）
+  // 返回面：**恒名** `<fn>Output`（Bug 614：名字与来源解耦）；内容：契约返回
+  // 优先，否则观测返回。
   if (spec.returns) {
     const { node, dropped: d } = absToSchemaNode(spec.returns);
-    const notes = d.map((n) => `${spec.fn}Return: ${n}`);
+    const notes = d.map((n) => `${spec.fn}Output: ${n}`);
     dropped.push(...notes);
-    bodies.push(makeStandardSchemaSource(`${spec.fn}Return`, node, notes, used));
+    bodies.push(makeStandardSchemaSource(`${spec.fn}Output`, node, notes, used));
   } else if (spec.output) {
     const { node, dropped: d } = absToSchemaNode(spec.output);
     const notes = d.map((n) => `${spec.fn}Output: ${n}`);

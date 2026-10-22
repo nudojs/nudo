@@ -87,8 +87,14 @@ export function toJsBindingIdent(name: string, used?: Set<string>): string {
  * Object-literal / type-member key: bare ident or canonical integer,
  * otherwise JSON-quoted. Leading-zero digit keys (`01`) stay quoted — bare
  * `01` is a SyntaxError in modules/TS.
+ *
+ * `__proto__` 是**特例**（族 17 Bug 606）：它虽然长得像普通标识符，但在
+ * **JS 对象字面量**里 `__proto__: v` 是**原型 setter**（不是自有属性）⇒
+ * 运行时该键根本不存在（zod 形状丢键）。⇒ 一律写成计算键 `["__proto__"]`
+ * —— 计算键是普通自有属性。
  */
 export function formatObjectKey(k: string): string {
+  if (k === "__proto__") return `["${k}"]`;
   if (JS_IDENT.test(k)) return k;
   if (JS_CANONICAL_INT.test(k)) return k;
   return JSON.stringify(k);

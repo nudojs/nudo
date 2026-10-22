@@ -84,14 +84,14 @@ describe("Bug 539: standard 入参面不得把解构字段平铺成整参校验�
     expect(mod.actInput!["~standard"].validate({ a: 1, b: 2 }).issues).toBeUndefined();
   });
 
-  it("返回面口径：契约返回 → `<fn>Return`；无契约返回 → `<fn>Output`", () => {
+  it("返回面口径：恒名 `<fn>Output`（名字不随符号来源翻转——Bug 614）", () => {
     const withReturn = absToStandardSchemaFunction({
       fn: "act",
       inputs: [{ name: "a", abs: num() }],
       returns: num(),
     });
-    expect(withReturn.source).toContain("export const actReturn");
-    expect(withReturn.source).not.toContain("export const actOutput");
+    expect(withReturn.source).toContain("export const actOutput");
+    expect(withReturn.source).not.toContain("export const actReturn");
 
     const withOutput = absToStandardSchemaFunction({
       fn: "act",

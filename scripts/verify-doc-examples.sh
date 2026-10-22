@@ -301,10 +301,10 @@ verify_test mocking packages/website/docs/concepts/mocking.md \
   '=== readConfig ==='
 
 # export-ecosystem: call-site evidence + sidecar contract project to Standard
-# Schema validators (one module per function; names `<fn>_<param>` / `<fn>Return`).
+# Schema validators (one module per function; names `<fn>_<param>` / `<fn>Output`).
 verify_export_standard export-ecosystem packages/website/docs/guides/export-ecosystem.md \
   'export const createUser_input' \
-  'export const createUserReturn' \
+  'export const createUserOutput' \
   'export const iscreateUserOutputOutput' \
   'Standard Schema v1'
 

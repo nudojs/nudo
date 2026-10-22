@@ -327,7 +327,12 @@ function projectObj(
 ): NudoConstraint | undefined {
   // 动态键 / open 对象不是定长形状
   if (s.index || s.open) return undefined;
-  const fields: Record<string, NudoField> = {};
+  // **无原型字段表**（族 17 Bug 606）：普通对象存槽表 ⇒ 键 `__proto__` 的
+  // 赋值命中 `Object.prototype.__proto__` 的**原型 setter** ⇒ 该键永不成
+  // 自有属性 ⇒ `__proto__` 形参在契约投影里被静默吞掉（zod 产物丢键）。
+  // core 侧消费全走 `Object.entries` / `Object.hasOwn` / `!== undefined`
+  // ⇒ 无原型安全（与 `constraint.ts` 的 `partial()` 同一惯例）。
+  const fields: Record<string, NudoField> = Object.create(null) as Record<string, NudoField>;
   for (const [k, slot] of Object.entries(s.slots)) {
     // Bug 240（S21）：internal 槽不进约束面（内部槽不是自有属性）——
     // 规范数组下标槽除外（承载元素域，族 01 口径）。

@@ -27,6 +27,7 @@ import {
   buildEffectiveInterfaceOptions,
   resolveEvalMocks,
   selectExportFunctions,
+  selectPublicFunctions,
 } from "./export/selection.ts";
 import { unifiedParamFace, unifiedReturnFace } from "./export/contract-face.ts";
 import { renderZodModule, zodFaceEntries } from "./export/zod-face.ts";
@@ -41,7 +42,12 @@ import {
   exportFacePredicate,
   type DtsFaceEntry,
 } from "./export/dts-face.ts";
-import { reportMockSeedFailure, reportUnevidencedParams } from "./export/diagnostics.ts";
+import {
+  collectExportDiagnostics,
+  reportExportDiagnostics,
+  reportMockSeedFailure,
+  reportUnevidencedParams,
+} from "./export/diagnostics.ts";
 import { writeExportArtifacts, writtenPathLines } from "./export/io.ts";
 import { printExportStdout } from "./export/stdout.ts";
 
@@ -62,15 +68,37 @@ async function runExport(
   const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "all");
   const functions: FunctionAnalysis[] = selectExportFunctions(result);
 
+  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
+  // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
+  // 项目关 autoBind 时侧车不做 ambient 加载
+  const effOpts = buildEffectiveInterfaceOptions(filePath);
+
+  // 导出面裁剪谓词（dts 只发射导出面：export / export default / CJS exports ——
+  // 与 check entry 表同源 localNamedExports；导出 class 的实例方法按 Class
+  // 前缀放行）。四个产物面**共用**这一道闸门（Bug 621）。
+  const onExportFace = exportFacePredicate(dtsEntryNames(source));
+
+  // 诊断面（Bug 610 / 607 / 625）：契约面装载失败 / 契约形参名与声明形参表
+  // 不匹配 / 契约合取不可满足 ⇒ 产物面会发布一份与契约不符的投影 ⇒ 阻断级：
+  // 真实诊断上屏（stderr）+ exit 1 + **不发布产物**。
+  const diagnostics = collectExportDiagnostics({
+    filePath,
+    source,
+    result,
+    effOpts,
+    onExportFace,
+  });
+  if (diagnostics.blocking) {
+    reportExportDiagnostics(diagnostics);
+    process.exitCode = 1;
+    return;
+  }
+
   if (functions.length === 0) {
     console.log("No analyzed functions found.");
     return;
   }
 
-  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
-  // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
-  // 项目关 autoBind 时侧车不做 ambient 加载
-  const effOpts = buildEffectiveInterfaceOptions(filePath);
   // 契约种子求值的 @nudo:mock 种子（与 analyzer 文件级种子同口径；env 面
   // 不在此装配——env 依赖体 fail-closed 落 unknown，不伪造精度）
   const mockResult = resolveEvalMocks(source, filePath);
@@ -81,9 +109,6 @@ async function runExport(
   }
   const evalMocks = mockResult.mocks;
 
-  // dts 只发射导出面（export / export default / CJS exports —— 与 check
-  // entry 表同源 localNamedExports；导出 class 的实例方法按 Class 前缀放行）
-  const onExportFace = exportFacePredicate(dtsEntryNames(source));
   // 模块导出面（导出名 / 类 / 再导出）：dts 投影按**导出名**声明，类成员进
   // 类声明（一次一类），再导出面按原样复现（族 15 · S1）。
   const dtsSurface = dtsModuleSurfaceOf(source);
@@ -91,7 +116,16 @@ async function runExport(
   const dtsEntries: DtsFaceEntry[] = [];
 
   const effectiveDialect = schemaDialectOf(format, dialect);
-  const schemaExports: Record<string, Abs> = {};
+  // zod 导出表：**无原型** + **不折叠同名**（族 17 · Bug 623）——
+  // 普通对象把同名条目后者覆盖前者（实测：同一个类里两个同名方法 ⇒ zod 产物
+  // 只剩 1 个 `C_mInput`，另一个方法的证据凭空消失）⇒ 键侧先去重
+  // （`C_mInput` / `C_mInput_2`），再交给 service 的 `zodExportIdent` 做
+  // 标识符级去重（两层去重各司其职）。
+  const schemaExports: Record<string, Abs> = Object.create(null) as Record<string, Abs>;
+  /** zod 导出名占用表（键侧去重：同名条目各自成一条，不折叠）。 */
+  const zodExportNames = new Set<string>();
+  /** guard 标识符占用表（同一份产物 = 同一作用域 ⇒ 跨函数块共享）。 */
+  const guardIdents = new Set<string>();
   const standardChunks: string[] = [];
   const guardChunks: string[] = [];
   const dtsChunks: string[] = [];
@@ -99,24 +133,41 @@ async function runExport(
   /** 无证据（无契约 / 无 case / 无调用点）而落 unknown 的参数位（stderr 提示用） */
   const unevidencedParams: string[] = [];
 
-  for (const fn of functions) {
+  // 导出面过滤（**循环入口**，四个产物面共用一道闸门）：dts 面此前独有这道
+  // 过滤，zod / standard / guard 三面不裁剪 ⇒ 同一次导出里「哪些函数算公开」
+  // 有四套口径（内部实现照样产出运行时校验器，.d.ts 却静默缺席）——Bug 621。
+  const publicFunctions = selectPublicFunctions(functions, onExportFace);
+
+  for (const fn of publicFunctions) {
     const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
     const eff = effectiveInterface(source, baseName, effOpts);
+    // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
+    const faceCtx = {
+      source,
+      filePath,
+      ...(evalMocks ? { mocks: evalMocks } : {}),
+    };
     const paramExps = unifiedParamFace(fn, eff, caseResults);
-    const outputAbs = unifiedReturnFace(fn, eff, caseResults);
+    const outputAbs = unifiedReturnFace(fn, eff, caseResults, faceCtx);
 
     if (wantsSchema(format)) {
       // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
       for (const [name, abs] of zodFaceEntries(baseName, paramExps, outputAbs)) {
-        schemaExports[name] = abs;
+        // 同名条目不折叠（Bug 623）：占用表命中 ⇒ 加 `_2` / `_3` … 后缀
+        let key = name;
+        for (let i = 2; zodExportNames.has(key); i++) {
+          key = `${name}_${i}`;
+        }
+        zodExportNames.add(key);
+        schemaExports[key] = abs;
       }
     }
 
     if (wantsStandard(format)) {
-      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs);
+      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs, faceCtx);
       if (chunk) {
         standardChunks.push(chunk.source);
         for (const note of chunk.dropped) {
@@ -126,7 +177,9 @@ async function runExport(
     }
 
     if (format === "guard" || format === "all") {
-      guardChunks.push(guardFaceChunk(fn, baseName, caseResults));
+      // 守卫消费**统一返回面**（契约面优先，599 / 613）⇒ 与 zod / standard /
+      // dts 三个面同一口径（出口域 = 契约申报的域，不再是单次调用点字面量）
+      guardChunks.push(guardFaceChunk(baseName, outputAbs, guardIdents));
     }
 
     if (format === "dts" || format === "all") {
@@ -174,9 +227,22 @@ async function runExport(
     return;
   }
 
+  // 模块无公开面 ⇒ 四个产物面都无产物（Bug 621：四口径统一）——如实说明，
+  // 不静默零产物。
+  if (publicFunctions.length === 0 && functions.length > 0) {
+    console.log(
+      "No exported declarations found — export projects the module surface (export / export default / CJS exports).",
+    );
+    return;
+  }
+
   if (output) {
     const result2 = writeExportArtifacts(resolve(output), {
       stem,
+      // 模块标识 = 源文件路径（族 17 · Bug 609 / 622）：没有它，模块身份只能
+      // 靠「stem + 导出签名」猜 ⇒ 同 stem **且**导出名集合也相同的两个模块
+      // 会被判成同一模块（后者覆盖前者），且改名后重导会换唯一名、留下陈旧副本。
+      moduleKey: filePath,
       dialect: effectiveDialect,
       ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
       standardChunks,
@@ -196,7 +262,6 @@ async function runExport(
     guardChunks,
     dtsChunks,
     droppedNotes,
-    dialect: effectiveDialect,
   });
 }
 

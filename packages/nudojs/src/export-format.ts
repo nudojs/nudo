@@ -27,6 +27,17 @@ export function wantsStandard(format: ExportFormat): boolean {
   return format === "standard" || format === "all";
 }
 
+/**
+ * 本次导出的 **schema 方言**（= schema 产物的口径词）。
+ *
+ * 作用域 = **schema 产物**（`--format schema|all`）：它只喂给 schema 产物文件名
+ * （`schemaFileName`）⇒ 没有 schema 产物时这个值不参与任何产物命名。
+ *
+ * ⚠ 它**不是** stdout `dropped preds` 台账的口径词：台账内容（dropped 记录）
+ * 来自 **standard** 面 ⇒ 标题按**来源面**取名（stdout 面，`export/stdout.ts`），
+ * 否则 `--format standard`（根本没产 zod 产物）也会宣称「not projected into
+ * zod」（Bug 1050）。
+ */
 export function schemaDialectOf(
   _format: ExportFormat,
   dialect: SchemaDialectName | undefined,

@@ -14,7 +14,7 @@ import {
   type DtsModuleSurface,
 } from "@nudojs/service/emit";
 import { tryEvalCall, type FunctionAnalysis } from "@nudojs/service";
-import { contractParamFace, contractReturnFace, type ParamFace } from "./contract-face.ts";
+import { contractParamFace, effectiveContractReturnFace, type ParamFace } from "./contract-face.ts";
 
 /** dts 面的逐函数条目（模块面合成用：类声明一次一类 + 再导出 + brand 类）。 */
 export type DtsFaceEntry = {
@@ -62,7 +62,13 @@ export function dtsFaceEntry(
   surface: DtsModuleSurface | undefined,
 ): DtsFaceEntry {
   const contractParams: ParamFace[] = contractParamFace(eff);
-  let contractReturn: Abs | undefined = contractReturnFace(eff);
+  // 契约返回面取**已复核**口径：实现违约时不投影契约（回落观测面，Bug 626）、
+  // async 时保留 `promise<…>` 包装（Bug 618）。
+  let contractReturn: Abs | undefined = effectiveContractReturnFace(fn, eff, {
+    source,
+    filePath,
+    ...(evalMocks ? { mocks: evalMocks } : {}),
+  });
   if (contractReturn === undefined && contractParams.length > 0) {
     const byName = new Map(contractParams.map((p) => [p.name, p.abs]));
     const seedArgs = fn.paramNames.map(
