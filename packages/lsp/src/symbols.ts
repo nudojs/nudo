@@ -1348,6 +1348,34 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
       pushDefaultExport(stmt.declaration);
       continue;
     }
+    // CJS 成员导出：`exports.f = fn` / `module.exports.f = fn`（键名即导出名）
+    // ——此前整段在大纲里消失（998）：诊断面点名 alpha，符号面却查不到。
+    if (stmt.type === "ExpressionStatement") {
+      const expr = stmt.expression;
+      if (expr.type === "AssignmentExpression" && expr.operator === "=") {
+        const left = expr.left;
+        const right = expr.right;
+        if (left.type === "MemberExpression" && !left.computed) {
+          const obj = left.object;
+          const isExports = obj.type === "Identifier" && obj.name === "exports";
+          const isModuleExports =
+            obj.type === "MemberExpression" &&
+            obj.object.type === "Identifier" &&
+            obj.object.name === "module" &&
+            obj.property.type === "Identifier" &&
+            obj.property.name === "exports";
+          const prop = left.property;
+          if (
+            (isExports || isModuleExports) &&
+            prop.type === "Identifier" &&
+            (right.type === "FunctionExpression" || right.type === "ArrowFunctionExpression")
+          ) {
+            pushFn(right, prop, true);
+          }
+        }
+      }
+      continue;
+    }
     const { declaration: decl, exported } = unwrapExport(stmt);
 
     if (decl.type === "FunctionDeclaration") {

@@ -4,8 +4,8 @@ import { testTool } from "../agent-tools.ts";
 describe("nudo.test agent tool", () => {
   const src = `function scale(x) { return x + 1; }\n`;
 
-  it("returns CaseJson v1 with abs intension", () => {
-    const r = testTool(
+  it("returns CaseJson v1 with abs intension", async () => {
+    const r = await testTool(
       { file: "/t/scale.js", source: src, format: "json" },
       { readFile: () => src },
     );
@@ -15,20 +15,20 @@ describe("nudo.test agent tool", () => {
     expect(json.functions[0].cases[0].intension.abs).toContain("#");
   });
 
-  it("text format lists abs lines", () => {
-    const r = testTool({ file: "/t/scale.js", source: src }, { readFile: () => src });
+  it("text format lists abs lines", async () => {
+    const r = await testTool({ file: "/t/scale.js", source: src }, { readFile: () => src });
     const text = r.content[0].text;
     expect(text).toContain("scale");
     expect(text).toContain("abs:");
     expect(text).toContain('"version": 1');
   });
 
-  it("filters by function name", () => {
+  it("filters by function name", async () => {
     const multi = `
 function a(x) { return x; }
 function b(x) { return x + 1; }
 `;
-    const r = testTool(
+    const r = await testTool(
       { file: "/t/m.js", source: multi, format: "json", functions: ["b"] },
       { readFile: () => multi },
     );

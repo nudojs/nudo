@@ -30,6 +30,7 @@ import {
   type CallRecord,
 } from "./evaluator/call-record.ts";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
+import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import {
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
@@ -506,7 +507,11 @@ export function analyzeFileUncachedInner(
   } catch {
     fnFpMap = undefined;
   }
-  const envKeyFn = envNames.join(",");
+  // env 维度进 fn 键：env 名 + **预载状态**（Bug 993）——path 型 env 只能
+  // 异步装载，同一份源码在「预载前 / 预载后」得到两份不同结果（env 全局
+  // 可见性不同）。只编码名字时，「先同步（未预载）、后异步（已预载）」会
+  // 命中前者那份「无 env」的陈旧 fn 结果。
+  const envKeyFn = `${envNames.join(",")}#${pathEnvPreloadFingerprint() || "-"}`;
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
   // fnDepSeg（dep 内容指纹）已在模块图前一次算好：此处直接复用
 

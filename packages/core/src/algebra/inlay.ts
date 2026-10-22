@@ -10,9 +10,10 @@
  * implicit 导出的返回 inlay 标明 `derived`（展示档，非义务契约）。
  */
 
-import type { Node, FunctionDeclaration } from "@babel/types";
+import type { Node, FunctionDeclaration, ClassDeclaration } from "@babel/types";
 import { parseSource as parse } from "./parse-source.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import { localNamedExports } from "./scan-named-exports.ts";
 import { formatShape } from "./format.ts";
 import { predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
@@ -48,10 +49,33 @@ export type CollectAbsInlaysOpts = InterfaceTierOpts & {
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
   const file = parse(source);
   const out: Array<{ name: string; node: Node }> = [];
+  /**
+   * 导出面（localNamedExports）：CJS 成员导出键（`exports.f` /
+   * `module.exports.f`）与导出类实例方法键（`Class.method`）都在里面。
+   * 枚举必须与导出面同口径——否则 inlay 面与 CodeLens / hover 面分裂
+   * （CJS 成员导出在 inlay 面整段消失，导出类方法只在 hover 面存在）。
+   */
+  const exported = localNamedExports(source);
   const visitDecl = (decl: Node): void => {
     if (decl.type === "FunctionDeclaration" && (decl as FunctionDeclaration).id) {
       const fd = decl as FunctionDeclaration;
       out.push({ name: fd.id!.name, node: fd });
+    }
+    if (decl.type === "ClassDeclaration") {
+      // 导出类的实例/静态方法 → `Class.method`（契约键同口径，design §3.2）
+      const cd = decl as ClassDeclaration;
+      const clsName = cd.id?.name;
+      if (clsName) {
+        for (const m of cd.body?.body ?? []) {
+          if (m.type !== "ClassMethod") continue;
+          if (m.kind && m.kind !== "method") continue;
+          const keyName = m.key?.type === "Identifier" ? m.key.name : undefined;
+          if (!keyName) continue;
+          const fullName = `${clsName}.${keyName}`;
+          if (!exported.has(fullName)) continue;
+          out.push({ name: fullName, node: m as Node });
+        }
+      }
     }
     if (decl.type === "VariableDeclaration") {
       const dcls = (decl as { declarations?: Array<{ id?: { type?: string; name?: string }; init?: Node }> }).declarations ?? [];
@@ -69,11 +93,47 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
       }
     }
   };
+  /** `exports` / `module.exports` → true */
+  const isExportsTarget = (n: Node | undefined): boolean => {
+    if (!n) return false;
+    if (n.type === "Identifier") return (n as { name?: string }).name === "exports";
+    if (n.type === "MemberExpression") {
+      const me = n as { object?: Node; property?: Node };
+      return (
+        me.object?.type === "Identifier" &&
+        (me.object as { name?: string }).name === "module" &&
+        me.property?.type === "Identifier" &&
+        (me.property as { name?: string }).name === "exports"
+      );
+    }
+    return false;
+  };
+  /** CJS 成员导出：`exports.f = fn` / `module.exports.f = fn`（键名即导出名） */
+  const visitCjsAssign = (stmt: Node): void => {
+    const expr = (stmt as { expression?: Node }).expression;
+    if (!expr || expr.type !== "AssignmentExpression") return;
+    const assign = expr as { operator?: string; left?: Node; right?: Node };
+    if (assign.operator !== "=") return;
+    const left = assign.left;
+    const right = assign.right;
+    if (!left || !right || left.type !== "MemberExpression") return;
+    const me = left as { computed?: boolean; object?: Node; property?: Node };
+    if (me.computed === true) return;
+    if (!isExportsTarget(me.object)) return;
+    const prop = me.property;
+    const propName = prop?.type === "Identifier" ? (prop as { name: string }).name : undefined;
+    if (!propName) return;
+    if (!exported.has(propName)) return;
+    if (right.type !== "FunctionExpression" && right.type !== "ArrowFunctionExpression") return;
+    out.push({ name: propName, node: right });
+  };
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
       visitDecl(stmt.declaration as Node);
     } else if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       visitDecl(stmt.declaration as Node);
+    } else if (stmt.type === "ExpressionStatement") {
+      visitCjsAssign(stmt as Node);
     } else {
       visitDecl(stmt);
     }

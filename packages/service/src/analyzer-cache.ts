@@ -6,6 +6,7 @@ import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePa
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
 import { pathEnvContentFingerprint } from "./eval-run.ts";
+import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import { dirname } from "node:path";
 import type {
   AnalysisResult,
@@ -89,6 +90,12 @@ export function analysisFileCacheKey(
           dirname(filePath),
         )}`
       : "-";
+  // **env 预载状态**进键（Bug 993）：path 型 env 只能异步装载，同一份源码
+  // 在「预载前 / 预载后」得到两份不同结果（env 全局可见性不同）。键里已有
+  // env 文件的**内容**（envSeg / depSeg），但没有**预载状态**——「先同步
+  // （未预载）、后异步（已预载）」时后者会命中前者那份「无 env」的陈旧
+  // 结果。此段让两份结果互不串台（预载前 ∅ / 预载后 path=mtime 列表）。
+  const envPreloadSeg = pathEnvPreloadFingerprint() || "-";
   const abSeg = autoBind === false ? "ab0" : autoBind === true ? "ab1" : "ab?";
   // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
   // 指纹失败/truncated/readerr → 禁用共享命中（fail-closed，见 noCache）。
@@ -114,7 +121,7 @@ export function analysisFileCacheKey(
     filePath: stablePathKey(filePath),
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
     noCache,
   };
 }

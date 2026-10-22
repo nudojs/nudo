@@ -11,6 +11,7 @@ import { parse, type FileDirective } from "@nudojs/parser";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
+import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import { evalAbsModuleGraph, type AbsGraphOptions, type AbsModuleLoadIssue } from "./abs-modules-graph.ts";
 import { applyMockModuleDirectives, applyMockModuleDirectivesFromSource } from "./mock-module.ts";
 import { mockScopeSelected } from "./mock-abs.ts";
@@ -507,10 +508,14 @@ export function tryRunEval(
     const mode = opts.mode ?? "analyze";
     // env 维度 = 名字 + 项目级 path env 的**内容**（Bug 501：env 文件改了
     // 类型必须跟着变——只编码名字会让 memo 命中陈旧导出表）
+    // + **预载状态**（Bug 993：path 型 env 只能异步装载，同一份源码在
+    // 「预载前 / 预载后」得到两份不同结果——env 全局可见性不同。内容指纹
+    // 两边相同 ⇒ 不加这一段时「先同步（未预载）、后异步（已预载）」会命中
+    // 前者那份「无 env」的陈旧 memo）。
     const envKey = `${(opts.envNames ?? []).join(",")}#${pathEnvContentFingerprint(
       opts.envNames ?? [],
       dirname(filePath),
-    )}`;
+    )}#${pathEnvPreloadFingerprint() || "-"}`;
     const mockKey = mockSeedFingerprint(opts.mocks);
     const lenientKey = opts.lenientGlobals === true ? "1" : "0";
     const itersKey = opts.maxLoopIters === undefined ? "" : String(opts.maxLoopIters);

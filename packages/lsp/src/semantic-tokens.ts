@@ -281,6 +281,37 @@ export function buildSemanticTokens(
         collectParams((n.params as Node[] | undefined) ?? []);
         break;
       }
+      // CJS 成员导出：`exports.f = fn` / `module.exports.f = fn` —— 键名即导出名，
+      // 带 interface 档 modifier（与 ESM `export function f` 同口径；Bug 998）
+      case "AssignmentExpression": {
+        const operator = n.operator as string | undefined;
+        const left = n.left as Node | undefined;
+        const right = n.right as Node | undefined;
+        if (operator !== "=" || !left || !right) break;
+        if (left.type !== "MemberExpression") break;
+        const me = left as { computed?: boolean; object?: Node; property?: Node };
+        if (me.computed === true) break;
+        const obj = me.object;
+        if (!obj) break;
+        const isExports =
+          obj.type === "Identifier" && (obj as { name?: string }).name === "exports";
+        const objMember =
+          obj.type === "MemberExpression"
+            ? (obj as { object?: Node; property?: Node })
+            : undefined;
+        const isModuleExports =
+          objMember?.object?.type === "Identifier" &&
+          (objMember.object as { name?: string }).name === "module" &&
+          objMember.property?.type === "Identifier" &&
+          (objMember.property as { name?: string }).name === "exports";
+        if (!isExports && !isModuleExports) break;
+        const prop = me.property;
+        if (prop?.type !== "Identifier") break;
+        if (right.type !== "FunctionExpression" && right.type !== "ArrowFunctionExpression") break;
+        const name = (prop as { name: string }).name;
+        pushIdentifier(prop, TYPE_FUNCTION, tierModFor(name));
+        break;
+      }
       case "ArrowFunctionExpression":
         collectParams((n.params as Node[] | undefined) ?? []);
         break;

@@ -68,6 +68,29 @@ export type CaseJson = {
     tags?: string[];
     origin?: { line: number; column: number };
   }>;
+  /**
+   * 断言汇总（passed / failed / unchecked）——**additive**。
+   *
+   * CLI 的 `nudo test --json` 在 case 报告本体之外并入这一段（由
+   * `buildTestReport` 算，见 `@nudojs/service` 的 test-report 模块）；
+   * agent 工具面此前整段缺失 ⇒ 消费方分不出「见证通过」与「见证失败」
+   * （Bug 754）。两侧现在并入**同一份**计算结果。
+   */
+  assertions?: {
+    passed: number;
+    failed: number;
+    unchecked: number;
+  };
+  /**
+   * 路径错误（additive）——CLI 的 `nudo test --json` 对「路径不可用」给
+   * 结构化信封；agent 工具面此前只给裸 ENOENT 文本（Bug 956）。
+   */
+  pathErrors?: Array<{
+    path: string;
+    code: string;
+    message: string;
+    suggestion?: string;
+  }>;
 };
 
 function mapCase(c: CaseResult): CaseJsonCase {

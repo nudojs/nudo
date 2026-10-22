@@ -161,9 +161,22 @@ export function injectBindings(
 ): { source: string; applied: string[]; unapplied: string[] } {
   const applied: string[] = [];
   const unapplied: string[] = [];
+  // 形状校验下沉（Bug 961）：`bindings` 必须是数组——此前非数组一路传到
+  // `bindings.map` 才炸（裸 JS TypeError `bindings.map is not a function`
+  // 当工具错误回给客户端，是引擎内部实现细节，不是可诊断信息）。
+  if (!Array.isArray(bindings)) {
+    throw new TypeError("injectBindings: bindings must be an array of { name, type }");
+  }
   if (bindings.length === 0) return { source, applied, unapplied };
 
-  const bound = new Set(bindings.map((b) => b.name));
+  // 缺 `name` 的项：此前 `unapplied.push(undefined)` ⇒ `join` 渲染成**空串**
+  // ⇒ 提示行变成「…: 」（冒号后什么都没有），用户以为「没有未应用的绑定」，
+  // 实际是自己的请求少了一个字段。给具名提示。
+  const named = (b: unknown): string =>
+    b !== null && typeof b === "object" && typeof (b as { name?: unknown }).name === "string"
+      ? (b as { name: string }).name
+      : "";
+  const bound = new Set(bindings.map((b) => named(b)));
   const rewritten = splitMultiDeclarators(source, bound);
 
   const ast = parse(rewritten);
@@ -181,13 +194,20 @@ export function injectBindings(
 
   const byLine = new Map<number, TypeBinding[]>();
   for (const binding of bindings) {
-    const line = declLines.get(binding.name);
+    const name = named(binding);
+    const line = name === "" ? undefined : declLines.get(name);
     if (line === undefined) {
-      unapplied.push(binding.name);
+      unapplied.push(name === "" ? "<missing name>" : name);
       continue;
     }
+    // `type` 非字符串（畸形请求）不得让 mapTypeExpr 裸崩——按「认不出」
+    // 降级为 unknown（与既有降级口径一致）。
+    const type =
+      binding !== null && typeof binding === "object" && typeof (binding as { type?: unknown }).type === "string"
+        ? (binding as { type: string }).type
+        : "";
     const group = byLine.get(line) ?? [];
-    group.push(binding);
+    group.push({ name, type });
     byLine.set(line, group);
   }
 

@@ -405,6 +405,25 @@ export function getPathEnvDepContents(baseDir?: string): Array<{ path: string; c
   return out;
 }
 
+/**
+ * **预载状态**指纹（已驻留的 path env 文件：路径 + mtimeMs）。
+ *
+ * Bug 993：path 型 env 只能**异步**装载（动态 import），同步 `analyzeFile`
+ * 看不到 env 全局。于是同一份源码在「预载前 / 预载后」得到两份不同的
+ * 分析结果，而整文件 memo 的键里只有 env 文件的**内容**（dep 指纹），
+ * 没有**预载状态**——「先同步、后异步」时后者会命中前者那份「无 env」的
+ * 陈旧结果（env 全局仍不可见 ⇒ never / unknown）。
+ *
+ * 把本指纹放进分析缓存键 ⇒ 预载前后的键不同 ⇒ 两份结果互不串台。
+ */
+export function pathEnvPreloadFingerprint(): string {
+  if (pathEnvFiles.size === 0) return "";
+  const parts: string[] = [];
+  for (const [p, entry] of pathEnvFiles) parts.push(`${p}=${entry.mtimeMs}`);
+  parts.sort();
+  return parts.join("\u0001");
+}
+
 export async function preloadPathEnvs(envNames: string[], baseDir: string): Promise<void> {
   addPathEnvBaseDir(baseDir);
   // 相对说明符的解析基准 = 本次 preload 的目录（发起方文件所在目录）

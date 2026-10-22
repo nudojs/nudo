@@ -10,6 +10,8 @@ import {
   CodeLensRefreshRequest,
   DiagnosticRefreshRequest,
   DiagnosticSeverity,
+  ErrorCodes,
+  ResponseError,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync, existsSync, realpathSync } from "node:fs";
@@ -525,11 +527,24 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       case "nudo.getActiveCases":
         return handleGetActiveCases(arg as Parameters<typeof handleGetActiveCases>[0]);
       default:
-        return null;
+        // 940：未声明的命令名必须走**协议层错误**出口——返回 null 会让
+        // 「无此命令」与「跑了但无输出」在协议层同形（JSON-RPC 成功 + 空结果）。
+        throw new ResponseError(
+          ErrorCodes.MethodNotFound,
+          `Unknown command: ${command}`,
+        );
     }
   }
 
   connection.onExecuteCommand((params) => {
+    // 940：命令名先过白名单（advertise 面与执行面同源）——未声明的命令名
+    // 走协议层错误（MethodNotFound），不再返回 result:null 的假成功。
+    if (!(NUDO_COMMANDS as readonly string[]).includes(params.command)) {
+      throw new ResponseError(
+        ErrorCodes.MethodNotFound,
+        `Unknown command: ${params.command}`,
+      );
+    }
     const args = params.arguments ?? [];
     // CodeLens (and some clients) pass selectCase positionally:
     //   [uri, functionName, caseIndex, caseName]
@@ -590,7 +605,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   connection.onRequest("nudo/selectCase", handleSelectCase);
   connection.onRequest("nudo/selectContract", handleSelectContract);
 
-  connection.onRequest("nudo/getActiveCases", handleGetActiveCases);
+  // 结果面：成功 { fn: index }，失败 = 结构化工具错误（isError: true，955）。
+  // 协议层的 onRequest 字符串重载只接受单一结果类型 ⇒ 注册处标 unknown
+  // （运行时返回体不变）。
+  connection.onRequest("nudo/getActiveCases", (params: { uri?: string; file?: string }): unknown => handleGetActiveCases(params));
 
   /** Request aliases share the command handlers; the pinned return type keeps onRequest overload inference happy. */
   function dispatchAgentRequest(

@@ -3,7 +3,7 @@
  * - AGENT_TOOL_SOURCES 表钉住共享数据源
  * - check ↔ checkSource+serializeCheckJson（CLI --json 同构）
  * - hover ↔ getHoverAtPosition + interfaceTierOf（CodeLens 同源）
- * - test ↔ analyzeFile + serializeCaseJson
+ * - test ↔ analyzeFileAsync + buildTestReport + serializeCaseJson
  * - contract ↔ interfaceSurface + formatInterfaceSurfaceLine
  * - whatIf / suggestCase 真注入 / 真分析，不旁路
  * - autoBind：项目配置 AND 客户端（客户端不能打开已关闭项）
@@ -65,14 +65,17 @@ const stdLoader = (spec: string) => (spec.includes("std.nudo") ? STD : undefined
 
 describe("E5 AGENT_TOOL_SOURCES 共享数据源表", () => {
   it("pins the shared-source contract for every agent tool", () => {
-    expect(AGENT_TOOL_SOURCES.check).toBe("checkSource + serializeCheckJson");
+    expect(AGENT_TOOL_SOURCES.check).toBe("checkSource + mergeCheckIssues + serializeCheckJson");
     expect(AGENT_TOOL_SOURCES.hover).toBe("getHoverAtPosition + interfaceTierOf");
-    expect(AGENT_TOOL_SOURCES.test).toBe("analyzeFile + serializeCaseJson");
+    expect(AGENT_TOOL_SOURCES.test).toBe(
+      "analyzeFileAsync + buildTestReport + serializeCaseJson",
+    );
     expect(AGENT_TOOL_SOURCES.contract).toBe(
       "interfaceSurface + formatInterfaceSurfaceLine",
     );
-    expect(AGENT_TOOL_SOURCES.whatIf).toBe("injectBindings + analyzeFile");
-    expect(AGENT_TOOL_SOURCES.suggestCase).toBe("analyzeFile + buildCaseDirective");
+    expect(AGENT_TOOL_SOURCES.whatIf).toBe("injectBindings + analyzeFileAsync");
+    expect(AGENT_TOOL_SOURCES.suggestCase).toBe("analyzeFileAsync + buildCaseDirective");
+    expect(AGENT_TOOL_SOURCES.trace).toBe("analyzeFileAsync cases");
     expect(AGENT_TOOL_SOURCES["contract.emit"]).toBe("emitInterface");
     expect(AGENT_TOOL_SOURCES.codeLens).toBe(
       "computeInterfaceLenses + interfaceTierOf",
@@ -164,10 +167,10 @@ describe("E5 hoverTool ↔ getHoverAtPosition / CodeLens", () => {
   });
 });
 
-describe("E5 testTool ↔ analyzeFile + serializeCaseJson", () => {
-  it("JSON tail matches serializeCaseJson of the same analyzeFile", () => {
+describe("E5 testTool ↔ analyzeFileAsync + buildTestReport + serializeCaseJson", () => {
+  it("JSON tail matches serializeCaseJson of the same analyzeFile", async () => {
     const src = `export function scale(x) { return x + 1; }\n`;
-    const r = testTool(
+    const r = await testTool(
       { file: "/t/scale.js", source: src, format: "json" },
       { readFile: () => src },
     );
@@ -225,13 +228,13 @@ describe("E5 contractTool ↔ interfaceSurface / CodeLens / interfaceTierOf", ()
 });
 
 describe("E5 whatIf / suggestCase 真语义（不旁路）", () => {
-  it("whatIf binding injection changes inferred Abs of target", () => {
+  it("whatIf binding injection changes inferred Abs of target", async () => {
     const src = `const x = 1;\nconst y = x + 1;\n`;
-    const base = whatIf(
+    const base = await whatIf(
       { file: "/t/w.js", bindings: [], target: "y", source: src },
       { readFile: () => src },
     );
-    const assumed = whatIf(
+    const assumed = await whatIf(
       {
         file: "/t/w.js",
         bindings: [{ name: "x", type: "string" }],
@@ -246,7 +249,7 @@ describe("E5 whatIf / suggestCase 真语义（不旁路）", () => {
     expect(assumedText).toContain("Bindings applied");
   });
 
-  it("suggestCase cases equal analyzeFile cases for synthesized path", () => {
+  it("suggestCase cases equal analyzeFile cases for synthesized path", async () => {
     const src = `
 export function add(a, b) {
   return a + b;
@@ -257,7 +260,7 @@ add("a", "b");
     const result = analyzeFile("/t/s.js", src);
     const fn = result.functions.find((f) => f.name === "add");
     expect(fn).toBeDefined();
-    const r = suggestCase(
+    const r = await suggestCase(
       { file: "/t/s.js", functionName: "add", source: src },
       { readFile: () => src },
     );

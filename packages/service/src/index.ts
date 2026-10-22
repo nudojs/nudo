@@ -53,6 +53,11 @@ export {
 } from "./analysis-scope.ts";
 
 export {
+  collectCallsiteRecords,
+  type CallsiteRecords,
+} from "./callsite-records.ts";
+
+export {
   collectStaticImports,
   analyzeExportsFromSource,
   collectDependencySpecs,
@@ -179,7 +184,7 @@ export {
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 
-export { clearPathEnvCaches, getPathEnvCacheSizes, getPathEnvLoadErrors, getPathEnvDepContents } from "./evaluator/env-loader.ts";
+export { clearPathEnvCaches, getPathEnvCacheSizes, getPathEnvLoadErrors, getPathEnvDepContents, pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 
 export {
   getAnalysisSession,
@@ -243,3 +248,33 @@ export {
   isEnvTemplatePath,
   getEnvPathDepsSize,
 } from "./env-path-deps.ts";
+
+// ─── check 补充诊断通道 / test 断言汇总 / 路径错误 ─────────────────────
+// 宿主面（CLI / LSP 编辑器面 / LSP agent 工具面）共用的三块「报告拼装」
+// 逻辑——从 CLI 包下沉到 service，agent 工具面才能 import（Bug 752 /
+// 754 / 956 / 991）。
+export {
+  mergeCheckIssues,
+  directiveDiagIssues,
+  mockFromErrorIssues,
+  envUnresolvedIssues,
+  collectCheckSupplementIssues,
+  ENV_UNRESOLVED_CODE,
+  type Summarized,
+  type MockFromError,
+  type CheckSupplementOptions,
+} from "./check-issues.ts";
+export {
+  buildTestReport,
+  ENTRY_CONTRACT_NOTE,
+  type CaseTestOutcome,
+  type TestReport,
+  type TestReportOptions,
+} from "./test-report.ts";
+export {
+  pathNotFoundError,
+  targetPathError,
+  formatPathErrorText,
+  type PathError,
+  type PathErrorCode,
+} from "./path-errors.ts";
