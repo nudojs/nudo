@@ -512,7 +512,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
-| <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import/const 链）的注释 行含 `@generated` → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
+| <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import 链与**被 export 引用**的 const 链）的注释行是 nudo 自己的 `@generated` 标记 → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
 | <a id="genum"></a>`geNum` | fn | — | `geNum(term: Term, n: number): Pred` |
 | <a id="getabsproperty"></a>`getAbsProperty` | fn | 属性读取：template/string.length 等 | `getAbsProperty(recv: Abs, name: string): Abs \| undefined` |
 | <a id="getevalcallcollector"></a>`getEvalCallCollector` | fn | — | `getEvalCallCollector()` |
@@ -572,7 +572,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="lenum"></a>`leNum` | fn | — | `leNum(term: Term, n: number): Pred` |
 | <a id="leqresult"></a>`LeqResult` | type | — | `LeqResult = { ok: boolean; reason?: string; }` |
 | <a id="listfunctionnames"></a>`listFunctionNames` | fn | 列出源码中的顶层函数名。 | `listFunctionNames(source: string): string[]` |
-| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: number \| string \| boolean \| null \| undefined, c: NudoConstraint, seen?: Set<object>, ): boolean` |
+| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: LiteralValue, c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="littruth"></a>`litTruth` | fn | JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined | `litTruth(a: Abs): boolean \| undefined` |
 | <a id="localnamedexports"></a>`localNamedExports` | fn | 源文件本地导出名表（侧车自动绑定边界）： - ESM：`export function/const/let/var/class` 与本地 `export { x }` / `export { local as exported }`（按**导出名**绑定）； - `export default function add` / `const add = …; export default add`： 按**本地名** `add` 绑定（侧车可 `export const add = fn(…)`）； 同时登记 `"default"`，供侧车 `export default fn(…)` 对齐； - CJS（C4.3）：`module.exports = { a, b }`、`module.exports.a = …`、 `exports.a = …`、`module.exports = localFn`（登记 localFn 名）。 | `localNamedExports(source: string): Set<string>` |
 | <a id="locatecontractparam"></a>`locateContractParam` | fn | 契约参数名 → 形参定位。 | `locateContractParam( formals: FormalParam[], contractName: string, )` |
