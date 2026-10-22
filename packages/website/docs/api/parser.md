@@ -260,7 +260,7 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="classmemberkey"></a>`classMemberKey` | fn | Key node of a class member (for range selection). | `classMemberKey(member: Node \| null \| undefined): Node \| undefined` |
 | <a id="classmemberkeyname"></a>`classMemberKeyName` | fn | `key.name ?? key.value` on a class/object member key. | `classMemberKeyName(member: Node \| null \| undefined): string \| number \| undefined` |
 | <a id="directive"></a>`Directive` | type | — | `Directive = CaseDirective \| MockDirective \| PureDirective \| SkipDirective \| SampleDirective` |
-| <a id="directivediag"></a>`DirectiveDiag` | type | — | `DirectiveDiag = { code: string; message: string }` |
+| <a id="directivediag"></a>`DirectiveDiag` | type | 指令文法诊断。 | `DirectiveDiag = { code: string; message: string; at?: { line: number; column: number }; }` |
 | <a id="envdirective"></a>`EnvDirective` | type | — | `EnvDirective = { kind: "env"; envs: string[]; }` |
 | <a id="exportspecifierexportedname"></a>`exportSpecifierExportedName` | fn | ExportSpecifier exported name (`exported.name ?? exported.value`). | `exportSpecifierExportedName( spec: Node \| null \| undefined, ): string \| number \| undefined` |
 | <a id="exportspecifierlocalname"></a>`exportSpecifierLocalName` | fn | ExportSpecifier local name — Identifier only (matches `local.name`). | `exportSpecifierLocalName(spec: Node \| null \| undefined): string \| undefined` |
