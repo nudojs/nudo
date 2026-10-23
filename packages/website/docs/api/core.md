@@ -283,7 +283,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="parseenvpayload"></a>`parseEnvPayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseEnvPayload(payload: string): string[]` |
 | <a id="parsemockmodulepayload"></a>`parseMockModulePayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseMockModulePayload(payload: string): MockModuleRecord \| undefined` |
 | <a id="parsenudoimportpayload"></a>`parseNudoImportPayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseNudoImportPayload( payload: string, ): NudoImportRecord` |
-| <a id="parsesource"></a>`parseSource` | fn | Babel parse + memo | `parseSource( source: string, opts?: { errorRecovery?: boolean; keepTs?: boolean }, ): File` |
+| <a id="parsesource"></a>`parseSource` | fn | Babel parse + memo | `parseSource( source: string, opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string }, ): File` |
 | <a id="phi"></a>`Phi` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Phi = Pred` |
 | <a id="pred"></a>`Pred` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Pred = \| { op: "true" } \| { op: "false" } \| { op: "eq"; a: Term; b: Term } \| { op: "ne"; a: Term; b: Term } \| { op: "lt"; a: Term; b: Ter...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | const | one-way projections | — |
