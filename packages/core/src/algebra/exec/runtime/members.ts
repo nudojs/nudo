@@ -45,7 +45,7 @@ import { $objAccessor, lookupObjAccessor, migrateAccessors, accessorTable } from
 import { enforceProxyDeleteInvariant } from "../../builtins/object/descriptor.ts";
 // Bug 194：`delete X.prototype.m` 的方法注册表侧移除钩子（S8 落在
 // exec/class/declare.ts）——引擎的类方法不在原型对象的槽里，只删槽不留痕。
-import { deleteProtoMethod } from "../class/declare.ts";
+import { deleteProtoMethod, bindCtorFacetOf } from "../class/declare.ts";
 
 // 访问器侧表已下沉到 ../../accessors.ts（叶子模块，objects.ts join 共用）
 
@@ -965,6 +965,56 @@ function rhsPrototypeOf(
   return undefined;
 }
 
+/**
+ * Bug 205（补面）：obj 形状里是否有**内部槽**（协议面 / 生成器对象等**引擎
+ * 替身**）——内部槽 obj 不是用户写的对象字面量：其真实 [[Prototype]] 不是
+ * Object.prototype（生成器对象 ⇒ Generator.prototype）⇒ 不得按「闭 obj ⇒
+ * 原型链 = [Object.prototype]」定论（引擎自身的 protoOfRecv 口径对替身 obj
+ * 同样只是近似）。
+ */
+function hasInternalSlot(o: Abs): boolean {
+  if (o.shape.k !== "obj") return false;
+  for (const s of Object.values(o.shape.slots)) {
+    if (s.internal) return true;
+  }
+  return false;
+}
+
+/**
+ * Bug 205（补面）：**闭 obj**（对象字面量）接收者的 instanceof 定论——RHS 的
+ * prototype 对象（只在「原生必有 .prototype **对象**」时给出，否则调用方降
+ * 抽象——不误判）：
+ *
+ * - 类值（brand + classNameOfValue）：类必有 prototype 对象 ✅；
+ * - fn 形状且**可构造**（`ctor === true`）且**不是 bind 产物**（bind 产物可
+ *   构造但**无** .prototype 属性 ⇒ 原生 OrdinaryHasInstance 定抛 TypeError）：
+ *   facade 的 prototype 槽（`F.prototype = X` 的写落点）优先，否则按名
+ *   protoBrandAbs（与 `F.prototype` 读同一载体）；
+ * - 其余（箭头 / async / generator——原生**无** .prototype ⇒ 定抛；非类值的
+ *   brand 实例——原生 RHS 不可调用 ⇒ 定抛；any / unknown / sum）⇒ undefined。
+ */
+function closedObjRhsPrototype(rightName: string, rightVal: Abs | undefined): Abs | undefined {
+  if (rightVal === undefined) return undefined;
+  const rv = asAbsVal(rightVal);
+  const sh = rv.shape;
+  if (sh.k === "brand") {
+    if (classNameOfValue(rv as object) === undefined) return undefined;
+    return protoBrandAbs(rightName);
+  }
+  if (sh.k === "fn") {
+    if (sh.ctor !== true) return undefined;
+    // bind 产物：可构造但**无** .prototype（原生 instanceof 定抛 TypeError）
+    if (bindCtorFacetOf(rv) !== undefined) return undefined;
+    const nm = sh.name ?? rightName;
+    if (sh.slots) {
+      const slot = getSlot(sh.slots, "prototype");
+      if (slot) return slot.value;
+    }
+    return protoBrandAbs(nm);
+  }
+  return undefined;
+}
+
 /** 确定非对象（原生 `Get(C,"prototype")` 非 Object ⇒ TypeError）。 */
 function isDefinitelyNonObjectAbs(a: Abs): boolean {
   if (a.shape.k === "prim") return true;
@@ -1110,6 +1160,13 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       }
     }
   }
+  // Bug 205（左操作数收形）：左操作数可能是**宿主函数**（转译的函数声明 /
+  // 函数表达式——不是 Abs，原生是函数值）：原生 `F instanceof Function` 为
+  // true（函数的 [[Prototype]] 是 Function.prototype）、`F instanceof Object`
+  // 同为 true。此前直读 left.shape 崩 ⇒ 引擎 fail-closed 折 unknown（原生
+  // true ⇒ 精度债）。asAbsVal 收成 fn 形状（宿主函数的稳定门面，state.ts）。
+  // **收形放在 @@hasInstance 钩子之后**——钩子拿到的是**原生左值**（不收形）。
+  if (typeof (left as unknown) === "function") left = asAbsVal(left as unknown);
   switch (left.shape.k) {
     case "brand":
       // 类值本身是 constructor 函数：instanceof Function/Object 恒 true
@@ -1197,7 +1254,24 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       // 未知——可含任意内建原型（Object.create([]) instanceof Array 原生
       // true），不得断言精确 false，降 boolean；闭字面量原型恰为
       // Object.prototype，内建构造器（除 Object）恒 false 保持精确。
-      if (!left.shape.open && BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      //
+      // Bug 205（补面）：**闭 obj**（对象字面量）的 [[Prototype]] 恰是
+      // Object.prototype ⇒ 原型链恰是 [Object.prototype]（下一环 null）——
+      // 与 RHS 的 prototype 做**身份**比较即可定论：命中（= Object.prototype）
+      // → true，否则 false（原生 false：用户类 / 用户函数的 prototype 都不是
+      // Object.prototype）。此前只对**内建**构造器名折 exact false，用户类 /
+      // 用户函数折抽象 boolean（原生 false）——精度债。
+      // RHS 的 prototype 不可判时（箭头 / async / generator / bind 产物——
+      // 原生可能定抛 TypeError；非类值的 brand 实例——原生定抛）⇒ 保持抽象
+      // （不误判），见 closedObjRhsPrototype。**内部槽 obj**（引擎替身：生成器
+      // 对象 / 协议面）不是用户写的对象字面量 ⇒ 同样不按闭 obj 定论。
+      if (!left.shape.open) {
+        if (!hasInternalSlot(left)) {
+          const rhsProto = closedObjRhsPrototype(rightName, rightVal);
+          if (rhsProto !== undefined) return boolLit(rhsProto === objectProtoBrand());
+        }
+        if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      }
       return bool(); // Object.create(C.prototype) / open obj
     case "fn":
       if (rightName === "Function" || rightName === "Object") return boolLit(true);
