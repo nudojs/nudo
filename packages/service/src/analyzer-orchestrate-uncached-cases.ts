@@ -406,6 +406,30 @@ function isDottedName(name: string): boolean {
 }
 
 /**
+ * throws 证据并集（展示层同口径：`formatThrowsAbs` 取并集名）。
+ *
+ * 两份证据各自可能是 `never`（无证据）/ brand（TypeError…）/ sum（多臂并集）。
+ * 并集按**展示名**去重（同名不重复），多于一臂时落回 sum ⇒ 展示层 join " | "。
+ * 两份都是 never ⇒ undefined（**不写 `throws never`**）。
+ */
+function unionThrowsAbs(a: Abs | undefined, b: Abs | undefined): Abs | undefined {
+  const arms = (t: Abs | undefined): Abs[] => {
+    if (!t || t.shape.k === "never") return [];
+    if (t.shape.k === "sum") return t.shape.members.flatMap((m) => arms(m));
+    return [t];
+  };
+  const byName = new Map<string, Abs>();
+  for (const t of [...arms(a), ...arms(b)]) {
+    const name = formatThrowsAbs(t) ?? "Error";
+    if (!byName.has(name)) byName.set(name, t);
+  }
+  const uniq = [...byName.values()];
+  if (uniq.length === 0) return undefined;
+  if (uniq.length === 1) return uniq[0];
+  return makeAbsVal({ k: "sum", members: uniq }, undefined, undefined, "exact");
+}
+
+/**
  * 入口求值采集到的调用点证据落到**已回落 entry@** 的候选上（503）。
  *
  * 调用点位于**导出函数体内**时，被调方的候选先于调用方被处理 ⇒ 那一刻它
@@ -432,6 +456,16 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
     const cases = entry.candidate.analysis.cases;
     const idx = cases.indexOf(entry.entryCase);
     if (idx >= 0) cases.splice(idx, 1);
+    // 族 54（item 2）：entry@ 见证是**函数级 throws 域**（check 签名行口径：
+    // 入口求值的 hard throw ∪ soft may-throw）的唯一载体 ⇒ 撤掉它时若不把
+    // 证据带走，函数级 throws 证据随 entry@ 一起消失 ⇒ IDE 面（hover 的
+    // throws 段）的 throws 段缺失 ⇒ hover 与 `nudo check` 的签名尾缀分叉。
+    //
+    // 证据落在**函数级**承载位 `analysis.entryThrowsAbs`，**不并进**调用点见证的
+    // `throwsAbs`：后者语义是「**这条见证自己**观测到的抛」（调用点 = 这次调用
+    // 抛了什么）。并进去 ⇒ 不抛的调用被标成「可能抛」⇒ 草稿面（按「这次调用抛了
+    // 吗」筛返回义务）丢返回义务 ⇒ **契约产物变弱**（假绿方向）。
+    const entryThrowsAbs = entry.entryCase.throwsAbs;
     entry.candidate.analysis.entryOnly = false;
     // 「没有契约根且无调用点域」在有调用点域后不再成立 ⇒ 撤掉该 info
     const di = env.diagnostics.findIndex(
@@ -446,6 +480,11 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
       records,
       analysisConfig(findProjectConfig(dirname(env.filePath))?.config).callSiteBudget,
     );
+    // 函数级 throws 域落在**函数级**承载位（不并进调用点见证的 throwsAbs ——
+    // 那是「这条见证自己观测到的抛」；见上面注释里的口径说明）。
+    // 两份证据都是 never ⇒ 无证据 ⇒ **不写**（保持「无证据 ⇒ 不写 throws never」）。
+    const merged = unionThrowsAbs(entry.candidate.analysis.entryThrowsAbs, entryThrowsAbs);
+    if (merged) entry.candidate.analysis.entryThrowsAbs = merged;
   }
 }
 
@@ -1257,4 +1296,63 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // 入口求值可能带出了**别的**候选的调用点证据（调用点在函数体内）——
     // 此刻才出现的证据要落到那些「先回落 entry@」的候选上（503）。
     settleEntryOnlyCandidates(env);
+}
+
+/**
+ * **只取 throws 域**的入口求值（族 54 / item 2：选中 case 态）。
+ *
+ * 背景：LSP 的 selectCase 让被选函数**不生成 entry@ 见证**（域由选中的那条
+ * case 声明）⇒ 函数级 throws 域（check 签名行口径：入口求值的 hard throw ∪
+ * soft may-throw）在 case 台账里无处安放 ⇒ IDE hover（只读 case 台账的
+ * throws 证据）的 throws 段缺失 ⇒ hover 与 `nudo check` 的签名尾缀分叉。
+ *
+ * 这里补一次**只取证据**的入口求值：
+ * - **不产见证**（不新增 case ⇒ 产物面 / 固化面 / 报告台账都不受影响）；
+ * - **不改推断域**（`combinedAbs` 不动 ⇒ 域仍由选中的 case 声明）；
+ * - **不报诊断**（不收成员诊断、不发 entry-only info）；
+ * - **不并入调用点台账**（不采集调用点证据 ⇒ 不污染别的函数的证据面）。
+ *
+ * 只把**函数级 throws 域**并进该函数已有的 case 见证（并集）⇒ hover 的
+ * throws 段与 check 面同源。
+ */
+export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
+  const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
+  const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
+  const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
+    f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
+  );
+  let hardThrowsAbs: Abs = neverAbs;
+  const effects: MayThrowEffect[] = [];
+  setMayThrowCollector((e) => effects.push(e));
+  try {
+    if (filePath) {
+      const evalFull = tryEvalCallFull(
+        source,
+        filePath,
+        candidate.analysis.name,
+        argAbsEntry,
+        {
+          envNames,
+          mocks: mockSeedsToAbsMocks(seeds),
+          // 只取证据：成员诊断不收、调用点证据不采
+          collectMemberDiags: false,
+          ...(loadModule ? { loadModule } : {}),
+          depKey: fnDepSeg,
+        },
+      );
+      if (evalFull?.throws) hardThrowsAbs = evalFull.throws;
+    }
+  } catch {
+    /* 取证据失败不得打断分析（无证据 ⇒ 不并） */
+  } finally {
+    setMayThrowCollector(null);
+  }
+  // throws 域 = hard throw ∪ soft may-throw（any/nullish 成员访问等）
+  const union = unionThrowsAbs(hardThrowsAbs, mayThrowEffectsToAbs(effects));
+  if (!union) return;
+  // 落在**函数级**承载位（族 54 · item 2）：函数级 throws 域是**函数属性**，
+  // 不是「这条见证观测到的抛」⇒ 不并进 `cases[].throwsAbs`
+  // （并进去 ⇒ 不抛的调用被标成「可能抛」⇒ 草稿面丢返回义务 ⇒ 契约产物变弱）。
+  const merged = unionThrowsAbs(candidate.analysis.entryThrowsAbs, union);
+  if (merged) candidate.analysis.entryThrowsAbs = merged;
 }

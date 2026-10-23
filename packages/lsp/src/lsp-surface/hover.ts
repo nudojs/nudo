@@ -103,9 +103,16 @@ export type HoverInterfaceOpts = InterfaceTierOpts & {
  * may-throw 效果（core `formatThrowsAbs`）；IDE 侧同一份证据在 service
  * 的 `CaseResult.throwsAbs`（未抛 = never）⇒ 展示名同源。
  *
- * - entry@ 见证优先（check 的入口求值口径）；无 entry@ 时回落该函数
+ * - **函数级承载位优先**（族 54 · item 2）：`fn.entryThrowsAbs` 装的就是
+ *   check 签名行口径的**函数级** throws 域（入口求值的 hard throw ∪ soft
+ *   may-throw）⇒ 读它即与 check 同源。
+ * - 无该承载位时回落：`entry@` 见证优先（check 的入口求值口径）；再回落该函数
  *   全部见证的并集（指令 case / 调用点见证里的显式 throw）。
  * - 无证据 ⇒ undefined（**不写 `throws never`**）。
+ *
+ * ⚠ `cases[].throwsAbs` 是「**该条见证自己**观测到的抛」，**不是**函数级域 ——
+ * 它**不得**被当作函数级 throws 域的替身（族 54 的并域做法曾把不抛的调用点
+ * 标成「可能抛」⇒ 草稿面丢返回义务 ⇒ 契约产物变弱）。
  */
 function throwsDisplayOf(
   result: AnalysisResult | undefined,
@@ -114,12 +121,17 @@ function throwsDisplayOf(
   if (!result) return undefined;
   const fn = result.functions.find((f) => f.name === fnName);
   if (!fn) return undefined;
-  const entry = fn.cases.find((c) => c.name.startsWith("entry@"));
-  const pool = entry ? [entry] : fn.cases;
   const names = new Set<string>();
-  for (const c of pool) {
-    const n = formatThrowsAbs(c.throwsAbs);
+  const add = (t: Abs | undefined): void => {
+    const n = t === undefined ? undefined : formatThrowsAbs(t);
     if (n !== undefined && n !== "") names.add(n);
+  };
+  if (fn.entryThrowsAbs !== undefined) {
+    add(fn.entryThrowsAbs);
+  } else {
+    const entry = fn.cases.find((c) => c.name.startsWith("entry@"));
+    const pool = entry ? [entry] : fn.cases;
+    for (const c of pool) add(c.throwsAbs);
   }
   if (names.size === 0) return undefined;
   return [...names].sort().join(" | ");

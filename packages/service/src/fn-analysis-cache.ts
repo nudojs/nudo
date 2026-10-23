@@ -58,6 +58,8 @@ export type CachedFnAnalysis = {
     }>;
     combinedAbs?: Abs;
     entryOnly?: boolean;
+    /** 函数级 throws 域（族 54 · item 2）—— 与 case 自身的 throwsAbs 分属两面 */
+    entryThrowsAbs?: Abs;
     skipped?: boolean;
     noDeclaration?: boolean;
     fromModule?: string;

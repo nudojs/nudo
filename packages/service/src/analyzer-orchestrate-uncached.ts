@@ -16,6 +16,7 @@ import {
   bindingsOf,
   type Abs,
   extractDeclaredThrows,
+  localNamedExports,
 } from "@nudojs/core";
 import {
   DIAG,
@@ -105,6 +106,7 @@ import {
   evaluateCaseDirectives,
   synthesizeCallSiteCases,
   evaluateEntryCase,
+  evaluateThrowsOnly,
   type UncachedCaseEnv,
 } from "./analyzer-orchestrate-uncached-cases.ts";
 
@@ -542,6 +544,11 @@ export function analyzeFileUncachedInner(
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
   // fnDepSeg（dep 内容指纹）已在模块图前一次算好：此处直接复用
 
+  // 本地命名导出集合（**入口面口径** = 导出函数）：hover 的 throws 段与 check
+  // 的 L2 throws 都只对导出函数生效（hover：tier ⇔ 本地 named export）⇒
+  // 函数级 throws 证据只补给导出函数（非导出函数没有入口面）。
+  const exportedFnNames = localNamedExports(source);
+
   for (const fn of functions) {
     const skipDirective = fn.directives.find((d) => d.kind === "skip");
 
@@ -695,6 +702,27 @@ export function analyzeFileUncachedInner(
       caseIdxsToRun,
       activeCaseIdx,
     });
+
+    // 族 54（item 2）：**选中 case** 态下被选函数**不生成 entry@ 见证**（域由
+    // 选中的那条 case 声明）⇒ 函数级 throws 域（check 签名行口径）在 case
+    // 台账里无处安放 ⇒ IDE hover（只读 case 台账的 throws 证据）的 throws 段
+    // 缺失 ⇒ hover 与 `nudo check` 的签名尾缀分叉。⇒ 补一次**只取证据**的
+    // 入口求值，把函数级 throws 域并进该函数已有的 case 见证（不产见证 /
+    // 不改域 / 不报诊断）。
+    //
+    // 只在 LSP 的 selected 模式补：① 该模式只有 LSP selectCase 在用；② "all"
+    // 模式是 `nudo test` 的报告面 ⇒ 报告行不因本修复变动。
+    // pointWitnessOnly 的函数已走 entry@ 兜底（见证在场）⇒ 跳过。
+    // 只对**导出**函数补（入口面口径 = 导出函数，与 hover / check 同源）。
+    if (
+      !skipped &&
+      caseMode === "selected" &&
+      caseIdxsToRun.length > 0 &&
+      !pointWitnessOnly &&
+      exportedFnNames.has(fn.name)
+    ) {
+      evaluateThrowsOnly(caseEnv, { name: fn.name, node: fn.node, analysis });
+    }
 
     // skip：combinedAbs 已是声明面，case 结果不回写——case 是运行时见证，
     // 不参与面合成（skip 的语义 = 声明面即产品面，#176）
@@ -883,6 +911,15 @@ export function analyzeFileUncachedInner(
     if (records.length > 0) {
       // 调用点 case 合成（call@ / call@symbolic + combinedAbs）→ cases 文件
       synthesizeCallSiteCases(caseEnv, candidate, records, callSiteBudget);
+      // 族 54（item 2）：这条路径**从不**产 entry@ 见证（调用点域直接接管）
+      // ⇒ 函数级 throws 域（check 签名行口径：入口求值的 hard throw ∪ soft
+      // may-throw）在 case 台账里无处安放 ⇒ IDE hover（只读 case 台账的 throws
+      // 证据）的 throws 段缺失。⇒ 补一次**只取证据**的入口求值，把函数级
+      // throws 域并进刚合成的调用点见证（不产见证 / 不改域 / 不报诊断）。
+      // 只对**导出**函数补（入口面口径 = 导出函数，与 hover / check 同源）。
+      if (exportedFnNames.has(candidate.name)) {
+        evaluateThrowsOnly(caseEnv, candidate);
+      }
       continue;
     }
 

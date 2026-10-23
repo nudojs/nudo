@@ -73,6 +73,22 @@ export function clearEnvPathDeps(): void {
   envDependents.clear();
 }
 
+/**
+ * env 模板族共用的**扩展名表**：`js / mjs / ts / cjs / cts / mts`。
+ *
+ * `.env.<ext>`（env 工厂模板）与 `mock-<name>.<ext>` / `<name>.mock.<ext>`
+ * （mock 模板）**同表**——族内两支曾各写各的扩展名正则（mock 支只认
+ * `js|mjs|ts`）⇒ `mock-foo.cjs` / `fs.mock.cts` 这类模板改动**不进 watch
+ * 门禁** ⇒ 模板改了不触发依赖源文件复分析（族 21 遗留 697）。
+ */
+const ENV_TEMPLATE_EXT_RE = "(?:js|mjs|ts|cjs|cts|mts)";
+
+/** `mock-<name>.<ext>`：前缀锚在 **basename** 起点（绝对路径的 `/` 或相对路径的起点） */
+const ENV_MOCK_PREFIX_RE = new RegExp(`(^|/)mock-[^/]+\\.${ENV_TEMPLATE_EXT_RE}$`);
+
+/** `<name>.mock.<ext>`：后缀锚在文件名尾 */
+const ENV_MOCK_SUFFIX_RE = new RegExp(`\\.mock\\.${ENV_TEMPLATE_EXT_RE}$`);
+
 /** watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） */
 export function isEnvTemplatePath(path: string): boolean {
   const lower = stablePathKey(path).toLowerCase();
@@ -83,7 +99,7 @@ export function isEnvTemplatePath(path: string): boolean {
     lower.endsWith(".env.cjs") ||
     lower.endsWith(".env.cts") ||
     lower.endsWith(".env.mts") ||
-    /\/mock-[^/]+\.(js|mjs|ts)$/.test(lower) ||
-    /\.mock\.(js|mjs|ts)$/.test(lower)
+    ENV_MOCK_PREFIX_RE.test(lower) ||
+    ENV_MOCK_SUFFIX_RE.test(lower)
   );
 }
