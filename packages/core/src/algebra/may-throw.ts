@@ -10,6 +10,7 @@
 import type { Abs } from "./abs.ts";
 import { abs, unknown, strLit, str } from "./abs.ts";
 import { setPropFlags } from "./builtins/invariants.ts";
+import { isErrorFamilyKind } from "./exec/class-registry.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type MayThrowEffect = {
@@ -262,8 +263,10 @@ export function throwAbsToKinds(t: Abs | undefined): string[] {
 /** declared/ignore 条目是否盖住 kind（`Error` 盖 Error 家族；`*` 由调用方先判） */
 export function throwsKindCovered(kind: string, names: readonly string[]): boolean {
   if (names.includes(kind)) return true;
-  // `Error` 申报/忽略 = 整族（ReferenceError extends Error）
-  return names.includes("Error") && ERROR_FAMILY.has(kind);
+  // `Error` 申报/忽略 = 整族（ReferenceError extends Error；**用户自定义
+  // Error 子类**同理——Bug 365：静态内建名集合判不出用户子类 ⇒ 假红。
+  // 继承链信息已具备（注册表 superName 链）⇒ 沿链上溯判定。
+  return names.includes("Error") && isErrorFamilyKind(kind);
 }
 
 /** effects 是否被 ignore 列表吞掉（kind 或 Error 族） */

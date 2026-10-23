@@ -135,7 +135,13 @@ export function f(x) {
   return x;
 }
 `);
-    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBeGreaterThan(0);
+    // Bug 370：无界证据（循环体外的读不携带关系事实）⇒ 判「证不出」
+    // （nudo:unproven-return，warning）而非「确定违约」（error）
+    expect(
+      r.issues.filter(
+        (i) => i.code === "nudo:constraint-violated" || i.code === "nudo:unproven-return",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
 

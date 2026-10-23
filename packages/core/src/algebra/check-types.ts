@@ -4,6 +4,7 @@
  */
 import type { Abs } from "./abs.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
+import type { AbsCallRecord } from "./ast-records.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
 
 /**
@@ -49,4 +50,15 @@ export type CheckOptions = {
    * 入口 may-throw（L2）不评估。调用点参数义务（scan）不受影响。
    */
   skips?: ReadonlyMap<string, Abs | null>;
+  /**
+   * 外部调用点证据（Bug 366）：`--from` 采集到的**跨文件**调用点记录。
+   *
+   * drift 判定的「今日域」证据此前**只**来自 checkSource 评估被检查文件
+   * 自身时产生的 AbsCallRecord ⇒ 调用点在别的文件里时，`--from` 写出的
+   * 生成段永远判不出陈旧（假绿）。本字段把跨文件证据接进同一条判定通道。
+   *
+   * 形状 = core 公共导出 AbsCallRecord（fnName = **被调方的导出名**；
+   * callLoc 省略 = 跨文件调用点在本文件内无位置）。
+   */
+  from?: readonly AbsCallRecord[];
 };

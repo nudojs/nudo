@@ -51,6 +51,7 @@ changing the signature of any row below is **major**.
 | `formatAbs`, `formatShape`, `formatConstraint`, `formatCheckReport` | value | extensional rendering (one-way) | **public** |
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
+| `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | **public** |
 | `generalizeFromAst`, `generalizeAll` | value | symbolic α generalization | **public** |
 | `parseSource`, `resetParseSourceCache`, `getParseSourceCacheSize` | value | Babel parse + memo | **public** |
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |

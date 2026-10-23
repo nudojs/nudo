@@ -17,7 +17,7 @@ import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
-import { abs, unknown } from "./abs.ts";
+import { abs, never, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -48,6 +48,7 @@ import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
+import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
 import { absShapeForTsTypeText } from "./ts-type-shape.ts";
@@ -114,8 +115,11 @@ function evalRunOf(
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
-/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0） */
-function ctorParamCountOf(
+/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
+ *
+ *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
+ *  同口径实例化（构造实参补 any）——两处各写一份会漂移。 */
+export function ctorParamCountOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): number {
@@ -1078,7 +1082,16 @@ function generalizeFromAstUncached(
         if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
           const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
           const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
-          return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          try {
+            return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          } catch (e) {
+            // Bug 379：方法体**必抛** ⇒ 返回位 never（与顶层导出同口径：
+            // callTranspiledExportFull 对 NudoThrow 折 result=never）。
+            // 此前落进外层 catch ⇒ 签名退 unknown + 误导的 nudo:opaque-result
+            // （把「方法必抛」谎报成「推断失败」）。
+            if (isNudoThrow(e)) return never;
+            throw e;
+          }
         }
         return undefined;
       } else if (fnName in evalRun) {

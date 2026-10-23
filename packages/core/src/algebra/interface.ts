@@ -71,7 +71,14 @@ export { sidecarPathOf, isNodeModulesPath };
 // ---------------------------------------------------------------------------
 
 /** interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） */
-export type InterfaceDiag = { code: string; message: string; file?: string };
+export type InterfaceDiag = {
+  code: string;
+  message: string;
+  file?: string;
+  /** Bug 374：诊断位置（1-based 行 / 0-based 列；转发 refine 诊断时透传） */
+  line?: number;
+  column?: number;
+};
 
 /** 防长会话无界增长；消费方 takeInterfaceDiags 按批取走 */
 const MAX_INTERFACE_DIAGS = 1024;
@@ -799,7 +806,15 @@ export function effectiveInterface(
     // 同一物理侧车环只报一次（Bug 334）：ambient 加载通道已报过同链 ⇒ 跳过
     // （否则一个环 = 两条同码 error，门禁摘要虚增一倍）。
     if (!claimSidecarCycle(d.message)) continue;
-    collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
+    // Bug 374：位置透传（refine 侧带行/列 ⇒ 转发时不得丢）——否则
+    // nudo:contract-syntax 在 check 面回落成「文件第 1 行第 1 列」。
+    collectDiag({
+      code: d.code,
+      message: d.message,
+      ...(d.file ? { file: d.file } : {}),
+      ...(d.line !== undefined ? { line: d.line } : {}),
+      ...(d.column !== undefined ? { column: d.column } : {}),
+    });
   }
   const sidecarFn = sidecar.ok ? sidecar.constraint : undefined;
   const sidecarParamTexts = sidecar.ok ? sidecar.paramTexts : undefined;

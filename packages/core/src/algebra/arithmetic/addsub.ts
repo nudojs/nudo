@@ -23,6 +23,8 @@ import { errorTypeAbs } from "../may-throw.ts";
 import { distributeSumBinOp, strLitResult, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteCoercionMayThrow, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds, isNonNaN } from "./bounds.ts";
+// Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
+import { noteAssumeConsumed } from "../assume-ledger.ts";
 
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // Bug 25：内建 brand 操作数先经 ToPrimitive 强转（引擎已知 total——原型
@@ -390,9 +392,12 @@ function subAssumeBounds(
     if (termEquals(p.a, a.term) && termEquals(p.b, b.term)) {
       // 前提 le(a, b)：被减数 ≤ 减数 ⇒ a-b ≤ 0
       facts.push(le(resultTerm, lit(0)));
+      // Bug 367 记账：这条引理**真的产出了界**（消费点）⇒ 审计归因可认它
+      noteAssumeConsumed(p);
     } else if (termEquals(p.a, b.term) && termEquals(p.b, a.term)) {
       // 前提 le(b, a)：减数 ≤ 被减数 ⇒ a-b ≥ 0
       facts.push(ge(resultTerm, lit(0)));
+      noteAssumeConsumed(p);
     }
   }
   return facts.length ? and(...facts) : undefined;

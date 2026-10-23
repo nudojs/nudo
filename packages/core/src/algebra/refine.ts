@@ -31,7 +31,9 @@ import { createScopedDiagChannel } from "./diag-channel.ts";
 import { createScopedSlot, registerCollectorScopeParticipant } from "./collector-scope.ts";
 // D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
 import {
+  cleanDirectiveLine,
   extractNudoImportRecords,
+  findFnDirectiveScope,
   fnDirectiveCommentLines,
   scanAssumeSegments,
   scanInvariantSegments,
@@ -39,9 +41,10 @@ import {
   scanContractSegments,
   scanMalformedNudoImports,
   scanThrowsDecl,
+  type FnDirectiveScope,
   type NudoImportRecord,
 } from "./directive-scan.ts";
-import type { ImportDeclaration } from "@babel/types";
+import type { File, ImportDeclaration } from "@babel/types";
 import {
   type NudoConstraint,
   isNudoConstraint,
@@ -144,7 +147,14 @@ function emitSidecarClashDiags(
 // ---------------------------------------------------------------------------
 
 /** refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） */
-export type RefineDiag = { code: string; message: string; file?: string };
+export type RefineDiag = {
+  code: string;
+  message: string;
+  file?: string;
+  /** Bug 374：诊断位置（1-based 行 / 0-based 列；与 Babel loc 同坐标面） */
+  line?: number;
+  column?: number;
+};
 
 /** 防长会话无界增长；消费方 takeRefineDiags 按批取走 */
 const MAX_REFINE_DIAGS = 1024;
@@ -1303,6 +1313,77 @@ function extractRefineLines(source: string, fnName: string): string[] {
   return scanContractSegments(lines);
 }
 
+// ---------------------------------------------------------------------------
+// Bug 374：指令位置（诊断定位到**出错指令行**，不是函数声明行 / 文件首行）
+//
+// 口径：行 1-based、列 0-based（与 Babel loc 同坐标面）。
+// 作用域 = 该函数自己的前导注释块（findFnDirectiveScope）⇒ 别的函数里的
+// 同形指令不会把位置带偏；注释文本的第 k 行 ↔ 源文件第
+// `commentStartLines[i] + k` 行（块注释首行 = `/**` 所在行；行注释首行 =
+// `//` 所在行）⇒ 位置与源码逐行对齐。
+// ---------------------------------------------------------------------------
+
+/** 指令位置（1-based 行 / 0-based 列） */
+export type DirectiveLoc = { line: number; column?: number };
+
+/** 函数的前导指令 scope（源码解析失败 → undefined） */
+function fnDirectiveScopeOf(source: string, fnName: string): FnDirectiveScope | undefined {
+  let file: File;
+  try {
+    file = parseSource(source);
+  } catch {
+    return undefined;
+  }
+  return findFnDirectiveScope(file, fnName);
+}
+
+/**
+ * 指令段 → 源位置。找不到（段与注释行对不上 / 无 scope）→ undefined。
+ * 列 = 该指令文本在源码行里的起始偏移（0-based）；对不上则省略。
+ */
+function directiveSegLoc(
+  source: string,
+  scope: FnDirectiveScope | undefined,
+  prefix: string,
+  seg: string,
+): DirectiveLoc | undefined {
+  if (!scope) return undefined;
+  const srcLines = source.split("\n");
+  for (let ci = 0; ci < scope.commentTexts.length; ci++) {
+    const start = scope.commentStartLines[ci] ?? 0;
+    if (!start) continue;
+    const rawLine = srcLines[start - 1] ?? "";
+    const kind: "line" | "block" = rawLine.trimStart().startsWith("//") ? "line" : "block";
+    const lines = scope.commentTexts[ci]!.split("\n");
+    for (let li = 0; li < lines.length; li++) {
+      const cleaned = cleanDirectiveLine(lines[li]!, kind);
+      if (!cleaned.startsWith(prefix)) continue;
+      const body = cleaned.slice(prefix.length).trim().replace(/\*\/$/, "").trim();
+      if (body !== seg) continue;
+      const line = start + li;
+      const col = (srcLines[line - 1] ?? "").indexOf(cleaned);
+      return { line, ...(col >= 0 ? { column: col } : {}) };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 该函数的 @nudo:contract 段 → 源位置（Bug 374：接口冲突定位到出错指令行）。
+ * 消费方按段首 token（参数名 / `return`）挑出对应的那一条。
+ */
+export function contractSegmentLocs(
+  source: string,
+  fnName: string,
+): Array<{ segment: string; loc?: DirectiveLoc }> {
+  const scope = fnDirectiveScopeOf(source, fnName);
+  if (!scope) return [];
+  return scanContractSegments(scope.commentLines).map((segment) => ({
+    segment,
+    loc: directiveSegLoc(source, scope, "@nudo:contract", segment),
+  }));
+}
+
 /**
  * @nudo:assume 解析段（issue #152 用户引理前提）。
  * ok：lhs ≤ rhs（`>=` 段已在解析时翻转，消费方只见 le）；
@@ -1310,8 +1391,8 @@ function extractRefineLines(source: string, fnName: string): string[] {
  * 锚定 = AST 最近 Function（与 @nudo:contract 同 D6=G2 注释块绑定）。
  */
 export type AssumeSeg =
-  | { kind: "ok"; lhs: string; rhs: string }
-  | { kind: "bad"; raw: string };
+  | { kind: "ok"; lhs: string; rhs: string; line?: number; column?: number }
+  | { kind: "bad"; raw: string; line?: number; column?: number };
 
 /**
  * 关系文法 `<name> <= <name>` / `<name> >= <name>`——名字是 **JS 绑定名**
@@ -1337,15 +1418,27 @@ export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
   // 快路径：整文件无 @nudo:assume 时免 parse 全文（与 extractRefinesFromSource 同口径）
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:assume")) return [];
+  const scope = fnDirectiveScopeOf(source, fnName);
   const out: AssumeSeg[] = [];
-  for (const seg of scanAssumeSegments(fnDirectiveCommentLines(source, fnName))) {
+  for (const seg of scanAssumeSegments(scope?.commentLines ?? [])) {
     // 仅 var ≤ var（var-var 关系引理；`>=` 翻转为 le）；常数界属侧车契约文法
     const rel = parseRelationalSeg(seg);
+    // Bug 374：段位置 = 出错指令所在行（诊断不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:assume", seg);
     if (rel) {
-      out.push({ kind: "ok", lhs: rel.lhs, rhs: rel.rhs });
+      out.push({
+        kind: "ok",
+        lhs: rel.lhs,
+        rhs: rel.rhs,
+        ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+      });
       continue;
     }
-    out.push({ kind: "bad", raw: seg });
+    out.push({
+      kind: "bad",
+      raw: seg,
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
   }
   return out;
 }
@@ -1366,8 +1459,10 @@ export type InvariantSeg =
       rel: "ge" | "le" | "gt" | "lt";
       value: number;
       display: string;
+      line?: number;
+      column?: number;
     }
-  | { kind: "bad"; raw: string };
+  | { kind: "bad"; raw: string; line?: number; column?: number };
 
 /**
  * 不变量的路径文法：`[*]`（元素域）/ `.ident`（obj 槽）序列（可空 = 标量）。
@@ -1433,13 +1528,19 @@ export function extractInvariantSegs(source: string, fnName: string): InvariantS
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:invariant")) return [];
   const out: InvariantSeg[] = [];
-  for (const seg of scanInvariantSegments(fnDirectiveCommentLines(source, fnName))) {
+  const scope = fnDirectiveScopeOf(source, fnName);
+  for (const seg of scanInvariantSegments(scope?.commentLines ?? [])) {
+    // Bug 374：段位置 = 出错指令所在行（诊断不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:invariant", seg);
+    const pos = loc
+      ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) }
+      : {};
     const parsed = parseInvariantSeg(seg);
     if (!parsed) {
-      out.push({ kind: "bad", raw: seg });
+      out.push({ kind: "bad", raw: seg, ...pos });
       continue;
     }
-    out.push({ kind: "ok", ...parsed });
+    out.push({ kind: "ok", ...parsed, ...pos });
   }
   return out;
 }
@@ -1518,8 +1619,14 @@ export function extractRefinesFromSource(
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
+  const scope = fnDirectiveScopeOf(source, fnName);
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
+    // Bug 374：诊断位置 = 出错指令行（contract-syntax 不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:contract", line);
+    const pos = loc
+      ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) }
+      : {};
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
       // 约束名支持 `ns.foo` 命名空间展开（@nudo:import * as ns）
@@ -1531,6 +1638,7 @@ export function extractRefinesFromSource(
         collectDiag({
           code: DIAG.contractSyntax,
           message: `Malformed @nudo:contract segment '${part}' (expected <param> <constraintName> or return <constraintName>; e.g. @nudo:contract x positive)`,
+          ...pos,
         });
         continue;
       }
@@ -1544,6 +1652,7 @@ export function extractRefinesFromSource(
         collectDiag({
           code: DIAG.contractSyntax,
           message: `Unknown constraint name '${cName!}' in @nudo:contract (expected a name bound by @nudo:import)`,
+          ...pos,
         });
         continue;
       }

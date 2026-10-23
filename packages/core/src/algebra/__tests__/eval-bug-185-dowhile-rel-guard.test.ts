@@ -42,6 +42,18 @@ function l1(r: ReturnType<typeof check>): number {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated").length;
 }
 
+/**
+ * L1 **返回义务**诊断数（违约 error + 证不出 warning）。
+ * Bug 370：`x: number()` 是**无界** prim ⇒ 返回义务「既证不出、也反证不了」
+ * ⇒ 无界证据下判 `nudo:unproven-return`（warning）而非 `nudo:constraint-violated`
+ * （error，确定违约）。「仍报 L1」的不变量按**返回义务诊断**计。
+ */
+function l1Return(r: ReturnType<typeof check>): number {
+  return r.issues.filter(
+    (i) => i.code === "nudo:constraint-violated" || i.code === "nudo:unproven-return",
+  ).length;
+}
+
 describe("Bug 185 同构缺口 — do-while 体侧接关系守卫（L1 契约成立）", () => {
   it("第 2 轮起体内成立 x > 0 事实 ⇒ return x 满足契约", () => {
     const r = check(`
@@ -93,7 +105,8 @@ export function f(x) {
   } while (x > 0);
 }
 `);
-    expect(l1(r)).toBeGreaterThan(0);
+    // Bug 370：无界证据（无 > 0 事实）⇒ 判「证不出」（warning）而非「确定违约」
+    expect(l1Return(r)).toBeGreaterThan(0);
   });
 
   it("体侧写守卫名（影子会吞写）⇒ 跳过收窄仍报 L1", () => {
@@ -126,7 +139,8 @@ export function f(x) {
   return x;
 }
 `);
-    expect(l1(r)).toBeGreaterThan(0);
+    // Bug 370：循环体外的读不携带关系事实 ⇒ 无界证据 ⇒ 判「证不出」（warning）
+    expect(l1Return(r)).toBeGreaterThan(0);
   });
 
   it("do-while (v !== null) 体内成员读仍零 L2（nullish 接线不回归）", () => {

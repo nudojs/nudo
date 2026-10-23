@@ -73,12 +73,18 @@ describe("Bug 182: 早返回形态的后续路径建立补集关系事实", () =
   });
 
   it("负控制：事实臂不终止的普通 if/else 不断言否定界", () => {
-    // 后续路径返回 x（x ≤ 0 或 NaN）⇒ 仍违约
+    // 事实臂不终止 ⇒ else 臂**不**建立否定界（x ≤ 0 / NaN）⇒ 该臂的返回
+    // 只有 typeof 级证据 ⇒ 无界证据下**不得**判「确定违约」（error，假红）。
+    // Bug 370：判「证不出」（nudo:unproven-return，warning）——义务仍被报告，
+    // 但不再冒充「确定违约」；若引擎真的断言了否定界，这里会回到 error。
     const r = check(`export function f(x) {
   if (x > 0) { console.log("pos"); } else { return x; }
   return 1;
 }`);
-    expect(violations(r)).toBe(1);
+    expect(violations(r)).toBe(0);
+    expect(
+      r.issues.filter((i) => i.code === "nudo:unproven-return").length,
+    ).toBe(1);
   });
 
   it("负控制：四种关系算子的补集方向各不相同", () => {

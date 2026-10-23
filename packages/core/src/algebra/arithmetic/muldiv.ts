@@ -18,6 +18,8 @@ import { errorTypeAbs } from "../may-throw.ts";
 import { distributeSumBinOp, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
+// Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
+import { noteAssumeConsumed } from "../assume-ledger.ts";
 
 /** 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 */
 export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
@@ -147,8 +149,14 @@ function divAssumeBounds(
   let bLeA = false; // a ≥ b（le(b.term, a.term) 命中）
   for (const p of premises) {
     if (p.op !== "le") continue;
-    if (termEquals(p.a, a.term) && termEquals(p.b, b.term)) aLeB = true;
-    else if (termEquals(p.a, b.term) && termEquals(p.b, a.term)) bLeA = true;
+    if (termEquals(p.a, a.term) && termEquals(p.b, b.term)) {
+      aLeB = true;
+      // Bug 367 记账：这条引理**真的产出了界**（消费点）⇒ 审计归因可认它
+      noteAssumeConsumed(p);
+    } else if (termEquals(p.a, b.term) && termEquals(p.b, a.term)) {
+      bLeA = true;
+      noteAssumeConsumed(p);
+    }
   }
   // soundness：引理与操作数项不匹配 → 不得产生任何界
   if (!aLeB && !bLeA) return undefined;

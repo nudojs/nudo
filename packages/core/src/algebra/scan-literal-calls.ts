@@ -37,6 +37,7 @@ import {
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import { checkCallSite } from "./diagnostics.ts";
 import { locateContractParam, type FormalParam } from "./param-surface.ts";
 import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
@@ -226,6 +227,9 @@ export function scanLiteralCalls(
     checkArgStructures(fnName, source, args, loc);
 
     const parsed = parseCallArgs(ctx, args);
+    // Bug 364：实参个数按**语法实参个数**判定（parseCallArgs 每个语法
+    // 实参产出一项）——默认值补齐后的 absArgs 长度不是调用点实参个数。
+    const syntacticArgCount = parsed.absArgs.length;
     let absArgs = parsed.absArgs;
     let hasInfo = parsed.hasInfo;
     // 值流回退：静态实参无信息（嵌套调用形参 / 复杂表达式）时按执行态实参执法。
@@ -247,8 +251,10 @@ export function scanLiteralCalls(
         hasInfo = defaults.some(isInformativeArg);
       }
     }
-    if (!hasInfo || absArgs.length === 0) return;
 
+    // Bug 364：调用点验证面（`checkArg` / `checkCall`）接进产品路径 ——
+    // 此前本模块只做**契约面**执法 ⇒ 通用化参数面上的调用点验证整体静默。
+    // 放在「实参无信息」早退**之前**：实参个数与实参信息量无关。
     const g = generalizeFromAst(fnName, source, {
       file,
       refine: {
@@ -258,6 +264,18 @@ export function scanLiteralCalls(
         ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       },
     });
+    out.push(
+      ...checkCallSite(source, fnName, absArgs, {
+        argCount: syntacticArgCount,
+        hasInfo,
+        fn: g,
+        phi,
+        line: loc?.start.line,
+        column: loc?.start.column,
+      }),
+    );
+    if (!hasInfo || absArgs.length === 0) return;
+
     const paramNames = g?.params ?? [];
     const optsR: EffectiveInterfaceOpts = {
       loadModule: opts?.loadModule,
@@ -333,6 +351,8 @@ export function scanLiteralCalls(
   ): void => {
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
     const parsedExt = parseCallArgs(ctx, args);
+    // Bug 364：实参个数按**语法实参个数**判定（同 checkOneCall）
+    const syntacticArgCount = parsedExt.absArgs.length;
     let absArgs = parsedExt.absArgs;
     let hasInfo = parsedExt.hasInfo;
     if (!hasInfo) {
@@ -357,6 +377,18 @@ export function scanLiteralCalls(
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
+      // Bug 364：调用点验证面接进产品路径（跨文件被调方）
+      out.push(
+        ...checkCallSite(ext.source, ext.fnName, absArgs, {
+          argCount: syntacticArgCount,
+          hasInfo,
+          fn: g,
+          phi,
+          displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        }),
+      );
       paramNames = g?.params ?? [];
       // 跨文件侧车只在拿到定义文件路径时 ambient 绑定（防误绑到本文件侧车）
       const eiOpts: EffectiveInterfaceOpts = {

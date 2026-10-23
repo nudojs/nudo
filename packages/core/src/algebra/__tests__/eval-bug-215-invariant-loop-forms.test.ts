@@ -96,10 +96,14 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
   );
 
   it.each(FORMS.map((f) => [f.id, f.body] as const))(
-    "%s 对照（无公理）：证不出 → error constraint-violated（负控制：不得被本修复波及）",
+    "%s 对照（无公理）：证不出 → 返回义务未证得（负控制：不得被本修复波及）",
     (_id, body) => {
       const r = checkOf(srcOf(body, null), sidecarOpts(SIDECAR));
-      expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+      // Bug 370：无公理时 `last` 只有 typeof 级证据（无界）⇒ 返回义务
+      // 「既证不出、也反证不了」⇒ 判 `nudo:unproven-return`（warning），
+      // **不得**判 `nudo:constraint-violated`（确定违约 = 假红）。
+      expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
+      expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(false);
       expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
       expect(r.issues.some((i) => i.code.startsWith("nudo:invariant"))).toBe(false);
     },

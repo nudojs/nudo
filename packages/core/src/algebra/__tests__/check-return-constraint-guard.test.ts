@@ -18,6 +18,16 @@ function retViolations(src: string) {
   return errorsOf(src, "/t/ret-guard.js").filter((i) => i.code === "nudo:constraint-violated");
 }
 
+/**
+ * 返回义务「证不出」诊断（warning）。
+ * Bug 370：无界证据（只有 typeof 级 pred）下，带界义务**既证不出、也反证不了**
+ * ⇒ 判 `nudo:unproven-return`（warning），**不得**判 `nudo:constraint-violated`
+ * （确定违约 = 假红：`x` 既可能是 5（满足）也可能是 -1（不满足））。
+ */
+function retUnproven(src: string) {
+  return issuesOf(src, "/t/ret-guard.js").issues.filter((i) => i.code === "nudo:unproven-return");
+}
+
 describe("Bug 1: 守卫后普通变量返回（假阳 → 无 issue）", () => {
   it("ok: if (x >= 0) return x; return 0 —— nonNeg", () => {
     expect(
@@ -175,8 +185,11 @@ function f(x) {
 });
 
 describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () => {
-  it("error: 无守卫裸 return x ⊭ positive", () => {
-    const v = retViolations(`
+  it("unproven: 无守卫裸 return x ⊭ positive（无界证据 ⇒ 证不出，非确定违约）", () => {
+    // Bug 370：`x: number()` 是**无界** prim ⇒ `return x` 的义务「既证不出、
+    // 也反证不了」⇒ 判 `nudo:unproven-return`（warning，与 `return x + 1`
+    // 同档）；判 error（确定违约）是**假红**（`f(5)` 明明满足契约）。
+    const src = `
 /**
  * @nudo:contract x num
  * @nudo:contract return positive
@@ -184,9 +197,11 @@ describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () 
 function f(x) {
   return x;
 }
-`);
-    expect(v).toHaveLength(1);
-    expect(v[0]!.message).toContain("@nudo:contract return positive");
+`;
+    expect(retViolations(src)).toHaveLength(0);
+    const w = retUnproven(src);
+    expect(w).toHaveLength(1);
+    expect(w[0]!.message).toContain("@nudo:contract return positive");
   });
 
   it("error: 守卫弱于契约（x >= 0 臂含 x=0 ⊭ positive）", () => {
@@ -204,10 +219,11 @@ function f(x) {
     ).toHaveLength(1);
   });
 
-  it("error: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
-    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0)：真实违约，不得因守卫机制漏报
-    expect(
-      retViolations(`
+  it("unproven: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
+    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0) ⇒ **可能**违约；但该臂只带
+    // typeof 级证据（无界）⇒ 不得判「确定违约」（error，假红）⇒ 判「证不出」
+    // （warning）——义务仍被报告，不得漏报。
+    const src = `
 /**
  * @nudo:contract x num
  * @nudo:contract return nonNeg
@@ -215,8 +231,9 @@ function f(x) {
 function f(x) {
   return x < 0 ? 0 : x;
 }
-`),
-    ).toHaveLength(1);
+`;
+    expect(retViolations(src)).toHaveLength(0);
+    expect(retUnproven(src)).toHaveLength(1);
   });
 
   it("error: && 值形态的 false 臂 ⊭ number 契约（NaN 路径）", () => {

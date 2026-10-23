@@ -856,6 +856,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 步进表达式只取副作用（写真实绑定）；状态线程是合成计数器。
         // i++/i-- 的后置值语义会丢自增写回（步进闭包内无语句级 rebind pass），
         // 与主路径同口径：标识符 Update 强制 `name = $updateAdd/$updateSub(name)`。
+        // Bug 363 配套：步进里的赋值是**循环携带**的重绑定（可变绑定在路径上
+        // 取并集是合法 JS）⇒ 赋值记录的 conditional 标记必须为真，否则
+        // `for (let c = this; c; c = c.parent)` 这类循环变量改写被误判成
+        // 「结构可赋值」违例（real-package 零 FP 红线）。
+        const updateOpts: TranspileOptions = {
+          ...opts,
+          conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+        };
         const stepPart = (u: Node): string => {
           const upd = u as { type?: string; operator?: string; argument?: { type?: string; name?: string }; expressions?: unknown[] };
           if (upd.type === "UpdateExpression" && upd.argument?.type === "Identifier" && upd.argument.name) {
@@ -864,7 +872,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           if (upd.type === "SequenceExpression") {
             return (upd.expressions ?? []).map((e) => stepPart(e as Node)).join(", ");
           }
-          return emitTranspileExpression(u as Expression, opts);
+          return emitTranspileExpression(u as Expression, updateOpts);
         };
         const updateSrc = stmt.update ? stepPart(stmt.update as Node) : null;
         const forBodyOpts: TranspileOptions = {
@@ -951,12 +959,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       //   string 左操作数走字符串拼接臂（"5"++ 原生 6，拼接得 "51"）。
       // - Bug 144：步进表达式的**值**不得作状态线程——序列表达式（`i++, n++`）
       //   的值是末项值（后缀自增回旧值），会让循环变量停滞 / 超跑。
+      // - Bug 363 配套：步进里的赋值是**循环携带**的重绑定 ⇒ 赋值记录的
+      //   conditional 标记必须为真（否则 `for (let c = this; c; c = c.parent)`
+      //   这类循环变量改写被误判成结构可赋值违例 ⇒ real-package 零 FP 红线）。
       const updateSrc =
         stmt.update && stmt.update.type === "UpdateExpression" &&
         stmt.update.argument.type === "Identifier"
           ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$updateAdd" : "$updateSub"}(${stmt.update.argument.name})`
           : stmt.update
-            ? emitTranspileExpression(stmt.update, opts)
+            ? emitTranspileExpression(stmt.update, {
+                ...opts,
+                conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
+              })
             : null;
       // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
       // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面

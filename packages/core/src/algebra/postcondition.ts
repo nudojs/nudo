@@ -90,17 +90,62 @@ function isValueSetUnknown(ret: Abs): boolean {
 /**
  * 值域已知但无 pred 证据（bare prim / 无界表达式）：
  * 后置界义务证不出也反证不了 → unprovable，不得当 disproved。
- * 只有 ret.pred 存在却不蕴含时才有「确定不满足」的证据（F3 点 1）。
+ * 只有**带界证据**存在却不蕴含时才有「确定不满足」的证据（F3 点 1）。
+ *
+ * Bug 370：判据必须是「**带界**证据」，不是「**有** pred」。
+ * `typeof` 证据（`typeof x === "number"`）只说明**类型**，不说明**值域**
+ * ⇒ `ret.pred` 只有 typeof 时，「不蕴含」**推不出**「确定不满足」
+ * ⇒ 同一条义务在 `return x`（typeof 证据）下判 error、在 `return x + 1`
+ * （无 pred 证据）下判 warning —— 判据不一致 ⇒ 假红。
+ *
+ * 证据面 = **Φ ∧ ret.pred**：关系事实（守卫 / 补集）落在 Φ，值域事实落在
+ * `ret.pred` ⇒ 两边都要看（只看 `ret.pred` 会把「守卫补集臂」误判成无证据）。
  */
-function isBoundedEvidenceMissing(ret: Abs, constraint: NudoConstraint): boolean {
+function isBoundedEvidenceMissing(
+  ret: Abs,
+  constraint: NudoConstraint,
+  phi: Phi,
+): boolean {
   // 契约无 pred 义务：裸 prim 合格即可
   if (constraint.preds.length === 0 && !constraint.members) return false;
   // 字面量有确定值，可走域隶属 → 不算证据缺失
   if (ret.term?.op === "lit") return false;
-  // ret.pred 存在：可走蕴含判定 → 不算证据缺失
-  if (ret.pred && ret.pred.op !== "true") return false;
-  // 有约束义务但无 pred 证据（bare number vs gt(0)）→ 不可判定
+  // 含界原子（gt/ge/lt/le）⇒ 有界证据 ⇒ 可走蕴含判定 → 不算证据缺失
+  if (hasBoundEvidence(combineEvidence(phi, ret.pred))) return false;
+  // 有约束义务但无带界证据（bare number / 仅 typeof vs gt(0)）→ 不可判定
   return true;
+}
+
+/** 证据面 = Φ ∧ ret.pred（去 true） */
+function combineEvidence(phi: Phi, retPred: Pred | undefined): Pred {
+  const parts: Pred[] = [];
+  if (phi && phi.op !== "true") parts.push(phi);
+  if (retPred && retPred.op !== "true") parts.push(retPred);
+  if (parts.length === 0) return pTrue;
+  if (parts.length === 1) return parts[0]!;
+  return { op: "and", args: parts };
+}
+
+/**
+ * pred 树是否含**界原子**（数值/长度比较 gt/ge/lt/le）。
+ * `typeof` / `eq` 只是**类型/取值**证据，不是**界**证据。
+ */
+function hasBoundEvidence(p: Pred): boolean {
+  switch (p.op) {
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+      return true;
+    case "and":
+    case "or":
+      return p.args.some(hasBoundEvidence);
+    case "not":
+      // `not(gt(x,0))` ≡ `x <= 0` ⇒ 仍带界；`not(typeof(...))` 不带
+      return hasBoundEvidence(p.arg);
+    default:
+      return false;
+  }
 }
 
 /** 扁平化 sum 臂（嵌套 sum 一并拆开）；非 sum 返回自身 */
@@ -546,7 +591,7 @@ function assertScalar(
     }
     // 有界义务但无 pred 证据（bare prim / 无界表达式 vs gt(0)）→ 不可判定
     // 只有 ret.pred 存在却不蕴含时才是「确定不满足」（F3 点 1）
-    if (isBoundedEvidenceMissing(ret, constraint)) {
+    if (isBoundedEvidenceMissing(ret, constraint, phi)) {
       return unprovable(
         `cannot prove return satisfies ${formatConstraint(constraint)} (no bound evidence on the return value)`,
       );
@@ -573,7 +618,7 @@ function assertScalar(
 
   // 非字面量：pred 蕴含失败但值域已知且有 pred 证据 → 后置证不出 = 违约（fail-closed）
   if (constraintPred.op !== "true" || constraint.preds.length > 0) {
-    if (isBoundedEvidenceMissing(ret, constraint)) {
+    if (isBoundedEvidenceMissing(ret, constraint, phi)) {
       return unprovable(
         `cannot prove return satisfies ${formatConstraint(constraint)} (no bound evidence on the return value)`,
       );

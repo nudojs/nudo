@@ -1143,15 +1143,20 @@ export function resetEvalFallbackStats(): void {
   _fbModuleThrow = 0;
 }
 
-/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） */
-export function noteEvalFallback(e: unknown): void {
-  const f: EvalFallback = e instanceof NudoUnsupportedError
+/** 回落事件归类（unsupported:* 能力边界 / module-throw 程序自身抛 / internal 引擎缺陷） */
+function evalFallbackOf(e: unknown): EvalFallback {
+  return e instanceof NudoUnsupportedError
     ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
     : isNudoThrow(e)
       ? // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
         // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
         { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
       : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+}
+
+/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） */
+export function noteEvalFallback(e: unknown): void {
+  const f: EvalFallback = evalFallbackOf(e);
   if (f.reason === "internal") _fbInternal++;
   else if (f.reason === "module-throw") _fbModuleThrow++;
   else if (f.reason.startsWith("unsupported:")) _fbUnsupported++;
@@ -1183,6 +1188,35 @@ export function tryRunTranspiled(
   } catch (e) {
     noteEvalFallback(e);
     return undefined;
+  }
+}
+
+/**
+ * tryRunTranspiled 的**详细形态**：回落原因随失败一起返回。
+ *
+ * Bug 380：转译器拒绝构造 ⇒ tryRunTranspiled 返回 undefined ⇒ L2 证据面
+ * （check-may-throw.ts）把「**没分析出** may-throw」与「**分析出没有**
+ * may-throw」当成同一件事 ⇒ 门禁由红转绿。失败原因必须**可观测**，
+ * 调用方才能 fail-closed（把「不可判定」显式交给门禁）。
+ *
+ * 不进 exec/index.ts 的公开面（模块内可见即可；公开面零新增）。
+ */
+export type TranspileAttempt = {
+  /** 成功时的 run 表（导出槽 → 值） */
+  run?: Record<string, unknown>;
+  /** 失败时的回落原因（unsupported:* / module-throw / internal） */
+  fallback?: EvalFallback;
+};
+
+export function tryRunTranspiledDetailed(
+  source: string,
+  opts: RunTranspiledOptions = {},
+): TranspileAttempt {
+  try {
+    return { run: runTranspiled(source, opts) };
+  } catch (e) {
+    noteEvalFallback(e);
+    return { fallback: evalFallbackOf(e) };
   }
 }
 

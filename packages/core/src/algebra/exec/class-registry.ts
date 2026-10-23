@@ -182,6 +182,35 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
   return classRegistry.get(name);
 }
 
+/**
+ * Bug 365：kind 名是否属于 **Error 家族**（内建错误名 + **用户自定义
+ * Error 子类**）。
+ *
+ * `@nudo:throws Error` / `package.json#nudo.check.ignoreThrows = ["Error"]`
+ * 的承诺是「**与 instanceof 语义一致 / 覆盖全部子类**」⇒ 用户类
+ * `class MyError extends Error {}` 必须被 `Error` 覆盖。
+ * 静态内建名集合（`ERROR_FAMILY`）判不出用户子类 ⇒ 假红。
+ *
+ * 运行时信息已具备：注册表里该类的 `superName` 链
+ * （`getEvalClass("MyError").superName === "Error"`）⇒ 沿链上溯即可，
+ * **无需新增公共导出**（本函数不被三个公共入口 re-export）。
+ */
+export function isErrorFamilyKind(kind: string): boolean {
+  // 内建错误名（Error / TypeError / RangeError / …）
+  if (Object.hasOwn(BUILTIN_ERROR_SUPER, kind)) return true;
+  // 用户类：沿 superName 链上溯，看是否落到内建 Error 家族
+  let cur: string | undefined = kind;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    if (Object.hasOwn(BUILTIN_ERROR_SUPER, cur)) return true;
+    const spec = classRegistry.get(cur);
+    if (!spec) return false;
+    cur = spec.superName;
+  }
+  return false;
+}
+
 /** Bug 58：类值 Abs 注册表（名 → $class 产出的类值本身）。
  *  protoOfRecv 的父构造器投影按 superName 回取**同一** Abs 引用——
  *  `Object.getPrototypeOf(B) === A` 折 exact true 的前提（品牌 === 按

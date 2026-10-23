@@ -14,8 +14,16 @@ import { formalParamSignatureNames } from "./param-surface.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
 
-/** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
-const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
+/**
+ * L0 命中的 symbolic 对象稳定：display/detail 按 (Abs 身份, 函数名) 缓存。
+ *
+ * Bug 377：缓存键**只有 Abs 对象身份**，但缓存值 `detail` 内嵌**函数名**
+ * （`formatAbsMultiline(absVal, name)`）⇒ 共享同一 Abs 单例（`never` /
+ * `unknown` 是 `abs.ts` 的模块级单例）的第 2/3 个函数**串号**（`detail`
+ * 全写着第一个函数的名字）⇒ JSON 信封里 `name` 与 `detail` 自相矛盾。
+ * ⇒ 键必须覆盖值的全部依赖：Abs 身份 **+** 函数名。
+ */
+const sigFormatCache = new WeakMap<Abs, Map<string, { display: string; detail: string }>>();
 
 /** 入口形参个数估计（CJS / generalize 失败时喂 any 实参） */
 export function estimateEntryParamCount(
@@ -184,12 +192,18 @@ export function findFnLoc(
 }
 
 export function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
-  const hit = sigFormatCache.get(absVal);
+  // 键 = (Abs 身份, 函数名)：detail 内嵌函数名 ⇒ 名字必须进键（Bug 377）
+  let byName = sigFormatCache.get(absVal);
+  if (!byName) {
+    byName = new Map<string, { display: string; detail: string }>();
+    sigFormatCache.set(absVal, byName);
+  }
+  const hit = byName.get(name);
   if (hit) return hit;
   const out = {
     display: formatAbs(absVal),
     detail: formatAbsMultiline(absVal, name),
   };
-  sigFormatCache.set(absVal, out);
+  byName.set(name, out);
   return out;
 }

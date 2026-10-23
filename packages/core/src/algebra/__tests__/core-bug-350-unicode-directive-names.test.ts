@@ -33,7 +33,8 @@ export function 差(小数, 大数) {
 `;
     const segs = extractAssumeSegs(src, "差");
     expect(segs).toHaveLength(1);
-    expect(segs[0]).toEqual({ kind: "ok", lhs: "小数", rhs: "大数" });
+    // Bug 374：段带指令位置（line/column）⇒ 用 toMatchObject（不锁死新字段）
+    expect(segs[0]).toMatchObject({ kind: "ok", lhs: "小数", rhs: "大数" });
   });
 
   it("@nudo:assume `>=` 仍翻转为 le（中文名同样成立）", () => {
@@ -46,7 +47,7 @@ export function 差(小数, 大数) {
 }
 `;
     const segs = extractAssumeSegs(src, "差");
-    expect(segs).toEqual([{ kind: "ok", lhs: "小数", rhs: "大数" }]);
+    expect(segs).toMatchObject([{ kind: "ok", lhs: "小数", rhs: "大数" }]);
   });
 
   it("@nudo:invariant 中文名 → 合法", () => {

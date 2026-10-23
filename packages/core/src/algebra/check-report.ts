@@ -607,6 +607,23 @@ function escapeGhaProp(s: string): string {
 }
 
 /**
+ * 工作区根裁剪（Bug 373）：`startsWith` 是**纯字符串前缀**判定，没有路径
+ * 边界 ⇒ 兄弟目录（`…/app` vs `…/app2`）被裁成 `2/src/x.js`（指向**不存在**
+ * 的文件）⇒ GHA `file=` / GitLab `location.path` / `fingerprint` 全错。
+ *
+ * 口径：前缀命中后，余下部分必须是**空**或以**路径分隔符**开头 ⇒ 才是
+ * 「同一棵树下的子路径」；否则（`app2` vs `app`）原样保留完整路径。
+ */
+function stripWorkspaceRoot(file: string, workspaceRoot?: string): string {
+  if (!workspaceRoot) return file;
+  if (!file.startsWith(workspaceRoot)) return file;
+  const rest = file.slice(workspaceRoot.length);
+  // 前缀不是路径边界（`…/app2` 命中 `…/app`）⇒ 不裁
+  if (rest !== "" && !/^[/\\]/.test(rest)) return file;
+  return rest.replace(/^[/\\]/, "");
+}
+
+/**
  * GitHub Actions 行内注解（PR Files changed 红/黄标）。
  * 协议：`::error file=…,line=…,col=…,title=…::message`
  * 详见 https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions
@@ -616,10 +633,7 @@ export function formatGithubAnnotations(
   opts: { workspaceRoot?: string } = {},
 ): string {
   const lines: string[] = [];
-  let file = r.file;
-  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
-    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
-  }
+  const file = stripWorkspaceRoot(r.file, opts.workspaceRoot);
   for (const i of r.issues) {
     const level =
       i.severity === "error" ? "error" : i.severity === "warning" ? "warning" : "notice";
@@ -657,10 +671,7 @@ export function formatGitlabCodeQuality(
   r: CheckReport,
   opts: { workspaceRoot?: string } = {},
 ): GitlabCodeQualityIssue[] {
-  let file = r.file;
-  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
-    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
-  }
+  const file = stripWorkspaceRoot(r.file, opts.workspaceRoot);
   return r.issues.map((i) => {
     const begin = i.line ?? 1;
     const severity =

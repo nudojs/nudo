@@ -4,7 +4,7 @@
  * 在 check-report.ts；commander 装配在 check-command.ts）；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { paint } from "../ui.ts";
 import {
@@ -18,6 +18,7 @@ import {
   type CheckIssue,
   type CheckJson,
   type CheckReport,
+  type AbsCallRecord,
   type GitlabCodeQualityIssue,
   type RunTranspiledOptions,
 } from "@nudojs/core";
@@ -89,6 +90,56 @@ import {
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
 // ---------------------------------------------------------------------------
+
+/** 模块路径归一（realpath 对齐符号链接；读不到时回落原路径） */
+function normalizeModulePath(p: string): string {
+  try {
+    return realpathSync(resolve(p));
+  } catch {
+    return resolve(p);
+  }
+}
+
+/**
+ * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord（Bug 366）。
+ *
+ * core 的 drift 判定（`nudo:interface-drift`）此前只吃**被检查文件自身**求值
+ * 产生的调用记录 ⇒ 调用点在别的文件里时，`--from` 写出的生成段永远判不出
+ * 陈旧（落盘契约静默陈旧，0 warning 假绿）。本函数把 `--from` 的跨文件证据
+ * 接进同一条通道。
+ *
+ * 口径：
+ * - **只收可归因到本文件的记录**（targetModule = 导出 tag / fnModule = 定义
+ *   位点 命中本文件）⇒ 别的模块里的同名函数不会污染本文件的 drift 判定
+ *   （zero-FP 红线；与 service 侧 case 合成的 matchingExternal 同口径）。
+ * - `fnName` 取**被调方在目标模块里的导出名**（targetExport；缺失或命名空间
+ *   通配时回落调用处可见名）⇒ import 别名不影响路由。
+ * - **不携带 callLoc**：跨文件调用点在被检查文件内没有位置（不把别的文件的
+ *   行号挂到本文件上）。
+ */
+function externalAbsCallRecords(
+  filePath: string,
+  records: readonly CallRecord[] | undefined,
+): AbsCallRecord[] {
+  if (!records || records.length === 0) return [];
+  const current = normalizeModulePath(filePath);
+  const out: AbsCallRecord[] = [];
+  for (const r of records) {
+    const attributed =
+      (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === current) ||
+      (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === current);
+    if (!attributed) continue;
+    const targetExport = r.targetExport;
+    const fnName =
+      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
+        ? targetExport
+        : r.fnName;
+    if (!fnName) continue;
+    out.push({ fnName, args: r.argAbs, result: r.resultAbs });
+  }
+  return out;
+}
+
 /**
  * 文件级 `@nudo:env` 命名 env 抽取（D5=F1：文法在 core directive-scan 单源）。
  * `//` 与 `///` 等价；字符串/块注释里的同形文本不是指令；
@@ -661,6 +712,11 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     } catch {
       /* 分析器通道失败不得拖垮 check（诊断面降级，不造门禁） */
     }
+    // Bug 366：`--from` 采集的跨文件调用点证据进入 core 的 drift 判定
+    // （此前今日域证据只来自被检查文件自身的求值 ⇒ 靠 --from 写出的生成段
+    // 永远判不出陈旧）。归因口径见 externalAbsCallRecords（只收指向本文件
+    // 的记录 ⇒ 别的模块里的同名函数不污染本文件的判定）。
+    const externalAbsRecords = externalAbsCallRecords(filePath, opts.from);
     report = checkSource(filePath, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: filePath,
@@ -671,6 +727,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
       ...(inject && Object.keys(inject).length > 0
         ? { modules: inject.modules as never, inject }
         : {}),
+      ...(externalAbsRecords.length > 0 ? { from: externalAbsRecords } : {}),
       skips: collectSkipReturns(source),
     });
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
