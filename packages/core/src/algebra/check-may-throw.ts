@@ -110,7 +110,11 @@ export function collectEntryMayThrows(
         }
       }
     } catch {
-      /* 求值失败：已有 nudo:eval-error；L2 不叠报 */
+      // 求值失败 ⇒ L2 证据缺失（**不叠报** may-throw）。
+      //
+      // ⚠ **不存在** `nudo:eval-error` 这个诊断码（`DIAG` 注册表无此项、
+      // 全仓无发射点）⇒ 该幻影码的文档面已在族 32 / Bug 908 删除；
+      // 这里只留事实说明，**不要**再把幻影当既有码引用。
     } finally {
       setMayThrowCollector(null);
     }

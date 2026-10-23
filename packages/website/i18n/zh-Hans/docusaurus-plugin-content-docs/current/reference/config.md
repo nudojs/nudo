@@ -79,7 +79,7 @@ Nudo 从 `package.json` 的 `nudo` 键读取项目配置 —— 没有 `nudo.jso
 | `analysis.diagnostics` | `"off"` \| `"errors"` \| `"default"` \| `"verbose"` | `mode` 为 `"directives"` 时 `"errors"`，否则 `"default"` | IDE 诊断噪声档。 |
 | `analysis.evalMissingSlot` | `"off"` \| `"warning"` | `"off"` | C0.5：求值真实命中已知形状缺字段时发 `nudo:missing-slot` **warning**。是观察不是义务 —— 见[限制](../concepts/limits.md)。 |
 | `analysis.callSiteBudget` | 整数 1–64 | `3` | 每个函数保留的精确调用点 case 数（多态展开）。超预算的调用点符号化折叠为 `#widened` 结果。 |
-| `analysis.maxForks` | 整数 ≥ 1 | `5000` | 分支展开（`$fork`）总预算。命中时：`nudo:fork-truncated` warning 且结果 widen。`NUDO_MAX_FORKS` 压过该键；非法值回落默认。 |
+| `analysis.maxForks` | 整数 ≥ 1 | `5000` | 分支展开（`$fork`）总预算。命中时：`nudo:fork-truncated` info 且结果 widen。`NUDO_MAX_FORKS` 压过该键；非法值回落默认。 |
 
 范围调优实操（TS/JS 混合仓、`directives` vs `exports`）见[与 TypeScript 共存](../guides/coexistence.md)；预算行为见[性能](../guides/performance.md)。
 

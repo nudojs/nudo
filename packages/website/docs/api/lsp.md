@@ -16,8 +16,8 @@ API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps
 |------------|---------|
 | npm surface | `exports["."]` → `dist/server.js`; `bin.nudo-lsp`; `files: ["dist"]`; importing the entry **starts** the server |
 | initialize capabilities | `textDocumentSync` (Full), hover, completion (trigger `.`), codeLens, inlayHint, definition/references/rename, document/workspace symbols, code actions (`quickfix`), signatureHelp, semanticTokens (full), executeCommand, pull `diagnosticProvider` |
-| executeCommand | **dot form** `nudo.check`, `nudo.test`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`, `nudo.selectCase`, `nudo.getActiveCases` |
-| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/test`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
+| executeCommand | **dot form** `nudo.check`, `nudo.test`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`, `nudo.selectCase`, `nudo.selectContract`, `nudo.getActiveCases` |
+| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/test`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit`, `nudo/selectCase`, `nudo/selectContract`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
 | agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `test`, `contract`, `contract.draft`, `contract.emit`, `codeLens` (server-only) |
 | CheckJson / CaseJson | v1 schemas owned by core/service (`check-report.ts`, `case-json.ts`); lsp surfaces them unchanged; field add-only |
 | analysis defaults | `DEFAULT_ANALYSIS_MODE = "exports"`; null config → diagnostics `default`, `evalMissingSlot` `off` |

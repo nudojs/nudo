@@ -291,9 +291,9 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
 | `nudo:interface-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
 | `nudo:no-signature` | 无法归纳符号 Abs |
-| `nudo:opaque-result` / `nudo:eval-error` | 求值不透明 / 求值抛错 |
+| `nudo:opaque-result` | 求值不透明 |
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
-| `nudo:fork-truncated` | 分支展开（$fork 总次数）截断（**warning**）；结果 widen。上限可调：`NUDO_MAX_FORKS` / `nudo.analysis.maxForks` |
+| `nudo:fork-truncated` | 分支展开（$fork 总次数）截断（**info**）；结果 widen。上限可调：`NUDO_MAX_FORKS` / `nudo.analysis.maxForks` |
 | **`nudo:entry-may-throw`** | **L2：入口未消化 may-throw（默认 error）** |
 | `nudo:may-throw` / `nudo-unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 | `nudo:unknown-inference` | 引擎债：出口或签名出现真 `unknown` |

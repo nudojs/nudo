@@ -16,8 +16,8 @@ Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务�
 |--------|------|
 | npm 表面 | `exports["."]` → `dist/server.js`；`bin.nudo-lsp`；`files: ["dist"]`；导入入口 **会启动** 服务器 |
 | initialize capabilities | `textDocumentSync` (Full)、hover、completion（触发 `.`）、codeLens、inlayHint、definition/references/rename、document/workspace symbols、code actions（`quickfix`）、signatureHelp、semanticTokens（full）、executeCommand、pull `diagnosticProvider` |
-| executeCommand | **点号形** `nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` / `nudo.selectCase` / `nudo.getActiveCases` |
-| custom requests | **斜杠形是协议契约**：`nudo/check`、`nudo/test`、`nudo/hover`、`nudo/whatIf`、`nudo/suggestCase`、`nudo/trace`、`nudo/contract`、`nudo/contract.draft`、`nudo/contract.emit`、`nudo/selectCase`、`nudo/getActiveCases` — 均有匹配的 executeCommand（`nudo/X` ↔ `nudo.X`） |
+| executeCommand | **点号形** `nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` / `nudo.selectCase` / `nudo.selectContract` / `nudo.getActiveCases` |
+| custom requests | **斜杠形是协议契约**：`nudo/check`、`nudo/test`、`nudo/hover`、`nudo/whatIf`、`nudo/suggestCase`、`nudo/trace`、`nudo/contract`、`nudo/contract.draft`、`nudo/contract.emit`、`nudo/selectCase`、`nudo/selectContract`、`nudo/getActiveCases` — 均有匹配的 executeCommand（`nudo/X` ↔ `nudo.X`） |
 | agent tools | `AGENT_TOOL_SOURCES` 键：`whatIf`、`suggestCase`、`trace`、`check`、`hover`、`test`、`contract`、`contract.draft`、`contract.emit`、`codeLens`（仅 server） |
 | CheckJson / CaseJson | v1 schema 归 core/service；lsp 原样透出；字段只增不删 |
 | analysis 默认 | `DEFAULT_ANALYSIS_MODE = "exports"`；null 配置 → diagnostics `default`，`evalMissingSlot` `off` |

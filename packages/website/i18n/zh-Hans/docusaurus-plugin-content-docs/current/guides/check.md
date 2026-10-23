@@ -113,7 +113,6 @@ onboarding
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
 | `nudo:builtin-unknown` | 引擎债 | warning | API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock |
 | `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
-| `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | info | 递归求值被截断 —— `reason: cycle`（同抽象实参在栈上；预算解不开）或 `depth`/`calls`（预算用尽） |
 | `nudo:loop-truncated` | 引擎 | info | 循环退出条件越过迭代预算仍具体真；循环状态拓宽（不是调用预算） |
 | `nudo:fork-truncated` | 引擎 | info | 分支展开（`$fork`）预算用尽；结果拓宽 |

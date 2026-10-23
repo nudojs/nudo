@@ -81,7 +81,7 @@ See [`@nudo:env`](../concepts/directives.md) for path-based env files and the bu
 | `analysis.diagnostics` | `"off"` \| `"errors"` \| `"default"` \| `"verbose"` | `"errors"` when `mode` is `"directives"`, else `"default"` | Diagnostic noise level in the IDE. |
 | `analysis.evalMissingSlot` | `"off"` \| `"warning"` | `"off"` | C0.5: emit a `nudo:missing-slot` **warning** when evaluation actually hits a missing field on a known shape. Observation, never an obligation — see [Limits](../concepts/limits.md). |
 | `analysis.callSiteBudget` | integer 1–64 | `3` | Precise call-site cases kept per function (polyvariance). Over-budget sites fold symbolically into `#widened` results. |
-| `analysis.maxForks` | integer ≥ 1 | `5000` | Total branch-expansion (`$fork`) budget. When hit: `nudo:fork-truncated` warning and widened results. `NUDO_MAX_FORKS` wins over this key; invalid values fall back to the default. |
+| `analysis.maxForks` | integer ≥ 1 | `5000` | Total branch-expansion (`$fork`) budget. When hit: `nudo:fork-truncated` info and widened results. `NUDO_MAX_FORKS` wins over this key; invalid values fall back to the default. |
 
 Scope tuning recipes (mixed TS/JS repos, `directives` vs `exports`) are in [Coexisting with TypeScript](../guides/coexistence.md); budget behavior in [Performance](../guides/performance.md).
 

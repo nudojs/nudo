@@ -267,12 +267,6 @@ Evaluation returned opaque / uninformative Abs.
 
 Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 
-### `nudo:eval-error` {#nudo-eval-error}
-
-Body evaluation threw during analysis.
-
-Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
-
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
 Recursive evaluation was cut short; the result widened to `unknown#opaque`. The message — and the `reason` field in `check --json` — tells you **which kind**:
@@ -286,7 +280,7 @@ Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Info.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 

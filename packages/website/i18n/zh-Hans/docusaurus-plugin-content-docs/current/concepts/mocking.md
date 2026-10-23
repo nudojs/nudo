@@ -63,7 +63,7 @@ mock 模块会像普通依赖一样被装载求值；其中与 mock 同名的绑
 
 **警告：箭头函数 mock 体内不能调用构造器。** 约束构造器只存在于指令类型表达式（case 参数、`@nudo:skip`、`@nudo:as`……）中。mock 体内写普通 JavaScript——普通对象与闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` 帮助函数。
 
-**警告：未 mock 的全局量会在 求值引擎上真实执行。** 对 eval-hosted 文件（无顶层 `this.` 的源码默认路径），当没有 mock 绑定该名称时，转译代码会调用真实的 Node 运行时全局量。内建量如 `fetch` 因此会拿抽象值当 URL 并让运行崩溃（`ERR_INVALID_URL`，exit `1`），而不是求值为 `unknown`。把你分析代码调用的每个全局量都 mock 掉：`@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`。
+**警告：未 mock 的宿主副作用全局量在分析期不会被执行。** 会发起真实网络 I/O 或排真实定时器的宿主函数——`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`——被求值引擎拦下：它们不会带着 Abs 实参真实执行，结果拓宽为 `unknown#opaque`，并上报 `nudo:host-effect-blocked`（**Info**）。整轮不会崩溃、退出码不受影响，只是类型精度退化。把分析代码调用的这些全局量都 mock 掉以保住精确类型：`@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`。
 
 ## 示例
 

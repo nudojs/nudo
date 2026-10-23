@@ -794,3 +794,114 @@ describe("examples guide table ↔ docs/examples matrix (rule 16)", () => {
     ).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 规则 19（族 32 / Bug 908）：诊断术语表的**反向**对账 —— 文档里的每个码必须可发射。
+// 既有断言只做单向（「可发射 ⇒ 有文档锚点」），方向缺一半 ⇒ 只写文档、不写实现的码
+// 会变成永久幻影（Bug 908 = `nudo:eval-error`：DIAG 注册表无此项、全仓无发射点）。
+// ---------------------------------------------------------------------------
+
+// 「可发射码」全集 = 既有 emittedCodes()（DIAG 注册表 ∪ src 里 `code: "nudo:…"` 字面量）
+//   ∪ 补充扫描 `code: "nudo-…"`（**无冒号**形态的真实码 —— 例如 `nudo-unreachable`
+//     真发射于 packages/service/src/analyzer-orchestrate-uncached-modules.ts，
+//     但 emittedCodes() 的冒号字面量正则匹配不到它）。
+// emittedCodes() 本身语义不动（既有断言依赖它）；这里只新增一个更宽的辅助函数。
+function emittableCodes(): Set<string> {
+  const codes = new Set(emittedCodes());
+  for (const f of srcFiles()) {
+    for (const m of readFileSync(f, "utf8").matchAll(/code:\s*"(nudo[-\w:]+)"/g)) {
+      codes.add(m[1]);
+    }
+  }
+  return codes;
+}
+
+describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", () => {
+  const en = readFileSync(GLOSSARY_EN, "utf8");
+  const zh = readFileSync(GLOSSARY_ZH, "utf8");
+
+  it("every nudo:* heading in the glossaries is an emittable code (en + zh)", () => {
+    const emittable = emittableCodes();
+    const bad: string[] = [];
+    for (const [label, src] of [["en", en], ["zh", zh]] as const) {
+      // 标题正则沿用规则 3 的那条。
+      for (const m of src.matchAll(/^### `(nudo[\w:-]+)`([^\n]*)$/gm)) {
+        if (!emittable.has(m[1])) bad.push(`${label}: ${m[1]}`);
+      }
+    }
+    expect(
+      bad,
+      `phantom diagnostic codes in the glossary (documented but never emitted — delete the entry or emit the code): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 规则 20（族 32 / Bug 909）：`nudo:fork-truncated` 的严重度在文档面被手抄了 9 遍，
+// 没有一致性校验 ⇒ 实现（core 写死 severity: "info"，仓库自带回归测试
+// packages/core/src/algebra/__tests__/check-fork-truncated.test.ts 断言 info）
+// 与文档之间会漂移。此处钉住：9 处严重度陈述必须全部 = info。
+// ---------------------------------------------------------------------------
+
+describe("nudo:fork-truncated severity is consistent across the doc surface (rule 20)", () => {
+  // 9 处严重度陈述的落点（en/zh 各 4 处 + 仓库设计真源 1 处）。
+  // releases-history.md 是 changelog 归档页（生成物，不承诺严重度口径），不入列。
+  const SITES: Array<[string, string]> = [
+    ["en reference/diagnostics.md", join(EN_DOCS, "reference/diagnostics.md")],
+    ["zh reference/diagnostics.md", join(ZH_DOCS, "reference/diagnostics.md")],
+    ["en guides/check.md", join(EN_DOCS, "guides/check.md")],
+    ["zh guides/check.md", join(ZH_DOCS, "guides/check.md")],
+    ["en guides/performance.md", join(EN_DOCS, "guides/performance.md")],
+    ["zh guides/performance.md", join(ZH_DOCS, "guides/performance.md")],
+    ["en reference/config.md", join(EN_DOCS, "reference/config.md")],
+    ["zh reference/config.md", join(ZH_DOCS, "reference/config.md")],
+    ["design docs/design/cli-semantics.md", join(repoRoot, "docs/design/cli-semantics.md")],
+  ];
+
+  // 一处「严重度陈述」可能落在两处形态上：术语表里写在词条正文（标题之后、
+  // 下一个 `### ` 之前），其余页写在提到该码的那一行 ⇒ 两处都扫。
+  const severityTokens = (path: string): { tokens: Set<string>; warnLines: number[] } => {
+    const lines = readFileSync(path, "utf8").split("\n");
+    const tokens = new Set<string>();
+    const warnLines: number[] = [];
+    const scan = (text: string, lineNo: number): void => {
+      for (const m of text.matchAll(/\b(warning|info)\b/gi)) tokens.add(m[1].toLowerCase());
+      if (/\bwarning\b/i.test(text)) warnLines.push(lineNo);
+    };
+    for (const [i, line] of lines.entries()) {
+      if (line.includes("nudo:fork-truncated")) scan(line, i + 1);
+    }
+    const head = lines.findIndex((l) => /^###\s+`nudo:fork-truncated`/.test(l));
+    if (head >= 0) {
+      for (let j = head + 1; j < lines.length && !/^###\s/.test(lines[j]); j++) {
+        scan(lines[j], j + 1);
+      }
+    }
+    return { tokens, warnLines };
+  };
+
+  it("no doc statement about nudo:fork-truncated calls it a warning", () => {
+    const bad: string[] = [];
+    for (const [label, path] of SITES) {
+      for (const n of severityTokens(path).warnLines) bad.push(`${label}:${n}`);
+    }
+    expect(
+      bad,
+      `nudo:fork-truncated is severity "info" in core (check.ts fork-truncation branch) — fix these doc statements: ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every doc surface states info as the severity for nudo:fork-truncated", () => {
+    const bad: string[] = [];
+    for (const [label, path] of SITES) {
+      const { tokens } = severityTokens(path);
+      if (!tokens.has("info")) {
+        bad.push(`${label}: severity = [${[...tokens].sort().join(", ") || "none"}] (expected info)`);
+      }
+    }
+    expect(
+      bad,
+      `nudo:fork-truncated severity is not "info" on these doc surfaces: ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});

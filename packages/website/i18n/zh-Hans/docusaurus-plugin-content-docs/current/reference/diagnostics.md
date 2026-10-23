@@ -267,12 +267,6 @@ Context: [@nudo:env](../concepts/directives.md#nudo--运行时环境) · [依赖
 
 Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
-### `nudo:eval-error` {#nudo-eval-error}
-
-分析期间 body 求值抛出。
-
-Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
-
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
 递归求值被截断；结果拓宽为 `unknown#opaque`。文案——以及 `check --json` 的 `reason` 字段——指明**归因**：
@@ -286,7 +280,7 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**info**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 

@@ -115,7 +115,6 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
 | `nudo:builtin-unknown` | engine debt | warning | API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / mock |
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
-| `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | info | Recursive evaluation cut short — `reason: cycle` (same abstract args on stack; a budget cannot lift it) or `depth`/`calls` (budget ran out) |
 | `nudo:loop-truncated` | engine | info | Loop exit condition stayed concrete-true past the iteration budget; loop state widened (not the call budget) |
 | `nudo:fork-truncated` | engine | info | Branch-expansion (`$fork`) budget hit; result widened |
