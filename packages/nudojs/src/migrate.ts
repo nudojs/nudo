@@ -38,6 +38,23 @@ export type MigrateStatusRow = {
   /** 半完成：`migrate-retiring.json` 在而 `migrate-retired.json` 不在（可重跑 recover） */
   retiring: boolean;
   blockers: string[];
+  /**
+   * 本次 workspace 扫描**被排除的包**（机器面）。
+   *
+   * 排除 = pnpm 负向模式（`!packages/legacy`）命中的包 —— 用户声明「这个包
+   * 不归我管」⇒ 它既不进 status，也不被 `retire --all` 改写。
+   *
+   * ⚠ 此前这份清单**只**出现在 **stderr**（人读行）⇒ **机器消费者**看不到
+   * 「哪些包被排除了」（`--json` 面缺字段）。现在它同时进 **stdout 的机器面**
+   * （本字段）⇒ 机器可解析。
+   *
+   * 口径：
+   * - **只在有排除时出现**（无排除 ⇒ JSON 与旧版**逐字相同**）；
+   * - 同一扫描的**每一行都带同一份清单**（消费方取任意一行即可）；
+   * - 路径 = 相对**扫描根**（workspace root）的 posix 路径，与 stderr 那行
+   *   **逐字一致**（人读提示与机器报文说同一份清单）。
+   */
+  excluded?: string[];
 };
 
 export type StripResult = {
@@ -81,6 +98,17 @@ export type RetireResult = {
   marker: string;
   /** 保留 tsc 的编译器角色脚本（`nudo check` 不产产物 ⇒ 不得改写） */
   preservedScripts: RetirePreservedScript[];
+  /**
+   * 本次 workspace 扫描**被排除的包**（机器面）。
+   *
+   * 与 `MigrateStatusRow.excluded` 同口径：排除 = pnpm 负向模式命中的包；
+   * 此前只在 **stderr**（人读行）⇒ 机器消费者看不到 ⇒ 现在同时进 stdout 的
+   * 机器面（`--json`）。**只在有排除时出现** ⇒ 无排除时 JSON 逐字不变。
+   *
+   * ⚠ 只在 **workspace 扫描**（`retire --all`）时有值；单目标退役
+   * （`migrate retire <pkg>`）不做 workspace 枚举 ⇒ 无排除清单。
+   */
+  excluded?: string[];
 };
 
 /**
@@ -559,14 +587,31 @@ export function resolveWorkspacePackages(root: string): WorkspaceScan {
  * 包根集合（`migrate status` / `migrate retire --all` 的作用域）。
  * 边界（pnpm 排除掉的包 / 没匹配到包的 pattern）走 **stderr**——
  * stdout 是产品面（`--json` 必须是合法 JSON），提示不得污染它。
+ *
+ * ⚠ **排除清单同时进 stdout 的机器面**（`excluded` 字段，见
+ * `MigrateStatusRow.excluded`）：stderr 那行是**人读**提示，机器消费者拿不到
+ * 「哪些包被排除了」⇒ 这里把清单一并返回，由调用方放进 `--json` 报文。
  */
-function packageRoots(root: string): string[] {
+function packageRoots(root: string): { roots: string[]; excluded: string[] } {
   const scan = resolveWorkspacePackages(root);
   for (const note of scan.notes) console.error(`nudo migrate: ${note}`);
   if (scan.excluded.length > 0) {
     console.error(`nudo migrate: skipped (pnpm excluded): ${scan.excluded.join(", ")}`);
   }
-  return scan.roots;
+  return { roots: scan.roots, excluded: scan.excluded };
+}
+
+/**
+ * 排除清单的**机器面**形态。
+ *
+ * 字符串与 stderr 那行**逐字一致**（相对**扫描根**（workspace root）的 posix
+ * 路径）⇒ 人读提示与机器报文说的是同一份清单、同一批字符串。
+ *
+ * **无排除 ⇒ undefined**（JSON 里不出现该键 ⇒ 与旧版逐字相同）。
+ */
+function excludedPackages(excluded: string[]): string[] | undefined {
+  if (excluded.length === 0) return undefined;
+  return [...excluded];
 }
 
 /** 声明文件（.d.ts / .d.mts / .d.cts）不是可 strip 的实现源 */
@@ -574,6 +619,55 @@ const DTS_RE = /\.d\.(m|c)?ts$/i;
 
 function isDeclarationFile(file: string): boolean {
   return DTS_RE.test(file);
+}
+
+/**
+ * verify 的**扫描面**（nudojs 本地口径；**不**依赖 service 的 `isNudoTargetPath`）。
+ *
+ * 根因在 **service**（本片未改，见交回报告）：`isNudoTargetPath` 把 `.jsx` /
+ * `.tsx` / `.cjs` 一律排除 ⇒ `migrate verify` 看不见 **JSX 产物**（旧
+ * `migrate strip` 的 `.tsx → .jsx` 映射产物——Node 加载不了）⇒ 迁移闸门对
+ * **不可加载的产物**发绿灯（假绿）。`nudo check` / `nudo health` / `nudo test`
+ * 共用那条规则 ⇒ **service 侧仍是根因**，本片只做 **CLI 侧兜底**（verify 自己
+ * 算扫描面）。
+ *
+ * 口径（verify 关心「迁移前的源 + 迁移后的产物」）：
+ * - 源：`.ts` / `.mts` / `.cts` / `.tsx`
+ * - 产物：`.js` / `.mjs` / `.cjs` / `.jsx`
+ * - **排除**（与 Bug 566 同口径）：声明文件（`.d.ts` / `.d.mts` / `.d.cts`）、
+ *   侧车（`*.nudo.js` / `*.nudo.mjs` / `*.nudo.ts`）、draft 产物
+ *   （`*.nudo.draft.js` / `*.nudo.draft.mjs` / `*.nudo.draft.ts`）——它们不是
+ *   实现源码，当源码分析会与 `nudo check` 给出**相反结论**。
+ */
+const VERIFY_TARGET_EXTS: ReadonlySet<string> = new Set([
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".jsx",
+  ".ts",
+  ".mts",
+  ".cts",
+  ".tsx",
+]);
+
+/** 侧车 / draft 产物（排除表与 service `isNudoTargetPath` 逐条一致） */
+function isSidecarOrDraftPath(file: string): boolean {
+  const lower = file.toLowerCase();
+  return (
+    lower.endsWith(".nudo.js") ||
+    lower.endsWith(".nudo.mjs") ||
+    lower.endsWith(".nudo.ts") ||
+    lower.endsWith(".nudo.draft.js") ||
+    lower.endsWith(".nudo.draft.mjs") ||
+    lower.endsWith(".nudo.draft.ts")
+  );
+}
+
+/** verify 的目标判定（口径见 VERIFY_TARGET_EXTS 的说明） */
+function isVerifyTargetPath(file: string): boolean {
+  if (isDeclarationFile(file)) return false;
+  if (isSidecarOrDraftPath(file)) return false;
+  return VERIFY_TARGET_EXTS.has(extname(file.toLowerCase()));
 }
 
 /** migrate strip 的源门：TS/TSX 实现源，排除 .d.* 声明 */
@@ -1533,7 +1627,8 @@ function belongsToOtherPackage(file: string, self: string, allRoots: string[]): 
 
 export function migrateStatus(rootDir: string): MigrateStatusRow[] {
   const root = resolveMigrateRoot(rootDir);
-  const roots = packageRoots(root);
+  const { roots, excluded } = packageRoots(root);
+  const excludedList = excludedPackages(excluded);
   const workflowHits = listWorkflowTscLines(root);
   const rows: MigrateStatusRow[] = [];
   for (const r of roots) {
@@ -1605,6 +1700,8 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       retired,
       retiring,
       blockers,
+      // 排除清单（机器面）：同一次扫描的每一行都带同一份（无排除 ⇒ 不出现）
+      ...(excludedList ? { excluded: excludedList } : {}),
     });
   }
   return rows;
@@ -2218,7 +2315,6 @@ export async function migrateVerify(
     defaultLoadModule,
     findProjectConfig,
     interfaceConfig,
-    isNudoTargetPath,
   } = await import("@nudojs/service");
   const { preloadPathEnvs } = await import("@nudojs/service/evaluator");
   const { checkGateFromConfig, mergeIgnoreThrows, resolveEntryThrows } = await import(
@@ -2240,9 +2336,11 @@ export async function migrateVerify(
       throw new Error(`not found: ${p}`);
     }
     if (statSync(abs).isDirectory()) {
-      // Bug 566：文件筛选与 nudo check 同口径（isNudoTargetPath）——侧车
-      // （*.nudo.js）与 .d.ts 声明**不是**分析目标，不得当源码分析。
-      const found = listFiles(abs).filter((f) => isNudoTargetPath(f));
+      // Bug 566：文件筛选与 nudo check 同口径——侧车（*.nudo.js）与 .d.ts 声明
+      // **不是**分析目标，不得当源码分析。**扫描面本身**按 verify 自己的口径
+      // （isVerifyTargetPath，见其注释）：额外纳入 `.jsx` / `.tsx` / `.cjs`
+      // （JSX 产物 / TSX 源 / CJS 产物此前对 verify **不可见** ⇒ 假绿）。
+      const found = listFiles(abs).filter((f) => isVerifyTargetPath(f));
       if (found.length === 0) {
         // Bug 589：空集 ≠ 验过了（与 check 面的空目录判定一致）
         emptyRows.push({
@@ -2251,19 +2349,19 @@ export async function migrateVerify(
           nudoSummary: "0 error · 0 warning · 0 fn",
           code: "no-files",
           error: `No nudo files found in directory: ${abs}`,
-          fix: "add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped",
+          fix: "add .js/.mjs/.jsx/.ts sources (or point at a directory that has them); sidecar/decl are skipped",
         });
         continue;
       }
       files.push(...found);
-    } else if (!isNudoTargetPath(abs)) {
+    } else if (!isVerifyTargetPath(abs)) {
       emptyRows.push({
         file: relative(process.cwd(), abs),
         nudoOk: false,
         nudoSummary: "0 error · 0 warning · 0 fn",
         code: "not-a-target",
-        error: `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${abs}`,
-        fix: "pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)",
+        error: `Not an analysis target (need .js/.mjs/.jsx/.ts, not sidecar/decl): ${abs}`,
+        fix: "pass a .js/.mjs/.jsx/.ts analysis file (not .nudo.js sidecars or .d.ts decls)",
       });
     } else {
       files.push(abs);
@@ -2682,6 +2780,42 @@ type RetirePlan = {
 };
 
 /**
+ * 退役批次的**失败明细**（一个失败目标 = 一条）。
+ *
+ * 挂在抛出的 Error 的 `retireFailures` 属性上 ⇒ 命令层可把它放进 `--json`
+ * 信封（机器面拿结构化清单，不解析人读消息）。
+ */
+type RetireFailure = {
+  /** 失败目标（调用方给的路径原样） */
+  target: string;
+  /** 该目标的失败原因（库面消息） */
+  message: string;
+};
+
+/**
+ * 批次失败的 Error：**点名全部失败目标**。
+ *
+ * 消息口径（**只增不减**）：
+ * - 单个失败 ⇒ 与旧实现**逐字相同**（`<原因> (target: <目标>)`）；
+ * - 多个失败 ⇒ 旧消息**在前**，后面追加失败清单（每行 `  <目标>: <原因>`）。
+ *
+ * 结构化明细挂在 `retireFailures` 上（机器面；不新增公共导出）。
+ */
+function retireBatchError(failures: RetireFailure[]): Error {
+  const first = failures[0]!;
+  const head = `${first.message} (target: ${first.target})`;
+  const err =
+    failures.length === 1
+      ? new Error(head)
+      : new Error(
+          `${head} — ${failures.length} target(s) failed (no package was modified):\n` +
+            failures.map((f) => `  ${f.target}: ${f.message}`).join("\n"),
+        );
+  (err as Error & { retireFailures?: RetireFailure[] }).retireFailures = failures;
+  return err;
+}
+
+/**
  * 退役计划（只读）：算出 package.json 改写、workflow 改写、审计标记。
  * 「没有可退役的东西」⇒ 抛错（不注入、不写标记、不谎报已退役）。
  */
@@ -2844,6 +2978,10 @@ export function migrateRetire(
 /**
  * 多目标退役：**全退役或全报错**（不得静默只处理第一个）。
  * 任一目标失败 ⇒ 整批不落盘。
+ *
+ * 错误消息**点名全部失败目标**（旧实现只带**第一个**失败目标 ⇒ 其余失败目标
+ * **丢失**：用户以为只有一个包有问题）。原子性**不变**：任一失败 ⇒ 整批零写盘
+ * （抛错发生在 `commitRetirePlans` **之前**）。
  */
 export function migrateRetireMany(
   rootDirs: string[],
@@ -2851,14 +2989,18 @@ export function migrateRetireMany(
 ): RetireResult[] {
   if (rootDirs.length === 0) return [];
   const plans: RetirePlan[] = [];
+  const failures: RetireFailure[] = [];
   for (const dir of rootDirs) {
     const root = resolveMigrateRoot(dir);
     try {
       plans.push(planRetirePackage(root, opts));
     } catch (err) {
-      throw new Error(`${(err as Error).message} (target: ${dir})`);
+      // **不立即抛**：先把所有目标都计划一遍（计划是只读的、不落盘）⇒ 错误消息
+      // 能列出**全部**失败目标，而不是只报第一个。
+      failures.push({ target: dir, message: (err as Error).message });
     }
   }
+  if (failures.length > 0) throw retireBatchError(failures);
   if (!opts.dryRun) commitRetirePlans(plans[0]!.root, plans);
   return plans.map((p) => p.result);
 }
@@ -2870,7 +3012,9 @@ export function migrateRetireAll(
 ): RetireResult[] {
   const root = resolveMigrateRoot(rootDir);
   const plans: RetirePlan[] = [];
-  for (const r of packageRoots(root)) {
+  const { roots, excluded } = packageRoots(root);
+  const excludedList = excludedPackages(excluded);
+  for (const r of roots) {
     // Bug 588（retire --all 侧）：畸形清单**静默跳过** ⇒ 该包被当成「没有
     // tsc/typescript」⇒ 假绿。解析失败要显式报错（fail-closed）。
     const read = readPackageJsonDetailed(join(r, "package.json"));
@@ -2890,6 +3034,10 @@ export function migrateRetireAll(
     plans.push(planRetirePackage(r, opts));
   }
   if (plans.length === 0) return [];
+  // 排除清单（机器面）：同一批结果的每一条都带同一份（无排除 ⇒ 不出现）
+  if (excludedList) {
+    for (const p of plans) p.result.excluded = [...excludedList];
+  }
   if (!opts.dryRun) {
     try {
       commitRetirePlans(root, plans);

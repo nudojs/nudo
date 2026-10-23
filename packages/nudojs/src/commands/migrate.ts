@@ -412,12 +412,37 @@ export function registerMigrateCommand(program: Command): void {
           process.exitCode = 1;
         } catch (err) {
           const message = (err as Error).message;
+          // 批次失败明细（库面 `migrateRetireMany` 把**全部**失败目标挂在错误上
+          // ⇒ 机器面拿结构化清单，不解析人读消息）。
+          const failures = (
+            err as {
+              retireFailures?: Array<{ target: string; message: string }>;
+            }
+          ).retireFailures;
           // Bug 567 / 586：「无可退役」是**正常结果**（不是失败）——退役闸门
           // 的用户预期是「把还能退役的都退役了」，没东西可退役不该报红。
           // 库面用「nothing to retire …」消息表达该状态 ⇒ CLI 据此给 exit 0。
-          if (message.startsWith("nothing to retire")) {
+          // **批次口径**：只有**全部**失败项都是「nothing to retire」才算正常结果
+          // （否则某个目标的真错误会被当成正常 ⇒ 假绿）。
+          const benign =
+            failures !== undefined
+              ? failures.length > 0 &&
+                failures.every((f) => f.message.startsWith("nothing to retire"))
+              : message.startsWith("nothing to retire");
+          if (benign) {
             if (opts.json) {
-              console.log(JSON.stringify({ ok: true, retired: [], message }, null, 2));
+              console.log(
+                JSON.stringify(
+                  {
+                    ok: true,
+                    retired: [],
+                    message,
+                    ...(failures !== undefined ? { failedTargets: failures } : {}),
+                  },
+                  null,
+                  2,
+                ),
+              );
             } else {
               console.log(message);
             }
@@ -428,7 +453,19 @@ export function registerMigrateCommand(program: Command): void {
           // （旧实现失败时 stdout 为 0 字节 ⇒ `JSON.parse(stdout)` 抛错）。
           if (opts.json) {
             console.log(
-              JSON.stringify({ ok: false, action, targets, error: message }, null, 2),
+              JSON.stringify(
+                {
+                  ok: false,
+                  action,
+                  targets,
+                  error: message,
+                  // 批次失败明细（机器面）：`retire` 多目标失败时列出**全部**
+                  // 失败目标（人读消息在 `error` 里）。
+                  ...(failures !== undefined ? { failedTargets: failures } : {}),
+                },
+                null,
+                2,
+              ),
             );
           }
           process.exitCode = 1;
