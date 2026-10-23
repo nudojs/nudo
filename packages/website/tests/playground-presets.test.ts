@@ -79,7 +79,9 @@ describe("flagship presets keep their documented behaviour", () => {
     expect(sig, "needsPositive signature missing").toBeTruthy();
     // 契约（@nudo:import positive → number().gt(0)）把签名收窄成带 pred 的 number
     expect(sig?.conf).toBe("path");
-    expect(sig?.display).toContain("x > 0");
+    // ⚠ 口径更新（族 09 · Bug 413）：`display` 是**人类面口径**（shape 渲染，
+    // 不带 pred 段）⇒ 谓词证据改看 `detail`（**证据不丢**，只换字段）。
+    expect(sig?.detail).toContain("x > 0");
 
     const violation = report.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(violation, "violating call site not reported").toBeTruthy();
@@ -109,7 +111,8 @@ describe("flagship presets keep their documented behaviour", () => {
     expect(sig, "scale signature missing").toBeTruthy();
     // 契约 x > 0 进入代数：IEEE 严格端点退到 x ≥ 5e-324，x 极小时 fl(x + 1) === 1（吸收），
     // 故返回位派生的严格下界是 nextDown(1)，而非 1（锚点与 docs/design/evaluation.md 一致）
-    expect(sig?.display).toContain("(x + 1) > 0.9999999999999999");
+    // ⚠ 口径更新（族 09 · Bug 413）：谓词证据在 `detail`（`display` 是人类面口径的 shape 渲染）
+    expect(sig?.detail).toContain("(x + 1) > 0.9999999999999999");
     expect(sig?.conf).toBe("path");
     const violation = report.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(violation, "sidecar violation not reported").toBeTruthy();
