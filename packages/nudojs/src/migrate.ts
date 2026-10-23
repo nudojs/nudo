@@ -62,6 +62,19 @@ export type StripResult = {
   outFile: string;
   sidecarDraft?: string;
   notes: string[];
+  /**
+   * 失败码（机器面）——**与 `migrateVerify` 同款**（`VerifyResult.code`）。
+   *
+   * 族 56b：strip 的库面改**逐文件隔离**——解析失败**不**再中止整批，
+   * 而是降级成**一行错误**（带文件名）⇒ 同目标内其它文件的成功结果
+   * 照常返回（原先 `makeStripPlan` 直接 throw ⇒ 整批结果全丢）。
+   *
+   * 码表**沿用** `migrateVerify` 的逐文件失败码（`analysis-error`）——
+   * 不另立码表（verify 对任何逐文件失败都发这个码 ⇒ 两个面同码）。
+   */
+  code?: string;
+  /** 失败详情（带文件名，便于定位）——与 `migrateVerify` 的 `error` 同款 */
+  error?: string;
 };
 
 export type VerifyResult = {
@@ -1902,6 +1915,8 @@ function productSpecifier(spec: string, resolved: string, specPath: string): str
 
 /** strip 的产物计划（写盘前的全部计算结果） */
 type StripPlan = {
+  /** 判别位：与 StripFileFailure 区分（内部类型，不进公开面） */
+  kind: "plan";
   /** 源文件（绝对路径） */
   file: string;
   /** 产物文件（绝对路径） */
@@ -1913,6 +1928,43 @@ type StripPlan = {
   /** 侧车迁移（源侧车 → 产物侧车）：不是独立实现源 */
   sidecar: boolean;
 };
+
+/**
+ * 单个文件的失败（**解析错**）——逐文件隔离用（族 56b · Bug 696 的库面半边）。
+ *
+ * 结构与 `migrateVerify` 的逐文件错误行**同款**：`code`（机器面失败码）
+ * + `error`（带文件名的失败详情）。失败**不**中止整批 ⇒ 同目标内其它文件
+ * 的成功结果照常返回（原先 `makeStripPlan` 直接 throw ⇒ 同目标内的成功
+ * 结果**全丢**）。
+ */
+type StripFileFailure = {
+  /** 判别位：与 StripPlan 区分（内部类型，不进公开面） */
+  kind: "failure";
+  /** 源文件（绝对路径） */
+  file: string;
+  /** 产物文件（绝对路径） */
+  outFile: string;
+  /** 失败码（机器面）：与 `migrateVerify` 的逐文件失败码**同码** */
+  code: string;
+  /** 失败详情（带文件名） */
+  error: string;
+};
+
+/** strip 的计划项：成功计划 或 逐文件失败（两者按计划顺序混排） */
+type StripOutcome = StripPlan | StripFileFailure;
+
+/**
+ * strip 的逐文件失败码（机器面）——**沿用** `migrateVerify` 的逐文件失败码
+ * （`analysis-error`）⇒ 两个面同码，不另立码表。
+ */
+const STRIP_FAILURE_CODE = "analysis-error";
+
+/**
+ * 「这一批因别的文件失败而**没有**写盘」的注记（写盘模式下有失败时挂在
+ * 成功行上）——防止调用方把「计划成功」误读成「已写盘」。
+ */
+const STRIP_NOT_WRITTEN_NOTE =
+  "not written — another file in this strip batch failed (strip is atomic: a failed batch writes nothing)";
 
 /** 侧车源（*.nudo.ts）：TS 源的侧车，随产物侧车（*.nudo.js）迁移 */
 const SIDECAR_TS_RE = /\.nudo\.ts$/i;
@@ -1971,8 +2023,11 @@ function commitStripOps(ops: StripOp[]): void {
   }
 }
 
-/** 单个产物的计算（解析失败 ⇒ 报错带文件名；.tsx ⇒ 拒绝迁移） */
-function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripPlan {
+/**
+ * 单个产物的计算（**解析失败 ⇒ 降级成一行错误**（逐文件隔离，族 56b）；
+ * .tsx ⇒ 拒绝迁移（整批 throw：那是**产品判定**不是解析失败））。
+ */
+function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripOutcome {
   const ext = extname(file).toLowerCase();
   if (TSX_EXT.has(ext)) {
     // JSX 需要 JSX 变换（编译变换），strip 的产品约束是「只剥类型」⇒ 不产出
@@ -1984,7 +2039,7 @@ function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripPl
   const source = readFileSync(file, "utf-8");
   if (!isStripSource(file)) {
     // 非 TS 侧车（.js 形态）：原样迁移，不重排格式
-    return { file, outFile, code: source, notes: [], sidecar };
+    return { kind: "plan", file, outFile, code: source, notes: [], sidecar };
   }
   let code: string;
   let notes: string[];
@@ -1992,22 +2047,35 @@ function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripPl
     ({ code, notes } = stripTsToJs(source, { filePath: file }));
   } catch (err) {
     // 错误信息必须点名文件（Bug 574：Babel 的 "Unexpected token (2:12)" 无路径）
-    throw new Error(`parse failed: ${file}: ${(err as Error).message}`);
+    // 族 56b：**不**再 throw（那会中止整批 ⇒ 同目标内的成功结果全丢）⇒
+    // 降级成一行错误（结构同 `migrateVerify` 的逐文件错误行）。
+    return {
+      kind: "failure",
+      file,
+      outFile,
+      code: STRIP_FAILURE_CODE,
+      error: `parse failed: ${file}: ${(err as Error).message}`,
+    };
   }
   if (!sidecar && ext === ".cts") {
     notes.push(
       'source is CommonJS TypeScript (.cts) — strip does not transform module systems: the .js product keeps the source\'s import/export syntax (Node parses .js as CommonJS unless the nearest package.json sets "type": "module")',
     );
   }
-  return { file, outFile, code, notes, sidecar };
+  return { kind: "plan", file, outFile, code, notes, sidecar };
 }
 
 /**
  * 产物计划：先算完再写（两阶段）⇒ 解析失败时一个字节都不落盘（Bug 574）。
  * 目录路径与单文件路径走**同一条**侧车迁移逻辑（Bug 969）。
+ *
+ * 族 56b：解析失败**不再中止整批**——失败项降级成 `StripFileFailure`
+ * （一行错误，带文件名）⇒ 同目标内其它文件的成功结果照常返回。
+ * ⚠ 目标级错误（`not found` / 非 TS 源 / `.tsx` 不可迁移）**仍**整批 throw：
+ * 那是**用法/产品判定**，不是逐文件的解析失败。
  */
-function planStrip(paths: string[]): StripPlan[] {
-  const plans: StripPlan[] = [];
+function planStrip(paths: string[]): StripOutcome[] {
+  const plans: StripOutcome[] = [];
   const add = (file: string, outFile: string, sidecar: boolean): void => {
     plans.push(makeStripPlan(file, outFile, sidecar));
   };
@@ -2058,18 +2126,52 @@ function planStrip(paths: string[]): StripPlan[] {
   return plans;
 }
 
+/**
+ * 计划项 → 结果行（失败项 = **一行错误**；成功项 = 一行计划）。
+ *
+ * 族 56b：失败行与 `migrateVerify` 的逐文件错误行**同款**
+ * （`code` + `error`；`error` 带文件名）⇒ 机器面**同一套**读法。
+ * 成功行的字段**逐字不变**（负控：全部成功时的输出与旧版逐字相同）。
+ */
+function stripOutcomeToResult(o: StripOutcome): StripResult {
+  if (o.kind === "failure") {
+    return {
+      file: relative(process.cwd(), o.file),
+      outFile: relative(process.cwd(), o.outFile),
+      notes: [],
+      code: o.code,
+      error: o.error,
+    };
+  }
+  return {
+    file: relative(process.cwd(), o.file),
+    outFile: relative(process.cwd(), o.outFile),
+    notes: o.notes,
+  };
+}
+
 export async function migrateStrip(
   paths: string[],
   opts: { write?: boolean; draft?: boolean; backup?: boolean } = {},
 ): Promise<StripResult[]> {
-  // 阶段一：算完所有产物（零写盘）——解析失败 ⇒ 报错带文件名且不落盘（Bug 574）
-  const plans = planStrip(paths);
+  // 阶段一：**先算完全部结果**（含错误行，零写盘）——族 56b：
+  // 解析失败**不再中止整批**（降级成一行错误，带文件名；结构同
+  // `migrateVerify` 的逐文件错误行）⇒ 同目标内其它文件的成功结果照常返回。
+  const outcomes = planStrip(paths);
+  const failures = outcomes.filter((o): o is StripFileFailure => o.kind === "failure");
+  const plans = outcomes.filter((o): o is StripPlan => o.kind === "plan");
   if (!opts.write) {
-    return plans.map((p) => ({
-      file: relative(process.cwd(), p.file),
-      outFile: relative(process.cwd(), p.outFile),
-      notes: p.notes,
-    }));
+    return outcomes.map(stripOutcomeToResult);
+  }
+  if (failures.length > 0) {
+    // 原子性（Bug 574）：任一文件失败 ⇒ **整批零写盘**。
+    // 但**结果不丢**：成功文件的行照常返回（附「未写盘」注记 ⇒ 调用方
+    // 不会把「计划成功」误读成「已写盘」）。
+    const rows = outcomes.map(stripOutcomeToResult);
+    for (const row of rows) {
+      if (!row.code) row.notes.push(STRIP_NOT_WRITTEN_NOTE);
+    }
+    return rows;
   }
   // 阶段二：写盘（事务）——目标已存在且内容不同 ⇒ 拒绝覆盖（Bug 575）
   const ops: StripOp[] = [];

@@ -253,6 +253,19 @@ export function registerMigrateCommand(program: Command): void {
                   write: false,
                   draft: false,
                 });
+                // 族 56b：库面改**逐文件隔离**⇒ 计划里可能带**失败行**
+                // （`code` + `error`，带文件名；结构同 `migrate verify` 的
+                // 逐文件错误行）。任一失败 ⇒ 该目标**整批零写盘**（原子性）
+                // ⇒ 目标判失败，失败详情**逐字沿用**库面的错误文案
+                // （`parse failed: <文件>: <原因>`）⇒ CLI 输出与旧版一致。
+                const planFailure = plan.find((r) => r.code !== undefined);
+                if (planFailure) {
+                  failures.push({
+                    path: target,
+                    message: planFailure.error ?? `strip failed: ${planFailure.file}`,
+                  });
+                  continue;
+                }
                 // Bug 672：产物闸门——剥完仍有 TS-only 语法 ⇒ 写出去的 .js
                 // Node 解析不了（migrate 是一程闸门）⇒ 拒绝写盘并报错。
                 const leftovers = tsOnlyLeftovers(plan);
@@ -272,6 +285,16 @@ export function registerMigrateCommand(program: Command): void {
                       draft: opts.draft !== false,
                     })
                   : plan;
+                // 族 56b：写盘轮同样可能带回失败行（计划与写盘之间文件变了）
+                // ⇒ 同样判失败（该目标零写盘 ⇒ 不进 results）。
+                const writeFailure = written.find((r) => r.code !== undefined);
+                if (writeFailure) {
+                  failures.push({
+                    path: target,
+                    message: writeFailure.error ?? `strip failed: ${writeFailure.file}`,
+                  });
+                  continue;
+                }
                 results.push(...written);
               } catch (err) {
                 failures.push({ path: target, message: (err as Error).message });
