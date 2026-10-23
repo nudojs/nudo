@@ -4,7 +4,15 @@ import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { type Abs, type Environment } from "@nudojs/core";
+import {
+  absShapeKey,
+  confJoin,
+  joinValues,
+  type Abs,
+  type Environment,
+  type ObjShape,
+  type Slot,
+} from "@nudojs/core";
 import { createScopedSlot, registerCollectorScopeParticipant } from "@nudojs/core/internal";
 import { defineEnv as defineEsEnv } from "@nudojs/env/es";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
@@ -522,6 +530,179 @@ export function loadEnvs(envNames: string[], globalEnv: Environment, baseDir?: s
   return { modules: allModules, globals: allGlobals };
 }
 
+// ── Bug 1045：env 声明合并 = 并集（与 env 名书写顺序无关） ───────────────
+//
+// 病灶：`applyEnvDefinition` 此前对同名全局做**整块替换**（后一个 env 赢），
+// 于是 `@nudo:env node, web` 与 `@nudo:env web, node` 得到**不同的**全局表
+// ⇒ 同一份源码的签名不同、门禁结论相反（文档承诺 env 名之间是 union）。
+//
+// 并集的三条纪律（缺一条就会退回「顺序敏感」）：
+// 1. **可交换**：同一组声明无论先后顺序，合并结果必须逐字相同 ⇒
+//    sum 成员按**结构键排序**（core 的 makeSum 按入参顺序排 ⇒ 不可交换）。
+// 2. **可结合**：三个 env 逐个折叠与一次性合并等价 ⇒ 值域并集必须是
+//    「成员集合的并」而不是「两两折叠的形状」。
+// 3. **不丢实现**：fn 的 relation / apply 挂在 Abs 对象上（WeakMap 侧表）⇒
+//    并集成员**必须是原对象**（不得复制/重建），否则 env 声明的求值语义丢失。
+
+/**
+ * env 并集用的结构键。
+ *
+ * core 的 `absShapeKey` 不含 fn 的**静态槽**（dual-facet 成员：
+ * `Number.isFinite` / `Array.isArray` / `Response.json` …）⇒ 同签名但静态面
+ * 不同的两个 fn 会被误判成「同一份声明」⇒ 这里把静态槽递归折进键里。
+ */
+function envAbsKey(a: Abs): string {
+  const s = a.shape;
+  if (s.k === "fn" && s.slots) {
+    const staticSlots = s.slots;
+    const slots = Object.keys(staticSlots)
+      .sort()
+      .map((k) => `${k}:${envAbsKey(staticSlots[k]!.value)}`)
+      .join(",");
+    return `${absShapeKey(a)}|static{${slots}}`;
+  }
+  return absShapeKey(a);
+}
+
+/**
+ * 并集的成员表：展平 sum → 按结构键去重 → **按结构键排序**。
+ *
+ * 排序是可交换性的关键：成员序不同 ⇒ 展示串不同 ⇒ 签名随 env 名顺序漂移。
+ * 成员保留**原对象**（fn 的 relation / apply 侧表挂在对象上，复制即丢）。
+ */
+function unionMembers(values: Abs[]): Abs[] {
+  const seen = new Set<string>();
+  const out: Abs[] = [];
+  for (const v of values) {
+    const parts = v.shape.k === "sum" ? v.shape.members : [v];
+    for (const m of parts) {
+      const key = envAbsKey(m);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(m);
+    }
+  }
+  out.sort((x, y) => {
+    const kx = envAbsKey(x);
+    const ky = envAbsKey(y);
+    return kx < ky ? -1 : kx > ky ? 1 : 0;
+  });
+  return out;
+}
+
+/**
+ * 值域并集（槽值 / 非 obj 形状的全局）：不是「后者赢」。
+ *
+ * - 同构 ⇒ 取**新**的一份（与旧的 last-wins 逐字一致 ⇒ 单 env 行为不变）；
+ * - never ⇒ 另一侧；
+ * - 同型 prim ⇒ 收成单个 prim（字面量枚举另走 sum，见下）；
+ * - 其余 ⇒ 规范 sum（成员去重 + 排序 ⇒ 与入参顺序无关）。
+ */
+function unionEnvAbs(a: Abs, b: Abs): Abs {
+  if (envAbsKey(a) === envAbsKey(b)) return b;
+  if (a.shape.k === "never") return b;
+  if (b.shape.k === "never") return a;
+  if (a.shape.k === "prim" && b.shape.k === "prim" && a.shape.type === b.shape.type) {
+    const joined = joinValues(a, b);
+    // 同型非字面量 ⇒ 单 prim（path）；双字面量 ⇒ 枚举 sum ⇒ 落规范 sum 分支
+    if (joined.shape.k === "prim") return joined;
+  }
+  const members = unionMembers([a, b]);
+  if (members.length === 1) return members[0]!;
+  return { shape: { k: "sum", members }, conf: confJoin(a.conf, b.conf) };
+}
+
+/**
+ * obj ⊕ obj：**逐槽并集**（同名槽的值域再并集，不折 optional 的「后者赢」）。
+ *
+ * 槽的 optional / readonly / internal / symbolKey / inherited 标记按
+ * 「存在性取或、内容取与」合成：任一侧标 optional ⇒ 合并后 optional
+ * （读值可能缺失）；两侧都 readonly ⇒ 合并后 readonly。
+ */
+function mergeEnvObjects(a: Abs, b: Abs): Abs {
+  const sa = a.shape as ObjShape;
+  const sb = b.shape as ObjShape;
+  const slots: Record<string, Slot> = {};
+  let conf = confJoin(a.conf, b.conf);
+  const keys = [...new Set([...Object.keys(sa.slots), ...Object.keys(sb.slots)])].sort();
+  for (const key of keys) {
+    const x = sa.slots[key];
+    const y = sb.slots[key];
+    if (!x || !y) {
+      // 只在一侧出现 ⇒ 原样保留（槽值是原对象 ⇒ 实现不丢）
+      slots[key] = { ...(x ?? y)! };
+      continue;
+    }
+    const value = unionEnvAbs(x.value, y.value);
+    conf = confJoin(conf, value.conf);
+    const slot: Slot = { value };
+    if (x.optional || y.optional) slot.optional = true;
+    if (x.readonly && y.readonly) slot.readonly = true;
+    if (x.internal || y.internal) slot.internal = true;
+    if (x.symbolKey || y.symbolKey) slot.symbolKey = true;
+    if (x.inherited && y.inherited) slot.inherited = true;
+    slots[key] = slot;
+  }
+  const shape: ObjShape = { k: "obj", slots };
+  if (sa.index && sb.index) {
+    shape.index = {
+      key: unionEnvAbs(sa.index.key, sb.index.key),
+      value: unionEnvAbs(sa.index.value, sb.index.value),
+    };
+  } else if (sa.index ?? sb.index) {
+    shape.index = sa.index ?? sb.index;
+  }
+  if (sa.open || sb.open) shape.open = true;
+  return { shape, conf };
+}
+
+/**
+ * env 声明并集：同名全局 / 同名导出名的合并口径。
+ *
+ * - obj ⊕ obj ⇒ 逐槽并集（`mergeEnvObjects`）；
+ * - brand ⊕ brand（同名同 tag）⇒ 内层并集（保留品牌名）；
+ * - 其余（fn ⊕ fn、obj ⊕ brand、prim ⊕ prim …）⇒ **值域并集**
+ *   （`unionEnvAbs`）：fn 的 relation / apply 挂在对象上 ⇒ 只能并（sum），
+ *   不得重建（重建即丢实现 ⇒ env 声明的求值语义丢失）。
+ */
+function mergeEnvAbs(a: Abs, b: Abs): Abs {
+  if (envAbsKey(a) === envAbsKey(b)) return b;
+  if (a.shape.k === "never") return b;
+  if (b.shape.k === "never") return a;
+  if (a.shape.k === "obj" && b.shape.k === "obj") return mergeEnvObjects(a, b);
+  if (
+    a.shape.k === "brand" &&
+    b.shape.k === "brand" &&
+    a.shape.name === b.shape.name &&
+    (a.shape.tv === undefined || b.shape.tv === undefined || a.shape.tv === b.shape.tv)
+  ) {
+    return {
+      shape: {
+        k: "brand",
+        name: a.shape.name,
+        shape: mergeEnvAbs(a.shape.shape, b.shape.shape),
+        ctor: a.shape.ctor ?? b.shape.ctor,
+        tv: a.shape.tv ?? b.shape.tv,
+      },
+      conf: confJoin(a.conf, b.conf),
+    };
+  }
+  return unionEnvAbs(a, b);
+}
+
+/** 模块导出并集：同名导出名取并集（不是 last-wins） */
+function mergeEnvModuleExports(
+  prev: Record<string, Abs> | undefined,
+  next: Record<string, Abs>,
+): Record<string, Abs> {
+  const out: Record<string, Abs> = { ...prev };
+  for (const [name, value] of Object.entries(next)) {
+    const existing = ownEnvEntry(out, name);
+    out[name] = existing === undefined ? value : mergeEnvAbs(existing, value);
+  }
+  return out;
+}
+
 function applyEnvDefinition(
   def: EnvDefinition,
   allModules: Record<string, Record<string, Abs>>,
@@ -529,12 +710,16 @@ function applyEnvDefinition(
   globalEnv: Environment,
 ): void {
   for (const [key, value] of Object.entries(def.globals)) {
-    allGlobals[key] = value;
-    globalEnv.bind(key, value);
+    // Bug 1045：同名全局取**并集**（顺序无关），不是「后者赢」
+    const prev = ownEnvEntry(allGlobals, key);
+    const merged = prev === undefined ? value : mergeEnvAbs(prev, value);
+    allGlobals[key] = merged;
+    // 绑**合并后**的值（否则全局表与 globalEnv 两张表会分叉）
+    globalEnv.bind(key, merged);
   }
   if (def.modules) {
     for (const [modName, exports] of Object.entries(def.modules)) {
-      allModules[modName] = { ...allModules[modName], ...exports };
+      allModules[modName] = mergeEnvModuleExports(ownEnvEntry(allModules, modName), exports);
     }
   }
 }
