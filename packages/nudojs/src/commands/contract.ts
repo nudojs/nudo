@@ -12,7 +12,14 @@ import { resolve, relative } from "node:path";
 import type { Command } from "commander";
 import { formatInterfaceSurfaceLine } from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
-import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, variadicSwallowError, type PathError } from "./shared.ts";
+import {
+  collectExternalRecords,
+  pathErrorEntry,
+  reportPathErrors,
+  resolveTargetsCollect,
+  variadicSwallowError,
+  type PathError,
+} from "./shared.ts";
 import { runContractDraft } from "./contract-draft.ts";
 import { runContractEmit } from "./contract-emit.ts";
 import { runContractFromDts } from "./contract-from-dts.ts";
@@ -93,8 +100,17 @@ const CONTRACT_ANALYSIS_FAILED_CODE = "nudo:contract-analysis-failed";
 /** 某个 root 的分支层输出**不是 JSON 文档**（机器面拿不到合法载荷）的机器面码。 */
 const CONTRACT_JSON_PAYLOAD_INVALID_CODE = "nudo:contract-json-payload-invalid";
 
-/** 错误条目（`pathErrors[]`）——路径错误与用法错误同字段（`check` 面同款）。 */
-function contractErrorEntry(errors: ContractJsonError[]): ContractJsonEntry {
+/**
+ * 错误条目（`pathErrors[]`）——路径错误与用法错误同字段（`check` 面同款）。
+ *
+ * 63b：**新增可选** `targetErrors[]`（分析目标闸门错误的**精确**子集）——
+ * `pathErrors[]` 字段名 + 内容 + 顺序**逐字不变**（既有机器消费者零影响）；
+ * `--from` 路径错误**不**进 `targetErrors[]`；无闸门错误 ⇒ 该字段**不出现**。
+ */
+function contractErrorEntry(
+  errors: ContractJsonError[],
+  targetErrors?: PathError[],
+): ContractJsonEntry {
   return {
     pathErrors: errors.map((e) => ({
       path: e.path,
@@ -102,6 +118,10 @@ function contractErrorEntry(errors: ContractJsonError[]): ContractJsonEntry {
       message: e.message,
       ...(e.suggestion ? { suggestion: e.suggestion } : {}),
     })),
+    // 63b：闸门错误的精确入口（`--from` 路径错误不在其中）
+    ...(targetErrors && targetErrors.length > 0
+      ? { targetErrors: targetErrors.map(pathErrorEntry) }
+      : {}),
   };
 }
 
@@ -293,13 +313,17 @@ export function registerContractCommand(program: Command): void {
           ? collectExternalRecords(opts.from, jsonMode ? fromErrors : undefined)
           : undefined;
         const targets: string[] = [];
-        const pathErrors: PathError[] = [];
+        // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
+        // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
+        // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
+        // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
+        const targetErrors: PathError[] = [];
         for (const p of paths) {
           const r = resolveTargetsCollect(p);
           targets.push(...r.targets);
-          pathErrors.push(...r.errors);
+          targetErrors.push(...r.errors);
         }
-        const allPathErrors = [...pathErrors, ...fromErrors];
+        const allPathErrors = [...targetErrors, ...fromErrors];
         if (!jsonMode) reportPathErrors(allPathErrors);
         const roots = targets.filter((t) => isNudoTargetPath(t));
         if (roots.length === 0) {
@@ -307,7 +331,9 @@ export function registerContractCommand(program: Command): void {
             // --json：路径错误也必须有 body（绝不空 stdout + exit 1）
             console.log(
               JSON.stringify(
-                allPathErrors.length > 0 ? [contractErrorEntry(allPathErrors)] : [],
+                allPathErrors.length > 0
+                  ? [contractErrorEntry(allPathErrors, targetErrors)]
+                  : [],
                 null,
                 2,
               ),
@@ -390,7 +416,10 @@ export function registerContractCommand(program: Command): void {
         if (jsonMode) {
           // 路径错误是**命令级**事实（不是某个 root 的）⇒ 独立成一项
           // （print / emit / draft 三形态统一 —— 族 20 · Bug 661）
-          if (allPathErrors.length > 0) jsonEntries.push(contractErrorEntry(allPathErrors));
+          // 63b：该项里**新增可选** `targetErrors[]`（分析目标闸门错误的精确
+          // 子集）；`pathErrors[]` 逐字不变。
+          if (allPathErrors.length > 0)
+            jsonEntries.push(contractErrorEntry(allPathErrors, targetErrors));
           console.log(JSON.stringify(jsonEntries, null, 2));
         }
       },

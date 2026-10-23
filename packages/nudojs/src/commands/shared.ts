@@ -64,6 +64,52 @@ export type PathError = {
   suggestion: string;
 };
 
+/**
+ * `--json` 面的路径错误条目形状（族 63b）。
+ *
+ * `pathErrors[]`（路径级错误全集）与 `targetErrors[]`（分析目标闸门子集）
+ * **同形** ⇒ 机器消费者按字段分流时不用做形状转换。
+ */
+export type PathErrorEntry = {
+  path: string;
+  code: string;
+  message: string;
+  suggestion: string;
+};
+
+/**
+ * 路径错误 → `--json` 面条目（族 63b · **单一映射源**）。
+ *
+ * `targetErrors[]` 必须与它在 `pathErrors[]` 里的对应条目**逐字同形**
+ * （同一批事实、两个字段）⇒ 映射只写这一份，三个动词共用。
+ */
+export function pathErrorEntry(e: {
+  path: string;
+  code: string;
+  message: string;
+  suggestion: string;
+}): PathErrorEntry {
+  return { path: e.path, code: e.code, message: e.message, suggestion: e.suggestion };
+}
+
+/**
+ * 信封挂 `targetErrors[]`（族 63b · 三个动词同款口径）。
+ *
+ * - `pathErrors[]`：**逐字不变**（字段名 + 内容 + 顺序）——既有机器消费者零影响。
+ * - `targetErrors[]`：**新增的可选**字段 = 「分析目标闸门」错误（非分析目标 /
+ *   空目录 / 路径不存在）的**精确**入口。
+ *   - `--from` 路径错误**不**进这里（它是**精确入口**，不是副本）；
+ *   - 闸门错误**同时**留在 `pathErrors[]` 里（全集不变 ⇒ 不丢事实）。
+ * - **无**闸门错误 ⇒ **不出现**该字段（既有场景输出逐字不变）。
+ */
+export function attachTargetErrors<T extends object>(
+  envelope: T,
+  targetErrors: readonly { path: string; code: string; message: string; suggestion: string }[],
+): T & { targetErrors?: PathErrorEntry[] } {
+  if (targetErrors.length === 0) return envelope;
+  return { ...envelope, targetErrors: targetErrors.map(pathErrorEntry) };
+}
+
 /** 产品路径面：相对 cwd 的展示路径（逃出根时回落原值）。 */
 export function displayPathOf(p: string): string {
   const rel = relative(process.cwd(), p);

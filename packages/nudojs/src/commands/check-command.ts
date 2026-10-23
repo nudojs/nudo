@@ -33,7 +33,9 @@ import {
 } from "../check-gate-config.ts";
 import { attachPathErrors } from "../check-json-map.ts";
 import {
+  attachTargetErrors,
   collectExternalRecords,
+  emitJsonDoc,
   reportPathErrors,
   resolveTargets,
   resolveTargetsCollect,
@@ -131,6 +133,12 @@ export function startCheckWatch(
  *
  * exit 只由**打印出去的那份文档**的 ok 决定（与 watch 的「最近一轮门禁状态」
  * 语义一致：startWatch 的轮首复位会吃掉更早的 exit 写入）。
+ *
+ * 63：落盘形态 = **JSON Lines**（**一行**一份完整 JSON 文档）——watch 的
+ * stdout 是**流**（第 2 轮起会累积第 2 份文档 ⇒ 整份 `JSON.parse(stdout)`
+ * 抛 "Unexpected non-whitespace character after JSON"）。逐行落盘后机器
+ * 消费者可**逐行** `JSON.parse`。本函数**只**被 watch 面调用 ⇒ 非 watch
+ * 面的 pretty 文档形态不受影响。
  */
 async function runCheckJsonFace(
   file: string,
@@ -151,7 +159,7 @@ async function runCheckJsonFace(
       serializeCheckJsonMulti(collected),
       syntaxErrors,
     );
-    console.log(JSON.stringify(envelope, null, 2));
+    emitJsonDoc(envelope, true);
     process.exitCode = envelope.ok && !injectionFailed ? 0 : 1;
     return;
   }
@@ -160,7 +168,7 @@ async function runCheckJsonFace(
     process.exitCode = 1;
     return;
   }
-  console.log(JSON.stringify(single, null, 2));
+  emitJsonDoc(single, true);
   process.exitCode = single.ok && !injectionFailed ? 0 : 1;
 }
 
@@ -420,11 +428,15 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
         const targets: string[] = [];
-        const pathErrors: PathError[] = [];
+        // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
+        // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
+        // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
+        // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
+        const targetErrors: PathError[] = [];
         for (const p of paths) {
           const r = resolveTargetsCollect(p);
           targets.push(...r.targets);
-          pathErrors.push(...r.errors);
+          targetErrors.push(...r.errors);
         }
         if (opts.json && opts.abs) {
           usageErrorExit(opts.json, "error: --json cannot be combined with --abs");
@@ -432,7 +444,7 @@ export function registerCheckCommand(program: Command): void {
         }
         // 非 --json：路径错误走 usageError+exit（历史行为）
         if (!opts.json) {
-          reportPathErrors(pathErrors);
+          reportPathErrors(targetErrors);
           if (targets.length === 0) return;
         }
         const fromErrors: PathError[] = [];
@@ -443,7 +455,7 @@ export function registerCheckCommand(program: Command): void {
           opts.from?.length && !opts.watch
             ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
             : undefined;
-        const allPathErrors = [...pathErrors, ...fromErrors];
+        const allPathErrors = [...targetErrors, ...fromErrors];
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
         const gateErr = validateGateFlags(opts);
         if (gateErr) {
@@ -540,7 +552,11 @@ export function registerCheckCommand(program: Command): void {
                 serializeCheckJsonMulti([]),
                 allPathErrors,
               );
-              console.log(JSON.stringify(envelope, null, 2));
+              // 63b：`pathErrors[]` 逐字不变 + **新增**可选 `targetErrors[]`
+              // （分析目标闸门错误的精确子集；`--from` 路径错误不进它）。
+              console.log(
+                JSON.stringify(attachTargetErrors(envelope, targetErrors), null, 2),
+              );
               process.exitCode = envelope.ok ? 0 : 1;
               return;
             }
@@ -573,7 +589,13 @@ export function registerCheckCommand(program: Command): void {
               ...allPathErrors,
               ...syntaxErrors,
             ]);
-            console.log(JSON.stringify(envelope, null, 2));
+            // 63b：`pathErrors[]` **逐字不变**（字段名 + 内容 + 顺序）——
+            // 既有机器消费者零影响；**新增**可选 `targetErrors[]` = 分析目标
+            // 闸门错误（路径不存在 / 空目录 / 非分析目标）的**精确**子集
+            // （`--from` 路径错误**不**进它；闸门错误仍留在 `pathErrors[]` 里）。
+            console.log(
+              JSON.stringify(attachTargetErrors(envelope, targetErrors), null, 2),
+            );
             process.exitCode = envelope.ok && !gateFlags.injectionSetupFailed ? 0 : 1;
             return;
           }

@@ -21,7 +21,10 @@ import { paint, paintOne } from "../ui.ts";
 import { buildTestReport, entryContractNoteFns, formatTestReport } from "../run-test.ts";
 import { formatSyntaxErrorBlock, syntaxErrorInfo } from "./check-report.ts";
 import {
+  attachTargetErrors,
   collectExternalRecords,
+  emitJsonDoc,
+  pathErrorEntry,
   reportPathErrors,
   resolveTargetsCollect,
   startWatch,
@@ -66,8 +69,16 @@ const SYNTAX_ERROR_CODE = "syntax-error";
  * 共用这一条**（Bug 957）：形状与既有「路径错误」信封逐字同构
  * （version / file / summary / functions / diagnostics / assertions /
  * pathErrors）⇒ `--json` 下绝不出现「空 stdout + 非零 exit」。
+ *
+ * 63b：**新增可选** `targetErrors[]`（分析目标闸门错误的**精确**子集）——
+ * `pathErrors[]` 字段名 + 内容 + 顺序**逐字不变**（既有机器消费者零影响）；
+ * `--from` 路径错误**不**进 `targetErrors[]`；无闸门错误 ⇒ 该字段**不出现**。
  */
-function failureEnvelope(file: string, failures: TestFailure[]): Record<string, unknown> {
+function failureEnvelope(
+  file: string,
+  failures: TestFailure[],
+  targetErrors?: TestFailure[],
+): Record<string, unknown> {
   return {
     version: 1,
     file,
@@ -81,6 +92,10 @@ function failureEnvelope(file: string, failures: TestFailure[]): Record<string, 
       message: e.message,
       suggestion: e.suggestion,
     })),
+    // 63b：闸门错误的精确入口（`--from` 路径错误不在其中）
+    ...(targetErrors && targetErrors.length > 0
+      ? { targetErrors: targetErrors.map(pathErrorEntry) }
+      : {}),
   };
 }
 
@@ -127,22 +142,20 @@ function syntaxErrorExit(
   source: string,
   syntax: { line: number; column: number; essence: string },
   json: boolean | undefined,
+  jsonLines = false,
 ): void {
   if (json) {
-    console.log(
-      JSON.stringify(
-        failureEnvelope(filePath, [
-          {
-            path: filePath,
-            code: SYNTAX_ERROR_CODE,
-            message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
-            suggestion:
-              "fix the syntax error; run `nudo test` without --json for a source excerpt with a caret",
-          },
-        ]),
-        null,
-        2,
-      ),
+    emitJsonDoc(
+      failureEnvelope(filePath, [
+        {
+          path: filePath,
+          code: SYNTAX_ERROR_CODE,
+          message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
+          suggestion:
+            "fix the syntax error; run `nudo test` without --json for a source excerpt with a caret",
+        },
+      ]),
+      jsonLines,
     );
   } else {
     console.error(paint(formatSyntaxErrorBlock(filePath, source, syntax)));
@@ -181,8 +194,19 @@ async function runTest(
     abs?: boolean;
     /** --json 面：路径错误并入 CaseJson（ok↔exit 同源的 test 面） */
     pathErrors?: TestFailure[];
+    /**
+     * 63b：--json 面的**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）
+     * ——`pathErrors[]` 里的**精确子集**（`--from` 路径错误不在其中）。
+     */
+    targetErrors?: TestFailure[];
     /** env-unresolved 告警去重表（同 baseDir 多文件只报一次；批轮/watch 轮由调用方持有） */
     envErrorSeen?: Set<string>;
+    /**
+     * 63：**watch 面**的 `--json` 落盘形态 = **JSON Lines**（一行一份完整
+     * JSON 文档；watch 的 stdout 是流，第 2 轮起会累积第 2 份文档 ⇒ 整份
+     * `JSON.parse(stdout)` 会炸）。非 watch 面 = 一份 pretty 文档（逐字不变）。
+     */
+    jsonLines?: boolean;
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
@@ -191,7 +215,7 @@ async function runTest(
   if (!analysis.ok) {
     // Bug 650：解析失败此前直接上浮到顶层 catch ⇒ 裸 message、无文件名、
     // `--json` 面 stdout 0 字节。现在复用 check 面的语法错分支。
-    syntaxErrorExit(filePath, source, analysis.syntax, opts.json);
+    syntaxErrorExit(filePath, source, analysis.syntax, opts.json, opts.jsonLines === true);
     return;
   }
   let result = analysis.result;
@@ -232,7 +256,12 @@ async function runTest(
         suggestion: e.suggestion,
       }));
     }
-    console.log(JSON.stringify(json, null, 2));
+    // 63b：**新增可选** `targetErrors[]`（分析目标闸门错误的精确子集）——
+    // `pathErrors[]` 逐字不变；无闸门错误 ⇒ 该字段不出现。
+    const targetErrors = opts.targetErrors ?? [];
+    // 63：watch 面 ⇒ **JSON Lines**（一行一份完整 JSON 文档）；非 watch
+    // 面 ⇒ 一份 pretty 文档（既有形态，逐字不变）。
+    emitJsonDoc(attachTargetErrors(json, targetErrors), opts.jsonLines === true);
     if (report.failed > 0 || pathErrors.length > 0) process.exitCode = 1;
     else process.exitCode = 0;
   } else if (opts.abs) {
@@ -374,14 +403,18 @@ export function registerTestCommand(program: Command): void {
           return;
         }
         const targets: string[] = [];
-        const pathErrors: PathError[] = [];
+        // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
+        // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
+        // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
+        // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
+        const targetErrors: PathError[] = [];
         for (const p of paths) {
           const r = resolveTargetsCollect(p);
           targets.push(...r.targets);
-          pathErrors.push(...r.errors);
+          targetErrors.push(...r.errors);
         }
         if (!opts.json) {
-          reportPathErrors(pathErrors);
+          reportPathErrors(targetErrors);
           if (targets.length === 0) return;
         }
         if (opts.json && targets.length > 1) {
@@ -394,12 +427,14 @@ export function registerTestCommand(program: Command): void {
         const externalRecords = opts.from?.length
           ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
           : undefined;
-        const allPathErrors = [...pathErrors, ...fromErrors];
+        const allPathErrors = [...targetErrors, ...fromErrors];
         if (opts.json && targets.length === 0) {
           // **任何**失败形态都必有 JSON body（绝不空 stdout + exit 1）：
           // 路径错误 / 用法错误 / 语法错共用这一条 CaseJson 失败信封。
           const file = allPathErrors[0]?.path ?? paths[0] ?? "";
-          console.log(JSON.stringify(failureEnvelope(file, allPathErrors), null, 2));
+          console.log(
+            JSON.stringify(failureEnvelope(file, allPathErrors, targetErrors), null, 2),
+          );
           process.exitCode = 1;
           return;
         }
@@ -459,6 +494,8 @@ export function registerTestCommand(program: Command): void {
             abs: opts.abs,
             envErrorSeen,
             ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
+            // 63b：闸门错误的精确子集（`--from` 路径错误不在其中）
+            ...(opts.json && targetErrors.length > 0 ? { targetErrors } : {}),
           });
         };
 
@@ -478,11 +515,17 @@ export function registerTestCommand(program: Command): void {
                 json: opts.json,
                 abs: opts.abs,
                 envErrorSeen,
+                // 63：watch 面 ⇒ `--json` 落 **JSON Lines**（一行一份完整
+                // JSON 文档；第 2 轮起 stdout 累积第 2 份文档 ⇒ 整份
+                // `JSON.parse(stdout)` 会炸）。
+                jsonLines: true,
                 ...(opts.json && roundFromErrors.length > 0
                   ? { pathErrors: [...allPathErrors, ...roundFromErrors] }
                   : opts.json && allPathErrors.length > 0
                     ? { pathErrors: allPathErrors }
                     : {}),
+                // 63b：闸门错误的精确子集（`--from` 路径错误不在其中）
+                ...(opts.json && targetErrors.length > 0 ? { targetErrors } : {}),
               });
               // 本轮证据缺失 ⇒ 本轮红（runTest 之后落，避免被轮首复位吃掉）
               if (roundFromErrors.length > 0) process.exitCode = 1;
