@@ -98,6 +98,19 @@ describe("extractFunction — guards", () => {
     if (!r.ok) return;
     expect(r.functionName).toBe("extracted");
   });
+
+  // Bug 971：兜底名 `extracted` **空闲时保持不变**（上面那条既有口径不变），
+  // 被占用时才自动改名（占用检查做在 extract-function.ts 内部）。
+  it("renames the fallback when the name is taken", () => {
+    const s = `export function extracted() {\n  return 0;\n}\n\nexport function f() {\n  const x = 1;\n  return x + 1;\n}\n`;
+    const r = extractFunction(s, {
+      start: { line: 6, character: 9 },
+      end: { line: 6, character: 14 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.functionName).toBe("extracted1");
+  });
 });
 
 describe("applyEdits / extractToWorkspaceEdit", () => {

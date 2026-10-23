@@ -7,6 +7,15 @@
  * - 选区内声明且选区外仍使用的变量 → 返回值（MVP 单值）
  * - 新函数插在**当前所在函数之前**（或顶层选区时插在选区语句前）
  * - 选区替换为调用；表达式选区替换为 `name(args)`
+ *
+ * 结构约束（族 23 片 C）：
+ * - 插入点必须是**语句位置**：用最近祖先的「语句起点」而不是 `function` 关键字列
+ *   （Bug 732：`export` 关键字不被新函数认领），也不插进表达式内部
+ *   （Bug 736：箭头初始化式 / 对象字面量方法 / class 方法）。
+ * - 顶层选区的插入点跳过文件前导区（hashbang / 指令 / 前导注释）（Bug 742）。
+ * - 选区含 `break` / `continue` / 非末尾 `return` ⇒ 拒绝（控制流不可搬）（Bug 740）。
+ * - 新函数名做**占用检查**：撞名时自动改名（`extracted` → `extracted1`…）（Bug 971）。
+ * - 产物必须仍可解析（自检），否则不出 edit。
  */
 import { parse } from "@nudojs/parser";
 import type { Node, File, Statement, Expression } from "@babel/types";
@@ -82,6 +91,133 @@ function isValidIdent(name: string): boolean {
   return /^[A-Za-z_$][\w$]*$/.test(name) && !/^(break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|let|static|enum|await|implements|package|protected|interface|private|public|null|true|false)$/.test(name);
 }
 
+// ---------------------------------------------------------------------------
+// 私有内部模块：插入点计算 / 语句切分 / 取名。
+// 三块职责都只服务 `extractFunction` 一个导出函数 ⇒ **零新增导出**。
+// ---------------------------------------------------------------------------
+
+/** 语句列表宿主：其直接子节点处于「语句位置」，可以在其前面插一条声明。 */
+const STATEMENT_LIST_HOSTS = new Set(["Program", "BlockStatement", "SwitchCase", "StaticBlock"]);
+
+/** 最小路径结构：只要 node + parentPath 链 + scope。 */
+type AnchorPath = {
+  node: Node;
+  parentPath: AnchorPath | null;
+  scope: ScopeLike;
+};
+
+/** 最小作用域结构：只要 bindings + 父作用域链。 */
+type ScopeLike = {
+  bindings: Record<string, unknown>;
+  parent?: ScopeLike | undefined;
+};
+
+/**
+ * 向上找最近的「语句位置」祖先节点（新函数的插入锚点）。
+ *
+ * - `export function f(){}` ⇒ ExportNamedDeclaration（起点 = `export` 的列）
+ *   ⇒ 新函数插在 `export` **之前**，`export` 关键字不会被新函数认领（Bug 732）。
+ * - `export const f = () => {}` / 对象字面量方法 / class 方法 ⇒ 整条声明之前
+ *   ⇒ 新函数不会被插进表达式内部（Bug 736）。
+ */
+function statementAnchor(path: AnchorPath): AnchorPath | null {
+  let cur: AnchorPath | null = path;
+  while (cur && cur.parentPath) {
+    const parentType = cur.parentPath.node.type;
+    if (STATEMENT_LIST_HOSTS.has(parentType)) return cur;
+    cur = cur.parentPath;
+  }
+  return null;
+}
+
+/** 节点起点（LSP 0-based）；无 loc 时返回 null。 */
+function nodeStartPos(node: Node): LspPosition | null {
+  const loc = node.loc;
+  if (!loc) return null;
+  return { line: loc.start.line - 1, character: loc.start.column };
+}
+
+/** 名字在给定作用域链上是否已被占用（顶层 function/const/class/import 共用命名空间）。 */
+function isNameTaken(scope: ScopeLike | null | undefined, name: string): boolean {
+  let cur = scope;
+  while (cur) {
+    if (cur.bindings[name]) return true;
+    cur = cur.parent;
+  }
+  return false;
+}
+
+/**
+ * 取一个未被占用的新函数名（Bug 971）。
+ * 占用检查做在**本体**里 ⇒ 调用方（`server-code-actions.ts`）零改动。
+ */
+function uniqueFunctionName(base: string, scope: ScopeLike | null | undefined): string {
+  if (!isNameTaken(scope, base)) return base;
+  for (let i = 1; i <= 999; i++) {
+    const candidate = `${base}${i}`;
+    if (!isNameTaken(scope, candidate)) return candidate;
+  }
+  return base;
+}
+
+/** 控制流语句类别：`break` / `continue` 在新函数里没有循环/开关可跳 ⇒ 不可搬。 */
+function controlFlowKind(stmt: Node): "break" | "continue" | "return" | null {
+  const t = stmt.type;
+  if (t === "BreakStatement") return "break";
+  if (t === "ContinueStatement") return "continue";
+  if (t === "ReturnStatement") return "return";
+  return null;
+}
+
+/**
+ * 文件前导区（hashbang / 指令 / 前导注释）之后的第一个合法插入位置。
+ * Node 只认**第一行**的 `#!` 为 shebang ⇒ 声明插到它之前会让整个文件不可解析
+ * （Bug 742）。
+ */
+function leadingSafeInsertPos(source: string, ast: File): LspPosition {
+  const program = ast.program as unknown as {
+    interpreter?: { loc?: { start: { line: number }; end: { line: number } } | null } | null;
+    directives?: Array<{ loc?: { start: { line: number }; end: { line: number } } | null }>;
+    body?: Array<{ loc?: { start: { line: number } } | null }>;
+  };
+  // Babel 的 loc.line 是 1-based；`end.line` 正好等于「下一行」的 0-based 行号。
+  let line = 0;
+  const interpreter = program.interpreter;
+  if (interpreter?.loc) line = Math.max(line, interpreter.loc.end.line);
+  for (const d of program.directives ?? []) {
+    if (d.loc) line = Math.max(line, d.loc.end.line);
+  }
+  const firstBodyStart = program.body?.[0]?.loc?.start.line ?? Number.MAX_SAFE_INTEGER;
+  const comments = (ast as unknown as {
+    comments?: Array<{ loc?: { start: { line: number }; end: { line: number } } | null }>;
+  }).comments ?? [];
+  for (const c of comments) {
+    if (!c.loc) continue;
+    if (c.loc.start.line < firstBodyStart) line = Math.max(line, c.loc.end.line);
+  }
+  const maxLine = source.split("\n").length - 1;
+  return { line: Math.min(line, maxLine), character: 0 };
+}
+
+/** 插入点：锚点节点的起点；没有锚点时退到文件前导区之后（Bug 742）。 */
+function resolveInsertAt(anchor: AnchorPath | null, source: string, ast: File): LspPosition {
+  if (anchor) {
+    const pos = nodeStartPos(anchor.node);
+    if (pos) return pos;
+  }
+  return leadingSafeInsertPos(source, ast);
+}
+
+/** 抽取产物必须仍是可解析的源码（自检：坏产物一律不出 edit）。 */
+function parsesCleanly(text: string): boolean {
+  try {
+    parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 打印语句/表达式：用 babel generator 会引入依赖；MVP 用源码切片 + 简单缩进。 */
 function sliceSource(source: string, loc: { start: { line: number; column: number }; end: { line: number; column: number } }): string {
   const lines = source.split("\n");
@@ -104,11 +240,25 @@ function indentBlock(text: string, pad: string): string {
     .join("\n");
 }
 
+/**
+ * 被抽出的「写」：区分**原本是声明**与**原本是赋值**（Bug 734）。
+ * - assign：选区内是 `x = …`（对外部变量的赋值）⇒ 调用点必须用**赋值表达式**，
+ *   不得引入新的 `const`（会与外层 `let x` 重复声明）。
+ * - declare：选区内是 `const/let/var x = …`（声明，且选区外仍被引用）⇒
+ *   调用点还原**同种声明**。
+ */
+type CapturedWrite = {
+  name: string;
+  kind: "assign" | "declare";
+  /** declare 型：原声明关键字（let/const/var） */
+  declKind?: "var" | "let" | "const";
+};
+
 type BindingInfo = {
   /** 选区内自由引用（外部绑定） */
   freeReads: string[];
   /** 选区内声明、选区外仍可能读写 */
-  capturedWrites: string[];
+  capturedWrites: CapturedWrite[];
 };
 
 function analyzeSelectionBindings(
@@ -119,29 +269,32 @@ function analyzeSelectionBindings(
   const freeReads = new Set<string>();
   const declaredInSel = new Set<string>();
   const writtenInSel = new Set<string>();
+  /** 选区内声明的名字 → 原声明关键字（调用点还原同种声明） */
+  const declKindByName = new Map<string, "var" | "let" | "const">();
 
   // 先扫选区节点声明
-  const visitDecl = (n: Node | null | undefined): void => {
+  const visitDecl = (n: Node | null | undefined, kind?: "var" | "let" | "const"): void => {
     if (!n) return;
     const node = n as { type: string; name?: string; id?: Node; left?: Node; right?: Node; properties?: Array<{ value?: Node }>; elements?: Array<Node | null>; argument?: Node };
     if (node.type === "Identifier" && node.name) {
       declaredInSel.add(node.name);
+      if (kind) declKindByName.set(node.name, kind);
       return;
     }
     if (node.type === "ObjectPattern") {
-      for (const p of node.properties ?? []) visitDecl(p.value);
+      for (const p of node.properties ?? []) visitDecl(p.value, kind);
       return;
     }
     if (node.type === "ArrayPattern") {
-      for (const el of node.elements ?? []) visitDecl(el);
+      for (const el of node.elements ?? []) visitDecl(el, kind);
       return;
     }
     if (node.type === "AssignmentPattern") {
-      visitDecl(node.left);
+      visitDecl(node.left, kind);
       return;
     }
     if (node.type === "RestElement") {
-      visitDecl(node.argument);
+      visitDecl(node.argument, kind);
       return;
     }
   };
@@ -149,13 +302,16 @@ function analyzeSelectionBindings(
   for (const n of selectedNodes) {
     const stmt = n as {
       type: string;
+      kind?: string;
       declarations?: Array<{ id: Node; init?: Node }>;
       id?: Node;
       params?: Node[];
       expression?: Node;
     };
     if (stmt.type === "VariableDeclaration") {
-      for (const d of stmt.declarations ?? []) visitDecl(d.id);
+      const kind =
+        stmt.kind === "var" || stmt.kind === "let" || stmt.kind === "const" ? stmt.kind : undefined;
+      for (const d of stmt.declarations ?? []) visitDecl(d.id, kind);
     } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
       visitDecl(stmt.id);
     }
@@ -216,7 +372,7 @@ function analyzeSelectionBindings(
 
   // 选区内声明、选区外仍被引用 → 返回值候选（按声明序，MVP 取第一个）
   // 选区内对外部绑定的赋值写 → 也返回
-  const capturedWrites: string[] = [];
+  const capturedWrites: CapturedWrite[] = [];
   const usedOutside = (name: string): boolean => {
     let hit = false;
     try {
@@ -235,33 +391,36 @@ function analyzeSelectionBindings(
     return hit;
   };
 
+  // 赋值写（选区内 `x = …`，x 声明在选区外）⇒ kind = "assign"（Bug 734）
   for (const w of writtenInSel) {
     if (!declaredInSel.has(w) && isValidIdent(w)) {
-      capturedWrites.push(w);
+      capturedWrites.push({ name: w, kind: "assign" });
     }
   }
+  // 选区内的声明（且选区外仍被引用）⇒ kind = "declare"
   for (const d of declaredInSel) {
-    if (isValidIdent(d) && usedOutside(d) && !capturedWrites.includes(d)) {
-      capturedWrites.push(d);
+    if (isValidIdent(d) && usedOutside(d) && !capturedWrites.some((c) => c.name === d)) {
+      capturedWrites.push({ name: d, kind: "declare", declKind: declKindByName.get(d) });
     }
   }
+  capturedWrites.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   return {
     freeReads: [...freeReads].filter((n) => isValidIdent(n)).sort(),
-    capturedWrites: capturedWrites.filter((n) => isValidIdent(n)).sort(),
+    capturedWrites: capturedWrites.filter((c) => isValidIdent(c.name)),
   };
 }
 
 /**
  * 提取函数。range 为 LSP 0-based。
- * name 缺省 `extracted`。
+ * name 缺省 `extracted`（占用时自动改名为 `extracted1`…）。
  */
 export function extractFunction(
   source: string,
   range: LspRange,
   options: { name?: string } = {},
 ): ExtractResult {
-  const fnName = options.name && isValidIdent(options.name) ? options.name : "extracted";
+  const requestedName = options.name && isValidIdent(options.name) ? options.name : "extracted";
   let ast: File;
   try {
     ast = parse(source) as File;
@@ -279,14 +438,17 @@ export function extractFunction(
   }
 
   // 收集与选区相交的顶层/函数体语句
-  const statements: Statement[] = [];
+  type SelectedStatement = { node: Statement; path: AnchorPath };
+  const statements: SelectedStatement[] = [];
   type FnCtx = {
     node: Node;
     loc: { start: { line: number; column: number }; end: { line: number; column: number } };
     bodyStart: { line: number; column: number };
+    /** 插入锚点：所在函数的最近「语句位置」祖先（Bug 732 / 736） */
+    anchor: AnchorPath | null;
   };
   let containingFnBox: { fn: FnCtx | null } = { fn: null };
-  const exprBox: { node: Expression | null } = { node: null };
+  const exprBox: { node: Expression | null; path: AnchorPath | null } = { node: null, path: null };
 
   try {
     traverseEsm()(ast, {
@@ -302,7 +464,12 @@ export function extractFunction(
         // 最内层函数
         const prev = containingFnBox.fn;
         if (!prev || loc.start.line > prev.loc.start.line) {
-          containingFnBox.fn = { node: path.node as Node, loc, bodyStart };
+          containingFnBox.fn = {
+            node: path.node as Node,
+            loc,
+            bodyStart,
+            anchor: statementAnchor(path as unknown as AnchorPath),
+          };
         }
       },
       // 表达式选区：最小 Expression 与选区匹配
@@ -319,10 +486,14 @@ export function extractFunction(
         if (locCovers(loc, sel)) {
           if (!exprBox.node) {
             exprBox.node = path.node as Expression;
+            exprBox.path = path as unknown as AnchorPath;
           } else {
             const cur = exprBox.node.loc!;
             // 更小的赢
-            if (locCovers(cur, loc)) exprBox.node = path.node as Expression;
+            if (locCovers(cur, loc)) {
+              exprBox.node = path.node as Expression;
+              exprBox.path = path as unknown as AnchorPath;
+            }
           }
         }
       },
@@ -333,7 +504,7 @@ export function extractFunction(
         if (!locIntersects(loc, sel)) return;
         // 整语句被选区覆盖
         if (locCovers(sel, loc)) {
-          statements.push(path.node as Statement);
+          statements.push({ node: path.node as Statement, path: path as unknown as AnchorPath });
         }
       },
     });
@@ -349,25 +520,30 @@ export function extractFunction(
     const exprSrc = sliceSource(source, exprLoc);
     const bindings = analyzeSelectionBindings(ast, [expr], sel);
     // 表达式自由变量 = freeReads（不含声明）
-    const params = bindings.freeReads.filter((p) => !bindings.capturedWrites.includes(p) || true);
     const uniqueParams = [...new Set(bindings.freeReads)];
+
+    // 插入点：所在函数之前的**语句位置**（Bug 732：语句起始列，不是 `function`
+    // 关键字列 ⇒ `export` 不会被新函数认领；Bug 736：表达式宿主回退到整条声明之前）
+    const anchor = containingFnBox.fn?.anchor ?? (exprBox.path ? statementAnchor(exprBox.path) : null);
+    const insertAt = resolveInsertAt(anchor, source, ast);
+    // 取名：占用检查在本体（Bug 971）⇒ 调用方零改动
+    const fnName = uniqueFunctionName(requestedName, anchor?.scope);
+
     const paramList = uniqueParams.join(", ");
     const functionText = `function ${fnName}(${paramList}) {\n  return ${indentBlock(exprSrc, "  ").trimStart()};\n}\n`;
     const callText = `${fnName}(${paramList})`;
     const replaceRange = babelLocToLsp(exprLoc);
-
-    // 插入点：所在函数前，或文件顶
-    let insertAt: LspPosition = { line: 0, character: 0 };
-    if (containingFnBox.fn) {
-      const fnLoc = containingFnBox.fn.loc;
-      insertAt = babelLocToLsp({ start: fnLoc.start, end: fnLoc.start }).start;
-    }
 
     // 生成新源码：先插函数，再替换表达式（按偏移从后往前）
     const newText = applyEdits(source, [
       { range: replaceRange, newText: callText },
       { range: { start: insertAt, end: insertAt }, newText: functionText + (insertAt.line === 0 ? "" : "\n") },
     ]);
+
+    // 自检：产物必须仍可解析（坏产物一律不出 edit）
+    if (!parsesCleanly(newText)) {
+      return { ok: false, reason: "extraction would produce an unparsable file" };
+    }
 
     return {
       ok: true,
@@ -388,44 +564,76 @@ export function extractFunction(
 
   // 语句序列必须连续
   const sorted = [...statements].sort(
-    (a, b) => (a.loc!.start.line - b.loc!.start.line) || (a.loc!.start.column - b.loc!.start.column),
+    (a, b) =>
+      (a.node.loc!.start.line - b.node.loc!.start.line) ||
+      (a.node.loc!.start.column - b.node.loc!.start.column),
   );
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!.loc!;
-    const cur = sorted[i]!.loc!;
+    const prev = sorted[i - 1]!.node.loc!;
+    const cur = sorted[i]!.node.loc!;
     if (cur.start.line < prev.end.line || (cur.start.line === prev.end.line && cur.start.column < prev.end.column)) {
       return { ok: false, reason: "selection is not a contiguous statement list" };
     }
   }
 
-  const first = sorted[0]!;
-  const last = sorted[sorted.length - 1]!;
+  const first = sorted[0]!.node;
+  const last = sorted[sorted.length - 1]!.node;
+
+  // 控制流感知（Bug 740）：`break` / `continue` 在新函数里没有循环/开关可跳 ⇒ 不可搬。
+  for (const s of sorted) {
+    const kind = controlFlowKind(s.node);
+    if (kind === "break" || kind === "continue") {
+      return { ok: false, reason: `selection contains a ${kind} statement that cannot be extracted` };
+    }
+  }
+  // `return` 只允许出现在选区**末尾**：否则外层的控制流/返回值被改写。
+  const lastStmt = last as { type: string; argument?: Node | null; expression?: Node };
+  const returnCount = sorted.filter((s) => (s.node as { type: string }).type === "ReturnStatement").length;
+  const isReturnInSel = returnCount > 0;
+  if (isReturnInSel && (returnCount > 1 || lastStmt.type !== "ReturnStatement")) {
+    return { ok: false, reason: "selection contains a return statement that is not the last statement" };
+  }
+
   const blockLoc = {
     start: first.loc!.start,
     end: last.loc!.end,
   };
   const blockSrc = sliceSource(source, blockLoc);
-  const bindings = analyzeSelectionBindings(ast, sorted, sel);
+  const bindings = analyzeSelectionBindings(ast, sorted.map((s) => s.node), sel);
+
+  // 插入点：所在函数之前的**语句位置**（Bug 732 / 736）；顶层选区时插在选区语句前
+  // （Bug 742：跳过 hashbang / 指令 / 前导注释）。
+  const anchor = containingFnBox.fn?.anchor ?? statementAnchor(sorted[0]!.path);
+  const insertAt = resolveInsertAt(anchor, source, ast);
+  // 取名：占用检查在本体（Bug 971）⇒ 调用方零改动
+  const fnName = uniqueFunctionName(requestedName, anchor?.scope);
 
   // 返回值：最后一个语句是 ExpressionStatement 且表达式结果被使用——MVP：
-  // - 若最后是 `return`，提取体为原语句（去掉外层 return 逻辑保持）
+  // - 若最后是 `return`，返回值必须**接回调用点**（否则外层返回值被静默丢掉）
   // - 若 capturedWrites 非空，返回第一个
   // - 否则 void
   let returns: string | null = null;
   let bodyStatements = blockSrc;
   let callText: string;
 
-  const lastStmt = last as { type: string; argument?: Node | null; expression?: Node };
-  const isReturnInSel = lastStmt.type === "ReturnStatement" && sorted.length >= 1 && lastStmt.argument;
-
   if (bindings.capturedWrites.length > 0) {
-    returns = bindings.capturedWrites[0]!;
-    bodyStatements = `${blockSrc}\n  return ${returns};`;
-    callText = `const ${returns} = ${fnName}(${bindings.freeReads.join(", ")});`;
-  } else if (isReturnInSel && sorted.length === 1) {
-    // 单条 return → 函数就是它
+    if (isReturnInSel) {
+      // 末尾 return + capturedWrites：调用点既要写回外部变量、又要回传返回值 ⇒ 拒绝
+      return { ok: false, reason: "selection combines a trailing return with captured writes" };
+    }
+    const w = bindings.capturedWrites[0]!;
+    returns = w.name;
+    bodyStatements = `${blockSrc}\n  return ${w.name};`;
+    // 原本是声明 ⇒ 还原同种声明；原本是赋值 ⇒ 用赋值表达式（**不得**引入新的 const，
+    // 否则与外层 `let x` 重复声明 ⇒ 文件不再可解析）（Bug 734）。
+    callText =
+      w.kind === "declare"
+        ? `${w.declKind ?? "const"} ${w.name} = ${fnName}(${bindings.freeReads.join(", ")});`
+        : `${w.name} = ${fnName}(${bindings.freeReads.join(", ")});`;
+  } else if (isReturnInSel) {
+    // 末尾是 return ⇒ 函数返回该值，调用点必须接住（Bug 740 第二形态）
     bodyStatements = blockSrc;
-    returns = "value";
+    returns = lastStmt.argument ? "value" : null;
     callText = `return ${fnName}(${bindings.freeReads.join(", ")});`;
   } else {
     callText = `${fnName}(${bindings.freeReads.join(", ")});`;
@@ -433,12 +641,6 @@ export function extractFunction(
 
   const paramList = bindings.freeReads.join(", ");
   const functionText = `function ${fnName}(${paramList}) {\n${indentBlock(bodyStatements, "  ")}\n}\n`;
-
-  let insertAt: LspPosition = { line: 0, character: 0 };
-  if (containingFnBox.fn) {
-    const fnLoc = containingFnBox.fn.loc;
-    insertAt = { line: fnLoc.start.line - 1, character: fnLoc.start.column };
-  }
 
   const replaceRange = babelLocToLsp(blockLoc);
   const newText = applyEdits(source, [
@@ -448,6 +650,11 @@ export function extractFunction(
       newText: functionText + (insertAt.line === 0 && !source.startsWith("\n") ? "" : "\n"),
     },
   ]);
+
+  // 自检：产物必须仍可解析（坏产物一律不出 edit）
+  if (!parsesCleanly(newText)) {
+    return { ok: false, reason: "extraction would produce an unparsable file" };
+  }
 
   return {
     ok: true,
