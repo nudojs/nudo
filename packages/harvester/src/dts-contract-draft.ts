@@ -92,6 +92,12 @@ type Dsl = {
 type DtsSymbols = {
   aliases: Map<string, ts.TypeAliasDeclaration>;
   interfaces: Map<string, ts.InterfaceDeclaration>;
+  /**
+   * **限定名**桶（`A.Opts`）——短名桶不带命名空间身份 ⇒ `A.Opts` 与 `B.Opts`
+   * 会互相并入（Bug 792 同款：收割面用 `qualifiedInterfaces` 分桶）。
+   */
+  qualifiedAliases: Map<string, ts.TypeAliasDeclaration>;
+  qualifiedInterfaces: Map<string, ts.InterfaceDeclaration>;
 };
 
 /** 投影上下文：符号表 + 备注累加器 + 深度 + 别名环保护 */
@@ -180,11 +186,54 @@ function typeRefName(node: ts.TypeReferenceNode): string {
   return "?";
 }
 
-/** 成员键：Identifier / StringLiteral / NumericLiteral（其余＝计算键，不可表达） */
+/**
+ * 成员键：Identifier / StringLiteral / NumericLiteral / **可判定的计算成员名**。
+ *
+ * Bug 832 同款（草稿面）：计算成员名此前**整条丢弃**（返回 `undefined`）⇒
+ * `[Symbol.iterator]()` 这类成员在草稿里消失 ⇒ 契约被悄悄放宽（假绿）。
+ * 现在按**收割面同口径**（harvest-dts.ts `computedMemberName`）：
+ * - `Symbol.iterator` → `@@iterator`（引擎的 symbol 槽名，与收割面同一个名字）
+ * - `Symbol.asyncIterator` → `@@asyncIterator`
+ * - 计算键的字符串字面量 → 该字面量文本
+ *
+ * 不可静态判定者（`[key]` / `[foo()]`）仍返回 `undefined` ⇒ **调用方必须留 note**
+ * （成员被丢 ⇒ 汇总行不许说谎）。
+ */
 function memberKey(name: ts.PropertyName | undefined): string | undefined {
   if (!name) return undefined;
   if (ts.isIdentifier(name)) return name.text;
   if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  if (ts.isComputedPropertyName(name)) {
+    const expr = name.expression;
+    if (
+      ts.isPropertyAccessExpression(expr) &&
+      ts.isIdentifier(expr.expression) &&
+      expr.expression.text === "Symbol"
+    ) {
+      if (expr.name.text === "iterator") return "@@iterator";
+      if (expr.name.text === "asyncIterator") return "@@asyncIterator";
+      return undefined;
+    }
+    if (ts.isStringLiteral(expr)) return expr.text;
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 成员键 + 「取不到键就留 note」——成员被丢 ⇒ 必须**看得见**（汇总行说真话）。
+ *
+ * 改前：`memberToField` 对取不到键的成员**直接 return undefined** ⇒ 无 note ⇒
+ * 汇总行报「0 skipped」⇒ 丢失零信号（Bug 832 同款）。
+ */
+function memberKeyOrNote(
+  name: ts.PropertyName | undefined,
+  what: string,
+  ctx: DraftCtx,
+): string | undefined {
+  const key = memberKey(name);
+  if (key !== undefined) return key;
+  ctx.notes.push(`${what} member with a name that cannot be resolved statically is not projected`);
   return undefined;
 }
 
@@ -279,6 +328,9 @@ function typeToDsl(node: ts.TypeNode | undefined, ctx: DraftCtx): Dsl | undefine
   if (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
     return fnSignatureDsl(node.parameters, node.type, ctx);
   }
+  if (ts.isConditionalTypeNode(node)) {
+    return conditionalDsl(node, ctx);
+  }
   if (ts.isTypeReferenceNode(node)) {
     return typeRefDsl(node, ctx);
   }
@@ -288,6 +340,49 @@ function typeToDsl(node: ts.TypeNode | undefined, ctx: DraftCtx): Dsl | undefine
   }
   ctx.notes.push("unmodeled type → any()");
   return { dsl: "any()", modeled: false };
+}
+
+/**
+ * 条件类型（`T extends U ? X : Y`）⇒ 草稿面按**收割面同口径**投影。
+ *
+ * 收割面（harvest-dts.ts `mapConditionalType`）：
+ * - 「恒真」形态（`extends unknown`）⇒ 取**真支**；
+ * - 判不出时（类型参数未定）⇒ 取**两支并集**（`absUnion([trueAbs, falseAbs])`）。
+ *
+ * 草稿面同款：恒真 ⇒ 只投影真支；判不出 ⇒ 两支都投影并取 union。
+ * 草稿**比 TS 松**（TS 按实参选一支，草稿取并集）⇒ 不构成假红；
+ * 但这是**降级**（信息丢失）⇒ 如实标注（note ⇒ 该导出计入 `skipped`，
+ * 汇总行不许说谎）。
+ */
+function conditionalDsl(node: ts.ConditionalTypeNode, ctx: DraftCtx): Dsl {
+  const ext = ts.isParenthesizedTypeNode(node.extendsType)
+    ? node.extendsType.type
+    : node.extendsType;
+  if (ext.kind === ts.SyntaxKind.UnknownKeyword) {
+    // 恒真：任何类型都 extends unknown（收割面同口径 ⇒ 只取真支）
+    const t = typeToDsl(node.trueType, child(ctx));
+    ctx.notes.push(
+      "conditional type — the extends side is `unknown` (always true); only the true branch is projected",
+    );
+    if (!t) return { dsl: "any()", modeled: false };
+    return { dsl: t.dsl, modeled: false, ...(t.raw ? { raw: true } : {}) };
+  }
+  const t = typeToDsl(node.trueType, child(ctx));
+  const f = typeToDsl(node.falseType, child(ctx));
+  // union(any(), X) 是空约束 ⇒ 任一支未建模 ⇒ 整体降级
+  if (!t || !f || !t.modeled || !f.modeled) {
+    ctx.notes.push(
+      "conditional type — not decidable from the declaration and its branches are not modeled → any() (same as the harvest face's undecidable branch)",
+    );
+    return { dsl: "any()", modeled: false };
+  }
+  ctx.notes.push(
+    "conditional type — not decidable from the declaration; both branches are projected (union), same as the harvest face",
+  );
+  if (t.dsl === f.dsl) {
+    return { dsl: t.dsl, modeled: false, ...(t.raw ? { raw: true } : {}) };
+  }
+  return { dsl: `union(${t.dsl}, ${f.dsl})`, modeled: false };
 }
 
 /** 备注长度标记（判断某次投影是否新增了备注） */
@@ -380,7 +475,7 @@ function typeRefDsl(node: ts.TypeReferenceNode, ctx: DraftCtx): Dsl {
   if (name === "Partial") return partialDsl(args, ctx);
 
   // 同文件的 `type` 别名 ⇒ 解析（与收割面同源）——Bug 1011
-  const alias = ctx.symbols.aliases.get(name);
+  const alias = lookupAlias(name, ctx);
   if (alias) {
     if (ctx.resolving.has(name)) {
       ctx.notes.push(`type alias '${name}' is recursive → any()`);
@@ -396,7 +491,7 @@ function typeRefDsl(node: ts.TypeReferenceNode, ctx: DraftCtx): Dsl {
     return d;
   }
   // 同文件的 `interface` ⇒ 展开成 shape（Partial<Local> 等特判依赖它）
-  const iface = ctx.symbols.interfaces.get(name);
+  const iface = lookupInterface(name, ctx);
   if (iface) {
     const mark = noteMark(ctx);
     // 注册进 resolving ⇒ 继承环（A extends B extends A）不会无限展开
@@ -407,6 +502,45 @@ function typeRefDsl(node: ts.TypeReferenceNode, ctx: DraftCtx): Dsl {
   }
   ctx.notes.push(`unmodeled type reference '${name}' → any()`);
   return { dsl: "any()", modeled: false };
+}
+
+/**
+ * 类型引用 ⇒ 本文件声明（**限定名优先**，与收割面同口径）。
+ *
+ * 限定名（`A.Opts`）⇒ 先查**限定名桶**（Bug 792 同款：短名桶不带命名空间身份 ⇒
+ * `A.Opts` 与 `B.Opts` 会互相并入）。
+ * 限定名的短名回退 ⇒ **只**认「ambient 模块块里的声明」（lodash 形态），
+ * 与收割面 `interfaceDeclsOf` 的短名回退判据同口径。
+ */
+function lookupInterface(name: string, ctx: DraftCtx): ts.InterfaceDeclaration | undefined {
+  if (!name.includes(".")) return ctx.symbols.interfaces.get(name);
+  const qualified = ctx.symbols.qualifiedInterfaces.get(name);
+  if (qualified) return qualified;
+  const short = name.slice(name.lastIndexOf(".") + 1);
+  const decl = ctx.symbols.interfaces.get(short);
+  if (decl && inAmbientModuleBlock(decl)) return decl;
+  return undefined;
+}
+
+/** 类型引用 ⇒ 本文件声明（别名，限定名优先）——见 `lookupInterface` */
+function lookupAlias(name: string, ctx: DraftCtx): ts.TypeAliasDeclaration | undefined {
+  if (!name.includes(".")) return ctx.symbols.aliases.get(name);
+  const qualified = ctx.symbols.qualifiedAliases.get(name);
+  if (qualified) return qualified;
+  const short = name.slice(name.lastIndexOf(".") + 1);
+  const decl = ctx.symbols.aliases.get(short);
+  if (decl && inAmbientModuleBlock(decl)) return decl;
+  return undefined;
+}
+
+/** 声明是否在 **ambient 模块块**里（`declare module "x" { … }`） */
+function inAmbientModuleBlock(decl: ts.Node): boolean {
+  let node: ts.Node | undefined = decl.parent;
+  while (node) {
+    if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) return true;
+    node = node.parent;
+  }
+  return false;
 }
 
 /**
@@ -421,13 +555,8 @@ function interfaceMembers(iface: ts.InterfaceDeclaration, ctx: DraftCtx): ts.Typ
   for (const clause of iface.heritageClauses ?? []) {
     if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
     for (const t of clause.types) {
-      const expr = t.expression;
-      const name = ts.isIdentifier(expr)
-        ? expr.text
-        : ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)
-          ? expr.name.text
-          : undefined;
-      const base = name ? ctx.symbols.interfaces.get(name) : undefined;
+      const name = heritageBaseName(t);
+      const base = name ? lookupInterface(name, ctx) : undefined;
       if (!base || !name) {
         ctx.notes.push(
           `interface '${iface.name.text}' extends ${name ?? "a non-local type"} — the inherited members are not modeled`,
@@ -445,6 +574,20 @@ function interfaceMembers(iface: ts.InterfaceDeclaration, ctx: DraftCtx): ts.Typ
   }
   out.push(...iface.members);
   return out;
+}
+
+/** heritage 子句里的基类型名（`Base` / `NS.Base`）——收割面同口径 */
+function heritageBaseName(t: ts.ExpressionWithTypeArguments): string | undefined {
+  const expr = t.expression;
+  if (ts.isIdentifier(expr)) return expr.text;
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    ts.isIdentifier(expr.name)
+  ) {
+    return `${expr.expression.text}.${expr.name.text}`;
+  }
+  return undefined;
 }
 
 /** 类型字面量 / interface 的成员 ⇒ shape */
@@ -472,7 +615,7 @@ function membersToShape(members: readonly ts.TypeElement[], ctx: DraftCtx): stri
 
 function memberToField(m: ts.TypeElement, ctx: DraftCtx): string | undefined {
   if (ts.isPropertySignature(m)) {
-    const key = memberKey(m.name);
+    const key = memberKeyOrNote(m.name, "property", ctx);
     if (key === undefined) return undefined;
     const d = typeToDsl(m.type, child(ctx)) ?? { dsl: "any()", modeled: false };
     const v = m.questionToken ? optionalize(d) : d.dsl;
@@ -480,7 +623,7 @@ function memberToField(m: ts.TypeElement, ctx: DraftCtx): string | undefined {
   }
   if (ts.isMethodSignature(m)) {
     // 方法签名成员**必须保留**（丢了就悄悄放宽了契约）——Bug 945
-    const key = memberKey(m.name);
+    const key = memberKeyOrNote(m.name, "method", ctx);
     if (key === undefined) return undefined;
     const d = fnSignatureDsl(m.parameters, m.type, ctx);
     const v = m.questionToken ? optionalize(d) : d.dsl;
@@ -498,11 +641,34 @@ function memberToField(m: ts.TypeElement, ctx: DraftCtx): string | undefined {
     ctx.notes.push("accessor member is not modeled");
     return undefined;
   }
+  ctx.notes.push("member of an unsupported form is not projected");
   return undefined;
 }
 
-function paramsDsl(params: readonly ts.ParameterDeclaration[], ctx: DraftCtx): string {
-  const fields: string[] = [];
+/**
+ * 一个**形参槽**（名字 / 可选性 / 类型 DSL / 是否完整建模）。
+ *
+ * 拆成结构是为了让**重载集**能按位合并（见 `mergeParamSlots`）——
+ * 合并要在**可选化之前**做，否则可选位会被 union 包两层。
+ */
+type ParamSlot = {
+  name: string;
+  optional: boolean;
+  /** 类型 DSL（**可选化之前**） */
+  dsl: string;
+  /** dsl 是裸字面量（不能链式 `.optional()`） */
+  raw?: boolean;
+  /** 是否完整建模（false ⇒ 不参与按位合并） */
+  modeled: boolean;
+  /** 原样写（不做可选化）——「无类型标注」位的既有措辞 */
+  plain?: boolean;
+};
+
+function paramSlots(
+  params: readonly ts.ParameterDeclaration[],
+  ctx: DraftCtx,
+): ParamSlot[] {
+  const out: ParamSlot[] = [];
   params.forEach((p, i) => {
     const name = p.name && ts.isIdentifier(p.name) ? p.name.text : `p${i}`;
     // 族 27 Bug 794（草稿面）：`this` 形参不是**调用实参**位 ⇒ 写进契约
@@ -510,19 +676,83 @@ function paramsDsl(params: readonly ts.ParameterDeclaration[], ctx: DraftCtx): s
     if (name === "this") return;
     if (p.dotDotDotToken) {
       ctx.notes.push(`${name}: rest parameter → array(any())`);
-      fields.push(`${name}: array(any())`);
+      out.push({ name, optional: false, dsl: "array(any())", modeled: false });
       return;
     }
     const optional = Boolean(p.questionToken) || Boolean(p.initializer);
     const d = typeToDsl(p.type, child(ctx));
     if (!d) {
       ctx.notes.push(`${name}: no type annotation → any()`);
-      fields.push(`${name}: any()`);
+      out.push({ name, optional, dsl: "any()", modeled: false, plain: true });
       return;
     }
-    fields.push(optional ? `${name}: ${optionalize(d)}` : `${name}: ${d.dsl}`);
+    out.push({
+      name,
+      optional,
+      dsl: d.dsl,
+      ...(d.raw ? { raw: true } : {}),
+      modeled: d.modeled,
+    });
   });
+  return out;
+}
+
+/** 形参槽 ⇒ 契约文本（可选位在这里才可选化） */
+function slotText(s: ParamSlot): string {
+  if (s.plain) return s.dsl;
+  if (!s.optional) return s.dsl;
+  return optionalize({
+    dsl: s.dsl,
+    modeled: s.modeled,
+    ...(s.raw ? { raw: true } : {}),
+  });
+}
+
+/** 形参槽 ⇒ `{ a: number(), b: string() }` */
+function slotsToDsl(slots: readonly ParamSlot[]): string {
+  const fields = slots.map((s) => `${s.name}: ${slotText(s)}`);
   return fields.length === 0 ? "{}" : `{ ${fields.join(", ")} }`;
+}
+
+function paramsDsl(params: readonly ts.ParameterDeclaration[], ctx: DraftCtx): string {
+  return slotsToDsl(paramSlots(params, ctx));
+}
+
+/**
+ * 重载集的**按位合并**（与收割面同口径，族 27 Bug 827）：
+ * 元数相同 + 每位都完整建模 + 每位可选性一致 ⇒ 该位取**各重载的并集**。
+ *
+ * 元数**不同** ⇒ **不合并**（收割面同口径：把元数改成最宽的那个，会让
+ * `f("a")` 变成「参数不够」⇒ 假红）⇒ 取首个重载，并**明确标注窄口径**。
+ */
+function mergeParamSlots(per: readonly ParamSlot[][]): ParamSlot[] | undefined {
+  const first = per[0];
+  if (!first || first.length === 0) return undefined;
+  const out: ParamSlot[] = [];
+  for (let i = 0; i < first.length; i++) {
+    const slot = first[i]!;
+    const texts: string[] = [];
+    let ok = true;
+    for (const slots of per) {
+      const s = slots[i];
+      if (!s || s.optional !== slot.optional || !s.modeled || !slot.modeled) {
+        ok = false;
+        break;
+      }
+      if (!texts.includes(s.dsl)) texts.push(s.dsl);
+    }
+    if (!ok) return undefined;
+    // 合并后的 DSL：多位 ⇒ union（**构建器**，不是裸字面量 ⇒ 可选化时不重复包 union）
+    const mergedText = texts.length === 1 ? texts[0]! : `union(${texts.join(", ")})`;
+    out.push({
+      name: slot.name,
+      optional: slot.optional,
+      dsl: mergedText,
+      modeled: true,
+      ...(texts.length === 1 && slot.raw ? { raw: true } : {}),
+    });
+  }
+  return out;
 }
 
 function fnSignatureDsl(
@@ -554,26 +784,53 @@ function isDefaultExported(stmt: ts.Node): boolean {
   return mods?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
 }
 
+/**
+ * 文件级符号表：`type` 别名 / `interface`。
+ *
+ * **命名空间**（`declare namespace A { … }`）里的声明**按限定名登记**
+ * （`A.Opts`）——Bug 792 同款：短名桶不带命名空间身份 ⇒ `A.Opts` 与 `B.Opts`
+ * 会互相并入（收割面用 `qualifiedInterfaces` 分桶，草稿面同款）。
+ *
+ * `declare global { … }` 的 `global` **不是**命名空间（TS 侧是全局作用域）⇒
+ * 不进限定名链。
+ */
 function collectSymbols(sf: ts.SourceFile): DtsSymbols {
   const aliases = new Map<string, ts.TypeAliasDeclaration>();
   const interfaces = new Map<string, ts.InterfaceDeclaration>();
-  for (const stmt of sf.statements) {
-    if (ts.isTypeAliasDeclaration(stmt)) {
-      if (!aliases.has(stmt.name.text)) aliases.set(stmt.name.text, stmt);
-    } else if (ts.isInterfaceDeclaration(stmt)) {
-      if (!interfaces.has(stmt.name.text)) interfaces.set(stmt.name.text, stmt);
+  const qualifiedAliases = new Map<string, ts.TypeAliasDeclaration>();
+  const qualifiedInterfaces = new Map<string, ts.InterfaceDeclaration>();
+  const walk = (stmts: readonly ts.Statement[], ns: string[]): void => {
+    for (const stmt of stmts) {
+      if (ts.isTypeAliasDeclaration(stmt)) {
+        if (!aliases.has(stmt.name.text)) aliases.set(stmt.name.text, stmt);
+        const q = [...ns, stmt.name.text].join(".");
+        if (q !== stmt.name.text && !qualifiedAliases.has(q)) qualifiedAliases.set(q, stmt);
+      } else if (ts.isInterfaceDeclaration(stmt)) {
+        if (!interfaces.has(stmt.name.text)) interfaces.set(stmt.name.text, stmt);
+        const q = [...ns, stmt.name.text].join(".");
+        if (q !== stmt.name.text && !qualifiedInterfaces.has(q)) qualifiedInterfaces.set(q, stmt);
+      } else if (
+        ts.isModuleDeclaration(stmt) &&
+        stmt.body &&
+        ts.isModuleBlock(stmt.body) &&
+        ts.isIdentifier(stmt.name) &&
+        stmt.name.text !== "global"
+      ) {
+        walk(stmt.body.statements, [...ns, stmt.name.text]);
+      }
     }
-  }
-  return { aliases, interfaces };
+  };
+  walk(sf.statements, []);
+  return { aliases, interfaces, qualifiedAliases, qualifiedInterfaces };
 }
 
 /** 本地声明表（`export { x }` 的本地再导出解析用） */
-function collectLocals(sf: ts.SourceFile): Map<string, ts.Statement> {
+function collectLocals(stmts: readonly ts.Statement[]): Map<string, ts.Statement> {
   const out = new Map<string, ts.Statement>();
   const put = (name: string | undefined, stmt: ts.Statement): void => {
     if (name && !out.has(name)) out.set(name, stmt);
   };
-  for (const stmt of sf.statements) {
+  for (const stmt of stmts) {
     if (ts.isVariableStatement(stmt)) {
       for (const d of stmt.declarationList.declarations) put(pickName(d), stmt);
       continue;
@@ -694,7 +951,11 @@ function enumShape(decl: ts.EnumDeclaration, ctx: DraftCtx): string {
 }
 
 /**
- * 顶层函数的重载组 ⇒ 合并（形参取首个 + 返回取 union，**与收割面同口径**）。
+ * 顶层函数的重载组 ⇒ 合并（**与收割面同口径**，族 27 Bug 827）。
+ *
+ * - **元数相同** ⇒ 形参**按位合并**（该位取各 overload 的并集），返回取 union；
+ * - **元数不同** ⇒ **不合并形参**（取首个 overload）：把元数改成最宽的那个，会让
+ *   `f("a")` 变成「参数不够」⇒ 假红（收割面同口径）⇒ 取首个 + **明确标注窄口径**。
  *
  * 重载**不能静默塌成第一个 overload**（Bug 825）：合并结果里保留**全部**
  * overload 的返回类型（union），并把**每条 overload 的签名**写进 note ⇒
@@ -704,26 +965,52 @@ function enumShape(decl: ts.EnumDeclaration, ctx: DraftCtx): string {
 function mergeOverloads(
   decls: readonly ts.FunctionDeclaration[],
   ctx: DraftCtx,
-): { dsl: Dsl; sigs: string[] } {
+): {
+  dsl: Dsl;
+  sigs: string[];
+  /** 形参是否按位合并了（false ⇒ 取首个 overload 的形参） */
+  paramsMerged: boolean;
+  /** 合并后的元数（= 首个 overload 的元数） */
+  arity: number;
+  /** 各 overload 的元数是否不同 */
+  arityDiffers: boolean;
+} {
   const first = decls[0]!;
   if (decls.length === 1) {
     const d = fnSignatureDsl(first.parameters, first.type, ctx);
-    return { dsl: d, sigs: [d.dsl] };
+    return {
+      dsl: d,
+      sigs: [d.dsl],
+      paramsMerged: true,
+      arity: arityOf(first),
+      arityDiffers: false,
+    };
   }
+  const slotsPer: ParamSlot[][] = [];
   const rets: Dsl[] = [];
   const sigs: string[] = [];
-  let p = "";
-  decls.forEach((d, i) => {
-    const params = paramsDsl(d.parameters, ctx);
-    if (i === 0) p = params;
+  for (const d of decls) {
+    const slots = paramSlots(d.parameters, ctx);
+    slotsPer.push(slots);
+    const params = slotsToDsl(slots);
     const r = typeToDsl(d.type, child(ctx));
     const ret = r ?? { dsl: "any()", modeled: true };
     rets.push(ret);
     sigs.push(`fn(${params}, ${constraintSlot(ret)})`);
-  });
+  }
+  const arity = slotsPer[0]!.length;
+  const arityDiffers = slotsPer.some((s) => s.length !== arity);
+  const merged = arityDiffers ? undefined : mergeParamSlots(slotsPer);
+  const p = slotsToDsl(merged ?? slotsPer[0]!);
   if (rets.some((r) => !r.modeled)) {
     ctx.notes.push("an overload return type is not modeled → any()");
-    return { dsl: { dsl: `fn(${p}, any())`, modeled: false }, sigs };
+    return {
+      dsl: { dsl: `fn(${p}, any())`, modeled: false },
+      sigs,
+      paramsMerged: merged !== undefined,
+      arity,
+      arityDiffers,
+    };
   }
   // 同名 overload 的返回类型去重（保留**每条** overload 的类型，见 note）
   const uniq = new Map<string, Dsl>();
@@ -733,7 +1020,23 @@ function mergeOverloads(
     texts.length === 1
       ? constraintSlot(texts[0]!)
       : `union(${texts.map((r) => r.dsl).join(", ")})`;
-  return { dsl: { dsl: `fn(${p}, ${ret})`, modeled: true }, sigs };
+  return {
+    dsl: { dsl: `fn(${p}, ${ret})`, modeled: true },
+    sigs,
+    paramsMerged: merged !== undefined,
+    arity,
+    arityDiffers,
+  };
+}
+
+/** 函数声明的元数（`this` 形参不是实参位 ⇒ 不计） */
+function arityOf(d: ts.FunctionDeclaration): number {
+  let n = 0;
+  for (const p of d.parameters) {
+    if (p.name && ts.isIdentifier(p.name) && p.name.text === "this") continue;
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -747,7 +1050,6 @@ function collectExports(sourceFile: ts.SourceFile): {
   lost: number;
 } {
   const symbols = collectSymbols(sourceFile);
-  const locals = collectLocals(sourceFile);
   const ctx: DraftCtx = {
     symbols,
     notes: [],
@@ -756,8 +1058,11 @@ function collectExports(sourceFile: ts.SourceFile): {
     lost: { n: 0 },
   };
   const out: DtsExportDraft[] = [];
-  /** 重载组：同名函数声明合并（Bug 825） */
-  const fnGroups = new Map<string, ts.FunctionDeclaration[]>();
+  /** 重载组：同名函数声明合并（Bug 825）——ambient 块的来源标记随组带过去 */
+  const fnGroups = new Map<
+    string,
+    { decls: ts.FunctionDeclaration[]; ambient: string | undefined }
+  >();
   const emittedFns = new Set<string>();
 
   const push = (e: DtsExportDraft): void => {
@@ -769,212 +1074,363 @@ function collectExports(sourceFile: ts.SourceFile): {
     out.push(e);
   };
 
-  const fnDecl = (stmt: ts.FunctionDeclaration, name: string): void => {
-    const group = fnGroups.get(name);
-    if (group) group.push(stmt);
-    else fnGroups.set(name, [stmt]);
+  /**
+   * 带 **ambient 块**标记的 push。
+   *
+   * ambient 模块体（`declare module "x" { … }`）里的导出**不是本文件的导出**
+   * ⇒ 如实标注 + 标 partial ⇒ 该条计入 `skipped`（汇总行不许说谎）：
+   * 改前整个 ambient 体**既不可见也不计数**（汇总行报「0 skipped」）。
+   */
+  const pushScoped = (e: DtsExportDraft, ambient: string | undefined): void => {
+    if (ambient) {
+      e.note = e.note ? `${e.note}; ${ambient}` : ambient;
+      if (e.dsl !== undefined) e.partial = true;
+    }
+    push(e);
   };
 
-  for (const stmt of sourceFile.statements) {
-    // export function / export declare function / export default function
-    if (ts.isFunctionDeclaration(stmt)) {
-      const exported = isExported(stmt);
-      const isDefault = isDefaultExported(stmt);
-      if (!exported && !isDefault) continue;
-      // 具名 default 导出的**模块导出名**是 `default`（不是本地名）——Bug 1003
-      const name = isDefault ? "default" : pickName(stmt);
-      if (!name) {
-        push({
-          name: "default",
-          note: "anonymous default function is not projected",
-          kind: "other",
-        });
+  const fnDecl = (stmt: ts.FunctionDeclaration, name: string, ambient: string | undefined): void => {
+    const group = fnGroups.get(name);
+    if (group) group.decls.push(stmt);
+    else fnGroups.set(name, { decls: [stmt], ambient });
+  };
+
+  /**
+   * 遍历一个语句列表（文件顶层 / ambient 模块体）。
+   *
+   * `prefix` = 外层 ambient 块的**名字前缀**（ambient 模块 "x" ⇒ `x.`）；
+   * `ambient` = 外层 ambient 块的说明（undefined = 文件顶层）。
+   */
+  const collectStatements = (
+    stmts: readonly ts.Statement[],
+    prefix: string,
+    ambient: string | undefined,
+  ): void => {
+    const locals = collectLocals(stmts);
+    for (const stmt of stmts) {
+      // export function / export declare function / export default function
+      if (ts.isFunctionDeclaration(stmt)) {
+        const exported = isExported(stmt);
+        const isDefault = isDefaultExported(stmt);
+        if (!exported && !isDefault) continue;
+        // 具名 default 导出的**模块导出名**是 `default`（不是本地名）——Bug 1003
+        const name = isDefault ? "default" : pickName(stmt);
+        if (!name) {
+          pushScoped(
+            {
+              name: `${prefix}default`,
+              note: "anonymous default function is not projected",
+              kind: "other",
+            },
+            ambient,
+          );
+          continue;
+        }
+        fnDecl(stmt, `${prefix}${name}`, ambient);
         continue;
       }
-      fnDecl(stmt, name);
-      continue;
-    }
-    if (ts.isVariableStatement(stmt)) {
-      if (!isExported(stmt)) continue;
-      for (const d of stmt.declarationList.declarations) {
-        const name = pickName(d);
-        if (!name) continue;
-        const t = typeToDsl(d.type, ctx);
-        if (!t) {
-          push({
-            name,
-            note: "no type annotation — the value is not projected",
+      if (ts.isVariableStatement(stmt)) {
+        if (!isExported(stmt)) continue;
+        for (const d of stmt.declarationList.declarations) {
+          const name = pickName(d);
+          if (!name) continue;
+          const t = typeToDsl(d.type, ctx);
+          if (!t) {
+            pushScoped(
+              {
+                name: `${prefix}${name}`,
+                note: "no type annotation — the value is not projected",
+                kind: "value",
+              },
+              ambient,
+            );
+            continue;
+          }
+          pushScoped(
+            {
+              name: `${prefix}${name}`,
+              dsl: constraintSlot(t),
+              kind: t.dsl.startsWith("fn(") ? "function" : "value",
+              ...(t.modeled ? {} : { partial: true }),
+            },
+            ambient,
+          );
+        }
+        continue;
+      }
+      if (ts.isClassDeclaration(stmt)) {
+        if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
+        const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
+        if (!name) {
+          pushScoped(
+            { name: `${prefix}default`, note: "anonymous class is not projected", kind: "class" },
+            ambient,
+          );
+          continue;
+        }
+        // **构造器签名**（类值的「调用形状」）——此前**整条消失** ⇒
+        // `new Thing(…)` 零义务（且汇总行还报「0 skipped」⇒ 丢失零信号）。
+        // 收割面把类值建成**构造器 fn**（ctor facet + 构造器形参表）⇒
+        // 草稿面同款：投影构造器的形参表（实例侧 DSL 无从表达 ⇒ 如实标注）。
+        const ctor = stmt.members.find(ts.isConstructorDeclaration);
+        if (ctor) {
+          const slots = paramSlots(ctor.parameters, ctx);
+          pushScoped(
+            {
+              name: `${prefix}${name}`,
+              dsl: `fn(${slotsToDsl(slots)}, any())`,
+              kind: "class",
+              note: "constructor signature projected as a plain fn — the contract DSL has no `new` semantics, and the instance side is not modeled",
+              partial: true,
+            },
+            ambient,
+          );
+        }
+        let anyMethod = false;
+        for (const m of stmt.members) {
+          if (ts.isMethodDeclaration(m) || ts.isMethodSignature(m)) {
+            const mname = pickName(m);
+            if (!mname) continue;
+            anyMethod = true;
+            const d = fnSignatureDsl(m.parameters, (m as ts.MethodDeclaration).type, ctx);
+            pushScoped(
+              {
+                name: `${prefix}${name}.${mname}`,
+                dsl: d.dsl,
+                kind: "function",
+                ...(d.modeled ? {} : { partial: true }),
+              },
+              ambient,
+            );
+          }
+        }
+        if (!anyMethod && !ctor) {
+          pushScoped(
+            {
+              name: `${prefix}${name}`,
+              note: "class without public methods projected",
+              kind: "class",
+            },
+            ambient,
+          );
+        }
+        continue;
+      }
+      if (ts.isEnumDeclaration(stmt)) {
+        // enum 是**运行时导出**（收割面看得见）⇒ 必须进草稿——Bug 960
+        if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
+        const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
+        if (!name) {
+          pushScoped(
+            { name: `${prefix}enum`, note: "anonymous enum is not projected", kind: "other" },
+            ambient,
+          );
+          continue;
+        }
+        const dsl = enumShape(stmt, ctx);
+        pushScoped({ name: `${prefix}${name}`, dsl, kind: "value" }, ambient);
+        continue;
+      }
+      if (ts.isModuleDeclaration(stmt)) {
+        // **ambient 模块**（`declare module "x" { … }`）——此前**整块不遍历**
+        // ⇒ 内部导出既不可见也不计数（汇总行说谎）。收割面把模块体登记在
+        // 该模块的 scope 下 ⇒ 草稿面同款：遍历模块体，导出名带模块前缀。
+        if (ts.isStringLiteral(stmt.name)) {
+          const modName = stmt.name.text;
+          if (!stmt.body || !ts.isModuleBlock(stmt.body)) {
+            pushScoped(
+              {
+                name: `${prefix}${modName}`,
+                note: "ambient module without a body is not projected",
+                kind: "other",
+              },
+              ambient,
+            );
+            continue;
+          }
+          collectStatements(
+            stmt.body.statements,
+            `${prefix}${modName}.`,
+            `ambient module "${modName}" — not an export of this file (review before accepting)`,
+          );
+          continue;
+        }
+        // `declare global { … }`：**不是**命名空间（TS 侧是全局作用域）⇒
+        // 成员同样不是本文件的导出 ⇒ 按 ambient 块处理（可见 + 计数）。
+        if (ts.isIdentifier(stmt.name) && stmt.name.text === "global") {
+          if (!stmt.body || !ts.isModuleBlock(stmt.body)) {
+            pushScoped(
+              { name: `${prefix}global`, note: "ambient global without a body", kind: "other" },
+              ambient,
+            );
+            continue;
+          }
+          collectStatements(
+            stmt.body.statements,
+            `${prefix}global.`,
+            `ambient global declaration — not an export of this file (review before accepting)`,
+          );
+          continue;
+        }
+        // namespace 是**运行时导出** ⇒ 必须进草稿——Bug 960
+        if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
+        const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
+        if (!name) {
+          pushScoped(
+            { name: `${prefix}namespace`, note: "anonymous namespace is not projected", kind: "other" },
+            ambient,
+          );
+          continue;
+        }
+        if (!stmt.body || !ts.isModuleBlock(stmt.body)) {
+          pushScoped(
+            {
+              name: `${prefix}${name}`,
+              note: "namespace with a qualified name is not projected",
+              kind: "other",
+            },
+            ambient,
+          );
+          continue;
+        }
+        const fields: string[] = [];
+        for (const inner of stmt.body.statements) {
+          const f = namespaceMemberField(inner, ctx);
+          if (f) fields.push(f);
+        }
+        pushScoped(
+          {
+            name: `${prefix}${name}`,
+            dsl: fields.length > 0 ? `shape({ ${fields.join(", ")} })` : "shape({})",
             kind: "value",
-          });
+          },
+          ambient,
+        );
+        continue;
+      }
+      if (ts.isExportDeclaration(stmt)) {
+        // export { x } from "m" / export * from "m" / export { x as y }
+        const spec = stmt.moduleSpecifier?.getText(sourceFile);
+        if (!stmt.exportClause) {
+          pushScoped(
+            {
+              name: spec ? `export * from ${spec}` : "export *",
+              note: "star re-export — the exported names are unknown, so nothing is projected",
+              kind: "other",
+            },
+            ambient,
+          );
           continue;
         }
-        push({
-          name,
-          dsl: constraintSlot(t),
-          kind: t.dsl.startsWith("fn(") ? "function" : "value",
-          ...(t.modeled ? {} : { partial: true }),
-        });
-      }
-      continue;
-    }
-    if (ts.isClassDeclaration(stmt)) {
-      if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
-      const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
-      if (!name) {
-        push({ name: "default", note: "anonymous class is not projected", kind: "class" });
-        continue;
-      }
-      let anyMethod = false;
-      for (const m of stmt.members) {
-        if (ts.isMethodDeclaration(m) || ts.isMethodSignature(m)) {
-          const mname = pickName(m);
-          if (!mname) continue;
-          anyMethod = true;
-          const d = fnSignatureDsl(m.parameters, (m as ts.MethodDeclaration).type, ctx);
-          push({
-            name: `${name}.${mname}`,
-            dsl: d.dsl,
-            kind: "function",
-            ...(d.modeled ? {} : { partial: true }),
-          });
+        if (ts.isNamespaceExport(stmt.exportClause)) {
+          pushScoped(
+            {
+              name: `${prefix}${stmt.exportClause.name.text}`,
+              note: `namespace re-export${spec ? ` from ${spec}` : ""} is not projected`,
+              kind: "other",
+            },
+            ambient,
+          );
+          continue;
         }
-      }
-      if (!anyMethod) {
-        push({ name, note: "class without public methods projected", kind: "class" });
-      }
-      continue;
-    }
-    if (ts.isEnumDeclaration(stmt)) {
-      // enum 是**运行时导出**（收割面看得见）⇒ 必须进草稿——Bug 960
-      if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
-      const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
-      if (!name) {
-        push({ name: "enum", note: "anonymous enum is not projected", kind: "other" });
+        for (const el of stmt.exportClause.elements) {
+          const exported = el.name.text;
+          if (spec) {
+            pushScoped(
+              {
+                name: `${prefix}${exported}`,
+                note: `re-export from ${spec} is not projected`,
+                kind: "other",
+              },
+              ambient,
+            );
+            continue;
+          }
+          // 本地再导出 ⇒ 解析同文件的本地声明
+          const localName = el.propertyName?.text ?? el.name.text;
+          const local = locals.get(localName);
+          if (!local) {
+            pushScoped(
+              {
+                name: `${prefix}${exported}`,
+                note: `local re-export of '${localName}' — the local declaration was not found`,
+                kind: "other",
+              },
+              ambient,
+            );
+            continue;
+          }
+          const projected = projectLocal(local, localName, exported, ctx);
+          pushScoped({ ...projected, name: `${prefix}${projected.name}` }, ambient);
+        }
         continue;
       }
-      const dsl = enumShape(stmt, ctx);
-      push({ name, dsl, kind: "value" });
-      continue;
-    }
-    if (ts.isModuleDeclaration(stmt)) {
-      // namespace 是**运行时导出** ⇒ 必须进草稿——Bug 960
-      if (!isExported(stmt) && !isDefaultExported(stmt)) continue;
-      const name = isDefaultExported(stmt) ? "default" : pickName(stmt);
-      if (!name) {
-        push({ name: "namespace", note: "anonymous namespace is not projected", kind: "other" });
-        continue;
-      }
-      if (!stmt.body || !ts.isModuleBlock(stmt.body)) {
-        push({
-          name,
-          note: "namespace with a qualified name is not projected",
-          kind: "other",
-        });
-        continue;
-      }
-      const fields: string[] = [];
-      for (const inner of stmt.body.statements) {
-        const f = namespaceMemberField(inner, ctx);
-        if (f) fields.push(f);
-      }
-      push({
-        name,
-        dsl: fields.length > 0 ? `shape({ ${fields.join(", ")} })` : "shape({})",
-        kind: "value",
-      });
-      continue;
-    }
-    if (ts.isExportDeclaration(stmt)) {
-      // export { x } from "m" / export * from "m" / export { x as y }
-      const spec = stmt.moduleSpecifier?.getText(sourceFile);
-      if (!stmt.exportClause) {
-        push({
-          name: spec ? `export * from ${spec}` : "export *",
-          note: "star re-export — the exported names are unknown, so nothing is projected",
-          kind: "other",
-        });
-        continue;
-      }
-      if (ts.isNamespaceExport(stmt.exportClause)) {
-        push({
-          name: stmt.exportClause.name.text,
-          note: `namespace re-export${spec ? ` from ${spec}` : ""} is not projected`,
-          kind: "other",
-        });
-        continue;
-      }
-      for (const el of stmt.exportClause.elements) {
-        const exported = el.name.text;
-        if (spec) {
-          push({
-            name: exported,
-            note: `re-export from ${spec} is not projected`,
+      if (ts.isExportAssignment(stmt)) {
+        // export = / export default expr
+        pushScoped(
+          {
+            name: `${prefix}default`,
+            note: "export assignment — bind via sidecar default",
             kind: "other",
-          });
-          continue;
-        }
-        // 本地再导出 ⇒ 解析同文件的本地声明
-        const localName = el.propertyName?.text ?? el.name.text;
-        const local = locals.get(localName);
-        if (!local) {
-          push({
-            name: exported,
-            note: `local re-export of '${localName}' — the local declaration was not found`,
-            kind: "other",
-          });
-          continue;
-        }
-        push(projectLocal(local, localName, exported, ctx));
+          },
+          ambient,
+        );
+        continue;
       }
-      continue;
+      if (ts.isImportEqualsDeclaration(stmt)) {
+        // `export import x = require("m")`（CJS 形态的运行时导出）
+        // —— 旧实现**整条静默丢弃** ⇒ 汇总行看不出丢失（Bug 960 同族）
+        if (!isExported(stmt)) continue;
+        const name = pickName(stmt);
+        pushScoped(
+          {
+            name: `${prefix}${name ?? "import="}`,
+            note: "import-equals export — the aliased module value is not projected",
+            kind: "other",
+          },
+          ambient,
+        );
+        continue;
+      }
+      if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
+        // 类型不是运行时契约；跳过（但进符号表）
+        continue;
+      }
     }
-    if (ts.isExportAssignment(stmt)) {
-      // export = / export default expr
-      push({
-        name: "default",
-        note: "export assignment — bind via sidecar default",
-        kind: "other",
-      });
-      continue;
-    }
-    if (ts.isImportEqualsDeclaration(stmt)) {
-      // `export import x = require("m")`（CJS 形态的运行时导出）
-      // —— 旧实现**整条静默丢弃** ⇒ 汇总行看不出丢失（Bug 960 同族）
-      if (!isExported(stmt)) continue;
-      const name = pickName(stmt);
-      push({
-        name: name ?? "import=",
-        note: "import-equals export — the aliased module value is not projected",
-        kind: "other",
-      });
-      continue;
-    }
-    if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
-      // 类型不是运行时契约；跳过（但进符号表）
-      continue;
-    }
-  }
+  };
+
+  collectStatements(sourceFile.statements, "", undefined);
 
   // 重载组：合并成一条（全部 overload 的返回类型都保留）
-  for (const [name, decls] of fnGroups) {
+  for (const [name, group] of fnGroups) {
     if (emittedFns.has(name)) continue;
     emittedFns.add(name);
+    const decls = group.decls;
     const m = mergeOverloads(decls, ctx);
     if (decls.length > 1) {
       // 被合并掉的 overload **如实计数**（汇总行是契约的一部分）——Bug 825
       ctx.lost.n += decls.length - 1;
     }
-    push({
-      name,
-      dsl: m.dsl.dsl,
-      kind: "function",
-      ...(decls.length > 1
-        ? {
-            note: `${decls.length} overloads merged — parameters from the first, return = union of all; overloads: ${m.sigs.join(" | ")}`,
-          }
-        : {}),
-      ...(m.dsl.modeled ? {} : { partial: true }),
-    });
+    // 形参口径必须**写明**：按位合并（与收割面同口径）／还是取首个（窄口径）
+    const paramNote = m.paramsMerged
+      ? "parameters merged position by position (union per position)"
+      : m.arityDiffers
+        ? `parameters from the first (arity ${m.arity} — calls with more arguments are not covered; the contract DSL has no overload set)`
+        : "parameters from the first (the overload parameter types could not be merged)";
+    pushScoped(
+      {
+        name,
+        dsl: m.dsl.dsl,
+        kind: "function",
+        ...(decls.length > 1
+          ? {
+              note: `${decls.length} overloads merged — ${paramNote}, return = union of all; overloads: ${m.sigs.join(" | ")}`,
+            }
+          : {}),
+        ...(m.dsl.modeled ? {} : { partial: true }),
+      },
+      group.ambient,
+    );
   }
 
   return { exports: out, lost: ctx.lost.n };
