@@ -1176,7 +1176,13 @@ function checkSourceInner(
         message: `${name}: signature has true unknown (inference failed)`,
         actual: where,
         expected: "computable Abs (any = unconstrained, unknown = engine debt)",
-        suggestion: "add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable",
+        // Bug 1062（族 46）：本诊断此前把「`@nudo:replace` 的目标文本没命中」
+        // 说成「推断精度不够」⇒ 归因错误 ⇒ 用户只看到 unknown-inference。
+        // service 侧已加「点名目标文本」的显式诊断（`nudo:directive-syntax`），
+        // 这里补一句归因提示，把「指令没生效」这条可能性点出来。
+        suggestion:
+          "add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable; " +
+          "if you used @nudo:replace, check the target text matches the source",
         fn: name,
       });
     }
