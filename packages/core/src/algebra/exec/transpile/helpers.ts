@@ -834,6 +834,36 @@ export function bumpDestrTmpSeq(seq: { n: number }, info: UserIdentInfo): void {
 }
 
 /**
+ * 词形集 → `_d{n}` / `_n{n}` 序号最大值（-1 = 无占用）。
+ * 与 `userIdentInfo` 的同名计算同口径（供**合并**后的避让集复用）。
+ */
+export function tmpSeqMaxOf(names: ReadonlySet<string>): number {
+  let max = -1;
+  for (const name of names) {
+    const hitSeq = /^_[dn](\d+)$/.exec(name);
+    if (!hitSeq) continue;
+    const idx = Number(hitSeq[1]);
+    if (idx > max) max = idx;
+  }
+  return max;
+}
+
+/**
+ * 避让集 = 源文本词形 ∪ 调用方补给的词形（`opts.userIdents`）。
+ *
+ * 无补充词形时**原样返回**源文本信息（产物逐字不变）；有补充时并集重算
+ * `_d{n}` / `_n{n}` 序号上限（解构临时名计数器同口径）。
+ */
+export function userIdentInfoOf(opts: TranspileOptions): UserIdentInfo {
+  const info = userIdentInfo(opts.source);
+  const extra = opts.userIdents;
+  if (!extra || extra.size === 0) return info;
+  const names = new Set<string>(info.names);
+  for (const n of extra) names.add(n);
+  return { names, tmpSeqMax: Math.max(info.tmpSeqMax, tmpSeqMaxOf(extra)) };
+}
+
+/**
  * Bug 181：取一个不与用户标识符相撞的临时名（base 为期望基名）。
  * 撞名时加数字后缀（`_p0` → `_p0_1`）——形参占位名不能改形（签名面按位对齐）。
  */
@@ -869,7 +899,7 @@ export function safeTmpName(base: string, info: UserIdentInfo): string {
  * （同源文本下两次计算结果相同，但存变量更抗后续改动）。
  */
 export function internalTmpName(base: string, opts: TranspileOptions): string {
-  return safeTmpName(base, userIdentInfo(opts.source));
+  return safeTmpName(base, userIdentInfoOf(opts));
 }
 
 /**
@@ -1000,12 +1030,17 @@ export function collectLoopBodyTopLevelDeclNames(body: unknown, acc: Set<string>
  * 计算语句列表层的可见 const 绑定名：
  * childConsts = (parentConsts − 本层 let/var 遮蔽) ∪ 本层 const。
  * 不进入嵌套块/函数体（那些作用域各自计算）。
+ *
+ * 附带登记「本层**初始化器是函数表达式**的 const 绑定名」（见
+ * `constFnNamesOf`）——族 59 · W9（台账族 43 遗留 5）：const 绑定**不可重绑**，
+ * 成员写不得重绑根。
  */
 export function computeConstScope(
   stmts: readonly unknown[],
   parentConsts: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
   const consts = new Set<string>();
+  const fnConsts = new Set<string>();
   const mutables = new Set<string>();
   const walkList = (list: readonly unknown[]): void => {
     for (const s of list) {
@@ -1013,13 +1048,25 @@ export function computeConstScope(
       const n = s as {
         type?: string;
         kind?: string;
-        declarations?: Array<{ id?: unknown }>;
+        declarations?: Array<{ id?: unknown; init?: { type?: string } }>;
         id?: unknown;
         body?: unknown;
       };
       if (n.type === "VariableDeclaration") {
-        const target = n.kind === "const" ? consts : mutables;
-        for (const d of n.declarations ?? []) collectPatternNames(d.id, target);
+        const isConst = n.kind === "const";
+        const target = isConst ? consts : mutables;
+        for (const d of n.declarations ?? []) {
+          collectPatternNames(d.id, target);
+          if (!isConst) continue;
+          // 初始化器是函数表达式 / 箭头函数 ⇒ 该 const 绑定的值是引擎的
+          // **fn Abs**（`$fnVal`）——`$set(fnAbs, …)` 就地写（返回同一 Abs）
+          // ⇒ 成员写去掉根重绑**不丢写**（收窄口径，见 constFnNamesOf）。
+          const initType = d.init?.type;
+          if (initType !== "FunctionExpression" && initType !== "ArrowFunctionExpression") continue;
+          const fnNames = new Set<string>();
+          collectPatternNames(d.id, fnNames);
+          for (const nm of fnNames) fnConsts.add(nm);
+        }
         continue;
       }
       if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
@@ -1032,13 +1079,115 @@ export function computeConstScope(
   };
   walkList(stmts);
   const out = new Set<string>();
+  const outFn = new Set<string>();
+  const parentFn = parentConsts ? constFnScopeTable.get(parentConsts) : undefined;
   if (parentConsts) {
     for (const name of parentConsts) {
-      if (!mutables.has(name)) out.add(name);
+      if (mutables.has(name)) continue;
+      out.add(name);
+      if (parentFn?.has(name)) outFn.add(name);
     }
   }
   for (const name of consts) out.add(name);
+  for (const name of fnConsts) outFn.add(name);
+  constFnScopeTable.set(out, outFn);
   return out;
+}
+
+/**
+ * const 作用域集的**裁剪复制**（参数 / catch / 循环等遮蔽处）——同时裁剪
+ * fn-const 侧表（族 59 · W9）保持两侧关联（否则侧表丢失 ⇒ 收窄口径失效）。
+ */
+export function copyConstScope(
+  scope: ReadonlySet<string> | undefined,
+  drop: ReadonlySet<string>,
+): Set<string> | undefined {
+  if (!scope) return undefined;
+  const out = new Set<string>();
+  const outFn = new Set<string>();
+  const fn = constFnScopeTable.get(scope);
+  for (const name of scope) {
+    if (drop.has(name)) continue;
+    out.add(name);
+    if (fn?.has(name)) outFn.add(name);
+  }
+  constFnScopeTable.set(out, outFn);
+  return out;
+}
+
+/**
+ * 模块级 const 作用域的 **fn-const 登记**（族 59 · W9）。
+ *
+ * 模块体自身的 `const` 声明不进 `opts.constNames`（该表只收 import 绑定与
+ * 嵌套作用域的 const 面）⇒ 模块级的「const 绑定的函数」写（`const F =
+ * function(){}; F.prototype = {}`）看不到 fn-const 面。此处按模块体登记
+ * fn-const 集（绑定到模块级 const 集对象上，供 member-path 侧查表）。
+ */
+export function registerConstFnScope(
+  moduleConstNames: Set<string>,
+  stmts: readonly unknown[],
+  parentConsts: ReadonlySet<string> | undefined,
+): void {
+  const own = new Set<string>();
+  const mutables = new Set<string>();
+  for (const s of stmts) {
+    if (!s || typeof s !== "object") continue;
+    const n = s as {
+      type?: string;
+      kind?: string;
+      declarations?: Array<{ id?: unknown; init?: { type?: string } }>;
+      id?: unknown;
+    };
+    if (n.type === "VariableDeclaration") {
+      const isConst = n.kind === "const";
+      for (const d of n.declarations ?? []) {
+        if (!isConst) {
+          collectPatternNames(d.id, mutables);
+          continue;
+        }
+        const initType = d.init?.type;
+        if (initType !== "FunctionExpression" && initType !== "ArrowFunctionExpression") continue;
+        const fnNames = new Set<string>();
+        collectPatternNames(d.id, fnNames);
+        for (const nm of fnNames) own.add(nm);
+      }
+      continue;
+    }
+    if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+      collectPatternNames(n.id, mutables);
+    }
+  }
+  const outFn = new Set<string>();
+  const parentFn = parentConsts ? constFnScopeTable.get(parentConsts) : undefined;
+  if (parentFn) {
+    for (const name of parentFn) {
+      if (mutables.has(name)) continue;
+      outFn.add(name);
+    }
+  }
+  for (const name of own) outFn.add(name);
+  constFnScopeTable.set(moduleConstNames, outFn);
+}
+
+/**
+ * 词法作用域 const 集 → 该作用域内**初始化器是函数表达式**的 const 绑定名。
+ *
+ * 族 59 · W9（台账族 43 遗留 5）：`const F = function(){}; F.prototype = {};`
+ * 的写**不得重绑根绑定**——原生 const 不可重绑（`F.prototype = {}` 是对函数
+ * 对象的 [[Set]]，不是对绑定的赋值 ⇒ 原生不报错）。
+ *
+ * 引擎此前的 const 模型只覆盖「用户层直接赋值」（`F = x` ⇒ TypeError），
+ * **成员写**走的是「根绑定重绑」通道 ⇒ const 绑定被内部重绑（污染根绑定）。
+ *
+ * 收窄口径：**只对初始化器是函数表达式的 const 绑定**建模——这类绑定的值是
+ * fn Abs（`$fnVal`），`$set(fnAbs, …)` **就地写**（返回同一 Abs）⇒ 去掉根
+ * 重绑不丢写；其余 const 绑定（值可能是需重绑的形态，如内建 brand）维持
+ * 既有根重绑通道不动。
+ */
+const constFnScopeTable = new WeakMap<ReadonlySet<string>, ReadonlySet<string>>();
+
+export function constFnNamesOf(scope: ReadonlySet<string> | undefined): ReadonlySet<string> | undefined {
+  return scope ? constFnScopeTable.get(scope) : undefined;
 }
 
 /** 赋值/自增目标若是 const 绑定 → 发射 TypeError 抛出 */

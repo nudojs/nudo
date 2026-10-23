@@ -17,7 +17,7 @@
 import type { Node, Expression } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, symbolKeyOf } from "./helpers.ts";
+import { isExpression, symbolKeyOf, constFnNamesOf } from "./helpers.ts";
 
 export type MemberLayer = {
   /**
@@ -47,7 +47,20 @@ export type MemberLayer = {
  *   赋值目标），会让整个模块 new Function 抛 SyntaxError ⇒ fail-closed
  *   （LSP 重放面 recordPositions 常开 ⇒ 带成员写回的模块整体退化为 unknown）。
  */
-export type MemberPath = { rootSrc: string; rootTarget: string; layers: MemberLayer[] };
+export type MemberPath = {
+  rootSrc: string;
+  rootTarget: string;
+  layers: MemberLayer[];
+  /**
+   * 根绑定**是否可重绑**（false = const 绑定，成员写不得重绑根）。
+   *
+   * 族 59 · W9（台账族 43 遗留 5）：`const F = function(){}; F.prototype = {};`
+   * 的写**污染了根绑定**——引擎未建模「const 不可重绑」，成员写走了根绑定
+   * 重绑通道。原生：成员写是对**对象**的 [[Set]]，不动绑定 ⇒ 不报错、
+   * 根绑定不被污染。收窄口径见 helpers.ts 的 `constFnNamesOf`。
+   */
+  rootRebindable: boolean;
+};
 
 /**
  * 成员/下标链 → 可重绑路径。根必须是标识符（或 transpile this 参数），
@@ -58,6 +71,8 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
   let cur: Node = m as unknown as Node;
   let rootSrc: string | null = null;
   let rootTarget: string | null = null;
+  // 根绑定可重绑？const 绑定（值是 fn Abs）不可重绑——族 59 · W9
+  let rootRebindable = true;
   while (cur.type === "MemberExpression") {
     const mm = cur as unknown as { object: Node; property: Node; computed: boolean };
     const k = mm.property;
@@ -131,6 +146,11 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
     } else {
       rootSrc = cur.name;
       rootTarget = cur.name;
+      // const 绑定（初始化器是函数表达式）不可重绑——成员写不得重绑根
+      // （族 59 · W9：const F = function(){}; F.prototype = {} 污染根绑定）
+      if (constFnNamesOf(opts.constNames)?.has(cur.name)) {
+        rootRebindable = false;
+      }
       // 位置插桩：成员链根 Identifier 记对象位（hover
       // `node` 于 `node.value` → 对象 Abs——臂内 shadow
       // 重绑后解析到窄化值，与槽位插桩同语义）
@@ -145,7 +165,7 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
   } else {
     return null;
   }
-  return { rootSrc, rootTarget, layers };
+  return { rootSrc, rootTarget, layers, rootRebindable };
 }
 
 /** 路径读取源：d[i][0] → $idx($idx(d, i), 0) */
@@ -323,7 +343,13 @@ export function memberWriteIfe(p: MemberPath, valSrc: string): string {
   lines.push(`const ${MP_VAL} = ${valSrc};`);
   if (plan.n === 1) {
     // 单层：原生 [[Set]] 就在根上（写回根 = 新根）
-    lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+    if (p.rootRebindable) {
+      lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+    } else {
+      // const 根：原生成员写**不动绑定**（写是对对象的 [[Set]]）⇒ 不重绑根
+      // （族 59 · W9）。单层写就地落（fn Abs 的 $set 就地写）⇒ 写不丢。
+      lines.push(`${plan.write(MP_VAL)};`);
+    }
   } else {
     lines.push(`const ${MP_RES} = ${plan.write(MP_VAL)};`);
     lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
@@ -358,7 +384,12 @@ export function memberReadModifyWriteIfe(
   lines.push(`const ${MP_OLD} = ${oldExpr};`);
   lines.push(`const ${MP_NEW} = ${spec.newValueOf(MP_OLD)};`);
   if (plan.n === 1) {
-    lines.push(`${p.rootTarget} = ${plan.write(MP_NEW)};`);
+    if (p.rootRebindable) {
+      lines.push(`${p.rootTarget} = ${plan.write(MP_NEW)};`);
+    } else {
+      // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
+      lines.push(`${plan.write(MP_NEW)};`);
+    }
   } else {
     lines.push(`const ${MP_RES} = ${plan.write(MP_NEW)};`);
     lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
@@ -384,7 +415,12 @@ export function memberDeleteIfe(p: MemberPath): string {
   lines.push(`const ${MP_DELK} = ${plan.lastKeyAbs};`);
   lines.push(`const ${MP_RES} = $del(${plan.holder}, ${MP_DELK});`);
   if (plan.n === 1) {
-    lines.push(`${p.rootTarget} = ${MP_RES};`);
+    if (p.rootRebindable) {
+      lines.push(`${p.rootTarget} = ${MP_RES};`);
+    } else {
+      // const 根：不重绑根（族 59 · W9）
+      lines.push(`void ${MP_RES};`);
+    }
   } else {
     lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
     lines.push(...propagateLines(p, plan, plan.n - 2, MP_RES, "  "));
@@ -403,7 +439,12 @@ export function memberWriteRootIfe(p: MemberPath, valSrc: string): string {
   const lines = [...plan.decls];
   lines.push(`const ${MP_VAL} = ${valSrc};`);
   if (plan.n === 1) {
-    lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+    if (p.rootRebindable) {
+      lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+    } else {
+      // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
+      lines.push(`${plan.write(MP_VAL)};`);
+    }
   } else {
     lines.push(`const ${MP_RES} = ${plan.write(MP_VAL)};`);
     lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);

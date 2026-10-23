@@ -75,7 +75,7 @@ import {
   collectPatternNames,
   finalizerBits,
   withClassNameHint,
-  userIdentInfo,
+  userIdentInfoOf,
   bumpDestrTmpSeq,
   internalTmpName,
 } from "../helpers.ts";
@@ -92,7 +92,7 @@ import {
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { paramNamesOf, transpileFnBodyStmts, narrowRelComplementArmThunk } from "./fn-body.ts";
-import { computeConstScope } from "../helpers.ts";
+import { computeConstScope, copyConstScope } from "../helpers.ts";
 // Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
 import { fnParamsHaveThis } from "../expr/function.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
@@ -753,7 +753,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 导出退化 unknown（假 nudo:opaque-result）。计数器创建处
         // （transpile.ts）已预置避让；此处再走一次避让路径，覆盖自带
         // 计数器的转译单元（transpileBodyNode 等）。
-        bumpDestrTmpSeq(tmpSeq, userIdentInfo(opts.source));
+        bumpDestrTmpSeq(tmpSeq, userIdentInfoOf(opts));
         const tmp = `_d${tmpSeq.n++}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
         lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
@@ -1068,7 +1068,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
       const loopParentConsts =
         opts.constNames && opts.constNames.has(initName)
-          ? new Set([...opts.constNames].filter((n) => n !== initName))
+          ? copyConstScope(opts.constNames, new Set([initName]))
           : opts.constNames;
       const forBodyOpts: TranspileOptions = {
         ...opts,
@@ -1554,11 +1554,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...opts,
         yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
         ...(opts.constNames && catchShadow.size > 0
-          ? {
-              constNames: new Set(
-                [...opts.constNames].filter((n) => !catchShadow.has(n)),
-              ),
-            }
+          ? { constNames: copyConstScope(opts.constNames, catchShadow) }
           : {}),
       };
       // Bug 186：catch 体走 transpileFnBodyStmts（与函数体顶层同口径）——
@@ -1794,7 +1790,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       const bodyLines: string[] = [];
       // for (const x of …) 头绑定在循环体内不可再赋
-      const loopConstNames = new Set(opts.constNames);
+      const loopConstNames = copyConstScope(opts.constNames, new Set()) ?? new Set<string>();
       let loopBindIsConst = false;
       if (stmt.left.type === "VariableDeclaration" && stmt.left.kind === "const") {
         loopBindIsConst = true;

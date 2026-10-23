@@ -14,7 +14,7 @@
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfo, bumpDestrTmpSeq, safeTmpName } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName } from "./helpers.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import type { MemberPath } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
@@ -231,6 +231,7 @@ export function emitArrMutatorRebinds(
             rootSrc: `$removeNullish(${guardSrc})`,
             rootTarget: path.rootTarget,
             layers: path.layers.slice(guardLayer),
+            rootRebindable: path.rootRebindable,
           };
           const narrowParent =
             narrow.layers.length >= 2
@@ -245,6 +246,7 @@ export function emitArrMutatorRebinds(
                     rootSrc: path.rootSrc,
                     rootTarget: path.rootTarget,
                     layers: path.layers.slice(0, guardLayer),
+                    rootRebindable: path.rootRebindable,
                   } as MemberPath,
                   innerDel,
                 );
@@ -314,7 +316,7 @@ export function emitDestructure(
   // 同一计数器 `n++`）。用户自己声明 `_d0` 时，生成码的 `const _d0` 会与
   // 用户声明重复（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为 unknown），
   // 在函数体内还会**遮蔽**模块级同名绑定（错值）。
-  bumpDestrTmpSeq(tmpSeq, userIdentInfo(opts.source));
+  bumpDestrTmpSeq(tmpSeq, userIdentInfoOf(opts));
   // 赋值解构（kw 为空）写 const 绑定 → TypeError；声明解构走 kw（let/const）
   const assignName = (name: string): void => {
     if (kw === "" && isConstAssignTarget(name, opts)) {
@@ -570,7 +572,7 @@ export function emitParamBinding(
   // 此前每个形参各建一个 `{ n: 0 }` ⇒ 多个解构形参的 `_n{n}` 临时名互相
   // 撞名（重复 const ⇒ SyntaxError ⇒ 整模块求值失败）。
   const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
-  const userInfo = userIdentInfo(opts.source);
+  const userInfo = userIdentInfoOf(opts);
   bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     if (p.type === "Identifier") {
@@ -648,7 +650,7 @@ export function emitParamBindingFromArgs(
   let restBoundEarly = false;
   // Bug 181：共享解构临时名计数器 + 与用户标识符避让
   const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
-  const userInfo = userIdentInfo(opts.source);
+  const userInfo = userIdentInfoOf(opts);
   bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——它**不占

@@ -690,6 +690,16 @@ function $invokeInner(
     // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
     const viaBuiltin = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
     if (viaBuiltin !== undefined) return viaBuiltin;
+    // 含内建父的类链（class MyMap extends Map {}）：实例 brand 名是**派生类名**
+    // ⇒ 上面的直查落空 ⇒ `.get` / `.size` / `.has` 折 unknown（族 02 遗留
+    // 「含内建父的类链保守不判」——假阴性）。沿类链找首个**内建 owner**（内建
+    // 方法表按内建名建键——与读面 builtinOwnerOf 同口径）按该 owner 派发。
+    // 用户面优先：链上有同名**用户方法**时归用户面（原生派生类覆盖内建成员）。
+    const chainBuiltinOwner = builtinChainOwner(brandName, method);
+    if (chainBuiltinOwner !== undefined) {
+      const viaChainBuiltin = evalBuiltinInstanceMethod(chainBuiltinOwner, method, thisVal, args);
+      if (viaChainBuiltin !== undefined) return viaChainBuiltin;
+    }
     // C1：Map/Set forEach（条目表回调）
     if ((brandName === "Map" || brandName === "Set") && method === "forEach") {
       // Bug 31：GetCallback 前置校验（空接收者零迭代也要抛）——Bug 55
@@ -1650,6 +1660,35 @@ function isDefinitelyNotCallableValue(a: Abs): boolean {
     return !!t && t.op === "lit";
   }
   return true;
+}
+
+/**
+ * 含内建父的类链（class MyMap extends Map {}）：**内建 owner** 解析。
+ *
+ * 派生类实例的 brand 名是**派生类名**（graft 产物），内建方法表按**内建名**
+ * 建键 ⇒ 直查落空（`.get` / `.size` / `.has` 折 unknown = 族 02 遗留「含内建
+ * 父的类链保守不判」——假阴性，非假抛）。沿类链找首个**内建 owner**（内建方法
+ * 表命中该方法名），按该 owner 派发（读面 containers/member.ts 的
+ * builtinOwnerOf 同口径：两面必须一致）。
+ *
+ * 用户面优先：链上（派生类及其中间用户类）有同名**用户方法**时归用户面
+ * （原生派生类覆盖内建成员——class M extends Set { add(x){…} }）。
+ */
+function builtinChainOwner(brandName: string, method: string): string | undefined {
+  let first = true;
+  for (const name of evalClassChain(brandName)) {
+    if (first) {
+      first = false;
+      // 派生类自身不是内建 owner（其 brand 名是派生类名）
+      continue;
+    }
+    const methods = BUILTIN_BRAND_METHODS[name];
+    if (!methods || !methods.has(method)) continue;
+    // 用户面优先：链上有同名用户方法 ⇒ 不走内建派发
+    if (findMethod(brandName, method)) return undefined;
+    return name;
+  }
+  return undefined;
 }
 
 /**

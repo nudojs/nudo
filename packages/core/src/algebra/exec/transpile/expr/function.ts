@@ -46,6 +46,7 @@ import {
   safeTmpName,
   userIdentInfo,
   internalTmpName,
+  copyConstScope,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -235,7 +236,7 @@ export function transpileFunctionExpr(
       const fnParamShadows = paramNamesOfFn(fn.params);
       const fnBodyConstNames =
         opts.constNames && fnParamShadows.size > 0
-          ? new Set([...opts.constNames].filter((n) => !fnParamShadows.has(n)))
+          ? copyConstScope(opts.constNames, fnParamShadows)
           : opts.constNames;
       // Bug 201：async 体的挂起可行性——体（含 await）且所有 await 都在
       // **生成器级**位置 ⇒ 该体编译成宿主生成器（await = 真挂起点，由

@@ -45,6 +45,8 @@ function definePropRebindSrc(target: Node, opts: TranspileOptions): string | nul
   if (target.type === "MemberExpression") {
     const path = memberPathOf(target as unknown as Parameters<typeof memberPathOf>[0], opts);
     if (!path) return null;
+    // const 根：不重绑根（族 59 · W9）——defineProperty 的写回值就地落
+    if (!path.rootRebindable) return `${setPathSrc(path, "__nudoDefR")};`;
     return `${path.rootTarget} = ${setPathSrc(path, "__nudoDefR")}`;
   }
   return null;

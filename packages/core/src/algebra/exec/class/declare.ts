@@ -827,12 +827,14 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
         // 第一形态值，直接返回；brand 产物嫁接内建槽到被构造 brand 名。
         if (built.shape.k !== "brand") return built;
         const instName = thisVal.shape.k === "brand" ? thisVal.shape.name : className;
-        return abs(
-          { k: "brand", name: instName, shape: built.shape.shape },
-          built.term,
-          built.pred,
-          built.conf,
-        );
+        // 内建集合的**条目表按 Abs 身份驻留**（collections.ts 的 WeakMap：
+        // mapTables / setTables）——**重铸 Abs 会丢表** ⇒ 含内建父的类链
+        // （class MyMap extends Map ⇒ new MyMap([["a",1]])）的实例读不到
+        // 条目（`.get` / `.size` 折 unknown = 族 02 遗留「含内建父的类链
+        // 保守不判」）。改为**就地改 brand 名**（Abs 身份不变 ⇒ 侧表存活；
+        // brand 名换成「被构造类名」与原生一致——instanceof 沿类链命中）。
+        built.shape = { ...built.shape, name: instName };
+        return built;
       }
     }
     return thisVal;

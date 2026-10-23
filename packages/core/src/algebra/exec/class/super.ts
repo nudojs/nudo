@@ -11,7 +11,7 @@ import type { Abs } from "../../abs.ts";
 import { abs, unknown } from "../../abs.ts";
 import { getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../../objects.ts";
 import { findClassAccessor, findStaticClassAccessor } from "../runtime/members.ts";
-import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv } from "../../builtins.ts";
+import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv, protoBrandAbs } from "../../builtins.ts";
 import { $get, $set, $lit, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
 import { withNewTargetReset, throwStrictWrite, undef } from "../runtime/state.ts";
 import { $call } from "../call.ts";
@@ -57,6 +57,14 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   if (child) after = applyInstanceFields(child, after);
   if (after && after.shape.k === "brand") {
     // 保持子类 brand 名
+    if (after.shape.name === childName) {
+      // 已是子类 brand 名 ⇒ **不重铸 Abs**（保持 Abs 身份）。理由：内建集合
+      // 的条目表按 **Abs 身份** 驻留（collections.ts 的 WeakMap）——重铸会
+      // 丢表 ⇒ 含内建父的类链（class MyMap extends Map）实例读不到条目。
+      // 原生 super() 返回的就是**同一个 this**（不换对象）——此处同口径。
+      markSuperCalled(after, childName);
+      return after;
+    }
     const next = abs(
       { k: "brand", name: childName, shape: after.shape.shape },
       after.term,
@@ -85,9 +93,71 @@ export function $invokeSuper(
     const parentName = child?.superName;
     if (!parentName) return unknown;
     const m = findMethod(parentName, method);
-    if (!m) return unknown;
+    if (!m) {
+      // Bug 194 遗留（族 59 · W9）：父链闭合且该名**确不存在** ⇒ 原生抛
+      // TypeError（`super.m is not a function`）——此前一律折 unknown
+      // （假阴性：删方法后 super 调用面看不出原生会抛）。
+      if (superMethodAbsent(parentName, method)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return unknown;
+    }
     return m(thisVal, ...args);
   });
+}
+
+/**
+ * Bug 194 遗留（族 59 · W9）：`super.m()` 的**缺席判定**——父类原型链上
+ * 确实没有该方法 ⇒ 原生 `super.m is not a function`（TypeError，可被用户
+ * try/catch 吸收）。
+ *
+ * 判「确实不存在」需三条**同时**成立（任一不成立 ⇒ 保守 unknown，**绝不假抛**）：
+ *
+ * 1. **父链闭合**：链上每个类都在注册表里（宿主/未注册父名 ⇒ 链开——内建父
+ *    的原型面不可枚举）；fn 伪父（`class B extends (function(){}) {}`）的父
+ *    是普通函数，其原型面不受注册表管 ⇒ 链开；
+ * 2. **无动态原型写**：`A.prototype.m = fn` 写在注册表之外（注册表只收类体
+ *    方法）⇒ 该方法可能存在 ⇒ 链开（原型槽面可见 ⇒ 判存在）；同名**访问器**
+ *    （getter 可能返回可调用值）⇒ 链开；
+ * 3. **不是 Object.prototype 成员**：链尾（无 extends）接 Object.prototype ⇒
+ *    `super.toString()` / `super.hasOwnProperty(…)` 原生存在 ⇒ 不是 TypeError
+ *    （引擎不建 Object.prototype 方法的调用面 ⇒ 仍折 unknown）。
+ */
+function superMethodAbsent(parentName: string, method: string): boolean {
+  let cur: string | undefined = parentName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = getEvalClass(cur);
+    if (!spec) return false; // 链洞（宿主 / 未注册父名）⇒ 不可判
+    // fn 伪父：父是普通函数值（原型面不受注册表管）⇒ 不可判
+    const cv = lookupClassValue(cur);
+    if (cv && cv.shape.k === "fn") return false;
+    // 同名访问器：super.m 取到 getter 的返回值（可能是函数）⇒ 不可判
+    if (spec.accessors && Object.hasOwn(spec.accessors, method)) return false;
+    // 动态原型写（A.prototype.m = fn）：注册表外 ⇒ 方法可能存在 ⇒ 不可判
+    // （constructor 槽是原型对象自带的，不算动态写）
+    if (method !== "constructor" && protoSlotHasKey(cur, method)) return false;
+    if (spec.superNull) return true; // extends null：链止于此（无 Object.prototype 尾）
+    const next = spec.superName;
+    if (!next) {
+      // 链尾 = Object.prototype
+      if (method === "constructor") return true; // 父类构造器本身（原生调用抛 TypeError）
+      if (OBJECT_PROTO_METHOD_NAMES.has(method)) return false;
+      return true;
+    }
+    cur = next;
+  }
+  return false; // 环（防御）
+}
+
+/** 类原型对象上有该键的槽（动态原型写 / 内建槽）——不可判 ⇒ true（开链） */
+function protoSlotHasKey(className: string, key: string): boolean {
+  const pb = protoBrandAbs(className);
+  if (pb.shape.k !== "brand") return true;
+  const inner = pb.shape.shape;
+  if (inner.shape.k !== "obj") return true;
+  return !!getSlot(inner.shape.slots, key);
 }
 
 /** 类实例方法内 super.p / super[k] 属性读（Bug 14）：父类原型链上的
@@ -197,7 +267,13 @@ export function $invokeSuperKey(
   const parentName = getEvalClass(childName)?.superName;
   if (!parentName) return unknown;
   const m = findMethod(parentName, k);
-  if (!m) return unknown;
+  if (!m) {
+    // Bug 194 遗留（族 59 · W9）：同 $invokeSuper——缺席且父链闭合 ⇒ TypeError
+    if (superMethodAbsent(parentName, k)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return unknown;
+  }
   return withNewTargetReset(() => m(thisVal, ...args));
 }
 

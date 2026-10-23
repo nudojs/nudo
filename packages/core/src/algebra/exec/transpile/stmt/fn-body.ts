@@ -45,6 +45,8 @@ import {
   collectPatternNames,
   collectVarHoistNames,
   computeConstScope,
+  copyConstScope,
+  internalTmpName,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
@@ -206,9 +208,7 @@ export function transpileFnBodyStmts(
     if (opts.constNames && varScope.skip.size > 0) {
       varOpts = {
         ...varOpts,
-        constNames: new Set(
-          [...opts.constNames].filter((n) => !varScope!.skip.has(n)),
-        ),
+        constNames: copyConstScope(opts.constNames, varScope!.skip),
       };
     }
   }

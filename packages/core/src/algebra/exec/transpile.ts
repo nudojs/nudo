@@ -27,6 +27,7 @@ import {
   collectExportVarNames,
   userIdentInfo,
   bumpDestrTmpSeq,
+  registerConstFnScope,
 } from "./transpile/helpers.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
@@ -84,13 +85,20 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
     if (s.type !== "ImportDeclaration") continue;
     for (const spec of s.specifiers) importConstNames.add(spec.local.name);
   }
+  // 族 59 · W9：模块级 const 作用域集（**只**含 import 绑定 + 调用方传入的
+  // 继承集）——模块体自身的 const 声明不进 `constNames`（该表是「用户层直接
+  // 赋值 ⇒ TypeError」的判据，加模块自身 const 会改变既有门禁结论）。
+  // 模块体自身的 const 只登记 **fn-const 面**（成员写不得重绑 const 根）。
+  const moduleConstNames = new Set<string>(opts.constNames ?? []);
+  for (const name of importConstNames) moduleConstNames.add(name);
+  registerConstFnScope(moduleConstNames, file.program.body, opts.constNames);
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
+    constNames: moduleConstNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
-    ...(importConstNames.size > 0 ? { constNames: importConstNames } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,

@@ -122,6 +122,17 @@ export type TranspileOptions = {
    */
   constNames?: ReadonlySet<string>;
   /**
+   * **调用方补给的**用户标识符词形集（Bug 1058 避让的补充来源）。
+   *
+   * `internalTmpName` 的避让集 = `userIdentInfo(opts.source).names`（源文本
+   * 词形）∪ 本集合。用于**没有源文本**的转译单元——`exec/body-fn.ts` 的
+   * body 编译路径（`transpileBodyNode(impl.body, …)` 原先传空 opts ⇒ 无
+   * source ⇒ 避让集恒空 ⇒ 引擎内部临时名与用户标识符相撞 ⇒ 产物非法 JS
+   * ⇒ 整模块 fail-closed）。该路径的调用方从 **AST** 收标识符词形
+   * （body 内全部 Identifier + 形参名）补进来。
+   */
+  userIdents?: ReadonlySet<string>;
+  /**
    * 本作用域已提升到函数体顶部的 var 名（Bug 21）：块内 `var x = init`
    * 改发赋值 `x = init`（绑定由顶部 `let x = $lit(void 0)` 提供）。
    * 函数/方法体边界由 transpileFnBodyStmts 重算替换。
