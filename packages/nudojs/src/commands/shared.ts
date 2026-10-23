@@ -535,6 +535,23 @@ function watchBanner(text: string): void {
 }
 
 /**
+ * 机器面 JSON 文档落盘（**watch 面 = JSON Lines**，族 63）。
+ *
+ * - `lines === false`（**非 watch 面**）⇒ 缩进 2 的 pretty 文档——既有形态，
+ *   **逐字不变**（既有金标钉的就是它）。
+ * - `lines === true`（**watch 面**）⇒ **一行**一份完整 JSON 文档：watch 的
+ *   stdout 是**流**（第 2 轮起 stdout 里会累积第 2 份文档 ⇒ 整份
+ *   `JSON.parse(stdout)` 抛 "Unexpected non-whitespace character after JSON"）。
+ *   逐行落盘后 stdout = **JSON Lines**（每行一份完整 JSON 文档）⇒ 机器
+ *   消费者可**逐行** `JSON.parse`，不再随轮数炸。
+ *
+ * watch 横幅**仍走 stderr**（Bug 693）⇒ stdout 保持纯机器面。
+ */
+export function emitJsonDoc(doc: unknown, lines: boolean): void {
+  console.log(lines ? JSON.stringify(doc) : JSON.stringify(doc, null, 2));
+}
+
+/**
  * watch 循环（check / test 共用）。返回关闭句柄（停掉 fs watcher 与
  * 去抖计时器；CLI 面常驻不用，测试/宿主用于确定性清理）。
  *

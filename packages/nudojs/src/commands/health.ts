@@ -12,6 +12,7 @@ import { projectConfigShapeIssue } from "../config-shape.ts";
 import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
+  emitJsonDoc,
   reemitUpdate,
   resolveTargetsCollect,
   startWatch,
@@ -320,15 +321,42 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
   }
 }
 
-async function runHealth(paths: string[], opts: { from?: string[]; json?: boolean }): Promise<void> {
+/**
+ * `nudo health` 的**一轮**执行（文本面 + `--json` 面共用同一份事实）。
+ *
+ * **`--json` 面的机器契约（族 63）**：
+ * - `pathErrors[]`：**路径级错误全集**（`--from` 路径错误 + **分析目标闸门**
+ *   错误 + 「无法判定漂移」证据错误）。**字段名与内容逐字不变**（兼容既有
+ *   机器消费者）——名字只承诺「path」层错误，不只承诺「--from」层。
+ * - `targetErrors[]`（**新增·可选**）：`pathErrors[]` 里**分析目标闸门**那部分
+ *   （非分析目标 / 空目录 / 路径不存在）的**精确**入口 ⇒ 语义可见、旧字段兼容。
+ * - `summary.drift`：单位 = **见证（case）条数**（= Σ `files[].drift.(added+
+ *   removed)` = 文本面 Summary 的「N case drift」）⇒ 文本面 / JSON 面 /
+ *   每文件明细行**同一个数字、同一个量纲**。
+ * - **watch 面**（`--watch --json`）：stdout = **JSON Lines**（一行一份完整
+ *   JSON 文档）；**非 watch 面** = 一份 pretty 文档（既有形态，逐字不变）。
+ */
+async function runHealth(
+  paths: string[],
+  opts: { from?: string[]; json?: boolean; jsonLines?: boolean },
+): Promise<void> {
   const targetPaths = paths.length > 0 ? paths : ["."];
   // 路径错误 sink（不直接设 exit），ok↔exit 单一来源；check/test 同规。
   // 683/947/948 三条都进这个 sink：--from 路径错误、**目标闸门**错误
   // （非分析目标 / 空目录）——文本面打 stderr（message + fix），
   // --json 面进 pathErrors[]（机器消费者拿得到原因，不只是 ok:false）。
-  const fromErrors: PathError[] = [];
+  //
+  // 63：**sink 拆成两摊**（内部命名不再漂移，`pathErrors[]` 的**名字**与
+  // **内容**不再互相矛盾）：
+  //  - `pathErrorSink` = **有序**的路径级错误全集（= JSON 面 `pathErrors[]`
+  //    的内容；**字段名与内容逐字不变** ⇒ 既有机器消费者零影响）。
+  //  - `targetErrors`  = 其中的**分析目标闸门**子集（非分析目标 / 空目录 /
+  //    路径不存在）——**新增**的可选 JSON 字段 `targetErrors[]` 让这层语义
+  //    **对机器消费者可见**（旧字段继续兼容，两份内容一致 ⇒ 不丢事实）。
+  const pathErrorSink: PathError[] = [];
+  const targetErrors: PathError[] = [];
   const externalRecords = opts.from?.length
-    ? collectExternalRecords(opts.from, fromErrors)
+    ? collectExternalRecords(opts.from, pathErrorSink)
     : undefined;
 
   const files: string[] = [];
@@ -355,7 +383,8 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
     //  · 空目录 = 一个文件都没检查 ⇒ 空集 ≠ 一切正常（不能发绿灯通行证）。
     // 两类都产出 check/test **同款**的 PathError（同样的 message / suggestion）。
     const { targets, errors } = resolveTargetsCollect(p);
-    fromErrors.push(...errors);
+    pathErrorSink.push(...errors);
+    targetErrors.push(...errors);
     files.push(...targets);
   }
   for (const filePath of files) {
@@ -367,8 +396,8 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   // 判据：只有**存在待验证的冻结见证**时才判「无法判定」——没有冻结见证时
   // 「0 drift」属实（不得因此给合法用法发假红）。
   const frozenWitnessTotal = reports.reduce((n, r) => n + (r.frozenWitnesses ?? 0), 0);
-  if (opts.from?.length && fromErrors.length === 0 && !externalRecords && frozenWitnessTotal > 0) {
-    fromErrors.push({
+  if (opts.from?.length && pathErrorSink.length === 0 && !externalRecords && frozenWitnessTotal > 0) {
+    pathErrorSink.push({
       path: resolve(opts.from[0]),
       code: DIAG.pathMissingCallsite,
       message: `Cannot determine witness drift: --from produced no call-site records (${opts.from.join(", ")})`,
@@ -376,73 +405,105 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
     });
   }
 
-  const driftCount = reports.filter((r) => r.drift).length;
+  // 63：漂移计数**两个量纲**分开算：
+  //  - `driftCases` = 漂移的**见证（case）条数** = Σ 各文件明细行的
+  //    「N witness directive(s) changed」⇒ **与明细行同量纲**。
+  //  - 有漂移的**文件数**不再单独计数：门禁判据用 `driftCases > 0`
+  //    （⇔ 旧口径的「有漂移的文件数 > 0」，两者恒等 ⇒ 判红口径不变）。
+  // 旧口径 Summary 印「**有漂移的文件数**」而明细行印「**见证条数**」⇒
+  // 同一份报告里两个「N」量纲不同（用户读到的数自相矛盾）。
+  // 现在 Summary 印 `driftCases`：标签「case drift」= 一条 `@nudo:case`
+  // 见证指令 ⇒ **标签与数字终于同义**（数字 == Σ 明细行的条数）。
+  const driftCases = reports.reduce(
+    (n, r) => n + (r.drift ? r.drift.added + r.drift.removed : 0),
+    0,
+  );
   const ifaceDriftCount = reports.filter((r) => (r.interfaceDrift ?? 0) > 0).length;
   const errorCount = reports.filter((r) => r.error).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
-  const failed = driftCount > 0 || ifaceDriftCount > 0 || errorCount > 0;
+  const failed = driftCases > 0 || ifaceDriftCount > 0 || errorCount > 0;
   // ok↔exit 单一来源：pathErrors 非空 ⇒ ok:false（绝不 ok:true + 非零 exit）
-  const ok = !failed && fromErrors.length === 0;
+  const ok = !failed && pathErrorSink.length === 0;
   // exit 只由 ok 决定（单一来源）；--json / 非 JSON 共用
   process.exitCode = ok ? 0 : 1;
 
-  // 687：错误计数**单一来源**——文件内 error + --from 路径错误。
+  // 687：错误计数**单一来源**——文件内 error + 路径级错误（--from 路径错误 +
+  // 分析目标闸门错误）。
   // 文本面与 --json 面必须报同一个数字（同一次运行不得给两个结论）。
-  const totalErrors = errorCount + fromErrors.length;
+  const totalErrors = errorCount + pathErrorSink.length;
   // 925：budget 截断快照（与 `nudo check --json` 的 budget 同源同义）——
   // 文本面报了「budget truncated / 结果被宽化」，机器面必须也拿得到
   // truncated 标志（否则机器消费者读到一份「干净」的健康报告）。
   const budgetTruncated = reports.some((r) => r.budget?.truncated === true);
 
   if (opts.json) {
-    console.log(
-      JSON.stringify(
-        {
-          ok,
-          ...(fromErrors.length > 0
-            ? {
-                pathErrors: fromErrors.map((e) => ({
-                  path: e.path,
-                  code: e.code,
-                  message: e.message,
-                  suggestion: e.suggestion,
-                })),
-              }
-            : {}),
-          files: reports.map((r) => ({
-            file: r.file,
-            functions: r.functions,
-            entryOnly: r.entryOnly,
-            uncovered: r.uncovered,
-            ...(r.drift ? { drift: r.drift } : {}),
-            ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
-            ...(r.budget ? { budget: { ...r.budget } } : {}),
-            ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
-            ...(r.configShape ? { configShape: r.configShape } : {}),
-            ...(r.error ? { error: r.error } : {}),
-          })),
-          summary: {
-            files: reports.length,
-            drift: driftCount,
-            interfaceDrift: ifaceDriftCount,
-            errors: totalErrors,
-            uncovered: uncoveredTotal,
-            ...(budgetTruncated ? { budgetTruncated: true } : {}),
-            internal_fallbacks: reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0),
-          },
+    emitJsonDoc(
+      {
+        ok,
+        // 63：`pathErrors[]` **逐字不变**（字段名 + 内容 + 顺序）——既有机器
+        // 消费者零影响。它是**路径级错误全集**（--from 路径错误 + 分析目标
+        // 闸门错误 + 「无法判定漂移」证据错误），名字只说「path」不只说
+        // 「--from」⇒ 精确语义由下面的 `targetErrors[]` 给出。
+        ...(pathErrorSink.length > 0
+          ? {
+              pathErrors: pathErrorSink.map((e) => ({
+                path: e.path,
+                code: e.code,
+                message: e.message,
+                suggestion: e.suggestion,
+              })),
+            }
+          : {}),
+        // 63：**新增**的可选字段——「分析目标闸门」错误（非分析目标 / 空目录 /
+        // 路径不存在）的**精确**入口。内容是 `pathErrors[]` 的子集（旧字段
+        // 继续兼容 ⇒ 不丢事实；新消费者可按语义分流）。
+        ...(targetErrors.length > 0
+          ? {
+              targetErrors: targetErrors.map((e) => ({
+                path: e.path,
+                code: e.code,
+                message: e.message,
+                suggestion: e.suggestion,
+              })),
+            }
+          : {}),
+        files: reports.map((r) => ({
+          file: r.file,
+          functions: r.functions,
+          entryOnly: r.entryOnly,
+          uncovered: r.uncovered,
+          ...(r.drift ? { drift: r.drift } : {}),
+          ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
+          ...(r.budget ? { budget: { ...r.budget } } : {}),
+          ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
+          ...(r.configShape ? { configShape: r.configShape } : {}),
+          ...(r.error ? { error: r.error } : {}),
+        })),
+        summary: {
+          files: reports.length,
+          // 63：单位 = **见证（case）条数**（与文本面 Summary、与
+          // Σ files[].drift.(added+removed) 同量纲）⇒ 三个面同一个数字。
+          drift: driftCases,
+          interfaceDrift: ifaceDriftCount,
+          errors: totalErrors,
+          uncovered: uncoveredTotal,
+          ...(budgetTruncated ? { budgetTruncated: true } : {}),
+          internal_fallbacks: reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0),
         },
-        null,
-        2,
-      ),
+      },
+      // 63：watch 面 ⇒ **JSON Lines**（一行一份完整 JSON 文档；第 2 轮起
+      // stdout 里会累积第 2 份文档 ⇒ 整份 JSON.parse(stdout) 会炸）。
+      // 非 watch 面仍是**一份 pretty 文档**（既有形态，逐字不变）。
+      opts.jsonLines === true,
     );
   } else {
-    // --from 路径错误上屏（usage face，与 check/test 一致）；ok:false 已在上方挡 exit
-    for (const e of fromErrors) {
+    // 路径级错误上屏（usage face，与 check/test 一致）；ok:false 已在上方挡 exit
+    for (const e of pathErrorSink) {
       console.error(e.message);
       console.error(`fix:  ${e.suggestion}`);
     }
     if (reports.length === 0) {
-      if (fromErrors.length > 0) {
+      if (pathErrorSink.length > 0) {
         console.log("Result: FAIL (path errors found)");
       } else {
         console.log("No files to check.");
@@ -515,15 +576,18 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
       }
     }
     const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);
+    // 63：Summary 的漂移数 = **见证（case）条数**（= Σ 明细行的
+    // 「N witness directive(s) changed」）⇒ 与明细行**同量纲**（旧口径印的是
+    // 「有漂移的文件数」⇒ 同一份报告里两个「N」互相矛盾）。
     console.log(
-      `\nSummary: ${reports.length} file(s) · ${driftCount} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s)` +
+      `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s)` +
         (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
     // ok↔exit 单一来源：pathErrors / drift / errors 任一存在都不得报 OK
     console.log(
       ok
         ? "Result: OK (uncovered function(s) are informational only)"
-        : fromErrors.length > 0 && !failed
+        : pathErrorSink.length > 0 && !failed
           ? "Result: FAIL (path errors found)"
           : "Result: FAIL (drift or errors found)",
     );
@@ -585,11 +649,16 @@ export function registerHealthCommand(program: Command): void {
       const runOptions = { ...(fromPaths ? { from: fromPaths } : {}), json: opts.json };
       if (opts.watch) {
         const watchPaths = paths.length > 0 ? paths : ["."];
+        // 63：watch 面 ⇒ stdout 是**流** ⇒ `--json` 走 **JSON Lines**
+        // （一行一份完整 JSON 文档；第 2 轮起 stdout 里会累积第 2 份文档
+        // ⇒ 整份 `JSON.parse(stdout)` 抛 "Unexpected non-whitespace
+        // character after JSON"）。非 watch 面仍是**一份 pretty 文档**。
+        const watchOptions = { ...runOptions, jsonLines: true };
         // 927：缺失路径必须在 watch 装上**之前**报告——watch 的文件收集会
         // 跳过不存在的路径 ⇒ 「File not found」报告不可达 ⇒ 静默空会话
         // （exit 0 / 零报告 / 假绿）。与无 watch 面同口径：同一份报告 + 红。
         if (watchPaths.some((p) => pathIsMissing(p))) {
-          await runHealth(paths, runOptions);
+          await runHealth(paths, watchOptions);
           return;
         }
         // 929：watch runner 必须消费 per-file 目标——health 是**项目级**报告，
@@ -603,7 +672,7 @@ export function registerHealthCommand(program: Command): void {
           async () => {
             if (ranThisRound) return;
             ranThisRound = true;
-            await runHealth(paths, runOptions);
+            await runHealth(paths, watchOptions);
           },
           "health",
           () => {
