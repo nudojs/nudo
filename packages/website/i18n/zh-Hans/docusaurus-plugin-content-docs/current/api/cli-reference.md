@@ -355,9 +355,12 @@ src/lib.js
   · 1 function(s)
   ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
 
-Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
 Result: FAIL (drift or errors found)
 ```
+
+> `case drift` 计**发生变化的见证指令条数**（`added + removed`），对所有文件求和 ——
+> 与每文件那行 `drift: N witness directive(s) changed` 同量纲。
 
 **退出码：**
 

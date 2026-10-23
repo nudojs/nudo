@@ -191,7 +191,7 @@ const key = buildKey("docs", "readme");
 | <a id="harvestedenv"></a>`HarvestedEnv` | type | Harvested env：Abs 原生（与 EnvDefinition 同形）。 | `HarvestedEnv = { globals: Record<string, Abs>; modules: Record<string, Record<string, Abs>>; stats: { files: number; symbols: number; ski...` |
 | <a id="harvestedvaluetoabs"></a>`harvestedValueToAbs` | fn | 单个 Abs 导出 → 可调用 mock（fn 槽按 relation α 替换，或返回声明返回类型） | `harvestedValueToAbs(a: Abs): Abs` |
 | <a id="harvestjson"></a>`HarvestJson` | type | — | `HarvestJson = { v: 1; pkg: string; pkgVersion?: string; knobs: { maxFiles: number; abi: string }; dtsHash: string; modules: Record<string...` |
-| <a id="harvestnodestats"></a>`HarvestNodeStats` | type | — | `HarvestNodeStats = { files: number; symbols: number; skipped: number; }` |
+| <a id="harvestnodestats"></a>`HarvestNodeStats` | type | — | `HarvestNodeStats = { files: number; symbols: number; skipped: number; degraded?: number; }` |
 | <a id="harvestnodetypes"></a>`harvestNodeTypes` | fn | harvest @types/node（限制文件数 + 时间预算，避免拖垮启动）。 | `harvestNodeTypes( fromDir?: string, maxFiles: number = HARVEST_NODE_DEFAULT_MAX_FILES, maxMs: number = HARVEST_NODE_DEFAULT_MAX_MS, ): NodeEnvResult` |
 | <a id="harvestpackage"></a>`harvestPackage` | fn | harvest 一个 npm 包（或 @types 包） | `harvestPackage( pkg: string, fromDir?: string, maxFiles = 24, ): PackageHarvest` |
 | <a id="harvestpackagecached"></a>`harvestPackageCached` | fn | — | `harvestPackageCached(pkg: string, fromDir: string): PackageHarvest \| null` |
