@@ -116,7 +116,7 @@ export function runModule(src: string, expr: string): string {  const dir = mkdt
  * 返回 exit code + stdout。L2 门禁（`nudo:entry-may-throw`）住在 CLI 里，
  * 分析面（`analyzeFile`）不发射它 ⇒ 门禁面只能走 CLI。
  */
-export function runNudoCheck(file: string): { code: number; stdout: string } {
+export function runNudoCheck(file: string): { code: number; stdout: string; stderr?: string } {
   const repoRoot = join(import.meta.dirname, "..", "..", "..", "..");
   const cli = join(repoRoot, "packages", "nudojs", "src", "index.ts");
   const tsx = join(repoRoot, "node_modules", "tsx", "dist", "loader.mjs");

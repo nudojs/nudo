@@ -18,7 +18,7 @@
 import { describe, it, expect } from "vitest";
 import { inlineVariableAt } from "../refactor-b2.ts";
 import { withLspServer } from "./helpers.ts";
-import { anyOverlap, applyEdits, nodeCheck, runModule } from "./lsp-bug-r90b-harness.ts";
+import { anyOverlap, applyEdits, nodeCheck, runModule, type Edit } from "./lsp-bug-r90b-harness.ts";
 
 const SRC = `export let calls = 0;
 export function doSomething(x) {
@@ -34,7 +34,7 @@ export function f() {
 const LINE = 6;
 const COLUMN = 8;
 
-function inline(): { title: string; edits: ReturnType<typeof applyEdits> } | null {
+function inline(): { title: string; edits: Edit[] } | null {
   const r = inlineVariableAt(SRC, LINE, COLUMN);
   if (!r || !("edits" in r)) return null;
   return r;

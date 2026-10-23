@@ -31,12 +31,24 @@ function captureStderr(fn: () => void): string[] {
   return writes;
 }
 
+/**
+ * 故意传入**类型上非法**的 `entryThrows` 值。
+ *
+ * `NudoConfig["check"]["entryThrows"]` 的静态类型是 `"error" | "warning" | "off"`，
+ * 而运行时**必须**容错（`checkConfig` 对非法值告警并回落可用档位）⇒
+ * 这里用一次**测试专用**的类型断言表达「我要喂一个类型之外的字面量」，
+ * **断言语义不变**：被测的仍是运行时行为，不是类型。
+ */
+function illegalEntryThrows(value: string): "error" | "warning" | "off" {
+  return value as "error" | "warning" | "off";
+}
+
 describe("Bug 639: entryThrows 非法值告警进程内去重", () => {
   it("同一非法值在多次 checkConfig 调用里只告警一次", () => {
     const writes = captureStderr(() => {
-      checkConfig({ check: { entryThrows: "bogus-639-same" } });
-      checkConfig({ check: { entryThrows: "bogus-639-same" } });
-      checkConfig({ check: { entryThrows: "bogus-639-same" } });
+      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
+      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
+      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-same") } });
     });
     expect(writes.length).toBe(1);
     expect(writes[0]).toContain("nudo.check.entryThrows");
@@ -45,8 +57,8 @@ describe("Bug 639: entryThrows 非法值告警进程内去重", () => {
 
   it("负控制：不同非法值各告警一次（去重键含值）", () => {
     const writes = captureStderr(() => {
-      checkConfig({ check: { entryThrows: "bogus-639-a" } });
-      checkConfig({ check: { entryThrows: "bogus-639-b" } });
+      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-a") } });
+      checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-b") } });
     });
     expect(writes.length).toBe(2);
     expect(writes[0]).toContain("bogus-639-a");
@@ -63,7 +75,7 @@ describe("Bug 639: entryThrows 非法值告警进程内去重", () => {
   });
 
   it("非法值仍回落可用档位（告警文案里的 using 段与生效档一致）", () => {
-    const cfg = checkConfig({ check: { entryThrows: "bogus-639-fallback" } });
+    const cfg = checkConfig({ check: { entryThrows: illegalEntryThrows("bogus-639-fallback") } });
     expect(["error", "warning", "off"]).toContain(cfg.entryThrows);
   });
 });
