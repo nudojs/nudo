@@ -3,7 +3,7 @@
  */
 import type { Statement, Node } from "@babel/types";
 import { indent } from "./helpers.ts";
-import { matchRelIdentLit } from "../../arithmetic.ts";
+import { matchRelIdentLit, matchRelIdentLitComposite } from "../../arithmetic.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;
@@ -1168,10 +1168,27 @@ export type RelGuard = {
   op: "gt" | "ge" | "lt" | "le";
   /** 字面量界 */
   k: number;
+  /**
+   * **复合**关系式（合取 `x > 0 && x < 10`）派生的守卫（族 60 · 第 4 条）。
+   *
+   * 合取为真 ⇒ 每一合取项为真 ⇒ **事实臂**接守卫可靠；
+   * 但 `¬(A ∧ B)` = `¬A ∨ ¬B` **不是**单一关系 ⇒ **补集方向**
+   * （后续路径 / else 臂）**不可**用它 ⇒ 消费方
+   * （`narrowRelComplementArmThunk`）**必须**跳过 `composite: true` 的守卫，
+   * 否则会在「测试为假」的路径上断言 `¬A`（**假绿**）。
+   */
+  composite?: boolean;
+  /**
+   * 复合守卫的**其余**合取项界（**同名**变量；事实臂一并接上）。
+   * `x > 0 && x < 10` ⇒ 主界 `x > 0` + 其余界 `x < 10`
+   * （事实臂同时持有两个界 ⇒ 契约朝任一方向都能证得）。
+   */
+  extra?: Array<{ op: "gt" | "ge" | "lt" | "le"; k: number }>;
 };
 
 export function relGuardOf(test: unknown): RelGuard | undefined {
-  return matchRelIdentLit(test);
+  // 单一关系式优先（行为逐字不变）；复合式（合取）才走复合匹配。
+  return matchRelIdentLit(test) ?? matchRelIdentLitComposite(test);
 }
 
 /** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
@@ -1187,5 +1204,12 @@ export function narrowRelArmThunk(
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
   if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
-  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(guard.op)}, ${guard.k}))`;
+  // 复合守卫（合取）的**其余**合取项界一并接上（同名变量）——
+  // 合取为真 ⇒ 每一合取项为真 ⇒ 事实臂同时持有全部界
+  // （只接一个界会在契约朝**另一**方向时把「证不出」变成「证反了」⇒ 假红）。
+  let out = thunk;
+  for (const b of [{ op: guard.op, k: guard.k }, ...(guard.extra ?? [])]) {
+    out = `((${guard.name}) => ${out})($refineRel(${guard.name}, ${JSON.stringify(b.op)}, ${b.k}))`;
+  }
+  return out;
 }

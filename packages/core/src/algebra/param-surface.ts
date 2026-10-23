@@ -47,6 +47,18 @@ export type FormalParam =
       tsType?: string;
       /** rest 形参恒可省略（Bug 399） */
       optional?: boolean;
+      /**
+       * S6-1008：rest 形参的**元数信息**（本函数接受的实参个数域）。
+       *
+       * - `min`：**必选元数**——rest 之前**必选**形参的个数（默认形参 /
+       *   带默认值的解构形参可省略 ⇒ 不计；TS 的 `this` 接收者标注不是形参
+       *   ⇒ 不计）。
+       * - `variadic`：**变长**——rest 吸收 0..n 个实参 ⇒ 元数**无上界**
+       *   （「真正变长」由 core 建模 ⇒ 消费方不再各自按名字后缀猜）。
+       *
+       * 缺省 = undefined（未建模 ⇒ 消费方按既有「定长」口径处理）。
+       */
+      arity?: { min: number; variadic: true };
     }
   | {
       kind: "pattern";
@@ -338,6 +350,14 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
       // 旧实现只读内层 ⇒ rest 形参恒丢声明类型（Bug 479 的 rest 缺口）。
       // 两处都读：先节点（当前 Babel 口径），再内层（老口径兜底）。
       const tsType = tsTypeOf(p);
+      // S6-1008：rest 形参的**元数信息**——必选元数 = rest 之前**必选**形参
+      // 的个数（`optional !== true` 的位；默认形参 / 带默认值的解构形参可省
+      // ⇒ 不计；`this` 标注已被跳过 ⇒ 不计）；rest 吸收 0..n 个实参 ⇒
+      // **变长**（元数无上界）。core 侧建模 ⇒ 消费方不必再按名字后缀猜。
+      const minArity = out.reduce(
+        (n, f) => (f.optional === true ? n : n + 1),
+        0,
+      );
       out.push({
         kind: "rest",
         name,
@@ -345,6 +365,7 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
         index,
         // Bug 399：rest 形参恒可省略
         optional: true,
+        arity: { min: minArity, variadic: true },
         ...(tsType.tsType ? tsType : tsTypeOf(arg)),
       });
       continue;

@@ -405,7 +405,10 @@ export function narrowRelComplementArmThunk(
   guard: RelGuard | undefined,
   forkBindingNames: ReadonlySet<string> | readonly string[],
 ): string {
-  if (!guard) return thunk;
+  // 复合关系式（合取）派生的守卫：**补集方向不可用**——
+  // `¬(A ∧ B)` = `¬A ∨ ¬B`（不是单一关系）⇒ 在「测试为假」的后续路径上
+  // 断言 `¬A` 会是**假绿**（族 60 · 第 4 条）⇒ 整体跳过（宁缺毋假）。
+  if (!guard || guard.composite) return thunk;
   const names =
     forkBindingNames instanceof Set
       ? (forkBindingNames as Set<string>)

@@ -299,6 +299,107 @@ export function matchRelIdentLit(
   return undefined;
 }
 
+/**
+ * 合取（`&&`）的**合取项**列表（源码序，左 → 右）。
+ *
+ * Babel 把 `a && b && c` 解析成**左嵌套**（`((a && b) && c)`）——
+ * 摊平要递归**两侧**（右嵌套 `a && (b && c)` 同样摊平）。
+ */
+function conjunctsOf(test: unknown): unknown[] {
+  const out: unknown[] = [];
+  const walk = (node: unknown): void => {
+    const t = node as { type?: string; operator?: string; left?: unknown; right?: unknown };
+    if (t?.type === "LogicalExpression" && t.operator === "&&") {
+      walk(t.left);
+      walk(t.right);
+      return;
+    }
+    out.push(node);
+  };
+  walk(test);
+  return out;
+}
+
+/**
+ * 关系算子（四种）——关系守卫与复合匹配的共用口径。
+ */
+type RelOp = "gt" | "ge" | "lt" | "le";
+
+/**
+ * **复合**关系式（合取）的关系匹配（族 60 · 第 4 条）。
+ *
+ * 根因：关系守卫（`relGuardOf` → `matchRelIdentLit`）此前只认**单一**关系式
+ * （`x > 0`）⇒ 复合测试（`x > 0 && x < 10`）**不接**任何关系守卫 ⇒ 事实臂里
+ * 的裸 `return x` 丢守卫界 ⇒ `@nudo:contract return number().gt(0)` 判「证不出」
+ * （与语义等价的单关系写法结论相反 ⇒ L1 门禁口径分裂）。
+ *
+ * 可靠方向：合取的**任一**合取项都被整体蕴含（`A ∧ B` 为真 ⇒ A 为真）⇒
+ * 事实臂接**合取项的界**是可靠的（sound）。
+ *
+ * ⚠ **补集方向不可用**：`¬(A ∧ B)` = `¬A ∨ ¬B` —— **不是**单一关系 ⇒
+ * 消费方（`narrowRelComplementArmThunk`）**必须**跳过 `composite: true`
+ * 的守卫，否则会在「后续路径」上断言 `¬A`（**假绿**）。
+ *
+ * 析取（`||`）**不**接：合取才蕴含；析取的单项不被整体蕴含（`A ∨ B` 为真
+ * **不**蕴含 A）。
+ *
+ * 界的选择：
+ * - 同一变量 + 同一关系 ⇒ 取**最紧**的界（`x > 0 && x > 5` ⇒ `x > 5`）；
+ * - 同一变量 + 不同关系 ⇒ **各自**保留（`x > 0 && x < 10` ⇒ 两个界都接上：
+ *   事实臂同时持有 `x > 0` 与 `x < 10`）——只接其中一个会在**方向相反**时
+ *   把「证不出」变成「证反了」（如契约 `number().gt(0)` vs 首项 `x < 10`
+ *   ⇒ 假红）。
+ * - 不同变量 ⇒ 只取**先到**的那个变量（守卫影子重绑只作用于一个名字）。
+ */
+export function matchRelIdentLitComposite(
+  test: unknown,
+): {
+  name: string;
+  op: RelOp;
+  k: number;
+  composite: true;
+  extra?: Array<{ op: RelOp; k: number }>;
+} | undefined {
+  const parts = conjunctsOf(test);
+  // 合取项 < 2 ⇒ 不是复合式（单一关系式走 matchRelIdentLit —— 行为不变）
+  if (parts.length < 2) return undefined;
+  // 同名合取项按关系分组（每组取**最紧**的界）；不同名只取**先到**的那个变量
+  const byName = new Map<string, Map<RelOp, number>>();
+  const nameOrder: string[] = [];
+  for (const part of parts) {
+    const m = matchRelIdentLit(part);
+    if (!m) continue;
+    let byOp = byName.get(m.name);
+    if (!byOp) {
+      byOp = new Map<RelOp, number>();
+      byName.set(m.name, byOp);
+      nameOrder.push(m.name);
+    }
+    const prev = byOp.get(m.op);
+    if (prev === undefined) {
+      byOp.set(m.op, m.k);
+      continue;
+    }
+    // gt/ge：k 越大越紧；lt/le：k 越小越紧
+    const tighter = m.op === "gt" || m.op === "ge" ? m.k > prev : m.k < prev;
+    if (tighter) byOp.set(m.op, m.k);
+  }
+  const name = nameOrder[0];
+  if (name === undefined) return undefined;
+  const bounds = [...(byName.get(name) ?? new Map<RelOp, number>()).entries()];
+  const first = bounds[0];
+  if (!first) return undefined;
+  const [op, k] = first;
+  const extra = bounds.slice(1).map(([o, kk]) => ({ op: o, k: kk }));
+  return {
+    name,
+    op,
+    k,
+    composite: true,
+    ...(extra.length > 0 ? { extra } : {}),
+  };
+}
+
 export function falseConstraint(c: Abs): Pred | undefined {
   if (c.term?.op === "lit" && c.term.value === true) return undefined;
   if (c.term?.op === "lit" && c.term.value === false) return pTrue;
