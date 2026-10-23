@@ -7,6 +7,7 @@
  * 拆分产生的内部符号从 runtime/* 深路径可见，但不进 facade。
  */
 export {
+  $fnKindStamp,
   $fnVal,
   $absVal,
   $catchReturn,

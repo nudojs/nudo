@@ -19,6 +19,8 @@ import {
 // 不进 runtime.ts facade（facade 只再导出公开符号面），只进绑定表。
 import { $asyncGen } from "./runtime/async.ts";
 import { $call } from "./call.ts";
+// Bug 325：函数**声明**形态的种类戳（宿主普通函数无法回推 async/generator）
+import { $fnKindStamp } from "./runtime/state.ts";
 
 let cached: Record<string, unknown> | undefined;
 
@@ -33,6 +35,8 @@ export function rtAllBindings(): Record<string, unknown> {
     cached.takeLoopExits = takeLoopExits;
     cached.takeThrowExits = takeThrowExits;
     cached.$call = $call;
+    // Bug 325：种类戳符号（产物代码按名 import 的同一符号，见 exec/index.ts）
+    cached.$fnKindStamp = $fnKindStamp;
     // Bug 201：async 体（含 await）编译成宿主生成器，由本符号驱动挂起/恢复
     cached.$asyncGen = $asyncGen;
   }

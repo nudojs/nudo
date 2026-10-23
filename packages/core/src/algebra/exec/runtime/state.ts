@@ -195,6 +195,11 @@ export function asAbsVal(v: unknown): Abs {
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
     // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
     const ctor = hostFnCtorFacet(v);
+    // Bug 325：宿主函数的**种类**戳（async / generator / async-generator）——
+    // 函数**声明**转译后是宿主普通函数（async 体包 $async、generator 体包
+    // $gen）⇒ 种类无法从宿主侧反推 ⇒ 转译侧在声明处显式戳一次（$fnKindStamp）
+    // ⇒ 标签面（Object.prototype.toString）读得到 ⇒ "[object AsyncFunction]" 等
+    const hostKind = hostFnKindOf(v);
     // Bug 9：声明名 / 原生 fn.length 透传（v.name / v.length 是宿主真值）——
     // f.name / f.length 折 exact；匿名（name ""）不记 name
     const fnName = typeof v.name === "string" && v.name ? v.name : undefined;
@@ -202,6 +207,8 @@ export function asAbsVal(v: unknown): Abs {
       params,
       {
         body: noBody,
+        // Bug 325：种类戳进 impl（标签面读 impl.fnKind）
+        ...(hostKind !== undefined ? { fnKind: hostKind } : {}),
         // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
         // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
         // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
@@ -230,6 +237,47 @@ export function asAbsVal(v: unknown): Abs {
 
 /** 宿主函数 → 稳定 Abs 门面的旁表（Bug 291；WeakMap ⇒ 不泄漏宿主引用） */
 const hostFnAbsCache = new WeakMap<object, Abs>();
+
+/** 函数种类戳（Bug 325） */
+export type FnKind = "async" | "generator" | "async-generator";
+
+/**
+ * Bug 325：宿主函数 → **函数种类**戳（"async" | "generator" |
+ * "async-generator"）的旁表。
+ *
+ * 函数**声明**形态转译后是宿主**普通函数**（async 体包 `$async`、generator
+ * 体包 `$gen`）⇒ async/generator 种类**无法从宿主侧反推** ⇒ 由转译侧在
+ * 声明处显式戳一次（`$fnKindStamp`），`asAbsVal` 建 fn Abs 时读旁表 ⇒
+ * `Object.prototype.toString.call(f)` 给出原生标签（"[object
+ * AsyncFunction]" / "[object GeneratorFunction]" /
+ * "[object AsyncGeneratorFunction]"，与函数表达式 / 箭头 / 方法四条既有
+ * 产生路径同口径）。
+ *
+ * 旁表按**宿主函数对象**键控（WeakMap ⇒ 不泄漏宿主引用）；读侧在
+ * `asAbsVal` 建 Abs 时取 ⇒ 该 Abs 按宿主函数缓存（Bug 291 的稳定门面）
+ * ⇒ 戳只需落一次。
+ */
+const hostFnKindRegistry = new WeakMap<object, FnKind>();
+
+/** transpile 生成代码用：给宿主函数打种类戳（Bug 325） */
+export function $fnKindStamp(fn: unknown, kind: string): void {
+  if (typeof fn !== "function") return;
+  if (kind !== "async" && kind !== "generator" && kind !== "async-generator") return;
+  hostFnKindRegistry.set(fn as object, kind);
+  // 戳**晚于**首次建 Abs（宿主函数声明提升 ⇒ 声明前就可能被调用）⇒
+  // 已缓存的 Abs 就地补戳（impl 可变 ⇒ 标签面立即生效）
+  const existing = hostFnAbsCache.get(fn as object);
+  if (existing) {
+    const impl = getFnImpl(existing);
+    if (impl) impl.fnKind = kind;
+  }
+}
+
+/** 宿主函数的种类戳（无戳 ⇒ undefined ⇒ 标签保守折 "[object Function]"） */
+export function hostFnKindOf(fn: unknown): FnKind | undefined {
+  if (typeof fn !== "function") return undefined;
+  return hostFnKindRegistry.get(fn as object);
+}
 
 /** transpile 侧收形入口（instanceof RHS 值等）：host 裸值 / Abs → Abs。
  *  `$` 前缀是运行时绑定表（runtimeArgNames）的注入约定。 */

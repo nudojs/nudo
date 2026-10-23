@@ -35,9 +35,12 @@
  *   "[object AsyncGeneratorFunction]"；
  * - `Object` / `Array.prototype.slice` → "[object Function]"（宿主内建无种类戳）。
  *
- * 已知缺口（**不在本文件钉**）：**函数声明**形态（`export async function f(){}`）
- * 仍是 "[object Function]"（原生 "[object AsyncFunction]"）——转译后是宿主
- * 函数、无法回推 async 种类；该缺口在族 05 收尾时作遗留记录。
+ * **函数声明形态**（`export async function f(){}` 等）此前是已知缺口：
+ * 声明转译后是宿主**普通函数**（async 体包 `$async`、generator 体包 `$gen`）
+ * ⇒ async/generator 种类**无法从宿主侧反推** ⇒ 标签恒为 "[object Function]"。
+ * 修法（族 05 收尾）：转译侧在声明处显式戳一次（`$fnKindStamp`，
+ * `exec/runtime/state.ts` 的宿主函数→种类旁表）⇒ `asAbsVal` 建 fn Abs 时
+ * 读戳 ⇒ 标签面给出原生标签（与表达式 / 箭头 / 方法四条路径同口径）。
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
@@ -47,6 +50,17 @@ import { call } from "./eval-helpers.ts";
 function tag(body: string): { ok: boolean; value?: unknown } {
   return litValue(
     call(`export function f() { ${body} }`, "f").result,
+  );
+}
+
+/** 端到端取**函数声明**形态的标签（声明在模块顶层，读声明名 `f`） */
+function declTag(decl: string): { ok: boolean; value?: unknown } {
+  return litValue(
+    call(
+      `${decl}
+export function probe() { return Object.prototype.toString.call(f); }`,
+      "probe",
+    ).result,
   );
 }
 
@@ -143,6 +157,36 @@ describe("Bug 325 — 函数种类标签（async × generator 四象限）", () 
       value: FUNCTION,
     });
     expect(tag(`return Object.prototype.toString.call(Array.prototype.slice);`)).toEqual({
+      ok: true,
+      value: FUNCTION,
+    });
+  });
+
+  it("函数声明：同步折 Function、async 折 AsyncFunction（宿主普通函数的种类戳）", () => {
+    expect(declTag(`function f() {}`)).toEqual({ ok: true, value: FUNCTION });
+    expect(declTag(`async function f() {}`)).toEqual({ ok: true, value: ASYNC });
+  });
+
+  it("函数声明：generator 折 GeneratorFunction、async generator 折 AsyncGeneratorFunction", () => {
+    expect(declTag(`function* f() {}`)).toEqual({ ok: true, value: GENERATOR });
+    expect(declTag(`async function* f() {}`)).toEqual({
+      ok: true,
+      value: ASYNC_GENERATOR,
+    });
+  });
+
+  it("函数声明：种类戳在**声明提升**下也生效（声明前先调用）", () => {
+    // 声明提升 ⇒ 声明前的调用可能先建出 fn Abs（Abs 按宿主函数缓存）⇒
+    // 戳必须早于任何调用（转译侧把戳放在声明之前）
+    expect(
+      declTag(`async function f() { return 1; }
+const early = f();
+`),
+    ).toEqual({ ok: true, value: ASYNC });
+  });
+
+  it("负控制：函数声明的宿主原生标签不被误用（同步声明仍是 Function）", () => {
+    expect(declTag(`function f() { return 1; }`)).toEqual({
       ok: true,
       value: FUNCTION,
     });

@@ -458,15 +458,36 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // @@toStringTag "AsyncGenerator"）；**不进** $async 包装（原生 async
       // generator 返回 AsyncGenerator 本身，非 promise）——generator 分支在
       // async 分支之前，async generator 天然不走 $async。
+      // Bug 325：函数**声明**形态的种类戳——声明转译后是宿主**普通函数**
+      // （async 体包 $async、generator 体包 $gen）⇒ async/generator 种类
+      // 无法从宿主侧反推 ⇒ 显式戳一次（$fnKindStamp）⇒ 标签面
+      // （Object.prototype.toString）给出原生标签。
+      //
+      // 戳放在声明**之前**：函数声明提升 ⇒ 声明前的调用也可能先建出 fn Abs
+      // ⇒ 戳晚一步就永久丢失（Abs 按宿主函数缓存）⇒ 提前戳。
+      const declKind =
+        stmt.async === true
+          ? stmt.generator === true
+            ? "async-generator"
+            : "async"
+          : stmt.generator === true
+            ? "generator"
+            : undefined;
+      const kindStamp = declKind !== undefined
+        ? `${pad}$fnKindStamp(${stmt.id.name}, ${JSON.stringify(declKind)});`
+        : "";
       if (stmt.generator) {
         return [
+          kindStamp,
           `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $gen(() => {`,
           bodySrc,
           `${indent(depth + 1)}}${stmt.async === true ? ", true" : ""});`,
           `${pad}}`,
-        ].join("\n");
+        ]
+          .filter((l) => l !== "")
+          .join("\n");
       }
       // async 声明同口径：宿主函数是普通 function（body 包 $async）
       //
@@ -477,6 +498,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       if (stmt.async) {
         if (asyncGen) {
           return [
+            kindStamp,
             `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
             restBind,
             ...genHoist,
@@ -484,23 +506,31 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             bodySrc,
             `${indent(depth + 1)}});`,
             `${pad}}`,
-          ].join("\n");
+          ]
+            .filter((l) => l !== "")
+            .join("\n");
         }
         return [
+          kindStamp,
           `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $async(() => {`,
           bodySrc,
           `${indent(depth + 1)}});`,
           `${pad}}`,
-        ].join("\n");
+        ]
+          .filter((l) => l !== "")
+          .join("\n");
       }
       return [
+        kindStamp,
         `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
         restBind,
         bodySrc,
         `${pad}}`,
-      ].join("\n");
+      ]
+        .filter((l) => l !== "")
+        .join("\n");
     }
     case "ReturnStatement": {
       const asVar = matchAsOverride(stmt as Node, opts);

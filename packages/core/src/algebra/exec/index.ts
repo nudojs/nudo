@@ -5,7 +5,7 @@ export {
   $add, $absVal, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles, $restBind,
   $async, $asyncReturn, $await, $bitand, $bitnot, $bitor, $bitxor,
   $catchVal, $classExpr, $collectionForEach, $concat, $copy, $del, $delRes,
-  $div, $dynamicImport, $elems, $eq, $eqLoose, $fnVal, $for, $forInKeys,
+  $div, $dynamicImport, $elems, $eq, $eqLoose, $fnKindStamp, $fnVal, $for, $forInKeys,
   $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
