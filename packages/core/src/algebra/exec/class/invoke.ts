@@ -580,6 +580,10 @@ function $invokeInner(
   // 被判「确定没有该方法」的成员（prim 原型方法表外，如 string 上的
   // toFixed）⇒ 原生调用 undefined ⇒ **该分支定抛 TypeError** ⇒ 记
   // may-throw（soft，catch 可吸收）并跳过该成员（该分支不贡献值）。
+  //
+  // Bug 1045 后续（S16）：sum 成员可以是 **fn**（构造器 —— 多个 env 名合并
+  // 后 `Response` 是两个构造器声明的并集）⇒ fn 的静态成员挂在 fn 的 slots 上
+  // （dual-facet）⇒ 判据见 memberLikelyHasMethod 的 fn 分支。
   if (thisVal.shape.k === "sum") {
     const results: Abs[] = [];
     for (const m of thisVal.shape.members) {
@@ -588,7 +592,10 @@ function $invokeInner(
         continue;
       }
       // 该成员确定没有此方法 ⇒ 原生该分支抛 TypeError（记 throws 域）
-      notePrimMemberMissing(m, method, "method", loc);
+      // notePrimMemberMissing 只认 prim 接收者 ⇒ fn 臂由 noteFnStaticMemberMissing 接手
+      if (!notePrimMemberMissing(m, method, "method", loc)) {
+        noteFnStaticMemberMissing(m, method, loc);
+      }
     }
     if (results.length === 0) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
@@ -1310,6 +1317,75 @@ const CLASS_VALUE_INHERITED_NAMES: ReadonlySet<string> = new Set([
   "@@hasInstance",
 ]);
 
+/**
+ * Bug 1045 后续（S16）：fn 形状的**静态面**判据（dual-facet 事实源）。
+ *
+ * 构造器 / 静态成员挂在 fn 的 `shape.slots` 上（`Response.json` /
+ * `Array.isArray` / `Number.isFinite` …）——fn 的**实例面**在 prototype 上，
+ * 与静态面**不同槽**（故本判据只看静态面，不掺实例面）。
+ *
+ * 三态返回（判据强度必须分清，判不准 ≠ 确定没有）：
+ * - `true`：静态槽里有该名 ⇒ 可派发；
+ * - `false`：静态槽**明确不含**该名 ⇒ 确定没有（原生读 undefined ⇒ 调用 TypeError）；
+ * - `undefined`：**没有静态槽信息** ⇒ 判据不足 ⇒ 保守放行（不可判不可抛）。
+ *
+ * 「没有 slots」与「slots 为空对象」的区别（本判据采用的口径）：
+ * - `shape.slots === undefined` ⇒ 该 fn **没有静态面模型**（判据不足）⇒ 放行；
+ *   （env 声明里没挂 slots 的构造器、宿主桥接 fn 都落这里）
+ * - `shape.slots` 存在但**为空对象** ⇒ 静态面模型为**空**（该 fn 确定没有任何
+ *   静态成员）⇒ 表外名**确定缺席** ⇒ 不放行。
+ *
+ * optional 槽（读面可能缺席 ⇒ `joinAbs(value, undefined)`）⇒ 判据不足 ⇒ 放行。
+ */
+function fnStaticFaceHas(m: Abs, method: string): boolean | undefined {
+  const sh = m.shape;
+  if (sh.k !== "fn") return undefined;
+  const slots = sh.slots;
+  if (slots === undefined) return undefined; // 无静态面模型 → 判据不足
+  const slot = getSlot(slots, method);
+  if (slot === undefined) return false; // 静态面模型在场且不含该名 → 确定没有
+  if (slot.optional) return undefined; // 槽可能缺席 → 判据不足
+  return true;
+}
+
+/**
+ * Bug 1045 后续（S16）：sum 成员是 **fn** 且静态面**确定不含**该名 ⇒ 原生该
+ * 分支读 undefined ⇒ 调用定抛 TypeError ⇒ 记 may-throw（soft，catch 可吸收）
+ * + 成员诊断（与 prim 臂 notePrimMemberMissing 同口径；后者只认 prim 接收者，
+ * fn 臂此前**不记** ⇒ sum 里 fn 成员的原生抛被吞掉）。
+ *
+ * 判据不足（fn 无静态面模型 / 槽 optional）⇒ **不记**（宁可宽，不可凭空造
+ * may-throw ⇒ 假红）。
+ */
+function noteFnStaticMemberMissing(
+  m: Abs,
+  method: string,
+  loc?: [number, number],
+): boolean {
+  const sh = m.shape;
+  if (sh.k !== "fn") return false;
+  if (fnStaticFaceHas(m, method) !== false) return false; // 有该名 / 判据不足 → 不记
+  // Function.prototype / Object.prototype 名沿函数对象恒可得 ⇒ 不得判缺席
+  if (CLASS_VALUE_INHERITED_NAMES.has(method)) return false;
+  const recv = sh.name ?? "fn";
+  recordMemberDiag({
+    kind: "method",
+    name: method,
+    receiver: recv,
+    line: loc?.[0],
+    column: loc?.[1],
+  });
+  recordMayThrow({
+    kind: "TypeError",
+    cause: `method '${method}' missing on ${recv} receiver (calling undefined)`,
+    recv,
+    name: method,
+    line: loc?.[0],
+    column: loc?.[1],
+  });
+  return true;
+}
+
 function memberLikelyHasMethod(m: Abs, method: string): boolean {
   const k = m.shape.k;
   if (k === "prim") {
@@ -1318,6 +1394,19 @@ function memberLikelyHasMethod(m: Abs, method: string): boolean {
     const table = PRIM_PROTO_METHODS[(m.shape as { type?: string }).type ?? ""];
     if (!table) return true; // 判据不足 → 保守放行
     return table.has(method);
+  }
+  if (k === "fn") {
+    // Bug 1045 后续（S16）：fn = 构造器 / dual-facet 全局（Response / Array…）
+    // —— 静态成员挂 fn 的 slots 上。旧判据无 fn 分支 ⇒ 落尾部 `return false`
+    // ⇒ 「确定没有此方法」⇒ 被跳过 ⇒ 合并 fn 全局的静态成员调用
+    // （`Response.json(x)`）折 unknown（精度回退，族 36 引入）。
+    //
+    // Function.prototype / Object.prototype 名沿函数对象恒可得
+    // （`Response.toString()` / `Response.call()` 原生不抛）⇒ 不得判缺席。
+    if (CLASS_VALUE_INHERITED_NAMES.has(method)) return true;
+    const has = fnStaticFaceHas(m, method);
+    if (has === undefined) return true; // 判据不足 → 保守放行
+    return has;
   }
   if (k === "brand" || k === "obj") return true;
   if (k === "arr" || k === "tuple") return true;
