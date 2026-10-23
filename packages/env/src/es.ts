@@ -191,10 +191,76 @@ export function defineEnv(): EnvDefinition {
   const bigintPrim = (): Abs =>
     abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
 
-  /** Intl 命名空间成员（构造器；Nudo 只建模构造器值，成员面不建模） */
-  const intlCtor = (name: string): Abs =>
-    envFn([prim.unknown, prim.unknown], brandOf(name), undefined, {
+  /**
+   * Intl 命名空间成员（构造器）。
+   *
+   * 族 62（Bug 332）：**实例面**（实例方法值）此前**完全未建模**——
+   * `brandOf(name)` 的 shape 是 `unknown` ⇒ 声明面读 `new Intl.Collator().compare`
+   * 只能是 unknown（原生是 `"function"`）。此处补 **Collator / NumberFormat /
+   * DateTimeFormat** 三个子构造器的实例方法面（方法值 + 参数/返回面）。
+   *
+   * 原生 oracle（node v26.10.0 实测 `Object.getOwnPropertyNames(prototype)`）：
+   * - `Intl.Collator.prototype` = `constructor, resolvedOptions, compare`
+   * - `Intl.NumberFormat.prototype` / `Intl.DateTimeFormat.prototype`
+   *   = `constructor, resolvedOptions, formatToParts, format, formatRange,
+   *      formatRangeToParts`
+   *
+   * ⚠️ 运行时面（引擎读 `new Intl.Collator().compare`）由 core 的
+   * `BUILTIN_BRAND_METHODS`（`packages/core/src/algebra/exec/runtime/members.ts`）
+   * 决定，**不在 env 包**——`Intl` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里
+   * ⇒ 本声明**不会**注入运行时（见交回报告的「口径与已知偏差」）。
+   */
+  const intlCtor = (name: string, instance?: Abs): Abs =>
+    envFn([prim.unknown, prim.unknown], brandOf(name, instance), undefined, {
       name, ctor: true, params: ["locales?", "options?"],
+    });
+
+  /**
+   * Intl 实例的 `resolvedOptions()`：返回**选项对象**——其成员集各子构造器
+   * 不同（locale / usage / style / calendar / …），**未建模** ⇒ 返回 unknown
+   * （不建闭 obj——闭 obj 缺槽会读出「exact undefined」＝wrong-exact）。
+   */
+  const intlResolvedOptions = (): Abs =>
+    envFn([], prim.unknown, undefined, { params: [] });
+
+  /** `Intl.Collator` 实例面（compare → number；resolvedOptions → unknown）。 */
+  const intlCollatorInstance = (): Abs =>
+    objAbs({
+      compare: envFn(
+        [prim.unknown, prim.unknown],
+        prim.num(),
+        undefined,
+        { params: ["x", "y"] },
+      ),
+      resolvedOptions: intlResolvedOptions(),
+    });
+
+  /**
+   * `Intl.NumberFormat` / `Intl.DateTimeFormat` 实例面（两者原型成员同源：
+   * format / formatToParts / formatRange / formatRangeToParts / resolvedOptions）。
+   */
+  const intlFormatInstance = (): Abs =>
+    objAbs({
+      format: envFn([prim.unknown], prim.str(), undefined, { params: ["value"] }),
+      formatToParts: envFn(
+        [prim.unknown],
+        arrOf(prim.unknown),
+        undefined,
+        { params: ["value"] },
+      ),
+      formatRange: envFn(
+        [prim.unknown, prim.unknown],
+        prim.str(),
+        undefined,
+        { params: ["start", "end"] },
+      ),
+      formatRangeToParts: envFn(
+        [prim.unknown, prim.unknown],
+        arrOf(prim.unknown),
+        undefined,
+        { params: ["start", "end"] },
+      ),
+      resolvedOptions: intlResolvedOptions(),
     });
 
   /** TypedArray 全家（12 族）——见 globals 段的 Bug 865 注释 */
@@ -330,6 +396,20 @@ export function defineEnv(): EnvDefinition {
   const promiseResolveImplAbs: AbsSigImpl = (args) => {
     if (!args[0]) return undefined;
     return promiseOf(args[0]);
+  };
+
+  /**
+   * 族 62（Bug 890 精度）：`Promise.reject(reason)` 的**拒绝 reason 就是实参**
+   * （ES 规范：`Promise.reject(x)` 以 `x` 拒绝）⇒ 把实参装进 promise 的
+   * `rejected` 通道（此前恒 `unknown` ⇒ `catch (e) { e }` 折出 unknown）。
+   * 无实参 ⇒ 原生以 `undefined` 拒绝。
+   *
+   * ⚠️ `Promise` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里 ⇒ 本声明**不会**
+   * 注入运行时（运行时由 core 的 `evalPromiseStatic` 按名派发，那侧已是
+   * 精确 reason）——此处修的是**声明面**（env ≡ ES 标准库声明）。
+   */
+  const promiseRejectImplAbs: AbsSigImpl = (args) => {
+    return promiseOf(prim.never, args[0] ?? undef());
   };
 
   return {
@@ -482,7 +562,7 @@ export function defineEnv(): EnvDefinition {
         params: ["executor"],
         slots: {
           resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
-          reject: envFn([prim.unknown], promiseOf(prim.never)),
+          reject: envFn([prim.unknown], promiseOf(prim.never), promiseRejectImplAbs),
           all: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(arrOf(prim.unknown))),
           allSettled: envFn(
             [arrOf(promiseOf(prim.unknown))],
@@ -575,12 +655,13 @@ export function defineEnv(): EnvDefinition {
         name: "EvalError", ctor: true, params: ["message?"],
       }),
       Intl: objAbs({
-        Collator: intlCtor("Intl.Collator"),
-        DateTimeFormat: intlCtor("Intl.DateTimeFormat"),
+        // 族 62（Bug 332）：三个子构造器带**实例面**（实例方法值）。
+        Collator: intlCtor("Intl.Collator", intlCollatorInstance()),
+        DateTimeFormat: intlCtor("Intl.DateTimeFormat", intlFormatInstance()),
         DisplayNames: intlCtor("Intl.DisplayNames"),
         ListFormat: intlCtor("Intl.ListFormat"),
         Locale: intlCtor("Intl.Locale"),
-        NumberFormat: intlCtor("Intl.NumberFormat"),
+        NumberFormat: intlCtor("Intl.NumberFormat", intlFormatInstance()),
         PluralRules: intlCtor("Intl.PluralRules"),
         RelativeTimeFormat: intlCtor("Intl.RelativeTimeFormat"),
         Segmenter: intlCtor("Intl.Segmenter"),

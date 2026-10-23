@@ -441,6 +441,13 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
   "Intl.DateTimeFormat": new Set([
     "format", "formatRange", "formatRangeToParts", "formatToParts", "resolvedOptions",
   ]),
+  // 族 62 · 第 1 条：Intl.Collator 实例面（此前缺席 → `typeof
+  // new Intl.Collator().compare` 折精确 "undefined"（wrong-exact：原生是
+  // "function"））。原生面 = %Intl.Collator.prototype% 的 compare /
+  // resolvedOptions（node v26.10.0 实测
+  // Object.getOwnPropertyNames(Intl.Collator.prototype) =
+  // ["constructor","resolvedOptions","compare"]；constructor 不入实例面）。
+  "Intl.Collator": new Set(["compare", "resolvedOptions"]),
 };
 
 /** Bug 36：%TypedArray%.prototype 回调族（HOF + find 系 + reduce 系；

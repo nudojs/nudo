@@ -23,7 +23,7 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, strLit, bool, unknown } from "../../abs.ts";
-import { objOf, getSlot, invokeToPrimitiveHook } from "../../objects.ts";
+import { objOf, getSlot, invokeToPrimitiveHook, getProtoAbs } from "../../objects.ts";
 import { classifyCanBeHeldWeakly } from "../../collections.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
@@ -139,6 +139,88 @@ function iterableListCopy(a: Abs | undefined): Abs {
 }
 
 /**
+ * 族 62 · 第 3 条：原生 InstallErrorCause 走 HasProperty(options, "cause")
+ * ——**含原型链**（`Object.create({cause: 1})` 的自有键集为空但原型链上有
+ * cause ⇒ 原生 `new Error("m", o).cause` === 1）。引擎的 obj 槽域只记**自有**
+ * 键 ⇒ 原型链上的键不在自有槽域里 ⇒ HasProperty 的判定分三档：
+ *
+ * - "definite"：options 自有 cause 键（调用方直接取槽值）；
+ * - "present"：原型链上**确有** cause 键（链全闭且命中）⇒ 原生**确定**装
+ *   cause 槽（自有面 / in 面 / gOPN 面都含 "cause"）⇒ 装**值 unknown** 的
+ *   槽（值不经原型链 Get 解析——保守，但不得读出「确定不存在」）；
+ * - "absent"：链全闭且无 cause 键 ⇒ 原生确定无 cause 槽 ⇒ 不装槽；
+ * - "unknown"：链上任一环**开放**（键集不完备）⇒ 存在性不可判 ⇒ 装
+ *   **optional** 的 unknown 值槽（读出 unknown ∪ undefined；in / hasOwn
+ *   折 boolean 域而非确定值）。
+ */
+type CausePresence =
+  | { kind: "definite"; value: Abs }
+  | { kind: "present" }
+  | { kind: "absent" }
+  | { kind: "unknown" };
+
+function optionsCausePresence(optionsArg: Abs): CausePresence {
+  const s = optionsArg.shape;
+  // **确定非对象**的 options（prim / nullish 字面量）——原生
+  // InstallErrorCause 首步「options 不是对象 ⇒ 直接返回」⇒ 确定无 cause 槽。
+  if (s.k === "prim" || s.k === "never") return { kind: "absent" };
+  if (optionsArg.term?.op === "lit" && (optionsArg.term.value === null || optionsArg.term.value === undefined)) {
+    return { kind: "absent" };
+  }
+  // 抽象 options（any / unknown / sum）——键集不可判 ⇒ 存在性不可判。
+  if (s.k === "any" || s.k === "unknown" || s.k === "sum" || s.k === "eff") {
+    return { kind: "unknown" };
+  }
+  // 自有 cause 键（自有槽域命中）——值精确。
+  if (s.k === "obj") {
+    const own = getSlot(s.slots, "cause");
+    if (own) return { kind: "definite", value: own.value };
+  }
+  if (s.k === "fn") {
+    const own = s.slots ? getSlot(s.slots, "cause") : undefined;
+    if (own) return { kind: "definite", value: own.value };
+    return { kind: "absent" };
+  }
+  if (s.k === "brand") {
+    const inner = s.shape;
+    if (inner.shape.k === "obj") {
+      const own = getSlot(inner.shape.slots, "cause");
+      if (own) return { kind: "definite", value: own.value };
+    }
+    return { kind: "absent" };
+  }
+  // 原型链（protoTable 记录）：逐环找 cause 键——**命中即存在性确定**
+  // （原型链上的键无论是否可枚举皆命中 HasProperty）；任一环开放 ⇒ 链不可判。
+  let chainUndecidable = false;
+  let cur: Abs | undefined = getProtoAbs(optionsArg);
+  while (cur !== undefined) {
+    if (cur.shape.k !== "obj") {
+      chainUndecidable = true;
+      break;
+    }
+    const cs = cur.shape as unknown as {
+      slots: Record<string, { value: Abs }>;
+      open?: boolean;
+      index?: unknown;
+    };
+    if (cs.open === true || cs.index !== undefined) {
+      chainUndecidable = true;
+      break;
+    }
+    const hit = getSlot(cs.slots, "cause");
+    if (hit) return { kind: "present" };
+    cur = getProtoAbs(cur);
+  }
+  // 自有键集不完备（开放 obj）⇒ 存在性不可判（原型链命中已在上返回）。
+  if (s.k === "obj") {
+    const os = s as unknown as { open?: boolean; index?: unknown };
+    if (os.open === true || os.index !== undefined) return { kind: "unknown" };
+  }
+  if (chainUndecidable) return { kind: "unknown" };
+  return { kind: "absent" };
+}
+
+/**
  * Error brand：shape 带 name/message（字面量 message 保精确）。
  * AggregateError(errors, message[, options])：message 在第二实参，errors
  * 挂 .errors（原生是实参数组**副本**——见 iterableListCopy）；options.cause
@@ -152,7 +234,7 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
   // 带 cause → ["stack","message","cause"]；AggregateError →
   // ["stack","message","cause","errors"]（cause 先于 errors）。name 是
   // inherited 原型链槽，不在 gOPN 面，位置不影响观察序。
-  const slots: Record<string, { value: Abs; inherited?: boolean }> = {
+  const slots: Record<string, { value: Abs; inherited?: boolean; optional?: boolean }> = {
     // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
     // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
     stack: { value: str("path") },
@@ -166,7 +248,7 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
     message: { value: errorMessageSlot(messageArg) },
   };
   const optionsArg = name === "AggregateError" ? args[2] : args[1];
-  if (optionsArg && optionsArg.shape.k === "obj") {
+  if (optionsArg) {
     // Bug 316：原生 InstallErrorCause（ES2022 10.2.1）——**只有 options
     // 真有 `cause` 键**时才装 cause 槽：options 无 cause 键 ⇒ 错误对象
     // **无**自有 cause 槽（`hasOwnProperty("cause")` / `Object.hasOwn` /
@@ -174,8 +256,28 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
     // 值为 undefined。
     // 此前无 cause 键也装一个 undefAbs() 槽 ⇒ 自有面假 true（"cause" in e
     // 也假 true——$in 走槽存在性判定）。
-    const causeSlot = getSlot(optionsArg.shape.slots, "cause");
-    if (causeSlot) slots["cause"] = { value: causeSlot.value };
+    //
+    // 族 62 · 第 3 条（cause 继承槽）：HasProperty(options, "cause") 走
+    // **原型链**——`Object.create({cause: 1})` 的自有键集为空但原型链上有
+    // cause ⇒ 原生 `new Error("m", o).cause` === 1。此前只按**自有槽**判
+    // （闭 obj 且无 cause 槽 ⇒ 不装）⇒ 继承面读出「确定不存在」（精确
+    // undefined），与原生相反。
+    // 修法：键集**不可判**时（开放 obj / 原型链开放 / 抽象 options）装
+    // **值为 unknown 的 cause 槽**：读出「有槽但不知道值」（unknown），
+    // 不是「确定没有」（精确 undefined）。原型链上**确有** cause 键时
+    // （存在性确定）装同款 unknown 值槽（值不经原型链 Get 解析——保守），
+    // in / hasOwn / gOPN 面与原生同（确定含 "cause"）。
+    const causePresence = optionsCausePresence(optionsArg);
+    if (causePresence.kind === "definite") {
+      slots["cause"] = { value: causePresence.value };
+    } else if (causePresence.kind === "present") {
+      slots["cause"] = { value: unknown };
+    } else if (causePresence.kind === "unknown") {
+      // optional 槽：$in / hasOwnProperty 折 boolean 域（原生不可判），
+      // $get 读出 unknown ∪ undefined（unknown——「有槽但不知道值」）。
+      slots["cause"] = { value: unknown, optional: true };
+    }
+    // "absent"：原生确定无 cause 槽 ⇒ 不装（保持 Bug 316 口径）。
   }
   if (name === "AggregateError") {
     // Bug 54：errors（args[0]）过 IterableToList——非可迭代定抛（node 实测

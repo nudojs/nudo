@@ -1358,6 +1358,12 @@ export function $get(
       const idx = canonicalArrayIndex(key);
       if (idx !== undefined) {
         const elem = TYPED_ARRAY_ELEMENT[o.shape.name]!;
+        // 族 62 · 第 4 条：元素**值**入索引槽（makeTypedArrayAbs 装）⇒ 命中
+        // 槽直读原生同款精确值（`new Int8Array(["3"])["0"]` → 3）。
+        const slot = inner?.shape.k === "obj"
+          ? getSlot(inner.shape.slots, String(idx))
+          : undefined;
+        if (slot) return slot.value;
         const lenA = inner?.shape.k === "obj"
           ? getSlot(inner.shape.slots, "length")?.value
           : undefined;

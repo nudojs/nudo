@@ -195,6 +195,19 @@ export function $idx(
   if (a.shape.k === "brand") {
     const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
     if (elem) {
+      // 族 62 · 第 4 条：元素**值**入索引槽（makeTypedArrayAbs 装）⇒ 命中槽
+      // 直读原生同款精确值（`new Int8Array(["3"])[0]` → 3）；未命中（长度
+      // 形态 / 抽象源 / 越界）⇒ 回落元素域 ∪ undefined（不假精确）。
+      if (idx !== undefined) {
+        const inner = (a.shape as { shape?: Abs }).shape;
+        if (inner && inner.shape.k === "obj") {
+          const slot = getSlot(
+            (inner.shape as unknown as { slots: Record<string, { value: Abs }> }).slots,
+            String(idx),
+          );
+          if (slot) return slot.value;
+        }
+      }
       return joinAbs(
         abs({ k: "prim", type: elem }, undefined, undefined, "exact"),
         undef(),

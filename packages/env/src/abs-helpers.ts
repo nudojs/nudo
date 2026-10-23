@@ -142,10 +142,19 @@ export function unionOf(...members: Abs[]): Abs {
  * try/catch 可吸收 ⇒ catch 臂可达）。core 侧零改动。
  *
  * `rejected` 是**态信息**，不进 leq / 指纹 / check 等价。
+ *
+ * 族 62（Bug 890 精度）：**可选**的拒绝 reason。缺省仍是 `unknown`
+ * （拒绝 reason 不可知 ⇒ 两臂均可能）——**逐声明**给 reason，不是全局改。
+ * 给了 reason 之后，`catch (e)` 的 `e` 折出该 reason 的 Abs（如 `TypeError`
+ * 品牌 ⇒ `e.message` / `e.name` 可解），`$await` 未吸收的拒绝也按该 reason
+ * 进 throw 通道（`packages/core/src/algebra/exec/runtime/async.ts`）。
+ *
+ * ⚠️ reason 必须是**该声明的全部拒绝路径**的公共上界：只覆盖「常见路径」
+ * 会把别的 reason 变成 wrong-exact（宁可 `unknown`）。
  */
-export function promiseOf(inner: Abs): Abs {
+export function promiseOf(inner: Abs, rejectReason?: Abs): Abs {
   return makeAbs(
-    { k: "eff", eff: "promise", inner, rejected: unknown },
+    { k: "eff", eff: "promise", inner, rejected: rejectReason ?? unknown },
     undefined,
     undefined,
     "exact",

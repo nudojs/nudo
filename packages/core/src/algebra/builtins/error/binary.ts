@@ -28,7 +28,7 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, numLit, litValue, boolLit, bool, unknown, strLit } from "../../abs.ts";
+import { abs, numLit, litValue, boolLit, bool, unknown, strLit, bigintLit } from "../../abs.ts";
 import { objOf, getSlot } from "../../objects.ts";
 import { isSetAbs, isMapAbs } from "../../collections.ts";
 import { validateCallableArg, applyCallbackValue } from "../../hof.ts";
@@ -361,10 +361,25 @@ export function makeTypedArrayAbs(name: string, args: Abs[]): Abs {
   }
   // Bug 131：tuple/arr 源逐项元素转换（与 .of 同款：number 家族拒 symbol/
   // bigint 项、bigint 家族走 enforceTaBigIntItem；抽象项 → may）。此前构造
-  // 面完全跳过元素转换 → new Uint8Array([1n]) 的 throws 域 never（假 total，
+  // 面完全跳过元素转换 → new Uint8Array([1n]) 的 throws 域 never（假 total,
   // 原生定抛 TypeError）。长度/值域 imprecision 保持既有口径。
   if (len && (len.shape.k === "tuple" || len.shape.k === "arr")) {
     enforceTaItemConversion(name, len);
+  }
+  // 族 62 · 第 4 条：元素**值**入索引槽（此前只做 throws 面 ⇒ 任何元素读
+  // 都只给「元素域 ∪ undefined」——`new Int8Array(["3"])[0]` 读出 number |
+  // undefined，原生是 3）。闭 tuple 源逐元素过 ToNumber / ToBigInt + 家族
+  // 取值转换（整数 TA 的模 2^n 回绕、Float32 的 fround 舍入）⇒ 值精确。
+  // 非字面量项（对象源的 valueOf / 抽象域）不入槽——值不可判（读面回落
+  // 元素域 ∪ undefined，不得假精确）。
+  if (len && len.shape.k === "tuple" && !len.shape.rest) {
+    const elem = typedArrayElementOf(name);
+    if (elem !== undefined) {
+      for (let i = 0; i < len.shape.elements.length; i++) {
+        const v = taItemValueAbs(name, elem, len.shape.elements[i]!);
+        if (v !== undefined) slots[String(i)] = { value: v };
+      }
+    }
   }
   const inner = objOf(slots);
   if (lenSlotExactForm) setPropFlags(inner, "length", { enumerable: false });
@@ -483,6 +498,110 @@ function enforceTaItem(it: Abs, elem: "number" | "bigint"): void {
   if (it.term?.op !== "lit" && mayCoerceThrowOperand(it)) {
     recordMayThrow({ kind: "TypeError", cause: "TypedArray item ToNumber may throw (Symbol/BigInt)" });
   }
+}
+
+/**
+ * 族 62 · 第 4 条：TA 单项**元素值**折叠（ToNumber / ToBigInt + 家族的取值
+ * 转换）。
+ *
+ * 原生 `new Int8Array(["3"])[0]` → 3（ToNumber("3") = 3 → 存进 Int8 槽）、
+ * `new Uint8Array([256])[0]` → 0（模 2^8 回绕）、`new Int8Array([200])[0]` →
+ * -56（回绕后落有符号半区）、`new Int8Array([1.5])[0]` → 1（向零截断）、
+ * `new Float32Array([0.1])[0]` → 0.10000000149011612（Float32 舍入——
+ * Math.fround 与 V8 存值同口径）。
+ *
+ * 只折**字面量**项（值可判）；对象源（valueOf 回调）与抽象项不入槽——值
+ * 不可判（读面回落「元素域 ∪ undefined」，不假精确）。
+ */
+function taItemValueAbs(
+  name: string,
+  elem: "number" | "bigint",
+  item: Abs,
+): Abs | undefined {
+  if (item.term?.op !== "lit") return undefined;
+  const v = item.term.value;
+  if (elem === "bigint") {
+    if (typeof v === "bigint") return bigintLit(taStoreBigInt(name, v));
+    if (typeof v === "boolean") return bigintLit(taStoreBigInt(name, v ? 1n : 0n));
+    if (typeof v === "string") {
+      // 非法字符串 → SyntaxError（enforceTaBigIntItem 已定抛）⇒ 到此必合法。
+      try {
+        return bigintLit(taStoreBigInt(name, BigInt(v)));
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined; // number / null / undefined / symbol → 原生定抛（已抛）
+  }
+  // number 家族：ToNumber
+  let n: number;
+  if (typeof v === "number") n = v;
+  else if (typeof v === "string") n = Number(v);
+  else if (typeof v === "boolean") n = v ? 1 : 0;
+  else if (v === null) n = 0;
+  else if (v === undefined) n = NaN;
+  else return undefined; // bigint / symbol → 原生定抛（已抛）
+  const stored = taStoreNumber(name, n);
+  return stored === undefined ? undefined : numLit(stored);
+}
+
+/** 整数 TA 的取值转换：ToIntegerOrInfinity（向零截断、NaN → 0）+ 模 2^n 回绕 */
+function taStoreNumber(name: string, n: number): number | undefined {
+  // 浮点家族：原样存（不向零截断——ToIntegerOrInfinity 只用于**整数** TA；
+  // Float32 额外过 fround 舍入，与 V8 存值同口径）。
+  if (name === "Float32Array") return Math.fround(n);
+  if (name === "Float64Array") return n;
+  const trunc = Number.isFinite(n) ? Math.trunc(n) : n;
+  if (Number.isNaN(trunc)) return 0;
+  switch (name) {
+    case "Int8Array":
+      return taWrapSigned(trunc, 8);
+    case "Uint8Array":
+      return taWrapUnsigned(trunc, 8);
+    case "Int16Array":
+      return taWrapSigned(trunc, 16);
+    case "Uint16Array":
+      return taWrapUnsigned(trunc, 16);
+    case "Int32Array":
+      return taWrapSigned(trunc, 32);
+    case "Uint32Array":
+      return taWrapUnsigned(trunc, 32);
+    case "Uint8ClampedArray":
+      return taClampUint8(trunc);
+    default:
+      return undefined;
+  }
+}
+
+function taWrapUnsigned(v: number, bits: number): number {
+  if (!Number.isFinite(v)) return 0;
+  const mod = 2 ** bits;
+  return ((v % mod) + mod) % mod;
+}
+
+function taWrapSigned(v: number, bits: number): number {
+  const u = taWrapUnsigned(v, bits);
+  const half = 2 ** (bits - 1);
+  return u >= half ? u - 2 ** bits : u;
+}
+
+/** ToUint8Clamp：NaN → 0；≤0 → 0；≥255 → 255；其余四舍五入（偶数优先） */
+function taClampUint8(v: number): number {
+  if (Number.isNaN(v)) return 0;
+  if (v <= 0) return 0;
+  if (v >= 255) return 255;
+  const f = Math.floor(v);
+  const diff = v - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return f % 2 === 0 ? f : f + 1;
+}
+
+/** bigint 家族的取值转换：模 2^64 回绕（BigInt64 有符号 / BigUint64 无符号） */
+function taStoreBigInt(name: string, v: bigint): bigint {
+  if (name === "BigInt64Array") return BigInt.asIntN(64, v);
+  if (name === "BigUint64Array") return BigInt.asUintN(64, v);
+  return v;
 }
 
 /**

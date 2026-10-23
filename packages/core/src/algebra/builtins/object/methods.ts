@@ -1820,11 +1820,19 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             // Bug 66：inherited 槽（name——原生经 X.prototype 原型链解析，
             // 非实例自有）不在 gOPN 面；message/stack（/errors/cause）自有
             // 不可枚举照列
+            // 族 62 · 第 3 条：optional 槽（cause 的「键不可判」槽——装
+            // unknown 值）不证明键存在 ⇒ 不入自有键清单（原生该情形下
+            // gOPN 不可判；不得折出确定的 "cause" 键）。
             return abs(
               {
                 k: "tuple",
                 elements: Object.keys(os.slots)
-                  .filter((n) => (os.slots[n] as { inherited?: boolean } | undefined)?.inherited !== true)
+                  .filter(
+                    (n) =>
+                      (os.slots[n] as { inherited?: boolean; optional?: boolean } | undefined)?.inherited !==
+                        true &&
+                      (os.slots[n] as { optional?: boolean } | undefined)?.optional !== true,
+                  )
                   .map((n) => strLit(n)),
               },
               undefined,

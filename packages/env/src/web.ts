@@ -7,6 +7,7 @@ import { absStrLit } from "@nudojs/core/internal";
 import {
   arrOf,
   envFn,
+  errBrand,
   nullLit,
   objAbs,
   promiseOf,
@@ -72,13 +73,19 @@ export function defineEnv(): EnvDefinition {
    * `bodyUsed` 两侧都有（WHATWG Fetch `Request.bodyUsed` / `Response.bodyUsed`
    * 各一；node v26 undici 实测 `new Request(u).bodyUsed` 存在）⇒ 归共有面，
    * **不是** Response 专有。
+   *
+   * 族 62（Bug 890 精度）：body 读取族的**拒绝 reason = TypeError**
+   * （WHATWG Fetch「consume body」：body 流出错 / JSON 解析失败 ⇒ 抛
+   * TypeError；node v26 undici 实测 `await res.json()` 遇非法 JSON ⇒
+   * `TypeError: Unexpected token …`）。此前 reason 是 `unknown` ⇒
+   * `catch (e) { e.message }` 拿不到东西。
    */
   const bodyReadSlots = {
-    json: envFn([], promiseOf(prim.unknown)),
-    text: envFn([], promiseOf(prim.str())),
-    arrayBuffer: envFn([], promiseOf(prim.unknown)),
-    blob: envFn([], promiseOf(prim.unknown)),
-    formData: envFn([], promiseOf(prim.unknown)),
+    json: envFn([], promiseOf(prim.unknown, errBrand("TypeError"))),
+    text: envFn([], promiseOf(prim.str(), errBrand("TypeError"))),
+    arrayBuffer: envFn([], promiseOf(prim.unknown, errBrand("TypeError"))),
+    blob: envFn([], promiseOf(prim.unknown, errBrand("TypeError"))),
+    formData: envFn([], promiseOf(prim.unknown, errBrand("TypeError"))),
     clone: envFn([], prim.unknown),
     headers: Headers,
     url: prim.str(),
@@ -272,7 +279,15 @@ export function defineEnv(): EnvDefinition {
   };
 
   const webGlobals: Record<string, Abs> = {
-    fetch: envFn([unionOf(prim.str(), Request)], promiseOf(Response)),
+    // 族 62（Bug 890 精度）：`fetch` 的**拒绝 reason** = TypeError ∪ AbortError
+    // （WHATWG Fetch「fetch」：网络错 / 非法 URL ⇒ TypeError；`signal` 被 abort
+    // ⇒ 以 abort reason 拒绝，默认 abort reason 是 `AbortError` DOMException）。
+    // ⚠️ 已知偏差：**自定义** abort reason（`controller.abort("x")`）不在建模
+    // 范围 ⇒ 该路径的 reason 实际比声明宽（见交回报告）。
+    fetch: envFn(
+      [unionOf(prim.str(), Request)],
+      promiseOf(Response, unionOf(errBrand("TypeError"), errBrand("AbortError"))),
+    ),
     // Bug 860：浏览器构造器必须带 `ctor: true`——否则 `$new` 走「fn 无 ctor
     // ⇒ 记 unknown-constructibility 假 may-throw」分支（假红）。
     // `name` 只用于 `class X extends <Ctor>` 的链键（issue #106），不改变
@@ -393,8 +408,11 @@ export function defineEnv(): EnvDefinition {
         request: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
       }),
       clipboard: objAbs({
-        readText: envFn([], promiseOf(prim.str())),
-        writeText: envFn([prim.str()], promiseOf(undef())),
+        // 族 62（Bug 890 精度）：Clipboard API 的**拒绝 reason = NotAllowedError**
+        // （W3C Clipboard API：权限被拒 / 文档非 fully active ⇒ 以
+        // `NotAllowedError` DOMException 拒绝）。
+        readText: envFn([], promiseOf(prim.str(), errBrand("NotAllowedError"))),
+        writeText: envFn([prim.str()], promiseOf(undef(), errBrand("NotAllowedError"))),
       }),
     }),
     location: objAbs({
@@ -468,21 +486,27 @@ export function defineEnv(): EnvDefinition {
       randomUUID: envFn([], prim.str()),
       getRandomValues: envFn([prim.unknown], prim.unknown),
       subtle: objAbs({
+        // 族 62（Bug 890 精度）：WebCrypto 的**拒绝 reason = OperationError**
+        // （WebCrypto Level 1/2：digest / encrypt / decrypt / sign / verify /
+        // generateKey / deriveKey / deriveBits / wrapKey / unwrapKey /
+        // exportKey 的**唯一**拒绝原因是 `OperationError` DOMException）。
+        // ⚠️ `importKey` 例外：它可能以 `DataError` / `NotSupportedError`
+        // 拒绝（不止一种）⇒ 保持 `unknown`（宁可 unknown，不假精确）。
         digest: envFn(
           [prim.str(), prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         encrypt: envFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         decrypt: envFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         sign: envFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         verify: envFn(
           [
@@ -491,11 +515,11 @@ export function defineEnv(): EnvDefinition {
             prim.unknown,
             prim.unknown,
           ],
-          promiseOf(prim.bool()),
+          promiseOf(prim.bool(), errBrand("OperationError")),
         ),
         generateKey: envFn(
           [prim.unknown, prim.bool(), arrOf(prim.str())],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         // Bug 1049：WebCrypto Level 1 / Level 2 标准 API——旧表只有 8 个键
         // ⇒ 缺的这 4 个读出 **exact undefined** ⇒ 调用即「确定抛 TypeError」
@@ -510,19 +534,19 @@ export function defineEnv(): EnvDefinition {
             prim.bool(),
             arrOf(prim.str()),
           ],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         deriveBits: envFn(
           [prim.unknown, prim.unknown, prim.num()],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         wrapKey: envFn(
           [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         unwrapKey: envFn(
           [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
         importKey: envFn(
           [
@@ -532,11 +556,12 @@ export function defineEnv(): EnvDefinition {
             prim.bool(),
             arrOf(prim.str()),
           ],
+          // 拒绝 reason 有多种（DataError / NotSupportedError）⇒ 保持 unknown。
           promiseOf(prim.unknown),
         ),
         exportKey: envFn(
           [prim.str(), prim.unknown],
-          promiseOf(prim.unknown),
+          promiseOf(prim.unknown, errBrand("OperationError")),
         ),
       }),
     }),
