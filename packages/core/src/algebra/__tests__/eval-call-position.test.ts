@@ -348,10 +348,14 @@ describe("Bug 38: 字符串 pattern 的 match/search/matchAll（字面量接收�
     expect(s).toContain('input: "abc"');
   });
 
-  it("matchAll(字符串) → 恒无 g 定抛 TypeError（非保守 unknown）", () => {
+  // Bug 449：原钉「matchAll(字符串) → 恒无 g 定抛 TypeError」**钉死了错误
+  // 行为**（ES2023：非 RegExp 实参走 RegExpCreate(ToString(pattern), "g")，
+  // "g" 由算法自补 ⇒ 返回迭代器；只有「实参确定是 RegExp 且 flags 确定不含
+  // g」才抛 TypeError）⇒ 改写为迭代器 + 不抛。
+  it("matchAll(字符串) → RegExpCreate(ToString(pattern),\"g\") 迭代器（不定抛 TypeError）", () => {
     const r = evalWithArgs(`export function f() { return "ab".matchAll("a"); }`, []);
-    expect(r.value).toBe("never");
-    expect(r.throws).toContain("TypeError");
+    expect(r.value).toBe("RegExpMatchIterator");
+    expect(r.throws).not.toContain("TypeError");
   });
 });
 

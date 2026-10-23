@@ -306,19 +306,24 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   // Bug 38：字符串 pattern——原生 search/match 第一步 RegExpCreate(ToString(
   // pattern))，与空 flags 的 RegExp 等价（"abc123".search("c") ≡ search(/c/)）。
   // 一切非 symbol 字面量（string/number/bool/null/bigint/undefined）经
-  // ToString 折叠；matchAll 的字符串 pattern 恒无 g → 下方 !reBrand 分支
-  // 回落 callAbsMethod 的定抛臂。
+  // ToString 折叠；matchAll 的字符串 pattern 走 RegExpCreate(pattern, "g")
+  // （Bug 449：下方 !reBrand 分支自补 "g" 后真迭代，**不**回落定抛臂）。
   const litTerm = re && re.term?.op === "lit" ? (re.term as { op: "lit"; value: unknown }) : undefined;
   // Bug 179：RegExpCreate 语义——pattern 为 undefined 字面量 ⇒ **空模式**
   // （ES2023 RegExpCreate：pattern undefined → P = ""），不是 "undefined"。
   // 原生 'abc'.match(undefined) → [""]（空模式在 0 处匹配）；此前折成
   // "undefined" → 无匹配 → null。
+  // Bug 449：matchAll 的**缺省实参**（args[0] 不存在）同为空模式（原生
+  // "abc".matchAll() → 4 命中）⇒ 必须在下方的 strPat 早退判定前补上，
+  // 否则 matchAll 拿不到尾段的真迭代；match/search 的缺省实参不在本片
+  // 范围，仍按原路径回落抽象臂。
+  const missingArgPat = re === undefined && method === "matchAll" ? "" : undefined;
   const strPat =
     !reBrand && litTerm && typeof litTerm.value !== "symbol"
       ? litTerm.value === undefined
         ? ""
         : String(litTerm.value)
-      : undefined;
+      : missingArgPat;
   const svR = litValue(recv);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv !== "string") return undefined; // 非字符串字面量接收者：不接管
@@ -396,7 +401,31 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   }
   // matchAll：非全局正则原生 TypeError（hard throw，catch 可吸收）；
   // 全局（brand /g）→ 真执行迭代，每项 [full, ...groups] 元组
-  if (!reBrand) return undefined; // 非 brand 参数（如字符串模式）：保守回落
+  if (!reBrand) {
+    // Bug 449：**非 RegExp 实参不抛**——ES2023 String.prototype.matchAll
+    // 步 3：IsRegExp(pattern) 为 false ⇒ matcher = RegExpCreate(
+    // ToString(pattern), "g")（"g" 由算法自补）⇒ 返回迭代器。只有「实参
+    // 确定是 RegExp 且 flags 确定不含 g」才抛 TypeError（原生 node 实测：
+    // "abc".matchAll("b") / matchAll(1) / matchAll() 全部正常返回迭代器）。
+    // strPat 已按 RegExpCreate 口径算好（undefined → ""，其余 ToString；
+    // 缺省实参同为**空 pattern**——见上方 missingArgPat）。
+    if (strPat === undefined) return undefined; // 抽象 pattern：回落抽象臂
+    let gRe: RegExp;
+    try {
+      gRe = new RegExp(strPat, "g");
+    } catch {
+      // Bug 252 口径：模式编译失败 = **确定 SyntaxError**（RegExpCreate 步 2），
+      // 不得回落成「本臂不接管」哨兵（throws 域会折 never ⇒ 假 no-throw）
+      throw new NudoThrow(errorTypeAbs("SyntaxError"));
+    }
+    // 真迭代：每项是 **RegExpExecArray（匹配数组）**，不是字符串
+    const gMs = sv.matchAll(gRe);
+    const gEls: Abs[] = [];
+    for (const m of gMs) {
+      gEls.push(matchResultAbs(m));
+    }
+    return matchIteratorAbs(gEls);
+  }
   if (!flags.includes("g")) {
     throw new NudoThrow(
       errorTypeAbs("TypeError"),

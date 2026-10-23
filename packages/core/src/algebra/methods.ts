@@ -263,9 +263,14 @@ function matchResultDomain(): Abs {
  * Bug 2：matchAll 的抽象接收者兜底臂（字面量双折由 stringRegexMethod 先行
  * 接管）。RegExp brand + 字面量 flags：无 g → 定抛 TypeError；有 g →
  * RegExpMatchIterator brand（元素不可枚举——不注侧表，spread/for-of 等
- * 消费端保守展开；与 Bug 23 的迭代器协议面同族的最小面）。非 RegExp
- * brand 实参经 RegExpCreate 恒无 g → prim/nullish/缺省/tuple/arr 定抛；
- * obj/fn/any/unknown/sum（可自带 @@matchAll/flags）→ may + 迭代器。
+ * 消费端保守展开；与 Bug 23 的迭代器协议面同族的最小面）。
+ * Bug 449：**确定非 RegExp 的实参不抛**——ES2023 matchAll 步 3：IsRegExp(
+ * pattern) 为 false ⇒ matcher = RegExpCreate(ToString(pattern), "g")（"g"
+ * 由算法自补）⇒ 返回迭代器。只有「实参确定是 RegExp 且 flags 确定不含 g」
+ * 才定抛 TypeError（原生 node 实测："abc".matchAll("b") / matchAll(1) /
+ * matchAll() 全部正常返回迭代器）。元素域在抽象接收者上不可知 ⇒ 保守元素
+ * （协议面齐、元素 unknown）。obj/fn/any/unknown/sum（可能自带 @@matchAll/
+ * flags）→ may + 迭代器。
  */
 function matchAllAbstractArm(args: Abs[]): Abs {
   const re = args[0];
@@ -294,11 +299,14 @@ function matchAllAbstractArm(args: Abs[]): Abs {
     re.shape.k === "arr" ||
     (re.term?.op === "lit" && (re.term.value === null || re.term.value === undefined));
   if (definiteNonRegExp) {
-    // RegExpCreate(ToString(pattern)) 恒无 g → 确定 TypeError（node 实测
-    // "ab".matchAll("a") / matchAll(1) / matchAll() 全抛）
-    throw new NudoThrow(errorTypeAbs("TypeError"));
+    // Bug 449：确定非 RegExp ⇒ RegExpCreate(ToString(pattern), "g") ⇒
+    // **迭代器**（不得硬抛 TypeError——ES2023 只有「确定是 RegExp 且 flags
+    // 确定不含 g」才抛）。元素域不可知 ⇒ 保守元素（迭代器协议面齐）。
+    // ToString 可能抛的面（symbol 定抛 / 对象 may）在 callAbsMethod 的
+    // 实参校验段已分别处理，此处不重复记录。
+    return iter;
   }
-  // obj（可带 @@match）/fn/any/unknown/sum：可能为 g 正则形态 → may
+  // obj（可带 @@matchAll）/fn/any/unknown/sum：可能为 RegExp 形态但缺 g → may
   recordMayThrow({
     kind: "TypeError",
     cause: "matchAll RegExp argument may lack the global flag",

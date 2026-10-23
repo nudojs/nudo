@@ -680,17 +680,80 @@ function posToOffset(source: string, pos: LspPosition): number {
   return off + pos.character;
 }
 
-/** 多 edit 合成新源码（从后往前应用，避免偏移漂移）。 */
+/** edit 在**原 source** 上的绝对偏移（统一坐标口径，Bug 450）。 */
+type OffsetEdit = { start: number; end: number; newText: string };
+
+/**
+ * 多 edit 合成新源码（Bug 450）。
+ *
+ * **坐标口径**：全部 edit 的偏移都在**原 source** 上算好，再**从后往前**
+ * （起点倒序）应用到结果串 ⇒ 靠前 edit 的原坐标不会被靠后 edit 改写后的
+ * 文本带偏。
+ *
+ * 改前是「**排序**用原 source、**应用**用已改写的 `out`」——区间嵌套时
+ * （插入点落在替换范围内部）后应用的 edit 落点按陈旧坐标漂移 ⇒ 源文件被
+ * 搅成垃圾（`"AAAA BBBB CCCC"` + 替换 [5,9) + 插入 @6 ⇒ `"AAAA REPLBBB
+ * CCCC"`，插入文本被吞进替换文本里）。
+ *
+ * **区间嵌套的合成口径**：LSP 规范下「插入点落在替换范围内部」属于**非法
+ * 重叠** edit；这里给出**确定性**合成——插入文本并入该替换范围、紧贴
+ * 替换文本**之前**（插入内容不丢、源码不被搅乱；`"AAAA INSREPL CCCC"`）。
+ *
+ * **替换范围之间真的重叠**（部分重叠 / 交叉）无法确定性合成 ⇒ 抛
+ * `RangeError`（fail-closed：调用方 `server-code-actions.ts` 的
+ * `refactor.extract` 是 best-effort，抛错即「不出 action」）。
+ */
 export function applyEdits(source: string, edits: TextEdit[]): string {
-  const sorted = [...edits].sort(
-    (a, b) => posToOffset(source, b.range.start) - posToOffset(source, a.range.start),
-  );
+  const prepared: OffsetEdit[] = edits.map((e) => ({
+    start: posToOffset(source, e.range.start),
+    end: posToOffset(source, e.range.end),
+    newText: e.newText,
+  }));
+  const replacements = prepared.filter((e) => e.end > e.start);
+  const insertions = prepared.filter((e) => e.end === e.start);
+
+  // 1) 区间嵌套消解：插入点落在某个替换范围 [s,e) 内（含 s）⇒ 并入该范围。
+  //    插入文本按偏移升序**前置**到替换文本之前（⇒ 同起点时也是「替换之前」，
+  //    与改前的既有口径一致）。
+  const prefixByRange = new Map<OffsetEdit, string>();
+  const absorbed = new Set<OffsetEdit>();
+  for (const ins of [...insertions].sort((a, b) => a.start - b.start)) {
+    // 命中最内层（起点最靠后）的那个替换范围
+    let host: OffsetEdit | null = null;
+    for (const r of replacements) {
+      if (r.start <= ins.start && ins.start < r.end) {
+        if (!host || r.start > host.start) host = r;
+      }
+    }
+    if (!host) continue;
+    prefixByRange.set(host, (prefixByRange.get(host) ?? "") + ins.newText);
+    absorbed.add(ins);
+  }
+  for (const r of replacements) {
+    const prefix = prefixByRange.get(r);
+    if (prefix) r.newText = prefix + r.newText;
+  }
+
+  // 2) 替换范围之间重叠（部分重叠 / 交叉）⇒ 无法确定性合成 ⇒ fail-closed。
+  for (let i = 0; i < replacements.length; i++) {
+    for (let j = i + 1; j < replacements.length; j++) {
+      const a = replacements[i]!;
+      const b = replacements[j]!;
+      if (Math.max(a.start, b.start) < Math.min(a.end, b.end)) {
+        throw new RangeError(
+          `applyEdits: overlapping edit ranges [${a.start},${a.end}) and [${b.start},${b.end})`,
+        );
+      }
+    }
+  }
+
+  // 3) 从后往前应用（起点倒序；同起点时先应用范围更大的那个）。
+  //    偏移全部来自**原 source** ⇒ 靠前的 edit 落点不会被前面的改写带偏。
+  const rest = [...replacements, ...insertions.filter((e) => !absorbed.has(e))];
+  rest.sort((a, b) => b.start - a.start || b.end - a.end);
   let out = source;
-  for (const e of sorted) {
-    const start = posToOffset(out, e.range.start);
-    const end = posToOffset(out, e.range.end);
-    // applyEdits 用原 source 算 offset；对 insertAt 同点多次时后写的先应用
-    out = out.slice(0, start) + e.newText + out.slice(end);
+  for (const e of rest) {
+    out = out.slice(0, e.start) + e.newText + out.slice(e.end);
   }
   return out;
 }

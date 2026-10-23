@@ -707,6 +707,10 @@ function normalizeCallArg(a: Abs | undefined): Abs {
  * Bug 882：**实参未必是 Abs**（普通调用面把裸宿主值原样灌进来——见
  * `normalizeCallArg`）。无形状的实参**不参与类型变量绑定**（此前
  * `arg.shape` 解引用 undefined ⇒ TypeError 冒泡 ⇒ L2 假红）。
+ *
+ * Bug 453：形参/实参的**形状 kind 可不同**（收割的 `T[]` = `arr` vs 引擎的
+ * 数组字面量 = `tuple`）⇒ 增加**跨 kind 臂**（`arr`×`tuple` / `tuple`×`arr`）。
+ * ⚠ **同 kind 臂排在前**（既有用例依赖它）。
  */
 function bindTypeVars(
   pattern: Abs,
@@ -731,6 +735,28 @@ function bindTypeVars(
   if (ps.k === "tuple" && as.k === "tuple") {
     const n = Math.min(ps.elements.length, as.elements.length);
     for (let i = 0; i < n; i++) bindTypeVars(ps.elements[i]!, as.elements[i]!, map, depth + 1);
+    return;
+  }
+  // 跨 kind 臂（Bug 453）：**收割**的 `T[]` 形参建成 `arr`（元素 = α var），
+  // 而**引擎**的数组字面量建成 `tuple` ⇒ 只做同 kind 配对 ⇒ α **永不绑定**
+  // ⇒ 返回值落 `any`（未绑定 α）⇒ 参与算术即「抽象操作数强制转换」
+  // ⇒ 记 may-throw ⇒ **L2 假红**（tsc exit 0 的合法代码被门禁判红）。
+  //
+  // ⚠ **同 kind 臂必须排在前**（上面两臂）：否则
+  // `packages/core/src/algebra/__tests__/hof-relation.test.ts` 的既有用例
+  // 「deep α: `T[]` param binds T from `number[]` arg (lodash-style)」
+  // （arr 形参 × arr 实参）会被改判。
+  if (ps.k === "arr" && as.k === "tuple") {
+    // 元素域取**首元素**（最简口径）：tuple 的元素类型在 TS 侧是联合，
+    // 逐槽 join 需要各槽同宽，最简取首个可绑定元素。
+    const first = as.elements[0];
+    if (first !== undefined) bindTypeVars(ps.element, first, map, depth + 1);
+    return;
+  }
+  if (ps.k === "tuple" && as.k === "arr") {
+    // tuple 形参 × arr 实参：实参只有一个元素类型（arr 元素类型本身即其元素的
+    // 保守 join）⇒ 各槽都拿它（α 首次绑定保留 ⇒ 多槽同 α 时首个胜出）。
+    for (const el of ps.elements) bindTypeVars(el, as.element, map, depth + 1);
     return;
   }
   if (ps.k === "sum") {
