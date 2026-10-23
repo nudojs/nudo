@@ -845,7 +845,7 @@ type SymbolTable = {
 | <a id="safeloadmodule"></a>`safeLoadModule` | fn | loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 | `safeLoadModule( loadModule: (spec: string, fromFile: string) => string \| undefined, spec: string, fromFile: string, ): string \| undefined` |
 | <a id="schemadialect"></a>`SchemaDialect` | type | — | `SchemaDialect = "zod"` |
 | <a id="schemanode"></a>`SchemaNode` | type | — | `SchemaNode = \| { k: "lit"; value: import("@nudojs/core").LiteralValue } \| { k: "prim"; type: "number" \| "string" \| "boolean" \| "bigint" \|...` |
-| <a id="schemanodetozod"></a>`schemaNodeToZod` | fn | — | `schemaNodeToZod(node: SchemaNode): string` |
+| <a id="schemanodetozod"></a>`schemaNodeToZod` | fn | SchemaNode → zod 源码（**只给源码**；渲染层的降级台账见 `schemaNodeToZodProjection` / `projectAbsToSchema`）。 | `schemaNodeToZod(node: SchemaNode): string` |
 | <a id="schemaprojection"></a>`SchemaProjection` | type | — | `SchemaProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 | <a id="schemarefinement"></a>`SchemaRefinement` | type | — | `SchemaRefinement = \| { kind: "numBound"; op: "gt" \| "ge" \| "lt" \| "le"; n: number } \| { kind: "int" } \| { kind: "strMin"; n: number } \| {...` |
 | <a id="serializecasearg"></a>`serializeCaseArg` | fn | 单个 Abs → parseCaseArgExpr 可解析回去的表达式文本；不可表达返回 null | `serializeCaseArg(a: Abs): string \| null` |
