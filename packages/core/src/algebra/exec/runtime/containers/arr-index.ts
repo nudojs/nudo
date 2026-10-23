@@ -91,6 +91,39 @@ export function $idx(
   const keyStr = propertyKeyOf(i);
   const iv = keyStr;
   const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
+  // 族 57 · 外-02 ①：符号键的**槽寻址通道**（普通对象面）——propertyKeyOf
+  // 对 symbol 返 undefined（symbol 不是字符串 PropertyKey）⇒ 此前符号键读
+  // 落抽象下标投影（unknown）、写被丢弃（对象标 open）。symKey 是符号键的
+  // 内部槽键（well-known → "@@X"；用户符号 → "@@sym#N"，见 symbol-slot.ts）
+  // ——读写两侧同键 ⇒ 值可回读。
+  const symKey = symbolSlotKeyOf(i);
+  if (symKey !== undefined) {
+    // Proxy 面按规范把**真 symbol** 传给 get 陷阱（Bug 149）⇒ 走下方 Proxy
+    // 臂（不落槽寻址）。
+    const isProxy = a.shape.k === "brand" && a.shape.name === "Proxy";
+    if (!isProxy) {
+      // 有槽表的面（普通对象 / 内层是 obj 的 brand——包装对象、类实例…）：
+      // 符号槽寻址（写面同键 ⇒ 读回同值）。
+      const objShape: ObjShape | undefined =
+        a.shape.k === "obj"
+          ? (a.shape as ObjShape)
+          : a.shape.k === "brand" && a.shape.shape.shape.k === "obj"
+            ? (a.shape.shape.shape as ObjShape)
+            : undefined;
+      if (objShape) {
+        const slot = getSlot(objShape.slots, symKey);
+        if (slot) return slot.value;
+        // 闭 shape 符号键确定缺席 → undefined（原生同款）；open shape 键集
+        // 不完备 → unknown（不得假精确）。
+        return objShape.open ? unknown : undef();
+      }
+      // 无槽模型的容器面（tuple / arr / Set / Map / 生成器…）：符号键缺席
+      // ——闭 tuple 恒缺席 → undefined；抽象 arr 的 expando 面不可判（写面
+      // 丢弃 expando）→ unknown（同 arr 臂的确定非下标键口径）。
+      if (a.shape.k === "arr") return unknown;
+      return undef();
+    }
+  }
   // Bug 54：生成器对象下标读（数组解构逐项投影 `const [a] = it`）——按
   // 消费位 live 视图取数，不再从静态形状槽 0 重放已消费元素
   if (a.shape.k === "obj" && hasGenView(a)) {
@@ -274,6 +307,10 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // 非字面量键（var/app term）→ iv undefined（对象走抽象键 open 路径）；
   // 此前误用 litValue 的 {ok:false} 包装对象，String(iv) 变 "[object Object]"
   const iv = pk;
+  // 族 57 · 外-02 ①：符号键的槽寻址键（读面同款：symbol-slot.ts）——
+  // propertyKeyOf 对 symbol 返 undefined ⇒ 此前符号键写落抽象键分支
+  // （写被丢弃 + 对象标 open ⇒ 键集面不保真）。
+  const symKey = symbolSlotKeyOf(i);
   // Bug 56：Arguments brand → 委托 tuple 内层（原地写回，brand 身份保持）
   if (a.shape.k === "brand" && a.shape.name === "Arguments") {
     $idxSet(a.shape.shape, i, value);
@@ -358,6 +395,11 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     return a;
   }
   if (sk === "obj") {
+    if (symKey !== undefined) {
+      // 族 57 · 外-02 ①：符号键写落**符号槽**（slotKey 标记 ⇒ JSON / 字符串
+      // 枚举面不可见，Bug 73 口径）——键确定 ⇒ 无需标 open（键集面保真）。
+      return $set(a, symKey, value, { symbolKey: true });
+    }
     if (iv === undefined) {
       // 抽象键：无槽位模型——标记 open（缺失键读不再折 undefined 假精确）
       // Bug 383：键**不可判**（对象键的 ToString 结果不可判——如函数键的
@@ -375,6 +417,12 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     return $set(a, String(iv), value);
   }
   if (sk === "brand") {
+    if (symKey !== undefined) {
+      // 族 57 · 外-02 ①：符号键写落内层 obj 的**符号槽**（$set 就地突变
+      // 内层 ⇒ 读面同键可见）——索引写仍按既有口径保守（内建 brand 不写：
+      // Uint8Array 截断被写穿假精确）。
+      return $set(a, symKey, value, { symbolKey: true });
+    }
     if (iv === undefined) return a;
     // 仅用户类（注册表）委派 $set——内建 brand（TypedArray/String 包装等）
     // 下标写语义未建模，保持保守不写（差分抓到：Uint8Array 截断被写穿假精确）

@@ -23,7 +23,7 @@ import { isNullishLitAbs } from "../../surface.ts";
 import { isMapAbs, isSetAbs, mapSizeAbs, setSizeAbs } from "../../collections.ts";
 import {
   evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
-  isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
+  isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
   protoOfRecv, hostBuiltinCtorName, protoBrandAbs,
 } from "../../builtins.ts";
@@ -32,7 +32,9 @@ import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
-import { slotKeyOfSymbolAbs } from "./symbol-key.ts";
+// 族 57 · 第 6 条 ②：符号键的**槽寻址键**（well-known → "@@X"；用户符号 →
+// "@@sym#<身份 id>"）——普通对象面的符号槽寻址单一事实源（片 W7 建）。
+import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
@@ -249,10 +251,18 @@ export function $in(key: Abs, o: Abs): Abs {
   // 投影寻址（与读写面同口径），Proxy has 陷阱收到**真 symbol**（规范
   // PropertyKey：trap 的 key 与读取时的 key 相同）。此前此臂提前
   // return bool() ⇒ has 陷阱**完全不派发**。
-  const symSlotKey = isSymbolAbs(key) ? slotKeyOfSymbolAbs(key) : undefined;
+  //
+  // 族 57 · 第 6 条 ②（外-02 符号键槽寻址 · 第二半）：槽键改用
+  // **symbolSlotKeyOf**——well-known 符号 → "@@X"（同 slotKeyOfSymbolAbs），
+  // **用户符号**（Symbol("x") / Symbol.for("x")）→ "@@sym#<身份 id>"
+  // （每次调用新符号 ⇒ 新 id；Symbol.for 驻留 ⇒ 同 id 同槽键；**不按
+  // description**——description 可撞会串键）。此前只认 well-known 符号 ⇒
+  // 用户符号的 `in` 折 boolean 域（原生 true）。无身份 id 的符号 → undefined
+  // ⇒ 键不可判 ⇒ 仍折 boolean（不得凭空捏）。
+  const symSlotKey = symbolSlotKeyOf(key);
   const keyStr = propertyKeyOf(key) ?? symSlotKey;
   if (keyStr === undefined) {
-    // 抽象键 / 用户符号（Symbol("x")）——键不可判
+    // 抽象键 / 无身份的符号——键不可判
     return bool();
   }
   const kv: string | number = keyStr;
@@ -1445,7 +1455,12 @@ export function $delRes(o: Abs, _key: Abs): Abs {
  */
 export function $del(o: Abs, key: Abs): Abs {
   // ToPropertyKey：null/undefined/boolean → "null"/"undefined"/"true"
-  const keyStr = propertyKeyOf(key);
+  //
+  // 族 57 · 第 6 条 ②（外-02 符号键槽寻址 · 第二半）：符号键的槽寻址键用
+  // **symbolSlotKeyOf**（well-known → "@@X"；用户符号 → "@@sym#<身份 id>"）
+  // ——此前 propertyKeyOf(symbol) 恒 undefined ⇒ obj 臂整段跳过 ⇒ 符号槽
+  // **删不掉**（原生 `delete o[Symbol.iterator]` 把槽删掉）。
+  const keyStr = propertyKeyOf(key) ?? symbolSlotKeyOf(key);
   if (o.shape.k === "sum") {
     return abs(
       { k: "sum", members: o.shape.members.map((m) => $del(m, key)) },

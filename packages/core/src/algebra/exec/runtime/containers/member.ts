@@ -144,6 +144,7 @@ import {
   $fnVal,
   noBody,
   enforceProxyGetInvariant,
+  hostFnKindOf,
 } from "../state.ts";
 import { $typeof } from "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
@@ -165,6 +166,28 @@ import { $len } from "./arr-index.ts";
  */
 function ownRecValue<T>(rec: Record<string, T> | undefined, key: string): T | undefined {
   return rec !== undefined && Object.hasOwn(rec, key) ? rec[key] : undefined;
+}
+
+/**
+ * 宿主值的**真构造器名**（"Function" / "GeneratorFunction" / "AsyncFunction" /
+ * "Object" …）——原生 `v.constructor.name`。
+ *
+ * Bug 234：宿主函数面（转译的函数声明 / 命名空间成员如 `Number`）与命名空间
+ * 对象面（`Math` / `JSON`）的 `constructor` 此前未建模（宿主函数面落 unknown、
+ * 命名空间面落抽象 fn 面）。按**宿主真值**取名（不猜）⇒ 调用方折对应内建
+ * 构造器面（`===` 折叠按名、`.name` 精确）。
+ *
+ * 取不到（无 constructor / name 非串）→ undefined ⇒ 调用方折 unknown
+ * （不得凭空捏一个构造器名）。
+ */
+function hostCtorNameOf(v: object): string | undefined {
+  try {
+    const ctor = (v as { constructor?: { name?: unknown } }).constructor;
+    const name = (ctor as { name?: unknown } | undefined)?.name;
+    return typeof name === "string" && name ? name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -884,6 +907,15 @@ export function $get(
       }
     }
     if (ns) {
+      // Bug 234：**命名空间面的 constructor**——原生
+      // `Number.constructor === Function`（Number 是函数对象）、
+      // `Math.constructor === Object`（Math 是普通对象）——按宿主真值取
+      // 构造器名（**不猜**）⇒ 折对应内建构造器面（=== 折叠按名，.name 精确）。
+      // 此前落通用成员读（抽象 fn 面 ⇒ .name 抽象串）。
+      if (key === "constructor") {
+        const cn = hostCtorNameOf(o as unknown as object);
+        return cn === undefined ? unknown : builtinCtorAbs(cn);
+      }
       try {
         const raw = (o as Record<string, unknown>)[key];
         if (typeof raw === "function") {
@@ -922,6 +954,19 @@ export function $get(
     // call/apply/bind 一等读取（$invoke 转发面既有）
     if (typeof o === "function") {
       const fn = o as { name?: unknown; length?: unknown; prototype?: unknown };
+      // Bug 234：宿主函数面的 **constructor**——普通函数 → Function；
+      // generator / async 家族各自不同（原生 g.constructor.name ===
+      // "GeneratorFunction"、async → "AsyncFunction"——一律折 "Function"
+      // 是自信的错值）。转译后的声明是宿主普通函数 ⇒ 种类读 fnKind 戳
+      // （Bug 325；戳缺失 → 落宿主真值）。
+      if (key === "constructor") {
+        const kind = hostFnKindOf(o);
+        if (kind === "generator") return builtinCtorAbs("GeneratorFunction");
+        if (kind === "async") return builtinCtorAbs("AsyncFunction");
+        if (kind === "async-generator") return builtinCtorAbs("AsyncGeneratorFunction");
+        const cn = hostCtorNameOf(o as unknown as object);
+        return cn === undefined ? unknown : builtinCtorAbs(cn);
+      }
       if (key === "name") {
         return typeof fn.name === "string" && fn.name ? strLit(fn.name) : str();
       }
@@ -1571,6 +1616,15 @@ export function $get(
   }
   // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
   if (key === "constructor") {
+    // Bug 234：函数面的原生构造器名——普通函数 Function；generator / async
+    // 家族各自不同（原生 g.constructor.name === "GeneratorFunction"——
+    // 折 "Function" 是自信的错值）。fnKind 戳（Bug 325）给出函数种类。
+    if (o.shape.k === "fn") {
+      const fk = getFnImpl(o)?.fnKind;
+      if (fk === "generator") return builtinCtorAbs("GeneratorFunction");
+      if (fk === "async") return builtinCtorAbs("AsyncFunction");
+      if (fk === "async-generator") return builtinCtorAbs("AsyncGeneratorFunction");
+    }
     const cn = ctorNameOfRecv(o);
     if (cn) return builtinCtorAbs(cn);
   }

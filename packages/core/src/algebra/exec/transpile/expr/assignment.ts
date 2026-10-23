@@ -312,16 +312,33 @@ export function transpileAssignmentExpr(
         }
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
-          return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${JSON.stringify(m.property.name)}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+          const key = JSON.stringify(m.property.name);
+          if (!compoundFn) {
+            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+          }
+          // 族 57 第 8 条：复合赋值（`mk().x += 2`）此前**丢 compoundFn** ⇒
+          // 只发右值（表达式值 = 2，原生 3）。改为读-改-写：对象**只求值
+          // 一次**（IIFE 实参——原生 mk() 只调一次），旧值读 → RHS → 写
+          // （原生 GetValue → RHS → PutValue 序）。旧值不可判时 $add 折
+          // unknown（**不把「判不准」升级成确定值**）。
+          return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${key}); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
         }
         if (m.computed) {
           const obj = transpileExpression(m.object as Expression, opts);
           const k = m.property;
           if (k.type === "NumericLiteral") {
-            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            if (!compoundFn) {
+              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            }
+            // 族 57 第 8 条同款：复合赋值读-改-写（读 $idx / 写 $idxSet）
+            return `((__nudoMpObj) => { const __nudoMpOld = $idx(__nudoMpObj, $lit(${k.value})); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
           }
           if (k.type === "StringLiteral") {
-            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${JSON.stringify(k.value)}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            const key = JSON.stringify(k.value);
+            if (!compoundFn) {
+              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            }
+            return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${key}); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
           }
           if (isExpression(k)) {
             // [Symbol.X] = v → "@@X" 字符串槽写（镜像成员读 / 对象字面量计算键
@@ -330,10 +347,17 @@ export function transpileAssignmentExpr(
             const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
             if (symK !== null) {
               // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
-              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
+              if (!compoundFn) {
+                return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
+              }
+              return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${symK}, { symbolKey: true }); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
             }
             // 计算键只求值一次（IIFE 实参）且先于 RHS（原生顺序）
-            return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
+            if (!compoundFn) {
+              return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
+            }
+            // 族 57 第 8 条同款：复合赋值读-改-写（键仍只求值一次）
+            return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpOld = $idx(__nudoMpObj, __nudoMpKey); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
           }
         }
         throw new NudoUnsupportedError(
