@@ -27,7 +27,11 @@ export function computeCaseDecorationSpans(
     // 语法错误的 buffer：不亮（旧实现同样静默跳过）
     return [];
   }
-  const lines = source.split("\n");
+  // 行终止符口径 = VS Code / LSP 的 `Position.character` 语义：**行终止符不属于该行**
+  // ⇒ 行长 = 该行**可见长度**。旧实现按 `\n` 切行 ⇒ CRLF 源文件上行尾的 `\r`
+  // 被算进行长 ⇒ endChar 越界 1 列（Bug 905）。切分口径与 Babel 的行号口径
+  // （`\r\n` 记一行）一致，故 loc.start/end.line 与此处下标仍对齐。
+  const lines = source.split(/\r\n|\r|\n/);
   const last = lines.length - 1;
   const clamp = (line: number): number => Math.min(Math.max(line, 0), Math.max(last, 0));
   const spans: CaseDecorationSpan[] = [];

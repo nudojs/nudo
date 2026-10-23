@@ -42,7 +42,7 @@ Hover over an expression to see its inferred type. The extension uses `getTypeAt
 
 ### Active-case decoration (LSP-G1)
 
-Selecting a `@nudo:case` via CodeLens highlights the **whole function body** plus the case comment line (not only the comment). Server-side signature help also projects real `paramTypes` / return shapes.
+Selecting a `@nudo:case` via CodeLens highlights the **whole function body** plus the case comment line (not only the comment). The highlight is recomputed from the current buffer on every document edit, so it keeps tracking the case while you type. Server-side signature help also projects real `paramTypes` / return shapes.
 
 ### Coexistence with tsserver (LSP-G4)
 
@@ -133,7 +133,14 @@ Nudo provides syntax highlighting based on inferred types. Functions, variables,
 
 ### Command: "Nudo: Select Case"
 
-You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run **Nudo: Select Case**. This command is registered as `nudo.selectCase` and is used by the CodeLens to switch the active case for a function.
+**Nudo: Select Case** (`nudo.selectCase`) is the command behind the case CodeLens: the lens hands over the file, the function name, and the case index, and the extension switches that function's active case (highlighting it locally right away).
+
+The same command is listed in the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`), but a palette run carries **no arguments** — a bare command has no function or case to work with. The extension falls back to the active editor for the file and then reports the missing input (**Nudo: select case needs a function name (use the CodeLens)**) instead of guessing: no request is sent and no local highlight is written. Switching a case is therefore a **CodeLens** action.
+
+Two more notes:
+
+- The command's handler is attached when the language server connects (the client registers the ids the server advertises), so the palette entry becomes runnable once the client is up.
+- If the server rejects a case switch, the extension shows the error and **rolls the optimistic local highlight back** — a rejected switch never leaves a stale highlight behind.
 
 ### Commands: Interface / Draft / Persist
 
@@ -141,9 +148,11 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 |---------------|---------|----------|
 | Nudo: Show Contract | `nudo.contract` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
-| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
+| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow; from the palette the function is picked interactively, and the same three-step gate applies |
 
 CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.contract.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
+
+Run from the command palette, these commands work on the **active editor** (no file argument needed): **Show Contract** and **Draft Contract** are file-granular, while **Persist Contract (@generated)** asks which function to persist with a **QuickPick** over the file's persistable exports — the same set the server's `⚡ persist interface` / `↻ update interface` CodeLens offers. If the file has no persistable function, the command reports that there is none (there is no free-text fallback). The three-step gate is the same on both paths: the dry-run never writes, a failed dry-run offers no write action at all, and the sidecar is written only after you confirm.
 
 ---
 

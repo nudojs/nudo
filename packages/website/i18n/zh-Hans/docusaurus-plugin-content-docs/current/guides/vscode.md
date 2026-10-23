@@ -42,7 +42,7 @@ code --install-extension nudo-vscode.vsix
 
 ### 活动 Case 装饰（LSP-G1）
 
-通过 CodeLens 选中某个 `@nudo:case` 会高亮**整个函数体**加上该 case 注释行（不只是注释）。服务端签名帮助也会投影真实的 `paramTypes` / 返回 shape。
+通过 CodeLens 选中某个 `@nudo:case` 会高亮**整个函数体**加上该 case 注释行（不只是注释）。高亮会在每次文档编辑时按当前缓冲区重算，因此你边打字它边跟着走。服务端签名帮助也会投影真实的 `paramTypes` / 返回 shape。
 
 ### 与 tsserver 共存（LSP-G4）
 
@@ -136,7 +136,14 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 
 ### 命令："Nudo: Select Case"
 
-也可以调用命令面板（`Cmd+Shift+P` / `Ctrl+Shift+P`）并运行 **Nudo: Select Case**。该命令注册为 `nudo.selectCase`，供 CodeLens 用于切换函数的激活 case。
+**Nudo: Select Case**（`nudo.selectCase`）就是 case CodeLens 背后的命令：透镜把文件、函数名与 case 下标一并传进来，扩展据此切换该函数的激活 case（并立刻在本地高亮）。
+
+同一条命令也列在命令面板（`Cmd+Shift+P` / `Ctrl+Shift+P`）里，但**面板执行不传任何参数**——裸命令无从得知要选哪个函数、哪个 case。扩展会先用当前编辑器兜住文件，然后如实报告缺失的入参（**Nudo: select case needs a function name (use the CodeLens)**）而不是猜：既不发请求，也不写本地高亮。因此切换 case 是 **CodeLens** 的动作。
+
+另外两点：
+
+- 该命令的处理器在语言服务器连上时才挂上（id 由客户端按服务端广告注册），所以面板项要等客户端就绪后才可点。
+- 服务端拒绝一次 case 切换时，扩展会给出错误提示并**回滚乐观的本地高亮**——被拒的切换不会留下错误的高亮。
 
 ### 命令：Interface / Draft / Persist
 
@@ -144,9 +151,11 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 |----------|------|------|
 | Nudo: Show Contract | `nudo.contract` | 在 **Nudo** 输出通道打印分层（同 `nudo contract`） |
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
-| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程 |
+| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程；从面板走时用 QuickPick 交互选函数，三步门禁不变 |
 
 非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.contract.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
+
+从命令面板触发时，这些命令作用于**当前活动编辑器**（不需要传文件参数）：**Show Contract** 与 **Draft Contract** 是文件粒度的，而 **Persist Contract (@generated)** 会用 **QuickPick** 让你从该文件可固化的导出里选一个函数——与服务端 `⚡ persist interface` / `↻ update interface` CodeLens 给的是同一批函数。文件里没有可固化函数时，命令会如实报告没有（没有自由文本兜底）。两条路径的门禁完全一致：dry-run 绝不写盘，dry-run 失败时根本不提供写盘动作，侧车只在你确认之后才写。
 
 ---
 
