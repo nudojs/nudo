@@ -308,12 +308,28 @@ function realPathOf(p: string): string {
  * **同目录同 stem 的 `.ts` 与 `.js` 是同一模块的两份副本**：`migrate strip`
  * 的产物 `.js` 与它的源 `.ts` 默认并存（源只有 `--backup` 才改名）⇒ 门禁把
  * 同一个模块分析两遍，机器面 `summary.errors` / `functions` / `files` 恰好
- * 翻倍（Bug 923）。这里按「模块」计数：同目录的 `.ts` 与 `.js` 只取 **`.ts`**
- * （迁移前的事实源：带类型注解 ⇒ 推断更准；`.js` 是它的产物副本），
- * `.ts` 被删掉后自然回落到 `.js`。
+ * 翻倍（Bug 923）。这里按「模块」计数：同目录的 `.ts` 与 `.js` **只分析一份**
+ * （一个模块 ⇒ 一次分析 ⇒ 计数不翻倍）。
+ *
+ * ★ **取哪一份 = 产物（发布物）胜出**（Bug 1053）：
+ * - 旧规则把「取 `.ts`」**硬编码**（迁移**前**的事实源：带类型注解 ⇒ 推断更准）。
+ * - 但 `migrate strip --write` **默认保留源 `.ts`** ⇒ 迁移过渡期（strip →
+ *   retire 之间）目录里 `.ts` 与 `.js` **并存**是常态 ⇒ `retire` 装上的 CI
+ *   门禁（`nudo check .`）查的是**退役后不再被编译的死源**，真正**发布出去
+ *   的产物 `.js` 零覆盖** ⇒ **假绿**；且与 `migrate verify` 对同一包给出
+ *   **相反结论**（verify 红 / check 绿）。
+ * - 现在改成「**产物胜出**」：同目录存在同名产物 ⇒ 源被产物取代 ⇒ 门禁查
+ *   **发布物**（迁移门禁必须门禁**要发布的东西**）；源单独存在时照旧分析源。
+ *
+ * **不变式**（Bug 923 仍然成立）：一个模块 ⇒ **一次**分析（计数不翻倍）。
  *
  * 映射与 `migrate strip` 的产物扩展名同口径：`.ts → .js`、`.mts → .mjs`、
  * `.cts → .js`（strip 只剥类型，不做模块系统转换）。
+ *
+ * ⚠ **取舍**（行为变更，已写进 changeset）：同 stem 的 `.js` 若**不是** strip
+ * 产物（例如手写的旧模块、或被提交进仓库的编译输出），现在被分析的是 `.js`
+ * 而不是 `.ts` ⇒ 源不再被门禁覆盖。要区分「产物」与「同名的另一个模块」需要
+ * strip 落一份产物清单（marker）——本次未做（见交回报告）。
  *
  * **符号链接**（Bug 671）：链接进来的文件 / 目录**参与**分析
  * （跟随链接判定；目录链接按 realpath 防环）。
@@ -345,15 +361,20 @@ function collectNudoFilesIn(
   for (const entry of entries) {
     kinds.set(entry.name, entryKind(entry, join(dir, entry.name)));
   }
-  // 同目录里「会产出同名 .js / .mjs」的 TS 源（按 stem 索引）
-  const jsStems = new Set<string>(); // .ts / .cts 源 → 产物 .js
-  const mjsStems = new Set<string>(); // .mts 源 → 产物 .mjs
+  // 同目录里**已存在的产物**（`.js` / `.mjs`，按 stem 索引）——
+  // 「源 vs 产物」同 stem 冲突时**产物胜出**（Bug 1053：门禁要门禁发布物）。
+  // 只收**分析目标**：侧车（`*.nudo.js`）/ draft 不是产物 ⇒ 不能压掉源。
+  const jsProducts = new Set<string>(); // .js 产物（stem）
+  const mjsProducts = new Set<string>(); // .mjs 产物（stem）
   for (const entry of entries) {
     if (kinds.get(entry.name) !== "file") continue;
-    const stem = sourceStemOf(entry.name);
-    if (stem === undefined) continue;
-    if (entry.name.toLowerCase().endsWith(".mts")) mjsStems.add(stem);
-    else jsStems.add(stem);
+    const fullPath = join(dir, entry.name);
+    const lower = entry.name.toLowerCase();
+    if (lower.endsWith(".mjs")) {
+      if (isNudoTargetPath(fullPath)) mjsProducts.add(entry.name.slice(0, entry.name.length - 4));
+    } else if (lower.endsWith(".js")) {
+      if (isNudoTargetPath(fullPath)) jsProducts.add(entry.name.slice(0, entry.name.length - 3));
+    }
   }
   const results: string[] = [];
   for (const entry of entries) {
@@ -371,14 +392,16 @@ function collectNudoFilesIn(
     }
     if (kind !== "file") continue;
     if (!isNudoTargetPath(fullPath)) continue;
-    // 产物副本（.js / .mjs）且同目录有对应 TS 源 ⇒ 跳过（同一模块只分析一遍）
-    const lower = entry.name.toLowerCase();
-    if (lower.endsWith(".mjs")) {
-      const stem = entry.name.slice(0, entry.name.length - 4);
-      if (mjsStems.has(stem)) continue;
-    } else if (lower.endsWith(".js")) {
-      const stem = entry.name.slice(0, entry.name.length - 3);
-      if (jsStems.has(stem)) continue;
+    // 源（.ts / .mts / .cts）与同 stem 的产物（.js / .mjs）并存 ⇒
+    // **产物胜出**：源被产物取代 ⇒ 不再分析源（Bug 1053：迁移过渡期门禁必须
+    // 查发布出去的 `.js`，否则 CI 门禁查的是退役后不再被编译的死源 ⇒ 假绿）。
+    // 产物侧不再跳过（产物恒被分析）⇒ Bug 923 的「一个模块只分析一遍」不变式
+    // 由「源被压掉」保证（计数不翻倍）。
+    const stem = sourceStemOf(entry.name);
+    if (stem !== undefined) {
+      const lower = entry.name.toLowerCase();
+      const products = lower.endsWith(".mts") ? mjsProducts : jsProducts;
+      if (products.has(stem)) continue;
     }
     // 范围闸门（产品默认安全排除 [+ watch 扫描的用户 include/exclude]）
     if (!inScope(fullPath)) continue;

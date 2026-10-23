@@ -35,9 +35,16 @@ describe("Bug 923 — strip 后的门禁按模块计数（不翻倍）", () => {
     await migrateStrip([src], { write: true, draft: false });
 
     // 源与产物都在（strip 默认保留源）⇒ 门禁不得把两者算成两个模块
+    //
+    // **Bug 1053（主 agent 追认，2026-10-23）**：同 stem 冲突时**代表文件由
+    // 「取源 `.ts`」改为「取产物 `.js`」—— 因为 `migrate strip --write` 之后
+    // 源 `.ts` 是**退役后不再被编译的死源**，门禁必须查**发布出去的产物**
+    // （否则发布的产物零覆盖 ⇒ 假绿，且与 `migrate verify` 给出相反结论）。
+    // ⇒ 本用例的**计数不变式**（同一模块只分析一遍 ⇒ `toHaveLength(1)`）**不变**，
+    // 只更新「被选中的那一份是哪个」。
     const collected = collectNudoFiles(dir);
-    expect(collected.filter((f) => f.endsWith("index.ts"))).toHaveLength(1);
-    expect(collected.filter((f) => f.endsWith("index.js"))).toHaveLength(0);
+    expect(collected.filter((f) => f.endsWith("index.ts"))).toHaveLength(0);
+    expect(collected.filter((f) => f.endsWith("index.js"))).toHaveLength(1);
     expect(collected).toHaveLength(1);
   });
 
