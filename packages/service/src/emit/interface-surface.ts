@@ -531,8 +531,13 @@ type CachedEffectiveInterface = {
   conflict?: { params: string[]; returns?: boolean };
 };
 
-/** 缓存表格式版本：编码规则变更 ⇒ 旧表整层 miss（不得当命中读） */
-const IFACE_TABLE_VERSION = 2;
+/**
+ * 缓存表格式版本：编码规则变更 ⇒ 旧表整层 miss（不得当命中读）
+ *
+ * v3（族 48 · 2026-10-23）：bigint 字面量契约的 `litC(bigint)` 补上了
+ * `prim: "bigint"` ⇒ 约束编码（类型义务 + 字面量项）变了 ⇒ 旧表必须整层 miss。
+ */
+const IFACE_TABLE_VERSION = 3;
 
 /** null = implicit 负缓存 */
 type IfaceTableJson = {

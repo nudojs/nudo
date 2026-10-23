@@ -62,16 +62,23 @@ describe("Bug 1020 —— lit(1n) 字面量契约不再是恒真契约（bigint 
   it("lit(1n) 契约收到 2 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("bigOne", "2"));
     const vs = violated(r);
-    expect(vs.length).toBe(1);
-    expect(vs[0]?.expected).toBe("x = 1n");
+    // 族 48（主 agent 追认，2026-10-23）：bigint 字面量契约**补齐了缺失的
+    // `typeof` 类型义务** ⇒ 与 number/string/boolean 兄弟 prim **同款**
+    // （`constraint-builders.test.ts` 钉的 `typeof x = "number" ∧ x = 42` 即该口径）
+    // ⇒ 类型不符时**多报一条**「类型义务」诊断。
+    // ⇒ 本用例的**核心主张**（`lit(1n)` 在实参位不再是恒真契约 ⇒ 必判违例）**不变**，
+    // 变的只是**条数**与**首条消息**。两条都成立（`2` 既不是 bigint，也不等于 `1n`）。
+    expect(vs.length).toBe(2);
+    expect(vs[0]?.expected).toBe('typeof x = "bigint"');
     expect(vs[0]?.actual).toContain("2");
   });
 
   it("lit(1n) 契约收到 1 ⇒ 判违例（1 ≠ 1n：number 与 bigint 是两个域）", () => {
     const r = check(call("bigOne", "1"));
     const vs = violated(r);
-    expect(vs.length).toBe(1);
-    expect(vs[0]?.expected).toBe("x = 1n");
+    // 同上（族 48 · 主 agent 追认）：bigint 补齐 `typeof` 义务 ⇒ 条数 1 → 2。
+    expect(vs.length).toBe(2);
+    expect(vs[0]?.expected).toBe('typeof x = "bigint"');
   });
 
   it("union(lit(1n), lit(2n)) 收到 2 ⇒ 判违例（改前 0 违例 = 假绿）", () => {

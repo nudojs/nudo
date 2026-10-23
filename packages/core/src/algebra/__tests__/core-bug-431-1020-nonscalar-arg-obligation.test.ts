@@ -80,8 +80,13 @@ describe("Bug 431 / 1020 —— 非标量实参撞标量 / union 契约不再零
   it("lit(1n) 收到对象 ⇒ 判违例（改前 0 违例 = 假绿）", () => {
     const r = check(call("litOneN", "{}"));
     const vs = violated(r);
+    // 族 48（主 agent 追认，2026-10-23）：bigint 字面量契约**补齐了缺失的
+    // `typeof` 类型义务** ⇒ 与 number/string/boolean 兄弟 prim **同款**
+    // ⇒ 首条消息由 `x = 1n` 变为 `typeof x = "bigint"`。
+    // 本用例的**核心主张**（对象实参违反 lit(1n) 契约 ⇒ 必判违例）**不变**，
+    // **违例条数不变**（仍是 1 条）—— 变的只是**首条消息的措辞**。
     expect(vs.length).toBe(1);
-    expect(vs[0]?.expected).toBe("x = 1n");
+    expect(vs[0]?.expected).toBe('typeof x = "bigint"');
   });
 
   it("lit(1n) 收到数组 ⇒ 判违例（改前 0 违例 = 假绿）", () => {

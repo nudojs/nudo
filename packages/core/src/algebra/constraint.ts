@@ -378,6 +378,11 @@ export function litC(v: import("./term.ts").LiteralValue): ConstraintBuilder {
     typeof v === "number" ? "number"
     : typeof v === "string" ? "string"
     : typeof v === "boolean" ? "boolean"
+    // Bug 1046：bigint 字面量此前**不给 prim** ⇒ `constraintOnTermAbs` 落到
+    // 「有界但无 prim ⇒ 按 number 处理」的兜底 ⇒ Abs 的 shape 说 number、
+    // pred 说 bigint ⇒ guard 面渲染 `typeof data === "number" && data === 1n`
+    // ⇒ **假红**（拒收契约申报的唯一合法值）。
+    : typeof v === "bigint" ? "bigint"
     : undefined;
   return makeBuilder(prim, [eq(selfTerm(), termLit(v))]);
 }
