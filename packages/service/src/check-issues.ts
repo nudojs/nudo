@@ -20,7 +20,14 @@
  * **本模块是那份并入逻辑的落点**：三面都调它 ⇒ 不再分叉。
  *
  * 与 CLI 的既有实现保持**逐字同源**（并入顺序：指令文法 → mock 装载 →
- * env 未解析；severity / code / message / suggestion 文案逐字一致）。
+ * env 未解析；severity / code / message 逐字一致）。
+ *
+ * ⚠ **suggestion 例外**：mock 装载失败的 suggestion 已按**错误种类**细分
+ * （重复声明 / 导出名缺失 / 表达式解析失败 / 文件缺失，见
+ * {@link mockFromErrorSuggestion}）⇒ 与 CLI 侧那份拷贝
+ * （`packages/nudojs/src/check-json-map.ts` 的 `mockFromErrorIssues`）在
+ * **重复声明 / 导出名缺失**两族上**不再逐字一致**（CLI 侧仍是通用句）
+ * ⇒ 待 CLI 侧同步（两份实现应收敛回一处）。
  */
 import { existsSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
@@ -88,12 +95,74 @@ export type MockFromError = {
 };
 
 /**
+ * mock 装载失败的**种类**（决定 suggestion 文案）。
+ *
+ * - `duplicate`：mock-module **重复声明**（同一 specifier 两条指令）
+ * - `missing-export`：mock 文件**没有导出**被点名的那个名字
+ * - `expression`：`@nudo:mock` 内联**表达式**解析失败
+ * - `missing-file`：mock **文件**缺失 / 装载失败
+ */
+type MockFromErrorKind = "duplicate" | "missing-export" | "expression" | "missing-file";
+
+/**
+ * 重复声明族 message 前缀（`mock-module.ts`：
+ * `Duplicate @nudo:mock-module directive for "…" — …`）。
+ */
+const MOCK_MODULE_DUPLICATE_PREFIX = "Duplicate @nudo:mock-module directive";
+
+/**
+ * 点名缺失族 message 形状（`mock-module.ts`：`Mock module "…" does not export "…"`）
+ * —— 捕获组 1 = 缺失的导出名。
+ */
+const MOCK_MODULE_MISSING_EXPORT_RE = /does not export "([^"]+)"/;
+
+/**
+ * mock 错误 → 种类。
+ *
+ * 码只能分出「表达式认不出」（mock-invalid）与其余（module-missing）两族；
+ * **重复声明**与**表达式解析失败**同码（都是 mock-invalid）⇒ 用 message 族区分。
+ */
+function mockFromErrorKind(fe: MockFromError): MockFromErrorKind {
+  if (fe.message.startsWith(MOCK_MODULE_DUPLICATE_PREFIX)) return "duplicate";
+  if (fe.code === DIAG.mockInvalid) return "expression";
+  if (MOCK_MODULE_MISSING_EXPORT_RE.test(fe.message)) return "missing-export";
+  return "missing-file";
+}
+
+/**
+ * 种类 → 贴切的 suggestion 文案（每族一句，指向该族的**修法**）。
+ *
+ * 「重复声明」与「导出名缺失」原先都落到通用句（提示与事实不符 ⇒ 提示无用）：
+ * - 重复声明 ⇒ 让用户**只保留一条**声明；
+ * - 导出名缺失 ⇒ 点名那个缺失的导出（mock 文件在，只是没导出它）。
+ */
+function mockFromErrorSuggestion(fe: MockFromError, kind: MockFromErrorKind): string {
+  switch (kind) {
+    case "duplicate":
+      return "Remove the duplicate @nudo:mock-module declaration — keep only one directive per module specifier";
+    case "missing-export": {
+      const name = MOCK_MODULE_MISSING_EXPORT_RE.exec(fe.message)?.[1];
+      return name
+        ? `Add "${name}" to the mock file "${fe.fromPath}", or drop it from the @nudo:mock-module directive`
+        : `Add the missing export to the mock file "${fe.fromPath}", or drop it from the @nudo:mock-module directive`;
+    }
+    case "expression":
+      return "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)";
+    case "missing-file":
+      return `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`;
+  }
+}
+
+/**
  * mock 装载失败 → CheckIssue。
  *
  * 表达式认不出（mockInvalid）= **指令被忽略**（mock 不生效），按文档是
  * warning（reference/diagnostics.md#nudo-mock-invalid「Warning」；
  * guides/check.md 诊断表「nudo:mock-invalid | engine | warning」）；
  * mock 文件缺失 / 加载失败（moduleMissing）才是 error。
+ *
+ * suggestion 按**错误种类**给（见 {@link mockFromErrorSuggestion}）：重复声明 /
+ * 导出名缺失 / 表达式解析失败 / 文件缺失 四族各有各的修法。
  */
 export function mockFromErrorIssues(mockFromErrors: MockFromError[]): CheckIssue[] {
   return mockFromErrors.map((fe) => {
@@ -102,9 +171,7 @@ export function mockFromErrorIssues(mockFromErrors: MockFromError[]): CheckIssue
       severity: isExpr ? ("warning" as const) : ("error" as const),
       code: (fe.code ?? DIAG.moduleMissing) as string,
       message: fe.message,
-      suggestion: isExpr
-        ? "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)"
-        : `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+      suggestion: mockFromErrorSuggestion(fe, mockFromErrorKind(fe)),
     };
   });
 }
