@@ -16,6 +16,9 @@ import type { FileDirective } from "./types.ts";
 // `///` 形态残留一个 `/`，`//` 形态是空白/原文）。只认 CommentLine 行注释，
 // 块注释与字符串里的同形文本不算。载荷文法在 core directive-scan 单源。
 const ENV_REGEX = /^\/?\s*@nudo:env\s+(.+)/;
+// Bug 417：**裸标签**（`/// @nudo:env` 没写 env 名）此前整行不匹配 ⇒ 零诊断
+// 地丢弃 ⇒ env 未解析 ⇒ 全局 `unknown`。⇒ 单独识别并给诊断。
+const ENV_BARE_REGEX = /^\/?\s*@nudo:env\b[ \t]*$/;
 const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+(.+)/;
 
 /**
@@ -25,8 +28,13 @@ const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+(.+)/;
  * nudo:directive-syntax 警告并给出三斜线正确写法。
  * 标签只在「注释行首」匹配（可选 `*` 续行前缀，镜像 CASE_TAG_REGEX），
  * 散文行中 / `@example` 内 `///` 前缀形态不误报。
+ *
+ * Bug 416：`@nudo:import` 同属文件级指令族 —— 此前 core 的**文本扫描通道**
+ * 把行注释与块注释拍平（丢掉 kind）⇒ 块注释里的 import **真的生效**，
+ * 与本 AST 通道「块注释忽略并告警」的口径**相反**。⇒ 纳入同一告警族。
  */
-const FILE_TAG_IN_BLOCK_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:(env|mock-module)\b/g;
+const FILE_TAG_IN_BLOCK_REGEX =
+  /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:(env|mock-module|import)\b/g;
 
 /** 块注释内错位的文件级指令族标签 → nudo:directive-syntax（复用既有码） */
 function warnMisplacedFileTags(blockText: string): void {
@@ -39,7 +47,9 @@ function warnMisplacedFileTags(blockText: string): void {
       message:
         tag === "env"
           ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (JSDoc block form is ignored)`
-          : `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (JSDoc block form is ignored)`,
+          : tag === "mock-module"
+            ? `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (JSDoc block form is ignored)`
+            : `@nudo:import is a file-level directive — use '/// @nudo:import { a } from "./x.nudo.js"' at the top of the file (JSDoc block form is ignored)`,
     });
   }
 }
@@ -116,7 +126,7 @@ function collectFileDirectives(ast: Node): FileDirective[] {
       typeof comment.start === "number" && inFunctionBody(fnRanges, comment.start);
     if (misplaced) {
       if (MOCK_MODULE_REGEX.test(text)) warnMisplacedFileTagLine("mock-module");
-      else if (ENV_REGEX.test(text)) warnMisplacedFileTagLine("env");
+      else if (ENV_REGEX.test(text) || ENV_BARE_REGEX.test(text)) warnMisplacedFileTagLine("env");
       continue;
     }
 
@@ -132,12 +142,35 @@ function collectFileDirectives(ast: Node): FileDirective[] {
         });
         continue;
       }
+      // Bug 415：标签命中但**载荷解析失败** ⇒ 不得静默丢弃（此前无 else
+      // 分支 ⇒ 指令静默蒸发：mock 不生效、门禁照常绿）。
+      emitDirectiveDiag({
+        code: DIAG.directiveSyntax,
+        message: `Unrecognized @nudo:mock-module form (expected '"src" from "path"' or '"src" { a, b } from "path"')`,
+      });
+      continue;
     }
 
     const envMatch = text.match(ENV_REGEX);
     if (envMatch) {
       const envs = parseEnvPayload(envMatch[1]!);
-      if (envs.length > 0) results.push({ kind: "env", envs });
+      if (envs.length > 0) {
+        results.push({ kind: "env", envs });
+      } else {
+        // Bug 417：载荷里**一个 env 名都读不出来** ⇒ 指令不生效 ⇒ 用户看得见
+        emitDirectiveDiag({
+          code: DIAG.directiveSyntax,
+          message: `Unrecognized @nudo:env list (expected env names, e.g. '/// @nudo:env node, web')`,
+        });
+      }
+      continue;
+    }
+    // Bug 417：**裸标签**（没写 env 名）⇒ 指令不生效且此前零诊断
+    if (ENV_BARE_REGEX.test(text)) {
+      emitDirectiveDiag({
+        code: DIAG.directiveSyntax,
+        message: `@nudo:env requires at least one env name (e.g. '/// @nudo:env node')`,
+      });
     }
   }
 

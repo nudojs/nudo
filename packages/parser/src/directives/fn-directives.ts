@@ -24,7 +24,7 @@ import type { Directive, FunctionWithDirectives } from "./types.ts";
  * S4-004：`\s+` 跨行会把下一行粘进本标签（诊断错误归因/吞下一个标签），
  * 改同行分隔 `[ \t]`；`[^\n]*` 让空标签也可见。前缀镜像 core
  * directive-scan 的 CASE_NAME_REGEX（块 `*` 续行 / `///` 残留单 `/`）。 */
-const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b[ \t]*([^\n]*)/g;
+const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b([ \t]*)([^\n]*)/g;
 /** JS 标识符（Unicode 感知）：mock 名文法 */
 const JS_IDENT_RE = /^[\p{L}$_][\p{L}\p{N}$_]*$/u;
 /**
@@ -186,6 +186,18 @@ function parseDirectivesFromCommentTexts(
     // case 名非法形态（单引号/空/转义/缺实参括号）→ nudo:directive-syntax
     scanMalformedCaseNames(text, caseArgSpans, commentStartLine);
 
+    // ⚠ Bug 918：期望**写了却抽不出**（`=>` 后为空、续行也没有值）⇒ 断言被
+    // 静默丢出门禁（`[unchecked]` + exit 0 + 零诊断）⇒ 必须发
+    // nudo:directive-syntax（不再静默吞错）。
+    for (const tag of caseTags) {
+      if (!tag.expectedIssue) continue;
+      emitDirectiveDiag({
+        code: DIAG.directiveSyntax,
+        message: `Malformed @nudo:case: ${tag.expectedIssue} — got: @nudo:case "${tag.name}" (…)`,
+        at: siteInCommentText(text, commentStartLine, tag.tagOffset),
+      });
+    }
+
     const inCaseArgs = (idx: number): boolean =>
       caseArgSpans.some(([s, e]: [number, number]) => idx >= s && idx < e);
 
@@ -333,13 +345,26 @@ function scanMalformedCaseNames(
   let m: RegExpExecArray | null;
   while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
     if (inCaseArgs(m.index)) continue;
-    const rest = m[1]!.trim();
+    const separator = m[1]!;
+    const rest = m[2]!.trim();
+    // ⚠ Bug 978：标签与名字之间**无空白**（粘连写法 `@nudo:case"c1"`）——
+    // 抽取侧（core CASE_NAME_REGEX 要求 `[ \t]+`）**不匹配** ⇒ 整条 case 会
+    // **静默蒸发**（一个 case 都不跑、零诊断）⇒ 这里必须**看得见**并诊断
+    // （口径与族 28 的 Bug 980 `@nudo:mock` 粘连写法一致）。
+    if (separator === "" && rest.startsWith('"')) {
+      emitDirectiveDiag({
+        code: DIAG.directiveSyntax,
+        message: `Malformed @nudo:case: expected a space between '@nudo:case' and the name (expected @nudo:case "name" (…)) — got: @nudo:case${rest.slice(0, 60)}`,
+        at: siteInCommentText(text, startLine, m.index),
+      });
+      continue;
+    }
     // 合法形态前缀：非空双引号名 + 同行实参括号（已被 CASE_NAME_REGEX 吸走的不重复报）
     const legal = rest.match(/^("[^"]+")[ \t]*\(/);
     if (legal) {
       // S4-003：合法形态判定必须真的平衡——此前 `"a" (1`（未闭合）既有形似
       // 前缀又不进 caseArgSpans，被静默丢弃且零诊断。跨行未闭合同样在此暴露。
-      const parenIdx = m.index + m[0].length - m[1]!.length + legal[0].length - 1;
+      const parenIdx = m.index + m[0].length - m[2]!.length + legal[0].length - 1;
       if (extractBalancedParens(text, parenIdx) === null) {
         emitDirectiveDiag({
           code: DIAG.directiveSyntax,

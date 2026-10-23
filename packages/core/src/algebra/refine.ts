@@ -39,6 +39,7 @@ import {
   scanInvariantSegments,
   scanBudgetDecl,
   scanContractSegments,
+  scanMalformedDirectiveSegments,
   scanMalformedNudoImports,
   scanThrowsDecl,
   type FnDirectiveScope,
@@ -1340,6 +1341,10 @@ function fnDirectiveScopeOf(source: string, fnName: string): FnDirectiveScope | 
 /**
  * 指令段 → 源位置。找不到（段与注释行对不上 / 无 scope）→ undefined。
  * 列 = 该指令文本在源码行里的起始偏移（0-based）；对不上则省略。
+ *
+ * Bug 421 / 1032：段文本有两种取法——**载荷**（`x <= y`）与**整行原文**
+ * （畸形段：`@nudo:assumed d <= max` / `@nudo:contractx p n`）⇒ 后者用
+ * 「整行相等」兜底匹配，否则畸形诊断会丢掉位置（落在文件首行）。
  */
 function directiveSegLoc(
   source: string,
@@ -1359,7 +1364,7 @@ function directiveSegLoc(
       const cleaned = cleanDirectiveLine(lines[li]!, kind);
       if (!cleaned.startsWith(prefix)) continue;
       const body = cleaned.slice(prefix.length).trim().replace(/\*\/$/, "").trim();
-      if (body !== seg) continue;
+      if (body !== seg && cleaned !== seg) continue;
       const line = start + li;
       const col = (srcLines[line - 1] ?? "").indexOf(cleaned);
       return { line, ...(col >= 0 ? { column: col } : {}) };
@@ -1382,6 +1387,24 @@ export function contractSegmentLocs(
     segment,
     loc: directiveSegLoc(source, scope, "@nudo:contract", segment),
   }));
+}
+
+/**
+ * 畸形指令段（粘连 / 空载荷）的诊断文案（**既有**语法诊断码，不另造新码）。
+ *
+ * - glued（标签后缺分隔空白 ⇒ 标签名被延长）：点明「标签后必须有空白」
+ * - empty（标签无载荷）：点明缺什么载荷
+ */
+function malformedDirectiveMessage(
+  tag: string,
+  raw: string,
+  reason: "glued" | "empty",
+  expected: string,
+): string {
+  if (reason === "glued") {
+    return `Malformed ${tag} directive '${raw}' (expected '${tag} ${expected}' — a space is required after the tag)`;
+  }
+  return `Malformed ${tag} directive '${raw}' (expected '${tag} ${expected}')`;
 }
 
 /**
@@ -1620,6 +1643,25 @@ export function extractRefinesFromSource(
   if (!stripStringsKeepComments(source).includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
   const scope = fnDirectiveScopeOf(source, fnName);
+  // Bug 981 / 1032：粘连（`@nudo:contractx p n`——标签名被延长）与**空载荷**
+  // （`@nudo:contract` 单独成行）此前**整行不匹配**严格正则且**无 else 分支**
+  // ⇒ 契约整条蒸发、**零诊断**（假绿：用户以为契约生效了）⇒ 这里显式发
+  // `nudo:contract-syntax`（既有码，不另造新码）。
+  for (const seg of scanMalformedDirectiveSegments(scope?.commentLines ?? [], [
+    "@nudo:contract",
+  ])) {
+    const loc = directiveSegLoc(source, scope, "@nudo:contract", seg.raw);
+    collectDiag({
+      code: DIAG.contractSyntax,
+      message: malformedDirectiveMessage(
+        "@nudo:contract",
+        seg.raw,
+        seg.reason,
+        "<param> <constraintName>",
+      ),
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
+  }
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
     // Bug 374：诊断位置 = 出错指令行（contract-syntax 不再落在文件首行）
@@ -1801,6 +1843,11 @@ export function extractRefineReturnFromSource(
  *
  * 与 refine 同扫函数前注释块（D6=G2 同一 scope 绑定）。
  * 返回 `*` = 申报任意；数组 = 按名申报；undefined = 无申报（L2 照常执法）。
+ *
+ * Bug 1032：粘连（`@nudo:throwsTypeError`）与**空载荷**（`@nudo:throws`）此前
+ * **整行不匹配**严格正则且**无 else 分支** ⇒ 抛错申报**零诊断**地蒸发 ⇒ L2
+ * 门禁按「未申报」执法（假红），而用户以为申报生效了 ⇒ 这里显式发
+ * `nudo:directive-syntax`（既有码，不另造新码）。
  */
 export function extractDeclaredThrows(
   source: string,
@@ -1811,6 +1858,15 @@ export function extractDeclaredThrows(
     return undefined;
   }
   const lines = fnDirectiveCommentLines(source, fnName);
+  const scope = fnDirectiveScopeOf(source, fnName);
+  for (const seg of scanMalformedDirectiveSegments(lines, ["@nudo:throws"])) {
+    const loc = directiveSegLoc(source, scope, "@nudo:throws", seg.raw);
+    collectDiag({
+      code: DIAG.directiveSyntax,
+      message: malformedDirectiveMessage("@nudo:throws", seg.raw, seg.reason, "<ErrorKind>"),
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
+  }
   const spec = scanThrowsDecl(lines);
   if (spec === undefined) return undefined;
   if (spec === "*") return "*";

@@ -3,8 +3,8 @@
  * Full replace swaps the specifier's exports table; partial `{ a, b }` only
  * overlays those named exports and lets the rest fall through.
  *
- * Fail-closed: missing mock file / eval failure / empty binding → error, not
- * a silent drop and not invented types.
+ * Fail-closed: missing mock file / eval failure / empty binding / **named export
+ * the mock does not provide** → error, not a silent drop and not invented types.
  */
 
 import { extractFileDirectives, parse, type FileDirective } from "@nudojs/parser";
@@ -48,22 +48,37 @@ function loadMockModuleExports(
   return { exports };
 }
 
+/**
+ * 局部（点名）形态的 overlay 取值。
+ *
+ * `missing` = **被点名但 mock 没有导出**的名字（Bug 963）：点名表是用户声明的
+ * 契约（「这个导出要被替换」）⇒ 缺一个就是契约没兑现 ⇒ 由调用方走**错误出口**，
+ * **不得**让原模块的同名导出原封不动活下来（那会让分析跑在「一半 mock、
+ * 一半原模块」的混合程序上）。
+ */
 function pickNamed(
   mock: AbsModuleExports,
   names: string[],
-): { named: Record<string, import("@nudojs/core").Abs>; default?: import("@nudojs/core").Abs } {
+): {
+  named: Record<string, import("@nudojs/core").Abs>;
+  default?: import("@nudojs/core").Abs;
+  missing: string[];
+} {
   const named: Record<string, import("@nudojs/core").Abs> = {};
   let def: import("@nudojs/core").Abs | undefined;
+  const missing: string[] = [];
   for (const n of names) {
     if (n === "default") {
       if (mock.default) def = mock.default;
+      else missing.push(n);
       continue;
     }
     // 自有属性读：mock 未导出 toString 等名时裸读会把 Object.prototype 方法叠成 mock 导出
     const v = Object.hasOwn(mock.named, n) ? mock.named[n] : undefined;
     if (v !== undefined) named[n] = v;
+    else missing.push(n);
   }
-  return def !== undefined ? { named, default: def } : { named };
+  return def !== undefined ? { named, default: def, missing } : { named, missing };
 }
 
 /**
@@ -104,6 +119,19 @@ export function applyMockModuleDirectives(
     // partial: listed names from mock, rest fall through to original
     const orig = out[d.source] ?? { named: {} };
     const overlay = pickNamed(mock, d.names);
+    // Bug 963：点名缺失 ⇒ **fail-closed**（与同函数的「mock 文件缺失」同口径）：
+    //   走错误出口（nudo:module-missing ⇒ error），该条指令**不生效**
+    //   （applied 不置 true、原模块保持原样）——绝不「一半 mock、一半原模块」。
+    if (overlay.missing.length > 0) {
+      for (const n of overlay.missing) {
+        errors.push({
+          name: d.source,
+          fromPath: d.fromPath,
+          message: `Mock module "${d.fromPath}" does not export "${n}"`,
+        });
+      }
+      continue;
+    }
     const named = { ...orig.named, ...overlay.named };
     const merged: AbsModuleExports = {
       named,

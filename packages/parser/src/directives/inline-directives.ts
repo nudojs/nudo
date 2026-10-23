@@ -21,6 +21,14 @@ function stripInlineCommentPrefix(line: string, kind: "line" | "block"): string 
 
 const REPLACE_LINE_REGEX = /^@nudo:replace[ \t]+(.+)$/;
 const REPLACE_BARE_RE = /^@nudo:replace[ \t]*$/;
+/**
+ * `@nudo:replace` 标签名被延长（`@nudo:replaceFoo`）——**粘连**形态。
+ *
+ * Bug 1032：粘连形态既不匹配严格正则、也不匹配宽松正则 ⇒ 整条行内指令对扫描器
+ * **完全不可见** ⇒ **零诊断**地蒸发。没有第二条 `@nudo:replace*` 指令 ⇒ 一律
+ * 是**畸形**的 `@nudo:replace`（可显式诊断）。
+ */
+const REPLACE_GLUED_RE = /^@nudo:replace[A-Za-z0-9_$]/;
 
 /**
  * `@nudo:as` 标签（行内指令）。标签后**分隔空白可有可无**：
@@ -36,6 +44,12 @@ const AS_TAG = "@nudo:as";
 
 /**
  * `@nudo:as` 载荷切分：载荷文本（空串 ⇒ 无载荷）；不是 `@nudo:as` 指令 ⇒ null。
+ *
+ * ⚠ Bug 1032（parser 面）**未改**这里：标签名被延长（`@nudo:asXYZ`）⇒ 不是
+ * `@nudo:as` 指令、且**零诊断**——这是族 28（Bug 842）**已合入并钉死**的行为
+ * （`packages/parser/src/__tests__/parser-bug-842-as-payload-separator.test.ts`
+ * 的「tag boundary」用例断言 `@nudo:asXYZ` / `@nudo:ascii` 零诊断）⇒ 本片
+ * 不推翻它（**越界发现**，见交付报告）。`@nudo:replace` 侧无此约束，已修。
  */
 function asPayloadOf(line: string): string | null {
   if (!line.startsWith(AS_TAG)) return null;
@@ -223,6 +237,16 @@ function collectInlineDirectivesFromComments(comments: readonly Comment[]): Inli
           message: `@nudo:replace requires a target and type expression (expected @nudo:replace <target> <typeExpr>)`,
           at,
         });
+        continue;
+      }
+      if (REPLACE_GLUED_RE.test(line)) {
+        // Bug 1032：粘连形态（`@nudo:replaceFoo`）此前**零诊断**地蒸发 ⇒ 显式诊断
+        emitDirectiveDiag({
+          code: DIAG.directiveSyntax,
+          message: `Malformed @nudo:replace directive '${line.slice(0, 60)}' (expected a space after the tag: @nudo:replace <target> <typeExpr>)`,
+          at,
+        });
+        continue;
       }
     }
   }
