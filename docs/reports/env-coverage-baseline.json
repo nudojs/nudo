@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T18:46:33.966Z",
+  "generatedAt": "2026-10-23T14:55:16.130Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {

@@ -33,7 +33,7 @@ import {
 } from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 import nodePath from "node:path";
-import { getHashes as nodeGetHashes } from "node:crypto";
+import { getCiphers as nodeGetCiphers, getHashes as nodeGetHashes } from "node:crypto";
 import { fileURLToPath as nodeFileURLToPath, pathToFileURL as nodePathToFileURL } from "node:url";
 
 
@@ -442,6 +442,34 @@ export function defineEnv(): EnvDefinition {
     return fold(args);
   };
 
+  /**
+   * `fs.openSync` **合法**的 flags 字符串（宿主实测 Node v26.10.0：逐个
+   * `openSync(<真实文件>, flag)` 试出来——非法名抛 TypeError
+   * ERR_INVALID_ARG_VALUE）。
+   *
+   * 实测合法名：`a` / `ax` / `a+` / `as` / `as+` / `r` / `r+` / `rs` / `rs+` /
+   * `sr` / `sr+` / `w` / `wx` / `w+` / `xw`；
+   * 实测**非法**名：`ws` / `ws+` / `x` / `x+` / `xs` / `xs+`（⇒ TypeError）。
+   * flags 名**大小写敏感**（实测 `"R"` / `"W"` / `"A"` 都非法）⇒ 精确比对。
+   */
+  const FS_OPEN_FLAGS = new Set([
+    "a",
+    "ax",
+    "a+",
+    "as",
+    "as+",
+    "r",
+    "r+",
+    "rs",
+    "rs+",
+    "sr",
+    "sr+",
+    "w",
+    "wx",
+    "w+",
+    "xw",
+  ]);
+
   const fsModule: Record<string, Abs> = {
     // encoding 字面量 → string；否则 string|Buffer（TS 重载近似）
     // Bug 880：同步族带 throws 面（原生对不存在路径抛 Error / code=ENOENT …）
@@ -622,6 +650,27 @@ export function defineEnv(): EnvDefinition {
       undefined,
       { params: ["path", "flags?", "callback"] },
     ),
+    // 族 61：`openSync` 此前**未声明** ⇒ 走宿主路径（行为对、精度随 core）。
+    // 宿主实测 Node v26.10.0：
+    // - `openSync(path)` / `openSync(path, flags)` / `openSync(path, flags, mode)`
+    //   ⇒ 返回 **fd（number）**；flags 缺省 = "r"；mode 缺省 = 0o666。
+    // - 路径不存在 ⇒ **Error**（ENOENT）⇒ 同步族口径 = may-throw Error。
+    // - flags 是**非法字符串** ⇒ **TypeError**（ERR_INVALID_ARG_VALUE）
+    //   ⇒ 字面量可判定 ⇒ 必抛 TypeError。
+    openSync: envFn(
+      [prim.str(), unionOf(prim.str(), prim.num()), prim.num()],
+      prim.num(),
+      (args) => {
+        const flags = absStrLit(args[1]);
+        if (flags !== undefined && !FS_OPEN_FLAGS.has(flags)) {
+          // 原生抛 TypeError（ERR_INVALID_ARG_VALUE："The argument 'flags' is invalid"）
+          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        }
+        // 原生：路径不存在 / 权限不足 ⇒ Error（ENOENT / EACCES …）
+        return fsMayThrow(prim.num());
+      },
+      { params: ["path", "flags?", "mode?"] },
+    ),
   };
 
   /** fs.promises / node:fs/promises — Promise-returning slots only here. */
@@ -694,6 +743,50 @@ export function defineEnv(): EnvDefinition {
     }),
     chmod: envFn([prim.str(), prim.num()], promiseOf(undef())),
     open: envFn([prim.str(), prim.str()], promiseOf(brandOf("FileHandle"))),
+    // ── 族 61：`fs/promises` 三个宿主真实成员此前**未声明** ──────────
+    // 宿主实测 Node v26.10.0（`require("node:fs/promises")` 自有键）：
+    // - `lstat(path[, options])` ⇒ Promise<**Stats**>（与 `stat` **同一张表**
+    //   —— 原生两者的成员表一致；只是 stat 跟随符号链接、lstat 不跟随）。
+    // - `statfs(path[, options])` ⇒ Promise<{ type, bsize, frsize, blocks,
+    //   bfree, bavail, files, ffree }>（8 个**数值**槽）。
+    // - `opendir(path[, options])` ⇒ Promise<**Dir**>（原型面 = `path` /
+    //   `read` / `readSync` / `close` / `closeSync` / `entries`）。
+    // 原生这三者**失败走 reject**（不是同步抛）⇒ 不加同步 throws 面
+    // （rejected 通道见族 29 Bug 890 的 promiseOf）。
+    lstat: envFn(
+      [prim.str(), statOptions],
+      promiseOf(statsAbs),
+      undefined,
+      { params: ["path", "options?"] },
+    ),
+    statfs: envFn(
+      [prim.str(), statOptions],
+      promiseOf(objAbs({
+        type: prim.num(),
+        bsize: prim.num(),
+        frsize: prim.num(),
+        blocks: prim.num(),
+        bfree: prim.num(),
+        bavail: prim.num(),
+        files: prim.num(),
+        ffree: prim.num(),
+      })),
+      undefined,
+      { params: ["path", "options?"] },
+    ),
+    opendir: envFn(
+      [prim.str(), statOptions],
+      promiseOf(brandOf("Dir", objAbs({
+        path: prim.str(),
+        read: envFn([], promiseOf(unionOf(direntAbs, nullLit()))),
+        readSync: envFn([], unionOf(direntAbs, nullLit())),
+        close: envFn([], promiseOf(undef())),
+        closeSync: envFn([], undef()),
+        entries: envFn([], promiseOf(arrOf(direntAbs))),
+      }))),
+      undefined,
+      { params: ["path", "options?"] },
+    ),
   };
 
   const strImpl1Abs = (fn: (a: string) => string): AbsSigImpl => (args) => {
@@ -1239,6 +1332,228 @@ function assertRegexpPattern(
    */
   const cryptoDigestNames = new Set(nodeGetHashes().map((n) => n.toLowerCase()));
 
+  /**
+   * HMAC **可用**的 digest 名（宿主实测 Node v26.10.0：`getHashes()` 的 81 个
+   * 名字里 **73 个**能被 `createHmac` 接受；被拒的 8 个是 `shake*` /
+   * `keccak-kmac*` —— XOF / KMAC 没有 HMAC 形式）。
+   *
+   * 原生分两档：`createHmac("nope", k)`（**不认识**的名字）⇒ **TypeError**
+   * （ERR_CRYPTO_INVALID_DIGEST）；`createHmac("shake256", k)`（**认识但 HMAC
+   * 用不了**）⇒ **Error**（OpenSSL 错误）⇒ 这 8 个名字必须排除，否则
+   * `createHmac` 的实参域闸会放行（**假绿**）。
+   */
+  const CRYPTO_HMAC_REJECTED_DIGESTS = new Set([
+    "keccak-kmac-128",
+    "keccak-kmac-256",
+    "keccak-kmac128",
+    "keccak-kmac256",
+    "shake-128",
+    "shake-256",
+    "shake128",
+    "shake256",
+  ]);
+  const cryptoHmacDigestNames = new Set(
+    [...cryptoDigestNames].filter((n) => !CRYPTO_HMAC_REJECTED_DIGESTS.has(n)),
+  );
+
+  /**
+   * `createCipheriv` / `createDecipheriv` **可用**的 cipher 名（宿主实测：
+   * `node:crypto.getCiphers()` ⇒ 165 个）。原生对**未知** cipher 名抛
+   * **Error**（ERR_CRYPTO_UNKNOWN_CIPHER / "Unknown cipher"）。
+   */
+  const cryptoCipherNames = new Set(nodeGetCiphers().map((n) => n.toLowerCase()));
+
+  /**
+   * `generateKeyPairSync` 支持的 key type（宿主实测 Node v26.10.0）。
+   * 原生对**不支持**的 type 抛 **TypeError**（ERR_INVALID_ARG_VALUE
+   * / "The argument 'type' must be a supported key type."）。
+   */
+  const cryptoKeyTypes = new Set([
+    "rsa",
+    "dsa",
+    "ec",
+    "ed25519",
+    "ed448",
+    "x25519",
+    "x448",
+  ]);
+
+  /**
+   * digest 名实参域闸（`createHash` / `createHmac` / `createSign` /
+   * `createVerify` 共用一份口径——族 61 同源化）。
+   *
+   * 原生有**两档**错误（宿主实测 Node v26.10.0）：
+   * - 名字**根本不认识**（不在 `getHashes()` 里）⇒ **TypeError**
+   *   （ERR_CRYPTO_INVALID_DIGEST / "Invalid digest: nope"）；
+   * - 名字**认识但该入口用不了**（如 HMAC 的 shake-* / keccak-kmac-*，
+   *   或 OpenSSL 不支持的 md4）⇒ **Error**（OpenSSL 错误）。
+   *
+   * 判定：
+   * - 实参**抽象** ⇒ 原生**可能**抛 ⇒ **may-throw**（取「不认识」那档的品牌）；
+   * - 字面量**不在 known 集** ⇒ 必抛（unknownBrand）；
+   * - 字面量在 known 集但**不在 usable 集** ⇒ 必抛（unusableBrand）；
+   * - 落在 usable 集 ⇒ **零抛**。
+   */
+  const digestNameGuard = (
+    arg: Abs | undefined,
+    known: Set<string>,
+    usable: Set<string>,
+    ret: Abs,
+    unknownBrand: string,
+    unusableBrand: string,
+  ): AbsApplyResult | undefined => {
+    const name = absStrLit(arg);
+    if (name === undefined) {
+      // 抽象实参：digest 名未知 ⇒ 原生可能抛（不认识 ⇒ 抛）
+      return makeAbsApplyResult(ret, errBrand(unknownBrand));
+    }
+    const key = name.toLowerCase();
+    if (!known.has(key)) {
+      // 原生抛（不认识的 digest 名）⇒ 必抛
+      return makeAbsApplyResult(neverAbs, errBrand(unknownBrand));
+    }
+    if (!usable.has(key)) {
+      // 原生抛（认识但该入口用不了）⇒ 必抛
+      return makeAbsApplyResult(neverAbs, errBrand(unusableBrand));
+    }
+    return undefined;
+  };
+
+  /** cipher 名实参域闸（`createCipheriv` / `createDecipheriv` 共用）。 */
+  const cipherNameGuard = (
+    arg: Abs | undefined,
+    ret: Abs,
+  ): AbsApplyResult | undefined => {
+    const name = absStrLit(arg);
+    if (name === undefined) {
+      // 抽象实参：cipher 名未知 ⇒ 原生可能抛（未知 cipher ⇒ 抛 Error）
+      return makeAbsApplyResult(ret, errBrand("Error"));
+    }
+    if (!cryptoCipherNames.has(name.toLowerCase())) {
+      // 原生抛 Error（ERR_CRYPTO_UNKNOWN_CIPHER / "Unknown cipher"）⇒ 必抛
+      return makeAbsApplyResult(neverAbs, errBrand("Error"));
+    }
+    return undefined;
+  };
+
+  /** HMAC 实例面（`createHmac` 的返回域）——apply 与声明共用一份 brand */
+  const hmacInstance = brandOf("Hmac", objAbs({
+    update: envFn([unionOf(prim.str(), bufferBrand)], brandOf("Hmac")),
+    digest: envFn(
+      [prim.str()],
+      unionOf(prim.str(), bufferBrand),
+      undefined,
+      { params: ["encoding?"] },
+    ),
+  }));
+
+  /** Cipher / Decipher 实例面（原生只暴露 `update` / `final` / `getAuthTag`） */
+  const cipherInstance = brandOf("Cipher");
+  const decipherInstance = brandOf("Decipher");
+
+  /** KeyObject 实例面（`generateKeyPairSync` 的 publicKey / privateKey） */
+  const keyObjectInstance = brandOf("KeyObject", objAbs({
+    type: prim.str(),
+    asymmetricKeyType: prim.str(),
+    export: envFn([objAbs({
+      format: { value: prim.str(), optional: true },
+      type: { value: prim.str(), optional: true },
+    })], unionOf(prim.str(), bufferBrand)),
+  }));
+
+  /** `generateKeyPairSync` 的 options（原生第二参） */
+  const keyPairOptions = objAbs({
+    modulusLength: { value: prim.num(), optional: true },
+    publicExponent: { value: prim.num(), optional: true },
+    namedCurve: { value: prim.str(), optional: true },
+    passphrase: { value: unionOf(prim.str(), bufferBrand), optional: true },
+    encoding: { value: prim.str(), optional: true },
+  });
+
+  /** `generateKeyPairSync` 的返回域（原生 = `{ publicKey, privateKey }`） */
+  const keyPairInstance = brandOf("KeyPair", objAbs({
+    publicKey: keyObjectInstance,
+    privateKey: keyObjectInstance,
+  }));
+
+  /** Sign / Verify 实例面（`createSign` / `createVerify` 的返回域） */
+  const signInstance = brandOf("Sign", objAbs({
+    update: envFn([unionOf(prim.str(), bufferBrand)], brandOf("Sign")),
+    sign: envFn([unionOf(prim.str(), bufferBrand)], bufferBrand),
+  }));
+  const verifyInstance = brandOf("Verify", objAbs({
+    update: envFn([unionOf(prim.str(), bufferBrand)], brandOf("Verify")),
+    verify: envFn([unionOf(prim.str(), bufferBrand)], prim.bool()),
+  }));
+
+  /**
+   * `scryptSync` 的实参域（宿主实测 Node v26.10.0）：
+   * - `keylen < 0` ⇒ **RangeError**（ERR_OUT_OF_RANGE；keylen ∈ [0, 2^31-1]）；
+   *   keylen **抽象** ⇒ 原生可能抛 ⇒ may-throw RangeError。
+   * - `options.N` 必须是 **2 的幂**（N=1 ⇒ RangeError；N=0 原生**不抛**）；
+   * - 内存闸 `128 * r * (N + p + 2) > maxmem` ⇒ **RangeError**
+   *   （ERR_CRYPTO_INVALID_SCRYPT_PARAMS；默认 r=8 / p=1 / maxmem=32MB）。
+   *
+   * options 槽判不出 ⇒ 原生**可能**抛 ⇒ may-throw RangeError。
+   */
+  const scryptOptionsGuard = (
+    args: Abs[],
+    ret: Abs,
+  ): AbsApplyResult | undefined => {
+    const keylen = numOf(args[2]);
+    if (keylen === undefined) {
+      // 抽象 keylen ⇒ 原生可能抛（keylen < 0 ⇒ RangeError）
+      return makeAbsApplyResult(ret, errBrand("RangeError"));
+    }
+    if (keylen < 0 || keylen > 0x7fffffff) {
+      // 原生：keylen ∈ [0, 2^31-1] ⇒ 必抛 RangeError
+      return makeAbsApplyResult(neverAbs, errBrand("RangeError"));
+    }
+    const options = args.length > 3 ? args[3] : undefined;
+    if (options === undefined) {
+      // 无 options ⇒ 默认 N=16384 / r=8 / p=1 / maxmem=32MB ⇒ 恒不抛
+      return undefined;
+    }
+    const optShape = options.shape;
+    if (optShape.k !== "obj") {
+      // options 抽象（unknown / any / 非 obj）⇒ 原生可能抛
+      return makeAbsApplyResult(ret, errBrand("RangeError"));
+    }
+    const slots = optShape.slots;
+    /**
+     * options 槽的三态：
+     * - **缺省**（槽不存在）⇒ 原生用**默认值** ⇒ 可判定；
+     * - **字面量** ⇒ 可判定；
+     * - **抽象**（槽在、值判不出）⇒ 原生可能抛 ⇒ may-throw。
+     */
+    const numSlot = (key: string): number | undefined | null => {
+      const slot = slots[key];
+      if (!slot) return undefined; // 缺省 ⇒ 用默认值
+      return numOf(slot.value) ?? null; // null = 抽象
+    };
+    const n = numSlot("N");
+    const r = numSlot("r");
+    const p = numSlot("p");
+    const maxmem = numSlot("maxmem");
+    if (n === null || r === null || p === null || maxmem === null) {
+      // 有抽象槽 ⇒ 原生可能抛
+      return makeAbsApplyResult(ret, errBrand("RangeError"));
+    }
+    // N：必须是 2 的幂（N=1 原生抛；N=0 原生不抛 ⇒ 只查 N>1）
+    const effN = n ?? 16384;
+    if (effN > 1 && (effN & (effN - 1)) !== 0) {
+      return makeAbsApplyResult(neverAbs, errBrand("RangeError"));
+    }
+    // 内存闸：128 * r * (N + p + 2) > maxmem（默认值同原生）
+    const effR = r ?? 8;
+    const effP = p ?? 1;
+    const effMax = maxmem ?? 32 * 1024 * 1024;
+    if (128 * effR * (effN + effP + 2) > effMax) {
+      return makeAbsApplyResult(neverAbs, errBrand("RangeError"));
+    }
+    return undefined;
+  };
+
   const cryptoModule: Record<string, Abs> = {
     randomBytes: envFn(
       [prim.num()],
@@ -1280,37 +1595,112 @@ function assertRegexpPattern(
       [prim.str()],
       hashInstance,
       (args) => {
-        const alg = absStrLit(args[0]);
-        if (alg === undefined) {
-          // 抽象实参：算法名未知 ⇒ 原生可能抛（不支持的 digest ⇒ Error）
-          return makeAbsApplyResult(hashInstance, errBrand("Error"));
-        }
-        if (!cryptoDigestNames.has(alg.toLowerCase())) {
-          // 原生抛 Error（"Digest method not supported"）⇒ 必抛
-          return makeAbsApplyResult(neverAbs, errBrand("Error"));
-        }
+        const guard = digestNameGuard(
+          args[0],
+          cryptoDigestNames,
+          cryptoDigestNames,
+          hashInstance,
+          "Error",
+          "Error",
+        );
+        if (guard) return guard;
         return hashInstance;
       },
     ),
+    // 族 61：HMAC 的 digest 名域**独立**于 `createHash`（原生拒 shake-* /
+    // keccak-kmac* —— 8 个名字）。原生分两档错误：**不认识**的名字 ⇒
+    // TypeError（ERR_CRYPTO_INVALID_DIGEST）；**认识但 HMAC 用不了** ⇒
+    // Error（OpenSSL 错误）。
     createHmac: envFn(
       [prim.str(), unionOf(prim.str(), bufferBrand)],
-      brandOf("Hmac", objAbs({
-        update: envFn([unionOf(prim.str(), bufferBrand)], brandOf("Hmac")),
-        digest: envFn(
-          [prim.str()],
-          unionOf(prim.str(), bufferBrand),
-          undefined,
-          { params: ["encoding?"] },
-        ),
-      })),
+      hmacInstance,
+      (args) => {
+        const guard = digestNameGuard(
+          args[0],
+          cryptoDigestNames,
+          cryptoHmacDigestNames,
+          hmacInstance,
+          "TypeError",
+          "Error",
+        );
+        if (guard) return guard;
+        return hmacInstance;
+      },
     ),
+    // 族 61：cipher 名域（宿主：未知 cipher ⇒ Error "Unknown cipher"）。
+    // key / iv 的**长度**校验未建模（env 的 Buffer 面不建模长度）⇒
+    // 已知偏差，见报告。
     createCipheriv: envFn(
       [prim.str(), unionOf(prim.str(), bufferBrand), unionOf(prim.str(), bufferBrand)],
-      brandOf("Cipher"),
+      cipherInstance,
+      (args) => {
+        const guard = cipherNameGuard(args[0], cipherInstance);
+        if (guard) return guard;
+        return cipherInstance;
+      },
     ),
     createDecipheriv: envFn(
       [prim.str(), unionOf(prim.str(), bufferBrand), unionOf(prim.str(), bufferBrand)],
-      brandOf("Decipher"),
+      decipherInstance,
+      (args) => {
+        const guard = cipherNameGuard(args[0], decipherInstance);
+        if (guard) return guard;
+        return decipherInstance;
+      },
+    ),
+    // 族 61：Sign / Verify 与 createHash 同族（digest 名域）——原生对
+    // 不支持的 digest 抛 **TypeError**（ERR_CRYPTO_INVALID_DIGEST）。
+    createSign: envFn(
+      [prim.str()],
+      signInstance,
+      (args) => {
+        const guard = digestNameGuard(
+          args[0],
+          cryptoDigestNames,
+          cryptoDigestNames,
+          signInstance,
+          "TypeError",
+          "Error",
+        );
+        if (guard) return guard;
+        return signInstance;
+      },
+    ),
+    createVerify: envFn(
+      [prim.str()],
+      verifyInstance,
+      (args) => {
+        const guard = digestNameGuard(
+          args[0],
+          cryptoDigestNames,
+          cryptoDigestNames,
+          verifyInstance,
+          "TypeError",
+          "Error",
+        );
+        if (guard) return guard;
+        return verifyInstance;
+      },
+    ),
+    // 族 61：key type 域（原生：不支持的 type ⇒ TypeError
+    // ERR_INVALID_ARG_VALUE）+ 返回域 `{ publicKey, privateKey }`。
+    // options（modulusLength / namedCurve …）的域**未建模**（原生对
+    // modulusLength < 512 抛 Error）⇒ 已知偏差，见报告。
+    generateKeyPairSync: envFn(
+      [prim.str(), keyPairOptions],
+      keyPairInstance,
+      (args) => {
+        const type = absStrLit(args[0]);
+        if (type === undefined) {
+          // 抽象实参：key type 未知 ⇒ 原生可能抛
+          return makeAbsApplyResult(keyPairInstance, errBrand("TypeError"));
+        }
+        if (!cryptoKeyTypes.has(type.toLowerCase())) {
+          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        }
+        return keyPairInstance;
+      },
+      { params: ["type", "options?"] },
     ),
     pbkdf2Sync: envFn(
       [prim.str(), prim.str(), prim.num(), prim.num(), prim.str()],
@@ -1341,7 +1731,20 @@ function assertRegexpPattern(
         return bufferBrand;
       },
     ),
-    scryptSync: envFn([prim.str(), prim.str(), prim.num()], bufferBrand),
+    // 族 61：`scryptSync` 的**实参域**（原生 keylen ∈ [0, 2^31-1]；
+    // options.N 必须是 2 的幂；内存闸 128*r*(N+p+2) ≤ maxmem）
+    // —— 此前**恒不抛** ⇒ 必抛入口被放行（假绿）。
+    // 声明（形参表 / 返回域）保持**逐字不变**：options 槽从**调用实参**
+    // 里读（args[3]），不扩形参表 ⇒ 既有成员的声明面不动。
+    scryptSync: envFn(
+      [prim.str(), prim.str(), prim.num()],
+      bufferBrand,
+      (args) => {
+        const guard = scryptOptionsGuard(args, bufferBrand);
+        if (guard) return guard;
+        return bufferBrand;
+      },
+    ),
     timingSafeEqual: envFn(
       [bufferBrand, bufferBrand],
       prim.bool(),
@@ -2058,6 +2461,29 @@ function assertRegexpPattern(
   };
   /** crypto.subtle 对象面（全局 `crypto.subtle` 与 `SubtleCrypto` 实例共用一份槽表） */
   const subtleCryptoObj = objAbs(subtleCryptoSlots);
+
+  /**
+   * 族 61：`node:crypto` 模块的 **webcrypto 面**（宿主实测 Node v26.10.0：
+   * `require("node:crypto")` 自有键含 `webcrypto` / `subtle` / `getRandomValues`）。
+   *
+   * - `webcrypto` 是 **`Crypto` 实例**（原型面 = `constructor` / `subtle` /
+   *   `getRandomValues` / `randomUUID`），不是 SubtleCrypto；
+   * - `subtle` 是 `SubtleCrypto` 实例，且 `webcrypto.subtle === crypto.subtle`
+   *   （宿主实测同一对象）⇒ 与全局 `crypto.subtle` **同源**（共用
+   *   `subtleCryptoObj` 一份槽表 —— 族 35 的同源化口径）。
+   *
+   * 旧实现：三个名**未导出** ⇒ 走宿主路径（行为对、精度随 core）。
+   */
+  cryptoModule.webcrypto = brandOf(
+    "Crypto",
+    objAbs({
+      randomUUID: envFn([], prim.str()),
+      getRandomValues: envFn([arrOf(prim.unknown)], arrOf(prim.unknown)),
+      subtle: brandOf("SubtleCrypto", subtleCryptoObj),
+    }),
+  );
+  cryptoModule.subtle = brandOf("SubtleCrypto", subtleCryptoObj);
+  cryptoModule.getRandomValues = envFn([arrOf(prim.unknown)], arrOf(prim.unknown));
 
   const nodePlatformGlobals: Record<string, Abs> = {
     // ── Event 族 ───────────────────────────────────────────────
