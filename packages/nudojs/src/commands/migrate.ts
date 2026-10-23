@@ -13,6 +13,10 @@
  *   `stripTsToJs`）——**族 16 的文件**，本命令层不碰它；这里做**命令层
  *   能做的部分**：写盘**之前**检出「剥完仍有 TS-only 语法」的目标并
  *   拒绝写盘 + 响亮报错（migrate 是一程闸门，写坏了没有回退路径）。
+ *   **族 12 扩围**（真源已修，闸门只作兜底）：`export =` / `export as
+ *   namespace`（Bug 446）· 类成员的 `x!` / `y?` / `m?()`（Bug 447）·
+ *   TS 的 `this` 形参（Bug 448）—— 判据与「零误伤论证」见
+ *   `tsOnlyConstructs` 的注释。
  */
 import type { Command } from "commander";
 import { readFileSync, statSync } from "node:fs";
@@ -53,11 +57,41 @@ const CLASS_MEMBER_TYPES = new Set([
 const MEMBER_MODIFIER_FLAGS = ["accessibility", "readonly", "abstract", "override"] as const;
 
 /**
+ * TS-only 的**模块出口语句**（Bug 446）。
+ *
+ * 这两个 Babel 节点类型在**纯 JS 源码里永不出现**（`export =` / `export as
+ * namespace` 是 TS 语法）⇒ 判据零误伤。
+ */
+const TS_ONLY_EXIT_STATEMENTS = new Set([
+  "TSExportAssignment",
+  "TSNamespaceExportDeclaration",
+]);
+
+/**
  * 剥除之后仍然残留的 **TS-only** 构造（= 产物里会出现的 TS 语法）。
  *
- * 只覆盖报告点名的两类（`private` / `public` / `protected` / `readonly`
- * 类成员修饰符 + 构造器参数属性）；`namespace` / `enum` 等由 strip 自己的
- * notes 负责（族 16 的既有口径），不在这里拦。
+ * 覆盖（族 12 扩围）：
+ * - Bug 672：`private` / `public` / `protected` / `readonly` 类成员修饰符 +
+ *   构造器参数属性；
+ * - Bug 446：`export =` / `export as namespace` 两条 TS-only 出口语句；
+ * - Bug 447：类成员的 `x!`（definite）与 `y?` / `m?()`（optional）；
+ * - Bug 448：TS 的 `this` 形参。
+ *
+ * ⚠ **零误伤论证**（判据写粗 ⇒ 把合法 JS 拦下来 ⇒ 迁移被卡住）：
+ * 1. `TSParameterProperty` / `TSExportAssignment` / `TSNamespaceExportDeclaration`
+ *    —— Babel 只在 TS 语法下产出这些节点类型 ⇒ 纯 JS 源码零命中；
+ * 2. 类成员的 `definite` / `optional` —— Babel 只在 TS 语法下给类成员节点置
+ *    这两个字段（JS 类成员没有 `x!` / `y?`）⇒ 纯 JS 源码零命中；⚠ 只按
+ *    **类成员节点族**判定（`CLASS_MEMBER_TYPES`），绝不碰表达式节点自己的
+ *    `optional`（`a?.b` 的 `OptionalMemberExpression` 是合法 JS）；
+ * 3. `this` 形参 —— 判据只看**形参数组**里的 `Identifier("this")`；`this` 在
+ *    strict 与 sloppy 下都**不是合法形参名**（`function f(this) {}` 是
+ *    SyntaxError）⇒ 纯 JS 源码零命中；函数体里的 `this` **表达式**不在
+ *    形参数组里 ⇒ 不受影响。
+ *
+ * ⚠ **不拦**的形态：值位置的「类型专用导入」（Bug 445）—— 它是**合法 JS
+ * 语法**（只是链接期可能失败）⇒ 语法闸门拦不住；那一形态由 `nudo check`
+ * 的 `nudo:missing-export` 抓（诊断面），不在本闸门重复实现。
  */
 function tsOnlyConstructs(ast: unknown, out: string[] = [], seen = new Set<object>()): string[] {
   if (!ast || typeof ast !== "object") return out;
@@ -71,11 +105,37 @@ function tsOnlyConstructs(ast: unknown, out: string[] = [], seen = new Set<objec
   const type = typeof node.type === "string" ? node.type : undefined;
   if (type === "TSParameterProperty") {
     out.push("constructor parameter property");
+  } else if (type && TS_ONLY_EXIT_STATEMENTS.has(type)) {
+    out.push(
+      type === "TSExportAssignment"
+        ? "TS-only `export =` statement"
+        : "TS-only `export as namespace` statement",
+    );
   } else if (type && CLASS_MEMBER_TYPES.has(type)) {
     for (const flag of MEMBER_MODIFIER_FLAGS) {
       const value = node[flag];
       if (value === true || (typeof value === "string" && value.length > 0)) {
         out.push(`class member modifier '${flag === "readonly" ? "readonly" : value}'`);
+        break;
+      }
+    }
+    // Bug 447：`x!`（definite）与 `y?` / `m?()`（optional）是**另外两个**
+    // AST 字段 ⇒ 原样打印就不是合法 JS。
+    if (node.definite === true) {
+      out.push("class member definite assignment assertion ('x!')");
+    }
+    if (node.optional === true) {
+      out.push("class member optional marker ('y?' / 'm?()')");
+    }
+  }
+  // Bug 448：TS 的 `this` 形参 —— Babel 把它表示成「一个名叫 this 的
+  // Identifier」；它留在形参位 ⇒ 产物 `function f(this, a)` Node 加载不了。
+  const params = node.params;
+  if (Array.isArray(params)) {
+    for (const p of params) {
+      const rec = p as { type?: string; name?: string } | null;
+      if (rec?.type === "Identifier" && rec.name === "this") {
+        out.push("TS-only `this` parameter");
         break;
       }
     }
@@ -258,7 +318,7 @@ export function registerMigrateCommand(program: Command): void {
             }
             if (failures.length > 0) {
               console.error(
-                "fix:  fix the reported file(s) and re-run; migrate strip only removes types (class member modifiers / constructor parameter properties must be lowered by hand or by tsc)",
+                "fix:  fix the reported file(s) and re-run; migrate strip only removes types (class member modifiers / constructor parameter properties / `export =` / `export as namespace` / `this` parameters must be lowered by hand or by tsc)",
               );
               process.exitCode = 1;
             }

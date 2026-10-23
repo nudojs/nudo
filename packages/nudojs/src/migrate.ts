@@ -1610,7 +1610,38 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
   return rows;
 }
 
-/** TS 源 → 纯 JS 源（Nudo strip 语义；enum 删除见 strip-types 注释）。 */
+/**
+ * 剥除事实回报（与 core 的 `StripOptions.report` **同字段名**）。
+ *
+ * ⚠ `StripOptions` 是 `packages/core/src/strip-types.ts` 内的**本地类型、未导出**
+ * ⇒ 这里**镜像**一份结构（只声明用到的字段；字段全可选 ⇒ 形状兼容）。
+ * 字段语义（core 侧为准）：
+ * - enumRemoved：TS enum 声明被**整条删除**（仅 `declare enum` —— 环境声明
+ *   没有运行时语义）。
+ * - enumSynthesized：TS enum 被**合成成运行时对象**（正向 + 反向映射）。
+ * - namespaceKept：非 declare 的 namespace 被保留（运行时语义）。
+ * - exportAssignmentRemoved：`export = X` / `export as namespace X` 被剥除。
+ * - thisParamRemoved：TS 的 `this` 形参被从形参数组里删除。
+ * - typeOnlyImportRemoved：值位置零引用的**本地**类型专用 import 被消掉。
+ * - typeOnlyImportKept：值位置的导入**被保留**（绑定有值位置引用，或引用形态
+ *   判不准 ⇒ 保守保留）⇒ 产物面应当提示人工确认。
+ * - directivesBefore / directivesAfter / directivesDropped：剥除前后的
+ *   `@nudo:` 指令条数比对（不等 ⇒ 有指令随被删语句一起消失）。
+ */
+type StripReport = {
+  enumRemoved?: boolean;
+  enumSynthesized?: boolean;
+  namespaceKept?: boolean;
+  exportAssignmentRemoved?: boolean;
+  thisParamRemoved?: boolean;
+  typeOnlyImportRemoved?: boolean;
+  typeOnlyImportKept?: boolean;
+  directivesBefore?: number;
+  directivesAfter?: number;
+  directivesDropped?: boolean;
+};
+
+/** TS 源 → 纯 JS 源（Nudo strip 语义；enum 合成见 strip-types 注释）。 */
 export function stripTsToJs(
   source: string,
   opts: { filePath?: string } = {},
@@ -1619,7 +1650,7 @@ export function stripTsToJs(
   const ast = parseSource(source, { keepTs: true });
   // 剥除事实回报（Bug 596）：notes 必须基于 **AST 事实**——裸正则扫源码会把
   // 注释 / 字符串里的 "enum " / "namespace " 当成声明（提示与事实相反）。
-  const report: { enumRemoved?: boolean; namespaceKept?: boolean } = {};
+  const report: StripReport = {};
   const resolveSpecifier = opts.filePath
     ? (spec: string): string | undefined =>
         resolveProductSpecifier(opts.filePath as string, spec, notes)
@@ -1628,14 +1659,54 @@ export function stripTsToJs(
     report,
     ...(resolveSpecifier ? { resolveSpecifier } : {}),
   });
+  // 运行时 enum 现在是**被合成**而不是被删除（Bug 913）⇒ note 必须跟着改口径：
+  // 「runtime semantics lost」对「已被合成」的文件是**误报**。
+  if (report.enumSynthesized) {
+    notes.push(
+      "contains enum — strip synthesizes a runtime object for it (TS enum semantics kept: forward + reverse mapping); confirm the emitted shape matches your expectations",
+    );
+  }
   if (report.enumRemoved) {
     notes.push(
-      "contains enum — strip removes it (runtime semantics lost); convert to const object first",
+      "contains declare enum — strip removes it (ambient declaration: no runtime semantics)",
     );
   }
   if (report.namespaceKept) {
     notes.push(
       "contains namespace — non-declare namespaces keep TS nodes and may not print cleanly",
+    );
+  }
+  // `export =` / `export as namespace` 被剥除（Bug 446）：产物**合法**了，但
+  // CommonJS 的出口面**没了** ⇒ 必须提示人工改写成 ESM 出口。
+  if (report.exportAssignmentRemoved) {
+    notes.push(
+      "contains `export =` / `export as namespace` — strip removes it (TS-only module exit): the CommonJS export surface is gone — re-export it as an ESM export by hand",
+    );
+  }
+  // TS 的 `this` 形参被剥除（Bug 448）：运行时无影响（只是接收者标注）。
+  if (report.thisParamRemoved) {
+    notes.push(
+      "contains a `this` parameter — strip removes it (TypeScript-only receiver annotation: no runtime effect)",
+    );
+  }
+  // 值位置零引用的类型专用 import 被消掉（Bug 445）：与 tsc 的 import elision
+  // 同口径 ⇒ 这是**预期行为**，但用户需要知道产物少了什么。
+  if (report.typeOnlyImportRemoved) {
+    notes.push(
+      "removed a type-only import (its binding was only used in type positions — same elision as tsc)",
+    );
+  }
+  // 保守保留的 import（本地再导出 / 包说明符 / 完全未引用）⇒ 产物**可能**链接
+  // 失败（被 import 的模块剥成空模块）⇒ 提示人工确认。
+  if (report.typeOnlyImportKept) {
+    notes.push(
+      "kept an import whose binding could not be proven type-only (local re-export / package specifier / unused) — the product fails to link if the imported module has no such runtime export: check it by hand",
+    );
+  }
+  // 剥除前后的指令条数比对（Bug 968 的兜底自检）：不等 ⇒ 有指令随被删语句消失。
+  if (report.directivesDropped) {
+    notes.push(
+      `some @nudo: directives were lost while stripping (before: ${report.directivesBefore ?? 0}, after: ${report.directivesAfter ?? 0}) — re-check the emitted file`,
     );
   }
   const out = generate(

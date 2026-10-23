@@ -51,8 +51,15 @@ describe("Bug 596 — migrate strip 的 notes 基于 AST 事实", () => {
     expect(notes.join("\n")).not.toMatch(/namespace/);
   });
 
-  it("export as namespace X ⇒ 不提示 namespace（不是 namespace 声明）", async () => {
+  it("export as namespace X ⇒ 不提示 namespace **声明**（它不是 namespace 声明）", async () => {
     const notes = await notesOf(`export as namespace MyGlobal;\nexport const y = 1;\n`);
-    expect(notes.join("\n")).not.toMatch(/namespace/);
+    // ⚠ **口径更新**（族 12 S2 · 2026-10-23）：`export as namespace` 现在是
+    // **被报告的事实**（TS-only 模块出口语句被剥除 ⇒ CommonJS / 全局出口面
+    // 消失）⇒ 提示文本里**会提到这个语法名**。断言从「整段文本不含
+    // namespace」收窄为「不含 namespace **声明**类提示」——原断言的**本意**
+    // （不把非声明当声明来提示）**原样保留**；同时补一条**更强**的正向断言
+    // （新事实必须被报出来）。
+    expect(notes.join("\n")).not.toMatch(/may not print cleanly/);
+    expect(notes.join("\n")).toMatch(/export =/);
   });
 });

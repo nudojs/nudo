@@ -387,7 +387,11 @@ describe("stripTypes: parse() 统一 TS 剥除", () => {
     expect(() => parse("const y = <string>x;")).toThrow();
   });
 
-  it("interface / type alias / enum / declare 声明被删除", () => {
+  it("interface / type alias / declare 声明被删除；enum 被合成成运行时对象（Bug 913）", () => {
+    // 口径更新（Bug 913）：TS 的 `enum` **有运行时语义**（tsc 编译成带反向映射的
+    // 对象）⇒ 剥除器不再把它整条删除，而是**合成**一个等价的运行时对象
+    // （`var Color = (function (Color) { … })({})`）⇒ 成员引用不再退化成
+    // 未绑定全局读取。`declare enum`（环境声明）仍然整条删除。
     const ast = parse(`
 interface User { name: string }
 type Alias = { tag: "x" };
@@ -397,9 +401,24 @@ declare function goneFn(): void;
 function kept(n) { return n; }
 `);
     const body = ast.program.body;
+    expect(body).toHaveLength(2);
+    // [0] = 合成的 enum 运行时对象（var Color = …）
+    expect(body[0].type).toBe("VariableDeclaration");
+    expect((body[0] as any).kind).toBe("var");
+    expect((body[0] as any).declarations[0].id.name).toBe("Color");
+    // [1] = 幸存的用户函数
+    expect(body[1].type).toBe("FunctionDeclaration");
+    expect((body[1] as any).id.name).toBe("kept");
+  });
+
+  it("declare enum（环境声明）仍然整条删除", () => {
+    const ast = parse(`
+declare enum Color { Red }
+function kept(n) { return n; }
+`);
+    const body = ast.program.body;
     expect(body).toHaveLength(1);
     expect(body[0].type).toBe("FunctionDeclaration");
-    expect((body[0] as any).id.name).toBe("kept");
   });
 
   it("export 包装的类型声明整体删除", () => {
