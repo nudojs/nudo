@@ -360,7 +360,7 @@ Read the projection honestly: primitives, literal unions, arrays, and object lit
 | `--from-dts` | — | Reverse `.d.ts` / annotated TS / package types into a draft (**not enforced**) |
 | `--dry-run` | `--emit` / `--draft --write` | Print instead of writing |
 | `--exit-on-diff` | `--emit --dry-run` | Exit `1` when the sidecar would change |
-| `--json` | `--draft` | `{ draftSource, diff, entries[] }` for agent review |
+| `--json` | `--draft` | A **JSON array** for agent review. The top level is **always an array** (one element per input); for `--draft` each element is `{ file, draftPath, draftSource, diff, entries[] }`. A failed target contributes `{ file, errors: [{ code, message }] }` and a usage/path error contributes `{ pathErrors: [{ path, code, message, suggestion }] }`. |
 
 Print / `--draft` / `--from-dts` fail only on usage / IO errors; `--emit` additionally fails on `--exit-on-diff` with a diff — analysis diagnostics seen during emit are printed but never gate the exit. Full table: [CLI Reference](../api/cli-reference.md#nudo-contract).
 

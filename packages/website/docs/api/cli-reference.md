@@ -244,7 +244,7 @@ Print, draft, or emit each function's effective interface with its source layer.
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
 nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
-nudo contract --from-dts <paths...> [--write] [--dry-run]
+nudo contract --from-dts <paths...> [--write] [--dry-run] [--force]
 ```
 
 **Layers:**
@@ -260,7 +260,8 @@ nudo contract --from-dts <paths...> [--write] [--dry-run]
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
 | `--from-dts` | Reverse TypeScript `.d.ts` / annotated `.ts` sources, or an npm package's types (the positional `<paths...>`), into a reviewable `@nudo:draft` (`*.nudo.draft.js`). **Not enforced** until you review it and copy accepted exports into a `*.nudo.js` sidecar — the contracts step of the TypeScript-retirement path ([Migrate from TypeScript](../guides/migrating-from-typescript.md)) |
-| `--write` | With `--draft` / `--from-dts`: write `*.nudo.draft.js` to disk |
+| `--write` | With `--draft` / `--from-dts`: write `*.nudo.draft.js` to disk. With `--from-dts`, the draft is written **next to the source `.d.ts`** (not into the current directory) and an **existing draft that differs is never silently overwritten** — the command refuses and exits `1`. |
+| `--force` | With `--from-dts --write`: overwrite an existing draft that differs (same escape hatch as `NUDO_DRAFT_FORCE=1`). |
 | `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |

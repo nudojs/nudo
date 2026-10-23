@@ -107,7 +107,10 @@ function isBrandInstance(name: string, value: unknown): boolean {
 function describeValue(value: unknown): string {
   try {
     if (typeof value === "bigint") return value.toString() + "n";
-    if (typeof value === "number") return String(value);
+    // Bug 1065（同族漏点，收口时一并补）：`-0` 与 `0` 在 `===` 下等价，但除法 /
+    // Math.sign / Object.is 上可观察 ⇒ 保真（与同文件 :538 的字面量序列化**同口径**，
+    // 消除「同文件内部两套口径」）。
+    if (typeof value === "number") return Object.is(value, -0) ? "-0" : String(value);
     if (typeof value === "string") return JSON.stringify(value);
     if (value === undefined) return "undefined";
     if (value === null) return "null";

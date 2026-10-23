@@ -576,7 +576,19 @@ export function schemaNodeToZod(node: SchemaNode): string {
       if (v === undefined) return "z.undefined()";
       if (typeof v === "string") return `z.literal(${JSON.stringify(v)})`;
       if (typeof v === "boolean") return `z.literal(${v})`;
-      if (typeof v === "number") return `z.literal(${v})`;
+      if (typeof v === "number") {
+        // Bug 1065：`-0` 与 `0` 身份不同（Object.is / 1/x 可观察），而
+        // `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 产物写 `z.literal(0)`
+        // ⇒ **比门禁宽**（门禁按 `lit(-0)` 判红、zod 放行 `0`）⇒ 假绿。
+        // ⇒ 这里必须**保真**写 `-0`（不许静默放宽成 `0`）。
+        // ⚠ zod 的 literal 走 `===` 口径 ⇒ `-0` 与 `0` 在运行时**不可区分**
+        // ⇒ 该处**已知有损** ⇒ 就地标注（消费方看得见），不许无声无息。
+        // （zod 运行时行为本次**未独立复现**——环境无 zod 依赖。）
+        if (Object.is(v, -0)) {
+          return "z.literal(-0) /* known lossy: zod literal uses ===, so -0 and 0 are indistinguishable at runtime */";
+        }
+        return `z.literal(${v})`;
+      }
       return "z.unknown()";
     }
     case "prim":

@@ -238,7 +238,7 @@ nudo test lib.js --from test.js --freeze=update
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
 nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
-nudo contract --from-dts <paths...> [--write] [--dry-run]
+nudo contract --from-dts <paths...> [--write] [--dry-run] [--force]
 ```
 
 **分层：**
@@ -254,7 +254,8 @@ nudo contract --from-dts <paths...> [--write] [--dry-run]
 | `--emit` | 把推断域固化为侧车 `@generated` 段 |
 | `--draft` | 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） |
 | `--from-dts` | 把 TypeScript `.d.ts` / 带注解的 `.ts` 源或 npm 包类型（位置参数 `<paths...>`）逆向为可审阅的 `@nudo:draft`（`*.nudo.draft.js`）。**不执法** —— 审阅并把接受的导出复制进 `*.nudo.js` 侧车后才生效；这是 TS 退役路径上的契约步骤（[从 TypeScript 迁移](../guides/migrating-from-typescript.md)） |
-| `--write` | 搭配 `--draft` / `--from-dts`：写入 `*.nudo.draft.js` |
+| `--write` | 搭配 `--draft` / `--from-dts`：写入 `*.nudo.draft.js`。搭配 `--from-dts` 时，草稿写在**源 `.d.ts` 旁边**（不是当前目录），且**内容不同的既有草稿绝不被静默覆盖** —— 命令报错并退出 `1`。 |
+| `--force` | 搭配 `--from-dts --write`：覆盖内容不同的既有草稿（与 `NUDO_DRAFT_FORCE=1` 同一逃生口）。 |
 | `--fn <name>` | 限定单个函数（**可重复**；有手写根时可命名下游派生目标） |
 | `--all` | emit 所有合格函数 |
 | `--dry-run` | 打印 unified diff 而不写盘 |

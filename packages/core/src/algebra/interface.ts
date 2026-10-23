@@ -30,7 +30,7 @@
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import type { Term } from "./term.ts";
-import { termToString } from "./term.ts";
+import { litKeyString, termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
 import { identBoundaryRegex } from "./code-text.ts";
@@ -1083,7 +1083,14 @@ function litToString(v: unknown): string {
   // = "10"，诊断里读起来就是 number 字面量 10（另一条契约）——`lit(10)` 与
   // `lit(10n)` 必须可区分（Bug 361）。
   if (typeof v === "bigint") return `${String(v)}n`;
-  return String(v); // number / boolean / null
+  // Bug 1065：`-0` 与 `0` 身份不同（Object.is / 1/x 可观察），而
+  // `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 侧车写的 `lit(-0)` 渲成 `lit(0)`
+  // ⇒ 诊断陈述的契约 ≠ 用户写的契约（自相矛盾），且 zod 产物面**比门禁宽**
+  // （产物写 `z.literal(0)`、门禁按 `lit(-0)` 判红 ⇒ 假绿）。
+  // ⇒ 复用仓库既有的保真口径 `litKeyString`（`./term.ts`：Object.is(v,-0) ⇒ "-0"）
+  // ——与 `format.ts` 的 prim bigint / -0 渲染同款判据。
+  if (typeof v === "number") return litKeyString(v);
+  return String(v); // boolean / null / undefined
 }
 
 /** length(self) 上的 ge/le 常数界 → n（否则 undefined） */
@@ -1103,11 +1110,14 @@ function predToChain(p: Pred): string {
     case "le": {
       if (p.b.op !== "lit" || typeof p.b.value !== "number") break;
       if (p.a.op === "app" && p.a.fn === "length") {
-        if (p.op === "ge") return `.min(${p.b.value})`;
-        if (p.op === "le") return `.max(${p.b.value})`;
+        // Bug 1065（同族漏点，收口时一并补）：常数界也走 `litToString` 保真口径 ——
+        // `String(-0) === "0"` ⇒ `.min(-0)` / `.max(-0)` 会被渲成 `.min(0)` / `.max(0)`
+        // ⇒ 诊断陈述的契约 ≠ 用户写的契约（同 `litToString` 的根因）。
+        if (p.op === "ge") return `.min(${litToString(p.b.value)})`;
+        if (p.op === "le") return `.max(${litToString(p.b.value)})`;
         break;
       }
-      if (p.a.op === "var") return `.${p.op}(${p.b.value})`;
+      if (p.a.op === "var") return `.${p.op}(${litToString(p.b.value)})`;
       break;
     }
     case "eq": {
@@ -1125,7 +1135,9 @@ function predToChain(p: Pred): string {
         ] as const) {
           const ge = lengthBound(x, "ge");
           const le = lengthBound(y, "le");
-          if (ge !== undefined && ge === le) return `.length(${ge})`;
+          // Bug 1065：常数界的渲染同 `litToString` 口径（`${ge}` 走 String(-0)==="0"
+          // ⇒ 负号被抹掉）⇒ 用 litToString 渲染（`-0` ⇒ "-0"）。
+          if (ge !== undefined && ge === le) return `.length(${litToString(ge)})`;
         }
       }
       return p.args.map(predToChain).join("");

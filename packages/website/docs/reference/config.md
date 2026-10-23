@@ -126,7 +126,7 @@ Off by default — a forged cache report could hide violations, so enable it onl
 | `NUDO_CACHE_MAX_EVALRUNS` | Session LRU `maxEvalRuns` | `32` | Same rules as above. |
 | `NUDO_DEPS_CACHE_DIR` | Cross-project `@types` harvest cache root | `~/.cache/nudo/deps` | Path, or `off` / `0` to disable the deps layer. Fail-open; see [Performance](../guides/performance.md). |
 | `NUDO_HARVEST_NODE` | `@types/node` harvest | enabled | `off` disables harvesting Node APIs (explicit skip, not a silent fallback). |
-| `NUDO_DRAFT_FORCE` | Write guard for contract drafts | unset | `1` allows `contract --draft --write` (and the agent draft-write tool) when no project root is found for the file. |
+| `NUDO_DRAFT_FORCE` | Write guard for contract drafts | unset | `1` allows `contract --draft --write` (and the agent draft-write tool) when no project root is found for the file, **and** allows `contract --from-dts --write` to overwrite an existing draft that differs. |
 
 ## Precedence
 

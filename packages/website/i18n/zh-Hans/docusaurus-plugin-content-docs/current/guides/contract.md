@@ -360,7 +360,7 @@ export const findUser = fn({ id: number() }, any());
 | `--from-dts` | — | 逆向 `.d.ts` / 带注解 TS / 包类型为草稿（**不执法**） |
 | `--dry-run` | `--emit` / `--draft --write` | 只打印不写盘 |
 | `--exit-on-diff` | `--emit --dry-run` | 侧车将变化时退出码 `1` |
-| `--json` | `--draft` | 供 agent 审阅的 `{ draftSource, diff, entries[] }` |
+| `--json` | `--draft` | 供 agent 审阅的 **JSON 数组**。顶层**恒为数组**（每个输入一个元素）；`--draft` 下每个元素是 `{ file, draftPath, draftSource, diff, entries[] }`。失败的目标贡献 `{ file, errors: [{ code, message }] }`，用法 / 路径错误贡献 `{ pathErrors: [{ path, code, message, suggestion }] }`。 |
 
 打印 / `--draft` / `--from-dts` 仅在用法 / IO 错误时失败；`--emit` 另在 `--exit-on-diff` 且有 diff 时失败 —— emit 期间看到的分析诊断只打印，绝不挡 exit。完整表：[CLI Reference](../api/cli-reference.md#nudo-contract)。
 

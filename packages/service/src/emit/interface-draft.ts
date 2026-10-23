@@ -27,7 +27,7 @@
 
 import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
   constraintToEntryAbs,
   effectiveInterface,
@@ -1040,8 +1040,15 @@ export function writeInterfaceDraft(
   if (opts.projectDir) {
     const rootReal = safeRealpath(opts.projectDir);
     const draftReal = safeRealpath(draftPath);
-    const rel = relative(rootReal, draftReal);
-    if (rel.startsWith("..") || isAbsolute(rel)) {
+    const relToRoot = relative(rootReal, draftReal);
+    // 族 20 · Bug 665（service 半）：逃逸判据按**路径分量**判定 ——
+    // 「整段等于 `..`」或「以 `..` + 分隔符开头」或「跨盘（绝对路径）」。
+    // 改前用**字符串前缀** `rel.startsWith("..")` ⇒ 把项目根下的
+    // **合法目录名**（`..data/` / `...cfg/`）误判成「越出项目根」⇒ 草稿拒写。
+    // ⚠ 与 CLI 半（`packages/nudojs/src/commands/contract-draft.ts` 的
+    // `runContractDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修；
+    // 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
+    if (relToRoot === ".." || relToRoot.startsWith(`..${sep}`) || isAbsolute(relToRoot)) {
       throw new Error(`draft write refused: outside project root ${opts.projectDir}`);
     }
   }
