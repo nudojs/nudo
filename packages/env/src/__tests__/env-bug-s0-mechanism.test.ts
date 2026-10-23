@@ -229,7 +229,7 @@ describe("S0 机制层 · envFnVariadic 透传 + errBrand", () => {
     // (b) required 段相符、rest 段不符 ⇒ **不**执法（变长参数只查 required 段）
     const restOnly = applyOf(fn, [numLit(1), numLit(2)]) as AbsApplyResult;
     expect(isAbsApplyResult(restOnly)).toBe(false);
-    expect((restOnly as Abs).shape.k).toBe("prim");
+    expect((restOnly as unknown as Abs).shape.k).toBe("prim");
 
     // (c) apply 抛异常 ⇒ 走声明的 throws 面
     const boom = envFnVariadic(prim.str(), prim.str(), {

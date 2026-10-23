@@ -60,7 +60,7 @@ describe("Bug 468 — nudo 键形状非法必须可观测且不得谎报成配�
         JSON.stringify({ name: "sub", nudo: raw }),
       );
 
-      let found: ReturnType<typeof findProjectConfig> = null;
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
       const out = captureStderr(() => {
         found = findProjectConfig(sub);
       });
@@ -80,7 +80,7 @@ describe("Bug 468 — nudo 键形状非法必须可观测且不得谎报成配�
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub", nudo: "adoption" }));
 
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     captureStderr(() => {
       found = findProjectConfig(sub);
     });
@@ -104,7 +104,7 @@ describe("Bug 468 — nudo 键形状非法必须可观测且不得谎报成配�
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "sub", nudo: {} }));
 
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const out = captureStderr(() => {
       found = findProjectConfig(sub);
     });

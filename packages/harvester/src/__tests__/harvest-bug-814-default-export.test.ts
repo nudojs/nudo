@@ -21,7 +21,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatShape, getFnImpl } from "@nudojs/core";
+import { formatShape, getFnImpl, type Abs } from "@nudojs/core";
 import { harvestDts } from "../harvest-dts.ts";
 import { packageHarvestToAbsModules } from "../harvest-to-abs.ts";
 import type { PackageHarvest } from "../harvest-package.ts";
@@ -81,7 +81,7 @@ describe("Bug 814 —— `export default` 进导出表，局部名不进", () =>
     expect(formatShape(mock)).toContain("()");
     const impl = getFnImpl(mock);
     const out = impl?.apply?.([{ shape: { k: "prim", type: "number" }, conf: "exact" }]);
-    expect(formatShape(out!)).toBe("number");
+    expect(formatShape(out! as Abs)).toBe("number");
     // 局部名不得出现在具名导出面里（TS 侧 TS2614）
     expect(mods["fx"]!.named["makeThing"]).toBeUndefined();
   });

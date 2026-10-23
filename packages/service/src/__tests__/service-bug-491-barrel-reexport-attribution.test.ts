@@ -16,8 +16,14 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { analyzeFile, collectCallRecords } from "../analyzer.ts";
-import { litValue } from "@nudojs/core";
+import { litValue, type Abs } from "@nudojs/core";
 import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
+
+/** 字面量值面（litValue 的 ok 判别式收窄；非字面量 → undefined） */
+function litOf(a: Abs): unknown {
+  const lv = litValue(a);
+  return lv.ok ? lv.value : undefined;
+}
 
 const DOMAIN = "nudo:interface-domain-exceeds";
 
@@ -46,7 +52,7 @@ describe("Bug 491：再导出链归因（barrel 不再吞掉跨文件调用点�
       expect(rec).toBeDefined();
       // 归因到**定义文件**（此前是中间 barrel → 门禁证据蒸发）
       expect(rec!.targetModule).toBe(lib);
-      expect(litValue(rec!.argAbs[0]!).value).toBe(-1);
+      expect(litOf(rec!.argAbs[0]!)).toBe(-1);
 
       const result = analyzeFile(lib, LIB, undefined, records);
       const issues = result.diagnostics.filter((d) => d.code === DOMAIN);

@@ -26,7 +26,7 @@ function v(src: string) {
 function throwName(src: string): string {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
 /** 整链短路：不得抛，且结果必须是精确 undefined */

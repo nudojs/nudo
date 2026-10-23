@@ -47,8 +47,9 @@ describe("Bug 251: toLocaleString value (ICU) + locales argument validation", ()
 
   it("默认 locale 也不再折成 toString 的裸数字串", () => {
     const r = call(`export function f() { return (1234567.5).toLocaleString(); }`);
-    expect(litValue(r.result).ok).toBe(true);
-    expect(litValue(r.result).value).not.toBe("1234567.5");
+    const lv = litValue(r.result);
+    expect(lv.ok).toBe(true);
+    expect(lv.ok ? lv.value : undefined).not.toBe("1234567.5");
   });
 
   it("locales 为 null → 确定 TypeError（number）", () => {

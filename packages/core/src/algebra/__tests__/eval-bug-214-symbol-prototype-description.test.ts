@@ -23,7 +23,7 @@ function v(src: string) {
 function throwName(src: string): string {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
 describe("Bug 214 — Symbol.prototype.description 定抛 TypeError", () => {

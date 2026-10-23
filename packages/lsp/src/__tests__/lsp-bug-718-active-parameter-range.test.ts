@@ -49,7 +49,7 @@ describe("Bug 718 signatureHelp：activeParameter 不越界", () => {
     expect(help.signatures[0]!.parameters).toHaveLength(2);
     expect(help.activeParameter).toBe(1);
     expect(help.signatures[0]!.activeParameter).toBe(1);
-    expect(help.activeParameter!).toBeLessThan(help.signatures[0]!.parameters.length);
+    expect(help.activeParameter!).toBeLessThan(help.signatures[0]!.parameters!.length);
   });
 
   it("纯函数面：0 参签名 ⇒ 省略 activeParameter（不是填 0）", () => {

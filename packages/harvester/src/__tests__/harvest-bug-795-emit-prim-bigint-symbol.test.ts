@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatShape } from "@nudojs/core";
+import { formatShape, type Abs } from "@nudojs/core";
 import { harvestDts, emitEnvModule } from "../harvest-dts.ts";
 import { absToHarvestSig, harvestSigToAbs } from "../harvest-json.ts";
 
@@ -91,10 +91,10 @@ describe("Bug 795 — 落盘面不得把 bigint / symbol 降级成 unknown", () 
     const evaluated = mod.defineEnv();
     expect(fnPrims(evaluated.globals.big)).toEqual({ param: "bigint", ret: "bigint" });
     expect(fnPrims(evaluated.globals.sym)).toEqual({ param: "symbol", ret: "symbol" });
-    expect(formatShape(evaluated.globals.big)).toBe(formatShape(env.globals.big));
-    expect(formatShape(evaluated.globals.sym)).toBe(formatShape(env.globals.sym));
+    expect(formatShape(evaluated.globals.big as Abs)).toBe(formatShape(env.globals.big));
+    expect(formatShape(evaluated.globals.sym as Abs)).toBe(formatShape(env.globals.sym));
     // 对照组：普通原语两侧一致
-    expect(formatShape(evaluated.globals.ok)).toBe(formatShape(env.globals.ok));
+    expect(formatShape(evaluated.globals.ok as Abs)).toBe(formatShape(env.globals.ok));
   });
 
   it("磁盘投影面（签名投影）同样保留 bigint / symbol", () => {

@@ -30,7 +30,7 @@ function v(src: string) {
 function throwName(src: string): string {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
 /** 是否 definite throw（结果面是 never + throws 面是具名 brand） */

@@ -29,11 +29,11 @@ describe("Bug 349 check 签名面：fn 形参不出现内部占位 term", () => 
 
   it("形参类型是 (number) => number（无 x0 / ret）", () => {
     expect(sig).toBeDefined();
-    expect(sig!.paramTypes[0]).toBe("(number) => number");
+    expect(sig!.paramTypes![0]).toBe("(number) => number");
   });
   it("签名面不含占位名", () => {
     const line = r.signatures
-      .map((s) => s.paramTypes.join(" | "))
+      .map((s) => s.paramTypes!.join(" | "))
       .join(" ");
     expect(line).not.toContain("x0");
     expect(line).not.toContain("ret");
@@ -42,21 +42,25 @@ describe("Bug 349 check 签名面：fn 形参不出现内部占位 term", () => 
 
 describe("Bug 349 formatShape：fn 内层槽位压占位 term、留 α 名", () => {
   it("占位 term（x0 / ret）不回显", () => {
-    const slot = abs({ k: "prim", type: "number" }, termVar("x0"));
-    const ret = abs({ k: "prim", type: "number" }, termVar("ret"));
+    const slot = abs({ k: "prim", type: "number" }, termVar("x0"), undefined, "exact");
+    const ret = abs({ k: "prim", type: "number" }, termVar("ret"), undefined, "exact");
     const f = abs(
       { k: "fn", params: ["x"], paramTypes: [slot], returnType: ret },
       undefined,
+      undefined,
+      "exact",
     );
     expect(formatShape(f)).toBe("(number) => number");
   });
 
   it("关系 fn 的 α 名（A1 / B1）照旧回显", () => {
-    const slot = abs({ k: "any" }, termVar("A1"));
-    const ret = abs({ k: "any" }, termVar("B1"));
+    const slot = abs({ k: "any" }, termVar("A1"), undefined, "exact");
+    const ret = abs({ k: "any" }, termVar("B1"), undefined, "exact");
     const f = abs(
       { k: "fn", params: ["x"], paramTypes: [slot], returnType: ret },
       undefined,
+      undefined,
+      "exact",
     );
     expect(formatShape(f)).toBe("(A1) => B1");
   });

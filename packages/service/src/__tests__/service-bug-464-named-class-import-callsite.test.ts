@@ -17,11 +17,17 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { analyzeFile, collectCallRecords } from "../analyzer.ts";
-import { litValue } from "@nudojs/core";
+import { litValue, type Abs } from "@nudojs/core";
 import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
 
 const OTHER = `export function helper(x) { return x * 3; }
 `;
+
+/** 字面量值面（litValue 的 ok 判别式收窄；非字面量 → undefined） */
+function litOf(a: Abs): unknown {
+  const lv = litValue(a);
+  return lv.ok ? lv.value : undefined;
+}
 
 describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）", () => {
   it("import { Svc }：调用点归因到类所在模块并合成 call@ case", () =>
@@ -42,8 +48,8 @@ describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）",
       expect(rec).toBeDefined();
       // 归因到**类所在模块**（此前为 undefined → 记录被整条丢弃）
       expect(rec!.targetModule).toBe(t9);
-      expect(litValue(rec!.argAbs[0]!).value).toBe(1);
-      expect(litValue(rec!.resultAbs).value).toBe(2);
+      expect(litOf(rec!.argAbs[0]!)).toBe(1);
+      expect(litOf(rec!.resultAbs)).toBe(2);
 
       // 注入后合成 call@ case（不再回落 entry@）
       const result = analyzeFile(t9, readFileSync(t9, "utf-8"), undefined, records);
@@ -51,7 +57,7 @@ describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）",
       expect(fn).toBeDefined();
       const call = fn!.cases.find((c) => c.source === "callsite");
       expect(call).toBeDefined();
-      expect(litValue(call!.abs).value).toBe(2);
+      expect(litOf(call!.abs)).toBe(2);
       expect(fn!.cases.some((c) => c.name.startsWith("entry@"))).toBe(false);
     }));
 
@@ -71,7 +77,7 @@ describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）",
       const rec = records.find((r) => r.fnName === "Svc464b.run");
       expect(rec).toBeDefined();
       expect(rec!.targetModule).toBe(t9);
-      expect(litValue(rec!.resultAbs).value).toBe(3);
+      expect(litOf(rec!.resultAbs)).toBe(3);
     }));
 
   it("负控制：命名空间导入形态仍按成员名归因（exportName = 成员名）", () =>
@@ -114,6 +120,6 @@ describe("Bug 464：具名类导入的调用点归因（--from 不再丢弃）",
       const result = analyzeFile(t9, readFileSync(t9, "utf-8"), undefined, records);
       const fn = result.functions.find((f) => f.name === "Svc464d.run");
       expect(fn!.cases.filter((c) => c.source === "callsite")).toHaveLength(1);
-      expect(litValue(fn!.cases[0]!.abs).value).toBe(2);
+      expect(litOf(fn!.cases[0]!.abs)).toBe(2);
     }));
 });

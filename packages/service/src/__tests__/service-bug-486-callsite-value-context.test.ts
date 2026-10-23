@@ -47,7 +47,10 @@ addTo(1);
       // 现场观测：addTo(5)=5, addTo(1)=6（模块级累加器）
       const values = fn!.cases
         .filter((c) => c.name.startsWith("call@"))
-        .map((c) => c.abs.term?.value)
+        .map((c) => {
+          const t = c.abs.term;
+          return t?.op === "lit" ? t.value : undefined;
+        })
         .sort((a, b) => Number(a) - Number(b));
       expect(values).toEqual([5, 6]);
     }));
@@ -71,6 +74,7 @@ const x = add(1, 2);
       );
       const fn = result.functions.find((f) => f.name === "add");
       const call = fn!.cases.find((c) => c.name.startsWith("call@"));
-      expect(call!.abs.term?.value).toBe(3);
+      const ct = call!.abs.term;
+      expect(ct?.op === "lit" ? ct.value : undefined).toBe(3);
     }));
 });

@@ -24,7 +24,8 @@ describe("Bug 262：concat 的非数组接收者整体作为单元素", () => {
     const lit = r.result;
     expect(lit.shape.k).toBe("prim");
     expect(lit.term?.op).toBe("lit");
-    expect(lit.term?.value).toBe("ab");
+    const t = lit.term;
+    expect(t?.op === "lit" ? t.value : undefined).toBe("ab");
   });
 
   it("concat.call(闭 obj) = 1 个元素（原生；此前 2 个）", () => {

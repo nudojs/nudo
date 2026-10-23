@@ -24,8 +24,10 @@ describe("Bug 354 · array 缺元素约束守卫", () => {
   });
 
   it("array() 抛 Nudo 原生诊断（点名构造器 + 给出写法）", () => {
-    expect(() => array()).toThrow(/nudo array\(\)/);
-    expect(() => array()).toThrow(/element constraint is required/);
+    // 少传实参：零参调用与 `array(undefined)` 同口径（守卫判的是实参值，
+    // 不是实参个数）⇒ 用显式 undefined 表达「缺参」。
+    expect(() => array(undefined)).toThrow(/nudo array\(\)/);
+    expect(() => array(undefined)).toThrow(/element constraint is required/);
   });
 
   it("array(undefined) 与 array() 同口径（不得静默变 lit(undefined)）", () => {

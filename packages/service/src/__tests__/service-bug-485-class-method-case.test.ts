@@ -35,7 +35,8 @@ describe("Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 unkno
       const c = fn!.cases.find((x) => x.name === "k");
       expect(c).toBeDefined();
       expect(c!.abs.term?.op).toBe("lit");
-      expect(c!.abs.term?.value).toBe(1);
+      const t = c!.abs.term;
+      expect(t?.op === "lit" ? t.value : undefined).toBe(1);
     }));
 
   it("实例方法：见证实参参与运算（(1) => 2）", () =>
@@ -51,7 +52,8 @@ describe("Bug 485：类方法上的 @nudo:case 见证被求值（不再恒 unkno
       const result = analyzeFile(file, readFileSync(file, "utf-8"));
       const fn = result.functions.find((f) => f.name === "C.m");
       const c = fn!.cases.find((x) => x.name === "k");
-      expect(c!.abs.term?.value).toBe(2);
+      const t = c!.abs.term;
+      expect(t?.op === "lit" ? t.value : undefined).toBe(2);
     }));
 
   it("负控制：顶层函数同款 case 口径不变（结果 1）", () =>
@@ -65,7 +67,8 @@ export function f(x) { return 1; }
       const result = analyzeFile(file, readFileSync(file, "utf-8"));
       const fn = result.functions.find((f) => f.name === "f");
       const c = fn!.cases.find((x) => x.name === "k");
-      expect(c!.abs.term?.value).toBe(1);
+      const t = c!.abs.term;
+      expect(t?.op === "lit" ? t.value : undefined).toBe(1);
     }));
 
   it("负控制：判不出来时如实回落 unknown（不编造值）", () =>

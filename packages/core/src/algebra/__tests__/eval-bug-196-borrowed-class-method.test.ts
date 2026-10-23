@@ -25,7 +25,7 @@ function v(src: string) {
 function throwName(src: string): string {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
 describe("Bug 196 — 借用类方法按方法体执行（this = 接收者），不按接收者成员表反查", () => {

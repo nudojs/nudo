@@ -83,7 +83,7 @@ describe("Bug 935 — 项目级 package.json#nudo.env 的元素级校验", () =>
     const dir = tmpProject("nudo-bug-935-proj-", {
       "package.json": JSON.stringify({ name: "p935", nudo: { env: ["node", 42, null] } }),
     });
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const err = captureStderr(() => {
       found = findProjectConfig(dir);
     });
@@ -96,7 +96,7 @@ describe("Bug 935 — 项目级 package.json#nudo.env 的元素级校验", () =>
     const dir = tmpProject("nudo-bug-935-proj-shape-", {
       "package.json": JSON.stringify({ name: "p935b", nudo: { env: "node" } }),
     });
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const err = captureStderr(() => {
       found = findProjectConfig(dir);
     });
@@ -108,7 +108,7 @@ describe("Bug 935 — 项目级 package.json#nudo.env 的元素级校验", () =>
     const dir = tmpProject("nudo-bug-935-proj-ok-", {
       "package.json": JSON.stringify({ name: "p935c", nudo: { env: ["node", "es"] } }),
     });
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const err = captureStderr(() => {
       found = findProjectConfig(dir);
     });

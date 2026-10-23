@@ -45,7 +45,7 @@ function writeTemp(name: string, content: string): string {
 function retOf(env: { globals: Record<string, Abs> }, name: string): string {
   const fn = env.globals[name]!;
   const rel = getFnImpl(fn)?.relation;
-  const rt = rel?.returnType ?? fn.shape?.returnType;
+  const rt = rel?.returnType ?? (fn.shape.k === "fn" ? fn.shape.returnType : undefined);
   return rt ? formatShape(rt) : "<none>";
 }
 

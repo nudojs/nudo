@@ -13,23 +13,25 @@
  * 锚定值均为 node 原生实测（各断言注释）。
  */
 import { describe, it, expect } from "vitest";
-import { litValue } from "../abs.ts";
+import { litValue, type Abs } from "../abs.ts";
 import { call } from "./eval-helpers.ts";
 import { runTranspiled } from "../exec/run.ts";
 
 describe("解构绑定的可变性（161）", () => {
   it("形参解构后可再赋 → 5（修前 throws TypeError）", () => {
-    const r = call(`export function f({ a }) { a = 5; return a; }`, "f", [{ a: 1 }]);
+    // 实参传宿主裸值（运行时由 callTranspiledExportFull 收成 Abs）⇒ 这里
+    // 只做类型层 cast，不改实参形态。
+    const r = call(`export function f({ a }) { a = 5; return a; }`, "f", [{ a: 1 }] as unknown as Abs[]);
     expect(litValue(r.result)).toEqual({ ok: true, value: 5 });
   });
 
   it("数组形参解构后可再赋 → 5（修前 throws TypeError）", () => {
-    const r = call(`export function f([a]) { a = 5; return a; }`, "f", [[1]]);
+    const r = call(`export function f([a]) { a = 5; return a; }`, "f", [[1]] as unknown as Abs[]);
     expect(litValue(r.result)).toEqual({ ok: true, value: 5 });
   });
 
   it("rest 形参解构后可再赋 → 5（修前 throws TypeError）", () => {
-    const r = call(`export function f([...a]) { a = 5; return a; }`, "f", [[1, 2]]);
+    const r = call(`export function f([...a]) { a = 5; return a; }`, "f", [[1, 2]] as unknown as Abs[]);
     expect(litValue(r.result)).toEqual({ ok: true, value: 5 });
   });
 

@@ -26,7 +26,7 @@ import type { Abs } from "@nudojs/core";
  */
 
 function roundTrip(a: Abs): Abs {
-  const env = { globals: { x: a }, modules: {} };
+  const env = { globals: { x: a }, modules: {}, stats: { files: 1, symbols: 1, skipped: 0 } };
   const json = serializeHarvestJson("pkg", env, { dtsHash: "h", maxFiles: 12 });
   const back = materializeHarvestJson(json);
   expect(back, "materialize must not miss").toBeTruthy();
@@ -39,7 +39,10 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
       {
         k: "obj",
         slots: {},
-        index: { key: abs({ k: "prim", type: "string" }), value: abs({ k: "prim", type: "number" }) },
+        index: {
+          key: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"),
+          value: abs({ k: "prim", type: "number" }, undefined, undefined, "exact"),
+        },
         open: true,
       },
       undefined,
@@ -66,8 +69,8 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
     const tup = abs(
       {
         k: "tuple",
-        elements: [abs({ k: "prim", type: "number" })],
-        rest: abs({ k: "prim", type: "string" }),
+        elements: [abs({ k: "prim", type: "number" }, undefined, undefined, "exact")],
+        rest: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"),
       },
       undefined,
       undefined,
@@ -84,8 +87,8 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
       {
         k: "fn",
         params: ["x"],
-        paramTypes: [abs({ k: "prim", type: "number" })],
-        returnType: abs({ k: "prim", type: "string" }),
+        paramTypes: [abs({ k: "prim", type: "number" }, undefined, undefined, "exact")],
+        returnType: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"),
         ctor: true,
       },
       undefined,
@@ -103,8 +106,8 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
         k: "fn",
         params: [],
         paramTypes: [],
-        returnType: abs({ k: "prim", type: "number" }),
-        slots: { of: { value: abs({ k: "prim", type: "number" }) } },
+        returnType: abs({ k: "prim", type: "number" }, undefined, undefined, "exact"),
+        slots: { of: { value: abs({ k: "prim", type: "number" }, undefined, undefined, "exact") } },
       },
       undefined,
       undefined,
@@ -137,7 +140,10 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
       {
         k: "obj",
         slots: {},
-        index: { key: abs({ k: "prim", type: "string" }), value: abs({ k: "prim", type: "number" }) },
+        index: {
+          key: abs({ k: "prim", type: "string" }, undefined, undefined, "exact"),
+          value: abs({ k: "prim", type: "number" }, undefined, undefined, "exact"),
+        },
         open: true,
       },
       undefined,

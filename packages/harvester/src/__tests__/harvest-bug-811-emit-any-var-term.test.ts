@@ -23,7 +23,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatShape } from "@nudojs/core";
+import { formatShape, type Abs } from "@nudojs/core";
 import { harvestDts, emitEnvModule } from "../harvest-dts.ts";
 
 const dirs: string[] = [];
@@ -104,6 +104,6 @@ describe("Bug 811 —— 落盘产物保留泛型 α 的 var term（不被降级
     // α 的 var term 必须在产物里活着（否则落盘 env 整体失去泛型性）
     expect(varTermIds(evaluated.globals.first)).toEqual(["T"]);
     expect(arrElemVarIds(evaluated.globals.first)).toEqual(["T"]);
-    expect(formatShape(evaluated.globals.first)).toBe(formatShape(env.globals.first));
+    expect(formatShape(evaluated.globals.first as Abs)).toBe(formatShape(env.globals.first));
   });
 });

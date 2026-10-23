@@ -113,7 +113,7 @@ describe("Bug 290: match/exec 结果的可迭代面（原生数组 exotic）", (
     );
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
-    expect(String(lv.value)).toBe("0,1,index,input,groups");
+    expect(String(lv.ok ? lv.value : undefined)).toBe("0,1,index,input,groups");
   });
 
   it("负控制：全局 match（纯串数组）与无匹配（null）行为不变", () => {

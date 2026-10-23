@@ -70,7 +70,8 @@ describe("Bug 399 formal param optional marker", () => {
       { type: "AssignmentPattern", left: { type: "Identifier", name: "b" } },
     ] as never);
     // 名字不带 `?` / `...` 后缀 ⇒ 消费侧必须读 optional 标记
-    expect(formals[0]!.name).toBe("b");
-    expect(formals[0]!.optional).toBe(true);
+    const p = formals[0]!;
+    expect(p.kind === "default" ? p.name : undefined).toBe("b");
+    expect(p.optional).toBe(true);
   });
 });

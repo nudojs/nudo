@@ -30,7 +30,7 @@ beforeEach(() => {
 
 /** 取源里第一个函数声明的节点。 */
 function firstFnNode(source: string) {
-  const file = parseSource(source, "/test/bug397.ts");
+  const file = parseSource(source);
   for (const stmt of file.program.body) {
     const node = stmt as { type: string; declaration?: { type: string } };
     if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "FunctionDeclaration") {

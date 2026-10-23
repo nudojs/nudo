@@ -120,6 +120,7 @@ export function g() { return f(); }
     // 共享脚手架 eval-helpers：零实参调用 ⇒ 运行时取默认值 -5
     const rec = callLit(`export function f(x = -5) { return x; }`, "f");
     expect(rec.result.term?.op).toBe("lit");
-    expect(rec.result.term?.value).toBe(-5);
+    const t = rec.result.term;
+    expect(t?.op === "lit" ? t.value : undefined).toBe(-5);
   });
 });

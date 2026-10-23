@@ -12,7 +12,7 @@ import { call } from "./eval-helpers.ts";
 function v(src: string): unknown {
   const r = litValue(call(`export function f() { ${src} }`, "f").result);
   expect(r.ok).toBe(true);
-  return r.value;
+  return r.ok ? r.value : undefined;
 }
 
 describe("Bug 226 — 对象 rest 解构触发 getter", () => {

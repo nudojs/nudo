@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { formatShape } from "@nudojs/core";
+import type { DirectiveDiag } from "@nudojs/parser";
 import { analyzeFile } from "../analyzer.ts";
 import { collectEvalReplacements } from "../eval-run.ts";
 
@@ -187,14 +188,14 @@ export function f() {
 `;
     const reps = collectEvalReplacements(src);
     expect(reps.asTargets.length).toBe(0);
-    const diags: Array<{ code: string }> = [];
+    const diags: DirectiveDiag[] = [];
     collectEvalReplacements(src, { diags });
     expect(diags.map((d) => d.code)).toContain("nudo:directive-syntax");
   });
 
   it("无任何行内指令的源码不产生诊断", () => {
     const src = `export function f() {\n  return 1;\n}\n`;
-    const diags: Array<{ code: string }> = [];
+    const diags: DirectiveDiag[] = [];
     const reps = collectEvalReplacements(src, { diags });
     expect(reps.asTargets.length).toBe(0);
     expect(reps.targets.length).toBe(0);

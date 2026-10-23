@@ -68,7 +68,7 @@ describe("Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值�
       const root = rootWithConfig();
       const sub = subPackage(root, raw);
 
-      let found: ReturnType<typeof findProjectConfig> = null;
+      let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
       const out = captureStderr(() => {
         found = findProjectConfig(sub);
       });
@@ -83,7 +83,7 @@ describe("Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值�
   it("假值 nudo 键：根包的 check.ignoreThrows 不得吞掉子包的 L2", () => {
     const root = rootWithConfig();
     const sub = subPackage(root, false);
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     captureStderr(() => {
       found = findProjectConfig(sub);
     });
@@ -95,7 +95,7 @@ describe("Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值�
   it("假值 nudo 键：根包的 nudo.env 不得渗进子包", () => {
     const root = rootWithConfig();
     const sub = subPackage(root, false);
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     captureStderr(() => {
       found = findProjectConfig(sub);
     });
@@ -106,7 +106,7 @@ describe("Bug 936 — 假值 nudo 键遮断祖先配置（存在性 ≠ 真值�
   it("\"nudo\": {}（空对象）：遮断祖先搜索，配置为空", () => {
     const root = rootWithConfig();
     const sub = subPackage(root, {});
-    let found: ReturnType<typeof findProjectConfig> = null;
+    let found: ReturnType<typeof findProjectConfig> = null as ReturnType<typeof findProjectConfig>;
     const out = captureStderr(() => {
       found = findProjectConfig(sub);
     });

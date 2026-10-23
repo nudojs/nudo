@@ -69,9 +69,7 @@ describe("String 方法的模式实参是自由标识符（179）", () => {
 
   it("转译产物不得给自由标识符生成赋值（eval / arguments / undefined）", () => {
     for (const pat of ["eval", "arguments", "undefined", "Math"]) {
-      const src = transpileSource(`export function __run() {\nreturn 'abc'.replaceAll(${pat}, 'x');\n}`, {
-        mode: "exec",
-      });
+      const src = transpileSource(`export function __run() {\nreturn 'abc'.replaceAll(${pat}, 'x');\n}`);
       expect(/\b(eval|arguments|undefined|Math)\s*=[^=]/.test(src)).toBe(false);
     }
   });

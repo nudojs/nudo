@@ -26,7 +26,7 @@ import { caseExpectedSatisfied } from "../analyzer-orchestrate-uncached-cases.ts
 import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
 
 /** 找出 nudo:case-expected 诊断（期望不满足）。 */
-function caseExpectedIssues(result: { diagnostics: readonly { code: string }[] }): number {
+function caseExpectedIssues(result: { diagnostics: readonly { code?: string }[] }): number {
   return result.diagnostics.filter((d) => d.code === "nudo:case-expected").length;
 }
 

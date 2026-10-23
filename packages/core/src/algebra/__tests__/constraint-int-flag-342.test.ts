@@ -20,23 +20,28 @@ import {
   number,
 } from "../index.ts";
 
+/** pred 树节点（只读本测试关心的字段） */
+type IntPredNode = {
+  op?: string;
+  fn?: string;
+  value?: unknown;
+  a?: IntPredNode;
+  b?: IntPredNode;
+  args?: IntPredNode[];
+};
+
 /** pred 树里有没有 `eq(x % 1, 0)` 这条整性编码 */
 function hasIntEncoding(pred: unknown): boolean {
   if (!pred || typeof pred !== "object") return false;
-  const p = pred as {
-    op?: string;
-    a?: { op?: string; fn?: string; args?: Array<{ op?: string; value?: unknown }> };
-    b?: { op?: string; value?: unknown };
-    args?: unknown[];
-  };
+  const p = pred as IntPredNode;
   if (p.op === "eq") {
-    const isModOne = (t: p["a"]): boolean =>
+    const isModOne = (t: IntPredNode | undefined): boolean =>
       t?.op === "app" &&
       t.fn === "%" &&
       t.args?.length === 2 &&
       t.args[1]?.op === "lit" &&
       t.args[1]?.value === 1;
-    const isZero = (t: p["b"]): boolean => t?.op === "lit" && t.value === 0;
+    const isZero = (t: IntPredNode | undefined): boolean => t?.op === "lit" && t.value === 0;
     if ((isModOne(p.a) && isZero(p.b)) || (isModOne(p.b) && isZero(p.a))) return true;
   }
   if (p.op === "and" && Array.isArray(p.args)) {

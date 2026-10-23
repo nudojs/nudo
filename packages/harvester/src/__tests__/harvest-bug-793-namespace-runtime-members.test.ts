@@ -22,7 +22,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatShape } from "@nudojs/core";
+import { formatShape, type Abs } from "@nudojs/core";
 import { harvestDts } from "../harvest-dts.ts";
 
 const dirs: string[] = [];
@@ -135,9 +135,9 @@ declare namespace B {
 `,
     );
     const env = harvestDts([p]);
-    const a = (env.globals["A"]! as { shape: { slots: Record<string, { value: unknown }> } }).shape.slots["f"]!
+    const a = (env.globals["A"]! as { shape: { slots: Record<string, { value: Abs }> } }).shape.slots["f"]!
       .value;
-    const b = (env.globals["B"]! as { shape: { slots: Record<string, { value: unknown }> } }).shape.slots["f"]!
+    const b = (env.globals["B"]! as { shape: { slots: Record<string, { value: Abs }> } }).shape.slots["f"]!
       .value;
     expect(formatShape(a)).toBe("() => number");
     expect(formatShape(b)).toBe("() => string");

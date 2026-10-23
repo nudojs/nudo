@@ -158,7 +158,7 @@ describe("Bug 203 — 类体 static \"@@hasInstance\"（字符串键）不是 Sy
     const src = `export class A { static [Symbol.hasInstance](v) { return true; } }`;
     const exports = runTranspiled(src, { mode: "analyze" }) as Record<string, Abs>;
     const cls = exports.A!;
-    const inner = cls.shape.shape as Abs;
+    const inner = (cls.shape as { k: "brand"; name: string; shape: Abs }).shape;
     const objShape = inner.shape as { k: string; slots: Record<string, { symbolKey?: boolean }> };
     expect(objShape.k).toBe("obj");
     const slot = objShape.slots["@@hasInstance"]!;
@@ -170,7 +170,7 @@ describe("Bug 203 — 类体 static \"@@hasInstance\"（字符串键）不是 Sy
     const src = `export class A { static "@@hasInstance"() { return true; } }`;
     const exports = runTranspiled(src, { mode: "analyze" }) as Record<string, Abs>;
     const cls = exports.A!;
-    const inner = cls.shape.shape as Abs;
+    const inner = (cls.shape as { k: "brand"; name: string; shape: Abs }).shape;
     const objShape = inner.shape as { k: string; slots: Record<string, { symbolKey?: boolean }> };
     expect(objShape.k).toBe("obj");
     const slot = objShape.slots["@@hasInstance"]!;

@@ -16,6 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { formatShape, numLit, strLit, type Abs } from "@nudojs/core";
 import nodePath from "node:path";
+import type { FormatInputPathObject } from "node:path";
 import { applyOut, brandName, callSite, envMember } from "./env-bug-s3-helpers.ts";
 
 /** `undefined` 字面量（引擎里是 unknown shape + lit(undefined)）。 */
@@ -47,18 +48,20 @@ type Case = {
   native: () => unknown;
 };
 
+// 坏实参（number）**故意**传给原生 path 族当 oracle——运行期就是原生
+// 必抛 TypeError 的那批调用；类型层用 cast 表达「故意传错型」。
 const BAD: Case[] = [
-  { name: "join(123)", member: "join", args: [numLit(123)], native: () => nodePath.join(123) },
-  { name: "join('a', 1)", member: "join", args: [strLit("a"), numLit(1)], native: () => nodePath.join("a", 1) },
-  { name: "basename('/x/y.txt', 5)", member: "basename", args: [strLit("/x/y.txt"), numLit(5)], native: () => nodePath.basename("/x/y.txt", 5) },
-  { name: "dirname(123)", member: "dirname", args: [numLit(123)], native: () => nodePath.dirname(123) },
-  { name: "extname(456)", member: "extname", args: [numLit(456)], native: () => nodePath.extname(456) },
-  { name: "isAbsolute(123)", member: "isAbsolute", args: [numLit(123)], native: () => nodePath.isAbsolute(123) },
-  { name: "relative('/a', 7)", member: "relative", args: [strLit("/a"), numLit(7)], native: () => nodePath.relative("/a", 7) },
-  { name: "normalize(789)", member: "normalize", args: [numLit(789)], native: () => nodePath.normalize(789) },
-  { name: "parse(123)", member: "parse", args: [numLit(123)], native: () => nodePath.parse(123) },
-  { name: "resolve(789)", member: "resolve", args: [numLit(789)], native: () => nodePath.resolve(789) },
-  { name: "format(123)", member: "format", args: [numLit(123)], native: () => nodePath.format(123) },
+  { name: "join(123)", member: "join", args: [numLit(123)], native: () => nodePath.join(123 as unknown as string) },
+  { name: "join('a', 1)", member: "join", args: [strLit("a"), numLit(1)], native: () => nodePath.join("a", 1 as unknown as string) },
+  { name: "basename('/x/y.txt', 5)", member: "basename", args: [strLit("/x/y.txt"), numLit(5)], native: () => nodePath.basename("/x/y.txt", 5 as unknown as string) },
+  { name: "dirname(123)", member: "dirname", args: [numLit(123)], native: () => nodePath.dirname(123 as unknown as string) },
+  { name: "extname(456)", member: "extname", args: [numLit(456)], native: () => nodePath.extname(456 as unknown as string) },
+  { name: "isAbsolute(123)", member: "isAbsolute", args: [numLit(123)], native: () => nodePath.isAbsolute(123 as unknown as string) },
+  { name: "relative('/a', 7)", member: "relative", args: [strLit("/a"), numLit(7)], native: () => nodePath.relative("/a", 7 as unknown as string) },
+  { name: "normalize(789)", member: "normalize", args: [numLit(789)], native: () => nodePath.normalize(789 as unknown as string) },
+  { name: "parse(123)", member: "parse", args: [numLit(123)], native: () => nodePath.parse(123 as unknown as string) },
+  { name: "resolve(789)", member: "resolve", args: [numLit(789)], native: () => nodePath.resolve(789 as unknown as string) },
+  { name: "format(123)", member: "format", args: [numLit(123)], native: () => nodePath.format(123 as unknown as FormatInputPathObject) },
 ];
 
 const GOOD: Case[] = [
@@ -126,7 +129,7 @@ describe("Bug 877 · node:path 族实参类型执法", () => {
   });
 
   it("6. posix / win32 平台路径对象同口径（原生 posix.join(123) 也必抛）", () => {
-    expect(() => nodePath.posix.join(123)).toThrow(TypeError);
+    expect(() => nodePath.posix.join(123 as unknown as string)).toThrow(TypeError);
     const posix = envMember("node:path", "posix");
     expect(posix.shape.k).toBe("brand");
     const inner = (posix.shape as { shape: Abs }).shape;

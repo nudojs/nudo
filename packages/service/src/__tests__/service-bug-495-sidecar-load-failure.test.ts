@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { analyzeFile } from "../analyzer.ts";
 import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
 
-function codes(result: { diagnostics: readonly { code: string }[] }): string[] {
+function codes(result: { diagnostics: readonly { code?: string }[] }): (string | undefined)[] {
   return result.diagnostics.map((d) => d.code);
 }
 

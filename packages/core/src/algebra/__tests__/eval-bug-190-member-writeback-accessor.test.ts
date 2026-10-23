@@ -28,7 +28,7 @@ function v(src: string) {
 function throwsName(src: string): string | null {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t || !t.shape || t.shape.k === "never") return null;
-  return t.shape.k === "brand" ? (t.shape.name ?? "brand") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "brand") : (t.shape.k as string);
 }
 
 describe("Bug 190: 成员路径写回不得打到根（中间层是访问器时）", () => {

@@ -114,7 +114,7 @@ describe("Bug 241: 字面量判别式 + 非字面量 case 测试 ⇒ 该臂不�
     const r = call(src, "f", [NUMBER_ABS]);
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
-    expect(lv.value).toBe("t");
+    expect(lv.ok ? lv.value : undefined).toBe("t");
   });
 
   it("负控制：非字面量 case 测试仍按序惰性求值（命中即停，Bug 168 口径）", () => {
@@ -122,6 +122,6 @@ describe("Bug 241: 字面量判别式 + 非字面量 case 测试 ⇒ 该臂不�
     const r = call(src, "f", [NUMBER_ABS]);
     const lv = litValue(r.result);
     expect(lv.ok).toBe(true);
-    expect(lv.value).toBe(1);
+    expect(lv.ok ? lv.value : undefined).toBe(1);
   });
 });

@@ -29,7 +29,7 @@ function v(src: string) {
 function throwName(src: string): string {
   const t = call(src, "f").throws as { shape?: { k?: string; name?: string } } | undefined;
   if (!t?.shape || t.shape.k === "never") return "";
-  return t.shape.k === "brand" ? (t.shape.name ?? "") : t.shape.k;
+  return t.shape.k === "brand" ? (t.shape.name ?? "") : (t.shape.k as string);
 }
 
 // 内建原型对象是**进程级单例**——本文件对它们的改写会漏进后续用例

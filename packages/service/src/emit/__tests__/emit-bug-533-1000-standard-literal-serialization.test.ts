@@ -23,6 +23,7 @@ import {
   lit,
   numLit,
   v,
+  type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
 import { absToSchemaNode } from "../schema-generator.ts";

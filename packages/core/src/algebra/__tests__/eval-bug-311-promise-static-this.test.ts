@@ -17,7 +17,8 @@
  *    合并前端到端仍是「静态派发无接收者」（返回 promise<1>、L2 假绿）。
  */
 import { describe, it, expect } from "vitest";
-import { abs, absLit, numLit } from "@nudojs/core";
+import { abs, numLit } from "@nudojs/core";
+import { absLit } from "../abs.ts";
 import { evalNamespaceCall } from "../builtins/error.ts";
 import { call } from "./eval-helpers.ts";
 import type { Abs } from "@nudojs/core";

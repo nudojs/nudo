@@ -58,9 +58,10 @@ describe("Bug 398：leqAbs 的字面量同一性按 SameValue（Object.is）判�
     const r = call("export function f() { return 0; }", "f", []);
     const actual = litValue(r.result);
     expect(actual.ok).toBe(true);
-    expect(Object.is(actual.value, -0)).toBe(false);
-    expect(Object.is(actual.value, 0)).toBe(true);
+    const actualValue = actual.ok ? actual.value : undefined;
+    expect(Object.is(actualValue, -0)).toBe(false);
+    expect(Object.is(actualValue, 0)).toBe(true);
     // 期望（-0）对实际（+0）：SameValue 下不满足
-    expect(leqAbs(numLit(actual.value as number), numLit(-0)).ok).toBe(false);
+    expect(leqAbs(numLit(actualValue as number), numLit(-0)).ok).toBe(false);
   });
 });

@@ -29,6 +29,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue, resetCheckSourceMemo, resetGeneralizeMemo } from "@nudojs/core";
+import type { CheckIssue } from "../check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 const SIDE = `import { number, lit, union, nullable } from "@nudojs/core";
@@ -49,7 +50,7 @@ function check(src: string) {
 }
 
 /** 调用点前置条件违例（nudo:constraint-violated） */
-function violated(r: { issues: { code: string }[] }) {
+function violated(r: { issues: CheckIssue[] }) {
   return r.issues.filter((i) => i.code === "nudo:constraint-violated");
 }
 

@@ -22,10 +22,9 @@ import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { withInvariantSpecs } from "../exec/runtime/state.ts";
 import { applyInvariantsToPack } from "../exec/runtime/invariant-apply.ts";
-import { abs, num } from "../abs.ts";
+import { abs, num, type Abs } from "../abs.ts";
 import { lit, v } from "../term.ts";
 import { ge, le, predToString } from "../pred.ts";
-import type { Abs } from "../../abs.ts";
 
 const sidecarOpts = (sidecar: string) => ({
   loadModule: (spec: string) => (spec.endsWith(".nudo.js") ? sidecar : undefined),

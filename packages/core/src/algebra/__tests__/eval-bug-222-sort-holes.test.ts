@@ -17,7 +17,7 @@ import { call } from "./eval-helpers.ts";
 function v(src: string): unknown {
   const r = litValue(call(`export function f() { ${src} }`, "f").result);
   expect(r.ok).toBe(true);
-  return r.value;
+  return r.ok ? r.value : undefined;
 }
 
 describe("Bug 222 — sort 保留稀疏数组的空洞", () => {

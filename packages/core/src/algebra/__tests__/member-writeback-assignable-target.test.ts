@@ -76,7 +76,6 @@ describe("转译产物：写回目标不得是 $nodoPos(...) 调用", () => {
   for (const body of bodies) {
     it(`无 "$nodoPos(...) =" 赋值：${body}`, () => {
       const src = transpileSource(`export function __run() {\n${body}\n}`, {
-        mode: "exec",
         recordPositions: true,
       });
       expect(/\$nodoPos\([^)]*\)\s*=[^=]/.test(src)).toBe(false);

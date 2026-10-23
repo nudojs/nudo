@@ -43,7 +43,7 @@ export function f() { return "ab"; }
   it("sinon mock return value is unknown, not a wrong string", () => {
     const expr = parseSinonExpr('sinon.stub().returns("a" + "b")');
     expect(expr).not.toBeNull();
-    const lv = expr ? litValue(expr.returnValue) : { ok: false as const };
+    const lv = expr ? litValue(expr.returnValue!) : { ok: false as const };
     expect(lv.ok).toBe(false);
   });
 
@@ -51,6 +51,6 @@ export function f() { return "ab"; }
     const expr = parseSinonExpr('sinon.stub().returns("ab")');
     expect(expr).not.toBeNull();
     if (!expr) return;
-    expect(litValue(expr.returnValue)).toEqual({ ok: true, value: "ab" });
+    expect(litValue(expr.returnValue!)).toEqual({ ok: true, value: "ab" });
   });
 });

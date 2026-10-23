@@ -37,7 +37,6 @@ function checkCaller(caller: string) {
   });
   return checkSource("/t/caller.js", caller, pTrue, {
     loadModule: files.loadModule,
-    resolve: files.resolve,
     fromFile: "/t/caller.js",
   });
 }

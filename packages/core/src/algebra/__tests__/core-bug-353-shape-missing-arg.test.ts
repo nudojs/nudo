@@ -23,14 +23,16 @@ describe("Bug 353 · shape 缺参诊断（宿主原文不得冒泡）", () => {
   });
 
   it("shape() 抛 Nudo 原生诊断，点名构造器并说明缺参", () => {
-    expect(() => shape()).toThrow(/nudo shape\(\)/);
-    expect(() => shape()).toThrow(/fields object is required/);
+    // 少传实参：零参调用与 `shape(undefined)` 同口径（守卫判的是实参值，
+    // 不是实参个数）⇒ 用显式 undefined 表达「缺参」。
+    expect(() => shape(undefined as never)).toThrow(/nudo shape\(\)/);
+    expect(() => shape(undefined as never)).toThrow(/fields object is required/);
   });
 
   it("诊断不含宿主 TypeError 原文", () => {
     let msg = "";
     try {
-      shape();
+      shape(undefined as never);
     } catch (e) {
       msg = (e as Error).message;
     }

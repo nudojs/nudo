@@ -17,10 +17,10 @@ import { absToSchemaNode } from "../schema-generator.ts";
 import { absToStandardSchema, validateSchemaNode } from "../standard-schema.ts";
 import { loadGeneratedModule } from "./fixtures.ts";
 
-/** `{ c: 1 }` 形状的对象 Abs。 */
+/** `{ c: 1 }` 形状的对象 Abs（槽值 = 字面量 1：prim number shape + lit term）。 */
 const shapeAbs = (): Abs =>
   abs(
-    { k: "obj", slots: { c: { value: abs({ k: "lit", value: 1 }, { op: "lit", value: 1 }, undefined, "exact") } } },
+    { k: "obj", slots: { c: { value: abs({ k: "prim", type: "number" }, { op: "lit", value: 1 }, undefined, "exact") } } },
     undefined,
     undefined,
     "exact",
@@ -53,7 +53,7 @@ describe("Bug 549: 必填槽存在性用 HasProperty 语义", () => {
       {
         k: "obj",
         slots: {
-          toString: { value: abs({ k: "lit", value: "x" }, { op: "lit", value: "x" }, undefined, "exact") },
+          toString: { value: abs({ k: "prim", type: "string" }, { op: "lit", value: "x" }, undefined, "exact") },
         },
       },
       undefined,
