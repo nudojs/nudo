@@ -49,6 +49,7 @@ import {
 import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileFnBodyStmts } from "../stmt/fn-body.ts";
+import { asyncBodyPlan } from "../async-plan.ts";
 import { classSpecOf } from "../class-emit.ts";
 /** 参数模式名集（var 提升边界扣除）——stmt.ts paramNamesOf 的 expr 侧副本 */
 export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
@@ -206,6 +207,9 @@ export function transpileFunctionExpr(
       // 值求值**之前**建立（见 allPrologue 顺序）。
       const paramOpts: TranspileOptions = {
         ...opts,
+        // Bug 201：默认参数表达式不是 async 体的生成器段（原生：await 在
+        // 默认值里是语法错误）⇒ 归零（保持既有 `$await` 兜底）
+        inAsyncBody: false,
         ...(!isArrow && hasArgs ? { argsBinding: "__nudoArgs" } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
@@ -226,12 +230,23 @@ export function transpileFunctionExpr(
         opts.constNames && fnParamShadows.size > 0
           ? new Set([...opts.constNames].filter((n) => !fnParamShadows.has(n)))
           : opts.constNames;
+      // Bug 201：async 体的挂起可行性——体（含 await）且所有 await 都在
+      // **生成器级**位置 ⇒ 该体编译成宿主生成器（await = 真挂起点，由
+      // `$asyncGen` 驱动恢复）。否则沿用既有 `$async(thunk)` 同步路径
+      //（发射产物逐字不变 ⇒ 既有金标零漂移）。
+      const asyncPlan =
+        fn.async === true && fn.generator !== true ? asyncBodyPlan(fn.body) : undefined;
+      const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
         // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
         conditionalFlow: 0,
         inFunction: true,
+        // Bug 201：async 体的 await 发射 `yield`（真挂起点）；非 async 体
+        // 必须归零（嵌套同步函数不是生成器——`yield` 会是语法错误）
+        inAsyncBody: asyncGen,
+        ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
         ...(fnBodyConstNames !== opts.constNames ? { constNames: fnBodyConstNames } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
@@ -310,10 +325,20 @@ export function transpileFunctionExpr(
             ...argsSlotPrologue,
             ...prologue,
           ];
+      // Bug 201：生成器路径——宿主生成器**不自带** `this` / `arguments`
+      //（生成器函数有自己的 this 绑定、无 arguments 绑定）⇒ 两个槽提到
+      // **宿主函数作用域**（生成器体闭包读它们，语义不变）。
+      const genHoistPrologue: string[] = [];
+      let prologueParts = allPrologue;
+      if (asyncGen && hasThis) {
+        genHoistPrologue.push(...thisPrologue);
+        if (hasArgs) genHoistPrologue.push(...argsSlotPrologue);
+        prologueParts = allPrologue.filter((l) => !genHoistPrologue.includes(l));
+      }
       if (fn.body.type === "BlockStatement") {
         const raw = withImplicitReturn(
           fn.body,
-          [...allPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts, {
+          [...prologueParts, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts, {
             // Bug 21：函数体 var 提升边界——参数模式名已绑定，不得提升
             skip: paramNamesOfFn(fn.params),
           })].join("\n"),
@@ -333,14 +358,20 @@ export function transpileFunctionExpr(
         // 与「无 prototype」（箭头/async/方法）。声明路径走宿主函数分支
         //（isHostGeneratorFn 源形判定），此处是表达式面。
         if (hasThis) {
+          // Bug 201：async 体走生成器路径 ⇒ `function*(){…}` + `$asyncGen`
+          //（await = 真挂起点）。`this` / `arguments` 槽提到宿主函数作用域。
           const wrap = fn.async && !fn.generator
-            ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
+            ? asyncGen
+              ? `function (${argsParamParts.join(", ")}) {\n${genHoistPrologue.join("\n")}\nreturn $asyncGen(function* () {\n${inner}\n});\n}`
+              : `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
           return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
         }
         if (fn.async && !fn.generator) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+          // Bug 201：async 体走生成器路径 ⇒ 表达式体提升进 `function*(){…}`
+          //（箭头表达式体不是生成器——`yield` 会是语法错误）
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\n${inner}\n})` : `$async(() => {\n${inner}\n})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
         }
         return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
       }
@@ -355,14 +386,18 @@ export function transpileFunctionExpr(
       const mutTmp = safeTmpName("__mutRet", userIdentInfo(opts.source));
       /** 表达式体的返回序列（无写回时直返表达式） */
       const retSeq = (pad: string): string[] => {
+        // Bug 201：async 体走生成器路径 ⇒ 表达式体提升进 `function*(){…}`
+        //（箭头表达式体不是生成器——`yield` 会是语法错误）
+        const asyncWrap = (body: string): string =>
+          asyncGen ? `$asyncGen(function* () {\n${body}\n})` : `$async(() => ${body})`;
         if (rebinds.length === 0) {
-          return [`${pad}return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`];
+          return [`${pad}return ${fn.async ? asyncWrap(bodySrc) : bodySrc};`];
         }
         if (fn.async) {
           // async：捕获与写回都在 $async thunk **内**——写回是体的副作用，
           // 不得逸出 thunk（体内 throw 须落 promise 拒绝通道）
           return [
-            `${pad}return $async(() => {`,
+            `${pad}return ${asyncGen ? `$asyncGen(function* () {` : `$async(() => {`}`,
             `${pad}  let ${mutTmp} = ${bodySrc};`,
             ...rebinds.map((l) => `${pad}  ${l}`),
             `${pad}  return ${mutTmp};`,
@@ -377,9 +412,12 @@ export function transpileFunctionExpr(
       };
       if (allPrologue.length > 0 || hasThis) {
         // 表达式体 + 模式参数/this 注入：提升为块体以容纳 prologue
-        const inner = [...allPrologue, ...retSeq("  ")].join("\n");
+        const inner = [...prologueParts, ...retSeq("  ")].join("\n");
         if (hasThis) {
-          const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
+          // Bug 201：生成器路径——this / arguments 槽提到宿主函数作用域
+          const wrap = asyncGen
+            ? `function (${argsParamParts.join(", ")}) {\n${genHoistPrologue.join("\n")}\n${inner}\n}`
+            : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
           return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
         }
@@ -392,7 +430,8 @@ export function transpileFunctionExpr(
         return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
+        // Bug 201：生成器路径 ⇒ 表达式体提升进 `function*(){…}`
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\nreturn ${bodySrc};\n})` : `$async(() => ${bodySrc})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
       }
       return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc}${optionalSrc} })`;
       })();

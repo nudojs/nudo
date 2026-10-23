@@ -33,7 +33,7 @@ import {
 } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
-import { thenableRiskOf } from "../../builtins/promise.ts";
+import { thenableRiskOf, queuePromiseMicro } from "../../builtins/promise.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -247,6 +247,237 @@ export function $async(thunk: () => Abs): Abs {
     awaitRejectionFrames.pop();
     awaitUnsettledHit = saved;
   }
+}
+
+/**
+ * eff("promise") 形状（**就地**填 inner / rejected / unsettled）。
+ *
+ * Bug 201：async 体的真挂起路径需要「形状就地持有」——promise Abs 先建
+ * （inner 暂 unknown），续体在微任务里跑完后**就地**填 inner ⇒ 消费者
+ * 拿到的同一个 Abs 看到终值（与 promise reaction 的 `sh.inner = …` 同款）。
+ */
+type LivePromiseShape = {
+  k: "eff";
+  eff: "promise";
+  inner: Abs;
+  rejected?: Abs;
+  unsettled?: boolean;
+};
+
+/**
+ * Bug 201：async 体的**真挂起**路径（宿主生成器驱动）。
+ *
+ * 转译侧：async 体（**直接含 await**）编译成宿主生成器 `function*(){…}`，
+ * `await x` 发射 `yield x`（挂起点 + 被等待值）。本函数驱动生成器：
+ *
+ * - **同步段**：跑到第一个挂起点即返回 promise（inner 暂 unknown）⇒
+ *   await 之后的语句**不在调用点内联跑完**（原生：恢复点是微任务）。
+ * - **续体**：登记到宿主微任务队列（与 promise reaction **同一队列** ⇒
+ *   跨 promise 链的先后顺序天然保真——上游 promise 的续体先跑，下游
+ *   `await` 恢复时读到的已是上游终值）。
+ * - **值域**：续体跑完 ⇒ 就地填 promise 的 inner（终值由续体给出）。
+ *
+ * 与 `$async(thunk)` 的分工：**无 await 的 async 体**没有挂起点，沿用
+ * `$async` 的同步路径（发射产物逐字不变 ⇒ 既有金标零漂移）。
+ */
+export function $asyncGen(genFn: () => Generator): Abs {
+  const shape: LivePromiseShape = { k: "eff", eff: "promise", inner: unknown };
+  const promise = markFreshInstance(abs(shape, undefined, undefined, "path"));
+  // 体的循环早退臂（loopExits）——与 $async 同口径并入 inner
+  const localExits: Abs[] = [];
+  // 本帧的 await 拒绝表（未被体内 catch 吸收者 → 结果 promise 的 rejected 通道）
+  const rejections: Abs[] = [];
+
+  let it: Generator;
+  try {
+    it = genFn();
+  } catch (e) {
+    settleAsyncGen(promise, e, localExits, rejections);
+    return promise;
+  }
+  let first: IteratorResult<unknown>;
+  try {
+    first = loopExitsAls.run(localExits, () => it.next());
+  } catch (e) {
+    settleAsyncGen(promise, e, localExits, rejections);
+    return promise;
+  }
+  if (first.done) {
+    // 体无挂起点（await 在未走的分支上）→ 同步给值
+    settleAsyncGenValue(promise, first.value as Abs, localExits, rejections);
+    return promise;
+  }
+  scheduleAsyncGenResume(it, first.value as Abs, promise, localExits, rejections);
+  return promise;
+}
+
+/**
+ * 登记续体：把「恢复点」排进宿主微任务队列。
+ *
+ * 被等待值三类（原生口径）：
+ * - **promise**：已拒绝 ⇒ 恢复点以 `throw(reason)` 注入（体内 catch 可收）；
+ *   带 unsettled 面 ⇒ 结果 promise 标 unsettled（原生：可能永不 settle）；
+ *   否则 ⇒ 恢复值 = inner（**活通道**读：注册期捕获的 inner 是 pre-join 态）。
+ * - **非 promise**：原生 `await <非 promise>` 也要一个微任务 ⇒ 恢复值 = 原值。
+ */
+function scheduleAsyncGenResume(
+  it: Generator,
+  operand: Abs,
+  promise: Abs,
+  localExits: Abs[],
+  rejections: Abs[],
+): void {
+  const sh = operand?.shape;
+  if (sh && sh.k === "eff" && sh.eff === "promise") {
+    const live = sh as LivePromiseShape;
+    queuePromiseMicro(() => {
+      const rejected = live.rejected;
+      // 确定拒绝（fulfilled 臂不可能）：原生 await 拒绝 ⇒ 体内 throw
+      // (catch 可吸收)——与 $await 同口径
+      if (rejected !== undefined && live.inner.shape.k === "never") {
+        if (live.unsettled === true) {
+          (promise.shape as LivePromiseShape).unsettled = true;
+        }
+        stepAsyncGen(it, promise, localExits, rejections, () =>
+          it.throw(new NudoThrow(rejected)),
+        );
+        return;
+      }
+      if (rejected !== undefined) {
+        // Bug 220：双臂 promise——拒绝臂**不得丢**：记入 throw 通道（体内
+        // catch 吸收 ⇒ catch 臂可达），fulfilled 值照常交付 ⇒ 结果是
+        // 「fulfilled 值 ∪ 拒绝」（原生同口径）
+        pushThrowExit(rejected);
+        rejections.push(rejected);
+      }
+      if (live.unsettled === true) {
+        // 悬挂：原生可能永不恢复 ⇒ 结果 promise 带 unsettled 面
+        (promise.shape as LivePromiseShape).unsettled = true;
+      }
+      stepAsyncGen(it, promise, localExits, rejections, () => it.next(live.inner));
+    });
+    return;
+  }
+  // 非 promise：原生 await 非 promise 也要一个微任务；thenable 走
+  // PromiseResolve 式的采纳（取 then(res, rej) 的 settle 值——Bug 221）
+  queuePromiseMicro(() => {
+    let adopted: Abs | undefined;
+    try {
+      adopted = adoptThenable(operand);
+    } catch (e) {
+      // 采纳期抛错（then 不可调用 / then 体抛）⇒ 恢复点以 throw 注入
+      stepAsyncGen(it, promise, localExits, rejections, () => it.throw(e));
+      return;
+    }
+    stepAsyncGen(it, promise, localExits, rejections, () => it.next(adopted ?? operand));
+  });
+}
+
+/** 推进一步（恢复）；又遇挂起点 ⇒ 继续排队 */
+function stepAsyncGen(
+  it: Generator,
+  promise: Abs,
+  localExits: Abs[],
+  rejections: Abs[],
+  step: () => IteratorResult<unknown>,
+): void {
+  let res: IteratorResult<unknown>;
+  try {
+    res = loopExitsAls.run(localExits, () => step());
+  } catch (e) {
+    settleAsyncGen(promise, e, localExits, rejections);
+    return;
+  }
+  if (res.done) {
+    settleAsyncGenValue(promise, res.value as Abs, localExits, rejections);
+    return;
+  }
+  scheduleAsyncGenResume(it, res.value as Abs, promise, localExits, rejections);
+}
+
+/**
+ * 体终值落地：就地填 promise 的 inner。
+ *
+ * async 体 return <promise>：原生递归采纳 thenable（体已折 eff(promise)）
+ * ⇒ 直接采纳其 inner（不得包第二层 promise<promise<…>>）。
+ */
+function settleAsyncGenValue(
+  promise: Abs,
+  value: Abs,
+  localExits: Abs[],
+  rejections: Abs[],
+): void {
+  const sh = promise.shape as LivePromiseShape;
+  const v = value ?? unknown;
+  // 未被体内 catch 吸收的 await 拒绝 → 结果 promise 的 rejected 通道
+  // (原生：拒绝落 promise，不外溢成调用方 may-throw)
+  const pending = takePendingAsyncGenRejections(rejections);
+  const pendingJoined =
+    pending.length > 0 ? pending.reduce((a, b) => joinAbs(a, b)) : undefined;
+  if (v.shape?.k === "eff" && v.shape.eff === "promise") {
+    const vs = v.shape as LivePromiseShape;
+    sh.inner = vs.inner;
+    const rejected =
+      vs.rejected !== undefined && pendingJoined !== undefined
+        ? joinAbs(vs.rejected, pendingJoined)
+        : (vs.rejected ?? pendingJoined);
+    if (rejected !== undefined) sh.rejected = rejected;
+    if (vs.unsettled === true) sh.unsettled = true;
+    promise.conf = confJoin(vs.inner.conf, "path");
+    return;
+  }
+  const joined =
+    localExits.length > 0 ? localExits.reduce((a, b) => joinAbs(a, b), v) : v;
+  sh.inner = joined;
+  if (pendingJoined !== undefined) sh.rejected = pendingJoined;
+  promise.conf = confJoin(joined.conf, "path");
+}
+
+/**
+ * 摘出「仍挂在 throw 通道里」的 await 拒绝（已被体内 catch 吸收的不在
+ * 列）——并把其余 throw 通道内容原样放回（不得吞掉别的 may-throw）。
+ * 与 $async 的 takePendingAwaitRejections 同口径。
+ */
+function takePendingAsyncGenRejections(mine: Abs[]): Abs[] {
+  if (mine.length === 0) return [];
+  const exits = takeThrowExits();
+  const pending = mine.filter((r) => exits.includes(r));
+  if (pending.length === 0) return [];
+  const kept = exits.filter((e) => !pending.includes(e));
+  exits.length = 0;
+  for (const e of kept) exits.push(e);
+  return pending;
+}
+
+/**
+ * 体抛错 / 早退的落地口径：
+ * - NudoThrow ⇒ promise **确定拒绝**（inner = never：fulfilled 臂不可能；
+ *   reason 走 rejected 通道）。
+ * - NudoReturn ⇒ 早退值即返回值（原生：async 体的 return 是返回值，不是异常）。
+ * - 宿主异常（引擎自身缺陷）照抛——不得静默折成拒绝。
+ */
+function settleAsyncGen(
+  promise: Abs,
+  e: unknown,
+  localExits: Abs[],
+  rejections: Abs[],
+): void {
+  const sh = promise.shape as LivePromiseShape;
+  if (isNudoThrow(e)) {
+    sh.inner = never;
+    const pending = takePendingAsyncGenRejections(rejections);
+    sh.rejected =
+      pending.length > 0
+        ? joinAbs(e.absValue, pending.reduce((a, b) => joinAbs(a, b)))
+        : e.absValue;
+    promise.conf = "path";
+    return;
+  }
+  if (isNudoReturn(e)) {
+    settleAsyncGenValue(promise, e.absValue, localExits, rejections);
+    return;
+  }
+  throw e;
 }
 
 /**

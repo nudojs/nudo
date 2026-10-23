@@ -326,6 +326,13 @@ export function transpileOperatorExpr(
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
+      // Bug 201：async 体内的 await = **真挂起点**——发射 `yield`（宿主生成器
+      // 挂起），被等待值由 `$asyncGen` 的续体解析（promise → inner /
+      // 拒绝 → throw / 悬挂 → unsettled 面）。await 之后的语句因此**不在
+      // 调用点内联跑完**（原生：恢复点是微任务）。
+      //
+      // 非 async 体（原生语法错误路径）保留 `$await` 兜底。
+      if (opts.inAsyncBody) return `(yield ${arg})`;
       return `$await(${arg})`;
     }
     case "YieldExpression": {

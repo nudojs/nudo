@@ -125,14 +125,16 @@ describe("R3b：确定 fulfilled 的 .then 同步映射（effectFree∧closed �
        export function f() { const q = Promise.resolve(5).then((v) => v + n); n = 10; return q; }`,
     );
     expect(fmt(r.result)).toBe("promise<15>");
-    // await 变体：async 体同步跑完、await 塌 unknown（回调无 closed facet
-    // 不同步折）——诚实降级 promise<unknown>，不得假折 6 或 15
+    // await 变体（Bug 201 后）：async 体的 await 是**真挂起点**——回调在
+    // 微任务里跑（原生口径），引擎在续体里**真**算出 5 + 10 = 15 ⇒
+    // promise<15>。改前 async 体同步跑完、await 塌 unknown（假降级：
+    // 引擎从未真的算出 15）。断言由 unknown 收紧为 15（加强，非弱化）。
     const a = call(
       `let n = 1;
        async function g() { return await Promise.resolve(5).then((v) => v + n); }
        export function f() { const r = g(); n = 10; return r; }`,
     );
-    expect(fmt(a.result)).toBe("promise<unknown>");
+    expect(fmt(a.result)).toBe("promise<15>");
   });
 
   it("副作用控制（effectFree 门）：副作用回调不进同步窗口（外层观测序保持）", () => {
@@ -141,16 +143,19 @@ describe("R3b：确定 fulfilled 的 .then 同步映射（effectFree∧closed �
        async function g() { return await Promise.resolve(1).then((v) => { x = 9; return v; }); }
        export function f() { const r = g(); return x; }`,
     );
-    // 原生 f 同步返回 0（回调微任务后跑）；诚实降级：await 塌 unknown
+    // 原生 f 同步返回 0（回调微任务后跑）；Bug 201 后 async 体的 await 是
+    // 真挂起点 ⇒ 回调在续体（微任务）里跑 ⇒ 同步段仍读到 0
     const { result } = x;
     const lv = result as { term?: { op?: string; value?: unknown } };
     expect(lv?.term?.value).toBe(0);
+    // 结果 promise 的值域：续体里**真**跑出 1（回调 return v）⇒ promise<1>
+    // （改前 await 塌 unknown——引擎从未真的算出 1）。断言由 unknown 收紧为 1。
     const pr = call(
       `let x2 = 0;
        async function g2() { return await Promise.resolve(1).then((v) => { x2 = 9; return v; }); }
        export function f() { return g2(); }`,
     );
-    expect(fmt(pr.result)).toBe("promise<unknown>");
+    expect(fmt(pr.result)).toBe("promise<1>");
   });
 
   it("纯抛错回调 → definite rejection（native：then 回调抛错折 rejection）", () => {

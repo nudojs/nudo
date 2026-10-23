@@ -69,6 +69,30 @@ export type TranspileOptions = {
   yieldTryCtx?: number;
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
   conditionalFlow?: number;
+  /**
+   * 当前处在 **async 函数体**内（Bug 201）。
+   *
+   * async 体内的 `await` 是**真挂起点**：发射 `yield <operand>`（宿主生成器
+   * 挂起），由 `$asyncGen` 驱动恢复 ⇒ await 之后的语句不在调用点内联跑完
+   * （原生：恢复点是微任务）。
+   *
+   * 函数/方法体边界重置：async 体 ⇒ true；**非** async 体 ⇒ false（嵌套
+   * 同步函数不得继承——它不是生成器，`yield` 会是语法错误）。
+   */
+  inAsyncBody?: boolean;
+  /**
+   * 当前 async 体内**需发挂起门**的 `for await` 语句节点（节点身份）。
+   *
+   * Bug 201：原生 `for await` 每轮一个 await；引擎既有建模是同步驱动 ⇒
+   * 生成器级发**整循环一个**挂起门（循环前 `yield`）。只有落在**生成器级**
+   * 位置（生成器体内联）的 for await 才能发门——分支臂/循环体里的 for await
+   * 是宿主 thunk（`yield` 会是语法错误）⇒ 由 async-plan 判定排除。
+   *
+   * 键 = 源偏移量（`String(node.start)`）——转译侧会**浅拷贝**语句节点
+   * （completeElseChains / flattenEarlyReturnBlocks）⇒ 节点身份不稳定，
+   * 源偏移量在拷贝间稳定。
+   */
+  asyncForAwaitGates?: ReadonlySet<string>;
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
   inFunction?: boolean;
   /**

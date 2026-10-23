@@ -28,6 +28,7 @@ import {
 } from "./emit.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
+import { asyncBodyPlan } from "./async-plan.ts";
 
 export function emitSetterAccessorThunk(
   vname: string,
@@ -545,7 +546,19 @@ export function classSpecOf(
       argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
       ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
     };
-    const bindOpts = m.static ? staticOpts : methodOpts;
+    const bindOptsBase = m.static ? staticOpts : methodOpts;
+    // Bug 201：async 方法体的挂起可行性（体含 await 且所有 await 都在
+    // **生成器级**位置 ⇒ 编译成宿主生成器，await = 真挂起点）
+    const cmAsync = m.async === true && m.generator !== true;
+    const cmPlan = cmAsync ? asyncBodyPlan(m.body as Node | undefined) : undefined;
+    const cmAsyncGen = cmPlan !== undefined && cmPlan.hasAwait && cmPlan.allSafe;
+    const bindOpts: TranspileOptions = cmAsyncGen
+      ? {
+          ...bindOptsBase,
+          inAsyncBody: true,
+          asyncForAwaitGates: cmPlan!.forAwaitGates,
+        }
+      : bindOptsBase;
     let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
@@ -607,7 +620,11 @@ export function classSpecOf(
         const fnSrc = [
           `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
           ...(staticAsync
-            ? [`${indent(depth + 4)}return $async(() => {`, bodyStmts, `${indent(depth + 4)}});`]
+            ? [
+                `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
+                bodyStmts,
+                `${indent(depth + 4)}});`,
+              ]
             : [bodyStmts]),
           `${indent(depth + 3)}}, { bindThis: true, ctor: false, length: ${nativeParamArity(m.params)} })`,
         ].join("\n");
@@ -626,7 +643,11 @@ export function classSpecOf(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         ...(staticAsync
-          ? [`${indent(depth + 4)}return $async(() => {`, bodyStmts, `${indent(depth + 4)}});`]
+          ? [
+              `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
+              bodyStmts,
+              `${indent(depth + 4)}});`,
+            ]
           : [bodyStmts]),
         `${indent(depth + 3)}},`,
       );
@@ -650,7 +671,7 @@ export function classSpecOf(
       // Bug 141：async generator 方法不进 $async（原生返 AsyncGenerator 本身）
       methodParts.push(
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
-        `${indent(depth + 4)}return $async(() => {`,
+        `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
         bodyStmts,
         `${indent(depth + 4)}});`,
         `${indent(depth + 3)}},`,

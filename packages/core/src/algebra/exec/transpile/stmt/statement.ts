@@ -94,6 +94,7 @@ import { paramNamesOf, transpileFnBodyStmts, narrowRelComplementArmThunk } from 
 import { computeConstScope } from "../helpers.ts";
 // Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
 import { fnParamsHaveThis } from "../expr/function.ts";
+import { asyncBodyPlan } from "../async-plan.ts";
 import { transpileBlockAsThunk, extractForInitName } from "./block.ts";
 import { transpileClass } from "../class-emit.ts";
 /** switch 共享体函数名序号（跨语句/函数去重） */
@@ -355,12 +356,21 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         fnParamsHaveThis(stmt.params as Node[]);
       // `arguments`：体/嵌套箭头引用（含参数默认值）时建独立 tuple 槽（strict 映射，见 $arguments）
       const hasArgs = fnBodyHasOwnArguments(stmt as { body?: Node | null; params?: Node[] });
+      // Bug 201：async 体的挂起可行性——体（含 await）且所有 await 都在
+      // **生成器级**位置 ⇒ 该体编译成宿主生成器（await = 真挂起点）。
+      // 否则沿用既有 `$async(thunk)` 同步路径（发射产物逐字不变）。
+      const asyncPlan = stmt.async === true ? asyncBodyPlan(stmt.body) : undefined;
+      const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
         // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
         conditionalFlow: 0,
         inFunction: true,
+        // Bug 201：async 体的 await 发射 `yield`（真挂起点）；非 async 体
+        // 必须归零（嵌套同步函数不是生成器——`yield` 会是语法错误）
+        inAsyncBody: asyncGen,
+        ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
         argsBinding: hasArgs ? "__nudoArgs" : undefined,
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
@@ -388,6 +398,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // Bug 16：__this 必须 let——`this.s = v` 的赋值包装发射
       // `__this = $set(__this, …)` 重绑（构造调用 this 是对象时执行到），
       // const 重绑宿主 TypeError
+      // 顺序：缺参归一 → __nudoArgs/__this 建立 → 参数默认值/解构（默认值
+      // 可读自有 arguments（`a = arguments.length`）与 this——槽必须先于
+      // prologue 声明，否则 TDZ ReferenceError）
+      //
+      // Bug 201：生成器路径（asyncGen）——宿主生成器**不自带** `this` /
+      // `arguments`（生成器函数有自己的 this 绑定、无 arguments 绑定）⇒
+      // 两个槽提到**宿主函数作用域**（生成器体闭包读它们，语义不变）。
       const thisPrologue = hasThis
         ? `${indent(depth + 2)}let __this = $rawThis(this);\n`
         : "";
@@ -395,14 +412,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const argsPrologue = hasArgs
         ? `${indent(depth + 2)}let __nudoArgs = $arguments(arguments);\n`
         : "";
-      // 顺序：缺参归一 → __nudoArgs/__this 建立 → 参数默认值/解构（默认值
-      // 可读自有 arguments（`a = arguments.length`）与 this——槽必须先于
-      // prologue 声明，否则 TDZ ReferenceError）
+      // 生成器路径：宿主函数作用域里的 this / arguments 捕获（生成器体内不再发）
+      const genHoist = [
+        ...(hasThis ? [`${indent(depth + 1)}let __this = $rawThis(this);`] : []),
+        ...(hasArgs ? [`${indent(depth + 1)}let __nudoArgs = $arguments(arguments);`] : []),
+      ];
       const bodyStmts =
         stmt.body.type === "BlockStatement"
           ? withImplicitReturn(
               stmt.body,
-              [...bindParams, thisPrologue, argsPrologue, ...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts, {
+              [...bindParams, ...(asyncGen ? [] : [thisPrologue, argsPrologue]), ...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts, {
                 // Bug 21：函数体 var 提升边界——参数模式名已绑定，不得提升
                 skip: paramNamesOf(stmt.params as Node[]),
               })]
@@ -450,7 +469,23 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ].join("\n");
       }
       // async 声明同口径：宿主函数是普通 function（body 包 $async）
+      //
+      // Bug 201：体（含 await）且所有 await 都在生成器级位置 ⇒ 编译成
+      // **宿主生成器**（`$asyncGen(function*(){…})`）：`await` 发射 `yield`
+      // = 真挂起点 ⇒ await 之后的语句不在调用点内联跑完（原生：恢复点是
+      // 微任务）。`this` / `arguments` 提到宿主函数作用域（生成器不自带）。
       if (stmt.async) {
+        if (asyncGen) {
+          return [
+            `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
+            restBind,
+            ...genHoist,
+            `${indent(depth + 1)}return $asyncGen(function* () {`,
+            bodySrc,
+            `${indent(depth + 1)}});`,
+            `${pad}}`,
+          ].join("\n");
+        }
         return [
           `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
@@ -1832,6 +1867,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${tailOpts ? `, ${tailOpts}` : ""} }`;
       return [
         ...recvPre,
+        // Bug 201：`for await` 的挂起门——原生每轮一个 await；引擎既有建模
+        // 是同步驱动 ⇒ **整循环一个**挂起点（循环前 yield，循环体在恢复点
+        // 跑）。口径偏差已登记（与引擎既有的同步 for-await 建模一致）。
+        // 只有**生成器级**位置的 for await 才发门（分支臂/循环体里的是宿主
+        // thunk——yield 会是语法错误）。
+        ...(isForAwait &&
+        typeof (stmt as { start?: number }).start === "number" &&
+        opts.asyncForAwaitGates?.has(String((stmt as { start?: number }).start))
+          ? [`${pad}yield $lit(void 0);`]
+          : []),
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         // Bug 163 / 178：头赋值在**每轮进体时**写回目标（原生：每轮把
         // 迭代项赋给头目标）——放在 destructure 之前、循环体语句之前

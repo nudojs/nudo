@@ -37,6 +37,7 @@ import { emitTranspileExpression as transpileExpression } from "../transpile-dis
 import { emitFnBlockBody } from "../stmt/fn-body.ts";
 import { emitSetterAccessorThunk } from "../class-emit.ts";
 import { paramNamesOfFn } from "./function.ts";
+import { asyncBodyPlan } from "../async-plan.ts";
 /**
  * 对象/数组/展开族：对象字面量（方法简写/访问器/计算键/__proto__）、数组字面量
  * （hole/spread 经 $concat 归一）。
@@ -137,6 +138,12 @@ export function transpileObjectExpr(
           const omBindFromArgs =
             mHasArgs ||
             (prop.params as Node[]).some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
+          // Bug 201：async 方法体的挂起可行性（体含 await 且所有 await 都在
+          // 生成器级位置 ⇒ 编译成宿主生成器，await = 真挂起点）
+          const omAsync =
+            (prop as { async?: boolean }).async === true && prop.generator !== true;
+          const omPlan = omAsync ? asyncBodyPlan(prop.body) : undefined;
+          const omAsyncGen = omPlan !== undefined && omPlan.hasAwait && omPlan.allSafe;
           const methodOpts: TranspileOptions = {
             ...opts,
             inLoop: 0,
@@ -147,6 +154,9 @@ export function transpileObjectExpr(
             argsBinding: omBindFromArgs ? "__nudoArgs" : undefined,
             // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
             yieldTryCtx: 0,
+            // Bug 201：async 方法体的 await 发射 `yield`（真挂起点）
+            inAsyncBody: omAsyncGen,
+            ...(omAsyncGen && omPlan ? { asyncForAwaitGates: omPlan.forAwaitGates } : {}),
           };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
@@ -239,9 +249,11 @@ export function transpileObjectExpr(
           // Bug 70：async 对象方法体包 $async（此前丢 async 修饰——返回裸体
           // 值而非 Promise）；async *m() 双包（$gen 内、$async 外，镜像类
           // 方法 stmt.ts 路径）
+          // Bug 201：async 方法体走生成器路径 ⇒ `function*(){…}` + `$asyncGen`
+          //（await = 真挂起点；`this` / `arguments` 已是宿主箭头形参 ⇒ 闭包可见）
           if ((prop as { async?: boolean }).async) {
             mBodyInner = [
-              `return $async(() => {`,
+              omAsyncGen ? `return $asyncGen(function* () {` : `return $async(() => {`,
               mBodyInner,
               `});`,
             ].join("\n");

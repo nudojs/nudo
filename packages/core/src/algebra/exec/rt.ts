@@ -15,6 +15,9 @@ import {
   takeLoopExits,
   takeThrowExits,
 } from "./runtime.ts";
+// Bug 201：async 体的真挂起驱动（生成器路径）——**内部**运行时符号：
+// 不进 runtime.ts facade（facade 只再导出公开符号面），只进绑定表。
+import { $asyncGen } from "./runtime/async.ts";
 import { $call } from "./call.ts";
 
 let cached: Record<string, unknown> | undefined;
@@ -30,6 +33,8 @@ export function rtAllBindings(): Record<string, unknown> {
     cached.takeLoopExits = takeLoopExits;
     cached.takeThrowExits = takeThrowExits;
     cached.$call = $call;
+    // Bug 201：async 体（含 await）编译成宿主生成器，由本符号驱动挂起/恢复
+    cached.$asyncGen = $asyncGen;
   }
   return cached;
 }
