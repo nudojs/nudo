@@ -13,6 +13,8 @@
  * - 只有**源码声明**的 case（`source === "directive"`）进断言面；分析器合成
  *   的观察（call@ / entry@）只进展示面，不进 passed/failed/unchecked；
  * - 声明了但**没有** `=> expected` 的 case 记 `unchecked`（不是失败）；
+ * - **引擎未能推断**实测值（`unknown` / `conf=opaque`）⇒ 也记 `unchecked`
+ *   （Bug 950 第三态：**无法判定** ⇒ 既不是失败，也不是空洞通过）；
  * - 期望判定走 service 的**值级谓词**判定（`caseExpectedSatisfied`）——
  *   与分析面同口径（裸 leqAbs 不做值级判定会让 `number().gt(0)` 恒假红）。
  */
@@ -25,6 +27,15 @@ export type CaseTestOutcome = {
   caseName: string;
   ok: boolean;
   unchecked: boolean;
+  /**
+   * `unchecked` 的原因（Bug 950 第三态）：
+   * - `"no-expectation"`：声明了 case 但**没写** `=> expected`（既有口径）；
+   * - `"inference-failed"`：引擎**未能推断**实测值（`unknown` / `conf=opaque`）
+   *   ⇒ **无法判定**（既不是失败，也不是空洞通过）。
+   *
+   * 缺省 = 合成 case（`synthetic: true`，不进断言面）。
+   */
+  uncheckedReason?: "no-expectation" | "inference-failed";
   expected?: string;
   actual: string;
   throws?: string;
@@ -68,6 +79,27 @@ function formatCaseLine(c: CaseResult): string {
     line += `   throws ${formatShape(c.throwsAbs)}`;
   }
   return line;
+}
+
+/**
+ * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定）。
+ *
+ * 判据（**报告面本地**判）：
+ * - `shape.k === "unknown"`：core 的 unknown 语义 = 「分析拿不到信息
+ *   （求值失败 / 泄漏）」⇒ 实测值**没推出来**；
+ * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
+ *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
+ *
+ * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
+ * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
+ * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
+ * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
+ *
+ * 为什么不放在判定函数里：`caseExpectedSatisfied` 是**二值**判定（片 C 冻结），
+ * 第三态是**报告面**的事（能不能下断言结论）⇒ 本地判。
+ */
+function inferenceFailed(actual: Abs): boolean {
+  return actual.shape.k === "unknown" || actual.conf === "opaque";
 }
 
 /**
@@ -133,6 +165,7 @@ export function buildTestReport(
           caseName: c.name,
           ok: true,
           unchecked: true,
+          uncheckedReason: "no-expectation",
           actual,
           ...(throwsStr ? { throws: throwsStr } : {}),
           synthetic: false,
@@ -140,6 +173,25 @@ export function buildTestReport(
         continue;
       }
       const expected = formatShape(c.expected as Abs);
+      // Bug 950 第三态：引擎**未能推断**实测值（unknown / conf=opaque）⇒
+      // **无法判定** ⇒ 记 unchecked（既不是失败，也不是空洞通过）。
+      // ⚠ 判在**判定调用之前** ⇒ `any()` / `unknown()` 这类「放宽的期望」
+      // 不会借 `leqAbs` 的「目标放宽 ⇒ 通过」捷径空洞判 ok（改前：假红
+      // `number()` / 假绿 `any()` —— 同一事实两种期望都不可用）。
+      if (inferenceFailed(c.abs)) {
+        outcomes.push({
+          fn: fnName,
+          caseName: c.name,
+          ok: false,
+          unchecked: true,
+          uncheckedReason: "inference-failed",
+          expected,
+          actual,
+          ...(throwsStr ? { throws: throwsStr } : {}),
+          synthetic: false,
+        });
+        continue;
+      }
       let ok = false;
       try {
         // 期望判定与 service 分析面**同口径**（值级谓词）。
@@ -199,7 +251,9 @@ export function buildTestReport(
   return {
     file,
     passed: declared.filter((o) => o.ok && !o.unchecked).length,
-    failed: declared.filter((o) => !o.ok).length,
+    // Bug 950：`unchecked`（无法判定）**不算失败** ⇒ 「引擎没推出来」
+    // 不再被压成「断言不符」（假红）⇒ 也不置红（exit 0）。
+    failed: declared.filter((o) => !o.ok && !o.unchecked).length,
     // 只计声明 case 的 unchecked；合成 call@/entry@ 不进断言面
     unchecked: declared.filter((o) => o.unchecked).length,
     outcomes,

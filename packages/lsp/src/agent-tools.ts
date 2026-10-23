@@ -16,6 +16,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import {
   buildCaseDirective,
+  serializeCaseArg,
   serializeCaseJson,
   interfaceSurface,
   draftInterface,
@@ -1086,6 +1087,56 @@ function resolveToolFile(params: { file?: string; uri?: string }): string {
 }
 
 /**
+ * 合成 / 固化见证的**名字空间前缀**——手写见证名一律避开：
+ * - `call@`：service 侧 `case-emitter` 的 `GENERATED_PREFIX`（`--freeze`
+ *   固化的见证；`stripGeneratedCaseDirectives` 剥离的生成物）；
+ * - `entry@`：入口兜底见证。
+ *
+ * 建议名若落进这两个前缀 ⇒ 贴回后与 `--freeze` 固化的见证**撞名** ⇒ 同一个
+ * 调用点留下两条见证（Bug 655）。
+ */
+const SYNTHETIC_WITNESS_PREFIXES = ["call@", "entry@"];
+
+/** 手写见证名的前缀（工具建议用；与合成 / 固化见证分属不同名字空间）。 */
+const HANDWRITTEN_WITNESS_PREFIX = "witness@";
+
+/**
+ * 工具建议里的**手写见证名**（`witness@<n>`；n 从 1 起，按**产出顺序**编号
+ * ——实参表达不了而被放弃的 case 不占号 ⇒ 建议里的号连续）。
+ *
+ * - **合法**：名字只含字母 / `@` / 数字 ⇒ 指令文法 `"([^"]+)"` 承载得了
+ *   （`buildCaseDirective` 只拒含 `"` / 换行的名字）。
+ * - **不落进合成 / 冻结名字空间**：前缀 `witness@` 与 `call@` / `entry@`
+ *   不相交 ⇒ 贴回后既不会被当成合成观察，也不会与 `--freeze` 固化的见证
+ *   撞名。
+ * - **稳定**：同一份源码每次建议同名 ⇒ 可重复贴回，不会每次换名。
+ */
+function suggestedWitnessName(index: number): string {
+  return `${HANDWRITTEN_WITNESS_PREFIX}${index + 1}`;
+}
+
+/**
+ * 观测值 → 期望表达式（贴回后的**断言面**用；`null` = 不给期望）。
+ *
+ * - 抛错观测（`never`）⇒ 期望**永不可能**被满足（Bug 649 的 never 前置
+ *   条件）⇒ 不给期望（否则贴回即假红）；
+ * - 引擎推不出（`unknown` / `any` / `opaque`）⇒ 期望要么空洞（`any()`
+ *   恒满足）要么判不了 ⇒ 不给期望；
+ * - 指令文法表达不了（fn / eff / brand / 稀疏元组）⇒ 不给期望。
+ *
+ * 其余 ⇒ 观测值在指令文法里的形态（与 `--freeze` 同一个序列化器 ⇒ 往返
+ * 保真 ⇒ 贴回后引擎能原样读回）。
+ */
+function observedExpectedText(abs: Abs): string | null {
+  if (abs.shape.k === "never") return null;
+  if (abs.conf === "opaque") return null;
+  const text = serializeCaseArg(abs);
+  if (text === null) return null;
+  if (text === "any()" || text === "undefined") return null;
+  return text;
+}
+
+/**
  * Suggest @nudo:case directives for a function (ported from MCP).
  *
  * 「函数不存在」是**明确的失败**（用户传了不存在的 functionName）⇒ 走
@@ -1126,10 +1177,25 @@ export async function suggestCase(
     }
 
     if (syntheticCases.length > 0) {
-      // 全部为合成 case 时可产出直接粘贴回源码的指令文本
-      const directives = syntheticCases
-        .map((c) => buildCaseDirective(c.name, c.argAbs ?? []))
-        .filter((d): d is string => d !== null);
+      // 全部为合成 case 时可产出直接粘贴回源码的指令文本。
+      //
+      // Bug 655：建议里**不得**写合成 case 的**原名**（`call@L<n>`）——
+      // ① 它落在引擎的合成 / 固化名字空间（`call@` / `entry@`）里；
+      // ② 贴回后与 `--freeze` 固化的见证**重复**（同一个调用点两条见证）。
+      // 现在：**改写成手写见证名**（`witness@<n>`，避开合成 / 固化名字空间）
+      // + **带上 `=> expected`**（观测值 ⇒ 贴回后真的产生断言，而不是
+      // `unchecked`）。
+      const directives: string[] = [];
+      let noExpectation = 0;
+      let emitted = 0;
+      for (const c of syntheticCases) {
+        const directive = buildCaseDirective(suggestedWitnessName(emitted), c.argAbs ?? []);
+        if (directive === null) continue; // 实参表达不了 ⇒ 整条放弃（同 --freeze）
+        emitted++;
+        const expected = observedExpectedText(c.abs);
+        if (expected === null) noExpectation++;
+        directives.push(expected === null ? directive : `${directive} => ${expected}`);
+      }
       if (directives.length > 0) {
         const skipped = syntheticCases.length - directives.length;
         const lines = [
@@ -1141,6 +1207,14 @@ export async function suggestCase(
         if (skipped > 0) {
           lines.push(`(${skipped} case(s) skipped: not serializable as directives)`);
         }
+        if (noExpectation > 0) {
+          lines.push(
+            `(${noExpectation} case(s) have no expressible expectation: no expectation added)`,
+          );
+        }
+        lines.push(
+          `Note: witness names are hand-written (not the synthetic ${SYNTHETIC_WITNESS_PREFIXES.join("/")} namespace); the expected value is the observed result.`,
+        );
         return textResult(lines.join("\n"));
       }
       return textResult(

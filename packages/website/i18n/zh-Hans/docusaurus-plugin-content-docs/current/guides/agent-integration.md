@@ -163,9 +163,10 @@ Bindings applied: raw: string
 ```text
 Function "add" has 2 synthesized case(s); suggested directives:
 /**
- * @nudo:case "call@L2" (1, 2)
- * @nudo:case "call@L3" ("x", "y")
+ * @nudo:case "witness@1" (1, 2) => 3
+ * @nudo:case "witness@2" ("x", "y") => "xy"
 */
+Note: witness names are hand-written (not the synthetic call@/entry@ namespace); the expected value is the observed result.
 ```
 
 已有手写用例的函数则返回 `Function "<name>" already has N case(s)`；其余返回情形见 [Agent API](../api/agent.md#nudosuggestcase) 页面。

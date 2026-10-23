@@ -34,6 +34,7 @@ import {
   leqAbs,
   localNamedExports,
   effectiveInterface,
+  extractDeclaredThrows,
   unknown as absUnknown,
   $invoke,
   $new,
@@ -44,6 +45,8 @@ import {
   SELF,
   substPred,
   takeInterfaceDiagsSince,
+  type EffectiveInterface,
+  type InterfaceDiag,
   type NudoConstraint,
   type Pred,
   type Term,
@@ -54,6 +57,8 @@ import {
   setMayThrowCollector,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
+  throwAbsToKinds,
+  throwsKindCovered,
   type MayThrowEffect,
   type EvalMemberDiag,
 } from "@nudojs/core/internal";
@@ -131,6 +136,29 @@ export type UncachedCaseEnv = {
    * 「已固化函数的二次 freeze」看不到现场调用点（跨分片接线点，见报告）。
    */
   externalCallRecords?: CallRecord[];
+  /**
+   * 本文件的**有效契约**（`effectiveInterface`）按函数名 memo（Bug 921）。
+   *
+   * case 级 `nudo:may-throw` 的免除口径要与 check 面同口径 ⇒ 需要本函数的
+   * **已申报抛**（源码申报 ∪ 侧车 `fn.throws`）⇒ 要读侧车 ⇒ 要调
+   * `effectiveInterface`。而 entry 面也调同一个函数 ⇒ 若各调一次：
+   * ① 侧车模块被执行两遍；② core 的「同 (路径, 原因) 只报一次」去重表会让
+   * **后一次**拿不到加载失败诊断（加载失败被吞 ⇒ 假绿）。
+   * ⇒ 两侧共用同一份 memo：谁先算谁算，后手复用（诊断也只报一次）。
+   */
+  effectiveInterfaceMemo?: Map<string, EffectiveInterfaceMemo>;
+};
+
+/**
+ * 有效契约 memo 项（Bug 921）：`effectiveInterface` 的结果 + 它带出的
+ * `nudo:interface-load` 诊断（侧车加载失败 / 孤儿导出）。
+ *
+ * ⚠ 诊断**不**在 memo 计算处上报：仍旧由 entry 面按既有形态转 error 诊断
+ * （同一 range / 同一文案）⇒ 行为不变。
+ */
+export type EffectiveInterfaceMemo = {
+  eff: EffectiveInterface | undefined;
+  loadDiags: InterfaceDiag[];
 };
 
 /** 已回落 entry@ 的候选（待 settle：entry@ 见证 + 候选本身）。 */
@@ -281,8 +309,19 @@ function sameLiteralValue(a: unknown, b: unknown): boolean {
 /**
  * 实际值是否满足期望（结构面 leqAbs + 对象槽字面量严格面 + 值面谓词）。
  * 实际值不是字面量（unknown / 结构值）时**不**做值级判定（判不了 ⇒ 不满足）。
+ *
+ * Bug 649：**实测是 `never` ⇒ 不得判 ok**。`never` 是类型格的**底元素**
+ * （`never ⊑ 任何类型` 恒真）⇒ 抛错函数的 case 带 `=> expected` 时，
+ * 结构面判定必然通过 ⇒ 断言**恒真**（假绿）：抛错函数无论期望什么都「通过」。
+ * 这里加一道**前置条件**把「实测 never」拦在判定层之外。
+ *
+ * ⚠ 只拦「判 ok / 不 ok」这一层——**展示形态不变**：`comparableExpected`
+ * 在不满足时原样返回 expected ⇒ 期望文本（`number (> 0)` 这类谓词期望）
+ * 不跟着变形（见同文件 `comparableExpected`）。
  */
 export function caseExpectedSatisfied(actual: Abs, expected: Abs): boolean {
+  // 底元素实测（抛错 / 不发散不出值）⇒ 期望**不可能**被满足 ⇒ 不得判 ok
+  if (actual.shape.k === "never") return false;
   const pred = expected.pred;
   if (!pred || pred.op === "true") return expectedStructurallySatisfied(actual, expected);
   const anchored = anchorPredOnSelf(pred, expectedSelfIds(expected));
@@ -545,6 +584,73 @@ function evalClassMethodWitness(
   return dispatch(clsAbs);
 }
 
+/**
+ * 有效契约（`effectiveInterface`）按函数名 memo（Bug 921）。
+ *
+ * case 面与 entry 面共用一份 ⇒ 侧车模块只被执行一次、core 的
+ * 「同 (路径, 原因) 只报一次」去重表也只被消费一次（否则后手拿不到
+ * 加载失败诊断 ⇒ 加载失败被吞 ⇒ 假绿）。
+ *
+ * ⚠ `nudo:interface-load` 诊断**不**在这里上报：仍旧由 entry 面按既有形态
+ * 转 error 诊断（同一 range / 同一文案）⇒ 既有行为不变。
+ */
+function effectiveInterfaceMemoOf(env: UncachedCaseEnv, fnName: string): EffectiveInterfaceMemo {
+  const memo = (env.effectiveInterfaceMemo ??= new Map<string, EffectiveInterfaceMemo>());
+  const hit = memo.get(fnName);
+  if (hit) return hit;
+  const ifaceSince = interfaceDiagCount();
+  const autoBind = interfaceConfig(
+    findProjectConfig(dirname(env.filePath))?.config,
+  ).autoBind;
+  const eff = effectiveInterface(env.source, fnName, {
+    loadModule: env.loadModule ?? defaultLoadModule,
+    fromFile: env.filePath,
+    ...(autoBind === false ? { autoBind: false } : {}),
+  });
+  const loadDiags = takeInterfaceDiagsSince(ifaceSince).filter(
+    (d) => d.code === DIAG.interfaceLoad,
+  );
+  const entry: EffectiveInterfaceMemo = { eff, loadDiags };
+  memo.set(fnName, entry);
+  return entry;
+}
+
+/**
+ * 本函数**已申报的有意抛**（Bug 921）：与 check 面**同口径**
+ * ——`packages/core/src/algebra/check.ts` 的 entry 面 / L2 面：
+ * `extractDeclaredThrows(source, name) ?? effectiveInterface(name)?.throws?.kinds`
+ * → `filterGateThrows(effects, declared, ignore)`。
+ *
+ * 源码申报（`@nudo:throws` / case `!! throws`）优先；源码没申报才回落侧车
+ * `fn.throws`（同 check 面的 `??` 口径：源码申报在场时，check 面**不**再看侧车）。
+ */
+function declaredThrowsKinds(env: UncachedCaseEnv, fnName: string): string[] | "*" | undefined {
+  const src = extractDeclaredThrows(env.source, fnName);
+  if (src !== undefined) return src;
+  return effectiveInterfaceMemoOf(env, fnName).eff?.throws?.kinds;
+}
+
+/**
+ * 观测到的抛是否**全部**被「已申报的有意抛」覆盖（Bug 921）。
+ *
+ * 口径与 check 面 `filterDeclaredThrows` 一致：`declared === "*"` ⇒ 全覆盖；
+ * 数组 ⇒ 按 kind 覆盖（`Error` 申报盖住整个 Error 族）；未申报 / 未覆盖 ⇒ 不豁免。
+ */
+function declaredThrowsCover(throwsAbs: Abs, env: UncachedCaseEnv, fnName: string): boolean {
+  let declared: string[] | "*" | undefined;
+  try {
+    declared = declaredThrowsKinds(env, fnName);
+  } catch {
+    // 读侧车失败（诊断不得打断分析）⇒ 不豁免（保守：照报 may-throw）
+    return false;
+  }
+  if (declared === undefined) return false;
+  if (declared === "*") return true;
+  const kinds = throwAbsToKinds(throwsAbs);
+  if (kinds.length === 0) return false;
+  return kinds.every((kind) => throwsKindCovered(kind, declared));
+}
+
 export function evaluateCaseDirectives(
   env: UncachedCaseEnv,
   fn: CaseDirectiveTarget,
@@ -697,7 +803,24 @@ export function evaluateCaseDirectives(
         if (directive.expected) {
           // 值级判定（谓词面）+ 结构判定：number().gt(0) 这类期望不再恒假红
           ok = caseExpectedSatisfied(caseAbs, directive.expected);
-          if (!ok) {
+          // Bug 950 第三态：引擎**未能推断**实测值（实测 Abs 是 `unknown` /
+          // `conf === "opaque"`）⇒ **无法判定**，不是「类型不匹配」
+          // ⇒ 记 INFO（与 check 面同事实的 `nudo:opaque-result` 同严重度），
+          // **不发** `nudo:case-expected` error。
+          // 报告面（`run-test.ts` / `service/test-report.ts`）同步把这类记为
+          // `unchecked`（不置红）⇒ 两侧口径一致。
+          //
+          // ⚠ 判据必须在 `ok` **之外**：期望写成 `any()` 时 `caseExpectedSatisfied`
+          // 会借 core `leqAbs` 的「目标放宽 ⇒ 通过」捷径返回 true ⇒ 若只看 `!ok`，
+          // 这一支就不会触发 ⇒ 分析面会**静默**，与报告面的 `unchecked` 分叉。
+          if (caseAbs.shape.k === "unknown" || caseAbs.conf === "opaque") {
+            diagnostics.push({
+              range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
+              severity: "info",
+              message: `debug "${directive.name}": the engine could not infer the actual value (got ${formatShape(caseAbs)}) — cannot judge the declared expectation ${formatExpected(directive.expected)}`,
+              code: DIAG.opaqueResult,
+            });
+          } else if (!ok) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
@@ -714,13 +837,22 @@ export function evaluateCaseDirectives(
 
       if (isActive) {
         if (caseThrowsAbs.shape.k !== "never") {
-          const throwRange = caseThrowLoc ?? fnLoc;
-          diagnostics.push({
-            range: throwRange,
-            severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:contract return <constraint>`,
-            code: DIAG.mayThrow,
-          });
+          // Bug 921：**已申报的有意抛** ⇒ 不发 warning（与 check 面同口径：
+          // check.ts 的 entry 面 / L2 面 → `extractDeclaredThrows` →
+          // `filterGateThrows`）。此前 case 面只认「抛了就是问题」⇒ 同一份
+          // 声明在 `nudo check` 面被承认（0 error）、在 `nudo test` 面照报 ⇒
+          // 两个 verb 对同一文件给出**相反裁决**。
+          if (!declaredThrowsCover(caseThrowsAbs, env, fn.name)) {
+            const throwRange = caseThrowLoc ?? fnLoc;
+            const kinds = throwAbsToKinds(caseThrowsAbs);
+            const kindsText = kinds.length > 0 ? kinds.join(", ") : formatShape(caseThrowsAbs);
+            diagnostics.push({
+              range: throwRange,
+              severity: "warning",
+              message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. If the throw is intentional, declare it with @nudo:throws ${kindsText} or @nudo:case "${directive.name}" (...) !! throws ${kindsText}; otherwise add a try-catch block`,
+              code: DIAG.mayThrow,
+            });
+          }
         }
         // unreachable 诊断已由文件级 collectEvalDiagnostics 统一上报（无 case 级重复扫描）
       }
@@ -1080,23 +1212,16 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         exportNames.has(candidate.analysis.name) ||
         (candidate.assignedName !== undefined && exportNames.has(candidate.assignedName));
       if (isEntry) {
-        const autoBind = interfaceConfig(
-          findProjectConfig(dirname(filePath))?.config,
-        ).autoBind;
         // 侧车**加载失败**与「根本没有侧车」必须可区分：加载失败已由 core
         // 侧 nudo:interface-load 通道上报，这里取走新诊断并转成 error 诊断
         // （test 面此前**不收集**该通道 ⇒ 坏侧车在 test 面彻底隐形），
         // 且**不再**发「没有契约根」——那条 info 的事实陈述在侧车存在时
         // 是错的（用户明明写了契约，只是写坏了），修复建议也会误导。
-        const ifaceSince = interfaceDiagCount();
-        const eff = effectiveInterface(source, candidate.analysis.name, {
-          loadModule: loadModule ?? defaultLoadModule,
-          fromFile: filePath,
-          ...(autoBind === false ? { autoBind: false } : {}),
-        });
-        const loadDiags = takeInterfaceDiagsSince(ifaceSince).filter(
-          (d) => d.code === DIAG.interfaceLoad,
-        );
+        //
+        // Bug 921：走**共享 memo**（case 面可能已经算过同一个函数的有效契约
+        // ⇒ 侧车模块只被执行一次、core 的加载失败去重表只被消费一次；
+        // 否则 case 面先算会把加载失败诊断吞掉 ⇒ 假绿）。
+        const { eff, loadDiags } = effectiveInterfaceMemoOf(env, candidate.analysis.name);
         if (loadDiags.length > 0) {
           env.sidecarLoadFailed = true;
           for (const d of loadDiags) {

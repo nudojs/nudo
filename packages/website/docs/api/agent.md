@@ -177,9 +177,10 @@ Suggest `@nudo:case` directives for a function based on its parameter types.
 ```text
 Function "add" has 2 synthesized case(s); suggested directives:
 /**
- * @nudo:case "call@L2" (1, 2)
- * @nudo:case "call@L3" ("x", "y")
+ * @nudo:case "witness@1" (1, 2) => 3
+ * @nudo:case "witness@2" ("x", "y") => "xy"
 */
+Note: witness names are hand-written (not the synthetic call@/entry@ namespace); the expected value is the observed result.
 ```
 
 Cases whose arguments cannot be serialized as directives (functions, Promises, instances, …) are dropped and reported in a trailing `(M case(s) skipped: not serializable as directives)` line; if none of the cases is serializable, the reply falls back to `Function "<functionName>" already has N case(s) (none serializable as directives)`.

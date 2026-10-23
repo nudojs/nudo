@@ -163,9 +163,10 @@ When every case of the function was synthesized from call sites, the reply is di
 ```text
 Function "add" has 2 synthesized case(s); suggested directives:
 /**
- * @nudo:case "call@L2" (1, 2)
- * @nudo:case "call@L3" ("x", "y")
+ * @nudo:case "witness@1" (1, 2) => 3
+ * @nudo:case "witness@2" ("x", "y") => "xy"
 */
+Note: witness names are hand-written (not the synthetic call@/entry@ namespace); the expected value is the observed result.
 ```
 
 Functions with handwritten cases instead get `Function "<name>" already has N case(s)`; the remaining outcomes are listed on the [Agent API](../api/agent.md#nudosuggestcase) page.

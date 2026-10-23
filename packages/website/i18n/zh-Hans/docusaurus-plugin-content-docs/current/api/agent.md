@@ -167,9 +167,10 @@ Bindings applied: raw: string
 ```text
 Function "add" has 2 synthesized case(s); suggested directives:
 /**
- * @nudo:case "call@L2" (1, 2)
- * @nudo:case "call@L3" ("x", "y")
+ * @nudo:case "witness@1" (1, 2) => 3
+ * @nudo:case "witness@2" ("x", "y") => "xy"
 */
+Note: witness names are hand-written (not the synthetic call@/entry@ namespace); the expected value is the observed result.
 ```
 
 实参无法序列化为指令的用例（函数、Promise、实例等）会被丢弃，并在末尾追加一行 `(M case(s) skipped: not serializable as directives)`；若全部用例都不可序列化，则改回 `Function "<functionName>" already has N case(s) (none serializable as directives)`。

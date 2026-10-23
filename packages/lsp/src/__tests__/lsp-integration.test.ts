@@ -827,8 +827,10 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
     const text = synthesized.content[0].text;
     expect(text).toContain('Function "add" has 2 synthesized case(s); suggested directives:');
     expect(text).toContain("/**");
-    expect(text).toContain(' * @nudo:case "call@L2" (1, 2)');
-    expect(text).toContain(' * @nudo:case "call@L3" ("x", "y")');
+    // Bug 655：建议里的名字是**手写见证名**（`witness@<n>`，避开合成 / 固化
+    // 名字空间 `call@` / `entry@`）+ **带 `=> expected`**（观测值）。
+    expect(text).toContain(' * @nudo:case "witness@1" (1, 2) => 3');
+    expect(text).toContain(' * @nudo:case "witness@2" ("x", "y") => "xy"');
     expect(text).toContain("*/");
 
     // 手写 case：source 未标记（非 callsite），报 already has N case(s) 原样

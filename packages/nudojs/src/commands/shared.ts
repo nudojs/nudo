@@ -116,19 +116,38 @@ export async function reemitUpdate(
 }
 
 /**
- * 现场文件可用性探针（Bug 466）。
+ * 模块图装载问题的**「装不上」档**（engine 权威口径）。
+ *
+ * 与主分析通道的严重度分档**同集合**（`analyzer-orchestrate-uncached.ts` 的
+ * `pushBModuleIssues`）：`missing` / `missing-export` / `unreadable` /
+ * `json-invalid` 是 **error**；`cycle` / `depth` / `exports-unresolved` 是
+ * **warning**（后者还会回落 harvest ⇒ 仍能求值）⇒ 不算「装不上」。
+ */
+const UNRESOLVED_MODULE_ISSUE_KINDS: ReadonlySet<string> = new Set([
+  "missing",
+  "missing-export",
+  "unreadable",
+  "json-invalid",
+]);
+
+/**
+ * 现场文件可用性探针（Bug 466 + **Bug 1060 第三档**）。
  *
  * `collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」，于是
  * **「现场文件读失败」与「现场文件里确实没有调用」在下游同形** ⇒
  * `nudo test --from <坏文件>` 静默回落 entry@ + exit 0（假绿：用户以为跑过
  * 调用点验证，实际什么都没验证）。
  *
- * 本探针在**该现场文件产出 0 条记录**时复跑一次求值（与 collectCallRecords
- * 同参数 ⇒ 命中 eval memo，不重复执行现场文件的顶层代码）：
+ * 本探针复跑一次求值（与 collectCallRecords 同参数 ⇒ 命中 eval memo，
+ * 不重复执行现场文件的顶层代码），判**三档**：
  * - 解析失败（语法错）→ `mockSeedsForSource` 内的 `parse` 抛错；
- * - 求值失败（模块装载失败 / 顶层抛）→ `tryRunEval` 返回 undefined。
+ * - 求值失败（模块装载失败 / 顶层抛）→ `tryRunEval` 返回 undefined；
+ * - **模块解析失败**（**Bug 1060 第三档**）→ 求值**成功**（lenient 装载器给
+ *   未解析的 import 补 stub，模块体继续跑完）但**调用点被丢弃** ⇒
+ *   `tryRunEval` 的 `moduleIssues` 里带着 `missing` / `missing-export`
+ *   （引擎权威，与主分析通道的 `nudo:module-missing` 家族同源）。
  *
- * 两者都判为「现场文件读失败」，与「文件不存在」同口径（pathMissingCallsite
+ * 三档都判为「现场文件读失败」，与「文件不存在」同口径（pathMissingCallsite
  * 家族）：明确报错 + 非 0 退出。
  */
 function probeCallsiteFile(
@@ -143,6 +162,16 @@ function probeCallsiteFile(
       ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
     });
     if (!run) return { ok: false, reason: "evaluation failed (module did not load)" };
+    // 第三档（Bug 1060）：求值成功但**模块图有装不上的 import** ⇒ 调用点已丢。
+    const unresolved = (run.moduleIssues ?? []).filter((i) =>
+      UNRESOLVED_MODULE_ISSUE_KINDS.has(i.kind),
+    );
+    if (unresolved.length > 0) {
+      return {
+        ok: false,
+        reason: `module resolution failed: ${unresolved.map((i) => i.reason).join("; ")}`,
+      };
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: `parse failed: ${(err as Error).message}` };
@@ -173,23 +202,26 @@ export function collectExternalRecords(
     const siteFiles = siteStat.isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
     for (const sf of siteFiles) {
       const source = readFileSync(sf, "utf-8");
-      const siteRecords = collectCallRecords(sf, source);
-      // 0 条记录 ⇒ 「现场文件里没有调用」与「现场文件读失败」同形，必须区分
-      // （Bug 466：读失败被吞成 0 条记录 ⇒ 静默 entry@ + exit 0 假绿）。
-      if (siteRecords.length === 0) {
-        const probe = probeCallsiteFile(sf, source);
-        if (!probe.ok) {
-          const err: PathError = {
-            path: sf,
-            code: DIAG.pathMissingCallsite,
-            message: `Callsite file failed to load: ${sf} — ${probe.reason}`,
-            suggestion: `fix the callsite file (it must parse and evaluate) or pass --from <file-or-dir> that loads cleanly; it supplies call@ records for generation`,
-          };
-          if (errorSink) errorSink.push(err);
-          else reportPathErrors([err]);
-          continue;
-        }
+      // 探针**先行**（不再挂在「0 条记录」分支上）：
+      // - Bug 466：0 条记录 ⇒「现场文件里没有调用」与「现场文件读失败」同形，
+      //   必须区分（读失败被吞成 0 条记录 ⇒ 静默 entry@ + exit 0 假绿）。
+      // - Bug 1060：**模块解析失败**这一档**求值是成功的**（lenient 装载器给
+      //   未解析的 import 补 stub）⇒ 记录**非空**但指向**不存在的函数**
+      //   （下游被丢弃）⇒ 静默回落 entry@ + exit 0 假绿。
+      //   ⇒ 探针必须对**每个**现场文件都跑，不能只挂在「0 条记录」分支上。
+      const probe = probeCallsiteFile(sf, source);
+      if (!probe.ok) {
+        const err: PathError = {
+          path: sf,
+          code: DIAG.pathMissingCallsite,
+          message: `Callsite file failed to load: ${sf} — ${probe.reason}`,
+          suggestion: `fix the callsite file (it must parse and evaluate) or pass --from <file-or-dir> that loads cleanly; it supplies call@ records for generation`,
+        };
+        if (errorSink) errorSink.push(err);
+        else reportPathErrors([err]);
+        continue;
       }
+      const siteRecords = collectCallRecords(sf, source);
       records.push(...siteRecords);
     }
   }
@@ -527,6 +559,14 @@ export function startWatch(
         await runOne(f);
       } catch (err) {
         console.error(`Error ${relative(process.cwd(), f)}:`, (err as Error).message);
+        // Bug 926：单文件分析失败（解析失败 / 装配失败）**必须置红**。
+        // 改前这里只打一行 stderr 就吞掉 ⇒ watch 面**保持绿**（exit 0），
+        // 而同一目录的 `check --watch` / `health --watch` / 非 watch 的
+        // `test` **全部 exit 1** ⇒ watch 面上唯一的假绿。
+        // 与本文件自陈的「退出码语义 = 最近一轮的门禁状态」一致。
+        // ⚠ **不中断整轮**：一个坏文件不该中止整轮（这是现在的行为，也是对的；
+        //   错的只是「不置红」）。
+        process.exitCode = 1;
       }
     }
     graph = buildModuleGraph(getFiles());
@@ -602,6 +642,9 @@ export function startWatch(
         await runOne(f);
       } catch (err) {
         console.error(`Error ${relative(process.cwd(), f)}:`, (err as Error).message);
+        // Bug 926：增量轮的单文件失败**同样必须置红**（与全量轮同口径）。
+        // 改前增量轮只打 stderr 不置红 ⇒ 改坏一个文件后 watch 面仍是绿的。
+        process.exitCode = 1;
       }
     }
     watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
