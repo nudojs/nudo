@@ -24,6 +24,8 @@ import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.t
 import { domainEvidenceCases } from "./domain-cases.ts";
 import { tsAnnotationTypeText } from "../ts-annotation.ts";
 import { exportNameRepr } from "./export-binding.ts";
+import { isHiddenInternalSlot } from "./internal-slot.ts";
+import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
 
 // ---------------------------------------------------------------------------
 // Abs → TS（dts 主路径）
@@ -203,11 +205,58 @@ const BUILTIN_GENERIC_BRANDS = new Map<string, string>([
   ["AsyncIterableIterator", "AsyncIterableIterator<unknown>"],
 ]);
 
-/** brand 名 → TS 类型串（内建泛型补实参；用户类原样；非法名 → unknown） */
+/**
+ * Bug 233：brand 类名的解析口径（**当前投影作用域**内可解析的类名）。
+ *
+ * - `undefined` = 无模块面的**纯投影**（`absToTSType` 单值投影）⇒ 保持原样：
+ *   类名原样输出（纯投影没有声明面，无从判断该名在产物里是否可解析）。
+ * - 有模块面 ⇒ 只有**产物里可解析**的类名才保留：本地声明的类（`declare class`
+ *   合成）/ 已 import 的类（补 `import type`）/ TS 全局类型名（与 zod 白名单同
+ *   名单）。其余（用户类 brand 来自未声明的名字）**降级为 unknown**——产物里
+ *   出现「从未声明的类型名」会让消费方 tsc 报 TS2304（Bug 233）。
+ */
+let currentBrandScope: ReadonlySet<string> | undefined;
+
+/** 在给定 brand 解析口径下投影（作用域内恢复旧口径） */
+function withBrandScope<T>(scope: ReadonlySet<string>, fn: () => T): T {
+  const prev = currentBrandScope;
+  currentBrandScope = scope;
+  try {
+    return fn();
+  } finally {
+    currentBrandScope = prev;
+  }
+}
+
+/**
+ * 模块面可解析的类名（本地声明的类 + 已 import 的类）——brand 类名只在这里
+ * 列出的名字下才允许进产物。
+ */
+function brandScopeOf(surface: DtsModuleSurface | undefined): ReadonlySet<string> {
+  const out = new Set<string>();
+  if (!surface) return out;
+  for (const name of surface.classes.keys()) out.add(name);
+  for (const name of surface.imports?.keys() ?? []) out.add(name);
+  return out;
+}
+
+/**
+ * brand 名 → TS 类型串（内建泛型补实参；用户类原样；非法名 → unknown）。
+ *
+ * Bug 233：模块面作用域内，**类名必须在产物里可解析**才原样输出（否则消费方
+ * tsc TS2304）——不可解析的类名降级为 `unknown`（降级台账见 `projectModuleDts`）。
+ * TS 全局类型名（Date / RegExp / Error / URL …）与 zod 白名单**同名单**
+ * （族 15 S11 的 zod 白名单同源）——它们在 TS 里是环境内建类型名，无需声明。
+ */
 function brandTSType(name: string): string {
   const builtin = BUILTIN_GENERIC_BRANDS.get(name);
   if (builtin !== undefined) return builtin;
-  return isJsBindingIdent(name) || /^[A-Z][A-Za-z0-9_$]*$/.test(name) ? name : "unknown";
+  if (!isJsBindingIdent(name) && !/^[A-Z][A-Za-z0-9_$]*$/.test(name)) return "unknown";
+  const scope = currentBrandScope;
+  if (scope === undefined) return name;
+  if (scope.has(name)) return name;
+  if (isRuntimeGlobalCtorName(name)) return name;
+  return "unknown";
 }
 
 /** 规范数组下标（"0" / "12"；无前导零）——生成器的元素槽位 */
@@ -365,9 +414,10 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
       if (iter !== undefined) return iter;
       const entries: string[] = [];
       for (const [k, slot] of Object.entries(a.shape.slots)) {
-        // Bug 554：内部槽（internal）不是用户可见属性（私有字段 `#x` /
-        // 生成器协议槽）⇒ 不进结构字段（与 core 的 format 面同口径）。
-        if (slot.internal === true) continue;
+        // Bug 240 / 554：内部槽（internal）不是用户可见属性（私有字段 `#x` /
+        // 生成器协议槽）⇒ 不进结构字段（与 core 的 format / projection / denote
+        // 三面**同判据**：internal 且键不是规范数组下标）。
+        if (isHiddenInternalSlot(k, slot)) continue;
         // 符号键槽：TS 里是**符号键成员**，不是字符串字段（`"@@iterator"`
         // 只是引擎内部的键投影）。未登记的符号键 TS 无语法可表达 ⇒ 跳过。
         if (slot.symbolKey === true) {
@@ -537,7 +587,10 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
     case "arr":
       return makeAbs({ k: "arr", element: widenParamAbs(s.element, budget) }, undefined, undefined, "exact");
     case "obj": {
-      const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+      const slots: Record<
+        string,
+        { value: Abs; optional?: boolean; internal?: boolean; symbolKey?: boolean }
+      > = {};
       for (const [k, slot] of Object.entries(s.slots)) {
         // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——**先**取 getter 读域
         // 再 widen（本分支造新对象，侧表按对象身份键控，造新后读域即丢）。
@@ -545,6 +598,11 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
         slots[k] = {
           value: widenParamAbs(src, budget),
           ...(slot.optional ? { optional: true } : {}),
+          // Bug 240：internal / symbolKey 标记必须**透传**——widen 造新槽时丢了
+          // 标记 ⇒ 内部槽（私有字段 / 生成器协议槽）被"提权"成用户可见字段
+          // （`"#priv": number` / `"@@iterator": …`），产物面泄漏内部实现细节。
+          ...(slot.internal === true ? { internal: true } : {}),
+          ...(slot.symbolKey === true ? { symbolKey: true } : {}),
         };
       }
       return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
@@ -1480,6 +1538,18 @@ export function projectFunctionDts(
   contract?: DtsContractFace,
   surface?: DtsModuleSurface,
 ): DtsFunctionProjection {
+  // Bug 233：brand 类名只在**产物里可解析**时才保留（本地声明 / 已 import /
+  // TS 全局类型名）——作用域覆盖整条投影链（JSDoc / 签名 / 返回位）。
+  return withBrandScope(brandScopeOf(surface), () =>
+    projectFunctionDtsInner(fn, contract, surface),
+  );
+}
+
+function projectFunctionDtsInner(
+  fn: FunctionAnalysis,
+  contract?: DtsContractFace,
+  surface?: DtsModuleSurface,
+): DtsFunctionProjection {
   // Bug 518/550：类成员（`C.m`）**不是模块级导出**——模块级没有 `C_m` 这个
   // 名字（那是凭空造导出；#494 的清洗只让它可解析，不让它正确）。
   // 成员声明进类体，类声明由模块面合成（一次一类）。
@@ -1664,7 +1734,21 @@ export interface DtsClassSurface {
   ctorParams?: string[];
 }
 
-/** 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出） */
+/**
+ * 导入面（一条 import 声明里的**类型名** → 模块说明符）。
+ *
+ * Bug 233：brand 引用的类若来自**别的模块**（本模块 import 进来的），
+ * 产物里必须能解析那个类名 ⇒ 补 `import type { C } from "…";`（否则消费方
+ * tsc TS2304）。命名空间导入（`import * as ns`）不能当类型名用 ⇒ 不收。
+ */
+export interface DtsImportSurface {
+  /** 模块说明符（源码原文） */
+  specifier: string;
+  /** 导入形态：具名（`import type { X } from "…"`）/ 默认（`import type X from "…"`） */
+  kind: "named" | "default";
+}
+
+/** 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） */
 export interface DtsModuleSurface {
   /** 导出名 → 本地绑定名（CJS 槽 / 匿名 default / 再导出 ⇒ "" = 无本地绑定） */
   exportBindings: Map<string, string>;
@@ -1672,6 +1756,14 @@ export interface DtsModuleSurface {
   reexports: string[];
   /** 类面（类本地名 → 类声明面） */
   classes: Map<string, DtsClassSurface>;
+  /**
+   * 导入面（可当类型名用的导入绑定名 → 模块说明符）。
+   *
+   * 具名导入按**导出名**记（`import { X as Y }` ⇒ 键 "X"——产物里补
+   * `import type { X } from "…"` 用的是导出名）；默认导入按**本地名**记
+   * （`import X from "…"` ⇒ 键 "X"，补 `import type X from "…"`）。
+   */
+  imports?: Map<string, DtsImportSurface>;
 }
 
 /** AST 节点最小形状（Babel AST 的鸭子类型——不引 @babel/types） */
@@ -1763,6 +1855,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     exportBindings: new Map(),
     reexports: [],
     classes: new Map(),
+    imports: new Map(),
   };
   let ast: { program: { body: SurfaceNode[] } };
   try {
@@ -1814,6 +1907,32 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     }
     if (stmt.type === "ExportDefaultDeclaration") {
       addClass(stmt.declaration as SurfaceNode | null | undefined);
+    }
+  }
+
+  // ── 导入面（Bug 233：brand 类名来自别的模块 ⇒ 产物里要能解析那个名字）──
+  // 具名导入按**导出名**记（`import { X as Y }` ⇒ 键 "X"——补 import 用导出名）；
+  // 默认导入按**本地名**记；命名空间导入不能当类型名 ⇒ 不收。
+  const imports = surface.imports ?? new Map<string, DtsImportSurface>();
+  for (const stmt of body) {
+    if (stmt.type !== "ImportDeclaration") continue;
+    const from = stmt.source as SurfaceNode | undefined;
+    const specifier = String(from?.value ?? "");
+    if (!specifier) continue;
+    for (const spec of (stmt.specifiers as SurfaceNode[] | undefined) ?? []) {
+      if (spec.type === "ImportDefaultSpecifier") {
+        const local = surfaceName(spec.local as SurfaceNode | undefined);
+        if (local && !imports.has(local)) {
+          imports.set(local, { specifier, kind: "default" });
+        }
+        continue;
+      }
+      if (spec.type !== "ImportSpecifier") continue; // 命名空间导入不能当类型名
+      const exported = surfaceName(spec.imported as SurfaceNode | undefined);
+      if (!exported) continue;
+      if (!imports.has(exported)) {
+        imports.set(exported, { specifier, kind: "named" });
+      }
     }
   }
 
@@ -2059,8 +2178,27 @@ export interface DtsModuleProjection {
  * - 类成员收进 `declare class C { … }`（模块级不再有 `C_m` 导出）
  * - 再导出面（`export * from` / `export {x} from`）按原样发射
  * - brand 引用（类实例类型）补类声明（否则 TS2304）
+ * - brand 引用的类若来自**别的模块**（本模块 import 进来的）⇒ 补
+ *   `import type { C } from "…";`（Bug 233：否则产物里那个类名从未声明 ⇒
+ *   消费方 tsc TS2304）
+ * - 产物里**无法解析**的类名（既没本地声明、也没 import、也不是 TS 全局类型名）
+ *   ⇒ 降级为 unknown，并在产物头部留**降级台账**（可诊断）
  */
 export function projectModuleDts(
+  surface: DtsModuleSurface | undefined,
+  entries: ReadonlyArray<{
+    fn: FunctionAnalysis;
+    projection: DtsFunctionProjection;
+    contract?: DtsContractFace;
+  }>,
+): DtsModuleProjection {
+  // Bug 233：类字段声明（brand 实例形状）也要在 brand 解析口径内渲染。
+  return withBrandScope(brandScopeOf(surface), () =>
+    projectModuleDtsInner(surface, entries),
+  );
+}
+
+function projectModuleDtsInner(
   surface: DtsModuleSurface | undefined,
   entries: ReadonlyArray<{
     fn: FunctionAnalysis;
@@ -2111,10 +2249,41 @@ export function projectModuleDts(
     );
   }
 
+  // ── Bug 233：brand 引用的类来自 import ⇒ 补 import type（否则 TS2304）──
+  const importLines: string[] = [];
+  if (surface?.imports) {
+    for (const [name, imp] of surface.imports) {
+      if (!brands.has(name)) continue; // 只为**被引用**的类补 import
+      if (surface.classes.has(name)) continue; // 本地已声明 ⇒ 走 declare class
+      const src = JSON.stringify(imp.specifier);
+      importLines.push(
+        imp.kind === "default"
+          ? `import type ${name} from ${src};`
+          : `import type { ${name} } from ${src};`,
+      );
+    }
+  }
+
+  // ── Bug 233：不可解析的类名（降级为 unknown）——台账（可诊断） ──
+  // 判据与 `brandTSType` 同款（内建泛型 / 模块面可解析 / TS 全局类型名 ⇒ 不降级）。
+  const scope = brandScopeOf(surface);
+  const unresolved = [...brands.keys()].filter(
+    (name) =>
+      !BUILTIN_GENERIC_BRANDS.has(name) &&
+      !scope.has(name) &&
+      !isRuntimeGlobalCtorName(name),
+  );
+  const ledger =
+    unresolved.length > 0
+      ? [
+          `// nudo:unresolved-class ${unresolved.join(", ")} — brand type not declared in this module (projected as unknown)`,
+        ]
+      : [];
+
   // ── 再导出面 ──
   if (surface) for (const r of surface.reexports) lines.push(r);
 
-  return { lines, params };
+  return { lines: [...importLines, ...ledger, ...lines], params };
 }
 
 /** 类声明行（导出形态 + 构造器 + 实例方法 + 静态方法 + 实例字段） */
@@ -2178,6 +2347,9 @@ function brandFieldLines(
   const out: Array<{ name: string; type: string }> = [];
   for (const [k, slot] of Object.entries(instance.shape.slots)) {
     if (methodNames.has(k)) continue;
+    // Bug 240：私有字段（`#x`）是 internal 槽 ⇒ 不是用户可见属性 ⇒ 不进类体
+    // （与 core 三面同判据）。
+    if (isHiddenInternalSlot(k, slot)) continue;
     out.push({ name: k, type: absToTSType(widenParamAbs(slot.value)) });
   }
   return out;

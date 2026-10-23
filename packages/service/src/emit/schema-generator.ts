@@ -15,6 +15,7 @@ import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { sanitizeLineCommentText } from "./line-comment.ts";
+import { isHiddenInternalSlot } from "./internal-slot.ts";
 
 /**
  * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
@@ -441,6 +442,10 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
+        // Bug 240：internal 槽（私有字段 / 生成器协议槽）不是自有属性 ⇒ 不进
+        // 产物面（与 core 的约束面 / guard 面 / format 面同判据）。约束投影
+        // （`absToConstraint`）已剔；这里是形状兜底路径（约束不可表达时）。
+        if (isHiddenInternalSlot(key, slot)) continue;
         const sub = absToSchemaNodeB(slot.value, budget);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
@@ -540,8 +545,14 @@ const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
   "URL", "URLSearchParams", "TextEncoder", "TextDecoder",
 ]);
 
-/** brand 名能否用 `z.instanceof(<name>)` 表达（须是运行时全局构造器名） */
-function isRuntimeGlobalCtorName(name: string): boolean {
+/**
+ * brand 名能否用 `z.instanceof(<name>)` 表达（须是运行时全局构造器名）。
+ *
+ * 同名单也是 **dts 面的 TS 全局类型名名单**（族 15 S11 的 zod 白名单同源）：
+ * 这些名字在 TS 里是环境内建类型名（Date / RegExp / Error / URL …）⇒ 产物里
+ * 原样引用即可，无需声明（dts 面见 `dts-generator.ts` 的 `brandTSType`）。
+ */
+export function isRuntimeGlobalCtorName(name: string): boolean {
   return RUNTIME_GLOBAL_CTOR_NAMES.has(name);
 }
 
