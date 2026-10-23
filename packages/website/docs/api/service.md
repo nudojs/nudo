@@ -681,7 +681,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="collectchecksupplementissues"></a>`collectCheckSupplementIssues` | fn | 采集三条补充诊断通道（指令文法 / mock 装载 / env 未解析）→ CheckIssue[]。 | `collectCheckSupplementIssues( filePath: string, source: string, opts: CheckSupplementOptions = {}, ): CheckIssue[]` |
 | <a id="collectdependencyspecs"></a>`collectDependencySpecs` | fn | 从 AST 收集静态相对依赖（ESM import + CJS require） | `collectDependencySpecs(ast: File): string[]` |
 | <a id="collectenvglobals"></a>`collectEnvGlobals` | fn | — | `collectEnvGlobals(envNames: string[]): Record<string, Abs>` |
-| <a id="collectenvmodules"></a>`collectEnvModules` | fn | — | `collectEnvModules(envNames: string[]): Record<string, AbsModuleExports>` |
+| <a id="collectenvmodules"></a>`collectEnvModules` | fn | Bug 282：env 模块是 **CJS 互操作**模块——Node 的 `node:fs` 的默认导出就是 模块对象本身（具名导出挂在它上面）⇒ ESM **默认导入** （`import fs from "node:fs"`）必须绑到**命名空间**。 | `collectEnvModules(envNames: string[]): Record<string, AbsModuleExports>` |
 | <a id="collectenvnames"></a>`collectEnvNames` | fn | — | `collectEnvNames(filePath: string, source: string, includeProject: boolean): string[]` |
 | <a id="collectevaldiagnostics"></a>`collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
 | <a id="collectevalreplacements"></a>`collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表。 | `collectEvalReplacements( source: string, opts?: { diags?: DirectiveDiag[] }, ): EvalReplacements` |

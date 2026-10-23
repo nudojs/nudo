@@ -226,6 +226,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
+| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | — |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
 | <a id="confidence"></a>`Confidence` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Confidence = "exact" \| "path" \| "widened" \| "mock" \| "partial" \| "opaque"` |
@@ -386,7 +387,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (348)</summary>
+<summary>Additional exports from src/index.ts (347)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -395,7 +396,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; fnKind?: "function" \| "async" \| "generator" \| ...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
-| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; }` |
+| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; interopDefault?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
@@ -427,7 +428,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
 | <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; reason?: "cycle" \| "depth" \|...` |
 | <a id="checkjsonmulti"></a>`CheckJsonMulti` | type | 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 | `CheckJsonMulti = { version: 1; kind: "multi"; ok: boolean; summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean }...` |
-| <a id="checkoptions"></a>`CheckOptions` | type | — | — |
 | <a id="clearbclasses"></a>`clearBClasses` | fn | — | `clearBClasses(): void` |
 | <a id="clearcollectiontables"></a>`clearCollectionTables` | fn | — | `clearCollectionTables(): void` |
 | <a id="clearstaletermpred"></a>`clearStaleTermPred` | fn | 调用方已直接改 shape 时的 term/pred 清理 | `clearStaleTermPred(v: Abs): void` |
@@ -534,7 +534,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
 | <a id="interface_source_abbr"></a>`INTERFACE_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const INTERFACE_SOURCE_ABBR` |
-| <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string }` |
+| <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="interfacediagcount"></a>`interfaceDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `interfaceDiagCount(): number` |
 | <a id="interfacesource"></a>`InterfaceSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `InterfaceSource = "handwritten" \| "generated" \| "implicit"` |
 | <a id="interfacesourceof"></a>`interfaceSourceOf` | fn | interfaceTierOf 的来源投影；非导出 → undefined | `interfaceSourceOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceSource \| undefined` |
@@ -656,7 +656,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="pushphi"></a>`pushPhi` | fn | — | `pushPhi(p: Phi): void` |
 | <a id="pushthrowexit"></a>`pushThrowExit` | fn | — | `pushThrowExit(v: Abs): void` |
 | <a id="queuepromisemicro"></a>`queuePromiseMicro` | fn | — | `queuePromiseMicro(task: () => void): void` |
-| <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string }` |
+| <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="refinediagcount"></a>`refineDiagCount` | fn | 当前诊断累计序号（since 锚） | `refineDiagCount(): number` |
 | <a id="refineentry"></a>`RefineEntry` | type | 同时保留原始 NudoConstraint（shape 字段检查用）。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; name?: string; }` |
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
