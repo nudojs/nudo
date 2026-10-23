@@ -15,7 +15,7 @@ import { and, gt, ge, lt, le, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isStrPrim, isBigPrim, litValue, num, numLit, str } from "../abs.ts";
 import { concatString, isTemplateLike } from "../template.ts";
-import { makeSum, isNullProtoWithoutCoercer } from "../objects.ts";
+import { makeSum, isNullProtoWithoutCoercer, joinValues } from "../objects.ts";
 import { noteDerivationAdd } from "../derivation.ts";
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
@@ -64,6 +64,39 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     ) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
+  }
+  // Bug 402：**任一侧是 sum** 时，字符串快路径必须让位给**成员级并联**
+  // （distributeSumBinOp）。否则 concatString 会把 union 各成员的 parts
+  // 平铺进同一个数组 ⇒ createTemplateAbs 对全字面量 parts 折叠成**单个**
+  // lit ⇒ 产出原生不可能的确定字面量（("a"|"b") + "!" ⇒ "ab!"，原生只有
+  // "a!" / "b!"）。并联分发按成员**成对**组合 ⇒ "a!" | "b!"。
+  //
+  // 只在「字符串快路径本来会命中」且「任一侧是 sum」时改道；其余分支
+  // （数值 / 数组 / any / 未知混合）保持既有次序与结果不变。
+  //
+  // ⚠ 例外：union 里有**整型 string** 臂（字符串全集）时**不**改道——那一臂
+  // 的 ToString 投影就是全集 ⇒ 拼接结果恒是「整型 string」，并联分发只会把
+  // 它拆成同型但难读的 union（`string | "undefined"`），而字符串快路径
+  // （concatString 内部的成员归一）给出同一个类型、可读的形态（`string`）。
+  // 该形态是既有金标（#119：`${f.file}`（file: string|undefined）⇒ `string`）。
+  if (
+    (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) &&
+    (a.shape.k === "sum" || b.shape.k === "sum") &&
+    !hasAnyStringMember(a) &&
+    !hasAnyStringMember(b)
+  ) {
+    // ⚠ 成员结果的合成走 **`joinValues` 口径**（仓内既有的「同 prim 合并」
+    // 规则），不是裸 `sum`：
+    // - 双**字面量**成员 ⇒ 枚举 sum（`"a!" | "b!"`）—— Bug 402 的目标形态；
+    // - 字面量 × **无收窄 pred 的同 prim 臂** ⇒ 收成 bare prim（`string`）。
+    //   否则成员级的 template 结果（渲染面即 `string`）会与字面量臂并排成
+    //   `"NaN day" | string` ⇒ **既不可读又与既有签名面不一致**
+    //   （真实 `ms(durationMs, {long:true})` 的值域就是 `string`，
+    //     文档 pin 钉的也是 `formatAge(durationMs: number) => string`）。
+    const distributed = distributeSumBinOp("+", a, b, phi, add, (members) =>
+      members.reduce((acc, m) => joinValues(acc, m)),
+    );
+    if (distributed) return distributed;
   }
   // 字符串拼接（含 template parts）—— JS + 优先走 string：
   // `1n + "s" === "1s"`（ToString），不得落进 bigint 混型硬抛。
@@ -182,6 +215,29 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
 
   return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/**
+ * union 里是否有一臂是**整型 string**（字符串全集）。
+ *
+ * 判据（与 `template.ts` 的 `isAnyStringAbs` 同口径 —— 两处各持一份私有
+ * 副本，避免为它新增导出）：prim string + 无 lit term + pred 不收窄值域。
+ * template（meta 在 pred 槽）与 min/max 界都收窄 ⇒ 不算；**typeof 证据
+ * 谓词**（同 prim 链塌缩时补的锚定，见 `constraint.ts` 的
+ * `constraintOnTermAbs` union 臂）不收窄 ⇒ 算。
+ *
+ * 用途（Bug 402 的并联分发例外）：整型 string 臂的 ToString 投影就是全集 ⇒
+ * 该 union 的拼接结果恒是「整型 string」⇒ 成员级并联只会把它拆成同型但难读
+ * 的 union（`string | "undefined"`）⇒ 这类 union 留在字符串快路径。
+ */
+function hasAnyStringMember(a: Abs): boolean {
+  if (a.shape.k !== "sum" || !a.shape.members) return false;
+  return a.shape.members.some((m) => {
+    if (m.shape.k !== "prim" || m.shape.type !== "string") return false;
+    if (m.term?.op === "lit") return false;
+    if (!m.pred) return true;
+    return m.pred.op === "typeof" && m.pred.type === "string";
+  });
 }
 
 /**

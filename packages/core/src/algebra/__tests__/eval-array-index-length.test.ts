@@ -109,27 +109,44 @@ describe("check signatures: length assignment", () => {
     return r.signatures[0]?.display;
   }
 
+  /** 置信度（`display` 自 Bug 413 起是人类面口径，不再带 `#conf` 段） */
+  function confOf(src: string): string | undefined {
+    const r = checkSource("/t/idx.js", withStdImport(src), pTrue, stdOpts);
+    return r.signatures[0]?.conf;
+  }
+
+  /** 多行明细（谓词证据所在处） */
+  function detailOf(src: string): string | undefined {
+    const r = checkSource("/t/idx.js", withStdImport(src), pTrue, stdOpts);
+    return r.signatures[0]?.detail;
+  }
+
   it("length truncation reaches the signature", () => {
-    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=1; return a.length; }`)).toBe("1  #exact");
+    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=1; return a.length; }`)).toBe("1");
+    expect(confOf(`export function f() { const a=[1,2,3]; a.length=1; return a.length; }`)).toBe("exact");
   });
 
   it("length extension reaches the signature", () => {
-    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=5; return a.length; }`)).toBe("5  #exact");
+    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=5; return a.length; }`)).toBe("5");
+    expect(confOf(`export function f() { const a=[1,2,3]; a.length=5; return a.length; }`)).toBe("exact");
   });
 
   it("invalid length throw is catchable in the signature", () => {
-    expect(
-      sigOf(
-        `export function f() { const a=[1,2,3]; try { a.length=-1; return 'no'; } catch(e) { return e instanceof RangeError ? 'range' : 'other'; } }`,
-      ),
-    ).toBe("\"range\"  #exact");
+    const src = `export function f() { const a=[1,2,3]; try { a.length=-1; return 'no'; } catch(e) { return e instanceof RangeError ? 'range' : 'other'; } }`;
+    expect(sigOf(src)).toBe("\"range\"");
+    expect(confOf(src)).toBe("exact");
   });
 
   it("huge valid length stays conservative in the signature", () => {
     // `.length` 读携带非负 pred（issue #98：`new Array(b.length+1)` 的
     // RangeError note 依此豁免）——巨大长度不折 exact，保持 number + len≥0
-    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=5000; return a.length; }`)).toMatch(
-      /^number\s+= len#\d+\s+where len#\d+ ≥ 0\s+#path$/,
-    );
+    //
+    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带
+    // `= len#N where len#N ≥ 0` 注记）⇒ 形状断言看 display、谓词证据看
+    // `detail`（内部计数器 id 已换成稳定名 `len` —— 编号曾随进程漂移）。
+    const src = `export function f() { const a=[1,2,3]; a.length=5000; return a.length; }`;
+    expect(sigOf(src)).toBe("number");
+    expect(detailOf(src)).toMatch(/pred: len ≥ 0/);
+    expect(detailOf(src)).not.toMatch(/len#/);
   });
 });

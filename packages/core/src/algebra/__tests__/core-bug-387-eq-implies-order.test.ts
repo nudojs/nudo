@@ -29,8 +29,10 @@ const z = v("z");
 
 /** 签名里的可能值集合（排序后比较——join 顺序不稳定） */
 function sigValues(display: string): string[] {
+  // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` 段）
+  // ⇒ throws 后缀改用空格切（此前靠 `  #` 切掉）
   return display
-    .split("  #")[0]!
+    .split(/\s+throws\s+/)[0]!
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0)

@@ -2,7 +2,7 @@
  * 格式化：把 Abs 渲染成人类可读 / CLI 友好的字符串。
  */
 
-import type { Abs } from "./abs.ts";
+import type { Abs, Shape } from "./abs.ts";
 import { litValue } from "./abs.ts";
 import type { Term, LiteralValue } from "./term.ts";
 import { termEquals, termToString } from "./term.ts";
@@ -173,6 +173,25 @@ function formatLitValue(v: LiteralValue): string {
   return JSON.stringify(v) ?? "undefined";
 }
 
+/**
+ * Bug 403 / 404：**需要分组括号**的形状判定。
+ *
+ * `fn` 的文本（`(a) => b`）后面直接接后缀时，按 TS 解析规则后缀绑定到
+ * **函数的返回类型**而不是外层容器：
+ * - `arr(fn)` → `(a) => b[]` 被读成「返回 `b[]` 的函数」（应是「函数数组」）
+ * - `sum(fn, n)` → `(a) => b | n` 被读成「返回 `b | n` 的函数」（应是「函数或 n」）
+ *
+ * ⇒ `fn` 出现在「后面还要接后缀」的位置（数组元素 / union 成员）时必须加括号。
+ * dts 面（`absToTSType`）对同一形态**已经**加了括号 ⇒ 两个渲染器此前对同一
+ * Abs 给出两种读法（`formatShape` 面是坏渲染）。
+ *
+ * ⚠ 裁决范围：**只对 `fn`**（403 / 404 的实测证据只涉及 `fn`）。`brand` /
+ * `obj` / `tuple` 的同类缺口**不在本片范围**（见族 09 勘察报告的越界发现）。
+ */
+function needsGrouping(shape: Shape): boolean {
+  return shape.k === "fn";
+}
+
 function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string {
   const s = a.shape;
   switch (s.k) {
@@ -240,8 +259,12 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       // Bug 34：union 元素加括号——`3 | 1 | 2[]` 按 TS 解析歧义为
       // 3 | 1 | (2[])（sort/flatMap 元素 join 的 arr(sum) 面）；单 prim/
       // lit 元素保持 `X[]` 不加冗余括号
+      // Bug 403：**函数元素**同样要加括号——`(a) => b[]` 按 TS 解析歧义为
+      // 「返回 `b[]` 的函数」；`fn` 元素走 needsGrouping 判定（union 判定保留）
       const el = formatShapeB(s.element, budget, ind);
-      return s.element.shape.k === "sum" ? `(${el})[]` : `${el}[]`;
+      return s.element.shape.k === "sum" || needsGrouping(s.element.shape)
+        ? `(${el})[]`
+        : `${el}[]`;
     }
     case "tuple": {
       // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽
@@ -331,7 +354,10 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
         const t = formatShapeB(m, budget, ind);
         if (seen.has(t)) continue;
         seen.add(t);
-        parts.push(t);
+        // Bug 404：**函数成员**加括号——`(a) => b | n` 按 TS 解析歧义为
+        // 「返回 `b | n` 的函数」（`|` 被函数的返回类型吃掉）；去重 key 仍用
+        // **未包裹**的文本（避免把 `fn` 成员与别的成员误去重）
+        parts.push(needsGrouping(m.shape) ? `(${t})` : t);
         kinds.push(m.shape.k);
       }
       // pretty：仅当至少一臂是复合 shape（object/array/map/set/fn——

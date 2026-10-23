@@ -44,6 +44,17 @@ function l2Of(r: ReturnType<typeof check>, fn?: string) {
   );
 }
 
+/**
+ * 签名置信度（**口径更新 · 族 09 S5 · Bug 413**）。
+ *
+ * `display` 自 Bug 413 起是**人类面口径**的 shape 渲染（与 `nudo check` 的
+ * 签名行逐字同源）⇒ 不再带 `#exact` / `#path` 置信度段 ⇒ 置信度证据改看
+ * `signatures[].conf`（**证据不丢**，只是换了字段）。
+ */
+function confOf(r: { signatures: { name: string; conf: string }[] }, fn: string): string {
+  return r.signatures.find((s) => s.name === fn)?.conf ?? "(missing)";
+}
+
 describe("#136 issue 原样：守卫后 push 元素不再带 undefined 臂", () => {
   it("while + (m = re.exec(content)) + if (m[1].trim().length > 0)：0 error、返回 [string]", () => {
     const r = check(`
@@ -69,7 +80,8 @@ export function rg(content) {
     // 每臂元素恒 string（无 undefined 臂）
     expect(sigOf(r, "rg")).not.toContain("undefined");
     expect(sigOf(r, "rg")).toContain("[]");
-    expect(sigOf(r, "rg")).toContain("#exact");
+    // 置信度证据改看 `sig.conf`（`display` 自 Bug 413 起不再带 `#conf` 段）
+    expect(confOf(r, "rg")).toBe("exact");
   });
 
   it("同源码无侧车：仍报 entry-may-throw TypeError（.trim() nullish 臂 throws 事实不丢）", () => {
@@ -109,7 +121,8 @@ export function rgExplicit(content) {
     // 同上（Bug 49/51：{0..8} 次入栈并集，元素恒 string，无 undefined 臂）
     expect(sigOf(r, "rgExplicit")).not.toContain("undefined");
     expect(sigOf(r, "rgExplicit")).toContain("[]");
-    expect(sigOf(r, "rgExplicit")).toContain("#exact");
+    // 置信度证据改看 `sig.conf`（`display` 自 Bug 413 起不再带 `#conf` 段）
+    expect(confOf(r, "rgExplicit")).toBe("exact");
   });
 
   it("无守卫直推 out.push(m[1])：仍 [string|undefined]（诚实化不回退）", () => {
@@ -154,7 +167,8 @@ export function parts(content) {
     // input:string（修前均质 arr：m[0] 也带 undefined、length/index/input unknown）。
     // Bug 99：exec 首败零迭代臂（native 无匹配 → return null）现被正确汇合
     // ——原断言钉的是丢 null 臂的 unsound 行为。
-    expect(sigOf(r, "parts")).toMatch(/^null \| \[string, 2, number, string\]  #exact/);
+    expect(sigOf(r, "parts")).toMatch(/^null \| \[string, 2, number, string\]/);
+    expect(confOf(r, "parts")).toBe("exact");
   });
 
   it("具名捕获组：m.groups.<name> 读 string|undefined 槽", () => {
@@ -175,7 +189,8 @@ export function named(content) {
     // 具名组槽 string|undefined（未参与捕获 undefined）；join 尾注为
     // undefAbs 的 unknown 形状显示（Bug 22 口径，非引擎债）。
     // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
-    expect(sigOf(r, "named")).toMatch(/^null \| string \| undefined  #exact/);
+    expect(sigOf(r, "named")).toMatch(/^null \| string \| undefined/);
+    expect(confOf(r, "named")).toBe("exact");
   });
 
   it("具体 subject 双字面量真执行路径（matchResultAbs）行为不变", () => {
@@ -187,7 +202,8 @@ export function concrete() {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "concrete")).toBe('["xby", "b", 2, 0, "xby"]  #exact');
+    expect(sigOf(r, "concrete")).toBe('["xby", "b", 2, 0, "xby"]');
+    expect(confOf(r, "concrete")).toBe("exact");
   });
 });
 
@@ -230,7 +246,8 @@ export function orAlt(content) {
     expect(r.summary.errors).toBe(0);
     // 整体假 ⇒ A 假且 B 求值到达 ⇒ 接收者非 nullish。
     // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
-    expect(sigOf(r, "orAlt")).toMatch(/^null \| string  #path/);
+    expect(sigOf(r, "orAlt")).toMatch(/^null \| string/);
+    expect(confOf(r, "orAlt")).toBe("path");
   });
 
   it("可选链 m?.[1]?.trim()：短路不蕴含接收者非 nullish（控制组不窄化）", () => {
@@ -267,7 +284,8 @@ export function dotRecv(node) {
 `);
     expect(r.summary.errors).toBe(0);
     // 调用求值到达 ⇒ node.name 非 nullish（修前无事实：string | undefined | "-"）
-    expect(sigOf(r, "dotRecv")).toBe('string | "-"  #path');
+    expect(sigOf(r, "dotRecv")).toBe('string | "-"');
+    expect(confOf(r, "dotRecv")).toBe("path");
   });
 
   it("接收者含调用等复杂表达式不提取（宁缺毋假）", () => {
@@ -283,6 +301,7 @@ export function complexRecv(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // receiver 是 CallExpression——不提取事实（此处不涉 m 槽，只钉不崩不误窄）
-    expect(sigOf(r, "complexRecv")).toBe('string | "-"  #path');
+    expect(sigOf(r, "complexRecv")).toBe('string | "-"');
+    expect(confOf(r, "complexRecv")).toBe("path");
   });
 });

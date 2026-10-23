@@ -7,8 +7,9 @@
 
 import type { parseSource } from "./parse-source.ts";
 import type { Abs } from "./abs.ts";
-import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbsMultiline, formatShape } from "./format.ts";
 import { identBoundaryRegex } from "./code-text.ts";
+import { absWithStableTermIds } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { formalParamSignatureNames } from "./param-surface.ts";
 
@@ -191,6 +192,18 @@ export function findFnLoc(
   return {};
 }
 
+/**
+ * 签名的多行明细（机器面 `signatures[].detail` 与人类面 `--verbose` **同源**）。
+ *
+ * 形态沿用 `formatAbsMultiline`（首行 = 函数名 —— Bug 377 的「不得串号」
+ * 依赖它）；**term / pred 里的引擎内部计数器 id 换成稳定名**（`len#2` →
+ * `len`）—— 编号随进程漂移 ⇒ 不得进对外载荷（Bug 413），而谓词证据
+ * （`len ≥ 0`）必须保留。
+ */
+function formatSigDetail(absVal: Abs, name: string): string {
+  return formatAbsMultiline(absWithStableTermIds(absVal), name);
+}
+
 export function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
   // 键 = (Abs 身份, 函数名)：detail 内嵌函数名 ⇒ 名字必须进键（Bug 377）
   let byName = sigFormatCache.get(absVal);
@@ -201,8 +214,11 @@ export function formatSigCached(absVal: Abs, name: string): { display: string; d
   const hit = byName.get(name);
   if (hit) return hit;
   const out = {
-    display: formatAbs(absVal),
-    detail: formatAbsMultiline(absVal, name),
+    // **人类面口径**（`formatShape`）：与 `formatCheckReport` 的签名行**逐字
+    // 同源**（Bug 413：机器面此前用 `formatAbs` ⇒ 把 term / pred 段渲进
+    // 对外载荷，其中混着引擎内部计数器 id `len#N` ⇒ 载荷随参数列表位置漂移）。
+    display: formatShape(absVal),
+    detail: formatSigDetail(absVal, name),
   };
   byName.set(name, out);
   return out;

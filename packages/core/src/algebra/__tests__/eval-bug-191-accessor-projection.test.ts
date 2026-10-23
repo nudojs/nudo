@@ -77,8 +77,12 @@ describe("Bug 191: 访问器占位槽不得投影成 exact undefined", () => {
 
   it("守卫面按 getter 读域判定（原生读 data.ab 得 1）", () => {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
+    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带
+    // ① 数组排除（`!Array.isArray(data)`）② 必填槽的**独立存在性子句**
+    // （`Object.hasOwn(data, "ab") || ("ab" in data && …)`）——
+    // 访问器键的**读域判定**（`data.ab === 1`）不变。
     expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && data.ab === 1',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1',
     );
   });
 
@@ -112,7 +116,7 @@ describe("Bug 191 负控制：非 getter 槽不受影响", () => {
     const src = `export function f() { return { plain: 5 }; }`;
     expect(shapeOf(src)).toBe("{ plain: 5 }");
     expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && data.plain === 5',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "plain") || ("plain" in data && !Object.hasOwn(Object.prototype, "plain"))) && data.plain === 5',
     );
   });
 
@@ -125,7 +129,7 @@ describe("Bug 191 负控制：非 getter 槽不受影响", () => {
     const src = `export function f() { return { set ab(v) {} }; }`;
     expect(shapeOf(src)).toBe("{ ab: undefined }");
     expect(guardOf(src)).toBe(
-      'typeof data === "object" && data !== null && data.ab === undefined',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === undefined',
     );
   });
 

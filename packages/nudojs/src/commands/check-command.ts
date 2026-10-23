@@ -11,10 +11,17 @@ import type { Command } from "commander";
 import {
   formatAbs,
   serializeCheckJsonMulti,
+  type Abs,
   type CheckJson,
   type GitlabCodeQualityIssue,
 } from "@nudojs/core";
-import { analyzeFile, defaultLoadModule, injectBindings, type CallRecord } from "@nudojs/service";
+import {
+  analyzeFile,
+  defaultLoadModule,
+  injectBindings,
+  type AnalysisResult,
+  type CallRecord,
+} from "@nudojs/service";
 import {
   isEntryThrowsMode,
   isGateProfile,
@@ -192,6 +199,41 @@ function usageErrorExit(
   process.exitCode = envelope.ok ? 0 : 1;
 }
 
+/**
+ * Bug 405：`--target` 指向的名字 ⇒ 类型串（`--what-if` 早退分支专用）。
+ *
+ * 顶层绑定 Abs 的 fn 形状**没有 returnType**（只有 `{ k: "fn", params: [...] }`）
+ * ⇒ `formatAbs` 打出 `() => ?`——`?` 既不是合法 TS 类型也不是 Nudo 的类型
+ * 记号（坏渲染 / 误导输出）。同一函数的**签名表**走的是另一条面
+ * （`result.functions` / `combinedAbs`）⇒ 同一个函数在签名表里是
+ * `useRaw() => 3`、在 `--target` 里却是 `() => ?`（两条面互相矛盾）。
+ *
+ * 修法（路线 ①）：命中**函数名** ⇒ 从 `result.functions` 取该函数的
+ * `combinedAbs`（真实返回域）补进绑定 fn 形状缺失的 returnType 再渲染；
+ * 取不到（非函数 / 无 combinedAbs）才回落到 `result.bindings`。
+ *
+ * 返回槽**不带 term**：term 是引擎内部抽象变量名（`len#N`）⇒ 不进用户面
+ * 文本（签名表口径：`formatShape` 不带 `= term`）。
+ */
+function whatIfTargetType(result: AnalysisResult, name: string): string {
+  const returnAbs = result.functions.find((f) => f.name === name)?.combinedAbs;
+  const bindingAbs = result.bindings.get(name)?.abs;
+  if (returnAbs && bindingAbs && bindingAbs.shape.k === "fn") {
+    const returnSlot: Abs = {
+      shape: returnAbs.shape,
+      ...(returnAbs.pred !== undefined ? { pred: returnAbs.pred } : {}),
+      conf: returnAbs.conf,
+    };
+    return formatAbs({
+      ...bindingAbs,
+      shape: { ...bindingAbs.shape, returnType: returnSlot },
+    });
+  }
+  if (bindingAbs) return formatAbs(bindingAbs);
+  if (returnAbs) return formatAbs(returnAbs);
+  return "unknown";
+}
+
 export function registerCheckCommand(program: Command): void {
   program
     .command("check")
@@ -365,8 +407,7 @@ export function registerCheckCommand(program: Command): void {
           const original = readFileSync(file, "utf-8");
           const { source, applied, unapplied } = injectBindings(original, bindings);
           const result = analyzeFile(file, source, undefined, undefined, defaultLoadModule);
-          const binding = result.bindings.get(opts.target);
-          const typeStr = binding ? formatAbs(binding.abs) : "unknown";
+          const typeStr = whatIfTargetType(result, opts.target);
           const notes: string[] = [];
           if (applied.length > 0) notes.push(`Bindings applied: ${applied.join(", ")}`);
           if (unapplied.length > 0) {

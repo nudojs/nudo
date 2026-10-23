@@ -13,7 +13,8 @@
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
-import { formatObjectKey, sanitizeCommentText, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
+import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
+import { sanitizeLineCommentText } from "./line-comment.ts";
 
 /**
  * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
@@ -707,7 +708,7 @@ export function absToZodSchemaModule(
   const droppedBlock =
     dropped.length > 0
       ? `\n// dropped preds (not projected into zod):\n${dropped
-          .map((d) => `//   ${sanitizeCommentText(d)}`)
+          .map((d) => `//   ${sanitizeLineCommentText(d)}`)
           .join("\n")}\n`
       : "";
   const source = `${banner}\n\nimport { z } from "zod";\n${droppedBlock}\n${decls.join("\n\n")}\n`;

@@ -64,12 +64,53 @@ function accessedKeys(guard: string): string[] {
   return keys;
 }
 
-/** 按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 " && "） */
+/**
+ * 按顶层 `&&` 拆 guard 条款（core 生成的守卫串顶层连接符固定为 " && "）。
+ *
+ * 口径更新（族 09 / Bug 409 + 410）：必填槽的**存在性子句**自带一层括号
+ * （`(Object.hasOwn(v, "a") || ("a" in v && !Object.hasOwn(Object.prototype, "a")))`）
+ * ⇒ 顶层拆分必须**跳过括号内**的 " && "（本函数的注释一直声明「按**顶层**
+ * 拆」，此前实现没做到——只有顶层连接符恰好不在括号里的旧产物才看不出差别）。
+ * 字符串字面量里的括号也要跳过（键名里可能有括号）。
+ */
 function splitClauses(guard: string): string[] {
-  return guard
-    .split(" && ")
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let i = 0;
+  while (i < guard.length) {
+    const ch = guard[i]!;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      // 跳过字符串字面量（键名里可能有括号）
+      i += 1;
+      while (i < guard.length) {
+        if (guard[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (guard[i] === ch) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      depth -= 1;
+    } else if (depth === 0 && guard.startsWith(" && ", i)) {
+      out.push(guard.slice(start, i).trim());
+      i += 4;
+      start = i;
+      continue;
+    }
+    i += 1;
+  }
+  const tail = guard.slice(start).trim();
+  if (tail.length > 0) out.push(tail);
+  return out.filter((p) => p.length > 0);
 }
 
 /** 在原生对象上求值单条 guard 条款（原生 oracle） */
@@ -108,8 +149,11 @@ describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
     //       typeof data.constructor === "object" && data.constructor !== null &&
     //       data.constructor.name === "" && typeof data["@@iterator"] === "function"
     // 改后：只剩元素域（数字下标）两条
+    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带 ① 数组排除
+    // （`!Array.isArray(data)`）② 必填槽的**独立存在性子句** ——
+    // internal 槽的剔除口径不变。
     expect(guardOf(GEN_SRC, "g")).toBe(
-      'typeof data === "object" && data !== null && data["0"] === 1 && data["1"] === "s"',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "0") || ("0" in data && !Object.hasOwn(Object.prototype, "0"))) && data["0"] === 1 && (Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1"))) && data["1"] === "s"',
     );
   });
 
@@ -130,7 +174,7 @@ describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
     expect(guard).toContain("data.a === 1");
     expect(guard).toContain('data.b === "x"');
     expect(guard).toBe(
-      'typeof data === "object" && data !== null && data.a === 1 && data.b === "x"',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "a") || ("a" in data && !Object.hasOwn(Object.prototype, "a"))) && data.a === 1 && (Object.hasOwn(data, "b") || ("b" in data && !Object.hasOwn(Object.prototype, "b"))) && data.b === "x"',
     );
   });
 
@@ -153,7 +197,15 @@ describe("Bug 240（S21）：原生 oracle 对拍（guard 条款逐条对照）"
     const falseOnes = clauses.filter((c) => evalClause(c, g) === false);
     // 族 01 已知残留：数字下标槽承载元素域（族 01「数字下标读（历史口径）」结论）
     // ⇒ 原生生成器上恒 false。本分片按「不改族 01 已提交语义」约束保留。
-    expect(falseOnes).toEqual(['data["0"] === 1', 'data["1"] === "s"']);
+    // 口径更新（族 09 / Bug 409 + 410）：必填槽的**存在性子句**也是 false
+    // ——同一个族 01 残留（数字下标槽不是真实属性 ⇒ 既没有值也没有键）。
+    // ⇒ false 条款从 2 条变 4 条，仍**全部**指向数字下标槽。
+    expect(falseOnes).toEqual([
+      '(Object.hasOwn(data, "0") || ("0" in data && !Object.hasOwn(Object.prototype, "0")))',
+      'data["0"] === 1',
+      '(Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1")))',
+      'data["1"] === "s"',
+    ]);
   });
 
   it("负控制：普通对象的 guard 每条在原生对象上都是 true", () => {
@@ -193,7 +245,13 @@ export function f() { return new C(); }`;
   it("私有字段槽不进 guard（改前恒假条款 `data[\"#C::x\"] === 1` 消失）", () => {
     const guard = guardOf(PRIV_SRC);
     expect(guard).not.toContain("#C::x");
-    expect(guard).toBe('typeof data === "object" && data !== null');
+    // 口径更新（族 09 / Bug 407 + 409 + 410）：`new C()` 的 Abs 是 **brand**
+    // ⇒ guard 面现在还带 ① brand 身份子句（`Reflect.get(globalThis, "C")`
+    // 形态的 instanceof 判定；用户类名不是全局构造器 ⇒ 运行时放行）
+    // ② 数组排除 ③ 内层对象面（无可见槽 ⇒ 无存在性子句）。
+    expect(guard).toBe(
+      '((typeof Reflect.get(globalThis, "C") !== "function" || data instanceof Reflect.get(globalThis, "C"))) && (typeof data === "object" && data !== null && !Array.isArray(data))',
+    );
   });
 
   it("原生 oracle：私有字段不是自有属性（恒假条款的依据）", () => {
@@ -215,8 +273,10 @@ describe("Bug 240（S21）：与 S18 签名面 / Bug 191 访问器读域同口�
 
   it("Bug 191：访问器键的 guard 仍按 getter 读域判定（不被本分片改坏）", () => {
     const src = `export function f() { return { get ab() { return 1; } }; }`;
+    // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带 ① 数组排除
+    // ② 必填槽的**独立存在性子句** —— 读域判定（`data.ab === 1`）不变。
     expect(denoteGuard(call(src, "f").result, "data")).toBe(
-      'typeof data === "object" && data !== null && data.ab === 1',
+      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "ab") || ("ab" in data && !Object.hasOwn(Object.prototype, "ab"))) && data.ab === 1',
     );
   });
 

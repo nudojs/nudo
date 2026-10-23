@@ -44,10 +44,11 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
-import { DIAG, exportedNameOfLocal, runWithCollectorScope, sanitizeCommentText } from "@nudojs/core/internal";
+import { DIAG, exportedNameOfLocal, runWithCollectorScope } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
+import { sanitizeLineCommentText } from "./line-comment.ts";
 import { allocNudoBinding, directBindingOk, exportNameRepr } from "./export-binding.ts";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
@@ -760,7 +761,7 @@ function sectionText(fn: string, dsl: string, srcRel: string, binding = fn, eol 
     binding === fn
       ? `export const ${fn} = ${dsl};`
       : `const ${binding} = ${dsl};${eol}export { ${binding} as ${exportNameRepr(fn)} };`;
-  return `${GENERATED_HEADER}${eol}// source: ${sanitizeCommentText(`${srcRel}:${fn}`)}${eol}${decl}${eol}`;
+  return `${GENERATED_HEADER}${eol}// source: ${sanitizeLineCommentText(`${srcRel}:${fn}`)}${eol}${decl}${eol}`;
 }
 
 /**

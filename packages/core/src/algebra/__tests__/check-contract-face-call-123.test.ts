@@ -31,6 +31,19 @@ import {
 } from "@nudojs/core";
 import { l2Count, sigOf } from "./nudo-constraints.ts";
 
+/**
+ * 签名的**多行明细**（谓词证据所在处）。
+ *
+ * ⚠ `display` 自 Bug 413 起是**人类面口径**的 shape 渲染（与 `nudo check`
+ * 签名行逐字同源）⇒ 不再带 term / pred 注记 ⇒ 谓词证据改看 `detail`。
+ */
+function sigDetailOf(
+  r: { signatures: { name: string; detail: string }[] },
+  fn: string,
+): string {
+  return r.signatures.find((s) => s.name === fn)?.detail ?? "(missing)";
+}
+
 // ---------------------------------------------------------------------------
 // fixtures（issue #123 原文：levenshtein DP + fn({a,b: string}, number)）
 // ---------------------------------------------------------------------------
@@ -270,7 +283,7 @@ export function fwd(x) { return echo(x); }`);
 export function bump(x) { const d = gain(x); return d + 1; }`);
     expect(r.ok).toBe(true);
     expect(codes(r)).toEqual([]);
-    expect(sigOf(r, "bump")).toMatch(/≥ 1/);
+    expect(sigDetailOf(r, "bump")).toMatch(/≥ 1/);
   });
 
   it("(f2) ge(0) 返回面：`100 - d ≤ 100` 上界（issue 的 1 - d/max ≤ 1 同形）可证", () => {
@@ -278,7 +291,7 @@ export function bump(x) { const d = gain(x); return d + 1; }`);
 export function norm(x) { const d = gain(x); return 100 - d; }`);
     expect(r.ok).toBe(true);
     expect(codes(r)).toEqual([]);
-    expect(sigOf(r, "norm")).toMatch(/≤ 100/);
+    expect(sigDetailOf(r, "norm")).toMatch(/≤ 100/);
   });
 
   it("(f3) 对照：裸 number() 返回契约无谓词——调用方上界不可证（unproven-return）", () => {
@@ -286,7 +299,7 @@ export function norm(x) { const d = gain(x); return 100 - d; }`);
 export function bumpPlain(x) { const d = gainPlain(x); return d + 1; }`);
     // 调用方自身无返回契约 → 不可证只体现在无谓词签名上（不是 error）
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "bumpPlain")).not.toMatch(/≥ 1/);
+    expect(sigDetailOf(r, "bumpPlain")).not.toMatch(/≥ 1/);
   });
 
   it("(f4) 调用方声明返回契约时：有 ge(0) 面可证 / 裸 number 面不可证", () => {
@@ -346,6 +359,6 @@ export function bumpPlainSF(x) { const d = gainPlainSF(x); return d + 1; }
       .filter((i) => i.code === "nudo:unproven-return")
       .map((i) => i.fn);
     expect(unprovenFns).toEqual(["bumpPlainSF"]);
-    expect(sigOf(r, "bumpSF")).toMatch(/≥ 1/);
+    expect(sigDetailOf(r, "bumpSF")).toMatch(/≥ 1/);
   });
 });

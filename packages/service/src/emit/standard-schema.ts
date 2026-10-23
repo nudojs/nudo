@@ -30,7 +30,7 @@
  */
 
 import type { Abs, FormalParam } from "@nudojs/core";
-import { sanitizeCommentText } from "@nudojs/core/internal";
+import { sanitizeLineCommentText } from "./line-comment.ts";
 import {
   absToSchemaNode,
   safeExportIdent,
@@ -619,7 +619,7 @@ function makeStandardSchemaSource(
   const nodeText = schemaNodeSource(node);
   const notes =
     dropped.length > 0
-      ? dropped.map((d) => `//   ${sanitizeCommentText(d)}`).join("\n") + "\n"
+      ? dropped.map((d) => `//   ${sanitizeLineCommentText(d)}`).join("\n") + "\n"
       : "";
   return `${notes}export const ${safeExportIdent(exportName, used)} = {
   "~standard": {

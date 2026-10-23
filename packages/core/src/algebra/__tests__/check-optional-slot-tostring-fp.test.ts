@@ -52,7 +52,10 @@ export function plainTemplate(f) { return \`\${f.file}\`; }
 `);
     expect(l2Count(r)).toBe(0);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "plainTemplate")).toBe("string  #path");
+    expect(sigOf(r, "plainTemplate")).toBe("string");
+    // 置信度仍是 path（`display` 自 Bug 413 起是人类面口径的 shape 渲染，
+    // 不再带 `#conf` 段 ⇒ 置信度改看 `conf` 字段）
+    expect(r.signatures.find((s) => s.name === "plainTemplate")?.conf).toBe("path");
     expect(sigOf(r, "plainTemplate")).not.toContain("throws");
   });
 
@@ -75,7 +78,8 @@ export function nullableTpl(s) { return \`[\${s}]\`; }
 `);
     expect(l2Count(r)).toBe(0);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "nullableTpl")).toBe("string  #path");
+    expect(sigOf(r, "nullableTpl")).toBe("string");
+    expect(r.signatures.find((s) => s.name === "nullableTpl")?.conf).toBe("path");
   });
 
   it("`??` 回退形态保持干净（issue 对照组，修复前已干净）", () => {

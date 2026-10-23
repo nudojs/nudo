@@ -17,7 +17,7 @@ function litStrOf(a: Parameters<typeof litValue>[0]): string {
 }
 import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
-import { isNullProtoObj, isNullProtoWithoutCoercerSlot } from "./objects.ts";
+import { isNullProtoObj, isNullProtoWithoutCoercerSlot, joinValues } from "./objects.ts";
 import { lookupObjAccessor } from "./accessors.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs } from "./may-throw.ts";
@@ -331,9 +331,9 @@ export function concatString(a: Abs, b: Abs): Abs {
     );
   }
   // 至少一侧是 string（含 template / prim / 可 stringify 字面量）
-  const aParts = coerceToStringParts(a);
-  const bParts = coerceToStringParts(b);
-  if (!aParts || !bParts) {
+  const aGroups = coerceToStringParts(a);
+  const bGroups = coerceToStringParts(b);
+  if (!aGroups || !bGroups) {
     // 一侧确定是 string（string prim/lit/template），另一侧 any/unknown（无信息）：
     // JS 里字符串操作数决定结果类型为 string——`"s" + x` / `x + "s"` / `${x}`
     // 都是 string（ToString 对 Symbol 抛的路径不在此建模）。此前返回 unknown
@@ -344,7 +344,50 @@ export function concatString(a: Abs, b: Abs): Abs {
     }
     return abs({ k: "unknown" }, undefined, undefined, "partial");
   }
-  return createTemplateAbs([...aParts, ...bParts]);
+  // Bug 402：**成员级叉乘**（不是把两侧 parts 平铺进同一个数组）。
+  // 旧实现 `createTemplateAbs([...aParts, ...bParts])` 把 union 各成员的
+  // parts 平铺成一个 template ⇒ 全字面量 parts 被 createTemplateAbs 折叠成
+  // **单个** lit ⇒ 产出原生不可能的确定字面量（("a"|"b") + "!" ⇒ "ab!"，
+  // 原生只有 "a!" / "b!"）。现在：两侧成员**成对**组合，每个组合折成自己
+  // 的 template，结果按成员去重后收成 sum（成员数 1 ⇒ 直接返回该成员）。
+  const members: Abs[] = [];
+  for (const ag of aGroups) {
+    for (const bg of bGroups) {
+      members.push(createTemplateAbs([...ag, ...bg]));
+    }
+  }
+  // 防御：两侧都无可组合成员（空联合）⇒ 不可折叠
+  if (members.length === 0) return abs({ k: "unknown" }, undefined, undefined, "partial");
+  if (members.length === 1) return members[0]!;
+  // 成员合成走 **`joinValues` 口径**（仓内既有的「同 prim 合并」规则）：
+  // 双**字面量**成员 ⇒ 枚举 sum（`"a!" | "b!"`，Bug 402 的目标形态）；
+  // 字面量 × **无收窄 pred 的同 prim 臂** ⇒ 收成 bare prim（`string`）——
+  // 否则成员级 template 结果（渲染面即 `string`）会与字面量臂并排成
+  // `"NaN day" | string` ⇒ 既不可读又与既有签名面不一致。
+  return members.reduce((acc, m) => joinValues(acc, m));
+}
+
+/**
+ * 整型 string（字符串全集）：prim string + 无 lit term + pred 不收窄值域。
+ *
+ * 「整型 string」是**字符串全集** ⇒ 它投影出的 ToString 也是全集 ⇒ union 里
+ * 只要有一臂是整型 string，整个 union 的 ToString 投影就是整型 string（其余
+ * 臂的投影都 ⊆ string）⇒ union 收成那一臂。
+ *
+ * pred 口径（关键）：
+ * - **无 pred** ⇒ 整型 string ✓
+ * - **`typeof(x) === "string"`** ⇒ 只是**锚定证据**（同 prim 链塌缩时补的
+ *   typeof，见 `constraint.ts` 的 `constraintOnTermAbs` union 臂），与 shape
+ *   的 prim 同型 ⇒ **不收窄值域** ⇒ 仍算整型 string ✓
+ * - template pred（meta 在 pred 槽）⇒ template 不是字符串全集
+ *   （`` `${number}` `` 只覆盖十进制数字串）⇒ 不算
+ * - 其它 pred（min/max 界等）⇒ 收窄值域 ⇒ 不算
+ */
+function isAnyStringAbs(a: Abs): boolean {
+  if (a.shape.k !== "prim" || a.shape.type !== "string") return false;
+  if (a.term?.op === "lit") return false;
+  if (!a.pred) return true;
+  return a.pred.op === "typeof" && a.pred.type === "string";
 }
 
 /**
@@ -353,17 +396,30 @@ export function concatString(a: Abs, b: Abs): Abs {
  * 闭普通对象 "[object Object]"（无用户 toString/valueOf/@@toPrimitive 面）、
  * prim 字面量 String(v)。任一 part 抽象 → 不可判。
  * 消费面：Symbol.for 容器键驻留（String([1]) === "1"）。
+ *
+ * Bug 402：union 的 ToString **不唯一**（"a"|"b" ⇒ "a" 或 "b"）⇒ 多成员
+ * 不可判（此前把成员 parts 平铺成一个串 ⇒ 得到 "ab" 这种原生不可能的值）。
  */
 export function concreteToStringOf(a: Abs): string | undefined {
-  const parts = coerceToStringParts(a);
-  if (parts === undefined) return undefined;
+  const groups = coerceToStringParts(a);
+  if (groups === undefined) return undefined;
+  if (groups.length !== 1) return undefined;
   let out = "";
-  for (const p of parts) {
+  for (const p of groups[0]!) {
     if (p.term?.op !== "lit" || typeof p.term.value !== "string") return undefined;
     out += p.term.value;
   }
   return out;
 }
+
+/**
+ * 字符串投影的**成员级并行**视图（Bug 402）。
+ *
+ * 外层数组的每个元素 = 「一个 union 成员的 parts 序列」；非联合值 ⇒ 只有
+ * 一个元素（自身即唯一成员）。**成员边界不可丢**——把多个成员的 parts 平铺
+ * 进同一个数组会让 union 拼接折成单个（原生不可能的）确定字面量。
+ */
+type StringPartGroups = Abs[][];
 
 /**
  * JS ToString / 数组 ToPrimitive（join）投影为 string part。
@@ -372,22 +428,24 @@ export function concreteToStringOf(a: Abs): string | undefined {
  * 注意 litValue 哨兵：lit(undefined) 读出来是 undefined，与「无 lit」
  * 不可分——必须先看 term.op === "lit"。
  */
-function coerceToStringParts(a: Abs): Abs[] | undefined {
-  if (isTemplateAbs(a) || isStrPrim(a)) return templatePartsOf(a);
-  if (isStrLit(a)) return [a];
+function coerceToStringParts(a: Abs): StringPartGroups | undefined {
+  if (isTemplateAbs(a) || isStrPrim(a)) return [templatePartsOf(a)];
+  if (isStrLit(a)) return [[a]];
   if (a.term?.op === "lit") {
     const v = a.term.value;
     if (typeof v === "symbol") return undefined;
     // number/boolean/null/undefined/bigint：ToString
-    return [abs({ k: "prim", type: "string" }, lit(String(v)), undefined, "exact")];
+    return [
+      [abs({ k: "prim", type: "string" }, lit(String(v)), undefined, "exact")],
+    ];
   }
   if (a.shape.k === "prim" && a.shape.type === "number") {
     // abstract number → `${number}` part
-    return [a];
+    return [[a]];
   }
   // 数组：ToPrimitive = join(",")，结果恒为 string
   if (a.shape.k === "tuple" || a.shape.k === "arr") {
-    return [arrayToPrimitiveString(a)];
+    return [[arrayToPrimitiveString(a)]];
   }
   // 闭普通对象（无自定义 valueOf/toString/@@toPrimitive 槽）：Default Object ToString
   // 注意：slots 是普通对象，`slots["toString"]` 会命中 Object.prototype——
@@ -424,12 +482,14 @@ function coerceToStringParts(a: Abs): Abs[] | undefined {
       }
       if (tagAbstract) return undefined;
       return [
-        abs(
-          { k: "prim", type: "string" },
-          lit(`[object ${tag ?? "Object"}]`),
-          undefined,
-          "exact",
-        ),
+        [
+          abs(
+            { k: "prim", type: "string" },
+            lit(`[object ${tag ?? "Object"}]`),
+            undefined,
+            "exact",
+          ),
+        ],
       ];
     }
   }
@@ -438,14 +498,32 @@ function coerceToStringParts(a: Abs): Abs[] | undefined {
   // （JS ToString 对联合值逐臂取值，模板拼接臂不抛）。
   // 此前联合整体落 undefined → concatString 污染成 unknown，
   // 把整条返回链（模板返回的函数）的推断类型抹成 unknown。
+  //
+  // Bug 402：**成员级并行**——每个 union 成员一组 parts，成员边界**不可**
+  // 平铺（旧实现 `parts.push(...mp)` 把各成员的 parts 摊进同一个数组 ⇒
+  // concatString 再把两侧合成单个 template ⇒ createTemplateAbs 对全字面量
+  // parts 折叠成**一个** lit ⇒ 产出原生不可能的确定字面量）。
   if (a.shape.k === "sum" && a.shape.members) {
-    const parts: Abs[] = [];
+    const groups: StringPartGroups = [];
     for (const m of a.shape.members) {
-      const mp = coerceToStringParts(m);
-      if (mp === undefined) return undefined;
-      parts.push(...mp);
+      const mg = coerceToStringParts(m);
+      if (mg === undefined) return undefined;
+      groups.push(...mg);
     }
-    return parts;
+    // 空联合（无成员）无可投影的值域 ⇒ 不可折叠
+    if (groups.length === 0) return undefined;
+    // union 归一：某一臂的 ToString 投影是**整型 string** ⇒ 整个 union 的
+    // ToString 投影也是整型 string（其余臂的投影都 ⊆ string）⇒ 收成那一臂。
+    //
+    // 不做这一步，`${x}`（x: string|undefined）会渲染成 `string | "undefined"`
+    // ——而原生值域就是 `string`（"undefined" 本就是字符串）；两者同类型，
+    // 但 `string` 才是与既有签名一致的可读形态（#119）。
+    //
+    // ⚠ 只认**整型 string**：template（`${number}`）与带 pred 的窄化 string
+    // 不是字符串全集 ⇒ 不收（`${number}` | "undefined" 是两个不同的值域）。
+    const anyStr = groups.find((g) => g.length === 1 && isAnyStringAbs(g[0]!));
+    if (anyStr) return [anyStr];
+    return groups;
   }
   return undefined;
 }

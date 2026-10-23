@@ -71,14 +71,16 @@ describe("Bug 1031：类声明前的 export 说明符语句不再让类方法签
   });
 
   it("check 面：三形态的签名显示逐字相同（不是 unknown）", () => {
-    const displays = [PRE, POST, NONE].map((src, i) => {
+    const sigs = [PRE, POST, NONE].map((src, i) => {
       const file = `/t/b1031-${i}.js`;
       const r = checkSource(file, src, pTrue, { fromFile: file });
       const sig = r.signatures.find((s) => s.name.endsWith(".m"));
-      return sig?.display ?? "(missing)";
+      return sig ?? null;
     });
     // 修复前：pre 形态是 unknown，另两个是 1（顺序敏感）
-    expect(displays).toEqual(["1  #exact", "1  #exact", "1  #exact"]);
+    // ⚠ `display` 自 Bug 413 起是人类面口径的 shape 渲染（不再带 `#conf` 段）
+    expect(sigs.map((s) => s?.display)).toEqual(["1", "1", "1"]);
+    expect(sigs.map((s) => s?.conf)).toEqual(["exact", "exact", "exact"]);
   });
 
   it("契约面：类方法返回类型契约违规必须是 error（不是 warning）", () => {

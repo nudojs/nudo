@@ -16,7 +16,7 @@ import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { localNamedExports } from "./scan-named-exports.ts";
 import { formatShape } from "./format.ts";
 import { predToString } from "./pred.ts";
-import { termToString } from "./term.ts";
+import { termToString, litKeyString, type Term } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
@@ -165,6 +165,30 @@ function renameTypeVars(s: string, varMap: Map<string, string>): string {
 }
 
 /**
+ * Bug 412：内部抽象变量名 → 稳定可读标识。
+ *
+ * `len#N` 由 `exec/runtime/containers/arr-index.ts` 的**模块级自增**计数器
+ * `lenVarSeq` 铸造 ⇒ 它既不是用户可见的类型名，又随重算换号（源码级 memo
+ * 未命中即递增）⇒ 直接上屏＝「内部 id 泄漏 + 同一份源码两次给出不同文本」。
+ *
+ * 口径：`len#<数字>` 一律映射成 `len`（稳定、可读）；其它 var（A1 / α 形参名）
+ * 原样保留，随后由 `renameTypeVars` 改写成形参名。
+ * lit 节点不动 ⇒ 字面量文本（含字符串里的 "len#3"）不受影响。
+ */
+const INTERNAL_LEN_ID_RE = /^len#\d+$/;
+const READABLE_LEN_ID = "len";
+
+function readableTerm(t: Term): Term {
+  if (t.op === "var") {
+    return INTERNAL_LEN_ID_RE.test(t.id) ? { op: "var", id: READABLE_LEN_ID } : t;
+  }
+  if (t.op === "app") {
+    return { op: "app", fn: t.fn, args: t.args.map(readableTerm) };
+  }
+  return t;
+}
+
+/**
  * 返回值 inlay：路径摘要（对应源码 return），不是精化后的外延类型。
  * `double` → `x | x * 2`；`scale` → `x + 1`。
  * `where` / ToNumber 拆分留给 hover 展开。
@@ -180,23 +204,35 @@ function formatReturnDisplay(g: PolyFn): string {
   const stripParens = (t: string): string =>
     t.startsWith("(") && t.endsWith(")") ? t.slice(1, -1) : t;
 
+  /** term → 用户面文本（内部 id 已映射成稳定可读标识；Bug 412） */
+  const termText = (t: Term): string =>
+    stripParens(renameTypeVars(termToString(readableTerm(t)), varMap));
+
   const memberPath = (m: Abs): { key: string; text: string } => {
     if (m.term?.op === "var") {
-      const name = renameTypeVars(m.term.id, varMap);
+      // 内部 id（len#N）→ 稳定可读标识（Bug 412）；去重键与渲染文本同源
+      const name = INTERNAL_LEN_ID_RE.test(m.term.id)
+        ? READABLE_LEN_ID
+        : renameTypeVars(m.term.id, varMap);
       return { key: `var:${name}`, text: name };
     }
     if (m.term?.op === "app") {
-      const t = stripParens(renameTypeVars(termToString(m.term), varMap));
+      const t = termText(m.term);
       return { key: `app:${t}`, text: t };
     }
     const lvR = litValue(m);
     // 「是否字面量」看 ok：lit(undefined) 也是字面量，不得用 value !== undefined 门闩。
     if (lvR.ok) {
       const lv = lvR.value;
-      if (typeof lv === "number" && !Number.isFinite(lv)) {
-        return { key: `lit:${String(lv)}`, text: String(lv) };
-      }
-      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) ?? "undefined" };
+      // 规范口径（Bug 414）：字面量文本走仓库既有渲染（`term.ts` 的
+      // `termToString` / `litKeyString`，与 `format.ts` 的 `formatLitValue`
+      // 同口径）——`JSON.stringify(-0)` 会把负零抹成 "0"（-0 与 0 在
+      // Object.is / 1/x 上可观察不同）。
+      const text = termToString({ op: "lit", value: lv });
+      // 去重键与渲染文本**同源**（否则 `-0` 臂与 `0` 臂键相同 ⇒ `seen`
+      // 把其中一条整个丢掉）；`typeof` 前缀区分 `lit("10")` / `lit(10)`。
+      const key = `lit:${typeof lv}:${litKeyString(lv)}`;
+      return { key, text };
     }
     return { key: `shape:${formatShape(m)}`, text: formatShape(m) };
   };
@@ -204,7 +240,7 @@ function formatReturnDisplay(g: PolyFn): string {
   const abs = g.symbolic;
   // 外层 term：单路径计算形（`x + 1`）
   if (abs.term && abs.term.op !== "lit") {
-    return stripParens(renameTypeVars(termToString(abs.term), varMap));
+    return termText(abs.term);
   }
   if (abs.shape.k === "sum") {
     // 同 term 的精化臂（number>3 | string 都是 A1）合并为一条路径 `x`
@@ -277,7 +313,17 @@ export function collectAbsInlays(
       }
     }
 
-    type FnNodeLike = { params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>; body?: { loc?: { start?: { line: number; column: number } } } };
+    type FnNodeLike = {
+      params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>;
+      body?: {
+        /** Babel 节点判别式：`BlockStatement` = 块体，其余 = 表达式体 */
+        type?: string;
+        loc?: {
+          start?: { line: number; column: number };
+          end?: { line: number; column: number };
+        };
+      };
+    };
     const fnNode = node as FnNodeLike;
     const paramList = fnNode.params ?? [];
     for (let i = 0; i < paramList.length; i++) {
@@ -305,9 +351,23 @@ export function collectAbsInlays(
       }
     }
 
-    // 返回：插在函数体 `{` 前——优先 term/路径形；implicit 导出标明 derived
-    const bodyLoc = fnNode.body?.loc;
-    if (bodyLoc?.start) {
+    /**
+     * 返回 inlay 的锚点（Bug 408）：
+     * - **块体**（`BlockStatement`）⇒ `{` 的位置（标注插在 `{` 前，正确）。
+     * - **表达式体** ⇒ 整个表达式的**结束**位置（标注落在表达式之后）。
+     *
+     * 改前无条件取 `body.loc.start`：对块体它等于 `{`（正确），对**表达式体**
+     * 它等于**表达式的起点** ⇒ 标注被插到 `=>` 与表达式之间，把源码行劈开
+     * （`export const arrow = (v) => : v * 2  v * 2;`）。
+     * 口径同 TypeScript 自身的返回类型 inlay（提示落在被标注表达式之后）。
+     */
+    const bodyNode = fnNode.body;
+    const bodyLoc = bodyNode?.loc;
+    const anchor =
+      bodyNode?.type === "BlockStatement"
+        ? bodyLoc?.start
+        : (bodyLoc?.end ?? bodyLoc?.start);
+    if (anchor) {
       let label: string;
       try {
         label = `: ${formatReturnDisplay(g)}`;
@@ -316,8 +376,8 @@ export function collectAbsInlays(
       }
       if (isImplicitExport) label += "  · derived";
       inlays.push({
-        line: bodyLoc.start.line,
-        character: Math.max(0, bodyLoc.start.column),
+        line: anchor.line,
+        character: Math.max(0, anchor.column),
         label: `${label}  `,
         kind: "type",
         ...(tierSrc ? { interfaceSource: tierSrc } : {}),

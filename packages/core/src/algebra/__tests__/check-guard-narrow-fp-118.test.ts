@@ -76,7 +76,10 @@ export function nullGuard(doc) { if (!doc || typeof doc !== 'object') return 'no
 `);
     expect(l2Count(r, "nullGuard")).toBe(0);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "nullGuard")).toMatch(/^"none" \| "v3" \| "v2"  #exact/);
+    expect(sigOf(r, "nullGuard")).toMatch(/^"none" \| "v3" \| "v2"$/);
+    // 置信度仍是 exact（`display` 自 Bug 413 起是人类面口径的 shape 渲染，
+    // 不再带 `#conf` 段 ⇒ 置信度改看 `conf` 字段）
+    expect(r.signatures.find((s) => s.name === "nullGuard")?.conf).toBe("exact");
   });
 
   it("可选链守卫后迭代：for-of 零 L2", () => {

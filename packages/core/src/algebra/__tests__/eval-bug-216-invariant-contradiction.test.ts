@@ -63,8 +63,8 @@ describe("Bug 216：矛盾公理不得烘进 Abs（ex falso 假绿）", () => {
     const r = checkOf(srcOf("@nudo:invariant last >= 0"), sidecarOpts(SIDECAR_CONFLICT));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
-    expect(sig!.display).toContain("n ≤ -5");
-    expect(sig!.display).not.toContain("n ≥ 0");
+    expect(sig!.detail).toContain("n ≤ -5");
+    expect(sig!.detail).not.toContain("n ≥ 0");
   });
 
   it("对照（无公理）：同样的红（公理被拒后行为与「没写公理」同口径）", () => {

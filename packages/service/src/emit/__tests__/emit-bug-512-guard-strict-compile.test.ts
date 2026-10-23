@@ -91,7 +91,14 @@ describe("Bug 512 — 守卫产物必须过 tsc --noEmit --strict", () => {
 
   it("负控制：守卫产物不引用用户类名（不会 TS2304）", () => {
     const g = generateGuardFunctionFromAbs("isUser", brandOf("Counter"));
-    expect(g).not.toContain("Counter");
+    // 口径更新（族 09 / Bug 407 —— 「brand 身份必须被投影」）：brand 的身份
+    // 判定落进产物 ⇒ 品牌名以**字符串字面量**出现（`Reflect.get(globalThis,
+    // "Counter")`），不再是「完全不出现」。但**裸标识符**（`instanceof
+    // Counter`）仍然禁止 —— 那才是 TS2304 的来源。断言改为「剥掉字符串
+    // 字面量后不得出现用户类名」⇒ 原口径的**不变量**不变（且更贴近它要防的
+    // 东西）；真正的 strict 编译门在本文件上方那条用例里（brand 形态也在其中）。
+    const withoutStringLiterals = g.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    expect(withoutStringLiterals).not.toContain("Counter");
     expect(g).toContain("as Record<string, any>");
   });
 });

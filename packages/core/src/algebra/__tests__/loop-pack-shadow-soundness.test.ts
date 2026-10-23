@@ -99,22 +99,28 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     // a=[] 真值 0；`=> 1` 即非健全。Bug 47 后单代表迭代出口按增长宽化到
     // 无上界域（native a=[2,2] → 2 ∉ {0,1}，number 是 sound 超集）。
     // throws TypeError：for-of over any 接收者 may TypeError（Bug 6 迭代守卫，原生语义）
-    expect(sig("shadowPack").display).toBe("number  #widened throws TypeError");
+    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` 段）
+    // ⇒ 宽化证据（conf = widened）改看 `conf` 字段
+    expect(sig("shadowPack").display).toBe("number throws TypeError");
+    expect(sig("shadowPack").conf).toBe("widened");
   });
 
   it("for / while: same shadow soundness across loop forms", () => {
     // forShadow 的 throws：a[i] 计算成员读 any 接收者 may TypeError（$idx 守卫）
     // Bug 48 后抽象条件预算耗尽按增长宽化（native a.length 任意 → 不再折
     // {0..8} 假上界）
-    expect(sig("forShadow").display).toBe("number  #widened throws TypeError");
+    expect(sig("forShadow").display).toBe("number throws TypeError");
+    expect(sig("forShadow").conf).toBe("widened");
     // whileShadow 的 throws：`i < a.length`（a.length:any）关系比较 may TypeError
     //（Bug 31 关系算子守卫，原生语义：a.length 可能为 Symbol）；值域不变
-    expect(sig("whileShadow").display).toBe("number  #widened throws TypeError");
+    expect(sig("whileShadow").display).toBe("number throws TypeError");
+    expect(sig("whileShadow").conf).toBe("widened");
   });
 
   it("do-while: body-first semantics preserved (≥1 widen, no more 1..9 cap)", () => {
     // 同 whileShadow：`while (i < a.length)`（Bug 31，a.length:any may Symbol）
-    expect(sig("doWhileShadow").display).toBe("number  #widened throws TypeError");
+    expect(sig("doWhileShadow").display).toBe("number throws TypeError");
+    expect(sig("doWhileShadow").conf).toBe("widened");
   });
 
   it("#91: top-level `const re` (regex state rebind) stays excluded — no ReferenceError", () => {
@@ -124,7 +130,11 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     // #91 症状面：entry 不再报 may throw ReferenceError；签名保持 sound 布尔并集。
     // throws TypeError（非 ReferenceError）：for-of over any 接收者（files）may
     // TypeError（Bug 6 迭代守卫，原生语义）。
-    expect(f4!.display).toBe("true | false  #exact  join(boolean | boolean|boolean) throws TypeError");
+    // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` /
+    // pathNote 段）⇒ 置信度看 `conf`、join 证据看 `abs.pathNote`
+    expect(f4!.display).toBe("true | false throws TypeError");
+    expect(f4!.conf).toBe("exact");
+    expect(String(f4!.abs.pathNote)).toContain("join(boolean | boolean|boolean)");
     expect(String(f4!.throws)).toContain("TypeError");
     expect(String(f4!.throws)).not.toContain("ReferenceError");
     const sel = rep91.signatures.find((s) => s.name === "selectedByFiles");
@@ -133,7 +143,8 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     // 迭代——「先跑任意次（selected 可被置 true）再 continue」的域不可
     // 观测，出口按打断宽化到全域 boolean（sound：native ∈ {true,false}；
     // #91 的回归面是 ReferenceError——仍不得出现）
-    expect(sel!.display).toBe("boolean  #widened throws TypeError");
+    expect(sel!.display).toBe("boolean throws TypeError");
+    expect(sel!.conf).toBe("widened");
     expect(String(sel!.throws)).toContain("TypeError");
     expect(String(sel!.throws)).not.toContain("ReferenceError");
     const entryThrows = rep91.issues.filter(

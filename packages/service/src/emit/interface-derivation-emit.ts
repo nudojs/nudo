@@ -24,9 +24,10 @@ import {
   takeRefineDiagsSince,
   type NudoConstraint,
 } from "@nudojs/core";
-import { DIAG, sanitizeCommentText } from "@nudojs/core/internal";
+import { DIAG } from "@nudojs/core/internal";
 
 import { unifiedDiff } from "./case-emitter.ts";
+import { sanitizeLineCommentText } from "./line-comment.ts";
 import {
   deriveFromRoot,
   widestConstraint,
@@ -322,8 +323,8 @@ export function emitDerivedFromRoot(
       const buildSection = (labels: string[]): string =>
         [
           DERIVED_HEADER,
-          `// source: ${sanitizeCommentText(`${srcRel}:${row.fn}`)}`,
-          `// derived-from: ${sanitizeCommentText(labels.join(", "))}`,
+          `// source: ${sanitizeLineCommentText(`${srcRel}:${row.fn}`)}`,
+          `// derived-from: ${sanitizeLineCommentText(labels.join(", "))}`,
           body.text,
           "",
         ].join("\n");
@@ -791,7 +792,7 @@ function sameLabelSet(a: string[], b: string[]): boolean {
 function withDerivedFromLabels(sectionText: string, labels: string[]): string {
   return sectionText.replace(
     /^(\s*\/\/\s*derived-from:).*$/m,
-    (_m, p1: string) => `${p1} ${sanitizeCommentText(labels.join(", "))}`,
+    (_m, p1: string) => `${p1} ${sanitizeLineCommentText(labels.join(", "))}`,
   );
 }
 

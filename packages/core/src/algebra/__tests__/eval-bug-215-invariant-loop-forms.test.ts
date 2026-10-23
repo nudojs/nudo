@@ -89,9 +89,11 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
       expect(relied!.severity).toBe("info");
       expect(relied!.message).toContain("proved via @nudo:invariant last >= 0");
       // 签名面：出口绑定带上了公理界（n ≥ 0）
+      // ⚠ 证据在 `detail` 的 pred 行（`display` 自 Bug 413 起是**人类面口径**
+      // 的 shape 渲染，不再带 term / pred 注记）
       const sig = r.signatures.find((s) => s.name === "f");
       expect(sig).toBeDefined();
-      expect(sig!.display).toContain("n ≥ 0");
+      expect(sig!.detail).toContain("n ≥ 0");
     },
   );
 
