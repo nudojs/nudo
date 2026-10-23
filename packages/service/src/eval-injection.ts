@@ -49,6 +49,12 @@ export type EvalReplacements = {
  * case 分支里的指令此前被**静默丢弃**（零诊断、类型覆盖失效）。
  * 指令挂在**非语句**节点上（表达式属性 / 类方法键等）时无处可施 →
  * 收集表为空则发一条 `nudo:directive-syntax` 显式诊断（不再无声消失）。
+ *
+ * **目标文本未命中 ⇒ 显式诊断**（Bug 1062）：`@nudo:replace` 的目标文本在
+ * 承载语句的作用域内找不到对应节点（写法与源码不符）⇒ 该指令**无效**
+ * （转译面永远不命中）⇒ 发一条**点名目标文本**的 `nudo:directive-syntax`
+ * ——此前此处**零诊断**（静默失效），唯一信号是归因错误的
+ * `nudo:unknown-inference` ⇒ 「写错目标」与「没写指令」不可区分。
  */
 export function collectEvalReplacements(
   source: string,
@@ -134,6 +140,19 @@ function collectInto(
             // 登记一条**无作用域**条目——指令仍在场（注入包在场 → B run
             // 不被门禁拦，与旧口径一致），但转译面不命中任何节点。
             acc.targets.push({ target: d.targetSource, varName });
+            // Bug 1062：此处此前**零诊断**（静默失效）⇒ 唯一的信号是
+            // **归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」
+            // 说成「推断精度不够」）⇒ 假红 / 假绿。
+            // ⇒ 发一条**显式**诊断（点名目标文本）：②「写错目标」与
+            // ③「根本没写这条指令」从此**可区分**。
+            // 诊断码复用 `nudo:directive-syntax`（与本文件同族的「指令挂在
+            // 非语句节点上 ⇒ 无处可施 ⇒ 指令被忽略」同码）：同族的另外三种
+            // 失败形态（类型表达式不认识 / 目标与类型分不开 / 挂在非语句上）
+            // 都走这个码 ⇒ 「指令写了但没生效」是同一族。
+            opts?.diags?.push({
+              code: "nudo:directive-syntax",
+              message: `@nudo:replace target "${d.targetSource}" matched no expression in the scope of the statement it annotates — the directive has no effect`,
+            });
           } else {
             for (const range of ranges) {
               acc.targets.push({
