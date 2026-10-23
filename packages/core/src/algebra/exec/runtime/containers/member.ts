@@ -149,6 +149,9 @@ import {
 import { $typeof } from "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
 import { findClassAccessor, findStaticClassAccessor, $in, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
+// 族 58 · Bug 4：%GeneratorPrototype% 协议面方法值（next/return/throw）——
+// generator 原型对象的内层 obj 槽装配点（见 generatorProtoBrandOf）。
+import { generatorProtoProtocolMember } from "../async.ts";
 import { protoChainSetVerdict } from "../proto-set.ts";
 import { lengthToNumber } from "../array-length.ts";
 import { lookupObjAccessor } from "../../../accessors.ts";
@@ -330,7 +333,21 @@ function generatorProtoBrandOf(v: Function | Abs): Abs {
     const rawNm = typeof v === "function" ? v.name : (v.shape as { name?: string }).name;
     const nm = typeof rawNm === "string" && rawNm ? rawNm : `anonymous${++genProtoSeq}`;
     p = abs(
-      { k: "brand", name: `${nm}.generatorProto`, shape: objOf({}) },
+      {
+        k: "brand",
+        name: `${nm}.generatorProto`,
+        // 族 58 · Bug 4：%GeneratorPrototype% 协议面（next/return/throw）——
+        // 原生 `g.prototype.next` 是函数（node v26.10.0 实测），引擎此前折
+        // exact undefined（wrong-exact）。协议方法值由 exec/runtime/async.ts
+        // 的 generatorProtoProtocolMember 给出（该文件在本分片可改面内）；
+        // 槽标 **internal**——原生该方法在原型链上而非原型对象的自有键 ⇒
+        // hasOwnProperty / gOPN / 枚举面不可见（与原生一致）。
+        shape: objOf({
+          next: { value: generatorProtoProtocolMember("next"), internal: true },
+          return: { value: generatorProtoProtocolMember("return"), internal: true },
+          throw: { value: generatorProtoProtocolMember("throw"), internal: true },
+        }),
+      },
       undefined,
       undefined,
       "exact",

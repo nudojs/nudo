@@ -920,6 +920,53 @@ function makeGenObject(
   return markFreshInstance(g);
 }
 
+/**
+ * 族 58 · Bug 4：%GeneratorPrototype% 的**协议面**方法值（next / return /
+ * throw）——原生 generator 函数 `g` 的 `g.prototype`（原型对象）**继承**
+ * %GeneratorPrototype% 的三个协议方法（node v26.10.0 实测：
+ * `typeof g.prototype.next === "function"`；`Object.getOwnPropertyNames(
+ * g.prototype)` === []——协议方法**不是**原型对象的自有键，原生在原型链上）。
+ *
+ * 引擎此前不给该面（`g.prototype.next` 折 exact undefined——wrong-exact：
+ * 原生是函数）。
+ *
+ * 值语义：apply 时按**接收者**派发——
+ * - 接收者是生成器对象（内部 next/return/throw 槽）→ 转发到该槽的函数
+ *   （原生 `g.prototype.next.call(it)` 与 `it.next()` 同款语义）；
+ * - 否则原生定抛 TypeError（"Method [Generator].prototype.next called on
+ *   incompatible receiver"）。
+ *
+ * 槽位装配（原型对象的内层 obj）由 containers/member.ts 的
+ * generatorProtoBrandOf 接线（该文件不在本分片的可改面——见报告的越界
+ * 诉求；一行调用即可）；协议槽标 **internal**——原生该方法在原型链上而非
+ * 自有键 ⇒ hasOwnProperty / gOPN / 枚举面不可见（与原生一致）。
+ */
+export function generatorProtoProtocolMember(name: "next" | "return" | "throw"): Abs {
+  return absFunction(
+    [],
+    {
+      body: noBody,
+      apply: (args: Abs[], thisVal?: Abs): Abs => {
+        const recv = thisVal;
+        const slot =
+          recv && recv.shape.k === "obj"
+            ? getSlot((recv.shape as ObjShape).slots, name)
+            : undefined;
+        if (slot) {
+          // 经 $call 路由（不走裸 impl.apply）——保留 throws 通道
+          // （生成器的 .throw() 定抛 / 延迟抛点在调用边界统一收口）。
+          return $call(slot.value, args, recv);
+        }
+        // 原生定抛（"called on incompatible receiver"）——不打 kind:"protoMethod"
+        // 标记（该标记会让 $invokeInner 的「属性上的可调用值」回退跳过本 apply
+        // ⇒ 原生必抛的调用被折成 unknown 且不记 may-throw ⇒ L2 门禁假绿）。
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      },
+    },
+    { ctor: false },
+  );
+}
+
 /** function* 体：收集所有 yield 值；返回带迭代器协议面的生成器对象 Abs；
  *  抽象分支时降 conf（P0-6）
  *

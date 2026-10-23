@@ -506,6 +506,83 @@ export function protoBrandOwnMember(brandName: string, key: string): boolean {
 }
 
 /**
+ * 族 58 · Bug 321/3：原型 brand（`X.prototype`）的**自有键**精确清单
+ * （gOPN 语义：「全部自有键」，含不可枚举）。
+ *
+ * 覆盖范围（**只**覆盖引擎已建模成员的原型；其余原型保持既有保守域
+ * `string[]`——**不扩 Abs 形状**，避免把本项升级成 A 类架构债）：
+ * - Error 家族原型：自有数据属性 name/message（引擎已建模）+ 自有方法
+ *   toString（**仅** Error.prototype 自有；子类的 toString 是继承的——
+ *   node v26.10.0 实测 `Object.getOwnPropertyNames(TypeError.prototype)`
+ *   = ["constructor","name","message"]，toString 在原型链上）。
+ * - 用户类原型：constructor + owner 类的**自有**实例方法/访问器（祖先类
+ *   成员在原型链上，原生 gOPN 不列）。
+ *
+ * 顺序：原生 gOPN 按**定义序**（constructor 在先）。引擎的类注册表把方法与
+ * 访问器分两张表（spec.methods / spec.accessors）⇒ 交错定义序不可复原 ⇒
+ * 方法与访问器**同时**存在时不给精确清单（返回 undefined，保持保守域）。
+ */
+const PROTO_BRAND_OWN_KEYS: Record<string, readonly string[]> = {
+  "Error.prototype": ["constructor", "name", "message", "toString"],
+  "TypeError.prototype": ["constructor", "name", "message"],
+  "RangeError.prototype": ["constructor", "name", "message"],
+  "ReferenceError.prototype": ["constructor", "name", "message"],
+  "SyntaxError.prototype": ["constructor", "name", "message"],
+  "URIError.prototype": ["constructor", "name", "message"],
+  "EvalError.prototype": ["constructor", "name", "message"],
+  "AggregateError.prototype": ["constructor", "name", "message"],
+};
+
+/**
+ * 族 58 · Bug 321/3：原型 brand 的自有键集（精确清单或 undefined=开放）。
+ * 单一事实源——消费方：builtins/object/enum-entries.ts 的
+ * builtinBrandOwnKeyNames（gOPN 面）与 builtins/object/methods.ts 的
+ * Object.hasOwn 面（该文件不在本分片的可改面——见报告的越界诉求；
+ * 一行调用即可）。
+ */
+export function protoBrandOwnStringKeys(brandName: string): string[] | undefined {
+  // 生成器原型 brand（`${fn名}.generatorProto`）：原生 `g.prototype` 的自有键集
+  // **恒空**（next/return/throw 在 %GeneratorPrototype% 上——原型链，非自有键；
+  // node 实测 `Object.getOwnPropertyNames(g.prototype)` === []）⇒ 空元组。
+  if (brandName.endsWith(".generatorProto")) return [];
+  if (!brandName.endsWith(".prototype")) return undefined;
+  const fixed = PROTO_BRAND_OWN_KEYS[brandName];
+  if (fixed) return [...fixed];
+  const owner = brandName.slice(0, -".prototype".length);
+  const spec = getEvalClass(owner);
+  if (!spec) return undefined;
+  const methods = Object.keys(spec.methods ?? {});
+  const accessors = Object.keys(spec.accessors ?? {});
+  // 方法/访问器交错定义序不可复原 ⇒ 不给精确清单（保持保守域）。
+  if (methods.length > 0 && accessors.length > 0) return undefined;
+  const keys = ["constructor"];
+  for (const k of [...methods, ...accessors]) {
+    if (k === "constructor" || keys.includes(k)) continue;
+    keys.push(k);
+  }
+  return keys;
+}
+
+/**
+ * 族 58 · Bug 5：任意 brand 的 **"length" 槽**（成员读语义）——env 声明面
+ * 建模的槽（如 Buffer 实例的 `length`）此前不可读：core 的 `$len` 只认
+ * 少数品牌（String / TypedArray 家族 / Arguments / Proxy），其余 brand 一律
+ * 折 unknown ⇒ `buf.length` 拿不到。
+ *
+ * 口径：**只**认内层 obj 的**非可选** "length" 槽（无槽的 brand 沿既有
+ * unknown 口径；可选槽的 length 读出 `T | undefined`——本 helper 只回
+ * 确定的非可选槽，可选槽仍沿调用方的 unknown 口径）。
+ */
+export function brandLengthSlotValue(a: Abs): Abs | undefined {
+  if (!a || a.shape.k !== "brand") return undefined;
+  const inner = (a.shape as { shape?: Abs }).shape;
+  if (!inner || inner.shape.k !== "obj") return undefined;
+  const slot = getSlot((inner.shape as ObjShape).slots, "length");
+  if (!slot || slot.optional) return undefined;
+  return slot.value;
+}
+
+/**
  * Bug 217：开放对象**声明的索引值域**（`shape.index.value`）——成员读优先用
  * 它（`process.env.HOME` → `string | undefined`；`process.versions.node` →
  * `string`），无索引声明才退 unknown（那才是真正的「推断失败」）。

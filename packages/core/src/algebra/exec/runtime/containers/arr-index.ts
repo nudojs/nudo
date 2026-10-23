@@ -59,6 +59,9 @@ import { markDomainShared, isDomainShared } from "../../../len-sharing.ts";
 import { $call } from "../../call.ts";
 import { widenTupleToArr } from "./arr-make.ts";
 import { $set, $get } from "./member.ts";
+// 族 58 · Bug 5：任意 brand 的 "length" 槽读（单一事实源，见 members.ts）。
+import { brandLengthSlotValue } from "../members.ts";
+import { symbolSlotKeyOf } from "./symbol-slot.ts";
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(
@@ -639,6 +642,15 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   if (a.shape.k === "brand" && classNameOfValue(a as object) === a.shape.name) {
     return $get(a, "length", opts);
   }
+  // 族 58 · Bug 5：任意 brand 的 "length" 槽——env 声明面建模的槽（如
+  // Buffer 实例的 length）此前不可读（core 的 $len 只认 String / TypedArray
+  // 家族 / Arguments / Proxy，其余 brand 一律折 unknown ⇒ buf.length 拿不到）。
+  // 口径：只认内层 obj 的**非可选** "length" 槽（无槽的 brand 沿尾 unknown；
+  // 可选槽沿既有 unknown 口径）——判定由 exec/runtime/members.ts 的
+  // brandLengthSlotValue 单一事实源给出（与 $get 品牌内层槽读同口径 ⇒
+  // `buf.length` 与 `buf["length"]` 一致）。
+  const brandLen = brandLengthSlotValue(a);
+  if (brandLen !== undefined) return brandLen;
   return unknown;
 }
 

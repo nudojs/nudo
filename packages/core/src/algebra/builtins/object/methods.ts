@@ -104,6 +104,8 @@ import {
   wellKnownSymbolSlotKey,
 } from "./descriptor.ts";
 import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
+// 族 58 · Bug 321：原型 brand 的自有键集判定（单一事实源，见 members.ts）。
+import { protoBrandOwnStringKeys } from "../../exec/runtime/members.ts";
 // Bug 284：Proxy 的 isExtensible 陷阱派发需要 $call（陷阱实参 (target)，
 // this = handler）——exec/call.ts 已在本模块的依赖图内（exec/runtime/members.ts
 // 引入），此处只是显式直连。
@@ -1034,6 +1036,17 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           return boolLit(false);
         }
       }
+      // 族 58 · Bug 321：原型 brand（`X.prototype`）的**自有**成员判定——
+      // 引擎已建模成员的原型的自有键集可精确列举（Error 家族：name/message
+      // 是原型对象的自有数据属性；用户类：constructor + 自有方法/访问器）⇒
+      // 折确定 boolean（原生 Object.hasOwn(Error.prototype,"name") === true，
+      // 此前折保守 partial boolean）。未建模原型的键集仍开放 ⇒ 沿既有保守
+      // boolean。判定单一事实源：exec/runtime/members.ts 的
+      // protoBrandOwnStringKeys。
+      if (a0.shape.k === "brand") {
+        const ownKeys = protoBrandOwnStringKeys((a0.shape as { name?: string }).name ?? "");
+        if (ownKeys) return boolLit(ownKeys.includes(key));
+      }
       // R4a：Error 家族 brand——自有槽 presence 精确折（message/stack（/
       // errors/cause）自有 → true；name 是 inherited 原型链槽 → false；
       // 闭内层缺席键 → false——自有键集构造期静态可知；$set 公有覆写
@@ -1820,6 +1833,24 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             );
           }
         }
+        // 族 58 · Bug 321/3：原型 brand（`X.prototype`）的 gOPN 面——自有键集
+        // 可精确列举时（引擎已建模成员的原型）折精确元组；键集不可判（其余
+        // 原型）⇒ 保守 partial string[]（**不**折空——空是自信的确切错值：
+        // 原生 gOPN(Array.prototype) 有 41 个键）。
+        {
+          const protoOwn = builtinBrandOwnKeyNames(a0);
+          if (protoOwn) {
+            return abs(
+              { k: "tuple", elements: protoOwn.map((n) => strLit(n)) },
+              undefined,
+              undefined,
+              "exact",
+            );
+          }
+          if (brandName.endsWith(".prototype")) {
+            return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+          }
+        }
         if (builtinBrandNoEnumKeys(a0)) {
           // Bug 308：gOPN 语义是「**全部**自有键」——RegExp 实例有自有的
           // `lastIndex`（ECMA-262 §22.2.6，非可枚举）⇒ 原生
@@ -2039,6 +2070,39 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           // 方法：value = 与成员读面**同一函数对象**（$get 复用同一驻留
           // ——A.prototype.m === new A().m 恒 true）
           return mkDesc($get(a0, key), true, false, true);
+        }
+      }
+      // 族 58 · Bug 321/3：原型 brand（`X.prototype`）上 defineProperty 安装的
+      // **自有数据槽**（内层 obj 槽 + 标志表）——原生 gOPD 折**精确描述符**
+      // （原型对象上的自有属性）；此前整族落「descriptor | undefined」并 ⇒
+      // 读 `.writable` / `.value` 即**定抛 TypeError**（wrong-**throw**：原生
+      // 恒有描述符——含「writable:true 重定义后读出新的 writable」这条）。
+      // 缺席键沿既有保守并（不折 undefined——内层 obj 闭但键集面另有归属）。
+      if (a0.shape.k === "brand" && key !== undefined) {
+        const pname = (a0.shape as { name?: string }).name ?? "";
+        if (pname.endsWith(".prototype")) {
+          const pInner = a0.shape.shape;
+          if (pInner.shape.k === "obj" && !pInner.shape.open) {
+            const pSlots = (pInner.shape as ObjShape)
+              .slots as Record<string, { value: Abs; internal?: boolean; inherited?: boolean }>;
+            if (Object.prototype.hasOwnProperty.call(pSlots, key)) {
+              if (pSlots[key]!.internal === true || pSlots[key]!.inherited === true) {
+                return undefAbs();
+              }
+              const accDesc = accessorDescOf(pInner, key);
+              if (accDesc) return accDesc;
+              // flags 表记在接收者 brand 上（applyPropertyDescriptor 的
+              // setPropFlags(out, …)——out 为 brand）；原型槽的原地安装口径
+              // （putProtoSlotsInPlace）把 flags 记在内层 obj 上——两者并查。
+              const pFlags = getPropFlags(a0)?.get(key) ?? getPropFlags(pInner)?.get(key);
+              return mkDesc(
+                pSlots[key]!.value,
+                pFlags?.writable !== false,
+                pFlags?.enumerable !== false,
+                pFlags?.configurable !== false,
+              );
+            }
+          }
         }
       }
       // Bug 84：用户类实例——内层闭 obj 自有槽精确描述符（此前整

@@ -39,6 +39,8 @@ import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { str } from "../shared.ts";
 import { isEnumerableView } from "../invariants.ts";
+// 族 58 · Bug 321/3：原型 brand 的自有键集判定（单一事实源）。
+import { protoBrandOwnStringKeys } from "../../exec/runtime/members.ts";
 
 /**
  * Bug 43：boxed String brand（new String("ab") / Object('ab') 字面量箱）的
@@ -86,6 +88,12 @@ const BUILTIN_BRAND_NO_ENUM_KEYS = new Set([
 export function builtinBrandNoEnumKeys(a0: Abs | undefined): boolean {
   if (!a0 || a0.shape.k !== "brand") return false;
   const name = (a0.shape as { name?: string }).name ?? "";
+  // 族 58 · Bug 321/3：原型 brand（`X.prototype`）也归「零**可枚举**自有键」
+  // ——原生原型对象的自有成员（constructor / 方法 / 访问器）**全是**不可枚举
+  // 数据属性（node v26.10.0 实测：Object.keys(Error.prototype) === []、
+  // Object.keys(class A { m(){} }.prototype) === []）⇒ 可枚举自有键恒空。
+  // （gOPN 面是「**全部**自有键」，另走 builtinBrandOwnKeyNames。）
+  if (name.endsWith(".prototype")) return true;
   return BUILTIN_BRAND_NO_ENUM_KEYS.has(name);
 }
 
@@ -103,7 +111,11 @@ export function builtinBrandOwnKeyNames(a0: Abs | undefined): string[] | undefin
   if (!a0 || a0.shape.k !== "brand") return undefined;
   const name = (a0.shape as { name?: string }).name ?? "";
   if (name === "RegExp") return ["lastIndex"];
-  return undefined;
+  // 族 58 · Bug 321/3：原型 brand（`X.prototype`）的**自有键**（gOPN 语义）
+  // ——引擎已建模成员的原型（Error 家族 / 用户类）可给精确清单；其余原型
+  // 仍开放（undefined ⇒ 调用方沿既有保守域 string[]）。
+  // 判定单一事实源：exec/runtime/members.ts 的 protoBrandOwnStringKeys。
+  return protoBrandOwnStringKeys(name);
 }
 
 /**

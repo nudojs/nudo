@@ -41,5 +41,9 @@ export function isAbstractKeySymbol(a: Abs): boolean {
 }
 
 export function isSymbolAbs(a: Abs | undefined): boolean {
-  return !!a && a.shape.k === "prim" && a.shape.type === "symbol";
+  // 非 Abs 实参（部分调用点传**裸 JS 值**——如 $del 的键：可选链 delete 发射
+  // `$del(obj, "a")` 的裸字符串）→ 不可判，**不得**取 .shape（宿主 TypeError
+  // ⇒ 整模块 fail-closed）。先判「是不是 Abs」再取 shape。
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return false;
+  return a.shape.k === "prim" && a.shape.type === "symbol";
 }

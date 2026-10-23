@@ -42,7 +42,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { litValue, formatShape } from "../index.ts";
-import { call } from "./eval-helpers.ts";
+import { call, tupleEls } from "./eval-helpers.ts";
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 
@@ -133,16 +133,18 @@ describe("Bug 295 — 原型 `constructor` 不可枚举：for-in 枚举面看不
 });
 
 describe("Bug 295 — 不可枚举 ≠ 不可见：gOPN 仍列 `constructor`", () => {
-  it("Object.getOwnPropertyNames(A.prototype) 仍含 \"constructor\"（原生 [\"constructor\"]）", () => {
+  it("Object.getOwnPropertyNames(A.prototype) 精确 [\"constructor\"]（原生 [\"constructor\"]）", () => {
     // 原生 oracle（node v26）：["constructor"]。
-    // 引擎口径：类原型的 gOPN 走**保守域** `string[]`（不折成空数组，也不
-    // 折成精确的 ["constructor"]）⇒ 按引擎实际口径断言（见本文件头）。
+    // 引擎口径（族 58 · Bug 321/3 落盘后）：类原型的 gOPN 由**保守域** `string[]`
+    // 升为**精确元组** ["constructor"]（引擎已建模该原型的自有成员 ⇒ 自有键集
+    // 静态可知）——与原生 oracle 逐字一致（本断言由「保守域」期望**加强**为
+    // 「精确原生」期望，未删未弱化）。
     const r = call(
       wrap(`class Bug295ProtoE {}; return Object.getOwnPropertyNames(Bug295ProtoE.prototype);`),
       "f",
     ).result;
-    expect(formatShape(r)).toBe("string[]");
-    expect(litValue(r).ok).toBe(false);
+    expect(formatShape(r)).toBe('["constructor"]');
+    expect(tupleEls(r)).toEqual(["constructor"]);
     // 可见性（精确）：`constructor` 是原型的**自有**属性——不可枚举 ≠ 不可见
     expect(
       v(
