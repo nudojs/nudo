@@ -1199,15 +1199,21 @@ function assertRegexpPattern(
       (args) => {
         const href = absStrLit(args[0]);
         const base = args[1] !== undefined ? absStrLit(args[1]) : undefined;
-        if (href === undefined) return undefined;
+        if (href === undefined) {
+          // 抽象实参：原生是否抛取决于运行时值 ⇒ may-throw TypeError
+          // （旧实现 `return undefined` ⇒ 回落「返回 URL 面、**永不抛**」⇒ 假绿）
+          return makeAbsApplyResult(nodeUrlObj, errBrand("TypeError"));
+        }
         try {
           const url = base !== undefined ? new URL(href, base) : new URL(href);
           return urlAbsOf(url);
         } catch {
-          return undefined;
+          // 原生抛 TypeError（Invalid URL）⇒ 记 throws 面（不再静默吞掉）
+          // ——套 Bug 881（fileURLToPath）同款范式。
+          return makeAbsApplyResult(nodeUrlObj, errBrand("TypeError"));
         }
       },
-      { params: ["href", "base?"], ctor: true },
+      { params: ["href", "base?"], ctor: true, throws: errBrand("TypeError") },
     ),
     URLSearchParams: envFn(
       [unionOf(
@@ -1921,6 +1927,18 @@ function assertRegexpPattern(
     // Bug 866：模块导出的构造器必须带 `ctor: true`——否则 `new TextEncoder()`
     // / `new TextDecoder("utf-8")` 落「fn 形 callee 构造性未知」⇒ 记
     // unknown-constructibility **假 may-throw**（原生一个都不抛）。
+    //
+    // ⚠ **已知限制（族 64 收尾时查清 · 未修）**：`util.TextEncoder` /
+    // `util.TextDecoder` 与**全局**同名导出是**同一个 class**
+    // （宿主实测 `require("util").TextEncoder === TextEncoder`）⇒ 裸调**必抛**
+    // TypeError；但此处只有 `ctor: true`、**没有**类值标记的 rest 形参
+    // ⇒ core 的 `isClassValueCallee` 不命中 ⇒ 裸调恒不抛 ⇒ **同族假绿**
+    // （与**全局**面分叉 —— 全局面已由族 64 改成类值）。
+    // 收口它要动 **core 的 `$new` env 构造器分支**（`exec/class/declare.ts`）：
+    // 无 `apply` 的 env 构造器走 `$call` ⇒ 会命中类值判据 ⇒ **`new` 也抛**
+    // ⇒ 必须挂 `apply`；而挂 `apply` 后实例面从 `obj` 变 `brand`
+    // ⇒ 打破既有金标 `env-bug-866-module-ctor.test.ts`（`shape.k === "obj"`）。
+    // ⇒ 收益窄（少见的裸调路径）＋ 代价越界到 core ⇒ **本波登记为已知限制**。
     TextEncoder: envFn(
       [],
       objAbs({
@@ -2259,14 +2277,22 @@ function assertRegexpPattern(
   // - 全局对象 / 函数 ⇒ objAbs / envFn 合理签名。
   // ══════════════════════════════════════════════════════════════════════
 
-  /** 宿主可构造的构造器声明（{ctor:true} + 实例面 + 可选静态面） */
+  /**
+   * 宿主**可**构造的构造器声明（`{ctor:true}` + 实例面 + 可选静态面）。
+   *
+   * `opts.apply`（族 64 新增）：**类值**声明用的构造面——原生里「类」只有
+   * `[[Construct]]` 面（裸调定抛 TypeError），core 的 Bug 272 判据是
+   * `ctor: true` + 单一 rest 形参 `"_rest"`（`isClassValueCallee`）⇒ 裸调
+   * 走 core 的类值分支（定抛 TypeError）；`apply` 返回**声明实例面** ⇒
+   * `new X()` 仍拿到声明的实例面（不丢精度）。
+   */
   const ctorOf = (
     name: string,
     paramTypes: Abs[],
     instance: Abs,
-    opts?: { params?: string[]; slots?: Record<string, Abs> },
+    opts?: { params?: string[]; slots?: Record<string, Abs>; apply?: EnvApplyImpl },
   ): Abs =>
-    envFn(paramTypes, instance, undefined, {
+    envFn(paramTypes, instance, opts?.apply, {
       name,
       ctor: true,
       ...(opts?.params ? { params: opts.params } : {}),
@@ -2484,6 +2510,24 @@ function assertRegexpPattern(
   );
   cryptoModule.subtle = brandOf("SubtleCrypto", subtleCryptoObj);
   cryptoModule.getRandomValues = envFn([arrOf(prim.unknown)], arrOf(prim.unknown));
+
+  /**
+   * `TextEncoder` 的**声明实例面**（族 64：类值声明要复用它 ⇒ 提成 const）。
+   *
+   * 宿主实测（node v26.10.0）：`new TextEncoder().encoding === "utf-8"`（字面量）、
+   * `encode(s) → Uint8Array`、`encodeInto(s, buf) → { read, written }`。
+   */
+  const textEncoderInstance = brandOf(
+    "TextEncoder",
+    objAbs({
+      encoding: prim.str(),
+      encode: envFn([prim.str()], arrOf(prim.num())),
+      encodeInto: envFn(
+        [prim.str(), arrOf(prim.num())],
+        objAbs({ read: prim.num(), written: prim.num() }),
+      ),
+    }),
+  );
 
   const nodePlatformGlobals: Record<string, Abs> = {
     // ── Event 族 ───────────────────────────────────────────────
@@ -2746,22 +2790,22 @@ function assertRegexpPattern(
     ),
 
     // ── 编码 / 压缩 流 ────────────────────────────────────────
-    TextEncoder: ctorOf(
-      "TextEncoder",
-      [],
-      brandOf(
-        "TextEncoder",
-        objAbs({
-          encoding: prim.str(),
-          encode: envFn([prim.str()], arrOf(prim.num())),
-          encodeInto: envFn(
-            [prim.str(), arrOf(prim.num())],
-            objAbs({ read: prim.num(), written: prim.num() }),
-          ),
-        }),
-      ),
-      { params: [] },
-    ),
+    // 族 64（Bug 889 的 node 侧）：`TextEncoder` 是 **class** ⇒ 裸调**必抛**
+    // TypeError（宿主实测 v26.10.0：`TextEncoder()` ⇒ TypeError
+    // "Class constructor TextEncoder cannot be invoked without 'new'"）。
+    // 旧声明是**普通 fn 面**（关系面）⇒ 裸调落「返回声明类型、**永不抛**」
+    // ⇒ **L2 门禁假绿**（原生必抛的入口被判恒不抛）。
+    //
+    // 修法：**在 env 侧声明成类值**（core 的 Bug 272 判据：`ctor: true` +
+    // 单一 rest 形参 `"_rest"` ⇒ `isClassValueCallee` 命中 ⇒ 裸调定抛
+    // TypeError，**与原生同形**）；`apply` 返回**声明实例面** ⇒
+    // `new TextEncoder()` 的实例面（encoding / encode / encodeInto）**不丢**
+    // ——不像「删声明回落宿主」那样退成 `undefined`（那是**确定的错值**，
+    // 宿主真值是 "utf-8"）。
+    TextEncoder: ctorOf("TextEncoder", [], textEncoderInstance, {
+      params: ["_rest"],
+      apply: () => textEncoderInstance,
+    }),
     TextEncoderStream: ctorOf(
       "TextEncoderStream",
       [],
