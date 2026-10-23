@@ -114,14 +114,44 @@ export function methodBindNames(params: unknown[] | undefined): string[] {
  * 旧口径 `line >= a.stmtStart && line <= a.stmtEnd`（只看行号）会让多行语句
  * （if 块 / 多行 const）内部的嵌套语句、以及同行的下一条语句都被误覆盖——
  * 违反文档「only affects the immediately following statement」。
+ *
+ * Bug 635：**export 包装**形态的载体身份。`// @nudo:as string()` 写在
+ * `export const raw = 1;` 前面时，指令的载体节点是 **ExportNamedDeclaration**
+ * （Babel 把前置注释挂在 export 语句上），而转译面拿到的声明节点是**内层**
+ * `VariableDeclaration` ⇒ 两个字符区间不重合 ⇒ 覆盖**匹配不到** ⇒
+ * 工具打印「Bindings applied」却类型不变（假成功）。
+ *
+ * 修法：补一条「export 前缀」匹配——**尾端相同**（export 语句与其内层声明
+ * 同一处结尾）+ **前缀恰是 export 引导词**（`export ` / `export default `）
+ * ⇒ 命中。前缀用源文本核对（`opts.source`），避免「同尾不同语句」误命中。
  */
 export function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
   if (!opts.asOverrides?.length) return null;
   if (typeof stmt.start !== "number" || typeof stmt.end !== "number") return null;
   for (const a of opts.asOverrides) {
     if (a.stmtStart === stmt.start && a.stmtEnd === stmt.end) return a.varName;
+    if (
+      a.stmtEnd === stmt.end &&
+      a.stmtStart < stmt.start &&
+      isExportWrapperGap(opts.source, a.stmtStart, stmt.start)
+    ) {
+      return a.varName;
+    }
   }
   return null;
+}
+
+/**
+ * 区间 `[from, to)` 是否**只是 export 引导词**（`export ` / `export default `）。
+ *
+ * 只认 export 引导词 ⇒ export 语句与其内层声明是「同一处结尾」时才算包装；
+ * 其它同尾区间（不同语句凑巧同尾）不误命中。源文本缺失 ⇒ 不认（fail-closed：
+ * 退回 Bug 166 的精确匹配口径）。
+ */
+function isExportWrapperGap(source: string | undefined, from: number, to: number): boolean {
+  if (typeof source !== "string") return false;
+  if (from < 0 || to > source.length || to <= from) return false;
+  return /^export\s+(?:default\s+)?$/.test(source.slice(from, to));
 }
 
 /**

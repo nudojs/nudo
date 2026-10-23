@@ -4,8 +4,9 @@
  * 在 check-report.ts；commander 装配在 check-command.ts）；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { resolve, dirname, isAbsolute } from "node:path";
+import type { File } from "@babel/types";
 import { paint } from "../ui.ts";
 import {
   actionsForIssue,
@@ -13,10 +14,12 @@ import {
   extractFileEnvNames,
   listFnDirectiveScopes,
   pTrue,
+  parseSource,
   sidecarPathOf,
   type CheckAction,
   type CheckIssue,
   type CheckJson,
+  type CheckOptions,
   type CheckReport,
   type AbsCallRecord,
   type GitlabCodeQualityIssue,
@@ -39,8 +42,10 @@ import {
   evalAbsModuleGraph,
   findProjectConfig,
   interfaceConfig,
+  mergeHarvestUnderEnv,
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
+  resolveModule,
   type CallRecord,
 } from "@nudojs/service";
 import {
@@ -52,12 +57,19 @@ import {
   type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
+import { DIAG } from "@nudojs/core/internal";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
   getPathEnvDepContents,
 } from "@nudojs/service/evaluator";
 import { emitCheckReport, formatSyntaxErrorBlock, syntaxErrorInfo } from "./check-report.ts";
+import {
+  collectNudoFiles,
+  displayPathOf,
+  reportPathErrors,
+  type PathError,
+} from "./shared.ts";
 import {
   checkGateFromConfig,
   configIgnoreThrows,
@@ -69,6 +81,8 @@ import {
   type GateProfile,
 } from "../check-gate-config.ts";
 import {
+  dedupeAgainstIssues,
+  dedupeFromStaticIssues,
   directiveDiagIssues,
   domainIssuesFromDiagnostics,
   ENV_UNRESOLVED_CODE,
@@ -76,9 +90,11 @@ import {
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
+  staticFromDomainIssues,
   stripCachedSigRets,
   stripConfigShapeIssues,
   stripEnvUnresolvedIssues,
+  type FromCallsiteFile,
 } from "../check-json-map.ts";
 import { shouldComputeCacheKey, shouldUseDiskCache } from "../check-ci-flags.ts";
 import {
@@ -229,14 +245,28 @@ type GateCliOptions = {
  * entryThrows 不在此报：service 层 checkConfig 已单源告警
  * （`nudo.check.entryThrows: invalid value …`，LSP/CLI 同口径）。
  * 同一 typo 进程内去重（批量/多文件不重复刷屏；watch 跨轮不重报）。
+ *
+ * **文案按最终生效档位生成**（637）：旧文案写死 `using default strict`，
+ * 而生效档位可能来自**同层** `check.entryThrows`（显式值优先）或 CLI 旗标
+ * ⇒ 诊断说假话（用户读到「using default strict」以为门禁在 strict 档、
+ * 自己的文件没过，实际 warning 档已放行、exit 0）。
  */
 const warnedGateConfig = new Set<string>();
-function warnInvalidGateConfig(config: Parameters<typeof checkConfig>[0]): void {
+function warnInvalidGateConfig(
+  config: Parameters<typeof checkConfig>[0],
+  effective: { mode: EntryThrowsMode; isDefault: boolean },
+): void {
   const invalid = invalidGateConfig(config);
-  if (invalid.profile === undefined || warnedGateConfig.has(invalid.profile)) return;
-  warnedGateConfig.add(invalid.profile);
+  if (invalid.profile === undefined) return;
+  // 去重键含生效档位：同一 typo 值在不同项目可能解析出不同档位 ⇒ 各报各的
+  const suffix = effective.isDefault
+    ? "using default strict"
+    : `using ${effective.mode}`;
+  const key = `${invalid.profile}\u0000${suffix}`;
+  if (warnedGateConfig.has(key)) return;
+  warnedGateConfig.add(key);
   console.error(
-    `warning: package.json nudo.check.profile: unknown value "${invalid.profile}" (expected: adoption | strict) — using default strict`,
+    `warning: package.json nudo.check.profile: unknown value "${invalid.profile}" (expected: adoption | strict) — ${suffix}`,
   );
 }
 
@@ -276,12 +306,23 @@ function resolveGateForConfig(
   config: Parameters<typeof checkConfig>[0],
   cli: GateCliOptions,
 ): { entryThrows: EntryThrowsMode; ignoreThrows: string[] } {
-  warnInvalidGateConfig(config);
-  warnInvalidIgnoreThrowsConfig(config);
   const cCfg = checkConfig(config);
   const gate = checkGateFromConfig(config);
+  const entryThrows = resolveEntryThrows(cli, gate, cCfg.entryThrows);
+  warnInvalidGateConfig(config, {
+    mode: entryThrows,
+    // 生效档位 = 默认 strict ⟺ 解析链上**没有任何**显式来源（CLI 显式 /
+    // CLI profile / 配置 entryThrows / 配置 profile 全空）且归一化回落 error
+    isDefault:
+      cli.entryThrows === undefined &&
+      cli.profile === undefined &&
+      gate.entryThrows === undefined &&
+      gate.profile === undefined &&
+      cCfg.entryThrows === "error",
+  });
+  warnInvalidIgnoreThrowsConfig(config);
   return {
-    entryThrows: resolveEntryThrows(cli, gate, cCfg.entryThrows),
+    entryThrows,
     ignoreThrows: mergeIgnoreThrows(cli.ignoreThrows, configIgnoreThrows(config)),
   };
 }
@@ -301,15 +342,18 @@ function resolveGateForFile(
 /** runCheck 选项（action 层装配；jsonCollect / gitlabRowsCollect / gateFlags 为多文件聚合通道）；段3 渲染面（check-report.ts）消费 */
 
 /**
- * --json 多文件聚合通道：注入装配失败标记 + 语法错文件的 pathError 行
- * （后者与路径错误同信封字段——attachPathErrors 挂 ok:false；code 用
- * 非 `nudo:*` 的 file 级事实码，不进源文件诊断术语表）。
+ * --json 多文件聚合通道：注入装配失败标记 + **路径级错误行**（语法错 /
+ * 输入读失败）——后者与路径错误同信封字段（attachPathErrors 挂 ok:false）。
+ *
+ * code 口径：语法错用非 `nudo:*` 的 file 级事实码 `syntax-error`（不进源
+ * 文件诊断术语表）；输入读失败用 `nudo:path-io`（PathError 码表已有，
+ * 630：读输入失败此前不走本通道 ⇒ `--json` 下 stdout 0 字节）。
  */
 export type GateFlagsChannel = {
   injectionSetupFailed?: boolean;
   syntaxPathErrors?: Array<{
     path: string;
-    code: "syntax-error";
+    code: "syntax-error" | typeof DIAG.pathIo;
     message: string;
     suggestion: string;
   }>;
@@ -320,6 +364,16 @@ export type RunCheckOptions = {
   /** 多文件 --json：收集 CheckJson，不在本函数内打印 / 设 exit */
   jsonCollect?: CheckJson[];
   from?: CallRecord[];
+  /**
+   * `--from` **现场文件路径**（Bug 643）：调用点义务的静态证据源。
+   *
+   * `from`（执行态 `CallRecord[]`）只覆盖**被执行过**的调用点 ⇒ 被包在
+   * 函数 / 箭头 / 方法体里的调用点整条失明 ⇒ 同一处静态可见的违例，
+   * `nudo check <调用方>` 报红、`nudo check <被调方> --from <调用方>` 报绿。
+   * 本字段给出现场文件路径 ⇒ check 面按**同文件通道的判据**（core
+   * `scanLiteralCalls` 的静态全树扫描）复核一遍 ⇒ 两个通道同码同判据。
+   */
+  fromPaths?: string[];
   verbose?: boolean;
   abs?: boolean;
   absView?: { fn?: string; assume?: string[]; generalize?: boolean };
@@ -360,6 +414,8 @@ export type CheckCacheState = {
   autoBind: ReturnType<typeof interfaceConfig>["autoBind"];
   aCfg: ReturnType<typeof analysisConfig>;
   allEnvNames: string[];
+  /** env 装配（项目级 / 文件级分层——Bug 647）：基准目录供诊断过滤与 --fix 面复用 */
+  envs: EnvAssembly;
   entryThrows: EntryThrowsMode;
   ignoreThrows: string[];
   disk: DiskCache;
@@ -419,6 +475,113 @@ function projectEnvShapeIssue(projectDir: string | undefined): ConfigShapeIssue 
   };
 }
 
+/**
+ * env 名装配产物（**分层**：项目级 / 文件级）。
+ *
+ * `allEnvNames` = 收集期（collectEnvGlobals / collectEnvModules）用的合并名表；
+ * `projectEnvNames` / `fileEnvNames` = 两层各自的名单（预载与诊断过滤用）。
+ */
+export type EnvAssembly = {
+  /** 合并后的 env 名（项目级在前，文件级在后） */
+  allEnvNames: string[];
+  /** 项目级 env 名（相对说明符已按**项目根**绝对化） */
+  projectEnvNames: string[];
+  /** 文件级 env 名（相对说明符保持相对——按**文件目录**解析） */
+  fileEnvNames: string[];
+  /** 项目级 env 的解析基准（项目根；无项目配置时回落文件目录） */
+  projectEnvBaseDir: string;
+  /** 文件级 env 的解析基准（被分析文件所在目录） */
+  fileEnvBaseDir: string;
+};
+
+/**
+ * env 名装配 + path env 预载（**分层**——Bug 647）。
+ *
+ * 口径：
+ * - **项目级**（package.json#nudo.env）按**项目根**解析 —— 文档承诺
+ *   「every file in the project uses them」；
+ * - **文件级**（`/// @nudo:env <path>`）按**被分析文件所在目录**解析。
+ *
+ * 旧实现把两层拍平成一个列表、统一按「被分析文件所在目录」预载 ⇒ 子目录里的
+ * 文件**永远拿不到**项目级 path env ⇒ 假红（`never` + `nudo:env-unresolved`）。
+ *
+ * 两处配套细节（缺一不可）：
+ * 1. 项目级**相对说明符**先绝对化（按项目根）：收集期（loadEnvs）的查表基准
+ *    是「**最后一次** preload 的目录」，而相对说明符只有**唯一候选** ⇒ 不绝对化
+ *    则子目录文件查表必然落空；
+ * 2. 两次 preload 的顺序 = 项目级先、文件级后 ⇒ 进程级 env 基准槽最后落在
+ *    **文件目录**（文件级相对说明符的解析基准）。
+ */
+async function assembleEnvs(
+  filePath: string,
+  source: string,
+  proj: ReturnType<typeof findProjectConfig>,
+): Promise<EnvAssembly> {
+  // package.json#nudo.env 必须是数组：非数组时配置层回落默认（[]），但**消费
+  // 点**不许裸崩（934：`projectEnvNames is not iterable` ⇒ 五个 verb 全崩）。
+  // 形状问题由 projectEnvShapeIssue 报告（见上），门禁本身继续跑（回落默认 env）。
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
+  // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
+  // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
+  const fileEnvNames = fileEnvNamesFromText(source);
+  const fileEnvBaseDir = dirname(filePath);
+  const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+  const projectEnvSpec = projectEnvNames.map((name) =>
+    typeof name === "string" && (name.startsWith("./") || name.startsWith("../"))
+      ? resolve(projectEnvBaseDir, name)
+      : name,
+  );
+  await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+  await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
+  return {
+    allEnvNames: [...new Set([...projectEnvSpec, ...fileEnvNames])],
+    projectEnvNames: projectEnvSpec,
+    fileEnvNames,
+    projectEnvBaseDir,
+    fileEnvBaseDir,
+  };
+}
+
+/**
+ * 按键去重（同一 env 文件在两层基准下各记一条 ⇒ 只留一条）。
+ * 键由调用方给（env 加载失败 = 路径 + 文案；env 依赖内容 = 路径）。
+ */
+function dedupeByKey<T>(items: T[], keyOf: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = keyOf(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * check 面**自己**试过的 env 解析路径（env 加载失败诊断的过滤基准）。
+ *
+ * path env 的加载失败按**解析后的路径**记录；进程级注册表里还有**分析器通道**
+ * （service 的 `analyzeFileAsync`）的 preload 记录——它按「被分析文件所在目录」
+ * 解析**项目级** env 名（service 侧同源缺陷，见报告「越界发现」）⇒ 会留下一条
+ * **check 面从未请求过**的路径（例：`<项目根>/src/env/web.ts`）⇒ 报告面若照单
+ * 全收就说「env 没加载」，而 env 其实**已加载**（Bug 647 修完后的假绿残留）。
+ *
+ * ⇒ 只报 check 面**自己**试过的路径（项目级按项目根、文件级按文件目录）；
+ * **未知名**（path 形如名字本身，非绝对路径）一律保留（必须可见）。
+ */
+function expectedEnvPaths(envs: EnvAssembly): Set<string> {
+  const out = new Set<string>();
+  for (const name of envs.projectEnvNames) {
+    if (typeof name === "string") out.add(resolve(envs.projectEnvBaseDir, name));
+  }
+  for (const name of envs.fileEnvNames) {
+    if (typeof name === "string") out.add(resolve(envs.fileEnvBaseDir, name));
+  }
+  return out;
+}
+
 async function loadCheckCache(
   filePath: string,
   source: string,
@@ -428,18 +591,8 @@ async function loadCheckCache(
   const { entryThrows, ignoreThrows } = resolveGateForConfig(proj?.config, opts);
   const autoBind = interfaceConfig(proj?.config).autoBind;
   const aCfg = analysisConfig(proj?.config);
-  // package.json#nudo.env 必须是数组：非数组时配置层回落默认（[]），但**消费
-  // 点**不许裸崩（934：`projectEnvNames is not iterable` ⇒ 五个 verb 全崩）。
-  // 这里显式 Array.isArray 守卫：形状问题由 projectEnvShapeIssue 报告（见下），
-  // 门禁本身继续跑（回落默认 env）。
-  const rawProjectEnv = proj?.config.env;
-  const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
-  // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
-  // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
-  // path 型 @nudo:env（./custom.env.ts）由 preloadPathEnvs 在 test 路径
-  // 预载；check 同步路径只收命名 env（collectEnvGlobals 对未知名安全跳过）。
-  const fileEnvNames = fileEnvNamesFromText(source);
-  const allEnvNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
+  // env 名装配（项目级 / 文件级分层）+ path env 预载见 assembleEnvs
+  // （Array.isArray 守卫与 934 的形状问题同在那边）。
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
   const dep = collectLoadDepContents(filePath, source, defaultLoadModule);
@@ -470,13 +623,16 @@ async function loadCheckCache(
     }
   }
   // path 型 env（nudo.env / /// @nudo:env <path>）在 check 门禁下必须
-  // 与 test/LSP 同口径 preload——否则自定义 env 静默退化 env-关（issue #89）
-  const envBaseDir = dirname(filePath);
-  await preloadPathEnvs(allEnvNames, envBaseDir);
+  // 与 test/LSP 同口径 preload——否则自定义 env 静默退化 env-关（issue #89）。
+  // 基准**分层**（Bug 647）：项目级按项目根、文件级按文件目录。
+  const envs = await assembleEnvs(filePath, source, proj);
   // path env 文件内容纳入磁盘缓存指纹（mtime→content sha 变更即 cache miss）；
-  // 按本文件 preload 目录过滤——批量 check 时其它项目的 env 内容折进
+  // 按**各自**的 preload 目录过滤——批量 check 时其它项目的 env 内容折进
   // 缓存键会造成误 miss（进程级注册表无归属，见 getPathEnvDepContents）
-  const envDepContents = getPathEnvDepContents(envBaseDir);
+  const envDepContents = dedupeByKey(
+    [...getPathEnvDepContents(envs.fileEnvBaseDir), ...getPathEnvDepContents(envs.projectEnvBaseDir)],
+    (d) => d.path,
+  );
   const depContentsForKey = [...(dep.depContents ?? []), ...envDepContents];
   const cacheKey = shouldComputeCacheKey({
     useDisk,
@@ -488,7 +644,7 @@ async function loadCheckCache(
           projectDir: proj?.projectDir,
           sidecarContent,
           depContents: depContentsForKey,
-          projectEnvNames: allEnvNames,
+          projectEnvNames: envs.allEnvNames,
           analysisCfg: {
             mode: aCfg.mode,
             evalMissingSlot: aCfg.evalMissingSlot,
@@ -499,12 +655,17 @@ async function loadCheckCache(
           },
         })
     : undefined;
-  const cachedJson = cacheKey ? disk.get<CheckJson>(cacheKey) : undefined;
+  const cachedJson =
+    !strictParseFails(filePath, source) && cacheKey
+      ? disk.get<CheckJson>(cacheKey)
+      : undefined;
   return {
     proj,
     autoBind,
     aCfg,
-    allEnvNames,
+    allEnvNames: envs.allEnvNames,
+    /** env 装配（分层基准——诊断过滤与 --fix 面复用同一口径） */
+    envs,
     entryThrows,
     ignoreThrows,
     disk,
@@ -532,6 +693,65 @@ async function loadCheckCache(
 /** `@nudo:mock name from "path"` 解析失败（缺文件/缺绑定/求值失败） */
 type MockFromError = { name: string; fromPath: string; message: string; code?: string };
 /**
+ * 严格解析（按扩展名）是否失败——**只**用于「不吃旧磁盘缓存」判定，不抛错。
+ *
+ * Bug 633：旧版本（typescript 插件无条件开）曾把 `.js` 里的 TS-only 语法判绿
+ * 并把「OK」写进磁盘缓存 ⇒ 升级后命中那条陈旧条目 ⇒ 假绿继续存活。
+ * ⇒ 严格解析失败时**跳过缓存命中**，走正常分析路径 ⇒ 语法错通道判红。
+ */
+function strictParseFails(filePath: string, source: string): boolean {
+  try {
+    parseForCheck(filePath, source);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * check 面的源码解析入口：**按扩展名**选解析插件（core `parseSource` 的
+ * `filename` 口径——`.js` 不开 typescript 插件）。
+ *
+ * Bug 633：`.js` 里的 TS-only 语法（`private x = 0` / `as T` / `interface` /
+ * `enum` …）此前被**静默接受** ⇒ `nudo check` 对一个 **Node 自己都拒绝**
+ * （`node --check` 报 SyntaxError）的文件判绿 ⇒ CI 门禁假绿。
+ *
+ * 口径：严格解析失败、而宽松解析（typescript 插件）成功 ⇒ 判定为
+ * 「TS-only 语法」⇒ 报成语法错并说清原因（位置信息保留）；两者都失败 ⇒
+ * 真语法错，原样上屏。
+ */
+function parseForCheck(filePath: string, source: string): File {
+  try {
+    return parseSource(source, { filename: filePath });
+  } catch (err) {
+    let lenientOk = false;
+    try {
+      parseSource(source);
+      lenientOk = true;
+    } catch {
+      lenientOk = false;
+    }
+    if (!lenientOk) throw err;
+    throw tsOnlySyntaxError(err);
+  }
+}
+
+/** TS-only 语法错误（`.js` 里出现 TS 语法）——补一句人话，原错误位置信息保留 */
+function tsOnlySyntaxError(err: unknown): SyntaxError {
+  const src = err as { message?: string; loc?: { line: number; column: number } };
+  const raw = String(src?.message ?? err ?? "");
+  const tail = /\s*\(\d+:\d+\)\s*$/.exec(raw)?.[0] ?? "";
+  const essence = raw.replace(/\s*\(\d+:\d+\)\s*$/, "").trim();
+  const next = new SyntaxError(
+    `TypeScript-only syntax is not valid in a .js file: ${essence}${tail}`,
+  );
+  if (src?.loc) {
+    (next as SyntaxError & { loc?: { line: number; column: number } }).loc = src.loc;
+  }
+  return next;
+}
+
+/**
  * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
  * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
  * （checkSource/generalize memo 键按对象身份）。
@@ -551,7 +771,9 @@ function buildCheckInjection(
   const graph = evalAbsModuleGraph(source, filePath);
   const reps = collectEvalReplacements(source, { diags: dirDiags });
   const seedPkg = runWithDirectiveDiags(dirDiags, () => {
-    const ast = parse(source);
+    // 按扩展名选插件的解析（Bug 633）：`.js` 里的 TS-only 语法在此**抛错**
+    // ⇒ 走语法错通道（人类面 tsc 风格块 / --json 面 pathErrors），不静默判绿。
+    const ast = parseForCheck(filePath, source);
     const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), {
       fromFile: filePath,
     });
@@ -564,12 +786,14 @@ function buildCheckInjection(
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
   const envMods = collectEnvModules(allEnvNames);
-  // env modules（fs/path/node:*…）并入模块图：与 test 路径
-  // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
-  let mergedMods = {
-    ...graph.modules,
-    ...(Object.keys(envMods).length > 0 ? envMods : {}),
-  };
+  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
+  // （与 test/service 面同口径）——手工 env 与 harvest **同名模块**时，
+  // env 赢同名槽、harvest 填 env 的**空位**（B8）。
+  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
+  // harvest 的**非冲突导出被整体丢弃** ⇒ check 面报 `unknown` + 误导性
+  // `nudo:unknown-inference`，而 test 面报**精确值** ⇒ 两个产品面互相矛盾
+  // （Bug 1037）。
+  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
   // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
   const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
     fromFile: filePath,
@@ -609,9 +833,170 @@ function buildCheckInjection(
   return { inject, mockFromErrors };
 }
 
+/**
+ * import 说明符 → 被调方文件路径（Bug 643 静态扫描的归因键）。
+ *
+ * service 的 `resolveModule` 吃**目录**并回 `{filePath}`；`defaultLoadModule`
+ * 回的是**源码**（不能当路径用）⇒ 这里单独做一层目录适配。
+ */
+function resolveModulePath(specifier: string, fromFile: string): string | undefined {
+  try {
+    return resolveModule(specifier, dirname(fromFile))?.filePath;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `--from` 现场文件集合（Bug 643）。
+ *
+ * 两条来源取并集：
+ * - `fromPaths`（**路径**通道）：CLI 交上来的 `--from` 现场文件路径 ⇒ 覆盖
+ *   「现场文件里没有任何被执行过的调用」的情形（执行态记录为空 ⇒ 旧通道
+ *   整条失明，这正是 Bug 643 的症状面）。
+ * - 执行态记录上的 `callSiteFile`（**记录**通道）：已有执行态证据时，现场
+ *   文件路径已经带在记录上 ⇒ 顺带纳入静态复核（补齐同文件里其余未被执行
+ *   的调用点）。
+ *
+ * 读不到的文件直接跳过（无证据 ⇒ 不造门禁）。
+ */
+function fromCallsiteFiles(opts: RunCheckOptions): FromCallsiteFile[] {
+  const paths = new Set<string>();
+  for (const p of opts.fromPaths ?? []) {
+    const abs = resolve(p);
+    // `--from` 允许目录（与 collectExternalRecords 同口径）⇒ 展开成文件
+    try {
+      if (statSync(abs).isDirectory()) {
+        for (const f of collectNudoFiles(abs)) paths.add(f);
+        continue;
+      }
+    } catch {
+      /* 读不到 ⇒ 下面按文件读再跳过一次 */
+    }
+    paths.add(abs);
+  }
+  for (const rec of opts.from ?? []) {
+    const site = (rec as { callSiteFile?: string }).callSiteFile;
+    if (site) paths.add(resolve(site));
+  }
+  const out: FromCallsiteFile[] = [];
+  for (const p of paths) {
+    try {
+      out.push({ path: p, source: readFileSync(p, "utf-8") });
+    } catch {
+      /* 读不到现场文件 ⇒ 无证据（不造门禁） */
+    }
+  }
+  return out;
+}
+
+/**
+ * checkSource 的**分析输入装配**（`runCheck` 与 `runCheckFix` 共用单源）。
+ *
+ * 口径（Bug 640）：`nudo check` 与 `nudo check --fix` 必须喂给分析器**同一套**
+ * 输入——autoBind（侧车是否环境绑定）/ projectDir（项目根）/ entryThrows /
+ * ignoreThrows / inject·modules（`@nudo:mock` 的替换、`@nudo:env` 的全局、
+ * 模块图）/ skips。旧实现 `runCheckFix` 只传 loadModule / fromFile /
+ * ignoreThrows / entryThrows / skips ⇒ 两条命令对**同一文件**给出**相反**的
+ * 门禁结论（`@nudo:mock` 不生效 ⇒ 假红；`autoBind:false` 不生效 ⇒ 假绿 /
+ * CI 假通过）。
+ *
+ * 装配项全部来自**同一处**（本函数）⇒ 两条命令**不可能**再分叉。
+ */
+type CheckSourceInputs = {
+  /** 被检查文件（绝对路径） */
+  filePath: string;
+  /** 文件源码（`skips` 从中抽） */
+  source: string;
+  /** 侧车环境绑定（`nudo.contract.autoBind`；false ⇒ 不绑定） */
+  autoBind: ReturnType<typeof interfaceConfig>["autoBind"];
+  /** 项目根（ambient 侧车 / 模块解析的项目基准） */
+  projectDir: string | undefined;
+  /** L2 门禁档（error / warning / ignore） */
+  entryThrows: EntryThrowsMode;
+  /** 忽略的 throws 类 */
+  ignoreThrows: string[];
+  /** eval 注入包（modules / mocks / envGlobals / replacements / asOverrides） */
+  inject: RunTranspiledOptions | undefined;
+  /** `--from` 采集的执行态调用点证据（仅 plain check 有） */
+  from?: AbsCallRecord[];
+};
+
+function checkSourceOptions(inputs: CheckSourceInputs): CheckOptions {
+  const { filePath, source } = inputs;
+  return {
+    loadModule: defaultLoadModule,
+    fromFile: filePath,
+    ...(inputs.autoBind === false ? { autoBind: false } : {}),
+    ...(inputs.projectDir ? { projectDir: inputs.projectDir } : {}),
+    entryThrows: inputs.entryThrows,
+    ...(inputs.ignoreThrows.length > 0 ? { ignoreThrows: inputs.ignoreThrows } : {}),
+    ...(inputs.inject && Object.keys(inputs.inject).length > 0
+      ? { modules: inputs.inject.modules as never, inject: inputs.inject }
+      : {}),
+    ...(inputs.from && inputs.from.length > 0 ? { from: inputs.from } : {}),
+    skips: collectSkipReturns(source),
+  };
+}
+
+/**
+ * 输入读取失败 → **显式路径错误**（630）。
+ *
+ * 旧实现：`runCheck` 的 `readFileSync` 无 try/catch ⇒ EACCES/EIO 异常**逃逸**
+ * 出命令层 ⇒ 顶层兜底只打一行裸 errno ⇒ `--json` 面 **stdout 0 字节** +
+ * exit 1（违反 cli-semantics「--json 下 stdout 永不为空 / 绝不出现空 stdout
+ * + 非零 exit」）；同族的其它路径错误（不存在 / 空目录 / 非目标 / --out 写
+ * 失败）都走 `pathErrors[]` 信封，唯独「读输入」这条路漏了。
+ *
+ * 现在：归一到 `PathError{code:"nudo:path-io"}`——
+ * - `--json` 面：进 `gateFlags.syntaxPathErrors`（与路径错误同信封字段）⇒
+ *   信封 `ok:false` + `pathErrors[]`，stdout 非空；
+ * - 人类面：`reportPathErrors` ⇒ 一行 message + `fix:` 提示（同一 face）。
+ */
+function reportInputReadError(
+  filePath: string,
+  err: unknown,
+  opts: RunCheckOptions,
+): void {
+  const reason = err instanceof Error ? err.message : String(err);
+  const pathError: PathError = {
+    path: filePath,
+    code: DIAG.pathIo,
+    message: `Cannot read ${filePath}: ${reason}`,
+    suggestion:
+      "check the path exists and is readable (file permissions / IO); fix the path or grant access, then re-run",
+  };
+  if (opts.json) {
+    // json ⇒ gateFlags 必在（action 层两侧都装配）；自愈式兜底防未来调用面
+    // 漏传导致静默丢 ok:false
+    const flags = (opts.gateFlags ??= {});
+    (flags.syntaxPathErrors ??= []).push({
+      path: pathError.path,
+      code: DIAG.pathIo,
+      message: pathError.message,
+      suggestion: pathError.suggestion,
+    });
+  } else {
+    reportPathErrors([pathError]);
+  }
+  // #1 指纹：读输入失败是非 L2 error（不得触发 onboarding 块）
+  if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
+  process.exitCode = 1;
+}
+
 export async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void> {
   const filePath = resolve(file);
-  const source = readFileSync(filePath, "utf-8");
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    // 输入读取失败（EACCES / EIO / …）——**显式路径错误**（630）：
+    // 旧实现让异常逃逸出命令层 ⇒ `--json` 面 stdout 0 字节 + stderr 裸 errno
+    // （违反「--json 下 stdout 永不为空」）。现在归一到 PathError{path-io}：
+    // --json 面并入 pathErrors 信封（ok:false），人类面给 message + fix:。
+    reportInputReadError(filePath, err, opts);
+    return;
+  }
 
   // 段1 loadCache：项目/门禁/环境装配 + 磁盘缓存读取
   const cache = await loadCheckCache(filePath, source, opts);
@@ -717,19 +1102,23 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     // 永远判不出陈旧）。归因口径见 externalAbsCallRecords（只收指向本文件
     // 的记录 ⇒ 别的模块里的同名函数不污染本文件的判定）。
     const externalAbsRecords = externalAbsCallRecords(filePath, opts.from);
-    report = checkSource(filePath, source, pTrue, {
-      loadModule: defaultLoadModule,
-      fromFile: filePath,
-      ...(cache.autoBind === false ? { autoBind: false } : {}),
-      ...(cache.proj?.projectDir ? { projectDir: cache.proj.projectDir } : {}),
-      entryThrows: cache.entryThrows,
-      ...(cache.ignoreThrows.length > 0 ? { ignoreThrows: cache.ignoreThrows } : {}),
-      ...(inject && Object.keys(inject).length > 0
-        ? { modules: inject.modules as never, inject }
-        : {}),
-      ...(externalAbsRecords.length > 0 ? { from: externalAbsRecords } : {}),
-      skips: collectSkipReturns(source),
-    });
+    // 分析输入装配**单源**（checkSourceOptions）——`--fix` 面走同一构造
+    // （Bug 640：两条命令喂给分析器的输入集必须一致）。
+    report = checkSource(
+      filePath,
+      source,
+      pTrue,
+      checkSourceOptions({
+        filePath,
+        source,
+        autoBind: cache.autoBind,
+        projectDir: cache.proj?.projectDir,
+        entryThrows: cache.entryThrows,
+        ignoreThrows: cache.ignoreThrows,
+        inject,
+        from: externalAbsRecords,
+      }),
+    );
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
     if (dirDiags.length > 0) {
       report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
@@ -744,9 +1133,17 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   // path env 加载失败必须可见（issue #88）：warning，不让 silent 降级为 env-关。
   // live 瞬态：每轮现场注入（report + 命中轮的 cachedJson——--json 面缓存
   // 命中走 cachedJson 而非 report 序列化，不同口径注入会首跑/命中不一致）。
-  // 按本文件 preload 目录过滤：批量 check 时其它项目（如 R1）的 env 加载
-  // 失败不得泄进本项目（R2）文件报告
-  const envLoadErrors = getPathEnvLoadErrors(dirname(filePath));
+  // 按**各自**的 preload 目录过滤：文件级按文件目录、项目级按项目根
+  // （Bug 647：旧实现只按文件目录取 ⇒ 项目级 env 的失败被静默丢弃）；
+  // 批量 check 时其它项目（如 R1）的 env 加载失败不得泄进本项目（R2）文件报告。
+  const expectedEnvPathsSet = expectedEnvPaths(cache.envs);
+  const envLoadErrors = dedupeByKey(
+    [
+      ...getPathEnvLoadErrors(cache.envs.fileEnvBaseDir),
+      ...getPathEnvLoadErrors(cache.envs.projectEnvBaseDir),
+    ],
+    (e) => `${e.path}\u0000${e.error}`,
+  ).filter((e) => !isAbsolute(e.path) || expectedEnvPathsSet.has(e.path));
   if (envLoadErrors.length > 0) {
     const envIssues = envLoadErrors.map((e) => ({
       severity: "warning" as const,
@@ -791,7 +1188,38 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   // 项目配置」（三者都在磁盘缓存键里）⇒ 命中轮从缓存读回同一结论，
   // 既不重复求值也不会陈旧。
   if (domainIssues.length > 0) {
-    report = mergeCheckIssues(report, domainIssues);
+    // 白名单扩容后，分析器通道与 check 面的 mock 通道可能报**同一事实**
+    // （`@nudo:mock fs from "..."` 的文件缺失 ⇒ mock 通道一条 +
+    // 模块图通道一条，同码同文）⇒ 追加前先按（code, message）去重。
+    const fresh = dedupeAgainstIssues(report.issues, domainIssues);
+    if (fresh.length > 0) {
+      report = mergeCheckIssues(report, fresh);
+    }
+  }
+
+  // Bug 643：`--from` 的调用点义务按**同判据**复核（静态全树扫描）。
+  //
+  // 旧通道只有**执行态** `externalCallRecords`（真正跑过的调用才有记录）
+  // ⇒ 被包在函数 / 箭头 / 方法体里的调用点整条失明 ⇒ 同一处静态可见的
+  // 违例，`nudo check <调用方>` 报红、`nudo check <被调方> --from <调用方>`
+  // 报绿（谁被检查谁决定颜色）。这里复用 core 同文件通道的静态扫描
+  // （`scanLiteralCalls`）对 `--from` 现场文件复核一遍 ⇒ 两通道同码同判据。
+  //
+  // 不进缓存键：`--from` 的事实随现场文件内容变化，缓存键只含被检查文件 ⇒
+  // 命中轮仍会跑本段（现场文件在磁盘上，按本轮内容复核）。
+  const fromStaticIssues = dedupeFromStaticIssues(
+    staticFromDomainIssues({
+      targetPath: filePath,
+      callsites: fromCallsiteFiles(opts),
+      resolveModule: resolveModulePath,
+      loadModule: defaultLoadModule,
+      ...(cache.autoBind === false ? { autoBind: false } : {}),
+      ...(cache.proj?.projectDir ? { projectDir: cache.proj.projectDir } : {}),
+    }),
+    domainIssues,
+  );
+  if (fromStaticIssues.length > 0) {
+    report = mergeCheckIssues(report, fromStaticIssues);
   }
 
   // 段3 report+exit：打印面 + 缓存回写 + exit
@@ -851,13 +1279,51 @@ export async function runCheckFix(opts: {
     // CLI profile > pkg entryThrows > pkg profile > 默认 error）+
     // mergeIgnoreThrows（加法合并）
     const { entryThrows, ignoreThrows } = resolveGateForFile(file, opts);
-    const report = checkSource(file, source, pTrue, {
-      loadModule: defaultLoadModule,
-      fromFile: file,
-      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
-      entryThrows,
-      skips: collectSkipReturns(source),
-    });
+    // —— 分析输入装配：与 plain check **同源**（Bug 640）——
+    // 旧实现只传 loadModule / fromFile / ignoreThrows / entryThrows / skips，
+    // 少传 autoBind / projectDir / inject·modules ⇒ 同一文件两条命令结论相反。
+    const proj = findProjectConfig(dirname(file));
+    const autoBind = interfaceConfig(proj?.config).autoBind;
+    const envs = await assembleEnvs(file, source, proj);
+    const dirDiags: DirectiveDiag[] = [];
+    let inject: RunTranspiledOptions | undefined;
+    let mockIssues: CheckIssue[] = [];
+    try {
+      const built = buildCheckInjection(file, source, envs.allEnvNames, dirDiags);
+      inject = built.inject;
+      mockIssues = built.mockFromErrors.length > 0 ? mockFromErrorIssues(built.mockFromErrors) : [];
+    } catch (err) {
+      // 装配失败（语法错 / 注入装配错）——不得静默跳过（否则 --fix 面把
+      // 不可分析的文件当绿）：上屏 + 计入残余 error ⇒ 末尾 exit 1。
+      const syntax = syntaxErrorInfo(err);
+      if (syntax) {
+        console.error(paint(formatSyntaxErrorBlock(file, source, syntax)));
+      } else {
+        console.error(`error: analysis setup failed for ${file}: ${(err as Error).message}`);
+      }
+      residualErrors++;
+      continue;
+    }
+    const report = mergeCheckIssues(
+      checkSource(
+        file,
+        source,
+        pTrue,
+        checkSourceOptions({
+          filePath: file,
+          source,
+          autoBind,
+          projectDir: proj?.projectDir,
+          entryThrows,
+          ignoreThrows,
+          inject,
+        }),
+      ),
+      // mock 装配失败（`@nudo:mock name from "path"` 解析失败）——plain check
+      // 把它们并进报告（nudo:module-missing / nudo:mock-load-failed）⇒
+      // --fix 面必须同样计入，否则「check 红 / --fix 绿」的方向又回来了。
+      mockIssues,
+    );
     for (const i of report.issues) {
       if (i.severity === "error") beforeErrorCodes.add(i.code);
     }
@@ -878,6 +1344,11 @@ export async function runCheckFix(opts: {
 
     for (const issue of report.issues) {
       if (only && !only.has(issue.code)) continue;
+      // 门禁档（profile / entryThrows）把 L2 **降级成 warning** 时，用户已
+      // 明确说「不拦」⇒ --fix 不得替用户写契约（Bug 640 第三方向：
+      // `--profile adoption --fix --write` 曾为一条 warning 级诊断落盘侧车）。
+      // ⇒ 只物化**门禁拦得住**（error 级）的诊断。
+      if (issue.severity === "warning") continue;
       const acts: CheckAction[] = issue.actions ?? actionsForIssue(issue);
       const throwsKind =
         issue.suggestion?.match(/@nudo:throws\s+(\w+)/)?.[1] ??
@@ -918,9 +1389,16 @@ export async function runCheckFix(opts: {
         const next = applyTextEdits(source, plan.edits);
         if (next !== source) {
           planned++;
-          console.log(`\n--- ${file}`);
-          console.log(`+++ ${file}  (${plan.title})`);
-          console.log(unifiedDiff(source, next, file) || "(no line diff)");
+          // 648：diff 头**只**由 unifiedDiff 产出（旧实现自印一份 `---`/`+++`
+          // 又追加自带头的 unifiedDiff ⇒ 双份头，且 `+++` 行的路径字段被
+          // `([fix] …)` 说明文字污染 ⇒ 解析出的文件名不是合法路径）。
+          // 说明文字移到 diff **之外**的一行；路径取**相对 cwd**（与兄弟命令
+          // `test --freeze --dry-run` 同口径）⇒ 头是 `--- a/<rel>` /
+          // `+++ b/<rel>`，`git apply -p1` 可直接消费（绝对路径会拼出
+          // `a//abs` 的双斜杠，剥掉 `a/` 后仍是绝对路径 ⇒ git 拒绝）。
+          const relPath = displayPathOf(file);
+          console.log(`\nfix: ${relPath}  (${plan.title})`);
+          console.log(unifiedDiff(source, next, relPath) || "(no line diff)");
           if (opts.write) {
             writeFileSync(file, next, "utf-8");
             source = next;
@@ -934,9 +1412,10 @@ export async function runCheckFix(opts: {
         const next = plan.sidecar.newText;
         if (next !== cur) {
           planned++;
-          console.log(`\n--- ${plan.sidecar.path}`);
-          console.log(`+++ ${plan.sidecar.path}  (${plan.title})`);
-          console.log(unifiedDiff(cur, next, plan.sidecar.path) || "(new file)");
+          // 648：同源码编辑分支——单份头 + 相对路径 + 说明文字在 diff 之外
+          const relPath = displayPathOf(plan.sidecar.path);
+          console.log(`\nfix: ${relPath}  (${plan.title})`);
+          console.log(unifiedDiff(cur, next, relPath) || "(new file)");
           if (opts.write) {
             writeFileSync(plan.sidecar.path, next, "utf-8");
             sidecarText = next;
@@ -953,13 +1432,25 @@ export async function runCheckFix(opts: {
     // 红）。门禁解析与首次 checkSource 同一 per-file 值。
     // 残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
     if (report.issues.some((i) => i.severity === "error")) {
-      const post = checkSource(file, source, pTrue, {
-        loadModule: defaultLoadModule,
-        fromFile: file,
-        ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
-        entryThrows,
-        skips: collectSkipReturns(source),
-      });
+      // 复检：**同一套**分析输入（Bug 640）——复检必须与首次分析同口径，
+      // 否则「残余 error」是另一套输入下的结论（--fix 面比 check 面更松/更紧）。
+      const post = mergeCheckIssues(
+        checkSource(
+          file,
+          source,
+          pTrue,
+          checkSourceOptions({
+            filePath: file,
+            source,
+            autoBind,
+            projectDir: proj?.projectDir,
+            entryThrows,
+            ignoreThrows,
+            inject,
+          }),
+        ),
+        mockIssues,
+      );
       residualErrors += post.issues.filter((i) => i.severity === "error").length;
       for (const i of post.issues) {
         if (i.severity === "error") afterErrorCodes.add(i.code);

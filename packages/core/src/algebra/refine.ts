@@ -113,6 +113,57 @@ registerCollectorScopeParticipant((body) => {
 });
 
 /**
+ * 侧车**装载诊断**（nudo:interface-load）——exec 期间产生、随 exec 结果缓存。
+ *
+ * 口径同撞名诊断：诊断在 exec 内部产生 ⇒ exec 结果进缓存后，缓存命中不再跑
+ * exec ⇒ 此处产生的诊断会在后续分析里消失（门禁面看不到：分析器先跑、
+ * checkSource 后跑，只有先跑那次能报）⇒ 必须**随结果一起缓存**、每次调用
+ * （含缓存命中）重发。
+ */
+type SidecarLoadDiag = { code: string; message: string };
+
+/**
+ * 侧车装载诊断的**作用域内去重**集（同撞名口径）：诊断随结果缓存、每次调用
+ * 重发 ⇒ 不去重会在一个作用域里重复 N 次（每个函数一次 effectiveInterface）。
+ * 每个分析作用域一份**新**集合（分析器一轮 / checkSource 一轮各一份）⇒
+ * 两个消费面各拿得到一份。
+ *
+ * **无作用域**（模块级 fallback）⇒ null ⇒ **不去重**：保持「每次 exec 都报」
+ * 的旧口径（宿主直接调 execNudoModule 的场景不在分析作用域内，去重会让
+ * 后一次调用看不到诊断）。
+ */
+const sidecarLoadDiagReported = createScopedSlot<Set<string> | null>(() => null);
+registerCollectorScopeParticipant((body) => {
+  const prev = sidecarLoadDiagReported.get();
+  sidecarLoadDiagReported.set(new Set<string>());
+  try {
+    return sidecarLoadDiagReported.runScoped(body);
+  } finally {
+    sidecarLoadDiagReported.set(prev);
+  }
+});
+
+/**
+ * 发出侧车装载诊断（随 exec 结果缓存 ⇒ 命中时**重发**）。
+ * 去重键 = 侧车路径 + 码 + 消息（同一侧车的同一事实只报一次/作用域）。
+ */
+function emitSidecarLoadDiags(
+  diags: readonly SidecarLoadDiag[],
+  fromFile: string | undefined,
+): void {
+  if (diags.length === 0) return;
+  const reported = sidecarLoadDiagReported.get();
+  for (const d of diags) {
+    if (reported !== null) {
+      const sig = `${fromFile ?? ""}\u0000${d.code}\u0000${d.message}`;
+      if (reported.has(sig)) continue;
+      reported.add(sig);
+    }
+    collectDiag({ code: d.code, message: d.message, file: fromFile });
+  }
+}
+
+/**
  * 发出侧车撞名诊断（Bug 356 扩展面 ②）。
  * 撞名 = 侧车自己的顶层声明与它 import 的本地名同名 ⇒ native ESM 是
  * SyntaxError（重复声明，模块不装载）；引擎里是「遮蔽」⇒ 导入值静默丢失、
@@ -758,12 +809,18 @@ function registerSidecarParamTexts(
  * - spec 链成环 → throw NudoSidecarError(nudo:interface-cycle，消息带链)。
  *
  * opts.fromFile 语义 = 该侧车自身的路径（相对 spec 解析基准 + 环检测链起点）。
+ *
+ * `diags` = **出参**：本次 exec 期间产生的侧车装载诊断（nudo:interface-load）。
+ * 诊断**不在此处发出**（exec 结果进缓存后，缓存命中不再跑 exec ⇒ 此处发出的
+ * 诊断会在后续分析里消失 ⇒ 门禁面看不到）⇒ 收集到出参、由
+ * execNudoModuleCached 在每次调用（含缓存命中）时统一发出（同撞名口径）。
  */
 function execSidecar(
   src: string,
   opts: RefineResolveOpts | undefined,
   chain: string[],
   preloaded: ReadonlyMap<string, string | undefined>,
+  diags: SidecarLoadDiag[],
 ): {
   exports: Record<string, unknown>;
   bindingInfos: Map<string, SidecarBindingInfo>;
@@ -790,10 +847,9 @@ function execSidecar(
         if (n.ns) {
           // namespace import 绑成整个 inject 表会静默把 fs/path 等本地名
           // 变成构建器袋——显式诊断，不再静默错绑
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
-            file: fromFile,
           });
           prologue.push(`var ${n.local} = __nudoInjects;`);
           importBound.set(n.local, imp.spec);
@@ -802,10 +858,9 @@ function execSidecar(
           // 诊断被吞 + __nudoInjects 裸读把原生函数绑进侧车执行域
           const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
           if (!hasOwnInject) {
-            collectDiag({
+            diags.push({
               code: DIAG.interfaceLoad,
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
-              file: fromFile,
             });
             prologue.push(`var ${n.local} = undefined;`);
           } else if (n.local !== n.imported) {
@@ -815,10 +870,9 @@ function execSidecar(
           }
         } else {
           // default import：侧车无默认导出概念——显式诊断（不再静默 undefined）
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
-            file: fromFile,
           });
           prologue.push(`var ${n.local} = undefined;`);
           importBound.set(n.local, imp.spec);
@@ -828,29 +882,26 @@ function execSidecar(
     }
     const load = opts?.loadModule;
     if (!load || !fromFile) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (no loadModule for relative specifier)`,
-        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
     }
     if (!isSidecarSpec(imp.spec)) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' unsupported: relative imports must target .nudo.js/.nudo.ts`,
-        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
     }
     const canonical = resolveDepPath(fromFile, imp.spec);
     if (isNodeModulesPath(canonical)) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
-        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -863,10 +914,9 @@ function execSidecar(
     }
     const depSrc = preloaded.has(canonical) ? preloaded.get(canonical) : load(imp.spec, fromFile);
     if (depSrc === undefined) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (loadModule returned no source)`,
-        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -887,6 +937,7 @@ function execSidecar(
         { loadModule: load, fromFile: canonical },
         [...chain, canonical],
         preloaded,
+        diags,
       );
     } catch (e) {
       if (e instanceof NudoSidecarError) throw e;
@@ -906,19 +957,17 @@ function execSidecar(
         if (Object.hasOwn(depExports, n.imported)) {
           deps[n.local] = depExports[n.imported];
         } else {
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
-            file: fromFile,
           });
           deps[n.local] = undefined;
         }
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
-        collectDiag({
+        diags.push({
           code: DIAG.interfaceLoad,
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
-          file: fromFile,
         });
         deps[n.local] = Object.hasOwn(depExports, "default") ? depExports.default : undefined;
       }
@@ -1006,17 +1055,23 @@ export type RefineResolveOpts = {
  * 由 execNudoModuleCached 按当前路径补登记参数折叠文本；
  * clashes = 侧车顶层声明 ∩ import 绑定的撞名（Bug 356 扩展面 ②）——
  * 缓存命中不再跑 exec ⇒ 撞名诊断必须**随结果一起缓存**并在命中时重发，
- * 否则门禁面看不到（分析器先跑、checkSource 后跑 ⇒ 只有后跑那次能报）。 */
+ * 否则门禁面看不到（分析器先跑、checkSource 后跑 ⇒ 只有后跑那次能报）；
+ * diags = 本次 exec 期间产生的侧车装载诊断（nudo:interface-load，1064）——
+ * 同理：exec 内部产生的诊断在缓存命中后不再出现 ⇒ 侧车写坏（import 了
+ * 非构建器名等）在 check 面上彻底隐形（门禁假绿）。 */
 const nudoModuleExecCache = new Map<
   string,
   {
     exports: Record<string, unknown>;
     bindingInfos: Map<string, SidecarBindingInfo>;
     clashes: SidecarClash[];
+    diags: SidecarLoadDiag[];
   }
 >();
-/** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误 */
-const nudoModuleFailCache = new Map<string, unknown>();
+/** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误。
+ *  失败前已产生的装载诊断一并缓存 ⇒ 命中时重发（否则失败轮的诊断只在
+ *  第一次 exec 时可见）。 */
+const nudoModuleFailCache = new Map<string, { error: unknown; diags: SidecarLoadDiag[] }>();
 const MAX_NUDO_MODULE_EXEC = 64;
 /** 防病态侧车依赖图；截断时指纹不可信 → 本次不读写缓存 */
 const MAX_SIDECAR_CLOSURE = 64;
@@ -1100,31 +1155,42 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
       // 撞名诊断随结果缓存 ⇒ 命中时**重发**（否则门禁面看不到：
       // 分析器先跑、checkSource 后跑，只有后跑那次能报）
       emitSidecarClashDiags(hit.clashes, opts.fromFile);
+      // 侧车装载诊断（1064）同口径：exec 内部产生的诊断在缓存命中后
+      // 不再出现 ⇒ 侧车写坏在 check 面彻底隐形（门禁假绿）
+      emitSidecarLoadDiags(hit.diags, opts.fromFile);
       return hit.exports;
     }
-    if (nudoModuleFailCache.has(key)) {
-      throw nudoModuleFailCache.get(key);
+    const failed = nudoModuleFailCache.get(key);
+    if (failed !== undefined) {
+      // 失败前已产生的装载诊断一并重发（同上口径）
+      emitSidecarLoadDiags(failed.diags, opts.fromFile);
+      throw failed.error;
     }
   }
 
+  /** 本次 exec 期间产生的侧车装载诊断（出参 ⇒ 命中/失败缓存都带着它） */
+  const diags: SidecarLoadDiag[] = [];
   try {
-    const { exports, bindingInfos, clashes } = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
+    const { exports, bindingInfos, clashes } = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded, diags);
+    emitSidecarLoadDiags(diags, opts.fromFile);
     emitSidecarClashDiags(clashes, opts.fromFile);
     if (key !== undefined) {
       if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
         const oldest = nudoModuleExecCache.keys().next().value;
         if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
       }
-      nudoModuleExecCache.set(key, { exports, bindingInfos, clashes });
+      nudoModuleExecCache.set(key, { exports, bindingInfos, clashes, diags });
     }
     return exports;
   } catch (e) {
+    // exec 抛错前已产生的装载诊断仍要报（否则「侧车写坏」的事实被抛错吞掉）
+    emitSidecarLoadDiags(diags, opts.fromFile);
     if (key !== undefined) {
       if (nudoModuleFailCache.size >= MAX_NUDO_MODULE_EXEC) {
         const oldest = nudoModuleFailCache.keys().next().value;
         if (oldest !== undefined) nudoModuleFailCache.delete(oldest);
       }
-      nudoModuleFailCache.set(key, e);
+      nudoModuleFailCache.set(key, { error: e, diags });
     }
     throw e;
   }

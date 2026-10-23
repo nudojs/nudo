@@ -4,6 +4,9 @@
  * 与 parser.parse 同插件集 + 统一 TS 剥除。
  *
  * 进程内 LRU：同一 source 字符串只 parse 一次（check / generalize / eval 共享）。
+ *
+ * `opts.filename`（可选）：**知道扩展名**的调用方（如 check 面）传文件名 ⇒
+ * 解析插件集按扩展名选（`.js` 不开 typescript 插件——Bug 633）。缺省 = 旧行为。
  */
 import { parse as babelParse } from "@babel/parser";
 import type { File } from "@babel/types";
@@ -19,6 +22,41 @@ const MAX_AST_CACHE = 16;
 const MAX_AST_SOURCE_CHARS = 1_000_000;
 const astCache = new Map<string, File>();
 
+/**
+ * 解析插件集（**按文件扩展名**选）。
+ *
+ * - `.js` / `.mjs` / `.cjs` / `.jsx`：**纯 JS** ⇒ **不开** typescript 插件
+ * - 其余（`.ts` / `.mts` / `.cts` / `.tsx` / 未知扩展名 / 无文件名）：旧行为
+ *   （typescript + jsx）
+ *
+ * 为什么（Bug 633）：`.js` 里的 TS-only 语法（`private x = 0` / `as T` /
+ * `interface` / `enum` …）此前被**静默接受** ⇒ 门禁对一个 **Node 自己都
+ * 拒绝**（`node --check` 报 SyntaxError）的文件判绿 ⇒ CI 门禁假绿。
+ * 按扩展名关掉 typescript 插件后，「语法 Node 拒绝」与「check 判绿」
+ * 不可能再同时成立。
+ *
+ * 缺省（无文件名）保持旧行为：调用方（parser 包 / generalize / scan…）
+ * 未必知道被解析物的扩展名 ⇒ 不得凭猜测收紧（收紧只由**知道扩展名**的
+ * 入口做，见 `parseSource` 的 `filename` 选项）。
+ */
+type ParsePlugin = "typescript" | "jsx";
+type ParseMode = "ts" | "js";
+const PLUGINS_BY_MODE: Record<ParseMode, readonly ParsePlugin[]> = {
+  ts: ["typescript", "jsx"],
+  js: ["jsx"],
+};
+
+function parseModeFor(filename: string | undefined): ParseMode {
+  if (!filename) return "ts";
+  const lower = filename.toLowerCase();
+  return lower.endsWith(".js") ||
+    lower.endsWith(".mjs") ||
+    lower.endsWith(".cjs") ||
+    lower.endsWith(".jsx")
+    ? "js"
+    : "ts";
+}
+
 export function resetParseSourceCache(): void {
   astCache.clear();
 }
@@ -29,11 +67,12 @@ export function getParseSourceCacheSize(): number {
 
 function parseUncached(
   source: string,
-  opts?: { errorRecovery?: boolean; keepTs?: boolean },
+  opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string },
 ): File {
+  const mode = parseModeFor(opts?.filename);
   const ast = babelParse(source, {
     sourceType: "module",
-    plugins: ["typescript", "jsx"],
+    plugins: [...PLUGINS_BY_MODE[mode]],
     attachComment: true,
     errorRecovery: opts?.errorRecovery === true,
   });
@@ -46,7 +85,7 @@ function parseUncached(
 
 export function parseSource(
   source: string,
-  opts?: { errorRecovery?: boolean; keepTs?: boolean },
+  opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string },
 ): File {
   // keepTs 与 errorRecovery 同属兜底/特殊路径，不进缓存（缓存条目是剥除后的 AST）
   if (opts?.keepTs === true || opts?.errorRecovery === true) {
@@ -55,10 +94,13 @@ export function parseSource(
   if (source.length > MAX_AST_SOURCE_CHARS) {
     return parseUncached(source, opts);
   }
-  const hit = astCache.get(source);
+  // 缓存键必须含**插件模式**：同一段源码在 `.js`（无 typescript 插件）与
+  // `.ts`（有）下是两棵不同的 AST ⇒ 只按 source 做键会让两棵树串味。
+  const key = `${parseModeFor(opts?.filename)}\u0000${source}`;
+  const hit = astCache.get(key);
   if (hit !== undefined) {
-    astCache.delete(source);
-    astCache.set(source, hit);
+    astCache.delete(key);
+    astCache.set(key, hit);
     return hit;
   }
   const ast = parseUncached(source, opts);
@@ -66,6 +108,6 @@ export function parseSource(
     const oldest = astCache.keys().next().value;
     if (oldest !== undefined) astCache.delete(oldest);
   }
-  astCache.set(source, ast);
+  astCache.set(key, ast);
   return ast;
 }

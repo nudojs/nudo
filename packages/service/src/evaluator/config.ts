@@ -142,9 +142,14 @@ export function checkConfig(config: NudoConfig | null | undefined): CheckConfig 
       // 否则 IDE 把 CLI 已降级的 L2 显示为 error
       entryThrows = rawProfile === "adoption" ? "warning" : "error";
     }
-    // 非法 entryThrows 始终告警——不得因 profile 合法而被吞掉
+    // 非法 entryThrows 始终告警——不得因 profile 合法而被吞掉。
+    // **进程内去重**（Bug 639）：同族 `profile` typo 走 `warnedGateConfig`
+    // 去重（一条），本条此前走裸 `stderr.write` ⇒ 批量检查时同一 typo
+    // **每文件刷一行**（N 个文件 N 行噪声）。口径对齐 profile：同一非法值
+    // 一次进程只提示一次。
     if (rawEntry !== undefined) {
-      process.stderr?.write?.(
+      warnOnce(
+        `check.entryThrows:${JSON.stringify(rawEntry)}`,
         `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using ${entryThrows}\n`,
       );
     }
@@ -209,7 +214,12 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     diagnostics,
     callSiteBudget,
     evalMissingSlot: raw?.evalMissingSlot === "warning" ? "warning" : "off",
-    maxForks: parseMaxForks(raw?.maxForks) ?? MAX_EVAL_TOTAL_FORKS,
+    // **env 生效值**（Bug 636）：fork 预算的真正上限由 env `NUDO_MAX_FORKS`
+    // 优先决定（`applyBForkBudgetFromConfig` 同口径）。此前这里只认
+    // package.json ⇒ 磁盘缓存键（`checkCacheKey` 的 `analysisCfg.maxForks`）
+    // 记的是 config-only 值 ⇒ 改 env 不改键 ⇒ 命中轮返回**上一轮**的
+    // 陈旧 budget（反向则是新预算**根本没执行**）。
+    maxForks: effectiveMaxForks(config),
   };
 }
 
@@ -217,6 +227,33 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
 function parseMaxForks(raw: unknown): number | undefined {
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 1) return undefined;
   return Math.floor(raw);
+}
+
+/**
+ * fork 预算的**生效值**（纯函数、无副作用）。
+ *
+ * 优先级与 `applyBForkBudgetFromConfig` **逐条同口径**：
+ * env `NUDO_MAX_FORKS` > `package.json#nudo.analysis.maxForks` > 默认 5000；
+ * env 设了但非法 → 回默认 5000（不回配置键，见 #490）。
+ *
+ * 与 `applyBForkBudgetFromConfig` 的差别：后者**写** core 预算并发一条
+ * stderr 提示（副作用）；本函数只**算**值，供缓存键 / 指纹等**纯**维度
+ * 使用（`analysisConfig().maxForks` → `checkCacheKey` 的 `analysisCfg.maxForks`
+ * ⇒ 键随 env 变 ⇒ 命中轮不再返回陈旧 budget）。
+ */
+export function effectiveMaxForks(
+  // 只读 `analysis.maxForks` ⇒ 收**最小形状**（`NudoConfig` 可赋值给它；
+  // 磁盘缓存键侧只需喂 `{ analysis: { maxForks } }`）。
+  config: { analysis?: { maxForks?: number } } | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const rawEnv = env.NUDO_MAX_FORKS;
+  // 空串按「未设」处理（与 NUDO_CACHE_DIR / applyBForkBudgetFromConfig 同口径）
+  const envSet = rawEnv !== undefined && rawEnv.trim() !== "";
+  const fromEnv = envSet ? parseMaxForks(Number(rawEnv)) : undefined;
+  if (envSet && fromEnv === undefined) return MAX_EVAL_TOTAL_FORKS;
+  const fromCfg = parseMaxForks(config?.analysis?.maxForks);
+  return fromEnv ?? fromCfg ?? MAX_EVAL_TOTAL_FORKS;
 }
 
 /**
@@ -235,16 +272,15 @@ export function applyBForkBudgetFromConfig(
   const rawEnv = env.NUDO_MAX_FORKS;
   // 空串按「未设」处理（与 NUDO_CACHE_DIR 的空串口径一致）
   const envSet = rawEnv !== undefined && rawEnv.trim() !== "";
-  const fromEnv = envSet ? parseMaxForks(Number(rawEnv)) : undefined;
-  const fromCfg = parseMaxForks(config?.analysis?.maxForks);
-  if (envSet && fromEnv === undefined) {
+  if (envSet && parseMaxForks(Number(rawEnv)) === undefined) {
     warnOnce(
       `maxforks:${rawEnv}`,
       `nudo: NUDO_MAX_FORKS: invalid value ${JSON.stringify(rawEnv)} (expected an integer >= 1); using ${MAX_EVAL_TOTAL_FORKS}\n`,
     );
-    return setEvalForkBudgetLimit(MAX_EVAL_TOTAL_FORKS);
   }
-  return setEvalForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_EVAL_TOTAL_FORKS);
+  // 生效值与 `effectiveMaxForks` 同源（唯一优先级实现 ⇒ 缓存键 / 报告面
+  // 与真正写进 core 的预算永不打架）。
+  return setEvalForkBudgetLimit(effectiveMaxForks(config, env));
 }
 
 /** 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） */

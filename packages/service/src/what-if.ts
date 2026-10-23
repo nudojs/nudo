@@ -165,6 +165,14 @@ function splitMultiDeclarators(source: string, bound: Set<string>): string {
   return out;
 }
 
+/**
+ * 顶层声明的**语句身份**（Bug 1036）：字符区间 + 所在行。
+ *
+ * 注入点按**区间**落 ⇒ 同一行的多条声明各自落在自己的声明前（行号口径
+ * 会撞车 ⇒ 假设落到别的变量上）。
+ */
+type DeclSite = { start: number; end: number; line: number };
+
 export function injectBindings(
   source: string,
   bindings: TypeBinding[],
@@ -190,23 +198,42 @@ export function injectBindings(
   const rewritten = splitMultiDeclarators(source, bound);
 
   const ast = parse(rewritten);
-  const declLines = new Map<string, number>();
+  // 锚点 = **声明语句自身**（Bug 1036）。
+  //
+  // 旧口径优先取 `leadingComments[0].loc.start.line`：Babel 会把上一行的
+  // **行尾注释**同时挂成下一条声明的 `leadingComments[0]`
+  // （`const a = 1; // 说明` ⇒ `const b = 2;` 的 leading 里有「说明」）
+  // ⇒ 锚点被劫持到上一行 ⇒ 假设落到**另一个变量**上，而回显仍说
+  // 「Bindings applied: …」⇒ 工具回答的是另一个问题（假成功）。
+  //
+  // 只记**行号**也不够：同一行两条声明（`const a = 1; const b = 2;`）行号
+  // 撞车 ⇒ 后者被判成「同侧撞车、丢弃」⇒ 假设仍然落到**另一个变量**上，
+  // 且失败理由被渲染成「no top-level declaration found」（**编的理由**）。
+  //
+  // ⇒ 记**字符区间**（语句身份）：注入点按区间落，同一行的多条声明各自
+  // 落在**自己**的声明前（行中声明 ⇒ 插在它自己的字符位 + 换行；行首
+  // 声明 ⇒ 插在整行之前，并按 `isCommentOnlyLine` 把前置注释块整块上移，
+  // 使 JSDoc / 前置注释仍与语句相邻）。
+  const declSites = new Map<string, DeclSite>();
   for (const stmt of programBody(ast)) {
     const names = new Set<string>();
     declaredNames(stmt, names);
-    if (names.size === 0 || !stmt.loc) continue;
-    const anchorLine =
-      stmt.leadingComments?.[0]?.loc?.start.line ?? stmt.loc.start.line;
+    if (names.size === 0 || !stmt.loc || stmt.start == null) continue;
+    const site: DeclSite = {
+      start: stmt.start,
+      end: stmt.end ?? stmt.start,
+      line: stmt.loc.start.line,
+    };
     for (const name of names) {
-      if (!declLines.has(name)) declLines.set(name, anchorLine);
+      if (!declSites.has(name)) declSites.set(name, site);
     }
   }
 
-  const byLine = new Map<number, TypeBinding[]>();
+  const bySite = new Map<DeclSite, TypeBinding[]>();
   for (const binding of bindings) {
     const name = named(binding);
-    const line = name === "" ? undefined : declLines.get(name);
-    if (line === undefined) {
+    const site = name === "" ? undefined : declSites.get(name);
+    if (site === undefined) {
       unapplied.push(name === "" ? "<missing name>" : name);
       continue;
     }
@@ -216,18 +243,41 @@ export function injectBindings(
       binding !== null && typeof binding === "object" && typeof (binding as { type?: unknown }).type === "string"
         ? (binding as { type: string }).type
         : "";
-    const group = byLine.get(line) ?? [];
+    const group = bySite.get(site) ?? [];
     group.push({ name, type });
-    byLine.set(line, group);
+    bySite.set(site, group);
   }
 
-  const insertions: Array<{ index: number; text: string }> = [];
-  for (const [line, group] of byLine) {
-    // 语句级 as 只能表达一个类型；拆分后正常一行一个。同侧行撞车时只认第一个。
+  // 注入点 = **字符偏移**（Bug 1036）：行中声明落在它自己的字符位之前，
+  // 行首声明落在整行之前（前置注释块整块上移）。
+  const lines = rewritten.split("\n");
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < rewritten.length; i++) {
+    if (rewritten[i] === "\n") lineStarts.push(i + 1);
+  }
+  /** 该声明的注入字符偏移 */
+  const insertionOffsetOf = (site: DeclSite): number => {
+    const lineIdx = site.line - 1;
+    const lineStart = lineStarts[lineIdx] ?? site.start;
+    // 本行在声明之前只有空白 ⇒ 声明是本行的**第一条**语句 ⇒ 整行插入
+    if (!/^\s*$/.test(rewritten.slice(lineStart, site.start))) return site.start;
+    // 注入点上移：语句正上方若是**整块注释**（JSDoc / 前置注释），
+    // 插在块**之前**而不是块与语句之间 ⇒ 注释块仍与语句相邻
+    // （插在中间会把 JSDoc 从声明上摘掉 ⇒ `@nudo:mock` / `@nudo:contract`
+    // 等 JSDoc 指令静默失效）。
+    let idx = lineIdx;
+    while (idx > 0 && isCommentOnlyLine(lines[idx - 1]!)) idx--;
+    return lineStarts[idx] ?? lineStart;
+  };
+
+  const insertions: Array<{ offset: number; text: string }> = [];
+  for (const [site, group] of bySite) {
+    // 语句级 as 只能表达一个类型；拆分后正常一条声明一个。
+    // 同一条声明被点名两次时只认第一个（第二个进 unapplied）。
     const b = group[0]!;
     const mapped = mapTypeExpr(b.type);
     insertions.push({
-      index: line - 1,
+      offset: insertionOffsetOf(site),
       text: `// @nudo:as ${mapped.directive}`,
     });
     // 回显必须与**实际注入**一致：认不出的表达式注入的是 `unknown`，
@@ -239,8 +289,22 @@ export function injectBindings(
     );
     for (const shadowed of group.slice(1)) unapplied.push(shadowed.name);
   }
-  insertions.sort((a, b) => b.index - a.index);
-  const lines = rewritten.split("\n");
-  for (const ins of insertions) lines.splice(ins.index, 0, ins.text);
-  return { source: lines.join("\n"), applied, unapplied };
+  // 从后往前插 ⇒ 先插的偏移不被后插的推移
+  insertions.sort((a, b) => b.offset - a.offset);
+  let out = rewritten;
+  for (const ins of insertions) {
+    out = out.slice(0, ins.offset) + ins.text + "\n" + out.slice(ins.offset);
+  }
+  return { source: out, applied, unapplied };
+}
+
+/**
+ * 该行是否**只含注释**（行注释 / 块注释首行 / JSDoc 续行 `*`）。
+ *
+ * what-if 注入点上移的判据（见 `injectBindings`）：只有「整行都是注释」
+ * 才算前置注释块的一行；`const a = 1; // 说明` 这种**代码 + 行尾注释**
+ * 不算（它是上一条语句的尾巴，不是下一条语句的前置块）。
+ */
+function isCommentOnlyLine(line: string): boolean {
+  return /^\s*(?:\/\/|\/\*|\*)/.test(line);
 }

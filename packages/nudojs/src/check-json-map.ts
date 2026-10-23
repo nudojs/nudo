@@ -1,8 +1,11 @@
 /**
  * check 报告/JSON 映射（纯）：缓存重建、诊断码、issue 注入与 summary 聚合。
  */
+import { resolve } from "node:path";
 import {
+  checkSource,
   formatCheckReport,
+  pTrue,
   serializeCheckJson,
   type CheckIssue,
   type CheckJson,
@@ -10,6 +13,7 @@ import {
   type NudoSig,
 } from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
+import { parse, programBody } from "@nudojs/parser";
 import { CONFIG_SHAPE_CODE } from "./config-shape.ts";
 
 /**
@@ -192,16 +196,75 @@ export type DomainDiagnosticLike = {
 };
 
 /**
- * interface 家族诊断 → CheckIssue（check 面消费分析器诊断的唯一入口）。
+ * check 面「哪些码上屏」的**定稿清单**（族 18 · 片 3 owner）。
  *
- * 白名单 = **check 面承诺可见**的 interface 家族码：
+ * 判据（三条同时满足才上屏）：
+ * 1. **文档承诺 check 面可见**：guides/check.md 的诊断表 或
+ *    reference/diagnostics.md 明确写了该码的 check 面语义；
+ * 2. **分析器（service）真实产出**：码出现在 `analyzeFileAsync` 的
+ *    `diagnostics` 里（不是 core `checkSource` 独有能力）；
+ * 3. **不与 core `checkSource` 的既有诊断重复**：重复 ⇒ 双报。
+ *
+ * 逐条依据：
  * - `nudo:interface-domain-exceeds`（L1 error/warning）：契约域被调用实参超出。
+ *   分析器产出 + 文档承诺 ⇒ 上屏。
  * - `nudo:interface-entry-only`（L1 **info**）：导出无契约根且无调用点域
  *   （entry-only）。文档（guides/check.md、reference/diagnostics.md）承诺它
  *   是 check 的 L1 info；此前白名单**只**留 domain-exceeds 一条 ⇒ 分析器
  *   产出的 entry-only 被 CLI 静默丢弃（infos: 0），而 `nudo health` 走另一条
  *   统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂（Bug 461）。
  *   severity 固定 **info**：观察面提示，不挡门禁（ok / exit code 不变）。
+ * - 模块装载问题族（Bug 632）：`nudo:module-missing` / `nudo:missing-export`
+ *   （error）、`nudo:module-cycle` / `nudo:module-depth` /
+ *   `nudo:exports-unresolved`（warning）、`nudo:json-invalid`（error）。
+ *   分析器 `composeEvalModules` 的模块图装载问题（service
+ *   `pushBModuleIssues`）**只**走分析器诊断通道；core `checkSource`
+ *   不装载依赖模块图 ⇒ 这些事实此前在 check 面**完全不可见** ⇒
+ *   依赖解析失败的源文件门禁绿灯、exit 0（文档承诺 module-missing /
+ *   missing-export / cycle / depth 是 check 面 error/warning）。
+ * - `nudo:env-harvest-conflict`（warning，Bug 1038）：handwritten `@nudo:env`
+ *   胜出 / harvest 冲突。reference/diagnostics.md 明确列它是 check 面告警，
+ *   分析器已产出（service `pushBModuleIssues`）⇒ 此前被白名单整条丢掉。
+ *
+ * **刻意排除**（避免与 core `checkSource` 双报，或非 check 面语义）：
+ * - `nudo:module-unreadable`：core `checkSource` 已通过
+ *   `loadReadFailureIssues` 上报同一事实（依赖存在但读不了）。
+ * - `nudo:interface-load`：core `checkSource` 自己上报一份（侧车加载失败）。
+ * - `nudo:unknown-inference` / `nudo:opaque-result` / `nudo:no-signature` /
+ *   `nudo:missing-slot` / `nudo:builtin-unknown` / `nudo:no-method` /
+ *   `nudo:unknown-recv`：core `checkSource`（engine-debt 家族）独有能力。
+ * - `nudo:entry-may-throw` / `nudo:assume-*` / `nudo:invariant-*`：L2 家族，
+ *   core `checkSource` 独有能力（check 面的 L2 门禁由 `resolveGateForFile`
+ *   解析，不能与分析器通道混流）。
+ * - `nudo:mock-invalid`：check 面已有 `mockFromErrorIssues` 通道上报。
+ * - `nudo:case-*` / `nudo:may-throw`：check 面以 caseMode "none" 调分析器，
+ *   永不产出。
+ *
+ * 导出供下游片（4 / 5）复用同一口径，避免各处各写一份白名单。
+ */
+export const CHECK_FACE_DIAG_CODES: readonly string[] = [
+  // interface 家族
+  DIAG.interfaceDomainExceeds,
+  DIAG.interfaceEntryOnly,
+  // 模块装载问题族（Bug 632）
+  DIAG.moduleMissing,
+  DIAG.missingExport,
+  DIAG.moduleCycle,
+  DIAG.moduleDepth,
+  DIAG.jsonInvalid,
+  DIAG.exportsUnresolved,
+  // env 家族（Bug 1038）
+  DIAG.envHarvestConflict,
+];
+
+const CHECK_FACE_DIAG_CODE_SET: ReadonlySet<string> = new Set(CHECK_FACE_DIAG_CODES);
+
+/**
+ * 分析器诊断 → CheckIssue（check 面消费分析器诊断的唯一入口）。
+ *
+ * 白名单 = {@link CHECK_FACE_DIAG_CODES}（check 面承诺可见的码集合）。
+ * severity 口径：entry-only 固定 **info**（观察面提示，不挡门禁）；
+ * 其余按分析器给的 severity 走（error ⇒ 挡门禁 / exit 1，warning ⇒ 只可见）。
  *
  * 函数名保持 `domainIssuesFromDiagnostics`：`commands/check.ts` 按名 import
  * （共享热点文件，不在本分片改动范围），改名会断其 import。
@@ -211,7 +274,8 @@ export function domainIssuesFromDiagnostics(
 ): CheckIssue[] {
   return diagnostics
     .filter(
-      (d) => d.code === DIAG.interfaceDomainExceeds || d.code === DIAG.interfaceEntryOnly,
+      (d): d is DomainDiagnosticLike & { code: string } =>
+        d.code !== undefined && CHECK_FACE_DIAG_CODE_SET.has(d.code),
     )
     .map((d) => {
       const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
@@ -222,7 +286,7 @@ export function domainIssuesFromDiagnostics(
           : d.severity === "error"
             ? ("error" as const)
             : ("warning" as const),
-        code: isEntryOnly ? DIAG.interfaceEntryOnly : DIAG.interfaceDomainExceeds,
+        code: d.code,
         message: d.message,
         line: d.range.start.line,
         column: d.range.start.column,
@@ -231,6 +295,210 @@ export function domainIssuesFromDiagnostics(
         suggestion: d.suggestions?.[0],
       };
     });
+}
+
+// ---------------------------------------------------------------------------
+// Bug 643 —— `--from` 的调用点义务必须与**同文件通道同判据**
+// ---------------------------------------------------------------------------
+
+/** `--from` 现场文件（调用点文件） */
+export type FromCallsiteFile = {
+  /** 现场文件绝对路径 */
+  path: string;
+  /** 现场文件源码 */
+  source: string;
+};
+
+export type StaticFromDomainOptions = {
+  /** 被调方（被检查文件）绝对路径 */
+  targetPath: string;
+  /** `--from` 现场文件（调用点文件） */
+  callsites: readonly FromCallsiteFile[];
+  /** import 说明符解析（相对现场文件）⇒ 解析到被调方的 import 即证据来源 */
+  resolveModule?: (specifier: string, fromFile: string) => string | undefined;
+  /** 侧车装载器（`*.nudo.js` 契约侧车） */
+  loadModule?: (specifier: string, fromFile: string) => string | undefined;
+  /** 侧车 ambient 绑定开关 */
+  autoBind?: boolean;
+  /** 项目根 */
+  projectDir?: string;
+};
+
+/** 路径归一比较（两侧都先 resolve ⇒ 相对/绝对写法等价） */
+function sameModulePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b);
+}
+
+/**
+ * 现场文件里指向被调方的 import 绑定：本地名 → 被调方导出名
+ * （命名空间导入记为 `"*"` ⇒ 成员访问 `ns.f` 归到导出 `f`）。
+ */
+function targetImportBindings(
+  site: FromCallsiteFile,
+  opts: StaticFromDomainOptions,
+): Map<string, string> {
+  const bindings = new Map<string, string>();
+  if (!opts.resolveModule) return bindings;
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(site.source);
+  } catch {
+    return bindings; // 解析失败 ⇒ 无证据（不猜）
+  }
+  for (const stmt of programBody(ast)) {
+    if (stmt.type !== "ImportDeclaration") continue;
+    const resolved = opts.resolveModule(stmt.source.value, site.path);
+    if (!resolved || !sameModulePath(resolved, opts.targetPath)) continue;
+    for (const spec of stmt.specifiers) {
+      if (spec.type === "ImportSpecifier") {
+        const imported =
+          spec.imported.type === "Identifier"
+            ? spec.imported.name
+            : String(spec.imported.value);
+        bindings.set(spec.local.name, imported);
+      } else if (spec.type === "ImportNamespaceSpecifier") {
+        bindings.set(spec.local.name, "*");
+      }
+    }
+  }
+  return bindings;
+}
+
+/** 现场文件里的本地名 → 被调方导出名（命名空间成员 `ns.f` → `f`）。 */
+function resolveExportName(local: string, bindings: Map<string, string>): string | undefined {
+  const direct = bindings.get(local);
+  if (direct !== undefined && direct !== "*") return direct;
+  const dot = local.lastIndexOf(".");
+  if (dot > 0) {
+    const obj = local.slice(0, dot);
+    const prop = local.slice(dot + 1);
+    if (bindings.get(obj) === "*") return prop;
+  }
+  return undefined;
+}
+
+/**
+ * `--from` 的**静态**调用点证据（Bug 643）。
+ *
+ * 背景：调用点义务有两条通道，判据本应一致——
+ * - **同文件**：core 的 `scanLiteralCalls` 做**静态全树扫描** ⇒ 无论调用点
+ *   是否被执行过都执法；
+ * - **跨文件（`--from`）**：此前只有**执行态** `externalCallRecords`（只有
+ *   真正跑过的调用才有记录）⇒ 被包在函数 / 箭头 / 方法体里的调用点静默漏过
+ *   ⇒ 同一处静态可见的违例，`nudo check <调用方>` 报红、`nudo check <被调方>
+ *   --from <调用方>` 报绿（谁被检查谁决定颜色）。
+ *
+ * 修法：**复用 core 同文件通道的静态扫描**（`checkSource` 对现场文件跑一遍
+ * ⇒ `scanLiteralCalls` 静态全树扫描），只取「被调方导出」的
+ * `nudo:constraint-violated` 归因到被调方 ⇒ 判据（只认 plain literal 实参、
+ * 契约面来源=侧车、归因=import 绑定表）全部沿用 core，不引入第二套判据。
+ *
+ * 上屏码用 **`nudo:interface-domain-exceeds`**（与既有 `--from` 执行态通道
+ * 同码）：core 的 `nudo:constraint-violated` 是**同文件通道**的码（它的报告
+ * 面指向调用方文件）；跨文件面归到被调方 ⇒ 用跨文件面的码 ⇒ 两条 `--from`
+ * 通道同码、L1 分层一致、文档深链一致。
+ *
+ * loc（line/column）**不搬**：调用点在**现场文件**里，搬进被调方的报告会
+ * 指错文件（与既有 `--from` 执行态通道同款：不带 loc）。
+ */
+export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  for (const site of opts.callsites) {
+    const bindings = targetImportBindings(site, opts);
+    if (bindings.size === 0) continue;
+    let report: CheckReport;
+    try {
+      report = checkSource(site.path, site.source, pTrue, {
+        ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+        fromFile: site.path,
+        ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        ...(opts.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
+      });
+    } catch {
+      continue; // 现场文件自身分析失败 ⇒ 不造证据（不造门禁）
+    }
+    for (const issue of report.issues) {
+      if (issue.code !== DIAG.constraintViolated) continue;
+      const local = issue.fn;
+      if (!local) continue;
+      const exportName = resolveExportName(local, bindings);
+      if (!exportName) continue;
+      // core 的消息形状：`${被调名}[${参数位}]: argument ⊭ precondition`
+      const key = callSiteKeyOf(issue.message);
+      if (!key) continue;
+      const shown = plainEvidence(issue.actual);
+      out.push({
+        severity: "error",
+        code: DIAG.interfaceDomainExceeds,
+        message: `${exportName}[${key.param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
+        actual: shown,
+        ...(issue.expected !== undefined ? { expected: issue.expected } : {}),
+        suggestion: `Loosen the handwritten contract for ${exportName} (${key.param}: ${issue.expected ?? "?"}), or fix the caller's values`,
+        fn: exportName,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * `--from` 两条通道的**去重**（Bug 643）。
+ *
+ * 执行态通道（分析器 `nudo:interface-domain-exceeds`）与静态通道（本模块的
+ * `staticFromDomainIssues`）判的是**同一处事实**（被调方某参数位被调用实参
+ * 超出）⇒ 同（被调名, 参数位）只报一条，执行态优先（既有 `--from` 面口径）。
+ */
+export function dedupeFromStaticIssues(
+  staticIssues: readonly CheckIssue[],
+  executionIssues: readonly CheckIssue[],
+): CheckIssue[] {
+  const seen = new Set<string>();
+  for (const e of executionIssues) {
+    if (e.code !== DIAG.interfaceDomainExceeds) continue;
+    const key = callSiteKeyOf(e.message);
+    if (key) seen.add(key.key);
+  }
+  if (seen.size === 0) return [...staticIssues];
+  return staticIssues.filter((s) => {
+    const key = callSiteKeyOf(s.message);
+    return key === undefined || !seen.has(key.key);
+  });
+}
+
+/** 消息里的「被调名[参数位]」键（两条 `--from` 通道共用同一形状） */
+function callSiteKeyOf(
+  message: string,
+): { key: string; name: string; param: string } | undefined {
+  const m = /^([^(]+)\[([^\]]+)\]/.exec(message);
+  if (!m) return undefined;
+  return { key: `${m[1]}[${m[2]}]`, name: m[1], param: m[2] };
+}
+
+/** 字面量证据的裸值（剥掉 `formatAbs` 的 `  #conf` 后缀） */
+function plainEvidence(actual: string | undefined): string {
+  return (actual ?? "?").replace(/\s+#\w+$/, "");
+}
+
+/**
+ * 追加 issues 前先与**已有** issues 去重（Bug 632 的双报收口）。
+ *
+ * check 面有两条通道会报**同一事实**：
+ * - `mockFromErrorIssues`（check 面的 mock 通道：`@nudo:mock fs from "..."`
+ *   的文件缺失）；
+ * - 分析器通道（模块图装载问题：mock 文件缺失 ⇒ `nudo:module-missing`）。
+ *
+ * 两条通道的**文案逐字相同** ⇒ 白名单扩容后同一条事实会被报两遍（同码同文）。
+ * 去重键 = （code, message）⇒ 只在**追加分析器诊断**时用，不改
+ * `mergeCheckIssues` 的语义（core 自身可能合法地产生同文多条，如同一函数里
+ * 两次同样的调用 ⇒ 那两条的行号不同，属于既有行为，不能动）。
+ */
+export function dedupeAgainstIssues(
+  existing: readonly CheckIssue[],
+  candidates: readonly CheckIssue[],
+): CheckIssue[] {
+  if (candidates.length === 0) return [];
+  const seen = new Set(existing.map((i) => `${i.code}\u0000${i.message}`));
+  return candidates.filter((i) => !seen.has(`${i.code}\u0000${i.message}`));
 }
 
 export function dualEntryIssue(dual: {

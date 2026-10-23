@@ -10,13 +10,19 @@ import {
   compileAnyMatcher,
   interfaceConfig,
   collectEnvNames,
+  collectEnvGlobals,
+  collectEnvModules,
+  collectEvalReplacements,
+  evalAbsModuleGraph,
+  applyMockModuleDirectivesFromSource,
+  mockSeedsForSource,
   getPathEnvLoadErrors,
   type AnalysisResult,
   type Diagnostic,
   type DiagnosticsLevel,
 } from "@nudojs/service";
 import { dirname, resolve as resolvePath } from "node:path";
-import { checkSource, pTrue } from "@nudojs/core";
+import { checkSource, pTrue, type Abs, type AbsModuleExports, type RunTranspiledOptions } from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
 import type { Plugin } from "vite";
 
@@ -41,17 +47,105 @@ export type NudoPluginOptions = {
  */
 type CheckProjection = { diagnostics: Diagnostic[]; failure?: string };
 
+/**
+ * check 面的**注入装配**（Bug 634）。
+ *
+ * CLI（`packages/nudojs/src/commands/check.ts` 的 `buildCheckInjection`）
+ * 与 LSP（`packages/lsp/src/agent-tools.ts` 的 `buildLspInjection`）都把
+ * `@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局装进 core 的
+ * `inject` 通道再交给 `checkSource`；本插件此前**只传** `loadModule` /
+ * `autoBind` / `skips` ⇒ 注入**整段缺席** ⇒ 被 mock 掉的依赖退化成未知
+ * 全局 ⇒ 构建期报 `nudo:entry-may-throw`（假红），而同一份文件
+ * `nudo check` 判绿（CI 绿 / 构建红）。
+ *
+ * 口径与 CLI / LSP 同源（env 名单、模块图、mock-module 覆盖、mock 表、
+ * 行内指令表逐项同款）；**刻意**的差异：CLI 额外并入
+ * `@nudo:mock name from "path"` 的装载失败旁路诊断（`mockFromErrors`），
+ * 本插件的 check 面不并入那条（构建期的加载失败由分析器通道
+ * `analyzeFileAsync` 的 diagnostics 负责）。
+ *
+ * 装配失败（语法错文件 / 模块图不可用）**降级为空注入**——不把构建打挂
+ * （诊断面仍由 `checkSource` 自己的报错通道出）。
+ */
+function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions {
+  const inject: RunTranspiledOptions = {};
+  // env 名单：文件级 `@nudo:env` ∪ 项目级 package.json#nudo.env
+  let envNames: string[] = [];
+  let envGlobals: Record<string, Abs> = {};
+  let envMods: Record<string, AbsModuleExports> = {};
+  try {
+    envNames = collectEnvNames(id, code, true);
+    envGlobals = collectEnvGlobals(envNames);
+    envMods = collectEnvModules(envNames);
+  } catch {
+    envNames = [];
+    envGlobals = {};
+    envMods = {};
+  }
+  // 模块图（跨模块 import/require）+ env 模块并入 + `@nudo:mock-module` 覆盖
+  let modules: Record<string, AbsModuleExports> = {};
+  try {
+    const graph = evalAbsModuleGraph(code, id);
+    modules = {
+      ...graph.modules,
+      ...(Object.keys(envMods).length > 0 ? envMods : {}),
+    };
+    modules = applyMockModuleDirectivesFromSource(code, modules, {
+      fromFile: id,
+    }).modules;
+  } catch {
+    modules = {};
+  }
+  // `@nudo:mock`：函数级 mock 覆盖表（语法错文件 ⇒ 空表，不打挂构建）
+  let mocks: Record<string, never> = {};
+  try {
+    mocks = mockSeedsForSource(code, { fromFile: id }) as Record<string, never>;
+  } catch {
+    mocks = {};
+  }
+  // 行内指令：`@nudo:replace` / `@nudo:as` 的覆盖表
+  let reps: ReturnType<typeof collectEvalReplacements> = {
+    targets: [],
+    values: {},
+    asTargets: [],
+    asValues: {},
+  };
+  try {
+    reps = collectEvalReplacements(code);
+  } catch {
+    reps = { targets: [], values: {}, asTargets: [], asValues: {} };
+  }
+  return {
+    ...(Object.keys(modules).length > 0 ? { modules } : {}),
+    ...(Object.keys(mocks).length > 0 ? { mocks: mocks as never } : {}),
+    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
+    ...(reps.targets.length > 0
+      ? { replacements: reps.values, replacementTargets: reps.targets }
+      : {}),
+    ...(reps.asTargets.length > 0
+      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
+      : {}),
+  };
+}
+
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): CheckProjection {
   try {
     // 与 CLI/LSP/agent 同源：package.json#nudo.contract.autoBind=false 时
     // 不得强制 ambient 手写契约（避免构建期误报）。
     const autoBind = interfaceConfig(findProjectConfig(dirname(id))?.config).autoBind;
+    const inject = buildViteCheckInjection(id, code);
     const report = checkSource(id, code, pTrue, {
       loadModule,
       fromFile: id,
       ...(autoBind === false ? { autoBind: false } : {}),
       skips: collectSkipReturns(code),
+      // 与 CLI `checkSource(..., { modules: inject.modules, inject })` 同形：
+      // `modules` 必须是**并入 env / mock-module 覆盖后**的表（core 的
+      // `evalAnalyzeOpts` 取 `opts.modules ?? inject.modules`）。
+      ...(Object.keys(inject).length > 0
+        ? { modules: inject.modules as never, inject }
+        : {}),
     });
     return {
       diagnostics: report.issues

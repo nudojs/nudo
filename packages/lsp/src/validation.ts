@@ -37,6 +37,17 @@ import {
   type ModuleGraphCache,
 } from "@nudojs/service";
 import { preloadPathEnvs } from "@nudojs/service/evaluator";
+// Bug 634：门禁面的**注入装配器**与 agent 工具面同源（`buildLspInjection`，
+// packages/lsp/src/agent-tools.ts）——CLI 走 `inject` 通道（`@nudo:mock` /
+// `@nudo:as` / `@nudo:replace` / env 全局），LSP 编辑器面此前**只传
+// `modules`** ⇒ 同一份文件 CLI 绿 / IDE 红（假红）。
+//
+// ⚠ 循环依赖：agent-tools.ts 已 import 本模块的 `evalAnalysisModules`
+// （`evalAnalysisModules` ↔ `buildLspInjection` 互为对偶）⇒ 本模块再
+// import agent-tools 形成环。环上**只有函数声明**被跨模块引用（ESM 的
+// 函数声明在模块实例化期即就绪）⇒ 环是良性的：两侧都只在**函数体内**
+// 调用对方，不存在初始化期读取。
+import { buildLspInjection } from "./agent-tools.ts";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports, type CheckIssue } from "@nudojs/core";
@@ -966,6 +977,15 @@ export function checkToLspDiagnostics(
     const cCfg = checkConfig(proj?.config);
     // 模块图：缺图时跨模块调用 unknown → unproven-return 假红（CLI 有图同文件绿）
     const analysisModules = evalAnalysisModules(filePath, source);
+    // Bug 634：注入包（modules + mocks + env 全局 + replace/as）——与 CLI
+    // `buildCheckInjection` 同源同口径（`buildLspInjection` 是本包的唯一
+    // 装配点，agent 工具面复用同一份）。此前本面只传 `modules` ⇒
+    // `@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局**全部缺席**
+    // ⇒ 被 mock 掉的依赖退化成未知全局 ⇒ 报 `nudo:entry-may-throw`（假红）。
+    const inject = buildLspInjection(filePath, source, {
+      loadModule: loadModule ?? lspLoadModule,
+      modules: analysisModules,
+    });
     const report = checkSource(filePath, source, pTrue, {
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
@@ -974,7 +994,13 @@ export function checkToLspDiagnostics(
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),
-      ...(analysisModules ? { modules: analysisModules } : {}),
+      // 与 CLI `checkSource(..., { modules: inject.modules, inject })` 同形：
+      // `modules` 走**并入 env / mock-module 覆盖后**的表（`evalAnalyzeOpts`
+      // 取 `opts.modules ?? inject.modules` ⇒ 两者必须同源，否则 env 模块
+      // 被未并入的旧表顶掉）。
+      ...(Object.keys(inject).length > 0
+        ? { modules: inject.modules as never, inject }
+        : {}),
     });
     const issues: CheckIssue[] = [...report.issues];
     // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径。

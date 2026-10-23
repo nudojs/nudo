@@ -51,6 +51,13 @@ export type CheckWatchOptions = {
   humanMode: boolean;
   /** 与非 watch 面共用的门禁/观察选项 */
   shared: RunCheckOptions;
+  /**
+   * `--json` watch 面（Bug 645）：每轮**每文件**吐一份机器可读文档
+   * （单文件 = 裸 CheckJson；有语法错 = 带 pathErrors 的 CheckJsonMulti 信封）。
+   * 旧实现里 `--json` 分支在 watch 安装之前就 return ⇒ `--watch` 被**静默丢弃**
+   * （进程跑完 JSON 即退出，监听从未启动）。
+   */
+  jsonFace?: boolean;
 };
 
 /**
@@ -78,6 +85,11 @@ export function startCheckWatch(
   return startWatch(
     paths,
     async (t: string) => {
+      // `--json` watch 面（Bug 645）：每轮仍吐机器可读文档（见 runCheckJsonFace）
+      if (opts.jsonFace) {
+        await runCheckJsonFace(t, { ...opts.shared, from: roundFrom });
+        return;
+      }
       await runCheck(t, {
         ...opts.shared,
         from: roundFrom,
@@ -99,6 +111,85 @@ export function startCheckWatch(
       if (roundFromErrors.length > 0) reportPathErrors(roundFromErrors);
     },
   );
+}
+
+/**
+ * watch 面的 `--json` 文档（Bug 645）。
+ *
+ * watch 面**没有**信封（每轮的文件集合随磁盘变），所以每处理一个文件就落一份
+ * 机器可读文档：
+ * - 正常文件 ⇒ 裸 CheckJson（与非 watch 面的**单文件**契约同形）
+ * - 语法错等「runCheck 提前 return、没有 report 条目」⇒ 带 pathErrors 的
+ *   CheckJsonMulti 信封（与非 watch 面同形）⇒ **stdout 永不为空**
+ *
+ * exit 只由**打印出去的那份文档**的 ok 决定（与 watch 的「最近一轮门禁状态」
+ * 语义一致：startWatch 的轮首复位会吃掉更早的 exit 写入）。
+ */
+async function runCheckJsonFace(
+  file: string,
+  opts: RunCheckOptions,
+): Promise<void> {
+  const collected: CheckJson[] = [];
+  const gateFlags: GateFlagsChannel = {};
+  await runCheck(file, {
+    ...opts,
+    json: true,
+    jsonCollect: collected,
+    gateFlags,
+  });
+  const syntaxErrors = gateFlags.syntaxPathErrors ?? [];
+  const injectionFailed = gateFlags.injectionSetupFailed === true;
+  if (collected.length === 0 || syntaxErrors.length > 0) {
+    const envelope = attachPathErrors(
+      serializeCheckJsonMulti(collected),
+      syntaxErrors,
+    );
+    console.log(JSON.stringify(envelope, null, 2));
+    process.exitCode = envelope.ok && !injectionFailed ? 0 : 1;
+    return;
+  }
+  const single = collected[0];
+  if (!single) {
+    process.exitCode = 1;
+    return;
+  }
+  console.log(JSON.stringify(single, null, 2));
+  process.exitCode = single.ok && !injectionFailed ? 0 : 1;
+}
+
+/** 用法错误的机器面码（`--json` 信封的 pathErrors[]）。 */
+const USAGE_ERROR_CODE = "nudo:usage-error";
+
+/**
+ * 用法错误出口（Bug 954）。
+ *
+ * - 人类面：stderr 文案（`extra.human`，缺省 = `message`）+ exit 1（历史行为不变）
+ * - `--json` 机器面：stdout 输出 CheckJsonMulti 信封（ok:false + pathErrors[]），
+ *   exit **只**由信封的 ok 决定 ⇒ 绝不出现「空 stdout + 非零 exit」
+ *   （docs/design/cli-semantics.md §6.1）。
+ *
+ * 用法错误没有「路径」⇒ pathErrors[0].path 为空串，事实全在 message/suggestion。
+ */
+function usageErrorExit(
+  json: boolean | undefined,
+  message: string,
+  extra?: { human?: string; suggestion?: string },
+): void {
+  if (!json) {
+    console.error(extra?.human ?? message);
+    process.exitCode = 1;
+    return;
+  }
+  const envelope = attachPathErrors(serializeCheckJsonMulti([]), [
+    {
+      path: "",
+      code: USAGE_ERROR_CODE,
+      message,
+      ...(extra?.suggestion ? { suggestion: extra.suggestion } : {}),
+    },
+  ]);
+  console.log(JSON.stringify(envelope, null, 2));
+  process.exitCode = envelope.ok ? 0 : 1;
 }
 
 export function registerCheckCommand(program: Command): void {
@@ -182,11 +273,27 @@ export function registerCheckCommand(program: Command): void {
             ...(opts.only?.length ? ["--only"] : []),
           ];
           if (swallowed.length > 0) {
+            // 人类面：shared.ts 的 variadicSwallowError（两行文案 + exit 1）
+            // 机器面（--json）：同一事实进信封 pathErrors[]（Bug 954）——
+            // 旧实现只有 stderr 文案 ⇒ stdout 空 + exit 1（机器面 JSON.parse 炸）。
+            if (opts.json) {
+              usageErrorExit(
+                true,
+                `error: \`nudo check\` received no paths — variadic flag(s) ${swallowed.join(", ")} consumed the following arguments`,
+                {
+                  suggestion:
+                    "separate variadic flags from paths with `--` (e.g. `nudo check --from a.js -- b.js`) or list paths before the flags",
+                },
+              );
+              return;
+            }
             variadicSwallowError("check", swallowed);
             return;
           }
-          console.error("Usage error: `nudo check` needs at least one path.");
-          process.exitCode = 1;
+          usageErrorExit(
+            opts.json,
+            "Usage error: `nudo check` needs at least one path.",
+          );
           return;
         }
         // BUG-022/S5-004：--fix 是物化工具面（#69），不得与观察/机器面
@@ -207,20 +314,51 @@ export function registerCheckCommand(program: Command): void {
         ) {
           // G5：--from 也进拒绝表——旧实现静默丢使用处证据并以
           // 弱分析（无调用记录注入）落盘契约
-          console.error(
+          usageErrorExit(
+            opts.json,
             "error: --fix cannot be combined with --json/--abs/--gha/--gitlab/--watch/--verbose/--from/--what-if (materialization face; the CI gate is plain `nudo check`)",
           );
-          process.exitCode = 1;
           return;
         }
         // AI3：what-if 与门禁分离——只回答「假设下 target 是什么」
         if (opts.whatIf && opts.whatIf.length > 0) {
+          // Bug 644：what-if 是**早退**分支 ⇒ 机器/观察旗标（--json/--abs/
+          // --gha/--gitlab/--from/--watch/--verbose）此前被**静默丢弃**
+          // （stdout 是人读文本、exit 0 ⇒ 机器面 JSON.parse 直接炸；
+          //  且用户以为 --json 生效了）。组合表显式拒绝（与 --fix 的拒绝表同款纪律）。
+          const machineFlags = [
+            ...(opts.json ? ["--json"] : []),
+            ...(opts.abs ? ["--abs"] : []),
+            ...(opts.gha ? ["--gha"] : []),
+            ...(opts.gitlab ? ["--gitlab"] : []),
+            ...(opts.from?.length ? ["--from"] : []),
+            ...(opts.watch ? ["--watch"] : []),
+            ...(opts.verbose ? ["--verbose"] : []),
+          ];
+          if (machineFlags.length > 0) {
+            usageErrorExit(
+              opts.json,
+              `error: --what-if cannot be combined with ${machineFlags.join("/")} (what-if answers one question; the machine / observation faces are not applied)`,
+            );
+            return;
+          }
           const targets: string[] = [];
           for (const p of paths) targets.push(...resolveTargets(p));
+          // Bug 644：多文件**静默塌缩**成第 1 个（此前 b.js 从未被分析、
+          // 也没有任何提示）⇒ 显式 usage error。
+          if (targets.length > 1) {
+            usageErrorExit(
+              opts.json,
+              `error: --what-if needs exactly one file (got ${targets.length})`,
+            );
+            return;
+          }
           const file = targets[0];
           if (!file || !opts.target) {
-            console.error("error: --what-if needs one file and --target <name>");
-            process.exitCode = 1;
+            usageErrorExit(
+              opts.json,
+              "error: --what-if needs one file and --target <name>",
+            );
             return;
           }
           const bindings = parseWhatIfBindings(opts.whatIf);
@@ -248,8 +386,7 @@ export function registerCheckCommand(program: Command): void {
           pathErrors.push(...r.errors);
         }
         if (opts.json && opts.abs) {
-          console.error("error: --json cannot be combined with --abs");
-          process.exitCode = 1;
+          usageErrorExit(opts.json, "error: --json cannot be combined with --abs");
           return;
         }
         // 非 --json：路径错误走 usageError+exit（历史行为）
@@ -269,8 +406,7 @@ export function registerCheckCommand(program: Command): void {
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
         const gateErr = validateGateFlags(opts);
         if (gateErr) {
-          console.error(gateErr);
-          process.exitCode = 1;
+          usageErrorExit(opts.json, gateErr);
           return;
         }
         const entryThrows = isEntryThrowsMode(opts.entryThrows)
@@ -285,7 +421,12 @@ export function registerCheckCommand(program: Command): void {
           const fix = await runCheckFix({
             targets,
             only: opts.only,
-            write: opts.write === true,
+            // Bug 629：--write 与 --dry-run 同时给出时**以 dry-run 为准**
+            // （旧实现 `opts.write === true` 直接落盘 ⇒ --dry-run 被静默忽略，
+            //  用户以为在演练、实际改了磁盘）。与兄弟命令同款口径：
+            // `nudo contract --draft --write --dry-run` / `nudo test --freeze --dry-run`
+            // 都是「只打印、不落盘」。
+            write: opts.write === true && opts.dryRun !== true,
             ignoreThrows,
             entryThrows,
             profile,
@@ -298,6 +439,19 @@ export function registerCheckCommand(program: Command): void {
 
         const shared: {
           from?: CallRecord[];
+          /**
+           * `--from` **现场文件路径**（Bug 643）：调用点义务的静态证据源。
+           *
+           * `from`（执行态 `CallRecord[]`）只覆盖**被执行过**的调用点 ⇒
+           * 被包在函数 / 箭头 / 方法体里的调用点整条失明：现场文件零条
+           * 执行态记录时 `collectExternalRecords` 直接回 `undefined` ⇒
+           * 连「现场文件是哪个」都到不了 `runCheck` ⇒ 同一处静态可见的
+           * 违例，`nudo check <调用方>` 报红、`nudo check <被调方> --from
+           * <调用方>` 报绿（谁被检查谁决定颜色）。本字段把**路径**原样
+           * 交下去 ⇒ check 面按同文件通道的判据（core 静态全树扫描）
+           * 复核一遍 ⇒ 两个通道同码同判据。
+           */
+          fromPaths?: string[];
           verbose?: boolean;
           abs?: boolean;
           absView?: { fn?: string; assume?: string[]; generalize?: boolean };
@@ -309,6 +463,10 @@ export function registerCheckCommand(program: Command): void {
           quiet?: boolean;
         } = {
           from: externalRecords,
+          // Bug 643：`--from` 的**路径**与执行态记录是两条通道，不可混用——
+          // 这里传的是 CLI 的 `--from` 路径数组（`string[]`），
+          // `externalRecords` 才是塌缩后的执行态记录。
+          fromPaths: opts.from,
           verbose: opts.verbose,
           gha: opts.gha,
           gitlab: opts.gitlab,
@@ -329,6 +487,30 @@ export function registerCheckCommand(program: Command): void {
         };
 
         if (opts.json) {
+          // Bug 645：`--watch` 不再被 `--json` 的早退**静默丢弃**——旧实现
+          // 在这里就 return（watch 安装在下方）⇒ 进程跑完 JSON 即退出，
+          // 「Watching for changes...」永不出现、监听从未启动。
+          // 现在两者**共存**：watch 每轮仍吐 JSON（每文件一份文档，
+          // 口径见 runCheckJsonFace）。
+          if (opts.watch) {
+            if (allPathErrors.length > 0) {
+              // watch 面没有信封 ⇒ 路径错误先以机器可读信封落红（不装 watch）
+              const envelope = attachPathErrors(
+                serializeCheckJsonMulti([]),
+                allPathErrors,
+              );
+              console.log(JSON.stringify(envelope, null, 2));
+              process.exitCode = envelope.ok ? 0 : 1;
+              return;
+            }
+            startCheckWatch(paths, {
+              from: opts.from,
+              humanMode: false,
+              jsonFace: true,
+              shared,
+            });
+            return;
+          }
           if (targets.length === 0 && allPathErrors.length === 0) {
             // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
             process.exitCode = 0;

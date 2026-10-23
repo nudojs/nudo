@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { stablePathKey } from "@nudojs/core/internal";
-import { diskCacheRoot } from "./evaluator/config.ts";
+import { diskCacheRoot, effectiveMaxForks } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
 function readServiceVersion(): string {
@@ -295,8 +295,24 @@ export function checkCacheKey(
   const envSeg = (opts.projectEnvNames ?? []).length > 0
     ? [...(opts.projectEnvNames ?? [])].sort().join(",")
     : "-";
+  // fork 预算维度 = **env 生效值**（Bug 636）：env `NUDO_MAX_FORKS` 优先于
+  // `package.json#nudo.analysis.maxForks`（`effectiveMaxForks` 的同一优先级，
+  // 与 `applyBForkBudgetFromConfig` 写进 core 的值同源 ⇒ 键与真正跑起来的
+  // 预算永不打架）。
+  //
+  // 调用方通常已喂生效值（`analysisConfig()` ⇒ env 生效的 `maxForks`），但
+  // **键自己**再兜一层 ⇒ 调用方漏喂 / 喂陈旧值时也不会命中**上一轮**的
+  // 陈旧报告（缓存串味：改 env 后命中轮返回旧 budget，新预算根本没执行）。
+  // 调用方与 env 都没给值 ⇒ 保持 "-"（不凭空引入维度，避免无谓全量 miss）。
+  const rawMaxForks = opts.analysisCfg?.maxForks;
+  const envRaw = process.env.NUDO_MAX_FORKS;
+  const envSet = envRaw !== undefined && envRaw.trim() !== "";
+  const maxForksDim =
+    rawMaxForks === undefined && !envSet
+      ? "-"
+      : String(effectiveMaxForks({ analysis: { maxForks: rawMaxForks } }, process.env));
   const cfgSeg = opts.analysisCfg
-    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}|${opts.analysisCfg.maxForks ?? "-"}`
+    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}|${maxForksDim}`
     : "-";
   return sha256Hex(
     [
