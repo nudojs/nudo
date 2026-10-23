@@ -189,6 +189,24 @@ export function attachHover(deps: IdeDeps): void {
   });
 }
 
+/**
+ * 指令补全的**前缀过滤**（前缀匹配语义）。
+ *
+ * 语义：**typed 文本必须是 label 的前缀**（`label.startsWith(typed)`）——
+ * **不是子串匹配**。子串匹配把「label 内部含有 typed」也算命中
+ * （`@nudo:mock` 里含 `c` ⇒ typed `c` 会把 `@nudo:mock` 也带出来）。
+ *
+ * 例（typed = 用户已输入的 `@nudo[:…]`）：
+ * - typed `@nudo:ca` ⇒ 只命中 `@nudo:case`（`@nudo:contract` 的前缀是 `@nudo:co`）；
+ * - typed `@nudo:c` ⇒ 命中**所有**以 `@nudo:c` 开头的指令 —— `@nudo:case` 与
+ *   `@nudo:contract` **都**命中：两者都真前缀于 `@nudo:c`（前缀语义 ⇒ 不是
+ *   「只能命中一个」；子串语义才会多带出 `@nudo:mock` 这类假命中）。
+ */
+export function matchesDirectivePrefix(label: string, typed: string): boolean {
+  if (typed === "") return true;
+  return label.startsWith(typed);
+}
+
 export function attachCompletion(deps: IdeDeps): void {
   const connection = deps.connection;
   const documents = { get: deps.getDocument };
@@ -257,8 +275,8 @@ export function attachCompletion(deps: IdeDeps): void {
         start: { line: params.position.line, character: startCharacter },
         end: { line: params.position.line, character: params.position.character },
       };
-      return NUDO_DIRECTIVE_COMPLETIONS.filter(
-        (d) => !directivePrefix || d.label.startsWith(directivePrefix) || d.label.includes(directivePrefix),
+      return NUDO_DIRECTIVE_COMPLETIONS.filter((d) =>
+        matchesDirectivePrefix(d.label, directivePrefix),
       ).map((d): LspCompletionItem => ({
         label: d.label,
         kind: CompletionItemKind.Keyword,

@@ -8,6 +8,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitizeErrorMessage } from "./sanitize.ts";
+import { configIgnoreThrows } from "./gate-config.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
@@ -26,6 +27,7 @@ import {
   checkConfig,
   collectSkipReturns,
   collectEnvNames,
+  envPathDependents,
   getPathEnvLoadErrors,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
@@ -437,6 +439,21 @@ export async function handleNudoDepFileChanged(
   const parentSet = new Set<string>();
   for (const x of parents ?? []) {
     if (x !== p) parentSet.add(x);
+  }
+  // **path-based `@nudo:env` 模板的反向边**（service 的 env-path-deps 表——
+  // CLI watch 的真源）。
+  //
+  // ⚠ 为什么必须显式接这条边：env 模板**不是 import 边** ⇒ 模块图里没有它；
+  //   LSP 自己的 `nudoDepParents` 登记用的是**未解析**的 spec 路径
+  //   （`resolvePath(dirname, "./custom.env")`）⇒ 与磁盘上的
+  //   `custom.env.ts` **对不上** ⇒ 模板变更找不到依赖它的源文件 ⇒
+  //   **不重检** ⇒ IDE 诊断停在旧状态；而 CLI watch 用同一张表会重检 ⇒
+  //   **两面口径分裂**。
+  // ⇒ 这里直接消费 service 的**同一张表**（不另写一份解析）⇒ IDE 与 CLI 同口径。
+  for (const dependent of envPathDependents(p)) {
+    const parent = cacheKey(dependent);
+    if (parent === p) continue;
+    parentSet.add(parent);
   }
   // 普通 import/实现文件：从 module graph 取 transitive dependents
   // （外部编辑 utils.js 时打开中的 parent 必须失效）
@@ -1004,6 +1021,10 @@ export function checkToLspDiagnostics(
     const proj = findProjectConfig(dirname(filePath));
     const autoBind = interfaceConfig(proj?.config).autoBind;
     const cCfg = checkConfig(proj?.config);
+    // ignoreThrows 走**配置面解析**（裸字符串 / 数组内逗号都认）⇒ 与 CLI
+    // `nudo check` 同口径（service checkConfig 的严格 `string[]` 会把
+    // `"TypeError"` / `["TypeError,RangeError"]` 静默丢成空表 ⇒ CLI 绿 / IDE 红）。
+    const ignoreThrows = configIgnoreThrows(proj?.config);
     // 模块图：缺图时跨模块调用 unknown → unproven-return 假红（CLI 有图同文件绿）
     const analysisModules = evalAnalysisModules(filePath, source);
     // Bug 634：注入包（modules + mocks + env 全局 + replace/as）——与 CLI
@@ -1021,7 +1042,7 @@ export function checkToLspDiagnostics(
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
       entryThrows: cCfg.entryThrows,
-      ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(source),
       // 与 CLI `checkSource(..., { modules: inject.modules, inject })` 同形：
       // `modules` 走**并入 env / mock-module 覆盖后**的表（`evalAnalyzeOpts`

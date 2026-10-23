@@ -34,6 +34,7 @@ import {
 } from "@nudojs/service/emit";
 import { getHoverAtPosition, getCasesForFile, type HoverInterfaceOpts } from "./lsp-surface.ts";
 import { sanitizeErrorMessage } from "./sanitize.ts";
+import { configIgnoreThrows } from "./gate-config.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
@@ -524,7 +525,12 @@ export function checkTool(
     }
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     // 与 CLI runCheck 同源读取 package.json#nudo.check（L2）
-    const cCfg = checkConfig(findProjectConfig(dirname(filePath))?.config);
+    const projectCfg = findProjectConfig(dirname(filePath))?.config;
+    const cCfg = checkConfig(projectCfg);
+    // ignoreThrows 走**配置面解析**（裸字符串 / 数组内逗号都认）⇒ 与 CLI
+    // `nudo check` 同口径（service checkConfig 的严格 `string[]` 会把
+    // `"TypeError"` / `["TypeError,RangeError"]` 静默丢成空表 ⇒ CLI 绿 / IDE 红）。
+    const ignoreThrows = configIgnoreThrows(projectCfg);
     const projectDir = resolveDraftProjectDir(filePath);
     // 模块图（与 checkToLspDiagnostics 同源）：缺图时跨模块
     // 调用塌缩 unknown → nudo:unproven-return 假红（CLI/LSP
@@ -547,7 +553,7 @@ export function checkTool(
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(projectDir ? { projectDir } : {}),
       entryThrows: cCfg.entryThrows,
-      ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(source),
     });
     // 补充诊断通道（Bug 752 / 991）：与 CLI / LSP 编辑器面同一份并入实现
@@ -1296,6 +1302,64 @@ export function tracePositionalArgs(
     return { uri: args[0], functionName: args[1] };
   }
   return undefined;
+}
+
+/**
+ * executeCommand **位置参数 → 参数对象**桥（Bug 725 的通用版）。
+ *
+ * 背景：IDE 侧（CodeLens / 扩展）历史上用**位置参数**发命令
+ * （`[uri, …]`），而 executeCommand 通道只认**对象**参数
+ * （`{ uri | file, … }`）⇒ 位置形态落到兜底分支 ⇒ 协议层参数错误 ⇒
+ * 命令 100% 失败。`nudo.trace` / `nudo.contract*` 此前已各自补了桥，
+ * 其余命令（check / hover / test / whatIf / suggestCase / getActiveCases）
+ * 仍缺 ⇒ **同一族命令两种参数形态两种命运**。
+ *
+ * 口径：
+ * - 位置形态 = `args[0]` 是**字符串**（uri / 路径）⇒ 走本桥；
+ * - 对象形态（`args[0]` 是对象）⇒ 本桥返回 `undefined` ⇒ 走原来的对象通道
+ *   （**不改**既有对象形态行为）。
+ * - 形态不合法（缺必填项 / 类型不对）⇒ 返回 `undefined` ⇒ 调用方报
+ *   **协议层参数形态错误**，不把字符串当对象传下去。
+ *
+ * @param command 命令名（点形态，如 `nudo.check`）
+ * @param args `params.arguments`（位置形态数组）
+ */
+export function positionalCommandParams(
+  command: string,
+  args: unknown[],
+): Record<string, unknown> | undefined {
+  const target = args[0];
+  if (typeof target !== "string" || target.length === 0) return undefined;
+  switch (command) {
+    // [uri]
+    case "nudo.check":
+    case "nudo.test":
+      return { file: target };
+    // [uri, line, column]（line 1-based / column 0-based，与 hover 载荷同口径）
+    case "nudo.hover": {
+      const line = args[1];
+      const column = args[2];
+      if (typeof line !== "number" || typeof column !== "number") return undefined;
+      return { file: target, line, column };
+    }
+    // [uri, target]（顶层变量名）
+    case "nudo.whatIf": {
+      const whatIfTarget = args[1];
+      if (typeof whatIfTarget !== "string" || whatIfTarget.length === 0) return undefined;
+      return { file: target, target: whatIfTarget };
+    }
+    // [uri, functionName]
+    case "nudo.suggestCase": {
+      const functionName = args[1];
+      if (typeof functionName !== "string" || functionName.length === 0) return undefined;
+      return { uri: target, functionName };
+    }
+    // [uri]
+    case "nudo.getActiveCases":
+      return { uri: target };
+    default:
+      return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------

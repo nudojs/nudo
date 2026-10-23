@@ -1164,6 +1164,20 @@ export function renameTargetAt(
   } catch {
     return { error: "parse error" };
   }
+  return renameTargetFromAst(ast, line, column);
+}
+
+/**
+ * 同 {@link renameTargetAt}，但**复用已解析的 AST**。
+ *
+ * 符号层（definition / references）自己已经持有 AST ⇒ 走本函数避免二次解析，
+ * 也让「协议面的方法面」与「纯函数面的方法面」**同一份判据**（口径不分裂）。
+ */
+export function renameTargetFromAst(
+  ast: Node,
+  line: number,
+  column: number,
+): RenameTarget | { error: string } | null {
   type Hit = {
     name: string;
     loc: SourceLocation;
@@ -1303,6 +1317,94 @@ export function renameTargetAt(
     return { error: `cannot rename '${h.name}' (property / non-binding identifier)` };
   }
   return { name: h.name, loc: h.loc, kind: "binding" };
+}
+
+/**
+ * **方法面**目标：光标处的标识符是不是「某个归属的方法」（方法键 / 同源成员访问）。
+ *
+ * 方法键**不是绑定**（绑定表不收它）⇒ 走绑定面永远查不到它 ⇒ 定义 / 引用面
+ * 必须先问一次「这是不是方法」。
+ *
+ * ⚠ **与协议面同源**：判据直接取 {@link renameTargetFromAst}（改名面的那一份）
+ * ⇒ 纯函数面与协议面**同一口径**（此前协议面内联一份、纯函数面没有 ⇒ 两面分裂）。
+ *
+ * @returns 方法身份（名字 + 归属）；不是方法 ⇒ `null`（调用方退回绑定面）。
+ */
+export function methodTargetAt(
+  ast: Node,
+  line: number,
+  column: number,
+): { name: string; owner?: MethodOwner } | null {
+  const target = renameTargetFromAst(ast, line, column);
+  if (!target || "error" in target) return null;
+  if (target.kind !== "method") return null;
+  return { name: target.name, owner: target.owner };
+}
+
+/** 方法引用命中（带**文件**身份）——跨文件口径下的方法面结果 */
+export type MethodReferenceInfo = {
+  name: string;
+  loc: SourceLocation;
+  /** 命中所在文件（路径形态，与 `ReferenceInfo.uri` 同口径） */
+  uri: string;
+  kind: "key" | "member";
+};
+
+/**
+ * **方法面**的引用收集：当前文件 + `extraFiles` 里的**跨文件**命中。
+ *
+ * ⚠ **为什么必须跨文件**：`Alpha.run` 的调用点常常在**另一个文件**里
+ * （`import { Alpha } from "./a.js"; new Alpha().run()`）。只扫当前文件 ⇒
+ * 「查找引用」看不到调用点，而改名面**已经**会带上它们 ⇒ 两个面口径分裂
+ * （用户在 IDE 里查引用看不到、但一改名就跨文件被改 ⇒ 越权改动）。
+ *
+ * 归属（owner）**由调用方显式给出**（来自光标所在文件）⇒ 跨文件扫描按**同一个归属**
+ * 匹配：`Alpha` 在别的文件里是 import 绑定 ⇒ 接收者归属仍解析为 `class:Alpha`
+ * ⇒ 同源成员访问照常计入；`Beta.run`（同名不同类）不计入（Bug 712 的边界）。
+ *
+ * 文本取**打开文档的 buffer**（磁盘 ≠ buffer ⇒ 坐标错位），与改名面同源。
+ */
+export function collectMethodReferencesAcrossFiles(
+  fromFile: string,
+  source: string,
+  target: { name: string; owner?: MethodOwner },
+  options: {
+    extraFiles?: string[];
+    sourceProvider?: SourceProvider;
+  } = {},
+): MethodReferenceInfo[] {
+  const out: MethodReferenceInfo[] = [];
+  const pushHits = (uri: string, ast: Node): void => {
+    for (const h of collectMethodReferences(ast, target.name, { owner: target.owner })) {
+      out.push({ name: target.name, loc: h.loc, uri, kind: h.kind });
+    }
+  };
+  try {
+    pushHits(fromFile, parse(source));
+  } catch {
+    /* 解析失败 ⇒ 当前文件没有命中 */
+  }
+  const currentKey = cacheKeyOf(fromFile);
+  for (const extra of options.extraFiles ?? []) {
+    if (cacheKeyOf(extra) === currentKey) continue;
+    const extraSrc = readSourceWith(options.sourceProvider, extra);
+    if (extraSrc === undefined) continue;
+    try {
+      pushHits(extra, parse(extraSrc));
+    } catch {
+      /* skip unreadable */
+    }
+  }
+  return out;
+}
+
+/** 路径归一（去重口径）：绝对路径 + 正斜杠（与 `validation.ts` 的 cacheKey 同形） */
+function cacheKeyOf(filePath: string): string {
+  try {
+    return resolve(filePath).replace(/\\/g, "/");
+  } catch {
+    return filePath.replace(/\\/g, "/");
+  }
 }
 
 /** 方法键的归属（类 → 类名；对象字面量 → 绑定变量名） */
@@ -2669,6 +2771,12 @@ export function isLocalAliasSymbol(ast: Node, ident: string): boolean {
 /**
  * A5：可能的定义位（本地定义优先，其次跨文件，再次侧车契约）。
  * onDefinition 返回 Location[]，便于 F12 跳本地声明，Peek Definition 见侧车。
+ *
+ * ⚠ **方法面优先**：类 / 对象方法的**方法键不是绑定**（绑定表不收它）⇒
+ * 绑定面永远查不到它 ⇒ 先问一次「光标处是不是方法」（{@link methodTargetAt}），
+ * 是则走**方法面**（定义位 = 方法键，跨文件同源），否则走绑定面。
+ * 协议面与纯函数面因此**同一口径**（此前协议面内联一份方法判据、纯函数面没有
+ * ⇒ 直接调用纯函数时方法认不出来 ⇒ 两面分裂）。
  */
 export function resolveDefinitionLocations(
   fromFile: string,
@@ -2687,6 +2795,20 @@ export function resolveDefinitionLocations(
 ): Array<{ filePath: string; loc: SourceLocation; name: string }> {
   const out: Array<{ filePath: string; loc: SourceLocation; name: string }> = [];
   const ast = parse(source);
+  // 方法面（方法键不是绑定 ⇒ 先问方法面；判据与协议面同源）
+  if (options.at) {
+    const methodTarget = methodTargetAt(ast, options.at.line, options.at.column);
+    if (methodTarget) {
+      const hits = collectMethodReferencesAcrossFiles(fromFile, source, methodTarget, {
+        extraFiles: options.extraFiles,
+        sourceProvider: options.sourceProvider,
+      });
+      const defs = hits.filter((h) => h.kind === "key");
+      if (defs.length > 0) {
+        return defs.map((h) => ({ filePath: h.uri, loc: h.loc, name: h.name }));
+      }
+    }
+  }
   const table = buildSymbolTable(ast, fromFile);
   // D1：光标位置必须透传 —— 符号表按作用域存同名绑定，不给位置就会落到
   // 另一个作用域的声明（遮蔽）。无位置时 findDefinition 退回 plain-name 兜底。
@@ -2826,6 +2948,11 @@ export function resolveDefinition(
  * includeDeclaration=true 时把定义位置也计入（LSP context.includeDeclaration）。
  * `at` 提供时走 collectBindingReferences——同绑定、抗遮蔽、不碰属性名。
  *
+ * ⚠ **方法面优先**：`at` 落在**类 / 对象方法**上时走 {@link methodTargetAt} +
+ * {@link collectMethodReferencesAcrossFiles}（方法键 + 同源成员访问，**含跨文件**）
+ * —— 方法键不是绑定 ⇒ 绑定面查不到它；跨文件同源 ⇒ 与改名面口径一致
+ * （此前 references 只扫当前文件、rename 却跨文件 ⇒ 两面分裂）。
+ *
  * 符号归属判定（决定跨文件口径）：
  * 1. 光标在 import / re-export 说明符上 ⇒ 符号是**目标模块的导出**；
  * 2. 本文件的 ident 是**带别名**的 import 绑定 ⇒ 符号是**本地别名**（只改本地）；
@@ -2846,6 +2973,20 @@ export function resolveReferences(
 ): ReferenceInfo[] {
   const includeDecl = options.includeDeclaration !== false;
   const ast = parse(source);
+  // 方法面优先（方法键不是绑定 ⇒ 绑定面查不到）
+  if (options.at) {
+    const methodTarget = methodTargetAt(ast, options.at.line, options.at.column);
+    if (methodTarget) {
+      const hits = collectMethodReferencesAcrossFiles(fromFile, source, methodTarget, {
+        extraFiles: options.extraFiles,
+        sourceProvider: options.sourceProvider,
+      });
+      const refs = hits
+        .filter((h) => includeDecl || h.kind !== "key")
+        .map((h) => ({ name: h.name, loc: h.loc, uri: h.uri }));
+      if (refs.length > 0) return refs;
+    }
+  }
   const table = buildSymbolTable(ast, fromFile);
   // D1：includeDeclaration 必须透传给引用收集（声明位在 collectBindingReferences
   // 里也会出现一次；不透传 ⇒ context.includeDeclaration=false 仍返回声明位）。

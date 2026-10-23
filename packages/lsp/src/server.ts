@@ -65,6 +65,7 @@ import {
   contractPositionalArgs,
   contractEmitPositionalArgs,
   tracePositionalArgs,
+  positionalCommandParams,
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
@@ -997,6 +998,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const bridged = tracePositionalArgs(args);
       if (bridged) return trace(bridged, agentToolDeps);
     }
+    // 位置参数 → 参数对象桥（Bug 725）：check / hover / test / whatIf /
+    // suggestCase / getActiveCases 的**位置形态**（`[uri, …]`）此前一律落到
+    // 兜底分支 ⇒ 协议层参数错误 ⇒ 命令 100% 失败（扩展侧只能绕道 slash 请求）。
+    // ⚠ 只在 `args[0]` 是**字符串**时桥接 ⇒ 对象形态（`{ file: … }`）走原通道，
+    // **既有行为不变**；形态不合法 ⇒ 返回 undefined ⇒ 落兜底分支报参数错误。
+    const positional = positionalCommandParams(params.command, args);
+    if (positional) return dispatchNudoCommand(params.command, positional);
     // 兜底：参数必须是**对象**。把字符串当对象传下去会让工具拿到
     // `params.file === undefined` ⇒ 每次点击观察透镜只得到一个错误
     // （Bug 780）⇒ 参数形态不对时直接报**协议层参数错误**。

@@ -382,25 +382,10 @@ connection.onDefinition((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return null;
 
-    // 类 / 对象方法：方法键不是绑定（绑定表不收它）⇒ 定义位走**方法面**
-    const methodTarget = renameTargetAt(source, line, column);
-    if (methodTarget && "kind" in methodTarget && methodTarget.kind === "method") {
-      const hits = collectMethodReferences(ast, methodTarget.name, {
-        owner: methodTarget.owner,
-      });
-      const methodDefs = hits.filter((h) => h.kind === "key");
-      if (methodDefs.length > 0) {
-        return methodDefs.map((h) => ({
-          uri: params.textDocument.uri,
-          range: {
-            start: { line: h.loc.start.line - 1, character: h.loc.start.column },
-            end: { line: h.loc.end.line - 1, character: h.loc.end.column },
-          },
-        }));
-      }
-    }
-
     // A5：本地声明 + 侧车契约一起返回（Peek 可见契约边）
+    // ⚠ **类 / 对象方法（方法键不是绑定）由符号层自己判**（`resolveDefinitionLocations`
+    //   内的方法面）：协议面与纯函数面**同一口径**（此前协议面内联一份判据、
+    //   纯函数面没有 ⇒ 直接调用纯函数时方法认不出来 ⇒ 两面分裂）。
     const defs = resolveDefinitionLocations(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
       workspaceFallback: true,
@@ -437,24 +422,9 @@ connection.onReferences((params) => {
     const identAtPos = findIdentifierAtPosition(ast, line, column);
     if (!identAtPos) return [];
 
-    // 类 / 对象方法：方法键不是绑定 ⇒ 引用面走**方法面**（定义位 + 同源成员访问）
-    const methodTarget = renameTargetAt(source, line, column);
-    if (methodTarget && "kind" in methodTarget && methodTarget.kind === "method") {
-      const hits = collectMethodReferences(ast, methodTarget.name, {
-        owner: methodTarget.owner,
-      });
-      const includeDecl = params.context?.includeDeclaration !== false;
-      return hits
-        .filter((h) => includeDecl || h.kind !== "key")
-        .map((h) => ({
-          uri: params.textDocument.uri,
-          range: {
-            start: { line: h.loc.start.line - 1, character: h.loc.start.column },
-            end: { line: h.loc.end.line - 1, character: h.loc.end.column },
-          },
-        }));
-    }
-
+    // 类 / 对象方法（方法键不是绑定）由符号层自己判（`resolveReferences` 内的
+    // 方法面）：**含跨文件**同源成员访问 ⇒ 与改名面口径一致（此前 references
+    // 只扫当前文件、rename 却跨文件 ⇒ 两面分裂）。
     const refs = resolveReferences(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
       includeDeclaration: params.context?.includeDeclaration !== false,

@@ -127,7 +127,8 @@ export type BuildSemanticTokensOpts = InterfaceTierOpts & {
  * 非导出绑定只带 declaration，不假装进档。
  *
  * 推断优先 Abs 模块图绑定（TypeValue 退出主路径）；失败时复用
- * evaluateProgram。解析失败返回 []。
+ * evaluateProgram。**解析失败走词法降级**（{@link lexicalFallbackTokens}）——
+ * 语法非法 buffer 上**不整面清零**（见该函数的取舍说明）。
  */
 export function buildSemanticTokens(
   filePath: string,
@@ -138,7 +139,9 @@ export function buildSemanticTokens(
   try {
     ast = parse(source);
   } catch {
-    return [];
+    // 语法非法 buffer ⇒ **降级而非清零**（Babel 的 errorRecovery 只覆盖极少数
+    // 错误，「Unexpected token」照样抛 ⇒ 不能靠它兜底）⇒ 走词法降级。
+    return encodeSemanticTokens(lexicalFallbackTokens(source));
   }
 
   const functionNames = collectFunctionBindingNames(filePath, source, ast);
@@ -406,4 +409,163 @@ export function buildSemanticTokens(
 
   tokens.sort((a, b) => a.line - b.line || a.char - b.char);
   return encodeSemanticTokens(tokens);
+}
+
+/**
+ * **词法降级**：语法非法 buffer 上保住**部分** semantic token。
+ *
+ * 背景：解析失败此前直接 `return []` ⇒ 客户端把**整面**颜色清掉（用户改到一半
+ * 语法非法 ⇒ 整个文件瞬间没色 ⇒ 语义高亮「一闪就没」）。
+ *
+ * 做法：把注释 / 字符串内容**挖空**（保留长度与换行 ⇒ 坐标不变）⇒ 再按关键字
+ * （`function` / `class` / `const` / `let` / `var`）取紧随其后的标识符。
+ *
+ * 取舍（说明）：
+ * - **只给声明位上色**（函数名 / 类名 / 变量名）⇒ 降级档**不撒谎**：
+ *   成员访问 / 参数 / 引用位一律不上色（静态不可知 ⇒ 不猜）。
+ * - **不缓存上次成功结果** ⇒ 不会拿**旧坐标**染色（用户改了一行 ⇒ 上次坐标全错，
+ *   比清零更坏）。
+ * - 代价：降级档**认不出方法键 / 参数 / 解构绑定**（宁可少上色，不可错上色）。
+ */
+function lexicalFallbackTokens(source: string): SemanticToken[] {
+  const masked = maskCommentsAndStrings(source);
+  const tokens: SemanticToken[] = [];
+  const KEYWORDS: Array<{ kw: string; typeIndex: number }> = [
+    { kw: "function", typeIndex: TYPE_FUNCTION },
+    { kw: "class", typeIndex: TYPE_CLASS },
+    { kw: "const", typeIndex: TYPE_VARIABLE },
+    { kw: "let", typeIndex: TYPE_VARIABLE },
+    { kw: "var", typeIndex: TYPE_VARIABLE },
+  ];
+  for (const { kw, typeIndex } of KEYWORDS) {
+    const re = new RegExp(`\\b${kw}\\b`, "g");
+    for (;;) {
+      const m = re.exec(masked);
+      if (!m) break;
+      const kwStart = m.index;
+      const kwEnd = kwStart + kw.length;
+      // 成员访问（`x.function`）不是声明 ⇒ 跳过
+      const prev = previousNonSpace(masked, kwStart);
+      if (prev === ".") continue;
+      // 声明名：关键字之后（允许 `*` 生成器标记与空白）的标识符
+      let i = kwEnd;
+      while (i < masked.length && /\s/.test(masked[i]!)) i++;
+      if (masked[i] === "*") {
+        i++;
+        while (i < masked.length && /\s/.test(masked[i]!)) i++;
+      }
+      const idMatch = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(masked.slice(i));
+      if (!idMatch) continue;
+      const name = idMatch[0];
+      const nameStart = i;
+      const nameEnd = i + name.length;
+      // 对象字面量的键（`{ const: 1 }`）不是声明 ⇒ 跳过
+      const after = masked[nameEnd];
+      if (typeIndex === TYPE_VARIABLE && after === ":") continue;
+      const { line, column } = lineColumnAt(source, nameStart);
+      tokens.push({
+        line,
+        char: column,
+        length: nameEnd - nameStart,
+        typeIndex,
+        modifierBitmask: MOD_DECLARATION,
+      });
+      re.lastIndex = nameEnd;
+    }
+  }
+  tokens.sort((a, b) => a.line - b.line || a.char - b.char);
+  return tokens;
+}
+
+/** 注释 / 字符串内容挖空（保留长度与换行 ⇒ 坐标不变） */
+function maskCommentsAndStrings(source: string): string {
+  const out = source.split("");
+  const n = source.length;
+  let i = 0;
+  let prevSignificant = "";
+  const blank = (idx: number): void => {
+    if (out[idx] !== "\n") out[idx] = " ";
+  };
+  while (i < n) {
+    const ch = source[i]!;
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < n && source[i] !== "\n") {
+        blank(i);
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      blank(i);
+      blank(i + 1);
+      i += 2;
+      while (i < n) {
+        if (source[i] === "*" && source[i + 1] === "/") {
+          blank(i);
+          blank(i + 1);
+          i += 2;
+          break;
+        }
+        blank(i);
+        i++;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      // 只在**值位置**当字符串开头（前一个有效字符是标识符 / 数字 / `)` / `]`
+      // ⇒ 更可能是除号后的标识符或属性名）
+      const isValuePos = prevSignificant === "" || !/[A-Za-z0-9_$)\]]/.test(prevSignificant);
+      if (!isValuePos) {
+        prevSignificant = ch;
+        i++;
+        continue;
+      }
+      const quote = ch;
+      blank(i);
+      i++;
+      while (i < n) {
+        const c = source[i]!;
+        if (c === "\\") {
+          blank(i);
+          if (i + 1 < n && source[i + 1] !== "\n") blank(i + 1);
+          i += 2;
+          continue;
+        }
+        if (c === quote) {
+          blank(i);
+          i++;
+          break;
+        }
+        blank(i);
+        i++;
+      }
+      prevSignificant = quote;
+      continue;
+    }
+    if (!/\s/.test(ch)) prevSignificant = ch;
+    i++;
+  }
+  return out.join("");
+}
+
+/** offset 之前的最后一个非空白字符（没有 ⇒ ""） */
+function previousNonSpace(text: string, offset: number): string {
+  for (let i = offset - 1; i >= 0; i--) {
+    const c = text[i]!;
+    if (!/\s/.test(c)) return c;
+  }
+  return "";
+}
+
+/** offset → (0-based 行, UTF-16 列) */
+function lineColumnAt(source: string, offset: number): { line: number; column: number } {
+  let line = 0;
+  let lineStart = 0;
+  for (let i = 0; i < offset; i++) {
+    if (source.charCodeAt(i) === 10) {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+  return { line, column: offset - lineStart };
 }
