@@ -1497,6 +1497,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const tryOpts: TranspileOptions = {
         ...opts,
         inTry: (opts.inTry ?? 0) + 1,
+        // 族 65 · BC #28：try 块完成 ≠ 函数尾 ⇒ 块内早退提升走控制流协议
+        // （见 TranspileOptions.inCtrlBlock）。
+        inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
         tryMarkName: markName,
         hasTryHandler: !!stmt.handler,
         tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
@@ -1553,6 +1556,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const catchOpts: TranspileOptions = {
         ...opts,
         yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
+        // 族 65 · BC #28：catch 体完成 ≠ 函数尾（catch 跑完函数继续）⇒ 体内
+        // 早退提升走控制流协议。
+        inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
         ...(opts.constNames && catchShadow.size > 0
           ? { constNames: copyConstScope(opts.constNames, catchShadow) }
           : {}),
@@ -1635,6 +1641,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // Bug 148：finally 体是块作用域——其内声明的 const 不可再赋（名单自算）
         const finScopeOpts: TranspileOptions = {
           ...opts,
+          // 族 65 · BC #28：finally 体完成 ≠ 函数尾 ⇒ 体内早退提升走控制流协议
+          inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
           constNames: computeConstScope(
             stmt.finalizer.type === "BlockStatement" ? stmt.finalizer.body : [],
             opts.constNames,

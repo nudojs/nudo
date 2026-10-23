@@ -316,8 +316,36 @@ export function transpileFnBodyStmts(
       "cons",
       recvSet,
     );
-    const cons = wrapArm(consNarrowed, "fk1_");
-    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
+    const inCtrl =
+      (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0 || (opts.inCtrlBlock ?? 0) > 0;
+    // 标志名避开用户标识符（Bug 1058 同款口径：用户写了同名标识符 ⇒ 重复
+    // 词法声明 ⇒ 产物非法 JS ⇒ 整模块 fail-closed）。
+    const fkConsName = internalTmpName("__fkCons", opts);
+    // 族 65 · BC #28（try/catch 吞控制流信号）：inCtrl 形态（循环体 / try 块
+    // 体内）的早退提升此前发 `$loopReturn($fork(test, cons, alt))`——**测试为
+    // 假**时 $fork 走 alt 臂（后续路径），其值被当成早退值抛出 ⇒ 函数**提前
+    // 返回**后续路径的值（原生：后续路径照常跑完，函数继续走到块外）。
+    // 复现（node v26.10.0 对拍）：
+    //   let n=0; try { if (0) return 42; n++; } catch (e) {} return n;
+    //   原生 1 ⇒ 此前引擎折 undefined（自信的错值：把「块内后续路径的值」
+    //   当成函数返回值）。
+    //
+    // 修法：区分「早退真的发生」与「走后续路径」——
+    // - cons 臂（早退臂）跑 ⇒ 置 `__fkCons` 标志；
+    // - alt 臂（后续路径）内的 `return` 走 $loopReturn 信号（inLoop +1 ⇒
+    //   ReturnStatement 发 $loopReturn）⇒ alt 臂的 return 是**函数级**早退
+    //   （原生语义），不被当成本次提升的返回值；
+    // - 只有 `__fkCons` 为真才 $loopReturn ⇒ 测试为假时**不**早退（后续路径
+    //   照常跑完，函数继续）。
+    // 抽象测试（双臂都跑）：cons 臂置标志 ⇒ 仍按 join 值早退（既有口径不变）。
+    const consMarked = inCtrl
+      ? `() => { ${fkConsName} = true; return (${consNarrowed})(); }`
+      : consNarrowed;
+    const cons = wrapArm(consMarked, "fk1_");
+    const altBody = transpileFnBodyStmts(rest, depth + 1, {
+      ...scopedOpts,
+      inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
+    });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
     // Bug 182：alt 臂 = **后续路径**（事实臂已 return / throw 提前退出 ⇒ 落到
     // alt 的路径上测试为**假**）⇒ 该路径上可断言**否定关系界**
@@ -342,13 +370,13 @@ export function transpileFnBodyStmts(
       recvSet,
     );
     const alt = wrapArm(altNarrowed, "fk2_");
-    const inCtrl = (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0;
     const applyJoin = names.length ? forkJoinBindings(names, pad).join("\n") : "";
     if (names.length === 0) {
       const promoted = [
         ...testRebinds,
+        ...(inCtrl ? [`${pad}let ${fkConsName} = false;`] : []),
         inCtrl
-          ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
+          ? `${pad}const __fkR = $fork(${test}, ${cons}, ${alt});\n${pad}if (${fkConsName}) $loopReturn(__fkR);`
           : `${pad}return $fork(${test}, ${cons}, ${alt});`,
       ].join("\n");
       return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
@@ -357,10 +385,11 @@ export function transpileFnBodyStmts(
       `${pad}{`,
       ...testRebinds,
       ...forkBindingDecls(names, padIn),
+      ...(inCtrl ? [`${padIn}let ${fkConsName} = false;`] : []),
       `${padIn}const __fkR = $fork(${test}, ${cons}, ${alt});`,
       applyJoin.split("\n").map((l) => l.replace(/^\s*/, padIn)).join("\n"),
       inCtrl
-        ? `${padIn}$loopReturn(__fkR);`
+        ? `${padIn}if (${fkConsName}) $loopReturn(__fkR);`
         : `${padIn}return __fkR;`,
       `${pad}}`,
     ].join("\n");

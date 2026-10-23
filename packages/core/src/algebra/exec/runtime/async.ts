@@ -899,6 +899,15 @@ function makeGenObject(
     slots["@@toStringTag"] = { value: strLit("AsyncGenerator"), internal: true, symbolKey: true };
   } else {
     slots["@@iterator"] = { value: genSelfIteratorFn(g), internal: true, symbolKey: true };
+    // 族 65 · Bug 240（BC #45）：同步生成器补 @@toStringTag = "Generator"
+    // ——原生 %GeneratorPrototype%[Symbol.toStringTag] = "Generator" ⇒
+    // `Object.prototype.toString.call(g())` 原生是 "[object Generator]"，
+    // 此前引擎无该槽 ⇒ 折 "[object Object]"（自信的错值）。
+    // 槽同样 internal + symbolKey ⇒ 自有面 / 枚举面不可见（原生生成器对象
+    // 无任何自有可枚举属性）、gOPS 面不可见（原生 gOPS(g()) === []）。
+    // **不**改生成器对象的 Abs 形状（仍是闭 obj）——「生成器身份在类型投影
+    // 面可见」需 brand("Generator") 建模层改造，属 A 类架构债（见交回报告）。
+    slots["@@toStringTag"] = { value: strLit("Generator"), internal: true, symbolKey: true };
   }
   registerGenElements(g, live);
   registerGenDrain(g, {

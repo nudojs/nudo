@@ -25,11 +25,13 @@
  *
  * 引擎当前：`makeIntlCtorAbs` 覆盖的 NumberFormat / DateTimeFormat 已按
  * 原生给 "NumberFormat" / "DateTimeFormat" ✅；**但**经「命名空间成员」
- * 通道投影的 Collator / Locale 等**未覆盖**（仍给限定名），且未建模子
- * 构造器的**实例方法面**读出 exact undefined（原生是 "function"）。
- * 这两条按「原生期望 + TODO(族05)」用 `it.fails` 钉住（**旗标口径**：
- * 引擎修好后 `it.fails` 会翻红，提醒摘掉旗标并进主门禁——同
- * `check-recall-gold.test.ts` 的 it.fails 口径）。
+ * 通道投影的 Collator / Locale 等**未覆盖**（仍给限定名）。
+ * 「命名空间成员」那条按「原生期望 + TODO(族05)」用 `it.fails` 钉住
+ * （**旗标口径**：引擎修好后 `it.fails` 会翻红，提醒摘掉旗标并进主门禁
+ * ——同 `check-recall-gold.test.ts` 的 it.fails 口径）。
+ * 实例方法面那条（`typeof new Intl.Collator().compare` ⇒ "function"）已由
+ * **族 65 · 第 4 条**收口（core 的 `BUILTIN_BRAND_METHODS` 补
+ * "Intl.Collator"）⇒ 旗标已摘、断言转正。
  *
  * 取证（原生 oracle）：
  *   node -e 'const c=new Intl.Collator();
@@ -99,16 +101,12 @@ describe("Bug 332 — 构造器 fn 的 name 面（原生是**子构造器名**�
 });
 
 describe("Bug 332 — 实例方法面（未建模子构造器）", () => {
-  it.fails("TODO(族05): typeof new Intl.Collator().compare → \"function\"（引擎当前给 unknown 域）", () => {
-    // TODO(族05): 引擎与原生不一致（**精度差**，非错值）——
-    //   原生：typeof new Intl.Collator().compare === "function"
-    //         （实例继承 Intl.Collator.prototype 上 brand check 的访问器）
-    //   引擎：unknown 域（读面不再折 exact "undefined"——那是自信的错值：
-    //         说成员不存在）
-    // 台账（builtin-coverage-registry）登记的是「Intl.Collator.proto.compare：
-    // 未建模，接受 unknown」——实例面现按台账口径折 unknown（imprecise 但
-    // sound）。要精确到 "function" 需把未建模子构造器的**实例方法面**建模
-    // （方法值 + 派发），属 Intl 子构造器整体建模工作，超出本批范围。
+  it("typeof new Intl.Collator().compare → \"function\"（族 65 第 4 条已建模）", () => {
+    // 原生：typeof new Intl.Collator().compare === "function"
+    //   （实例继承 Intl.Collator.prototype 上的方法）
+    // 族 65 · 第 4 条：`BUILTIN_BRAND_METHODS` 补 "Intl.Collator"
+    // （compare / resolvedOptions）⇒ 实例方法面折精确 "function"
+    // （此前是 unknown 域——imprecise 但 sound）。
     const r = call(wrap(`return typeof new Intl.Collator().compare;`), "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });

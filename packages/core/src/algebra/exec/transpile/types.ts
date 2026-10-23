@@ -54,6 +54,19 @@ export type TranspileOptions = {
   lenientGlobals?: boolean;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
+  /**
+   * 「块完成 ≠ 函数尾」深度（>0 时**早退提升**走控制流协议而非「返回值」
+   * 协议）。
+   *
+   * 族 65 · BC #28：try / catch / finally **块体**的完成不是函数尾（块跑完
+   * 后函数继续往下走）⇒ 早退提升（fn-body.ts）的 alt 臂（后续路径）跑完后
+   * **不得**把它的值当函数返回值抛出。此前只有 `inTry` 计入 inCtrl ⇒ catch /
+   * finally 体（inTry 不加）落「返回值」协议（`return $fork(...)`）⇒ 后续
+   * 路径的值被当成函数返回值（自信的错值）。
+   *
+   * 与 `inTry` 分开：inTry 另有职责（return 前 drain throwExits）。
+   */
+  inCtrlBlock?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
   tryMarkName?: string;
   /** 当前 try 是否带 catch handler（soft may-throw digest/release 分支） */

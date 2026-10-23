@@ -396,6 +396,80 @@ function proxyIsExtensible(o: Abs): Abs | undefined {
 }
 
 /**
+ * 族 65 · Bug 240：`Object.getOwnPropertySymbols` 的**自有 symbol 键**投影。
+ *
+ * 原生返回自有 symbol 键的数组（node v26.10.0 实测：普通对象 / 数组 /
+ * 字符串 / 数字 / 函数 / Error 实例 / TA 实例 / 生成器对象 / Map / Promise
+ * ⇒ `[]`；宿主命名空间对象（Math / JSON / Intl / Reflect / globalThis）⇒
+ * `[Symbol.toStringTag]`；`Array.prototype` ⇒ `[Symbol.iterator,
+ * Symbol.unscopables]`；`Array` / `Promise` / `Map` / `Set` 构造器 ⇒
+ * `[Symbol.species]`）。
+ *
+ * 引擎把 symbol 键投影成 `"@@X"` 槽（Slot.symbolKey 标记——宿主对象投影
+ * 见 exec/runtime/state.ts，转译期 `[Symbol.X]` 同口径）⇒ **闭**对象的自有
+ * symbol 键集 = 槽里 `symbolKey` 且**非 internal / 非 inherited** 的那些。
+ * internal 槽不是自有属性（生成器对象的 `@@iterator` 在原生是原型链成员
+ * ⇒ 原生 `gOPS(g())` === `[]`）⇒ 剔除。
+ *
+ * 键集**不可判**时（开放 obj / 抽象 brand / arr / eff / any / unknown /
+ * sum / Proxy / 原型 brand——引擎未建模原型对象自身的 symbol 键）⇒ 返回
+ * undefined（调用方沿保守 `symbol[]` 域，**不折空**：空是自信的确切错值）。
+ */
+function ownSymbolKeysAbs(a0: Abs): Abs | undefined {
+  const symPrim = (): Abs => abs({ k: "prim", type: "symbol" }, undefined, undefined, "path");
+  const tupleOf = (n: number): Abs =>
+    abs({ k: "tuple", elements: Array.from({ length: n }, () => symPrim()) }, undefined, undefined, "exact");
+  const countOwn = (slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>): number =>
+    Object.keys(slots).filter((n) => {
+      const s = slots[n]!;
+      return s.symbolKey === true && s.internal !== true && s.inherited !== true;
+    }).length;
+  const s = a0.shape;
+  if (s.k === "obj") {
+    const os = s as unknown as {
+      slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
+      open?: boolean;
+      index?: unknown;
+    };
+    if (os.open === true || os.index !== undefined) return undefined;
+    return tupleOf(countOwn(os.slots));
+  }
+  if (s.k === "brand") {
+    // Proxy：ownKeys 陷阱可给任意 symbol 键 ⇒ 不可判。
+    if (s.name === "Proxy") return undefined;
+    // 原型 brand（`X.prototype`）：引擎只建模了原型的**字符串**自有键，
+    // 原型的自有 symbol 键未建模 ⇒ 不可判（不折空）。
+    if (s.name.endsWith(".prototype")) return undefined;
+    const inner = s.shape;
+    if (inner.shape.k !== "obj") return undefined;
+    const os = inner.shape as unknown as {
+      slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
+      open?: boolean;
+      index?: unknown;
+    };
+    if (os.open === true || os.index !== undefined) return undefined;
+    return tupleOf(countOwn(os.slots));
+  }
+  if (s.k === "tuple") {
+    // 元组 = 闭合数组值：引擎槽域无 symbol 键 ⇒ 原生无自有 symbol 键。
+    return tupleOf(0);
+  }
+  if (s.k === "prim") {
+    // 装箱原始值（Number / String / Boolean / BigInt / Symbol 包装）：
+    // 原生包装器无自有 symbol 键。
+    return tupleOf(0);
+  }
+  if (s.k === "fn") {
+    // 函数值：自有键 = 静态 / expando 槽（引擎建模在 fn 槽域）⇒ symbol 键
+    // 取 symbolKey 槽计数。
+    const slots = s.slots;
+    if (!slots) return tupleOf(0);
+    return tupleOf(countOwn(slots));
+  }
+  return undefined;
+}
+
+/**
  * Bug 57/84：访问器属性描述符（get/set thunk 包成 fn Abs；调用经 apply 钩子
  * 求值）。this 回退 target——描述符 getter 被调用时 this 为接收者（obj 臂为
  * 本体、类实例臂为承载槽的内层 inner，但原生 this 是 brand 实例，侧表 thunk
@@ -1937,12 +2011,17 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
     }
     case "getOwnPropertySymbols": {
-      // Bug 35：nullish 接收者定抛；symbol 键不在 Abs 槽域——保守 symbol[]
-      //（不假造空精确：源侧 symbol 计算键写不建模，但也不排除）
+      // Bug 35：nullish 接收者定抛
       if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       noteRecvMayNullish(a0, "Object.getOwnPropertySymbols receiver ToObject");
+      // 族 65 · Bug 240：原生返回**自有 symbol 键数组**——键集可判时折精确
+      // 元组（此前恒折保守 symbol[] ⇒ 生成器对象等「确定无自有 symbol 键」
+      // 的目标被折成「可能有任意符号」的保守域）。键集不可判（开放 obj /
+      // 抽象 brand / arr / any / unknown / sum / Proxy）⇒ 保守 symbol[]。
+      const ownSyms = ownSymbolKeysAbs(a0);
+      if (ownSyms) return ownSyms;
       return abs(
         { k: "arr", element: abs({ k: "prim", type: "symbol" }, undefined, undefined, "path") },
         undefined,
