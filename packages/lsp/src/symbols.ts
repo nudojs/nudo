@@ -63,6 +63,15 @@ export type LocMeta = {
   shorthandKey?: string;
   /** 引用位在源码里的列跨度：编辑范围不得宽于一个标识符 */
   srcWidth?: number;
+  /**
+   * 「导出名身份」的**本地名**（`export { hidden as visible }` 里的 `visible`）。
+   *
+   * 别名导出把**两个身份**压进了同一个说明符：本地名 `hidden`（本地绑定）
+   * 与导出名 `visible`（本模块对外的名字）。带上这个字段 ⇒ 符号表能分辨
+   * 「这条定义是**导出名**」⇒ 跨文件匹配按**导出名**走、改名编辑集按
+   * **导出名**收集（Bug 1066）。
+   */
+  exportLocalName?: string;
 };
 
 /** 带元数据的位置（service 的 SourceLocation + LSP 私有元数据） */
@@ -229,6 +238,13 @@ export function isBindingIdentifier(path: {
         return parent.type === "ObjectProperty" && parent.shorthand === true;
       }
       return true;
+    case "PrivateName":
+      // 私有成员（`#name`）：**不是**普通绑定。
+      // 它的身份是 `#name`（带 `#`），由符号表按「类作用域 + `#` 前缀」单独
+      // 登记（见 buildSymbolTable 的 ClassPrivateMethod / ClassPrivateProperty
+      // 访问器）⇒ 这里若放行，`#total` 会被当成普通标识符 `total`
+      // ⇒ 命中同名的模块级绑定（跨文件毁掉无关导出， Bug 1007）。
+      return false;
     case "LabeledStatement":
     case "BreakStatement":
     case "ContinueStatement":
@@ -286,6 +302,71 @@ function registerParam(
   }
 }
 
+/** 符号表登记回调（见 {@link buildSymbolTable}） */
+type RegisterFn = (
+  name: string,
+  kind: SymbolInfo["kind"],
+  node: Node,
+  scope: ScopeRange | undefined,
+  extra?: LocMeta,
+) => void;
+
+/** 向上找所属类节点（ClassDeclaration / ClassExpression） */
+function enclosingClassNode(path: {
+  parentPath?: { node?: Node | null; parentPath?: unknown } | null;
+}): Node | null {
+  let cur: { node?: Node | null; parentPath?: unknown } | null | undefined = path.parentPath;
+  while (cur) {
+    const node = cur.node;
+    if (node?.type === "ClassDeclaration" || node?.type === "ClassExpression") return node;
+    cur = cur.parentPath as typeof cur;
+  }
+  return null;
+}
+
+/**
+ * 私有成员所属**类**的作用域范围。
+ *
+ * 私有名（`#name`）只在自己类体里可见 ⇒ 作用域 = 所属类（不是模块作用域）。
+ */
+function privateMemberScopeRange(path: {
+  parentPath?: { node?: Node | null; parentPath?: unknown } | null;
+}): ScopeRange | undefined {
+  const classNode = enclosingClassNode(path);
+  if (!classNode?.loc) return undefined;
+  return scopeRangeOf({ block: classNode });
+}
+
+/** PrivateName 是不是某个类成员的**声明位**（`#total() {}` / `#field = 1`） */
+function isPrivateMemberDeclaration(path: {
+  parentPath?: { node?: { type?: string } | null } | null;
+}): boolean {
+  const parent = path.parentPath?.node;
+  return parent?.type === "ClassPrivateMethod" || parent?.type === "ClassPrivateProperty";
+}
+
+/**
+ * 私有成员（`#name`）的**身份**登记（Bug 1007）。
+ *
+ * 身份 = `#name`（**带 `#`**）⇒ 与同名的模块级绑定在**名字层面**就分开；
+ * 声明位 = 私有名里的标识符（`#total` 的 `total` 那一段，不含 `#`）
+ * ⇒ 改名只替换标识符、`#` 保留。
+ */
+function registerPrivateMember(
+  register: RegisterFn,
+  path: {
+    node: { key?: Node | null };
+    parentPath?: { node?: Node | null; parentPath?: unknown } | null;
+  },
+  kind: SymbolInfo["kind"] = "variable",
+): void {
+  const key = path.node.key as { type?: string; id?: Node } | null | undefined;
+  if (!key || key.type !== "PrivateName" || !key.id) return;
+  const name = (key.id as { name?: string }).name;
+  if (!name) return;
+  register(`#${name}`, kind, key.id, privateMemberScopeRange(path));
+}
+
 export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
   const definitions = new Map<string, SymbolInfo>();
   const references: ReferenceInfo[] = [];
@@ -302,8 +383,9 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
     kind: SymbolInfo["kind"],
     node: Node,
     scope: ScopeRange | undefined,
+    extra?: LocMeta,
   ): void => {
-    const loc = metaLoc(locFromNode(node), { scope, srcWidth: srcWidthOf(node) });
+    const loc = metaLoc(locFromNode(node), { scope, srcWidth: srcWidthOf(node), ...extra });
     const info: SymbolInfo = { name, kind, loc, uri };
     // 同作用域内后声明不覆盖先声明
     const key = scope ? `${name}@${scope.start.line}:${scope.start.column}` : `${name}@?`;
@@ -354,6 +436,48 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
           );
         }
       },
+      // 类方法形参（Bug 1010）：此前访问器清单只覆盖三种函数 ⇒ 类方法形参
+      // 不进 definitions ⇒ `definition` 返回 null，而同一位置的 `references`
+      // 却返回声明位点（同一个 LSP、同一坐标、两个面自相矛盾）。
+      ClassMethod(path) {
+        for (const param of path.node.params ?? []) {
+          registerParam(
+            (n, k, node) => register(n, k, node, scopeRangeOf(path.scope)),
+            param,
+          );
+        }
+      },
+      // 对象字面量方法形参（Bug 1010）
+      ObjectMethod(path) {
+        for (const param of path.node.params ?? []) {
+          registerParam(
+            (n, k, node) => register(n, k, node, scopeRangeOf(path.scope)),
+            param,
+          );
+        }
+      },
+      // 私有方法：形参 + **私有成员身份**（Bug 1007 / 1010）
+      ClassPrivateMethod(path) {
+        for (const param of path.node.params ?? []) {
+          registerParam(
+            (n, k, node) => register(n, k, node, scopeRangeOf(path.scope)),
+            param,
+          );
+        }
+        registerPrivateMember(register, path, "function");
+      },
+      // 私有字段（无形参）：登记**私有成员身份**（Bug 1007）
+      ClassPrivateProperty(path) {
+        registerPrivateMember(register, path, "variable");
+      },
+      // `catch (e)` 的形参（Bug 1010）：作用域 = **CatchClause 自身作用域**
+      // （babel 的 catch 形参绑定在 catch 块里，不是外层作用域）
+      CatchClause(path) {
+        registerParam(
+          (n, k, node) => register(n, k, node, scopeRangeOf(path.scope)),
+          path.node.param,
+        );
+      },
       VariableDeclarator(path) {
         if (path.node.id.type === "Identifier") {
           register(path.node.id.name, "variable", path.node.id, scopeRangeOf(path.scope));
@@ -378,6 +502,52 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
         for (const spec of path.node.specifiers ?? []) {
           register(spec.local.name, "variable", spec.local, scopeRangeOf(path.scope));
         }
+      },
+      /**
+       * 本地 export list（`export { a }` / `export { a as b }`）：**导出名**是
+       * 一个**独立身份**（Bug 1066）。
+       *
+       * `export { hidden as visible }` 里 `hidden`（本地绑定）与 `visible`
+       * （本模块对外的名字）是**两个符号**：改导出名要连 importer 的 imported
+       * 侧一起改，改本地名**不得**连坐（否则模块图断裂）。
+       * ⇒ 导出名按自己的名字登记成一条定义，并带上本地名（`exportLocalName`）。
+       */
+      ExportNamedDeclaration(path) {
+        // re-export（`export { a } from "./m"`）不绑本地名 ⇒ 不是本地定义
+        if (path.node.source) return;
+        for (const spec of path.node.specifiers ?? []) {
+          if (spec.type !== "ExportSpecifier") continue;
+          const exported = exportSpecifierExportedName(spec);
+          if (exported === undefined) continue;
+          const local = nameOrStringValue(spec.local);
+          if (!local) continue;
+          const exportedName = String(exported);
+          // 同名直出（`export { a }`）⇒ 导出名 == 本地名 ⇒ 本地绑定那条定义
+          // 已经是它的声明位（先声明者优先），这里**不重复登记**
+          if (exportedName === local) continue;
+          register(exportedName, "variable", spec.exported, scopeRangeOf(path.scope), {
+            exportLocalName: local,
+          });
+        }
+      },
+      /**
+       * 私有成员用点位（`this.#total()`）：身份 = `#total`（带 `#`）。
+       *
+       * 私有成员**只在所属类体里可见** ⇒ 作用域 = 所属类；名字带 `#` ⇒ 与
+       * 同名的模块级绑定**在名字层面**就分开了（Bug 1007）。
+       */
+      PrivateName(path) {
+        const id = path.node.id;
+        if (!id?.name) return;
+        // 声明位（`#total() {}`）由 ClassPrivateMethod / ClassPrivateProperty
+        // 访问器登记 ⇒ 这里只收**用点**
+        if (isPrivateMemberDeclaration(path)) return;
+        const scope = privateMemberScopeRange(path);
+        references.push({
+          name: `#${id.name}`,
+          loc: metaLoc(locFromNode(id), { scope, srcWidth: srcWidthOf(id) }),
+          uri,
+        });
       },
       Identifier(path) {
         // 定义位点不进 references（decl 由 resolveReferences/includeDeclaration 负责）
@@ -425,6 +595,70 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
 }
 
 /**
+ * 私有成员（`#name`）的同绑定引用（Bug 1007）。
+ *
+ * babel 的 scope **不登记私有名**（`scope.getBinding("#x")` 恒为 undefined）
+ * ⇒ 不能走通用绑定路径。私有名的可见性 = **所属类体** ⇒ 引用集合 = 同一个类里
+ * 所有同名私有名（声明位 + 用点位），且**永不跨文件**。
+ *
+ * 引用位 = 私有名里的**标识符**（`#total` 的 `total` 那一段，不含 `#`）
+ * ⇒ 改名只替换标识符、`#` 保留。
+ */
+function collectPrivateMemberReferences(
+  ast: Node,
+  memberName: string,
+  at: { line: number; column: number },
+  uri: string,
+  options: { includeDeclaration?: boolean },
+): ReferenceInfo[] {
+  const includeDecl = options.includeDeclaration !== false;
+  const bare = memberName.startsWith("#") ? memberName.slice(1) : memberName;
+  const out: ReferenceInfo[] = [];
+  // ① 光标处的私有成员 → 所属类
+  const hit: { owner: Node | null } = { owner: null };
+  try {
+    traverseFn()(ast, {
+      PrivateName(path) {
+        const loc = path.node.loc;
+        if (!loc) return;
+        if (
+          loc.start.line === at.line &&
+          loc.start.column <= at.column &&
+          loc.end.column >= at.column
+        ) {
+          hit.owner = enclosingClassNode(path);
+          path.stop();
+        }
+      },
+    });
+  } catch {
+    /* partial AST */
+  }
+  const owner = hit.owner;
+  if (!owner) return out;
+  const scope = scopeRangeOf({ block: owner });
+  // ② 同一个类里所有同名私有名
+  try {
+    traverseFn()(ast, {
+      PrivateName(path) {
+        const id = path.node.id;
+        if (!id?.name || id.name !== bare) return;
+        if (enclosingClassNode(path) !== owner) return;
+        if (isPrivateMemberDeclaration(path) && !includeDecl) return;
+        out.push({
+          name: memberName,
+          loc: metaLoc(locFromNode(id), { scope, srcWidth: srcWidthOf(id) }),
+          uri,
+        });
+      },
+    });
+  } catch {
+    /* partial AST */
+  }
+  return out;
+}
+
+/**
  * 作用域感知的同绑定引用（重构金标核心）：
  * 从 (line, column) 处的标识符解析 babel binding，只收集**同一绑定**的
  * 引用与声明。属性名/成员属性/遮蔽的同名绑定不会被带入。
@@ -440,6 +674,11 @@ export function collectBindingReferences(
   uri: string,
   options: { includeDeclaration?: boolean } = {},
 ): ReferenceInfo[] {
+  // 私有成员（`#name`）：babel 的 scope **不登记私有名** ⇒ 没有 binding 可查
+  // ⇒ 走「类内收集」专用路径（Bug 1007）
+  if (name.startsWith("#")) {
+    return collectPrivateMemberReferences(ast, name, at, uri, options);
+  }
   const includeDecl = options.includeDeclaration !== false;
   const out: ReferenceInfo[] = [];
   const seen = new Set<string>();
@@ -539,7 +778,14 @@ export function collectBindingReferences(
 export type RenameTarget = {
   name: string;
   loc: SourceLocation;
-  kind: "binding" | "method";
+  /**
+   * 目标类别：
+   * - `binding`：普通绑定标识符；
+   * - `method`：class/object 方法键（按**归属**分派，name-based）；
+   * - `private`：私有成员（`#name`）—— 身份带 `#`，只在所属类内可见；
+   * - `export`：本地 export list 的**导出名**（`export { a as b }` 的 b）。
+   */
+  kind: "binding" | "method" | "private" | "export";
   /**
    * 方法归属（kind === "method" 时给出）：类方法 → 所属类；对象字面量方法 → 绑定变量名。
    *
@@ -924,6 +1170,10 @@ export function renameTargetAt(
     ok: boolean;
     methodKey: boolean;
     memberProp: boolean;
+    /** 私有成员（`#name`）：身份带 `#`（Bug 1007） */
+    privateMember: boolean;
+    /** 本地 export list 的**导出名**（`export { a as b }` 的 b）（Bug 1066） */
+    exportSide: boolean;
     owner?: MethodOwner;
     receiver: ReceiverOwner | null;
   };
@@ -933,21 +1183,46 @@ export function renameTargetAt(
       Identifier(path) {
         const loc = path.node.loc;
         if (!loc) return;
+        const parent = path.parent as
+          | (Node & {
+              type: string;
+              key?: Node;
+              computed?: boolean;
+              shorthand?: boolean;
+              value?: Node | null;
+              local?: Node;
+              exported?: Node;
+            })
+          | null;
+        // 私有成员（`#name`）：babel 把键 / 用点包成 `PrivateName`
+        // ⇒ 命中范围取 **PrivateName**（含 `#`）⇒ 光标落在 `#` 上也算命中
+        const priv =
+          parent?.type === "PrivateName"
+            ? (parent as unknown as { id?: Node; loc?: { start: { line: number; column: number }; end: { line: number; column: number } } })
+            : undefined;
+        const hitLoc = priv?.loc ?? loc;
         if (
-          loc.start.line === line &&
-          loc.start.column <= column &&
-          loc.end.column >= column
+          hitLoc.start.line === line &&
+          hitLoc.start.column <= column &&
+          hitLoc.end.column >= column
         ) {
-          const parent = path.parent as
-            | (Node & { type: string; key?: Node; computed?: boolean; shorthand?: boolean; value?: Node | null })
-            | null;
+          // 私有成员键（`#name`）在 babel 里是 `PrivateName` 包着标识符
+          // ⇒ 自身键判定必须**穿透** PrivateName（看它的 id）（Bug 1007）
+          const isPrivateSelfKey = Boolean(
+            priv &&
+              priv.id === path.node &&
+              path.parentPath &&
+              isPrivateMemberDeclaration(path.parentPath),
+          );
           const isSelfKey =
-            parent &&
-            (parent.type === "ClassMethod" ||
-              parent.type === "ObjectMethod" ||
-              parent.type === "ClassPrivateMethod") &&
-            parent.key === path.node &&
-            parent.computed !== true;
+            (parent &&
+              (parent.type === "ClassMethod" ||
+                parent.type === "ObjectMethod" ||
+                parent.type === "ClassPrivateMethod") &&
+              parent.key === path.node &&
+              parent.computed !== true) ||
+            // 穿透 PrivateName 的私有成员键（见上）
+            isPrivateSelfKey;
           // 对象字面量的函数值属性（`{ m: fn }`）也是方法定义位；
           // 简写 `{ x }` 不是（key 与 value 同节点 ⇒ 那是绑定，见 Bug 715）。
           const isObjectFnKey =
@@ -963,13 +1238,25 @@ export function renameTargetAt(
               parent.type === "OptionalMemberExpression") &&
             (parent as { property?: Node }).property === path.node &&
             (parent as { computed?: boolean }).computed !== true;
-          const isMethod = Boolean(isSelfKey || isObjectFnKey);
+          // 私有成员（`#name`）：**不是**普通绑定，也不是 name-based 的方法
+          // （方法面按名字收集 ⇒ 会把同名模块级绑定一起改掉）
+          const isPrivateMember = Boolean(priv && priv.id === path.node);
+          // 本地 export list 的**导出名**（`export { a as b }` 的 b）：
+          // 它是**另一个身份**（不是本地绑定 `a`）（Bug 1066）
+          const isExportSide = Boolean(
+            parent?.type === "ExportSpecifier" &&
+              parent.exported === path.node &&
+              parent.local !== path.node,
+          );
+          const isMethod = Boolean(isSelfKey || isPrivateSelfKey || isObjectFnKey) && !isPrivateMember;
           hit = {
-            name: path.node.name,
+            name: isPrivateMember ? `#${path.node.name}` : path.node.name,
             loc: locFromNode(path.node),
             ok: isBindingIdentifier(path),
             methodKey: isMethod,
             memberProp: Boolean(isMemberProp),
+            privateMember: isPrivateMember,
+            exportSide: isExportSide,
             owner: isMethod ? ownerOfMethodKey(path) : undefined,
             receiver: isMemberProp ? receiverOwnerAt(path) : null,
           };
@@ -982,6 +1269,17 @@ export function renameTargetAt(
   }
   if (!hit) return null;
   const h = hit as Hit;
+  // 私有成员（`#name`）：身份带 `#` ⇒ placeholder 含 `#`；
+  // 但**编辑范围**只覆盖标识符（`#` 保留）⇒ 改名结果是 `#newName`。
+  // ⚠ 新名校验（合法 JS 标识符）拒收 `#newName` ⇒ placeholder 只作**提示**，
+  //   用户填的是**不带 `#`** 的标识符（编辑范围不含 `#`，两者一致）。
+  if (h.privateMember) {
+    return { name: h.name, loc: h.loc, kind: "private" };
+  }
+  // 导出名（`export { a as b }` 的 b）：可改名身份 = **导出名**（不是本地名 `a`）
+  if (h.exportSide) {
+    return { name: h.name, loc: h.loc, kind: "export" };
+  }
   if (h.methodKey) {
     return { name: h.name, loc: h.loc, kind: "method", owner: h.owner };
   }
@@ -1201,6 +1499,19 @@ export function findIdentifierAtPosition(ast: Node, line: number, column: number
   let found: string | null = null;
   try {
     traverseFn()(ast, {
+      // 私有成员（`#name`）：身份 = `#name`（带 `#`）⇒ 光标落在 `#` 上也算命中
+      PrivateName(path) {
+        const loc = path.node.loc;
+        if (!loc) return;
+        if (
+          loc.start.line === line &&
+          loc.start.column <= column &&
+          loc.end.column >= column
+        ) {
+          found = `#${path.node.id.name}`;
+          path.stop();
+        }
+      },
       Identifier(path) {
         const loc = path.node.loc;
         if (!loc) return;
@@ -1798,13 +2109,25 @@ export function readSourceWith(
  * `export { a } from "./m"`（re-export）**不是**本地 export list：它把本模块的
  * 导出名接到目标模块的导出名上 ⇒ 查定义必须跟到目标模块（fromFile 用于解析
  * 相对说明符；缺省时无法解析相对路径 ⇒ re-export 只能跳过）。
+ *
+ * ⚠ **本地名 / 导出名是两个身份**（Bug 1066）：`export { hidden as visible }`
+ * 里 `hidden`（本地绑定）与 `visible`（对外的导出名）必须分开 ⇒ 别名导出
+ * 额外返回 `exportName`（导出名）与 `exportLoc`（导出说明符的**导出侧**）。
  */
 export function findExportDefinition(
   targetSource: string,
   exportName: string,
   fromFile?: string,
   sourceProvider?: SourceProvider,
-): { name: string; kind: SymbolInfo["kind"]; loc: SourceLocation } | null {
+): {
+  name: string;
+  kind: SymbolInfo["kind"];
+  loc: SourceLocation;
+  /** 对外的导出名（**别名导出**时 ≠ name） */
+  exportName?: string;
+  /** 导出说明符的**导出侧**位置（**别名导出**时给出） */
+  exportLoc?: SourceLocation;
+} | null {
   let ast: Node;
   try {
     ast = parse(targetSource);
@@ -1867,7 +2190,23 @@ export function findExportDefinition(
         }
         const table = buildSymbolTable(ast, "");
         const def = table.definitions.get(local);
-        if (def) return { name: local, kind: def.kind, loc: def.loc };
+        if (def) {
+          const exportedName = String(exported);
+          if (exportedName === local) {
+            // 同名直出（`export { a }`）⇒ 导出名 == 本地名 ⇒ 同一个身份
+            return { name: local, kind: def.kind, loc: def.loc };
+          }
+          // 别名导出（`export { a as b }`）⇒ **两个身份**：
+          //   loc = 本地绑定 `a` 的声明位（F12：跳到本地绑定）
+          //   exportLoc = 导出说明符的**导出侧** `b`（改名面：改的是导出名）
+          return {
+            name: local,
+            kind: def.kind,
+            loc: def.loc,
+            exportName: exportedName,
+            exportLoc: locFromNode(s.exported),
+          };
+        }
       }
     }
   }
@@ -1945,6 +2284,13 @@ export function findCrossFileReferences(
     maxFiles?: number;
     /** 源码覆盖层（打开文档 buffer 优先） */
     sourceProvider?: SourceProvider;
+    /**
+     * 显式的**导出名集合**（覆盖「按本地名反查导出名」的默认推导）。
+     *
+     * 别名导出（`export { hidden as visible }`）里本地名与导出名**分属两个
+     * 身份** ⇒ 调用方按身份指定要匹配的导出名（Bug 1066）。
+     */
+    exportNames?: string[];
   } = {},
 ): ReferenceInfo[] {
   const out: ReferenceInfo[] = [];
@@ -1960,7 +2306,8 @@ export function findCrossFileReferences(
   }
 
   // 被查符号在定义文件里的导出名（default 导出 = "default"）
-  const exportNames = exportedNamesIn(definingFile, exportName, options.sourceProvider);
+  const exportNames =
+    options.exportNames ?? exportedNamesIn(definingFile, exportName, options.sourceProvider);
 
   const definingNorm = resolve(definingFile);
   for (const cand of candidates) {
@@ -2349,7 +2696,17 @@ export function resolveDefinitionLocations(
     sourceProvider: options.sourceProvider,
   });
   // import 绑定：真实定义在目标导出；本地 import 说明符作次要位点（Peek）
-  if (cross) {
+  // 「导出名身份」（`export { hidden as visible }` 的 visible）：F12 跳到
+  // **本地绑定**（`hidden` 的声明）—— 导出说明符的导出侧只是「这个名字的
+  // 声明处」，本地绑定才是实现（与停在本地名位的行为一致， Bug 1066）。
+  const exportLocal = local ? metaOf(local.loc).exportLocalName : undefined;
+  if (exportLocal && local) {
+    const localBinding = findDefinition(table, exportLocal, options.at);
+    if (localBinding) {
+      out.push({ filePath: fromFile, loc: localBinding.loc, name: localBinding.name });
+    }
+    out.push({ filePath: fromFile, loc: local.loc, name: local.name });
+  } else if (cross) {
     out.push(cross);
     if (local) {
       out.push({ filePath: fromFile, loc: local.loc, name: local.name });
@@ -2377,11 +2734,70 @@ export function resolveDefinitionLocations(
 }
 
 /**
- * 统一导航入口：
- * - 本地定义命中 → 当前文件
- * - 否则若是 import 绑定 → 跨文件
- * - 否则侧车同名契约（A5）
- * - 否则（workspaceFallback，仅 definition）→ 同名导出兜底
+ * 「导出名身份」的**声明位**（Bug 1066）。
+ *
+ * `export { hidden as visible }` 里 **visible**（导出名）与 **hidden**（本地名）
+ * 是**两个身份**：
+ * - 导出名的声明位 = 导出说明符的**导出侧**（`visible` 那一段）；
+ * - 本地名的声明位 = 本地绑定的声明（`const hidden = 1`）。
+ *
+ * 改名必须按身份分派：改导出名 ⇒ 改导出侧 + importer 的 imported 侧；
+ * 改本地名 ⇒ 改本地声明 + 导出说明符的本地侧。
+ */
+function exportNameDeclarationAt(
+  fromFile: string,
+  source: string,
+  ident: string,
+  at: { line: number; column: number },
+  options: { sourceProvider?: SourceProvider },
+): { filePath: string; loc: SourceLocation; name: string } | null {
+  let ast: Node;
+  try {
+    ast = parse(source);
+  } catch {
+    return null;
+  }
+  // ① 光标在本地 export list 的**导出侧**（`export { a as b }` 的 b）
+  for (const stmt of programBody(ast)) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
+    for (const s of stmt.specifiers ?? []) {
+      if (s.type !== "ExportSpecifier") continue;
+      if (!nodeAtPosition(s.exported, at)) continue;
+      const exported = exportSpecifierExportedName(s);
+      if (exported === undefined) continue;
+      const local = nameOrStringValue(s.local);
+      // 同名直出（`export { a }`）⇒ 导出名 == 本地名 ⇒ **同一个**身份
+      // （声明位仍是本地绑定的声明 ⇒ 不走本函数）
+      if (!local || local === String(exported)) continue;
+      return { filePath: fromFile, loc: locFromNode(s.exported), name: String(exported) };
+    }
+  }
+  // ② 光标在 importer 的用法处 ⇒ 符号是目标模块的**导出名**
+  //    （目标模块用别名导出 ⇒ 声明位 = 目标模块的导出说明符导出侧）
+  const binding = collectImportBindings(ast, fromFile).get(ident);
+  if (!binding?.resolvedPath || binding.aliased || binding.importedName === "*") return null;
+  const targetSrc = readSourceWith(options.sourceProvider, binding.resolvedPath);
+  if (targetSrc === undefined) return null;
+  const def = findExportDefinition(
+    targetSrc,
+    binding.importedName,
+    binding.resolvedPath,
+    options.sourceProvider,
+  );
+  if (!def?.exportLoc || !def.exportName) return null;
+  return { filePath: binding.resolvedPath, loc: def.exportLoc, name: def.exportName };
+}
+
+/**
+ * 改名通道的**定义位**。
+ *
+ * ⚠ 与 {@link resolveDefinitionLocations}（F12 导航面）**刻意不同**：
+ * 别名导出（`export { hidden as visible }`）里 **visible**（导出名）与
+ * **hidden**（本地名）是两个身份 ——
+ * - F12 面：跳到**本地绑定**（`hidden` 的声明）；
+ * - 改名面：编辑集必须是**导出名**的身份 ⇒ 定义位取导出说明符的**导出侧**
+ *   （改了本地名会把「导出名 ≠ 本地名」的模块图改断，importer 立刻失联，
+ *   Bug 1066）。
  */
 export function resolveDefinition(
   fromFile: string,
@@ -2395,6 +2811,12 @@ export function resolveDefinition(
     isMemberAccess?: boolean;
   } = {},
 ): { filePath: string; loc: SourceLocation; name: string } | null {
+  if (options.at) {
+    const exportDecl = exportNameDeclarationAt(fromFile, source, ident, options.at, {
+      sourceProvider: options.sourceProvider,
+    });
+    if (exportDecl) return exportDecl;
+  }
   const all = resolveDefinitionLocations(fromFile, source, ident, options);
   return all[0] ?? null;
 }
@@ -2493,14 +2915,35 @@ export function resolveReferences(
 
   // ③ 本地定义：扫描 import / re-export 本文件的其它文件
   if (localDef) {
+    const meta = metaOf(localDef.loc);
+    // 「导出名身份」（`export { hidden as visible }` 的 visible）：符号是**导出名**
+    // ⇒ 跨文件引用 = importer 们对该**导出名**的引用（不是本地名的）
+    const exportLocal = meta.exportLocalName;
+    if (exportLocal) {
+      const exportNames = exportedNamesOfLocal(ast, exportLocal);
+      const cross =
+        exportNames.length > 0
+          ? findCrossFileReferences(fromFile, exportLocal, {
+              extraFiles: options.extraFiles,
+              sourceProvider: options.sourceProvider,
+              exportNames,
+            })
+          : [];
+      return dedup(declOf(localDef), localRefs, cross);
+    }
+    // 本地绑定身份：只认**以自己的名字**对外的导出名
+    // （`export { f as g }` 的 `g` 是**另一个**身份 ⇒ 改 `f` 不得连坐 `g` 的
+    //   importer；`export default f` 的 "default" 仍是 `f` 自己 ⇒ 算）
     const exportName = localDef.name;
-    const isExported = isExportedName(ast, exportName);
-    const cross = isExported
-      ? findCrossFileReferences(fromFile, exportName, {
-          extraFiles: options.extraFiles,
-          sourceProvider: options.sourceProvider,
-        })
-      : [];
+    const directNames = directExportNamesOfLocal(ast, exportName);
+    const cross =
+      directNames.length > 0
+        ? findCrossFileReferences(fromFile, exportName, {
+            extraFiles: options.extraFiles,
+            sourceProvider: options.sourceProvider,
+            exportNames: directNames,
+          })
+        : [];
     return dedup(declOf(localDef), localRefs, cross);
   }
 
@@ -2534,28 +2977,45 @@ function referencesOfExportedSymbol(
   let defDecl: ReferenceInfo[] = [];
   // 定义文件里的**本地名**（default 导出的本地名 ≠ 导出名 "default"）
   let localNameInDef = exportName;
+  // 别名导出（`export { hidden as visible }`）⇒ 符号是**导出名** `visible`，
+  // 本地名 `hidden` 是**另一个**身份（Bug 1066）
+  let exportedNameInDef = exportName;
+  let exportedLocInDef: SourceLocation | undefined;
   if (defAst) {
     const def = findExportDefinition(defSource, exportName, definingFile, opts.sourceProvider);
-    if (def) localNameInDef = def.name;
-    const defTable = buildSymbolTable(defAst, definingFile);
-    if (opts.at && def) {
-      // 目标文件：从定义位点收集同绑定
-      // D1：includeDeclaration 同样要透传（声明位在引用集合里也出现一次）
-      defLocalRefs.push(
-        ...collectBindingReferences(
-          defAst,
-          localNameInDef,
-          { line: def.loc.start.line, column: def.loc.start.column },
-          definingFile,
-          { includeDeclaration: opts.includeDecl },
-        ),
-      );
-    } else {
-      defLocalRefs.push(...findReferences(defTable, localNameInDef));
+    if (def) {
+      localNameInDef = def.name;
+      exportedNameInDef = def.exportName ?? def.name;
+      exportedLocInDef = def.exportLoc;
     }
-    const d = findDefinition(defTable, localNameInDef);
-    if (d && opts.includeDecl) {
-      defDecl = [{ name: d.name, loc: d.loc, uri: definingFile }];
+    const defTable = buildSymbolTable(defAst, definingFile);
+    if (def?.exportLoc && exportedNameInDef !== localNameInDef) {
+      // 别名导出：定义文件内的引用 = 导出说明符的**导出侧**
+      // （本地名 `hidden` 的声明 / 引用属于**另一个**身份 ⇒ 不得进编辑集：
+      //   改了会把「导出名 ≠ 本地名」的模块图改断，importer 立刻失联）
+      if (opts.includeDecl && exportedLocInDef) {
+        defDecl = [{ name: exportedNameInDef, loc: exportedLocInDef, uri: definingFile }];
+      }
+    } else {
+      if (opts.at && def) {
+        // 目标文件：从定义位点收集同绑定
+        // D1：includeDeclaration 同样要透传（声明位在引用集合里也出现一次）
+        defLocalRefs.push(
+          ...collectBindingReferences(
+            defAst,
+            localNameInDef,
+            { line: def.loc.start.line, column: def.loc.start.column },
+            definingFile,
+            { includeDeclaration: opts.includeDecl },
+          ),
+        );
+      } else {
+        defLocalRefs.push(...findReferences(defTable, localNameInDef));
+      }
+      const d = findDefinition(defTable, localNameInDef);
+      if (d && opts.includeDecl) {
+        defDecl = [{ name: d.name, loc: d.loc, uri: definingFile }];
+      }
     }
   }
 
@@ -2618,7 +3078,53 @@ export function exportedNamesOfLocal(ast: Node, name: string): string[] {
   return out;
 }
 
-/** 本地绑定 `name` 是否被本文件导出（任意导出名） */
-function isExportedName(ast: Node, name: string): boolean {
-  return exportedNamesOfLocal(ast, name).length > 0;
+/**
+ * 本地绑定 `name` 在本文件里**以自己的名字**对外的导出名集合（Bug 1066）。
+ *
+ * - `export function f` / `export const f` / `export { f }` ⇒ {"f"}
+ * - `export default function f` / `export default f` ⇒ {"default"}
+ *   （default 导出**就是**这个本地绑定 ⇒ 改名要连 importer 一起改）
+ * - `export { f as g }` ⇒ **{}** —— `g` 是**另一个**身份（对外的公开名），
+ *   改本地绑定 `f` **不得**连坐 `g` 的 importer（否则模块图断裂）。
+ * - re-export（`export { f } from "./m"`）⇒ {}（`f` 不是本文件的本地绑定）
+ */
+function directExportNamesOfLocal(ast: Node, name: string): string[] {
+  const out: string[] = [];
+  const push = (n: string): void => {
+    if (!out.includes(n)) out.push(n);
+  };
+  for (const stmt of programBody(ast)) {
+    if (stmt.type === "ExportNamedDeclaration") {
+      if (stmt.declaration) {
+        const d: Node = stmt.declaration;
+        if (d.type === "FunctionDeclaration" && d.id?.name === name) push(name);
+        if (d.type === "ClassDeclaration" && d.id?.name === name) push(name);
+        if (d.type === "VariableDeclaration") {
+          for (const dec of getDeclarations(d)) {
+            const id = getDeclaratorId(dec);
+            if (id?.name === name) push(name);
+          }
+        }
+        continue;
+      }
+      // 本地 export list（无 source）：`export { f }` / `export { f as g }`
+      if (stmt.source) continue;
+      for (const s of stmt.specifiers ?? []) {
+        if (s.type !== "ExportSpecifier") continue;
+        const local = nameOrStringValue(s.local);
+        if (local !== name) continue;
+        const exported = exportSpecifierExportedName(s);
+        if (exported === undefined) continue;
+        // 别名导出（`export { f as g }`）⇒ `g` 属于**另一个**身份 ⇒ 不计
+        if (String(exported) === name) push(name);
+      }
+      continue;
+    }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d: Node = stmt.declaration;
+      if (fnOrClassIdName(d) === name) push("default");
+      if (d?.type === "Identifier" && d.name === name) push("default");
+    }
+  }
+  return out;
 }

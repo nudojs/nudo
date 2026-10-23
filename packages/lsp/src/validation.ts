@@ -6,6 +6,7 @@
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
@@ -265,10 +266,15 @@ function normPath(p: string): string {
  * Canonical key for session path-keyed maps (analysisCache / knownFiles /
  * nudoDepParents / validateGeneration). Accepts a URI or a file path.
  *
- * Unifies Windows drive forms: `file:///c:/x` → `/c:/x` (uriToFilePath) and
- * `c:\x` / `c:/x` / `C:/x` (fs-resolved) all collapse to `c:/x`. Without the
+ * Unifies Windows drive forms: `file:///c:/x` → `c:\x`（Windows 上的
+ * `fileURLToPath`）/ `/c:/x`（POSIX 上的同形）and `c:\x` / `c:/x` / `C:/x`
+ * (fs-resolved) all collapse to `c:/x`. Without the
  * leading-slash strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows
  * and delete/lookup misses the entry written under the URI-derived key.
+ *
+ * ⚠ Bug 748：`uriToFilePath` 改用 `fileURLToPath`（与 `pathToFileURL` 互逆）
+ *   ⇒ 本键的**盘符形态**随之变化（Windows 上不再带前导斜杠）；下面的
+ *   前导斜杠剥离分支**仍保留**（POSIX 形态 `file:///c:/x` 依旧命中）。
  *
  * Drive-form unification is `stablePathKey`（core 单源）——L0 memo 依赖索引与
  * 本键必须同形态，否则 Windows 上定向逐出 miss（FIX-RESIDUAL-3）。
@@ -527,8 +533,31 @@ export function hasNudoDirectives(source: string): boolean {
   );
 }
 
+/**
+ * `file:` URI → 文件路径（Bug 748：**必须与 `filePathToUri` 互逆**）。
+ *
+ * ⚠ 此前本函数是裸 `decodeURIComponent(uri.slice(7))` ⇒ 两个毛病：
+ *   ① **畸形百分号转义**（`%` / `%zz`）抛 **`URIError`** ⇒
+ *      `didOpen` / `didChange` / `didClose` 三个处理器中断 ⇒
+ *      **该文档零诊断**（L2 假绿）；服务端自产的 URI（裸 `%`）**自己解不回来**。
+ *   ② **Windows 盘符**：`slice(7)` 不剥前导斜杠 ⇒ `file:///c:/x` ⇒ `/c:/x`。
+ * ⇒ 改用 Node 内置 **`fileURLToPath`**（与 `pathToFileURL` **天生互逆**、
+ *   跨平台、盘符形态正确）+ **`try/catch` 兜底**：畸形 ⇒ **回退到未解码原文**，
+ *   **绝不抛**（抛异常会让整条通知链断掉）。
+ * ⚠ **非 `file:` scheme**（`untitled:` 等）**原样返回**（行为不变）。
+ */
 export function uriToFilePath(uri: string): string {
-  return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
+  if (!uri.startsWith("file://")) return uri;
+  try {
+    return fileURLToPath(uri);
+  } catch {
+    // 畸形（百分号转义非法 / 非法 host）⇒ 回退：先试旧的解码口径，再退原文。
+    try {
+      return decodeURIComponent(uri.slice(7));
+    } catch {
+      return uri.slice(7);
+    }
+  }
 }
 
 /**

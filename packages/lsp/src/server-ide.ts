@@ -27,7 +27,6 @@ import {
 import { lookupScopedBinding, reuseBinding } from "./lsp-surface/replay.ts";
 import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
-  isNudoTargetPath,
   shouldAnalyzeFile,
   findProjectConfig,
   interfaceConfig,
@@ -66,7 +65,23 @@ export type IdeDeps = {
   connection: Connection;
   getDocument: (uri: string) => TextDocument | undefined;
   listDocuments: () => TextDocument[];
+  /**
+   * 门禁谓词（**真源在 `server.ts` 的 `isNudoFile`**）：本模块的 hover /
+   * completion / inlayHint / signatureHelp / semanticTokens 五个门禁点与
+   * `server-navigation.ts` 共用**同一个实例** ⇒ 两侧口径必然一致
+   * （Bug 751：此前各写各的 ⇒ 同一坐标六种请求三种结论）。
+   *
+   * ⚠ **不得另写一份谓词**；需要更宽的口径（见 `isNudoTargetPath`）时在
+   *   调用点**显式**写明理由。
+   */
   isNudoFile: (uri: string) => boolean;
+  /**
+   * 门禁谓词的**路径层**（`isNudoFile` 的第一层，同一真源）：按**文件路径**
+   * 判定「是否 nudo 推断目标」。codeLens（interface 档）用它——interface 档的
+   * 主路径正是**零注解**文件（同名侧车绑定），不能用带 analysis.mode 的
+   * `isNudoFile`。⚠ 两者都**排除**侧车契约文件（`*.nudo.js` 等）。
+   */
+  isNudoTargetPath: (filePath: string) => boolean;
   getActiveCases: (uri: string) => Map<string, number>;
   activeLoadModule: LoadModule;
   /** 参数约束 inlay（`where …`）开关：项目配置 > 宿主设置 > false（关） */
@@ -332,13 +347,15 @@ export function attachCodeLens(deps: IdeDeps): void {
   const getActiveCasesForUri = deps.getActiveCases;
   const activeLoadModule = deps.activeLoadModule;
   const agentToolDeps = deps.agentToolDeps;
+  const isNudoTargetPath = deps.isNudoTargetPath;
 
   connection.onCodeLens((params) => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
     // interface 档的目标场景就是零注解文件（侧车同名绑定，§2.1 主路径），
-    // 因此这里放宽为 isNudoTargetPath 而非 isNudoFile——case 副层只依赖
-    // 指令，注解文件行为不变；hover/inlayHint/semanticTokens 仍走 isNudoFile。
+    // 因此这里放宽为**路径层**门禁（isNudoTargetPath）而非 isNudoFile——case
+    // 副层只依赖指令，注解文件行为不变；hover/inlayHint/semanticTokens 仍走
+    // isNudoFile。⚠ 两者都排除侧车契约文件（*.nudo.js 等）⇒ 口径一致。
     if (!isNudoTargetPath(uriToFilePath(params.textDocument.uri))) return [];
 
     const filePath = uriToFilePath(params.textDocument.uri);

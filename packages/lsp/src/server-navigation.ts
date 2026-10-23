@@ -2,7 +2,9 @@
  * 文档符号 / 工作区符号 / 跳转 / 引用 / 重命名（自 server.ts 机械拆出；语义未改）。
  */
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
+  type ClientCapabilities,
   type Connection,
   type DocumentSymbol,
   type SymbolInformation,
@@ -10,7 +12,7 @@ import {
 } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import { parse } from "@nudojs/parser";
-import { isSidecarPath } from "@nudojs/service";
+import { isNudoTargetPath } from "@nudojs/service";
 import {
   documentSymbols,
   findIdentifierAtPosition,
@@ -34,15 +36,154 @@ export type NavigationDeps = {
   listDocuments: () => TextDocument[];
   isNudoFile: (uri: string) => boolean;
   knownFiles: Set<string>;
+  /**
+   * **客户端能力**（Bug 749）——返回客户端在 `initialize` 里声明的
+   * `params.capabilities` **原对象**（未改写 / 未归一）。
+   *
+   * · **用途**：`textDocument/documentSymbol` 的返回**形状**
+   *   （层级式 `DocumentSymbol[]` vs 扁平 `SymbolInformation[]`）与
+   *   **`SymbolKind` 取值**都受客户端能力约束。
+   * · **缺省**：`undefined` ⇒ 客户端**没发**该能力段（老客户端可能根本不发）
+   *   ⇒ 消费方**必须走默认**：**层级式 + 全量 `SymbolKind`**，
+   *   **不得因拿不到能力就退化**。
+   * · **真源**：`server.ts` 的 `onInitialize`（片 C 落）——本模块**只消费**，
+   *   不自己读 `initialize` 的 params。
+   */
+  clientCapabilities?: () => ClientCapabilities | undefined;
 };
 
+/**
+ * 文件路径 → `file:` URI（Bug 748）。
+ *
+ * ⚠ **必须与 `validation.ts` 的 `uriToFilePath` 互逆**：此前本函数**裸拼**
+ *   `file://` + 路径（路径里的 `%` / `#` / `?` / 空格 / 中文**不转义**）⇒
+ *   服务端自产的 URI **本身非法**（裸 `%`）⇒ 客户端回传后
+ *   `decodeURIComponent` 抛 `URIError` ⇒ 该文档**零诊断**（L2 假绿）。
+ * ⇒ 改用 Node 内置 **`pathToFileURL`**：**零新增导出**、跨平台、
+ *   天生与 `fileURLToPath` 互逆（保留字符按 RFC 3986 转义）。
+ * ⚠ **输出形态变了**（族 23 侧断言须归一）：
+ *   `/tmp/a.js` ⇒ `file:///tmp/a.js`（与旧实现同形）；
+ *   `/tmp/100%.js` ⇒ `file:///tmp/100%25.js`（旧实现给裸 `%`）。
+ */
 export function filePathToUri(filePath: string): string {
   if (filePath.startsWith("file://")) return filePath;
-  // Windows 路径保留盘符；POSIX 直接拼
-  const normalized = filePath.replace(/\\/g, "/");
-  return normalized.startsWith("/")
-    ? `file://${normalized}`
-    : `file:///${normalized}`;
+  return pathToFileURL(filePath).href;
+}
+
+/**
+ * `SymbolKind` **夹取**（Bug 749）：客户端在
+ * `textDocument.documentSymbol.symbolKind.valueSet` 里声明它**能显示**的 kind
+ * ⇒ 服务端回一个**不在集合内**的 kind 是**取值违规**（老客户端可能直接丢弃
+ * 或渲染成未知图标）。
+ *
+ * ⚠ **缺省语义**：客户端**没发**该能力段 ⇒ `valueSet` 为 `undefined`
+ *   ⇒ **不夹取**（回全量 kind）。
+ * ⚠ 夹取目标**必须在客户端声明的集合内** ⇒ 优先挑语义安全的
+ *   `Variable`(13) / `Function`(12) / `Constant`(14)；都不在集合内 ⇒ 退回
+ *   集合的第一个（仍是客户端允许的取值）。
+ */
+function clampSymbolKind(kind: LspSymbolKind, valueSet: readonly number[] | undefined): LspSymbolKind {
+  if (!valueSet || valueSet.length === 0) return kind;
+  if (valueSet.includes(kind)) return kind;
+  for (const safe of [LspSymbolKind.Variable, LspSymbolKind.Function, LspSymbolKind.Constant]) {
+    if (valueSet.includes(safe)) return safe;
+  }
+  return valueSet[0] as LspSymbolKind;
+}
+
+/**
+ * 夹取后的**降级提示**（Bug 749）：kind 被夹取 ⇒ 在 `detail` 里留痕
+ * （客户端只看到夹取后的 kind ⇒ 不留痕就「静默降级」，用户无从判断）。
+ * ⚠ 未被夹取 ⇒ `detail` **原样返回**（不污染既有断言）。
+ */
+function symbolDetail(
+  detail: string | undefined,
+  clampedKind: LspSymbolKind,
+  originalKind: LspSymbolKind,
+): string | undefined {
+  if (clampedKind === originalKind) return detail;
+  const note = `kind clamped to ${clampedKind} (client symbolKind.valueSet)`;
+  return detail ? `${detail} — ${note}` : note;
+}
+
+/**
+ * ECMAScript **保留字**（Bug 750）——不能作为绑定名。
+ *
+ * · ES 保留字（`class` / `const` / `enum` / `await` …）
+ * · **严格模式**未来保留字（`implements` / `interface` / `let` / `package` /
+ *   `private` / `protected` / `public` / `static` / `yield`）
+ * · 严格模式下**不可**作为绑定名（`arguments` / `eval`）
+ *
+ * ⚠ 只收**真正非法**的词：TS 的**上下文关键字**（`type` / `namespace` /
+ *   `as` / `from` / `get` / `set` / `of` / `out` …）在 JS 里是**合法标识符**
+ *   ⇒ 不收（否则把合法改名误拒）。
+ */
+const RESERVED_WORDS = new Set<string>([
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+  "arguments",
+  "eval",
+]);
+
+/**
+ * 重命名目标名的**语法层**校验（Bug 750）。
+ *
+ * ① **非空**；② **合法 JS 标识符**
+ * （`/^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*$/u`）；
+ * ③ **非保留字**。
+ *
+ * ⚠ **只做语法层**（零跨片）：「与同作用域已有绑定冲突」（重复声明）需要
+ *   作用域模型（`buildSymbolTable`）⇒ 本族**不做**，登记为独立后续项。
+ */
+function isValidRenameName(name: string): boolean {
+  if (!name) return false;
+  if (!/^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*$/u.test(name)) return false;
+  if (RESERVED_WORDS.has(name)) return false;
+  return true;
 }
 
 /** 打开文档 + 会话 knownFiles，供跨文件 references 扫描 */
@@ -90,16 +231,61 @@ connection.onDocumentSymbol((params) => {
   if (!document) return [];
   if (!isNudoFile(params.textDocument.uri)) return [];
 
+  // 客户端能力（Bug 749）：返回的**形状**与 **`SymbolKind` 取值**都受客户端
+  // 声明约束（`textDocument.documentSymbol.hierarchicalDocumentSymbolSupport`
+  // / `textDocument.documentSymbol.symbolKind.valueSet`）。
+  // ⚠ **缺省语义**：客户端**没发**该能力段 ⇒ `undefined` ⇒ 走**默认**
+  //   （层级式 + 全量 `SymbolKind`）——**不得因拿不到能力就退化**。
+  const caps = deps.clientCapabilities?.();
+  const dsCaps = caps?.textDocument?.documentSymbol;
+  const hierarchical = dsCaps?.hierarchicalDocumentSymbolSupport !== false;
+  const valueSet = dsCaps?.symbolKind?.valueSet;
+
   try {
     const ast = parse(document.getText());
-    const toLsp = (s: DocumentSymbolItem): DocumentSymbol => ({
-      name: s.name,
-      detail: s.detail,
-      kind: s.kind as LspSymbolKind,
-      range: s.range,
-      selectionRange: s.selectionRange,
-      children: s.children?.map(toLsp),
-    });
+    if (!hierarchical) {
+      // 客户端不支持层级式 ⇒ 回**扁平协议**（`SymbolInformation[]`：
+      // `location` 而非 `range` / `selectionRange` / `children`；层级关系用
+      // `containerName` 表达）。
+      // ⚠ LSP 的 `SymbolInformation` **没有** `detail` 字段（只有
+      //   `DocumentSymbol` 有）⇒ 这里把 `detail` 作为**扩展字段**带上
+      //   （JSON-RPC 客户端忽略未知字段）—— 否则「kind 被夹取」的降级提示
+      //   在扁平协议下**无处可留**。
+      const out: Array<SymbolInformation & { detail?: string }> = [];
+      const flatten = (items: DocumentSymbolItem[], container: string | undefined): void => {
+        for (const s of items) {
+          const kind = clampSymbolKind(s.kind as LspSymbolKind, valueSet);
+          const entry: SymbolInformation & { detail?: string } = {
+            name: s.name,
+            kind,
+            detail: symbolDetail(s.detail, kind, s.kind as LspSymbolKind),
+            location: {
+              uri: params.textDocument.uri,
+              range: {
+                start: { line: s.range.start.line, character: s.range.start.character },
+                end: { line: s.range.end.line, character: s.range.end.character },
+              },
+            },
+          };
+          if (container) entry.containerName = container;
+          out.push(entry);
+          if (s.children?.length) flatten(s.children, s.name);
+        }
+      };
+      flatten(documentSymbols(ast), undefined);
+      return out;
+    }
+    const toLsp = (s: DocumentSymbolItem): DocumentSymbol => {
+      const kind = clampSymbolKind(s.kind as LspSymbolKind, valueSet);
+      return {
+        name: s.name,
+        detail: symbolDetail(s.detail, kind, s.kind as LspSymbolKind),
+        kind,
+        range: s.range,
+        selectionRange: s.selectionRange,
+        children: s.children?.map(toLsp),
+      };
+    };
     return documentSymbols(ast).map(toLsp);
   } catch {
     return [];
@@ -114,6 +300,13 @@ connection.onWorkspaceSymbol((params) => {
   const files = new Set<string>([...deps.knownFiles].map(cacheKey));
   for (const d of documents.all()) files.add(cacheKey(d.uri));
   for (const filePath of files) {
+    // 门禁（Bug 751）：与其它导航请求**同一判据**——`isNudoFile` 的**路径层**
+    // `isNudoTargetPath`（同样**排除侧车** `*.nudo.js` / `*.nudo.mjs` /
+    // `*.nudo.ts` 与 `*.nudo.draft.*`）。
+    // ⚠ 本面扫的是**文件路径集合**（`knownFiles` + 已打开文档）⇒ 可能含
+    //   **未打开**的文件 ⇒ **不能**用 `isNudoFile`（它要求文档已打开 ⇒ 会把
+    //   未打开的文件**整片误杀**）⇒ 只用**路径层**。
+    if (!isNudoTargetPath(filePath)) continue;
     const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
     let source: string | undefined;
     if (doc) {
@@ -129,20 +322,37 @@ connection.onWorkspaceSymbol((params) => {
     try {
       const ast = parse(source);
       const uri = doc?.uri ?? filePathToUri(filePath);
-      for (const sym of documentSymbols(ast)) {
-        if (query && !sym.name.toLowerCase().includes(query)) continue;
-        out.push({
-          name: sym.name,
-          kind: sym.kind as LspSymbolKind,
-          location: {
-            uri,
-            range: {
-              start: { line: sym.selectionRange.start.line, character: sym.selectionRange.start.character },
-              end: { line: sym.selectionRange.end.line, character: sym.selectionRange.end.character },
-            },
-          },
-        });
-      }
+      // **递归下钻** `children` 并**扁平化**（Bug 745）：`documentSymbols` 把
+      // 类成员放在 `children` 里 ⇒ 只取顶层 ⇒ 类方法 / 类属性**永远**不进
+      // 搜索结果。LSP 的 `workspace/symbol` 是**扁平协议** ⇒ 层级关系用
+      // `containerName` 表达。
+      const flatten = (items: DocumentSymbolItem[], container: string | undefined): void => {
+        for (const sym of items) {
+          if (!query || sym.name.toLowerCase().includes(query)) {
+            const entry: SymbolInformation = {
+              name: sym.name,
+              kind: sym.kind as LspSymbolKind,
+              location: {
+                uri,
+                range: {
+                  start: {
+                    line: sym.selectionRange.start.line,
+                    character: sym.selectionRange.start.character,
+                  },
+                  end: {
+                    line: sym.selectionRange.end.line,
+                    character: sym.selectionRange.end.character,
+                  },
+                },
+              },
+            };
+            if (container) entry.containerName = container;
+            out.push(entry);
+          }
+          if (sym.children?.length) flatten(sym.children, sym.name);
+        }
+      };
+      flatten(documentSymbols(ast), undefined);
     } catch {
       /* skip unparseable */
     }
@@ -153,11 +363,14 @@ connection.onWorkspaceSymbol((params) => {
 connection.onDefinition((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return null;
-  // A5：侧车契约文件本身也可导航（打开的 *.nudo.js / *.nudo.ts）
-  const uriPath = params.textDocument.uri;
-  if (!isNudoFile(uriPath) && !isSidecarPath(uriToFilePath(uriPath))) {
-    return null;
-  }
+  // 门禁（Bug 751）：与其它导航请求**同一个谓词**（`isNudoFile` 真源 =
+  // `server.ts`）⇒ 侧车契约文件（`*.nudo.js` 等）在本请求上一律为 null。
+  // ⚠ 此前本行额外挂了 `|| isSidecarPath(...)` **逃生口** ⇒ 侧车只有
+  //   `definition` 放行、其余五个请求挡住 ⇒ **同一坐标六种请求三种结论**
+  //   （definition 说「这个符号存在」、documentSymbol 说「这个文件里没有
+  //   任何符号」）⇒ LSP 内部自相矛盾。
+  // ⚠ **代价（已裁决：接受）**：丢掉「源码 → 侧车」的 definition 可导航能力。
+  if (!isNudoFile(params.textDocument.uri)) return null;
 
   const source = document.getText();
   const filePath = uriToFilePath(params.textDocument.uri);
@@ -264,6 +477,12 @@ connection.onRenameRequest((params) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) return null;
   if (!isNudoFile(params.textDocument.uri)) return null;
+  // 新名校验（Bug 750）：**语法层** —— 合法 JS 标识符 + 非保留字 + 非空。
+  // ⚠ 此前 `params.newName` 被**直接**当替换文本用 ⇒ 一次改名就能把源码改成
+  //   **非法 JavaScript**（`node --check` 直接 `SyntaxError`）。
+  // ⚠ 「与同作用域已有绑定冲突」（重复声明）需要作用域模型
+  //   （`buildSymbolTable`，片 A 的地盘）⇒ **本族不做**（独立后续项）。
+  if (!isValidRenameName(params.newName)) return null;
 
   const source = document.getText();
   const filePath = uriToFilePath(params.textDocument.uri);

@@ -14,6 +14,8 @@
  * - withTempDir：mkdtemp + try/finally rmSync 的 tmpdir 脚手架。
  * - withLspServer：真 server（mock connection）+ didOpen 的协议面脚手架——
  *   协议回归钉（rename / references / definition）拿到的就是协议响应本身。
+ * - withLspServerCapabilities：同上，但**先发 initialize**（携带客户端能力）
+ *   ——客户端能力协商面（Bug 749）的协议回归钉入口。
  * - mock 的 `workspace` 特性面 + `fireWorkspaceFoldersChanged`：工作区文件夹
  *   变更通知的协议面入口（Bug 783）。
  */
@@ -213,20 +215,27 @@ export function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
 // ---------------------------------------------------------------------------
 
 /**
- * 真 LSP server 脚手架：建临时目录 → 落文件 → 起 server（mock connection）→
- * didOpen 全部文件 → 交出协议请求入口。
- *
- * 协议面回归钉（rename / references / definition / documentSymbol …）走这条
- * 路径：拿到的是**协议响应本身**，不是内部函数的推断。
+ * 真 LSP server 脚手架的上下文：协议请求入口 + 文件 uri + 临时目录。
  */
-export async function withLspServer(
+export type LspServerCtx = {
+  req: (method: string) => (params: any) => any;
+  uri: (name: string) => string;
+  dir: string;
+};
+
+/**
+ * 真 LSP server 脚手架的内核：建临时目录 → 落文件 → 起 server（mock
+ * connection）→（可选）发 `initialize` → didOpen 全部文件 → 交出协议请求入口。
+ *
+ * `capabilities` 非空时**先发 `initialize`**（客户端能力协商面，Bug 749）：
+ * server 在 `initialize` 里捕获 `params.capabilities`，协议面才可能按能力
+ * 作答 ⇒ 能力面回归钉必须走这条路径。
+ */
+async function runLspServer(
   files: Record<string, string>,
-  fn: (ctx: {
-    req: (method: string) => (params: any) => any;
-    uri: (name: string) => string;
-    dir: string;
-  }) => Promise<void>,
-  prefix = "nudo-lsp-server-",
+  capabilities: Record<string, unknown> | undefined,
+  fn: (ctx: LspServerCtx) => Promise<void>,
+  prefix: string,
 ): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   try {
@@ -236,6 +245,16 @@ export async function withLspServer(
     const mock = createMockConnection();
     const { createNudoServer } = await import("../server.ts");
     createNudoServer(mock as unknown as never);
+    if (capabilities !== undefined) {
+      const initialize = mock.requests.get("initialize");
+      if (!initialize) throw new Error("initialize handler not registered");
+      initialize({
+        processId: null,
+        rootUri: null,
+        workspaceFolders: null,
+        capabilities,
+      });
+    }
     for (const [name, text] of Object.entries(files)) {
       mock.notifications.get("textDocument/didOpen")!({
         textDocument: {
@@ -256,4 +275,40 @@ export async function withLspServer(
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * 真 LSP server 脚手架：建临时目录 → 落文件 → 起 server（mock connection）→
+ * didOpen 全部文件 → 交出协议请求入口。
+ *
+ * 协议面回归钉（rename / references / definition / documentSymbol …）走这条
+ * 路径：拿到的是**协议响应本身**，不是内部函数的推断。
+ *
+ * ⚠ 本脚手架**不发** `initialize` ⇒ server 侧拿不到客户端能力
+ *   （`clientCapabilities` 保持 `undefined`）⇒ 协议面走**默认**行为。
+ *   需要客户端能力面（Bug 749）请用 `withLspServerCapabilities`。
+ */
+export async function withLspServer(
+  files: Record<string, string>,
+  fn: (ctx: LspServerCtx) => Promise<void>,
+  prefix = "nudo-lsp-server-",
+): Promise<void> {
+  await runLspServer(files, undefined, fn, prefix);
+}
+
+/**
+ * **新增（Bug 749）**：真 LSP server 脚手架 + **客户端能力**。
+ *
+ * 与 `withLspServer` 的唯一差别：起 server 后**先发 `initialize`**
+ * （携带 `capabilities`）⇒ server 捕获客户端能力 ⇒ 协议面可按能力作答。
+ * `capabilities` 传 `undefined` ⇒ 不发 `initialize`（等价于
+ * `withLspServer`）。
+ */
+export async function withLspServerCapabilities(
+  files: Record<string, string>,
+  capabilities: Record<string, unknown> | undefined,
+  fn: (ctx: LspServerCtx) => Promise<void>,
+  prefix = "nudo-lsp-caps-",
+): Promise<void> {
+  await runLspServer(files, capabilities, fn, prefix);
 }

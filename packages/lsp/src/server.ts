@@ -5,6 +5,7 @@ import {
   ProposedFeatures,
   TextDocumentSyncKind,
   type Connection,
+  type ClientCapabilities,
   type InitializeParams,
   type InitializeResult,
   CodeLensRefreshRequest,
@@ -21,6 +22,7 @@ import { sanitizeErrorMessage } from "./sanitize.ts";
 import { sidecarPathOf } from "@nudojs/core";
 import {
   isNudoTargetPath,
+  isSidecarPath,
   shouldAnalyzeFile,
   findProjectConfig,
   interfaceConfig,
@@ -226,6 +228,26 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    */
   let clientSettingsTree: Record<string, unknown> = {};
 
+  /**
+   * 客户端能力（Bug 749）：`initialize` 时捕获的 `params.capabilities`。
+   *
+   * 协议面必须**按客户端声明的能力作答**：`textDocument/documentSymbol` 的
+   * 返回**形状**（层级式 `DocumentSymbol[]` vs 扁平 `SymbolInformation[]`）
+   * 与 `SymbolKind` **取值**都受客户端能力约束
+   * （`textDocument.documentSymbol.hierarchicalDocumentSymbolSupport` /
+   * `textDocument.documentSymbol.symbolKind.valueSet`）。
+   *
+   * 此前 server **从不保存** `params.capabilities` ⇒ 任何 handler 都无从按
+   * 能力分支（`onDocumentSymbol` 恒回「层级式 + 全量 SymbolKind」）。
+   *
+   * ⚠ **缺省语义**：客户端**没发**该能力段时（老客户端可能根本不发）⇒
+   *   本值保持 `undefined` ⇒ 消费方必须走**默认**：**层级式 + 全量
+   *   SymbolKind**（不得因拿不到能力就退化）。
+   * ⚠ 本项读的是**客户端**能力，与 `NUDO_INITIALIZE_CAPABILITIES`
+   *   （服务端**声明**的能力键清单）不是一回事 ⇒ 冻结表零变更。
+   */
+  let clientCapabilities: ClientCapabilities | undefined;
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   /**
@@ -271,6 +293,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   }
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
+    // 客户端能力（Bug 749）：捕获 `params.capabilities` —— 协议面按能力作答
+    // （形状 / SymbolKind 取值）。⚠ **返回值不变** ⇒
+    // `NUDO_INITIALIZE_CAPABILITIES`（服务端声明的能力键清单）一行不动。
+    clientCapabilities = params.capabilities;
     workspaceRoots = (params.workspaceFolders ?? [])
       .map((w) => safeUriToFilePath(w.uri))
       .filter((p): p is string => p !== undefined);
@@ -300,6 +326,23 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         },
       },
     );
+    // 工作区文件夹变更订阅（Bug 783）：真 transport 下
+    // `connection.workspace.onDidChangeWorkspaceFolders` 这个 **getter** 只在
+    // `initialize` 之后才就绪（`remote.initialize(capabilities)` 跑在本处理器
+    // **之前**）⇒ 构造期那次（抛异常，已被兜住）在这里补。
+    //
+    // ⚠ 补的时机 = **下一轮事件循环**（`setTimeout(0)`，宏任务）：
+    //   `vscode-languageserver` 在用户的 `onInitialize` 返回**之后**才跑
+    //   `fillServerCapabilities`（微任务）⇒ 定时器落在其后 ⇒ server 自己声明的
+    //   `workspace.workspaceFolders.changeNotifications` 生效 ⇒ 不会多发一个
+    //   冗余的 `client/registerCapability` 请求（某些客户端没实现它 ⇒ 未处理的
+    //   rejection）。
+    // ⚠ 客户端**没声明** `capabilities.workspace.workspaceFolders` ⇒ getter
+    //   仍抛 ⇒ 被 `subscribeWorkspaceFolders` 的 try 兜住 ⇒ 静默跳过（server 不崩）。
+    // ⚠ **返回值一字不动** ⇒ 服务端声明的能力键清单（冻结表）零变更。
+    setTimeout(() => {
+      subscribeWorkspaceFolders();
+    }, 0);
     return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Full,
@@ -358,20 +401,39 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    * `workspaceRoots` 在 `initialize` 之后**永久冻结**（三个写入点全在
    * `onInitialize` 里）⇒ 新加入的目录被写盘边界误拒、已移出的目录仍被授权。
    *
-   * `connection.workspace` 是可选特性面（测试用的内存 mock 可能没有）⇒
-   * 缺失时静默跳过，不得让 server 起不来。
+   * ⚠ **取值必须防御（会抛异常的 getter）**：
+   *   `connection.workspace.onDidChangeWorkspaceFolders` 在
+   *   `vscode-languageserver@10.1.2` 里是一个 **getter**
+   *   （`lib/common/workspaceFolder.js:38`）：客户端没声明
+   *   `capabilities.workspace.workspaceFolders` 时它**直接抛异常**
+   *   （`Client doesn't support sending workspace folder change events.`）
+   *   ⇒ `?.` **挡不住**（`?.` 只挡 `null` / `undefined`，不挡抛异常）。
+   *   且该 getter 只在 `initialize` **之后**、且客户端**声明了**该能力时
+   *   **才就绪**（`lib/common/server.js:733` 的 `remote.initialize(capabilities)`
+   *   跑在用户的 `onInitialize` 处理器**之前**）⇒ **构造期**取它**必然抛**
+   *   （真 transport 实证：server 启动即崩）。
+   *
+   *   ⇒ 订阅分两处尝试，**两处都不得抛**：
+   *   1. **构造期**（内存 mock / 已就绪的连接）：直接取；
+   *   2. **`initialize` 之后**（真 transport）：再取一次（`onInitialize` 里
+   *      排的 `setTimeout(0)`——落在库自己的 `fillServerCapabilities` 之后）。
+   *   取不到（抛异常 / 不是函数）⇒ **静默跳过订阅**（server 照常启动）。
    */
-  const workspaceFoldersFeature = connection.workspace as unknown as
-    | {
-        onDidChangeWorkspaceFolders?: (
-          h: (e: {
-            added: readonly { uri: string; name: string }[];
-            removed: readonly { uri: string; name: string }[];
-          }) => void,
-        ) => unknown;
-      }
-    | undefined;
-  workspaceFoldersFeature?.onDidChangeWorkspaceFolders?.((event) => {
+  type WorkspaceFolderChangeEvent = {
+    added: readonly { uri: string; name: string }[];
+    removed: readonly { uri: string; name: string }[];
+  };
+
+  type WorkspaceFoldersFeatureLike = {
+    onDidChangeWorkspaceFolders?: (
+      h: (e: WorkspaceFolderChangeEvent) => void,
+    ) => unknown;
+  };
+
+  /** 订阅是否已建立（同一连接只订阅一次）。 */
+  let workspaceFoldersSubscribed = false;
+
+  const onWorkspaceFoldersChanged = (event: WorkspaceFolderChangeEvent): void => {
     const added = (event.added ?? [])
       .map((w) => safeUriToFilePath(w.uri))
       .filter((p): p is string => p !== undefined);
@@ -389,7 +451,45 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       void validateText(fp, doc.uri, doc.getText(), doc.version, validationDeps());
     }
     refreshPullDiagnostics();
-  });
+  };
+
+  /**
+   * 订阅工作区文件夹变更（幂等 + **永不抛**）。
+   *
+   * ⚠ `connection.workspace` 可能整个缺失（内存 mock）⇒ 静默跳过。
+   * ⚠ `onDidChangeWorkspaceFolders` 是**会抛异常的 getter** ⇒ 取值必须
+   *   放在 `try` 里（`?.` 挡不住抛异常）。
+   *
+   * @returns 是否订阅成功（false ⇒ 客户端不支持该通知面 ⇒ 降级，不影响启动）。
+   */
+  function subscribeWorkspaceFolders(): boolean {
+    if (workspaceFoldersSubscribed) return true;
+    let subscribe:
+      | ((h: (e: WorkspaceFolderChangeEvent) => void) => unknown)
+      | undefined;
+    try {
+      // ⚠ `connection.workspace` 与它上面的 getter **都**在 try 里取值。
+      const feature = connection.workspace as unknown as
+        | WorkspaceFoldersFeatureLike
+        | undefined;
+      subscribe = feature?.onDidChangeWorkspaceFolders;
+    } catch {
+      // 客户端没声明 `capabilities.workspace.workspaceFolders` ⇒ getter 抛异常
+      return false;
+    }
+    if (typeof subscribe !== "function") return false;
+    try {
+      subscribe(onWorkspaceFoldersChanged);
+    } catch {
+      return false;
+    }
+    workspaceFoldersSubscribed = true;
+    return true;
+  }
+
+  // 构造期先试一次（内存 mock / 已就绪的连接）：真 transport 下这里会抛，
+  // 由上面的 try 兜住 ⇒ 改为在 `initialize` 之后（`onInitialize`）再试。
+  subscribeWorkspaceFolders();
 
   // 打开即验证：didOpen 不会触发 onDidChangeContent，若不在此主动验证，
   // 新打开的文件要等到首次编辑（300ms 防抖后）或客户端 pull 诊断才有结果。
@@ -571,11 +671,34 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     );
   }
 
+  /**
+   * 导航面 / IDE 面的**门禁谓词（真源）**（Bug 751）。
+   *
+   * 判据（两层）：
+   * 1. **路径层** `isNudoTargetPath`：`.js` / `.mjs` / `.ts` 可作推断目标，
+   *    并**明确排除**侧车契约文件（`*.nudo.js` / `*.nudo.mjs` / `*.nudo.ts`）
+   *    与 draft 产物（`*.nudo.draft.*`）。
+   * 2. **analysis.mode 层** `shouldAnalyzeFile`：`directives` = 今日行为；
+   *    `exports` / `all` 由 package.json#nudo.analysis 打开无指令分析。
+   *
+   * ⚠ **同一个实例**经 `deps.isNudoFile` 注入 `server-navigation.ts` 与
+   *   `server-ide.ts` ⇒ 两侧门禁口径**必然一致**（Bug 751 的根因就是
+   *   「各请求各写各的门禁」⇒ 同一坐标六种请求三种结论）。
+   *   ⇒ **消费方不得另写一份谓词**。
+   * ⚠ 本谓词要求文档**已打开**（`documents.get(uri)`）⇒ 只适用于「按文档
+   *   发请求」的面；`workspace/symbol` 扫的是**文件路径集合**（可能未打开）
+   *   ⇒ 那条路径用**路径层** `isNudoTargetPath`（本谓词的第一层，同样排除
+   *   侧车），不得用本谓词（否则未打开的文件会被整片误杀）。
+   * ⚠ 侧车排除在此**显式**写一遍（纵深防御）：即便 `isNudoTargetPath` 的
+   *   后缀表将来漂移，导航面也不会把侧车契约文件放进来。
+   */
   function isNudoFile(uri: string): boolean {
     // 路径目标 + analysis.mode（design-cli-semantics §7）：directives=今日行为；
     // exports/all 由 package.json#nudo.analysis 打开无指令分析
-    if (!isNudoTargetPath(uriToFilePath(uri))) return false;
     const filePath = uriToFilePath(uri);
+    if (!isNudoTargetPath(filePath)) return false;
+    // 侧车契约文件（*.nudo.js 等）不是推断目标：导航面一律不认（Bug 751）
+    if (isSidecarPath(filePath)) return false;
     const cached = nudoFileCache.get(uri);
     if (cached !== undefined) return cached;
     const doc = documents.get(uri);
@@ -677,6 +800,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     getDocument: (uri) => documents.get(uri),
     listDocuments: () => documents.all(),
     isNudoFile,
+    // 门禁谓词的**路径层**（同一真源）：codeLens（interface 档）用
+    isNudoTargetPath,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
     inlayParamsEnabled,
@@ -692,12 +817,28 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   attachSignatureHelp(ideDeps);
   attachSemanticTokens(ideDeps);
 
-  const navigationDeps: NavigationDeps = {
+  /**
+   * 导航面依赖。
+   *
+   * ⚠ **门禁契约（Bug 751）**：`isNudoFile` 是**同一个实例**（server.ts 的
+   *   真源）⇒ 导航面与 IDE 面口径必然一致；消费方**不得**另写谓词。
+   * ⚠ **能力契约（Bug 749）**：`clientCapabilities` 返回 `initialize` 时
+   *   捕获的客户端能力（`params.capabilities`）。
+   *   · **名字**：`clientCapabilities`
+   *   · **类型**：`() => ClientCapabilities | undefined`
+   *   · **语义**：返回客户端在 `initialize` 里声明的能力；**缺省**
+   *     （`undefined`，老客户端可能根本不发该段）⇒ 消费方必须走
+   *     **层级式 + 全量 SymbolKind** 的默认输出，**不得**因拿不到能力就退化。
+   */
+  const navigationDeps: NavigationDeps & {
+    clientCapabilities?: () => ClientCapabilities | undefined;
+  } = {
     connection,
     getDocument: (uri) => documents.get(uri),
     listDocuments: () => documents.all(),
     isNudoFile,
     knownFiles,
+    clientCapabilities: () => clientCapabilities,
   };
   attachNavigation(navigationDeps);
 
