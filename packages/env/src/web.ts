@@ -384,6 +384,14 @@ export function defineEnv(): EnvDefinition {
       // Bug 872：NavigatorID mixin 成员——缺槽读出 exact undefined ⇒
       // `navigator.hardwareConcurrency > 4` 折成**恒 false**（错值，不抛）。
       hardwareConcurrency: prim.num(),
+      // Bug 1048 同源：Web Locks API（**W3C 标准**，浏览器 + node 24+ 都有）——
+      // 缺槽读出 exact undefined ⇒ `navigator.locks.request(...)` 判「确定抛
+      // TypeError」（假红）。宿主实测：`navigator.locks` 原型成员 =
+      // `constructor, request, query`。
+      locks: objAbs({
+        query: envFn([], promiseOf(prim.unknown)),
+        request: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+      }),
       clipboard: objAbs({
         readText: envFn([], promiseOf(prim.str())),
         writeText: envFn([prim.str()], promiseOf(undef())),
@@ -487,6 +495,33 @@ export function defineEnv(): EnvDefinition {
         ),
         generateKey: envFn(
           [prim.unknown, prim.bool(), arrOf(prim.str())],
+          promiseOf(prim.unknown),
+        ),
+        // Bug 1049：WebCrypto Level 1 / Level 2 标准 API——旧表只有 8 个键
+        // ⇒ 缺的这 4 个读出 **exact undefined** ⇒ 调用即「确定抛 TypeError」
+        // ⇒ 合法浏览器代码被判「必抛」（L2 门禁假红）；node env 同一对象
+        // 早已声明 `deriveKey` / `deriveBits` ⇒ 两 env 自相矛盾。补齐后
+        // 两 env 的 `crypto.subtle` 成员集合同源。
+        deriveKey: envFn(
+          [
+            prim.unknown,
+            prim.unknown,
+            prim.unknown,
+            prim.bool(),
+            arrOf(prim.str()),
+          ],
+          promiseOf(prim.unknown),
+        ),
+        deriveBits: envFn(
+          [prim.unknown, prim.unknown, prim.num()],
+          promiseOf(prim.unknown),
+        ),
+        wrapKey: envFn(
+          [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
+          promiseOf(prim.unknown),
+        ),
+        unwrapKey: envFn(
+          [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
           promiseOf(prim.unknown),
         ),
         importKey: envFn(

@@ -1912,6 +1912,153 @@ function assertRegexpPattern(
     values: envFn([], brandOf("ReadableStreamIterator")),
   };
 
+  /**
+   * Response 实例面（Bug 1044：构造器实例面 + 静态工厂返回面**同源**）。
+   *
+   * 静态工厂 `Response.json(...)` 返回的**就是**一个 Response 实例 ⇒ 静态面
+   * 与实例面共用同一份槽表 ⇒ 读面与宿主一致（`.status` → number、`.then` →
+   * exact `undefined`），也与 web env 的静态面（返回实例面）同源。
+   */
+  const ResponseInstance = brandOf(
+    "Response",
+    objAbs({
+      type: prim.str(),
+      url: prim.str(),
+      redirected: prim.bool(),
+      status: prim.num(),
+      ok: prim.bool(),
+      statusText: prim.str(),
+      headers: brandOf("Headers"),
+      body: prim.unknown,
+      bodyUsed: prim.bool(),
+      clone: envFn([], brandOf("Response")),
+      arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
+      blob: envFn([], promiseOf(brandOf("Blob"))),
+      formData: envFn([], promiseOf(brandOf("FormData"))),
+      json: envFn([], promiseOf(prim.unknown)),
+      text: envFn([], promiseOf(prim.str())),
+    }),
+  );
+
+  /**
+   * performance 成员表（全局对象面 + `Performance` 实例面**同源**）。
+   *
+   * Bug 1047：宿主真实成员（真 node v26.10.0 实测
+   * `Object.getOwnPropertyNames(Object.getPrototypeOf(performance))`）——
+   * 旧表只声明 9 个槽 ⇒ 缺的成员读出 **exact undefined**（确定的错值）
+   * ⇒ 调用即「确定抛 TypeError」⇒ 合法 node 代码被判「必抛」（L2 门禁假红）。
+   * web env 同一对象早已含 `clearResourceTimings` / `toJSON`（Bug 862）
+   * ⇒ 两 env 收口不对称，这里补齐。
+   */
+  const performanceSlots = {
+    timeOrigin: prim.num(),
+    now: envFn([], prim.num()),
+    mark: envFn([prim.str()], brandOf("PerformanceMark")),
+    measure: envFn([prim.str()], brandOf("PerformanceMeasure")),
+    clearMarks: envFn([prim.str()], undef()),
+    clearMeasures: envFn([prim.str()], undef()),
+    getEntries: envFn([], arrOf(brandOf("PerformanceEntry"))),
+    getEntriesByName: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
+    getEntriesByType: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
+    // Performance Level 2 标准面（浏览器 + node 都有）：
+    clearResourceTimings: envFn([], undef()),
+    toJSON: envFn([], prim.unknown),
+    // perf_hooks（node 专有面，宿主实测存在）：
+    // - `setResourceTimingBufferSize(n)` → undefined
+    // - `eventLoopUtilization()` → `{ idle, active, utilization }`
+    // - `nodeTiming` → 对象（**属性**，不是函数）
+    // - `timerify(fn)` → **返回被包装的函数**（不是 undefined）
+    setResourceTimingBufferSize: envFn([prim.num()], undef()),
+    eventLoopUtilization: envFn(
+      [],
+      objAbs({
+        idle: prim.num(),
+        active: prim.num(),
+        utilization: prim.num(),
+      }),
+    ),
+    nodeTiming: objAbs({
+      name: prim.str(),
+      entryType: prim.str(),
+      startTime: prim.num(),
+      duration: prim.num(),
+      nodeStart: prim.num(),
+      v8Start: prim.num(),
+      environment: prim.str(),
+      loopStart: prim.num(),
+      loopExit: prim.num(),
+      bootstrapComplete: prim.num(),
+      idleTime: prim.num(),
+      uvMetricsInfo: prim.unknown,
+    }),
+    // `timerify(fn)` 原生返回**可调用**的包装函数 ⇒ 返回域给一个可调用面
+    // （声明成 undefined 会让 `performance.timerify(f)(x)` 落「不可调用」）。
+    timerify: envFn([prim.unknown], envFn([prim.unknown], prim.unknown)),
+  };
+  /** performance 对象面（全局 `performance` 与 `Performance` 实例共用一份槽表） */
+  const performanceObj = objAbs(performanceSlots);
+
+  /**
+   * navigator 成员表（全局对象面 + `Navigator` 实例面**同源**）。
+   *
+   * Bug 1048：Web Locks API（**W3C 标准**，浏览器 + node 24+ 都有）——旧表
+   * 只声明 5 个槽 ⇒ `navigator.locks` 读出 **exact undefined**（确定的错值，
+   * 宿主上是 LockManager 对象）⇒ `navigator.locks.request(...)` 判「确定抛
+   * TypeError」（L2 门禁假红）。宿主实测：`navigator.locks` 原型成员 =
+   * `constructor, request, query`。
+   */
+  const navigatorSlots = {
+    hardwareConcurrency: prim.num(),
+    language: prim.str(),
+    languages: arrOf(prim.str()),
+    userAgent: prim.str(),
+    platform: prim.str(),
+    locks: brandOf(
+      "LockManager",
+      objAbs({
+        query: envFn([], promiseOf(prim.unknown)),
+        request: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+      }),
+    ),
+  };
+  /** navigator 对象面（全局 `navigator` 与 `Navigator` 实例共用一份槽表） */
+  const navigatorObj = objAbs(navigatorSlots);
+
+  /**
+   * crypto.subtle 成员表（`crypto` 全局面 + `SubtleCrypto` 实例面**同源**）。
+   *
+   * Bug 1049：web env 的同名表缺 4 个标准 WebCrypto API（`deriveKey` /
+   * `deriveBits` / `wrapKey` / `unwrapKey`）⇒ 合法浏览器代码被判「确定抛
+   * TypeError」（L2 门禁假红）；node 侧已含前两个 ⇒ 两 env 自相矛盾。
+   * 这里把 node 侧补齐 Level 2 的 `wrapKey` / `unwrapKey`（宿主实测存在）
+   * ⇒ 两 env 的 `crypto.subtle` 成员集合同源。
+   */
+  const subtleCryptoSlots = {
+    encrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    decrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    sign: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    verify: envFn([prim.unknown, prim.unknown], promiseOf(prim.bool())),
+    digest: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    generateKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    deriveKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    deriveBits: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+    wrapKey: envFn(
+      [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
+      promiseOf(prim.unknown),
+    ),
+    unwrapKey: envFn(
+      [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
+      promiseOf(prim.unknown),
+    ),
+    importKey: envFn(
+      [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
+      promiseOf(prim.unknown),
+    ),
+    exportKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
+  };
+  /** crypto.subtle 对象面（全局 `crypto.subtle` 与 `SubtleCrypto` 实例共用一份槽表） */
+  const subtleCryptoObj = objAbs(subtleCryptoSlots);
+
   const nodePlatformGlobals: Record<string, Abs> = {
     // ── Event 族 ───────────────────────────────────────────────
     EventTarget: ctorOf(
@@ -2391,31 +2538,28 @@ function assertRegexpPattern(
     Response: ctorOf(
       "Response",
       [prim.unknown, prim.unknown],
-      brandOf(
-        "Response",
-        objAbs({
-          type: prim.str(),
-          url: prim.str(),
-          redirected: prim.bool(),
-          status: prim.num(),
-          ok: prim.bool(),
-          statusText: prim.str(),
-          headers: brandOf("Headers"),
-          body: prim.unknown,
-          bodyUsed: prim.bool(),
-          clone: envFn([], brandOf("Response")),
-          arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
-          blob: envFn([], promiseOf(brandOf("Blob"))),
-          formData: envFn([], promiseOf(brandOf("FormData"))),
-          json: envFn([], promiseOf(prim.unknown)),
-          text: envFn([], promiseOf(prim.str())),
-        }),
-      ),
+      ResponseInstance,
       {
         params: ["body?", "init?"],
         slots: {
           error: envFn([], brandOf("Response")),
-          json: envFn([prim.unknown], promiseOf(prim.unknown)),
+          // Bug 1044：静态 `Response.json` 是**构造**一个 Response（WHATWG
+          // Fetch / undici：**同步**返回 `Response`，不是 promise）⇒ 旧声明
+          // 写成 `promiseOf(prim.unknown)` ⇒ `.then(...)` 被判安全而宿主必抛
+          // （`TypeError: Response.json(...).then is not a function`）⇒
+          // **L2 门禁假绿**。
+          //
+          // 返回域改成**实例面**（`ResponseInstance`，brand "Response"）——
+          // 与同表 `error` / `redirect` 同品牌、与 web env 静态面同源，且读面
+          // 精确（`.status` → number、`.then` → exact `undefined`，与宿主一致）。
+          // **实例面**的 `json`（读 body ⇒ 真 promise）保持不动。
+          //
+          // 已知偏差（core 侧，本包改不到）：core 的
+          // `definitelyUncallableMember` 只判**平 obj 接收者**
+          // （`if (s.k !== "obj") return false;`）⇒ brand 接收者的缺槽成员
+          // （exact `undefined`）被调用时不记抛 ⇒ `Response.json(x).then(...)`
+          // 仍不被 L2 门禁标出（web env 能标出，只因它把 Response 建成平 obj）。
+          json: envFn([prim.unknown], ResponseInstance),
           redirect: envFn([prim.unknown, prim.num()], brandOf("Response")),
         },
       },
@@ -2484,16 +2628,7 @@ function assertRegexpPattern(
     ),
     Navigator: nonCtorOf(
       "Navigator",
-      brandOf(
-        "Navigator",
-        objAbs({
-          hardwareConcurrency: prim.num(),
-          language: prim.str(),
-          languages: arrOf(prim.str()),
-          userAgent: prim.str(),
-          platform: prim.str(),
-        }),
-      ),
+      brandOf("Navigator", navigatorObj),
     ),
 
     // ── 加密 / 性能 族 ────────────────────────────────────────
@@ -2522,41 +2657,11 @@ function assertRegexpPattern(
     ),
     SubtleCrypto: nonCtorOf(
       "SubtleCrypto",
-      brandOf(
-        "SubtleCrypto",
-        objAbs({
-          encrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          decrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          sign: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          verify: envFn([prim.unknown, prim.unknown], promiseOf(prim.bool())),
-          digest: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          generateKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          deriveKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          deriveBits: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          importKey: envFn(
-            [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-            promiseOf(prim.unknown),
-          ),
-          exportKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-        }),
-      ),
+      brandOf("SubtleCrypto", subtleCryptoObj),
     ),
     Performance: nonCtorOf(
       "Performance",
-      brandOf(
-        "Performance",
-        objAbs({
-          timeOrigin: prim.num(),
-          now: envFn([], prim.num()),
-          mark: envFn([prim.str()], brandOf("PerformanceMark")),
-          measure: envFn([prim.str()], brandOf("PerformanceMeasure")),
-          clearMarks: envFn([prim.str()], undef()),
-          clearMeasures: envFn([prim.str()], undef()),
-          getEntries: envFn([], arrOf(brandOf("PerformanceEntry"))),
-          getEntriesByName: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
-          getEntriesByType: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
-        }),
-      ),
+      brandOf("Performance", performanceObj),
     ),
     PerformanceEntry: nonCtorOf(
       "PerformanceEntry",
@@ -2677,43 +2782,10 @@ function assertRegexpPattern(
     crypto: objAbs({
       randomUUID: envFn([], prim.str()),
       getRandomValues: envFn([arrOf(prim.unknown)], arrOf(prim.unknown)),
-      subtle: brandOf(
-        "SubtleCrypto",
-        objAbs({
-          encrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          decrypt: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          sign: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          verify: envFn([prim.unknown, prim.unknown], promiseOf(prim.bool())),
-          digest: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          generateKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          deriveKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          deriveBits: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-          importKey: envFn(
-            [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-            promiseOf(prim.unknown),
-          ),
-          exportKey: envFn([prim.unknown, prim.unknown], promiseOf(prim.unknown)),
-        }),
-      ),
+      subtle: brandOf("SubtleCrypto", subtleCryptoObj),
     }),
-    performance: objAbs({
-      timeOrigin: prim.num(),
-      now: envFn([], prim.num()),
-      mark: envFn([prim.str()], brandOf("PerformanceMark")),
-      measure: envFn([prim.str()], brandOf("PerformanceMeasure")),
-      clearMarks: envFn([prim.str()], undef()),
-      clearMeasures: envFn([prim.str()], undef()),
-      getEntries: envFn([], arrOf(brandOf("PerformanceEntry"))),
-      getEntriesByName: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
-      getEntriesByType: envFn([prim.str()], arrOf(brandOf("PerformanceEntry"))),
-    }),
-    navigator: objAbs({
-      hardwareConcurrency: prim.num(),
-      language: prim.str(),
-      languages: arrOf(prim.str()),
-      userAgent: prim.str(),
-      platform: prim.str(),
-    }),
+    performance: performanceObj,
+    navigator: navigatorObj,
     // localStorage：Node 需 --localstorage-file 才可用（无则 undefined）
     localStorage: unionOf(
       brandOf(
