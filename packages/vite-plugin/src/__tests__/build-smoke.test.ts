@@ -17,13 +17,20 @@ import nudoPlugin from "../index.ts";
  */
 
 /** 收集 vite logger.warn 的插件诊断（不透传，保持测试输出干净）。 */
-function captureWarnings(): { logger: ReturnType<typeof createLogger>; warnings: string[] } {
+function captureWarnings(): { logger: ReturnType<typeof createLogger>; warnings: string[]; infos: string[] } {
   const warnings: string[] = [];
+  const infos: string[] = [];
   const logger = createLogger("warn");
   logger.warn = (msg: string, _opt?: unknown) => {
     warnings.push(msg);
   };
-  return { logger, warnings };
+  // ⚠ **S3 更新（族 30 · S3 · Bug 1002）**：buildEnd 的**汇总行**改走 vite
+  // logger 的 info 通道（原先走裸 console.log ⇒ 逃出 `build.logLevel` 契约）⇒
+  // 这里把 info 通道也接出来（`createLogger("warn")` 默认会静音 info）。
+  logger.info = (msg: string, _opt?: unknown) => {
+    infos.push(msg);
+  };
+  return { logger, warnings, infos };
 }
 
 /** build() 联合返回里取单次构建 RollupOutput 的首个 JS chunk（本套件非 watch/数组形态）。 */
@@ -34,7 +41,7 @@ function firstChunk(result: Awaited<ReturnType<typeof build>>): { fileName: stri
 }
 
 function buildFixture(root: string, entryRel: string, failOnError = false) {
-  const { logger, warnings } = captureWarnings();
+  const { logger, warnings, infos } = captureWarnings();
   const buildPromise = build({
     root,
     configFile: false,
@@ -51,7 +58,7 @@ function buildFixture(root: string, entryRel: string, failOnError = false) {
       },
     },
   });
-  return { buildPromise, warnings };
+  return { buildPromise, warnings, infos };
 }
 
 describe("vite-plugin-nudo real build smoke", () => {
@@ -123,15 +130,17 @@ export const entry = needsPositive;
 
       const summary = vi.spyOn(console, "log").mockImplementation(() => {});
       try {
-        const { buildPromise, warnings } = buildFixture(dir, "entry.js");
+        const { buildPromise, warnings, infos } = buildFixture(dir, "entry.js");
         await buildPromise; // 默认 failOnError=false：不因 error 级诊断失败
 
         const msgs = warnings.join("\n");
         expect(msgs).toContain("[nudo]");
         expect(msgs).toMatch(/entry-may-throw/);
 
-        // buildEnd 汇总行（console.log 直写）：entry-may-throw 计入 error 档
-        const logged = summary.mock.calls.map((c) => String(c[0])).join("\n");
+        // buildEnd 汇总行（**走 vite logger 的 info 通道** —— S3 / Bug 1002：
+        // 原先走 console.log，会逃出 `build.logLevel` 契约）：
+        // entry-may-throw 计入 error 档
+        const logged = infos.join("\n");
         expect(logged).toMatch(
           /\[nudo\] Analysis complete: [1-9]\d* error\(s\), \d+ warning\(s\)/,
         );
@@ -156,7 +165,7 @@ export const answer = 42;
 
       const summary = vi.spyOn(console, "log").mockImplementation(() => {});
       try {
-        const { buildPromise, warnings } = buildFixture(dir, "entry.js");
+        const { buildPromise, warnings, infos } = buildFixture(dir, "entry.js");
         const result = await buildPromise;
         const chunk = firstChunk(result);
         expect(chunk).toBeTruthy();
@@ -165,6 +174,9 @@ export const answer = 42;
         );
 
         expect(warnings.join("\n")).not.toContain("[nudo]");
+        // 汇总行现在走 vite logger 的 info 通道（S3 / Bug 1002）⇒ 干净工程
+        // 既不上 console.log 也不上 info 通道。
+        expect(infos.join("\n")).not.toContain("[nudo] Analysis complete");
         expect(summary.mock.calls.map((c) => String(c[0])).join("\n")).not.toContain(
           "[nudo] Analysis complete",
         );
