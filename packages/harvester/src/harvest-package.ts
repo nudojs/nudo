@@ -444,7 +444,12 @@ export function resolveSubpathEntry(root: string, sub: string): string | undefin
 /** harvest 结果 → 人类可读导出表 */
 export function formatHarvestSummary(h: PackageHarvest): string {
   const lines: string[] = [];
-  lines.push(`${h.pkg}: ${h.dtsFiles.length} d.ts, ${h.env.stats.symbols} symbols`);
+  // 族 52 第 6 条：降级数（类型未建模的符号）只在**有降级**时出现（`degraded` 可选）。
+  const degraded = h.env.stats.degraded ?? 0;
+  lines.push(
+    `${h.pkg}: ${h.dtsFiles.length} d.ts, ${h.env.stats.symbols} symbols` +
+      (degraded > 0 ? `, ${degraded} degraded` : ""),
+  );
   const mods = Object.keys(h.env.modules);
   for (const m of mods.slice(0, 5)) {
     const exports = h.env.modules[m]!;

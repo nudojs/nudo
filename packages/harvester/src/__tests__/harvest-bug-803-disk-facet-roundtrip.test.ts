@@ -119,14 +119,14 @@ describe("族 27 · 磁盘投影 facet 往返（Bug 803 接线）", () => {
     expect(sh.slots!["of"]!.value.shape).toEqual({ k: "prim", type: "number" });
   });
 
-  it("ABI 已抬到 v10（收割语义变了 ⇒ 旧磁盘缓存必须 miss）", () => {
-    expect(HARVEST_DISK_ABI).toBe("nudo-harvest-disk-v10");
+  it("ABI 已抬到 v11（收割语义变了 ⇒ 旧磁盘缓存必须 miss）", () => {
+    expect(HARVEST_DISK_ABI).toBe("nudo-harvest-disk-v11");
     // 旧 ABI 的载荷必须被判 miss（否则用户本地 ~/.cache/nudo/deps/ 里的
     // 旧收割产物会继续命中 ⇒ CLI 看不到本轮修复）
     const stale = {
       v: 1,
       pkg: "pkg",
-      knobs: { maxFiles: 12, abi: "nudo-harvest-disk-v9" },
+      knobs: { maxFiles: 12, abi: "nudo-harvest-disk-v10" },
       dtsHash: "h",
       modules: {},
       globals: {},

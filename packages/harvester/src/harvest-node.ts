@@ -43,6 +43,11 @@ export type HarvestNodeStats = {
   files: number;
   symbols: number;
   skipped: number;
+  /**
+   * 「类型未建模」的符号数（族 52 第 6 条）——**可选**字段：没有降级时**不出现**
+   * （旧磁盘缓存 / 手写 env 没有它 ⇒ `undefined` ⇒ 视作 0）。
+   */
+  degraded?: number;
 };
 
 export type NodeEnvResult =
@@ -255,6 +260,7 @@ export function harvestNodeTypes(
         files: env.stats.files,
         symbols: env.stats.symbols,
         skipped: env.stats.skipped,
+        ...(env.stats.degraded !== undefined ? { degraded: env.stats.degraded } : {}),
       };
       const result: NodeEnvResult = {
         ok: true,
@@ -275,6 +281,7 @@ export function harvestNodeTypes(
       files: env.stats.files,
       symbols: env.stats.symbols,
       skipped: env.stats.skipped,
+      ...(env.stats.degraded !== undefined ? { degraded: env.stats.degraded } : {}),
     };
     if (diskRoot) {
       writeHarvestDisk(

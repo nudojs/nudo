@@ -82,8 +82,15 @@ export type HarvestSig =
  * 接口成员表并带 `ctor` facet（Bug 796 / 826）；③ 顶层 `declare namespace`
  * 的运行时成员收进命名空间自有记录（Bug 793）。任一条都会让旧缓存的
  * 物化结果与新收割器**不一致** ⇒ 必须让旧缓存 miss。
+ *
+ * **v10 → v11**：族 52（片 W2）改了七处收割语义 —— ①非限定类型引用按「引用点
+ * 所在命名空间」解析；②`extends` 基接口按基声明分别代入类型实参；③条件类型按
+ * 绑定实参求值真支；④泛型实例化顺序反转（成员在类型实参作用域里映射）；
+ * ⑤模块作用域的命名空间不再摊平进模块记录（`export = ns` 的模块导出面仍摊平）；
+ * ⑥`stats.degraded` 记录「类型未建模」降级；⑦匿名默认导出不再被丢掉。
+ * ①②③④⑦ 都会让旧缓存的物化结果与新收割器**不一致** ⇒ 必须让旧缓存 miss。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v10";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v11";
 
 export type HarvestJson = {
   v: 1;
@@ -95,7 +102,14 @@ export type HarvestJson = {
   dtsHash: string;
   modules: Record<string, Record<string, HarvestSig>>;
   globals: Record<string, HarvestSig>;
-  stats: { files: number; symbols: number; skipped: number };
+  /**
+   * 收割统计（族 52 第 6 条）。
+   *
+   * - `skipped`：**丢了**（符号没进收割面）
+   * - `degraded`：**降级**（符号在，但类型有未建模的部分）——**可选**字段，
+   *   没有降级时**不出现**（旧磁盘缓存没有它 ⇒ 读回是 `undefined` ⇒ 视作 0）。
+   */
+  stats: { files: number; symbols: number; skipped: number; degraded?: number };
 };
 
 export function sha256Hex(data: string): string {

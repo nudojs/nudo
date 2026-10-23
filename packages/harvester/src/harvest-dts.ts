@@ -24,7 +24,14 @@ import { absLit } from "@nudojs/core/internal";
 export type HarvestedEnv = {
   globals: Record<string, Abs>;
   modules: Record<string, Record<string, Abs>>;
-  stats: { files: number; symbols: number; skipped: number };
+  /**
+   * 收割统计。
+   *
+   * - `skipped`：**丢了**（符号没进收割面）
+   * - `degraded`：**降级**（符号在，但类型有未建模的部分 ⇒ 值域未知）——族 52 第 6 条
+   *   新增的**可选**字段（旧磁盘缓存 / 外部构造的 env 不带它 ⇒ `undefined`）。
+   */
+  stats: { files: number; symbols: number; skipped: number; degraded?: number };
 };
 
 type NamedTypeDecl = ts.InterfaceDeclaration | ts.ClassDeclaration;
@@ -76,10 +83,25 @@ interface HarvestContext {
   moduleAliases: Array<[alias: string, target: string]>;
   /** `import x = require("mod")` bindings, per scope key */
   importEquals: Map<string, Map<string, string>>;
+  /**
+   * 模块名 → 该模块 `export = <名字>` 的目标（族 52 第 5 条）。
+   *
+   * `export = ns`（ns 是该模块里的命名空间）⇒ **模块的导出面 = 命名空间的成员面**
+   * （@types/node 的 `node:path` 形态）⇒ 命名空间的成员**摊平**进模块记录；
+   * 没有 `export = ns` 的模块 ⇒ 命名空间是模块的一个**成员**（`import { Y } from "x"`），
+   * 它的成员**不摊平**（`import { bar } from "x"` 在 TS 里是 TS2305）。
+   */
+  exportEquals: Map<string, string>;
   declaredModules: Set<string>;
   pending: PendingSymbol[];
   symbols: number;
   skipped: number;
+  /** 「类型未建模」的符号数（降级计数；族 52 第 6 条） */
+  degraded: number;
+  /** 未建模类型节点的**单调标记**（按符号取增量 ⇒ 每个符号最多计 1） */
+  degradedMark: number;
+  /** 匿名默认导出类的合成名计数（族 52 第 7 条） */
+  anonDefaultClass: number;
 }
 
 interface Scope {
@@ -250,10 +272,14 @@ export function harvestDts(
     typeParams: new Set(),
     moduleAliases: [],
     importEquals: new Map(),
+    exportEquals: new Map(),
     declaredModules: new Set(),
     pending: [],
     symbols: 0,
     skipped: 0,
+    degraded: 0,
+    degradedMark: 0,
+    anonDefaultClass: 0,
   };
 
   // Phase 1: collect declarations into the shared symbol table.
@@ -283,10 +309,18 @@ export function harvestDts(
   // Phase 2: materialize Abs with the complete symbol table available.
   materialize(ctx);
 
+  // 族 52 第 6 条：降级计数（`stats.degraded`）**只在有降级时**出现 ——
+  // 没有降级时 `stats` 的形状与旧口径**逐字不变**（`degraded` 是可选字段）。
+  const stats: HarvestedEnv["stats"] = {
+    files: parsed,
+    symbols: ctx.symbols,
+    skipped: ctx.skipped,
+  };
+  if (ctx.degraded > 0) stats.degraded = ctx.degraded;
   return {
     globals: ctx.globals,
     modules: ctx.modules,
-    stats: { files: parsed, symbols: ctx.symbols, skipped: ctx.skipped },
+    stats,
   };
 }
 
@@ -432,17 +466,16 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
       // `declare namespace Foo { function bar() {} }` 凭空造出全局 `bar`
       // （运行时并不存在裸 `bar`）⇒ 并**抑制**了对应的 ReferenceError 诊断。
       //
-      // 模块作用域（`declare module "x" { namespace Y { … } }`）保持既有口径
-      // （成员摊平进模块记录）：`export = ns` 的模块（@types/node 的 path /
-      // fs）正是这个形态，模块的导出面 = 命名空间的成员面。
+      // 族 52 第 5 条：**模块作用域**的命名空间（`declare module "x" {
+      // namespace Y { … } }`）同样**不摊平**——TS 里 `import { bar } from "x"`
+      // 是 TS2305（`bar` 不是 "x" 的导出；`Y` 才是）。
+      // 例外：`export = ns`（ns 是该模块里的命名空间）⇒ **模块的导出面 =
+      // 命名空间的成员面**（@types/node 的 `node:path` 形态）⇒ 摊平。
+      // 该判定在 materialize 时做（`export = ns` 可能在命名空间**之后**出现）。
       const nsName = stmt.name.text;
-      if (scope.moduleName !== undefined) {
-        collectStatements(ctx, body.statements, { moduleName: scope.moduleName, ns: [...scope.ns, nsName] });
-        return;
-      }
       const nsRec = nullDict<Abs>();
       collectStatements(ctx, body.statements, {
-        moduleName: undefined,
+        moduleName: scope.moduleName,
         ns: [...scope.ns, nsName],
         nsRec,
       });
@@ -455,6 +488,14 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
 
   if (ts.isFunctionDeclaration(stmt)) {
     if (!stmt.name) {
+      // 族 52 第 7 条：**匿名**默认导出（`export default function (): void;`）
+      // 是 TS 承认的默认导出（`import d from "m"` 合法）——此前按「无名声明」
+      // 丢掉 ⇒ 模块的 default 导出凭空消失（导入侧报「没有该导出」）。
+      if (isDefaultExportDecl(stmt)) {
+        ctx.pending.push({ t: "fn", scope, name: "default", decls: [stmt] });
+        ctx.symbols++;
+        return;
+      }
       ctx.skipped++;
       return;
     }
@@ -518,7 +559,19 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
 
   if (ts.isClassDeclaration(stmt)) {
     if (!stmt.name) {
-      ctx.skipped++;
+      // 族 52 第 7 条：**匿名**默认导出类（`export default class { … }`）是 TS
+      // 承认的默认导出（`import k from "m"` 合法）——此前按「无名声明」丢掉
+      // ⇒ 模块的 default 导出凭空消失（导入侧报「没有该导出」）。
+      // 匿名类没有可登记的名字 ⇒ 用**唯一**的合成名登记（实例面仍可展开）。
+      if (isDefaultExportDecl(stmt)) {
+        const synth = `__nudo_default_class_${ctx.anonDefaultClass++}`;
+        registerTypeDecl(ctx, scope, synth, stmt);
+        if (!ctx.classes.has(synth)) ctx.classes.set(synth, stmt);
+        // 导出条目本身在物化阶段计数（这里不再重复计数）
+        ctx.pending.push({ t: "value", scope, name: "default", lookup: synth });
+      } else {
+        ctx.skipped++;
+      }
       return;
     }
     registerTypeDecl(ctx, scope, stmt.name.text, stmt);
@@ -629,6 +682,11 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
     // (resolved in the materialize phase, when the symbol table is complete).
     // `export = X` is the CJS form: the module exports the entity itself (Bug 818 / 824).
     if (stmt.expression && ts.isIdentifier(stmt.expression)) {
+      // 族 52 第 5 条：`export = <命名空间>` ⇒ 该模块的**导出面 = 命名空间的成员面**
+      // ⇒ 命名空间的成员摊平进模块记录（@types/node 的 `node:path` 形态）。
+      if (stmt.isExportEquals && scope.moduleName !== undefined) {
+        ctx.exportEquals.set(scope.moduleName, stmt.expression.text);
+      }
       ctx.pending.push({ t: "value", scope, name: "default", lookup: stmt.expression.text });
       return;
     }
@@ -661,8 +719,13 @@ function registerTypeDecl(ctx: HarvestContext, scope: Scope, name: string, decl:
  *
  * `declare global { … }` 的 "global" **不是**命名空间：TS 侧它的内容是全局作用域的
  * ambient 声明（不是 `global.X`）。
+ *
+ * 族 52 第 1 条：这条链同时是**引用点**的命名空间身份 ⇒ 短名解析要按它分流
+ * （`A.Opts` 与 `B.Opts` 不再互相并入）。逐节点缓存（每个 AST 节点只算一次）。
  */
 function namespaceChainOf(decl: ts.Node): string[] {
+  const cached = nsChainCache.get(decl);
+  if (cached) return cached;
   const chain: string[] = [];
   let node: ts.Node | undefined = decl.parent;
   while (node) {
@@ -671,8 +734,12 @@ function namespaceChainOf(decl: ts.Node): string[] {
     }
     node = node.parent;
   }
+  nsChainCache.set(decl, chain);
   return chain;
 }
+
+/** 节点 → 命名空间链（缓存） */
+const nsChainCache = new WeakMap<ts.Node, string[]>();
 
 /**
  * 声明是否位于 **ambient 模块块**内（`declare module "x" { … }`）——模块增强的形态。
@@ -737,36 +804,24 @@ function computedMemberName(name: ts.PropertyName | undefined): string | undefin
 }
 
 /**
- * TypeReference → 已登记的 interface / class 声明列表（含 augmentation 合并）。
+ * TypeReference → interface / class 声明（**命名空间感知**）。
  *
- * Bug 796：此前只收 `isInterfaceDeclaration` ⇒ `declare class` 的**实例成员**
- * 整体丢失（`instanceFor` 拿不到任何成员 ⇒ 展开成空 obj），`const p: Point`
- * 这条绑定随之退成 unknown 再被丢弃。class 的成员收集器（属性/方法/访问器）
- * 本来就写好了，只是被这道过滤挡在门外 ⇒ 这里放行 class。
+ * 族 52 第 1 条（792 残留）：解析**必须带命名空间身份**。
  *
- * Bug 792：**限定名**解析必须带命名空间身份。短名桶（`ctx.interfaces`）不带命名空间
- * 身份 ⇒ 此前 `A.Opts` 与 `B.Opts` 被无条件并集 ⇒ `A.Opts` 继承了 `B.Opts` 的成员。
- * 现在：限定名只精确命中自己的限定桶，短名回退**只**认「ambient 模块块里的模块增强
- * 声明」（lodash 形态）——命名空间里的同名接口不再互相并入。
+ * - **限定名**（`A.Opts`）：先按引用点所在命名空间做**相对**解析（内层优先：
+ *   `A.B` 里的 `B.Opts` 先找 `A.B.Opts`），再精确命中绝对限定桶；短名回退**只**认
+ *   「ambient 模块块里的模块增强声明」（lodash 形态）。
+ * - **短名**（`Opts`）：按引用点所在命名空间**内层优先**地找（`namespace A` 里的
+ *   `Opts` ⇒ `A.Opts`），找不到才回落**全局**短名 —— 且全局短名桶**只**认
+ *   「不在任何命名空间里」的声明 ⇒ `A.Opts` / `B.Opts` **不再互相并入**。
  *
- * Bug 809：`extends` 子句的**基接口**成员并入实例模型（递归）。此前只搬接口**自身**
- * 声明的成员 ⇒ `interface Derived extends Base` 的 `derived.b` 读不到 ⇒ 折 exact
- * `undefined` ⇒ 后续 `.length` 被判「确定抛 TypeError」（L2 假红）。
+ * `refNs` = 引用点的命名空间链（`undefined` ⇒ 全局作用域）。
  */
-function interfaceDeclsOf(
+function resolveIfaceDecls(
   ctx: HarvestContext,
-  typeNode: ts.TypeNode | string,
-  /** 继承链上的名字（环保护）：`A extends B` / `B extends A` */
-  chain?: Set<string>,
+  name: string,
+  refNs: readonly string[] | undefined,
 ): NamedTypeDecl[] {
-  const name = typeof typeNode === "string" ? typeNode : ts.isTypeReferenceNode(typeNode)
-    ? typeNameString(typeNode.typeName)
-    : undefined;
-  if (!name) return [];
-  const visited = chain ?? new Set<string>();
-  if (visited.has(name)) return []; // 继承环（TS 非法，但 .d.ts 可能手写）
-  const nextChain = new Set(visited);
-  nextChain.add(name);
   const short = name.includes(".") ? name.split(".").pop()! : name;
   const qualified = name !== short;
   const seen = new Set<NamedTypeDecl>();
@@ -776,16 +831,86 @@ function interfaceDeclsOf(
     seen.add(d);
     out.push(d);
   };
-  // 精确名（限定名 → 限定桶；短名 → 短名桶）
-  for (const d of ctx.interfaces.get(name) ?? []) add(d);
-  for (const d of ctx.qualifiedInterfaces.get(name) ?? []) add(d);
   if (qualified) {
+    // 相对解析（引用点在命名空间里）：内层优先，命中即止（TS 的名字遮蔽）
+    if (refNs && refNs.length > 0) {
+      for (let i = refNs.length - 1; i >= 0; i--) {
+        const rel = [...refNs.slice(0, i + 1), name].join(".");
+        const decls = ctx.qualifiedInterfaces.get(rel);
+        if (decls && decls.length > 0) {
+          for (const d of decls) add(d);
+          return out;
+        }
+      }
+    }
+    // 绝对限定名
+    for (const d of ctx.qualifiedInterfaces.get(name) ?? []) add(d);
     // 短名回退：**只**认 ambient 模块块里的模块增强声明（lodash 形态）。
     // 命名空间里的同名接口（A.Opts / B.Opts）**不得**互相并入（Bug 792）。
     for (const d of ctx.interfaces.get(short) ?? []) {
       if (namespaceChainOf(d).length === 0 && inAmbientModuleBlock(d)) add(d);
     }
+    return out;
   }
+  // 短名：引用点所在命名空间优先（内层优先；命中即止）
+  if (refNs && refNs.length > 0) {
+    for (let i = refNs.length - 1; i >= 0; i--) {
+      const rel = [...refNs.slice(0, i + 1), name].join(".");
+      const decls = ctx.qualifiedInterfaces.get(rel);
+      if (decls && decls.length > 0) {
+        for (const d of decls) add(d);
+        return out;
+      }
+    }
+  }
+  // 全局短名：只认**不在命名空间里**的声明（命名空间里的同名接口不再互相并入）
+  for (const d of ctx.interfaces.get(name) ?? []) {
+    if (namespaceChainOf(d).length === 0) add(d);
+  }
+  return out;
+}
+
+/**
+ * TypeReference → 已登记的 interface / class 声明列表（含 augmentation 合并 + 基接口）。
+ *
+ * Bug 796：此前只收 `isInterfaceDeclaration` ⇒ `declare class` 的**实例成员**
+ * 整体丢失（`instanceFor` 拿不到任何成员 ⇒ 展开成空 obj），`const p: Point`
+ * 这条绑定随之退成 unknown 再被丢弃。class 的成员收集器（属性/方法/访问器）
+ * 本来就写好了，只是被这道过滤挡在门外 ⇒ 这里放行 class。
+ *
+ * Bug 792：**限定名**解析必须带命名空间身份（见 `resolveIfaceDecls`）。
+ *
+ * Bug 809：`extends` 子句的**基接口**成员并入实例模型（递归）。此前只搬接口**自身**
+ * 声明的成员 ⇒ `interface Derived extends Base` 的 `derived.b` 读不到 ⇒ 折 exact
+ * `undefined` ⇒ 后续 `.length` 被判「确定抛 TypeError」（L2 假红）。
+ *
+ * `refNs` = 引用点的命名空间链（`undefined` ⇒ 全局作用域）。
+ */
+function interfaceDeclsOf(
+  ctx: HarvestContext,
+  typeNode: ts.TypeNode | string,
+  /** 继承链上的名字（环保护）：`A extends B` / `B extends A` */
+  chain?: Set<string>,
+  /** 引用点所在命名空间链（族 52 第 1 条） */
+  refNs?: readonly string[],
+): NamedTypeDecl[] {
+  const name = typeof typeNode === "string" ? typeNode : ts.isTypeReferenceNode(typeNode)
+    ? typeNameString(typeNode.typeName)
+    : undefined;
+  if (!name) return [];
+  const visited = chain ?? new Set<string>();
+  if (visited.has(name)) return []; // 继承环（TS 非法，但 .d.ts 可能手写）
+  const nextChain = new Set(visited);
+  nextChain.add(name);
+  const seen = new Set<NamedTypeDecl>();
+  const out: NamedTypeDecl[] = [];
+  const add = (d: NamedTypeDecl): void => {
+    if (seen.has(d)) return;
+    seen.add(d);
+    out.push(d);
+  };
+  // 精确名（命名空间感知）
+  for (const d of resolveIfaceDecls(ctx, name, refNs)) add(d);
   // Bug 809：`extends` 的基声明成员并入（递归；基声明排在自身之后）
   for (const d of [...out]) {
     for (const clause of d.heritageClauses ?? []) {
@@ -793,7 +918,8 @@ function interfaceDeclsOf(
       for (const expr of clause.types) {
         const baseName = heritageBaseName(expr);
         if (!baseName) continue;
-        for (const b of interfaceDeclsOf(ctx, baseName, nextChain)) add(b);
+        // 基接口在**派生声明**的命名空间里解析
+        for (const b of interfaceDeclsOf(ctx, baseName, nextChain, namespaceChainOf(d))) add(b);
       }
     }
   }
@@ -1162,7 +1288,15 @@ function materialize(ctx: HarvestContext): void {
 
   // 命名空间对象（Bug 793）：记录「pending → 槽位表」，供 2b 之后再回填
   // （命名空间里的 `export { X }` 在 2b 才解析进 nsRec）。
-  const nsSlots: Array<{ rec: Record<string, Abs>; slots: Record<string, Slot> }> = [];
+  // `flat` = 族 52 第 5 条的「摊平目标」（模块导出面 = 命名空间成员面）。
+  const nsSlots: Array<{
+    rec: Record<string, Abs>;
+    slots: Record<string, Slot>;
+    flat?: Record<string, Abs>;
+  }> = [];
+  // 命名空间对象名 → 槽位表（TS 的 function-namespace 合并：命名空间**先**到、
+  // 函数**后**到时，函数顶掉命名空间对象，成员挂成函数的静态成员）
+  const nsSlotsByName = new Map<string, Record<string, Slot>>();
 
   for (const p of ctx.pending) {
     if (p.t === "iface-expand") continue;
@@ -1177,13 +1311,31 @@ function materialize(ctx: HarvestContext): void {
       }
       const slots = nullDict<Slot>();
       for (const n of names) slots[n] = { value: p.rec[n]! };
+      // 族 52 第 5 条：模块用 `export = <本命名空间>` ⇒ **模块的导出面 =
+      // 命名空间的成员面**（@types/node 的 `node:path` 形态）⇒ 摊平进模块记录。
+      // 没有 `export = ns` 的模块 ⇒ 命名空间是模块的一个成员（`import { Y } from "x"`），
+      // 它的成员**不摊平**（`import { bar } from "x"` 在 TS 里是 TS2305）。
+      if (
+        p.scope.moduleName !== undefined &&
+        ctx.exportEquals.get(p.scope.moduleName) === p.name
+      ) {
+        const flat = recordFor(ctx, p.scope);
+        for (const [k, v] of Object.entries(p.rec)) {
+          if (Object.hasOwn(flat, k)) continue; // 模块自有声明先到先得
+          flat[k] = v;
+        }
+        nsSlots.push({ rec: p.rec, slots, flat });
+        continue;
+      }
       const existing = rec[p.name];
       if (existing === undefined) {
         rec[p.name] = objOf(slots);
+        nsSlotsByName.set(`${scopeKey(p.scope)} ${p.name}`, slots);
       } else if (existing.shape.k === "fn") {
         // 函数 + 命名空间同名（TS 的 function-namespace 合并）：
         // 命名空间成员是该值的静态成员，不另造一个同名对象
         (existing.shape as { slots?: Record<string, Slot> }).slots = slots;
+        nsSlotsByName.set(`${scopeKey(p.scope)} ${p.name}`, slots);
       } else {
         // 同名的非函数值（const / class …）：命名空间成员无处安放 ⇒ 如实计数
         ctx.skipped++;
@@ -1193,34 +1345,56 @@ function materialize(ctx: HarvestContext): void {
       continue;
     }
     if (p.t === "fn") {
-      if (rec[p.name] !== undefined) continue; // same name already handled (first wins)
       // 多 overload：分别算签名（保留各自 typeParams），再 join 返回位
       // ——禁止在 materialize 里二次 mapType（那时 typeParams 已清空，T→unknown）
-      const sigs = p.decls.map((d) => signatureToFnSig(ctx, d));
-      const value = sigs[0]!;
-      const shape0 = value.shape.k === "fn" ? value.shape : undefined;
-      if (shape0 && sigs.length > 1) {
-        // 参数位：保留每个 overload 的参数类型（逐位 union），不再只取第一个 overload 的参数
-        // ——TS 的 overload 是签名列表，只取 sigs[0] 会把其余 overload 的参数语义整条抹掉
-        //（Bug 827）。
-        const mergedParams = mergeOverloadParams(sigs);
-        if (mergedParams) {
-          shape0.paramTypes = mergedParams;
-          const rel0 = getFnImpl(value)?.relation;
-          if (rel0) rel0.paramTypes = mergedParams;
+      const fnValue = (): Abs => {
+        const sigs = p.decls.map((d) => signatureToFnSig(ctx, d));
+        const value = sigs[0]!;
+        const shape0 = value.shape.k === "fn" ? value.shape : undefined;
+        if (shape0 && sigs.length > 1) {
+          // 参数位：保留每个 overload 的参数类型（逐位 union），不再只取第一个 overload 的参数
+          // ——TS 的 overload 是签名列表，只取 sigs[0] 会把其余 overload 的参数语义整条抹掉
+          //（Bug 827）。
+          const mergedParams = mergeOverloadParams(sigs);
+          if (mergedParams) {
+            shape0.paramTypes = mergedParams;
+            const rel0 = getFnImpl(value)?.relation;
+            if (rel0) rel0.paramTypes = mergedParams;
+          }
+          const returns: Abs[] = [];
+          for (const s of sigs) {
+            if (s.shape.k !== "fn") continue;
+            const ret = s.shape.returnType;
+            if (ret && !isPlainUnknown(ret)) returns.push(ret);
+          }
+          const withVars = returns.filter((r) => hasTypeVar(r));
+          const pool = withVars.length > 0 ? withVars : returns;
+          const mergedRet = pool.length > 0 ? absUnion(pool) : absUnknown();
+          shape0.returnType = mergedRet;
+          const rel = getFnImpl(value)?.relation;
+          if (rel) rel.returnType = mergedRet;
         }
-        const returns: Abs[] = [];
-        for (const s of sigs) {
-          if (s.shape.k !== "fn") continue;
-          const ret = s.shape.returnType;
-          if (ret && !isPlainUnknown(ret)) returns.push(ret);
+        return value;
+      };
+      const existing = rec[p.name];
+      if (existing !== undefined) {
+        // 族 52：命名空间对象**先**到、函数**后**到（TS 的 function-namespace
+        // 合并：@types/node 的 `namespace rename { … }` 与 `function rename(…)`
+        // 同名）⇒ 函数顶掉命名空间对象，命名空间成员挂成函数的静态成员。
+        const nsStatic = nsSlotsByName.get(`${scopeKey(p.scope)}${p.name}`);
+        if (nsStatic && existing.shape.k === "obj") {
+          const value = fnValue();
+          (value.shape as { slots?: Record<string, Slot> }).slots = nsStatic;
+          rec[p.name] = value;
         }
-        const withVars = returns.filter((r) => hasTypeVar(r));
-        const pool = withVars.length > 0 ? withVars : returns;
-        const mergedRet = pool.length > 0 ? absUnion(pool) : absUnknown();
-        shape0.returnType = mergedRet;
-        const rel = getFnImpl(value)?.relation;
-        if (rel) rel.returnType = mergedRet;
+        continue; // same name already handled (first wins)
+      }
+      // 族 52 第 6 条：签名里有**未建模**的类型 ⇒ 记一次降级（不是「丢了」）
+      const markBefore = ctx.degradedMark;
+      const value = fnValue();
+      if (ctx.degradedMark > markBefore) {
+        ctx.degraded++;
+        ctx.degradedMark = markBefore; // 每个符号最多计 1
       }
       rec[p.name] = value;
       continue;
@@ -1237,7 +1411,16 @@ function materialize(ctx: HarvestContext): void {
         // skipped（丢了才计入）。保留 unknown 绑定还避免了遮蔽 evaluator
         // 内置的问题：遮蔽只发生在**同名**时，而同名内置（URL 等）在
         // .d.ts 里本来就有可映射的类型，不会走到这条降级路径。
+        //
+        // 族 52 第 6 条：这条路径（以及函数签名的同类路径）**记一次降级**
+        // （`stats.degraded`）——「类型未建模」此前只体现在值域上，
+        // 汇总行看不出来（`skipped` 的语义是「丢了」）。
+        const markBefore = ctx.degradedMark;
         const mapped = p.typeNode ? mapType(ctx, p.typeNode, 0) : absUnknown();
+        if (ctx.degradedMark > markBefore) {
+          ctx.degraded++;
+          ctx.degradedMark = markBefore; // 每个符号最多计 1
+        }
         rec[p.name] = mapped;
         break;
       }
@@ -1247,7 +1430,13 @@ function materialize(ctx: HarvestContext): void {
         const key = p.lookup ?? p.name;
         const cls = ctx.classes.get(key);
         if (cls) {
+          // 族 52 第 6 条：类成员里有**未建模**的类型 ⇒ 记一次降级
+          const markBefore = ctx.degradedMark;
           rec[p.name] = classValueAbs(ctx, cls, key);
+          if (ctx.degradedMark > markBefore) {
+            ctx.degraded++;
+            ctx.degradedMark = markBefore;
+          }
           // 再导出 / default 别名是新导出条目（class 自身的声明已在收集阶段计数）
           if (p.lookup !== undefined) ctx.symbols++;
           break;
@@ -1286,10 +1475,12 @@ function materialize(ctx: HarvestContext): void {
   // 2c) 命名空间成员回填（Bug 793）：命名空间里的 `export { X }` 在 2b 才
   // 解析进 nsRec ⇒ 把新增的成员补进命名空间对象的槽位表（槽位表是**活**的，
   // 对象本身不被替换 ⇒ 2b 之前拿到该对象的引用仍然有效）。
-  for (const { rec: nsRec, slots } of nsSlots) {
+  // 族 52 第 5 条：摊平形态（模块导出面 = 命名空间成员面）⇒ 新增成员也进模块记录。
+  for (const { rec: nsRec, slots, flat } of nsSlots) {
     for (const [k, v] of Object.entries(nsRec)) {
       if (Object.hasOwn(slots, k)) continue;
       slots[k] = { value: v };
+      if (flat && !Object.hasOwn(flat, k)) flat[k] = v;
     }
   }
 
@@ -1460,17 +1651,112 @@ function mergeOverloadSigs(sigs: Abs[]): Abs {
   return absFnSig(params, mergedRet, extra);
 }
 
-function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
-  const decls = interfaceDeclsOf(ctx, key);
+/**
+ * interface / class 声明 + **它自己的**类型实参。
+ *
+ * 族 52 第 2 条：基接口的类型实参必须**按基声明分别**代入
+ * （`interface D extends Base<number>` ⇒ 基成员里的 `v` 是 `number`，不是 α）。
+ */
+interface IfaceEntry {
+  decl: NamedTypeDecl;
+  /** 该声明自己的类型实参（已映射成 Abs；非泛型声明 ⇒ 空数组） */
+  typeArgs: Abs[];
+  /** 该声明自己的形参 → 实参绑定（成员映射时直接代入 ⇒ 条件类型在**实参**作用域求值） */
+  bindings: Map<string, Abs>;
+}
+
+/** 声明的类型形参 → 实参（键 = 形参名；引用点按 α 身份取用） */
+function typeParamBindings(
+  decls: readonly NamedTypeDecl[],
+  args: readonly Abs[],
+): Map<string, Abs> {
+  const map = new Map<string, Abs>();
+  const tps = decls[0]?.typeParameters ?? [];
+  tps.forEach((tp, i) => {
+    const arg = args[i];
+    if (arg) map.set(tp.name.text, arg);
+  });
+  return map;
+}
+
+/**
+ * 声明链（自身 + 基接口）+ **各自的**类型实参。
+ *
+ * Bug 809：基接口的成员并入实例模型。
+ * 族 52 第 2 条：基接口的类型实参来自 `extends` 子句，在**派生声明**的作用域里求值
+ * （`interface D<T> extends Base<T>` ⇒ 基的实参 = D 的实参）。
+ */
+function collectIfaceEntries(
+  ctx: HarvestContext,
+  decls: readonly NamedTypeDecl[],
+  args: readonly Abs[],
+  /** 继承链上的名字（环保护） */
+  chain: Set<string>,
+  /** 引用点所在命名空间链 */
+  refNs: readonly string[] | undefined,
+  /** 引用方（派生声明）的类型实参绑定 ⇒ 基接口的实参在**派生**作用域里求值 */
+  outerBindings: Map<string, Abs>,
+): IfaceEntry[] {
+  const out: IfaceEntry[] = [];
+  const seen = new Set<NamedTypeDecl>();
+  for (const d of decls) {
+    if (seen.has(d)) continue;
+    seen.add(d);
+    out.push({ decl: d, typeArgs: [...args], bindings: typeParamBindings([d], args) });
+  }
+  for (const d of decls) {
+    const dNs = namespaceChainOf(d);
+    for (const clause of d.heritageClauses ?? []) {
+      if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+      for (const expr of clause.types) {
+        const baseName = heritageBaseName(expr);
+        if (!baseName || chain.has(baseName)) continue;
+        const baseDecls = resolveIfaceDecls(ctx, baseName, dNs);
+        if (baseDecls.length === 0) continue;
+        // 基接口的类型实参：`extends Base<number>` 的实参在**派生**作用域里求值；
+        // 没给实参 ⇒ 取基自己的默认值 / 约束（TS 的实参推断缺席时的口径）。
+        const explicit = expr.typeArguments ?? [];
+        const baseArgs = explicit.length > 0
+          ? explicit.map((a) => mapType(ctx, a, 0, outerBindings))
+          : effectiveTypeArgs(ctx, baseDecls, undefined);
+        const nextChain = new Set(chain);
+        nextChain.add(baseName);
+        out.push(
+          ...collectIfaceEntries(
+            ctx,
+            baseDecls,
+            baseArgs,
+            nextChain,
+            dNs,
+            typeParamBindings(baseDecls, baseArgs),
+          ),
+        );
+      }
+    }
+  }
+  return out;
+}
+
+function instanceFor(
+  ctx: HarvestContext,
+  key: string,
+  typeArgs?: Abs[],
+  /** 引用点所在命名空间链（族 52 第 1 条；undefined ⇒ 全局作用域） */
+  refNs?: readonly string[],
+): Abs {
+  const decls = resolveIfaceDecls(ctx, key, refNs);
   const decl = decls[0];
   if (!decl) return absUnknown();
-  if (ctx.expanding.has(key)) {
+  // 缓存键 / 递归守卫必须编码**命名空间身份**（否则 A.Opts 与 B.Opts 共用一条缓存）
+  const nsTag = refNs && refNs.length > 0 ? `ns:${refNs.join(".")}:` : "";
+  const cacheKey = `${nsTag}${key}`;
+  if (ctx.expanding.has(cacheKey)) {
     // Recursion guard: reference by name, shape pending (not "no members").
     // See absBrandOpen — an empty closed brand reads back as exact undefined
     // ⇒ legal code gets flagged as a definite TypeError (L2 false red).
     return absBrandOpen(decl.name?.text ?? key);
   }
-  ctx.expanding.add(key);
+  ctx.expanding.add(cacheKey);
   // 接口自身泛型形参（Map<K,V> 的 K/V）进入 typeParams，成员签名才能映射成 var
   const savedTp = ctx.typeParams;
   ctx.typeParams = new Set(savedTp);
@@ -1482,11 +1768,23 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
     const effective = effectiveTypeArgs(ctx, decls, typeArgs);
     // Bug 791：缓存键必须编码类型实参的**身份**（实参个数不够——同一接口的
     // 不同实参会命中同一条缓存 ⇒ Box<number> 被折成 Box<string>）
-    const cacheKey = effective.length > 0
-      ? `${key}::${effective.map(absFingerprint).join("|")}`
-      : key;
-    const cached = ctx.instanceCache.get(cacheKey);
+    const argKey = effective.length > 0
+      ? `${cacheKey}::${effective.map(absFingerprint).join("|")}`
+      : cacheKey;
+    const cached = ctx.instanceCache.get(argKey);
     if (cached !== undefined) return cached;
+    // 族 52 第 2/4 条：声明链（自身 + 基接口）各自的类型实参 / 绑定
+    const entries = collectIfaceEntries(
+      ctx,
+      decls,
+      effective,
+      new Set([key]),
+      refNs,
+      typeParamBindings(decls, effective),
+    );
+    for (const entry of entries) {
+      for (const tp of entry.decl.typeParameters ?? []) ctx.typeParams.add(tp.name.text);
+    }
     const properties: Record<string, Abs> = memberDict();
     // 同名方法的 overload 集（Bug 805：重载集全部保留，不再按名去重）
     const methodSigs = new Map<string, Abs[]>();
@@ -1496,7 +1794,8 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
     // 同一行报 TS2722 ⇒ 假绿）。true = 该名字目前只见过可选形态。
     const optionalMethods = new Map<string, boolean>();
     // 合并全部 augmentation 成员（lodash LoDashStatic 跨 common/*.d.ts）
-    for (const d of decls) {
+    for (const entry of entries) {
+      const d = entry.decl;
       const members = d.members as readonly (ts.TypeElement | ts.ClassElement)[];
       for (const member of members) {
         const modifiers = (member as { modifiers?: readonly { kind: ts.SyntaxKind }[] }).modifiers;
@@ -1505,7 +1804,9 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
           // Bug 832：计算成员名（`[Symbol.iterator]`）也要收（迭代协议）
           const name = memberName(member) ?? computedMemberName(member.name);
           if (name === undefined) continue;
-          let type = member.type ? mapType(ctx, member.type, 0) : absUnknown();
+          // 族 52 第 4 条：成员类型在**类型实参**的作用域里映射（条件类型
+          // 在实参已知时求值 ⇒ `Box<Promise<string>>` 的 payload 是 string，不是 α）
+          let type = member.type ? mapType(ctx, member.type, 0, entry.bindings) : absUnknown();
           if (member.questionToken) type = absUnion([type, absUndefLit()]);
           properties[name] = type;
           methodSigs.delete(name); // 属性位优先于同名方法位（与旧口径一致）
@@ -1515,7 +1816,7 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
           const name = memberName(member) ?? computedMemberName(member.name);
           if (name === undefined) continue;
           if (properties[name] !== undefined) continue; // 属性位已占位
-          const sig = signatureToFnSig(ctx, member);
+          const sig = signatureToFnSig(ctx, member, entry.bindings);
           // Bug 805：重载集**全部保留**（按名去重会把第二个 overload 的返回
           // 类型整体抹除）——按 materialize 的 fn 分支口径合并（参数位逐位
           // union + 返回位并集）
@@ -1530,7 +1831,7 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
         } else if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
           const name = memberName(member) ?? computedMemberName(member.name);
           if (name === undefined || properties[name] !== undefined || !member.type) continue;
-          properties[name] = mapType(ctx, member.type, 0);
+          properties[name] = mapType(ctx, member.type, 0, entry.bindings);
         }
         // call / construct / index signatures are not representable — skipped.
       }
@@ -1558,11 +1859,11 @@ function instanceFor(ctx: HarvestContext, key: string, typeArgs?: Abs[]): Abs {
       });
       if (map.size > 0) value = substAbs(value, map);
     }
-    ctx.instanceCache.set(cacheKey, value);
+    ctx.instanceCache.set(argKey, value);
     return value;
   } finally {
     ctx.typeParams = savedTp;
-    ctx.expanding.delete(key);
+    ctx.expanding.delete(cacheKey);
   }
 }
 
@@ -1581,7 +1882,12 @@ function isThisParameter(param: ts.ParameterDeclaration): boolean {
   return ts.isIdentifier(name) && name.text === "this";
 }
 
-function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): Abs {
+function signatureToFnSig(
+  ctx: HarvestContext,
+  sig: ts.SignatureDeclaration,
+  /** 外层（接口）的类型实参绑定（族 52 第 4 条：签名也在实参作用域里映射） */
+  bindings?: Map<string, Abs>,
+): Abs {
   const savedTp = ctx.typeParams;
   ctx.typeParams = new Set(savedTp);
   for (const tp of sig.typeParameters ?? []) {
@@ -1593,14 +1899,14 @@ function signatureToFnSig(ctx: HarvestContext, sig: ts.SignatureDeclaration): Ab
       let type: Abs;
       if (param.dotDotDotToken) {
         const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
-        type = inner ? absArr(mapType(ctx, inner, 0)) : absUnknown();
+        type = inner ? absArr(mapType(ctx, inner, 0, bindings)) : absUnknown();
       } else {
-        type = param.type ? mapType(ctx, param.type, 0) : absUnknown();
+        type = param.type ? mapType(ctx, param.type, 0, bindings) : absUnknown();
       }
       if (param.questionToken && !param.dotDotDotToken) type = absUnion([type, absUndefLit()]);
       return type;
     });
-    const returnType = sig.type ? mapType(ctx, sig.type, 0) : absUnknown();
+    const returnType = sig.type ? mapType(ctx, sig.type, 0, bindings) : absUnknown();
     const cond = ctx.pendingCond;
     ctx.pendingCond = undefined;
     return absFnSig(paramTypes, returnType, cond
@@ -1753,6 +2059,24 @@ function typeParamVarId(node: ts.Node, name: string): string {
   if (scopes.length <= 1) return name;
   // 遮蔽 → 最近声明者拿独立身份（TS 就近遮蔽）
   return `${name}@${scopeTagOf(scopes[0]!)}`;
+}
+
+/**
+ * 类型形参绑定查找（族 52）。
+ *
+ * - 普通形参绑定按引用点的 **α 身份**取（`T` / `T@<tag>`）⇒ 方法自己的 `<T>`
+ *   遮蔽外层 `<T>` 时**不被**外层实参代入（Bug 810 的口径不变）。
+ * - `infer` 绑定按**名字**取（`infer:E`）—— infer 声明不是 TypeParameterDeclaration
+ *   ⇒ 没有独立的 α 身份（Bug 798 的口径）。
+ */
+function lookupTypeParamBinding(
+  bindings: Map<string, Abs> | undefined,
+  node: ts.Node,
+  name: string,
+): Abs | undefined {
+  if (!bindings) return undefined;
+  const id = typeParamVarId(node, name);
+  return bindings.get(id) ?? bindings.get(`infer:${name}`);
 }
 
 /** 开放对象（索引签名 / `Record`）：带索引值域，成员读不折 exact undefined */
@@ -2026,7 +2350,11 @@ function mapTypeRef(
     // （`infer E` 才是 InferTypeNode）⇒ 不查绑定表 ⇒ 真支退化成 α 变量
     // ⇒ 条件类型的值域丢失（`number[] extends (infer E)[] ? E : never`
     // 收割成 `any` 而不是 `number`）。
-    const bound = bindings?.get(name);
+    //
+    // 族 52：绑定按引用点的 **α 身份**取（`T@<tag>` ⇒ 遮蔽的形参不被外层代入，
+    // Bug 810 的口径不变）；`infer` 绑定按**名字**取（infer 声明不是
+    // TypeParameterDeclaration ⇒ 没有独立的 α 身份）。
+    const bound = lookupTypeParamBinding(bindings, node, name);
     if (bound) return bound;
     // Bug 810：α 身份按**作用域**隔离（方法自己的 <T> 遮蔽外层同名 <T>）
     return typeVarAbs(typeParamVarId(node, name));
@@ -2068,7 +2396,13 @@ function mapTypeRef(
     return absOpenObj({}, { key, value });
   }
   if (ctx.interfaces.has(name) || ctx.qualifiedInterfaces.has(name)) {
-    return instanceFor(ctx, name, args.map((a) => mapType(ctx, a, depth, bindings)));
+    // 族 52 第 1 条：解析带上**引用点所在命名空间** ⇒ `A.Opts` 与 `B.Opts` 不再共用一份
+    return instanceFor(
+      ctx,
+      name,
+      args.map((a) => mapType(ctx, a, depth, bindings)),
+      namespaceChainOf(node),
+    );
   }
   const aliases = ctx.aliases.get(name) ?? ctx.qualifiedAliases.get(name) ?? [];
   const alias = aliases[0];
@@ -2185,6 +2519,8 @@ function absExtends(check: Abs, ext: Abs, depth = 0): ExtendsResult {
     if (es.k === "unknown") return "true"; // extends unknown
     if (es.k === "never") return "false";
     if (es.k === "any") return "unknown"; // any → 判不出
+    // 族 52：字面量 vs 数组 / 元组 ⇒ **不成立**（`"a" extends string[]` 假）
+    if (es.k === "arr" || es.k === "tuple") return "false";
     return "unknown";
   }
   if (eIsLit) {
@@ -2201,6 +2537,15 @@ function absExtends(check: Abs, ext: Abs, depth = 0): ExtendsResult {
   if (es.k === "never") return "false";   // 只有 never 赋给 never
   if (es.k === "prim" && cs.k === "prim") {
     return cs.type === es.type ? "true" : "false";
+  }
+  // 族 52：prim / 对象 / 函数 / 品牌 vs 数组 / 元组 ⇒ **不成立**
+  // （TS 可赋值性：`string extends string[]` 假 —— 此前判不出 ⇒ 条件类型取两支并集，
+  //  真支的字面量在「T 根本不匹配」时也出现在结果里）
+  if (
+    (es.k === "arr" || es.k === "tuple") &&
+    (cs.k === "prim" || cs.k === "obj" || cs.k === "fn" || cs.k === "brand")
+  ) {
+    return "false";
   }
   if (es.k === "sum") {
     const flags = es.members.map((m) => absExtends(check, m, depth + 1));
@@ -2392,8 +2737,9 @@ function mapConditionalType(
 
   try {
     // 真支：infer 变量在真支里可见（TS 作用域）⇒ 绑定带进真支求值
+    // （族 52：infer 绑定按**名字**携带 ⇒ `infer:E` ⇒ 与 Bug 798 的口径一致）
     const trueBindings = new Map<string, Abs>(bindings ?? []);
-    for (const [k, v] of inferMap) trueBindings.set(k, v);
+    for (const [k, v] of inferMap) trueBindings.set(`infer:${k}`, v);
     const trueAbs = mapType(ctx, node.trueType, depth + 1, trueBindings);
     const falseAbs = mapType(ctx, node.falseType, depth + 1, bindings);
     if (absMatch === "true") return trueAbs;
@@ -2599,21 +2945,29 @@ function mapType(
       // `keyof T` → 键名并集（可算时）；判不出 ⇒ 退化哨兵（extends 位
       // 按「判不出」处理，不恒真 —— Bug 822）。
       const names = keyofNamesOf(ctx, node.type, depth);
-      if (!names) return absUnknown();
+      if (!names) {
+        ctx.degradedMark++; // 族 52 第 6 条：keyof 判不出 ⇒ 降级
+        return absUnknown();
+      }
       if (names.length === 0) return absNever();
       return absExact({ k: "sum", members: names.map((n) => absLit(n)) });
     }
+    ctx.degradedMark++; // 族 52 第 6 条：未建模的算子 ⇒ 降级
     return absUnknown();
   }
 
   if (ts.isConditionalTypeNode(node)) {
-    return mapConditionalType(ctx, node, depth, bindings);
+    const cond = mapConditionalType(ctx, node, depth, bindings);
+    // 族 52 第 6 条：条件类型判不出（退成 unknown）⇒ 降级
+    if (isPlainUnknown(cond)) ctx.degradedMark++;
+    return cond;
   }
 
   if (ts.isInferTypeNode(node)) {
     // 裸 infer U：外层条件类型绑定过 ⇒ 取绑定值；未绑定 ⇒ α 变量
+    // （族 52：infer 绑定按**名字**携带 ⇒ `infer:U`）
     const name = node.typeParameter.name.text;
-    const bound = bindings?.get(name);
+    const bound = bindings?.get(`infer:${name}`);
     if (bound) return bound;
     return typeVarAbs(name);
   }
@@ -2655,6 +3009,8 @@ function mapType(
     default:
       // typeof X, keyof, conditional / mapped / indexed / template-literal /
       // import() types and everything else — conservative degradation.
+      // 族 52 第 6 条：**未建模**的类型构造 ⇒ 记一次降级（不是「丢了」）
+      ctx.degradedMark++;
       return absUnknown();
   }
 }
