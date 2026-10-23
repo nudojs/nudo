@@ -2618,6 +2618,18 @@ function mapType(
     return typeVarAbs(name);
   }
 
+  if (ts.isTypePredicateNode(node)) {
+    // Bug 1054：TS 类型谓词（`x is T` / `asserts x is T`）的**返回类型**是
+    // `boolean` / `void` —— 被谓词的 `T` 是**收窄信息**（调用点的副作用），
+    // **不是**返回面。此前本函数没有 `TypePredicate` 分支 ⇒ 落到兜底
+    // ⇒ 收割成 `unknown` ⇒ 调用方签名面变 `unknown` ⇒ 触发
+    // `nudo:unknown-inference` 误导诊断（把「谓词返回 boolean」说成
+    // 「推断失败」）+ dts 面写 `unknown` ⇒ 消费方 tsc TS2322 假红。
+    // `asserts` 断言函数（`asserts x is T` / `asserts x`）运行时返回
+    // `undefined` ⇒ 与 `: void` 同口径（同 `mapType` 的 VoidKeyword 分支）。
+    return node.assertsModifier ? absUndefLit() : absPrim("boolean");
+  }
+
   switch (node.kind) {
     case ts.SyntaxKind.StringKeyword:
       return absPrim("string");
