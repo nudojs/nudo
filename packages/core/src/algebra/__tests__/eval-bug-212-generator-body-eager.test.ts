@@ -8,7 +8,7 @@
  * `$gen` 目前是**eager 收集**（构造期跑完整个体，收集 yield 序列）⇒
  * 外层绑定在构造期就被改写，且改成一个在任何原生观测点都不成立的值。
  *
- * ── 修法边界（本分片不可闭合）──────────────────────────────────────────
+ * ── 修法边界（S10 研究级复勘：结论同前，且已定位到**唯一**可行落点）────
  * 要让「体内对外层绑定的写」不写穿到调用方，需要**转译侧**为生成器体
  * 发出「绑定 pack/unpack」（循环绑定包机制已有：transpile 侧按循环体
  * 里的绑定名发 `$pack`/`$unpack`）或把生成器体降成可挂起/续跑的段
@@ -21,6 +21,31 @@
  * 附：eager 收集本身是族 01 结论（`exec-generator.test.ts` 头注：
  * 「yield 收集保持 eager（既有值域建模，注释口径不变）」）⇒ 本条按
  * 「不改族 01 已提交语义」约束以 todo 记缺口。
+ *
+ * ── S10 研究级复勘（族 44 · 出路 B · 精确登记）──────────────────────────
+ * **为什么 runtime 侧无法修**（两条独立硬约束）：
+ * (1) **写穿无句柄**：体内对外层绑定的写 = 对**闭包变量的裸 JS 赋值**
+ *     （转译产物 `((__v) => { $assignRecord("n", n, __v, …); return n = __v; })(…)`，
+ *     见 exec/transpile/expr/assignment.ts:361）——`$assignRecord` 只观测、
+ *     **其返回值被丢弃** ⇒ runtime 无法让它「不写」；`$gen` 也拿不到调用方的
+ *     变量句柄（JS 闭包变量不可寻址）。
+ * (2) **eager 收集是值域/签名面的承重结构**：生成器对象的元素面（数字下标
+ *     槽）与 conf 在**构造期**烘进 Abs 的 shape
+ *     （exec/runtime/async.ts:877-886、:1039）⇒ 改成惰性会把 dts 的
+ *     `Generator<any | number>` 退成 `Generator<unknown>`，并把 conf 从
+ *     exact 降级（conf 参与 leqAbs ⇒ 影响 L1/L2 门禁精度）。
+ *
+ * **唯一可行落点（转译侧，纯转译侧、不动公开面）**：在 `$gen` 的体外套
+ * 「自由写快照 + 折回」——复用仓里已有的 `collectFreeAssignedNames`
+ * （exec/transpile/helpers.ts:1061）算出「该体写到的**外层**绑定」，
+ * 发射 `const __g0_n = $copy(n); try { …体… } finally { n = $join(__g0_n, n); }`
+ * （`$copy`/`$join` 均已是 exec/index.ts 的既有导出 ⇒ 不触公开面冻结）。
+ * 该形态把「确定的错值」变成「sound 的过近似」（`0 | 1` 而非 `1`）；
+ * 逐点精确（native `1` / `"a"`）需「真挂起」（生成器体降成真 JS generator），
+ * 属引擎内核级改造，建议另立族。
+ *
+ * 完整数据流 / 消费面清单 / 分步路径 / 受阻原因：
+ * `tmp/probe/fix-r95/S10-GENERATOR-LAZINESS.md`（S10 研究级交付，出路 B）。
  */
 import { describe, it, expect } from "vitest";
 import { val } from "./eval-helpers.ts";
