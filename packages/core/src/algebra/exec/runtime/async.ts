@@ -8,6 +8,10 @@
  *   （闭对象 + 自有 then 槽）走 PromiseResolve 式采纳（取 then(res, rej)
  *   的 settle 值，不是 thenable 本身）。any/unknown/fn/开对象的采纳面
  *   不可判 → 保持原值（不猜、不用 unknown 掩盖）。
+ * - Bug 1052：thenable 采纳的**判定与调用**与 promise 构造面（`Promise.resolve`
+ *   / `new Promise(resolve => resolve(thenable))`）**同一套机制**
+ *   （`builtins/promise.ts` 的 `thenableAdoption`）——本文件只做 await 面的
+ *   语义映射（reject → throw；未 settle → 悬挂）。
  * - 生成器对象是**内部槽对象**：协议方法与 yield 元素的槽标 internal
  *   （枚举面 / 自有面不可见；$get / $in 照常直读直查）。
  * - `yield*` 委托的 `.return(v)` 必须**转发**给委托迭代器（委托的清理
@@ -33,7 +37,7 @@ import {
 } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
-import { thenableRiskOf, queuePromiseMicro } from "../../builtins/promise.ts";
+import { thenableAdoption, queuePromiseMicro } from "../../builtins/promise.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -485,60 +489,31 @@ function settleAsyncGen(
  * 原生走 PromiseResolve 式的采纳（取 v.then(res, rej) 的结果），引擎
  * 此前把 thenable 对象本身当成待决值（声明出与原生互斥的具体类型）。
  *
+ * **Bug 1052**：采纳的**判定与调用**复用 promise 面的同一套机制
+ * （`builtins/promise.ts` 的 `thenableAdoption`——Promise 构造器 / 静态
+ * resolve 的 thenable 采纳与本面同款），不再各写一套。
+ *
  * 只对「闭对象 + 自有 then 槽」判定为**确定** thenable（thenableRiskOf 同
  * 口径：any/unknown/fn/open obj 的采纳面不可判 → 不走本路径，保持原值）。
  */
 function adoptThenable(v: Abs): Abs | undefined {
-  // thenable 风险面（promise.ts 的 thenableRiskOf 口径）：确定非 thenable
-  // → 不走采纳（await 保持原值）。
-  if (!thenableRiskOf(v)) return undefined;
-  // 采纳只对**确定** thenable（闭对象 + 自有 then 槽）可执行：any/unknown/
-  // fn/开对象的采纳面不可判（then 可能不存在 / 可能永不 settle）→ 保持原值。
-  if (v.shape.k !== "obj") return undefined;
-  const shape = v.shape as ObjShape;
-  if (shape.open === true) return undefined;
-  const slot = getSlot(shape.slots, "then");
-  if (!slot || slot.optional) return undefined;
-  const thenFn = slot.value;
-  const impl = getFnImpl(thenFn);
-  const callable =
-    typeof thenFn === "object" &&
-    thenFn !== null &&
-    "shape" in thenFn &&
-    (impl?.apply !== undefined || (impl?.body !== undefined && impl.body !== noBody));
-  if (!callable) {
-    // 原生：then 不可调用 → await 抛 TypeError（PromiseResolve 的 then 步骤）
-    throw new NudoThrow(errorTypeAbs("TypeError"));
+  const ad = thenableAdoption(v);
+  switch (ad.kind) {
+    case "noThen":
+    case "undecidable":
+      // 确定非 thenable / 采纳面不可判 → 保持原值（不猜、不用 unknown 掩盖）
+      return undefined;
+    case "thenNotCallable":
+      // 原生：then 不可调用 → await 抛 TypeError（PromiseResolve 的 then 步骤）
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    case "pending":
+      // then 未 settle → 原生 promise 悬挂（await 永挂）
+      awaitUnsettledHit = true;
+      return unknown;
+    case "settled":
+      if (ad.rejected !== undefined) throw new NudoThrow(ad.rejected);
+      return ad.resolved;
   }
-  let resolved: Abs | undefined;
-  let rejected: Abs | undefined;
-  const resFn = absFunction(["value"], {
-    body: noBody,
-    apply: (args: Abs[]) => {
-      if (resolved === undefined) resolved = args[0] ?? undef();
-      return undef();
-    },
-  }, { ctor: false });
-  const rejFn = absFunction(["reason"], {
-    body: noBody,
-    apply: (args: Abs[]) => {
-      if (rejected === undefined) rejected = args[0] ?? undef();
-      return undef();
-    },
-  }, { ctor: false });
-  try {
-    $call(thenFn, [resFn, rejFn], v);
-  } catch (e) {
-    if (isNudoThrow(e)) throw e;
-    throw new NudoThrow(errorTypeAbs("Error"));
-  }
-  if (rejected !== undefined) throw new NudoThrow(rejected);
-  if (resolved === undefined) {
-    // then 未 settle → 原生 promise 悬挂（await 永挂）
-    awaitUnsettledHit = true;
-    return unknown;
-  }
-  return resolved;
 }
 
 /** await → 解包 eff("promise") */

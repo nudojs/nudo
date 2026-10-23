@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, never } from "../abs.ts";
-import { joinAbs, objOf } from "../objects.ts";
+import { joinAbs, objOf, getSlot, type ObjShape } from "../objects.ts";
 import { isMapAbs, isSetAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, instantiateReturn } from "../hof.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
@@ -295,11 +295,70 @@ function syncFacetOf(h: Abs | undefined): boolean {
   return impl?.effectFree === true && impl.closed === true;
 }
 
+/**
+ * Bug 1052 邻面：then / catch / finally 回调**返回值**的采纳结果（臂级）。
+ *
+ * - `value`：该臂的 fulfilled 值域（采纳兑现值；`never` = 该臂被拒绝）
+ * - `rejected`：该臂导致的拒绝 reason（原生：回调返回值是 thenable 且它调
+ *   reject ⇒ 结果 promise 被拒绝，reason = 该 reason）
+ * - `hang`：该臂**永挂**（`then` 调过但没 settle ⇒ 原生 promise 永挂；
+ *   采纳面不可判 ⇒ settle 不可判 ⇒ 不猜）
+ */
+interface HandlerReturn {
+  value: Abs;
+  rejected?: Abs;
+  hang: boolean;
+}
+
+/**
+ * Bug 1052 邻面：回调**返回值**的 thenable 采纳（原生 `PromiseResolve` 在
+ * 回调返回值面上的同款行为——原生 `await Promise.resolve(1).then(() => ({then:
+ * (r) => r(5)}))` ⇒ `5`）。
+ *
+ * 采纳机制**唯一**：复用 `adoptThenableChain`（与 `Promise.resolve` /
+ * `new Promise` / await 面**同一套**判定与调用——不另造一套）。落地映射与
+ * `Promise.resolve` 面（`onResolve`）**同款**：
+ * - `settled` + resolved → 兑现值（原生：结果 promise 以该值兑现）；
+ * - `settled` + rejected → 拒绝 reason（该臂被拒绝）；
+ * - `pending`（`then` 调过没 settle）→ 永挂（不猜）；
+ * - `undecidable`（采纳面不可判）→ 原值 + 永挂（settle 不可判，不猜）；
+ * - `noThen` / `thenNotCallable` → 普通值（原生 `Get(then)` 不可调用 ⇒ 以该值
+ *   兑现——不抛 TypeError）。
+ *
+ * 口径边界：原生在**微任务**里调 `then`，引擎在求值点**抽象地**调
+ * （await 面 / `Promise.resolve` 面同款近似）⇒ 兑现值同款，`then` 体副作用的
+ * **时序**与原生不同。
+ */
+function adoptCallbackReturn(r: Abs | undefined): HandlerReturn {
+  // 回调没返回值 / 值不可知（unknown 单例）：臂**正常结束**（原生：promise 以
+  // 该值兑现）——settle 态已知，值不可知。各调用点按既有口径落（同步面标
+  // unsettled，微任务面标值 unknown）。
+  if (!r || isUnknownSingleton(r)) return { value: unknown, hang: false };
+  if (isPromiseEff(r)) {
+    // eff(promise)：原生回调返回 promise ⇒ 递归采纳（兑现值 / 拒绝通道 /
+    // 永挂标记随被返回的 promise）
+    const sh = r.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+    return { value: sh.inner, rejected: sh.rejected, hang: sh.unsettled === true };
+  }
+  const ad = adoptThenableChain(r);
+  if (ad.kind === "settled") {
+    return ad.rejected !== undefined
+      ? { value: never, rejected: ad.rejected, hang: false }
+      : { value: ad.resolved ?? unknown, hang: false };
+  }
+  // pending：then 调过但没 settle ⇒ 原生 promise 永挂（不记兑现值）
+  if (ad.kind === "pending") return { value: unknown, hang: true };
+  // undecidable：采纳面不可判 ⇒ settle 不可判 ⇒ 原值 + 永挂（不猜）
+  if (ad.kind === "undecidable") return { value: r, hang: true };
+  // noThen / thenNotCallable：按普通值兑现
+  return { value: r, hang: false };
+}
+
 /** R3b：同步执行的 then 回调返回值 → 结果 promise：
  * - eff(promise) → 递归采纳（inner 与 rejected/unsettled 通道随返回 promise，
  *   原生 then 回调返回 thenable 的采纳同款）；
  * - unknown 单例（可能是 thenable，采纳面不可判）→ unsettled promise<unknown>；
- * - 其余 → unwrapThenable 后 settled promise。 */
+ * - 其余 → 采纳（thenable ⇒ 兑现值）后 settled promise。 */
 function adoptHandlerReturn(mapped: Abs | undefined, conf: Abs["conf"]): Abs {
   if (mapped && isPromiseEff(mapped)) {
     const sh = mapped.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
@@ -318,8 +377,27 @@ function adoptHandlerReturn(mapped: Abs | undefined, conf: Abs["conf"]): Abs {
       ),
     );
   }
-  const next = !mapped || isUnknownSingleton(mapped) ? unknown : unwrapThenable(mapped);
-  return isUnknownSingleton(next) ? promiseUnsettled(next, conf) : promiseAbs(next, conf);
+  // 既有口径：回调返回值不可知（unknown 单例）⇒ 结果 promise 状态未知
+  if (!mapped || isUnknownSingleton(mapped)) return promiseUnsettled(unknown, conf);
+  // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 / 永挂）
+  const hr = adoptCallbackReturn(mapped);
+  if (hr.rejected !== undefined) {
+    return markFreshInstance(
+      abs(
+        {
+          k: "eff",
+          eff: "promise",
+          inner: never,
+          rejected: hr.rejected,
+          ...(hr.hang ? { unsettled: true } : {}),
+        },
+        undefined,
+        undefined,
+        conf,
+      ),
+    );
+  }
+  return hr.hang ? promiseUnsettled(hr.value, conf) : promiseAbs(hr.value, conf);
 }
 
 /** promise 的已知拒绝 reason（无通道 → undefined） */
@@ -355,6 +433,140 @@ export function thenableRiskOf(v: Abs): boolean {
   }
   if (k === "sum") return (v.shape as { members: Abs[] }).members.some(thenableRiskOf);
   return false;
+}
+
+/**
+ * Bug 1052：thenable 采纳（原生 `PromiseResolveThenableJob` 的抽象版）。
+ *
+ * `thenableRiskOf` 只答「**可能**自带 then 采纳面」（⇒ 标 unsettled）；本类型
+ * 把该风险面**一分为二**（风险面 ≠ 采纳面）：
+ * - `noThen`：确定没有 `then` 成员 ⇒ 不是 thenable（按普通值走）。
+ * - `thenNotCallable`：有 `then` 成员但**不可调用** ⇒ 原生 `Get(resolution,
+ *   "then")` 不可调用 ⇒ **按普通值兑现**（不抛 TypeError）。
+ * - `undecidable`：采纳面不可判（any/unknown/fn/开对象/可选 `then` 槽）⇒
+ *   settle 不可判（调用方标 unsettled）。
+ * - `settled`：`then(res, rej)` 调过 ⇒ 兑现值（`resolved`）/ 拒绝 reason
+ *   （`rejected`）。
+ * - `pending`：`then` 调过但没 settle ⇒ 原生 promise 永挂。
+ */
+export type ThenableAdoption =
+  | { kind: "noThen" }
+  | { kind: "thenNotCallable" }
+  | { kind: "undecidable" }
+  | { kind: "settled"; resolved?: Abs; rejected?: Abs }
+  | { kind: "pending" };
+
+/** 闭对象 + 自有 `then` 槽 → 槽值（optional 标记）；其余（开对象/非 obj）→ undefined */
+function ownThenSlot(v: Abs): { value: Abs; optional: boolean } | undefined {
+  if (v.shape.k !== "obj") return undefined;
+  const shape = v.shape as ObjShape;
+  if (shape.open === true) return undefined;
+  const slot = getSlot(shape.slots, "then");
+  if (!slot) return undefined;
+  return { value: slot.value, optional: slot.optional === true };
+}
+
+/** `then` 可调用判定（与 await 面（Bug 221）同口径：fn impl 的 apply/body 面） */
+function thenCallable(thenFn: Abs): boolean {
+  const impl = getFnImpl(thenFn);
+  return (
+    typeof thenFn === "object" &&
+    thenFn !== null &&
+    "shape" in thenFn &&
+    (impl?.apply !== undefined || (impl?.body !== undefined && impl.body !== noBody))
+  );
+}
+
+/** 确定 thenable 谓词（闭对象 + 自有 `then` 槽 + `then` 可调用）——**不调用** then */
+function definiteThenable(v: Abs): boolean {
+  const own = ownThenSlot(v);
+  return own !== undefined && !own.optional && thenCallable(own.value);
+}
+
+/**
+ * 调 `then(res, rej)` 取 settle 值（原生 PromiseResolveThenableJob 的同步
+ * 抽象版——宿主在微任务里调，引擎在求值点抽象地调，**值域**同款）。
+ *
+ * - **first-wins**（原生）：`then` 同时调 res 与 rej ⇒ 只有**第一次** settle
+ *   生效；`then` 在 settle **之后**抛错 ⇒ 忽略（原生 thenable job 语义）。
+ * - `then` 体抛错（且未 settle）⇒ 原生 promise **被拒绝**（reason = 抛出值）。
+ */
+function settleByThen(thenFn: Abs, receiver: Abs): ThenableAdoption {
+  let settledValue: Abs | undefined;
+  let settledRejected = false;
+  const resFn = absFunction(["value"], {
+    body: noBody,
+    apply: (args: Abs[]) => {
+      if (settledValue === undefined && !settledRejected) settledValue = args[0] ?? undefAbs();
+      return undefAbs();
+    },
+  }, { ctor: false });
+  const rejFn = absFunction(["reason"], {
+    body: noBody,
+    apply: (args: Abs[]) => {
+      if (settledValue === undefined && !settledRejected) {
+        settledValue = args[0] ?? undefAbs();
+        settledRejected = true;
+      }
+      return undefAbs();
+    },
+  }, { ctor: false });
+  const settled = (): ThenableAdoption | undefined =>
+    settledValue === undefined
+      ? undefined
+      : settledRejected
+        ? { kind: "settled", rejected: settledValue }
+        : { kind: "settled", resolved: settledValue };
+  try {
+    applyCallbackValue(thenFn, [resFn, rejFn], emptyEnv(), pTrue, defaultLeakBudget, receiver);
+  } catch (e) {
+    // `then` 体抛错 ⇒ 原生 promise 被拒绝（reason = 抛出值）；已 settle 的
+    // 兑现优先（first-wins）
+    return settled() ?? {
+      kind: "settled",
+      rejected: e instanceof NudoThrow ? e.absValue : errorTypeAbs("Error"),
+    };
+  }
+  return settled() ?? { kind: "pending" };
+}
+
+/**
+ * Bug 1052：thenable 采纳（**一步**：判定 + 调 `then` 取 settle）。
+ *
+ * 与 `await` 面（`exec/runtime/async.ts` 的 `adoptThenable`，Bug 221）**同款
+ * 判定与同款调用**——await 面复用本函数（不另造一套）。
+ */
+export function thenableAdoption(v: Abs): ThenableAdoption {
+  const own = ownThenSlot(v);
+  if (own !== undefined) {
+    if (own.optional) return { kind: "undecidable" };
+    if (!thenCallable(own.value)) return { kind: "thenNotCallable" };
+    return settleByThen(own.value, v);
+  }
+  // 无自有 `then` 槽：any/unknown/fn/开对象 → 采纳面不可判；其余 → 确定无 then
+  return thenableRiskOf(v) ? { kind: "undecidable" } : { kind: "noThen" };
+}
+
+/** 采纳链深度上限（原生有自解析检测；引擎用上限近似，防自采纳死循环） */
+const MAX_THENABLE_ADOPT_DEPTH = 8;
+
+/**
+ * Bug 1052：采纳链（原生同款**递归**采纳：兑现值若仍是 thenable ⇒ 再采纳
+ * 一层；原生 `PromiseResolveThenableJob` 同款）。
+ */
+export function adoptThenableChain(v: Abs): ThenableAdoption {
+  let cur = v;
+  for (let depth = 0; depth < MAX_THENABLE_ADOPT_DEPTH; depth++) {
+    const ad = thenableAdoption(cur);
+    if (ad.kind !== "settled") return ad;
+    if (ad.rejected !== undefined) return ad;
+    const next = ad.resolved;
+    if (next === undefined) return { kind: "pending" };
+    // 兑现值仍是**确定 thenable** → 再采纳一层（原生同款递归）
+    if (!definiteThenable(next)) return { kind: "settled", resolved: next };
+    cur = next;
+  }
+  return { kind: "undecidable" };
 }
 
 /** eff(promise) 形态判定（通道采纳用） */
@@ -479,9 +691,11 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   // settle → inner 已 unwrap 进 join 面，rejected/unsettled 通道仍并入）
   const effSettles: Abs[] = [];
 
-  const onResolve = (value?: unknown): Abs => {
-    const raw = asAbs(value) ?? litFromJs(value);
-    if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
+  /**
+   * 记录一次 resolve settle（值域 / 采纳风险面 / eff(promise) 通道）。
+   * `risk`：采纳面不可判（thenable 风险）⇒ promise 标 unsettled。
+   */
+  const recordResolve = (raw: Abs, risk: boolean): void => {
     const v = unwrapThenable(raw);
     const token = currentPromiseSettleArm();
     settledArms.push(token);
@@ -491,8 +705,29 @@ export function evalPromiseCtor(args: Abs[]): Abs {
       effSettles.push(raw);
       resolveRisks.push(true);
     } else {
-      resolveRisks.push(thenableRiskOf(v));
+      resolveRisks.push(risk);
     }
+  };
+
+  const onResolve = (value?: unknown): Abs => {
+    const raw = asAbs(value) ?? litFromJs(value);
+    if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
+    // Bug 1052：thenable 采纳（原生 resolve(thenable) → PromiseResolveThenableJob）
+    // ——兑现值 = `then(res, rej)` 的 settle 值（**不是** thenable 对象本身）
+    const adopted = adoptThenableChain(raw);
+    if (adopted.kind === "settled") {
+      if (adopted.rejected !== undefined) return onReject(adopted.rejected);
+      if (adopted.resolved !== undefined) {
+        recordResolve(adopted.resolved, thenableRiskOf(unwrapThenable(adopted.resolved)));
+      }
+      return undefAbs();
+    }
+    // pending：then 调过但没 settle ⇒ 原生 promise 永挂（不记 settle 值）
+    if (adopted.kind === "pending") return undefAbs();
+    // noThen / thenNotCallable / undecidable → 普通值路径
+    // （thenNotCallable：原生 `Get(then)` 不可调用 ⇒ 以该值兑现 ⇒ 无采纳风险；
+    //  undecidable：采纳面不可判 ⇒ 标 unsettled）
+    recordResolve(raw, adopted.kind === "undecidable" ? thenableRiskOf(raw) : false);
     return undefAbs();
   };
   // Bug 36：reject 通道与 resolve 对称收集（fork 臂 join；first-wins 同款）
@@ -699,11 +934,19 @@ export function evalPromiseMethod(
         }
         const resultPromise = promiseAbs(unknown, "path");
         queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
           try {
             const recovered = applyCallbackValue(onRejected, [reason], emptyEnv(), pTrue, defaultLeakBudget);
-            sh.inner =
-              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+            // 永挂——原生 `then` 回调返回 thenable 的采纳同款）
+            const hr = adoptCallbackReturn(recovered);
+            sh.inner = hr.value;
+            if (hr.rejected !== undefined) {
+              sh.inner = never;
+              sh.rejected = hr.rejected;
+              return;
+            }
+            if (hr.hang) sh.unsettled = true;
           } catch (e) {
             if (e instanceof NudoThrow) {
               // 回调定抛 → 结果确定拒绝（原生 onRejected 抛错折 rejection）
@@ -725,12 +968,16 @@ export function evalPromiseMethod(
           if (!rejNullish && unsettled) {
             const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
             queuePromiseMicro(() => {
-              const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+              const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
               try {
                 const recovered = applyCallbackValue(onRejected, [unknown], emptyEnv(), pTrue, defaultLeakBudget);
-                const next =
-                  !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
-                sh.inner = joinAbs(unwrapThenable(liveRecvShape().inner), next);
+                // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道）
+                const hr = adoptCallbackReturn(recovered);
+                sh.inner = joinAbs(unwrapThenable(liveRecvShape().inner), hr.hang ? never : hr.value);
+                if (hr.rejected !== undefined) {
+                  sh.rejected = hr.rejected;
+                  return;
+                }
               } catch (e) {
                 if (e instanceof NudoThrow) {
                   sh.rejected = e.absValue;
@@ -767,10 +1014,16 @@ export function evalPromiseMethod(
           const live = liveRecvShape();
           try {
             const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            const next =
-              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
-            sh.inner = joinAbs(unwrapThenable(live.inner), next);
-            if (!isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
+            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+            // 永挂——永挂则保持 unsettled：结果 promise 可能永不 settle）
+            const hr = adoptCallbackReturn(recovered);
+            sh.inner = joinAbs(unwrapThenable(live.inner), hr.hang ? never : hr.value);
+            if (hr.rejected !== undefined) {
+              sh.rejected = hr.rejected;
+              delete sh.unsettled;
+              return;
+            }
+            if (!hr.hang && !isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
           } catch (e) {
             if (e instanceof NudoThrow) {
               sh.rejected = e.absValue;
@@ -815,18 +1068,24 @@ export function evalPromiseMethod(
       //（另一臂仍可能 fulfilled——除确定 fulfilled 接收者的 f 臂）。
       const resultPromise = unsettled ? promiseUnsettled(unknown, "path") : promiseAbs(unknown, "path");
       queuePromiseMicro(() => {
-        const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+        const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
         const live = liveRecvShape();
         const liveRejected = live.rejected ?? rejected;
         const rejectArms: Abs[] = [];
-        const runArm = (h: Abs | undefined, arg: Abs): Abs => {
+        // Bug 1052 邻面：臂的回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+        // 永挂）——采纳机制唯一（复用 adoptThenableChain）
+        const runArm = (h: Abs | undefined, arg: Abs): HandlerReturn => {
           const r = applyCallbackValue(h, [arg], emptyEnv(), pTrue, defaultLeakBudget);
-          return !r || isUnknownSingleton(r) ? unknown : unwrapThenable(r);
+          return adoptCallbackReturn(r);
         };
         let fulfilled: Abs = unknown;
         let fThrew = false;
+        let hang = false;
         try {
-          fulfilled = runArm(onFulfilled, live.inner);
+          const hr = runArm(onFulfilled, live.inner);
+          fulfilled = hr.value;
+          if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
+          hang = hang || hr.hang;
         } catch (e) {
           if (e instanceof NudoThrow) {
             rejectArms.push(e.absValue);
@@ -840,7 +1099,11 @@ export function evalPromiseMethod(
             rejectArms.push(liveRejected); // 拒绝透传臂
           } else {
             try {
-              fulfilled = joinAbs(fulfilled, runArm(onRejected, liveRejected));
+              const hr = runArm(onRejected, liveRejected);
+              // 永挂臂不产出值（never）——值域仍由 fulfilled 臂给出
+              fulfilled = joinAbs(fulfilled, hr.hang ? never : hr.value);
+              if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
+              hang = hang || hr.hang;
             } catch (e) {
               if (e instanceof NudoThrow) rejectArms.push(e.absValue);
               else throw e;
@@ -849,7 +1112,10 @@ export function evalPromiseMethod(
         } else if (unsettled && !rejNullish) {
           // state 未知的 rejected 臂：g(unknown reason) 值臂 join
           try {
-            fulfilled = joinAbs(fulfilled, runArm(onRejected, unknown));
+            const hr = runArm(onRejected, unknown);
+            fulfilled = joinAbs(fulfilled, hr.hang ? never : hr.value);
+            if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
+            hang = hang || hr.hang;
           } catch (e) {
             if (e instanceof NudoThrow) rejectArms.push(e.absValue);
             else throw e;
@@ -860,6 +1126,9 @@ export function evalPromiseMethod(
         if (rejectArms.length > 0) {
           sh.rejected = rejectArms.reduce((a, b) => joinAbs(a, b));
         }
+        // 臂永挂（then 调过没 settle / 采纳面不可判）⇒ 结果 promise 可能永不
+        // settle ⇒ unsettled（不猜）
+        if (hang) sh.unsettled = true;
       });
       return resultPromise;
     }
@@ -875,11 +1144,19 @@ export function evalPromiseMethod(
         }
         const resultPromise = promiseAbs(unknown, "path");
         queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
           try {
             const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            sh.inner =
-              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+            // 永挂——原生 catch 回调返回 thenable 的采纳同款）
+            const hr = adoptCallbackReturn(recovered);
+            sh.inner = hr.value;
+            if (hr.rejected !== undefined) {
+              sh.inner = never;
+              sh.rejected = hr.rejected;
+              return;
+            }
+            if (hr.hang) sh.unsettled = true;
           } catch (e) {
             if (e instanceof NudoThrow) {
               // 回调定抛 → 结果确定拒绝（原生 catch 回调抛错折 rejection）
@@ -929,10 +1206,16 @@ export function evalPromiseMethod(
           const live = liveRecvShape();
           try {
             const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            const next =
-              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
-            sh.inner = joinAbs(unwrapThenable(live.inner), next);
-            if (!isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
+            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+            // 永挂——永挂则保持 unsettled：结果 promise 可能永不 settle）
+            const hr = adoptCallbackReturn(recovered);
+            sh.inner = joinAbs(unwrapThenable(live.inner), hr.hang ? never : hr.value);
+            if (hr.rejected !== undefined) {
+              sh.rejected = hr.rejected;
+              delete sh.unsettled;
+              return;
+            }
+            if (!hr.hang && !isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
           } catch (e) {
             if (e instanceof NudoThrow) {
               sh.rejected = e.absValue;
@@ -956,7 +1239,20 @@ export function evalPromiseMethod(
             sh.inner = unknown;
             return;
           }
-          sh.inner = joinAbs(liveRecvShape().inner, unwrapThenable(recovered));
+          // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
+          // 永挂）
+          const hr = adoptCallbackReturn(recovered);
+          if (hr.hang) {
+            // 永挂（then 调过没 settle / 采纳面不可判）⇒ 值域不可知
+            sh.inner = unknown;
+            return;
+          }
+          if (hr.rejected !== undefined) {
+            sh.inner = never;
+            sh.rejected = hr.rejected;
+            return;
+          }
+          sh.inner = joinAbs(liveRecvShape().inner, hr.value);
         } catch (e) {
           if (e instanceof NudoThrow) {
             sh.rejected = e.absValue;
@@ -968,21 +1264,49 @@ export function evalPromiseMethod(
       return resultPromise;
     }
     case "finally": {
-      // finally 不改变 settled value（回调返回值丢弃——返回 thenable 的采纳
-      // 面不建模）；Bug 36：拒绝通道透传（Promise.reject(1).finally(g) 仍以 1
+      // finally 不改变 settled value（原生 finally 兑现值**丢弃**——回调返回值
+      // 只作「等待」用）；Bug 36：拒绝通道透传（Promise.reject(1).finally(g) 仍以 1
       // 拒绝）。R3 audit：effectFree∧closed 回调真执行一次（原生 finally 回调
       // 恒执行，无论 settle 态）：定抛 → 结果确定拒绝且 reason 替换（原生
       // Promise.reject(1).finally(() => { throw 9 }) 拒绝 9）。无 facet（副作用
       // 回调）不执行——抛错面不建模，通道透传。
       const rejected = rejectedOf(recv);
       const handler = args[0];
+      let handlerReturn: HandlerReturn | undefined;
       if (!isIdentity(handler) && syncFacetOf(handler)) {
         try {
-          applyCallbackValue(handler, [], emptyEnv(), pTrue, defaultLeakBudget);
+          // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（原生 finally 等它
+          // settle：兑现值丢弃 / 拒绝替换 reason / 未 settle ⇒ 永挂）
+          handlerReturn = adoptCallbackReturn(
+            applyCallbackValue(handler, [], emptyEnv(), pTrue, defaultLeakBudget),
+          );
         } catch (e) {
           if (e instanceof NudoThrow) return promiseRejected(e.absValue, confOf());
           throw e;
         }
+      }
+      // 原生：thenable 调 reject ⇒ 结果被拒（reason **替换**原 reason——原生
+      // Promise.reject("orig").finally(() => ({then:(res,rej)=>rej("new")}))
+      // 拒绝 "new"）
+      if (handlerReturn?.rejected !== undefined) {
+        return promiseRejected(handlerReturn.rejected, confOf());
+      }
+      // 原生：thenable 没 settle ⇒ 结果 promise 永挂（不猜）
+      if (handlerReturn?.hang) {
+        return markFreshInstance(
+          abs(
+            {
+              k: "eff",
+              eff: "promise",
+              inner,
+              ...(rejected !== undefined ? { rejected } : {}),
+              unsettled: true,
+            },
+            undefined,
+            undefined,
+            confOf(),
+          ),
+        );
       }
       if (rejected !== undefined) {
         return markFreshInstance(
@@ -1244,9 +1568,18 @@ export function evalPromiseStatic(
       const inner = args.length > 0 ? (args[0] ?? unknown) : undefAbs();
       // Promise.resolve(thenable) 采纳（通道/标记随原 promise）
       if (inner.shape.k === "eff" && inner.shape.eff === "promise") return inner;
-      // 值可能自带 thenable 采纳面（any/unknown/fn/open obj/带 then 槽 obj）
-      // → settle 不可判，标 unsettled（catch/then 拒绝臂保持活）
-      if (thenableRiskOf(inner)) return promiseUnsettled(inner);
+      // Bug 1052：thenable 采纳（原生 PromiseResolveThenableJob）——兑现值 =
+      // `then(res, rej)` 的 settle 值（**不是** thenable 对象本身）
+      const adopted = adoptThenableChain(inner);
+      if (adopted.kind === "settled") {
+        if (adopted.rejected !== undefined) return promiseRejected(adopted.rejected, "path");
+        return promiseAbs(adopted.resolved ?? unknown, "path");
+      }
+      // pending：then 调过但没 settle ⇒ 原生 promise 永挂
+      if (adopted.kind === "pending") return promiseUnknown();
+      // 确定非 thenable（无 then 成员 / then 不可调用）⇒ 以该值兑现；
+      // 采纳面不可判（any/unknown/fn/开对象）⇒ 标 unsettled（settle 不可判）
+      if (adopted.kind === "undecidable") return promiseUnsettled(inner);
       return promiseAbs(inner, "path");
     }
     case "reject":
