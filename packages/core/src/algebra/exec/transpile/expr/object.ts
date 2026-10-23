@@ -31,6 +31,7 @@ import {
   collectForkBindingNames,
   withClassNameHint,
   fnKindSrc,
+  internalTmpName,
 } from "../helpers.ts";
 import { emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -80,6 +81,11 @@ export function transpileObjectExpr(
        * （后者对 getter-only 键定抛 TypeError）。
        */
       let hasDynComputedAccessor = false;
+      // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名
+      // （`__margs`）避开用户标识符——撞名 ⇒ 重复词法声明 ⇒ 产物非法 JS ⇒
+      // 整模块 fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
+      const argsSlot = internalTmpName("__nudoArgs", opts);
+      const margsName = internalTmpName("__margs", opts);
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -151,7 +157,7 @@ export function transpileObjectExpr(
             // 方法体是新函数边界：return 不携带外层 if 臂退出信号
             conditionalFlow: 0,
             thisParam: "__this",
-            argsBinding: omBindFromArgs ? "__nudoArgs" : undefined,
+            argsBinding: omBindFromArgs ? argsSlot : undefined,
             // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
             yieldTryCtx: 0,
             // Bug 201：async 方法体的 await 发射 `yield`（真挂起点）
@@ -165,7 +171,7 @@ export function transpileObjectExpr(
             // （getter 长度 0 / setter 长度 1）。此前访问器 thunk 不发
             // `__nudoArgs` 槽绑定 ⇒ 体里的 `arguments` 走 $throwFreeArguments()
             // ⇒ 定抛 ReferenceError（原生返回 0）。访问器一律给槽绑定。
-            const accOpts: TranspileOptions = { ...methodOpts, argsBinding: "__nudoArgs" };
+            const accOpts: TranspileOptions = { ...methodOpts, argsBinding: argsSlot };
             // thunk 先行构造（get：单表达式体；set：与 stmt.ts 类访问器同口径
             // emitSetterAccessorThunk——内层箭头丢弃体返回值（恒返回 __this）
             // + 别名写接收者回收；N3：setter 形参默认值/解构经 __nudoArgs 槽绑定）
@@ -174,7 +180,7 @@ export function transpileObjectExpr(
               omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v";
             const thunkSrc =
               prop.kind === "get"
-                ? `(__this) => {\n  let __nudoArgs = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
+                ? `(__this) => {\n  let ${argsSlot} = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
                 : emitSetterAccessorThunk(
                     omVName,
                     emitFnBlockBody(prop.body, 2, accOpts, {
@@ -185,9 +191,9 @@ export function transpileObjectExpr(
                     1,
                     [
                       // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
-                      `    let __nudoArgs = $arguments([${omVName}]);`,
+                      `    let ${argsSlot} = $arguments([${omVName}]);`,
                       ...(omFirstP && omFirstP.type !== "Identifier"
-                        ? emitParamBindingFromArgs(prop.params as Node[], "    ", accOpts, "__nudoArgs").prologue
+                        ? emitParamBindingFromArgs(prop.params as Node[], "    ", accOpts, argsSlot).prologue
                         : []),
                     ],
                   );
@@ -229,13 +235,13 @@ export function transpileObjectExpr(
           let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts, { varParams: paramNamesOfFn(prop.params as Node[]) });
           let mParams = ["__this", ...bindNames];
           if (omBindFromArgs) {
-            const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, "__nudoArgs");
+            const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, argsSlot);
             mBodyInner = [
-              `  let __nudoArgs = $arguments(__margs);`,
+              `  let ${argsSlot} = $arguments(${margsName});`,
               ...bound.prologue,
               mBodyInner,
             ].join("\n");
-            mParams = ["__this", "...__margs"];
+            mParams = ["__this", `...${margsName}`];
           }
           // Bug 58：generator 对象方法体不在调用期执行——包 $gen（吞调用期
           // throws；yield 收集保持既有 eager 口径，与声明/类方法路径同编）
@@ -367,20 +373,20 @@ export function transpileObjectExpr(
               // 方法型函数表达式体是新函数边界：return 不携带外层 if 臂退出信号
               conditionalFlow: 0,
               thisParam: "__this",
-              argsBinding: feBindFromArgs ? "__nudoArgs" : undefined,
+              argsBinding: feBindFromArgs ? argsSlot : undefined,
             };
             let mBodyInner = emitFnBlockBody(fn.body, 1, methodOpts, {
               varParams: paramNamesOfFn(fn.params as unknown as Node[]),
             });
             let mParams = ["__this", ...bindNames];
             if (feBindFromArgs) {
-              const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, "__nudoArgs");
+              const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, argsSlot);
               mBodyInner = [
-                `  let __nudoArgs = $arguments(__margs);`,
+                `  let ${argsSlot} = $arguments(${margsName});`,
                 ...bound.prologue,
                 mBodyInner,
               ].join("\n");
-              mParams = ["__this", "...__margs"];
+              mParams = ["__this", `...${margsName}`];
             }
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）

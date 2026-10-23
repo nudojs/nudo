@@ -77,6 +77,7 @@ import {
   withClassNameHint,
   userIdentInfo,
   bumpDestrTmpSeq,
+  internalTmpName,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -333,8 +334,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 匿名默认函数/类合成名字（原 <anonymous fn skipped> 整条丢失）；
         // 输出 `function X {}` + `export default X;`——真实 ESM 与 run.ts
         // 后处理（→ __nudoExport("default", X)）都合法。
+        // Bug 1058：匿名默认导出的合成名避开用户标识符（模块级绑定，撞名
+        // ⇒ 重复词法声明 ⇒ 整模块 fail-closed）
         const name =
-          d.id?.name ?? (d.type === "FunctionDeclaration" ? "__nudoDefaultFn" : "__nudoDefaultClass");
+          d.id?.name ??
+          (d.type === "FunctionDeclaration"
+            ? internalTmpName("__nudoDefaultFn", opts)
+            : internalTmpName("__nudoDefaultClass", opts));
         const named = d.id ? d : ({ ...d, id: { type: "Identifier", name } } as Statement);
         const inner = transpileStatement(named, depth + 1, opts);
         return `${inner}\n${pad}export default ${name};`;
@@ -361,6 +367,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 否则沿用既有 `$async(thunk)` 同步路径（发射产物逐字不变）。
       const asyncPlan = stmt.async === true ? asyncBodyPlan(stmt.body) : undefined;
       const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
+      // Bug 1058：arguments 槽名（`__nudoArgs`）必须避开用户标识符——用户
+      // 自己声明同名绑定时，生成的 `let __nudoArgs = …` 与之**重复词法
+      // 声明** ⇒ 产物非法 JS ⇒ 整模块 fail-closed（导出全退化 unknown +
+      // 假 nudo:opaque-result ⇒ 门禁假绿）。
+      const argsSlot = internalTmpName("__nudoArgs", opts);
+      // Bug 1058：函数体自吸收 catch 的载体名同样避开用户标识符
+      const fnRetCarrier = internalTmpName("__nudoFnRet", opts);
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
@@ -372,7 +385,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         inAsyncBody: asyncGen,
         ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
-        argsBinding: hasArgs ? "__nudoArgs" : undefined,
+        argsBinding: hasArgs ? argsSlot : undefined,
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
         yieldTryCtx: 0,
       };
@@ -410,12 +423,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         : "";
       // 真实 function 有宿主 arguments → 投成独立 tuple（不破坏下方 restBind）
       const argsPrologue = hasArgs
-        ? `${indent(depth + 2)}let __nudoArgs = $arguments(arguments);\n`
+        ? `${indent(depth + 2)}let ${argsSlot} = $arguments(arguments);\n`
         : "";
       // 生成器路径：宿主函数作用域里的 this / arguments 捕获（生成器体内不再发）
       const genHoist = [
         ...(hasThis ? [`${indent(depth + 1)}let __this = $rawThis(this);`] : []),
-        ...(hasArgs ? [`${indent(depth + 1)}let __nudoArgs = $arguments(arguments);`] : []),
+        ...(hasArgs ? [`${indent(depth + 1)}let ${argsSlot} = $arguments(arguments);`] : []),
       ];
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -440,8 +453,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ? [
             `${indent(depth + 1)}try {`,
             bodyStmts,
-            `${indent(depth + 1)}} catch (__nudoFnRet) {`,
-            `${indent(depth + 1)}  return $catchReturn(__nudoFnRet);`,
+            // Bug 1058：catch 载体名避开用户标识符（与用户同名绑定重复词法
+            // 声明 ⇒ 产物非法 JS ⇒ 整模块 fail-closed）
+            `${indent(depth + 1)}} catch (${fnRetCarrier}) {`,
+            `${indent(depth + 1)}  return $catchReturn(${fnRetCarrier});`,
             `${indent(depth + 1)}}`,
           ].join("\n")
         : bodyStmts;
@@ -563,27 +578,39 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           // → 整模块 fail-closed：同文件所有函数退化为 unknown / never）。
           // 修法：把每个 return 的临时量收进**自己的块**（块作用域独立 →
           // 不再同名冲突）；return 仍在块内——块不改变 return 的函数退出语义。
+          //
+          // Bug 1059：块内 `const __nudoRet = <用户表达式>` 与用户**外层**同名
+          // 绑定**遮蔽** ⇒ 初始化器里的 `__nudoRet` 引用解析到引擎自己的
+          // 绑定 ⇒ TDZ ReferenceError ⇒ 被用户自己的 catch 吞掉 ⇒ 原生 15 被
+          // 算成 0（wrong-exact + 门禁假绿）。修法：临时量名避开用户标识符
+          // （`__nudoRet` → `__nudoRet_1`）⇒ 用户表达式读到的仍是用户绑定。
+          // 配对：声明 / `$pushLoopExit` / `prefix(...)` 三处用同一个名字。
+          const retTmp = internalTmpName("__nudoRet", opts);
+          const xsTmp = internalTmpName("__xs", opts);
           return [
             `${pad}{`,
-            `${indent(depth + 1)}const __nudoRet = ${rec};`,
+            `${indent(depth + 1)}const ${retTmp} = ${rec};`,
             ...retRebinds,
             `${indent(depth + 1)}{`,
-            `${indent(depth + 2)}const __xs = $tryTakeSince(${markExpr});`,
-            `${indent(depth + 2)}if (__xs.length) {`,
-            `${indent(depth + 3)}$pushLoopExit(__nudoRet);`,
-            `${indent(depth + 3)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
+            `${indent(depth + 2)}const ${xsTmp} = $tryTakeSince(${markExpr});`,
+            `${indent(depth + 2)}if (${xsTmp}.length) {`,
+            `${indent(depth + 3)}$pushLoopExit(${retTmp});`,
+            `${indent(depth + 3)}$throw(${xsTmp}.reduce((a, b) => $join(a, b)));`,
             `${indent(depth + 2)}}`,
             `${indent(depth + 2)}${opts.tryRethrowCatch ? "$tryReleaseSoftCatch();" : opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
             `${indent(depth + 1)}}`,
-            `${indent(depth + 1)}${prefix}(__nudoRet);`,
+            `${indent(depth + 1)}${prefix}(${retTmp});`,
             `${pad}}`,
           ].join("\n");
         }
         if (retRebinds.length === 0) return `${pad}${prefix}(${rec});`;
+        // Bug 1058：写回载体名避开用户标识符（用户自己有 `__mutRet` 时改名，
+        // 否则 `let __mutRet = __mutRet` ⇒ TDZ ReferenceError）
+        const mutTmp = internalTmpName("__mutRet", opts);
         return [
-          `${pad}let __mutRet = ${rec};`,
+          `${pad}let ${mutTmp} = ${rec};`,
           ...retRebinds,
-          `${pad}${prefix}(__mutRet);`,
+          `${pad}${prefix}(${mutTmp});`,
         ].join("\n");
       };
       if (asVar) {
@@ -1436,7 +1463,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // SyntaxError 整模块 fail-closed；loc 缺失 `?? 0` 同样撞车
       const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
       const tmpNo = tryTmpSeq.n++;
-      const markName = `__nudoTm_${tmpNo}`;
+      // Bug 1058：try 标记名 / catch 载体名必须**避开用户标识符**——用户自己
+      // 声明了 `__nudoTm_0` / `__nudoE_0` 时，生成的同名 `const` 与之**重复
+      // 词法声明** ⇒ 产物非法 JS ⇒ 整模块 fail-closed（导出全退化 unknown +
+      // 假 nudo:opaque-result ⇒ 门禁假绿）。
+      const markName = internalTmpName(`__nudoTm_${tmpNo}`, opts);
       // Bug 52：yield 点 try 上下文位——try 块与 catch 体在本 try 的
       // finally/catch 覆盖内；finally 体不在自身 finally 覆盖内（外层 ctx
       // 原样）。位值与 runtime/control.ts 的 YIELD_* 常量钉死同步（transpile
@@ -1500,7 +1531,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         (handlerParam.type === "ObjectPattern" || handlerParam.type === "ArrayPattern")
           ? handlerParam
           : null;
-      const catchTmp = `__nudoE_${tmpNo}`;
+      const catchTmp = internalTmpName(`__nudoE_${tmpNo}`, opts);
       // Bug 175：可选 catch 绑定（ES2019 `catch { … }`）**不引入任何绑定**——
       // 此前载体名回落成**硬编码 "e"**：① 遮蔽外层同名绑定（自信错值）
       // ② 顶掉未声明名的 ReferenceError（漏抛 / 假绿）③ 与用户自己的
@@ -1545,7 +1576,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             : transpileStatement(stmt.handler.body as unknown as Statement, d, o);
       if (stmt.handler) {
         const catchBody = transpileCatchBody(depth + 1, catchOpts);
-        const softVar = `__soft_${markName}`;
+        // Bug 1058：派生临时名（soft 载体 / catch 值 / take-since 序列 /
+        // rethrow 载体 / post 序列）同样避开用户标识符——它们由 markName
+        // 派生，markName 已避让，但派生名自身仍可能与用户词形相撞。
+        const softVar = internalTmpName(`__soft_${markName}`, opts);
+        const cvName = internalTmpName(`__cv_${markName}`, opts);
+        const xsName = internalTmpName(`__xs_${markName}`, opts);
+        const rethrowName = internalTmpName(`__rethrow_${markName}`, opts);
         lines.push(`${pad}catch (${catchTmp}) {`);
         // NudoReturn 是控制流信号，不是 catch 绑定
         lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
@@ -1553,19 +1590,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 遇信号重抛 ⇒ catch 体不执行、信号透传到循环捕获点（原生：break 不是
         // 异常，到不了 catch 处理器）。求值放在 soft 摘帧**之前**：信号透传时
         // soft 效果不得被本帧消化（须上浮给外层帧）。
-        lines.push(`${indent(depth + 1)}const __cv_${markName} = $catchVal(${catchTmp});`);
+        lines.push(`${indent(depth + 1)}const ${cvName} = $catchVal(${catchTmp});`);
         // soft：入口摘下、不立刻消化；catch 落出口 discard，rethrow orphan 上浮
         lines.push(`${indent(depth + 1)}const ${softVar} = $tryDetachSoftCatch();`);
-        lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
-        lines.push(`${indent(depth + 1)}__xs_${markName}.push(__cv_${markName});`);
+        lines.push(`${indent(depth + 1)}const ${xsName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}${xsName}.push(${cvName});`);
         lines.push(
           // catch 绑定可再赋（let 语义），不是 const；模式参载体 = catchTmp；
           // 可选 catch 绑定不引入用户可见绑定（Bug 175）
           patternParam
-            ? `${indent(depth + 1)}${catchTmp} = __xs_${markName}.reduce((a, b) => $join(a, b));`
+            ? `${indent(depth + 1)}${catchTmp} = ${xsName}.reduce((a, b) => $join(a, b));`
             : optionalBinding
               ? ""
-              : `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
+              : `${indent(depth + 1)}let ${catchParam} = ${xsName}.reduce((a, b) => $join(a, b));`,
         );
         lines.push(`${indent(depth + 1)}try {`);
         if (patternParam) {
@@ -1582,9 +1619,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           );
         }
         lines.push(catchBody);
-        lines.push(`${indent(depth + 1)}} catch (__rethrow_${markName}) {`);
+        lines.push(`${indent(depth + 1)}} catch (${rethrowName}) {`);
         lines.push(`${indent(depth + 2)}$tryOrphanSoft(${softVar});`);
-        lines.push(`${indent(depth + 2)}throw __rethrow_${markName};`);
+        lines.push(`${indent(depth + 2)}throw ${rethrowName};`);
         lines.push(`${indent(depth + 1)}}`);
         lines.push(`${indent(depth + 1)}$tryDiscardSoft(${softVar});`);
         lines.push(`${pad}}`);
@@ -1627,15 +1664,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // try/catch/finally 之后再 drain 未吸收的抽象 throw
       if (stmt.handler) {
         const catchBody = transpileCatchBody(depth + 2, catchOpts);
+        // Bug 1058：post 序列临时名避开用户标识符（配对：声明 / .length /
+        // .reduce 三处同名）
+        const postName = internalTmpName(`__post_${markName}`, opts);
         lines.push(`${pad}{`);
-        lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
-        lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
+        lines.push(`${indent(depth + 1)}const ${postName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}if (${postName}.length) {`);
         lines.push(
           patternParam
-            ? `${indent(depth + 2)}let ${catchTmp} = __post_${markName}.reduce((a, b) => $join(a, b));`
+            ? `${indent(depth + 2)}let ${catchTmp} = ${postName}.reduce((a, b) => $join(a, b));`
             : optionalBinding
               ? ""
-              : `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
+              : `${indent(depth + 2)}let ${catchParam} = ${postName}.reduce((a, b) => $join(a, b));`,
         );
         if (patternParam) {
           emitDestructure(
@@ -1657,10 +1697,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 1)}}`);
         lines.push(`${pad}}`);
       } else {
+        // Bug 1058：post 序列临时名避开用户标识符（配对：声明 / .length /
+        // .reduce 三处同名）
+        const postName = internalTmpName(`__post_${markName}`, opts);
         lines.push(`${pad}{`);
-        lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
-        lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
-        lines.push(`${indent(depth + 2)}$throw(__post_${markName}.reduce((a, b) => $join(a, b)));`);
+        lines.push(`${indent(depth + 1)}const ${postName} = $tryTakeSince(${markName});`);
+        lines.push(`${indent(depth + 1)}if (${postName}.length) {`);
+        lines.push(`${indent(depth + 2)}$throw(${postName}.reduce((a, b) => $join(a, b)));`);
         lines.push(`${indent(depth + 1)}}`);
         lines.push(`${pad}}`);
       }

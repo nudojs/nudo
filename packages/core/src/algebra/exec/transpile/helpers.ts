@@ -845,6 +845,34 @@ export function safeTmpName(base: string, info: UserIdentInfo): string {
 }
 
 /**
+ * Bug 1058 / Bug 1059：引擎**内部临时名**必须**避开用户标识符**。
+ *
+ * 引擎为转译生成的内部绑定（`arguments` 槽 `__nudoArgs` / try 标记
+ * `__nudoTm_{n}` / catch 载体 `__nudoE_{n}` / try 内 return 载体 `__nudoRet`
+ * / 写回载体 `__mutRet` / 函数体 catch 载体 `__nudoFnRet` …）此前一律用
+ * **固定名**发射 ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
+ * - **同作用域重复词法声明** ⇒ 产物不是合法 JS ⇒ `new Function` 编译期
+ *   SyntaxError ⇒ 求值器 fail-closed（**整模块**导出退化 unknown + 假
+ *   `nudo:opaque-result` ⇒ 门禁假绿）；
+ * - **内层遮蔽**用户同名外层绑定 ⇒ 初始化器自引用 ⇒ TDZ ReferenceError ⇒
+ *   被用户自己的 catch 吞掉 ⇒ 原生值被算成别的值（wrong-exact）。
+ *
+ * 口径：`userIdentInfo(source).names` 是**源文本里出现过的全部标识符词形**
+ * （保守超集）⇒ 避让在**整个转译单元**生效（不做作用域分析——用户在内层
+ * 作用域声明的名字也会遮蔽外层生成的临时名）⇒ 生成名与用户标识符**词形**
+ * 永不相撞。命名 `<base>_<k>`（k 从 1 起跳过已占用名）——与 Bug 181 的
+ * `safeTmpName` 同款且**确定性**（同一源文本 ⇒ 同一名 ⇒ 产物逐字可重现；
+ * 缓存键 / 差分语料依赖它）。**无碰撞时原名返回** ⇒ 产物逐字不变。
+ *
+ * 配对义务：内部名**生成与使用必须同名**（词法槽 / 载体名）⇒ 调用点要把
+ * 算出的名字**存成局部变量**再同时用在声明与引用处，不得各处各算一次
+ * （同源文本下两次计算结果相同，但存变量更抗后续改动）。
+ */
+export function internalTmpName(base: string, opts: TranspileOptions): string {
+  return safeTmpName(base, userIdentInfo(opts.source));
+}
+
+/**
  * var 提升预扫描（Bug 21）：收集函数体（或模块顶层）内全部 `var` 声明名
  * （含嵌套块/循环/try/switch 臂；含 for-init/left 的 var），**不穿越**
  * 函数/方法/类体边界（那些绑定属于内层作用域）。export var（模块顶层

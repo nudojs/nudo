@@ -45,6 +45,7 @@ import {
   collectPatternNames,
   safeTmpName,
   userIdentInfo,
+  internalTmpName,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -198,6 +199,12 @@ export function transpileFunctionExpr(
       // 非箭头且体直接引用 arguments：建独立 tuple 槽。箭头不建槽（沿外层
       // argsBinding；无绑定 → $unknown()，见 Identifier 分支）。
       const hasArgs = !isArrow && fnBodyHasOwnArguments(fn);
+      // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名
+      // （`__allArgs`）必须避开用户标识符——用户自己声明同名绑定时，生成的
+      // `let __nudoArgs = …` 与之**重复词法声明** ⇒ 产物非法 JS ⇒ 整模块
+      // fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
+      const argsSlot = internalTmpName("__nudoArgs", opts);
+      const allArgsName = internalTmpName("__allArgs", opts);
       // 参数默认值在函数作用域求值：非箭头且引用自有 arguments
       // （fnBodyHasOwnArguments 已含参数面）→ 默认表达式读 __nudoArgs 槽
       //（useArgsSlot 路径由 emitParamBindingFromArgs 处理，此处覆盖
@@ -210,7 +217,7 @@ export function transpileFunctionExpr(
         // Bug 201：默认参数表达式不是 async 体的生成器段（原生：await 在
         // 默认值里是语法错误）⇒ 归零（保持既有 `$await` 兜底）
         inAsyncBody: false,
-        ...(!isArrow && hasArgs ? { argsBinding: "__nudoArgs" } : {}),
+        ...(!isArrow && hasArgs ? { argsBinding: argsSlot } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
       };
       // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
@@ -249,7 +256,7 @@ export function transpileFunctionExpr(
         ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
         ...(fnBodyConstNames !== opts.constNames ? { constNames: fnBodyConstNames } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
-        ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
+        ...(isArrow ? {} : { argsBinding: hasArgs ? argsSlot : undefined }),
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
         yieldTryCtx: 0,
       };
@@ -301,12 +308,12 @@ export function transpileFunctionExpr(
       let argsSlotPrologue: string[] = [];
       let argsParamParts = paramParts;
       if (useArgsSlot) {
-        const bound = emitParamBindingFromArgs(fn.params, "  ", fnBodyOpts, "__nudoArgs");
-        argsSlotPrologue = [`  let __nudoArgs = $arguments(__allArgs);`, ...bound.prologue];
-        argsParamParts = ["...__allArgs"];
+        const bound = emitParamBindingFromArgs(fn.params, "  ", fnBodyOpts, argsSlot);
+        argsSlotPrologue = [`  let ${argsSlot} = $arguments(${allArgsName});`, ...bound.prologue];
+        argsParamParts = [`...${allArgsName}`];
       } else if (hasArgs && hasThis) {
         // 真实 function 包装：宿主 arguments 直接投影
-        argsSlotPrologue = [`  let __nudoArgs = $arguments(arguments);`];
+        argsSlotPrologue = [`  let ${argsSlot} = $arguments(arguments);`];
       }
       const allPrologue = useArgsSlot
         ? [...argsSlotPrologue, ...thisPrologue]

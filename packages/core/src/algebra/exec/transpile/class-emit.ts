@@ -22,6 +22,7 @@ import {
   paramDisplayNames,
   nativeParamArity,
   fnKindOf,
+  internalTmpName,
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
@@ -114,6 +115,11 @@ export function classSpecOf(
   // 两者皆无 → 合成名（发射用；对外可见的 name 是空串——原生无名类名为 ""）。
   const name = stmt.id?.name ?? nameHint ?? "AnonymousClass";
   const displayName = stmt.id?.name ?? nameHint ?? "";
+  // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名（`__margs`）
+  // 避开用户标识符——撞名 ⇒ 重复词法声明 ⇒ 产物非法 JS ⇒ 整模块
+  // fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
+  const argsSlot = internalTmpName("__nudoArgs", opts);
+  const margsName = internalTmpName("__margs", opts);
   // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
   // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
   const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
@@ -474,7 +480,7 @@ export function classSpecOf(
         // Bug 151：访问器是普通函数——原生 `arguments` 天然存在（getter 长度
         // 0 / setter 长度 1）。此前访问器体无 args 绑定 ⇒ 体里的 arguments
         // 定抛 ReferenceError（原生返回 0）。
-        argsBinding: "__nudoArgs",
+        argsBinding: argsSlot,
         // P4b：访问器体同在类体不可变自有名绑定作用域内（methodOptsBase 同口径）
         constNames: selfConstNames,
         // Bug 14：静态访问器体 super 接收者 = 父类构造器
@@ -486,7 +492,7 @@ export function classSpecOf(
       if (m.kind === "get") {
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
         // Bug 151：getter 的 arguments 长度 = 0
-        def.get = `(__this) => {\n${indent(depth + 3)}let __nudoArgs = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
+        def.get = `(__this) => {\n${indent(depth + 3)}let ${argsSlot} = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const setParams = (m.params ?? []) as Node[];
         const firstP = setParams[0] as { type?: string; name?: string } | undefined;
@@ -506,10 +512,10 @@ export function classSpecOf(
         // opts（thisParam __this）求值。
         // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
         let setPrologue: string[] = [
-          `${indent(depth + 4)}let __nudoArgs = $arguments([${vname}]);`,
+          `${indent(depth + 4)}let ${argsSlot} = $arguments([${vname}]);`,
         ];
         if (firstP && firstP.type !== "Identifier") {
-          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, "__nudoArgs");
+          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, argsSlot);
           setPrologue = [...setPrologue, ...bound.prologue];
         }
         def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
@@ -537,13 +543,13 @@ export function classSpecOf(
       mHasArgs || mParamsNodes.some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
     const methodOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? argsSlot : undefined,
     };
     // 静态方法体边界（R5/Bug 14）：默认表达式里的 super.x 也要按
     // staticSuperSrc 派发——绑定与体共用同一 opts
     const staticOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? argsSlot : undefined,
       ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
     };
     const bindOptsBase = m.static ? staticOpts : methodOpts;
@@ -570,10 +576,10 @@ export function classSpecOf(
         mParamsNodes,
         indent(depth + 4),
         bindOpts,
-        "__nudoArgs",
+        argsSlot,
       );
       bodyStmts = [
-        `${indent(depth + 4)}let __nudoArgs = $arguments(__margs);`,
+        `${indent(depth + 4)}let ${argsSlot} = $arguments(${margsName});`,
         ...bound.prologue,
         bodyStmts,
       ].join("\n");
@@ -618,7 +624,7 @@ export function classSpecOf(
       // 方法口径）；槽无 symbolKey 标记 ⇒ 不是钩子。
       if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
         const fnSrc = [
-          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
           ...(staticAsync
             ? [
                 `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
@@ -641,7 +647,7 @@ export function classSpecOf(
       }
       staticMethodParts.push(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         ...(staticAsync
           ? [
               `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
@@ -662,7 +668,7 @@ export function classSpecOf(
       // P2b：.length = 首个默认值/rest 形参前的形参数（Bug 69 同口径）
       ctorLength = nativeParamArity(m.params);
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
@@ -670,7 +676,7 @@ export function classSpecOf(
     } else if (m.async === true && m.generator !== true) {
       // Bug 141：async generator 方法不进 $async（原生返 AsyncGenerator 本身）
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -680,7 +686,7 @@ export function classSpecOf(
       methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );

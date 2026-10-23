@@ -626,10 +626,13 @@ export function emitParamBinding(
 }
 
 /**
- * 从 `$arguments` 槽（`__nudoArgs`）绑定形参——FunctionExpression 走
+ * 从 `$arguments` 槽（基名 `__nudoArgs`）绑定形参——FunctionExpression 走
  * `(...__allArgs)` 收齐全量实参时用。Identifier/默认参/解构/rest 与
  * emitParamBinding 同语义，但读 `$idx(__nudoArgs, i)` 而不是 JS 形参。
  * 返回 rest 名与 prologue；namedCount 供 $arrRest 切片。
+ *
+ * Bug 1058：`argsSrc` 是**调用点算出的**槽名（可能已避开用户标识符改名为
+ * `__nudoArgs_1`）⇒ 槽的声明处与此处读同一名 ⇒ 配对不漂。
  */
 export function emitParamBindingFromArgs(
   params: Node[],
