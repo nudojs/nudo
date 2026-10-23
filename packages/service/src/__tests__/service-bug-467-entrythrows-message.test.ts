@@ -8,6 +8,12 @@
  * 修法：先算出最终生效档位，再按**生效值**拼告警文案
  * （config.md「L2 entryThrows resolution order」：非法值不是合法显式值 →
  * 落到 config profile 预设）。
+ *
+ * ⚠ **本文件里每个用例必须用**互不相同**的非法值**：告警走 `warnOnce`
+ * （**一进程一次**，key = `check.entryThrows:<原始值>`）⇒ 同值只提示一次。
+ * 原先三个用例共用 `"bogus"` ⇒ 第一个用例（adoption）把告警吃掉，
+ * 后两个拿到空串 ⇒ **用例顺序依赖**，在 HEAD 上长期红。
+ * 改成互不相同的非法值后，每个用例各自触发一次告警 ⇒ 与用例顺序无关。
  */
 import { describe, it, expect } from "vitest";
 import { checkConfig } from "../evaluator/config.ts";
@@ -32,7 +38,7 @@ describe("Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一
   it("非法 entryThrows + adoption profile：文案说 warning（生效值也是 warning）", () => {
     let eff: string | undefined;
     const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus", profile: "adoption" } as never })
+      eff = checkConfig({ check: { entryThrows: "bogus-adoption", profile: "adoption" } as never })
         .entryThrows;
     });
     expect(eff).toBe("warning");
@@ -45,7 +51,7 @@ describe("Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一
   it("非法 entryThrows + strict profile：文案说 error（生效值也是 error）", () => {
     let eff: string | undefined;
     const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus", profile: "strict" } as never }).entryThrows;
+      eff = checkConfig({ check: { entryThrows: "bogus-strict", profile: "strict" } as never }).entryThrows;
     });
     expect(eff).toBe("error");
     expect(out).toContain("using error");
@@ -54,7 +60,7 @@ describe("Bug 467 — 非法 entryThrows 的告警文案必须与生效档位一
   it("非法 entryThrows + 无 profile：回默认 error，文案说 error", () => {
     let eff: string | undefined;
     const out = captureStderr(() => {
-      eff = checkConfig({ check: { entryThrows: "bogus" } as never }).entryThrows;
+      eff = checkConfig({ check: { entryThrows: "bogus-default" } as never }).entryThrows;
     });
     expect(eff).toBe("error");
     expect(out).toContain("using error");
