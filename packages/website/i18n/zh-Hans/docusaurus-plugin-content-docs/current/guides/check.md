@@ -46,7 +46,7 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  2 error · 0 warning · 0 info · 3 fn
+  2 error · 0 warning · 2 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
@@ -64,6 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -254,6 +256,8 @@ L2 entry-throws 严重级按首个命中解析：
 未捕获异常使 Node 进程以非零码退出。同样，**导出边界**上的未声明/未捕获 throws 使 `nudo check` 失败。内部调用栈中的 throw 是实现细节，由调用方或 L1 处理。
 
 ## 选项
+
+全部旗标与 `package.json#nudo.check` 配置都在 [CLI 参考](../api/cli-reference.md#nudo-check) 里一次性说明。要点如下：
 
 | 选项 | 说明 |
 |------|------|

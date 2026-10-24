@@ -65,6 +65,24 @@
  * ⇒ 诊断文本带 query、且 `sidecarPathOf("/p/a.js?t=1")` = `/p/a.js?t=1.nudo.js`
  * ⇒ **侧车契约在 HMR 期找不到**。修法在 S4：`transform` 里改用
  * `normalizeModuleId(id)`（本模块已导出，签名冻结）作为分析与诊断的 id。
+ *
+ * ## Bug 1088 —— 软链工程根 ⇒ 全部源文件被判「依赖」⇒ 插件静默空转
+ *
+ * - **根因**：`projectRootAbs()` 只做 `path.resolve`（**不解析软链**），
+ *   而 `scopePath` 拿 **realpath**（`realpathSync`）去比 ⇒ 软链 root 与
+ *   文件 realpath **永不同前缀** ⇒ `outsideRoot` 恒为 true ⇒
+ *   `isDependency = true` ⇒ `scopeDecision` 直接 `skip:"exclude"`
+ *   ⇒ **零分析、零诊断、零构建失败、零提示**（假绿）。
+ *   触发面：macOS 的 `/tmp`→`/private/tmp`、`/var`→`/private/var`、
+ *   `vite build --root <软链>`、CI/容器里挂在软链下的 checkout。
+ * - **修法**：「在 root 之内」的判定**两侧都取 realpath**（root 也解析
+ *   软链）⇒ 软链 root 与其下文件（无论 id 是软链形态还是 realpath 形态）
+ *   都判「在 root 之内」。
+ * - **附带（同一处）**：`setProjectRoot` 是**模块级全局状态** ⇒ 同进程内
+ *   第二个 Vite config 会覆盖第一个的 root ⇒ 第一个实例的文件全被判
+ *   「root 之外」⇒ 同样静默空转。⇒ root 改为**按插件实例持有**
+ *   （`index.ts` 自持 root，判定时经 `scopeDecision` 的第三参显式传入）；
+ *   模块级的 `setProjectRoot` / `getProjectRoot` **保留**（契约钉 + 兜底）。
  */
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -129,7 +147,13 @@ export function configureScope(options: ScopeOptions): void {
   excludeMatch = compiled.exclude;
 }
 
-/** 记录项目根（`config.root`）。 */
+/**
+ * 记录项目根（`config.root`）—— **模块级兜底**（Bug 1088）。
+ *
+ * ⚠ 模块级状态 ⇒ 同进程内第二个 Vite config 会覆盖第一个的 root。
+ * ⇒ 插件实例**自持** root（`index.ts`），判定时经 `scopeDecision` 的第三参
+ * 显式传入；本函数仅作「直接调用 `scopeDecision(id, code)`」的兜底与契约面。
+ */
 export function setProjectRoot(root: string | undefined): void {
   projectRoot = root;
 }
@@ -161,10 +185,33 @@ export function isVirtualModuleId(id: string): boolean {
 // S1：依赖图视角（1056）+ 双口径匹配（1018）
 // ---------------------------------------------------------------------------
 
+/**
+ * 生效的工程根：**显式传入优先**（插件实例持有 ⇒ 同进程多 config 不互相
+ * 覆盖），否则回落到模块级记录（`setProjectRoot`）。
+ */
+function effectiveRoot(root?: string): string | undefined {
+  return root !== undefined ? root : projectRoot;
+}
+
 /** 工程根的绝对形态（`config.root` 已是绝对路径；此处只做兜底规范化）。 */
-function projectRootAbs(): string | undefined {
-  if (projectRoot === undefined) return undefined;
-  return resolve(projectRoot);
+function projectRootAbs(root?: string): string | undefined {
+  const r = effectiveRoot(root);
+  if (r === undefined) return undefined;
+  return resolve(r);
+}
+
+/**
+ * 工程根的**物理形态**（软链解析后的 realpath）。
+ *
+ * Bug 1088：`config.root` 只做 `path.resolve`（**不解析软链**）⇒ 软链 root
+ * 与文件的 realpath 永不同前缀 ⇒ 「root 之外」判定恒真 ⇒ 全部源文件被判
+ * 「依赖」⇒ 插件静默空转。⇒ 判定「在 root 之内」时两侧都取 realpath。
+ * root 不存在 / 读不到时 `realPathOf` 退回原路径 ⇒ 行为与修复前一致。
+ */
+function projectRootReal(root?: string): string | undefined {
+  const abs = projectRootAbs(root);
+  if (abs === undefined) return undefined;
+  return realPathOf(abs);
 }
 
 /** `p` 是否在 `root` 之内（含 root 自身）。 */
@@ -176,13 +223,23 @@ function isInside(root: string, p: string): boolean {
  * 项目相对路径（**1018 的相对口径**）。
  * 与 `packages/service/src/analysis-scope.ts` 的 `excludeHit` / `includeHit`
  * 同守卫：逃出工程根（`..` 前缀）⇒ **不参与**相对口径。
+ *
+ * Bug 1088：root 是**软链**形态时，模块 id 可能是**解析后**的 realpath
+ * （Vite 默认 `preserveSymlinks: false`）⇒ 词法相对关系不成立 ⇒ 退到
+ * root 的 realpath 再算一次（否则 `include: ["src/**"]` 这类**相对口径**
+ * 会在软链工程里整片失配）。
  */
-function projectRelative(absPath: string): string | undefined {
-  const root = projectRootAbs();
-  if (!root) return undefined;
-  const rel = relative(root, absPath).split(sep).join("/");
-  if (rel === "" || rel.startsWith("..")) return undefined;
-  return rel;
+function projectRelative(absPath: string, root?: string): string | undefined {
+  const rootAbs = projectRootAbs(root);
+  if (!rootAbs) return undefined;
+  const rel = relative(rootAbs, absPath).split(sep).join("/");
+  if (rel !== "" && !rel.startsWith("..")) return rel;
+  const rootReal = projectRootReal(root);
+  if (rootReal && rootReal !== rootAbs) {
+    const relReal = relative(rootReal, absPath).split(sep).join("/");
+    if (relReal !== "" && !relReal.startsWith("..")) return relReal;
+  }
+  return undefined;
 }
 
 /** 路径是否含 `node_modules` **段**（不是子串 —— `my-node_modules` 不算）。 */
@@ -247,11 +304,11 @@ function nodeModulesLinks(nmDir: string): NodeModulesLink[] {
  * 候选 `node_modules` 目录：**工程根向上链**（`<root>/node_modules`、
  * `<repo>/node_modules`、… —— monorepo / pnpm 工作区的软链都在这里）。
  */
-function candidateNodeModulesDirs(): string[] {
+function candidateNodeModulesDirs(root?: string): string[] {
   const dirs = new Set<string>();
-  const root = projectRootAbs();
-  if (root) {
-    let dir = root;
+  const rootAbs = projectRootAbs(root);
+  if (rootAbs) {
+    let dir = rootAbs;
     for (;;) {
       dirs.add(join(dir, "node_modules"));
       const up = dirname(dir);
@@ -272,7 +329,7 @@ function candidateNodeModulesDirs(): string[] {
  */
 type ScopePath = { abs: string; view: string; isDependency: boolean };
 
-function scopePath(absPath: string): ScopePath {
+function scopePath(absPath: string, root?: string): ScopePath {
   const realPath = realPathOf(absPath);
   // 物理目录形态：id 或 realpath 含 `node_modules` 段。
   if (hasNodeModulesSegment(absPath) || hasNodeModulesSegment(realPath)) {
@@ -280,7 +337,7 @@ function scopePath(absPath: string): ScopePath {
   }
   // 软链依赖形态：realpath 落在某个 `node_modules` 软链的解析目标下
   // ⇒ 还原成依赖图视角的路径。
-  for (const nmDir of candidateNodeModulesDirs()) {
+  for (const nmDir of candidateNodeModulesDirs(root)) {
     for (const link of nodeModulesLinks(nmDir)) {
       if (realPath === link.target || realPath.startsWith(`${link.target}${sep}`)) {
         const view = join(link.link, relative(link.target, realPath));
@@ -289,8 +346,17 @@ function scopePath(absPath: string): ScopePath {
     }
   }
   // 工程根之外 ⇒ 不是本工程的源码（依赖 / 别处的工作区包）。
-  const root = projectRootAbs();
-  const outsideRoot = root !== undefined && !isInside(root, realPath);
+  //
+  // Bug 1088：root 可能是**未解析的软链**（`config.root` 只做 path.resolve）
+  // ⇒ 拿词法 root 去比 realpath **恒不相等** ⇒ 全部源文件被判「依赖」
+  // ⇒ 插件静默空转（零诊断、零失败、零提示 = 假绿）。
+  // ⇒ 两侧都取 realpath 再比（root 软链 ⇒ 两侧解析后同前缀）。
+  const rootAbs = projectRootAbs(root);
+  const rootReal = projectRootReal(root);
+  const outsideRoot =
+    rootAbs !== undefined &&
+    !isInside(rootAbs, realPath) &&
+    !(rootReal !== undefined && isInside(rootReal, realPath));
   return { abs: absPath, view: absPath, isDependency: outsideRoot };
 }
 
@@ -314,8 +380,11 @@ function matchDual(matcher: Matcher, view: string, rel: string | undefined): boo
  *   5. 双口径匹配（Bug 1018）⇒ exclude 优先于 include；
  *   6. `shouldAnalyzeFile` 守卫（Bug 902）—— **包在 try 里**：守卫抛错时
  *      降级为「跳过」，绝不把异常冒泡出钩子。
+ *
+ * Bug 1088：第三参 `root` = **本插件实例持有的工程根**（`config.root`）。
+ * 缺省时回落到模块级记录（`setProjectRoot`）⇒ 旧调用方行为不变。
  */
-export function scopeDecision(id: string, code: string): ScopeDecision {
+export function scopeDecision(id: string, code: string, root?: string): ScopeDecision {
   // (1) 虚拟模块：`\0` 前缀 / `virtual:` 前缀 —— 无真实文件、无同目录侧车。
   if (typeof id !== "string") return { skip: true, reason: "guard" };
   if (isVirtualModuleId(id)) return { skip: true, reason: "virtual" };
@@ -325,10 +394,10 @@ export function scopeDecision(id: string, code: string): ScopeDecision {
   // (3) 剥 query（`?t=<ts>` / `?v=<hash>`）。
   const abs = normalizeModuleId(id);
   // (4) 依赖图视角（软链依赖 / 工程根之外 ⇒ 排除）。
-  const path = scopePath(abs);
+  const path = scopePath(abs, root);
   if (path.isDependency) return { skip: true, reason: "exclude" };
   // (5) 双口径匹配：绝对路径 + 项目相对路径。
-  const rel = projectRelative(path.abs);
+  const rel = projectRelative(path.abs, root);
   if (matchDual(excludeMatch, path.view, rel)) return { skip: true, reason: "exclude" };
   if (!matchDual(includeMatch, path.view, rel)) return { skip: true, reason: "include" };
   // (6) 分析守卫 —— **包在 try 里**（异常不得冒泡出钩子）。

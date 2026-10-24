@@ -554,9 +554,11 @@ export function registerCheckCommand(program: Command): void {
               );
               // 63b：`pathErrors[]` 逐字不变 + **新增**可选 `targetErrors[]`
               // （分析目标闸门错误的精确子集；`--from` 路径错误不进它）。
-              console.log(
-                JSON.stringify(attachTargetErrors(envelope, targetErrors), null, 2),
-              );
+              // Bug 1085：watch 面的 stdout 是 **JSON Lines**（每行一份完整
+              // JSON 文档）⇒ 这条**早退**分支也必须落一行（改前落 pretty
+              // 多行文档 ⇒ 逐行 `JSON.parse` 的消费者在第一行就炸，且
+              // 同一 flag 组合的 stdout 形态随路径是否可解析而变）。
+              emitJsonDoc(attachTargetErrors(envelope, targetErrors), true);
               process.exitCode = envelope.ok ? 0 : 1;
               return;
             }

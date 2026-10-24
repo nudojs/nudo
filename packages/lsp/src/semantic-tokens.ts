@@ -6,6 +6,20 @@ import {
   type InterfaceSource,
   type InterfaceTierOpts,
 } from "@nudojs/core";
+/**
+ * 注释 / 字符串掩码 —— **复用 core 的单源实现**（`@nudojs/core/internal`）。
+ *
+ * Bug 1088：本文件此前**自维护**一份弱化实现（判据「前一个有效字符是标识符
+ * 字符 ⇒ 不当字符串开头」）⇒ 判据**反了**：`return` / `typeof` / `case` /
+ * `await` 等关键字末字符都是字母 ⇒ 紧跟其后的字符串**整段不被遮罩** ⇒ 字符串
+ * 字面量内部被当作代码扫描（`return "const fake";` ⇒ 在字符串里的 `fake`
+ * 上产出 `variable` token，坐标也指到字符串内部）。
+ *
+ * ⇒ 直接用 core 的 `maskCommentsAndStrings`（基于**真 lexer**：模板插值按代码
+ * 岛处理、正则字面量整段遮罩）——与 `lsp-surface/completions.ts` 同源同款，
+ * 不再在 LSP 侧维护第二份弱化实现。
+ */
+import { maskCommentsAndStrings } from "@nudojs/core/internal";
 
 /**
  * Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。
@@ -475,77 +489,6 @@ function lexicalFallbackTokens(source: string): SemanticToken[] {
   }
   tokens.sort((a, b) => a.line - b.line || a.char - b.char);
   return tokens;
-}
-
-/** 注释 / 字符串内容挖空（保留长度与换行 ⇒ 坐标不变） */
-function maskCommentsAndStrings(source: string): string {
-  const out = source.split("");
-  const n = source.length;
-  let i = 0;
-  let prevSignificant = "";
-  const blank = (idx: number): void => {
-    if (out[idx] !== "\n") out[idx] = " ";
-  };
-  while (i < n) {
-    const ch = source[i]!;
-    if (ch === "/" && source[i + 1] === "/") {
-      while (i < n && source[i] !== "\n") {
-        blank(i);
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "*") {
-      blank(i);
-      blank(i + 1);
-      i += 2;
-      while (i < n) {
-        if (source[i] === "*" && source[i + 1] === "/") {
-          blank(i);
-          blank(i + 1);
-          i += 2;
-          break;
-        }
-        blank(i);
-        i++;
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      // 只在**值位置**当字符串开头（前一个有效字符是标识符 / 数字 / `)` / `]`
-      // ⇒ 更可能是除号后的标识符或属性名）
-      const isValuePos = prevSignificant === "" || !/[A-Za-z0-9_$)\]]/.test(prevSignificant);
-      if (!isValuePos) {
-        prevSignificant = ch;
-        i++;
-        continue;
-      }
-      const quote = ch;
-      blank(i);
-      i++;
-      while (i < n) {
-        const c = source[i]!;
-        if (c === "\\") {
-          blank(i);
-          if (i + 1 < n && source[i + 1] !== "\n") blank(i + 1);
-          i += 2;
-          continue;
-        }
-        if (c === quote) {
-          blank(i);
-          i++;
-          break;
-        }
-        blank(i);
-        i++;
-      }
-      prevSignificant = quote;
-      continue;
-    }
-    if (!/\s/.test(ch)) prevSignificant = ch;
-    i++;
-  }
-  return out.join("");
 }
 
 /** offset 之前的最后一个非空白字符（没有 ⇒ ""） */

@@ -43,8 +43,11 @@ export type PostProof =
   | { status: "unprovable"; reason: string };
 
 /**
- * 证明通道选项：phi = 路径前提；seen = lazy thunk 环保护（per-path 副本，
- * 见 assertImplies 入口）。内部 helper 透传同一对象。
+ * 证明通道选项：phi = 路径前提（返回点的 Φ）；seen = lazy thunk 环保护
+ * （per-path 副本，见 assertImplies 入口）。内部 helper 透传同一对象。
+ *
+ * Bug 1080：Φ 侧只按**同项**口径计入证据面（见 `isBoundedEvidenceMissing`）——
+ * 与被约束项无关的前提事实不得把「证不出」升级成「确定违约」。
  */
 type AssertOpts = { phi?: Phi; seen?: Set<object> };
 
@@ -98,8 +101,14 @@ function isValueSetUnknown(ret: Abs): boolean {
  * ⇒ 同一条义务在 `return x`（typeof 证据）下判 error、在 `return x + 1`
  * （无 pred 证据）下判 warning —— 判据不一致 ⇒ 假红。
  *
- * 证据面 = **Φ ∧ ret.pred**：关系事实（守卫 / 补集）落在 Φ，值域事实落在
- * `ret.pred` ⇒ 两边都要看（只看 `ret.pred` 会把「守卫补集臂」误判成无证据）。
+ * Bug 1080：证据面 = **ret.pred（值域事实）∧ Φ 的「同项」界事实（路径事实）**。
+ *
+ * - Φ 侧只认**约束被约束项本身**的界原子（`termEquals` 同项判定）：路径
+ *   前提里的界事实可能约束的是**另一个项**（`if (x > 0) return y` 的
+ *   `x > 0` 与 y 无关）⇒ 拿它当 y 的值域证据 ⇒ 「证不出」被误判成
+ *   「确定不满足」（error）⇒ **假红**（用无关证据制造确定违约）。
+ * - Φ 侧**同项**的界事实才计入（`return y` 且路径前提是 `y > 0` ⇒ 关系
+ *   事实确实落在返回项上 ⇒ 计入证据面 ⇒ 可走蕴含判定 ⇒ 义务可证）。
  */
 function isBoundedEvidenceMissing(
   ret: Abs,
@@ -110,27 +119,20 @@ function isBoundedEvidenceMissing(
   if (constraint.preds.length === 0 && !constraint.members) return false;
   // 字面量有确定值，可走域隶属 → 不算证据缺失
   if (ret.term?.op === "lit") return false;
-  // 含界原子（gt/ge/lt/le）⇒ 有界证据 ⇒ 可走蕴含判定 → 不算证据缺失
-  if (hasBoundEvidence(combineEvidence(phi, ret.pred))) return false;
+  // 值域事实：ret.pred 的界原子（相对 ret.term）
+  if (hasBoundEvidence(ret.pred)) return false;
+  // 路径事实：Φ 里**同项**的界原子（约束被约束项本身的界）
+  if (hasSameItemBoundEvidence(phi, retAnchorTerm(ret))) return false;
   // 有约束义务但无带界证据（bare number / 仅 typeof vs gt(0)）→ 不可判定
   return true;
-}
-
-/** 证据面 = Φ ∧ ret.pred（去 true） */
-function combineEvidence(phi: Phi, retPred: Pred | undefined): Pred {
-  const parts: Pred[] = [];
-  if (phi && phi.op !== "true") parts.push(phi);
-  if (retPred && retPred.op !== "true") parts.push(retPred);
-  if (parts.length === 0) return pTrue;
-  if (parts.length === 1) return parts[0]!;
-  return { op: "and", args: parts };
 }
 
 /**
  * pred 树是否含**界原子**（数值/长度比较 gt/ge/lt/le）。
  * `typeof` / `eq` 只是**类型/取值**证据，不是**界**证据。
  */
-function hasBoundEvidence(p: Pred): boolean {
+function hasBoundEvidence(p: Pred | undefined): boolean {
+  if (!p) return false;
   switch (p.op) {
     case "gt":
     case "ge":
@@ -146,6 +148,41 @@ function hasBoundEvidence(p: Pred): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Φ（路径前提）里是否含**同项**界原子——即约束**被约束项本身**的界事实。
+ *
+ * 同项判定：界原子的左侧与被约束项 `termEquals`；长度界
+ * （`length(item)` 形态）视为**该项**的界（同一项的长度事实）。
+ * 约束的是**别的项**时不计入（见 `isBoundedEvidenceMissing` 的 Bug 1080 段）。
+ */
+function hasSameItemBoundEvidence(p: Phi | undefined, item: Term): boolean {
+  if (!p) return false;
+  switch (p.op) {
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+      return sameItemTerm(item, p.a);
+    case "and":
+    case "or":
+      return p.args.some((a) => hasSameItemBoundEvidence(a, item));
+    case "not":
+      // `not(gt(item,0))` ≡ `item <= 0` ⇒ 仍是该项的界
+      return hasSameItemBoundEvidence(p.arg, item);
+    default:
+      return false;
+  }
+}
+
+/** 界原子的左侧是否**就是**被约束项（`length(item)` 形态算同一项的界） */
+function sameItemTerm(item: Term, left: Term): boolean {
+  if (termEquals(item, left)) return true;
+  if (left.op === "app" && left.fn === "length" && left.args.length === 1) {
+    return termEquals(item, left.args[0]!);
+  }
+  return false;
 }
 
 /** 扁平化 sum 臂（嵌套 sum 一并拆开）；非 sum 返回自身 */
@@ -227,7 +264,10 @@ function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
 
 /**
  * 统一后置证明：返回 Abs 的值域是否蕴含契约。
- * phi：路径前提（可选，与前置同一 Phi 通道）。
+ * phi：路径前提（可选，与前置同一 Phi 通道）——**返回点的 Φ**（调用方
+ * 传入；缺省 = `pTrue`）。Φ 侧只按**同项**口径计入证据面（Bug 1080）：
+ * 与被约束项无关的前提事实（`if (x > 0) return y` 的 `x > 0`）不构成
+ * 返回值的值域证据 ⇒ 判「证不出」而非「确定违约」。
  *
  * DEC-001 + scalar-over-sum：sum 返回按成员分发（shape/array/scalar 同口径），
  * nullish 臂走契约显式化；union/nullable 对「每个臂 ∃ 契约成员」对账。

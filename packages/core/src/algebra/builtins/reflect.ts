@@ -28,6 +28,10 @@
  *   ToBoolean + 不抛），Object 面需在 object/methods.ts 接线（越界诉求）。
  * - **数组 length 写**（Bug 320）：Reflect.set(arr, "length", v) 走
  *   [[Set]] → ArraySetLength（截断/延长），此前静默丢弃写入。
+ * - **ownKeys 段序**（Bug 1078）：ES2024 OrdinaryOwnPropertyKeys——字符串键段
+ *   在前、symbol 键段在后（各段内部维持既有顺序）；此前按槽插入序混排。
+ * - **Proxy gOPD 不变量**（Bug 1074）：Reflect.getOwnPropertyDescriptor 的
+ *   陷阱结果照 [[GetOwnProperty]] 不变量校验（靶一致性）——违者定抛。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
@@ -43,6 +47,7 @@ import {
   proxyOwnKeysTrapKeys,
   proxyTargetOwnStringKeys,
   enforceProxyDeleteInvariant,
+  enforceProxyGetOwnPropDescInvariant,
   applyPropertyDescriptorVerdict,
   completePropDescAbs,
   validateDescriptorObject,
@@ -556,17 +561,22 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
           // symbol 键投影成 "@@X" 槽名 ⇒ 须还原成宿主真 symbol（与
           // Proxy 陷阱 key 同一映射源：symbol-key.ts 的 slotKey→symbol）。
           // internal 私有槽（原生私有字段对 ownKeys 不可见）剔除。
-          const elements = Object.keys(os.slots)
-            .filter((n) => os.slots[n]?.internal !== true)
-            .map((n) => {
-              if (os.slots[n]?.symbolKey === true) {
-                const sym = symbolAbsForSlotKey(n);
-                // 非 well-known 槽键 → 无宿主 symbol 可还原 → 保守留串
-                // （不得凭空捏一个 symbol）
-                if (sym !== undefined) return sym;
-              }
+          // Bug 1078：段序按 ES2024 OrdinaryOwnPropertyKeys——**字符串键段
+          // 在前、symbol 键段在后**（各段内部维持既有顺序）；此前按槽插入
+          // 序把 symbol 投影槽与字符串键混排 ⇒ 顺序错的 exact 元组。
+          const slotNames = Object.keys(os.slots).filter((n) => os.slots[n]?.internal !== true);
+          const stringNames = slotNames.filter((n) => os.slots[n]?.symbolKey !== true);
+          const symbolNames = slotNames.filter((n) => os.slots[n]?.symbolKey === true);
+          const elements = [
+            ...stringNames.map((n) => strLit(n)),
+            ...symbolNames.map((n) => {
+              const sym = symbolAbsForSlotKey(n);
+              // 非 well-known 槽键 → 无宿主 symbol 可还原 → 保守留串
+              // （不得凭空捏一个 symbol）
+              if (sym !== undefined) return sym;
               return strLit(n);
-            });
+            }),
+          ];
           return abs({ k: "tuple", elements }, undefined, undefined, "exact");
         }
       } else if (t0.shape.k === "tuple") {
@@ -645,6 +655,9 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
           const trap = proxyTrapOf(parts.handler, "getOwnPropertyDescriptor");
           if (trap.k === "fn") {
             const r = $call(trap.fn, [parts.target, args[1] ?? undef()], parts.handler);
+            // Bug 1074：靶一致性不变量（[[GetOwnProperty]] step 12.f）——违者
+            // 原生定抛 TypeError（与 Object 面同口径）。
+            enforceProxyGetOwnPropDescInvariant(parts.target, args[1], r);
             return reflectDescriptorResult(r);
           }
           if (trap.k === "dead" || trap.k === "opaque") {

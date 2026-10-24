@@ -55,7 +55,8 @@ function warnMisplacedFileTags(blockText: string): void {
 }
 
 /**
- * 行注释形态的文件级指令**位置错位**（落在函数体内）→ nudo:directive-syntax。
+ * 行注释形态的文件级指令**位置错位**（落在函数体 / 类体 / 对象字面量体内）
+ * → nudo:directive-syntax。
  * 与块注释形态对称：块形态被忽略且告警，行形态此前被**静默提升**成整文件作用域
  * （Bug 847）——现在同样忽略 + 告警。
  */
@@ -64,8 +65,8 @@ function warnMisplacedFileTagLine(tag: "env" | "mock-module"): void {
     code: DIAG.directiveSyntax,
     message:
       tag === "env"
-        ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (line comment inside a function body is ignored)`
-        : `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (line comment inside a function body is ignored)`,
+        ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (line comment inside a function/class/object body is ignored)`
+        : `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (line comment inside a function/class/object body is ignored)`,
   });
 }
 
@@ -84,8 +85,65 @@ function functionBodyRanges(ast: Node): [number, number][] {
   ]);
 }
 
-/** 偏移是否落在某个函数体内 */
-function inFunctionBody(ranges: [number, number][], offset: number): boolean {
+/**
+ * 类体 / 对象字面量体区间（**Bug 1088 的位置闸门扩展**）。
+ *
+ * `functionBodyRanges` 的区间是「函数站点」区间；对 `ClassMethod` /
+ * `ObjectMethod`，Babel 给的 `node.start` 是**方法键**的位置 ⇒ 方法**上方**
+ * 的行注释落在区间**之外** ⇒ 不算 misplaced ⇒ `/// @nudo:env web` 被
+ * **静默提升**成**整文件** env（零诊断）——正是 Bug 847 要消除的那类洞，
+ * 只是闸门没覆盖 class / object 体。
+ *
+ * ⇒ 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体
+ * （`ObjectExpression`）」⇒ 方法 / 字段上方的注释一并被拦下
+ * （忽略 + `nudo:directive-syntax` 告警），与函数体口径一致。
+ *
+ * ⚠ **不**把 `ClassDeclaration` / `ObjectExpression` 整体纳入：类**声明上方**
+ * 的注释（`/// @nudo:env node` 写在 `class A {` 之前）仍是合法的顶层位置。
+ */
+function nestedBodyRanges(ast: Node): [number, number][] {
+  const out: [number, number][] = [];
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    const n = node as {
+      type?: string;
+      start?: number | null;
+      end?: number | null;
+      [key: string]: unknown;
+    };
+    if (
+      (n.type === "ClassBody" || n.type === "ObjectExpression") &&
+      typeof n.start === "number" &&
+      typeof n.end === "number"
+    ) {
+      out.push([n.start, n.end]);
+    }
+    for (const key of Object.keys(n)) {
+      // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
+      if (
+        key === "loc" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments" ||
+        key === "comments" ||
+        key === "tokens" ||
+        key === "extra"
+      ) {
+        continue;
+      }
+      visit(n[key]);
+    }
+  };
+  visit(ast);
+  return out;
+}
+
+/** 偏移是否落在某个区间内 */
+function inRanges(ranges: [number, number][], offset: number): boolean {
   return ranges.some(([s, e]) => offset >= s && offset < e);
 }
 
@@ -113,7 +171,11 @@ function collectFileDirectives(ast: Node): FileDirective[] {
   // Bug 847：文件级指令的**位置**闸门——行注释形态不得落在**函数体内**。
   // 此前只看文本不看位置 ⇒ 函数体里的 `/// @nudo:env node` 被**静默提升**成
   // 整文件 env（零诊断）；现在不提升 + 告警。
+  //
+  // Bug 1088：闸门区间再纳入**类体 / 对象字面量体**——方法 / 字段**上方**的
+  // 行注释此前落在「函数站点区间」之外 ⇒ 同样被静默提升成整文件 env。
   const fnRanges = functionBodyRanges(ast);
+  const bodyRanges = nestedBodyRanges(ast);
   for (const comment of comments) {
     if (comment.type === "CommentBlock") {
       warnMisplacedFileTags(comment.value);
@@ -123,7 +185,8 @@ function collectFileDirectives(ast: Node): FileDirective[] {
     const text = comment.value;
 
     const misplaced =
-      typeof comment.start === "number" && inFunctionBody(fnRanges, comment.start);
+      typeof comment.start === "number" &&
+      (inRanges(fnRanges, comment.start) || inRanges(bodyRanges, comment.start));
     if (misplaced) {
       if (MOCK_MODULE_REGEX.test(text)) warnMisplacedFileTagLine("mock-module");
       else if (ENV_REGEX.test(text) || ENV_BARE_REGEX.test(text)) warnMisplacedFileTagLine("env");

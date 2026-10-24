@@ -4,10 +4,10 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, confJoin, unknown } from "./abs.ts";
+import { abs, anyAbs, confJoin, unknown } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { simplifyTerm, v as termVar, termToString } from "./term.ts";
-import type { Pred } from "./pred.ts";
+import type { Pred, PrimName } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { getSlot, joinAbs } from "./objects.ts";
@@ -746,11 +746,17 @@ function bindTypeVars(
   // `packages/core/src/algebra/__tests__/hof-relation.test.ts` 的既有用例
   // 「deep α: `T[]` param binds T from `number[]` arg (lodash-style)」
   // （arr 形参 × arr 实参）会被改判。
+  //
+  // Bug 1079：跨 kind 臂的**取值口径**收紧——元素域必须是 tuple **全部**
+  // 元素的同型域（见 `tupleElementDomain`），不得拿首元素代表整个元素域。
   if (ps.k === "arr" && as.k === "tuple") {
-    // 元素域取**首元素**（最简口径）：tuple 的元素类型在 TS 侧是联合，
-    // 逐槽 join 需要各槽同宽，最简取首个可绑定元素。
-    const first = as.elements[0];
-    if (first !== undefined) bindTypeVars(ps.element, first, map, depth + 1);
+    // Bug 1079：元素域取 tuple **全部**元素的同型域（**不是首元素**）。
+    // 首元素只代表一个槽：拿它当整个元素域 ⇒ 异构数组 `[1,"a"]` 被推成
+    // `number[]`——比真实类型 `(number|string)[]` **更窄** ⇒ 把「不知道」
+    // 升级成「知道」⇒ 契约 `array(number())` 假绿 / `array(string())` 假红。
+    // 异构 ⇒ `any`（诚实的「不知道」，不臆造窄类型）。
+    const domain = tupleElementDomain(as.elements, as.rest);
+    if (domain !== undefined) bindTypeVars(ps.element, domain, map, depth + 1);
     return;
   }
   if (ps.k === "tuple" && as.k === "arr") {
@@ -792,6 +798,50 @@ function bindTypeVars(
     return;
   }
   // prim / unknown：无 α 可绑
+}
+
+/**
+ * tuple 实参的**元素域**（Bug 1079）——arr 形参（收割的 `T[]`）× tuple 实参
+ * （引擎的数组字面量）时 α 的取值。
+ *
+ * - 空 tuple（无元素）⇒ `undefined` ⇒ **不绑**（α 留在原处 ⇒ 返回值落
+ *   `any`：诚实的「不知道」，不臆造元素类型）。
+ * - 元素**同型**（prim 类型相同 / 形状 kind 相同）⇒ 该同型域：
+ *   - prim：字面量按 TS 侧字面量拓宽落 base prim（`[1,2]` ⇒ `number`，
+ *     不是 `1|2`——字面量域比 TS 推出来的类型**窄**）；
+ *   - 结构形状（obj / arr / tuple…）：各元素 join（obj 槽并集等——与引擎
+ *     其它「tuple ⇒ 元素域」口径同款）。
+ * - 元素**异型**（`[1,"a"]`）⇒ `any`：TS 侧推成 `number | string`，本引擎
+ *   不做联合投影 ⇒ 取 `any`（不窄于真实类型 ⇒ 不假绿）。
+ *
+ * ⚠ 「首次绑定保留」语义（见上方 tuple×arr 臂注释）：`any` 也要**绑上去**
+ * （而不是跳过）——否则后续形参可能把同一个 α 绑成窄类型 ⇒ 又回到「自信的
+ * 错误类型」。
+ */
+function tupleElementDomain(elements: Abs[], rest?: Abs): Abs | undefined {
+  const live = [...elements, ...(rest ? [rest] : [])].filter(
+    (e) => e.shape.k !== "never",
+  );
+  if (live.length === 0) return undefined;
+  // 异型判定：元素 base type 必须一致（any / unknown 元素 ⇒ 域不可知）
+  let key: string | undefined;
+  for (const el of live) {
+    if (el.shape.k === "any" || el.shape.k === "unknown") return anyAbs;
+    const k = el.shape.k === "prim" ? `prim:${el.shape.type}` : el.shape.k;
+    if (key === undefined) key = k;
+    else if (key !== k) return anyAbs;
+  }
+  const conf = live.reduce((c, e) => confJoin(c, e.conf), "exact" as Confidence);
+  if (key!.startsWith("prim:")) {
+    const type = key!.slice("prim:".length) as PrimName;
+    const only = live[0]!;
+    // 单元素且非字面量：保留该项自身的界证据（term + pred）
+    if (live.length === 1 && only.term?.op !== "lit") return only;
+    // 字面量 / 多元素：落 base prim（字面量拓宽；多元素的界不互相成立 ⇒ 不下窄）
+    return { shape: { k: "prim", type }, conf };
+  }
+  // 同型结构形状：各元素 join（obj 槽并集 / 同构嵌套等）
+  return live.reduce((a, b) => joinAbs(a, b));
 }
 
 /**

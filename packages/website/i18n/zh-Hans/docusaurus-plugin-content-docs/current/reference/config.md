@@ -9,6 +9,8 @@ Nudo 从 `package.json` 的 `nudo` 键读取项目配置 —— 没有 `nudo.jso
 
 **配置从哪里找：** 对每个被分析的文件，Nudo 从该文件所在目录向上查找，使用**最近一个带 `nudo` 键的 `package.json`**。不带 `nudo` 键的 `package.json` 不会终止查找 —— monorepo 里，仓库根部的配置对自有 `package.json` 但无 `nudo` 键的子包仍然可见。
 
+终止查找的是键的**存在**，不是它的真值：一个 `nudo` 键即便取假值（`false` / `null` / `0` / `""`）或畸形值（字符串、数字、布尔或数组而非对象）**照样终止查找** —— 该包随后被视为**没有** nudo 配置，且**不**继承祖先配置。畸形键会在 stderr 打印一条说明，而不是被静默忽略。
+
 键的归一化是宽松的：非法值回落默认（`nudo.check.entryThrows` 额外在 stderr 打印警告），不会导致运行失败。
 
 ## 最小示例
@@ -58,7 +60,7 @@ Nudo 从 `package.json` 的 `nudo` 键读取项目配置 —— 没有 `nudo.jso
 
 | 键 | 取值 | 默认 | 含义 |
 |---|---|---|---|
-| `contract.autoBind` | boolean | `true` | `*.nudo.js` 侧车的 ambient 绑定，供 `check`、LSP 执法与 `contract` 打印共用。`false` 时侧车不再被 ambient 加载。 |
+| `contract.autoBind` | boolean | `true` | `*.nudo.js` 侧车的 ambient 绑定，供 `check`、LSP 执法与 `contract` 打印共用。`false` 时侧车不再被 ambient 加载。非布尔值非法：回落 `true` 并在 stderr 打印一条说明，这样 `check` 与 `contract`/`export` 对「侧车是否已绑定」永不各说各话。 |
 | `contract.emit` | string \| string[]（glob，相对项目根） | `[]` | 契约 emit（`nudo contract --emit` 与 LSP persist lens）的白名单。空 = 不按路径过滤。模式匹配的是**源文件**路径（不是侧车路径）；白名单外的 emit 目标被拒绝并给出 `emit-denied` warning。 |
 
 ## `nudo.env` —— 运行时环境
@@ -73,7 +75,7 @@ Nudo 从 `package.json` 的 `nudo` 键读取项目配置 —— 没有 `nudo.jso
 
 | 键 | 取值 | 默认 | 含义 |
 |---|---|---|---|
-| `analysis.include` | string[]（glob） | `[]`（不过滤） | IDE / vite-plugin / watch 扫描分析的路径过滤。 |
+| `analysis.include` | string[]（glob 或路径） | `[]`（不过滤） | IDE / vite-plugin / watch 扫描分析的路径过滤。带 `*` / `?` 的模式是 glob（编译器与锚定规则同 `analysis.exclude`）；不含通配符的模式是**路径**：命中该文件本身，若它指向目录则命中其下所有文件（`src` → `src/**`）。字面量绝不做子串搜索 —— `include: ["src"]` 不会带进 `src-other/x.js`。 |
 | `analysis.exclude` | string[]（glob） | `["**/node_modules/**", "**/dist/**", "**/coverage/**"]` | IDE 分析排除的路径。显式空数组回落到该默认安全列表 —— `node_modules` 保护不会被误关。 |
 | `analysis.mode` | `"directives"` \| `"exports"` \| `"all"` | `"exports"` | IDE / 构建分析哪些文件：`exports` = 含 `export` / 侧车 / `@nudo:` 指令的文件；`directives` = 仅注解文件；`all` = 所有目标路径。点名路径的 CLI 命令（`nudo check src/lib.js`）不受 mode 影响，始终分析该文件。 |
 | `analysis.diagnostics` | `"off"` \| `"errors"` \| `"default"` \| `"verbose"` | `mode` 为 `"directives"` 时 `"errors"`，否则 `"default"` | IDE 诊断噪声档。 |
@@ -101,7 +103,7 @@ VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.
 
 默认关闭 —— 伪造的缓存报告可能掩盖违例，只在可信机器上开启，并将 `.nudo/cache` 加入 gitignore。落盘内容、fail-open 语义与 CI 指引见[性能 —— `.nudo/cache` 磁盘缓存](../guides/performance.md)。
 
-**优先级提示：** 与多数键不同，任何显式的 `nudo.cache` 值（包括 `false`）都压过 `NUDO_CACHE_DIR`；只有 `nudo.cache` 未设置时才读环境变量。
+**优先级提示：** 与多数键不同，任何显式的 `nudo.cache` 值（包括 `false` 与空串 `""`）都压过 `NUDO_CACHE_DIR`；只有 `nudo.cache` 未设置时才读环境变量。显式的 `""` 表示「关」，与 `false` 同义。
 
 ## `nudo.sessionCache` —— 进程内 LRU 上限
 
@@ -117,7 +119,7 @@ VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.
 
 | 变量 | 管什么 | 默认 | 取值 |
 |---|---|---|---|
-| `NUDO_MAX_FORKS` | 分支展开预算（与 `nudo.analysis.maxForks` 同一旋钮） | `5000` | 整数 ≥ 1；非法回落默认。压过配置键。 |
+| `NUDO_MAX_FORKS` | 分支展开预算（与 `nudo.analysis.maxForks` 同一旋钮） | `5000` | 整数 ≥ 1；非法值回落**默认值** —— 是默认值，不是配置键（设了但非法的环境变量值不会再落到 `nudo.analysis.maxForks`）。压过配置键。 |
 | `NUDO_CACHE_DIR` | 项目磁盘缓存根（与 `nudo.cache` 同一旋钮） | 未设置（关） | 绝对路径，或 `off` / `0` 关闭。仅在 `nudo.cache` 未设置时读取。 |
 | `NUDO_CACHE_MAX_FILES` | 会话 LRU `maxFiles` | `64` | 整数；`0` / `off` 关闭该层；钳制到 65,536。 |
 | `NUDO_CACHE_MAX_FNS` | 会话 LRU `maxFns` | `1024` | 规则同上。 |

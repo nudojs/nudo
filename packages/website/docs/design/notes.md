@@ -23,7 +23,7 @@ Architecture truth lives in the repository, not on this site: [`docs/design/`](h
 | [`lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md) | LSP client UI gaps — the tracked list behind [LSP clients](../guides/lsp-clients.md) | Current |
 | [`limitations.md`](https://github.com/nudojs/nudo/blob/main/docs/design/limitations.md) | Limitations that still constrain decisions; unresolved items | Living |
 | [`generator-laziness.md`](https://github.com/nudojs/nudo/blob/main/docs/design/generator-laziness.md) | Generator bodies still run eagerly (Bug 212): why lazy generators are not implementable inside the current eager-snapshot model, the affected consumers, and the minimal transpile-side path to a sound over-approximation | Architecture debt (documented) |
-| [`architecture-debt.md`](https://github.com/nudojs/nudo/blob/main/docs/design/architecture-debt.md) | The 9 items blocked at the evaluation-model / `Abs`-representation layer (eager generator bodies, missing throws channel on relation/apply results, union dispatch by member name, no overload slot on fn shapes) — why they need dedicated scheduling | Architecture debt (ledger) |
+| [`architecture-debt.md`](https://github.com/nudojs/nudo/blob/main/docs/design/architecture-debt.md) | The 10 items blocked at the evaluation-model / `Abs`-representation layer (eager generator bodies, missing throws channel on relation/apply results, union dispatch by member name, no overload slot on fn shapes) — why they need dedicated scheduling | Architecture debt (ledger) |
 
 ## Process notes
 

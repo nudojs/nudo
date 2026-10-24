@@ -84,6 +84,20 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
   // watchChange 随其它缓存整表丢弃——新一轮构建必须重新上报）。
   const envErrorSeen = new Set<string>();
 
+  /**
+   * 工程根（`config.root`）—— **按插件实例持有**（Bug 1088）。
+   *
+   * `scope.ts` 的 `setProjectRoot` 是**模块级全局状态** ⇒ 同进程内第二个
+   * Vite config（client + SSR / 多项目 / 测试里多份 config）会覆盖第一个的
+   * root ⇒ 第一个实例的文件全被判「root 之外」⇒ **静默空转**（零诊断、
+   * 零失败、零提示 = 假绿）。
+   *
+   * ⇒ 本实例自持 root，判定时经 `scopeDecision(id, code, root)` 显式传入；
+   * 模块级的 `setProjectRoot` 仍照写（契约面 + 直接调 `scopeDecision` 的
+   * 宿主兜底），但**不再**参与本实例的范围判定。
+   */
+  let projectRoot: string | undefined = undefined;
+
   return {
     name: "vite-plugin-nudo",
 
@@ -114,8 +128,12 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
     /**
      * 记录项目根（`config.root`）——**惰性**：S0 阶段无人读它 ⇒ 行为零变化；
      * S1 起 scope 匹配才真正消费它（见 scope.ts 的 setProjectRoot）。
+     *
+     * Bug 1088：root **按实例**持有（`projectRoot`）⇒ 同进程内第二个 config
+     * 不再覆盖第一个的 root；模块级 `setProjectRoot` 仍写（契约面兜底）。
      */
     configResolved(config: ResolvedConfig) {
+      projectRoot = config.root;
       setProjectRoot(config.root);
     },
 
@@ -149,7 +167,9 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
         // 守卫）全部落在 scope.ts 的 scopeDecision（见 scope.ts 的契约）。
         // ⚠ **守卫调用在 try 内**（S1 的 C-S1-2）：`scopeDecision` 契约上
         // 永不抛，但异常一旦冒泡也必须被插件兜底 `catch` 接住 —— 构建不炸。
-        const decision = scopeDecision(id, code);
+        // Bug 1088：第三参 = **本实例持有的工程根** ⇒ 同进程多 config 时
+        // 各自的 root 不互相覆盖（软链 root 也不再把全部源文件判成依赖）。
+        const decision = scopeDecision(id, code, projectRoot);
         if (decision.skip) return null;
 
         // **模块 id 归一化**（剥 `?t=` / `?v=` query）—— 分析与诊断一律用

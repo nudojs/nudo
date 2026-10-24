@@ -30,7 +30,7 @@
  * ⇒ 待 CLI 侧同步（两份实现应收敛回一处）。
  */
 import { existsSync } from "node:fs";
-import { dirname, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { type CheckIssue } from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
 import {
@@ -43,6 +43,7 @@ import {
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { collectEnvNames } from "./analyzer-orchestrate-calls.ts";
 import { collectEvalReplacements } from "./eval-run.ts";
+import { findProjectConfig } from "./evaluator/config.ts";
 import { getPathEnvLoadErrors } from "./evaluator/env-loader.ts";
 import { applyMockModuleDirectivesFromSource } from "./mock-module.ts";
 import { mockDirectivesToAbsSeeds } from "./mock-abs.ts";
@@ -180,14 +181,78 @@ export function mockFromErrorIssues(mockFromErrors: MockFromError[]): CheckIssue
 export const ENV_UNRESOLVED_CODE = DIAG.envUnresolved;
 
 /**
+ * env 名的**解析基准**分层（两层口径，与 CLI `assembleEnvs` 同源）。
+ *
+ * Bug 647（重犯 Bug 1081）：`package.json#nudo.env` 是**项目级**（文档承诺
+ * 「项目里每个文件都用它」）⇒ 相对说明符按**项目根**解析；`/// @nudo:env`
+ * 是**文件级** ⇒ 按**被分析文件所在目录**解析。旧实现把两者一律按文件目录
+ * 解析 ⇒ ① 项目级 env 明明存在却被报成「找不到」（假阳）；② 项目级 env 的
+ * **真实加载失败**记在项目根基准下、按文件目录取不到 ⇒ 被静默丢弃（假阴）。
+ */
+type EnvTier = {
+  /** env 名（原始拼写） */
+  names: string[];
+  /** 该层的解析基准目录 */
+  baseDir: string;
+};
+
+/** 项目级 env 名（`package.json#nudo.env`）——按项目根解析。 */
+function projectEnvTier(filePath: string, fileBaseDir: string): EnvTier | null {
+  const proj = findProjectConfig(dirname(filePath));
+  const names = proj?.config.env;
+  if (!Array.isArray(names) || names.length === 0) return null;
+  return {
+    names: names.filter((n): n is string => typeof n === "string"),
+    // 项目根；找不到项目配置时退回文件级基准（与 CLI 的
+    // `proj?.projectDir ?? fileEnvBaseDir` 同口径）。
+    baseDir: proj?.projectDir ?? fileBaseDir,
+  };
+}
+
+/** 文件级 env 名（`/// @nudo:env`）——按被分析文件所在目录解析。 */
+function fileEnvTier(filePath: string, source: string, fileBaseDir: string): EnvTier | null {
+  let names: string[];
+  try {
+    names = collectEnvNames(filePath, source, false);
+  } catch {
+    return null;
+  }
+  if (names.length === 0) return null;
+  return { names, baseDir: fileBaseDir };
+}
+
+/** 两层 env 基准（项目级 → 文件级）。 */
+function envTiers(filePath: string, source: string, fileBaseDir: string): EnvTier[] {
+  const tiers: EnvTier[] = [];
+  const project = projectEnvTier(filePath, fileBaseDir);
+  if (project) tiers.push(project);
+  const file = fileEnvTier(filePath, source, fileBaseDir);
+  if (file) tiers.push(file);
+  return tiers;
+}
+
+/** 本文件**真正请求过**的 env 解析路径（两层并集）。 */
+function expectedEnvPaths(tiers: EnvTier[]): Set<string> {
+  const out = new Set<string>();
+  for (const tier of tiers) {
+    for (const name of tier.names) out.add(resolvePath(tier.baseDir, name));
+  }
+  return out;
+}
+
+/**
  * path env 未解析 → CheckIssue（warning）。
  *
  * 两条来源合并去重（同一 path+error 只报一条）：
  * 1. **进程级 live 记录**（`getPathEnvLoadErrors`）——宿主 preload 过 path env
- *    时可见（CLI check 路径 / LSP 编辑器面都 preload）；
+ *    时可见（CLI check 路径 / LSP 编辑器面都 preload）；按**两层基准**取并集
+ *    （项目级 env 的加载失败记在**项目根**基准下——只按文件目录取会把它丢掉）；
  * 2. **同步可见的缺失文件**——同步入口（agent 工具面不 await preload）看不到
  *    ①，此时按同一文案补齐：path 形 env（`./x.mjs` / `../x.mjs` / `a/b.mjs`）
  *    解析后不存在 ⇒ `path env not found: <resolved>`。
+ *
+ * `baseDir` = **文件级** env 的解析基准（缺省 = 被分析文件所在目录）；
+ * 项目级 env 的基准由项目配置推导（项目根）——两层口径见 {@link EnvTier}。
  *
  * 文案与 CLI 逐字一致：`path env failed to load: <path> — <error>`。
  */
@@ -208,31 +273,36 @@ export function envUnresolvedIssues(
       message: `path env failed to load: ${e.path} — ${e.error}`,
     });
   };
-  for (const e of getPathEnvLoadErrors(baseDir)) push(e);
-  for (const e of missingPathEnvs(filePath, source, baseDir)) push(e);
+  const tiers = envTiers(filePath, source, baseDir);
+  // ① 进程级 live 记录（预载时已出错的 env）——按**两个基准**取并集。
+  const expected = expectedEnvPaths(tiers);
+  for (const tier of tiers) {
+    for (const e of getPathEnvLoadErrors(tier.baseDir)) {
+      // 只报「本文件自己请求过」的路径：分析器通道按文件目录解析**项目级**
+      // env 名 ⇒ 会在文件目录下留下一条本文件从未请求过的路径；报它 = 事实
+      // 相反的假阳（与 CLI 的 expectedEnvPaths 过滤同口径）。
+      // 非绝对路径 = 「未知 env 名 / 非法条目」这类按名记录的错 ⇒ 一律保留。
+      if (isAbsolute(e.path) && !expected.has(e.path)) continue;
+      push(e);
+    }
+  }
+  // ② 同步可见的缺失文件（尚未被任何预载尝试过的 path env）。
+  for (const e of missingPathEnvs(tiers)) push(e);
   return out;
 }
 
-/** path 形 env 指向的文件不存在（同步可见的那一半）。 */
-function missingPathEnvs(
-  filePath: string,
-  source: string,
-  baseDir: string,
-): Array<{ path: string; error: string }> {
-  let names: string[];
-  try {
-    names = collectEnvNames(filePath, source, true);
-  } catch {
-    return [];
-  }
+/** path 形 env 指向的文件不存在（同步可见的那一半）——基准按层取。 */
+function missingPathEnvs(tiers: EnvTier[]): Array<{ path: string; error: string }> {
   const out: Array<{ path: string; error: string }> = [];
-  for (const name of names) {
-    if (typeof name !== "string") continue;
-    // path 形 env：含 "/"（含 "./" / "../" 前缀）——内建名（es/web/node）不是 path 形
-    if (!name.includes("/")) continue;
-    const resolved = resolvePath(baseDir, name);
-    if (existsSync(resolved)) continue;
-    out.push({ path: resolved, error: `path env not found: ${resolved}` });
+  for (const tier of tiers) {
+    for (const name of tier.names) {
+      if (typeof name !== "string") continue;
+      // path 形 env：含 "/"（含 "./" / "../" 前缀）——内建名（es/web/node）不是 path 形
+      if (!name.includes("/")) continue;
+      const resolved = resolvePath(tier.baseDir, name);
+      if (existsSync(resolved)) continue;
+      out.push({ path: resolved, error: `path env not found: ${resolved}` });
+    }
   }
   return out;
 }

@@ -7,6 +7,7 @@ import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
 import { pathEnvContentFingerprint } from "./eval-run.ts";
 import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
+import { findProjectConfig } from "./evaluator/config.ts";
 import { dirname } from "node:path";
 import type {
   AnalysisResult,
@@ -83,11 +84,18 @@ export function analysisFileCacheKey(
   // （同名 env 文件改了内容 → 类型面必须跟着变；Bug 501）。
   // 文件级 `/// @nudo:env` 的同款维度已由 depSeg 覆盖（load-deps-fp 采
   // 路径 env 内容）——此处只补项目级。
+  //
+  // 解析基准 = **项目根**（不是被分析文件所在目录）：package.json#nudo.env
+  // 是项目级（相对说明符按项目根解析——与 CLI `assembleEnvs` 同口径）。
+  // 旧实现按文件目录解析 ⇒ env 文件在项目根、被分析文件在子目录时，指纹读
+  // 的是**不存在**的 `<proj>/src/env.ts` ⇒ 内容退化成常量哈希 ⇒ 键对该 env
+  // 的内容实际不敏感（Bug 1083）。
+  const projectEnvBaseDir = findProjectConfig(dirname(filePath))?.projectDir ?? dirname(filePath);
   const envSeg =
     projectEnvNames && projectEnvNames.length > 0
       ? `${projectEnvNames.join(",")}#${pathEnvContentFingerprint(
           projectEnvNames,
-          dirname(filePath),
+          projectEnvBaseDir,
         )}`
       : "-";
   // **env 预载状态**进键（Bug 993）：path 型 env 只能异步装载，同一份源码

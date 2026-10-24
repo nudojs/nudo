@@ -9,9 +9,15 @@
  *
  * 原生依据（**node v26.10.0 实测**；本文件每条断言的期望值都先跑原生确认，
  * 不用印象值）：
- * - `Object.keys` / `Object.getOwnPropertyNames` / `Object.getOwnPropertyDescriptors`
- *   / for-in / `JSON.stringify` 只枚举**字符串**键 ⇒ `[Symbol.toStringTag]`
- *   这类 symbol 键**看不到**（gOPD 尤其：原生只有 `a` 一条）。
+ * - `Object.keys` / `Object.getOwnPropertyNames` / for-in / `JSON.stringify`
+ *   只枚举**字符串**键 ⇒ `[Symbol.toStringTag]` 这类 symbol 键**看不到**。
+ * - **Bug 1075 更正**：`Object.getOwnPropertyDescriptors` **不在**该清单里——
+ *   原生 gOPDs 走 [[OwnPropertyKeys]]（**含** symbol 键：结果对象带**真
+ *   symbol** 键 ⇒ `Reflect.ownKeys(gOPDs(o)).length === 2`、
+ *   `Object.getOwnPropertySymbols(gOPDs(o)).length === 1`；而
+ *   `Object.keys(gOPDs(o))` / `Object.getOwnPropertyNames(gOPDs(o))` 仍只有
+ *   `"a"`——字符串键面不受影响）。本文件此前把 gOPDs 误列入「只枚举字符串
+ *   键」清单并据此断言 ownKeys 长度 1 ⇒ 该断言钉的是**错行为**，已更正。
  * - `Reflect.ownKeys` 枚举**自有可枚举**键（字符串 + symbol）⇒ symbol 键**在**，
  *   且取回的是**真 symbol**（`typeof === "symbol"`，`=== Symbol.toStringTag`）。
  * - `"@@toStringTag" in o` 是**假**（原型链上没有这个字符串键）；
@@ -29,7 +35,9 @@
  *   两套 flags 载体。
  * - `exec/runtime/containers/iterate.ts`：for-in 三处枚举改走字符串键视图。
  * - `builtins/object/methods.ts`：`getOwnPropertyDescriptors` 的 open/闭 obj
- *   两分支过滤 symbol 槽；`classInstanceEnumEntries` 用剔除 symbol 的 `enumKeys`。
+ *   两分支**保留** symbol 槽（Bug 1075：原生 gOPDs 含 symbol 键——symbol
+ *   投影槽带 `symbolKey` 标记随结果对象走 ⇒ 字符串键面仍剔除它）；
+ *   `classInstanceEnumEntries` 用剔除 symbol 的 `enumKeys`。
  * - `builtins/reflect.ts`：`Reflect.ownKeys` 把 symbol 槽还原成宿主**真 symbol**。
  * - `exec/runtime/members.ts`：`$in` 的 obj/brand 臂——symbol 键槽不被字符串
  *   键命中（原生 `"@@toStringTag" in o` === false）。
@@ -74,7 +82,7 @@ describe("Bug 295 — 枚举面：symbol 键不进字符串键视图", () => {
     ).toEqual({ ok: true, value: "a" });
   });
 
-  it("Object.getOwnPropertyDescriptors({a:1, [Symbol.toStringTag]:2}) → **只有 a 一条**（symbol 键不进 gOPD）", () => {
+  it("Object.getOwnPropertyDescriptors({a:1, [Symbol.toStringTag]:2}) → 字符串键面只有 a；自有键面含 symbol 键（Bug 1075）", () => {
     expect(
       v(
         wrap(
@@ -89,14 +97,15 @@ describe("Bug 295 — 枚举面：symbol 键不进字符串键视图", () => {
         ),
       ),
     ).toEqual({ ok: true, value: "a" });
-    // 原生：gOPD 的自有键面只有 1 条（"a"）——symbol 键不进 gOPD
+    // 原生：gOPDs 走 [[OwnPropertyKeys]]——**含** symbol 键 ⇒ 自有键面 2 条
+    // （"a" + Symbol.toStringTag；字符串键段在前——ES2024 OrdinaryOwnPropertyKeys）
     expect(
       v(
         wrap(
           `const o = { a: 1, [Symbol.toStringTag]: 2 }; return Reflect.ownKeys(Object.getOwnPropertyDescriptors(o)).length;`,
         ),
       ),
-    ).toEqual({ ok: true, value: 1 });
+    ).toEqual({ ok: true, value: 2 });
     expect(
       v(
         wrap(

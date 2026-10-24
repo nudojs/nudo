@@ -9,6 +9,13 @@
  * 现补**实例方法桥**（类 Abs → `$new` → `$invoke`）；静态/实例按**源码类
  * 声明**判定（运行期无法用返回值区分）。
  *
+ * **构造器隔离（Bug 1070）**：实例桥造实例要跑构造器 ⇒ 构造器实参一律补
+ * `any` ⇒ 构造器体内的强制转换必产 TypeError ⇒ 那是**构造器**的
+ * may-throw（真实调用点传 number 时构造器是 total 的），**不是**方法体的
+ * ⇒ 归因到方法入口 = 假红（普通类即触发 error 级 `nudo:entry-may-throw`）。
+ * 构造器改在**独立 may-throw 会话**里跑（效果与硬抛都不归因给方法），
+ * 方法体自身的证据照常收集。
+ *
  * **fail-closed 口径（Bug 380）**：入口**没被分析**（转译器拒绝构造 ⇒ 模块
  * 整体未求值）时，may-throw **不可判定**——不得与「分析出没有 may-throw」
  * 混同（旧口径把二者都当空 effects ⇒ 门禁由红转绿）。此类入口记一条
@@ -223,7 +230,11 @@ export function evalThrowsOutcome(
           return {
             kind: "analyzed",
             result: invokeAsThrows(() => {
-              const inst = $new(clsAbs, ctorAnyArgs(file, clsName ?? ""));
+              const inst = instanceForMethodBridge(
+                clsAbs,
+                clsName ?? "",
+                ctorAnyArgs(file, clsName ?? ""),
+              );
               return $invoke(inst, methodName ?? "", args);
             }, phi),
           };
@@ -336,6 +347,56 @@ function classMethodIsStatic(
 function ctorAnyArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
   const n = file ? ctorParamCountOf(file, clsName) : 0;
   return Array.from({ length: n }, () => abs({ k: "any" }, undefined, pTrue, "path"));
+}
+
+/**
+ * 实例方法桥的**构造器隔离**（Bug 1070）。
+ *
+ * 造实例就得跑构造器 ⇒ 构造器实参一律补 `any`（`ctorAnyArgs`）⇒ 构造器
+ * 体内的任何强制转换（`x + 1` / `x > 0` / `"a" + x` / `x.toFixed()`）必产
+ * TypeError ⇒ 那是**构造器**的 may-throw（真实调用点传 number 时构造器是
+ * total 的），**不是**方法体的 ⇒ 归因到方法入口 = 假红（一个普通类就能
+ * 触发 error 级 `nudo:entry-may-throw` ⇒ 直接卡死用户 CI）。
+ *
+ * 口径：构造器在**独立的 may-throw 会话**里跑 ⇒
+ * - 软效果（`recordMayThrow`）与 try 帧栈都**不进**方法入口的收集域；
+ * - 硬抛（NudoThrow / ReferenceError）**不归因给方法**（那是 `new C()`
+ *   入口的事）⇒ 退到**裸实例**（跳过构造器）继续求值方法体 ⇒ 方法体
+ *   自身的证据照常收集（闸门不整体关掉）。
+ *
+ * ⚠ 构造器仍**要跑**：方法体读 `this.<字段>` 时需要构造器写入的槽值 ⇒
+ * 跳过构造器会把字段读退成 unknown ⇒ 方法体**自己**的 may-throw 证据
+ * 也一起丢（假绿）。构造器只隔离「证据」，不隔离「副作用」。
+ */
+function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
+  try {
+    // 独立会话 ⇒ 构造器期间的效果/帧栈不进外层收集域（见上）
+    return runWithMayThrowSession(() => $new(clsAbs, ctorArgs));
+  } catch {
+    // 构造器抛 ⇒ 归因给构造器入口，不归因给方法 ⇒ 裸实例兜底
+    return bareInstanceOf(clsAbs, clsName);
+  }
+}
+
+/**
+ * 裸实例（跳过构造器）：brand 名取**类值**的 brand 名（类值即 brand ⇒
+ * 导出槽兜底 / `export default class` 同口径），内层是空 obj。
+ */
+function bareInstanceOf(clsAbs: Abs, clsName: string): Abs {
+  const name =
+    clsAbs.shape.k === "brand" && clsAbs.shape.name.length > 0
+      ? clsAbs.shape.name
+      : clsName;
+  return abs(
+    {
+      k: "brand",
+      name,
+      shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+    },
+    undefined,
+    undefined,
+    "path",
+  );
 }
 
 /** 源码跨度（行/列，1-based 行） */

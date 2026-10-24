@@ -111,16 +111,6 @@ import {
 } from "./analyzer-orchestrate-uncached-cases.ts";
 
 /**
- * 模块加载问题的**专用诊断码**（core 的 DIAG 注册表只读——越界上报，见报告）。
- *
- * 形态写成 `code: "nudo:…"` 字面量：docs 覆盖测试按 `code: "nudo:…"` 扫描
- * 生产面 ⇒ 这两个新码的**文档锚点被强制**（core 侧补进 DIAG 注册表后，改用
- * `DIAG.*` 也一样由注册表扫描强制）。
- */
-const MODULE_UNREADABLE_CODE = { code: "nudo:module-unreadable" }.code;
-const MODULE_JSON_INVALID_CODE = { code: "nudo:json-invalid" }.code;
-
-/**
  * case 实参是否**全是字面量** ⇒ 该 case 是**点观测**（返回值也只是那个点，
  * 不是调用域）。
  *
@@ -343,11 +333,11 @@ export function analyzeFileUncachedInner(
                 : iss.kind === "unreadable"
                   ? // 「文件在但读不了」不得复用 module-missing（那是「不存在」）
                     // ——事实相反的诊断码会让门禁判错（Bug 499）。
-                    MODULE_UNREADABLE_CODE
+                    DIAG.moduleUnreadable
                   : iss.kind === "json-invalid"
                     ? // 「JSON 语法错」专用码（不是 module-missing——文件在、
                       // 语法坏了；两种形态的处置不同）（Bug 457）。
-                      MODULE_JSON_INVALID_CODE
+                      DIAG.jsonInvalid
                     : DIAG.moduleMissing;
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },

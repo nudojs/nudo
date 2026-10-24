@@ -1749,6 +1749,7 @@ type StripReport = {
   directivesBefore?: number;
   directivesAfter?: number;
   directivesDropped?: boolean;
+  ctorParamPropsSuperMissing?: boolean;
 };
 
 /** TS 源 → 纯 JS 源（Nudo strip 语义；enum 合成见 strip-types 注释）。 */
@@ -1817,6 +1818,16 @@ export function stripTsToJs(
   if (report.directivesDropped) {
     notes.push(
       `some @nudo: directives were lost while stripping (before: ${report.directivesBefore ?? 0}, after: ${report.directivesAfter ?? 0}) — re-check the emitted file`,
+    );
+  }
+  // 派生类构造器**没有**顶层 `super(...)` 调用 ⇒ 参数属性赋值仍落在构造器体
+  // **开头**（早于 `super()`）⇒ 产物在 `new C()` 时抛 ReferenceError
+  // （"Must call super constructor in derived class before accessing 'this'"）。
+  // strip 不合成 `super()`（父构造器实参不可知 ⇒ 合成会引入新的错值）⇒
+  // 保持源自身的失败形态并提示人工处理。
+  if (report.ctorParamPropsSuperMissing) {
+    notes.push(
+      "a derived class constructor has no top-level `super(...)` call — constructor parameter properties are lowered at the top of the constructor body (before `super()`), so `new C()` throws a ReferenceError in the emitted file: add the `super(...)` call by hand",
     );
   }
   const out = generate(

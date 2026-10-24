@@ -886,8 +886,81 @@ function functionBodyRanges(source: string): [number, number][] {
   }
 }
 
-/** 偏移是否落在某个函数体内 */
-function inFunctionBody(ranges: [number, number][], offset: number): boolean {
+/**
+ * 类体 / 对象字面量体区间（**Bug 1088 的位置闸门扩展**）。
+ *
+ * `functionBodyRanges` 的区间是「函数站点」区间；对 `ClassMethod` /
+ * `ObjectMethod`，Babel 给的 `node.start` 是**方法键**的位置 ⇒ 方法**上方**
+ * 的行注释落在区间**之外** ⇒ 不算 misplaced ⇒ `/// @nudo:env web` 被
+ * **静默提升**成**整文件** env（零诊断）——正是 Bug 847 要消除的那类洞，
+ * 只是闸门没覆盖 class / object 体。
+ *
+ * ⇒ 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体
+ * （`ObjectExpression`）」⇒ 方法 / 字段上方的注释一并被拦下，
+ * 与函数体口径一致（parser 的 AST 路径同款，见
+ * `packages/parser/src/directives/file-directives.ts` 的 `nestedBodyRanges`）。
+ *
+ * ⚠ **不**把 `ClassDeclaration` / `ObjectExpression` 整体纳入：类**声明上方**
+ * 的注释（`/// @nudo:env node` 写在 `class A {` 之前）仍是合法的顶层位置。
+ *
+ * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
+ */
+function nestedBodyRanges(source: string): [number, number][] {
+  try {
+    const out: [number, number][] = [];
+    const visit = (node: unknown): void => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item);
+        return;
+      }
+      const n = node as {
+        type?: string;
+        start?: number | null;
+        end?: number | null;
+        [key: string]: unknown;
+      };
+      if (
+        (n.type === "ClassBody" || n.type === "ObjectExpression") &&
+        typeof n.start === "number" &&
+        typeof n.end === "number"
+      ) {
+        out.push([n.start, n.end]);
+      }
+      for (const key of Object.keys(n)) {
+        // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
+        if (
+          key === "loc" ||
+          key === "leadingComments" ||
+          key === "trailingComments" ||
+          key === "innerComments" ||
+          key === "comments" ||
+          key === "tokens" ||
+          key === "extra"
+        ) {
+          continue;
+        }
+        visit(n[key]);
+      }
+    };
+    visit(parseSource(source));
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 位置闸门的**全部**区间（函数体 + 类体 / 对象字面量体）。
+ *
+ * Bug 847（函数体）+ Bug 1088（class / object 体）两条同源洞的合流口径。
+ */
+function bodyGateRanges(source: string): [number, number][] {
+  return [...functionBodyRanges(source), ...nestedBodyRanges(source)];
+}
+
+/** 偏移是否落在某个「函数体 / 类体 / 对象字面量体」内 */
+function inBodyRange(ranges: [number, number][], offset: number): boolean {
   return ranges.some(([s, e]) => offset >= s && offset < e);
 }
 
@@ -896,13 +969,14 @@ export function extractFileEnvNames(source: string): string[] {
   // S4-004 同族：标签/载荷同行分隔——`\s*`/`\s+` 跨行会把非注释行的
   // `@nudo:env` 或下一行载荷粘进上一条行注释
   const re = new RegExp(`${LINE_COMMENT_PREFIX}[ \\t]*@nudo:env[ \\t]+([^\\n*]+)`, "g");
-  // Bug 847：位置闸门——函数体里的文件级 env 不再对整份文件生效
-  const fnRanges = functionBodyRanges(source);
+  // Bug 847 / Bug 1088：位置闸门——函数体 / 类体 / 对象体里的文件级 env
+  // 不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   const out: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const commentStart = m.index + m[0].indexOf("//");
-    if (inFunctionBody(fnRanges, commentStart)) continue;
+    if (inBodyRange(bodyRanges, commentStart)) continue;
     out.push(...parseEnvPayload(m[1]!));
   }
   return out;
@@ -914,13 +988,14 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
     `${LINE_COMMENT_PREFIX}[ \\t]*@nudo:mock-module[ \\t]+([^\\n]+)`,
     "g",
   );
-  // Bug 847：位置闸门——函数体里的文件级 mock-module 不再对整份文件生效
-  const fnRanges = functionBodyRanges(source);
+  // Bug 847 / Bug 1088：位置闸门——函数体 / 类体 / 对象体里的文件级
+  // mock-module 不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   const out: MockModuleRecord[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const commentStart = m.index + m[0].indexOf("//");
-    if (inFunctionBody(fnRanges, commentStart)) continue;
+    if (inBodyRange(bodyRanges, commentStart)) continue;
     const rec = parseMockModulePayload(m[1]!);
     if (rec) out.push(rec);
   }
@@ -945,8 +1020,9 @@ function directiveCommentLinesRaw(
   // 等长掩码（字符串→空格、注释原文保留）：下标与原文一一对应 ⇒ 位置闸门可比
   const src = maskStringsKeepComments(source);
   const out: Array<{ text: string; inHeader: boolean; kind: "line" | "block" }> = [];
-  // Bug 847：位置闸门——函数体里的文件级指令不再对整份文件生效
-  const fnRanges = functionBodyRanges(source);
+  // Bug 847 / Bug 1088：位置闸门——函数体 / 类体 / 对象体里的文件级指令
+  // 不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   // 行注释（// 或 ///；排除 ////——Babel 值以 // 开头时 cleanDirectiveLine 不剥）
   const lineRe = /(?:^|[^/:])\/\/\/?([^\n]*)/g;
   let m: RegExpExecArray | null;
@@ -954,7 +1030,7 @@ function directiveCommentLinesRaw(
     const commentStart = m.index + m[0].indexOf("//");
     out.push({
       text: cleanDirectiveLine(m[1]!, "line"),
-      inHeader: !inFunctionBody(fnRanges, commentStart),
+      inHeader: !inBodyRange(bodyRanges, commentStart),
       kind: "line",
     });
   }

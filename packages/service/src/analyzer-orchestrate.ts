@@ -6,7 +6,7 @@
  *   - analyzer-orchestrate-calls.ts     env 名收集 + 调用点发现
  *   - analyzer-orchestrate-uncached.ts  analyzeFileUncached / UncachedInner
  */
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
@@ -49,11 +49,33 @@ export async function analyzeFileAsync(
   // collector 作用域须在 await preloadPathEnvs 之前打开：预载触发的诊断/collector
   // 落进本次分析的 store，不与 await 窗口交错的其它分析串台（幂等：嵌套复用）。
   return runWithCollectorScope(async () => {
-    const envNames = collectEnvNames(filePath, source, true);
+    // Bug 647（两层基准）：项目级 env（`package.json#nudo.env`）按**项目根**
+    // 解析，文件级 env（`/// @nudo:env`）按**被分析文件所在目录**解析。
+    // 此前两族一律按文件目录解析 ⇒ 项目级 env 在「项目根之外的文件」上解析
+    // 到不存在的路径 ⇒ env 全局对那些文件不可见（分析面退化 unknown）。
+    // 口径与 CLI 的 `packages/nudojs/src/commands/check.ts`（`projectEnvSpec`
+    // + 两次 `preloadPathEnvs`）同款。
+    const fileEnvBaseDir = dirname(filePath);
+    const proj = findProjectConfig(fileEnvBaseDir);
+    const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+    const rawProjectEnv = proj?.config.env;
+    const projectEnvNames = Array.isArray(rawProjectEnv)
+      ? rawProjectEnv.filter((n): n is string => typeof n === "string")
+      : [];
+    // 相对说明符先按项目根**绝对化**（与 CLI 同款）⇒ preload 时基准不再歧义
+    const projectEnvSpec = projectEnvNames.map((name) =>
+      name.startsWith("./") || name.startsWith("../")
+        ? resolve(projectEnvBaseDir, name)
+        : name,
+    );
+    const fileEnvNames = collectEnvNames(filePath, source, false);
     // path-based @nudo:env / mock-module 反向边（watch 失效）
     noteEnvPathDeps(filePath, source);
-    if (envNames.length > 0) {
-      await preloadPathEnvs(envNames, dirname(filePath));
+    if (projectEnvSpec.length > 0) {
+      await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+    }
+    if (fileEnvNames.length > 0) {
+      await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
     }
     return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
   });

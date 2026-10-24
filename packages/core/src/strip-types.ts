@@ -63,8 +63,13 @@ import type { Node } from "@babel/types";
  *    源里的注解。
  *
  * 已知不处理（会以 unknown 求值，不崩溃）：非 declare 的 namespace（运行时语义）、
- * TSImportEqualsDeclaration（import x = require(...)）、构造器参数属性
- * （constructor(private x)）——均在 .ts 推断目标场景之外。
+ * TSImportEqualsDeclaration（import x = require(...)）——均在 .ts 推断目标场景
+ * 之外。
+ *
+ * 构造器参数属性（`constructor(private x)`）**已处理**（Bug 672 降级 + Bug 1071
+ * 排序）：语义 =「字段 `x` + 构造器里 `this.x = x`」⇒ 产物补上那半句赋值；
+ * **派生类**的赋值必须落在 `super(...)` **之后**（原生：`super()` 之前访问
+ * `this` ⇒ ReferenceError；tsc emit 同口径：`super(); this.x = x;`）。
  */
 
 /** 数组槽位删除哨兵：语句/成员/specifier 只出现在数组上下文中 */
@@ -110,6 +115,10 @@ const SKIP_KEYS = new Set([
  * - directivesBefore / directivesAfter / directivesDropped：**剥除前后**的
  *   `@nudo:` 指令条数比对（Bug 968 的兜底自检）——不等 ⇒ 有指令随被删语句
  *   一起消失。
+ * - ctorParamPropsSuperMissing：**派生类**的构造器参数属性降级时，构造器体
+ *   **顶层**找不到 `super(...)` 调用 ⇒ 赋值只能落回构造器体开头（原生语义：
+ *   `super()` 之前访问 `this` ⇒ ReferenceError；源本身即非法 TS）⇒ 产物面
+ *   应当提示人工确认（Bug 1071）。
  */
 type StripOptions = {
   report?: {
@@ -123,6 +132,7 @@ type StripOptions = {
     directivesBefore?: number;
     directivesAfter?: number;
     directivesDropped?: boolean;
+    ctorParamPropsSuperMissing?: boolean;
   };
   resolveSpecifier?: (spec: string) => string | undefined;
 };
@@ -1029,8 +1039,16 @@ function deleteTypeSyntaxFields(
  * 两种 AST 形态都认：
  * - Babel 7：`TSParameterProperty` 包装节点（修饰符在包装节点上）；
  * - Babel 8 / 部分解析器：修饰符直接挂在普通参数节点上。
+ *
+ * **赋值位置（Bug 1071）**：派生类（`extends`）的构造器里，`this` 在
+ * `super()` 之前**不可访问**（原生：ReferenceError: Must call super
+ * constructor…）⇒ 赋值必须落在 `super(...)` **之后**（tsc emit 同口径：
+ * `super(); this.x = x;`）。基类（无 `extends`）⇒ 仍在构造器体开头。
  */
-function lowerConstructorParameterProperties(cls: Node & Record<string, unknown>): void {
+function lowerConstructorParameterProperties(
+  cls: Node & Record<string, unknown>,
+  opts: StripOptions | undefined,
+): void {
   const body = cls.body as { body?: unknown[] } | undefined;
   const members = body?.body;
   if (!Array.isArray(members)) return;
@@ -1079,29 +1097,62 @@ function lowerConstructorParameterProperties(cls: Node & Record<string, unknown>
   if (names.length === 0) return;
   ctor.params = kept;
 
-  // 构造器体开头插入 `this.x = x;`
+  // 构造器体插入 `this.x = x;`
   const ctorBody = ctor.body as { body?: unknown[] } | undefined;
   if (!ctorBody || !Array.isArray(ctorBody.body)) {
     ctor.body = { type: "BlockStatement", body: [], directives: [] };
   }
   const stmts = (ctor.body as { body?: unknown[] }).body as unknown[];
-  stmts.unshift(
-    ...names.map((name) => ({
-      type: "ExpressionStatement",
-      expression: {
-        type: "AssignmentExpression",
-        operator: "=",
-        left: {
-          type: "MemberExpression",
-          object: { type: "ThisExpression" },
-          property: { type: "Identifier", name },
-          computed: false,
-          optional: false,
-        },
-        right: { type: "Identifier", name },
+  const assignments = names.map((name) => ({
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      operator: "=",
+      left: {
+        type: "MemberExpression",
+        object: { type: "ThisExpression" },
+        property: { type: "Identifier", name },
+        computed: false,
+        optional: false,
       },
-    })),
-  );
+      right: { type: "Identifier", name },
+    },
+  }));
+  // 派生类 ⇒ 赋值落 `super(...)` **之后**（super 之前访问 this ⇒ ReferenceError）
+  const superIdx = cls.superClass ? superCallIndex(stmts) : -1;
+  if (superIdx >= 0) {
+    stmts.splice(superIdx + 1, 0, ...assignments);
+    return;
+  }
+  // 派生类但构造器体**顶层**没有 `super(...)` 调用 ⇒ 赋值无处可落（原生语义：
+  // 派生类构造器必须调 super()，否则访问 this 即 ReferenceError；TS 侧也是
+  // 非法源（TS2377））⇒ 保守**不改相对顺序**（仍落体首，保留源自身的失败形态），
+  // 不凭空合成 `super()`（父构造器的实参不可知 ⇒ 合成会引入新的错值）⇒ 回报
+  // 事实，让产物面提示人工确认。
+  if (cls.superClass && opts?.report) opts.report.ctorParamPropsSuperMissing = true;
+  stmts.unshift(...assignments);
+}
+
+/**
+ * 构造器体**顶层**语句里的 `super(...)` 调用下标（没有 ⇒ -1）。
+ *
+ * 判据：Babel 的 `super()` = ExpressionStatement → CallExpression →
+ * `callee.type === "Super"`。只看**顶层**（`super()` 必须在构造器体顶层：
+ * TS 规则「含参数属性/字段初始化时 super() 必须是第一条语句」⇒ 嵌在分支里
+ * 的 super() 本身就是非法源）。
+ */
+function superCallIndex(stmts: unknown[]): number {
+  for (let i = 0; i < stmts.length; i++) {
+    const stmt = stmts[i] as
+      | { type?: string; expression?: { type?: string; callee?: { type?: string } } }
+      | undefined;
+    if (stmt?.type !== "ExpressionStatement") continue;
+    const expr = stmt.expression;
+    if (expr?.type !== "CallExpression") continue;
+    if (expr.callee?.type !== "Super") continue;
+    return i;
+  }
+  return -1;
 }
 
 /** 表达式级解包：类型断言/满足断言/非空断言/裸泛型引用 → 内层表达式 */
@@ -1188,9 +1239,10 @@ function transformNode(
   }
 
   // 构造器参数属性降级（Bug 672）——必须**在**递归之前：插入的赋值语句与
-  // 剥掉包装的形参随后一并走类型注解剥除。
+  // 剥掉包装的形参随后一并走类型注解剥除（Bug 1071：派生类的赋值落
+  // `super(...)` 之后）。
   if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
-    lowerConstructorParameterProperties(node);
+    lowerConstructorParameterProperties(node, opts);
   }
 
   // 相对说明符改写（产物面；分析面不传 opts ⇒ 不动）

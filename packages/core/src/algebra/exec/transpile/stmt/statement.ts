@@ -365,7 +365,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // Bug 201：async 体的挂起可行性——体（含 await）且所有 await 都在
       // **生成器级**位置 ⇒ 该体编译成宿主生成器（await = 真挂起点）。
       // 否则沿用既有 `$async(thunk)` 同步路径（发射产物逐字不变）。
-      const asyncPlan = stmt.async === true ? asyncBodyPlan(stmt.body) : undefined;
+      //
+      // Bug 1072：**async generator 声明**（`async function*`）的体被编译成
+      // `$gen(() => {…}, true)`——体是**普通箭头**，不是宿主生成器 ⇒ 体里的
+      // `await` 若按 async 函数口径发射裸 `yield` ⇒ 产物不是合法 JS
+      // （`new Function` SyntaxError: Unexpected strict mode reserved word）
+      // ⇒ **整模块** fail-closed（导出全退化 unknown + 假 nudo:opaque-result）
+      // ⇒ L2 门禁（nudo:entry-may-throw）不再触发 ⇒ 门禁假绿。
+      // 与三条兄弟路径（函数表达式 / 对象方法 / class 方法）同口径：
+      // `generator !== true` 才做 async 挂起计划 ⇒ async generator 体走
+      // `$await(…)` 兜底（await 不是真挂起点，但产物合法）。
+      const asyncPlan =
+        stmt.async === true && stmt.generator !== true
+          ? asyncBodyPlan(stmt.body)
+          : undefined;
       const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       // Bug 1058：arguments 槽名（`__nudoArgs`）必须避开用户标识符——用户
       // 自己声明同名绑定时，生成的 `let __nudoArgs = …` 与之**重复词法
@@ -1123,7 +1136,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 原生：for (let i…) 每轮绑定独立，continue 前的 `i = 5` 写进本轮绑定
       // ⇒ 下一轮 i++ 得 6。修法：体用 try/finally 把最新值写回共享槽，
       // $for 的 continue 臂经 loopVar 回调取用（迭代次数/结果随之正确）。
-      const loopVarSlot = `__nudoLv${forLoopVarSeq++}`;
+      //
+      // Bug 1073：槽名必须**避开用户标识符**——用户源码里声明了同名绑定
+      // （`const __nudoLv0 = 1;`）时，生成的 `let __nudoLv0;` 与之**重复
+      // 词法声明**（同作用域）⇒ 产物不是合法 JS ⇒ `new Function`
+      // SyntaxError（Identifier has already been declared）⇒ **整模块**
+      // fail-closed（导出全退化 unknown ⇒ L2 门禁假绿）。与 Bug 1058/1059
+      // 同款修法（internalTmpName：撞名则加 `_k` 后缀；无碰撞时原名返回
+      // ⇒ 产物逐字不变）。
+      const loopVarSlot = internalTmpName(`__nudoLv${forLoopVarSeq++}`, opts);
       const optsSrc = (() => {
         const parts: string[] = [];
         if (packSrc && unpackSrc) parts.push(`pack: () => ${packSrc}`, `unpack: ${unpackSrc}`);

@@ -60,6 +60,18 @@
  *   ⇒ S2 **不改**实现，只补**回归钉**
  *   （`__tests__/vite-bug-898-*.test.ts` / `vite-bug-983-*.test.ts`），
  *   并在报告里记录「勘察基线已陈旧」的勘误。
+ *
+ * ## Bug 1089 —— 无 `line` 的 check issue 不得被伪造成 `:1:0`
+ *
+ * core 产出的部分 check issue **不带源位置**（`nudo:module-unreadable`
+ * 「依赖模块存在但不可读」/ `nudo:internal` …）⇒ 本层此前把 `undefined`
+ * 兜底成第 1 行第 0 列 ⇒ 构建日志把「**另一个文件**不可读」定位到**当前
+ * 文件第 1 行**（误导定位，也与 CLI 人类面「无位置就不打位置」分裂）。
+ *
+ * ⇒ **不编造位置**：无 `line` 时用 service 的占位约定 `{line: 0, column: 0}`
+ * ⇒ `report.ts` 的 `renderLocation`（`line <= 0` ⇒ 省略 `:line:col`）统一
+ * 省略位置 ⇒ 与 CLI 人类面（`core/src/algebra/check-report.ts`：
+ * `i.line != null ? \`L${i.line}\` : ""`）同口径。
  */
 import {
   defaultLoadModule as loadModule,
@@ -218,13 +230,24 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
         // 且 `nudo:assume-relied` / `nudo:invariant-relied` /
         // `nudo:opaque-result` 在构建日志里永不上屏（与 LSP 面同款分裂）。
         .map((i) => {
-          const line = i.line ?? 1;
-          const column = i.column ?? 0;
           const parts = [i.message];
           if (i.actual) parts.push(`actual: ${i.actual}`);
           if (i.expected) parts.push(`expected: ${i.expected}`);
           if (i.suggestion) parts.push(i.suggestion);
           if (i.code) parts.push(`(${i.code})`);
+          // Bug 1089：**无源位置**的 check issue（依赖模块存在但不可读
+          // `nudo:module-unreadable` / `nudo:internal` …）**不带 `line`** ⇒
+          // 此前被兜底成第 1 行第 0 列 ⇒ 构建日志把「另一个文件不可读」这类
+          // 诊断定位到**当前文件第 1 行**（既误导定位，又与 CLI 人类面
+          // 「无位置就不打位置」和本包 `report.ts` 的 `renderLocation` 契约
+          // 三面不一致）。
+          //
+          // ⇒ **不编造**位置：无 `line` 时用 service 的占位约定
+          // `{line: 0, column: 0}` ⇒ `renderLocation`（`line <= 0` ⇒
+          // 省略 `:line:col`）统一省略位置（与 CLI 同口径）。
+          const hasLine = typeof i.line === "number" && i.line > 0;
+          const line = hasLine ? i.line! : 0;
+          const column = hasLine && typeof i.column === "number" ? i.column : 0;
           return {
             // severity 三档原样带出（error / warning / info）——档位由
             // `filterDiagnosticsByLevel` 统一裁决，转换层不预判。
@@ -233,7 +256,7 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
             code: i.code,
             range: {
               start: { line, column },
-              end: { line, column: column + 1 },
+              end: { line, column: hasLine ? column + 1 : 0 },
             },
           };
         }),

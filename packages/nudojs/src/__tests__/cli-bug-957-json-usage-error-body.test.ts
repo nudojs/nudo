@@ -9,11 +9,14 @@
  * 产出。
  *
  * 修复：用法错误在 `--json` 下也走**同一条** CaseJson 失败信封
- * （`pathErrors[{code:"usage-error"}]` + exit 1）；非 `--json` 面的人读
+ * （`pathErrors[{code:"nudo:usage-error"}]` + exit 1）；非 `--json` 面的人读
  * 文案**不变**。
  *
- * ⚠ 码是**非 `nudo:*` 的文件级事实码**（本地定义在 `commands/test.ts`，
- * 不改 `shared.ts` 的 `PathError["code"]` 联合）。
+ * ⚠ 码：用法错误码本地定义在 `commands/test.ts`（不改 `shared.ts` 的
+ * `PathError["code"]` 联合）——**Bug 1087**：该码原为 `"usage-error"`，与
+ * `check` / `contract` 的 `"nudo:usage-error"` **分叉** ⇒ 同一类错误在三个
+ * 动词产出不同的机器码 ⇒ 消费者要为 test 单独维护一张码表 ⇒ 已统一为
+ * `"nudo:usage-error"`（`"syntax-error"` 保持不变）。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -46,7 +49,7 @@ describe("Bug 957 — test --json 的用法错误也必须有机器可读 body",
   ];
 
   for (const c of cases) {
-    it(`CLI：${c.name} ⇒ stdout 是 CaseJson 信封（pathErrors[{code:\"usage-error\"}]）+ exit 1`, () => {
+    it(`CLI：${c.name} ⇒ stdout 是 CaseJson 信封（pathErrors[{code:\"nudo:usage-error\"}]）+ exit 1`, () => {
       const p = makeProject();
       try {
         const r = runCli(c.args(p), { cwd: p.cwd });
@@ -57,7 +60,8 @@ describe("Bug 957 — test --json 的用法错误也必须有机器可读 body",
         expect(doc.version).toBe(1);
         expect(Array.isArray(doc.pathErrors)).toBe(true);
         expect(doc.pathErrors.length).toBeGreaterThan(0);
-        expect(doc.pathErrors[0].code).toBe("usage-error");
+        // Bug 1087：用法错误码与 check / contract 同码（`nudo:usage-error`）
+        expect(doc.pathErrors[0].code).toBe("nudo:usage-error");
         expect(doc.pathErrors[0].message.length).toBeGreaterThan(0);
         // 与路径错误信封同形（同一动词不再有两条失败通道）
         expect(Array.isArray(doc.functions)).toBe(true);

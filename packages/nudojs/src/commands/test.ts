@@ -44,10 +44,12 @@ import {
  * test 面机器面（`--json`）的失败条目（Bug 957 / 650）。
  *
  * **本地定义**：不改 `shared.ts` 的 `PathError["code"]` 联合（那是别的片的
- * 文件）⇒ 这里用**非 `nudo:*` 的文件级事实码**（照抄 check 面
+ * 文件）⇒ 这里用**本地约定**的机器码（照抄 check 面
  * `GateFlagsChannel.syntaxPathErrors` 的范式）：
  * - `"syntax-error"`：解析/装配阶段的语法错（与 check 面同码同义）；
- * - `"usage-error"`：用法错误（旗标组合 / 缺路径）。
+ * - `"nudo:usage-error"`：用法错误（旗标组合 / 缺路径）——**与 check /
+ *   contract 同码**（Bug 1087：改前 test 面是 `"usage-error"` ⇒ 同一类错误
+ *   在三个动词产出**不同的机器码** ⇒ 消费者要为 test 单独维护一张码表）。
  *
  * `PathError`（shared）逐字满足本形状 ⇒ 路径错误可直接并入同一信封。
  */
@@ -58,8 +60,8 @@ type TestFailure = {
   suggestion: string;
 };
 
-/** 用法错误的机器面码（非 `nudo:*` 的文件级事实码）。 */
-const USAGE_ERROR_CODE = "usage-error";
+/** 用法错误的机器面码（与 `check` / `contract` 的 `nudo:usage-error` 同码）。 */
+const USAGE_ERROR_CODE = "nudo:usage-error";
 
 /** 语法错的机器面码（与 check 面 `pathErrors[{code:"syntax-error"}]` 同码）。 */
 const SYNTAX_ERROR_CODE = "syntax-error";
@@ -432,9 +434,12 @@ export function registerTestCommand(program: Command): void {
           // **任何**失败形态都必有 JSON body（绝不空 stdout + exit 1）：
           // 路径错误 / 用法错误 / 语法错共用这一条 CaseJson 失败信封。
           const file = allPathErrors[0]?.path ?? paths[0] ?? "";
-          console.log(
-            JSON.stringify(failureEnvelope(file, allPathErrors, targetErrors), null, 2),
-          );
+          // Bug 1085：watch 面的 stdout 是 **JSON Lines**（每行一份完整
+          // JSON 文档）⇒ 这条**早退**分支（watch 安装之前）也必须落一行
+          // （改前落 pretty 多行文档 ⇒ 逐行 `JSON.parse` 的消费者在第一行
+          // 就炸，且同一 flag 组合的 stdout 形态随路径是否可解析而变）。
+          // 非 watch 面**逐字不变**（仍是一份 pretty 文档）。
+          emitJsonDoc(failureEnvelope(file, allPathErrors, targetErrors), opts.watch === true);
           process.exitCode = 1;
           return;
         }

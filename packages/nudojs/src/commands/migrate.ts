@@ -258,12 +258,45 @@ export function registerMigrateCommand(program: Command): void {
                 // 逐文件错误行）。任一失败 ⇒ 该目标**整批零写盘**（原子性）
                 // ⇒ 目标判失败，失败详情**逐字沿用**库面的错误文案
                 // （`parse failed: <文件>: <原因>`）⇒ CLI 输出与旧版一致。
-                const planFailure = plan.find((r) => r.code !== undefined);
-                if (planFailure) {
-                  failures.push({
-                    path: target,
-                    message: planFailure.error ?? `strip failed: ${planFailure.file}`,
-                  });
+                //
+                // Bug 1086（命令层半边）：
+                // - 失败条目的 `path` 用**库面失败行的 `file`**（失败**文件**，
+                //   不是目标**目录**）⇒ 与同一 `pathErrors[]` 里 TS-only 闸门
+                //   失败的 `path: l.file`（同量纲：文件）一致 ⇒ 机器消费者不必
+                //   去解析 message 里的文件名字符串才能定位坏文件。
+                // - 同目标内的**成功行照常透出**（不再整目标丢弃）⇒ 消费者能
+                //   知道「哪些文件本来可以迁移」（库面已按族 56b 逐文件隔离）。
+                const planFailures = plan.filter((r) => r.code !== undefined);
+                if (planFailures.length > 0) {
+                  const reported = new Set<string>();
+                  for (const f of planFailures) {
+                    reported.add(f.file);
+                    failures.push({
+                      path: f.file,
+                      message: f.error ?? `strip failed: ${f.file}`,
+                    });
+                  }
+                  if (opts.write) {
+                    // 写盘轮：库面在有失败时**零写盘**并给成功行附「未写盘」
+                    // 注记 ⇒ 成功行带着注记进 results（不被误读成「已写盘」）。
+                    const written = await migrateStrip([target], {
+                      write: true,
+                      backup: opts.backup === true,
+                      draft: opts.draft !== false,
+                    });
+                    for (const f of written.filter((r) => r.code !== undefined)) {
+                      // 同一文件只报一次（计划轮已报过 ⇒ 不重复）
+                      if (reported.has(f.file)) continue;
+                      reported.add(f.file);
+                      failures.push({
+                        path: f.file,
+                        message: f.error ?? `strip failed: ${f.file}`,
+                      });
+                    }
+                    results.push(...written.filter((r) => r.code === undefined));
+                  } else {
+                    results.push(...plan.filter((r) => r.code === undefined));
+                  }
                   continue;
                 }
                 // Bug 672：产物闸门——剥完仍有 TS-only 语法 ⇒ 写出去的 .js
@@ -286,13 +319,18 @@ export function registerMigrateCommand(program: Command): void {
                     })
                   : plan;
                 // 族 56b：写盘轮同样可能带回失败行（计划与写盘之间文件变了）
-                // ⇒ 同样判失败（该目标零写盘 ⇒ 不进 results）。
-                const writeFailure = written.find((r) => r.code !== undefined);
-                if (writeFailure) {
-                  failures.push({
-                    path: target,
-                    message: writeFailure.error ?? `strip failed: ${writeFailure.file}`,
-                  });
+                // ⇒ 同样判失败。Bug 1086：失败条目的 `path` 用失败行的
+                // `file`（**文件**，不是目标目录）；同目标内的成功行照常透出
+                // （库面已附「未写盘」注记 ⇒ 不会被误读成已写盘）。
+                const writeFailures = written.filter((r) => r.code !== undefined);
+                if (writeFailures.length > 0) {
+                  for (const f of writeFailures) {
+                    failures.push({
+                      path: f.file,
+                      message: f.error ?? `strip failed: ${f.file}`,
+                    });
+                  }
+                  results.push(...written.filter((r) => r.code === undefined));
                   continue;
                 }
                 results.push(...written);

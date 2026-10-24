@@ -33,6 +33,11 @@
  *   （proxyGetOwnPropDescTrap：派发 + ToPropertyDescriptor 非对象 → 定抛 +
  *   completePropDescAbs 补全描述符）——Reflect 面在 builtins/reflect.ts
  *   调用；Object 面需在 builtins/object/methods.ts 接线（越界诉求见报告）。
+ * - Bug 1074：Proxy [[GetOwnProperty]] 的**靶一致性不变量**（ES2024 10.5.5
+ *   step 12.f）——靶自有 + 不可配置 + 不可写的数据属性，陷阱描述符的
+ *   [[Value]] 必须 SameValue 靶上的实际值，否则原生定抛 TypeError
+ *   （enforceProxyGetOwnPropDescInvariant；口径与 [[Get]] 面的
+ *   exec/runtime/state.ts enforceProxyGetInvariant 同源）。
  * - Bug 86：tuple 接收者不再静默丢弃——下标键逐位装（增长段 hole、
  *   空描述符清 hole）、length 键截断/延长（非法 RangeError）、
  *   {writable:false} length 以 sealed 近似、frozen 相同值重定义放行。
@@ -980,10 +985,155 @@ export function proxyGetOwnPropDescTrap(
     if (s.k === "any" || s.k === "unknown" || s.k === "sum") {
       return { k: "opaque" };
     }
+    // Bug 1074：靶一致性不变量（[[GetOwnProperty]]）——违者原生定抛 TypeError
+    enforceProxyGetOwnPropDescInvariant(parts.target, keyAbs, r);
     return { k: "desc", desc: completePropDescAbs(r) };
   }
   if (trap.k === "dead" || trap.k === "opaque") return { k: "opaque" };
   return { k: "absent" };
+}
+
+/**
+ * 描述符视图（**ToPropertyDescriptor** 口径：缺省布尔位 = false）。
+ *
+ * `writable` / `enumerable` / `configurable` 三态：
+ * - `true` / `false`：可判（缺省 ⇒ false；字面量 ⇒ 布尔值）；
+ * - `undefined`：**不可判**（抽象 prim）⇒ 参与比较时一律**跳过**（sound，
+ *   不拿「不可判」当「false」去制造假抛）。
+ */
+type DescView = {
+  isAccessor: boolean;
+  get?: Abs;
+  set?: Abs;
+  value?: Abs;
+  writable: boolean | undefined;
+  enumerable: boolean | undefined;
+  configurable: boolean | undefined;
+};
+
+/**
+ * Bug 1074：Proxy [[GetOwnProperty]] 的**靶一致性**校验（ES2024 10.5.5
+ * step 6.a / 7.a–7.c + node v26 实测的更严档）。
+ *
+ * **修前**：引擎**照抄陷阱的值**（`Object.getOwnPropertyDescriptor(p,"a").value`
+ * 折 exact 2）⇒ 自信的错值（原生抛 TypeError）。
+ *
+ * **口径来源**：以 **node v26.10.0 实测矩阵**为准（靶 present/absent ×
+ * 陷阱 present/absent × configurable/writable/enumerable 全组合 = 82 例；
+ * 候选谓词与原生**零偏差**）。规则：
+ * 1. 靶**无**该自有键 ⇒ 陷阱描述符必须 `configurable`（否则原生抛）；
+ * 2. 靶**有**该自有键而陷阱报的 `configurable` 与靶不一致 ⇒ 原生抛；
+ * 3. 靶是不可配置的数据属性 ⇒ 陷阱报的 writable / enumerable 必须与靶
+ *    **一致**，且靶不可写时 [[Value]] 必须 SameValue（否则原生抛）；
+ * 4. 靶是访问器属性而陷阱报数据描述符 ⇒ 原生抛（反之亦然）。
+ *
+ * 与 [[Get]] 面 `exec/runtime/state.ts` 的 `enforceProxyGetInvariant` 同源
+ * （那处归并行 worker 拥有，故此处按同一口径**就地复刻**，只读参照未改它）。
+ *
+ * **保守面（不抛，sound）**：抽象键 / symbol 投影键（靶自有 symbol 面不可判）/
+ * 靶不是对象 / 陷阱结果不可判 / 标志位或值不可判 / 访问器 get·set 身份不可比。
+ */
+export function enforceProxyGetOwnPropDescInvariant(
+  target: Abs,
+  keyAbs: Abs | undefined,
+  trapResult: Abs,
+): void {
+  const kvR = keyAbs ? litValue(keyAbs) : undefined;
+  const kv = kvR?.ok ? kvR.value : undefined;
+  if (typeof kv !== "string" && typeof kv !== "number") return; // 抽象键 / symbol 键 → 不可判
+  const key = String(kv);
+  const inner = proxyTargetInnerObj(target);
+  if (!inner) return;
+  const trapView = descViewOf(trapResult);
+  if (!trapView) return; // 陷阱结果不是可判对象 → 不可判（非对象已在调用方定抛）
+  const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
+  const hasSlot = Object.prototype.hasOwnProperty.call(slots, key);
+  const acc = lookupObjAccessor(inner, key);
+  if (!hasSlot && acc === undefined) {
+    // 规则 1：靶无该自有键 ⇒ 陷阱描述符必须可配置
+    if (trapView.configurable === false) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return;
+  }
+  // 靶侧**有效**标志（默认皆 true；sealed ⇒ configurable=false；
+  // frozen ⇒ configurable/writable/enumerable 全 false）
+  const st = extStateOf(inner);
+  const flags = getPropFlags(inner)?.get(key);
+  const targetWritable = flags?.writable !== false && st !== "frozen";
+  const targetEnumerable = flags?.enumerable !== false && st !== "frozen";
+  const targetConfigurable =
+    flags?.configurable !== false && st !== "frozen" && st !== "sealed";
+  // 规则 2：可配置性必须一致
+  if (trapView.configurable !== undefined && trapView.configurable !== targetConfigurable) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (acc !== undefined) {
+    // 规则 4：靶是访问器 ⇒ 陷阱也必须报访问器描述符
+    if (!trapView.isAccessor) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return; // get / set 的**身份**不可比 → 不抛（sound）
+  }
+  // 靶是数据属性 ⇒ 陷阱不得报访问器描述符
+  if (trapView.isAccessor) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // 规则 3：靶不可配置 ⇒ writable / enumerable 冻结；靶不可写时值也冻结
+  if (targetConfigurable) return;
+  if (trapView.writable !== undefined && trapView.writable !== targetWritable) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (trapView.enumerable !== undefined && trapView.enumerable !== targetEnumerable) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (targetWritable) return;
+  const a = litValue(slots[key]!.value);
+  const b = trapView.value ? litValue(trapView.value) : undefined;
+  if (!a.ok || !b || !b.ok) return; // 值不可判 → 不抛
+  if (!Object.is(a.value, b.value)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+}
+
+/**
+ * 描述符视图（ToPropertyDescriptor 口径）。
+ *
+ * 数据位（`value` / `writable`）与访问器位（`get` / `set`）**同时**出现 ⇒
+ * 原生 ToPropertyDescriptor 定抛 TypeError（"Invalid property descriptor.
+ * Cannot both specify accessors and a value or writable attribute"）。
+ */
+function descViewOf(desc: Abs): DescView | undefined {
+  if (desc.shape.k !== "obj") return undefined;
+  const slots = (desc.shape as ObjShape).slots as Record<string, { value: Abs }>;
+  const has = (k: string): boolean => Object.prototype.hasOwnProperty.call(slots, k);
+  const slotVal = (k: string): Abs | undefined => slots[k]?.value;
+  const boolOf = (k: string): boolean | undefined => {
+    const v = slotVal(k);
+    if (v === undefined) return false; // 缺省 → ToPropertyDescriptor 默认 false
+    const lvR = litValue(v);
+    if (lvR.ok) return Boolean(lvR.value);
+    const sh = v.shape.k;
+    if (sh === "obj" || sh === "arr" || sh === "tuple" || sh === "fn" || sh === "brand") return true;
+    return undefined; // 抽象 prim → 不可判
+  };
+  const hasGet = has("get");
+  const hasSet = has("set");
+  const hasValue = has("value");
+  const hasWritable = has("writable");
+  const isAccessor = hasGet || hasSet;
+  if (isAccessor && (hasValue || hasWritable)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  return {
+    isAccessor,
+    get: slotVal("get"),
+    set: slotVal("set"),
+    value: slotVal("value"),
+    writable: boolOf("writable"),
+    enumerable: boolOf("enumerable"),
+    configurable: boolOf("configurable"),
+  };
 }
 
 /**

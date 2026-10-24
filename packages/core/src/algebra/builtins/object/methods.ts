@@ -30,6 +30,11 @@
  *   本模块的描述符面须与之同口径（gOPDs 的访问器描述符 = {get, set}）。
  * - Bug 326：键家族（keys/values/entries）对**自有键集不完备**的对象折
  *   partial（标记在 prop flags 侧表）——不得折 exact 空元组。
+ * - Bug 1075：gOPDs 的自有键面走 [[OwnPropertyKeys]]——**含 symbol 键**
+ *   （原生 gOPDs 的结果对象带真 symbol 键）⇒ symbol 投影槽**保留**并带
+ *   `symbolKey` 标记（字符串键面 Object.keys / gOPN 仍剔除它）。
+ * - Bug 1077：不可变原型 Object.prototype 置 **null** 原型**放行**
+ *   （protoChangeAllowed；置非 null 仍拒——Object 面抛 / Reflect 面 false）。
  * - 未建模方法 → undefined 走通用回退。
  */
 
@@ -128,11 +133,17 @@ import {
  * eval-value-read-reflect.test.ts 已 pin）。
  */
 export function protoChangeAllowed(t0: Abs, p0: Abs): boolean {
-  // Bug 386：不可变原型对象（Object.prototype）——[[SetPrototypeOf]] 一律拒绝
-  // （原生：Object.setPrototypeOf 抛 TypeError: Immutable prototype object
-  // 'Object.prototype' cannot have their prototype set；Reflect 返 false）。
-  // 规范 + V8 实测：仅 Object.prototype 是不可变原型，其余内建原型可改。
-  if (isImmutableProtoAbs(t0)) return false;
+  // Bug 386 / 1077：不可变原型对象（Object.prototype）——[[SetPrototypeOf]]
+  // 拒绝**非 null** 原型（原生：Object.setPrototypeOf 抛 TypeError: Immutable
+  // prototype object 'Object.prototype' cannot have their prototype set；
+  // Reflect 返 false）；**置 null 放行**——ES2024 10.4.1.2 的
+  // Object.prototype.[[SetPrototypeOf]] 只在 V **非 null** 时抛，node v26
+  // 实测 `Object.setPrototypeOf(Object.prototype, null)` 不抛（Object.prototype
+  // 的 [[Prototype]] 本就是 null ⇒ 空操作）、`Reflect.setPrototypeOf(...)` 返
+  // true。规范 + V8 一致：仅 Object.prototype 是不可变原型，其余内建原型可改。
+  if (isImmutableProtoAbs(t0)) {
+    return p0.term?.op === "lit" && p0.term.value === null;
+  }
   // Bug 385：原型环——新原型的 [[Prototype]] 链上溯已含 t0 ⇒ 拒绝
   // （原生：Object.setPrototypeOf 抛 TypeError: Cyclic __proto__ value；
   // Reflect 返 false）。修前引擎**静默建出活原型环**（native 不存在该状态）。
@@ -1660,6 +1671,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // exact 描述符对象（mkPropDescAbs / flags 与 gOPD 同口径）；
       // tuple → 索引 + length 描述符；字符串装箱 → 字符 + length（不可写）；
       // 其余 prim 装箱 → {}；open/抽象 → 开放 obj（槽值 descriptor|undefined）
+      // Bug 1075：自有键面走 [[OwnPropertyKeys]]——**含 symbol 键**（原生
+      // gOPDs 的结果对象带真 symbol 键；symbol 投影槽保留 + symbolKey 标记）
       if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
@@ -1687,66 +1700,73 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         target: Abs,
         entries: Array<[string, Abs]>,
         flagsOf: (key: string) => { writable: boolean; enumerable: boolean; configurable: boolean },
+        symbolKeyOf?: (key: string) => boolean,
       ): Abs => {
-        const slots: Record<string, { value: Abs }> = {};
+        const slots: Record<string, { value: Abs; symbolKey?: boolean }> = {};
         for (const [key, value] of entries) {
           const accDesc = accessorPropDescAbs(target, key);
-          if (accDesc) {
-            slots[key] = { value: accDesc };
-            continue;
-          }
           const f = flagsOf(key);
-          slots[key] = { value: mkPropDescAbs(value, f.writable, f.enumerable, f.configurable) };
+          const desc =
+            accDesc ?? mkPropDescAbs(value, f.writable, f.enumerable, f.configurable);
+          slots[key] = symbolKeyOf?.(key) ? { value: desc, symbolKey: true } : { value: desc };
         }
         return abs({ k: "obj", slots }, undefined, undefined, "exact");
       };
       if (a0.shape.k === "obj") {
-        const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
+        const os = a0.shape as {
+          slots: Record<string, { value: Abs; symbolKey?: boolean }>;
+          open?: boolean;
+          index?: unknown;
+        };
         if (os.open || os.index) {
           // 槽开放：可能有未知自有键 → 开放 obj（已知键精确，未知键按
           // open 语义折 descriptor|undefined 保守域）
-          const slots: Record<string, { value: Abs }> = {};
+          const slots: Record<string, { value: Abs; symbolKey?: boolean }> = {};
           for (const key of Object.keys(os.slots)) {
             // Bug 84：internal 私有槽非自有属性，不产 descriptor
             if ((os.slots[key] as { internal?: boolean })?.internal === true) continue;
-            // Bug 295：gOPDs 只产**字符串键**描述符（原生 symbol 键不进
-            // gOPDs —— symbol 键另有 getOwnPropertySymbols 面）
-            if ((os.slots[key] as { symbolKey?: boolean })?.symbolKey === true) continue;
+            // Bug 1075：symbol 键**保留**（原生 gOPDs 走 [[OwnPropertyKeys]]
+            // ——含 symbol 键；结果对象带该 symbol 键 ⇒ gOPS 看得到、
+            // Object.keys / gOPN 看不到——靠 symbolKey 标记分流）
+            const isSym = (os.slots[key] as { symbolKey?: boolean })?.symbolKey === true;
             const value = os.slots[key]!.value;
             const flags = getPropFlags(a0)?.get(key);
             // Bug 291：访问器描述符（get/set 键，无 value/writable）
             const accDesc = accessorPropDescAbs(a0, key);
-            slots[key] = {
-              value:
-                accDesc ??
-                mkPropDescAbs(
-                  value,
-                  flags?.writable !== false,
-                  flags?.enumerable !== false,
-                  flags?.configurable !== false,
-                ),
-            };
+            const desc =
+              accDesc ??
+              mkPropDescAbs(
+                value,
+                flags?.writable !== false,
+                flags?.enumerable !== false,
+                flags?.configurable !== false,
+              );
+            slots[key] = isSym ? { value: desc, symbolKey: true } : { value: desc };
           }
           return abs({ k: "obj", slots, open: true }, undefined, undefined, "partial");
         }
         // Bug 84：internal 私有槽非自有属性，不产 descriptor
-        // Bug 295：gOPDs 只产**字符串键**描述符（symbol 键不进）
+        // Bug 1075：gOPDs 走 [[OwnPropertyKeys]]——**含 symbol 键**（原生
+        // `Object.getOwnPropertyDescriptors({[Symbol.toStringTag]:1})` 的结果
+        // 对象带该 symbol 键；此前按 symbolKey 过滤掉 ⇒ 结果对象少一个
+        // 自有属性、键数少 1——自信的错值）
         const entries = Object.keys(os.slots)
-          .filter(
-            (key) =>
-              (os.slots[key] as { internal?: boolean })?.internal !== true &&
-              (os.slots[key] as { symbolKey?: boolean })?.symbolKey !== true,
-          )
+          .filter((key) => (os.slots[key] as { internal?: boolean })?.internal !== true)
           .map((key) => [key, os.slots[key]!.value] as [string, Abs]);
         const flagsMap = getPropFlags(a0);
-        return descSlotsOfWithAccessors(a0, entries, (key) => {
-          const f = flagsMap?.get(key);
-          return {
-            writable: f?.writable !== false,
-            enumerable: f?.enumerable !== false,
-            configurable: f?.configurable !== false,
-          };
-        });
+        return descSlotsOfWithAccessors(
+          a0,
+          entries,
+          (key) => {
+            const f = flagsMap?.get(key);
+            return {
+              writable: f?.writable !== false,
+              enumerable: f?.enumerable !== false,
+              configurable: f?.configurable !== false,
+            };
+          },
+          (key) => (os.slots[key] as { symbolKey?: boolean })?.symbolKey === true,
+        );
       }
       if (a0.shape.k === "tuple") {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];

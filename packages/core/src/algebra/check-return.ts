@@ -16,6 +16,7 @@
 import type { Abs } from "./abs.ts";
 import type { NudoConstraint } from "./constraint.ts";
 import type { CheckIssue } from "./check-report.ts";
+import type { Phi } from "./pred.ts";
 import { assertImplies } from "./postcondition.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
@@ -49,6 +50,17 @@ export type ReturnContractAudit = {
    * 缺省 = 未知 ⇒ 不宣称依赖；给出 = 只宣称集合内的引理。
    */
   consumedAssume?: ReadonlySet<string>;
+  /**
+   * 返回点的**路径前提**（Φ）——证明通道的 Φ 侧（Bug 1080）。
+   *
+   * 缺省 = 无路径前提（`pTrue`）：证据面只有 `ret.pred`（值域事实）。
+   *
+   * ⚠ 只放**约束返回项本身**的关系事实（守卫界 / 补集臂）：与返回项无关的
+   * 前提（如 `if (x > 0) return y` 里的 `x > 0`）**不构成**返回值的值域
+   * 证据——证明通道按「同项」口径消费（见 `postcondition.ts` 的同项判定），
+   * 不得用无关证据把「证不出」升级成「确定违约」（假红）。
+   */
+  phi?: Phi;
 };
 
 /**
@@ -71,8 +83,11 @@ export function checkReturnConstraint(
     assumeDisplay,
     invariantDisplay,
     consumedAssume,
+    phi,
   } = audit;
-  const proof = assertImplies(ret, constraint);
+  // Bug 1080：Φ 侧（返回点路径前提）进证明通道——证据面 = ret.pred ∧ Φ 的
+  // 「同项」界事实（与被约束项无关的前提事实不得制造确定违约）。
+  const proof = assertImplies(ret, constraint, phi ? { phi } : undefined);
   // #369 / #372：issue 构造处带位置（函数声明位置）⇒ 消费面不再兜底首行
   const where = (): { line?: number; column?: number } => {
     if (loc?.line === undefined) return {};

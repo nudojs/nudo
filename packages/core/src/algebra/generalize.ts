@@ -115,6 +115,41 @@ function evalRunOf(
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
+/**
+ * 类方法桥的实例（**Bug 1093**）：构造器**抛**时不得把方法体的推断一起拖垮。
+ *
+ * 此前 `$new` 抛 ⇒ 异常逃出 `runCore` ⇒ 方法签名退 unknown + 误导的
+ * info 级 `nudo:opaque-result`（把「构造器必抛」谎报成「推断失败」）。
+ * 构造器抛**不等于**方法抛 ⇒ 方法体仍应被求值（方法可能是 total 的）。
+ *
+ * 口径与 `check-may-throw.ts` 的 `instanceForMethodBridge` 一致（那处**反向
+ * import 本文件**的 `ctorParamCountOf` ⇒ 此处**就地复刻**，不跨模块耦合以免
+ * 成包环）：构造器抛 ⇒ 退到**裸实例**（跳过构造器）继续求值方法体 ⇒ 方法体
+ * 自身的推断照常产出（闸门不整体关掉）。
+ */
+function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
+  try {
+    return $new(clsAbs, ctorArgs);
+  } catch {
+    // 裸实例：brand 名取**类值**的 brand 名（类值即 brand ⇒ `export default
+    // class` 同口径），内层是空 obj
+    const name =
+      clsAbs.shape.k === "brand" && clsAbs.shape.name.length > 0
+        ? clsAbs.shape.name
+        : clsName;
+    return abs(
+      {
+        k: "brand",
+        name,
+        shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+}
+
 /** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
  *
  *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
@@ -1081,7 +1116,11 @@ function generalizeFromAstUncached(
           : undefined;
         if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
           const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
-          const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
+          const inst = instanceForMethodBridge(
+            clsAbs as Abs,
+            clsName ?? "",
+            Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
+          );
           try {
             return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
           } catch (e) {

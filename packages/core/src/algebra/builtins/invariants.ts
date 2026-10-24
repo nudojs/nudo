@@ -11,7 +11,10 @@
  *     引擎的 @@iterator 协议槽正靠这条拷贝链落地）。
  *   - `enumOwnStringKeys` = **字符串键视图**（**剔除** symbol 投影槽）——
  *     原生 for-in / Object.keys|values|entries / getOwnPropertyNames /
- *     getOwnPropertyDescriptors / JSON.stringify 只枚举字符串键。
+ *     JSON.stringify 只枚举字符串键。
+ *     **注意**（Bug 1075）：`Object.getOwnPropertyDescriptors` **不在**此列——
+ *     原生 gOPDs 走 [[OwnPropertyKeys]]（**含** symbol 键：结果对象带真
+ *     symbol 键，`Object.getOwnPropertySymbols(gOPDs(o))` 看得到）。
  * - 报告建议「给 enumOwnKeys 补 symbolKey 过滤」与原生 oracle 冲突：它会
  *   把 symbol 键从 spread/assign/rest 的拷贝链里剔掉 ⇒ 折坏 @@iterator 协议
  *   槽（core 既有 8 处回归）。故按 oracle 拆两套视图，调用点分流。
@@ -64,8 +67,10 @@ export function enumOwnKeys(o: Abs, slots: Record<string, unknown>): string[] {
 /**
  * 枚举视图的**字符串键**视图（Bug 295）：在 `enumOwnKeys` 口径上再剔除
  * **symbol 投影槽**（Slot.symbolKey）——原生 for-in / Object.keys|values|
- * entries / getOwnPropertyNames|getOwnPropertyDescriptors / JSON.stringify
- * 只枚举**字符串**键。
+ * entries / getOwnPropertyNames / JSON.stringify 只枚举**字符串**键。
+ *
+ * **不含** `Object.getOwnPropertyDescriptors`（Bug 1075）：原生 gOPDs 走
+ * [[OwnPropertyKeys]]——**含** symbol 键（结果对象带真 symbol 键）。
  *
  * 与 `enumOwnKeys`（CopyDataProperties 视图，含 symbol 键）的分工见文件头
  * 不变量：把 symbol 键从 spread/assign/**对象 rest** 的拷贝链剔掉会折坏

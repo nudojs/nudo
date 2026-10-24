@@ -375,9 +375,13 @@ Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invaria
 ```text
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
 path env failed to load: ./nope.mjs — path env not found: <resolved-path>
+unknown env name "bogus" (built-in envs: es, web, node; a path env needs a ./ or ../ prefix)
+env file must export a defineEnv() function (got undefined)
 ```
 
 **路径型** env 项（`package.json#nudo.env` 的路径项或 `/// @nudo:env <path>`）加载失败——直连 `import()` 与重写回退均失败，或指向的文件不存在。**Warning**——该 env 项退化为「env 关」语义，分析会静默丢失这些绑定（env 正常加载的运行能推断得更多）；不要把该告警当 benign 处理。
+
+同一码还覆盖两类 env **契约**失败：env 名既不是内置（`es`、`web`、`node`）也不是路径（路径型 env 需要 `./` 或 `../` 前缀）；以及路径型 env 文件未导出 `defineEnv()` 函数、导出了非函数、求值时抛错，或返回了 `{ globals }` 以外的值。此前两者都是静默的：env 干脆没生效，受影响的代码随后被判成「必定抛 `ReferenceError`」。`package.json#nudo.env` 里的非字符串项也按同样方式报告，而不是崩掉。
 
 **发射面：** `nudo check`（issues 段）、`nudo test`（env warnings 段，告警行格式完全一致；`--json` 面告警走 stderr，stdout 保持单一 JSON 文档）与 LSP（warning 诊断，code 同名，消息格式同源）。它从不影响退出码。
 

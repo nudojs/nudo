@@ -400,7 +400,11 @@ export function setInstanceProto(o: Abs, proto: Abs): void {
 
 /**
  * 不可变原型对象（原生 ImmutablePrototypeExoticObject）：[[SetPrototypeOf]]
- * 一律拒绝（抛 TypeError / Reflect 返 false）。
+ * 拒绝**非 null** 原型（抛 TypeError / Reflect 返 false）；**置 null 放行**
+ * （ES2024 10.4.1.2 的 Object.prototype.[[SetPrototypeOf]] 只在 V 非 null
+ * 时抛——Object.prototype 的 [[Prototype]] 本就是 null ⇒ 空操作；node v26
+ * 实测 `Object.setPrototypeOf(Object.prototype, null)` 不抛、
+ * `Reflect.setPrototypeOf(Object.prototype, null)` 返 true）。
  *
  * 规范 + V8 实测（node）：**仅 `Object.prototype`** 是不可变原型——
  * `Object.setPrototypeOf(Object.prototype, {})` → TypeError: Immutable
@@ -449,7 +453,16 @@ export function protoChainContains(proto: Abs, target: Abs): boolean {
 export function setProtoAbs(o: Abs, proto: Abs): Abs {
   const pvR = litValue(proto);
   const pv = pvR.ok ? pvR.value : undefined;
-  if (pv === null) return markNullProtoObj(o);
+  if (pv === null) {
+    // Bug 1077：不可变原型（Object.prototype）置 **null** ——原生允许且是空操作
+    // （Object.prototype 的 [[Prototype]] 本就是 null；ES2024 10.4.1.2 的
+    // Object.prototype.[[SetPrototypeOf]] 只在 V 非 null 时抛；node v26 实测
+    // `Object.setPrototypeOf(Object.prototype, null)` 不抛）。**不落 null-proto
+    // 标记**——那会把 Object.prototype 的原型链面改成「无 Object.prototype
+    // 回落」（原生 "toString" in Object.prototype === true ⇒ 不可改）。
+    if (isImmutableProtoAbs(o)) return o;
+    return markNullProtoObj(o);
+  }
   if (proto.term?.op === "lit" && (pv === undefined || typeof pv !== "object")) {
     return o;
   }

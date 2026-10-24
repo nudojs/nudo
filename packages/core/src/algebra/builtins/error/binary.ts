@@ -551,6 +551,12 @@ function taStoreNumber(name: string, n: number): number | undefined {
   // Float32 额外过 fround 舍入，与 V8 存值同口径）。
   if (name === "Float32Array") return Math.fround(n);
   if (name === "Float64Array") return n;
+  // Bug 1076：Uint8ClampedArray 的转换是 **ToUint8Clamp**（ES2024 7.1.7）
+  // ——「就近偶数」取整，**不先向零截断**（原生 new Uint8ClampedArray([1.5])[0]
+  // === 2、new Uint8ClampedArray([3.5])[0] === 4）。此前先 Math.trunc 再钳位
+  // ⇒ 折出自信的错值（1 / 3）。taClampUint8 自带 NaN / ±Infinity / 0 / 255
+  // 边界处理 ⇒ 直接吃**未截断**的 n。
+  if (name === "Uint8ClampedArray") return taClampUint8(n);
   const trunc = Number.isFinite(n) ? Math.trunc(n) : n;
   if (Number.isNaN(trunc)) return 0;
   switch (name) {
@@ -566,8 +572,6 @@ function taStoreNumber(name: string, n: number): number | undefined {
       return taWrapSigned(trunc, 32);
     case "Uint32Array":
       return taWrapUnsigned(trunc, 32);
-    case "Uint8ClampedArray":
-      return taClampUint8(trunc);
     default:
       return undefined;
   }

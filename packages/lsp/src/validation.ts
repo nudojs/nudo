@@ -1122,14 +1122,36 @@ export async function envUnresolvedDiags(
     return [];
   }
   if (envNames.length === 0) return [];
+  // Bug 647（两层基准）：项目级 env 按**项目根**解析、文件级按**文件目录**
+  // ——口径与 CLI（`packages/nudojs/src/commands/check.ts`）同款；此前一律
+  // 按文件目录解析 ⇒ 项目级 env 在「项目根之外的文件」上解析到不存在的路径
+  // ⇒ env 全局对那些文件不可见（编辑器面退化 unknown）。
   const baseDir = dirname(filePath);
+  const proj = findProjectConfig(baseDir);
+  const projectEnvBaseDir = proj?.projectDir ?? baseDir;
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv)
+    ? rawProjectEnv.filter((n): n is string => typeof n === "string")
+    : [];
+  const projectEnvSpec = projectEnvNames.map((name) =>
+    name.startsWith("./") || name.startsWith("../")
+      ? resolvePath(projectEnvBaseDir, name)
+      : name,
+  );
+  const fileEnvNames = collectEnvNames(filePath, source, false);
+  const candidates = new Set<string>();
   try {
-    await preloadPathEnvs(envNames, baseDir);
+    if (projectEnvSpec.length > 0) {
+      await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+      for (const n of projectEnvSpec) candidates.add(resolvePath(projectEnvBaseDir, n));
+    }
+    if (fileEnvNames.length > 0) {
+      await preloadPathEnvs(fileEnvNames, baseDir);
+      for (const n of fileEnvNames) candidates.add(resolvePath(baseDir, n));
+    }
   } catch {
     /* preload 自身抛出（stat 竞态等）不拖垮诊断发布 */
   }
-  // preloadPathEnvs 记录的 path = resolvePath(baseDir, name)——同式过滤陈旧条目
-  const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
   // 按名字发的诊断：记录 path = 名字本身（未知名）/ JSON 渲染（非法 env 项）
   const byName = new Set<string>(envNames);
   for (const raw of envNames as unknown[]) {

@@ -362,10 +362,12 @@ const __nudoBrandCtors = ${JSON.stringify(GLOBAL_BRAND_CTOR_NAMES)};
 // 全局作用域（按名查构造器；该运行时没有此全局 ⇒ 放行）。
 const __nudoGlobalScope = (typeof globalThis !== "undefined" ? globalThis : {}) as unknown as Record<string, unknown>;
 // 值的安全描述：不抛、且不丢非有限数值（JSON.stringify 会把 Infinity 写成 null）。
+// -0 与 0 在 === 下等价，但除法 / Math.sign / Object.is 上可观察 ⇒ 保真
+// （与库函数版 describeValue 同口径——两份实现的消息必须逐字一致）。
 function __nudoDescribe(v: unknown): string {
   try {
     if (typeof v === "bigint") return v.toString() + "n";
-    if (typeof v === "number") return String(v);
+    if (typeof v === "number") return Object.is(v, -0) ? "-0" : String(v);
     if (typeof v === "string") return JSON.stringify(v);
     if (v === undefined) return "undefined";
     if (v === null) return "null";
