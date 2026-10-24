@@ -6,11 +6,11 @@
  *   - analyzer-orchestrate-calls.ts     env 名收集 + 调用点发现
  *   - analyzer-orchestrate-uncached.ts  analyzeFileUncached / UncachedInner
  */
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
-import { preloadPathEnvs } from "./evaluator/env-loader.ts";
+import { absolutizeEnvSpec, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { analysisCacheGet, analysisCacheSet } from "./analysis-file-cache.ts";
 import { analysisFileCacheKey, cloneAnalysisResult } from "./analyzer-cache.ts";
 import type {
@@ -63,11 +63,7 @@ export async function analyzeFileAsync(
       ? rawProjectEnv.filter((n): n is string => typeof n === "string")
       : [];
     // 相对说明符先按项目根**绝对化**（与 CLI 同款）⇒ preload 时基准不再歧义
-    const projectEnvSpec = projectEnvNames.map((name) =>
-      name.startsWith("./") || name.startsWith("../")
-        ? resolve(projectEnvBaseDir, name)
-        : name,
-    );
+    const projectEnvSpec = absolutizeEnvSpec(projectEnvNames, projectEnvBaseDir);
     const fileEnvNames = collectEnvNames(filePath, source, false);
     // path-based @nudo:env / mock-module 反向边（watch 失效）
     noteEnvPathDeps(filePath, source);
@@ -106,7 +102,15 @@ export function analyzeFile(
   return runWithCollectorScope(() => {
     const projectConfig = findProjectConfig(dirname(filePath));
     const cfg = analysisConfig(projectConfig?.config);
-    const projectEnvNames = projectConfig?.config.env ?? [];
+    // 项目级 env 名**绝对化**（按项目根）——与收集期（`analyzeFileUncachedInner`）
+    // 同一套规则：缓存键里的 env 维度必须是**解析后**的名字，否则「项目根之外的
+    // 文件」与「项目根的文件」对同一 env 名给出不同键（Bug 1098 同源）。
+    const projectEnvBaseDir = projectConfig?.projectDir ?? dirname(filePath);
+    const rawProjectEnv = projectConfig?.config.env;
+    const projectEnvNames = absolutizeEnvSpec(
+      Array.isArray(rawProjectEnv) ? rawProjectEnv : [],
+      projectEnvBaseDir,
+    );
     const autoBind = interfaceConfig(projectConfig?.config).autoBind;
     const k = analysisFileCacheKey(
       filePath,

@@ -22,6 +22,7 @@ import type { Command } from "commander";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseSource } from "@nudojs/core";
+import type { StripResult, StripWriteStatus } from "../migrate.ts";
 
 /**
  * verify 的 tsc 基线根（Bug 582）：目录目标取目录本身，文件目标取其所在目录。
@@ -185,6 +186,35 @@ function tsOnlyLeftovers(plan: Array<{ file: string }>): Array<{ file: string; f
 }
 
 
+// ---------------------------------------------------------------------------
+// Bug 1100 — 写盘状态（人类面措辞 / 机器面标记）
+// ---------------------------------------------------------------------------
+
+/**
+ * 写盘状态 → 人类面措辞（Bug 1100）。
+ *
+ * ⚠ **未写盘不得说 "wrote"**：旧实现是 `opts.write ? "wrote" : "dry"`（**无
+ * 条件**按 `--write` 打 `wrote`）⇒ 批内有失败文件时（库面整批零写盘，原子性
+ * · Bug 574）人类面打出 `wrote  good.ts → good.js`，而磁盘上**根本没有**
+ * `good.js`；同一行下面还跟着一句「not written」的 note ⇒ 同一行既说
+ * 「wrote」又说「not written」（自相矛盾）。
+ *
+ * 现在措辞由**逐行**的写盘状态决定：
+ * - `written` ⇒ `wrote`（产物确实落盘）；
+ * - `not-written` ⇒ `not written`（本批因别的文件失败而整批零写盘）；
+ * - `planned` ⇒ `dry`（dry-run：只有计划面，没请求写盘）。
+ */
+function stripWriteMode(status: StripWriteStatus): string {
+  switch (status) {
+    case "written":
+      return "wrote";
+    case "not-written":
+      return "not written";
+    default:
+      return "dry";
+  }
+}
+
 export function registerMigrateCommand(program: Command): void {
   program
     .command("migrate")
@@ -277,8 +307,9 @@ export function registerMigrateCommand(program: Command): void {
                     });
                   }
                   if (opts.write) {
-                    // 写盘轮：库面在有失败时**零写盘**并给成功行附「未写盘」
-                    // 注记 ⇒ 成功行带着注记进 results（不被误读成「已写盘」）。
+                    // 写盘轮：库面在有失败时**零写盘**，并给成功行附「未写盘」
+                    // 注记 **+ 写盘状态标记** `not-written` ⇒ 成功行进 results
+                    // 且**结构化地**标明「没落盘」（不靠 note 自由文本猜）。
                     const written = await migrateStrip([target], {
                       write: true,
                       backup: opts.backup === true,
@@ -321,7 +352,8 @@ export function registerMigrateCommand(program: Command): void {
                 // 族 56b：写盘轮同样可能带回失败行（计划与写盘之间文件变了）
                 // ⇒ 同样判失败。Bug 1086：失败条目的 `path` 用失败行的
                 // `file`（**文件**，不是目标目录）；同目标内的成功行照常透出
-                // （库面已附「未写盘」注记 ⇒ 不会被误读成已写盘）。
+                // （库面已附「未写盘」注记 + `not-written` 状态标记 ⇒ 结构化地
+                // 标明「没落盘」，不会被误读成已写盘）。
                 const writeFailures = written.filter((r) => r.code !== undefined);
                 if (writeFailures.length > 0) {
                   for (const f of writeFailures) {
@@ -338,9 +370,19 @@ export function registerMigrateCommand(program: Command): void {
                 failures.push({ path: target, message: (err as Error).message });
               }
             }
+            // Bug 1100：**写盘状态**（机器面）——**每一行都带** ⇒ 消费方只读
+            // 结构化字段就能判定「产物是不是真的落盘了」（此前只能靠 `notes`
+            // 的自由文本区分「已写盘」与「计划成功但本批未写盘」⇒ 极易把
+            // 「计划成功」误判成「已产出」）。
+            // 库面在**写盘轮**填真值（`written` / `not-written`）；dry-run 的
+            // 行不带此键 ⇒ 命令层补 `planned`（dry-run 天然未写盘）。
+            const rows: StripResult[] = results.map((r) => ({
+              ...r,
+              writeStatus: r.writeStatus ?? (opts.write ? "not-written" : "planned"),
+            }));
             if (opts.json) {
               if (failures.length === 0) {
-                console.log(JSON.stringify(results, null, 2));
+                console.log(JSON.stringify(rows, null, 2));
               } else {
                 // 失败也必须是**合法 JSON**（stdout 永不为空）+ 已攒结果不丢
                 console.log(
@@ -349,7 +391,7 @@ export function registerMigrateCommand(program: Command): void {
                       ok: false,
                       action: "strip",
                       targets,
-                      results,
+                      results: rows,
                       pathErrors: failures.map((f) => ({
                         path: f.path,
                         code: "nudo:migrate-strip-failed",
@@ -363,8 +405,11 @@ export function registerMigrateCommand(program: Command): void {
                 );
               }
             } else {
-              for (const r of results) {
-                const mode = opts.write ? "wrote" : "dry";
+              for (const r of rows) {
+                // 措辞由**逐行**的写盘状态决定（Bug 1100）——未写盘**不得**打
+                // `wrote`（旧实现按 `--write` 无条件打 `wrote` ⇒ 整批零写盘
+                // 时谎称已产出）。
+                const mode = stripWriteMode(r.writeStatus ?? "planned");
                 console.log(`${mode}  ${r.file} → ${r.outFile}`);
                 if (r.sidecarDraft) console.log(`      draft  ${r.sidecarDraft}`);
                 for (const n of r.notes) console.log(`      note: ${n}`);

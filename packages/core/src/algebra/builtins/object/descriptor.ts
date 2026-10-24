@@ -1023,9 +1023,11 @@ type DescView = {
  * 候选谓词与原生**零偏差**）。规则：
  * 1. 靶**无**该自有键 ⇒ 陷阱描述符必须 `configurable`（否则原生抛）；
  * 2. 靶**有**该自有键而陷阱报的 `configurable` 与靶不一致 ⇒ 原生抛；
- * 3. 靶是不可配置的数据属性 ⇒ 陷阱报的 writable / enumerable 必须与靶
- *    **一致**，且靶不可写时 [[Value]] 必须 SameValue（否则原生抛）；
- * 4. 靶是访问器属性而陷阱报数据描述符 ⇒ 原生抛（反之亦然）。
+ * 3. 靶不可配置 ⇒ 陷阱报的 writable / enumerable 必须与靶**一致**，
+ *    且靶不可写时 [[Value]] 必须 SameValue（否则原生抛）；
+ * 4. 靶**不可配置**且是访问器属性而陷阱报数据描述符 ⇒ 原生抛（反之亦然）。
+ *    —— 靶**可配置**时原生**不抛**（ES2024 IsCompatiblePropertyDescriptor
+ *    只在 current.[[Configurable]] 为 false 时做形态比对）。
  *
  * 与 [[Get]] 面 `exec/runtime/state.ts` 的 `enforceProxyGetInvariant` 同源
  * （那处归并行 worker 拥有，故此处按同一口径**就地复刻**，只读参照未改它）。
@@ -1056,28 +1058,39 @@ export function enforceProxyGetOwnPropDescInvariant(
     }
     return;
   }
-  // 靶侧**有效**标志（默认皆 true；sealed ⇒ configurable=false；
-  // frozen ⇒ configurable/writable/enumerable 全 false）
-  const st = extStateOf(inner);
-  const flags = getPropFlags(inner)?.get(key);
-  const targetWritable = flags?.writable !== false && st !== "frozen";
-  const targetEnumerable = flags?.enumerable !== false && st !== "frozen";
-  const targetConfigurable =
-    flags?.configurable !== false && st !== "frozen" && st !== "sealed";
+  /**
+   * 靶侧**有效**标志——经 `currentPropDesc` 取（**接收者优先、内层兜底**：
+   * defineProperty / freeze / seal 把标志记在**接收者**上——brand 靶 ⇒ 记在
+   * brand 上；obj 靶 ⇒ 记在 obj 上；只看内层 obj 取不到 ⇒ 标志回落成缺省值
+   * ⇒ 把「陷阱与靶完全一致」误判成「不一致」⇒ 假红）。
+   *
+   * 缺省口径（与原生一致）：
+   * - writable：数据属性缺省 true；**frozen ⇒ false**（freeze 改 writable）；
+   * - enumerable：缺省 true——**freeze 不改 enumerable**（原生
+   *   `Object.freeze({a:1})` ⇒ writable:false / enumerable:true /
+   *   configurable:false；此前把 frozen 当 enumerable:false ⇒ 假红）；
+   * - configurable：缺省 true；sealed / frozen ⇒ false。
+   */
+  const cur = currentPropDesc(target, key);
+  const targetWritable = cur.writable;
+  const targetEnumerable = cur.enumerable;
+  const targetConfigurable = cur.configurable;
   // 规则 2：可配置性必须一致
   if (trapView.configurable !== undefined && trapView.configurable !== targetConfigurable) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  if (acc !== undefined) {
-    // 规则 4：靶是访问器 ⇒ 陷阱也必须报访问器描述符
-    if (!trapView.isAccessor) {
+  /**
+   * 规则 4：形态（数据 / 访问器）一致性——**仅当靶不可配置**时检查。
+   * ES2024 IsCompatiblePropertyDescriptor：形态（数据 ↔ 访问器）比对只在
+   * current.[[Configurable]] 为 false 时做；靶**可配置** ⇒ 原生**不抛**
+   * （node v26.10.0 实测：靶 {a:1} 可配置 + 陷阱报访问器描述符 ⇒ 原生返回
+   * 描述符、不抛；反向同款）。
+   */
+  if (!targetConfigurable) {
+    const targetIsAccessor = cur.isAccessor || acc !== undefined;
+    if (targetIsAccessor !== trapView.isAccessor) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
-    return; // get / set 的**身份**不可比 → 不抛（sound）
-  }
-  // 靶是数据属性 ⇒ 陷阱不得报访问器描述符
-  if (trapView.isAccessor) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // 规则 3：靶不可配置 ⇒ writable / enumerable 冻结；靶不可写时值也冻结
   if (targetConfigurable) return;

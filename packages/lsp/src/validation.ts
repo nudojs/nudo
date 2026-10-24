@@ -1139,15 +1139,18 @@ export async function envUnresolvedDiags(
       : name,
   );
   const fileEnvNames = collectEnvNames(filePath, source, false);
+  // 候选路径（**两层并集**）：本文件自己请求过的 env 解析路径——诊断过滤基准
+  // （项目级按**项目根**、文件级按**文件目录**）。先于预载收集 ⇒ 预载自身
+  // 抛出（stat 竞态等）时过滤基准仍在（诊断不得因预载失败而丢）。
   const candidates = new Set<string>();
+  for (const n of projectEnvSpec) candidates.add(resolvePath(projectEnvBaseDir, n));
+  for (const n of fileEnvNames) candidates.add(resolvePath(baseDir, n));
   try {
     if (projectEnvSpec.length > 0) {
       await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
-      for (const n of projectEnvSpec) candidates.add(resolvePath(projectEnvBaseDir, n));
     }
     if (fileEnvNames.length > 0) {
       await preloadPathEnvs(fileEnvNames, baseDir);
-      for (const n of fileEnvNames) candidates.add(resolvePath(baseDir, n));
     }
   } catch {
     /* preload 自身抛出（stat 竞态等）不拖垮诊断发布 */
@@ -1160,7 +1163,22 @@ export async function envUnresolvedDiags(
     if (typeof rendered === "string") byName.add(rendered);
   }
   const lengths = lineLengthsOf(source);
-  return getPathEnvLoadErrors(baseDir)
+  // 两层基准各取一次：文件级按**文件目录**、项目级按**项目根**。
+  // 失败条目按「记录时的 preload 目录」归档（`recordPathEnvError(path, baseDir, e)`），
+  // 只取文件目录 ⇒ 项目级 env 的失败取不到 ⇒ IDE 假绿（诊断不可见）且与 CLI 面
+  // 口径分裂（CLI 同款双取：`packages/nudojs/src/commands/check.ts`）。
+  // 合并后按**两层候选路径的并集**过滤（本文件自己请求过的路径才报）。
+  const seen = new Set<string>();
+  const loadErrors = [
+    ...getPathEnvLoadErrors(baseDir),
+    ...getPathEnvLoadErrors(projectEnvBaseDir),
+  ].filter((e) => {
+    const key = `${e.path}\u0000${e.error}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return loadErrors
     .filter((e) => candidates.has(e.path) || byName.has(e.path))
     // 与 check 主通道**同一个转换点**（同档 = warning，同 range = 无锚点
     // 形态 0:0→0:1）——不得在这里另起一套 range/severity 口径。

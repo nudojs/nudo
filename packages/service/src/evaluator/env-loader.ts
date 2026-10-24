@@ -143,6 +143,30 @@ function isPathEnvName(name: string, baseDir: string): boolean {
   return resolved.endsWith(".ts") && existsSync(resolved);
 }
 
+/**
+ * env 说明符的**绝对化**（相对说明符 → 绝对路径）。
+ *
+ * 两层基准各自用自己的解析目录（**项目级** = 项目根、**文件级** = 被分析文件
+ * 所在目录）；绝对化之后名字与「基准」解耦 ⇒ 收集期（`loadEnvs`）查表不再依赖
+ * 「**最后一次** preload 的目录」（进程级单槽）——否则项目级 env 在「文件声明了
+ * 任何 `@nudo:env`」时查表落空（env 全局丢失 ⇒ never/unknown ⇒ Bug 1098）。
+ *
+ * 规则与 CLI 的 `assembleEnvs`（`packages/nudojs/src/commands/check.ts`）同款：
+ * 只有 `./` / `../` 前缀的说明符被绝对化；内建名（`es` / `web` / `node`）与
+ * 裸拼写原样保留（空串也**保留** ⇒ 仍走「未知名 env」诊断，不静默吞）。
+ * 非字符串元素丢弃——配置形状由 config 层归一（`sanitizeProjectEnv`）。
+ */
+export function absolutizeEnvSpec(names: readonly unknown[], baseDir: string): string[] {
+  const out: string[] = [];
+  for (const name of names) {
+    if (typeof name !== "string") continue;
+    out.push(
+      name.startsWith("./") || name.startsWith("../") ? resolvePath(baseDir, name) : name,
+    );
+  }
+  return out;
+}
+
 // A harvested env file lives anywhere on disk (e.g. /tmp) and imports
 // "@nudojs/core" — a bare specifier that only resolves from inside the repo's
 // packages. When the direct import fails, rewrite those specifiers to absolute

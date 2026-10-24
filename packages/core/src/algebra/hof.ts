@@ -10,7 +10,7 @@ import { simplifyTerm, v as termVar, termToString } from "./term.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
-import { getSlot, joinAbs } from "./objects.ts";
+import { getSlot, joinAbs, makeSum } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
@@ -801,6 +801,24 @@ function bindTypeVars(
 }
 
 /**
+ * **已知 nullish 元素**（Bug 1097）：引擎把 `null` / `undefined` 建成
+ * 「`unknown` **形状** + lit **项**」（`abs.ts` 的 `absLit` / `exec` runtime 的
+ * `undef()`）⇒ 形状 kind 是 `unknown`，但**类型是已知的**。
+ *
+ * 与「真·推断失败」严格区分：后者是 `unknown` 形状且**没有**已知 lit
+ * （`unknown` 令牌 / 未知 term）⇒ 元素域真的不可知。
+ *
+ * 口径锚点（`abs.ts` 顶部）：`any` = 无约束并集（**自信的任意值**），
+ * `unknown` = 推导失败（**不是**任意值）⇒ 二者不可互换。
+ */
+function isKnownNullishAbs(el: Abs): boolean {
+  if (el.shape.k !== "unknown") return false;
+  const t = el.term;
+  if (t?.op !== "lit") return false;
+  return t.value === null || t.value === undefined;
+}
+
+/**
  * tuple 实参的**元素域**（Bug 1079）——arr 形参（收割的 `T[]`）× tuple 实参
  * （引擎的数组字面量）时 α 的取值。
  *
@@ -817,31 +835,73 @@ function bindTypeVars(
  * ⚠ 「首次绑定保留」语义（见上方 tuple×arr 臂注释）：`any` 也要**绑上去**
  * （而不是跳过）——否则后续形参可能把同一个 α 绑成窄类型 ⇒ 又回到「自信的
  * 错误类型」。
+ *
+ * **Bug 1097：`unknown` 形状 ≠ 域不可知。** 引擎把 `null` / `undefined`
+ * 建成「`unknown` 形状 + lit 项」⇒ 这两个是**已知类型**。此前按形状 kind
+ * 一刀切（`shape.k === "unknown"` ⇒ 域退 `any`）⇒ 精度回退（`[null]` 的
+ * 元素域从 `null` 退成 `any`）且 `any` 是「自信的任意值」（参与算术即抽象
+ * 强转 ⇒ 记 may-throw ⇒ L2 假红）。现按三类分派：
+ *
+ * 1. **已知 nullish**（`unknown` 形状 + lit 项，值为 `null`/`undefined`）
+ *    ⇒ 已知类型：**不参与**异型判定（否则 `[1,null]` 会被判异型），
+ *    只**贡献可空性**（`[1,null]` ⇒ `number | null`；只有 nullish ⇒ `null`）。
+ * 2. **真·推断失败**（`unknown` 形状且无已知 lit）⇒ 域**不可知** ⇒ 退
+ *    **`unknown`**（**不是** `any`：仓内口径 `unknown` = 推导失败，
+ *    `any` = 无约束并集）。选 `unknown` 还顺带避开 may-tier：算术抽象臂
+ *    对 `any` 记 may-throw、对 `unknown` 不记（wave 1 口径）⇒ 不制造
+ *    L2 假红。
+ * 3. **其它**（prim / obj / tuple / any…）⇒ 保持既有同型 base type 口径
+ *    （同型 ⇒ 该 base type；异型 ⇒ 仍退 `any`——本轮不把异型窄化成联合）。
  */
 function tupleElementDomain(elements: Abs[], rest?: Abs): Abs | undefined {
   const live = [...elements, ...(rest ? [rest] : [])].filter(
     (e) => e.shape.k !== "never",
   );
   if (live.length === 0) return undefined;
-  // 异型判定：元素 base type 必须一致（any / unknown 元素 ⇒ 域不可知）
-  let key: string | undefined;
+  // Bug 1097：先分流 nullish / 真·未知，其余走既有同型判定。
+  const nullish: Abs[] = [];
+  const others: Abs[] = [];
   for (const el of live) {
-    if (el.shape.k === "any" || el.shape.k === "unknown") return anyAbs;
+    if (el.shape.k === "unknown") {
+      // 已知 nullish（null / undefined）⇒ 已知类型：只贡献可空性。
+      if (isKnownNullishAbs(el)) nullish.push(el);
+      // 真·推断失败 ⇒ 元素域不可知 ⇒ unknown（不是 any）。
+      else return unknown;
+      continue;
+    }
+    others.push(el);
+  }
+  // 异型判定：元素 base type 必须一致
+  let key: string | undefined;
+  for (const el of others) {
     const k = el.shape.k === "prim" ? `prim:${el.shape.type}` : el.shape.k;
     if (key === undefined) key = k;
     else if (key !== k) return anyAbs;
   }
-  const conf = live.reduce((c, e) => confJoin(c, e.conf), "exact" as Confidence);
-  if (key!.startsWith("prim:")) {
-    const type = key!.slice("prim:".length) as PrimName;
-    const only = live[0]!;
-    // 单元素且非字面量：保留该项自身的界证据（term + pred）
-    if (live.length === 1 && only.term?.op !== "lit") return only;
-    // 字面量 / 多元素：落 base prim（字面量拓宽；多元素的界不互相成立 ⇒ 不下窄）
-    return { shape: { k: "prim", type }, conf };
+  // 只有 nullish 元素 ⇒ 域 = null / undefined（可空性本身就是域）。
+  if (key === undefined) {
+    let acc = nullish[0]!;
+    for (let i = 1; i < nullish.length; i++) acc = makeSum(acc, nullish[i]!);
+    return acc;
   }
-  // 同型结构形状：各元素 join（obj 槽并集 / 同构嵌套等）
-  return live.reduce((a, b) => joinAbs(a, b));
+  // `any` 元素 ⇒ 域 = any（吸收一切，含可空性：any | null ≡ any）。
+  if (key === "any") return anyAbs;
+  const conf = others.reduce((c, e) => confJoin(c, e.conf), "exact" as Confidence);
+  let base: Abs;
+  if (key.startsWith("prim:")) {
+    const type = key.slice("prim:".length) as PrimName;
+    const only = others[0]!;
+    // 单元素且非字面量：保留该项自身的界证据（term + pred）
+    if (others.length === 1 && only.term?.op !== "lit") base = only;
+    // 字面量 / 多元素：落 base prim（字面量拓宽；多元素的界不互相成立 ⇒ 不下窄）
+    else base = { shape: { k: "prim", type }, conf };
+  } else {
+    // 同型结构形状：各元素 join（obj 槽并集 / 同构嵌套等）
+    base = others.reduce((a, b) => joinAbs(a, b));
+  }
+  // 可空性：base ∪ {null / undefined}（用仓内既有 sum 构造，不自造联合表示）
+  if (nullish.length === 0) return base;
+  return nullish.reduce((acc, n) => makeSum(acc, n), base);
 }
 
 /**

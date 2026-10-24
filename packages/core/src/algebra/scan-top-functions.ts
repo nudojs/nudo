@@ -4,6 +4,10 @@
  *  P1：本地 `class Foo` 经 `export { Foo }` / `export { Foo as default }` /
  *  `export default Foo` 导出时同样登记实例方法。
  *
+ * ⚠ 本清单 = **函数**普查面（与 service 面 `collectTopLevelFunctions` 逐字
+ * 对齐 ⇒ 改这里必须同步改 service 面）。**类导出入口**（`new C()`）是另一
+ * 个面 ⇒ 见 {@link listClassEntryNames}（check 面专用，不进函数普查）。
+ *
  * 从 scan.ts 拆出：纯 AST 清单，无调用图状态。
  */
 
@@ -232,4 +236,78 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     }
   }
   return names;
+}
+
+/**
+ * 导出的**类**（本地名）清单 —— `new C()` 入口面（Bug 1096）。
+ *
+ * `export class C {}` 的**类值本身**是一个导出符号：`new C(x)` 是**真实
+ * 入口** ⇒ 构造器**无条件抛**是 check 闸门必须看得见的事实。此前类导出不在
+ * 入口表 ⇒ 构造器必抛在 check 面（与 `nudo test` 见证面）**双面不可见** ⇒
+ * CI 闸门假绿（Bug 1096）。
+ *
+ * 导出形态与 {@link listTopFunctions} 的类方法口径**同源**（同一批形态）：
+ * - `export class C {}` / `export default class C {}` ⇒ `C`；
+ * - `export { C }` / `export { C as default }` / `export { C as X }` ⇒ `C`
+ *   （**本地名**口径：与 `localNamedExports` 一致 ⇒ L2 的 isEntry 判得到）；
+ * - `export default C`（本地类）⇒ `C`。
+ *
+ * ⚠ **不进**函数普查面（`listTopFunctions`）：普查面是**函数**表，且与 service
+ * 面 `collectTopLevelFunctions` 逐字对齐（改它必须同步改 service 面 ⇒ 越界）。
+ * 类导出入口是 check 面（L2 入口门禁）专用的**另一个面** ⇒ 由 check 面把本
+ * 清单并进入口表。
+ */
+export function listClassEntryNames(
+  source: string,
+  file?: ReturnType<typeof parse>,
+): string[] {
+  const f = file ?? parse(source);
+  const out: string[] = [];
+  const push = (n: string | undefined): void => {
+    if (n && !out.includes(n)) out.push(n);
+  };
+  /** 本地 ClassDeclaration（含未直接 export 的） */
+  const localClasses = new Map<string, Node>();
+  for (const stmt of f.program.body) {
+    if (stmt.type === "ClassDeclaration") {
+      const cname = (stmt as { id?: { name?: string } }).id?.name;
+      if (cname) localClasses.set(cname, stmt);
+    }
+  }
+  for (const stmt of f.program.body) {
+    // export { C } / export { C as default } / export { C as X }（说明符语句）
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.declaration) {
+      for (const spec of stmt.specifiers ?? []) {
+        const s = spec as { type?: string; local?: { name?: string } };
+        if (s.type !== "ExportSpecifier") continue;
+        const localName = s.local?.name;
+        if (!localName) continue;
+        if (!localClasses.has(localName)) continue;
+        push(localName);
+      }
+      continue;
+    }
+    // export class C {} / export default class C {} / export default C
+    if (
+      stmt.type === "ExportNamedDeclaration" ||
+      stmt.type === "ExportDefaultDeclaration"
+    ) {
+      const d = stmt.declaration as
+        | { type?: string; id?: { name?: string } }
+        | null
+        | undefined;
+      if (!d) continue;
+      if (d.type === "ClassDeclaration") {
+        push(d.id?.name);
+        continue;
+      }
+      // export default C（本地类）
+      if (stmt.type === "ExportDefaultDeclaration" && d.type === "Identifier") {
+        const localName = d.id?.name;
+        if (localName && localClasses.has(localName)) push(localName);
+      }
+      continue;
+    }
+  }
+  return out;
 }

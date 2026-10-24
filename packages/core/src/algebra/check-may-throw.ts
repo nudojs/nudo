@@ -48,6 +48,7 @@ import {
 } from "./exec/may-throw.ts";
 import { MAX_CHECK_MEMO } from "./check-memo.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
+import { extractDeclaredThrows } from "./refine.ts";
 import type { parseSource } from "./parse-source.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
@@ -159,6 +160,29 @@ export function invokeAsThrows(fn: () => Abs, phi: Phi = pTrue): TranspiledCallR
   }
 }
 /**
+ * 入口的**申报式 throws**（`@nudo:throws`）—— 类入口额外看**构造器**的申报。
+ *
+ * Bug 1096：类导出入口（`new C()`）的构造器在 directive-scan 里的 scope 名是
+ * `C.constructor`（类方法 scope 口径）⇒ 按入口名 `C` 查**查不到** ⇒ 用户在
+ * 构造器上申报的 `@nudo:throws TypeError` 会被忽略 ⇒ 闸门无从放行 ⇒ 假红
+ * （用户已声明仍被卡）。类入口额外查一次构造器 scope 即可闭环。
+ *
+ * check.ts 的门禁过滤处（`const declared = extractDeclaredThrows(source, name)
+ * ?? …`）改调本函数即可。**不**在此处过滤 effects：门禁过滤 ≠ 藏事实
+ * （未过滤的 throws 仍要上屏）。
+ */
+export function declaredThrowsForEntry(
+  source: string,
+  fnName: string,
+): string[] | "*" | undefined {
+  const own = extractDeclaredThrows(source, fnName);
+  if (own !== undefined) return own;
+  // 类入口（无点号的普查名）⇒ 构造器 scope `C.constructor` 兜底
+  if (fnName.includes(".")) return undefined;
+  return extractDeclaredThrows(source, `${fnName}.constructor`);
+}
+
+/**
  * L2 throws 的 evaluator 求值（详细形态）。
  *
  * 三种结局见 {@link ThrowsOutcome}。**Bug 379**：类方法桥补**实例方法**
@@ -167,6 +191,11 @@ export function invokeAsThrows(fn: () => Abs, phi: Phi = pTrue): TranspiledCallR
  *
  * **Bug 380**：转译器拒绝构造 ⇒ 模块整体未求值 ⇒ 结局是 `unanalyzable`
  * （**不是**「分析出没有 may-throw」）。
+ *
+ * **Bug 1096**：**类导出入口**（`new C()`）—— 构造器的**无条件抛**（硬抛）
+ * 是可判定事实 ⇒ 必须进 throws 域（此前实例方法桥 `catch {}` 吞掉 ⇒ 构造器
+ * 必抛在 check 闸门与 `nudo test` 见证面**双面不可见** ⇒ CI 闸门假绿）。
+ * 口径见 {@link classEntryThrows}。
  */
 export function evalThrowsOutcome(
   source: string,
@@ -213,6 +242,20 @@ export function evalThrowsOutcome(
     }
   };
   try {
+    // Bug 1096：类导出入口（`new C()`）—— 构造器实参补 any 后**硬抛**
+    // （= 无条件 throw）⇒ 那是 `new C()` 这个**真实入口**的 may-throw ⇒
+    // 必须进 throws 域（否则构造器必抛在 check 闸门上完全不可见 ⇒ 假绿）。
+    // 软效果（any 补位的强制转换，Bug 1070 口径）**不进** ⇒ 普通类不触发
+    // error 级 `nudo:entry-may-throw`（不假红）。
+    if (!fnName.includes(".")) {
+      const clsAbs = classAbsOf(exports, file, fnName);
+      if (isAbsVal(clsAbs) && isClassValueAbs(clsAbs)) {
+        return {
+          kind: "analyzed",
+          result: classEntryThrows(clsAbs as Abs, file, fnName, phi),
+        };
+      }
+    }
     // own-property：`in` 走原型链，toString/constructor 等继承名会被当真实导出
     if (Object.hasOwn(exports, fnName)) {
       const r = call(fnName, args);
@@ -302,6 +345,46 @@ function classAbsOf(
 }
 
 /**
+ * 类**值**（构造器本身）判定：brand + `ctor: true` facet。
+ *
+ * 实例 brand **无**此 facet（`exec/class/declare.ts`：ctor facet 只挂类值）
+ * ⇒ 判据不会把「实例」误认成「类」。
+ */
+function isClassValueAbs(v: Abs): boolean {
+  return v.shape.k === "brand" && v.shape.ctor === true;
+}
+
+/**
+ * 类导出入口（`new C()`）的 throws 域（Bug 1096）。
+ *
+ * 口径（与实例方法桥的构造器隔离**孪生**，两处同构）：
+ * - 构造器在**独立 may-throw 会话**里跑 ⇒ 软效果（`recordMayThrow`：any
+ *   补位的强制转换 / any 成员访问）与 try 帧栈都**不进**本入口的收集域。
+ *   依据 Bug 1070：构造器实参一律补 any ⇒ `x + 1` / `x.toFixed()` 必产
+ *   TypeError ⇒ 那是 any 补位的**伪影**（真实调用点传具体实参时构造器可能
+ *   是 total 的）⇒ 报它 = 假红（一个普通类就能卡死用户 CI）。
+ * - **硬抛**（NudoThrow：构造器里的无条件 `throw`）**进** throws 域 ⇒ 这是
+ *   `new C()` 的真实 may-throw ⇒ 归因落点 = 类声明处的 `Class` 入口（此前
+ *   构造器必抛被 `catch {}` 吞掉 ⇒ check 闸门与 `nudo test` 见证面双面
+ *   不可见 ⇒ 假绿）。
+ *
+ * 与实例方法桥的差别只有一处：**这里不吞硬抛**（要把它交给门禁），实例方法
+ * 桥仍按 Bug 1070 口径把构造器的 throws 挡在方法入口之外（硬抛 ⇒ 裸实例
+ * 兜底，见 {@link instanceForMethodBridge}）。
+ */
+function classEntryThrows(
+  clsAbs: Abs,
+  file: ParsedFile | undefined,
+  clsName: string,
+  phi: Phi,
+): TranspiledCallResult {
+  return invokeAsThrows(
+    () => runWithMayThrowSession(() => $new(clsAbs, ctorAnyArgs(file, clsName))),
+    phi,
+  );
+}
+
+/**
  * 类方法静态/实例判定（按**源码类声明**；判不出 → undefined）。
  *
  * 判据来源必须是源码而非运行期：静态桥 `$staticInvoke` 对**不存在**的静态
@@ -367,20 +450,38 @@ function ctorAnyArgs(file: ParsedFile | undefined, clsName: string): Abs[] {
  * ⚠ 构造器仍**要跑**：方法体读 `this.<字段>` 时需要构造器写入的槽值 ⇒
  * 跳过构造器会把字段读退成 unknown ⇒ 方法体**自己**的 may-throw 证据
  * 也一起丢（假绿）。构造器只隔离「证据」，不隔离「副作用」。
+ *
+ * **Bug 1096**：硬抛不再被**彻底丢弃**——它归因到 `new C()` 这个**真实
+ * 入口**（类导出入口，见 {@link classEntryThrows}）：构造器无条件抛是
+ * 可判定事实 ⇒ check 闸门必须看得见（否则假绿）。方法入口仍**不**背这条
+ * 账（Bug 1070 口径不变 ⇒ 不假红）。裸实例的内层改为 unknown（构造器写过
+ * 的字段 = 不可知，不是「确定不存在」）⇒ 见 {@link bareInstanceOf}。
  */
 function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
   try {
     // 独立会话 ⇒ 构造器期间的效果/帧栈不进外层收集域（见上）
     return runWithMayThrowSession(() => $new(clsAbs, ctorArgs));
   } catch {
-    // 构造器抛 ⇒ 归因给构造器入口，不归因给方法 ⇒ 裸实例兜底
+    // 构造器抛 ⇒ 归因给构造器入口（`new C()`，见 classEntryThrows），
+    // **不**归因给方法 ⇒ 裸实例兜底（字段按不可知处理）
     return bareInstanceOf(clsAbs, clsName);
   }
 }
 
 /**
  * 裸实例（跳过构造器）：brand 名取**类值**的 brand 名（类值即 brand ⇒
- * 导出槽兜底 / `export default class` 同口径），内层是空 obj。
+ * 导出槽兜底 / `export default class` 同口径）。
+ *
+ * **内层是 unknown，不是空 obj**（Bug 1096）：构造器抛 ⇒ 构造器写过的字段
+ * **不可知**（不是「确定不存在」）⇒ 空 obj 会把 `this.v` 折成**确定的
+ * undefined**（自信的错值：真实是构造器写入的值）⇒ 连带 `this.v.toFixed()`
+ * 在**虚构实例**上抛 TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必
+ * 抛、恒返回 never」）+ error 级 `nudo:entry-may-throw`（假红，直接卡 CI）。
+ * 内层 unknown ⇒ 字段读 = unknown（不可知）⇒ 成员调用不产 may-throw ⇒
+ * 签名不折 never（兜底实例的 TypeError 不得决定方法签名）。
+ *
+ * 与 `generalize.ts` 的同名孪生实现**同构**（那处是值域通道）——两处必须
+ * 一起改，否则证据域与值域口径漂移。
  */
 function bareInstanceOf(clsAbs: Abs, clsName: string): Abs {
   const name =
@@ -391,7 +492,7 @@ function bareInstanceOf(clsAbs: Abs, clsName: string): Abs {
     {
       k: "brand",
       name,
-      shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+      shape: abs({ k: "unknown" }, undefined, undefined, "partial"),
     },
     undefined,
     undefined,

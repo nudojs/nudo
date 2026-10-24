@@ -126,13 +126,26 @@ function evalRunOf(
  * import 本文件**的 `ctorParamCountOf` ⇒ 此处**就地复刻**，不跨模块耦合以免
  * 成包环）：构造器抛 ⇒ 退到**裸实例**（跳过构造器）继续求值方法体 ⇒ 方法体
  * 自身的推断照常产出（闸门不整体关掉）。
+ *
+ * **Bug 1096**：裸实例的**内层是 unknown，不是空 obj**——构造器写过的字段
+ * 是**不可知**，不是「确定不存在」：空 obj 会把 `this.v` 折成**确定的
+ * undefined**（自信的错值）⇒ 连带 `this.v.toFixed()` 在**虚构实例**上抛
+ * TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必抛、恒返回 never」）
+ * ⇒ 连带 error 级 `nudo:entry-may-throw`（假红，直接卡 CI）。内层 unknown
+ * ⇒ 字段读 = unknown（不可知）⇒ 成员调用不产 may-throw ⇒ 签名不折 never
+ * （兜底实例的 TypeError 不得决定方法签名），而方法体**自己**的推断照常
+ * 产出（不退化成整体 opaque）。
+ *
+ * 与 `check-may-throw.ts` 的同名孪生实现**同构**（那处是证据域通道）——
+ * 两处必须一起改，否则证据域与值域口径漂移。
  */
 function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
   try {
     return $new(clsAbs, ctorArgs);
   } catch {
     // 裸实例：brand 名取**类值**的 brand 名（类值即 brand ⇒ `export default
-    // class` 同口径），内层是空 obj
+    // class` 同口径），内层是 **unknown**（构造器写过的字段 = 不可知，
+    // 不是「确定不存在」⇒ 不折确定的 undefined / 不在虚构实例上抛）
     const name =
       clsAbs.shape.k === "brand" && clsAbs.shape.name.length > 0
         ? clsAbs.shape.name
@@ -141,7 +154,7 @@ function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]):
       {
         k: "brand",
         name,
-        shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+        shape: abs({ k: "unknown" }, undefined, undefined, "partial"),
       },
       undefined,
       undefined,
@@ -182,6 +195,92 @@ export function ctorParamCountOf(
     }
   }
   return 0;
+}
+
+/**
+ * 类声明的**构造器形参表**（类入口签名面用；无显式 ctor → 空表）。
+ *
+ * 遍历口径**刻意与** {@link ctorParamCountOf} 同源（同一批语句形态）⇒ 形参
+ * 个数与「构造实参补 any 的个数」永远一致（否则签名面显示 N 个形参、而构造
+ * 实参只补 M 个 ⇒ 两面自相矛盾）。
+ */
+function ctorFormalsOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): FormalParam[] {
+  for (const stmt of fileAst.program.body) {
+    if (
+      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
+      "declaration" in (stmt as object)
+    ) {
+      const decl = stmt.type === "ExportNamedDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt;
+      if (!decl || typeof decl !== "object") continue;
+      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
+      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
+        for (const m of c.body?.body ?? []) {
+          const mem = m as { kind?: string; params?: unknown[] };
+          if (mem.kind === "constructor") {
+            return formalParamsFromNodes(mem.params as never);
+          }
+        }
+        return [];
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * 类导出入口的签名（**Bug 1096**）。
+ *
+ * `export class C {}` 的**类值本身**是一个导出符号：`new C(x)` 是**真实
+ * 入口** ⇒ L2 门禁必须能归因「构造器无条件抛」（此前类导出不在入口表 ⇒
+ * 构造器必抛在 check 面**完全不可见** ⇒ CI 闸门假绿）。
+ *
+ * 签名面 = **类值**（brand `C`）+ **构造器形参**（`new C(x)` 的实参位）：
+ * 类不是被调用的函数（`C(x)` 是运行时 TypeError）⇒ 形参面取构造器形参，
+ * 返回值取类值本身（不是 `any`、也不是 unknown——类值是**已知**的）。
+ */
+function classEntryPolyFn(
+  fnName: string,
+  source: string,
+  opts: {
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    inject?: RunTranspiledOptions;
+    file?: ReturnType<typeof babelParse>;
+  },
+): PolyFn | undefined {
+  const fileAst = opts.file ?? babelParse(source);
+  const evalRun = evalRunOf(source, opts.modules, scopeSelectedInject(opts.inject, fnName));
+  if (!evalRun) return undefined;
+  const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
+  // 槽位口径与类方法桥同源（export-slot.ts：cjs-member 与 named 同键取值）
+  const raw = slot ? evalRun[slot.key] : evalRun[fnName];
+  if (!raw || typeof raw !== "object" || !("shape" in (raw as object))) return undefined;
+  const clsAbs = raw as Abs;
+  // 类值 = brand + `ctor: true` facet（实例 brand 无此 facet）
+  if (clsAbs.shape.k !== "brand" || clsAbs.shape.ctor !== true) return undefined;
+  const formals = ctorFormalsOf(fileAst, fnName);
+  const params = formals.length > 0 ? formalParamSignatureNames(formals) : [];
+  const typeParams: TypeParam[] = formals.map((f, i) => {
+    // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
+    const shape = absShapeForTsTypeText(f.tsType);
+    return {
+      id: `A${i + 1}`,
+      value: abs(shape ?? { k: "any" }, undefined, pTrue, "path"),
+    };
+  });
+  return {
+    name: fnName,
+    params,
+    typeParams,
+    symbolic: clsAbs,
+    instantiate: () => clsAbs,
+    display: formatPoly(fnName, params, params, typeParams, clsAbs),
+    ...(formals.length > 0 ? { formals } : {}),
+  };
 }
 
 function bodyReferencesName(body: Node, name: string): boolean {
@@ -826,7 +925,12 @@ function generalizeFromAstUncached(
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
-  if (!extracted) return undefined;
+  if (!extracted) {
+    // Bug 1096：类导出入口（`new C()`）—— 类值本身是导出符号 ⇒ 签名面
+    // 必须有它（否则 check 面的 L2 门禁无从归因「构造器必抛」⇒ 假绿；
+    // 且 `nudo:no-signature` 会把类误报成「推断失败」）。
+    return classEntryPolyFn(fnName, source, opts);
+  }
   const { params, body, env, formals } = extracted;
   const budget = opts.budget ?? defaultLeakBudget;
   const label = opts.label ?? "A";

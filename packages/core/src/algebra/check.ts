@@ -33,7 +33,6 @@ import {
   extractAssumeSegs,
   extractInvariantSegs,
   extractRefineReturnFromSource,
-  extractDeclaredThrows,
   fnTopLevelLocalNames,
   refineDiagCount,
   setRefineDiagCollector,
@@ -94,6 +93,11 @@ import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
+// Bug 1096：**类导出入口**（`new C()`）是真实的 L2 入口——构造器必抛必须能
+// 归因到它（否则构造器证据被丢弃 ⇒ 闸门假绿）。`listClassEntryNames` 与
+// `listTopFunctions` 是**两个普查面**（后者是函数普查面，与 service 面
+// `collectTopLevelFunctions` 逐字对齐，不能改它）⇒ 单独取类清单并入入口表。
+import { listClassEntryNames } from "./scan-top-functions.ts";
 import {
   interfaceDriftIssues,
   type DriftCandidate,
@@ -106,7 +110,11 @@ import {
   findFnLoc,
   formatSigCached,
 } from "./check-signatures.ts";
-import { collectEntryMayThrows, evalAnalyzeOpts } from "./check-may-throw.ts";
+import {
+  collectEntryMayThrows,
+  declaredThrowsForEntry,
+  evalAnalyzeOpts,
+} from "./check-may-throw.ts";
 import { structuralAssignIssues } from "./check-assign.ts";
 import { scanCaseInconsistency } from "./check-case-scan.ts";
 import {
@@ -255,7 +263,12 @@ function checkSourceInScope(
   const signatures: NudoSig[] = [];
   // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
   const file = parse(source);
-  const names = listTopFunctions(source, file);
+  // Bug 1096：类导出入口（`new C()`）并入 L2 入口表——构造器必抛有了真实
+  // 归因落点（此前构造器证据被丢弃 ⇒ 闸门假绿）。
+  const names = [
+    ...listTopFunctions(source, file),
+    ...listClassEntryNames(source, file),
+  ];
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =
@@ -1029,7 +1042,7 @@ function checkSourceInner(
         const effects = collectEntryMayThrows(source, name, synthetic, file, phi, opts);
         const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
         const declared =
-          extractDeclaredThrows(source, name) ??
+          declaredThrowsForEntry(source, name) ??
           effectiveInterfaceCached(name)?.throws?.kinds;
         const remaining = filterGateThrows(effects, declared, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
@@ -1088,7 +1101,7 @@ function checkSourceInner(
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
       const declared =
-        extractDeclaredThrows(source, name) ??
+        declaredThrowsForEntry(source, name) ??
         effectiveInterfaceCached(name)?.throws?.kinds;
       const remaining = filterGateThrows(effects, declared, ignoreThrows);
       const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));

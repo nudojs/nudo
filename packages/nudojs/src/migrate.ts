@@ -57,11 +57,38 @@ export type MigrateStatusRow = {
   excluded?: string[];
 };
 
+/**
+ * strip 产物的**写盘状态**（机器面 · Bug 1100）。
+ *
+ * 消费方**只读这个字段**就能判定「产物是不是真的落盘了」，不必去解析
+ * `notes` 里的自由文本——此前「已写盘」与「计划成功但本批未写盘」只能靠
+ * 一句 note 区分 ⇒ 机器消费方极易把「计划成功」误判成「已产出」。
+ */
+export type StripWriteStatus =
+  /** 产物**已落盘**（写盘轮全成功） */
+  | "written"
+  /** 计划成功但**未写盘**：本批因别的文件失败而**整批零写盘**（原子性 · Bug 574） */
+  | "not-written"
+  /** **未请求写盘**（dry-run）⇒ 只有计划面，磁盘上没有产物 */
+  | "planned";
+
 export type StripResult = {
   file: string;
   outFile: string;
   sidecarDraft?: string;
   notes: string[];
+  /**
+   * 写盘状态（机器面 · Bug 1100）——`written` / `not-written` / `planned`。
+   *
+   * ⚠ 库面只在**写盘轮**（`write: true`）填真值（`written` / `not-written`）：
+   * - `written` ⇒ 产物**已落盘**；
+   * - `not-written` ⇒ **整批零写盘**（本批有别的文件失败）⇒ `outFile` 不存在。
+   *
+   * dry-run（`write: false`）的行**不带**此键（dry-run 天然「未写盘」⇒
+   * 返回形状逐字不变）；命令层（`commands/migrate.ts`）为 dry-run 的行补
+   * `planned` ⇒ CLI 的 `--json` **逐行同构** ⇒ 消费方只读结构化字段即可判定。
+   */
+  writeStatus?: StripWriteStatus;
   /**
    * 失败码（机器面）——**与 `migrateVerify` 同款**（`VerifyResult.code`）。
    *
@@ -2172,15 +2199,19 @@ export async function migrateStrip(
   const failures = outcomes.filter((o): o is StripFileFailure => o.kind === "failure");
   const plans = outcomes.filter((o): o is StripPlan => o.kind === "plan");
   if (!opts.write) {
+    // dry-run：**一个字节都不写** ⇒ 行不带写盘状态（库面 dry-run 的返回
+    // 形状逐字不变）；命令层按「计划面」补 `planned`（CLI 的 JSON 协议
+    // 逐行同构 ⇒ 消费方只读结构化字段即可判定产物有没有落盘）。
     return outcomes.map(stripOutcomeToResult);
   }
   if (failures.length > 0) {
     // 原子性（Bug 574）：任一文件失败 ⇒ **整批零写盘**。
-    // 但**结果不丢**：成功文件的行照常返回（附「未写盘」注记 ⇒ 调用方
-    // 不会把「计划成功」误读成「已写盘」）。
+    // 但**结果不丢**：成功文件的行照常返回（附「未写盘」注记 + **写盘状态
+    // 标记** `not-written` ⇒ 调用方不会把「计划成功」误读成「已写盘」）。
     const rows = outcomes.map(stripOutcomeToResult);
     for (const row of rows) {
       if (!row.code) row.notes.push(STRIP_NOT_WRITTEN_NOTE);
+      row.writeStatus = "not-written";
     }
     return rows;
   }
@@ -2247,6 +2278,9 @@ export async function migrateStrip(
       outFile: relative(process.cwd(), p.outFile),
       ...(sidecarDraft ? { sidecarDraft: relative(process.cwd(), sidecarDraft) } : {}),
       notes: p.notes,
+      // 写盘轮走到这里 ⇒ 事务已提交 ⇒ 产物**确实落盘**（Bug 1100：机器面
+      // 的「已写盘」标记只能来自这一步，不能由调用方猜）。
+      writeStatus: "written",
     });
   }
   return results;

@@ -22,7 +22,7 @@ import type { NudoConstraint } from "./constraint.ts";
 import type { CheckIssue } from "./check-report.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { assertImplies, phiSuppliesConstraint } from "./postcondition.ts";
-import { noteAssumeConsumed } from "./assume-ledger.ts";
+import { assumeConsumed, noteAssumeConsumed } from "./assume-ledger.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
 import { DIAG } from "./diag-codes.ts";
@@ -111,6 +111,10 @@ export function checkReturnConstraint(
   // Bug 1094：**Φ 依赖判定 + 记账**——去掉 Φ 就证不出 ⇒ 本次证明依赖路径
   // 前提 ⇒ 把命中的前提记进账本（对象身份）⇒ 归因面（nudo:assume-relied）
   // 可见：用户公理不得被静默消费。
+  //
+  // ⚠ 这次记账是**活写**：归因面在下方就地读账本（读在写之后）⇒ 命中的前提
+  // 真的进 `nudo:assume-relied`。早前版本的归因集取自调用方传入的调用**前**
+  // 快照 ⇒ 这里的写入读不到（死写）⇒ 账本与归因两套口径。
   const phiUsedIdx = new Set<number>();
   if (phi && proof.status === "proved" && phiPremises && phiPremises.length > 0) {
     const withoutPhi = assertImplies(ret, constraint);
@@ -143,9 +147,25 @@ export function checkReturnConstraint(
     // #367：粒度从「函数级（声明了就算）」收紧到「**本次证明消费过**」
     // （消费集由代数核在引理消费点记账 ⇒ 只认真产出了界的那条引理）。
     // Bug 1094：Φ 侧消费的前提同样进归因集（公理不得被静默消费）。
+    // 归因集 = **引理账本**（assume-ledger.ts）真正消费过的前提 ∪ Φ 侧命中的
+    // 前提（phiUsedIdx 兜底）∪ 调用方传入的快照（consumedAssume）。
+    //
+    // ⚠ 账本取数必须在**本次 Φ 消费记账之后**：Φ 侧的 `noteAssumeConsumed`
+    // 写入发生在上面的证明段里，而调用方传入的 `consumedAssume` 快照取自
+    // 调用**之前** ⇒ 早取会把 Φ 侧的写入读丢（账本写入成了死写）。
+    // ⇒ 这里就地取账本（读在写之后），账本才是"消费过"的唯一事实源。
+    const ledgerUsedIdx = new Set<number>();
+    if (assumeDisplay && phiPremises) {
+      const consumed = assumeConsumed();
+      for (let i = 0; i < assumeDisplay.length; i++) {
+        const premise = phiPremises[i];
+        if (premise !== undefined && consumed.includes(premise)) ledgerUsedIdx.add(i);
+      }
+    }
     const relied: CheckIssue[] = [];
     const usedAssume = (assumeDisplay ?? []).filter(
-      (d, i) => consumedAssume?.has(d) === true || phiUsedIdx.has(i),
+      (d, i) =>
+        consumedAssume?.has(d) === true || ledgerUsedIdx.has(i) || phiUsedIdx.has(i),
     );
     if (usedAssume.length > 0) {
       relied.push({

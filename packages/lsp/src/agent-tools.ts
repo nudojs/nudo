@@ -101,6 +101,9 @@ import {
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
 } from "@nudojs/service";
+// env 说明符绝对化（项目级按**项目根**、文件级按**文件目录**）——与 CLI
+// `assembleEnvs` 同款；service 侧唯一事实源。
+import { absolutizeEnvSpec } from "@nudojs/service/evaluator";
 
 export { injectBindings, typeExprToDirective, type TypeBinding };
 
@@ -428,8 +431,21 @@ export function buildLspInjection(
   const loadModule = opts?.loadModule;
   // env 名单：文件级 `@nudo:env`（文本扫描，不 parse ⇒ 语法错文件也不炸）
   // ∪ 项目级 package.json#nudo.env —— 与 CLI `allEnvNames` 同口径。
-  const projEnv = findProjectConfig(dirname(filePath))?.config.env;
-  const projectEnvNames = Array.isArray(projEnv) ? projEnv : [];
+  //
+  // 项目级相对说明符按**项目根**绝对化（CLI `assembleEnvs` 同款，`absolutizeEnvSpec`
+  // 单一事实源）：否则注入包里的项目级 env 名仍是**相对名**，而查表基准 =
+  // 「最后一次预载的目录」= **文件目录**（文件级 env 预载在后）⇒ 唯一候选
+  // `<proj>/src/env.mjs` ≠ 预载登记的 `<proj>/env.mjs` ⇒ 查表落空 ⇒
+  // env 全局缺失 ⇒ `checkSource` 的入口求值抛 ReferenceError ⇒ 报 L2
+  // `nudo:entry-may-throw`（**IDE 红 / CLI 绿**的假红）。
+  // 文件级相对名**保持相对**（仍按文件目录解析）。
+  const proj = findProjectConfig(dirname(filePath));
+  const projEnv = proj?.config.env;
+  const projectEnvBaseDir = proj?.projectDir ?? dirname(filePath);
+  const projectEnvNames = absolutizeEnvSpec(
+    Array.isArray(projEnv) ? projEnv : [],
+    projectEnvBaseDir,
+  );
   const envNames = [
     ...new Set([...projectEnvNames, ...extractFileEnvNames(source)]),
   ];

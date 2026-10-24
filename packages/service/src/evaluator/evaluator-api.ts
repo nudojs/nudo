@@ -15,7 +15,16 @@ export {
   builtinProtoMemberNames,
 } from "./builtins/builtin-prototype.ts";
 
-export { loadEnvs, loadEnvsAsync, preloadPathEnvs, getPathEnvLoadErrors, getPathEnvDepContents, pathEnvPreloadFingerprint, type LoadedEnv } from "./env-loader.ts";
+export {
+  loadEnvs,
+  loadEnvsAsync,
+  preloadPathEnvs,
+  getPathEnvLoadErrors,
+  getPathEnvDepContents,
+  pathEnvPreloadFingerprint,
+  absolutizeEnvSpec,
+  type LoadedEnv,
+} from "./env-loader.ts";
 
 export {
   findProjectConfig,

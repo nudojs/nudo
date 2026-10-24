@@ -37,7 +37,7 @@ import {
   type CallRecord,
 } from "./evaluator/call-record.ts";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
-import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
+import { pathEnvPreloadFingerprint, absolutizeEnvSpec } from "./evaluator/env-loader.ts";
 import {
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
@@ -209,8 +209,19 @@ export function analyzeFileUncachedInner(
     .flatMap((d) => d.envs);
 
   const projectConfig = findProjectConfig(dirname(filePath));
-  const projectEnvNames = projectConfig?.config.env ?? [];
-  const envNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
+  // Bug 1098：项目级 env 的相对说明符必须**绝对化**（按**项目根**）——收集期的
+  // 查表基准 = 「最后一次 preload 的目录」= **文件目录**（文件级 env 预载在后），
+  // 而相对说明符只有**唯一候选** ⇒ 不绝对化则项目级 env 必然查表落空
+  // （env 全局丢失 ⇒ 返回面 never + `nudo:builtin-unknown` 假阳 + 类型面退化）。
+  // 与 `analyzeFileAsync` 的预载侧、CLI 的 `assembleEnvs` 同一套规则。
+  const projectEnvBaseDir = projectConfig?.projectDir ?? dirname(filePath);
+  const rawProjectEnv = projectConfig?.config.env;
+  const projectEnvSpec = absolutizeEnvSpec(
+    Array.isArray(rawProjectEnv) ? rawProjectEnv : [],
+    projectEnvBaseDir,
+  );
+  // 顺序：项目级先、文件级后（文件级相对名仍按**文件目录**解析）。
+  const envNames = [...new Set([...projectEnvSpec, ...fileEnvNames])];
   const analysisCfg = analysisConfig(projectConfig?.config);
   const callSiteBudget = analysisCfg.callSiteBudget;
 
