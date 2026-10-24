@@ -11,135 +11,12022 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.15.2 |
-| `@nudojs/service` | 1.9.2 |
-| `nudojs (CLI)` | 1.6.2 |
-| `@nudojs/parser` | 1.5.2 |
-| `@nudojs/lsp` | 1.7.2 |
-| `@nudojs/env` | 0.5.2 |
-| `@nudojs/harvester` | 0.4.2 |
-| `vite-plugin-nudo` | 0.5.2 |
-| `nudo-vscode` | 0.3.50 |
+| `@nudojs/core` | 1.16.0 |
+| `@nudojs/service` | 1.10.0 |
+| `nudojs (CLI)` | 1.7.0 |
+| `@nudojs/parser` | 1.5.3 |
+| `@nudojs/lsp` | 1.8.0 |
+| `@nudojs/env` | 0.5.3 |
+| `@nudojs/harvester` | 0.4.3 |
+| `vite-plugin-nudo` | 0.6.0 |
+| `nudo-vscode` | 0.3.51 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.15.2 {#pkg-core}
+## @nudojs/core 1.16.0 {#pkg-core}
 
-## 1.15.2
+## 1.16.0
+
+### Minor Changes
+
+- f896290: **BREAKING**: 类成员的调用点参数契约补齐**三条保守边界**（与普通函数 / 具名导入
+  同一口径）。
+  
+  `nudo check` 此前对以下类成员调用点**零义务**（违约代码判绿）：
+  
+  - **未导出的本地类**：`class L { @nudo:contract m }` 的 `const c = new L(); c.m(-1)` /
+    `new L().m(-1)` / `L.s(-1)`。普通**未导出本地函数**本来就在调用点执法 ⇒ 类成员与
+    本地函数规则不一致（同一义务两套口径）。
+  - **匿名 `export default class { m(a){} }`**：`import K from "./lib.js"` 后
+    `new K().m(-1)` 解析不到类（具名 `export default class K` 已可用）。匿名类没有
+    本地名 ⇒ 契约键用导出槽名（`default.m`，侧车键 `default_m`；`@nudo:contract` 的
+    指令 scope 同口径）⇒ `nudo check` 现在报 `fn: default.m`。
+  - **命名空间导入**：`import * as ns from "./lib.js"` 的 `new ns.K().m(-1)` /
+    `ns.K.s(-1)`（`const m = require(...)` 的 `m.K` 同路径）。类解析与具名导入共用
+    同一套类 AST 事实（`classBindingOf`），不另写模块解析器。
+  
+  修法：模块级本地类的 own 方法名并入**调用点扫描**的 knownFns（签名普查面 / L2 入口表
+  不动 ⇒ `nudo check` 的签名列表不因本地类扩面）；匿名默认类绑定名 = `default`；
+  命名空间模块按**词法作用域**解析（内层同名声明遮蔽 ⇒ 不解析）。
+  
+  **谁不会坏（守卫，全部保持零新诊断）**：继承而来（非 own）的方法；构造器
+  `this.m = …` / 同名类字段覆盖；getter / setter / computed 成员名；静态 / 实例交叉
+  调用（`K.m` 调实例方法、`new K().s` 调静态方法）；接收者被形参 / 局部声明遮蔽；
+  重新赋值（失效范围从「当前作用域帧」改为**沿作用域链**——函数体内
+  `L = …` 之后不再套旧类契约）；未声明契约的类与方法（未导出本地类的侧车不绑，
+  与未导出本地函数同口径）。
+  
+  **有意保持不执法（与普通函数 parity，不发明更宽义务）**：
+  `export { K as J } from "./lib.js"` 的别名再导出、`import { K } …; export { K }`、
+  以及命名空间经再导出 index（普通函数的 `ns.f` 同样不执法）。再导出环（a ↔ b）有
+  深度上限，终止且零诊断。
+- a069994: fix(core,cli): 类成员的参数契约在**导入类实例** / **内联 `new`** / **静态调用**形态下
+  不执法（假绿）
+  
+  `nudo check` 此前只对「本地类实例 + 同类文件里的 `const c = new C(); c.m(…)`」做
+  调用点契约执法。以下形态解析不出被调方 ⇒ 整条调用被跳过 ⇒ 违约代码判绿：
+  
+  - 导入类：`const c = new K(); c.m(-1)`（`import { K } from "./lib.js"`）
+  - 内联构造：`new K().m(-1)`（导入 / 本地都）
+  - 静态方法：`K.s(-1)`（导入 / 本地都）
+  
+  修法：类成员的调用点解析改由**类声明 AST 的 own 成员事实**驱动 —— 实例 / 静态分开
+  判定，`K.static.s` 沿用静态 / 实例同名时的既有 scope 名（`@nudo:contract` 侧）。
+  本地类仍以 `nudo check` 的签名普查面为闸门（未导出的类保持零诊断、不扩面）；导入类
+  按定义模块 + 定义文件侧车绑定契约（`K_m` / `K.s` 等同既有侧车键）。
+  
+  **BREAKING**: `nudo check` 现在会对上述形态**新报** `nudo:constraint-violated`
+  （及调用点前置条件违例）⇒ 此前依赖这些调用点静默的 CI 流水线会开始**非零退出**。
+  这些调用点本来就是 L1 义务的覆盖空洞：同一份契约在 `c.m(…)` 上执法、在
+  `new K().m(…)` 上放行，属于同一义务的两套口径。
+  
+  **谁不会坏（守卫，全部保持零新诊断）**：继承而来（非 own）的方法；构造器
+  `this.m = …` 或同名类字段覆盖的方法；getter / setter / computed 成员名；
+  静态 / 实例交叉调用（`K.m` 调实例方法、`new K().s` 调静态方法）；接收者被形参 /
+  局部声明遮蔽或被重新赋值；未声明契约的方法。
+- b37321b: 新增诊断码 `nudo:module-unreadable`（模块**存在但不可读**）⇒ **新诊断码**属
+  增量（additive）⇒ minor。
+  
+  The engine keeps the module semantics and the declared types of a TypeScript
+  source.
+  
+  - An import cycle made the first call inside the cycle return a wrong value
+    and made the same export answer differently depending on the order of the
+    calls. Live import bindings are refreshed when a call enters, not only after
+    it returns, and the refresh registry no longer drops the bindings of a
+    module that is still alive.
+  - A dependency that exists but cannot be read escaped the check as an
+    uncaught error that killed the whole run. The read failure is classified
+    (absent / unreadable) and reported as `nudo:module-unreadable`.
+  - The TypeScript type annotations of a source were removed before the
+    analysis saw them, so every parameter of a `.ts` file was unconstrained
+    and the file was reported as possibly throwing. The declared types are
+    kept now, and a parameter declared `a: string` is analyzed as a string.
+  - An `export default function f() {}` was looked up under its local name and
+    not found, because an ESM default export lives under `default`. The lookup
+    falls back to the default slot now.
+  - A `module.exports = { f: fn }` export was not reachable by name, so the
+    function's return type degraded to `unknown`.
+  - The type annotation of a rest parameter (`...rest: string[]`) was read from
+    the wrong node and was always lost.
+- a069994: **BREAKING**: `nudo check` 的 L2 入口 may-throw（`nudo:entry-may-throw`）fail-closed
+  归因改为**按可达性**：转译器拒绝的构造（`unsupported:*`）现在也归因到**经顶层辅助函数 /
+  类可达该构造**的入口。
+  
+  此前只认「构造落在入口**自己的**源码跨度内」⇒ 同一段代码内联在入口里是红的，拆到顶层
+  helper 就绿：`export function f(g) { return g().x++; }` 报 error，而
+  `export function f(g) { return h(g); } function h(g) { return g().x++; }` 零诊断
+  （exit 0）。归因面同时补齐：
+  
+  - **类**：入口 `C` 用整个类声明跨度；入口 `C.m` 并入构造器与同类字段初始化器
+    （实例方法：构造器 + 实例字段；静态方法：静态字段 + 静态块）。
+  - **CJS 入口形态**：`exports.f = function …` / `module.exports.f = …` /
+    `module.exports = { f: … }`（与入口枚举同一批形态，不新造入口）。
+  
+  不可达的入口仍**不**背账（同模块的陪葬入口不会凭空多出 may-throw）。
+  
+  谁会坏：把不支持构造拆进 helper / 类 / CJS 赋值来「绕过」L2 的代码。这些文件本来就因为
+  引擎无法分析整个模块而**没有任何入口结论**，此前的绿是假绿。
+  怎么迁移：把构造改成可分析形态，或用 `@nudo:throws Error` / `--ignore-throws Error`
+  显式放行该入口。
+- ed4d259: **BREAKING**: 模块顶层**必然抛**（装载期无条件 `throw`）现在 fail-closed：新增
+  error 级 `nudo:module-throw`（check 默认 error、可放行），不再「导出全丢 ⇒
+  零诊断 + exit 0」。
+  
+  此前 `throw new TypeError("boom"); export function f(){ return 1; }` 的求值回落
+  `module-throw` ⇒ 导出全丢（签名退化 `f() => unknown`）、L2 无证据、CLI 打 `OK` /
+  exit 0 —— 引擎**完全没能分析**的模块被判绿（附录 A#1）。现在报一条**模块级**
+  `nudo:module-throw`（定位 = 顶层 `throw`，文案带抛出类型名），`nudo check` 非零
+  退出；`--json` / LSP / vite-plugin 走同一条 issue 通道（无 CLI 特判）。
+  
+  判据**只认句法证据**：顶层语句序列（只穿过裸块）里**无条件**执行的 `throw`。
+  为什么不用引擎的「抽象上必抛」：真实包实测（node_modules 的 6 个文件：
+  `typescript/lib/_tsserver.js`、`react-dom/cjs/*`、`vitest/dist/chunks/*`）顶层
+  **没有** `throw` 语句却回落 `module-throw`（缺失依赖 → 闭合对象 → 方法不可调用
+  = 宿主 API 近似；react-dom 的两个 cjs bundle 原生 `require()` 实测成功）⇒ 拿
+  引擎结论做门禁 = 假红。条件抛（`if (typeof window === "undefined") throw`）、
+  `try/catch` 吸收的抛、引擎近似抛**不报**（现状不变；零 FP 语料库
+  `check-real-packages` 的 10 个包 / ~1060 个文件触发 0）。
+  
+  抑制口径与 L2 同源：`--entry-throws off`（或 `package.json#nudo.check.entryThrows`）
+  关闸、`--entry-throws warning` 降档、`--ignore-throws <Kind>` 按抛出类型名放行
+  （`Error` 盖整族）。每个模块**一条**诊断，不按入口重复。
+  
+  谁会坏：模块顶层无条件 `throw`（含 React Server entry stub、`vitest/index.cjs`
+  这类「import 即拒绝」的守卫文件）此前判绿，现在 error。这些模块原生**根本无法
+  导入**（导出本来就不可用）⇒ 此前是假绿；若装载即抛是有意行为，用
+  `--ignore-throws <Kind>` 或 `--entry-throws off` 显式放行。
+- f896290: **BREAKING**: `nudo check` 的调用点契约执法补上**非标量字面量实参**：函数 / 箭头 /
+  类表达式、`new Date(0)` / `new Map()` / `new Set()`、正则字面量、`Symbol(...)`、
+  `NaN` / `Infinity` / `-Infinity`、模板字面量、`void 0` 不再对形参契约零义务。
+  
+  此前这些实参在**函数体内**的调用点被整条跳过（`parseCallArgs` 落兜底
+  `absUnknown()` ⇒ `hasInfo=false`），同一个实参在顶层调用却报违例 ⇒ 同一义务两套
+  裁决。例：
+  
+  - `/** @nudo:contract x positive */ function u(x){…}` + `u(() => 1)` ⇒ 0 条（假绿）
+  - `u(new Date(0))` / `u(/re/)` / `u(new Map())` 对 `number()` / `string()` ⇒ 0 条
+  - `u(NaN)` 对 `number().gt(0)` / `u(Infinity)` 对 `number().lt(10)` ⇒ 0 条
+  
+  另外 `brand` 包装（`new Date(0)` / 正则 / boxed prim）在 `typeof` 通道不拆壳 ⇒
+  即便实参 Abs 到了分类器（顶层执行态回退），裸 prim 契约仍零义务；而同一 `typeof`
+  判据在 union 面会拆 brand。现在两条通道同口径，`shape` 通道也拆 brand（`new
+  Date(0)` 对空 shape = 任意对象不再误报「object shape」，对带必填字段的 shape 报
+  missing field）。
+  
+  **只报确定事实**（宁漏勿错）：函数/箭头/类恒为 function，正则 / 内建 `new` 恒为
+  对象，模板恒为 string，`Symbol()` 恒为 symbol，未遮蔽的 `NaN` / `Infinity` 恒为
+  number 字面量；`NaN` 仍是 `number`（裸 `number()` 放行），`Infinity > 0` 放行。
+  未知形态（任意用户构造器的 `new`——`new` 可能返回原语、动态模板、被遮蔽的内建名、
+  无法求值的表达式）仍落 unknown ⇒ 不猜。
+  
+  谁可能坏：此前依赖「函数体里的非标量字面量实参静默」的 CI 流水线会开始非零退出。
+  这些调用点本来就是 L1 义务的覆盖空洞（同一份契约在顶层调用上已执法）。
+- ebe909e: `@nudojs/core` 新增公开可选项 `TranspileOptions.disableAsyncGen`（async 生成器路径的**安全网**开关）、
+  `@nudojs/service` 新增公开导出 `analyzeFileWithEvalFailures` / `analyzeFileAsyncWithEvalFailures` /
+  `FileEvalFailure` ⇒ 均为纯**增量** ⇒ minor。
+  
+  `nudojs` 的**闸门口径翻转**（模块级求值失败 ⇒ 不再静默放绿）按 **minor** 发布：
+  `nudo check` 以 **error 级 `nudo:internal`** 报出并以**非零码**退出，`nudo health` 的
+  `Result` 不再报 `OK`。**这是闸门口径的翻转**（详见下方「BREAKING」）。
+  
+  > **bump 级别说明**：本项目**尚无外部用户**，本批 1.x 包的破坏性变更统一以 **minor**
+  > 发布并保留 `**BREAKING**:` 标注（谁会坏 + 怎么迁移照旧写全）⇒ 不占用 major 跳版，
+  > 也不触发发布侧 `gate-major` 的人工确认闸门。一旦有外部用户依赖这些包面，
+  > 即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」政策。
+  
+  fix: review 报告 34 条缺陷收口（闸门假红/假绿 · 契约面宽松 · 机器面谎报 · 文档与 changeset 漂移）
+  
+  本轮把一份 34 条缺陷的 review 报告逐条落地：每条都先在当前代码上**复现**（或判定为
+  非缺陷），再修，并**逐条用回滚法自证「修前红 / 修后绿」**。新增 **39 个回归测试文件**。
+  
+  ---
+  
+  **BREAKING**: `nudo check` / `nudo health` 现在对**引擎内部回落**（模块求值失败 ⇒ 该文件
+  的导出全部丢失）**fail-closed**。此前这类文件**零诊断 + exit 0** ⇒ CI 闸门**假绿**
+  （合法代码与违约代码都判绿）。现在：命中内部回落 ⇒ 报 **error 级 `nudo:internal`**
+  （消息含文件路径与原因）⇒ `nudo check` **非零退出**；`nudo health` 报
+  `Result: FAIL (engine internal fallback found)` 并非零退出。
+  
+  谁会坏：依赖「坏文件也能过闸」的 CI 流水线（此前引擎自己挂了就当无事发生）。这些文件
+  本来就是引擎缺陷的暴露面 —— 现在会**显式**报出来。
+  
+  怎么迁移：修掉被报出的文件（消息里给了路径与原因）。注意**口径边界**：`unsupported:*`
+  （能力边界）与 `nudo:opaque-result`（推断精度）**不**触发该失败路径；只有**引擎内部回落**
+  （`internal`）才 fail-closed。
+  
+  ---
+  
+  ### 高危（闸门级 · 5 条）
+  
+  - **`await` 的位置表与转译侧脱节 ⇒ `yield` 落进嵌套箭头 ⇒ 整模块编译失败 ⇒ L2 闸门假绿**
+    （`core/algebra/exec/transpile/async-plan.ts` · `core/algebra/exec/run.ts`）：async 体的
+    真挂起靠**宿主生成器**（`function*(){…}` + `await` 发射 `yield`）实现 ⇒ `yield` 必须落在
+    生成器**体内联**位置；而转译侧把若干操作数包进**宿主 thunk** —— `yield` 落在里面是
+    **SyntaxError** ⇒ `new Function` 编译失败 ⇒ **整个模块**的导出全部丢失 ⇒ 闸门看不到任何
+    入口 ⇒ **零诊断 + exit 0** ⇒ **CI 闸门假绿**。位置表此前只把「分支臂 / 循环体 / 短路右臂 /
+    三元两臂」判为 thunk，漏了：**成员调用的实参**（`o.m(await 1)`）、**成员赋值的接收者/计算键/
+    右值**（`o.x = await 1`）、**成员自增的计算键**（`o[await k]++`）、**逻辑赋值的右值**
+    （`x ||= await 1`）、**循环判别式与步进式**、**switch 的 case 测试**、**早退守卫之后的后续
+    语句**（`if (!c) return null; … await …`）。实测：`export async function load(id){ if(!id)
+    return null; const res = await fetch("/x/"+id); return res.json(); }` 修前 ⇒ `nudo check`
+    **OK / exit 0 / 签名全 unknown**；修后 ⇒ **error 级 `nudo:entry-may-throw`**（与 main 同结论）。
+    修法（两处，缺一不可）：① 位置表补齐（上列位置判 thunk ⇒ 该 async 体回落 `$async` 同步
+    路径，产物是**合法 JS**）；② **安全网**：生成器模式编译失败时**关闭 `asyncGen` 重试一次**
+    ⇒ 纵有未来新增的脱节位置，模块也**编译得出来** ⇒ 导出可见 ⇒ 闸门照常判定
+    （**宁可少精确，不可整模块消失**）。
+  
+  - **模块级求值失败 ⇒ 闸门假绿**（`service/src/analyzer-orchestrate.ts` ·
+    `nudojs/src/commands/{check,check-report,health}.ts`）：见上方 **BREAKING** 段。
+    修法：按**文件**收集 `internal` 回落（进程级计数无法定位到文件）⇒ 命中即产出
+    **error 级 `nudo:internal`**（复用已注册码 `DIAG.internal`，未新增第二套码表）⇒
+    `ok:false` ⇒ 非零退出；分析失败的降级产物**不回写磁盘缓存**（回写 ⇒ 下次命中缓存跳过求值
+    ⇒ 静默转绿）。
+  
+  - **早返回的关系补集默认「x 不是 NaN」⇒ 契约被证成 ⇒ 假绿**
+    （`core/algebra/exec/transpile/stmt/{fn-body,statement}.ts`）：`¬(x <= k)` 还含 `x` 为
+    **NaN** 的情形（NaN 与任何比较皆假）⇒ 后续路径只该断定 `x > k ∨ x is NaN`；此前直接断言
+    `x > k`（排除了 NaN）⇒ `if (x < 0) return 0; return x;` + `return nonNeg` 判**成立**
+    （零诊断），而原生 `x=NaN` 时返回 NaN ⇒ **真违规被放过**。且与**三元**写法
+    （`x < 0 ? 0 : x`）结论**不一致**（三元判 `unproven-return`）。修法：撤销后续路径的否定界
+    窄化 ⇒ 两条路径同口径。
+  
+  - **Bug 370 把「确定违规」降为 warning**（`core/algebra/postcondition.ts`）：证据面判据
+    从「`ret.pred` 有事实」改成「含**界原子**」⇒ `typeof` 级证据（`@nudo:contract x num` 的
+    **声明域参数**）被判成「无证据」⇒ 返回义务降级成 `nudo:unproven-return`（**warning**，且
+    warning **不改变 exit code** ⇒ 门禁空转）。`if (x === -1 || x === -2) return x;` + `return
+    positive` 是**确定违规**（x=0 即违约），此前只出 warning。修法：判据回到「`ret.pred` 有
+    事实」⇒ 声明域参数 ⇒ **error 级 `nudo:constraint-violated`**。
+  
+  - **契约合取的结构型义务被静默丢掉 ⇒ 假绿**（`core/algebra/interface.ts`）：合取遇任一侧
+    结构型就直接返回前侧 ⇒ 源码 shape`{id}` ∧ 侧车 shape`{id,name}` 的 **`name` 义务整条蒸发**
+    ⇒ 契约面比声明面**宽松** ⇒ 违约代码被放过。修法：改为**字段级合并**（两侧都有的字段递归
+    合取、单侧字段保留、`optional` 取交集）；合不了的形态组合按既有口径**不**判 conflict
+    （能力边界 ≠ 语义不可满足）但**显式留痕**（新增 `EffectiveInterface.undecidable` ⇒ check 面
+    发 **warning** 级 `nudo:interface-conflict`，**不静默宽松**）。
+  
+  ### 闸门可信度（假红 / 假绿 · 14 条）
+  
+  - **展开实参被计为 1 个 ⇒ `nudo:arg-count` 假红**（`core/algebra/scan/literal-args.ts`）：
+    `impl(...args)` 被计成 1 个实参 ⇒ 报「expects 2 argument(s), got 1」；数组字面量展开的**空洞**
+    （`three(...[1,,3])`，原生是 3 个实参）被跳过；幻影槽位破坏 rest 聚合（`few(1, ...more)`
+    对 `array(number()).max(1)` 报长度违规）。修法：个数不可判时**让位**元数检查；空洞按
+    `undefined` 计入；rest / length 边界在展开处**停止**。
+  - **裸名 callee 解析不看作用域 ⇒ 无契约也触发 arity 假红**（`core/algebra/scan-call-graph.ts`）：
+    外层函数的**形参 / 局部 const / 嵌套函数 / for-of 绑定 / 解构绑定**同名时，把顶层声明当被调
+    方 ⇒ 报「log expects 2 argument(s), got 1」+ 假 may-throw。修法：callee 解析引入**作用域链**。
+  - **`memberToFn` 按变量名做键 ⇒ 同名局部/参数互相串味**（`core/algebra/scan-call-graph.ts`）：
+    别名与成员绑定改为**按作用域分桶**，重新赋值时失效。
+  - **TS `x?: T` 与 JSDoc `[x]` 被当成必需参数 ⇒ arity 假红**（`core/algebra/param-surface.ts`）：
+    `h()` 对 `/** @param {number} [x] */ function h(x)` 报「expects 1 argument(s), got 0」。
+  - **`or` 契约的「不可判定」成员被当成失败**（`core/algebra/scan/literal-shapes.ts`）：
+    `union(number().gt(0), lit("a"))` 对**非字面量 number** 实参误报。修法：三值聚合 ——
+    **全部**成员确定假才报；不可判定且域容纳该形态 ⇒ 整条 union 保持未决。
+  - **显式 `undefined` 被当成值**（`core/algebra/scan/literal-args.ts`）：`d1(undefined)` 对带默认值
+    的形参报约束错误。修法：显式 `undefined` ⇒ 走**默认值**。
+  - **默认值填充只在零参时发生 ⇒ 假绿**（`core/algebra/scan-literal-calls.ts`）：
+    `e4(1)` 缺失的尾部位不补（运行时 x = -5）⇒ 静默。修法：补齐**所有缺失的尾部位置**。
+  - **switch 分组 case 标签的 `hit` 收窄不安全**（`core/algebra/exec/transpile/stmt-predicates.ts`）：
+    `const x = null; switch (x) { case null: case "ab": return x.length; }` 原生抛 TypeError，
+    引擎按源码推导读 `"ab".length` ⇒ **L2 may-throw 消失**。`case 0:` 还会把 `-0` 重绑成 `+0`
+    （原生 `1 / -0` = `-Infinity`，引擎算成 `Infinity` = **自信的错值**）。修法：只有**同体全部
+    标签都是原始字面量**才产命中事实；`0` 按**交集细化** `{0, -0}`。
+  - **`lit(NaN)` 契约被判自相矛盾 ⇒ 假红**（`core/algebra/interface.ts`）：字面量值比较用
+    `!==` ⇒ `NaN !== NaN` ⇒ 同一个 `lit(NaN)` 自比被判成「两个不同字面量」⇒
+    `nudo:interface-conflict`。修法：改用既有 helper `termEquals`（`===` + NaN 特例）。
+  - **import 别名撞 ambient builder 声明 ⇒ 整个 sidecar 装载失败**
+    （`core/algebra/refine.ts`）：`import { number as string } from "@nudojs/core"` 与包装器的
+    `const { number, string, … } = __nudoInjects` 同处一个外层作用域 ⇒ SyntaxError ⇒ 侧车整体
+    装载失败 ⇒ **契约全丢**。修法：显式 import 的本地名从 ambient builder 名单里排除。
+  - **`autoBind:false` 下不可读的 ambient sidecar 仍被报成 error ⇒ 假红**
+    （`core/algebra/load-deps-fp.ts` · `core/algebra/check.ts`）：**指纹计算**的推测性读取
+    走的是**分析读**通道 ⇒ EACCES 被收口成 error；而那份侧车在 `autoBind:false` 下**根本不会被
+    绑定**。修法：推测性读走**未经降级闸**的通道（读失败只让指纹标 `readError`）+ 按 ambient
+    绑定资格 gate。
+  - **缓存的 sidecar 诊断丢失依赖归属**（`core/algebra/refine.ts`）：root→dep 递归求值共享同一
+    diags 数组 ⇒ 依赖侧车的诊断一律记到 **root** 名下。修法：诊断带**来源文件**并纳入去重键。
+  - **`lit(1n)` 的大字面量被提前过滤 ⇒ 假绿**（`core/algebra/contract-face.ts`）：bigint 过滤
+    发生在 `literalMeetsConstraint` **之前** ⇒ `lit(1n)` 契约下返回 `2n` 的被调函数被判**满足**
+    ⇒ 违约被放过。修法：bigint 参与比较（`1n !== 1`，与 number 不混同）。
+  
+  ### 机器面 / 契约面 / 工具链（8 条）
+  
+  - **`@nudo:skip` 签名分支输出旧机器面**（`core/algebra/check.ts`）：JSON `display` 带
+    `#exact` 而终端显示 `number` ⇒ 机器消费方拿到的是**人类面之外的文本**。修法：与其它路径
+    同款（`formatSigCached`）。
+  - **内部临时名遮蔽用户标识符**（`core/algebra/exec/transpile/{member-path,expr/assignment,
+    expr/call,expr/optional-chain,expr/short-circuit}.ts` · `helpers.ts`）：引擎写死的
+    `__nudoMp*` / `__nudoDefR` / `__nudoReArgs` / `__v` 会**遮蔽**用户源码里的同名绑定 ⇒ 自信错值
+    或 TDZ **ReferenceError**（⇒ 闸门**假红**）；模块级同名还会撞出重复声明 SyntaxError ⇒
+    **整模块 fail-closed** ⇒ 闸门**假绿**。修法：改用既有 `internalTmpName` /
+    `internalTmpNameSet`（**无碰撞时基名原样返回 ⇒ 产物逐字不变**）。
+  - **CJS 对象字面量导出的普查键必须是成员键**（`core/algebra/export-slot.ts`）：
+    `module.exports = { greet: function inner(x){…} }` 的侧车契约**整个不绑定**（只剩
+    `unproven-return` 警告、签名退成 `unknown` ⇒ **假绿**），且内层 id 与成员键碰撞时映射串。
+    修法：导出槽映射**只用成员键**。
+  - **`leq` 的 fn arity 只比较必需参数个数**（`core/algebra/leq.ts`）：`(a = 1, b) => b.toFixed()`
+    被接受为单参目标（原生 `g(1)` 抛 TypeError）⇒ 判定比原生松 ⇒ 假绿。修法：按**最后一个必需
+    参数的位置**比较。
+  - **生成的守卫对 `new Proxy(...)` 抛错**（`core/algebra/denote.ts`）：`x instanceof Proxy` 在
+    原生**抛 TypeError**（Proxy 没有 prototype）⇒ 守卫产物一跑就炸。修法：对**无可用 prototype**
+    的构造器跳过身份子句。
+  - **超参 warning 忽略可选/默认槽位**（`core/algebra/diagnostics.ts`）：`f(a, b = 1)` 被 `f(1, 2)`
+    调用时误报「takes 1 argument(s) but 2 were passed」。修法：上界按**非 rest 形参总数**。
+  - **多行 `@nudo:case … !! throws` 声明丢失**（`core/algebra/directive-scan.ts`）：case 参数跨行
+    时后缀正则匹配不到 ⇒ 申报的 throws 丢失 ⇒ `nudo:entry-may-throw` **假红**。修法：先在完整
+    注释里找平衡的 case 参数终点再识别后缀。
+  - **`export default C` 的类入口被漏**（`core/algebra/scan-top-functions.ts`）：Babel 的
+    `Identifier` 字段是 **`name`**（代码读的是 `d.id?.name` ⇒ `undefined`）⇒ 类入口不在入口表里
+    ⇒ 构造器入口闸门看不到它 ⇒ **假绿**。
+  
+  ### async 运行时（2 条）
+  
+  - **callee 有 2 个及以上 await 时 caller 提前恢复**（`core/algebra/exec/runtime/async.ts`）：
+    队列为 `[callee-resume, caller-resume]` ⇒ callee 的**第二次**续体排在 caller 之后 ⇒ caller
+    读到**占位符**。实测 `async function g(){ log.push(1); await null; log.push(2); await null;
+    log.push(3) }` 原生 `"1,2,3"` / 修前 `"1,2"` / 修后 `"1,2,3"`；`return await h()` 原生 `7` /
+    修前 `unknown` / 修后 `7`。修法：live promise 维护 **pending 态 + waiter 列表**，await 的
+    恢复排在 settle **之后**。
+  - **`Promise.all` 取调用期快照**（`core/algebra/builtins/promise.ts`）：元素尚未 settle 时取到
+    占位符 ⇒ 兑现值被永久冻住；元素**拒绝**通道丢失 ⇒ 拒绝臂成死代码（**假绿**）。修法：组合子
+    自身 pending，元素 settle 后重算聚合；任一元素确定拒绝 ⇒ 组合子短路拒绝。
+  
+  ### 约束构造器（1 条）
+  
+  - **`.int()` 暴露给非 number builder ⇒ 同一约束两个裁决**（`core/algebra/constraint.ts`）：
+    `literalMeetsConstraint("abc", string().int())`（域面）接受 `"abc"`，而 Abs/投影面却带整数
+    谓词。修法：非 number builder 上 `.int()` **抛错**（与 `shift()` 同口径）。同批收口：
+    `fn()` 缺字段表守卫、`boolean().gt(1)` / `string().length(-3)` 等**恒假**契约（假红）、
+    `array(1,2)` 静默丢元素约束（假绿）。
+  
+  ### 文档 · changeset · 诊断注册表（4 条）
+  
+  - **自称破坏性的 vite-plugin changeset 声明为 patch**（`.changeset/fix-vite-plugin-s{1,3,4}.md`
+    等 32 个）：按 `docs/versioning.md` 逐个复核并**校正 bump 级别**（pre-1.0 的破坏性 ⇒ minor；
+    1.x+ 的 JSON 形状变更 / 默认严重级变更本应 ⇒ major，但**本项目尚无外部用户** ⇒ 本批
+    统一以 **minor** 发布，见上方「bump 级别说明」），并补 `**BREAKING**:` 与迁移说明。
+  - **设计文档引用了被 gitignore 的产物**（`docs/design/generator-laziness.md` ·
+    `docs/design/architecture-debt.md`）：`tmp/…` 路径（读者不可达）、`bun` 命令、过时行号、
+    `$gen` 发射点数目（3 ⇒ 实为 4）。修法：删交接笔记、引用**符号名**、指向仓内回归钉。
+  - **中文 API 文档漂移**（`packages/website/i18n/.../api/{agent,cli-reference,lsp,harvester,
+    service}.md`）：手写页与 EN 现状不一致（`--json` 的形态、`force?: boolean`、旧契约…）⇒
+    逐页同步；同时**收紧**文档覆盖闸门（`docs-coverage.test.ts`）让手写 api 页也进闸门。
+  - **诊断码绕过注册表**（`packages/core/src/algebra/diag-codes.ts` ·
+    `packages/nudojs/src/commands/migrate.ts`）：`nudo:migrate-strip-failed` 此前直写字面量 ⇒
+    进 `DIAG` 注册表并由 CLI 引用常量。
+  
+  ### 附带（不改变对外行为）
+  
+  - `nudo init` 的祖先配置继承口径与加载器对齐（本包已有 `nudo` 键 ⇒ 祖先**不可继承** ⇒ 不再用
+    祖先配置当拒绝理由，消除「拒绝 + 不可修复」的死锁）。
+  - `contract --help` 的 `--json` 描述、`contract --from-dts` 的拒绝提示（同时给出 `--force` 与
+    `NUDO_DRAFT_FORCE=1`；**人工改过的草稿永不被覆盖**这条口径不变）。
+  - `nudo:migrate-strip-failed` 进注册表；`interface` 缓存面新增 `undecidable` 透传。
+  - 6 条**被放松/空转**的既有测试恢复为**强断言**（`check-regex-capture-narrow-136` ·
+    `eval-loop-return-join` · `eval-bug-499` · `core-bug-1064` · `loop-pack-shadow-soundness` ·
+    `core-bug-1079`）—— 此前它们在 main 上也通过，钉不住任何回归。
+- f896290: **BREAKING**: `nudo check` 的 L2 入口 may-throw（`nudo:entry-may-throw`）fail-closed
+  归因补上**模块装载期**（module-init）：转译器拒绝的构造（`unsupported:*`）落在
+  顶层语句体 / 顶层初始化表达式 / 类定义期执行面时，现在归因到**每个**入口。
+  
+  此前归因只认「入口自身跨度 ∪ 入口可达的顶层绑定」⇒ 装载期构造不属于任何入口的
+  执行路径 ⇒ 无人背账 ⇒ L2 静默转绿：
+  `const g = () => ({x:1}); g().x++; export function safe() { return 1; }`
+  零诊断（exit 0，尽管模块整体未被分析）。装载期代码先于**任何**入口调用执行，
+  转译失败 ⇒ 每个入口的 total 性都不可判定。
+  
+  计入装载期（归因到每个入口）：顶层语句体、顶层 `const x = <表达式>` 初始化器、
+  任何顶层类的 `static {}` 块 / 静态字段初始化器 / **计算键** / `extends` 表达式
+  （类定义期就执行，与类是否被引用无关）。不计入（仍按 Bug 1153 的可达性归因）：
+  函数体与参数默认值（调用时跑）、实例字段初始化器 / 构造器 / 方法体（`new` / 调用
+  时跑）⇒ 不可达的 helper / 类成员里的构造仍不归因（不做过度的「陪葬入口」断言）。
+  构造没有 `loc` 时仍按「无证据」处理。
+  
+  **TS-only 声明语句例外（Bug 895）**：`namespace` / `import x = require()` 等类型层 /
+  声明层语法的转译拒绝（`unsupported:statement:TS*`）**不**做装载期归因——`.ts`
+  源码必须保持零诊断；`namespace` 体里「程序自己的抛」与 module-throw 同族（门禁面
+  已静默）。enum / interface / type alias / `declare` 形态 / `as const` / `satisfies` /
+  抽象类本来就转译通过（实测）。
+  
+  谁会坏：把不支持构造放在模块顶层（含未被引用的类的静态面）来「绕过」L2 的代码。
+  这些文件本来就因为引擎无法分析整个模块而**没有任何入口结论**，此前的绿是假绿。
+  怎么迁移：把构造改成可分析形态，或用 `@nudo:throws Error` / `--ignore-throws Error`
+  显式放行该入口。
 
 ### Patch Changes
 
-- 4513a45: Fix a 5.5x yargs regression from the Bug 116 strict seam: guard shadow
-  rebinding emitted the **guarded identifier** as an arrow parameter
-  (`((arguments) => THUNK)(…)` for `if (arguments.length === 0)` style
-  discriminant/nullish/typeof/rel guards), and `arguments`/`eval` are
-  illegal binding names in strict code — the whole module body then died
-  at `new Function` compile time with "Unexpected eval or arguments in
-  strict mode", fail-closed to empty exports, and since failed evals are
-  never memoized every analysis re-transpiled the file (yargs check
-  5952ms → 1161ms after the fix). Guard names that cannot be bound in
-  strict mode now skip the narrowing wrapper entirely (same all-or-nothing
-  skip as fork-binding collisions — narrowing is a precision gain, not a
-  semantic obligation). The `"use strict"` prefix itself is now scoped to
-  sources with ESM syntax (`sourceHasEsmSyntax`: static `import` / any
-  `export` statement ⇒ definitely ESM); sources without it follow Node's
-  `.js`-without-`type:"module"` default and stay CommonJS/sloppy, so
-  sloppy-legal constructs (implicit global writes, `arguments` bindings)
-  no longer miscompile in CJS files. Docs: the levenshtein
-  `@nudo:invariant` example splits its L2 expectation
-  (`--ignore-throws RangeError`, mirroring the engine test suite) for the
-  legitimate `Array.from` array-like-length may-throw.
+- 02aa122: fix(core,service): `-0` 保真渲染的**同根因漏点**一并补齐（族 20 · Bug 1065 收口）
+  
+  Bug 1065 的根因是「用 `String(v)` 渲染数值」⇒ `String(-0) === "0"` ⇒ 负号被抹掉。
+  主修只覆盖了 `litToString` / `lengthBound` 两处；收口时按**同一根因**把其余
+  漏点一并补齐（**诊断陈述的契约 ≠ 用户写的契约**是同一个错）：
+  
+  - **core（`packages/core/src/algebra/interface.ts` · `predToChain`）**：其余三处
+    常数界渲染 —— `.min(n)` / `.max(n)`（`length` 上的 `ge` / `le` 界）与
+    `.<op>(n)`（变量上的常数界）—— 改走保真口径 `litToString` ⇒ `.min(-0)` /
+    `.max(-0)` 不再被抹成 `.min(0)` / `.max(0)`；`.length(n)` 的常数界渲染同款。
+  - **service（`packages/service/src/emit/standard-schema.ts` · `describeValue`）**：
+    `typeof value === "number"` 的渲染改用 `Object.is(value, -0) ? "-0" : String(value)`
+    ⇒ 该文件**此前存在两套 `-0` 口径**（另一处已保真、这一处没有）⇒ 同款收敛。
+  
+  诊断文本、侧车 DSL 回写与 schema 产物现在**全部**走同一套保真口径
+  ⇒ `-0` 在所有面上渲染一致，不再出现「一处保真、一处抹零」。
+- 6ec8afc: Accessors now see `arguments`, and a string method whose pattern is a free
+  identifier no longer breaks the module.
+  
+  - A getter or setter is an ordinary function, so `arguments` exists in it
+    (length 0 for a getter, 1 for a setter). The accessor body was emitted
+    without the `arguments` slot, so reading `arguments` inside an accessor
+    threw a `ReferenceError` instead of returning `0`. Accessors now carry the
+    slot like every other function body.
+  - `String.prototype.match` / `replace` / `replaceAll` emitted a state
+    write-back that assigned to the pattern argument, whatever it was. With
+    `eval` or `arguments` as the pattern the generated module was not valid
+    strict-mode JavaScript, so the whole module failed to load; with
+    `undefined` it threw a `TypeError` out of nowhere. The regular expression
+    state is now updated in place, so no assignment is generated at all, and
+    a pattern that is not a regular expression is converted with the
+    `RegExpCreate` / `ToString` rules instead of being reported as throwing.
+- 7fea13a: Accessors are now projected by what they actually return, repeated keys in
+  an object literal follow the last definition, and an early return narrows
+  the path that follows it.
+  
+  - An accessor does not live in a shape slot: the transpiler writes a
+    placeholder `undefined` slot to keep the key present and keeps the real
+    getter in a side table. The read path consults the side table, so `o.ab`
+    reads correctly, but the projection paths read the placeholder slot, so
+    every object literal with a getter was projected as
+    `{ ab: undefined }` — a confident wrong value, narrower than the truth
+    and self-contradictory. The projection paths (shape formatting, guard
+    derivation, constraint projection, contract proof) and the `.d.ts`
+    generator now take the read domain of the getter: the getter is
+    evaluated with the object as receiver, a getter that throws projects to
+    `unknown`, and a data property keeps its slot value.
+  - A key that appears twice in an object literal kept the *first* accessor
+    even when a data property came later, so `{ get x() {}, x: 2 }` was read
+    through the getter and writing `o.x = 9` was reported as a definite
+    `TypeError`. The last definition now wins, including its kind: a data
+    property after an accessor replaces it, and an accessor after a data
+    property replaces it too.
+  - The facts of an early return did not reach the path that follows it, so
+    `if (x <= 0) { return 1; } return x;` violated a contract of
+    `number().gt(0)` while the equivalent `if (x > 0) { return x; } else {
+    return 1; }` passed. The path after an early return now knows the
+    negation of the guard. The fact reaches the code after the early return
+    whatever block the early return is written in — a bare block, a `try`
+    block, a `catch` block or a `finally` block.
+- bb8e201: fix(core): 族 60 · core 代数层 5 条精度债——rest 形参元数信息 + 复合关系守卫（片 W10）
+  
+  族 60 的 5 条 core 代数层精度债，本片（core · `algebra/**`）落**两条新修法**，
+  另两条**已在 HEAD 修好**（本片补钉锁住，**不改源码**），第 5 条**只报告**
+  （正解必然新增公共导出 ⇒ 触及公共 API 冻结面 ⇒ 本片不擅自新增）。
+  
+  **1) S6-1008 · rest 形参的元数信息在 core 层可读**（新修）
+  
+  `packages/core/src/algebra/param-surface.ts`：`FormalParam` 的 rest 变体此前
+  只有 `kind: "rest"` + `optional: true` ⇒ **元数信息缺失** ⇒ 「真正变长」只能由
+  每个消费方各自按名字后缀（`...x` / `x?`）重猜一遍。现在 rest 形参带
+  `arity: { min, variadic: true }`：`min` = **必选元数**（rest 之前**必选**形参的
+  个数；默认形参 / 带默认值的解构形参可省略 ⇒ 不计；TS 的 `this` 接收者标注不是
+  形参 ⇒ 不计）、`variadic` = **变长**（rest 吸收 0..n 个实参 ⇒ 元数无上界）。
+  
+  **2) 复合测试接关系守卫**（新修）
+  
+  `packages/core/src/algebra/arithmetic/cmp.ts`（新增 `matchRelIdentLitComposite`）
+  + `exec/transpile/stmt-predicates.ts` + `exec/transpile/stmt/fn-body.ts`：
+  关系守卫此前只认**单一**关系式（`x > 0`）⇒ 复合测试（`x > 0 && x < 10`）**不接**
+  任何守卫 ⇒ 事实臂里的裸 `return x` 丢守卫界 ⇒ `@nudo:contract return
+  number().gt(0)` 判「证不出」（**与语义等价的单关系写法结论相反** ⇒ L1 门禁口径
+  分裂）。
+  
+  现在合取（`&&`）的**每一个**同变量合取项界都接进事实臂（`x > 0 && x < 10` ⇒ 事实臂
+  同时持有 `x > 0` 与 `x < 10`）：合取为真 ⇒ 每一合取项为真 ⇒ 事实臂可靠。
+  
+  **sound 护栏（关键）**：`¬(A ∧ B)` = `¬A ∨ ¬B` —— **不是**单一关系 ⇒ 复合守卫
+  **只**用于事实臂；**补集方向**（后续路径 / else 臂）在 `narrowRelComplementArmThunk`
+  处**整体跳过**（守卫带 `composite: true` 标记）⇒ 不会在「测试为假」的路径上断言
+  `¬A`（**假绿**）。析取（`||`）**不**接（合取才蕴含）。只接**一个**界会在契约朝
+  **另一**方向时把「证不出」变成「证反了」（假红）⇒ 同名多界**一并**接上。
+  
+  **已在 HEAD 修好、本片只补钉锁住（不改源码）**：
+  
+  - **族 21 遗留 · `buildArgsFromAssume` 写死 `x > 0`**：族 08（Bug 976）已改成
+    「用户声明的界落进形参自己的 pred」——无界时**不写界**（不替用户发明更强的默认
+    界）。本片补钉锁住两条口径（用户界落位 + 无界不写）。
+  - **S11-534 · core 字面量渲染 bigint 不可分**：族 06（Bug 361）/ 族 20（Bug 1065）
+    已让 `lit(10n)` 与 `lit(10)` **可分**（bigint 保 `n` 后缀），且 `-0` 保符号。
+    本片补钉锁住「数字字面量渲染**逐字不变**」的负控。
+  
+  **只报告不擅自改（第 5 条）**：`absShapeForTsTypeText`（TS 声明类型文本 → Abs
+  形状）在 core 内部可用，但**未**进公共面 ⇒ service 的 dts 产物面拿不到它。正解
+  必然**新增公共导出** ⇒ 触及公共 API 冻结面 ⇒ 本片**不**擅自新增，**留给主 agent
+  拍板**（可行替代：service 侧复用 core 的既有公共导出；或把工具挪到 service 侧并
+  删 core 重复实现——后者超出本片范围）。
+  
+  **口径**：公共 API 冻结面**零变更**（core 四张表无新增导出；`FormalParam` 只加
+  **可选字段** `arity?`，既有导出签名不动）；本片**未**动 service / env / lsp /
+  nudojs / harvester。
+- 5c750f2: Arrays, iterators and the prototype methods now behave like the
+  language.
+  
+  - `Array.from` reads an array-like whose `length` or whose indices are
+    accessors. The getters are now called; before, the result was an
+    empty array and a borrowed call saw zeroes.
+  - `Array.from` and `TypedArray.from` pass their third argument
+    (`thisArg`) to the callback, so the callback sees the right `this`.
+  - `Object.prototype.toLocaleString` delegates to `this.toString()`.
+    A user-defined `toString` is now honoured, and a `null`-prototype
+    receiver throws the `TypeError` the language throws.
+  - `Array.prototype.join` / `toString` / `toLocaleString` report the
+    `TypeError` they throw when the receiver is `null` or `undefined`.
+  - The `@@iterator` method of an iterator object returns the iterator
+    itself. `it[Symbol.iterator]() === it` is now `true` for the
+    iterators of an array, a string, a `Set` and a `Map`; the `Set` and
+    `Map` ones used to throw.
+- e3b8791: Promises and generators now report what the original reports.
+  
+  - Awaiting a promise with two arms dropped the rejected arm, so the
+    `catch` branch was unreachable and the domain of the enclosing function
+    was wrong. The rejected arm is recorded now: a `try`/`catch` inside the
+    function can absorb it, and what is not absorbed becomes the rejected
+    arm of the promise instead of escaping to the caller.
+  - Awaiting a thenable did not adopt it: the thenable object itself was
+    returned. A thenable with a callable `then` is adopted now and the
+    settled value is used. A value whose adoption cannot be decided is
+    returned unchanged.
+  - `yield*` did not forward the `return` of the delegating generator to the
+    iterator it delegates to, so the cleanup of the delegated iterator was
+    lost. The `return` is forwarded now, and the outcome of the delegation
+    decides the outcome of the outer generator.
+  - A generator object was modelled as a plain object with its own
+    enumerable properties, so `Object.keys(g)` listed six keys, `g[0]`
+    returned the first yielded value and `"0" in g` was `true`. The
+    properties of a generator are internal now: they are not enumerable and
+    not own properties, while the protocol methods are still reachable.
+  - The same applies to the shape of a generator: the protocol methods are
+    no longer published in the type of a generator, in its constraint, or
+    in the guard that is generated for it.
+- 8a5bf7e: `await` now suspends the async body instead of running it to completion at
+  the call site.
+  
+  - An `async` function used to be evaluated as a straight-line block: the
+    whole body — including everything *after* an `await` — ran before the
+    call returned, so its side effects were already visible to the caller.
+    `async function f() { await 0; n = 5; } f();` left `n` at `5`; natively
+    it is still `0`, because the continuation after an `await` runs in a
+    microtask, after the current synchronous run has finished. The same
+    applied to counters, log ordering across `async` calls, and a pending
+    promise, which the engine walked straight through.
+  - An async body that contains an `await` is now compiled to a real
+    generator, and `await x` suspends it at that point. The continuation is
+    queued on the same microtask queue the promise reactions already use, so
+    the order of work across a promise chain is preserved. `await` in an
+    expression position — `const x = await f()`, `return await g()`,
+    `h(await x)`, `x + await y`, `const { a } = await f()` — suspends the
+    same way.
+  - The value of the returned promise is still the value the body reaches:
+    the continuation fills the promise's inner value in place, so
+    `promise<7>` is reported for `async function f() { return await g(); }`
+    where `g` returns `7`.
+  - A `for await` loop is treated as one suspension point for the whole
+    loop, rather than one per iteration. That keeps it consistent with how
+    the engine already models `for await`; natively each iteration awaits
+    separately.
+  - An async body whose `await` sits inside a branch arm, a loop body, a
+    `switch` arm, or the right-hand side of `&&` / `||` / `??` keeps its
+    previous behaviour: those positions are compiled to plain callbacks,
+    where a suspension point cannot be expressed. The body as a whole is
+    left unchanged rather than half-suspended.
+- 8542f44: fix(core): bigint 字面量契约带 `prim: "bigint"`（族 48 · Bug 1046 core 面）
+  
+  **病灶**：`litC(v)` 只给 number / string / boolean 标 `prim`，**bigint 字面量不带
+  prim** ⇒ `constraintOnTermAbs` 落到「有界但无 prim ⇒ 按 number 处理」的兜底 ⇒
+  契约 Abs 的 **shape 说 number、pred 说 bigint**（`x = 1n`）⇒ 各面互相矛盾：
+  
+  - **guard 面**：渲染成 `(typeof data === "number") && (data === 1n)` ⇒ 契约申报的
+    **唯一合法值 `1n` 被守卫拒收**（**假红**：`guard(1n) === false`）；
+  - **dts 面**：bigint 契约的返回类型被写成 `number`；
+  - **union 成员面**更糟：`samePrimLiteralUnionAbs` 按 `typeof v` 归类，bigint 落到
+    兜底分支 ⇒ `union(lit(1n))` 的 shape 说 **boolean** ⇒ 守卫恒假。
+  
+  **修法**（`packages/core/src/algebra/constraint.ts` 的 `litC`）：补 bigint 分支 ⇒
+  `prim: "bigint"`，与 number / string / boolean 字面量契约**同款口径**
+  （`constraint-builders.test.ts` 钉的 `typeof x = "number" ∧ x = 42` 就是这条口径）。
+  
+  **跨面效果**：
+  
+  - guard 面 ⇒ `(typeof data === "bigint") && (data === 1n)` ⇒ `guard(1n) === true`
+    （假红消除）；union 成员同样落到 prim bigint（不再说 boolean）。
+  - dts 面 ⇒ bigint 契约的返回类型写成 `bigint`（此前是错的 `number`）。
+  - zod / standard 面**不变**：bigint prim 无解码器 ⇒ 仍走「eq 主导」投影 ⇒ 节点仍是
+    `{k:"lit", value:1n}`（与 service 侧 Bug 1046 的 zod 面修复同口径）。
+  - **门禁的接受集不变**：`lit(1n)` 仍只接受 `1n`。但契约谓词现在与其它 prim 同款
+    带 typeof 义务（`typeof x = "bigint" ∧ x = 1n`）⇒ 实参**类型**不符时，除 literal
+    义务（`x = 1n`）外还会多报一条**类型**义务（`typeof x = "bigint"`）——与
+    `lit(1)` / `lit("a")` / `lit(true)` 契约的既有行为同款（此前只有 bigint 字面量
+    契约缺这条类型义务）。
+- f11510a: Reassigning a `const` binding declared inside a block scope now throws
+  `TypeError` again, in every block scope.
+  
+  - The `constNames` set that decides whether an assignment target is immutable
+    was only computed for function bodies and plain blocks. `try` / `catch` /
+    `finally` bodies and `for` / `for-of` / `for-in` / `while` / `do-while`
+    bodies are block scopes too, but their statements were transpiled without
+    recomputing the set, so a `const` declared there was not treated as
+    immutable. Assigning to it silently wrote the new value, and the throws
+    domain was folded to `never`.
+  - Every block-scope emission point now recomputes the immutable-name set for
+    its own scope, the same way the plain-block path already did. A `const`
+    reassignment in those scopes throws `TypeError` (and the entry point is
+    reported as `throws TypeError`), while `let` / `var` bindings and inner
+    `let` shadowing stay mutable.
+- 5c750f2: Boxed primitives and prototype objects now look the way the language
+  looks.
+  
+  - `Object(1n)` keeps its internal value. `typeof Object(1n).valueOf()` is
+    `"bigint"` again, and `Object(1n) + 1` throws the `TypeError` the
+    language throws for mixing a bigint with a number.
+  - `Object(Symbol("x")).description` is `"x"` instead of `undefined`.
+  - `Object.getPrototypeOf(Function.prototype)` is `Object.prototype`.
+  - `Error.prototype` has its own `name` and `message` properties, so
+    `Object.prototype.hasOwnProperty.call(Error.prototype, "name")` is
+    `true`.
+  - The prototype chain of the built-in prototypes is no longer flattened:
+    `Object.getPrototypeOf(Uint8Array.prototype)` is not
+    `Object.prototype` any more.
+  - `String(x)` no longer reports a possible `TypeError` for every
+    object. `String(new Date(0))`, `String(new Map())` and
+    `` `${new Date(0)}` `` are all accepted, and they now agree with each
+    other.
+  - `Intl.NumberFormat.name` is `"NumberFormat"` and
+    `Intl.DateTimeFormat.name` is `"DateTimeFormat"`, instead of the
+    internal dispatch key `Intl.NumberFormat`. The same applies to
+    `Intl.Collator.name` and `Intl.Locale.name`.
+- 29d766d: fix(core): brand 接收者的「确定缺失」判定补齐（族 46 · Bug 1044 收口）
+  
+  `definitelyUncallableMember`（evaluator `$invoke` 的成员调用终判）此前首行
+  `if (s.k !== "obj") return false;` ⇒ **只判平 obj 接收者** ⇒ **brand 接收者**
+  的缺槽成员被调用时**不记抛** ⇒ env 声明的 brand（`Response` / `Headers` /
+  `Blob` / `FormData` / `Request` …）上调用宿主不存在的成员，原生恒抛
+  `TypeError`，引擎却折 `unknown`、零诊断 ⇒ **L2 门禁假绿**。
+  
+  典型形态：`Response.json(x).then(cb)` —— `Response.json` 同步返回一个
+  **Response 实例**（brand），其内层槽表没有 `then` ⇒ 原生
+  `TypeError: Response.json(...).then is not a function` ⇒ 门禁应报错，实际不报。
+  
+  ⇒ **同一个缺陷 env 侧表现不一致**：web env 把 `Response` 建成**平 obj** ⇒
+  平 obj 规则早已判「确定抛」（web 假红）；node env 建成 **brand** ⇒ 一律不判
+  （node 假绿）。本修法让两者口径一致。
+  
+  **修法**：brand 接收者 ⇒ 取内层 shape；**内层是闭合 obj**（closed + exact
+  conf、无 open / index 键域）⇒ 走既有「表外 ⇒ 确定缺失」逻辑；**内层不是
+  闭合 obj**（`unknown` / prim / arr / open / 带 index）⇒ **维持现状**（不记抛，
+  域不封闭 ⇒ 只能说「可能缺失」）。
+  
+  **保守边界（缺席不可证 ⇒ 一律不判）**：
+  
+  - Object.prototype 名（`toString` / `valueOf` / …）——原型上恒有；
+  - 引擎已为该 brand 建模原型面者：内建 brand（`Date` / `Map` / `Set` /
+    `Promise` / Error 家族 / `ArrayBuffer` 族 / `URL` / `URLSearchParams` /
+    `TextDecoder` / `WeakRef` / `FinalizationRegistry` / typed array 族）、
+    装箱 brand（`String` / `Number` / `Boolean` / `Symbol` / `BigInt`）、
+    `Proxy`（陷阱可给任意成员）、`Intl.*` 子构造器、原型对象 brand
+    （`X.prototype` / `X.generatorProto`）⇒ 它们的内层槽表**不是**可调用面全集；
+  - 注册用户类（类注册表持有原型方法面，域不同）。
+  
+  **钉**：新增回归钉（`eval-bug-1044-brand-missing-member.test.ts`），覆盖
+  表外成员记抛 / 表内成员不记抛 / 内层 `unknown` 与 open obj **不**记抛
+  （soundness 护栏）/ 平 obj 既有行为逐字不变 / 内建 brand 不误判 /
+  L2 门禁面（`nudo:entry-may-throw`）；并带**同步守卫**——引擎两张内建 brand
+  原型表的键集必须 ⊆ 排除名单（新增内建 brand 时漏同步 ⇒ 守卫变红 ⇒ 防止
+  「漏排除 ⇒ 合法调用被误判成确定抛」的假红）。
+  
+  **已知偏差（诚实记录）**：本判定把 env 声明的 brand 实例面当作该 brand 的
+  **完整可调用面** ⇒ 若 env 声明漏了宿主真实存在的成员（如 node 22+ 的
+  `Response.prototype.bytes` / `textStream` / `Blob.prototype.textStream`），
+  该成员会被判成「确定不存在」⇒ **假红**。此偏差与 web env（平 obj 建模）
+  **今天已有**的行为完全一致（web env 的 `resp.bytes()` 已判「确定抛」）
+  ⇒ 本修法只是让 node env 与 web env 口径一致；补齐 env 侧成员表即可同时
+  消掉两 env 的该条假红（env 包侧，不在本包范围）。
+- e3b8791: Reading a member of a built-in prototype, a branded value or a namespace now
+  returns what JavaScript returns instead of a confident `undefined`.
+  
+  - A built-in prototype object had no table for its own members, so
+    `Map.prototype[Symbol.toStringTag]` returned `undefined` instead of `"Map"`,
+    `RegExp.prototype.flags` returned `undefined` instead of `""` and
+    `Error.prototype.name` returned `undefined` instead of `"Error"`. The
+    prototype objects of the built-ins now carry their own symbol members,
+    their own data properties and their own methods.
+  - A value of a built-in brand whose class was derived from a built-in — an
+    instance of `class M extends Set` — lost the whole built-in prototype
+    face: `s.add` returned `undefined` even though `"add" in s` said `true`.
+    The two answers contradicted each other. The prototype chain is now
+    resolved to the first built-in owner, and a member defined by the
+    derived class still wins.
+  - `Object.prototype.toString.call(Math)` reported `[object Math]` but
+    `Math[Symbol.toStringTag]` returned `undefined`. A namespace object now
+    exposes its `Symbol.toStringTag`.
+  - `Symbol.prototype.description` returned the string `"undefined"` and did
+    not record a throw; it now throws a `TypeError`, like the specification
+    says.
+  - `Map.prototype.size` and `Set.prototype.size` returned `"undefined"` and
+    did not record a throw; they now throw a `TypeError`.
+  - `Intl.NumberFormat.prototype.format` returned `undefined` and did not
+    record a throw; reading a brand-check accessor of an `Intl` prototype now
+    throws a `TypeError`.
+  - A member that does not exist on a `number`, `boolean` or `bigint` primitive
+    folded to `unknown`, which made every later read of that value look
+    harmless. It now folds to `undefined`, so the later read is still
+    recognised as a possible `TypeError`.
+  - `Symbol()` instances resolved `toString` and `toLocaleString` to the
+    matching members of `Object.prototype`, losing the brand check. The brand
+    check is now performed.
+  - The `constructor` of a class value resolved to a built-in constructor
+    named after the class, so `Widget.constructor === Function` was `false`.
+    It is now `true`.
+  - A getter-only static accessor accepted a write; it now throws a `TypeError`
+    in strict mode, like the instance-level accessors already did.
+  - The `prototype` property of a class value was missing its
+    "not writable" flag, so `A.prototype = {}` silently wrote through. It is
+    now rejected with a `TypeError`.
+  - `process.env` and `process.versions` were shown as
+    `Record<string, string | undefined>` but reading `process.env.HOME`
+    returned `unknown`, and the difference was reported as a failed
+    inference. The read now uses the declared index domain.
+  - A host or namespace object such as `Math` only projected its enumerable
+    own properties, so `Object.getOwnPropertyNames(Math)` returned `0` and
+    `Math.PI` could not be read at all, even though the object was marked as
+    exactly known. All own properties are projected now, and the descriptor
+    flags are recorded, so the enumerable face still matches the original.
+- e3b8791: Methods of a class are dispatched by the method itself, and the prototype
+  of an instance is modelled.
+  
+  - Calling a method that was taken off an object — `const m = o.m; m()` —
+    was reported as a definite `TypeError`, and the same happened when the
+    method was borrowed with `call`, `apply` or `bind`. The method body is
+    executed now, with the receiver the call site provides.
+  - `delete X.prototype.m` did not remove the method from the registry, so
+    the method was still readable, still reported as present and still
+    callable. It is removed now, and calling it raises a `TypeError`.
+  - `instanceof` compared the **name** of the constructor of the instance
+    with the name on the right-hand side, ignoring the real prototype chain.
+    After `F.prototype = {}` or `Object.setPrototypeOf(f, null)`, the
+    instance still was reported as an instance, and the answer was an
+    exact `true` — a confident answer that sends a type guard down the
+    wrong branch. The instance records its prototype now, the check follows
+    that chain, and a prototype that cannot be decided folds to `boolean`
+    instead of `true`. Assigning a non-object to `F.prototype` raises a
+    `TypeError`, as the specification says.
+  - `new.target` inside an instance field initialiser was the class value
+    instead of `undefined`. The field initialiser is evaluated outside the
+    constructor frame now, so `new.target` is `undefined` there, as in
+    JavaScript.
+  - A constructor of an unmodelled built-in, such as `Intl.Collator`, was
+    branded with an internal placeholder name. The placeholder leaked into
+    the type of the value, into the generated declaration file and into the
+    generated schema, where it made the product unusable. The brand carries
+    the real name now, and the generated products no longer contain the
+    placeholder.
+- 6e5344a: An anonymous class expression now takes its name from the binding it is
+  assigned to, as in JavaScript.
+  
+  - `const K = class { … }` produced a class whose `name` was the synthetic
+    `"AnonymousClass"`, because the transpiler fixed the class name at
+    emission time and never applied the language's NamedEvaluation rule. The
+    same happened for `K = class { … }` and for `{ K: class { … } }`.
+  - The binding name is now passed back into the class expression, so `K.name`
+    is `"K"`. A name written on the class itself (`class Named { … }`) still
+    wins, and the name applies only to that class expression — a nested class
+    expression inside the class body stays unnamed.
+  - The visible `name` of a class is now separate from the internal class name
+    the engine uses for its own bookkeeping: an unbound class expression has
+    the empty name (`""`), like in JavaScript, while the internal name is still
+    available for the emitted code.
+- 7fea13a: Classes now behave like JavaScript classes with respect to computed field
+  keys, static blocks, private names and async members.
+  
+  - The computed key of an instance field (`class A { [k()] = 1 }`) was
+    evaluated per instance instead of once when the class is defined, so the
+    field name could drift between two constructions and the side effects of
+    the key expression were missing. The key is now evaluated once, at class
+    definition time, and every instance installs the field under that key.
+    Computed keys of static fields and methods keep their own evaluation
+    point.
+  - A `static` block always ran after *all* static field initializers, so the
+    source order of the class body was lost. `class A { static { A.q = 1 }
+    static r = A.q + 1 }` folded `r` to `NaN`; it is now `2`.
+  - `super` inside a `static` block resolved against the instance prototype
+    chain, so it read the wrong binding. It now resolves against the class
+    prototype, like in JavaScript.
+  - Private names were not scoped to their class: a private field of one class
+    could be read and written from another class, a derived class shadowed the
+    private field of its base class, and reading a foreign private field
+    returned a value instead of throwing `TypeError`. Private names are now
+    scoped to the class that declares them.
+  - A `static async` method was not wrapped in the async protocol, so it
+    returned the raw value instead of a promise and a `throw` inside the body
+    was thrown synchronously at the call site. It now returns a promise and
+    rejects, like an instance async method.
+  - An `async function*` was compiled as a synchronous generator: `next()`
+    returned a bare result object instead of a promise, the object had no
+    `@@asyncIterator` method, `Object.prototype.toString` reported
+    `[object Object]` instead of `[object AsyncGenerator]`, and the object
+    wrongly offered the synchronous iteration protocol. Async generators are
+    now compiled with the async protocol, in the declaration form, the
+    function-expression form and the class-method form. The element domain of
+    a `for await` loop over an async generator is taken from the generator
+    instead of folding to `unknown`.
+- 8bf3fd0: fix(core): 类与转译面四条精度债（族 59 · core 类与转译面）+ 族 57 第 8 条承接
+  
+  四条精度债逐条修复（期望值均以 node v26.10.0 原生实测为锚）：
+  
+  - **const 绑定的函数上的成员写**（台账族 43 遗留 5）：`const F = function(){};`
+    后写 `F.prototype = {}` 时，转译侧仍走**根绑定重绑**通道（引擎只对「用户层
+    直接赋值」建模 const 不可重绑，成员写走的是内部重绑）⇒ 写污染了根绑定。
+    原生：成员写是对函数对象的 `[[Set]]`，**不动绑定** ⇒ 不报错、`F.prototype`
+    被替换。引擎现在对「初始化器是函数表达式 / 箭头函数的 const 绑定」不重绑
+    根（该类绑定的值是引擎的 fn Abs，`$set` 就地写 ⇒ 写不丢）。收窄口径：其余
+    const 绑定（值可能是需重绑的形态，如内建 brand）与 `let` / 函数声明维持
+    既有根重绑通道不动。
+  - **body 编译路径的临时名避让**（族 45 遗留 3）：`exec/body-fn.ts` 的 body
+    转译单元不传 `source` ⇒ 引擎内部临时名（`__nudoTm_{n}` / `__nudoE_{n}` …）
+    的避让集恒空 ⇒ 用户标识符与引擎临时名相撞 ⇒ 产物是重复词法声明的非法 JS
+    ⇒ 整模块 fail-closed。该路径现在从 **AST** 收标识符词形（body 内全部
+    Identifier + 形参）作为避让来源。
+  - **`super.m()` 在删方法后**（Bug 194 遗留）：父类方法被 `delete` 后，
+    `super.m()` 折 unknown（看不出原生会抛）。原生：`super.m is not a
+    function` ⇒ **TypeError**（可被用户 try/catch 吸收）。引擎现在在父链
+    **闭合**（链上每个类都在注册表里）、**无动态原型写**、且该名不是
+    Object.prototype 成员时定抛 TypeError；任一条件不成立仍保守折 unknown
+    （**绝不假抛**）。
+  - **含内建父的类链**（Bug 194 / 208）：`class MyMap extends Map {}` 的实例
+    读不回内建父的条目面（`.get` / `.size` / `.has` 折 unknown = 假阴性）。
+    根因有二：内建集合的条目表按 **Abs 身份** 驻留，而派生实例在构造时被
+    **重铸**成新 Abs（表丢失）；内建方法派发按 brand 名**直查**（派生类的
+    brand 名是派生类名 ⇒ 落空）。现在构造链**保持 Abs 身份**（就地改 brand
+    名），调用面**沿类链解析首个内建 owner** 后派发（用户面同名方法仍优先）。
+  - **复合赋值到「根不可重绑」成员**（族 57 第 8 条 · 归属 W9）：`mk().x += 2`
+    的 transpile 走「根不可重绑」分支（`foo().x` 的接收者不可重绑）——该分支
+    **丢 compoundFn** ⇒ 只发右值 ⇒ 表达式值折 `2`（原生 `3`）。现在改为
+    读-改-写：对象**只求值一次**（原生 `mk()` 只调一次）、旧值读 → RHS → 写
+    （原生 GetValue → RHS → PutValue 序）；旧值不可判时算子折抽象（**不把
+    「判不准」升级成确定值**）。计算键形态（`mk()[k] += 2`）同款。
+- 5749924: 族 21 收口接线：把各分片「越界发现」里明确交给**主 agent** 的接线项补齐 ——
+  以及一条**真源缺口**（672 的剥除面在 core，不在 CLI）。
+  
+  **Bug 672 的真源（core `strip-types.ts`）** —— `nudo migrate strip --write` 写出的
+  `.js` **Node 解析不了**：`private` / `public` / `protected` / `readonly` /
+  `abstract` / `override` / `declare` 这些**类成员修饰符**原样保留，构造器**参数属性**
+  （`constructor(private opening: number)`）也原样保留 ⇒ 产物仍是 TS。
+  现在：
+  - 类成员修饰符被**剥掉**（只在类成员节点上删 —— 这些字段名在别的节点上没有 TS 语义）；
+  - 构造器参数属性**降级**成「普通形参 + 构造器体开头补 `this.x = x`」
+    （TS 语义 =「字段 x + 构造器里 `this.x = x`」；字段声明不必显式写 ——
+    JS 的 `this.x = …` 就是动态字段，语义等价）。Babel 7 的 `TSParameterProperty`
+    包装节点与 Babel 8 的「修饰符直接挂在参数上」两种 AST 形态都认。
+  
+  **Bug 670 的越界（`nudo contract --json`）** —— `runContractPrint` 完全不看
+  `opts.json` ⇒ `nudo contract --json` 把人类文本（`<file>` + 每行签名）写进
+  stdout ⇒ `JSON.parse(stdout)` 抛错。`--json` 是**机器面** ⇒ 现在 stdout 是
+  合法 JSON（`{ file, entries: [{ fn, signature }] }`），人类面不变。
+  
+  **Bug 1026 的残留（`migrate` 的发现清单）** —— `migrate verify` 的扫描集合此前只
+  抄了产品默认安全排除 3 条里的 1 条（`node_modules`）⇒ `dist/` 与 `coverage/` 的
+  陈旧构建产物被当源码门禁 ⇒ `migrate verify`（绿）与 `migrate retire` 装上的
+  `nudo check .`（红）扫描的文件集合不同。现在补齐 3 条（另排除 `.git` / `.nudo`）。
+  
+  **Bug 928 的 test 面同机制** —— `nudo test --watch --from` 的调用点证据此前是
+  **启动快照**、每轮从不刷新 ⇒ 同一轮里两个文件对同一次调用给出相反裁决，且与同一
+  磁盘状态下的全新非 watch 运行结论相反。改为**每轮开跑前重采**（与
+  `nudo check --watch --from` 同口径）；本轮证据缺失 ⇒ 本轮红。
+  
+  **Bug 693 的钉真落在 watch 形态** —— 该钉原先用 `node tsx/dist/cli.mjs <cli> …
+  --watch` 起子进程：tsx 的 CLI 会把 `--watch` 当成**自己/node 的旗标**吞掉 ⇒
+  子进程的 `process.argv` 里没有 `--watch` ⇒ CLI **根本没进 watch 形态** ⇒ 钉在测
+  非 watch 路径（假通过）。改用共享的 watch runner（`node --import <绝对路径的
+  tsx loader>` + 显式追加 `--watch`）⇒ 钉真的落在 watch 形态上；runner 另支持
+  「等 stdout 里出现一份可解析的 JSON」（谓词**分开**收 stdout / stderr ——
+  合并判断会被 stderr 的横幅干扰）。
+  
+  **Bug 948 的文本面对称** —— 空目标集现在 `ok:false` + 非零 exit ⇒ 文本面**必须**
+  有裁决行，否则出现「exit 1 但无 Result / 无 Summary」⇒ 与 JSON 面不对称。
+  
+  **既有钉的契约适配（2 条）** —— 695（信封 `summary.errors` 不再含路径错误）与
+  672（真源修好后命令层闸门不再拦）两处契约变更使既有钉失配 ⇒ 按**新契约**改钉
+  （不是回退修复）。
+  
+  **`nudo init` 的文档漂移** —— 新行为（非法值被替换 / 拒绝遮蔽祖先可继承配置 /
+  拒绝越界写容器根）此前未写进文档 ⇒ 同步 `docs/design/cli-semantics.md`、
+  `packages/website/docs/guides/cli.md`、`packages/website/docs/api/cli-reference.md`
+  （及 zh-Hans 版）。
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- e3b8791: Destructuring, array holes and the length of a union are now modelled the
+  way JavaScript models them.
+  
+  - `Array.prototype.sort` and `toSorted` turned the holes of a sparse array
+    into elements, so the array gained a key, `in` reported the key as
+    present and the higher-order methods stopped skipping it. The holes stay
+    holes.
+  - The rest of an object destructuring did not call the getters, so the
+    side effects of the getters were lost. The getters are called now.
+  - A property written to an array under a key that is not an index was
+    dropped, and reading it back reported a confident `undefined` — a value
+    that is narrower than the truth and contradicts the engine's own rule
+    that it must not be falsely precise. Reading it back is not precise any
+    more, and the write is no longer dropped.
+  - The `length` of a union was read as `number`, whatever the members were,
+    so a contract of `number()` was always accepted and nothing was ever
+    reported. The length of each member is kept now.
+- f6538a2: fix(core): 宿主函数面的 `constructor` 与普通对象的**符号键槽寻址**（族 57）
+  
+  族 57 的 8 条容器 / Proxy / 符号键精度债，本片（core · `exec/runtime/containers/**`）
+  落了**两条修法**（其余六条已是原生或修法落在别的分片，见下）：
+  
+  - **Bug 234 · 宿主函数面 / 命名空间面的 `constructor`**
+    （`packages/core/src/algebra/exec/runtime/containers/member.ts`）：
+    此前 `f.constructor` / `g.constructor` 落 `unknown`（宿主函数面**没有**
+    `constructor` 臂），`Number.constructor` / `Math.constructor` 落通用成员读
+    （抽象 fn 面 ⇒ `.name` 是抽象串）。现在按**宿主真值**取构造器名
+    （`hostCtorNameOf`）：普通函数 → `Function`、生成器 → `GeneratorFunction`、
+    async → `AsyncFunction`（转译后声明是宿主普通函数 ⇒ 种类读 Bug 325 的
+    `fnKind` 戳，不猜）、`Number` → `Function`、`Math` / `JSON` → `Object`
+    ⇒ `f.constructor === Function` 折 `true`、`.name` 折精确串。
+  - **外-02 ① · 普通对象面的符号键槽寻址**
+    （`packages/core/src/algebra/exec/runtime/containers/arr-index.ts` +
+    新增 `containers/symbol-slot.ts`）：`propertyKeyOf` 对 symbol 返 undefined
+    ⇒ 符号键**写被丢弃**（对象标 open）、**读落抽象下标投影**（`unknown`）。
+    现在符号键有内部槽键通道：well-known 符号 → `"@@X"`（与转译侧静态投影
+    同源），用户符号 → `"@@sym#<身份 id>"`（`Symbol("x")` 每次是新符号 ⇒ 每次
+    新 id；`Symbol.for("x")` 是驻留符号 ⇒ 同一 id，同键）⇒
+    `const s = Symbol("x"); const o = {}; o[s] = 1; o[s]` 折 `1`（原生同款），
+    且符号槽带 `symbolKey` 标记 ⇒ 字符串枚举面不可见（Bug 73 口径）。
+  
+  **口径与边界**：
+  
+  - sound 优先：所有新读面在「键不可判」时仍折 `unknown` / `undefined`，
+    不把「判不准」升级成确定值；Proxy 面按规范把**真 symbol** 传给陷阱
+    （Bug 149），不走槽寻址。
+  - 本片**未**动的两处（修法落在别的分片的文件范围，已在报告里给出精确改点）：
+    `in` / `delete` 的符号键通道（`exec/runtime/members.ts`）与
+    `mk().x += 2` 的复合赋值（`exec/transpile/expr/assignment.ts`）。
+  - 公共 API 冻结面零变更（无新增导出）。
+- e3b8791: Control flow and the loop invariants now carry the facts JavaScript
+  guarantees at those points.
+  
+  - A `break` inside a `try` block was swallowed by the `catch` block: the
+    body of the `catch` ran and the loop did not leave. A control flow
+    signal is not an exception, so it is not delivered to a `catch` block
+    now, and the loop leaves as it should.
+  - The write to the loop variable of a `for (let i …)` loop before a
+    `continue` was dropped, so the loop ran a different number of times and
+    produced a different result. The latest value of the loop variable is
+    written back when the body is left, and the `continue` branch uses it.
+  - The invariant of a `@nudo:invariant` directive was silently dropped in
+    a `while`, a `do..while` and a `for..of` loop, so a function could not
+    prove what its own invariant promised. The invariant is applied when
+    the loop is left now, in all loop forms.
+  - An invariant whose predicate contradicts the other facts was baked into
+    the value, and a contradiction proved anything: a real violation of a
+    contract was reported as proven. Contradictory facts are no longer
+    merged, so a contradiction can no longer prove a violation away.
+  - The `switch` statement did not narrow the value in an arm, and the
+    branch that was not taken did not narrow it either, so the code after
+    the switch was analysed against a value that could never occur there.
+    The arms now know the value they matched and the value they excluded.
+  - The facts of an early return did not reach the path that follows it, so
+    `if (x <= 0) { return 1; } return x;` was reported as violating a
+    contract that the equivalent `if`/`else` form satisfied. The path after
+    an early return now knows the negation of the guard, in every block the
+    early return is written in.
+- 2af2bae: `nudo check` no longer dies on an assignment whose recorded value is not an
+  abstract value, so one bad file can no longer cut a whole check run short.
+  
+  - The assignment channel records the **runtime** value of a binding and of
+    the right-hand side. Those values are abstract values for ordinary
+    expressions, but they are plain host values in two cases: an environment
+    global that is a function or a constructor (`parseInt`, `String`,
+    `Promise`, `setTimeout`, …) is injected as a host function, and a
+    function declaration is an ordinary host function object after
+    transpilation. The structural-assignment gate assumed every recorded
+    value was abstract and read `.shape` on it, so `let g = parseInt; g = 1;`
+    or `f = h` (with `h` a function declaration) threw a `TypeError` that
+    killed the whole `nudo check` run — no signatures, no diagnostics, and
+    every file queued after the failing one was never analysed.
+  - The gate now checks that a recorded value is abstract before reading its
+    shape. A recorded host value carries no comparable shape, so the record
+    is skipped (fail-closed): the run continues, the remaining files are
+    checked, and assignments between abstract values are still reported as
+    before.
+- 2af2bae: `nudo check` now compares `@nudo:case` witnesses against **field-level and
+  shape** contracts, and splits multi-line or escaped case arguments the same
+  way the shared single source does. Violating witnesses used to be dropped
+  silently, so a check run could pass with zero diagnostics while the witness
+  contradicted the contract.
+  
+  - **Field-level / shape contracts were skipped as a whole.** A contract with
+    a `fields` shape was skipped by the witness scan, so the case face carried
+    no obligation at all for it. A witness that contradicted the shape — a
+    field of the wrong type, or a missing field — was never reported.
+  - **Non-literal arguments were normalised to `unknown` and then skipped.**
+    Object and array literals are now parsed into real abstract values, so a
+    witness such as `{ a: "x" }` is compared with the contract instead of
+    being dropped. A missing field is reported as `missing field <path>` and a
+    field whose type does not match as `typeof <path> = "<prim>"`, matching the
+    wording of the call-site face.
+  - **Multi-line case arguments were never checked.** The argument text handed
+    over by the shared directive scanner still carries the JSDoc continuation
+    prefix (` * `), so the arguments could not be parsed and the whole witness
+    was skipped — the same witness written on a single line was reported
+    correctly. The prefix is now stripped before the arguments are split.
+  - **The check face split arguments differently from the shared single
+    source.** Its private splitter treated `\` as an escape character, so
+    `"a\", -1` produced one argument instead of two and the violating witness
+    on the second argument did not exist — the L2 witness gate passed on a
+    contract violation, while `nudo test` saw a different argument list. The
+    check face now uses the same splitting rules as the parser.
+  - **An argument that cannot be parsed is no longer skipped silently.** When
+    an argument on a contract slot cannot be parsed, or when the case supplies
+    no argument for that slot at all, the scan now reports a visible
+    `nudo:directive-syntax` warning instead of dropping the obligation.
+- 2af2bae: Five `nudo check` diagnostics that never fired now fire, and three false
+  positives / wrong paths are gone.
+  
+  - **Call-site verification is no longer dead code** (Bug 364). `checkArg` /
+    `checkCall` had no producer, so the documented call-site verification
+    surface was silent: `nudo:arg-count` and friends never appeared in
+    `nudo check`. The call-site scan now runs the generalized parameter face
+    check as well (`nudo:arg-count` for a missing required argument, the
+    argument obligation codes, `nudo:partial-result` as info). Argument
+    counting uses the *required* arity (default and rest parameters do not
+    consume an argument slot), extra arguments are a warning rather than an
+    error (JavaScript allows them), and `checkArg` now aligns the expected
+    predicate with the argument's own term so a non-literal argument is no
+    longer reported as `nudo:constraint-unproven` for a constraint it may well
+    satisfy. `nudo:fn-not-found` stays on the public API only — whether a
+    callee resolves is decided by the call-site scan.
+  - **`Error` covers user-defined Error subclasses** (Bug 365).
+    `@nudo:throws Error` and `package.json#nudo.check.ignoreThrows: ["Error"]`
+    promised `instanceof` semantics ("covers every subclass"), but coverage was
+    decided with a static set of built-in names, so `class MyError extends
+    Error {}` was not covered and the L2 gate reported a false positive. The
+    decision now walks the runtime inheritance chain.
+  - **A bounded return obligation is only "disproved" when there is bound
+    evidence** (Bug 370). The check asked "is there a predicate at all", so a
+    `typeof` predicate counted as falsifiable evidence: the same obligation
+    was an error for `return x` and a warning for `return x + 1`. With an
+    unbounded `x` the obligation can neither be proven nor disproved, so the
+    evidence test now looks for an actual bound (`gt` / `ge` / `lt` / `le`) in
+    the combined evidence (`Φ ∧ ret.pred`).
+  - **CI annotations no longer point at a file that does not exist** (Bug 373).
+    The GitHub Actions / GitLab Code Quality path trimmed the workspace root
+    with a bare `startsWith`, so a sibling directory (`app` vs `app2`) was
+    trimmed to `2/src/x.js`. The prefix now has to end on a path boundary.
+  - **Signature details no longer report the wrong function name** (Bug 377).
+    The signature format cache was keyed by the `Abs` object identity, but the
+    cached detail embeds the function name, so the second and third function
+    sharing one `never` value showed the first function's name. The cache key
+    now covers the function name as well.
+- 2af2bae: Return-contract diagnostics now carry the position of the function they
+  belong to, name the constraint source they really came from, and only claim
+  that a proof relied on a user lemma when the proof actually consumed it.
+  
+  - **Position.** `checkSource` built its return-contract issues without a
+    `line` / `column`, so every consumer fell back to the top of the file:
+    the LSP drew the diagnostic at line 1 column 0, `nudo check --gha`
+    annotated `line=1,col=1`, GitLab Code Quality reported `lines.begin: 1`,
+    and `--json` emitted no position at all — even when the offending
+    function was declared on line 10. The issues are now built with the
+    declaration position of the function, so the LSP, the CI annotations and
+    the JSON machine contract all point at the real line.
+  - **Constraint source.** The message of a violated return contract always
+    said `@nudo:contract return <name>`, even when the constraint came from
+    the return slot of a sidecar `fn({...}, <ret>)` binding — a directive
+    that does not exist in the source file. The message now names the real
+    source: `@nudo:contract return <name>` for a source directive,
+    `sidecar fn() return slot (...)` for a sidecar return slot.
+  - **Lemma attribution.** The `nudo:assume-relied` audit note claimed that
+    a proof relied on a user lemma whenever the function declared one and
+    the return contract happened to be provable — even when the lemma took
+    no part in the proof (`return 0` is provable regardless of
+    `@nudo:assume d <= max`). The engine now records which lemmas a proof
+    actually consumed and attributes the note to those, so an unused lemma no
+    longer produces a false "proved via @nudo:assume" claim. The proof
+    result itself is unchanged: the note is an audit annotation, not a gate.
+- 2af2bae: `nudo check` now sees assignments inside function bodies, judges generated
+  segments against cross-file call sites, and points diagnostics at the
+  offending directive.
+  
+  - `nudo:assign-mismatch` only covered module top-level assignments: the
+    assignment recorder was installed around the top-level evaluation, but
+    function bodies had already been evaluated (by the generalizer) before
+    that, so every `$assignRecord` from a function body was dropped. Real
+    code assigns mostly inside functions, so the check reported "OK" on
+    functions that assign a string to a number. The recorder is now installed
+    before the function loop, and repeated evaluations of the same assignment
+    site are folded into one diagnostic.
+  - `nudo:interface-drift` never fired when the call site lived in another
+    file: the "today" evidence came only from evaluating the checked file
+    itself, so a generated segment written with `--from` could not be judged
+    stale. `CheckOptions.from` now carries cross-file call-site records into
+    the same judgment; records are attributed to the checked file, so a
+    same-named function in another module cannot pollute the verdict.
+  - `nudo:assume-invalid`, `nudo:invariant-invalid`, `nudo:contract-syntax`
+    and `nudo:interface-conflict` carried no position: the LSP drew the red
+    squiggle at line 1 column 1 and `nudo check --json` reported
+    `issues[].line: null`, even when the offending directive was on line 7.
+    All four codes now report the line and column of the directive that
+    caused them.
+- 2af2bae: `nudo check` no longer treats "this entry was never analysed" as "this entry
+  cannot throw".
+  
+  - **Class instance methods were invisible to the L2 entry gate.** The
+    evidence collector only had a *static* method bridge (`$staticInvoke`).
+    That bridge answers "unknown" — without throwing — for a method that is
+    not a static method, so an instance method produced no throws evidence at
+    all. A public method with an explicit `throw new TypeError()` therefore
+    passed `nudo check` with exit code 0, while the same throw in a top-level
+    function of the same file was reported. The class branch now also has an
+    *instance* method bridge (class value → `new` with `any` constructor
+    arguments → invoke), and decides static vs. instance from the class
+    declaration in the source — at runtime the two cannot be told apart,
+    because the static bridge reports "unknown" for a method it does not own.
+    The same file's static methods and top-level functions are unaffected.
+  - **A method that always throws now has an honest signature.** The
+    generalisation path swallowed the throw and reported the method as
+    `unknown` ("inference failed"). It now reports `never`, matching how a
+    top-level function that always throws is reported.
+  - **A construct the transpiler rejects no longer turns the gate green.** If
+    the transpiler refuses a construct, the whole module is left unanalysed;
+    the entry gate used to read that as "no may-throw evidence" and stayed
+    green, so two expressions differing only by a `++` got opposite verdicts.
+    The transpiler's reason for refusing is now observable, and an entry that
+    could not be analysed is reported as "may throw Error" — a sound
+    over-approximation, since an unanalysed entry cannot be shown to be
+    total. `@nudo:throws Error` or `--ignore-throws Error` accepts it
+    explicitly.
+- 2af2bae: `nudo check` no longer reports an assignment that only fails a refinement
+  it never carried, and no longer attaches the callee's own precision to
+  every call site.
+  
+  - **Assignments are compared by shape.** `nudo:assign-mismatch` used to
+    demand that the new value also imply every refinement the *previous*
+    value carried. That refinement is usually a fact about the **caller's**
+    variable, not a constraint on the binding being assigned: in `ms@2.1.3`
+    the statement `str = String(str)` compares a new `string` against an old
+    `string` whose refinement said `typeof text = "string"` (derived at the
+    call site `parseAge("2d")`). The two have the same shape — the
+    assignment is sound at runtime — yet the gate reported
+    `str: assignment ⊭ existing shape` and turned
+    `nudo check docs/examples/retire-real/after/src/age.js` red. The gate
+    now compares the **shape** of the binding, which is what its own
+    message promises: shape changes (`let n = 1; n = "str"`), missing
+    members (`let a = {x: 1}; a = {y: 2}`) and element retypes are still
+    reported, and conditional reassignments are still exempt.
+  - **Call sites no longer report the callee's precision.** Wiring the
+    call-site verification into `nudo check` also started emitting
+    `nudo:partial-result` for every call whose callee had a partial or
+    opaque result. That is the callee's own precision problem, not the
+    call site's, and it filled the info channel with one line per call —
+    it moved the documented `nudo check` summary of the troubleshooting and
+    errors-versus-TypeScript guides from `0 info` / `1 info` to `1 info` /
+    `2 info`. The product path no longer emits it. The code and the
+    `checkCall` public API that has always reported it are unchanged.
+- e424592: File-level `@nudo:` directives no longer evaporate in silence: the mock-module
+  payload grammar accepts single quotes, the env payload grammar accepts
+  space-separated lists, block-comment `@nudo:import` is ignored instead of
+  taking effect, and an empty `@nudo:import` payload is diagnosed.
+  
+  - `@nudo:mock-module 'axios' from './mocks/v-axios.js'` was silently dropped.
+    The two payload regexes hard-coded double quotes, so a single-quoted payload
+    matched neither and the directive returned `undefined`. The mock was never
+    installed, no diagnostic was raised, and the gate stayed green. Single
+    quotes are now accepted (the source and the path may even use different
+    quote kinds), and an unparsable payload now raises `nudo:directive-syntax`
+    instead of vanishing.
+  - `@nudo:env node web` was silently dropped. The payload was split on commas
+    only, so a space-separated list became a single token and was filtered out;
+    a bare `/// @nudo:env` tag did not even match the tag regex. Both forms
+    were discarded with no diagnostic, so no environment was loaded and
+    everything stayed `unknown`. Commas and whitespace are now both accepted
+    (trailing comments are stripped), and a bare tag raises
+    `nudo:directive-syntax`.
+  - `@nudo:import` inside a block comment took effect. The text scanner
+    flattened line comments and block comments into one list and dropped the
+    comment kind, so a block-comment import really loaded its sidecar — the
+    opposite of `@nudo:env` / `@nudo:mock-module`, which the AST channel ignores
+    in block comments. Comment kinds are now kept apart: line comments take
+    effect, block comments are ignored and warned about.
+  - `/// @nudo:import` with an empty payload was silently discarded. The payload
+    was dropped before the malformed-import scanner could see it, so the
+    malformed form had no diagnostic while other unrecognised forms of the same
+    directive did. The empty payload is now reported as a malformed import and
+    raises `nudo:contract-syntax`.
+- e424592: Function-level `@nudo:` directives now bind to the right function again: a
+  statement-level JSDoc on a multi-declarator `const` binds to the first
+  declarator only, an inline JSDoc on an arrow initializer binds to the binding
+  name, a shadowing function no longer steals the exported function's
+  `@nudo:throws`, a `static` method and an instance method of the same name get
+  distinct directive scope names, and the CommonJS assignment form
+  (`exports.f = function`) keeps its directives.
+  
+  - One JSDoc was bound to *every* declarator of a multi-declarator `const`. The
+    statement-level comment was copied to each declarator's scope, so
+    `const a = () => 1, b = () => 2` under `@nudo:case "shared"` produced the
+    same witness twice — `nudo test` printed the case under `a` *and* under `b`.
+    The statement-level JSDoc now binds to the first declarator only (the
+    TypeScript ground truth); a later declarator keeps only its own inline
+    comment.
+  - An inline JSDoc on an arrow initializer was registered under `<anonymous>`.
+    The variable-declaration branch built a scope named after the variable but
+    read the *statement's* leading comments, while the inline comment sits on the
+    arrow node itself — so the witness landed on the `<anonymous>` scope and
+    `nudo test` printed `=== <anonymous> ===`. A declared function now has exactly
+    one scope, named after its binding, and both the statement-level and the
+    inline comment are visible on it.
+  - A shadowing function stole the exported function's `@nudo:throws`. Directive
+    scopes are looked up by name, and the first match in document order won, so an
+    inner `f` inside another function took the comment block of the exported
+    `f` — the exported `f` then inherited `@nudo:throws *` and the L2
+    entry-may-throw gate stayed green while the function really threw. Scopes now
+    carry their lexical nesting depth and a name lookup takes the shallowest
+    match, which is the same function the analysis side registers.
+  - A `static` method and an instance method of the same name shared the
+    directive scope name `C.m`. Only one `@nudo:contract` survived and it was
+    applied to both methods, so the static method's contract was reported against
+    the instance method (`nudo:interface-param-mismatch`). When a class has an
+    instance method of the same name, the static method's scope is now named
+    `C.static.m`; the instance method keeps `C.m`, matching the name-census
+    surface, which registers only the instance method on a name collision.
+  - The CommonJS assignment form lost every function-level directive.
+    `exports.f = function (x) { … }` has no binding name to take, so the scope
+    was named `<anonymous>` and the lookup by the exported name `f` found
+    nothing: the L1 contract silently did not apply (green gate), a
+    `@nudo:throws` declaration did not suppress the L2 gate (red gate), and the
+    `@nudo:case` witness evaporated entirely — with no diagnostic in any of the
+    three cases. The CommonJS export slot (`exports.f`, `module.exports.f`,
+    `module.exports`) is now used as the binding name, and the statement-level
+    comment is attached to that scope.
+- e424592: `@nudo:case` witnesses no longer evaporate in silence: an escaped quote in an
+  argument no longer swallows the whole case, the `=> expected` part is read on
+  CRLF sources, on the next line and behind a `!! throws` suffix, redundant
+  brackets around the expectation are stripped, and a glued
+  `@nudo:case"name"` tag is diagnosed instead of vanishing.
+  
+  - `@nudo:case "k" ("a\"b") => 3` was dropped entirely. The bracket scanner was
+    string-aware but not escape-aware, so the `\"` inside the string ended the
+    string, the bracket closed early and the whole case was discarded. What
+    remained on screen was a misattributed "unclosed argument list" warning.
+    Balancing now follows JavaScript escape semantics first; a string that never
+    closes (not valid JavaScript) still falls back to the previous lenient
+    reading, so the argument count seen by the check face and by `nudo test`
+    stays the same.
+  - `=> expected` was lost in a CRLF source file. The line was split on `\n` and
+    the trailing `\r` stayed in the expectation text, so the expectation failed
+    to parse and was dropped: the case became `[unchecked]`, the assertion never
+    ran, `nudo test` exited `0` and nothing was reported. Lines are now split on
+    `\r?\n`.
+  - A `!! throws [Kind]` suffix on the case line was read as the expectation
+    text. With the suffix before `=>` the expectation disappeared entirely; with
+    the suffix after `=>` the text `1 !! throws` was parsed and rejected. The
+    suffix is now stripped from the expectation expression only — the case line
+    itself is never rewritten, so the function-level `!! throws` declaration
+    still sees it.
+  - `=> (999)` / `=> ("a")` / `=> ({ b: 1 })` never parsed, because the
+    expectation kept its outer brackets while the argument side had always
+    stripped them. The expectation now drops its redundant outer brackets, the
+    same way the arguments do. An arrow function (`(x) => y`) is left alone.
+  - An expectation on the line after `=>` was silently discarded, and an
+    expectation that was written but empty was discarded just as silently. The
+    value is now read from the next line, and an empty `=>` is reported as
+    `nudo:directive-syntax` instead of passing unnoticed.
+  - `@nudo:case"c1" (1, 2)` — no space between the tag and the name — was
+    neither extracted (the extractor requires a space) nor reported (the
+    diagnostic side accepted it). The case vanished with no diagnostic and
+    `nudo test` ran no case at all. Both sides now share one grammar, and the
+    glued form is reported as `nudo:directive-syntax`, the same way a glued
+    `@nudo:mock` name is.
+- e424592: Malformed `@nudo:` directives are diagnosed instead of evaporating in silence:
+  an empty or glued `@nudo:assume` / `@nudo:invariant` / `@nudo:contract` /
+  `@nudo:throws` now raises a syntax diagnostic, and a `!! throws` suffix is only
+  read where it is actually a directive.
+  
+  - `@nudo:assume` with an empty payload, or `@nudo:assumed d <= max` (a space
+    missing between the tag and the payload), matched no branch at all: the
+    scanner returned nothing and nothing was reported. The lemma was dropped
+    without a word, so the return contract fell back from "proved" to "unproved"
+    and the only sign was a `nudo:unproven-return` whose text blamed inference
+    precision instead of the rejected lemma. An empty or glued
+    `@nudo:assume` / `@nudo:invariant` now produces a bad segment and raises
+    `nudo:assume-invalid` / `nudo:invariant-invalid`; a glued or empty
+    `@nudo:contract` / `@nudo:throws` raises `nudo:contract-syntax` /
+    `nudo:directive-syntax`. The strict grammar is unchanged — a tag still needs
+    a separating space — the loose forms are only reported.
+  - `!! throws` was matched anywhere in a function's comment block, so a prose
+    line ("this helper uses `!! throws`") or a case **name** that happens to
+    contain that text was read as a function-level throw declaration. The
+    declaration then covered every throw, `filterGateThrows` let them all
+    through, and the `nudo:entry-may-throw` gate was silently switched off while
+    the signature still printed `throws TypeError`. The suffix is now only read
+    where it is a directive: after the argument list of a `@nudo:case` line, or
+    on the continuation line of such a case. The documented case-suffix form
+    (`@nudo:case "neg" (0) !! throws`) keeps working exactly as before.
+  - The same glue was invisible to the inline directives of the parser package:
+    `@nudo:replaceFoo x number()` matched neither the strict nor the loose
+    pattern, so the whole inline directive disappeared. It now raises
+    `nudo:directive-syntax`. The `@nudo:as` side keeps the behaviour already
+    merged for Bug 842: a tag whose name is extended (`@nudo:asXYZ`) is not an
+    `@nudo:as` directive and stays silent.
+- ec0a9e4: fix(core exec/class): 派生构造器 super 通道、实例字段自有数据属性、构造器对象返回值、bind 产物可构造、Proxy construct 靶判定、super.constructor 取父类
+  
+  - **Bug 245**：派生类构造器未调 `super()` / 重复调 `super()` 定抛 `ReferenceError`（原生 "Must call super constructor…" / "Super constructor may only be called once"）——引擎此前无「本帧已调 super」状态通道，两者皆静默通过。状态走 `class/declare.ts` 的**模块级 WeakMap 侧表**（不改公共类型；`class/super.ts` 的 `$super` 标记 + `constructClass` 终判）。
+  - **Bug 247**：实例字段落地改走 **CreateDataPropertyOrThrow** 语义（自有数据属性，**不**沿原型链派发 setter）——父类同名 getter/setter 不再拦截字段落地（此前 getter-only 假抛 `TypeError`、setter-only 把字段写穿到父类 setter）。
+  - **Bug 250**：宿主构造器 / 可构造 fn Abs 的返回值判定放宽为「是 Object 就用它」（`obj|arr|tuple|fn|brand|eff`）——构造器返回数组 / 函数不再被静默换回 `this`。
+  - **Bug 253**：`Function.prototype.bind` 产物**可构造**——原生 `new (f.bind(thisArg, ...bound))()` 走目标的 `[[Construct]]`（新实例 + 绑定实参前置 + `this` = 新实例）；构造 facet 走 `class/declare.ts` 的**模块级 WeakMap 侧表**（不改公共类型 `AbsFnImpl`）。
+  - **Bug 257**：`$new` 的 Proxy 分支先判 **IsConstructor(target)**——靶不可构造时定抛 `TypeError` 且**不派发** construct 陷阱（此前陷阱照常派发、副作用发生、构造"成功"）。
+  - **Bug 266**：`super.constructor` 取**父类构造器**（父类值注册表）——此前回落内置 `Object`（`Sub.who() => "Object"`、`super.constructor === Base` 假 false）。
+- ec0a9e4: fix(core): 族 03 exec/class 分片 E2——244 / 258 / 263 / 264 / 1035 / 1041
+  
+  - **244** 原型 / 实例上的方法**写**（`A.prototype.m = fn` / `a.m = fn` /
+    `this.m = fn`）此前在**派发面**被完全忽略 ⇒ monkey-patch 静默失效（跑的还是
+    注册表里的旧方法体；写成非函数也不抛）。派发面改为按原生查找序
+    own → prototype 查「实例自有槽 / 原型链数据槽」，命中即按用户写的值调用，
+    非函数则定抛 TypeError。
+  - **258** `Function.prototype.apply` 的 **array-like** 实参此前只折 1 个未知
+    实参 ⇒ 实参面塌陷（`f.apply(null,{length:2,0:1,1:2})` 原生传 2 个）。改为按
+    `length`（字面量）逐下标取实参，缺席下标折 undefined；length 抽象仍保守
+    折 unknown。
+  - **263** union 方法分派的成员判据此前**只认 `string`**（`method` 形参根本没被
+    使用）⇒ number / boolean / bigint / symbol 成员上的方法（toFixed /
+    toPrecision / toExponential …）在 union 上一律被判「missing」⇒ 成员被提前
+    排除、值域塌成 unknown + 诊断点名错成员；反过来 string 成员被无条件放行 ⇒
+    string 上不存在的方法也被判「有」。判据改为按各 prim 类型的**真实原型方法
+    表**判定，被判「确定没有」的成员按原生记 TypeError may-throw（该分支定抛）
+    并跳过该成员。
+  - **264** 内建命名空间对象上调用**不存在**的静态方法（`Math.clamp` /
+    `JSON.foo` / `Object.foo` …）此前回落 unknown 且**不记 throws** ⇒ L2 门禁
+    假绿（引擎声称不可能抛，原生恒抛 TypeError）。改为定抛 TypeError；成员
+    存在但不是函数（`Math.PI()`）同抛；成员存在且引擎未建模仍保守折 unknown。
+  - **1035** 类值接收者（`A.m()`）的派发此前**先查实例方法表** ⇒ 同名 static +
+    实例方法并存时跑错方法体、抛错方向双向反转。改为类值接收者先查静态面
+    （静态方法表 → 类值自有槽 → 内建父构造器 → 静态访问器），静态面确无该
+    成员时定抛 TypeError（原生 `A.m is not a function`）。
+  - **1041** 摘下的一等方法值（`const f = A.m`）在同名 static + 实例方法并存时
+    **定抛 TypeError**（原生正常返回）⇒ L2 门禁假红。方法值的**来源侧**
+    （static / inst）随值传到派发面（`protoMethodDispatch` 的 origin 参数），
+    摘下调用按来源侧定方法体，不再「不可判」。
+- ec0a9e4: Borrowed `String.prototype` and `Error.prototype` methods no longer throw
+  where the language does not, and borrowed `Array.prototype` methods now
+  follow the spec on non-array receivers.
+  
+  - The brand-check table treated the whole `String.prototype` as
+    brand-checked, so every one of its 30 generic methods threw a `TypeError`
+    when borrowed onto another value (`String.prototype.toUpperCase.call(1)`
+    is `"1"` natively). Only `toString` and `valueOf` really require a
+    `String` receiver; the rest are generic (`RequireObjectCoercible` plus
+    `ToString`) and are now dispatched on the coerced receiver.
+  - `Error.prototype.toString` is an ordinary method: it reads `this.name`
+    and `this.message` and has no brand check. Borrowing it onto a plain
+    object threw a `TypeError` instead of returning `"X: y"`. The error
+    family no longer takes part in the brand check, and the generic
+    implementation is used for object receivers.
+  - The `Array.prototype` mutators (`push`, `pop`, `shift`, `unshift`,
+    `splice`, `sort`, `reverse`, `fill`, `copyWithin`) threw a `TypeError`
+    on every primitive receiver. Only a string receiver throws, because
+    `ToObject("ab")` has a non-writable `length`; every other primitive
+    becomes an ordinary extensible object, so `push.call(5, 1)` is `1` and
+    `pop.call(5)` is `undefined`.
+  - `Array.prototype.concat` spread the receiver even when it was not an
+    array, so `concat.call("ab")` produced two elements instead of one. The
+    spec only copies the receiver's elements when `IsArray(O)` holds;
+    otherwise the receiver is appended as a single element.
+  - `sort`, `reverse`, `fill` and `copyWithin` operate in place and return
+    the receiver, but a non-array receiver was materialized into an empty
+    array. They now return the receiver itself.
+  - `Array.prototype.with` always throws a `RangeError` on a primitive
+    receiver, because the receiver's length is `0` and the index is out of
+    range. The engine reported no throw at all, so the L2 gate reported a
+    false green.
+- ec0a9e4: fix(core): 数组方法族六处原生语义偏差（Bug 248 / 254 / 255 / 270 / 1040 / 1051）
+  
+  - Bug 248：HOF 回调族（forEach/map/filter/reduce/reduceRight/some/every/
+    find/findIndex/findLast/findLastIndex/flatMap）逐位读**当前容器**（原生
+    `Get(O,k)` / `HasProperty(O,k)` 逐步现读），不再用进体前快照的元素表；
+    `for..of` 走数组迭代器的 **live 视图**（`next()` 每步重读长度）⇒ 体内变异
+    对后续迭代可见。
+  - Bug 254：mutator 家族（push/pop/shift/unshift/splice）的**泛型接收者**
+    （数组样对象 `{length, 0: …}`）写面按 spec 落地（`Set(O,"length",n)` /
+    `CreateDataPropertyOrThrow` / `DeletePropertyOrThrow`），不再静默丢弃写入；
+    不可判定形态（open obj / 抽象 length / 访问器侧表）记 may-throw 后不写。
+  - Bug 255：`Array.prototype.fill()` **零实参**不再整条跳过（原生把整条数组
+    填成 undefined、length 不变）；缺省 value 取「确定 undefined」。
+  - Bug 270：`toSpliced` / `splice` 的删除窗口走同一实现（spliceWindow）——
+    `toSpliced()` 零实参 ⇒ start 缺省 ⇒ 不删；`toSpliced(0, undefined)` ⇒
+    skipCount 在场（undefined ⇒ 0）⇒ 不删（此前把整条数组删空）。
+  - Bug 1040：`includes(searchElement, fromIndex)` 补 fromIndex 校验（bigint /
+    symbol 确定 TypeError）⇒ L2 `nudo:entry-may-throw` 门禁不再假绿。
+  - Bug 1051：`lastIndexOf(x, undefined)` 的起始下标按原生取 0（fromIndex
+    缺省 ⇒ len-1；显式 undefined ⇒ 0）——fromIndex 引入「缺省 / 显式
+    undefined / 数值」第三态（`toIOIArg`）。
+- ec0a9e4: fix(core): 字符串 / 正则方法族的 4 处语义偏差（族 03 Bug 249 / 251 / 252 / 1042）
+  
+  - **249** `String.prototype.matchAll` 的结果补上**迭代器协议面**（原生 RegExp String
+    Iterator）：`next`（按游标推进，耗尽 → `{value: undefined, done: true}`）、
+    `@@iterator`（返回自身）、`@@toStringTag`（`"[object RegExp String Iterator]"`）。
+    此前只挂 brand 名 + 元素侧表 ⇒ `typeof it.next` 折 exact `"undefined"`
+    （wrong-exact）、`it.next()` 折 unknown。协议槽按原型语义建模（internal 槽：
+    `Object.keys` 空 / `hasOwnProperty` 假 / `in` 真）。
+  - **251** `toLocaleString` / `toLocale*` 家族的**值**与**locales 实参校验**：
+    number 臂此前把 `toLocaleString` 重定向成宿主 `toString` ⇒ 丢千分位 / `-0` /
+    指数形态（`(1234567.5).toLocaleString()` → `"1234567.5"`，原生
+    `"1,234,567.5"`）；三臂（number / bigint / 字符串 `toLocaleUpperCase|
+    toLocaleLowerCase`）均不校验 locales 实参 ⇒ `null`（原生 TypeError）、非法
+    language tag（原生 RangeError）全不抛 ⇒ throws 域折 never（假 no-throw）。
+    现改走宿主 ICU 路径 + `CanonicalizeLocaleList` 同款校验。
+  - **252** `String.prototype.search` / `match` / `matchAll` 的**无效字符串模式**：
+    模式编译失败此前被 `catch { return undefined }` 吞成「本臂不接管」哨兵 ⇒ 回落
+    抽象臂 ⇒ **throws 域折 never**（假 no-throw，L2 门禁假绿）。现按 RegExpCreate
+    步 2 定抛 **SyntaxError**（字面量模式 ⇒ 编译结果运行时同款），抽象接收者路径
+    同步补判定。
+  - **1042** `charAt` / `charCodeAt` / `codePointAt` / `at` **没有第二实参**（元数 1）：
+    此前与 `slice` / `substring` / `substr` 同 case 分支且无条件校验 `args[1]` ⇒
+    `"abc".charAt(0, 1n)` 凭空判「必抛 TypeError」（原生正常返回 `"a"`）⇒ L2 门禁
+    假红。现按各方法**真实元数**分流校验。
+- ec0a9e4: Static fields now shadow inherited static methods, and calling a method that
+  does not exist on an array or a built-in object throws instead of silently
+  succeeding.
+  
+  - A derived class that declares `static m = 2` now owns that member: `B.m`
+    reads `2` and `B.m()` throws `TypeError`, like it does natively. The
+    static-method lookup only consulted the method registry and walked the
+    `super` chain, so the inherited `A.m()` was called instead and the
+    own static field was ignored. The lookup now checks the class value's own
+    static slots first, matching the native own-then-prototype order.
+  - Calling a method that does not exist on an array or on a built-in object
+    (`[].missing()`, `new Map().missing()`) threw nothing and was not even
+    recorded as a possible throw, so the L2 gate reported a false green. The
+    missing-method check now covers arrays and built-in objects: both
+    prototype surfaces are closed, so a name outside them is provably absent
+    and the call throws `TypeError`, consistently with the class-instance
+    branch.
+- 0366b6d: Calling a class without `new`, calling a proxy whose target is not callable,
+  calling a proxy at all, and calling an unknown value now behave like the
+  runtime does.
+  
+  - A class value (a `class` declaration or a class expression) only has a
+    `[[Construct]]` slot. Calling it as a plain function threw a `TypeError`
+    natively ("Class constructor A cannot be invoked without 'new'"); the
+    engine folded the call into `unknown` and did not record a `may-throw`, so
+    `nudo check` reported the entry as never throwing.
+  - A proxy only gets a `[[Call]]` slot when its target is callable. A proxy
+    over `{}`, `[]` or a class therefore throws a `TypeError` natively; the
+    engine treated every proxy as callable and reported "never throws".
+  - A proxy call never reached the target and never dispatched the `apply`
+    trap: the trap name was missing from the proxy trap table, so trap
+    side effects were dropped and the result was always `unknown`. The `apply`
+    trap is now dispatched with the native argument order
+    `(target, thisArg, args)`, and a proxy without an `apply` trap falls back
+    to the target's own call.
+- 0366b6d: Proxy traps now reach the enumeration and extensibility faces.
+  
+  - `Object.isExtensible(proxy)` dispatched no trap at all: the `isExtensible`
+    trap was missing from the handler lookup table, so the call always folded to
+    a definite `true`. A proxy whose trap reports `false` while its target is
+    still extensible makes the native engine throw a `TypeError` (the
+    extensibility invariant is violated), and the trap's own side effects were
+    dropped as well. The trap is now dispatched, its result is coerced with
+    `ToBoolean`, and a mismatch against the target's real extensibility raises
+    the `TypeError` the native engine raises. The target's real extensibility
+    follows `Object.preventExtensions` / `Object.freeze` on the proxy, which
+    freeze the *target* in the native engine.
+  - `for (const key in proxy)` enumerated the **target's** own enumerable keys
+    and ignored the `ownKeys` trap, so it produced an exact but wrong key
+    sequence. The enumeration now goes through `[[OwnPropertyKeys]]` (the
+    `ownKeys` trap, including the spec's invariant checks — duplicate entries or
+    a missing non-configurable target key raise a `TypeError`) and then filters
+    the result by enumerability through `[[GetOwnProperty]]`. The key order is
+    the trap's order, as in the native engine.
+- 0366b6d: Family 04 (core execution / entry), shard C — fixes for bugs 273, 274, 275,
+  276, 277, 280, 287 and 289.
+  
+  - **Bug 273**: an `@nudo:mock <name>` whose name collided with a **module-level
+    binding** made the whole file fail to evaluate. The env/mock injection
+    unconditionally prepended `let <name> = …`, while the import rewrite emits
+    `let <name> = …` for the same name, so `new Function` raised a
+    `SyntaxError` (duplicate declaration). The file then degraded to
+    fail-closed `unknown` and `nudo check` exited `0` — a green gate over a file
+    that was never analysed. Injection now skips names that are already bound at
+    module level (module-level binding wins), and a mock that targets an
+    **imported** binding is applied by rewriting that import binding to read the
+    mock value (the mock overrides the import), so `@nudo:mock` keeps working
+    instead of being silently dropped.
+  - **Bug 274**: `@nudo:mock Math` / `JSON` / `Date` / `Promise` … were silently
+    ignored. Mocks and env globals shared one injection table, and the merged
+    key set was filtered with the **env-only** "do not shadow host intrinsics"
+    skip list (`ENV_SHADOW_SKIP_GLOBALS`), so every mock whose name was on that
+    list was dropped before injection — the user believed the mock was in effect
+    while the host intrinsic answered. The skip list now applies to **env
+    globals only**; mock keys are not filtered (a mock value is an `Abs` with no
+    host object identity to preserve — shadowing the host global is the point of
+    a mock).
+  - **Bug 275**: the optional `require` form (`try { d = require(a) } catch (e)
+    { d = require(b) }`) missed the `cjsMain` branch, so a module shaped
+    `module.exports = X` was returned as a **namespace** instead of `X` itself —
+    the plain `require` and the optional `require` disagreed on the shape of the
+    same module. Both paths now share one value resolution.
+  - **Bug 276**: `require()` of a module that cannot be resolved returned a plain
+    `unknown` value instead of throwing, so the user's `catch` arm was dead code
+    and the engine claimed "does not throw" — the `nudo:entry-may-throw` gate
+    under-reported (a missing module was diagnosed as `nudo:module-missing` while
+    the runtime said "no throw"). A missing module now throws a `NudoThrow`
+    carrying an `Error` brand (same class as the native `MODULE_NOT_FOUND`), so
+    the `catch` arm is live and an uncaught one is reported honestly. The
+    **load-time** case (a `require` executed while the module body is still being
+    evaluated) keeps the previous degradation: natively it means "the module
+    cannot be loaded", and throwing there would fail the whole file closed
+    (every export collapses to `unknown` ⇒ green gate over an unanalysed file);
+    the missing module is still reported by the `nudo:module-missing` diagnostic.
+  - **Bug 277**: in a CommonJS module the top-level `this` was `undefined`
+    instead of `module.exports`, so `this.x = v` always threw a `TypeError` and
+    the whole module failed to evaluate (green gate over a file that was never
+    analysed). The top-level `this` is now bound to the module's `exports` object
+    (`=== module.exports`), so `this.x = v` is visible through `module.exports`
+    exactly as in Node. ESM sources keep `undefined` (the native ESM semantics).
+  - **Bug 280**: `export const a = …, b = …` only exported `a` — the second
+    declarator was missing from the export table, so `b` was not an export, its
+    signature collapsed to `unknown` and cross-module imports of `b` were
+    `unknown` as well. The transpiled output of a multi-declarator export is
+    byte-identical to that of an independent declaration plus an independent
+    export (the transpiler only prefixes the first declarator with `export `),
+    so the remaining declarators are now recovered from the **source AST** and
+    merged into the export-name set.
+  - **Bug 287**: the export-name recovery regexes used the ASCII-only `\w`, so
+    any exported name containing `$` or a non-ASCII character was dropped
+    entirely: the function was never analysed, its signature collapsed to
+    `unknown` and a bogus `nudo:unknown-inference` was appended — the
+    `nudo:entry-may-throw` gate went green on a file that did throw. The capture
+    groups now accept JavaScript identifiers (`$`, `_`, Unicode), and the same
+    pattern source is shared with the `export * as` rewrite.
+  - **Bug 289**: `export * as "<name>" from "…"` (the ES2022 arbitrary module
+    namespace name) was not rewritten, so the statement leaked into the
+    transpiled output, `new Function` raised a `SyntaxError` and the whole
+    module failed to evaluate — every export was silently emptied and the L1 gate
+    went green. The namespace re-export rewrite now accepts a string literal
+    name in addition to an identifier.
+- 0366b6d: `structuredClone` now models its own argument contract instead of inheriting
+  the generic "abstract argument may throw" fallback.
+  
+  - The host-global literal guard recorded a `may throw TypeError` (with a
+    "Symbol coercion" cause) for **every** abstract argument. That reasoning
+    only holds for host functions that coerce their argument (`parseInt`,
+    `Number`, `decodeURIComponent`, `btoa`, …): `structuredClone` runs the
+    structured clone algorithm and never coerces its argument. Every cloneable
+    shape — plain object, array, `Date`, `Map`, `Set`, `RegExp`, `ArrayBuffer`,
+    typed arrays, class instances — was therefore reported as possibly throwing
+    although the native engine clones it silently, and the CI gate (`L2`
+    `nudo:entry-may-throw`) turned legal code red. Cloneable shapes no longer
+    record a throw.
+  - The shapes the native engine really rejects — functions, `Symbol`,
+    `WeakMap` / `WeakSet` / `WeakRef`, `Promise`, generators, and objects
+    carrying a function-valued property — were reported as `TypeError`, while
+    the host throws a `DOMException` whose name is `DataCloneError`. The throws
+    face now carries `DataCloneError`, so `@nudo:throws DataCloneError` is
+    accepted and the diagnostic text matches the host.
+  - The argument contract is classified by the **shape** of the argument (never
+    by feeding an abstract value into the host): primitives and cloneable
+    containers are cloneable, `fn` / `symbol` / `eff` / the `Weak` family are
+    not, and an unconstrained (`any`) argument still honestly records a
+    `DataCloneError` may-throw.
+- 0366b6d: Family 04 (core execution / entry), shard E — fixes for bugs 990, 1031 and 286.
+  
+  - **Bug 1031 (core)**: an `export { … };` specifier statement placed **before** a
+    class declaration made every method of that class collapse to `unknown`.
+    `ctorParamCountOf` treated the specifier statement as a declaration and
+    dereferenced `declaration.type` on a `null` declaration, raising a
+    `TypeError` inside the class-method bridge. The bridge swallowed the error
+    in an empty `catch {}`, so the method signature silently degraded to
+    `unknown` and picked up a misleading `nudo:opaque-result` diagnostic. Worst
+    of all, a violated return-type contract on such a method was downgraded from
+    an **error** to a **warning**, so `nudo check` exited `0` and let the
+    violation through. The null declaration is now skipped explicitly, and the
+    bridge distinguishes an internal failure from a failed evaluation run
+    instead of swallowing it silently. The behaviour no longer depends on the
+    order of the `export { … };` statement.
+  - **Bug 990 (core)**: `collectAbsExports` decided between the re-export branch
+    and the local-export branch by testing whether a module table was supplied at
+    all. With no module table, `export { a } from "./m.js"` was handled as a
+    local export and invented a named export, and `export { default } from
+    "./m.js"` invented a `default` export — the very existence of a `default`
+    slot is protocol-level information, so consumers were told the module has a
+    default export it does not have. The branch now only looks at whether the
+    statement has a source: an unreachable source yields no export slots at all,
+    matching the "module table present but module missing" case. `bindImports`
+    also resolves `import { default as d } from "./m.js"` through `mod.default`,
+    so it now matches `import d from "./m.js"` instead of binding `unknown`.
+  - **Bug 286 (service)**: call records for namespace member calls
+    (`ns.helper(…)`, both ESM `import * as ns` and CJS `require`) only carried the
+    member name, never the receiver. The attribution side splits the callee name
+    on a dot, so the split never happened: `targetModule` / `targetExport` stayed
+    empty, the record was dropped by the matching side, and the **error-level**
+    `nudo:interface-domain-exceeds` gate never fired for out-of-domain calls
+    across a namespace import. Such records now carry the receiver's local
+    binding name (`ns.helper`), the same shape class member calls already use
+    (`Brand.method`), and a CJS `require` binding is registered as a namespace
+    import. Ordinary calls (local functions, named imports, host globals) keep
+    their existing record names.
+- 0366b6d: `@nudo:pure` now memoizes by **value** instead of by **variable identity**.
+  
+  - The memo key was built from the argument's *term* — the identity of the
+    variable the argument was read from — not from the argument's value. Every
+    call that read the same variable collapsed onto one cache entry, so
+    rebinding that variable to a different value still hit the previous entry
+    and returned a **stale result**. On the product path (`_memoize` marker on
+    a host function) `use()` returned `"2,2"` where the runtime returns
+    `"2,4"`.
+  - The memo key is now derived from the value: literal values use the literal
+    itself, and objects/tuples are compared by their slot and element content.
+    Rebinding a variable to a different value invalidates the cache entry and
+    the call is recomputed; two different variables holding the same value share
+    one cache entry, which is what memoizing by value promises.
+  - Arguments whose value cannot be decided (functions, class instances, open
+    objects, promises, primitives without a literal value) are **not** cached at
+    all: the engine rather misses a cache hit than computes a wrong one, since
+    a wrong hit is exactly the stale value this fix removes.
+  - The call-budget and cycle-detection keys keep their previous
+    *call-identity* meaning; only the pure-memo channel uses the new
+    value-based key.
+- 0366b6d: Importing an environment module by its default name now infers the same type
+  as importing it as a namespace.
+  
+  - `import fs from "node:fs"` bound to nothing, because the environment module
+    table only carried the named exports and had no `default` slot. The import
+    folded to `unknown`, every exported function of that file degraded to
+    `unknown`, and the check reported a misleading `nudo:unknown-inference`
+    warning (the binding was never connected; nothing failed to infer) while
+    still exiting 0. Importing the very same module as `import * as fs from
+    "node:fs"` was judged normally, so one import semantics produced two gate
+    verdicts.
+  - Environment modules are CommonJS interoperability modules: Node's default
+    export for `node:fs` is the module object itself, with the named exports on
+    it. The environment module table now carries that `default` slot (the
+    namespace of the module) and marks the module as an interoperability
+    module, and the default-import binding has a single source of truth: the
+    `default` slot when present, the namespace for an interoperability module
+    that has no `default` slot, `unknown` otherwise.
+  - Ordinary user modules are untouched: a module table without a `default`
+    slot still binds a default import to `unknown` rather than falling back to
+    the namespace.
+- ec0a9e4: fix(core): 族 03 接线 —— mutator 在端到端路径上就地改接收者（Bug 254）
+  
+  `Array.prototype.push.call({ length: 0 }, 5)` 原生会就地写接收者
+  （`o.length` 变 1、`o[0]` 变 5），但引擎此前把数组样接收者**物化成副本**再派发
+  mutator ⇒ 写入落在副本上（返回值对、写面丢）。
+  
+  修法：mutator 家族在闭对象数组样接收者上改走**原接收者**
+  （`invokeArrMethod` 的泛型接收者臂 → `$arrMutContainer` → `mutateArrayLike` 就地写），
+  其余读方法保持物化通道。
+  
+  同批把 `shift` 臂的空元组分支对齐 `pop` 臂（0-tuple 移出 `undefined`，
+  此前落到泛型接收者臂折 `unknown`）。
+  
+  新回归钉 `core-bug-254-mutator-arraylike-wiring.test.ts`（端到端 6 例）。
+- c325a10: fix(core): `String.prototype.matchAll(<非 RegExp 实参>)` 不再折**确定**
+  TypeError（Bug 449）
+  
+  - ES2023 规定：只有「实参**确定是 RegExp** 且其 flags **确定不含 `g`**」
+    才抛 TypeError；实参确定不是 RegExp 时走
+    `RegExpCreate(ToString(pattern), "g")`（`g` 由算法自补）⇒ 返回**迭代器**。
+    此前这条「无 `g` ⇒ TypeError」的判定被错误推广到**所有非 RegExp 实参**
+    ⇒ `"abc".matchAll("b")` / `matchAll(1)` / `matchAll()` / `matchAll(null)`
+    全部被折成 `never` + `throws: TypeError`（假抛 ⇒ L2 `entry-may-throw` 假红）。
+  - 现在：字面量接收者 + 字面量 pattern 走 `new RegExp(ToString(pattern), "g")`
+    **真迭代**（迭代项是 `RegExpExecArray` 匹配数组，不是字符串）；抽象接收者 /
+    抽象 pattern 走抽象臂 ⇒ 迭代器（元素域保守 unknown，迭代器协议面齐），
+    **不抛** TypeError。
+  - 非法模式仍是**确定 `SyntaxError`**（`"abc".matchAll("(")`），不得回落成
+    「本臂不接管」哨兵（否则 throws 域折 `never` ⇒ 假 no-throw）。
+  - 未变：实参确定是 RegExp 且确定无 `g` ⇒ **仍**确定 TypeError
+    （`"abc".matchAll(/b/)`）；`Symbol` 实参仍确定 TypeError。
+- c325a10: fix(core): 解析入口 / 依赖指纹 / 泛型 α 绑定三条根因收口（Bug 451 / 452 / 453）
+  
+  - **Bug 451 —— `.ts` 尖括号类型断言不再整文件解析失败**：
+    `packages/core/src/algebra/parse-source.ts` 的 `parseUncached` 对**所有**源一律
+    `["typescript", "jsx"]`（`parseSource` 拿不到文件名）⇒ Babel 在 TS+JSX 双插件下
+    把 `<` 起始的表达式**优先**按 JSX 解析 ⇒ `.ts`（非 `.tsx`）里**合法**的
+    `<T>x` 尖括号类型断言让**整个文件**解析失败（`check` / `test` / `export` /
+    `migrate strip` 全废，tsc 对同一份源 `exit 0`）。
+    修法（路线 A，单文件 / 零调用面改动 / `parseSource` 签名不变 ⇒ 公共 API 冻结面
+    零变更）：解析**硬失败**时去掉 `jsx` **重试一次**；重试也失败则报**首次**错误。
+    插件集不随调用方变化 ⇒ AST LRU 缓存键（mode + source）**不动**、无串味。
+  - **Bug 452 —— 依赖指纹不再漏「仅副作用 import」**：
+    `packages/core/src/algebra/load-deps-fp.ts` 的 `extractAllLoadSpecs` 用**正则**抽
+    说明符、模块图用 **AST** 抽 ⇒ 两者对「仅副作用 import」（`import "./setup.js";`）
+    与「模板字符串 `require(\`./tpl.js\`)`」的判断**不一致** ⇒ 指纹**低估**真实依赖集
+    ⇒ 磁盘缓存键不含该依赖的内容 ⇒ 依赖改了而键不变 ⇒ `nudo check` 继续吐**上一次的
+    陈旧签名**（文件头「more misses, **never a stale hit**」承诺被证伪）。
+    修法：指纹的说明符抽取**并入 AST 侧**（与模块图同口径：import / export-from /
+    `require` / `require.resolve` 的可折叠静态字符串）⇒ **正则集 ∪ AST 集** ⇒
+    只多 miss（保守），绝不陈旧命中；AST 解析失败时正则集仍在 ⇒ 不引入新的低估。
+  - **Bug 453 —— 收割的泛型函数在调用点绑定类型实参**：
+    `packages/core/src/algebra/hof.ts` 的 `bindTypeVars` 只做**同 kind** 配对 ⇒
+    harvester 把 `T[]` 建成 **`arr`**（元素 = α var）、引擎把**数组字面量**建成
+    **`tuple`** ⇒ α **永不绑定** ⇒ 返回值落 `any` ⇒ 参与算术即「抽象操作数强制转换」
+    ⇒ 记 may-throw ⇒ **L2 假红**（tsc `exit 0` 的合法代码被门禁判红）。
+    修法：加**跨 kind 臂**（`arr` 形参 × `tuple` 实参 ⇒ 取首元素；
+    `tuple` 形参 × `arr` 实参 ⇒ 取 arr 的元素类型）。
+    ⚠ **同 kind 臂排在前** —— `hof-relation.test.ts` 的既有用例
+    「deep α: `T[]` param binds T from `number[]` arg (lodash-style)」**保持绿**。
+  - 未变：core 公共 API 冻结面**零新增导出**（`parseSource` 签名不变、
+    `extractAllLoadSpecs` / `loadModuleDepsFingerprint` 只改内部实现）。
+- e2880fd: 族 06 收口接线（2）：合取读侧看不穿嵌套 `and` ⇒ 入口契约里的事实被静默丢弃。
+  
+  - **入口 Φ 的嵌套合取**：入口契约谓词逐条进 Φ，而每条谓词本身可能是合取
+    （`and(typeof x, ge(x,0))`）。旧口径用裸 `{op:"and",args:[…]}` 合成 Φ ⇒
+    Φ = `and(and(…), and(…))` ⇒ 内层原子对合取读侧（`buildCtx` /
+    `collectBoundsFromPhi` / `impliesNotTypeof` …）**不可见** ⇒ Φ 里的事实被
+    静默丢弃。合成改用 `and()`（展平一层），合取读侧改为**递归展平** ——
+    合取可结合，`and(and(A,B),C)` ≡ `and(A,B,C)`。
+  - **可观测后果**：`max === 0 ? 1 : 1 - d/max` 这类形态，在契约声明
+    `max >= 1` 时本可证明 `max === 0` 不可达 ⇒ 死臂剪掉 ⇒ 签名是
+    `sim(d: number, max: number) => number`。Φ 嵌套后证不出 ⇒ 死臂留下 ⇒
+    签名退化成 `=> 1 | number`（多出一个恒被契约排除的臂）。
+  - 展平是**读侧**修正：不动任何已构造谓词的形状 ⇒ 展示串 / 谓词相等判定 /
+    缓存键零漂移。
+- e59c991: Type renderings no longer read as the wrong type, and `nudo check --what-if
+  --target` prints a real return domain instead of `?`.
+  
+  - A function type inside an array or a union is now grouped with
+    parentheses. `formatShape` rendered an array of functions as
+    `(number) => number[]`, which TypeScript reads as "a function returning
+    `number[]`" rather than "an array of functions", and rendered a union of a
+    function and a number as `(number) => number | number`, where the `|` binds
+    to the function's return type. The `.d.ts` renderer already grouped both,
+    so the two renderers disagreed about the same abstract value. Function
+    members and function elements are now parenthesized; other member kinds are
+    unchanged.
+  - `nudo check --what-if --target <function>` printed `() => ?` for the
+    targeted function: the top-level binding's abstract value carries no
+    return type, while the signature table reads a different abstract value.
+    The target now takes the function's real return domain, so the two faces
+    agree; the `?` placeholder itself is unchanged.
+- e59c991: Type guards now keep the structural obligations the type actually carries.
+  
+  - A branded value (`Date`, `Map`, …) was projected as "is an object", so
+    `{}`, `[]` and `new Map()` passed a guard that was supposed to accept a
+    `Date`. The guard now checks the brand identity
+    (`instanceof Reflect.get(globalThis, "<Brand>")`); a brand whose constructor
+    is not a global is let through, matching the standard-schema face.
+  - A required object slot was only checked through its value guard, so a slot
+    whose value is unconstrained (`any()` / `unknown`) lost its "the key must
+    exist" rule entirely, and a slot whose value domain contains `undefined`
+    could not tell a missing key from an explicit `undefined`. The existence
+    rule is now an independent clause, and the object check no longer accepts
+    arrays.
+  - A length bound (`string().length(3)` / `max(3)` / `min(2)`) was dropped
+    from the guard, so every string passed. Length bounds are now projected as
+    `value.length` comparisons.
+- e59c991: Inlay hints now show readable return types instead of engine-internal text.
+  
+  - The return hint of an arrow function with an expression body was anchored at
+    the **start** of the returned expression, so the annotation was pushed
+    between `=>` and the expression and split the source line
+    (`const arrow = (v) => : v * 2  v * 2;`). Block-bodied functions are
+    unchanged (the hint still sits right before `{`); for an expression body the
+    hint is now anchored at the **end** of the expression, the same place
+    TypeScript puts its own return-type hint.
+  - The return hint could show the engine's internal abstract variable id
+    (`len#0`, minted by a process-wide counter), which is neither a type the
+    user wrote nor reproducible across recomputations. Internal length ids are
+    now shown as the stable, readable `len`.
+  - A literal `-0` was rendered as `0`, and because the union members were
+    de-duplicated with a key that did not distinguish `-0` from `0`, one of the
+    two union members was dropped entirely (`0 | -0` displayed as `0`). Literal
+    text and the de-duplication key now follow the repository's canonical
+    literal rendering, so `-0` survives and both union members are kept.
+- e59c991: String unions are now concatenated member by member, and generated line
+  comments no longer carry a block-comment escape.
+  
+  - A value that is one of several string literals was concatenated as if the
+    literals were one piece of text. `("a" | "b") + "!"` was reported as the
+    single string `"ab!"` — a value no call can produce, because the real
+    answers are `"a!"` and `"b!"`. The same happened to `` `v=${x}` ``, which
+    was reported as `"v=ab"`. A union now keeps its members apart while it is
+    converted to text, and the two sides are combined member by member, so the
+    result is the union `"a!" | "b!"`.
+  - The comment cleaner escaped the end of a block comment everywhere it was
+    used, including inside `//` line comments, where it has no meaning. The
+    contract draft printed by `nudo contract --draft` — the text a user is
+    asked to copy into the sidecar — showed `/* no evidence — tighten *\/`
+    instead of `/* no evidence — tighten */`. Line comments now keep the text as
+    it is; a line break inside a comment is still flattened, so a comment can
+    never spill out of its line. Block comments (the JSDoc in the emitted
+    `.d.ts`) still escape it, because there the escape is what keeps the
+    comment from ending early.
+  
+  - **Member results are combined with the engine's existing "same primitive"
+    rule** (`joinValues`), not as a raw union. Two *literal* members still form an
+    enumeration (`"a!" | "b!"`), but a literal combined with a same-primitive arm
+    that carries no narrowing evidence collapses to that primitive — the same
+    rule the rest of the algebra uses. Without it, a union member whose rendering
+    is already `string` would sit next to a literal and print as
+    `"NaN days" | "NaN day" | string | …`: harder to read than the type it
+    describes, and inconsistent with the signature the same function has
+    everywhere else (`formatAge(durationMs: number) => string`).
+- e59c991: `nudo check --json` no longer ships the engine's internal variable ids, and its
+  signatures now match the ones printed on the terminal.
+  
+  - The machine-readable signature fields rendered the abstract value's `term` /
+    `pred` unconditionally. Those terms mix in the engine's internal variable
+    ids (`len#0`, `len#2`, …), which are minted by a **process-wide counter**, so
+    the id a file got depended on the file's position in the command line.
+    Checking three identical files gave `len#0` / `len#2` / `len#4`, and swapping
+    the order swapped the ids — the JSON payload of a single file was a function
+    of its argument position rather than of its contents. The internal ids are now
+    replaced by a **stable name** (`len#2` → `len`), so the abstract term and
+    predicate evidence survives while the drifting number is gone.
+  - `signatures[].display` is now rendered with the same `formatShape` projection
+    the terminal uses, so the machine face and the human face of one command
+    agree: `nudo check` prints `f() => number` while `--json` used to report
+    `number = len#0 where len#0 ≥ 0 #path` for the very same function. The
+    confidence marker and the branch-join note are still available — through the
+    `conf` field and the `detail` / `abs` fields.
+- e59c991: Regression pin for a `__proto__` object-slot projection defect that was
+  **already fixed** in an earlier release (family 17 / Bug 606) — this changeset
+  only adds the guard test, there is no behaviour change.
+  
+  An object slot named `__proto__` used to be swallowed by the contract
+  projection layer: the field table was a plain object, so assigning the key hit
+  the `Object.prototype.__proto__` **prototype setter** instead of creating an own
+  property, and the key silently vanished from the projected shape (the zod
+  artefact lost the field). The rendering layer had the same hole.
+  
+  Both are closed: the projected field table is now a **null-prototype** object,
+  and `formatObjectKey` writes `__proto__` as a **computed key**
+  (`["__proto__"]`), which is an ordinary own property.
+  
+  The new pin locks that behaviour in place:
+  
+  - `formatObjectKey("__proto__")` returns `["__proto__"]`, never a bare
+    `__proto__` key.
+  - The projected field table has a `null` prototype and `__proto__` shows up as
+    an **own** key (`Object.hasOwn`), so the prototype setter cannot swallow it.
+  
+  One related residue is **not** fixed here and is filed separately: zod v4
+  assigns `["__proto__"]` back onto the parsed result through `[[Set]]`, which
+  triggers the prototype setter, so the **parsed** value still loses the key.
+  That is zod's own runtime behaviour, outside Nudo's projection and generation
+  responsibilities.
+- 3d79864: fix(core): 族 65 · core 剩余 6 条精度债收口（BC #28 / #44 / #45 + 族 62 的 3 条）
+  
+  本片收掉 core 侧最后 6 条精度债（台账 `#28` / `#44` / `#45` + 族 62 的
+  `Intl.Collator` / `cause` 继承槽 / 类型化数组元素值），全部**对拍 node
+  v26.10.0 原生**后落码：
+  
+  - **BC #44 · `Object.getOwnPropertySymbols` 的自有 symbol 键面**
+    （`builtins/object/methods.ts`）：引擎把 symbol 键投影成 `"@@X"` 槽
+    （`Slot.symbolKey` 标记）⇒ **闭**对象的自有 symbol 键集可精确列举 ⇒ 折
+    精确元组；原生 `[]` 的目标（普通对象 / 数组 / 字符串 / 数字 / 函数 /
+    Error 实例 / TA 实例 / **生成器对象**）不再折保守 `symbol[]`；宿主命名
+    空间对象（Math / JSON / Intl / Reflect）折 1 个 symbol 键
+    （原生 `[Symbol.toStringTag]`）。键集**不可判**（开放 obj / 抽象 brand /
+    arr / 原型 brand / Proxy / any / unknown / sum）⇒ **仍**保守 `symbol[]`
+    （不折空——空是自信的确切错值）。
+  - **BC #45 · 生成器身份面**（`exec/runtime/async.ts`）：同步生成器补
+    `@@toStringTag = "Generator"` ⇒ `Object.prototype.toString.call(g())`
+    原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错
+    值）。槽仍 internal + symbolKey ⇒ 自有面 / 枚举面 / gOPS 面不可见
+    （原生生成器对象无任何自有可枚举属性）。**不扩 Abs 形状**：生成器对象
+    仍是闭 obj ⇒ 「类型投影面与空对象同形」这一条**未**收口（根治需
+    `makeGenObject` 改 `brand("Generator")` ⇒ A 类架构债，已登记为
+    `docs/design/architecture-debt.md` 的 **A11**）。
+  - **BC #28 · try/catch 与控制流信号**（`exec/transpile/stmt/fn-body.ts` ·
+    `stmt/statement.ts` · `transpile/types.ts`）：台账记的 `try { break; } catch {}`
+    在 HEAD **已不复现**（族 02 的 Bug 211 已让 `$catchVal` 透传
+    `NudoLoopSignal`）；本片收掉的是**同族仍在的既有缺口**——try / catch /
+    finally **块体**里的早退提升（`if (c) return X;` + 后续语句）此前把
+    「块内**后续路径**的值」当成函数返回值抛出 ⇒
+    `try { if (0) return 42; n++; } catch (e) {} return n;` 原生 `1`、引擎折
+    `undefined`（自信的错值）。修法：早退臂置标志 + 后续路径内的 `return` 走
+    `$loopReturn` 信号 ⇒ **只有早退真的发生**才早退；块完成 ≠ 函数尾由新增的
+    `inCtrlBlock` 位表达（catch / finally 体此前落「返回值」协议）。
+  - **族 62 ① · `Intl.Collator` 实例面**（`exec/runtime/members.ts`）：
+    `BUILTIN_BRAND_METHODS` 补 `"Intl.Collator"`（`compare` /
+    `resolvedOptions`）⇒ `typeof new Intl.Collator().compare` 折精确
+    `"function"`（此前是 unknown 域）。
+  - **族 62 ③ · Error 的 `cause` 继承槽**（`builtins/error/error-family.ts`）：
+    原生 InstallErrorCause 走 `HasProperty(options, "cause")`——**含原型链**
+    ⇒ `new Error("m", Object.create({cause: 1})).cause` 原生是 `1`，此前引擎
+    读出**精确 undefined**（「确定不存在」——自信的错值）。修法：键集不可判
+    （开放 obj / 原型链开放 / 抽象 options）时装**值为 unknown 的 cause 槽**
+    （读出「有槽但不知道值」）；原型链上**确有** cause 键时（存在性确定）装
+    同款 unknown 值槽 ⇒ `in` / `hasOwn` / gOPN 面与原生同（确定含
+    `"cause"`）。闭 obj 无 cause 键 ⇒ 仍**不装**槽（原生同）。
+  - **族 62 ④ · 类型化数组的元素**值**面**（`builtins/error/binary.ts` ·
+    `exec/runtime/containers/arr-index.ts` · `containers/member.ts`）：闭 tuple
+    源逐元素过 ToNumber / ToBigInt + 家族取值转换（整数 TA 的模 2^n 回绕、
+    向零截断、Float32 的 `fround` 舍入、Uint8Clamp）⇒ 值入索引槽 ⇒
+    `new Int8Array(["3"])[0]` 折 `3`（原生同；此前是 `number | undefined`）。
+    值不可判的源（对象源的 `valueOf` 回调 / 抽象域 / 长度形态）**不入槽**
+    ⇒ 读面仍回落「元素域 ∪ undefined」（不假精确）。
+  
+  新钉 `packages/core/src/algebra/__tests__/eval-bug-65-core-remaining.test.ts`
+  （23 例：6 条各 ≥1 例 + 负控，逐条对拍原生）。既有金标**只加强不弱化**：
+  `eval-object-json-w9.test.ts` 的 gOPS 断言（保守 `symbol[]` → 精确元组
+  + 抽象接收者仍保守）、`eval-bug-332-intl-collator-shape.test.ts` 与
+  `packages/env/src/__tests__/env-bug-62-es-web-surface.test.ts` 的
+  `it.fails` 旗标（族 62 的 3 条）均已摘旗转正。
+- e2880fd: The constraint builders now reject arguments they cannot honor, instead of
+  turning them into a weaker or empty contract.
+  
+  - `length(...)` accepts a finite numeric bound only, like its sibling
+    builders. `string().length(NaN)` used to build a contract that no string
+    could satisfy, and `string().length("3")` used to build a contract that was
+    never checked at all; both are refused while the contract is built.
+  - `shape(...)` takes an object of field constraints. A number, an array or a
+    string used to collapse the whole shape into an empty one — the contract
+    then held for every object — and a missing argument reported the raw
+    `TypeError` of the host. Both now report which builder got the wrong
+    argument.
+  - `array(...)` requires an element constraint. Without one the element became
+    `undefined`, so every ordinary array argument was reported as a violation.
+    Write `array(lit(undefined))` when undefined elements are meant.
+  - The field tables of `shape`, `partial`, `omit` and `pick` are built without a
+    prototype. A field named `__proto__` was written as the prototype of the
+    table instead of a key of its own, so the field vanished from the contract
+    and the check accepted every argument. The field survives now, and the
+    builders report a field table that lost a key instead of quietly accepting a
+    weaker contract.
+- e2880fd: fix(core): 「prim + 界」契约补回类型义务 + 约束 DSL 形态校验（族 06 / Bug 333 335 337 347 357 358）
+  
+  - **333 / 335**：`instantiateConstraint` 只要约束带 `prim` 就把 `typeof` 谓词与界**合取**
+    （此前只在 `preds.length === 0` 时补 ⇒ `number().gt(0)` / `string().max(3)` 这类
+    「prim + 界」契约实例化后**没有类型义务** ⇒ 类型错配的实参被静默放行）。
+    ⚠ `instantiateOnTerm` 保持原口径：union 成员经它实例化，补 `typeof` 会让
+    执法侧 `or` 分支判不出（成员谓词变 `and`）⇒ `union(lit(1), lit(2))` 的违例丢失。
+  - **337**：`length()` 的内部占位符 `__nudo_self__` 替换**递归进应用项实参**
+    （`app("length", […])`）与 `and` / `or` / `not` 分支 ⇒ 占位符不再泄漏进
+    实例化谓词与产品 `expected` 文本。
+  - **347**：`pick()` 取字段改**自有属性**判定（`Object.hasOwn`）⇒
+    `"constructor"` / `"toString"` 等原型链成员不再被当成字段塞进字段表
+    （此前让 `nudo contract` / `nudo export` 面裸崩、`nudo check` 面静默作废整条契约）。
+  - **357**：`fn()` 第三实参做形态校验：`opts` 必须是对象；`opts.throws` 归一后必须能
+    抽出至少一个错误名 ⇒ 无效申报不再被静默吞掉（零诊断假红），改为可读的 DSL 错误。
+  - **358**：`pick()` / `omit()` 的 `keys` 必须是**字符串数组** ⇒ 传字符串不再被逐字符
+    迭代（`pick` 把契约放松成空 = 假绿、`omit` 让约束变更严 = 假红），改为可读的 DSL 错误。
+- e2880fd: 族 06 修复 S3：Bug 342 / 348 / 355 / 922 / 965 —— 约束 → Abs 投影不再蒸发
+  用户写下的那部分约束，产物面与门禁面给出同一个裁决。
+  
+  - **922**：`array(number()).min(3)` 这类**数组自身**的长度界在 Abs 投影里整条
+    丢弃（数组分支提前返回、pred 槽写死 undefined）⇒ 契约面 / zod 面 /
+    standard 面 / 门禁面全都看不见它 ⇒ 完全静默的假绿。数组分支现在承载顶层
+    长度界，执法面也按**数组元素个数**求值（此前只处理字符串）。
+  - **355**：`array(string().max(1))` 的**元素**长度界在 Abs 投影里无处承载 ⇒
+    同一份代码，CI 门禁判绿而 zod 产物面判红（跨产物面自相矛盾）。元素的长度
+    界现在进 Abs 投影，执法面按元素位（`length(a[0]) ≤ 1`）求值。
+  - **965**：`lit(null)` / `lit(undefined)` 的整条约束在 Abs 里消失（pred 被丢弃
+    + shape 退成 unknown）⇒ 形参退化成 unknown、调用点前置条件不再执法 ⇒
+    门禁 OK / exit 0（假绿），而同一份契约在 dts 面印 `x: null`、在契约面印
+    `x: lit(null)` ⇒ 三个面三种答案。nullish 域现在保留在 pred 槽里，null 与
+    undefined 分成**两个域**（`lit(null)` 契约不收 undefined，反之亦然）。
+    实参抽取此前只处理数字与字符串字面量 ⇒ `f(null)` 根本没有实参可判 ⇒
+    null / undefined 现在也进实参位。
+  - **342**：`.int()` 是**数据标志**不产生 pred ⇒ 约束 → Abs 投影把整性整条
+    蒸发 ⇒ zod / standard 产物面静默放行 `3.5`，而门禁（读约束）仍判红 ⇒ 两道
+    门对同一事实给出相反裁决。整性现在投影成 pred。
+  - **348**：`lit()` 的字面量只活在 pred 里（shape 无字面量位）⇒ 只看
+    term / shape 的 widen 路径永远看不见它 ⇒ 同一份契约四个面四种答案。check
+    签名面与 dts 面的**参数位**现在按 pred 里的字面量域保形
+    （`x: lit(1)` / `x: 1`），与契约面、zod 面对齐。
+  
+  渲染面顺带修了一个会崩的字面量拼法：bigint 走 `JSON.stringify` 直接抛
+  `Do not know how to serialize a BigInt`（NaN / ±Infinity 会被印成 `null`、
+  `-0` 被抹成 `0`）——现在按 JS 字面量拼法展示。
+- e2880fd: 族 06 修复 S4：Bug 338 / 344 / 345 / 350 / 351 / 356 / 360 / 362 ——
+  源码指令的文法、侧车的装载与诊断归属，从此按引擎真实口径说话。
+  
+  - **350**：三条源码指令（`@nudo:assume` / `@nudo:invariant` / `@nudo:contract`）
+    的标识符文法只接受 ASCII ⇒ 中文标识符 / `$` 前缀等**合法 JS 绑定名**被判
+    malformed（L1 假红），而侧车面又把同一个中文名当一等公民 ⇒ 跨面自相矛盾。
+    三条指令现在共用 JS 绑定名文法（Unicode 合法）。
+  - **356**：侧车求值把 15 个构建器名当**形参**注入，而侧车自身的
+    `const <name> = …` 在同一函数作用域 ⇒ `SyntaxError: Cannot declare a const
+    variable twice` ⇒ 侧车根本加载不了 ⇒ 该文件全部契约丢失、三个运行时产物面
+    静默退化为「接受一切」，而 `nudo export` exit 0 零告警。注入名不再占用侧车
+    自身的顶层作用域；侧车顶层声明与相对 import 绑定的同名也会被点名。
+  - **338**：同上（侧车注入名与侧车自身绑定的撞名）——侧车**加载失败**现在给出
+    指向侧车路径的原生诊断，而不是让宿主 `SyntaxError` 原文冒泡。
+  - **345**：依赖侧车的求值异常**原样冒泡** ⇒ 报错指向导入方且点名它根本没有的
+    名字，导入方的合法契约被连坐作废 ⇒ 契约门禁假绿。现在包装成 Nudo 原生
+    诊断并点名**依赖侧车路径**。
+  - **344**：两条 `@nudo:import` 绑**同一个本地名** ⇒ 后写覆盖先写，零冲突检测
+    零诊断 ⇒ 裁决随行序翻转。现在拒绝绑定（不猜哪条赢）。
+  - **351 / 360**：源码 `@nudo:contract return <fn 形态模板>` 的返回义务整条不
+    被执法；且多条 return 段**只执法第一条** ⇒ 违反第 2 条时 0 error / exit 0
+    （加一条契约反而让门禁变绿）。返回义务现在真的被执法，多条 return 段
+    **合成单条合取**（与形参位「同形参多段取合取」的既有语义一致）。
+  - **362**：`sidecarPathOf` 不剥已有的 `.nudo` 段 ⇒ `lib.nudo.js` 被拼成
+    `lib.nudo.nudo.js` ⇒ 该文件不是任何源码的侧车 ⇒ 契约永久静默失效。
+- e2880fd: 族 06 修复 S5：Bug 334 339 340 359 361 964 —— 侧车装载与契约合流的口径修正：
+  
+  - **334**：同一个物理侧车环被 ambient 加载通道与 `@nudo:import` 通道各报一次
+    ⇒ 一个环 = 两条同码 error（门禁摘要虚增一倍）。现在按环链文本去重，
+    一个物理环只报一条 `nudo:interface-cycle`。
+  - **339**：侧车导出名与源码函数名对不上（打错一字）⇒ 契约被**静默丢弃**
+    （签名退化成 any、dts 类型错、门禁冒假红且修复提示指错方向）。现在做一趟
+    孤儿导出扫描：侧车里没人认领、且**像是打错一个字**的 `fn()` 契约会被点名
+    报出（契约库侧车的正常条目不报，零假阳）。
+  - **340**：非标量约束（shape/array/union/fn）的合取是 `and()` 的**能力边界**，
+    不是「语义不可满足」——原来一律记成 conflict ⇒ 门禁假红
+    `nudo:interface-conflict` **且**该形参的义务被整条跳过（假绿）。现在只有
+    真正的语义矛盾（prim 不一致）才记 conflict。
+  - **359**：别名 / `default` 桥接下侧车诊断点名的是源码本地名（侧车里根本没有
+    那个导出）。现在点名侧车里真实存在的导出名，并同时给出源码函数名。
+  - **361**：bigint 字面量丢 `n` 后缀 ⇒ 诊断里的 `lit(10n)` 读起来是 number 字面量
+    `lit(10)`（陈述的是另一条契约）。展示面（`termToString` / `litToString`）现在
+    保 `n` 后缀，与 `format.ts` 的 prim bigint 渲染同口径。
+  - **964**：单份契约**内部**自相矛盾（`number().gt(10).lt(5)`）零诊断（静默假绿）。
+    现在与跨来源矛盾同口径报 `nudo:interface-conflict`。
+- e2880fd: 族 06 修复 S6：Bug 343 346 349 1023 —— 契约面的采用与呈现口径（callee 违约、
+  assume 前提作用域、fn 槽位占位 term、跨模块形参名）
+  
+  - **343**（callee 违约时的假绿）：调用点不再用 callee 的**声明面**替换**确定违反**
+    声明约束的真实返回值。callee 返回 `5` 而契约声明 `number().ge(0).le(1)` 时，
+    引擎本已判定违约，但调用点仍把声明面当事实交给 caller ⇒ caller 的返回契约被
+    「证得」（跨模块时 `nudo check` 零错误）。现在保留真实返回值 ⇒ caller 侧同样
+    报 `nudo:constraint-violated`。
+  - **346**（`@nudo:assume` 前提的作用域）：前提槽不再**整体**关掉 callee 契约面的
+    采用。只有当引理前提的自由变量里**确实含**该位被重锚成的 callee 形参名时才跳过
+    这一位；与本次调用无关的惰性引理（如 `p <= q`，p/q 是调用方的局部量）不再把
+    调用方的返回类型退化成 `any`、也不再造出假红的 `nudo:unproven-return`。
+    与引理名字撞名的情形仍跳过（#152 的 soundness 护栏保留）。
+  - **349**（签名面泄漏内部占位 term）：契约 fn 的槽位 term 是内部占位名
+    （constraint.ts 生成的 `x${i}` / `ret`），此前回显进签名面长成 TS 默认参数
+    `f(cb: (number = x0) => number = ret) => number`。现在 fn 形状的内层槽位不再
+    回显占位名；关系 fn 槽位的 α 名（A1/B1）照旧回显。
+  - **1023**（跨模块形参名对不上被静默吞掉）：跨模块桥接路径与同文件路径**同口径**
+    ——契约形参名对不上形参表时报 `nudo:interface-param-mismatch`（此前该形参的义务
+    在调用方**蒸发**，负参调用假绿）。两条路径复用同一段计算与同一条文案。
+- da4fbfc: Call-site contract enforcement no longer depends on where the call sits, and
+  default parameter values are checked against the contract they belong to.
+  
+  - `f(true)` was checked only when the call was a top-level statement. The
+    literal fast path had no case for boolean literals, so `f(true)` fell
+    through to the unknown fallback and the call site carried no enforceable
+    information. Only the evaluator's value-flow fallback could still see it,
+    and that fallback has a record only for statements the module actually
+    executed — a call inside a function body was therefore never checked.
+    Boolean literals now have their own case in the fast path, so the same
+    violation is reported identically in both places.
+  - A parameter with a default value (`f(x = -5)`) was never checked when the
+    call passed no argument at all: the zero-argument early return skipped the
+    whole call site. The default value was computed by the engine and then
+    never reconciled with the contract, so a default that violates its own
+    precondition passed silently. Zero-argument calls now fill the argument
+    positions from the callee's default values before the contract is
+    enforced. Defaults that cannot be read statically (destructuring
+    patterns) are left alone rather than guessed at.
+- da4fbfc: Union and nullable contracts now enforce their members, and a bigint literal
+  contract is no longer a contract that can never fail.
+  
+  - A contract written as a union or as a nullable is instantiated into a
+    disjunction of atoms, and the enforcement side decides each atom on its
+    own. The atoms that carry a nullish literal could not be decided — the
+    literal value of `undefined` cannot be told apart from "no value" — so
+    the disjunction was reported as "cannot tell" and the whole contract was
+    skipped. Every argument outside the contract passed silently. The nullish
+    atoms are now decided on their own terms, with `null` and `undefined` kept
+    as two separate domains, so `f(0)` against `union(number().gt(0),
+    lit(null))` is reported while `f(3)` still passes.
+  - A union over primitive types is instantiated into `typeof` atoms, and those
+    atoms could not be decided either, which left contracts such as
+    `union(number(), string())` without any enforceable content. The decision
+    side now reads the primitive shape of the argument and compares it with the
+    type the atom asks for, so `f(true)` against `union(number(), string())` is
+    reported.
+  - `lit(1n)` was instantiated into an equality atom whose literal side could
+    not be read, because only number, string and boolean were recognised as
+    literal values. The atom was therefore never decidable and the contract
+    accepted every argument: `f(2)` against `lit(1n)` passed. Bigint literals
+    are read as literals now, and the expected value keeps its `n` suffix in
+    the diagnostic.
+- da4fbfc: fix(core): 调用点扫描 / 契约执法五处缺陷（族 11 片 S2）
+  
+  - **433** `union(...)` 含 shape / array 成员时**成员结构义务整体丢失**（假绿）：
+    契约侧把成员摊成顶层 `or(...)`（结构义务实例化即丢），执法侧也没有 union
+    成员分支 ⇒ 两侧都缺。消费侧补 union 成员分支：与实参形态匹配的成员**全部**
+    不满足才报违例（union 是析取）；谓词通道能自己裁决时让位（不双报）。
+  - **436** 同一条「缺字段」违例被 `checkShapeReqs` + `checkReqs` 两条并行通道
+    **各报一次**（错误计数翻倍）⇒ 报告收敛到 `checkReqs` 一处，诊断文本不变。
+  - **439** `lazy(() => shape(...))` / `lazy(() => array(...))` 的结构义务被闸门
+    `continue` 掉（假绿）⇒ 判闸门前先 deref lazy 包装（按 `LAZY_TEMPLATE_DEPTH`
+    预算递归解包）。
+  - **914** 字段位 / 数组元素位的 `null` / `undefined` 实参完全不被执法 ⇒ prim 门
+    与数值界门显式判 nullish 违例（与顶层标量面同口径）。
+  - **1021** 顶层「结构约束」位对 `null` / `undefined` 实参零诊断（假绿）⇒ 排除
+    条件改成「**无 term 的** unknown / any / never 才跳过」。
+- da4fbfc: Call-site contract enforcement now covers class instances, default exports,
+  and re-export chains, and it applies one literal identity on every argument
+  position.
+  
+  - A method call on a class instance (`const c = new C(); c.m(-1)`) was never
+    checked. The call graph only recognized members of object literals, so the
+    callee name could not be resolved and the whole call was skipped, while the
+    contract face and the signature face both claimed the contract was in
+    force. Instance members now resolve to the class method they belong to, so
+    the call site and the contract face agree.
+  - A contract on a default export was not enforced across files
+    (`import calc from "./a"`). The imported name was recorded as the literal
+    export name `default`, but contracts bind by the name the callee declares
+    locally, so a hand-written sidecar could never attach and the violation
+    passed the gate silently. The callee's local declaration name is now used.
+  - A re-export chain was cut short by an unrelated local function with the
+    same name in the middle module. The chain was only followed when the name
+    appeared anywhere in the module's source, so a local function that was
+    never exported shadowed the re-export and the contract of the re-exported
+    function went unused. The chain now follows the module's exported names,
+    which is what the module system itself uses.
+  - The same literal contract could be satisfied or rejected depending on where
+    the argument sat: a scalar argument compared `-0` and `0` as equal, while
+    an object field or an array element compared them as different. One
+    identity is now used everywhere: `===` plus the NaN exception, so `-0`
+    satisfies `lit(0)` and `NaN` satisfies `lit(NaN)`.
+- da4fbfc: Sidecar sections are now recognised by nudo's own marker and nudo's own
+  boundaries, and a class's static and instance methods no longer share one name.
+  
+  - A sidecar comment that merely **mentions** `@generated` (for example
+    `// handwritten contract: this mentions @generated`) was treated as nudo's
+    own section header. The whole handwritten contract then lost its
+    obligations — a call site that violated the contract was not reported at
+    all and `nudo check` exited 0 — and `nudo contract --emit --all` replaced
+    the handwritten contract with the observed values. A header now counts only
+    when the comment starts with `@generated` and names nudo, and a section
+    boundary stops at a `const` that the export does not reference. The
+    legitimate generated shapes (the alias section, the composite downstream
+    section with its prelude `const`, a multi-step prelude, a header directly
+    above the export) are still recognised.
+  - A static method and an instance method with the same name were both listed
+    as `C.m`, so the two records replaced each other in the tables indexed by
+    name and the signature mixed parts of both methods. The instance method
+    now takes the name on its own, and the generated TypeScript declaration no
+    longer repeats the member.
+  - `get` and `set` members of a CommonJS object literal were collected as
+    exported functions, which invented an entry point and a spurious "may
+    throw" error. They are not callable entries and are no longer collected.
+  - A CommonJS member assignment whose value is a named function expression was
+    named after the function's own inner id instead of the export slot, so the
+    sidecar contract never bound and the exported symbol was missing from the
+    signature table. The export slot name wins now.
+- da4fbfc: Regression pins for three call-site contract enforcement reports whose
+  symptoms are already gone. No behaviour changes: these bugs were fixed
+  earlier (by the `lit(null)` / `lit(undefined)` literal fix, by the
+  `export default` dts export-name fix, and by resolving a callee's
+  `@nudo:import` sidecar against the callee's own directory). The pins
+  exist so the fixed behaviour cannot silently regress.
+  
+  - A parameter whose contract is exactly `lit(null)` or `lit(undefined)`
+    now has a pin that spells out both directions: the one allowed value
+    passes with no diagnostic, and every other value is reported as a
+    violation. `null` and `undefined` are two distinct domains, so
+    `lit(null)` rejects `undefined` and `lit(undefined)` rejects `null`.
+    The pin also records that a bare literal contract (one `eq` atom) and
+    a `union` / `nullable` contract (nullish as a *member*) are different
+    shapes handled by different channels; only the bare literal shape is
+    pinned here.
+  - The dts projection now has a pin for all four `export default` shapes
+    — named function, class, anonymous function and arrow — and asserts
+    that the emitted export name is `default` in each case, so a default
+    export can no longer be projected as a named export that does not exist
+    at runtime.
+  - A cross-file call now has a pin that the callee's sidecar is resolved
+    against the callee's directory, not the caller's: the sidecar next to
+    the callee loads without an `nudo:interface-load` or
+    `nudo:contract-syntax` diagnostic, and the call site still reports the
+    real precondition violation.
+- da4fbfc: Union, nullable and literal contracts no longer skip legal arguments, and
+  arguments that cannot possibly satisfy a literal contract are no longer
+  let through.
+  
+  - A union or nullable contract was reported as violated for *every* nullish
+    argument, before the disjunction was looked at branch by branch. An
+    argument that satisfies one of the branches — `null` against
+    `union(number().gt(0), lit(null))`, `undefined` against
+    `nullable(number().gt(0))` — was still reported. The disjunction is now
+    decided branch by branch and one satisfied branch is enough to pass.
+    `null` and `undefined` remain two separate domains, so `null` against
+    `union(number().gt(0), lit(undefined))` is still reported.
+  - An argument that is not a scalar literal — an object, an array, a bigint —
+    was skipped by the literal branch altogether, so a contract such as
+    `lit(1n)` accepted every such argument. The literal branch now reaches
+    those arguments: a definite mismatch in the argument's shape is reported
+    as a violation, while an argument whose shape cannot be determined is
+    still left alone. A disjunction is decided the same way, and a branch
+    that is known to fail is now enough to report the violation even when
+    another branch cannot be decided.
+  - A bigint literal argument (`f(1n)`) could not be read at the call site,
+    so the call site had nothing to enforce and was skipped in function
+    bodies. Bigint literals are read now, so `f(2n)` against `lit(1n)` is
+    reported and `f(1n)` against `lit(1n)` passes.
+  - The two places that judge literal identity answer different questions and
+    keep their own answers: the assignment side asks whether two values are
+    the same value (`Object.is`, so `-0` and `0` differ), while the contract
+    side asks whether a value falls inside a contract's domain (`===` plus a
+    `NaN` special case, so `-0` *is* `0`). A pin now records this division so
+    the two are not made to look alike later.
+- da4fbfc: A literal contract now reaches bigint arguments in every argument position,
+  not only in the scalar one.
+  
+  - A scalar argument was already checked against a bigint literal contract:
+    `f(2n)` against `lit(1n)` was reported and `f(1n)` against `lit(1n)`
+    passed. The same contract in an object field or an array element was not
+    checked at all, because the literal branch only admitted number, string,
+    boolean, null and undefined arguments: `f({ v: 2n })` against
+    `shape({ v: lit(1n) })` and `f([2n])` against `array(lit(1n))` passed
+    silently. One contract now gets one verdict in all three positions, so the
+    two out-of-domain arguments are reported and the in-domain ones still
+    pass.
+  - The union of bigint literals is decided the same way in a field as it is
+    in the scalar position: `union(lit(1n), lit(2n))` reports `3n` and passes
+    `1n` and `2n`.
+  - The `typeof` label of a bigint literal is matched against bigint values,
+    so a bigint is no longer treated as a value of some other type.
+- 5dd89ca: fix(core): TS 剥除 pass 的六处缺陷（445 / 446 / 447 / 448 / 913 / 968）
+  
+  `stripTypes` 是全链（CLI / service / LSP / evaluator）共用的 TS→JS 剥除 pass。
+  本轮修了六处会让 `nudo migrate strip` 产出**不可加载**的 `.js`、或让分析面
+  **假红 / 假绿**的缺陷：
+  
+  - **445** 值位置的「类型专用导入」被消除（与 tsc 的 import elision 同口径）：
+    `import { Foo } from "./t.js"` 且 `Foo` 只在类型位置被用到 ⇒ tsc 会消掉这条
+    import；不消掉的话，被 import 的模块被剥成空模块 ⇒ 产物 ESM 链接期
+    `SyntaxError: does not provide an export named 'Foo'`。判据是语法级的
+    「值位置引用收集」，**保守**：判不准的绑定一律保留。
+  - **446** TS-only 的模块出口语句 `export = X` / `export as namespace X` 被剥除
+    （原样留在 `.js` 里 ⇒ 产物不是合法 JS）。
+  - **447** 类成员的 `x!`（确定赋值断言）、`y?`（可选属性）、`m?()`（可选方法）
+    被剥除（原样留在 `.js` 里 ⇒ `node --check` 报 `Unexpected token '!'` / `'?'`）。
+  - **448** TS 的 `this` 形参从形参数组里删除（原样留在 `.js` 里 ⇒ 产物不是合法
+    JS，Node 加载即 `SyntaxError: Unexpected token 'this'`）。
+  - **913** TS 的 `enum` 不再被整段删除，而是**合成**成等价的运行时对象
+    （逐形态对齐 tsc 的 emit：反向映射 / 自动递增 / 字符串枚举 / `const enum`）。
+    此前 enum 声明被删 ⇒ 成员引用退化成未绑定全局读取 ⇒ 门禁报 error 级
+    `nudo:entry-may-throw`（假红）+ dts / zod / standard / guard 四个产物面把
+    返回类型落成 `never`。
+  - **968** 挂在「将被删除的语句」上的文件级指令（`/// @nudo:import` /
+    `@nudo:env` / `@nudo:mock-module` …）被**转挂**到下一个幸存节点，不再随语句
+    一起消失（此前源红、产物绿的假绿）。
+  
+  `StripOptions.report` 增加了可选的事实回报字段（`enumSynthesized` /
+  `exportAssignmentRemoved` / `thisParamRemoved` / `typeOnlyImportRemoved` /
+  `typeOnlyImportKept` / `directivesBefore` / `directivesAfter` /
+  `directivesDropped`）——`@nudojs/core` 的公开导出面**零新增**。
+- 97f28ed: fix(core): 等式蕴含序关系、字面量同一性按 SameValue、默认形参可省略、strict 端点放松只做一次
+  
+  - Bug 387：`implies` 补「**等式 ⇒ 序关系 / 对称**」规则——`x === y` ⇒
+    `x <= y` ∧ `x >= y`（`===` 排除 NaN ⇒ 等值必然不小于也不大于）、`x === x` ⇒
+    `x <= x`；等式事实同时给出对称式 `x === y` ⇒ `y === x`（**不含** `lt` / `gt`：
+    等值不蕴含严格序）。此前 `a === b` 前提消解不掉 `a <= b` 的分支可达性 ⇒
+    恒假分支被算成可达（`nudo check` 签名 `f(a, any, b: any) => 1 | 2 | 3`，应为
+    `1 | 3`）。
+  - Bug 398：`leqAbs` 的字面量同一性按注释宣称的 **SameValue**（`Object.is`）判定，
+    不再按 `===`——`0 === -0` 为 true ⇒ `lit(-0)` 与 `lit(0)` 互相「满足」⇒ 精确
+    期望被静默放宽（native `Object.is(0, -0) === false`）。NaN ≡ NaN 的口径不变；
+    失败原因串里的 `-0` 与 `0` 现在可区分。
+  - Bug 399（读侧）：fn shape 新增**可选**字段 `optionalParams?: boolean[]`（与
+    `params` 同下标，true = 该位可省），`leq` 据此算必选元数——默认形参
+    （`f(a, b = 1)`）在形参表面只是光秃秃的名字，此前被计成必选元数 ⇒
+    `nudo:assign-mismatch` 假红。`requiredFnArity` 的公开签名与既有行为一字不改
+    （无标记时回退名字后缀判据）。
+  - Bug 1004：strict 端点的 1 ULP 离散性放松**只做一次**——同项比较时按 IEEE 格点
+    读事实端点（`t > L` ⟺ `t >= nextUp(L)`；`t >= L` 不步进）⇒ `x > 0 ⇒ x + 1`
+    的后置 `number().ge(1)` 不再假红（`nudo:constraint-violated`）。区间层的
+    `nextDown` 放松**保留**（它是保真所需：`x>0 ∧ y>=1 ⊬ x+y>1` 依赖它才不假证）。
+- 97f28ed: fix(core): `+` 的 bigint 臂不再短路数组臂；`0 / x` 折叠保留分母符号
+  
+  - Bug 946：`add()` 的数组臂（ToPrimitive → `join(",")` ⇒ string）**前移**到 bigint
+    臂之前 —— `+` 的第一步是 ToPrimitive，原生 `1n + []` 得字符串 `"1"`、**从不抛**，
+    此前 bigint 臂先命中 ⇒ 硬抛 `TypeError` ⇒ 返回值折 `never` ⇒ L2
+    `nudo:entry-may-throw` **假红**（exit 1）。现在 `1n + []` / `[] + 1n` / `[1] + 1n`
+    / `1n + [1,2]` 分别折 `"1"` / `"1"` / `"11"` / `"11,2"`，`catch` 语义同步纠正
+    （原生不抛 ⇒ `try` 块正常走完，不再误进 `catch`）。
+  - Bug 946（算术面）：`isMaybeBigintOperand` 的 kind 清单补 `arr` / `tuple`，
+    `foldBigintBinOp` 给数组/元组一条**显式硬抛**分支 —— 数组的 ToPrimitive 恒为
+    字符串 ⇒ `ToNumber` ⇒ number ⇒ 与 bigint 混型 `TypeError` **确定**（原生
+    `1n - []` 恒抛）⇒ 硬抛且可被 `catch` 吸收（不得走软 may-throw 通道：软通道让
+    求值继续 ⇒ `catch` 分支变死代码）。`isMaybeCoercionThrowOperand` 把数组/元组
+    **排除**（其 ToPrimitive 恒 string ⇒ 既不会成 bigint 也不会成 Symbol ⇒
+    `1 + []` / `[] < 1` 原生从不抛，不得记假 may-throw）。
+  - Bug 959：`div()` 的 `0 / x` 字面量折叠（issue #170）此前在判「分母可证非零」后
+    直接折 `+0`，把 IEEE「`0 / x` 取 x 的符号」丢在门外 ⇒ 负分母的 `-0` 被折成
+    `+0`（下游 `1 / (0 / x)` 再折成 `+Infinity`）。现在**分母符号参与折叠**：
+    分母恒正 ⇒ `+0`，分母恒负 ⇒ `-0`（`lit` 保真负零），下游相应为 `-Infinity`。
+    符号不可证（可能正 / 可能为 0）时仍不折（保守）。
+- 97f28ed: fix(core): 形参表面模型记录解构模式种类、跳过 TS `this` 接收者标注、标注默认形参可选
+  
+  - Bug 388：`FormalParam` 的 pattern 变体新增 `patternKind`（`"object"` / `"array"`）——
+    数组解构形参在签名面渲染为 `[ x, y ]`（此前对象/数组解构一律渲染 `{ … }`）。
+  - Bug 392 / 393（模型层）：数组解构新增 `boundIndex`（绑定名 → 元素下标），
+    `locateContractParam` 对数组解构按下标返回 `fieldIndex`（对象解构的属性键口径不变）。
+  - Bug 397：TS 的 `this: T` 是接收者标注而非运行时形参 ⇒ 不进形参表、不占实参位
+    （形参表位置随之前移）。
+  - Bug 399（模型层）：形参表新增 `optional` 标记（默认形参 / rest / 带默认值的解构
+    形参恒为 true）——消费侧算必选元数不再靠名字后缀猜。
+- 97f28ed: fix(core): rest 形参实参聚合、未契约兄弟绑定补 unknown、env 门禁不再吞推断失败警告、`--assume` 的界不再被写死成 `x > 0`
+  
+  - Bug 400：`locateContractParam` 算出的 `rest: true` 此前在
+    `scan-literal-calls.ts` 的 `entries.push` 里被**丢掉** ⇒ 执法侧的实参映射
+    （恒等 `(i) => i`）把**首个实参**当成 rest 形参的值 ⇒ `sum(...nums)` +
+    契约 `array(number().gt(0))` 时，合法调用 `sum(1, 2)` 被判「实参 `1` ⊭ array
+    约束」（假红），报出的实参值也是错的（`1` 而不是 `[1, 2]`）。现在 rest 标志
+    **透传**到执法侧，该位之后的**全部实参聚成一个精确元组 Abs** 再与契约比
+    ⇒ `sum(1, 2)` 通过；`sum(1, -2)` 报违例且 `actual` 是整个聚合值 `[1, -2]`。
+  - Bug 401：解构形参的合成形状只含**契约命中的字段** ⇒ 未契约的兄弟绑定
+    从头到尾不进袋子 ⇒ 形参形状是**闭对象** ⇒ 读兄弟绑定得 **exact
+    `undefined`**（自信的错值，native 是实值）。现在合成前把该 pattern 的
+    **全部顶层绑定**都放进袋子（未契约的用 `unknown`）⇒ 形参类型写成
+    `{ a: number, b: unknown }`，读 `b` 折 `unknown`。
+  - Bug 389：**没生效**的 `@nudo:env` 指令此前让函数体 fail-closed ⇒ 符号面
+    `conf = opaque` ⇒ `check.ts` 的 `budgetExplained` 把它当「已解释」⇒ 唯一能
+    提示「推断失败」的 `nudo:unknown-inference` **警告被吞**，取而代之的是一条
+    把它引向 `@nudo:case` 的 `nudo:opaque-result` 信息（指错方向）。现在 env 门禁
+    的事实（`PolyFn.envGated`）对诊断层可见 ⇒ 该场景发 `nudo:unknown-inference`
+    警告，不再发指错方向的信息。
+  - Bug 976（core 半）：`buildArgsFromAssume` 把被假设形参的**前提写死**成
+    `x > 0` ⇒ `--assume 'x>-5'` / `'x>-100'` 的负界被静默顶成 `x>0` ⇒ 引擎过度
+    收窄、合法分支被剪掉（`"neg"` 分支不可达 ⇒ 错值 / 假绿）。现在 core 接收
+    **形参 → 界**的映射，把用户声明的界直接落进形参的 `pred`（`>` 严格、`>=`
+    非严格）；**没有声明界时不写界**（不替用户发明更强的默认界）⇒ Φ 只承担
+    跨变量 / 额外前提。
+- 97f28ed: fix(core): 用户转换钩子真调用（ToPrimitive / ToPropertyKey / toJSON）+ 原型写入的环与不可变原型判定
+  
+  - Bug 381：隐式强转路径对 user obj 的钩子槽**只做存在性判定** ⇒ 钩子体从不执行 ⇒
+    钩子的副作用（计数器 / 捕获变量写）与 throw 域一并丢失，且钩子体**确定抛错**的代码
+    被折成**确定不抛**。修后新增 `$invoke` 调用面（`objects.ts` 的 `coercionHookOf` /
+    `invokeToPrimitiveHook` / `invokeCoercionHook`）：钩子体真调用（hint 决定
+    valueOf / toString 先后，@@toPrimitive 优先），副作用发生、钩子体抛错按原生传播
+    （用户 try/catch 可吸收）。覆盖 `+` / 模板串 / `String()` / `JSON.stringify` 的
+    `toJSON` 步 / `new Error(对象实参)`。
+  - Bug 383：计算成员访问的**对象键**不做 ToPropertyKey ⇒ 写被静默丢弃、键强制转换
+    副作用全丢。修后 `propertyKeyOf` 对对象接收者走 ToPrimitive(string) → ToString
+    （钩子真调用）；键**不可判**时写打「自有键集不完备」标记（键家族据此折 partial，
+    不得折 exact 空元组）。
+  - Bug 385：`Object.setPrototypeOf` 不做原型环检测 ⇒ 引擎建出 native 不存在的活原型环。
+    修后原型环与不可变原型在**同一事实源** `protoChangeAllowed` 判定：
+    `Object.setPrototypeOf` 抛 TypeError（native 同款），`Reflect.setPrototypeOf` 返 false。
+  - Bug 386：`Object.setPrototypeOf(Object.prototype, …)` 不查不可变原型 ⇒ 静默改写并
+    假绿。修后同 385 的单一事实源拒绝（仅 `Object.prototype` 是不可变原型——其余内建
+    原型可改，native 实测）。
+- 97f28ed: The function shape now carries which parameters may be omitted, and a
+  TypeScript `this: T` annotation is no longer emitted as a runtime parameter.
+  
+  - A parameter with a default value may be omitted by the caller, but the
+    parameter list only ever carried its bare name, so it was counted as a
+    required argument: assigning `(x = 1) => x` to a function that accepts no
+    arguments was reported as a mismatch even though the arrow function can be
+    called with no arguments at all. The function shape now carries a per-position
+    "may be omitted" flag (defaults, `?` parameters and rest parameters), and the
+    required-argument count is derived from it. The public `requiredFnArity`
+    signature and behaviour are unchanged; the flag is consulted first and the
+    name-suffix rule remains the fallback.
+  
+    The flag is populated on every path that produces a function value: function
+    expressions and arrow functions, object methods, function declarations and
+    exported functions.
+  
+  - A TypeScript `this: T` annotation is a receiver annotation, not a runtime
+    parameter, but the transpiler emitted it as one. The emitted function was
+    therefore syntactically invalid — `this` is not a legal parameter name — so
+    loading the module threw and every evaluation of that module degraded to
+    `unknown`. The annotation is now skipped in the emitted signature, in the
+    argument-slot binding (it does not occupy an argument position, so the
+    arguments after it were bound to the wrong parameters), and in the host
+    signature of class methods.
+  
+  - The index of a default parameter inside the emitted host signature is now
+    taken from the emitted signature itself rather than from the source
+    parameter list. The two coincide as long as every source parameter produces
+    exactly one signature entry, which is no longer the case now that the `this`
+    annotation is skipped.
+- e2880fd: 族 06 收口接线：补上分片被终止前未落地的两段，并把它们钉住。
+  
+  - **965 的最后一段**：实参抽取只处理数字与字符串字面量 ⇒ `f(null)` 根本没有
+    实参可判 ⇒ 调用点前置条件整条不查 ⇒ `lit(null)` / `lit(undefined)` 契约
+    对 null 实参永远不报违例（假绿）。null 与 undefined 现在都进实参位，
+    且分属两个域（`undefined` 是全局绑定，不是局部变量）。
+  - **348 的最后一段**：check 签名面的参数类型走的是自己的 widen 路径 ⇒
+    `lit(1)` 被印成 `number`，而契约面印 `lit(1)`、dts 面印 `1` ⇒ 同一份契约
+    三个面三种答案。签名面现在与契约面、dts 面对齐。
+  - 渲染面修了一个**会崩**的字面量拼法：bigint 走 `JSON.stringify` 直接抛
+    `Do not know how to serialize a BigInt`（NaN / ±Infinity 印成 `null`、
+    `-0` 抹成 `0`）——字面量展示现在按 JS 字面量拼法。
+- 5c750f2: Dates and regular expressions now keep their state, and a URL keeps its
+  query parameters.
+  
+  - `Date.prototype.set*` update the time value. The setters used to do
+    nothing, so the rendered date was stale.
+  - `Date.prototype.toJSON` returns `null` for an invalid date (a time
+    value of `NaN`), as in the language, instead of a string.
+  - The result of `RegExp.prototype.exec` and of a non-global `match` is
+    array-like again, so array methods, spreading and `for…of` work on
+    it.
+  - A `URL` carries its `searchParams`, and a `URLSearchParams` carries
+    its entries. `new URL("https://x/?a=1").searchParams.get("a")` is
+    `"1"`, `searchParams.get("z")` is `null`, `searchParams.size` is the
+    number of entries, and `searchParams.toString()` is the query
+    string. `set`, `append` and `delete` update the same object.
+- 4d1a249: `Object.prototype.toString` now reports the right label for functions that
+  are declared with `async` or `*`.
+  
+  - `export async function f() {}` used to report `[object Function]`, and so
+    did `export function* f() {}` and `export async function* f() {}`. A
+    function declared with `async` or `*` is compiled to a plain host
+    function, so the kind could not be recovered from the host value the way
+    it is for a function expression, an arrow function, or a method.
+  - The declaration site now records the kind explicitly, and
+    `Object.prototype.toString.call(f)` reports `[object AsyncFunction]`,
+    `[object GeneratorFunction]`, and `[object AsyncGeneratorFunction]`
+    respectively — the same labels the other declaration forms already
+    produced.
+  - The kind is recorded before the declaration, so a function that is called
+    before its declaration — function declarations are hoisted — still gets
+    the right label.
+- af09752: `Object.defineProperty` evaluates its arguments once, and `delete` /
+  `Object.defineProperty` now take effect at the point where they are
+  evaluated.
+  
+  - `Object.defineProperty(o, key, desc)` was emitted twice in statement
+    position: once as the call itself and once as the write-back, and the
+    write-back re-evaluated the argument expressions. A side effect in the
+    key or in the descriptor therefore ran twice. The write-back now happens
+    inside the call's own evaluation, so every argument is evaluated once.
+  - `delete o[k]` and `Object.defineProperty(o, …)` used to be emitted as a
+    read-only value plus a separate statement-level write-back. When they
+    appeared inside a larger expression, the write-back could only run
+    after the whole statement, so a read that followed the `delete` in the
+    same expression still saw the old value (`delete a[0]` followed by
+    `0 in a` reported `true`). Both now delete / define at the point of
+    evaluation, so later reads in the same expression observe the change.
+- fcaa9e9: fix(core): 描述符 / 生成器协议面 / 任意 brand 的 `.length` 槽（族 58 · core runtime）
+  
+  5 条精度债（族 58 台账 · W8 分片）——全部**对拍原生**（node v26.10.0 宿主实测），
+  新增回归钉 `packages/core/src/algebra/__tests__/eval-bug-58-descriptor-generator-proto.test.ts`（34 例）。
+  
+  - **Bug 197 · 描述符 exists 分支的 `writable:true` 重定义**：台账记「`writable:true`
+    的重定义不覆盖旧的 `[[Writable]]`」——**该缺陷在 HEAD 已被修掉**（Bug 292 的
+    双向标志表工作：描述符的显式字段**覆盖**当前值），普通对象路径已逐字对齐原生
+    （重定义后 `Object.getOwnPropertyDescriptor(o,"x").writable === true`）。本片
+    **补上残留面**：**原型对象**（`X.prototype`）上 `defineProperty` 装的自有数据槽
+    在 **gOPD 读面**此前落「descriptor | undefined」并 ⇒ 读 `.writable` 即**定抛
+    TypeError**（wrong-**throw**：原生恒有描述符）⇒ 现在读面折**精确描述符**
+    （值 + writable/enumerable/configurable 三标志），「重定义后读出新的 writable」
+    在对象面与原型面**都成立**。
+  - **Bug 321 · 原型 brand 描述符面**：`Object.getOwnPropertyNames(Error.prototype)`
+    此前折保守 `string[]`、`Object.hasOwn(Error.prototype, "name")` 此前折保守
+    boolean ⇒ 现在对**引擎已建模成员**的原型（Error 家族）折**精确**：
+    gOPN(Error.prototype) = `["constructor","name","message","toString"]`、
+    gOPN(TypeError.prototype) = `["constructor","name","message"]`（`toString` 是
+    **继承**的，不入自有键）、`Object.hasOwn(..., "name"/"message"/"toString")` 折
+    **true**、表外键折 **false**、`Object.keys(Error.prototype)` 折**精确空元组**。
+  - **类原型的 gOPN / keys 面**：类原型的 `Object.getOwnPropertyNames` 此前折保守
+    `string[]` ⇒ 现在对**引擎已建模成员**的类原型折**精确清单**
+    （`["constructor", ...自有方法/访问器]`），`Object.keys(类原型)` 折**精确空元组**
+    （原生：类成员全不可枚举），`Object.hasOwn(类原型, ...)` 折确定 boolean。
+    **口径边界（诚实写明）**：只覆盖引擎已建模成员者——其余原型（Array/Object/Map…）
+    仍走既有保守域 `string[]`（**不扩 Abs 形状**：扩形状是 A 类架构债）；类原型
+    的**方法与访问器交错定义序**在引擎的类注册表里不可复原（methods / accessors 分
+    两张表）⇒ 两者同时存在时仍给保守域。
+  - **生成器 `prototype.next` 协议面**：`g.prototype.next` 此前折 **exact undefined**
+    （wrong-exact；原生是函数）⇒ 现在 `%GeneratorPrototype%` 的三个协议方法
+    （next / return / throw）都可读（`typeof === "function"`），且**借用调用**按接收者
+    派发（`g.prototype.next.call(it)` 真的推进该生成器 ⇒ 与 `it.next()` 同款语义）；
+    无接收者调用原生定抛 TypeError ⇒ 引擎同抛（此前折 unknown 且**不记 may-throw**
+    ⇒ L2 门禁假绿）。协议槽标 **internal**——原生该方法在**原型链**上而非原型对象
+    的自有键 ⇒ 自有面（hasOwnProperty / gOPN / 枚举）不可见（`gOPN(g.prototype)`
+    精确空元组，与原生 `[]` 一致）。
+  - **`.length` slot 在任意 brand 上不可读**：core 的 `$len` 此前只认 String /
+    TypedArray 家族 / Arguments / Proxy 几个品牌 ⇒ 其余 brand（含 env 声明面建模的
+    Buffer 实例）一律折 **unknown**，`buf.length` 拿不到 ⇒ 现在 `$len` 读**任意 brand
+    内层 obj 的非可选 `"length"` 槽**（与 `$get` 品牌内层槽读**同口径** ⇒
+    `buf.length` 与 `buf["length"]` 一致）；无该槽的 brand 仍折 unknown。
+  
+  **附带（族 57 第 6 条 ② 的闭合点 · 主 agent 追加）**：普通对象面的符号键
+  **`in` / `delete`** 槽寻址此前只认 well-known 符号 ⇒ 用户符号的 `s in o` 折
+  boolean 域（原生 true）、well-known 符号的 `delete o[Symbol.iterator]` 不删槽
+  （原生 false）⇒ 现在 `$in` / `$del` 的槽键统一走 `symbolSlotKeyOf`
+  （well-known → `"@@X"`；用户符号 → `"@@sym#<身份 id>"`，`Symbol("x")` 每次新 id、
+  `Symbol.for("x")` 驻留同 id，**不按 description**——description 可撞会串键）。
+  裸字符串键 / 数字键 / 未定义键三类输入**不崩**且行为与改前**逐字一致**
+  （`isSymbolAbs` / `symbolSlotKeyOf` 先判「是不是 Abs」再取 shape）。
+  
+  **已知偏差（诚实写明）**：
+  - 未建模成员的原型的 gOPN / hasOwn 仍走既有保守域（`string[]` / boolean 域）——
+    扩到全体原型需要**扩 Abs 形状**承载原型自有键集 ⇒ 归 A 类架构债，本片不做。
+  - 类原型的方法/访问器**交错**定义序不可复原 ⇒ 该形态仍走保守域。
+  - 生成器协议面的**函数身份**面（`g.prototype.next === it.next` 原生 true）仍
+    折 false（引擎的协议方法值与实例内部槽是**两个**函数对象）——本次只修「可读 +
+    可调 + 借用调用按接收者派发」。
+- 7fea13a: Destructuring follows the iteration protocol of the value it destructures, and
+  the temporary names the transpiler generates no longer collide with the names
+  in the source.
+  
+  - Array destructuring always read the receiver by index (`$idx(receiver, i)`).
+    A user iterable — an object with its own `@@iterator` method — has no index
+    slots, so every element folded to a confident `undefined` instead of the
+    value the iterator yields. The receiver is now checked with the real
+    iteration protocol (`GetIterator` + `IteratorNext`) and the elements are
+    taken in iteration order, so the folded value matches JavaScript element by
+    element. Values that the engine models itself (arrays, strings, `Set`,
+    `Map`, generators, collection iterators) keep their exact element
+    domains, and a receiver that is not iterable still throws `TypeError`.
+  - A destructuring target that is a member expression with a default value
+    (`({ a: o.x = 1 } = src)`) dropped the write-back: the member was treated
+    as a nested pattern, so the target kept its old value. The member is now
+    read, defaulted, and written back.
+  - The temporary names the transpiler generates for destructuring (`_d0`,
+    `_n1`, `_p0`, `_rest0`, …) did not avoid the identifiers used in the
+    source. A user declaration with the same name produced a duplicate
+    lexical declaration, which is a `SyntaxError`: the whole module failed to
+    evaluate and every export folded to `unknown`. Inside a function body the
+    temporary also shadowed a module-level binding of the same name and the
+    user read a wrong value. The names now avoid the identifiers of the
+    source, and the shared counter is pre-seeded so that even the first
+    allocation avoids them.
+  
+    As part of this, the placeholder function body (`noBody`) is now a single
+    shared object. Two separate copies made an identity check for "is this a
+    placeholder function" fail across modules, which made the engine's own
+    iterators look like user iterables and made
+    `[...Array.from('ab').keys()]` throw a `TypeError` that JavaScript does not
+    throw.
+- 9ccffb3: Destructuring with a computed key now reads the property the key points at.
+  
+  - In `const { [k]: v } = o`, a bare identifier used as a computed key was
+    taken as the *name* of the key instead of being evaluated, so the engine
+    read `o["k"]` and returned `undefined` for every such destructuring — and
+    `k` was never evaluated at all.
+  - A computed key is now evaluated and the property it selects is read. The
+    key expression is evaluated once, as in JavaScript, and the same value is
+    used for the read and for the rest element's exclusion set — so
+    `const { [k]: v, ...r } = o` no longer leaves `k`'s property behind in
+    `r`.
+  - Literal computed keys (`{ [1]: v }`, `{ ["x"]: v }`) and plain keys
+    (`{ x: v }`) are unaffected.
+- e9fdaa7: Destructured bindings follow the mutability of the binding they come from,
+  and a destructuring export exports the real names.
+  
+  - A binding that came from a destructuring pattern was always emitted as
+    `const`, even when the binding itself is mutable: a parameter, a `let` or
+    `var` loop head. Assigning to such a binding inside the body threw a
+    `TypeError` although the original code does not throw, which turned into
+    a false `entry may throw` report and an `unknown` return value. A
+    parameter or a `let` / `var` head now keeps its binding mutable, while a
+    `const` head still throws.
+  - `export const { a } = …` and `export const [a] = …` exported the
+    internal temporary name instead of the destructured names, so the real
+    export was missing and importing it from another module produced
+    `unknown`. The export now lists the names that were actually bound.
+- 7fea13a: The `@nudo:as` and `@nudo:replace` directives now affect exactly the node
+  they annotate, and `this` inside a default parameter binds to the function
+  that owns the parameter.
+  
+  - `@nudo:as` is a type override: the annotated expression must still be
+    evaluated. The transpiler replaced the whole expression with the injected
+    constant, so the side effects of the expression never happened, the
+    expression's throws domain disappeared (`JSON.parse` failures were
+    swallowed and the entry point was reported as not throwing), and the
+    runtime value was wrong. The expression is now evaluated once and the
+    injected value is used as the result.
+  - `@nudo:replace` had the same problem: the replaced sub-expression was
+    never evaluated, so its side effects were lost and its throws domain
+    disappeared. It is now evaluated once, and the injected value is used as
+    the result.
+  - The scope of both directives was decided by a window of line numbers, so
+    an unrelated expression on the same line, the next statement on the same
+    line, a nested block or a nested function body was overridden or
+    replaced as well. The scope is now decided by the identity of the
+    annotated node, so only that node is affected.
+  - `this` inside a default parameter expression bound to the `this` of the
+    enclosing scope. In JavaScript the default value is evaluated in the
+    scope of the function that owns the parameter, so `this` is that
+    function's own `this`. The transpiler only looked for `this` in the
+    function body, so the default expression used the outer `this`: a
+    default of `this.v` returned the outer object's value instead of
+    throwing, and a default of `this` returned `undefined` instead of the
+    receiver.
+  - The body of an arrow function or a function expression is an expression,
+    and the value of `o.n++` had to be captured before the write-back ran.
+    The expression is now captured first, the write-back second, and the
+    captured value is returned.
+  - The optional call `o.b?.()` short-circuited only the call itself: when
+    `o.b` was nullish, the rest of the chain was still evaluated and
+    `undefined.c` was reported as a definite `TypeError`. The whole chain is
+    now short-circuited, like the optional member access `o.b?.c` already
+    was.
+- 69e67d3: 族 29 修复 S6：Bug 882 · Bug 890 —— node:util 品牌形参函数的普通调用面 L2
+  假红 + env promise 缺 rejected 通道（catch 臂被当成死代码）。
+  
+  **Bug 882（core 侧根因）** — `promisify` / `callbackify` / `inherits` /
+  `isDeepStrictEqual` 这类**品牌形参**函数在**具名导入**调用面
+  （`import { promisify } from "node:util"` ⇒ `promisify(readFile)`）报
+  `nudo:entry-may-throw`，而**成员调用**面（`util.promisify(readFile)`）正常
+  ⇒ 同一函数两种口径。根因：普通调用面把**裸宿主值**（宿主函数 / 宿主构造器
+  / 函数声明绑定）原样灌进 `bindTypeVars`，`arg.shape` 解引用 `undefined` ⇒
+  TypeError 冒泡 ⇒ 上层记 may TypeError ⇒ L2 假红（原生必不抛）。
+  
+  - `packages/core/src/algebra/hof.ts` 的 `bindTypeVars`：**无形状的实参不参与
+    类型变量绑定**（此前直接解引用 `arg.shape` 崩）。
+  - **普通调用面也做实参归一化**（与成员调用面同款）：`hof.ts` 新增
+    `setRawArgNormalizer` 注册钩子，`packages/core/src/algebra/exec/class/invoke.ts`
+    在加载期注册 `asAbsVal` 门面 ⇒ 两个调用面共用同一归一化 ⇒ 同一宿主函数恒
+    同一 Abs 身份 ⇒ **两种口径一致**。
+  
+  **Bug 890** — env 造的 promise **没有 rejected 通道** ⇒ core 读成「**确定
+  fulfilled**」⇒ `catch` 臂被当成**死代码** ⇒ 引擎给出**确定的错值**（原生
+  `fs/promises.readFile` / `fetch` / `crypto.subtle.digest` 都可能拒绝）。
+  
+  - **core 侧零改动**：`settledFulfilledOf` / `then` / `catch` / `$await` 对
+    **带 `rejected` 通道**的 promise 处理已经正确（`rejected !== undefined` ⇒
+    不判「确定 fulfilled」；`catch` 走「两臂 join」分支；`$await` 把拒绝臂送进
+    throw 通道 ⇒ `try/catch` 可吸收 ⇒ catch 臂可达）。本分片只补回归钉。
+  - **env 侧改法（`packages/env/src/abs-helpers.ts` 的 `promiseOf()`）**：给
+    promise 形状补上 `rejected` 通道 ⇒ 两臂均可能 ⇒ catch 臂保持活：
+  
+    ```ts
+    export function promiseOf(inner: Abs): Abs {
+      return makeAbs(
+        { k: "eff", eff: "promise", inner, rejected: unknown },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    ```
+  
+    （`unknown` = env 侧已有的 unknown Abs——拒绝 reason 不可知 ⇒ 两臂均可能；
+    `rejected` 是**态信息**，不进 leq / 指纹 / check 等价。）
+- 69e67d3: 族 29 主 agent 收口：跨分片组合出来的 4 个缺口。
+  
+  - **Bug 884（web 侧）**：`web.ts` 的 `structuredClone` 声明已删（node 侧同款
+    修法在 `node.ts`）⇒ 回落宿主内建 ⇒ 不可克隆值的 throws 面（宿主
+    `DOMException` / `DataCloneError`）不再被 env 声明整段吃掉 ⇒ L2 门禁恢复。
+  - **`enforceArgs` 的并集实参过严**（S3 越界发现，主 agent 修正）：实参是**并集**
+    （如 `string | undefined`）时，`leqAbs(sum, pt)` 整体判 false ⇒ 旧实现把它
+    当「确定不符 ⇒ 必抛 TypeError」，而原生只在 `undefined` 分支抛 ⇒ 可能假红。
+    现在**逐成员**判定：只有**全部分支**都不兼容才判必抛，部分分支不兼容判
+    may-throw ⇒ 与原生同口径。
+  - **Bug 886 / 889 的组合缺口**（S1 删声明 + S5 覆盖推导撞出来的）：web env 的
+    `TextDecoder` 声明已删（宿主才有精确的 `RangeError` 与「类不可裸调」语义），
+    但 core 的**构造面** `evalBuiltinNew` 不认 `TextDecoder` ⇒
+    ① `nudo test` 报「Built-in API "TextDecoder" is not covered by Nudo's type
+    inference」（假阳）；② Abs 面与 `$new` 宿主面口径分裂。现在
+    `evalBuiltinNew` 补 `case "TextDecoder"` ⇒ 两侧同 builder
+    （`makeTextDecoderAbs`），假阳消失。
+  - **「已被覆盖」判定里的手写例外已删**（族 29 Bug 865 的根因收口）：core 其实
+    已精确建模 `WeakRef`（`evalBuiltinNew` 的 `case "WeakRef"`），但三条既有
+    service 契约把 `WeakRef` 当作「未被覆盖的全局」样例钉住，于是判定里留了
+    一张手写例外表——那正是 Bug 865 要消灭的「手写白名单」换了个地方继续写。
+    现在例外表删除，三条契约的**样例全局**换成真正未被建模的宿主全局
+    `Atomics`（core 无 `Atomics` 建模面；它是 `globalThis` 里的数据属性 ⇒
+    不触发访问器副作用），契约的**意图**（未建模全局要报 `builtin-unknown`、
+    且不与 `unknown-global` 双报）完全保留。
+- b0878e3: 契约投影里的 `__proto__` 形参不再被吞掉（族 17 · Bug 606 的 core 侧两处）。
+  
+  - **投影字段表改无原型**（`algebra/projection.ts` 的 `projectObj`）：槽位被抄进
+    一个**普通对象** `fields` ⇒ 键 `__proto__` 的赋值命中
+    `Object.prototype.__proto__` 的**原型 setter** ⇒ 该键永不成自有属性 ⇒
+    `Object.entries()` 看不到它 ⇒ 契约投影**静默丢掉** `__proto__` 形参
+    （zod 产物丢键，而 dts 面走另一条路径是对的 ⇒ 跨产物面自相矛盾）。
+    改用 `Object.create(null)`（与 `constraint.ts` 的 `partial()` 同一惯例；
+    core 侧消费全走 `Object.entries` / `Object.hasOwn` / `!== undefined` ⇒ 无原型安全）。
+  - **键渲染改计算键**（`algebra/codegen-escape.ts` 的 `formatObjectKey`）：
+    `__proto__` 虽然长得像普通标识符，但在 **JS 对象字面量**里 `__proto__: v` 是
+    **原型 setter**（不是自有属性）⇒ 运行时该键根本不存在（zod 形状丢键）。
+    一律写成计算键 `["__proto__"]` —— 计算键是普通自有属性。
+- 493b8c2: fix(core): sum 里的**构造器成员**（fn 形状）不再被误判「确定没有此方法」
+  
+  **病灶**（`packages/core/src/algebra/exec/class/invoke.ts` · `memberLikelyHasMethod`）：
+  union 派发面按「成员大概有这个方法吗」过滤 sum 成员，旧判据只有
+  prim / brand / obj / arr / tuple / eff 分支 —— **fn 落尾部 `return false`**
+  ⇒ sum 里的 fn 成员一律被判「确定没有此方法」⇒ 被跳过 ⇒ 合并 fn 全局的
+  **静态成员调用**（`Response.json(x)`）折 `unknown`。
+  
+  触发面：多个 `@nudo:env` 名合并成**并集**后，同名全局（如 `Response`）是两个
+  构造器声明的 **sum** ⇒ `mk(x) { return Response.json(x); }` 的签名从
+  `Response | {…}`（单 env 时的精度）退成 `unknown`，并附一条
+  `nudo:unknown-inference` warning。
+  
+  **修法**：给 `memberLikelyHasMethod` 补 **fn 分支** —— 判据改为「fn 的
+  **静态槽**（dual-facet：构造器静态成员挂在 fn 的 `shape.slots` 上）里有没有这个名」：
+  
+  - 静态槽里有 ⇒ 可派发；
+  - 静态槽**明确不含** ⇒ 确定没有（原生读 undefined ⇒ 调用 TypeError）⇒ 记
+    may-throw + 跳过该成员（该分支不贡献值）；
+  - fn **没有静态面模型**（`shape.slots` 缺席）⇒ 判据不足 ⇒ **保守放行**
+    （不可判不可抛：宁可多派发一次，不可凭空造 may-throw ⇒ 假红）。
+  
+  「没有 slots」与「slots 为空对象」的区别已写进代码注释：`slots === undefined`
+  = 没有静态面模型（判据不足）；`slots` 存在但为空 = 静态面模型为**空**（表外名
+  确定缺席）。另：`Function.prototype` / `Object.prototype` 名（`toString` /
+  `call` / `bind` …）沿函数对象恒可得 ⇒ 不得判缺席。
+  
+  **影响面**：prim / brand / obj / arr / tuple / eff 的既有 union 派发行为**逐字不变**
+  （判据分支只新增 fn 一支）；新增的 may-throw 只在「sum 成员是 fn 且其静态面
+  模型明确不含该名」时出现（原生该分支确实抛 TypeError）。
+- d7ae28a: `for` loop stepping now follows the UpdateExpression (`ToNumeric` ± 1)
+  semantics and no longer takes the step expression's value as the loop
+  state.
+  
+  - A `for (let i = …; …; i++)` counter lowered `i++` to `$add(i, 1)`,
+    which is the binary `+`: a bigint counter raised `TypeError`
+    (`bigint + number` takes the mixed-bigint arm) and a string counter
+    concatenated (`"5"++` is `6` natively, the engine produced `"51"`,
+    `"511"`, … and ran to the iteration bound). The main `for` path now
+    uses `$updateAdd` / `$updateSub`, matching the three other step
+    lowerings in the tree.
+  - The step closure's return value was used as the `$for` state thread.
+    For a sequence step (`i++, n++`) that value is the last element's
+    value — the postfix increment's old value — so the loop variable
+    stalled or over-ran (`for (let i = 0; i < 3; i++, n++) { n += 10 }`
+    folded `11` instead of `33`). The step now only contributes side
+    effects and the state thread is always the loop variable itself, the
+    same contract the non-declaration `for` fallback path already used.
+- edc7590: Statement-level `if` / `switch` no longer roll back the side effects of
+  their own test / discriminant.
+  
+  The fork snapshot (`__fk0_*` for `if`, `__sw0_*` for `switch`) is the
+  baseline each branch is restored to when it starts. The baseline has to be
+  taken *after* the test / discriminant was evaluated: the snapshot used to
+  be emitted before `$fork(...)`, while the test is the first argument of
+  that call and is therefore evaluated later — so every side effect of the
+  test (a call, a getter, an assignment, an increment) was undone when the
+  branch started.
+  
+  `if (f()) { … }` folded `0` instead of `1`, `if ((n = 5) > 0) { … }`
+  folded `0` instead of `5`, and `switch (f()) { … }` folded `0` instead of
+  `1`. The test / discriminant is now evaluated into a temporary first, the
+  snapshot is taken afterwards, and `$fork` / `$switch` use that temporary.
+- 5c750f2: `Object.prototype.toString` now tells an async function from a
+  generator.
+  
+  `Object.prototype.toString.call(async function () {})` was
+  `"[object Function]"` for every function shape. The label now follows
+  the language:
+  
+  - `function () {}` → `"[object Function]"`
+  - `async function () {}` → `"[object AsyncFunction]"`
+  - `function* () {}` → `"[object GeneratorFunction]"`
+  - `async function* () {}` → `"[object AsyncGeneratorFunction]"`
+  
+  The same holds for a method shorthand (`{ async m() {} }.m`), for a
+  class method (`class A { async m() {} }` → `A.prototype.m`) and for a
+  static class method.
+  
+  A plain `function f() {}` declaration reports `"[object Function]"` —
+  the label the language gives it.
+- ed4d259: fix(core): 引擎内部临时名避让补齐 switch / 自增 IIFE / 类 setter 别名 / 循环协议
+  （附录 A#4 · Bug 1159）
+  
+  Bug 1058/1059 约定「引擎内部临时名必须避开用户标识符」，此前落到 `__nudoMp*` /
+  调用族 / 可选链 / 短路 / 对象 / 类形参。附录 A#4 登记为「实测无害」的残留经
+  逐点探针**全部可触发**（体内确有用户表达式在引擎临时名的块作用域里求值），
+  现统一改经 `internalTmpName` / `internalTmpNameSet` 分配：
+  
+  - **switch 的 case 测试辅助族 / 共享体名**（`__swT` / `__swTV` / `__swTD` /
+    `__swAllDone` / `__swTestRead` / `__swEval` / `__swEvalAll` / `__swI` /
+    `__swJ` / `__swBody{n}`）：测试 thunk 与臂 thunk 都在该块作用域里求值用户
+    表达式 ⇒ 用户同名外层绑定被**遮蔽**（`const __swAllDone = 42` 被读成引擎的
+    `false`）或撞 **TDZ**（臂入口注入的 `if (!__swTestRead)` 在用户
+    `let __swTestRead` 声明之前读 ⇒ ReferenceError）。
+  - **switch 臂 break 标签**（`__nudoSw{n}`）：标签是**信号字符串**
+    （`$loopBreak` / `$isBreakTo` 按字符串比对）⇒ 与用户同名标签块相撞时，臂内
+    **无标签** `break` 的信号被用户的标签块 catch 吸收 ⇒ switch 不退出、块后续
+    语句照跑（错值）。
+  - **自增 IIFE**（`expr/operators.ts` 的 `__v` / `__old`、非路径 delete IIFE 的
+    `__nudoDelP` / `__nudoDelK` / `__nudoDelD`）：IIFE 体内求值 / 重复发射用户
+    表达式（接收者、写目标标识符、父对象、计算键）⇒ 遮蔽或 TDZ。除附录登记项外，
+    同文件另发现两处同族残留（标识符后缀 `x++` 的 `__old`、delete IIFE），一并修复。
+  - **类 setter 别名载体**（`class-emit.ts` 的 `__nab{i}` / `__nabs`）：thunk 体内
+    求值用户 setter 体 ⇒ 遮蔽用户同名外层绑定。
+  - **循环协议公共名**（`stmt/statement.ts`）：`for` fallback 的 `$for` 状态线程
+    形参 `__n`（测试 / 体 thunk 内联用户源码 ⇒ `let __n = 100; for (i = 0; __n < 3; i++)`
+    的条件被读成合成计数器）与 do-while 首轮标记 `__nudoDwFirst`（块级绑定 +
+    体 thunk 内联用户体）。
+  - **表达式侧两处同族残留**（`expr/function.ts` 的宿主 rest 形参名 `__rest_raw`
+    与 `expr/assignment.ts` 的解构赋值 IIFE 形参 `__d`，按同族 grep 指令扩展）：
+    前者与用户同名 rest 形参**重复声明**（SyntaxError），后者让默认值表达式读到
+    IIFE 实参对象。
+  - **for-in 接收者临时名**（`stmt/statement.ts` 的 `__fir{n}`，按同族 grep 指令
+    发现的第 4 处）：`const __fir{n} = (用户接收者表达式)` 的初始化器与循环体都在
+    该块里求值用户代码 ⇒ 首轮重复声明 SyntaxError；Bug 1139 的重试仅**碰巧**
+    推高计数器躲开单名碰撞，两次尝试的序号都被用户占用时宿主 SyntaxError 直接
+    冒出 `runTranspiled`。
+  
+  无碰撞时基名原样返回 ⇒ **产物逐字不变**（9507 条差分语料 + 手写 switch / label /
+  类 / 私有名 / delete 语料，`git archive HEAD` 的旧发射器与新版对拍 0 diff）；
+  撞名时改名只发生在该源文本内（基名仍由既有计数器决定，计数器行为未变）
+  ⇒ **无缓存键 / ABI 变更**。诊断语码与门禁口径不变。
+- e20c128: `import { "a-b" as x } from "…"` binds the arbitrary module export name.
+  
+  ES2022 allows importing an arbitrary module export name. The transpiler
+  rendered such a specifier with `String(s.imported)`, but `s.imported` is a
+  `StringLiteral` **node** in that form, so `String(node)` produced
+  `"[object Object]"`. The generated import statement was therefore invalid
+  JavaScript, the whole module failed to evaluate, and the imported value
+  silently degraded to `unknown` — `nudo check` then reported a single
+  warning and no error, i.e. a false green.
+  
+  The import side now renders a string export name with its quotes, like the
+  export side already did, and the binding lookup strips the quotes to get
+  the actual export name.
+- abff33b: `instanceof` 按**真实原型链**判定：补上闭 obj 接收者与函数值接收者两面（Bug 205 · 族 43 · 片 S7）
+  
+  族 02 已把 brand 实例侧（`F.prototype = {}` / `Object.setPrototypeOf(f, null)`）
+  从「按构造器**名**匹配」改成「沿记录的原型链做身份比较」。本片补上此前仍
+  降抽象的两面，并把宿主口径钉进回归钉。
+  
+  - **闭 obj 接收者（对象字面量）**：它的 `[[Prototype]]` 恰是
+    `Object.prototype` ⇒ 原型链恰是 `[Object.prototype]`（下一环 null）⇒ 与
+    右操作数的 `prototype` 做**身份**比较即可定论。此前只有**内建**构造器名
+    （`Array` / `Date` / …）折精确 `false`，**用户类 / 用户函数**一律折抽象
+    `boolean`：`({}) instanceof F` 的原生值是 `false`，引擎却答「不知道」。
+    现在：用户类 / 用户函数 → 精确 `false`；`F.prototype = Object.prototype`
+    之后 → 精确 `true`（原型身份命中）。
+  - **左操作数是宿主函数**（`function F(){}` / `function () {}`）：转译后进
+    `$instanceof` 的左值不是 Abs，此前直读 `left.shape` 崩 ⇒ 引擎 fail-closed
+    折 `unknown`。原生 `F instanceof Function` / `F instanceof Object` 都是
+    `true`（函数的 `[[Prototype]]` 是 `Function.prototype`）。现在折精确 `true`。
+  - **口径更正（宿主实测）**：`new F() instanceof Function` 的原生值是
+    **`false`**，不是 `true`——普通函数 `F` 的实例原型链是
+    `f → F.prototype → Object.prototype → null`，`Function.prototype` 不在其中。
+    只有**以 Function 为基类**的类实例（`class X extends Function`）才是 `true`。
+    引擎此前已给精确 `false`（与原生一致），本片保持该口径并写入回归钉——此前
+    修复台账里「原生 true」的记述与宿主实测不符，以本钉为准。
+  - **不误判护栏**：右操作数的 `prototype` **不可判**时（箭头函数 / async 函数 /
+    生成器函数——原生可能**无** `.prototype` ⇒ 定抛 `TypeError`；`bind` 产物——
+    可构造但无 `.prototype`）⇒ 保持抽象 `boolean`，不折精确 `false`。引擎替身
+    对象（生成器对象等**内部槽** obj）同样不按「闭 obj ⇒ 原型链 =
+    `[Object.prototype]`」定论（其真实原型不是 `Object.prototype`）。
+  - **已知债（不在本片范围）**：替换 / `setPrototypeOf` 进来的新原型，其**自身**
+    的 `[[Prototype]]` 链未建模 ⇒ 引擎诚实降 `boolean`（原生 true/false vs 引擎
+    boolean —— sound 不误判）。本片不改既有钉
+    `eval-bug-205-instanceof-prototype-chain.test.ts` 的该条断言。
+- e3b8791: Iteration follows the protocol of the value being iterated, and the
+  iteration protocol is now honoured when it is left early.
+  
+  - A `Map` or a `Set` was iterated over a snapshot taken when the iterator
+    was created, so an entry added during the iteration was never visited
+    and a deleted entry was still visited. The iterator is now a live view
+    of the receiver.
+  - An iterator that is left early — through `break`, `return` or `throw` —
+    never told the iterated value about it. The `return` method of a user
+    iterator is now called when the iteration is left early, as the
+    specification requires, including the cases where the method is missing,
+    is not callable, or does not return an object.
+  - `for..in` over an instance of a class only visited the own slots of the
+    instance and skipped everything on the prototype chain. The prototype
+    chain is walked now.
+  - A tagged template object was modelled as a plain object: its
+    properties were enumerable, it was not frozen, and the array methods
+    were missing. It is now a frozen array exotic object, and
+    `Array.isArray` reports `true` for it, as in JavaScript.
+  - A `String` wrapper object was not iterable, so spreading one was
+    reported as a possible `TypeError` even though JavaScript spreads it
+    into its characters. A `Number` wrapper is still not iterable, and is
+    still reported as a possible error.
+  - A user-defined `@@iterator` method was never called by `for..of` or by
+    `Array.from`: the loop ran once and the element domain was unknown.
+    The iteration protocol is now used, and the number of elements is taken
+    from the iterator when it reports that it is done.
+  - The members of a user-defined iterable are now read in iteration order
+    and with the value the iterator yields, instead of being read as index
+    properties.
+- 5c750f2: `JSON.stringify` and `JSON.parse` handle the values the language
+  handles.
+  
+  - `JSON.parse` calls the reviver. The callback used to be dropped
+    entirely, so its side effects never happened; `JSON.stringify` has
+    always called its replacer, and the two now agree.
+  - A nested built-in no longer makes `JSON.stringify` report a possible
+    `TypeError`. `JSON.stringify({p: Promise.resolve(1)})` is
+    `'{"p":{}}'`, and the same holds for a `Map`, a `Set` or a
+    generator object nested in the value.
+  - A replacer that is not callable is ignored, as in the language.
+    `JSON.stringify({a: 1}, new Map())` is `'{"a":1}'` and does not
+    report a throw; a constructor such as `Map` is callable and is still
+    reported as a possible `TypeError`.
+- c80456a: Logical assignment (`||=` / `&&=` / `??=`) only writes in the branch that
+  actually assigns.
+  
+  Only the branch that performs the assignment does a PutValue — `o.a ||= 2`
+  does not write when the left-hand side is truthy (no setter call, no
+  `TypeError` on a read-only accessor). The write-back used to wrap the whole
+  short-circuit result, so the "keep the original value" branch wrote as well:
+  a getter-only property raised a spurious `TypeError` (the `nudo check` gate
+  reported `may throw TypeError` for code that never throws) and a property
+  with a setter had its setter called one time too many.
+  
+  The write-back now lives inside the assigning branch, while the "keep the
+  original value" branch just returns the value it read. The write-back root
+  joins the fork binding set, so a write performed inside a branch is joined
+  across branches instead of letting the later branch overwrite the earlier
+  one.
+- e6c4586: LSP 符号 / 观察面与导出面对齐：默认导出、导出类实例方法、CJS 成员导出不再
+  整段消失，跨模块调用点补上 `call@` 观察透镜（Bug 753 / 769 / 998 / 1034）。
+  
+  - `export default function` 此前只存在于 hover / 大纲面，CodeLens 与
+    inlayHint 的 interface 档（`● contract / imp` / `⚡ persist interface` /
+    `⚡ draft interface`）整段缺失。默认导出现在与具名导出同形。
+  - 导出类的实例方法（`Counter.inc`）此前只在 hover 面可见：CodeLens 没有
+    interface 档，inlayHint 也没有返回 inlay。类方法现在以 `Class.method`
+    为契约键进入两面，与顶层导出函数同形。
+  - CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）此前在
+    documentSymbol / workspace symbol / inlayHint / semanticTokens 四个面
+    全部不可见，CodeLens 也没有 interface 档——而诊断面却点名该导出。
+    四面现在与 ESM 具名导出同形（导出键带 function 档 + interface 档 modifier）。
+  - 跨模块调用点（`import { add } from "./lib.js"` 后调用 `add(x, 2)`）此前
+    不在调用方文件的 CodeLens 上投影——CLI `nudo test` 已经打印该事实。
+    调用方文件现在出现与 CLI 同形的 `call@L4` lens；被导入函数的 entry@
+    仍属被导入模块，不在调用方落镜。
+  
+  core 侧只改了内部未导出函数 `listFunctions` 的函数体（导出类实例方法与
+  CJS 成员导出的枚举），未新增任何导出名。
+- f87c9f9: fix(lsp/core): IDE 面与 CLI 同源装配注入 + info 级 check 诊断不再被提前砍掉（Bug 785 / 786 / 780 / 779 vite 半）
+  
+  - **Bug 785**（注入装配）：LSP 侧**从不采集**行内指令（`@nudo:as` /
+    `@nudo:replace`）⇒ CLI 与 IDE 对同一份文件给出**相反**的门禁结论与签名
+    （IDE 假红：用户声明过 `raw` 是 number，IDE 仍按 string 判
+    `raw.toFixed` 不存在并报 `nudo:entry-may-throw`）。新增 **LSP 侧注入装配器**
+    `buildLspInjection`（`packages/lsp/src/agent-tools.ts`）—— 与 CLI
+    `buildCheckInjection` **同口径**（`@nudo:as` / `@nudo:replace` /
+    `@nudo:mock` / env 全局 / 模块图），**不从 lsp 反向 import nudojs**，
+    零新增 core / service 导出；agent check 工具面把它交给
+    `checkSource({ inject })` ⇒ `nudo/check` 由 `ok=false · 1 error ·
+    unknown #partial` 变为 `ok=true · 0 error · string`（与 CLI 同款结论）。
+  - **Bug 786**（注入传递协议 + inlay 半）：`CollectAbsInlaysOpts` 新增
+    `inject` 字段并透传给 `generalizeFromAst`（core 侧**只改内部函数体**、
+    零新增 core 导出 ⇒ 不破 core 冻结面）⇒ inlay 面不再把「行内指令缺席」
+    显示成 `unknown`（Nudo 词汇里 = 「推断失败」）。对外交付注入传递协议：
+    `buildLspInjection(filePath, source, { loadModule?, modules? }) →
+    RunTranspiledOptions`，消费方统一走
+    `checkSource({ inject })` / `generalizeFromAst({ inject })` /
+    `collectAbsInlays({ inject })`。
+  - **Bug 780**（agent 侧）：`nudo.trace` 此前**只读 `params.file`** ⇒ LSP 自产的
+    `file://…` uri 形态与 `executeCommand` 位置参数形态都让 `params.file` 变
+    `undefined` ⇒ 观察透镜 100% 抛 TypeError。现在 `FunctionToolParams` 收
+    `uri` 键（与 `file` 二选一，缺省时报共用入口闸的 `file is required …`
+    而不是裸 TypeError），并导出位置参数桥 `tracePositionalArgs([uri, fn])`
+    （形态不合法 ⇒ `undefined`，由命令桥报协议层参数形态错误）。
+  - **Bug 779**（vite 半）：`checkIssuesToDiagnostics` 在转成 vite Diagnostic
+    **之前**就把 info 级砍掉 ⇒ 下游档位过滤器永远看不到 info ⇒
+    `nudo.analysis.diagnostics: "verbose"` 对 check 诊断是**空操作**
+    （`nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result`
+    永不上屏）。转换点改为保留三档，档位取舍只由
+    `filterDiagnosticsByLevel` 决定；info 级走 vite 的 **info 通道**
+    （不混进 warn 流），warning 计数不含 info。
+- 5c750f2: `Math.min` and `Math.max` now keep a satisfiable range.
+  
+  The bounds of `min` and `max` were merged the wrong way round, so
+  `Math.min(x, 0)` claimed both `> 0` and `≤ 0` at the same time. A
+  function that always returns `0` satisfied a `@nudo:contract return
+  number().gt(0)` contract, and the value was reported as exactly
+  `"pos"`. The bounds are now merged the right way round, so the
+  contract is rejected and the value is reported as `"nonpos"`.
+- a3c95a4: `o.p++` and `++o.p` read the member exactly once.
+  
+  A native `o.p++` is one Get plus one Put. The engine split the update into
+  an expression part (which evaluated the new value) and a statement-level
+  rebinding (which wrote the value back), and both parts emitted their own
+  `readPathSrc(path)` — so the member was read twice. A getter therefore ran
+  twice (doubling its side effects), and a stateful getter returned a
+  different value on the second read, which made even the result of the
+  update wrong (`"1:2"` instead of `"1:1"`).
+  
+  The member target is now self-contained like the identifier target: the
+  value is read once, the write-back happens inside the expression, and the
+  statement-level rebinding no longer adds a second read or a second
+  increment.
+- e3b8791: Writing a member now goes through the same checks JavaScript does.
+  
+  - A write only looked at the receiver's own slots, own accessors and own
+    attribute flags: the `writable: false` flag was never consulted for
+    functions, class values or indexed properties, and the prototype chain
+    was not walked at all. Writing to a read-only property inherited from a
+    prototype succeeded silently, and a setter on the prototype was never
+    called. The write now follows the ordinary internal method: the
+    prototype chain is walked, an accessor without a setter raises a
+    `TypeError`, a non-writable or frozen property raises a `TypeError`, and a
+    setter is invoked. An instance of a user class is covered too.
+  - A write through a proxy rejected only the literal `false` returned by
+    the trap, so a trap returning `0`, `""`, `null` or `undefined` was
+    accepted. Every falsy result is now a rejection.
+  - A write to a built-in prototype was shadowed by the built-in method
+    table: after `Array.prototype.push = 5`, reading `Array.prototype.push`
+    still returned the built-in function and the write was ignored. The
+    receiver's own slot now wins, as the specification's lookup order
+    requires.
+  - An array's `length` accepted values that are not numbers: `a.length =
+    undefined` and `a.length = {}` did not raise a `RangeError`. The value
+    is converted to a number first, then checked to be an integer in range.
+  - A sealed array accepted a truncating `length` write, `pop()` and
+    `shift()` without raising a `TypeError`. The empty array still behaves
+    like the original, and an array that was only made non-extensible still
+    accepts the truncation, exactly as in JavaScript.
+  - `delete a.length` was reported as successful. The `length` property of
+    an array is not configurable, so the delete now raises a `TypeError`.
+- 7fea13a: Assignments, calls and object literals now evaluate their parts in the order
+  JavaScript specifies.
+  
+  - An assignment to a member expression evaluated the right-hand side before
+    the object and the computed key. The member write was emitted as an
+    immediately-invoked function whose *argument* was the right-hand side, so
+    the value was computed first and the reference second; a computed key was
+    inlined into both the read and the write and therefore ran twice. The
+    reference (the object, every key, every intermediate value) is now
+    evaluated into temporaries first, the right-hand side comes after, and a
+    computed key is evaluated once and shared by the read and the write.
+  - `o.m(args)` evaluated the arguments before reading `o.m`, so a getter on
+    `o.m` ran after the arguments instead of before them. The receiver and the
+    member are now read before the arguments are evaluated, and the getter runs
+    exactly once.
+  - `__proto__: <expr>` in an object literal had its value expression moved to
+    the end of the literal, so the side effects of the properties ran in the
+    wrong order. The value is now evaluated in place, in source order.
+  - `o.a.b = v` wrote back through every level of the path, so a getter on
+    `o.a` was also assigned to. Only the last level is written back now; the
+    intermediate levels are read, never written.
+  - The write-back of a member update (`o.n++`) is pinned by a regression
+    test: it must happen at the moment the expression is evaluated, so that
+    `if` tests, `switch` discriminants and loop steps see the value before the
+    write.
+- d56cbd7: Member write-backs now target an assignable binding, so modules with a
+  member write-back no longer fail to evaluate when position recording is
+  enabled.
+  
+  With position recording on, the member path root used to be wrapped in
+  `$nodoPos(name, line, column)` — a *read* wrapper used to record where a
+  value was read. The write-back sites then reused that same expression as
+  the *assignment target*:
+  
+  ```js
+  $nodoPos(o, 2, 24) = $del($nodoPos(o, 2, 24), $lit("a"));
+  ```
+  
+  That is not a valid assignment target, so the generated module threw a
+  `SyntaxError` when it was compiled, the whole module failed to evaluate,
+  and every export of that module degraded to `unknown`. The LSP replay
+  surface keeps position recording on, so hovering over any value in a
+  module that writes to a member (`o.a = 2`, `delete o.a`,
+  `Object.defineProperty(o, …)`, `o.a++`) fell back to the declared shape
+  instead of the evaluated one.
+  
+  The member path now carries the plain binding name separately from the
+  instrumented read, and every write-back assigns to the plain name.
+- e5b3f38: 族 16 修复 M4：Bug 574 / 575 / 583 / 585 / 587 / 591 / 592 / 596 / 917 / 923 / 969 —— `nudo migrate strip` 的**写盘面**修好：两阶段（先算完再写）+ 事务写盘 ⇒ 语法错文件不再留下半写状态，错误信息点名文件；写目标前检测既有同名 `.js` ⇒ 不再静默覆盖手写 JS（`--backup` 时先备份）；`--backup` 撞名改用 `*.1.bak` 并在输出里交代，不再静默跳过；侧车草稿落在**草稿路径** `*.nudo.draft.js`（不再冒充正式侧车 `*.nudo.js`）；产物的相对模块说明符按真实文件补成显式扩展名（`./helper` → `./helper.js`）；notes 改为**基于 AST 事实**（注释 / 字符串里的 "enum" / "namespace" 不再误报）；`.cts` 产物不再谎称 CommonJS；`.tsx` 明确拒绝（strip 不做 JSX 变换，不再产出 Node 加载不了的 `.jsx`）；单文件路径与目录路径走同一条侧车迁移逻辑（既有 `*.nudo.ts` 一并迁到 `*.nudo.js`，产物契约不丢）；目录级分析按**模块**计数（源 `.ts` 与产物 `.js` 是同一模块，不再翻倍）。
+- 089d4ec: `import d, * as ns from "…"` binds the namespace, and an empty class
+  expression keeps its `extends` clause.
+  
+  - The default + namespace import form was flattened into
+    `import { default as d, * as ns } from "…"`, which is neither valid ESM
+    nor matched by the namespace rewrite (the `*` has to follow the `{`
+    directly), so the named branch treated `*` as an imported name and the
+    namespace binding folded to `unknown`. The mixed form is now emitted in
+    its standard ESM shape and rewritten accordingly.
+  
+  - A class expression with an empty body took a fast path that emitted
+    `$classExpr()` before `classSpecOf` read the `extends` clause, so the
+    prototype chain and the class registration were both lost:
+    `new B() instanceof A` folded `false` and `extends null` did not raise
+    its `TypeError`. An empty body now only takes the fast path when the
+    class has no superclass.
+- 169ed52: `nudo check` and `nudo check --fix` now analyse the same program, and the gate
+  no longer accepts TypeScript-only syntax in a `.js` file.
+  
+  - `nudo check --fix` fed the analyzer a different input set than `nudo check`:
+    the auto-bind setting, the project directory and the injected modules were
+    missing, and the mock environment was not assembled. A project could pass
+    the gate and still be reported as broken by `--fix`, or the other way
+    around. Both commands now build their analyzer input through one shared
+    constructor.
+  - `--fix` also materialised plans for findings that had been downgraded to a
+    warning, so a diagnostic that no longer blocks the gate still wrote a
+    sidecar into the user's repository. Only error-level findings are
+    materialised now.
+  - A `.js` file containing TypeScript-only syntax (`private x = 0`, `x as T`)
+    was parsed happily, so the gate reported success on a file that Node cannot
+    even load. The parser now picks its plugins from the file extension, and the
+    check face reports the syntax error instead.
+  - A project-level path environment (`package.json#nudo.env`) was resolved
+    relative to the analysed file rather than to the project root, so a
+    subdirectory file could not find the environment it declared.
+  - Environments are merged with the harvested ones under the same precedence
+    the test and service faces use, so a harvested export that does not collide
+    with a handwritten environment is no longer dropped.
+- 169ed52: `nudo check` no longer loses a failing input, misreports the gate tier, prints
+  an unappliable diff, or stays green on a broken sidecar.
+  
+  - An input file that exists but cannot be read (permissions, I/O) escaped the
+    command as a raw `EACCES` message. With `--json` the command printed
+    nothing at all, so a CI job got an empty stdout and a non-zero exit code
+    without a machine-readable reason. The failure is now reported as a path
+    error (`nudo:path-io`) inside the usual JSON envelope, and the human face
+    prints the reason plus a `fix:` hint.
+  - The warning about an unknown `package.json#nudo.check.profile` always said
+    `using default strict`, even when an explicit `check.entryThrows` (or a CLI
+    flag) had put the gate into a different tier. The message now names the tier
+    that is actually in effect, so it can no longer contradict the report.
+  - `nudo check --fix` printed its own `---`/`+++` header in addition to the
+    header of the unified diff, polluted the `+++` path field with the
+    `[fix] …` explanation, and used absolute paths (which produced `a//…`).
+    The diff now has a single header with a relative path, exactly like the
+    sibling `nudo test --freeze --dry-run` output, and can be consumed by
+    `git apply`.
+  - A sidecar that imports something that is not a constraint builder (for
+    example `import { totallyBogus } from "@nudojs/core"`) was diagnosed while
+    the sidecar was executed, but the diagnosis was dropped as soon as the
+    execution result was cached. Because the analyzer runs before the gate, the
+    gate itself never saw it: `nudo check` reported success and exited 0 on a
+    sidecar that could not be loaded. The diagnosis is now cached together with
+    the execution result and reported again on every cache hit, so the gate
+    reports `nudo:interface-load` and turns red.
+- 169ed52: The disk cache, the LSP and the Vite plugin now agree with the CLI about
+  environments, budgets and injected modules.
+  
+  - The cache key did not contain the effective fork budget, so changing
+    `NUDO_MAX_FORKS` still served the previous run's result. The effective
+    value (environment variable, then `package.json`, then the default) is now
+    part of the key.
+  - An invalid `nudo.check.entryThrows` value was reported once per checked
+    file. The warning is now printed once per distinct invalid value.
+  - `@nudo:as` did not apply to an exported binding, so the tool still reported
+    "bindings applied" while the type stayed unchanged. The override now
+    matches the exported declaration as well.
+  - `--what-if` attached an assumption to the wrong variable when a line ended
+    with a comment, and it reported a made-up reason when two declarations
+    shared a line. Assumptions are now anchored by statement identity.
+  - The LSP and the Vite plugin never applied `@nudo:mock`, so a project that
+    checked cleanly in the CLI reported a spurious "may throw" in the editor and
+    in the build. Both now assemble the same injection channel the CLI uses.
+- 02aa122: fix(core,service): 侧车契约与 zod 产物不再把 `-0` 渲染成 `0`（族 20 · 片 D · Bug 1065）
+  
+  `-0` 与 `0` 身份不同（`Object.is` / `1/x` 可观察），而 `String(-0) === "0"`
+  ⇒ 负号被抹掉 ⇒ 同一个值在三处被渲染成**另一条契约**。
+  
+  - **core（`packages/core/src/algebra/interface.ts`）**：`litToString` 的 number
+    分支改用仓库既有的保真口径 `litKeyString`（`./term.ts`：`Object.is(v, -0) ⇒ "-0"`，
+    与 `format.ts` 的 `formatLitValue` 同款判据）；`lengthBound` 的常数界渲染
+    （`.length(n)`）同款口径一并改。⇒ 侧车写的 `lit(-0)` 现在**如实**渲染成
+    `lit(-0)`：`nudo contract` 回显、`nudo check` 诊断的 `expected:` / `suggestion:`、
+    以及侧车 DSL 回写（`nudo contract --emit`）都不再抹掉负号。
+    ⇒ **零新增公开导出**（`litKeyString` 是同包相对 import，core 冻结面未动）。
+  - **service（`packages/service/src/emit/schema-generator.ts`）**：`case "lit"` 的
+    数字分支**保真**写 `z.literal(-0)`（改前是 `z.literal(0)`）⇒ 产物不再
+    **比门禁宽**（门禁按 `lit(-0)` 判红、产物却放行 `0` ⇒ 假绿）。
+    ⚠ zod 的 literal 走 `===` 口径 ⇒ `-0` 与 `0` 在运行时**不可区分** ⇒ 该处
+    **已知有损** ⇒ 产物就地加注释标明（消费方看得见），**不许静默放宽**。
+    （zod 的运行时行为本次**未独立复现**——环境无 zod 依赖。）
+  
+  诊断文本与 zod 产物是**同一个渲染上游**（`formatConstraint` ⇒ `litToString`）
+  ⇒ 一处修，两面同时保真。
+- f47fd50: Numeric literals that overflow to infinity are no longer folded to `null`.
+  
+  Babel parses `1e400` as a `NumericLiteral` whose value is `Infinity`
+  (the raw text stays "1e400"). The transpiler rendered the literal back to
+  source with `JSON.stringify(expr.value)`, and `JSON.stringify(Infinity)`
+  returns the four-character string `"null"` — JSON has no representation
+  for infinity. That text was pasted into the generated code, so `1e400`
+  became `$lit(null)`, the JS `null` literal rather than the string "null".
+  
+  `return 1e400` folded `null` instead of `Infinity`, `-1e400` folded `-0`
+  instead of `-Infinity`, `Number(1e400)` folded `0` and `String(1e400)`
+  folded `"null"`. Non-finite numbers are now emitted the same way the
+  intrinsics are (`1/0` / `-1/0`, which do not depend on any identifier),
+  and `-0` keeps its sign.
+- 5c750f2: `Object.defineProperty` now validates the descriptor, and the reflection
+  helpers behave like the spec instead of guessing.
+  
+  - `Object.defineProperty` runs `ValidateAndApplyPropertyDescriptor`.
+    Redefining a non-configurable or non-writable property used to succeed
+    silently and rewrite the value; it now throws a `TypeError`, and a new
+    key on a non-extensible target is rejected instead of accepted.
+  - `Object.defineProperties(o, 42)` no longer throws. The second argument
+    goes through `ToObject`, so a primitive becomes a wrapper with no own
+    properties and nothing is defined.
+  - `Object.create(o, undefined)` no longer throws. Passing `undefined`
+    explicitly skips the whole step, exactly like omitting it.
+  - `Reflect.defineProperty(proxy, …)` returns `false` when the trap
+    refuses, instead of throwing a `TypeError`.
+  - `Reflect.get` now runs getters, so an object literal with a getter
+    returns the getter's value rather than `undefined`.
+  - `Reflect.set` honors its fourth argument (the receiver) and uses
+    `[[Set]]` semantics on a proxy, so a trap that returns `false` yields
+    `false` rather than a thrown `TypeError`.
+  - `Reflect.set(array, "length", 3)` now actually changes the length.
+  - `Object.keys` / `values` / `entries` no longer claim an exact empty
+    tuple for an object with an open key set (the shape produced by
+    `Object.groupBy`); they report a `string[]` domain instead of a
+    confidently wrong `[]`.
+- d2cf3cf: An optional catch binding (`catch { … }`) no longer introduces a binding.
+  
+  The optional catch binding of ES2019 binds nothing, but the transpiler
+  fell back to the hard-coded name `"e"` for the carrier. That binding then
+  
+  - shadowed an outer binding of the same name, so `catch { return e }`
+    returned the caught exception instead of the outer value (`"outer"`
+    became an `Error`);
+  - swallowed the `ReferenceError` of an undeclared name, so the signature
+    claimed the function never throws;
+  - collided with the user's own `let e`, which is a duplicate declaration in
+    the same block: the module then failed to transpile and degraded to
+    `unknown`, while the diagnostic blamed the user's code.
+  
+  An optional catch binding no longer emits a user-visible binding, so the
+  catch body resolves outer names as it normally would.
+- 27cc16a: Directive parsing no longer loses or over-applies directives: malformed mock
+  tags are reported instead of evaporating, file-level directives only apply
+  where they are written, and a case expectation is no longer voided by a
+  trailing comment.
+  
+  - A file-level `/// @nudo:mock-module "fs" from "./mock-fs.js"` was caught by
+    the function-level `@nudo:mock` tag pattern, so a correct file produced a
+    fabricated `nudo:directive-syntax` warning ("Malformed @nudo:mock …").
+    The mock tag now requires a name boundary that excludes the `-` suffix of
+    the file-level family.
+  - `@nudo:mock` with an empty payload (`@nudo:mock fetch =`, `@nudo:mock g
+    from`) matched neither strict grammar, so the directive evaporated silently
+    — no mock, no diagnostic, and the analysis ran against the real API. The
+    three mock grammars are now closed: a tag that matches the lenient pattern
+    but neither strict one is reported through `nudo:directive-syntax`.
+  - `@nudo:skip=> number()` (no space between the tag and the payload) dropped
+    the whole payload, so the declared return type never took effect and the
+    signature degraded from `f() => number` to `f() => any` — an `any` leak into
+    the product surface. The separating whitespace is no longer part of the
+    required structure.
+  - `@nudo:mockfetch = …` (no space between the tag and the name) did not even
+    match the lenient tag pattern, so the whole mock was invisible to the
+    scanner: zero diagnostics and the analysis ran against the real
+    implementation. The lenient pattern now sees the glued spelling and reports
+    that a space is required.
+  - A `@nudo:case` expectation with a trailing comment (`=> string() // the
+    result is a number`) failed to parse and fell back to an explicit `unknown`,
+    which satisfies every expectation — the assertion was silently voided and
+    the command reported "1 passed" with exit code `0`. The trailing comment is
+    now stripped before the expectation is parsed.
+  - A malformed `@nudo:case` did not register an argument-region mask, so
+    `@nudo:mock` / `@nudo:skip` written inside its arguments leaked out as real
+    directives (false positives, methods dropped from the emitted declaration).
+    Malformed cases now mask their argument region as well; the malformed-name
+    diagnostic is unchanged.
+  - A file-level `@nudo:env` / `@nudo:mock-module` written inside a function
+    body was promoted to whole-file scope: the environment or the module
+    replacement applied to the entire file, with zero diagnostics. File-level
+    directives are now position-gated — a line comment inside a function body is
+    ignored and reported through `nudo:directive-syntax`, while top-level
+    positions (file header, `export` line, between statements) keep working. The
+    same gate is applied to the text-level extraction used by `@nudo:import`, so
+    the three file-level families now behave alike.
+- 27cc16a: The directive grammar now has a single enforcement face: the case-argument
+  grammar of the check product, the case emitter, the function census and the
+  diagnostic positions are aligned with the parser.
+  
+  - The check product parses a case witness with its own literal grammar (a
+    decimal regular expression, and a string sliced off its first and last
+    character). A witness written as `1e3` or `"a\tb"` therefore did not denote
+    the value the user wrote, and the contract gate reported
+    `witness ⊭ contract` for a witness that was in fact correct — while the
+    same file, read by the parser, held a different value. The check product
+    now uses the same literal grammar as the parser: JavaScript number
+    semantics (exponent, hex, binary, octal, separators) and JavaScript string
+    semantics (escapes), and a text that is not a single literal is no longer
+    folded into a confident wrong value.
+  - The case emitter wrote a string value into the directive text verbatim, so a
+    value containing a backslash or the quote character produced a directive
+    that no longer re-parsed to the same value — `nudo test --freeze` wrote out
+    a case that failed on the next run. The emitter now escapes what the
+    grammar requires. Non-finite numbers (`NaN`, `Infinity`) and bigint
+    literals were dropped from the emitted case entirely (the whole case was
+    abandoned); they are now expressible.
+  - A static class method was visible in the signature surface of `nudo check`
+    but invisible in the function census of `nudo test` / `nudo health` /
+    `nudo contract`, because the census only collected instance methods. The
+    census now collects static methods as well, matching the check product.
+  - A directive diagnostic carried no position, so every occurrence of the same
+    problem was reported at the same place and the product surfaces could not
+    point at the offending directive. Diagnostics now carry the position of the
+    offending directive.
+  - The union splitter of the what-if surface did not treat a backslash as an
+    escape inside a string, so a type expression containing `\"` was split in
+    the wrong place.
+- fbca6fb: fix: 后置条件证明通道的 Φ 侧接线（返回点路径前提）+ 消除 Φ 的假红
+  
+  上一片（族 65 收口）把「证据面 = Φ ∧ ret.pred」的 Φ 侧**同项**判定补上后，
+  留下两件待决：Φ 侧**从未接入**生产（`phi` 参数恒为 `pTrue`），且按其文档
+  语义接线**不健全**——Φ 中的界原子可能约束的是**另一个项**
+  （`if (x > 0) return y`），蕴含失败会被判 `disproved`（error），而真实结论
+  应是「证不出」。
+  
+  本片把两件都收口：
+  
+  - **消除假红（前置）**：Φ 侧计入证据面的条件收紧为「**同项** ∧ **蕴含**该约束
+    的 pred」（`postcondition.ts` 的 `phiSuppliesConstraint`）。实测口径：
+  
+    | Φ | 契约 | 改前 | 改后 |
+    |---|---|---|---|
+    | `y > 0`（同项但不足以蕴含 `y > 10`） | `number().gt(10)` | `disproved`（error，**假红**） | `unprovable`（warning，正确） |
+    | `y > 20`（同项且足够） | `number().gt(10)` | `unprovable` | `proved` |
+    | `x > 100`（**无关项**） | `number().gt(10)` | `unprovable` | `unprovable` |
+  
+    ⇒ **Φ 只能把「证不出」升级成「已证明」，绝不制造「确定违约」**；引擎自身
+    收窄（`ret.pred`）侧的 fail-closed 口径（守卫弱于契约 ⇒ error）**原样保留**。
+  
+  - **接进生产**：Φ = 用户引理前提（`@nudo:assume` 的 `assumePhi.phi`）⇒
+    `check.ts`（主路径 + skip 分支）→ `ReturnContractAudit.phi` / `.phiPremises`
+    → `check-return.ts` → `assertImplies(ret, constraint, { phi })`。
+    项身份实测：形参**有契约**时入口 Abs 由 `constraintToEntryAbs` 生成、term =
+    **真实形参名** ⇒ 与前提项同项 ✓；形参**无契约**时返回项锚在 α 名 ⇒ 对不上 ⇒
+    Φ 侧不生效（保守少证，不假红）。
+  
+  - **归因不得静默**：证明真的**依赖**路径前提时（去掉 Φ 就证不出），命中的前提
+    经 `noteAssumeConsumed` 记进引理账本 ⇒ `nudo:assume-relied`（info）可见——
+    用户公理不会被静默消费。skip 分支补齐 `assumeDisplay`，堵住「Φ 被消费却无
+    归因」的洞。
+  
+  - **`@nudo:invariant` 未接**：它是循环携带界（join / 宽化位强制），循环退出后
+    的绑定值不必满足它 ⇒ 作为返回点 Φ 不健全。
+  
+  验证：全仓 `tsc --noEmit`（含测试文件）0 错误；`pnpm run test` **1757 文件 /
+  14531 用例全绿**（exit 0）；`check-gold`（recall=precision=1.0）绿；新增
+  `core-bug-1094-postcondition-phi-wiring.test.ts`（15 条，含「Φ 永不新增
+  `disproved`」的性质不变式）；既有 `core-bug-1080` 的一条断言随假红消除同步
+  更新（fail-closed 语义改由 `ret.pred` 侧承载，Φ 侧单列「证不出」）。
+  
+  **已知边界**：当前 `@nudo:assume` 文法只允许「名 <= 名」，而蕴含判定的区间
+  上下文只提取**数值**界 ⇒ 前提推不出字面界契约 ⇒ Φ 接线虽已生效（生产路径
+  确实把 Φ 交到证明通道），但**暂不翻转任何判据**。要让 Φ 真正生效，需要其一：
+  ① `@nudo:assume` 文法支持字面界（如 `d <= 10`）；② 把形参契约事实并入返回点
+  Φ（属可靠性政策决策，与 Bug 346「契约面不得当成事实」的既有口径相关）。
+  两者都是独立于「接线」的特性，本片未擅自扩展。
+- 535adcd: fix(core): `then` / `catch` / `finally` **回调返回值**的 thenable 采纳 —— 结果 promise 的值域不再是 thenable 对象本身（族 50 · Bug 1052 邻面）
+  
+  原生（ES2023 `PerformPromiseThen` + `PromiseResolve` + `PromiseResolveThenableJob`）：
+  回调的**返回值**也要走 `PromiseResolve` ⇒ 返回值是对象且 `Get(then)` **可调用**
+  ⇒ 调 `then(resolveFn, rejectFn)` ⇒ 结果 promise 的兑现值 = 该 settle 值
+  （**不是** thenable 对象本身）。
+  `await Promise.resolve(1).then(() => ({ then: (r) => r(5) }))` ⇒ 原生 **`5`**。
+  
+  引擎此前只认 `eff(promise)`（`unwrapThenable` 只做「promise ⇒ inner」的单层解包）
+  ⇒ 回调返回带 `then` 成员的普通对象时**原样穿过** ⇒ 结果 promise 的值域 =
+  **thenable 对象本身**（`promise<{ then: (r) => ? }>`）⇒ 与宿主的 `5` **互斥**
+  （wrong-exact）⇒ 该值域一路进 dts / zod / guard / standard 产物面。
+  
+  **根因**：族 38（Bug 1052 本体）已建立**唯一**的 thenable 采纳机制
+  （`thenableAdoption` / `adoptThenableChain`），但只接在 `Promise.resolve` /
+  `new Promise` / `await` 三条通道上 ⇒ **回调返回值**这条通道漏接。
+  
+  **修法**（`packages/core/src/algebra/builtins/promise.ts`）：**复用**族 38 的
+  `adoptThenableChain`（**不另造一套**——采纳机制唯一），在 then / catch /
+  finally 的**回调返回值记账点**按 `Promise.resolve` 面同款映射：
+  `settled`+resolved ⇒ 兑现值；`settled`+rejected ⇒ 拒绝通道（reason）；
+  `pending`（`then` 调过没 settle）⇒ 永挂（unsettled，不猜）；`undecidable`
+  （采纳面不可判）⇒ 原值 + 永挂；`noThen` / `thenNotCallable` ⇒ 普通值
+  （原生 `Get(then)` 不可调用 ⇒ 以该值兑现，不抛 TypeError）。
+  
+  修后：
+  
+  - `Promise.resolve(1).then(() => ({ then: (r) => r(5) }))` ⇒ `promise<5>`（原生同）；
+  - `Promise.reject("x").catch(() => ({ then: (r) => r(5) }))` ⇒ `promise<5>`；
+  - `Promise.resolve(1).finally(() => ({ then: (r) => r(5) }))` ⇒ `promise<1>`
+    ——原生 `finally` **不改 settled value**（thenable 只作「等待」用，兑现值丢弃）；
+  - 回调返回的 thenable 调 `reject` ⇒ 结果被拒、reason 落 **rejected 通道**
+    （`finally` 臂的 reason **替换**原 reason——原生同款）；
+  - 回调返回的 thenable 没 settle ⇒ 结果 promise **永挂**（标 unsettled，不猜）；
+  - 兑现值仍是 thenable ⇒ **递归**采纳一层（原生同款，深度上限 8 与族 38 一致）；
+  - **非 thenable 对照逐字不变**：`then(() => 7)` ⇒ `promise<7>`；
+    `then(() => ({ a: 1 }))` ⇒ `promise<{ a: 1 }>`；`then` 不是函数 ⇒
+    `promise<{ then: 1 }>`（确定 fulfilled）。
+  
+  **口径边界（已登记）**：宿主在**微任务**里调 `then`，引擎在求值点**抽象地**调
+  （`await` 面 / `Promise.resolve` 面同款近似）⇒ **兑现值**同款，但 `then` 体副作用的
+  **时序**与原生不同。采纳面**不可判**（any/unknown/fn/开对象/可选 `then` 槽）⇒ 仍标
+  unsettled（settle 不可判，不猜）——与 `Promise.resolve` 面同款。
+  
+  **未改的记账点（诚实登记）**：纯 **relation** 回调（`fnImpl.relation` 且无
+  body/apply）的返回值是**类型层**的值（非运行时对象）⇒ 无 thenable 采纳面 ⇒
+  该路径保持原样，未接采纳。
+- 5c750f2: Promises keep their rejection channel, and the static methods respect
+  their `this` binding.
+  
+  - A throwing executor now rejects the promise. The rejection used to be
+    swallowed, which turned `catch` into dead code and reported a
+    confident wrong value.
+  - `Promise.all` / `race` / `any` keep the rejection channel instead of
+    dropping it, and `race` / `any` no longer settle with the element
+    promise itself.
+  - `Promise.allSettled` projects each entry correctly: `value` holds the
+    resolved value, `reason` holds the rejection reason, and `status`
+    distinguishes fulfilled from rejected.
+  - A non-callable `then` / `catch` handler passes the value through
+    unchanged, as in the language, instead of rejecting the promise.
+  - `Promise.resolve` / `reject` / `all` / `race` / `any` / `allSettled`
+    are ordinary functions that receive `this`. `Promise.resolve.call(null, 1)`
+    now throws a `TypeError` (it used to return a value and report no
+    throw), while `Promise.resolve(1)` and `Promise.resolve.call(Promise, 1)`
+    keep working.
+- 535adcd: fix(core): `Promise.resolve(thenable)` / `new Promise(resolve => resolve(thenable))` 走 **thenable 采纳** —— promise 的值域不再是 thenable 对象本身（族 38 · Bug 1052）
+  
+  原生（ES2023 `PromiseResolve` / `NewPromiseCapability` + `PromiseResolveThenableJob`）：
+  对**非 promise 值**，`resolve(x)` 要取 `then = Get(resolution, "then")`，
+  **可调用**则调 `then(resolveFn, rejectFn)`，由它决定兑现值 ⇒
+  `Promise.resolve({ then: (r) => r(1) })` 兑现 **`1`**（number）。
+  
+  引擎此前**只认 `eff(promise)`**（`unwrapThenable` 只做「promise ⇒ inner」的单层
+  解包），带 `then` 成员的普通对象**原样穿过** ⇒ promise 的值域 = **thenable 对象
+  本身**（`promise<{ then: (r) => ? }>`）⇒ 与宿主的 `1` **互斥**（wrong-exact）
+  ⇒ 该值域一路进 dts / zod / guard / standard 产物面（消费方看到「一个带 then 的
+  对象」，而运行时兑现的是 `1`）。
+  
+  **根因**：`thenableRiskOf` 能识别「这个值**可能**自带 then 采纳面」，但它的
+  **唯一**用途是给 promise 打 `unsettled` 标记 ⇒ **风险被识别了，采纳却没做**。
+  
+  **修法**（`packages/core/src/algebra/builtins/promise.ts`）：
+  
+  - 新增 thenable 采纳机制 `thenableAdoption` / `adoptThenableChain`——把「风险面」
+    **一分为二**：`noThen`（确定无 `then`）/ `thenNotCallable`（有 `then` 但不可
+    调用 ⇒ 原生按**普通值**兑现）/ `undecidable`（any/unknown/fn/开对象 ⇒ 采纳面
+    不可判 ⇒ 仍标 unsettled）/ `settled`（兑现值 / 拒绝 reason）/ `pending`（`then`
+    调过但没 settle ⇒ 原生 promise 永挂）；
+  - 采纳入口统一走它：`Promise.resolve` 静态臂、`new Promise` 执行器 `resolve`
+    采集臂、**以及 `await` 面**（`exec/runtime/async.ts` 的 `adoptThenable`
+    **复用同一套**判定与调用，不另造——await 面的既有语义逐字保留）。
+  
+  修后：
+  
+  - `Promise.resolve({ then: (r) => r(1) })` ⇒ `promise<1>`（原生同）；
+  - `new Promise((resolve) => resolve({ then: (r) => r(1) }))` ⇒ `promise<1>`；
+  - 兑现值仍是 thenable ⇒ **递归**采纳一层（原生同款）；
+  - 采纳的 settle 语义 = 原生 **first-wins**（`then` 同时调 res 与 rej ⇒ 只认第一
+    次；`then` 在 settle **之后**抛错 ⇒ 忽略）；
+  - thenable 的 `then` 调 `reject` ⇒ 拒绝 reason 落 promise 的 **rejected 通道**
+    （`await` 该 promise ⇒ 抛该 reason，catch 臂可达）；`then` 体抛错 ⇒ promise
+    被拒绝；
+  - **负控**：`Promise.resolve(1)` ⇒ `promise<1>`；`Promise.resolve({a: 1})` ⇒
+    `promise<{ a: 1 }>`；**`then` 不是函数** ⇒ 不当作 thenable（原生
+    `Get(then)` 不可调用 ⇒ 以该值兑现）⇒ `promise<{ then: 1 }>`（确定 fulfilled，
+    不再是 unsettled）。
+  
+  **口径边界（已登记）**：宿主在**微任务**里调 `then`，引擎在求值点**抽象地**调
+  （`await` 面同款近似）⇒ **兑现值**同款，但 `then` 体副作用的**时序**与原生不同。
+  
+  采纳面**不可判**（any/unknown/fn/开对象/可选 `then` 槽）⇒ 仍标 unsettled（settle
+  不可判，不猜）。
+  
+  `await` 面此前在 `then` **同时**调 res 与 rej 时**优先取拒绝** ⇒ 现按原生
+  **first-wins**（先 res ⇒ 兑现）；该边界**无既有断言覆盖**（`await` 面其余语义
+  逐字保留，含「`then` 不可调用 ⇒ 抛 TypeError」的既有口径）。
+- e3b8791: Proxy traps are now dispatched and the invariants of the proxy
+  specification are checked.
+  
+  - A proxy with a `get` trap was not checked for the invariant that a
+    non-configurable and non-writable property of the target must be
+    reported with the same value, so the trap could report a different
+    value where JavaScript would raise a `TypeError`.
+  - A proxy with an `ownKeys` trap was not checked at all: a duplicate key,
+    a key that is not a string or a symbol, a missing non-configurable key
+    of the target, or an extra key on a non-extensible target were all
+    accepted. The invariant checks are now performed, and the trap is
+    dispatched from `Reflect.ownKeys`, `Object.keys` and
+    `Object.getOwnPropertyNames`.
+  - `Reflect.set` raised a `TypeError` where the original returns `false`,
+    and `Reflect.deleteProperty` reported success where the original raises
+    a `TypeError` for a non-configurable property of the target.
+  - `Reflect.get` and `Reflect.getOwnPropertyDescriptor` did not dispatch the
+    traps of the proxy at all.
+  - A proxy was only marked as a fresh instance when one of its traps was
+    used, so two proxies over the same target could not be told apart. The
+    mark is now applied where the proxy is created.
+  - A proxy without a `get` trap fell back to reading the target, and the
+    getter was called with the target as its receiver. The receiver is the
+    proxy now, as the specification requires.
+- b6abab4: Proxy traps now receive the real `Symbol` key, not the engine's internal
+  `"@@X"` string projection.
+  
+  - The engine stores symbol-keyed properties under an internal `"@@X"` slot
+    name. `obj[Symbol.x]` was transpiled into `$get(obj, "@@x")`, and the
+    Proxy `get` / `set` / `has` trap dispatch passed that internal name on as
+    the trap's key argument. Handlers that dispatch on the key therefore all
+    failed: `typeof k` was `"string"` instead of `"symbol"`, `String(k)` was
+    `"@@iterator"` instead of `"Symbol(Symbol.iterator)"`, and
+    `k === Symbol.iterator` was always `false`.
+  - `Symbol.iterator in proxy` was worse: the `has` trap was never dispatched
+    at all, because the `in` operator bailed out early on symbol keys.
+  - Symbol-projected keys are now restored to the real symbol at the trap
+    boundary. The `in` operator looks the key up by its host identity, so the
+    `has` trap fires and a symbol-keyed own property is reported correctly.
+  - A user-written string literal `"@@iterator"` stays a string key: it is a
+    different property key from `Symbol.iterator` and is still handed to the
+    trap as a string.
+- 356172a: RegExp state calls evaluate their arguments once, and `delete` dispatches
+  the Proxy `deleteProperty` trap exactly once.
+  
+  - `re.test(x)` / `re.exec(x)` / `re.compile(x)` inlined the very same
+    argument source text into two runtime calls (`$invoke`, which performs
+    the call, and `$reStateCall`, which reads back `lastIndex`). Every
+    argument expression therefore ran twice — a counter incremented by the
+    argument ended up at `2` instead of `1`. The arguments are now
+    materialized into an array that both channels share. The same fix
+    applies to the optional-chain receiver (`re?.test(x)`, `re.exec(x)?.[0]`).
+  - `delete o[k]` was emitted twice: once as the expression value
+    (`$delRes`) and once as the statement-level write-back (`o = $del(o, k)`).
+    On a plain object the second call is idempotent, but on a `Proxy` each
+    call dispatched the `deleteProperty` trap, so the trap ran twice while
+    the specification allows exactly one call. The trap is now dispatched
+    only by the expression channel; the write-back channel merely probes
+    whether a trap is present and leaves the target untouched.
+- e3b8791: The generated products and the named imports of a module now agree with
+  each other.
+  
+  - The schema product rendered the brand of a generator as
+    `z.instanceof(GeneratorFunction)`, which made the generated module fail
+    to load with a `ReferenceError`. The brands that are not globals are
+    downgraded to `z.unknown()` and the loss is recorded, so the product can
+    always be loaded.
+  - A named import of a function from an environment module wrapped the
+    declared function in a JavaScript arrow function, which dropped the
+    declared parameter and return types: the signature showed an invalid
+    placeholder and the generated declaration file disagreed with it. The
+    named import now yields the declared function itself, so both import
+    forms report the same type. The function is still callable: a call and a
+    `new` both dispatch to it.
+- a069994: fix(core): `@nudo:assume` / `@nudo:invariant` 求值不再复用 generalize 的进程内缓存
+  （种子求值绕过 L0）
+  
+  `generalize` 的 L0（进程内函数签名 memo）键只装**静态身份**（源码指纹 / 依赖 /
+  预算等），不含 `@nudo:assume` 引理与 `@nudo:invariant` 循环界这两份**动态种子**
+  ⇒ 带种子的求值可能命中无种子缓存（或反之），造成两类用户可见错误：
+  
+  - **审计面蒸发（误导性假绿）**：同一文件第二次 `nudo check`、只改了无关兄弟函数、
+    或 IDE/LSP 先跑过一次无种子签名推导后，带引理的函数会命中缓存而跳过重新求值
+    ⇒ 引理消费账本没被填 ⇒ `nudo:assume-relied` / `nudo:invariant-relied`
+    不再上屏，用户以为引理没被用上（实际证明仍依赖它）。现在这些场景与冷跑一致：
+    relied info 每次都在。
+  - **精度泄漏**：种子求值折出的界（如 `1 - d/max ≥ 0 ∧ ≤ 1`）会被写进 L0 ⇒
+    之后的**无种子**签名推导（`nudo check` 签名面 / LSP hover）读到它，
+    在没有公理的上下文里显示只有引理才能证出的类型。现在无种子推导与冷跑逐字一致。
+  
+  修复方式：种子非平凡（引理前提非 `true` 或有循环界规格）时，目标函数入口的
+  generalize **既不读也不写** L0；其余路径的缓存行为不变（无 `@nudo:assume` /
+  `@nudo:invariant` 的项目零变化）。
+- 369a42d: Short-circuit operators evaluate their left operand exactly once.
+  
+  `$fork` only guarantees that the *test* is evaluated once and that the
+  arms run lazily — the test value is not handed back to the arms, so
+  emitting the left operand's source into an arm evaluated it a second
+  time. A getter, a call or a computed key therefore ran twice (four
+  times for nested `??`), and an incrementing getter returned a different
+  value on the second read, so the result and the surrounding state were
+  wrong (`o.x ?? 5` folded `2` instead of `1` for a getter counting its
+  own reads; `a[i++] ?? "d"` folded `"undefined|2"` instead of `"x|1"`).
+  
+  An impure left operand (getter / call / computed key / increment) that
+  is reused by an arm is now bound to a temporary first, and the test and
+  the arms all refer to that binding. Pure left operands (identifier /
+  literal / `this`) keep their previous shape, since re-reading them is
+  not observable.
+- 29d766d: fix(core): `String.prototype` 的 ES2017 别名 `trimLeft` / `trimRight` 方法值读不再折成 `undefined`（族 41 · Bug 1055）
+  
+  宿主 `String.prototype` 上真实存在两个 ES2017 别名 `trimLeft` / `trimRight`
+  （≡ `trimStart` / `trimEnd`，原生同一内置）。引擎有**两套**字符串方法名集合：
+  
+  - **方法派发面**（`packages/core/src/algebra/methods.ts`）—— `case "trimLeft":`
+    / `case "trimRight":` ⇒ **调用**路径认识这两个别名；
+  - **方法值读投影面**（`packages/core/src/algebra/exec/member-diag.ts` 的
+    `STRING_METHODS` 白名单）—— 只列了 `trimStart` / `trimEnd`，**漏列**这两个
+    别名 ⇒ **读**路径把它们当成「原型上不存在的成员」。
+  
+  ⇒ 同一引擎两套集合自相矛盾：`s.trimLeft()` 正常返回 `string`，但 `s.trimLeft`
+  读出 **exact `undefined`**（原生是 `function`）⇒ `String.prototype.trimLeft`
+  走同一张表 ⇒ 同样落 `undefined` ⇒ `String.prototype.trimLeft.call(s)` ⇒
+  「property 'call' on undefined」⇒ 硬 `TypeError` ⇒ **L2 门禁假红**
+  （`nudo:entry-may-throw`）。
+  
+  **修法**：`STRING_METHODS` 补 `"trimLeft"` / `"trimRight"` 两个表项（只加表项，
+  不动任何导出面）。修后：
+  
+  - `typeof s.trimLeft` / `typeof s.trimRight` ⇒ `function`（原生同）；
+  - `String.prototype.trimLeft.call(s)` / `String.prototype.trimRight.call(s)`
+    ⇒ `string`，不再记 `TypeError`（L2 假红消失）；
+  - 调用面 `s.trimLeft()` / `s.trimRight()` 不变（≡ `trimStart` / `trimEnd`）；
+  - **负控**：表外名字（如 `notARealMethod`）仍折 exact `undefined`，仍记
+    `TypeError` ⇒ 没有把整张表改成全放行。
+  
+  顺带把「表与宿主同名集同源」这条不变量钉住：新回归钉逐名对拍
+  `Object.getOwnPropertyNames(String.prototype)`（node v26.10.0 实测：自有方法
+  50 个 = 本表 50 个，无漏列 / 无多列），防止「派发面认识、读面不认识」的分裂
+  再次发生。
+- 7fea13a: `switch` statements and loop bodies now carry the facts that JavaScript
+  guarantees at those points.
+  
+  - A `break` inside a `switch` arm — including inside an `if` inside the arm
+    — was emitted as a `return`, which only ended the innermost thunk. The
+    statements after it still ran. A `break` in an arm now ends the arm and
+    the `switch`, and a `break` that belongs to an enclosing loop still ends
+    only that loop.
+  - The test of a `case` was emitted like an ordinary argument, so every case
+    test of the `switch` ran before the `switch` was entered, even after a
+    case had already matched. The case tests are now evaluated in source
+    order and stop at the matching one, and each test is evaluated exactly
+    once. When the discriminant is abstract and no case can be selected, all
+    case tests are still evaluated, so their side effects are not lost.
+  - A side effect in a case test was rolled back by the snapshot the arm
+    restores, so `switch (1) { case t(1): n = n + 10; break; }` ended with
+    `n = 10` instead of `n = 11`. The baseline is now refreshed after the
+    case test, so the writes of the test survive while the arms stay
+    isolated from each other.
+  - The head of a `for (var … of …)` or `for (var … in …)` was lowered to a
+    callback parameter. That shadowed the function-level `var` binding, so
+    reading it after the loop gave `undefined`, and every iteration created a
+    new binding, so a closure captured the wrong value. The `var` head is now
+    a function-level binding, shared by all iterations and still visible
+    after the loop; `let` and `const` heads keep their per-iteration binding.
+  - `for (o.x of …)` and `for (o.x in …)` did not write the iteration value
+    back to the member at all, so `o.x` kept its old value. The head target is
+    now assigned on every iteration, like in JavaScript.
+  - The body of a `for`, `while` or `do-while` loop did not receive the facts
+    of its own test. A `for (; x > 0; ) { return x; }` was judged to violate
+    a contract of `number().gt(0)`, and `for (; v !== null; ) { return
+    v.length; }` was reported as possibly throwing on `null`, even though
+    JavaScript never throws there. The loop body now receives the nullish and
+    the relational facts of the test, in all three loop forms. The first
+    iteration of a `do-while` body is not narrowed, because it runs before the
+    test is evaluated.
+  - A `break` or `continue` in the body of a `do-while` escaped the whole
+    function, because the body was executed once outside the loop. The body
+    now always runs inside the loop, so `break` ends the loop and `continue`
+    goes to the test.
+  - A `case` label did not produce any narrowing fact, so the arm did not
+    know which value it matched and the other arms did not know which values
+    were excluded. `switch (x) { case 1: return x; default: return 2; }`
+    violated a contract of `number().gt(0)`, and `switch (v) { case null:
+    return 0; default: return v.length; }` was reported as possibly throwing
+    on `null`. The arms now know the matched value and the excluded values.
+- 56f308e: Two `switch` defects are fixed: a `default` that follows an empty `case`
+  no longer runs its body twice, and a `break` inside a loop nested in a
+  `switch` arm breaks the loop again.
+  
+  - In `case 1: default: body` the default's statements are shared between
+    the case arm (which falls through into them) and the default arm (which
+    runs them when nothing matches). The fall-through merge appended them a
+    second time, so the body ran twice in one arm — `switchDefaultAfterEmptyCase()`
+    folded `"dd"` instead of `"d"` and side effects were doubled.
+  
+  - The "inside a switch arm" marker was carried into nested loops, so an
+    unlabelled `break` inside such a loop was lowered as "end of arm" instead
+    of "end of loop": the loop ran to completion (`f() => 3` instead of `1`).
+    Loop bodies no longer inherit the marker.
+- 5c750f2: Symbol-keyed properties stay symbol-keyed, and prototypes no longer leak
+  their `constructor` into enumeration.
+  
+  - A property defined with a symbol key is no longer reported as the
+    string `"@@X"`. `for…in`, `Object.keys`, `Object.getOwnPropertyNames`
+    and `Object.getOwnPropertyDescriptors` only list string keys, and
+    `Reflect.ownKeys` returns the symbol itself (so `typeof` is
+    `"symbol"`, as in the language).
+  - `Object.assign` copies a symbol key as a symbol key instead of
+    downgrading it to a string property.
+  - `"@@toStringTag" in obj` is now `false`: the string `"@@toStringTag"`
+    is not the same key as `Symbol.toStringTag`.
+  - `Object.getOwnPropertyDescriptor(proxy, key)` dispatches the proxy's
+    `getOwnPropertyDescriptor` trap. It used to never run and always
+    reported a broken descriptor.
+  - `Object.freeze` / `Object.seal` / `Object.preventExtensions` record
+    key-level flags, so `Object.isFrozen` / `Object.isSealed` report the
+    right answer, and a frozen property stays frozen.
+  - A function's `constructor` property is not enumerable any more:
+    `for (const k in A.prototype)` is empty, as it is in the language.
+  - A regular expression exposes its own `lastIndex` property, and
+    `Object.getOwnPropertyNames(/x/)` lists it.
+- 7fd7468: 族 45 修复 S11：Bug 1058 / Bug 1059 —— 引擎**内部临时名**与用户标识符**避让**。
+  
+  同根因（Bug 181 的修复只装在了解构临时名族 `_d{n}` / `_n{n}` 上 ⇒ 这里只装了一半）：
+  引擎为转译生成的内部绑定一律用**固定名**发射（`arguments` 槽 `__nudoArgs` /
+  try 标记 `__nudoTm_{n}` / catch 载体 `__nudoE_{n}` / try 内 return 载体
+  `__nudoRet` / 写回载体 `__mutRet` / 函数体 catch 载体 `__nudoFnRet` /
+  宿主 rest 形参 `__margs` / `__allArgs` / 匿名默认导出合成名 `__nudoDefaultFn`
+  `__nudoDefaultClass`）⇒ 用户源码里写了同名标识符时两种失效形态都成立：
+  
+  - **同作用域重复词法声明**（Bug 1058）⇒ 转译产物**不是合法 JS** ⇒ `new
+    Function` 编译期 `SyntaxError` ⇒ 求值器 fail-closed ⇒ **整模块**导出退化为
+    `unknown` + **假** `nudo:opaque-result`（「path not covered, or native」——
+    误导诊断）⇒ 门禁 exit 0 **假绿**；连**无关**的导出也一并失去签名。
+  - **内层遮蔽**用户同名外层绑定（Bug 1059）⇒ 引擎的 `const __nudoRet = <用户
+    表达式>` 在**自己的初始化器**里读 `__nudoRet` ⇒ TDZ `ReferenceError` ⇒ 被
+    用户自己的 `catch` 吞掉 ⇒ 原生 `15` 被算成 `0`（wrong-exact）⇒ 签名面写成
+    `=> 0` ⇒ 门禁假绿。
+  
+  修法（`transpile/helpers.ts` 新增 `internalTmpName`）：生成内部名时用
+  `userIdentInfo(source).names`（源文本里出现过的**全部标识符词形**，保守超集）
+  做避让——撞名则加 `_k` 后缀并跳过已占用名。避让在**整个转译单元**生效（不做
+  作用域分析：用户在内层作用域声明的名字同样会遮蔽外层生成的临时名）⇒ 生成名与
+  用户标识符词形永不相撞；**无碰撞时原名返回** ⇒ 产物逐字不变；同一源文本 ⇒ 同一
+  名 ⇒ 产物**确定性**（缓存键 / 差分语料依赖它）。生成与使用**成对改名**
+  （声明 / 引用 / 词法槽绑定三处一致）。
+  
+  回归钉：`packages/core/src/algebra/__tests__/eval-bug-1058-1059-temp-name-collision.test.ts`
+  （1059 结果 `15` 而非 `0`、签名面写 `15`；1058 三族不退化 `unknown`、无假
+  `nudo:opaque-result`、无关导出仍拿到签名；负控：内部名逐字不变；确定性：两次
+  转译逐字相同）。
+- ed4d259: fix(core): this 载体名 `__this` 避让用户标识符（附录 A#4 · Bug 1160）
+  
+  Bug 1058/1059 约定「引擎内部临时名必须避开用户标识符」。附录 A#4 把 `__this`
+  载体登记为「实测无害」并显式留到独立一波（1149 / 1151 的钉子断言了该字面
+  形态）——经逐点探针**全部可达**：`__this` 是跨发射器协议（真函数 prologue
+  `let __this = $rawThis(this)` / 宿主生成器 hoist 声明，与类/对象方法、构造器、
+  访问器 thunk、字段 / 静态块 / `@@hasInstance` 安装 thunk 的首参声明），而这些
+  作用域里求值的是用户源码：
+  
+  - **真函数**（声明 / 表达式 / 生成器）：用户形参同名 ⇒ `let __this` 与形参
+    **重复声明** SyntaxError ⇒ 整模块 fail-closed；外层 / 块级同名 ⇒ 体内 `this`
+    读到用户绑定、用户读 `__this` 读到载体（自信错值）。
+  - **类 / 对象方法 + 构造器**（含函数表达式属性）：宿主签名是
+    `(__this, <用户形参>)` ⇒ 用户形参同名 ⇒ 重复形参 SyntaxError；默认参数、
+    体内块级同名、`super()` 接收者重绑（块级 `let __this` 劫持重绑）同款失效。
+  - **访问器 / 字段 / 静态块 thunk**：thunk 首参 `__this` 遮蔽外层用户绑定
+    （getter / setter / 实例字段 / 静态字段 / 静态块 / 具名类 `let C = __this`
+    绑定）；静态块顶层 `let __this` 与 thunk 形参重复声明。
+  - **`@@hasInstance` 安装 thunk**（静态字段与字符串键静态方法两种形态）：
+    值 / 方法体在 thunk 内求值 ⇒ 同款遮蔽。
+  - **类名恰为 `__this`**：静态块 `thisParam` = 类名与 thunk 首参同名 ⇒
+    重复声明 / 自遮蔽。
+  
+  修法：**单一来源** `helpers.ts` 的 `thisCarrierOf(opts)`——根转译单元
+  （`transpileFile` / `transpileBodyNode`）经 `internalTmpName("__this", opts)`
+  在入口分配一次并写入 `opts.thisSlot`，全部声明方与 `thisParam` 读方经同一
+  函数取同名（避让口径 = `userIdentInfoOf(opts)` = 源文本词形 ∪
+  `opts.userIdents`；撞名加 `_k` 后缀）——**不造第二套命名机制**。
+  
+  无碰撞时基名原样返回 ⇒ **产物逐字不变**（9485 条差分语料 + 19 条手写
+  方法 / 访问器 / 箭头 / 类字段 / 静态块 / 对象方法 / `new.target` / `super`
+  语料，`git archive HEAD` 旧发射器与新版对拍 0 diff）；撞名改名是源文本局部
+  分配（确定性：同源 ⇒ 同名）⇒ **无缓存键 / ANALYSIS_ABI 变更**。诊断语码与
+  门禁口径不变。
+- ae69b28: Two `return` statements in the same lexical block inside a `try` no
+  longer break the whole module.
+  
+  A `return` inside a `try` region is emitted with a fixed temporary name
+  (`const __nudoRet = …`). Two such returns in the same block were a
+  duplicate `const` declaration, which fails at compile time with
+  `SyntaxError: Identifier '__nudoRet' has already been declared` — the
+  whole module then fails closed, so every function in the file degraded to
+  `unknown` / `never` and `nudo check` lost the signatures of unrelated
+  functions. Merely having the two returns in the source was enough; the
+  dead code never had to run.
+  
+  Each return now takes its temporary in a block of its own, so the
+  bindings no longer collide. The `return` stays inside that block, which
+  does not change the function-exit semantics.
+- 5c750f2: Typed array construction and `set` now reject what the language rejects.
+  
+  - `new Uint8Array(buffer)` checks that the remaining bytes are a whole
+    number of elements. A buffer whose length is not a multiple of the
+    element size now throws a `RangeError` instead of being silently
+    truncated to a shorter array.
+  - `%TypedArray%.prototype.set` checks that source and target hold the
+    same kind of element. Copying an `Int8Array` into a `Uint8Array` is
+    rejected with a `TypeError`; copying between two arrays of the same
+    element type keeps working.
+  - `%TypedArray%.prototype.set` converts every element with `ToNumber`
+    (or `ToBigInt` for bigint arrays) and reports the failure. A source
+    holding a value that cannot be converted now throws a `TypeError` (or
+    a `SyntaxError` for a non-numeric string) instead of being accepted
+    silently.
 
-更早版本（53）→ [完整发布历史](./releases-history.md#pkg-core)
+更早版本（54）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## @nudojs/service 1.9.2 {#pkg-service}
+## @nudojs/service 1.10.0 {#pkg-service}
 
-## 1.9.2
+## 1.10.0
+
+### Minor Changes
+
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- 97f28ed: **BREAKING**: 产物面（dts / zod / standard / case）的**形参位形状**变了 ——
+  数组解构形参现在按**元素下标**聚合成**元组**，TS 的 `this: T` 接收者标注不再
+  被当成形参。
+  
+  谁会坏：消费方 `import` 生成产物并按**旧形状**调用的代码 ——
+  
+  - 数组解构形参（`fn({ a: number() })` 对 `[a, b]`）：dts 面此前给
+    `{ a: number }`、zod 面给 `z.object({ a: … })`（与真实形参形态**颠倒**），
+    现在给**元组**（`[ a, b ]` / `z.tuple([…])`）⇒ 旧形状的调用点类型不兼容；
+  - `this: T` 接收者标注：dts 多一个形参（消费方吃 `TS2554` 假红）、zod 多一个
+    字面量槽 `"this"`、standard 多一个幽灵导出 `<fn>_this` ⇒ 这些**幽灵位**现在
+    全部消失。
+  
+  怎么迁移：重新生成产物；数组解构形参按**数组**传参；消费方若引用过
+  `<fn>_this` 之类幽灵导出，直接删掉（它们本就不存在）。
+  
+  fix(service, nudojs): 期望判定严格化、数组解构的产物面按元素下标寻址、`--assume` 的界落到形参前提、`this` 接收者标注不进形参表
+  
+  - Bug 396（`@nudo:case` 期望判定）：`leqAbs` 的「同 prim 字面量视为可赋」捷径在
+    **对象槽**位上连字面量相等性都不比 ⇒ `shape({ a: lit(2) })` 这类期望**永不被
+    执法**（case 期望恒 `[ok]`、`nudo:case-expected` 零诊断 ⇒ 假绿），而同一份
+    契约在手写侧车面走逐字段约束树能抓到 ⇒ 两面自相矛盾。`caseExpectedSatisfied`
+    补一道「期望槽里的字面量按值比较」（含嵌套对象槽），**只**作用于期望判定，
+    `leqAbs` 的既有语义一字不动（core 侧那一行不改 —— gold 的 `assign-compatible` /
+    `wider` 依赖该口径）。
+  - Bug 394（产物面）：**数组解构**形参的字段级侧车契约（`fn({ a: number() })` 对
+    `[a, b]` 来说 `a` 是**下标 0 的元素**，不是属性键）此前被摊成**对象槽** ⇒
+    dts 给 `{ a: number }`、zod 给 `z.object({ a: … })` ⇒ 产物输入面与真实形参形态
+    **完全颠倒**（合法数组调用被判红、非法对象调用被放行）。现在 dts / zod /
+    standard 三面都按**元素下标**聚合成**元组**（未契约的元素位留 `any`——无约束，
+    不是 unknown），dts 的声明名渲染成数组形态 `[ a, b ]`。
+  - Bug 397（产物半）：TS 的 `this: T` 是**接收者标注**、不是运行时形参 ——
+    service 侧形参表入口 `extractFormals` 现在**兜底**过滤它并**重排 index**
+    （index 是形参表内的位置 ⇒ 实参位靠它对齐）⇒ dts / zod / standard / case
+    四个产物面不再多出一槽（dts 多一个形参 ⇒ 消费方吃 TS2554 假红；zod 多一个字面量
+    槽 `"this"` ⇒ 对每一个真实调用值报假红；standard 多一个幽灵导出 `<fn>_this`）。
+  - Bug 976（CLI 半）：`--assume` 声明的**界**此前被顶成写死的 `x>0` ⇒ 用户写
+    `--assume 'x>-5'` 时观察面只给 `"pos"`（`x=-1` 的分支被当成不可达 ⇒ 说谎）。
+    现在把**用户声明的界**（按形参名归并、同一形参多条取合取）落进形参自己的前提
+    （**替换**写死的默认，不是与它合取），并与 core 半
+    （`buildArgsFromAssume` 的 `bounds` 形参）同批接线；契约的义务与用户的界并存
+    （契约 pred ∧ 用户界）⇒ 契约不被削弱、用户的界也不被顶掉。
+- cc9b638: **BREAKING**: 重复声明 `@nudo:mock-module` 的诊断**码**与**默认严重级**变了 ——
+  分析器通道此前把它一律报成 `nudo:module-missing`（**error**，fail-closed），
+  现在按**错误种类**还原码：重复声明 ⇒ `nudo:mock-invalid`（**warning**，与 check
+  面同码同级）；mock 文件缺失 / 装载失败 / 点名缺失 ⇒ `nudo:module-missing`
+  （error，fail-closed）**逐字不变**。
+  
+  谁会坏：按**诊断码**分流 / 静音 / 快照的下游 —— 重复声明这一路径的码从
+  `nudo:module-missing` 变成 `nudo:mock-invalid`，严重级从 error 变成 warning ⇒
+  
+  - 只静音 `nudo:module-missing` 的规则**不再**静音重复声明（改按
+    `nudo:mock-invalid` 静音）；
+  - 把 `nudo:module-missing` 当 error 断言的快照 / 闸门**变红→变黄**（重复声明
+    不再拦构建）。
+  
+  怎么迁移：按**新码** `nudo:mock-invalid` 调整静音规则与快照；真正的模块缺失 /
+  装载失败仍是 `nudo:module-missing`（error），语义不变。
+  
+  fix(service): 指令诊断的**码归因**与**文案贯通** —— `@nudo:mock-module` 重复声明不再被说成「模块缺失」（Bug 1062 / 1063 收口）
+  
+  上一版把两条指令的**本体**修好了（`@nudo:replace` 目标未命中 ⇒ 显式诊断；
+  `@nudo:mock-module` 重复声明 ⇒ 显式诊断 + 导出名并集），但**码**在
+  `nudo test` / `health` 面上**丢了**：分析器通道把 `composed.mockErrors`
+  （**只有 message**）一律映射成固定码 `nudo:module-missing` ⇒「重复声明」被说成
+  「模块缺失」（归因错误：码与文案不自洽），且重复声明这种**指令写法歧义**被按
+  fail-closed 的 **error** 级上报。
+  
+  - **码归因**：分析器通道按错误**种类**还原码 —— 重复声明 ⇒ `nudo:mock-invalid`
+    （warning，与 check 面同码同级：指令写法有歧义，导出表取并集 ⇒ 分析仍然
+    sound）；mock 文件缺失 / 装载失败 / 点名缺失 ⇒ `nudo:module-missing`
+    （error，fail-closed）**逐字不变**。
+  - **文案贯通**：check 补充通道的 suggestion 按**具体种类**分族 —— 重复声明 ⇒
+    「只保留一条声明」；导出名缺失 ⇒ 点名那个**缺失的导出**；表达式解析失败 /
+    文件缺失 ⇒ 原句逐字保留。
+  - **同族表缺口**：service 侧 body-read 的「接收者无歧义是 string」证据集补
+    `trimLeft` / `trimRight`（宿主 `String.prototype` 上真实存在的
+    `trimStart` / `trimEnd` 别名；**Array 上不存在**这两个方法 ⇒ 不触发该表刻意
+    排除 `includes`/`indexOf` 的那类歧义）⇒ `param.trimLeft()` 能推出
+    `param: string()`（补前只是**保守漏证据**，不是假红）。
+  
+  回归钉 `packages/service/src/__tests__/service-bug-1062-1063-diag-attribution.test.ts`：
+  码归因（含「不得再被说成 `nudo:module-missing`」负控）、既有码不被误改、
+  suggestion 分族文案、body-read 的 `trimLeft` 推断 + `includes` 负控。
+- b0878e3: **BREAKING**: standard 面的**返回面导出名**从 `<fn>Return` 改名成 `<fn>Output`
+  （名字不再随符号来源翻转）。
+  
+  谁会坏：生成产物后 `import { <fn>Return } from "*.nudo.standard"` 的消费方 ——
+  **有返回契约**时导出名此前叫 `<fn>Return`、走观测时叫 `<fn>Output`，现在**恒叫**
+  `<fn>Output` ⇒ 旧名 `import` 断（消费方 `tsc --noEmit` 会红）。
+  
+  怎么迁移：把 `import { <fn>Return }` 改成 `import { <fn>Output }`（内容不变：
+  仍按「契约返回优先，否则观测返回」取值）；重新生成产物。
+  
+  `nudo export` 的 standard / guard 两面不再丢符号名与可选性。
+  
+  - **standard 面的返回面导出名恒为 `<fn>Output`**（Bug 614）。此前返回面的名字
+    与符号来源耦合：有返回契约时叫 `<fn>Return`，走观测时叫 `<fn>Output`，同一
+    个函数换个源码状态就换了名字——下游 `import { <fn>Output } from
+    "*.nudo.standard"` 直接报错，而同一次导出的 zod 面**恒叫** `<fn>Output`，
+    两面同物异名。现在名字与来源解耦，恒叫 `<fn>Output`（内容仍按「契约返回优
+    先，否则观测返回」取值）。
+  - **standard 面的顶层形参保住可选性**（Bug 627）。顶层形参导出走的是独立值节
+    点（不是对象槽），结构上无处挂 `optional`，契约允许的 `undefined` 被运行时
+    拒收（`number().optional()` 的形参，`act_x.validate(undefined)` 应当通过）。
+    现在契约级可选性（`StandardSchemaFunctionSpec.inputs[].optional`）与声明级
+    可选性（默认形参）都被保真：可选位的整参校验器接受 `undefined`
+    （`T | undefined`，与 zod 面 `.optional()` 同判据），`<fn>Input` 的对应槽位
+    带 `optional`（键可缺席）。
+  - **guard 面的导出名可以模块内去重**（Bug 608）。守卫名此前只过字符清洗
+    （`A.b` → `isA_bOutput`），两个不同的源函数清洗后同名就会在同一份守卫产物里
+    产生两个 `export function isA_bOutput`（node 下 `SyntaxError`，tsc 下
+    `TS2323` / `TS2393`）。`generateGuardFunctionFromAbs(name, abs, used?)` 现在
+    接受一个**模块级去重集合**（与 zod 面 `safeExportIdent(name, used)` 同一套
+    口径：`isA_bOutput` / `isA_bOutput_2`）；不传该集合时行为与旧版一致。
+- e6c4586: agent 工具面的载荷**新增**了 `assertions` 段 / `pathErrors[]` 段与新诊断码
+  （`nudo:path-not-found` / `nudo:path-not-target`）；`@nudojs/service` **新增**了
+  一批公开导出（`mergeCheckIssues` / `directiveDiagIssues` / `mockFromErrorIssues` /
+  `envUnresolvedIssues` / `collectCheckSupplementIssues` / `buildTestReport` /
+  `pathNotFoundError` / `targetPathError` / `formatPathErrorText` 等）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  LSP agent 工具面（`nudo/check` / `nudo/test`）与 CLI 的通道对齐：补回
+  check 的补充诊断通道、test 的断言汇总、imported 段、路径错误信封与
+  「分析目标」闸门。
+  
+  - `nudo/check` 此前只跑裸 `checkSource`，CLI 侧并入 check 报告的三条补充
+    通道（指令文法 `nudo:directive-syntax`、mock 装载失败
+    `nudo:module-missing`、path env 未解析 `nudo:env-unresolved`）一条都没接
+    ⇒ 同一文件 CLI / LSP 编辑器面 / agent 面给出三份 issue 集（agent 面把
+    「指令写错了」整条吞掉，mock 文件缺失判绿）。并入逻辑下沉到
+    `@nudojs/service`（`mergeCheckIssues` / `directiveDiagIssues` /
+    `mockFromErrorIssues` / `collectCheckSupplementIssues`），三面共用同一份。
+  - `nudo/test` 此前没有 `assertions` 段 ⇒ 消费方分不出「见证通过」与「见证
+    失败」。现在并入与 CLI `nudo test --json` 同口径的
+    `assertions`（passed / failed / unchecked，service 的 `buildTestReport`）。
+  - `nudo/test` 的文本面此前**不渲染** imported（外部）函数 ⇒ CLI 有的
+    `(imported)` 段在 IDE 面整段消失，而头部计数仍把外部 case 算进去
+    （「3 case」只印 2 条）。现在按来源模块分组渲染，段头
+    `--- <mod> (imported) ---`。
+  - `nudo/test` 的 `functions` 过滤只重算**本地** case 数 ⇒ `summary.cases`
+    与自身 payload 矛盾（summary 说 1、payload 躺着 2）。外部函数不在过滤
+    范围内，其 case 仍留在 payload 里 ⇒ 计数改为与 payload 同源。
+  - `nudo/check` / `nudo/test` 此前没有「分析目标」闸门 ⇒ 对侧车契约文件报
+    「0 fn / 0 error」判绿（CLI 对同一文件 exit 1「Not an analysis
+    target」），`nudo/test` 还把契约 DSL 构造器（`fn(...)` / `shape(...)`）
+    当成真实调用点报成 case。入口现在复用与 CLI 同一份目标判定
+    （`isNudoTargetPath` + 侧车 / `.d.ts` / JSX 排除），非分析目标返回
+    `nudo:path-not-target`。
+  - `nudo/check` / `nudo/test` 此前对不存在的文件只返回裸 `ENOENT` 文本
+    （`format:"json"` 也不返回 JSON）。现在走结构化路径错误通道
+    （`pathErrors[]` + `nudo:path-not-found` + suggestion），与 CLI
+    `check --json` / `test --json` 同构。
+  - `nudo/test` 的 `functions` 入参此前零校验：传字符串被逐字符建集合（函数
+    全被滤掉 ⇒ 全空报告的假空结论），传数字 / 对象时过滤被整体跳过（静默
+    失效）。畸形入参现在一律工具错误（`isError: true`）。
+- e6c4586: 三个 contract 工具**新增**入参 `from?: string[]`（`--from` 等价通道），`@nudojs/service`
+  **新增**公开导出 `collectCallsiteRecords`（+ 类型 `CallsiteRecords`）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  fix(lsp,service): 族 25 A2 —— 契约面四条缺陷（762 / 765 / 766 / 994）
+  
+  - **762** `nudo.contract.emit` 现在与 CLI `nudo contract --emit` **同序同口径**：
+    先 `emitDerivedFromRoot`（root 驱动下行推导），再 `emitInterface`（本地侧车）。
+    此前工具**从不**调派生步 ⇒ CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面
+    永远不产生，且结果文本把「引擎没做的那一步」说成「name-clash」——误导性诊断。
+    下游侧车的写盘边界与本地侧车同口径（必须落在 workspace roots 内）。
+  - **765** 源文件 open buffer 与磁盘文本不一致时**拒绝写盘**（可诊断错误：
+    save or discard before emit）——此前只挡了侧车自己的脏 buffer，源文件的脏
+    buffer 会把**未保存**的代码形状写进侧车，磁盘源码却一个字节没变。
+  - **766** emit 写盘边界改按**路径分量**判定逃逸（`..` 或 `..` + 分隔符），
+    不再误杀 `..dotted.js` / `...triple.js` / `..cfg/x.js` 这类合法路径名；
+    root 外的文件与指向 root 外的符号链接**仍然拒绝**。
+  - **994** 三个 contract 工具（`nudo/contract` / `nudo/contract.draft` /
+    `nudo/contract.emit`）新增 `from?: string[]`（`--from` 等价通道）：跨文件
+    调用点证据参与契约求解，接口面/草稿/落盘与 CLI `nudo contract --from` 同口径。
+    证据采集下沉到 service：新增导出 `collectCallsiteRecords`（+ 类型
+    `CallsiteRecords`）。
+- e6c4586: **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
+  本版本同步更新）——
+  
+  - 失败面统一成 `{ success: false, error, isError: true }`：
+    `nudo/selectCase` / `nudo/selectContract` / `nudo/getActiveCases` 此前对
+    非法入参**答 `{"success": true}`**（或幽灵条目），现在答结构化错误信封 ⇒
+    客户端按 `success` 分支的代码路径变了；
+  - `AGENT_TOOL_SOURCES` 的**值**同步为新的共享数据源（`analyzeFile` →
+    `analyzeFileAsync`；`check` → `checkSource + mergeCheckIssues +
+    serializeCheckJson`；`test` → `analyzeFileAsync + buildTestReport +
+    serializeCaseJson`）⇒ 依赖这张表反推「命令 ↔ 数据源」的客户端读到不同的值。
+  
+  谁会坏：把 `nudo/selectCase` / `nudo/selectContract` 的**失败**当成功处理的
+  客户端（此前恒 `success:true`，现在会拿到 `success:false` + `isError:true`）；
+  以及读 `AGENT_TOOL_SOURCES` 做能力判断的客户端。
+  
+  怎么迁移：客户端按 `{ success: false, error, isError: true }` 分支处理失败
+  （`packages/lsp/PUBLIC_API.md` 与两份 API 文档已同步）；不要再按
+  `AGENT_TOOL_SOURCES` 的**字面**判能力，改按命令名判断。
+  
+  `@nudojs/service` 侧**新增**公开导出 `pathEnvPreloadFingerprint` ⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  族 25 收口接线（6 项）：把跨片耦合的缺口补上，并让文档与工具面说同一件事。
+  
+  - **`testTool` 改异步入口**（Bug 993）：A4 把 `whatIf` / `suggestCase` / `trace`
+    改成了 `analyzeFileAsync`（path 型 env 只能异步预载），但 `testTool` 属另一片
+    的函数级边界 ⇒ 冷进程 `nudo/test` 首调仍是 env-less（`"unknown"` + 1 条误导
+    诊断）。⇒ 改 `async` + `analyzeFileAsync`（**签名变更**：
+    `AgentToolResult` → `Promise<AgentToolResult>`），同步调用点与既有测试。
+  - **`AGENT_TOOL_SOURCES` 值同步**：工具面真换了数据源，表与文档要跟着走 ——
+    `check` → `checkSource + mergeCheckIssues + serializeCheckJson`、
+    `test` → `analyzeFileAsync + buildTestReport + serializeCaseJson`；同步
+    `packages/lsp/PUBLIC_API.md` §5、`packages/website/docs/api/agent.md` 与
+    `AGENT_TOOL_SOURCES` 的值钉。
+  - **`nudo/contract.emit` 转发 `from`**（Bug 994）：三个 contract 工具已支持
+    `--from` 等价通道，但协议入口 `makeHandleContractEmit` 只构造
+    `{file, functionName, mode, dryRun?}` ⇒ **`from` 到不了 emit 工具** ⇒ 补
+    入参类型 + 透传。
+  - **CJS 导出的 hover 面**（Bug 998）：`findFunctionNameAtPosition` 没有
+    `MemberExpression` property 分支 ⇒ `module.exports.alpha = function () {}`
+    的 hover 回退成无名 `(x) => ?`（诊断面认得它、hover 面不认 ⇒ IDE 内部
+    自相矛盾）⇒ 补分支（祖父节点走 `path.parentPath.parent` —— Babel 的
+    `node.parent` 不存在）。
+  - **失败面文档同步**：`selectCase` / `selectContract` / `getActiveCases` 的失败
+    面统一为 `{ success: false, error, isError: true }` ⇒ 两份 API 文档的返回面
+    记载同步；`nudo/contract.emit` 的 `from?: string[]` 参数也补进文档。
+  - **`pathEnvPreloadFingerprint` 的瞬时 ReferenceError**：族内 build 前
+    `dist` 落后于 `src` 造成的一次性混用 ⇒ 随本族 build 消失（已连跑 5 次
+    复现不出）。
+- 3432d8c: CaseJson 的断言面新增了**第三种裁决** `unchecked`（外加可选字段
+  `uncheckedReason`）⇒ 机器面新增可选字段属**增量**变更（additive）⇒ minor。
+  
+  `nudo test` can now tell "the engine could not infer the value" apart from
+  "the value does not match the expectation".
+  
+  - **A failed inference used to be reported as a failed assertion.** When the
+    engine cannot infer a witness' result (the observed value is `unknown`, or
+    its confidence is `opaque`), the assertion verdict was binary: the case was
+    reported as `[FAIL]`, `nudo:case-expected` was raised, and the run exited
+    `1`. Writing the honest expectation (`=> number()`) could never fix it,
+    because the real cause was the failed inference, not a type mismatch — while
+    the very same source was only an `INFO` (`nudo:opaque-result`, exit `0`) on
+    the `nudo check` face, i.e. the two faces gave opposite severities for one
+    fact.
+  - **The opposite expectation passed for the wrong reason.** `=> any()` (the
+    top type) satisfied every expectation, including the ones the engine could
+    not judge at all, so the assertion reported `[ok]` while nothing had been
+    inferred — a hollow pass.
+  
+  Both assertion report faces — the CLI one (`nudo test`, `nudo test --json`,
+  `nudo test --abs`) and the LSP agent tool one (`testTool`) — now use the same
+  three-state verdict: a case whose observed value could not be inferred is
+  recorded as **unchecked** (it is neither a failure nor a pass), it does not
+  turn the run red, and the report says so explicitly ("cannot judge — the
+  engine could not infer the actual value") and points at the
+  `nudo:opaque-result` remediation path instead of claiming a type mismatch. The
+  `unchecked` count in the `assertions` summary and in the `--json` payload now
+  includes those cases, and a real mismatch is still reported as `[FAIL]` with
+  exit `1`.
+- ebe909e: `@nudojs/core` 新增公开可选项 `TranspileOptions.disableAsyncGen`（async 生成器路径的**安全网**开关）、
+  `@nudojs/service` 新增公开导出 `analyzeFileWithEvalFailures` / `analyzeFileAsyncWithEvalFailures` /
+  `FileEvalFailure` ⇒ 均为纯**增量** ⇒ minor。
+  
+  `nudojs` 的**闸门口径翻转**（模块级求值失败 ⇒ 不再静默放绿）按 **minor** 发布：
+  `nudo check` 以 **error 级 `nudo:internal`** 报出并以**非零码**退出，`nudo health` 的
+  `Result` 不再报 `OK`。**这是闸门口径的翻转**（详见下方「BREAKING」）。
+  
+  > **bump 级别说明**：本项目**尚无外部用户**，本批 1.x 包的破坏性变更统一以 **minor**
+  > 发布并保留 `**BREAKING**:` 标注（谁会坏 + 怎么迁移照旧写全）⇒ 不占用 major 跳版，
+  > 也不触发发布侧 `gate-major` 的人工确认闸门。一旦有外部用户依赖这些包面，
+  > 即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」政策。
+  
+  fix: review 报告 34 条缺陷收口（闸门假红/假绿 · 契约面宽松 · 机器面谎报 · 文档与 changeset 漂移）
+  
+  本轮把一份 34 条缺陷的 review 报告逐条落地：每条都先在当前代码上**复现**（或判定为
+  非缺陷），再修，并**逐条用回滚法自证「修前红 / 修后绿」**。新增 **39 个回归测试文件**。
+  
+  ---
+  
+  **BREAKING**: `nudo check` / `nudo health` 现在对**引擎内部回落**（模块求值失败 ⇒ 该文件
+  的导出全部丢失）**fail-closed**。此前这类文件**零诊断 + exit 0** ⇒ CI 闸门**假绿**
+  （合法代码与违约代码都判绿）。现在：命中内部回落 ⇒ 报 **error 级 `nudo:internal`**
+  （消息含文件路径与原因）⇒ `nudo check` **非零退出**；`nudo health` 报
+  `Result: FAIL (engine internal fallback found)` 并非零退出。
+  
+  谁会坏：依赖「坏文件也能过闸」的 CI 流水线（此前引擎自己挂了就当无事发生）。这些文件
+  本来就是引擎缺陷的暴露面 —— 现在会**显式**报出来。
+  
+  怎么迁移：修掉被报出的文件（消息里给了路径与原因）。注意**口径边界**：`unsupported:*`
+  （能力边界）与 `nudo:opaque-result`（推断精度）**不**触发该失败路径；只有**引擎内部回落**
+  （`internal`）才 fail-closed。
+  
+  ---
+  
+  ### 高危（闸门级 · 5 条）
+  
+  - **`await` 的位置表与转译侧脱节 ⇒ `yield` 落进嵌套箭头 ⇒ 整模块编译失败 ⇒ L2 闸门假绿**
+    （`core/algebra/exec/transpile/async-plan.ts` · `core/algebra/exec/run.ts`）：async 体的
+    真挂起靠**宿主生成器**（`function*(){…}` + `await` 发射 `yield`）实现 ⇒ `yield` 必须落在
+    生成器**体内联**位置；而转译侧把若干操作数包进**宿主 thunk** —— `yield` 落在里面是
+    **SyntaxError** ⇒ `new Function` 编译失败 ⇒ **整个模块**的导出全部丢失 ⇒ 闸门看不到任何
+    入口 ⇒ **零诊断 + exit 0** ⇒ **CI 闸门假绿**。位置表此前只把「分支臂 / 循环体 / 短路右臂 /
+    三元两臂」判为 thunk，漏了：**成员调用的实参**（`o.m(await 1)`）、**成员赋值的接收者/计算键/
+    右值**（`o.x = await 1`）、**成员自增的计算键**（`o[await k]++`）、**逻辑赋值的右值**
+    （`x ||= await 1`）、**循环判别式与步进式**、**switch 的 case 测试**、**早退守卫之后的后续
+    语句**（`if (!c) return null; … await …`）。实测：`export async function load(id){ if(!id)
+    return null; const res = await fetch("/x/"+id); return res.json(); }` 修前 ⇒ `nudo check`
+    **OK / exit 0 / 签名全 unknown**；修后 ⇒ **error 级 `nudo:entry-may-throw`**（与 main 同结论）。
+    修法（两处，缺一不可）：① 位置表补齐（上列位置判 thunk ⇒ 该 async 体回落 `$async` 同步
+    路径，产物是**合法 JS**）；② **安全网**：生成器模式编译失败时**关闭 `asyncGen` 重试一次**
+    ⇒ 纵有未来新增的脱节位置，模块也**编译得出来** ⇒ 导出可见 ⇒ 闸门照常判定
+    （**宁可少精确，不可整模块消失**）。
+  
+  - **模块级求值失败 ⇒ 闸门假绿**（`service/src/analyzer-orchestrate.ts` ·
+    `nudojs/src/commands/{check,check-report,health}.ts`）：见上方 **BREAKING** 段。
+    修法：按**文件**收集 `internal` 回落（进程级计数无法定位到文件）⇒ 命中即产出
+    **error 级 `nudo:internal`**（复用已注册码 `DIAG.internal`，未新增第二套码表）⇒
+    `ok:false` ⇒ 非零退出；分析失败的降级产物**不回写磁盘缓存**（回写 ⇒ 下次命中缓存跳过求值
+    ⇒ 静默转绿）。
+  
+  - **早返回的关系补集默认「x 不是 NaN」⇒ 契约被证成 ⇒ 假绿**
+    （`core/algebra/exec/transpile/stmt/{fn-body,statement}.ts`）：`¬(x <= k)` 还含 `x` 为
+    **NaN** 的情形（NaN 与任何比较皆假）⇒ 后续路径只该断定 `x > k ∨ x is NaN`；此前直接断言
+    `x > k`（排除了 NaN）⇒ `if (x < 0) return 0; return x;` + `return nonNeg` 判**成立**
+    （零诊断），而原生 `x=NaN` 时返回 NaN ⇒ **真违规被放过**。且与**三元**写法
+    （`x < 0 ? 0 : x`）结论**不一致**（三元判 `unproven-return`）。修法：撤销后续路径的否定界
+    窄化 ⇒ 两条路径同口径。
+  
+  - **Bug 370 把「确定违规」降为 warning**（`core/algebra/postcondition.ts`）：证据面判据
+    从「`ret.pred` 有事实」改成「含**界原子**」⇒ `typeof` 级证据（`@nudo:contract x num` 的
+    **声明域参数**）被判成「无证据」⇒ 返回义务降级成 `nudo:unproven-return`（**warning**，且
+    warning **不改变 exit code** ⇒ 门禁空转）。`if (x === -1 || x === -2) return x;` + `return
+    positive` 是**确定违规**（x=0 即违约），此前只出 warning。修法：判据回到「`ret.pred` 有
+    事实」⇒ 声明域参数 ⇒ **error 级 `nudo:constraint-violated`**。
+  
+  - **契约合取的结构型义务被静默丢掉 ⇒ 假绿**（`core/algebra/interface.ts`）：合取遇任一侧
+    结构型就直接返回前侧 ⇒ 源码 shape`{id}` ∧ 侧车 shape`{id,name}` 的 **`name` 义务整条蒸发**
+    ⇒ 契约面比声明面**宽松** ⇒ 违约代码被放过。修法：改为**字段级合并**（两侧都有的字段递归
+    合取、单侧字段保留、`optional` 取交集）；合不了的形态组合按既有口径**不**判 conflict
+    （能力边界 ≠ 语义不可满足）但**显式留痕**（新增 `EffectiveInterface.undecidable` ⇒ check 面
+    发 **warning** 级 `nudo:interface-conflict`，**不静默宽松**）。
+  
+  ### 闸门可信度（假红 / 假绿 · 14 条）
+  
+  - **展开实参被计为 1 个 ⇒ `nudo:arg-count` 假红**（`core/algebra/scan/literal-args.ts`）：
+    `impl(...args)` 被计成 1 个实参 ⇒ 报「expects 2 argument(s), got 1」；数组字面量展开的**空洞**
+    （`three(...[1,,3])`，原生是 3 个实参）被跳过；幻影槽位破坏 rest 聚合（`few(1, ...more)`
+    对 `array(number()).max(1)` 报长度违规）。修法：个数不可判时**让位**元数检查；空洞按
+    `undefined` 计入；rest / length 边界在展开处**停止**。
+  - **裸名 callee 解析不看作用域 ⇒ 无契约也触发 arity 假红**（`core/algebra/scan-call-graph.ts`）：
+    外层函数的**形参 / 局部 const / 嵌套函数 / for-of 绑定 / 解构绑定**同名时，把顶层声明当被调
+    方 ⇒ 报「log expects 2 argument(s), got 1」+ 假 may-throw。修法：callee 解析引入**作用域链**。
+  - **`memberToFn` 按变量名做键 ⇒ 同名局部/参数互相串味**（`core/algebra/scan-call-graph.ts`）：
+    别名与成员绑定改为**按作用域分桶**，重新赋值时失效。
+  - **TS `x?: T` 与 JSDoc `[x]` 被当成必需参数 ⇒ arity 假红**（`core/algebra/param-surface.ts`）：
+    `h()` 对 `/** @param {number} [x] */ function h(x)` 报「expects 1 argument(s), got 0」。
+  - **`or` 契约的「不可判定」成员被当成失败**（`core/algebra/scan/literal-shapes.ts`）：
+    `union(number().gt(0), lit("a"))` 对**非字面量 number** 实参误报。修法：三值聚合 ——
+    **全部**成员确定假才报；不可判定且域容纳该形态 ⇒ 整条 union 保持未决。
+  - **显式 `undefined` 被当成值**（`core/algebra/scan/literal-args.ts`）：`d1(undefined)` 对带默认值
+    的形参报约束错误。修法：显式 `undefined` ⇒ 走**默认值**。
+  - **默认值填充只在零参时发生 ⇒ 假绿**（`core/algebra/scan-literal-calls.ts`）：
+    `e4(1)` 缺失的尾部位不补（运行时 x = -5）⇒ 静默。修法：补齐**所有缺失的尾部位置**。
+  - **switch 分组 case 标签的 `hit` 收窄不安全**（`core/algebra/exec/transpile/stmt-predicates.ts`）：
+    `const x = null; switch (x) { case null: case "ab": return x.length; }` 原生抛 TypeError，
+    引擎按源码推导读 `"ab".length` ⇒ **L2 may-throw 消失**。`case 0:` 还会把 `-0` 重绑成 `+0`
+    （原生 `1 / -0` = `-Infinity`，引擎算成 `Infinity` = **自信的错值**）。修法：只有**同体全部
+    标签都是原始字面量**才产命中事实；`0` 按**交集细化** `{0, -0}`。
+  - **`lit(NaN)` 契约被判自相矛盾 ⇒ 假红**（`core/algebra/interface.ts`）：字面量值比较用
+    `!==` ⇒ `NaN !== NaN` ⇒ 同一个 `lit(NaN)` 自比被判成「两个不同字面量」⇒
+    `nudo:interface-conflict`。修法：改用既有 helper `termEquals`（`===` + NaN 特例）。
+  - **import 别名撞 ambient builder 声明 ⇒ 整个 sidecar 装载失败**
+    （`core/algebra/refine.ts`）：`import { number as string } from "@nudojs/core"` 与包装器的
+    `const { number, string, … } = __nudoInjects` 同处一个外层作用域 ⇒ SyntaxError ⇒ 侧车整体
+    装载失败 ⇒ **契约全丢**。修法：显式 import 的本地名从 ambient builder 名单里排除。
+  - **`autoBind:false` 下不可读的 ambient sidecar 仍被报成 error ⇒ 假红**
+    （`core/algebra/load-deps-fp.ts` · `core/algebra/check.ts`）：**指纹计算**的推测性读取
+    走的是**分析读**通道 ⇒ EACCES 被收口成 error；而那份侧车在 `autoBind:false` 下**根本不会被
+    绑定**。修法：推测性读走**未经降级闸**的通道（读失败只让指纹标 `readError`）+ 按 ambient
+    绑定资格 gate。
+  - **缓存的 sidecar 诊断丢失依赖归属**（`core/algebra/refine.ts`）：root→dep 递归求值共享同一
+    diags 数组 ⇒ 依赖侧车的诊断一律记到 **root** 名下。修法：诊断带**来源文件**并纳入去重键。
+  - **`lit(1n)` 的大字面量被提前过滤 ⇒ 假绿**（`core/algebra/contract-face.ts`）：bigint 过滤
+    发生在 `literalMeetsConstraint` **之前** ⇒ `lit(1n)` 契约下返回 `2n` 的被调函数被判**满足**
+    ⇒ 违约被放过。修法：bigint 参与比较（`1n !== 1`，与 number 不混同）。
+  
+  ### 机器面 / 契约面 / 工具链（8 条）
+  
+  - **`@nudo:skip` 签名分支输出旧机器面**（`core/algebra/check.ts`）：JSON `display` 带
+    `#exact` 而终端显示 `number` ⇒ 机器消费方拿到的是**人类面之外的文本**。修法：与其它路径
+    同款（`formatSigCached`）。
+  - **内部临时名遮蔽用户标识符**（`core/algebra/exec/transpile/{member-path,expr/assignment,
+    expr/call,expr/optional-chain,expr/short-circuit}.ts` · `helpers.ts`）：引擎写死的
+    `__nudoMp*` / `__nudoDefR` / `__nudoReArgs` / `__v` 会**遮蔽**用户源码里的同名绑定 ⇒ 自信错值
+    或 TDZ **ReferenceError**（⇒ 闸门**假红**）；模块级同名还会撞出重复声明 SyntaxError ⇒
+    **整模块 fail-closed** ⇒ 闸门**假绿**。修法：改用既有 `internalTmpName` /
+    `internalTmpNameSet`（**无碰撞时基名原样返回 ⇒ 产物逐字不变**）。
+  - **CJS 对象字面量导出的普查键必须是成员键**（`core/algebra/export-slot.ts`）：
+    `module.exports = { greet: function inner(x){…} }` 的侧车契约**整个不绑定**（只剩
+    `unproven-return` 警告、签名退成 `unknown` ⇒ **假绿**），且内层 id 与成员键碰撞时映射串。
+    修法：导出槽映射**只用成员键**。
+  - **`leq` 的 fn arity 只比较必需参数个数**（`core/algebra/leq.ts`）：`(a = 1, b) => b.toFixed()`
+    被接受为单参目标（原生 `g(1)` 抛 TypeError）⇒ 判定比原生松 ⇒ 假绿。修法：按**最后一个必需
+    参数的位置**比较。
+  - **生成的守卫对 `new Proxy(...)` 抛错**（`core/algebra/denote.ts`）：`x instanceof Proxy` 在
+    原生**抛 TypeError**（Proxy 没有 prototype）⇒ 守卫产物一跑就炸。修法：对**无可用 prototype**
+    的构造器跳过身份子句。
+  - **超参 warning 忽略可选/默认槽位**（`core/algebra/diagnostics.ts`）：`f(a, b = 1)` 被 `f(1, 2)`
+    调用时误报「takes 1 argument(s) but 2 were passed」。修法：上界按**非 rest 形参总数**。
+  - **多行 `@nudo:case … !! throws` 声明丢失**（`core/algebra/directive-scan.ts`）：case 参数跨行
+    时后缀正则匹配不到 ⇒ 申报的 throws 丢失 ⇒ `nudo:entry-may-throw` **假红**。修法：先在完整
+    注释里找平衡的 case 参数终点再识别后缀。
+  - **`export default C` 的类入口被漏**（`core/algebra/scan-top-functions.ts`）：Babel 的
+    `Identifier` 字段是 **`name`**（代码读的是 `d.id?.name` ⇒ `undefined`）⇒ 类入口不在入口表里
+    ⇒ 构造器入口闸门看不到它 ⇒ **假绿**。
+  
+  ### async 运行时（2 条）
+  
+  - **callee 有 2 个及以上 await 时 caller 提前恢复**（`core/algebra/exec/runtime/async.ts`）：
+    队列为 `[callee-resume, caller-resume]` ⇒ callee 的**第二次**续体排在 caller 之后 ⇒ caller
+    读到**占位符**。实测 `async function g(){ log.push(1); await null; log.push(2); await null;
+    log.push(3) }` 原生 `"1,2,3"` / 修前 `"1,2"` / 修后 `"1,2,3"`；`return await h()` 原生 `7` /
+    修前 `unknown` / 修后 `7`。修法：live promise 维护 **pending 态 + waiter 列表**，await 的
+    恢复排在 settle **之后**。
+  - **`Promise.all` 取调用期快照**（`core/algebra/builtins/promise.ts`）：元素尚未 settle 时取到
+    占位符 ⇒ 兑现值被永久冻住；元素**拒绝**通道丢失 ⇒ 拒绝臂成死代码（**假绿**）。修法：组合子
+    自身 pending，元素 settle 后重算聚合；任一元素确定拒绝 ⇒ 组合子短路拒绝。
+  
+  ### 约束构造器（1 条）
+  
+  - **`.int()` 暴露给非 number builder ⇒ 同一约束两个裁决**（`core/algebra/constraint.ts`）：
+    `literalMeetsConstraint("abc", string().int())`（域面）接受 `"abc"`，而 Abs/投影面却带整数
+    谓词。修法：非 number builder 上 `.int()` **抛错**（与 `shift()` 同口径）。同批收口：
+    `fn()` 缺字段表守卫、`boolean().gt(1)` / `string().length(-3)` 等**恒假**契约（假红）、
+    `array(1,2)` 静默丢元素约束（假绿）。
+  
+  ### 文档 · changeset · 诊断注册表（4 条）
+  
+  - **自称破坏性的 vite-plugin changeset 声明为 patch**（`.changeset/fix-vite-plugin-s{1,3,4}.md`
+    等 32 个）：按 `docs/versioning.md` 逐个复核并**校正 bump 级别**（pre-1.0 的破坏性 ⇒ minor；
+    1.x+ 的 JSON 形状变更 / 默认严重级变更本应 ⇒ major，但**本项目尚无外部用户** ⇒ 本批
+    统一以 **minor** 发布，见上方「bump 级别说明」），并补 `**BREAKING**:` 与迁移说明。
+  - **设计文档引用了被 gitignore 的产物**（`docs/design/generator-laziness.md` ·
+    `docs/design/architecture-debt.md`）：`tmp/…` 路径（读者不可达）、`bun` 命令、过时行号、
+    `$gen` 发射点数目（3 ⇒ 实为 4）。修法：删交接笔记、引用**符号名**、指向仓内回归钉。
+  - **中文 API 文档漂移**（`packages/website/i18n/.../api/{agent,cli-reference,lsp,harvester,
+    service}.md`）：手写页与 EN 现状不一致（`--json` 的形态、`force?: boolean`、旧契约…）⇒
+    逐页同步；同时**收紧**文档覆盖闸门（`docs-coverage.test.ts`）让手写 api 页也进闸门。
+  - **诊断码绕过注册表**（`packages/core/src/algebra/diag-codes.ts` ·
+    `packages/nudojs/src/commands/migrate.ts`）：`nudo:migrate-strip-failed` 此前直写字面量 ⇒
+    进 `DIAG` 注册表并由 CLI 引用常量。
+  
+  ### 附带（不改变对外行为）
+  
+  - `nudo init` 的祖先配置继承口径与加载器对齐（本包已有 `nudo` 键 ⇒ 祖先**不可继承** ⇒ 不再用
+    祖先配置当拒绝理由，消除「拒绝 + 不可修复」的死锁）。
+  - `contract --help` 的 `--json` 描述、`contract --from-dts` 的拒绝提示（同时给出 `--force` 与
+    `NUDO_DRAFT_FORCE=1`；**人工改过的草稿永不被覆盖**这条口径不变）。
+  - `nudo:migrate-strip-failed` 进注册表；`interface` 缓存面新增 `undecidable` 透传。
+  - 6 条**被放松/空转**的既有测试恢复为**强断言**（`check-regex-capture-narrow-136` ·
+    `eval-loop-return-join` · `eval-bug-499` · `core-bug-1064` · `loop-pack-shadow-soundness` ·
+    `core-bug-1079`）—— 此前它们在 main 上也通过，钉不住任何回归。
+- dde4b03: **BREAKING**: standard 面的**导出集**变了 —— 解构形参的字段级校验器
+  （`act_a` / `act_b`）**移除**，改为整参校验器 `<fn>Input`（与 zod 面同名同义）。
+  
+  谁会坏：`import { act_a } from "*.nudo.standard"` 的消费方 —— 这些导出**不再
+  存在** ⇒ 消费方 `tsc --noEmit` 会红（此前它们拒收正确入参、收下错误入参，本就
+  不可用）。
+  
+  怎么迁移：改 import `<fn>Input`（一个校验器校验**整个**入参对象）并重新生成
+  产物。
+  
+  `nudo export --format standard` now produces a product that compiles in a
+  strict TypeScript project, keeps literal values intact, and exposes one
+  input validator with the same name as the zod face.
+  
+  - The generated module was plain JavaScript with a `.ts` extension, so every
+    helper parameter and local was an implicit `any`: `tsc --noEmit --strict`
+    reported a dozen `TS7006` / `TS7005` / `TS7034` errors per file and the
+    product was unusable in a strict project, while the zod face of the same
+    export compiled cleanly. The helpers now carry their types
+    (`__nudoTypeOf(v: unknown): string`,
+    `__nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | number)[], issues: NudoIssue[]): void`)
+    and the module ships the `NudoSchemaNode` / `NudoIssue` type aliases it
+    needs.
+  - Schema nodes were serialized with `JSON.stringify`, which has no notation
+    for non-finite numbers: `Infinity` was silently written as `null`, so the
+    exported validator rejected the value the function always returns and
+    accepted a value it never returns — the opposite of the zod, guard and
+    `nudo check` faces. Nodes are now written as source text, so `Infinity`,
+    `-Infinity` and `NaN` survive; a `bigint` literal no longer throws
+    `Do not know how to serialize a BigInt`, which used to abort the whole
+    `nudo export` run and lose the other dialects' output as well.
+  - The input face of a function with a destructured parameter exported the
+    contract's field-level entries as if they were whole parameters
+    (`act_a`, `act_b`), so `act_a.validate({ a: 1, b: 2 })` rejected the
+    correct argument and `act_a.validate(1)` accepted a wrong one. A
+    function-level assembler (`absToStandardSchemaFunction`) now emits
+    `<fn>Input` — one validator for the whole argument object, named like the
+    zod face — keeps `<fn>_<param>` for real parameters, and never lifts a
+    destructured field to a top-level parameter validator.
+- dde4b03: **BREAKING**: dts 面的**投影形状**变了 —— `.d.ts` 现在按**模块面**装配
+  （类作为**类声明**投影、成员在类体内；`export default` 保持默认形态；
+  `export * from` / `export { x } from` 的再导出被复现）；standard 面的输入面
+  导出名也统一成 `<fn>Input`（解构形参不再导出字段级校验器 `act_a` / `act_b`）。
+  
+  谁会坏：消费方 `import` 生成 `.d.ts` 的类型并按**旧形状**引用的代码 ——
+  
+  - 类成员此前被摊成**模块级**声明（源码里并不存在这些顶层符号）⇒ 旧 `.d.ts`
+    的形状与新 `.d.ts` 不同 ⇒ 消费方 `tsc --noEmit` 会红；
+  - 再导出的符号此前**整个缺失** ⇒ 现在出现（反向：依赖「它不在」的代码会冲突）；
+  - standard 面解构形参的 `act_a` / `act_b` 导出**移除**，改为 `<fn>Input`。
+  
+  怎么迁移：重新生成产物并按新形状引用（类成员走 `Class.member`，再导出符号现在
+  可用）；standard 面改 import `<fn>Input`。
+  
+  Cross-shard wiring for the `service-emit` batch: the CLI now feeds the
+  product faces the same information the analyzer holds, and a frozen
+  witness no longer takes over a function's published type.
+  
+  - `nudo export --format standard` builds its module with the service
+    assembler (`absToStandardSchemaFunction`) instead of a hand-rolled
+    projection, so the standard face has the same input validator as the zod
+    face (`<fn>Input`, one validator for the whole argument object) and a
+    destructured parameter no longer exports field-level validators
+    (`act_a`, `act_b`) that reject the correct argument.
+  - The dts face is now assembled from the **module** surface: a class is
+    projected once as a class declaration (members inside the class body)
+    instead of one flat declaration per member, `export default` keeps its
+    default form, and `export * from` / `export { x } from` re-exports are
+    reproduced. Before, the class members were emitted as module-level
+    declarations that did not exist in the source and a re-exported symbol
+    was missing from the `.d.ts` entirely.
+  - A contract that declares an optional parameter now reaches the product
+    faces: the constraint's `isOptional` is carried explicitly (the entry
+    `Abs` does not keep it), so the zod input object renders
+    `.optional()` and the dts declaration uses `x?: T`.
+  - `nudo contract --emit` renders each diagnostic exactly once. The emit
+    summary already renders and consumes the issue list, so the CLI's
+    trailing error-only loop printed the same diagnostic a second time on
+    the dry-run path.
+  - `nudo contract --emit --write` now exits non-zero when it refuses to
+    overwrite a hand-edited draft. The file is left untouched (as before),
+    but a silent exit `0` told CI that the draft had been regenerated.
+  - `nudo check --fix` states explicitly when the fix did not turn the gate
+    green but changed the diagnostic instead (for example the old
+    `constraint-violated` became a new `entry-may-throw`). The previous
+    message ("N residual error(s) remain") read as if the fix had worked.
+  - `nudo export` no longer collapses a function's published type to a
+    single frozen call site. A `@nudo:case` witness without an assertion
+    observes **one point**; it is not a domain claim, so it must not own the
+    return face. `nudo test --freeze` writes exactly such a witness, so
+    freezing a call used to narrow the zod face to `z.literal(3)` and the
+    guard face to `data === 3` — a guard that rejects every legal call —
+    while `nudo check` still reported `number | string` for the same
+    function. A function whose only evidence is a point witness now keeps
+    its inferred domain, and the zod, standard, guard and dts faces agree
+    with the check face.
+  - `nudo test` classifies a case as synthetic by its **source** instead of
+    by its name. A witness written by `--freeze` is named after the call
+    site (`call@<file>:<line>`) but is declared in the source, so it was
+    reported as synthetic and the run claimed "no declared @nudo:case
+    expectations" even though the source now declares one.
+  - `nudo contract --emit` removes a generated section whose export no
+    longer exists in the source. The stale section kept the name occupied
+    in the sidecar, so a hand-written contract for a new function of the
+    same name produced an invalid sidecar.
+  - A rest parameter is now observed as a **variable-length** argument, and
+    the entry fallback observation of it is marked uncertain. Before,
+    `xs.length` was observed as the literal `1` of the single placeholder
+    argument, and the zod, standard and guard faces projected that
+    one-off observation as the output domain (`literal(1)`) — a validator
+    that rejects the value the exported function itself returns — while the
+    dts face wrote `number`.
+- b37321b: env 装载失败现在**报告出来**（`nudo:env-unresolved` 的适用面扩大：未知 env 名、
+  `defineEnv()` 契约失败、相对路径 env 的按目录解析、`package.json#nudo.env` 里的
+  非字符串元素）⇒ 诊断面**增量**（additive）⇒ minor。
+  
+  Runtime environments that cannot be applied now say so, instead of leaving
+  the affected code to be judged as always throwing.
+  
+  - `@nudo:env bogus` — an env name that is neither a built-in (`es`, `web`,
+    `node`) nor a path — was ignored silently: no diagnostic, and the env never
+    applied. It is now reported as `nudo:env-unresolved`.
+  - A path env file that does not export a `defineEnv()` function, exports a
+    non-function, throws while being evaluated, or returns something other than
+    `{ globals }` also went unnoticed, with the same effect. These contract
+    failures are reported now, too. A file with a syntax error was already
+    reported — the two cases now use the same channel.
+  - A relative path env was resolved against a process-wide registry, so the
+    first `./env.ts` loaded won every later same-spelled path. Each directory
+    now resolves its own.
+  - A `package.json#nudo.env` array holding a non-string element crashed the
+    loader with `name.includes is not a function`. The element is now rejected
+    with a diagnostic.
+- b37321b: 新增两个诊断码 `nudo:module-unreadable`（模块**存在但不可读**）与
+  `nudo:json-invalid`（JSON 语法非法）⇒ **新诊断码**属增量（additive）⇒ minor。
+  
+  Modules are resolved the way Node resolves them, and a dependency that
+  cannot be loaded is named for what it is.
+  
+  - `require("./data")` was reported as "module not found" even when
+    `data.json` sat right next to it, and `import "./data"` was accepted even
+    when only `data.js` existed. The CommonJS and the ESM resolution rules are
+    applied separately now: `require` follows the `require` condition and
+    resolves extensionless paths, `import` follows the `import` condition and
+    requires the extension.
+  - A bare package with a conditional `exports` map always resolved to the
+    CommonJS build, because the conditions were ordered with `require` first.
+    The condition is now chosen by the kind of import.
+  - `node_modules` was searched in one directory only. The search now walks up
+    the tree the way Node does.
+  - A package's own `#imports` mapping was not supported at all and produced
+    no diagnostic, so the imported value silently collapsed to `unknown`. It is
+    resolved now, and an unresolvable `#` specifier is reported.
+  - A dependency that exists but cannot be read (`EACCES` and friends) was
+    folded into "file not found" — a statement about the opposite of the fact —
+    and, in the check path, escaped as an uncaught error that killed the whole
+    run. "Unreadable" and "absent" are separate outcomes now, and an unreadable
+    dependency is reported as `nudo:module-unreadable`.
+  - A `.json` dependency was loaded as JavaScript, failed, and was dropped
+    without a word. Its value is imported now; invalid JSON is reported as
+    `nudo:json-invalid` instead of being called a missing module.
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
-  - @nudojs/env@0.5.2
-  - @nudojs/harvester@0.4.2
-  - @nudojs/parser@1.5.2
+- 02aa122: fix(core,service): `-0` 保真渲染的**同根因漏点**一并补齐（族 20 · Bug 1065 收口）
+  
+  Bug 1065 的根因是「用 `String(v)` 渲染数值」⇒ `String(-0) === "0"` ⇒ 负号被抹掉。
+  主修只覆盖了 `litToString` / `lengthBound` 两处；收口时按**同一根因**把其余
+  漏点一并补齐（**诊断陈述的契约 ≠ 用户写的契约**是同一个错）：
+  
+  - **core（`packages/core/src/algebra/interface.ts` · `predToChain`）**：其余三处
+    常数界渲染 —— `.min(n)` / `.max(n)`（`length` 上的 `ge` / `le` 界）与
+    `.<op>(n)`（变量上的常数界）—— 改走保真口径 `litToString` ⇒ `.min(-0)` /
+    `.max(-0)` 不再被抹成 `.min(0)` / `.max(0)`；`.length(n)` 的常数界渲染同款。
+  - **service（`packages/service/src/emit/standard-schema.ts` · `describeValue`）**：
+    `typeof value === "number"` 的渲染改用 `Object.is(value, -0) ? "-0" : String(value)`
+    ⇒ 该文件**此前存在两套 `-0` 口径**（另一处已保真、这一处没有）⇒ 同款收敛。
+  
+  诊断文本、侧车 DSL 回写与 schema 产物现在**全部**走同一套保真口径
+  ⇒ `-0` 在所有面上渲染一致，不再出现「一处保真、一处抹零」。
+- 7fea13a: Accessors are now projected by what they actually return, repeated keys in
+  an object literal follow the last definition, and an early return narrows
+  the path that follows it.
+  
+  - An accessor does not live in a shape slot: the transpiler writes a
+    placeholder `undefined` slot to keep the key present and keeps the real
+    getter in a side table. The read path consults the side table, so `o.ab`
+    reads correctly, but the projection paths read the placeholder slot, so
+    every object literal with a getter was projected as
+    `{ ab: undefined }` — a confident wrong value, narrower than the truth
+    and self-contradictory. The projection paths (shape formatting, guard
+    derivation, constraint projection, contract proof) and the `.d.ts`
+    generator now take the read domain of the getter: the getter is
+    evaluated with the object as receiver, a getter that throws projects to
+    `unknown`, and a data property keeps its slot value.
+  - A key that appears twice in an object literal kept the *first* accessor
+    even when a data property came later, so `{ get x() {}, x: 2 }` was read
+    through the getter and writing `o.x = 9` was reported as a definite
+    `TypeError`. The last definition now wins, including its kind: a data
+    property after an accessor replaces it, and an accessor after a data
+    property replaces it too.
+  - The facts of an early return did not reach the path that follows it, so
+    `if (x <= 0) { return 1; } return x;` violated a contract of
+    `number().gt(0)` while the equivalent `if (x > 0) { return x; } else {
+    return 1; }` passed. The path after an early return now knows the
+    negation of the guard. The fact reaches the code after the early return
+    whatever block the early return is written in — a bare block, a `try`
+    block, a `catch` block or a `finally` block.
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- e424592: `@nudo:mock-module` now fails closed when the mock file does not export a name
+  you listed, instead of silently falling back to the original module.
+  
+  - The local (named) form of the directive lists the exports to replace. A name
+    the mock file does not provide was skipped without a word, so the original
+    module's export of the same name survived the overlay: the analysis ran on a
+    **half-mocked program** (one export from the mock, the other from the real
+    module), and the directive was still reported as applied. Signatures,
+    contracts, `.d.ts` and schema products were then computed for a program that
+    exists neither in the source nor in the mock.
+  - Such a name is now reported through the existing module-loading error channel
+    as `nudo:module-missing` (error) — one diagnostic per missing name — and the
+    directive is **not applied**: the original module is left untouched rather
+    than half-overlaid. Exports the mock does provide keep working, and names you
+    did not list still fall through to the original module as documented.
+- 0366b6d: Family 04 (core execution / entry), shard E — fixes for bugs 990, 1031 and 286.
+  
+  - **Bug 1031 (core)**: an `export { … };` specifier statement placed **before** a
+    class declaration made every method of that class collapse to `unknown`.
+    `ctorParamCountOf` treated the specifier statement as a declaration and
+    dereferenced `declaration.type` on a `null` declaration, raising a
+    `TypeError` inside the class-method bridge. The bridge swallowed the error
+    in an empty `catch {}`, so the method signature silently degraded to
+    `unknown` and picked up a misleading `nudo:opaque-result` diagnostic. Worst
+    of all, a violated return-type contract on such a method was downgraded from
+    an **error** to a **warning**, so `nudo check` exited `0` and let the
+    violation through. The null declaration is now skipped explicitly, and the
+    bridge distinguishes an internal failure from a failed evaluation run
+    instead of swallowing it silently. The behaviour no longer depends on the
+    order of the `export { … };` statement.
+  - **Bug 990 (core)**: `collectAbsExports` decided between the re-export branch
+    and the local-export branch by testing whether a module table was supplied at
+    all. With no module table, `export { a } from "./m.js"` was handled as a
+    local export and invented a named export, and `export { default } from
+    "./m.js"` invented a `default` export — the very existence of a `default`
+    slot is protocol-level information, so consumers were told the module has a
+    default export it does not have. The branch now only looks at whether the
+    statement has a source: an unreachable source yields no export slots at all,
+    matching the "module table present but module missing" case. `bindImports`
+    also resolves `import { default as d } from "./m.js"` through `mod.default`,
+    so it now matches `import d from "./m.js"` instead of binding `unknown`.
+  - **Bug 286 (service)**: call records for namespace member calls
+    (`ns.helper(…)`, both ESM `import * as ns` and CJS `require`) only carried the
+    member name, never the receiver. The attribution side splits the callee name
+    on a dot, so the split never happened: `targetModule` / `targetExport` stayed
+    empty, the record was dropped by the matching side, and the **error-level**
+    `nudo:interface-domain-exceeds` gate never fired for out-of-domain calls
+    across a namespace import. Such records now carry the receiver's local
+    binding name (`ns.helper`), the same shape class member calls already use
+    (`Brand.method`), and a CJS `require` binding is registered as a namespace
+    import. Ordinary calls (local functions, named imports, host globals) keep
+    their existing record names.
+- 0366b6d: Family 04 (core execution / entry), shard F — the service-side remainder of
+  bug 274.
+  
+  - **Bug 274 (service)**: `@nudo:mock Math` / `JSON` / `Date` / `Number` … were
+    silently ignored on the **call-value** channel (`nudo test` case values,
+    `nudo export` dts, the LSP hover surface). The core side already separates
+    the two injection tables — the "do not shadow host intrinsics" skip list
+    (`ENV_SHADOW_SKIP`) applies to **env globals only**, because a mock value is
+    an `Abs` with no host object identity to preserve (shadowing the host global
+    is exactly what a mock is for). But two service call sites merged the mock
+    table into `envGlobals` before handing it to the engine, so the engine could
+    no longer tell mocks from env globals and the skip list swallowed the mocks
+    on that list — the user believed the mock was in effect while the host
+    intrinsic answered. Both call sites now pass the two tables separately
+    (`mocks` through its own parameter, `envGlobals` carrying env globals only):
+    - `eval-run.ts` (`tryRunEval`) — the call-value / case-evaluation channel,
+    - `abs-modules-graph.ts` (`collectAbsBindingsFromGraph`) — the module-graph
+      binding surface.
+  
+    The precedence is unchanged: the engine reads the merged table as
+    `{ ...envGlobals, ...mocks }`, so a mock still **overrides** an env global of
+    the same name, exactly as before when the mock was merged in last.
+- 0366b6d: Importing an environment module by its default name now infers the same type
+  as importing it as a namespace.
+  
+  - `import fs from "node:fs"` bound to nothing, because the environment module
+    table only carried the named exports and had no `default` slot. The import
+    folded to `unknown`, every exported function of that file degraded to
+    `unknown`, and the check reported a misleading `nudo:unknown-inference`
+    warning (the binding was never connected; nothing failed to infer) while
+    still exiting 0. Importing the very same module as `import * as fs from
+    "node:fs"` was judged normally, so one import semantics produced two gate
+    verdicts.
+  - Environment modules are CommonJS interoperability modules: Node's default
+    export for `node:fs` is the module object itself, with the named exports on
+    it. The environment module table now carries that `default` slot (the
+    namespace of the module) and marks the module as an interoperability
+    module, and the default-import binding has a single source of truth: the
+    `default` slot when present, the namespace for an interoperability module
+    that has no `default` slot, `unknown` otherwise.
+  - Ordinary user modules are untouched: a module table without a `default`
+    slot still binds a default import to `unknown` rather than falling back to
+    the namespace.
+- e59c991: String unions are now concatenated member by member, and generated line
+  comments no longer carry a block-comment escape.
+  
+  - A value that is one of several string literals was concatenated as if the
+    literals were one piece of text. `("a" | "b") + "!"` was reported as the
+    single string `"ab!"` — a value no call can produce, because the real
+    answers are `"a!"` and `"b!"`. The same happened to `` `v=${x}` ``, which
+    was reported as `"v=ab"`. A union now keeps its members apart while it is
+    converted to text, and the two sides are combined member by member, so the
+    result is the union `"a!" | "b!"`.
+  - The comment cleaner escaped the end of a block comment everywhere it was
+    used, including inside `//` line comments, where it has no meaning. The
+    contract draft printed by `nudo contract --draft` — the text a user is
+    asked to copy into the sidecar — showed `/* no evidence — tighten *\/`
+    instead of `/* no evidence — tighten */`. Line comments now keep the text as
+    it is; a line break inside a comment is still flattened, so a comment can
+    never spill out of its line. Block comments (the JSDoc in the emitted
+    `.d.ts`) still escape it, because there the escape is what keeps the
+    comment from ending early.
+  
+  - **Member results are combined with the engine's existing "same primitive"
+    rule** (`joinValues`), not as a raw union. Two *literal* members still form an
+    enumeration (`"a!" | "b!"`), but a literal combined with a same-primitive arm
+    that carries no narrowing evidence collapses to that primitive — the same
+    rule the rest of the algebra uses. Without it, a union member whose rendering
+    is already `string` would sit next to a literal and print as
+    `"NaN days" | "NaN day" | string | …`: harder to read than the type it
+    describes, and inconsistent with the signature the same function has
+    everywhere else (`formatAge(durationMs: number) => string`).
+- da4fbfc: Sidecar sections are now recognised by nudo's own marker and nudo's own
+  boundaries, and a class's static and instance methods no longer share one name.
+  
+  - A sidecar comment that merely **mentions** `@generated` (for example
+    `// handwritten contract: this mentions @generated`) was treated as nudo's
+    own section header. The whole handwritten contract then lost its
+    obligations — a call site that violated the contract was not reported at
+    all and `nudo check` exited 0 — and `nudo contract --emit --all` replaced
+    the handwritten contract with the observed values. A header now counts only
+    when the comment starts with `@generated` and names nudo, and a section
+    boundary stops at a `const` that the export does not reference. The
+    legitimate generated shapes (the alias section, the composite downstream
+    section with its prelude `const`, a multi-step prelude, a header directly
+    above the export) are still recognised.
+  - A static method and an instance method with the same name were both listed
+    as `C.m`, so the two records replaced each other in the tables indexed by
+    name and the signature mixed parts of both methods. The instance method
+    now takes the name on its own, and the generated TypeScript declaration no
+    longer repeats the member.
+  - `get` and `set` members of a CommonJS object literal were collected as
+    exported functions, which invented an entry point and a spurious "may
+    throw" error. They are not callable entries and are no longer collected.
+  - A CommonJS member assignment whose value is a named function expression was
+    named after the function's own inner id instead of the export slot, so the
+    sidecar contract never bound and the exported symbol was missing from the
+    signature table. The export slot name wins now.
+- da4fbfc: Regression pins for three call-site contract enforcement reports whose
+  symptoms are already gone. No behaviour changes: these bugs were fixed
+  earlier (by the `lit(null)` / `lit(undefined)` literal fix, by the
+  `export default` dts export-name fix, and by resolving a callee's
+  `@nudo:import` sidecar against the callee's own directory). The pins
+  exist so the fixed behaviour cannot silently regress.
+  
+  - A parameter whose contract is exactly `lit(null)` or `lit(undefined)`
+    now has a pin that spells out both directions: the one allowed value
+    passes with no diagnostic, and every other value is reported as a
+    violation. `null` and `undefined` are two distinct domains, so
+    `lit(null)` rejects `undefined` and `lit(undefined)` rejects `null`.
+    The pin also records that a bare literal contract (one `eq` atom) and
+    a `union` / `nullable` contract (nullish as a *member*) are different
+    shapes handled by different channels; only the bare literal shape is
+    pinned here.
+  - The dts projection now has a pin for all four `export default` shapes
+    — named function, class, anonymous function and arrow — and asserts
+    that the emitted export name is `default` in each case, so a default
+    export can no longer be projected as a named export that does not exist
+    at runtime.
+  - A cross-file call now has a pin that the callee's sidecar is resolved
+    against the callee's directory, not the caller's: the sidecar next to
+    the callee loads without an `nudo:interface-load` or
+    `nudo:contract-syntax` diagnostic, and the call site still reports the
+    real precondition violation.
+- 2688251: fix(service): 指令**未命中**不再静默失效 —— `@nudo:replace` 目标不存在 / `@nudo:mock-module` 重复声明各有显式诊断（Bug 1062 / Bug 1063）
+  
+  两条是**同一根因**：指令的**语义前提**被违反时，引擎**静默失效、零诊断**
+  ⇒ 唯一的信号是**归因错误**的 `nudo:unknown-inference`（把「你的指令没生效」
+  说成「推断精度不够」）⇒ 假红 / 假绿。
+  
+  - **`@nudo:replace` 的目标文本在源码里不存在**（Bug 1062）：收集面此前把
+    「目标文本在承载语句的作用域内无对应节点」降级成一条**无作用域**登记项
+    ⇒ 转译面恒跳过 ⇒ 声明的类型覆盖**静默蒸发**；「目标写错一个字母」与
+    「根本没写这条指令」的输出**逐字相同**。现在收集面发一条**点名目标文本**
+    的 `nudo:directive-syntax`（warning）⇒ 两种情况**可区分**；目标写对时
+    **零**该诊断。
+  - **`@nudo:mock-module` 对同一模块重复声明**（Bug 1063）：叠加面此前对同一
+    specifier **逐条整块覆写**（后者胜出、无比较、无告警）⇒ 先声明者独有的
+    导出名**静默消失** ⇒ 该导出名的调用点退化成 `unknown`（wrong-exact）。
+    现在重复声明发一条**点名两条来源**的 `nudo:mock-invalid`（warning），且
+    导出表取**并集**（同名后者胜出）⇒ 导出名不再静默消失。
+  
+  诊断码**复用既有注册码**（`nudo:directive-syntax` / `nudo:mock-invalid`）⇒
+  不新增诊断码；两条诊断都不挡门禁 exit（warning 级）。
+- 1caec28: fix(service): `@nudo:env` 多名合并取**并集**（顺序无关）——Bug 1045
+  
+  `@nudo:env node, web` 与 `@nudo:env web, node` 此前得到**两张不同的全局表**
+  （`packages/service/src/evaluator/env-loader.ts` · `applyEnvDefinition` 对同名
+  全局做**整块替换**，后一个 env 赢）⇒ **同一份源码**只因 env 名书写顺序不同，
+  签名不同、门禁结论相反（`OK` vs `FAILED`：`performance.toJSON` 在 web 有、
+  node 无 ⇒ 顺序换成 node 赢时 `pf()` 被判「必抛 TypeError」）——与文档承诺的
+  「env 名之间是 union」相悖。
+  
+  合并改为并集：
+  
+  - **obj ⊕ obj** ⇒ 逐槽并集（同名槽的值域再并集，不折「后者赢」）；
+  - **brand ⊕ brand**（同名同 tag）⇒ 内层并集，保留品牌名；
+  - **其余形态**（fn ⊕ fn / obj ⊕ brand / prim ⊕ prim …）⇒ 值域并集（sum）；
+  - **模块侧**同名导出名同样取并集，不再 last-wins；
+  - `globalEnv.bind` 绑**合并后**的值（全局表与 globalEnv 不再分叉）。
+  
+  并集满足三条纪律，缺一条就会退回「顺序敏感」：**可交换**（sum 成员按结构键
+  排序——core 的 `makeSum` 按入参顺序排成员）、**可结合**（值域并集是「成员集合
+  的并」而非两两折叠）、**不丢实现**（fn 的 relation / apply 挂在 Abs 对象上，
+  并集成员保留原对象，不复制不重建）。
+  
+  单 env（只写 `@nudo:env web` / `node`）行为**逐字不变**：同名声明若结构同构
+  则直接取同一份对象 ⇒ 全局表与 env 自身声明逐字相同。
+- 69e67d3: 族 29 修复 S5：Bug 861 · 864 · 865 —— es env 的 console 成员表补全（`timeStamp` / `dirxml` / `profile` / `profileEnd` 等缺槽读出 exact undefined ⇒ `console.timeStamp()` 假红「may throw TypeError」）、URI 族改走 core 的 `evalGlobalFn` 建模（`decodeURI("%")` 的 `URIError` 不再被吞 ⇒ L2 假绿修复，抽象实参回落声明域 + may-throw URIError）、es env 补齐 ES 规范全局声明 + service 的「已被覆盖」判定改为按 core 真实建模能力推导（`BigInt` / TypedArray 全家 / `ArrayBuffer` / `DataView` / `AggregateError` / `Function` / `escape` 等不再被报「未被 Nudo 覆盖」，与同一份报告里的精确签名自洽）。
+- 69e67d3: 族 29 主 agent 收口：跨分片组合出来的 4 个缺口。
+  
+  - **Bug 884（web 侧）**：`web.ts` 的 `structuredClone` 声明已删（node 侧同款
+    修法在 `node.ts`）⇒ 回落宿主内建 ⇒ 不可克隆值的 throws 面（宿主
+    `DOMException` / `DataCloneError`）不再被 env 声明整段吃掉 ⇒ L2 门禁恢复。
+  - **`enforceArgs` 的并集实参过严**（S3 越界发现，主 agent 修正）：实参是**并集**
+    （如 `string | undefined`）时，`leqAbs(sum, pt)` 整体判 false ⇒ 旧实现把它
+    当「确定不符 ⇒ 必抛 TypeError」，而原生只在 `undefined` 分支抛 ⇒ 可能假红。
+    现在**逐成员**判定：只有**全部分支**都不兼容才判必抛，部分分支不兼容判
+    may-throw ⇒ 与原生同口径。
+  - **Bug 886 / 889 的组合缺口**（S1 删声明 + S5 覆盖推导撞出来的）：web env 的
+    `TextDecoder` 声明已删（宿主才有精确的 `RangeError` 与「类不可裸调」语义），
+    但 core 的**构造面** `evalBuiltinNew` 不认 `TextDecoder` ⇒
+    ① `nudo test` 报「Built-in API "TextDecoder" is not covered by Nudo's type
+    inference」（假阳）；② Abs 面与 `$new` 宿主面口径分裂。现在
+    `evalBuiltinNew` 补 `case "TextDecoder"` ⇒ 两侧同 builder
+    （`makeTextDecoderAbs`），假阳消失。
+  - **「已被覆盖」判定里的手写例外已删**（族 29 Bug 865 的根因收口）：core 其实
+    已精确建模 `WeakRef`（`evalBuiltinNew` 的 `case "WeakRef"`），但三条既有
+    service 契约把 `WeakRef` 当作「未被覆盖的全局」样例钉住，于是判定里留了
+    一张手写例外表——那正是 Bug 865 要消灭的「手写白名单」换了个地方继续写。
+    现在例外表删除，三条契约的**样例全局**换成真正未被建模的宿主全局
+    `Atomics`（core 无 `Atomics` 建模面；它是 `globalThis` 里的数据属性 ⇒
+    不触发访问器副作用），契约的**意图**（未建模全局要报 `builtin-unknown`、
+    且不与 `unknown-global` 双报）完全保留。
+- e6c4586: **BREAKING**: 既有 `nudo/…` 请求的**响应信封**变了。
+  
+  - `nudo/trace` / `nudo/suggestCase` 的失败路径此前**不带** `isError: true`
+    （失败被当成成功，客户端只能从正文分辨）⇒ 现在失败路径返回 `isError: true`
+    （MCP 风格）⇒ 按「有没有 `isError`」分支的客户端行为变了；
+  - `nudo/hover` 现在**校验**位置参数：非整数 `line` / `column` 此前被原样回显
+    且所有分析字段为 `null`（与「此处无 hover」不可区分），现在答**工具错误**；
+    `column` 缺省为 `0` ⇒ `{ file, line, column, … }` 的载荷形状恒成立。
+  
+  谁会坏：把失败响应当成功处理的客户端（`nudo/trace` / `nudo/suggestCase` 的失败
+  现在带 `isError: true`）；以及用非整数 `column` 调 `nudo/hover` 探测「此处有没有
+  东西」的客户端（现在拿到的是工具错误而不是一个全 `null` 的载荷）。
+  
+  怎么迁移：客户端按 `isError` 分支处理失败；`nudo/hover` 只传整数 `line` /
+  `column`（`column` 缺省即 0）。
+  
+  Fix agent-tool (LSP) defects found by the族 25 audit:
+  
+  - **767** — `nudo/trace` / `nudo/suggestCase` failure paths now return `isError: true` (MCP-style), so a failed call is distinguishable from a successful one at the protocol level instead of only in the text.
+  - **768** — `nudo/hover` validates its position arguments: a non-integer `line` / `column` is a tool error (previously the value was echoed back with every analysis field `null`, so "no hover here" and "my argument was the wrong type" were indistinguishable), and `column` now defaults to `0` so the documented `{ file, line, column, … }` payload shape always holds.
+  - **961** — `nudo/whatIf` validates its arguments: a missing `target` is a tool error (previously a fake success reporting `Type of "undefined": unknown`), a non-array `bindings` is a diagnosable tool error (previously a raw `bindings.map is not a function`), and a binding without `name` is rejected instead of silently doing nothing. `injectBindings` in `@nudojs/service` gained the matching shape guard and names the offending entry (`<missing name>`).
+  - **993** — the observing agent tools (`nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`) now analyse through the asynchronous entry point, which preloads path-based `@nudo:env` modules. Their output no longer depends on whether the file happens to be open in the editor (previously the same file and tool could answer `never`/`unknown` or `99` depending on call order, together with a misleading "Built-in API is not covered" diagnostic). The analysis caches additionally key on the env **preload state** so a synchronous analysis taken before the preload can no longer feed a stale "no env" result to later calls.
+  - **955 (shared entry)** — `normalizeFilePath` now rejects a non-string / empty / missing `file` with a diagnosable `file is required …` tool error instead of leaking a raw `file.startsWith is not a function` TypeError (or silently falling back to the server's working directory). Every agent tool goes through this shared entry point.
+- 27a795e: 族 22 修复 D4：Bug 698 700 701 708 717 721 723 —— 补全面与语义 token 面对齐真实语义。
+  
+  - 尾随点号时补全整面清零：用户刚敲下 `obj.` 的那一刻 buffer 文本语法非法，
+    而解析不容错 ⇒ 分析直接抛 ⇒ 补全返回空并在 console 报错——恰在最需要补全的
+    时刻失效。分析输入与绑定解析输入现在共用同一个消毒器（把尾随 `x.` 改写成
+    `x._ `），尾随点号与已敲出部分成员名给出同样的成员列表。缓存键仍按真实源码
+    计算：消毒文本只喂给一次性分析，不写回分析缓存，缓存与真实源码不会串味。
+  - 指令补全在乘号之后也弹 `@nudo:` 指令：判定是「前面出现过 `*` 或 `nudo`」的
+    子串匹配（`@?n?u?d?o?:?` 整段可选），于是 `x * ` 之后、字符串字面量里的
+    `@nudo:` 都算命中。指令面现在先算光标的**词法上下文**（注释 / 字符串 / 代码），
+    只在光标确实落在注释里时才出；注释里（含跨行 JSDoc）照旧出。
+  - `@nudo:sample` 的补全项吹着「Control loop iteration sampling」，但该指令只被
+    解析、不被消费；而且插入文本缺 count，接受补全就产生诊断。说明改成如实描述
+    （reserved / no-op），插入文本带上 count 占位。
+  - 模块级函数的补全项被标成「方法」：顶层 `function` / 箭头函数绑定不是任何对象
+    的成员，IDE 会把它渲染成方法。补全项新增 `function` 档（成员函数仍是
+    `method`，非函数绑定仍是 `variable`）。
+  - 语义 token 面漏标：类名、类方法、类字段、方法形参、数组解构元素全部不上色，
+    对象解构的绑定被上成属性。类名 → class 档（图例末尾追加，老索引不变）、类
+    方法键 → method、类字段键 → property、方法形参 → parameter、解构绑定 →
+    variable。
+  - 对象字面量里的简写 `{ x }` 是对变量的**引用**，却被当成属性定义（property 档
+    且带 declaration 标记）。简写现在是 variable 档且不带 declaration 标记。
+  - 标识符 token 的长度按解码后的名字算：`const abc = 1` 里名字是 `abc`（3），
+    但源码写法是转义序列（8）⇒ token 只盖住转义序列前半截，客户端高亮错位。长度
+    改用源码跨度（位置口径仍是 UTF-16 code unit）。
+- 169ed52: The disk cache, the LSP and the Vite plugin now agree with the CLI about
+  environments, budgets and injected modules.
+  
+  - The cache key did not contain the effective fork budget, so changing
+    `NUDO_MAX_FORKS` still served the previous run's result. The effective
+    value (environment variable, then `package.json`, then the default) is now
+    part of the key.
+  - An invalid `nudo.check.entryThrows` value was reported once per checked
+    file. The warning is now printed once per distinct invalid value.
+  - `@nudo:as` did not apply to an exported binding, so the tool still reported
+    "bindings applied" while the type stayed unchanged. The override now
+    matches the exported declaration as well.
+  - `--what-if` attached an assumption to the wrong variable when a line ended
+    with a comment, and it reported a made-up reason when two declarations
+    shared a line. Assumptions are now anchored by statement identity.
+  - The LSP and the Vite plugin never applied `@nudo:mock`, so a project that
+    checked cleanly in the CLI reported a spurious "may throw" in the editor and
+    in the build. Both now assemble the same injection channel the CLI uses.
+- 02aa122: fix(nudojs): `nudo contract --draft` 的 dry-run 面（打 unified diff）+ `--json`/`--write` 显式互斥 + 项目根判据按路径分量
+  
+  族 20 · 片 B（660 / 663 / 665）。
+  
+  - **Bug 660 —— `--draft --write --dry-run` 不打 unified diff**（只打一行
+    「[dry-run] would write → …」），而 CLI Reference 承诺 `--dry-run` =
+    "Print a unified diff instead of writing"。同一个 `--dry-run` 旗标在
+    `--emit` 与 `--draft` 两条分支上语义不同。现在 `--draft` 分支**复用
+    `--emit` 分支的同一个 diff 生成器**（`unifiedDiff`，已在
+    `@nudojs/service/emit` ⇒ 零新增导出），对照面是**既有草稿文件**的磁盘内容
+    （与 `--draft --json` 审阅面同款口径），diff 头与 `--emit --dry-run` 同形
+    （`--- a/<path>` / `+++ b/<path>`）；dry-run 仍然**不写盘**。
+  - **Bug 663 —— `--draft --json --write` 静默丢弃 `--write`**（`--json` 分支
+    早退 ⇒ 写盘分支不可达）⇒ 草稿根本没落盘、exit 0、零提示 ⇒ **假绿 + 静默
+    数据丢失**。现在 `--json` 与 `--write` **显式互斥**：
+    `error: --write cannot be combined with --json` + **exit 1**，机器面仍给出
+    一份合法 JSON 载荷（`{file, errors:[{code:"nudo:usage-error"}]}`，由命令层的
+    跨文件聚合层收进恒定数组外壳）。
+  - **Bug 665 —— 项目根边界用 `rel.startsWith("..")` 判逃逸** ⇒ 项目根下的
+    **合法目录名**（`..data/` / `...cfg/`）与**合法文件名**（`..data.js`）被误判
+    成「越出项目根」⇒ 草稿**拒写**（exit 1），而同一项目里的普通文件正常写出。
+    判据改成**按路径分量**：「整段等于 `..`」或「以 `..` + 路径分隔符开头」或
+    「跨盘（绝对路径）」——CLI 半（`nudo contract --draft --write`）与 service 半
+    （`writeInterfaceDraft` 的写盘守卫）**逐字同款**；真正越出项目根的路径**仍被
+    拒**。
+- 02aa122: fix(core,service): 侧车契约与 zod 产物不再把 `-0` 渲染成 `0`（族 20 · 片 D · Bug 1065）
+  
+  `-0` 与 `0` 身份不同（`Object.is` / `1/x` 可观察），而 `String(-0) === "0"`
+  ⇒ 负号被抹掉 ⇒ 同一个值在三处被渲染成**另一条契约**。
+  
+  - **core（`packages/core/src/algebra/interface.ts`）**：`litToString` 的 number
+    分支改用仓库既有的保真口径 `litKeyString`（`./term.ts`：`Object.is(v, -0) ⇒ "-0"`，
+    与 `format.ts` 的 `formatLitValue` 同款判据）；`lengthBound` 的常数界渲染
+    （`.length(n)`）同款口径一并改。⇒ 侧车写的 `lit(-0)` 现在**如实**渲染成
+    `lit(-0)`：`nudo contract` 回显、`nudo check` 诊断的 `expected:` / `suggestion:`、
+    以及侧车 DSL 回写（`nudo contract --emit`）都不再抹掉负号。
+    ⇒ **零新增公开导出**（`litKeyString` 是同包相对 import，core 冻结面未动）。
+  - **service（`packages/service/src/emit/schema-generator.ts`）**：`case "lit"` 的
+    数字分支**保真**写 `z.literal(-0)`（改前是 `z.literal(0)`）⇒ 产物不再
+    **比门禁宽**（门禁按 `lit(-0)` 判红、产物却放行 `0` ⇒ 假绿）。
+    ⚠ zod 的 literal 走 `===` 口径 ⇒ `-0` 与 `0` 在运行时**不可区分** ⇒ 该处
+    **已知有损** ⇒ 产物就地加注释标明（消费方看得见），**不许静默放宽**。
+    （zod 的运行时行为本次**未独立复现**——环境无 zod 依赖。）
+  
+  诊断文本与 zod 产物是**同一个渲染上游**（`formatConstraint` ⇒ `litToString`）
+  ⇒ 一处修，两面同时保真。
+- 3432d8c: Two `nudo test` case-reporting defects are fixed in the shared service analysis
+  layer; the CLI report faces (`nudo test`, `nudo test --json`) inherit both fixes
+  because they consume the same judgement function.
+  
+  - **A throwing case could never fail its declared expectation.** The observed
+    value of a case that throws is `never`, and `never` is the bottom element of
+    the type lattice (`never ⊑ anything` always holds), so the structural check
+    passed for *every* declared expectation. `@nudo:case "t" (1) => 42` on a
+    function that throws used to be reported as `✓ 1 passed` with zero
+    diagnostics. The judgement now carries a precondition: an observed `never`
+    can never satisfy an expectation, so the case is reported as failed and
+    `nudo:case-expected` is raised. The expectation text shown to the user is
+    unchanged — a predicate expectation still renders as `number (> 0)`.
+  - **The case-level `nudo:may-throw` warning ignored a declared, intentional
+    throw.** A throw declared with `@nudo:case "t" (1) !! throws TypeError`,
+    `@nudo:throws TypeError`, or a sidecar `fn(…, { throws: "TypeError" })` was
+    accepted by `nudo check` (zero errors) but still reported by `nudo test`, so
+    the two verbs returned opposite verdicts for the same file. The case-level
+    warning now uses the same mouth as the check face: a declared throw is not
+    reported. Undeclared throws are still reported, and the remediation text now
+    points at the mechanisms the user is already using
+    (`@nudo:throws <Kind>` / `@nudo:case … !! throws <Kind>`) instead of only
+    listing try-catch and `@nudo:contract`.
+- 27cc16a: The directive grammar now has a single enforcement face: the case-argument
+  grammar of the check product, the case emitter, the function census and the
+  diagnostic positions are aligned with the parser.
+  
+  - The check product parses a case witness with its own literal grammar (a
+    decimal regular expression, and a string sliced off its first and last
+    character). A witness written as `1e3` or `"a\tb"` therefore did not denote
+    the value the user wrote, and the contract gate reported
+    `witness ⊭ contract` for a witness that was in fact correct — while the
+    same file, read by the parser, held a different value. The check product
+    now uses the same literal grammar as the parser: JavaScript number
+    semantics (exponent, hex, binary, octal, separators) and JavaScript string
+    semantics (escapes), and a text that is not a single literal is no longer
+    folded into a confident wrong value.
+  - The case emitter wrote a string value into the directive text verbatim, so a
+    value containing a backslash or the quote character produced a directive
+    that no longer re-parsed to the same value — `nudo test --freeze` wrote out
+    a case that failed on the next run. The emitter now escapes what the
+    grammar requires. Non-finite numbers (`NaN`, `Infinity`) and bigint
+    literals were dropped from the emitted case entirely (the whole case was
+    abandoned); they are now expressible.
+  - A static class method was visible in the signature surface of `nudo check`
+    but invisible in the function census of `nudo test` / `nudo health` /
+    `nudo contract`, because the census only collected instance methods. The
+    census now collects static methods as well, matching the check product.
+  - A directive diagnostic carried no position, so every occurrence of the same
+    problem was reported at the same place and the product surfaces could not
+    point at the offending directive. Diagnostics now carry the position of the
+    offending directive.
+  - The union splitter of the what-if surface did not treat a backslash as an
+    escape inside a string, so a type expression containing `\"` was split in
+    the wrong place.
+- aa23265: fix(service): 产物面（dts / schema / standard）2 条——internal 槽不再外泄，用户类 brand 不再产出未声明的类型名（族 55 · W5）
+  
+  产物面有**两面**：dts（类型声明）与 schema / standard（运行时校验器）。本次两条
+  都落在**同一个语义缺口**上——产物把 **Abs 内部实现细节**当**用户可见的公开面**
+  直出。
+  
+  **1) Bug 240：产物面仍发布 internal 槽**
+  
+  internal 槽（`Slot.internal`）不是自有可枚举属性——私有字段（`#x`）与生成器协议
+  槽（`next` / `return` / `throw` / `constructor` / `@@iterator`）都属此类。core 侧
+  早已统一判据（`format.ts` 投影面 / `projection.ts` 约束面 / `denote.ts` guard 面
+  同款 `isHiddenInternalSlot`：`internal` 且键**不是**规范数组下标 ⇒ 该槽对属性
+  introspection 不可见 ⇒ 不进产物），但 service 的产物面没跟上：
+  
+  - **dts 形参位**：`widenParamAbs` 造新槽时丢了 `internal` / `symbolKey` 标记 ⇒
+    内部槽被"提权"成用户可见字段——改前
+    `export declare function f(x: { a: number; "#priv": number; "@@iterator": number }): number;`
+    （私有字段与 **symbol 键**协议槽按字符串键直出）。
+  - **dts 类体**：私有字段进 `declare class` 的字段列表。
+  - **schema 形状兜底路径**（约束不可表达时，如 open 对象）：内部槽进 zod / standard
+    产物。
+  
+  现在 service 产物面**复用 core 的同一判据**（`packages/service/src/emit/internal-slot.ts`
+  的 `isHiddenInternalSlot`，判据逐字同款，不另造）：内部槽不进 dts / schema /
+  standard 产物。**规范数组下标槽是例外**（族 01 口径：生成器的数字下标槽承载
+  **元素域**，不是内部实现细节）——该例外与 core 三面、约束面、schema 面前后一致。
+  
+  **2) Bug 233：dts 面把用户类 brand 渲染成从未声明的类型名**
+  
+  `absToTSType(brand("Counter"))` = `Counter` ⇒ 产物里那个类名**从未声明** ⇒ 消费方
+  tsc 报 **TS2304**（"Cannot find name 'Counter'"）。修法按**模块面**口径（产物是
+  一个**模块**，类名必须在模块里可解析）：
+  
+  - **本地声明**的类 ⇒ 保留类名 + `declare class`（Bug 517 既有口径**逐字不变**）；
+  - **import 进来**的类 ⇒ 保留类名 + 补 `import type { C } from "…";`——族 15 S11 的
+    zod 白名单口径「**补 import 的类名不能被误杀**」：不能把未声明的类型名一律降级，
+    已 import 的类名要保留（模块面新增导入面扫描：`DtsModuleSurface.imports`）；
+  - **两边都没有**的类名 ⇒ **降级为 `unknown`**（不再产出未声明的类型名 ⇒ 不再
+    TS2304），并在产物头部留**降级台账**（`// nudo:unresolved-class …`）⇒ 降级
+    **可诊断**（台账点名被降级的类名）。
+  - **TS 全局类型名**（Date / RegExp / Error / URL …）与 **zod 白名单同名单**
+    （`RUNTIME_GLOBAL_CTOR_NAMES`，族 15 S11 同源）⇒ 原样保留，无需声明。
+  
+  纯投影面（`absToTSType` 单值投影，无模块面 ⇒ 无声明面可判）保持既有口径**逐字
+  不变**（`absToTSType(brand("User"))` 仍是 `"User"`，见既有钉 `emit-bug-521`）。
+  
+  **四面口径**：dts / schema / standard / guard 对 **internal 槽**现已同款（guard /
+  约束面此前已由 core 修好，本次补齐 service 侧）；对 **brand 类名**，schema /
+  standard 仍按族 15 S11 的 zod 白名单口径（用户类降级 `z.unknown()` + dropped
+  台账——zod 产物只 import zod，不能引用用户类），dts 面则因**类型面**可以补
+  `import type` 而保留已 import 的类名——这是**产物形态的固有差异**，不是口径分叉。
+- e3b8791: The generated products and the named imports of a module now agree with
+  each other.
+  
+  - The schema product rendered the brand of a generator as
+    `z.instanceof(GeneratorFunction)`, which made the generated module fail
+    to load with a `ReferenceError`. The brands that are not globals are
+    downgraded to `z.unknown()` and the loss is recorded, so the product can
+    always be loaded.
+  - A named import of a function from an environment module wrapped the
+    declared function in a JavaScript arrow function, which dropped the
+    declared parameter and return types: the signature showed an invalid
+    placeholder and the generated declaration file disagreed with it. The
+    named import now yields the declared function itself, so both import
+    forms report the same type. The function is still callable: a call and a
+    `new` both dispatch to it.
+- b37321b: The analysis service finds the functions, the call sites and the evidence the
+  way the source describes them.
+  
+  - A function declared as `export const f = () => {}` was invisible to
+    `nudo test`, `nudo export` and `nudo contract`, although `nudo check` saw
+    it. Every product now sees the same set of functions.
+  - `module.exports = { f: fn }` was invisible for the same reason.
+  - `export default function f() {}` was looked up under its local name, while
+    an ESM default export lives under `default` — the lookup missed, the
+    signature degraded to `unknown`, and a misleading `nudo:opaque-result` was
+    reported.
+  - A call site inside an exported function body produced no `call@` case at
+    all, so the call-site domain of that function was lost and the export was
+    reported as entry-only. Call sites are now collected while the function
+    body is evaluated.
+  - A case name taken from the line number in the *calling* file collided
+    between two call sites, pointed at an unrelated line, and made a second
+    freeze drop the new witnesses. The name now carries the file it refers to
+    when the call site is elsewhere, and the emitter compares witnesses by
+    identity.
+  - An expectation written as a predicate — `number().gt(0)` — was compared
+    structurally and therefore always failed. The value is now checked against
+    the predicate, and the report says so when a predicate is not satisfied.
+  - A `@nudo:case` on a class method was never evaluated, so the witness was
+    always `unknown` and every expectation failed. Class methods are evaluated
+    now.
+  - The value reported for a synthesized call-site witness was re-evaluated in
+    the target's context and could disagree with the actual call. The
+    observed value is reported now.
+  - A sidecar that failed to load was reported as "no contract root", which
+    sends the reader to write a contract that already exists. The load failure
+    is reported as `nudo:interface-load` now.
+  - A line-level directive (`@nudo:as`, `@nudo:replace`) inside a loop body, a
+    `try` block, a `switch` case, a labeled statement, an arrow function body
+    or a class method body was dropped without a word. Those positions are
+    collected now, and a directive that cannot be applied anywhere is reported
+    as `nudo:directive-syntax`.
+  - A dependency module's own `@nudo:as` / `@nudo:replace` directives were
+    ignored, so the same file analyzed as a root and as a dependency got
+    different types.
+  - A live import binding was frozen into a snapshot when the module graph was
+    merged, so a change inside the dependency was invisible to the importer.
+  - The synthetic `entry@` cases shared one module instance, so module-level
+    state leaked from one case into the next.
+  - A project-level path env file's *content* was not part of the analysis
+    cache key, so a changed env file reused the previous result within the same
+    process.
+  - Two functions declaring a `@nudo:mock` of the same name: the one declared
+    last won the whole file, and the first function was given the wrong type.
+    The mock is now chosen by scope.
+  - An inline `@nudo:mock` lost the fact that it can or cannot be constructed,
+    so `new` on it did not throw where it should have.
+  - A `@nudo:mock` in its `rejects` form was modelled as returning `never`,
+    which made any return contract vacuously true and wrote `f(): never` into
+    the generated declaration file. It is modelled as a promise that never
+    fulfills now.
+  - A `@nudo:pure` directive never reached the function it marked, so the
+    directive did nothing.
+  - `nudo:builtin-unknown` reported an imported or exported alias as an
+    uncovered built-in, adding a warning next to a type that had already been
+    inferred exactly.
+  - A `--what-if` binding naming a type Nudo cannot express was silently
+    widened to `any`, while the report said the binding had been applied as
+    written. It degrades to `unknown` now, and the report says what was
+    actually injected.
+- b37321b: Project configuration is normalized once, and every product reads the same
+  normalized value.
+  
+  - A `nudo` key whose value is not an object — `"nudo": true` — was ignored
+    without a word, and it also suppressed the "this project has no Nudo
+    configuration yet" hint. The key now stops the search for an ancestor
+    configuration (the documented rule is "the nearest `package.json` that
+    contains a `nudo` key"), the package is treated as having no Nudo
+    configuration, and a note on stderr says so.
+  - A `nudo` key holding a falsy value (`false` / `null` / `0` / `""`) did not
+    stop the search either, so a sub-package silently inherited the root
+    package's `check.ignoreThrows` and `nudo.env`. Presence now stops the
+    search, whatever the value is.
+  - `nudo.contract.autoBind` was passed through verbatim. A non-boolean value
+    made `check` and `contract`/`export` disagree — one side treated it as
+    "off", the other as "on" — and the disk cache could not tell the values
+    apart, so a wrong conclusion was cached. The value is normalized to a
+    boolean once, and a non-boolean falls back to `true` with a note.
+  - `nudo.check.entryThrows` with an invalid value printed "using error" while
+    the gate actually used the value the `profile` preset selects. The note now
+    names the value in effect.
+  - `nudo.cache: ""` did not override `NUDO_CACHE_DIR`; an explicit empty
+    string now means "off", like `false` does.
+  - `NUDO_MAX_FORKS` with an invalid value fell through to
+    `nudo.analysis.maxForks`, so the run quietly used a budget the user had
+    not asked for. An invalid value now falls back to the default and says so.
+  - `nudo.analysis.maxForks` and the session cache limit are per-project
+    settings, but they were written into process-wide slots only when the
+    project configuration was looked up for the first time. Two projects
+    analyzed in a different order got different results. They are now applied
+    on every lookup, so the same project and configuration always give the same
+    answer.
+  - A `package.json#nudo.env` entry that is not an array, or an array with a
+    non-string element, is reported instead of crashing the loader.
+- dde4b03: The `.d.ts` product now projects the module's export surface: export names,
+  classes and re-exports.
+  
+  - `export default function (…)`, `export default (…) => …`, `exports.compute = …`
+    and `const f = …; export { f }` were dropped from the `.d.ts` product even
+    though the export face advertised them. They are now declared.
+  - A declaration is named after the **export name**, not after the local
+    binding: `export { internal as publicName }` is declared as
+    `publicName`, and `export default function addOne` is declared as
+    `export default function addOne`. The local binding name is never
+    mistaken for the export name.
+  - A class is projected as a class: `export class C { … }` becomes
+    `export declare class C { … }` with the constructor and the static
+    methods inside it. The instance methods are no longer flattened into a
+    module-level `C_m` export, which never existed in the source and merged
+    with a real export of the same name into a fake overload.
+  - A class instance type (`User`) referenced by a declaration is declared as
+    well, so the `.d.ts` no longer fails to compile with `TS2304: Cannot find
+    name 'User'`.
+  - `export * from "…"` and `export { x } from "…"` are re-emitted, so the
+    product's export surface matches the source module's.
+- dde4b03: `nudo test --freeze` now writes into the source file **without disturbing the
+  file's byte shape**, and the diff it prints can be applied by `git apply`.
+  
+  - **A UTF-8 BOM used to move into the middle of the file.** The freeze writes
+    the new `@nudo:case` block *above* the declaration, so the first line moved
+    down one line — and the BOM, which lived on that first line, moved with it:
+    the file stopped being "UTF-8 with BOM" and became a UTF-8 text with a
+    zero-width `U+FEFF` sitting in front of the `export`. The BOM is now kept
+    aside while the body is edited and put back at the very front of the file.
+    The same holds when already-generated directives are stripped (the first
+    line may be dropped there, and the BOM used to go with it).
+  - **A CRLF file stayed CRLF.** The newly inserted lines now follow the file's
+    dominant line ending, so `file(1)` keeps reporting "with CRLF line
+    terminators" instead of switching to "with CRLF, LF line terminators", and
+    the lines that were already in the file keep the endings they had.
+  - **The printed diff of a file without a final newline could not be
+    applied.** `git apply --check` rejected it, because the diff did not say
+    that the last line has no newline. The diff now follows the same line model
+    as `diff -u` / `git diff`: the last line without a terminator is marked with
+    `\ No newline at end of file`, and whether the file ends with a newline is
+    treated as part of the content (as native tools do). Diffs for files with a
+    final newline are unchanged.
+  - **The diff no longer hides byte changes.** The BOM stays in the first line
+    of the diff (the same shape native `git diff` produces), so a patch against
+    a BOM file still applies, and a real byte change — a BOM being dropped by a
+    writer, say — is shown instead of being reported as "no change".
+- dde4b03: `nudo contract` no longer loses recursive contracts, crashes on bigint
+  literals, or prints the contract's parameter names as the function's
+  formal parameter list.
+  
+  - The contract surface cached constraints with
+    `JSON.parse(JSON.stringify(c))`. A `lazy()` slot is a thunk (a
+    function), and `JSON.stringify` silently drops function-valued
+    properties, so a recursive constraint collapsed into an empty optional
+    slot: the first run printed the expanded recursive shape, every later
+    run printed `any().optional()`, and the cached surface was weaker than
+    the `nudo check` gate for the same file. Constraints are now encoded
+    with a dedicated codec: literals keep their type (`bigint`,
+    `±Infinity`, `NaN`, `-0`, `undefined`), and a `lazy()` slot is stored
+    as an index into a node table that is rebuilt into a thunk on read-back,
+    so a cold run and a cache-hit run print the same thing.
+  - `JSON.stringify` cannot represent a `bigint`, so a contract with a
+    bigint literal made the whole `nudo contract` command fail with a bare
+    `Do not know how to serialize a BigInt` (exit 1, no file, no diagnostic
+    code) while `nudo check`, `nudo health` and `nudo test` stayed green on
+    the same file. Bigint literals are now encoded losslessly and the
+    command prints the contract normally.
+  - The printed effective contract used the parameter names declared by the
+    contract, so a contract binding `zzz` printed `(zzz: …)` for a function
+    whose parameter is `x`, while `nudo check` printed `scale(x: any)` for
+    the same file. The printed parameter list now comes from the declared
+    formal parameter list (the same source as the `nudo check` signature),
+    and a contract parameter that binds to no formal parameter is listed
+    separately and marked `(not a formal parameter)` instead of taking over
+    a parameter name.
+- dde4b03: Quickfix edits: the `@nudo:throws` annotation now lands on the declaration it
+  belongs to, TS sidecars carry their builder import, and the nullish quickfix
+  no longer swallows a contract's `throws` obligation.
+  
+  - **The `@nudo:throws` annotation was written into the wrong place, or into a
+    file that no longer parsed.** The quickfix located the declaration by name
+    (first line that matched) and then scanned *downwards* for the first line
+    containing a JSDoc terminator. A plain block comment (`/* note *\/`) inside
+    the function body carries the same terminator, so the bare tag was emitted
+    outside of any comment and the file stopped being valid JavaScript. The
+    declaration is now resolved through the AST (top-level declaration of that
+    name — a same-named local binding inside another function no longer
+    matches) and the tag is written inside the JSDoc block actually attached to
+    the declaration; when there is none, a complete JSDoc block is inserted
+    above the declaration.
+  - **Sidecars written for TypeScript sources did not compile.** `nudo check
+    --fix --write` emitted the contract DSL (`fn({ x: shape({ toFixed: any() })
+    })`) into a `*.nudo.ts` sidecar without any import: `fn` / `shape` were
+    undeclared (`TS2304`) and `any()` collided with the TypeScript type keyword
+    (`TS2693`), so the product failed `tsc --noEmit --strict`. TS sidecars now
+    import the builders they use from `@nudojs/core`, renaming the ones that
+    clash with a TypeScript type keyword, and the DSL is rewritten accordingly.
+    JavaScript sidecars keep the existing "engine injects the builders" contract.
+  - **The nullish quickfix deleted the user's `throws` obligation.** The
+    `nullable(...)` wrapper was applied to everything between the first top-level
+    comma and the closing parenthesis of `fn(...)`, which swallowed the third
+    argument (`{ throws: "Error" }`). The gate then reported a *different* error
+    (`entry-may-throw` instead of `constraint-violated`) — a "fix" that traded
+    one red for another. Only the return slot is wrapped now; the remaining
+    arguments are preserved verbatim, and the edit is downgraded to a review
+    when the engine cannot prove that the gate turns green.
+- dde4b03: `nudo contract --emit` no longer writes a derived contract twice for the same
+  downstream export, no longer lets one root overwrite another root's contract,
+  and no longer keeps the generated section of an export the source no longer
+  has.
+  
+  - Two handwritten contracts in the **same** root file that call the same
+    downstream export produced two derived rows for one export name, so the
+    target sidecar got two `@generated` sections exporting the same name. That
+    file is not valid ESM (`SyntaxError: Duplicate export of 'add2'`), so the
+    sidecar never loaded and the derived contract silently degraded to a
+    no-op (`add2(x: any)`). The roots are now aggregated per downstream export
+    into a single derived row whose parameter domain is the **union** of the
+    roots' domains (the widest one), and the sidecar is checked for duplicate
+    export names before it is written — Babel does not report them, so the
+    check is explicit now.
+  - When **different** root files derive the same downstream export, the last
+    writer simply replaced the previous section, so the snapshot covered only
+    the call sites of one root and the result depended on the order in which
+    the commands were run. The write now merges the new derivation with the
+    existing section (again the widest domain) and records every contributing
+    root in the section header, so the same source tree produces the same
+    snapshot whatever the order is.
+  - A generated section whose export no longer exists in the target source was
+    never removed: it stayed in the sidecar as an export that does not exist at
+    runtime and permanently held on the name, so a hand-written contract for a
+    new function of the same name made the whole sidecar fail to load. The
+    derived path now drops those stale sections and no longer derives a
+    contract for an export the target does not have.
+  
+  The update path of the derived emitter also stopped appending the sections it
+  did not rewrite a second time — they are already in place, so the sidecar
+  used to end up with the same section twice (and an invalid export name).
+- dde4b03: Derived contracts now name the parameter the implementation actually returns,
+  and the same function derives the same contract no matter how many call sites
+  the root has.
+  
+  - The return slot of a derived contract was anchored to a parameter by the
+    derivation root node id alone. Every parameter derived from the same
+    upstream variable shares that id, so `helper(a, b) { return b; }` called as
+    `helper(x + 5, x + 1)` anchored the return to the **first** parameter and
+    wrote `fn({ a, b }, a)` — a return constraint of `number().gt(5)` for an
+    implementation that only guarantees `number().gt(1)`. The contract was
+    stronger than the code, and `nudo contract` displayed it as authoritative.
+    The anchor is now resolved against the parameter it actually describes:
+    when several parameters share a root, they are told apart by the
+    constraint value, and when that is still ambiguous the relative anchor is
+    refused instead of guessed, so the return slot falls back to the direct
+    chain projection.
+  - A derived contract for one function could change shape when the root
+    called it once or twice. The derivation tags were read after the call-site
+    values had been joined, and joining two equal values returns one of them,
+    so the join tag replaced the shift chain of the first call site and the
+    compositional projection was never reached. The tags are now read before
+    the join, and the return slot of a multi-call-site root is projected call
+    site by call site. `add2(x) => x + 2` called once or twice now derives the
+    same `fn({ x }, x.shift(2))`, instead of the second form degrading to a
+    literal bound one ULP away (`number().gt(0.9999999999999999)`), which
+    accepted a boundary value the exact form rejects.
+  - When the call sites of one root do not derive the same chain, the derived
+    section falls back to the expanded form; it no longer emits two `const`
+    declarations of the same name with different values, which is not valid
+    JavaScript.
+- dde4b03: `nudo export --format dts` now derives its parameter table from the declared
+  formals instead of from the observed call arity, and renders optionality the
+  way TypeScript means it.
+  
+  - The parameter table used to be cut to the number of arguments seen at call
+    sites, so a rest parameter produced `export declare function sum(...xs:
+    number): number;` — not valid TypeScript (`TS2370`) — and a second call
+    shape appended `arg1` / `arg2` after the rest parameter (`TS1014`). The
+    table now follows the declared formals: a rest parameter absorbs the
+    trailing arguments and is always last, and its type is promoted to an
+    array.
+  - A parameter declared by a contract but never exercised by a case used to
+    disappear from the `.d.ts` (`addAll(a: number)` for a two-parameter
+    contract), while `nudo check`, the zod face and the standard face all kept
+    it. The declaration is now authoritative for the table's length; cases only
+    contribute types.
+  - A parameter with a default value was rendered as required, so consumers
+    calling `def()` or `optNoEvidence(1)` — both legal in the implementation —
+    hit `TS2554`. Optionality now comes from the contract, then from the
+    declared default, then from the shortest observed call.
+  - A contract that marks a top-level parameter optional
+    (`number().optional()`) lost that marker in the `.d.ts` and rejected calls
+    the contract allows (`TS2345`). The contract face now carries the
+    optionality flag and the declaration renders `x?: number`.
+  - A destructured parameter lost the whole handwritten contract and was
+    declared `act(_p0: unknown)`, leaving TypeScript consumers with no type
+    checking at all. The contract's field-level entries are now projected into
+    the parameter's shape and the declaration uses the binding-pattern name
+    (`act({ a, b }: { a: number; b: number })`).
+  - Optional object slots were rendered as `k: T | undefined`, which in
+    TypeScript still requires the key — the projection was *stricter* than the
+    contract, the zod face, the standard face and `nudo check`, and rejected
+    values those four accept (`TS2345` / `TS2741`). They are now rendered as
+    the optional property `k?: T`, matching the `?` already used for top-level
+    parameters.
+- dde4b03: dts 投影面：Abs → TS 类型渲染与导出绑定名清洗的 6 处修正
+  
+  - **520**：手写契约的返回域保形——`lit(42)` 渲染成 `42`（与 zod / standard /
+    `nudo check` 三面同口径）；旧口径把契约返回 widen 成 `number`（字面量住在
+    Abs 的 **pred** 里、不在 term 里，widen 路径看不到它）。
+  - **521**：内建**泛型** brand 补类型实参——`Map<unknown, unknown>` /
+    `Set<unknown>` / `WeakMap<object, unknown>` / `WeakSet<object>`；旧口径直出
+    裸名 ⇒ 产出的 `.d.ts` 吃 **TS2314**、编译不过。
+  - **544**：Abs 的 `any`（未受约束）与 `unknown`（推断失败）**分面**——前者渲染
+    成 TS `any`、后者才是 `unknown`（`abs.md:100` 明文规则）；旧口径两者合并成
+    `unknown` ⇒ 消费方吃 **TS2571** 假红，而 zod / standard / guard 三面都宽松。
+  - **552**：导出绑定名过保留字清洗（core 的 `toJsBindingIdent` 口径，`default` /
+    `class` 等加 `_` 前缀）；旧口径直出 ⇒ 整份 `.d.ts` 吃 **TS1359 + TS1005**。
+  - **554**：生成器 / 迭代器形态识别——带 `next` 槽的对象渲染成 `Generator<T>` /
+    `AsyncGenerator<T>` / `IterableIterator<T>`（元素类型取数字下标元素槽），
+    内部槽不进结构字段；旧口径把内部协议槽当普通字段直出 ⇒ 返回类型里没有
+    `[Symbol.iterator]()` ⇒ 消费方 `for…of` 吃 **TS2488**。
+  - **565**：零成员对象渲染成 `Record<string, never>`（不是 TS 的 `{}`＝任意非
+    nullish 值）——属性读不再吃 **TS2339** 假红，且在联合类型里不再吸收
+    `{ a: number }`（契约义务不再被静默作废）。
+- dde4b03: The Standard Schema face now enforces what its own type says, and its
+  `validate` never throws.
+  
+  - A fixed-length tuple was only checked element by element, so
+    `pairOutput.validate([1, "two", 3])` passed even though the exported type
+    is the 2-tuple `[1, "two"]` — the engine (`leqAbs`) and the zod face
+    (`z.tuple`) both reject it. The tuple arm now requires the array length
+    to match the element count, unless the tuple has a `rest` slot.
+  - The two copies of the validator disagreed: the library version walked
+    arrays with `forEach` (which skips holes) while the generated module used
+    an index loop (which reads a hole as `undefined`), so the same schema and
+    the same sparse array got opposite verdicts. Both copies now use the
+    index loop, matching the zod face and the engine, which both read a hole
+    as `undefined`.
+  - A `brand` node was accepted unconditionally, so `mkDateOutput.validate({})`
+    passed while the zod face of the same export (`z.instanceof(Date)`)
+    rejected it. A brand whose name is a runtime global constructor is now
+    checked with `instanceof` (no import needed, the product stays
+    importable); brands with no runtime criterion (user classes) are still
+    passed through, and the projection already records them as dropped.
+  - A `fn` node was accepted unconditionally, so a function-typed output
+    validator passed `42` / `null` / `"str"` / `{}` while the zod face
+    (`z.function()`) rejected all of them. A `fn` node now requires the value
+    to be a function (the signature is not checked).
+  - A required slot was only considered present when it was an *own*
+    property, so a value carrying the key on its prototype
+    (`Object.create({ c: 1 })`) was reported as missing — stricter than the
+    zod face and than the TypeScript structural type, which both accept it.
+    Key presence now follows `HasProperty` semantics, minus the
+    `Object.prototype` pollution keys (`toString`, `constructor`, …).
+  - `~standard.validate` threw a `TypeError` on a `bigint` or a circular
+    object, because the issue message was built with `JSON.stringify` on the
+    runtime input. Standard Schema v1 requires `validate` to *return* a
+    result, so the message is now built with a safe description
+    (`1n`, `<unserializable>`) and any error is reported as an issue instead
+    of escaping.
+  - The issue message no longer loses non-finite numbers: `Infinity` is
+    reported as `expected Infinity, got 0` instead of `expected null, got
+    null`, matching the zod, guard and `nudo check` faces.
+- dde4b03: Emit products: the zod `number` schema now covers the whole JavaScript number
+  domain, the type guards are valid TypeScript, and a literal that only came
+  from an uncertain observation is no longer projected as the exit domain.
+  
+  - **The zod schema rejected the very value the exported function returned.**
+    An Abs `number` primitive covers every JavaScript number, NaN and
+    ±Infinity included, but zod's `z.number()` only accepts finite numbers (its
+    parse requires `!Number.isNaN(input) && Number.isFinite(input)`). The
+    projection was therefore *narrower* than the type it claims to describe: a
+    function returning `0 / 0` was described by a schema that rejected its own
+    return value, so consumers validating the result got a false red. The zod
+    dialect now widens an unrefined `number` to the full domain
+    (`z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))`).
+    A `number` that carries a refinement keeps the narrow form, because the
+    refinement itself already excludes the non-finite values (`x > 5`,
+    `Number.isInteger(x)`). The shared schema node is unchanged, so the
+    standard dialect keeps its current (NaN-accepting) number check.
+  - **The generated type guards did not compile.** `<file>.nudo.guard.ts` is a
+    TypeScript file, but the guard signature carried no type annotation
+    (`export function isUserOutput(data) { … }`), so under `tsc --noEmit
+    --strict` the parameter was an implicit `any` (`TS7006`) and the product
+    could not be used in a strict project. The guards now take `value: unknown`
+    and return `boolean`; inside the body the checked value is narrowed to the
+    narrowest type that lets the predicate compile — the primitive type for a
+    primitive or literal, a dynamic object shape for a structural form, and the
+    union of the member types for a union. Only built-in TypeScript type names
+    are used, so a product never references a user class name (`TS2304`).
+  - **A literal observed once was projected as if it were the exit domain.**
+    When the only evidence about a return value is an uncertain observation (a
+    join of several call sites, a mock, or a fallback evaluation), its literal
+    is not the function's exit domain: a rest parameter observed through the
+    fallback evaluation was projected as `literal(1)` by the zod, standard and
+    guard dialects, and those products then rejected the exported function's
+    own return value. Literals from uncertain observations are now widened to
+    their base type in all three dialects, and the widening is recorded in the
+    `dropped` ledger. Literals that are certain (`exact` confidence) and
+    literals coming from a hand-written contract keep their exact form.
+- dde4b03: `nudo contract --emit` now writes sidecars that are valid, compilable and
+  byte-faithful, and it no longer contradicts the LSP lens or the check face.
+  
+  - A value-level template in the sidecar (`export const classify = number()`)
+    was treated as a handwritten **function** contract, so the emitter refused
+    to persist anything for that name ("handwritten wins — skipping") while the
+    code lens showed the function as having *no* contract. The clash set now
+    follows the same rule as the tier face (only `fn(…)` bindings are
+    contracts); a non-contract binding that occupies the export name is
+    replaced in place by the generated section, so the sidecar becomes valid
+    and the contract takes effect.
+  - A generated section could collide with an **import local binding** of the
+    same name, which made the whole sidecar unloadable
+    (`Identifier 'x' has already been declared`) and silently dropped every
+    contract of that file — while the tool reported success. Import locals are
+    now part of the binding allocation, so the section falls back to an alias
+    binding (`const _nudo_1 = …; export { _nudo_1 as x };`).
+  - `--emit --fn <name>` no longer reorders the existing `@generated` sections:
+    the sections are replaced in place, so a refresh produces a content-only
+    diff instead of a pure reordering (which made `--exit-on-diff` fail in CI
+    on the first run).
+  - The sidecar keeps its own byte shape: the generated sections now use the
+    sidecar's dominant line ending (a CRLF sidecar no longer becomes a
+    mixed CRLF/LF file), and a UTF-8 BOM is preserved instead of being
+    silently dropped (a no-op emit no longer reports a change).
+  - A sidecar for a **TypeScript** source (`*.nudo.ts`) now declares the
+    builders its generated section uses, so the product compiles
+    (`tsc --noEmit --strict` reported `Cannot find name 'lit'` / `'fn'`
+    before). The declaration is type-only and keeps the runtime behaviour of
+    the JavaScript sidecar (builders are injected by the sidecar loader).
+  - The `nudo:interface-emit-denied` message now names the **source file**
+    that was rejected and states that the allowlist patterns match the source
+    file path, so an allowlist copied from the documentation is not refused
+    forever.
+  - The emit summary is the single place where diagnostics are rendered: a
+    diagnostic is printed once, and the CLI and the LSP agent face agree.
+- dde4b03: `nudo contract --draft` now writes a draft that can be copied into a sidecar
+  as-is: the sidecar key is the module's **export identity**, the file is
+  always valid JavaScript, the return obligation never contradicts the
+  function's own inferred return domain, and a draft the user has edited is
+  never silently overwritten.
+  
+  - The draft's sidecar key came from the *analysis name*, sanitized into a
+    legal identifier. An anonymous `export default` therefore got the
+    synthesized key `_default`, while the key that actually binds is
+    `default` — copying the draft into `*.nudo.js` left the contract in
+    place but **inert**, and `nudo check` stayed green on a call that
+    violated it. The key is now the export identity (the same source as
+    `nudo contract --emit`), and an unsafe binding name is emitted in the
+    alias form `const _nudo_N = …; export { _nudo_N as <identity> };`.
+  - The builder `import` and the generated `export const <name>` shared one
+    module scope, so a function whose name is a builder name (`number`,
+    `lit`, `union`, …) produced `import { number } from "@nudojs/core"` next
+    to `export const number = …` — a parse-time `SyntaxError: Identifier
+    'number' has already been declared`. The generated file was not valid
+    JavaScript, so the "copy the accepted exports into the sidecar" step
+    could only produce a broken sidecar. The same collision is fixed in the
+    `--from-dts` draft.
+  - A rest parameter (`...rest`) was rendered into the constraint DSL
+    verbatim (`{ first: number(), ...rest: number() }`), which is neither a
+    legal object literal nor legal DSL: copying the draft broke the whole
+    sidecar (`nudo:interface-load`), losing every contract in the file.
+    Rest-parameter functions are now reported as `not-projectable` and
+    skipped, and every draft is assembled once (`execNudoModule`) before it
+    is written — a draft that does not load is never handed to the user.
+  - The return obligation was derived only from the *observed* call sites,
+    which are a subset of the function's real return domain: `opt(flag)`
+    returning `1 | null` was drafted as `fn({ flag: boolean() }, number())`,
+    so accepting the draft made the function violate its own draft. The
+    obligation is now checked against the inferred return domain (the same
+    source as the `nudo check` signature) and is not written when it does
+    not cover it.
+  - `--draft --write` overwrote a hand-edited `*.nudo.draft.js` without a
+    word, while the file's own header claims "Handwritten contracts are
+    never overwritten". Drafts now carry a content fingerprint; a draft
+    whose content no longer matches its fingerprint is kept as-is and the
+    command reports that it was not overwritten.
+- dde4b03: `nudo test --freeze` now writes call-site witnesses without disturbing the
+  source file it writes into: the new `@nudo:case` block lands at the
+  declaration's own column, it keeps the file's line-ending convention, and a
+  witness that cannot be expressed faithfully is dropped instead of being
+  written as a different (wrong) value.
+  
+  - **The frozen JSDoc block was indented by the `function` keyword's column
+    instead of the declaration's.** For `export function greet(u) { … }` the
+    function node starts at column 7 (`export default function` at column 15),
+    so the whole block was shifted right and no longer lined up with the
+    declaration it documents. The block is now indented like the declaration
+    line it is inserted above, which keeps nested functions at their own
+    indentation.
+  - **Writing into a CRLF file produced mixed line endings.** The existing
+    lines kept their `\r\n`, but the newly inserted block was written with bare
+    `\n`, so `file(1)` started reporting "with CRLF, LF line terminators" and
+    the file's line-ending convention was silently rewritten. Newly inserted
+    lines now follow the file's dominant line ending, and the existing lines
+    keep the endings they already had.
+  - **A sparse tuple's holes were frozen as explicit `undefined` elements.**
+    The hole of `[1, , 3]` carries the same abstract value as an explicit
+    `undefined` element, so the witness could not tell them apart and was
+    written as `[1, undefined, 3]`. Reading that back says the array is dense:
+    the very same call site flipped from `false` to `true`, i.e. the freeze
+    rewrote an observed fact into its opposite. The case-argument grammar has
+    no spelling for a hole, so such a witness is now skipped (like a witness
+    with a rest slot) instead of being approximated.
+- 106ad1d: 族 54 · service 协议面收口（3 条中的 2 条；第 3 条在 nudojs 包，见下）。
+  
+  **Bug 697（env 模板族扩展名表）** — `isEnvTemplatePath` 的 mock 两支
+  （`mock-<name>.<ext>` / `<name>.mock.<ext>`）只认 `js|mjs|ts`，而 `.env.<ext>`
+  分支认 `js|mjs|ts|cjs|cts|mts` ⇒ 族内两支各写各的扩展名表 ⇒ `mock-foo.cjs` /
+  `fs.mock.cts` / `x.mock.mts` 这类 env 模板**不进 watch 门禁** ⇒ 模板改动
+  不触发依赖源文件复分析。改为三支**同表**（`js / mjs / ts / cjs / cts / mts`）；
+  mock 前缀支同时锚到 **basename** 起点（相对路径形态 `mock-foo.js` 同样成立）。
+  非模板路径判定逐字不变。
+  
+  **Bug（族 54 / item 2：hover 的 throws 段在两种状态下仍缺）** — hover 只读
+  case 台账的 throws 证据（`AnalysisResult.functions[].cases[].throwsAbs`），
+  而函数级 throws 域（check 签名行口径 = 入口求值的 hard throw ∪ soft
+  may-throw）的唯一载体是 `entry@` 见证 ⇒ 两种状态下证据随见证一起消失 ⇒
+  IDE 的 throws 段与 `nudo check` 的签名尾缀分叉：
+  
+  - **有调用点见证**：`settleEntryOnlyCandidates` 把 `entry@` 见证连同 throws
+    证据一起撤掉、改由 `call@` 见证承担调用点域 ⇒ 证据无处安放；
+  - **模块级调用点路径**：该路径**从不**产 `entry@` 见证（调用点域直接接管）
+    ⇒ 同样无处安放；
+  - **选中 case**（LSP selectCase）：被选函数**不生成** `entry@` 见证（域由
+    选中的那条 case 声明）⇒ 同样无处安放。
+  
+  改为：入口域的 throws 证据并进该函数**已有**的见证（并集；见证数不变、
+  推断域不变 ⇒ 产物面 / 固化面 / 报告台账的形状都不动）。补证据时只跑**只取
+  证据**的入口求值（不产见证 / 不改域 / 不报诊断 / 不并入调用点台账），且只对
+  **导出**函数补（入口面口径 = 导出函数，与 hover / check 同源）。
+  `nudo test` 的 "all" 模式不在补证据范围内 ⇒ 报告面不变。
+  
+  **未收口（第 3 条，跨包）** — 台账里的「`migrate verify` 库面整批 abort」
+  实测**已不成立**：`migrateVerify`（`packages/nudojs/src/migrate.ts`）早已逐
+  文件隔离（同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件照常
+  返回）。仍整批 abort 的是同族的 `migrateStrip`（696 的库面半边：
+  `planStrip` → `makeStripPlan` 遇解析错即 throw ⇒ 同目标内其它文件的成功结果
+  全丢）—— 该文件在 **nudojs** 包（另一分片的范围），本片未改。
+- 8542f44: fix(service): 契约申报的 bigint 字面量在 zod 面不再被静默放宽（族 37 · Bug 1046）
+  
+  **病灶**：契约里申报 bigint 字面量（如侧车 `fn({}, lit(10n))`）时，zod 面的产物
+  写的是 `z.unknown()` —— 比门禁**宽**（门禁按 `lit(10n)` 判红、zod 放行 `10` / `42` /
+  `"x"` / `null`）⇒ **假绿**；而且**零台账**（产物里没有任何痕迹）。
+  
+  零台账的根因是**两层都失声**：契约路径的 Abs 把字面量放在 **pred** 里
+  （`eq(self, lit(10n))`）⇒ 节点层（`absToSchemaNode`）认为「投影成功」（节点 =
+  `{k:"lit", value:10n}`）⇒ 不进 `dropped`；而 zod 渲染臂 `case "lit"` **没有 bigint
+  分支** ⇒ 落到兜底 `z.unknown()` ⇒ 与 standard 面（`{"k":"lit","value":10n}` 保真）
+  的**接受集自相矛盾**。
+  
+  **修法**（`packages/service/src/emit/schema-generator.ts`）：
+  
+  - zod 方言的 `lit` 臂补 bigint 分支 ⇒ `z.literal(10n)`。zod 的 `z.literal`
+    **原生支持 bigint**（zod v3/v4 皆可；真 zod v4.6.7 实测 `safeParse(10n)=true`、
+    `safeParse(10|42|"x"|null|undefined)=false`）⇒ zod 面的接受集现在**等于**
+    standard 面 ⇒ 跨面自相矛盾消失。
+  - **方言保真**升为渲染层的**局部不变量**：zod 渲染器改为同时返回**源码 + 自己
+    的降级台账**，凡是把可表达的形态降级成 `z.unknown()`（类型外的字面量值、没有
+    运行期构造器的 brand）**必须留痕** ⇒ 台账并进**既有** `dropped` 通道 ⇒ 出现在
+    产物的 `// dropped preds (not projected into zod):` 块里（用户可见）。
+    「静默放宽」从此在渲染层不再可能发生（改前 bigint 契约字面量就是靠这条路漏出去的）。
+  
+  **已知偏差（core 层，族外，未修）**：guard 面渲染
+  `(typeof data === "number") && (data === 10n)` ⇒ `guard(10n) === false`
+  （**假红**：拒收契约申报的唯一合法值）。根因在 core：`litC(bigint)` 不给 prim
+  （`PrimName` 有 `"bigint"` 但 `litC` 不用）⇒ `constraintOnTermAbs` 落到
+  「有界但无 prim ⇒ 按 number 处理」的兜底 ⇒ Abs 的 shape 说 number、pred 说 bigint。
+  core 不在本族范围 ⇒ 以 `it.fails` 旗标钉住（core 修好后旗标会翻红，提醒摘掉）。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [7fea13a]
+- Updated dependencies [a1c093f]
+- Updated dependencies [9f26414]
+- Updated dependencies [67abd92]
+- Updated dependencies [3d66f5a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [1b08a18]
+- Updated dependencies [b4768ca]
+- Updated dependencies [5fd3cbb]
+- Updated dependencies [5fb8a51]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [dde4b03]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+  - @nudojs/core@1.16.0
+  - @nudojs/env@0.5.3
+  - @nudojs/parser@1.5.3
+  - @nudojs/harvester@0.4.3
 
-更早版本（55）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（56）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.6.2 {#pkg-nudojs}
+## nudojs (CLI) 1.7.0 {#pkg-nudojs}
 
-## 1.6.2
+## 1.7.0
+
+### Minor Changes
+
+- f896290: **BREAKING**: 类成员的调用点参数契约补齐**三条保守边界**（与普通函数 / 具名导入
+  同一口径）。
+  
+  `nudo check` 此前对以下类成员调用点**零义务**（违约代码判绿）：
+  
+  - **未导出的本地类**：`class L { @nudo:contract m }` 的 `const c = new L(); c.m(-1)` /
+    `new L().m(-1)` / `L.s(-1)`。普通**未导出本地函数**本来就在调用点执法 ⇒ 类成员与
+    本地函数规则不一致（同一义务两套口径）。
+  - **匿名 `export default class { m(a){} }`**：`import K from "./lib.js"` 后
+    `new K().m(-1)` 解析不到类（具名 `export default class K` 已可用）。匿名类没有
+    本地名 ⇒ 契约键用导出槽名（`default.m`，侧车键 `default_m`；`@nudo:contract` 的
+    指令 scope 同口径）⇒ `nudo check` 现在报 `fn: default.m`。
+  - **命名空间导入**：`import * as ns from "./lib.js"` 的 `new ns.K().m(-1)` /
+    `ns.K.s(-1)`（`const m = require(...)` 的 `m.K` 同路径）。类解析与具名导入共用
+    同一套类 AST 事实（`classBindingOf`），不另写模块解析器。
+  
+  修法：模块级本地类的 own 方法名并入**调用点扫描**的 knownFns（签名普查面 / L2 入口表
+  不动 ⇒ `nudo check` 的签名列表不因本地类扩面）；匿名默认类绑定名 = `default`；
+  命名空间模块按**词法作用域**解析（内层同名声明遮蔽 ⇒ 不解析）。
+  
+  **谁不会坏（守卫，全部保持零新诊断）**：继承而来（非 own）的方法；构造器
+  `this.m = …` / 同名类字段覆盖；getter / setter / computed 成员名；静态 / 实例交叉
+  调用（`K.m` 调实例方法、`new K().s` 调静态方法）；接收者被形参 / 局部声明遮蔽；
+  重新赋值（失效范围从「当前作用域帧」改为**沿作用域链**——函数体内
+  `L = …` 之后不再套旧类契约）；未声明契约的类与方法（未导出本地类的侧车不绑，
+  与未导出本地函数同口径）。
+  
+  **有意保持不执法（与普通函数 parity，不发明更宽义务）**：
+  `export { K as J } from "./lib.js"` 的别名再导出、`import { K } …; export { K }`、
+  以及命名空间经再导出 index（普通函数的 `ns.f` 同样不执法）。再导出环（a ↔ b）有
+  深度上限，终止且零诊断。
+- a069994: fix(core,cli): 类成员的参数契约在**导入类实例** / **内联 `new`** / **静态调用**形态下
+  不执法（假绿）
+  
+  `nudo check` 此前只对「本地类实例 + 同类文件里的 `const c = new C(); c.m(…)`」做
+  调用点契约执法。以下形态解析不出被调方 ⇒ 整条调用被跳过 ⇒ 违约代码判绿：
+  
+  - 导入类：`const c = new K(); c.m(-1)`（`import { K } from "./lib.js"`）
+  - 内联构造：`new K().m(-1)`（导入 / 本地都）
+  - 静态方法：`K.s(-1)`（导入 / 本地都）
+  
+  修法：类成员的调用点解析改由**类声明 AST 的 own 成员事实**驱动 —— 实例 / 静态分开
+  判定，`K.static.s` 沿用静态 / 实例同名时的既有 scope 名（`@nudo:contract` 侧）。
+  本地类仍以 `nudo check` 的签名普查面为闸门（未导出的类保持零诊断、不扩面）；导入类
+  按定义模块 + 定义文件侧车绑定契约（`K_m` / `K.s` 等同既有侧车键）。
+  
+  **BREAKING**: `nudo check` 现在会对上述形态**新报** `nudo:constraint-violated`
+  （及调用点前置条件违例）⇒ 此前依赖这些调用点静默的 CI 流水线会开始**非零退出**。
+  这些调用点本来就是 L1 义务的覆盖空洞：同一份契约在 `c.m(…)` 上执法、在
+  `new K().m(…)` 上放行，属于同一义务的两套口径。
+  
+  **谁不会坏（守卫，全部保持零新诊断）**：继承而来（非 own）的方法；构造器
+  `this.m = …` 或同名类字段覆盖的方法；getter / setter / computed 成员名；
+  静态 / 实例交叉调用（`K.m` 调实例方法、`new K().s` 调静态方法）；接收者被形参 /
+  局部声明遮蔽或被重新赋值；未声明契约的方法。
+- 97f28ed: **BREAKING**: 产物面（dts / zod / standard / case）的**形参位形状**变了 ——
+  数组解构形参现在按**元素下标**聚合成**元组**，TS 的 `this: T` 接收者标注不再
+  被当成形参。
+  
+  谁会坏：消费方 `import` 生成产物并按**旧形状**调用的代码 ——
+  
+  - 数组解构形参（`fn({ a: number() })` 对 `[a, b]`）：dts 面此前给
+    `{ a: number }`、zod 面给 `z.object({ a: … })`（与真实形参形态**颠倒**），
+    现在给**元组**（`[ a, b ]` / `z.tuple([…])`）⇒ 旧形状的调用点类型不兼容；
+  - `this: T` 接收者标注：dts 多一个形参（消费方吃 `TS2554` 假红）、zod 多一个
+    字面量槽 `"this"`、standard 多一个幽灵导出 `<fn>_this` ⇒ 这些**幽灵位**现在
+    全部消失。
+  
+  怎么迁移：重新生成产物；数组解构形参按**数组**传参；消费方若引用过
+  `<fn>_this` 之类幽灵导出，直接删掉（它们本就不存在）。
+  
+  fix(service, nudojs): 期望判定严格化、数组解构的产物面按元素下标寻址、`--assume` 的界落到形参前提、`this` 接收者标注不进形参表
+  
+  - Bug 396（`@nudo:case` 期望判定）：`leqAbs` 的「同 prim 字面量视为可赋」捷径在
+    **对象槽**位上连字面量相等性都不比 ⇒ `shape({ a: lit(2) })` 这类期望**永不被
+    执法**（case 期望恒 `[ok]`、`nudo:case-expected` 零诊断 ⇒ 假绿），而同一份
+    契约在手写侧车面走逐字段约束树能抓到 ⇒ 两面自相矛盾。`caseExpectedSatisfied`
+    补一道「期望槽里的字面量按值比较」（含嵌套对象槽），**只**作用于期望判定，
+    `leqAbs` 的既有语义一字不动（core 侧那一行不改 —— gold 的 `assign-compatible` /
+    `wider` 依赖该口径）。
+  - Bug 394（产物面）：**数组解构**形参的字段级侧车契约（`fn({ a: number() })` 对
+    `[a, b]` 来说 `a` 是**下标 0 的元素**，不是属性键）此前被摊成**对象槽** ⇒
+    dts 给 `{ a: number }`、zod 给 `z.object({ a: … })` ⇒ 产物输入面与真实形参形态
+    **完全颠倒**（合法数组调用被判红、非法对象调用被放行）。现在 dts / zod /
+    standard 三面都按**元素下标**聚合成**元组**（未契约的元素位留 `any`——无约束，
+    不是 unknown），dts 的声明名渲染成数组形态 `[ a, b ]`。
+  - Bug 397（产物半）：TS 的 `this: T` 是**接收者标注**、不是运行时形参 ——
+    service 侧形参表入口 `extractFormals` 现在**兜底**过滤它并**重排 index**
+    （index 是形参表内的位置 ⇒ 实参位靠它对齐）⇒ dts / zod / standard / case
+    四个产物面不再多出一槽（dts 多一个形参 ⇒ 消费方吃 TS2554 假红；zod 多一个字面量
+    槽 `"this"` ⇒ 对每一个真实调用值报假红；standard 多一个幽灵导出 `<fn>_this`）。
+  - Bug 976（CLI 半）：`--assume` 声明的**界**此前被顶成写死的 `x>0` ⇒ 用户写
+    `--assume 'x>-5'` 时观察面只给 `"pos"`（`x=-1` 的分支被当成不可达 ⇒ 说谎）。
+    现在把**用户声明的界**（按形参名归并、同一形参多条取合取）落进形参自己的前提
+    （**替换**写死的默认，不是与它合取），并与 core 半
+    （`buildArgsFromAssume` 的 `bounds` 形参）同批接线；契约的义务与用户的界并存
+    （契约 pred ∧ 用户界）⇒ 契约不被削弱、用户的界也不被顶掉。
+- b0878e3: **BREAKING**: `nudo export` 的产物面（zod / standard / dts / guard）**参数位与返回位
+  的形状变了** —— 槽位表改以**声明形参表**为骨架，与 `nudo check` 的签名面合流。
+  
+  谁会坏：直接 `import { <fn>Input } from "*.nudo.zod"`（或 guard / standard 产物）
+  并按**旧形状**调用的消费方 —— 生成的 `.d.ts` 与 zod / standard 输入对象现在按
+  **真实调用形态**渲染（剩余参数 `...rest` 是一个**数组**槽、点路径契约键展开成
+  **嵌套形状**、声明级默认值让槽位**可选**），旧形状与新形状不兼容 ⇒ 消费方的
+  `tsc --noEmit` 会红。
+  
+  怎么迁移：重新生成产物（`nudo export --format all --out …`）并按新形状改消费方
+  调用点 —— 剩余参数按**数组**传、点路径契约按**嵌套对象**传、有默认值的形参现在
+  是**可选**位。
+  
+  `nudo export` 的参数面与返回面改按**声明形参表**合流：契约面与观测面不再二选一，
+  剩余参数 / 默认形参 / 点路径契约 / async 返回 / 违约返回都按真实调用形态投影。
+  
+  - **剩余参数**（`...rest`）此前被拆成「`...rest` 一个槽 + 凭空造出来的 `argN`
+    槽」，槽值是单个实参（Bug 604）。现在槽位表以声明形参表为骨架：槽名取裸名
+    （`rest`）、槽值是**数组**、槽数取声明形参个数。
+  - **部分契约**（契约只覆盖部分形参）时，未被覆盖的形参位此前被**静默丢掉**
+    （Bug 605）——契约面与观测面二选一。现在两者按形参合流：契约覆盖的位取契约
+    Abs，未覆盖的位取声明形参表 + 观测证据（不丢位），与 dts 面同口径。
+  - **声明级默认值**此前不参与槽位可选性，带默认值的形参被渲染成必填槽
+    （Bug 611）——dts 面是 `b?: number`、zod 面是必填，两个产物面自相矛盾。现在
+    可选性按三来源口径（契约级 → 声明级默认值 → 观测级最短元数）产出，与 dts 面
+    逐位同。
+  - **有参数契约、无返回契约**时，返回面此前回退到**无约束**的入口观测（缺种子
+    重算），与 dts / check 面矛盾（Bug 612）。现在先用契约参数作种子重算一次
+    返回位（与 dts / check 面同一条路径），重算失败才回落观测面。
+  - **async 函数的返回约束**此前被当成整个返回类型，`Promise<…>` 包装丢失
+    （Bug 618）。现在契约返回描述的是 await 后的值，返回面保留 promise 包装。
+  - **`@nudo:skip` + 多条 case 见证**时 Output 面此前不产出（兜底只取第 0 条断言
+    见证，而无断言的 case 是见证不是断言），参数面却 join 了全部见证——同一函数
+    两套口径（Bug 619）。现在返回面兜底 join 全部域证据见证。
+  - **点路径契约键**（`"card.grade"`）此前被当成字面量顶层属性名，约束也被当成
+    整个形参的约束（Bug 620）。现在契约参数按声明形参表定位，点路径展开成嵌套
+    形状（`{ card: { grade: … } }`），与 dts 面的嵌套形状一致。
+  - **返回契约**此前当「已证成的事实」直接投影，产物可能声明一个实现可被证否的
+    返回类型（Bug 626）。现在投影前复核实现：违约时不投影契约，回落实现实际的
+    返回形态。
+  
+  产物面（zod / standard / dts / guard）因此与 `nudo check` 的签名面口径一致：
+  同一份源码在两面给出的参数位与返回位不再互相矛盾。
+- b0878e3: **BREAKING**: `nudo export` 的四个产物面现在共用**同一条导出面规则** ——
+  未导出的内部实现**不再**发布运行时守卫（guard 面），zod / standard / dts 三面
+  此前投影**每一个**函数（含内部实现），现在只投影**模块的公开导出面**。
+  
+  谁会坏：直接 `import { is<fn>Output } from "*.nudo.guard"` 的消费方 —— 未导出
+  （内部实现）的函数此前**有**守卫导出，现在**没有**了 ⇒ 消费方的
+  `tsc --noEmit` 会红；guard 的**返回域**也改成与 zod / standard / dts 同一条
+  （此前 guard 用单次调用的**观测**返回，与契约域矛盾）。
+  
+  怎么迁移：重新生成产物；只对**公开导出**的函数使用 guard 导出（内部实现不再有
+  守卫 —— 这是「一个导出一个出口域」的统一口径）。
+  
+  `nudo export` now publishes one exit domain across its product faces, and a
+  parameter named `__proto__` no longer disappears from the zod artifact.
+  
+  - The guard face (`--format guard`) took the **observed** return value of a
+    single call site, so a function with a declared return contract published a
+    guard that rejected every value the contract allows (`return data === 0.5;`
+    for a contract of "number between 0 and 1"), while the zod face of the very
+    same run published the contract domain. The guard now consumes the same
+    unified return face as the zod / Standard Schema / dts faces, so one export
+    gives one exit domain. A contract the implementation violates is still
+    projected as the implementation actually behaves — in every face.
+  - The zod input object was assembled into an ordinary object, so a parameter
+    named `__proto__` was swallowed by the inherited prototype setter and never
+    became an own key: the artifact published `<fn>Input` without that
+    parameter, while the `.d.ts` of the same run kept it. The slot table is now
+    assembled without a prototype, so the parameter is no longer lost while the
+    artifact is assembled (the other inherited key names are kept as well).
+  - The guard face now inherits the shared export-surface rule: a function that
+    is not exported no longer publishes a runtime guard.
+- b0878e3: **BREAKING**: `nudo export` 的四个产物面现在共用**同一条导出面规则**，且**硬失败**
+  不再静默发布产物。
+  
+  - 四个产物面只投影**模块的公开导出面**（此前 zod / standard / guard 投影**每一个**
+    函数，含内部实现）⇒ 未导出的内部实现**不再**有 `<fn>Input` / `is<fn>Output`
+    之类的导出 ⇒ 直接 import 这些导出的消费方 `tsc --noEmit` 会红。
+  - `@nudo:skip` 的函数此前被导出面过滤器**排除**（它按设计没有 case 见证）⇒ 从不
+    出现在任何产物面；现在它**照常投影** ⇒ 产物多出此前没有的导出。
+  
+  谁会坏：按「产物里有某个函数」做**存在性**判断的消费方（内部实现不再有守卫 /
+  zod 校验器）；以及期待 `@nudo:skip` 的函数**不出现**在产物里的脚本。
+  
+  怎么迁移：重新生成产物并只依赖**公开导出面**上的导出；`@nudo:skip` 现在会出现在
+  产物里（它只跳过 case 见证，不跳过投影）。
+  
+  `nudo export` now refuses to publish a projection that contradicts the
+  contract, keeps the four product faces on one public-surface rule, and stops
+  dropping `@nudo:skip` functions.
+  
+  - A sidecar (`*.nudo.js`) that failed to load was silently ignored: the
+    contract was lost, and the artifacts published the "not declared" case as
+    "no constraint" (zod `z.unknown()`) — no message on stderr, exit 0.
+    `nudo export` now reports the real `nudo:interface-load` diagnostic and
+    exits 1 without publishing anything.
+  - A contract parameter name that is not in the declared parameter list was
+    projected as-is, so the zod face published an `<fn>Input` whose key the
+    function signature does not have. `nudo export` now reports
+    `nudo:interface-param-mismatch` and exits 1 without publishing anything.
+  - A contract whose conjunction is unsatisfiable (the source
+    `@nudo:contract` contradicts the same-name sidecar) was projected with only
+    half of the contract, producing a validator that can never pass.
+    `nudo export` now reports `nudo:interface-conflict` and exits 1 without
+    publishing anything.
+  - The dts face projected the module's **public surface** (export / export
+    default / CJS exports), while the zod / Standard Schema / guard faces
+    projected **every** function — internal implementations included. A module
+    with no exports at all still produced three runtime validators while its
+    `.d.ts` was silently missing. All four faces now share one export-surface
+    rule, and a module with no public surface says so instead of producing
+    nothing without a word.
+  - `@nudo:skip` functions were excluded from the export entry filter (they
+    have no case witness by design), so they never reached any product face.
+    They are now projected like any other exported function.
+- b0878e3: **BREAKING**: `nudo export --out` 的**产物文件名**变了，且**不再覆盖**不是自己
+  生成的产物。
+  
+  - 产物名冲突时现在带**模块键后缀**（`lib.323a7411.d.ts` / `C.m.nudo.standard.ts` /
+    `C.m.2.nudo.standard.ts`）⇒ 此前 `a/lib.js` 与 `b/lib.js` 会**互相覆盖**
+    （后者静默盖掉前者）⇒ 消费方按**固定文件名**取产物的流水线现在会找不到文件。
+  - `--out` 现在**拒绝覆盖**它没生成过的文件（exit 1 + `nudo:path-io`）⇒ 此前
+    手写的 `.d.ts` 会被**静默替换**成 `unknown`；现在构建会以非零码退出。
+  
+  谁会坏：按**固定文件名**消费 `nudo export --out` 产物的脚本（文件名现在带模块键
+  后缀 / 方法名）；以及依赖「`--out` 会覆盖输出目录里的同名文件」的流水线（现在
+  拒绝并 exit 1）。
+  
+  怎么迁移：改用产物里的 `// nudo-export-module:` marker 行定位产物（它记录产物
+  属于哪个模块），而不是硬编码文件名；确保输出目录里没有会被覆盖的同名文件
+  （或先清空输出目录）。产物内的 `// nudo-export-module:` marker 用于区分
+  「同模块更新」与「另一个模块的同名产物」。
+  
+  `nudo export --out` no longer loses artifacts silently: product names are
+  unique per module, hand-written files are never overwritten, and a failed
+  write reports what actually landed.
+  
+  - Two modules could map to the same artifact path. The Standard Schema face
+    names its file after the **function** (so two modules exporting a function
+    of the same name collided), while the dts / zod / guard faces name theirs
+    after the source file **stem** (so `a/lib.js` and `b/lib.js` collided). The
+    second export silently overwrote the first one, and the consumer ended up
+    with another module's declarations. A product name that is already taken
+    by a different module now gets a module-key suffix
+    (`lib.323a7411.d.ts`), so both modules keep their artifact.
+  - Two functions with the same name in one module (two `m` methods of a class)
+    were written to the same Standard Schema file — the second write overwrote
+    the first. Each function now gets its own file
+    (`C.m.nudo.standard.ts`, `C.m.2.nudo.standard.ts`).
+  - A hand-written `.d.ts` in the output directory was overwritten without a
+    word, replacing precise types with `unknown`. `nudo export` now refuses to
+    overwrite a file it did not generate (exit 1, `nudo:path-io` diagnostic) and
+    leaves the file untouched.
+  - When a write failed, the artifacts that had already been written were
+    dropped from the output: stdout showed no `wrote` line at all while the
+    files were on disk. The written list is now replayed, and the error names
+    the file that failed instead of only the directory.
+  - The `fix:` hint for a failed `--out` pointed at `nudo check --out`, an
+    option that does not exist (`error: unknown option '--out'`). It now points
+    at `nudo export --out` and says what to do.
+  
+  Artifacts written with `--out` carry a `// nudo-export-module:` marker line
+  that records which module they belong to; it is used to tell "same module,
+  updated" from "another module with the same name".
+- b0878e3: **BREAKING**: `nudo export --format all`（stdout）的**导出名**变了 —— 同一模块
+  作用域内同名导出现在被**改名**而不是撞名报错。
+  
+  - zod 面与 standard 面都叫 `<fn>Input` / `<fn>Output` ⇒ `--format all` 的 stdout
+    此前撞名（`TS2451`）；现在**后一个**面改名（`<fn>OutputStandard`）⇒ 消费方
+    `import { <fn>Output } from "…"` 现在拿到的是 **zod 面**的那个名字，standard 面
+    的同名导出**改名** ⇒ 直接按旧名 import 的消费方 `tsc --noEmit` 会红。
+  
+  谁会坏：`nudo export --format all > out.ts` 后按名 import `<fn>Output` / `<fn>Input`
+  的消费方（standard 面的同名导出现在带 `Standard` 后缀）；以及期待 `--format all`
+  stdout **撞名报错**的脚本（现在能出文件了）。
+  
+  怎么迁移：重新生成产物并按新名 import（zod 面保持 `<fn>Output` / `<fn>Input`，
+  standard 面在 `--format all` 合并流里是 `<fn>OutputStandard`）；或分开导出
+  （`--format zod` 与 `--format standard` 各自成文件 ⇒ 名字不冲突）。
+  
+  `nudo export` to stdout now produces one usable module: the Standard Schema
+  helper is declared once, the four dialects no longer collide on export names,
+  and the dropped-preds ledger names the face it came from.
+  
+  - `--format standard` to stdout repeated the whole `__nudoCheck` helper for
+    every exported function, because each per-function module carries its own
+    copy and the chunks were concatenated as they were. The shared prelude
+    (banner + helper) is now emitted once, so the artifact no longer fails to
+    compile with `TS2393` / `TS2300`.
+  - `--format all` to stdout put the zod and the Standard Schema face into the
+    same module scope. Both name the same validator `<fn>Input` / `<fn>Output`,
+    so the artifact failed with `TS2451`. A top-level name may now be declared
+    only once per stream: the first face keeps the product name and a later
+    face that would repeat it is renamed (`<fn>OutputStandard`).
+  - The `dropped preds` ledger was always titled "not projected into zod" even
+    when the run produced no zod artifact at all (`--format standard`) and its
+    entries come from the Standard Schema face. The title now names the face
+    the entries come from, and `--format all` shows one zod ledger and one
+    Standard Schema ledger instead of the same title twice.
+  
+  Artifacts written with `--out` are unchanged: each dialect keeps its own file
+  and its own product names.
+- b0878e3: **BREAKING**: standard 面的返回面导出名**恒为** `<fn>Output`（此前「有返回契约时」
+  叫 `<fn>Return`）—— 这条改名随 CLI 到达消费方。
+  
+  谁会坏：`nudo export --format standard` 之后 `import { <fn>Return } from
+  "*.nudo.standard"` 的消费方 ⇒ 旧名 import 断（消费方 `tsc --noEmit` 会红）。
+  
+  怎么迁移：改 import 名为 `<fn>Output` 并重新生成产物；文档与
+  `scripts/verify-doc-examples.sh` 的 pin 已同步。
+  
+  `nudo export` 的六片并发修复收口：主 agent 接线把「命名规则分叉」「同名条目折叠」
+  「契约可选性丢失」「模块身份靠猜」四处跨片缺口补上。
+  
+  - **命名规则的唯一产地**（Bug 602 / 603 / 609 / 622）：`export/stdout.ts` 原先
+    自带一份 `DIALECT_SUFFIX` + `uniqueSegmentName`，`export/io.ts` 又造了一份 ⇒
+    「stdout 改名规则」与「落盘改名规则」可能分叉。删掉 stdout 侧的本地副本，
+    改为 import `io.ts` 的实现（同一 `ArtifactDialect` 口径）。
+  - **同名条目不再折叠**（Bug 623）：zod 导出表原是**普通对象** ⇒ 同一个类里两个
+    同名方法（`C.m` 出现两次）时后者覆盖前者 ⇒ zod 产物只剩 1 个 `C_mInput`，
+    另一个方法的证据凭空消失。导出表改无原型对象 + **键侧去重**
+    （`C_mInput` / `C_mInput_2`）⇒ 两份都在；guard 面同步接上
+    `generateGuardFunctionFromAbs` 的**去重集合** ⇒ 同一份产物里不再出现两个
+    同名 `export function`（此前是 TS2393 重复声明）。
+  - **standard 面的可选性透传**（Bug 627）：参数面的 `optional` 没传给 service ⇒
+    契约允许 `undefined` 的形参在 standard 面被当必填 ⇒ 消费方判非法。
+  - **模块身份不再靠猜**（Bug 609 / 622）：`--out` 写盘时把**源文件路径**作为
+    `moduleKey` 传给写盘层 ⇒ 模块身份从「stem + 导出签名」升级为路径 ⇒ 同 stem
+    **且**导出名集合也相同的两个模块不再被判成同一模块（后者覆盖前者），且
+    改名后重导不会换唯一名、留下陈旧副本。
+  - **614 的破坏性重命名连带面同步**：standard 面返回面导出名**恒为 `<fn>Output`**
+    ⇒ `scripts/verify-doc-examples.sh` 的 pin 与中英文档
+    `guides/export-ecosystem.md` 同步（否则 `verify:docs` 红）。
+- e5b3f38: `nudo migrate status --json` 的机器面新增了**可选字段** `packageJsonError`
+  （畸形 `package.json` 的解析失败原因）⇒ 新增可选字段属**增量**变更（additive）
+  ⇒ minor。
+  
+  `nudo migrate status` now reports the truth about a package: the nudo gate
+  is detected from the **command text**, the dependency scope covers
+  `peerDependencies`, `.ts` counts stop at workspace package boundaries, a
+  `tsc` script blocks even when no `.ts` file is left, a broken
+  `package.json` is reported instead of being read as "empty", and the
+  `blockers` list no longer carries the `—` placeholder (the JSON face
+  reports `[]`).
+  
+  - The "no nudo check/test script yet" blocker matched the **script name**
+    (`/check|test/`) while the scripts it looked at were collected by
+    **command text**. A package already running `nudo check .` under a name
+    like `lint` or `typecheck2` was reported as having no gate — and the
+    blocker never went away after `migrate retire`, which rewrites the script
+    to `npx nudojs check .` (a form the old `/\bnudo\b/` pattern did not even
+    match). The gate is now detected from the command text
+    (`nudo check` / `nudo test` / `npx nudojs check`).
+  - The dependency scope merged only `dependencies` and `devDependencies`,
+    so a package carrying `typescript` in `peerDependencies` was reported as
+    `typescript dep: no` with no "typescript still in dependencies" blocker,
+    while `migrate retire` on that same package did remove the dependency.
+    All four dependency fields are now merged by one shared helper.
+  - `tsFiles` / `tsxFiles` were counted by a plain directory walk, so the
+    root row of a workspace repeated every nested package's sources. Each
+    row now counts only the files of its own package.
+  - The "tsc still in scripts" blocker was gated on `tsFiles > 0`, so a
+    package with a `tsc` script and no TypeScript source left — exactly the
+    case worth retiring — reported no blocker at all.
+  - A `package.json` with a JSON syntax error was silently read as "no
+    dependencies, no scripts", which `nudo check` contradicts. `migrate
+    status` now reports the parse failure (in `blockers` and in the new
+    `packageJsonError` field of the JSON face).
+  - The `—` placeholder for "no blocker" leaked into the `blockers` string
+    (`1 tsc line(s) in .github/workflows; —`) and into the JSON `blockers`
+    array, where a machine consumer counted it as one more blocker. The
+    placeholder is gone: no blockers means no entry, and the JSON face
+    reports `[]`.
+  - A `scripts` entry whose value is `null` is valid JSON (npm reads it as
+    "no command") but crashed `migrate status` with a bare
+    `Cannot read properties of null (reading 'split')`. Non-string script
+    values are now treated as "no command".
+- 697c5e1: **BREAKING**: `nudo check` 的**同 stem 选源规则**变了 —— 同名 `.js` 产物现在
+  **胜出**于同名 `.ts` 源 ⇒ 源不再被门禁覆盖（此前门禁查的是源）。
+  
+  谁会坏：仓库里**同时**提交了 `foo.ts` 与编译产物 `foo.js`（且该 `.js` **不是**
+  `nudo migrate strip` 产物）的工程 —— 门禁现在分析 `foo.js`，`foo.ts` **不再**被
+  分析 ⇒ 只写在 `.ts` 里的契约 / 指令**不再**被门禁看到（覆盖静默丢失）；分析对象
+  也换了 ⇒ 诊断集合可能变化。
+  
+  怎么迁移：让 `foo.js` 与 `foo.ts` **同源**（用 `nudo migrate strip` 的产物，或
+  删掉其中一个）；本版本**尚未**落产物清单（marker）来区分「strip 产物」与「同名
+  的另一个模块」，因此同名 `.ts` / `.js` 并存的工程需要自己消歧。
+  
+  fix(nudojs): `migrate strip --write` 的产物 `.js` 不再被 `nudo check` 跳过（发布物零覆盖 ⇒ 假绿）
+  
+  **现象**：`nudo migrate strip --write` **默认保留源 `.ts`** ⇒ 迁移过渡期
+  （strip → retire 之间）目录里 `.ts` 与 `.js` **并存**是常态 ⇒ `nudo check`
+  （= `migrate retire` 装到 CI 上的门禁）**跳过同 stem 的产物 `.js`** ⇒
+  **真正发布出去的产物零覆盖**（假绿）；且与 `migrate verify` 对同一包给出
+  **相反结论**（verify 红 / check 绿）。
+  
+  **根因**：目录扫描的「同 stem 只分析一份」规则把「取哪一份」**硬编码成
+  `.ts`**（迁移**前**的事实源：带类型标注 ⇒ 推断更准）⇒ 迁移过渡期恰好取
+  **错**的那一份。
+  
+  **修法**（`packages/nudojs/src/commands/shared.ts` · `collectNudoFiles`）：
+  同 stem 冲突时**产物（发布物）胜出** —— 同目录存在同名产物 ⇒ 源被产物取代 ⇒
+  门禁查**要发布的东西**；源单独存在时照旧分析源。
+  
+  - **不变式保持**：一个模块 ⇒ **一次**分析（源被压掉，不是两份都分析）⇒
+    `summary.errors` / `functions` / `files` 不翻倍。
+  - **契约不丢**：strip 保留注释 ⇒ `@nudo:contract` / `/// @nudo:import` 在产物里
+    仍然生效 ⇒ 产物侧的契约面与源侧同强度。
+  
+  **行为变更（请注意）**：
+  
+  1. 同 stem 的 `.js` 若**不是** strip 产物（例如手写的旧模块、或被提交进仓库的
+     编译输出），现在被分析的是 `.js` 而不是 `.ts` ⇒ 源不再被门禁覆盖。要区分
+     「产物」与「同名的另一个模块」需要 strip 落一份产物清单（marker），本次未做。
+  2. `.mts` / `.cts` 源（它们**本身不是**分析目标）的产物 `.mjs` / `.js` 现在
+     **会被分析**；改前这类产物被「同名源存在 ⇒ 跳过」规则连坐 ⇒ 该模块被分析
+     **0 次**（零覆盖）⇒ 现在补上。
+- e5b3f38: **BREAKING**: `nudo migrate retire --all --json` 的**顶层 JSON 形状**现在**恒为
+  数组**（此前随结果条数变化：1 个包 = 对象，≥2 个包 = 数组）。
+  
+  谁会坏：解析 `nudo migrate retire --all --json` stdout 的机器消费方 ——
+  单包时顶层从 `{ … }` 变成 `[ { … } ]` ⇒ `payload.removedDeps` 之类变成
+  `undefined`。
+  
+  怎么迁移：消费方改按数组遍历（`const rows = Array.isArray(p) ? p : [p]` 之类的
+  兼容读法，或直接改读数组）。
+  
+  族 16 收口接线：把各分片「越界发现」里明确交给**命令层**
+  （`packages/nudojs/src/commands/migrate.ts`）的接线项补齐 —— migrate 的
+  四个子命令此前在命令层与库面**口径分裂**。
+  
+  **Bug 668** — `migrate status` 只把 `targets[0]` 交给 `migrateStatus` ⇒
+  `nudo migrate status pkg-a pkg-b` 只报 pkg-a、无警告、exit 0（迁移审计场景下
+  这是危险的静默截断）。改为**全量审计**（按包根去重）。
+  
+  **Bug 595** — `migrate retire <a> <b>` 只退役 `a`，`b` 静默跳过。改用库面的
+  多目标入口 `migrateRetireMany`（**全退役或全报错**，任一失败 ⇒ 整批零写盘）。
+  
+  **Bug 675** — `migrate retire --all --json` 的顶层 JSON 形状**随结果条数变化**
+  （1 个包 = 对象，≥2 个包 = 数组）⇒ 机器可读契约不稳定。改为**恒为数组**，
+  与 `migrate status --json` / `migrate strip --json` 一致。
+  
+  **Bug 1006** — `migrate retire --all` 失败时 **stdout 为空** ⇒ `--json` 契约
+  下 stdout 不是合法 JSON。改为失败时 stdout 也给出**合法 JSON 信封**
+  （`{ok:false, action, targets, error}`），人类面引导仍走 stderr。
+  
+  **Bug 567 / 586** — 「无可退役」被当成**错误**（库面抛错 ⇒ CLI exit 1）⇒ 用户
+  跑一次正常退役却看到红色。改为「无可退役」是**正常结果**（exit 0 + 明确提示）；
+  编译器角色的脚本被原样保留时，CLI **打印**该脚本与保留原因（否则看起来像漏改）。
+  
+  **Bug 588（retire 侧）** — 畸形 `package.json` 被 `readJson` 的「解析失败 =
+  不存在」压成同一个 `undefined` ⇒ 谎报「no package.json under X」（与 `nudo check`
+  面的「package.json parse failed」不同口径）。改用详细读取并 **fail-closed**；
+  `retire --all` 侧同样不再**静默跳过**畸形清单。
+  
+  **Bug 586（判据收口）** — 「这个脚本是不是编译脚本」的判据必须是「**它会不会真的
+  产出产物**」，而不是「命令行里出现了 `-p`」或「脚本名叫 build」：
+  - `tsc -p tsconfig.build.json`（带 `outDir` + `declaration`）⇒ **真会 emit**
+    ⇒ 编译器角色 ⇒ 原样保留（**报告 586 要的就是这个**）；
+  - `tsc -p .` 而 tsconfig 里 `compilerOptions.noEmit: true` ⇒ **不产出任何产物**
+    ⇒ 它其实是**类型门禁** ⇒ 改写成 `nudo check` 且 typescript 依赖**可摘**
+    （仓内公开样板 `docs/examples/migrate/before` 正是这一形状 —— 旧判定会让
+    「退役 tsc」的故事落空：依赖摘不掉）。
+  判定会读 tsconfig（含 `extends` 链）与 JSONC 注释；**读不到配置 ⇒ 保守按
+  「会 emit」处理**（不得猜着改写）。
+- 169ed52: check 面新增了此前**不存在**的诊断码（`nudo:json-invalid` 等）⇒ 机器面新增
+  可观测的诊断码属**增量**变更（additive）⇒ minor。
+  
+  `nudo check` now reports the diagnostics it used to swallow: module-loading
+  problems and env-harvest conflicts reach the check face instead of being
+  dropped.
+  
+  - A dependency that could not be found, or that did not provide the requested
+    export, was diagnosed by the analyzer but never surfaced, so the gate stayed
+    green on a program that could not even be loaded. Module-loading problems
+    are now visible on the check face (`nudo:module-missing`, `nudo:missing-export`
+    as errors; `nudo:module-cycle`, `nudo:module-depth`, `nudo:json-invalid`,
+    `nudo:exports-unresolved` as warnings).
+  - The same finding was reported twice when it arrived through both the mock
+    channel and the module-graph channel; the duplicates are now collapsed.
+  - A handwritten `@nudo:env` that wins over the harvested environment was
+    invisible on the check face although the documentation lists it as a check
+    warning. It is now reported as `nudo:env-harvest-conflict` (warning, so it
+    does not block the gate).
+  - `--from` now also sees call sites that live inside a function body: the
+    call-site files are scanned statically as well, so a violation that was
+    visible when the caller was checked alone is reported when the callee is
+    checked with `--from`.
+- 02aa122: **BREAKING**: `nudo contract --json` 的**顶层载荷形状**从「一个对象」变成
+  「**单元素数组**」（目录形态此前是 N 份 JSON 首尾相接 ⇒ `JSON.parse` 直接抛）。
+  
+  谁会坏：解析 `nudo contract --json` stdout 的机器消费方 —— 单文件形态的顶层
+  从 `{ file, entries[], draftPath, … }` 变成 `[{ file, entries[], draftPath, … }]`
+  ⇒ `payload.file` / `payload.entries` 变成 `undefined`；元素内部的键
+  （`file` / `entries[].fn` / `entries[].signature` / `draftPath` / `draftSource` /
+  `diff`）**未变**。
+  
+  怎么迁移：消费方改读 `docs[0]`（并按数组遍历，别再假设「单文件 = 单对象」）。
+  
+  fix(nudojs): `nudo contract` 的 `--json` 机器面（跨文件聚合 + 失败可读）+ `--from-dts` 的用法校验顺序
+  
+  族 20 · 片 A（658 / 659 / 661 / 664）。
+  
+  - **Bug 658 —— `contract --json` 的 stdout 必须是**一份** JSON（跨文件聚合层）**。
+    改前 JSON 出口是**单文档**（每个 root 一次 `console.log`），而命令层对每个 root
+    各跑一次 ⇒ 目录形态的 stdout 是 **N 份 JSON 首尾相接**，`JSON.parse` 抛
+    `Unexpected non-whitespace character after JSON`。现在命令层加**跨文件聚合层**：
+    收集所有 root 的机器文档后**一次**打印；**单文件也走同一路径** ⇒ 形态恒定。
+    ⚠ **破坏性变更**：单文件载荷的**顶层形状**从「一个对象」变成「**单元素数组**」
+    （元素内部的键 `file` / `entries[].fn` / `entries[].signature` /
+    `draftPath` / `draftSource` / `diff` **未变**）。消费方请改读 `docs[0]`。
+    同一修法覆盖 **print 分支**（`contract --json <目录>` 改前同样是多份拼接）。
+  - **Bug 659 —— `--from-dts` 不再绕过全部用法校验**。改前 `--from-dts` 在**所有
+    校验之前**短路 ⇒ `--emit` / `--draft` / `--json` 被静默吞掉
+    （`--from-dts --emit --draft` 不报互斥、exit 0；`--from-dts --json` 的 stdout
+    是 draft 文本、不是 JSON）。现在 `--from-dts` 与其它模式共用同一套
+    「先校验、后分派」的顺序：`--emit`/`--draft` 互斥、`--write` 需要草稿模式、
+    `--exit-on-diff` 需要 `--emit --dry-run` 都对 `--from-dts` 生效；
+    `--json` 与 `--from-dts` **显式互斥**（`--from-dts` 没有机器可读载荷 ⇒
+    显式拒绝，不许「给了不生效且不报错」）。
+    ⚠ `--write` + `--from-dts` 仍是**合法**组合（help 与 CLI Reference 的口径都是
+    「With `--draft` / `--from-dts`」）⇒ 校验按模式判定，不误伤。
+  - **Bug 661 —— `--json` 形态下路径错误必须进 JSON body**。改前 `--json` 把
+    `reportPathErrors`（stderr 面）整段跳过，而 `pathErrors` 只接进 draft 分支 ⇒
+    print / emit 形态下「置红的那个原因」既不在 stdout 也不在 stderr，**exit 1
+    没有任何理由**。现在路径错误进聚合信封的 `pathErrors[]`
+    （print / emit / draft **三形态统一**），exit 仍为 1。
+  - **Bug 664 —— 失败的 root 也必须进 `--json` 载荷**。改前 per-root `catch` 只产
+    人类文本：单文件形态 stdout **0 字节** + exit 1（违反「绝不空 stdout + 非零
+    exit」不变量）；目录形态 stdout 是一份**只含好文件**的合法 JSON，失败文件
+    **彻底消失**。现在失败 root 进聚合结果的 `errors[]`
+    （`code: nudo:contract-analysis-failed`）⇒ stdout 永不为空、载荷不缺项。
+  - 顺带：`--json` 形态下的**用法错误**也落一份机器可读信封
+    （`pathErrors[{code:"nudo:usage-error"}]` + exit 1），口径与 `nudo check --json`
+    的用法错误信封同款（`--json` 下 stdout 永不为空）。
+- 02aa122: **BREAKING**: `nudo contract --from-dts --write` 的**草稿落盘位置**变了
+  （Bug 944）—— 此前写在**当前工作目录**，现在写在**源 `.d.ts` 旁边**。
+  
+  谁会坏：跑 `nudo contract --from-dts --write` 后在**当前目录**读草稿的脚本
+  （例如 `cat createUser.nudo.draft.ts`）⇒ 文件现在在源 `.d.ts` 所在目录
+  （`types/index.d.ts` ⇒ `types/index.d.nudo.draft.ts`）⇒ 旧路径读不到；
+  从 `node_modules` 收割来的包类型**不再**写草稿（此前会写）。
+  
+  怎么迁移：按源 `.d.ts` 的目录定位草稿（`<dir-of-dts>/<stem>.nudo.draft.ts`），
+  别再假设草稿落在 CWD；`node_modules` 里的包类型先把 `.d.ts` 复制进工程再跑。
+  
+  `nudo contract --emit` / `--from-dts`: unmatched `--fn` names no longer widen
+  the write scope, the dry-run preview names the sidecar it would change,
+  `--json --emit` now emits a machine payload, and `--from-dts --write` lands its
+  draft next to the source `.d.ts` instead of in the current directory.
+  
+  - **Bug 657 — `--fn <misspelled>` silently dropped the filter.** When none of
+    the requested names matched an export of the target file, the filtered list
+    was downgraded to "no filter at all", so the emitter refreshed *every*
+    existing `@generated` segment (or, with `--all`, created segments for every
+    export) and wrote the sidecar — exit 0, no warning. Now a name that matches
+    nothing is a usage error: the local export names are listed, the exit code
+    is 1, and **nothing is written**. When only *some* names match, the
+    unmatched ones are passed through unchanged and surface through the
+    emitter's existing `skipped <fn> (not-an-export)` channel — the same wording
+    the LSP / agent face already uses.
+  - **Bug 662 — the `--emit --dry-run` preview named the source file.** The
+    preview said `would update lib.js` while the diff it printed was against
+    `lib.nudo.js`. The label now names the sidecar, matching the diff header
+    and the other two branches of the same command.
+  - **Bug 667 — `--json --emit` ignored `--json`.** stdout was human text and
+    the exit code was 0, so a machine consumer got unparseable output with no
+    failure signal. `--json --emit` now prints one valid JSON document: the
+    per-file machine record (`file`, `sidecar`, `changed`, `written`, `skipped`,
+    `issues`, `diff`), shaped like the `--json` / `--draft --json` records and
+    collected into the same aggregated array.
+  - **Bug 944 — `--from-dts --write` wrote into the current directory and
+    overwrote unconditionally** (a draft belonging to a *different* file with
+    the same base name was silently replaced; exit 0, no warning). The draft now
+    lands next to the source `.d.ts` (same `sidecarDraftPath` convention as
+    `--draft --write`), an existing draft with different content is **not**
+    overwritten (the write is refused with an explanation and exit 1; override
+    with `NUDO_DRAFT_FORCE=1`), the write goes through the same guarded writer
+    as `--draft --write` (never the formal sidecar, never `node_modules`, never
+    outside the project root, unchanged content is not rewritten, an empty draft
+    is not written), and the closing hint names the sidecar to copy the accepted
+    exports into.
+  
+    **Behaviour change:** the draft produced by `--from-dts --write` moves from
+    the current working directory to the directory of the source `.d.ts`
+    (for example `types/index.d.ts` now yields `types/index.d.nudo.draft.ts`).
+    Scripts that read the draft from the working directory have to follow the
+    new path. Drafts for package types harvested from `node_modules` are no
+    longer written at all — copy the `.d.ts` into the project first.
+- 02aa122: 新增 CLI 旗标 `nudo contract --from-dts --write --force`（覆盖既有草稿的**可见**
+  逃生口）—— 1.x+ 包的新旗标属**增量**变更（additive）⇒ minor。
+  
+  fix(nudojs): `nudo contract --from-dts --write` 新增 `--force` 旗标（覆盖既有草稿的可见逃生口）
+  
+  族 20 · 收口片（主 agent 接线）。`--from-dts --write` 在目标草稿已存在且内容不同时
+  会**拒绝覆盖**（exit 1，零写盘）。此前唯一的逃生口是环境变量 `NUDO_DRAFT_FORCE=1`
+  —— 对脚本不可见、不可审计。
+  
+  现在新增 CLI 旗标 `--force`：
+  
+  - `nudo contract --from-dts --write --force` ⇒ 允许覆盖既有草稿；
+  - 与 `NUDO_DRAFT_FORCE=1` **等价**（旗标优先），但**在 CLI 面可见、可被脚本审计**；
+  - 不加 `--force` 时的行为**不变**（仍然拒绝覆盖 + exit 1 + 零写盘）。
+  
+  旗标只在 `--from-dts --write` 组合下有意义；与其它模式同用时不改变既有语义。
+- 3432d8c: CaseJson 的断言面新增了**第三种裁决** `unchecked`（外加可选字段
+  `uncheckedReason`）⇒ 机器面新增可选字段属**增量**变更（additive）⇒ minor。
+  
+  `nudo test` can now tell "the engine could not infer the value" apart from
+  "the value does not match the expectation".
+  
+  - **A failed inference used to be reported as a failed assertion.** When the
+    engine cannot infer a witness' result (the observed value is `unknown`, or
+    its confidence is `opaque`), the assertion verdict was binary: the case was
+    reported as `[FAIL]`, `nudo:case-expected` was raised, and the run exited
+    `1`. Writing the honest expectation (`=> number()`) could never fix it,
+    because the real cause was the failed inference, not a type mismatch — while
+    the very same source was only an `INFO` (`nudo:opaque-result`, exit `0`) on
+    the `nudo check` face, i.e. the two faces gave opposite severities for one
+    fact.
+  - **The opposite expectation passed for the wrong reason.** `=> any()` (the
+    top type) satisfied every expectation, including the ones the engine could
+    not judge at all, so the assertion reported `[ok]` while nothing had been
+    inferred — a hollow pass.
+  
+  Both assertion report faces — the CLI one (`nudo test`, `nudo test --json`,
+  `nudo test --abs`) and the LSP agent tool one (`testTool`) — now use the same
+  three-state verdict: a case whose observed value could not be inferred is
+  recorded as **unchecked** (it is neither a failure nor a pass), it does not
+  turn the run red, and the report says so explicitly ("cannot judge — the
+  engine could not infer the actual value") and points at the
+  `nudo:opaque-result` remediation path instead of claiming a type mismatch. The
+  `unchecked` count in the `assertions` summary and in the `--json` payload now
+  includes those cases, and a real mismatch is still reported as `[FAIL]` with
+  exit `1`.
+- ebe909e: `@nudojs/core` 新增公开可选项 `TranspileOptions.disableAsyncGen`（async 生成器路径的**安全网**开关）、
+  `@nudojs/service` 新增公开导出 `analyzeFileWithEvalFailures` / `analyzeFileAsyncWithEvalFailures` /
+  `FileEvalFailure` ⇒ 均为纯**增量** ⇒ minor。
+  
+  `nudojs` 的**闸门口径翻转**（模块级求值失败 ⇒ 不再静默放绿）按 **minor** 发布：
+  `nudo check` 以 **error 级 `nudo:internal`** 报出并以**非零码**退出，`nudo health` 的
+  `Result` 不再报 `OK`。**这是闸门口径的翻转**（详见下方「BREAKING」）。
+  
+  > **bump 级别说明**：本项目**尚无外部用户**，本批 1.x 包的破坏性变更统一以 **minor**
+  > 发布并保留 `**BREAKING**:` 标注（谁会坏 + 怎么迁移照旧写全）⇒ 不占用 major 跳版，
+  > 也不触发发布侧 `gate-major` 的人工确认闸门。一旦有外部用户依赖这些包面，
+  > 即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」政策。
+  
+  fix: review 报告 34 条缺陷收口（闸门假红/假绿 · 契约面宽松 · 机器面谎报 · 文档与 changeset 漂移）
+  
+  本轮把一份 34 条缺陷的 review 报告逐条落地：每条都先在当前代码上**复现**（或判定为
+  非缺陷），再修，并**逐条用回滚法自证「修前红 / 修后绿」**。新增 **39 个回归测试文件**。
+  
+  ---
+  
+  **BREAKING**: `nudo check` / `nudo health` 现在对**引擎内部回落**（模块求值失败 ⇒ 该文件
+  的导出全部丢失）**fail-closed**。此前这类文件**零诊断 + exit 0** ⇒ CI 闸门**假绿**
+  （合法代码与违约代码都判绿）。现在：命中内部回落 ⇒ 报 **error 级 `nudo:internal`**
+  （消息含文件路径与原因）⇒ `nudo check` **非零退出**；`nudo health` 报
+  `Result: FAIL (engine internal fallback found)` 并非零退出。
+  
+  谁会坏：依赖「坏文件也能过闸」的 CI 流水线（此前引擎自己挂了就当无事发生）。这些文件
+  本来就是引擎缺陷的暴露面 —— 现在会**显式**报出来。
+  
+  怎么迁移：修掉被报出的文件（消息里给了路径与原因）。注意**口径边界**：`unsupported:*`
+  （能力边界）与 `nudo:opaque-result`（推断精度）**不**触发该失败路径；只有**引擎内部回落**
+  （`internal`）才 fail-closed。
+  
+  ---
+  
+  ### 高危（闸门级 · 5 条）
+  
+  - **`await` 的位置表与转译侧脱节 ⇒ `yield` 落进嵌套箭头 ⇒ 整模块编译失败 ⇒ L2 闸门假绿**
+    （`core/algebra/exec/transpile/async-plan.ts` · `core/algebra/exec/run.ts`）：async 体的
+    真挂起靠**宿主生成器**（`function*(){…}` + `await` 发射 `yield`）实现 ⇒ `yield` 必须落在
+    生成器**体内联**位置；而转译侧把若干操作数包进**宿主 thunk** —— `yield` 落在里面是
+    **SyntaxError** ⇒ `new Function` 编译失败 ⇒ **整个模块**的导出全部丢失 ⇒ 闸门看不到任何
+    入口 ⇒ **零诊断 + exit 0** ⇒ **CI 闸门假绿**。位置表此前只把「分支臂 / 循环体 / 短路右臂 /
+    三元两臂」判为 thunk，漏了：**成员调用的实参**（`o.m(await 1)`）、**成员赋值的接收者/计算键/
+    右值**（`o.x = await 1`）、**成员自增的计算键**（`o[await k]++`）、**逻辑赋值的右值**
+    （`x ||= await 1`）、**循环判别式与步进式**、**switch 的 case 测试**、**早退守卫之后的后续
+    语句**（`if (!c) return null; … await …`）。实测：`export async function load(id){ if(!id)
+    return null; const res = await fetch("/x/"+id); return res.json(); }` 修前 ⇒ `nudo check`
+    **OK / exit 0 / 签名全 unknown**；修后 ⇒ **error 级 `nudo:entry-may-throw`**（与 main 同结论）。
+    修法（两处，缺一不可）：① 位置表补齐（上列位置判 thunk ⇒ 该 async 体回落 `$async` 同步
+    路径，产物是**合法 JS**）；② **安全网**：生成器模式编译失败时**关闭 `asyncGen` 重试一次**
+    ⇒ 纵有未来新增的脱节位置，模块也**编译得出来** ⇒ 导出可见 ⇒ 闸门照常判定
+    （**宁可少精确，不可整模块消失**）。
+  
+  - **模块级求值失败 ⇒ 闸门假绿**（`service/src/analyzer-orchestrate.ts` ·
+    `nudojs/src/commands/{check,check-report,health}.ts`）：见上方 **BREAKING** 段。
+    修法：按**文件**收集 `internal` 回落（进程级计数无法定位到文件）⇒ 命中即产出
+    **error 级 `nudo:internal`**（复用已注册码 `DIAG.internal`，未新增第二套码表）⇒
+    `ok:false` ⇒ 非零退出；分析失败的降级产物**不回写磁盘缓存**（回写 ⇒ 下次命中缓存跳过求值
+    ⇒ 静默转绿）。
+  
+  - **早返回的关系补集默认「x 不是 NaN」⇒ 契约被证成 ⇒ 假绿**
+    （`core/algebra/exec/transpile/stmt/{fn-body,statement}.ts`）：`¬(x <= k)` 还含 `x` 为
+    **NaN** 的情形（NaN 与任何比较皆假）⇒ 后续路径只该断定 `x > k ∨ x is NaN`；此前直接断言
+    `x > k`（排除了 NaN）⇒ `if (x < 0) return 0; return x;` + `return nonNeg` 判**成立**
+    （零诊断），而原生 `x=NaN` 时返回 NaN ⇒ **真违规被放过**。且与**三元**写法
+    （`x < 0 ? 0 : x`）结论**不一致**（三元判 `unproven-return`）。修法：撤销后续路径的否定界
+    窄化 ⇒ 两条路径同口径。
+  
+  - **Bug 370 把「确定违规」降为 warning**（`core/algebra/postcondition.ts`）：证据面判据
+    从「`ret.pred` 有事实」改成「含**界原子**」⇒ `typeof` 级证据（`@nudo:contract x num` 的
+    **声明域参数**）被判成「无证据」⇒ 返回义务降级成 `nudo:unproven-return`（**warning**，且
+    warning **不改变 exit code** ⇒ 门禁空转）。`if (x === -1 || x === -2) return x;` + `return
+    positive` 是**确定违规**（x=0 即违约），此前只出 warning。修法：判据回到「`ret.pred` 有
+    事实」⇒ 声明域参数 ⇒ **error 级 `nudo:constraint-violated`**。
+  
+  - **契约合取的结构型义务被静默丢掉 ⇒ 假绿**（`core/algebra/interface.ts`）：合取遇任一侧
+    结构型就直接返回前侧 ⇒ 源码 shape`{id}` ∧ 侧车 shape`{id,name}` 的 **`name` 义务整条蒸发**
+    ⇒ 契约面比声明面**宽松** ⇒ 违约代码被放过。修法：改为**字段级合并**（两侧都有的字段递归
+    合取、单侧字段保留、`optional` 取交集）；合不了的形态组合按既有口径**不**判 conflict
+    （能力边界 ≠ 语义不可满足）但**显式留痕**（新增 `EffectiveInterface.undecidable` ⇒ check 面
+    发 **warning** 级 `nudo:interface-conflict`，**不静默宽松**）。
+  
+  ### 闸门可信度（假红 / 假绿 · 14 条）
+  
+  - **展开实参被计为 1 个 ⇒ `nudo:arg-count` 假红**（`core/algebra/scan/literal-args.ts`）：
+    `impl(...args)` 被计成 1 个实参 ⇒ 报「expects 2 argument(s), got 1」；数组字面量展开的**空洞**
+    （`three(...[1,,3])`，原生是 3 个实参）被跳过；幻影槽位破坏 rest 聚合（`few(1, ...more)`
+    对 `array(number()).max(1)` 报长度违规）。修法：个数不可判时**让位**元数检查；空洞按
+    `undefined` 计入；rest / length 边界在展开处**停止**。
+  - **裸名 callee 解析不看作用域 ⇒ 无契约也触发 arity 假红**（`core/algebra/scan-call-graph.ts`）：
+    外层函数的**形参 / 局部 const / 嵌套函数 / for-of 绑定 / 解构绑定**同名时，把顶层声明当被调
+    方 ⇒ 报「log expects 2 argument(s), got 1」+ 假 may-throw。修法：callee 解析引入**作用域链**。
+  - **`memberToFn` 按变量名做键 ⇒ 同名局部/参数互相串味**（`core/algebra/scan-call-graph.ts`）：
+    别名与成员绑定改为**按作用域分桶**，重新赋值时失效。
+  - **TS `x?: T` 与 JSDoc `[x]` 被当成必需参数 ⇒ arity 假红**（`core/algebra/param-surface.ts`）：
+    `h()` 对 `/** @param {number} [x] */ function h(x)` 报「expects 1 argument(s), got 0」。
+  - **`or` 契约的「不可判定」成员被当成失败**（`core/algebra/scan/literal-shapes.ts`）：
+    `union(number().gt(0), lit("a"))` 对**非字面量 number** 实参误报。修法：三值聚合 ——
+    **全部**成员确定假才报；不可判定且域容纳该形态 ⇒ 整条 union 保持未决。
+  - **显式 `undefined` 被当成值**（`core/algebra/scan/literal-args.ts`）：`d1(undefined)` 对带默认值
+    的形参报约束错误。修法：显式 `undefined` ⇒ 走**默认值**。
+  - **默认值填充只在零参时发生 ⇒ 假绿**（`core/algebra/scan-literal-calls.ts`）：
+    `e4(1)` 缺失的尾部位不补（运行时 x = -5）⇒ 静默。修法：补齐**所有缺失的尾部位置**。
+  - **switch 分组 case 标签的 `hit` 收窄不安全**（`core/algebra/exec/transpile/stmt-predicates.ts`）：
+    `const x = null; switch (x) { case null: case "ab": return x.length; }` 原生抛 TypeError，
+    引擎按源码推导读 `"ab".length` ⇒ **L2 may-throw 消失**。`case 0:` 还会把 `-0` 重绑成 `+0`
+    （原生 `1 / -0` = `-Infinity`，引擎算成 `Infinity` = **自信的错值**）。修法：只有**同体全部
+    标签都是原始字面量**才产命中事实；`0` 按**交集细化** `{0, -0}`。
+  - **`lit(NaN)` 契约被判自相矛盾 ⇒ 假红**（`core/algebra/interface.ts`）：字面量值比较用
+    `!==` ⇒ `NaN !== NaN` ⇒ 同一个 `lit(NaN)` 自比被判成「两个不同字面量」⇒
+    `nudo:interface-conflict`。修法：改用既有 helper `termEquals`（`===` + NaN 特例）。
+  - **import 别名撞 ambient builder 声明 ⇒ 整个 sidecar 装载失败**
+    （`core/algebra/refine.ts`）：`import { number as string } from "@nudojs/core"` 与包装器的
+    `const { number, string, … } = __nudoInjects` 同处一个外层作用域 ⇒ SyntaxError ⇒ 侧车整体
+    装载失败 ⇒ **契约全丢**。修法：显式 import 的本地名从 ambient builder 名单里排除。
+  - **`autoBind:false` 下不可读的 ambient sidecar 仍被报成 error ⇒ 假红**
+    （`core/algebra/load-deps-fp.ts` · `core/algebra/check.ts`）：**指纹计算**的推测性读取
+    走的是**分析读**通道 ⇒ EACCES 被收口成 error；而那份侧车在 `autoBind:false` 下**根本不会被
+    绑定**。修法：推测性读走**未经降级闸**的通道（读失败只让指纹标 `readError`）+ 按 ambient
+    绑定资格 gate。
+  - **缓存的 sidecar 诊断丢失依赖归属**（`core/algebra/refine.ts`）：root→dep 递归求值共享同一
+    diags 数组 ⇒ 依赖侧车的诊断一律记到 **root** 名下。修法：诊断带**来源文件**并纳入去重键。
+  - **`lit(1n)` 的大字面量被提前过滤 ⇒ 假绿**（`core/algebra/contract-face.ts`）：bigint 过滤
+    发生在 `literalMeetsConstraint` **之前** ⇒ `lit(1n)` 契约下返回 `2n` 的被调函数被判**满足**
+    ⇒ 违约被放过。修法：bigint 参与比较（`1n !== 1`，与 number 不混同）。
+  
+  ### 机器面 / 契约面 / 工具链（8 条）
+  
+  - **`@nudo:skip` 签名分支输出旧机器面**（`core/algebra/check.ts`）：JSON `display` 带
+    `#exact` 而终端显示 `number` ⇒ 机器消费方拿到的是**人类面之外的文本**。修法：与其它路径
+    同款（`formatSigCached`）。
+  - **内部临时名遮蔽用户标识符**（`core/algebra/exec/transpile/{member-path,expr/assignment,
+    expr/call,expr/optional-chain,expr/short-circuit}.ts` · `helpers.ts`）：引擎写死的
+    `__nudoMp*` / `__nudoDefR` / `__nudoReArgs` / `__v` 会**遮蔽**用户源码里的同名绑定 ⇒ 自信错值
+    或 TDZ **ReferenceError**（⇒ 闸门**假红**）；模块级同名还会撞出重复声明 SyntaxError ⇒
+    **整模块 fail-closed** ⇒ 闸门**假绿**。修法：改用既有 `internalTmpName` /
+    `internalTmpNameSet`（**无碰撞时基名原样返回 ⇒ 产物逐字不变**）。
+  - **CJS 对象字面量导出的普查键必须是成员键**（`core/algebra/export-slot.ts`）：
+    `module.exports = { greet: function inner(x){…} }` 的侧车契约**整个不绑定**（只剩
+    `unproven-return` 警告、签名退成 `unknown` ⇒ **假绿**），且内层 id 与成员键碰撞时映射串。
+    修法：导出槽映射**只用成员键**。
+  - **`leq` 的 fn arity 只比较必需参数个数**（`core/algebra/leq.ts`）：`(a = 1, b) => b.toFixed()`
+    被接受为单参目标（原生 `g(1)` 抛 TypeError）⇒ 判定比原生松 ⇒ 假绿。修法：按**最后一个必需
+    参数的位置**比较。
+  - **生成的守卫对 `new Proxy(...)` 抛错**（`core/algebra/denote.ts`）：`x instanceof Proxy` 在
+    原生**抛 TypeError**（Proxy 没有 prototype）⇒ 守卫产物一跑就炸。修法：对**无可用 prototype**
+    的构造器跳过身份子句。
+  - **超参 warning 忽略可选/默认槽位**（`core/algebra/diagnostics.ts`）：`f(a, b = 1)` 被 `f(1, 2)`
+    调用时误报「takes 1 argument(s) but 2 were passed」。修法：上界按**非 rest 形参总数**。
+  - **多行 `@nudo:case … !! throws` 声明丢失**（`core/algebra/directive-scan.ts`）：case 参数跨行
+    时后缀正则匹配不到 ⇒ 申报的 throws 丢失 ⇒ `nudo:entry-may-throw` **假红**。修法：先在完整
+    注释里找平衡的 case 参数终点再识别后缀。
+  - **`export default C` 的类入口被漏**（`core/algebra/scan-top-functions.ts`）：Babel 的
+    `Identifier` 字段是 **`name`**（代码读的是 `d.id?.name` ⇒ `undefined`）⇒ 类入口不在入口表里
+    ⇒ 构造器入口闸门看不到它 ⇒ **假绿**。
+  
+  ### async 运行时（2 条）
+  
+  - **callee 有 2 个及以上 await 时 caller 提前恢复**（`core/algebra/exec/runtime/async.ts`）：
+    队列为 `[callee-resume, caller-resume]` ⇒ callee 的**第二次**续体排在 caller 之后 ⇒ caller
+    读到**占位符**。实测 `async function g(){ log.push(1); await null; log.push(2); await null;
+    log.push(3) }` 原生 `"1,2,3"` / 修前 `"1,2"` / 修后 `"1,2,3"`；`return await h()` 原生 `7` /
+    修前 `unknown` / 修后 `7`。修法：live promise 维护 **pending 态 + waiter 列表**，await 的
+    恢复排在 settle **之后**。
+  - **`Promise.all` 取调用期快照**（`core/algebra/builtins/promise.ts`）：元素尚未 settle 时取到
+    占位符 ⇒ 兑现值被永久冻住；元素**拒绝**通道丢失 ⇒ 拒绝臂成死代码（**假绿**）。修法：组合子
+    自身 pending，元素 settle 后重算聚合；任一元素确定拒绝 ⇒ 组合子短路拒绝。
+  
+  ### 约束构造器（1 条）
+  
+  - **`.int()` 暴露给非 number builder ⇒ 同一约束两个裁决**（`core/algebra/constraint.ts`）：
+    `literalMeetsConstraint("abc", string().int())`（域面）接受 `"abc"`，而 Abs/投影面却带整数
+    谓词。修法：非 number builder 上 `.int()` **抛错**（与 `shift()` 同口径）。同批收口：
+    `fn()` 缺字段表守卫、`boolean().gt(1)` / `string().length(-3)` 等**恒假**契约（假红）、
+    `array(1,2)` 静默丢元素约束（假绿）。
+  
+  ### 文档 · changeset · 诊断注册表（4 条）
+  
+  - **自称破坏性的 vite-plugin changeset 声明为 patch**（`.changeset/fix-vite-plugin-s{1,3,4}.md`
+    等 32 个）：按 `docs/versioning.md` 逐个复核并**校正 bump 级别**（pre-1.0 的破坏性 ⇒ minor；
+    1.x+ 的 JSON 形状变更 / 默认严重级变更本应 ⇒ major，但**本项目尚无外部用户** ⇒ 本批
+    统一以 **minor** 发布，见上方「bump 级别说明」），并补 `**BREAKING**:` 与迁移说明。
+  - **设计文档引用了被 gitignore 的产物**（`docs/design/generator-laziness.md` ·
+    `docs/design/architecture-debt.md`）：`tmp/…` 路径（读者不可达）、`bun` 命令、过时行号、
+    `$gen` 发射点数目（3 ⇒ 实为 4）。修法：删交接笔记、引用**符号名**、指向仓内回归钉。
+  - **中文 API 文档漂移**（`packages/website/i18n/.../api/{agent,cli-reference,lsp,harvester,
+    service}.md`）：手写页与 EN 现状不一致（`--json` 的形态、`force?: boolean`、旧契约…）⇒
+    逐页同步；同时**收紧**文档覆盖闸门（`docs-coverage.test.ts`）让手写 api 页也进闸门。
+  - **诊断码绕过注册表**（`packages/core/src/algebra/diag-codes.ts` ·
+    `packages/nudojs/src/commands/migrate.ts`）：`nudo:migrate-strip-failed` 此前直写字面量 ⇒
+    进 `DIAG` 注册表并由 CLI 引用常量。
+  
+  ### 附带（不改变对外行为）
+  
+  - `nudo init` 的祖先配置继承口径与加载器对齐（本包已有 `nudo` 键 ⇒ 祖先**不可继承** ⇒ 不再用
+    祖先配置当拒绝理由，消除「拒绝 + 不可修复」的死锁）。
+  - `contract --help` 的 `--json` 描述、`contract --from-dts` 的拒绝提示（同时给出 `--force` 与
+    `NUDO_DRAFT_FORCE=1`；**人工改过的草稿永不被覆盖**这条口径不变）。
+  - `nudo:migrate-strip-failed` 进注册表；`interface` 缓存面新增 `undecidable` 透传。
+  - 6 条**被放松/空转**的既有测试恢复为**强断言**（`check-regex-capture-narrow-136` ·
+    `eval-loop-return-join` · `eval-bug-499` · `core-bug-1064` · `loop-pack-shadow-soundness` ·
+    `core-bug-1079`）—— 此前它们在 main 上也通过，钉不住任何回归。
+- dde4b03: **BREAKING**: dts 面的**投影形状**变了 —— `.d.ts` 现在按**模块面**装配
+  （类作为**类声明**投影、成员在类体内；`export default` 保持默认形态；
+  `export * from` / `export { x } from` 的再导出被复现）；standard 面的输入面
+  导出名也统一成 `<fn>Input`（解构形参不再导出字段级校验器 `act_a` / `act_b`）。
+  
+  谁会坏：消费方 `import` 生成 `.d.ts` 的类型并按**旧形状**引用的代码 ——
+  
+  - 类成员此前被摊成**模块级**声明（源码里并不存在这些顶层符号）⇒ 旧 `.d.ts`
+    的形状与新 `.d.ts` 不同 ⇒ 消费方 `tsc --noEmit` 会红；
+  - 再导出的符号此前**整个缺失** ⇒ 现在出现（反向：依赖「它不在」的代码会冲突）；
+  - standard 面解构形参的 `act_a` / `act_b` 导出**移除**，改为 `<fn>Input`。
+  
+  怎么迁移：重新生成产物并按新形状引用（类成员走 `Class.member`，再导出符号现在
+  可用）；standard 面改 import `<fn>Input`。
+  
+  Cross-shard wiring for the `service-emit` batch: the CLI now feeds the
+  product faces the same information the analyzer holds, and a frozen
+  witness no longer takes over a function's published type.
+  
+  - `nudo export --format standard` builds its module with the service
+    assembler (`absToStandardSchemaFunction`) instead of a hand-rolled
+    projection, so the standard face has the same input validator as the zod
+    face (`<fn>Input`, one validator for the whole argument object) and a
+    destructured parameter no longer exports field-level validators
+    (`act_a`, `act_b`) that reject the correct argument.
+  - The dts face is now assembled from the **module** surface: a class is
+    projected once as a class declaration (members inside the class body)
+    instead of one flat declaration per member, `export default` keeps its
+    default form, and `export * from` / `export { x } from` re-exports are
+    reproduced. Before, the class members were emitted as module-level
+    declarations that did not exist in the source and a re-exported symbol
+    was missing from the `.d.ts` entirely.
+  - A contract that declares an optional parameter now reaches the product
+    faces: the constraint's `isOptional` is carried explicitly (the entry
+    `Abs` does not keep it), so the zod input object renders
+    `.optional()` and the dts declaration uses `x?: T`.
+  - `nudo contract --emit` renders each diagnostic exactly once. The emit
+    summary already renders and consumes the issue list, so the CLI's
+    trailing error-only loop printed the same diagnostic a second time on
+    the dry-run path.
+  - `nudo contract --emit --write` now exits non-zero when it refuses to
+    overwrite a hand-edited draft. The file is left untouched (as before),
+    but a silent exit `0` told CI that the draft had been regenerated.
+  - `nudo check --fix` states explicitly when the fix did not turn the gate
+    green but changed the diagnostic instead (for example the old
+    `constraint-violated` became a new `entry-may-throw`). The previous
+    message ("N residual error(s) remain") read as if the fix had worked.
+  - `nudo export` no longer collapses a function's published type to a
+    single frozen call site. A `@nudo:case` witness without an assertion
+    observes **one point**; it is not a domain claim, so it must not own the
+    return face. `nudo test --freeze` writes exactly such a witness, so
+    freezing a call used to narrow the zod face to `z.literal(3)` and the
+    guard face to `data === 3` — a guard that rejects every legal call —
+    while `nudo check` still reported `number | string` for the same
+    function. A function whose only evidence is a point witness now keeps
+    its inferred domain, and the zod, standard, guard and dts faces agree
+    with the check face.
+  - `nudo test` classifies a case as synthetic by its **source** instead of
+    by its name. A witness written by `--freeze` is named after the call
+    site (`call@<file>:<line>`) but is declared in the source, so it was
+    reported as synthetic and the run claimed "no declared @nudo:case
+    expectations" even though the source now declares one.
+  - `nudo contract --emit` removes a generated section whose export no
+    longer exists in the source. The stale section kept the name occupied
+    in the sidecar, so a hand-written contract for a new function of the
+    same name produced an invalid sidecar.
+  - A rest parameter is now observed as a **variable-length** argument, and
+    the entry fallback observation of it is marked uncertain. Before,
+    `xs.length` was observed as the literal `1` of the single placeholder
+    argument, and the zod, standard and guard faces projected that
+    one-off observation as the output domain (`literal(1)`) — a validator
+    that rejects the value the exported function itself returns — while the
+    dts face wrote `number`.
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
-  - @nudojs/env@0.5.2
-  - @nudojs/harvester@0.4.2
-  - @nudojs/parser@1.5.2
-  - @nudojs/service@1.9.2
+- 5749924: 族 21 修复 C1：Bug 674 682 683 691 947 948 949 —— `nudo health` 的诊断与判定面。
+  
+  - **674**：`health` 把**所有非 drift 的分析诊断**丢掉 → 坏掉的侧车在 health 面
+    **绿灯**（假绿）。现在 analyzer 的 **error 级诊断**（「分析错误」：
+    `nudo:interface-load` / `nudo:module-missing` …）进 `report.error` ⇒
+    `ok:false` / `errors≥1` / 非零 exit，与 `nudo check` 对同一路径同口径
+    （口径 = `guides/health.md` 的 health 门「Analysis errors」）。
+  - **682**：witness drift 计数不再用「新集合大小 + 旧集合大小」的**和式**
+    （把同一条见证的改写拆成 +1 new / -1 removed 各计一次 ⇒ 只改 1 条见证报
+    「2 条变更」，且与同屏 Summary 的「1 case drift」自相矛盾）。改为按**见证
+    身份（调用点）**逐条比对的**实际变更条数**（同一条见证被改写只计 1 次）；
+    `--json` 面额外给出 `drift.changed`（机器面可拆分 new / changed）。
+  - **683**：`health --from` 的使用点**一条调用记录都没有**时，整段漂移检测被
+    静默跳过 ⇒ 见证早已陈旧仍报 `Result: OK` / exit 0（假绿）。现在显式报
+    「**无法判定漂移**」（`nudo:path-missing-callsite` + `fix:` 提示）并判红；
+    没有冻结见证时「0 drift」属实 ⇒ 不发假红。
+  - **691**：`health` 的**契约漂移判定**不施加 **mock 通道** ⇒ 同一份陈旧生成段，
+    `nudo check` 报 `nudo:interface-drift` 而 `health` 报 0 contract drift / OK /
+    exit 0（假绿 + 跨动词自相矛盾）。现在契约漂移判定与 `nudo check`
+    **同口径**（同一注入包装配：模块图 + mocks + env 全局 + replace/as）。
+  - **947**：`health` **不设「分析目标」闸门** ⇒ 把 `.d.ts` / 侧车 / `.jsx` 当成
+    **已检查的源文件**并报「Result: OK」（exit 0），而 `check` / `test` 对同一
+    路径 exit 1「Not an analysis target」（假绿 + 跨动词自相矛盾）。现在目标解析
+    与 check / test **同口径**（`isNudoTargetPath` 闸门 + 同款 `pathNotTarget`
+    错误：同样的 message / suggestion）。
+  - **948**：`health --json` 在**空目标集**时给出 `"ok": true` + `"files": []` +
+    exit 0 ⇒ 机器消费者读到「一切正常」，而实际上**一个文件都没检查**。现在
+    空目录与 check 同口径判红（`nudo:path-empty-dir` + `ok:false` + 非零 exit）。
+  - **949**：`health` 的 `uncovered` 指标**在结构上恒为 0**（过滤式恰好排除了文档
+    定义的「entry fallback」那一类）⇒ 文档承诺的「uncovered ⇒ Reported,
+    informational only」**永不成立**；机器面读出的 `"uncovered": 0` 恒为假。
+    现在 `uncovered` = 「无调用点证据（回落 entry@）」的函数（口径 =
+    `guides/health.md`）⇒ 文本面逐个点名报出，机器面 `summary.uncovered` 真实；
+    仍是 informational only（不判红）。
+- 5749924: 族 21 修复 C2：Bug 687 688 925 927 929 —— health 的输出面与 watch 面。
+  
+  - **687**：文本面与 `--json` 面的 error 计数**同源**（文件内 error + `--from`
+    路径错误 ⇒ `totalErrors`）⇒ 同一轮两个面不再给出两个数字（此前文本面
+    「0 error(s)」+ JSON 面 `summary.errors: 1`）。
+  - **688**：`health` 的 `--from` 多值语义与 `check` / `contract` **同口径** ——
+    多文件 `--from` 被**接受**（`nudo health lib.js --from a.js b.js`），
+    分析目标仍是 `lib.js`；多值时 stderr 如实说明「`--from` 之后的裸 token
+    全部按使用点文件处理」。无位置路径时仍是 usage error（文案如实：
+    此时 paths 确实为空，与 check / test / contract 同款）。
+  - **925**：`health --json` 的机器面**序列化 budget 截断快照**
+    （`files[].budget`，与 `nudo check --json` 同源同义）+ 多文件聚合出
+    `summary.budgetTruncated` ⇒ 文本面报「budget truncated / 结果被宽化」时，
+    机器消费者也拿得到 `truncated` 标志（此前 JSON 面给 `"ok": true` 的
+    「干净」报告）。
+  - **927**：`health --watch` 在**装 watch 之前**做路径存在性校验 ⇒ 缺失路径
+    与无 watch 面**同款**（`File not found` 上屏 + exit 1）且**不装 watch**
+    ⇒ 不再是「静默空会话 + 绿」（假绿）。
+  - **929**：watch 的 runner **按轮去重**（`startWatch` 的 `onRoundStart`）——
+    一轮只跑一次 `runHealth` ⇒ 首轮只产出一份完整报告（此前按文件数重跑整个
+    路径集 ⇒ N 份报告 / N 份 JSON 文档 ⇒ `JSON.parse(stdout)` 必炸）。
+- 5749924: 族 21 修复 C3：Bug 671 684 685 686 689 1026 —— 目录扫描与 watch 路径面。
+  
+  - **671**：目录目标的文件收集**跟随符号链接**判定（`statSync`），链接进来的
+    文件 / 目录不再被静默丢弃 ⇒ `check <dir>` 不再对链接进来的坏文件假绿
+    （exit 0），目录链接按 realpath 防环。
+  - **1026**：目录发现复用产品唯一的范围闸门（`shouldAnalyzeFile`）⇒
+    **产品默认安全排除三条全生效**（node_modules / dist / coverage，此前 CLI
+    只抄了 1/3）⇒ `dist/` 里的陈旧构建产物不再被当源码门禁（`nudo test <pkg>`
+    不再假红），CLI 与 IDE / vite 对同一文件结论一致。
+  - **689**：**watch 扫描**走同一个 service 闸门 ⇒ 应用
+    `nudo.analysis.include` / `exclude`（文档承诺「watch 扫描：应用」），
+    不应用 mode ⇒ 与 IDE 对同一文件口径一致；CLI **非 watch** 的目标扫描仍
+    忽略 include/exclude（「点名路径即意图」）。
+  - **684 / 685 / 686**：watch 的**监视根按每个路径各自解析**（目录→该目录，
+    文件→其所在目录），事件路径按**所属监视根**换算 ⇒ 多路径且首个是文件时
+    watch 不再彻底失效，同目录多文件时变更文件不再被误记成首个路径，跨目录
+    路径时其余目录不再是盲区；关闭句柄一次关掉全部 watcher。
+- 5749924: fix(cli): `check --abs` 观察面与 watch 输出面的产品面修复
+  
+  - `check --abs --fn <不存在的名字>`：拼错的名字不再被报成「引擎推导失败」
+    （unknown / conf: partial），改为与「文件里没有该函数」同款的用法错误
+    （stderr + `fix:` 提示）+ 非零 exit。
+  - `check --abs --assume <坏值>`：坏值不再被静默吞掉（命令照跑并 exit 0），
+    改为用法错误 + 非零 exit，且不进入观察面。
+  - `check --abs`：有效契约（源码 `@nudo:contract` + 侧车 `*.nudo.js`）约束的
+    形参真的进求值（与签名表同源），不再回落 `any` —— 同一函数在
+    `check`（`g(x: number) => string`）与 `check --abs`（`g(number) => string`）
+    两个面上不再给出互斥的类型。
+  - `check --abs --assume`：`>=` 不再一律按 `>` 构造（`x>=1` 过去实际得到
+    `x>1`）；多条假设**合取**（过去互相覆盖，只有最后一条生效）；与
+    `--generalize` 组合时显式拒绝（该模式没有 Φ 入口，旧的「接受并回显、
+    然后忽略」是静默说谎）。
+  - watch 横幅（人类进度）一律走 **stderr**：`nudo test --watch --json` /
+    `nudo health --watch --json` 的 stdout 现在是纯 JSON（`JSON.parse(stdout)`
+    不再抛）。
+  - watch 增量轮：env 模板判定排在 `isNudoTargetPath` 之前（旧的 env 反向边
+    分支是死代码 ⇒ 改了 env 模板，依赖它的源文件永不复分析）。
+- 5749924: fix(cli): `nudo init` 的幂等判据 / 作用域 / IO 错误面 / 写盘保真度，与 `migrate strip` 的机器面
+  
+  - `nudo init` 的幂等判据与**配置加载器的真值判据**对齐（`packages/service/src/evaluator/config.ts`
+    的 `readNudoKey`）：只有「`nudo` 键存在 **且** 值是非 null 的非数组对象」才算
+    一份有效配置。形状非法的值（`null` / 标量 / 数组）过去让 init 报「already has a
+    nudo config」而一个字节不写（加载器却按「无配置」提示你去跑 `nudo init` ⇒ 死循环），
+    现在被替换成 adoption 基线。
+  - `nudo init` 不再**遮蔽**祖先配置：祖先 package.json 已有有效 `nudo` 配置时，
+    init 拒绝写入遮蔽键（`error:` / `fix:` 引导 + exit 1）—— 过去它静默写下一个
+    `nudo` 键，让 monorepo 根的 strict 档整段消失，**红的 CI 门禁被静默翻绿**。
+  - `nudo init` 不再**向上逃逸**：最近的 package.json 若是 workspace / 容器根
+    （`pnpm-workspace.yaml` / `lerna.json` / `package.json#workspaces` / 常规
+    workspace 目录下的子包），init 拒绝写入（提示先给目标包建 package.json）——
+    过去它把基线写进**仓库根**，整个 monorepo 的门禁档被改。
+  - `nudo init` 的 IO 失败路径可区分：读失败报「cannot read」（过去被误报成
+    「不是合法 JSON」），写失败不再冒泡成裸 errno，而是「cannot write」+ `fix:`
+    引导 + 非零 exit。
+  - `nudo init` 写盘改为**最小改动**：只在原文本上插入 / 替换 `nudo` 键，其余字节
+    逐字保留（缩进单位、键序、冒号后空格、换行风格、尾换行状态）—— 过去整份
+    `JSON.stringify(pkg, null, 2)` 重写，把 4 空格缩进规范化成 2 空格、把整数样键
+    重排、并强行补尾换行。
+  - `nudo migrate strip` 逐目标收集结果：一个目标失败（语法错）不再吞掉其它目标
+    的成功结果；`--json` 失败时 stdout 仍是**合法 JSON**（`ok:false` + `results` +
+    带文件名的 `pathErrors`），stderr 带文件名。
+  - `nudo migrate strip --write` 在**写盘之前**检出「剥完仍有 TS-only 语法」的目标
+    （类成员修饰符 `private` / `public` / `protected` / `readonly`、构造器参数属性）
+    并**拒绝写盘** + 响亮报错 —— 过去它静默写出一个 Node 解析不了的 `.js`
+    （migrate 是一程闸门，写坏了没有回退路径）。产物本身可解析仍取决于
+    `packages/core/src/strip-types.ts` 的降级发射面。
+- 5749924: Five CLI-surface fixes (flags / JSON envelope / watch / config robustness).
+  
+  - `--what-if` now accepts `name=type` as well as `name:type`. The documented
+    commands (guides/ai-native-dx.md, reference/agents.md) use the equals form;
+    the parser only accepted the colon form, so the whole token was taken as the
+    binding name and the assumption silently did not apply ("Bindings not
+    applied", exit 0).
+  - `package.json#nudo.check.ignoreThrows` is parsed by the same parser as
+    `--ignore-throws` (comma-separated, trimmed, bare string or array). The
+    config side used a strict `string[]` filter, so `"TypeError"` and
+    `["TypeError,RangeError"]` were silently dropped and the gate stayed red
+    although the throw class looked ignored. A malformed value (number / boolean
+    / object) falls back to the default and prints one stderr warning.
+  - The `CheckJsonMulti` envelope no longer counts `--from` path errors as
+    analysis errors: `summary.errors` equals the sum of `reports[].summary
+    .errors` equals the human-face count (the contract core asserts). Path
+    errors stay in `pathErrors[]`; a non-empty `pathErrors` still means
+    `ok: false` and exit 1.
+  - `nudo check --watch --from` re-collects the call-site evidence every round
+    instead of using a start-up snapshot, so a dependent file and its caller no
+    longer give opposite verdicts for the same call in the same round. Missing
+    call-site evidence turns the round red instead of silently reusing stale
+    data.
+  - `package.json#nudo.env` with a non-array value is reported as a
+    `config-shape` warning (file name + diagnostic code) in both the human and
+    the `--json` face, and the consumption point no longer iterates it blindly.
+- 79d7feb: fix(nudojs): CLI 机器面的 3 条（族 56 · nudojs **CLI 面**）
+  
+  这 3 条都是**机器消费者**能看见的问题（`nudo migrate` 的 `--json` 面 / 迁移
+  闸门）：
+  
+  - **排除清单未上 stdout**（`migrate status` / `migrate retire --all`）：排除
+    清单（pnpm 负向模式 `!packages/legacy` 命中的包）此前**只**出现在 **stderr**
+    的人读行 ⇒ **机器消费者**看不到「哪些包被排除了」。现在它同时进 **stdout 的
+    机器面**：`--json` 的每行/每条结果多一个 `excluded` 字段（相对**扫描根**的
+    posix 路径，与 stderr 那行**逐字一致**）。口径：**只在有排除时出现** ⇒ 无排除
+    时 `--json` 输出与旧版**逐字相同**；**文本面 stdout 不变**（stderr 那行人读
+    提示仍在原处）。
+  - **多目标退役的错误消息只带第一个失败目标**（`migrate retire <a> <b>`）：
+    `migrateRetireMany` 此前**遇到第一个失败就抛** ⇒ 其余失败目标**丢失**
+    （用户以为只有一个包有问题）。现在消息**列出全部失败目标**（`<原因> (target:
+    <目标>)` 之后追加 `  <目标>: <原因>` 清单），`--json` 面另有结构化的
+    `failedTargets`。**原子性不变**：任一失败 ⇒ 整批零写盘；单个失败的消息与旧
+    实现**逐字同形**。附带修一处**假绿**：一批里混着「无可退役」与**真错误**时，
+    旧口径按**第一个**失败项定 exit（真错误被当成正常结果 ⇒ exit 0）⇒ 现在
+    「**全部**失败项都是无可退役」才算正常结果，否则报红。
+  - **verify 的扫描面不含 `.jsx`**（`migrate verify`）：verify 此前复用 service
+    的 `isNudoTargetPath`（排除 `.jsx`）⇒ **JSX 产物**（旧 `migrate strip` 的
+    `.tsx → .jsx` 映射产物，Node 加载不了）对迁移闸门**不可见** ⇒ 闸门对**不可
+    加载的产物**发绿灯。verify 现在**自己算扫描面**（纳入 `.jsx` / `.tsx` /
+    `.cjs`；声明文件 / 侧车 / draft 产物**仍不是**目标 ⇒ Bug 566 同口径不变）。
+    ⚠ **根因仍在 service**（`isNudoTargetPath` 排除 `.jsx`）——`nudo check` /
+    `nudo health` / `nudo test` 共用那条规则，本片只做 **CLI 侧兜底**。
+- ae9a2b9: fix(nudojs): health 文本面量纲 / `pathErrors[]` 命名 / watch 多轮 JSON 形态（族 63 · nudojs CLI 协议面）
+  
+  这 3 条都是**机器消费者**能看见的问题（`nudo health` 的报告面 + `--json` 面、
+  `--watch` 的 stdout 形态）：
+  
+  - **health 文本面两处量纲不一**：Summary 的「N case drift」计的是**有漂移的
+    文件数**，而同屏明细行计的是**见证条数** ⇒ 同一份报告里两个「N」量纲不同
+    （一个文件里两条见证陈旧 ⇒ Summary 印「1 case drift」、明细行印「2 witness
+    directive(s) changed」⇒ 用户读到的数自相矛盾）。现在 Summary 的数 =
+    **见证（case）条数**（= Σ 各文件明细行的条数）⇒ 标签「case drift」（一条
+    `@nudo:case` 见证指令）与数字终于同义；`--json` 面的 `summary.drift` 同一
+    量纲（= Σ `files[].drift.(added+removed)`）⇒ **文本面 / JSON 面 / 每文件
+    明细行三个面同一个数字、同一个量纲**。
+    ⚠ **机器契约变更**：`--json` 的 `summary.drift` 的**单位**由「有漂移的
+    文件数」改为「见证条数」（无漂移时仍是 `0` ⇒ 无漂移场景的输出**逐字不变**）。
+    「有漂移的文件数」仍可由 `files[]` 逐条数出（`summary.files` 是文件总数）。
+  - **`pathErrors[]` 命名漂移**：C1 把「**分析目标闸门**」错误（非分析目标 / 空
+    目录 / 路径不存在）也推进了同一个 sink ⇒ 该数组名不再只表示「`--from` 路径
+    错误」⇒ 机器消费者按名字误读。**既有字段 `pathErrors[]` 的名字与内容逐字
+    保留**（兼容既有机器消费者：它是**路径级错误全集**）⇒ 另**新增**一个可选
+    字段 `targetErrors[]`（分析目标闸门错误的**精确**子集）⇒ 语义可见、旧字段
+    兼容、事实不丢。（`--from` 路径错误**不**进 `targetErrors[]` ⇒ 新字段是精确
+    入口，不是副本。）
+  - **watch 多轮累积的 JSON 形态**：第 2 轮起 stdout 里会有**第 2 份文档** ⇒
+    机器消费者的 `JSON.parse(stdout)` 直接炸（"Unexpected non-whitespace
+    character after JSON"）。现在 **`--watch --json` 的 stdout = JSON Lines**
+    （**每行**一份完整 JSON 文档；`nudo health --watch --json` 一轮一份，
+    `nudo check/test --watch --json` 一轮每文件一份）⇒ 机器消费者可**逐行**
+    `JSON.parse`，不再随轮数炸。**非 watch 的单轮输出逐字不变**（仍是一份
+    pretty 文档）；watch 横幅继续走 **stderr**（stdout 保持纯机器面）。
+- 5323af0: fix(nudojs): `pathErrors[]` 命名漂移 —— check / test / contract 三个动词补齐 `targetErrors[]`（族 63b）
+  
+  `pathErrors[]` 这个名字原本只承诺「`--from` 路径错误」，但 C1 把「**分析目标
+  闸门**」错误（路径不存在 / 空目录 / 非分析目标）也推进了**同一个** sink ⇒
+  数组名不再副实 ⇒ **机器消费者**读 `pathErrors[]` 时会误以为里面全是 `--from`
+  路径问题。
+  
+  口径与 `nudo health`（族 63 · health 面）**同款**，三个动词统一：
+  
+  - **`pathErrors[]`**：**有序全集**，**字段名 + 内容 + 顺序逐字不变**
+    （既有机器消费者零影响；`--json` 的既有场景 stdout 逐字不变）；
+  - **`targetErrors[]`**（**新增的可选** JSON 字段）= **分析目标闸门**错误的
+    **精确**子集
+    - `--from` 路径错误**不**进它（它是**精确入口**，不是副本）；
+    - 闸门错误**同时**留在 `pathErrors[]` 里（全集不变 ⇒ 不丢事实）；
+  - **无**闸门错误 ⇒ `targetErrors[]` **不出现**（既有场景输出逐字不变）。
+  
+  覆盖动词：`nudo check --json`（CheckJsonMulti 信封）、`nudo test --json`
+  （CaseJson 信封）、`nudo contract --json`（聚合信封的错误条目）。
+  **人类面（stderr 文案）逐字不变**。
+- a069994: `nudo check` now explains mock-load failures with the suggestion that fits
+  the failure, instead of one generic sentence.
+  
+  - A duplicate `@nudo:mock-module` declaration (`nudo:mock-invalid`) used to
+    be answered with "Fix the @nudo:mock expression", which points at the
+    wrong problem. It now says to remove the duplicate declaration and keep
+    one directive per module specifier.
+  - A mock file that does not export the named binding
+    (`nudo:module-missing`) used to be answered with "Create the mock file",
+    although the file exists. It now names the missing export and the mock
+    file path, and suggests adding the export or dropping it from the
+    directive.
+  - Diagnostics, severities and exit codes are unchanged; only the
+    suggestion line differs. `nudo check` and `nudo migrate verify` now use
+    the same helpers as the editor and agent surfaces, so all of them report
+    the same suggestion for the same file.
+- 3ce08ae: fix(nudojs): `migrate strip` 库面改**逐文件错误隔离**（族 56b · Bug 696 的库面半边）
+  
+  台账里的「`migrate verify` 库面整批 abort」经实测**已不成立**（`migrateVerify`
+  早已逐文件隔离：同目标内部分文件语法错 ⇒ 失败文件记 `analysis-error`、成功文件
+  照常返回）；仍整批 abort 的是同族的 `migrateStrip`——`planStrip` → `makeStripPlan`
+  遇解析错即 `throw` ⇒ **同目标内其它文件的成功结果全丢**（且与 verify 的口径不一致）。
+  
+  现在解析失败**降级成一行错误**（结构与 `migrateVerify` 的逐文件错误行**同款**：
+  `code` + `error`，`error` 带文件名；失败码沿用 verify 的 `analysis-error`，**不另立
+  码表**）⇒ 库面与 verify **同口径**：**先算完全部结果（含错误行）⇒ 再决定写不写**。
+  
+  - **原子性不变**：任一文件失败 ⇒ **整批零写盘**（成功文件也不落盘）——好性质保留，
+    没有为「不丢结果」改成部分写盘；写盘模式下成功行会附一条「未写盘」注记
+    （防调用方把「计划成功」误读成「已写盘」）。
+  - **CLI 面逐字不变**：`nudo migrate strip` 的 stdout / stderr / exit code 与改前
+    **逐字相同**（失败详情沿用旧文案 `parse failed: <文件>: <原因>`）；失败目标仍
+    判失败（exit 1）、不进 `results`。
+  - **成功行的字段逐字不变**（负控：成功行不带 `code` / `error` 键 ⇒ `--json` 的
+    成功信封与旧版逐字相同）。
+  - ⚠ **仍整批 throw 的两类错误**（未改）：`.tsx` 不可迁移（Bug 583 的产品判定）与
+    目标级用法错误（`not found` / 非 TS 源）——它们不是逐文件的解析失败。
+- b37321b: The command line now answers the same questions as the editor, and stops
+  answering them differently.
+  
+  - `nudo check` and `nudo health` disagreed about an export that has no
+    contract root: the health report counted it, the check report did not
+    mention it. The check report now lists it as `nudo:interface-entry-only`.
+  - `nudo:mock-invalid` was reported as an error, although the reference says
+    it is a warning, and the same file reported it as a warning on another
+    path. It is a warning now. The gate itself does not change: an explicit
+    contract and the entry-throws rule are unaffected, and a mock file that is
+    missing is still an error.
+  - `nudo test --from` pointed at a file that could not be parsed or evaluated
+    reported nothing and exited successfully, which is indistinguishable from
+    "no call sites". The failure is reported and the run exits non-zero.
+  - A `package.json` whose `nudo` key is not an object — or is a falsy value —
+    was accepted without a word. The check report now says the configuration
+    could not be read, and the "this project has no Nudo configuration yet"
+    hint is not shown.
+  - An import cycle made every file in the cycle report `unknown`. The
+    dependency graph is no longer dropped, and a genuinely recursive cycle is
+    truncated by the recursion budget instead.
+  - The vite plugin never read the path-env load failures, so a
+    `@nudo:env ./missing.js` that failed to load was invisible during a build.
+    The failure is reported now.
+  - An unreadable dependency was described as a missing file.
+- 5749924: 族 21 收口接线：把各分片「越界发现」里明确交给**主 agent** 的接线项补齐 ——
+  以及一条**真源缺口**（672 的剥除面在 core，不在 CLI）。
+  
+  **Bug 672 的真源（core `strip-types.ts`）** —— `nudo migrate strip --write` 写出的
+  `.js` **Node 解析不了**：`private` / `public` / `protected` / `readonly` /
+  `abstract` / `override` / `declare` 这些**类成员修饰符**原样保留，构造器**参数属性**
+  （`constructor(private opening: number)`）也原样保留 ⇒ 产物仍是 TS。
+  现在：
+  - 类成员修饰符被**剥掉**（只在类成员节点上删 —— 这些字段名在别的节点上没有 TS 语义）；
+  - 构造器参数属性**降级**成「普通形参 + 构造器体开头补 `this.x = x`」
+    （TS 语义 =「字段 x + 构造器里 `this.x = x`」；字段声明不必显式写 ——
+    JS 的 `this.x = …` 就是动态字段，语义等价）。Babel 7 的 `TSParameterProperty`
+    包装节点与 Babel 8 的「修饰符直接挂在参数上」两种 AST 形态都认。
+  
+  **Bug 670 的越界（`nudo contract --json`）** —— `runContractPrint` 完全不看
+  `opts.json` ⇒ `nudo contract --json` 把人类文本（`<file>` + 每行签名）写进
+  stdout ⇒ `JSON.parse(stdout)` 抛错。`--json` 是**机器面** ⇒ 现在 stdout 是
+  合法 JSON（`{ file, entries: [{ fn, signature }] }`），人类面不变。
+  
+  **Bug 1026 的残留（`migrate` 的发现清单）** —— `migrate verify` 的扫描集合此前只
+  抄了产品默认安全排除 3 条里的 1 条（`node_modules`）⇒ `dist/` 与 `coverage/` 的
+  陈旧构建产物被当源码门禁 ⇒ `migrate verify`（绿）与 `migrate retire` 装上的
+  `nudo check .`（红）扫描的文件集合不同。现在补齐 3 条（另排除 `.git` / `.nudo`）。
+  
+  **Bug 928 的 test 面同机制** —— `nudo test --watch --from` 的调用点证据此前是
+  **启动快照**、每轮从不刷新 ⇒ 同一轮里两个文件对同一次调用给出相反裁决，且与同一
+  磁盘状态下的全新非 watch 运行结论相反。改为**每轮开跑前重采**（与
+  `nudo check --watch --from` 同口径）；本轮证据缺失 ⇒ 本轮红。
+  
+  **Bug 693 的钉真落在 watch 形态** —— 该钉原先用 `node tsx/dist/cli.mjs <cli> …
+  --watch` 起子进程：tsx 的 CLI 会把 `--watch` 当成**自己/node 的旗标**吞掉 ⇒
+  子进程的 `process.argv` 里没有 `--watch` ⇒ CLI **根本没进 watch 形态** ⇒ 钉在测
+  非 watch 路径（假通过）。改用共享的 watch runner（`node --import <绝对路径的
+  tsx loader>` + 显式追加 `--watch`）⇒ 钉真的落在 watch 形态上；runner 另支持
+  「等 stdout 里出现一份可解析的 JSON」（谓词**分开**收 stdout / stderr ——
+  合并判断会被 stderr 的横幅干扰）。
+  
+  **Bug 948 的文本面对称** —— 空目标集现在 `ok:false` + 非零 exit ⇒ 文本面**必须**
+  有裁决行，否则出现「exit 1 但无 Result / 无 Summary」⇒ 与 JSON 面不对称。
+  
+  **既有钉的契约适配（2 条）** —— 695（信封 `summary.errors` 不再含路径错误）与
+  672（真源修好后命令层闸门不再拦）两处契约变更使既有钉失配 ⇒ 按**新契约**改钉
+  （不是回退修复）。
+  
+  **`nudo init` 的文档漂移** —— 新行为（非法值被替换 / 拒绝遮蔽祖先可继承配置 /
+  拒绝越界写容器根）此前未写进文档 ⇒ 同步 `docs/design/cli-semantics.md`、
+  `packages/website/docs/guides/cli.md`、`packages/website/docs/api/cli-reference.md`
+  （及 zh-Hans 版）。
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- 2af2bae: `nudo check` now sees assignments inside function bodies, judges generated
+  segments against cross-file call sites, and points diagnostics at the
+  offending directive.
+  
+  - `nudo:assign-mismatch` only covered module top-level assignments: the
+    assignment recorder was installed around the top-level evaluation, but
+    function bodies had already been evaluated (by the generalizer) before
+    that, so every `$assignRecord` from a function body was dropped. Real
+    code assigns mostly inside functions, so the check reported "OK" on
+    functions that assign a string to a number. The recorder is now installed
+    before the function loop, and repeated evaluations of the same assignment
+    site are folded into one diagnostic.
+  - `nudo:interface-drift` never fired when the call site lived in another
+    file: the "today" evidence came only from evaluating the checked file
+    itself, so a generated segment written with `--from` could not be judged
+    stale. `CheckOptions.from` now carries cross-file call-site records into
+    the same judgment; records are attributed to the checked file, so a
+    same-named function in another module cannot pollute the verdict.
+  - `nudo:assume-invalid`, `nudo:invariant-invalid`, `nudo:contract-syntax`
+    and `nudo:interface-conflict` carried no position: the LSP drew the red
+    squiggle at line 1 column 1 and `nudo check --json` reported
+    `issues[].line: null`, even when the offending directive was on line 7.
+    All four codes now report the line and column of the directive that
+    caused them.
+- e59c991: Type renderings no longer read as the wrong type, and `nudo check --what-if
+  --target` prints a real return domain instead of `?`.
+  
+  - A function type inside an array or a union is now grouped with
+    parentheses. `formatShape` rendered an array of functions as
+    `(number) => number[]`, which TypeScript reads as "a function returning
+    `number[]`" rather than "an array of functions", and rendered a union of a
+    function and a number as `(number) => number | number`, where the `|` binds
+    to the function's return type. The `.d.ts` renderer already grouped both,
+    so the two renderers disagreed about the same abstract value. Function
+    members and function elements are now parenthesized; other member kinds are
+    unchanged.
+  - `nudo check --what-if --target <function>` printed `() => ?` for the
+    targeted function: the top-level binding's abstract value carries no
+    return type, while the signature table reads a different abstract value.
+    The target now takes the function's real return domain, so the two faces
+    agree; the `?` placeholder itself is unchanged.
+- e59c991: String unions are now concatenated member by member, and generated line
+  comments no longer carry a block-comment escape.
+  
+  - A value that is one of several string literals was concatenated as if the
+    literals were one piece of text. `("a" | "b") + "!"` was reported as the
+    single string `"ab!"` — a value no call can produce, because the real
+    answers are `"a!"` and `"b!"`. The same happened to `` `v=${x}` ``, which
+    was reported as `"v=ab"`. A union now keeps its members apart while it is
+    converted to text, and the two sides are combined member by member, so the
+    result is the union `"a!" | "b!"`.
+  - The comment cleaner escaped the end of a block comment everywhere it was
+    used, including inside `//` line comments, where it has no meaning. The
+    contract draft printed by `nudo contract --draft` — the text a user is
+    asked to copy into the sidecar — showed `/* no evidence — tighten *\/`
+    instead of `/* no evidence — tighten */`. Line comments now keep the text as
+    it is; a line break inside a comment is still flattened, so a comment can
+    never spill out of its line. Block comments (the JSDoc in the emitted
+    `.d.ts`) still escape it, because there the escape is what keeps the
+    comment from ending early.
+  
+  - **Member results are combined with the engine's existing "same primitive"
+    rule** (`joinValues`), not as a raw union. Two *literal* members still form an
+    enumeration (`"a!" | "b!"`), but a literal combined with a same-primitive arm
+    that carries no narrowing evidence collapses to that primitive — the same
+    rule the rest of the algebra uses. Without it, a union member whose rendering
+    is already `string` would sit next to a literal and print as
+    `"NaN days" | "NaN day" | string | …`: harder to read than the type it
+    describes, and inconsistent with the signature the same function has
+    everywhere else (`formatAge(durationMs: number) => string`).
+- e59c991: `nudo check --json` no longer ships the engine's internal variable ids, and its
+  signatures now match the ones printed on the terminal.
+  
+  - The machine-readable signature fields rendered the abstract value's `term` /
+    `pred` unconditionally. Those terms mix in the engine's internal variable
+    ids (`len#0`, `len#2`, …), which are minted by a **process-wide counter**, so
+    the id a file got depended on the file's position in the command line.
+    Checking three identical files gave `len#0` / `len#2` / `len#4`, and swapping
+    the order swapped the ids — the JSON payload of a single file was a function
+    of its argument position rather than of its contents. The internal ids are now
+    replaced by a **stable name** (`len#2` → `len`), so the abstract term and
+    predicate evidence survives while the drifting number is gone.
+  - `signatures[].display` is now rendered with the same `formatShape` projection
+    the terminal uses, so the machine face and the human face of one command
+    agree: `nudo check` prints `f() => number` while `--json` used to report
+    `number = len#0 where len#0 ≥ 0 #path` for the very same function. The
+    confidence marker and the branch-join note are still available — through the
+    `conf` field and the `detail` / `abs` fields.
+- 5dd89ca: fix(nudojs): `migrate strip` 的产物面事实回报 + 兜底闸门扩围（族 12 S2）
+  
+  族 12 的六条缺陷（445 / 446 / 447 / 448 / 913 / 968）的**根因**全部在
+  `@nudojs/core` 的 `strip-types.ts`（已由 S1 修好）。本片只做**产物面**：
+  
+  - **`migrate strip` 的 notes 跟事实**（`stripTsToJs`）：notes 现在基于
+    `stripTypes` 的 `report` 事实回报，而不是「enum 被删」这一过时口径 ——
+    运行时 enum 现在是**被合成**（不是被删除）⇒ note 改成「已合成运行时对象」，
+    不再误报「runtime semantics lost」。另补：`export =` / `export as namespace`
+    被剥除（CommonJS 出口面消失）、`this` 形参被剥除、类型专用 import 被消掉
+    （tsc 同口径）、保守保留的 import（本地再导出 / 包说明符 / 未引用 ⇒ 产物
+    可能链接失败）与「指令条数前后不一致」的提示。
+  - **兜底闸门扩围**（`migrate strip` 写盘前的「产物可解析性闸门」）：除
+    `TSParameterProperty` 与 4 个类成员修饰符 flag 外，新增认得
+    `export =` / `export as namespace`、类成员的 `x!` / `y?` / `m?()`、TS 的
+    `this` 形参。**零误伤**：这些判据在纯 JS 源码里零命中（TS-only 节点类型 /
+    TS-only 字段 / `this` 不是合法形参名）。
+  - **六条产物面回归钉**（`packages/nudojs/src/__tests__/cli-bug-445|446|447|
+    448|913|968-migrate-strip-*.test.ts`）：产物必须 `node --check` 过、
+    指令必须存活、门禁行为正确（源红 / 产物**同样红**，不再假绿）。
+  
+  `migrate verify` 的语义**未改**（它的契约是「跑 `nudo check`」）；`nudojs` 的
+  公开导出面**零新增**。
+- b4768ca: 族 27 收口接线：让**三个产物面**（内存收割面 / 磁盘缓存面 / 落盘源码面）与
+  **两个产物面**（收割面 / 草稿面）在同一份 `.d.ts` 上给出**同一个类型**。
+  
+  **磁盘 ABI v8 → v9 → v10** —— `HARVEST_DISK_ABI` 随收割语义抬版本。不抬则
+  用户本地 `~/.cache/nudo/deps/` 里的旧收割产物会继续命中 ⇒ CLI **看不到本轮
+  修复**（实测：同一夹具，旧缓存 ⇒ `useDefault(xs: any) => unknown`）。
+  v10 覆盖收口时又改的三处语义：`this` 形参不再进收割签名（Bug 794）、
+  `declare class` 进入接口成员表并带 `ctor` facet（Bug 796 / 826）、顶层
+  `declare namespace` 的运行时成员收进命名空间自有记录（Bug 793）。
+  
+  **磁盘投影补 facet** —— `HarvestSig` 此前只投影 `params` / `returns`，把
+  `obj` 的索引签名与开放标志、`tuple` 的 rest、`fn` 的 `ctor` 与静态槽**全部
+  丢掉** ⇒ 缓存往返把「开放对象 + 值域」抹成闭合空对象（成员读 undefined ⇒
+  定抛）、把「构造器」抹成普通 fn（`new` 落「可构造性未知」⇒ 假红）、把类型
+  字面量的具名成员抹掉。`absToHarvestSig` 投影 + `harvestSigToAbs` 还原两侧
+  同时补齐。
+  
+  **磁盘投影补条件元数据** —— `fn` 形态加 `inferFrom` / `condFallback`：条件
+  类型判不出时的绑定线索与假支此前不投影 ⇒ 缓存命中后条件元数据丢失 ⇒
+  **同一份 `.d.ts`，冷缓存与热缓存给出不同类型**（实测：改前冷 ⇒ `callCond()`
+  返回 `0`，热 ⇒ `any`；改后冷 / 热完全一致）。
+  
+  **落盘源码面补 `ctor` / 静态槽** —— `emitAbs` 的 `fn` 分支此前只发
+  `relationFn([...], ret, { conf: "exact" })`，把 facet 全丢 ⇒ 走落盘 env 模块
+  时 `new X()` 判「可构造性未知」。用 IIFE 在 `relationFn` 之后补 facet（**不改
+  core 冻结面**）⇒ 三路径同型。
+  
+  **草稿面 `this` 形参跳过** —— `dts-contract-draft.ts` 的参数收集此前把
+  `this` 写成必填实参位 ⇒ 草稿元数 +1（第一个真实实参被绑到 `this` 槽）。
+  判据同收割面。
+  
+  **草稿面接口 heritage 展开** —— `extends` 基接口的成员进草稿（带环保护）。
+  
+  **CLI 汇总行接 `droppedDirs`** —— `nudo contract --from-dts <目录>` 的目录
+  模式只取 `dtsPathToContractDraft` 的 `files`、**丢掉它的 stats** ⇒
+  「遍历不到的目录」不出现在汇总行 ⇒ 汇总行报「0 skipped」而实际丢了东西。
+  现在并进 `skipped`。
+- e5b3f38: 族 16 修复 M1：Bug 570 / 579 / 943 / 966 / 967 / 924 / 580 / 1005 —— tsc 的**检测口径与改写口径统一**（版本钉住 `tsc@5.4.5`、路径限定型 `./node_modules/.bin/tsc`、非命令位的 `tsc` 旗标值/描述文字），CI workflow 改写改为 **YAML 语义**（只认 `run:` 标量、引号标量不再漏改、块标量跨行命令不再被拆坏），tsc argv 解析认识 `${{ … }}` / `$( … )` / glob，不再写出必然红的门禁命令。
+- e5b3f38: 族 16 修复 M3：Bug 581 / 584 / 597 —— `nudo migrate` 的 workspace 包枚举改为真 glob：对象式 `workspaces`（`{ packages: [...] }`）不再被静默丢弃（子包在 status 与 `retire --all` 里可见并被真正退役）；pnpm 负向模式 `!packages/legacy` 真的排除该包（不再被 `retire --all` 改写 / 删依赖 / 写 marker）；`packages/**` 与多段 pattern（`packages` 目录下两层 `*`）能发现嵌套成员（不再「nothing to retire」假绿）。被排除 / 未匹配的包通过 stderr 显式说明。
+- e5b3f38: 族 16 修复 M4：Bug 574 / 575 / 583 / 585 / 587 / 591 / 592 / 596 / 917 / 923 / 969 —— `nudo migrate strip` 的**写盘面**修好：两阶段（先算完再写）+ 事务写盘 ⇒ 语法错文件不再留下半写状态，错误信息点名文件；写目标前检测既有同名 `.js` ⇒ 不再静默覆盖手写 JS（`--backup` 时先备份）；`--backup` 撞名改用 `*.1.bak` 并在输出里交代，不再静默跳过；侧车草稿落在**草稿路径** `*.nudo.draft.js`（不再冒充正式侧车 `*.nudo.js`）；产物的相对模块说明符按真实文件补成显式扩展名（`./helper` → `./helper.js`）；notes 改为**基于 AST 事实**（注释 / 字符串里的 "enum" / "namespace" 不再误报）；`.cts` 产物不再谎称 CommonJS；`.tsx` 明确拒绝（strip 不做 JSX 变换，不再产出 Node 加载不了的 `.jsx`）；单文件路径与目录路径走同一条侧车迁移逻辑（既有 `*.nudo.ts` 一并迁到 `*.nudo.js`，产物契约不丢）；目录级分析按**模块**计数（源 `.ts` 与产物 `.js` 是同一模块，不再翻倍）。
+- e5b3f38: 族 16 修复 M5：Bug 567 / 576 / 578 / 586 / 595 / 920 / 1006 / 1028 —— `nudo migrate retire` 的退役面、审计记录与作用域：
+  
+  - **没有可退役的东西就不写盘**（567）：既无 `typescript` 依赖、又无门禁角色 tsc 脚本的包，`retire` 现在报「nothing to retire」并**零写盘**（此前仍写 `.nudo/migrate-retired.json` 并注入 `check:nudo`，`migrate status` 随后把它标成 `[retired]`）。
+  - **二次运行不再擦掉审计记录**（576）：`.nudo/migrate-retired.json` 与既有记录**合并**（并集 + 保留首次 `retiredAt`），此前第二次运行把 `removedDeps` / `rewrittenScripts` / `rewrittenWorkflows` 清空并改写 `retiredAt`。
+  - **注入真的落盘**（578）：`check:nudo` 注入写回 `pkg.scripts`（此前只改了局部副本 ⇒ 落盘文件里根本没有 `scripts` 键，CLI 输出与审计记录却都谎报「已改写」）。
+  - **编译脚本不再被换成门禁**（586）：只改写**门禁角色**的脚本（`--noEmit` / 裸 tsc）；`build` / `compile` / `bundle` / `emit` 等构建角色与带发射语义旗标（`--outDir` / `--declaration` / `-b` / `-p` 无 `--noEmit`）的脚本**原样保留**，并在结果与审计记录里列出（`preservedScripts`）；这类脚本仍需 tsc ⇒ `typescript` 依赖相应保留（摘掉它 build 当场坏掉）。只有编译脚本的包明确拒绝退役并说明原因。
+  - **多目标全退役或全报错**（595）：新增 `migrateRetireMany(paths)`（原子；任一目标失败 ⇒ 整批零写盘），CLI 侧需把 `targets[0]!` 换成 `targets`（见交付报告）。
+  - **workflow 改写作用域限定在被退役包**（920）：退役子包只改写**该包自有**的 `.github/workflows`，仓库根共享的 workflow 属于整仓作用域，不再被静默替换成 `npx nudojs check .`。
+  - **`retire --all` 包间原子**（1006）：整批先规划后统一提交，第 N 个包失败 ⇒ **前 N−1 个包也不落盘**（此前已提交的包留在仓库里而错误消息不点名）；错误消息点名本批涉及的包。
+  - **同键同型**（1028）：stdout `--json` 报文与落盘 marker 的 `rewrittenWorkflows` 现在都是 `{file,from,to}` 对象数组（此前 stdout 是对象数组、marker 是路径字符串数组），审计记录不再丢掉 CI 改写的前后内容。
+- e5b3f38: 族 16 修复 M6：Bug 566 568 569 582 589 593 —— `migrate verify` 与 `nudo check` 判定同源（文件筛选排除侧车/`.d.ts`、分析注入带模块图与 mock）、`--json` stdout 只放 JSON（人工报告走 stderr）、批量目标 per-file 隔离（语法错不再整批中止）、`--with-tsc` 基线真的加载 tsconfig 并按文件切分诊断、空目录判红（不再静默 exit 0）。
+- 169ed52: `nudo check` no longer bails out early on a flag combination, and the JSON
+  machine face now reports usage errors inside the same envelope as every other
+  failure.
+  
+  - `--fix` combined with `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` /
+    `--verbose` / `--from` / `--what-if` used to abort with a bare usage string,
+    so a CI job that combined two flags got no machine-readable answer at all.
+    The combination is now rejected through the normal JSON envelope
+    (`ok: false` plus a `pathErrors` entry carrying the machine code
+    `nudo:usage-error`), and the process exit code is decided only by `ok`.
+  - `--dry-run` combined with `--write` used to run the write path, so a
+    supposedly read-only invocation still mutated files on disk. The dry-run
+    flag now wins, and the write path is not entered.
+  - `--watch` together with `--json` used to fall back to the human face and
+    print a second, different report. The JSON face is now honoured in watch
+    mode as well (`jsonFace` is an optional field, so the existing callers are
+    unaffected).
+- 169ed52: `nudo check --gitlab` and the disk cache no longer lose or duplicate results.
+  
+  - `--gitlab` annotations were emitted a second time on stdout in addition to
+    the collected rows, so a CI log carried the same finding twice. When the
+    caller collects the rows, they are no longer printed as well.
+  - A run that produced both a per-file result and a whole-project result
+    entered the disk cache twice under two different keys, so the second entry
+    could be served for the first one's input. Both entries now collapse into a
+    single cache entry.
+- 169ed52: `nudo check` and `nudo check --fix` now analyse the same program, and the gate
+  no longer accepts TypeScript-only syntax in a `.js` file.
+  
+  - `nudo check --fix` fed the analyzer a different input set than `nudo check`:
+    the auto-bind setting, the project directory and the injected modules were
+    missing, and the mock environment was not assembled. A project could pass
+    the gate and still be reported as broken by `--fix`, or the other way
+    around. Both commands now build their analyzer input through one shared
+    constructor.
+  - `--fix` also materialised plans for findings that had been downgraded to a
+    warning, so a diagnostic that no longer blocks the gate still wrote a
+    sidecar into the user's repository. Only error-level findings are
+    materialised now.
+  - A `.js` file containing TypeScript-only syntax (`private x = 0`, `x as T`)
+    was parsed happily, so the gate reported success on a file that Node cannot
+    even load. The parser now picks its plugins from the file extension, and the
+    check face reports the syntax error instead.
+  - A project-level path environment (`package.json#nudo.env`) was resolved
+    relative to the analysed file rather than to the project root, so a
+    subdirectory file could not find the environment it declared.
+  - Environments are merged with the harvested ones under the same precedence
+    the test and service faces use, so a harvested export that does not collide
+    with a handwritten environment is no longer dropped.
+- 169ed52: `nudo check` no longer loses a failing input, misreports the gate tier, prints
+  an unappliable diff, or stays green on a broken sidecar.
+  
+  - An input file that exists but cannot be read (permissions, I/O) escaped the
+    command as a raw `EACCES` message. With `--json` the command printed
+    nothing at all, so a CI job got an empty stdout and a non-zero exit code
+    without a machine-readable reason. The failure is now reported as a path
+    error (`nudo:path-io`) inside the usual JSON envelope, and the human face
+    prints the reason plus a `fix:` hint.
+  - The warning about an unknown `package.json#nudo.check.profile` always said
+    `using default strict`, even when an explicit `check.entryThrows` (or a CLI
+    flag) had put the gate into a different tier. The message now names the tier
+    that is actually in effect, so it can no longer contradict the report.
+  - `nudo check --fix` printed its own `---`/`+++` header in addition to the
+    header of the unified diff, polluted the `+++` path field with the
+    `[fix] …` explanation, and used absolute paths (which produced `a//…`).
+    The diff now has a single header with a relative path, exactly like the
+    sibling `nudo test --freeze --dry-run` output, and can be consumed by
+    `git apply`.
+  - A sidecar that imports something that is not a constraint builder (for
+    example `import { totallyBogus } from "@nudojs/core"`) was diagnosed while
+    the sidecar was executed, but the diagnosis was dropped as soon as the
+    execution result was cached. Because the analyzer runs before the gate, the
+    gate itself never saw it: `nudo check` reported success and exited 0 on a
+    sidecar that could not be loaded. The diagnosis is now cached together with
+    the execution result and reported again on every cache hit, so the gate
+    reports `nudo:interface-load` and turns red.
+- 169ed52: Two reported `nudo check` defects were already fixed by earlier releases; this
+  change only adds regression pins that keep them fixed.
+  
+  - A string in `package.json#nudo.env` is rejected with a shape warning and the
+    environment list is ignored; it is no longer expanded character by character.
+  - A cycle in the module graph no longer discards the whole dependency graph,
+    so a cyclic and an acyclic project produce the same result.
+- 169ed52: `nudo check <callee> --from <caller>` now closes the loop on call sites that
+  live inside a function body, arrow function, or method body.
+  
+  The `--from` usage-site files were handed to the checker only as executed call
+  records. A call site that had never been executed — for example one wrapped in a
+  function body — produced no record at all, so the callee's gate stayed green
+  while checking the caller alone reported the very same violation. The usage-site
+  file paths now reach the checker as well, and the call-site obligation is
+  re-checked with the same criterion the single-file channel uses, so both
+  channels report the same code for the same fact.
+  
+  - `nudo check <callee> --from <caller>` now exits 1 with exactly one
+    `nudo:interface-domain-exceeds` for a call site wrapped in a function body;
+    before this change the same command exited 0.
+  - Checking the caller directly is unchanged: it still reports exactly one
+    `nudo:constraint-violated`.
+  - A call site that is reported by both channels is still reported only once.
+- 02aa122: fix(nudojs): `nudo contract --draft` 的 dry-run 面（打 unified diff）+ `--json`/`--write` 显式互斥 + 项目根判据按路径分量
+  
+  族 20 · 片 B（660 / 663 / 665）。
+  
+  - **Bug 660 —— `--draft --write --dry-run` 不打 unified diff**（只打一行
+    「[dry-run] would write → …」），而 CLI Reference 承诺 `--dry-run` =
+    "Print a unified diff instead of writing"。同一个 `--dry-run` 旗标在
+    `--emit` 与 `--draft` 两条分支上语义不同。现在 `--draft` 分支**复用
+    `--emit` 分支的同一个 diff 生成器**（`unifiedDiff`，已在
+    `@nudojs/service/emit` ⇒ 零新增导出），对照面是**既有草稿文件**的磁盘内容
+    （与 `--draft --json` 审阅面同款口径），diff 头与 `--emit --dry-run` 同形
+    （`--- a/<path>` / `+++ b/<path>`）；dry-run 仍然**不写盘**。
+  - **Bug 663 —— `--draft --json --write` 静默丢弃 `--write`**（`--json` 分支
+    早退 ⇒ 写盘分支不可达）⇒ 草稿根本没落盘、exit 0、零提示 ⇒ **假绿 + 静默
+    数据丢失**。现在 `--json` 与 `--write` **显式互斥**：
+    `error: --write cannot be combined with --json` + **exit 1**，机器面仍给出
+    一份合法 JSON 载荷（`{file, errors:[{code:"nudo:usage-error"}]}`，由命令层的
+    跨文件聚合层收进恒定数组外壳）。
+  - **Bug 665 —— 项目根边界用 `rel.startsWith("..")` 判逃逸** ⇒ 项目根下的
+    **合法目录名**（`..data/` / `...cfg/`）与**合法文件名**（`..data.js`）被误判
+    成「越出项目根」⇒ 草稿**拒写**（exit 1），而同一项目里的普通文件正常写出。
+    判据改成**按路径分量**：「整段等于 `..`」或「以 `..` + 路径分隔符开头」或
+    「跨盘（绝对路径）」——CLI 半（`nudo contract --draft --write`）与 service 半
+    （`writeInterfaceDraft` 的写盘守卫）**逐字同款**；真正越出项目根的路径**仍被
+    拒**。
+- 02aa122: refactor(nudojs): `nudo contract` 的三个分支函数拆到同包内部模块（**行为零变化**）
+  
+  族 20 · S0（串行前置重构）。`packages/nudojs/src/commands/contract.ts` 里
+  按分支天然分块的三个函数，搬到**同包内部模块**：
+  
+  - `runContractDraft` → `packages/nudojs/src/commands/contract-draft.ts`
+  - `runContractEmit` → `packages/nudojs/src/commands/contract-emit.ts`
+  - `runContractFromDts` → `packages/nudojs/src/commands/contract-from-dts.ts`
+  
+  `contract.ts` 只保留 `registerContractCommand`（**唯一导出**）+ `runContractPrint`
+  + action（含 per-root 循环）。
+  
+  - **函数签名逐字不变**（参数、返回类型、行为全部不变）；函数体逐字搬移。
+  - **零新增公开导出**：`packages/nudojs/src/index.ts` 一行未动；`nudojs` 的
+    `exports` 仍只有 `"."` ⇒ 三个新模块**不在公开面上**。
+  - **行为零变化**：同一批夹具（`nudo contract` 的 print / `--json` / `--draft` /
+    `--draft --json` / `--emit` / `--emit --dry-run` / `--from-dts` 七个形态）
+    改前 / 改后各跑一遍，**stdout / stderr / exit code 逐字零差异**。
+- 3432d8c: `nudo test`: one failure channel for the machine face, one conclusion for
+  "this file has no functions", and the flags the help text promises are now
+  actually accepted.
+  
+  - **Bug 650 — a syntax error was reported as a bare message with no file
+    name, and `--json` printed nothing at all.** The Babel parse error
+    escaped `runTest` up to the top-level catch, which printed only
+    `err.message` (no path, no `line:column`, no source excerpt), and the
+    `--json` serialization point sat *after* the throw ⇒ stdout was 0 bytes
+    and `JSON.parse(stdout)` threw. `nudo test` now reuses the syntax-error
+    branch of `nudo check`: the human face gets a tsc-style block (path +
+    `line:column` + source excerpt + `^` caret) and the `--json` face gets
+    the same CaseJson envelope as every other failure, with
+    `pathErrors[{code:"syntax-error"}]`.
+  - **Bug 652 — `nudo test --abs` exited 1 on a file that declares no
+    function, while the same command without `--abs` exited 0.** The `--abs`
+    face borrowed `runAbsView`, which treats "this file has no functions" as
+    a usage error (`Function not found` + exit 1) — that is the *intended*
+    behaviour of `nudo check --abs` (Bug 669) and is left untouched. Inside
+    `nudo test` the observation face is now skipped when the file declares no
+    function, so both faces print the same report and exit with the same
+    code.
+  - **Bug 653 — `--exit-on-diff` was silently ignored without `--freeze`.**
+    The precondition check lived *inside* the `if (opts.freeze !== undefined)`
+    branch ⇒ without `--freeze` the flag was swallowed and the command
+    exited 0, which turns a CI gate into a no-op. The check now runs before
+    the branch, so `--exit-on-diff` without `--freeze` is a usage error
+    (exit 1) — the same stance `nudo contract --exit-on-diff` takes.
+  - **Bug 654 / Bug 656 — `--help` promised `--freeze` modes `update | add`,
+    but `--freeze=add` was rejected with exit 1.** The help text and the flag
+    parser had each been written on their own. The parser now accepts
+    `--freeze=add` (identical to omitting the value), and the error message
+    for an invalid value lists the same set of legal values as the help.
+  - **Bug 919 — `nudo test --abs` swallowed the whole diagnostics section.**
+    The predicate that decides whether diagnostics are printed excluded the
+    `--abs` face ⇒ a wrong expectation (`=> 42x`) produced *zero* hints on
+    screen while the assertion failed. `--abs` no longer excludes
+    diagnostics, so the default, `--json` and `--abs` faces report the same
+    number of diagnostics for the same file. `nudo check --abs` keeps its
+    existing shape.
+  - **Bug 957 — `--json` usage errors produced an empty stdout plus a
+    non-zero exit.** Every usage-error branch of `nudo test` (missing path,
+    `--json` + `--abs`, `--json` with several files, `--freeze` + `--json`,
+    the variadic `--from` swallow) wrote to stderr and returned before the
+    machine face could be produced, while the *path* failures of the very
+    same verb did produce a proper envelope ⇒ two failure channels, two
+    machine shapes. Usage errors now go through the same CaseJson envelope
+    (`pathErrors[{code:"usage-error"}]` + exit 1); the human-readable text of
+    the non-`--json` face is unchanged.
+- 3432d8c: `nudo test --watch` no longer swallows a failed file, and `nudo test --from`
+  no longer lets an unresolvable import pass silently.
+  
+  - **Bug 926 — `nudo test --watch` kept the gate green when a file failed to
+    analyze.** The shared watch loop (`startWatch`, used by the `check` /
+    `test` / `health` watch faces) caught the exception thrown by a single
+    file, printed one stderr line and moved on — without ever setting a
+    non-zero exit code. The watch face was therefore the only place where a
+    broken file stayed green: `nudo check --watch`, `nudo health --watch` and
+    the non-watch `nudo test` all exit 1 on the same directory. The per-file
+    catch now marks the round red (`process.exitCode = 1`), in the full round
+    and in the incremental round alike, matching the exit-code semantics the
+    same file states ("the exit code is the gate state of the most recent
+    round"). A broken file still does not abort the round — one bad file must
+    not stop the others from being analyzed.
+  - **Bug 1060 — `nudo test --from <callsite>` silently accepted a callsite
+    file whose imports do not resolve.** Importing a module that does not
+    exist, or a name the module does not export, evaluated successfully (the
+    lenient loader stubs out the unresolved import) but the call sites were
+    lost: the command printed no `call@` record, fell back to `entry@`, and
+    exited 0 — a false green, because the user believes the call sites were
+    verified while nothing was. Syntax errors and top-level throws were
+    already reported (that was the half of the previous fix); module
+    resolution failures are now reported the same way. The callsite probe
+    asks the engine for the module-graph issues it already computes
+    (`missing` / `missing-export` / `unreadable` / `json-invalid` — the same
+    set the main analysis channel reports as `nudo:module-missing`), and a
+    callsite file that carries one is reported as a callsite load failure
+    (`nudo:path-missing-callsite`) with a non-zero exit code. The probe now
+    runs for every callsite file, not only for the ones that produced zero
+    records: an unresolved import produces a record pointing at a function
+    that does not exist, so the record count alone never revealed it.
+- 3432d8c: nudo test: 补一条**反向回归钉**，锁住「声明式 `@nudo:case` 不得因名字前缀被丢出断言面」。
+  
+  本片**零实现改动** —— Bug 651 的引擎侧根因已由族 14/15 的收口提交 `dde4b037` 修掉：
+  synthetic 判据已从**名字前缀**（`name.startsWith("call@") || name.startsWith("entry@")`）
+  改成**来源**判据（`c.source !== "directive"`，CLI 面 `packages/nudojs/src/run-test.ts`
+  与平行副本 `packages/service/src/test-report.ts` 同改）。本片只补钉，把「已修」的
+  行为钉住 ⇒ 防止将来有人把判据改回**名字前缀**。
+  
+  新钉 `packages/nudojs/src/__tests__/cli-bug-651-declared-case-name.test.ts`（5 例，
+  只钉**语义**、不钉汇总行字面量）：
+  
+  - 声明式见证 `@nudo:case "call@L42" (2) => 5`（实得 4）⇒ 计入失败、**exit 1**、
+    报告面出现 `[FAIL]` 行（旧行为：被当成 synthetic ⇒ 断言面「0 failed」、**exit 0**，
+    而诊断面同时报 `nudo:case-expected` error ⇒ 报告自相矛盾）。
+  - 同一形状的 `entry@L42` 前缀变体 ⇒ 同上。
+  - `--freeze` 写回形态的名字（`call@<file>:<line>`）⇒ 同上（这正是来源判据的原始动机：
+    写回的见证**写在源码里** ⇒ 已声明）。
+  - **同名对照**：普通名字（`myCase`）的失败断言行为与前缀变体**完全一致**。
+  - 期望相符的 `call@L42` ⇒ 计入通过、**exit 0**（不是 `unchecked`、不是 synthetic）。
+  
+  实测：钉子在 HEAD 只读副本上**通过**（5/5 ⇒ 假阳性钉在 HEAD 上通过）；
+  把副本里的判据改回名字前缀后 **4/5 失败**（只有普通名字的对照例仍通过）
+  ⇒ 钉子确实能抓住「判据改回名字前缀」这一回归。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [cc9b638]
+- Updated dependencies [2688251]
+- Updated dependencies [7fea13a]
+- Updated dependencies [a1c093f]
+- Updated dependencies [9f26414]
+- Updated dependencies [1caec28]
+- Updated dependencies [67abd92]
+- Updated dependencies [3d66f5a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [b4768ca]
+- Updated dependencies [1b08a18]
+- Updated dependencies [b4768ca]
+- Updated dependencies [5fd3cbb]
+- Updated dependencies [5fb8a51]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [27a795e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [02aa122]
+- Updated dependencies [3432d8c]
+- Updated dependencies [3432d8c]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [aa23265]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [106ad1d]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+- Updated dependencies [8542f44]
+  - @nudojs/core@1.16.0
+  - @nudojs/service@1.10.0
+  - @nudojs/env@0.5.3
+  - @nudojs/parser@1.5.3
+  - @nudojs/harvester@0.4.3
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.5.2 {#pkg-parser}
+## @nudojs/parser 1.5.3 {#pkg-parser}
 
-## 1.5.2
+## 1.5.3
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- e424592: File-level `@nudo:` directives no longer evaporate in silence: the mock-module
+  payload grammar accepts single quotes, the env payload grammar accepts
+  space-separated lists, block-comment `@nudo:import` is ignored instead of
+  taking effect, and an empty `@nudo:import` payload is diagnosed.
+  
+  - `@nudo:mock-module 'axios' from './mocks/v-axios.js'` was silently dropped.
+    The two payload regexes hard-coded double quotes, so a single-quoted payload
+    matched neither and the directive returned `undefined`. The mock was never
+    installed, no diagnostic was raised, and the gate stayed green. Single
+    quotes are now accepted (the source and the path may even use different
+    quote kinds), and an unparsable payload now raises `nudo:directive-syntax`
+    instead of vanishing.
+  - `@nudo:env node web` was silently dropped. The payload was split on commas
+    only, so a space-separated list became a single token and was filtered out;
+    a bare `/// @nudo:env` tag did not even match the tag regex. Both forms
+    were discarded with no diagnostic, so no environment was loaded and
+    everything stayed `unknown`. Commas and whitespace are now both accepted
+    (trailing comments are stripped), and a bare tag raises
+    `nudo:directive-syntax`.
+  - `@nudo:import` inside a block comment took effect. The text scanner
+    flattened line comments and block comments into one list and dropped the
+    comment kind, so a block-comment import really loaded its sidecar — the
+    opposite of `@nudo:env` / `@nudo:mock-module`, which the AST channel ignores
+    in block comments. Comment kinds are now kept apart: line comments take
+    effect, block comments are ignored and warned about.
+  - `/// @nudo:import` with an empty payload was silently discarded. The payload
+    was dropped before the malformed-import scanner could see it, so the
+    malformed form had no diagnostic while other unrecognised forms of the same
+    directive did. The empty payload is now reported as a malformed import and
+    raises `nudo:contract-syntax`.
+- e424592: `@nudo:case` witnesses no longer evaporate in silence: an escaped quote in an
+  argument no longer swallows the whole case, the `=> expected` part is read on
+  CRLF sources, on the next line and behind a `!! throws` suffix, redundant
+  brackets around the expectation are stripped, and a glued
+  `@nudo:case"name"` tag is diagnosed instead of vanishing.
+  
+  - `@nudo:case "k" ("a\"b") => 3` was dropped entirely. The bracket scanner was
+    string-aware but not escape-aware, so the `\"` inside the string ended the
+    string, the bracket closed early and the whole case was discarded. What
+    remained on screen was a misattributed "unclosed argument list" warning.
+    Balancing now follows JavaScript escape semantics first; a string that never
+    closes (not valid JavaScript) still falls back to the previous lenient
+    reading, so the argument count seen by the check face and by `nudo test`
+    stays the same.
+  - `=> expected` was lost in a CRLF source file. The line was split on `\n` and
+    the trailing `\r` stayed in the expectation text, so the expectation failed
+    to parse and was dropped: the case became `[unchecked]`, the assertion never
+    ran, `nudo test` exited `0` and nothing was reported. Lines are now split on
+    `\r?\n`.
+  - A `!! throws [Kind]` suffix on the case line was read as the expectation
+    text. With the suffix before `=>` the expectation disappeared entirely; with
+    the suffix after `=>` the text `1 !! throws` was parsed and rejected. The
+    suffix is now stripped from the expectation expression only — the case line
+    itself is never rewritten, so the function-level `!! throws` declaration
+    still sees it.
+  - `=> (999)` / `=> ("a")` / `=> ({ b: 1 })` never parsed, because the
+    expectation kept its outer brackets while the argument side had always
+    stripped them. The expectation now drops its redundant outer brackets, the
+    same way the arguments do. An arrow function (`(x) => y`) is left alone.
+  - An expectation on the line after `=>` was silently discarded, and an
+    expectation that was written but empty was discarded just as silently. The
+    value is now read from the next line, and an empty `=>` is reported as
+    `nudo:directive-syntax` instead of passing unnoticed.
+  - `@nudo:case"c1" (1, 2)` — no space between the tag and the name — was
+    neither extracted (the extractor requires a space) nor reported (the
+    diagnostic side accepted it). The case vanished with no diagnostic and
+    `nudo test` ran no case at all. Both sides now share one grammar, and the
+    glued form is reported as `nudo:directive-syntax`, the same way a glued
+    `@nudo:mock` name is.
+- e424592: Malformed `@nudo:` directives are diagnosed instead of evaporating in silence:
+  an empty or glued `@nudo:assume` / `@nudo:invariant` / `@nudo:contract` /
+  `@nudo:throws` now raises a syntax diagnostic, and a `!! throws` suffix is only
+  read where it is actually a directive.
+  
+  - `@nudo:assume` with an empty payload, or `@nudo:assumed d <= max` (a space
+    missing between the tag and the payload), matched no branch at all: the
+    scanner returned nothing and nothing was reported. The lemma was dropped
+    without a word, so the return contract fell back from "proved" to "unproved"
+    and the only sign was a `nudo:unproven-return` whose text blamed inference
+    precision instead of the rejected lemma. An empty or glued
+    `@nudo:assume` / `@nudo:invariant` now produces a bad segment and raises
+    `nudo:assume-invalid` / `nudo:invariant-invalid`; a glued or empty
+    `@nudo:contract` / `@nudo:throws` raises `nudo:contract-syntax` /
+    `nudo:directive-syntax`. The strict grammar is unchanged — a tag still needs
+    a separating space — the loose forms are only reported.
+  - `!! throws` was matched anywhere in a function's comment block, so a prose
+    line ("this helper uses `!! throws`") or a case **name** that happens to
+    contain that text was read as a function-level throw declaration. The
+    declaration then covered every throw, `filterGateThrows` let them all
+    through, and the `nudo:entry-may-throw` gate was silently switched off while
+    the signature still printed `throws TypeError`. The suffix is now only read
+    where it is a directive: after the argument list of a `@nudo:case` line, or
+    on the continuation line of such a case. The documented case-suffix form
+    (`@nudo:case "neg" (0) !! throws`) keeps working exactly as before.
+  - The same glue was invisible to the inline directives of the parser package:
+    `@nudo:replaceFoo x number()` matched neither the strict nor the loose
+    pattern, so the whole inline directive disappeared. It now raises
+    `nudo:directive-syntax`. The `@nudo:as` side keeps the behaviour already
+    merged for Bug 842: a tag whose name is extended (`@nudo:asXYZ`) is not an
+    `@nudo:as` directive and stays silent.
+- 27cc16a: `@nudo:case` witnesses and expected values now follow JavaScript literal
+  semantics, and an unreadable expected value can no longer pass silently.
+  
+  - The numeric branch of the case-argument grammar only recognized a decimal
+    regex, so every other legal JavaScript number — exponent notation, hex,
+    binary and modern octal literals, numeric separators, a leading or trailing
+    dot, a unary sign — was folded into `unknown`. Since `unknown` is the top
+    type (`leqAbs(actual, unknown)` always holds), the witness satisfied any
+    contract and the assertion passed for the wrong reason. Those forms are now
+    parsed with JavaScript literal semantics, so `1e3` is `1000`, `0x10` is `16`,
+    `0b101` is `5`, `0o17` is `15`, `1_000` is `1000`, `.5` is `0.5` and `5.` is
+    `5`.
+  - A legacy octal literal was read as decimal (`Number("017")` is `17`), while
+    sloppy-mode JavaScript reads it as octal (`017` is `15`). The witness and the
+    expected value were therefore a confident **wrong** value. A leading zero now
+    means octal (`017` → `15`, `010` → `8`), and a leading zero with `8` / `9`
+    keeps sloppy decimal semantics (`08` → `8`).
+  - Expression-shaped literals — a parenthesized value (`(7)`, `-(7)`), an
+    unsigned or negative sign (`+1`, `- 7`), a template literal without
+    interpolation (`` `x` ``) and a bigint (`7n`) — were also folded into
+    `unknown` and are now recognized.
+  - An expected value that cannot be parsed was folded into the same `unknown`
+    Abs as an explicit `unknown`, so `leqAbs(actual, unknown)` always held and
+    the assertion was vacuously true: the report said "1 passed" and the command
+    exited with `0`. A parse failure is now distinct from an explicit `unknown`:
+    it is reported through the existing `nudo:directive-syntax` channel and the
+    assertion fails instead of passing. An explicit `unknown` / `any` keeps its
+    meaning of "not constrained".
+- 27cc16a: String literals in `@nudo:case` / `@nudo:skip` / `@nudo:mock` now follow
+  JavaScript string semantics, and a text that is not a single string literal
+  is no longer folded into a wrong value.
+  
+  - A string literal was taken by slicing off the first and the last
+    character, so escape sequences were never interpreted: `"a\tb"` became the
+    four-character string `a\tb` (with a literal backslash) instead of
+    `a<TAB>b`. A witness therefore did not denote the same string as the
+    sidecar contract, which is evaluated as real JavaScript, and the contract
+    gate reported `witness ⊭ contract` for a witness that was in fact
+    correct. Escapes are now interpreted with JavaScript semantics (`\t`,
+    `\n`, `\\`, `\"`, `\uXXXX`, …).
+  - The same slice accepted any text that merely started and ended with a
+    quote, so `"a" + "b"` was folded into the string `a" + "b` — a value
+    nobody wrote. The expectation of a case, a case witness, the declared
+    return type of `@nudo:skip` and the payload of `@nudo:mock` all carried
+    that wrong value, and the reported expectation was unreadable text. A
+    string is now recognised only when the whole text is one string literal;
+    anything else is reported as unrecognized (`nudo:directive-syntax`) and
+    no longer produces a confident wrong value.
+  - The rule lives in one place (`directives/string-literal.ts`), so the case
+    argument, the expectation, `@nudo:skip` and `@nudo:mock` share it.
+- 27cc16a: `@nudo:case` / `@nudo:mock` payloads no longer lose structure or optionality.
+  
+  - The object / array literal branch of the case-argument grammar only checked
+    the first and the last character of the text, so trailing text was folded
+    into the value: `[1][0]` became the tuple `[unknown]` and
+    `{ a: 1 } + { b: 2 }` became `{ a: unknown }`. The engine then reported a
+    confident wrong value and the assertion failed even though the expected
+    value was plain JavaScript. The whole text is now validated as exactly one
+    literal; anything else is treated as "not recognized" (`unknown`) and is
+    reported through the existing `nudo:directive-syntax` channel.
+  - An object literal property without a top-level colon (a getter, a method
+    shorthand or a shorthand property) was silently dropped, so a `@nudo:mock`
+    payload lost that property without a word and the mock value became a
+    confident wrong value. Such a literal is now rejected as "not recognized"
+    and the offending property is named in a `nudo:directive-syntax`
+    diagnostic.
+  - The `optional` flag of a `shape({ … .optional() })` field was dropped when
+    the expected value was projected into an Abs, so an optional field became
+    mandatory and a legal actual value failed the assertion, and the reported
+    `expected` text did not show `?`. The flag is now projected into the slot,
+    matching the contract (sidecar) face of the same grammar.
+- 27cc16a: Directive parsing no longer loses or over-applies directives: malformed mock
+  tags are reported instead of evaporating, file-level directives only apply
+  where they are written, and a case expectation is no longer voided by a
+  trailing comment.
+  
+  - A file-level `/// @nudo:mock-module "fs" from "./mock-fs.js"` was caught by
+    the function-level `@nudo:mock` tag pattern, so a correct file produced a
+    fabricated `nudo:directive-syntax` warning ("Malformed @nudo:mock …").
+    The mock tag now requires a name boundary that excludes the `-` suffix of
+    the file-level family.
+  - `@nudo:mock` with an empty payload (`@nudo:mock fetch =`, `@nudo:mock g
+    from`) matched neither strict grammar, so the directive evaporated silently
+    — no mock, no diagnostic, and the analysis ran against the real API. The
+    three mock grammars are now closed: a tag that matches the lenient pattern
+    but neither strict one is reported through `nudo:directive-syntax`.
+  - `@nudo:skip=> number()` (no space between the tag and the payload) dropped
+    the whole payload, so the declared return type never took effect and the
+    signature degraded from `f() => number` to `f() => any` — an `any` leak into
+    the product surface. The separating whitespace is no longer part of the
+    required structure.
+  - `@nudo:mockfetch = …` (no space between the tag and the name) did not even
+    match the lenient tag pattern, so the whole mock was invisible to the
+    scanner: zero diagnostics and the analysis ran against the real
+    implementation. The lenient pattern now sees the glued spelling and reports
+    that a space is required.
+  - A `@nudo:case` expectation with a trailing comment (`=> string() // the
+    result is a number`) failed to parse and fell back to an explicit `unknown`,
+    which satisfies every expectation — the assertion was silently voided and
+    the command reported "1 passed" with exit code `0`. The trailing comment is
+    now stripped before the expectation is parsed.
+  - A malformed `@nudo:case` did not register an argument-region mask, so
+    `@nudo:mock` / `@nudo:skip` written inside its arguments leaked out as real
+    directives (false positives, methods dropped from the emitted declaration).
+    Malformed cases now mask their argument region as well; the malformed-name
+    diagnostic is unchanged.
+  - A file-level `@nudo:env` / `@nudo:mock-module` written inside a function
+    body was promoted to whole-file scope: the environment or the module
+    replacement applied to the entire file, with zero diagnostics. File-level
+    directives are now position-gated — a line comment inside a function body is
+    ignored and reported through `nudo:directive-syntax`, while top-level
+    positions (file header, `export` line, between statements) keep working. The
+    same gate is applied to the text-level extraction used by `@nudo:import`, so
+    the three file-level families now behave alike.
+- 27cc16a: Inline directives and mock payloads keep their meaning: an `@nudo:as` payload is
+  no longer dropped when it is written without a separating space, a trailing
+  comment no longer turns a valid type into `unknown`, an inline mock keeps its
+  `async` flag and its parameter bindings, and two identical malformed
+  directives in one file are no longer collapsed into a single diagnostic.
+  
+  - `@nudo:as(string())` (no space between the tag and the payload) matched
+    neither the "payload" pattern (which required whitespace) nor the "bare
+    tag" pattern (which only accepted `@nudo:as` on its own), so the whole
+    directive evaporated with zero diagnostics and the type override never took
+    effect. The separating whitespace is now optional, an outer pair of
+    balanced parentheses is unwrapped (`@nudo:as(string())` is
+    `@nudo:as string()`), a tag whose name continues with an identifier
+    character (`@nudo:assume`, `@nudo:ascii`) is still not an `@nudo:as`
+    directive, and an empty payload is reported explicitly.
+  - A trailing comment without a preceding space (`@nudo:as string()// why`) was
+    merged into the type expression, so a valid type was judged "unsafe" and
+    degraded to `unknown` — the type override silently stopped applying.
+    Trailing comments are now detected by lexical boundary; a `//` that follows
+    a numeric literal and a digit is still read as a division, and comment
+    markers inside a string literal are still ignored.
+  - `@nudo:mock f = async (x) => x + 1` lost its `async` flag during parsing,
+    so the mock was modelled as a synchronous function and the call site
+    `f(1).then(…)` was reported as "method 'then' missing on number receiver" —
+    an error-level false positive (native returns a promise). The scan result now
+    carries the `async` flag.
+  - The parameters of an inline mock payload had no binding semantics: a
+    destructuring parameter was replaced by a placeholder name, a default-value
+    parameter was dropped entirely, and a rest parameter kept its literal `...`.
+    The mock body therefore read undeclared globals (`ReferenceError`) and the
+    emitted declaration said `never`. The parameter list now keeps the source
+    form, the parameter ASTs and the bound names, all aligned one-to-one.
+  - The deduplication identity of a directive diagnostic was the code plus the
+    message text, with no position, so two word-for-word identical malformed
+    directives in one file collapsed into a single diagnostic and the second
+    occurrence was completely invisible. A diagnostic now carries the position
+    of the offending directive and the identity includes it: the same problem at
+    the same place is still reported once, while the same text at two different
+    places is reported twice.
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [7fea13a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+  - @nudojs/core@1.16.0
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-parser)
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 1.7.2 {#pkg-lsp}
+## @nudojs/lsp 1.8.0 {#pkg-lsp}
 
-## 1.7.2
+## 1.8.0
+
+### Minor Changes
+
+- e6c4586: agent 工具面的载荷**新增**了 `assertions` 段 / `pathErrors[]` 段与新诊断码
+  （`nudo:path-not-found` / `nudo:path-not-target`）；`@nudojs/service` **新增**了
+  一批公开导出（`mergeCheckIssues` / `directiveDiagIssues` / `mockFromErrorIssues` /
+  `envUnresolvedIssues` / `collectCheckSupplementIssues` / `buildTestReport` /
+  `pathNotFoundError` / `targetPathError` / `formatPathErrorText` 等）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  LSP agent 工具面（`nudo/check` / `nudo/test`）与 CLI 的通道对齐：补回
+  check 的补充诊断通道、test 的断言汇总、imported 段、路径错误信封与
+  「分析目标」闸门。
+  
+  - `nudo/check` 此前只跑裸 `checkSource`，CLI 侧并入 check 报告的三条补充
+    通道（指令文法 `nudo:directive-syntax`、mock 装载失败
+    `nudo:module-missing`、path env 未解析 `nudo:env-unresolved`）一条都没接
+    ⇒ 同一文件 CLI / LSP 编辑器面 / agent 面给出三份 issue 集（agent 面把
+    「指令写错了」整条吞掉，mock 文件缺失判绿）。并入逻辑下沉到
+    `@nudojs/service`（`mergeCheckIssues` / `directiveDiagIssues` /
+    `mockFromErrorIssues` / `collectCheckSupplementIssues`），三面共用同一份。
+  - `nudo/test` 此前没有 `assertions` 段 ⇒ 消费方分不出「见证通过」与「见证
+    失败」。现在并入与 CLI `nudo test --json` 同口径的
+    `assertions`（passed / failed / unchecked，service 的 `buildTestReport`）。
+  - `nudo/test` 的文本面此前**不渲染** imported（外部）函数 ⇒ CLI 有的
+    `(imported)` 段在 IDE 面整段消失，而头部计数仍把外部 case 算进去
+    （「3 case」只印 2 条）。现在按来源模块分组渲染，段头
+    `--- <mod> (imported) ---`。
+  - `nudo/test` 的 `functions` 过滤只重算**本地** case 数 ⇒ `summary.cases`
+    与自身 payload 矛盾（summary 说 1、payload 躺着 2）。外部函数不在过滤
+    范围内，其 case 仍留在 payload 里 ⇒ 计数改为与 payload 同源。
+  - `nudo/check` / `nudo/test` 此前没有「分析目标」闸门 ⇒ 对侧车契约文件报
+    「0 fn / 0 error」判绿（CLI 对同一文件 exit 1「Not an analysis
+    target」），`nudo/test` 还把契约 DSL 构造器（`fn(...)` / `shape(...)`）
+    当成真实调用点报成 case。入口现在复用与 CLI 同一份目标判定
+    （`isNudoTargetPath` + 侧车 / `.d.ts` / JSX 排除），非分析目标返回
+    `nudo:path-not-target`。
+  - `nudo/check` / `nudo/test` 此前对不存在的文件只返回裸 `ENOENT` 文本
+    （`format:"json"` 也不返回 JSON）。现在走结构化路径错误通道
+    （`pathErrors[]` + `nudo:path-not-found` + suggestion），与 CLI
+    `check --json` / `test --json` 同构。
+  - `nudo/test` 的 `functions` 入参此前零校验：传字符串被逐字符建集合（函数
+    全被滤掉 ⇒ 全空报告的假空结论），传数字 / 对象时过滤被整体跳过（静默
+    失效）。畸形入参现在一律工具错误（`isError: true`）。
+- e6c4586: 三个 contract 工具**新增**入参 `from?: string[]`（`--from` 等价通道），`@nudojs/service`
+  **新增**公开导出 `collectCallsiteRecords`（+ 类型 `CallsiteRecords`）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  fix(lsp,service): 族 25 A2 —— 契约面四条缺陷（762 / 765 / 766 / 994）
+  
+  - **762** `nudo.contract.emit` 现在与 CLI `nudo contract --emit` **同序同口径**：
+    先 `emitDerivedFromRoot`（root 驱动下行推导），再 `emitInterface`（本地侧车）。
+    此前工具**从不**调派生步 ⇒ CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面
+    永远不产生，且结果文本把「引擎没做的那一步」说成「name-clash」——误导性诊断。
+    下游侧车的写盘边界与本地侧车同口径（必须落在 workspace roots 内）。
+  - **765** 源文件 open buffer 与磁盘文本不一致时**拒绝写盘**（可诊断错误：
+    save or discard before emit）——此前只挡了侧车自己的脏 buffer，源文件的脏
+    buffer 会把**未保存**的代码形状写进侧车，磁盘源码却一个字节没变。
+  - **766** emit 写盘边界改按**路径分量**判定逃逸（`..` 或 `..` + 分隔符），
+    不再误杀 `..dotted.js` / `...triple.js` / `..cfg/x.js` 这类合法路径名；
+    root 外的文件与指向 root 外的符号链接**仍然拒绝**。
+  - **994** 三个 contract 工具（`nudo/contract` / `nudo/contract.draft` /
+    `nudo/contract.emit`）新增 `from?: string[]`（`--from` 等价通道）：跨文件
+    调用点证据参与契约求解，接口面/草稿/落盘与 CLI `nudo contract --from` 同口径。
+    证据采集下沉到 service：新增导出 `collectCallsiteRecords`（+ 类型
+    `CallsiteRecords`）。
+- e6c4586: **BREAKING**: 既有 `nudo/…` 请求的**响应信封**变了。
+  
+  - `nudo/trace` / `nudo/suggestCase` 的失败路径此前**不带** `isError: true`
+    （失败被当成成功，客户端只能从正文分辨）⇒ 现在失败路径返回 `isError: true`
+    （MCP 风格）⇒ 按「有没有 `isError`」分支的客户端行为变了；
+  - `nudo/hover` 现在**校验**位置参数：非整数 `line` / `column` 此前被原样回显
+    且所有分析字段为 `null`（与「此处无 hover」不可区分），现在答**工具错误**；
+    `column` 缺省为 `0` ⇒ `{ file, line, column, … }` 的载荷形状恒成立。
+  
+  谁会坏：把失败响应当成功处理的客户端（`nudo/trace` / `nudo/suggestCase` 的失败
+  现在带 `isError: true`）；以及用非整数 `column` 调 `nudo/hover` 探测「此处有没有
+  东西」的客户端（现在拿到的是工具错误而不是一个全 `null` 的载荷）。
+  
+  怎么迁移：客户端按 `isError` 分支处理失败；`nudo/hover` 只传整数 `line` /
+  `column`（`column` 缺省即 0）。
+  
+  Fix agent-tool (LSP) defects found by the族 25 audit:
+  
+  - **767** — `nudo/trace` / `nudo/suggestCase` failure paths now return `isError: true` (MCP-style), so a failed call is distinguishable from a successful one at the protocol level instead of only in the text.
+  - **768** — `nudo/hover` validates its position arguments: a non-integer `line` / `column` is a tool error (previously the value was echoed back with every analysis field `null`, so "no hover here" and "my argument was the wrong type" were indistinguishable), and `column` now defaults to `0` so the documented `{ file, line, column, … }` payload shape always holds.
+  - **961** — `nudo/whatIf` validates its arguments: a missing `target` is a tool error (previously a fake success reporting `Type of "undefined": unknown`), a non-array `bindings` is a diagnosable tool error (previously a raw `bindings.map is not a function`), and a binding without `name` is rejected instead of silently doing nothing. `injectBindings` in `@nudojs/service` gained the matching shape guard and names the offending entry (`<missing name>`).
+  - **993** — the observing agent tools (`nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`) now analyse through the asynchronous entry point, which preloads path-based `@nudo:env` modules. Their output no longer depends on whether the file happens to be open in the editor (previously the same file and tool could answer `never`/`unknown` or `99` depending on call order, together with a misleading "Built-in API is not covered" diagnostic). The analysis caches additionally key on the env **preload state** so a synchronous analysis taken before the preload can no longer feed a stale "no env" result to later calls.
+  - **955 (shared entry)** — `normalizeFilePath` now rejects a non-string / empty / missing `file` with a diagnosable `file is required …` tool error instead of leaking a raw `file.startsWith is not a function` TypeError (or silently falling back to the server's working directory). Every agent tool goes through this shared entry point.
+- e6c4586: **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
+  本版本同步更新）。
+  
+  - `nudo.selectCase` / `nudo.selectContract` 的失败面此前是 `{"success": true}`
+    （对不存在的函数、对空调用都答成功）⇒ 现在答
+    `{ success: false, error, isError: true }`；
+  - `workspace/executeCommand` 上的**未知命令名**此前答 `result: null`（与
+    「命令跑了但没产出」不可区分）⇒ 现在答协议级 `MethodNotFound` 错误。
+  
+  谁会坏：按 `success` 分支处理 `nudo.selectCase` / `nudo.selectContract` 的客户端
+  （失败路径的 `success` 现在是 `false`）；以及靠 `result === null` 判「命令不存在」
+  的客户端（现在收到的是 JSON-RPC 错误）。
+  
+  怎么迁移：客户端按 `{ success: false, error, isError: true }` 处理失败；用
+  JSON-RPC 错误码判「命令不存在」（`MethodNotFound`）。
+  
+  The LSP editor commands now tell the truth: a selection that did not happen
+  is reported as a failure, and the mirrors a selection touches are refreshed
+  together.
+  
+  - `nudo.selectCase` validates its arguments before touching the active-case
+    table. A `caseIndex` outside the function's `@nudo:case` list used to be
+    accepted: `-1` crashed the analysis (`Cannot read properties of undefined
+    (reading 'argsAbs')` in the diagnostics) and `99` silently replaced the
+    observation slot. A `functionName` that is not a function of the target
+    file used to be stored as-is, so `nudo.getActiveCases` reported ghost
+    entries such as `{"":0}`. Both now return a structured error and leave the
+    table untouched.
+  - `nudo.selectContract` validates that the target function exists in the
+    file. It used to answer `{"success":true}` for a function that was never
+    there (and for a call without any arguments at all), so the client could not
+    tell a real switch from a no-op.
+  - A selection refreshes the inlay hints and the pull diagnostics as well as
+    the code lenses. Only the code lenses were refreshed, so a client without
+    code lens support kept showing the previous case, and a pull-diagnostics
+    client never saw the diagnostics of the newly selected case.
+  - `file` / `uri` arguments must be non-empty strings. A non-string `file` used
+    to escape as a bare `TypeError` (`file.startsWith is not a function`), which
+    reached the client as a JSON-RPC protocol error instead of a tool error
+    carrying `isError: true`; a missing `file` silently fell back to the
+    server's working directory.
+  - An unknown command name on `workspace/executeCommand` now fails with the
+    protocol-level `MethodNotFound` error instead of answering with a `null`
+    result, which was indistinguishable from "the command ran and produced
+    nothing".
+- e6c4586: **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
+  本版本同步更新）——
+  
+  - 失败面统一成 `{ success: false, error, isError: true }`：
+    `nudo/selectCase` / `nudo/selectContract` / `nudo/getActiveCases` 此前对
+    非法入参**答 `{"success": true}`**（或幽灵条目），现在答结构化错误信封 ⇒
+    客户端按 `success` 分支的代码路径变了；
+  - `AGENT_TOOL_SOURCES` 的**值**同步为新的共享数据源（`analyzeFile` →
+    `analyzeFileAsync`；`check` → `checkSource + mergeCheckIssues +
+    serializeCheckJson`；`test` → `analyzeFileAsync + buildTestReport +
+    serializeCaseJson`）⇒ 依赖这张表反推「命令 ↔ 数据源」的客户端读到不同的值。
+  
+  谁会坏：把 `nudo/selectCase` / `nudo/selectContract` 的**失败**当成功处理的
+  客户端（此前恒 `success:true`，现在会拿到 `success:false` + `isError:true`）；
+  以及读 `AGENT_TOOL_SOURCES` 做能力判断的客户端。
+  
+  怎么迁移：客户端按 `{ success: false, error, isError: true }` 分支处理失败
+  （`packages/lsp/PUBLIC_API.md` 与两份 API 文档已同步）；不要再按
+  `AGENT_TOOL_SOURCES` 的**字面**判能力，改按命令名判断。
+  
+  `@nudojs/service` 侧**新增**公开导出 `pathEnvPreloadFingerprint` ⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  族 25 收口接线（6 项）：把跨片耦合的缺口补上，并让文档与工具面说同一件事。
+  
+  - **`testTool` 改异步入口**（Bug 993）：A4 把 `whatIf` / `suggestCase` / `trace`
+    改成了 `analyzeFileAsync`（path 型 env 只能异步预载），但 `testTool` 属另一片
+    的函数级边界 ⇒ 冷进程 `nudo/test` 首调仍是 env-less（`"unknown"` + 1 条误导
+    诊断）。⇒ 改 `async` + `analyzeFileAsync`（**签名变更**：
+    `AgentToolResult` → `Promise<AgentToolResult>`），同步调用点与既有测试。
+  - **`AGENT_TOOL_SOURCES` 值同步**：工具面真换了数据源，表与文档要跟着走 ——
+    `check` → `checkSource + mergeCheckIssues + serializeCheckJson`、
+    `test` → `analyzeFileAsync + buildTestReport + serializeCaseJson`；同步
+    `packages/lsp/PUBLIC_API.md` §5、`packages/website/docs/api/agent.md` 与
+    `AGENT_TOOL_SOURCES` 的值钉。
+  - **`nudo/contract.emit` 转发 `from`**（Bug 994）：三个 contract 工具已支持
+    `--from` 等价通道，但协议入口 `makeHandleContractEmit` 只构造
+    `{file, functionName, mode, dryRun?}` ⇒ **`from` 到不了 emit 工具** ⇒ 补
+    入参类型 + 透传。
+  - **CJS 导出的 hover 面**（Bug 998）：`findFunctionNameAtPosition` 没有
+    `MemberExpression` property 分支 ⇒ `module.exports.alpha = function () {}`
+    的 hover 回退成无名 `(x) => ?`（诊断面认得它、hover 面不认 ⇒ IDE 内部
+    自相矛盾）⇒ 补分支（祖父节点走 `path.parentPath.parent` —— Babel 的
+    `node.parent` 不存在）。
+  - **失败面文档同步**：`selectCase` / `selectContract` / `getActiveCases` 的失败
+    面统一为 `{ success: false, error, isError: true }` ⇒ 两份 API 文档的返回面
+    记载同步；`nudo/contract.emit` 的 `from?: string[]` 参数也补进文档。
+  - **`pathEnvPreloadFingerprint` 的瞬时 ReferenceError**：族内 build 前
+    `dist` 落后于 `src` 造成的一次性混用 ⇒ 随本族 build 消失（已连跑 5 次
+    复现不出）。
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
-  - @nudojs/parser@1.5.2
-  - @nudojs/service@1.9.2
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- 2af2bae: Return-contract diagnostics now carry the position of the function they
+  belong to, name the constraint source they really came from, and only claim
+  that a proof relied on a user lemma when the proof actually consumed it.
+  
+  - **Position.** `checkSource` built its return-contract issues without a
+    `line` / `column`, so every consumer fell back to the top of the file:
+    the LSP drew the diagnostic at line 1 column 0, `nudo check --gha`
+    annotated `line=1,col=1`, GitLab Code Quality reported `lines.begin: 1`,
+    and `--json` emitted no position at all — even when the offending
+    function was declared on line 10. The issues are now built with the
+    declaration position of the function, so the LSP, the CI annotations and
+    the JSON machine contract all point at the real line.
+  - **Constraint source.** The message of a violated return contract always
+    said `@nudo:contract return <name>`, even when the constraint came from
+    the return slot of a sidecar `fn({...}, <ret>)` binding — a directive
+    that does not exist in the source file. The message now names the real
+    source: `@nudo:contract return <name>` for a source directive,
+    `sidecar fn() return slot (...)` for a sidecar return slot.
+  - **Lemma attribution.** The `nudo:assume-relied` audit note claimed that
+    a proof relied on a user lemma whenever the function declared one and
+    the return contract happened to be provable — even when the lemma took
+    no part in the proof (`return 0` is provable regardless of
+    `@nudo:assume d <= max`). The engine now records which lemmas a proof
+    actually consumed and attributes the note to those, so an unused lemma no
+    longer produces a false "proved via @nudo:assume" claim. The proof
+    result itself is unchanged: the note is an audit annotation, not a gate.
+- c325a10: fix(lsp): `refactor.extract` 的多 edit 合成统一坐标口径（Bug 450）
+  
+  - 根因：`packages/lsp/src/extract-function.ts` 的 `applyEdits` **排序**用原
+    `source` 的坐标、**应用**时却用 `posToOffset(out, …)` 在**已被前面的 edit
+    改写过的** `out` 上求坐标 ⇒ 两个区间相互包含（插入点落在替换范围内部）时，
+    后应用的 edit 落点按**陈旧坐标**漂移 ⇒ 源文件被搅成垃圾
+    （`"AAAA BBBB CCCC"` + 替换 [5,9) + 插入 @6 ⇒ 改前 `"AAAA REPLBBB CCCC"`）。
+  - 修法：**统一坐标口径** —— 全部 edit 的偏移都在**原 source** 上算好，再
+    **从后往前**（起点倒序）应用；区间嵌套（插入点落在替换范围内部，LSP 规范下
+    属非法重叠 edit）按「插入文本并入该替换范围、紧贴替换文本**之前**」
+    **确定性合成** ⇒ 改后 `"AAAA INSREPL CCCC"`（插入内容不丢、源码不被搅乱）。
+  - 替换范围之间**真的**重叠（部分重叠 / 交叉）无法确定性合成 ⇒ fail-closed：
+    抛 `RangeError`（`server-code-actions.ts` 的 `refactor.extract` 是
+    best-effort ⇒ 抛错即「不出 action」，绝不产出非法 WorkspaceEdit）。
+  - 影响面：`applyEdits` 的两个调用点（**表达式提取路径** / **语句序列路径**）
+    同时受益；不相交 edit 的既有行为**逐字不变**。
+  - 未变：公共 API 冻结面零变更（`packages/lsp/src/public-api.ts` 四张表不动、
+    零新增导出）。
+- e6c4586: LSP 符号 / 观察面与导出面对齐：默认导出、导出类实例方法、CJS 成员导出不再
+  整段消失，跨模块调用点补上 `call@` 观察透镜（Bug 753 / 769 / 998 / 1034）。
+  
+  - `export default function` 此前只存在于 hover / 大纲面，CodeLens 与
+    inlayHint 的 interface 档（`● contract / imp` / `⚡ persist interface` /
+    `⚡ draft interface`）整段缺失。默认导出现在与具名导出同形。
+  - 导出类的实例方法（`Counter.inc`）此前只在 hover 面可见：CodeLens 没有
+    interface 档，inlayHint 也没有返回 inlay。类方法现在以 `Class.method`
+    为契约键进入两面，与顶层导出函数同形。
+  - CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）此前在
+    documentSymbol / workspace symbol / inlayHint / semanticTokens 四个面
+    全部不可见，CodeLens 也没有 interface 档——而诊断面却点名该导出。
+    四面现在与 ESM 具名导出同形（导出键带 function 档 + interface 档 modifier）。
+  - 跨模块调用点（`import { add } from "./lib.js"` 后调用 `add(x, 2)`）此前
+    不在调用方文件的 CodeLens 上投影——CLI `nudo test` 已经打印该事实。
+    调用方文件现在出现与 CLI 同形的 `call@L4` lens；被导入函数的 entry@
+    仍属被导入模块，不在调用方落镜。
+  
+  core 侧只改了内部未导出函数 `listFunctions` 的函数体（导出类实例方法与
+  CJS 成员导出的枚举），未新增任何导出名。
+- f87c9f9: fix(lsp): 成员补全引擎的接收者解析与内建原型投影（Bug 771 / 772 / 782 / 787 / 788）
+  
+  - **771** union 接收者的补全不再跳过「零成员」的那一支：sum 交集计算区分
+    「该臂成员集为空」（原始值臂 ⇒ 交集必空）与「该臂补全信息不可得」
+    （unknown / any / never ⇒ 可跳过）⇒ `{x,y} | 5` 的 `u.` 不再给出 `x` / `y`
+    （取属性在原始值臂上是 TypeError）。
+  - **772** 成员补全的接收者按**整条成员访问链**解析（`a.b.c` ⇒ 接收者是 `a.b`），
+    不再取最后一段标识符 ⇒ `a.b.` 不再给出同名顶层绑定的成员。
+  - **782** 接收者识别与源码消毒的标识符捕获组改为 Unicode 感知
+    （JS IdentifierStart/Continue + `$`）⇒ 非 ASCII 接收者（`对象.`）给出该对象的
+    成员，不再回落成顶层变量表。
+  - **787** 字面量 / 括号 / 字符串接收者（`(42).` / `(true).` / `"abc".`）走内建
+    原型表（Number / Boolean / String）；**认不出接收者时给空**，绝不回落成顶层
+    变量表（那份表与「成员」意图无关）。
+  - **788** prim 分支按类型分派到对应的内建原型表
+    （number → Number / boolean → Boolean / bigint → BigInt / symbol → Symbol），
+    品牌名命中内建类时同样投影该类成员 ⇒ number / boolean 接收者不再是零候选。
+  
+  新增 `getCompletionsAtPosition` 的**上下文入参**（`CompletionContext`）与
+  `completionBranchAt` 补全面分支判定入口，供调用方（IDE 入口）按光标词法上下文
+  与作用域决定成员面 / 变量面。
+- f87c9f9: fix(lsp): 补全面的绑定下沉 + 词法上下文闸（Bug 789 / 952）
+  
+  - **789**：成员补全解析接收者 Abs 时不再只查**模块级** `bindings` 表（该表由
+    service 的 `collectBindings` 只遍历**顶层**语句填充 ⇒ 函数体内的局部量 /
+    形参不在表里）⇒ 函数内接收者一律**零候选**（连 `string` 局部量也是 0 项）。
+    新增 `replay.ts` 的 `lookupScopedBinding`（**作用域感知**的绑定查询）：
+    局部量走引擎节点级 Abs 重放（`recordPositions` 插桩在**声明位**记录初始化
+    求值态 Abs——与模块级绑定面同口径），形参走契约种子（`generalizeFromAst` 的
+    `entryShapes`，与 hover 的「A 参数面」同源）；`server-ide.ts` 的补全入口把
+    它挂到 `CompletionContext.lookupBinding` 上（作用域面优先，作用域里没有才
+    回落模块级绑定面）⇒ **同一份代码只改「接收者声明的位置」**，成员候选集完全
+    一致。
+  - **952**：补全入口**单次**计算光标的词法上下文（code / comment / string），
+    指令面 / 成员面 / 变量面共用同一份 ⇒ 光标落在**字符串 / 模板字面量内部**或
+    注释里时不再弹出候选（接受任一项即把标识符写进字面量内部 ⇒ 静默改写运行时
+    值）；代码位与注释里的 `@nudo:` 指令面行为不变。
+- f87c9f9: Hover now agrees with `nudo check` on what a parameter's type is, and an
+  early-return guard no longer narrows away a `null` that is still reachable.
+  
+  - **Bug 773** — The flow facts treated `if (!p) { return 0; } else { … }` as
+    an early-return guard and stripped the `nullable(…)` wrapper from `p` for
+    the rest of the function. The `else` branch falls through to the code
+    below the `if`, so `p` can still be nullish there; the hover showed a
+    type that does not hold. The guard now only narrows when there is no
+    `else` branch, or when the `else` branch also ends in `return` / `throw`.
+  - **Bug 774** — A parameter of a function without a contract produced an
+    empty hover, even though the signature block of the very same hover
+    showed `x: any`. The parameter projection now falls back to the
+    "unconstrained ⇒ `any`" rule (design §2); identifiers that are not
+    parameters still report no information.
+  - **Bug 775** — For contract parameters the hover showed the sidecar
+    expression text (`x: number().gt(0)`) while `nudo check` showed the
+    inferred type (`x: number`), so one function had two different parameter
+    types depending on the surface. Non-union contract parameters now use the
+    same inferred shape as the check signature line. Union parameters keep
+    their declared form: a discriminated union expands to tens of thousands
+    of characters and its arms are identified only by the user's own type
+    names.
+  - **Bug 786 (hover half)** — The hover surface never forwarded the
+    `inject` bundle, so inline directives (`@nudo:mock` / `@nudo:as` /
+    `@nudo:replace`, environment globals) were missing and the derivation
+    collapsed to `unknown` ("inference failed") while the CLI gate showed the
+    real type. `HoverInterfaceOpts` now carries `inject` and passes it to
+    every `generalizeFromAst` call of the hover surface.
+- f87c9f9: fix(lsp): server 骨架 8 条——重复诊断推送 / 配置深合并 / trace 位置参数桥 / 工作区根 / 畸形 URI / inlay 开关同口径 / pull 诊断 env 通道（Bug 776 / 777 / 780 / 783 / 784 / 790 / 781 / 992）
+  
+  - **Bug 776**（重复推送）：`vscode-languageserver` 的 `TextDocuments.listen()`
+    在 `didOpen` 时**同时** fire `onDidOpen` 与 `onDidChangeContent` ⇒ 打开即
+    验证路径与编辑防抖路径对**同一内容**各跑一遍完整校验、各 publish 一次
+    （同 version 同内容发两次）。`server.ts` 记文档指纹（version + 内容），
+    防抖路径遇到同一指纹即认定 didOpen 回声并跳过；publish 面再加**内容去重**
+    （同 uri + 同 version + 同诊断内容只发一次，同版本但内容变了仍照发）。
+  - **Bug 777**（配置深合并）：`workspace/didChangeConfiguration` 的载荷只带
+    **变更部分**（或与 nudo 无关的整棵树），server 却把它当整棵子树读 ⇒
+    未提及的键被抹成 `undefined` ⇒ 一次无关的设置变更就把宿主的
+    `nudo.analysis.mode` 默认值清掉（分析范围静默收缩、hover 变 null）。
+    宿主设置改为**累积合并树**：出现的键覆盖、未出现的键保留、`null` = 显式
+    重置；扁平键（`"nudo.analysis.mode"`）按点号展开成嵌套路径，与嵌套形态
+    等价。
+  - **Bug 780**（命令桥 · server 侧）：`nudo.trace` **没有**位置参数桥
+    （`nudo.contract*` 有）⇒ IDE 观察透镜的 `[uri, fn]` 落到兜底分支、把 uri
+    字符串当参数对象传下去 ⇒ 工具 100% 失败。补上与 `nudo.contract*` 同款的
+    位置参数桥（复用 agent 侧 `tracePositionalArgs`），并把兜底分支改成
+    「参数不是对象 ⇒ 协议层 `InvalidParams`」，不再把字符串当对象传下去。
+  - **Bug 783**（工作区根）：`workspaceRoots` 的写入点**全在** `onInitialize`
+    里 ⇒ 之后永不更新；server 也从不订阅
+    `workspace/didChangeWorkspaceFolders`，且 capabilities 未声明
+    `workspace.workspaceFolders.changeNotifications` ⇒ 客户端根本不会发这条
+    通知。现在声明该能力 + 订阅通知（增删根、realpath 归一）+ 根集合变化后
+    清 `nudoFileCache`、重检已打开文档、广播 `workspace/diagnostic/refresh`
+    （新纳入的目录不再被写盘边界误拒，已移出的目录不再保留过期授权）。
+  - **Bug 784**（畸形 URI）：`onInitialize` 对每个 workspace folder 的
+    `uriToFilePath` 没有兜底 ⇒ 一个百分号转义非法的 URI 抛 `URIError` ⇒
+    initialize 整个失败 ⇒ 客户端拿不到 capabilities ⇒ 整个语言服务器会话
+    起不来。改为逐个 folder 兜底：跳过畸形项 + 记可读告警，其余照常。
+  - **Bug 790**（inlay 开关同口径）：项目侧 `nudo.inlayHints.parameters`
+    **原样返回**原始值，宿主侧走 `parseInlayParams` ⇒ 同一个键两套规则
+    （项目写字符串 `"false"` 反而**开启**参数 inlay，宿主同一个值**关闭**）。
+    项目侧改用**同一个归一化函数**：非 boolean 一律回落默认（关）+ 一条
+    可读告警。
+  - **Bug 781 / 992**（诊断面同形）：push 面（`validateText`）会发
+    `nudo:env-unresolved`，pull 面（`textDocument/diagnostic`）**完全没有**
+    env 通道 ⇒ 同一文件两个诊断面互相打脸（IDE 与 CI 结论不一致）。pull 通道
+    补上 env 通道——与 push **同源同档**（`envUnresolvedDiags` +
+    `filterCheckLspByLevel` + 同一 level + 同一去重键空间）。
+  
+  冻结面：`packages/lsp/src/public-api.ts` 四张表本族**零变更**。`workspace`
+   能力键已由 server 声明，但**未**写进 `NUDO_INITIALIZE_CAPABILITIES`
+  （属于「stable 键集变更」，待 owner 拍板后统一补表 + 补 `PUBLIC_API.md`）。
+- f87c9f9: fix(lsp): 诊断 range 夹到行尾 + check 通道保留 info 级（Bug 778 / 779 LSP 半）
+  
+  - **Bug 778**：service 的 `column: 999`「整行」哨兵被原样写进 LSP
+    `end.character` ⇒ 协议层 range 越界（push / pull 两条通道都越界）。诊断
+    range 的**唯一计算点** `lspDiagnosticRange`（`validation.ts`）：行号 1 基
+    → 0 基、列号夹到该行长度以内、同 line 时 end ≥ start；行长表由本轮源码
+    逐行算出（会话条目缓存 ⇒ pull 通道无源码参数时同样夹取）。
+  - **Bug 779**（LSP 半）：`checkToLspDiagnostics` 在转换前就把 info 级砍掉 ⇒
+    下游档位过滤器永远看不到 info ⇒ `nudo.analysis.diagnostics: "verbose"` 对
+    check 诊断是空操作（`nudo:assume-relied` / `nudo:invariant-relied` /
+    `nudo:opaque-result` 永不上屏，与 CLI `nudo check` 两侧集合不一致）。转换点
+    改为保留三档，档位取舍只由 `filterCheckLspByLevel` 决定（verbose 放行
+    info；default / errors / off 不放行，`off` 的门禁码可见性不变）。
+  - **env 通道同档同 range**：`nudo:env-unresolved` 改走与 check 主通道同一个
+    转换点（`checkIssueToLspDiagnostic`）⇒ severity 与 range 与主通道同口径。
+  - 对外交付两个前置件：`envUnresolvedDiags` 改为 export（供 pull 诊断面
+    消费）；`handleNudoDepFileChanged` 排除变更文件自身（防自激重检）。
+- f87c9f9: fix(lsp/core): IDE 面与 CLI 同源装配注入 + info 级 check 诊断不再被提前砍掉（Bug 785 / 786 / 780 / 779 vite 半）
+  
+  - **Bug 785**（注入装配）：LSP 侧**从不采集**行内指令（`@nudo:as` /
+    `@nudo:replace`）⇒ CLI 与 IDE 对同一份文件给出**相反**的门禁结论与签名
+    （IDE 假红：用户声明过 `raw` 是 number，IDE 仍按 string 判
+    `raw.toFixed` 不存在并报 `nudo:entry-may-throw`）。新增 **LSP 侧注入装配器**
+    `buildLspInjection`（`packages/lsp/src/agent-tools.ts`）—— 与 CLI
+    `buildCheckInjection` **同口径**（`@nudo:as` / `@nudo:replace` /
+    `@nudo:mock` / env 全局 / 模块图），**不从 lsp 反向 import nudojs**，
+    零新增 core / service 导出；agent check 工具面把它交给
+    `checkSource({ inject })` ⇒ `nudo/check` 由 `ok=false · 1 error ·
+    unknown #partial` 变为 `ok=true · 0 error · string`（与 CLI 同款结论）。
+  - **Bug 786**（注入传递协议 + inlay 半）：`CollectAbsInlaysOpts` 新增
+    `inject` 字段并透传给 `generalizeFromAst`（core 侧**只改内部函数体**、
+    零新增 core 导出 ⇒ 不破 core 冻结面）⇒ inlay 面不再把「行内指令缺席」
+    显示成 `unknown`（Nudo 词汇里 = 「推断失败」）。对外交付注入传递协议：
+    `buildLspInjection(filePath, source, { loadModule?, modules? }) →
+    RunTranspiledOptions`，消费方统一走
+    `checkSource({ inject })` / `generalizeFromAst({ inject })` /
+    `collectAbsInlays({ inject })`。
+  - **Bug 780**（agent 侧）：`nudo.trace` 此前**只读 `params.file`** ⇒ LSP 自产的
+    `file://…` uri 形态与 `executeCommand` 位置参数形态都让 `params.file` 变
+    `undefined` ⇒ 观察透镜 100% 抛 TypeError。现在 `FunctionToolParams` 收
+    `uri` 键（与 `file` 二选一，缺省时报共用入口闸的 `file is required …`
+    而不是裸 TypeError），并导出位置参数桥 `tracePositionalArgs([uri, fn])`
+    （形态不合法 ⇒ `undefined`，由命令桥报协议层参数形态错误）。
+  - **Bug 779**（vite 半）：`checkIssuesToDiagnostics` 在转成 vite Diagnostic
+    **之前**就把 info 级砍掉 ⇒ 下游档位过滤器永远看不到 info ⇒
+    `nudo.analysis.diagnostics: "verbose"` 对 check 诊断是**空操作**
+    （`nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result`
+    永不上屏）。转换点改为保留三档，档位取舍只由
+    `filterDiagnosticsByLevel` 决定；info 级走 vite 的 **info 通道**
+    （不混进 warn 流），warning 计数不含 info。
+- 27a795e: 族 22 修复 D1：Bug 699 / 702 / 709 / 714 / 715 —— 符号表按作用域存绑定、引用集合只收标识符、rename 编辑协议合法。
+  
+  - **699**：babel 把 `ExportNamedDeclaration` **语句节点**放进导出绑定的
+    `referencePaths`，改名时它变成一个「宽于单个标识符」的编辑目标 ⇒ `rename`
+    一个导出绑定会把整条 `export function …` 声明替换成一个标识符，且与声明位
+    的编辑**重叠**（LSP 不允许同一份 edit 列表里 range 重叠）。引用集合现在只收
+    `Identifier` 节点；改名编辑另外加两道兜底：宽于一个标识符的编辑挡掉、互相
+    重叠的编辑只留窄的一条。
+  - **702**：`references` 把**声明位点返回两次**（符号表里的声明位 + 引用集合里
+    的声明位），还混着上面那条语句级伪引用。引用集合按 (uri, 位置) 去重，语句级
+    目标不再进集合。
+  - **709**：符号表按**名字**索引 ⇒ **遮蔽**的同名局部变量上 F12 /
+    Find-references 会落到另一个作用域的声明。定义现在按**作用域路径**存（同名
+    绑定在不同作用域各存一条），查定义时按光标所在作用域取最内层的那条。
+  - **714**：`references` 的 `context.includeDeclaration: false` 仍返回声明位点 ——
+    该开关只关掉了「另一处」的声明。引用收集现在接受 `includeDeclaration` 入参并
+    由 references 通道透传。
+  - **715**：改名遇到**对象字面量简写属性**（`{ x }`）时，key 与 value 是同一段
+    源码 ⇒ 整段替换会把 key 也改掉（对象的形状被静默改掉）。这类位置现在生成
+    `x: <新名>`（保留 key、只换 value）；解构模式（`function f({ x })`）同理。
+- 27a795e: 族 22 修复 D2：Bug 704 705 706 712 719 —— 大纲面与「方法引用 / 改名」面对齐真实符号。
+  
+  - 大纲里所有变量绑定都写成 `const`：`let mutable = 1` 与 `var x = 1` 的
+    detail 都是 `const`（导出时是 `export const`）——文案只按「是否导出」二分，
+    完全不看声明种类。现在按 `const` / `let` / `var` 如实输出（导出时前缀
+    `export `）。
+  - 大纲漏掉整个默认导出：`export default (x) => x` 与**匿名**
+    `export default function () {}` 一条都不出（顶层语句循环只认函数 / 类 /
+    变量声明；无名函数又被「没有 id 就丢弃」的守卫挡掉）。默认导出现在一定在
+    大纲里：表达式型给一个名为 `default` 的符号，函数型即便匿名也出项
+    （无名时名字取 `default`，有名时取函数名）。
+  - 大纲漏掉**解构绑定**：`const { p, q } = …` / `const [first, second] = …`
+    里的每个绑定都不出（取 id 的辅助函数只认普通标识符 ⇒ 整条声明被跳过）。
+    解构模式现在逐个绑定展开，每个绑定各出一个变量项。
+  - 类方法的 **references / definition 一律返回空**：类方法键不是绑定标识符，
+    绑定面找不到绑定目标就直接返回空，而已经写好的方法面没有被这两个请求接入。
+    两个请求现在改走方法面（方法键 + 同源成员访问）：在类方法上查引用能看到
+    调用点，在 `k.m(…)` 上按 F12 能跳回类里的方法键。
+  - 方法改名**越过无关对象**、且漏掉对象字面量的同名 key：改 `K.m` 会把
+    `o.m`（另一个对象的成员）一起改掉，改坏调用点；而对象字面量里的
+    `{ m() {} }` / `{ m: fn }` 的 key 又不在收集范围 ⇒ 定义位点与使用位点口径
+    不一致。方法引用现在**以「归属」为界**：类方法归类、对象字面量方法归对象，
+    成员访问只在接收者归属与该方法定义**同源**时计入；同名但不同类 / 不同
+    对象的方法不合并（跨文件扫描同样按归属收敛）。
+- 27a795e: Cross-file navigation follows the module graph the editor actually shows.
+  
+  - A default export had no cross-file references: `export default function
+    greet()` in one file and `import greet from "./a.js"` in another — the
+    definition jumped across files, but the references of that definition
+    were empty. The export name of a symbol is now resolved before the
+    importers are matched, so `default` is a first-class export name and the
+    importing file shows up in the references.
+  - A namespace import was read as if it named a single export:
+    `import * as ns from "./def.js"` made every occurrence of `ns` a
+    reference to *every* export of the imported file, including the ones the
+    file never mentions. A namespace import now contributes only its member
+    accesses (`ns.beta`), and a bare `ns` is not a reference.
+  - Renaming an exported symbol across files edited the wrong side of an
+    aliased import: `import { oldName as alias }` became
+    `import { oldName as newName }` — the imported name was left behind, so
+    the import no longer resolved and the module failed to load — while the
+    alias, which is a separate local binding, was renamed. The imported side
+    of the import specifier is edited now, the alias and its call sites are
+    left alone, and renaming the alias itself no longer reaches into the
+    imported module.
+  - The fallback that jumps to a same-named export in the workspace fired
+    on member accesses: `o.helper` jumped to an unrelated
+    `export function helper` in another file. The fallback applies to plain
+    identifiers only.
+  - Cross-file definition, references and rename read the file from disk
+    instead of the editor buffer, so an unsaved edit was invisible and the
+    positions were off by the number of unsaved lines. The open document is
+    the source of truth now, and the disk is only a fallback.
+  - A re-export was invisible to references and rename: `export { a } from
+    "./m.js"` established no edge, so renaming `a` in `m.js` left the
+    re-export untouched and broke the module. The re-export edge is followed
+    now, in both directions: the references of a re-export cover the target
+    module, and renaming either side keeps the two in sync.
+  - The sidecar contract lookup pointed at bindings the engine never
+    consumes. Only an exported `fn({ … }, …)` binding is a contract (a value
+    template such as `number().gt(0)` is reported as `not fn() form` and has
+    no effect), so go-to-definition no longer sends the user to a binding
+    that cannot take effect.
+- 27a795e: 族 22 修复 D4：Bug 698 700 701 708 717 721 723 —— 补全面与语义 token 面对齐真实语义。
+  
+  - 尾随点号时补全整面清零：用户刚敲下 `obj.` 的那一刻 buffer 文本语法非法，
+    而解析不容错 ⇒ 分析直接抛 ⇒ 补全返回空并在 console 报错——恰在最需要补全的
+    时刻失效。分析输入与绑定解析输入现在共用同一个消毒器（把尾随 `x.` 改写成
+    `x._ `），尾随点号与已敲出部分成员名给出同样的成员列表。缓存键仍按真实源码
+    计算：消毒文本只喂给一次性分析，不写回分析缓存，缓存与真实源码不会串味。
+  - 指令补全在乘号之后也弹 `@nudo:` 指令：判定是「前面出现过 `*` 或 `nudo`」的
+    子串匹配（`@?n?u?d?o?:?` 整段可选），于是 `x * ` 之后、字符串字面量里的
+    `@nudo:` 都算命中。指令面现在先算光标的**词法上下文**（注释 / 字符串 / 代码），
+    只在光标确实落在注释里时才出；注释里（含跨行 JSDoc）照旧出。
+  - `@nudo:sample` 的补全项吹着「Control loop iteration sampling」，但该指令只被
+    解析、不被消费；而且插入文本缺 count，接受补全就产生诊断。说明改成如实描述
+    （reserved / no-op），插入文本带上 count 占位。
+  - 模块级函数的补全项被标成「方法」：顶层 `function` / 箭头函数绑定不是任何对象
+    的成员，IDE 会把它渲染成方法。补全项新增 `function` 档（成员函数仍是
+    `method`，非函数绑定仍是 `variable`）。
+  - 语义 token 面漏标：类名、类方法、类字段、方法形参、数组解构元素全部不上色，
+    对象解构的绑定被上成属性。类名 → class 档（图例末尾追加，老索引不变）、类
+    方法键 → method、类字段键 → property、方法形参 → parameter、解构绑定 →
+    variable。
+  - 对象字面量里的简写 `{ x }` 是对变量的**引用**，却被当成属性定义（property 档
+    且带 declaration 标记）。简写现在是 variable 档且不带 declaration 标记。
+  - 标识符 token 的长度按解码后的名字算：`const abc = 1` 里名字是 `abc`（3），
+    但源码写法是转义序列（8）⇒ token 只盖住转义序列前半截，客户端高亮错位。长度
+    改用源码跨度（位置口径仍是 UTF-16 code unit）。
+- 27a795e: 族 22 修复 D5：Bug 711 718 720 985 986 —— 签名帮助面对齐「正在被编辑的那个调用」。
+  
+  - 嵌套调用弹**外层**函数的签名：光标在内层实参里时，弹出的却是外层函数的
+    签名（内层调用完全不参与）。命中第一个（外层）`CallExpression` 就停 +
+    `path.skip()` ⇒ 内层 `CallExpression` 永不被访问。现在在所有命中里保留
+    **最内层**者（被调者起点更靠后 / 终点更靠前者更内层），嵌套调用的签名帮助
+    指向内层被调者。
+  - `activeParameter` **越界**：2 参签名在第 2 个实参之后报下标 2（协议规定下标
+    须落在签名参数表内，越界值客户端只能回落 0 ⇒ 高亮错误的参数）。下标现在按
+    **签名参数表**夹住（`min(active, params-1)`），参数表为空时**省略**该字段
+    （不是填 0）。
+  - **方法调用**（`obj.method(…)`）**整面无响应**：被调者是接收者的**槽位**，
+    不是模块级绑定 ⇒ 绑定面必然 miss。签名面现在沿 Abs 形状逐段下钻
+    （`obj` → `obj.method`），与成员补全面同一条下钻口径。
+  - **默认导出**的 callee（`export default function defFn(…)`）**整面无响应**：
+    分析结果的绑定表只收**具名导出**，默认导出连 `default` 键都没有 ⇒ 绑定面
+    必然 miss。签名面落到 **AST 定位回落**（与 hover 面同源的
+    `generalizeFromAst`）⇒ 按**声明**找被调者，与绑定表的键口径无关。
+  - **函数体内的局部 callee**（局部函数声明 / 局部箭头常量）**整面无响应**：
+    局部绑定不在模块级绑定表里。同一套 AST 定位回落覆盖这一形态。
+  - 查表与 AST 定位都 miss 时，返回**可观测的降级结果**（被调者标识符 + 空
+    参数表）而不是 `null` —— 「没有签名」与「Nudo 不知道」必须可区分。
+- 27a795e: 族 22 修复 D6：Bug 716 722 724 725 911 951 —— hover / CodeLens / inlay hint 面与 `nudo check` 对齐。
+  
+  - inlay hint 面无视请求区间：`textDocument/inlayHint` 的 `range` 是必填且表示
+    「只请求该区间」，但服务端从不读它 ⇒ 两个不相交的区间返回**逐字节相同**的
+    整文件 hint 集，客户端的局部刷新被无视、无关区段的 hint 反复重绘。现在
+    返回的 hint 落在请求区间内（区间缺省时仍给整文件集，不丢内容）。
+  - CRLF 源文件上的 inlay hint 位置越界 1 列：服务端按 `\n` 切行，行尾的 `\r`
+    被算进行长 ⇒ end-of-line hint 的 `character` 比客户端算出的可见行长多 1
+    （LSP 里行终止符不属于该行）。切行改成 CRLF 感知，服务端行长与客户端的
+    可见行长一致。
+  - hover 首行的契约档位恒为「激活」：hover 渲染 `● contract / …` 时没把观察
+    选择器的状态带上（默认值就是激活），而同一文件的 CodeLens 在选中 case 后
+    已翻成 `○ contract / …` ⇒ 同一个 IDE 里两个面互相打脸。现在 hover 与
+    CodeLens 同源：选中 case 时契约档两处一起翻 `○`。
+  - 观察透镜是死链：服务端 CodeLens 把 `entry@` / `call@` 透镜交给客户端执行
+    `nudo.trace`，但 VS Code 扩展从未注册这个命令 ⇒ 点了报「command
+    'nudo.trace' not found」，观察透镜 100% 不可用。扩展补注册该命令（转发到
+    服务端的 `nudo/trace`），manifest 的 `contributes.commands` 一并登记。
+  - hover 签名块整段丢掉 `throws` 通道：Abs 的四槽（shape × term × pred ×
+    conf）没有 throws 槽 ⇒ IDE 里显示「不会抛」，而 `nudo check` 同一函数判
+    `nudo:entry-may-throw`（error）⇒ 跨产品面自相矛盾，并违反
+    `api/lsp.md` 明写的「check-identical signature」承诺。签名块现在按 check
+    签名行的同款格式带上 `throws <Type>`（见证面证据；无证据时省略，不写
+    `throws never`；非导出函数不带——CLI 的 L2 throws 只对 entry 生效）。
+  - hover 签名块的返回类型按 `maxDepth: 4` 截断：同一份源码、同一函数、同一次
+    分析下，`nudo check` 签名行 / 同文档的 inlayHint / `nudo.hover` 载荷给出
+    三个互不相同的类型（越深的结构，hover 给的信息越少——深度 8 与深度 4 的
+    hover 输出逐字节相同）。返回类型改走共享投影预算（与 check 同口径）。
+- b37321b: The editor shows what the command line shows, at a position the editor can
+  use.
+  
+  - A file that only contains `@nudo:assume`, `@nudo:invariant`, `@nudo:throws`
+    or `@nudo:budget` was skipped as "not a Nudo file", so those directives
+    were never analyzed and the file looked clean. Those files are analyzed
+    now.
+  - A `nudo:directive-syntax` diagnostic was published twice, and one copy
+    carried line `-1` — not a valid position in the protocol. It is published
+    once, at a valid position.
+  - The placeholder position used for `nudo:module-missing` and
+    `nudo:mock-invalid` was converted to line `-1`. Those two error
+    diagnostics now land on a valid line.
+  - An env diagnostic that names the env rather than a file was filtered out
+    because the filter only matched file paths. The unknown-env-name and the
+    env-contract diagnostics are visible now.
+  - The project configuration fingerprint read the raw `autoBind` value while
+    the analysis read the normalized one, so a configuration written as a
+    non-boolean looked like a different configuration on every keystroke. The
+    fingerprint uses the normalized value.
+  - A path env whose load failed was reported by the service analysis before
+    the check ran, and the check's own copy of the diagnostic could be lost. The
+    diagnostic reaches the editor in both paths.
+- 63b12c1: LSP IDE 面 8 处用户看得见的缺口（族 53）：语义高亮不再整面消失、指令补全
+  不再子串误命中、类方法跳转与跨文件引用可解析、`executeCommand` 接位置参数、
+  `ignoreThrows` 与 CLI 同口径、env 模板变更触发依赖文件复分析、扩展命令面板
+  补齐 `nudo.selectContract`。
+  
+  - **语义 token 面在语法非法 buffer 上整面清零**（`semantic-tokens.ts`）：
+    `buildSemanticTokens` 遇 `parse` 抛就 `return []` ⇒ 用户改到一半（括号没
+    闭合 / 半个表达式）**整个文件的高亮瞬间消失**。现在解析失败走**词法降级**：
+    把注释 / 字符串内容挖空（长度与换行不变 ⇒ 坐标不变）后按关键字
+    （`function` / `class` / `const` / `let` / `var`）取紧随其后的标识符 ⇒
+    **仍有部分 token**。取舍：降级档**只给声明位**上色（成员访问 / 参数 /
+    引用位静态不可知 ⇒ 不猜，宁可少上色不可错上色），且**不缓存上次成功结果**
+    （旧坐标比清零更坏）。
+  - **指令补全的前缀过滤是子串匹配**（`server-ide.ts`）：过滤收敛为**纯前缀
+    匹配**（`label.startsWith(typed)`），语义写死在 `matchesDirectivePrefix`
+    的注释里。⚠ 前缀语义：`@nudo:ca` 只命中 `@nudo:case`（`@nudo:contract`
+    的前缀是 `@nudo:co`）；`@nudo:c` 命中**所有**以 `@nudo:c` 开头的指令
+    （`@nudo:case` 与 `@nudo:contract` **都**真前缀于它）——被排除的是「不是
+    typed 前缀」的 label（子串语义才会把 `@nudo:mock` / `@nudo:replace` 这类
+    **含** `c` 的项误纳进来）。
+  - **方法面未下沉到符号层**（`symbols.ts`）：类 / 对象方法的**方法键不是绑定**
+    （绑定表不收它）⇒ 纯函数面 `resolveDefinitionLocations` /
+    `resolveReferences` 直接调用时认不出方法（此前只有协议通道内联了一份
+    方法判据 ⇒ 纯函数面与协议面口径分裂）。方法面现在下沉到符号层
+    （`methodTargetAt`），协议通道改为**委托**符号层 ⇒ 两面同一口径。
+  - **跨文件方法 references 未接**：references 通道对方法只扫**当前文件**
+    ⇒ 跨文件的 `Alpha.run` 调用点不在结果里，而改名面已经会带上它们 ⇒ 用户
+    「查引用看不到、一改名却跨文件被改」。方法面现在**跨文件**扫描
+    （`collectMethodReferencesAcrossFiles`：`extraFiles` + 打开文档 buffer
+    覆盖层），归属（owner）由光标所在文件显式给出 ⇒ 同名不同类（`Beta.run`）
+    仍不合并。
+  - **`executeCommand` 缺位置参数 → 对象桥**（`server.ts`）：IDE 侧历史上用
+    **位置参数**发命令（`[uri, …]`），而 executeCommand 通道只认**对象**参数
+    ⇒ 位置形态落到兜底分支 ⇒ 协议层 InvalidParams ⇒ 命令 100% 失败（扩展侧
+    只能绕道 slash 请求）。`agent-tools.ts` 的 `positionalCommandParams` 统一桥
+    `nudo.check` / `nudo.hover` / `nudo.test` / `nudo.whatIf` /
+    `nudo.suggestCase` / `nudo.getActiveCases`。对象形态**行为不变**；位置形态
+    缺必填项仍报协议层参数形态错误。
+  - **LSP 侧 `ignoreThrows` 口径与 CLI 分裂**（`gate-config.ts`）：service 的
+    `checkConfig` 只认**严格 `string[]`** ⇒ 配置写成 `"TypeError"`（裸字符串）
+    或 `["TypeError,RangeError"]`（数组元素内含逗号）时被静默丢成空表 ⇒ IDE
+    仍报 `nudo:entry-may-throw`（假红），而 CLI 认这两种写法 ⇒ 同一份
+    `package.json` **CLI 绿 / IDE 红**。LSP 侧改为按**同一语义**解析（裸字符串 /
+    字符串数组都接受；数组元素内部也按逗号切分；trim 后丢空；非字符串元素忽略），
+    并把 CLI 的解析器作为**测试 oracle** 逐值比对。⚠ 根因在 service / core 的
+    配置解析层 ⇒ 本次只修 IDE 面（service 层未动）。
+  - **LSP 的 env 模板无反向边**（`validation.ts`）：watched-files 只按 LSP 自己
+    的 `nudoDepParents` 定向重检 ⇒ path 型 `@nudo:env` 模板改了**不一定**触发
+    依赖源文件复分析（CLI watch 走 service 的 env 反向边表 ⇒ 两面口径分裂）。
+    现在 LSP 直接消费 **service 的同一张表**（`envPathDependents`——解析口径
+    同源，不另写一份）⇒ IDE 与 CLI 同口径。
+  - **manifest 漏登记 `nudo.selectContract`**（`packages/vscode/package.json`）：
+    扩展的 handler 认这个命令（languageclient 自动注册 ⇒ CodeLens 可用），
+    但 `contributes.commands` 没有它 ⇒ **命令面板里搜不到**。现在登记进 manifest
+    （标题与兄弟命令同款风格）。
+- a6e9fa2: LSP navigation now agrees with itself: method and `catch` parameters have a
+  definition, private class members keep their own identity, and renaming an
+  aliased export renames the export instead of the local binding.
+  
+  - `textDocument/definition` returned `null` for a **class method parameter**, an
+    **object method parameter**, and a **`catch` parameter**, while
+    `textDocument/references` at the very same position returned the
+    declaration. The symbol table only visited the parameters of three kinds of
+    function, so those parameters never became definitions and the definition
+    lookup fell through to a workspace fallback that found nothing. The symbol
+    table now visits class methods, object methods, private methods, private
+    fields, and `catch` clauses; a `catch` parameter is scoped to the `catch`
+    clause itself.
+  - A **private class member** (`#name`) was resolved as if it were the ordinary
+    identifier `name`, so `definition`, `references`, and `rename` all landed on
+    an unrelated binding with the same name — renaming a private method rewrote
+    an unrelated exported symbol and its importers across files, breaking the
+    module graph. A private member now has its own identity (`#name`), scoped to
+    the class that declares it; `prepareRename` reports the placeholder with the
+    `#`, and the edited range still covers only the identifier so the `#` is
+    kept.
+  - An **aliased export** (`export { a as b }`) packed two identities into one
+    specifier: the local name `a` and the exported name `b`. Renaming through an
+    importer collected the edit set by the local name, so it rewrote the local
+    declaration and the local side of the export specifier while the importers
+    were renamed to a name the module no longer exported — the module graph broke
+    even though both files stayed syntactically valid. The local name and the
+    exported name are now separate identities: renaming the exported name edits
+    the exported side of the specifier together with the `imported` side of every
+    importer, and never the local declaration; renaming the local name edits the
+    local declaration and the local side of the specifier only. The exported-name
+    position is no longer a dead end: `definition`, `references`,
+    `prepareRename`, and `rename` all answer there.
+- a6e9fa2: LSP: make the navigation face answer per the client's capabilities, encode
+  URIs correctly, validate rename targets, and give every navigation request
+  the same file gate.
+  
+  - **Bug 745 — `workspace/symbol` never returned class members.** The handler
+    only walked the *top level* of `documentSymbols`, while class methods and
+    class properties live in a symbol's `children` ⇒ they could never appear
+    in a workspace search. The handler now walks the tree recursively and
+    flattens it into `SymbolInformation[]`, expressing the hierarchy through
+    `containerName` (which is what the flat LSP protocol expects).
+  - **Bug 748 — `filePathToUri` and `uriToFilePath` were not inverses of each
+    other.** The encoding side concatenated `file://` with the raw path (so
+    `%`, `#`, `?` and spaces were never escaped) ⇒ the server produced URIs
+    that were not valid URIs; the decoding side ran a bare
+    `decodeURIComponent` ⇒ a malformed percent escape threw an uncaught
+    `URIError` and aborted `didOpen` / `didChange` / `didClose`, leaving that
+    document with **zero diagnostics**. The encoding side now uses Node's
+    `pathToFileURL` and the decoding side uses `fileURLToPath` with a
+    `try`/`catch` fallback (malformed input degrades to the undecoded text and
+    never throws), so the two are exact inverses; `cacheKey` benefits as well.
+    URIs for non-`file:` schemes (`untitled:` …) are still returned verbatim.
+  - **Bug 749 — `textDocument/documentSymbol` ignored the client's
+    capabilities.** The server never kept `params.capabilities`, so it always
+    answered with the hierarchical shape and the full `SymbolKind` range even
+    when the client declared `hierarchicalDocumentSymbolSupport: false` or a
+    restricted `symbolKind.valueSet` (both are protocol violations). The
+    navigation handlers now consume the client capabilities that
+    `initialize` captured: a client without hierarchical support receives a
+    flat `SymbolInformation[]` (`location` instead of
+    `range` / `selectionRange` / `children`), and a kind outside the client's
+    `valueSet` is clamped to a safe value inside that set (with a note in
+    `detail`). When the client sends no capability section at all the default
+    answer is kept — hierarchical shape, full `SymbolKind` range.
+  - **Bug 750 — `textDocument/rename` never validated the new name.** The
+    request's `newName` was used as the replacement text verbatim ⇒ a single
+    rename could turn the source into invalid JavaScript (an invalid
+    identifier, an empty name or a reserved word) and `node --check` would
+    fail with a `SyntaxError`. The new name is now checked at the syntax
+    level — it must be a legal JavaScript identifier, non-empty and not a
+    reserved word — and an invalid name produces no edits at all.
+  - **Bug 751 — the navigation requests each had their own file gate.** The
+    sidecar contract file (`*.nudo.js`) was let through by `definition` only,
+    was rejected by the other four navigation requests, and was listed by
+    `workspace/symbol`, which had no gate at all ⇒ one coordinate, three
+    different answers (the server contradicted itself). `definition` no longer
+    has its sidecar escape hatch and `workspace/symbol` now uses the same
+    path-level gate, so sidecar contract files are invisible to every
+    navigation request. (The cost is that a source symbol can no longer jump
+    into its sidecar contract; that capability needs the symbol table to model
+    sidecar bindings and is tracked separately.)
+- a6e9fa2: LSP: capture the client's capabilities at `initialize`, and give the
+  navigation/IDE file gate a single source of truth.
+  
+  - **Bug 749 — the server never kept `params.capabilities`.** `onInitialize`
+    only echoed the server's own capability declaration, so no handler could
+    answer according to what the client asked for: `textDocument/documentSymbol`
+    always answered with the hierarchical shape and the full `SymbolKind` range,
+    even when the client declared `hierarchicalDocumentSymbolSupport: false`
+    or a restricted `symbolKind.valueSet`. The client capabilities are now
+    captured during `initialize` and handed to the navigation handlers through
+    the existing `deps` object (no new package export). When the client sends
+    no capability section at all the value stays `undefined` and the handlers
+    keep the default answer (hierarchical shape, full `SymbolKind` range) — an
+    old client must not degrade the server's output. The `initialize` result
+    itself is unchanged, so the declared server capability inventory is
+    untouched.
+  - **Bug 751 — every request had its own file gate.** The sidecar contract
+    file (`*.nudo.js`) was let through by `definition` only, was rejected by
+    the other navigation requests and by all six IDE requests, and was listed
+    by `workspace/symbol`, which had no gate at all — one coordinate, three
+    different answers. The gate now has a single source of truth
+    (`server.ts`'s `isNudoFile`, which explicitly excludes sidecar contract
+    files) and the same predicate instance is injected into the navigation and
+    the IDE handlers, so both sides answer alike. Sidecar exclusion is also
+    spelled out in the predicate itself, so it survives a future drift of the
+    path-level suffix table.
+- a6e9fa2: LSP: three reverse guard tests for the navigation findings that no longer
+  reproduce.
+  
+  This slice changes **no implementation code** — it only adds three regression
+  tests that pin the *already fixed* behaviour of the navigation face. The
+  symptoms described in the bug report do not reproduce on `HEAD`: they were
+  covered by an earlier family, and the tests below are the guard rails that
+  keep them from coming back (they are expected to **pass** on `HEAD`).
+  
+  - **Bug 746 — renaming a local alias must not drag the exported symbol and
+    the other importers along.** Renaming the local alias of
+    `import { oldName as alias } from "./xf-def.js"` now edits only the local
+    side of the import specifier and its call site; the defining module and
+    the other importer stay untouched. The opposite direction is pinned as
+    well: renaming the exported name from the defining module edits that
+    module and the *imported* side of every importer, and leaves the alias
+    alone. (Covered by the Bug 710 fix of the earlier signature family.)
+  - **Bug 747 — renaming a parameter must not drag the shadowing top-level
+    variable along.** With `const x = 1;` next to `export function f(x)`, both
+    directions are pinned: renaming the parameter edits only the parameter
+    declaration and its use, renaming the top-level variable edits only that
+    one place. `definition` and `references` stay scope-aware as well.
+    (Covered by the Bug 709 fix of the earlier signature family.)
+  - **Bug 1025 — the *imported* side of an aliased import resolves to the
+    module it really imports.** With two files exporting the same name, the
+    `definition` of the imported side lands in the imported module instead of
+    the unrelated same-named export, and its `references` are not the empty
+    array the report saw — they are the same set the non-aliased form
+    returns. The underlying key space of the import binding table (it is
+    still keyed by the local name alone) is tracked as a residual item; the
+    position-aware lookup currently covers it.
+- a6e9fa2: LSP: the workspace-folder subscription must never take the server down.
+  
+  `connection.workspace.onDidChangeWorkspaceFolders` is a **getter** in
+  `vscode-languageserver@10.1.2` that throws
+  (`Client doesn't support sending workspace folder change events.`) unless the
+  client declared `capabilities.workspace.workspaceFolders` — and it only
+  becomes usable **after** `initialize`, when the library has processed the
+  client's capabilities. The server read that getter while it was still being
+  constructed, i.e. before any client had spoken, so the getter threw for
+  **every** client and the language server died on startup with
+  
+  ```
+  Error: Client doesn't support sending workspace folder change events.
+      at get onDidChangeWorkspaceFolders (…/vscode-languageserver/lib/common/workspaceFolder.js:38:23)
+      at createNudoServer (…/packages/lsp/src/server.ts:374:3)
+  ```
+  
+  The optional chaining (`?.`) did not help: it only guards `null` /
+  `undefined`, not a thrown exception.
+  
+  The value is now read inside a `try`/`catch`; a client that does not
+  support the notification face makes the server skip the subscription
+  silently and start normally, and `initialize` still answers with the
+  unchanged server capabilities. The subscription itself is kept: it is taken
+  once at construction (in-memory connections) and, for a real transport, once
+  more right after `initialize` — where the getter is finally ready — so the
+  workspace-folder change handling (the authorization boundary follows the
+  added/removed folders) keeps working instead of being silently dropped by
+  the guard.
+- e2d4688: The code-action face of the language server no longer crashes and no longer
+  writes broken code into the user's sources.
+  
+  - The language server captured the agent-tool dependencies before the server
+    had finished initializing, so every `textDocument/codeAction` request threw
+    and the whole face was unavailable. The dependencies are now read on demand.
+  - The quick fix for a missing call-site field wrote the literal `undefined`
+    into the source, which then failed the very check it was meant to fix. The
+    placeholder is now `null`, and the violation is still reported afterwards.
+  - The quick fix that adds a field to a contract inserted it into the
+    parameter list instead of the parameter's shape, producing a sidecar that
+    no longer parsed. The insertion point is now located through the syntax
+    tree, and a field that is already declared is not offered at all.
+  - The quick fix that inserts a call-site field used a textual heuristic that
+    could land inside a string literal. The insertion point is now located
+    through the syntax tree, and the fix is not offered when there is no object
+    argument.
+  - The quick fix that writes a sidecar inserted the new declaration at the
+    top of the file, which left the previous contents in place and produced a
+    file with a duplicate export. The edit now covers the existing sidecar, and
+    a plan that would duplicate an export is not offered.
+- e2d4688: The "inline variable" refactoring of the language server now refuses to inline
+  a value it cannot prove is safe.
+  
+  - A variable was inlined even when it was reassigned or captured by a closure,
+    which changed the program's behaviour. The refactoring now only offers an
+    inline action when the variable is provably single-assignment and not
+    captured.
+  - A variable was inlined across an export boundary, so the module's public
+    API changed silently. Exports are now detected and left alone.
+  - The refactoring was offered for a binding that the selected range does not
+    actually cover, and it sometimes inlined the wrong occurrence of a shadowed
+    name.
+- e2d4688: fix(lsp): Extract to function 的插入点 / 语句切分 / 取名收口（族 23 片 C：Bug 732 / 734 / 736 / 740 / 742 / 971）
+  
+  - **Bug 732**：`Extract to function` 不再把原函数的 `export` 关键字偷给新函数 ——
+    插入点改用**语句起点**（`export` 的列）而不是 `function` 关键字的列 ⇒ 模块公开 API
+    不再从 `['f']` 静默变成 `['extracted']`。
+  - **Bug 734**：被抽出的若是**赋值表达式**（`x = compute();`），调用点生成**赋值表达式**
+    （`x = extracted(...)`）而不是硬编码的 `const x = ...` ⇒ 不再与外层 `let x` 重复声明
+    （文件曾彻底不可解析）。原本就是声明时还原同种声明（`const` / `let` / `var`）。
+  - **Bug 736**：新函数只插在**语句位置** ⇒ 箭头初始化式 / 对象字面量方法 / class 方法
+    三种宿主不再产出不可解析的文件。
+  - **Bug 740**：选区含 `break` / `continue` 时**拒绝**抽取（不再产出
+    `SyntaxError: Illegal break statement`）；选区末条是 `return` 时**把返回值接回调用点**
+    （`return extracted();`）⇒ 外层返回值不再被静默丢掉。
+  - **Bug 742**：顶层选区的插入点跳过文件前导区（hashbang / 指令 / 前导注释）⇒ 新函数不再
+    落到 `#!/usr/bin/env node` 之前（文件曾整体不可解析）。
+  - **Bug 971**：新函数名做**占用检查**（在 `extract-function.ts` 内部，调用方零改动）⇒
+    撞名时自动改名（`extracted` → `extracted1`）⇒ 不再出现
+    `SyntaxError: Identifier 'extracted' has already been declared`。
+  - 抽取产物新增「仍可解析」自检：坏产物一律不出 edit。
+- 27a795e: 族 22 收口接线：方法改名在**归属歧义**时拒绝执行，而不是改出自相矛盾的代码。
+  
+  - 改一个类方法时，如果文件里同时存在「接收者归属解析不出来」的成员访问
+    （形参、外部对象）**和**另一个同名但不同归属的成员，那么这个成员访问
+    **可能**指目标方法、也可能指那个别的归属——静态上不可判定。此时改名只有
+    两种自洽结果：全改（可能改到无关对象，运行时读到 `undefined`）或全不改
+    （**定义改了、调用点没改**，同样读到 `undefined`）。两者都会改坏代码，
+    所以现在**拒绝这次改名**：不产出任何编辑，编辑器显示该符号不可改名。
+    准备改名的提示与真正的改名请求同口径，不会先让用户改、改的时候又拒绝。
+  - 之前把「改定义、不改歧义调用点」当成安全的做法，实际它同样改坏代码；
+    这一条修掉之后，改名要么覆盖全部可能的调用点，要么明确拒绝。
+- 169ed52: The disk cache, the LSP and the Vite plugin now agree with the CLI about
+  environments, budgets and injected modules.
+  
+  - The cache key did not contain the effective fork budget, so changing
+    `NUDO_MAX_FORKS` still served the previous run's result. The effective
+    value (environment variable, then `package.json`, then the default) is now
+    part of the key.
+  - An invalid `nudo.check.entryThrows` value was reported once per checked
+    file. The warning is now printed once per distinct invalid value.
+  - `@nudo:as` did not apply to an exported binding, so the tool still reported
+    "bindings applied" while the type stayed unchanged. The override now
+    matches the exported declaration as well.
+  - `--what-if` attached an assumption to the wrong variable when a line ended
+    with a comment, and it reported a made-up reason when two declarations
+    shared a line. Assumptions are now anchored by statement identity.
+  - The LSP and the Vite plugin never applied `@nudo:mock`, so a project that
+    checked cleanly in the CLI reported a spurious "may throw" in the editor and
+    in the build. Both now assemble the same injection channel the CLI uses.
+- 3432d8c: `nudo/suggestCase`（LSP agent 工具）给出的见证建议不再落进引擎的「合成 / 固化」
+  名字空间，并带上可判定的期望。
+  
+  - **改前**：工具把合成 case 的**原名**（`call@L<n>`）原样写进建议文本
+    （`* @nudo:case "call@L4" ("bob")`）。该名字属于合成 / 固化见证的名字空间
+    （`call@` = `nudo test --freeze` 固化的见证，`entry@` = 入口兜底见证）⇒
+    用户照建议原样贴回源码后，同一个调用点会留下**两条**见证（工具建议的
+    `call@L4` + 固化出来的 `call@L7`）。
+  - **改后**：建议里的名字是**手写见证名** `witness@<n>`（与 `call@` / `entry@`
+    不相交；名字只含字母 / `@` / 数字 ⇒ 指令文法承载得了；同一份源码每次建议
+    同名 ⇒ 可重复贴回），并且每条建议都带上 **`=> expected`**（观测值，用
+    `--freeze` 同一个序列化器产出 ⇒ 往返保真）⇒ 贴回后**真的**产生断言
+    （进断言面、计入 `passed`），而不是一条没有期望的 `unchecked` 见证。
+  
+  引擎推不出结果（`unknown` / `any` / `opaque`）、调用抛错（`never`）或结果
+  无法用指令文法表达时，不给期望（并在建议末尾说明条数）——宁可留一条诚实的
+  无期望见证，也不写一条注定判红的期望。
+  
+  工具名 / 协议面不变（`nudo.suggestCase` / `nudo/suggestCase` / `suggestCase`
+  三处表项未动）。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [cc9b638]
+- Updated dependencies [2688251]
+- Updated dependencies [7fea13a]
+- Updated dependencies [1caec28]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [27a795e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [02aa122]
+- Updated dependencies [3432d8c]
+- Updated dependencies [3432d8c]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [aa23265]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [106ad1d]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+- Updated dependencies [8542f44]
+  - @nudojs/core@1.16.0
+  - @nudojs/service@1.10.0
+  - @nudojs/parser@1.5.3
 
-更早版本（56）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（57）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.5.2 {#pkg-env}
+## @nudojs/env 0.5.3 {#pkg-env}
 
-## 0.5.2
+## 0.5.3
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
+- e3b8791: Reading a member of a built-in prototype, a branded value or a namespace now
+  returns what JavaScript returns instead of a confident `undefined`.
+  
+  - A built-in prototype object had no table for its own members, so
+    `Map.prototype[Symbol.toStringTag]` returned `undefined` instead of `"Map"`,
+    `RegExp.prototype.flags` returned `undefined` instead of `""` and
+    `Error.prototype.name` returned `undefined` instead of `"Error"`. The
+    prototype objects of the built-ins now carry their own symbol members,
+    their own data properties and their own methods.
+  - A value of a built-in brand whose class was derived from a built-in — an
+    instance of `class M extends Set` — lost the whole built-in prototype
+    face: `s.add` returned `undefined` even though `"add" in s` said `true`.
+    The two answers contradicted each other. The prototype chain is now
+    resolved to the first built-in owner, and a member defined by the
+    derived class still wins.
+  - `Object.prototype.toString.call(Math)` reported `[object Math]` but
+    `Math[Symbol.toStringTag]` returned `undefined`. A namespace object now
+    exposes its `Symbol.toStringTag`.
+  - `Symbol.prototype.description` returned the string `"undefined"` and did
+    not record a throw; it now throws a `TypeError`, like the specification
+    says.
+  - `Map.prototype.size` and `Set.prototype.size` returned `"undefined"` and
+    did not record a throw; they now throw a `TypeError`.
+  - `Intl.NumberFormat.prototype.format` returned `undefined` and did not
+    record a throw; reading a brand-check accessor of an `Intl` prototype now
+    throws a `TypeError`.
+  - A member that does not exist on a `number`, `boolean` or `bigint` primitive
+    folded to `unknown`, which made every later read of that value look
+    harmless. It now folds to `undefined`, so the later read is still
+    recognised as a possible `TypeError`.
+  - `Symbol()` instances resolved `toString` and `toLocaleString` to the
+    matching members of `Object.prototype`, losing the brand check. The brand
+    check is now performed.
+  - The `constructor` of a class value resolved to a built-in constructor
+    named after the class, so `Widget.constructor === Function` was `false`.
+    It is now `true`.
+  - A getter-only static accessor accepted a write; it now throws a `TypeError`
+    in strict mode, like the instance-level accessors already did.
+  - The `prototype` property of a class value was missing its
+    "not writable" flag, so `A.prototype = {}` silently wrote through. It is
+    now rejected with a `TypeError`.
+  - `process.env` and `process.versions` were shown as
+    `Record<string, string | undefined>` but reading `process.env.HOME`
+    returned `unknown`, and the difference was reported as a failed
+    inference. The read now uses the declared index domain.
+  - A host or namespace object such as `Math` only projected its enumerable
+    own properties, so `Object.getOwnPropertyNames(Math)` returned `0` and
+    `Math.PI` could not be read at all, even though the object was marked as
+    exactly known. All own properties are projected now, and the descriptor
+    flags are recorded, so the enumerable face still matches the original.
+- a1c093f: 族 62（片 W12）：env 的 **ES / Web 内建构造器声明面**精度 —— 5 条台账里 **1 条 env 侧真修**、**3 条由同批 core 收口**、**1 条复核后为非缺陷**。
+  
+  **真修 · 第 5 条（Bug 890 精度）：env promise 的拒绝 reason 逐声明可见。**
+  `promiseOf(inner)` 加**可选**拒绝 reason（缺省仍是 `unknown` ⇒ 其余声明逐字不变），
+  逐声明给出**规范规定**的 reason：
+  
+  - `fetch` ⇒ `TypeError`（网络错 / 非法 URL）∪ `AbortError`（信号 abort 的默认 reason）；
+  - `Request` / `Response` 的 body 读取族（`json` / `text` / `arrayBuffer` / `blob` / `formData`）⇒ `TypeError`（WHATWG Fetch「consume body」：流出错 / JSON 解析失败）；
+  - `crypto.subtle.*`（`digest` / `encrypt` / `decrypt` / `sign` / `verify` / `generateKey` / `deriveKey` / `deriveBits` / `wrapKey` / `unwrapKey` / `exportKey`）⇒ `OperationError` DOMException（WebCrypto 规范）；
+  - `navigator.clipboard.readText` / `writeText` ⇒ `NotAllowedError` DOMException（Clipboard 规范）；
+  - `Promise.reject(reason)`（**声明面**）⇒ 拒绝 reason 就是实参（ES 规范）。
+  
+  效果：`catch (e)` 的形参不再恒为 `unknown` ⇒ `e.name` / `e.message` **可解**
+  （此前 `e.message` 折出 unknown ⇒ 拿不到）。
+  
+  **声明面 · 第 1 条（Bug 332）：Intl 子构造器的实例方法面。**
+  `Intl.Collator` / `Intl.NumberFormat` / `Intl.DateTimeFormat` 的**实例面**
+  补上原生原型成员（`compare` / `format` / `formatToParts` / `formatRange` /
+  `formatRangeToParts` / `resolvedOptions`），方法值 + 参数/返回面齐备。
+  
+  **其余 3 条已由同批 core 收口**（`fix-core-remaining-65`）：第 1 条的**运行时**面
+  （`typeof new Intl.Collator().compare` 现折精确 `"function"`）、第 3 条
+  （继承的 `cause` 不再折「确定不存在」，现为 `unknown` —— 原生是 `1`，
+  引擎取**不假精确**的口径）、第 4 条（`new Int8Array(["3"])[0]` 折 `3`，
+  类型化数组元素值面已建模）。第 2 条不是缺陷：原生 `new AggregateError()`
+  **抛 TypeError**，引擎同判（该入口报 `nudo:entry-may-throw` TypeError），
+  台账「`errors = []`」的前提与原生不符。
+  
+  **env 包的 `exports` map 未动**（无新增导出面）；`promiseOf` 只加了**可选**形参。
+- 9f26414: fix(env): env 成员表对齐宿主实测（族 35 · Bug 1044 / 1047 / 1048 / 1049）
+  
+  env 的成员表是**手写**的 ⇒ 两个方向的错都会进产品面：**缺**成员 ⇒ 闭 obj 缺槽
+  ⇒ 成员读出 **exact `undefined`**（确定的错值）⇒ 调用即「确定抛 TypeError」⇒
+  **L2 门禁假红**；**写错返回域** ⇒ 宿主必抛的调用被判安全 ⇒ **L2 门禁假绿**。
+  本批把四条从未被任何批次处理过的成员表缺陷一并对齐，并补上**宿主实测护栏**。
+  
+  - **Bug 1044（node env · `Response` 静态面 · 假绿）**：`Response.json` 的返回域
+    写成了 `promise<unknown>`（WHATWG Fetch / undici：静态 `Response.json`
+    **同步**返回 `Response`）⇒ `.then(...)` 被判安全而宿主必抛
+    （`TypeError: Response.json(...).then is not a function`）。改成 `Response`
+    **实例面**（brand），读面与宿主一致（`.status` → number、`.then` → exact
+    `undefined`），与 web env 的静态面同源；**实例面**的 `json`（读 body ⇒ 真
+    promise）保持不动。
+    *已知偏差*：`.then(...)` 这一具体形态**仍不**被 L2 门禁标出——core 的
+    「确定不可调用成员」判定只覆盖**平 obj 接收者**，brand 接收者的缺槽成员
+    被调用时不记抛（core 侧问题，本包改不到）。
+  - **Bug 1047（node env · `performance` · 假红）**：补齐宿主真实存在的 6 个成员
+    —— `toJSON` / `clearResourceTimings`（Performance Level 2 标准面，web env
+    早已补过 ⇒ 两 env 不对称）/ `eventLoopUtilization` / `nodeTiming` /
+    `setResourceTimingBufferSize` / `timerify`（perf_hooks 面）。`nodeTiming` 按
+    宿主实测建模为**对象**，`timerify` 的返回域是**可调用**面（宿主返回包装函数，
+    不是 `undefined`）。
+  - **Bug 1048（node env · `navigator` · 假红）**：补 `locks`（Web Locks API，W3C
+    标准，浏览器 + node 24+ 都有）⇒ `navigator.locks` 不再读出 exact `undefined`，
+    `navigator.locks.request(...)` 不再被判「确定抛 TypeError」。
+  - **Bug 1049（web env · `crypto.subtle` · 假红）**：补 4 个标准 WebCrypto API
+    —— `deriveKey` / `deriveBits`（Level 1）/ `wrapKey` / `unwrapKey`（Level 2）
+    ⇒ node env 同一对象早已声明前两个的**两 env 自相矛盾**消失。
+  
+  **两 env 同源**：node env 的 `crypto.subtle` 同步补上 `wrapKey` / `unwrapKey`，
+  node / web 两 env 的 `crypto.subtle` 成员集合同源；web env 的 `navigator` 同步
+  补上 `locks`。node env 内部把 `performance`（全局对象面 + `Performance` 实例面）、
+  `navigator`（全局对象面 + `Navigator` 实例面）与 `crypto.subtle`（`crypto` 全局面
+  + `SubtleCrypto` 实例面）改为**共用一份槽表**，杜绝「一处补了一处没补」的漂移。
+  
+  **宿主实测护栏**：新增回归钉，对 `performance` / `navigator` / `crypto.subtle` /
+  `Response` 各断言「**宿主实测成员名 ⊆ env 表成员名**」（真 node 子进程跑
+  `Object.getOwnPropertyNames` 对照 env 表），并带**负控**（宿主没有的成员仍被判
+  「确定缺失」）⇒ 证明没有把整张表改成全放行。
+- 67abd92: fix(env): node env 面的 4 处假绿 / 口径不一致收尾（族 64）
+  
+  env 的 node 声明面是**手写**的 ⇒ 宿主**必抛**的路径被判「恒不抛」⇒
+  **L2 门禁假绿**。本批按**宿主实测**（node v26.10.0）逐条收口。
+  
+  **第 1 条 · 全局 `TextEncoder` 是 class，裸调必抛 TypeError（真修）。**
+  宿主实测：`TextEncoder()` ⇒ TypeError（"Class constructor TextEncoder cannot be
+  invoked without 'new'"）；旧声明是**普通 fn 面** ⇒ 裸调落「返回声明类型、
+  **永不抛**」⇒ 假绿。现在**在 env 侧声明成类值**（core 的 Bug 272 判据：
+  `ctor: true` + 单一 rest 形参 `"_rest"` ⇒ 裸调定抛 TypeError，**与原生同形**），
+  `apply` 返回**声明实例面** ⇒ `new TextEncoder()` 的实例面
+  （`encoding` / `encode` / `encodeInto`）**不丢**——不像「删声明回落宿主」那样
+  退成 `undefined`（那是**确定的错值**，宿主真值是 `"utf-8"`）。
+  副作用（诚实记录）：签名显示从 `() => TextEncoder` 变为 `(_rest) => TextEncoder`
+  ——与 core 自己对**类表达式**的显示口径（`(_rest) => ?`）同款。
+  
+  **第 2 条 · `node:url` 的 `URL` 不再吞掉原生异常（真修，调用面）。**
+  apply 的 catch 分支此前 `return undefined` ⇒ 非法 URL 被静默吞掉（恒不抛）；
+  现在套 **Bug 881**（`fileURLToPath`）同款范式：非法 URL ⇒ 记 **TypeError**
+  throws 面；抽象实参 ⇒ 原生可能抛 ⇒ 同样记 may-throw TypeError；合法 URL ⇒
+  零抛 + 字面量 `href`（字面量精度不回归）。
+  *已知偏差（core 侧 A 类债）*：core 的 `$new` 只取 `AbsApplyResult` 的 `abs`
+  （**throws 面被丢**）⇒ env 层无法表达「构造期必抛」⇒
+  `new URL("not a url")` 仍恒不抛；已在钉里记录现状，待 core 修复后改写。
+  
+  **第 3 条 · `util` / `querystring` 的 `escape` / `unescape`（无需改动，已钉）。**
+  宿主实测：`require("node:util").escape === undefined`（util **没有**这两个
+  成员）、`require("node:querystring").escape` 是函数（querystring **有**）⇒
+  env 的 querystring 面与宿主一致，util 面也**没有**多声明 ⇒ 任务书前提里的
+  「util 多声明」实为**误归因**（声明在 querystring 面，宿主同样有）⇒ 不改，
+  只钉住与宿主一致。
+  
+  **第 4 条 · `crypto.subtle` 的拒绝 reason（不改，保持 `unknown`，已钉）。**
+  宿主实测：node 的 WebCrypto 与浏览器**不同**——拒绝 reason ∈
+  {NotSupportedError, TypeError, OperationError, DataError}（**从不是**
+  OperationError 唯一值）⇒ 按 `promiseOf` 的契约（reason 必须是**全部**拒绝
+  路径的公共上界，否则是 wrong-exact）node env 的 reason 必须保持 `unknown`；
+  web env 的 `OperationError` 是**浏览器口径**（WebCrypto 规范）⇒ 跨 env
+  不同源是**宿主事实**，不是缺陷 ⇒ 不改，只钉住。
+  
+  **负控**：族 61 的既有声明**逐字不变**——node env 仍是 **130** 个全局、
+  `node:crypto` / `node:fs` / `node:fs/promises` 的成员名单与 formatShape 不变。
+  **env 包的 `exports` map 未动**（无新增导出面）。
+- 3d66f5a: fix(env): node env 的模块面与共享槽面对齐宿主实测（族 61 · 6 条）
+  
+  node env 的声明面是**手写**的 ⇒ 两个方向的错都会进产品面：**缺成员** ⇒ 该名
+  走宿主路径（行为对、类型精度低）；**缺实参域** ⇒ 原生**必抛**的入口被判
+  「恒不抛」⇒ **L2 门禁假绿**。本批按**宿主实测**（node v26.10.0）补齐六条。
+  
+  - **`node:crypto` 同族兄弟不再恒不抛（假绿）**：旧实现只给
+    `createHash` / `randomBytes` / `randomInt` / `pbkdf2Sync` / `timingSafeEqual`
+    建了实参域；`createHmac` / `createCipheriv` / `createDecipheriv` /
+    `scryptSync` / `generateKeyPairSync`（以及新增的 `createSign` / `createVerify`）
+    原生必抛的调用被判安全。现在按宿主实测建 throws 面：
+    - `createHmac`：**不认识**的 digest 名 ⇒ `TypeError`
+      （ERR_CRYPTO_INVALID_DIGEST）；**认识但 HMAC 用不了**的名字
+      （`shake-*` / `keccak-kmac-*`，8 个）⇒ `Error`（OpenSSL 错误）——两档
+      错误品牌与原生一致；合法 digest 零抛。
+    - `createCipheriv` / `createDecipheriv`：未知 cipher ⇒ `Error`
+      （ERR_CRYPTO_UNKNOWN_CIPHER）。
+    - `createSign` / `createVerify`：不认识的 digest 名 ⇒ `TypeError`。
+    - `generateKeyPairSync`（**新增成员**）：不支持的 key type ⇒ `TypeError`
+      （ERR_INVALID_ARG_VALUE）；合法 type 零抛，返回域是
+      `{ publicKey, privateKey }`（KeyObject 面）。
+    - `scryptSync`：`keylen` 越界 ⇒ `RangeError`；`options.N` 非 2 的幂 ⇒
+      `RangeError`；内存闸 `128*r*(N+p+2) > maxmem` ⇒ `RangeError`；options
+      缺省槽按原生默认值（r=8 / p=1 / maxmem=32MB）判定 ⇒ 合法参数零抛。
+      *已知偏差*：key / iv 的**长度**校验与 `generateKeyPairSync` 的
+      `options`（`modulusLength` / `namedCurve`）域**未建模**。
+  - **`node:crypto` 导出 `webcrypto`（缺口）**：宿主 `require("node:crypto")`
+    自带 `webcrypto` / `subtle` / `getRandomValues` 三个自有键，env 一个都没导出
+    ⇒ 这三个名走宿主路径。现在补上：`webcrypto` 是 **`Crypto` 面**
+    （`subtle` / `getRandomValues` / `randomUUID`），`subtle` 与全局
+    `crypto.subtle` **同源**（共用族 35 的 `subtleCryptoSlots` 一份槽表）。
+  - **`node:fs` / `node:fs/promises` API 面补齐（缺口）**：`fs.openSync`
+    此前**未声明** ⇒ 补上（返回 fd（number）；路径不存在 ⇒ may-throw `Error`
+    （ENOENT 语义，同 fs 同步族口径）；**非法 flags 字符串** ⇒ 必抛 `TypeError`
+    （ERR_INVALID_ARG_VALUE）；flags 缺省 = `"r"`）；`fs/promises` 补
+    `lstat`（**与 `stat` 同一张 Stats 表**）、`statfs`（8 个数值槽）、
+    `opendir`（`Dir` 面：`path` / `read` / `readSync` / `close` / `closeSync` /
+    `entries`）。
+  - **回归钉（已随族 35 关闭）**：`navigator.userAgent` 已是 `prim.str()`，
+    node env 全局表里**没有**读出 `unknown` 的槽 ⇒ 钉成回归钉防回退。
+  - **ESM 上下文全局面（141 vs 130）**：宿主实测 ESM 上下文 184 个全局，减去
+    43 个 Node 内建模块命名空间 = **141**；env 声明 **130**（多出
+    `__dirname` / `__filename` 两个 CJS 模块作用域名）⇒ **真实缺口是 13 个**
+    （台账的「11」是 141−130 的粗算）。13 个**逐个**给出**不声明**的理由：
+    `Object` / `Function` / `Proxy` / `escape` / `unescape`（es env 金标要求，
+    声明会遮蔽 core 的精确语义）、`eval`（直接 eval 是语法形式）、
+    `queueMicrotask` / `structuredClone` / `atob` / `btoa`（族 29 Bug 883 / 884 /
+    888 金标：声明会**遮蔽宿主的 throws 面** ⇒ 反而制造假绿）、
+    `URL` / `URLSearchParams`（宿主路径已同样精确，声明无收益）、
+    `TextDecoder`（宿主路径比 env 面**更精确**：`utf-8` vs `string` ⇒ 声明会降
+    精度）。
+  - **env 覆盖基线**：`docs/reports/env-coverage-baseline.{json,md}` 用
+    `scripts/env-coverage-baseline.ts` **重新生成**（未手改）。数字未变
+    （node resolved 75/77、leaf-clean 69、signature-level 6、unknown 0、
+    mock-required 2）——剩下的 2 条 mock-required（流机器 / 真起进程）与 6 条
+    signature-level（`assert.*` / `util.*` 的**真无约束参**）都是
+    `docs/design/limitations.md` 记的**设计边界**，不是缺口。
+  
+  **负控**：既有 env 成员的声明**逐字不变**——`node:crypto` 既有 10 个成员、
+  `node:fs` / `node:fs/promises` 既有成员名单与 formatShape、以及 node env 的
+  130 个全局全部不变；本次只**新增**成员（crypto 6 个 / fs 1 个 /
+  fs-promises 3 个）。
+- 69e67d3: Env declarations can now report that a host call throws, and can police
+  the types of the arguments they are given.
+  
+  - `envFn` used to swallow whatever the host function threw: the `apply`
+    wrapper caught every exception and returned the declared return type, so
+    a declaration such as `atob("!!!")` looked like a call that never
+    throws. The wrapper now returns through core's existing throws channel
+    (`makeAbsApplyResult`), so a native exception is recorded as a
+    may-throw at the call site, the same way a user-written `throw` is. An
+    apply that returns a bare value still means "does not throw", and an
+    apply that returns its own throws face keeps it.
+  - The error brand of a native exception is taken from `error.name`, with
+    `"Error"` as the fallback for a non-`Error` throw. Declarations whose
+    host throws a brand that is not a standard error name — `atob` and
+    `btoa` throw a `DOMException` named `InvalidCharacterError` — pass the
+    brand explicitly through the new declaration-side `throws` option.
+  - The new declaration-side `enforceArgs` option checks each argument
+    against the declared parameter type before the host call happens. An
+    argument that definitely does not fit makes the call throw a
+    `TypeError`; an argument the engine cannot pin down (an `unknown`, an
+    `any`, or a value that is not exact) makes the call possibly throw a
+    `TypeError`. The check is opt-in, per declaration.
+  - `envFnVariadic` accepts the same `throws` and `enforceArgs` options and
+    passes them on; for a variadic declaration only the required
+    parameters are checked.
+  - The declaration helpers involved — `envFn`, `envFnVariadic`,
+    `errBrand(name)` (builds an error-brand value) and the `EnvApplyImpl`
+    apply signature — are internal to the package (`src/abs-helpers.ts`)
+    and are not part of its `exports` surface: `@nudojs/env/es`, `/web` and
+    `/node` export only `defineEnv` and the `EnvDefinition` type.
+- 69e67d3: The web environment now describes the browser the way the browser behaves.
+  
+  - The browser constructors are constructible again. `Response`, `Request`,
+    `Headers`, `URLSearchParams`, `EventTarget`, `Event` and `CustomEvent` are
+    declared with `ctor: true`, so `new X()` no longer reports a may-throw for
+    a call that the browser makes happily. `Response` used to be a plain
+    object rather than a function at all, which made `new Response()` a
+    definite `TypeError`; it is now a constructor whose static `json`,
+    `redirect` and `error` live on the constructor itself.
+  - `Request` no longer copies the whole member table of `Response`. The
+    status members `ok`, `status`, `statusText`, `redirected` and `type`
+    belong to `Response` only — a native `Request` has no `status` at all —
+    so reading `request.status` now yields `undefined` instead of a number.
+    `Request` keeps its own members (`method`, `body`, `mode`, `credentials`,
+    `cache`, `redirect`, `referrer`, `referrerPolicy`, `integrity`, `signal`,
+    `keepalive`, `duplex`, `destination`) and shares `bodyUsed` with
+    `Response`.
+  - `document` and `performance` list their members. A member the table left
+    out used to read as `undefined`, and calling it was reported as a
+    definite `TypeError` — on `document.getElementsByTagName`,
+    `document.forms`, `document.write`, `performance.getEntries` and the
+    rest. The collections read as arrays, and `performance` also exposes
+    `navigation`, `serverTiming` and `timeOrigin`.
+  - The global list covers the browser globals that were missing: `alert`,
+    `screen`, `DOMParser`, `XMLHttpRequest`, `Worker`, `FileReader`,
+    `matchMedia`, `IntersectionObserver`, `getComputedStyle`, `indexedDB` and
+    `caches`. Reading an undeclared global is a `ReferenceError`, so the
+    missing ones were reported on perfectly ordinary browser code.
+  - `navigator.hardwareConcurrency` is declared. It used to read as
+    `undefined`, which made `navigator.hardwareConcurrency > 4` fold to
+    `false` without a word of complaint; it is a number now.
+  - `AbortSignal.any` is declared, so combining signals no longer reads as a
+    definite `TypeError`.
+  - `location.searchParams` is declared, so `location.searchParams.get("q")`
+    no longer reads as a definite `TypeError`; it returns `string | null`.
+  - `atob`, `btoa`, `TextEncoder` and `TextDecoder` are no longer declared
+    by the environment, because the host models them more precisely than the
+    environment did. `atob("!!!")` used to look like a call that never
+    throws; it now reports the `InvalidCharacterError` the browser raises,
+    and valid base64 still folds to the exact string. `new TextDecoder` with
+    an unsupported label reported a `TypeError`; it now reports the
+    `RangeError` the browser raises. `TextEncoder` and `TextDecoder` are
+    classes, so calling either without `new` reports the `TypeError` the
+    browser raises, and calling them with `new` reports nothing.
+  - `queueMicrotask` is no longer declared by the environment. The
+    declaration shadowed the check that the argument is callable, so
+    `queueMicrotask(1)` looked like a call that never throws; it now reports
+    the `TypeError` the browser raises.
+- 69e67d3: The node environment now covers the globals Node actually has, and stops
+  shadowing the host built-ins it does not need to model.
+  
+  - The node environment used to declare 41 globals. The remaining host
+    globals were unmodelled, so `new BroadcastChannel("x").name` and
+    friends were cast into an empty brand: reading a member gave
+    `undefined`, and reading it twice gave a definite `TypeError`. The
+    environment now declares the host constructors — with their instance
+    faces, and with `ctor: true` for the ones Node can actually construct
+    and `ctor: false` for the ones it cannot (`AbortSignal`,
+    `MessagePort`) — together with the global objects `crypto`,
+    `performance` and `navigator`. Reading `crypto.randomUUID()` now gives
+    a `string` instead of `unknown` plus a misleading
+    `nudo:unknown-inference` diagnostic that blamed the user's code.
+    Built-ins that core already models exactly (`URL`, `URLSearchParams`,
+    `TextDecoder`, `Proxy`, the error and typed-array families) are still
+    not declared, so their precise behaviour is not shadowed.
+  - `Buffer` is a constructor now. It was declared as a plain object, so
+    `new Buffer(1)` was a definite `TypeError` although Node returns a
+    buffer. The static side (`from`, `alloc`, `of`, …) hangs off the
+    constructor and points at the same buffer shape as the instance side.
+  - The `Buffer` instance face gained `byteLength`, `buffer` and
+    `byteOffset`. They used to read as `undefined` where Node reports `4`,
+    an `ArrayBuffer` and `0`.
+  - The three process streams (`stdin`, `stdout`, `stderr`) share one
+    socket face. `process.stdout` only had `write` and `process.stdin`
+    only had `on`, so `process.stdout.on("data", …)` and
+    `process.stdin.setEncoding("utf8")` were definite `TypeError`s.
+  - The `process` face gained twelve real members: `emitWarning`, `abort`,
+    `kill`, `release`, `features`, `umask`, `getActiveResourcesInfo`,
+    `resourceUsage`, `availableMemory`, `loadEnvFile`, `getBuiltinModule`
+    and `constrainedMemory`. `process.features` is an open map over
+    `boolean | string | undefined` values, so reading a flag no longer
+    degrades to `unknown`.
+  - `process.hrtime` is callable again. It was declared as an object, so
+    `process.hrtime()` became `unknown` and produced a misleading
+    `nudo:unknown-inference` diagnostic; it now returns a
+    `[seconds, nanoseconds]` array, with `hrtime.bigint()` as a static
+    member.
+  - The node environment no longer declares `structuredClone` or
+    `queueMicrotask`. Declaring them shadowed the host built-ins and made
+    their throws face disappear, so the engine claimed calls that do throw
+    never do. Both names now fall back to the host path, which keeps the
+    throws face.
+- 69e67d3: Node `fs` / `fs/promises` / `path` / `os` declarations now match what the
+  host actually does, so the checker no longer reports calls as safe when
+  the host throws, and no longer invents values the host cannot produce.
+  
+  - `os.cpus()` describes the whole per-CPU record. The result was missing
+    the `times` member, so reading `cpus()[0].times.user` produced an exact
+    `undefined` and the engine concluded the call must throw a `TypeError`.
+    The record now carries `times` with `user` / `nice` / `sys` / `idle` /
+    `irq`, as the host does.
+  - The `node:path` family checks the types of its arguments. A path
+    argument that definitely is not a string makes the call throw a
+    `TypeError`, which is what the host does — `path.join(123)` and
+    `path.isAbsolute(123)` both fail that way. An argument the engine
+    cannot pin down makes the call possibly throw instead. A bad argument
+    no longer produces a confident value either: `path.basename("/x/y.txt",
+    5)` used to report the string `"y.txt"`, a name the host never returns.
+    Variadic members (`join`, `resolve`) are checked across every
+    argument, and the optional suffix of `basename` still accepts
+    `undefined`, as the host does. `path.posix` and `path.win32` follow the
+    same rules.
+  - The synchronous `node:fs` members report that they may throw. The
+    host throws an `Error` (with a `code` such as `ENOENT`) when a path is
+    missing or a permission is denied, but the declaration claimed the call
+    could never fail. The call is now marked as possibly throwing an
+    `Error`; it is not marked as always throwing, because the engine
+    cannot know whether the path exists. `existsSync` still never throws,
+    and `rmSync` with `force: true` keeps ignoring a missing path.
+  - `fs/promises` results use the same member tables as the synchronous
+    family. The promise-family result was a trimmed copy, so reading
+    `mtimeMs`, `nlink` or `isBlockDevice()` off it produced an exact
+    `undefined` instead of the number or boolean the host returns, and
+    the `Dirent` of `readdir` had no shape at all. `readdir` now also
+    follows the host and returns names when `withFileTypes` is not set and
+    directory entries when it is.
+  - `statSync` and `fs.promises.stat` report the `undefined` the host
+    returns for `throwIfNoEntry: false`. The result was declared as never
+    `undefined`, so the checker reported the call as safe and went on to
+    give a confident `boolean` or `number` for a member read that the host
+    answers with a `TypeError`.
+- 69e67d3: The node environment now models the host's real throw and value behaviour for
+  its `url`, `crypto`, `child_process`, `util` and `assert` modules.
+  
+  - `node:url`'s `URL` and `URLSearchParams` and `node:util`'s `TextEncoder`
+    and `TextDecoder` are constructors now. They are declared as plain
+    functions, so `new URL("https://x.dev/a")` was reported as a call that may
+    throw a `TypeError` ("new on function value of unknown constructibility")
+    even though the host never throws there. The declarations now carry the
+    constructor flag, and the instance faces are unchanged.
+  - `node:assert` no longer claims that an assertion never fails. `ok(false)`,
+    `strictEqual(1, 2)`, `deepStrictEqual({a:1},{a:2})`, `notStrictEqual(1, 1)`,
+    `match("abc", /z/)` and `fail()` throw an `AssertionError` in the host, and
+    the declarations now say so: an assertion that is known to fail throws an
+    `AssertionError`, an assertion that is known to hold throws nothing, and an
+    argument the engine cannot pin down may throw. A missing argument to
+    `strictEqual` throws a `TypeError`, the way the host does.
+  - `node:url`'s `fileURLToPath` no longer swallows the exception the host
+    throws for an invalid URL or a non-`file:` scheme. The call is now reported
+    as a call that may throw a `TypeError` instead of quietly returning a
+    string.
+  - `node:crypto`'s `createHash`, `randomBytes`, `randomInt`, `pbkdf2Sync` and
+    `timingSafeEqual` now carry the throw the host throws for an out-of-range
+    argument: an unsupported digest name throws an `Error`, an out-of-range
+    size, iteration count or key length throws a `RangeError`, and two buffers
+    of different lengths throw a `RangeError`.
+  - `node:util`'s `promisify`, `callbackify`, `inherits` and
+    `isDeepStrictEqual` take their function arguments through the apply path,
+    so the argument is no longer bound as a type variable. The signatures are
+    unchanged.
+  - `url.pathToFileURL` returns the full URL face (eleven components plus
+    `toString` and `toJSON`) instead of a one-slot `{ href }` object, so
+    reading `.pathname` or `.protocol` no longer yields `undefined`, and
+    reading a member of one of them no longer looks like a guaranteed
+    `TypeError`.
+  - `child_process.spawnSync` returns the full face of the host's result:
+    `pid`, `output`, `signal`, `status`, `stdout`, `stderr` and `error`.
+    Reading `.pid` no longer yields `undefined`, and reading `.output[0]` no
+    longer looks like a guaranteed `TypeError`.
+- 69e67d3: 族 29 修复 S5：Bug 861 · 864 · 865 —— es env 的 console 成员表补全（`timeStamp` / `dirxml` / `profile` / `profileEnd` 等缺槽读出 exact undefined ⇒ `console.timeStamp()` 假红「may throw TypeError」）、URI 族改走 core 的 `evalGlobalFn` 建模（`decodeURI("%")` 的 `URIError` 不再被吞 ⇒ L2 假绿修复，抽象实参回落声明域 + may-throw URIError）、es env 补齐 ES 规范全局声明 + service 的「已被覆盖」判定改为按 core 真实建模能力推导（`BigInt` / TypedArray 全家 / `ArrayBuffer` / `DataView` / `AggregateError` / `Function` / `escape` 等不再被报「未被 Nudo 覆盖」，与同一份报告里的精确签名自洽）。
+- 69e67d3: 族 29 修复 S6：Bug 882 · Bug 890 —— node:util 品牌形参函数的普通调用面 L2
+  假红 + env promise 缺 rejected 通道（catch 臂被当成死代码）。
+  
+  **Bug 882（core 侧根因）** — `promisify` / `callbackify` / `inherits` /
+  `isDeepStrictEqual` 这类**品牌形参**函数在**具名导入**调用面
+  （`import { promisify } from "node:util"` ⇒ `promisify(readFile)`）报
+  `nudo:entry-may-throw`，而**成员调用**面（`util.promisify(readFile)`）正常
+  ⇒ 同一函数两种口径。根因：普通调用面把**裸宿主值**（宿主函数 / 宿主构造器
+  / 函数声明绑定）原样灌进 `bindTypeVars`，`arg.shape` 解引用 `undefined` ⇒
+  TypeError 冒泡 ⇒ 上层记 may TypeError ⇒ L2 假红（原生必不抛）。
+  
+  - `packages/core/src/algebra/hof.ts` 的 `bindTypeVars`：**无形状的实参不参与
+    类型变量绑定**（此前直接解引用 `arg.shape` 崩）。
+  - **普通调用面也做实参归一化**（与成员调用面同款）：`hof.ts` 新增
+    `setRawArgNormalizer` 注册钩子，`packages/core/src/algebra/exec/class/invoke.ts`
+    在加载期注册 `asAbsVal` 门面 ⇒ 两个调用面共用同一归一化 ⇒ 同一宿主函数恒
+    同一 Abs 身份 ⇒ **两种口径一致**。
+  
+  **Bug 890** — env 造的 promise **没有 rejected 通道** ⇒ core 读成「**确定
+  fulfilled**」⇒ `catch` 臂被当成**死代码** ⇒ 引擎给出**确定的错值**（原生
+  `fs/promises.readFile` / `fetch` / `crypto.subtle.digest` 都可能拒绝）。
+  
+  - **core 侧零改动**：`settledFulfilledOf` / `then` / `catch` / `$await` 对
+    **带 `rejected` 通道**的 promise 处理已经正确（`rejected !== undefined` ⇒
+    不判「确定 fulfilled」；`catch` 走「两臂 join」分支；`$await` 把拒绝臂送进
+    throw 通道 ⇒ `try/catch` 可吸收 ⇒ catch 臂可达）。本分片只补回归钉。
+  - **env 侧改法（`packages/env/src/abs-helpers.ts` 的 `promiseOf()`）**：给
+    promise 形状补上 `rejected` 通道 ⇒ 两臂均可能 ⇒ catch 臂保持活：
+  
+    ```ts
+    export function promiseOf(inner: Abs): Abs {
+      return makeAbs(
+        { k: "eff", eff: "promise", inner, rejected: unknown },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    ```
+  
+    （`unknown` = env 侧已有的 unknown Abs——拒绝 reason 不可知 ⇒ 两臂均可能；
+    `rejected` 是**态信息**，不进 leq / 指纹 / check 等价。）
+- 69e67d3: 族 29 主 agent 收口：跨分片组合出来的 4 个缺口。
+  
+  - **Bug 884（web 侧）**：`web.ts` 的 `structuredClone` 声明已删（node 侧同款
+    修法在 `node.ts`）⇒ 回落宿主内建 ⇒ 不可克隆值的 throws 面（宿主
+    `DOMException` / `DataCloneError`）不再被 env 声明整段吃掉 ⇒ L2 门禁恢复。
+  - **`enforceArgs` 的并集实参过严**（S3 越界发现，主 agent 修正）：实参是**并集**
+    （如 `string | undefined`）时，`leqAbs(sum, pt)` 整体判 false ⇒ 旧实现把它
+    当「确定不符 ⇒ 必抛 TypeError」，而原生只在 `undefined` 分支抛 ⇒ 可能假红。
+    现在**逐成员**判定：只有**全部分支**都不兼容才判必抛，部分分支不兼容判
+    may-throw ⇒ 与原生同口径。
+  - **Bug 886 / 889 的组合缺口**（S1 删声明 + S5 覆盖推导撞出来的）：web env 的
+    `TextDecoder` 声明已删（宿主才有精确的 `RangeError` 与「类不可裸调」语义），
+    但 core 的**构造面** `evalBuiltinNew` 不认 `TextDecoder` ⇒
+    ① `nudo test` 报「Built-in API "TextDecoder" is not covered by Nudo's type
+    inference」（假阳）；② Abs 面与 `$new` 宿主面口径分裂。现在
+    `evalBuiltinNew` 补 `case "TextDecoder"` ⇒ 两侧同 builder
+    （`makeTextDecoderAbs`），假阳消失。
+  - **「已被覆盖」判定里的手写例外已删**（族 29 Bug 865 的根因收口）：core 其实
+    已精确建模 `WeakRef`（`evalBuiltinNew` 的 `case "WeakRef"`），但三条既有
+    service 契约把 `WeakRef` 当作「未被覆盖的全局」样例钉住，于是判定里留了
+    一张手写例外表——那正是 Bug 865 要消灭的「手写白名单」换了个地方继续写。
+    现在例外表删除，三条契约的**样例全局**换成真正未被建模的宿主全局
+    `Atomics`（core 无 `Atomics` 建模面；它是 `globalThis` 里的数据属性 ⇒
+    不触发访问器副作用），契约的**意图**（未建模全局要报 `builtin-unknown`、
+    且不与 `unknown-global` 双报）完全保留。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [7fea13a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+  - @nudojs/core@1.16.0
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-env)
 
-## @nudojs/harvester 0.4.2 {#pkg-harvester}
+## @nudojs/harvester 0.4.3 {#pkg-harvester}
 
-## 0.4.2
+## 0.4.3
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
-  - @nudojs/env@0.5.2
-  - @nudojs/parser@1.5.2
+- b4768ca: 族 27 修复 H1a：Bug 797 798 816 821 822 823 —— 条件类型的 `extends` 判定改成**三分支**（真 / 假 / 判不出）：字面量按值比（`number extends 1` 不再恒真）、brand 按结构比（同名之外不再确定判假）、`keyof` / `typeof` / 未解析类型判不出时**不取支**；`infer` 的括号穿透 + 绑定替换真支；条件元数据**按条目隔离**（不再从上下文级单槽泄漏进下一条签名 ⇒ 逐字相同的两条声明不再得到不同类型，冷 / 热缓存不再翻转结论）；真支是嵌套条件类型时**递归求值**（不再被 `infer` 变量顶替）。
+- b4768ca: 族 27 修复 H1b：Bug 799 / 800 / 802 / 803 / 810 / 811 / 819 / 829 / 830 —— 泛型 / 交叉 / 元组 / 索引 / 类型字面量的收割面与 TypeScript 真实语义对齐：交叉类型合并两侧成员、泛型别名按类型实参实例化、元组逐槽映射、`Record` / 索引签名建成开放对象、方法类型形参按作用域遮蔽外层同名形参、内联类型字面量的访问器成员可读、构造签名带 `ctor` 面、调用签名投影成 fn、落盘产物保留泛型 α 的 var term。
+- b4768ca: 族 27 修复 H2：Bug 791 · 805 · 806 · 812 · 813 —— 泛型实例化按**实参身份**分桶、
+  接口成员**重载集全部保留**、递归类型别名改**按引用建模**（不再指数展开）、
+  递归 interface 的自引用不再铸成**闭合空 brand**、类型形参**默认值生效**。
+  
+  **Bug 791** — 泛型实例化缓存键只编码**实参个数** ⇒ 同一接口的不同类型实参命中
+  同一条缓存 ⇒ `Box<number>` 被折成 `Box<string>`（`Box<number>.value` 收割成
+  `string`）。缓存键改成编码类型实参的**身份**（Abs 结构 + α term 身份）⇒ 不同
+  实参 ⇒ 不同实例；同一实参 ⇒ 仍然命中缓存（同一个 Abs 实例对象）。
+  
+  **Bug 805** — 接口成员的**重载集只保留第一个 overload** ⇒ 其余 overload 的返回
+  类型被**整体抹除**（`m(a: number): string; m(a: string): number` 收割成
+  `(number) => string` ⇒ 假红 + 假绿，与 TS 完全倒置）。重载集现在**全部保留**：
+  参数位逐位 union（复用顶层函数路径的 `mergeOverloadParams`，Bug 827 同族），
+  返回位取 union（带 α 的返回优先）⇒ 与 materialize 的 fn 分支**同口径**，
+  同一实体两条收割路径不再分叉。
+  
+  **Bug 806** — 递归**类型别名**按 depth 硬展开 ⇒ 展开 8 层且**指数级**（6 个
+  自引用成员 ⇒ 54,083,943 字节的 env 模块）⇒ 末层折成 `unknown`。递归别名改成
+  **惰性/引用式建模**：别名登记成合成 interface（成员面照搬类型字面量），自引用点
+  经实例化路径落到「按名引用 + 形状待定」的 brand ⇒ 不再内联展开。同一夹具现在
+  5,176 字节（≈ 10,000× 更小），且互引别名（`type A = { b: B }; type B = { a: A }`）
+  同样被识别为递归。
+  
+  **Bug 812** — 递归 interface 的自引用被铸成**空 brand**（`absBrand(name, {})`）
+  ⇒ 那是**闭合空对象** = 「该对象确定没有这个成员」⇒ 成员读走「槽位缺失 ⇒
+  exact undefined」⇒ 合法代码被判「定抛 TypeError」（L2 门禁假红）。自引用改成
+  「按名引用 + 形状待定」（`shape: unknown`）—— 与落盘面（`emitAbs` 早已如此）
+  同口径 ⇒ **收割面 / 磁盘往返面 / 落盘发射面**给出同一个类型。
+  
+  **Bug 813** — 泛型**类型形参默认值**从不读取 ⇒ 无参引用（`Box` 对
+  `interface Box<T extends string = string>`）留下**未绑定 α** ⇒ 引擎侧「未绑定
+  α」= 无约束值 ⇒ 其上的方法调用被建模为定抛 TypeError（假红）。现在按 TS 语义取
+  值：显式实参 > **默认值** > **约束** > 推断 `unknown`（不再留未绑定 α）。
+  
+  ⚠️ 已知残留（core 侧，本次不改）：Bug 805 的重载在**调用点**仍无法按实参类型选
+  arm —— Abs 的 fn 形状没有 overload 集合的承载位，收割面只能给 union 返回 ⇒
+  `union` 方法分派的保守性（string 分支也参与 `toFixed` 分派）仍会让
+  `iov.m("hello").toFixed(0)` 报 may-throw（与顶层函数路径的 Bug 827 同款残留，
+  core 冻结，本次不消）。
+- b4768ca: 族 27 修复 H3：Bug 792 807 808 809 831 832 977 —— 收割面的**接口成员表**与 TypeScript 对齐：限定名类型引用不再并入其它命名空间的同名接口（792）、同一接口方法在 brand 面与模块级提升面是同一个类型（807）、提升时保留 `?` 可选标记（808）、`extends` 的继承成员并入实例模型（809）、接口成员提升不再抢真实导出的名字也不产生幽灵导出（831）、计算成员名 `[Symbol.iterator]` 保留（迭代协议不再整体丢失，832）、可选**方法**成员与可选属性同口径保留可省性（977）。
+- b4768ca: 族 27 修复 H4：Bug 814 · 815 · 817 · 818 · 820 · 824 · 827 —— 收割面不再丢
+  导出形式（`export default` / `export { X as Y }` / `export = X` / `export * from`），
+  导出表不再随 `.d.ts` 遍历顺序变，重载集不再塌成「第一个 overload 的参数 + union 返回」。
+  
+  **Bug 814** — `export default` **不在模块导出表里** ⇒ 默认导入落 `unknown`（假警告）；
+  默认导出的**局部名**被当成具名导出（假绿：TS 侧是 TS2614，引擎侧解析成功）。
+  
+  - `export default function foo()` / `export default class Foo {}` 的导出名改成
+    `default`（局部名不再进导出表）；`export default <局部名>` 解析到该局部绑定的值。
+  
+  **Bug 815** — `export { X as Y }`（本地改名再导出）被**整条丢弃** ⇒ 改名后的导出
+  根本不存在（假警告）。现在改名后的导出名进导出表，值取局部绑定。
+  
+  **Bug 817** — `export * from` 的别名应用是**整记录替换**（`!ctx.modules[alias]` 守卫）
+  ⇒ **有自有声明的模块**把星号再导出的名字**整批丢掉**。别名改成与模块自有声明
+  **合并**（自有优先），多目标（`export * from "a"; export * from "b";`）也合并；
+  纯别名仍与目标共用同一条记录（落盘面继续去重）。
+  
+  **Bug 818** — `declare module "x" { export = <本地类/常量> }` ⇒ **整个模块记录不生成**
+  （`ctx.skipped++` 静默丢弃）。现在模块记录生成、`default` = 被导出实体的值；
+  解析不出来时计入 `skipped`（汇总行有信号）。按 TS 语义（`export =` 的类只能默认导入，
+  具名导入是 TS2595）**不**生成具名导出。
+  
+  **Bug 820** — `export { X }` 的「是不是值」判定发生在 **Phase 1** ⇒ 模块导出表随
+  **`.d.ts` 遍历顺序**变（同一份声明换个文件顺序就少一个导出）。判定挪到物化阶段
+  （符号表完整时）⇒ 导出表逐项相同、与遍历顺序无关。类型位导出
+  （`export type { X }` / `export { type X }`）不产生运行时值，计入 `skipped`。
+  
+  **Bug 824** — 模块级 `.d.ts` **顶层的 CJS `export = X`** 整个被丢弃 ⇒ 该包**没有
+  `default` 导出** ⇒ ESM 默认导入（`import _ from "pkg"`）落 `unknown` + 假警告。
+  现在顶层 `export = X` 进 `default` 导出（值 = X 的值），桥接层把它提升成包的
+  `default` 导出。
+  
+  **Bug 827** — 顶层函数的**重载集塌成 union 返回**（参数只取第一个 overload）。
+  参数位改成保留**每个** overload 的参数类型（逐位 union；参数个数不同或带泛型 α
+  时保持原样），返回位仍是各 overload 返回类型的 union ⇒ 重载集不再在收割产物里
+  被抹掉。
+  
+  ⚠️ 已知残留（core 侧，本次不改）：`convert(1).toFixed()` 的 **L5 假红**还需要
+  core 侧「按实参形态选 overload arm」的 dispatch（Abs 的 fn 形状目前没有 overload
+  集合的承载位）＋ union 方法分派只认 `string` 成员（Bug 771 / 263）—— 收割侧
+  无法单独消掉该假红，详见交付报告的「越界发现」段。
+- b4768ca: 族 27 修复 H5：Bug 793 · Bug 794 · Bug 796 · Bug 804 · Bug 826 —— 声明采集
+  **丢实体 / 元数错位 / 可构造性未知**（收割面）。
+  
+  **Bug 793** — 顶层 `declare namespace` 的**运行时成员被摊平进 globals** ⇒
+  harvester **凭空造出全局**（`declare namespace Foo { function bar() {} }` ⇒
+  globals 里多出一个不存在的 `bar`）⇒ 并**抑制**了对应的 ReferenceError 诊断
+  （裸 `bar()` 被当成有定义；`tsc --strict` 对同一份代码报 TS2304）。
+  
+  - `harvest-dts.ts` 的 `collectStatement`：`namespace` 分支改为把运行时成员收进
+    **命名空间自有的记录**（`Scope.nsRec`），并挂一个命名空间对象 `Foo`（成员在
+    `Foo.bar` 面）⇒ **不摊平**进 globals。
+  - `recordFor` 命中 `scope.nsRec` ⇒ 命名空间成员落在自己的记录里；`scopeKey`
+    把命名空间链计入作用域键 ⇒ 两个命名空间的同名成员不会被当成 overload 合并。
+  - 只有类型（interface / type）的命名空间**不产生**运行时对象 ⇒
+    `declare namespace _ { interface X {} }` 不会凭空多出一个全局 `_`。
+  - 模块作用域（`declare module "x" { namespace Y { … } }`）保持既有口径
+    （成员摊平进模块记录）：`export = ns` 的模块（@types/node 的 path / fs）
+    正是这个形态。
+  
+  **Bug 794** — `this` 形参被当**普通形参**收割 ⇒ **元数错位**（arity +1，
+  第一个真实实参被绑到 `this` 槽）+ 契约草稿凭空多一个必填参数。
+  
+  - `harvest-dts.ts` 的 `signatureToFnSig` 跳过 `this` 形参（TS 把它建模成
+    名字为 `this` 的普通 ParameterDeclaration，不显式跳过就与真形参无法区分）。
+  - `classValueAbs` 的构造器参数同口径（跳过 `this` 形参）。
+  - 草稿面（`dts-contract-draft.ts`）不在本片区间：对应改法见交付报告。
+  
+  **Bug 796** — `declare class` 的**实例成员整体丢失**（`declare class` 的
+  `instanceFor` 拿到空壳 ⇒ 展开成空 obj）+ `const p: Point` 这个**绑定从
+  globals 彻底消失**。
+  
+  - `harvest-dts.ts` 的 `interfaceDeclsOf` 放宽为「interface **或** class」
+    （成员收集器本来就写好了类支持，只是被一道 `isInterfaceDeclaration` 过滤
+    挡在门外）；返回类型随之放宽为 `NamedTypeDecl[]`。
+  - `registerTypeDecl` 对 class 也登记**限定名**（命名空间里的 class
+    `NodeJS.Process` 的实例面可解析）。
+  
+  **Bug 804** — 映射类型 / 模板字面量类型 / 索引访问类型（以及 `keyof` /
+  `typeof`）落 `unknown` 后，**`declare const` 整条绑定被丢弃** ⇒ 用户代码引用
+  它时被判「**确定抛 ReferenceError**」（L2 假红；`tsc --strict` exit 0）。
+  
+  - `harvest-dts.ts` 的 `materialize` var 分支：类型判不出时**保留绑定**（值为
+    `unknown`）——「类型未建模」是**降级**（值域未知），不是「符号不存在」⇒
+    不再计入 `skipped`（丢了才计入）。
+  
+  **Bug 826** — 收割的 **`declare class` 类值没有 `ctor` facet** ⇒ `new X()`
+  被判「**可能抛 TypeError**（可构造性未知）」⇒ L2 假红。
+  
+  - `harvest-dts.ts` 的 `classValueAbs`：类值走 `absCtorSig`（带 `ctor: true`
+    facet）—— core 的 `new` 路径按 callee 的 `ctor` facet 判可构造性。
+  - `harvest-to-abs.ts` 的 `harvestedValueToAbs`：mock 化时**透传** `ctor`
+    facet（否则又变回「可构造性未知」）。
+- b4768ca: 族 27 修复 H6：Bug 795 · Bug 828 · Bug 836 —— 落盘面保留 `bigint` / `symbol`
+  原语（不再降级 `unknown`）+ 导出表 / 模块记录表改用**无原型字典**（撞
+  `Object.prototype` 成员的导出不再整条丢失、`declare module "__proto__"` 不再
+  污染 `Object.prototype`）。
+  
+  **Bug 795** — `emitEnvModule` 只认 `number` / `string` / `boolean` 三个原语，
+  `bigint` / `symbol` **一律降级成 `unknown`** ⇒ **同一份 `.d.ts`，内存收割与
+  落盘产物给出不同答案**（内存面是 `(bigint) => bigint`，落盘面是
+  `(unknown) => unknown`）。
+  
+  - `harvest-dts.ts` 的 `emitAbs`（落盘渲染）补 `bigint` / `symbol` 分支 ⇒ 与
+    内存面（`mapType` → `absPrim`）同口径；磁盘投影（`harvest-json.ts`）本来就
+    带这两个原语 ⇒ 这次补的是**发射器**与**磁盘格式**之间的能力缺口。
+  - `harvest-json.ts` 的 `harvestSigToAbs` 去掉骗人的
+    `sig.type as "number" | "string" | "boolean" | "bigint"` 硬转：改成白名单
+    校验（`bigint` / `symbol` 都保留，未知原语标签诚实降级成 `unknown`）。
+  
+  **Bug 828** — 导出表 / 成员表用**普通对象 + 原型链裸读裸写** ⇒ 名字撞
+  `Object.prototype` 成员的导出（`toString` / `valueOf` / `hasOwnProperty` /
+  `constructor` / `__proto__`）**整条静默丢失**，而 `stats.skipped` 仍是 0 ⇒
+  端到端 L2 假红（`tsc --strict` exit 0 的代码报 may-throw + unknown-inference）。
+  
+  - `harvest-dts.ts` 的 `recordFor`：`globals` / 模块记录表改用
+    `Object.create(null)`（**无原型** ⇒ 只有自有键可见，`__proto__` 只是普通
+    数据键），并用 `Object.hasOwn` 判定「已有记录」⇒ 去重裸读不再命中原型成员。
+  - `harvest-json.ts` 的序列化 / 回放路径同样改用无原型表（模块名 / 导出名 /
+    对象槽名撞原型成员时不再被吞）。
+  
+  **Bug 836** — `declare module "__proto__"` 让收割器把导出**直接写到
+  `Object.prototype`** 上 ⇒ **进程级原型污染**（分析进程里每个普通对象都多出
+  该成员）+ 该模块记录从表里**消失**。
+  
+  - `harvest-dts.ts` 的 `recordFor`：模块记录表无原型 + own-property 判定 ⇒
+    模块名 `__proto__` / `constructor` 读到的是**自己的记录**而不是
+    `Object.prototype` / `Object` ⇒ 不再写穿原型链，模块记录也不再消失。
+  - `harvest-dts.ts` 的 `emitKey`：`__proto__` 改用**计算属性名**
+    （`["__proto__"]`）——对象字面量里的 `__proto__: v`（即便带引号）也会触发
+    `[[SetPrototypeOf]]` ⇒ 成员丢失 + 字面量原型被改写。
+- b4768ca: 族 27 修复 H7：Bug 833 835 1014 —— 包根解析改为「包自带 types 优先、`@types` 最后回落」；包名键只由该包自己的顶层导出占（模块记录不再占包名键），子路径说明符不再回落到包名键；ambient 声明（`declare global` / script 模式 `.d.ts`）不再被提升成包名键的具名导出。
+- b4768ca: 族 27 修复 H8a：Bug 801 / 916 / 945 / 1011 / 1012 / 1013 —— `contract --from-dts` 的**草稿面**类型语义与 TypeScript 对齐：
+  
+  - **801**：TS 的 `null` 不再映射成 `any()`（契约是空的 ⇒ 假绿）⇒ 映射成**真 null 面**（`union(…, null)`）；`undefined` 同理；约束位（导出顶层 / fn 返回位）上的裸字面量包一层 `union(…)` ⇒ 草稿抄进侧车后仍是**真约束**。
+  - **916**：`Promise<T>` **不再剥掉** Promise 外壳（剥掉 ⇒ 契约先天不可满足 ⇒ 假红，且与收割面相反）⇒ 该位无约束 + 如实标注丢失（与收割面保留 `eff/promise` 同口径）。
+  - **945**：类型字面量里的**方法签名**成员不再被丢（丢了 ⇒ 契约被悄悄放宽 ⇒ 假绿 TS2345）⇒ 进契约为 `fn(…)`；数字键成员同样保留。
+  - **1011**：同文件的 `type` 别名**被解析**（不解析 ⇒ `string` 降成 `any()` ⇒ 零义务假绿）⇒ `type Id = string` ⇒ `string()`；`interface` 同样展开成 shape。
+  - **1012**：`Partial<T>` 的字段**变可选**（原样透传 ⇒ 比 TS 更严 ⇒ 假红）⇒ `partial(shape({…}))`。
+  - **1013**：`Record<K,V>` 的值域**落到实现**（键为字面量集合时 ⇒ `shape({ a: number() })`）；键非字面量时契约 DSL 无索引签名 ⇒ **如实降级**（不再写「注释宣称有值域」的假声明）＋ 标注「值域未建模」＋ 计入 `skipped`。
+- b4768ca: 族 27 修复 H8b：Bug 825 · 834 · 960 · 1003 · 1015 —— 草稿面（`nudo contract
+  --from-dts`）不再静默丢导出 / 说谎的汇总行 / 产出语法非法的草稿。
+  
+  **Bug 825** — **重载集静默塌成第一个 overload** ⇒ 草稿少声明签名，且被丢掉的
+  overload **不计入 `skipped`** ⇒ 汇总行看不出任何丢失。现在重载**全部保留**
+  （返回位取全部 overload 的 union，与收割面同口径），每条 overload 的**签名写进
+  note**（审阅者看得见「这里本来有 N 条」），被合并掉的 overload **逐条计入
+  `stats.skipped`**。
+  
+  **Bug 834** — 带引号 / 连字符的属性键产出**语法非法**的草稿 ⇒ 抄进 `*.nudo.js`
+  后 sidecar **加载失败** ⇒ `nudo check` 门禁由绿转红（exit 1）。属性键现在走
+  **合法转义**（JS 标识符 / 字符串字面量两种合法形态）；`__proto__` 走**计算属性名**
+  （对象字面量里的 `__proto__: v` 即便带引号也会触发 `[[SetPrototypeOf]]` ⇒ 成员从
+  字面量里消失）。
+  
+  **Bug 960** — 5 类**运行时导出**（`export {x} from` / `export * from` / `enum` /
+  `namespace` / 匿名 `export default function`）整条丢弃，且汇总行报「0 skipped」⇒
+  丢失零信号；而同一 harvester 的**收割面看得见 `Color`（enum）** ⇒ 两个产物面自相
+  矛盾。现在 5 类导出全部进草稿（`enum` / `namespace` 投影成运行时 shape；再导出
+  逐个 push + note）；**投影不了的也要 `push({name, note, kind})`** ⇒ 进
+  `stats.skipped` ⇒ 汇总行说真话。
+  
+  **Bug 1003** — **具名 default 导出**被写成本地名键 ⇒ 草稿键 `helper` ≠ 模块导出名
+  `default` ⇒ 照抄进侧车后该导出**永远零义务**（假绿），而汇总行报「0 skipped」。
+  现在 default 导出的草稿键**恒为 `default`** ⇒ 抄进侧车后绑定的是模块的 `default`
+  导出（实测 `impl(x: number) => string`；改前是 `impl(x: any) => string` +
+  `nudo:interface-entry-only`）。
+  
+  **Bug 1015** — 目录模式**静默只投影前 16 个 `.d.ts`** ⇒ 第 17+ 个文件的导出整条
+  不存在，而汇总行报「16 d.ts · 0 skipped」。现在目录模式**投影全部** `.d.ts`；
+  遍历不到的地方（读失败 / 深度上限）**如实计数** ⇒ 汇总行说真话。
+- 1b08a18: 族 27 修复 S4：Bug 1054 —— TS **类型谓词**的返回类型不再被收割成 `unknown`。
+  
+  `mapType` 的类型节点分派表**没有 `TypePredicate` 分支** ⇒ `x is T` / `asserts x is T`
+  落进兜底分支（`default: return absUnknown()`）⇒ 被谓词的签名返回面变成 `unknown`：
+  
+  - 调用方的签名面随之变成 `unknown` ⇒ 触发 `nudo:unknown-inference` **误导诊断**
+    （把「谓词返回 boolean」说成「推断失败」，并把用户引向 `@nudo:case` / env mock /
+    refine —— 而真正要修的是收割器）；
+  - dts 产物写 `unknown` ⇒ 消费方 tsc **TS2322 假红**（`const b: boolean = f(x)`）。
+  
+  修法（**同一张分派表**上补分支，不另起一套）：按 TS 运行时语义映射返回面 ——
+  `x is T` ⇒ **`boolean`**（`T` 是**收窄信息**，是调用点的副作用，**不是**返回面）；
+  `asserts x is T` / `asserts x` ⇒ **`void`**（断言函数运行时返回 `undefined`，
+  与 `: void` 返回同口径）。覆盖顶层函数、接口方法签名、函数类型（type literal）三条路径。
+- b4768ca: 族 27 收口接线：让**三个产物面**（内存收割面 / 磁盘缓存面 / 落盘源码面）与
+  **两个产物面**（收割面 / 草稿面）在同一份 `.d.ts` 上给出**同一个类型**。
+  
+  **磁盘 ABI v8 → v9 → v10** —— `HARVEST_DISK_ABI` 随收割语义抬版本。不抬则
+  用户本地 `~/.cache/nudo/deps/` 里的旧收割产物会继续命中 ⇒ CLI **看不到本轮
+  修复**（实测：同一夹具，旧缓存 ⇒ `useDefault(xs: any) => unknown`）。
+  v10 覆盖收口时又改的三处语义：`this` 形参不再进收割签名（Bug 794）、
+  `declare class` 进入接口成员表并带 `ctor` facet（Bug 796 / 826）、顶层
+  `declare namespace` 的运行时成员收进命名空间自有记录（Bug 793）。
+  
+  **磁盘投影补 facet** —— `HarvestSig` 此前只投影 `params` / `returns`，把
+  `obj` 的索引签名与开放标志、`tuple` 的 rest、`fn` 的 `ctor` 与静态槽**全部
+  丢掉** ⇒ 缓存往返把「开放对象 + 值域」抹成闭合空对象（成员读 undefined ⇒
+  定抛）、把「构造器」抹成普通 fn（`new` 落「可构造性未知」⇒ 假红）、把类型
+  字面量的具名成员抹掉。`absToHarvestSig` 投影 + `harvestSigToAbs` 还原两侧
+  同时补齐。
+  
+  **磁盘投影补条件元数据** —— `fn` 形态加 `inferFrom` / `condFallback`：条件
+  类型判不出时的绑定线索与假支此前不投影 ⇒ 缓存命中后条件元数据丢失 ⇒
+  **同一份 `.d.ts`，冷缓存与热缓存给出不同类型**（实测：改前冷 ⇒ `callCond()`
+  返回 `0`，热 ⇒ `any`；改后冷 / 热完全一致）。
+  
+  **落盘源码面补 `ctor` / 静态槽** —— `emitAbs` 的 `fn` 分支此前只发
+  `relationFn([...], ret, { conf: "exact" })`，把 facet 全丢 ⇒ 走落盘 env 模块
+  时 `new X()` 判「可构造性未知」。用 IIFE 在 `relationFn` 之后补 facet（**不改
+  core 冻结面**）⇒ 三路径同型。
+  
+  **草稿面 `this` 形参跳过** —— `dts-contract-draft.ts` 的参数收集此前把
+  `this` 写成必填实参位 ⇒ 草稿元数 +1（第一个真实实参被绑到 `this` 槽）。
+  判据同收割面。
+  
+  **草稿面接口 heritage 展开** —— `extends` 基接口的成员进草稿（带环保护）。
+  
+  **CLI 汇总行接 `droppedDirs`** —— `nudo contract --from-dts <目录>` 的目录
+  模式只取 `dtsPathToContractDraft` 的 `files`、**丢掉它的 stats** ⇒
+  「遍历不到的目录」不出现在汇总行 ⇒ 汇总行报「0 skipped」而实际丢了东西。
+  现在并进 `skipped`。
+- 5fd3cbb: fix(harvester): 草稿面（`nudo contract --from-dts`）8 条与收割面**同源**（族 51）
+  
+  harvester 有两面：**收割面**（`harvest-dts.ts` → Abs）与**草稿面**
+  （`dts-contract-draft.ts` → `*.nudo.js` 草稿）。台账族 27 记了 8 条**草稿面**的
+  纯缺口（收割面已修、草稿面没跟上）⇒ 同一份 `.d.ts`，收割面说得准、草稿面说不了
+  （草稿比 TS **松**，**不是假红**，但用户拿到的是残缺草稿）；共同症状是
+  **静默降级**成 `any()` / 丢成员，而**汇总行不说谎** ⇒ 用户看不出草稿缺了什么。
+  
+  本次只改草稿面（`packages/harvester/src/dts-contract-draft.ts`），逐条照搬收割面
+  （`harvest-dts.ts`）的既有正确处理：
+  
+  1. **条件类型**：新增 `ConditionalTypeNode` 分支 ⇒ 判不出时取**两支并集**
+     （收割面 `mapConditionalType` 同口径），`extends unknown` 的恒真形态只取真支；
+     不再整条降级 `any()`，且降级**明确可见**（note ⇒ 计入 `skipped`）。
+  2. **计算成员名**：`memberKey` 按收割面 `computedMemberName` 同口径认
+     `Symbol.iterator` → `@@iterator` / `Symbol.asyncIterator` → `@@asyncIterator` /
+     计算键的字符串字面量 ⇒ **不再整条丢弃**；不可静态判定者留 note
+     ⇒ **部分**丢失时汇总行也看得见（此前只在「全部成员被丢」时才发 note）。
+  3. **`extends` 基接口成员**：`collectSymbols` 按**限定名**登记（命名空间内的
+     interface 登记为 `A.Opts`），`interfaceMembers` 按限定名解析基类
+     ⇒ 基接口成员**进草稿**，且 `A.Base` 与 `B.Base` 不互相并入。
+  4. **命名空间限定名**：`A.Opts` 能解析（此前只有短名桶 ⇒ 降级 `any()`）。
+  5. **class 构造器签名**：投影为类值的构造器 fn（收割面同款：类值 = 构造器）
+     ⇒ `new Thing(…)` 不再零义务；该条**计入 `skipped`**（契约 DSL 无 `new` 语义 ⇒
+     需人工审阅），汇总行不再说谎。
+  6. **ambient module 体**：`declare module "x" { … }` / `declare global { … }`
+     的**体**被遍历 ⇒ 内部导出**进草稿**且**计数**（此前整块不可见也不计数）。
+  7. **重载 arity**：元数**相同** ⇒ 形参**按位合并**（并集，不比 TS 更严，
+     收割面 Bug 827 同口径）；元数**不同** ⇒ 仍取首个 overload（改成最宽会让
+     `f("a")` 变成「参数不够」⇒ 假红）但**明确标注窄口径**（note 写明 arity 与
+     「多参调用不在覆盖内」）。
+  8. **跨文件再导出 / 跨文件导入的类型**：名字**可见**、降级**可见**且**计入
+     `skipped`**（类型需模块解析器 ⇒ 本片无法闭合，已如实标注为剩余缺口）。
+  
+  草稿面**不比 TS 更严**（新投影只会更宽：并集 / 可见降级），负控形态（与族 51 无关的
+  声明）的草稿输出**逐字不变**；既有金标全绿（`packages/harvester` 72 个测试文件
+  / 344 例）。
+- 5fb8a51: 族 52 修复（片 W2）：harvester **收割面**的 7 条残留 —— ①**非限定**类型引用按「引用点所在命名空间」解析（`A.Opts` 与 `B.Opts` 不再互相并入；792 残留）；②`extends` 的**基接口**按基声明分别代入类型实参（`interface D extends Base<number>` ⇒ 基成员 `v` 是 `number`，不再是 α）；③条件类型按**绑定实参**求值真支（嵌套条件类型给出精确的 `"s"` / `"n"` / `"x"`，不再给并集）；④泛型实例化顺序反转（成员在**类型实参**的作用域里映射 ⇒ `Box<Promise<string>>` 的 `payload` 是 `string`，不再是 α）；⑤**模块作用域**的命名空间不再摊平进模块记录（`declare module "x" { namespace Y { … } }` ⇒ `import { bar } from "x"` 不再错误解析成功，与 TS 的 TS2305 同口径；`export = ns` 的模块导出面仍摊平 ⇒ @types/node 的 `node:path` 等真实包零回归）；⑥「类型未建模」进 `stats.degraded`（**可选**字段，降级 ≠ 丢了；没有降级时 `stats` 形状逐字不变）；⑦**匿名**默认导出（`export default function (): void;` / `export default class { … }`）不再被丢掉 ⇒ 模块的 `default` 导出在，不再计入 `skipped`。
+  
+  **磁盘 ABI v10 → v11** —— `HARVEST_DISK_ABI` 随收割语义抬版本（①②③④⑦ 任一条都会让
+  旧缓存的物化结果与新收割器不一致 ⇒ 旧缓存必须 miss，否则用户本地
+  `~/.cache/nudo/deps/` 里的旧收割产物会继续命中 ⇒ CLI 看不到本轮修复）。
+- dde4b03: `nudo contract --draft` now writes a draft that can be copied into a sidecar
+  as-is: the sidecar key is the module's **export identity**, the file is
+  always valid JavaScript, the return obligation never contradicts the
+  function's own inferred return domain, and a draft the user has edited is
+  never silently overwritten.
+  
+  - The draft's sidecar key came from the *analysis name*, sanitized into a
+    legal identifier. An anonymous `export default` therefore got the
+    synthesized key `_default`, while the key that actually binds is
+    `default` — copying the draft into `*.nudo.js` left the contract in
+    place but **inert**, and `nudo check` stayed green on a call that
+    violated it. The key is now the export identity (the same source as
+    `nudo contract --emit`), and an unsafe binding name is emitted in the
+    alias form `const _nudo_N = …; export { _nudo_N as <identity> };`.
+  - The builder `import` and the generated `export const <name>` shared one
+    module scope, so a function whose name is a builder name (`number`,
+    `lit`, `union`, …) produced `import { number } from "@nudojs/core"` next
+    to `export const number = …` — a parse-time `SyntaxError: Identifier
+    'number' has already been declared`. The generated file was not valid
+    JavaScript, so the "copy the accepted exports into the sidecar" step
+    could only produce a broken sidecar. The same collision is fixed in the
+    `--from-dts` draft.
+  - A rest parameter (`...rest`) was rendered into the constraint DSL
+    verbatim (`{ first: number(), ...rest: number() }`), which is neither a
+    legal object literal nor legal DSL: copying the draft broke the whole
+    sidecar (`nudo:interface-load`), losing every contract in the file.
+    Rest-parameter functions are now reported as `not-projectable` and
+    skipped, and every draft is assembled once (`execNudoModule`) before it
+    is written — a draft that does not load is never handed to the user.
+  - The return obligation was derived only from the *observed* call sites,
+    which are a subset of the function's real return domain: `opt(flag)`
+    returning `1 | null` was drafted as `fn({ flag: boolean() }, number())`,
+    so accepting the draft made the function violate its own draft. The
+    obligation is now checked against the inferred return domain (the same
+    source as the `nudo check` signature) and is not written when it does
+    not cover it.
+  - `--draft --write` overwrote a hand-edited `*.nudo.draft.js` without a
+    word, while the file's own header claims "Handwritten contracts are
+    never overwritten". Drafts now carry a content fingerprint; a draft
+    whose content no longer matches its fingerprint is kept as-is and the
+    command reports that it was not overwritten.
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [7fea13a]
+- Updated dependencies [a1c093f]
+- Updated dependencies [9f26414]
+- Updated dependencies [67abd92]
+- Updated dependencies [3d66f5a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+  - @nudojs/core@1.16.0
+  - @nudojs/env@0.5.3
+  - @nudojs/parser@1.5.3
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-harvester)
 
-## vite-plugin-nudo 0.5.2 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.6.0 {#pkg-vite-plugin}
 
-## 0.5.2
+## 0.6.0
+
+### Minor Changes
+
+- b37321b: **BREAKING**: `nudo.analysis.include` 的**字面量条目**现在真的命中
+  （Bug 1018 同族）——此前不带通配符的条目**永不匹配** ⇒ 整份 allowlist 被
+  **静默忽略** ⇒ 该工程此前**零诊断**；现在字面条目按路径命中（该文件或该目录）
+  ⇒ 此前零分析的工程**开始产出诊断**，`failOnError: true` 的构建会由绿变红。
+  env 加载失败（缺文件 / 未知 env 名 / 未导出 `defineEnv()`）此前**完全静默**
+  ⇒ 受影响代码被当成「env 不存在」分析；现在会报出来。
+  
+  谁会坏：依赖 0.5.x「静默零分析」的项目（把 `nudo.analysis.include` 当**装饰**用、
+  靠它压掉整片分析的构建流水线）；以及依赖「env 加载失败不阻断构建」的流水线。
+  
+  怎么迁移：把 `nudo.analysis.include` 写成**字面语义**即可；想继续「整片静音」
+  请用 `nudo.analysis.diagnostics` 档位，而不是靠不生效的 allowlist。
+  `vite-plugin-nudo` 仍是 **pre-1.0**（0.x）：本次按政策以 **minor** 发布
+  （0.x 的 minor 可能含破坏性变更）。
+  
+  The build plugin reports the env failures it used to drop.
+  
+  - A path env file that failed to load — a missing file, an unknown env name,
+    a file that does not export a `defineEnv()` function — produced no
+    diagnostic during a build, so the affected code was analyzed as if the env
+    did not exist. The failure is reported now.
+  
+  - A `nudo.analysis.include` entry without a wildcard never matched, so the
+    whole allowlist was silently ignored. A literal entry is matched as a path
+    now: it names that file, or that directory.
+- c52b107: fix(vite-plugin): 构建期分析面的「模块 id → 匹配」层归一化（896 / 902 / 903 / 1018 / 1056）
+  
+  **BREAKING**: 项目相对 `include` / `exclude` 现在真的生效（Bug 1018）——
+  此前插件选项只按**绝对 module id** 匹配 ⇒ `exclude: ["other/**"]` 静默不生效、
+  `include: ["src/**"]` 静默把整份分析归零 ⇒ 「静默零分析」的工程此前**零诊断**。
+  现在选项与 `nudo.analysis.include` / `exclude` **同口径**（绝对路径 **或** 相对
+  `config.root` 的路径命中即算命中）⇒ 此前零分析的工程**开始产出诊断**，
+  `failOnError: true` 的构建会由绿变红。
+  
+  谁会坏：依赖 0.5.x「静默零分析」的项目（把 `include` / `exclude` 当**装饰**用、
+  靠它压掉整片分析的构建流水线）；以及显式传了 `exclude` 却指望它只作用于项目内
+  路径的用法（依赖 / 软链依赖现在**一律排除**）。
+  
+  怎么迁移：把 `include` / `exclude` 写成**字面语义**即可（相对 `config.root` 的 glob
+  现在与 `nudo.analysis.*` 同口径）；想继续「整片静音」请用
+  `nudo.analysis.diagnostics` 档位，而不是靠不生效的 glob。`vite-plugin-nudo` 仍是
+  **pre-1.0**（0.x）：本次按政策以 **minor** 发布（0.x 的 minor 可能含破坏性变更）。
+  
+  - **Bug 896（虚拟模块）**：Vite 的虚拟模块 id（`\0` 前缀 / `virtual:` 前缀）
+    被原样拼成侧车路径 ⇒ 路径含 NUL ⇒ 必读不到 ⇒ **干净模块被判 error**
+    （`failOnError: true` 时抛错中断构建）。虚拟 id 现在在分析入口被**跳过**。
+  
+  - **Bug 902（畸形入参）**：`transform(code = null)` 抛未捕获异常
+    （`Cannot read properties of null (reading 'length')`，且异常在插件兜底
+    `catch` 之外）。非字符串 `code` 现在被前置拦下，守卫调用也移进 `try`
+    ⇒ 任何畸形入参都走「跳过」而不是抛给调用方。
+  
+  - **Bug 903（HMR query）**：`?t=<timestamp>` / `?v=<hash>` 让 include 失配
+    ⇒ 整份文件被跳过 ⇒ **dev 期诊断消失（假绿）**。匹配与分析现在统一用
+    **剥掉 query 的 id**。
+  
+  - **Bug 1018（相对 glob 失效）**：`include` / `exclude` **选项**此前只按
+    **绝对 module id** 匹配 ⇒ 项目相对 glob（`other/**` / `src/**`）永不命中
+    ⇒ 与**同名**的项目配置 `nudo.analysis.include` / `exclude` **判定相反**。
+    选项现在与 `nudo.analysis.*` **同口径**：同时对「相对 `config.root` 的路径」
+    与「绝对路径」求值。
+    ⚠ **破坏性行为变更**：**项目相对 glob 现在生效** —— 此前
+    `exclude: ["other/**"]` 静默不生效、`include: ["src/**"]` 静默把整份分析
+    归零；现在两者都按字面语义执行。之前「静默零分析」的工程会开始产出诊断。
+  
+  - **Bug 1056（软链依赖）**：默认排除的「node_modules 段」规则匹配不到
+    **软链工作区依赖**的 realpath id ⇒ 别的包源码被当项目源码分析
+    （Vite 红 / 同项目 `nudo check` 绿 ⇒ 跨面矛盾 + 假红）。排除判定前先把 id
+    归一化成**依赖图视角** ⇒ 软链依赖与物理目录依赖一致地被排除。
+    ⚠ **行为变更**：依赖（`node_modules` 段 / 软链依赖 / 工程根 `config.root`
+    之外的路径）现在**一律排除**，即使用户显式传了自定义 `exclude`。
+- c52b107: The build plugin no longer hides contract failures or drops diagnostics.
+  
+  **BREAKING**: 两处构建期行为变化（0.5.x 的绿构建可能变红 / 静默构建可能变吵）：
+  
+  1. `nudo.analysis.diagnostics: "off"` **不再静默契约门禁**。此前门禁诊断
+     （L1 `nudo:constraint-violated` / L2 `nudo:entry-may-throw`）与显示通道合并
+     过滤 ⇒ `off` 项目**零诊断**、`failOnError: true` 也照样**绿**（坏契约上的
+     绿灯 CI）。现在门禁通道独立：**error 级的 check 诊断在任何档位（含 `off`）
+     都照常上报、照常拦构建**。
+  2. `build.logLevel: "silent"` 现在**真的什么都不输出**（含汇总行）。汇总行此前
+     走裸 `console.log`，逃出 Vite logger 的管辖 ⇒ 静默构建仍打印
+     `[nudo] Analysis complete: N error(s), M warning(s)`，却看不到那 N 条诊断
+     （只报数、不给理由）。现在汇总行走 Vite logger ⇒ 静默档下**连汇总行都没有**。
+  
+  谁会坏：靠 `diagnostics: "off"` 换「构建期不拦契约」的流水线（CI 由绿转红）；
+  以及在 `logLevel: "silent"` 下仍依赖 `[nudo] Analysis complete: …` 这行汇总
+  做日志采集的脚本（该行不再出现）。
+  
+  怎么迁移：想让构建期完全安静，用 `build.logLevel: "silent"`（现在它真的静默）
+  并把 `failOnError` 设为 `false`；想让契约门禁在构建期也生效，保持现状即可
+  （门禁不再被 `off` 抹掉，这是有意的 fail-closed 方向）。`vite-plugin-nudo` 仍是
+  **pre-1.0**（0.x）：本次按政策以 **minor** 发布（0.x 的 minor 可能含破坏性变更）。
+  
+  - `nudo.analysis.diagnostics: "off"` no longer silences the **contract gate**.
+    Previously the check-gate diagnostics (L1 `nudo:constraint-violated`, L2
+    `nudo:entry-may-throw`) were merged into the display path and filtered
+    together with it, so an `off` project reported **zero** diagnostics and a
+    build with `failOnError: true` still **passed** — a green CI on a broken
+    contract. The gate channel is now separate: error-level check diagnostics
+    are reported and still fail the build under `failOnError: true`, in every
+    diagnostics tier including `off`. The display path (evaluator diagnostics,
+    path-env failures, and check warnings/info) keeps the old tier semantics.
+  
+  - `build.logLevel: "silent"` now silences **everything** the plugin prints.
+    The build summary used to be written with a bare `console.log`, which
+    escaped Vite's logger: a silent build still printed
+    `[nudo] Analysis complete: N error(s), M warning(s)` while none of the N
+    diagnostics were shown. The summary now goes through Vite's logger, so a
+    silent build prints nothing at all.
+  
+  **Fixes**
+  
+  - `failOnError: true` reported only the **first** error-level diagnostic and
+    dropped the rest, while the build summary counted them all ("2 error(s)"
+    next to a single reported error). The first error still fails the build;
+    every remaining error-level diagnostic is now reported as well, so the
+    summary count and the number of reported diagnostics agree.
+  
+  - Diagnostics without a source position were rendered as `:0:0` (a line that
+    does not exist) or `:1:0` (an invented first line). A diagnostic with no
+    position now omits the `:line:col` part entirely, matching the CLI, which
+    prints no location for the same diagnostic.
+  
+  - The evaluator-side diagnostics dropped their `(nudo:code)` suffix, so a
+    single build log mixed two text formats and `grep '(nudo:'` only found half
+    of the diagnostics. Every diagnostic now carries its code, and the two
+    sources use the same format.
+- c52b107: fix(vite-plugin): 构建期分析面看到**原始 TS 源码**（895 / 900）+ 模块 id 归一化接线
+  
+  **BREAKING**: 本版本一并生效的三处破坏性行为变化（详见下文
+  「**Breaking behavior changes（本版本一并生效）**」逐条说明）：
+  
+  1. **899** —— `nudo.analysis.diagnostics: "off"` **不再抹掉契约门禁**：error 级的
+     check 诊断在任何档位（含 `off`）都照常上报、照常拦构建 ⇒ 此前靠 `off` 拿到
+     绿灯 CI 的流水线**由绿转红**。
+  2. **1002** —— `build.logLevel: "silent"` 下插件**什么都不输出**（含汇总行）
+     ⇒ 依赖 `[nudo] Analysis complete: …` 这行做日志采集的脚本**取不到**该行。
+  3. **1018** —— 项目相对 glob 现在生效（`include` / `exclude` 同时对「相对
+     `config.root` 的路径」与「绝对路径」求值）⇒ 此前「静默零分析」的工程
+     **开始产出诊断**，`failOnError: true` 的构建**由绿转红**。
+  
+  谁会坏：靠 `diagnostics: "off"` 换「构建期不拦契约」的流水线；依赖静默构建里
+  那行汇总做采集的脚本；把 `include` / `exclude` 当**装饰**用、靠它压掉整片分析的
+  工程。
+  
+  怎么迁移：用 `build.logLevel: "silent"` + `failOnError: false` 换「构建期完全
+  安静」；`include` / `exclude` 改成**字面语义**（与 `nudo.analysis.*` 同口径）；
+  契约门禁在构建期生效是有意的 fail-closed 方向，保持现状即可。
+  `vite-plugin-nudo` 仍是 **pre-1.0**（0.x）：本次按政策以 **minor** 发布
+  （0.x 的 minor 可能含破坏性变更）。
+  
+  **Fixes**
+  
+  - **Bug 895（假红面）**：插件对象**缺** `enforce: "pre"` ⇒ 排在核心插件
+    `vite:esbuild` **之后** ⇒ `transform` 收到的是 esbuild 的**转译产物**
+    （TS loader 剥光注释）⇒ `.ts` 源里**只存在于注释**的 `@nudo:` 指令全部
+    不可见 ⇒ 分析按「无指令普通模块」跑 ⇒ 报出 `nudo check` **不会**报的
+    error（同一份文件：CLI 判 OK，`vite build` 红）。插件现在排在
+    `vite:esbuild` **之前** ⇒ 看到**原始 TS 源码** ⇒ 指令可见 ⇒ 与 CLI 判同。
+  
+  - **Bug 900（假绿面 · 895 的反方向）**：同一根因的另一面 —— `.ts` 源里的
+    `@nudo:contract` / `@nudo:case` 被 esbuild 删光 ⇒ **门禁静默放绿**
+    （同一份契约：`.js` 源报红，`.ts` 源**零诊断**）。修复后 `.ts` 源与 `.js`
+    源的**诊断集合一致**。
+  
+  - **模块 id 归一化接线**：分析 / 诊断一律用**剥掉 query**（`?t=` / `?v=`）
+    的 module id ⇒ ① 诊断文本不再带 `?t=`；② `sidecarPathOf` 命中**真实
+    侧车** ⇒ HMR 期侧车契约不再静默失效。
+  
+  - **诊断行号回到源码坐标系**：`enforce: "pre"` 之后诊断行号从「转译产物
+    坐标系」回到「**源码坐标系**」—— 这是**预期修复**（诊断**集合**不变，
+    位置回到用户写代码的那份文件）。
+  
+  - **TS 语法兜底**：`enforce: "pre"` ⇒ 插件看到含类型注解的原始 TS 源码 ⇒
+    分析面必须吃得住 TS 语法。TS 特有语法（`interface` / 泛型 / `enum` /
+    `namespace` / `as const` / `satisfies` / 抽象类 / 参数属性）照常解析；
+    解析不了的语法（如装饰器）降级为一条 `Failed to analyze` warning ——
+    **构建不炸**。
+  
+  **Breaking behavior changes（本版本一并生效）**
+  
+  - **899 —— `nudo.analysis.diagnostics: "off"` 不再抹掉契约门禁**。此前门禁
+    诊断（L1 `nudo:constraint-violated` / L2 `nudo:entry-may-throw`）与
+    evaluator 诊断合并后一起过滤 ⇒ `off` 项目**零诊断**、`failOnError: true`
+    也**照样绿**（坏契约上的绿灯 CI）。现在门禁通道独立：**error 级的 check
+    诊断在任何档位（含 `off`）都照常上报、照常拦构建**；显示通道
+    （evaluator 诊断、path-env 失败、check 的 warning / info）保持原档位语义。
+  
+  - **1002 —— `build.logLevel: "silent"` 下插件**什么都不输出**（含汇总行）**。
+    汇总行此前走裸 `console.log`，逃出 Vite logger 的管辖 ⇒ 静默构建仍打印
+    `[nudo] Analysis complete: N error(s), M warning(s)`，却看不到那 N 条诊断
+    （只报数、不给理由）。现在汇总行走 Vite logger ⇒ 静默档下**连汇总行都没有**。
+  
+  - **1018 —— 项目相对 glob 现在生效**。插件选项的 `include` / `exclude`
+    此前只按**绝对 module id** 匹配 ⇒ 项目相对 glob（`other/**` / `src/**`）
+    永不命中 ⇒ 与**同名**的项目配置 `nudo.analysis.include` / `exclude`
+    **判定相反**。选项现在与 `nudo.analysis.*` **同口径**：同时对「相对
+    `config.root` 的路径」与「绝对路径」求值。
+    ⚠ **之前「静默零分析」的工程会开始产出诊断**（此前 `exclude: ["other/**"]`
+    静默不生效、`include: ["src/**"]` 静默把整份分析归零）。
 
 ### Patch Changes
 
-- Updated dependencies [4513a45]
-  - @nudojs/core@1.15.2
-  - @nudojs/service@1.9.2
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- c52b107: Internal restructuring only — no behaviour change.
+  
+  The plugin entry point was split into three package-internal modules so the
+  individual concerns can be maintained separately:
+  
+  - `scope.ts` — module id normalisation and analysis-scope decisions
+    (include/exclude matching, the `shouldAnalyzeFile` guard, `config.root`).
+  - `check-assembly.ts` — assembling the `checkSource` call and turning its
+    issues into diagnostics.
+  - `report.ts` — the diagnostic reporting loop, `failOnError` aggregation, the
+    build-end summary, and the single message-rendering outlet.
+  
+  `index.ts` is now a thin shell that only wires the plugin hooks together. The
+  plugin's public surface is unchanged: the package still exports exactly one
+  runtime symbol (`default`). The three new modules are not re-exported from the
+  entry point and are not part of the package's `exports` map, so they stay
+  internal.
+  
+  The public behaviour of the plugin — which files are analysed, which
+  diagnostics are reported, and what the build end summary says — is unchanged
+  by this restructuring.
+- c52b107: The build plugin reads the project's L2 gate settings instead of ignoring them.
+  
+  - `package.json#nudo.check.entryThrows` was ignored during a build: the
+    plugin always applied the strictest level, so a project that had moved the
+    gate to `"warning"` (or `"off"`) saw `nudo check` pass while `vite build`
+    reported an error — and with `failOnError: true` the build was interrupted.
+    The configured level is applied now, matching the CLI and the editor.
+  
+  - `package.json#nudo.check.ignoreThrows` was ignored for the same reason: a
+    throw class listed there was still reported as `nudo:entry-may-throw`.
+    The listed classes are ignored now.
+- c52b107: fix(vite-plugin): 补 Bug 901 的回归钉 —— info 不计入 warning 计数 + info 走 info 通道（假阳性片）
+  
+  - **Bug 901 的核心症状已由族 26 随 `f87c9f9d` 落地**（changeset
+    `fix-lsp-core-F.md` 的「Bug 779 vite 半」）：`buildEnd` 汇总行的 warning 计数
+    改成只数 `severity === "warning"`（此前是 `totalDiags - errorCount` ⇒ 把
+    info 级诊断算成告警），诊断上报循环新增 **info → `this.info`** 分支（此前
+    info 级诊断**一条都不上屏** ⇒ 汇总行与构建日志自相矛盾）。
+  
+  - 本次**只补回归钉**（`packages/vite-plugin/src/__tests__/vite-bug-901-info-not-counted-as-warning.test.ts`），
+    **未改动任何实现**：钉住两条已成立的行为 ——
+  
+    1. **info 不计入 warning 计数**：汇总行 `[nudo] Analysis complete: X error(s), Y warning(s)`
+       的 `Y` 只数 warning 级诊断；info 级诊断不计入，且汇总不得比「实际 warning 条数」多。
+    2. **info 走 `this.info` 上屏**：info 级诊断出现在 vite 的 info 通道，**不混进 warn 流**
+       （否则 info 冒充告警）。
+  
+  - 该钉在 **HEAD 只读副本上通过**（它钉的是已修好的行为 ⇒ 本族唯一的「反向闸例外」），
+    在**族 26 修复前的副本上 3/3 失败** ⇒ 仍是一道有效的回归守护。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [cc9b638]
+- Updated dependencies [2688251]
+- Updated dependencies [7fea13a]
+- Updated dependencies [1caec28]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [27a795e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [02aa122]
+- Updated dependencies [3432d8c]
+- Updated dependencies [3432d8c]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [aa23265]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [106ad1d]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+- Updated dependencies [8542f44]
+  - @nudojs/core@1.16.0
+  - @nudojs/service@1.10.0
 
-更早版本（55）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（56）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

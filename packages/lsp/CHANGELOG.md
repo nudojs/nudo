@@ -1,5 +1,1357 @@
 # @nudojs/lsp
 
+## 1.8.0
+
+### Minor Changes
+
+- e6c4586: agent 工具面的载荷**新增**了 `assertions` 段 / `pathErrors[]` 段与新诊断码
+  （`nudo:path-not-found` / `nudo:path-not-target`）；`@nudojs/service` **新增**了
+  一批公开导出（`mergeCheckIssues` / `directiveDiagIssues` / `mockFromErrorIssues` /
+  `envUnresolvedIssues` / `collectCheckSupplementIssues` / `buildTestReport` /
+  `pathNotFoundError` / `targetPathError` / `formatPathErrorText` 等）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  LSP agent 工具面（`nudo/check` / `nudo/test`）与 CLI 的通道对齐：补回
+  check 的补充诊断通道、test 的断言汇总、imported 段、路径错误信封与
+  「分析目标」闸门。
+  
+  - `nudo/check` 此前只跑裸 `checkSource`，CLI 侧并入 check 报告的三条补充
+    通道（指令文法 `nudo:directive-syntax`、mock 装载失败
+    `nudo:module-missing`、path env 未解析 `nudo:env-unresolved`）一条都没接
+    ⇒ 同一文件 CLI / LSP 编辑器面 / agent 面给出三份 issue 集（agent 面把
+    「指令写错了」整条吞掉，mock 文件缺失判绿）。并入逻辑下沉到
+    `@nudojs/service`（`mergeCheckIssues` / `directiveDiagIssues` /
+    `mockFromErrorIssues` / `collectCheckSupplementIssues`），三面共用同一份。
+  - `nudo/test` 此前没有 `assertions` 段 ⇒ 消费方分不出「见证通过」与「见证
+    失败」。现在并入与 CLI `nudo test --json` 同口径的
+    `assertions`（passed / failed / unchecked，service 的 `buildTestReport`）。
+  - `nudo/test` 的文本面此前**不渲染** imported（外部）函数 ⇒ CLI 有的
+    `(imported)` 段在 IDE 面整段消失，而头部计数仍把外部 case 算进去
+    （「3 case」只印 2 条）。现在按来源模块分组渲染，段头
+    `--- <mod> (imported) ---`。
+  - `nudo/test` 的 `functions` 过滤只重算**本地** case 数 ⇒ `summary.cases`
+    与自身 payload 矛盾（summary 说 1、payload 躺着 2）。外部函数不在过滤
+    范围内，其 case 仍留在 payload 里 ⇒ 计数改为与 payload 同源。
+  - `nudo/check` / `nudo/test` 此前没有「分析目标」闸门 ⇒ 对侧车契约文件报
+    「0 fn / 0 error」判绿（CLI 对同一文件 exit 1「Not an analysis
+    target」），`nudo/test` 还把契约 DSL 构造器（`fn(...)` / `shape(...)`）
+    当成真实调用点报成 case。入口现在复用与 CLI 同一份目标判定
+    （`isNudoTargetPath` + 侧车 / `.d.ts` / JSX 排除），非分析目标返回
+    `nudo:path-not-target`。
+  - `nudo/check` / `nudo/test` 此前对不存在的文件只返回裸 `ENOENT` 文本
+    （`format:"json"` 也不返回 JSON）。现在走结构化路径错误通道
+    （`pathErrors[]` + `nudo:path-not-found` + suggestion），与 CLI
+    `check --json` / `test --json` 同构。
+  - `nudo/test` 的 `functions` 入参此前零校验：传字符串被逐字符建集合（函数
+    全被滤掉 ⇒ 全空报告的假空结论），传数字 / 对象时过滤被整体跳过（静默
+    失效）。畸形入参现在一律工具错误（`isError: true`）。
+- e6c4586: 三个 contract 工具**新增**入参 `from?: string[]`（`--from` 等价通道），`@nudojs/service`
+  **新增**公开导出 `collectCallsiteRecords`（+ 类型 `CallsiteRecords`）⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  fix(lsp,service): 族 25 A2 —— 契约面四条缺陷（762 / 765 / 766 / 994）
+  
+  - **762** `nudo.contract.emit` 现在与 CLI `nudo contract --emit` **同序同口径**：
+    先 `emitDerivedFromRoot`（root 驱动下行推导），再 `emitInterface`（本地侧车）。
+    此前工具**从不**调派生步 ⇒ CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面
+    永远不产生，且结果文本把「引擎没做的那一步」说成「name-clash」——误导性诊断。
+    下游侧车的写盘边界与本地侧车同口径（必须落在 workspace roots 内）。
+  - **765** 源文件 open buffer 与磁盘文本不一致时**拒绝写盘**（可诊断错误：
+    save or discard before emit）——此前只挡了侧车自己的脏 buffer，源文件的脏
+    buffer 会把**未保存**的代码形状写进侧车，磁盘源码却一个字节没变。
+  - **766** emit 写盘边界改按**路径分量**判定逃逸（`..` 或 `..` + 分隔符），
+    不再误杀 `..dotted.js` / `...triple.js` / `..cfg/x.js` 这类合法路径名；
+    root 外的文件与指向 root 外的符号链接**仍然拒绝**。
+  - **994** 三个 contract 工具（`nudo/contract` / `nudo/contract.draft` /
+    `nudo/contract.emit`）新增 `from?: string[]`（`--from` 等价通道）：跨文件
+    调用点证据参与契约求解，接口面/草稿/落盘与 CLI `nudo contract --from` 同口径。
+    证据采集下沉到 service：新增导出 `collectCallsiteRecords`（+ 类型
+    `CallsiteRecords`）。
+- e6c4586: **BREAKING**: 既有 `nudo/…` 请求的**响应信封**变了。
+  
+  - `nudo/trace` / `nudo/suggestCase` 的失败路径此前**不带** `isError: true`
+    （失败被当成成功，客户端只能从正文分辨）⇒ 现在失败路径返回 `isError: true`
+    （MCP 风格）⇒ 按「有没有 `isError`」分支的客户端行为变了；
+  - `nudo/hover` 现在**校验**位置参数：非整数 `line` / `column` 此前被原样回显
+    且所有分析字段为 `null`（与「此处无 hover」不可区分），现在答**工具错误**；
+    `column` 缺省为 `0` ⇒ `{ file, line, column, … }` 的载荷形状恒成立。
+  
+  谁会坏：把失败响应当成功处理的客户端（`nudo/trace` / `nudo/suggestCase` 的失败
+  现在带 `isError: true`）；以及用非整数 `column` 调 `nudo/hover` 探测「此处有没有
+  东西」的客户端（现在拿到的是工具错误而不是一个全 `null` 的载荷）。
+  
+  怎么迁移：客户端按 `isError` 分支处理失败；`nudo/hover` 只传整数 `line` /
+  `column`（`column` 缺省即 0）。
+  
+  Fix agent-tool (LSP) defects found by the族 25 audit:
+  
+  - **767** — `nudo/trace` / `nudo/suggestCase` failure paths now return `isError: true` (MCP-style), so a failed call is distinguishable from a successful one at the protocol level instead of only in the text.
+  - **768** — `nudo/hover` validates its position arguments: a non-integer `line` / `column` is a tool error (previously the value was echoed back with every analysis field `null`, so "no hover here" and "my argument was the wrong type" were indistinguishable), and `column` now defaults to `0` so the documented `{ file, line, column, … }` payload shape always holds.
+  - **961** — `nudo/whatIf` validates its arguments: a missing `target` is a tool error (previously a fake success reporting `Type of "undefined": unknown`), a non-array `bindings` is a diagnosable tool error (previously a raw `bindings.map is not a function`), and a binding without `name` is rejected instead of silently doing nothing. `injectBindings` in `@nudojs/service` gained the matching shape guard and names the offending entry (`<missing name>`).
+  - **993** — the observing agent tools (`nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`) now analyse through the asynchronous entry point, which preloads path-based `@nudo:env` modules. Their output no longer depends on whether the file happens to be open in the editor (previously the same file and tool could answer `never`/`unknown` or `99` depending on call order, together with a misleading "Built-in API is not covered" diagnostic). The analysis caches additionally key on the env **preload state** so a synchronous analysis taken before the preload can no longer feed a stale "no env" result to later calls.
+  - **955 (shared entry)** — `normalizeFilePath` now rejects a non-string / empty / missing `file` with a diagnosable `file is required …` tool error instead of leaking a raw `file.startsWith is not a function` TypeError (or silently falling back to the server's working directory). Every agent tool goes through this shared entry point.
+- e6c4586: **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
+  本版本同步更新）。
+  
+  - `nudo.selectCase` / `nudo.selectContract` 的失败面此前是 `{"success": true}`
+    （对不存在的函数、对空调用都答成功）⇒ 现在答
+    `{ success: false, error, isError: true }`；
+  - `workspace/executeCommand` 上的**未知命令名**此前答 `result: null`（与
+    「命令跑了但没产出」不可区分）⇒ 现在答协议级 `MethodNotFound` 错误。
+  
+  谁会坏：按 `success` 分支处理 `nudo.selectCase` / `nudo.selectContract` 的客户端
+  （失败路径的 `success` 现在是 `false`）；以及靠 `result === null` 判「命令不存在」
+  的客户端（现在收到的是 JSON-RPC 错误）。
+  
+  怎么迁移：客户端按 `{ success: false, error, isError: true }` 处理失败；用
+  JSON-RPC 错误码判「命令不存在」（`MethodNotFound`）。
+  
+  The LSP editor commands now tell the truth: a selection that did not happen
+  is reported as a failure, and the mirrors a selection touches are refreshed
+  together.
+  
+  - `nudo.selectCase` validates its arguments before touching the active-case
+    table. A `caseIndex` outside the function's `@nudo:case` list used to be
+    accepted: `-1` crashed the analysis (`Cannot read properties of undefined
+    (reading 'argsAbs')` in the diagnostics) and `99` silently replaced the
+    observation slot. A `functionName` that is not a function of the target
+    file used to be stored as-is, so `nudo.getActiveCases` reported ghost
+    entries such as `{"":0}`. Both now return a structured error and leave the
+    table untouched.
+  - `nudo.selectContract` validates that the target function exists in the
+    file. It used to answer `{"success":true}` for a function that was never
+    there (and for a call without any arguments at all), so the client could not
+    tell a real switch from a no-op.
+  - A selection refreshes the inlay hints and the pull diagnostics as well as
+    the code lenses. Only the code lenses were refreshed, so a client without
+    code lens support kept showing the previous case, and a pull-diagnostics
+    client never saw the diagnostics of the newly selected case.
+  - `file` / `uri` arguments must be non-empty strings. A non-string `file` used
+    to escape as a bare `TypeError` (`file.startsWith is not a function`), which
+    reached the client as a JSON-RPC protocol error instead of a tool error
+    carrying `isError: true`; a missing `file` silently fell back to the
+    server's working directory.
+  - An unknown command name on `workspace/executeCommand` now fails with the
+    protocol-level `MethodNotFound` error instead of answering with a `null`
+    result, which was indistinguishable from "the command ran and produced
+    nothing".
+- e6c4586: **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
+  本版本同步更新）——
+  
+  - 失败面统一成 `{ success: false, error, isError: true }`：
+    `nudo/selectCase` / `nudo/selectContract` / `nudo/getActiveCases` 此前对
+    非法入参**答 `{"success": true}`**（或幽灵条目），现在答结构化错误信封 ⇒
+    客户端按 `success` 分支的代码路径变了；
+  - `AGENT_TOOL_SOURCES` 的**值**同步为新的共享数据源（`analyzeFile` →
+    `analyzeFileAsync`；`check` → `checkSource + mergeCheckIssues +
+    serializeCheckJson`；`test` → `analyzeFileAsync + buildTestReport +
+    serializeCaseJson`）⇒ 依赖这张表反推「命令 ↔ 数据源」的客户端读到不同的值。
+  
+  谁会坏：把 `nudo/selectCase` / `nudo/selectContract` 的**失败**当成功处理的
+  客户端（此前恒 `success:true`，现在会拿到 `success:false` + `isError:true`）；
+  以及读 `AGENT_TOOL_SOURCES` 做能力判断的客户端。
+  
+  怎么迁移：客户端按 `{ success: false, error, isError: true }` 分支处理失败
+  （`packages/lsp/PUBLIC_API.md` 与两份 API 文档已同步）；不要再按
+  `AGENT_TOOL_SOURCES` 的**字面**判能力，改按命令名判断。
+  
+  `@nudojs/service` 侧**新增**公开导出 `pathEnvPreloadFingerprint` ⇒ 纯**增量**
+  （additive）⇒ minor。
+  
+  族 25 收口接线（6 项）：把跨片耦合的缺口补上，并让文档与工具面说同一件事。
+  
+  - **`testTool` 改异步入口**（Bug 993）：A4 把 `whatIf` / `suggestCase` / `trace`
+    改成了 `analyzeFileAsync`（path 型 env 只能异步预载），但 `testTool` 属另一片
+    的函数级边界 ⇒ 冷进程 `nudo/test` 首调仍是 env-less（`"unknown"` + 1 条误导
+    诊断）。⇒ 改 `async` + `analyzeFileAsync`（**签名变更**：
+    `AgentToolResult` → `Promise<AgentToolResult>`），同步调用点与既有测试。
+  - **`AGENT_TOOL_SOURCES` 值同步**：工具面真换了数据源，表与文档要跟着走 ——
+    `check` → `checkSource + mergeCheckIssues + serializeCheckJson`、
+    `test` → `analyzeFileAsync + buildTestReport + serializeCaseJson`；同步
+    `packages/lsp/PUBLIC_API.md` §5、`packages/website/docs/api/agent.md` 与
+    `AGENT_TOOL_SOURCES` 的值钉。
+  - **`nudo/contract.emit` 转发 `from`**（Bug 994）：三个 contract 工具已支持
+    `--from` 等价通道，但协议入口 `makeHandleContractEmit` 只构造
+    `{file, functionName, mode, dryRun?}` ⇒ **`from` 到不了 emit 工具** ⇒ 补
+    入参类型 + 透传。
+  - **CJS 导出的 hover 面**（Bug 998）：`findFunctionNameAtPosition` 没有
+    `MemberExpression` property 分支 ⇒ `module.exports.alpha = function () {}`
+    的 hover 回退成无名 `(x) => ?`（诊断面认得它、hover 面不认 ⇒ IDE 内部
+    自相矛盾）⇒ 补分支（祖父节点走 `path.parentPath.parent` —— Babel 的
+    `node.parent` 不存在）。
+  - **失败面文档同步**：`selectCase` / `selectContract` / `getActiveCases` 的失败
+    面统一为 `{ success: false, error, isError: true }` ⇒ 两份 API 文档的返回面
+    记载同步；`nudo/contract.emit` 的 `from?: string[]` 参数也补进文档。
+  - **`pathEnvPreloadFingerprint` 的瞬时 ReferenceError**：族内 build 前
+    `dist` 落后于 `src` 造成的一次性混用 ⇒ 随本族 build 消失（已连跑 5 次
+    复现不出）。
+
+### Patch Changes
+
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- 2af2bae: Return-contract diagnostics now carry the position of the function they
+  belong to, name the constraint source they really came from, and only claim
+  that a proof relied on a user lemma when the proof actually consumed it.
+  
+  - **Position.** `checkSource` built its return-contract issues without a
+    `line` / `column`, so every consumer fell back to the top of the file:
+    the LSP drew the diagnostic at line 1 column 0, `nudo check --gha`
+    annotated `line=1,col=1`, GitLab Code Quality reported `lines.begin: 1`,
+    and `--json` emitted no position at all — even when the offending
+    function was declared on line 10. The issues are now built with the
+    declaration position of the function, so the LSP, the CI annotations and
+    the JSON machine contract all point at the real line.
+  - **Constraint source.** The message of a violated return contract always
+    said `@nudo:contract return <name>`, even when the constraint came from
+    the return slot of a sidecar `fn({...}, <ret>)` binding — a directive
+    that does not exist in the source file. The message now names the real
+    source: `@nudo:contract return <name>` for a source directive,
+    `sidecar fn() return slot (...)` for a sidecar return slot.
+  - **Lemma attribution.** The `nudo:assume-relied` audit note claimed that
+    a proof relied on a user lemma whenever the function declared one and
+    the return contract happened to be provable — even when the lemma took
+    no part in the proof (`return 0` is provable regardless of
+    `@nudo:assume d <= max`). The engine now records which lemmas a proof
+    actually consumed and attributes the note to those, so an unused lemma no
+    longer produces a false "proved via @nudo:assume" claim. The proof
+    result itself is unchanged: the note is an audit annotation, not a gate.
+- c325a10: fix(lsp): `refactor.extract` 的多 edit 合成统一坐标口径（Bug 450）
+  
+  - 根因：`packages/lsp/src/extract-function.ts` 的 `applyEdits` **排序**用原
+    `source` 的坐标、**应用**时却用 `posToOffset(out, …)` 在**已被前面的 edit
+    改写过的** `out` 上求坐标 ⇒ 两个区间相互包含（插入点落在替换范围内部）时，
+    后应用的 edit 落点按**陈旧坐标**漂移 ⇒ 源文件被搅成垃圾
+    （`"AAAA BBBB CCCC"` + 替换 [5,9) + 插入 @6 ⇒ 改前 `"AAAA REPLBBB CCCC"`）。
+  - 修法：**统一坐标口径** —— 全部 edit 的偏移都在**原 source** 上算好，再
+    **从后往前**（起点倒序）应用；区间嵌套（插入点落在替换范围内部，LSP 规范下
+    属非法重叠 edit）按「插入文本并入该替换范围、紧贴替换文本**之前**」
+    **确定性合成** ⇒ 改后 `"AAAA INSREPL CCCC"`（插入内容不丢、源码不被搅乱）。
+  - 替换范围之间**真的**重叠（部分重叠 / 交叉）无法确定性合成 ⇒ fail-closed：
+    抛 `RangeError`（`server-code-actions.ts` 的 `refactor.extract` 是
+    best-effort ⇒ 抛错即「不出 action」，绝不产出非法 WorkspaceEdit）。
+  - 影响面：`applyEdits` 的两个调用点（**表达式提取路径** / **语句序列路径**）
+    同时受益；不相交 edit 的既有行为**逐字不变**。
+  - 未变：公共 API 冻结面零变更（`packages/lsp/src/public-api.ts` 四张表不动、
+    零新增导出）。
+- e6c4586: LSP 符号 / 观察面与导出面对齐：默认导出、导出类实例方法、CJS 成员导出不再
+  整段消失，跨模块调用点补上 `call@` 观察透镜（Bug 753 / 769 / 998 / 1034）。
+  
+  - `export default function` 此前只存在于 hover / 大纲面，CodeLens 与
+    inlayHint 的 interface 档（`● contract / imp` / `⚡ persist interface` /
+    `⚡ draft interface`）整段缺失。默认导出现在与具名导出同形。
+  - 导出类的实例方法（`Counter.inc`）此前只在 hover 面可见：CodeLens 没有
+    interface 档，inlayHint 也没有返回 inlay。类方法现在以 `Class.method`
+    为契约键进入两面，与顶层导出函数同形。
+  - CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）此前在
+    documentSymbol / workspace symbol / inlayHint / semanticTokens 四个面
+    全部不可见，CodeLens 也没有 interface 档——而诊断面却点名该导出。
+    四面现在与 ESM 具名导出同形（导出键带 function 档 + interface 档 modifier）。
+  - 跨模块调用点（`import { add } from "./lib.js"` 后调用 `add(x, 2)`）此前
+    不在调用方文件的 CodeLens 上投影——CLI `nudo test` 已经打印该事实。
+    调用方文件现在出现与 CLI 同形的 `call@L4` lens；被导入函数的 entry@
+    仍属被导入模块，不在调用方落镜。
+  
+  core 侧只改了内部未导出函数 `listFunctions` 的函数体（导出类实例方法与
+  CJS 成员导出的枚举），未新增任何导出名。
+- f87c9f9: fix(lsp): 成员补全引擎的接收者解析与内建原型投影（Bug 771 / 772 / 782 / 787 / 788）
+  
+  - **771** union 接收者的补全不再跳过「零成员」的那一支：sum 交集计算区分
+    「该臂成员集为空」（原始值臂 ⇒ 交集必空）与「该臂补全信息不可得」
+    （unknown / any / never ⇒ 可跳过）⇒ `{x,y} | 5` 的 `u.` 不再给出 `x` / `y`
+    （取属性在原始值臂上是 TypeError）。
+  - **772** 成员补全的接收者按**整条成员访问链**解析（`a.b.c` ⇒ 接收者是 `a.b`），
+    不再取最后一段标识符 ⇒ `a.b.` 不再给出同名顶层绑定的成员。
+  - **782** 接收者识别与源码消毒的标识符捕获组改为 Unicode 感知
+    （JS IdentifierStart/Continue + `$`）⇒ 非 ASCII 接收者（`对象.`）给出该对象的
+    成员，不再回落成顶层变量表。
+  - **787** 字面量 / 括号 / 字符串接收者（`(42).` / `(true).` / `"abc".`）走内建
+    原型表（Number / Boolean / String）；**认不出接收者时给空**，绝不回落成顶层
+    变量表（那份表与「成员」意图无关）。
+  - **788** prim 分支按类型分派到对应的内建原型表
+    （number → Number / boolean → Boolean / bigint → BigInt / symbol → Symbol），
+    品牌名命中内建类时同样投影该类成员 ⇒ number / boolean 接收者不再是零候选。
+  
+  新增 `getCompletionsAtPosition` 的**上下文入参**（`CompletionContext`）与
+  `completionBranchAt` 补全面分支判定入口，供调用方（IDE 入口）按光标词法上下文
+  与作用域决定成员面 / 变量面。
+- f87c9f9: fix(lsp): 补全面的绑定下沉 + 词法上下文闸（Bug 789 / 952）
+  
+  - **789**：成员补全解析接收者 Abs 时不再只查**模块级** `bindings` 表（该表由
+    service 的 `collectBindings` 只遍历**顶层**语句填充 ⇒ 函数体内的局部量 /
+    形参不在表里）⇒ 函数内接收者一律**零候选**（连 `string` 局部量也是 0 项）。
+    新增 `replay.ts` 的 `lookupScopedBinding`（**作用域感知**的绑定查询）：
+    局部量走引擎节点级 Abs 重放（`recordPositions` 插桩在**声明位**记录初始化
+    求值态 Abs——与模块级绑定面同口径），形参走契约种子（`generalizeFromAst` 的
+    `entryShapes`，与 hover 的「A 参数面」同源）；`server-ide.ts` 的补全入口把
+    它挂到 `CompletionContext.lookupBinding` 上（作用域面优先，作用域里没有才
+    回落模块级绑定面）⇒ **同一份代码只改「接收者声明的位置」**，成员候选集完全
+    一致。
+  - **952**：补全入口**单次**计算光标的词法上下文（code / comment / string），
+    指令面 / 成员面 / 变量面共用同一份 ⇒ 光标落在**字符串 / 模板字面量内部**或
+    注释里时不再弹出候选（接受任一项即把标识符写进字面量内部 ⇒ 静默改写运行时
+    值）；代码位与注释里的 `@nudo:` 指令面行为不变。
+- f87c9f9: Hover now agrees with `nudo check` on what a parameter's type is, and an
+  early-return guard no longer narrows away a `null` that is still reachable.
+  
+  - **Bug 773** — The flow facts treated `if (!p) { return 0; } else { … }` as
+    an early-return guard and stripped the `nullable(…)` wrapper from `p` for
+    the rest of the function. The `else` branch falls through to the code
+    below the `if`, so `p` can still be nullish there; the hover showed a
+    type that does not hold. The guard now only narrows when there is no
+    `else` branch, or when the `else` branch also ends in `return` / `throw`.
+  - **Bug 774** — A parameter of a function without a contract produced an
+    empty hover, even though the signature block of the very same hover
+    showed `x: any`. The parameter projection now falls back to the
+    "unconstrained ⇒ `any`" rule (design §2); identifiers that are not
+    parameters still report no information.
+  - **Bug 775** — For contract parameters the hover showed the sidecar
+    expression text (`x: number().gt(0)`) while `nudo check` showed the
+    inferred type (`x: number`), so one function had two different parameter
+    types depending on the surface. Non-union contract parameters now use the
+    same inferred shape as the check signature line. Union parameters keep
+    their declared form: a discriminated union expands to tens of thousands
+    of characters and its arms are identified only by the user's own type
+    names.
+  - **Bug 786 (hover half)** — The hover surface never forwarded the
+    `inject` bundle, so inline directives (`@nudo:mock` / `@nudo:as` /
+    `@nudo:replace`, environment globals) were missing and the derivation
+    collapsed to `unknown` ("inference failed") while the CLI gate showed the
+    real type. `HoverInterfaceOpts` now carries `inject` and passes it to
+    every `generalizeFromAst` call of the hover surface.
+- f87c9f9: fix(lsp): server 骨架 8 条——重复诊断推送 / 配置深合并 / trace 位置参数桥 / 工作区根 / 畸形 URI / inlay 开关同口径 / pull 诊断 env 通道（Bug 776 / 777 / 780 / 783 / 784 / 790 / 781 / 992）
+  
+  - **Bug 776**（重复推送）：`vscode-languageserver` 的 `TextDocuments.listen()`
+    在 `didOpen` 时**同时** fire `onDidOpen` 与 `onDidChangeContent` ⇒ 打开即
+    验证路径与编辑防抖路径对**同一内容**各跑一遍完整校验、各 publish 一次
+    （同 version 同内容发两次）。`server.ts` 记文档指纹（version + 内容），
+    防抖路径遇到同一指纹即认定 didOpen 回声并跳过；publish 面再加**内容去重**
+    （同 uri + 同 version + 同诊断内容只发一次，同版本但内容变了仍照发）。
+  - **Bug 777**（配置深合并）：`workspace/didChangeConfiguration` 的载荷只带
+    **变更部分**（或与 nudo 无关的整棵树），server 却把它当整棵子树读 ⇒
+    未提及的键被抹成 `undefined` ⇒ 一次无关的设置变更就把宿主的
+    `nudo.analysis.mode` 默认值清掉（分析范围静默收缩、hover 变 null）。
+    宿主设置改为**累积合并树**：出现的键覆盖、未出现的键保留、`null` = 显式
+    重置；扁平键（`"nudo.analysis.mode"`）按点号展开成嵌套路径，与嵌套形态
+    等价。
+  - **Bug 780**（命令桥 · server 侧）：`nudo.trace` **没有**位置参数桥
+    （`nudo.contract*` 有）⇒ IDE 观察透镜的 `[uri, fn]` 落到兜底分支、把 uri
+    字符串当参数对象传下去 ⇒ 工具 100% 失败。补上与 `nudo.contract*` 同款的
+    位置参数桥（复用 agent 侧 `tracePositionalArgs`），并把兜底分支改成
+    「参数不是对象 ⇒ 协议层 `InvalidParams`」，不再把字符串当对象传下去。
+  - **Bug 783**（工作区根）：`workspaceRoots` 的写入点**全在** `onInitialize`
+    里 ⇒ 之后永不更新；server 也从不订阅
+    `workspace/didChangeWorkspaceFolders`，且 capabilities 未声明
+    `workspace.workspaceFolders.changeNotifications` ⇒ 客户端根本不会发这条
+    通知。现在声明该能力 + 订阅通知（增删根、realpath 归一）+ 根集合变化后
+    清 `nudoFileCache`、重检已打开文档、广播 `workspace/diagnostic/refresh`
+    （新纳入的目录不再被写盘边界误拒，已移出的目录不再保留过期授权）。
+  - **Bug 784**（畸形 URI）：`onInitialize` 对每个 workspace folder 的
+    `uriToFilePath` 没有兜底 ⇒ 一个百分号转义非法的 URI 抛 `URIError` ⇒
+    initialize 整个失败 ⇒ 客户端拿不到 capabilities ⇒ 整个语言服务器会话
+    起不来。改为逐个 folder 兜底：跳过畸形项 + 记可读告警，其余照常。
+  - **Bug 790**（inlay 开关同口径）：项目侧 `nudo.inlayHints.parameters`
+    **原样返回**原始值，宿主侧走 `parseInlayParams` ⇒ 同一个键两套规则
+    （项目写字符串 `"false"` 反而**开启**参数 inlay，宿主同一个值**关闭**）。
+    项目侧改用**同一个归一化函数**：非 boolean 一律回落默认（关）+ 一条
+    可读告警。
+  - **Bug 781 / 992**（诊断面同形）：push 面（`validateText`）会发
+    `nudo:env-unresolved`，pull 面（`textDocument/diagnostic`）**完全没有**
+    env 通道 ⇒ 同一文件两个诊断面互相打脸（IDE 与 CI 结论不一致）。pull 通道
+    补上 env 通道——与 push **同源同档**（`envUnresolvedDiags` +
+    `filterCheckLspByLevel` + 同一 level + 同一去重键空间）。
+  
+  冻结面：`packages/lsp/src/public-api.ts` 四张表本族**零变更**。`workspace`
+   能力键已由 server 声明，但**未**写进 `NUDO_INITIALIZE_CAPABILITIES`
+  （属于「stable 键集变更」，待 owner 拍板后统一补表 + 补 `PUBLIC_API.md`）。
+- f87c9f9: fix(lsp): 诊断 range 夹到行尾 + check 通道保留 info 级（Bug 778 / 779 LSP 半）
+  
+  - **Bug 778**：service 的 `column: 999`「整行」哨兵被原样写进 LSP
+    `end.character` ⇒ 协议层 range 越界（push / pull 两条通道都越界）。诊断
+    range 的**唯一计算点** `lspDiagnosticRange`（`validation.ts`）：行号 1 基
+    → 0 基、列号夹到该行长度以内、同 line 时 end ≥ start；行长表由本轮源码
+    逐行算出（会话条目缓存 ⇒ pull 通道无源码参数时同样夹取）。
+  - **Bug 779**（LSP 半）：`checkToLspDiagnostics` 在转换前就把 info 级砍掉 ⇒
+    下游档位过滤器永远看不到 info ⇒ `nudo.analysis.diagnostics: "verbose"` 对
+    check 诊断是空操作（`nudo:assume-relied` / `nudo:invariant-relied` /
+    `nudo:opaque-result` 永不上屏，与 CLI `nudo check` 两侧集合不一致）。转换点
+    改为保留三档，档位取舍只由 `filterCheckLspByLevel` 决定（verbose 放行
+    info；default / errors / off 不放行，`off` 的门禁码可见性不变）。
+  - **env 通道同档同 range**：`nudo:env-unresolved` 改走与 check 主通道同一个
+    转换点（`checkIssueToLspDiagnostic`）⇒ severity 与 range 与主通道同口径。
+  - 对外交付两个前置件：`envUnresolvedDiags` 改为 export（供 pull 诊断面
+    消费）；`handleNudoDepFileChanged` 排除变更文件自身（防自激重检）。
+- f87c9f9: fix(lsp/core): IDE 面与 CLI 同源装配注入 + info 级 check 诊断不再被提前砍掉（Bug 785 / 786 / 780 / 779 vite 半）
+  
+  - **Bug 785**（注入装配）：LSP 侧**从不采集**行内指令（`@nudo:as` /
+    `@nudo:replace`）⇒ CLI 与 IDE 对同一份文件给出**相反**的门禁结论与签名
+    （IDE 假红：用户声明过 `raw` 是 number，IDE 仍按 string 判
+    `raw.toFixed` 不存在并报 `nudo:entry-may-throw`）。新增 **LSP 侧注入装配器**
+    `buildLspInjection`（`packages/lsp/src/agent-tools.ts`）—— 与 CLI
+    `buildCheckInjection` **同口径**（`@nudo:as` / `@nudo:replace` /
+    `@nudo:mock` / env 全局 / 模块图），**不从 lsp 反向 import nudojs**，
+    零新增 core / service 导出；agent check 工具面把它交给
+    `checkSource({ inject })` ⇒ `nudo/check` 由 `ok=false · 1 error ·
+    unknown #partial` 变为 `ok=true · 0 error · string`（与 CLI 同款结论）。
+  - **Bug 786**（注入传递协议 + inlay 半）：`CollectAbsInlaysOpts` 新增
+    `inject` 字段并透传给 `generalizeFromAst`（core 侧**只改内部函数体**、
+    零新增 core 导出 ⇒ 不破 core 冻结面）⇒ inlay 面不再把「行内指令缺席」
+    显示成 `unknown`（Nudo 词汇里 = 「推断失败」）。对外交付注入传递协议：
+    `buildLspInjection(filePath, source, { loadModule?, modules? }) →
+    RunTranspiledOptions`，消费方统一走
+    `checkSource({ inject })` / `generalizeFromAst({ inject })` /
+    `collectAbsInlays({ inject })`。
+  - **Bug 780**（agent 侧）：`nudo.trace` 此前**只读 `params.file`** ⇒ LSP 自产的
+    `file://…` uri 形态与 `executeCommand` 位置参数形态都让 `params.file` 变
+    `undefined` ⇒ 观察透镜 100% 抛 TypeError。现在 `FunctionToolParams` 收
+    `uri` 键（与 `file` 二选一，缺省时报共用入口闸的 `file is required …`
+    而不是裸 TypeError），并导出位置参数桥 `tracePositionalArgs([uri, fn])`
+    （形态不合法 ⇒ `undefined`，由命令桥报协议层参数形态错误）。
+  - **Bug 779**（vite 半）：`checkIssuesToDiagnostics` 在转成 vite Diagnostic
+    **之前**就把 info 级砍掉 ⇒ 下游档位过滤器永远看不到 info ⇒
+    `nudo.analysis.diagnostics: "verbose"` 对 check 诊断是**空操作**
+    （`nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result`
+    永不上屏）。转换点改为保留三档，档位取舍只由
+    `filterDiagnosticsByLevel` 决定；info 级走 vite 的 **info 通道**
+    （不混进 warn 流），warning 计数不含 info。
+- 27a795e: 族 22 修复 D1：Bug 699 / 702 / 709 / 714 / 715 —— 符号表按作用域存绑定、引用集合只收标识符、rename 编辑协议合法。
+  
+  - **699**：babel 把 `ExportNamedDeclaration` **语句节点**放进导出绑定的
+    `referencePaths`，改名时它变成一个「宽于单个标识符」的编辑目标 ⇒ `rename`
+    一个导出绑定会把整条 `export function …` 声明替换成一个标识符，且与声明位
+    的编辑**重叠**（LSP 不允许同一份 edit 列表里 range 重叠）。引用集合现在只收
+    `Identifier` 节点；改名编辑另外加两道兜底：宽于一个标识符的编辑挡掉、互相
+    重叠的编辑只留窄的一条。
+  - **702**：`references` 把**声明位点返回两次**（符号表里的声明位 + 引用集合里
+    的声明位），还混着上面那条语句级伪引用。引用集合按 (uri, 位置) 去重，语句级
+    目标不再进集合。
+  - **709**：符号表按**名字**索引 ⇒ **遮蔽**的同名局部变量上 F12 /
+    Find-references 会落到另一个作用域的声明。定义现在按**作用域路径**存（同名
+    绑定在不同作用域各存一条），查定义时按光标所在作用域取最内层的那条。
+  - **714**：`references` 的 `context.includeDeclaration: false` 仍返回声明位点 ——
+    该开关只关掉了「另一处」的声明。引用收集现在接受 `includeDeclaration` 入参并
+    由 references 通道透传。
+  - **715**：改名遇到**对象字面量简写属性**（`{ x }`）时，key 与 value 是同一段
+    源码 ⇒ 整段替换会把 key 也改掉（对象的形状被静默改掉）。这类位置现在生成
+    `x: <新名>`（保留 key、只换 value）；解构模式（`function f({ x })`）同理。
+- 27a795e: 族 22 修复 D2：Bug 704 705 706 712 719 —— 大纲面与「方法引用 / 改名」面对齐真实符号。
+  
+  - 大纲里所有变量绑定都写成 `const`：`let mutable = 1` 与 `var x = 1` 的
+    detail 都是 `const`（导出时是 `export const`）——文案只按「是否导出」二分，
+    完全不看声明种类。现在按 `const` / `let` / `var` 如实输出（导出时前缀
+    `export `）。
+  - 大纲漏掉整个默认导出：`export default (x) => x` 与**匿名**
+    `export default function () {}` 一条都不出（顶层语句循环只认函数 / 类 /
+    变量声明；无名函数又被「没有 id 就丢弃」的守卫挡掉）。默认导出现在一定在
+    大纲里：表达式型给一个名为 `default` 的符号，函数型即便匿名也出项
+    （无名时名字取 `default`，有名时取函数名）。
+  - 大纲漏掉**解构绑定**：`const { p, q } = …` / `const [first, second] = …`
+    里的每个绑定都不出（取 id 的辅助函数只认普通标识符 ⇒ 整条声明被跳过）。
+    解构模式现在逐个绑定展开，每个绑定各出一个变量项。
+  - 类方法的 **references / definition 一律返回空**：类方法键不是绑定标识符，
+    绑定面找不到绑定目标就直接返回空，而已经写好的方法面没有被这两个请求接入。
+    两个请求现在改走方法面（方法键 + 同源成员访问）：在类方法上查引用能看到
+    调用点，在 `k.m(…)` 上按 F12 能跳回类里的方法键。
+  - 方法改名**越过无关对象**、且漏掉对象字面量的同名 key：改 `K.m` 会把
+    `o.m`（另一个对象的成员）一起改掉，改坏调用点；而对象字面量里的
+    `{ m() {} }` / `{ m: fn }` 的 key 又不在收集范围 ⇒ 定义位点与使用位点口径
+    不一致。方法引用现在**以「归属」为界**：类方法归类、对象字面量方法归对象，
+    成员访问只在接收者归属与该方法定义**同源**时计入；同名但不同类 / 不同
+    对象的方法不合并（跨文件扫描同样按归属收敛）。
+- 27a795e: Cross-file navigation follows the module graph the editor actually shows.
+  
+  - A default export had no cross-file references: `export default function
+    greet()` in one file and `import greet from "./a.js"` in another — the
+    definition jumped across files, but the references of that definition
+    were empty. The export name of a symbol is now resolved before the
+    importers are matched, so `default` is a first-class export name and the
+    importing file shows up in the references.
+  - A namespace import was read as if it named a single export:
+    `import * as ns from "./def.js"` made every occurrence of `ns` a
+    reference to *every* export of the imported file, including the ones the
+    file never mentions. A namespace import now contributes only its member
+    accesses (`ns.beta`), and a bare `ns` is not a reference.
+  - Renaming an exported symbol across files edited the wrong side of an
+    aliased import: `import { oldName as alias }` became
+    `import { oldName as newName }` — the imported name was left behind, so
+    the import no longer resolved and the module failed to load — while the
+    alias, which is a separate local binding, was renamed. The imported side
+    of the import specifier is edited now, the alias and its call sites are
+    left alone, and renaming the alias itself no longer reaches into the
+    imported module.
+  - The fallback that jumps to a same-named export in the workspace fired
+    on member accesses: `o.helper` jumped to an unrelated
+    `export function helper` in another file. The fallback applies to plain
+    identifiers only.
+  - Cross-file definition, references and rename read the file from disk
+    instead of the editor buffer, so an unsaved edit was invisible and the
+    positions were off by the number of unsaved lines. The open document is
+    the source of truth now, and the disk is only a fallback.
+  - A re-export was invisible to references and rename: `export { a } from
+    "./m.js"` established no edge, so renaming `a` in `m.js` left the
+    re-export untouched and broke the module. The re-export edge is followed
+    now, in both directions: the references of a re-export cover the target
+    module, and renaming either side keeps the two in sync.
+  - The sidecar contract lookup pointed at bindings the engine never
+    consumes. Only an exported `fn({ … }, …)` binding is a contract (a value
+    template such as `number().gt(0)` is reported as `not fn() form` and has
+    no effect), so go-to-definition no longer sends the user to a binding
+    that cannot take effect.
+- 27a795e: 族 22 修复 D4：Bug 698 700 701 708 717 721 723 —— 补全面与语义 token 面对齐真实语义。
+  
+  - 尾随点号时补全整面清零：用户刚敲下 `obj.` 的那一刻 buffer 文本语法非法，
+    而解析不容错 ⇒ 分析直接抛 ⇒ 补全返回空并在 console 报错——恰在最需要补全的
+    时刻失效。分析输入与绑定解析输入现在共用同一个消毒器（把尾随 `x.` 改写成
+    `x._ `），尾随点号与已敲出部分成员名给出同样的成员列表。缓存键仍按真实源码
+    计算：消毒文本只喂给一次性分析，不写回分析缓存，缓存与真实源码不会串味。
+  - 指令补全在乘号之后也弹 `@nudo:` 指令：判定是「前面出现过 `*` 或 `nudo`」的
+    子串匹配（`@?n?u?d?o?:?` 整段可选），于是 `x * ` 之后、字符串字面量里的
+    `@nudo:` 都算命中。指令面现在先算光标的**词法上下文**（注释 / 字符串 / 代码），
+    只在光标确实落在注释里时才出；注释里（含跨行 JSDoc）照旧出。
+  - `@nudo:sample` 的补全项吹着「Control loop iteration sampling」，但该指令只被
+    解析、不被消费；而且插入文本缺 count，接受补全就产生诊断。说明改成如实描述
+    （reserved / no-op），插入文本带上 count 占位。
+  - 模块级函数的补全项被标成「方法」：顶层 `function` / 箭头函数绑定不是任何对象
+    的成员，IDE 会把它渲染成方法。补全项新增 `function` 档（成员函数仍是
+    `method`，非函数绑定仍是 `variable`）。
+  - 语义 token 面漏标：类名、类方法、类字段、方法形参、数组解构元素全部不上色，
+    对象解构的绑定被上成属性。类名 → class 档（图例末尾追加，老索引不变）、类
+    方法键 → method、类字段键 → property、方法形参 → parameter、解构绑定 →
+    variable。
+  - 对象字面量里的简写 `{ x }` 是对变量的**引用**，却被当成属性定义（property 档
+    且带 declaration 标记）。简写现在是 variable 档且不带 declaration 标记。
+  - 标识符 token 的长度按解码后的名字算：`const abc = 1` 里名字是 `abc`（3），
+    但源码写法是转义序列（8）⇒ token 只盖住转义序列前半截，客户端高亮错位。长度
+    改用源码跨度（位置口径仍是 UTF-16 code unit）。
+- 27a795e: 族 22 修复 D5：Bug 711 718 720 985 986 —— 签名帮助面对齐「正在被编辑的那个调用」。
+  
+  - 嵌套调用弹**外层**函数的签名：光标在内层实参里时，弹出的却是外层函数的
+    签名（内层调用完全不参与）。命中第一个（外层）`CallExpression` 就停 +
+    `path.skip()` ⇒ 内层 `CallExpression` 永不被访问。现在在所有命中里保留
+    **最内层**者（被调者起点更靠后 / 终点更靠前者更内层），嵌套调用的签名帮助
+    指向内层被调者。
+  - `activeParameter` **越界**：2 参签名在第 2 个实参之后报下标 2（协议规定下标
+    须落在签名参数表内，越界值客户端只能回落 0 ⇒ 高亮错误的参数）。下标现在按
+    **签名参数表**夹住（`min(active, params-1)`），参数表为空时**省略**该字段
+    （不是填 0）。
+  - **方法调用**（`obj.method(…)`）**整面无响应**：被调者是接收者的**槽位**，
+    不是模块级绑定 ⇒ 绑定面必然 miss。签名面现在沿 Abs 形状逐段下钻
+    （`obj` → `obj.method`），与成员补全面同一条下钻口径。
+  - **默认导出**的 callee（`export default function defFn(…)`）**整面无响应**：
+    分析结果的绑定表只收**具名导出**，默认导出连 `default` 键都没有 ⇒ 绑定面
+    必然 miss。签名面落到 **AST 定位回落**（与 hover 面同源的
+    `generalizeFromAst`）⇒ 按**声明**找被调者，与绑定表的键口径无关。
+  - **函数体内的局部 callee**（局部函数声明 / 局部箭头常量）**整面无响应**：
+    局部绑定不在模块级绑定表里。同一套 AST 定位回落覆盖这一形态。
+  - 查表与 AST 定位都 miss 时，返回**可观测的降级结果**（被调者标识符 + 空
+    参数表）而不是 `null` —— 「没有签名」与「Nudo 不知道」必须可区分。
+- 27a795e: 族 22 修复 D6：Bug 716 722 724 725 911 951 —— hover / CodeLens / inlay hint 面与 `nudo check` 对齐。
+  
+  - inlay hint 面无视请求区间：`textDocument/inlayHint` 的 `range` 是必填且表示
+    「只请求该区间」，但服务端从不读它 ⇒ 两个不相交的区间返回**逐字节相同**的
+    整文件 hint 集，客户端的局部刷新被无视、无关区段的 hint 反复重绘。现在
+    返回的 hint 落在请求区间内（区间缺省时仍给整文件集，不丢内容）。
+  - CRLF 源文件上的 inlay hint 位置越界 1 列：服务端按 `\n` 切行，行尾的 `\r`
+    被算进行长 ⇒ end-of-line hint 的 `character` 比客户端算出的可见行长多 1
+    （LSP 里行终止符不属于该行）。切行改成 CRLF 感知，服务端行长与客户端的
+    可见行长一致。
+  - hover 首行的契约档位恒为「激活」：hover 渲染 `● contract / …` 时没把观察
+    选择器的状态带上（默认值就是激活），而同一文件的 CodeLens 在选中 case 后
+    已翻成 `○ contract / …` ⇒ 同一个 IDE 里两个面互相打脸。现在 hover 与
+    CodeLens 同源：选中 case 时契约档两处一起翻 `○`。
+  - 观察透镜是死链：服务端 CodeLens 把 `entry@` / `call@` 透镜交给客户端执行
+    `nudo.trace`，但 VS Code 扩展从未注册这个命令 ⇒ 点了报「command
+    'nudo.trace' not found」，观察透镜 100% 不可用。扩展补注册该命令（转发到
+    服务端的 `nudo/trace`），manifest 的 `contributes.commands` 一并登记。
+  - hover 签名块整段丢掉 `throws` 通道：Abs 的四槽（shape × term × pred ×
+    conf）没有 throws 槽 ⇒ IDE 里显示「不会抛」，而 `nudo check` 同一函数判
+    `nudo:entry-may-throw`（error）⇒ 跨产品面自相矛盾，并违反
+    `api/lsp.md` 明写的「check-identical signature」承诺。签名块现在按 check
+    签名行的同款格式带上 `throws <Type>`（见证面证据；无证据时省略，不写
+    `throws never`；非导出函数不带——CLI 的 L2 throws 只对 entry 生效）。
+  - hover 签名块的返回类型按 `maxDepth: 4` 截断：同一份源码、同一函数、同一次
+    分析下，`nudo check` 签名行 / 同文档的 inlayHint / `nudo.hover` 载荷给出
+    三个互不相同的类型（越深的结构，hover 给的信息越少——深度 8 与深度 4 的
+    hover 输出逐字节相同）。返回类型改走共享投影预算（与 check 同口径）。
+- b37321b: The editor shows what the command line shows, at a position the editor can
+  use.
+  
+  - A file that only contains `@nudo:assume`, `@nudo:invariant`, `@nudo:throws`
+    or `@nudo:budget` was skipped as "not a Nudo file", so those directives
+    were never analyzed and the file looked clean. Those files are analyzed
+    now.
+  - A `nudo:directive-syntax` diagnostic was published twice, and one copy
+    carried line `-1` — not a valid position in the protocol. It is published
+    once, at a valid position.
+  - The placeholder position used for `nudo:module-missing` and
+    `nudo:mock-invalid` was converted to line `-1`. Those two error
+    diagnostics now land on a valid line.
+  - An env diagnostic that names the env rather than a file was filtered out
+    because the filter only matched file paths. The unknown-env-name and the
+    env-contract diagnostics are visible now.
+  - The project configuration fingerprint read the raw `autoBind` value while
+    the analysis read the normalized one, so a configuration written as a
+    non-boolean looked like a different configuration on every keystroke. The
+    fingerprint uses the normalized value.
+  - A path env whose load failed was reported by the service analysis before
+    the check ran, and the check's own copy of the diagnostic could be lost. The
+    diagnostic reaches the editor in both paths.
+- 63b12c1: LSP IDE 面 8 处用户看得见的缺口（族 53）：语义高亮不再整面消失、指令补全
+  不再子串误命中、类方法跳转与跨文件引用可解析、`executeCommand` 接位置参数、
+  `ignoreThrows` 与 CLI 同口径、env 模板变更触发依赖文件复分析、扩展命令面板
+  补齐 `nudo.selectContract`。
+  
+  - **语义 token 面在语法非法 buffer 上整面清零**（`semantic-tokens.ts`）：
+    `buildSemanticTokens` 遇 `parse` 抛就 `return []` ⇒ 用户改到一半（括号没
+    闭合 / 半个表达式）**整个文件的高亮瞬间消失**。现在解析失败走**词法降级**：
+    把注释 / 字符串内容挖空（长度与换行不变 ⇒ 坐标不变）后按关键字
+    （`function` / `class` / `const` / `let` / `var`）取紧随其后的标识符 ⇒
+    **仍有部分 token**。取舍：降级档**只给声明位**上色（成员访问 / 参数 /
+    引用位静态不可知 ⇒ 不猜，宁可少上色不可错上色），且**不缓存上次成功结果**
+    （旧坐标比清零更坏）。
+  - **指令补全的前缀过滤是子串匹配**（`server-ide.ts`）：过滤收敛为**纯前缀
+    匹配**（`label.startsWith(typed)`），语义写死在 `matchesDirectivePrefix`
+    的注释里。⚠ 前缀语义：`@nudo:ca` 只命中 `@nudo:case`（`@nudo:contract`
+    的前缀是 `@nudo:co`）；`@nudo:c` 命中**所有**以 `@nudo:c` 开头的指令
+    （`@nudo:case` 与 `@nudo:contract` **都**真前缀于它）——被排除的是「不是
+    typed 前缀」的 label（子串语义才会把 `@nudo:mock` / `@nudo:replace` 这类
+    **含** `c` 的项误纳进来）。
+  - **方法面未下沉到符号层**（`symbols.ts`）：类 / 对象方法的**方法键不是绑定**
+    （绑定表不收它）⇒ 纯函数面 `resolveDefinitionLocations` /
+    `resolveReferences` 直接调用时认不出方法（此前只有协议通道内联了一份
+    方法判据 ⇒ 纯函数面与协议面口径分裂）。方法面现在下沉到符号层
+    （`methodTargetAt`），协议通道改为**委托**符号层 ⇒ 两面同一口径。
+  - **跨文件方法 references 未接**：references 通道对方法只扫**当前文件**
+    ⇒ 跨文件的 `Alpha.run` 调用点不在结果里，而改名面已经会带上它们 ⇒ 用户
+    「查引用看不到、一改名却跨文件被改」。方法面现在**跨文件**扫描
+    （`collectMethodReferencesAcrossFiles`：`extraFiles` + 打开文档 buffer
+    覆盖层），归属（owner）由光标所在文件显式给出 ⇒ 同名不同类（`Beta.run`）
+    仍不合并。
+  - **`executeCommand` 缺位置参数 → 对象桥**（`server.ts`）：IDE 侧历史上用
+    **位置参数**发命令（`[uri, …]`），而 executeCommand 通道只认**对象**参数
+    ⇒ 位置形态落到兜底分支 ⇒ 协议层 InvalidParams ⇒ 命令 100% 失败（扩展侧
+    只能绕道 slash 请求）。`agent-tools.ts` 的 `positionalCommandParams` 统一桥
+    `nudo.check` / `nudo.hover` / `nudo.test` / `nudo.whatIf` /
+    `nudo.suggestCase` / `nudo.getActiveCases`。对象形态**行为不变**；位置形态
+    缺必填项仍报协议层参数形态错误。
+  - **LSP 侧 `ignoreThrows` 口径与 CLI 分裂**（`gate-config.ts`）：service 的
+    `checkConfig` 只认**严格 `string[]`** ⇒ 配置写成 `"TypeError"`（裸字符串）
+    或 `["TypeError,RangeError"]`（数组元素内含逗号）时被静默丢成空表 ⇒ IDE
+    仍报 `nudo:entry-may-throw`（假红），而 CLI 认这两种写法 ⇒ 同一份
+    `package.json` **CLI 绿 / IDE 红**。LSP 侧改为按**同一语义**解析（裸字符串 /
+    字符串数组都接受；数组元素内部也按逗号切分；trim 后丢空；非字符串元素忽略），
+    并把 CLI 的解析器作为**测试 oracle** 逐值比对。⚠ 根因在 service / core 的
+    配置解析层 ⇒ 本次只修 IDE 面（service 层未动）。
+  - **LSP 的 env 模板无反向边**（`validation.ts`）：watched-files 只按 LSP 自己
+    的 `nudoDepParents` 定向重检 ⇒ path 型 `@nudo:env` 模板改了**不一定**触发
+    依赖源文件复分析（CLI watch 走 service 的 env 反向边表 ⇒ 两面口径分裂）。
+    现在 LSP 直接消费 **service 的同一张表**（`envPathDependents`——解析口径
+    同源，不另写一份）⇒ IDE 与 CLI 同口径。
+  - **manifest 漏登记 `nudo.selectContract`**（`packages/vscode/package.json`）：
+    扩展的 handler 认这个命令（languageclient 自动注册 ⇒ CodeLens 可用），
+    但 `contributes.commands` 没有它 ⇒ **命令面板里搜不到**。现在登记进 manifest
+    （标题与兄弟命令同款风格）。
+- a6e9fa2: LSP navigation now agrees with itself: method and `catch` parameters have a
+  definition, private class members keep their own identity, and renaming an
+  aliased export renames the export instead of the local binding.
+  
+  - `textDocument/definition` returned `null` for a **class method parameter**, an
+    **object method parameter**, and a **`catch` parameter**, while
+    `textDocument/references` at the very same position returned the
+    declaration. The symbol table only visited the parameters of three kinds of
+    function, so those parameters never became definitions and the definition
+    lookup fell through to a workspace fallback that found nothing. The symbol
+    table now visits class methods, object methods, private methods, private
+    fields, and `catch` clauses; a `catch` parameter is scoped to the `catch`
+    clause itself.
+  - A **private class member** (`#name`) was resolved as if it were the ordinary
+    identifier `name`, so `definition`, `references`, and `rename` all landed on
+    an unrelated binding with the same name — renaming a private method rewrote
+    an unrelated exported symbol and its importers across files, breaking the
+    module graph. A private member now has its own identity (`#name`), scoped to
+    the class that declares it; `prepareRename` reports the placeholder with the
+    `#`, and the edited range still covers only the identifier so the `#` is
+    kept.
+  - An **aliased export** (`export { a as b }`) packed two identities into one
+    specifier: the local name `a` and the exported name `b`. Renaming through an
+    importer collected the edit set by the local name, so it rewrote the local
+    declaration and the local side of the export specifier while the importers
+    were renamed to a name the module no longer exported — the module graph broke
+    even though both files stayed syntactically valid. The local name and the
+    exported name are now separate identities: renaming the exported name edits
+    the exported side of the specifier together with the `imported` side of every
+    importer, and never the local declaration; renaming the local name edits the
+    local declaration and the local side of the specifier only. The exported-name
+    position is no longer a dead end: `definition`, `references`,
+    `prepareRename`, and `rename` all answer there.
+- a6e9fa2: LSP: make the navigation face answer per the client's capabilities, encode
+  URIs correctly, validate rename targets, and give every navigation request
+  the same file gate.
+  
+  - **Bug 745 — `workspace/symbol` never returned class members.** The handler
+    only walked the *top level* of `documentSymbols`, while class methods and
+    class properties live in a symbol's `children` ⇒ they could never appear
+    in a workspace search. The handler now walks the tree recursively and
+    flattens it into `SymbolInformation[]`, expressing the hierarchy through
+    `containerName` (which is what the flat LSP protocol expects).
+  - **Bug 748 — `filePathToUri` and `uriToFilePath` were not inverses of each
+    other.** The encoding side concatenated `file://` with the raw path (so
+    `%`, `#`, `?` and spaces were never escaped) ⇒ the server produced URIs
+    that were not valid URIs; the decoding side ran a bare
+    `decodeURIComponent` ⇒ a malformed percent escape threw an uncaught
+    `URIError` and aborted `didOpen` / `didChange` / `didClose`, leaving that
+    document with **zero diagnostics**. The encoding side now uses Node's
+    `pathToFileURL` and the decoding side uses `fileURLToPath` with a
+    `try`/`catch` fallback (malformed input degrades to the undecoded text and
+    never throws), so the two are exact inverses; `cacheKey` benefits as well.
+    URIs for non-`file:` schemes (`untitled:` …) are still returned verbatim.
+  - **Bug 749 — `textDocument/documentSymbol` ignored the client's
+    capabilities.** The server never kept `params.capabilities`, so it always
+    answered with the hierarchical shape and the full `SymbolKind` range even
+    when the client declared `hierarchicalDocumentSymbolSupport: false` or a
+    restricted `symbolKind.valueSet` (both are protocol violations). The
+    navigation handlers now consume the client capabilities that
+    `initialize` captured: a client without hierarchical support receives a
+    flat `SymbolInformation[]` (`location` instead of
+    `range` / `selectionRange` / `children`), and a kind outside the client's
+    `valueSet` is clamped to a safe value inside that set (with a note in
+    `detail`). When the client sends no capability section at all the default
+    answer is kept — hierarchical shape, full `SymbolKind` range.
+  - **Bug 750 — `textDocument/rename` never validated the new name.** The
+    request's `newName` was used as the replacement text verbatim ⇒ a single
+    rename could turn the source into invalid JavaScript (an invalid
+    identifier, an empty name or a reserved word) and `node --check` would
+    fail with a `SyntaxError`. The new name is now checked at the syntax
+    level — it must be a legal JavaScript identifier, non-empty and not a
+    reserved word — and an invalid name produces no edits at all.
+  - **Bug 751 — the navigation requests each had their own file gate.** The
+    sidecar contract file (`*.nudo.js`) was let through by `definition` only,
+    was rejected by the other four navigation requests, and was listed by
+    `workspace/symbol`, which had no gate at all ⇒ one coordinate, three
+    different answers (the server contradicted itself). `definition` no longer
+    has its sidecar escape hatch and `workspace/symbol` now uses the same
+    path-level gate, so sidecar contract files are invisible to every
+    navigation request. (The cost is that a source symbol can no longer jump
+    into its sidecar contract; that capability needs the symbol table to model
+    sidecar bindings and is tracked separately.)
+- a6e9fa2: LSP: capture the client's capabilities at `initialize`, and give the
+  navigation/IDE file gate a single source of truth.
+  
+  - **Bug 749 — the server never kept `params.capabilities`.** `onInitialize`
+    only echoed the server's own capability declaration, so no handler could
+    answer according to what the client asked for: `textDocument/documentSymbol`
+    always answered with the hierarchical shape and the full `SymbolKind` range,
+    even when the client declared `hierarchicalDocumentSymbolSupport: false`
+    or a restricted `symbolKind.valueSet`. The client capabilities are now
+    captured during `initialize` and handed to the navigation handlers through
+    the existing `deps` object (no new package export). When the client sends
+    no capability section at all the value stays `undefined` and the handlers
+    keep the default answer (hierarchical shape, full `SymbolKind` range) — an
+    old client must not degrade the server's output. The `initialize` result
+    itself is unchanged, so the declared server capability inventory is
+    untouched.
+  - **Bug 751 — every request had its own file gate.** The sidecar contract
+    file (`*.nudo.js`) was let through by `definition` only, was rejected by
+    the other navigation requests and by all six IDE requests, and was listed
+    by `workspace/symbol`, which had no gate at all — one coordinate, three
+    different answers. The gate now has a single source of truth
+    (`server.ts`'s `isNudoFile`, which explicitly excludes sidecar contract
+    files) and the same predicate instance is injected into the navigation and
+    the IDE handlers, so both sides answer alike. Sidecar exclusion is also
+    spelled out in the predicate itself, so it survives a future drift of the
+    path-level suffix table.
+- a6e9fa2: LSP: three reverse guard tests for the navigation findings that no longer
+  reproduce.
+  
+  This slice changes **no implementation code** — it only adds three regression
+  tests that pin the *already fixed* behaviour of the navigation face. The
+  symptoms described in the bug report do not reproduce on `HEAD`: they were
+  covered by an earlier family, and the tests below are the guard rails that
+  keep them from coming back (they are expected to **pass** on `HEAD`).
+  
+  - **Bug 746 — renaming a local alias must not drag the exported symbol and
+    the other importers along.** Renaming the local alias of
+    `import { oldName as alias } from "./xf-def.js"` now edits only the local
+    side of the import specifier and its call site; the defining module and
+    the other importer stay untouched. The opposite direction is pinned as
+    well: renaming the exported name from the defining module edits that
+    module and the *imported* side of every importer, and leaves the alias
+    alone. (Covered by the Bug 710 fix of the earlier signature family.)
+  - **Bug 747 — renaming a parameter must not drag the shadowing top-level
+    variable along.** With `const x = 1;` next to `export function f(x)`, both
+    directions are pinned: renaming the parameter edits only the parameter
+    declaration and its use, renaming the top-level variable edits only that
+    one place. `definition` and `references` stay scope-aware as well.
+    (Covered by the Bug 709 fix of the earlier signature family.)
+  - **Bug 1025 — the *imported* side of an aliased import resolves to the
+    module it really imports.** With two files exporting the same name, the
+    `definition` of the imported side lands in the imported module instead of
+    the unrelated same-named export, and its `references` are not the empty
+    array the report saw — they are the same set the non-aliased form
+    returns. The underlying key space of the import binding table (it is
+    still keyed by the local name alone) is tracked as a residual item; the
+    position-aware lookup currently covers it.
+- a6e9fa2: LSP: the workspace-folder subscription must never take the server down.
+  
+  `connection.workspace.onDidChangeWorkspaceFolders` is a **getter** in
+  `vscode-languageserver@10.1.2` that throws
+  (`Client doesn't support sending workspace folder change events.`) unless the
+  client declared `capabilities.workspace.workspaceFolders` — and it only
+  becomes usable **after** `initialize`, when the library has processed the
+  client's capabilities. The server read that getter while it was still being
+  constructed, i.e. before any client had spoken, so the getter threw for
+  **every** client and the language server died on startup with
+  
+  ```
+  Error: Client doesn't support sending workspace folder change events.
+      at get onDidChangeWorkspaceFolders (…/vscode-languageserver/lib/common/workspaceFolder.js:38:23)
+      at createNudoServer (…/packages/lsp/src/server.ts:374:3)
+  ```
+  
+  The optional chaining (`?.`) did not help: it only guards `null` /
+  `undefined`, not a thrown exception.
+  
+  The value is now read inside a `try`/`catch`; a client that does not
+  support the notification face makes the server skip the subscription
+  silently and start normally, and `initialize` still answers with the
+  unchanged server capabilities. The subscription itself is kept: it is taken
+  once at construction (in-memory connections) and, for a real transport, once
+  more right after `initialize` — where the getter is finally ready — so the
+  workspace-folder change handling (the authorization boundary follows the
+  added/removed folders) keeps working instead of being silently dropped by
+  the guard.
+- e2d4688: The code-action face of the language server no longer crashes and no longer
+  writes broken code into the user's sources.
+  
+  - The language server captured the agent-tool dependencies before the server
+    had finished initializing, so every `textDocument/codeAction` request threw
+    and the whole face was unavailable. The dependencies are now read on demand.
+  - The quick fix for a missing call-site field wrote the literal `undefined`
+    into the source, which then failed the very check it was meant to fix. The
+    placeholder is now `null`, and the violation is still reported afterwards.
+  - The quick fix that adds a field to a contract inserted it into the
+    parameter list instead of the parameter's shape, producing a sidecar that
+    no longer parsed. The insertion point is now located through the syntax
+    tree, and a field that is already declared is not offered at all.
+  - The quick fix that inserts a call-site field used a textual heuristic that
+    could land inside a string literal. The insertion point is now located
+    through the syntax tree, and the fix is not offered when there is no object
+    argument.
+  - The quick fix that writes a sidecar inserted the new declaration at the
+    top of the file, which left the previous contents in place and produced a
+    file with a duplicate export. The edit now covers the existing sidecar, and
+    a plan that would duplicate an export is not offered.
+- e2d4688: The "inline variable" refactoring of the language server now refuses to inline
+  a value it cannot prove is safe.
+  
+  - A variable was inlined even when it was reassigned or captured by a closure,
+    which changed the program's behaviour. The refactoring now only offers an
+    inline action when the variable is provably single-assignment and not
+    captured.
+  - A variable was inlined across an export boundary, so the module's public
+    API changed silently. Exports are now detected and left alone.
+  - The refactoring was offered for a binding that the selected range does not
+    actually cover, and it sometimes inlined the wrong occurrence of a shadowed
+    name.
+- e2d4688: fix(lsp): Extract to function 的插入点 / 语句切分 / 取名收口（族 23 片 C：Bug 732 / 734 / 736 / 740 / 742 / 971）
+  
+  - **Bug 732**：`Extract to function` 不再把原函数的 `export` 关键字偷给新函数 ——
+    插入点改用**语句起点**（`export` 的列）而不是 `function` 关键字的列 ⇒ 模块公开 API
+    不再从 `['f']` 静默变成 `['extracted']`。
+  - **Bug 734**：被抽出的若是**赋值表达式**（`x = compute();`），调用点生成**赋值表达式**
+    （`x = extracted(...)`）而不是硬编码的 `const x = ...` ⇒ 不再与外层 `let x` 重复声明
+    （文件曾彻底不可解析）。原本就是声明时还原同种声明（`const` / `let` / `var`）。
+  - **Bug 736**：新函数只插在**语句位置** ⇒ 箭头初始化式 / 对象字面量方法 / class 方法
+    三种宿主不再产出不可解析的文件。
+  - **Bug 740**：选区含 `break` / `continue` 时**拒绝**抽取（不再产出
+    `SyntaxError: Illegal break statement`）；选区末条是 `return` 时**把返回值接回调用点**
+    （`return extracted();`）⇒ 外层返回值不再被静默丢掉。
+  - **Bug 742**：顶层选区的插入点跳过文件前导区（hashbang / 指令 / 前导注释）⇒ 新函数不再
+    落到 `#!/usr/bin/env node` 之前（文件曾整体不可解析）。
+  - **Bug 971**：新函数名做**占用检查**（在 `extract-function.ts` 内部，调用方零改动）⇒
+    撞名时自动改名（`extracted` → `extracted1`）⇒ 不再出现
+    `SyntaxError: Identifier 'extracted' has already been declared`。
+  - 抽取产物新增「仍可解析」自检：坏产物一律不出 edit。
+- 27a795e: 族 22 收口接线：方法改名在**归属歧义**时拒绝执行，而不是改出自相矛盾的代码。
+  
+  - 改一个类方法时，如果文件里同时存在「接收者归属解析不出来」的成员访问
+    （形参、外部对象）**和**另一个同名但不同归属的成员，那么这个成员访问
+    **可能**指目标方法、也可能指那个别的归属——静态上不可判定。此时改名只有
+    两种自洽结果：全改（可能改到无关对象，运行时读到 `undefined`）或全不改
+    （**定义改了、调用点没改**，同样读到 `undefined`）。两者都会改坏代码，
+    所以现在**拒绝这次改名**：不产出任何编辑，编辑器显示该符号不可改名。
+    准备改名的提示与真正的改名请求同口径，不会先让用户改、改的时候又拒绝。
+  - 之前把「改定义、不改歧义调用点」当成安全的做法，实际它同样改坏代码；
+    这一条修掉之后，改名要么覆盖全部可能的调用点，要么明确拒绝。
+- 169ed52: The disk cache, the LSP and the Vite plugin now agree with the CLI about
+  environments, budgets and injected modules.
+  
+  - The cache key did not contain the effective fork budget, so changing
+    `NUDO_MAX_FORKS` still served the previous run's result. The effective
+    value (environment variable, then `package.json`, then the default) is now
+    part of the key.
+  - An invalid `nudo.check.entryThrows` value was reported once per checked
+    file. The warning is now printed once per distinct invalid value.
+  - `@nudo:as` did not apply to an exported binding, so the tool still reported
+    "bindings applied" while the type stayed unchanged. The override now
+    matches the exported declaration as well.
+  - `--what-if` attached an assumption to the wrong variable when a line ended
+    with a comment, and it reported a made-up reason when two declarations
+    shared a line. Assumptions are now anchored by statement identity.
+  - The LSP and the Vite plugin never applied `@nudo:mock`, so a project that
+    checked cleanly in the CLI reported a spurious "may throw" in the editor and
+    in the build. Both now assemble the same injection channel the CLI uses.
+- 3432d8c: `nudo/suggestCase`（LSP agent 工具）给出的见证建议不再落进引擎的「合成 / 固化」
+  名字空间，并带上可判定的期望。
+  
+  - **改前**：工具把合成 case 的**原名**（`call@L<n>`）原样写进建议文本
+    （`* @nudo:case "call@L4" ("bob")`）。该名字属于合成 / 固化见证的名字空间
+    （`call@` = `nudo test --freeze` 固化的见证，`entry@` = 入口兜底见证）⇒
+    用户照建议原样贴回源码后，同一个调用点会留下**两条**见证（工具建议的
+    `call@L4` + 固化出来的 `call@L7`）。
+  - **改后**：建议里的名字是**手写见证名** `witness@<n>`（与 `call@` / `entry@`
+    不相交；名字只含字母 / `@` / 数字 ⇒ 指令文法承载得了；同一份源码每次建议
+    同名 ⇒ 可重复贴回），并且每条建议都带上 **`=> expected`**（观测值，用
+    `--freeze` 同一个序列化器产出 ⇒ 往返保真）⇒ 贴回后**真的**产生断言
+    （进断言面、计入 `passed`），而不是一条没有期望的 `unchecked` 见证。
+  
+  引擎推不出结果（`unknown` / `any` / `opaque`）、调用抛错（`never`）或结果
+  无法用指令文法表达时，不给期望（并在建议末尾说明条数）——宁可留一条诚实的
+  无期望见证，也不写一条注定判红的期望。
+  
+  工具名 / 协议面不变（`nudo.suggestCase` / `nudo/suggestCase` / `suggestCase`
+  三处表项未动）。
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [cc9b638]
+- Updated dependencies [2688251]
+- Updated dependencies [7fea13a]
+- Updated dependencies [1caec28]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [27a795e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [02aa122]
+- Updated dependencies [3432d8c]
+- Updated dependencies [3432d8c]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [aa23265]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [dde4b03]
+- Updated dependencies [b37321b]
+- Updated dependencies [b37321b]
+- Updated dependencies [106ad1d]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+- Updated dependencies [8542f44]
+  - @nudojs/core@1.16.0
+  - @nudojs/service@1.10.0
+  - @nudojs/parser@1.5.3
+
 ## 1.7.2
 
 ### Patch Changes

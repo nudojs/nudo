@@ -1,6 +1,652 @@
 # @nudojs/parser
 
 
+## 1.5.3
+
+### Patch Changes
+
+- 0f67015: fix: 并发 review 收口的 25 条缺陷 + 4 条跨文件尾巴（CI 闸门假红/假绿 · 自相信值 · 机器面口径漂移）
+  
+  本片是一次**并发 review**（8 个分片）收口的结果：25 条缺陷全部修复，另补
+  4 条 worker 报告的跨文件尾巴。核心是**闸门可信度**——`nudo check` 是 CI
+  闸门，假红会卡死用户仓库、假绿会让门禁空转。
+  
+  ### 高危（5 条 · 闸门级）
+  
+  - **L2 实例方法桥把**构造器**的 throws 归因给方法**（`core/algebra/check-may-throw.ts`）：
+    实例桥用 `ctorAnyArgs`（全 `any`）跑构造器 ⇒ 构造器里的强制转换 TypeError
+    被算进**方法**的 throws 域 ⇒ 普通类即触发 error 级 `nudo:entry-may-throw`。
+    修法：构造器改在**独立 may-throw 会话**里跑（证据隔离、副作用保留）⇒
+    构造器的 throws 归因给 `new C()` 入口而非方法；构造器抛时退**裸实例**
+    继续求值方法体 ⇒ 方法自身的证据照常收集（闸门不整体关掉）。
+  - **`async function*` **声明**体的 `await` 发射成裸 `yield`**
+    （`core/algebra/exec/transpile/stmt/statement.ts`）：缺 `stmt.generator !== true`
+    守卫 ⇒ 产物是非法 JS ⇒ **整模块 fail-closed** ⇒ 全部导出退 unknown/opaque ⇒
+    error 级 `nudo:entry-may-throw` 降成 INFO `nudo:opaque-result`（门禁假绿）。
+    修法：与函数表达式 / 对象方法 / 类方法三条兄弟路径对齐。
+  - **Proxy `getOwnPropertyDescriptor` 陷阱违反 [[GetOwnProperty]] 不变量**
+    （`core/algebra/builtins/object/descriptor.ts`）：引擎照抄陷阱的值 ⇒ 自信的
+    错值。修法：以 **node v26.10.0 实测矩阵**（82 例零偏差）反推完整谓词 ⇒
+    补齐「靶无该自有键」「可配置性不一致」「不可配置属性的 writable /
+    enumerable / value 冻结」「数据 / 访问器描述符不得混报」四档。
+  - **`Object.getOwnPropertyDescriptors` 丢 symbol 键自有属性**
+    （`core/algebra/builtins/object/methods.ts`）：原生走 `[[OwnPropertyKeys]]`
+    **含** symbol 键 ⇒ 结果对象少一个自有属性。附带修正 `builtins/invariants.ts`
+    把 gOPDs 列进「只枚举字符串键」的**事实错误**注释。
+  - **`Uint8ClampedArray` 元素先截断再钳位**（`core/algebra/builtins/error/binary.ts`）：
+    `ToUint8Clamp` 是就近偶数取整、**不**向零截断 ⇒ 改传未截断值。
+  
+  ### 中危（9 条）
+  
+  - **`strip-types` 把构造器参数属性赋值插到 `super()` 之前**
+    （`core/src/strip-types.ts`）：派生类产物在 `new C()` 时抛 ReferenceError ⇒
+    `migrate` 是一程闸门（无回退）且 `node --check` 只验语法 ⇒ 静默写出坏代码。
+    修法：按 tsc emit 口径插到 `super(...)` **之后**；找不到顶层 `super(...)` 时
+    保持源自身的失败形态并产出一条 note（`nudojs/src/migrate.ts` 侧透出）。
+  - **`Object.setPrototypeOf(Object.prototype, null)` 过拒绝**
+    （`core/algebra/builtins/object/methods.ts` · `objects.ts`）：按 ES2024
+    10.4.1.2（`[[SetPrototypeOf]]` 只在 V **非 null** 时抛）+ node v26 实测
+    **放行 null**、仍拒非 null ⇒ 不再与原生/规范冲突（无需登记架构债）。
+  - **`Reflect.ownKeys` 的 symbol 键排在字符串键之前**（`core/algebra/builtins/reflect.ts`）：
+    按 ES2024 `OrdinaryOwnPropertyKeys` 改两段排列。
+  - **`arr` 形参 × `tuple` 实参的 α 绑定只取首元素**（`core/algebra/hof.ts`）：
+    异构数组字面量 `[1,"a"]` ⇒ `T := number` ⇒ 返回 `number[]`（**窄于**真实类型）
+    ⇒ 把「不知道」升级成「知道」。修法：元素域取全部元素的同型 join，异构退 `any`。
+  - **项目级 path env 按「被分析文件目录」解析**（`service/src/check-issues.ts` ·
+    `service/src/analyzer-orchestrate.ts` · `lsp/src/validation.ts`）：假阳（报
+    不存在的路径）+ 假阴（项目级 env 真实失败被静默丢弃）⇒ 改两层基准
+    （项目级按项目根 / 文件级按文件目录），与 CLI 同口径。
+  - **`check --json --watch` / `test --json --watch` 的路径错误早退分支打 pretty
+    JSON**（`nudojs/src/commands/check-command.ts` · `test.ts`）：破坏 watch 面
+    「stdout = JSON Lines」契约（机器消费者第一行即炸）⇒ 三动词统一一行一份 JSON。
+  - **`migrate strip --json` 的 `pathErrors[].path` 混用目录 / 文件量纲，且同目标内
+    成功文件的逐文件结果被整条丢弃**（`nudojs/src/commands/migrate.ts`）⇒
+    逐文件隔离在 CLI 面等于没生效 ⇒ 失败条目改用文件路径、成功行进 `results`。
+  - **vite-plugin：工程根含软链时全部源文件被判为「依赖」**
+    （`vite-plugin/src/scope.ts` · `index.ts`）：`resolve()`（不解析软链）对比
+    `realpathSync()`（解析软链）⇒ 整工程被 skip 且**零日志**（静默空转）⇒
+    两侧都取 realpath 再比；root 改为按插件实例持有（同进程第二个 Vite config
+    不再覆盖第一个的 root）。
+  - **zh-Hans 镜像未跟随 en 更新**（5 个页面）：输出块按真机重抄 + 缺段补齐，并
+    **新增机械闸门**（`website/tests/docs-coverage.test.ts` 规则 21：blocks /
+    machine / tokens / rows / paras 五档 en↔zh 比对）⇒ 漂移不再静默过 CI。
+  
+  ### 低危（11 条）
+  
+  `__nudoLv{N}` 循环槽名改走 `internalTmpName`（`core/algebra/exec/transpile/stmt/statement.ts`）；
+  后置条件证据面的 Φ 侧改**同项**判定（`core/algebra/postcondition.ts` · `check-return.ts`）
+  ——无关 Φ 不再把「证不出」误判为 `disproved`；
+  standard-schema 内联 `__nudoDescribe` 与库函数副本的 `-0` 口径统一
+  （`service/src/emit/standard-schema.ts`）；整文件缓存键的「项目级 path env 内容」
+  维度按项目根解析（`service/src/analyzer-cache.ts`）；两条新诊断码改用 core 的
+  `DIAG` 注册表（`service/src/analyzer-orchestrate-uncached.ts`）；用法错误码三动词
+  统一为 `nudo:usage-error`（`nudojs/src/commands/test.ts`）；vite-plugin 无 `line`
+  的 issue 不再伪造成 `:1:0`（`vite-plugin/src/check-assembly.ts`）；parser 的文件级
+  指令位置闸门补 class / 对象字面量体（`parser/src/directives/file-directives.ts`）；
+  LSP 语义 token 降级路径复用 core 的真 lexer 遮罩（`lsp/src/semantic-tokens.ts`）；
+  架构债台账条目数 9→10（3 处索引）；`walkAbs` 的 brand 解包补空值守卫
+  （`scripts/env-coverage-baseline.ts`）。
+  
+  ### 跨文件尾巴（4 条 · worker 报告的同源缺口，本片一并收口）
+  
+  - **core 文本路径的同类位置闸门洞**（`core/algebra/directive-scan.ts`）：
+    parser 侧修了 class / 对象体，core 的文本路径是孪生路径、同样漏了 ⇒ 按同口径
+    补上（`nestedBodyRanges`）。
+  - **`generalize.ts` 的类方法桥**（值域通道）：构造器抛 ⇒ 异常逃出 ⇒ 方法签名退
+    unknown + 误导的 INFO `nudo:opaque-result`。`check-may-throw.ts` 反向 import
+    `generalize.ts` ⇒ 跨模块复用会成包环 ⇒ 按仓库既有「就地复刻」惯例本地实现
+    裸实例兜底。
+  - **`nudojs/src/migrate.ts` 透出 `ctorParamPropsSuperMissing` note**：core 已置位
+    但用户看不到 ⇒ 补提示。
+  - **LSP / service 的项目级 env 预载基准**（见上「中危」条）。
+  
+  ### 验证
+  
+  全仓 `tsc --noEmit`（**含测试文件**）0 错误；`pnpm run test` **1756 文件 /
+  14515 用例全绿**（exit 0）；`pnpm run build` exit 0；`verify-doc-examples.sh`
+  278 checks passed / 0 failed；`coverage:env -- --check` exit 0。25 条缺陷各配
+  一条「**修前红 / 修后绿**」的回归测试（新增 24 个测试文件），高危项另在
+  **产品 CLI 面**逐条复现核对（与原生 node v26.10.0 逐值一致）。
+- 2d96c29: `@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+  ⇒ 纯**增量**（additive）⇒ minor。
+  
+  fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
+  
+  上一片（并发 review 收口 25 条 + 族 65/1094 两轮）之后又做了一轮**并发
+  review**（5 个分片 × 只读审查 + 逐条代码层复核）⇒ 查出 **10 条**该轮改动
+  引入或遗留的缺陷，本片一次性收口。核心仍是**闸门可信度**：`nudo check` 是
+  CI 闸门，**假红**卡死用户仓库、**假绿**让门禁空转。
+  
+  本片新增 **7 个回归测试文件**（全部含「修前红 / 修后绿」实测），另补 1 个
+  残留洞（指令作用域闸门）。
+  
+  ---
+  
+  ### 高危（4 条 · 闸门级）
+  
+  - **构造器 may-throw 证据被整体丢弃且「归因落点」根本不存在 ⇒ L2 闸门假绿**
+    （`core/algebra/check-may-throw.ts` · `core/algebra/scan-top-functions.ts` ·
+    `core/algebra/check.ts`）：实例方法桥把构造器跑在独立 may-throw 会话里
+    （软效果不进方法域 ⇒ 假红已消除），但**硬抛**（无条件 `throw`）也被
+    `catch {}` 吞掉；而注释声称"归因给 `new C()` 入口"——**该入口并不存在**
+    （`scan-top-functions.ts` 只登记 `Class.method`，跳过 ctor）⇒
+    `export class A { constructor(x){ throw new TypeError("boom"); } }`
+    在 check 闸门与 test 见证面**双面零诊断**（0 error / 0 warning / exit 0）。
+    修法：新增**类导出入口**普查面 `listClassEntryNames`（`new C()` 是真实入口）
+    ⇒ 类入口并入 L2 入口表（`check.ts`），构造器的**硬抛**进 throws 域、报在
+    **类声明位置**；构造器的**软效果**（any 补位的强制转换）仍不进 ⇒ 普通类
+    不触发 error 级 `nudo:entry-may-throw`（假红不回归）。另：类入口的
+    `@nudo:throws` 申报落点 = 构造器 scope（`C.constructor`）⇒ 用户已申报不再被卡
+    （`declaredThrowsForEntry`）。
+  
+  - **同一「裸实例兜底」在值域通道产出自信的错值 ⇒ 方法签名折 `never` + 假红**
+    （`core/algebra/generalize.ts`）：兜底实例的内层是**空 obj** ⇒ 构造器写过的
+    字段被建模成「确定不存在」⇒ `this.v` 读成**确定的 `undefined`**、
+    `this.v + 1` 读成**确定的 `NaN`**；`this.v.toFixed(2)` 在**虚构实例**上抛
+    ⇒ 签名 **`never`**（谎称"该方法必抛、恒返回 never"）⇒ 连带 **error 级
+    `nudo:entry-may-throw`**。修法：兜底实例内层改 **unknown**（构造器写过的
+    字段 = **不可知**，不是"缺槽"）⇒ 不折确定错值、不在虚构实例上抛 ⇒ 签名落
+    `unknown`，且方法体照常求值（不退化成整体 opaque）。与上一条同源，两处
+    **就地复刻**的孪生实现已互相点名，防止再漂移。
+  
+  - **Proxy `getOwnPropertyDescriptor` 不变量新增规则的 3 处阈值错误 ⇒ 假红**
+    （`core/algebra/builtins/object/descriptor.ts`）：上一片新增的
+    `enforceProxyGetOwnPropDescInvariant` 在 Object 面与 Reflect 面同时接线，
+    三处口径与 node v26.10.0 不符 ⇒ **native 不抛、引擎抛 TypeError** ⇒
+    error 级 `nudo:entry-may-throw` ⇒ 直接卡 CI：
+    1. **形态一致性检查未以「靶属性不可配置」为前提** ⇒ ES2024
+       `IsCompatiblePropertyDescriptor` 只在 `current.[[Configurable]]` 为 false
+       时比对数据/访问器形态，引擎无条件抛 ⇒ **可配置**靶 + 异形态陷阱整类误判；
+    2. **`frozen` 被当成 `enumerable:false`** ⇒ `Object.freeze` 只改
+       writable/configurable、**不改 enumerable** ⇒ 冻结靶 + 诚实报告描述符的
+       Proxy 被判违约（同处注释"frozen ⇒ enumerable 全 false"本身是事实错误）；
+    3. **靶侧标志/extState 只查「内层 obj」不查「接收者」** ⇒ `defineProperty` 把
+       标志记在接收者上（brand 靶记在 brand）⇒ 取不到 ⇒ 回落 `configurable:true`
+       ⇒ **陷阱报告与靶完全一致也被判违约**。
+    修法：形态比对收进「靶不可配置」分支；`frozen` 不再改 enumerable；靶侧三标志
+    统一复用同文件 `currentPropDesc`（接收者优先、内层兜底）。**不可配置**靶 +
+    异形态陷阱仍抛（能力未关）。
+  
+  - **项目级 env 的「两层基准」只做了一半 ⇒ 分析器通道丢 env 全局 / IDE 与 CLI
+    结论相反**（`service/src/analyzer-orchestrate*.ts` · `service/evaluator/env-loader.ts`
+    · `lsp/src/validation.ts` · `lsp/src/agent-tools.ts`）：上一片把项目级 env
+    改为**按项目根**解析，但只改了**预载**侧；**收集期**仍用原始相对名查表，
+    而相对说明符只有唯一候选（按文件目录解析）⇒ 与预载登记的 key 不匹配 ⇒
+    **只要被分析文件声明了任何 `@nudo:env`（哪怕是内建名 `node`），项目级 path
+    env 就对它完全不可见** ⇒ 返回面退 `never` + 假阳 `nudo:builtin-unknown`；
+    同时 LSP 的 `env-unresolved` 诊断按「记录时的 preload 目录」归档 ⇒ 项目级 env
+    的失败被**静默吞掉**（IDE 假绿，CLI 同刻仍报）。
+    修法：绝对化规则收进 `env-loader.ts` 的**单一 helper**（`absolutizeEnvSpec`），
+    预载侧 / 收集期 / 缓存键 / LSP 注入 / LSP 诊断**五处共用**；LSP 诊断按
+    `fileEnvBaseDir + projectEnvBaseDir` 双取合并去重。改后 IDE 与 CLI 对同一
+    文件结论一致。
+  
+  ### 中危（4 条）
+  
+  - **`migrate strip --write` 把「未写盘」的成功行报成 `wrote`**（`nudojs/src/migrate.ts`
+    · `nudojs/src/commands/migrate.ts`）：库面在有失败时整批零写盘（原子性）并给
+    成功行附注记，命令层却把注记行当普通成功行推入 `results`，人类面用
+    `opts.write ? "wrote" : "dry"` **无条件**打 `wrote` ⇒ 同一行既说 "wrote"
+    又说 "not written"，而磁盘上根本没有 `.js`；`--json` 侧只有一条自由文本
+    `notes` 能区分 ⇒ 机器消费方极易误判已产出。修法：新增机器可判定的
+    **`writeStatus`**（`"written"` / `"not-written"` / `"planned"`），人类面按逐行
+    状态措辞（`wrote` / `not written` / `dry`）。
+  
+  - **HOF 元组元素域把**已知**的 null/undefined 压成 `any`**（`core/algebra/hof.ts`）：
+    引擎把 `null`/`undefined` 建模成 **`unknown` 形状 + lit 项**，而元素域按
+    **shape kind** 判"域是否可知" ⇒ 把**已知**类型误判成"域不可知" ⇒
+    `[null]` 的元素域从 `null` 退成 `any`、`[1,null]` 退成 `any`（应为
+    `number | null`）；`any` 是"自信的任意值"，参与算术即强制转换 ⇒ 记
+    may-throw ⇒ L2 假红面。修法：三分类——已知 nullish（不参与异型判定、只贡献
+    可空性，用仓内既有 `makeSum` 表达联合）、真·推断失败（退 **`unknown`**，
+    不是 `any`）、其它（同型判定不变，异型仍退 `any`）。
+  
+  - **文件级指令的作用域闸门未覆盖 `ArrayExpression` / `ObjectPattern` / `ArrayPattern`**
+    （`parser/src/directives/file-directives.ts` · `core/algebra/directive-scan.ts`）：
+    写在数组字面量 / 解构模式里的 `@nudo:env` 被**静默提升**成整文件生效（零诊断，
+    越权）。修法：两侧孪生闸门同步扩到三类嵌套体（两通道 23 组样例逐例一致）。
+  
+  - **引理账本写入是「死写」**（`core/algebra/check-return.ts`）：Φ 侧的消费在
+    证明段里记进账本，而调用方传入的 `consumedAssume` 快照取自**调用之前** ⇒
+    Φ 侧的写入永远读不到 ⇒ 账本与归因两套口径（changeset 宣称的"经
+    `noteAssumeConsumed` 记进账本 ⇒ 归因可见"实际断在取数时序上）。
+    修法：归因集**就地取账本**（读在写之后）⇒ 账本是"消费过"的唯一事实源，
+    调用方快照退化为兜底。
+  
+  ---
+  
+  ### 验证
+  
+  - 全仓 `tsc --noEmit`（`pnpm run lint`）**0 错误**；`pnpm run build` exit 0；
+  - `pnpm run test` 全量绿（**1757+ 文件 / 14500+ 用例**，exit 0）；
+  - 新增 8 个回归测试文件，全部**修前红 / 修后绿**实测（红数由**回滚修复**逐条复核）：
+    `core-bug-1095`（Proxy 阈值，22 例 · 修前 12 红）、`core-bug-1096`（构造器
+    归因，11 例 · 修前 6 红）、`core-bug-1097`（HOF 元素域，15 例 · 修前 10 红）、
+    `core-bug-1102` + `parser-bug-1101`（指令闸门，79 例 · 修前 12 红）、
+    `core-bug-1103`（引理账本，5 例 · 修前 1 红）、`service-bug-1098` +
+    `lsp-bug-1099` + `lsp-bug-1104`（env 两层基准，11 例 · 修前 6 红）、
+    `nudojs-bug-1100`（migrate strip 写盘状态，6 例 · 修前 5 红）—— 合计 **149 例**；
+  - 产品 CLI 面逐条复现核对：`nudo check` 对"构造器必抛"报 **error 级
+    `nudo:entry-may-throw`（归在类入口）**、对"构造器软 throw"**零 error**；
+    Proxy 三场景（可配置靶异形态 / 冻结靶 / brand 靶）**零 error**；
+    `migrate strip --write` 失败批输出 **`not written`** 且磁盘**零写盘**、
+    `--json` 带 **`writeStatus: "not-written"`**；项目级 env + 文件级 env 并存时
+    `nudo check` 得 `f() => 42`（修前为 `never` + 假阳）。
+  
+  ### 已知边界 / 未闭合
+  
+  - **Proxy `gOPD` 仍有 3 处漏抛**（靶不可扩展且键不存在时报 `configurable:true`；
+    靶不可写+不可配置而陷阱省略 `value`；靶为不可配置访问器且 get/set 身份不同）——
+    **基线同样不抛**（非本次回归），新增抛点有制造新假红的风险 ⇒ 已把 node v26.10.0
+    实测矩阵写进 `core-bug-1095` 测试文件注释，留待单独立项。
+  - **不可配置访问器靶现在也会比对 `enumerable`**（原生确实抛）——属**收紧**，
+    若有用例依赖旧的"访问器靶跳过该比对"需按原生重判。
+  - **HOF 异型元素仍退 `any`**（`[1,"a"]`）——既有保守口径，本片未窄化成联合。
+  - **真·未知 ⇒ `unknown`** 会让该 α 恰为返回类型时多一条 **warning 级**
+    `nudo:unknown-inference`（级别 warning，不影响 L2 闸门）。
+  - **进程级 `lastEnvBaseDir` 单槽**（同步 `analyzeFile` 路径下的**文件级**相对名）
+    与 **Windows 下 `isPathEnvName` 只认 `/`** 均为既有基线，本片未动。
+  - **MCP `nudo check` 工具面**（同步、无 path env 预载）与 **`migrate strip --json`
+    顶层形态不统一**（成功=裸数组 / 失败=对象信封）仍待单独立项。
+- e424592: File-level `@nudo:` directives no longer evaporate in silence: the mock-module
+  payload grammar accepts single quotes, the env payload grammar accepts
+  space-separated lists, block-comment `@nudo:import` is ignored instead of
+  taking effect, and an empty `@nudo:import` payload is diagnosed.
+  
+  - `@nudo:mock-module 'axios' from './mocks/v-axios.js'` was silently dropped.
+    The two payload regexes hard-coded double quotes, so a single-quoted payload
+    matched neither and the directive returned `undefined`. The mock was never
+    installed, no diagnostic was raised, and the gate stayed green. Single
+    quotes are now accepted (the source and the path may even use different
+    quote kinds), and an unparsable payload now raises `nudo:directive-syntax`
+    instead of vanishing.
+  - `@nudo:env node web` was silently dropped. The payload was split on commas
+    only, so a space-separated list became a single token and was filtered out;
+    a bare `/// @nudo:env` tag did not even match the tag regex. Both forms
+    were discarded with no diagnostic, so no environment was loaded and
+    everything stayed `unknown`. Commas and whitespace are now both accepted
+    (trailing comments are stripped), and a bare tag raises
+    `nudo:directive-syntax`.
+  - `@nudo:import` inside a block comment took effect. The text scanner
+    flattened line comments and block comments into one list and dropped the
+    comment kind, so a block-comment import really loaded its sidecar — the
+    opposite of `@nudo:env` / `@nudo:mock-module`, which the AST channel ignores
+    in block comments. Comment kinds are now kept apart: line comments take
+    effect, block comments are ignored and warned about.
+  - `/// @nudo:import` with an empty payload was silently discarded. The payload
+    was dropped before the malformed-import scanner could see it, so the
+    malformed form had no diagnostic while other unrecognised forms of the same
+    directive did. The empty payload is now reported as a malformed import and
+    raises `nudo:contract-syntax`.
+- e424592: `@nudo:case` witnesses no longer evaporate in silence: an escaped quote in an
+  argument no longer swallows the whole case, the `=> expected` part is read on
+  CRLF sources, on the next line and behind a `!! throws` suffix, redundant
+  brackets around the expectation are stripped, and a glued
+  `@nudo:case"name"` tag is diagnosed instead of vanishing.
+  
+  - `@nudo:case "k" ("a\"b") => 3` was dropped entirely. The bracket scanner was
+    string-aware but not escape-aware, so the `\"` inside the string ended the
+    string, the bracket closed early and the whole case was discarded. What
+    remained on screen was a misattributed "unclosed argument list" warning.
+    Balancing now follows JavaScript escape semantics first; a string that never
+    closes (not valid JavaScript) still falls back to the previous lenient
+    reading, so the argument count seen by the check face and by `nudo test`
+    stays the same.
+  - `=> expected` was lost in a CRLF source file. The line was split on `\n` and
+    the trailing `\r` stayed in the expectation text, so the expectation failed
+    to parse and was dropped: the case became `[unchecked]`, the assertion never
+    ran, `nudo test` exited `0` and nothing was reported. Lines are now split on
+    `\r?\n`.
+  - A `!! throws [Kind]` suffix on the case line was read as the expectation
+    text. With the suffix before `=>` the expectation disappeared entirely; with
+    the suffix after `=>` the text `1 !! throws` was parsed and rejected. The
+    suffix is now stripped from the expectation expression only — the case line
+    itself is never rewritten, so the function-level `!! throws` declaration
+    still sees it.
+  - `=> (999)` / `=> ("a")` / `=> ({ b: 1 })` never parsed, because the
+    expectation kept its outer brackets while the argument side had always
+    stripped them. The expectation now drops its redundant outer brackets, the
+    same way the arguments do. An arrow function (`(x) => y`) is left alone.
+  - An expectation on the line after `=>` was silently discarded, and an
+    expectation that was written but empty was discarded just as silently. The
+    value is now read from the next line, and an empty `=>` is reported as
+    `nudo:directive-syntax` instead of passing unnoticed.
+  - `@nudo:case"c1" (1, 2)` — no space between the tag and the name — was
+    neither extracted (the extractor requires a space) nor reported (the
+    diagnostic side accepted it). The case vanished with no diagnostic and
+    `nudo test` ran no case at all. Both sides now share one grammar, and the
+    glued form is reported as `nudo:directive-syntax`, the same way a glued
+    `@nudo:mock` name is.
+- e424592: Malformed `@nudo:` directives are diagnosed instead of evaporating in silence:
+  an empty or glued `@nudo:assume` / `@nudo:invariant` / `@nudo:contract` /
+  `@nudo:throws` now raises a syntax diagnostic, and a `!! throws` suffix is only
+  read where it is actually a directive.
+  
+  - `@nudo:assume` with an empty payload, or `@nudo:assumed d <= max` (a space
+    missing between the tag and the payload), matched no branch at all: the
+    scanner returned nothing and nothing was reported. The lemma was dropped
+    without a word, so the return contract fell back from "proved" to "unproved"
+    and the only sign was a `nudo:unproven-return` whose text blamed inference
+    precision instead of the rejected lemma. An empty or glued
+    `@nudo:assume` / `@nudo:invariant` now produces a bad segment and raises
+    `nudo:assume-invalid` / `nudo:invariant-invalid`; a glued or empty
+    `@nudo:contract` / `@nudo:throws` raises `nudo:contract-syntax` /
+    `nudo:directive-syntax`. The strict grammar is unchanged — a tag still needs
+    a separating space — the loose forms are only reported.
+  - `!! throws` was matched anywhere in a function's comment block, so a prose
+    line ("this helper uses `!! throws`") or a case **name** that happens to
+    contain that text was read as a function-level throw declaration. The
+    declaration then covered every throw, `filterGateThrows` let them all
+    through, and the `nudo:entry-may-throw` gate was silently switched off while
+    the signature still printed `throws TypeError`. The suffix is now only read
+    where it is a directive: after the argument list of a `@nudo:case` line, or
+    on the continuation line of such a case. The documented case-suffix form
+    (`@nudo:case "neg" (0) !! throws`) keeps working exactly as before.
+  - The same glue was invisible to the inline directives of the parser package:
+    `@nudo:replaceFoo x number()` matched neither the strict nor the loose
+    pattern, so the whole inline directive disappeared. It now raises
+    `nudo:directive-syntax`. The `@nudo:as` side keeps the behaviour already
+    merged for Bug 842: a tag whose name is extended (`@nudo:asXYZ`) is not an
+    `@nudo:as` directive and stays silent.
+- 27cc16a: `@nudo:case` witnesses and expected values now follow JavaScript literal
+  semantics, and an unreadable expected value can no longer pass silently.
+  
+  - The numeric branch of the case-argument grammar only recognized a decimal
+    regex, so every other legal JavaScript number — exponent notation, hex,
+    binary and modern octal literals, numeric separators, a leading or trailing
+    dot, a unary sign — was folded into `unknown`. Since `unknown` is the top
+    type (`leqAbs(actual, unknown)` always holds), the witness satisfied any
+    contract and the assertion passed for the wrong reason. Those forms are now
+    parsed with JavaScript literal semantics, so `1e3` is `1000`, `0x10` is `16`,
+    `0b101` is `5`, `0o17` is `15`, `1_000` is `1000`, `.5` is `0.5` and `5.` is
+    `5`.
+  - A legacy octal literal was read as decimal (`Number("017")` is `17`), while
+    sloppy-mode JavaScript reads it as octal (`017` is `15`). The witness and the
+    expected value were therefore a confident **wrong** value. A leading zero now
+    means octal (`017` → `15`, `010` → `8`), and a leading zero with `8` / `9`
+    keeps sloppy decimal semantics (`08` → `8`).
+  - Expression-shaped literals — a parenthesized value (`(7)`, `-(7)`), an
+    unsigned or negative sign (`+1`, `- 7`), a template literal without
+    interpolation (`` `x` ``) and a bigint (`7n`) — were also folded into
+    `unknown` and are now recognized.
+  - An expected value that cannot be parsed was folded into the same `unknown`
+    Abs as an explicit `unknown`, so `leqAbs(actual, unknown)` always held and
+    the assertion was vacuously true: the report said "1 passed" and the command
+    exited with `0`. A parse failure is now distinct from an explicit `unknown`:
+    it is reported through the existing `nudo:directive-syntax` channel and the
+    assertion fails instead of passing. An explicit `unknown` / `any` keeps its
+    meaning of "not constrained".
+- 27cc16a: String literals in `@nudo:case` / `@nudo:skip` / `@nudo:mock` now follow
+  JavaScript string semantics, and a text that is not a single string literal
+  is no longer folded into a wrong value.
+  
+  - A string literal was taken by slicing off the first and the last
+    character, so escape sequences were never interpreted: `"a\tb"` became the
+    four-character string `a\tb` (with a literal backslash) instead of
+    `a<TAB>b`. A witness therefore did not denote the same string as the
+    sidecar contract, which is evaluated as real JavaScript, and the contract
+    gate reported `witness ⊭ contract` for a witness that was in fact
+    correct. Escapes are now interpreted with JavaScript semantics (`\t`,
+    `\n`, `\\`, `\"`, `\uXXXX`, …).
+  - The same slice accepted any text that merely started and ended with a
+    quote, so `"a" + "b"` was folded into the string `a" + "b` — a value
+    nobody wrote. The expectation of a case, a case witness, the declared
+    return type of `@nudo:skip` and the payload of `@nudo:mock` all carried
+    that wrong value, and the reported expectation was unreadable text. A
+    string is now recognised only when the whole text is one string literal;
+    anything else is reported as unrecognized (`nudo:directive-syntax`) and
+    no longer produces a confident wrong value.
+  - The rule lives in one place (`directives/string-literal.ts`), so the case
+    argument, the expectation, `@nudo:skip` and `@nudo:mock` share it.
+- 27cc16a: `@nudo:case` / `@nudo:mock` payloads no longer lose structure or optionality.
+  
+  - The object / array literal branch of the case-argument grammar only checked
+    the first and the last character of the text, so trailing text was folded
+    into the value: `[1][0]` became the tuple `[unknown]` and
+    `{ a: 1 } + { b: 2 }` became `{ a: unknown }`. The engine then reported a
+    confident wrong value and the assertion failed even though the expected
+    value was plain JavaScript. The whole text is now validated as exactly one
+    literal; anything else is treated as "not recognized" (`unknown`) and is
+    reported through the existing `nudo:directive-syntax` channel.
+  - An object literal property without a top-level colon (a getter, a method
+    shorthand or a shorthand property) was silently dropped, so a `@nudo:mock`
+    payload lost that property without a word and the mock value became a
+    confident wrong value. Such a literal is now rejected as "not recognized"
+    and the offending property is named in a `nudo:directive-syntax`
+    diagnostic.
+  - The `optional` flag of a `shape({ … .optional() })` field was dropped when
+    the expected value was projected into an Abs, so an optional field became
+    mandatory and a legal actual value failed the assertion, and the reported
+    `expected` text did not show `?`. The flag is now projected into the slot,
+    matching the contract (sidecar) face of the same grammar.
+- 27cc16a: Directive parsing no longer loses or over-applies directives: malformed mock
+  tags are reported instead of evaporating, file-level directives only apply
+  where they are written, and a case expectation is no longer voided by a
+  trailing comment.
+  
+  - A file-level `/// @nudo:mock-module "fs" from "./mock-fs.js"` was caught by
+    the function-level `@nudo:mock` tag pattern, so a correct file produced a
+    fabricated `nudo:directive-syntax` warning ("Malformed @nudo:mock …").
+    The mock tag now requires a name boundary that excludes the `-` suffix of
+    the file-level family.
+  - `@nudo:mock` with an empty payload (`@nudo:mock fetch =`, `@nudo:mock g
+    from`) matched neither strict grammar, so the directive evaporated silently
+    — no mock, no diagnostic, and the analysis ran against the real API. The
+    three mock grammars are now closed: a tag that matches the lenient pattern
+    but neither strict one is reported through `nudo:directive-syntax`.
+  - `@nudo:skip=> number()` (no space between the tag and the payload) dropped
+    the whole payload, so the declared return type never took effect and the
+    signature degraded from `f() => number` to `f() => any` — an `any` leak into
+    the product surface. The separating whitespace is no longer part of the
+    required structure.
+  - `@nudo:mockfetch = …` (no space between the tag and the name) did not even
+    match the lenient tag pattern, so the whole mock was invisible to the
+    scanner: zero diagnostics and the analysis ran against the real
+    implementation. The lenient pattern now sees the glued spelling and reports
+    that a space is required.
+  - A `@nudo:case` expectation with a trailing comment (`=> string() // the
+    result is a number`) failed to parse and fell back to an explicit `unknown`,
+    which satisfies every expectation — the assertion was silently voided and
+    the command reported "1 passed" with exit code `0`. The trailing comment is
+    now stripped before the expectation is parsed.
+  - A malformed `@nudo:case` did not register an argument-region mask, so
+    `@nudo:mock` / `@nudo:skip` written inside its arguments leaked out as real
+    directives (false positives, methods dropped from the emitted declaration).
+    Malformed cases now mask their argument region as well; the malformed-name
+    diagnostic is unchanged.
+  - A file-level `@nudo:env` / `@nudo:mock-module` written inside a function
+    body was promoted to whole-file scope: the environment or the module
+    replacement applied to the entire file, with zero diagnostics. File-level
+    directives are now position-gated — a line comment inside a function body is
+    ignored and reported through `nudo:directive-syntax`, while top-level
+    positions (file header, `export` line, between statements) keep working. The
+    same gate is applied to the text-level extraction used by `@nudo:import`, so
+    the three file-level families now behave alike.
+- 27cc16a: Inline directives and mock payloads keep their meaning: an `@nudo:as` payload is
+  no longer dropped when it is written without a separating space, a trailing
+  comment no longer turns a valid type into `unknown`, an inline mock keeps its
+  `async` flag and its parameter bindings, and two identical malformed
+  directives in one file are no longer collapsed into a single diagnostic.
+  
+  - `@nudo:as(string())` (no space between the tag and the payload) matched
+    neither the "payload" pattern (which required whitespace) nor the "bare
+    tag" pattern (which only accepted `@nudo:as` on its own), so the whole
+    directive evaporated with zero diagnostics and the type override never took
+    effect. The separating whitespace is now optional, an outer pair of
+    balanced parentheses is unwrapped (`@nudo:as(string())` is
+    `@nudo:as string()`), a tag whose name continues with an identifier
+    character (`@nudo:assume`, `@nudo:ascii`) is still not an `@nudo:as`
+    directive, and an empty payload is reported explicitly.
+  - A trailing comment without a preceding space (`@nudo:as string()// why`) was
+    merged into the type expression, so a valid type was judged "unsafe" and
+    degraded to `unknown` — the type override silently stopped applying.
+    Trailing comments are now detected by lexical boundary; a `//` that follows
+    a numeric literal and a digit is still read as a division, and comment
+    markers inside a string literal are still ignored.
+  - `@nudo:mock f = async (x) => x + 1` lost its `async` flag during parsing,
+    so the mock was modelled as a synchronous function and the call site
+    `f(1).then(…)` was reported as "method 'then' missing on number receiver" —
+    an error-level false positive (native returns a promise). The scan result now
+    carries the `async` flag.
+  - The parameters of an inline mock payload had no binding semantics: a
+    destructuring parameter was replaced by a placeholder name, a default-value
+    parameter was dropped entirely, and a rest parameter kept its literal `...`.
+    The mock body therefore read undeclared globals (`ReferenceError`) and the
+    emitted declaration said `never`. The parameter list now keeps the source
+    form, the parameter ASTs and the bound names, all aligned one-to-one.
+  - The deduplication identity of a directive diagnostic was the code plus the
+    message text, with no position, so two word-for-word identical malformed
+    directives in one file collapsed into a single diagnostic and the second
+    occurrence was completely invisible. A diagnostic now carries the position
+    of the offending directive and the identity includes it: the same problem at
+    the same place is still reported once, while the same text at two different
+    places is reported twice.
+- Updated dependencies [02aa122]
+- Updated dependencies [6ec8afc]
+- Updated dependencies [7fea13a]
+- Updated dependencies [bb8e201]
+- Updated dependencies [5c750f2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [8a5bf7e]
+- Updated dependencies [8542f44]
+- Updated dependencies [f11510a]
+- Updated dependencies [5c750f2]
+- Updated dependencies [29d766d]
+- Updated dependencies [e3b8791]
+- Updated dependencies [e3b8791]
+- Updated dependencies [6e5344a]
+- Updated dependencies [f896290]
+- Updated dependencies [a069994]
+- Updated dependencies [7fea13a]
+- Updated dependencies [8bf3fd0]
+- Updated dependencies [5749924]
+- Updated dependencies [0f67015]
+- Updated dependencies [2d96c29]
+- Updated dependencies [e3b8791]
+- Updated dependencies [f6538a2]
+- Updated dependencies [e3b8791]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [2af2bae]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [e424592]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [0366b6d]
+- Updated dependencies [ec0a9e4]
+- Updated dependencies [c325a10]
+- Updated dependencies [c325a10]
+- Updated dependencies [b37321b]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [e59c991]
+- Updated dependencies [3d79864]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [e2880fd]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [da4fbfc]
+- Updated dependencies [5dd89ca]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [97f28ed]
+- Updated dependencies [e2880fd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [4d1a249]
+- Updated dependencies [af09752]
+- Updated dependencies [fcaa9e9]
+- Updated dependencies [7fea13a]
+- Updated dependencies [9ccffb3]
+- Updated dependencies [e9fdaa7]
+- Updated dependencies [7fea13a]
+- Updated dependencies [69e67d3]
+- Updated dependencies [69e67d3]
+- Updated dependencies [b0878e3]
+- Updated dependencies [a069994]
+- Updated dependencies [493b8c2]
+- Updated dependencies [d7ae28a]
+- Updated dependencies [edc7590]
+- Updated dependencies [5c750f2]
+- Updated dependencies [ed4d259]
+- Updated dependencies [e20c128]
+- Updated dependencies [abff33b]
+- Updated dependencies [e3b8791]
+- Updated dependencies [5c750f2]
+- Updated dependencies [c80456a]
+- Updated dependencies [e6c4586]
+- Updated dependencies [f87c9f9]
+- Updated dependencies [5c750f2]
+- Updated dependencies [a3c95a4]
+- Updated dependencies [e3b8791]
+- Updated dependencies [7fea13a]
+- Updated dependencies [d56cbd7]
+- Updated dependencies [e5b3f38]
+- Updated dependencies [089d4ec]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [169ed52]
+- Updated dependencies [02aa122]
+- Updated dependencies [f47fd50]
+- Updated dependencies [5c750f2]
+- Updated dependencies [d2cf3cf]
+- Updated dependencies [27cc16a]
+- Updated dependencies [27cc16a]
+- Updated dependencies [fbca6fb]
+- Updated dependencies [535adcd]
+- Updated dependencies [5c750f2]
+- Updated dependencies [535adcd]
+- Updated dependencies [e3b8791]
+- Updated dependencies [b6abab4]
+- Updated dependencies [356172a]
+- Updated dependencies [ebe909e]
+- Updated dependencies [e3b8791]
+- Updated dependencies [a069994]
+- Updated dependencies [369a42d]
+- Updated dependencies [29d766d]
+- Updated dependencies [7fea13a]
+- Updated dependencies [56f308e]
+- Updated dependencies [5c750f2]
+- Updated dependencies [7fd7468]
+- Updated dependencies [ed4d259]
+- Updated dependencies [f896290]
+- Updated dependencies [ae69b28]
+- Updated dependencies [5c750f2]
+  - @nudojs/core@1.16.0
+
 ## 1.5.2
 
 ### Patch Changes
