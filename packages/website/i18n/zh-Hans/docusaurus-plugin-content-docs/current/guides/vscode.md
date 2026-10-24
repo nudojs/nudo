@@ -147,6 +147,8 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 | 面板标题 | 命令 | 行为 |
 |----------|------|------|
 | Nudo: Show Contract | `nudo.contract` | 在 **Nudo** 输出通道打印分层（同 `nudo contract`） |
+| Nudo: Select Contract (back to contract observation) | `nudo.selectContract` | 把函数切回契约观测（取消其激活的 case），并清掉本地 case 高亮 |
+| Nudo: Trace Observation (entry@ / call@) | `nudo.trace` | 在 **Nudo** 输出通道打印该函数的逐用例观测（`entry@` / `call@`）（同 `nudo trace`） |
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
 | Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程；从面板走时用 QuickPick 交互选函数，三步门禁不变 |
 

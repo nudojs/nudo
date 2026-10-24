@@ -1,6 +1,9 @@
 ---
-"@nudojs/service": patch
+"@nudojs/service": minor
 ---
+
+新增两个诊断码 `nudo:module-unreadable`（模块**存在但不可读**）与
+`nudo:json-invalid`（JSON 语法非法）⇒ **新诊断码**属增量（additive）⇒ minor。
 
 Modules are resolved the way Node resolves them, and a dependency that
 cannot be loaded is named for what it is.

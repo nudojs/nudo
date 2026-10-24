@@ -51,6 +51,30 @@ function printDocsLinks(issues: Array<{ code?: string }>): void {
 /** L2 入口 may-throw 诊断码（onboarding 指纹：error 全为此码才打引导块） */
 const ENTRY_MAY_THROW_CODE = DIAG.entryMayThrow;
 
+/**
+ * 1145：**模块级求值失败**（引擎内部回落）诊断的 message 前缀。
+ *
+ * 这是 CLI 面识别「分析失败 ⇒ 闸门未能判定」的**唯一**判据：
+ * `nudo:internal` 这个码本身还被 core 的 assign 通道降级路径占用
+ * （severity **warning**，message 形如 `assign channel check failed: …`）
+ * ⇒ 不得用「码相同」当判据（否则把那条 warning 误判成分析失败 ⇒ 缓存
+ * 不回写 ⇒ 性能退化）。
+ */
+export const ANALYSIS_FAILED_PREFIX = "analysis failed: module evaluation failed";
+
+/**
+ * 该报告是否含「模块级求值失败」诊断（⇒ 降级产物**不得**回写磁盘缓存：
+ * 回写会让下次 check 命中缓存整体跳过求值 ⇒ 静默转绿）。
+ */
+function hasAnalysisFailure(report: { issues: CheckIssue[] }): boolean {
+  return report.issues.some(
+    (i) =>
+      i.code === DIAG.internal &&
+      typeof i.message === "string" &&
+      i.message.startsWith(ANALYSIS_FAILED_PREFIX),
+  );
+}
+
 /** #1 onboarding 块：issues 段之后、docs 段之前（措辞是文档/verify-examples 同步基线） */
 function printOnboardingBlock(): void {
   console.log("");
@@ -381,7 +405,17 @@ export async function emitCheckReport(
 
   // 降级产物不回写：注入装配失败时的分析缺注入面（无模块/mock），
   // 回写会让下次 check 命中缓存整体跳过注入装配 → 静默转绿
-  if (cache.useDisk && cache.cacheKey && !cache.cached && !opts.abs && !injectionSetupFailed) {
+  // 1145：同理——**模块级求值失败**（引擎内部回落 ⇒ 模块导出丢失 ⇒ 闸门
+  // 未能判定）的降级产物也不得回写（回写 ⇒ 下次命中缓存整体跳过求值 ⇒
+  // 静默转绿 ⇒ 假绿复发）。
+  if (
+    cache.useDisk &&
+    cache.cacheKey &&
+    !cache.cached &&
+    !opts.abs &&
+    !injectionSetupFailed &&
+    !hasAnalysisFailure(report)
+  ) {
     try {
       // env-unresolved 是 live 瞬态（每轮现场收集），不持久化——
       // 否则命中轮 live merge 再追加会重复告警

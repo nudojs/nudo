@@ -92,6 +92,13 @@ export const DIAG = {
   jsonInvalid: "nudo:json-invalid",
   // --- 宿主面（LSP / CLI pathErrors 信封） ---
   internal: "nudo:internal",
+  /**
+   * `nudo migrate strip` 的**逐文件**失败（语法错 / TS-only 残留）——
+   * 机器面 `pathErrors[].code`。此前 CLI 层直写字面量（绕过注册表），
+   * 术语表反向对账（docs-coverage rule 19）只能靠 src 字面量扫描兜住；
+   * 进注册表后本码的「可发射」由 DIAG 单点保证。
+   */
+  migrateStripFailed: "nudo:migrate-strip-failed",
   pathEmptyDir: "nudo:path-empty-dir",
   pathIo: "nudo:path-io",
   pathMissingCallsite: "nudo:path-missing-callsite",

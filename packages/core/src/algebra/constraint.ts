@@ -184,24 +184,73 @@ function makeBuilder(
   };
   const add = (p: Pred): ConstraintBuilder =>
     makeBuilder(prim, [...preds, p], extra);
+  /**
+   * 数值界链（gt / ge / lt / le）只在**数值**链上成立。
+   *
+   * 此前 `string().gt(1)` / `boolean().gt(1)` 静默产出 `gt(self, 1)` ⇒
+   * ① 域面（`domain-membership.ts`）与 Abs 面（`constraintOnTermAbs`）给出
+   * **两个裁决**（同 1113 的口径分裂）；② 该约束**恒假**（字符串 / 布尔不可能
+   * `> 1`）⇒ 每个合法实参都被判违例 = **假红**。
+   *
+   * ⇒ 与 `shift()` 同口径拒绝（非数值链 / 结构链上直接报错），不再静默产出
+   * 恒假契约。
+   */
+  const numericBound = (method: string, n: number): number => {
+    if (fields || element || members || fnSlot || lazySlot)
+      throw new Error(
+        `nudo ${method}(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)`,
+      );
+    if (prim !== undefined && prim !== "number")
+      throw new Error(`nudo ${method}(): only numeric chains are allowed (prim=${prim})`);
+    return finiteBoundArg(method, n);
+  };
+  /**
+   * 长度界链（min / max / length）的界必须**非负**。
+   *
+   * 此前 `string().length(-3)` 产出 `len(self) === -3` ⇒ **恒假** ⇒ 每个合法
+   * 字符串都被判违例 = 假红；`max(-3)` 同理。⇒ 负界直接报错。
+   *
+   * 注：非整数界（如 `length(2.5)`）**保持现状**（既有门禁 Bug 336 明确钉住
+   * 「2.5 合法」⇒ 只护栏 NaN / Infinity，不加严）。
+   */
+  const lengthBound = (method: string, n: number): number => {
+    const bound = finiteBoundArg(method, n);
+    if (bound < 0)
+      throw new Error(
+        `nudo ${method}(): length bound must be a non-negative integer, got ${bound}`,
+      );
+    return bound;
+  };
   // base 先赋、方法后赋：所有链式方法（含 .int() 的重复幂等调用）恒可用；
   // int 数据可见性由 isIntFlag 统一读取（域判定 / 显示 / 归一化）。
   const builder = Object.assign(
     Object.create(null),
     base,
     {
-      gt: (n: number) => add(gt(selfTerm(), termLit(finiteBoundArg("gt", n)))),
-      ge: (n: number) => add(ge(selfTerm(), termLit(finiteBoundArg("ge", n)))),
-      lt: (n: number) => add(lt(selfTerm(), termLit(finiteBoundArg("lt", n)))),
-      le: (n: number) => add(le(selfTerm(), termLit(finiteBoundArg("le", n)))),
-      int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
-      min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(finiteBoundArg("min", n)))),
-      max: (n: number) => add(le(lenTerm(selfTerm()), termLit(finiteBoundArg("max", n)))),
+      gt: (n: number) => add(gt(selfTerm(), termLit(numericBound("gt", n)))),
+      ge: (n: number) => add(ge(selfTerm(), termLit(numericBound("ge", n)))),
+      lt: (n: number) => add(lt(selfTerm(), termLit(numericBound("lt", n)))),
+      le: (n: number) => add(le(selfTerm(), termLit(numericBound("le", n)))),
+      int: () => {
+        // `.int()` 只在**数值**链上成立（Bug 1113）：此前 int 标志对**所有** builder
+        // 暴露 ⇒ `string().int()` 造出「域面忽略 / Abs 面生成 `x % 1 === 0`」的
+        // **同一约束两个裁决**（口径分裂）。此处与 `shift()` 同口径拒绝 ⇒ 非数值链
+        // 上 `.int()` 直接报错，不再静默产出互相矛盾的契约。
+        if (fields || element || members || fnSlot || lazySlot)
+          throw new Error(
+            "nudo int(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)",
+          );
+        if (prim !== undefined && prim !== "number")
+          throw new Error(`nudo int(): only numeric chains are allowed (prim=${prim})`);
+        return makeBuilder(prim ?? "number", preds, { ...extra, int: true });
+      },
+      min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(lengthBound("min", n)))),
+      max: (n: number) => add(le(lenTerm(selfTerm()), termLit(lengthBound("max", n)))),
       length: (n: number) => {
         // 有限数值界护栏（Bug 336 / 341）：与 gt/ge/lt/le/min/max 同源。
         // 缺护栏时 length(NaN) 造出恒假契约（每个合法字符串都判违规 = 假红），
         // length("3") 这类笔误把整条契约静默废掉（门禁零诊断 = 假绿）。
-        const bound = finiteBoundArg("length", n);
+        const bound = lengthBound("length", n);
         return add(
           pAnd(
             ge(lenTerm(selfTerm()), termLit(bound)),
@@ -273,10 +322,17 @@ export function any(): ConstraintBuilder {
  */
 export function array(
   item: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
+  ...rest: unknown[]
 ): ConstraintBuilder {
   if (item === undefined)
     throw new Error(
       "nudo array(): an element constraint is required (e.g. array(number())); write array(lit(undefined)) to allow undefined elements",
+    );
+  // 多余实参此前被**静默丢弃**（`array(1, 2)` ⇒ 只认第一个）⇒ 用户的第二个
+  // 元素约束从未生效（契约被悄悄削弱 = 假绿）⇒ 显式报错。
+  if (rest.length > 0)
+    throw new Error(
+      `nudo array(): takes exactly one element constraint, got ${rest.length + 1} argument(s)`,
     );
   return makeBuilder(undefined, [], {
     element: asNestedConstraint(item, "array(item)"),
@@ -536,8 +592,12 @@ export function fn(
   returns?: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
   opts?: { throws?: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined },
 ): ConstraintBuilder {
+  // 字段表实参守卫（Bug 352 / 353 同源，Bug 1112）：缺参 / 非对象 ⇒ 点名构造器 +
+  // 说明缺参，**不把宿主原文**（"Cannot convert undefined or null to object"）
+  // 泄进产品诊断；`fn(42)` 也不再静默变成 `fn({})`（契约被悄悄削弱 = 假绿）。
+  const fields = requireFieldsObject("fn", params);
   const normalized: Record<string, NudoConstraint> = {};
-  for (const [k, v] of Object.entries(params)) {
+  for (const [k, v] of Object.entries(fields)) {
     normalized[k] = asNestedConstraint(v, `fn param '${k}'`);
   }
   let throwsSlot: NudoConstraint | undefined;
@@ -1120,7 +1180,12 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
   // 约束 → Abs 投影把整性整条蒸发 ⇒ zod / standard 产物面静默放行 3.5，
   // 而门禁（读约束）仍判红 ⇒ 两道门对同一事实给出相反裁决。编码口径与投影层
   // 解码器 `projection.ts` 的 isIntZeroModOne 一致：eq(self % 1, 0)。
-  const intPred = isIntFlag(c) ? intPredOnTerm(t) : undefined;
+  //
+  // Bug 1113：**只在数值域上**生成整性 pred —— 域面（domain-membership.ts）本就
+  // 只在 `prim === "number"` 时执法 int；这里若对任何 int 位都生成 `x % 1 === 0`
+  // ⇒ 非数值约束上出现「域面接受 / Abs 面带整数谓词」的双裁决。`.int()` 已在
+  // builder 侧拒绝非数值链（构造期即报错），此处再按域口径收口 ⇒ 两面一致。
+  const intPred = isIntFlag(c) && c.prim === "number" ? intPredOnTerm(t) : undefined;
   const predOut = andPreds(pred.op === "true" ? undefined : pred, intPred);
   if (c.prim) {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");

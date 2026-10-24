@@ -14,7 +14,7 @@
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import type { MemberPath } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
@@ -703,24 +703,167 @@ export function emitParamBindingFromArgs(
 
 /** 收集语句/表达式里以 Identifier 为 receiver 的数组 mutator 名 */
 
+/**
+ * Bug 1151-b：fork 协议**内部临时名**的共享分配结果。
+ *
+ * 字段与基名一一对应（实际名经 `internalTmpNameSet` / `internalTmpName`
+ * 分配——避开用户标识符词形）。
+ */
+export interface ForkTmpNames {
+  /** 快照名（基名 `__fk0_${n}`） */
+  snap: readonly string[];
+  /** cons 臂槽位名（基名 `__fk1_${n}`） */
+  arm1: readonly string[];
+  /** alt 臂槽位名（基名 `__fk2_${n}`） */
+  arm2: readonly string[];
+  /** cons 臂 set 标志（基名 `__fk1_set_${n}`） */
+  arm1Set: readonly string[];
+  /** alt 臂 set 标志（基名 `__fk2_set_${n}`） */
+  arm2Set: readonly string[];
+  /** 臂内 continue 标志（基名 `__cont`） */
+  cont: string;
+  /** 测试载体（基名 `__fkT`） */
+  test: string;
+  /** fork 结果载体（基名 `__fkR`） */
+  result: string;
+}
+
+/**
+ * Bug 1151-b：fork 协议的**内部临时名分配器**（`__fk0_${n}` / `__fk1_${n}` /
+ * `__fk2_${n}` / `__fk1_set_${n}` / `__fk2_set_${n}` / `__cont` / `__fkT` /
+ * `__fkR`）。
+ *
+ * 此前这些名字一律**写死** ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
+ * - **遮蔽**：`const __fk0_a = $copy(a)`（快照）遮蔽用户同名绑定 ⇒ 臂内
+ *   `out = __fk0_a` 读到的是引擎快照值（**自信错值** ⇒ 闸门**假绿**）；
+ *   `let __cont = true`（臂标志）遮蔽用户同名绑定 ⇒ 同上（读出 `true`）；
+ * - **重复声明**：模块级同名 ⇒ 产物不是合法 JS ⇒ `new Function` 编译期
+ *   SyntaxError ⇒ 整模块 fail-closed（导出退化 unknown ⇒ 闸门**假绿**）。
+ *
+ * 口径与 Bug 1058/1059 / 1127 / 1146 / 1149 / 1151-a **同款**
+ * （`internalTmpNameSet` = 源文本词形 ∪ `opts.userIdents` 避让集；撞名加
+ * `_k` 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一 opts ⇒ 同一
+ * 批名 ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
+ *
+ * ⚠ **成对一致是硬约束**：同一批名字在「声明点」与「**全部**引用点」必须
+ * 同名 ⇒ 声明点（`forkBindingDecls`）与引用点（`forkArmThunk` /
+ * `forkJoinBindings` / `stmt/statement.ts` 与 `stmt/fn-body.ts` 的 inline
+ * `wrapArm` 副本）**一律走本分配器**（纯函数 + 确定性 ⇒ 两侧同名）。
+ */
+export function forkTmpNames(names: readonly string[], opts: TranspileOptions): ForkTmpNames {
+  const bases: string[] = [];
+  for (const n of names) bases.push(`__fk0_${n}`);
+  for (const n of names) bases.push(`__fk1_${n}`);
+  for (const n of names) bases.push(`__fk2_${n}`);
+  for (const n of names) bases.push(`__fk1_set_${n}`);
+  for (const n of names) bases.push(`__fk2_set_${n}`);
+  // 组内去重（`internalTmpNameSet`）：不同基名避让后可能落到同一个名字
+  // （例：用户绑定 `x` 与 `set_x` ⇒ 基名 `__fk1_set_x` 与 `__fk1_set_x`）。
+  const a = internalTmpNameSet(bases, opts);
+  const k = names.length;
+  return {
+    snap: a.slice(0, k),
+    arm1: a.slice(k, 2 * k),
+    arm2: a.slice(2 * k, 3 * k),
+    arm1Set: a.slice(3 * k, 4 * k),
+    arm2Set: a.slice(4 * k, 5 * k),
+    // 单例名（`__cont` / `__fkT` / `__fkR`）与批量族不同前缀 ⇒ 不会互撞。
+    cont: internalTmpName("__cont", opts),
+    test: internalTmpName("__fkT", opts),
+    result: internalTmpName("__fkR", opts),
+  };
+}
+
+/**
+ * Bug 1151-b：switch 协议的**内部临时名分配结果**（同 fork 族口径）。
+ *
+ * 基名：`__sw0_${n}`（基线快照）/ `__sw${i}_${n}`（第 i 臂槽位）/
+ * `__sw${i}set_${n}`（第 i 臂 set 标志）/ `__cont`（臂标志）/
+ * `__swD`（判别式载体）/ `__swR`（结果载体）/ `__p`（join 载体内数组）。
+ */
+export interface SwitchTmpNames {
+  /** 基线快照名（基名 `__sw0_${n}`） */
+  snap: readonly string[];
+  /** 各臂槽位名（基名 `__sw${i}_${n}`，i 从 1 起） */
+  arm: readonly (readonly string[])[];
+  /** 各臂 set 标志（基名 `__sw${i}set_${n}`，i 从 1 起） */
+  armSet: readonly (readonly string[])[];
+  /** 臂内 continue 标志（基名 `__cont`） */
+  cont: string;
+  /** 判别式载体（基名 `__swD`） */
+  disc: string;
+  /** switch 结果载体（基名 `__swR`） */
+  result: string;
+  /** join 载体内数组名（基名 `__p`） */
+  joinArr: string;
+}
+
+/**
+ * Bug 1151-b：switch 协议的**内部临时名分配器**（同 fork 族口径）。
+ *
+ * ⚠ **成对一致是硬约束**：臂槽位名在「声明点」（`decls`）与「引用点」
+ * （`wrapArmThunk` / `joins`）必须同名 ⇒ 两侧一律走本分配器。
+ */
+export function switchTmpNames(
+  names: readonly string[],
+  armCount: number,
+  opts: TranspileOptions,
+): SwitchTmpNames {
+  const bases: string[] = [];
+  for (const n of names) bases.push(`__sw0_${n}`);
+  for (let i = 1; i <= armCount; i++) for (const n of names) bases.push(`__sw${i}_${n}`);
+  for (let i = 1; i <= armCount; i++) for (const n of names) bases.push(`__sw${i}set_${n}`);
+  const a = internalTmpNameSet(bases, opts);
+  const k = names.length;
+  const arm: string[][] = [];
+  const armSet: string[][] = [];
+  let p = k;
+  for (let i = 0; i < armCount; i++) {
+    arm.push(a.slice(p, p + k));
+    p += k;
+  }
+  for (let i = 0; i < armCount; i++) {
+    armSet.push(a.slice(p, p + k));
+    p += k;
+  }
+  return {
+    snap: a.slice(0, k),
+    arm,
+    armSet,
+    cont: internalTmpName("__cont", opts),
+    disc: internalTmpName("__swD", opts),
+    result: internalTmpName("__swR", opts),
+    joinArr: internalTmpName("__p", opts),
+  };
+}
+
+/**
+ * fork 臂 thunk：臂入口把绑定恢复到快照基线，臂尾把结束态写入本臂槽位。
+ *
+ * @param arm 臂序（0 = cons 臂 / 1 = alt 臂）
+ */
 export function forkArmThunk(
   bodyLines: string[],
-  outPrefix: string,
+  arm: 0 | 1,
   names: string[],
+  opts: TranspileOptions,
 ): string {
+  const t = forkTmpNames(names, opts);
+  const slots = arm === 0 ? t.arm1 : t.arm2;
+  const sets = arm === 0 ? t.arm1Set : t.arm2Set;
   return [
     `() => {`,
-    ...names.map((n) => `  ${n} = $copy(__fk0_${n});`),
-    `  let __cont = true;`,
+    ...names.map((n, i) => `  ${n} = $copy(${t.snap[i]});`),
+    `  let ${t.cont} = true;`,
     `  try {`,
     ...bodyLines.map((l) => `    ${l}`),
     `  } catch (e) {`,
-    `    if ($isForkExit(e)) __cont = false;`,
+    `    if ($isForkExit(e)) ${t.cont} = false;`,
     `    throw e;`,
     `  } finally {`,
-    `    if (__cont) {`,
-    ...names.map((n) => `      __${outPrefix}${n} = ${n};`),
-    ...names.map((n) => `      __${outPrefix}set_${n} = true;`),
+    `    if (${t.cont}) {`,
+    ...names.map((n, i) => `      ${slots[i]} = ${n};`),
+    ...names.map((n, i) => `      ${sets[i]} = true;`),
     `    }`,
     `  }`,
     `}`,
@@ -728,19 +871,21 @@ export function forkArmThunk(
 }
 
 /** fork 绑定声明：snapshot（深拷贝——容器写已就地化，臂间必须状态隔离）+ 两臂槽位 + ran 标志 */
-export function forkBindingDecls(names: string[], pad = ""): string[] {
-  return names.flatMap((n) => [
-    `${pad}const __fk0_${n} = $copy(${n});`,
-    `${pad}let __fk1_${n}; let __fk2_${n};`,
-    `${pad}let __fk1_set_${n} = false; let __fk2_set_${n} = false;`,
+export function forkBindingDecls(names: string[], pad = "", opts: TranspileOptions): string[] {
+  const t = forkTmpNames(names, opts);
+  return names.flatMap((n, i) => [
+    `${pad}const ${t.snap[i]} = $copy(${n});`,
+    `${pad}let ${t.arm1[i]}; let ${t.arm2[i]};`,
+    `${pad}let ${t.arm1Set[i]} = false; let ${t.arm2Set[i]} = false;`,
   ]);
 }
 
 /** fork 后把各臂结束态 join 回绑定（仅 join **未**以 return/throw 退出的臂） */
-export function forkJoinBindings(names: string[], pad = ""): string[] {
+export function forkJoinBindings(names: string[], pad = "", opts: TranspileOptions): string[] {
+  const t = forkTmpNames(names, opts);
   return names.map(
-    (n) =>
-      `${pad}${n} = (__fk1_set_${n} && __fk2_set_${n}) ? $join(__fk1_${n}, __fk2_${n}) : (__fk1_set_${n} ? __fk1_${n} : (__fk2_set_${n} ? __fk2_${n} : ${n}));`,
+    (n, i) =>
+      `${pad}${n} = (${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}));`,
   );
 }
 

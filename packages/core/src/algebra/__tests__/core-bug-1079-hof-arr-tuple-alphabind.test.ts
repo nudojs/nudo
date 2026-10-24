@@ -126,6 +126,40 @@ describe("Bug 1079: arr 形参 × tuple 实参的 α 绑定口径", () => {
 
 describe("Bug 1079: anyAbs 是异构元素域的落点", () => {
   it("异构元素域用 anyAbs（不是 unknown——unknown 是推断失败，any 是未约束）", () => {
-    expect(anyAbs.shape.k).toBe("any");
+    const fn = abs(
+      {
+        k: "fn",
+        params: ["xs", "y"],
+        paramTypes: [arrParam, alpha],
+        returnType: alpha,
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const out = instantiateReturn(fn, [tupleArg(numLit(1), strLit("a")), numLit(2)]);
+    // ⚠ 断言强度：落点是 **anyAbs 本体的面**（`anyAbs.shape` 是**同一个**
+    // 对象）——旧写法只断言本地常量 `anyAbs.shape.k === "any"`（恒真 ⇒ 在
+    // main 上也过 ⇒ 空转）；这里断言的是**引擎行为**：异构元素域真的落到
+    // anyAbs（main 的引擎会绑成 number ⇒ 这条断言在 main 上**红**）。
+    expect(out.shape).toBe(anyAbs.shape);
+    expect(out.shape).toEqual({ k: "any" });
+    expect(out.shape.k).not.toBe("unknown");
+    expect(out.conf).toBe(anyAbs.conf);
+    expect(out.term).toBe(anyAbs.term);
+
+    // 负控制：同型元素域**不是** anyAbs（否则上面那条断言没有鉴别力——
+    // 修前 α 绑成首元素 number，落点与 anyAbs 完全不同）
+    const homogeneous = instantiateReturn(
+      abs(
+        { k: "fn", params: ["xs"], paramTypes: [arrParam], returnType: alpha },
+        undefined,
+        undefined,
+        "exact",
+      ),
+      [tupleArg(numLit(1), numLit(2))],
+    );
+    expect(homogeneous.shape).not.toBe(anyAbs.shape);
+    expect(homogeneous.shape).toEqual({ k: "prim", type: "number" });
   });
 });

@@ -1,6 +1,10 @@
 ---
-"@nudojs/service": patch
+"@nudojs/service": minor
 ---
+
+env 装载失败现在**报告出来**（`nudo:env-unresolved` 的适用面扩大：未知 env 名、
+`defineEnv()` 契约失败、相对路径 env 的按目录解析、`package.json#nudo.env` 里的
+非字符串元素）⇒ 诊断面**增量**（additive）⇒ minor。
 
 Runtime environments that cannot be applied now say so, instead of leaving
 the affected code to be judged as always throwing.

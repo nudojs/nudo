@@ -293,7 +293,7 @@ export function listClassEntryNames(
       stmt.type === "ExportDefaultDeclaration"
     ) {
       const d = stmt.declaration as
-        | { type?: string; id?: { name?: string } }
+        | { type?: string; id?: { name?: string }; name?: string }
         | null
         | undefined;
       if (!d) continue;
@@ -302,8 +302,12 @@ export function listClassEntryNames(
         continue;
       }
       // export default C（本地类）
+      // ⚠ Bug 1119：Babel 的 `Identifier` 节点字段是 **`name`**（`id` 是
+      // `Identifier` 上的 `id` 字段，**不存在**）⇒ 旧式读 `d.id?.name` 恒为
+      // undefined ⇒ `export default C` 的类**入口**（`new C()`）漏出入口表 ⇒
+      // 构造器必抛在 L2 `nudo:entry-may-throw` 闸门**看不见** ⇒ 假绿。
       if (stmt.type === "ExportDefaultDeclaration" && d.type === "Identifier") {
-        const localName = d.id?.name;
+        const localName = d.name;
         if (localName && localClasses.has(localName)) push(localName);
       }
       continue;

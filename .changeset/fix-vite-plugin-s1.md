@@ -1,8 +1,24 @@
 ---
-"vite-plugin-nudo": patch
+"vite-plugin-nudo": minor
 ---
 
 fix(vite-plugin): 构建期分析面的「模块 id → 匹配」层归一化（896 / 902 / 903 / 1018 / 1056）
+
+**BREAKING**: 项目相对 `include` / `exclude` 现在真的生效（Bug 1018）——
+此前插件选项只按**绝对 module id** 匹配 ⇒ `exclude: ["other/**"]` 静默不生效、
+`include: ["src/**"]` 静默把整份分析归零 ⇒ 「静默零分析」的工程此前**零诊断**。
+现在选项与 `nudo.analysis.include` / `exclude` **同口径**（绝对路径 **或** 相对
+`config.root` 的路径命中即算命中）⇒ 此前零分析的工程**开始产出诊断**，
+`failOnError: true` 的构建会由绿变红。
+
+谁会坏：依赖 0.5.x「静默零分析」的项目（把 `include` / `exclude` 当**装饰**用、
+靠它压掉整片分析的构建流水线）；以及显式传了 `exclude` 却指望它只作用于项目内
+路径的用法（依赖 / 软链依赖现在**一律排除**）。
+
+怎么迁移：把 `include` / `exclude` 写成**字面语义**即可（相对 `config.root` 的 glob
+现在与 `nudo.analysis.*` 同口径）；想继续「整片静音」请用
+`nudo.analysis.diagnostics` 档位，而不是靠不生效的 glob。`vite-plugin-nudo` 仍是
+**pre-1.0**（0.x）：本次按政策以 **minor** 发布（0.x 的 minor 可能含破坏性变更）。
 
 - **Bug 896（虚拟模块）**：Vite 的虚拟模块 id（`\0` 前缀 / `virtual:` 前缀）
   被原样拼成侧车路径 ⇒ 路径含 NUL ⇒ 必读不到 ⇒ **干净模块被判 error**

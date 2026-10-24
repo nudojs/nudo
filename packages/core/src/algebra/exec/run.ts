@@ -70,6 +70,15 @@ export type RunTranspiledOptions = {
   recordPositions?: boolean;
   /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
   lenientGlobals?: boolean;
+  /**
+   * **关闭** async 体的生成器路径（`$async` 同步路径）——安全网。
+   *
+   * Bug 1139：生成器模式下 `await` 的位置表与转译侧脱节 ⇒ `yield` 落进嵌套
+   * 箭头 ⇒ `new Function` SyntaxError ⇒ **整个模块**编译失败 ⇒ 全部导出
+   * 丢失 ⇒ L2 闸门**假绿**（exit 0）。本开关让求值引擎能在生成器模式编译
+   * 失败时**重试一次**（关闭生成器路径）⇒ 模块至少编译得出来 ⇒ 导出可见。
+   */
+  disableAsyncGen?: boolean;
 };
 
 /**
@@ -774,7 +783,24 @@ export function runTranspiled(
   return runWithCollectorScope(() => {
     enterEvalCallBudgetSession(); // 宿主入口：最外层重置；嵌套导出桥继承外层预算
     try {
-      return runTranspiledInner(source, opts);
+      try {
+        return runTranspiledInner(source, opts);
+      } catch (e) {
+        // Bug 1139（安全网）：**生成器模式编译失败**（`new Function` 抛
+        // SyntaxError：`yield` 落进了嵌套箭头）⇒ 关闭 asyncGen **重试一次**
+        // ⇒ `await` 退化为 `$await`（同步近似）⇒ 模块至少**编译得出来**
+        // ⇒ 导出可见 ⇒ L2 闸门照常判定。
+        //
+        // 为什么必须重试而不是直接回落：编译失败 ⇒ **整个模块**的导出全部
+        // 丢失 ⇒ 闸门看不到任何入口 ⇒ **零诊断 + exit 0** ⇒ CI 闸门**假绿**
+        // （合法代码与违约代码都判绿）。宁可少精确，不可整模块消失。
+        //
+        // 只在**首次**尝试（未关闭 asyncGen）时重试 ⇒ 不会无限递归。
+        if (e instanceof SyntaxError && !opts.disableAsyncGen) {
+          return runTranspiledInner(source, { ...opts, disableAsyncGen: true });
+        }
+        throw e;
+      }
     } finally {
       exitEvalCallBudgetSession();
     }
@@ -809,6 +835,7 @@ function runTranspiledInner(
     lenientGlobals: opts.lenientGlobals,
     recordPositions: opts.recordPositions,
     thisParam: CJS_THIS_BIND,
+    disableAsyncGen: opts.disableAsyncGen,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   // 顶层 this 出现在产物里（函数体内的 this 不折成本绑定）⇒ 该源需要顶层

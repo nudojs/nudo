@@ -16,7 +16,7 @@
  */
 import type { Expression, Node, AssignmentExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, withClassNameHint } from "../helpers.ts";
+import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, withClassNameHint, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { COMPOUND_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { emitDestructure } from "../emit.ts";
@@ -27,6 +27,27 @@ import { transpileShortCircuitExpr } from "./short-circuit.ts";
  * 赋值族：解构赋值、逻辑赋值（||=//&&=/??=）、memberPath 不可变更新链写回、
  * super 写（静态/实例/home object）、标识符赋值与 const 守卫。
  */
+/**
+ * Bug 1151-c：赋值 IIFE 形参载体（**基名**）——实际名经 `internalTmpName`
+ * 分配（避开用户标识符词形）。
+ *
+ * 赋值 IIFE 形态 `((__v) => {…return ${name} = __v; })(${valSrc})`——
+ * **IIFE 体内求值用户表达式**（写目标 `${name}` / super 的计算键 `${keySrc}`）
+ * ⇒ 写死名 `__v` 会**遮蔽**用户同名绑定 ⇒
+ * - **写目标被吃掉**：`let __v = 1; __v = 5;` ⇒ 体内 `__v = __v` 写的是
+ *   形参 ⇒ 用户绑定**根本没被写回**（原生 5 / 引擎 1 ⇒ 自信错值 ⇒ 假绿）；
+ * - **super 计算键被吃掉**：`super[__v] = 1` ⇒ 键表达式被内插进 IIFE 体内
+ *   ⇒ 读到形参（= 赋值）而非用户绑定（原生 "5" / 引擎 "1"）。
+ *
+ * 口径与 Bug 1058/1059 / 1127 / 1146 / 1149 / 1151-a **同款**
+ * （`userIdentInfoOf(opts)` = 源文本词形 ∪ `opts.userIdents`；撞名加 `_k`
+ * 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**。
+ *
+ * ⚠ **实参面不遮蔽**：IIFE 实参（`${valSrc}`）在 IIFE **作用域外**求值 ⇒
+ * RHS 读用户同名绑定不受影响 ⇒ 实参位**保持原样**（不重命名、不改语义）。
+ */
+const ASSIGN_V_BASE = "__v";
+
 export function transpileAssignmentExpr(
   expr:
     | AssignmentExpression,
@@ -54,6 +75,9 @@ export function transpileAssignmentExpr(
           : opts,
       );
       const op = expr.operator;
+      // Bug 1151-c：赋值 IIFE 形参载体避开用户标识符（写目标 / super 计算键
+      // 在 IIFE **体内**求值 ⇒ 写死名会遮蔽用户同名绑定 ⇒ 自信错值）。
+      const assignV = internalTmpName(ASSIGN_V_BASE, opts);
       if (op === "||=" || op === "&&=" || op === "??=") {
         const rNode = expr.right as Node;
         /**
@@ -207,7 +231,7 @@ export function transpileAssignmentExpr(
                 `$get(${obj}, ${key})`,
                 expr.left as unknown as Node,
                 null,
-                (val) => `((__v) => (($set(${obj}, ${key}, __v)), __v))(${val})`,
+                (val) => `((${assignV}) => (($set(${obj}, ${key}, ${assignV})), ${assignV}))(${val})`,
               );
             }
           }
@@ -254,13 +278,13 @@ export function transpileAssignmentExpr(
           const keySrc = m.computed
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-          const setCall = `$setSuperStatic(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, __v)`;
+          const setCall = `$setSuperStatic(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`;
           // 复合读沿父类静态面（$get 收字符串键；计算键经 $idx 收 Abs）
           const readSrc = m.computed
             ? `$idx(${opts.staticSuperSrc}, ${keySrc})`
             : `$get(${opts.staticSuperSrc}, ${JSON.stringify((m.property as { name: string }).name)})`;
           const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
-          return `((__v) => ((${setCall}), __v))(${valSrc})`;
+          return `((${assignV}) => ((${setCall}), ${assignV}))(${valSrc})`;
         }
         // Bug 55：super.k = v / super[k] = v（实例方法/构造器）——此前裸发
         // `/* super */` 注释哨兵（$set(, "x", v)）→ 宿主硬 SyntaxError。
@@ -273,14 +297,14 @@ export function transpileAssignmentExpr(
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
           const setCall = opts.className
-            ? `$setSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc}, __v)`
-            : `$setSuperObj(${recv}, ${keySrc}, __v)`;
+            ? `$setSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`
+            : `$setSuperObj(${recv}, ${keySrc}, ${assignV})`;
           // 复合赋值（super.x += 5）：读-改-写——读沿 super 链（$getSuper）
           const readSrc = opts.className
             ? `$getSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc})`
             : `$getSuperObj(${recv}, ${keySrc})`;
           const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
-          return `((__v) => ((${setCall}), __v))(${valSrc})`;
+          return `((${assignV}) => ((${setCall}), ${assignV}))(${valSrc})`;
         }
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
@@ -308,37 +332,51 @@ export function transpileAssignmentExpr(
           }
           const cur = `$get(${obj}, ${key})`;
           const valSrc = compoundFn ? `${compoundFn}(${cur}, ${right})` : right;
-          return `((__v) => (($set(${obj}, ${key}, __v)), __v))(${valSrc})`;
+          return `((${assignV}) => (($set(${obj}, ${key}, ${assignV})), ${assignV}))(${valSrc})`;
         }
+        // Bug 1127：内部临时名（`__nudoMpObj` / `__nudoMpKey` / `__nudoMpVal` /
+        // `__nudoMpOld`）**避开用户标识符**——本 IIFE 在**自身作用域**里求值
+        // RHS（用户表达式）⇒ 写死名会遮蔽用户同名绑定（读成引擎临时量 ⇒
+        // 自信的错值；同名 `const` ⇒ TDZ ReferenceError）。
+        // 口径同 Bug 1058/1059（`internalTmpNameSet` = 源文本词形 ∪
+        // `opts.userIdents` 避让 + `_k` 后缀）⇒ 无碰撞时基名原样返回。
+        const mpNames = internalTmpNameSet(
+          ["__nudoMpObj", "__nudoMpKey", "__nudoMpVal", "__nudoMpOld"],
+          opts,
+        );
+        const mpObj = mpNames[0]!;
+        const mpKey = mpNames[1]!;
+        const mpVal = mpNames[2]!;
+        const mpOld = mpNames[3]!;
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
           const key = JSON.stringify(m.property.name);
           if (!compoundFn) {
-            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            return `((${mpObj}) => { const ${mpVal} = ${right}; ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
           }
           // 族 57 第 8 条：复合赋值（`mk().x += 2`）此前**丢 compoundFn** ⇒
           // 只发右值（表达式值 = 2，原生 3）。改为读-改-写：对象**只求值
           // 一次**（IIFE 实参——原生 mk() 只调一次），旧值读 → RHS → 写
           // （原生 GetValue → RHS → PutValue 序）。旧值不可判时 $add 折
           // unknown（**不把「判不准」升级成确定值**）。
-          return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${key}); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+          return `((${mpObj}) => { const ${mpOld} = $get(${mpObj}, ${key}); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
         }
         if (m.computed) {
           const obj = transpileExpression(m.object as Expression, opts);
           const k = m.property;
           if (k.type === "NumericLiteral") {
             if (!compoundFn) {
-              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+              return `((${mpObj}) => { const ${mpVal} = ${right}; ($idxSet(${mpObj}, $lit(${k.value}), ${mpVal})); return ${mpVal}; })(${obj})`;
             }
             // 族 57 第 8 条同款：复合赋值读-改-写（读 $idx / 写 $idxSet）
-            return `((__nudoMpObj) => { const __nudoMpOld = $idx(__nudoMpObj, $lit(${k.value})); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            return `((${mpObj}) => { const ${mpOld} = $idx(${mpObj}, $lit(${k.value})); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($idxSet(${mpObj}, $lit(${k.value}), ${mpVal})); return ${mpVal}; })(${obj})`;
           }
           if (k.type === "StringLiteral") {
             const key = JSON.stringify(k.value);
             if (!compoundFn) {
-              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+              return `((${mpObj}) => { const ${mpVal} = ${right}; ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
             }
-            return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${key}); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${key}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
+            return `((${mpObj}) => { const ${mpOld} = $get(${mpObj}, ${key}); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
           }
           if (isExpression(k)) {
             // [Symbol.X] = v → "@@X" 字符串槽写（镜像成员读 / 对象字面量计算键
@@ -348,16 +386,16 @@ export function transpileAssignmentExpr(
             if (symK !== null) {
               // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
               if (!compoundFn) {
-                return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
+                return `((${mpObj}) => { const ${mpVal} = ${right}; ($set(${mpObj}, ${symK}, ${mpVal}, { symbolKey: true })); return ${mpVal}; })(${obj})`;
               }
-              return `((__nudoMpObj) => { const __nudoMpOld = $get(__nudoMpObj, ${symK}, { symbolKey: true }); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
+              return `((${mpObj}) => { const ${mpOld} = $get(${mpObj}, ${symK}, { symbolKey: true }); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($set(${mpObj}, ${symK}, ${mpVal}, { symbolKey: true })); return ${mpVal}; })(${obj})`;
             }
             // 计算键只求值一次（IIFE 实参）且先于 RHS（原生顺序）
             if (!compoundFn) {
-              return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
+              return `((${mpObj}, ${mpKey}) => { const ${mpVal} = ${right}; ($idxSet(${mpObj}, ${mpKey}, ${mpVal})); return ${mpVal}; })(${obj}, ${transpileExpression(k, opts)})`;
             }
             // 族 57 第 8 条同款：复合赋值读-改-写（键仍只求值一次）
-            return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpOld = $idx(__nudoMpObj, __nudoMpKey); const __nudoMpVal = ${compoundFn}(__nudoMpOld, ${right}); ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
+            return `((${mpObj}, ${mpKey}) => { const ${mpOld} = $idx(${mpObj}, ${mpKey}); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($idxSet(${mpObj}, ${mpKey}, ${mpVal})); return ${mpVal}; })(${obj}, ${transpileExpression(k, opts)})`;
           }
         }
         throw new NudoUnsupportedError(
@@ -380,9 +418,9 @@ export function transpileAssignmentExpr(
         const valSrc = compoundFn ? `${compoundFn}(${name}, ${right})` : right;
         // 顶层绑定表跟重赋值（final 值语义；函数/箭头体不在顶层作用域）
         const bindSrc = !opts.inFunction
-          ? ` $recordBinding(${JSON.stringify(name)}, __v);`
+          ? ` $recordBinding(${JSON.stringify(name)}, ${assignV});`
           : "";
-        return `((__v) => { $assignRecord(${JSON.stringify(name)}, ${name}, __v, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = __v; })(${valSrc})`;
+        return `((${assignV}) => { $assignRecord(${JSON.stringify(name)}, ${name}, ${assignV}, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = ${assignV}; })(${valSrc})`;
       }
       throw new NudoUnsupportedError(
         `assign-target`,

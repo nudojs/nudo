@@ -13,7 +13,6 @@ import { formatAbs } from "./format.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
 import { resetSidecarLoadFailureCache } from "./interface.ts";
 import {
-  loadModuleDepsFingerprint,
   stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
@@ -47,15 +46,16 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
-export function checkDepsFingerprint(
-  source: string,
-  opts: CheckOptions,
-): LoadDepsFingerprint {
-  if (!opts.loadModule || !opts.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
-  }
-  return loadModuleDepsFingerprint(source, opts.loadModule, opts.fromFile);
-}
+/**
+ * ⚠ `checkDepsFingerprint` 已删除（Bug 1139 修复线引入的副作用）：
+ * 指纹的 **ambient 侧车探测**必须与「分析读」区分（`autoBind:false` 下
+ * 不可读的 ambient 侧车**不得**让门禁变红）⇒ 探测要走**未经降级闸**的
+ * 推测性 loader，并受 `sidecarAutoBindAllowed` 约束 ⇒ 调用点必须直接调
+ * `loadModuleDepsFingerprint`（带上 ambient 选项）⇒ 本包装器（无法传
+ * ambient 选项）失去唯一用途 ⇒ 删。
+ *
+ * `loadModuleDepsFingerprint` 见 `load-deps-fp.ts`。
+ */
 
 function unindexCheckKey(key: string): void {
   const deps = checkKeyDeps.get(key);

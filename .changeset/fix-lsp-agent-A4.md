@@ -1,7 +1,23 @@
 ---
-"@nudojs/lsp": patch
+"@nudojs/lsp": major
 "@nudojs/service": patch
 ---
+
+**BREAKING**: 既有 `nudo/…` 请求的**响应信封**变了。
+
+- `nudo/trace` / `nudo/suggestCase` 的失败路径此前**不带** `isError: true`
+  （失败被当成成功，客户端只能从正文分辨）⇒ 现在失败路径返回 `isError: true`
+  （MCP 风格）⇒ 按「有没有 `isError`」分支的客户端行为变了；
+- `nudo/hover` 现在**校验**位置参数：非整数 `line` / `column` 此前被原样回显
+  且所有分析字段为 `null`（与「此处无 hover」不可区分），现在答**工具错误**；
+  `column` 缺省为 `0` ⇒ `{ file, line, column, … }` 的载荷形状恒成立。
+
+谁会坏：把失败响应当成功处理的客户端（`nudo/trace` / `nudo/suggestCase` 的失败
+现在带 `isError: true`）；以及用非整数 `column` 调 `nudo/hover` 探测「此处有没有
+东西」的客户端（现在拿到的是工具错误而不是一个全 `null` 的载荷）。
+
+怎么迁移：客户端按 `isError` 分支处理失败；`nudo/hover` 只传整数 `line` /
+`column`（`column` 缺省即 0）。
 
 Fix agent-tool (LSP) defects found by the族 25 audit:
 

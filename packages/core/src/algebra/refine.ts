@@ -119,8 +119,12 @@ registerCollectorScopeParticipant((body) => {
  * exec ⇒ 此处产生的诊断会在后续分析里消失（门禁面看不到：分析器先跑、
  * checkSource 后跑，只有先跑那次能报）⇒ 必须**随结果一起缓存**、每次调用
  * （含缓存命中）重发。
+ *
+ * Bug 1125：`file` = 诊断的**来源侧车**（产出它的那份侧车，不是 root）。
+ * 递归求值共享同一个 diags 数组 ⇒ 只存 code/message 会把**依赖侧车**的诊断
+ * 记在 root 名下（用户去 root 里找不到那个名字 ⇒ 定位错文件）。
  */
-type SidecarLoadDiag = { code: string; message: string };
+type SidecarLoadDiag = { code: string; message: string; file?: string };
 
 /**
  * 侧车装载诊断的**作用域内去重**集（同撞名口径）：诊断随结果缓存、每次调用
@@ -145,7 +149,11 @@ registerCollectorScopeParticipant((body) => {
 
 /**
  * 发出侧车装载诊断（随 exec 结果缓存 ⇒ 命中时**重发**）。
- * 去重键 = 侧车路径 + 码 + 消息（同一侧车的同一事实只报一次/作用域）。
+ * 去重键 = 来源文件 + 码 + 消息（同一侧车的同一事实只报一次/作用域）。
+ *
+ * Bug 1125：归因用**诊断自己的来源文件**（`d.file` = 产出它的那份侧车），
+ * 缺省才回落 root 的 fromFile；去重键同样纳入来源文件 ⇒ 同一消息在两个文件
+ * 里各出现一次时**两条都在**（互不吞掉）。
  */
 function emitSidecarLoadDiags(
   diags: readonly SidecarLoadDiag[],
@@ -154,12 +162,13 @@ function emitSidecarLoadDiags(
   if (diags.length === 0) return;
   const reported = sidecarLoadDiagReported.get();
   for (const d of diags) {
+    const file = d.file ?? fromFile;
     if (reported !== null) {
-      const sig = `${fromFile ?? ""}\u0000${d.code}\u0000${d.message}`;
+      const sig = `${file ?? ""}\u0000${d.code}\u0000${d.message}`;
       if (reported.has(sig)) continue;
       reported.add(sig);
     }
-    collectDiag({ code: d.code, message: d.message, file: fromFile });
+    collectDiag({ code: d.code, message: d.message, file });
   }
 }
 
@@ -836,6 +845,21 @@ function execSidecar(
   const deps: Record<string, unknown> = {};
   /** import 绑定名 → 来源 spec（冲突检测用；见 declaredNames 冲突诊断） */
   const importBound = new Map<string, string>();
+  /**
+   * **显式导入的本地名**（prologue 用 `var` 单独绑定的那批）。
+   *
+   * Bug 1123：ambient builder 解构（`const { number, string, … } = __nudoInjects;`）
+   * 与 prologue 的 `var` 绑在**同一外层作用域** ⇒ 用户写了别名
+   * （`import { number as string }` ⇒ `var string = …`）就撞名 ⇒
+   * SyntaxError「Identifier 'string' has already been declared」⇒
+   * **整个侧车装载失败**（该文件全部契约静默丢失 ⇒ 门禁假绿）。
+   *
+   * 修法：这些名字由 import 绑定 ⇒ ambient 解构**不得**再声明同名
+   * （与 native ESM 一致：用户显式导入的名字不再有 ambient 兜底）。
+   * 同名注入（`import { number }`）不在此集——它不产生 prologue `var`，
+   * 仍由 ambient 解构绑定。
+   */
+  const explicitlyBound = new Set<string>();
   /** 依赖侧车的撞名（合并进本侧车的 clashes，随 exec 结果一起缓存） */
   const depClashes: SidecarClash[] = [];
 
@@ -850,8 +874,10 @@ function execSidecar(
           diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
+            file: fromFile,
           });
           prologue.push(`var ${n.local} = __nudoInjects;`);
+          explicitlyBound.add(n.local);
           importBound.set(n.local, imp.spec);
         } else if (n.imported !== undefined) {
           // 自有属性判定：`in` 会命中 Object.prototype（toString 等）——
@@ -861,11 +887,14 @@ function execSidecar(
             diags.push({
               code: DIAG.interfaceLoad,
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
+              file: fromFile,
             });
             prologue.push(`var ${n.local} = undefined;`);
+            explicitlyBound.add(n.local);
           } else if (n.local !== n.imported) {
             // 同名注入名由外层解构绑定；alias 走 __nudoInjects（hasOwn 已证自有键）
             prologue.push(`var ${n.local} = __nudoInjects[${JSON.stringify(n.imported)}];`);
+            explicitlyBound.add(n.local);
             importBound.set(n.local, imp.spec);
           }
         } else {
@@ -873,8 +902,10 @@ function execSidecar(
           diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
+            file: fromFile,
           });
           prologue.push(`var ${n.local} = undefined;`);
+          explicitlyBound.add(n.local);
           importBound.set(n.local, imp.spec);
         }
       }
@@ -885,6 +916,7 @@ function execSidecar(
       diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (no loadModule for relative specifier)`,
+        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -893,6 +925,7 @@ function execSidecar(
       diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' unsupported: relative imports must target .nudo.js/.nudo.ts`,
+        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -902,6 +935,7 @@ function execSidecar(
       diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
+        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -917,6 +951,7 @@ function execSidecar(
       diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (loadModule returned no source)`,
+        file: fromFile,
       });
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
@@ -960,6 +995,7 @@ function execSidecar(
           diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
+            file: fromFile,
           });
           deps[n.local] = undefined;
         }
@@ -968,6 +1004,7 @@ function execSidecar(
         diags.push({
           code: DIAG.interfaceLoad,
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
+          file: fromFile,
         });
         deps[n.local] = Object.hasOwn(depExports, "default") ? depExports.default : undefined;
       }
@@ -995,6 +1032,9 @@ function execSidecar(
 
   for (const local of Object.keys(deps)) {
     prologue.push(`var ${local} = __nudoDeps[${JSON.stringify(local)}];`);
+    // 相对 import 的本地名由 __nudoDeps 绑定 ⇒ 不得再被 ambient 解构声明
+    // （同名 `const` + `var` 同作用域 ⇒ SyntaxError ⇒ 侧车整体装载失败）
+    explicitlyBound.add(local);
   }
 
   const returnObj = exportPairs
@@ -1012,7 +1052,13 @@ function execSidecar(
   // 侧车自己的代码。侧车的词法声明与外层注入名**同名**时是「遮蔽」（不同
   // 作用域）而不是「重复声明」——与 native ESM 一致（未导入的名字本就不在
   // 作用域里，遮蔽是合法的）。
-  const builderNames = Object.keys(sidecarInjects);
+  //
+  // Bug 1123：**显式导入的本地名**从解构里排除——解构（`const`）与 prologue
+  // 的 `var` 在同一外层作用域，别名导入（`number as string`）会撞名 ⇒
+  // SyntaxError ⇒ 整个侧车装载失败（契约全丢 ⇒ 门禁假绿）。
+  const builderNames = Object.keys(sidecarInjects).filter(
+    (n) => !explicitlyBound.has(n),
+  );
   const body = [
     `const { ${builderNames.join(", ")} } = __nudoInjects;`,
     prologue.length > 0 ? prologue.join("\n") : "",

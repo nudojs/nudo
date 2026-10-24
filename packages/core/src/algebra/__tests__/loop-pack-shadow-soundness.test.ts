@@ -132,9 +132,11 @@ describe("loop pack/unpack exclusion × shadowing", () => {
     // TypeError（Bug 6 迭代守卫，原生语义）。
     // ⚠ Bug 413：`display` 自此是人类面口径的 shape 渲染（不再带 `#conf` /
     // pathNote 段）⇒ 置信度看 `conf`、join 证据看 `abs.pathNote`
+    // ⚠ 断言强度：pathNote **精确相等**（`toContain` 会放过「前后多挂别的
+    // join 证据」⇒ join 口径就没人钉了）。
     expect(f4!.display).toBe("true | false throws TypeError");
     expect(f4!.conf).toBe("exact");
-    expect(String(f4!.abs.pathNote)).toContain("join(boolean | boolean|boolean)");
+    expect(String(f4!.abs.pathNote)).toBe("join(boolean | boolean|boolean)");
     expect(String(f4!.throws)).toContain("TypeError");
     expect(String(f4!.throws)).not.toContain("ReferenceError");
     const sel = rep91.signatures.find((s) => s.name === "selectedByFiles");

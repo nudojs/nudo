@@ -17,6 +17,12 @@
  *   配置，写入自己的 `nudo` 键会**遮蔽**祖先（加载器取「最近的有 nudo
  *   键的 package.json」）⇒ 拒绝写盘并说明；② 最近�� package.json 若是
  *   **workspace / 容器根**，往那里写等于给整仓改门禁档 ⇒ 拒绝写盘。
+ * - **继承口径 = 加载器口径**（Bug 1144）：① 只有**本包没有 `nudo` 键**
+ *   时才谈得上「继承祖先」——本包的 `nudo` 键存在但形状非法时，加载器
+ *   按「无配置」处理且**不继承**祖先 ⇒ 此时不得以「it inherits」拒绝
+ *   （那是假话，且让用户无法自行修复该值 ⇒ 死锁），按文档**以基线替换
+ *   并告警**；② 用户**显式**指向容器根 ⇒ 照写并说清作用域（只有「从
+ *   子目录越界写」才拒绝）。
  * - **IO 失败可区分**（Bug 680）：读失败（EACCES…）与「不是合法 JSON」
  *   是两条不同的错误面；写失败不再冒泡成裸 errno，而是 `error:` / `fix:`
  *   引导 + 非零 exit。
@@ -459,15 +465,26 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
   }
   // Bug 677：祖先已有可继承的 nudo 配置 ⇒ 写入会**遮蔽**它
   // （加载器取「最近的有 nudo 键的 package.json」）⇒ 门禁由红翻绿。
-  const ancestor = findInheritableAncestorConfig(pkgDir);
-  if (ancestor) {
-    io.err(
-      `error: refusing to write a nudo config into ${display} — it inherits a nudo config from ${displayPathOf(ancestor.path)}`,
-    );
-    io.err(
-      `fix:  the inherited config stays visible here; add the "nudo" key to ${display} yourself if this package needs its own config (or drop the nudo key from ${displayPathOf(ancestor.path)})`,
-    );
-    return 1;
+  //
+  // ⚠ 只在**本包没有 `nudo` 键**时才算「祖先可继承」（Bug 1144）：
+  // 加载器（packages/service/src/evaluator/config.ts 的 findProjectConfig）
+  // 在**本包的 `nudo` 键存在但形状非法**时给 stderr 提示后按「无配置」
+  // 处理，并**不继承**祖先配置（键存在即截断祖先搜索，#936）⇒ 此时祖先
+  // 配置对本包**不可继承**：拿「it inherits」当拒绝理由是**假话**，而且
+  // 死锁——文档承诺「无效值以基线替换并告警」，实现却拒绝写盘 ⇒ 用户
+  // 无法自行修复该值。本包已有 `nudo` 键（无论有效与否）⇒ 走下面的
+  // 「幂等 / 替换基线」分支。
+  if (!state.present) {
+    const ancestor = findInheritableAncestorConfig(pkgDir);
+    if (ancestor) {
+      io.err(
+        `error: refusing to write a nudo config into ${display} — it inherits a nudo config from ${displayPathOf(ancestor.path)}`,
+      );
+      io.err(
+        `fix:  the inherited config stays visible here; add the "nudo" key to ${display} yourself if this package needs its own config (or drop the nudo key from ${displayPathOf(ancestor.path)})`,
+      );
+      return 1;
+    }
   }
   const content = writeNudoKeyMinimally(read.raw, ADOPTION_BASELINE);
   try {

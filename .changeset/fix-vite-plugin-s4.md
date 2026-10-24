@@ -1,8 +1,30 @@
 ---
-"vite-plugin-nudo": patch
+"vite-plugin-nudo": minor
 ---
 
 fix(vite-plugin): 构建期分析面看到**原始 TS 源码**（895 / 900）+ 模块 id 归一化接线
+
+**BREAKING**: 本版本一并生效的三处破坏性行为变化（详见下文
+「**Breaking behavior changes（本版本一并生效）**」逐条说明）：
+
+1. **899** —— `nudo.analysis.diagnostics: "off"` **不再抹掉契约门禁**：error 级的
+   check 诊断在任何档位（含 `off`）都照常上报、照常拦构建 ⇒ 此前靠 `off` 拿到
+   绿灯 CI 的流水线**由绿转红**。
+2. **1002** —— `build.logLevel: "silent"` 下插件**什么都不输出**（含汇总行）
+   ⇒ 依赖 `[nudo] Analysis complete: …` 这行做日志采集的脚本**取不到**该行。
+3. **1018** —— 项目相对 glob 现在生效（`include` / `exclude` 同时对「相对
+   `config.root` 的路径」与「绝对路径」求值）⇒ 此前「静默零分析」的工程
+   **开始产出诊断**，`failOnError: true` 的构建**由绿转红**。
+
+谁会坏：靠 `diagnostics: "off"` 换「构建期不拦契约」的流水线；依赖静默构建里
+那行汇总做采集的脚本；把 `include` / `exclude` 当**装饰**用、靠它压掉整片分析的
+工程。
+
+怎么迁移：用 `build.logLevel: "silent"` + `failOnError: false` 换「构建期完全
+安静」；`include` / `exclude` 改成**字面语义**（与 `nudo.analysis.*` 同口径）；
+契约门禁在构建期生效是有意的 fail-closed 方向，保持现状即可。
+`vite-plugin-nudo` 仍是 **pre-1.0**（0.x）：本次按政策以 **minor** 发布
+（0.x 的 minor 可能含破坏性变更）。
 
 **Fixes**
 

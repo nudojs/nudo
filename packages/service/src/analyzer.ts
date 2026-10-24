@@ -90,7 +90,10 @@ export {
   analyzeFileAsync,
   analyzeFile,
   collectCallRecords,
+  analyzeFileWithEvalFailures,
+  analyzeFileAsyncWithEvalFailures,
 } from "./analyzer-orchestrate.ts";
+export type { FileEvalFailure } from "./analyzer-orchestrate.ts";
 
 export { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 export type { CallRecord } from "./evaluator/evaluator-api.ts";

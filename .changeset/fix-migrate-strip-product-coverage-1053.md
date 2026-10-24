@@ -1,6 +1,18 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo check` 的**同 stem 选源规则**变了 —— 同名 `.js` 产物现在
+**胜出**于同名 `.ts` 源 ⇒ 源不再被门禁覆盖（此前门禁查的是源）。
+
+谁会坏：仓库里**同时**提交了 `foo.ts` 与编译产物 `foo.js`（且该 `.js` **不是**
+`nudo migrate strip` 产物）的工程 —— 门禁现在分析 `foo.js`，`foo.ts` **不再**被
+分析 ⇒ 只写在 `.ts` 里的契约 / 指令**不再**被门禁看到（覆盖静默丢失）；分析对象
+也换了 ⇒ 诊断集合可能变化。
+
+怎么迁移：让 `foo.js` 与 `foo.ts` **同源**（用 `nudo migrate strip` 的产物，或
+删掉其中一个）；本版本**尚未**落产物清单（marker）来区分「strip 产物」与「同名
+的另一个模块」，因此同名 `.ts` / `.js` 并存的工程需要自己消歧。
 
 fix(nudojs): `migrate strip --write` 的产物 `.js` 不再被 `nudo check` 跳过（发布物零覆盖 ⇒ 假绿）
 

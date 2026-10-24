@@ -1,6 +1,9 @@
 ---
-"nudojs": patch
+"nudojs": minor
 ---
+
+check 面新增了此前**不存在**的诊断码（`nudo:json-invalid` 等）⇒ 机器面新增
+可观测的诊断码属**增量**变更（additive）⇒ minor。
 
 `nudo check` now reports the diagnostics it used to swallow: module-loading
 problems and env-harvest conflicts reach the check face instead of being

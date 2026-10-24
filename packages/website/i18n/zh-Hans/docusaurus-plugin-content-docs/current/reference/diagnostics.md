@@ -597,7 +597,7 @@ Context: [nudo export](../api/cli-reference.md#nudo-export)
 migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
 ```
 
-`nudo migrate strip --write` 拒绝写出 Node 解析不了的产物。**Error**（usage）——strip 只剥类型语法；类成员修饰符（`private` / `public` / `protected` / `readonly` / `abstract` / `override`）与构造器参数属性必须手工降级（或交给 `tsc`）。`migrate` 是一程闸门：半写的 `.js` 没有回退路径 ⇒ 文件一个字节都不落盘，并点名。
+`nudo migrate strip --write` 拒绝写出 Node 解析不了的产物。**Error**（usage）——strip 只剥类型语法；它**自己降不了**的构造必须手工降级（或交给 `tsc`）。类成员修饰符（`private` / `public` / `protected` / `readonly` / `abstract` / `override`）与构造器参数属性**已由** strip 降级（修饰符被丢弃；参数属性变成字段 + 构造器体里的 `this.x = x` 赋值）⇒ 它们不再触发本闸门——仍会触发的是 strip 降不了的构造（例如**解构**形态的构造器参数属性）。`migrate` 是一程闸门：半写的 `.js` 没有回退路径 ⇒ 文件一个字节都不落盘，并点名。
 
 Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
 

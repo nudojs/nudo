@@ -29,9 +29,18 @@ function disp(r: { result?: unknown }): string {
   return (formatAbs(r.result as never) ?? "").replace(/\s+#[a-z]+(\s+join\([^)]*\))?$/, "");
 }
 
-/** 生成器协议面（运行面）负控制源——投影面按 Bug 240 不发布 internal 槽 */
-const GEN_PROTO_PROBE = `export function* g() { yield 1; }
-export function probe() { const gi = g(); return typeof gi.next; }`;
+/**
+ * 生成器身份探针：**调用被测的同一个生成器函数** ⇒ 检验迭代器协议面
+ * （`next` / `return` / `throw` 三个方法槽都是函数）。
+ *
+ * ⚠ 旧探针调的是**另一个**生成器 `g`（`GEN_PROTO_PROBE`）⇒ 探针恒绿、
+ * 对被测函数零信息；叠上投影面的 `/^\{/`（`{}` 也匹配）⇒ 断言整体失效
+ * （「是生成器」这件事没人钉）。本探针必须把**被测源**拼进去。
+ */
+function genIdentityProbe(genSrc: string): string {
+  return `${genSrc}
+export function probe() { const gi = f(1); return typeof gi.next + "|" + typeof gi.return + "|" + typeof gi.throw; }`;
+}
 
 describe("Bug 99: while/for 体内 return 的 0 迭代路径（exec 面）", () => {
   it("while：any 参 → 返回臂与出口续体 join（不再折 0 #exact）", () => {
@@ -199,29 +208,30 @@ describe("Bug 99: thunk 边界——gen/async 体内循环 return 不产幻影�
   });
 
   it("generator：循环 return 并入终末值域（对象形状不染 number 臂）", () => {
-    const r = call(
-      `export function* f(x) { while (x < 0) { return 5; } return 9; }`,
-      "f",
-      [anyAbs],
-    );
+    const SRC = `export function* f(x) { while (x < 0) { return 5; } return 9; }`;
+    const r = call(SRC, "f", [anyAbs]);
     const d = disp(r);
     // Bug 240：生成器的协议槽（next/return/throw/constructor/@@iterator）是
     // internal 槽 ⇒ 不进投影面（`constructor: GeneratorFunction` 不再出现）；
-    // 「是生成器对象」改由**运行面**协议槽负控制钉（见下）
+    // 「是生成器对象」改由**运行面**协议槽钉（探针调的是**同一个** `f`）。
     expect(d).toMatch(/^\{/);
     expect(d).not.toMatch(/\|\s*5\b/);
-    expect(disp(call(GEN_PROTO_PROBE, "probe"))).toBe('"function"');
+    expect(disp(call(genIdentityProbe(SRC), "probe"))).toBe('"function|function|function"');
   });
 
   it("generator + switch/fork 臂 return：同款不染（$gen 本地作用域）", () => {
-    const r = call(
-      `export function* f(x) { switch (x) { case 1: return 5; } yield 1; return 9; }`,
-      "f",
-      [anyAbs],
-    );
+    const SRC = `export function* f(x) { switch (x) { case 1: return 5; } yield 1; return 9; }`;
+    const r = call(SRC, "f", [anyAbs]);
     const d = disp(r);
     expect(d).toMatch(/^\{/);
     expect(d).not.toMatch(/\|\s*5\b/);
+    expect(disp(call(genIdentityProbe(SRC), "probe"))).toBe('"function|function|function"');
+  });
+
+  it("负控制：非生成器函数的同一探针 ⇒ 协议槽是 undefined（探针有鉴别力）", () => {
+    const probe = `export function plain(x) { return 42; }
+export function probe() { const gi = plain(1); return typeof gi.next + "|" + typeof gi.return + "|" + typeof gi.throw; }`;
+    expect(disp(call(probe, "probe"))).toBe('"undefined|undefined|undefined"');
   });
 });
 

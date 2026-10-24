@@ -1,6 +1,17 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo contract --json` 的**顶层载荷形状**从「一个对象」变成
+「**单元素数组**」（目录形态此前是 N 份 JSON 首尾相接 ⇒ `JSON.parse` 直接抛）。
+
+谁会坏：解析 `nudo contract --json` stdout 的机器消费方 —— 单文件形态的顶层
+从 `{ file, entries[], draftPath, … }` 变成 `[{ file, entries[], draftPath, … }]`
+⇒ `payload.file` / `payload.entries` 变成 `undefined`；元素内部的键
+（`file` / `entries[].fn` / `entries[].signature` / `draftPath` / `draftSource` /
+`diff`）**未变**。
+
+怎么迁移：消费方改读 `docs[0]`（并按数组遍历，别再假设「单文件 = 单对象」）。
 
 fix(nudojs): `nudo contract` 的 `--json` 机器面（跨文件聚合 + 失败可读）+ `--from-dts` 的用法校验顺序
 

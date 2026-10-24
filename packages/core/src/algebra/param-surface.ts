@@ -395,9 +395,123 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
   return out;
 }
 
+/**
+ * JSDoc `@param {T} [name]` / `@param {T} [name=default]` ⇒ **可选形参**名集合。
+ *
+ * Bug 1108：JSDoc 约定「方括号包住的名字 = 可省略」⇒
+ * `/** @param {number} [x] *\/ function h(x){}` 的 `x` 可省 ⇒ 元数检查不该报
+ * 「h expects 1 argument(s), got 0」（假红）。
+ *
+ * 只认**方括号**形态（`[x]` / `[x=1]`）；`@param {T} x` 是**必填**。
+ */
+export function jsDocOptionalParams(nodes: Array<unknown>): Set<string> {
+  const out = new Set<string>();
+  for (const node of nodes) {
+    const comments = (node as { leadingComments?: Array<{ value?: string }> } | undefined)
+      ?.leadingComments;
+    for (const c of comments ?? []) {
+      const text = c.value ?? "";
+      const re = /@param\s*(?:\{[^}]*\}\s*)?\[([^\]=]+)(?:=[^\]]*)?\]/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        const name = (m[1] ?? "").trim();
+        if (name) out.add(name);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * TS 可选形参 `x?: T` 的名字集合（**从源码文本**判定）。
+ *
+ * 为什么不用 AST 的 `optional` 标志：parse 阶段的类型擦除（`strip-types.ts`）
+ * 会把 TS-only 的 `optional` 字段**删掉**（它不进 JS 产物）⇒ 到这里已经看不到。
+ * ⇒ 退到**源码文本**：形参节点的源码片段里，绑定名 / 模式**之后**的 `?` 标记。
+ *
+ * 判定细则（避免把类型注解里的 `?` 误当可选标记）：
+ * - 标识符形参：`<名字>` 之后紧跟 `?`；
+ * - 模式形参（`{…}` / `[…]`）：**配对括号之后**紧跟 `?`；
+ * - 默认值里的 `?`（`x = c ? 1 : 2`）与类型里的 `?`（`x: (a?: T) => V`）
+ *   都不在绑定名之后 ⇒ 不误判。
+ */
+export function tsOptionalParams(
+  params: Array<unknown> | undefined,
+  source: string | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  if (!source) return out;
+  for (const p of (params ?? []) as Array<Record<string, unknown>>) {
+    if (!p) continue;
+    const node = p;
+    if (node.type === "AssignmentPattern") {
+      const left = node.left as Record<string, unknown> | undefined;
+      if (left && markIsOptional(source, left)) {
+        const name = left.name;
+        if (typeof name === "string") out.add(name);
+      }
+      continue;
+    }
+    if (!markIsOptional(source, node)) continue;
+    if (node.type === "Identifier" && typeof node.name === "string") out.add(node.name);
+  }
+  return out;
+}
+
+/** 形参节点的源码片段里，绑定名 / 模式之后是否有 TS 的 `?` 标记 */
+function markIsOptional(
+  source: string,
+  node: { start?: number; end?: number },
+): boolean {
+  if (typeof node.start !== "number" || typeof node.end !== "number") return false;
+  const text = source.slice(node.start, node.end);
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    const open = trimmed[0]!;
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) return /^\s*\?/.test(trimmed.slice(i + 1));
+      }
+    }
+    return false;
+  }
+  return /^[A-Za-z_$][\w$]*\s*\?/.test(trimmed);
+}
+
+/**
+ * 把「可省略」标记合并进形参表（Bug 1108）。
+ *
+ * 形参表里的 `optional` 位决定**必选元数**（消费侧 `arityFace` 据此算
+ * `required`）⇒ TS `x?: T` 与 JSDoc `[x]` 的形参必须标上，否则
+ * `h()`（少传实参）被判「expects 1 argument(s), got 0」（假红）。
+ *
+ * 只改 `kind: "id"` 的位（标识符形参）；默认形参 / rest 形参恒可省略，
+ * 解构形参的「可选」语义由模式自身决定（不猜）。
+ */
+export function withOptionalParams(
+  formals: FormalParam[] | undefined,
+  optionalNames: ReadonlySet<string>,
+): FormalParam[] | undefined {
+  if (!formals || formals.length === 0) return formals;
+  if (optionalNames.size === 0) return formals;
+  let changed = false;
+  const out = formals.map((f) => {
+    if (f.kind !== "id") return f;
+    if (!optionalNames.has(f.name)) return f;
+    if (f.optional === true) return f;
+    changed = true;
+    return { ...f, optional: true };
+  });
+  return changed ? out : formals;
+}
+
 /** 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） */
-export function formalParamDisplayNames(formals: FormalParam[]): string[] {
-  return formals.map((f) => {
+export function formalParamDisplayNames(formals: FormalParam[]): string[] {  return formals.map((f) => {
     switch (f.kind) {
       case "id":
       case "default":

@@ -151,24 +151,30 @@ function decideLitCmp(
 /**
  * 被调方的**实参位面**（nativeParamArity 口径）：
  * - `required` = **必填**实参位个数（默认形参 / rest 形参**不吃**实参位）；
+ * - `total` = **非 rest** 形参的总位数——默认形参**占位**（`f(a, b = 1)` 的
+ *   第 2 个实参被 `b` 吃掉 ⇒ 不是「多传」；Bug 1131）；
  * - `hasRest` = 有 rest 形参（多余实参被它吸收 ⇒ 不算实参个数不符）。
  */
-function arityFace(g: PolyFn): { required: number; hasRest: boolean } {
+function arityFace(g: PolyFn): { required: number; total: number; hasRest: boolean } {
   const formals = g.formals;
   const restByName = g.params.filter((p) => p.startsWith("...")).length;
   const hasRest = (formals?.some((f) => f.kind === "rest") ?? false) || restByName > 0;
   if (!formals || formals.length === 0) {
     // 无 formals 面：按展示名推断（rest 位不吃实参位）
-    return { required: Math.max(0, g.params.length - restByName), hasRest };
+    const total = Math.max(0, g.params.length - restByName);
+    return { required: total, total, hasRest };
   }
   let required = 0;
+  let total = 0;
   for (const f of formals) {
     if (f.kind === "rest") break;
+    total++;
     if (f.optional === true) continue;
     required++;
   }
   // 保守：不超过展示名个数（`this` 接收者等不占位）
-  return { required: Math.min(required, g.params.length), hasRest };
+  const cap = g.params.length;
+  return { required: Math.min(required, cap), total: Math.min(total, cap), hasRest };
 }
 
 /**
@@ -192,7 +198,7 @@ export function checkCall(
   }
 
   // 参数个数（**必填位**口径：默认形参 / rest 形参不吃实参位）
-  const { required, hasRest } = arityFace(g);
+  const { required, total, hasRest } = arityFace(g);
   if (args.length < required) {
     diags.push({
       severity: "error",
@@ -202,12 +208,15 @@ export function checkCall(
     });
     return diags;
   }
-  if (args.length > required && !hasRest) {
+  if (args.length > total && !hasRest) {
     // JS 允许多余实参（被调方忽略）⇒ 只提示，不判 error（native 语义）
+    //
+    // Bug 1131：上界是**非 rest 形参的总位数**（不是必填位数）——默认形参
+    // **占位**（`f(a, b = 1)` 的第 2 个实参被 `b` 吃掉 ⇒ 不是「多传」）。
     diags.push({
       severity: "warning",
       code: DIAG.argCount,
-      message: `${fnName} takes ${required} argument(s) but ${args.length} were passed`,
+      message: `${fnName} takes ${total} argument(s) but ${args.length} were passed`,
       fn: fnName,
     });
   }
@@ -284,7 +293,7 @@ export function checkCallSite(
   if (!g) return out;
   const display = opts.displayName ?? fnName;
   const argCount = opts.argCount ?? args.length;
-  const { required, hasRest } = arityFace(g);
+  const { required, total, hasRest } = arityFace(g);
 
   if (argCount < required) {
     out.push({
@@ -297,11 +306,12 @@ export function checkCallSite(
     });
     return out;
   }
-  if (argCount > required && !hasRest) {
+  if (argCount > total && !hasRest) {
+    // Bug 1131：上界是**非 rest 形参的总位数**（默认形参占位 ⇒ 不是「多传」）
     out.push({
       severity: "warning",
       code: DIAG.argCount,
-      message: `${display} takes ${required} argument(s) but ${argCount} were passed`,
+      message: `${display} takes ${total} argument(s) but ${argCount} were passed`,
       fn: display,
       line: opts.line,
       column: opts.column,

@@ -189,8 +189,18 @@ export async function runContractFromDts(
     const prev = existsSync(outPath) ? readFileSync(outPath, "utf-8") : undefined;
     if (prev !== undefined && prev !== draftSource && !force) {
       console.error(`error: draft exists and differs: ${outRel} — refusing to overwrite`);
+      // 族 20 · Bug 1147：提示**同时**给出两个放行口子（CLI 旗标 `--force`
+      // **与**环境变量 `NUDO_DRAFT_FORCE=1`）—— 改前只提环境变量 ⇒ 用户按
+      // 文档用 `--force` 被拒时**看不出还有旗标**（死胡同）。
       console.error(
-        `hint: delete it to regenerate, or set NUDO_DRAFT_FORCE=1 to overwrite it`,
+        `hint: to overwrite a machine-generated draft, re-run with --force (or NUDO_DRAFT_FORCE=1)`,
+      );
+      // 措辞要准：**人工改过的草稿永不被覆盖**（`writeInterfaceDraft` 的
+      // `skipped: "hand-edited"` 通道，与 `--draft --write` 面同款）⇒ 这条
+      // 拒绝是**预期行为**，force 也放行不了它 ⇒ 明说，避免用户「加了
+      // --force 还是被拒」时以为工具坏了。
+      console.error(
+        `hint: a hand-edited draft is never overwritten — refusing here is expected; merge it manually, or delete it to regenerate`,
       );
       process.exitCode = 1;
       return;

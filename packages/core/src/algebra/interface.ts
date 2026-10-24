@@ -30,7 +30,7 @@
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import type { Term } from "./term.ts";
-import { litKeyString, termToString } from "./term.ts";
+import { litKeyString, termEquals, termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
 import { identBoundaryRegex } from "./code-text.ts";
@@ -43,6 +43,7 @@ import {
 } from "./collector-scope.ts";
 import {
   type NudoConstraint,
+  type NudoField,
   isNudoConstraint,
   fnConstraintToEntryReqs,
   throwConstraintToKinds,
@@ -165,6 +166,14 @@ export type EffectiveInterface = {
    * nudo:interface-conflict 并跳过对应位执法。
    */
   conflict?: { params: string[]; returns?: boolean };
+  /**
+   * 合取**不可判定**标记（Bug 1141）：结构型组合（union / fn / 结构型∧标量…）
+   * 算不出交集 —— 不是「不可满足」（不标 conflict、既有义务继续执法），但
+   * **另一侧**的义务确实没被执法 ⇒ 显式报出（不得静默宽松）。
+   *
+   * 独立于 `conflict`：conflict 的语义是「矛盾 ⇒ 跳过该位执法」，两者不可混。
+   */
+  undecidable?: { params: string[]; returns?: boolean };
 };
 
 /** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
@@ -175,8 +184,14 @@ function isUnderProjectRoot(sidecarPath: string, projectDir: string): boolean {
   return sc === root || sc.startsWith(`${root}/`);
 }
 
-/** 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2） */
-function sidecarAutoBindAllowed(
+/**
+ * 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2）
+ *
+ * 导出（Bug 1124）：指纹侧（load-deps-fp.ts / check.ts）也须按同一资格判定
+ * ambient 侧车——autoBind 关闭时该侧车根本不会被绑定 ⇒ 指纹**不必**探测它
+ * （探测失败也不该升级成分析错误 ⇒ 门禁假红）。
+ */
+export function sidecarAutoBindAllowed(
   sidecarPath: string,
   autoBind: boolean | ((sidecarPath: string) => boolean) | undefined,
   projectDir?: string,
@@ -658,9 +673,27 @@ function boundsOf(c: NudoConstraint): Bound[] {
   return out;
 }
 
-/** eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉 */
-function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null | undefined }> {
-  const out: Array<{ term: string; value: number | string | boolean | null | undefined }> = [];
+/**
+ * eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉。
+ *
+ * `lit` 一并带出（Bug 1122）：字面量同一性判定必须走 **SameValue 的 NaN 口径**
+ * （`===` + NaN 特例）——`NaN !== NaN` 恒真 ⇒ 用 `!==` 比字面量会把**同一个**
+ * `lit(NaN)` 约束判成「两个不同字面量」⇒ 单份契约自相矛盾（门禁假红）。
+ * 口径复用 `termEquals`（term.ts；与 domain-membership.ts 的 literalSame 同款）。
+ */
+function eqLitsOf(
+  c: NudoConstraint,
+): Array<{
+  term: string;
+  value: number | string | boolean | null | undefined;
+  /** 字面量项本体（同一性判定用 termEquals） */
+  lit: Term;
+}> {
+  const out: Array<{
+    term: string;
+    value: number | string | boolean | null | undefined;
+    lit: Term;
+  }> = [];
   const visit = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(visit);
@@ -669,18 +702,21 @@ function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | stri
     if (p.op !== "eq") return;
     let term: Term | undefined;
     let value: number | string | boolean | null | undefined;
+    let litTerm: Term | undefined;
     let hasLit = false;
     if (p.a.op === "var" && p.b.op === "lit") {
       term = p.a;
       value = p.b.value as number | string | boolean | null | undefined;
+      litTerm = p.b;
       hasLit = true;
     } else if (p.b.op === "var" && p.a.op === "lit") {
       term = p.b;
       value = p.a.value as number | string | boolean | null | undefined;
+      litTerm = p.a;
       hasLit = true;
     }
-    if (term !== undefined && hasLit) {
-      out.push({ term: termToString(term), value });
+    if (term !== undefined && litTerm !== undefined && hasLit) {
+      out.push({ term: termToString(term), value, lit: litTerm });
     }
   };
   c.preds.forEach(visit);
@@ -719,7 +755,9 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
   for (const x of eqA) {
     for (const y of eqB) {
       if (x.term !== y.term) continue;
-      if (x.value !== y.value) return true;
+      // 字面量同一性：SameValue 的 NaN 口径（termEquals）——`NaN !== NaN`
+      // 恒真 ⇒ 用 `!==` 会把同一个 lit(NaN) 判成冲突（Bug 1122 假红）。
+      if (!termEquals(x.lit, y.lit)) return true;
     }
   }
   for (const eq of eqA) {
@@ -754,6 +792,83 @@ function isNonScalarForm(c: NudoConstraint): boolean {
 }
 
 /**
+ * 结构型（shape）合取：**字段级合并**（Bug 1141）。
+ *
+ * 旧口径：任一侧是结构型就 `return prev` ⇒ 另一侧的字段义务被**整条丢掉**
+ * ⇒ 契约面比声明面**宽松** ⇒ 违约代码被放过（假绿）。典型：源码 shape
+ * {id:number()} ∧ 侧车 shape {id:number(),name:string()} ⇒ `name` 义务蒸发。
+ *
+ * 现在：两侧都是 shape ⇒ **逐字段合并**
+ * - 两侧都有的字段 ⇒ 递归合取（字段级判定语义不变）；
+ * - 只有一侧有的字段 ⇒ **保留**（被丢的那一侧补回来 ⇒ 义务不丢）。
+ *
+ * 返回 undefined = 不是「可合并的 shape 对」（交给调用方按其它形态处理）。
+ */
+function mergeShapeFields(
+  prev: NudoConstraint,
+  next: NudoConstraint,
+  onConflict: () => void,
+): NudoConstraint | undefined {
+  const a = derefConstraint(prev);
+  const b = derefConstraint(next);
+  if (a.fields === undefined || b.fields === undefined) return undefined;
+  // shape 只认 fields（element / members / fn 是别的形态，不可混）
+  if (a.element !== undefined || b.element !== undefined) return undefined;
+  if (a.members !== undefined || b.members !== undefined) return undefined;
+  if (a.fn !== undefined || b.fn !== undefined) return undefined;
+  // 带 preds 的不是纯 shape（合并不保语义）⇒ 不走这条路
+  if (a.preds.length > 0 || b.preds.length > 0) return undefined;
+  const fields: Record<string, NudoField> = Object.create(null);
+  for (const key of Object.keys(a.fields)) {
+    const fa = a.fields[key]!;
+    const fb = b.fields[key];
+    if (fb === undefined) {
+      fields[key] = fa;
+      continue;
+    }
+    fields[key] = {
+      constraint: conjoinOrConflict(fa.constraint, fb.constraint, onConflict),
+      // 交集语义：只有**两侧都**可选才算可选（任一侧要求 ⇒ 必填）
+      optional: fa.optional === true && fb.optional === true ? true : undefined,
+    };
+  }
+  for (const key of Object.keys(b.fields)) {
+    if (a.fields[key] !== undefined) continue;
+    fields[key] = b.fields[key]!;
+  }
+  return {
+    __nudoConstraint: true,
+    preds: [],
+    fields,
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
+}
+
+/**
+ * 数组合取：**元素级合并**（array(E1) ∧ array(E2) = array(E1 ∧ E2)）。
+ * 返回 undefined = 不是「可合并的数组对」。
+ */
+function mergeArrayElement(
+  prev: NudoConstraint,
+  next: NudoConstraint,
+  onConflict: () => void,
+): NudoConstraint | undefined {
+  const a = derefConstraint(prev);
+  const b = derefConstraint(next);
+  if (a.element === undefined || b.element === undefined) return undefined;
+  if (a.fields !== undefined || b.fields !== undefined) return undefined;
+  if (a.members !== undefined || b.members !== undefined) return undefined;
+  if (a.fn !== undefined || b.fn !== undefined) return undefined;
+  if (a.preds.length > 0 || b.preds.length > 0) return undefined;
+  return {
+    __nudoConstraint: true,
+    preds: [],
+    element: conjoinOrConflict(a.element, b.element, onConflict),
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
+}
+
+/**
  * 同参合一：and() 合取；不可合取（prim 不一致 / 非 shape 标量等 and()
  * throw）= 合取不可满足——onConflict 标记后保既有（消费方跳过执法）。
  *
@@ -767,14 +882,27 @@ function isNonScalarForm(c: NudoConstraint): boolean {
  *
  * 现在只有第二类才标 conflict；第一类保留既有约束（prev）且**不**标
  * conflict ⇒ 该形参的义务仍在（由 prev 执法），门禁不再假红。
+ *
+ * Bug 1141：结构型不得**静默丢掉**另一侧 ⇒ 先走字段级 / 元素级合并
+ * （shape∧shape、array∧array ⇒ 两侧义务都在）；合不了的形态组合
+ * （union / fn / 结构型∧标量…）⇒ 保 prev（能力边界 ≠ 语义不可满足 ⇒ 不标
+ * conflict）但**显式报出**（onUndecidable）——「另一侧没被执法」不得静默。
  */
 function conjoinOrConflict(
   prev: NudoConstraint,
   next: NudoConstraint,
   onConflict: () => void,
+  onUndecidable?: () => void,
 ): NudoConstraint {
-  // 形态不支持：不是矛盾 ⇒ 不标 conflict（保 prev，义务继续执法）。
-  if (isNonScalarForm(prev) || isNonScalarForm(next)) return prev;
+  // 结构型：字段级 / 元素级合并（Bug 1141）——义务不丢、不误报 conflict。
+  const merged = mergeShapeFields(prev, next, onConflict) ?? mergeArrayElement(prev, next, onConflict);
+  if (merged !== undefined) return merged;
+  // 形态不支持：不是矛盾 ⇒ 不标 conflict（保 prev，义务继续执法）；
+  // 但另一侧的义务**没被执法** ⇒ 显式报出（不得静默宽松，Bug 1141）。
+  if (isNonScalarForm(prev) || isNonScalarForm(next)) {
+    onUndecidable?.();
+    return prev;
+  }
   try {
     return andC(prev, next);
   } catch {
@@ -884,6 +1012,8 @@ export function effectiveInterface(
   // 并跳过该参执法），显示保源码行。
   const params = new Map<string, NudoConstraint>();
   const conflictParams: string[] = [];
+  /** 合取**不可判定**（结构型组合合不了）——Bug 1141：显式报出，不静默丢义务 */
+  const undecidableParams: string[] = [];
   for (const e of sourceEntries) {
     const prev = params.get(e.param);
     if (prev === undefined) {
@@ -902,9 +1032,16 @@ export function effectiveInterface(
     }
     params.set(
       e.param,
-      conjoinOrConflict(prev, e.constraint, () => {
-        if (!conflictParams.includes(e.param)) conflictParams.push(e.param);
-      }),
+      conjoinOrConflict(
+        prev,
+        e.constraint,
+        () => {
+          if (!conflictParams.includes(e.param)) conflictParams.push(e.param);
+        },
+        () => {
+          if (!undecidableParams.includes(e.param)) undecidableParams.push(e.param);
+        },
+      ),
     );
   }
   if (sidecarFn !== undefined && !sidecarGenerated) {
@@ -914,9 +1051,19 @@ export function effectiveInterface(
         if (crossBoundConflict(prev, constraint) && !conflictParams.includes(param)) {
           conflictParams.push(param);
         }
-        params.set(param, conjoinOrConflict(prev, constraint, () => {
-          if (!conflictParams.includes(param)) conflictParams.push(param);
-        }));
+        params.set(
+          param,
+          conjoinOrConflict(
+            prev,
+            constraint,
+            () => {
+              if (!conflictParams.includes(param)) conflictParams.push(param);
+            },
+            () => {
+              if (!undecidableParams.includes(param)) undecidableParams.push(param);
+            },
+          ),
+        );
       } else {
         params.set(param, constraint);
         // 单份契约内部自相矛盾（Bug 964）：侧车侧单份矛盾同样要报 conflict。
@@ -933,11 +1080,20 @@ export function effectiveInterface(
   const r2 = sidecarFn !== undefined && !sidecarGenerated ? sidecarReturns : undefined;
   let returnsC: NudoConstraint | undefined;
   let conflictReturns = false;
+  /** 返回位合取不可判定（结构型组合）——Bug 1141：显式报出 */
+  let undecidableReturns = false;
   if (r1 !== undefined && r2 !== undefined) {
     if (crossBoundConflict(r1, r2)) conflictReturns = true;
-    returnsC = conjoinOrConflict(r1, r2, () => {
-      conflictReturns = true;
-    });
+    returnsC = conjoinOrConflict(
+      r1,
+      r2,
+      () => {
+        conflictReturns = true;
+      },
+      () => {
+        undecidableReturns = true;
+      },
+    );
   } else {
     returnsC = r1 ?? r2;
   }
@@ -986,6 +1142,14 @@ export function effectiveInterface(
           conflict: {
             params: conflictParams,
             ...(conflictReturns ? { returns: true } : {}),
+          },
+        }
+      : {}),
+    ...(undecidableParams.length > 0 || undecidableReturns
+      ? {
+          undecidable: {
+            params: undecidableParams,
+            ...(undecidableReturns ? { returns: true } : {}),
           },
         }
       : {}),

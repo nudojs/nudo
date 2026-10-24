@@ -53,6 +53,7 @@ import { absLit, anyAbs, bigintLit, confJoin, numLit } from "../abs.ts";
 import type { Abs, Confidence } from "../abs.ts";
 import type { CheckIssue } from "../check-report.ts";
 import type { CallResolve } from "../scan-call-graph.ts";
+import { jsDocOptionalParams, tsOptionalParams } from "../param-surface.ts";
 
 /**
  * `scanLiteralCalls` 的选项（**结构上**与薄壳里 `scanLiteralCalls` 的
@@ -172,6 +173,16 @@ export function evalArgAbs(
 }
 
 /**
+ * 实参是不是**显式 `undefined`**（`f(undefined)`）——JS 语义：带默认值的形参
+ * 收到显式 `undefined` 时**走默认值**（`f(undefined)` ≡ `f()`）。
+ * Bug 1110：此前 `undefined` 被当成「值就是 undefined」去过契约 ⇒ 报假红。
+ */
+export function isExplicitUndefinedArg(node: unknown): boolean {
+  const n = node as { type?: string; name?: string } | undefined;
+  return n?.type === "Identifier" && n.name === "undefined";
+}
+
+/**
  * 实参抽取的**快路径分派表**（契约③）。
  *
  * 分派顺序固定：`NumericLiteral` / `BigIntLiteral` / `Unary(-)` /
@@ -187,9 +198,29 @@ export function evalArgAbs(
 export function parseCallArgs(
   ctx: LiteralScanCtx,
   args: Array<Record<string, unknown>>,
-): { absArgs: Abs[]; hasInfo: boolean } {
+): {
+  absArgs: Abs[];
+  hasInfo: boolean;
+  /**
+   * **语法实参个数**（元数检查用）。`undefined` = 个数**不可判**（非字面量
+   * 展开 `f(...args)`）⇒ 调用点**跳过**元数检查（fail-closed：不猜）。
+   * Bug 1105：此前非字面量展开只产**一个** `absUnknown()` 槽位 ⇒
+   * `impl(...args)` 被计成 1 个实参 ⇒ `nudo:arg-count` 假红。
+   */
+  argCount: number | undefined;
+  /**
+   * 首个**非字面量展开**在 `absArgs` 里的下标（无则 `undefined`）。
+   * 契约面（rest / length 边界）在该点**停止**：展开后的槽位个数不可知 ⇒
+   * 不把它算进已知长度（Bug 1105：幻影槽位破坏 rest 聚合）。
+   */
+  spreadAt: number | undefined;
+} {
   const absArgs: Abs[] = [];
   let hasInfo = false;
+  /** 非字面量展开 ⇒ 实参个数不可判 */
+  let argCountUnknown = false;
+  /** 首个非字面量展开的 absArgs 下标 */
+  let spreadAt: number | undefined;
   const varAbs = ctx.varAbs;
   const note = (abs: Abs | undefined): void => {
     if (abs && isInformativeArg(abs)) hasInfo = true;
@@ -292,7 +323,13 @@ export function parseCallArgs(
       const inner = (a as { argument?: Record<string, unknown> }).argument;
       if (inner?.type === "ArrayExpression") {
         for (const el of (inner.elements ?? []) as Array<Record<string, unknown> | null>) {
-          if (!el) continue;
+          if (!el) {
+            // **空洞**（`f(...[1,,3])`）：原生展开产出 `1, undefined, 3` **三个**
+            // 实参。此前 `continue` 跳过 ⇒ 计成 2 个 ⇒ 元数检查假红（Bug 1105）。
+            absArgs.push(absLit(undefined));
+            hasInfo = true;
+            continue;
+          }
           if (el.type === "NumericLiteral" && typeof el.value === "number") {
             absArgs.push(numLit(el.value));
             hasInfo = true;
@@ -310,7 +347,11 @@ export function parseCallArgs(
           }
         }
       } else {
+        // 非字面量展开：实参**个数不可判** ⇒ 元数检查跳过（Bug 1105）。
+        // 槽位仍占一位（保持实参位与形参位的下标对应），契约面在该点停止。
         absArgs.push(absUnknown());
+        argCountUnknown = true;
+        if (spreadAt === undefined) spreadAt = absArgs.length - 1;
       }
     } else if (a.type === "CallExpression") {
       // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
@@ -320,7 +361,7 @@ export function parseCallArgs(
       absArgs.push(absUnknown());
     }
   }
-  return { absArgs, hasInfo };
+  return { absArgs, hasInfo, argCount: argCountUnknown ? undefined : absArgs.length, spreadAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -347,16 +388,20 @@ function paramsOfFnNode(node: unknown): unknown[] | undefined {
 }
 
 /**
- * 按名字找被调函数的形参节点（顶层声明扫描）。
+ * 按名字找被调函数的**声明节点**（顶层声明扫描）。
  *
  * 覆盖：`export function f` / `function f` / `export const f = (…) => …` /
  * `export default function f` / 类方法 `C.m`。找不到 ⇒ undefined（fail-closed：
  * 取不到默认值 ⇒ 不补实参 ⇒ 行为与修复前一致）。
+ *
+ * 返回 `{ fn, stmt }`：`fn` = 函数节点（形参 / JSDoc 载体），`stmt` = 顶层语句
+ * 节点（`export function f` 的 JSDoc 挂在 **export 包装**上而不是函数节点上
+ * ⇒ 两侧都要看，Bug 1108）。
  */
-function findFnParams(
+export function findFnDecl(
   fileAst: ReturnType<typeof parse> | undefined,
   fnName: string,
-): unknown[] | undefined {
+): { fn: AstNode; stmt: AstNode } | undefined {
   const body = fileAst?.program?.body ?? [];
   for (const stmt of body) {
     const s = stmt as unknown as AstNode;
@@ -369,7 +414,7 @@ function findFnParams(
       const id = decl.id as { name?: string } | undefined;
       if (id?.name === fnName) {
         const p = paramsOfFnNode(decl);
-        if (p) return p;
+        if (p) return { fn: decl, stmt: s };
       }
     }
     // ② 变量声明（箭头 / 函数表达式）
@@ -379,7 +424,7 @@ function findFnParams(
         const did = d.id as { type?: string; name?: string } | undefined;
         if (did?.type === "Identifier" && did.name === fnName) {
           const p = paramsOfFnNode(d.init);
-          if (p) return p;
+          if (p) return { fn: d.init as AstNode, stmt: s };
         }
       }
     }
@@ -396,12 +441,43 @@ function findFnParams(
         const key = m.key as { type?: string; name?: string } | undefined;
         if (key?.type === "Identifier" && key.name === meth) {
           const p = paramsOfFnNode(m);
-          if (p) return p;
+          if (p) return { fn: m, stmt: s };
         }
       }
     }
   }
   return undefined;
+}
+
+/** 按名字找被调函数的形参节点（顶层声明扫描）——`findFnDecl` 的薄封装 */
+function findFnParams(
+  fileAst: ReturnType<typeof parse> | undefined,
+  fnName: string,
+): unknown[] | undefined {
+  const found = findFnDecl(fileAst, fnName);
+  if (!found) return undefined;
+  return paramsOfFnNode(found.fn);
+}
+
+/**
+ * 被调方的**可省略形参名**集合（Bug 1108）。
+ *
+ * 两种来源：
+ * - JSDoc `@param {T} [x]`（方括号 = 可选）——JSDoc 挂在 **export 包装**上
+ *   时看 `stmt`，挂在函数节点上时看 `fn` ⇒ 两侧都扫；
+ * - TS `x?: T`（从**源码文本**判定：类型擦除阶段已把 AST 的 `optional`
+ *   标志删掉）。
+ */
+export function optionalParamNames(
+  fnName: string,
+  source: string,
+  fileAst?: ReturnType<typeof parse>,
+): Set<string> {
+  const decl = findFnDecl(fileAst, fnName);
+  if (!decl) return new Set();
+  const out = jsDocOptionalParams([decl.stmt, decl.fn]);
+  for (const n of tsOptionalParams(paramsOfFnNode(decl.fn), source)) out.add(n);
+  return out;
 }
 
 /** 标量字面量节点 → Abs（数值 / 一元负号 / 字符串 / 布尔 / null）；非标量 → undefined */
@@ -440,19 +516,26 @@ function scalarLiteralAbs(node: AstNode): Abs | undefined {
  *
  * 返回值下标 = **形参位**（与 `formalParamsFromNodes` 的 index 同序：
  * TS 接收者标注 `this: T` 不占位——Bug 397；rest 形参恒在末位 ⇒ 截断，
- * 不进数组）。**取不到任何默认值 ⇒ 返回 `[]`**（调用方保持修复前行为）。
+ * 不进数组）。**取不到任何默认值 ⇒ 返回空表**（调用方保持修复前行为）。
  * 未取到默认值的位补 `absUnknown()` 占位（无信息 ⇒ 不发明义务）。
+ *
+ * Bug 1110 / 1111：`defaulted` 标出**哪些位真的有默认值** ——
+ * - 1110：调用点**显式传 `undefined`** ⇒ 运行时走默认值 ⇒ 该位应按默认值执法
+ *   （此前按 `undefined` 执法 ⇒ 报「实参 undefined」假红）。
+ * - 1111：调用点**漏传尾部位置** ⇒ 运行时走默认值 ⇒ 缺失的**所有尾部位置**
+ *   都要补默认值（此前只在**零实参**时补 ⇒ `e4(1)` 静默 = 假绿）。
  */
 export function defaultArgAbss(
   fnName: string,
   source: string,
   fileAst?: ReturnType<typeof parse>,
   lookupVar?: (name: string) => Abs | undefined,
-): Abs[] {
+): { values: Abs[]; defaulted: Set<number> } {
   const file = fileAst ?? parse(source);
   const params = findFnParams(file, fnName);
-  if (!params || params.length === 0) return [];
+  if (!params || params.length === 0) return { values: [], defaulted: new Set() };
   const out: Abs[] = [];
+  const defaulted = new Set<number>();
   let anyDefault = false;
   let index = 0;
   for (const p of params) {
@@ -475,11 +558,12 @@ export function defaultArgAbss(
     const abs = scalarLiteralAbs(right) ?? evalArgAbs(right, lookupVar);
     if (!abs) continue;
     out[i] = abs;
+    defaulted.add(i);
     anyDefault = true;
   }
-  if (!anyDefault) return [];
+  if (!anyDefault) return { values: [], defaulted: new Set() };
   for (let i = 0; i < index; i++) {
     if (!out[i]) out[i] = absUnknown();
   }
-  return out;
+  return { values: out, defaulted };
 }

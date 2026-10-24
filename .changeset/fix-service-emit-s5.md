@@ -1,6 +1,16 @@
 ---
-"@nudojs/service": patch
+"@nudojs/service": major
 ---
+
+**BREAKING**: standard 面的**导出集**变了 —— 解构形参的字段级校验器
+（`act_a` / `act_b`）**移除**，改为整参校验器 `<fn>Input`（与 zod 面同名同义）。
+
+谁会坏：`import { act_a } from "*.nudo.standard"` 的消费方 —— 这些导出**不再
+存在** ⇒ 消费方 `tsc --noEmit` 会红（此前它们拒收正确入参、收下错误入参，本就
+不可用）。
+
+怎么迁移：改 import `<fn>Input`（一个校验器校验**整个**入参对象）并重新生成
+产物。
 
 `nudo export --format standard` now produces a product that compiles in a
 strict TypeScript project, keeps literal values intact, and exposes one

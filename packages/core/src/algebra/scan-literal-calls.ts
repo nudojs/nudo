@@ -38,7 +38,7 @@ import {
 } from "./interface.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { checkCallSite } from "./diagnostics.ts";
-import { locateContractParam, type FormalParam } from "./param-surface.ts";
+import { locateContractParam, withOptionalParams, type FormalParam } from "./param-surface.ts";
 import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -49,14 +49,18 @@ import {
   collectCallResolvers,
   collectForwarders,
   resolveCalleeFn,
+  scopeChainChild,
   type ExternalFnRef,
+  type ScopeChain,
 } from "./scan-call-graph.ts";
 import { DIAG } from "./diag-codes.ts";
 import {
   absUnknown,
   defaultArgAbss,
   evalArgAbs,
+  isExplicitUndefinedArg,
   isInformativeArg,
+  optionalParamNames,
   parseCallArgs,
   type LiteralScanCtx,
 } from "./scan/literal-args.ts";
@@ -229,7 +233,13 @@ export function scanLiteralCalls(
     const parsed = parseCallArgs(ctx, args);
     // Bug 364：实参个数按**语法实参个数**判定（parseCallArgs 每个语法
     // 实参产出一项）——默认值补齐后的 absArgs 长度不是调用点实参个数。
-    const syntacticArgCount = parsed.absArgs.length;
+    //
+    // Bug 1105：非字面量展开（`f(...args)`）⇒ 个数**不可判** ⇒ `argCount`
+    // 为 `undefined` ⇒ 元数检查整条跳过（fail-closed：不猜）。用 NaN 传下去：
+    // `checkCallSite` 里 `argCount < required` / `argCount > required` 两个比较
+    // 对 NaN 恒为 false ⇒ 元数检查让位，而实参义务检查照跑（不复制 arityFace
+    // 的必选元数算法 ⇒ 两处口径不会漂）。
+    const syntacticArgCount = parsed.argCount;
     let absArgs = parsed.absArgs;
     let hasInfo = parsed.hasInfo;
     // 值流回退：静态实参无信息（嵌套调用形参 / 复杂表达式）时按执行态实参执法。
@@ -241,14 +251,26 @@ export function scanLiteralCalls(
         hasInfo = evalArgs.some(isInformativeArg);
       }
     }
-    // Bug 444：零实参调用 → 用被调函数的**默认值形参**补齐实参位再执法。
-    // 此前 `absArgs.length === 0` 整条跳过 ⇒ 形参默认值本身违反自身契约时
-    // 「引擎自己算出了 -5 却不对账」（假绿）。默认值取不到 ⇒ 保持原早退。
-    if (absArgs.length === 0) {
-      const defaults = defaultArgAbss(fnName, source, file, (n) => varAbs.get(n));
-      if (defaults.length > 0) {
-        absArgs = defaults;
-        hasInfo = defaults.some(isInformativeArg);
+    // Bug 444 / 1110 / 1111：默认值形参的实参位补齐。
+    // - 1110：调用点**显式传 `undefined`** ⇒ 运行时走默认值 ⇒ 该位按默认值执法。
+    // - 1111：调用点**漏传尾部位置** ⇒ 运行时走默认值 ⇒ 缺失的**所有尾部位置**
+    //   都补默认值（此前只在**零实参**时补 ⇒ `e4(1)` 静默 = 假绿）。
+    const defaults = defaultArgAbss(fnName, source, file, (n) => varAbs.get(n));
+    if (defaults.values.length > 0) {
+      const filled = absArgs.slice();
+      // 显式 undefined ⇒ 默认值（Bug 1110）
+      for (let i = 0; i < filled.length; i++) {
+        if (!defaults.defaulted.has(i)) continue;
+        if (!isExplicitUndefinedArg(args[i])) continue;
+        filled[i] = defaults.values[i]!;
+      }
+      // 缺失的尾部位置 ⇒ 默认值（Bug 1111）
+      for (let i = filled.length; i < defaults.values.length; i++) {
+        filled[i] = defaults.values[i]!;
+      }
+      if (filled.length !== absArgs.length || filled.some((a, i) => a !== absArgs[i])) {
+        absArgs = filled;
+        hasInfo = absArgs.some(isInformativeArg);
       }
     }
 
@@ -264,17 +286,34 @@ export function scanLiteralCalls(
         ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       },
     });
+    // Bug 1108：TS `x?: T` / JSDoc `@param {T} [x]` 的形参**可省略** ⇒
+    // 必选元数要减掉这一位 ⇒ `h()`（少传实参）不再被判「expects 1
+    // argument(s), got 0」（假红）。形参表来自泛化结果（memo 共享）⇒
+    // **不改**原对象，只换一份带 `optional` 的副本。
+    const gWithOptional = withOptionalParams(
+      g?.formals,
+      optionalParamNames(fnName, source, file),
+    );
+    const fnFace = gWithOptional && g ? { ...g, formals: gWithOptional } : g;
     out.push(
       ...checkCallSite(source, fnName, absArgs, {
-        argCount: syntacticArgCount,
+        // Bug 1105：个数不可判（非字面量展开）⇒ NaN ⇒ 元数检查两个比较恒假
+        // ⇒ 让位；实参义务检查照跑。
+        argCount: syntacticArgCount ?? Number.NaN,
         hasInfo,
-        fn: g,
+        fn: fnFace,
         phi,
         line: loc?.start.line,
         column: loc?.start.column,
       }),
     );
     if (!hasInfo || absArgs.length === 0) return;
+
+    // Bug 1105：非字面量展开处的**已知长度到此为止** —— 展开后的槽位个数
+    // 不可知 ⇒ rest / length 边界**不把展开槽位算进已知长度**（否则
+    // `few(1, ...more)` 的 rest 聚合出 `[1, unknown]` ⇒ 长度 2 ⇒ 假红）。
+    const contractArgs =
+      parsed.spreadAt !== undefined ? absArgs.slice(0, parsed.spreadAt) : absArgs;
 
     const paramNames = g?.params ?? [];
     const optsR: EffectiveInterfaceOpts = {
@@ -287,7 +326,17 @@ export function scanLiteralCalls(
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
       const ownFull = interfaceToIndexed(ownEi, paramNames, g?.formals);
-      checkShapeReqs(ctx, fnName, ownFull, paramNames, absArgs, (i) => i, loc);
+      // Bug 1114：结构通道先跑 ⇒ 它报过的实参位（「实参不是 object」）传给谓词
+      // 通道**让位** ⇒ 同一条违例只报一次。
+      const notObject = checkShapeReqs(
+        ctx,
+        fnName,
+        ownFull,
+        paramNames,
+        contractArgs,
+        (i) => i,
+        loc,
+      );
       checkReqs(
         ctx,
         fnName,
@@ -302,9 +351,10 @@ export function scanLiteralCalls(
             ],
         ),
         paramNames,
-        absArgs,
+        contractArgs,
         (i) => i,
         loc,
+        notObject,
       );
     }
 
@@ -320,7 +370,15 @@ export function scanLiteralCalls(
           wrapperArgOfTarget.set(targetIdx, wrapperIdx);
         });
         const mapArg = (targetIdx: number) => wrapperArgOfTarget.get(targetIdx);
-        checkShapeReqs(ctx, `${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
+        const notObjectFwd = checkShapeReqs(
+          ctx,
+          `${fnName}→${fwd.target}`,
+          tFull,
+          tParams,
+          contractArgs,
+          mapArg,
+          loc,
+        );
         checkReqs(
           ctx,
           `${fnName}→${fwd.target}`,
@@ -335,9 +393,10 @@ export function scanLiteralCalls(
               ],
           ),
           tParams,
-          absArgs,
+          contractArgs,
           mapArg,
           loc,
+          notObjectFwd,
         );
       }
     }
@@ -352,7 +411,8 @@ export function scanLiteralCalls(
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
     const parsedExt = parseCallArgs(ctx, args);
     // Bug 364：实参个数按**语法实参个数**判定（同 checkOneCall）
-    const syntacticArgCount = parsedExt.absArgs.length;
+    // Bug 1105：非字面量展开 ⇒ 个数不可判 ⇒ 元数检查跳过（NaN）。
+    const syntacticArgCount = parsedExt.argCount;
     let absArgs = parsedExt.absArgs;
     let hasInfo = parsedExt.hasInfo;
     if (!hasInfo) {
@@ -362,14 +422,23 @@ export function scanLiteralCalls(
         hasInfo = evalArgs.some(isInformativeArg);
       }
     }
-    // Bug 444（同上）：跨文件零实参调用 → 用被调方（ext.source）的默认值补齐。
+    // Bug 444 / 1110 / 1111（同上）：默认值形参的实参位补齐。
     // 跨文件时绑定表不可得（varAbs 是**调用方**的顶层绑定）⇒ 不做标识符解析，
     // 只取标量字面量默认值（fail-closed）。
-    if (absArgs.length === 0) {
-      const defaults = defaultArgAbss(ext.fnName, ext.source, undefined, undefined);
-      if (defaults.length > 0) {
-        absArgs = defaults;
-        hasInfo = defaults.some(isInformativeArg);
+    const defaultsExt = defaultArgAbss(ext.fnName, ext.source, undefined, undefined);
+    if (defaultsExt.values.length > 0) {
+      const filled = absArgs.slice();
+      for (let i = 0; i < filled.length; i++) {
+        if (!defaultsExt.defaulted.has(i)) continue;
+        if (!isExplicitUndefinedArg(args[i])) continue;
+        filled[i] = defaultsExt.values[i]!;
+      }
+      for (let i = filled.length; i < defaultsExt.values.length; i++) {
+        filled[i] = defaultsExt.values[i]!;
+      }
+      if (filled.length !== absArgs.length || filled.some((a, i) => a !== absArgs[i])) {
+        absArgs = filled;
+        hasInfo = absArgs.some(isInformativeArg);
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
@@ -380,7 +449,7 @@ export function scanLiteralCalls(
       // Bug 364：调用点验证面接进产品路径（跨文件被调方）
       out.push(
         ...checkCallSite(ext.source, ext.fnName, absArgs, {
-          argCount: syntacticArgCount,
+          argCount: syntacticArgCount ?? Number.NaN,
           hasInfo,
           fn: g,
           phi,
@@ -415,7 +484,18 @@ export function scanLiteralCalls(
       });
       return;
     }
-    checkShapeReqs(ctx, displayName, full, paramNames, absArgs, (i) => i, loc);
+    // Bug 1105：展开处停止（rest / length 边界不把展开槽位算进已知长度）
+    const contractArgsExt =
+      parsedExt.spreadAt !== undefined ? absArgs.slice(0, parsedExt.spreadAt) : absArgs;
+    const notObjectExt = checkShapeReqs(
+      ctx,
+      displayName,
+      full,
+      paramNames,
+      contractArgsExt,
+      (i) => i,
+      loc,
+    );
     checkReqs(
       ctx,
       displayName,
@@ -430,9 +510,10 @@ export function scanLiteralCalls(
           ],
       ),
       paramNames,
-      absArgs,
+      contractArgsExt,
       (i) => i,
       loc,
+      notObjectExt,
     );
   };
 
@@ -549,7 +630,13 @@ export function scanLiteralCalls(
     }
   };
 
-  const visit = (n: unknown): void => {
+  /**
+   * 调用点走查（通用 AST 走查 ⇒ 能进表达式）。
+   *
+   * 作用域链（Bug 1106 / 1107）：进入**开作用域**的节点时把子作用域 id 前插
+   * 到链首（与收集侧 `walkStatements` 同一套 id 算法 ⇒ 两端口径一致）。
+   */
+  const visit = (n: unknown, chain: ScopeChain = [""]): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as Record<string, unknown> & {
       type?: string;
@@ -558,7 +645,7 @@ export function scanLiteralCalls(
     if (obj.type === "CallExpression") {
       const callee = obj.callee as Record<string, unknown>;
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
-      const resolved = resolveCalleeFn(callee, resolve, knownSet);
+      const resolved = resolveCalleeFn(callee, resolve, knownSet, chain);
       if (typeof resolved === "string") {
         checkOneCall(resolved, args, obj.loc);
       } else if (resolved?.external) {
@@ -566,11 +653,12 @@ export function scanLiteralCalls(
         checkExternalCall(resolved.external, args, name, obj.loc);
       }
     }
+    const childChain = scopeChainChild(chain, obj);
     for (const key of Object.keys(obj)) {
       if (key === "loc" || key === "start" || key === "end") continue;
       const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
+      if (Array.isArray(val)) val.forEach((x) => visit(x, childChain));
+      else if (val && typeof val === "object") visit(val, childChain);
     }
   };
   visit(file);

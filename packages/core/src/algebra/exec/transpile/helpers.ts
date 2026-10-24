@@ -903,6 +903,35 @@ export function internalTmpName(base: string, opts: TranspileOptions): string {
 }
 
 /**
+ * Bug 1127：批量分配内部临时名（**同款避让口径**，一次算避让集）。
+ *
+ * 与 `internalTmpName` 同口径（`userIdentInfoOf(opts)` = 源文本词形 ∪
+ * `opts.userIdents`），但：
+ * - 避让集**只算一次**（逐个调 `internalTmpName` 会把避让集重算 n 次——
+ *   `opts.userIdents` 非空时每次都重建并集）；
+ * - 同一批内**互不撞名**（不同 base 避让后可能落到同一个名字——`<base>_<k>`
+ *   形态下 `X` 与 `X_1` 两族可撞）⇒ 组内去重（`taken` 集）。
+ *
+ * 确定性：同一 opts ⇒ 同一批名（同序）⇒ 产物逐字可重现。
+ */
+export function internalTmpNameSet(bases: readonly string[], opts: TranspileOptions): string[] {
+  const info = userIdentInfoOf(opts);
+  const taken = new Set<string>();
+  const out: string[] = [];
+  for (const base of bases) {
+    let name = safeTmpName(base, info);
+    let k = 1;
+    while (taken.has(name)) {
+      name = safeTmpName(`${base}_${k}`, info);
+      k++;
+    }
+    taken.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
  * var 提升预扫描（Bug 21）：收集函数体（或模块顶层）内全部 `var` 声明名
  * （含嵌套块/循环/try/switch 臂；含 for-init/left 的 var），**不穿越**
  * 函数/方法/类体边界（那些绑定属于内层作用域）。export var（模块顶层

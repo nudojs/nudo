@@ -22,6 +22,7 @@ import type { Command } from "commander";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseSource } from "@nudojs/core";
+import { DIAG } from "@nudojs/core/internal";
 import type { StripResult, StripWriteStatus } from "../migrate.ts";
 
 /**
@@ -394,7 +395,7 @@ export function registerMigrateCommand(program: Command): void {
                       results: rows,
                       pathErrors: failures.map((f) => ({
                         path: f.path,
-                        code: "nudo:migrate-strip-failed",
+                        code: DIAG.migrateStripFailed,
                         message: f.message,
                       })),
                       error: failures[0]!.message,

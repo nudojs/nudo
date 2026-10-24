@@ -7,6 +7,7 @@
  *   - analyzer-orchestrate-uncached.ts  analyzeFileUncached / UncachedInner
  */
 import { dirname } from "node:path";
+import { setEvalFallbackCollector, type EvalFallback } from "@nudojs/core";
 import { runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
@@ -29,6 +30,36 @@ export {
 } from "./analyzer-orchestrate-uncached.ts";
 
 /**
+ * 分析前的 env 预载（项目级 `package.json#nudo.env` + 文件级 `/// @nudo:env`）。
+ *
+ * Bug 647（两层基准）：项目级 env 按**项目根**解析，文件级 env 按**被分析
+ * 文件所在目录**解析。此前两族一律按文件目录解析 ⇒ 项目级 env 在「项目根
+ * 之外的文件」上解析到不存在的路径 ⇒ env 全局对那些文件不可见（分析面退化
+ * unknown）。口径与 CLI 的 `packages/nudojs/src/commands/check.ts`
+ * （`projectEnvSpec` + 两次 `preloadPathEnvs`）同款。
+ */
+async function preloadAnalysisEnvs(filePath: string, source: string): Promise<void> {
+  const fileEnvBaseDir = dirname(filePath);
+  const proj = findProjectConfig(fileEnvBaseDir);
+  const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv)
+    ? rawProjectEnv.filter((n): n is string => typeof n === "string")
+    : [];
+  // 相对说明符先按项目根**绝对化**（与 CLI 同款）⇒ preload 时基准不再歧义
+  const projectEnvSpec = absolutizeEnvSpec(projectEnvNames, projectEnvBaseDir);
+  const fileEnvNames = collectEnvNames(filePath, source, false);
+  // path-based @nudo:env / mock-module 反向边（watch 失效）
+  noteEnvPathDeps(filePath, source);
+  if (projectEnvSpec.length > 0) {
+    await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+  }
+  if (fileEnvNames.length > 0) {
+    await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
+  }
+}
+
+/**
  * Async entry to analyzeFile: preloads path-based env files
  * (`/// @nudo:env ./nudo-harvest-node.ts`) via dynamic import — impossible
  * synchronously in ESM — then runs the sync analysis, which picks the
@@ -49,30 +80,7 @@ export async function analyzeFileAsync(
   // collector 作用域须在 await preloadPathEnvs 之前打开：预载触发的诊断/collector
   // 落进本次分析的 store，不与 await 窗口交错的其它分析串台（幂等：嵌套复用）。
   return runWithCollectorScope(async () => {
-    // Bug 647（两层基准）：项目级 env（`package.json#nudo.env`）按**项目根**
-    // 解析，文件级 env（`/// @nudo:env`）按**被分析文件所在目录**解析。
-    // 此前两族一律按文件目录解析 ⇒ 项目级 env 在「项目根之外的文件」上解析
-    // 到不存在的路径 ⇒ env 全局对那些文件不可见（分析面退化 unknown）。
-    // 口径与 CLI 的 `packages/nudojs/src/commands/check.ts`（`projectEnvSpec`
-    // + 两次 `preloadPathEnvs`）同款。
-    const fileEnvBaseDir = dirname(filePath);
-    const proj = findProjectConfig(fileEnvBaseDir);
-    const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
-    const rawProjectEnv = proj?.config.env;
-    const projectEnvNames = Array.isArray(rawProjectEnv)
-      ? rawProjectEnv.filter((n): n is string => typeof n === "string")
-      : [];
-    // 相对说明符先按项目根**绝对化**（与 CLI 同款）⇒ preload 时基准不再歧义
-    const projectEnvSpec = absolutizeEnvSpec(projectEnvNames, projectEnvBaseDir);
-    const fileEnvNames = collectEnvNames(filePath, source, false);
-    // path-based @nudo:env / mock-module 反向边（watch 失效）
-    noteEnvPathDeps(filePath, source);
-    if (projectEnvSpec.length > 0) {
-      await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
-    }
-    if (fileEnvNames.length > 0) {
-      await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
-    }
+    await preloadAnalysisEnvs(filePath, source);
     return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
   });
 }
@@ -141,6 +149,105 @@ export function analyzeFile(
       analysisCacheSet(k.filePath, k.source, k.auxKey, result);
     }
     return cloneAnalysisResult(result);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 1145：模块级求值失败（引擎内部回落）——**按文件**观测
+// ---------------------------------------------------------------------------
+
+/**
+ * 引擎内部回落（`internal` fallback）的**按文件**观测结果。
+ *
+ * core 的回落三分类（`packages/core/src/algebra/exec/run.ts` 的 `evalFallbackOf`）：
+ * - `unsupported:*` —— **能力边界**（transpile 未 lowering 的构造）：既有口径，
+ *   **不得**变成闸门失败（否则大面积假红）；
+ * - `module-throw` —— **程序自身抛**（NudoThrow；catch 可吸收）：既有口径，
+ *   **不得**变成闸门失败；
+ * - `internal` —— **引擎内部缺陷**（生成模块编译失败 / 求值抛内部错误）：
+ *   该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
+ *   ⇒ **闸门假绿**（1145）。这是唯一进失败信号的回落。
+ */
+export type FileEvalFailure = {
+  /** 被分析文件（绝对路径） */
+  file: string;
+  /** 回落原因（当前只有 `internal` = 引擎内部缺陷） */
+  reason: string;
+  /** 回落消息（引擎给出的失败详情） */
+  message: string;
+};
+
+/** 只有 `internal`（引擎内部缺陷）进失败信号；能力边界 / 程序自身抛不进。 */
+function isGateFatalFallback(f: EvalFallback): boolean {
+  return f.reason === "internal";
+}
+
+/**
+ * 分析一个文件 + 观测**该文件**的引擎内部回落（1145 观测面）。
+ *
+ * 与 {@link analyzeFile} 的差别：
+ * 1. **不共享**整文件分析 memo（`analysisCacheGet/Set`）——memo 命中 ⇒ 不求值
+ *    ⇒ 无回落可观测 ⇒ 「没看到失败」≠「没失败」（观测面会**假绿**）。
+ *    观测面每次真求值（uncached 路径）。
+ * 2. 额外返回 `evalFailures`（本次分析期间的 `internal` 回落，按文件定位）。
+ *
+ * ⚠ collector 是**进程级单槽**（core 的 `setEvalFallbackCollector`）：本函数
+ * 安装期间**不得**有别的回落观察者（否则互相覆盖）。CLI 的 check 编排走自己
+ * 的 per-file collector（`commands/check.ts`），不调用本函数。
+ */
+export function analyzeFileWithEvalFailures(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
+  /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
+  caseMode: DirectiveCaseMode = "all",
+): { analysis: AnalysisResult; evalFailures: FileEvalFailure[] } {
+  const evalFailures: FileEvalFailure[] = [];
+  setEvalFallbackCollector((f: EvalFallback) => {
+    if (!isGateFatalFallback(f)) return;
+    evalFailures.push({ file: filePath, reason: f.reason, message: f.message });
+  });
+  try {
+    const analysis = analyzeFileUncached(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      loadModule,
+      caseMode,
+    );
+    return { analysis, evalFailures };
+  } finally {
+    setEvalFallbackCollector(null);
+  }
+}
+
+/**
+ * {@link analyzeFileAsync} 的观测面版本（1145）：env 预载 + 同步分析 +
+ * **按文件**的引擎内部回落观测。
+ */
+export async function analyzeFileAsyncWithEvalFailures(
+  filePath: string,
+  source: string,
+  activeCases?: Map<string, number>,
+  externalCallRecords?: CallRecord[],
+  loadModule?: AnalyzeLoadModule,
+  /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
+  caseMode: DirectiveCaseMode = "all",
+): Promise<{ analysis: AnalysisResult; evalFailures: FileEvalFailure[] }> {
+  // collector 作用域须在 await preloadPathEnvs 之前打开（与 analyzeFileAsync 同口径）。
+  return runWithCollectorScope(async () => {
+    await preloadAnalysisEnvs(filePath, source);
+    return analyzeFileWithEvalFailures(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      loadModule,
+      caseMode,
+    );
   });
 }
 

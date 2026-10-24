@@ -1,6 +1,15 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: standard 面的返回面导出名**恒为** `<fn>Output`（此前「有返回契约时」
+叫 `<fn>Return`）—— 这条改名随 CLI 到达消费方。
+
+谁会坏：`nudo export --format standard` 之后 `import { <fn>Return } from
+"*.nudo.standard"` 的消费方 ⇒ 旧名 import 断（消费方 `tsc --noEmit` 会红）。
+
+怎么迁移：改 import 名为 `<fn>Output` 并重新生成产物；文档与
+`scripts/verify-doc-examples.sh` 的 pin 已同步。
 
 `nudo export` 的六片并发修复收口：主 agent 接线把「命名规则分叉」「同名条目折叠」
 「契约可选性丢失」「模块身份靠猜」四处跨片缺口补上。

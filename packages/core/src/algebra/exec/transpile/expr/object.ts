@@ -17,6 +17,11 @@
  * - symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见，Bug 73）；
  * - 数组含 spread 时 hole 下标不可静态确定，$concat 归一（字符串按 code
  *   points 拆）。
+ * - Bug 1149：本文件的引擎内部临时名（`__v` / `__k` / `__nudoObjBase` /
+ *   `__nudoProtoBox`）是**基名**——实际名经 `internalTmpName` 分配（避开用户
+ *   标识符词形）：这些名都是**词法绑定**（IIFE 形参 / thunk 形参），IIFE 与
+ *   访问器 thunk **在自身作用域里求值用户表达式** ⇒ 写死名会遮蔽用户同名
+ *   绑定（自信错值）或撞 TDZ（ReferenceError）。
  */
 import type { Expression, Node, ObjectExpression, ArrayExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
@@ -39,6 +44,28 @@ import { emitFnBlockBody } from "../stmt/fn-body.ts";
 import { emitSetterAccessorThunk } from "../class-emit.ts";
 import { paramNamesOfFn } from "./function.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
+
+/**
+ * 对象族的引擎内部临时名（**基名**）——实际名经 `internalTmpName` 分配。
+ *
+ * Bug 1149（同 call.ts / short-circuit.ts 口径）：
+ * - `__v`：setter thunk 的**首参载体**（首参非 Identifier——解构/默认值——
+ *   时用引擎临时名）；thunk 形参会**遮蔽**用户同名外层绑定 ⇒ setter 体读到
+ *   的是引擎临时量而非用户的值（自信错值 ⇒ 假绿）。
+ * - `__k` / `__nudoObjBase`：计算键 IIFE 的形参；IIFE 内在自身作用域求值
+ *   键/值表达式 ⇒ 写死名会遮蔽用户同名绑定（自信错值）。
+ * - `__nudoProtoBox`：proto 段链 IIFE 的形参；proto **值表达式**在该 IIFE
+ *   作用域内求值 ⇒ 写死名会遮蔽用户同名绑定（自信错值）。
+ *
+ * 口径：`userIdentInfoOf(opts)` = 源文本词形 ∪ `opts.userIdents`；撞名加
+ * `_k` 后缀 ⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一源文本 ⇒ 同一名
+ * ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
+ */
+const V_BASE = "__v";
+const K_BASE = "__k";
+const OBJ_BASE_BASE = "__nudoObjBase";
+const PROTO_BOX_BASE = "__nudoProtoBox";
+
 /**
  * 对象/数组/展开族：对象字面量（方法简写/访问器/计算键/__proto__）、数组字面量
  * （hole/spread 经 $concat 归一）。
@@ -86,6 +113,12 @@ export function transpileObjectExpr(
       // 整模块 fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
       const argsSlot = internalTmpName("__nudoArgs", opts);
       const margsName = internalTmpName("__margs", opts);
+      // Bug 1149：对象族的引擎内部临时名避开用户标识符词形（IIFE / 访问器
+      // thunk 在自身作用域求值用户表达式 ⇒ 写死名会遮蔽用户同名绑定）。
+      const vName = internalTmpName(V_BASE, opts);
+      const kName = internalTmpName(K_BASE, opts);
+      const objBaseName = internalTmpName(OBJ_BASE_BASE, opts);
+      const protoBoxName = internalTmpName(PROTO_BOX_BASE, opts);
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -148,7 +181,7 @@ export function transpileObjectExpr(
           // 生成器级位置 ⇒ 编译成宿主生成器，await = 真挂起点）
           const omAsync =
             (prop as { async?: boolean }).async === true && prop.generator !== true;
-          const omPlan = omAsync ? asyncBodyPlan(prop.body) : undefined;
+          const omPlan = omAsync ? asyncBodyPlan(prop.body, opts.disableAsyncGen) : undefined;
           const omAsyncGen = omPlan !== undefined && omPlan.hasAwait && omPlan.allSafe;
           const methodOpts: TranspileOptions = {
             ...opts,
@@ -176,8 +209,13 @@ export function transpileObjectExpr(
             // emitSetterAccessorThunk——内层箭头丢弃体返回值（恒返回 __this）
             // + 别名写接收者回收；N3：setter 形参默认值/解构经 __nudoArgs 槽绑定）
             const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
+            // Bug 1149：首参非 Identifier（解构/默认值）时用引擎临时名承载
+            // 原始实参——thunk 形参会**遮蔽**用户同名外层绑定（setter 体读到
+            // 的是引擎临时量 ⇒ 自信错值）。
             const omVName =
-              omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v";
+              omFirstP?.type === "Identifier"
+                ? (bindNames[0] ?? vName)
+                : vName;
             const thunkSrc =
               prop.kind === "get"
                 ? `(__this) => {\n  let ${argsSlot} = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
@@ -201,10 +239,12 @@ export function transpileObjectExpr(
             // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍
             //（原生键只在字面量位置求值一次）。IIFE 绑定临时键 __k 供两处
             // 共用；注册是侧表插入（与位置无关），键求值保持在字面量位置
+            // Bug 1149：IIFE 形参名避开用户标识符（__k 遮蔽用户同名绑定 ⇒
+            // acc 里重发的用户表达式读到错值）。
             if (computedKeySrc !== null) {
               const getArg = prop.kind === "get" ? thunkSrc : "null";
               const setArg = prop.kind === "set" ? thunkSrc : "null";
-              acc = `((__k) => $objAccessorKey($setKey(${acc ?? "$obj({})"}, __k, $lit(void 0)), __k, ${getArg}, ${setArg}))(${computedKeySrc})`;
+              acc = `((${kName}) => $objAccessorKey($setKey(${acc ?? "$obj({})"}, ${kName}, $lit(void 0)), ${kName}, ${getArg}, ${setArg}))(${computedKeySrc})`;
               // Bug 143：动态计算键访问器**就地**注册（侧表）——后续同键的
               // 数据属性须按「定义」语义替换它（见下方 $del 臂）。
               hasDynComputedAccessor = true;
@@ -323,7 +363,9 @@ export function transpileObjectExpr(
             // 动态计算键的同键仲裁只能运行期做：$del 清掉该键的访问器侧表项
             // （+ 占位槽），随后 $setKey 写数据值。键/基准各求值一次（IIFE
             // 形参），求值序 = 基准 → 键 → 值（原生同）。
-            acc = `((__nudoObjBase, __k) => $setKey($del(__nudoObjBase, __k), __k, ${v}))(${base}, ${k})`;
+            // Bug 1149：IIFE 形参名避开用户标识符（__k / __nudoObjBase 遮蔽用户
+            // 同名绑定 ⇒ 值表达式 v 读到引擎临时量 ⇒ 自信错值）。
+            acc = `((${objBaseName}, ${kName}) => $setKey($del(${objBaseName}, ${kName}), ${kName}, ${v}))(${base}, ${k})`;
           } else {
             acc = `$setKey(${base}, ${k}, ${v})`;
           }
@@ -422,7 +464,7 @@ export function transpileObjectExpr(
           const segExpr = protoSegs[i + 1] ?? `$obj({})`;
           const boxKey = JSON.stringify(`__nudoP${i}`);
           // 逗号表达式：先写盒子（此处求值 proto 值），再取段表达式
-          const write = `$set(__nudoProtoBox, ${boxKey}, ${protoVals[i]})`;
+          const write = `$set(${protoBoxName}, ${boxKey}, ${protoVals[i]})`;
           chain =
             chain === null
               ? `(${write}, ${segExpr})`
@@ -432,7 +474,9 @@ export function transpileObjectExpr(
         const lastKey = JSON.stringify(`__nudoP${protoVals.length - 1}`);
         // 多个 __proto__ → 最后一个生效（原生如此；重复 __proto__ 本身是
         // 早期错误，此处只保「后写覆盖」语义）
-        result = `((__nudoProtoBox) => $setProto(${objExpr}, $get(__nudoProtoBox, ${lastKey})))($obj({}))`;
+        // Bug 1149：IIFE 形参名避开用户标识符（proto 值表达式在该 IIFE
+        // 作用域内求值 ⇒ 写死名遮蔽用户同名绑定 ⇒ 自信错值）。
+        result = `((${protoBoxName}) => $setProto(${objExpr}, $get(${protoBoxName}, ${lastKey})))($obj({}))`;
       }
       for (const [key, def] of accDefs) {
         // 静态键访问器注册（计算键访问器已在属性位就地 $objAccessorKey——Bug 112）

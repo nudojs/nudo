@@ -1,6 +1,10 @@
 ---
-"nudojs": patch
+"nudojs": minor
 ---
+
+`nudo migrate status --json` 的机器面新增了**可选字段** `packageJsonError`
+（畸形 `package.json` 的解析失败原因）⇒ 新增可选字段属**增量**变更（additive）
+⇒ minor。
 
 `nudo migrate status` now reports the truth about a package: the nudo gate
 is detected from the **command text**, the dependency scope covers

@@ -22,7 +22,8 @@ export type StandardFaceChunk = {
  * standard 面的函数块：无入参、无契约返回、无观测返回 ⇒ 不出块（undefined）。
  *
  * `returns` 取**契约返回面**（不是统一返回面）——契约声明的返回形态与实际观测
- * 的返回形态是两条不同的证据线：契约面进 `<fn>Return`，观测面进 `<fn>Output`。
+ * 的返回形态是两条不同的证据线：契约面与观测面**都**进 `<fn>Output`（导出名不再
+ * 随符号来源翻转；此前契约面叫 `<fn>Return`，下游 `import { <fn>Return }` 会断）。
  *
  * 契约返回面取**已复核**口径（`effectiveContractReturnFace`）：实现违约时不投影
  * 契约（Bug 626）、async 时保留 `promise<…>` 包装（Bug 618）。

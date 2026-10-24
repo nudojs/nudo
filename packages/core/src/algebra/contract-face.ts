@@ -25,6 +25,10 @@
  *   never（throws 通道承载）与 opaque（预算截断保守面）不替换。
  *   **确定违反**声明约束时（Bug 343）不替换——callee 违约时不得把声明面
  *   当作事实交给 caller（caller 的返回契约会建立在已被引擎证伪的前提上）。
+ *   **bigint 与其余标量同口径**（Bug 1142）：域判定必须**在比较之后**发生
+ *   （bigint 不得在 `literalMeetsConstraint` 之前被过滤掉），否则
+ *   `lit(1n)` 契约既判不出「满足」也判不出「违反」⇒ 违约推断面被声明面
+ *   替换 ⇒ 假绿。
  */
 
 import type { Abs } from "./abs.ts";
@@ -156,14 +160,23 @@ function assumePremiseVarNames(): Set<string> | undefined {
   return vars.size > 0 ? vars : undefined;
 }
 
-/** 标量字面量值落在声明约束域内（非标量/不可判定 → false，保守走面替换） */
+/**
+ * 标量字面量值落在声明约束域内（非标量/不可判定 → false，保守走面替换）。
+ *
+ * **bigint 必须参与比较**（Bug 1142）：此前本函数在调用
+ * `literalMeetsConstraint` **之前**就把 bigint 排除掉 ⇒ bigint 值从不
+ * 参与域判定 ⇒ `lit(1n)` 契约既判不出「满足」也判不出「违反」⇒
+ * 违约推断面被**声明面替换**（`2n` 被当成满足 `lit(1n)`）⇒ **假绿**。
+ * 现在 bigint 与 number / string / boolean 同口径（域隶属通道的
+ * `literalSame`：`===` + NaN 特例 ⇒ `1n !== 1`，bigint 与 number 不混同）。
+ */
 function litMeetsReturnConstraint(r: Abs, c: NudoConstraint | undefined): boolean {
   if (!c) return false;
   const lv = litValue(r);
   if (!lv.ok) return false;
   const v = lv.value;
   if (typeof v !== "number" && typeof v !== "string" && typeof v !== "boolean"
-    && v !== null && v !== undefined) {
+    && typeof v !== "bigint" && v !== null && v !== undefined) {
     return false;
   }
   return literalMeetsConstraint(v, c);
@@ -191,6 +204,11 @@ export function presentCallResultFace(r: Abs, faces: FnContractFaces): Abs {
  * 结构域（shape / array / fn）的域判定判不了（literalMeetsConstraint 对
  * 结构域一律 false）⇒ 不算违反（保守：仍用声明面）。非字面量（无确定值）
  * ⇒ 不算违反。
+ *
+ * **bigint 必须参与比较**（Bug 1142）：此前 bigint 在比较**之前**被排除
+ * ⇒ `lit(1n)` 契约收到 `2n` 判不出「确定违反」⇒ 走声明面替换 ⇒ 违约
+ * 被洗白（假绿）。现在 bigint 与其余标量同口径（`2n` 对 `lit(1n)` 违反、
+ * `1n` 满足；`1` 对 `lit(1n)` 违反——number 与 bigint 不混同）。
  */
 function violatesDeclaredReturn(r: Abs, c: NudoConstraint | undefined): boolean {
   if (!c) return false;
@@ -200,7 +218,8 @@ function violatesDeclaredReturn(r: Abs, c: NudoConstraint | undefined): boolean 
   if (!term || term.op !== "lit") return false; // 非字面量：无确定证据
   const v = term.value;
   if (v === null || v === undefined) return !constraintAdmitsNullish(cc);
-  if (typeof v !== "number" && typeof v !== "string" && typeof v !== "boolean") {
+  if (typeof v !== "number" && typeof v !== "string" && typeof v !== "boolean"
+    && typeof v !== "bigint") {
     return false;
   }
   return !literalMeetsConstraint(v, cc);

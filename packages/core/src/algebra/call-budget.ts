@@ -506,7 +506,7 @@ let _evalForkTruncNoted = false;
 /**
  * 专用标签：fork 截断不是「某个递归函数被截断」，不能复用函数名 label
  * （否则 check 会误报 nudo:recursion-truncated）。service/check 按此标签
- * 映射为 `nudo:fork-truncated`（warning）。
+ * 映射为 `nudo:fork-truncated`（info —— 预算观测，非质量失败）。
  */
 export const FORK_TRUNCATION_LABEL = "#fork-budget";
 

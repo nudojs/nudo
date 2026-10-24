@@ -597,7 +597,7 @@ Context: [nudo export](../api/cli-reference.md#nudo-export)
 migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
 ```
 
-`nudo migrate strip --write` refused to write a product that Node cannot parse. **Error** (usage) — the strip pass removes type syntax only; class member modifiers (`private` / `public` / `protected` / `readonly` / `abstract` / `override`) and constructor parameter properties must be lowered by hand (or by `tsc`). `migrate` is a one-way gate: a half-written `.js` has no rollback path, so the file is left untouched and named.
+`nudo migrate strip --write` refused to write a product that Node cannot parse. **Error** (usage) — the strip pass removes type syntax only; whatever it cannot lower itself must be lowered by hand (or by `tsc`). Class member modifiers (`private` / `public` / `protected` / `readonly` / `abstract` / `override`) and constructor parameter properties **are** lowered by the strip pass now (the modifiers are dropped; a parameter property becomes a field plus a `this.x = x` assignment in the constructor body), so they no longer trip this gate — what still trips it is a construct the pass cannot lower (e.g. a **destructured** constructor parameter property). `migrate` is a one-way gate: a half-written `.js` has no rollback path, so the file is left untouched and named.
 
 Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
 

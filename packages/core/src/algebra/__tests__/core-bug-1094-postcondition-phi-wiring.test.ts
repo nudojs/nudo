@@ -241,8 +241,12 @@ export function f(d, max) {
 }
 `;
     const r = issuesOf(src, "/t/phi-wiring.js");
-    expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toHaveLength(1);
-    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toEqual([]);
+    // Bug 1116：返回项 `d` 是**声明域参数**（d: num）⇒ 值域已知（任意 number）
+    // ⇒ `positive` 不蕴含 ⇒ 契约不成立（d=0 即违约）⇒ error（不再降级成
+    // warning——warning 不改 exit code ⇒ 门禁空转）。
+    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(1);
+    expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toEqual([]);
+    // Φ 未被消费 ⇒ 零 assume-relied（不变）。
     expect(r.issues.filter((i) => i.code === "nudo:assume-relied")).toEqual([]);
   });
 
@@ -258,8 +262,10 @@ export function f(d, max) {
 }
 `;
     const r = issuesOf(src, "/t/phi-wiring.js");
-    expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toHaveLength(1);
-    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    // Bug 1116：同上的声明域参数口径 ⇒ error（无公理时也成立：契约不成立
+    // 与 Φ 无关——Φ 只影响「能否证成」，不影响「能否反证」）。
+    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated")).toHaveLength(1);
+    expect(r.issues.filter((i) => i.code === "nudo:unproven-return")).toEqual([]);
   });
 
   it("生产接线是活的：@nudo:assume 的前提 Φ 真的交到了证明通道（opts.phi 非空）", () => {

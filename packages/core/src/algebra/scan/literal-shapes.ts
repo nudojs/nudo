@@ -240,6 +240,105 @@ function judgeOrMember(
   return actual === typeof v ? undefined : false;
 }
 
+/**
+ * 实参的**域类型**（`or` 成员的域兼容性判定用）。
+ *
+ * 与 `argScalarKind` 的差别：**区分 null / undefined 两个域**（nullish 实参的
+ * shape 是 `unknown` ⇒ `argScalarKind` 判不出 ⇒ 会把「nullish 实参撞数值界」
+ * 误当成未决）。null 与 undefined 是两个互不相等的域（Bug 429 负控制钉住）。
+ */
+function argDomainKind(arg: Abs): string | undefined {
+  const nk = nullishKindOf(arg);
+  if (nk !== undefined) return nk;
+  return argScalarKind(arg);
+}
+
+/**
+ * `or` 成员的**域类型**（该成员能容纳哪一类标量）——`undefined` = 判不出。
+ *
+ * Bug 1109：`union(number().gt(0), lit("a"))` 的成员实例化出来是
+ * `gt(x, 0)` 与 `eq(x, "a")`（`instantiateOnTerm` 对「prim + preds」**不带**
+ * typeof 原子）。对**非字面量 number** 实参：`gt` 不可判定（值未知）、
+ * `eq(x,"a")` 按类型为假 ⇒ 旧聚合规则「有 false ⇒ 违例」⇒ 报
+ * `(x > 0 ∨ x = "a")` ⇒ **假红**（实参完全可能满足 `x > 0` 那支）。
+ *
+ * 修法（与域面 `domain-membership.ts` 同口径）：把成员分成三类 ——
+ * - **true**：放行（析取满足）；
+ * - **确定假**：判得假，**或**域类型与实参形态**不兼容**（类型级确定违例）；
+ * - **未决**：判不了，**且**域类型与实参形态兼容（或域类型判不出）。
+ *
+ * 只有**全部成员都确定假**才报违例；存在未决成员 ⇒ 整条 union 保持未决
+ * （fail-closed：不猜 ⇒ 不报）。
+ */
+function memberDomainKind(q: Pred): string | undefined {
+  switch (q.op) {
+    case "eq": {
+      const v = predEqLiteral(q);
+      if (v !== undefined) return typeof v;
+      const nv = predEqNullish(q);
+      if (nv !== undefined) return nv.value === null ? "null" : "undefined";
+      return undefined;
+    }
+    case "typeof":
+      return q.t.op === "var" ? q.type : undefined;
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+      // 挂在参数自身的数值界 ⇒ 域是 number（length 界挂在 `length(x)` 上 ⇒ 判不出）
+      return q.a.op === "var" && q.b.op === "lit" && typeof q.b.value === "number"
+        ? "number"
+        : undefined;
+    case "and": {
+      for (const a of q.args) {
+        const k = memberDomainKind(a);
+        if (k !== undefined) return k;
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * `or`（union / nullable 契约）的**三值聚合**（Bug 1109 修法）。
+ *
+ * - `true`：任一支为真 ⇒ 放行（析取满足）。
+ * - `false`：**全部**成员都确定假 ⇒ 违例。
+ * - `undefined`：存在未决成员 ⇒ 整条未决 ⇒ 跳过（不猜）。
+ */
+function judgeOrUnion(
+  or: { op: "or"; args: Pred[] },
+  arg: Abs,
+  argLen: number | undefined,
+): boolean | undefined {
+  const typeLevel = orMembersOnVar(or);
+  let hasFalse = false;
+  let undecided = false;
+  for (const q of or.args) {
+    const r = judgeOrMember(q, arg, argLen, typeLevel);
+    if (r === true) return true;
+    if (r === false) {
+      hasFalse = true;
+      continue;
+    }
+    // 判不了 ⇒ 类型级再看**域类型**：域与实参形态不兼容 ⇒ 确定假；
+    // 兼容（或判不出）⇒ 未决 ⇒ 整条 union 保持未决。
+    if (typeLevel) {
+      const kind = argDomainKind(arg);
+      const dom = memberDomainKind(q);
+      if (kind !== undefined && dom !== undefined && dom !== kind) {
+        hasFalse = true;
+        continue;
+      }
+    }
+    undecided = true;
+  }
+  if (undecided) return undefined;
+  return hasFalse ? false : undefined;
+}
+
 /** 解构/默认参契约名 → 实参字段路径投影（C4.1 平铺；#137 嵌套点路径逐段下钻） */
 function projectArgPath(arg: Abs, segments: string[]): Abs | undefined {
   let cur: Abs | undefined = arg;
@@ -280,9 +379,15 @@ export function checkReqs(
   /** target 参下标 → 实参下标；缺省恒等 */
   argIndexOf: (reqIdx: number) => number | undefined,
   loc?: { start: { line: number; column: number } },
+  /**
+   * Bug 1114：**结构通道已报「实参不是 object」**的形参下标 ⇒ 该实参位的谓词
+   * 通道让位（否则同一条违例被报两次：「object shape at x」+「x.id > 0」）。
+   */
+  skipParams?: ReadonlySet<number>,
 ): void {
   const out = ctx.out;
   for (const [idx, pred, fieldPath, contractParam, rest] of reqs) {
+    if (skipParams?.has(idx)) continue;
     const argIdx = argIndexOf(idx);
     if (argIdx === undefined) continue;
     let arg = absArgs[argIdx];
@@ -330,6 +435,13 @@ export function checkReqs(
     // 门会实例化出 `typeof(x,"number")`）⇒ 类型不匹配由 typeof 通道独家报 ⇒
     // eq 通道的类型级兜底必须让位（否则同一条违例报两次）。
     const hasVarTypeof = flat.some((q) => q.op === "typeof" && q.t.op === "var");
+    // Bug 1114：同一实参位上 **typeof 通道已报** ⇒ **数值界**通道让位
+    // （类型都不对时「x > 0」这类界判据对实参没有意义 ⇒ 同一条违例报两次：
+    // `number().gt(0)` 收到 boolean ⇒ 「typeof x = "number"」+「x > 0」）。
+    // 让位只压**同一实参位**的其它通道，不影响别的形参位。
+    // ⚠ **eq（值义务）通道不让位**（族 48 口径：类型义务与值义务是两条独立
+    // 义务 ⇒ 既有门禁 core-bug-1020 / eval-bug-1046 钉住条数 2）。
+    let typeofReported = false;
     for (const p of flat) {
       // typeof 约束（string() / number() / boolean() 裸 prim）
       // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
@@ -348,6 +460,7 @@ export function checkReqs(
                   : undefined;
         // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
         if (actualPrim !== undefined && actualPrim !== expected) {
+          typeofReported = true;
           out.push({
             severity: "error",
             code: DIAG.constraintViolated,
@@ -362,6 +475,15 @@ export function checkReqs(
         }
         continue;
       }
+      // Bug 1114：**数值界**通道在 typeof 通道已报时让位 —— 类型都不对时，
+      // 「x > 0」这类界判据对实参**没有意义**（布尔 / 字符串不可能 > 0）
+      // ⇒ 与「typeof x = "number"」是同一条违例的两种说法 ⇒ 只报一次。
+      //
+      // ⚠ **eq（值义务）通道不让位**：契约「`typeof x = "bigint" ∧ x = 1n`」是
+      // **两条独立义务**，类型不符**与**值不符是**两个事实**（族 48 · 主 agent
+      // 追认 2026-10-23：bigint 字面量契约补齐 typeof 义务 ⇒ 类型不符时**多报
+      // 一条**「类型义务」诊断）⇒ 既有门禁 core-bug-1020 /
+      // eval-bug-1046 钉住条数（2 条）⇒ 这里只让位**界**通道。
       // nullish 字面量域（lit(null) / lit(undefined)）：值域只有那**一个**
       // nullish 值（Bug 965）。此前 eq 通道只认 number/string/boolean ⇒
       // lit(null) / lit(undefined) 契约整条不执法（假绿：f(2) 被放行），
@@ -404,6 +526,13 @@ export function checkReqs(
           p.op === "le" ||
           p.op === "eq"
         ) {
+          // Bug 1114：数值界在 typeof 通道已报时让位（见上：类型都不对时界判据
+          // 没有意义 ⇒ 同一条违例只报一次）；eq（值义务）仍报（族 48 口径）。
+          if (
+            typeofReported &&
+            (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le")
+          )
+            continue;
           out.push({
             severity: "error",
             code: DIAG.constraintViolated,
@@ -458,24 +587,15 @@ export function checkReqs(
       // nullish 实参整条挡在门外 ⇒ 那些实参对 union 契约**零义务**
       // （假绿：Bug 431 的非标量那一半）。
       //
-      // 逐支求值 + **三值聚合**（族 11 片 S6 任务③）：
+      // 逐支求值 + **三值聚合**（族 11 片 S6 任务③ + Bug 1109 修法）：
       //   - 任一支 true     ⇒ 放行（析取满足）
-      //   - 否则任一支 false ⇒ 违例（「确定违例的成员」+「判不了的成员」⇒
-      //                        整条仍不可满足；此前被 `unknown` 压住 ⇒ 假绿）
-      //   - 全是 undefined   ⇒ 不可判定 ⇒ 跳过（不猜）
+      //   - **全部**支确定假 ⇒ 违例（确定违例的成员 + 域类型与实参形态不兼容
+      //                        的成员；「有 false 就报」会把**不可判定但域兼容**
+      //                        的成员误判成违例 ⇒ 假红）
+      //   - 存在未决成员     ⇒ 不可判定 ⇒ 跳过（不猜）
       if (p.op === "or") {
-        const typeLevel = orMembersOnVar(p);
-        let pass = false;
-        let hasFalse = false;
-        for (const q of p.args) {
-          const r = judgeOrMember(q, arg, argLen, typeLevel);
-          if (r === true) {
-            pass = true;
-            break;
-          }
-          if (r === false) hasFalse = true;
-        }
-        if (!pass && hasFalse) {
+        const verdict = judgeOrUnion(p, arg, argLen);
+        if (verdict === false) {
           out.push({
             severity: "error",
             code: DIAG.constraintViolated,
@@ -540,6 +660,9 @@ export function checkReqs(
         // 走到这里的是普通数值界。
         // boolean/null 不进数值域（includes/every/some 返回 boolean 误当收窄）
         if (typeof lv === "boolean" || lv === null) {
+          // Bug 1114：typeof 通道已报（类型都不对）⇒ 数值界判据对实参**没有
+          // 意义**（布尔 / null 不可能 > 0）⇒ 同一条违例只报一次。
+          if (typeofReported) continue;
           out.push({
             severity: "error",
             code: DIAG.constraintViolated,
@@ -581,6 +704,11 @@ export function checkReqs(
 /**
  * shape 约束：实参 object Abs 的每个字段 ⊭ 嵌套约束。
  * 缺字段 / 类型不符 / 数值界违例 → nudo:constraint-violated。
+ *
+ * 返回值（Bug 1114）：`true` = 报了「实参**不是 object**」这条（`object shape
+ * at <path>`）⇒ 同一实参位的**谓词通道**（字段界那条）必须让位 ⇒ 否则
+ * `shape({id:number().gt(0)})` 收到 `null` 会同时发「object shape at x」与
+ * 「x.id > 0」两条（同一条违例报两次）。
  */
 export function checkShapeAgainstAbs(
   ctx: LiteralScanCtx,
@@ -590,14 +718,14 @@ export function checkShapeAgainstAbs(
   absArg: Abs,
   path: string,
   loc?: { start: { line: number; column: number } },
-): void {
+): boolean {
   const out = ctx.out;
   // Bug 439：`lazy(() => shape(...))` 的结构信息在 thunk 里 ⇒ 先 deref
   // （包装自身 `fields` 为空 ⇒ 不 deref 就被下面的 `!constraint.fields` 丢掉）
   const c = derefDeep(constraint);
-  if (!c.fields) return;
+  if (!c.fields) return false;
   // unknown 实参：无信息，不猜
-  if (absArg.shape.k === "unknown" && !absArg.term) return;
+  if (absArg.shape.k === "unknown" && !absArg.term) return false;
 
   const slots =
     absArg.shape.k === "obj"
@@ -630,8 +758,9 @@ export function checkShapeAgainstAbs(
         line: loc?.start.line,
         column: loc?.start.column,
       });
+      return true;
     }
-    return;
+    return false;
   }
 
   for (const [key, field] of Object.entries(c.fields) as Array<
@@ -665,6 +794,7 @@ export function checkShapeAgainstAbs(
       loc,
     );
   }
+  return false;
 }
 
 /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度
@@ -913,8 +1043,15 @@ export function checkShapeReqs(
   absArgs: Abs[],
   argIndexOf: (reqIdx: number) => number | undefined,
   loc?: { start: { line: number; column: number } },
-): void {
+): Set<number> {
   const out = ctx.out;
+  /**
+   * Bug 1114：返回「**实参不是 object**（已报 `object shape at <path>`）」的形参
+   * 下标集合 ⇒ 同一实参位的**谓词通道**（字段界那条）必须让位 ⇒ 否则
+   * `shape({id:number().gt(0)})` 收到 `null` 会同时发「object shape at x」与
+   * 「x.id > 0」两条（同一条违例报两次）。
+   */
+  const notObject = new Set<number>();
   for (const [idx, entry, fieldPath, rest] of reqs) {
     // Bug 439：`lazy(() => shape(...))` 的**包装自身**四项（fields / element /
     // int / prim）全空 ⇒ 闸门若只看约束自身，整条结构义务会被 `continue`
@@ -954,7 +1091,9 @@ export function checkShapeReqs(
     // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
     // shape 字段
     if (c.fields) {
-      checkShapeAgainstAbs(ctx, displayName, paramName, c, arg, paramName, loc);
+      if (checkShapeAgainstAbs(ctx, displayName, paramName, c, arg, paramName, loc)) {
+        notObject.add(idx);
+      }
     }
     // 顶层 array 元素
     if (c.element) {
@@ -1019,6 +1158,7 @@ export function checkShapeReqs(
       }
     }
   }
+  return notObject;
 }
 
 /**
@@ -1097,10 +1237,10 @@ function checkUnionMembers(
 /**
  * 谓词通道（`checkReqs` 的 `or` 聚合臂）能否**自己**裁决这条 union。
  *
- * 与 `or` 聚合臂**逐字同口径**（族 11 片 S6 任务③）：聚合规则是
- * 「有 true ⇒ 放行；否则有 false ⇒ 违例；否则（全是 undefined）⇒ 跳过」
- * ⇒ 本函数返回 true 的条件 = 「没有成员为 true **且**至少一个成员为 false」
- * —— 正是 `or` 臂会产出诊断的条件 ⇒ 两条通道互斥（同一条违例不会双报）。
+ * 与 `or` 聚合臂**逐字同口径**（族 11 片 S6 任务③ + Bug 1109 修法）：聚合规则是
+ * 「有 true ⇒ 放行；**全部**成员确定假 ⇒ 违例；否则（存在未决成员）⇒ 跳过」
+ * ⇒ 本函数返回 true 的条件 = 「谓词通道会产出诊断」⇒ 两条通道互斥
+ * （同一条违例不会双报）。
  *
  * 结构成员实例化出的分支（`ptypeof(get(u, id), "number")`）**恒不可判定**
  * ⇒ `or` 臂被压住 ⇒ 不报 ⇒ 由结构分支接管（Bug 433 的让位闸）。
@@ -1112,14 +1252,7 @@ function unionPredDecides(
 ): boolean {
   const or = flattenPred(pred).find((q) => q.op === "or");
   if (!or || or.op !== "or") return false;
-  const typeLevel = orMembersOnVar(or);
-  let hasFalse = false;
-  for (const q of or.args) {
-    const r = judgeOrMember(q, arg, argLen, typeLevel);
-    if (r === true) return false;
-    if (r === false) hasFalse = true;
-  }
-  return hasFalse;
+  return judgeOrUnion(or, arg, argLen) === false;
 }
 
 /** array 成员的元素义务（逐元素；`arr` 走 join 元素、`tuple` 走逐槽） */

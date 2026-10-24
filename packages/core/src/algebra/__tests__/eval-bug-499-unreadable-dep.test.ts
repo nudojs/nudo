@@ -59,18 +59,29 @@ describe("Bug 499：依赖不可读不得炸穿整轮 check", () => {
     expect(r.issues.filter((i) => i.code === "nudo:module-unreadable")).toEqual([]);
   });
 
-  it("读失败轮不得与「真不存在」轮共享 memo（陈旧命中）", () => {
+  it("读失败轮不得与「真不存在」轮共享 memo（陈旧命中）—— **同一个 loader 闭包**切换行为", () => {
     const src = MAIN;
-    const miss = checkSource("/t/main2.js", src, pTrue, {
-      fromFile: "/t/main2.js",
-      loadModule: () => undefined,
-    });
+    // ⚠ 断言强度：两次调用必须**共用同一个 loader 对象**——`checkMemoKey` 含
+    // loader 身份 ⇒ 换 loader 就换 key ⇒ 旧写法（miss 一个 loader /
+    // unreadable 另一个 loader）**不可能**陈旧命中 ⇒ 钉不到失效逻辑。
+    let mode: "miss" | "unreadable" = "miss";
+    const loader = () => {
+      if (mode === "miss") return undefined;
+      throw Object.assign(new Error("EACCES: permission denied, open '/t/dep.js'"), {
+        code: "EACCES",
+        path: "/t/dep.js",
+      });
+    };
+    const opts = { fromFile: "/t/main2.js", loadModule: loader };
+    const miss = checkSource("/t/main2.js", src, pTrue, opts);
     expect(miss.issues.filter((i) => i.code === "nudo:module-unreadable")).toEqual([]);
-    // 同一文件、同一份源码：换成不可读 ⇒ 必须重新判定并报出读失败
-    const unreadable = checkSource("/t/main2.js", src, pTrue, {
-      fromFile: "/t/main2.js",
-      loadModule: throwingLoader("EACCES", "/t/dep.js"),
-    });
+    // 同一 loader、同一文件、同一份源码：切到不可读 ⇒ 必须重新判定并报出读失败
+    mode = "unreadable";
+    const unreadable = checkSource("/t/main2.js", src, pTrue, opts);
     expect(unreadable.issues.filter((i) => i.code === "nudo:module-unreadable").length).toBe(1);
+    // 读失败轮**不得**把 memo 写成「读失败」的结论 ⇒ 切回 miss 后仍是静默
+    mode = "miss";
+    const missAgain = checkSource("/t/main2.js", src, pTrue, opts);
+    expect(missAgain.issues.filter((i) => i.code === "nudo:module-unreadable")).toEqual([]);
   });
 });

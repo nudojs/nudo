@@ -98,7 +98,8 @@ function classEntryGate(
     if (!g) continue;
     const effects = collectEntryMayThrows(source, name, g, file, pTrue, stdOpts);
     const declared = declaredThrowsForEntry(source, name);
-    for (const e of filterGateThrows(effects, declared, stdOpts.ignoreThrows)) {
+    // `ignoreThrows` 未设 ⇒ undefined（与 check.ts `opts.ignoreThrows` 同口径：不忽略任何 throw）
+    for (const e of filterGateThrows(effects, declared, undefined)) {
       out.push({ fn: name, kind: e.kind });
     }
   }

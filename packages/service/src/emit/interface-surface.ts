@@ -529,6 +529,13 @@ type CachedEffectiveInterface = {
   returns?: { constraint: EncodedConstraint };
   source: "handwritten" | "generated" | "implicit";
   conflict?: { params: string[]; returns?: boolean };
+  /**
+   * 合取**不可判定**（能力边界，非语义不可满足）——Bug 1141：结构型合取
+   * 不得静默丢掉另一侧的字段义务；合不了的形态组合按 Bug 340 口径不判
+   * conflict，但必须显式留痕（core 的 check 面据此发 warning 诊断）。
+   * 形状与 conflict 同款，便于缓存面无损透传。
+   */
+  undecidable?: { params: string[]; returns?: boolean };
 };
 
 /**
@@ -571,6 +578,7 @@ function cachedToEffective(
       : {}),
     source: e.source,
     ...(e.conflict ? { conflict: e.conflict } : {}),
+    ...(e.undecidable ? { undecidable: e.undecidable } : {}),
   };
 }
 
@@ -685,6 +693,7 @@ export async function interfaceSurface(
             // 磁盘表保留真实分档；implicit 也可序列化（展示层用）
             source: eff.source,
             ...(eff.conflict ? { conflict: eff.conflict } : {}),
+            ...(eff.undecidable ? { undecidable: eff.undecidable } : {}),
           };
         } catch {
           delete freshTable.fns[fn.name];

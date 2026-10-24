@@ -126,7 +126,7 @@ VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.
 | `NUDO_CACHE_MAX_EVALRUNS` | 会话 LRU `maxEvalRuns` | `32` | 规则同上。 |
 | `NUDO_DEPS_CACHE_DIR` | 跨项目 `@types` harvest 缓存根 | `~/.cache/nudo/deps` | 路径，或 `off` / `0` 关闭 deps 层。fail-open；见[性能](../guides/performance.md)。 |
 | `NUDO_HARVEST_NODE` | `@types/node` harvest | 开启 | `off` 关闭 Node API harvest（显式跳过，不是静默回退）。 |
-| `NUDO_DRAFT_FORCE` | 契约草稿写盘守卫 | 未设置 | `1` 允许在找不到项目根时执行 `contract --draft --write`（及 agent 草稿写盘工具），**并**允许 `contract --from-dts --write` 覆盖内容不同的既有草稿。 |
+| `NUDO_DRAFT_FORCE` | 契约草稿写盘守卫 | 未设置 | `1` 允许在找不到项目根时执行 `contract --draft --write`（及 agent 草稿写盘工具），**并**允许 `contract --from-dts --write` 覆盖内容不同的既有**机器原稿**。**人工改过的草稿永不覆盖**。 |
 
 ## 优先级
 

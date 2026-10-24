@@ -901,16 +901,34 @@ function caseLabelOf(node: unknown): CaseLabelKind | undefined {
   return undefined;
 }
 
-/** 一臂的标签事实集：prim 字面量集 + nullish 粒度 */
-type ArmLabels = { prims: CaseLabelValue[]; nullish: "null" | "undefined" | "nullish" | null };
+/**
+ * 一臂的标签事实集：prim 字面量集 + nullish 粒度 + 「是否全是原始字面量」。
+ *
+ * Bug 1117：`allLiteral` = 本臂的**每个** case 测试都是原始字面量
+ * （prim / null / undefined）。共享体的多标签臂（`case null: case "ab":`）
+ * 与含**非字面量**测试的臂（`case v === null: case "ab":`）都 ⇒ 命中值
+ * **不唯一** ⇒ 不得按 prim 标签单值重绑（否则把 null 那条路径重绑成
+ * "ab" ⇒ `null.length` 本该抛 TypeError 却读出 2 ⇒ L2 may-throw 消失）。
+ */
+type ArmLabels = {
+  prims: CaseLabelValue[];
+  nullish: "null" | "undefined" | "nullish" | null;
+  /** 本臂的 case 测试**全部**是原始字面量（prim / null / undefined） */
+  allLiteral: boolean;
+};
 
 /** 收集一臂的 case 标签事实（prim 去重；null/undefined 合并粒度） */
 function armLabelsOf(tests: readonly unknown[]): ArmLabels {
   const prims: CaseLabelValue[] = [];
   let nullish: "null" | "undefined" | "nullish" | null = null;
+  let allLiteral = true;
   for (const t of tests) {
     const l = caseLabelOf(t);
-    if (!l) continue;
+    if (!l) {
+      // 非字面量测试（`case v === null:`）⇒ 该臂的命中值不可由标签确定
+      allLiteral = false;
+      continue;
+    }
     if (l.k === "prim") {
       if (!prims.includes(l.v)) prims.push(l.v);
       continue;
@@ -918,7 +936,7 @@ function armLabelsOf(tests: readonly unknown[]): ArmLabels {
     if (nullish === null) nullish = l.k;
     else if (nullish !== l.k) nullish = "nullish";
   }
-  return { prims, nullish };
+  return { prims, nullish, allLiteral };
 }
 
 /**
@@ -1075,10 +1093,26 @@ export function switchCaseFacts(
     const facts: SwitchCaseFacts = { name };
     if (key !== undefined) facts.key = key;
     // 命中事实：仅非 default 臂（default 臂无标签 ⇒ 无命中值）
+    //
+    // Bug 1117：**同体的所有标签都必须是原始字面量**才谈得上「命中值」：
+    // - `case null: case "ab":` 共享一个体 ⇒ 命中值可能是 null **或** "ab"
+    //   ⇒ 只按 prim 标签单值重绑会把 null 那条路径重绑成 "ab"
+    //   （`const x = null; switch (x) { case null: case "ab": return x.length; }`
+    //   原生抛 TypeError，引擎却按 "ab" 读出 2 ⇒ L2 may-throw 消失 = 假绿）。
+    // - `case v === null: case "ab":` 含**非字面量**测试 ⇒ 命中值不可由标签确定
+    //   （原生命中的是「测试为真」那条路径）。
+    // ⇒ 这两类臂**不产命中事实**（宁缺毋假）。
+    //
     // 成员判别式的多标签臂（case "a": case "b": 共享体）——$narrowMemberEq
     // 的 keep=true 是**单值**语义（链式多值 = 交集 ⇒ 剪空后原样返回），
     // 保守放弃多标签臂的命中窄化。
-    if (!arm.isDefault && mine.prims.length > 0 && (key === undefined || mine.prims.length === 1)) {
+    if (
+      !arm.isDefault &&
+      mine.allLiteral &&
+      mine.nullish === null &&
+      mine.prims.length > 0 &&
+      (key === undefined || mine.prims.length === 1)
+    ) {
       facts.hit = [...mine.prims];
     }
     if (key !== undefined) {
@@ -1133,7 +1167,20 @@ export function narrowCaseLabelArmThunk(
       }
       const hit = facts.hit ?? [];
       if (hit.length > 0) {
-        const lits = hit.map((v) => `$lit(${JSON.stringify(v)})`);
+        // Bug 1117（P2）：`case 0:` 命中的是 `x === 0` ⇒ 值域含 **-0**
+        // （`-0 === 0` 为真，但 `-0 !== 0`）⇒ 直接重绑 `$lit(0)` 会把 -0
+        // 改成 +0（`const x = -0; switch (x) { case 0: return 1 / x; }`
+        // 原生是 -Infinity，引擎算成 Infinity = **自信的错值**）⇒ 数值 0 的
+        // 标签按**交集细化** `{0, -0}`（`$join($lit(0), $lit(-0))`），
+        // 不改写成单值。
+        const lits: string[] = [];
+        for (const v of hit) {
+          if (typeof v === "number" && v === 0) {
+            lits.push("$lit(0)", "$lit(-0)");
+            continue;
+          }
+          lits.push(`$lit(${JSON.stringify(v)})`);
+        }
         const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
         out = `((${facts.name}) => ${out})(${arg})`;
       }

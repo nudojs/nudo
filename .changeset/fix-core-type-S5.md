@@ -1,7 +1,23 @@
 ---
-"@nudojs/service": patch
-"nudojs": patch
+"@nudojs/service": major
+"nudojs": major
 ---
+
+**BREAKING**: 产物面（dts / zod / standard / case）的**形参位形状**变了 ——
+数组解构形参现在按**元素下标**聚合成**元组**，TS 的 `this: T` 接收者标注不再
+被当成形参。
+
+谁会坏：消费方 `import` 生成产物并按**旧形状**调用的代码 ——
+
+- 数组解构形参（`fn({ a: number() })` 对 `[a, b]`）：dts 面此前给
+  `{ a: number }`、zod 面给 `z.object({ a: … })`（与真实形参形态**颠倒**），
+  现在给**元组**（`[ a, b ]` / `z.tuple([…])`）⇒ 旧形状的调用点类型不兼容；
+- `this: T` 接收者标注：dts 多一个形参（消费方吃 `TS2554` 假红）、zod 多一个
+  字面量槽 `"this"`、standard 多一个幽灵导出 `<fn>_this` ⇒ 这些**幽灵位**现在
+  全部消失。
+
+怎么迁移：重新生成产物；数组解构形参按**数组**传参；消费方若引用过
+`<fn>_this` 之类幽灵导出，直接删掉（它们本就不存在）。
 
 fix(service, nudojs): 期望判定严格化、数组解构的产物面按元素下标寻址、`--assume` 的界落到形参前提、`this` 接收者标注不进形参表
 

@@ -95,15 +95,23 @@ function isValueSetUnknown(ret: Abs): boolean {
 }
 
 /**
- * 值域已知但无 pred 证据（bare prim / 无界表达式）：
+ * 值域**未被跟踪**（派生表达式 / 无 pred 证据）：
  * 后置界义务证不出也反证不了 → unprovable，不得当 disproved。
- * 只有**带界证据**存在却不蕴含时才有「确定不满足」的证据（F3 点 1）。
+ * 只有**值域已知**（ret.pred 有事实）却不蕴含时才有「确定不满足」的证据（F3 点 1）。
  *
- * Bug 370：判据必须是「**带界**证据」，不是「**有** pred」。
- * `typeof` 证据（`typeof x === "number"`）只说明**类型**，不说明**值域**
- * ⇒ `ret.pred` 只有 typeof 时，「不蕴含」**推不出**「确定不满足」
- * ⇒ 同一条义务在 `return x`（typeof 证据）下判 error、在 `return x + 1`
- * （无 pred 证据）下判 warning —— 判据不一致 ⇒ 假红。
+ * Bug 1116（回退 Bug 370 的语义降级）：判据是「**ret.pred 有事实**」，不是
+ * 「**带界**证据」。返回契约是对**所有**输入成立的后置 ⇒ 值域已知
+ * （声明域参数 / 字面量 / 带界事实）却不蕴含契约 ⇒ **契约不成立**
+ * （存在违约输入）⇒ 判 `disproved`（error）。
+ * - 旧口径（Bug 370：只有 gt/ge/lt/le 算证据）把 `typeof` 级证据
+ *   （`@nudo:contract x num` 的声明域参数）判成「无证据」⇒ 降级
+ *   `unproven-return`（**warning**）⇒ warning 不改 exit code ⇒
+ *   `nudo check` 门禁空转（假绿）：`return x`（x: number()）对
+ *   `return positive` 是**确定违约**（x=0 即违约）却只报 warning。
+ *   docs/design/cli-semantics.md §5.5：warning 只针对 any/unknown
+ *   （推断失败）——声明域参数不是 any/unknown ⇒ 不得降级。
+ * - `unprovable` 收窄到「**无 pred 证据**」（`return x + 1` /
+ *   `return Math.abs(x)`：值域未被跟踪 ⇒ 证不出也反证不了）。
  *
  * Bug 1080：证据面 = **ret.pred（值域事实）∧ Φ 的「同项」界事实（路径事实）**。
  *
@@ -131,11 +139,19 @@ function isBoundedEvidenceMissing(
   if (constraint.preds.length === 0 && !constraint.members) return false;
   // 字面量有确定值，可走域隶属 → 不算证据缺失
   if (ret.term?.op === "lit") return false;
-  // 值域事实：ret.pred 的界原子（相对 ret.term）
-  if (hasBoundEvidence(ret.pred)) return false;
+  // 值域事实（Bug 1116）：`ret.pred` 有事实 ⇒ 该项的值域**已知**
+  // （声明域参数的 typeof 级证据 / 守卫窄化的界事实）⇒ 返回义务**可判定**：
+  // 「不蕴含契约」= 「契约不成立」（契约对**所有**输入成立 ⇒ 值域 ⊄ 契约域
+  // ⇒ 存在违约输入）⇒ 判 `disproved`（error）。**不得**降级成
+  // `unproven-return`（warning）：warning 不改 exit code ⇒ 门禁空转（假绿）。
+  //
+  // ⚠ 只有**带界**原子（gt/ge/lt/le）才算证据是 Bug 370 的口径，已撤销：
+  //   `typeof` 级证据虽不描述值域，但**声明域参数**的值域就是它的声明域
+  //   （`number()` ⇒ 任意 number）⇒ 「不蕴含」确实蕴含「契约不成立」。
+  if (ret.pred && ret.pred.op !== "true") return false;
   // 路径事实：Φ 里**同项且蕴含该约束**的界事实（Bug 1094）
   if (phiSuppliesConstraint(phi, constraint, ret)) return false;
-  // 有约束义务但无带界证据（bare number / 仅 typeof vs gt(0)）→ 不可判定
+  // 无 pred 证据（bare prim / 派生表达式）⇒ 值域未被跟踪 ⇒ 不可判定
   return true;
 }
 
@@ -164,29 +180,6 @@ export function phiSuppliesConstraint(
   const item = retAnchorTerm(ret);
   if (!hasSameItemBoundEvidence(phi, item)) return false;
   return implies(phi, instantiateOnTerm(constraint, item));
-}
-
-/**
- * pred 树是否含**界原子**（数值/长度比较 gt/ge/lt/le）。
- * `typeof` / `eq` 只是**类型/取值**证据，不是**界**证据。
- */
-function hasBoundEvidence(p: Pred | undefined): boolean {
-  if (!p) return false;
-  switch (p.op) {
-    case "gt":
-    case "ge":
-    case "lt":
-    case "le":
-      return true;
-    case "and":
-    case "or":
-      return p.args.some(hasBoundEvidence);
-    case "not":
-      // `not(gt(x,0))` ≡ `x <= 0` ⇒ 仍带界；`not(typeof(...))` 不带
-      return hasBoundEvidence(p.arg);
-    default:
-      return false;
-  }
 }
 
 /**

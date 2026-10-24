@@ -64,6 +64,13 @@ Result: FAIL (drift or errors found)
 > summed over all files — the same unit as the per-file `drift: N witness directive(s) changed`
 > line above. (It used to count *files with drift*, which made the Summary number and the
 > detail line two different units on the same screen.)
+>
+> **Engine internal fallback ⇒ FAIL.** If a module could not be evaluated at all
+> (engine internal fallback — e.g. the module failed to compile or evaluate), the
+> affected file's exports could not be verified ⇒ `health` reports the file with
+> `✗ internal fallback(s)` and the run ends with
+> `Result: FAIL (engine internal fallback found)` and a non-zero exit code. This is
+> **fail-closed**: a file the engine could not analyze must not be reported as healthy.
 
 The suggested refresh is exactly the re-solidify command:
 

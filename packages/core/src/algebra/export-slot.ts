@@ -101,8 +101,15 @@ function defaultLocalNameOf(file: AstFileLike): string | undefined {
 /**
  * CJS 对象字面量导出：`module.exports = { … }` / `exports = { … }`。
  *
- * 返回「普查名 → 导出槽（成员键）」表。普查名口径与 `listTopFunctions`
- * 的 CJS 分支一致：命名函数表达式取**自有 id**，否则取**成员键**。
+ * 返回「普查名 → 导出槽（成员键）」表。**普查名口径 = 成员键**——与
+ * `listTopFunctions` 的 CJS 分支**同源**（`scan-top-functions.ts`：
+ * `pushFnFromInit(keyName, …)` ⇒ `fallbackName ?? r.id?.name` ⇒ 成员键优先）。
+ *
+ * ⚠ **不得**用具名函数表达式的内层 id（`fnId ?? key`）：内层 id 不是导出槽名
+ * （`{ greet: function inner() {} }` 的导出槽是 `greet`）⇒ 普查名 `greet` 在表里
+ * 查不到 ⇒ 侧车契约整个不绑定（L1 闸门**假绿**）+ 签名退成 `unknown`；且内层 id
+ * 会与别的成员键**碰撞**（`{ a: function b(){}, b: () => … }` ⇒ 映射串成
+ * `b -> a`）。成员键是导出面的唯一口径 ⇒ 映射**只用成员键**（Bug 1128）。
  */
 function cjsMemberSlotsOf(file: AstFileLike): Map<string, string> {
   const out = new Map<string, string>();
@@ -119,15 +126,8 @@ function cjsMemberSlotsOf(file: AstFileLike): Map<string, string> {
       }
       const key = memberKeyName(member);
       if (!key) continue;
-      if (member.type === "ObjectMethod") {
-        // 对象方法：普查名 = 成员键（方法名即导出名）
-        if (!out.has(key)) out.set(key, key);
-        continue;
-      }
-      const value = member.value as NodeLike | undefined;
-      const fnId = value?.type === "FunctionExpression" ? identName(value.id) : undefined;
-      const census = fnId ?? key;
-      if (!out.has(census)) out.set(census, key);
+      // 普查名 = **成员键**（对象方法 / 属性 / 具名函数表达式一律同口径）
+      if (!out.has(key)) out.set(key, key);
     }
   }
   return out;

@@ -22,7 +22,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `nudo.selectCase` | `nudo/selectCase` | 切换用于悬停/诊断的活动用例 |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | 读取文件中每个函数的活动用例索引 |
 
-`nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract*` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` 返回 `{ success: true }`；`nudo.getActiveCases` 返回 `Record<string, number>`。共享数据源由 `AGENT_TOOL_SOURCES`（E5）钉住——agent 工具与 CLI/LSP 命令走同一 service/core 入口。
+`nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract*` 返回 MCP 风格的文本内容——`{ content: [{ type: "text", text }] }`。`nudo.selectCase` / `nudo.selectContract` 成功时返回 `{ success: true }`，被拒绝时（函数未知、用例下标越界、参数畸形）返回 `{ success: false, error, isError: true }`；`nudo.getActiveCases` 成功时返回 `Record<string, number>`，失败时返回同样的 `{ success: false, error, isError: true }` 形状。共享数据源由 `AGENT_TOOL_SOURCES`（E5）钉住——agent 工具与 CLI/LSP 命令走同一 service/core 入口。
 
 ## 约定
 
@@ -45,13 +45,23 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `source` | `string?` | 预读源码（绕过磁盘/编辑器） |
 | `format` | `"text" \| "json"` | `"json"` → 只返回 CheckJson；默认人类摘要 + JSON |
 
-**返回（CheckJson v1）：** `{ version: 1, file, ok, summary, signatures[], issues[] }`，issue 可携带 `actual` / `expected`。Issue code：
+**返回（CheckJson v1）：** `{ version: 1, file, ok, summary, signatures[], issues[] }`，issue 可携带 `actual` / `expected`。Issue code（完整表见 [check 指南](../guides/check.md)）：
 
 | Code | 含义 |
 |------|---------|
 | `nudo:constraint-violated` | 调用/返回不满足显式契约 Pred（`actual ⊭ expected`） |
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配 |
+| `nudo:case-inconsistency` | `@nudo:case` 见证 ⊭ refine |
+| `nudo:interface-param-mismatch` | 手写契约的形参名不在形参面上 |
+| `nudo:interface-conflict` | 手写契约的合取不可满足 |
+| `nudo:interface-load` / `nudo:interface-cycle` | 侧车装载失败 / 循环 |
+| `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
+| `nudo:interface-name-clash` | 侧车导出名与源导出重名 |
+| `nudo:interface-underivable` | 派生契约行无法从源证据推导（**info**；手写契约永不触发它） |
+| `nudo:interface-drift` | `@generated` 段 ≠ 重算结果（warning） |
+| `nudo:no-signature` | 无符号化 Abs 签名（**warning**；L2 仍可能经 entry 回退生效） |
+| `nudo:opaque-result` | 不透明求值 |
 
 **`actions[]`（只增字段）。** 每条 `issues[]` 可携带结构化下一步。Agent 应优先消费 `actions[]`，不要解析 `suggestion` 散文：
 
@@ -82,7 +92,7 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `format` | `"text" \| "json"` | `"json"` → 只返回 CaseJson |
 | `functions` | `string[]?` | 过滤到这些函数名 |
 
-**返回（CaseJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是外延字符串（`formatShape` 投影）。
+**返回（CaseJson v1）：** `cases[].intension` 携带 `abs` / `term` / `pred` / `conf`（无损）；`args` / `result` 是外延字符串（`formatShape` 投影）。无约束的入口参数是 `any`；`unknown` 表示推断失败。
 
 ```json
 {
@@ -200,7 +210,7 @@ Note: witness names are hand-written (not the synthetic call@/entry@ namespace);
 | `functionName` | `string` | 函数名 |
 | `caseIndex` | `number` | 要激活的用例索引（从 0 开始） |
 
-**返回：** `{ success: true }`。服务器会以新的活动用例重新验证文档并刷新 CodeLens。
+**返回：** 成功时 `{ success: true }`；函数未知、该函数没有可选择的 `@nudo:case`、或 `caseIndex` 越界时 `{ success: false, error, isError: true }`。服务器会以新的活动用例重新验证文档并刷新 CodeLens、内联提示与拉取诊断。
 
 ## nudo.getActiveCases
 
@@ -212,7 +222,7 @@ Note: witness names are hand-written (not the synthetic call@/entry@ namespace);
 |------|------|-------------|
 | `file` | `string` | JavaScript 文件的 `file://` URI 或路径 |
 
-**返回：** `Record<string, number>`，函数名 → 活动用例索引，例如 `{ "parse": 1, "greet": 0 }`。
+**返回：** `Record<string, number>`，函数名 → 活动用例索引，例如 `{ "parse": 1, "greet": 0 }`；失败时 `{ success: false, error, isError: true }`。
 
 ## nudo.contract / nudo.contract.draft / nudo.contract.emit
 
@@ -222,7 +232,7 @@ Interface 产品面（与 CLI 同一数据源）：
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
-| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
 
 `loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.contract.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
 
@@ -241,6 +251,8 @@ Interface 产品面（与 CLI 同一数据源）：
 
 约束构建器形式（`number()`、`lit(...)`、`shape({...})`、`union(...)`、`array(...)`）与结构化表达式（对象/数组字面量、`=>` 函数）透传给指令文法（`parseCaseArgExpr`）；其他名字一律变为 `unknown`。
 
+Nudo 无法表达的名字会降级为 `unknown`——**绝不**被悄悄放宽成 `any`。`Bindings applied: …` 这行说明**实际**注入了什么，所以降级后的绑定读作 `x: unknown (requested "Date" is not expressible; applied as unknown)`。联合里只要有一个成员不可表达，整个联合一起降级（`union(unknown, …)` 不是合法的约束构建器实参）。
+
 ## 诊断
 
 类型错误（失败的 `@nudo:contract` 断言、不可达代码等）通过 LSP 诊断在两个方向可用：
@@ -258,7 +270,7 @@ Interface 产品面（与 CLI 同一数据源）：
 |--------------|-------------|
 | `nudo-what-if` | `nudo.whatIf`——`bindings` 现在会真正生效（此前被忽略） |
 | `nudo-check` | `nudo.check`（CheckJson v1，CI/agent 门禁首选）。pull 诊断现已含 Abs check + A3 过滤的 evaluator 诊断（打开 buffer），但不等价于全文件 CI 门禁 |
-| `nudo-type-at` | `bindings` 为空、`target` 指定目标的 `nudo.whatIf`，或 LSP hover |
+| `nudo-type-at` | `nudo.hover`（无损 Abs），或 `bindings` 为空、`target` 指定目标的 `nudo.whatIf` |
 | `nudo-suggest-case` | `nudo.suggestCase` |
 | `nudo-trace` | `nudo.trace` |
 

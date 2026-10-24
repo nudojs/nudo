@@ -101,11 +101,12 @@ describe("Bug 215：@nudo:invariant 在四种循环形态同口径生效", () =>
     "%s 对照（无公理）：证不出 → 返回义务未证得（负控制：不得被本修复波及）",
     (_id, body) => {
       const r = checkOf(srcOf(body, null), sidecarOpts(SIDECAR));
-      // Bug 370：无公理时 `last` 只有 typeof 级证据（无界）⇒ 返回义务
-      // 「既证不出、也反证不了」⇒ 判 `nudo:unproven-return`（warning），
-      // **不得**判 `nudo:constraint-violated`（确定违约 = 假红）。
-      expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
-      expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(false);
+      // Bug 1116：无公理时 `last` 是**声明域参数**（值域已知：任意 number）⇒
+      // 返回契约 `ge(0)` 不蕴含 ⇒ 契约不成立（存在违约输入）⇒ 判
+      // `nudo:constraint-violated`（error）。判 warning 会让门禁空转
+      // （warning 不改 exit code）。
+      expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+      expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
       expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
       expect(r.issues.some((i) => i.code.startsWith("nudo:invariant"))).toBe(false);
     },

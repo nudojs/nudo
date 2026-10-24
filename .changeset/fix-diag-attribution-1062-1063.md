@@ -1,6 +1,23 @@
 ---
-"@nudojs/service": patch
+"@nudojs/service": major
 ---
+
+**BREAKING**: 重复声明 `@nudo:mock-module` 的诊断**码**与**默认严重级**变了 ——
+分析器通道此前把它一律报成 `nudo:module-missing`（**error**，fail-closed），
+现在按**错误种类**还原码：重复声明 ⇒ `nudo:mock-invalid`（**warning**，与 check
+面同码同级）；mock 文件缺失 / 装载失败 / 点名缺失 ⇒ `nudo:module-missing`
+（error，fail-closed）**逐字不变**。
+
+谁会坏：按**诊断码**分流 / 静音 / 快照的下游 —— 重复声明这一路径的码从
+`nudo:module-missing` 变成 `nudo:mock-invalid`，严重级从 error 变成 warning ⇒
+
+- 只静音 `nudo:module-missing` 的规则**不再**静音重复声明（改按
+  `nudo:mock-invalid` 静音）；
+- 把 `nudo:module-missing` 当 error 断言的快照 / 闸门**变红→变黄**（重复声明
+  不再拦构建）。
+
+怎么迁移：按**新码** `nudo:mock-invalid` 调整静音规则与快照；真正的模块缺失 /
+装载失败仍是 `nudo:module-missing`（error），语义不变。
 
 fix(service): 指令诊断的**码归因**与**文案贯通** —— `@nudo:mock-module` 重复声明不再被说成「模块缺失」（Bug 1062 / 1063 收口）
 

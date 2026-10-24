@@ -17,7 +17,38 @@
 import type { Node, Expression } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, symbolKeyOf, constFnNamesOf } from "./helpers.ts";
+import { isExpression, symbolKeyOf, constFnNamesOf, internalTmpNameSet } from "./helpers.ts";
+
+/**
+ * Bug 1127：成员路径发射用的**内部临时名**集合（已避开用户标识符）。
+ *
+ * 引擎生成的临时名与用户标识符**同名**时两种失效形态都成立（Bug 1058/1059
+ * 口径）：同作用域重复词法声明 ⇒ 产物非法 JS ⇒ 整模块 fail-closed；内层遮蔽
+ * 用户绑定 ⇒ 用户表达式读到引擎临时量 ⇒ 自信的错值 / TDZ ReferenceError。
+ *
+ * 成员路径 IIFE **在自身作用域里求值用户表达式**（计算键 + RHS + 根引用）
+ * ⇒ 临时名必须逐个避开用户标识符词形。
+ */
+export type MpTmpNames = {
+  /** 根引用载体（`__nudoMpRoot`） */
+  root: string;
+  /** 写入值载体（`__nudoMpVal`） */
+  val: string;
+  /** 旧值载体（`__nudoMpOld`） */
+  old: string;
+  /** 新值载体（`__nudoMpNew`） */
+  next: string;
+  /** 写回结果载体（`__nudoMpRes`） */
+  res: string;
+  /** delete 键载体（`__nudoMpDelK`） */
+  delK: string;
+  /** 各层键载体（长度 = 层数；仅计算键用） */
+  keys: string[];
+  /** 中间层持有者载体（长度 = 层数 - 1） */
+  holds: string[];
+  /** 不可变更新补写链载体（长度 = 层数 - 1） */
+  props: string[];
+};
 
 export type MemberLayer = {
   /**
@@ -36,6 +67,16 @@ export type MemberLayer = {
   get: (base: string, key: string) => string;
   /** 写：base[key] = v */
   set: (base: string, key: string, v: string) => string;
+  /**
+   * Bug 1127：所属路径的**内部临时名**（各层共享同一份对象）。
+   *
+   * 挂在**层**上（而非只在 MemberPath 上）是为了让**派生路径**继承：
+   * emit.ts 的 optional 链 delete 前缀路径用对象字面量重建 MemberPath
+   * （只带 rootSrc / rootTarget / layers / rootRebindable）⇒ MemberPath 上
+   * 的字段会**丢失**；层对象是**共享引用**（`layers.slice(...)` 复制数组、
+   * 不复制元素）⇒ 派生路径经 `layers[0].tmp` 仍拿到同一套名字。
+   */
+  tmp?: MpTmpNames;
 };
 /**
  * 可重绑成员路径。
@@ -60,6 +101,14 @@ export type MemberPath = {
    * 根绑定不被污染。收窄口径见 helpers.ts 的 `constFnNamesOf`。
    */
   rootRebindable: boolean;
+  /**
+   * Bug 1127：本路径的**内部临时名**（避开用户标识符）。
+   *
+   * 派生路径（emit.ts 的 optional 链 delete 前缀路径）用对象字面量重建
+   * MemberPath（只带四个字段）⇒ 本字段会**丢失**⇒ 派生路径经
+   * `layers[0].tmp` 继承同一套名字（层对象是共享引用）。
+   */
+  tmp?: MpTmpNames;
 };
 
 /**
@@ -165,7 +214,11 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
   } else {
     return null;
   }
-  return { rootSrc, rootTarget, layers, rootRebindable };
+  // Bug 1127：内部临时名**避开用户标识符**（成员路径 IIFE 在自身作用域里
+  // 求值用户表达式——计算键 / RHS——写死名会遮蔽用户同名绑定）。
+  const tmp = allocTmpNames(opts, layers.length);
+  for (const l of layers) l.tmp = tmp;
+  return { rootSrc, rootTarget, layers, rootRebindable, tmp };
 }
 
 /** 路径读取源：d[i][0] → $idx($idx(d, i), 0) */
@@ -220,17 +273,90 @@ export function setParentPathSrc(p: MemberPath, valSrc: string): string {
  * - RHS 落在引用之后（原生顺序）；
  * - 计算键各一次（读/写共用同一绑定）；
  * - [[Set]] 只落末层（中间层只取值）——原生不做中间层 Put。
+ *
+ * Bug 1127：上面的 `__nudoMp*` 是**基名**——实际发射名经
+ * `internalTmpNameSet` 分配（避开用户标识符词形），同名则加 `_k` 后缀。
  * ------------------------------------------------------------------ */
 
-const MP_ROOT = "__nudoMpRoot";
-const MP_VAL = "__nudoMpVal";
-const MP_OLD = "__nudoMpOld";
-const MP_NEW = "__nudoMpNew";
-const MP_RES = "__nudoMpRes";
-const MP_DELK = "__nudoMpDelK";
-const mpKey = (i: number): string => `__nudoMpK${i}`;
-const mpHold = (i: number): string => `__nudoMpC${i}`;
-const mpProp = (i: number): string => `__nudoMpP${i}`;
+/** 内部临时名的**基名**（实际名见 MpTmpNames） */
+const MP_BASE_ROOT = "__nudoMpRoot";
+const MP_BASE_VAL = "__nudoMpVal";
+const MP_BASE_OLD = "__nudoMpOld";
+const MP_BASE_NEW = "__nudoMpNew";
+const MP_BASE_RES = "__nudoMpRes";
+const MP_BASE_DELK = "__nudoMpDelK";
+const mpBaseKey = (i: number): string => `__nudoMpK${i}`;
+const mpBaseHold = (i: number): string => `__nudoMpC${i}`;
+const mpBaseProp = (i: number): string => `__nudoMpP${i}`;
+
+/**
+ * Bug 1127：分配本路径的内部临时名（避开用户标识符）。
+ *
+ * 成员路径 IIFE **在自身作用域里求值用户表达式**（计算键 / RHS）⇒ 写死的
+ * `__nudoMp*` 会与用户同名绑定相撞：
+ * - 用户声明 `__nudoMpRoot` ⇒ IIFE 的 `const __nudoMpRoot = …` 遮蔽用户绑定
+ *   ⇒ 用户的计算键 / RHS 读到引擎临时量（自信的错值）或 TDZ ReferenceError；
+ * - 用户声明 `__nudoMpOld` ⇒ 复合赋值的旧值载体遮蔽用户绑定 ⇒ `$add(旧值, 旧值)`。
+ *
+ * 口径与 Bug 1058/1059 同款（`internalTmpNameSet` = `userIdentInfoOf(opts)`
+ * 避让集 + `_k` 后缀）⇒ 无碰撞时基名原样返回（产物逐字不变）。
+ */
+function allocTmpNames(opts: TranspileOptions, n: number): MpTmpNames {
+  const bases: string[] = [
+    MP_BASE_ROOT,
+    MP_BASE_VAL,
+    MP_BASE_OLD,
+    MP_BASE_NEW,
+    MP_BASE_RES,
+    MP_BASE_DELK,
+  ];
+  const keyBase = bases.length;
+  for (let i = 0; i < n; i++) bases.push(mpBaseKey(i));
+  const holdBase = bases.length;
+  for (let i = 0; i + 1 < n; i++) bases.push(mpBaseHold(i));
+  const propBase = bases.length;
+  for (let i = 0; i + 1 < n; i++) bases.push(mpBaseProp(i));
+  // 一次算避让集（`internalTmpNameSet` 内部只算一次 `userIdentInfoOf`）
+  const names = internalTmpNameSet(bases, opts);
+  const keys: string[] = [];
+  const holds: string[] = [];
+  const props: string[] = [];
+  for (let i = 0; i < n; i++) keys.push(names[keyBase + i]!);
+  for (let i = 0; i + 1 < n; i++) holds.push(names[holdBase + i]!);
+  for (let i = 0; i + 1 < n; i++) props.push(names[propBase + i]!);
+  return {
+    root: names[0]!,
+    val: names[1]!,
+    old: names[2]!,
+    next: names[3]!,
+    res: names[4]!,
+    delK: names[5]!,
+    keys,
+    holds,
+    props,
+  };
+}
+
+/**
+ * 本路径的临时名集合——`MemberPath.tmp` 优先；派生路径（对象字面量重建，
+ * 丢了 MemberPath 上的字段）经**共享的层对象**继承；都没有时退回基名
+ * （保底：产物仍可编译）。
+ */
+function tmpNamesOf(p: MemberPath, n: number): MpTmpNames {
+  const t = p.tmp ?? p.layers[0]?.tmp;
+  if (t) return t;
+  return {
+    root: MP_BASE_ROOT,
+    val: MP_BASE_VAL,
+    old: MP_BASE_OLD,
+    next: MP_BASE_NEW,
+    res: MP_BASE_RES,
+    delK: MP_BASE_DELK,
+    keys: Array.from({ length: n }, (_, i) => mpBaseKey(i)),
+    holds: Array.from({ length: Math.max(0, n - 1) }, (_, i) => mpBaseHold(i)),
+    props: Array.from({ length: Math.max(0, n - 1) }, (_, i) => mpBaseProp(i)),
+  };
+}
 
 /** 路径写入计划（键绑定 + 持有者链 + 末层读写） */
 type WritePlan = {
@@ -259,12 +385,13 @@ type WritePlan = {
 /** 计划构建：键绑定 + 持有者链（求值序 = 原生） */
 function planOf(p: MemberPath): WritePlan {
   const n = p.layers.length;
+  const t = tmpNamesOf(p, n);
   const decls: string[] = [];
   const keys: string[] = [];
   const keyAbss: string[] = [];
   // 根引用（原生第一求值：对象）
-  decls.push(`const ${MP_ROOT} = ${p.rootSrc};`);
-  let base = MP_ROOT;
+  decls.push(`const ${t.root} = ${p.rootSrc};`);
+  let base = t.root;
   const holders: string[] = [];
   for (let i = 0; i < n; i++) {
     const l = p.layers[i]!;
@@ -272,20 +399,22 @@ function planOf(p: MemberPath): WritePlan {
     let keyAbs = l.keyAbs;
     if (!l.keyConst) {
       // 计算键：绑临时量（只求值一次，读写共用）
-      decls.push(`const ${mpKey(i)} = ${l.keySrc};`);
-      key = mpKey(i);
-      keyAbs = mpKey(i);
+      const keyTmp = t.keys[i]!;
+      decls.push(`const ${keyTmp} = ${l.keySrc};`);
+      key = keyTmp;
+      keyAbs = keyTmp;
     }
     keys.push(key);
     keyAbss.push(keyAbs);
     if (i < n - 1) {
       // 中间层：**只取值**（原生不做中间层 [[Set]]）
-      decls.push(`const ${mpHold(i)} = ${l.get(base, key)};`);
-      holders.push(mpHold(i));
-      base = mpHold(i);
+      const holdTmp = t.holds[i]!;
+      decls.push(`const ${holdTmp} = ${l.get(base, key)};`);
+      holders.push(holdTmp);
+      base = holdTmp;
     }
   }
-  const holder = n === 1 ? MP_ROOT : base;
+  const holder = n === 1 ? t.root : base;
   const lastKey = keys[n - 1]!;
   const last = p.layers[n - 1]!;
   return {
@@ -308,14 +437,15 @@ function planOf(p: MemberPath): WritePlan {
  */
 function propagateLines(p: MemberPath, plan: WritePlan, holderIdx: number, newVal: string, pad: string): string[] {
   const lines: string[] = [];
-  const parentBase = holderIdx === 0 ? MP_ROOT : plan.holders[holderIdx - 1]!;
+  const t = tmpNamesOf(p, plan.n);
+  const parentBase = holderIdx === 0 ? t.root : plan.holders[holderIdx - 1]!;
   const parentKey = plan.keys[holderIdx]!;
   const setter = p.layers[holderIdx]!.set;
   if (holderIdx === 0) {
     lines.push(`${pad}${p.rootTarget} = ${setter(parentBase, parentKey, newVal)};`);
     return lines;
   }
-  const nextVar = mpProp(holderIdx);
+  const nextVar = t.props[holderIdx]!;
   lines.push(`${pad}const ${nextVar} = ${setter(parentBase, parentKey, newVal)};`);
   lines.push(`${pad}if (${nextVar} !== ${plan.holders[holderIdx - 1]}) {`);
   lines.push(...propagateLines(p, plan, holderIdx - 1, nextVar, `${pad}  `));
@@ -339,24 +469,25 @@ function ife(lines: string[]): string {
  */
 export function memberWriteIfe(p: MemberPath, valSrc: string): string {
   const plan = planOf(p);
+  const t = tmpNamesOf(p, plan.n);
   const lines = [...plan.decls];
-  lines.push(`const ${MP_VAL} = ${valSrc};`);
+  lines.push(`const ${t.val} = ${valSrc};`);
   if (plan.n === 1) {
     // 单层：原生 [[Set]] 就在根上（写回根 = 新根）
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+      lines.push(`${p.rootTarget} = ${plan.write(t.val)};`);
     } else {
       // const 根：原生成员写**不动绑定**（写是对对象的 [[Set]]）⇒ 不重绑根
       // （族 59 · W9）。单层写就地落（fn Abs 的 $set 就地写）⇒ 写不丢。
-      lines.push(`${plan.write(MP_VAL)};`);
+      lines.push(`${plan.write(t.val)};`);
     }
   } else {
-    lines.push(`const ${MP_RES} = ${plan.write(MP_VAL)};`);
-    lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
-    lines.push(...propagateLines(p, plan, plan.n - 2, MP_RES, "  "));
+    lines.push(`const ${t.res} = ${plan.write(t.val)};`);
+    lines.push(`if (${t.res} !== ${plan.holders[plan.n - 2]}) {`);
+    lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
     lines.push(`}`);
   }
-  lines.push(`return ${MP_VAL};`);
+  lines.push(`return ${t.val};`);
   return ife(lines);
 }
 
@@ -379,24 +510,25 @@ export function memberReadModifyWriteIfe(
   },
 ): string {
   const plan = planOf(p);
+  const t = tmpNamesOf(p, plan.n);
   const lines = [...plan.decls];
   const oldExpr = spec.toNumericOld ? `$toNumeric(${plan.read})` : plan.read;
-  lines.push(`const ${MP_OLD} = ${oldExpr};`);
-  lines.push(`const ${MP_NEW} = ${spec.newValueOf(MP_OLD)};`);
+  lines.push(`const ${t.old} = ${oldExpr};`);
+  lines.push(`const ${t.next} = ${spec.newValueOf(t.old)};`);
   if (plan.n === 1) {
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(MP_NEW)};`);
+      lines.push(`${p.rootTarget} = ${plan.write(t.next)};`);
     } else {
       // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
-      lines.push(`${plan.write(MP_NEW)};`);
+      lines.push(`${plan.write(t.next)};`);
     }
   } else {
-    lines.push(`const ${MP_RES} = ${plan.write(MP_NEW)};`);
-    lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
-    lines.push(...propagateLines(p, plan, plan.n - 2, MP_RES, "  "));
+    lines.push(`const ${t.res} = ${plan.write(t.next)};`);
+    lines.push(`if (${t.res} !== ${plan.holders[plan.n - 2]}) {`);
+    lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
     lines.push(`}`);
   }
-  lines.push(`return ${spec.valueIsOld ? MP_OLD : MP_NEW};`);
+  lines.push(`return ${spec.valueIsOld ? t.old : t.next};`);
   return ife(lines);
 }
 
@@ -410,23 +542,24 @@ export function memberReadModifyWriteIfe(
  */
 export function memberDeleteIfe(p: MemberPath): string {
   const plan = planOf(p);
+  const t = tmpNamesOf(p, plan.n);
   const lines = [...plan.decls];
   // 键只求值一次（$del / $delRes 共用同一绑定——符号键是运行时符号值）
-  lines.push(`const ${MP_DELK} = ${plan.lastKeyAbs};`);
-  lines.push(`const ${MP_RES} = $del(${plan.holder}, ${MP_DELK});`);
+  lines.push(`const ${t.delK} = ${plan.lastKeyAbs};`);
+  lines.push(`const ${t.res} = $del(${plan.holder}, ${t.delK});`);
   if (plan.n === 1) {
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${MP_RES};`);
+      lines.push(`${p.rootTarget} = ${t.res};`);
     } else {
       // const 根：不重绑根（族 59 · W9）
-      lines.push(`void ${MP_RES};`);
+      lines.push(`void ${t.res};`);
     }
   } else {
-    lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
-    lines.push(...propagateLines(p, plan, plan.n - 2, MP_RES, "  "));
+    lines.push(`if (${t.res} !== ${plan.holders[plan.n - 2]}) {`);
+    lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
     lines.push(`}`);
   }
-  lines.push(`return $delRes(${plan.holder}, ${MP_DELK});`);
+  lines.push(`return $delRes(${plan.holder}, ${t.delK});`);
   return ife(lines);
 }
 
@@ -436,19 +569,20 @@ export function memberDeleteIfe(p: MemberPath): string {
  */
 export function memberWriteRootIfe(p: MemberPath, valSrc: string): string {
   const plan = planOf(p);
+  const t = tmpNamesOf(p, plan.n);
   const lines = [...plan.decls];
-  lines.push(`const ${MP_VAL} = ${valSrc};`);
+  lines.push(`const ${t.val} = ${valSrc};`);
   if (plan.n === 1) {
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(MP_VAL)};`);
+      lines.push(`${p.rootTarget} = ${plan.write(t.val)};`);
     } else {
       // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
-      lines.push(`${plan.write(MP_VAL)};`);
+      lines.push(`${plan.write(t.val)};`);
     }
   } else {
-    lines.push(`const ${MP_RES} = ${plan.write(MP_VAL)};`);
-    lines.push(`if (${MP_RES} !== ${plan.holders[plan.n - 2]}) {`);
-    lines.push(...propagateLines(p, plan, plan.n - 2, MP_RES, "  "));
+    lines.push(`const ${t.res} = ${plan.write(t.val)};`);
+    lines.push(`if (${t.res} !== ${plan.holders[plan.n - 2]}) {`);
+    lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
     lines.push(`}`);
   }
   lines.push(`return ${p.rootTarget};`);

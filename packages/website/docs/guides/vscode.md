@@ -147,6 +147,8 @@ Two more notes:
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
 | Nudo: Show Contract | `nudo.contract` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
+| Nudo: Select Contract (back to contract observation) | `nudo.selectContract` | Switch the function back to contract observation (drops its activated case) and clear the local case highlight |
+| Nudo: Trace Observation (entry@ / call@) | `nudo.trace` | Print the per-case observation (`entry@` / `call@`) of a function in the **Nudo** output channel (same as `nudo trace`) |
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
 | Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow; from the palette the function is picked interactively, and the same three-step gate applies |
 

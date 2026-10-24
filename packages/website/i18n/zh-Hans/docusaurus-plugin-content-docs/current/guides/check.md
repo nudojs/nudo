@@ -119,6 +119,7 @@ onboarding
 | `nudo:loop-truncated` | 引擎 | info | 循环退出条件越过迭代预算仍具体真；循环状态拓宽（不是调用预算） |
 | `nudo:fork-truncated` | 引擎 | info | 分支展开（`$fork`）预算用尽；结果拓宽 |
 | `nudo:host-effect-blocked` | 引擎 | info | 宿主副作用函数（`fetch` / 定时器等）分析期不真实执行 —— 结果拓宽为 `unknown#opaque`。用 `@nudo:mock` / `@nudo:env` 打桩 |
+| `nudo:internal` | 引擎 | error | 该文件的检查闸门**没能跑完**（引擎内部回落 —— 例如模块求值失败）⇒ 该文件的导出**无法被验证** ⇒ **fail-closed**：`nudo check` 以非零码退出、`nudo health` 报 `Result: FAIL`。与 `nudo:unsupported:*`（能力边界）、`nudo:opaque-result`（推断精度）都不是一回事 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
 | `nudo:no-method` | 引擎 | error（原始类型接收者）/ warning | 成员访问无法解析 —— ``Method 'x' does not exist on type 'T'``。与 `nudo:unknown-recv` 不同 |
 | `nudo:mock-invalid` | 引擎 | warning | `@nudo:mock` 表达式不是已知形态（stub/spy/mock、箭头函数、类型表达式） |

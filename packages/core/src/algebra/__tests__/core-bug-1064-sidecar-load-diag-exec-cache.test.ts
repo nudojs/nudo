@@ -38,6 +38,23 @@ function execInScope(fromFile: string): string[] {
   });
 }
 
+/**
+ * 同上，但**连导出对象一起**返回——「是否重新求值」只能靠**对象身份**观测
+ * （诊断是**有意重放**的 ⇒ 诊断可见与否证明不了重新求值）。
+ */
+function execInScopeWithExports(fromFile: string): {
+  exports: Record<string, unknown>;
+  msgs: string[];
+} {
+  return runWithCollectorScope(() => {
+    const exports = execNudoModule(BAD_SIDECAR, { fromFile });
+    const msgs = takeRefineDiags()
+      .filter((d) => d.code === "nudo:interface-load")
+      .map((d) => d.message);
+    return { exports, msgs };
+  });
+}
+
 describe("bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
   it("第二个分析作用域（exec 缓存命中）仍报 interface-load", () => {
     resetNudoModuleExecCache();
@@ -67,11 +84,22 @@ describe("bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重
     expect(msgs.filter((m) => m.includes("is not an injected builder"))).toHaveLength(1);
   });
 
-  it("resetNudoModuleExecCache 后重新装载 ⇒ 诊断仍可见（不因去重表残留而消失）", () => {
+  it("resetNudoModuleExecCache ⇒ 侧车**重新求值**（导出对象身份变化），诊断仍可见", () => {
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064b/lib.nudo.js";
-    expect(execInScope(fromFile).length).toBeGreaterThan(0);
+    const first = execInScopeWithExports(fromFile);
+    expect(first.msgs.length).toBeGreaterThan(0);
+
+    // 未 reset：exec 缓存命中 ⇒ **同一个**导出对象（没有重跑 exec）
+    const cached = execInScopeWithExports(fromFile);
+    expect(cached.exports).toBe(first.exports);
+    expect(cached.msgs.length).toBeGreaterThan(0);
+
+    // reset 后 ⇒ **重新求值** ⇒ 导出对象身份变化
+    // （旧写法只断言「诊断仍可见」——诊断是**有意重放**的 ⇒ 恒真、零信息）
     resetNudoModuleExecCache();
-    expect(execInScope(fromFile).length).toBeGreaterThan(0);
+    const afterReset = execInScopeWithExports(fromFile);
+    expect(afterReset.exports).not.toBe(first.exports);
+    expect(afterReset.msgs.length).toBeGreaterThan(0);
   });
 });

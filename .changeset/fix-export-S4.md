@@ -1,6 +1,24 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo export --out` 的**产物文件名**变了，且**不再覆盖**不是自己
+生成的产物。
+
+- 产物名冲突时现在带**模块键后缀**（`lib.323a7411.d.ts` / `C.m.nudo.standard.ts` /
+  `C.m.2.nudo.standard.ts`）⇒ 此前 `a/lib.js` 与 `b/lib.js` 会**互相覆盖**
+  （后者静默盖掉前者）⇒ 消费方按**固定文件名**取产物的流水线现在会找不到文件。
+- `--out` 现在**拒绝覆盖**它没生成过的文件（exit 1 + `nudo:path-io`）⇒ 此前
+  手写的 `.d.ts` 会被**静默替换**成 `unknown`；现在构建会以非零码退出。
+
+谁会坏：按**固定文件名**消费 `nudo export --out` 产物的脚本（文件名现在带模块键
+后缀 / 方法名）；以及依赖「`--out` 会覆盖输出目录里的同名文件」的流水线（现在
+拒绝并 exit 1）。
+
+怎么迁移：改用产物里的 `// nudo-export-module:` marker 行定位产物（它记录产物
+属于哪个模块），而不是硬编码文件名；确保输出目录里没有会被覆盖的同名文件
+（或先清空输出目录）。产物内的 `// nudo-export-module:` marker 用于区分
+「同模块更新」与「另一个模块的同名产物」。
 
 `nudo export --out` no longer loses artifacts silently: product names are
 unique per module, hand-written files are never overwritten, and a failed

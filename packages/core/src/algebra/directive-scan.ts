@@ -1223,7 +1223,20 @@ const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b([ \t]*)
 
 /** case 行上的 `!! throws [Kind]` 后缀（文档化形态）——行首 / 行尾两处都要认。 */
 const CASE_THROWS_SUFFIX_LEAD_RE = /^\s*!!\s*throws(?:\s+[A-Za-z*][\w*|,\s]*)?/i;
-const CASE_THROWS_SUFFIX_TAIL_RE = /!!\s*throws(?:\s+[A-Za-z*][\w*|,\s]*)?\s*$/i;
+/**
+ * case 行**行尾**的 `!! throws [Kind]` 后缀（剥期望文本用）。
+ *
+ * ⚠ Bug 1120（性能 / DoS）：旧式 `(?:\s+[A-Za-z*][\w*|,\s]*)?\s*$` 里
+ * `[\w*|,\s]*` **含空白**且尾部还有 `\s*$` ⇒ 同一段空白有**多种切分** ⇒
+ * 回溯**二次方**（实测 5 万空格 ≈ 1.7s ⇒ 可打爆 CI）。
+ *
+ * ⇒ 改成**无歧义**切分：kind = `token (空白 token)*`，token 内**不含空白**
+ * （`[\w*|,]*`）⇒ 空白只能落在 token **之间**（唯一切分）⇒ 线性。
+ * kind 组（`[A-Za-z*][\w*|,]*` + 重复）只用于**剥掉**后缀（组内容被丢弃）
+ * ⇒ 语义与旧式等价（旧的 `\s` 允许跨行——本正则的输入恒为**单行**）。
+ */
+const CASE_THROWS_SUFFIX_TAIL_RE =
+  /!![ \t]*throws\b(?:[ \t]+[A-Za-z*][\w*|,]*(?:[ \t]+[A-Za-z*][\w*|,]*)*)?[ \t]*$/i;
 
 /**
  * 剥掉 case 行上的 `!! throws [Kind]` 后缀（**只在这里剥**）。
@@ -1571,72 +1584,142 @@ export function scanInvariantSegments(lines: string[]): string[] {
  * `nudo:entry-may-throw` 门禁被**静默关掉**（假绿、零诊断），而签名面仍打印
  * `throws TypeError` ⇒ 两面打架。
  *
- * 收紧后的口径（两档位置锚，`!! throws` 都必须落在**指令位置**上）：
- * 1. **同行后缀**：本行是 `@nudo:case` 行，`!! throws` 落在**实参括号闭合之后**
- *    （case 名 / 实参内部的同形文本不算）；
- * 2. **续行**：本行以 `!!` 开头，且**上一行是 case 行**（case 行的下一行单独
- *    写 `!! throws [Kind]`）。
+ * 收紧后的口径（`!! throws` 必须落在**指令位置**上）：
+ * 1. **同行后缀**：case 实参的**平衡终点之后**（case 名 / 实参内部的同形文本
+ *    不算）；实参可**跨行**（Bug 1118：先找平衡终点，再认后缀）；
+ * 2. **续行**：实参平衡终点所在行的**下一行**单独写 `!! throws [Kind]`
+ *    （旧口径「上一行是 case 行」保留为**兜底**，见 `scanCaseThrowsSuffixSpecs`）。
  *
  * 兜底口径：只有**显式** `!! throws`（无 kind）才产出「任意 throw」（`*`）⇒
  * `"*"` 不再来自误读。
  */
-const CASE_THROWS_SUFFIX_RE =
-  /^@nudo:case\b[ \t]*"[^"\n]*"[ \t]*\([^\n]*\)[ \t]*!![ \t]*throws\b(?:[ \t]+([A-Za-z*][\w*|,\s]*))?/i;
 /** case 续行形态：单独一行 `!! throws [Kind]`（上一行必须是 case 行） */
 const CASE_THROWS_CONT_RE = /^!![ \t]*throws\b(?:[ \t]+([A-Za-z*][\w*|,\s]*))?/i;
 
 /**
- * 本行的 `!! throws` **后缀申报**（kind 文本；无 kind ⇒ 空串 = 任意）。
- * 不是指令位置上的 `!! throws` ⇒ undefined（**不产出任何申报**）。
+ * case 标签 + 实参**起点**（行首锚；名字不跨行）。
  *
- * @param prevLine 上一行（续行形态的锚：上一行必须是 case 行）
+ * 名字用 `"[^"\n]*"`、`@nudo:case` 与名字之间用 `[ \t]*`（**含粘连形态**）⇒
+ * 与旧式同行后缀正则（`^@nudo:case\b[ \t]*"[^"\n]*"[ \t]*\(`）的**标签口径
+ * 逐字一致**。
  */
-function caseThrowsSuffixSpec(line: string, prevLine: string | undefined): string | undefined {
-  const m = line.match(CASE_THROWS_SUFFIX_RE);
-  if (m) return (m[1] ?? "").trim();
-  if (prevLine !== undefined && /^\s*@nudo:case\b/.test(prevLine)) {
-    const c = line.match(CASE_THROWS_CONT_RE);
-    if (c) return (c[1] ?? "").trim();
+const CASE_TAG_PAREN_RE = /(?:^|\n)[ \t]*@nudo:case\b[ \t]*"[^"\n]*"[ \t]*\(/g;
+
+/**
+ * 实参**闭合括号之后**的同行后缀：`!! throws [Kind]`（kind 组可空 = 任意）。
+ *
+ * 只认「闭合括号 + 空白 + `!! throws`」这一种位置 ⇒ `=> 1 !! throws` 这种
+ * （后缀落在期望表达式一侧）**不产申报**（Bug 1033 口径：后缀必须紧跟实参）。
+ */
+const CASE_THROWS_AFTER_PAREN_RE =
+  /^[ \t]*!![ \t]*throws\b(?:[ \t]+([A-Za-z*][\w*|,\s]*))?/i;
+
+/** 申报 spec（kind 文本；无 kind ⇒ 空串 = 任意 throw）+ 落点行号（保序用） */
+type ThrowsSpec = { line: number; spec: string };
+
+/**
+ * case 行的 `!! throws [Kind]` **后缀**申报（多行 / 单行统一口径）。
+ *
+ * ⚠ Bug 1118（**假红**）：旧口径要求 case 的两个括号**在同一行**
+ * （同行正则 `\([^\n]*\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒
+ * 多行写法
+ * ```
+ * @nudo:case "neg" (
+ * 0
+ * ) !! throws TypeError
+ * ```
+ * 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户已申报却被
+ * `nudo:entry-may-throw` **假红**卡住。
+ *
+ * ⇒ 改口径：**先在完整注释文本里找到 case 实参的平衡终点**（`extractBalancedParens`），
+ * 再识别后缀 —— 同行尾 / 紧接的下一行都认；**不再**靠「单行同括号」或
+ * 「上一行是 case 行」推断。单行写法（`@nudo:case "neg" (0) !! throws X`）
+ * 行为**逐字不变**。
+ *
+ * 位置锚（Bug 1033）**不放宽**：散文行、case **名字**内部的同形文本仍然
+ * **不产申报**（后缀必须落在实参闭合括号之后）。
+ */
+function scanCaseThrowsSuffixSpecs(lines: string[]): ThrowsSpec[] {
+  const out: ThrowsSpec[] = [];
+  if (lines.length === 0) return out;
+  const text = lines.join("\n");
+  /** case 实参区间（嵌套 case ⇒ 数据，不产申报；与 scanCaseTags 同口径） */
+  const spans: [number, number][] = [];
+  /** 偏移 → 行号（增量计数，扫描按文档序 ⇒ 线性） */
+  let scanned = 0;
+  let lineNo = 0;
+  const lineAt = (offset: number): number => {
+    while (scanned < offset) {
+      if (text[scanned] === "\n") lineNo++;
+      scanned++;
+    }
+    return lineNo;
+  };
+  CASE_TAG_PAREN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CASE_TAG_PAREN_RE.exec(text)) !== null) {
+    const parenStart = m.index + m[0].length - 1;
+    const args = extractBalancedParens(text, parenStart);
+    if (args === null) continue;
+    const afterParen = parenStart + args.length + 2;
+    // 嵌套 case：标签落在已有实参区间内 → 数据，不产出申报
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    spans.push([m.index, afterParen]);
+    const closeLine = lineAt(afterParen);
+    const lineEnd = text.indexOf("\n", afterParen);
+    // (a) 同行尾：实参闭合括号之后
+    const tail = text.slice(afterParen, lineEnd === -1 ? text.length : lineEnd);
+    const same = tail.match(CASE_THROWS_AFTER_PAREN_RE);
+    if (same) out.push({ line: closeLine, spec: (same[1] ?? "").trim() });
+    // (b) 续行：闭合括号所在行的**下一行**单独写 `!! throws [Kind]`
+    if (lineEnd === -1) continue;
+    const nextStart = lineEnd + 1;
+    const nextEnd = text.indexOf("\n", nextStart);
+    const cont = text.slice(nextStart, nextEnd === -1 ? text.length : nextEnd);
+    const c = cont.match(CASE_THROWS_CONT_RE);
+    if (c) out.push({ line: lineAt(nextStart), spec: (c[1] ?? "").trim() });
   }
-  return undefined;
+  // 旧口径兜底：续行形态（**上一行是 case 行**）——实参**未配平**的畸形 case
+  // 仍按旧口径产出申报（不丢声明 ⇒ 不假红）。
+  for (let i = 1; i < lines.length; i++) {
+    const prev = lines[i - 1]!;
+    if (!/^\s*@nudo:case\b/.test(prev)) continue;
+    const c = lines[i]!.match(CASE_THROWS_CONT_RE);
+    if (c) out.push({ line: i, spec: (c[1] ?? "").trim() });
+  }
+  return out;
 }
 
 /**
  * `@nudo:throws …` / case 行 `!! throws …`。
  * 返回 `*` = 申报任意；字符串 = 逗号/空白分隔的 kind 列表；undefined = 无申报。
  *
- * Bug 1033：`!! throws` 只在**指令位置**上采信（见 `caseThrowsSuffixSpec`）⇒
+ * Bug 1033：`!! throws` 只在**指令位置**上采信（见 `scanCaseThrowsSuffixSpecs`）⇒
  * 散文行 / case 名内部的同形文本不再被读成**函数级**申报 ⇒ L2 门禁照常执法。
+ *
+ * Bug 1118：case 后缀按**实参平衡终点**定位 ⇒ 多行实参写法的申报不再丢失。
  */
 export function scanThrowsDecl(lines: string[]): string | undefined {
   const kinds = new Set<string>();
   let any = false;
+  const addSpec = (spec: string): void => {
+    if (spec === "" || spec === "*") any = true;
+    else {
+      for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+        if (k === "*") any = true;
+        else kinds.add(k);
+      }
+    }
+  };
+  /** 全部申报（带行号）——按行号**保序**合并（`@nudo:throws` 与 case 后缀交错） */
+  const specs: ThrowsSpec[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    const th = line.match(/^@nudo:throws\s+(.+)$/i);
-    if (th) {
-      const spec = th[1]!.trim();
-      if (spec === "*") any = true;
-      else {
-        for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-          if (k === "*") any = true;
-          else kinds.add(k);
-        }
-      }
-    }
-    // Bug 1033：位置锚（case 行后缀 / 其续行）——误读形态不再产出申报
-    const cs = caseThrowsSuffixSpec(line, i > 0 ? lines[i - 1] : undefined);
-    if (cs !== undefined) {
-      const spec = cs;
-      if (spec === "" || spec === "*") any = true;
-      else {
-        for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-          if (k === "*") any = true;
-          else kinds.add(k);
-        }
-      }
-    }
+    const th = lines[i]!.match(/^@nudo:throws\s+(.+)$/i);
+    if (th) specs.push({ line: i, spec: th[1]!.trim() });
   }
+  specs.push(...scanCaseThrowsSuffixSpecs(lines));
+  specs.sort((a, b) => a.line - b.line);
+  for (const s of specs) addSpec(s.spec);
   if (any) return "*";
   if (kinds.size > 0) return [...kinds].join(",");
   return undefined;

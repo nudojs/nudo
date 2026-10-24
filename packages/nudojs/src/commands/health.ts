@@ -421,7 +421,18 @@ async function runHealth(
   const ifaceDriftCount = reports.filter((r) => (r.interfaceDrift ?? 0) > 0).length;
   const errorCount = reports.filter((r) => r.error).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
-  const failed = driftCases > 0 || ifaceDriftCount > 0 || errorCount > 0;
+  // 1145：**引擎内部回落**（internal fallback）= 模块级求值失败 ⇒ 该文件的
+  // 事实不完整（导出丢失 / 求值中断）⇒ health **不得**报 OK。
+  // 旧口径只把 `internal_fallbacks` 当观察指标打印、Result 仍 OK / exit 0
+  // ⇒ 机器面与人类面同时谎报（假绿）。现在它进 `failed` ⇒ ok:false ⇒ exit 1。
+  //
+  // 只算 `internal`：`unsupported:*`（能力边界）与 `module-throw`（程序自身
+  // 抛，catch 可吸收）**不**进 health 的失败判据（既有口径 ⇒ 不得制造假红）。
+  const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);
+  // 实质失败（漂移 / 契约漂移 / 分析错误）与「引擎内部回落」分开算：Result
+  // 文案要能说清**到底**哪一类失败（两类同时存在时优先实质失败）。
+  const substantiveFailed = driftCases > 0 || ifaceDriftCount > 0 || errorCount > 0;
+  const failed = substantiveFailed || internalTotal > 0;
   // ok↔exit 单一来源：pathErrors 非空 ⇒ ok:false（绝不 ok:true + 非零 exit）
   const ok = !failed && pathErrorSink.length === 0;
   // exit 只由 ok 决定（单一来源）；--json / 非 JSON 共用
@@ -571,11 +582,11 @@ async function runHealth(
         );
       }
       if ((r.internalFallbacks ?? 0) > 0) {
-        // D6-A：internal 回落=引擎缺陷指标（接受暴露，不静默）
-        console.log(paintOne(`  ⚠ internal_fallbacks: ${r.internalFallbacks}`));
+        // 1145：internal 回落现在是**门禁失败**（引擎内部缺陷 ⇒ 该文件事实
+        // 不完整 ⇒ health 不得报 OK）——标记从「观察告警」升为「失败项」。
+        console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
       }
     }
-    const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);
     // 63：Summary 的漂移数 = **见证（case）条数**（= Σ 明细行的
     // 「N witness directive(s) changed」）⇒ 与明细行**同量纲**（旧口径印的是
     // 「有漂移的文件数」⇒ 同一份报告里两个「N」互相矛盾）。
@@ -583,13 +594,16 @@ async function runHealth(
       `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s)` +
         (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
-    // ok↔exit 单一来源：pathErrors / drift / errors 任一存在都不得报 OK
+    // ok↔exit 单一来源：pathErrors / drift / errors / 引擎内部回落 任一存在
+    // 都不得报 OK（1145：internal 回落进失败判据 ⇒ 不得「显示回落却报 OK」）。
     console.log(
       ok
         ? "Result: OK (uncovered function(s) are informational only)"
-        : pathErrorSink.length > 0 && !failed
+        : pathErrorSink.length > 0 && !substantiveFailed
           ? "Result: FAIL (path errors found)"
-          : "Result: FAIL (drift or errors found)",
+          : internalTotal > 0 && !substantiveFailed
+            ? "Result: FAIL (engine internal fallback found)"
+            : "Result: FAIL (drift or errors found)",
     );
   }
 }

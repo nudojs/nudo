@@ -94,6 +94,16 @@ export type TranspileOptions = {
    */
   inAsyncBody?: boolean;
   /**
+   * **强制关闭** async 体的生成器路径（`$async` 同步路径）。
+   *
+   * Bug 1139（安全网）：`await` 的位置表（`async-plan.ts`）与转译侧一旦脱节，
+   * `yield` 会落进嵌套箭头 ⇒ `new Function` SyntaxError ⇒ **整个模块**编译
+   * 失败 ⇒ 全部导出丢失 ⇒ L2 闸门**假绿**（exit 0）。求值引擎在生成器模式
+   * 编译失败时以本开关**重试一次** ⇒ 模块至少编译得出来 ⇒ 导出可见 ⇒ 闸门
+   * 照常判定（宁可少精确，不可整模块消失）。
+   */
+  disableAsyncGen?: boolean;
+  /**
    * 当前 async 体内**需发挂起门**的 `for await` 语句节点（节点身份）。
    *
    * Bug 201：原生 `for await` 每轮一个 await；引擎既有建模是同步驱动 ⇒

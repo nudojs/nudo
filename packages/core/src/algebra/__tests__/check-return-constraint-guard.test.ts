@@ -185,10 +185,13 @@ function f(x) {
 });
 
 describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () => {
-  it("unproven: 无守卫裸 return x ⊭ positive（无界证据 ⇒ 证不出，非确定违约）", () => {
-    // Bug 370：`x: number()` 是**无界** prim ⇒ `return x` 的义务「既证不出、
-    // 也反证不了」⇒ 判 `nudo:unproven-return`（warning，与 `return x + 1`
-    // 同档）；判 error（确定违约）是**假红**（`f(5)` 明明满足契约）。
+  it("error: 无守卫裸 return x ⊭ positive（声明域参数 ⇒ 值域已知 ⇒ 确定违约）", () => {
+    // Bug 1116（回退 Bug 370 的语义降级）：`x: number()` 是**声明域参数** ⇒
+    // 返回项的值域**已知**（任意 number，含 NaN）⇒ 返回契约是对**所有**输入
+    // 成立的后置 ⇒ 值域 ⊄ 契约域（x=0 即违约）⇒ **契约不成立** ⇒ 判
+    // `nudo:constraint-violated`（error）。判 warning 会让 `nudo check` 门禁
+    // 空转（warning 不改 exit code；docs/design/cli-semantics.md §5.5：warning
+    // 只针对 any/unknown——声明域参数不是 any/unknown）。
     const src = `
 /**
  * @nudo:contract x num
@@ -198,10 +201,9 @@ function f(x) {
   return x;
 }
 `;
-    expect(retViolations(src)).toHaveLength(0);
-    const w = retUnproven(src);
-    expect(w).toHaveLength(1);
-    expect(w[0]!.message).toContain("@nudo:contract return positive");
+    expect(retViolations(src)).toHaveLength(1);
+    expect(retViolations(src)[0]!.message).toContain("@nudo:contract return positive");
+    expect(retUnproven(src)).toHaveLength(0);
   });
 
   it("error: 守卫弱于契约（x >= 0 臂含 x=0 ⊭ positive）", () => {
@@ -219,10 +221,9 @@ function f(x) {
     ).toHaveLength(1);
   });
 
-  it("unproven: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
-    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0) ⇒ **可能**违约；但该臂只带
-    // typeof 级证据（无界）⇒ 不得判「确定违约」（error，假红）⇒ 判「证不出」
-    // （warning）——义务仍被报告，不得漏报。
+  it("error: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
+    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0) ⇒ 违约输入**存在** ⇒ 契约不成立
+    // ⇒ error（Bug 1116：else 臂的返回项是声明域参数 ⇒ 值域已知 ⇒ 可判定）。
     const src = `
 /**
  * @nudo:contract x num
@@ -232,8 +233,8 @@ function f(x) {
   return x < 0 ? 0 : x;
 }
 `;
-    expect(retViolations(src)).toHaveLength(0);
-    expect(retUnproven(src)).toHaveLength(1);
+    expect(retViolations(src)).toHaveLength(1);
+    expect(retUnproven(src)).toHaveLength(0);
   });
 
   it("error: && 值形态的 false 臂 ⊭ number 契约（NaN 路径）", () => {

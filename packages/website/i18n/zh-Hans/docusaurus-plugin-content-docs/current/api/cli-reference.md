@@ -130,7 +130,13 @@ L2 **不**门禁内部 helper。`try`/`catch` 与 refine 可清除 L2。
 
 ```bash
 nudo check user.js
+```
+
+```bash
 nudo check src/lib.js --ignore-throws TypeError --from tests/
+```
+
+```bash
 # --json：单文件 → CheckJson；多文件/目录 → CheckJsonMulti 信封
 nudo check src/lib.js --json
 nudo check src/ --json
@@ -141,7 +147,7 @@ nudo check src/ --json
 | 码 | 含义 |
 |----|------|
 | `0` | 无 error 级诊断 |
-| `1` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
+| `1` | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 仍门禁 |
 
 ---
 
@@ -255,13 +261,13 @@ nudo contract --from-dts <paths...> [--write] [--dry-run] [--force]
 | `--draft` | 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） |
 | `--from-dts` | 把 TypeScript `.d.ts` / 带注解的 `.ts` 源或 npm 包类型（位置参数 `<paths...>`）逆向为可审阅的 `@nudo:draft`（`*.nudo.draft.js`）。**不执法** —— 审阅并把接受的导出复制进 `*.nudo.js` 侧车后才生效；这是 TS 退役路径上的契约步骤（[从 TypeScript 迁移](../guides/migrating-from-typescript.md)） |
 | `--write` | 搭配 `--draft` / `--from-dts`：写入 `*.nudo.draft.js`。搭配 `--from-dts` 时，草稿写在**源 `.d.ts` 旁边**（不是当前目录），且**内容不同的既有草稿绝不被静默覆盖** —— 命令报错并退出 `1`。 |
-| `--force` | 搭配 `--from-dts --write`：覆盖内容不同的既有草稿（与 `NUDO_DRAFT_FORCE=1` 同一逃生口）。 |
+| `--force` | 搭配 `--from-dts --write`：覆盖内容不同的既有**机器原稿**（与 `NUDO_DRAFT_FORCE=1` 同一逃生口）。**人工改过的草稿永不覆盖** —— 请手工合并或删掉后重新生成（exit `1`）。 |
 | `--fn <name>` | 限定单个函数（**可重复**；有手写根时可命名下游派生目标） |
 | `--all` | emit 所有合格函数 |
 | `--dry-run` | 打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--emit --dry-run`：diff 非空时退出 `1` |
 | `--from <paths…>` | 使用处证据，供域投影 |
-| `--json` | 搭配 `--draft`：输出 `{ draftSource, diff, entries[] }` 供 agent 审阅（AI4） |
+| `--json` | **打印 / `--draft` / `--emit`** 的机器面：顶层恒为 JSON **数组**（每个输入一个元素）。`--draft` 元素是 `{ file, draftPath, draftSource, diff, entries[] }`，`--emit` 元素是 `{ file, sidecar, changed, written, skipped[], issues[], diff? }`，打印元素是 `{ file, entries[] }`（AI4） |
 
 **示例：**
 
@@ -315,9 +321,18 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 | `standard` | Standard Schema v1 模块（`~standard`，vendor `nudo`）→ `<fn>.nudo.standard.ts` |
 | `all` | dts + guard + schema + standard |
 
-可表达的 Abs pred（常数界 / `int` / 字符串长度）会进入 schema；符号 pred 落在基类型上并在 `dropped preds` 注释列出。`standard` 在运行时 `validate` 中执法同一 refinement 集合——仍是单向投影，**CI 门禁仍是 `nudo check`**。
+可表达的 Abs pred（`gt/ge/lt/le`、`int`、字符串长度）会进入 schema；符号 pred 落在基类型上并在 `dropped preds` 注释列出。`standard` 在运行时 `validate` 中执法同一 refinement 集合——仍是单向投影，**CI 门禁仍是 `nudo check`**。
 
 `.d.ts` / schema 是 Abs 的单向有损投影。export 不接受 `--watch`。
+
+**示例：**
+
+```bash
+nudo export src/user.js --format schema --dialect zod
+nudo export src/user.js --format standard --out dist
+nudo export src/user.js --format dts --out dist/types
+nudo export src/api.js --format all --out dist
+```
 
 **退出码：**
 
@@ -421,6 +436,8 @@ setup 动词（对齐 `tsc` 的 `init` 命令心智）：向最近的 `package.j
 
 幂等：`package.json` 已有 `nudo` 键时只打印当前配置、不写盘；**形状非法**的 `nudo` 值（null / 标量 / 数组）被替换成基线并告警；祖先**可继承**的 `nudo` 配置不被遮蔽（拒绝写盘）；workspace / 容器根不被越界写入（拒绝写盘）。
 
+**显式**指向容器根的 `nudo init <容器根>` 会写入基线并给作用域告警（该 `nudo` 键对下层所有包生效）；只有「从子目录越界写」才拒绝。
+
 **退出码：** 成功与幂等重跑 `0`；用法 / IO 错误（找不到 `package.json`、JSON 非法、遮蔽祖先可继承配置、越界写 workspace / 容器根）`1`。
 
 ---
@@ -439,7 +456,7 @@ setup 动词（对齐 `tsc` 的 `init` 命令心智）：向最近的 `package.j
 
 | 命令 | exit `1` |
 |------|----------|
-| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 仍门禁 |
+| `check` | 任一 error 级诊断（L1 或未 ignore 的 L2） |
 | `test` | 任一**声明**断言失败 |
 | `contract` / `export`（只读） | 用法 / IO 错误 |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff |

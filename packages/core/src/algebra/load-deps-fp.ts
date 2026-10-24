@@ -39,6 +39,30 @@ export type LoadDepsFingerprint = {
 const MAX_LOAD_DEP_NODES = 64;
 
 /**
+ * 指纹的 ambient 侧车探测口径（Bug 1124）。
+ *
+ * ambient 侧车探测是**推测性**的：它只为算指纹，不代表分析真的要用这份侧车
+ * （autoBind 关 / 树外 / node_modules ⇒ 根本不会被绑定）。⇒ 探测失败
+ * **不得**升级成分析错误（门禁假红），但仍须让本轮指纹**不可信**
+ * （readError ⇒ 键带 readerr: 前缀、调用方 fail-open 禁 memo ⇒ 错误轮与
+ * miss 轮不共用键、互不为陈旧命中）。
+ */
+export type LoadDepsFingerprintOpts = {
+  /**
+   * ambient 侧车探测专用 loader（**推测性**读）。
+   * 调用方（check.ts）传**未经降级闸**的 loader：读失败只标 readError，
+   * 不记入分析错误。缺省 = 用 `loadModule`（旧行为）。
+   */
+  ambientLoadModule?: (spec: string, fromFile: string) => string | undefined;
+  /**
+   * ambient 绑定资格（autoBind / projectDir / node_modules）。
+   * 返回 false ⇒ 该侧车不会被 ambient 绑定 ⇒ 探测无意义 ⇒ 跳过
+   * （不读盘、不进指纹）。缺省 = 允许（旧行为：过近似，只过度失效）。
+   */
+  ambientAllowed?: (sidecarPath: string) => boolean;
+};
+
+/**
  * AST 节点最小形状（只取说明符抽取要用的字段）。
  */
 type SpecAstNode = {
@@ -243,14 +267,20 @@ function tryLoadDeps(
  * ambient 绑定其侧车，依赖侧车内容影响调用方报告——不进指纹则编辑后 memo
  * 陈旧命中（错诊断）。侧车 loadModule miss（无侧车文件）→ 不加任何条目。
  *
- * 注意：本扩展对 autoBind=false 与 /node_modules/ 均**不** gate（刻意过近似，
+ * 注意：本扩展对 autoBind=false 与 /node_modules/ 默认**不** gate（刻意过近似，
  * 只过度失效、绝不陈旧命中——安全方向）；ambient 生效边界由
  * interface.ts 的 sidecarClosureFingerprint 负责，两者职责不同。
+ *
+ * Bug 1124：调用方（check.ts）可传 `opts.ambientAllowed`（ambient 绑定资格）
+ * 与 `opts.ambientLoadModule`（推测性探测 loader）——autoBind 关闭时该侧车
+ * 根本不会被绑定 ⇒ 不必探测；探测失败也**不得**升级成分析错误（门禁假红），
+ * 但仍须让本轮指纹不可信（readError ⇒ 禁 memo，错误轮与 miss 轮不共用键）。
  */
 export function loadModuleDepsFingerprint(
   source: string,
   loadModule: (spec: string, fromFile: string) => string | undefined,
   fromFile: string,
+  opts?: LoadDepsFingerprintOpts,
 ): LoadDepsFingerprint {
   const parts: string[] = [];
   const paths: string[] = [];
@@ -268,6 +298,19 @@ export function loadModuleDepsFingerprint(
     if (a.err) readError = true;
     return a;
   };
+  /**
+   * ambient 侧车探测口（**推测性**读，缺省 = loadModule）：读失败同样让本轮
+   * 指纹不可信（readError ⇒ 键不可信、禁 memo ⇒ 错误轮与 miss 轮不共用键），
+   * 但调用方可给它**未经降级闸**的 loader ⇒ 失败不升级成分析错误（Bug 1124）。
+   */
+  const ambientLoad = (spec: string, from: string): LoadAttempt => {
+    const fn = opts?.ambientLoadModule ?? loadModule;
+    const a = tryLoadDeps(fn, spec, from);
+    if (a.err) readError = true;
+    return a;
+  };
+  /** ambient 绑定资格（缺省 = 允许） */
+  const ambientAllowed = opts?.ambientAllowed;
 
   const finish = (): LoadDepsFingerprint => {
     parts.sort();
@@ -286,9 +329,12 @@ export function loadModuleDepsFingerprint(
   /** 入口文件的 ambient 侧车 + 递归 .nudo 闭包（fromFile 与各 dep 共用） */
   const absorbSidecarClosure = (entryFile: string): void => {
     const sidecarPath = sidecarPathOf(entryFile);
+    // ambient 绑定无资格（autoBind 关 / 树外 / node_modules）⇒ 该侧车不会被
+    // 绑定 ⇒ 探测无意义（Bug 1124：不读盘、不进指纹）。
+    if (ambientAllowed !== undefined && !ambientAllowed(sidecarPath)) return;
     if (seen.has(sidecarPath)) return;
     const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-    const root = load(sidecarSpec, entryFile);
+    const root = ambientLoad(sidecarSpec, entryFile);
     if (root.err) {
       // 根侧车读错误 ≠ 无侧车：fp 由 readerr: 前缀标记；contents 补 null 条目，
       // 让磁盘缓存消费方（dep-contents → hasBareMiss）与主 BFS 读错误同口径
@@ -321,7 +367,7 @@ export function loadModuleDepsFingerprint(
       if (seen.has(path)) continue;
       seen.add(path);
       n++;
-      const src = load(cur.spec, cur.from).src;
+      const src = ambientLoad(cur.spec, cur.from).src;
       parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
       paths.push(path);
       contents.push({ path, content: src ?? null });

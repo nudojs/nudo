@@ -1,6 +1,16 @@
 ---
-"@nudojs/service": patch
+"@nudojs/service": major
 ---
+
+**BREAKING**: standard 面的**返回面导出名**从 `<fn>Return` 改名成 `<fn>Output`
+（名字不再随符号来源翻转）。
+
+谁会坏：生成产物后 `import { <fn>Return } from "*.nudo.standard"` 的消费方 ——
+**有返回契约**时导出名此前叫 `<fn>Return`、走观测时叫 `<fn>Output`，现在**恒叫**
+`<fn>Output` ⇒ 旧名 `import` 断（消费方 `tsc --noEmit` 会红）。
+
+怎么迁移：把 `import { <fn>Return }` 改成 `import { <fn>Output }`（内容不变：
+仍按「契约返回优先，否则观测返回」取值）；重新生成产物。
 
 `nudo export` 的 standard / guard 两面不再丢符号名与可选性。
 

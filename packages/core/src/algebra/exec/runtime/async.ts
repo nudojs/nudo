@@ -37,7 +37,7 @@ import {
 } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
-import { thenableAdoption, queuePromiseMicro } from "../../builtins/promise.ts";
+import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -283,9 +283,29 @@ type LivePromiseShape = {
  *
  * 与 `$async(thunk)` 的分工：**无 await 的 async 体**没有挂起点，沿用
  * `$async` 的同步路径（发射产物逐字不变 ⇒ 既有金标零漂移）。
+ *
+ * Bug 1126：live `$asyncGen` promise 带 **pending 态**（体尚未 settle）与
+ * **waiter 列表**（等它 settle 才恢复的 await 恢复点）。
+ *
+ * **机制共用**（Bug 1148）：pending 判定 + waiter 冲刷抽到
+ * `builtins/promise.ts` 的 `pendingPromiseWaiters`（`registerPendingPromise` /
+ * `isPendingPromiseShape` / `onPromiseSettled` / `flushPromiseWaiters`）——
+ * `Promise.all` 的活通道聚合（元素 settle 后刷新兑现值）与本文件的 await 恢复
+ * 点**同一套** pending 机制（不另造第二套）。
+ *
+ * 键 = promise 的 shape 对象（活通道本体：`inner` 就地填）。每个 `$asyncGen`
+ * 调用一个 shape ⇒ 键唯一；WeakMap ⇒ 随 promise 回收，不泄漏。
+ *
+ * **不挂在 shape 上**：`Shape` 是 `abs.ts` 的公开联合类型（eff 面无 pending
+ * 槽），且 waiter 闭包不该进投影 / 指纹面（`absShapeKey` / `shapeKey` 只读
+ * `inner`）。
  */
 export function $asyncGen(genFn: () => Generator): Abs {
   const shape: LivePromiseShape = { k: "eff", eff: "promise", inner: unknown };
+  // Bug 1126：体尚未 settle ⇒ promise 处于 **pending**（await 者登记 waiter，
+  // 恢复点排到 settle 之后——原生口径）。pending 机制与 `Promise.all` 活通道
+  // 聚合共用（`builtins/promise.ts` 的 pendingPromiseWaiters）。
+  registerPendingPromise(shape);
   const promise = markFreshInstance(abs(shape, undefined, undefined, "path"));
   // 体的循环早退臂（loopExits）——与 $async 同口径并入 inner
   const localExits: Abs[] = [];
@@ -323,6 +343,11 @@ export function $asyncGen(genFn: () => Generator): Abs {
  *   带 unsettled 面 ⇒ 结果 promise 标 unsettled（原生：可能永不 settle）；
  *   否则 ⇒ 恢复值 = inner（**活通道**读：注册期捕获的 inner 是 pre-join 态）。
  * - **非 promise**：原生 `await <非 promise>` 也要一个微任务 ⇒ 恢复值 = 原值。
+ *
+ * Bug 1126：**pending** 的 promise（live asyncGen 体尚未 settle）⇒ 恢复点
+ * **排到 settle 之后**再跑（原生：`await p` 的恢复在 p settle 之后）。
+ * 否则恢复点与被等待体的续体抢同一队列：callee 有 ≥2 个 await 时，callee 的
+ * 第二次续体排在 caller 恢复之后 ⇒ caller 读到占位符 `inner = unknown`。
  */
 function scheduleAsyncGenResume(
   it: Generator,
@@ -334,7 +359,7 @@ function scheduleAsyncGenResume(
   const sh = operand?.shape;
   if (sh && sh.k === "eff" && sh.eff === "promise") {
     const live = sh as LivePromiseShape;
-    queuePromiseMicro(() => {
+    const resume = () => {
       const rejected = live.rejected;
       // 确定拒绝（fulfilled 臂不可能）：原生 await 拒绝 ⇒ 体内 throw
       // (catch 可吸收)——与 $await 同口径
@@ -359,7 +384,13 @@ function scheduleAsyncGenResume(
         (promise.shape as LivePromiseShape).unsettled = true;
       }
       stepAsyncGen(it, promise, localExits, rejections, () => it.next(live.inner));
-    });
+    };
+    if (isPendingPromiseShape(live)) {
+      // Bug 1126：被等待的 promise 尚未 settle ⇒ 恢复点排到 **settle 之后**
+      onPromiseSettled(live, resume);
+      return;
+    }
+    queuePromiseMicro(resume);
     return;
   }
   // 非 promise：原生 await 非 promise 也要一个微任务；thenable 走
@@ -404,22 +435,42 @@ function stepAsyncGen(
  *
  * async 体 return <promise>：原生递归采纳 thenable（体已折 eff(promise)）
  * ⇒ 直接采纳其 inner（不得包第二层 promise<promise<…>>）。
+ *
+ * Bug 1126：被采纳的 promise **尚未 settle**（pending）⇒ 本 promise 的兑现值
+ * 待其 settle 后落地（原生：async 体 return promise ⇒ 递归采纳其兑现值 ⇒
+ * 本 promise 的 settle 时刻 = 被采纳 promise 的 settle 时刻）。本 promise 保持
+ * pending——抢跑 settle 会让调用方读到占位符 `inner = unknown`。
  */
 function settleAsyncGenValue(
   promise: Abs,
   value: Abs,
   localExits: Abs[],
   rejections: Abs[],
+  carriedRejected?: Abs,
 ): void {
   const sh = promise.shape as LivePromiseShape;
   const v = value ?? unknown;
   // 未被体内 catch 吸收的 await 拒绝 → 结果 promise 的 rejected 通道
   // (原生：拒绝落 promise，不外溢成调用方 may-throw)
-  const pending = takePendingAsyncGenRejections(rejections);
+  // 延后 settle（Bug 1126）时：拒绝面在**延后前**已取走并随参数带下来
+  // （体已跑完 ⇒ try/catch 吸收判定已终局 ⇒ 取一次即可）。
+  const pending = carriedRejected !== undefined ? [] : takePendingAsyncGenRejections(rejections);
   const pendingJoined =
-    pending.length > 0 ? pending.reduce((a, b) => joinAbs(a, b)) : undefined;
+    carriedRejected !== undefined
+      ? carriedRejected
+      : pending.length > 0
+        ? pending.reduce((a, b) => joinAbs(a, b))
+        : undefined;
   if (v.shape?.k === "eff" && v.shape.eff === "promise") {
     const vs = v.shape as LivePromiseShape;
+    if (isPendingPromiseShape(vs)) {
+      // Bug 1126：被采纳的 promise 尚未 settle ⇒ 本 promise 保持 pending，
+      // settle 排到它 settle 之后（原生：async 体 return promise ⇒ 递归采纳）。
+      onPromiseSettled(vs, () =>
+        settleAsyncGenValue(promise, v, localExits, rejections, pendingJoined),
+      );
+      return;
+    }
     sh.inner = vs.inner;
     const rejected =
       vs.rejected !== undefined && pendingJoined !== undefined
@@ -428,6 +479,7 @@ function settleAsyncGenValue(
     if (rejected !== undefined) sh.rejected = rejected;
     if (vs.unsettled === true) sh.unsettled = true;
     promise.conf = confJoin(vs.inner.conf, "path");
+    flushPromiseWaiters(sh);
     return;
   }
   const joined =
@@ -435,6 +487,7 @@ function settleAsyncGenValue(
   sh.inner = joined;
   if (pendingJoined !== undefined) sh.rejected = pendingJoined;
   promise.conf = confJoin(joined.conf, "path");
+  flushPromiseWaiters(sh);
 }
 
 /**
@@ -475,12 +528,18 @@ function settleAsyncGen(
         ? joinAbs(e.absValue, pending.reduce((a, b) => joinAbs(a, b)))
         : e.absValue;
     promise.conf = "path";
+    // Bug 1126：settle ⇒ 冲刷 waiter（await 恢复点排到 settle 之后）
+    flushPromiseWaiters(sh);
     return;
   }
   if (isNudoReturn(e)) {
     settleAsyncGenValue(promise, e.absValue, localExits, rejections);
     return;
   }
+  // 宿主异常（引擎自身缺陷）：promise 不 settle（内层仍是占位符 unknown ⇒
+  // fail-closed）。但**冲刷 waiter**——否则等待者永久悬挂（引擎不该因自身
+  // 缺陷把整条 await 链挂死）；恢复者读到的是占位符 unknown（保守值）。
+  flushPromiseWaiters(sh);
   throw e;
 }
 

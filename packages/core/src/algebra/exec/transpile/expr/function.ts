@@ -243,7 +243,9 @@ export function transpileFunctionExpr(
       // `$asyncGen` 驱动恢复）。否则沿用既有 `$async(thunk)` 同步路径
       //（发射产物逐字不变 ⇒ 既有金标零漂移）。
       const asyncPlan =
-        fn.async === true && fn.generator !== true ? asyncBodyPlan(fn.body) : undefined;
+        fn.async === true && fn.generator !== true
+          ? asyncBodyPlan(fn.body, opts.disableAsyncGen)
+          : undefined;
       const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       const fnBodyOpts: TranspileOptions = {
         ...opts,

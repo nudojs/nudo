@@ -39,7 +39,15 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
+    // 扫描期间条目可能消失（并发任务留下的临时目录被清掉）⇒ 跳过而不是
+    // 让整个闸门崩在 ENOENT 上（扫描结果少一个文件 ≠ 门禁结论）。
+    let isDir = false;
+    try {
+      isDir = statSync(p).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) walk(p, out);
     else out.push(p);
   }
   return out;
@@ -97,12 +105,16 @@ const SIDEBAR_ID_RE = /^[a-z0-9][a-z0-9/-]*$/;
 // 字符串字面量若紧跟这些键（窗口末尾），是元数据值不是 doc id。
 const SIDEBAR_META_KEY_RE = /\b(?:type|label|description|title)\s*:\s*$/;
 // 规则 14 排除生成物：releases/releases-history 由脚本聚合，versioning 由 changesets 生成，
-// api/ 目录整目录生成 —— 它们的 zh 镜像不承诺结构同步。
+// 它们的 zh 镜像不承诺结构同步。
+//
+// ⚠ `api/` **不再整目录排除**：`api/*.md` 的骨架块虽是 `scripts/gen-api-docs.mjs`
+// 生成的，但页面本身是**手写页**（散文 + 选项表 + 输出块），整目录排除等于把
+// 手写内容也架空（`agent.md` / `cli-reference.md` / `lsp.md` 的 zh 漂移因此长期
+// 无人看守）。骨架块由同一脚本成对注入 EN/ZH（标识符列逐字相同）⇒ 进闸门安全。
 const ZH_STRUCT_EXCLUDE = [
   /^releases\.md$/,
   /^releases-history\.md$/,
   /^guides\/versioning\.md$/,
-  /^api\//,
 ];
 // 规则 14 allowlist：zh 缺块/多链的显式豁免（须带理由）。
 const ZH_STRUCT_ALLOWLIST: Record<string, Array<"fences" | "urls">> = {
@@ -723,7 +735,11 @@ describe("zh structural freshness (rule 14)", () => {
     for (const kept of ["intro.md", "glossary.md", "guides/check.md"]) {
       expect(handwritten, `${kept} must stay in scope`).toContain(kept);
     }
-    for (const dropped of ["releases.md", "releases-history.md", "guides/versioning.md", "api/core.md"]) {
+    // api/ 下的**手写页**必须在范围内（骨架块成对注入 ⇒ 可进闸门）。
+    for (const kept of ["api/agent.md", "api/cli-reference.md", "api/lsp.md"]) {
+      expect(handwritten, `${kept} must stay in scope`).toContain(kept);
+    }
+    for (const dropped of ["releases.md", "releases-history.md", "guides/versioning.md"]) {
       expect(handwritten, `${dropped} must be excluded`).not.toContain(dropped);
     }
   });
@@ -1105,6 +1121,33 @@ describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", (
     expect(
       bad,
       `phantom diagnostic codes in the glossary (documented but never emitted — delete the entry or emit the code): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  // 术语表**标题**只是码出现的一个位置：指南 / 参考页 / api 页里的正文引用
+  // （表格里的码、清单里的码）同样会变成永久幻影（Bug 908 = `nudo:eval-error`
+  // 最初就写在术语表标题里，但同形态的漏抄可以出现在任何一页）。
+  // 这里把反向对账扩到**全部手写页**（生成页 releases*/versioning 不入列）。
+  it("every nudo:* code cited on a hand-written doc page is emittable (en + zh)", () => {
+    const emittable = emittableCodes();
+    const bad: string[] = [];
+    for (const [label, root] of [
+      ["en", EN_DOCS],
+      ["zh", ZH_DOCS],
+    ] as const) {
+      for (const rel of HANDWRITTEN_PAGES) {
+        const path = join(root, rel);
+        if (!existsSync(path)) continue;
+        // 只认**行内代码**形态（`nudo:xxx`）：散文里的裸串（`nudo:interface-*`
+        // 通配、`nudo:check` 命令名、`nudo:return` 前缀）不是诊断码。
+        for (const m of readFileSync(path, "utf8").matchAll(/(?<![@\w-])`(nudo:[a-z0-9-]+)`/g)) {
+          if (!emittable.has(m[1])) bad.push(`${label}/${rel}: ${m[1]}`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `phantom diagnostic codes cited on a doc page (documented but never emitted — delete the mention or emit the code): ${bad.join(", ")}`,
     ).toEqual([]);
   });
 });

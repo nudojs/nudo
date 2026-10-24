@@ -1,7 +1,11 @@
 ---
-"@nudojs/lsp": patch
-"@nudojs/service": patch
+"@nudojs/lsp": minor
+"@nudojs/service": minor
 ---
+
+三个 contract 工具**新增**入参 `from?: string[]`（`--from` 等价通道），`@nudojs/service`
+**新增**公开导出 `collectCallsiteRecords`（+ 类型 `CallsiteRecords`）⇒ 纯**增量**
+（additive）⇒ minor。
 
 fix(lsp,service): 族 25 A2 —— 契约面四条缺陷（762 / 765 / 766 / 994）
 

@@ -14,6 +14,12 @@
  *   「引用取值（getter 触发）→ 实参 → 调用」；实参直接内联进实参数组会
  *   让实参先于成员读求值（getter 跑晚了）。thunk 形态由 $invoke 先读成员
  *   （预读）再求实参（派发复用预读值 ⇒ getter 只跑一次）。
+ * - Bug 1146：本文件的引擎内部临时名（`__nudoDefR` / `__nudoReArgs` / `__v`）
+ *   是**基名**——实际名经 `internalTmpName` / `internalTmpNameSet` 分配
+ *   （避开用户标识符词形）：IIFE **在自身作用域里求值用户表达式** ⇒ 写死名
+ *   会遮蔽用户同名绑定（自信错值）或撞 TDZ（ReferenceError）。
+ *   `__nudoRequire` 不在此列——它是**运行时注入的宿主 helper**（绑定由
+ *   exec/run.ts 注入，非本文件的局部临时名）。
  */
 import type {
   Expression,
@@ -23,31 +29,53 @@ import type {
   OptionalCallExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, foldRequireSpecArg } from "../helpers.ts";
+import { isExpression, foldRequireSpecArg, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { memberPathOf, setPathSrc } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 /**
- * Object.defineProperty 目标的**写回源**（第一实参可重绑时）：
- * - 标识符 → `name = __nudoDefR`（`arguments` → argsBinding 槽）；
- * - 成员路径 → `root = $set(root, …, __nudoDefR)`（不可变更新链写回根）；
- * 不可重绑（调用结果 / new 表达式等）→ null（只发调用，不写回）。
+ * 引擎内部临时名的**基名**（实际名见下）。
+ *
+ * Bug 1146：本文件的 IIFE **在自身作用域里求值用户表达式**（defineProperty
+ * 的实参 / 正则调用的实参）⇒ 写死的临时名会与用户同名绑定相撞：
+ * - **遮蔽**：IIFE 的 `const __nudoDefR = …` 遮蔽用户同名绑定 ⇒ 用户表达式
+ *   读到**引擎临时量**（自信的错值 ⇒ 签名面写错 ⇒ 门禁假绿）；
+ * - **TDZ ReferenceError**：用户表达式读到的同名绑定正处在引擎临时量的
+ *   初始化器内 ⇒ ReferenceError（可被用户自己的 catch 吞掉 ⇒ 错值）。
+ *
+ * 口径同 Bug 1058/1059 / Bug 1127（`internalTmpName` / `internalTmpNameSet`
+ * = `userIdentInfoOf(opts)` 避让集 = 源文本词形 ∪ `opts.userIdents`；撞名加
+ * `_k` 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一源文本 ⇒ 同一名
+ * ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
  */
-function definePropRebindSrc(target: Node, opts: TranspileOptions): string | null {
+const DEF_R_BASE = "__nudoDefR";
+const RE_ARGS_BASE = "__nudoReArgs";
+const RE_RES_BASE = "__v";
+
+/**
+ * Object.defineProperty 目标的**写回源**（第一实参可重绑时）：
+ * - 标识符 → `name = <defR>`（`arguments` → argsBinding 槽）；
+ * - 成员路径 → `root = $set(root, …, <defR>)`（不可变更新链写回根）；
+ * 不可重绑（调用结果 / new 表达式等）→ null（只发调用，不写回）。
+ *
+ * `defR` 是**已分配**的引擎临时名（基名 `__nudoDefR`，调用点算好后传进来
+ * ——生成与使用必须同名）。
+ */
+function definePropRebindSrc(target: Node, opts: TranspileOptions, defR: string): string | null {
   if (target.type === "Identifier") {
     const name = (target as { name: string }).name;
     if (name === "arguments") {
-      return opts.argsBinding ? `${opts.argsBinding} = __nudoDefR` : null;
+      return opts.argsBinding ? `${opts.argsBinding} = ${defR}` : null;
     }
-    return `${name} = __nudoDefR`;
+    return `${name} = ${defR}`;
   }
   if (target.type === "MemberExpression") {
     const path = memberPathOf(target as unknown as Parameters<typeof memberPathOf>[0], opts);
     if (!path) return null;
     // const 根：不重绑根（族 59 · W9）——defineProperty 的写回值就地落
-    if (!path.rootRebindable) return `${setPathSrc(path, "__nudoDefR")};`;
-    return `${path.rootTarget} = ${setPathSrc(path, "__nudoDefR")}`;
+    if (!path.rootRebindable) return `${setPathSrc(path, defR)};`;
+    return `${path.rootTarget} = ${setPathSrc(path, defR)}`;
   }
   return null;
 }
@@ -172,7 +200,10 @@ export function transpileCallExpr(
         expr.arguments[0]
       ) {
         const methodName = (callee.property as { name: string }).name;
-        const rebind = definePropRebindSrc(expr.arguments[0] as Node, opts);
+        // Bug 1146：引擎临时名避开用户标识符（IIFE 在自身作用域求值实参 ⇒
+        // 写死名会遮蔽用户同名绑定 / 撞 TDZ ReferenceError）。
+        const defR = internalTmpName(DEF_R_BASE, opts);
+        const rebind = definePropRebindSrc(expr.arguments[0] as Node, opts, defR);
         if (rebind !== null) {
           const args = expr.arguments
             .map((a) =>
@@ -183,7 +214,7 @@ export function transpileCallExpr(
             .join(", ");
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
-          return `(() => { const __nudoDefR = $invoke(Object, ${JSON.stringify(methodName)}, [${args}]${locArg}); ${rebind}; return __nudoDefR; })()`;
+          return `(() => { const ${defR} = $invoke(Object, ${JSON.stringify(methodName)}, [${args}]${locArg}); ${rebind}; return ${defR}; })()`;
         }
       }
       // obj.method(args) / obj?.method(args) → $invoke / $optionalInvoke
@@ -224,7 +255,12 @@ export function transpileCallExpr(
           callee.object.type === "Identifier"
         ) {
           const recvName = (callee.object as { name: string }).name;
-          return `(() => { const __nudoReArgs = [${args}]; const __v = $invoke(${recvName}, ${name}, __nudoReArgs${locArg}); $reStateCall(${recvName}, ${name}, __nudoReArgs); return __v; })()`;
+          // Bug 1146：引擎临时名避开用户标识符（实参在本 IIFE 作用域求值 ⇒
+          // 写死名会遮蔽用户同名绑定 / 撞 TDZ ReferenceError）。
+          const reNames = internalTmpNameSet([RE_ARGS_BASE, RE_RES_BASE], opts);
+          const reArgs = reNames[0]!;
+          const reRes = reNames[1]!;
+          return `(() => { const ${reArgs} = [${args}]; const ${reRes} = $invoke(${recvName}, ${name}, ${reArgs}${locArg}); $reStateCall(${recvName}, ${name}, ${reArgs}); return ${reRes}; })()`;
         }
         // Bug 152：实参包 **thunk**（`() => [args]`）——原生 CallExpression 的
         // 求值顺序是「引用取值（成员 getter 在此触发）→ 实参 → 调用」；把实参

@@ -17,9 +17,10 @@
  *   经 narrowCaseLabelArmThunk 影子重绑进臂体；
  * - 语句级 emit 协议（fork 臂隔离/mutator rebinds/守卫剪影）与表达式侧
  *   short-circuit.ts 同源；控制流谓词在 ../stmt-predicates.ts（leaf）；
- * - 关系守卫双向：事实臂窄化断言「测试为真」的方向（narrowRelArmThunk），
- *   **早退**后的后续路径窄化断言**否定界**（narrowRelComplementArmThunk，
- *   见 ./fn-body.ts）——事实臂以 return/throw 结束时 else 臂即后续路径；
+ * - 关系守卫只接**事实臂**（narrowRelArmThunk）：「测试为真」的方向
+ *   （那侧 NaN 不可达）；**后续路径**（早退后的 else 臂）**不断言否定界**
+ *   （Bug 1115：¬(x <= k) 含 NaN ⇒ 否定界不可健全表示 ⇒ 断言它会排除
+ *   NaN ⇒ 假绿）；
  * - 循环体守卫接线（Bug 183 / 185）：`for` / `while` / `do-while` 的**测试
  *   事实**（nullish + 关系）经 loopBodyGuardsOf / narrowLoopBody 以影子参数
  *   接进循环体——事实臂 = 「测试为真 ⇒ 体内成立」（与 `if` 的事实臂同义）；
@@ -87,11 +88,13 @@ import {
   emitParamBinding,
   forkBindingDecls,
   forkJoinBindings,
+  forkTmpNames,
+  switchTmpNames,
   matchOptionalRequire,
   catchMayRethrow,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
-import { paramNamesOf, transpileFnBodyStmts, narrowRelComplementArmThunk } from "./fn-body.ts";
+import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
 import { computeConstScope, copyConstScope } from "../helpers.ts";
 // Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
 import { fnParamsHaveThis } from "../expr/function.ts";
@@ -377,7 +380,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // `$await(…)` 兜底（await 不是真挂起点，但产物合法）。
       const asyncPlan =
         stmt.async === true && stmt.generator !== true
-          ? asyncBodyPlan(stmt.body)
+          ? asyncBodyPlan(stmt.body, opts.disableAsyncGen)
           : undefined;
       const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       // Bug 1058：arguments 槽名（`__nudoArgs`）必须避开用户标识符——用户
@@ -794,21 +797,28 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const padIn = indent(depth + 1);
       // 块级作用域：同一函数内多个 if 都改 errors 时，__fk0_* 不得重复声明
       const padDecl = names.length > 0 ? padIn : pad;
-      const wrapArm = (thunk: string, outPrefix: string): string => {
+      // Bug 1151-b：fork 协议内部临时名（快照 `__fk0_*` / 臂槽位 / 臂标志
+      // `__cont` / 测试载体 `__fkT` / 结果载体 `__fkR`）**避开用户标识符**
+      // ——写死名会遮蔽用户同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点
+      // （`forkBindingDecls`）同源 ⇒ 「成对一致」。
+      const fk = forkTmpNames(names, opts);
+      const wrapArm = (thunk: string, arm: 0 | 1): string => {
         if (names.length === 0) return thunk;
+        const slots = arm === 0 ? fk.arm1 : fk.arm2;
+        const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
         return [
           `() => {`,
-          ...names.map((n) => `${padIn}${n} = $copy(__fk0_${n});`),
-          `${padIn}let __cont = true;`,
+          ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
+          `${padIn}let ${fk.cont} = true;`,
           `${padIn}try {`,
           `${padIn}  return (${thunk})();`,
           `${padIn}} catch (e) {`,
-          `${padIn}  if ($isForkExit(e)) __cont = false;`,
+          `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
           `${padIn}  throw e;`,
           `${padIn}} finally {`,
-          `${padIn}  if (__cont) {`,
-          ...names.map((n) => `${padIn}    __${outPrefix}${n} = ${n};`),
-          ...names.map((n) => `${padIn}    __${outPrefix}set_${n} = true;`),
+          `${padIn}  if (${fk.cont}) {`,
+          ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
+          ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
           `${padIn}  }`,
           `${padIn}}`,
           `}`,
@@ -856,37 +866,23 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const altNarrowed =
         altRaw === null
           ? null
-          : narrowRelComplementArmThunk(
-              narrowDiscriminantArmThunks(
-                narrowTypeArmThunk(
-                  narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-                  tguard,
-                  "alt",
-                  recvSet,
-                ),
-                dguards,
+          : narrowDiscriminantArmThunks(
+              narrowTypeArmThunk(
+                narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+                tguard,
                 "alt",
                 recvSet,
               ),
-              // Bug 182：事实臂以 return / throw 结束 ⇒ 该臂是**早退**，
-              // else 臂即**后续路径**（测试为假）⇒ 后续路径上可断言**否定
-              // 关系界**（`x <= 0` 为假 ⇒ `x > 0`）。早返回形态
-              // `if (x <= 0) { return 1; } return x;` 的尾句全终止 ⇒
-              // completeElseChains 把尾句收进**合成的 else** ⇒ 后续路径走
-              // 的正是这条 else 臂（此前不窄化 ⇒ 返回值域含未精化的 x ⇒
-              // `@nudo:contract return number().gt(0)` 被判违约 ⇒ 与语义等价
-              // 的 `if (x > 0) { return x; } else { return 1; }` 结论相反）。
-              // 事实臂**不**终止时（普通 if/else）不断言否定界——else 臂此时
-              // 只能断定 `¬(x <= k)`（NaN 亦满足），不可健全表示。
-              stmtReturns(stmt.consequent) ? rguard : undefined,
+              dguards,
+              "alt",
               recvSet,
             );
-      const cons = wrapArm(consNarrowed, "fk1_");
+      const cons = wrapArm(consNarrowed, 0);
       // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
       // 那是标识符，被遮蔽后会把 Abs 当 alternate 函数传进去）；有 fork 绑定时
       // 需要真 alternate 参与 join，折 UNDEF_LIT。
       const alt = names.length
-        ? wrapArm(altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed, "fk2_")
+        ? wrapArm(altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed, 1)
         : altNarrowed;
       const altArg = alt === null ? "" : `, ${alt}`;
       // Bug 135：fork 快照（__fk0_*）是**臂的基线**——基线必须取自**测试
@@ -896,14 +892,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 修法：测试先落临时量 __fkT，再取快照，$fork 用 __fkT。
       const joinLines = names.length
         ? [
-            `${padDecl}const __fkT = (${test});`,
+            `${padDecl}const ${fk.test} = (${test});`,
             ...testRebinds,
-            ...forkBindingDecls(names, padDecl),
+            ...forkBindingDecls(names, padDecl, opts),
           ]
         : testRebinds;
-      const applyJoin = names.length ? forkJoinBindings(names, padDecl).join("\n") : "";
+      const applyJoin = names.length
+        ? forkJoinBindings(names, padDecl, opts).join("\n")
+        : "";
       // 有 fork 绑定（快照基线）时测试已落 __fkT；否则测试仍是 $fork 的实参
-      const testRef = names.length > 0 ? "__fkT" : test;
+      const testRef = names.length > 0 ? fk.test : test;
       // 两分支都以 return/throw 退出时，$fork 即函数返回值
       // （循环/switch 臂内：用 $loopReturn 抛 NudoReturn，与早退语义一致）
       // else-if 链经 completeElseChains 补全最终 else 后同样命中本路径。
@@ -927,9 +925,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         return [
           openBlock,
           ...joinLines,
-          `${padDecl}const __fkR = $fork(${testRef}, ${cons}${altArg});`,
+          `${padDecl}const ${fk.result} = $fork(${testRef}, ${cons}${altArg});`,
           applyJoin,
-          inCtrl ? `${padDecl}$loopReturn(__fkR);` : `${padDecl}return __fkR;`,
+          inCtrl ? `${padDecl}$loopReturn(${fk.result});` : `${padDecl}return ${fk.result};`,
           closeBlock,
         ].join("\n");
       }
@@ -1290,6 +1288,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // （原生 CaseBlock：逐个求值 case 测试，命中即跳出求值循环）。
       const hasTests = stmt.cases.some((c) => c.test != null);
       const testSrcs: string[] = [];
+      // Bug 1151-b：switch 协议内部临时名（基线快照 `__sw0_*` / 臂槽位
+      // `__sw${i}_*` / 臂标志 `__cont`）**避开用户标识符**——写死名会遮蔽
+      // 用户同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`decls`）同源
+      // ⇒ 「成对一致」。
+      const sw = switchTmpNames(names, nArms, opts);
       const wrapArmThunk = (thunk: string, outIdx: number): string => {
         // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
         const lines: string[] = [`() => {`];
@@ -1298,8 +1301,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // ⇒ 全部求值 = 上界）
         if (hasTests) lines.push(`${indent(depth + 1)}if (!__swTestRead) __swEvalAll();`);
         if (names.length > 0) {
-          lines.push(...names.map((n) => `${indent(depth + 1)}${n} = $copy(__sw0_${n});`));
-          lines.push(`${indent(depth + 1)}let __cont = true;`);
+          lines.push(...names.map((n, i) => `${indent(depth + 1)}${n} = $copy(${sw.snap[i]});`));
+          lines.push(`${indent(depth + 1)}let ${sw.cont} = true;`);
         }
         lines.push(`${indent(depth + 1)}try {`);
         lines.push(`${indent(depth + 2)}return (${thunk})();`);
@@ -1308,15 +1311,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 2)}if ($isBreakTo(e, ${JSON.stringify(breakLabel)})) {`);
         lines.push(`${indent(depth + 3)}/* switch 臂 break：臂结束 */`);
         lines.push(`${indent(depth + 2)}} else {`);
-        if (names.length > 0) lines.push(`${indent(depth + 3)}if ($isForkExit(e)) __cont = false;`);
+        if (names.length > 0) lines.push(`${indent(depth + 3)}if ($isForkExit(e)) ${sw.cont} = false;`);
         lines.push(`${indent(depth + 3)}throw e;`);
         lines.push(`${indent(depth + 2)}}`);
         lines.push(`${indent(depth + 1)}}`);
         if (names.length > 0) {
           lines.push(`${indent(depth + 1)}finally {`);
-          lines.push(`${indent(depth + 2)}if (__cont) {`);
-          lines.push(...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}_${n} = ${n};`));
-          lines.push(...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}set_${n} = true;`));
+          lines.push(`${indent(depth + 2)}if (${sw.cont}) {`);
+          lines.push(...names.map((n, i) => `${indent(depth + 3)}${sw.arm[outIdx]![i]} = ${n};`));
+          lines.push(...names.map((n, i) => `${indent(depth + 3)}${sw.armSet[outIdx]![i]} = true;`));
           lines.push(`${indent(depth + 2)}}`);
           lines.push(`${indent(depth + 1)}}`);
         }
@@ -1377,7 +1380,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 「测试之后」的状态 ⇒ 测试里的写不被抹掉）。
       const testHelpers: string[] = [];
       if (testSrcs.length > 0) {
-        const refresh = names.map((n) => `${indent(depth + 2)}__sw0_${n} = $copy(${n});`);
+        const refresh = names.map((n, i) => `${indent(depth + 2)}${sw.snap[i]} = $copy(${n});`);
         testHelpers.push(
           `${pad}const __swT = [${testSrcs.map((t) => `() => (${t})`).join(", ")}];`,
           `${pad}const __swTV = [];`,
@@ -1414,20 +1417,23 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         if (testHelpers.length === 0) return lines.join("\n");
         return [`${pad}{`, ...lines, `${pad}}`].join("\n");
       }
-      const decls = names.flatMap((n) => [
+      // 槽位数 ≡ nArms（恒等式：slotCount = max(nArms, armSeq + (defaultArm ? 0 : 1))
+      // 且 armSeq ≡ merged.length ⇒ 两支下都等于 nArms）⇒ 分配器按 nArms 分配
+      // 即可覆盖全部槽位（`sw.arm` / `sw.armSet` 的长度 = nArms）。
+      const slotCount = Math.max(nArms, armSeq + (defaultArm ? 0 : 1));
+      const decls = names.flatMap((n, ni) => [
         // 基线可被 case 测试求值刷新（Bug 169）——故 let 而非 const
-        `${pad}let __sw0_${n} = $copy(${n});`,
-        ...Array.from({ length: Math.max(nArms, armSeq + (defaultArm ? 0 : 1)) }, (_, i) =>
-          `${pad}let __sw${i + 1}_${n}; let __sw${i + 1}set_${n} = false;`,
+        `${pad}let ${sw.snap[ni]} = $copy(${n});`,
+        ...Array.from({ length: slotCount }, (_, i) =>
+          `${pad}let ${sw.arm[i]![ni]}; let ${sw.armSet[i]![ni]} = false;`,
         ),
       ]);
-      const slotCount = Math.max(nArms, armSeq + (defaultArm ? 0 : 1));
-      const joins = names.map((n) => {
+      const joins = names.map((n, ni) => {
         const slots = Array.from(
           { length: slotCount },
-          (_, i) => `(__sw${i + 1}set_${n} ? __sw${i + 1}_${n} : null)`,
+          (_, i) => `(${sw.armSet[i]![ni]} ? ${sw.arm[i]![ni]} : null)`,
         );
-        return `${pad}${n} = (() => { const __p = [${slots.join(",")}].filter((x) => x !== null); return __p.length === 0 ? ${n} : __p.reduce((a, b) => $join(a, b)); })();`;
+        return `${pad}${n} = (() => { const ${sw.joinArr} = [${slots.join(",")}].filter((x) => x !== null); return ${sw.joinArr}.length === 0 ? ${n} : ${sw.joinArr}.reduce((a, b) => $join(a, b)); })();`;
       });
       // shared body 必须在声明 __sw0_* 的同一块内，否则闭包解析不到槽位绑定
       //
@@ -1437,16 +1443,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 修法：判别式先落 __swD（连同其自身写回），再取快照，$switch 用 __swD。
       return [
         `${pad}{`,
-        `${pad}const __swD = (${disc});`,
+        `${pad}const ${sw.disc} = (${disc});`,
         ...discRebinds,
         ...decls.map((l) => l.replace(new RegExp(`^${pad}`), `${pad}`)),
         ...testHelpers,
         ...sharedBodyDecls.map((l) =>
           l.startsWith(pad) ? `${pad}${l.slice(pad.length)}` : `${pad}${l}`,
         ),
-        `${pad}const __swR = ${switchCall("__swD")};`,
+        `${pad}const ${sw.result} = ${switchCall(sw.disc)};`,
         ...joins,
-        allReturn ? `${pad}return __swR;` : null,
+        allReturn ? `${pad}return ${sw.result};` : null,
         `${pad}}`,
       ]
         .filter((l): l is string => l !== null)
@@ -1458,7 +1464,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       if (optReq) {
         const reqSrc = `__nudoRequireOptional(${JSON.stringify(optReq.specs)})`;
         const cond = (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0;
-        const assignSrc = `((__v) => { $assignRecord(${JSON.stringify(optReq.name)}, ${optReq.name}, __v, ${optReq.locLine}, ${optReq.locCol}, ${cond});${!opts.inFunction ? ` $recordBinding(${JSON.stringify(optReq.name)}, __v);` : ""} return ${optReq.name} = __v; })(${reqSrc})`;
+        // Bug 1151-c：赋值 IIFE 形参载体避开用户标识符（写目标在 IIFE 体内
+        // 求值 ⇒ 写死名 `__v` 会遮蔽用户同名绑定 ⇒ 用户绑定没被写回）。
+        const reqV = internalTmpName("__v", opts);
+        const assignSrc = `((${reqV}) => { $assignRecord(${JSON.stringify(optReq.name)}, ${optReq.name}, ${reqV}, ${optReq.locLine}, ${optReq.locCol}, ${cond});${!opts.inFunction ? ` $recordBinding(${JSON.stringify(optReq.name)}, ${reqV});` : ""} return ${optReq.name} = ${reqV}; })(${reqSrc})`;
         const lines = [`${pad}${assignSrc};`];
         if (stmt.finalizer) {
           // Bug 148：finally 体是块作用域——其内 const 名单自算

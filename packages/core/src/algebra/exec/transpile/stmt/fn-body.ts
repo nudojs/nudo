@@ -7,14 +7,13 @@
  *   会绕过早退 if 提升，`if (c) return X; return Y` 的早退值被语句级 $fork
  *   thunk 吞掉（假精确）；
  * - 早退提升的 alt 臂 = **后续路径**（事实臂已 return/throw 提前退出 ⇒ 测试
- *   为假）⇒ 该臂断言**否定关系界**（narrowRelComplementArmThunk，见下）；
- * - 早退补集窄化的**送达范围**（Bug 186）：内含早退 if 且**无词法声明**的块
+ *   为假）⇒ 该臂**不断言否定关系界**（Bug 1115：¬(x <= k) 含 NaN，不可健全
+ *   表示 ⇒ 断言否定界会把 NaN 排除 ⇒ 假绿；事实臂窄化不受影响）；
+ * - 早退摊平的**送达范围**（Bug 186）：内含早退 if 且**无词法声明**的块
  *   摊平到当前语句表（flattenEarlyReturnBlocks）——块正常完成 ⇒ 早退测试为
- *   假 ⇒ 补集事实作用于块之后的路径；块内有词法声明时不摊平（作用域不外泄）；
+ *   假；块内有词法声明时不摊平（作用域不外泄）；
  * - try / catch / finally 的**块体**也走本入口（与函数体顶层同口径）——裸
- *   map(transpileStatement) 会绕过早退提升（嵌套语句表拿不到补集窄化）；
- * - 关系守卫的补集精化只用于**后续路径**（早退形态），普通 if/else 的 else
- *   臂不断言否定界（NaN 亦满足 `¬(x <= k)`，不可健全表示）；
+ *   map(transpileStatement) 会绕过早退提升；
  * - 函数体边界 var 提升（Bug 21）：skip = 参数模式名；嵌套块不传
  *   varScope（var 已在函数级提升，块内改发赋值）；
  * - P4b 参数遮蔽：继承 constNames 被本函数参数模式名遮蔽时扣除（假
@@ -36,7 +35,6 @@ import {
   narrowDiscriminantArmThunks,
   relGuardOf,
   narrowRelArmThunk,
-  type RelGuard,
 } from "../stmt-predicates.ts";
 import {
   isExpression,
@@ -48,7 +46,7 @@ import {
   copyConstScope,
   internalTmpName,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings } from "../emit.ts";
+import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
@@ -260,21 +258,28 @@ export function transpileFnBodyStmts(
     const pad = indent(depth);
     const padIn = indent(depth + 1);
     // 与 IfStatement 同协议：set-flag 哨兵 + forkJoinBindings
-    const wrapArm = (thunk: string, outPrefix: string): string => {
+    // Bug 1151-b：fork 协议内部临时名（快照 `__fk0_*` / 臂槽位 / 臂标志
+    // `__cont` / 结果载体 `__fkR`）**避开用户标识符**——写死名会遮蔽用户
+    // 同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`forkBindingDecls`）
+    // 同源 ⇒ 「成对一致」。
+    const fk = forkTmpNames(names, scopedOpts);
+    const wrapArm = (thunk: string, arm: 0 | 1): string => {
       if (names.length === 0) return thunk;
+      const slots = arm === 0 ? fk.arm1 : fk.arm2;
+      const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
       return [
         `() => {`,
-        ...names.map((n) => `${padIn}${n} = $copy(__fk0_${n});`),
-        `${padIn}let __cont = true;`,
+        ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
+        `${padIn}let ${fk.cont} = true;`,
         `${padIn}try {`,
         `${padIn}  return (${thunk})();`,
         `${padIn}} catch (e) {`,
-        `${padIn}  if ($isForkExit(e)) __cont = false;`,
+        `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
         `${padIn}  throw e;`,
         `${padIn}} finally {`,
-        `${padIn}  if (__cont) {`,
-        ...names.map((n) => `${padIn}    __${outPrefix}${n} = ${n};`),
-        ...names.map((n) => `${padIn}    __${outPrefix}set_${n} = true;`),
+        `${padIn}  if (${fk.cont}) {`,
+        ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
+        ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
         `${padIn}  }`,
         `${padIn}}`,
         `}`,
@@ -341,42 +346,43 @@ export function transpileFnBodyStmts(
     const consMarked = inCtrl
       ? `() => { ${fkConsName} = true; return (${consNarrowed})(); }`
       : consNarrowed;
-    const cons = wrapArm(consMarked, "fk1_");
+    const cons = wrapArm(consMarked, 0);
     const altBody = transpileFnBodyStmts(rest, depth + 1, {
       ...scopedOpts,
       inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
     });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    // Bug 182：alt 臂 = **后续路径**（事实臂已 return / throw 提前退出 ⇒ 落到
-    // alt 的路径上测试为**假**）⇒ 该路径上可断言**否定关系界**
-    // （`x <= 0` 为假 ⇒ `x > 0`）。事实臂窄化（narrowRelArmThunk）只管
-    // 「测试为真」的方向，补集方向此前整体放弃 ⇒ 早返回形态
-    // `if (x <= 0) { return 1; } return x;` 的返回值域含未精化的 x ⇒
-    // `@nudo:contract return number().gt(0)` 被判违约（与语义等价的
-    // `if (x > 0) { return x; } else { return 1; }` 结论相反 ⇒ L1 假红）。
-    const altNarrowed = narrowRelComplementArmThunk(
-      narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-          earlyTGuard,
-          "alt",
-          recvSet,
-        ),
-        earlyDGuards,
+    // Bug 1115：alt 臂 = **后续路径**（事实臂已 return / throw 提前退出 ⇒ 落到
+    // alt 的路径上测试为**假**）——但**不得**在后续路径上断言**否定关系界**
+    // （`x <= 0` 为假 ⇒ `x > 0`）：JS 里 `¬(x <= k)` 还含 `x` 为 NaN 的情形
+    // （NaN 与任何比较皆假）⇒ 后续路径只能断定 `x > k ∨ x is NaN`，
+    // 断言 `x > k` 会**排除 NaN**（不健全）⇒
+    // - `if (x < 0) return 0; return x;` + `return nonNeg`：后续路径断言
+    //   `x >= 0` ⇒ 契约被「证成」⇒ **0 诊断**（假绿）——原生 x=NaN 时
+    //   `NaN < 0` 为假 ⇒ 走到 `return x` ⇒ 返回 NaN ⇒ 违反 nonNeg。
+    // - 三元写法 `return x < 0 ? 0 : x;` 的 else 臂**没有**否定界窄化 ⇒
+    //   判 `unproven-return` ⇒ 两种等价写法结论不一致。
+    // ⇒ 后续路径**不断言否定界**（与三元路径同口径）：事实臂窄化
+    //   （narrowRelArmThunk）只管「测试为真」的方向（那侧 NaN 不可达）。
+    const altNarrowed = narrowDiscriminantArmThunks(
+      narrowTypeArmThunk(
+        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+        earlyTGuard,
         "alt",
         recvSet,
       ),
-      earlyRGuard,
+      earlyDGuards,
+      "alt",
       recvSet,
     );
-    const alt = wrapArm(altNarrowed, "fk2_");
-    const applyJoin = names.length ? forkJoinBindings(names, pad).join("\n") : "";
+    const alt = wrapArm(altNarrowed, 1);
+    const applyJoin = names.length ? forkJoinBindings(names, pad, scopedOpts).join("\n") : "";
     if (names.length === 0) {
       const promoted = [
         ...testRebinds,
         ...(inCtrl ? [`${pad}let ${fkConsName} = false;`] : []),
         inCtrl
-          ? `${pad}const __fkR = $fork(${test}, ${cons}, ${alt});\n${pad}if (${fkConsName}) $loopReturn(__fkR);`
+          ? `${pad}const ${fk.result} = $fork(${test}, ${cons}, ${alt});\n${pad}if (${fkConsName}) $loopReturn(${fk.result});`
           : `${pad}return $fork(${test}, ${cons}, ${alt});`,
       ].join("\n");
       return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
@@ -384,13 +390,13 @@ export function transpileFnBodyStmts(
     const promoted = [
       `${pad}{`,
       ...testRebinds,
-      ...forkBindingDecls(names, padIn),
+      ...forkBindingDecls(names, padIn, scopedOpts),
       ...(inCtrl ? [`${padIn}let ${fkConsName} = false;`] : []),
-      `${padIn}const __fkR = $fork(${test}, ${cons}, ${alt});`,
+      `${padIn}const ${fk.result} = $fork(${test}, ${cons}, ${alt});`,
       applyJoin.split("\n").map((l) => l.replace(/^\s*/, padIn)).join("\n"),
       inCtrl
-        ? `${padIn}if (${fkConsName}) $loopReturn(__fkR);`
-        : `${padIn}return __fkR;`,
+        ? `${padIn}if (${fkConsName}) $loopReturn(${fk.result});`
+        : `${padIn}return ${fk.result};`,
       `${pad}}`,
     ].join("\n");
     return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
@@ -399,56 +405,22 @@ export function transpileFnBodyStmts(
 }
 
 /**
- * 关系算子的**严格否定**（补集路径用）：`x <= k` 为假 ⇒ `x > k`（其余同理）。
- * 注：JS 里 `¬(x <= k)` 还含 `x` 为 NaN 的情形（NaN 与任何比较皆假）——
- * 严格说补集路径只能断定 `x > k ∨ x is NaN`；这里取**否定界**形态，
- * NaN 的排除交给**契约谓词层**（`number().gt(0)` 这类契约本身排除 NaN ⇒
- * 契约已排除 NaN 时补集路径满足 `> 0`）。否则「无法排除 NaN」会被误当成
- * 「不满足契约」⇒ 语义等价的两种写法结论相反（L1 门禁假红）。
+ * 关系守卫的**补集**精化已**整体撤销**（Bug 1115）。
+ *
+ * 原实现（Bug 182）在「测试为假」的后续路径上断言**否定关系界**
+ * （`x <= k` 为假 ⇒ `x > k`，`REL_COMPLEMENT_OP`）——但 JS 里
+ * `¬(x <= k)` 还含 `x` 为 NaN 的情形（NaN 与任何比较皆假）：
+ * 后续路径只能断定 `x > k ∨ x is NaN` ⇒ 断言 `x > k` **排除了 NaN**
+ * （不健全）⇒
+ * - `if (x < 0) return 0; return x;` + `return nonNeg`：后续路径断言
+ *   `x >= 0` ⇒ 契约被「证成」⇒ **0 诊断**（假绿）；原生 x=NaN ⇒
+ *   `NaN < 0` 为假 ⇒ `return x` ⇒ 返回 NaN ⇒ 违反 nonNeg（真违规）。
+ * - 三元写法 `return x < 0 ? 0 : x;` 的 else 臂没有否定界窄化 ⇒ 判
+ *   `unproven-return` ⇒ 两种等价写法结论不一致。
+ *
+ * ⇒ 后续路径**不断言否定界**（事实臂 `narrowRelArmThunk` 保留：那一侧
+ * 「测试为真」⇒ NaN 不可达，断言是健全的）。
  */
-const REL_COMPLEMENT_OP: Record<RelGuard["op"], RelGuard["op"]> = {
-  le: "gt",
-  lt: "ge",
-  ge: "lt",
-  gt: "le",
-};
-
-/**
- * 关系守卫的**补集**精化（Bug 182）：`((x) => THUNK)($refineRel(x, "gt", k))`。
- *
- * 事实臂（`narrowRelArmThunk`）断言的是「测试为真」的方向（`x <= k`）；
- * **后续路径**（事实臂以 return / throw 提前退出 ⇒ 落到该路径上测试为**假**）
- * 断言的是**否定界**（`x > k`）。两者语义不同，不可混用。
- *
- * 两条实现路径共用本函数：
- * - 早退提升（fn-body）：事实臂 return、尾句非全终止 ⇒ alt 臂 = 后续路径；
- * - if/else 分支（statement）：尾句全终止时 `completeElseChains` 把尾句收进
- *   **合成的 else** ⇒ 该 else 臂即后续路径（`if (x <= 0) { return 1; }
- *   return x;` 走的就是这条）。
- *
- * 跳过口径与事实臂一致：守卫名在 fork 绑定集（臂内写 / 快照重绑）时跳过
- * （影子参数会吞掉臂内写）；strict 非法绑定名（arguments / eval）跳过。
- */
-export function narrowRelComplementArmThunk(
-  thunk: string,
-  guard: RelGuard | undefined,
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-): string {
-  // 复合关系式（合取）派生的守卫：**补集方向不可用**——
-  // `¬(A ∧ B)` = `¬A ∨ ¬B`（不是单一关系）⇒ 在「测试为假」的后续路径上
-  // 断言 `¬A` 会是**假绿**（族 60 · 第 4 条）⇒ 整体跳过（宁缺毋假）。
-  if (!guard || guard.composite) return thunk;
-  const names =
-    forkBindingNames instanceof Set
-      ? (forkBindingNames as Set<string>)
-      : new Set(forkBindingNames);
-  if (names.has(guard.name) || guard.name === "arguments" || guard.name === "eval") {
-    return thunk;
-  }
-  const op = REL_COMPLEMENT_OP[guard.op];
-  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(op)}, ${guard.k}))`;
-}
-
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，

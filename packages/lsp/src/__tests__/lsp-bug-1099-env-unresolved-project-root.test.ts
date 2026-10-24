@@ -55,10 +55,10 @@ function projectPkg(env: string[]): string {
 }
 
 /** env-unresolved 诊断（其它诊断不算）。 */
-function envMsgs(diags: Array<{ code?: string | number; message: string }>): string[] {
+function envMsgs(diags: LspDiagnostic[]): string[] {
   return diags
     .filter((d) => d.code === "nudo:env-unresolved")
-    .map((d) => d.message);
+    .map((d) => (typeof d.message === "string" ? d.message : d.message.value));
 }
 
 describe("Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路径按项目根）", () => {
@@ -127,9 +127,7 @@ describe("Bug 1099: 项目级 env 的加载失败必须在 LSP 面可见（路�
     const codes = sent.map((d) => d.code);
     // `MAGIC` 是 env 全局 ⇒ 不得报「内建 API 未覆盖」（修前 IDE 直接发布假阳）
     expect(codes).not.toContain("nudo:builtin-unknown");
-    // ⚠ 只钉**分析器通道**这一条。L2 `nudo:entry-may-throw` 仍可能来自 **check
-    // 通道**（`buildLspInjection` 在 `packages/lsp/src/agent-tools.ts`：项目级 env
-    // 名未绝对化 ⇒ 该面仍看不见项目级 env）——那是另一条面、另一个文件的切片，
-    // 本轮不改（见报告「残留」）。
+    // 注：LSP **check 通道**的项目级 env 绝对化已由 Bug 1104（`absolutizeEnvSpec`）
+    // 修好 ⇒ 项目级 env 在该通道同样可见，不再是 IDE 红 / CLI 绿的假红来源。
   });
 });

@@ -1,7 +1,22 @@
 ---
-"@nudojs/service": patch
-"nudojs": patch
+"@nudojs/service": major
+"nudojs": major
 ---
+
+**BREAKING**: dts 面的**投影形状**变了 —— `.d.ts` 现在按**模块面**装配
+（类作为**类声明**投影、成员在类体内；`export default` 保持默认形态；
+`export * from` / `export { x } from` 的再导出被复现）；standard 面的输入面
+导出名也统一成 `<fn>Input`（解构形参不再导出字段级校验器 `act_a` / `act_b`）。
+
+谁会坏：消费方 `import` 生成 `.d.ts` 的类型并按**旧形状**引用的代码 ——
+
+- 类成员此前被摊成**模块级**声明（源码里并不存在这些顶层符号）⇒ 旧 `.d.ts`
+  的形状与新 `.d.ts` 不同 ⇒ 消费方 `tsc --noEmit` 会红；
+- 再导出的符号此前**整个缺失** ⇒ 现在出现（反向：依赖「它不在」的代码会冲突）；
+- standard 面解构形参的 `act_a` / `act_b` 导出**移除**，改为 `<fn>Input`。
+
+怎么迁移：重新生成产物并按新形状引用（类成员走 `Class.member`，再导出符号现在
+可用）；standard 面改 import `<fn>Input`。
 
 Cross-shard wiring for the `service-emit` batch: the CLI now feeds the
 product faces the same information the analyzer holds, and a frozen

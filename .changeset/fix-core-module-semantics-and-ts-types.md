@@ -1,6 +1,9 @@
 ---
-"@nudojs/core": patch
+"@nudojs/core": minor
 ---
+
+新增诊断码 `nudo:module-unreadable`（模块**存在但不可读**）⇒ **新诊断码**属
+增量（additive）⇒ minor。
 
 The engine keeps the module semantics and the declared types of a TypeScript
 source.

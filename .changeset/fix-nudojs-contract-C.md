@@ -1,6 +1,17 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo contract --from-dts --write` 的**草稿落盘位置**变了
+（Bug 944）—— 此前写在**当前工作目录**，现在写在**源 `.d.ts` 旁边**。
+
+谁会坏：跑 `nudo contract --from-dts --write` 后在**当前目录**读草稿的脚本
+（例如 `cat createUser.nudo.draft.ts`）⇒ 文件现在在源 `.d.ts` 所在目录
+（`types/index.d.ts` ⇒ `types/index.d.nudo.draft.ts`）⇒ 旧路径读不到；
+从 `node_modules` 收割来的包类型**不再**写草稿（此前会写）。
+
+怎么迁移：按源 `.d.ts` 的目录定位草稿（`<dir-of-dts>/<stem>.nudo.draft.ts`），
+别再假设草稿落在 CWD；`node_modules` 里的包类型先把 `.d.ts` 复制进工程再跑。
 
 `nudo contract --emit` / `--from-dts`: unmatched `--fn` names no longer widen
 the write scope, the dry-run preview names the sidecar it would change,

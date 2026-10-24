@@ -119,6 +119,7 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:loop-truncated` | engine | info | Loop exit condition stayed concrete-true past the iteration budget; loop state widened (not the call budget) |
 | `nudo:fork-truncated` | engine | info | Branch-expansion (`$fork`) budget hit; result widened |
 | `nudo:host-effect-blocked` | engine | info | Host side-effect function (`fetch` / timers / …) not executed during analysis — result widened to `unknown#opaque`. Mock with `@nudo:mock` / `@nudo:env` |
+| `nudo:internal` | engine | error | The check gate could **not** run to completion for this file (engine internal fallback — e.g. the module failed to evaluate) ⇒ the file's exports could not be verified ⇒ **fail-closed**: `nudo check` exits non-zero and `nudo health` reports `Result: FAIL`. Distinct from `nudo:unsupported:*` (capability boundary) and from `nudo:opaque-result` (inference precision) |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
 | `nudo:no-method` | engine | error (primitive receivers) / warning | Member access cannot resolve — ``Method 'x' does not exist on type 'T'``. Distinct from `nudo:unknown-recv` |
 | `nudo:mock-invalid` | engine | warning | `@nudo:mock` expression is not a known pattern (stub/spy/mock, arrow, type expression) |

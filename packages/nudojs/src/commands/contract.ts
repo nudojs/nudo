@@ -197,7 +197,18 @@ export function registerContractCommand(program: Command): void {
     .option("--dry-run", "With --emit or --draft --write: print instead of writing")
     .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change")
     .option("--from <paths...>", "Usage-site files feeding domain evidence")
-    .option("--json", "With --draft: machine-readable draftSource + unified diff (AI4)")
+    // 族 20 · Bug 1147：帮助文本与**实现**对齐 —— `--json` 是**三形态**通用
+    // （print / `--draft` / `--emit`）且**顶层恒为数组**；元素形状按形态不同。
+    // 改前写的是 "With --draft: …" ⇒ 用户以为 `--json` 只能配 `--draft`。
+    // ⚠ 只改文案，**不改行为**（三形态的 JSON 载荷形状见
+    // `runContractPrint` / `contract-draft.ts` / `contract-emit.ts`）。
+    .option(
+      "--json",
+      "Machine face for print / --draft / --emit: the top level is always a JSON array (one element per input), and the element shape differs per mode. " +
+        "print elements: { file, entries[] }. " +
+        "--draft elements: { file, draftPath, draftSource, diff, entries[] }. " +
+        "--emit elements: { file, sidecar, changed, written, skipped[], issues[], diff? }.",
+    )
     // 族 20 · Bug 944：`--from-dts --write` 现在拒绝覆盖既有草稿（存在性检查）
     // ⇒ 需要一条**显式**的覆盖通道（与 `NUDO_DRAFT_FORCE=1` 环境变量等价，
     // 但走 CLI 面可见、可被脚本审计）。仅对 `--from-dts --write` 生效。

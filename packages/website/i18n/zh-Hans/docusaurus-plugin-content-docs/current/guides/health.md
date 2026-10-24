@@ -63,6 +63,11 @@ Result: FAIL (drift or errors found)
 > `case drift` 计的是**发生变化的见证指令条数**（`added + removed`），对所有文件求和 ——
 > 与上面每文件那行 `drift: N witness directive(s) changed` **同量纲**。
 > （此前它计的是「**有漂移的文件数**」⇒ Summary 的数与明细行的数在同一屏上是两个量纲。）
+>
+> **引擎内部回落 ⇒ FAIL。** 若某模块**完全没能求值**（引擎内部回落 —— 例如模块编译或
+> 求值失败），该文件的导出**无法被验证** ⇒ `health` 把该文件标成
+> `✗ internal fallback(s)`，整轮以 `Result: FAIL (engine internal fallback found)`
+> 结束并以非零码退出。这是 **fail-closed**：引擎没能分析出来的文件**不得**被报成健康。
 
 建议的 refresh 就是再固化命令：
 

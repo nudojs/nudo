@@ -43,6 +43,9 @@ export {
   resolveModule,
   locFromNode,
   collectEnvNames,
+  analyzeFileWithEvalFailures,
+  analyzeFileAsyncWithEvalFailures,
+  type FileEvalFailure,
 } from "./analyzer.ts";
 
 export {

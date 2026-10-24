@@ -15,6 +15,7 @@ import {
   listFnDirectiveScopes,
   pTrue,
   parseSource,
+  setEvalFallbackCollector,
   sidecarPathOf,
   type CheckAction,
   type CheckIssue,
@@ -22,6 +23,7 @@ import {
   type CheckOptions,
   type CheckReport,
   type AbsCallRecord,
+  type EvalFallback,
   type GitlabCodeQualityIssue,
   type RunTranspiledOptions,
 } from "@nudojs/core";
@@ -63,7 +65,7 @@ import {
   getPathEnvLoadErrors,
   getPathEnvDepContents,
 } from "@nudojs/service/evaluator";
-import { emitCheckReport, formatSyntaxErrorBlock, syntaxErrorInfo } from "./check-report.ts";
+import { emitCheckReport, formatSyntaxErrorBlock, syntaxErrorInfo, ANALYSIS_FAILED_PREFIX } from "./check-report.ts";
 import {
   collectNudoFiles,
   displayPathOf,
@@ -1007,6 +1009,25 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   let injectionSetupFailed = false;
   // interface 家族诊断（entry-only / domain-exceeds）——分析器通道产物
   let domainIssues: CheckIssue[] = [];
+  // 1145：**模块级求值失败**观测（本文件求值期间的引擎内部回落）。
+  //
+  // core 的回落三分类（`exec/run.ts` 的 `evalFallbackOf`）：
+  // - `unsupported:*` 能力边界（transpile 未 lowering 的构造）——**不是**闸门失败；
+  // - `module-throw`  程序自身抛（NudoThrow；catch 可吸收）——**不是**闸门失败；
+  // - `internal`      引擎内部缺陷（生成模块编译失败 / 求值抛内部错误）
+  //   ⇒ 该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
+  //   ⇒ **闸门假绿**（合法代码与违约代码都判绿）。
+  //
+  // ⇒ 只收 `internal`；`unsupported:*` / `module-throw` 进了这里就是**假红**
+  // （大面积误判 ⇒ 用户 CI 卡死）。
+  //
+  // collector 是**进程级单槽**（core 的 `setEvalFallbackCollector`）：本函数
+  // 安装期间覆盖全进程 ⇒ 只能有一个观察者（service 的观测面 API 不在本路径
+  // 上调用，见 `analyzer-orchestrate.ts` 的 `analyzeFileWithEvalFailures`）。
+  const evalFailures: EvalFallback[] = [];
+  setEvalFallbackCollector((f: EvalFallback) => {
+    if (f.reason === "internal") evalFailures.push(f);
+  });
   if (cache.cachedJson) {
     // env-unresolved 是 live 瞬态：旧缓存可能已持久化该条目（命中轮 live
     // merge 会再追加 → 重复告警），读回时剔除，由下方 live merge 单一来源注入
@@ -1054,6 +1075,9 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
         // #1 指纹：语法错是非 L2 error（不得触发 onboarding 块）
         if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
         process.exitCode = 1;
+        // 1145：早退路径也要卸掉回落 collector（否则下一文件的回落会被
+        // 记到本文件名下 ⇒ 误判别的文件）。
+        setEvalFallbackCollector(null);
         return;
       }
       // BUG-023：注入装配失败不得静默跳过——无注入的分析
@@ -1123,6 +1147,41 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     if (dirDiags.length > 0) {
       report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
     }
+  }
+  // 1145：求值阶段结束 ⇒ 卸掉本文件的回落 collector（下一文件重新装 ⇒
+  // 回落**按文件**归因，不串台）。
+  setEvalFallbackCollector(null);
+
+  // 1145：**模块级求值失败 ⇒ 闸门 fail-closed**（不得静默放绿）。
+  //
+  // `internal` 回落 = 引擎内部缺陷（生成模块编译失败 / 求值抛内部错误）⇒
+  // 该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
+  // （**假绿**：合法代码与违约代码都判绿）。现在产出一条 **error 级**诊断
+  // ⇒ 报告 ok:false ⇒ exit 1（人类面 / --json 面同源，退出码由 ok 单一决定）。
+  //
+  // 诊断码 = `nudo:internal`（**已注册**码，语义正合："Internal analysis/check
+  // failure surfaced as a diagnostic (check gate could not run to completion)"）
+  // ⇒ 不新增第二套码表。机器面判据：`issues[].code === "nudo:internal"`
+  // 且 `severity === "error"`。
+  if (evalFailures.length > 0) {
+    // 同一原因会被多个求值通道各记一条（模块图 / 分析器 / checkSource）⇒
+    // 文案去重（条数仍如实报回落**总**数）。
+    const detail = [...new Set(evalFailures.map((f) => f.message))].join("; ");
+    const issue: CheckIssue = {
+      severity: "error",
+      code: DIAG.internal,
+      message: `${ANALYSIS_FAILED_PREFIX} (engine internal fallback ×${evalFailures.length}): ${filePath} — ${detail}`,
+      suggestion:
+        "the module could not be evaluated (engine internal failure) — the gate could not decide this file; fix the reported cause, or report it as an engine bug together with the checked source file",
+    };
+    report = mergeCheckIssues(report, [issue]);
+    // 人类面：明确的失败行（哪个文件 + 什么原因）——走 stderr（--json 面的
+    // stdout 是机器契约，不得混入自由文本；与「注入装配失败」同一通道）。
+    console.error(
+      `error: analysis failed for ${filePath}: module evaluation failed (engine internal fallback ×${evalFailures.length}) — ${detail}`,
+    );
+    // #1 指纹：分析失败是非 L2 error（不得触发 onboarding 块）
+    if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
   }
 
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
@@ -1304,26 +1363,45 @@ export async function runCheckFix(opts: {
       residualErrors++;
       continue;
     }
-    const report = mergeCheckIssues(
-      checkSource(
-        file,
-        source,
-        pTrue,
-        checkSourceOptions({
-          filePath: file,
+    // 1145：模块级求值失败（引擎内部回落）——与 plain check **同口径**
+    // fail-closed（否则「check 红 / --fix 绿」的方向又回来了：模块求值失败
+    // ⇒ 零诊断 ⇒ --fix 面判绿，而 plain check 判红）。
+    const evalFailures: EvalFallback[] = [];
+    setEvalFallbackCollector((f: EvalFallback) => {
+      if (f.reason === "internal") evalFailures.push(f);
+    });
+    let report: CheckReport;
+    try {
+      report = mergeCheckIssues(
+        checkSource(
+          file,
           source,
-          autoBind,
-          projectDir: proj?.projectDir,
-          entryThrows,
-          ignoreThrows,
-          inject,
-        }),
-      ),
-      // mock 装配失败（`@nudo:mock name from "path"` 解析失败）——plain check
-      // 把它们并进报告（nudo:module-missing / nudo:mock-load-failed）⇒
-      // --fix 面必须同样计入，否则「check 红 / --fix 绿」的方向又回来了。
-      mockIssues,
-    );
+          pTrue,
+          checkSourceOptions({
+            filePath: file,
+            source,
+            autoBind,
+            projectDir: proj?.projectDir,
+            entryThrows,
+            ignoreThrows,
+            inject,
+          }),
+        ),
+        // mock 装配失败（`@nudo:mock name from "path"` 解析失败）——plain check
+        // 把它们并进报告（nudo:module-missing / nudo:mock-load-failed）⇒
+        // --fix 面必须同样计入，否则「check 红 / --fix 绿」的方向又回来了。
+        mockIssues,
+      );
+    } finally {
+      setEvalFallbackCollector(null);
+    }
+    if (evalFailures.length > 0) {
+      const detail = [...new Set(evalFailures.map((f) => f.message))].join("; ");
+      console.error(
+        `error: analysis failed for ${file}: module evaluation failed (engine internal fallback ×${evalFailures.length}) — ${detail}`,
+      );
+      residualErrors++;
+    }
     for (const i of report.issues) {
       if (i.severity === "error") beforeErrorCodes.add(i.code);
     }

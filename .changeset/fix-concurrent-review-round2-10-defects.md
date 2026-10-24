@@ -1,10 +1,13 @@
 ---
 "@nudojs/core": patch
-"@nudojs/service": patch
+"@nudojs/service": minor
 "@nudojs/parser": patch
 "nudojs": patch
 "@nudojs/lsp": patch
 ---
+
+`@nudojs/service` **新增**公开导出 `absolutizeEnvSpec`（env 规格的绝对化入口）
+⇒ 纯**增量**（additive）⇒ minor。
 
 fix: 并发 review 收口的 10 条缺陷（闸门假红/假绿 · IDE/CLI 口径分裂 · 机器面谎报）
 

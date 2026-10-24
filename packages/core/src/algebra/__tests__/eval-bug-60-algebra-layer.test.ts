@@ -173,9 +173,12 @@ export function f(x) {
   return x;
 }`);
     const r = checkSource("/t/bug60.js", src, pTrue, stdOpts);
-    // 后续路径无界证据 ⇒ 判「证不出」（warning），**不**判「确定违约」（error）
-    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(0);
-    expect(r.issues.filter((i) => i.code === "nudo:unproven-return").length).toBe(1);
+    // 后续路径**不**断言否定界（`x <= 0`）——值域仍是「任意 number」⇒
+    // Bug 1116：声明域参数的值域已知 ⇒ `positive` 不蕴含 ⇒ 契约不成立
+    // （x=0 即违约）⇒ error。**不**是「假红」：否定界没被断言，判违约的依据
+    // 是「值域 ⊄ 契约域」，不是「断言了 x <= 0」。
+    expect(r.issues.filter((i) => i.code === "nudo:constraint-violated").length).toBe(1);
+    expect(r.issues.filter((i) => i.code === "nudo:unproven-return").length).toBe(0);
   });
 });
 

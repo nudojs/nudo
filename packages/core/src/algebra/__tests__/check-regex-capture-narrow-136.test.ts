@@ -167,7 +167,9 @@ export function parts(content) {
     // input:string（修前均质 arr：m[0] 也带 undefined、length/index/input unknown）。
     // Bug 99：exec 首败零迭代臂（native 无匹配 → return null）现被正确汇合
     // ——原断言钉的是丢 null 臂的 unsound 行为。
-    expect(sigOf(r, "parts")).toMatch(/^null \| \[string, 2, number, string\]/);
+    // ⚠ 断言强度：`display` **精确相等**（不是前缀正则——前缀正则会放过
+    // 「多一条 undefined 臂」这类变宽）+ 置信度**单独**断言（两件事分开钉）。
+    expect(sigOf(r, "parts")).toBe("null | [string, 2, number, string]");
     expect(confOf(r, "parts")).toBe("exact");
   });
 
@@ -189,7 +191,8 @@ export function named(content) {
     // 具名组槽 string|undefined（未参与捕获 undefined）；join 尾注为
     // undefAbs 的 unknown 形状显示（Bug 22 口径，非引擎债）。
     // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
-    expect(sigOf(r, "named")).toMatch(/^null \| string \| undefined/);
+    // ⚠ `display` **精确相等**（前缀正则会放过「多一条 undefined 臂」）。
+    expect(sigOf(r, "named")).toBe("null | string | undefined");
     expect(confOf(r, "named")).toBe("exact");
   });
 
@@ -246,7 +249,10 @@ export function orAlt(content) {
     expect(r.summary.errors).toBe(0);
     // 整体假 ⇒ A 假且 B 求值到达 ⇒ 接收者非 nullish。
     // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
-    expect(sigOf(r, "orAlt")).toMatch(/^null \| string/);
+    // ⚠ `display` **精确相等**：`null | string`（**没有** undefined 臂——
+    // 前缀正则 `/^null \| string/` 会放过 `null | string | undefined` ⇒
+    // 「假值臂剥离 undefined」这条语义就没人钉了）。
+    expect(sigOf(r, "orAlt")).toBe("null | string");
     expect(confOf(r, "orAlt")).toBe("path");
   });
 

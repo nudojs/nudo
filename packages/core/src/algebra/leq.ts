@@ -49,29 +49,36 @@ export function requiredFnArity(params: readonly string[] | undefined): number {
 }
 
 /**
- * Bug 399：fn shape 的**必选元数**——优先读 shape 自带的 `optionalParams`
- * 标记数组（与 `params` 同下标，true = 该位可省略），缺省回退
- * `requiredFnArity`（名字后缀兼容：`...rest` / `x?`）。
+ * Bug 1129：fn shape 的**最小实参元数**（= **最后一个必选参数的位置** + 1）。
  *
- * 为什么不能只靠名字后缀：默认形参（`f(a, b = 1)`）在形参表面被渲染成
- * **光秃秃的名字**（`b`，既非 `...` 也非 `?`）⇒ 被计成必选元数 ⇒
- * `f = (x = 1) => x` 被判「需要 1 个参数」⇒ `nudo:assign-mismatch` 假红
- * （JS 语义下 `(x = 1) => x` 的 `length` 是 0）。
+ * 义务要的是「**最后一个必选参数在第几位**」，不是「**有几个**必选参数」：
+ * 可选参数**之后**的必选参数仍然必选（TS 语义）⇒ `(a = 1, b)` 的最小实参
+ * 元数是 **2**（`b` 拿不到就炸：`b.toFixed()`），而「必选参数个数」口径只数出
+ * 1 ⇒ `(a = 1, b) => b.toFixed()` 被接受成**单参**目标 ⇒ 与原生
+ * `g = (x) => f(x); g(1)`（抛 TypeError）**不一致** ⇒ 假绿。
  *
- * `requiredFnArity` 的**公开签名与既有行为一字不改**（名字后缀判据只作为
- * 「无标记」时的回退）——既有钉 `__tests__/leq.test.ts` 仍绿。
+ * 判据：优先读 shape 自带的 `optionalParams` 标记数组（与 `params` 同下标，
+ * true = 该位可省略）；缺省回退名字后缀（`...rest` / `x?`）。
+ * rest 位**永远不是必选位**（它吸收 0..n 个实参）。
+ *
+ * `requiredFnArity` 的**公开签名与既有行为一字不改**（它数的是「必选个数」，
+ * 是另一个口径）——既有钉 `__tests__/leq.test.ts` 仍绿。
  */
-function fnRequiredArity(shape: { params: string[]; optionalParams?: boolean[] }): number {
+function fnMinArity(shape: { params: string[]; optionalParams?: boolean[] }): number {
   const opt = shape.optionalParams;
-  if (!opt) return requiredFnArity(shape.params);
-  let n = 0;
+  let last = -1;
   for (let i = 0; i < shape.params.length; i++) {
-    if (opt[i] === true) continue;
     const p = shape.params[i];
-    if (!p || p.startsWith("...") || p.endsWith("?")) continue;
-    n++;
+    if (!p) continue;
+    if (p.startsWith("...")) continue; // rest 位不是必选位
+    if (opt) {
+      if (opt[i] === true) continue; // 标记说可省 ⇒ 不是必选位
+    } else if (p.endsWith("?")) {
+      continue; // 回退：名字后缀判可省
+    }
+    last = i;
   }
-  return n;
+  return last + 1;
 }
 
 /**
@@ -337,10 +344,15 @@ function leqShape(
     // target always provides. Rest src → required tgt is OK; required src →
     // rest tgt fails when source.required > 0 (target may be called with 0 args).
     //
-    // Bug 399：必选元数读 fn shape 的 `optionalParams` 标记（默认形参可省），
-    // 缺省回退名字后缀判据（`requiredFnArity` 行为不变）。
-    const sReq = fnRequiredArity(s);
-    const tReq = fnRequiredArity(t);
+    // Bug 399：逐位「可省略」标记读 fn shape 的 `optionalParams`（默认形参可省），
+    // 缺省回退名字后缀判据（`...rest` / `x?`）。
+    //
+    // Bug 1129：比较的是**最小实参元数**（最后一个必选参数的位置 + 1），
+    // 不是「必选参数个数」——可选参数**之后**的必选参数仍必选 ⇒ `(a = 1, b)`
+    // 的最小元数是 2（原生 `g = (x) => f(x); g(1)` 抛 TypeError）⇒ 按个数
+    // 比较会把 2 误判成 1（假绿）。
+    const sReq = fnMinArity(s);
+    const tReq = fnMinArity(t);
     if (sReq > tReq) {
       return fail(
         `fn arity required ${sReq} ⊭ target required ${tReq} (params ${s.params.length} / ${t.params.length})`,

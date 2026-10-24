@@ -1,7 +1,14 @@
 ---
-"@nudojs/lsp": patch
-"@nudojs/service": patch
+"@nudojs/lsp": minor
+"@nudojs/service": minor
 ---
+
+agent 工具面的载荷**新增**了 `assertions` 段 / `pathErrors[]` 段与新诊断码
+（`nudo:path-not-found` / `nudo:path-not-target`）；`@nudojs/service` **新增**了
+一批公开导出（`mergeCheckIssues` / `directiveDiagIssues` / `mockFromErrorIssues` /
+`envUnresolvedIssues` / `collectCheckSupplementIssues` / `buildTestReport` /
+`pathNotFoundError` / `targetPathError` / `formatPathErrorText` 等）⇒ 纯**增量**
+（additive）⇒ minor。
 
 LSP agent 工具面（`nudo/check` / `nudo/test`）与 CLI 的通道对齐：补回
 check 的补充诊断通道、test 的断言汇总、imported 段、路径错误信封与

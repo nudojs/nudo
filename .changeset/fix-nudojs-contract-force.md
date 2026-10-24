@@ -1,6 +1,9 @@
 ---
-"nudojs": patch
+"nudojs": minor
 ---
+
+新增 CLI 旗标 `nudo contract --from-dts --write --force`（覆盖既有草稿的**可见**
+逃生口）—— 1.x+ 包的新旗标属**增量**变更（additive）⇒ minor。
 
 fix(nudojs): `nudo contract --from-dts --write` 新增 `--force` 旗标（覆盖既有草稿的可见逃生口）
 

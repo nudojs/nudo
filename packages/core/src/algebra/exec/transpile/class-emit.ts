@@ -31,6 +31,28 @@ import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
 import { asyncBodyPlan } from "./async-plan.ts";
 
+/**
+ * Bug 1151：**类** setter thunk 形参载体（**基名**）——实际名经
+ * `internalTmpName` 分配（避开用户标识符词形）。
+ *
+ * setter thunk 形态 `(__this, <v>) => {…}`——thunk 在**自身作用域**里求值
+ * 用户表达式（setter 体）⇒ 写死名 `__v` 会**遮蔽**用户同名外层绑定 ⇒
+ * setter 体读到引擎临时量（**自信错值** ⇒ 闸门**假绿**）：
+ *
+ * ```js
+ * const __v = 5;
+ * class C { set x(a = 3) { out = a + __v; } }   // 原生 15
+ * ```
+ *
+ * 修前引擎读到的 `__v` 是 thunk 形参（= 赋进去的值 10）⇒ 20。
+ *
+ * 口径与 Bug 1149 已修好的 `expr/object.ts` setter 路径**同款**
+ * （`userIdentInfoOf(opts)` = 源文本词形 ∪ `opts.userIdents`，撞名加 `_k`
+ * 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一源文本 ⇒ 同一名 ⇒
+ * 产物确定性（缓存键 / 差分语料依赖它）。
+ */
+const SETTER_V_BASE = "__v";
+
 export function emitSetterAccessorThunk(
   vname: string,
   bodySrc: string,
@@ -496,7 +518,15 @@ export function classSpecOf(
       } else {
         const setParams = (m.params ?? []) as Node[];
         const firstP = setParams[0] as { type?: string; name?: string } | undefined;
-        const vname = firstP?.type === "Identifier" && firstP.name ? firstP.name : "__v";
+        // Bug 1151：首参非 Identifier（解构/默认值）时用**引擎临时名**承载原始
+        // 实参——thunk 形参会**遮蔽**用户同名外层绑定（setter 体读到引擎临时量
+        // ⇒ 自信错值 ⇒ 闸门假绿）。走 `internalTmpName` 避让用户标识符词形
+        // （与 `expr/object.ts` setter 路径同款）；无碰撞时基名原样返回 ⇒ 产物
+        // 逐字不变。
+        const vname =
+          firstP?.type === "Identifier" && firstP.name
+            ? firstP.name
+            : internalTmpName(SETTER_V_BASE, opts);
         // setter thunk：内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
         // （详见 emitSetterAccessorThunk；F3：裸 return 折 undefined → TypeError，
         // 别名写 + 早退 if 提升被赋值点重绑冲掉 → undefined）
@@ -556,7 +586,9 @@ export function classSpecOf(
     // Bug 201：async 方法体的挂起可行性（体含 await 且所有 await 都在
     // **生成器级**位置 ⇒ 编译成宿主生成器，await = 真挂起点）
     const cmAsync = m.async === true && m.generator !== true;
-    const cmPlan = cmAsync ? asyncBodyPlan(m.body as Node | undefined) : undefined;
+    const cmPlan = cmAsync
+      ? asyncBodyPlan(m.body as Node | undefined, opts.disableAsyncGen)
+      : undefined;
     const cmAsyncGen = cmPlan !== undefined && cmPlan.hasAwait && cmPlan.allSafe;
     const bindOpts: TranspileOptions = cmAsyncGen
       ? {

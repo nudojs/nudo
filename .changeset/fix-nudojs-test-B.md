@@ -1,7 +1,10 @@
 ---
-"nudojs": patch
-"@nudojs/service": patch
+"nudojs": minor
+"@nudojs/service": minor
 ---
+
+CaseJson 的断言面新增了**第三种裁决** `unchecked`（外加可选字段
+`uncheckedReason`）⇒ 机器面新增可选字段属**增量**变更（additive）⇒ minor。
 
 `nudo test` can now tell "the engine could not infer the value" apart from
 "the value does not match the expectation".

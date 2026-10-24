@@ -46,6 +46,7 @@ import {
   localNamedExports,
   resetSidecarLoadFailureCache,
   setInterfaceDiagCollector,
+  sidecarAutoBindAllowed,
   sidecarClosureFingerprint,
   sidecarPathOf,
   takeInterfaceDiagsSince,
@@ -79,6 +80,7 @@ import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
   extractAllLoadSpecs,
+  loadModuleDepsFingerprint,
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
@@ -89,7 +91,7 @@ import { abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { and as pAndPred, le as lePred, pTrue } from "./pred.ts";
 import { v as termVar } from "./term.ts";
-import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbs, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
@@ -139,7 +141,6 @@ export {
   evictCheckSourceMemoForPaths,
 } from "./check-memo.ts";
 import {
-  checkDepsFingerprint,
   cloneCheckReport,
   checkMemoKey,
   checkMemoGet,
@@ -194,26 +195,37 @@ function checkSourceInScope(
   /** 本轮读失败清单（同一路径只记一次） */
   const loadReadFailures: LoadReadFailure[] = [];
   const loadFailureKeys = new Set<string>();
+  /**
+   * **推测性**读 loader（仅指纹用）：不经降级闸 ⇒ 读失败**不**记入分析错误。
+   *
+   * Bug 1124：ambient 侧车的指纹探测是**推测**的（autoBind 关时那份侧车根本
+   * 不会被绑定）⇒ 探测失败不得升级成 error 诊断（门禁假红：没有任何依赖或
+   * 启用的契约需要这次读取）。真正的 ambient 侧车读取走 interface.ts 的
+   * 绑定路径（失败 ⇒ nudo:interface-load，真故障照旧可见）。
+   */
+  let speculativeLoad: ((spec: string, from: string) => string | undefined) | undefined;
   if (opts.loadModule && opts.fromFile) {
     const loadCache = new Map<string, string | undefined>();
     const raw = opts.loadModule;
-    const fromFile = opts.fromFile;
+    /** 单次装载口（per-call 缓存）：抛错不进缓存 ⇒ 下一消费者重试 */
+    const cachedLoad = (spec: string, from: string): string | undefined => {
+      const k = `${from}\0${spec}`;
+      if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
+      return loadCache.get(k);
+    };
     callOpts = {
       ...opts,
-      loadModule: guardLoadModule(
-        (spec, from) => {
-          const k = `${from}\0${spec}`;
-          if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
-          return loadCache.get(k);
-        },
-        (failure) => {
-          const key = `${failure.path}\0${failure.code}`;
-          if (loadFailureKeys.has(key)) return;
-          loadFailureKeys.add(key);
-          loadReadFailures.push(failure);
-        },
-      ),
+      loadModule: guardLoadModule(cachedLoad, (failure) => {
+        const key = `${failure.path}\0${failure.code}`;
+        if (loadFailureKeys.has(key)) return;
+        loadFailureKeys.add(key);
+        loadReadFailures.push(failure);
+      }),
     };
+    // 推测性读：**仅**指纹用（ambient 侧车探测）。不经降级闸 ⇒ 读失败不记
+    // 入分析错误；失败仍让指纹标 readError ⇒ 键不可信、禁 memo（错误轮与
+    // miss 轮不共用键 ⇒ 互不为陈旧命中）。
+    speculativeLoad = cachedLoad;
   }
 
   // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
@@ -231,12 +243,25 @@ function checkSourceInScope(
   // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
   const stable = stableAnalyzeKeySource(source);
   // 一次指纹：check 整文件 memo + 所有 generalize L0 共用（避免 per-fn 重读 dep）
-  const depsFp = checkDepsFingerprint(stable, callOpts);
+  // ambient 侧车探测走**推测性** loader（读失败只标 readError，不升级成分析
+  // 错误——Bug 1124），且按 ambient 绑定资格 gate（autoBind 关 ⇒ 不探测）。
+  const depsFp =
+    callOpts.loadModule && callOpts.fromFile
+      ? loadModuleDepsFingerprint(stable, callOpts.loadModule, callOpts.fromFile, {
+          ...(speculativeLoad ? { ambientLoadModule: speculativeLoad } : {}),
+          ambientAllowed: (sidecarPath) =>
+            sidecarAutoBindAllowed(sidecarPath, opts.autoBind, opts.projectDir),
+        })
+      : { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   // ambient 侧车闭包指纹：进 memo 键（侧车变更 → 报告失效）+ 存在性门控 +
-  // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open
+  // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open。
+  // 纯指纹用途 ⇒ 探测用推测性 loader（读失败不上报为分析错误，Bug 1124）。
   const sidecarFp =
     callOpts.loadModule && callOpts.fromFile
-      ? sidecarClosureFingerprint(callOpts.fromFile, callOpts)
+      ? sidecarClosureFingerprint(callOpts.fromFile, {
+          ...callOpts,
+          ...(speculativeLoad ? { loadModule: speculativeLoad } : {}),
+        })
       : undefined;
   const allowMemo =
     useMemo &&
@@ -950,6 +975,12 @@ function checkSourceInner(
           contractParam.set(p.param, constraintToEntryAbs(p.constraint, p.param));
         }
       }
+      // 机器面口径（Bug 1140）：与其它路径同款 `formatSigCached` ——
+      // display = **人类面**渲染（formatShape，与终端签名行逐字同源），
+      // detail = 稳定 term id 版。旧口径在这里用 `formatAbs`/`formatAbsMultiline`
+      // ⇒ JSON 里带 `#exact` 与引擎内部 term 文本 ⇒ 机器消费方拿到的文本与
+      // 用户看到的**不一致**（同一函数两个面）。
+      const skipFmt = formatSigCached(retAbs, name);
       signatures.push({
         name,
         params,
@@ -958,8 +989,8 @@ function checkSourceInner(
           return a ? formatShape(a) : "any";
         }),
         abs: retAbs,
-        display: formatAbs(retAbs),
-        detail: formatAbsMultiline(retAbs, name),
+        display: skipFmt.display,
+        detail: skipFmt.detail,
         conf: retAbs.conf,
         ...(isEntryFn ? { entry: true } : {}),
       });
@@ -1224,19 +1255,19 @@ function checkSourceInner(
           );
         }
       }
+      // Bug 374：位置 = 出错的 @nudo:contract 指令行（参数位取该参数的那条段；
+      // 返回位取 `return` 那条段）；找不到指令则省略位置。
+      const contractLocs = contractSegmentLocs(source, name);
+      const locOf = (param: string): { line?: number; column?: number } => {
+        const hit = contractLocs.find((c) => {
+          const head = c.segment.trim().split(/\s+/)[0];
+          return head === param;
+        });
+        return hit?.loc
+          ? { line: hit.loc.line, ...(hit.loc.column !== undefined ? { column: hit.loc.column } : {}) }
+          : {};
+      };
       if (eff?.conflict) {
-        // Bug 374：位置 = 出错的 @nudo:contract 指令行（参数位取该参数的那条段；
-        // 返回位取 `return` 那条段）；找不到指令则省略位置。
-        const contractLocs = contractSegmentLocs(source, name);
-        const locOf = (param: string): { line?: number; column?: number } => {
-          const hit = contractLocs.find((c) => {
-            const head = c.segment.trim().split(/\s+/)[0];
-            return head === param;
-          });
-          return hit?.loc
-            ? { line: hit.loc.line, ...(hit.loc.column !== undefined ? { column: hit.loc.column } : {}) }
-            : {};
-        };
         if (eff.conflict.params.length > 0) {
           issues.push({
             severity: "error",
@@ -1258,6 +1289,33 @@ function checkSourceInner(
             ...locOf("return"),
           });
         }
+      }
+      // Bug 1141：合取**不可判定**（结构型组合：union / fn / 结构型∧标量…）
+      // ——不是「不可满足」（既有义务继续执法），但**另一侧**的义务确实没被
+      // 执法 ⇒ 显式报出（warning 级：能力边界不是用户代码矛盾 ⇒ 不该把门禁
+      // 判红；但绝不静默丢掉那一侧）。
+      const undecidable = eff?.undecidable;
+      if (undecidable !== undefined && undecidable.params.length > 0) {
+        issues.push({
+          severity: "warning",
+          code: DIAG.interfaceConflict,
+          message: `${name}: contract conjunction not computable (${undecidable.params.join(", ")}) — only one side is enforced`,
+          suggestion:
+            "structural contracts (shape / array / union / fn) cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
+          fn: name,
+          ...locOf(undecidable.params[0]!),
+        });
+      }
+      if (undecidable?.returns) {
+        issues.push({
+          severity: "warning",
+          code: DIAG.interfaceConflict,
+          message: `${name}: contract conjunction not computable on the return slot — only one side is enforced`,
+          suggestion:
+            "structural return constraints cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
+          fn: name,
+          ...locOf("return"),
+        });
       }
       // 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）；
       // 返回位 conflict（合取不可满足）时跳过——矛盾契约不该误诊为函数体违例

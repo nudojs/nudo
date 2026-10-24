@@ -1,14 +1,21 @@
 /**
- * Bug 370 —— 返回契约的**带界义务**把「只有 `typeof` 证据」当成「可证伪」
- * ⇒ 同一条义务在 `return x` 下判 **error**（`nudo:constraint-violated`）、在
- * `return x + 1` 下判 **warning**（`nudo:unproven-return`）——判据不一致 ⇒
- * **假红**（`x: number()` 是**无界** prim：`x` 既可能是 5（满足）也可能是
- * -1（不满足）⇒ 「既证不出、也反证不了」）。
+ * Bug 370 的判据已被 **Bug 1116 撤销**（返回契约的带界义务**不得**把「只有
+ * `typeof` 证据」的**声明域参数**当成「不可判定」）。
  *
- * 修法（core/algebra/postcondition.ts）：`isBoundedEvidenceMissing` 的判据
- * 从「`ret.pred` 存在且 `op !== "true"`」换成「证据面（Φ ∧ ret.pred）**含界
- * 原子**（gt/ge/lt/le）」⇒ `typeof` / prim 值域类 pred 与 `true` 同等对待
- * ⇒ 带界义务在**无界证据**下判 unprovable（warning），与 `return x + 1` 同档。
+ * Bug 370 的口径：`isBoundedEvidenceMissing` 的判据 = 「证据面（Φ ∧ ret.pred）
+ * **含界原子**（gt/ge/lt/le）」⇒ `typeof` 级证据（`@nudo:contract x num` 的
+ * 声明域参数）被判成「无证据」⇒ 降级 `nudo:unproven-return`（**warning**）。
+ *
+ * Bug 1116 的口径（现行）：判据 = 「`ret.pred` 有事实」⇒ 声明域参数的值域
+ * **已知**（`number()` ⇒ 任意 number，含 NaN）⇒ 返回契约是对**所有**输入成立
+ * 的后置 ⇒ 值域 ⊄ 契约域（x=0 即违约）⇒ **契约不成立** ⇒ 判
+ * `nudo:constraint-violated`（**error**）。warning 不改 exit code ⇒ 门禁空转
+ * （docs/design/cli-semantics.md §5.5：warning 只针对 any/unknown）。
+ *
+ * ⇒ 「`return x` 与 `return x + 1` 同档」不再成立：**声明域参数**的值域已知
+ * （⇒ 可判定 ⇒ error），**派生项**（`x + 1` / `Math.abs(x)`）的值域未被跟踪
+ * （⇒ 证不出也反证不了 ⇒ warning）。二者之差是**引擎能力边界**（派生项的值域
+ * 未被跟踪），不是判据不一致。
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
@@ -33,18 +40,18 @@ function retDiags(r: { issues: Array<{ code: string; severity: string }> }): str
 }
 
 describe("Bug 370：带界义务的判据 = 有界证据（不是「有 pred」）", () => {
-  it("return x 与 return x + 1 的返回义务严重级**必须一致**", () => {
+  it("声明域参数 ⇒ 值域已知 ⇒ 判「确定违约」（error）；派生项 ⇒ 判「证不出」（warning）", () => {
     const bare = retDiags(check("  return x;"));
     const arith = retDiags(check("  return x + 1;"));
-    expect(bare).toEqual(arith);
-    // 无界证据 ⇒ 判「证不出」（warning），不是「确定违约」（error）
-    expect(bare).toEqual(["warning:nudo:unproven-return"]);
+    // Bug 1116：`return x` 的返回项是**声明域参数**（x: number()）⇒ 值域已知
+    // ⇒ `positive` 不蕴含 ⇒ 契约不成立（x=0 即违约）⇒ error。
+    expect(bare).toEqual(["error:nudo:constraint-violated"]);
+    // 派生项的值域未被跟踪 ⇒ 既证不出也反证不了 ⇒ warning（fail-closed）。
     expect(arith).toEqual(["warning:nudo:unproven-return"]);
   });
 
-  it("带界义务在**无界证据**下不得出现 nudo:constraint-violated", () => {
+  it("派生项（值域未跟踪）在带界义务下不得出现 nudo:constraint-violated", () => {
     for (const body of [
-      "  return x;",
       "  return x + 1;",
       "  return x * 2;",
       "  return -x;",
@@ -54,6 +61,7 @@ describe("Bug 370：带界义务的判据 = 有界证据（不是「有 pred」�
       const r = check(body);
       expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(false);
     }
+    // 声明域参数（值域已知）**不在**本组：它判 error 是**正确**的（见上条）。
   });
 
   it("**有界证据**时「不蕴含」仍是确定违约（error）——判据不得过宽", () => {

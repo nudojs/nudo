@@ -1,6 +1,16 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo migrate retire --all --json` 的**顶层 JSON 形状**现在**恒为
+数组**（此前随结果条数变化：1 个包 = 对象，≥2 个包 = 数组）。
+
+谁会坏：解析 `nudo migrate retire --all --json` stdout 的机器消费方 ——
+单包时顶层从 `{ … }` 变成 `[ { … } ]` ⇒ `payload.removedDeps` 之类变成
+`undefined`。
+
+怎么迁移：消费方改按数组遍历（`const rows = Array.isArray(p) ? p : [p]` 之类的
+兼容读法，或直接改读数组）。
 
 族 16 收口接线：把各分片「越界发现」里明确交给**命令层**
 （`packages/nudojs/src/commands/migrate.ts`）的接线项补齐 —— migrate 的

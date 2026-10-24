@@ -1,6 +1,21 @@
 ---
-"nudojs": patch
+"nudojs": major
 ---
+
+**BREAKING**: `nudo export` 的四个产物面现在共用**同一条导出面规则**，且**硬失败**
+不再静默发布产物。
+
+- 四个产物面只投影**模块的公开导出面**（此前 zod / standard / guard 投影**每一个**
+  函数，含内部实现）⇒ 未导出的内部实现**不再**有 `<fn>Input` / `is<fn>Output`
+  之类的导出 ⇒ 直接 import 这些导出的消费方 `tsc --noEmit` 会红。
+- `@nudo:skip` 的函数此前被导出面过滤器**排除**（它按设计没有 case 见证）⇒ 从不
+  出现在任何产物面；现在它**照常投影** ⇒ 产物多出此前没有的导出。
+
+谁会坏：按「产物里有某个函数」做**存在性**判断的消费方（内部实现不再有守卫 /
+zod 校验器）；以及期待 `@nudo:skip` 的函数**不出现**在产物里的脚本。
+
+怎么迁移：重新生成产物并只依赖**公开导出面**上的导出；`@nudo:skip` 现在会出现在
+产物里（它只跳过 case 见证，不跳过投影）。
 
 `nudo export` now refuses to publish a projection that contradicts the
 contract, keeps the four product faces on one public-surface rule, and stops

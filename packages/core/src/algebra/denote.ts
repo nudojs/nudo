@@ -36,6 +36,50 @@ function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean 
   return slot.internal === true && canonicalArrayIndex(k) === undefined;
 }
 
+/**
+ * **没有可用 prototype** 的全局构造器（ES2024 标准全局 / node v26.10.0 实测）
+ * ——这些名字上的 `instanceof` 判定**原生抛 TypeError**：
+ * - 可调用但 `prototype` 不是对象（`Proxy` / `parseInt` / `eval` / `escape` …）
+ *   ⇒ `Get(C, "prototype")` 的结果不是对象 ⇒ 抛「Function has non-object
+ *   prototype 'undefined' in instanceof check」；
+ * - **不可调用**（`Math` / `JSON` / `Intl` / `Reflect` / `Atomics` /
+ *   `globalThis`）⇒ 抛「Right-hand side of 'instanceof' is not callable」。
+ *
+ * Bug 1130：brand 身份子句对这些构造器**必须跳过**——`instanceof` 一跑就抛 ⇒
+ * 守卫产物**不可用**。model 里会出现的是 `Proxy`（`new Proxy(...)` 的 brand，
+ * `builtins/error/error-family.ts` 的 `makeProxyAbs`）；其余是「用户类名与
+ * 标准全局同名」的防御（同名 ⇒ `globalThis[name]` 就是那个不可用的构造器）。
+ *
+ * 口径固定在 **ES2024 标准全局**（不依赖宿主环境——守卫产物可能在浏览器里跑）。
+ */
+const PROTOTYPE_LESS_GLOBALS = new Set([
+  // 可调用但没有对象 prototype
+  "Proxy",
+  "parseFloat",
+  "parseInt",
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "escape",
+  "unescape",
+  "eval",
+  "isFinite",
+  "isNaN",
+  // 不可调用（非构造器）
+  "Math",
+  "JSON",
+  "Intl",
+  "Reflect",
+  "Atomics",
+  "globalThis",
+]);
+
+/** 全局构造器**没有可用 prototype** ⇒ 身份子句不可表达（跳过） */
+function hasUnusablePrototype(name: string): boolean {
+  return PROTOTYPE_LESS_GLOBALS.has(name);
+}
+
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
   return denoteGuardB(a, v, new ProjectionBudget());
@@ -155,9 +199,13 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       // 裸标识符（用户类标识符在产物里 ⇒ TS2304，strict 工程编不过）；
       // ② 运行时没有这个全局构造器 ⇒ **放行**（与 standard 面「ctor 找不到 ⇒
       // 放行」同口径）。
-      const identity = brandIdentityClause(s.name, v);
       // brand 的内层是 Abs（对象面按内层身份查访问器侧表）
       const inner = denoteShape(s.shape, v, budget);
+      // Bug 1130：**没有可用 prototype** 的构造器（`Proxy` 等）⇒ `instanceof`
+      // 原生抛错 ⇒ 身份子句**跳过**（守卫必须能跑；身份信息在守卫面不可表达
+      // ⇒ 只保留内层 shape 判定）。
+      if (hasUnusablePrototype(s.name)) return inner;
+      const identity = brandIdentityClause(s.name, v);
       if (inner === "true") return identity;
       return `(${identity}) && (${inner})`;
     }
