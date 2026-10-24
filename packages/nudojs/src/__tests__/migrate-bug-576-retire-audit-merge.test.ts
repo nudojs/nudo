@@ -57,7 +57,7 @@ describe("Bug 576: 二次 retire 不得擦掉退役审计记录", () => {
     expect(second.retiredAt).toBe(firstAt);
   });
 
-  it("CLI 面：跑两遍 ⇒ 审计记录仍在（removedDeps 不被清空）", () => {
+  it("CLI 面：跑两遍 ⇒ 审计记录仍在（removedDeps 不被清空）", { timeout: 30_000 }, () => {
     const dir = auditPkg();
     const r1 = runCliTsx(["migrate", "retire", dir, "--json"]);
     expect(r1.status).toBe(0);

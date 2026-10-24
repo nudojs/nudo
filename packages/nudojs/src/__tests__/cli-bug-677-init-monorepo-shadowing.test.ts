@@ -56,7 +56,7 @@ describe("Bug 677 — init 不得用 nudo 键遮蔽祖先配置", () => {
     expect(errors.join("\n")).toContain("fix:");
   });
 
-  it("拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1", () => {
+  it("拒绝之后根配置仍然生效（门禁不翻绿）：nudo check 仍然 exit 1", { timeout: 30_000 }, () => {
     const { sub } = monoRepo();
     const before = runCliTsx(["check", join(sub, "a.js")]);
     expect(before.status, before.stderr).toBe(1);

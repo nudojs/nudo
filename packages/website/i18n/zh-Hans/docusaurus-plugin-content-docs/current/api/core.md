@@ -214,7 +214,7 @@ createEnvironment(parent?, bindings?)
 | <a id="anyabs"></a>`anyAbs` | const | Abs constructors / faces | `const anyAbs` |
 | <a id="anyvar"></a>`anyVar` | fn | Abs constructors / faces | `anyVar(id: string, conf: Confidence = "path"): Abs` |
 | <a id="app"></a>`app` | const | term / shape builders | `const app` |
-| <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ): ConstraintBuilder` |
+| <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ...rest: unknown[] ): ConstraintBuilder` |
 | <a id="bigintlit"></a>`bigintLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `bigintLit(value: bigint): Abs` |
 | <a id="bool"></a>`bool` | fn | Abs constructors / faces | `bool(): Abs` |
 | <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |

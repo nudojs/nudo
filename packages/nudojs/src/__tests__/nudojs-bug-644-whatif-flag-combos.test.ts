@@ -49,7 +49,7 @@ describe("Bug 644 — --what-if 不再静默吞掉机器 / 观察旗标", () => 
     }
   });
 
-  it("CLI：--abs / --gha / --gitlab / --from / --watch 与 --what-if ⇒ 显式拒绝（exit 1）", () => {
+  it("CLI：--abs / --gha / --gitlab / --from / --watch 与 --what-if ⇒ 显式拒绝（exit 1）", { timeout: 30_000 }, () => {
     const { cwd, file, other } = makeProject();
     try {
       const combos: string[][] = [

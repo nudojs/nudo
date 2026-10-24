@@ -15,10 +15,12 @@
  *   `opendir` ⇒ 补齐（宿主实测为准）。
  * - **第 4 条**：**已随族 35 关闭**（`navigator.userAgent` 已是 `prim.str()`；
  *   node env 全局表里已无 unknown 值的槽）⇒ 本文件钉成**回归钉**（防回退）。
- * - **第 5 条**：ESM 上下文宿主全局 **141**（184 − 43 个 Node 内建模块命名空间）
- *   vs env 声明 **130** ⇒ 实测缺口是 **13** 个（台账的「11」是 141−130 的
- *   粗算，未扣 env 多出的 `__dirname` / `__filename`）⇒ 逐个给出**不声明**的
- *   理由（多数是**金标要求**），并钉住「不许悄悄漂移」。
+ * - **第 5 条**：ESM 上下文宿主平台全局（v26 = 141：184 − 43 个 Node 内建模块
+ *   命名空间）vs env 声明 **130** ⇒ 实测缺口是 **13** 个（台账的「11」是
+ *   平台全局−130 的粗算，未扣 env 多出的 `__dirname` / `__filename`）⇒ 逐个
+ *   给出**不声明**的理由（多数是**金标要求**），并钉住「不许悄悄漂移」。
+ *   **宿主总面随 Node major 漂移**（v24 = 177：少的 7 个全是内建模块命名空间
+ *   全局）⇒ 只钉版本无关的台账等式（平台 − 声明），不钉 184 / 141 这种绝对值。
  * - **第 6 条**：env 覆盖基线剩下的 2 条 mock-required + 6 条 signature-level
  *   **都是设计边界**（不是缺口）⇒ 钉住「新声明是 leaf-clean」+「报告是脚本
  *   生成的」。
@@ -99,23 +101,41 @@ describe("族 61-1 · node:crypto 同族兄弟不再恒不抛（假绿收口）"
     expect(brandName((site.threw as { absValue: Abs }).absValue)).toBe("TypeError");
   });
 
-  it("1.2 createHmac 的 digest 集比 createHash 少 8 个（shake-* / keccak-kmac*）⇒ 引擎也判必抛", () => {
-    // 原生 oracle：getHashes() 的 81 个名字里 73 个能被 createHmac 接受
-    const rejected = nodeGetHashes().filter((h) => {
+  it("1.2 createHmac 拒用 XOF / KMAC 家族（shake-* / keccak-kmac*）⇒ 引擎逐个同判", () => {
+    // 原生 oracle：对 getHashes() 的每个名字实测一次
+    const hashes = nodeGetHashes().map((h) => h.toLowerCase());
+    const rejected = hashes.filter((h) => {
       try {
-        nodeCreateHmac(h.toLowerCase(), "k");
+        nodeCreateHmac(h, "k");
         return false;
       } catch {
         return true;
       }
     });
-    expect(rejected.length, "原生 oracle：HMAC 拒用的 digest 名").toBe(8);
-    // 名字**认识**但 HMAC 用不了 ⇒ 原生抛 **Error**（不是 TypeError）
-    expect(nativeErrorName(() => nodeCreateHmac("shake256", "k"))).toBe("Error");
-    const site = callSite(cryptoMod.createHmac!, [strLit("shake256"), strLit("k")]);
-    expect(site.threw, "shake256 is not an HMAC digest").toBeTruthy();
-    expect(brandName((site.threw as { absValue: Abs }).absValue)).toBe("Error");
-    // 名字**根本不认识** ⇒ 原生抛 **TypeError**（ERR_CRYPTO_INVALID_DIGEST）
+    // 宿主**只**在 XOF / KMAC 家族上拒用 (XOF / KMAC 没有 HMAC 形式) —— 这是
+    // 版本无关的口径。**条数**是 OpenSSL 名字表细节（v26 = 8 个别名，v24 = 2 个），
+    // 钉数量会把测试钉死在某个 minor 上（CI 的 node 24 就红过）。
+    for (const name of rejected) {
+      expect(name, "HMAC 拒用的 digest 必须落在 XOF / KMAC 家族").toMatch(
+        /^(shake|keccak-kmac)/,
+      );
+    }
+    expect(rejected.length, "宿主至少拒用 shake（XOF 无 HMAC 形式）").toBeGreaterThan(0);
+    // 引擎必须在**每个**宿主拒用的名字上判必抛（否则 L2 门禁假绿）
+    for (const name of rejected) {
+      const site = callSite(cryptoMod.createHmac!, [strLit(name), strLit("k")]);
+      expect(site.threw, `createHmac(${name}) 原生拒用 ⇒ 引擎必抛`).toBeTruthy();
+      expect(brandName((site.threw as { absValue: Abs }).absValue)).toBe("Error");
+    }
+    // 反向（假红方向）：家族**外**的名字一个都不许被判必抛。家族内名字的可用性
+    // 随 OpenSSL 名字表变化，不在版本无关口径内，故不参与这一臂。
+    for (const name of hashes) {
+      if (/^(shake|keccak-kmac)/.test(name)) continue;
+      const site = callSite(cryptoMod.createHmac!, [strLit(name), strLit("k")]);
+      expect(site.threw, `createHmac(${name}) 原生可用 ⇒ 引擎不得判必抛`).toBeUndefined();
+    }
+    // 名字**根本不认识** ⇒ 原生抛 **TypeError**（ERR_CRYPTO_INVALID_DIGEST），
+    // 与「认识但该入口用不了 ⇒ Error」是**两档**（后者已由上面的逐名断言覆盖）
     const unknown = callSite(cryptoMod.createHmac!, [strLit("nope"), strLit("k")]);
     expect(unknown.threw).toBeTruthy();
     expect(brandName((unknown.threw as { absValue: Abs }).absValue)).toBe("TypeError");
@@ -459,12 +479,50 @@ const UNDECLARED_REASONS: Record<string, string> = {
   TextDecoder: "宿主路径（core 的 makeTextDecoderAbs）比 env 面**更精确**（utf-8 vs string）⇒ 声明会降精度",
 };
 
-describe("族 61-5 · ESM 上下文全局面：141（宿主）vs 130（env 声明）", () => {
-  it("5.1 宿主实测：ESM 上下文 184 个全局，减去 43 个 Node 内建模块命名空间 = 141", () => {
+/**
+ * env **声明了**、但**较旧宿主**的 ESM 上下文里还没有的名字 —— env 的 node 面
+ * 按**最新宿主**（v26）声明，所以旧宿主上这些是「超前声明」：引擎对存在性更乐观，
+ * 只会少报错（不会制造假红），故允许；但**新增**必须先在这里写理由（漂移闸）。
+ */
+const DECLARED_AHEAD_OF_HOST: Record<string, string> = {
+  Temporal: "Node 26 才进入 ESM 全局面（v24.11 没有）",
+  Storage: "Node 26 的 Web Storage 构造器全局（v24.11 只在 web env 面建模）",
+  QuotaExceededError: "Node 26 的 Web Storage 错误类型（v24.11 没有）",
+  ErrorEvent: "Node 26 的 Web 事件类型（v24.11 没有）",
+  localStorage: "Node 22.4+ 需 --experimental-webstorage；v24.11 的 ESM 上下文默认没有",
+  sessionStorage: "同上（--experimental-webstorage）",
+};
+
+describe("族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env 声明）", () => {
+  it("5.1 宿主平台全局与 env 声明逐名对账（宿主面随 Node 版本漂移 ⇒ 不钉绝对值）", () => {
     const host = hostEsmGlobals();
-    expect(host.length, "宿主 ESM 上下文全局数（node v26.10.0）").toBe(184);
+    const presentModules = host.filter((g) => NODE_MODULE_GLOBALS.has(g));
     const platform = host.filter((g) => !NODE_MODULE_GLOBALS.has(g));
-    expect(platform.length, "平台全局数（台账口径）").toBe(141);
+    const declared = Object.keys(env.globals);
+    // 宿主平台全局面**随 Node 版本漂移**（v26.10 = 141 平台全局，v24.11 = 135：
+    // 少的是 Float16Array / DisposableStack 这类新平台 API）⇒ 钉两个**逐名**方向，
+    // 而不是 184 / 141 这种绝对值（钉绝对值的版本 CI 上红过两次）：
+    //   (a) 宿主有、env 没声明 ⇒ **必须**在 UNDECLARED_REASONS 里逐条给理由；
+    //   (b) env 声明、宿主没有 ⇒ **只许**是 CJS 作用域的 __dirname / __filename。
+    const undeclared = platform.filter((g) => !declared.includes(g));
+    for (const name of undeclared) {
+      expect(UNDECLARED_REASONS[name], `宿主全局 ${name} 未声明却没有理由（不许悄悄漂移）`)
+        .toBeTruthy();
+    }
+    // env 声明、宿主**没有**的名字：只许是 CJS 作用域名，或「env 按最新宿主声明」
+    // 的超前项（逐条有理由 ⇒ 新增声明必须写理由，不许悄悄漂移）
+    const phantom = declared.filter((g) => !platform.includes(g));
+    for (const name of phantom) {
+      if (name === "__dirname" || name === "__filename") continue;
+      expect(
+        DECLARED_AHEAD_OF_HOST[name],
+        `env 声明了宿主没有的全局 ${name}，且没有登记为超前声明`,
+      ).toBeTruthy();
+    }
+    // 被扣成「模块」的名字 env 不得**同时**声明成全局（分类口径自洽）
+    for (const name of presentModules) {
+      expect(env.globals[name], `${name} 是模块命名空间 ⇒ env 不得声明成全局`).toBeUndefined();
+    }
     expect(NODE_MODULE_GLOBALS.size).toBe(43);
   });
 
@@ -475,12 +533,18 @@ describe("族 61-5 · ESM 上下文全局面：141（宿主）vs 130（env 声�
     expect(declared).toContain("__filename");
   });
 
-  it("5.3 实测缺口是 13 个（台账的「11」是 141−130 的粗算，未扣 env 多出的 2 个）", () => {
+  it("5.3 缺口名单逐名对账：有理由的例外**确实没被声明**（不是「因为名字没出现」）", () => {
     const host = hostEsmGlobals().filter((g) => !NODE_MODULE_GLOBALS.has(g));
     const declared = Object.keys(env.globals);
     const missing = host.filter((g) => !declared.includes(g));
-    expect(missing.sort()).toEqual(Object.keys(UNDECLARED_REASONS).sort());
-    expect(missing.length).toBe(13);
+    // 5.1 保证 missing ⊆ 理由表；这里钉反方向：**宿主上存在**的每个有理由例外
+    // 都必须真的落在缺口里（否则「理由」是空转，env 其实声明了它）。
+    // 宿主缺的名字（如 v24 还没有 Float16Array）不参与——版本细节，不是漂移。
+    expect(missing.sort()).toEqual(
+      Object.keys(UNDECLARED_REASONS)
+        .filter((n) => host.includes(n))
+        .sort(),
+    );
   });
 
   it("5.4 每个未声明的名字都有**理由**（不许无脑补，也不许悄悄漂移）", () => {
