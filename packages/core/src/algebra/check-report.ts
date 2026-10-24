@@ -10,8 +10,90 @@
 
 import type { Diagnostic } from "./diagnostics.ts";
 import type { Abs, Confidence } from "./abs.ts";
+import type { Term } from "./term.ts";
+import type { Pred } from "./pred.ts";
 import { formatAbs, formatShape } from "./format.ts";
 import { DIAG } from "./diag-codes.ts";
+
+/**
+ * 引擎内部**进程级计数器**变量 id（Bug 413）。
+ *
+ * `len#N`（`exec/runtime/containers/arr-index.ts` 的 `lenVarSeq`）、
+ * `fromIdx#N`、`inv#N`、`#N` 一族的编号来自**模块级自增计数器** ⇒ 编号是
+ * **进程历史**的函数，不是**被分析文件**的函数 ⇒ 同一个文件在同一次调用里
+ * 换个参数位置就换号（`len#0` / `len#2` / `len#4`）⇒ 机器面载荷不是文件内容
+ * 的函数（CI diff / 快照 / 按文件比对都拿不到稳定内容）。
+ *
+ * 形参 α 名（`A1` / `A2`）**不带** `#` ⇒ 不命中（它们每文件重置、跨文件稳定）。
+ */
+const INTERNAL_TERM_ID_RE = /^(.*)#\d+$/;
+
+/**
+ * 内部计数器 id ⇒ **稳定可读**名（`len#2` → `len`）。
+ *
+ * 与 S3 的 412 同口径（内部 id 不得当用户面文本），但这里**保留** id 的
+ * 词根（`len` / `fromIdx` / `inv`）⇒ Abs 的谓词证据（`len ≥ 0`）不丢。
+ */
+function stableTermId(id: string): string {
+  const m = INTERNAL_TERM_ID_RE.exec(id);
+  if (!m) return id;
+  return m[1] === "" ? "internal" : m[1];
+}
+
+/** term 树：把内部计数器 id 换成稳定名 */
+function stableTerm(t: Term): Term {
+  if (t.op === "var") return { ...t, id: stableTermId(t.id) };
+  if (t.op === "app") return { ...t, args: t.args.map(stableTerm) };
+  return t;
+}
+
+/** pred 树：把内部计数器 id 换成稳定名 */
+function stablePred(p: Pred): Pred {
+  switch (p.op) {
+    case "eq":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "ne":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "lt":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "le":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "gt":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "ge":
+      return { ...p, a: stableTerm(p.a), b: stableTerm(p.b) };
+    case "and":
+      return { ...p, args: p.args.map(stablePred) };
+    case "or":
+      return { ...p, args: p.args.map(stablePred) };
+    case "not":
+      return { ...p, arg: stablePred(p.arg) };
+    case "typeof":
+      return { ...p, t: stableTerm(p.t) };
+    case "assumeFinite":
+      return { ...p, t: stableTerm(p.t) };
+    default:
+      return p;
+  }
+}
+
+/**
+ * Abs 的**对外渲染副本**：内部计数器 id 换成稳定名。
+ *
+ * 只影响**展示**（`formatAbs` / `formatAbsMultiline` 读它）⇒ 谓词证据
+ * （`len ≥ 0`）与形状 / 置信度 / pathNote 全部保留，只有那个会随进程漂移的
+ * 编号被抹平（Bug 413）。
+ *
+ * ⚠ **模块级导出，不进公开面**：`algebra/index.ts` / `internal.ts` 对本模块
+ * 都是**显式列举**导出，本函数不在名单里 ⇒ 公共 API 冻结面零变更。
+ */
+export function absWithStableTermIds(absVal: Abs): Abs {
+  return {
+    ...absVal,
+    term: absVal.term ? stableTerm(absVal.term) : absVal.term,
+    pred: absVal.pred ? stablePred(absVal.pred) : absVal.pred,
+  };
+}
 
 /** 无损函数签名（类型即计算） */
 export type NudoSig = {
@@ -21,9 +103,17 @@ export type NudoSig = {
   paramTypes?: string[];
   /** 符号 Abs 本体 */
   abs: Abs;
-  /** formatAbs 单行 */
+  /**
+   * 签名展示（**人类面口径**：shape 渲染）——与 `formatCheckReport` 的签名行
+   * **逐字同源**（Bug 413：机器面此前用 `formatAbs`，把 term / pred 段渲进
+   * 对外载荷，其中混着引擎内部计数器 id `len#N` ⇒ 载荷随参数列表位置漂移）。
+   */
   display: string;
-  /** formatAbsMultiline */
+  /**
+   * 签名明细（多行；首行 = 函数名）——与人类面 `--verbose` 同源。
+   * term / pred 里的引擎内部计数器 id 换成**稳定名**（`len#2` → `len`）
+   * （Bug 413）。
+   */
   detail: string;
   conf: Confidence;
   /** throws 域展示（如 TypeError）；省略 = 无 may-throw */
@@ -117,6 +207,17 @@ export type CheckReport = {
 /**
  * `nudo check --json` 稳定契约（供 CI / Agent）。
  * 字段只增不改语义；Abs 以 formatAbs 字符串给出，不序列化内部 shape 图。
+ *
+ * ⚠ **Bug 413 的载荷语义变更**（v1 契约内的字段**取值口径**收紧）：
+ * - `signatures[].display` 改为**人类面口径**（`formatShape`）⇒ 与 `nudo check`
+ *   的 signatures 行**逐字同源**（此前是 `formatAbs` 单行，两面不一致）；
+ * - `signatures[].detail` / `signatures[].abs` 里的**引擎内部计数器 id**
+ *   （`len#N` 一族）换成**稳定名**（`len#2` → `len`）⇒ 形状 / 谓词证据 /
+ *   `#conf` / pathNote 全部保留，只有那个会随进程漂移的编号被抹平。
+ *
+ * 动机：内部计数器 id 的编号是**进程历史**的函数 ⇒ 同一个文件的载荷曾随
+ * 它在命令行参数列表中的位置漂移（`len#0` / `len#2` / `len#4`）⇒ 机器消费
+ * 方（CI diff / 快照 / 按文件比对）拿到的不是文件内容的函数。
  */
 export type CheckJson = {
   version: 1;
@@ -334,7 +435,10 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
       display: s.display,
       detail: s.detail,
       conf: s.conf,
-      abs: formatAbs(s.abs),
+      // Bug 413：机器面不得渲出引擎内部计数器 id（`len#N` 一族 —— 编号是
+      // **进程历史**的函数 ⇒ 载荷不得是它的函数）⇒ term / pred 里的内部 id
+      // 换成**稳定名**（`len#2` → `len`）；形状 / 置信度 / pathNote 不变。
+      abs: formatAbs(absWithStableTermIds(s.abs)),
       ...(s.throws ? { throws: s.throws } : {}),
       ...(s.entry ? { entry: true } : {}),
     })),
@@ -551,8 +655,8 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
           ? s.params.map((p, i) => `${p}: ${s.paramTypes![i] ?? "any"}`).join(", ")
           : s.params.join(", ");
       const throwsStr = s.throws ? `  throws ${s.throws}` : "";
-      // display 是 formatAbs(返回 Abs)，可含嵌套 `=>` / ` #conf`；
-      // 禁止用 `=>` regex 抠返回（HOF 会误截成 `? }`）。
+      // display 是**人类面口径**的 shape 渲染（Bug 413 起与机器面同源），
+      // 可含嵌套 `=>`；禁止用 `=>` regex 抠返回（HOF 会误截成 `? }`）。
       const displayBase = s.display.replace(/\s+throws\s+[\s\S]+$/, "").trim();
       const shapeK = s.abs?.shape?.k;
       const looksLikeFakeAny =
@@ -607,6 +711,23 @@ function escapeGhaProp(s: string): string {
 }
 
 /**
+ * 工作区根裁剪（Bug 373）：`startsWith` 是**纯字符串前缀**判定，没有路径
+ * 边界 ⇒ 兄弟目录（`…/app` vs `…/app2`）被裁成 `2/src/x.js`（指向**不存在**
+ * 的文件）⇒ GHA `file=` / GitLab `location.path` / `fingerprint` 全错。
+ *
+ * 口径：前缀命中后，余下部分必须是**空**或以**路径分隔符**开头 ⇒ 才是
+ * 「同一棵树下的子路径」；否则（`app2` vs `app`）原样保留完整路径。
+ */
+function stripWorkspaceRoot(file: string, workspaceRoot?: string): string {
+  if (!workspaceRoot) return file;
+  if (!file.startsWith(workspaceRoot)) return file;
+  const rest = file.slice(workspaceRoot.length);
+  // 前缀不是路径边界（`…/app2` 命中 `…/app`）⇒ 不裁
+  if (rest !== "" && !/^[/\\]/.test(rest)) return file;
+  return rest.replace(/^[/\\]/, "");
+}
+
+/**
  * GitHub Actions 行内注解（PR Files changed 红/黄标）。
  * 协议：`::error file=…,line=…,col=…,title=…::message`
  * 详见 https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions
@@ -616,10 +737,7 @@ export function formatGithubAnnotations(
   opts: { workspaceRoot?: string } = {},
 ): string {
   const lines: string[] = [];
-  let file = r.file;
-  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
-    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
-  }
+  const file = stripWorkspaceRoot(r.file, opts.workspaceRoot);
   for (const i of r.issues) {
     const level =
       i.severity === "error" ? "error" : i.severity === "warning" ? "warning" : "notice";
@@ -657,10 +775,7 @@ export function formatGitlabCodeQuality(
   r: CheckReport,
   opts: { workspaceRoot?: string } = {},
 ): GitlabCodeQualityIssue[] {
-  let file = r.file;
-  if (opts.workspaceRoot && file.startsWith(opts.workspaceRoot)) {
-    file = file.slice(opts.workspaceRoot.length).replace(/^[/\\]/, "");
-  }
+  const file = stripWorkspaceRoot(r.file, opts.workspaceRoot);
   return r.issues.map((i) => {
     const begin = i.line ?? 1;
     const severity =

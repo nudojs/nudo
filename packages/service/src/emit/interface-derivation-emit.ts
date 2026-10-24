@@ -1,22 +1,39 @@
 /**
  * Root 驱动多文件写盘（emitDerivedFromRoot + 侧车段工具）。
- * 自 interface-derivation.ts 机械拆出；语义未改。
+ * 自 interface-derivation.ts 机械拆出。
+ *
+ * 不变量：
+ * - 写出的侧车必须是**合法 ESM**——同一导出名不得出现两段（拼装后自检
+ *   导出名唯一性：Babel 不报 duplicate export，测不出来）。
+ * - 同一 (目标文件, 目标导出) 的段是**各 root 的并集**（最宽者），且与
+ *   命令顺序无关（跨 root 合并时标签取并集并排序）。
+ * - 源里已不存在的导出，其 `@generated` 段必须被删掉（否则侧车里留下运行
+ *   时不存在的导出，并永久占住那个名字）。
  */
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
+  constraintToEntryAbs,
   execNudoModule,
   isNodeModulesPath,
   isNudoConstraint,
+  localNamedExports,
   parseSource,
   refineDiagCount,
   sidecarPathOf,
   takeRefineDiagsSince,
+  type NudoConstraint,
 } from "@nudojs/core";
-import { DIAG, sanitizeCommentText } from "@nudojs/core/internal";
+import { DIAG } from "@nudojs/core/internal";
 
 import { unifiedDiff } from "./case-emitter.ts";
-import { deriveFromRoot } from "./interface-derivation-derive.ts";
+import { sanitizeLineCommentText } from "./line-comment.ts";
+import {
+  deriveFromRoot,
+  widestConstraint,
+  type ConstraintEntry,
+} from "./interface-derivation-derive.ts";
+import type { DerivedExport } from "./interface-derivation-project.ts";
 import { formatDerivedSection } from "./interface-derivation-rewrite.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
 import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "../evaluator/config.ts";
@@ -97,6 +114,10 @@ function collectTopLevelNames(src: string): Set<string> {
 }
 
 function sidecarAssembles(text: string, fromFile: string, loadModule: LoadModule): boolean {
+  // 重复导出名：Babel **不报** duplicate export（侧车执行把 export 摘成对象
+  // 字面量，重复键被静默吞掉）——拼装阶段必须自己查，否则侧车成非法 ESM
+  // （`SyntaxError: Duplicate export of 'x'`，整份侧车装载失败）。
+  if (duplicateExportNames(text).length > 0) return false;
   try {
     parseSource(text);
     execNudoModule(text, { loadModule, fromFile });
@@ -104,6 +125,45 @@ function sidecarAssembles(text: string, fromFile: string, loadModule: LoadModule
   } catch {
     return false;
   }
+}
+
+/** 侧车里的重复导出名（升序） */
+function duplicateExportNames(src: string): string[] {
+  if (src.trim() === "") return [];
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(src);
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const dup = new Set<string>();
+  const add = (n: string): void => {
+    if (seen.has(n)) dup.add(n);
+    else seen.add(n);
+  };
+  for (const stmt of ast.program.body) {
+    if (stmt.type === "ExportNamedDeclaration") {
+      const d = stmt.declaration;
+      if (d) {
+        if (d.type === "VariableDeclaration") {
+          for (const decl of d.declarations) {
+            if (decl.id.type === "Identifier") add(decl.id.name);
+          }
+        } else if ((d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") && d.id) {
+          add(d.id.name);
+        }
+      }
+      if (!stmt.source) {
+        for (const spec of stmt.specifiers) {
+          add(spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value);
+        }
+      }
+    } else if (stmt.type === "ExportDefaultDeclaration") {
+      add("default");
+    }
+  }
+  return [...dup].sort();
 }
 
 export function emitDerivedFromRoot(
@@ -186,6 +246,8 @@ export function emitDerivedFromRoot(
     // 手写绑定名（顶层声明 − 生成段）
     const handwritten = handwrittenNames(prevSrc);
     const loadModule = opts.loadModule ?? defaultLoadModule;
+    // 目标源里当前**活着**的导出名（空集 = 扫描失败 → 不做死段判定）
+    const live = liveExportNames(targetFile);
 
     // update：剥离「本批可能重写」的生成段后收集残留顶层名；format 失败的
     // 段会保留旧文，其名字在失败时回填 taken（避免新段抢占）。
@@ -201,6 +263,7 @@ export function emitDerivedFromRoot(
     const written: string[] = [];
     let anySkip: EmitDerivedResult["sidecars"][number]["skipped"];
 
+    const acceptedFnsSeen = new Set<string>();
     for (const row of rows) {
       if (handwritten.has(row.fn)) {
         issues.push({
@@ -209,6 +272,27 @@ export function emitDerivedFromRoot(
           message: `sidecar already has a handwritten binding '${row.fn}' (${relative(process.cwd(), sidecarPath) || sidecarPath}); handwritten wins — skipping emit`,
         });
         anySkip = "name-clash";
+        continue;
+      }
+      // 目标源里已不存在该导出 → 不给它写契约（否则侧车里留下运行时不存在的
+      // 导出，并永久占住那个名字；用户为同名新函数手写侧车 ⇒ 侧车语法错）
+      if (isDeadName(row.fn, live)) {
+        issues.push({
+          code: DIAG.interfaceNotProjectable,
+          severity: "info",
+          message: `${row.fn}: no longer exported by ${relative(process.cwd(), targetFile) || targetFile} — dropping its derived section`,
+        });
+        anySkip = "not-projectable";
+        continue;
+      }
+      // 同名两段（同一导出名被写进同一侧车两次）⇒ 非法 ESM：拒绝第二段
+      if (acceptedFnsSeen.has(row.fn)) {
+        issues.push({
+          code: DIAG.interfaceNotProjectable,
+          severity: "error",
+          message: `duplicate derived section for '${row.fn}' in ${relative(process.cwd(), sidecarPath) || sidecarPath} — refusing to write (duplicate export)`,
+        });
+        anySkip = "not-projectable";
         continue;
       }
       if (row.underivable) {
@@ -236,13 +320,44 @@ export function emitDerivedFromRoot(
       }
       for (const n of body.usedNames) taken.add(n);
       const srcRel = relative(targetSidecarDir, targetFile) || basename(targetFile);
-      const section = [
-        DERIVED_HEADER,
-        `// source: ${sanitizeCommentText(`${srcRel}:${row.fn}`)}`,
-        `// derived-from: ${sanitizeCommentText(row.derivedFrom)}`,
-        body.text,
-        "",
-      ].join("\n");
+      const buildSection = (labels: string[]): string =>
+        [
+          DERIVED_HEADER,
+          `// source: ${sanitizeLineCommentText(`${srcRel}:${row.fn}`)}`,
+          `// derived-from: ${sanitizeLineCommentText(labels.join(", "))}`,
+          body.text,
+          "",
+        ].join("\n");
+
+      // 跨 root 合并（Bug 525）：既有段来自**别的** root 时，按名覆盖会让快照
+      // 只覆盖部分调用点（且**顺序相关**——谁后写谁赢）。改为与既有段求并集：
+      // 并集取**最宽**者（x>5 ⊆ x>1 → 并集 = x>1），标签取并集（排序 → 顺序无关）。
+      const rowLabels = splitLabels(row.derivedFrom);
+      const prevLabels = prevSection !== undefined ? derivedFromLabels(prevSection) : [];
+      const needsMerge =
+        prevSection !== undefined && prevLabels.length > 0 && !sameLabelSet(prevLabels, rowLabels);
+      let section: string;
+      if (needsMerge) {
+        const mergedLabels = mergeLabels(prevLabels, rowLabels);
+        const decision = mergeDecision(row, prevSection!, sidecarPath, loadModule);
+        if (decision === undefined) {
+          // 并集不可比较 → 既有段原样保留（**禁止**拿任一侧窄化另一侧）
+          anySkip = "not-projectable";
+          issues.push({
+            code: DIAG.interfaceNotProjectable,
+            severity: "error",
+            message: `${row.fn}: cannot merge the existing derived section with the one from ${row.derivedFrom} (incomparable domains) — keeping the existing section`,
+          });
+          for (const n of collectTopLevelNames(prevSection!)) taken.add(n);
+          continue;
+        }
+        section =
+          decision === "prev"
+            ? withDerivedFromLabels(prevSection!, mergedLabels)
+            : buildSection(mergedLabels);
+      } else {
+        section = buildSection(rowLabels);
+      }
 
       // round-trip：整段（含 import）必须可执行——fromFile 用目标侧车路径，
       // 相对 spec（./std.nudo.js）按该目录解析
@@ -262,32 +377,34 @@ export function emitDerivedFromRoot(
       const norm = normalizeSectionText(section);
       if (prevSection !== undefined && normalizeSectionText(prevSection) === norm) {
         anySkip = "no-change";
+        acceptedFnsSeen.add(row.fn);
         accepted.push({ fn: row.fn, text: prevSection, prevText: prevSection });
         for (const n of collectTopLevelNames(prevSection)) taken.add(n);
         continue;
       }
       written.push(row.fn);
+      acceptedFnsSeen.add(row.fn);
       accepted.push({ fn: row.fn, text: section, ...(prevSection !== undefined ? { prevText: prevSection } : {}) });
     }
 
     // 组装：update 只剥离**已接受**的生成段；underivable/not-projectable/
     // name-clash 的既有段原样保留（证据退化不静默删契约）。
     // accepted 为空时必须原样保留——否则 stripped=prev + preserved 会叠层。
+    // 死段（源里已不存在的导出）先剥掉（Bug 542）：否则侧车里留下运行时不
+    // 存在的导出，并永久占住那个名字。
+    const cleanedPrev = stripDeadSections(prevSrc, live);
     let finalContent: string;
     if (accepted.length === 0) {
-      finalContent = prevSrc;
+      finalContent = cleanedPrev;
     } else if (opts.mode === "add") {
-      finalContent = joinSectionTexts(prevSrc, accepted.map((a) => a.text));
+      finalContent = joinSectionTexts(cleanedPrev, accepted.map((a) => a.text));
     } else {
       const acceptedFns = new Set(accepted.map((a) => a.fn));
-      const stripped = stripGeneratedFor(prevSrc, acceptedFns);
-      const preserved = collectGeneratedSectionsRaw(prevSrc).filter(
-        (s) => !s.names.some((n) => acceptedFns.has(n)),
-      );
-      finalContent = joinSectionTexts(stripped, [
-        ...preserved.map((s) => normalizeSectionText(s.text)),
-        ...accepted.map((a) => a.text),
-      ]);
+      const stripped = stripGeneratedFor(cleanedPrev, acceptedFns);
+      // 保留段（未被本次重写的 @generated 段）**留在原位**——stripped 只剥了
+      // 「本次接受」的段，保留段仍在其中；再拼一遍会让同一段出现两次
+      // （侧车成非法 ESM：同一导出名两段 → Duplicate export）。
+      finalContent = joinSectionTexts(stripped, accepted.map((a) => a.text));
     }
 
     // 整文件 round-trip：同侧车多段拼装后仍必须是合法可执行模块
@@ -354,6 +471,126 @@ export function emitDerivedFromRoot(
  */
 type RawSection = { names: string[]; bindings: string[]; start: number; end: number; text: string };
 
+/**
+ * nudo 自己的**生成段标记行**：注释的**首个记号**是 `@generated`，且标注文本
+ * 点名 nudo（`@generated by nudo — do not edit; regenerate with …`）。
+ *
+ * Bug 440：旧判定是裸子串 `/@generated/` ⇒ 侧车里任何**散文提及**
+ * （`// 手写契约：这里提到了 @generated 这个词`）都算生成标记 ⇒ 手写段的
+ * L1 义务整体消失 + emit 侧整段覆盖手写契约（Bug 443）。
+ * 口径与 core `scan-named-exports.ts` 的 `isGeneratedMarkerLine` 一致。
+ */
+function isGeneratedMarkerLine(line: string): boolean {
+  const t = line.trim();
+  let rest: string;
+  if (t.startsWith("//")) rest = t.slice(2);
+  else if (t.startsWith("/*")) rest = t.slice(2);
+  else if (t.startsWith("*")) rest = t.slice(1);
+  else return false;
+  rest = rest.trim();
+  if (!/^@generated\b/.test(rest)) return false;
+  return /\bby\s+nudo\b/.test(rest);
+}
+
+type AstNode = { type?: string; name?: string; computed?: boolean; [k: string]: unknown };
+
+const SKIPPED_NODE_KEYS = new Set([
+  "type",
+  "name",
+  "start",
+  "end",
+  "loc",
+  "range",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "errors",
+]);
+
+/** 节点子树里出现的标识符名（非计算属性键只是键名，不算「引用」） */
+function collectIdentNames(node: unknown, out: Set<string>): void {
+  if (node === null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const n of node) collectIdentNames(n, out);
+    return;
+  }
+  const obj = node as AstNode;
+  if (obj.type === "Identifier" && typeof obj.name === "string") out.add(obj.name);
+  const t = obj.type;
+  const skipKey =
+    obj.computed === false &&
+    (t === "ObjectProperty" ||
+      t === "ObjectMethod" ||
+      t === "ClassMethod" ||
+      t === "ClassProperty" ||
+      t === "ClassPrivateProperty" ||
+      t === "ClassAccessorProperty" ||
+      t === "MemberExpression");
+  for (const key of Object.keys(obj)) {
+    if (SKIPPED_NODE_KEYS.has(key)) continue;
+    if (skipKey && key === "key") continue;
+    if (skipKey && key === "property") continue;
+    collectIdentNames(obj[key], out);
+  }
+}
+
+/**
+ * export 所属**生成段**的「段内链」：export 自身 + 紧邻的 import +
+ * **被 export 引用**的 const（组合式 §5.3 的 prelude const、多步 prelude 的
+ * 中间量、DESIGN-003 的别名绑定 const）。口径与 core
+ * `scan-named-exports.ts` 的 `sectionChainIndices` 一致。
+ */
+function sectionChainIndices(
+  stmts: ReturnType<typeof parseSource>["program"]["body"],
+  exportIdx: number,
+): Set<number> {
+  const chain = new Set<number>([exportIdx]);
+  const referenced = new Set<string>();
+  collectIdentNames(stmts[exportIdx], referenced);
+  for (let j = exportIdx - 1; j >= 0; j--) {
+    const prev = stmts[j]!;
+    if (prev.type === "ImportDeclaration") {
+      chain.add(j);
+      continue;
+    }
+    if (prev.type === "VariableDeclaration") {
+      const declared: string[] = [];
+      for (const d of prev.declarations) {
+        if (d.id.type === "Identifier") declared.push(d.id.name);
+      }
+      if (!declared.some((n) => referenced.has(n))) break;
+      for (const d of prev.declarations) collectIdentNames(d.init, referenced);
+      chain.add(j);
+      continue;
+    }
+    break;
+  }
+  return chain;
+}
+
+/**
+ * 段头（`@generated` 标记行）是否**拥有**该 export：头之后的第一条顶层语句
+ * 必须就是该 export 的段内链的**第一条**（段内链之外夹了语句 ⇒ 头不拥有它）。
+ */
+function headerOwnsExport(
+  stmts: ReturnType<typeof parseSource>["program"]["body"],
+  exportIdx: number,
+  headerPos: number,
+): boolean {
+  const chain = sectionChainIndices(stmts, exportIdx);
+  let first = exportIdx;
+  for (const idx of chain) if (idx < first) first = idx;
+  // 头之后的第一条顶层语句
+  for (let k = 0; k < stmts.length; k++) {
+    const start = stmts[k]!.start;
+    if (start == null || start < headerPos) continue;
+    return k === first;
+  }
+  return false;
+}
+
 function collectGeneratedSectionsRaw(src: string): RawSection[] {
   if (src.trim() === "") return [];
   let ast: ReturnType<typeof parseSource>;
@@ -372,6 +609,11 @@ function collectGeneratedSectionsRaw(src: string): RawSection[] {
       const stmt = stmts[i]!;
       if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
       if (stmt.start == null || stmt.end == null || stmt.start < headerPos) continue;
+      // Bug 432：段边界收紧——头与 export 之间的语句必须**全在段内链**
+      // （import + 被该 export 引用的 const）。夹着用户自己的 const ⇒ 这个头
+      // **不拥有**该 export（否则上一段的头落进本段 ⇒ 手写段被判成生成段 ⇒
+      // 「手写优先」保护被绕过 ⇒ emit 整段覆盖手写契约）。
+      if (!headerOwnsExport(stmts, i, headerPos)) continue;
       const d = stmt.declaration;
       const names: string[] = [];
       const bindings: string[] = [];
@@ -414,18 +656,12 @@ function collectGeneratedSectionsRaw(src: string): RawSection[] {
   return out;
 }
 
-/** 注释行上的 `@generated` 字节偏移（段起点） */
+/** 注释行上的 `@generated` 标记字节偏移（段起点）——nudo 自己的标记才算 */
 function findGeneratedHeaderOffsets(src: string): number[] {
   const out: number[] = [];
   let pos = 0;
   for (const line of src.split("\n")) {
-    const t = line.trim();
-    if (
-      (t.startsWith("//") || t.startsWith("/*") || t.startsWith("*")) &&
-      /@generated/.test(t)
-    ) {
-      out.push(pos);
-    }
+    if (isGeneratedMarkerLine(line)) out.push(pos);
     pos += line.length + 1;
   }
   return out;
@@ -476,10 +712,7 @@ function findGeneratedSectionText(src: string, fn: string): string | undefined {
   return collectGeneratedSectionsRaw(src).find((s) => s.names.includes(fn))?.text;
 }
 
-function stripGeneratedFor(src: string, fns: Set<string>): string {
-  const sections = collectGeneratedSectionsRaw(src).filter((s) =>
-    s.names.some((n) => fns.has(n)),
-  );
+function stripSections(src: string, sections: RawSection[]): string {
   if (sections.length === 0) return src;
   const sorted = [...sections].sort((a, b) => a.start - b.start);
   let out = "";
@@ -490,6 +723,142 @@ function stripGeneratedFor(src: string, fns: Set<string>): string {
   }
   out += src.slice(pos);
   return out;
+}
+
+function stripGeneratedFor(src: string, fns: Set<string>): string {
+  return stripSections(
+    src,
+    collectGeneratedSectionsRaw(src).filter((s) => s.names.some((n) => fns.has(n))),
+  );
+}
+
+// --- 死段清理（源里已不存在的导出）---
+
+/** 目标源里当前**活着**的导出名（空集 = 扫描失败 → 不判死段） */
+function liveExportNames(targetFile: string): Set<string> {
+  try {
+    return localNamedExports(readFileSync(targetFile, "utf-8"));
+  } catch {
+    return new Set();
+  }
+}
+
+/** 名字在源里已不存在（只认普通标识符——`Class.method` 形态不判） */
+function isDeadName(name: string, live: Set<string>): boolean {
+  if (live.size === 0) return false;
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) return false;
+  return !live.has(name);
+}
+
+/** 剥掉死段（段里的名字在源里都已不存在） */
+function stripDeadSections(src: string, live: Set<string>): string {
+  if (live.size === 0) return src;
+  const dead = collectGeneratedSectionsRaw(src).filter((s) =>
+    s.names.every((n) => isDeadName(n, live)),
+  );
+  return stripSections(src, dead);
+}
+
+// --- 跨 root 合并（标签 / 并集）---
+
+/** 标签串 → 标签数组（`a, b` → ["a","b"]） */
+function splitLabels(text: string): string[] {
+  return text
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
+/** 段内 `// derived-from:` 的标签集 */
+function derivedFromLabels(sectionText: string): string[] {
+  const m = /^\s*\/\/\s*derived-from:\s*(.+)$/m.exec(sectionText);
+  if (!m) return [];
+  return splitLabels(m[1]!);
+}
+
+/** 标签并集（排序 → 与写入顺序无关） */
+function mergeLabels(a: string[], b: string[]): string[] {
+  return [...new Set([...a, ...b])].sort();
+}
+
+/** 标签集相等 */
+function sameLabelSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((l) => set.has(l));
+}
+
+/** 替换段内的 derived-from 标签行 */
+function withDerivedFromLabels(sectionText: string, labels: string[]): string {
+  return sectionText.replace(
+    /^(\s*\/\/\s*derived-from:).*$/m,
+    (_m, p1: string) => `${p1} ${sanitizeLineCommentText(labels.join(", "))}`,
+  );
+}
+
+/** 既有生成段的 fn 约束（参数位 + 返回位） */
+function sectionFnConstraint(
+  sectionText: string,
+  fn: string,
+  fromFile: string,
+  loadModule: LoadModule,
+): { params: Record<string, NudoConstraint>; returns?: NudoConstraint } | undefined {
+  try {
+    const exports = execNudoModule(sectionText, { loadModule, fromFile });
+    const v = exports[fn];
+    if (!isNudoConstraint(v)) return undefined;
+    const f = (v as { fn?: { params?: Record<string, NudoConstraint>; returns?: NudoConstraint } })
+      .fn;
+    if (!f || typeof f !== "object") return undefined;
+    return {
+      params: f.params ?? {},
+      ...(f.returns !== undefined ? { returns: f.returns } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 跨 root 合并的取舍：既有段与本行的域求**并集**（取最宽者）。
+ * 返回 "prev"（沿用既有段的正文）/ "current"（用本行的正文）；
+ * 不可比较 → undefined（调用方保留既有段，**禁止**拿任一侧窄化另一侧）。
+ */
+function mergeDecision(
+  row: DerivedExport,
+  prevSection: string,
+  fromFile: string,
+  loadModule: LoadModule,
+): "prev" | "current" | undefined {
+  const prevFn = sectionFnConstraint(prevSection, row.fn, fromFile, loadModule);
+  if (!prevFn) return undefined;
+  const prevParams = prevFn.params;
+  const decisions: Array<"prev" | "current"> = [];
+  for (const p of row.params) {
+    const prevC = prevParams[p.name];
+    if (!prevC) return undefined;
+    const entries: ConstraintEntry[] = [
+      { abs: constraintToEntryAbs(prevC, p.name), constraint: prevC },
+      { abs: constraintToEntryAbs(p.constraint, p.name), constraint: p.constraint },
+    ];
+    const widest = widestConstraint(entries);
+    if (!widest) return undefined;
+    decisions.push(widest === entries[0] ? "prev" : "current");
+  }
+  const prevRet = prevFn.returns;
+  const curRet = row.returns?.constraint;
+  if (prevRet && curRet) {
+    const entries: ConstraintEntry[] = [
+      { abs: constraintToEntryAbs(prevRet, "__nudo_self__"), constraint: prevRet },
+      { abs: constraintToEntryAbs(curRet, "__nudo_self__"), constraint: curRet },
+    ];
+    const widest = widestConstraint(entries);
+    if (!widest) return undefined;
+    decisions.push(widest === entries[0] ? "prev" : "current");
+  }
+  if (decisions.length === 0) return undefined;
+  const first = decisions[0]!;
+  return decisions.every((d) => d === first) ? first : undefined;
 }
 
 function normalizeSectionText(text: string): string {

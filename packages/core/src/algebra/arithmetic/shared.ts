@@ -24,6 +24,10 @@ import { recordMayThrow } from "../may-throw.ts";
  * 此前仅 add 分发：sub/mul/div/mod 遇 sum 操作数整体落
  * unknown —— `100 - (cond ? 20 : 55)` 推断成 unknown，
  * 下游 clamp/区间契约误报。
+ *
+ * `combine`（可选）：成员结果的**合成口径**。缺省 = 原样收成 `sum` 形状
+ * （数值面口径：`2 * (cond ? 20 : 55)` ⇒ `40 | 110`，逐臂对账）。
+ * 字符串面（族 09 · Bug 402）传 `joinValues` 口径 —— 见 `addsub.ts` 的调用点。
  */
 export function distributeSumBinOp(
   op: "+" | "-" | "*" | "/" | "%",
@@ -31,6 +35,7 @@ export function distributeSumBinOp(
   b: Abs,
   phi: Phi,
   eval2: (x: Abs, y: Abs, phi: Phi) => Abs,
+  combine?: (members: Abs[]) => Abs,
 ): Abs | undefined {
   if (a.shape.k !== "sum" && b.shape.k !== "sum") return undefined;
   const parts: Abs[] = [];
@@ -53,6 +58,7 @@ export function distributeSumBinOp(
   if (uniq.length === 1) {
     return abs(uniq[0]!.shape, term, uniq[0]!.pred, confJoin(a.conf, b.conf));
   }
+  if (combine) return combine(uniq);
   return abs({ k: "sum", members: uniq }, term, undefined, "partial");
 }
 

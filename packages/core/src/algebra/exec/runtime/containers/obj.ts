@@ -7,9 +7,11 @@
  *   迁移，副本丢失侧表 = 臂内写不再硬抛 / 延迟异常静默丢弃。
  * - $spread 原生语义会**调用**源对象 getter 并把结果拷为数据槽——必须
  *   用 getter 求值后的副本（accessorTable 求值，抛/失败折 unknown）。
+ * - $objRest 同理：原生 CopyDataProperties 对保留键发 Get ⇒ getter 必须
+ *   被调用（副作用发生），rest 槽落 getter 的**返回值**（非占位 undefined）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, unknown } from "../../../abs.ts";
+import { abs, confJoin, litValue, unknown } from "../../../abs.ts";
 import {
   joinAbs,
   objOf,
@@ -44,6 +46,7 @@ import {
 import { $in, evalClassChain } from "../members.ts";
 import { migrateAccessors, accessorTable } from "../../../accessors.ts";
 import { copyMatchIterTables } from "../../match-iter.ts";
+import { slotKeyOfSymbolAbs } from "../symbol-key.ts";
 import { $call } from "../../call.ts";
 
 /**
@@ -358,9 +361,10 @@ function objRestGuard(o: Abs): void {
 
 /**
  * 解构 rest：`const { a, ...rest } = o` → rest = o 去掉 named keys。
+ * 排除集可含**动态计算键**（Abs）——原生按求值后的键排除（Bug 160）。
  * closed obj：剩余槽 closed；open / optional 键：rest 仍 open（可能有未知键）。
  */
-export function $objRest(o: Abs, keys: string[]): Abs {
+export function $objRest(o: Abs, keys: Array<string | Abs>): Abs {
   o = asAbsVal(o);
   objRestGuard(o);
   if (o.shape.k === "sum") {
@@ -376,15 +380,56 @@ export function $objRest(o: Abs, keys: string[]): Abs {
     }
     return unknown;
   }
-  const drop = new Set(keys);
+  const drop = new Set<string>();
+  // Bug 160：动态计算键（Abs）——原生按**求值后的键**排除；键值不可判时
+  // 无法排除 ⇒ rest 降 open（诚实过近似：键可能仍在 rest 里）。
+  let keyUndecidable = false;
+  for (const k of keys) {
+    if (typeof k === "string") {
+      drop.add(k);
+      continue;
+    }
+    const kv = litValue(asAbsVal(k));
+    if (kv.ok && (typeof kv.value === "string" || typeof kv.value === "number")) {
+      drop.add(String(kv.value));
+    } else if (kv.ok && typeof kv.value === "symbol") {
+      // 符号键：内部槽键表示 "@@name"（与读写面同口径）
+      const sk = slotKeyOfSymbolAbs(asAbsVal(k));
+      if (sk !== undefined) drop.add(sk);
+      else keyUndecidable = true;
+    } else {
+      keyUndecidable = true;
+    }
+  }
   const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
-  let openRest = o.shape.open === true;
+  let openRest = o.shape.open === true || keyUndecidable;
   // Bug 109：rest 只收枚举自有键（CopyDataProperties 同口径——
   // defineProperty 记的 enumerable:false 键 / internal 私有槽不进 rest；
   // enumOwnKeys 视图，obj 源 flag 侧表键控本 Abs 身份）
-  for (const k of enumOwnKeys(o, o.shape.slots)) {
+  //
+  // Bug 226：rest 走**读路径**——原生 CopyDataProperties 对每个保留键发一次
+  // Get（访问器被调用、副作用发生；rest 里落的是 getter 的**返回值**，不是
+  // 占位槽 undefined）。此前按结构搬槽（直接取 slots[k]）跳过读路径 → 对象
+  // 字面量 getter 从不被调用，副作用整体丢失（$spread / Object.assign 同族
+  // 路径本就发 Get → 只有 rest 漏）。
+  const acc = accessorTable.get(o as object);
+  const enumKeys = new Set(enumOwnKeys(o, o.shape.slots));
+  if (acc) {
+    // 纯 getter（无同名数据槽）也要进 rest（{ get x(){…} } 的 rest 里有 x）
+    for (const k of acc.keys()) {
+      if (isEnumerableView(o, k)) enumKeys.add(k);
+    }
+  }
+  for (const k of enumKeys) {
     if (drop.has(k)) continue;
-    setSlot(slots, k, o.shape.slots[k]!);
+    const g = acc?.get(k)?.get;
+    if (g) {
+      // getter 以接收者为 this 求值（原生 Get 的 receiver = 源对象）
+      setSlot(slots, k, { value: asAbsVal(g(o)) });
+      continue;
+    }
+    const slot = getSlot(o.shape.slots, k);
+    if (slot) setSlot(slots, k, slot);
     // optional 源键可能仍以 undefined 出现在 rest 的动态面；闭槽无需 open
   }
   // 提取的 optional 键：JS rest 会排除该键，但 open 对象上未知键仍可能进 rest

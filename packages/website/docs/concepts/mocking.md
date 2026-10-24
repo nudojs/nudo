@@ -63,7 +63,7 @@ The real diagnostics for the truncated line:
 
 **Warning: no builder calls inside an arrow-function mock body.** Constraint builders exist only in directive type expressions (case args, `@nudo:skip`, `@nudo:as`, …). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
 
-**Warning: an unmocked global is executed for real on the eval path.** For eval-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
+**Warning: an unmocked host side-effect global is not executed during analysis.** Host functions that would perform real network I/O or schedule real timers — `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback` — are blocked by the evaluator: they never run with Abs arguments, the result is widened to `unknown#opaque`, and the run reports `nudo:host-effect-blocked` (**Info**). The analysis does not crash and the exit code is unaffected — only type precision degrades. Mock any of them your analyzed code calls to keep the inferred type precise: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
 
 ## Examples
 

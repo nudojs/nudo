@@ -136,13 +136,17 @@ describe("Bug 84: transpile emits the private flag on instanceFields spec", () =
     );
     // init thunk 内含 '}'，不能用单列正则——按 entry 边界切片逐条断言
     const fields = code.slice(code.indexOf("instanceFields: ["), code.indexOf("],", code.indexOf("instanceFields: [")));
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::<私有名>"）——私有名
+    // 条目按"可选作用域前缀"匹配（公有键无前缀），意图不变
     const entryOf = (name: string): string => {
-      const start = fields.indexOf(`{ name: "${name}",`);
-      expect(start, `entry ${name} emitted`).toBeGreaterThan(-1);
+      const re = new RegExp(`\\{ name: "(?:#[^"]*::)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}",`);
+      const m = re.exec(fields);
+      expect(m, `entry ${name} emitted`).not.toBeNull();
+      const start = m!.index;
       const next = fields.indexOf("{ name:", start + 1);
       return fields.slice(start, next === -1 ? undefined : next);
     };
-    expect(entryOf("#x")).toContain("private: true");
+    expect(entryOf("x")).toContain("private: true");
     expect(entryOf("#y")).not.toContain("private");
     expect(entryOf("pub")).not.toContain("private");
   });
@@ -195,12 +199,16 @@ describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
       exec(`class A { get x() { return "G"; } pub = 2; } return JSON.stringify(new A());`),
     ).toBe('{"pub":2}');
   });
-  it("JSON.stringify with toJSON method stays abstract (native calls it via proto lookup)", () => {
+  it("JSON.stringify with toJSON method folds exactly (Bug 381: toJSON hook really called)", () => {
+    // Bug 381 起 toJSON 步**真调用**（原生 SerializeJSONProperty 步骤 2：经原型
+    // 查找取 toJSON 并以 key "" 调用）⇒ 引擎与原生同款折精确值（native 返回
+    // "T"，序列化文本为 "\"T\""）。修前：toJSON 槽只被**探测**（不执行）⇒ 折
+    // 抽象（abs=…）——那是「钩子从不调用」时代的保守折法。
     const r = exec(
       `class A { toJSON() { return "T"; } pub = 2; } return JSON.stringify(new A());`,
     );
     expect(typeof r).toBe("string");
-    expect(r).toMatch(/^abs=/); // 保守不折（原生返回 "T"）
+    expect(r).toBe('"T"');
   });
   it("JSON.stringify with dynamic defineProperty getter folds via accessor dispatch", () => {
     // 动态访问器：内层占位槽 + 侧表派发 getter（Bug 57 口径）→ 精确

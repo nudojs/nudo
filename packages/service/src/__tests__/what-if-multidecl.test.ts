@@ -3,7 +3,8 @@
  * 1) splitTopLevelUnion 不得在字符串内切 `|`（`number | "a|b"` 是两个成员）；
  * 2) 多声明符 `const a=1, b=2` 必须拆成独立语句再注入——否则一个 `@nudo:as`
  *    会盖住全部 Identifier init（漏到兄弟声明符），且只能表达一个类型。
- * 3) 引号内 `\` 不是转义（与 parseCaseArgExpr 原样 slice 一致）。
+ * 3) 引号内 `\` **是**转义（与 parseCaseArgExpr 的新字面量文法一致 ——
+ *    族 28 接线：旧口径「`\` 不当转义」已废止）。
  */
 import { describe, it, expect } from "vitest";
 import { injectBindings, typeExprToDirective } from "../what-if.ts";
@@ -15,10 +16,16 @@ describe("what-if splitTopLevelUnion strings", () => {
     expect(typeExprToDirective(`number | 'x|y'`)).toBe(`union(number(), 'x|y')`);
   });
 
-  it("treats backslash as raw (not escape) inside strings", () => {
-    // `"a\"` 是完整字符串（原样 slice，值 `a\`），`|` 在引号外，应当切开
+  it("treats backslash as an escape inside strings (escaped quote does not close)", () => {
+    // ★ 族 28 接线（Bug 840）：字面量文法改为**解释 JS 转义** ⇒ union 切分
+    // 必须**转义感知**：`\"` 不闭合字符串 ⇒ 字符串内的 `|` 不是分隔符。
+    // `"a\"b"` 是完整字符串（值 `a"b`），`|` 在引号外 ⇒ 切开
+    expect(typeExprToDirective(String.raw`"a\"b" | number`)).toBe(
+      String.raw`union("a\"b", number())`,
+    );
+    // 截断字面量（`"a\"` 永不闭合）⇒ 整段是一个成员，不切开
     expect(typeExprToDirective(String.raw`"a\" | number`)).toBe(
-      String.raw`union("a\", number())`,
+      String.raw`"a\" | number`,
     );
   });
 

@@ -6,9 +6,14 @@
  *   interface-surface 的注入证据形态）
  * - 小助手：absExact/absUnknown/absUnion（case-emitter 投影面）与
  *   neverAbs/undefLit/litAbs（字面量面）
+ * - 产物装载器：loadGeneratedModule（真执行**生成产物**里的内联校验器）
  */
 import { abs as makeAbs, numLit, strLit, boolLit, joinAbs, type Abs } from "@nudojs/core";
 import type { CallRecord } from "../../evaluator/call-record.ts";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export function absExact(shape: Abs["shape"]): Abs {
   return makeAbs(shape, undefined, undefined, "exact");
@@ -106,3 +111,33 @@ export function absRec(p: {
     ...(p.targetAliases ? { targetAliases: p.targetAliases } : {}),
   };
 }
+
+// ---- 产物装载器（真执行生成产物） ----
+
+/** 标准面产物的导出形态（`~standard` Props 的最小面）。 */
+export type StandardSchemaExport = {
+  "~standard": {
+    version: number;
+    vendor: string;
+    validate(value: unknown): {
+      value?: unknown;
+      issues?: ReadonlyArray<{ message: string; path?: ReadonlyArray<PropertyKey> }>;
+    };
+  };
+};
+
+/**
+ * 装载**生成产物源码**（真执行产物里的内联校验器，不是只比对字符串）。
+ *
+ * 产物是 `.ts`（helper 带类型标注）⇒ 不能用 `new Function` 当 JS 求值；写成
+ * 临时 `.ts` 文件后动态 import（vitest 走 TS 变换，与 nudojs 面的产物装载同法）。
+ */
+export async function loadGeneratedModule(
+  source: string,
+): Promise<Record<string, StandardSchemaExport>> {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-emit-generated-"));
+  const file = join(dir, "generated.ts");
+  writeFileSync(file, source, "utf-8");
+  return (await import(pathToFileURL(file).href)) as unknown as Record<string, StandardSchemaExport>;
+}
+

@@ -74,7 +74,8 @@ function withRetry(fn) {
 
   it("absToTSType renders type vars only when mapped", () => {
     const a = anyVar("A1");
-    expect(absToTSType(a)).toBe("unknown");
+    // 未映射的类型变量：Abs any（未约束）→ TS any（Bug 544：any ≠ unknown）
+    expect(absToTSType(a)).toBe("any");
     expect(absToTSType(a, new Map([["A1", "T"]]))).toBe("T");
     const arr = abs({ k: "arr", element: a }, undefined, undefined, "path");
     expect(absToTSType(arr, new Map([["A1", "T"]]))).toBe("T[]");

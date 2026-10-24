@@ -5,11 +5,17 @@
  * NudoConstraint 表达的域内。只覆盖可判定的标量子集：
  *
  *   - prim 门（prim 缺失或不匹配字面量类型 → false）
- *   - eq(self, lit v) 字面量等值（SameValue：含 undefined/NaN；与 leq 同口径）
+ *   - eq(self, lit v) 字面量等值（`===` + NaN 特例；见 literalSame）
  *   - gt/ge/lt/le 数值常数界（self op n）
  *   - 字符串长度界（length(self) op n，即 min/max/length 链）
  *   - int（整数性）
  *   - members（union）：任一成员满足即满足
+ *
+ * **bigint**（族 11 片 S7 / Bug 915 延伸）：`lit(1n)` 这类 bigint 字面量契约
+ * 此前在本通道**判不了**（值域只放行 number / string / boolean / null /
+ * undefined）⇒ 字段位 / 元素位对 bigint 字面量实参**零诊断**（假绿），
+ * 而**标量实参位**（S6 修好）报违例 ⇒ 同一份契约两个位置两种裁决。
+ * 现在字面量值域含 bigint ⇒ 域隶属通道对 bigint 与其余标量同口径。
  *
  * 对象 / 数组 / 函数域与不可判定的 pred 形态一律 false——保守不满足，
  * 对账侧宁可多报 domain-exceeds 也不放过。
@@ -18,7 +24,7 @@
 import type { NudoConstraint } from "./constraint.ts";
 import { SELF, derefConstraint, isIntFlag } from "./constraint.ts";
 import type { Pred, TypeofName } from "./pred.ts";
-import type { Term } from "./term.ts";
+import type { LiteralValue, Term } from "./term.ts";
 
 /**
  * members / fn 是 Phase 1 constraint 扩展形态（union()/fn() 构建器）。
@@ -29,9 +35,13 @@ type ExtendedConstraint = NudoConstraint & {
   fn?: unknown;
 };
 
-/** 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 */
+/** 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。
+ *
+ *  值域 = `LiteralValue`（含 **bigint**；族 11 片 S7 / Bug 915 延伸）——
+ *  bigint 字面量实参此前不在值域内 ⇒ 域隶属通道对 bigint 恒不满足，
+ *  而调用点的守卫又不放行 bigint ⇒ 字段位 / 元素位对 bigint **零诊断**。 */
 export function literalMeetsConstraint(
-  lv: number | string | boolean | null | undefined,
+  lv: LiteralValue,
   c: NudoConstraint,
   seen?: Set<object>,
 ): boolean {
@@ -75,12 +85,13 @@ export function literalMeetsConstraint(
 /**
  * typeof 标签与字面量证据的匹配（JS typeof）。
  * 证据域含 undefined/null：object 仅匹配 null（typeof null === "object"），
- * undefined 匹配 "undefined"；function/bigint/symbol 无字面量证据。
+ * undefined 匹配 "undefined"；function/symbol 无字面量证据。
+ *
+ * **bigint**（族 11 片 S7 / Bug 915 延伸）：此前 bigint 落 `default` ⇒ 恒
+ * false ⇒ `typeof(x, "bigint")` 原子与 `prim: "bigint"` 的约束**永远不满足**
+ * ⇒ 同一条契约在 bigint 实参上恒判违例。现在 bigint 与其余标量同口径。
  */
-function primMatches(
-  prim: TypeofName,
-  lv: number | string | boolean | null | undefined,
-): boolean {
+function primMatches(prim: TypeofName, lv: LiteralValue): boolean {
   switch (prim) {
     case "number":
       return typeof lv === "number";
@@ -88,6 +99,8 @@ function primMatches(
       return typeof lv === "string";
     case "boolean":
       return typeof lv === "boolean";
+    case "bigint":
+      return typeof lv === "bigint";
     case "object":
       return lv === null;
     case "undefined":
@@ -97,16 +110,45 @@ function primMatches(
   }
 }
 
-function predHolds(lv: number | string | boolean | null | undefined, p: Pred): boolean {
+/**
+ * 字面量同一性（Bug 915）：`===` + NaN 特例。
+ *
+ * - `===` ⇒ `-0` 与 `0` 同值（与 JS 语义一致：原生 `(-0) === 0` 为 true）
+ * - NaN 特例 ⇒ `NaN` 与自身同值（`===` 对 NaN 为 false，而字面量同一性
+ *   必须覆盖 NaN：契约写 `lit(NaN)` 时传 NaN 应当满足）
+ *
+ * 口径与 `term.ts` 的 `termEquals` 一致（`===` + NaN 特例）。
+ *
+ * 背景：本文件（**域隶属面**：对象字段位 / 数组元素位）此前用
+ * `Object.is`（SameValue），而同一条执法路径的**标量实参位**用 `===`
+ * ⇒ 同一份 `lit(0)` 契约，`-0` 在标量位放行、在字段位报错（两种裁决）。
+ * ⚠ `leq.ts` 的 `leqAbs` 用的是 SameValue（`Object.is`）——那是**赋值面**
+ * 的独立裁决（Bug 398），与本文件不是同一口径，**不要再互相引用为「同口径」**。
+ *
+ * **bigint**（族 11 片 S7 / Bug 915 延伸）：`===` 对 bigint 天然成立
+ * （`1n === 1n` 为 true，且 `1n !== 1` ⇒ number 与 bigint 不混同）⇒
+ * `lit(1n)` 契约对 `1n` 满足、对 `2n` / `1` 不满足。
+ */
+function literalSame(lv: LiteralValue, lit: LiteralValue): boolean {
+  if (lv === lit) return true;
+  return (
+    typeof lv === "number" &&
+    typeof lit === "number" &&
+    Number.isNaN(lv) &&
+    Number.isNaN(lit)
+  );
+}
+
+function predHolds(lv: LiteralValue, p: Pred): boolean {
   switch (p.op) {
     case "eq": {
       // eq(self, lit v)：lit(undefined)/lit(NaN) 的 litValue 哨兵 + === 都会漏；
-      // 直接看 term + SameValue（Object.is），与 leq 同口径。
+      // 直接看 term（字面量同一性见 literalSame）。
       const litT = isSelfVar(p.a) && p.b.op === "lit" ? p.b
         : isSelfVar(p.b) && p.a.op === "lit" ? p.a
         : undefined;
       if (!litT) return false;
-      return Object.is(lv, litT.value);
+      return literalSame(lv, litT.value);
     }
     case "gt":
     case "ge":
@@ -142,7 +184,7 @@ function cmpHolds(x: number, op: Cmp, n: number): boolean {
 
 /** 数值界（self op n）与长度界（length(self) op n）；右端必须是数字 lit。 */
 function boundHolds(
-  lv: number | string | boolean | null | undefined,
+  lv: LiteralValue,
   p: { op: Cmp; a: Term; b: Term },
 ): boolean {
   if (p.b.op !== "lit" || typeof p.b.value !== "number") return false;

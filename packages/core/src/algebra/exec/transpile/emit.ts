@@ -2,11 +2,19 @@
  * 模式解构 / 形参绑定 / 语句位写回（defineProperty/delete）/ fork 臂 thunk。
  * 数组 mutator 已改为 $invoke 调用点就地变更（Bug 49/51），不再语句位重绑。
  * 发射时经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
+ *
+ * 不变量（解构临时名，@nudo:as / @nudo:replace 指令面无关）：
+ * - 发射的解构临时名（`_d{n}` / `_n{n}` / `_p{i}` / `_rest{i}` / `_pd{i}`）
+ *   **必须避开用户标识符**（源文本里出现过的词形，保守超集）：撞名会让
+ *   生成码出现重复声明（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为
+ *   unknown）或**遮蔽**用户绑定（错值）——见 Bug 181。
+ * - 共享计数器（`opts.destrTmpSeq`）跨语句/跨形参唯一：`_d{n}`（语句位
+ *   init 临时）与 `_n{n}`（子模式临时）共用同一序号源，不得各自新建。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import type { MemberPath } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
@@ -32,7 +40,7 @@ function emitMemberTargetAssign(
   };
   const path = memberPathOf(m, opts);
   if (path) {
-    out.push(`${pad}${path.rootSrc} = ${setPathSrc(path, valueSrc)};`);
+    out.push(`${pad}${path.rootTarget} = ${setPathSrc(path, valueSrc)};`);
     return;
   }
   const obj = emitTranspileExpression(m.object as Expression, opts);
@@ -73,6 +81,24 @@ function emitMemberTargetAssign(
   }
   throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
 }
+
+/**
+ * Bug 140：原生数组解构 = GetIterator + IteratorNext。
+ *
+ * 接收者是**用户 iterable**（对象带自有 `@@iterator` 槽）时，元素按**迭代序**
+ * 取，**不是**按索引读。此前解构 lowering 一律走 `$idx(recv, i)`（按索引属性
+ * 读）——对用户 iterable 读到的是索引槽（多半没有）⇒ 折出**确定 undefined**
+ * （精确错值：原生是迭代序的第 2 个值）。
+ *
+ * 引擎侧的用户迭代协议在 `exec/runtime/containers/iterate.ts`：`$iterCheck`
+ * 兼做两件事——①可迭代性守卫（非可迭代 → TypeError）；②返回**用户 iterable 的
+ * 迭代序元素读取器**（非用户 iterable → null ⇒ 生成码走既有 `$idx` /
+ * `$arrRest` 快速路径：tuple / 数组 / 字符串 / Set / Map / 生成器 / `$tpl` /
+ * 数组迭代器…逐字不变）。
+ *
+ * 读取器按需取：模式有 n 个位置就取 n 个元素（原生空位也消耗一个迭代步），
+ * 有 rest 则取到 done（运行时步数上界兜底，超界折 unknown）。
+ */
 
 /**
  * Bug 111：delete o?.a 链的 OptionalMemberExpression 节点按普通 member 层
@@ -131,56 +157,11 @@ export function emitArrMutatorRebinds(
     // 数组 mutator（push/pop/…）不再需要语句位写回：$invoke 在调用点经
     // $arrMutContainer 就地变更（Bug 49/51——表达式内连续 mutator 按求值
     // 顺序生效；非可重绑接收者 m.get(k).push(x) 经共享容器别名持久）。
-    // 下方仅保留 defineProperty/delete 的语句位写回。
-    // Object.defineProperty / defineProperties(o, …)：返回值是新容器（value
-    // 进 slots、访问器进侧表），语句位置必须写回第一实参（freeze/seal/
-    // preventExtensions 就地标记无需写回）。Bug 19：defineProperties（复数）
-    // 与单数同形态，漏写回则描述符安装在被丢弃的副本上，后续 o.a 折 exact
-    // undefined——表达式位走返回值不受影响。Bug 87：member 目标（o.p /
-    // C.prototype / a[0]）此前只认 Identifier 同样丢写回——可重绑 member
-    // 路径经 memberPathOf 不可变更新链写回根；根不可重绑（foo().p）→
-    // memberPathOf null → 跳过（表达式位语句照常执行，不误删）。
-    if (
-      node.type === "CallExpression" &&
-      node.callee?.type === "MemberExpression" &&
-      node.callee.computed !== true &&
-      node.callee.object?.type === "Identifier" &&
-      (node.callee.object as { name: string }).name === "Object" &&
-      node.callee.property?.type === "Identifier" &&
-      ((node.callee.property as { name: string }).name === "defineProperty" ||
-        (node.callee.property as { name: string }).name === "defineProperties") &&
-      node.arguments?.[0] &&
-      ((node.arguments[0] as { type?: string }).type === "Identifier" ||
-        (node.arguments[0] as { type?: string }).type === "MemberExpression")
-    ) {
-      const methodName = (node.callee.property as { name: string }).name;
-      const restSrcs = (node.arguments as unknown as Expression[])
-        .slice(1)
-        .map((a) =>
-          (a as { type?: string }).type === "SpreadElement"
-            ? "$unknown()"
-            : emitTranspileExpression(a, opts),
-        )
-        .join(", ");
-      const restSuffix = restSrcs ? `, ${restSrcs}` : "";
-      const target0 = node.arguments[0] as { type?: string };
-      if (target0.type === "Identifier") {
-        const targetName = (target0 as { name: string }).name;
-        lines.push(
-          `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${targetName}${restSuffix}]);`,
-        );
-      } else {
-        const path = memberPathOf(
-          target0 as unknown as Parameters<typeof memberPathOf>[0],
-          opts,
-        );
-        if (path) {
-          const curSrc = readPathSrc(path);
-          const newSrc = `$invoke(Object, ${JSON.stringify(methodName)}, [${curSrc}${restSuffix}])`;
-          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, newSrc)};`);
-        }
-      }
-    }
+    // 下方仅保留**可选链** delete 的语句位写回。
+    // Bug 137/176：Object.defineProperty / defineProperties 的写回**下沉到
+    // 求值点**（表达式位自包含 IIFE：实参只求值一次 + 写回同点完成）——
+    // 语句位不得再重发整条调用（实参副作用翻倍），也不得把写回推迟到整条
+    // 语句之后（同表达式内后续读看到变更前的状态）。
     // delete obj[key] / delete o?.a：语句位置把删键后的容器写回绑定（表达式
     // 值 $delRes 由 transpile 负责）。Bug 111：OptionalMemberExpression 形
     // （delete o?.a）此前不匹配该 pass——表达式值对但从未真删（$delRes 是
@@ -211,13 +192,6 @@ export function emitArrMutatorRebinds(
         opts,
       );
       if (path) {
-        const parentRead =
-          path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
-        // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
-        // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
-        const keySrc = m.computed
-          ? emitTranspileExpression(m.property as Expression, opts)
-          : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
         // 求值序首个 optional hop 的层号（链上 `?.` 跳点节点带 optional
         // 标记——其后的外层链接同为 OptionalMemberExpression 类型但无标记；
         // walk 深度 s 的标记节点对应层 N-1-s，其 object 即守卫基）；-1 = 无
@@ -236,18 +210,28 @@ export function emitArrMutatorRebinds(
             s++;
           }
         }
-        if (guardLayer < 0) {
-          lines.push(
-            `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
-          );
-        } else {
+        // Bug 176：**非**可选链的 delete 写回已下沉到**求值点**（表达式位
+        // 自包含 IIFE：删除与布尔值同点产出）——语句位不得再写（否则写回被
+        // 推迟到整条语句之后，同表达式内后续读看到变更前的状态）。
+        if (guardLayer >= 0) {
+          const parentRead =
+            path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
+          // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
+          // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
+          const keySrc = m.computed
+            ? emitTranspileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
           // 守卫基 = 首个 optional hop 的 object 读；删键链从 $removeNullish
           // 收窄后的守卫基重建（守卫抽象时 sum 的 nullish 成员不得进 del 臂，
           // 否则误记 may-throw——原生 delete o?.a 恒不抛）
           const guardSrc = guardLayer === 0 ? path.rootSrc : readPrefix(path, guardLayer - 1);
+          // narrow / 前缀路径只作**读**用（$get / $set 的基读）——rootTarget
+          // 沿用外层根的裸绑定名（写回目标永远是外层根）。
           const narrow: MemberPath = {
             rootSrc: `$removeNullish(${guardSrc})`,
+            rootTarget: path.rootTarget,
             layers: path.layers.slice(guardLayer),
+            rootRebindable: path.rootRebindable,
           };
           const narrowParent =
             narrow.layers.length >= 2
@@ -258,11 +242,16 @@ export function emitArrMutatorRebinds(
             guardLayer === 0
               ? innerDel
               : setPathSrc(
-                  { rootSrc: path.rootSrc, layers: path.layers.slice(0, guardLayer) } as MemberPath,
+                  {
+                    rootSrc: path.rootSrc,
+                    rootTarget: path.rootTarget,
+                    layers: path.layers.slice(0, guardLayer),
+                    rootRebindable: path.rootRebindable,
+                  } as MemberPath,
                   innerDel,
                 );
           lines.push(
-            `${pad}${path.rootSrc} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
+            `${pad}${path.rootTarget} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
           );
         }
       }
@@ -284,38 +273,23 @@ export function emitArrMutatorRebinds(
       (node.arguments[0] as { type?: string }).type === "Identifier"
     ) {
       const mName = (node.callee.property as { name: string }).name;
-      const argName = (node.arguments[0] as { name: string }).name;
+      // Bug 179：实参取**求值源**而非标识符文本——自由标识符（`undefined` /
+      // `eval` / `Math`…）在生成代码里是宿主全局值而非 Abs，传进运行时会在
+      // `.shape` 上抛 TypeError（凭空抛）。且**不生成赋值**——`eval = …` /
+      // `arguments = …` 在 strict 模式是 SyntaxError（整模块中止 ⇒ 契约从
+      // ERROR 降级成 WARNING ⇒ 门禁假绿）；lastIndex 改为**就地**写
+      // （$reStateCall 就地改槽），无需重绑根绑定。
+      const argSrc = emitTranspileExpression(node.arguments[0] as Expression, opts);
       const subjSrc = emitTranspileExpression(node.callee.object as Expression, opts);
-      lines.push(`${pad}${argName} = $reStateCall(${argName}, ${JSON.stringify(mName)}, [${subjSrc}]);`);
+      lines.push(`${pad}$reStateCall(${argSrc}, ${JSON.stringify(mName)}, [${subjSrc}]);`);
     }
     // 自增/自减：标识符前/后缀均在表达式内自包含写回
     //（后缀缓存 ToNumeric 旧值），本 pass 不得再补写回——否则双倍自增。
-    // 成员目标（o.n++/++o.n）前后缀表达式值由表达式给出，写回在此统一补
-    //（成员路径无匿名临时量，表达式内无法安全写回）。
-    // 写回必须走 $updateAdd/$updateSub（ToNumeric ± 1），不得 $add 字符串拼接。
-    if (
-      node.type === "UpdateExpression" &&
-      (node as { argument?: unknown }).argument
-    ) {
-      const arg = (node as { argument: unknown }).argument as {
-        type?: string;
-        name?: string;
-        object?: Node;
-        property?: Node;
-        computed?: boolean;
-      };
-      const fn = (node as { operator?: string }).operator === "++" ? "$updateAdd" : "$updateSub";
-      if (arg.type === "MemberExpression") {
-        const path = memberPathOf(
-          arg as unknown as { object: Node; property: Node; computed: boolean },
-          opts,
-        );
-        if (path) {
-          const readSrc = readPathSrc(path);
-          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, `${fn}(${readSrc})`)};`);
-        }
-      }
-    }
+    // 成员目标（o.n++/++o.n）同样**自包含**（Bug 155：一次 Get + 一次 Put，
+    // getter 只读一次）——本 pass 也不得再补写回（否则双倍自增 / 读两遍）。
+    // 注：成员臂的写回下沉到表达式内后，语句位不再有任何自增写回；私有名
+    // 目标（this.#x++）本就自包含（memberPathOf 对 PrivateName 返回 null）。
+    // 成员目标的自增/自减写回已下沉到表达式内（自包含）——本 pass 不再补写。
     for (const key of Object.keys(node)) {
       if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
       if (key === "callee" || key === "property") continue; // 已处理 receiver
@@ -337,6 +311,12 @@ export function emitDestructure(
   out: string[],
   tmpSeq: { n: number },
 ): void {
+  // Bug 181：解构临时名与**用户标识符**避让——共享计数器推过用户占用的
+  // `_d{n}` / `_n{n}` 序号（statement.ts 的 `_d{n}` 与此处的 `_n{n}` 共用
+  // 同一计数器 `n++`）。用户自己声明 `_d0` 时，生成码的 `const _d0` 会与
+  // 用户声明重复（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为 unknown），
+  // 在函数体内还会**遮蔽**模块级同名绑定（错值）。
+  bumpDestrTmpSeq(tmpSeq, userIdentInfoOf(opts));
   // 赋值解构（kw 为空）写 const 绑定 → TypeError；声明解构走 kw（let/const）
   const assignName = (name: string): void => {
     if (kw === "" && isConstAssignTarget(name, opts)) {
@@ -351,6 +331,8 @@ export function emitDestructure(
   }
   if (pattern.type === "ObjectPattern") {
     const namedKeys: string[] = [];
+    /** Bug 160：动态计算键的临时绑定名（rest 排除集用——原生按**求值后的键**排除） */
+    const computedKeyNames: string[] = [];
     let restName: string | undefined;
     let restMember: Node | undefined;
     for (const prop of pattern.properties) {
@@ -363,26 +345,39 @@ export function emitDestructure(
         continue;
       }
       if (prop.type !== "ObjectProperty") continue;
-      const key = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+      // Bug 160：计算键的**裸标识符**是**表达式**（`{ [k]: v }` 读 o[k]），
+      // 不得取标识符的源码名当键——此前读 o["k"]（恒 undefined）且 k 从未
+      // 求值。staticKeyOf 只看节点 type/name，不看 computed ⇒ 须在此分流。
+      const keyNode = prop.key as { type?: string; name?: string; value?: unknown };
+      const isComputed = (prop as { computed?: boolean }).computed === true;
+      const keyIsComputedIdent = isComputed && keyNode.type === "Identifier";
+      const key = keyIsComputedIdent ? null : staticKeyOf(keyNode);
       // Bug 47：计算键不得静默丢绑定（target 变自由标识符 → 值域腐化 +
       // 裸读 ReferenceError 面）。[Symbol.X] → "@@X" 投影（镜像对象字面量
       // 计算键 / 成员读写口径）；其余计算键经 $idx 计算读（键不可判定 →
       // 槽并 undefined，sound 过近似）。
-      const isComputed = (prop as { computed?: boolean }).computed === true;
       const symKey =
         key === null && isComputed
           ? symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0])
           : null;
-      const computedKeySrc =
-        key === null && symKey === null && isComputed
-          ? emitTranspileExpression(prop.key as Expression, opts)
-          : null;
+      // Bug 160：计算键表达式**只求值一次**（原生求值一次，读与 rest 排除集
+      // 共用同一值）→ 绑定临时量，读与排除集都引它。
+      let computedKeySrc: string | null = null;
+      if (key === null && symKey === null && isComputed) {
+        const t = `_n${tmpSeq.n++}`;
+        out.push(`${pad}const ${t} = ${emitTranspileExpression(prop.key as Expression, opts)};`);
+        computedKeySrc = t;
+        computedKeyNames.push(t);
+      }
       if (key === null && symKey === null && computedKeySrc === null) continue;
       const keyLit = key !== null ? JSON.stringify(key) : symKey;
       if (keyLit !== null) namedKeys.push(JSON.parse(keyLit));
       // 键读取源：静态/符号投影键走 $get；抽象计算键走 $idx
+      // Bug 149：符号投影键带 symbolKey 标记——陷阱边界把 "@@X" 还原成真 symbol
       const readSrc =
-        keyLit !== null ? `$get(${fromSrc}, ${keyLit})` : `$idx(${fromSrc}, ${computedKeySrc})`;
+        keyLit !== null
+          ? `$get(${fromSrc}, ${keyLit}${symKey !== null ? ", { symbolKey: true }" : ""})`
+          : `$idx(${fromSrc}, ${computedKeySrc})`;
       if (prop.value.type === "AssignmentPattern") {
         const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
@@ -394,6 +389,14 @@ export function emitDestructure(
               `${pad}${kw} ${left.name} = $orDefault(${readSrc}, () => ${def});`,
             );
           }
+        } else if (left.type === "MemberExpression") {
+          // Bug 162：**成员目标**带默认值（`({ a: o.x = 1 } = src)`）——写回
+          // 不能丢。此前只认 Identifier / 子模式：成员目标落进「嵌套 + 默认」
+          // 分支后被当子模式递归，成员写回**静默丢弃** ⇒ 目标成员保持旧值
+          // （错值；原生是「读属性 → undefined 取默认 → 写回目标成员」）。
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault(${readSrc}, () => ${def});`);
+          emitMemberTargetAssign(left as Node, t, pad, opts, out);
         } else {
           // 嵌套 + 默认：const { a: { b } = {} } = o
           const t = `_n${tmpSeq.n++}`;
@@ -419,23 +422,19 @@ export function emitDestructure(
         emitMemberTargetAssign(prop.value as Node, readSrc, pad, opts, out);
       }
     }
+    // Bug 160：rest 排除集 = 静态键名 + **动态计算键的求值结果**（原生按
+    // 求值后的键排除；此前只排静态名 → 计算键仍留在 rest 里）。
+    const dropList = [...namedKeys.map((k) => JSON.stringify(k)), ...computedKeyNames];
+    const restSrc = `$objRest(${fromSrc}, [${dropList.join(", ")}])`;
     if (restName) {
       if (kw === "" && isConstAssignTarget(restName, opts)) {
         out.push(`${pad}$throwConstAssign();`);
       } else {
-        out.push(
-          `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
-        );
+        out.push(`${pad}${kw} ${restName} = ${restSrc};`);
       }
     } else if (restMember) {
       // rest 成员目标写回（namedKeys 须循环收齐后再算 $objRest）
-      emitMemberTargetAssign(
-        restMember,
-        `$objRest(${fromSrc}, ${JSON.stringify(namedKeys)})`,
-        pad,
-        opts,
-        out,
-      );
+      emitMemberTargetAssign(restMember, restSrc, pad, opts, out);
     }
     return;
   }
@@ -444,7 +443,27 @@ export function emitDestructure(
     // 逐项 $idx / $arrRest 投影前先过迭代性守卫（Bug 7：`const [x] = 1` /
     // `= {}` definite，抽象接收者 may）；字符串/元组等可迭代接收者与对象
     // 模式（$get 路径）不受影响。fromSrc 是临时名/绑定名，重复求值无副作用。
-    out.push(`${pad}$iterCheck(${fromSrc});`);
+    //
+    // Bug 140：接收者是**用户 iterable**（对象带自有 `@@iterator` 槽，引擎
+    // 无其元素模型）时，元素按**迭代序**取（GetIterator + IteratorNext），
+    // 不是按索引读（$idx 读索引属性 ⇒ 与迭代序无关的错值 / 确定 undefined）。
+    // `$iterCheck` 兼做守卫与**迭代序元素读取器**：非用户 iterable → null ⇒
+    // 走既有 `$idx` / `$arrRest` 快速路径（tuple / 数组 / 字符串 / Set / Map /
+    // 生成器 / `$tpl` / 数组迭代器…逐字不变）。
+    //
+    // 取元素个数：模式有 n 个位置就取 n 个（原生空位也消耗一个迭代步）；
+    // 有 rest ⇒ 取到 done（运行时步数上界兜底，超界折 unknown）。
+    const hasRest = pattern.elements.some(
+      (el) => el !== null && el.type === "RestElement",
+    );
+    const uiReader = `_n${tmpSeq.n++}`;
+    out.push(
+      `${pad}const ${uiReader} = $iterCheck(${fromSrc}, ${hasRest ? -1 : pattern.elements.length});`,
+    );
+    const readAt = (i: number): string =>
+      `${uiReader} ? ${uiReader}.get(${i}) : $idx(${fromSrc}, $lit(${i}))`;
+    const readRest = (i: number): string =>
+      `${uiReader} ? ${uiReader}.rest(${i}) : $arrRest(${fromSrc}, ${i})`;
     let restName: string | undefined;
     let restAt = 0;
     pattern.elements.forEach((el, i) => {
@@ -460,7 +479,7 @@ export function emitDestructure(
         // spurious-throw 面（差分 FALSE-THROW）。
         if (el.argument.type === "ObjectPattern" || el.argument.type === "ArrayPattern") {
           const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $arrRest(${fromSrc}, ${i});`);
+          out.push(`${pad}const ${t} = ${readRest(i)};`);
           emitDestructure(el.argument, t, kw, pad, opts, out, tmpSeq);
           return;
         }
@@ -468,7 +487,7 @@ export function emitDestructure(
           // [...o.x] = src（赋值位 rest 成员目标）：成员写回，不得静默跳过
           emitMemberTargetAssign(
             el.argument as Node,
-            `$arrRest(${fromSrc}, ${i})`,
+            readRest(i),
             pad,
             opts,
             out,
@@ -485,13 +504,19 @@ export function emitDestructure(
       }
       if (el.type === "AssignmentPattern") {
         const def = emitTranspileExpression(el.right as Expression, opts);
-        const idx = `$idx(${fromSrc}, $lit(${i}))`;
+        const idx = readAt(i);
         if (el.left.type === "Identifier") {
           if (kw === "" && isConstAssignTarget(el.left.name, opts)) {
             out.push(`${pad}$throwConstAssign();`);
           } else {
             out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
           }
+        } else if (el.left.type === "MemberExpression") {
+          // Bug 162：成员目标 + 默认值（`[o.x = 1] = src`）——同对象模式分支：
+          // 写回不能丢（读 → undefined 取默认 → 写回目标成员）。
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
+          emitMemberTargetAssign(el.left as Node, t, pad, opts, out);
         } else {
           const t = `_n${tmpSeq.n++}`;
           out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
@@ -501,7 +526,7 @@ export function emitDestructure(
       }
       if (el.type === "ObjectPattern" || el.type === "ArrayPattern") {
         const t = `_n${tmpSeq.n++}`;
-        out.push(`${pad}const ${t} = $idx(${fromSrc}, $lit(${i}));`);
+        out.push(`${pad}const ${t} = ${readAt(i)};`);
         emitDestructure(el, t, kw, pad, opts, out, tmpSeq);
         return;
       }
@@ -509,18 +534,18 @@ export function emitDestructure(
         if (kw === "" && isConstAssignTarget(el.name, opts)) {
           out.push(`${pad}$throwConstAssign();`);
         } else {
-          out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
+          out.push(`${pad}${kw} ${el.name} = ${readAt(i)};`);
         }
       } else if (el.type === "MemberExpression") {
         // [o.x] = src：成员目标写回（不得静默跳过）
-        emitMemberTargetAssign(el as Node, `$idx(${fromSrc}, $lit(${i}))`, pad, opts, out);
+        emitMemberTargetAssign(el as Node, readAt(i), pad, opts, out);
       }
     });
     if (restName) {
       if (kw === "" && isConstAssignTarget(restName, opts)) {
         out.push(`${pad}$throwConstAssign();`);
       } else {
-        out.push(`${pad}${kw} ${restName} = $arrRest(${fromSrc}, ${restAt});`);
+        out.push(`${pad}${kw} ${restName} = ${readRest(restAt)};`);
       }
     }
   }
@@ -543,8 +568,23 @@ export function emitParamBinding(
   const prologue: string[] = [];
   const defaulted: number[] = [];
   let rest: string | undefined;
+  // Bug 181：共享解构临时名计数器（跨形参唯一）+ 与用户标识符避让。
+  // 此前每个形参各建一个 `{ n: 0 }` ⇒ 多个解构形参的 `_n{n}` 临时名互相
+  // 撞名（重复 const ⇒ SyntaxError ⇒ 整模块求值失败）。
+  const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  const userInfo = userIdentInfoOf(opts);
+  bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     if (p.type === "Identifier") {
+      // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——Babel 的
+      // TS 插件把它解析成普通 `Identifier("this")`（不是 TSParameterProperty）。
+      // 此前直接 `sig.push("this")` ⇒ 产物是 `function f(this, a) { … }`
+      // ⇒ `this` **不是合法形参名**（strict / sloppy 皆 SyntaxError）⇒
+      // `new Function` 抛 ⇒ **整个模块装载失败** ⇒ 求值面（case@ / entry@ /
+      // call@）全折 unknown。
+      // ⇒ 跳过（与 core 模型层 `formalParamsFromNodes` 同口径）。
+      // `this` 是 JS 保留字，不可能有同名真形参 ⇒ 名字判定即可。
+      if (p.name === "this") return;
       sig.push(p.name);
       return;
     }
@@ -553,37 +593,48 @@ export function emitParamBinding(
         rest = p.argument.name;
         return;
       }
-      const ph = `_rest${i}`;
+      const ph = safeTmpName(`_rest${i}`, userInfo);
       rest = ph;
-      emitDestructure(p.argument, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      // Bug 161：形参绑定**可变**（原生 `function f([...a]) { a = 5; }` 合法）
+      // ——此前按 const 发射 ⇒ 体内再赋抛 TypeError（假红 + 错值）。
+      emitDestructure(p.argument, ph, "let", pad, opts, prologue, tmpSeq);
       return;
     }
-    const ph = `_p${i}`;
+    const ph = safeTmpName(`_p${i}`, userInfo);
     sig.push(ph);
     if (p.type === "AssignmentPattern") {
-      defaulted.push(i);
+      // `defaulted` 的语义是 **sig 下标**（见上方注释「sig 下标里默认参
+      // （AssignmentPattern）占位的位置」）。此前用**形参下标** `i`——
+      // 二者此前恰好相等，但跳过 `this` 形参（Bug 397）后两者会错位一位
+      // ⇒ 宿主签名的 `= void 0` 落错位置 ⇒ 默认参语义被挪到别的形参上。
+      defaulted.push(sig.length - 1);
       const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
-        prologue.push(`${pad}const ${p.left.name} = $orDefault(${ph}, () => ${def});`);
+        // Bug 161：默认参绑定可变（原生 `function f(a = 1) { a = 5; }` 合法）
+        prologue.push(`${pad}let ${p.left.name} = $orDefault(${ph}, () => ${def});`);
       } else {
-        const t = `_pd${i}`;
+        const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      // Bug 161：形参解构绑定可变（原生可再赋）
+      emitDestructure(p, ph, "let", pad, opts, prologue, tmpSeq);
     }
   });
   return { sig, rest, prologue, defaulted };
 }
 
 /**
- * 从 `$arguments` 槽（`__nudoArgs`）绑定形参——FunctionExpression 走
+ * 从 `$arguments` 槽（基名 `__nudoArgs`）绑定形参——FunctionExpression 走
  * `(...__allArgs)` 收齐全量实参时用。Identifier/默认参/解构/rest 与
  * emitParamBinding 同语义，但读 `$idx(__nudoArgs, i)` 而不是 JS 形参。
  * 返回 rest 名与 prologue；namedCount 供 $arrRest 切片。
+ *
+ * Bug 1058：`argsSrc` 是**调用点算出的**槽名（可能已避开用户标识符改名为
+ * `__nudoArgs_1`）⇒ 槽的声明处与此处读同一名 ⇒ 配对不漂。
  */
 export function emitParamBindingFromArgs(
   params: Node[],
@@ -597,21 +648,33 @@ export function emitParamBindingFromArgs(
   // rest 绑定是否已在 RestElement 处提前发射（模式 rest 参的 destructure
   // 行引用 `_rest{i}`，尾置绑定 = TDZ ReferenceError）
   let restBoundEarly = false;
+  // Bug 181：共享解构临时名计数器 + 与用户标识符避让
+  const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  const userInfo = userIdentInfoOf(opts);
+  bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
+    // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——它**不占
+    // 实参位**（原生 `function f(this: T, a)` 的首参就是 `a`）⇒ 既不进
+    // 形参绑定，也不进 `namedCount`。
+    if (p.type === "Identifier" && p.name === "this") return;
     if (p.type === "RestElement") {
       if (p.argument.type === "Identifier") {
         rest = p.argument.name;
       } else {
-        rest = `_rest${i}`;
+        rest = safeTmpName(`_rest${i}`, userInfo);
         restBoundEarly = true;
         // rest 语法上必为末参 → namedCount 此处已终值
         prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
-        emitDestructure(p.argument, rest, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        // Bug 161：形参 rest 绑定可变
+        emitDestructure(p.argument, rest, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
     namedCount++;
-    const idxSrc = `$idx(${argsSrc}, $lit(${i}))`;
+    // 实参位 = **实参数组**的下标 ⇒ 用 `namedCount - 1`（本形参之前的实参
+    // 个数），**不是**形参下标 `i`——跳过 `this` 形参（Bug 397）后两者会
+    // 错位一位 ⇒ 实参会被绑到错的形参上。
+    const idxSrc = `$idx(${argsSrc}, $lit(${namedCount - 1}))`;
     if (p.type === "Identifier") {
       prologue.push(`${pad}let ${p.name} = ${idxSrc};`);
       return;
@@ -621,14 +684,15 @@ export function emitParamBindingFromArgs(
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${idxSrc}, () => ${def});`);
       } else {
-        const t = `_pd${i}`;
+        const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        // Bug 161：默认参的解构绑定可变
+        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, idxSrc, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      emitDestructure(p, idxSrc, "let", pad, opts, prologue, tmpSeq);
     }
   });
   if (rest && !restBoundEarly) {
@@ -639,24 +703,167 @@ export function emitParamBindingFromArgs(
 
 /** 收集语句/表达式里以 Identifier 为 receiver 的数组 mutator 名 */
 
+/**
+ * Bug 1151-b：fork 协议**内部临时名**的共享分配结果。
+ *
+ * 字段与基名一一对应（实际名经 `internalTmpNameSet` / `internalTmpName`
+ * 分配——避开用户标识符词形）。
+ */
+export interface ForkTmpNames {
+  /** 快照名（基名 `__fk0_${n}`） */
+  snap: readonly string[];
+  /** cons 臂槽位名（基名 `__fk1_${n}`） */
+  arm1: readonly string[];
+  /** alt 臂槽位名（基名 `__fk2_${n}`） */
+  arm2: readonly string[];
+  /** cons 臂 set 标志（基名 `__fk1_set_${n}`） */
+  arm1Set: readonly string[];
+  /** alt 臂 set 标志（基名 `__fk2_set_${n}`） */
+  arm2Set: readonly string[];
+  /** 臂内 continue 标志（基名 `__cont`） */
+  cont: string;
+  /** 测试载体（基名 `__fkT`） */
+  test: string;
+  /** fork 结果载体（基名 `__fkR`） */
+  result: string;
+}
+
+/**
+ * Bug 1151-b：fork 协议的**内部临时名分配器**（`__fk0_${n}` / `__fk1_${n}` /
+ * `__fk2_${n}` / `__fk1_set_${n}` / `__fk2_set_${n}` / `__cont` / `__fkT` /
+ * `__fkR`）。
+ *
+ * 此前这些名字一律**写死** ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
+ * - **遮蔽**：`const __fk0_a = $copy(a)`（快照）遮蔽用户同名绑定 ⇒ 臂内
+ *   `out = __fk0_a` 读到的是引擎快照值（**自信错值** ⇒ 闸门**假绿**）；
+ *   `let __cont = true`（臂标志）遮蔽用户同名绑定 ⇒ 同上（读出 `true`）；
+ * - **重复声明**：模块级同名 ⇒ 产物不是合法 JS ⇒ `new Function` 编译期
+ *   SyntaxError ⇒ 整模块 fail-closed（导出退化 unknown ⇒ 闸门**假绿**）。
+ *
+ * 口径与 Bug 1058/1059 / 1127 / 1146 / 1149 / 1151-a **同款**
+ * （`internalTmpNameSet` = 源文本词形 ∪ `opts.userIdents` 避让集；撞名加
+ * `_k` 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一 opts ⇒ 同一
+ * 批名 ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
+ *
+ * ⚠ **成对一致是硬约束**：同一批名字在「声明点」与「**全部**引用点」必须
+ * 同名 ⇒ 声明点（`forkBindingDecls`）与引用点（`forkArmThunk` /
+ * `forkJoinBindings` / `stmt/statement.ts` 与 `stmt/fn-body.ts` 的 inline
+ * `wrapArm` 副本）**一律走本分配器**（纯函数 + 确定性 ⇒ 两侧同名）。
+ */
+export function forkTmpNames(names: readonly string[], opts: TranspileOptions): ForkTmpNames {
+  const bases: string[] = [];
+  for (const n of names) bases.push(`__fk0_${n}`);
+  for (const n of names) bases.push(`__fk1_${n}`);
+  for (const n of names) bases.push(`__fk2_${n}`);
+  for (const n of names) bases.push(`__fk1_set_${n}`);
+  for (const n of names) bases.push(`__fk2_set_${n}`);
+  // 组内去重（`internalTmpNameSet`）：不同基名避让后可能落到同一个名字
+  // （例：用户绑定 `x` 与 `set_x` ⇒ 基名 `__fk1_set_x` 与 `__fk1_set_x`）。
+  const a = internalTmpNameSet(bases, opts);
+  const k = names.length;
+  return {
+    snap: a.slice(0, k),
+    arm1: a.slice(k, 2 * k),
+    arm2: a.slice(2 * k, 3 * k),
+    arm1Set: a.slice(3 * k, 4 * k),
+    arm2Set: a.slice(4 * k, 5 * k),
+    // 单例名（`__cont` / `__fkT` / `__fkR`）与批量族不同前缀 ⇒ 不会互撞。
+    cont: internalTmpName("__cont", opts),
+    test: internalTmpName("__fkT", opts),
+    result: internalTmpName("__fkR", opts),
+  };
+}
+
+/**
+ * Bug 1151-b：switch 协议的**内部临时名分配结果**（同 fork 族口径）。
+ *
+ * 基名：`__sw0_${n}`（基线快照）/ `__sw${i}_${n}`（第 i 臂槽位）/
+ * `__sw${i}set_${n}`（第 i 臂 set 标志）/ `__cont`（臂标志）/
+ * `__swD`（判别式载体）/ `__swR`（结果载体）/ `__p`（join 载体内数组）。
+ */
+export interface SwitchTmpNames {
+  /** 基线快照名（基名 `__sw0_${n}`） */
+  snap: readonly string[];
+  /** 各臂槽位名（基名 `__sw${i}_${n}`，i 从 1 起） */
+  arm: readonly (readonly string[])[];
+  /** 各臂 set 标志（基名 `__sw${i}set_${n}`，i 从 1 起） */
+  armSet: readonly (readonly string[])[];
+  /** 臂内 continue 标志（基名 `__cont`） */
+  cont: string;
+  /** 判别式载体（基名 `__swD`） */
+  disc: string;
+  /** switch 结果载体（基名 `__swR`） */
+  result: string;
+  /** join 载体内数组名（基名 `__p`） */
+  joinArr: string;
+}
+
+/**
+ * Bug 1151-b：switch 协议的**内部临时名分配器**（同 fork 族口径）。
+ *
+ * ⚠ **成对一致是硬约束**：臂槽位名在「声明点」（`decls`）与「引用点」
+ * （`wrapArmThunk` / `joins`）必须同名 ⇒ 两侧一律走本分配器。
+ */
+export function switchTmpNames(
+  names: readonly string[],
+  armCount: number,
+  opts: TranspileOptions,
+): SwitchTmpNames {
+  const bases: string[] = [];
+  for (const n of names) bases.push(`__sw0_${n}`);
+  for (let i = 1; i <= armCount; i++) for (const n of names) bases.push(`__sw${i}_${n}`);
+  for (let i = 1; i <= armCount; i++) for (const n of names) bases.push(`__sw${i}set_${n}`);
+  const a = internalTmpNameSet(bases, opts);
+  const k = names.length;
+  const arm: string[][] = [];
+  const armSet: string[][] = [];
+  let p = k;
+  for (let i = 0; i < armCount; i++) {
+    arm.push(a.slice(p, p + k));
+    p += k;
+  }
+  for (let i = 0; i < armCount; i++) {
+    armSet.push(a.slice(p, p + k));
+    p += k;
+  }
+  return {
+    snap: a.slice(0, k),
+    arm,
+    armSet,
+    cont: internalTmpName("__cont", opts),
+    disc: internalTmpName("__swD", opts),
+    result: internalTmpName("__swR", opts),
+    joinArr: internalTmpName("__p", opts),
+  };
+}
+
+/**
+ * fork 臂 thunk：臂入口把绑定恢复到快照基线，臂尾把结束态写入本臂槽位。
+ *
+ * @param arm 臂序（0 = cons 臂 / 1 = alt 臂）
+ */
 export function forkArmThunk(
   bodyLines: string[],
-  outPrefix: string,
+  arm: 0 | 1,
   names: string[],
+  opts: TranspileOptions,
 ): string {
+  const t = forkTmpNames(names, opts);
+  const slots = arm === 0 ? t.arm1 : t.arm2;
+  const sets = arm === 0 ? t.arm1Set : t.arm2Set;
   return [
     `() => {`,
-    ...names.map((n) => `  ${n} = $copy(__fk0_${n});`),
-    `  let __cont = true;`,
+    ...names.map((n, i) => `  ${n} = $copy(${t.snap[i]});`),
+    `  let ${t.cont} = true;`,
     `  try {`,
     ...bodyLines.map((l) => `    ${l}`),
     `  } catch (e) {`,
-    `    if ($isForkExit(e)) __cont = false;`,
+    `    if ($isForkExit(e)) ${t.cont} = false;`,
     `    throw e;`,
     `  } finally {`,
-    `    if (__cont) {`,
-    ...names.map((n) => `      __${outPrefix}${n} = ${n};`),
-    ...names.map((n) => `      __${outPrefix}set_${n} = true;`),
+    `    if (${t.cont}) {`,
+    ...names.map((n, i) => `      ${slots[i]} = ${n};`),
+    ...names.map((n, i) => `      ${sets[i]} = true;`),
     `    }`,
     `  }`,
     `}`,
@@ -664,19 +871,21 @@ export function forkArmThunk(
 }
 
 /** fork 绑定声明：snapshot（深拷贝——容器写已就地化，臂间必须状态隔离）+ 两臂槽位 + ran 标志 */
-export function forkBindingDecls(names: string[], pad = ""): string[] {
-  return names.flatMap((n) => [
-    `${pad}const __fk0_${n} = $copy(${n});`,
-    `${pad}let __fk1_${n}; let __fk2_${n};`,
-    `${pad}let __fk1_set_${n} = false; let __fk2_set_${n} = false;`,
+export function forkBindingDecls(names: string[], pad = "", opts: TranspileOptions): string[] {
+  const t = forkTmpNames(names, opts);
+  return names.flatMap((n, i) => [
+    `${pad}const ${t.snap[i]} = $copy(${n});`,
+    `${pad}let ${t.arm1[i]}; let ${t.arm2[i]};`,
+    `${pad}let ${t.arm1Set[i]} = false; let ${t.arm2Set[i]} = false;`,
   ]);
 }
 
 /** fork 后把各臂结束态 join 回绑定（仅 join **未**以 return/throw 退出的臂） */
-export function forkJoinBindings(names: string[], pad = ""): string[] {
+export function forkJoinBindings(names: string[], pad = "", opts: TranspileOptions): string[] {
+  const t = forkTmpNames(names, opts);
   return names.map(
-    (n) =>
-      `${pad}${n} = (__fk1_set_${n} && __fk2_set_${n}) ? $join(__fk1_${n}, __fk2_${n}) : (__fk1_set_${n} ? __fk1_${n} : (__fk2_set_${n} ? __fk2_${n} : ${n}));`,
+    (n, i) =>
+      `${pad}${n} = (${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}));`,
   );
 }
 

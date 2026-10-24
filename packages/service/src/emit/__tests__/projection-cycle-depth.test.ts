@@ -9,7 +9,8 @@
  *
  * - absToTSType：`/* nudo:truncated:* *\/ unknown`（合法 TS，过 tsc 门）
  * - absToSchemaNode：unknown 节点 + dropped 台账记 truncated
- * - denoteGuard：`/* nudo:truncated:* *\/ true`（合法 JS，new Function 可编译）
+ * - denoteGuard：`/* nudo:truncated:* *\/ true`（合法 TS——Bug 512 之后守卫产物
+ *   带类型标注，不再是纯 JS）
  * - serializeCaseArg：null（既有「不可表达」信号）
  */
 import { describe, it, expect, afterAll } from "vitest";
@@ -22,6 +23,7 @@ import { absToTSType } from "../dts-generator.ts";
 import { absToSchemaNode } from "../schema-generator.ts";
 import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
 import { serializeCaseArg } from "../case-emitter.ts";
+import { loadGeneratedModule } from "./fixtures.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -90,10 +92,11 @@ describe("cyclic Abs (evaluator-produced, DESIGN-001)", () => {
     expect(selfSlot?.node.k).toBe("unknown");
   });
 
-  it("guard source stays syntactically valid with a truncation comment", () => {
+  it("guard source stays syntactically valid with a truncation comment", async () => {
     const src = generateGuardFunctionFromAbs("isA", evaluatorCyclicAbs());
     expect(src).toContain("/* nudo:truncated:cycle */ true");
-    expect(() => new Function("data", src.replace(/^export function \w+/, "function guard"))).not.toThrow();
+    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    await expect(loadGeneratedModule(src)).resolves.toBeTruthy();
   });
 
   it("serializeCaseArg returns null (grammar cannot express a cycle)", () => {
@@ -119,10 +122,11 @@ describe("deep-but-acyclic Abs (200 levels, DESIGN-001)", () => {
     expect(dropped.some((d) => d.includes("truncated (depth)"))).toBe(true);
   });
 
-  it("guard source stays syntactically valid", () => {
+  it("guard source stays syntactically valid", async () => {
     const src = generateGuardFunctionFromAbs("isDeep", deepObjAbs(200));
     expect(src).toContain("/* nudo:truncated:depth */ true");
-    expect(() => new Function("data", src.replace(/^export function \w+/, "function guard"))).not.toThrow();
+    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    await expect(loadGeneratedModule(src)).resolves.toBeTruthy();
   });
 
   it("serializeCaseArg returns null beyond the budget", () => {

@@ -1,22 +1,36 @@
 /**
  * JSON.parse / JSON.stringify
+ *
+ * Invariants:
+ * - **brand 折叠是递归的**（Bug 327）：内建 brand（Date / Map / Set / RegExp /
+ *   Error 族 / TypedArray / 装箱 prim…）的 JSON 值域在**任意深度**折叠——
+ *   顶层与对象/数组成员同款（此前白名单只对顶层接收者生效 ⇒ 嵌套 brand 一律
+ *   落「may carry BigInt / circular / throwing toJSON」⇒ L1/L2 假红）。
+ * - **total ≠ 精确**：值不可知但恒不抛的 brand（TypedArray 家族：元素值未
+ *   建模）折 total（值域 partial），**不**折成 "{}"——那会造出自信的错值。
+ * - bigint 元素家族（BigInt64Array / BigUint64Array）原生**定抛** TypeError
+ *   ⇒ 不在 total 集（保持 may-throw 记账）。
+ * - reviver（parse）与 replacer（stringify）**两侧口径对称**（Bug 298）：
+ *   callable 回调**真执行**（副作用通道不丢），返回值域保守（unknown）。
  */
 import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown, litValue } from "../abs.ts";
-import { getSlot, setSlot } from "../objects.ts";
+import { getSlot, setSlot, coercionHookOf } from "../objects.ts";
 import { undefAbs, applyCallbackAbs } from "../hof.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
+import { classNameOfValue } from "../class-mark.ts";
 import { pTrue } from "../pred.ts";
-import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
+import { str, isBigintPrimAbs, mayCoerceThrowOperand, TYPED_ARRAY_ELEMENT } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
 import { isMatchArrayView } from "./regexp.ts";
 import { classInstanceInnerOf, classChainHasJsonUserFace } from "../exec/class-registry.ts";
 import { readProperty } from "./object.ts";
 import { accessorTable } from "../accessors.ts";
+import { boxedPrimitiveValue } from "./error/boxed.ts";
 
 const NOT_LITERAL = Symbol("nudo:not-literal");
 /** value 模式下 fn/symbol 子树：JSON 值域省略（obj 槽跳过 / 数组槽 null） */
@@ -51,14 +65,37 @@ const JSON_TOTAL_ERROR_BRANDS = new Set([
 ]);
 
 /**
- * Bug 17：闭内建 brand 的精确折叠。原生值：
- * - RegExp/Map/Set/WeakMap/WeakSet/ArrayBuffer 族/DataView/Error 族 →
- *   "{}"（零可枚举自有属性、无 toJSON）
- * - URL → '"' + href + '"'（URL.prototype.toJSON ≡ href，槽已携带）
- * - Date → toJSON ≡ toISOString（tv 槽精确折叠；Invalid → "null"）
- * 无折叠（用户 brand/未知名）→ undefined（调用方保持 may-throw 记账）。
+ * Bug 327：内建 brand 的 JSON 折叠三档。
+ * - exact：JSON 值**精确可知**（可嵌入父对象/数组）——RegExp/Map/Set 族/
+ *   Error 族 → {}；Date → toISOString 串（Invalid → null）；URL → href 串；
+ *   装箱 Number/String/Boolean → [[PrimitiveValue]] 折 prim。
+ * - total：恒不抛但**值不可知**——TypedArray 家族（整数索引属性对象的元素
+ *   值未建模；BigInt64/BigUint64 除外，见 opaque）。
+ * - opaque：不可折——用户 toJSON 面 / BigInt 元素家族（原生定抛 TypeError）。
+ *
+ * opts.plainObject：**replacer 路径**用（原生 SerializeJSONProperty 步骤 4
+ * ——toJSON 步已在其前做过）⇒ Date/URL 不再折 ISO/href，而是按零可枚举
+ * 自有属性折 {}（原生 SerializeJSONObject 的结果）。
  */
-function foldJsonTotalBrand(a: Abs): Abs | undefined {
+type JsonBrandFold = { k: "exact"; value: unknown } | { k: "total" } | { k: "opaque" };
+
+/**
+ * Bug 327：内建 brand 的 JSON 值域折叠（**单一事实源**——顶层接收者与
+ * 对象/数组**成员**共用；此前白名单只喂顶层 ⇒ 嵌套 brand 一律走保守
+ * may-throw 记账 ⇒ L1/L2 假红）。
+ *
+ * 原生事实（node 实测）：
+ * - RegExp / Map / Set / WeakMap / WeakSet / ArrayBuffer 族 / DataView /
+ *   Error 族 → "{}"（零可枚举自有属性、无 toJSON）；
+ * - Date → toJSON ≡ toISOString（Invalid Date → null）；
+ * - URL → toJSON ≡ href；
+ * - 装箱 Number/String/Boolean → 拆箱后的原始值（原生序列化 prim）；
+ * - TypedArray 家族 → 整数索引属性对象（元素值未建模 ⇒ 值域不可知，
+ *   但**恒不抛**）；
+ * - BigInt64Array / BigUint64Array → 元素是 bigint ⇒ 原生**定抛**
+ *   TypeError（"Do not know how to serialize a BigInt"）。
+ */
+function jsonBrandFold(a: Abs, opts?: { plainObject?: boolean }): JsonBrandFold | undefined {
   if (a.shape.k !== "brand") return undefined;
   const name = (a.shape as { name: string }).name;
   const inner = (a.shape as { shape: Abs }).shape;
@@ -68,7 +105,73 @@ function foldJsonTotalBrand(a: Abs): Abs | undefined {
     inner.shape.k === "obj" &&
     getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "toJSON")
   ) {
-    return undefined;
+    return { k: "opaque" };
+  }
+  if (name === "URL") {
+    if (opts?.plainObject) return { k: "exact", value: {} }; // toJSON 步已做 → 普通对象
+    const href =
+      inner && inner.shape.k === "obj"
+        ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
+        : undefined;
+    const hv = href ? litValue(href) : undefined;
+    if (hv?.ok && typeof hv.value === "string") return { k: "exact", value: hv.value };
+    return { k: "total" }; // 抽象 href → ISO/href 串域，恒 total
+  }
+  if (name === "Date") {
+    if (opts?.plainObject) return { k: "exact", value: {} }; // toJSON 步已做 → 普通对象
+    const tv = (a.shape as { tv?: number }).tv;
+    if (tv !== undefined) {
+      // toJSON ≡ toISOString；Invalid Date（NaN）→ null
+      if (Number.isNaN(tv)) return { k: "exact", value: null };
+      try {
+        return { k: "exact", value: new Date(tv).toISOString() };
+      } catch {
+        return { k: "opaque" }; // 越界 epoch → 原生 toISOString 抛 RangeError
+      }
+    }
+    return { k: "total" }; // 无 epoch 槽：ISO 串域，恒 total
+  }
+  if (name === "String" || name === "Number" || name === "Boolean") {
+    // 装箱 prim → [[PrimitiveValue]] 拆箱（原生序列化拆箱后的原始值）
+    const pv = boxedPrimitiveValue(a);
+    const v = pv ? litValue(pv) : undefined;
+    if (v?.ok && v.value !== undefined) return { k: "exact", value: v.value };
+    return { k: "total" }; // 抽象装箱值 → prim 值域，恒 total
+  }
+  if (JSON_TOTAL_BRANDS.has(name) || JSON_TOTAL_ERROR_BRANDS.has(name)) {
+    return { k: "exact", value: {} };
+  }
+  // TypedArray 家族：表项**自有**取（裸 table[name] 会命中
+  // Object.prototype.constructor / toString ⇒ 自信的错值）
+  const taEl = Object.prototype.hasOwnProperty.call(TYPED_ARRAY_ELEMENT, name)
+    ? TYPED_ARRAY_ELEMENT[name]
+    : undefined;
+  // TypedArray 家族：元素值未建模 ⇒ 值域不可知，但恒不抛（total）。
+  // bigint 元素家族（BigInt64/BigUint64）原生定抛 TypeError ⇒ opaque。
+  if (taEl === "number") return { k: "total" };
+  if (taEl === "bigint") return { k: "opaque" };
+  return { k: "opaque" };
+}
+
+/**
+ * Bug 327：内建 brand 的 **toJSON 步**（原生 SerializeJSONProperty 步骤 2
+ * ——toJSON **先于** replacer）。只有 Date / URL 有原生 toJSON（其余 brand
+ * 无 ⇒ replacer 收到 brand 本体）；Date 的 toJSON ≡ toISOString（Invalid
+ * Date → null）、URL 的 toJSON ≡ href。
+ */
+function jsonBrandToJsonAbs(a: Abs): Abs | undefined {
+  if (a.shape.k !== "brand") return undefined;
+  const name = (a.shape as { name: string }).name;
+  const inner = (a.shape as { shape: Abs }).shape;
+  if (name === "Date") {
+    const tv = (a.shape as { tv?: number }).tv;
+    if (tv === undefined) return undefined; // 抽象 epoch → 不可折
+    if (Number.isNaN(tv)) return jsonValueToAbs(null);
+    try {
+      return strLit(new Date(tv).toISOString());
+    } catch {
+      return undefined; // 越界 epoch → 原生 toISOString 抛 RangeError（不折）
+    }
   }
   if (name === "URL") {
     const href =
@@ -76,21 +179,31 @@ function foldJsonTotalBrand(a: Abs): Abs | undefined {
         ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
         : undefined;
     const hv = href ? litValue(href) : undefined;
-    if (hv?.ok && typeof hv.value === "string") return strLit(JSON.stringify(hv.value));
-    return str("path"); // 抽象输入：href 域 string，恒 total
-  }
-  if (name === "Date") {
-    const tv = (a.shape as { tv?: number }).tv;
-    if (tv !== undefined) {
-      // toJSON ≡ toISOString；Invalid Date（NaN）→ null
-      return Number.isNaN(tv) ? strLit("null") : strLit(JSON.stringify(new Date(tv).toISOString()));
-    }
-    return str("path"); // 无 epoch 槽：ISO 串域，恒 total
-  }
-  if (JSON_TOTAL_BRANDS.has(name) || JSON_TOTAL_ERROR_BRANDS.has(name)) {
-    return strLit("{}");
+    if (hv?.ok && typeof hv.value === "string") return strLit(hv.value);
+    return undefined;
   }
   return undefined;
+}
+
+/**
+ * Bug 17：闭内建 brand 的精确折叠（顶层接收者专用——值已是 JSON 文本）。
+ * 成员位的 brand 走 absToJsonNative 的 brand 臂（折 JSON **值**，非文本）。
+ * - RegExp/Map/Set 族/Error 族 → "{}"
+ * - URL → '"' + href + '"'（URL.prototype.toJSON ≡ href，槽已携带）
+ * - Date → toJSON ≡ toISOString（tv 槽精确折叠；Invalid → "null"）
+ * 无折叠（用户 brand/未知名）→ undefined（调用方保持 may-throw 记账）。
+ */
+function foldJsonTotalBrand(a: Abs): Abs | undefined {
+  const fold = jsonBrandFold(a);
+  if (!fold) return undefined;
+  if (fold.k === "opaque") return undefined;
+  if (fold.k === "total") return str("path"); // 值不可知但恒 total：JSON 文本恒为串
+  try {
+    const s = JSON.stringify(fold.value);
+    return s === undefined ? undefined : strLit(s);
+  } catch {
+    return undefined; // 防御：bigint 载荷 → 原生 TypeError（调用方记 may-throw）
+  }
 }
 
 /**
@@ -109,6 +222,7 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
   const s = a.shape;
   if (a.term?.op === "lit") return true;
   if (s.k === "fn") return true; // OMIT（值域省略，不抛）
+  if (s.k === "eff") return true; // Promise / 生成器对象 → "{}"，恒不抛
   if (s.k === "prim") {
     const t = (s as { type?: string }).type;
     return t !== "bigint" && t !== "symbol"; // symbol → OMIT；bigint 已定抛
@@ -120,6 +234,13 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
     return s.elements.every((el) => jsonStringifyTotal(el, seen));
   }
   if (s.k === "arr") return jsonStringifyTotal((s as { element: Abs }).element, seen);
+  if (s.k === "brand") {
+    // Bug 327：内建 brand 的总性——精确可折（{} / ISO 串 / href / 拆箱 prim）
+    // 与「值不可知但恒不抛」（TypedArray 家族）皆 total；用户 toJSON 面 /
+    // bigint 元素家族（原生定抛）不 total。
+    const fold = jsonBrandFold(a);
+    return fold !== undefined && fold.k !== "opaque";
+  }
   if (s.k === "obj") {
     // Bug「match/exec 结果 JSON 视图」：match/exec 结果按数组序列化——
     // total 性只看下标元素（侧槽不进枚举面）
@@ -237,6 +358,25 @@ function absToJsonNative(
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (valueMode && s.k === "fn") return OMIT;
+  if (s.k === "eff") {
+    // Bug 327 顺带：Promise / 生成器**对象**（eff 形状）——原生既无自有
+    // 可枚举属性也无 toJSON ⇒ JSON.stringify 恒得 "{}" 且**恒不抛**
+    // （`JSON.stringify({p: Promise.resolve(1)})` → '{"p":{}}'）。此前 eff
+    // 无臂 ⇒ 落 NOT_LITERAL ⇒ 父层记 may-throw ⇒ **L1/L2 假红**。
+    // （内建 brand 臂只覆盖 brand 形状；Promise 是 eff 形状。）
+    return {};
+  }
+  if (s.k === "brand") {
+    // Bug 327：内建 brand 的 JSON 值（**成员位同款**——此前白名单只对顶层
+    // 接收者生效 ⇒ 嵌套 brand 落 NOT_LITERAL ⇒ 父层 may-throw 假红）。
+    // 精确可折 → 直接给 JSON 值；total 但值不可知（TypedArray 家族）→
+    // NOT_LITERAL（父层按不可折处理；总性由 jsonStringifyTotal 判定 ⇒
+    // 不记 may-throw）；opaque（用户 toJSON / bigint 元素）→ NOT_LITERAL
+    // ⇒ 保守 may-throw 记账。
+    const fold = jsonBrandFold(a);
+    if (fold?.k === "exact") return fold.value;
+    return NOT_LITERAL;
+  }
   if (s.k === "tuple") {
     // rest 槽有 0..n 个未知额外元素：折叠固定位会产出缺尾数组（非字面量）
     if ((a.shape as { rest?: Abs }).rest) return NOT_LITERAL;
@@ -364,7 +504,17 @@ function stringifyFnReplacer(
   // → 环 → 定抛
   const path = new Set<object>();
   const walk = (key: string, val: Abs): { kind: "val" | "omit" | "nonlit"; v?: unknown } => {
-    const r = applyCallbackAbs(rep, [strLit(key), val], replacerEnv(), pTrue, defaultLeakBudget);
+    // Bug 327：内建 brand 的 **toJSON 步**（原生 SerializeJSONProperty 步骤 2
+    // ——toJSON **先于** replacer）：Date → ISO 串、URL → href 串；其余 brand
+    // 无原生 toJSON（replacer 收到 brand 本体）。
+    const toJson = jsonBrandToJsonAbs(val);
+    const r = applyCallbackAbs(
+      rep,
+      [strLit(key), toJson ?? val],
+      replacerEnv(),
+      pTrue,
+      defaultLeakBudget,
+    );
     if (path.has(r as object)) throw new NudoThrow(errorTypeAbs("TypeError"));
     const t = r.term;
     if (t?.op === "lit") return { kind: "val", v: t.value };
@@ -372,6 +522,18 @@ function stringifyFnReplacer(
     if (s.k === "prim" && s.type === "symbol") return { kind: "omit" };
     if (isBigintPrimAbs(r)) throw new NudoThrow(errorTypeAbs("TypeError"));
     if (s.k === "fn") return { kind: "omit" };
+    if (s.k === "brand") {
+      // Bug 327：replacer 结果是内建 brand → 原生 SerializeJSONProperty
+      // 步骤 4（拆箱 / 普通对象序列化）：Map/Set 族/RegExp/Error 族/Date/URL
+      // → 零可枚举自有属性 → {}；装箱 prim → 拆箱后的原始值；TypedArray
+      // 家族 → 元素值未建模（值域不可知，深层键的 replacer 调用不可见
+      // ⇒ unseen 记账）。
+      const fold = jsonBrandFold(r, { plainObject: true });
+      if (fold?.k === "exact") return { kind: "val", v: fold.value };
+      partial = true;
+      unseen = true;
+      return { kind: "nonlit" };
+    }
     if (s.k === "tuple") {
       if ((s as { rest?: Abs }).rest) {
         partial = true;
@@ -479,6 +641,55 @@ function stringifyFnReplacer(
   }
 }
 
+/**
+ * Bug 298：JSON.parse 的 **callable reviver 逐键执行**（原生
+ * InternalizeJSONProperty 语义）。
+ *
+ * 原生步骤（ES2023 §25.5.1 InternalizeJSONProperty）：
+ * - 深度优先**后序**：先对每个子键递归（各调一次 reviver），再对本键调；
+ * - 根键 "" 也调一次 ⇒ 调用次数 = JSON 结构节点数（`[1,2]` → 3 次）；
+ * - reviver 返回 undefined → 该键被删除（数组槽留洞）；
+ * - holder = 根对象（reviver 的 this 恒为它——原生 `typeof this ===
+ *   "object"`）。
+ *
+ * 修前：reviver **一次都不执行** ⇒ 回调副作用（计数器 / 累加串 / 捕获变量
+ * 写）整体丢失，捕获变量保留**确定旧值**（引擎内部不对称：同文件的
+ * stringify replacer 却真执行）。
+ *
+ * 本函数只恢复**副作用通道**（调用次数 / 捕获变量的写 / this 绑定）；
+ * parse 的**值域**仍保守 unknown（逐键变换未建模——既有回归
+ * eval-json.test.ts「reviver arg stays conservative」与
+ * eval-object-json-w9.test.ts「callable reviver degrades to unknown」钉此
+ * 口径，见报告的「或至少」分支）。
+ */
+function runJsonReviver(root: unknown, rev: Abs): void {
+  // holder（原生是包着根值的对象）——reviver 的 this 恒为它
+  const holder = abs({ k: "obj", slots: Object.create(null) }, undefined, undefined, "exact");
+  const walk = (key: string, val: unknown): unknown => {
+    // 子键先（后序）——原生对每个自有可枚举键递归
+    if (val !== null && typeof val === "object") {
+      const obj = val as Record<string, unknown>;
+      for (const k of Object.keys(obj)) {
+        const nv = walk(k, obj[k]);
+        if (nv === undefined) delete obj[k];
+        else obj[k] = nv;
+      }
+    }
+    const r = applyCallbackAbs(
+      rev,
+      [strLit(key), jsonValueToAbs(val)],
+      replacerEnv(),
+      pTrue,
+      defaultLeakBudget,
+      holder,
+    );
+    const lv = litValue(r);
+    // 不可折的返回值 → 保留原值（值域本就保守，不参与建模）
+    return lv.ok ? lv.value : val;
+  };
+  walk("", root);
+}
+
 /** JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） */
 export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
   if (name === "parse") {
@@ -530,14 +741,26 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
             ? "null"
             : undefined;
     if (src === undefined) return unknown;
+    // 原生步骤序：parse（SyntaxError）**先于**一切 reviver 行为
+    let rawValue: unknown;
     try {
-      const parsed = jsonValueToAbs(JSON.parse(src));
-      // 解析成功后 reviver 才参与（原生步骤序：parse SyntaxError 先于一切
-      // reviver 行为）；非 callable reviver 原生忽略——保留折叠结果
-      return revTransforms ? unknown : parsed;
+      rawValue = JSON.parse(src);
     } catch {
       throw new NudoThrow(errorTypeAbs("SyntaxError"));
     }
+    // Bug 298：确定可调用的 reviver（fn 形）**真执行**——原生逐键调用，
+    // 回调副作用（计数器 / 累加串 / 捕获变量写 / this 绑定）不再整体丢失
+    // （修前 reviver 一次都不跑 ⇒ 捕获变量保留确定旧值）。reviver 抛错 →
+    // 原生传播（**不**转成 SyntaxError——解析已成功）。
+    if (rev && rev.shape.k === "fn") {
+      runJsonReviver(rawValue, rev);
+      // 值域仍保守 unknown（逐键变换未建模——见 runJsonReviver 头注）
+      return unknown;
+    }
+    // 非 callable reviver 原生忽略——保留折叠结果；抽象 reviver（any /
+    // unknown / sum / brand / eff / open obj）可能可调用 → 保守 unknown
+    const parsed = jsonValueToAbs(rawValue);
+    return revTransforms ? unknown : parsed;
   }
   if (name === "stringify") {
     // 顶层 undefined / function / symbol → 原生返回 undefined 值（非字符串）
@@ -553,6 +776,16 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       if (inner && brandName !== undefined && !classChainHasJsonUserFace(brandName)) {
         jsonArg = inner;
       }
+    }
+    // Bug 381：toJSON 步（原生 SerializeJSONProperty 步骤 2）——用户 toJSON
+    // 钩子**真调用**（与 Bug 381 的钩子调用面同口径）：钩子体的副作用
+    // （计数器 / 捕获变量写）与 throw 域随之而来；钩子体抛错 → NudoThrow
+    // 传播 ⇒ 用户 try/catch 可吸收（原生同款：必抛的 toJSON 必抛）。
+    // 原生顺序：toJSON **先于** replacer（步骤 2 先于步骤 3）——故此处
+    // （replacer 分支之前）替换被序列化的值。根键为 ""（原生同）。
+    const userToJson = coercionHookOf(a0Abs, "toJSON");
+    if (userToJson) {
+      jsonArg = userToJson.call([strLit("")]);
     }
     // Bug 59：callable replacer（fn 形）——原生对每个键（含根 ""）先调
     // replacer 再序列化其返回值；预提取（absToJsonNative）会先于 replacer
@@ -600,15 +833,25 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     if (replacerArg) {
       const rv = absToJsonNative(replacerArg, new Set(), false);
       if (rv === NOT_LITERAL || rv === OMIT) {
-        // Bug 59：NOT_LITERAL 的 replacer 可能 callable（any/unknown/brand/
-        // sum/host fn 字面量载荷）——原生逐键调用，may 抛；确定非 callable
+        // Bug 59：NOT_LITERAL 的 replacer 可能 callable（any/unknown/sum/
+        // host fn 字面量载荷）——原生逐键调用，may 抛；确定非 callable
         // （prim/tuple/never/闭 obj）不抛
+        //
+        // Bug 327 顺带：**brand 实例**（new Map() / new Date() / 用户类实例）
+        // 与 **eff**（Promise / 生成器对象）都**不可调用** ⇒ 原生
+        // SerializeJSONProperty 步骤 1「IsCallable(replacer)」为假 ⇒
+        // replacer 被**忽略** ⇒ 恒不抛。此前 brand/eff 一律记 may-throw ⇒
+        // **L1/L2 假红**（原生 `JSON.stringify({a:1}, new Map())` 无错）。
+        // brand 里**只有构造器**（class 值，markClassValue 标记）可调用
+        // （原生 `JSON.stringify({a:1}, Map)` 会逐键调 Map）⇒ 保留 may-throw。
+        const brandCallable =
+          replacerArg.shape.k === "brand" &&
+          classNameOfValue(replacerArg as object) !== undefined;
         if (
           replacerArg.shape.k === "any" ||
           replacerArg.shape.k === "unknown" ||
-          replacerArg.shape.k === "brand" ||
           replacerArg.shape.k === "sum" ||
-          replacerArg.shape.k === "eff" ||
+          brandCallable ||
           (replacerArg.shape.k === "obj" && (replacerArg.shape as { open?: boolean }).open === true)
         ) {
           recordMayThrow({

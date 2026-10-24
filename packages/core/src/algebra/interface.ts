@@ -30,7 +30,7 @@
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import type { Term } from "./term.ts";
-import { termToString } from "./term.ts";
+import { litKeyString, termEquals, termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
 import { identBoundaryRegex } from "./code-text.ts";
@@ -43,6 +43,7 @@ import {
 } from "./collector-scope.ts";
 import {
   type NudoConstraint,
+  type NudoField,
   isNudoConstraint,
   fnConstraintToEntryReqs,
   throwConstraintToKinds,
@@ -71,7 +72,14 @@ export { sidecarPathOf, isNodeModulesPath };
 // ---------------------------------------------------------------------------
 
 /** interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） */
-export type InterfaceDiag = { code: string; message: string; file?: string };
+export type InterfaceDiag = {
+  code: string;
+  message: string;
+  file?: string;
+  /** Bug 374：诊断位置（1-based 行 / 0-based 列；转发 refine 诊断时透传） */
+  line?: number;
+  column?: number;
+};
 
 /** 防长会话无界增长；消费方 takeInterfaceDiags 按批取走 */
 const MAX_INTERFACE_DIAGS = 1024;
@@ -123,6 +131,7 @@ export type InterfaceSource = "handwritten" | "generated" | "implicit";
 export { exportedNameOfLocal, generatedExportNames, localNamedExports } from "./scan-named-exports.ts";
 import { exportedNameOfLocal, generatedExportNames, localNamedExports } from "./scan-named-exports.ts";
 import { DIAG } from "./diag-codes.ts";
+import { extractNudoImportRecords } from "./directive-scan.ts";
 
 
 // ---------------------------------------------------------------------------
@@ -157,6 +166,14 @@ export type EffectiveInterface = {
    * nudo:interface-conflict 并跳过对应位执法。
    */
   conflict?: { params: string[]; returns?: boolean };
+  /**
+   * 合取**不可判定**标记（Bug 1141）：结构型组合（union / fn / 结构型∧标量…）
+   * 算不出交集 —— 不是「不可满足」（不标 conflict、既有义务继续执法），但
+   * **另一侧**的义务确实没被执法 ⇒ 显式报出（不得静默宽松）。
+   *
+   * 独立于 `conflict`：conflict 的语义是「矛盾 ⇒ 跳过该位执法」，两者不可混。
+   */
+  undecidable?: { params: string[]; returns?: boolean };
 };
 
 /** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
@@ -167,8 +184,14 @@ function isUnderProjectRoot(sidecarPath: string, projectDir: string): boolean {
   return sc === root || sc.startsWith(`${root}/`);
 }
 
-/** 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2） */
-function sidecarAutoBindAllowed(
+/**
+ * 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2）
+ *
+ * 导出（Bug 1124）：指纹侧（load-deps-fp.ts / check.ts）也须按同一资格判定
+ * ambient 侧车——autoBind 关闭时该侧车根本不会被绑定 ⇒ 指纹**不必**探测它
+ * （探测失败也不该升级成分析错误 ⇒ 门禁假红）。
+ */
+export function sidecarAutoBindAllowed(
   sidecarPath: string,
   autoBind: boolean | ((sidecarPath: string) => boolean) | undefined,
   projectDir?: string,
@@ -274,9 +297,168 @@ function noteSidecarLoadFailure(sidecarPath: string, reason: string): boolean {
   return true;
 }
 
+/**
+ * 已上报的侧车环签名（Bug 334：同一物理环只报一次）。
+ * 作用域化：交错分析不得互相清掉对方的去重表（与失败去重表同口径）。
+ */
+const sidecarCycleSlot = createScopedSlot<Set<string>>(() => new Set());
+registerCollectorScopeParticipant((body) => sidecarCycleSlot.runScoped(body));
+
+/**
+ * 已扫描过孤儿导出的侧车路径表（Bug 339：扫描按侧车做一次，不按源码函数做）。
+ */
+const sidecarOrphanScanSlot = createScopedSlot<Set<string>>(() => new Set());
+registerCollectorScopeParticipant((body) => sidecarOrphanScanSlot.runScoped(body));
+
 /** 与 resetNudoModuleExecCache 同口径：分析会话/测试间清空失败去重表 */
 export function resetSidecarLoadFailureCache(): void {
   sidecarLoadFailureSlot.get().clear();
+  // 已上报的侧车环签名同口径清空（否则同一文件二次检查时环诊断被吞）
+  sidecarCycleSlot.get().clear();
+  // 侧车孤儿导出扫描的「已扫描」表（每个侧车每次分析只扫一遍）
+  sidecarOrphanScanSlot.get().clear();
+}
+
+/** 环签名：同一物理环 = 同一链文本（两条通道的 message 只差前缀） */
+function sidecarCycleSignature(message: string): string | undefined {
+  const i = message.indexOf("sidecar import cycle:");
+  return i < 0 ? undefined : message.slice(i);
+}
+
+/**
+ * 同一物理侧车环只报一次（Bug 334）：ambient 加载通道与 `@nudo:import` 通道
+ * 各把同一个 `NudoSidecarError(nudo:interface-cycle)` 变成一条诊断 ⇒ 一个环
+ * = 两条同码 error（门禁摘要虚增一倍，假红放大）。签名取环链文本（两条通道
+ * 的 message 只差一个 "sidecar '…' failed to load: " 前缀）。非环诊断不参与
+ * 去重（恒 true）。
+ */
+function claimSidecarCycle(message: string): boolean {
+  const sig = sidecarCycleSignature(message);
+  if (sig === undefined) return true;
+  const seen = sidecarCycleSlot.get();
+  if (seen.has(sig)) return false;
+  seen.add(sig);
+  return true;
+}
+
+/**
+ * 源码能认领的侧车导出名集合（Bug 339 孤儿扫描的「已认领」侧）：
+ * - 同名（绑定直查口径）
+ * - 别名导出（`export { _c as class }` ⇒ 侧车导出名 class）
+ * - default（源侧 default 导出 ⇒ 侧车导出名 default）
+ * - `Class.method` / `Class_method` / 嵌套 `Class` 袋
+ * - `@nudo:import` 从**同一个侧车**引用的名字（模板/契约库导出不是孤儿）
+ * 含 "*" ⇒ 整个侧车导出面被 namespace import 认领（无孤儿可言）。
+ */
+function claimedSidecarNames(source: string, fromFile: string, sidecarPath: string): Set<string> {
+  const claimed = new Set<string>();
+  for (const name of localNamedExports(source)) {
+    claimed.add(name);
+    const aliasExport = exportedNameOfLocal(source, name);
+    if (aliasExport !== undefined) claimed.add(aliasExport);
+    if (isDefaultExportLocal(source, name)) claimed.add("default");
+    if (name.includes(".")) {
+      const [cls, method] = name.split(".", 2);
+      if (cls && method) {
+        claimed.add(`${cls}_${method}`);
+        claimed.add(cls);
+        claimed.add(method);
+      }
+    }
+  }
+  for (const rec of extractNudoImportRecords(source)) {
+    if (!rec.spec.startsWith(".") && !rec.spec.startsWith("/")) continue;
+    if (resolveDepPath(fromFile, rec.spec) !== sidecarPath) continue;
+    if (rec.names.some((n) => n.startsWith("*"))) {
+      claimed.add("*");
+      continue;
+    }
+    for (const local of rec.names) claimed.add(rec.importedOfLocal[local] ?? local);
+  }
+  return claimed;
+}
+
+/**
+ * 名字是否「像是打错一个字」：编辑距离 ≤ 1（多打/少打/打错一个字）。
+ *
+ * Bug 339 的诊断口径：侧车里没人认领的 fn() 契约**多数不是 bug**——契约库
+ * 侧车（供 `@nudo:import` 用的模板/工具条目）天然带一堆本文件用不到的导出；
+ * 只有「像是把源码函数名打错了一个字」才是真事故（契约被静默丢弃 ⇒ 形参
+ * 无义务 ⇒ 假绿 + 门禁冒假红）。用编辑距离把误报面收窄到「打错一字」。
+ */
+function looksLikeTypo(a: string, b: string): boolean {
+  if (a === b) return false;
+  // Levenshtein 距离（名字很短，O(n·m) 足够）
+  const prev = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(
+        prev[j]! + 1,
+        prev[j - 1]! + 1,
+        diag + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      diag = tmp;
+    }
+  }
+  return prev[b.length]! <= 1;
+}
+
+/**
+ * 侧车孤儿导出扫描（Bug 339）：侧车里有、源码里没人认领的 **fn() 契约** ⇒
+ * 该契约被**静默丢弃**（签名退化成 any、dts 类型错、门禁冒假红且修复提示
+ * 指向错误方向）。绑定是「拉取式」的（每个源码函数去问侧车「你叫这个名字
+ * 吗」），从不枚举侧车导出 ⇒ 没人认领的条目在系统里根本不存在。
+ *
+ * 口径：
+ * - 只有 **fn() 形态**的孤儿才算「契约被丢弃」——shape/array/union 模板是
+ *   `@nudo:import` 的料（没被 import 只是没用上，不是 bug）；已被
+ *   `@nudo:import` 认领的名字同样不算孤儿；
+ * - 只报「像是打错一字」的孤儿（looksLikeTypo）——契约库侧车里本文件用不到
+ *   的条目是常态，报了就是噪声（金标零假阳要求）。
+ */
+function reportOrphanSidecarExports(
+  sidecarSrc: string,
+  sidecarPath: string,
+  spec: string,
+  source: string,
+  fromFile: string,
+  loadModule: EffectiveInterfaceOpts["loadModule"],
+  exports: Record<string, unknown> | undefined,
+): void {
+  const scanned = sidecarOrphanScanSlot.get();
+  if (scanned.has(sidecarPath)) return;
+  const scNames = sidecarExportNames(sidecarSrc);
+  if (!scNames || scNames.size === 0) return;
+  const claimed = claimedSidecarNames(source, fromFile, sidecarPath);
+  if (claimed.has("*")) return;
+  const orphans = [...scNames].filter((n) => !claimed.has(n));
+  if (orphans.length === 0) return;
+  scanned.add(sidecarPath);
+  let exps = exports;
+  if (exps === undefined) {
+    try {
+      exps = execNudoModule(sidecarSrc, { loadModule, fromFile: sidecarPath });
+    } catch {
+      return; // 求值失败：失败诊断由绑定通道报（这里不重复）
+    }
+  }
+  const srcExports = [...localNamedExports(source)];
+  for (const name of orphans) {
+    const v = Object.hasOwn(exps, name) ? exps[name] : undefined;
+    if (!isNudoConstraint(v) || !v.fn) continue;
+    // 「像是打错一字」才是事故（契约被静默丢弃）；其余是契约库的正常条目。
+    const hint = srcExports.find((s) => looksLikeTypo(name, s));
+    if (hint === undefined) continue;
+    collectDiag({
+      code: DIAG.interfaceLoad,
+      message: `sidecar '${spec}' export '${name}' has no matching source function (source exports: ${srcExports.join(", ") || "(none)"}) — did you mean '${hint}'? the contract is not applied`,
+      file: sidecarPath,
+    });
+  }
 }
 
 function loadSidecarBinding(
@@ -313,14 +495,21 @@ function loadSidecarBinding(
   // #64：侧车只绑定部分源导出时，无关导出不得各自上报同一加载失败。
   // 先按导出名静态过滤；exec 失败也按 (路径, 原因) 去重，措辞不点名函数。
   const scNames = sidecarExportNames(sidecarSrc);
-  if (!sidecarMayBind(scNames, fnName, source)) return { ok: false };
+  if (!sidecarMayBind(scNames, fnName, source)) {
+    // 侧车里没有这个名字的绑定 ⇒ 顺手扫一遍孤儿导出（Bug 339：名字打错的
+    // 契约在这里被静默丢弃，签名退化成 any 且修复提示指向错误方向）。
+    reportOrphanSidecarExports(sidecarSrc, sidecarPath, spec, source, fromFile, loadModule, undefined);
+    return { ok: false };
+  }
   let exports: Record<string, unknown>;
   try {
     exports = execNudoModule(sidecarSrc, { loadModule, fromFile: sidecarPath });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     const code = e instanceof NudoSidecarError ? e.code : DIAG.interfaceLoad;
-    if (noteSidecarLoadFailure(sidecarPath, reason)) {
+    // 同一物理环只报一次（Bug 334）：@nudo:import 通道会先报同一条环，
+    // 这里按环链文本去重（一个环 ⇒ 一条 nudo:interface-cycle）。
+    if (noteSidecarLoadFailure(sidecarPath, reason) && claimSidecarCycle(reason)) {
       // 模块级失败：不写 for 'X'（读起来像 X 自身有问题）。
       // 影响面 = 侧车导出名 ∩ 源本地导出名（静态近似；exec 失败时无法枚举真实绑定）。
       let affected = 1;
@@ -343,6 +532,9 @@ function loadSidecarBinding(
     }
     return { ok: false };
   }
+  // 孤儿导出扫描（Bug 339）：本侧车可能还带着**没人认领**的 fn() 契约
+  // （名字打错 / 源码改名后遗留）⇒ 契约被静默丢弃。复用本次 exec 结果。
+  reportOrphanSidecarExports(sidecarSrc, sidecarPath, spec, source, fromFile, loadModule, exports);
   // C4.2 绑定键解析（全部按自有属性读：toString/constructor 等键裸读会踩
   // Object.prototype 原型链，把原型成员当侧车导出）：
   // 1. 平铺 `Class.method` / `Class_method`
@@ -351,7 +543,14 @@ function loadSidecarBinding(
   let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
   // 绑定键解析成功时的键（paramTexts 查询用，与 binding 解析同序）
   let bindingKey: string | undefined;
-  if (binding !== undefined) bindingKey = fnName;
+  // 侧车里**真实持有**该绑定的导出名（诊断点名用；Bug 359：别名 / default /
+  // Class_method 形态下侧车导出名 ≠ 源码函数名，点名源码函数名会让用户
+  // 去侧车里找一个根本不存在的导出）。
+  let bindingLabel: string | undefined;
+  if (binding !== undefined) {
+    bindingKey = fnName;
+    bindingLabel = fnName;
+  }
   // DESIGN-003：别名导出（`export { _c as class }`）的源码函数身份是本地名
   // _c，侧车契约身份是导出名 class——本地名查询按导出名桥接（旧侧车按本地
   // 名发射的形态仍走上方同名直查，两代侧车都可绑定）
@@ -360,22 +559,27 @@ function loadSidecarBinding(
     if (aliasExport !== undefined && Object.hasOwn(exports, aliasExport)) {
       binding = exports[aliasExport];
       bindingKey = aliasExport;
+      bindingLabel = aliasExport;
     }
   }
   if (binding === undefined && exports.default !== undefined && isDefaultExportLocal(source, fnName)) {
     binding = exports.default;
     bindingKey = "default";
+    bindingLabel = "default";
   }
   if (binding === undefined && fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
     if (Object.hasOwn(exports, `${cls}_${method}`)) {
       binding = exports[`${cls}_${method}`];
       bindingKey = `${cls}_${method}`;
+      bindingLabel = `${cls}_${method}`;
     }
     if (binding === undefined) {
       const bag = Object.hasOwn(exports, cls!) ? (exports[cls!] as Record<string, unknown> | undefined) : undefined;
       if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
         binding = Object.hasOwn(bag, method!) ? bag[method!] : undefined;
+        // 嵌套对象袋：侧车里真实存在的导出是 `cls`（袋本身），方法在袋内
+        bindingLabel = binding === undefined ? undefined : cls;
         // 嵌套对象袋形态无静态 fn() 登记（init 非 fn 调用）→ paramTexts 查不到，消费端回落 pred
       }
     }
@@ -393,10 +597,15 @@ function loadSidecarBinding(
     }
   }
   if (binding === undefined) return { ok: false };
+  // Bug 359：诊断点名**侧车里真实存在的导出名**（别名 / default / Class_method
+  // 形态下 ≠ 源码函数名），必要时同时给出源码函数名，避免用户照着点名去侧车
+  // 里找一个不存在的导出。
+  const boundExport = bindingLabel ?? fnName;
+  const srcFnSuffix = boundExport === fnName ? "" : ` (source function '${fnName}')`;
   if (!isNudoConstraint(binding)) {
     collectDiag({
       code: DIAG.interfaceLoad,
-      message: `sidecar '${spec}' export '${fnName}' is not a Nudo constraint`,
+      message: `sidecar '${spec}' export '${boundExport}' is not a Nudo constraint${srcFnSuffix}`,
       file: sidecarPath,
     });
     return { ok: false };
@@ -405,7 +614,7 @@ function loadSidecarBinding(
     // Phase 1 侧车绑定只承诺 fn() 形态；标量/shape 单参形态后续 Phase 放开
     collectDiag({
       code: DIAG.interfaceLoad,
-      message: `sidecar '${spec}' binding '${fnName}' is not fn() form (Phase 1 consumes only fn({ … }, …) bindings)`,
+      message: `sidecar '${spec}' binding '${boundExport}' is not fn() form (Phase 1 consumes only fn({ … }, …) bindings)${srcFnSuffix}`,
       file: sidecarPath,
     });
     return { ok: false };
@@ -464,9 +673,27 @@ function boundsOf(c: NudoConstraint): Bound[] {
   return out;
 }
 
-/** eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉 */
-function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null | undefined }> {
-  const out: Array<{ term: string; value: number | string | boolean | null | undefined }> = [];
+/**
+ * eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉。
+ *
+ * `lit` 一并带出（Bug 1122）：字面量同一性判定必须走 **SameValue 的 NaN 口径**
+ * （`===` + NaN 特例）——`NaN !== NaN` 恒真 ⇒ 用 `!==` 比字面量会把**同一个**
+ * `lit(NaN)` 约束判成「两个不同字面量」⇒ 单份契约自相矛盾（门禁假红）。
+ * 口径复用 `termEquals`（term.ts；与 domain-membership.ts 的 literalSame 同款）。
+ */
+function eqLitsOf(
+  c: NudoConstraint,
+): Array<{
+  term: string;
+  value: number | string | boolean | null | undefined;
+  /** 字面量项本体（同一性判定用 termEquals） */
+  lit: Term;
+}> {
+  const out: Array<{
+    term: string;
+    value: number | string | boolean | null | undefined;
+    lit: Term;
+  }> = [];
   const visit = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(visit);
@@ -475,18 +702,21 @@ function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | stri
     if (p.op !== "eq") return;
     let term: Term | undefined;
     let value: number | string | boolean | null | undefined;
+    let litTerm: Term | undefined;
     let hasLit = false;
     if (p.a.op === "var" && p.b.op === "lit") {
       term = p.a;
       value = p.b.value as number | string | boolean | null | undefined;
+      litTerm = p.b;
       hasLit = true;
     } else if (p.b.op === "var" && p.a.op === "lit") {
       term = p.b;
       value = p.a.value as number | string | boolean | null | undefined;
+      litTerm = p.a;
       hasLit = true;
     }
-    if (term !== undefined && hasLit) {
-      out.push({ term: termToString(term), value });
+    if (term !== undefined && litTerm !== undefined && hasLit) {
+      out.push({ term: termToString(term), value, lit: litTerm });
     }
   };
   c.preds.forEach(visit);
@@ -525,7 +755,9 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
   for (const x of eqA) {
     for (const y of eqB) {
       if (x.term !== y.term) continue;
-      if (x.value !== y.value) return true;
+      // 字面量同一性：SameValue 的 NaN 口径（termEquals）——`NaN !== NaN`
+      // 恒真 ⇒ 用 `!==` 会把同一个 lit(NaN) 判成冲突（Bug 1122 假红）。
+      if (!termEquals(x.lit, y.lit)) return true;
     }
   }
   for (const eq of eqA) {
@@ -538,14 +770,139 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
 }
 
 /**
+ * 单份契约**内部**自相矛盾（Bug 964）：同一约束节点里多条界互相矛盾
+ * （`number().gt(10).lt(5)` 归一化进同一节点的多个 pred）。
+ *
+ * 原来只在「两份契约合并」时做交叉比对（crossBoundConflict）⇒ 单份契约
+ * 自相矛盾零诊断（静默假绿：域为空却照样显示「x: number」，调用点也不报
+ * 任何东西）。口径与跨节点一致——把 a、b 取成同一个节点即可复用同一段
+ * 判定规则（常数界交叉 / eq 字面量冲突 / eq 与常数界互斥）。
+ */
+function selfBoundConflict(c: NudoConstraint): boolean {
+  return crossBoundConflict(c, c);
+}
+
+/**
+ * 非标量形态（shape / array / union / fn）：`and()` 在 Phase 1 不支持合取
+ * ——这是**能力边界**，不是「语义不可满足」。
+ */
+function isNonScalarForm(c: NudoConstraint): boolean {
+  const d = derefConstraint(c);
+  return d.fields !== undefined || d.element !== undefined || d.members !== undefined || d.fn !== undefined;
+}
+
+/**
+ * 结构型（shape）合取：**字段级合并**（Bug 1141）。
+ *
+ * 旧口径：任一侧是结构型就 `return prev` ⇒ 另一侧的字段义务被**整条丢掉**
+ * ⇒ 契约面比声明面**宽松** ⇒ 违约代码被放过（假绿）。典型：源码 shape
+ * {id:number()} ∧ 侧车 shape {id:number(),name:string()} ⇒ `name` 义务蒸发。
+ *
+ * 现在：两侧都是 shape ⇒ **逐字段合并**
+ * - 两侧都有的字段 ⇒ 递归合取（字段级判定语义不变）；
+ * - 只有一侧有的字段 ⇒ **保留**（被丢的那一侧补回来 ⇒ 义务不丢）。
+ *
+ * 返回 undefined = 不是「可合并的 shape 对」（交给调用方按其它形态处理）。
+ */
+function mergeShapeFields(
+  prev: NudoConstraint,
+  next: NudoConstraint,
+  onConflict: () => void,
+): NudoConstraint | undefined {
+  const a = derefConstraint(prev);
+  const b = derefConstraint(next);
+  if (a.fields === undefined || b.fields === undefined) return undefined;
+  // shape 只认 fields（element / members / fn 是别的形态，不可混）
+  if (a.element !== undefined || b.element !== undefined) return undefined;
+  if (a.members !== undefined || b.members !== undefined) return undefined;
+  if (a.fn !== undefined || b.fn !== undefined) return undefined;
+  // 带 preds 的不是纯 shape（合并不保语义）⇒ 不走这条路
+  if (a.preds.length > 0 || b.preds.length > 0) return undefined;
+  const fields: Record<string, NudoField> = Object.create(null);
+  for (const key of Object.keys(a.fields)) {
+    const fa = a.fields[key]!;
+    const fb = b.fields[key];
+    if (fb === undefined) {
+      fields[key] = fa;
+      continue;
+    }
+    fields[key] = {
+      constraint: conjoinOrConflict(fa.constraint, fb.constraint, onConflict),
+      // 交集语义：只有**两侧都**可选才算可选（任一侧要求 ⇒ 必填）
+      optional: fa.optional === true && fb.optional === true ? true : undefined,
+    };
+  }
+  for (const key of Object.keys(b.fields)) {
+    if (a.fields[key] !== undefined) continue;
+    fields[key] = b.fields[key]!;
+  }
+  return {
+    __nudoConstraint: true,
+    preds: [],
+    fields,
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
+}
+
+/**
+ * 数组合取：**元素级合并**（array(E1) ∧ array(E2) = array(E1 ∧ E2)）。
+ * 返回 undefined = 不是「可合并的数组对」。
+ */
+function mergeArrayElement(
+  prev: NudoConstraint,
+  next: NudoConstraint,
+  onConflict: () => void,
+): NudoConstraint | undefined {
+  const a = derefConstraint(prev);
+  const b = derefConstraint(next);
+  if (a.element === undefined || b.element === undefined) return undefined;
+  if (a.fields !== undefined || b.fields !== undefined) return undefined;
+  if (a.members !== undefined || b.members !== undefined) return undefined;
+  if (a.fn !== undefined || b.fn !== undefined) return undefined;
+  if (a.preds.length > 0 || b.preds.length > 0) return undefined;
+  return {
+    __nudoConstraint: true,
+    preds: [],
+    element: conjoinOrConflict(a.element, b.element, onConflict),
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
+}
+
+/**
  * 同参合一：and() 合取；不可合取（prim 不一致 / 非 shape 标量等 and()
  * throw）= 合取不可满足——onConflict 标记后保既有（消费方跳过执法）。
+ *
+ * Bug 340：and() throw 有**两类**语义，原实现一律当成「不可满足」：
+ * - 形态不支持（shape/array/union/fn 合取）——Phase 1 的能力边界，
+ *   两条约束**可能完全一致**（逐字相同的 shape 约束最常见）。
+ *   误报成 conflict ⇒ ①门禁假红（nudo:interface-conflict 说「不可满足」，
+ *   而实际只是合不了）②该形参的**义务被整条跳过** ⇒ 门禁假绿
+ *   （调用点不再校验，两条 bug 面同时打开）。
+ * - 语义真矛盾（prim 不一致：number() ∧ string()）——才是真 conflict。
+ *
+ * 现在只有第二类才标 conflict；第一类保留既有约束（prev）且**不**标
+ * conflict ⇒ 该形参的义务仍在（由 prev 执法），门禁不再假红。
+ *
+ * Bug 1141：结构型不得**静默丢掉**另一侧 ⇒ 先走字段级 / 元素级合并
+ * （shape∧shape、array∧array ⇒ 两侧义务都在）；合不了的形态组合
+ * （union / fn / 结构型∧标量…）⇒ 保 prev（能力边界 ≠ 语义不可满足 ⇒ 不标
+ * conflict）但**显式报出**（onUndecidable）——「另一侧没被执法」不得静默。
  */
 function conjoinOrConflict(
   prev: NudoConstraint,
   next: NudoConstraint,
   onConflict: () => void,
+  onUndecidable?: () => void,
 ): NudoConstraint {
+  // 结构型：字段级 / 元素级合并（Bug 1141）——义务不丢、不误报 conflict。
+  const merged = mergeShapeFields(prev, next, onConflict) ?? mergeArrayElement(prev, next, onConflict);
+  if (merged !== undefined) return merged;
+  // 形态不支持：不是矛盾 ⇒ 不标 conflict（保 prev，义务继续执法）；
+  // 但另一侧的义务**没被执法** ⇒ 显式报出（不得静默宽松，Bug 1141）。
+  if (isNonScalarForm(prev) || isNonScalarForm(next)) {
+    onUndecidable?.();
+    return prev;
+  }
   try {
     return andC(prev, next);
   } catch {
@@ -574,7 +931,18 @@ export function effectiveInterface(
   // 手写来源 ② ∪ 生成段：侧车同名自动绑定
   const sidecar = loadSidecarBinding(source, fnName, opts);
   for (const d of takeRefineDiagsSince(refineSince)) {
-    collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
+    // 同一物理侧车环只报一次（Bug 334）：ambient 加载通道已报过同链 ⇒ 跳过
+    // （否则一个环 = 两条同码 error，门禁摘要虚增一倍）。
+    if (!claimSidecarCycle(d.message)) continue;
+    // Bug 374：位置透传（refine 侧带行/列 ⇒ 转发时不得丢）——否则
+    // nudo:contract-syntax 在 check 面回落成「文件第 1 行第 1 列」。
+    collectDiag({
+      code: d.code,
+      message: d.message,
+      ...(d.file ? { file: d.file } : {}),
+      ...(d.line !== undefined ? { line: d.line } : {}),
+      ...(d.column !== undefined ? { column: d.column } : {}),
+    });
   }
   const sidecarFn = sidecar.ok ? sidecar.constraint : undefined;
   const sidecarParamTexts = sidecar.ok ? sidecar.paramTexts : undefined;
@@ -644,10 +1012,17 @@ export function effectiveInterface(
   // 并跳过该参执法），显示保源码行。
   const params = new Map<string, NudoConstraint>();
   const conflictParams: string[] = [];
+  /** 合取**不可判定**（结构型组合合不了）——Bug 1141：显式报出，不静默丢义务 */
+  const undecidableParams: string[] = [];
   for (const e of sourceEntries) {
     const prev = params.get(e.param);
     if (prev === undefined) {
       params.set(e.param, e.constraint);
+      // 单份契约内部自相矛盾（Bug 964）：原来只有「两份契约合并」才比对，
+      // 单份矛盾零诊断 ⇒ 静默假绿（域为空仍显示 x: number，调用点无义务）。
+      if (selfBoundConflict(e.constraint) && !conflictParams.includes(e.param)) {
+        conflictParams.push(e.param);
+      }
       continue;
     }
     // 源码双 refine 行：与「源码 × 侧车」同口径——常数界交叉与 and() throw
@@ -657,9 +1032,16 @@ export function effectiveInterface(
     }
     params.set(
       e.param,
-      conjoinOrConflict(prev, e.constraint, () => {
-        if (!conflictParams.includes(e.param)) conflictParams.push(e.param);
-      }),
+      conjoinOrConflict(
+        prev,
+        e.constraint,
+        () => {
+          if (!conflictParams.includes(e.param)) conflictParams.push(e.param);
+        },
+        () => {
+          if (!undecidableParams.includes(e.param)) undecidableParams.push(e.param);
+        },
+      ),
     );
   }
   if (sidecarFn !== undefined && !sidecarGenerated) {
@@ -669,11 +1051,25 @@ export function effectiveInterface(
         if (crossBoundConflict(prev, constraint) && !conflictParams.includes(param)) {
           conflictParams.push(param);
         }
-        params.set(param, conjoinOrConflict(prev, constraint, () => {
-          if (!conflictParams.includes(param)) conflictParams.push(param);
-        }));
+        params.set(
+          param,
+          conjoinOrConflict(
+            prev,
+            constraint,
+            () => {
+              if (!conflictParams.includes(param)) conflictParams.push(param);
+            },
+            () => {
+              if (!undecidableParams.includes(param)) undecidableParams.push(param);
+            },
+          ),
+        );
       } else {
         params.set(param, constraint);
+        // 单份契约内部自相矛盾（Bug 964）：侧车侧单份矛盾同样要报 conflict。
+        if (selfBoundConflict(constraint) && !conflictParams.includes(param)) {
+          conflictParams.push(param);
+        }
       }
     }
   }
@@ -684,14 +1080,25 @@ export function effectiveInterface(
   const r2 = sidecarFn !== undefined && !sidecarGenerated ? sidecarReturns : undefined;
   let returnsC: NudoConstraint | undefined;
   let conflictReturns = false;
+  /** 返回位合取不可判定（结构型组合）——Bug 1141：显式报出 */
+  let undecidableReturns = false;
   if (r1 !== undefined && r2 !== undefined) {
     if (crossBoundConflict(r1, r2)) conflictReturns = true;
-    returnsC = conjoinOrConflict(r1, r2, () => {
-      conflictReturns = true;
-    });
+    returnsC = conjoinOrConflict(
+      r1,
+      r2,
+      () => {
+        conflictReturns = true;
+      },
+      () => {
+        undecidableReturns = true;
+      },
+    );
   } else {
     returnsC = r1 ?? r2;
   }
+  // 返回位单份契约内部自相矛盾（Bug 964）：同上，域为空必须报出来。
+  if (returnsC !== undefined && selfBoundConflict(returnsC)) conflictReturns = true;
 
   return {
     fnName,
@@ -735,6 +1142,14 @@ export function effectiveInterface(
           conflict: {
             params: conflictParams,
             ...(conflictReturns ? { returns: true } : {}),
+          },
+        }
+      : {}),
+    ...(undecidableParams.length > 0 || undecidableReturns
+      ? {
+          undecidable: {
+            params: undecidableParams,
+            ...(undecidableReturns ? { returns: true } : {}),
           },
         }
       : {}),
@@ -828,7 +1243,18 @@ export function sidecarClosureFingerprint(
 
 function litToString(v: unknown): string {
   if (typeof v === "string") return JSON.stringify(v);
-  return String(v); // number / boolean / null
+  // bigint 保 n 后缀（与 format.ts 的 prim bigint 渲染同口径）：String(10n)
+  // = "10"，诊断里读起来就是 number 字面量 10（另一条契约）——`lit(10)` 与
+  // `lit(10n)` 必须可区分（Bug 361）。
+  if (typeof v === "bigint") return `${String(v)}n`;
+  // Bug 1065：`-0` 与 `0` 身份不同（Object.is / 1/x 可观察），而
+  // `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 侧车写的 `lit(-0)` 渲成 `lit(0)`
+  // ⇒ 诊断陈述的契约 ≠ 用户写的契约（自相矛盾），且 zod 产物面**比门禁宽**
+  // （产物写 `z.literal(0)`、门禁按 `lit(-0)` 判红 ⇒ 假绿）。
+  // ⇒ 复用仓库既有的保真口径 `litKeyString`（`./term.ts`：Object.is(v,-0) ⇒ "-0"）
+  // ——与 `format.ts` 的 prim bigint / -0 渲染同款判据。
+  if (typeof v === "number") return litKeyString(v);
+  return String(v); // boolean / null / undefined
 }
 
 /** length(self) 上的 ge/le 常数界 → n（否则 undefined） */
@@ -848,11 +1274,14 @@ function predToChain(p: Pred): string {
     case "le": {
       if (p.b.op !== "lit" || typeof p.b.value !== "number") break;
       if (p.a.op === "app" && p.a.fn === "length") {
-        if (p.op === "ge") return `.min(${p.b.value})`;
-        if (p.op === "le") return `.max(${p.b.value})`;
+        // Bug 1065（同族漏点，收口时一并补）：常数界也走 `litToString` 保真口径 ——
+        // `String(-0) === "0"` ⇒ `.min(-0)` / `.max(-0)` 会被渲成 `.min(0)` / `.max(0)`
+        // ⇒ 诊断陈述的契约 ≠ 用户写的契约（同 `litToString` 的根因）。
+        if (p.op === "ge") return `.min(${litToString(p.b.value)})`;
+        if (p.op === "le") return `.max(${litToString(p.b.value)})`;
         break;
       }
-      if (p.a.op === "var") return `.${p.op}(${p.b.value})`;
+      if (p.a.op === "var") return `.${p.op}(${litToString(p.b.value)})`;
       break;
     }
     case "eq": {
@@ -870,7 +1299,9 @@ function predToChain(p: Pred): string {
         ] as const) {
           const ge = lengthBound(x, "ge");
           const le = lengthBound(y, "le");
-          if (ge !== undefined && ge === le) return `.length(${ge})`;
+          // Bug 1065：常数界的渲染同 `litToString` 口径（`${ge}` 走 String(-0)==="0"
+          // ⇒ 负号被抹掉）⇒ 用 litToString 渲染（`-0` ⇒ "-0"）。
+          if (ge !== undefined && ge === le) return `.length(${litToString(ge)})`;
         }
       }
       return p.args.map(predToChain).join("");

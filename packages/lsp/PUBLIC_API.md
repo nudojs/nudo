@@ -90,9 +90,9 @@ to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 | `nudo/contract` | `nudo.contract` | tier lines |
 | `nudo/contract.draft` | `nudo.contract.draft` | draft summary |
 | `nudo/contract.emit` | `nudo.contract.emit` | emit summary |
-| `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
-| `nudo/selectContract` | `nudo.selectContract` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
-| `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` / `{ success: false, error, isError: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/selectContract` | `nudo.selectContract` | `{ success: true }` / `{ success: false, error, isError: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` / `{ success: false, error, isError: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
 
 **Consistency invariant (A7):** every slash-form request must have a matching
 executeCommand name (`nudo/X` ↔ `nudo.X`). Pinned by
@@ -108,12 +108,12 @@ documented agent tool names; values are the shared computation (E5 same-source).
 
 | Tool key | Shared source | Command / request |
 |----------|---------------|-------------------|
-| `whatIf` | `injectBindings + analyzeFile` | `nudo.whatIf` / `nudo/whatIf` |
-| `suggestCase` | `analyzeFile + buildCaseDirective` | `nudo.suggestCase` / `nudo/suggestCase` |
-| `trace` | `analyzeFile cases` | `nudo.trace` / `nudo/trace` |
-| `check` | `checkSource + serializeCheckJson` | `nudo.check` / `nudo/check` |
+| `whatIf` | `injectBindings + analyzeFileAsync` | `nudo.whatIf` / `nudo/whatIf` |
+| `suggestCase` | `analyzeFileAsync + buildCaseDirective` | `nudo.suggestCase` / `nudo/suggestCase` |
+| `trace` | `analyzeFileAsync cases` | `nudo.trace` / `nudo/trace` |
+| `check` | `checkSource + mergeCheckIssues + serializeCheckJson` | `nudo.check` / `nudo/check` |
 | `hover` | `getHoverAtPosition + interfaceTierOf` | `nudo.hover` / `nudo/hover` |
-| `test` | `analyzeFile + serializeCaseJson` | `nudo.test` / `nudo/test` |
+| `test` | `analyzeFileAsync + buildTestReport + serializeCaseJson` | `nudo.test` / `nudo/test` |
 | `contract` | `interfaceSurface + formatInterfaceSurfaceLine` | `nudo.contract` / `nudo/contract` |
 | `contract.draft` | `draftInterface + formatDraftSummary` | `nudo.contract.draft` / `nudo/contract.draft` |
 | `contract.emit` | `emitInterface` | `nudo.contract.emit` / `nudo/contract.emit` |

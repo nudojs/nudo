@@ -16,7 +16,7 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, litValue, bool, unknown } from "../../abs.ts";
+import { abs, litValue, bool, strLit, unknown } from "../../abs.ts";
 import { objOf } from "../../objects.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
@@ -160,6 +160,13 @@ export function makeIntlFormatAbs(sub: IntlSubCtor, locales: Abs | undefined): A
  * 成员读产出）。fn shape name "Intl.<Sub>" → $new 按名派发 evalBuiltinNew；
  * 调用面（原生 new 省略形 Intl.NumberFormat("en") ≡ new）走 apply 同一
  * 校验 builder。ctor facet true（typeof "function"、可 new）。
+ *
+ * Bug 332：fn **name** 属性原生是**子构造器名**（`Intl.NumberFormat.name`
+ * → "NumberFormat"，非 "Intl.NumberFormat"）。shape.name 是 $new 的**派发
+ * 键**（declare.ts 按 `cs.name` 派发 evalBuiltinNew——"Intl.NumberFormat"
+ * 命中 dispatch 的 case），不能改；改走**自有 name 槽**——member.ts 的
+ * dual-facet fn 静态槽臂（自有槽优先）在 shape.name 面之前 ⇒ 读面折
+ * "NumberFormat"，派发键仍是 "Intl.NumberFormat"（两口径互不干扰）。
  */
 export function makeIntlCtorAbs(sub: IntlSubCtor): Abs {
   return absFunction(
@@ -168,6 +175,10 @@ export function makeIntlCtorAbs(sub: IntlSubCtor): Abs {
       body: noBody,
       apply: (args) => makeIntlFormatAbs(sub, args[0]),
     },
-    { name: `Intl.${sub}`, ctor: true },
+    {
+      name: `Intl.${sub}`,
+      ctor: true,
+      slots: { name: { value: strLit(sub) } },
+    },
   );
 }

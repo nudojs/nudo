@@ -66,6 +66,13 @@ export const NUDO_AGENT_TOOL_NAMES = [
   "contract.emit",
 ] as const;
 
+// 注（Bug 783）：server 侧（`src/server.ts` 的 `onInitialize`）还声明了
+// `workspace` 能力键（`workspace.workspaceFolders.changeNotifications`）——
+// 客户端**只在**看到该声明时才会发 `workspace/didChangeWorkspaceFolders`
+// ⇒ 不声明 = 订阅形同虚设、工作区根集合永久冻结。本族（族 26）**未**把
+// `workspace` 写进下面这张表（四张冻结表本族零变更）；把该键并入冻结表属于
+// 「stable 键集变更」，需 owner 显式拍板后统一补表 + 补
+// `packages/lsp/PUBLIC_API.md` 一行。
 /** Capability keys declared in connection.onInitialize */
 export const NUDO_INITIALIZE_CAPABILITIES = [
   "textDocumentSync",

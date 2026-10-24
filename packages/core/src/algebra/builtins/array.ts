@@ -1,5 +1,21 @@
 /**
  * Array 构造 / Array.* 静态方法
+ *
+ * Invariants:
+ * - Bug 202：`Array.from(用户 iterable)` **实际驱动**用户迭代器（GetIterator
+ *   + IteratorNext，元素按迭代序取）——与 elemsOf / for-of / spread 同款
+ *   协议；迭代器报告 done ⇒ 元素数确切 ⇒ exact 元组。
+ * - Bug 195：`Array.isArray` 认**数组视图标注**（markMatchArrayView）的对象
+ *   ——标签模板对象是冻结的数组 exotic（原生 true）；RegExp exec/match
+ *   结果同款（原生亦是真数组）。
+ * - Bug 294：array-like 读数（length / 逐索引）**先经访问器侧表**
+ *   （accessorReadDomain）——真 getter 住侧表、shape 里只有占位槽；
+ *   裸读槽 ⇒ length 被当 undefined（折空数组）+ getter 副作用消失。
+ *   每次 Array.from 读一次 length / 每个索引（与原生同款）。
+ * - Bug 296：`Array.from(items, mapFn, thisArg)` 的**第三实参**透传给
+ *   回调（此前丢弃 ⇒ 回调 this 恒 undefined ⇒ 假抛 / 计数器归零）。
+ * - Bug 330：Array.prototype.{toString,toLocaleString,join} 接收者为
+ *   **nullish** ⇒ 定抛 TypeError（ToObject）——不记抛 ⇒ L2 门禁假绿。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
@@ -12,11 +28,12 @@ import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { markFreshInstance } from "../instance-id.ts";
 import { recordMayThrow } from "../may-throw.ts";
-import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf } from "../exec/match-iter.ts";
-import { iterabilityKind } from "../exec/runtime/containers/iterate.ts";
+import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
+import { iterabilityKind, $elems } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
+import { accessorKeysOf, accessorReadDomain } from "../accessors.ts";
 import { lit, v, type Term } from "../term.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
@@ -24,6 +41,11 @@ import { absFunction } from "../abs-fn.ts";
 import { boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
 import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
+// Bug 195：标签模板对象是**数组 exotic**（原生 GetTemplateObject →
+// CreateArrayFromList + SetIntegrityLevel(frozen)）⇒ Array.isArray(s) 恒 true。
+// 引擎用「数组视图」标注（markMatchArrayView——与 RegExp exec/match 结果
+// 同款机制，json.ts 消费）标记这类对象 ⇒ isArray 与该标注同口径。
+import { isMatchArrayView } from "./regexp.ts";
 
 export function makeArrayCtorAbs(args: Abs[]): Abs {
   /**
@@ -184,9 +206,22 @@ function evalArrayFrom(args: Abs[]): Abs {
   // validateCallableArg 定抛）。此前对 undefined-lit Abs 误当 mapper 应用于
   // applyCallbackValue → 假抛 TypeError（TypedArray.from Bug 37 同款口径）。
   const hasMapFn = !!mapFn && !(mapFn.term?.op === "lit" && mapFn.term.value === undefined);
+  // Bug 296：第三实参 thisArg（原生 Array.from(items, mapFn, thisArg)）——
+  // 此前 mapOne 不传 thisVal ⇒ 回调的 this 恒 undefined ⇒ 回调体读
+  // `this.k` 假抛 TypeError（"property 'k' on undefined"）、把计数器
+  // 永远写成 0。数组 HOF 通道（invoke-arr.ts 的 callFn）同款传 thisVal。
+  // 缺省（未给第三实参）⇒ undefined ≡ 旧行为（strict this）。
+  const thisArg = args[2];
   const mapOne = (el: Abs, i: Abs): Abs => {
     if (!hasMapFn) return el;
-    return applyCallbackValue(mapFn, [el, i], emptyEnv(), pTrue, defaultLeakBudget);
+    return applyCallbackValue(
+      mapFn,
+      [el, i],
+      emptyEnv(),
+      pTrue,
+      defaultLeakBudget,
+      thisArg,
+    );
   };
   // 无 mapFn 时下标 Abs 被 mapOne 丢弃——不 mint fresh var（零开销占位）
   const idxOrDrop = (lenTerm?: Term, lenNumeric = false): Abs =>
@@ -268,8 +303,9 @@ function evalArrayFrom(args: Abs[]): Abs {
     // total，[...o] / for..of 的同款谓词），两个消费者口径一致。此前 obj
     // 臂只实现 array-like 半边：带 @@iterator 的对象被当零长 array-like 折
     // exact 空 tuple（wrong-exact）。非可调用字面量 → 原生 GetMethod
-    // definite TypeError；可调用/抽象 → 迭代路径（元素域 unknown、长度
-    // 不可判——与 elemsOf 对 obj 迭代物的 [unknown] 单代表同口径）。
+    // definite TypeError；可调用/抽象 → 迭代路径。
+    // Bug 202：迭代路径**实际驱动**用户迭代器（此前只判可迭代、不调
+    // @@iterator/next ⇒ 副作用整体丢失）；元素域与长度口径见下方分支。
     // optional 槽（可能缺席）按缺席处理——走 array-like 臂，不冒 definite
     // 假抛。生成器/模板标签等侧表迭代物已在上方 mi 臂精确处理，不受影响。
     if (iterabilityKind(a0) === "total") {
@@ -282,7 +318,28 @@ function evalArrayFrom(args: Abs[]): Abs {
         !(iterVal.term?.op === "lit" && iterVal.term.value === undefined)
       ) {
         validateCallableArg(iterVal, "Array.from @@iterator may not be callable");
-        return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+        // Bug 202：**驱动用户迭代器**（GetIterator + IteratorNext）——此前
+        // 只判「可迭代」却不实际调 @@iterator/next ⇒ 迭代器体内的副作用
+        // （计数 / 写状态）整体丢失，元素域折 unknown（wrong-exact 的 0）。
+        // 走 elemsOf 同款协议（$elems：元素按**迭代序**取，步数上界同款）。
+        const els = $elems(a0);
+        // 迭代器报告 done ⇒ 元素数确切（registerUserIterLen 登记）⇒ exact
+        // 元组（原生 Array.from 逐位产出，长度 = 迭代出的元素数）
+        const exactLen = userIterLenOf(a0);
+        if (exactLen !== undefined && els.length === exactLen) {
+          return abs(
+            { k: "tuple", elements: els.map((el, i) => mapOne(el, numLit(i))) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+        // 元素数不可知（迭代器未耗尽 / 非用户迭代器——引擎自建迭代器的
+        // @@iterator 是空体占位）⇒ 元素域 = 已采集元素 join（未耗尽时 elemsOf
+        // 已并入 unknown 兜底——剩余元素个数不可知，sound）
+        let el = unknown;
+        for (let i = 0; i < els.length; i++) el = joinAbs(el, mapOne(els[i]!, numLit(i)));
+        return abs({ k: "arr", element: el }, undefined, undefined, "path");
       }
     }
     // Bug 51：array-like——length 槽决定迭代次数（ToLength 折叠），元素按
@@ -294,9 +351,24 @@ function evalArrayFrom(args: Abs[]): Abs {
     };
     const slots = os.slots ?? {};
     const open = !!os.open || !!os.index;
-    const lenAbs = Object.prototype.hasOwnProperty.call(slots, "length")
+    // Bug 294：array-like 读数**先经访问器侧表**——对象字面量的
+    // `get length()` / `get 0()` 在 shape 里只留 `$lit(void 0)` 占位槽
+    // （真 getter 住 accessorTable 侧表，见 accessors.ts）；裸读槽会把
+    // length 当 undefined（ToLength → 0 ⇒ Array.from 折空数组）、把索引
+    // 读成 undefined，且 getter 的副作用（计数 / 写状态）整体消失。
+    // 原生 Array.from 每次**恰好**读一次 length 与每个索引 ⇒ 本处按
+    // 「读一次」缓存（getter 副作用只发生一次，与原生同款）。
+    const accCache = new Map<string, Abs | undefined>();
+    const readKey = (key: string): Abs | undefined => {
+      if (accCache.has(key)) return accCache.get(key);
+      const v = accessorReadDomain(a0, key);
+      accCache.set(key, v);
+      return v;
+    };
+    const lenSlot = Object.prototype.hasOwnProperty.call(slots, "length")
       ? slots["length"]!.value
       : undefined;
+    const lenAbs = readKey("length") ?? lenSlot;
     // ToLength(literal)：number/string/bool/null/undefined（null→0、
     // undefined→NaN→0）；bigint 字面量 → ToNumber 定抛 TypeError
     let nLit: number | undefined;
@@ -333,12 +405,28 @@ function evalArrayFrom(args: Abs[]): Abs {
       }
       abstractLen = true;
     }
-    // 数字索引槽（obj 字面量数字键转字符串槽同口径）
-    const idxSlotAt = (i: number): Abs | undefined => slots[String(i)]?.value;
+    // 数字索引槽（obj 字面量数字键转字符串槽同口径）——**访问器优先**
+    // （Bug 294）：`get 0()` 这类索引访问器的真值住侧表，槽里只是占位。
+    const idxSlotAt = (i: number): Abs | undefined => {
+      const key = String(i);
+      const acc = readKey(key);
+      if (acc !== undefined) return acc;
+      return slots[key]?.value;
+    };
     const allIdxSlotValues = (): Abs[] => {
       const out: Abs[] = [];
+      const seen = new Set<string>();
       for (const kk of Object.keys(slots)) {
-        if (/^(0|[1-9][0-9]*)$/.test(kk)) out.push(slots[kk]!.value);
+        if (!/^(0|[1-9][0-9]*)$/.test(kk)) continue;
+        seen.add(kk);
+        out.push(readKey(kk) ?? slots[kk]!.value);
+      }
+      // 有访问器但**无槽**的索引键（defineProperty 装的 getter）——补齐，
+      // 否则抽象 length 臂的元素域丢掉这些值。
+      for (const kk of accessorKeysOf(a0)) {
+        if (seen.has(kk) || !/^(0|[1-9][0-9]*)$/.test(kk)) continue;
+        const acc = readKey(kk);
+        if (acc !== undefined) out.push(acc);
       }
       return out;
     };
@@ -402,6 +490,12 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       // Bug 56：arguments 对象不是数组 exotic——brand "Arguments" 包 tuple
       // 内层（$arguments），peelBrand 会看到 tuple，须在剥层前判定 false
       if (a0.shape.k === "brand" && a0.shape.name === "Arguments") return boolLit(false);
+      // Bug 195：**数组视图标注**的对象是数组 exotic——原生
+      // GetTemplateObject = CreateArrayFromList + SetIntegrityLevel(frozen)
+      // ⇒ 标签模板对象是**冻结的数组**（`Array.isArray(s)` 恒 true）；RegExp
+      // exec/match 结果同款（原生亦是真数组）。标注机制与 json.ts 的数组
+      // 序列化面同源（markMatchArrayView）。
+      if (isMatchArrayView(a0)) return boolLit(true);
       // Bug 57：Proxy 剥 brand 即靶形态（ArrayCreate 保留靶 IsArray 槽）
       const s = peelBrand(a0.shape);
       if (s.k === "arr" || s.k === "tuple") return boolLit(true);
@@ -594,7 +688,16 @@ export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Ab
     body: noBody,
     bindThis: true,
     apply: (a) => {
-      const recv = a[0] ?? undefAbs();
+      // Bug 330：接收者为 **nullish**（null / undefined）⇒ 原生 ToObject
+      // 定抛 TypeError（"Cannot convert undefined or null to object"）。
+      // 此前 `a[0] ?? undefAbs()` 把 nullish 接收者**静默替换**成
+      // undefined 值 ⇒ brand 判定（ToObject）从未发生 ⇒ 引擎全程不记
+      // 抛 ⇒ L2 门禁假绿（同一个 Array.prototype 上 slice / indexOf /
+      // map 却正确报红——自相矛盾）。
+      const recv = a[0];
+      if (recv === undefined || isNullishLitAbs(recv)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       // join 带可选分隔符：字面量分隔符 + 全字面量元组精确折叠，其余
       // 保守 path string（与 $invoke 同口径）。Bug 36：一等 join 路径
       // 同样逐元素校验（symbol 确定 TypeError / 抽象 may）

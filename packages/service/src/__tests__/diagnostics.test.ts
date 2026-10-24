@@ -34,7 +34,7 @@ function fn(x) {
     const source = `
 // @nudo:case "test" ()
 function fn() {
-  return WeakRef;
+  return Atomics;
 }
 `;
     const result = analyzeFile("test.js", source);

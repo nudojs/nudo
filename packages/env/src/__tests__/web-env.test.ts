@@ -35,6 +35,13 @@ function globalOf(env: Env, name: string): Abs {
   return g!;
 }
 
+/** fn 形全局的**静态槽**面（envFn 的 `opts.slots`）。 */
+function staticSlot(a: Abs | undefined, name: string): Abs | undefined {
+  if (!a || a.shape.k !== "fn") return undefined;
+  const slots = (a.shape as { slots?: Record<string, { value: Abs }> }).slots;
+  return slots?.[name]?.value;
+}
+
 /** Constructors are envFn wrappers — members live on the return object. */
 function instanceOf(a: Abs): Abs {
   return a.shape.k === "fn" && a.shape.returnType ? a.shape.returnType : a;
@@ -56,19 +63,25 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     const fetchFn = globalOf(env, "fetch");
     expect(shapeOf(fetchFn, "fetch")).toContain("=>");
 
+    // Bug 887：Request **没有** Response 的状态面（原生 r.status === undefined）。
     const Request = instanceOf(globalOf(env, "Request"));
     expect(shapeOf(Request, "Request instance")).toBeTruthy();
     for (const name of ["json", "text", "arrayBuffer", "clone"] as const) {
       expect(shapeOf(walk(Request, name), `Request.${name}`)).toContain("=>");
     }
-    expect(shapeOf(walk(Request, "ok"), "Request.ok")).toContain("bool");
-    expect(shapeOf(walk(Request, "status"), "Request.status")).toContain("number");
+    expect(shapeOf(walk(Request, "method"), "Request.method")).toContain("string");
+    expect(walk(Request, "status"), "Request.status (Response-only)").toBeUndefined();
+    expect(walk(Request, "ok"), "Request.ok (Response-only)").toBeUndefined();
 
-    const Response = globalOf(env, "Response");
-    // Response statics
+    // Bug 860：Response 改成**可构造**的 envFn——静态面在 fn 的 slots 上，
+    // 实例面在 returnType 上。
+    const ResponseCtor = globalOf(env, "Response");
     for (const name of ["json", "redirect", "error"] as const) {
-      expect(shapeOf(walk(Response, name), `Response.${name}`)).toContain("=>");
+      expect(shapeOf(staticSlot(ResponseCtor, name), `Response.${name}`)).toContain("=>");
     }
+    const Response = instanceOf(ResponseCtor);
+    expect(shapeOf(walk(Response, "status"), "Response.status")).toContain("number");
+    expect(shapeOf(walk(Response, "ok"), "Response.ok")).toContain("bool");
   });
 
   it("URL / URLSearchParams have typed members and literal-fold", () => {
@@ -99,12 +112,14 @@ describe("web env load + Fetch/URL/DOM faces", () => {
       "setInterval",
       "clearTimeout",
       "clearInterval",
-      "queueMicrotask",
       "requestAnimationFrame",
       "cancelAnimationFrame",
     ] as const) {
       expect(shapeOf(globalOf(env, name), name)).toContain("=>");
     }
+    // Bug 888：queueMicrotask 的 env 声明**删掉**（遮蔽掉 core 的可调用实参
+    // 校验 ⇒ 假绿）⇒ 不再出现在 env 全局表里。
+    expect(env.globals["queueMicrotask"]).toBeUndefined();
   });
 
   it("localStorage / sessionStorage expose the Storage surface", () => {
@@ -156,20 +171,20 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     expect(shapeOf(walk(ret, "abort"), "AbortController.abort")).toContain("=>");
   });
 
-  it("atob / btoa fold on literals", () => {
-    const btoaFn = globalOf(env, "btoa");
-    const impl = getFnImpl(btoaFn)!;
-    const folded = absOnly(impl.apply!([strLit("hi")]));
-    expect(litValue(folded)).toEqual({ ok: true, value: Buffer.from("hi").toString("base64") });
-    const atobFn = globalOf(env, "atob");
-    const aImpl = getFnImpl(atobFn)!;
-    const decoded = absOnly(aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]));
-    expect(litValue(decoded)).toEqual({ ok: true, value: "hi" });
+  it("atob / btoa / TextEncoder / TextDecoder are NOT declared (host fallback)", () => {
+    // Bug 883 / 886 / 889：这些 env 声明会**遮蔽**宿主内建的更精确建模
+    // （core：atob/btoa 的 InvalidCharacterError、TextDecoder 的 RangeError、
+    // 「类不可裸调」的 TypeError）⇒ 声明删除，走宿主回落路径。
+    for (const name of ["atob", "btoa", "TextEncoder", "TextDecoder"] as const) {
+      expect(env.globals[name], `global "${name}" must not be declared`).toBeUndefined();
+    }
   });
 
-  it("TextEncoder / TextDecoder / structuredClone are typed", () => {
-    expect(shapeOf(globalOf(env, "TextEncoder"), "TextEncoder")).toContain("=>");
-    expect(shapeOf(globalOf(env, "TextDecoder"), "TextDecoder")).toContain("=>");
-    expect(shapeOf(globalOf(env, "structuredClone"), "structuredClone")).toContain("=>");
+  it("structuredClone is NOT declared (host fallback, Bug 884)", () => {
+    // Bug 884（web 侧）：env 的 structuredClone 声明会**遮蔽**宿主内建 ⇒
+    // 宿主的 throws 面（不可克隆值抛 DOMException/DataCloneError）整个消失
+    // ⇒ L2 门禁假绿。声明删除，走宿主回落路径。
+    // （node 侧同款修法见 packages/env/src/node.ts。）
+    expect(env.globals["structuredClone"], "structuredClone must not be declared").toBeUndefined();
   });
 });

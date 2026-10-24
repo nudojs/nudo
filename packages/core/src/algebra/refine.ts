@@ -28,25 +28,35 @@ import { stripStringsKeepComments } from "./code-text.ts";
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
 // 诊断 side-channel 共享原语（与 interface 通道同一实现，leaf 无环）
 import { createScopedDiagChannel } from "./diag-channel.ts";
-import { registerCollectorScopeParticipant } from "./collector-scope.ts";
+import { createScopedSlot, registerCollectorScopeParticipant } from "./collector-scope.ts";
 // D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
 import {
+  cleanDirectiveLine,
   extractNudoImportRecords,
+  findFnDirectiveScope,
   fnDirectiveCommentLines,
   scanAssumeSegments,
   scanInvariantSegments,
   scanBudgetDecl,
   scanContractSegments,
+  scanMalformedDirectiveSegments,
   scanMalformedNudoImports,
   scanThrowsDecl,
+  type FnDirectiveScope,
+  type NudoImportRecord,
 } from "./directive-scan.ts";
-import type { ImportDeclaration } from "@babel/types";
+import type { File, ImportDeclaration } from "@babel/types";
 import {
   type NudoConstraint,
   isNudoConstraint,
   instantiateConstraint,
+  andC,
   CONSTRAINT_BUILDERS,
 } from "./constraint.ts";
+// JS 绑定名文法（Unicode 合法，如 `小数` / `$x`）——Bug 350：三条源码指令
+// 的标识符文法只收 ASCII ⇒ 中文标识符被判 malformed（L1 假红），而侧车面
+// 把同一个中文名当一等公民 ⇒ 跨面自相矛盾。codegen-escape 是 leaf，无环。
+import { isJsBindingIdent } from "./codegen-escape.ts";
 import { DIAG } from "./diag-codes.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -82,6 +92,114 @@ export function extractNudoImports(source: string): NamedImport[] {
   }));
 }
 
+/**
+ * 侧车撞名诊断的**作用域内去重**集（同一侧车的同一撞名只报一次）。
+ * 撞名诊断随 exec 结果缓存、每次调用重发 ⇒ 不去重会在一个作用域里
+ * 重复 N 次（每个函数一次 effectiveInterface）。
+ *
+ * 每个分析作用域一份**新**集合：ScopedSlot 的继承语义是「同一个对象」，
+ * 直接用会把上一轮分析已报的撞名带进下一轮 ⇒ 门禁面看不到（分析器先跑、
+ * checkSource 后跑，两轮都在同一进程）。
+ */
+const sidecarClashReported = createScopedSlot<Set<string>>(() => new Set<string>());
+registerCollectorScopeParticipant((body) => {
+  const prev = sidecarClashReported.get();
+  sidecarClashReported.set(new Set<string>());
+  try {
+    return sidecarClashReported.runScoped(body);
+  } finally {
+    sidecarClashReported.set(prev);
+  }
+});
+
+/**
+ * 侧车**装载诊断**（nudo:interface-load）——exec 期间产生、随 exec 结果缓存。
+ *
+ * 口径同撞名诊断：诊断在 exec 内部产生 ⇒ exec 结果进缓存后，缓存命中不再跑
+ * exec ⇒ 此处产生的诊断会在后续分析里消失（门禁面看不到：分析器先跑、
+ * checkSource 后跑，只有先跑那次能报）⇒ 必须**随结果一起缓存**、每次调用
+ * （含缓存命中）重发。
+ *
+ * Bug 1125：`file` = 诊断的**来源侧车**（产出它的那份侧车，不是 root）。
+ * 递归求值共享同一个 diags 数组 ⇒ 只存 code/message 会把**依赖侧车**的诊断
+ * 记在 root 名下（用户去 root 里找不到那个名字 ⇒ 定位错文件）。
+ */
+type SidecarLoadDiag = { code: string; message: string; file?: string };
+
+/**
+ * 侧车装载诊断的**作用域内去重**集（同撞名口径）：诊断随结果缓存、每次调用
+ * 重发 ⇒ 不去重会在一个作用域里重复 N 次（每个函数一次 effectiveInterface）。
+ * 每个分析作用域一份**新**集合（分析器一轮 / checkSource 一轮各一份）⇒
+ * 两个消费面各拿得到一份。
+ *
+ * **无作用域**（模块级 fallback）⇒ null ⇒ **不去重**：保持「每次 exec 都报」
+ * 的旧口径（宿主直接调 execNudoModule 的场景不在分析作用域内，去重会让
+ * 后一次调用看不到诊断）。
+ */
+const sidecarLoadDiagReported = createScopedSlot<Set<string> | null>(() => null);
+registerCollectorScopeParticipant((body) => {
+  const prev = sidecarLoadDiagReported.get();
+  sidecarLoadDiagReported.set(new Set<string>());
+  try {
+    return sidecarLoadDiagReported.runScoped(body);
+  } finally {
+    sidecarLoadDiagReported.set(prev);
+  }
+});
+
+/**
+ * 发出侧车装载诊断（随 exec 结果缓存 ⇒ 命中时**重发**）。
+ * 去重键 = 来源文件 + 码 + 消息（同一侧车的同一事实只报一次/作用域）。
+ *
+ * Bug 1125：归因用**诊断自己的来源文件**（`d.file` = 产出它的那份侧车），
+ * 缺省才回落 root 的 fromFile；去重键同样纳入来源文件 ⇒ 同一消息在两个文件
+ * 里各出现一次时**两条都在**（互不吞掉）。
+ */
+function emitSidecarLoadDiags(
+  diags: readonly SidecarLoadDiag[],
+  fromFile: string | undefined,
+): void {
+  if (diags.length === 0) return;
+  const reported = sidecarLoadDiagReported.get();
+  for (const d of diags) {
+    const file = d.file ?? fromFile;
+    if (reported !== null) {
+      const sig = `${file ?? ""}\u0000${d.code}\u0000${d.message}`;
+      if (reported.has(sig)) continue;
+      reported.add(sig);
+    }
+    collectDiag({ code: d.code, message: d.message, file });
+  }
+}
+
+/**
+ * 发出侧车撞名诊断（Bug 356 扩展面 ②）。
+ * 撞名 = 侧车自己的顶层声明与它 import 的本地名同名 ⇒ native ESM 是
+ * SyntaxError（重复声明，模块不装载）；引擎里是「遮蔽」⇒ 导入值静默丢失、
+ * 契约悄悄变弱 ⇒ 必须显式报出（建议改名）。
+ *
+ * 诊断码取 nudo:interface-load：这是**侧车装载**问题（侧车按写法装载不出
+ * 期望的契约），且只有这一族码会被消费方（service 分析器）取走并进门禁
+ * 报告——nudo:interface-name-clash 会被白名单过滤掉、诊断不可见。
+ */
+function emitSidecarClashDiags(
+  clashes: readonly SidecarClash[],
+  fromFile: string | undefined,
+): void {
+  if (clashes.length === 0) return;
+  const reported = sidecarClashReported.get();
+  for (const c of clashes) {
+    const sig = `${fromFile ?? ""}\u0000${c.local}\u0000${c.spec}`;
+    if (reported.has(sig)) continue;
+    reported.add(sig);
+    collectDiag({
+      code: DIAG.interfaceLoad,
+      message: `sidecar declares '${c.local}' at top level and also imports it from '${c.spec}' — native ESM rejects a duplicate declaration (SyntaxError); rename one of them`,
+      file: fromFile,
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 侧车加载诊断（side-channel）
 //
@@ -90,7 +208,14 @@ export function extractNudoImports(source: string): NamedImport[] {
 // ---------------------------------------------------------------------------
 
 /** refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） */
-export type RefineDiag = { code: string; message: string; file?: string };
+export type RefineDiag = {
+  code: string;
+  message: string;
+  file?: string;
+  /** Bug 374：诊断位置（1-based 行 / 0-based 列；与 Babel loc 同坐标面） */
+  line?: number;
+  column?: number;
+};
 
 /** 防长会话无界增长；消费方 takeRefineDiags 按批取走 */
 const MAX_REFINE_DIAGS = 1024;
@@ -157,6 +282,13 @@ type SidecarImportName = {
 
 type SidecarImport = { spec: string; names: SidecarImportName[] };
 
+/**
+ * 侧车顶层声明 ∩ 侧车自身 import 绑定 的撞名（Bug 356 扩展面 ②）。
+ * native ESM：重复声明 ⇒ SyntaxError（模块根本不装载）；引擎里是「遮蔽」⇒
+ * 导入值静默丢失、契约悄悄变弱 ⇒ 必须显式报出。
+ */
+type SidecarClash = { local: string; spec: string };
+
 function sidecarImportNames(stmt: ImportDeclaration): SidecarImportName[] {
   const out: SidecarImportName[] = [];
   for (const s of stmt.specifiers) {
@@ -192,6 +324,13 @@ function rewriteSidecarSource(
   exportPairs: Array<{ key: string; expr: string }>;
   imports: SidecarImport[];
   bindingInfos: Map<string, SidecarBindingInfo>;
+  /**
+   * 侧车**自身顶层**声明的名字（const/let/var/function/class）。
+   * 用于冲突检测：与 import 绑定同名 ⇒ native ESM 是 SyntaxError
+   * （Bug 356 扩展面 ②：相对 import 的本地名被侧车自己的顶层声明遮蔽 ⇒
+   * 导入值静默丢失）。这里只收顶层、只收标识符（解构模式不收）。
+   */
+  declaredNames: Set<string>;
 } {
   // .nudo.ts 需要未剥除 TS 的 AST（keepTs）——类型注解/声明的区间才能切除；
   // 默认路径照旧走剥除（全链消费方依赖剥除后形态）
@@ -201,7 +340,30 @@ function rewriteSidecarSource(
   /** 导出表：key = 绑定名（含 "default"），expr = 求值表达式标识符 */
   const exportPairs: Array<{ key: string; expr: string }> = [];
   const imports: SidecarImport[] = [];
+  /** 侧车自身顶层的声明名（冲突检测用；见返回型的 declaredNames） */
+  const declaredNames = new Set<string>();
   const DEFAULT_LOCAL = "__nudoDefault";
+
+  /** 顶层声明名收集：const/let/var 的标识符声明 + function/class 名 */
+  const noteDeclared = (decl: unknown): void => {
+    if (typeof decl !== "object" || decl === null) return;
+    const d = decl as {
+      type?: string;
+      id?: { type?: string; name?: string } | null;
+      declarations?: Array<{ id?: { type?: string; name?: string } | null }>;
+    };
+    if (d.type === "VariableDeclaration") {
+      for (const dec of d.declarations ?? []) {
+        if (dec.id?.type === "Identifier" && typeof dec.id.name === "string") {
+          declaredNames.add(dec.id.name);
+        }
+      }
+      return;
+    }
+    if (d.id?.type === "Identifier" && typeof d.id.name === "string") {
+      declaredNames.add(d.id.name);
+    }
+  };
 
   const badExport = (what: string): void => {
     collectDiag({
@@ -234,6 +396,7 @@ function rewriteSidecarSource(
     }
     if (stmt.type === "ExportNamedDeclaration") {
       const decl = stmt.declaration;
+      if (decl) noteDeclared(decl);
       if (decl?.type === "VariableDeclaration" && stmt.start != null && decl.start != null) {
         if (decl.kind === "const") {
           let simple = true;
@@ -306,9 +469,11 @@ function rewriteSidecarSource(
         if (decl.id?.name) {
           exportPairs.push({ key: decl.id.name, expr: decl.id.name });
           exportPairs.push({ key: "default", expr: decl.id.name });
+          declaredNames.add(decl.id.name);
         } else {
           // 匿名：包一层本地绑定
           exportPairs.push({ key: "default", expr: DEFAULT_LOCAL });
+          declaredNames.add(DEFAULT_LOCAL);
           if (decl.start != null && decl.end != null) {
             const kind = decl.type === "FunctionDeclaration" ? "function" : "class";
             cuts.push({
@@ -327,6 +492,7 @@ function rewriteSidecarSource(
       // export default <expr>（fn(…) / 标识符等）：var __nudoDefault = <expr>
       if (decl && stmt.start != null && decl.start != null && decl.end != null) {
         exportPairs.push({ key: "default", expr: DEFAULT_LOCAL });
+        declaredNames.add(DEFAULT_LOCAL);
         cuts.push({
           start: stmt.start,
           end: decl.start,
@@ -346,7 +512,10 @@ function rewriteSidecarSource(
       if (stmt.start != null && stmt.end != null) {
         cuts.push({ start: stmt.start, end: stmt.end, text: "" });
       }
+      continue;
     }
+    // 顶层声明（const/let/var/function/class）：不在 export 形态里
+    noteDeclared(stmt);
   }
 
   // ---- 运行时标志提取（Phase 1）：fn() 形参约束的表达式源码 ----
@@ -519,7 +688,7 @@ function rewriteSidecarSource(
     pos = c.end;
   }
   code += src.slice(pos);
-  return { code, exportPairs, imports, bindingInfos };
+  return { code, exportPairs, imports, bindingInfos, declaredNames };
 }
 
 /** 纯类型语句：整体删除（运行时无对应语义；enum 的反向映射本引擎不支持） */
@@ -649,20 +818,50 @@ function registerSidecarParamTexts(
  * - spec 链成环 → throw NudoSidecarError(nudo:interface-cycle，消息带链)。
  *
  * opts.fromFile 语义 = 该侧车自身的路径（相对 spec 解析基准 + 环检测链起点）。
+ *
+ * `diags` = **出参**：本次 exec 期间产生的侧车装载诊断（nudo:interface-load）。
+ * 诊断**不在此处发出**（exec 结果进缓存后，缓存命中不再跑 exec ⇒ 此处发出的
+ * 诊断会在后续分析里消失 ⇒ 门禁面看不到）⇒ 收集到出参、由
+ * execNudoModuleCached 在每次调用（含缓存命中）时统一发出（同撞名口径）。
  */
 function execSidecar(
   src: string,
   opts: RefineResolveOpts | undefined,
   chain: string[],
   preloaded: ReadonlyMap<string, string | undefined>,
+  diags: SidecarLoadDiag[],
 ): {
   exports: Record<string, unknown>;
   bindingInfos: Map<string, SidecarBindingInfo>;
+  /** 侧车顶层声明 ∩ import 绑定的撞名（Bug 356 扩展面 ②）；随结果缓存，命中时重发 */
+  clashes: SidecarClash[];
 } {
   const fromFile = opts?.fromFile;
-  const { code, exportPairs, imports, bindingInfos } = rewriteSidecarSource(src, fromFile);
+  const { code, exportPairs, imports, bindingInfos, declaredNames } = rewriteSidecarSource(
+    src,
+    fromFile,
+  );
   const prologue: string[] = [];
   const deps: Record<string, unknown> = {};
+  /** import 绑定名 → 来源 spec（冲突检测用；见 declaredNames 冲突诊断） */
+  const importBound = new Map<string, string>();
+  /**
+   * **显式导入的本地名**（prologue 用 `var` 单独绑定的那批）。
+   *
+   * Bug 1123：ambient builder 解构（`const { number, string, … } = __nudoInjects;`）
+   * 与 prologue 的 `var` 绑在**同一外层作用域** ⇒ 用户写了别名
+   * （`import { number as string }` ⇒ `var string = …`）就撞名 ⇒
+   * SyntaxError「Identifier 'string' has already been declared」⇒
+   * **整个侧车装载失败**（该文件全部契约静默丢失 ⇒ 门禁假绿）。
+   *
+   * 修法：这些名字由 import 绑定 ⇒ ambient 解构**不得**再声明同名
+   * （与 native ESM 一致：用户显式导入的名字不再有 ambient 兜底）。
+   * 同名注入（`import { number }`）不在此集——它不产生 prologue `var`，
+   * 仍由 ambient 解构绑定。
+   */
+  const explicitlyBound = new Set<string>();
+  /** 依赖侧车的撞名（合并进本侧车的 clashes，随 exec 结果一起缓存） */
+  const depClashes: SidecarClash[] = [];
 
   for (const imp of imports) {
     const relative = imp.spec.startsWith(".") || imp.spec.startsWith("/");
@@ -672,42 +871,49 @@ function execSidecar(
         if (n.ns) {
           // namespace import 绑成整个 inject 表会静默把 fs/path 等本地名
           // 变成构建器袋——显式诊断，不再静默错绑
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
             file: fromFile,
           });
           prologue.push(`var ${n.local} = __nudoInjects;`);
+          explicitlyBound.add(n.local);
+          importBound.set(n.local, imp.spec);
         } else if (n.imported !== undefined) {
           // 自有属性判定：`in` 会命中 Object.prototype（toString 等）——
           // 诊断被吞 + __nudoInjects 裸读把原生函数绑进侧车执行域
           const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
           if (!hasOwnInject) {
-            collectDiag({
+            diags.push({
               code: DIAG.interfaceLoad,
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
               file: fromFile,
             });
             prologue.push(`var ${n.local} = undefined;`);
+            explicitlyBound.add(n.local);
           } else if (n.local !== n.imported) {
-            // 同名注入名由函数参数绑定；alias 走 __nudoInjects（hasOwn 已证自有键）
+            // 同名注入名由外层解构绑定；alias 走 __nudoInjects（hasOwn 已证自有键）
             prologue.push(`var ${n.local} = __nudoInjects[${JSON.stringify(n.imported)}];`);
+            explicitlyBound.add(n.local);
+            importBound.set(n.local, imp.spec);
           }
         } else {
           // default import：侧车无默认导出概念——显式诊断（不再静默 undefined）
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
             file: fromFile,
           });
           prologue.push(`var ${n.local} = undefined;`);
+          explicitlyBound.add(n.local);
+          importBound.set(n.local, imp.spec);
         }
       }
       continue;
     }
     const load = opts?.loadModule;
     if (!load || !fromFile) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (no loadModule for relative specifier)`,
         file: fromFile,
@@ -716,7 +922,7 @@ function execSidecar(
       continue;
     }
     if (!isSidecarSpec(imp.spec)) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' unsupported: relative imports must target .nudo.js/.nudo.ts`,
         file: fromFile,
@@ -726,7 +932,7 @@ function execSidecar(
     }
     const canonical = resolveDepPath(fromFile, imp.spec);
     if (isNodeModulesPath(canonical)) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
         file: fromFile,
@@ -742,7 +948,7 @@ function execSidecar(
     }
     const depSrc = preloaded.has(canonical) ? preloaded.get(canonical) : load(imp.spec, fromFile);
     if (depSrc === undefined) {
-      collectDiag({
+      diags.push({
         code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (loadModule returned no source)`,
         file: fromFile,
@@ -750,12 +956,33 @@ function execSidecar(
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
     }
-    const depOut = execSidecar(
-      depSrc,
-      { loadModule: load, fromFile: canonical },
-      [...chain, canonical],
-      preloaded,
-    );
+    // Bug 345：依赖侧车的求值异常**原样冒泡** ⇒ 上层诊断指向**导入方**
+    // （"sidecar './m.nudo.js' failed to load: Identifier 'pick' has already
+    // been declared"）且点名导入方根本没有的名字——用户去 m.nudo.js 里找
+    // 'pick' 永远找不到。包装成 Nudo 原生诊断并**点名依赖侧车路径**。
+    // 环诊断自带链（NudoSidecarError）⇒ 原样上抛，不重包。
+    let depOut: {
+      exports: Record<string, unknown>;
+      bindingInfos: Map<string, SidecarBindingInfo>;
+      clashes: SidecarClash[];
+    };
+    try {
+      depOut = execSidecar(
+        depSrc,
+        { loadModule: load, fromFile: canonical },
+        [...chain, canonical],
+        preloaded,
+        diags,
+      );
+    } catch (e) {
+      if (e instanceof NudoSidecarError) throw e;
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new NudoSidecarError(
+        DIAG.interfaceLoad,
+        `sidecar '${imp.spec}' (imported by '${fromFile ?? "(unknown)"}') failed to load: ${reason}`,
+      );
+    }
+    depClashes.push(...depOut.clashes);
     const depExports = depOut.exports;
     for (const n of imp.names) {
       if (n.ns) {
@@ -765,7 +992,7 @@ function execSidecar(
         if (Object.hasOwn(depExports, n.imported)) {
           deps[n.local] = depExports[n.imported];
         } else {
-          collectDiag({
+          diags.push({
             code: DIAG.interfaceLoad,
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
             file: fromFile,
@@ -774,18 +1001,40 @@ function execSidecar(
         }
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
-        collectDiag({
+        diags.push({
           code: DIAG.interfaceLoad,
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
           file: fromFile,
         });
         deps[n.local] = Object.hasOwn(depExports, "default") ? depExports.default : undefined;
       }
+      importBound.set(n.local, imp.spec);
     }
   }
 
+  // Bug 356 扩展面 ②：侧车自己的顶层声明与 import 绑定同名 ⇒ native ESM 是
+  // SyntaxError（重复声明）；引擎里则是「遮蔽」⇒ 导入值静默丢失（契约悄悄
+  // 变弱）。**显式报出**可操作的诊断（建议改名），不静默。
+  //
+  // 诊断码取 nudo:interface-load：这是**侧车装载**问题（侧车按写法装载不出
+  // 期望的契约），且只有这一族码会被消费方（service 分析器）取走并进门禁
+  // 报告——nudo:interface-name-clash 会被白名单过滤掉、诊断不可见。
+  //
+  // 诊断**不在此处**发出：exec 结果进缓存后，缓存命中不再跑 exec ⇒ 此处
+  // 发出的诊断会在后续分析里消失（门禁面看不到）。改为把冲突**随 exec 结果
+  // 一起缓存**，由 execNudoModuleCached 在每次调用（含缓存命中）时统一发出。
+  const clashes: SidecarClash[] = [];
+  for (const [local, spec] of importBound) {
+    if (!declaredNames.has(local)) continue;
+    clashes.push({ local, spec });
+  }
+  clashes.push(...depClashes);
+
   for (const local of Object.keys(deps)) {
     prologue.push(`var ${local} = __nudoDeps[${JSON.stringify(local)}];`);
+    // 相对 import 的本地名由 __nudoDeps 绑定 ⇒ 不得再被 ambient 解构声明
+    // （同名 `const` + `var` 同作用域 ⇒ SyntaxError ⇒ 侧车整体装载失败）
+    explicitlyBound.add(local);
   }
 
   const returnObj = exportPairs
@@ -793,14 +1042,35 @@ function execSidecar(
       p.key === p.expr ? p.key : `${JSON.stringify(p.key)}: ${p.expr}`,
     )
     .join(", ");
-  const body = `${prologue.length > 0 ? `${prologue.join("\n")}\n` : ""}${code}\nreturn { ${returnObj} };`;
-  const fn = new Function(
-    ...Object.keys(sidecarInjects),
-    "__nudoInjects",
-    "__nudoDeps",
-    body,
+  // Bug 338 / 356：注入名不得占用**侧车自身的顶层作用域**。
+  // 旧口径把 15 个构建器名当 `new Function` 的**形参**——侧车里的
+  // `const pick = …`（rewriteSidecarSource 把 `export const` 改成 `const`）
+  // 与形参同名 ⇒ SyntaxError「Cannot declare a const variable twice」
+  // ⇒ 侧车根本加载不了 ⇒ 该文件全部契约丢失、三个运行时产物面退化为
+  // 「接受一切」，而 `nudo export` 仍 exit 0 零告警。
+  // 改成两层作用域：外层 = 注入袋 + 构建器解构 + 依赖绑定；内层 IIFE =
+  // 侧车自己的代码。侧车的词法声明与外层注入名**同名**时是「遮蔽」（不同
+  // 作用域）而不是「重复声明」——与 native ESM 一致（未导入的名字本就不在
+  // 作用域里，遮蔽是合法的）。
+  //
+  // Bug 1123：**显式导入的本地名**从解构里排除——解构（`const`）与 prologue
+  // 的 `var` 在同一外层作用域，别名导入（`number as string`）会撞名 ⇒
+  // SyntaxError ⇒ 整个侧车装载失败（契约全丢 ⇒ 门禁假绿）。
+  const builderNames = Object.keys(sidecarInjects).filter(
+    (n) => !explicitlyBound.has(n),
   );
-  const result = fn(...Object.values(sidecarInjects), sidecarInjects, deps) as Record<string, unknown>;
+  const body = [
+    `const { ${builderNames.join(", ")} } = __nudoInjects;`,
+    prologue.length > 0 ? prologue.join("\n") : "",
+    "return (function () {",
+    code,
+    `return { ${returnObj} };`,
+    "})();",
+  ]
+    .filter((part) => part !== "")
+    .join("\n");
+  const fn = new Function("__nudoInjects", "__nudoDeps", body);
+  const result = fn(sidecarInjects, deps) as Record<string, unknown>;
   // 绑定信息登记：成功求值后按侧车 canonical 路径 + 内容
   // hash 入库（失败不登记；resetNudoModuleExecCache 同口径清除）。
   // exec 缓存命中不重登记——同内容首次求值已入库；命中路径
@@ -808,7 +1078,7 @@ function execSidecar(
   if (fromFile !== undefined && bindingInfos.size > 0) {
     registerSidecarParamTexts(fromFile, hashSource(src), bindingInfos);
   }
-  return { exports: result, bindingInfos };
+  return { exports: result, bindingInfos, clashes };
 }
 
 /**
@@ -828,13 +1098,26 @@ export type RefineResolveOpts = {
 
 /** *.nudo.js 构建器执行结果（LRU）。键 = 依赖闭包内容指纹；无 loadModule 退化为 src。
  * 值携带 bindingInfos——缓存命中（同内容侧车在不同路径）时
- * 由 execNudoModuleCached 按当前路径补登记参数折叠文本。 */
+ * 由 execNudoModuleCached 按当前路径补登记参数折叠文本；
+ * clashes = 侧车顶层声明 ∩ import 绑定的撞名（Bug 356 扩展面 ②）——
+ * 缓存命中不再跑 exec ⇒ 撞名诊断必须**随结果一起缓存**并在命中时重发，
+ * 否则门禁面看不到（分析器先跑、checkSource 后跑 ⇒ 只有后跑那次能报）；
+ * diags = 本次 exec 期间产生的侧车装载诊断（nudo:interface-load，1064）——
+ * 同理：exec 内部产生的诊断在缓存命中后不再出现 ⇒ 侧车写坏（import 了
+ * 非构建器名等）在 check 面上彻底隐形（门禁假绿）。 */
 const nudoModuleExecCache = new Map<
   string,
-  { exports: Record<string, unknown>; bindingInfos: Map<string, SidecarBindingInfo> }
+  {
+    exports: Record<string, unknown>;
+    bindingInfos: Map<string, SidecarBindingInfo>;
+    clashes: SidecarClash[];
+    diags: SidecarLoadDiag[];
+  }
 >();
-/** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误 */
-const nudoModuleFailCache = new Map<string, unknown>();
+/** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误。
+ *  失败前已产生的装载诊断一并缓存 ⇒ 命中时重发（否则失败轮的诊断只在
+ *  第一次 exec 时可见）。 */
+const nudoModuleFailCache = new Map<string, { error: unknown; diags: SidecarLoadDiag[] }>();
 const MAX_NUDO_MODULE_EXEC = 64;
 /** 防病态侧车依赖图；截断时指纹不可信 → 本次不读写缓存 */
 const MAX_SIDECAR_CLOSURE = 64;
@@ -915,30 +1198,45 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
           hit.bindingInfos,
         );
       }
+      // 撞名诊断随结果缓存 ⇒ 命中时**重发**（否则门禁面看不到：
+      // 分析器先跑、checkSource 后跑，只有后跑那次能报）
+      emitSidecarClashDiags(hit.clashes, opts.fromFile);
+      // 侧车装载诊断（1064）同口径：exec 内部产生的诊断在缓存命中后
+      // 不再出现 ⇒ 侧车写坏在 check 面彻底隐形（门禁假绿）
+      emitSidecarLoadDiags(hit.diags, opts.fromFile);
       return hit.exports;
     }
-    if (nudoModuleFailCache.has(key)) {
-      throw nudoModuleFailCache.get(key);
+    const failed = nudoModuleFailCache.get(key);
+    if (failed !== undefined) {
+      // 失败前已产生的装载诊断一并重发（同上口径）
+      emitSidecarLoadDiags(failed.diags, opts.fromFile);
+      throw failed.error;
     }
   }
 
+  /** 本次 exec 期间产生的侧车装载诊断（出参 ⇒ 命中/失败缓存都带着它） */
+  const diags: SidecarLoadDiag[] = [];
   try {
-    const { exports, bindingInfos } = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
+    const { exports, bindingInfos, clashes } = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded, diags);
+    emitSidecarLoadDiags(diags, opts.fromFile);
+    emitSidecarClashDiags(clashes, opts.fromFile);
     if (key !== undefined) {
       if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
         const oldest = nudoModuleExecCache.keys().next().value;
         if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
       }
-      nudoModuleExecCache.set(key, { exports, bindingInfos });
+      nudoModuleExecCache.set(key, { exports, bindingInfos, clashes, diags });
     }
     return exports;
   } catch (e) {
+    // exec 抛错前已产生的装载诊断仍要报（否则「侧车写坏」的事实被抛错吞掉）
+    emitSidecarLoadDiags(diags, opts.fromFile);
     if (key !== undefined) {
       if (nudoModuleFailCache.size >= MAX_NUDO_MODULE_EXEC) {
         const oldest = nudoModuleFailCache.keys().next().value;
         if (oldest !== undefined) nudoModuleFailCache.delete(oldest);
       }
-      nudoModuleFailCache.set(key, e);
+      nudoModuleFailCache.set(key, { error: e, diags });
     }
     throw e;
   }
@@ -986,6 +1284,40 @@ export function lookupSidecarParamTexts(
 }
 
 /**
+ * Bug 344：两条 `@nudo:import` 绑**同一个本地名** ⇒ `map.set` 后写覆盖先写，
+ * 零冲突检测零诊断 ⇒ 契约裁决随**行序**翻转（native ESM 是 SyntaxError：
+ * 模块根本不装载）。
+ *
+ * 口径：**拒绝绑定**该本地名（不猜哪条赢——猜错就是静默的假绿/假红）+ 报
+ * error 级诊断（nudo:interface-name-clash）。返回冲突的本地名集合。
+ */
+function duplicateImportBindings(
+  imports: NudoImportRecord[],
+  file: string | undefined,
+): Set<string> {
+  const owner = new Map<string, string>();
+  const dup = new Set<string>();
+  for (const imp of imports) {
+    for (const raw of imp.names) {
+      // namespace 记 `*ns` ⇒ 本地名是 `ns` 本身
+      const local = raw.startsWith("*") ? raw.slice(1) : raw;
+      const prev = owner.get(local);
+      if (prev === undefined) {
+        owner.set(local, imp.spec);
+        continue;
+      }
+      dup.add(local);
+      collectDiag({
+        code: DIAG.interfaceNameClash,
+        message: `duplicate @nudo:import binding '${local}' (from '${prev}' and '${imp.spec}') — native ESM rejects a duplicate declaration (SyntaxError); rename one of them`,
+        file,
+      });
+    }
+  }
+  return dup;
+}
+
+/**
  * 从导入收集 name → NudoConstraint。
  * 加载失败 / 执行失败 / 导出形式不识别不再静默：收集 nudo:interface-load
  * （环 → nudo:interface-cycle）诊断后跳过该导入。
@@ -997,6 +1329,7 @@ function collectConstraints(
   const map = new Map<string, NudoConstraint>();
   diagnoseMalformedNudoImports(source);
   const imports = extractNudoImportRecords(source);
+  const dupBindings = duplicateImportBindings(imports, opts.fromFile);
   for (const imp of imports) {
     if (!opts.loadModule || !opts.fromFile) {
       // host 忘传 loader：约束会静默失效——必须报，否则 refine 无声消失
@@ -1047,6 +1380,8 @@ function collectConstraints(
       // 命名空间：`@nudo:import * as ns` → 展开为 `ns.exportName` 供 refine 引用
       if (name.startsWith("*")) {
         const ns = name.slice(1);
+        // 同名 import 绑定冲突（Bug 344）⇒ 拒绝绑定，不展开
+        if (dupBindings.has(ns)) continue;
         for (const [expName, v] of Object.entries(exports)) {
           if (isNudoConstraint(v)) {
             map.set(`${ns}.${expName}`, v);
@@ -1054,6 +1389,8 @@ function collectConstraints(
         }
         continue;
       }
+      // 同名 import 绑定冲突（Bug 344）⇒ 拒绝绑定（不猜哪条赢）
+      if (dupBindings.has(name)) continue;
       // `a as b`：查导出表用原始导出名 a，绑定用本地名 b（import 绑定语义
       // local ← imported；BUG-016 修复前用 b 查表 → 契约静默失效）
       const imported = imp.importedOfLocal[name] ?? name;
@@ -1089,6 +1426,99 @@ function extractRefineLines(source: string, fnName: string): string[] {
   return scanContractSegments(lines);
 }
 
+// ---------------------------------------------------------------------------
+// Bug 374：指令位置（诊断定位到**出错指令行**，不是函数声明行 / 文件首行）
+//
+// 口径：行 1-based、列 0-based（与 Babel loc 同坐标面）。
+// 作用域 = 该函数自己的前导注释块（findFnDirectiveScope）⇒ 别的函数里的
+// 同形指令不会把位置带偏；注释文本的第 k 行 ↔ 源文件第
+// `commentStartLines[i] + k` 行（块注释首行 = `/**` 所在行；行注释首行 =
+// `//` 所在行）⇒ 位置与源码逐行对齐。
+// ---------------------------------------------------------------------------
+
+/** 指令位置（1-based 行 / 0-based 列） */
+export type DirectiveLoc = { line: number; column?: number };
+
+/** 函数的前导指令 scope（源码解析失败 → undefined） */
+function fnDirectiveScopeOf(source: string, fnName: string): FnDirectiveScope | undefined {
+  let file: File;
+  try {
+    file = parseSource(source);
+  } catch {
+    return undefined;
+  }
+  return findFnDirectiveScope(file, fnName);
+}
+
+/**
+ * 指令段 → 源位置。找不到（段与注释行对不上 / 无 scope）→ undefined。
+ * 列 = 该指令文本在源码行里的起始偏移（0-based）；对不上则省略。
+ *
+ * Bug 421 / 1032：段文本有两种取法——**载荷**（`x <= y`）与**整行原文**
+ * （畸形段：`@nudo:assumed d <= max` / `@nudo:contractx p n`）⇒ 后者用
+ * 「整行相等」兜底匹配，否则畸形诊断会丢掉位置（落在文件首行）。
+ */
+function directiveSegLoc(
+  source: string,
+  scope: FnDirectiveScope | undefined,
+  prefix: string,
+  seg: string,
+): DirectiveLoc | undefined {
+  if (!scope) return undefined;
+  const srcLines = source.split("\n");
+  for (let ci = 0; ci < scope.commentTexts.length; ci++) {
+    const start = scope.commentStartLines[ci] ?? 0;
+    if (!start) continue;
+    const rawLine = srcLines[start - 1] ?? "";
+    const kind: "line" | "block" = rawLine.trimStart().startsWith("//") ? "line" : "block";
+    const lines = scope.commentTexts[ci]!.split("\n");
+    for (let li = 0; li < lines.length; li++) {
+      const cleaned = cleanDirectiveLine(lines[li]!, kind);
+      if (!cleaned.startsWith(prefix)) continue;
+      const body = cleaned.slice(prefix.length).trim().replace(/\*\/$/, "").trim();
+      if (body !== seg && cleaned !== seg) continue;
+      const line = start + li;
+      const col = (srcLines[line - 1] ?? "").indexOf(cleaned);
+      return { line, ...(col >= 0 ? { column: col } : {}) };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 该函数的 @nudo:contract 段 → 源位置（Bug 374：接口冲突定位到出错指令行）。
+ * 消费方按段首 token（参数名 / `return`）挑出对应的那一条。
+ */
+export function contractSegmentLocs(
+  source: string,
+  fnName: string,
+): Array<{ segment: string; loc?: DirectiveLoc }> {
+  const scope = fnDirectiveScopeOf(source, fnName);
+  if (!scope) return [];
+  return scanContractSegments(scope.commentLines).map((segment) => ({
+    segment,
+    loc: directiveSegLoc(source, scope, "@nudo:contract", segment),
+  }));
+}
+
+/**
+ * 畸形指令段（粘连 / 空载荷）的诊断文案（**既有**语法诊断码，不另造新码）。
+ *
+ * - glued（标签后缺分隔空白 ⇒ 标签名被延长）：点明「标签后必须有空白」
+ * - empty（标签无载荷）：点明缺什么载荷
+ */
+function malformedDirectiveMessage(
+  tag: string,
+  raw: string,
+  reason: "glued" | "empty",
+  expected: string,
+): string {
+  if (reason === "glued") {
+    return `Malformed ${tag} directive '${raw}' (expected '${tag} ${expected}' — a space is required after the tag)`;
+  }
+  return `Malformed ${tag} directive '${raw}' (expected '${tag} ${expected}')`;
+}
+
 /**
  * @nudo:assume 解析段（issue #152 用户引理前提）。
  * ok：lhs ≤ rhs（`>=` 段已在解析时翻转，消费方只见 le）；
@@ -1096,27 +1526,54 @@ function extractRefineLines(source: string, fnName: string): string[] {
  * 锚定 = AST 最近 Function（与 @nudo:contract 同 D6=G2 注释块绑定）。
  */
 export type AssumeSeg =
-  | { kind: "ok"; lhs: string; rhs: string }
-  | { kind: "bad"; raw: string };
+  | { kind: "ok"; lhs: string; rhs: string; line?: number; column?: number }
+  | { kind: "bad"; raw: string; line?: number; column?: number };
+
+/**
+ * 关系文法 `<name> <= <name>` / `<name> >= <name>`——名字是 **JS 绑定名**
+ * （Unicode 合法，如 `小数`；`$x` 也合法）。
+ *
+ * Bug 350：旧口径用 ASCII 正则 `[A-Za-z_$][\w$]*` ⇒ 中文标识符被判
+ * malformed（check 发 nudo:assume-invalid ⇒ **L1 假红**），而侧车面把同一个
+ * 中文名当一等公民 ⇒ 跨面自相矛盾。三条源码指令统一走 JS 标识符文法。
+ */
+function parseRelationalSeg(
+  seg: string,
+): { lhs: string; rhs: string } | undefined {
+  const m = seg.match(/^(.*?)\s*(<=|>=)\s*(.*)$/);
+  if (!m) return undefined;
+  const lhs = m[1]!.trim();
+  const rhs = m[3]!.trim();
+  if (!isJsBindingIdent(lhs) || !isJsBindingIdent(rhs)) return undefined;
+  // `>=` 翻转为 le（消费方只见 le）：lhs/rhs 互换
+  return m[2] === ">=" ? { lhs: rhs, rhs: lhs } : { lhs, rhs };
+}
 
 export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
   // 快路径：整文件无 @nudo:assume 时免 parse 全文（与 extractRefinesFromSource 同口径）
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:assume")) return [];
+  const scope = fnDirectiveScopeOf(source, fnName);
   const out: AssumeSeg[] = [];
-  for (const seg of scanAssumeSegments(fnDirectiveCommentLines(source, fnName))) {
+  for (const seg of scanAssumeSegments(scope?.commentLines ?? [])) {
     // 仅 var ≤ var（var-var 关系引理；`>=` 翻转为 le）；常数界属侧车契约文法
-    const geSeg = seg.match(/^([A-Za-z_$][\w$]*)\s*>=\s*([A-Za-z_$][\w$]*)$/);
-    if (geSeg) {
-      out.push({ kind: "ok", lhs: geSeg[2]!, rhs: geSeg[1]! });
+    const rel = parseRelationalSeg(seg);
+    // Bug 374：段位置 = 出错指令所在行（诊断不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:assume", seg);
+    if (rel) {
+      out.push({
+        kind: "ok",
+        lhs: rel.lhs,
+        rhs: rel.rhs,
+        ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+      });
       continue;
     }
-    const leSeg = seg.match(/^([A-Za-z_$][\w$]*)\s*<=\s*([A-Za-z_$][\w$]*)$/);
-    if (leSeg) {
-      out.push({ kind: "ok", lhs: leSeg[1]!, rhs: leSeg[2]! });
-      continue;
-    }
-    out.push({ kind: "bad", raw: seg });
+    out.push({
+      kind: "bad",
+      raw: seg,
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
   }
   return out;
 }
@@ -1137,40 +1594,88 @@ export type InvariantSeg =
       rel: "ge" | "le" | "gt" | "lt";
       value: number;
       display: string;
+      line?: number;
+      column?: number;
     }
-  | { kind: "bad"; raw: string };
+  | { kind: "bad"; raw: string; line?: number; column?: number };
 
-const INVARIANT_SEG_REGEX =
-  /^([A-Za-z_$][\w$]*)((?:\[\*\]|\.[A-Za-z_$][\w$]*)*)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/;
+/**
+ * 不变量的路径文法：`[*]`（元素域）/ `.ident`（obj 槽）序列（可空 = 标量）。
+ * `ident` 是 **JS 绑定名**（Unicode 合法，如 `.小数`）——Bug 350。
+ */
+function parseInvariantPath(
+  s: string,
+): Array<{ k: "idx" } | { k: "prop"; name: string }> | undefined {
+  const out: Array<{ k: "idx" } | { k: "prop"; name: string }> = [];
+  let i = 0;
+  while (i < s.length) {
+    if (s.startsWith("[*]", i)) {
+      out.push({ k: "idx" });
+      i += 3;
+      continue;
+    }
+    if (s[i] !== ".") return undefined;
+    let j = i + 1;
+    while (j < s.length && s[j] !== "." && s[j] !== "[") j += 1;
+    const name = s.slice(i + 1, j);
+    if (!isJsBindingIdent(name)) return undefined;
+    out.push({ k: "prop", name });
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * 不变量段文法：`<name><path> <rel> <number>`。
+ * `name` 是 **JS 绑定名**（Unicode 合法）；`path` 见 parseInvariantPath。
+ * Bug 350：旧口径是纯 ASCII 正则 ⇒ 中文标识符被判 malformed（L1 假红）。
+ */
+function parseInvariantSeg(seg: string): {
+  name: string;
+  path: Array<{ k: "idx" } | { k: "prop"; name: string }>;
+  rel: "ge" | "le" | "gt" | "lt";
+  value: number;
+  display: string;
+} | undefined {
+  const m = seg.match(/^(.*?)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return undefined;
+  const head = m[1]!.trim();
+  const relTxt = m[2]!;
+  const numTxt = m[3]!;
+  // `<name><path>`：名字是最长合法绑定名前缀，路径从第一个 `.` / `[` 起
+  const cut = head.search(/[.[]/);
+  const name = cut < 0 ? head : head.slice(0, cut);
+  const pathStr = cut < 0 ? "" : head.slice(cut);
+  if (!isJsBindingIdent(name)) return undefined;
+  const path = parseInvariantPath(pathStr);
+  if (path === undefined) return undefined;
+  return {
+    name,
+    path,
+    rel: relTxt === ">=" ? "ge" : relTxt === "<=" ? "le" : relTxt === ">" ? "gt" : "lt",
+    value: Number(numTxt),
+    display: `${name}${pathStr} ${relTxt} ${numTxt}`,
+  };
+}
 
 export function extractInvariantSegs(source: string, fnName: string): InvariantSeg[] {
   // 快路径：整文件无 @nudo:invariant 时免 regex 扫全文（与 extractAssumeSegs 同口径）
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:invariant")) return [];
   const out: InvariantSeg[] = [];
-  for (const seg of scanInvariantSegments(fnDirectiveCommentLines(source, fnName))) {
-    const m = seg.match(INVARIANT_SEG_REGEX);
-    if (!m) {
-      out.push({ kind: "bad", raw: seg });
+  const scope = fnDirectiveScopeOf(source, fnName);
+  for (const seg of scanInvariantSegments(scope?.commentLines ?? [])) {
+    // Bug 374：段位置 = 出错指令所在行（诊断不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:invariant", seg);
+    const pos = loc
+      ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) }
+      : {};
+    const parsed = parseInvariantSeg(seg);
+    if (!parsed) {
+      out.push({ kind: "bad", raw: seg, ...pos });
       continue;
     }
-    const pathStr = m[2] ?? "";
-    const path: Array<{ k: "idx" } | { k: "prop"; name: string }> = [];
-    for (const pm of pathStr.matchAll(/\[\*\]|\.[A-Za-z_$][\w$]*/g)) {
-      const t = pm[0]!;
-      if (t === "[*]") path.push({ k: "idx" });
-      else path.push({ k: "prop", name: t.slice(1) });
-    }
-    const relTxt = m[3]!;
-    out.push({
-      kind: "ok",
-      name: m[1]!,
-      path,
-      rel:
-        relTxt === ">=" ? "ge" : relTxt === "<=" ? "le" : relTxt === ">" ? "gt" : "lt",
-      value: Number(m[4]),
-      display: `${m[1]}${pathStr} ${relTxt} ${m[4]}`,
-    });
+    out.push({ kind: "ok", ...parsed, ...pos });
   }
   return out;
 }
@@ -1227,6 +1732,19 @@ export type RefineEntry = {
   name?: string;
 };
 
+/**
+ * 契约段的两个名字是否合法：形参位是 **JS 绑定名**（Unicode 合法，如 `计数`
+ * / `$x`）；约束名是绑定名，可带命名空间前缀（`ns.foo`，@nudo:import * as ns）。
+ *
+ * Bug 350：旧口径 `^(\w+)\s+([\w.]+)$` 只收 ASCII ⇒ 中文标识符 / `$` 前缀等
+ * 合法 JS 绑定名被判 malformed（check 发 nudo:contract-syntax ⇒ **L1 假红**），
+ * 而侧车面把同一个中文名当一等公民 ⇒ 跨面自相矛盾。
+ */
+function isContractSegmentNames(param: string, cName: string): boolean {
+  if (param !== "return" && !isJsBindingIdent(param)) return false;
+  return cName.split(".").every((p) => isJsBindingIdent(p));
+}
+
 export function extractRefinesFromSource(
   source: string,
   fnName: string,
@@ -1236,19 +1754,45 @@ export function extractRefinesFromSource(
   // 指令住注释——字符串里的同形文本不算
   if (!stripStringsKeepComments(source).includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
+  const scope = fnDirectiveScopeOf(source, fnName);
+  // Bug 981 / 1032：粘连（`@nudo:contractx p n`——标签名被延长）与**空载荷**
+  // （`@nudo:contract` 单独成行）此前**整行不匹配**严格正则且**无 else 分支**
+  // ⇒ 契约整条蒸发、**零诊断**（假绿：用户以为契约生效了）⇒ 这里显式发
+  // `nudo:contract-syntax`（既有码，不另造新码）。
+  for (const seg of scanMalformedDirectiveSegments(scope?.commentLines ?? [], [
+    "@nudo:contract",
+  ])) {
+    const loc = directiveSegLoc(source, scope, "@nudo:contract", seg.raw);
+    collectDiag({
+      code: DIAG.contractSyntax,
+      message: malformedDirectiveMessage(
+        "@nudo:contract",
+        seg.raw,
+        seg.reason,
+        "<param> <constraintName>",
+      ),
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
+  }
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
+    // Bug 374：诊断位置 = 出错指令行（contract-syntax 不再落在文件首行）
+    const loc = directiveSegLoc(source, scope, "@nudo:contract", line);
+    const pos = loc
+      ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) }
+      : {};
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
       // 约束名支持 `ns.foo` 命名空间展开（@nudo:import * as ns）
-      const m = part.match(/^(\w+)\s+([\w.]+)$/);
-      if (!m) {
+      const m = part.match(/^(\S+)\s+(\S+)$/);
+      if (!m || !isContractSegmentNames(m[1]!, m[2]!)) {
         // 非法契约段（F-3 #6-8：`x > 0` / `x number()` / `x` 单独）→ 不再静默 continue
         // return 段由 extractRefineReturnFromSource 处理，这里不报
         if (/^return\b/.test(part)) continue;
         collectDiag({
           code: DIAG.contractSyntax,
           message: `Malformed @nudo:contract segment '${part}' (expected <param> <constraintName> or return <constraintName>; e.g. @nudo:contract x positive)`,
+          ...pos,
         });
         continue;
       }
@@ -1262,6 +1806,7 @@ export function extractRefinesFromSource(
         collectDiag({
           code: DIAG.contractSyntax,
           message: `Unknown constraint name '${cName!}' in @nudo:contract (expected a name bound by @nudo:import)`,
+          ...pos,
         });
         continue;
       }
@@ -1293,8 +1838,70 @@ export function refineToIndexedFull(
 }
 
 /**
+ * 返回契约里的 **fn 形态模板** → 真正的返回义务（`fn.returns`）。
+ *
+ * Bug 351：源码 `@nudo:contract return <fn 形态模板>` 的返回义务整条不被执法
+ * ——返回槽装的是整个 fn 约束，而 postcondition 的 fn 分支把 fn 形态直接判
+ * 「已证明」。侧车口径（`interface.ts` 的 `sidecarFn?.fn.returns`）取的是
+ * **fn.returns** ⇒ 两侧口径必须一致：这里在提取期就拆出 `fn.returns`，
+ * 返回槽仍是**单条**（不改公开返回型）。
+ *
+ * fn 形态但**没有** returns 声明 ⇒ 没有返回义务 ⇒ 返回 undefined。
+ */
+function returnObligationOf(c: NudoConstraint): NudoConstraint | undefined {
+  const d = c;
+  if (d.fn === undefined) return d;
+  return d.fn.returns;
+}
+
+/**
+ * 多条返回契约合成**单条合取**（Bug 360）。
+ *
+ * 旧口径「首个命中即 return」⇒ 多条 `@nudo:contract return` 只执法第一条：
+ * 违反第 2 条时 0 error / exit 0（**加一条契约反而让门禁变绿**）。
+ * 语义取**合取**——与形参位「同形参多段取合取」的既有语义一致
+ * （`interface.ts` 的 `conjoinOrConflict` → `andC`）。
+ *
+ * 合取能力边界（Phase 1 只支持标量合取）与形参位同口径：
+ * - 非标量形态（shape/array/union）⇒ 保既有（第一条），**不**当矛盾
+ * - prim 不一致（number ∧ string）⇒ 真矛盾：报 nudo:contract-syntax，
+ *   保既有（第一条继续执法）
+ */
+function conjoinReturnContracts(
+  hits: Array<{ name: string; constraint: NudoConstraint }>,
+): { name: string; constraint: NudoConstraint } {
+  const first = hits[0]!;
+  if (hits.length === 1) return first;
+  const name = hits.map((h) => h.name).join(" ∧ ");
+  let acc = first.constraint;
+  for (const h of hits.slice(1)) {
+    const c = h.constraint;
+    // 非标量形态：合不了（Phase 1 能力边界，不是矛盾）⇒ 保既有
+    if (isNonScalarConstraint(acc) || isNonScalarConstraint(c)) continue;
+    try {
+      acc = andC(acc, c);
+    } catch {
+      collectDiag({
+        code: DIAG.contractSyntax,
+        message: `Contradictory @nudo:contract return segments '${name}' (cannot be satisfied together); keeping '${first.name}'`,
+      });
+      return { name, constraint: first.constraint };
+    }
+  }
+  return { name, constraint: acc };
+}
+
+/** 非标量形态（shape / array / union / fn）：Phase 1 的 and() 合不了 */
+function isNonScalarConstraint(c: NudoConstraint): boolean {
+  return c.fields !== undefined || c.element !== undefined || c.members !== undefined || c.fn !== undefined;
+}
+
+/**
  * 解析 `@nudo:contract return positive` → 返回契约。
  * 返回 undefined = 无声明（不猜后置）。
+ *
+ * Bug 360：多条 return 段**合成单条合取**（不再「首个命中即 return」）。
+ * Bug 351：fn 形态模板取其 `fn.returns`（与侧车口径一致，返回义务真被执法）。
  */
 export function extractRefineReturnFromSource(
   source: string,
@@ -1303,13 +1910,14 @@ export function extractRefineReturnFromSource(
 ): { name: string; constraint: NudoConstraint } | undefined {
   if (!stripStringsKeepComments(source).includes("@nudo:contract")) return undefined;
   const constraints = collectConstraints(source, opts);
+  const hits: Array<{ name: string; constraint: NudoConstraint }> = [];
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const m = part.match(/^return\s+([\w.]+)$/);
-      if (!m) {
+      const m = part.match(/^return\s+(\S+)$/);
+      if (!m || !m[1]!.split(".").every((p) => isJsBindingIdent(p))) {
         // return 段形态非法（如 `return > 0`）→ 诊断
-        if (/^return\b/.test(part) && !/^return\s+[\w.]+$/.test(part)) {
+        if (/^return\b/.test(part) && !/^return\s+\S+$/.test(part)) {
           collectDiag({
             code: DIAG.contractSyntax,
             message: `Malformed @nudo:contract return segment '${part}' (expected return <constraintName>)`,
@@ -1327,10 +1935,14 @@ export function extractRefineReturnFromSource(
         });
         continue;
       }
-      return { name: cName, constraint: c };
+      const obligation = returnObligationOf(c);
+      // fn 形态模板没有 returns 声明 ⇒ 没有返回义务（不进返回槽）
+      if (obligation === undefined) continue;
+      hits.push({ name: cName, constraint: obligation });
     }
   }
-  return undefined;
+  if (hits.length === 0) return undefined;
+  return conjoinReturnContracts(hits);
 }
 
 /**
@@ -1343,6 +1955,11 @@ export function extractRefineReturnFromSource(
  *
  * 与 refine 同扫函数前注释块（D6=G2 同一 scope 绑定）。
  * 返回 `*` = 申报任意；数组 = 按名申报；undefined = 无申报（L2 照常执法）。
+ *
+ * Bug 1032：粘连（`@nudo:throwsTypeError`）与**空载荷**（`@nudo:throws`）此前
+ * **整行不匹配**严格正则且**无 else 分支** ⇒ 抛错申报**零诊断**地蒸发 ⇒ L2
+ * 门禁按「未申报」执法（假红），而用户以为申报生效了 ⇒ 这里显式发
+ * `nudo:directive-syntax`（既有码，不另造新码）。
  */
 export function extractDeclaredThrows(
   source: string,
@@ -1353,6 +1970,15 @@ export function extractDeclaredThrows(
     return undefined;
   }
   const lines = fnDirectiveCommentLines(source, fnName);
+  const scope = fnDirectiveScopeOf(source, fnName);
+  for (const seg of scanMalformedDirectiveSegments(lines, ["@nudo:throws"])) {
+    const loc = directiveSegLoc(source, scope, "@nudo:throws", seg.raw);
+    collectDiag({
+      code: DIAG.directiveSyntax,
+      message: malformedDirectiveMessage("@nudo:throws", seg.raw, seg.reason, "<ErrorKind>"),
+      ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
+    });
+  }
   const spec = scanThrowsDecl(lines);
   if (spec === undefined) return undefined;
   if (spec === "*") return "*";

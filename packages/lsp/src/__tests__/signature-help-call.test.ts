@@ -59,13 +59,19 @@ describe("findEnclosingCall (P-IDE7)", () => {
     expect(at(SINGLE_LINE, 1, 42)?.currentParamIndex).toBe(2); // 22 结尾（`)` 处）
   });
 
-  it("nested calls keep outermost-first semantics (parity with old visitor)", () => {
+  it("nested calls resolve to the innermost enclosing call (Bug 711)", () => {
     const nested = "export function use() { return call(call(1, 2), 3); }\n";
-    // 光标在内层 call 的参数 `2`（col 44）上：旧 visitor 取外层（首个命中即停），
-    // 保持一致——外层 callee col 31，内层调用表达式是外层第 0 参
-    const hit = at(nested, 1, 44);
-    expect(hit).toMatchObject({ calleeLine: 1, calleeCol: 31 });
-    expect(hit?.currentParamIndex).toBe(0);
+    // 光标在内层 call 的参数 `2`（col 44）上 ⇒ 弹**最内层** `call`（callee col 36），
+    // 而非外层（callee col 31）。旧实现「首个命中即停 + path.skip()」取外层，
+    // 内层调用永远不参与 ⇒ 弹的是完全无关的参数表。
+    const inner = at(nested, 1, 44);
+    expect(inner).toMatchObject({ calleeLine: 1, calleeCol: 36 });
+    // 内层 call 的实参是 `(1, 2)` ⇒ `2` 是第 1 个（下标 1）
+    expect(inner?.currentParamIndex).toBe(1);
+    // 外层自己的实参（col 48 的 `3`）仍取外层 call，参数下标 = 1
+    const outer = at(nested, 1, 48);
+    expect(outer).toMatchObject({ calleeLine: 1, calleeCol: 31 });
+    expect(outer?.currentParamIndex).toBe(1);
   });
 
   it("positions outside any call yield null; same-line-after-call no longer false-matches", () => {

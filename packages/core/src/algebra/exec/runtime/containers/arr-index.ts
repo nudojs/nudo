@@ -10,6 +10,10 @@
  *   （issue #175：否则 xs[0].length - xs[1].length 假折 0）。
  * - abstractLen memo 只对**绑定接收者**合法（跨读同 term sound）；
  *   lenVarSeq 单调递增，len#N term 全局唯一。
+ * - Bug 209：Proxy **set 陷阱**返回值按规范 ToBoolean 判定——falsy（0 / "" /
+ *   null / undefined / false）→ strict TypeError（只认字面量 false 会漏）。
+ * - Bug 197：下标写查 defineProperty 的 writable:false → strict TypeError
+ *   （此前下标臂只查 frozen / sealed，flags 面没查 → 写穿无声）。
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
@@ -22,6 +26,7 @@ import {
   getSlot,
   canonicalArrayIndex,
   propertyKeyOf,
+  markKeySetOpenAbs,
 } from "../../../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
@@ -29,6 +34,7 @@ import { isSetAbs, isMapAbs, setElementsAbs, mapEntriesAbs } from "../../../coll
 import { hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../../match-iter.ts";
 import {
   extStateOf,
+  getPropFlags,
 } from "../../../builtins.ts";
 import {
   noteAnyMemberMayThrow,
@@ -53,6 +59,9 @@ import { markDomainShared, isDomainShared } from "../../../len-sharing.ts";
 import { $call } from "../../call.ts";
 import { widenTupleToArr } from "./arr-make.ts";
 import { $set, $get } from "./member.ts";
+// 族 58 · Bug 5：任意 brand 的 "length" 槽读（单一事实源，见 members.ts）。
+import { brandLengthSlotValue } from "../members.ts";
+import { symbolSlotKeyOf } from "./symbol-slot.ts";
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(
@@ -85,6 +94,39 @@ export function $idx(
   const keyStr = propertyKeyOf(i);
   const iv = keyStr;
   const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
+  // 族 57 · 外-02 ①：符号键的**槽寻址通道**（普通对象面）——propertyKeyOf
+  // 对 symbol 返 undefined（symbol 不是字符串 PropertyKey）⇒ 此前符号键读
+  // 落抽象下标投影（unknown）、写被丢弃（对象标 open）。symKey 是符号键的
+  // 内部槽键（well-known → "@@X"；用户符号 → "@@sym#N"，见 symbol-slot.ts）
+  // ——读写两侧同键 ⇒ 值可回读。
+  const symKey = symbolSlotKeyOf(i);
+  if (symKey !== undefined) {
+    // Proxy 面按规范把**真 symbol** 传给 get 陷阱（Bug 149）⇒ 走下方 Proxy
+    // 臂（不落槽寻址）。
+    const isProxy = a.shape.k === "brand" && a.shape.name === "Proxy";
+    if (!isProxy) {
+      // 有槽表的面（普通对象 / 内层是 obj 的 brand——包装对象、类实例…）：
+      // 符号槽寻址（写面同键 ⇒ 读回同值）。
+      const objShape: ObjShape | undefined =
+        a.shape.k === "obj"
+          ? (a.shape as ObjShape)
+          : a.shape.k === "brand" && a.shape.shape.shape.k === "obj"
+            ? (a.shape.shape.shape as ObjShape)
+            : undefined;
+      if (objShape) {
+        const slot = getSlot(objShape.slots, symKey);
+        if (slot) return slot.value;
+        // 闭 shape 符号键确定缺席 → undefined（原生同款）；open shape 键集
+        // 不完备 → unknown（不得假精确）。
+        return objShape.open ? unknown : undef();
+      }
+      // 无槽模型的容器面（tuple / arr / Set / Map / 生成器…）：符号键缺席
+      // ——闭 tuple 恒缺席 → undefined；抽象 arr 的 expando 面不可判（写面
+      // 丢弃 expando）→ unknown（同 arr 臂的确定非下标键口径）。
+      if (a.shape.k === "arr") return unknown;
+      return undef();
+    }
+  }
   // Bug 54：生成器对象下标读（数组解构逐项投影 `const [a] = it`）——按
   // 消费位 live 视图取数，不再从静态形状槽 0 重放已消费元素
   if (a.shape.k === "obj" && hasGenView(a)) {
@@ -132,7 +174,13 @@ export function $idx(
     return joinAbs(els.reduce((x, y) => joinAbs(x, y)), oobUndef());
   }
   if (a.shape.k === "arr") {
-    if (iv !== undefined && idx === undefined) return undef();
+    // Bug 232：确定非下标键（"foo"、-1、1.5、≥2^32-1…）——arr 形**没有**
+    // expando 槽模型（写面把 expando 写降级为 arr，值被丢弃），键**可能**
+    // 存在（原生 a[-1]=9 后读回 9）⇒ 不得折 exact undefined（自信的错值，
+    // 违反引擎自己的「不得假精确」不变式）。与字符串键路径同口径降级为
+    // 抽象值（$get 的 arr 臂返回 unknown）。
+    // 闭 tuple 无 expando（写面已就地降 arr）⇒ 仍折 exact undefined。
+    if (iv !== undefined && idx === undefined) return unknown;
     // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
     // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
     if (idx === undefined) {
@@ -147,6 +195,19 @@ export function $idx(
   if (a.shape.k === "brand") {
     const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
     if (elem) {
+      // 族 62 · 第 4 条：元素**值**入索引槽（makeTypedArrayAbs 装）⇒ 命中槽
+      // 直读原生同款精确值（`new Int8Array(["3"])[0]` → 3）；未命中（长度
+      // 形态 / 抽象源 / 越界）⇒ 回落元素域 ∪ undefined（不假精确）。
+      if (idx !== undefined) {
+        const inner = (a.shape as { shape?: Abs }).shape;
+        if (inner && inner.shape.k === "obj") {
+          const slot = getSlot(
+            (inner.shape as unknown as { slots: Record<string, { value: Abs }> }).slots,
+            String(idx),
+          );
+          if (slot) return slot.value;
+        }
+      }
       return joinAbs(
         abs({ k: "prim", type: elem }, undefined, undefined, "exact"),
         undef(),
@@ -262,13 +323,17 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // 非字面量键（var/app term）→ iv undefined（对象走抽象键 open 路径）；
   // 此前误用 litValue 的 {ok:false} 包装对象，String(iv) 变 "[object Object]"
   const iv = pk;
+  // 族 57 · 外-02 ①：符号键的槽寻址键（读面同款：symbol-slot.ts）——
+  // propertyKeyOf 对 symbol 返 undefined ⇒ 此前符号键写落抽象键分支
+  // （写被丢弃 + 对象标 open ⇒ 键集面不保真）。
+  const symKey = symbolSlotKeyOf(i);
   // Bug 56：Arguments brand → 委托 tuple 内层（原地写回，brand 身份保持）
   if (a.shape.k === "brand" && a.shape.name === "Arguments") {
     $idxSet(a.shape.shape, i, value);
     return a;
   }
-  // Bug 71：Proxy——set 陷阱优先（键 ToPropertyKey；返回字面量 false →
-  // strict TypeError）；无陷阱转发靶下标写（原地，brand 身份保持）
+  // Bug 71：Proxy——set 陷阱优先（键 ToPropertyKey；返回值按 ToBoolean 判定
+  // falsy → strict TypeError）；无陷阱转发靶下标写（原地，brand 身份保持）
   if (a.shape.k === "brand" && a.shape.name === "Proxy") {
     const parts = proxyPartsOf(a);
     if (parts) {
@@ -277,7 +342,9 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
         const keyAbs = iv !== undefined ? strLit(String(iv)) : i;
         const res = $call(trap.fn, [parts.target, keyAbs, value, a], parts.handler);
         const rv = litValue(res);
-        if (rv.ok && rv.value === false) throwStrictWrite();
+        // Bug 209：set 陷阱返回值按规范 **ToBoolean**——falsy（0 / "" / null /
+        // undefined / false）→ strict TypeError；此前只认字面量 false。
+        if (rv.ok && !rv.value) throwStrictWrite();
         return a;
       }
       if (trap.k === "dead" || trap.k === "opaque") {
@@ -297,6 +364,10 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     ) {
       throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
     }
+    // Bug 197：下标位 defineProperty 的 **writable:false** → strict 写原生
+    // TypeError；此前下标臂只查 frozen/sealed（flags 面完全没查）→ 写穿
+    // 无声（门禁假绿）。
+    if (getPropFlags(a)?.get(String(numIdx))?.writable === false) throwStrictWrite();
     // i ≥ 2^32-1：非数组下标，原生是 expando 属性（length 不变、`i in a` 可见）。
     // 数组模型无 expando 槽：就地降 arr（读/keys/in 全保守），不得假精确
     if (numIdx >= 4294967295) {
@@ -340,8 +411,20 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     return a;
   }
   if (sk === "obj") {
+    if (symKey !== undefined) {
+      // 族 57 · 外-02 ①：符号键写落**符号槽**（slotKey 标记 ⇒ JSON / 字符串
+      // 枚举面不可见，Bug 73 口径）——键确定 ⇒ 无需标 open（键集面保真）。
+      return $set(a, symKey, value, { symbolKey: true });
+    }
     if (iv === undefined) {
       // 抽象键：无槽位模型——标记 open（缺失键读不再折 undefined 假精确）
+      // Bug 383：键**不可判**（对象键的 ToString 结果不可判——如函数键的
+      // 源码文本 / 抽象 var 键）⇒ 写被丢弃 ⇒ 该对象的**自有键集不完备**
+      // （native 侧该键确实存在）⇒ 键家族（Object.keys / values / entries）
+      // 据此折 partial，**不得**折 exact 空元组（自信的确切错值：native
+      // `Object.keys(o).length` = 1 vs 引擎 0）。修前只标 open（键集面读
+      // 不到该语义）⇒ 键家族仍折 exact 空元组。
+      markKeySetOpenAbs(a);
       a.shape = { ...a.shape, open: true };
       a.conf = confJoin(a.conf, "path");
       clearStaleTermPred(a);
@@ -350,6 +433,12 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     return $set(a, String(iv), value);
   }
   if (sk === "brand") {
+    if (symKey !== undefined) {
+      // 族 57 · 外-02 ①：符号键写落内层 obj 的**符号槽**（$set 就地突变
+      // 内层 ⇒ 读面同键可见）——索引写仍按既有口径保守（内建 brand 不写：
+      // Uint8Array 截断被写穿假精确）。
+      return $set(a, symKey, value, { symbolKey: true });
+    }
     if (iv === undefined) return a;
     // 仅用户类（注册表）委派 $set——内建 brand（TypedArray/String 包装等）
     // 下标写语义未建模，保持保守不写（差分抓到：Uint8Array 截断被写穿假精确）
@@ -369,6 +458,32 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
 /** $len 的非负 term/pred 备忘（同一接收者对象 → 同一 var，跨迭代稳定） */
 const lenTermMemo = new WeakMap<Abs, Term>();
 let lenVarSeq = 0;
+
+/** 该 Abs 是否是「**确切的** undefined」（$len 的 undefined 臂：RegExp 匹配
+ *  迭代器等）——shape 是 unknown 令牌 + term 是 lit undefined。 */
+function isExactUndef(a: Abs): boolean {
+  return (
+    a.shape.k === "unknown" &&
+    a.term?.op === "lit" &&
+    (a.term as { value?: unknown }).value === undefined
+  );
+}
+
+/** 该成员**确定没有** .length 属性（原生读出 undefined，Bug 239）：
+ *  - prim 且非 string（number/boolean/bigint/symbol）
+ *  - 闭 obj 且无 length 槽
+ *  其余（unknown/any/brand/open obj/sum）长度**不可知**——不并 undefined 臂
+ *  （把「不可知」误当「确定无」会制造 L1 假红）。 */
+function memberHasNoLength(m: Abs): boolean {
+  const k = m.shape.k;
+  if (k === "prim") return (m.shape as { type?: string }).type !== "string";
+  if (k === "obj") {
+    const s = m.shape as ObjShape;
+    if (s.open) return false;
+    return getSlot(s.slots, "length") === undefined;
+  }
+  return false;
+}
 
 /** 抽象长度：number + var term + pred ≥0（字符串/数组长度恒非负）。
  *  供 `new Array(len + 1)` 等消费（add 的 addPred 平移界 → ctor 证非负
@@ -433,7 +548,31 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
     ) {
       return lens[0]!;
     }
-    return abstractLen(a);
+    // Bug 239：union 接收者读 .length 必须**保留各成员的长度**——某成员
+    // 根本没有 .length（原生 (7).length → undefined）时，旧口径
+    // `return abstractLen(a)` 把「无 length」当成「有 length」⇒ 恒 number
+    // ⇒ L1 契约 `number()` 被判成立、零诊断的**假绿**。
+    // 逐成员长度 join（同 $idx / $get 的 sum 分支口径）：确定「无 length」
+    // 的成员贡献 undefined 臂；长度不可知（unknown/any/brand/open obj）
+    // 的成员保持原值（不误并 undefined 臂 → 不制造假红）。
+    const arms: Abs[] = [];
+    let hasUndefArm = false;
+    for (const m of a.shape.members) {
+      const l = $len(m, opts);
+      if (memberHasNoLength(m)) {
+        arms.push(undef()); // 原生：成员没有 length 属性 → 读出 undefined
+        hasUndefArm = true;
+        continue;
+      }
+      if (isExactUndef(l)) {
+        arms.push(l); // 长度**就是** undefined（exact）
+        hasUndefArm = true;
+        continue;
+      }
+      arms.push(l);
+    }
+    if (!hasUndefArm) return abstractLen(a);
+    return arms.reduce((x, y) => joinAbs(x, y));
   }
   // Bug 56：Arguments brand → tuple 内层长度（arguments.length 精确）
   if (a.shape.k === "brand" && a.shape.name === "Arguments") {
@@ -516,6 +655,15 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   if (a.shape.k === "brand" && classNameOfValue(a as object) === a.shape.name) {
     return $get(a, "length", opts);
   }
+  // 族 58 · Bug 5：任意 brand 的 "length" 槽——env 声明面建模的槽（如
+  // Buffer 实例的 length）此前不可读（core 的 $len 只认 String / TypedArray
+  // 家族 / Arguments / Proxy，其余 brand 一律折 unknown ⇒ buf.length 拿不到）。
+  // 口径：只认内层 obj 的**非可选** "length" 槽（无槽的 brand 沿尾 unknown；
+  // 可选槽沿既有 unknown 口径）——判定由 exec/runtime/members.ts 的
+  // brandLengthSlotValue 单一事实源给出（与 $get 品牌内层槽读同口径 ⇒
+  // `buf.length` 与 `buf["length"]` 一致）。
+  const brandLen = brandLengthSlotValue(a);
+  if (brandLen !== undefined) return brandLen;
   return unknown;
 }
 

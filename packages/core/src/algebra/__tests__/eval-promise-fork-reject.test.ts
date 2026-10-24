@@ -11,7 +11,8 @@
  *   （inner ⊔ 各臂值 × rejected ⊔ 各臂 reason），eff(promise) resolve 的
  *   rejected/unsettled 通道并入 join 面
  * - 同路径顺序双 settle（含 fork join 之后的顺序 settle）：first-wins 原样
- * - 单 resolve / 只 reject / 同步抛 executor 控制组不变
+ * - 单 resolve / 只 reject / 同步抛 executor 控制组不变（同步抛 → 确定拒绝，
+ *   Bug 310：原生 promise 以抛出值拒绝）
  */
 import { describe, it, expect } from "vitest";
 import { formatAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";
@@ -181,12 +182,14 @@ describe("N1 控制组：first-wins / 单路径不回归", () => {
     expect(fmt(r.result)).toBe("promise<never>");
   });
 
-  it("executor 同步抛 → promise<unknown>（不假装 settle）", () => {
+  it("executor 同步抛 → 确定拒绝（Bug 310：原生 promise 以抛出值拒绝）", () => {
     const r = call(`export function f() { return new Promise(() => { throw new Error("boom"); }); }`);
     const sh = promiseShape(r.result);
-    expect(sh.inner).toBe("unknown");
-    expect(sh.rejected).toBe("<none>");
-    expect(sh.unsettled).toBe(true);
+    // 原生：executor 抛错 → promise 拒绝（fulfilled 臂不可能）→ inner never
+    // + rejected = Error("boom")（await 抛 → catch 臂可达）
+    expect(sh.inner).toBe("never");
+    expect(sh.rejected).toBe("Error");
+    expect(sh.unsettled).toBe(false);
   });
 
   it("顺序双 resolve 保持 first-wins", () => {

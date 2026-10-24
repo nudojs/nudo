@@ -587,9 +587,20 @@ function f(x) { return x; }`;
     expect(sink[0]!.code).toBe("nudo:directive-syntax");
   });
 
-  it("单次调用内同文案去重", () => {
+  it("单次调用内同文案去重（同一处同一问题）", () => {
     const sink: DirectiveDiag[] = [];
-    // 两个函数各带一条同文案非法 case 名 → 只报一次
+    // 同一去重域内、同一位置（同一份源码）被扫描两次 → 只报一次
+    runWithDirectiveDiags(sink, () => {
+      extractDirectives(parse(BAD));
+      extractDirectives(parse(BAD));
+    });
+    expect(sink.length).toBe(1);
+  });
+
+  it("同文案但不同位置 → 各报一条（Bug 848：去重身份含位置）", () => {
+    const sink: DirectiveDiag[] = [];
+    // 两个函数各带一条**逐字相同**的非法 case 名 ⇒ 两处**不同的出错点**
+    // ⇒ 不能塌缩成一条（用户修好第一处后以为已经修完，第二处完全不可见）
     extractDirectives(
       parse(`/**
  * @nudo:case 't' (1)
@@ -601,7 +612,10 @@ function f(x) { return x; }
 function g(x) { return x; }`),
       { diags: sink },
     );
-    expect(sink.length).toBe(1);
+    expect(sink.length).toBe(2);
+    expect(sink[0]!.at).toBeDefined();
+    expect(sink[1]!.at).toBeDefined();
+    expect(sink[0]!.at!.line).not.toBe(sink[1]!.at!.line);
   });
 
   it("sink extract 覆盖外层 runWithDirectiveDiags 域（自成新去重域）", () => {

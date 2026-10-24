@@ -16,7 +16,7 @@
  */
 
 import type { Comment, File, Node } from "@babel/types";
-import { stripStringsKeepComments } from "./code-text.ts";
+import { maskStringsKeepComments } from "./code-text.ts";
 import { parseSource } from "./parse-source.ts";
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ export function commentTextToLines(text: string, kind: "line" | "block"): string
 // ---------------------------------------------------------------------------
 
 export type FnDirectiveScope = {
-  /** 绑定名：`f` / `C.m` / `default` / `<anonymous>` */
+  /** 绑定名：`f` / `C.m` / `C.static.m` / `default` / `<anonymous>` */
   name: string;
   node: Node;
   /** 该函数的前导注释块（comment.value 原文，文档序） */
@@ -58,6 +58,16 @@ export type FnDirectiveScope = {
   /** 与 commentTexts 对齐的注释起始行号 */
   commentStartLines: number[];
   startLine: number;
+  /**
+   * 词法嵌套深度：0 = 顶层函数 / 类成员；每进入一层函数体 +1。
+   *
+   * Bug 424：scope 名**不唯一**（同名遮蔽函数 / 嵌套函数）⇒「按名 + 文档序
+   * 首个命中」会让**内层**同名函数抢走导出函数的注释块 ⇒ L2 门禁假绿 / 假红。
+   * ⇒ 按名查找取**最浅**（depth 最小）的那个。
+   */
+  depth?: number;
+  /** 宿主名（类名 / 外层函数名）；顶层为 undefined */
+  owner?: string;
 };
 
 function commentKind(c: Comment): "line" | "block" {
@@ -70,6 +80,8 @@ function buildScope(
   wrapper: Node | undefined,
   comments: readonly Comment[] | undefined,
   wrapperComments: readonly Comment[] | undefined,
+  depth = 0,
+  owner?: string,
 ): FnDirectiveScope {
   const seen = new Set<Comment>();
   const texts: string[] = [];
@@ -90,6 +102,8 @@ function buildScope(
     commentLines: lines,
     commentStartLines: startLines,
     startLine: loc?.start?.line ?? 0,
+    depth,
+    owner,
   };
 }
 
@@ -110,7 +124,112 @@ function keyNameOf(key: Node | null | undefined): string | undefined {
   return undefined;
 }
 
-type WalkCtx = { owner?: string };
+/**
+ * 注释宿主合并：函数节点**自身**的前导注释 + 语句宿主的前导注释。
+ *
+ * Bug 419：箭头函数初始化器上的**内联** JSDoc（写在 `=` 与 `() =>` 之间）
+ * 挂在**函数节点**上，而语句级 JSDoc 挂在**声明语句**上 ⇒ 两者都要可见，
+ * 且必须落在**同一个** scope（绑定名 `f`）上。
+ */
+function mergedLeadingComments(
+  fnNode: Node,
+  host: Node | undefined,
+): readonly Comment[] | undefined {
+  const own = (fnNode as { leadingComments?: readonly Comment[] }).leadingComments;
+  if (!host || host === fnNode) return own;
+  const hostComments = (host as { leadingComments?: readonly Comment[] }).leadingComments;
+  if (!hostComments) return own;
+  if (!own) return hostComments;
+  return [...own, ...hostComments];
+}
+
+/**
+ * CJS 导出槽名（绑定名）：
+ *
+ * - `exports.f = fn` → `f`
+ * - `module.exports.f = fn` → `f`
+ * - `module.exports = fn` → `default`
+ *
+ * 非 CJS 形态 ⇒ undefined。
+ *
+ * Bug 428：CJS 赋值形态**没有 AST 绑定名**可取（`exports.f` 的 `f` 不是绑定）
+ * ⇒ 函数级指令落不到导出名上 ⇒ L1 契约静默失效 / `@nudo:throws` 不生效 /
+ * `@nudo:case` 整条蒸发。⇒ 必须给这种形态一个绑定名（= 导出槽名）。
+ */
+function cjsExportSlotName(left: Node | null | undefined): string | undefined {
+  const l = left as {
+    type?: string;
+    computed?: boolean;
+    object?: Node | null;
+    property?: Node | null;
+  } | null | undefined;
+  if (!l || l.type !== "MemberExpression" || l.computed === true) return undefined;
+  const prop = keyNameOf(l.property);
+  const obj = l.object as {
+    type?: string;
+    name?: string;
+    object?: Node | null;
+    property?: Node | null;
+  } | null | undefined;
+  // exports.f = fn
+  if (obj?.type === "Identifier" && obj.name === "exports") return prop;
+  // module.exports.f = fn
+  if (
+    obj?.type === "MemberExpression" &&
+    obj.object?.type === "Identifier" &&
+    (obj.object as { name?: string }).name === "module" &&
+    obj.property?.type === "Identifier" &&
+    (obj.property as { name?: string }).name === "exports"
+  ) {
+    return prop;
+  }
+  // module.exports = fn ⇒ 槽名 default（与 generalize 的 env.fns 登记口径一致）
+  if (obj?.type === "Identifier" && obj.name === "module" && prop === "exports") {
+    return "default";
+  }
+  return undefined;
+}
+
+/**
+ * 类体里的**实例**方法键集合（ctor / get / set 不算）。
+ *
+ * Bug 425：static 与实例同名时，指令 scope 名必须区分 ⇒ 需要先知道
+ * 「这个类里有没有同名实例方法」。
+ */
+function classInstanceKeys(body: readonly unknown[]): Set<string> {
+  const keys = new Set<string>();
+  for (const m of body) {
+    const mem = m as {
+      type?: string;
+      kind?: string;
+      key?: Node | null;
+      static?: boolean;
+    };
+    if (mem.type !== "ClassMethod" && mem.type !== "ClassPrivateMethod") continue;
+    if (mem.kind && mem.kind !== "method") continue; // ctor / get / set
+    if (mem.static === true) continue;
+    const k = keyNameOf(mem.key);
+    if (k) keys.add(k);
+  }
+  return keys;
+}
+
+type WalkCtx = {
+  /** 宿主名（类名 / 外层函数名）；顶层 undefined */
+  owner?: string;
+  /** 词法嵌套深度（进入函数体的次数）：顶层函数 / 类成员 = 0 */
+  depth?: number;
+  /** 匿名函数表达式的**绑定名**（变量名 / 导出槽名）——Bug 419 / 428 */
+  fallbackName?: string;
+  /** 语句级注释宿主（内联 JSDoc / CJS 赋值形态） */
+  commentHost?: Node;
+  /** export 包装节点 */
+  wrapperNode?: Node;
+  /** 所在语句（ExpressionStatement）——CJS 赋值形态取语句级注释用 */
+  stmtNode?: Node;
+  /** 宿主类的**实例**方法键集合（static / 实例同名消歧——Bug 425） */
+  instanceKeys?: ReadonlySet<string>;
+};
 
 /**
  * 全量 Function 站点：nested function、class method、object method 均可见。
@@ -124,14 +243,19 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
     fnNode: Node,
     commentNode: Node | undefined,
     wrapper: Node | undefined,
+    depth = 0,
+    owner?: string,
   ): void => {
     out.push(
       buildScope(
         name,
         fnNode,
         wrapper,
-        (commentNode as { leadingComments?: readonly Comment[] } | undefined)?.leadingComments,
+        // 注释宿主 = 函数节点自身 + 语句宿主（内联 JSDoc / CJS 赋值形态）
+        mergedLeadingComments(fnNode, commentNode),
         (wrapper as { leadingComments?: readonly Comment[] } | undefined)?.leadingComments,
+        depth,
+        owner,
       ),
     );
   };
@@ -193,42 +317,64 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
         return;
       }
       case "FunctionDeclaration": {
-        const name = n.id?.name ?? (ctx as { fallbackName?: string }).fallbackName ?? "<anonymous>";
-        pushNamedFn(name, node, node as Node, (ctx as { wrapperNode?: Node }).wrapperNode);
-        visit(n.body as Node, { owner: name });
+        // 绑定名优先（fallbackName）：具名函数表达式的内层 id 不是绑定名
+        const name = ctx.fallbackName ?? n.id?.name ?? "<anonymous>";
+        pushNamedFn(name, node, node as Node, ctx.wrapperNode, ctx.depth ?? 0, ctx.owner);
+        visit(n.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
         return;
       }
       case "FunctionExpression": {
-        const name = n.id?.name ?? (ctx as { fallbackName?: string }).fallbackName ?? "<anonymous>";
-        pushNamedFn(name, node, node as Node, (ctx as { wrapperNode?: Node }).wrapperNode);
-        visit(n.body as Node, { owner: name });
+        // 绑定名优先（fallbackName）：变量名 / 导出槽名（Bug 419 / 428）
+        const name = ctx.fallbackName ?? n.id?.name ?? "<anonymous>";
+        pushNamedFn(
+          name,
+          node,
+          ctx.commentHost ?? (node as Node),
+          ctx.wrapperNode,
+          ctx.depth ?? 0,
+          ctx.owner,
+        );
+        visit(n.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
         return;
       }
       case "ArrowFunctionExpression": {
-        const name = (ctx as { fallbackName?: string }).fallbackName ?? "<anonymous>";
-        pushNamedFn(name, node, (ctx as { commentHost?: Node }).commentHost ?? (node as Node), (ctx as { wrapperNode?: Node }).wrapperNode);
-        visit(n.body as Node, { owner: name });
+        const name = ctx.fallbackName ?? "<anonymous>";
+        pushNamedFn(
+          name,
+          node,
+          ctx.commentHost ?? (node as Node),
+          ctx.wrapperNode,
+          ctx.depth ?? 0,
+          ctx.owner,
+        );
+        visit(n.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
         return;
       }
       case "VariableDeclaration": {
-        for (const d of (n.declarations as unknown[]) ?? []) {
-          const decl = d as { id?: { type?: string; name?: string }; init?: Node | null };
+        const decls = (n.declarations as unknown[]) ?? [];
+        for (let i = 0; i < decls.length; i++) {
+          const decl = decls[i] as { id?: { type?: string; name?: string }; init?: Node | null };
           const idName = decl.id?.type === "Identifier" ? decl.id.name : undefined;
           if (isFnExpr(decl.init)) {
-            const fn = decl.init!;
-            // 注释带在 VariableDeclaration 上；函数名 = 变量名
-            const scope = buildScope(
-              idName ?? "<anonymous>",
-              fn,
-              (ctx as { wrapperNode?: Node }).wrapperNode,
-              (node as { leadingComments?: readonly Comment[] }).leadingComments,
-              ((ctx as { wrapperNode?: Node }).wrapperNode as { leadingComments?: readonly Comment[] } | undefined)?.leadingComments,
-            );
-            out.push(scope);
-            visit(fn, { owner: idName });
+            // Bug 418：语句级 JSDoc 只绑**首个** declarator（TS 口径）⇒ 同一条
+            // 见证不会被重放到后续 declarator 上。
+            // Bug 419：初始化器上的**内联** JSDoc 绑到**绑定名**上（不再落
+            // `<anonymous>`）⇒ 委托给函数分支建**唯一** scope（名字 = 变量名）。
+            visit(decl.init, {
+              owner: ctx.owner,
+              fallbackName: idName ?? "<anonymous>",
+              commentHost: i === 0 ? node : undefined,
+              wrapperNode: ctx.wrapperNode,
+              depth: ctx.depth ?? 0,
+            });
           } else {
             // 非函数初始化：仍要递归进对象字面量里的 method / 嵌套函数
-            visit(decl.init, { owner: idName, commentHost: node, wrapperNode: (ctx as { wrapperNode?: Node }).wrapperNode } as WalkCtx);
+            visit(decl.init, {
+              owner: idName,
+              commentHost: node,
+              wrapperNode: ctx.wrapperNode,
+              depth: ctx.depth ?? 0,
+            });
             // 对象方法注释带在 ObjectMethod 上，不在此处
           }
         }
@@ -236,12 +382,19 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
       }
       case "ClassDeclaration":
       case "ClassExpression": {
-        const cname = n.id?.name ?? (ctx as { fallbackName?: string }).fallbackName ?? "<anonymous>";
+        const cname = n.id?.name ?? ctx.fallbackName ?? "<anonymous>";
         if (n.type === "ClassDeclaration") {
           // class 自身不是函数站点，但要递归 body
         }
         const body = (n.body as { body?: unknown[] })?.body ?? [];
-        for (const m of body) visit(m as Node, { owner: cname });
+        // Bug 425：static 与实例**同名** ⇒ scope 名必须区分。族 11 的普查口径
+        // （`scan-top-functions.ts` 的 `collectClassMethods`）是「同名时只登记
+        // **实例**方法」⇒ 指令侧同口径：实例方法保名 `C.m`，静态方法改名
+        // `C.static.m`（类里没有同名实例方法时静态方法仍是 `C.m`——与普查面同名）。
+        const instanceKeys = classInstanceKeys(body);
+        for (const m of body) {
+          visit(m as Node, { owner: cname, depth: ctx.depth ?? 0, instanceKeys });
+        }
         return;
       }
       case "ClassMethod":
@@ -249,9 +402,19 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
       case "ObjectMethod": {
         const key = keyNameOf(n.key);
         const owner = ctx.owner;
-        const name = key ? (owner ? `${owner}.${key}` : key) : "<anonymous>";
-        pushNamedFn(name, node, node as Node, undefined);
-        visit(n.body as Node, { owner: name });
+        // Bug 425：static 与实例同名 ⇒ 静态方法改名（`C.static.m`），实例方法
+        // 保名（`C.m`）⇒ 两条 `@nudo:contract` 不再互相顶替。
+        const isStatic = n.type !== "ObjectMethod" && n.static === true;
+        const collides = isStatic && key !== undefined && (ctx.instanceKeys?.has(key) ?? false);
+        const name = key
+          ? owner
+            ? collides
+              ? `${owner}.static.${key}`
+              : `${owner}.${key}`
+            : key
+          : "<anonymous>";
+        pushNamedFn(name, node, node as Node, undefined, ctx.depth ?? 0, owner);
+        visit(n.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
         return;
       }
       case "ObjectProperty":
@@ -270,9 +433,11 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
               (val as { leadingComments?: readonly Comment[] }).leadingComments ??
                 (node as { leadingComments?: readonly Comment[] }).leadingComments,
               undefined,
+              ctx.depth ?? 0,
+              owner,
             ),
           );
-          visit(val, { owner: name });
+          visit(val, { owner: name, depth: ctx.depth ?? 0 });
           return;
         }
         visit(val, ctx);
@@ -291,10 +456,32 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
         return;
       case "BinaryExpression":
       case "LogicalExpression":
-      case "AssignmentExpression":
         visit(n.left as Node, ctx);
         visit(n.right as Node, ctx);
         return;
+      case "AssignmentExpression": {
+        // Bug 428：CJS 赋值形态（`exports.f = fn` / `module.exports.f = fn`）
+        // 没有 AST 绑定名可取 ⇒ 函数级指令落不到导出名上 ⇒ L1 契约静默失效 /
+        // `@nudo:throws` 不生效 / `@nudo:case` 整条蒸发。
+        // ⇒ 给这种形态一个绑定名（导出槽名），并把**语句级**注释挂上去。
+        const slot = cjsExportSlotName(n.left as Node | null | undefined);
+        if (slot !== undefined && isFnExpr(n.right)) {
+          // 裸 `module.exports = fn` **没有槽名** ⇒ 回退内层 id（普查面同口径：
+          // 槽名缺失才回退内层 id——内层 id 不是导出槽名，槽名优先）。
+          const innerId = (n.right as { id?: { name?: string } | null })?.id?.name;
+          visit(n.right, {
+            owner: ctx.owner,
+            fallbackName: slot === "default" ? (innerId ?? "default") : slot,
+            commentHost: ctx.stmtNode,
+            wrapperNode: ctx.wrapperNode,
+            depth: ctx.depth ?? 0,
+          });
+          return;
+        }
+        visit(n.left as Node, ctx);
+        visit(n.right as Node, ctx);
+        return;
+      }
       case "MemberExpression":
       case "OptionalMemberExpression":
         visit(n.object as Node, ctx);
@@ -328,7 +515,8 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
         visit(n.expression as Node, ctx);
         return;
       case "ExpressionStatement":
-        visit(n.expression as Node, ctx);
+        // 语句级注释宿主（CJS 赋值形态取用）——见 Bug 428
+        visit(n.expression as Node, { ...ctx, stmtNode: node });
         return;
       case "BlockStatement": {
         for (const s of (n.body as unknown[]) ?? []) visit(s as Node, ctx);
@@ -425,38 +613,44 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
     };
     if (d.type === "FunctionDeclaration" || d.type === "FunctionExpression") {
       const name = d.id?.name ?? "default";
-      pushNamedFn(name, decl, decl, wrapper);
-      visit(d.body as Node, { owner: name });
+      pushNamedFn(name, decl, decl, wrapper, ctx.depth ?? 0, ctx.owner);
+      visit(d.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
       return;
     }
     if (d.type === "ClassDeclaration" || d.type === "ClassExpression") {
-      const cname = d.id?.name ?? "<anonymous>";
+      // Bug 1156：匿名 `export default class {}` ⇒ 导出槽名 "default" 是方法键
+      // 前缀（`default.m`）。具名类 / 变量绑定的类表达式仍用本地名。
+      const cname = d.id?.name ?? "default";
       const body = (d.body as { body?: unknown[] })?.body ?? [];
-      for (const m of body) visit(m as Node, { owner: cname });
+      // Bug 425：同 `visit` 的 ClassDeclaration 分支（static / 实例同名消歧）
+      const instanceKeys = classInstanceKeys(body);
+      for (const m of body) {
+        visit(m as Node, { owner: cname, depth: ctx.depth ?? 0, instanceKeys });
+      }
       return;
     }
     if (d.type === "VariableDeclaration") {
-      for (const raw of (d.declarations as unknown[]) ?? []) {
-        const vd = raw as { id?: { type?: string; name?: string }; init?: Node | null };
+      const decls = (d.declarations as unknown[]) ?? [];
+      for (let i = 0; i < decls.length; i++) {
+        const vd = decls[i] as { id?: { type?: string; name?: string }; init?: Node | null };
         const idName = vd.id?.type === "Identifier" ? vd.id.name : undefined;
         if (isFnExpr(vd.init)) {
-          const fn = vd.init!;
-          out.push(
-            buildScope(
-              idName ?? "default",
-              fn,
-              wrapper,
-              d.leadingComments,
-              (wrapper as { leadingComments?: readonly Comment[] }).leadingComments,
-            ),
-          );
-          visit(fn, { owner: idName });
+          // Bug 418：语句级 JSDoc 只绑**首个** declarator（TS 口径）。
+          // Bug 419：内联 JSDoc 绑到**绑定名**上（`export const f = …`）。
+          visit(vd.init, {
+            owner: ctx.owner,
+            fallbackName: idName ?? "default",
+            commentHost: i === 0 ? decl : undefined,
+            wrapperNode: wrapper,
+            depth: ctx.depth ?? 0,
+          });
         } else {
           visit(vd.init, {
             owner: idName,
             commentHost: decl,
             wrapperNode: wrapper,
-          } as WalkCtx);
+            depth: ctx.depth ?? 0,
+          });
         }
       }
       return;
@@ -471,9 +665,11 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
           wrapper,
           d.leadingComments,
           (wrapper as { leadingComments?: readonly Comment[] }).leadingComments,
+          ctx.depth ?? 0,
+          ctx.owner,
         ),
       );
-      visit(d.body as Node, { owner: name });
+      visit(d.body as Node, { owner: name, depth: (ctx.depth ?? 0) + 1 });
       return;
     }
     visit(decl, { ...ctx, wrapperNode: wrapper } as WalkCtx);
@@ -485,12 +681,28 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
   return out;
 }
 
-/** 按绑定名找函数 scope（文档序第一个命中） */
+/**
+ * 按绑定名找函数 scope。
+ *
+ * Bug 424：scope 名**不保证唯一**（同名遮蔽函数 / 嵌套同名函数）⇒ 此前
+ * 「文档序**首个**命中」让**内层**同名函数抢走导出函数的注释块 ⇒
+ * 导出函数继承内层的 `@nudo:throws` ⇒ **L2 门禁假绿 / 假红**。
+ *
+ * ⇒ 同名时取**词法最浅**的那个（`depth` 最小：顶层函数 / 类成员 = 0，
+ * 每进入一层函数体 +1）；同深度取文档序第一个。
+ * 口径与**分析面**一致：顶层函数先登记（`generalize.ts` 的 env.fns），
+ * 嵌套同名者被跳过 ⇒ 分析面问到的「同名函数」就是最浅的那个。
+ */
 export function findFnDirectiveScope(
   file: File,
   fnName: string,
 ): FnDirectiveScope | undefined {
-  return listFnDirectiveScopes(file).find((s) => s.name === fnName);
+  let best: FnDirectiveScope | undefined;
+  for (const s of listFnDirectiveScopes(file)) {
+    if (s.name !== fnName) continue;
+    if (!best || (s.depth ?? 0) < (best.depth ?? 0)) best = s;
+  }
+  return best;
 }
 
 /**
@@ -521,12 +733,25 @@ const isPathLikeEnv = (s: string): boolean =>
 /**
  * `@nudo:env` 载荷 → 命名 env token。只收 `\w+` 或 path-like
  * （拒绝 `node";` 这类截断捕获）。
+ *
+ * Bug 417：此前**只按 `,` 切分** ⇒ 空格分隔列表（`node web`）被切成**一个**
+ * token 后整条滤掉 ⇒ 零诊断地丢掉整条列表（env 未解析 ⇒ 全局 `unknown`）。
+ * ⇒ 逗号**与**空白两种分隔符都认；尾随的注释先剥掉（行尾注释是最自然的
+ * 写法：`/// @nudo:env node // 只需要 node`）。
  */
 export function parseEnvPayload(payload: string): string[] {
-  return payload
-    .split(",")
-    .map((e) => e.trim().replace(/^['"]|['"]$/g, ""))
-    .filter((e) => e && (/^\w+$/.test(e) || isPathLikeEnv(e)));
+  const out: string[] = [];
+  for (const segment of payload.split(",")) {
+    // 剥尾随注释：行尾 `// …` 与块注释 `/* … */`
+    const withoutComments = segment
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+    for (const token of withoutComments.split(/\s+/)) {
+      const name = token.trim().replace(/^['"]|['"]$/g, "");
+      if (name && (/^\w+$/.test(name) || isPathLikeEnv(name))) out.push(name);
+    }
+  }
+  return out;
 }
 
 export type MockModuleRecord = {
@@ -538,16 +763,25 @@ export type MockModuleRecord = {
 /**
  * `@nudo:mock-module "src" [ { a, b } ] from "path"` 载荷解析。
  * 名表 `{ … }` 可选；单源文法（parser / load-deps 共用）。
+ *
+ * Bug 415：两条正则原**硬编码双引号** ⇒ 单引号载荷（`'axios' from './m.js'`）
+ * 两条都不匹配 ⇒ 返回 `undefined` ⇒ 上游既不落诊断也不落记录 ⇒ 指令
+ * **静默蒸发**（mock 不生效、门禁照常绿）。⇒ 单引号与双引号**都认**
+ * （同一对引号必须自洽；source 与 path 的引号种类可不同）。
  */
 export function parseMockModulePayload(payload: string): MockModuleRecord | undefined {
-  const partial = payload.match(/^\s*"([^"]+)"\s*\{([^}]+)\}\s*from\s*"([^"]+)"\s*$/);
+  const partial = payload.match(
+    /^\s*(?:"([^"]+)"|'([^']+)')\s*\{([^}]+)\}\s*from\s*(?:"([^"]+)"|'([^']+)')\s*$/,
+  );
   if (partial) {
-    const names = partial[2]!.split(",").map((n) => n.trim()).filter(Boolean);
-    return { source: partial[1]!, names, fromPath: partial[3]! };
+    const names = partial[3]!.split(",").map((n) => n.trim()).filter(Boolean);
+    return { source: partial[1] ?? partial[2]!, names, fromPath: partial[4] ?? partial[5]! };
   }
-  const full = payload.match(/^\s*"([^"]+)"\s+from\s*"([^"]+)"\s*$/);
+  const full = payload.match(
+    /^\s*(?:"([^"]+)"|'([^']+)')\s+from\s*(?:"([^"]+)"|'([^']+)')\s*$/,
+  );
   if (full) {
-    return { source: full[1]!, fromPath: full[2]! };
+    return { source: full[1] ?? full[2]!, fromPath: full[3] ?? full[4]! };
   }
   return undefined;
 }
@@ -561,16 +795,27 @@ export type NudoImportRecord = {
 };
 
 /**
+ * `@nudo:import` 载荷里的标识符文法（Unicode 合法，如 `命名空间` / `$x`）。
+ * Bug 350：旧口径 `\w+` 只收 ASCII ⇒ Unicode 绑定名被判 malformed。
+ */
+const IMPORT_IDENT = "[\\p{ID_Start}$_][\\p{ID_Continue}$]*";
+
+/**
  * `@nudo:import` 载荷：named `{ a, b as c }` / namespace `* as ns`。
  * default 等未识别形态返回 `malformed`（由消费方发诊断）。
  * import 绑定语义 local ← imported：`a as b` 两个名字都保留——只留 local
  * 会让查表用错名字（`exports[b]` miss，BUG-016）。
+ *
+ * Bug 422：**空载荷**（「标签命中但没写载荷」）此前返回 `undefined`
+ * （=「没有这条指令」）⇒ 畸形扫描器**永远看不到它** ⇒ 零诊断。
+ * ⇒ 空载荷是「这条指令写坏了」⇒ 返回 `malformed`，让既有的
+ * `nudo:contract-syntax` 通道自然接管。
  */
 export function parseNudoImportPayload(
   payload: string,
 ): NudoImportRecord | "malformed-default" | "malformed" | undefined {
   const s = payload.trim();
-  if (s === "") return undefined;
+  if (s === "") return "malformed";
   const named = s.match(/^\{([^}]+)\}\s*from\s*["']([^"']+)["']$/);
   if (named) {
     const names: string[] = [];
@@ -589,11 +834,19 @@ export function parseNudoImportPayload(
     }
     return { names, importedOfLocal, spec: named[2]! };
   }
-  const ns = s.match(/^\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']$/);
+  const ns = new RegExp(
+    `^\\*\\s+as\\s+(${IMPORT_IDENT})\\s+from\\s*["']([^"']+)["']$`,
+    "u",
+  ).exec(s);
   if (ns) {
     return { names: [`*${ns[1]}`], importedOfLocal: {}, spec: ns[2]! };
   }
-  if (/^[\w$]+\s+from\b/.test(s) || /^[\w$]+\s*,/.test(s)) return "malformed-default";
+  if (
+    new RegExp(`^${IMPORT_IDENT}\\s+from\\b`, "u").test(s) ||
+    new RegExp(`^${IMPORT_IDENT}\\s*,`, "u").test(s)
+  ) {
+    return "malformed-default";
+  }
   return "malformed";
 }
 
@@ -606,7 +859,129 @@ const LINE_COMMENT_PREFIX = "(?:^|[^/:])\\/\\/\\/?";
 
 function fileDirectiveVisibleText(source: string): string {
   // 剥字符串 + 块注释：只留 `//` / `///` 行注释可见
-  return stripStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, " ");
+  // 等长掩码（字符串→空格、块注释→空格）：下标与原文一一对应 ⇒ 位置闸门可比
+  return maskStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, (m) =>
+    " ".repeat(m.length),
+  );
+}
+
+/**
+ * 函数体区间（顶层判定用）：文件级指令（`@nudo:env` / `@nudo:mock-module` /
+ * `@nudo:import`）**不得**落在任何函数体内——函数体里的 `/// @nudo:env node`
+ * 不是「本函数用 node env」，此前文本路径**只看文本不看位置** ⇒ 对**整份文件**
+ * 生效（Bug 847）。
+ *
+ * 与 parser 的 AST 路径（`file-directives.ts` 的 `functionBodyRanges`）同口径：
+ * 两条路径都用「不在函数体内」判定，顶层位置（文件头 / `export` 行 / 语句之间）
+ * 一律放行。
+ *
+ * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
+ */
+function functionBodyRanges(source: string): [number, number][] {
+  try {
+    return listFnDirectiveScopes(parseSource(source)).map((scope) => [
+      scope.node.start ?? 0,
+      scope.node.end ?? 0,
+    ]);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 类体 / 对象字面量体 / 数组字面量体 / 解构模式体区间
+ * （**Bug 1088 + Bug 1101 的位置闸门扩展**）。
+ *
+ * `functionBodyRanges` 的区间是「函数站点」区间；对 `ClassMethod` /
+ * `ObjectMethod`，Babel 给的 `node.start` 是**方法键**的位置 ⇒ 方法**上方**
+ * 的行注释落在区间**之外** ⇒ 不算 misplaced ⇒ `/// @nudo:env web` 被
+ * **静默提升**成**整文件** env（零诊断）——正是 Bug 847 要消除的那类洞，
+ * 只是闸门没覆盖 class / object 体。
+ *
+ * ⇒ 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体
+ * （`ObjectExpression`）」⇒ 方法 / 字段上方的注释一并被拦下，
+ * 与函数体口径一致（parser 的 AST 路径同款，见
+ * `packages/parser/src/directives/file-directives.ts` 的 `nestedBodyRanges`）。
+ *
+ * Bug 1101：同族洞的**剩余两类**——`ArrayExpression`（数组字面量体）与
+ * `ObjectPattern`（对象解构模式体）此前同样**不在**闸门区间内 ⇒ 写在数组元素 /
+ * 解构键上方的文件级指令被**静默提升**成**整文件**作用域（零诊断）。
+ * ⇒ 一并纳入，闸门口径对**所有嵌套体**闭合（与 parser 通道同款）。
+ *
+ * Bug 1101 补遗：`ArrayPattern`（数组解构模式体）是 `ObjectPattern` 的
+ * **同族孪生**——同一条洞（解构键上方的指令被静默提升）⇒ 一并纳入，
+ * 两类解构模式口径完全一致。
+ *
+ * ⚠ **不**把 `ClassDeclaration` / `ObjectExpression` / `ArrayExpression` /
+ * `ObjectPattern` / `ArrayPattern` **整体**纳入：声明**上方**的注释
+ * （`/// @nudo:env node` 写在 `class A {` / `const a = [` / `const {` /
+ * `const [` 之前）仍是合法的顶层位置 ⇒ 放行。
+ *
+ * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
+ */
+function nestedBodyRanges(source: string): [number, number][] {
+  try {
+    const out: [number, number][] = [];
+    const visit = (node: unknown): void => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item);
+        return;
+      }
+      const n = node as {
+        type?: string;
+        start?: number | null;
+        end?: number | null;
+        [key: string]: unknown;
+      };
+      if (
+        (n.type === "ClassBody" ||
+          n.type === "ObjectExpression" ||
+          n.type === "ArrayExpression" ||
+          n.type === "ObjectPattern" ||
+          n.type === "ArrayPattern") &&
+        typeof n.start === "number" &&
+        typeof n.end === "number"
+      ) {
+        out.push([n.start, n.end]);
+      }
+      for (const key of Object.keys(n)) {
+        // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
+        if (
+          key === "loc" ||
+          key === "leadingComments" ||
+          key === "trailingComments" ||
+          key === "innerComments" ||
+          key === "comments" ||
+          key === "tokens" ||
+          key === "extra"
+        ) {
+          continue;
+        }
+        visit(n[key]);
+      }
+    };
+    visit(parseSource(source));
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 位置闸门的**全部**区间（函数体 + 类体 / 对象字面量体 / 数组字面量体 /
+ * 解构模式体）。
+ *
+ * Bug 847（函数体）+ Bug 1088（class / object 体）+ Bug 1101（array / pattern 体）
+ * 三条同源洞的合流口径。
+ */
+function bodyGateRanges(source: string): [number, number][] {
+  return [...functionBodyRanges(source), ...nestedBodyRanges(source)];
+}
+
+/** 偏移是否落在某个「函数体 / 类体 / 对象字面量体 / 数组字面量体 / 解构模式体」内 */
+function inBodyRange(ranges: [number, number][], offset: number): boolean {
+  return ranges.some(([s, e]) => offset >= s && offset < e);
 }
 
 export function extractFileEnvNames(source: string): string[] {
@@ -614,9 +989,14 @@ export function extractFileEnvNames(source: string): string[] {
   // S4-004 同族：标签/载荷同行分隔——`\s*`/`\s+` 跨行会把非注释行的
   // `@nudo:env` 或下一行载荷粘进上一条行注释
   const re = new RegExp(`${LINE_COMMENT_PREFIX}[ \\t]*@nudo:env[ \\t]+([^\\n*]+)`, "g");
+  // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
+  // 数组体 / 解构模式体里的文件级 env 不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   const out: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    const commentStart = m.index + m[0].indexOf("//");
+    if (inBodyRange(bodyRanges, commentStart)) continue;
     out.push(...parseEnvPayload(m[1]!));
   }
   return out;
@@ -628,9 +1008,14 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
     `${LINE_COMMENT_PREFIX}[ \\t]*@nudo:mock-module[ \\t]+([^\\n]+)`,
     "g",
   );
+  // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
+  // 数组体 / 解构模式体里的文件级 mock-module 不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   const out: MockModuleRecord[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    const commentStart = m.index + m[0].indexOf("//");
+    if (inBodyRange(bodyRanges, commentStart)) continue;
     const rec = parseMockModulePayload(m[1]!);
     if (rec) out.push(rec);
   }
@@ -641,21 +1026,40 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
  * 指令只认**注释行首**（`//` / `///` / 块注释 `*` 续行清洗后以 `@nudo:` 开头）。
  * 句中散文提及（「无 @nudo:import 同名约束时…」）不是指令。
  * 字符串正文里的同形文本不是指令（scanSource 已遮罩）。
- * 返回清洗后的注释行（文档序）。
+ * 返回清洗后的注释行（文档序）+ **是否在函数体外**（位置闸门用，Bug 847）
+ * + **注释种类**（行注释 / 块注释；Bug 416）。
+ *
+ * Bug 416：此前行注释与块注释被**拍平成同一个列表**且 `kind` 被丢弃 ⇒
+ * 块注释里的 `@nudo:import` **真的生效**（与 `@nudo:env` /
+ * `@nudo:mock-module` 在块注释里被忽略并告警的 AST 口径**相反**）。
+ * ⇒ 保留 `kind`，由消费方分档（行注释生效 / 块注释忽略并告警）。
  */
-function directiveCommentLinesRaw(source: string): string[] {
-  const src = stripStringsKeepComments(source);
-  const out: string[] = [];
+function directiveCommentLinesRaw(
+  source: string,
+): Array<{ text: string; inHeader: boolean; kind: "line" | "block" }> {
+  // 等长掩码（字符串→空格、注释原文保留）：下标与原文一一对应 ⇒ 位置闸门可比
+  const src = maskStringsKeepComments(source);
+  const out: Array<{ text: string; inHeader: boolean; kind: "line" | "block" }> = [];
+  // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
+  // 数组体 / 解构模式体里的文件级指令不再对整份文件生效
+  const bodyRanges = bodyGateRanges(source);
   // 行注释（// 或 ///；排除 ////——Babel 值以 // 开头时 cleanDirectiveLine 不剥）
   const lineRe = /(?:^|[^/:])\/\/\/?([^\n]*)/g;
   let m: RegExpExecArray | null;
   while ((m = lineRe.exec(src))) {
-    out.push(cleanDirectiveLine(m[1]!, "line"));
+    const commentStart = m.index + m[0].indexOf("//");
+    out.push({
+      text: cleanDirectiveLine(m[1]!, "line"),
+      inHeader: !inBodyRange(bodyRanges, commentStart),
+      kind: "line",
+    });
   }
   // 块注释（含 JSDoc）
   const blockRe = /\/\*([\s\S]*?)\*\//g;
   while ((m = blockRe.exec(src))) {
-    out.push(...commentTextToLines(m[1]!, "block"));
+    for (const line of commentTextToLines(m[1]!, "block")) {
+      out.push({ text: line, inHeader: true, kind: "block" });
+    }
   }
   return out;
 }
@@ -663,14 +1067,27 @@ function directiveCommentLinesRaw(source: string): string[] {
 /**
  * `@nudo:import` 载荷行（行首锚定 + 多行 `{ … }` 续行拼接）。
  * 散文句中提及不产出；续行只拼「未闭合 `{` 之后的同批注释行」。
+ *
+ * Bug 416：只认**行注释**形态（与 parser AST 通道同口径：块注释形态被
+ * 忽略并告警）。
+ * Bug 422：标签命中但**载荷为空**也必须产出一条载荷（空串）⇒ 畸形扫描器
+ * 看得到它 ⇒ 发 `nudo:contract-syntax`（不再静默丢弃）。
  */
 function nudoImportPayloads(source: string): string[] {
   const lines = directiveCommentLinesRaw(source);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (!/^@nudo:import\s/.test(line)) continue;
-    let payload = line.replace(/^@nudo:import\s+/, "");
+    const entry = lines[i]!;
+    const line = entry.text;
+    // Bug 847：位置闸门——行注释形态的 `@nudo:import` 不得落在**函数体内**；
+    // 函数体里的 import 不再对整份文件生效。
+    if (!entry.inHeader) continue;
+    // Bug 416：块注释形态的文件级指令不生效（AST 通道口径）
+    if (entry.kind !== "line") continue;
+    // `\b` 防 `@nudo:imports`；标签后**无空白**也算命中（Bug 422：空载荷
+    // 必须可见）⇒ 载荷取标签后的剩余文本（可能为空串）。
+    if (!/^@nudo:import\b/.test(line)) continue;
+    let payload = line.replace(/^@nudo:import[ \t]*/, "").trim();
     // 多行 named：`{` 未闭合时拼后续注释行（直到 `}` / from "path"）
     if (payload.startsWith("{")) {
       let depth = 0;
@@ -680,7 +1097,12 @@ function nudoImportPayloads(source: string): string[] {
       }
       while (depth > 0 && i + 1 < lines.length) {
         i += 1;
-        const cont = lines[i]!;
+        // 续行也必须来自行注释（块注释形态的文件级指令不生效）
+        if (lines[i]!.kind !== "line") {
+          i -= 1;
+          break;
+        }
+        const cont = lines[i]!.text;
         if (/^@nudo:/.test(cont)) {
           i -= 1;
           break;
@@ -726,14 +1148,39 @@ export function scanMalformedNudoImports(
 /**
  * 平衡括号摘取（字符串感知；`\` 不是转义——与 case 实参原样 slice 一致）。
  * 返回括号内文本；无平衡括号 → null。
+ *
+ * ⚠ Bug 420：**配平扫描**优先按 JS 转义语义走——串里的 `\"` / `\'` 不再提前
+ * 结束字符串 ⇒ 括号配平正确 ⇒ 含转义引号的 case 不再被**整条丢弃**，诊断也不再
+ * 错误归因为「unclosed argument list」。
+ * ⚠ 串**未闭合**（如 `"a\", -1`——非法 JS 串）时**回退**宽松口径（`\` 不是
+ * 转义）——Bug 1009 钉住的实参切分口径必须保持不变（两个面看到同一个世界）。
  */
 export function extractBalancedParens(text: string, startIdx: number): string | null {
+  // 优先：转义感知（JS 语义）
+  const escaped = extractBalancedParensScan(text, startIdx, true);
+  if (escaped !== null) return escaped;
+  // 回退：宽松口径（`\` 不是转义）——串未闭合时仍能找到右括号
+  return extractBalancedParensScan(text, startIdx, false);
+}
+
+/** 配平扫描（`escapeAware` = 串内 `\` 是否当转义）。 */
+function extractBalancedParensScan(
+  text: string,
+  startIdx: number,
+  escapeAware: boolean,
+): string | null {
   if (text[startIdx] !== "(") return null;
   let depth = 0;
   let inString: string | null = null;
   for (let i = startIdx; i < text.length; i++) {
     const ch = text[i]!;
     if (inString) {
+      // Bug 420：转义感知口径下，串内 `\` 是转义 ⇒ 下一个字符（哪怕是引号）
+      // 不结束字符串
+      if (escapeAware && ch === "\\") {
+        i++;
+        continue;
+      }
       if (ch === inString) inString = null;
       continue;
     }
@@ -752,8 +1199,10 @@ export type CaseTag = {
   name: string;
   /** 括号内实参原文（未清洗续行 `*`） */
   argsText: string;
-  /** `=> expected` 表达式原文（同行/续行 `=>`） */
+  /** `=> expected` 表达式原文（同行/续行 `=>`；已剥 `!! throws` 后缀与冗余括号） */
   expectedText?: string;
+  /** 期望**写了却抽不出**的原因（消费方发 nudo:directive-syntax；Bug 918） */
+  expectedIssue?: string;
   /** 标签在 comment.value 中的下标 */
   tagOffset: number;
 };
@@ -766,25 +1215,122 @@ export type CaseTag = {
 // （旧 `\/\/\/?` 要两个斜杠——只匹配 `////` 残留，既漏 `///` 又违反
 // 「//// 不是指令前缀」契约）。
 const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case[ \t]+"([^"\n]+)"[ \t]*\(/g;
-// `\b` 防 `@nudo:cases`；`[ \t]*([^\n]*)` 让空标签（行尾无载荷）也可被
+// ⚠ Bug 978：宽松标签正则**捕获分隔空白**（m[1]）——粘连写法（`@nudo:case"c1"`）
+// 在抽取侧（`CASE_NAME_REGEX` 要求 `[ \t]+`）**不匹配** ⇒ 整条 case 会**静默
+// 蒸发** ⇒ 诊断面必须**看得见**它（口径与族 28 的 Bug 980 一致）。
+// `\b` 防 `@nudo:cases`；载荷 `[^\n]*` 让空标签（行尾无载荷）也可被
 // 消费方诊断，不再静默漏过。
-const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b[ \t]*([^\n]*)/g;
+// m[2] = 标签后的载荷文本（与旧 m[1] 同内容）。
+const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b([ \t]*)([^\n]*)/g;
+
+/** case 行上的 `!! throws [Kind]` 后缀（文档化形态）——行首 / 行尾两处都要认。 */
+const CASE_THROWS_SUFFIX_LEAD_RE = /^\s*!!\s*throws(?:\s+[A-Za-z*][\w*|,\s]*)?/i;
+/**
+ * case 行**行尾**的 `!! throws [Kind]` 后缀（剥期望文本用）。
+ *
+ * ⚠ Bug 1120（性能 / DoS）：旧式 `(?:\s+[A-Za-z*][\w*|,\s]*)?\s*$` 里
+ * `[\w*|,\s]*` **含空白**且尾部还有 `\s*$` ⇒ 同一段空白有**多种切分** ⇒
+ * 回溯**二次方**（实测 5 万空格 ≈ 1.7s ⇒ 可打爆 CI）。
+ *
+ * ⇒ 改成**无歧义**切分：kind = `token (空白 token)*`，token 内**不含空白**
+ * （`[\w*|,]*`）⇒ 空白只能落在 token **之间**（唯一切分）⇒ 线性。
+ * kind 组（`[A-Za-z*][\w*|,]*` + 重复）只用于**剥掉**后缀（组内容被丢弃）
+ * ⇒ 语义与旧式等价（旧的 `\s` 允许跨行——本正则的输入恒为**单行**）。
+ */
+const CASE_THROWS_SUFFIX_TAIL_RE =
+  /!![ \t]*throws\b(?:[ \t]+[A-Za-z*][\w*|,]*(?:[ \t]+[A-Za-z*][\w*|,]*)*)?[ \t]*$/i;
+
+/**
+ * 剥掉 case 行上的 `!! throws [Kind]` 后缀（**只在这里剥**）。
+ *
+ * ⚠ 硬规则（族 10 片 3 / Bug 426）：只在**期望表达式文本的局部副本**上剥，
+ * **绝不改写 case 行 / 注释原文** ⇒ 函数级 `!! throws` 申报（`scanThrowsDecl`
+ * 读的是原文行）仍然看得到后缀 ⇒ 两条语义互不干扰。
+ */
+function stripCaseThrowsSuffix(line: string): string {
+  return line.replace(CASE_THROWS_SUFFIX_LEAD_RE, "");
+}
+
+/** 剥掉**行尾**的 `!! throws [Kind]` 后缀（期望表达式文本用）。 */
+function stripTrailingCaseThrowsSuffix(text: string): string {
+  return text.replace(CASE_THROWS_SUFFIX_TAIL_RE, "").trim();
+}
+
+/**
+ * 剥掉期望表达式**外层**的冗余括号（`(999)` / `("a")` / `([1])` / `({ b: 1 })`）——
+ * 与实参侧（`extractBalancedParens` 剥外层括号）**同口径**。
+ *
+ * 只剥「整段被一对括号包住」的情形 ⇒ 箭头函数（`(x) => y`）不受影响。
+ */
+function stripRedundantParens(text: string): string {
+  let cur = text.trim();
+  while (cur.startsWith("(") && cur.endsWith(")")) {
+    const inner = extractBalancedParens(cur, 0);
+    if (inner === null) break;
+    // 括号不包住整段（`inner` 短于「去掉首尾括号」的长度）⇒ 不是冗余层
+    if (inner.length + 2 !== cur.length) break;
+    cur = inner.trim();
+  }
+  return cur;
+}
+
+/** 注释续行前缀（块 ` * ` / 行注释 `///`）剥离（与 fn-directives 同口径）。 */
+function stripCaseCommentPrefix(line: string, index: number): string {
+  if (index <= 0) return line;
+  return line.replace(/^\s*\*\s?/, "").replace(/^\s*\/\/\/?\s?/, "");
+}
+
+/** `=>` 之后**下一行**的期望值（Bug 918 形态 A：`=>` 后换行）。 */
+function findCaseExpectedOnNextLine(lines: string[], from: number): string | undefined {
+  for (let j = from; j < lines.length; j++) {
+    const cont = stripCaseThrowsSuffix(stripCaseCommentPrefix(lines[j]!, j));
+    if (/^\s*@nudo:/.test(cont)) return undefined;
+    if (cont.trim() === "") continue;
+    const arrow = cont.match(/^\s*=>\s*(.*)$/);
+    if (!arrow) return cont.trim();
+    const tail = arrow[1]!.trim();
+    if (tail === "") continue;
+    return tail;
+  }
+  return undefined;
+}
 
 /**
  * `)` 之后的 `=> expected` 表达式文本。允许 `=>` 出现在续行（剥块注释续行
- * ` * ` 前缀）；不吞下一个 `@nudo:` 标签。期望取 `=>` 所在行的同行剩余。
+ * ` * ` 前缀）；不吞下一个 `@nudo:` 标签。
+ *
+ * - Bug 423：CRLF 安全（切行按 `\r?\n`）——旧实现用 `.` 匹配行尾，`\r` 吃不掉
+ *   ⇒ CRLF 源文件里期望被**整条吞掉**（判 unchecked ⇒ 断言不执法）。
+ * - Bug 426：`!! throws [Kind]` 后缀（行首 / 行尾两处）从**期望文本**里剥掉
+ *   ⇒ 期望不再被后缀顶掉（后缀在 `=>` 之前）或被腐蚀（后缀在 `=>` 之后）。
+ * - Bug 427：期望文本剥**一层冗余括号**（与实参侧同口径）。
+ * - Bug 918：`=>` 后为空时**往下找一行**（形态 A）；确实没有值时给出行首锚的
+ *   语法错（形态 B）——不再静默判「无期望」。
  */
-function extractCaseExpectedExpr(text: string, afterParen: number): string | undefined {
-  const lines = text.slice(afterParen).split("\n");
+function extractCaseExpectedExpr(
+  text: string,
+  afterParen: number,
+): { text?: string; issue?: string } {
+  const lines = text.slice(afterParen).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    let line = lines[i]!;
-    if (i > 0) line = line.replace(/^\s*\*\s?/, "").replace(/^\s*\/\/\/?\s?/, "");
-    if (/^\s*@nudo:/.test(line)) return undefined;
-    const arrow = line.match(/^\s*=>\s*(\S.*)$/);
-    if (arrow) return arrow[1]!.trim();
-    if (line.trim() !== "") return undefined;
+    const line = stripCaseThrowsSuffix(stripCaseCommentPrefix(lines[i]!, i));
+    if (/^\s*@nudo:/.test(line)) break;
+    if (line.trim() === "") continue;
+    const arrow = line.match(/^\s*=>\s*(.*)$/);
+    if (!arrow) break;
+    const tail = stripTrailingCaseThrowsSuffix(arrow[1]!);
+    if (tail !== "") return { text: stripRedundantParens(tail) };
+    // `=>` 后本行为空 ⇒ 往下找一行（Bug 918 形态 A）
+    const next = findCaseExpectedOnNextLine(lines, i + 1);
+    if (next !== undefined) {
+      const stripped = stripTrailingCaseThrowsSuffix(next);
+      if (stripped === "") break;
+      return { text: stripRedundantParens(stripped) };
+    }
+    // `=>` 之后什么都没有 ⇒ 语法错（Bug 918 形态 B）
+    return { issue: "missing expected expression after '=>'" };
   }
-  return undefined;
+  return {};
 }
 
 /**
@@ -806,8 +1352,14 @@ export function scanCaseTags(text: string): CaseTag[] {
     if (caseArgSpans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
     caseArgSpans.push([m.index, afterParen]);
     const tagOffset = m.index + m[0].indexOf("@nudo:case");
-    const expectedText = extractCaseExpectedExpr(text, afterParen);
-    out.push({ name: m[1]!, argsText: argsStr, expectedText, tagOffset });
+    const expected = extractCaseExpectedExpr(text, afterParen);
+    out.push({
+      name: m[1]!,
+      argsText: argsStr,
+      expectedText: expected.text,
+      expectedIssue: expected.issue,
+      tagOffset,
+    });
   }
   return out;
 }
@@ -825,6 +1377,22 @@ export function scanCaseArgSpans(text: string): [number, number][] {
     if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
     spans.push([m.index, afterParen]);
   }
+  // Bug 846：**畸形** case 标签（单引号名 / 空名 / 缺实参括号…）也有实参区间——
+  // 此前只登记合法形态的区间 ⇒ 畸形 case 的实参里写的 `@nudo:mock` / `@nudo:skip`
+  // **泄漏**成真指令（假红 / d.ts 丢方法）。
+  // 只遮罩**实参区间**（不含标签本身）：标签本身仍要报「畸形 case 名」诊断。
+  CASE_TAG_REGEX.lastIndex = 0;
+  while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    const rest = m[2]!;
+    const rel = rest.indexOf("(");
+    if (rel === -1) continue;
+    const parenStart = m.index + m[0].length - rest.length + rel;
+    const argsStr = extractBalancedParens(text, parenStart);
+    if (argsStr === null) continue;
+    const afterParen = parenStart + argsStr.length + 2;
+    spans.push([parenStart, afterParen]);
+  }
   return spans;
 }
 
@@ -840,7 +1408,15 @@ export function scanMalformedCaseTagRests(
   let m: RegExpExecArray | null;
   while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
     if (inCaseArgs(m.index)) continue;
-    const rest = m[1]!.trim();
+    const separator = m[1]!;
+    const rest = m[2]!.trim();
+    // ⚠ Bug 978：标签与名字之间**无空白**（粘连写法 `@nudo:case"c1"`）——
+    // 抽取侧（`CASE_NAME_REGEX` 要求 `[ \t]+`）**不匹配** ⇒ 整条 case 会被
+    // **静默蒸发** ⇒ 诊断面必须**看得见**它（口径与族 28 的 Bug 980 一致）。
+    if (separator === "" && rest.startsWith('"')) {
+      out.push(rest);
+      continue;
+    }
     if (/^"[^"]+"\s*\(/.test(rest)) continue;
     out.push(rest);
   }
@@ -850,6 +1426,87 @@ export function scanMalformedCaseTagRests(
 // ---------------------------------------------------------------------------
 // 函数级标签行扫描（case / contract / assume / throws / budget）
 // ---------------------------------------------------------------------------
+
+/**
+ * 标签形态（行首锚定 + 严格 / 宽松两档）。
+ *
+ * - ok：标签 + 分隔空白 + 非空载荷（**唯一可执行形态**）
+ * - glued：标签后**没有**分隔空白就接了别的字符（标签名被延长）
+ * - empty：标签单独成行（载荷为空）
+ *
+ * Bug 981 / 1032：`@nudo:contractx p n` / `@nudo:assumed d <= max` /
+ * `@nudo:invariantdp >= 0` / `@nudo:throwsTypeError` 此前**整行不匹配**严格
+ * 正则且**无 else 分支** ⇒ **零诊断**地蒸发（契约整条蒸发；公理蒸发 ⇒ 返回
+ * 契约从「已证明」退回「未证明」，而唯一信号是**归因错误**的
+ * nudo:unproven-return）。
+ *
+ * 口径（与族 28 的 Bug 980 同款）：**严格文法仍要求分隔空白**——`@nudo:mockfetch`
+ * 不能被当成合法的 `@nudo:mock`；「宽松形态」只用于**诊断**。
+ */
+type DirectiveTagForm =
+  | { kind: "ok"; payload: string }
+  | { kind: "glued"; rest: string }
+  | { kind: "empty" };
+
+/**
+ * 行首标签形态判定：不是本标签 ⇒ undefined。
+ * @param ignoreCase 标签大小写不敏感（仅 `@nudo:throws` 历史上如此）
+ */
+function directiveTagForm(
+  line: string,
+  tag: string,
+  ignoreCase = false,
+): DirectiveTagForm | undefined {
+  const hit = ignoreCase
+    ? line.slice(0, tag.length).toLowerCase() === tag.toLowerCase()
+    : line.startsWith(tag);
+  if (!hit) return undefined;
+  const rest = line.slice(tag.length);
+  if (rest === "") return { kind: "empty" };
+  if (/^\s/.test(rest)) {
+    const payload = rest.trim().replace(/\*\/$/, "").trim();
+    return payload === "" ? { kind: "empty" } : { kind: "ok", payload };
+  }
+  return { kind: "glued", rest };
+}
+
+/** 畸形指令段（标签层）：粘连 / 空载荷 */
+export type MalformedDirectiveSegment = {
+  /** 指令标签（`@nudo:contract` / `@nudo:throws` …） */
+  tag: string;
+  /** 畸形原因：glued = 标签后缺分隔空白（标签名被延长）；empty = 标签无载荷 */
+  reason: "glued" | "empty";
+  /** 原始行文本（诊断文案 + 定位用） */
+  raw: string;
+};
+
+/**
+ * 畸形指令段扫描（粘连 / 空载荷）。
+ *
+ * 严格文法（`scanContractSegments` / `scanAssumeSegments` …）只收
+ * 「标签 + 分隔空白 + 载荷」；本函数只报另外两种形态——此前它们**零诊断**地
+ * 蒸发（Bug 981 / 1032 / 421）。
+ *
+ * 消费方（refine）按族发**既有**诊断码（`nudo:contract-syntax` /
+ * `nudo:directive-syntax` / `nudo:assume-invalid` / `nudo:invariant-invalid`），
+ * **不另造新码**。
+ *
+ * @param tags 只扫这些标签（引理 / 不变量两族走**坏段通道**，不由本函数服务）
+ */
+export function scanMalformedDirectiveSegments(
+  lines: string[],
+  tags: readonly string[],
+): MalformedDirectiveSegment[] {
+  const out: MalformedDirectiveSegment[] = [];
+  for (const line of lines) {
+    for (const tag of tags) {
+      const form = directiveTagForm(line, tag, tag === "@nudo:throws");
+      if (!form || form.kind === "ok") continue;
+      out.push({ tag, reason: form.kind, raw: line });
+    }
+  }
+  return out;
+}
 
 /**
  * `@nudo:contract <param> <name>` / `@nudo:contract return <name>` 行。
@@ -869,13 +1526,27 @@ export function scanContractSegments(lines: string[]): string[] {
  * `@nudo:assume <ident> <= <ident>` 行（issue #152 用户引理前提）。
  * 同时接受 `>=`（构造时翻转为 le）；一函数可多行。返回原始段文本，
  * 文法/操作符/形参校验由消费方（check）发 nudo:assume-invalid。
+ *
+ * Bug 421 / 1032：**空载荷**（`@nudo:assume` 单独成行）与**粘连**形态
+ * （`@nudo:assumed d <= max`——标签名被延长）此前**整行不匹配**严格正则且
+ * **无 else 分支** ⇒ 段列表为空 ⇒ **零诊断** ⇒ 用户的引理无声丢失（返回契约
+ * 从「已证明」退回「未证明」，唯一信号是**归因错误**的 nudo:unproven-return）。
+ * ⇒ 这两种形态各产出一条**坏段**（raw = 原始行文本）⇒ 既有的
+ * `nudo:assume-invalid` 通道自然接管（不另造新码）。
  */
 export function scanAssumeSegments(lines: string[]): string[] {
   const out: string[] = [];
   for (const line of lines) {
     // 行首锚定：句中散文「声明 @nudo:assume p q 后…」不是指令
     const m = line.match(/^@nudo:assume\s+(.+)$/);
-    if (m) out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+    if (m) {
+      out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+      continue;
+    }
+    const form = directiveTagForm(line, "@nudo:assume");
+    if (!form || form.kind === "ok") continue;
+    // 空载荷 ⇒ 空串段；粘连 ⇒ 原始行整段（消息里能看见用户真写的形态）
+    out.push(form.kind === "empty" ? "" : line);
   }
   return out;
 }
@@ -885,13 +1556,138 @@ export function scanAssumeSegments(lines: string[]): string[] {
  * 界）。path = `[*]` / `.ident` 序列（可空 = 标量绑定）；rel ∈ >= <= > <；
  * 数字允许负号。一函数可多行；返回原始段文本，文法/绑定名校验由消费方
  * （check）发 nudo:invariant-invalid。
+ *
+ * Bug 421 / 1032：同 `@nudo:assume`——空载荷 / 粘连形态此前**零诊断**地蒸发
+ * ⇒ 产出**坏段** ⇒ `nudo:invariant-invalid` 通道接管。
  */
 export function scanInvariantSegments(lines: string[]): string[] {
   const out: string[] = [];
   for (const line of lines) {
     // 行首锚定：句中散文「声明 @nudo:invariant dp >= 0 后…」不是指令
     const m = line.match(/^@nudo:invariant\s+(.+)$/);
-    if (m) out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+    if (m) {
+      out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+      continue;
+    }
+    const form = directiveTagForm(line, "@nudo:invariant");
+    if (!form || form.kind === "ok") continue;
+    out.push(form.kind === "empty" ? "" : line);
+  }
+  return out;
+}
+
+/**
+ * case 行的 `!! throws [Kind]` **后缀**（文档化形态：`@nudo:case "neg" (0) !! throws`）。
+ *
+ * ⚠ Bug 1033（位置锚收紧）：此前 `scanThrowsDecl` 对**任意**注释行做**无锚**
+ * 子串匹配 `!!\s*throws` ⇒ 散文行（"Note: this helper uses !! throws"）、case
+ * **名字**字符串内部（`@nudo:case "regression: !! throws" (1)`）都被读成
+ * **函数级**抛错申报 ⇒ `filterGateThrows` 把实际抛错**全部放行** ⇒ L2
+ * `nudo:entry-may-throw` 门禁被**静默关掉**（假绿、零诊断），而签名面仍打印
+ * `throws TypeError` ⇒ 两面打架。
+ *
+ * 收紧后的口径（`!! throws` 必须落在**指令位置**上）：
+ * 1. **同行后缀**：case 实参的**平衡终点之后**（case 名 / 实参内部的同形文本
+ *    不算）；实参可**跨行**（Bug 1118：先找平衡终点，再认后缀）；
+ * 2. **续行**：实参平衡终点所在行的**下一行**单独写 `!! throws [Kind]`
+ *    （旧口径「上一行是 case 行」保留为**兜底**，见 `scanCaseThrowsSuffixSpecs`）。
+ *
+ * 兜底口径：只有**显式** `!! throws`（无 kind）才产出「任意 throw」（`*`）⇒
+ * `"*"` 不再来自误读。
+ */
+/** case 续行形态：单独一行 `!! throws [Kind]`（上一行必须是 case 行） */
+const CASE_THROWS_CONT_RE = /^!![ \t]*throws\b(?:[ \t]+([A-Za-z*][\w*|,\s]*))?/i;
+
+/**
+ * case 标签 + 实参**起点**（行首锚；名字不跨行）。
+ *
+ * 名字用 `"[^"\n]*"`、`@nudo:case` 与名字之间用 `[ \t]*`（**含粘连形态**）⇒
+ * 与旧式同行后缀正则（`^@nudo:case\b[ \t]*"[^"\n]*"[ \t]*\(`）的**标签口径
+ * 逐字一致**。
+ */
+const CASE_TAG_PAREN_RE = /(?:^|\n)[ \t]*@nudo:case\b[ \t]*"[^"\n]*"[ \t]*\(/g;
+
+/**
+ * 实参**闭合括号之后**的同行后缀：`!! throws [Kind]`（kind 组可空 = 任意）。
+ *
+ * 只认「闭合括号 + 空白 + `!! throws`」这一种位置 ⇒ `=> 1 !! throws` 这种
+ * （后缀落在期望表达式一侧）**不产申报**（Bug 1033 口径：后缀必须紧跟实参）。
+ */
+const CASE_THROWS_AFTER_PAREN_RE =
+  /^[ \t]*!![ \t]*throws\b(?:[ \t]+([A-Za-z*][\w*|,\s]*))?/i;
+
+/** 申报 spec（kind 文本；无 kind ⇒ 空串 = 任意 throw）+ 落点行号（保序用） */
+type ThrowsSpec = { line: number; spec: string };
+
+/**
+ * case 行的 `!! throws [Kind]` **后缀**申报（多行 / 单行统一口径）。
+ *
+ * ⚠ Bug 1118（**假红**）：旧口径要求 case 的两个括号**在同一行**
+ * （同行正则 `\([^\n]*\)`），续行口径又要求**前一行**以 `@nudo:case` 开头 ⇒
+ * 多行写法
+ * ```
+ * @nudo:case "neg" (
+ * 0
+ * ) !! throws TypeError
+ * ```
+ * 的申报**整条丢失** ⇒ `extractDeclaredThrows` 消费不到 ⇒ 用户已申报却被
+ * `nudo:entry-may-throw` **假红**卡住。
+ *
+ * ⇒ 改口径：**先在完整注释文本里找到 case 实参的平衡终点**（`extractBalancedParens`），
+ * 再识别后缀 —— 同行尾 / 紧接的下一行都认；**不再**靠「单行同括号」或
+ * 「上一行是 case 行」推断。单行写法（`@nudo:case "neg" (0) !! throws X`）
+ * 行为**逐字不变**。
+ *
+ * 位置锚（Bug 1033）**不放宽**：散文行、case **名字**内部的同形文本仍然
+ * **不产申报**（后缀必须落在实参闭合括号之后）。
+ */
+function scanCaseThrowsSuffixSpecs(lines: string[]): ThrowsSpec[] {
+  const out: ThrowsSpec[] = [];
+  if (lines.length === 0) return out;
+  const text = lines.join("\n");
+  /** case 实参区间（嵌套 case ⇒ 数据，不产申报；与 scanCaseTags 同口径） */
+  const spans: [number, number][] = [];
+  /** 偏移 → 行号（增量计数，扫描按文档序 ⇒ 线性） */
+  let scanned = 0;
+  let lineNo = 0;
+  const lineAt = (offset: number): number => {
+    while (scanned < offset) {
+      if (text[scanned] === "\n") lineNo++;
+      scanned++;
+    }
+    return lineNo;
+  };
+  CASE_TAG_PAREN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CASE_TAG_PAREN_RE.exec(text)) !== null) {
+    const parenStart = m.index + m[0].length - 1;
+    const args = extractBalancedParens(text, parenStart);
+    if (args === null) continue;
+    const afterParen = parenStart + args.length + 2;
+    // 嵌套 case：标签落在已有实参区间内 → 数据，不产出申报
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    spans.push([m.index, afterParen]);
+    const closeLine = lineAt(afterParen);
+    const lineEnd = text.indexOf("\n", afterParen);
+    // (a) 同行尾：实参闭合括号之后
+    const tail = text.slice(afterParen, lineEnd === -1 ? text.length : lineEnd);
+    const same = tail.match(CASE_THROWS_AFTER_PAREN_RE);
+    if (same) out.push({ line: closeLine, spec: (same[1] ?? "").trim() });
+    // (b) 续行：闭合括号所在行的**下一行**单独写 `!! throws [Kind]`
+    if (lineEnd === -1) continue;
+    const nextStart = lineEnd + 1;
+    const nextEnd = text.indexOf("\n", nextStart);
+    const cont = text.slice(nextStart, nextEnd === -1 ? text.length : nextEnd);
+    const c = cont.match(CASE_THROWS_CONT_RE);
+    if (c) out.push({ line: lineAt(nextStart), spec: (c[1] ?? "").trim() });
+  }
+  // 旧口径兜底：续行形态（**上一行是 case 行**）——实参**未配平**的畸形 case
+  // 仍按旧口径产出申报（不丢声明 ⇒ 不假红）。
+  for (let i = 1; i < lines.length; i++) {
+    const prev = lines[i - 1]!;
+    if (!/^\s*@nudo:case\b/.test(prev)) continue;
+    const c = lines[i]!.match(CASE_THROWS_CONT_RE);
+    if (c) out.push({ line: i, spec: (c[1] ?? "").trim() });
   }
   return out;
 }
@@ -899,34 +1695,33 @@ export function scanInvariantSegments(lines: string[]): string[] {
 /**
  * `@nudo:throws …` / case 行 `!! throws …`。
  * 返回 `*` = 申报任意；字符串 = 逗号/空白分隔的 kind 列表；undefined = 无申报。
+ *
+ * Bug 1033：`!! throws` 只在**指令位置**上采信（见 `scanCaseThrowsSuffixSpecs`）⇒
+ * 散文行 / case 名内部的同形文本不再被读成**函数级**申报 ⇒ L2 门禁照常执法。
+ *
+ * Bug 1118：case 后缀按**实参平衡终点**定位 ⇒ 多行实参写法的申报不再丢失。
  */
 export function scanThrowsDecl(lines: string[]): string | undefined {
   const kinds = new Set<string>();
   let any = false;
-  for (const line of lines) {
-    const th = line.match(/^@nudo:throws\s+(.+)$/i);
-    if (th) {
-      const spec = th[1]!.trim();
-      if (spec === "*") any = true;
-      else {
-        for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-          if (k === "*") any = true;
-          else kinds.add(k);
-        }
+  const addSpec = (spec: string): void => {
+    if (spec === "" || spec === "*") any = true;
+    else {
+      for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+        if (k === "*") any = true;
+        else kinds.add(k);
       }
     }
-    const cs = line.match(/!!\s*throws(?:\s+([A-Za-z*][\w*|,\s]*))?/i);
-    if (cs) {
-      const spec = (cs[1] ?? "*").trim();
-      if (spec === "" || spec === "*") any = true;
-      else {
-        for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-          if (k === "*") any = true;
-          else kinds.add(k);
-        }
-      }
-    }
+  };
+  /** 全部申报（带行号）——按行号**保序**合并（`@nudo:throws` 与 case 后缀交错） */
+  const specs: ThrowsSpec[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const th = lines[i]!.match(/^@nudo:throws\s+(.+)$/i);
+    if (th) specs.push({ line: i, spec: th[1]!.trim() });
   }
+  specs.push(...scanCaseThrowsSuffixSpecs(lines));
+  specs.sort((a, b) => a.line - b.line);
+  for (const s of specs) addSpec(s.spec);
   if (any) return "*";
   if (kinds.size > 0) return [...kinds].join(",");
   return undefined;

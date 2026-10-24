@@ -29,7 +29,14 @@ import type { CallRecord } from "./evaluator/call-record.ts";
 
 /** 模块图组装上报的加载问题（cycle / depth / missing / …） */
 export type ModuleGraphIssues = Array<{
-  kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved";
+  kind:
+    | "cycle"
+    | "depth"
+    | "missing"
+    | "missing-export"
+    | "exports-unresolved"
+    | "unreadable"
+    | "json-invalid";
   label: string;
   reason: string;
 }>;
@@ -40,6 +47,33 @@ export type ModuleGraphResult = {
   /** eval 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
   evalTopCallRecords: CallRecord[];
 };
+
+/**
+ * mock-module **重复声明**族 message 的固定前缀。
+ *
+ * `mock-module.ts` 造重复声明错误时 message 以此开头
+ * （`Duplicate @nudo:mock-module directive for "…" — …`）。
+ * `composeEvalModules` 只把 **message** 带出来（`FromMockError.code` 在那一层被丢掉）
+ * ⇒ 最终诊断的**码**在本模块按前缀还原（见 {@link mockModuleErrorCode}）。
+ */
+const MOCK_MODULE_DUPLICATE_PREFIX = "Duplicate @nudo:mock-module directive";
+
+/**
+ * mock-module 错误 message → 诊断**码**（码归因）。
+ *
+ * 两族（与 `mock-module.ts` 的错误分类一一对应）：
+ * - **重复声明**（同一 specifier 被声明两次）⇒ `nudo:mock-invalid`
+ *   （指令写法有歧义 ⇒ warning；导出表取并集 ⇒ 分析仍然 sound）；
+ * - **装载失败 / 点名缺失**（mock 文件缺失、依赖解析失败、mock 没有导出那个名字）
+ *   ⇒ `nudo:module-missing`（fail-closed ⇒ error）。
+ *
+ * 前缀不命中 ⇒ 落 `nudo:module-missing`（与改前口径一致 ⇒ 保守）。
+ */
+function mockModuleErrorCode(message: string): string {
+  return message.startsWith(MOCK_MODULE_DUPLICATE_PREFIX)
+    ? DIAG.mockInvalid
+    : DIAG.moduleMissing;
+}
 
 /**
  * dep 内容指纹段（整文件 evaluator 缓存键与逐函数 fn 缓存键共用）。
@@ -118,13 +152,20 @@ export function assembleModuleGraph(args: {
         ...(loadModule ? { loadModule } : {}),
         fileDirectives,
       });
-      // @nudo:mock-module 应用失败 → 明确诊断（缺文件/缺绑定），不静默丢弃
+      // @nudo:mock-module 应用失败 → 明确诊断（缺文件/缺绑定/重复声明），不静默丢弃
       for (const msg of composed.mockErrors) {
+        // 码归因：重复声明 ⇒ nudo:mock-invalid（**不是** nudo:module-missing）
+        // ——「重复声明」被说成「模块缺失」是归因错误（码与文案不自洽）。
+        const code = mockModuleErrorCode(msg);
         diagnostics.push({
           range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-          severity: "error",
+          // 同码同级（#460 口径）：mock-invalid = 指令写法有歧义 ⇒ warning
+          // （不挡门禁，导出表取并集 ⇒ 分析仍然 sound）；
+          // module-missing = fail-closed ⇒ error。
+          // 与 check 面（check-issues.ts 的 mockFromErrorIssues）同码同级。
+          severity: code === DIAG.mockInvalid ? "warning" : "error",
           message: msg,
-          code: DIAG.moduleMissing,
+          code,
         });
       }
       pushBModuleIssues(composed.issues);

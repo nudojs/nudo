@@ -134,7 +134,19 @@ describe("BUG-022: check --fix 门禁语义（S5-004 方案A）", () => {
     writeFileSync(file, FIXTURE, "utf-8");
     const r = runCli(["check", file, "--fix", "--json"], dir);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain("cannot be combined");
+    // ⚠ 口径更新：`--json` 面的用法错误落一份**机器可读信封到 stdout**
+    // （Bug 954 的产品契约：`nudo check --json` 的用法错误不得留空 stdout；
+    //  同一 `--fix + --json` 组合另见
+    //  `nudojs-bug-954-json-usage-error-envelope.test.ts`）⇒ 断言改看 stdout；
+    //  **非 `--json` 面**才是 stderr 文案（954 的另一条用例守着）。
+    expect(r.stdout).toContain("cannot be combined");
+    const env = JSON.parse(r.stdout) as {
+      ok: boolean;
+      pathErrors: { code: string; message: string }[];
+    };
+    expect(env.ok).toBe(false);
+    expect(env.pathErrors[0]?.code).toBe("nudo:usage-error");
+    expect(env.pathErrors[0]?.message).toContain("cannot be combined");
   });
 
   it("--profile adoption downgrades L2 to warning: dry-run exits 0", () => {

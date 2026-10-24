@@ -1,6 +1,19 @@
 /**
  * 求值引擎运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
  * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
+ *
+ * Invariants:
+ * - Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性投影按
+ *   **getOwnPropertyNames**（全部自有字符串键）而非 Object.entries（只取可
+ *   枚举键）——原生这些对象的自有属性几乎全不可枚举，按可枚举投影会把整个
+ *   自有面丢掉（gOPN / ownKeys / hasOwn / gOPD 全折 0）；逐键记 enumerable /
+ *   writable / configurable 标志，不可枚举键仍不进枚举面。
+ * - Bug 210：enforceProxyGetInvariant 是 Proxy [[Get]] 规范不变量的单一实现
+ *   （靶上自有属性不可配置且不可写时，get 陷阱须返回其实际值）；
+ *   proxyTargetInnerObj 归一化「靶 → 内层 obj Abs」（不变性侧表与槽表都挂
+ *   在内层 obj 上——brand 包装的靶走内层）。
+ *   [[OwnPropertyKeys]] 不变量（重复名 / 漏键 / 多余键）在
+ *   builtins/object/descriptor.ts（enforceProxyOwnKeysInvariant）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
@@ -8,12 +21,14 @@ import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
+import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { registerSymbolMeta } from "../../symbol-id.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";
 import { joinAbs, objOf } from "../../objects.ts";
+import { extStateOf, getPropFlags, setPropFlags } from "../../builtins/invariants.ts";
 import type { InvariantSpec } from "./invariant-apply.ts";
 
 export { NudoThrow, isNudoThrow };
@@ -129,9 +144,18 @@ export function withInvariantSpecs<T>(
   }
 }
 
-/** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
+/**
+ * apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body）。
+ *
+ * **唯一单例**（Bug 140 收尾）：此前本文件与 `builtins/shared.ts` 各有一份
+ * 同形但**不同对象**的占位 body——按对象身份判「是否占位 body」的检查跨模块
+ * 必然失配（`impl.body !== noBody` 对 builtins 侧建的占位恒真）⇒ 引擎原生
+ * 迭代器的 `@@iterator` 占位 fn 被误判为「真实现」⇒ 对它跑用户迭代器协议
+ * ⇒ 调占位 fn ⇒ 确定 TypeError（`[...Array.from('ab').keys()]` 假抛）。
+ * 现在两侧共用同一对象，占位判据按身份比较恒成立。
+ */
 type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
-export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
+export const noBody: EmptyBlock = sharedNoBody as unknown as EmptyBlock;
 
 /**
  * Bug 26：宿主全局函数 apply 桥（exec/calls.ts 的 callHostGlobalFn——模块
@@ -157,17 +181,34 @@ export function setHostGlobalFnCall(bridge: (fn: unknown, args: Abs[]) => Abs | 
 export function asAbsVal(v: unknown): Abs {
   if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
   if (typeof v === "function") {
+    // Bug 291：宿主函数 → Abs 的**稳定门面**——同一宿主函数恒同一 Abs。
+    //
+    // 此前每次 asAbsVal(hostFn) 都新建 Abs ⇒ 以 Abs 为键的旁表
+    // （propFlags / extState / userFnSlots）**跨调用丢失**：
+    // `function g(){} Object.freeze(g); Object.isFrozen(g)` 原生 true，
+    // 引擎 false（freeze 的标志落在第一次新建的 Abs 上；再读 g 是全新
+    // Abs ⇒ 标志查不到）。原生语义：同一函数**恒同一身份**（`g === g`
+    // 真、`Object.isFrozen(g)` 恒定）⇒ 门面必须稳定。
+    const cached = hostFnAbsCache.get(v as object);
+    if (cached) return cached;
     const n = Math.max(0, v.length);
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
     // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
     const ctor = hostFnCtorFacet(v);
+    // Bug 325：宿主函数的**种类**戳（async / generator / async-generator）——
+    // 函数**声明**转译后是宿主普通函数（async 体包 $async、generator 体包
+    // $gen）⇒ 种类无法从宿主侧反推 ⇒ 转译侧在声明处显式戳一次（$fnKindStamp）
+    // ⇒ 标签面（Object.prototype.toString）读得到 ⇒ "[object AsyncFunction]" 等
+    const hostKind = hostFnKindOf(v);
     // Bug 9：声明名 / 原生 fn.length 透传（v.name / v.length 是宿主真值）——
     // f.name / f.length 折 exact；匿名（name ""）不记 name
     const fnName = typeof v.name === "string" && v.name ? v.name : undefined;
-    return absFunction(
+    const a = absFunction(
       params,
       {
         body: noBody,
+        // Bug 325：种类戳进 impl（标签面读 impl.fnKind）
+        ...(hostKind !== undefined ? { fnKind: hostKind } : {}),
         // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
         // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
         // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
@@ -188,8 +229,54 @@ export function asAbsVal(v: unknown): Abs {
         length: v.length,
       },
     );
+    hostFnAbsCache.set(v as object, a);
+    return a;
   }
   return $lit(v);
+}
+
+/** 宿主函数 → 稳定 Abs 门面的旁表（Bug 291；WeakMap ⇒ 不泄漏宿主引用） */
+const hostFnAbsCache = new WeakMap<object, Abs>();
+
+/** 函数种类戳（Bug 325） */
+export type FnKind = "async" | "generator" | "async-generator";
+
+/**
+ * Bug 325：宿主函数 → **函数种类**戳（"async" | "generator" |
+ * "async-generator"）的旁表。
+ *
+ * 函数**声明**形态转译后是宿主**普通函数**（async 体包 `$async`、generator
+ * 体包 `$gen`）⇒ async/generator 种类**无法从宿主侧反推** ⇒ 由转译侧在
+ * 声明处显式戳一次（`$fnKindStamp`），`asAbsVal` 建 fn Abs 时读旁表 ⇒
+ * `Object.prototype.toString.call(f)` 给出原生标签（"[object
+ * AsyncFunction]" / "[object GeneratorFunction]" /
+ * "[object AsyncGeneratorFunction]"，与函数表达式 / 箭头 / 方法四条既有
+ * 产生路径同口径）。
+ *
+ * 旁表按**宿主函数对象**键控（WeakMap ⇒ 不泄漏宿主引用）；读侧在
+ * `asAbsVal` 建 Abs 时取 ⇒ 该 Abs 按宿主函数缓存（Bug 291 的稳定门面）
+ * ⇒ 戳只需落一次。
+ */
+const hostFnKindRegistry = new WeakMap<object, FnKind>();
+
+/** transpile 生成代码用：给宿主函数打种类戳（Bug 325） */
+export function $fnKindStamp(fn: unknown, kind: string): void {
+  if (typeof fn !== "function") return;
+  if (kind !== "async" && kind !== "generator" && kind !== "async-generator") return;
+  hostFnKindRegistry.set(fn as object, kind);
+  // 戳**晚于**首次建 Abs（宿主函数声明提升 ⇒ 声明前就可能被调用）⇒
+  // 已缓存的 Abs 就地补戳（impl 可变 ⇒ 标签面立即生效）
+  const existing = hostFnAbsCache.get(fn as object);
+  if (existing) {
+    const impl = getFnImpl(existing);
+    if (impl) impl.fnKind = kind;
+  }
+}
+
+/** 宿主函数的种类戳（无戳 ⇒ undefined ⇒ 标签保守折 "[object Function]"） */
+export function hostFnKindOf(fn: unknown): FnKind | undefined {
+  if (typeof fn !== "function") return undefined;
+  return hostFnKindRegistry.get(fn as object);
 }
 
 /** transpile 侧收形入口（instanceof RHS 值等）：host 裸值 / Abs → Abs。
@@ -282,7 +369,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[] },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -309,6 +396,12 @@ export function $fnVal(
       // Bug 93：generator 表达式标记（transpile 透传）——member.ts fn 分支
       // 区分「不可构造但有 prototype」；宿主声明路径走 isHostGeneratorFn
       ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
+      // Bug 325：函数**种类**戳（async × generator 四象限）——与 kind 分开
+      // （kind 是派发角色维度）
+      ...(opts?.fnKind !== undefined ? { fnKind: opts.fnKind } : {}),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）⇒ 必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选 ⇒ 假红）
+      ...(opts?.optionalParams ? { optionalParams: opts.optionalParams } : {}),
     },
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
@@ -465,19 +558,162 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
       const proto = Object.getPrototypeOf(v);
       if (proto === Object.prototype || proto === null) {
         const slots: Record<string, { value: Abs }> = {};
-        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        /**
+         * Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性几乎
+         * 全部**不可枚举**（原生 Object.keys(Math) 为空串数组，但
+         * Object.getOwnPropertyNames(Math) 非空）——此前按 Object.entries
+         * （只取**可枚举**自有键）投影 ⇒ 整个自有面被丢弃 ⇒ 引擎侧
+         * gOPN / ownKeys / hasOwn / gOPD 对这些对象全折 0（原生折非 0）。
+         *
+         * 改为按 Object.getOwnPropertyNames 投影**全部自有字符串键**，并逐键
+         * 记下原生描述符标志（enumerable / writable / configurable）——
+         * 不可枚举键不进枚举面（Object.keys 仍为空，与原生一致），
+         * 描述符面（gOPD）与原生逐字段一致。
+         */
+        const names = Object.getOwnPropertyNames(v);
+        for (const k of names) {
+          const d = Object.getOwnPropertyDescriptor(v, k);
+          // 数据属性取 d.value；访问器属性取读值（getter 求值——与旧
+          // Object.entries 路径同口径：宿主 getter 在成员读时本就会求值）。
+          const raw = d && "value" in d ? d.value : (v as Record<string, unknown>)[k];
           Object.defineProperty(slots, k, {
-            value: { value: litAbsFromJs(val, depth + 1) },
+            value: { value: litAbsFromJs(raw, depth + 1) },
             enumerable: true,
             writable: true,
             configurable: true,
           });
         }
-        return objOf(slots);
+        const obj = objOf(slots);
+        for (const k of names) {
+          const d = Object.getOwnPropertyDescriptor(v, k);
+          if (!d) continue;
+          setPropFlags(obj, k, {
+            writable: d.writable !== false,
+            enumerable: d.enumerable !== false,
+            configurable: d.configurable !== false,
+          });
+        }
+        /**
+         * Bug 213（续）：宿主对象自有 **symbol** 键（如 Math 的
+         * Symbol.toStringTag）也进 [[OwnPropertyKeys]] 面——原生
+         * Reflect.ownKeys(Math) 比 getOwnPropertyNames 多一个 symbol 键。
+         * 引擎槽域是字符串键面，按既有约定投影为 "@@X" 槽（symbolKey 标记，
+         * 与 transpile 期 [Symbol.X] 投影同口径）；无名用户符号无投影
+         * （不凭空捏槽）。
+         */
+        for (const sym of Object.getOwnPropertySymbols(v)) {
+          const slotKey = hostSymbolSlotKeyOf(sym);
+          if (slotKey === undefined) continue;
+          const d = Object.getOwnPropertyDescriptor(v, sym);
+          Object.defineProperty(slots, slotKey, {
+            value: {
+              value: litAbsFromJs((v as unknown as Record<symbol, unknown>)[sym], depth + 1),
+              symbolKey: true,
+            },
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+          setPropFlags(obj, slotKey, {
+            writable: d?.writable !== false,
+            enumerable: d?.enumerable !== false,
+            configurable: d?.configurable !== false,
+          });
+        }
+        return obj;
       }
     }
   }
   return unknown;
+}
+
+/**
+ * Bug 213：宿主 Symbol 命名空间的 well-known 名 → "@@X" 槽键（**宿主身份**
+ * 反查——不用 description：用户符号 Symbol("Symbol.iterator") 的
+ * description 恰是 "Symbol.iterator"，按 description 会误投影到 well-known 槽）。
+ *
+ * 本模块是叶子（不能 import exec/runtime/symbol-key.ts——它依赖本文件的
+ * litAbsFromJs，会成 state↔symbol-key 环），故此处按宿主身份现查
+ * （宿主 well-known 符号集极小，仅在宿主对象带自有 symbol 键时触发）。
+ */
+function hostSymbolSlotKeyOf(sym: symbol): string | undefined {
+  const ns = Symbol as unknown as Record<string, unknown>;
+  for (const name of Object.getOwnPropertyNames(Symbol)) {
+    if (ns[name] === sym) return `@@${name}`;
+  }
+  return undefined;
+}
+
+/**
+ * Bug 210：Proxy 靶的**内层 obj Abs**（obj 靶 → 自身；brand 包装的靶 → 内层
+ * obj；其余形态 → undefined）——不变性侧表（extState / propFlags）与槽表都挂
+ * 在内层 obj 上（外层 brand Abs 只是包装）。
+ */
+export function proxyTargetInnerObj(target: Abs): Abs | undefined {
+  return target.shape.k === "obj"
+    ? target
+    : target.shape.k === "brand" && target.shape.shape.shape.k === "obj"
+      ? target.shape.shape
+      : undefined;
+}
+
+/**
+ * Bug 210：Proxy 靶上自有数据属性值（obj 槽 / brand 内层 obj 槽）。
+ * 非自有属性 → undefined（不变量不适用）。
+ */
+function proxyTargetOwnValue(target: Abs, key: string): Abs | undefined {
+  const inner = proxyTargetInnerObj(target);
+  if (!inner) return undefined;
+  const slots = (inner.shape as { slots: Record<string, { value: Abs }> }).slots;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return undefined;
+  return slots[key]!.value;
+}
+
+/**
+ * Bug 210：Proxy [[Get]] 规范不变量（ES2024 10.5.4 step 6）——靶上该自有
+ * 属性**不可配置且不可写**（数据属性）时，get 陷阱必须返回该属性的实际值
+ * （SameValue），否则抛 TypeError（原生 "'get' on proxy: property 'a' is a
+ * read-only and non-configurable data property on the proxy target but the
+ * proxy did not return its actual value"）。
+ *
+ * 判定口径：
+ * - 冻结靶（extState "frozen"）：全部自有数据属性不可写 + 不可配置；
+ * - 密封靶（"sealed"）：不可配置但**仍可写** → 不触发不变量；
+ * - defineProperty 收紧的 flags：writable:false + configurable:false。
+ *
+ * 值不可判（抽象值 / 非字面量）→ 不抛（sound 保守——原生只在确定不一致
+ * 时抛；引擎不得凭空造不一致）。
+ *
+ * 符号投影键（"[Symbol.X]" → "@@X"）：靶的**自有 symbol 属性**面在引擎里
+ * 不可判（槽键 "@@X" 与原生 symbol 键不同域）→ 跳过（调用方以
+ * opts.symbolKey 标记）。
+ *
+ * 消费方：exec/runtime/containers/member.ts 的 Proxy get 陷阱分支
+ * （该文件归 S2a/S2b 分片——越界诉求：陷阱结果算出后调本函数一行）。
+ */
+export function enforceProxyGetInvariant(
+  target: Abs,
+  key: string,
+  trapResult: Abs,
+  opts?: { symbolKey?: boolean },
+): void {
+  if (opts?.symbolKey === true) return; // symbol 投影键 → 靶自有 symbol 面不可判
+  const inner = proxyTargetInnerObj(target);
+  if (!inner) return;
+  const st = extStateOf(inner);
+  const flags = getPropFlags(inner)?.get(key);
+  const nonWritable = flags?.writable === false || st === "frozen";
+  const nonConfigurable =
+    flags?.configurable === false || st === "frozen" || st === "sealed";
+  if (!nonWritable || !nonConfigurable) return;
+  const own = proxyTargetOwnValue(inner, key);
+  if (own === undefined) return; // 靶上非自有属性 → 不变量不适用
+  const a = litValue(own);
+  const b = litValue(trapResult);
+  if (!a.ok || !b.ok) return; // 值不可判 → 不抛
+  if (!Object.is(a.value, b.value)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
 }
 
 /** JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined */

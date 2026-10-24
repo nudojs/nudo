@@ -42,16 +42,28 @@ describe("destructure assignment to member targets", () => {
 });
 
 describe("TypedArray index read domain", () => {
-  it("u8[i] is number | undefined (element domain ∪ OOB), never exact undefined", () => {
+  // 族 65（片 W17）：**常量下标**的元素值入索引槽 ⇒ 读出**精确值**（与原生一致）。
+  // 原断言钉的是旧的保守域（元素域 ∪ undefined）⇒ **期望值过时**（不是断言写错）
+  // ⇒ 由主 agent 追认更新（2026-10-23）。
+  //
+  // ⚠ 原测试的**标题**写的是 `u8[i]`（变量下标），但**代码**用的是**常量下标**
+  // `a[0]` ⇒ 变量下标那条**从未被真正覆盖** ⇒ 本次**补上**（下方的「变量下标」一例）。
+  it("u8[0]（常量下标）读出精确元素值（native 1）", () => {
     const r = call(`export function f() { const a = new Uint8Array([1,2,3]); return a[0]; }`).result;
-    expect(formatShape(r)).toBe("number | undefined");
+    expect(formatShape(r)).toBe("1");
   });
 
-  it("u8[0] + u8[2] folds number domain (no exact NaN, no string arm)", () => {
+  it("u8[i]（变量下标）仍是元素域 ∪ OOB（number | undefined），never exact undefined", () => {
+    const r = call(`export function f(i) { const a = new Uint8Array([1,2,3]); return a[i]; }`).result;
+    expect(formatShape(r)).toBe("number | undefined");
+    expect(formatShape(r)).not.toBe("undefined");
+  });
+
+  it("u8[0] + u8[2] 折精确值（native 4，无 NaN、无 string 臂）", () => {
     const r = call(`export function f() { const a = new Uint8Array([1,2,3]); return a[0] + a[2]; }`).result;
     expect(formatShape(r)).not.toContain("string");
     expect(formatShape(r)).not.toBe("NaN");
-    expect(formatShape(r)).toContain("number");
+    expect(formatShape(r)).toBe("4");
   });
 
   it("BigInt64Array element domain is bigint", () => {

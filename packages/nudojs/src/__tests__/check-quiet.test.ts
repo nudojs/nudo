@@ -21,12 +21,19 @@ function write(name: string, src: string): string {
 }
 
 const CLEAN_SRC = "export function id(x) { return x; }\n";
+/** 零 issue 样本：有契约根（侧车）⇒ 无 entry-only info（Bug 461 起普通 check 也报它） */
+const CLEAN_WITH_CONTRACT_SRC = "export function id(x) { return x; }\n";
+const CLEAN_WITH_CONTRACT_SIDECAR = `import { fn, number } from "@nudojs/core";
+
+export const id = fn({ x: number() }, number());
+`;
 /** L2-only：export 上未消化 may-throw（默认 error 档红） */
 const L2_SRC = "export function getName(user){ return user.name; }\n";
 
 describe("check --quiet", () => {
   it("成功且零 issue：只打一行摘要（无 signatures / 无 (no issues)）；exit 0", () => {
-    const file = write("clean.js", CLEAN_SRC);
+    const file = write("clean.js", CLEAN_WITH_CONTRACT_SRC);
+    writeFileSync(join(dir, "clean.nudo.js"), CLEAN_WITH_CONTRACT_SIDECAR, "utf-8");
     const r = runCliTsx(["check", file, "--quiet"], { cwd: dir });
     expect(r.status).toBe(0);
     const lines = r.stdout.split("\n").filter((l) => l.length > 0);
@@ -43,7 +50,7 @@ describe("check --quiet", () => {
     expect(r.stdout).not.toContain("signatures");
     // issues 段 + 摘要行不丢（actual 行含签名形态文本属 issues 产品面）
     expect(r.stdout).toContain("FAILED");
-    expect(r.stdout).toContain("1 error · 0 warning · 0 info · 1 fn");
+    expect(r.stdout).toContain("1 error · 0 warning · 1 info · 1 fn");
     expect(r.stdout).toContain("issues");
     expect(r.stdout).toContain("nudo:entry-may-throw");
   });
@@ -63,7 +70,7 @@ describe("check --quiet", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("signatures");
     expect(r.stdout).toContain("issues");
-    expect(r.stdout).toContain("0 error · 1 warning · 0 info · 1 fn");
+    expect(r.stdout).toContain("0 error · 1 warning · 1 info · 1 fn");
   });
 
   it("--json 机器契约不受 --quiet 影响（signatures 照常序列化）", () => {

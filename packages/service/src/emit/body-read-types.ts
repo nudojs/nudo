@@ -30,8 +30,22 @@ export type BodyReadTypes = Map<string, Map<string, BodyReadField[]>>;
 
 type UseHint = { type: string; via: string };
 
+/**
+ * 「接收者**无歧义**是 string」的方法**证据集**。
+ *
+ * 刻意排除 `includes`/`indexOf`/`slice`/`concat`/`at`（Array 上也存在 ⇒ 接收者
+ * 可能是数组 ⇒ 不作 string 证据，见 hintFromUse 的排除条件）。
+ *
+ * `trimLeft` / `trimRight` 是 `trimStart` / `trimEnd` 的**宿主别名**
+ * （`String.prototype.trimLeft === String.prototype.trimStart`）⇒ 与
+ * `trimStart`/`trimEnd` 语义完全等价；而 **Array.prototype 上不存在**这两个
+ * 方法（只有 String.prototype 有）⇒ 不触发上面那类歧义 ⇒ 补进本表安全
+ * （补前的后果只是**保守漏证据**：`param.trimLeft()` 推不出 `param: string()`
+ * ⇒ 该字段落 `shape({ … })`（中间环占位），不是假红）。
+ */
 const STRING_METHODS = new Set([
   "toLowerCase", "toUpperCase", "trim", "trimStart", "trimEnd",
+  "trimLeft", "trimRight",
   "slice", "substring", "substr", "charAt", "charCodeAt", "codePointAt",
   "includes", "startsWith", "endsWith", "split", "replace", "replaceAll",
   "repeat", "padStart", "padEnd", "normalize", "concat", "match", "matchAll",

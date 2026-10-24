@@ -5,16 +5,62 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl, namespaceAbsOf } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
-import { parse, extractInlineDirectives, type FileDirective, type DirectiveDiag } from "@nudojs/parser";
+import { parse, type FileDirective } from "@nudojs/parser";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve as resolvePath } from "node:path";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
+import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import { evalAbsModuleGraph, type AbsGraphOptions, type AbsModuleLoadIssue } from "./abs-modules-graph.ts";
 import { applyMockModuleDirectives, applyMockModuleDirectivesFromSource } from "./mock-module.ts";
+import { mockScopeSelected } from "./mock-abs.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { collectEvalReplacementsFromProgram } from "./eval-injection.ts";
+import { applyPureMarkers, pureFnNamesOfAst } from "./eval-pure.ts";
+
+/**
+ * 行内指令注入表（@nudo:replace / @nudo:as）——收集器在叶子模块
+ * `eval-injection.ts`（根侧与依赖侧共用，避免 eval-run ↔ abs-modules-graph 成环）。
+ * 这里转出以保持既有导入面（`eval-run.ts` 是公开入口）。
+ */
+export { collectEvalReplacements, resolveEvalInjection, type EvalInjection } from "./eval-injection.ts";
+
+/**
+ * 项目级 path env 文件的**内容**指纹（Bug 501）。
+ *
+ * env 名只是维度之一：同一个 env 名（`./env.ts`）指向的文件内容变了，
+ * 类型面必须跟着变——否则整文件分析缓存（analysisFileCacheKey）与
+ * evaluator memo（tryRunEval）会命中陈旧结果（env 改了、类型没改）。
+ * 文件级 `/// @nudo:env` 的同款维度已由 dep 指纹覆盖（load-deps-fp 采
+ * 路径 env 内容）——此处只补**项目级**（package.json#nudo.env）的路径 env。
+ *
+ * 口径与 env-loader 的 `isPathEnvName` 同源：内建名（es/web/node）不是
+ * 路径；带 "/" 或 "./" / "../" 前缀的是路径；裸拼写按「解析到 .ts 且存在」
+ * 判定。baseDir = 被分析文件所在目录（相对说明符的解析基准）。
+ */
+export function pathEnvContentFingerprint(envNames: string[], baseDir: string): string {
+  const parts: string[] = [];
+  for (const name of envNames) {
+    if (typeof name !== "string" || name.length === 0) continue;
+    // 内建 env 名（es / web / node）——不是路径 env
+    if (name === "es" || name === "web" || name === "node") continue;
+    const pathLike = name.includes("/") || name.startsWith("./") || name.startsWith("../");
+    const resolved = resolvePath(baseDir, name);
+    if (!pathLike && !(resolved.endsWith(".ts") && existsSync(resolved))) continue;
+    let content: string;
+    try {
+      content = readFileSync(resolved, "utf-8");
+    } catch {
+      content = "<unreadable>";
+    }
+    parts.push(`${resolved}=${hashSource(content)}`);
+  }
+  return parts.length === 0 ? "" : hashSource(parts.join("\u0001"));
+}
 
 /** Content part for one Abs mock seed. */
 function absSeedPart(a: Abs): string {
@@ -82,7 +128,28 @@ export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   }
 }
 
-/** @nudo:env modules（path / node:path / fs…）→ AbsModuleExports */
+/**
+ * @nudo:env modules（path / node:path / fs…）→ AbsModuleExports
+ *
+ * Bug 282：env 模块是 **CJS 互操作**模块——Node 的 `node:fs` 的默认导出就是
+ * 模块对象本身（具名导出挂在它上面）⇒ ESM **默认导入**
+ * （`import fs from "node:fs"`）必须绑到**命名空间**。
+ *
+ * 此前 env 表**只有 named、没有 default 槽** ⇒ core 的 `bindImport` 在
+ * `name === "default"` 分支取不到值 ⇒ 折 `unknown` ⇒ 该文件的导出函数
+ * 全量降级 `unknown` + 追加一条**误导性**的 `nudo:unknown-inference`
+ * （真实原因是绑定没接上，不是推断失败）+ 门禁**假绿**（exit 0）；
+ * 而**同一模块**的命名空间导入（`import * as fs`）却正常执法
+ * （`nudo:entry-may-throw` 判红）⇒ 同一种导入语义两种门禁结论。
+ *
+ * 口径：default 槽 = 该模块的**命名空间 Abs**（全部具名导出），
+ * 与 `mock-module.ts` 的「仅有 named 时合成 default 命名空间」同惯例；
+ * 同时打 `interopDefault` 标记（CJS 互操作模块 ⇒ default = 模块对象本身）
+ * ——core 的默认导入绑定（`defaultImportBindingOf`）据此回退，两条口径同源。
+ * 只装在 **env 表**上——用户模块表不动 ⇒ 用户模块缺 default 仍是
+ * `unknown`（Bug 990 口径：模块表有该 mod 但没有 default ⇒ 就是没有
+ * default，不得回退到命名空间）。
+ */
 export function collectEnvModules(envNames: string[]): Record<string, AbsModuleExports> {
   if (envNames.length === 0) return {};
   const env = createEnvironment();
@@ -95,7 +162,13 @@ export function collectEnvModules(envNames: string[]): Record<string, AbsModuleE
   }
   const out: Record<string, AbsModuleExports> = {};
   for (const [spec, named] of Object.entries(mods)) {
-    out[spec] = { named: { ...named } };
+    const namedTable = { ...named };
+    out[spec] = {
+      named: namedTable,
+      // CJS 互操作：default = 模块对象本身（= 命名空间）
+      default: namespaceAbsOf({ named: namedTable }),
+      interopDefault: true,
+    };
   }
   return out;
 }
@@ -144,10 +217,85 @@ export type MergeHarvestOptions = {
 };
 
 /**
+ * 保活导出表合并（Bug 476）：ESM 的 import 绑定是指向依赖模块作用域的
+ * **间接引用**——依赖模块的内部变异必须对导入方可见。
+ * 旧口径用对象展开搬运导出表（`{ ...exports.named }`）→ **求值**活 getter
+ * → 冻结成快照 ⇒ 依赖内部变异对导入方不可见（原生 "hello"，引擎 0）。
+ * 这里改为 defineProperty 委派：named 槽与 default 槽都保持 getter。
+ *
+ * 优先级：靠前的表先占位（同名槽取先到者）。
+ */
+function liveNamedTable(tables: Array<Record<string, Abs>>): Record<string, Abs> {
+  const out: Record<string, Abs> = {};
+  for (const table of tables) {
+    for (const k of Object.keys(table)) {
+      // 自有属性判定：`in` 走原型链（toString/constructor 等继承名会被当导出）
+      if (Object.hasOwn(out, k)) continue;
+      const d = Object.getOwnPropertyDescriptor(table, k);
+      if (d?.get) {
+        Object.defineProperty(out, k, {
+          enumerable: true,
+          configurable: true,
+          get: () => (table as Record<string, Abs>)[k],
+        });
+      } else {
+        out[k] = table[k];
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 复制模块导出表（保活 default 槽）。
+ * `named` 由调用方给定；`defaultSrc` 决定 default 槽取自谁（env 优先）。
+ * `keepFlags` = 是否保留 evaluated / cjsMain 等标记位（合并覆盖场景与
+ * 旧口径一致：env 覆盖后只留 named + default）。
+ */
+function copyModuleExports(
+  src: AbsModuleExports,
+  named: Record<string, Abs>,
+  defaultSrc: AbsModuleExports = src,
+  keepFlags = true,
+): AbsModuleExports {
+  const out = { named } as AbsModuleExports;
+  if (keepFlags) {
+    for (const k of Object.keys(src)) {
+      if (k === "named" || k === "default") continue;
+      const d = Object.getOwnPropertyDescriptor(src, k);
+      if (!d) continue;
+      if (d.get) {
+        Object.defineProperty(out, k, {
+          enumerable: true,
+          configurable: true,
+          get: () => (src as unknown as Record<string, unknown>)[k],
+        });
+      } else {
+        (out as unknown as Record<string, unknown>)[k] = d.value;
+      }
+    }
+  }
+  const dd = Object.getOwnPropertyDescriptor(defaultSrc, "default");
+  if (dd?.get) {
+    Object.defineProperty(out, "default", {
+      enumerable: true,
+      configurable: true,
+      get: () => defaultSrc.default,
+    });
+  } else if (dd) {
+    out.default = dd.value as Abs;
+  }
+  return out;
+}
+
+/**
  * Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping
  * module keys and overlapping export names (docs/versioning.md B8 + website
  * harvester API). Harvest-only modules/exports are kept as fill-in.
  * Overwrites notify `opts.onConflict` or the global collector.
+ *
+ * **导出表保活**（Bug 476）：named / default 槽都是活绑定（getter 委派），
+ * 合并不得按值快照——否则依赖模块的内部变异对导入方不可见。
  */
 export function mergeHarvestUnderEnv(
   harvestModules: Record<string, AbsModuleExports>,
@@ -156,18 +304,15 @@ export function mergeHarvestUnderEnv(
 ): Record<string, AbsModuleExports> {
   const out: Record<string, AbsModuleExports> = {};
   for (const [mod, exports] of Object.entries(harvestModules)) {
-    const named = { ...exports.named };
     // 保留 cjsMain / evaluated 等标记位（Bug 10 回归：require 对 CJS 单函数
     // 导出需返回 default 本身，丢标记会回落 namespace obj → obj-callee 定抛）
-    out[mod] = exports.default !== undefined ? { ...exports, named } : { ...exports, named };
+    out[mod] = copyModuleExports(exports, liveNamedTable([exports.named]));
   }
   const notify = opts?.onConflict ?? envHarvestConflictCollectorSlot.get();
   for (const [mod, envExports] of Object.entries(envModules)) {
     const existing = out[mod];
     if (!existing) {
-      const named = { ...envExports.named };
-      out[mod] =
-        envExports.default !== undefined ? { ...envExports, named } : { ...envExports, named };
+      out[mod] = copyModuleExports(envExports, liveNamedTable([envExports.named]));
       continue;
     }
     const overwritten: string[] = [];
@@ -187,110 +332,16 @@ export function mergeHarvestUnderEnv(
         /* collector must not break analysis */
       }
     }
-    const named = { ...existing.named, ...envExports.named };
-    const defaultAbs =
-      envExports.default !== undefined ? envExports.default : existing.default;
-    out[mod] = defaultAbs !== undefined ? { named, default: defaultAbs } : { named };
+    // env wins：同名槽取 env（保活），其余填 harvest
+    const named = liveNamedTable([envExports.named, existing.named]);
+    const defaultSrc = envExports.default !== undefined ? envExports : existing;
+    out[mod] = copyModuleExports(existing, named, defaultSrc, false);
+    // Bug 282：互操作标记随 env 侧走（keepFlags=false 会丢标记位 ⇒ env 模块的
+    // 「default = 模块对象本身」语义在合并后丢失）。default 槽本身已由
+    // defaultSrc 带上（env 侧 default 优先），此处只补标记。
+    if (envExports.interopDefault) out[mod].interopDefault = true;
   }
   return out;
-}
-
-/**
- * 收集 @nudo:replace + @nudo:as → transpile 注入表。
- * `opts.diags`：行内指令文法诊断（nudo:directive-syntax）显式落袋——
- * 语句级抽取各自独立去重；不传则丢弃（纯查询形态）。
- */
-export function collectEvalReplacements(
-  source: string,
-  opts?: { diags?: DirectiveDiag[] },
-): {
-  targets: Array<{
-    target: string;
-    varName: string;
-    stmtStart?: number;
-    stmtEnd?: number;
-  }>;
-  values: Record<string, Abs>;
-  asTargets: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
-  asValues: Record<string, Abs>;
-} {
-  const targets: Array<{
-    target: string;
-    varName: string;
-    stmtStart?: number;
-    stmtEnd?: number;
-  }> = [];
-  const values: Record<string, Abs> = {};
-  const asTargets: Array<{ varName: string; stmtStart: number; stmtEnd: number }> = [];
-  const asValues: Record<string, Abs> = {};
-  let i = 0;
-  try {
-    const file = parse(source);
-    const visitStmts = (stmts: unknown[]) => {
-      for (const stmt of stmts) {
-        if (!stmt || typeof stmt !== "object") continue;
-        const loc = (stmt as { loc?: { start: { line: number }; end: { line: number } } }).loc;
-        const dirs = extractInlineDirectives(
-          stmt as never,
-          opts?.diags ? { diags: opts.diags } : undefined,
-        );
-        for (const d of dirs) {
-          if (d.kind === "replace") {
-            const varName = `__rep${i++}`;
-            targets.push({
-              target: d.targetSource,
-              varName,
-              stmtStart: loc?.start.line,
-              stmtEnd: loc?.end.line,
-            });
-            values[varName] = d.typeAbs;
-          } else if (d.kind === "as" && loc) {
-            const varName = `__as${i++}`;
-            asTargets.push({
-              varName,
-              stmtStart: loc.start.line,
-              stmtEnd: loc.end.line,
-            });
-            asValues[varName] = d.typeAbs;
-          }
-        }
-        const s = stmt as {
-          type?: string;
-          body?: unknown;
-          block?: unknown;
-          consequent?: unknown;
-          alternate?: unknown;
-          declaration?: unknown;
-        };
-        if (s.type === "BlockStatement" && Array.isArray(s.body)) visitStmts(s.body);
-        if (s.type === "FunctionDeclaration" || s.type === "FunctionExpression") {
-          if (s.body) visitStmts([s.body]);
-        }
-        if (s.type === "ExportNamedDeclaration" && s.declaration) {
-          visitStmts([s.declaration]);
-        }
-        if (s.type === "IfStatement") {
-          if (s.consequent) visitStmts([s.consequent]);
-          if (s.alternate) visitStmts([s.alternate]);
-        }
-      }
-    };
-    visitStmts(file.program.body);
-  } catch (err) {
-    // BUG-025：半张注入表比无注入更糟——@nudo:replace/
-    // @nudo:as 前几条生效、后几条静默消失，应 exact
-    // 的 Abs 变 unknown/真执行。已收集任何 directive
-    // 时 rethrow（外层 catch → 整跑 fail-closed：
-    // eval-run 返回 undefined / check 注入面报错）；
-    // 零收集时 fail-closed 空 maps + noteEvalFallback
-    // 记录（无可注入项，throw 前的 parse/访问失败
-    // 不影响正确性）。
-    if (targets.length > 0 || asTargets.length > 0) {
-      throw err;
-    }
-    noteEvalFallback(err);
-  }
-  return { targets, values, asTargets, asValues };
 }
 
 export type EvalRunResult = {
@@ -365,8 +416,17 @@ type EvalCacheEntry = {
   lenientKey: string;
   /** maxLoopIters（""=引擎默认）——循环预算改变求值结果 */
   itersKey: string;
-  /** 只缓存成功求值；失败结果禁止入 memo（瞬时失败不得固化为空导出） */
-  value: EvalRunResult;
+  /**
+   * 已组装的模块图（依赖状态跨实例共享——与原生「同一模块实例」一致）。
+   * fresh 实例复用同一张图：避免重复组图（依赖指纹复核要读盘）与
+   * refresh 注册表被反复清空。
+   */
+  composed?: ComposedEvalModules;
+  /**
+   * 求值结果（**仅非 fresh 路径写入**）：memo 里的实例是「干净」的——
+   * 调用会污染它的模块级状态（Bug 472），故调用面一律走 fresh 实例。
+   */
+  value?: EvalRunResult;
 };
 
 /** 按「入口文件 × mode」键控多槽：analyze / exec 互不逐出（exec 采集不再踢掉分析结果） */
@@ -463,16 +523,35 @@ export function tryRunEval(
     depKey?: string | null;
     /** 宿主已组装的模块图（analyzer 一次分析内复用，消除重复 parse/eval） */
     composed?: ComposedEvalModules;
+    /**
+     * 新建独立模块实例（不复用 memo 里的活实例）——调用面专用。
+     * memo 里的实例捕获着模块级 `let` 绑定：一次调用改写它，后续用例
+     * 就会看到被污染的状态（合成 entry@ 用例之间「串味」，Bug 472）。
+     * fresh 实例只重建**根模块**（依赖模块图共享——与原生「同一依赖实例」
+     * 一致）；fresh 结果不入 memo 的 value（实例会被调用污染）。
+     */
+    fresh?: boolean;
   } = {},
 ): EvalRunResult | undefined {
   // collector 作用域（幂等）：本入口安装 collector，先开作用域再装才能隔离；
   // 嵌套（checkSource / 宿主外层已开）零开销复用外层 store。
   return runWithCollectorScope(() => {
     const mode = opts.mode ?? "analyze";
-    const envKey = (opts.envNames ?? []).join(",");
+    // env 维度 = 名字 + 项目级 path env 的**内容**（Bug 501：env 文件改了
+    // 类型必须跟着变——只编码名字会让 memo 命中陈旧导出表）
+    // + **预载状态**（Bug 993：path 型 env 只能异步装载，同一份源码在
+    // 「预载前 / 预载后」得到两份不同结果——env 全局可见性不同。内容指纹
+    // 两边相同 ⇒ 不加这一段时「先同步（未预载）、后异步（已预载）」会命中
+    // 前者那份「无 env」的陈旧 memo）。
+    const envKey = `${(opts.envNames ?? []).join(",")}#${pathEnvContentFingerprint(
+      opts.envNames ?? [],
+      dirname(filePath),
+    )}#${pathEnvPreloadFingerprint() || "-"}`;
     const mockKey = mockSeedFingerprint(opts.mocks);
     const lenientKey = opts.lenientGlobals === true ? "1" : "0";
     const itersKey = opts.maxLoopIters === undefined ? "" : String(opts.maxLoopIters);
+    // fresh：新建独立模块实例（不复用 memo 里的活实例）——调用面专用。
+    const fresh = opts.fresh === true;
     // 尾部无 @nudo 注释不参与：comment-only 编辑命中 evaluator。
     // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
     const stable = stableAnalyzeKeySource(source);
@@ -480,6 +559,8 @@ export function tryRunEval(
     //（与 BoundedLruMap max<=0 口径一致）
     const depKey = opts.depKey !== undefined ? opts.depKey : evalDepKey(source, filePath, opts.loadModule);
     const canCache = depKey !== null;
+    /** fresh 路径复用 memo 里的组图（依赖状态共享，根模块状态独立） */
+    let cachedComposed: ComposedEvalModules | undefined;
     if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
       const cacheKey = evalCacheSlotKey(filePath, mode);
       const cached = evalRunByFile.get(cacheKey);
@@ -495,10 +576,17 @@ export function tryRunEval(
         // LRU：命中移到队尾
         evalRunByFile.delete(cacheKey);
         evalRunByFile.set(cacheKey, cached);
-        return cached.value;
+        if (!fresh) {
+          // memo 里的实例可能被调用污染过（模块级状态）→ 调用面不得复用
+          if (cached.value) return cached.value;
+        } else {
+          cachedComposed = cached.composed;
+        }
       }
     }
     let out: EvalRunResult | null = null;
+    /** 本轮实际使用的组图（写 memo 时带上——fresh 路径据此复用） */
+    let usedComposed: ComposedEvalModules | undefined;
     try {
       const memberDiags: EvalMemberDiag[] = [];
       const truncated = new Set<string>();
@@ -508,19 +596,38 @@ export function tryRunEval(
       const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
       const prevCall = setEvalCallCollector((r) => topCalls.push(r));
       try {
-        // 单一组装入口（与 analyzer 共用）；宿主已组装时直接复用
+        // 单一组装入口（与 analyzer 共用）；宿主已组装时直接复用；
+        // fresh 路径复用 memo 里的组图（依赖状态共享、根模块状态独立）
         const composed =
           opts.composed ??
+          cachedComposed ??
           composeEvalModules(source, filePath, {
             envNames: opts.envNames,
             loadModule: opts.loadModule,
           });
+        usedComposed = composed;
         const modules = composed.modules;
-        const { targets, values, asTargets, asValues } = collectEvalReplacements(source);
-        const envGlobals = {
-          ...collectEnvGlobals(opts.envNames ?? []),
-          ...(opts.mocks ?? {}),
-        };
+        // 一次 parse 两用：行内指令注入表（@nudo:as / @nudo:replace）
+        // + 纯函数名（@nudo:pure）——同源同次，避免重复 parse。
+        const ast = parse(source);
+        const { targets, values, asTargets, asValues } = collectEvalReplacementsFromProgram(
+          ast.program,
+          source,
+        );
+        const pureFns = pureFnNamesOfAst(ast);
+        // Bug 274（service 侧剩余半边）：mock 与 env **分表传**。
+        //
+        // 此前 mock 被并进 `envGlobals` 一张表 ⇒ core 收到时**分不清哪些是
+        // mock** ⇒ core 注入面的「不遮蔽宿主内建」跳过表（ENV_SHADOW_SKIP，
+        // 只该作用于 env 全局）把名单内的 mock 一并吞掉 ⇒
+        // `@nudo:mock Math` / `JSON` / `Date` 静默 no-op（跑的是宿主内建）。
+        //
+        // 口径：env 全局只装 env；mock 走 `mocks` 形参（core 按两张表分别
+        // 过滤）。**优先级不变**——core 的 `__nudoEnv` 读面是
+        // `{ ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) }` ⇒ 同名时
+        // mock 覆盖 env（与此前「合并表里 mock 在后」逐字等价）。
+        const envGlobals = collectEnvGlobals(opts.envNames ?? []);
+        const mocks = opts.mocks ?? {};
         const exports = runTranspiled(source, {
           modules: modules as never,
           maxLoopIters: opts.maxLoopIters,
@@ -530,8 +637,13 @@ export function tryRunEval(
           asOverrideTargets: asTargets.length ? asTargets : undefined,
           asOverrides: asTargets.length ? asValues : undefined,
           envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+          mocks: Object.keys(mocks).length ? mocks : undefined,
           lenientGlobals: opts.lenientGlobals,
         });
+        // 纯度标记落在**刚诞生的这个实例**上（Bug 462 + 分片 J 的 fresh
+        // 语义）：memo 实例与 fresh 实例都带标记 ⇒ 标记与调用点解析到
+        // 同一对象身份（memo 以对象身份为键）。
+        applyPureMarkers(exports, pureFns);
         out = {
           exports,
           modules,
@@ -552,15 +664,41 @@ export function tryRunEval(
       out = null;
     }
     if (out !== null && canCache) {
-      evalCacheSet(filePath, mode, {
-        stableSource: stable,
-        envKey,
-        mockKey,
-        depKey: depKey!,
-        lenientKey,
-        itersKey,
-        value: out,
-      });
+      const cacheKey = evalCacheSlotKey(filePath, mode);
+      const prev = evalRunByFile.get(cacheKey);
+      const sameSlot =
+        prev !== undefined &&
+        prev.stableSource === stable &&
+        prev.envKey === envKey &&
+        prev.mockKey === mockKey &&
+        prev.depKey === depKey &&
+        prev.lenientKey === lenientKey &&
+        prev.itersKey === itersKey;
+      if (fresh) {
+        // fresh 实例会被调用污染 → **不入 memo 的 value**；只补齐组图
+        // （memo 里的干净实例保持不变，供分析面复用）
+        evalCacheSet(filePath, mode, {
+          stableSource: stable,
+          envKey,
+          mockKey,
+          depKey: depKey!,
+          lenientKey,
+          itersKey,
+          composed: usedComposed,
+          value: sameSlot ? prev?.value : undefined,
+        });
+      } else {
+        evalCacheSet(filePath, mode, {
+          stableSource: stable,
+          envKey,
+          mockKey,
+          depKey: depKey!,
+          lenientKey,
+          itersKey,
+          composed: usedComposed,
+          value: out,
+        });
+      }
     }
     return out ?? undefined;
   });
@@ -603,9 +741,15 @@ export function tryEvalCallFull(
   return runWithCollectorScope(() => {
     const run = tryRunEval(source, filePath, {
       envNames: opts.envNames,
-      mocks: opts.mocks,
+      // mock 表按**被求值的函数作用域**选（Bug 455）：同名 `@nudo:mock`
+      // 各归各函数——不分作用域则先声明的函数被后声明的同名 mock 改写成
+      // 错误类型（产物面 dts / case 值都受影响）。
+      mocks: opts.mocks ? mockScopeSelected(opts.mocks, fnName) : undefined,
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       ...(opts.depKey !== undefined ? { depKey: opts.depKey } : {}),
+      // fresh：每次调用一个独立模块实例——调用会改写模块级状态（`n++` 等），
+      // 复用同一实例会让后一个用例看到前一个用例的残留（Bug 472）。
+      fresh: true,
     });
     if (!run) return undefined;
     // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用

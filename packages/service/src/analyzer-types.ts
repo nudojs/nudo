@@ -65,6 +65,18 @@ export type FunctionAnalysis = {
   /** cases 结果 Abs 的 join；dts 返回位源。skip 函数恒为声明面（@nudo:skip =>），case 结果不参与（#176） */
   combinedAbs?: Abs;
   entryOnly?: boolean;
+  /**
+   * **函数级 throws 域**（族 54 · item 2）：check 签名行口径 = 入口求值的
+   * hard throw ∪ soft may-throw。
+   *
+   * 与 `cases[].throwsAbs`（**该条见证自身**观测到的抛）**分属两面** ——
+   * 把两者并进同一字段 ⇒ 调用点见证被标成「可能抛」⇒ 草稿面
+   * （按「这次调用抛了吗」筛返回义务）丢返回义务 ⇒ **契约产物变弱**（假绿方向）。
+   *
+   * 承载位的选择：函数级（这里）而不是每条见证 —— 函数级 throws 域**本来就是
+   * 函数属性**，每条见证各带一份会与「该见证自己的抛」混为一谈。
+   */
+  entryThrowsAbs?: Abs;
   /** @nudo:skip：只跳过推断面（combinedAbs=声明面，无 synth/hof）；@nudo:case 照常求值断言（#176） */
   skipped?: boolean;
   /**
@@ -121,7 +133,17 @@ export type AnalysisResult = {
 
 export type CompletionItem = {
   label: string;
-  kind: "property" | "method" | "variable";
+  /**
+   * 补全项类别：
+   * - "function"：**顶层**函数绑定（模块级 fn）——LSP `CompletionItemKind.Function`
+   * - "method"：**成员**函数（`obj.m` / 内置原型方法）
+   * - "property"：成员属性
+   * - "variable"：非函数绑定
+   *
+   * "function" 与 "method" 必须分开：模块级函数不是任何对象的成员，
+   * 标成 Method 会让 IDE 把它渲染成「方法」并与成员方法混同（Bug 717）。
+   */
+  kind: "property" | "method" | "variable" | "function";
   detail?: string;
 };
 

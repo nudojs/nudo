@@ -595,7 +595,10 @@ describe("LSP Integration - Narrowing Features", () => {
     const result = analyzeFile(filePath, testCode);
     const processFn = result.functions.find(f => f.name === "process");
     expect(processFn).toBeDefined();
-    expect(processFn!.cases.length).toBe(2);
+    // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
+    // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，
+    // Bug 511）⇒ 台账里多一条 entry@ 见证。
+    expect(processFn!.cases.length).toBe(3);
     // The "with-val" case should return a string
     const withValCase = processFn!.cases.find(c => c.name === "with-val");
     expect(withValCase).toBeDefined();
@@ -659,9 +662,10 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(typeExprToDirective("string | null")).toBe("union(string(), null)");
       expect(typeExprToDirective("shape({ port: number() })")).toBe("shape({ port: number() })");
       expect(typeExprToDirective("{ port: number() }")).toBe("{ port: number() }");
-      expect(typeExprToDirective("Date")).toBe("any()");
-      // legacy T.* is removed — collapsed to any()
-      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("any()");
+      // 认不出的裸名字不再静默洗成 any()（agent.md「any other name becomes `unknown`」）
+      expect(typeExprToDirective("Date")).toBe("unknown");
+      // legacy T.* is removed — 同样落到 unknown（`unknown` 是 @nudo:as 的合法载荷）
+      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("unknown");
     });
 
     it("inserts an @nudo:as line above the declaring statement", () => {
@@ -681,12 +685,24 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(unapplied).toEqual(["nope"]);
       expect(source).toBe(whatIfSrc);
     });
+
+    it("echoes the downgrade when the requested type is not expressible", () => {
+      // 认不出的名字注入 unknown；回显必须明说降级，不能把用户原文说成「按原样应用」
+      const { source, applied, unapplied } = injectBindings(whatIfSrc, [
+        { name: "x", type: "Date" },
+      ]);
+      expect(source).toBe("// @nudo:as unknown\nconst x = 1;\nconst y = x + 1;\n");
+      expect(unapplied).toEqual([]);
+      expect(applied).toHaveLength(1);
+      expect(applied[0]).toContain("unknown");
+      expect(applied[0]).toContain("not expressible");
+    });
   });
 
   describe("whatIf binding injection", () => {
-    it("bindings change the inferred target type (default vs assumed)", () => {
-      const base = whatIf({ file: "/test/what-if.js", bindings: [], target: "y" }, srcDeps(whatIfSrc));
-      const assumed = whatIf(
+    it("bindings change the inferred target type (default vs assumed)", async () => {
+      const base = await whatIf({ file: "/test/what-if.js", bindings: [], target: "y" }, srcDeps(whatIfSrc));
+      const assumed = await whatIf(
         { file: "/test/what-if.js", bindings: [{ name: "x", type: "string" }], target: "y" },
         srcDeps(whatIfSrc),
       );
@@ -700,16 +716,16 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(assumed.content[0].text).toContain("Bindings applied: x: string");
     });
 
-    it("union bindings surface as union types", () => {
-      const res = whatIf(
+    it("union bindings surface as union types", async () => {
+      const res = await whatIf(
         { file: "/test/what-if.js", bindings: [{ name: "x", type: "string | null" }], target: "x" },
         srcDeps(whatIfSrc),
       );
       expect(res.content[0].text).toContain("string | null");
     });
 
-    it("reports unknown targets", () => {
-      const res = whatIf(
+    it("reports unknown targets", async () => {
+      const res = await whatIf(
         { file: "/test/what-if.js", bindings: [{ name: "x", type: "string" }], target: "missing" },
         srcDeps(whatIfSrc),
       );
@@ -721,7 +737,7 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
   });
 
   describe("open-document priority and disk fallback", () => {
-    it("open buffer text wins over disk; disk is read when not open", () => {
+    it("open buffer text wins over disk; disk is read when not open", async () => {
       const openSrc = "const x = 7;\nconst y = x * 2;\n";
       const deps: AgentToolDeps = {
         getOpenText: (p) => (p === "/test/open-doc.js" ? { text: openSrc } : undefined),
@@ -730,11 +746,11 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
           return whatIfSrc;
         },
       };
-      const fromBuffer = whatIf({ file: "/test/open-doc.js", bindings: [], target: "y" }, deps);
+      const fromBuffer = await whatIf({ file: "/test/open-doc.js", bindings: [], target: "y" }, deps);
       expect(fromBuffer.content[0].text).toContain('Type of "y": 14');
     });
 
-    it("whatIf / suggestCase / trace read unopened files from disk (os.tmpdir)", () => {
+    it("whatIf / suggestCase / trace read unopened files from disk (os.tmpdir)", async () => {
       const dir = mkdtempSync(join(tmpdir(), "nudo-agent-disk-"));
       try {
         const plainPath = join(dir, "plain.js");
@@ -743,11 +759,11 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
         writeFileSync(casedPath, '// @nudo:case "one" (1)\nfunction inc(n) { return n + 1; }\n// @nudo:skip\nfunction bare(a) { return a; }\n');
 
         // no didOpen anywhere: default deps fall back to readFileSync
-        const base = whatIf({ file: plainPath, bindings: [], target: "y" });
+        const base = await whatIf({ file: plainPath, bindings: [], target: "y" });
         expect(base.content[0].text).toContain('Type of "y": 2');
 
         // file:// URI form normalizes to the same path
-        const viaUri = whatIf(
+        const viaUri = await whatIf(
           { file: `file://${plainPath}`, bindings: [{ name: "x", type: "string" }], target: "y" },
         );
         expect(viaUri.content[0].text).toContain('Type of "y":');
@@ -756,19 +772,19 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
         // normalizeFilePath decodes and resolves both forms identically
         expect(normalizeFilePath(`file://${plainPath}`)).toBe(normalizeFilePath(plainPath));
 
-        const tr = trace({ file: casedPath, functionName: "inc" });
+        const tr = await trace({ file: casedPath, functionName: "inc" });
         expect(tr.content[0].text).toContain("Input: (1)");
         expect(tr.content[0].text).toContain("Output: 2");
 
-        const withCases = suggestCase({ file: casedPath, functionName: "inc" });
+        const withCases = await suggestCase({ file: casedPath, functionName: "inc" });
         expect(withCases.content[0].text).toContain("already has 1 case(s)");
 
         // full-program inference synthesizes cases for plain functions;
         // only skipped ones stay at zero cases
-        const withoutCases = suggestCase({ file: casedPath, functionName: "bare" });
+        const withoutCases = await suggestCase({ file: casedPath, functionName: "bare" });
         expect(withoutCases.content[0].text).toContain("Suggested: /** @nudo:case */");
 
-        const missing = trace({ file: casedPath, functionName: "nope" });
+        const missing = await trace({ file: casedPath, functionName: "nope" });
         expect(missing.content[0].text).toContain('Function "nope" not found');
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -788,13 +804,13 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       }
     });
 
-    it("returns an Error text result for unreadable files instead of throwing", () => {
-      const res = whatIf({ file: join(tmpdir(), "nudo-agent-missing-file.js"), bindings: [], target: "y" });
+    it("returns an Error text result for unreadable files instead of throwing", async () => {
+      const res = await whatIf({ file: join(tmpdir(), "nudo-agent-missing-file.js"), bindings: [], target: "y" });
       expect(res.content[0].text).toMatch(/^Error: /);
     });
   });
 
-  it("suggestCase emits pasteable directives for synthesized cases; hand-written and zero-case stay as-is", () => {
+  it("suggestCase emits pasteable directives for synthesized cases; hand-written and zero-case stay as-is", async () => {
     // 同文件内调用产生合成 case：add 两条 call@L* 记录 → 直接可粘贴的指令文本
     const synthSrc = [
       "function add(a, b) { return a + b; }",
@@ -807,20 +823,22 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
     ].join("\n");
     const deps = srcDeps(synthSrc);
 
-    const synthesized = suggestCase({ file: "/test/synth.js", functionName: "add" }, deps);
+    const synthesized = await suggestCase({ file: "/test/synth.js", functionName: "add" }, deps);
     const text = synthesized.content[0].text;
     expect(text).toContain('Function "add" has 2 synthesized case(s); suggested directives:');
     expect(text).toContain("/**");
-    expect(text).toContain(' * @nudo:case "call@L2" (1, 2)');
-    expect(text).toContain(' * @nudo:case "call@L3" ("x", "y")');
+    // Bug 655：建议里的名字是**手写见证名**（`witness@<n>`，避开合成 / 固化
+    // 名字空间 `call@` / `entry@`）+ **带 `=> expected`**（观测值）。
+    expect(text).toContain(' * @nudo:case "witness@1" (1, 2) => 3');
+    expect(text).toContain(' * @nudo:case "witness@2" ("x", "y") => "xy"');
     expect(text).toContain("*/");
 
     // 手写 case：source 未标记（非 callsite），报 already has N case(s) 原样
-    const handWritten = suggestCase({ file: "/test/synth.js", functionName: "inc" }, deps);
+    const handWritten = await suggestCase({ file: "/test/synth.js", functionName: "inc" }, deps);
     expect(handWritten.content[0].text).toBe('Function "inc" already has 1 case(s)');
 
     // 零 case（skip）：占位符不变
-    const zero = suggestCase({ file: "/test/synth.js", functionName: "bare" }, deps);
+    const zero = await suggestCase({ file: "/test/synth.js", functionName: "bare" }, deps);
     expect(zero.content[0].text).toContain("Suggested: /** @nudo:case */");
   });
 });

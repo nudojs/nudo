@@ -8,6 +8,9 @@
  *   通道消费（求值侧 declare.ts 的 classImpl 挂载）。
  * - ctor 体隐式 return 语义：implicitReturn 只对 ctor 放行（裸 return 折
  *   undefined → TypeError 的原生派生类约束）。
+ * - Bug 133：**类名两分**——内部类名（brand 名 / 类注册键 / super 链键 /
+ *   发射用标识符）vs 对外可见的 **name**（原生无名类名为空串）；类表达式
+ *   的 NamedEvaluation 名经 nameHint 传入（类自身的名字优先）。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
@@ -18,12 +21,39 @@ import {
   collectForkBindingNames,
   paramDisplayNames,
   nativeParamArity,
+  fnKindOf,
+  internalTmpName,
+  internalTmpNameSet,
+  thisCarrierOf,
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
 } from "./emit.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
+import { asyncBodyPlan } from "./async-plan.ts";
+
+/**
+ * Bug 1151：**类** setter thunk 形参载体（**基名**）——实际名经
+ * `internalTmpName` 分配（避开用户标识符词形）。
+ *
+ * setter thunk 形态 `(__this, <v>) => {…}`——thunk 在**自身作用域**里求值
+ * 用户表达式（setter 体）⇒ 写死名 `__v` 会**遮蔽**用户同名外层绑定 ⇒
+ * setter 体读到引擎临时量（**自信错值** ⇒ 闸门**假绿**）：
+ *
+ * ```js
+ * const __v = 5;
+ * class C { set x(a = 3) { out = a + __v; } }   // 原生 15
+ * ```
+ *
+ * 修前引擎读到的 `__v` 是 thunk 形参（= 赋进去的值 10）⇒ 20。
+ *
+ * 口径与 Bug 1149 已修好的 `expr/object.ts` setter 路径**同款**
+ * （`userIdentInfoOf(opts)` = 源文本词形 ∪ `opts.userIdents`，撞名加 `_k`
+ * 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一源文本 ⇒ 同一名 ⇒
+ * 产物确定性（缓存键 / 差分语料依赖它）。
+ */
+const SETTER_V_BASE = "__v";
 
 export function emitSetterAccessorThunk(
   vname: string,
@@ -31,24 +61,77 @@ export function emitSetterAccessorThunk(
   aliasNames: readonly string[],
   depth: number,
   /** N3：setter 形参默认值/解构绑定行（__nudoArgs 槽，见类/对象 setter 发射位） */
-  paramPrologue: string[] = [],
+  paramPrologue: string[],
+  /** 求值侧 opts（Bug 1159：别名载体名经 `internalTmpNameSet` 避让用户词形） */
+  opts: TranspileOptions,
 ): string {
   const pad = indent(depth);
-  const lines: string[] = [`(__this, ${vname}) => {`];
+  // Bug 1159：别名载体 `__nab{i}` / 回收载体 `__nabs` 是 thunk 作用域的**词法
+  // 绑定**，而 thunk 体内求值**用户 setter 体**（内层 IIFE）⇒ 写死名会遮蔽
+  // 用户同名外层绑定（`const __nab0 = 100; set x(v) { out = __nab0; }` 引擎读到
+  // thunk 里的别名副本 ⇒ 自信错值）。实际名经分配器（同 Bug 1149 口径）；
+  // 无碰撞时基名原样返回 ⇒ 产物逐字不变。
+  const nabNames = internalTmpNameSet(
+    [...aliasNames.map((_, i) => `__nab${i}`), "__nabs"],
+    opts,
+  );
+  const nabsName = nabNames[aliasNames.length]!;
+  // Bug 1160：thunk 首参是 this 载体（声明方）——名字取单元共享名，避开用户
+  // 同名绑定（`const __this = 100; set x(v) { out = __this; }` 原生读用户绑定，
+  // 写死名会读到载体 ⇒ 自信错值）。无碰撞时基名 `__this` ⇒ 产物逐字不变。
+  const thisSlot = thisCarrierOf(opts);
+  const lines: string[] = [`(${thisSlot}, ${vname}) => {`];
   lines.push(...paramPrologue);
-  aliasNames.forEach((n, i) => lines.push(`${pad}const __nab${i} = ${n};`));
+  aliasNames.forEach((n, i) => lines.push(`${pad}const ${nabNames[i]!} = ${n};`));
   lines.push(`${pad}(() => {`, bodySrc, `${pad}})();`);
   if (aliasNames.length === 1) {
-    lines.push(`${pad}if (__nab0 === __this && ${aliasNames[0]} !== __nab0) return ${aliasNames[0]};`);
+    lines.push(`${pad}if (${nabNames[0]!} === ${thisSlot} && ${aliasNames[0]} !== ${nabNames[0]!}) return ${aliasNames[0]};`);
   } else if (aliasNames.length > 1) {
-    lines.push(`${pad}let __nabs;`);
+    lines.push(`${pad}let ${nabsName};`);
     aliasNames.forEach((n, i) =>
-      lines.push(`${pad}if (__nab${i} === __this && ${n} !== __nab${i}) __nabs = __nabs ? $join(__nabs, ${n}) : ${n};`),
+      lines.push(`${pad}if (${nabNames[i]!} === ${thisSlot} && ${n} !== ${nabNames[i]!}) ${nabsName} = ${nabsName} ? $join(${nabsName}, ${n}) : ${n};`),
     );
-    lines.push(`${pad}if (__nabs !== undefined) return __nabs;`);
+    lines.push(`${pad}if (${nabsName} !== undefined) return ${nabsName};`);
   }
-  lines.push(`${pad}return __this;`, `${indent(depth - 1)}}`);
+  lines.push(`${pad}return ${thisSlot};`, `${indent(depth - 1)}}`);
   return lines.join("\n");
+}
+
+/**
+ * Bug 158：私有名按**声明类**作用域化。
+ *
+ * 原生 Private Name 是**逐类定义**的：A 的 #x 与 B 的 #x 是两个不同私有名
+ * ——互不串值、派生类同名私有不覆盖基类私有、读外类私有抛 TypeError。
+ * 此前私有名键是裸 "#x" 混淆键（全局共享）→ 三条原生语义全失。
+ *
+ * 修法：类体内所有 PrivateName 节点的 id.name 改写为 "<类名>::<私有名>"
+ * （声明点与使用点共用同一键）。transpile 侧全部私有名路径（成员读/写、
+ * 复合赋值、update、调用、in 运算符）都从 PrivateName.id.name 取键
+ * （helpers.privateNameKeySrc / call.ts 内联同口径），改写一处即全路径
+ * 对齐；运行时沿用既有 privateNameGuard（"#" 前缀 brand 校验）——键按类
+ * 作用域化后，跨类读命中"非本类槽"→ 确定 TypeError。
+ *
+ * 嵌套类体自有私有名作用域独立——不进改写（否则外层类名串进内层私有名；
+ * 嵌套类体由其自身 classSpecOf 以自己的类名改写）。
+ *
+ * 改写在**副本**上进行（原 AST 不动）——同一 AST 多次转译不得累积改写。
+ */
+function scopePrivateNames(node: unknown, scope: string): unknown {
+  if (Array.isArray(node)) return node.map((n) => scopePrivateNames(n, scope));
+  if (!node || typeof node !== "object") return node;
+  const src = node as Record<string, unknown>;
+  const type = src.type as string | undefined;
+  if (type === "PrivateName") {
+    const id = src.id as { name?: string } | undefined;
+    const priv = id?.name ?? (src.name as string | undefined);
+    if (!priv) return { ...src };
+    return { ...src, id: { ...(id ?? {}), name: `${scope}::${priv}` } };
+  }
+  // 嵌套类：自有私有名作用域独立——只浅拷贝，不进改写
+  if (type === "ClassDeclaration" || type === "ClassExpression") return { ...src };
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(src)) out[k] = scopePrivateNames(src[k], scope);
+  return out;
 }
 
 /**
@@ -64,12 +147,28 @@ export function classSpecOf(
   },
   depth: number,
   opts: TranspileOptions,
-): { name: string; specLines: string[]; staticInitLines: string[] } {
-  const name = stmt.id?.name ?? "AnonymousClass";
+  /** Bug 133：NamedEvaluation 名（类表达式绑定到名字时的类名） */
+  nameHint?: string,
+): { name: string; displayName: string; specLines: string[]; staticInitLines: string[] } {
+  // Bug 133：类自身的名字（`class Named {}`）优先于绑定名——原生内层名优先；
+  // 匿名类表达式绑定到名字时以绑定名为类名（`const K = class {}` → "K"）；
+  // 两者皆无 → 合成名（发射用；对外可见的 name 是空串——原生无名类名为 ""）。
+  const name = stmt.id?.name ?? nameHint ?? "AnonymousClass";
+  const displayName = stmt.id?.name ?? nameHint ?? "";
+  // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名（`__margs`）
+  // 避开用户标识符——撞名 ⇒ 重复词法声明 ⇒ 产物非法 JS ⇒ 整模块
+  // fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
+  const argsSlot = internalTmpName("__nudoArgs", opts);
+  const margsName = internalTmpName("__margs", opts);
+  // Bug 1160：本类全部 this 载体（方法/构造器/访问器 thunk 首参、字段 /
+  // 静态块 / @@hasInstance 安装 thunk 首参）共用**转译单元分配名**——与
+  // methodOptsBase.thisParam（体内 this 读）同名；撞名加 `_k` 后缀，
+  // 无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+  const thisSlot = thisCarrierOf(opts);
   // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
   // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
   const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
-  const methods = stmt.body.body as Array<{
+  const methods = scopePrivateNames(stmt.body.body, name) as Array<{
     type: string;
     key?: unknown;
     params?: unknown[];
@@ -85,16 +184,52 @@ export function classSpecOf(
   const ctorParts: string[] = [];
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
-  const staticFieldParts: string[] = [];
+  /** Bug 142：静态元素有序表（静态字段 + 静态块按**类体源码顺序**混排）——
+   *  原生 InitializeStaticElements 源序执行（静态块与静态字段初始化器
+   *  交错）。此前静态块恒在全部静态字段初始化器之后（两块分表：静态字段
+   *  进 statics 表由 $class 求值，静态块另走 $staticInit 尾巴）→ 类体
+   *  源码顺序丢失（`static { A.q = 1 } static r = A.q + 1` 折 NaN）。
+   *  静态块以保留键入同表（不挂静态槽——$class 侧识别保留键改走"执行块"
+   *  分支，见 STATIC_BLOCK_KEY_PREFIX）。 */
+  const staticParts: string[] = [];
   /** Bug 59：实例字段 thunk（每次构造以新实例为 this 按源序求值） */
   const instanceFieldParts: string[] = [];
   /** Bug 60：计算键 synth 名 → 键表达式源（定义期求值，$class 折叠真名） */
   const computedKeyParts: string[] = [];
-  /** Bug 77：静态块 thunk（类绑定后执行；this = 类值） */
-  const staticInitParts: string[] = [];
+  /** Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中） */
+  const STATIC_BLOCK_KEY_PREFIX = "\u0000nudoStaticBlock:";
+  let staticBlockSeq = 0;
+  /**
+   * Bug 203：@@hasInstance 投影槽名（**符号键**投影与**普通字符串键**同名）。
+   *
+   * 原生两者是**不同的键**：符号键 `Symbol.hasInstance` 才是 instanceof
+   * 钩子；普通字符串键 `"@@hasInstance"` 只是一个普通静态属性。
+   * 修法（本文件侧）：
+   * - 符号键形态（`static [Symbol.hasInstance]…`）→ 仍进 spec（$class 侧
+   *   造钩子适配器），并给类值同名槽打 **symbolKey 标记**（同族 01 的
+   *   Bug 149 机制：读面据此把符号键槽与普通字符串键槽分开）；
+   * - 普通字符串键形态（`static "@@hasInstance"…`）→ **不进** spec 的
+   *   staticMethods/statics（进了则 members.ts 的 classDeclaresHasInstance
+   *   判"类声明了钩子"⇒ 被当钩子调用），改以**类值自有槽**安装（$set
+   *   写 own slot——与动态写 `A["@@hasInstance"]=fn` 同口径，槽无 symbolKey
+   *   标记 ⇒ 不是钩子）。
+   */
+  const HAS_INSTANCE_KEY = "@@hasInstance";
+  /** Bug 203：普通字符串键 "@@hasInstance" 的安装项（保留键入 statics 表
+   *  ——$class 侧只执行不挂静态槽，与静态块同机制）；排在静态元素**之前**
+   *  （原生：方法先于静态元素定义 ⇒ 静态字段初始化器可读该静态方法）。 */
+  const hasInstanceInstallParts: string[] = [];
+  let hasInstanceInstallSeq = 0;
+  /** Bug 203：类体声明了**符号键** `static [Symbol.hasInstance]` → 类值
+   *  同名槽需打 symbolKey 标记（类定义后置一步）。 */
+  let hasInstanceSymbolStatic = false;
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
+  // Bug 325：类方法的**函数种类**戳（async × generator 四象限）——原生类
+  // 方法的标签面随种类变（`Object.prototype.toString.call(A.prototype.m)`）。
+  const methodKindEntries: Array<[string, "function" | "async" | "generator" | "async-generator"]> = [];
+  const staticMethodKindEntries: Array<[string, "function" | "async" | "generator" | "async-generator"]> = [];
   /** P2b：构造器元数（.length 自有属性）——隐式构造器（基类/派生）恒 0 */
   let ctorLength = 0;
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
@@ -116,11 +251,16 @@ export function classSpecOf(
    *   Identifier/String/Numeric → 原名（Numeric 原生 ToPropertyKey 成串）；
    * - 计算键（含 `[k]()` 的 Identifier 形状——babel 把 computed 标在成员上）：
    *   发射求值源，$class 折叠真名，不静默挂 "method"。
+   *
+   * Bug 203：symbolKey 标记——**符号键**投影（句法形 `Symbol.X` → "@@X"）
+   * 标 true；普通字符串键（含字面量 "@@hasInstance"）缺省。两者投影名同形
+   * （"@@hasInstance"）但**键不同**（原生是符号键 vs 普通自有属性）——
+   * 读面据此区分（符号键投影槽打 Slot.symbolKey 标记，同族 01 的 Bug 149）。
    */
   const keyOf = (
     key: unknown,
     computed: boolean,
-  ): { name: string; private?: boolean } | { computed: string } | null => {
+  ): { name: string; private?: boolean; symbolKey?: boolean } | { computed: string } | null => {
     const k = key as
       | { type?: string; name?: string; value?: unknown; id?: { name?: string } }
       | undefined;
@@ -152,7 +292,7 @@ export function classSpecOf(
       asMember.property?.type === "Identifier" &&
       asMember.property.name
     ) {
-      return { name: `@@${asMember.property.name}` };
+      return { name: `@@${asMember.property.name}`, symbolKey: true };
     }
     if (isExpression(k as Node)) {
       return { computed: emitTranspileExpression(k as Expression, opts) };
@@ -162,11 +302,33 @@ export function classSpecOf(
 
   /** thunk（单表达式）多行安全包装 */
   const thunkOf = (src: string, d: number): string =>
-    [`(__this) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
+    [`(${thisSlot}) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
+
+  /**
+   * Bug 203：普通字符串键 `static "@@hasInstance"` 的**类值自有槽安装**
+   * thunk——把值写进类值 own slot "@@hasInstance"（$set 写语义：与动态写
+   * `A["@@hasInstance"]=fn` 同口径；槽无 symbolKey 标记 ⇒ 不是 instanceof
+   * 钩子）。类值 = thunk 首参（this = 类值，同静态字段口径）。
+   */
+  const hasInstanceInstallSrc = (valueSrc: string, selfName: string | undefined): string =>
+    [
+      `(${thisSlot}) => {`,
+      ...(selfName ? [`${indent(depth + 3)}let ${selfName} = ${thisSlot};`] : []),
+      `${indent(depth + 3)}$set(${thisSlot}, ${JSON.stringify(HAS_INSTANCE_KEY)}, ${valueSrc});`,
+      `${indent(depth + 3)}return $lit(void 0);`,
+      `${indent(depth + 2)}}`,
+    ].join("\n");
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
       const id = p as { type?: string; name?: string };
+      // Bug 397：TS 的 `this: T` 是**接收者标注**，不是运行时形参——Babel 的
+      // TS 插件把它解析成普通 `Identifier("this")` ⇒ 此前进了宿主方法签名
+      // `(__this, this, a) => {…}` ⇒ `this` 不是合法形参名 ⇒ 产物语法非法
+      // ⇒ `new Function` 抛 ⇒ **整个模块装载失败**。
+      // ⇒ 落成占位 `_`（与「非 Identifier 形参」同处理）⇒ `paramList` 过滤
+      //   `_` 时把它剔除 ⇒ 该形参**不占实参位**（原生 `this` 标注不占位）。
+      if (id?.type === "Identifier" && id.name === "this") return "_";
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 
@@ -190,7 +352,7 @@ export function classSpecOf(
     // 方法体是新函数边界：return 不携带外层 if 臂退出信号
     conditionalFlow: 0,
     inFunction: true,
-    thisParam: "__this",
+    thisParam: thisSlot,
     className: name,
     constNames: selfConstNames,
     // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
@@ -202,16 +364,35 @@ export function classSpecOf(
     if (m.type === "StaticBlock") {
       // this = 类值：thisParam 直接指类名绑定（静态块内 this.t = v 的
       // 不可变更新须重绑类绑定——经 memberPathOf 根可重绑路径落回）
-      const blkOpts: TranspileOptions = { ...methodOptsBase, thisParam: name };
+      // Bug 157：静态块内 super 的 home object 是类自身——super.<父类静态成员>
+      // 须按静态口径派发（父类构造器面），此前缺省落 $getSuper 实例原型链
+      // （super.m 折 exact undefined）。与静态字段/静态方法/静态访问器同口径
+      // 注入 staticSuperSrc。
+      // Bug 142：静态块与静态字段同表（源序）——块在 $class 内执行（类值
+      // 尚未回绑外层类名绑定）：类名引用经**类体自有词法绑定**（自有名
+      // 影子绑定 let C = __this，同静态字段口径）解析；无名类表达式无自
+      // 有绑定——this 走 __this（类值），类名引用保持自由（原生 TDZ）。
+      const blkOpts: TranspileOptions = {
+        ...methodOptsBase,
+        thisParam: stmt.id?.name ?? thisSlot,
+        ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+      };
       // StaticBlock.body 直接是语句数组（无 BlockStatement 包装）
       const blkBody = Array.isArray(m.body)
         ? (m.body as Statement[])
         : ((m.body as { body?: Statement[] })?.body ?? []);
       const stmts = transpileFnBodyStmts(blkBody, depth + 3, blkOpts, { skip: new Set() });
-      staticInitParts.push(
-        `${indent(depth + 2)}(__this) => {`,
-        stmts,
-        `${indent(depth + 2)}},`,
+      const selfName = stmt.id?.name;
+      const blockSrc = selfName
+        ? [
+            `(${thisSlot}) => {`,
+            `${indent(depth + 3)}let ${selfName} = ${thisSlot};`,
+            stmts,
+            `${indent(depth + 2)}}`,
+          ].join("\n")
+        : [`(${thisSlot}) => {`, stmts, `${indent(depth + 2)}}`].join("\n");
+      staticParts.push(
+        `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}${staticBlockSeq++}`)}: ${blockSrc},`,
       );
       continue;
     }
@@ -252,17 +433,33 @@ export function classSpecOf(
         const selfName = stmt.id?.name;
         const initSrc = selfName
           ? [
-              `(__this) => {`,
-              `${indent(depth + 3)}let ${selfName} = __this;`,
+              `(${thisSlot}) => {`,
+              `${indent(depth + 3)}let ${selfName} = ${thisSlot};`,
               `${indent(depth + 3)}return ${vsrc};`,
               `${indent(depth + 2)}}`,
             ].join("\n")
           : thunkOf(vsrc, depth + 2);
+        // Bug 203：普通字符串键 `static "@@hasInstance" = v`——**不是**符号
+        // 钩子（原生 instanceof 只看 Symbol.hasInstance）→ 不进 spec.statics
+        // （进了则 members.ts 的 classDeclaresHasInstance 判"类声明了钩子"），
+        // 改以类值自有槽安装（保留键入 statics 表：$class 侧只执行不挂槽）。
+        if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
+          hasInstanceInstallParts.push(
+            `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}hasInstanceStr${hasInstanceInstallSeq++}`)}: ${hasInstanceInstallSrc(vsrc, selfName)},`,
+          );
+          continue;
+        }
+        // Bug 203：符号键 `static [Symbol.hasInstance] = fn`——类值同名槽打
+        // symbolKey 标记（钩子适配器仍由 $class 侧承担）。
+        if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey === true) {
+          hasInstanceSymbolStatic = true;
+        }
+        // Bug 142：静态字段与静态块同表（类体源码序）
         if (keyR && "name" in keyR) {
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
+          staticParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
         } else if (keyR && "computed" in keyR) {
           const synth = `__ck${ckSeq++}`;
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
+          staticParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
           computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
         }
         // 无名键（解析异常）：无表达式可发射，跳过
@@ -281,10 +478,18 @@ export function classSpecOf(
           `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc}${keyR.private === true ? ", private: true" : ""} },`,
         );
       } else if (keyR && "computed" in keyR) {
-        // 原生计算键逐实例求值（ClassFieldDefinitionEvaluation 在构造期）
+        // Bug 139：计算键在**类定义期**求值一次（原生
+        // ClassDefinitionEvaluation 求属性键——键表达式只跑一次，构造期
+        // 按已定键安装字段）。此前键表达式逐实例求值（定义期 0 次 / 每构造
+        // 1 次）：键可能每次不同 → 字段名漂移（`[k()] = 1` 两次构造得到两个
+        // 键），且定义期副作用缺失。键表达式进 computedKeys 表（定义期随
+        // spec 字面量求值，$class 折叠真名后挂到实例字段——与静态字段/方法
+        // 的计算键同机制）。
+        const synth = `__ck${ckSeq++}`;
         instanceFieldParts.push(
-          `${indent(depth + 2)}{ key: ${thunkOf(keyR.computed, depth + 2)}, init: ${initSrc} },`,
+          `${indent(depth + 2)}{ name: ${JSON.stringify(synth)}, init: ${initSrc} },`,
         );
+        computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
       }
       continue;
     }
@@ -315,8 +520,12 @@ export function classSpecOf(
         // 访问器体是新函数边界：return 不携带外层 if 臂退出信号
         conditionalFlow: 0,
         inFunction: true,
-        thisParam: "__this",
+        thisParam: thisSlot,
         className: name,
+        // Bug 151：访问器是普通函数——原生 `arguments` 天然存在（getter 长度
+        // 0 / setter 长度 1）。此前访问器体无 args 绑定 ⇒ 体里的 arguments
+        // 定抛 ReferenceError（原生返回 0）。
+        argsBinding: argsSlot,
         // P4b：访问器体同在类体不可变自有名绑定作用域内（methodOptsBase 同口径）
         constNames: selfConstNames,
         // Bug 14：静态访问器体 super 接收者 = 父类构造器
@@ -327,11 +536,20 @@ export function classSpecOf(
       const def = target.get(mname) ?? {};
       if (m.kind === "get") {
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
-        def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
+        // Bug 151：getter 的 arguments 长度 = 0
+        def.get = `(${thisSlot}) => {\n${indent(depth + 3)}let ${argsSlot} = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const setParams = (m.params ?? []) as Node[];
         const firstP = setParams[0] as { type?: string; name?: string } | undefined;
-        const vname = firstP?.type === "Identifier" && firstP.name ? firstP.name : "__v";
+        // Bug 1151：首参非 Identifier（解构/默认值）时用**引擎临时名**承载原始
+        // 实参——thunk 形参会**遮蔽**用户同名外层绑定（setter 体读到引擎临时量
+        // ⇒ 自信错值 ⇒ 闸门假绿）。走 `internalTmpName` 避让用户标识符词形
+        // （与 `expr/object.ts` setter 路径同款）；无碰撞时基名原样返回 ⇒ 产物
+        // 逐字不变。
+        const vname =
+          firstP?.type === "Identifier" && firstP.name
+            ? firstP.name
+            : internalTmpName(SETTER_V_BASE, opts);
         // setter thunk：内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
         // （详见 emitSetterAccessorThunk；F3：裸 return 折 undefined → TypeError，
         // 别名写 + 早退 if 提升被赋值点重绑冲掉 → undefined）
@@ -345,12 +563,15 @@ export function classSpecOf(
         //（此前默认值静默丢弃折 undefined），解构 setter 参此前成自由标识符
         //（折 never）。赋进值以 [__v] 元组入槽，默认表达式以访问器边界
         // opts（thisParam __this）求值。
-        let setPrologue: string[] = [];
+        // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
+        let setPrologue: string[] = [
+          `${indent(depth + 4)}let ${argsSlot} = $arguments([${vname}]);`,
+        ];
         if (firstP && firstP.type !== "Identifier") {
-          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, "__nudoArgs");
-          setPrologue = [`${indent(depth + 4)}let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
+          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, argsSlot);
+          setPrologue = [...setPrologue, ...bound.prologue];
         }
-        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
+        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue, accBodyOpts);
       }
       target.set(mname, def);
       if (computedKeySrc) {
@@ -375,16 +596,30 @@ export function classSpecOf(
       mHasArgs || mParamsNodes.some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
     const methodOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? argsSlot : undefined,
     };
     // 静态方法体边界（R5/Bug 14）：默认表达式里的 super.x 也要按
     // staticSuperSrc 派发——绑定与体共用同一 opts
     const staticOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? argsSlot : undefined,
       ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
     };
-    const bindOpts = m.static ? staticOpts : methodOpts;
+    const bindOptsBase = m.static ? staticOpts : methodOpts;
+    // Bug 201：async 方法体的挂起可行性（体含 await 且所有 await 都在
+    // **生成器级**位置 ⇒ 编译成宿主生成器，await = 真挂起点）
+    const cmAsync = m.async === true && m.generator !== true;
+    const cmPlan = cmAsync
+      ? asyncBodyPlan(m.body as Node | undefined, opts.disableAsyncGen)
+      : undefined;
+    const cmAsyncGen = cmPlan !== undefined && cmPlan.hasAwait && cmPlan.allSafe;
+    const bindOpts: TranspileOptions = cmAsyncGen
+      ? {
+          ...bindOptsBase,
+          inAsyncBody: true,
+          asyncForAwaitGates: cmPlan!.forAwaitGates,
+        }
+      : bindOptsBase;
     let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
@@ -396,10 +631,10 @@ export function classSpecOf(
         mParamsNodes,
         indent(depth + 4),
         bindOpts,
-        "__nudoArgs",
+        argsSlot,
       );
       bodyStmts = [
-        `${indent(depth + 4)}let __nudoArgs = $arguments(__margs);`,
+        `${indent(depth + 4)}let ${argsSlot} = $arguments(${margsName});`,
         ...bound.prologue,
         bodyStmts,
       ].join("\n");
@@ -418,21 +653,67 @@ export function classSpecOf(
     }
     // Bug 58：generator 方法体不在调用期执行——包 $gen（吞调用期 throws，
     // yield 收集保持既有 eager 口径）
+    // Bug 141：async generator 方法——$gen 第二实参 = async 位（next/return/
+    // throw 返回 promise、装 @@asyncIterator/@@toStringTag）；不进 $async
+    // （原生 async generator 方法返回 AsyncGenerator 本身，非 promise）。
     if (m.generator) {
       bodyStmts = [
         `${indent(depth + 4)}return $gen(() => {`,
         bodyStmts,
-        `${indent(depth + 4)}});`,
+        `${indent(depth + 4)}}` + (m.async === true ? ", true" : "") + `);`,
       ].join("\n");
     }
     if (m.static) {
+      // Bug 159：static async 方法须进 $async 包装（原生 static async 方法
+      // 返回 promise；体 throw 不同步抛出调用点——确定拒绝）。此前静态方法
+      // 分支不包 $async：返回原始值（typeof → "number"）、体内 throw 变
+      // 同步抛。实例 async 方法同口径（下方分支）。
+      // Bug 141：async generator 方法不进 $async（原生返回 AsyncGenerator
+      // 本身，非 promise）——$gen 的 async 位承担 async 面。
+      const staticAsync = m.async === true && m.generator !== true;
+      // Bug 203：普通字符串键 `static "@@hasInstance"(){}`——**不是**符号
+      // 钩子（原生 instanceof 只看 Symbol.hasInstance）→ 不进 spec 的
+      // staticMethods（进了则 members.ts 的 classDeclaresHasInstance 判"类
+      // 声明了钩子"⇒ 字符串键被当钩子调用）。改以类值自有槽安装：值是
+      // 一等 fn（$fnVal + bindThis ⇒ 调用时 this = 接收者=类值，同静态
+      // 方法口径）；槽无 symbolKey 标记 ⇒ 不是钩子。
+      if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
+        const fnSrc = [
+          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+          ...(staticAsync
+            ? [
+                `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
+                bodyStmts,
+                `${indent(depth + 4)}});`,
+              ]
+            : [bodyStmts]),
+          `${indent(depth + 3)}}, { bindThis: true, ctor: false, length: ${nativeParamArity(m.params)} })`,
+        ].join("\n");
+        hasInstanceInstallParts.push(
+          `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}hasInstanceStr${hasInstanceInstallSeq++}`)}: ${hasInstanceInstallSrc(fnSrc, stmt.id?.name)},`,
+        );
+        continue;
+      }
+      // Bug 203：符号键 `static [Symbol.hasInstance]…`——类值同名槽打
+      // symbolKey 标记（读面据此把它与普通字符串键槽分开；同族 01 的
+      // Bug 149 机制）。钩子本身仍由 $class 侧适配器承担（spec 入口不变）。
+      if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey === true) {
+        hasInstanceSymbolStatic = true;
+      }
       staticMethodParts.push(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
-        bodyStmts,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        ...(staticAsync
+          ? [
+              `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
+              bodyStmts,
+              `${indent(depth + 4)}});`,
+            ]
+          : [bodyStmts]),
         `${indent(depth + 3)}},`,
       );
       staticMethodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      staticMethodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
       if (computedKeySrc) {
         computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
       }
@@ -442,27 +723,30 @@ export function classSpecOf(
       // P2b：.length = 首个默认值/rest 形参前的形参数（Bug 69 同口径）
       ctorLength = nativeParamArity(m.params);
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 2)}ctor: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
-        `${indent(depth + 3)}return __this;`,
+        `${indent(depth + 3)}return ${thisSlot};`,
         `${indent(depth + 2)}},`,
       );
-    } else if (m.async) {
+    } else if (m.async === true && m.generator !== true) {
+      // Bug 141：async generator 方法不进 $async（原生返 AsyncGenerator 本身）
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
-        `${indent(depth + 4)}return $async(() => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
         bodyStmts,
         `${indent(depth + 4)}});`,
         `${indent(depth + 3)}},`,
       );
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     }
     if (computedKeySrc) {
       computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
@@ -482,8 +766,17 @@ export function classSpecOf(
     specLines.push(`${indent(depth + 2)}hasExtends: true,`);
     specLines.push(`${indent(depth + 2)}extends: ${superSrc},`);
   }
-  if (staticFieldParts.length) {
-    specLines.push(`${indent(depth + 2)}statics: {`, ...staticFieldParts, `${indent(depth + 2)}},`);
+  if (staticParts.length || hasInstanceInstallParts.length) {
+    // Bug 142：静态字段 + 静态块同表（源码序）——$class 逐项执行（静态块
+    // 以保留键入表，不挂静态槽）
+    // Bug 203：普通字符串键 "@@hasInstance" 的安装项排在**静态元素之前**
+    // （原生：方法先于静态元素定义 ⇒ 静态字段初始化器可读该静态方法）。
+    specLines.push(
+      `${indent(depth + 2)}statics: {`,
+      ...hasInstanceInstallParts,
+      ...staticParts,
+      `${indent(depth + 2)}},`,
+    );
   }
   if (computedKeyParts.length) {
     specLines.push(
@@ -516,6 +809,22 @@ export function classSpecOf(
     specLines.push(`${indent(depth + 2)}methodParams: {`);
     for (const [k, names] of methodParamEntries) {
       specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: [${names.map((n) => JSON.stringify(n)).join(", ")}],`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
+  }
+  // Bug 325：类方法种类戳随 spec 下传（读取面 classMethodValueAbs 打
+  // impl.fnKind ⇒ 标签面 AsyncFunction / GeneratorFunction / …）
+  if (methodKindEntries.length) {
+    specLines.push(`${indent(depth + 2)}methodKinds: {`);
+    for (const [k, kind] of methodKindEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: ${JSON.stringify(kind)},`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
+  }
+  if (staticMethodKindEntries.length) {
+    specLines.push(`${indent(depth + 2)}staticMethodKinds: {`);
+    for (const [k, kind] of staticMethodKindEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: ${JSON.stringify(kind)},`);
     }
     specLines.push(`${indent(depth + 2)}},`);
   }
@@ -554,14 +863,20 @@ export function classSpecOf(
       `${indent(depth + 2)}},`,
     );
   }
-  const staticInitLines = staticInitParts.length
-    ? [
-        `${indent(depth)}$staticInit(${name}, [`,
-        ...staticInitParts,
-        `${indent(depth)}]);`,
-      ]
-    : [];
-  return { name, specLines, staticInitLines };
+  // Bug 142：静态块已并入 statics 表（与静态字段同序执行）——不再需要
+  // $staticInit 尾段（静态块恒在全部静态字段之后 = 源码顺序丢失）。
+  const staticInitLines: string[] = [];
+  // Bug 203：类体声明了**符号键** `static [Symbol.hasInstance]` → 类值同名
+  // 槽打 **symbolKey 标记**（读面据此把它与普通字符串键槽分开；同族 01 的
+  // Bug 149「符号键投影 → "@@X" 槽 + symbolKey 标记」同机制）。$class 侧
+  // 造的钩子适配器槽本身无标记（declare.ts 落槽不带标记）——类定义后置
+  // 一步补标（$get 读回同值再写，值身份不变）。
+  if (hasInstanceSymbolStatic) {
+    staticInitLines.push(
+      `${indent(depth + 2)}${name} = $set(${name}, ${JSON.stringify(HAS_INSTANCE_KEY)}, $get(${name}, ${JSON.stringify(HAS_INSTANCE_KEY)}), { symbolKey: true });`,
+    );
+  }
+  return { name, displayName, specLines, staticInitLines };
 }
 
 /** class C extends P { ctor, methods } → $class(...) */

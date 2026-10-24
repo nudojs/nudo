@@ -4,6 +4,8 @@
  * 不变量：
  * - ES：a?.b.c ≡ a == null ? undefined : a.b.c——`?.` 命中 nullish 时
  *   **剩余整条链**（含非可选访问/调用）不再求值；
+ * - 调用跳（`o.b?.()`）的 nullish 短路同口径：整链短路 undefined，剩余跳
+ *   不再求值/不抛（Bug 187）——短路臂之外不留剩余链；
  * - 非 nullish 臂接收者先过 $removeNullish（issue #97）——假臂里已证非
  *   nullish，成员读不再记 may-throw；
  * - 位置插桩（$nodoPos）与 transpile.ts positionRecordWrap 同口径：静态
@@ -16,9 +18,95 @@
  */
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression } from "../helpers.ts";
+import { isExpression, internalTmpNameSet } from "../helpers.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
+
+/**
+ * Bug 1149：可选链族的引擎内部临时名（**基名**）——实际名经
+ * `internalTmpNameSet` 分配（避开用户标识符词形）。
+ *
+ * 这些名都是**词法绑定**（IIFE 形参 / IIFE 内 `const` 载体），而 IIFE
+ * **在自身作用域里求值用户表达式**（接收者剪枝源 / 计算键 / 实参 / 删除键 /
+ * proto 值）⇒ 写死名会与用户同名绑定相撞：
+ * - **遮蔽**：IIFE 形参 `__oc` / `__nudoDelK` / `__k` 等遮蔽用户同名外层
+ *   绑定 ⇒ 用户表达式读到**引擎临时量**（自信错值 ⇒ 签名面写错 ⇒ 假绿）；
+ * - **TDZ ReferenceError**：用户表达式读到的同名绑定正处在引擎临时量的
+ *   初始化器内（`const __nudoReArgs = (用户实参)` / `const __nudoDelK = (键)`）
+ *   ⇒ ReferenceError（可被用户自己的 catch 吞掉 ⇒ 错值）。
+ *
+ * 口径同 Bug 1058/1059 / 1127 / 1146（`userIdentInfoOf(opts)` = 源文本词形
+ * ∪ `opts.userIdents`；撞名加 `_k` 后缀）⇒ **无碰撞时基名原样返回 ⇒ 产物
+ * 逐字不变**；同一源文本 ⇒ 同一名 ⇒ 产物确定性。
+ */
+const OC_BASE = "$__oc";
+const FN_BASE = "$__fn";
+const DEL_OC_BASE = "__oc";
+const DEL_P_BASE = "__nudoDelP";
+const DEL_K_BASE = "__nudoDelK";
+const RE_ARGS_BASE = "__nudoReArgs";
+const RE_RES_BASE = "__v";
+
+/** 一条链的引擎内部临时名（实际名） */
+type ChainTmpNames = {
+  /** 读链守卫基绑定（IIFE 形参） */
+  oc: string;
+  /** 调用跳方法值守卫基绑定（IIFE 形参） */
+  fn: string;
+  /** delete 链守卫基绑定（IIFE 形参） */
+  delOc: string;
+  /** delete 父对象载体 */
+  delP: string;
+  /** delete 键载体 */
+  delK: string;
+  /** 正则状态写回：实参数组载体 */
+  reArgs: string;
+  /** 正则状态写回：结果载体 */
+  reRes: string;
+};
+
+/** 未登记时的兜底（基名原样——正常路径恒经 flattenChain 登记） */
+const DEFAULT_CHAIN_TMP: ChainTmpNames = {
+  oc: OC_BASE,
+  fn: FN_BASE,
+  delOc: DEL_OC_BASE,
+  delP: DEL_P_BASE,
+  delK: DEL_K_BASE,
+  reArgs: RE_ARGS_BASE,
+  reRes: RE_RES_BASE,
+};
+
+/**
+ * 链级临时名登记表（按 hops 数组登记）。
+ *
+ * `emitDeleteChainFrom` 的入参只有 hops（调用方 operators.ts 不传 opts）⇒
+ * 用登记表把 `flattenChain` 分配的避让名传下去；同一 hops 数组 ⇒ 同一组名
+ * （嵌套链各级共用同一组名——各自的 IIFE 形参作用域独立，语义不变）。
+ */
+const chainTmpNames = new WeakMap<ChainHop[], ChainTmpNames>();
+
+/** 链级临时名分配（避让口径同 Bug 1058/1059 / 1127 / 1146） */
+function allocChainTmpNames(opts: TranspileOptions): ChainTmpNames {
+  const n = internalTmpNameSet(
+    [OC_BASE, FN_BASE, DEL_OC_BASE, DEL_P_BASE, DEL_K_BASE, RE_ARGS_BASE, RE_RES_BASE],
+    opts,
+  );
+  return {
+    oc: n[0]!,
+    fn: n[1]!,
+    delOc: n[2]!,
+    delP: n[3]!,
+    delK: n[4]!,
+    reArgs: n[5]!,
+    reRes: n[6]!,
+  };
+}
+
+/** 取链级临时名（未登记 ⇒ 兜底基名） */
+function tmpNamesOf(hops: ChainHop[]): ChainTmpNames {
+  return chainTmpNames.get(hops) ?? DEFAULT_CHAIN_TMP;
+}
+
 // --- 可选链整链短路 -------------------------------------------------------
 // ES：`a?.b.c` ≡ `a == null ? undefined : a.b.c`——`?.` 命中 nullish 时
 // **剩余整条链**（含非可选访问/调用）不得再求值。此前每跳独立 `$optionalGet`，
@@ -229,12 +317,17 @@ export function flattenChain(
     ? transpileExpression(cur as unknown as Expression, opts)
     : undefined;
   if (baseSrc === undefined) return undefined;
+  // Bug 1149：登记链级引擎内部临时名（避开用户标识符词形）——emitChainFrom /
+  // emitDeleteChainFrom 都按 hops 取同一组名。
+  chainTmpNames.set(hops, allocChainTmpNames(opts));
   return { baseSrc, hops };
 }
 
 function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
   if (i >= hops.length) return valSrc;
   const hop = hops[i]!;
+  // Bug 1149：引擎内部临时名（守卫基绑定 / 正则载体）避开用户标识符词形。
+  const tmp = tmpNamesOf(hops);
   const rest = (recv: string): string => emitChainFrom(hops, i + 1, recv);
   switch (hop.kind) {
     case "get":
@@ -242,55 +335,82 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // 原生不抛 → silent（不记 any may-throw，Bug 3）。链上后续跳仍走 $get
       //（x?.a.b 的 .b 保持 may-throw）。
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => posWrap(`$get(${r}, ${hop.key}, { silent: true })`, hop.posArg), hops, i)
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$get(${r}, ${hop.key}, { silent: true })`, hop.posArg), hops, i, tmp.oc)
         : rest(posWrap(`$get(${valSrc}, ${hop.key})`, hop.posArg));
     case "idx":
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => posWrap(`$idx(${r}, ${hop.keySrc}, { silent: true })`, hop.posArg), hops, i)
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$idx(${r}, ${hop.keySrc}, { silent: true })`, hop.posArg), hops, i, tmp.oc)
         : rest(posWrap(`$idx(${valSrc}, ${hop.keySrc})`, hop.posArg));
     case "len":
       // 可选跳（a?.length）：nullish 已由守卫臂剪除；any 不记 may-throw
       //（Bug 3，与 get/idx 跳同口径）。非可选 `.length` 走 $len 守卫诊断。
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => posWrap(`$len(${r}, { silent: true })`, hop.posArg), hops, i)
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$len(${r}, { silent: true })`, hop.posArg), hops, i, tmp.oc)
         : rest(posWrap(`$len(${valSrc})`, hop.posArg));
     case "call":
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => `$callNamed("call", ${r}, ${hop.argsSrc}${hop.locArg})`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$callNamed("call", ${r}, ${hop.argsSrc}${hop.locArg})`, hops, i, tmp.oc)
         : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
     case "invoke": {
-      const invokeOf = (recv: string, fnCheck: boolean): string => {
+      // 调用体（this 绑 recv）。
+      const callOf = (recv: string): string => {
         let call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
         // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
         // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
+        // Bug 171：实参**只求值一次**——argsSrc 同一份数组字面量内联进 $invoke
+        // 与 $reStateCall 两处会让实参表达式跑两遍（副作用翻倍）；改为先物化
+        // 成 __a，两个通道共用同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const __v = ${call}; ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, ${hop.argsSrc}); return __v; })()`;
+          call = `(() => { const ${tmp.reArgs} = ${hop.argsSrc}; const ${tmp.reRes} = $invoke(${recv}, ${hop.method}, ${tmp.reArgs}${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, ${tmp.reArgs}); return ${tmp.reRes}; })()`;
         }
-        if (!fnCheck) return call;
-        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
-        // 取舍——保 builtin 派发，getter 会跑两遍）
-        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($get(${recv}, ${hop.method}))`;
+        return call;
       };
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
+      // 剩余链的接收者 = 调用结果——调用体包一层 IIFE，惰性求值于 else 臂内
+      // （无剩余链时不包：保持既有发射形态不变）。
+      const contOf = (recv: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      if (hop.fnOptional) {
+        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
+        // 取舍——保 builtin 派发，getter 会跑两遍）。
+        // Bug 187：ES 的可选链短路是**整链**语义——方法值 nullish 时整条链
+        // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
+        // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
+        const fnFork = (recv: string): string =>
+          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv)}))($get(${recv}, ${hop.method}))`;
+        if (hop.recvOptional) {
+          // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
+          return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
+        }
+        return fnFork(valSrc);
       }
-      return rest(invokeOf(valSrc, hop.fnOptional));
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i, tmp.oc);
+      }
+      return rest(callOf(valSrc));
     }
     case "invokeKey": {
       // 计算键调用：$invokeKey 保 this；fnOptional（o[k]?.()）的方法值
       // nullish 检查读 $idx(recv, key)——计算键无静态名（$get 不可用）。
       // 键/接收者源文本内联两次与 invoke hop 的 fnCheck 同取舍（保派发，
       // 副作用键表达式会跑两遍）。
-      const invokeOf = (recv: string, fnCheck: boolean): string => {
-        const call = `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
-        if (!fnCheck) return call;
-        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($idx(${recv}, ${hop.keySrc}))`;
-      };
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
+      const callOf = (recv: string): string =>
+        `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
+      const contOf = (recv: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      if (hop.fnOptional) {
+        // 同 invoke hop（Bug 187）：方法值 nullish → 整链短路，剩余链进 else 臂
+        const fnFork = (recv: string): string =>
+          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv)}))($idx(${recv}, ${hop.keySrc}))`;
+        if (hop.recvOptional) {
+          return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
+        }
+        return fnFork(valSrc);
       }
-      return rest(invokeOf(valSrc, hop.fnOptional));
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i, tmp.oc);
+      }
+      return rest(callOf(valSrc));
     }
   }
 }
@@ -308,9 +428,10 @@ function shortCircuitHop(
   appliedOf: (recv: string) => string,
   hops: ChainHop[],
   i: number,
+  ocName: string,
 ): string {
-  const applied = appliedOf("$removeNullish($__oc)");
-  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, applied)}))(${valSrc})`;
+  const applied = appliedOf(`$removeNullish(${ocName})`);
+  return `((${ocName}) => $fork($nullishTest(${ocName}), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, applied)}))(${valSrc})`;
 }
 
 /**
@@ -318,23 +439,41 @@ function shortCircuitHop(
  * o?.[k]）。与读链（emitChainFrom）同构，差异两处：
  * - 任一 optional 跳命中 nullish → 短路臂返回 **true**（delete 表达式值），
  *   不是 undefined；
- * - 最后一跳（get/idx）发射 $delRes（删键结果布尔）而非 $get/$idx。
+ * - 最后一跳（get/idx）发射 delete 的**求值点自包含**形态（delOpSrc）而非
+ *   $get/$idx。
  * 中缀含 call/invoke/len（不可删除目标的父链）→ undefined（调用方 unsupported）。
  */
+
+/**
+ * delete 的求值点自包含形态（Bug 176）：父对象与键各只求值一次，删除
+ * （$del）与布尔值（$delRes）**同点**产出 ⇒ 同一条表达式里排在 delete
+ * 之后的读看到变更后的状态。Proxy 陷阱派发唯一在 $delRes（Bug 172）⇒
+ * 陷阱恰好一次。
+ *
+ * Bug 1149：父对象/键载体名避开用户标识符词形——本 IIFE **在自身作用域里
+ * 求值父对象与键表达式** ⇒ 写死名会遮蔽用户同名绑定（自信错值）或撞 TDZ
+ * （ReferenceError）。
+ */
+function delOpSrc(parentSrc: string, keySrc: string, tmp: ChainTmpNames): string {
+  return `(() => { const ${tmp.delP} = ${parentSrc}; const ${tmp.delK} = ${keySrc}; $del(${tmp.delP}, ${tmp.delK}); return $delRes(${tmp.delP}, ${tmp.delK}); })()`;
+}
 export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string): string | undefined {
   if (i >= hops.length) return undefined;
   const hop = hops[i]!;
+  // Bug 1149：delete 链的引擎内部临时名（守卫基绑定 / 父对象载体 / 键载体）
+  // 避开用户标识符词形（登记于 flattenChain ⇒ 与读链同源同组名）。
+  const tmp = tmpNamesOf(hops);
   const isLast = i === hops.length - 1;
   const delShortCircuit = (recv: string, body: string): string =>
-    `((__oc) => $fork($nullishTest(__oc), () => $lit(true), () => ${body}))(${recv})`;
+    `((${tmp.delOc}) => $fork($nullishTest(${tmp.delOc}), () => $lit(true), () => ${body}))(${recv})`;
   if (hop.kind === "get") {
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.key})`)
-        : `$delRes(${valSrc}, ${hop.key})`;
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, hop.key, tmp))
+        : delOpSrc(valSrc, hop.key, tmp);
     }
     if (hop.optional) {
-      const rest = emitDeleteChainFrom(hops, i + 1, `$get($removeNullish(__oc), ${hop.key})`);
+      const rest = emitDeleteChainFrom(hops, i + 1, `$get($removeNullish(${tmp.delOc}), ${hop.key})`);
       return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
     }
     return emitDeleteChainFrom(hops, i + 1, `$get(${valSrc}, ${hop.key})`);
@@ -342,11 +481,11 @@ export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string)
   if (hop.kind === "idx") {
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.keySrc})`)
-        : `$delRes(${valSrc}, ${hop.keySrc})`;
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, hop.keySrc, tmp))
+        : delOpSrc(valSrc, hop.keySrc, tmp);
     }
     if (hop.optional) {
-      const rest = emitDeleteChainFrom(hops, i + 1, `$idx($removeNullish(__oc), ${hop.keySrc})`);
+      const rest = emitDeleteChainFrom(hops, i + 1, `$idx($removeNullish(${tmp.delOc}), ${hop.keySrc})`);
       return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
     }
     return emitDeleteChainFrom(hops, i + 1, `$idx(${valSrc}, ${hop.keySrc})`);

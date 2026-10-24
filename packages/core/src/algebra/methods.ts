@@ -14,7 +14,7 @@ import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
-import { regexParts } from "./exec/class-regex.ts";
+import { regexParts, matchIteratorAbs } from "./exec/class-regex.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -69,6 +69,9 @@ function isStrRecv(recv: Abs): boolean {
  */
 function symbolHookSlot(x: Abs | undefined, projKey: string): Abs | undefined {
   if (!x) return undefined;
+  // Bug 179：自由标识符实参（宿主全局值 `Math` / `eval`…）不是 Abs —— 不得
+  // 读 .shape（TypeError）⇒ 无符号钩子槽。
+  if (typeof x !== "object" || !("shape" in (x as object))) return undefined;
   const inner = x.shape.k === "brand" ? x.shape.shape : undefined;
   const slots =
     inner && inner.shape.k === "obj"
@@ -143,6 +146,12 @@ function isUndefinedArg(x: Abs | undefined): boolean {
  */
 export function toStringArgTier(x: Abs | undefined): "ok" | "throw" | "may" {
   if (x === undefined) return "ok";
+  // Bug 179：自由标识符实参（`Math` / `eval` / `JSON`…）在生成代码里是**宿主
+  // 全局值**而非 Abs —— 其 ToString total（symbol 除外）⇒ 不记抛，且不得
+  // 读 .shape / .term（宿主值上没有这些字段）。
+  if (typeof x !== "object" || x === null || !("shape" in (x as object))) {
+    return typeof x === "symbol" ? "throw" : "ok";
+  }
   if (isSymbolAbs(x)) return "throw";
   if (x.term?.op === "lit") return "ok";
   return x.shape.k === "prim" ? "ok" : "may";
@@ -159,7 +168,81 @@ export function enforceToStringArg(x: Abs | undefined, what: string): void {
 
 /** RegExp brand 判定（Bug 69 IsRegExp 守卫 / replace pattern 合法臂共用） */
 function isRegExpBrandAbs(x: Abs | undefined): boolean {
-  return !!x && x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
+  // Bug 179：自由标识符实参（宿主全局值）不是 Abs —— 不得读 .shape。
+  if (!x || typeof x !== "object" || !("shape" in (x as object))) return false;
+  return x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
+}
+
+/**
+ * Bug 252：字面量 pattern 的 **RegExpCreate 形态**（ES2023 RegExpCreate
+ * 步 1-2：pattern 为 undefined → P = ""；否则 P = ToString(pattern)）。
+ * - 缺省实参 → ""（空模式，恒合法）
+ * - 非字面量 / symbol → undefined（不可判；symbol 走 TypeError 档）
+ */
+function literalPatternString(x: Abs | undefined): string | undefined {
+  if (x === undefined) return "";
+  // Bug 179：自由标识符实参（宿主全局值）不是 Abs —— 不得读 .term。
+  if (typeof x !== "object" || x === null || !("shape" in (x as object))) return undefined;
+  if (x.term?.op !== "lit") return undefined;
+  const v = x.term.value;
+  if (typeof v === "symbol") return undefined;
+  return v === undefined ? "" : String(v);
+}
+
+/**
+ * Bug 252：模式**可编译**判定（宿主 RegExp 编译器同款）——非法模式
+ * （未闭合组 / 未闭合字符类 / 非法量词…）编译抛 SyntaxError。
+ * flags 用 ""（search/match 的原生 flags）；matchAll 的 "g" 恒合法 ⇒
+ * 编译结果同款。
+ */
+function regexPatternCompiles(pattern: string): boolean {
+  try {
+    new RegExp(pattern, "");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Bug 251：locales 实参校验（ECMA-402 CanonicalizeLocaleList 口径）。
+ * 宿主 `Intl.NumberFormat(locales)` 与 `toLocaleString(locales)` /
+ * `toLocaleUpperCase(locales)` 的校验**同款**（node 实测逐档对拍）：
+ * - 缺省 / undefined → 默认 locale（合法）
+ * - null → **TypeError**（ToObject；node: 'a'.toLocaleUpperCase(null) 抛）
+ * - string → 结构非法的 language tag → **RangeError**
+ *   （node: 'a'.toLocaleUpperCase('b') 抛 RangeError）
+ * - 其它原始值（number/bool/bigint/symbol）→ 原生被忽略（默认 locale），不抛
+ * - 不可判 → may RangeError
+ */
+function validateLocalesArg(x: Abs | undefined, what: string): void {
+  if (x === undefined) return;
+  // Bug 179：自由标识符实参（宿主全局值）不是 Abs —— 不得读 .term。
+  if (typeof x !== "object" || x === null || !("shape" in (x as object))) return;
+  // symbol 实参：宿主 CanonicalizeLocaleList **忽略**（ToObject 路径）⇒
+  // 不抛（node 实测 (1).toLocaleString(Symbol()) → "1"、'a'.toLocaleUpperCase(
+  // Symbol()) → "a"）——不可记 may（否则假抛面）。
+  if (isSymbolAbs(x)) return;
+  if (x.term?.op !== "lit") {
+    recordMayThrow({ kind: "RangeError", cause: `${what} locales may be an invalid language tag` });
+    return;
+  }
+  const v = x.term.value;
+  if (v === undefined) return;
+  if (v === null) throw new NudoThrow(errorTypeAbs("TypeError"));
+  // 数组 / 元组等复合字面量：宿主逐元素校验，引擎不可判 → may RangeError
+  if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean" && typeof v !== "bigint") {
+    recordMayThrow({ kind: "RangeError", cause: `${what} locales may be an invalid language tag` });
+    return;
+  }
+  if (typeof v !== "string") return; // number/bool/bigint 原生被忽略
+  try {
+    new Intl.NumberFormat(v);
+  } catch (e) {
+    if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+    recordMayThrow({ kind: "RangeError", cause: `${what} locales may be an invalid language tag` });
+  }
 }
 
 /** Bug 2：match 的保守返回域——null | 匹配数组（global → string[]，
@@ -180,18 +263,21 @@ function matchResultDomain(): Abs {
  * Bug 2：matchAll 的抽象接收者兜底臂（字面量双折由 stringRegexMethod 先行
  * 接管）。RegExp brand + 字面量 flags：无 g → 定抛 TypeError；有 g →
  * RegExpMatchIterator brand（元素不可枚举——不注侧表，spread/for-of 等
- * 消费端保守展开；与 Bug 23 的迭代器协议面同族的最小面）。非 RegExp
- * brand 实参经 RegExpCreate 恒无 g → prim/nullish/缺省/tuple/arr 定抛；
- * obj/fn/any/unknown/sum（可自带 @@matchAll/flags）→ may + 迭代器。
+ * 消费端保守展开；与 Bug 23 的迭代器协议面同族的最小面）。
+ * Bug 449：**确定非 RegExp 的实参不抛**——ES2023 matchAll 步 3：IsRegExp(
+ * pattern) 为 false ⇒ matcher = RegExpCreate(ToString(pattern), "g")（"g"
+ * 由算法自补）⇒ 返回迭代器。只有「实参确定是 RegExp 且 flags 确定不含 g」
+ * 才定抛 TypeError（原生 node 实测："abc".matchAll("b") / matchAll(1) /
+ * matchAll() 全部正常返回迭代器）。元素域在抽象接收者上不可知 ⇒ 保守元素
+ * （协议面齐、元素 unknown）。obj/fn/any/unknown/sum（可能自带 @@matchAll/
+ * flags）→ may + 迭代器。
  */
 function matchAllAbstractArm(args: Abs[]): Abs {
   const re = args[0];
-  const iter = abs(
-    { k: "brand", name: "RegExpMatchIterator", shape: objOf({}) },
-    undefined,
-    undefined,
-    "path",
-  );
+  // Bug 249：抽象臂的迭代器**同样要有协议面**（next / @@iterator /
+  // @@toStringTag）——元素不可知 ⇒ matchEls = undefined（next() 的 value 折
+  // unknown、done 折不可判），不注元素侧表。
+  const iter = matchIteratorAbs(undefined);
   if (re && isRegExpBrandAbs(re)) {
     const parts = regexParts(re);
     if (parts) {
@@ -213,11 +299,14 @@ function matchAllAbstractArm(args: Abs[]): Abs {
     re.shape.k === "arr" ||
     (re.term?.op === "lit" && (re.term.value === null || re.term.value === undefined));
   if (definiteNonRegExp) {
-    // RegExpCreate(ToString(pattern)) 恒无 g → 确定 TypeError（node 实测
-    // "ab".matchAll("a") / matchAll(1) / matchAll() 全抛）
-    throw new NudoThrow(errorTypeAbs("TypeError"));
+    // Bug 449：确定非 RegExp ⇒ RegExpCreate(ToString(pattern), "g") ⇒
+    // **迭代器**（不得硬抛 TypeError——ES2023 只有「确定是 RegExp 且 flags
+    // 确定不含 g」才抛）。元素域不可知 ⇒ 保守元素（迭代器协议面齐）。
+    // ToString 可能抛的面（symbol 定抛 / 对象 may）在 callAbsMethod 的
+    // 实参校验段已分别处理，此处不重复记录。
+    return iter;
   }
-  // obj（可带 @@match）/fn/any/unknown/sum：可能为 g 正则形态 → may
+  // obj（可带 @@matchAll）/fn/any/unknown/sum：可能为 RegExp 形态但缺 g → may
   recordMayThrow({
     kind: "TypeError",
     cause: "matchAll RegExp argument may lack the global flag",
@@ -320,8 +409,25 @@ export function callAbsMethod(
           cause: "match/search/matchAll pattern ToString may throw (Symbol)",
         });
       }
+      // Bug 252：**字面量**模式的编译失败 = 确定 SyntaxError（RegExpCreate
+      // 步 2）。抽象接收者路径（stringRegexMethod 在其 sv 检查处提前 return，
+      // 够不到编译点）必须在此补——否则 `"abc".search("(")` 在抽象接收者上
+      // 回落抽象臂 ⇒ throws 域折 never（假 no-throw）。模式恒为字面量 ⇒
+      // 编译结果运行时同款 ⇒ 定抛（可被 try/catch 吸收）。
+      const patStr = literalPatternString(args[0]);
+      if (patStr !== undefined && !regexPatternCompiles(patStr)) {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
       break;
     }
+    case "toLocaleUpperCase":
+    case "toLocaleLowerCase":
+      // Bug 251：locales 实参校验（ECMA-402 CanonicalizeLocaleList）——null →
+      // TypeError；结构非法的 language tag → RangeError；number/bool/bigint/
+      // symbol 实参原生被忽略（默认 locale）。校验与**接收者是否字面量无关**
+      // ⇒ 模板/抽象接收者路径也在此校验（否则抽象接收者恒不抛，假 no-throw）。
+      validateLocalesArg(args[0], `String.prototype.${name}`);
+      break;
     case "anchor":
     case "link":
     case "fontcolor":
@@ -340,13 +446,22 @@ export function callAbsMethod(
       break;
     case "slice":
     case "substring":
+    case "substr":
+      // 元数 2：第二实参（end / length）走 ToIntegerOrInfinity
+      validateIndexArg(args[0], "position");
+      validateIndexArg(args[1], "end");
+      break;
     case "charAt":
     case "charCodeAt":
     case "codePointAt":
     case "at":
-    case "substr":
+      // Bug 1042：这四个方法**元数为 1**（charAt(pos) / charCodeAt(pos) /
+      // codePointAt(pos) / at(index)）——原生**不存在第二实参**，多余实参被
+      // 直接丢弃。此前它们与 slice/substring/substr 同 case 分支 ⇒ 无条件
+      // 校验 args[1] ⇒ `"abc".charAt(0, 1n)` 凭空判「必抛 TypeError」
+      // （原生正常返回 "a"）⇒ throws 域折 never ⇒ L2 门禁假红。
+      // 按各方法**真实元数**校验：只校验 args[0]。
       validateIndexArg(args[0], "position");
-      validateIndexArg(args[1], "end");
       break;
     case "localeCompare":
       enforceToStringArg(args[0], "compareString");
@@ -486,14 +601,29 @@ export function callAbsMethod(
     case "trimEnd":
     // Bug 11：ES2017 别名（≡ trimStart/trimEnd）——宿主全有，同臂折
     case "trimLeft":
-    case "trimRight":
-    case "toLocaleUpperCase":
-    case "toLocaleLowerCase": {
-      // Bug 72：此前未建模 → unknown。实参不参与（locale 实参原生忽略），
-      // 字面量经宿主真执行（同 host 行为一致），模板/抽象保守 strPrim。
+    case "trimRight": {
+      // Bug 72：此前未建模 → unknown。实参不参与，字面量经宿主真执行
+      // （同 host 行为一致），模板/抽象保守 strPrim。
       if (lit === undefined) return strPrim("path");
       const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
       return strLit(impl[name]!.call(lit));
+    }
+    case "toLocaleUpperCase":
+    case "toLocaleLowerCase": {
+      // Bug 72：字面量经宿主真执行（同 host 行为一致），模板/抽象保守 strPrim。
+      // Bug 251：locales 实参**参与**（宿主 CanonicalizeLocaleList 校验：
+      // null → TypeError、非法 language tag → RangeError；number/bool/
+      // bigint/symbol 实参原生被忽略 ⇒ 默认 locale）。此前实参被忽略 ⇒
+      // `"ABC".toLocaleUpperCase(null)` 原生抛 TypeError、引擎折 "ABC"
+      // （假 no-throw）。校验在入口校验档（与接收者具体性无关）完成。
+      if (lit === undefined) return strPrim("path");
+      const argAbs = args[0];
+      // symbol 实参宿主忽略（不抛、不改值）⇒ 不走保守臂
+      if (argAbs !== undefined && argAbs.term?.op !== "lit" && !isSymbolAbs(argAbs)) return strPrim("path");
+      const locR = argAbs === undefined ? undefined : litValue(argAbs);
+      const loc = locR?.ok ? locR.value : undefined;
+      const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+      return strLit(impl[name]!.call(lit, ...(argAbs !== undefined ? [loc] : [])));
     }
     case "anchor":
     case "big":
@@ -734,6 +864,11 @@ export function callAbsMethod(
           const pv = patAbs?.term?.op === "lit" ? patAbs.term.value : undefined;
           if (patAbs === undefined) {
             patSrc = "undefined";
+          } else if (typeof patAbs !== "object" || patAbs === null || !("shape" in (patAbs as object))) {
+            // Bug 179：自由标识符 pattern（宿主全局值 `Math` 等）——原生走
+            // ToString(pattern) 分支（非 RegExp 路径）⇒ 用宿主 ToString 折成
+            // 模式文本，不记抛。
+            patSrc = String(patAbs);
           } else if (typeof pv === "string") {
             patSrc = pv;
           } else if (patAbs.term?.op === "lit" && typeof pv !== "symbol") {

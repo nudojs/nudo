@@ -4,13 +4,13 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, confJoin, unknown } from "./abs.ts";
+import { abs, anyAbs, confJoin, unknown } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { simplifyTerm, v as termVar, termToString } from "./term.ts";
-import type { Pred } from "./pred.ts";
+import type { Pred, PrimName } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
-import { getSlot, joinAbs } from "./objects.ts";
+import { getSlot, joinAbs, makeSum } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
@@ -669,8 +669,48 @@ export function substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs {
 }
 
 /**
+ * 裸宿主值 → Abs 的归一化桥（**普通调用面**实参归一化用）。
+ *
+ * hof.ts 是 algebra 层叶子，**不 import exec**（避免 hof ↔ exec 环，
+ * 见本文件 `setApplyCallbackHost` 同款纪律）⇒ 归一化实现由宿主在运行时
+ * 注册（`exec/class/invoke.ts` 注册 `asAbsVal`——与成员调用面同一门面，
+ * 同一宿主函数恒同一 Abs 身份 ⇒ 两种调用口径一致）。
+ *
+ * 未注册 ⇒ 回落 `unknown`（fail-closed，不崩）。
+ */
+let rawArgNormalizer: ((v: unknown) => Abs) | undefined;
+
+/** 注册裸宿主值 → Abs 的归一化实现（宿主加载期调用；同款注册式）。 */
+export function setRawArgNormalizer(fn: (v: unknown) => Abs): void {
+  rawArgNormalizer = fn;
+}
+
+/**
+ * 普通调用面实参归一化（Bug 882）：具名导入 / 直接调用的实参可能是
+ * **裸宿主值**（宿主函数 / 宿主构造器 / 用户函数声明——transpile 侧直发
+ * host function）。这类值没有 Abs 形状 ⇒ 流进代数解引用点（`arg.shape`）
+ * 会解引用 undefined ⇒ TypeError 冒泡 ⇒ 上层当成「这个调用可能抛」⇒
+ * 记 may TypeError ⇒ **L2 门禁假红**（native 必不抛）。
+ *
+ * 归一化口径与成员调用面（`exec/class/invoke.ts` 的 Bug 85 段）同款：
+ * 非 Abs 实参一律经 `asAbsVal` 收成 Abs。
+ */
+function normalizeCallArg(a: Abs | undefined): Abs {
+  if (a && typeof a === "object" && "shape" in (a as object)) return a;
+  return rawArgNormalizer ? rawArgNormalizer(a) : unknown;
+}
+
+/**
  * 从 pattern（声明形参）与 arg（实参 Abs）做结构合一，绑定 α 变量。
  * 首次绑定保留；只下钻 arr / obj / tuple / sum / fn 形参。
+ *
+ * Bug 882：**实参未必是 Abs**（普通调用面把裸宿主值原样灌进来——见
+ * `normalizeCallArg`）。无形状的实参**不参与类型变量绑定**（此前
+ * `arg.shape` 解引用 undefined ⇒ TypeError 冒泡 ⇒ L2 假红）。
+ *
+ * Bug 453：形参/实参的**形状 kind 可不同**（收割的 `T[]` = `arr` vs 引擎的
+ * 数组字面量 = `tuple`）⇒ 增加**跨 kind 臂**（`arr`×`tuple` / `tuple`×`arr`）。
+ * ⚠ **同 kind 臂排在前**（既有用例依赖它）。
  */
 function bindTypeVars(
   pattern: Abs,
@@ -679,13 +719,15 @@ function bindTypeVars(
   depth = 0,
 ): void {
   if (depth > 6 || map.size > 16) return;
+  // 无形状实参（裸宿主值）：不绑定、不下钻——「绑不出」而非「崩」。
+  const as = (arg as Abs | undefined)?.shape;
+  if (!as) return;
   const pt = pattern.term;
   if (pt?.op === "var") {
     if (!map.has(pt.id)) map.set(pt.id, arg);
     return;
   }
   const ps = pattern.shape;
-  const as = arg.shape;
   if (ps.k === "arr" && as.k === "arr") {
     bindTypeVars(ps.element, as.element, map, depth + 1);
     return;
@@ -693,6 +735,34 @@ function bindTypeVars(
   if (ps.k === "tuple" && as.k === "tuple") {
     const n = Math.min(ps.elements.length, as.elements.length);
     for (let i = 0; i < n; i++) bindTypeVars(ps.elements[i]!, as.elements[i]!, map, depth + 1);
+    return;
+  }
+  // 跨 kind 臂（Bug 453）：**收割**的 `T[]` 形参建成 `arr`（元素 = α var），
+  // 而**引擎**的数组字面量建成 `tuple` ⇒ 只做同 kind 配对 ⇒ α **永不绑定**
+  // ⇒ 返回值落 `any`（未绑定 α）⇒ 参与算术即「抽象操作数强制转换」
+  // ⇒ 记 may-throw ⇒ **L2 假红**（tsc exit 0 的合法代码被门禁判红）。
+  //
+  // ⚠ **同 kind 臂必须排在前**（上面两臂）：否则
+  // `packages/core/src/algebra/__tests__/hof-relation.test.ts` 的既有用例
+  // 「deep α: `T[]` param binds T from `number[]` arg (lodash-style)」
+  // （arr 形参 × arr 实参）会被改判。
+  //
+  // Bug 1079：跨 kind 臂的**取值口径**收紧——元素域必须是 tuple **全部**
+  // 元素的同型域（见 `tupleElementDomain`），不得拿首元素代表整个元素域。
+  if (ps.k === "arr" && as.k === "tuple") {
+    // Bug 1079：元素域取 tuple **全部**元素的同型域（**不是首元素**）。
+    // 首元素只代表一个槽：拿它当整个元素域 ⇒ 异构数组 `[1,"a"]` 被推成
+    // `number[]`——比真实类型 `(number|string)[]` **更窄** ⇒ 把「不知道」
+    // 升级成「知道」⇒ 契约 `array(number())` 假绿 / `array(string())` 假红。
+    // 异构 ⇒ `any`（诚实的「不知道」，不臆造窄类型）。
+    const domain = tupleElementDomain(as.elements, as.rest);
+    if (domain !== undefined) bindTypeVars(ps.element, domain, map, depth + 1);
+    return;
+  }
+  if (ps.k === "tuple" && as.k === "arr") {
+    // tuple 形参 × arr 实参：实参只有一个元素类型（arr 元素类型本身即其元素的
+    // 保守 join）⇒ 各槽都拿它（α 首次绑定保留 ⇒ 多槽同 α 时首个胜出）。
+    for (const el of ps.elements) bindTypeVars(el, as.element, map, depth + 1);
     return;
   }
   if (ps.k === "sum") {
@@ -731,6 +801,110 @@ function bindTypeVars(
 }
 
 /**
+ * **已知 nullish 元素**（Bug 1097）：引擎把 `null` / `undefined` 建成
+ * 「`unknown` **形状** + lit **项**」（`abs.ts` 的 `absLit` / `exec` runtime 的
+ * `undef()`）⇒ 形状 kind 是 `unknown`，但**类型是已知的**。
+ *
+ * 与「真·推断失败」严格区分：后者是 `unknown` 形状且**没有**已知 lit
+ * （`unknown` 令牌 / 未知 term）⇒ 元素域真的不可知。
+ *
+ * 口径锚点（`abs.ts` 顶部）：`any` = 无约束并集（**自信的任意值**），
+ * `unknown` = 推导失败（**不是**任意值）⇒ 二者不可互换。
+ */
+function isKnownNullishAbs(el: Abs): boolean {
+  if (el.shape.k !== "unknown") return false;
+  const t = el.term;
+  if (t?.op !== "lit") return false;
+  return t.value === null || t.value === undefined;
+}
+
+/**
+ * tuple 实参的**元素域**（Bug 1079）——arr 形参（收割的 `T[]`）× tuple 实参
+ * （引擎的数组字面量）时 α 的取值。
+ *
+ * - 空 tuple（无元素）⇒ `undefined` ⇒ **不绑**（α 留在原处 ⇒ 返回值落
+ *   `any`：诚实的「不知道」，不臆造元素类型）。
+ * - 元素**同型**（prim 类型相同 / 形状 kind 相同）⇒ 该同型域：
+ *   - prim：字面量按 TS 侧字面量拓宽落 base prim（`[1,2]` ⇒ `number`，
+ *     不是 `1|2`——字面量域比 TS 推出来的类型**窄**）；
+ *   - 结构形状（obj / arr / tuple…）：各元素 join（obj 槽并集等——与引擎
+ *     其它「tuple ⇒ 元素域」口径同款）。
+ * - 元素**异型**（`[1,"a"]`）⇒ `any`：TS 侧推成 `number | string`，本引擎
+ *   不做联合投影 ⇒ 取 `any`（不窄于真实类型 ⇒ 不假绿）。
+ *
+ * ⚠ 「首次绑定保留」语义（见上方 tuple×arr 臂注释）：`any` 也要**绑上去**
+ * （而不是跳过）——否则后续形参可能把同一个 α 绑成窄类型 ⇒ 又回到「自信的
+ * 错误类型」。
+ *
+ * **Bug 1097：`unknown` 形状 ≠ 域不可知。** 引擎把 `null` / `undefined`
+ * 建成「`unknown` 形状 + lit 项」⇒ 这两个是**已知类型**。此前按形状 kind
+ * 一刀切（`shape.k === "unknown"` ⇒ 域退 `any`）⇒ 精度回退（`[null]` 的
+ * 元素域从 `null` 退成 `any`）且 `any` 是「自信的任意值」（参与算术即抽象
+ * 强转 ⇒ 记 may-throw ⇒ L2 假红）。现按三类分派：
+ *
+ * 1. **已知 nullish**（`unknown` 形状 + lit 项，值为 `null`/`undefined`）
+ *    ⇒ 已知类型：**不参与**异型判定（否则 `[1,null]` 会被判异型），
+ *    只**贡献可空性**（`[1,null]` ⇒ `number | null`；只有 nullish ⇒ `null`）。
+ * 2. **真·推断失败**（`unknown` 形状且无已知 lit）⇒ 域**不可知** ⇒ 退
+ *    **`unknown`**（**不是** `any`：仓内口径 `unknown` = 推导失败，
+ *    `any` = 无约束并集）。选 `unknown` 还顺带避开 may-tier：算术抽象臂
+ *    对 `any` 记 may-throw、对 `unknown` 不记（wave 1 口径）⇒ 不制造
+ *    L2 假红。
+ * 3. **其它**（prim / obj / tuple / any…）⇒ 保持既有同型 base type 口径
+ *    （同型 ⇒ 该 base type；异型 ⇒ 仍退 `any`——本轮不把异型窄化成联合）。
+ */
+function tupleElementDomain(elements: Abs[], rest?: Abs): Abs | undefined {
+  const live = [...elements, ...(rest ? [rest] : [])].filter(
+    (e) => e.shape.k !== "never",
+  );
+  if (live.length === 0) return undefined;
+  // Bug 1097：先分流 nullish / 真·未知，其余走既有同型判定。
+  const nullish: Abs[] = [];
+  const others: Abs[] = [];
+  for (const el of live) {
+    if (el.shape.k === "unknown") {
+      // 已知 nullish（null / undefined）⇒ 已知类型：只贡献可空性。
+      if (isKnownNullishAbs(el)) nullish.push(el);
+      // 真·推断失败 ⇒ 元素域不可知 ⇒ unknown（不是 any）。
+      else return unknown;
+      continue;
+    }
+    others.push(el);
+  }
+  // 异型判定：元素 base type 必须一致
+  let key: string | undefined;
+  for (const el of others) {
+    const k = el.shape.k === "prim" ? `prim:${el.shape.type}` : el.shape.k;
+    if (key === undefined) key = k;
+    else if (key !== k) return anyAbs;
+  }
+  // 只有 nullish 元素 ⇒ 域 = null / undefined（可空性本身就是域）。
+  if (key === undefined) {
+    let acc = nullish[0]!;
+    for (let i = 1; i < nullish.length; i++) acc = makeSum(acc, nullish[i]!);
+    return acc;
+  }
+  // `any` 元素 ⇒ 域 = any（吸收一切，含可空性：any | null ≡ any）。
+  if (key === "any") return anyAbs;
+  const conf = others.reduce((c, e) => confJoin(c, e.conf), "exact" as Confidence);
+  let base: Abs;
+  if (key.startsWith("prim:")) {
+    const type = key.slice("prim:".length) as PrimName;
+    const only = others[0]!;
+    // 单元素且非字面量：保留该项自身的界证据（term + pred）
+    if (others.length === 1 && only.term?.op !== "lit") base = only;
+    // 字面量 / 多元素：落 base prim（字面量拓宽；多元素的界不互相成立 ⇒ 不下窄）
+    else base = { shape: { k: "prim", type }, conf };
+  } else {
+    // 同型结构形状：各元素 join（obj 槽并集 / 同构嵌套等）
+    base = others.reduce((a, b) => joinAbs(a, b));
+  }
+  // 可空性：base ∪ {null / undefined}（用仓内既有 sum 构造，不自造联合表示）
+  if (nullish.length === 0) return base;
+  return nullish.reduce((acc, n) => makeSum(acc, n), base);
+}
+
+/**
  * relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。
  * impl.relation 槽优先于 shape.returnType。重复 α 先绑定保留。
  * **深度合一**：`T[]` 形参可从 `number[]` 实参绑出 T=number（lodash 泛型）。
@@ -745,7 +919,9 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   };
   const map = new Map<string, Abs>();
   src.paramTypes.forEach((p, i) => {
-    bindTypeVars(p, args[i] ?? unknown, map);
+    // Bug 882：普通调用面实参归一化（裸宿主值 → Abs）——与成员调用面
+    // （`exec/class/invoke.ts` 的 Bug 85 段）同款口径。
+    bindTypeVars(p, normalizeCallArg(args[i] ?? unknown), map);
   });
   // 条件类型 infer：T 绑定后投出 E/U；extends 不成立 → fallback 支
   if (src.inferFrom) {

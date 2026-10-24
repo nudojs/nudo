@@ -3,6 +3,8 @@
  *
  * - 默认打印全部 case（含合成 call@/entry@）——这就是调用点观察
  * - 仅 `@nudo:case` 且带 `=> expected` 进入 pass/fail；失败才影响 exit
+ * - **引擎未能推断**实测值（`unknown` / `conf=opaque`）⇒ 记 unchecked
+ *   （Bug 950 第三态：无法判定 ⇒ 既不是失败，也不是空洞通过）
  * - `--freeze[=update]`：见证固化，仍在 test 名下
  */
 
@@ -11,11 +13,11 @@ import {
   effectiveInterface,
   formatShape,
   interfaceDiagCount,
-  leqAbs,
   takeInterfaceDiagsSince,
   type Abs,
 } from "@nudojs/core";
 import {
+  caseExpectedSatisfied,
   defaultLoadModule,
   findProjectConfig,
   interfaceConfig,
@@ -28,10 +30,19 @@ export type CaseTestOutcome = {
   caseName: string;
   ok: boolean;
   unchecked: boolean;
+  /**
+   * `unchecked` 的原因（Bug 950 第三态）：
+   * - `"no-expectation"`：声明了 case 但**没写** `=> expected`（既有口径）；
+   * - `"inference-failed"`：引擎**未能推断**实测值（`unknown` / `conf=opaque`）
+   *   ⇒ **无法判定**（既不是失败，也不是空洞通过）。
+   *
+   * 缺省 = 合成 case（`synthetic: true`，不进断言面）。
+   */
+  uncheckedReason?: "no-expectation" | "inference-failed";
   expected?: string;
   actual: string;
   throws?: string;
-  /** 合成 case（call@/entry@）— 不参与 exit */
+  /** 合成 case（分析器合成出来的观察，非源码声明）— 不参与 exit */
   synthetic: boolean;
 };
 
@@ -57,6 +68,27 @@ function formatCaseLine(c: CaseResult): string {
     line += `   throws ${formatShape(c.throwsAbs)}`;
   }
   return line;
+}
+
+/**
+ * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定）。
+ *
+ * 判据（**报告面本地**判）：
+ * - `shape.k === "unknown"`：core 的 unknown 语义 = 「分析拿不到信息
+ *   （求值失败 / 泄漏）」⇒ 实测值**没推出来**；
+ * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
+ *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
+ *
+ * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
+ * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
+ * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
+ * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
+ *
+ * 为什么不放在 service 的判定函数里：`caseExpectedSatisfied` 是**二值**判定
+ * （片 C 冻结），第三态是**报告面**的事（能不能下断言结论）⇒ 本地判。
+ */
+function inferenceFailed(actual: Abs): boolean {
+  return actual.shape.k === "unknown" || actual.conf === "opaque";
 }
 
 /**
@@ -147,10 +179,15 @@ export function buildTestReport(
     }
     for (const c of cases) {
       caseLines.push(formatCaseLine(c));
-      const synthetic = c.name.startsWith("call@") || c.name.startsWith("entry@");
+      // synthetic 判据 = **来源**（源里没有这条 case ⇒ 合成出来的观察）。
+      // 不能只看名字前缀：`nudo test --freeze` 写回的见证 case 名叫
+      // `call@<file>:<line>`，但它是**写在源码里的** case 指令 ⇒ 已声明
+      // （无 `=> expected` ⇒ unchecked，不是 synthetic）。按名字前缀判会把它
+      // 误算成 synthetic，报告就写成「没有声明的断言」（Bug 511）。
+      const synthetic = c.source !== "directive";
       const throwsStr =
         c.throwsAbs && c.throwsAbs.shape.k !== "never" ? formatShape(c.throwsAbs) : undefined;
-      if (c.source !== "directive" || synthetic) {
+      if (synthetic) {
         outcomes.push({
           fn: fnName,
           caseName: c.name,
@@ -169,6 +206,7 @@ export function buildTestReport(
           caseName: c.name,
           ok: true,
           unchecked: true,
+          uncheckedReason: "no-expectation",
           actual,
           ...(throwsStr ? { throws: throwsStr } : {}),
           synthetic: false,
@@ -176,11 +214,33 @@ export function buildTestReport(
         continue;
       }
       const expected = formatShape(c.expected as Abs);
+      // Bug 950 第三态：引擎**未能推断**实测值（unknown / conf=opaque）⇒
+      // **无法判定** ⇒ 记 unchecked（既不是失败，也不是空洞通过）。
+      // ⚠ 判在**判定调用之前** ⇒ `any()` / `unknown()` 这类「放宽的期望」
+      // 不会借 `leqAbs` 的「目标放宽 ⇒ 通过」捷径空洞判 ok（改前：假红
+      // `number()` / 假绿 `any()` —— 同一事实两种期望都不可用）。
+      if (inferenceFailed(c.abs)) {
+        outcomes.push({
+          fn: fnName,
+          caseName: c.name,
+          ok: false,
+          unchecked: true,
+          uncheckedReason: "inference-failed",
+          expected,
+          actual,
+          ...(throwsStr ? { throws: throwsStr } : {}),
+          synthetic: false,
+        });
+        continue;
+      }
       let ok = false;
       try {
-        ok = leqAbs(c.abs, c.expected as Abs).ok;
+        // 期望判定与 service 分析面**同口径**（值级谓词）：裸 leqAbs 不做
+        // 值级判定 ⇒ `number().gt(0)` 这类谓词期望在报告面恒假红
+        // （分析面判满足、报告面判不满足）。
+        ok = caseExpectedSatisfied(c.abs, c.expected as Abs);
       } catch {
-        /* optional: leqAbs threw — treat case as failed */
+        /* optional: 判定抛错 — treat case as failed */
         ok = false;
       }
       outcomes.push({
@@ -234,7 +294,9 @@ export function buildTestReport(
   return {
     file,
     passed: declared.filter((o) => o.ok && !o.unchecked).length,
-    failed: declared.filter((o) => !o.ok).length,
+    // Bug 950：`unchecked`（无法判定）**不算失败** ⇒ 「引擎没推出来」
+    // 不再被压成「断言不符」（假红）⇒ 也不置红（exit 0）。
+    failed: declared.filter((o) => !o.ok && !o.unchecked).length,
     // 只计声明 case 的 unchecked；合成 call@/entry@ 不进断言面
     unchecked: declared.filter((o) => o.unchecked).length,
     outcomes,
@@ -263,7 +325,17 @@ export function formatTestReport(r: TestReport): string {
     lines.push(`  ${mark} ${r.passed} passed · ${r.failed} failed · ${r.unchecked} unchecked`);
   }
   for (const o of declared) {
-    if (o.unchecked) {
+    if (o.uncheckedReason === "inference-failed") {
+      // Bug 950 第三态：**工具的局限**（引擎没推出来）⇒ 不是「类型不匹配」。
+      // 文本指向 check 面同事实的 INFO（`nudo:opaque-result`）的补证据路径。
+      lines.push(`  [unchecked] ${o.fn}  case "${o.caseName}" → ${o.actual}`);
+      lines.push(
+        `         cannot judge — the engine could not infer the actual value (declared expectation: ${o.expected ?? "(none)"}; not a type mismatch)`,
+      );
+      lines.push(
+        `         → nudo:opaque-result: add a call site (@nudo:case) or a sidecar contract`,
+      );
+    } else if (o.unchecked) {
       lines.push(`  [unchecked] ${o.fn}  case "${o.caseName}" → ${o.actual}`);
     } else if (o.ok) {
       lines.push(`  [ok]   ${o.fn}  case "${o.caseName}" → ${o.actual}`);

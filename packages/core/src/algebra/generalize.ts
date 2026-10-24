@@ -15,9 +15,9 @@ import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
-import { pTrue, predToString } from "./pred.ts";
+import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
-import { abs, unknown } from "./abs.ts";
+import { abs, never, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -44,21 +44,57 @@ import {
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
-import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
+import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
+import { currentAssumePremises, currentInvariantSpecs } from "./exec/runtime/state.ts";
 import { $new, $invoke } from "./exec/class.ts";
+import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
+import { resolveExportSlotCall } from "./export-slot.ts";
+import { absShapeForTsTypeText } from "./ts-type-shape.ts";
 
 /** generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参） */
-const evalRunMemo = new Map<string, Record<string, unknown>>();
+const evalRunMemo = new Map<string, Record<string, unknown>>;
+
+/**
+ * 函数作用域 mock 覆盖表的载体键（Bug 455）。
+ * `@nudo:mock` 是**函数级**指令（parser 绑到最近的函数）：同名 mock 被两个
+ * 函数各自声明时，平表「后者胜出」会把先声明的函数改写成错类型。
+ * service 侧（`@nudojs/service` 的 mock-abs.ts）把覆盖表挂在 inject.mocks 上
+ * （同一 `Symbol.for` 注册表符号）⇒ 本文件按**被求值的函数名**取本函数那
+ * 一份；无覆盖 ⇒ 原表（未冲突的 mock 仍是文件级可见）。
+ */
+const MOCK_SCOPE_OVERRIDES: unique symbol = Symbol.for("nudo.mock.scopeOverrides");
+
+/** 按被求值的函数作用域选 mock 覆盖（无覆盖 ⇒ 原 inject） */
+function scopeSelectedInject(
+  inject: RunTranspiledOptions | undefined,
+  fnName: string,
+): RunTranspiledOptions | undefined {
+  const mocks = inject?.mocks;
+  if (!mocks) return inject;
+  const overrides = (
+    mocks as unknown as Record<symbol, Record<string, Record<string, Abs>> | undefined>
+  )[MOCK_SCOPE_OVERRIDES];
+  const own = overrides?.[fnName];
+  if (!own) return inject;
+  return { ...inject, mocks: { ...mocks, ...own } };
+}
+
 function evalRunOf(
   source: string,
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
   inject?: RunTranspiledOptions,
+  /**
+   * 作用域 mock 覆盖的 memo 区分位（Bug 455）。
+   * mock fn 的 formatAbs 只展形参不展返回值 ⇒ 两个作用域的同名 mock
+   * 指纹相同 ⇒ 键里必须带作用域名，否则共用同一份模块求值结果。
+   */
+  scopeKey?: string,
 ): Record<string, unknown> | undefined {
   // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
-  const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
+  const mKey = `${source}|${scopeKey ?? ""}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
   if (evalRunMemo.size >= 256) {
     const oldest = evalRunMemo.keys().next().value;
     if (oldest !== undefined) evalRunMemo.delete(oldest);
@@ -80,8 +116,59 @@ function evalRunOf(
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
-/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0） */
-function ctorParamCountOf(
+/**
+ * 类方法桥的实例（**Bug 1093**）：构造器**抛**时不得把方法体的推断一起拖垮。
+ *
+ * 此前 `$new` 抛 ⇒ 异常逃出 `runCore` ⇒ 方法签名退 unknown + 误导的
+ * info 级 `nudo:opaque-result`（把「构造器必抛」谎报成「推断失败」）。
+ * 构造器抛**不等于**方法抛 ⇒ 方法体仍应被求值（方法可能是 total 的）。
+ *
+ * 口径与 `check-may-throw.ts` 的 `instanceForMethodBridge` 一致（那处**反向
+ * import 本文件**的 `ctorParamCountOf` ⇒ 此处**就地复刻**，不跨模块耦合以免
+ * 成包环）：构造器抛 ⇒ 退到**裸实例**（跳过构造器）继续求值方法体 ⇒ 方法体
+ * 自身的推断照常产出（闸门不整体关掉）。
+ *
+ * **Bug 1096**：裸实例的**内层是 unknown，不是空 obj**——构造器写过的字段
+ * 是**不可知**，不是「确定不存在」：空 obj 会把 `this.v` 折成**确定的
+ * undefined**（自信的错值）⇒ 连带 `this.v.toFixed()` 在**虚构实例**上抛
+ * TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必抛、恒返回 never」）
+ * ⇒ 连带 error 级 `nudo:entry-may-throw`（假红，直接卡 CI）。内层 unknown
+ * ⇒ 字段读 = unknown（不可知）⇒ 成员调用不产 may-throw ⇒ 签名不折 never
+ * （兜底实例的 TypeError 不得决定方法签名），而方法体**自己**的推断照常
+ * 产出（不退化成整体 opaque）。
+ *
+ * 与 `check-may-throw.ts` 的同名孪生实现**同构**（那处是证据域通道）——
+ * 两处必须一起改，否则证据域与值域口径漂移。
+ */
+function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
+  try {
+    return $new(clsAbs, ctorArgs);
+  } catch {
+    // 裸实例：brand 名取**类值**的 brand 名（类值即 brand ⇒ `export default
+    // class` 同口径），内层是 **unknown**（构造器写过的字段 = 不可知，
+    // 不是「确定不存在」⇒ 不折确定的 undefined / 不在虚构实例上抛）
+    const name =
+      clsAbs.shape.k === "brand" && clsAbs.shape.name.length > 0
+        ? clsAbs.shape.name
+        : clsName;
+    return abs(
+      {
+        k: "brand",
+        name,
+        shape: abs({ k: "unknown" }, undefined, undefined, "partial"),
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+}
+
+/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
+ *
+ *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
+ *  同口径实例化（构造实参补 any）——两处各写一份会漂移。 */
+export function ctorParamCountOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): number {
@@ -93,6 +180,11 @@ function ctorParamCountOf(
       const decl = stmt.type === "ExportNamedDeclaration"
         ? (stmt as { declaration?: unknown }).declaration
         : stmt;
+      // Bug 1031：`export { q };` 是**说明符语句**（ExportNamedDeclaration 且
+      // declaration === null），不是声明语句 ⇒ 不可解引用 `decl.type`（空指针
+      // TypeError ⇒ 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒ 契约
+      // 违规从 error 降级成 warning ⇒ check 假绿）。这里显式跳过 null。
+      if (!decl || typeof decl !== "object") continue;
       const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
       if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
         for (const m of c.body?.body ?? []) {
@@ -104,6 +196,92 @@ function ctorParamCountOf(
     }
   }
   return 0;
+}
+
+/**
+ * 类声明的**构造器形参表**（类入口签名面用；无显式 ctor → 空表）。
+ *
+ * 遍历口径**刻意与** {@link ctorParamCountOf} 同源（同一批语句形态）⇒ 形参
+ * 个数与「构造实参补 any 的个数」永远一致（否则签名面显示 N 个形参、而构造
+ * 实参只补 M 个 ⇒ 两面自相矛盾）。
+ */
+function ctorFormalsOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): FormalParam[] {
+  for (const stmt of fileAst.program.body) {
+    if (
+      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
+      "declaration" in (stmt as object)
+    ) {
+      const decl = stmt.type === "ExportNamedDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt;
+      if (!decl || typeof decl !== "object") continue;
+      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
+      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
+        for (const m of c.body?.body ?? []) {
+          const mem = m as { kind?: string; params?: unknown[] };
+          if (mem.kind === "constructor") {
+            return formalParamsFromNodes(mem.params as never);
+          }
+        }
+        return [];
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * 类导出入口的签名（**Bug 1096**）。
+ *
+ * `export class C {}` 的**类值本身**是一个导出符号：`new C(x)` 是**真实
+ * 入口** ⇒ L2 门禁必须能归因「构造器无条件抛」（此前类导出不在入口表 ⇒
+ * 构造器必抛在 check 面**完全不可见** ⇒ CI 闸门假绿）。
+ *
+ * 签名面 = **类值**（brand `C`）+ **构造器形参**（`new C(x)` 的实参位）：
+ * 类不是被调用的函数（`C(x)` 是运行时 TypeError）⇒ 形参面取构造器形参，
+ * 返回值取类值本身（不是 `any`、也不是 unknown——类值是**已知**的）。
+ */
+function classEntryPolyFn(
+  fnName: string,
+  source: string,
+  opts: {
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    inject?: RunTranspiledOptions;
+    file?: ReturnType<typeof babelParse>;
+  },
+): PolyFn | undefined {
+  const fileAst = opts.file ?? babelParse(source);
+  const evalRun = evalRunOf(source, opts.modules, scopeSelectedInject(opts.inject, fnName));
+  if (!evalRun) return undefined;
+  const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
+  // 槽位口径与类方法桥同源（export-slot.ts：cjs-member 与 named 同键取值）
+  const raw = slot ? evalRun[slot.key] : evalRun[fnName];
+  if (!raw || typeof raw !== "object" || !("shape" in (raw as object))) return undefined;
+  const clsAbs = raw as Abs;
+  // 类值 = brand + `ctor: true` facet（实例 brand 无此 facet）
+  if (clsAbs.shape.k !== "brand" || clsAbs.shape.ctor !== true) return undefined;
+  const formals = ctorFormalsOf(fileAst, fnName);
+  const params = formals.length > 0 ? formalParamSignatureNames(formals) : [];
+  const typeParams: TypeParam[] = formals.map((f, i) => {
+    // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
+    const shape = absShapeForTsTypeText(f.tsType);
+    return {
+      id: `A${i + 1}`,
+      value: abs(shape ?? { k: "any" }, undefined, pTrue, "path"),
+    };
+  });
+  return {
+    name: fnName,
+    params,
+    typeParams,
+    symbolic: clsAbs,
+    instantiate: () => clsAbs,
+    display: formatPoly(fnName, params, params, typeParams, clsAbs),
+    ...(formals.length > 0 ? { formals } : {}),
+  };
 }
 
 function bodyReferencesName(body: Node, name: string): boolean {
@@ -391,6 +569,15 @@ export type PolyFn = {
   entryShapes?: Map<string, { abs: Abs; source: import("./hof.ts").RelSource }>;
   /** body 内对该形参的应用点（check/hover/dts 用） */
   hofSites?: import("./hof.ts").HofSite[];
+  /**
+   * Bug 389：本次求值被 **env 门禁**挡下（源码声明了 `@nudo:env`，但那个 env
+   * **没解析出全局** ⇒ 无注入 ⇒ 函数体 fail-closed ⇒ 符号面 conf=opaque）。
+   *
+   * 门禁本身是对的（不注入就跑 ⇒ 宿主调用会假抛），但「因门禁而 opaque」**不
+   * 是**「路径没覆盖」⇒ 诊断层不得把它当成「已解释」（否则唯一能提示「推断
+   * 失败」的 `nudo:unknown-inference` 恰好在用户把 env 名写错时被吞掉）。
+   */
+  envGated?: boolean;
 };
 
 export function extractFn(
@@ -415,6 +602,9 @@ export function extractFn(
       const formals = formalParamsFromNodes(decl.params as never);
       env.fns.set(decl.id.name, {
         params: formalParamDisplayNames(formals),
+        // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+        // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+        optionalParams: formals.map((f) => f.optional === true),
         body: decl.body,
         async: decl.async === true,
       });
@@ -425,9 +615,16 @@ export function extractFn(
         formalsByName.set("default", formals);
       }
     }
-    if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
+    if (
+      decl.type === "ClassDeclaration" &&
+      ((decl as { id?: { name?: string } }).id?.name ||
+        // Bug 1156：匿名 `export default class {}` 没有本地名 ⇒ 导出槽名
+        // "default" 就是方法键前缀（`default.m`，与指令 scope / 类绑定同口径）。
+        (stmt.type === "ExportDefaultDeclaration" &&
+          !(decl as { id?: { name?: string } }).id))
+    ) {
       // C4.2：导出 class 实例/静态方法 → `Class.method`
-      const cname = (decl as { id: { name: string } }).id.name;
+      const cname = (decl as { id?: { name?: string } }).id?.name ?? "default";
       const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
       for (const m of body) {
         const mem = m as {
@@ -451,6 +648,9 @@ export function extractFn(
         const formals = formalParamsFromNodes((mem.params ?? []) as never);
         env.fns.set(fullName, {
           params: formalParamDisplayNames(formals),
+          // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+          // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+          optionalParams: formals.map((f) => f.optional === true),
           body: mem.body,
           async: mem.async === true,
         });
@@ -473,6 +673,9 @@ export function extractFn(
           const formals = formalParamsFromNodes(init.params as never);
           env.fns.set(d.id.name, {
             params: formalParamDisplayNames(formals),
+            // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+            // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+            optionalParams: formals.map((f) => f.optional === true),
             body: init.body,
             async: init.async === true,
           });
@@ -495,6 +698,9 @@ export function extractFn(
       const formals = formalParamsFromNodes(init.params as never);
       env.fns.set("default", {
         params: formalParamDisplayNames(formals),
+        // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+        // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+        optionalParams: formals.map((f) => f.optional === true),
         body: init.body,
         async: init.async === true,
       });
@@ -520,6 +726,9 @@ export function extractFn(
     const formals = formalParamsFromNodes((node.params ?? []) as never);
     env.fns.set(key, {
       params: formalParamDisplayNames(formals),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+      optionalParams: formals.map((f) => f.optional === true),
       body: node.body,
       async: node.async === true,
     });
@@ -656,6 +865,9 @@ export function extractFn(
     const formals = formalParamsFromNodes((n.params ?? []) as never);
     env.fns.set(scope.name, {
       params: formalParamDisplayNames(formals),
+      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选）
+      optionalParams: formals.map((f) => f.optional === true),
       body: n.body,
       async: n.async === true,
     });
@@ -688,6 +900,15 @@ export function generalizeFromAst(
     inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
+  // 种子动态域（@nudo:assume / @nudo:invariant）**不进 L0 键**（键只按源码/
+  // 依赖/预算等静态身份；把种子塞进去会拆碎跨调用的缓存复用）⇒ 有种子时必须
+  // 绕过 L0：命中缓存会跳过重新求值 ⇒ ① 引理消费账本不填（漏
+  // `nudo:assume-relied`）；② 无种子条目被种子求值复用 → 漏折界（反之带折后
+  // 界的 PolyFn 经 L0 泄漏给无种子调用）。种子仅在目标函数入口求值窗口内
+  // 非平凡 ⇒ 该窗口内既不读也不写 L0。
+  if (currentAssumePremises().op !== "true" || currentInvariantSpecs().length > 0) {
+    return generalizeFromAstUncached(fnName, source, opts);
+  }
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
   // 截断/读错误指纹不可信：不读也不写 L0
   if (!truncated) {
@@ -721,16 +942,28 @@ function generalizeFromAstUncached(
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
-  if (!extracted) return undefined;
+  if (!extracted) {
+    // Bug 1096：类导出入口（`new C()`）—— 类值本身是导出符号 ⇒ 签名面
+    // 必须有它（否则 check 面的 L2 门禁无从归因「构造器必抛」⇒ 假绿；
+    // 且 `nudo:no-signature` 会把类误报成「推断失败」）。
+    return classEntryPolyFn(fnName, source, opts);
+  }
   const { params, body, env, formals } = extracted;
   const budget = opts.budget ?? defaultLeakBudget;
   const label = opts.label ?? "A";
 
-  const typeParams: TypeParam[] = params.map((p, i) => ({
-    id: `${label}${i + 1}`,
-    // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
-    value: abs({ k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
-  }));
+  const typeParams: TypeParam[] = params.map((p, i) => {
+    // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
+    // ⇒ 入口形参不再是「无约束 any」（否则 `a.toUpperCase()` 之类在
+    // 合法 TypeScript 上产生 nudo:entry-may-throw 假红）。
+    // 无注解 / 不可映射的类型（别名、泛型、对象类型）⇒ 仍是 any（不猜）。
+    const shape = absShapeForTsTypeText(formals[i]?.tsType);
+    return {
+      id: `${label}${i + 1}`,
+      // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
+      value: abs(shape ?? { k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
+    };
+  });
 
   let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }> | undefined;
   /** refine 契约带来的 entryShapes（source=refine，不重复提升） */
@@ -835,6 +1068,22 @@ function generalizeFromAstUncached(
               abs: snapshotAbs(entryAbs),
               source: "refine",
             });
+          }
+        }
+        // Bug 401：`patternFields` 只收**契约命中的字段** ⇒ 未契约的兄弟绑定
+        // 从头到尾不进这个袋子 ⇒ `buildPatternObjAbs` 合成出的形参形状是
+        // **闭对象** ⇒ 读兄弟绑定得 **exact `undefined`**（自信的错值；native
+        // 是实值）。按「闭对象 → unknown」的语义补：把该 pattern 的**全部
+        // 顶层绑定**都放进袋子（未契约的用 `unknown`），形状才是「开对象」。
+        // 槽键 = **源属性键**（rename `{a: alpha}` ⇒ 键是 a；`propKey` 缺项的
+        // 绑定——对象 rest 兄弟——按绑定名落键）。
+        for (const [pIdx, bag] of patternFields) {
+          const fp = formals[pIdx];
+          if (!fp || fp.kind !== "pattern") continue;
+          for (const name of fp.bound) {
+            const key = fp.propKey[name] ?? name;
+            if (bag[key] !== undefined) continue;
+            bag[key] = { abs: abs({ k: "unknown" }, undefined, undefined, "partial") };
           }
         }
         // 解构字段合成 obj Abs（签名上屏 `{ grade: string, … }`，不再是 any）
@@ -966,18 +1215,43 @@ function generalizeFromAstUncached(
   const runCore = (args: Abs[], phi: Phi): Abs | undefined => {
     if (!evalEligible) return undefined;
     try {
-      const evalRun = evalRunOf(source, opts.modules, opts.inject);
+      // 同名 mock 按作用域各生效（Bug 455）：覆盖存在时按作用域名分键求值
+      const scopedInject = scopeSelectedInject(opts.inject, fnName);
+      const evalRun = evalRunOf(
+        source,
+        opts.modules,
+        scopedInject,
+        scopedInject === opts.inject ? undefined : fnName,
+      );
       if (!evalRun) {
         /* B 失败 fail-closed */
         return undefined;
       } else if (fnName.includes(".")) {
         // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
         const [clsName, methodName] = fnName.split(".", 2);
-        const clsAbs = evalRun[clsName ?? ""];
+        // Bug 489 同源：`export default class C {…}` 的类只挂在 default 槽 ⇒
+        // 按类名查表落空 ⇒ 方法签名退成 unknown。同一套导出槽兜底。
+        const clsSlot = resolveExportSlotCall(fileAst, clsName ?? "", evalRun);
+        const clsAbs = clsSlot
+          ? evalRun[clsSlot.kind === "cjs-member" ? clsSlot.key : clsSlot.key]
+          : undefined;
         if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
           const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
-          const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
-          return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          const inst = instanceForMethodBridge(
+            clsAbs as Abs,
+            clsName ?? "",
+            Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
+          );
+          try {
+            return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          } catch (e) {
+            // Bug 379：方法体**必抛** ⇒ 返回位 never（与顶层导出同口径：
+            // callTranspiledExportFull 对 NudoThrow 折 result=never）。
+            // 此前落进外层 catch ⇒ 签名退 unknown + 误导的 nudo:opaque-result
+            // （把「方法必抛」谎报成「推断失败」）。
+            if (isNudoThrow(e)) return never;
+            throw e;
+          }
         }
         return undefined;
       } else if (fnName in evalRun) {
@@ -990,10 +1264,39 @@ function generalizeFromAstUncached(
           return a;
         });
         return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
+      } else {
+        // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
+        // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
+        // 查表落空会让签名退成 unknown + 一条指向错误的 nudo:opaque-result。
+        const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
+        if (!slot) return undefined;
+        // 提升形状预绑定到实参（同具名槽口径）
+        const evalArgs = args.map((a, i) => {
+          const shape = promoteScan.promotedShapes.get(params[i]!);
+          if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+            return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+          }
+          return a;
+        });
+        if (slot.kind === "cjs-member") {
+          // CJS：module.exports = { f: fn } —— 成员挂在 default 槽这个对象上
+          const d = evalRun[slot.key];
+          if (!d || typeof d !== "object" || !("shape" in (d as object))) return undefined;
+          const dAbs = d as Abs;
+          if (dAbs.shape.k !== "obj") return undefined;
+          return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
+        }
+        return callTranspiledExportFull(evalRun, slot.key, evalArgs, { phi }).result;
       }
-      return undefined;
-    } catch {
-      /* B 失败 fail-closed */
+    } catch (e) {
+      // Bug 1031：这里**不是**「B run 本身失败」（那条路径是 evalRun 为
+      // undefined ⇒ 上一分支已 return undefined），而是**桥内部异常**（引擎
+      // 缺陷）。两者混为一谈 ⇒ 内部空指针被静默降级成 unknown + 误导的
+      // nudo:opaque-result ⇒ 契约违规从 error 降级成 warning ⇒ check 假绿。
+      // 现在区分二者：仍 fail-closed（签名退 unknown，不当干净成功），但把
+      // 内部异常记进 eval-fallback 统计（nudo health 的 internal_fallbacks
+      // 暴露它），不再静默。
+      noteEvalFallback(e);
       return undefined;
     }
   };
@@ -1037,11 +1340,16 @@ function generalizeFromAstUncached(
       : typeParams.map((t, i) => (i === restIdx ? makeSymbolicRestAbs() : t.value));
   const symbolic = run(
     symbolicArgs,
-    // 入口契约进 Φ，让 body 内的单调性可传播
+    // 入口契约进 Φ，让 body 内的单调性可传播。
+    // 用 and() 合成（族 06）：每条形参谓词本身可能是合取
+    // （`and(typeof x, ge(x,0))`），裸 `{op:"and",args:[…]}` 会把它们
+    // **嵌套**一层 ⇒ 合取读侧（buildCtx 等）看不到内层原子 ⇒ Φ 里的
+    // 事实（如 `ge(max,1)`）被静默丢弃 ⇒ 死臂剪不掉（签名退化成
+    // `1 | number`）。and() 展平一层 ⇒ Φ 顶层即原子。
     entryReqs && entryReqs.length > 0
       ? entryReqs.length === 1
         ? entryReqs[0]!.pred
-        : { op: "and", args: entryReqs.map((r) => r.pred) }
+        : and(...entryReqs.map((r) => r.pred))
       : pTrue,
   );
 
@@ -1105,6 +1413,8 @@ function generalizeFromAstUncached(
     ...(fnRels ? { fnRels } : {}),
     ...(entryShapes ? { entryShapes } : {}),
     ...(hofSites ? { hofSites } : {}),
+    // Bug 389：env 门禁的事实要让诊断层看得见（否则「推断失败」信号被吞）
+    ...(envGated ? { envGated: true } : {}),
   };
 }
 
@@ -1236,23 +1546,27 @@ export function listFunctionNames(source: string): string[] {
 /**
  * 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any
  * （design-cli-semantics §2：入口无约束 = any，不是 unknown）。
+ *
+ * Bug 976（core 半）：被 assume 的形参的 pred 此前被**写死**成 `x > 0`——
+ * 用户写 `--assume 'x>-5'` 时，写死的界**更强**（`x>-5 ∧ x>0 ⇒ x>0`）⇒
+ * 引擎按 `x>0` 剪枝 ⇒ 观察面给出比用户声明**更窄**的结果（说谎）。
+ * 现在：**用户声明的界**（`bounds`：形参名 → Pred）直接落进形参的 pred；
+ * 没有声明界时**不写界**（不替用户发明一个更强的默认界）——Φ（CLI 侧）
+ * 是界的唯一来源。
  */
 export function buildArgsFromAssume(
   source: string,
   fnName: string,
   assumeIds: Set<string>,
+  /** 用户声明的界（形参名 → Pred）；缺省 = 不写界 */
+  bounds?: ReadonlyMap<string, Pred>,
 ): Abs[] {
   const extracted = extractFn(source, fnName);
   if (!extracted) return [];
   return extracted.params.map((p) => {
     if (assumeIds.has(p)) {
-      // 默认假设 >0；更细的 assume 由 CLI 拼 Phi
-      return abs(
-        { k: "prim", type: "number" },
-        termVar(p),
-        { op: "gt", a: termVar(p), b: { op: "lit", value: 0 } },
-        "path",
-      );
+      // 界只来自用户声明（bounds）；没有声明就不写——不发明默认界。
+      return abs({ k: "prim", type: "number" }, termVar(p), bounds?.get(p), "path");
     }
     return abs({ k: "any" }, undefined, undefined, "path");
   });

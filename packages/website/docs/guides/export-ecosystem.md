@@ -59,11 +59,11 @@ nudo export src/api/users.js --format standard --out dist
 # writes dist/createUser.nudo.standard.ts
 ```
 
-The generated module exposes one validator per parameter (`<fn>_<param>`) plus one for the return — named **`<fn>Return`** when a return contract exists (`<fn>Output` is used only when there is no contract, or only parameter contracts). **Contract refinements are baked in** — `age: number().ge(0)` becomes a `numBound { op: "ge", n: 0 }` check, and a `lit(42)` contract pins the exact value:
+The generated module exposes one validator per parameter (`<fn>_<param>`) plus one for the return — the return validator is always named **`<fn>Output`**, matching the zod face (the name no longer flips between `<fn>Return` and `<fn>Output` depending on whether a return contract exists). **Contract refinements are baked in** — `age: number().ge(0)` becomes a `numBound { op: "ge", n: 0 }` check, and a `lit(42)` contract pins the exact value:
 
 ```ts
 // dist/createUser.nudo.standard.ts (excerpt)
-// (also exports createUserReturn — the return-shape validator from the sidecar)
+// (also exports createUserOutput — the return-shape validator from the sidecar)
 export const createUser_input = {
   "~standard": {
     version: 1,

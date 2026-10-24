@@ -112,6 +112,55 @@ export function freeIdentifiers(body: Node, params: string[]): Set<string> {
 }
 
 /**
+ * body 内出现的**全部标识符词形**（形参 + body 内每个 Identifier——
+ * 含属性键 / 嵌套函数 / 解构子名）。
+ *
+ * 用途：body 编译路径**没有源文本**（`transpileBodyNode(impl.body, …)`
+ * 的 opts 无 `source`）⇒ 转译侧 `internalTmpName` 的避让集恒空 ⇒ 引擎
+ * 内部临时名（`__nudoTm_{n}` / `__nudoE_{n}` / `__nudoRet` / `__nudoArgs` …）
+ * 与用户标识符相撞 ⇒ 产物非法 JS（重复词法声明 / 遮蔽）⇒ 求值 fail-closed。
+ * 本集合是该路径**唯一可用**的避让来源（AST 词形 = 源文本词形的子集，
+ * 保守够用：用户绑定名必以 Identifier 出现）。
+ */
+export function bodyIdentNames(body: Node, params: readonly string[]): Set<string> {
+  const names = new Set<string>(params);
+  const seen = new WeakSet<object>();
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as object;
+    if (seen.has(obj)) return;
+    seen.add(obj);
+    const o = n as { type?: string; name?: unknown; [k: string]: unknown };
+    if (o.type === "Identifier" && typeof o.name === "string") {
+      names.add(o.name);
+      return;
+    }
+    for (const key of Object.keys(o)) {
+      if (
+        key === "loc" ||
+        key === "start" ||
+        key === "end" ||
+        key === "tokens" ||
+        key === "comments" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments"
+      ) {
+        continue;
+      }
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (item && typeof item === "object") visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(body);
+  return names;
+}
+
+/**
  * 编译 body → (args) => Abs。自由标识符（闭包）从 impl.env 解析注入：
  * vars → Abs 值；fns → absFunction 包装（调走 $callNamed → $call，递归预算保留）。
  * 全局名不注入——编译产物经 new Function 全局作用域解析（未定义名
@@ -159,7 +208,12 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
   }
   let runner: ((args: Abs[]) => Abs) | undefined;
   try {
-    const bodySrc = transpileBodyNode(impl.body, {});
+    // Bug 1058 遗留 3（族 59 · W9）：本路径**无 source** ⇒ 转译侧内部临时名
+    // 的避让集恒空 ⇒ 用户标识符与引擎临时名相撞 ⇒ 产物非法 JS ⇒ 整模块
+    // fail-closed。补上 AST 词形（body 内全部 Identifier + 形参）作为避让源。
+    const bodySrc = transpileBodyNode(impl.body, {
+      userIdents: bodyIdentNames(impl.body, impl.params),
+    });
     const js = [
       runtimeImportOf("@nudojs/core/exec"),
       `function __body(${impl.params.join(", ")}) {`,

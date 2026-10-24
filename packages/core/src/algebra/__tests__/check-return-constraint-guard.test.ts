@@ -18,6 +18,16 @@ function retViolations(src: string) {
   return errorsOf(src, "/t/ret-guard.js").filter((i) => i.code === "nudo:constraint-violated");
 }
 
+/**
+ * 返回义务「证不出」诊断（warning）。
+ * Bug 370：无界证据（只有 typeof 级 pred）下，带界义务**既证不出、也反证不了**
+ * ⇒ 判 `nudo:unproven-return`（warning），**不得**判 `nudo:constraint-violated`
+ * （确定违约 = 假红：`x` 既可能是 5（满足）也可能是 -1（不满足））。
+ */
+function retUnproven(src: string) {
+  return issuesOf(src, "/t/ret-guard.js").issues.filter((i) => i.code === "nudo:unproven-return");
+}
+
 describe("Bug 1: 守卫后普通变量返回（假阳 → 无 issue）", () => {
   it("ok: if (x >= 0) return x; return 0 —— nonNeg", () => {
     expect(
@@ -175,8 +185,14 @@ function f(x) {
 });
 
 describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () => {
-  it("error: 无守卫裸 return x ⊭ positive", () => {
-    const v = retViolations(`
+  it("error: 无守卫裸 return x ⊭ positive（声明域参数 ⇒ 值域已知 ⇒ 确定违约）", () => {
+    // Bug 1116（回退 Bug 370 的语义降级）：`x: number()` 是**声明域参数** ⇒
+    // 返回项的值域**已知**（任意 number，含 NaN）⇒ 返回契约是对**所有**输入
+    // 成立的后置 ⇒ 值域 ⊄ 契约域（x=0 即违约）⇒ **契约不成立** ⇒ 判
+    // `nudo:constraint-violated`（error）。判 warning 会让 `nudo check` 门禁
+    // 空转（warning 不改 exit code；docs/design/cli-semantics.md §5.5：warning
+    // 只针对 any/unknown——声明域参数不是 any/unknown）。
+    const src = `
 /**
  * @nudo:contract x num
  * @nudo:contract return positive
@@ -184,9 +200,10 @@ describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () 
 function f(x) {
   return x;
 }
-`);
-    expect(v).toHaveLength(1);
-    expect(v[0]!.message).toContain("@nudo:contract return positive");
+`;
+    expect(retViolations(src)).toHaveLength(1);
+    expect(retViolations(src)[0]!.message).toContain("@nudo:contract return positive");
+    expect(retUnproven(src)).toHaveLength(0);
   });
 
   it("error: 守卫弱于契约（x >= 0 臂含 x=0 ⊭ positive）", () => {
@@ -205,9 +222,9 @@ function f(x) {
   });
 
   it("error: 补集臂 NaN 面（x < 0 ? 0 : x 的 else 含 NaN ⊭ nonNeg）", () => {
-    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0)：真实违约，不得因守卫机制漏报
-    expect(
-      retViolations(`
+    // NaN < 0 为假 → else 臂可达且 NaN ⊭ ge(0) ⇒ 违约输入**存在** ⇒ 契约不成立
+    // ⇒ error（Bug 1116：else 臂的返回项是声明域参数 ⇒ 值域已知 ⇒ 可判定）。
+    const src = `
 /**
  * @nudo:contract x num
  * @nudo:contract return nonNeg
@@ -215,8 +232,9 @@ function f(x) {
 function f(x) {
   return x < 0 ? 0 : x;
 }
-`),
-    ).toHaveLength(1);
+`;
+    expect(retViolations(src)).toHaveLength(1);
+    expect(retUnproven(src)).toHaveLength(0);
   });
 
   it("error: && 值形态的 false 臂 ⊭ number 契约（NaN 路径）", () => {

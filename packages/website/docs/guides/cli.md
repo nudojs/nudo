@@ -20,7 +20,7 @@ nudo — JavaScript types, computed
 
 Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
-**Setup:** `nudo init [path]` — write an adoption baseline (`nudo.check.profile: "adoption"`) into the nearest `package.json`. Idempotent: an existing `nudo` key is printed, never overwritten. In a zero-config, zero-directive project, a failing `nudo check` prints an `onboarding` block pointing here.
+**Setup:** `nudo init [path]` — write an adoption baseline (`nudo.check.profile: "adoption"`) into the nearest `package.json`. Idempotent: an existing `nudo` key is printed, never overwritten. An **invalid** `nudo` value (`null` / scalar / array) is replaced by the baseline with a warning; an **inheritable** ancestor `nudo` config is never shadowed (refused, exit 1); a workspace / container root is never written across (refused, exit 1). An **explicit** `nudo init <container-root>` writes the baseline into that root with a scope warning; only writing **across** the boundary from a subdirectory is refused. In a zero-config, zero-directive project, a failing `nudo check` prints an `onboarding` block pointing here.
 **Observation:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
 **Contracts:** `nudo contract` + `nudo check`.
 **Ecosystem:** `nudo export`.

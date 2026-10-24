@@ -3,7 +3,7 @@
  */
 import type { Statement, Node } from "@babel/types";
 import { indent } from "./helpers.ts";
-import { matchRelIdentLit } from "../../arithmetic.ts";
+import { matchRelIdentLit, matchRelIdentLitComposite } from "../../arithmetic.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;
@@ -843,6 +843,362 @@ export function narrowDiscriminantArmThunks(
   return `((${params}) => ${thunk})(${args})`;
 }
 
+// --- switch case 标签窄化（Bug 184） ---------------------------------------
+
+/** case 标签的 prim 字面量值（string / number / boolean） */
+export type CaseLabelValue = string | number | boolean;
+
+/**
+ * switch 臂的 case 标签窄化事实（Bug 184）。
+ *
+ * 判别式（`switch (x)` / `switch (o.kind)`）天然携带两类事实：
+ * - **命中事实**：本臂的 case 标签是字面量时，判别值在本臂内**等于**该字面量
+ *   （`case 1:` ⇒ 臂内 x === 1；`case null:` ⇒ 臂内 v === null）；
+ * - **排除事实**：本臂**之外**的 case 标签是字面量时，判别值在本臂内**不等于**
+ *   该字面量（`default:` 臂里 v !== null —— `case null` 已捕获 null）。
+ *
+ * 标识符判别式：命中事实以影子重绑表达（`((x) => THUNK)($lit(1))`——臂内 x
+ * 恒为该字面量）；排除事实只有 **nullish** 标签可表达（$removeNull /
+ * $removeUndefined / $removeNullish）——非 nullish 字面量的补集无 Abs 可表，
+ * 保守放弃。
+ * 成员判别式：命中 / 排除事实均走 $narrowMemberEq（keep=true / keep=false）。
+ *
+ * Bug 241（第二形态）：**非字面量 case 测试**（`case v === null:`）的
+ * nullish 比较事实走 compareExclude——判别变量可与判别式无关
+ * （`switch (true) { case v === null: … }`），故与判别名的排除事实分表。
+ */
+export type SwitchCaseFacts = {
+  /** 判别基名（标识符判别式 = 判别标识符；成员判别式 = 成员基名） */
+  name: string;
+  /** 判别成员键（成员判别式 `switch (o.kind)`）；undefined = 标识符判别式 */
+  key?: string;
+  /** 命中事实：本臂的 case 标签 prim 字面量 */
+  hit?: CaseLabelValue[];
+  /** 排除事实：其它臂的 case 标签 prim 字面量（成员判别式用） */
+  exclude?: CaseLabelValue[];
+  /** 排除事实里的 nullish 标签粒度（标识符判别式用） */
+  excludeNullish?: "null" | "undefined" | "nullish";
+  /**
+   * Bug 241（第二形态）：非字面量 case 测试（nullish 比较 `v === null`）
+   * 的排除事实——「该测试为假」⇒ 被比较的变量不含该 nullish 粒度。
+   * 判别变量名可与判别式无关（判别式是字面量 true 时）⇒ 独立于 name。
+   */
+  compareExclude?: { name: string; grain: "null" | "undefined" | "nullish" }[];
+};
+
+/** case 测试节点的标签事实（null / undefined / prim 字面量；其余不可判） */
+type CaseLabelKind =
+  | { k: "prim"; v: CaseLabelValue }
+  | { k: "null" }
+  | { k: "undefined" };
+
+/** case 测试节点的标签事实（非字面量 → undefined＝不产事实） */
+function caseLabelOf(node: unknown): CaseLabelKind | undefined {
+  const t = node as { type?: string; name?: string };
+  if (t?.type === "NullLiteral") return { k: "null" };
+  if (t?.type === "Identifier" && t.name === "undefined") return { k: "undefined" };
+  if (isPrimLitNode(node)) return { k: "prim", v: (node as { value: CaseLabelValue }).value };
+  return undefined;
+}
+
+/**
+ * 一臂的标签事实集：prim 字面量集 + nullish 粒度 + 「是否全是原始字面量」。
+ *
+ * Bug 1117：`allLiteral` = 本臂的**每个** case 测试都是原始字面量
+ * （prim / null / undefined）。共享体的多标签臂（`case null: case "ab":`）
+ * 与含**非字面量**测试的臂（`case v === null: case "ab":`）都 ⇒ 命中值
+ * **不唯一** ⇒ 不得按 prim 标签单值重绑（否则把 null 那条路径重绑成
+ * "ab" ⇒ `null.length` 本该抛 TypeError 却读出 2 ⇒ L2 may-throw 消失）。
+ */
+type ArmLabels = {
+  prims: CaseLabelValue[];
+  nullish: "null" | "undefined" | "nullish" | null;
+  /** 本臂的 case 测试**全部**是原始字面量（prim / null / undefined） */
+  allLiteral: boolean;
+};
+
+/** 收集一臂的 case 标签事实（prim 去重；null/undefined 合并粒度） */
+function armLabelsOf(tests: readonly unknown[]): ArmLabels {
+  const prims: CaseLabelValue[] = [];
+  let nullish: "null" | "undefined" | "nullish" | null = null;
+  let allLiteral = true;
+  for (const t of tests) {
+    const l = caseLabelOf(t);
+    if (!l) {
+      // 非字面量测试（`case v === null:`）⇒ 该臂的命中值不可由标签确定
+      allLiteral = false;
+      continue;
+    }
+    if (l.k === "prim") {
+      if (!prims.includes(l.v)) prims.push(l.v);
+      continue;
+    }
+    if (nullish === null) nullish = l.k;
+    else if (nullish !== l.k) nullish = "nullish";
+  }
+  return { prims, nullish, allLiteral };
+}
+
+/**
+ * Bug 241（第二形态）：非字面量 case 测试的 **nullish 比较**事实。
+ *
+ * 原生 case 测试是**运行时求值的表达式**——`case v === null:` 命中的是
+ * 「`v === null` 为真」那条路径（不是「判别值等于某标签」）。⇒ 该测试
+ * **为假**时（miss 路径 ⇒ 落到后续臂 / default），被比较的变量**不含**该
+ * nullish 粒度：`v === null` 为假 ⇒ v 不是 null（$removeNull）；`v == null`
+ * 为假 ⇒ v 既非 null 也非 undefined（$removeNullish）。
+ *
+ * 只认**可判的否定**：负向比较（`v !== null`）的否定是「v 是 null」——
+ * 无排除类 Abs 可表（保守放弃）；关系比较（`v > 0`）的否定含 NaN（NaN 与
+ * 任何比较皆假）——不可健全表示（同 narrowRelArmThunk 口径）。
+ */
+type NullishCompare = {
+  /** 被比较的变量名 */
+  name: string;
+  /** nullish 粒度（严格比较按 null/undefined 分粒；松散比较恒 nullish） */
+  grain: "null" | "undefined" | "nullish";
+  /** 负向比较（`!==` / `!=`）——命中即「不含该粒度」 */
+  negated: boolean;
+};
+
+/** case 测试节点的 nullish 比较事实（`X === null` / `X == null` / …） */
+function nullishCompareOf(test: unknown): NullishCompare | undefined {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type !== "BinaryExpression") return undefined;
+  const op = t.operator;
+  if (op !== "===" && op !== "==" && op !== "!==" && op !== "!=") return undefined;
+  const identOf = (n: unknown): string | undefined => {
+    const x = n as { type?: string; name?: string };
+    return x?.type === "Identifier" ? x.name : undefined;
+  };
+  const isNullLit = (n: unknown): boolean => (n as { type?: string })?.type === "NullLiteral";
+  const isUndefIdent = (n: unknown): boolean => {
+    const x = n as { type?: string; name?: string };
+    return x?.type === "Identifier" && x.name === "undefined";
+  };
+  let varName: string | undefined;
+  let other: unknown;
+  if (identOf(t.left) !== undefined && (isNullLit(t.right) || isUndefIdent(t.right))) {
+    varName = identOf(t.left);
+    other = t.right;
+  } else if (identOf(t.right) !== undefined && (isNullLit(t.left) || isUndefIdent(t.left))) {
+    varName = identOf(t.right);
+    other = t.left;
+  }
+  // "undefined" 是全局绑定——不可作影子重绑的变量名
+  if (!varName || varName === "undefined") return undefined;
+  const negated = op === "!==" || op === "!=";
+  const loose = op === "==" || op === "!=";
+  // 松散比较：null 与 undefined 等值（null == undefined 为真）⇒ 粒度 nullish
+  const grain: NullishCompare["grain"] = loose
+    ? "nullish"
+    : isUndefIdent(other)
+      ? "undefined"
+      : "null";
+  return { name: varName, grain, negated };
+}
+
+/** 一臂的 nullish 比较事实（单测试臂——多测试臂的 miss 事实是「析取」的
+ *  否定，不可由单条比较推出 ⇒ 保守放弃） */
+function singleNullishCompare(arm: {
+  tests: readonly unknown[];
+  isDefault: boolean;
+}): NullishCompare | undefined {
+  if (arm.isDefault) return undefined;
+  if (arm.tests.length !== 1) return undefined;
+  return nullishCompareOf(arm.tests[0]);
+}
+
+/**
+ * Bug 241（第二形态）：判别式是**字面量 true** 时的臂事实（case 测试的
+ * 否定 ⇒ miss 路径收窄）。
+ *
+ * - 本臂自身：负向比较（`v !== null`）命中 ⇒ 「v 不含该 nullish 粒度」
+ *   （$removeNull / $removeNullish）；正向比较的命中是「v 含该粒度」——
+ *   无排除类 Abs 可表 ⇒ 保守放弃；
+ * - miss 路径（落到本臂 ⇒ **之前**各臂的 case 测试已求值且为假）⇒ 它们
+ *   的否定事实成立（正向比较 ⇒ 「v 不含该粒度」）。
+ */
+function booleanDiscCaseFacts(
+  arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+  i: number,
+): SwitchCaseFacts | undefined {
+  const cmpExclude: { name: string; grain: "null" | "undefined" | "nullish" }[] = [];
+  const own = singleNullishCompare(arms[i]!);
+  if (own && own.negated) cmpExclude.push({ name: own.name, grain: own.grain });
+  for (let j = 0; j < i; j++) {
+    const c = singleNullishCompare(arms[j]!);
+    if (c && !c.negated) cmpExclude.push({ name: c.name, grain: c.grain });
+  }
+  if (cmpExclude.length === 0) return undefined;
+  return { name: cmpExclude[0]!.name, compareExclude: cmpExclude };
+}
+
+/**
+ * switch 各臂的 case 标签窄化事实（Bug 184）。
+ *
+ * 判别目标：标识符（`switch (x)`）或成员（`switch (o.kind)`，复用
+ * memberGuardTarget 的判别身份识别）——其余形态（调用 / 计算键 / 三元）
+ * 不产事实（宁缺毋假）。
+ *
+ * 排除集合的取法：
+ * - 非 default 臂：**其它**非 default 臂的标签（贯穿路径上判别值仍是本臂的
+ *   命中值 ⇒ 与其它臂的标签值互斥）；
+ * - default 臂：**之前**的非 default 臂的标签（default 之后的臂可被贯穿
+ *   进入——那条路径上判别值可能是它们的标签值 ⇒ 不可排除）。
+ */
+export function switchCaseFacts(
+  discriminant: unknown,
+  arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+): (SwitchCaseFacts | undefined)[] {
+  const disc = discriminant as { type?: string; name?: string; value?: unknown };
+  // Bug 241（第二形态）：判别式是**字面量 true** + 非字面量 case 测试
+  // （`case v === null:`）——臂事实来自 case 测试的**否定**（miss 路径
+  // 收窄）：判别值是布尔 true 且 case 测试是布尔值时，「该臂未命中」⟺
+  // 「该测试为假」⇒ 落到后续臂 / default 的路径上，被比较的变量不含该
+  // nullish 粒度。判别值是其它值时「未命中」不蕴含「测试为假」⇒ 不产事实。
+  if (disc?.type === "BooleanLiteral" && disc.value === true) {
+    return arms.map((_arm, i) => booleanDiscCaseFacts(arms, i));
+  }
+  let name: string;
+  let key: string | undefined;
+  if (disc?.type === "Identifier" && disc.name) {
+    name = disc.name;
+  } else {
+    const m = memberGuardTarget(discriminant);
+    if (!m) return arms.map(() => undefined);
+    name = m.name;
+    key = m.key;
+  }
+  const labels = arms.map((a) => armLabelsOf(a.tests));
+  return arms.map((arm, i) => {
+    const mine = labels[i]!;
+    const exclPrim: CaseLabelValue[] = [];
+    let exclNullish: "null" | "undefined" | "nullish" | null = null;
+    for (let j = 0; j < arms.length; j++) {
+      if (j === i) continue;
+      const other = arms[j]!;
+      if (other.isDefault) continue;
+      // default 臂只排除**之前**的臂（之后的臂可被贯穿进入）
+      if (arm.isDefault && j > i) continue;
+      const l = labels[j]!;
+      for (const p of l.prims) {
+        if (mine.prims.includes(p)) continue;
+        if (!exclPrim.includes(p)) exclPrim.push(p);
+      }
+      if (l.nullish) {
+        exclNullish = exclNullish === null ? l.nullish : exclNullish === l.nullish ? exclNullish : "nullish";
+      }
+    }
+    const facts: SwitchCaseFacts = { name };
+    if (key !== undefined) facts.key = key;
+    // 命中事实：仅非 default 臂（default 臂无标签 ⇒ 无命中值）
+    //
+    // Bug 1117：**同体的所有标签都必须是原始字面量**才谈得上「命中值」：
+    // - `case null: case "ab":` 共享一个体 ⇒ 命中值可能是 null **或** "ab"
+    //   ⇒ 只按 prim 标签单值重绑会把 null 那条路径重绑成 "ab"
+    //   （`const x = null; switch (x) { case null: case "ab": return x.length; }`
+    //   原生抛 TypeError，引擎却按 "ab" 读出 2 ⇒ L2 may-throw 消失 = 假绿）。
+    // - `case v === null: case "ab":` 含**非字面量**测试 ⇒ 命中值不可由标签确定
+    //   （原生命中的是「测试为真」那条路径）。
+    // ⇒ 这两类臂**不产命中事实**（宁缺毋假）。
+    //
+    // 成员判别式的多标签臂（case "a": case "b": 共享体）——$narrowMemberEq
+    // 的 keep=true 是**单值**语义（链式多值 = 交集 ⇒ 剪空后原样返回），
+    // 保守放弃多标签臂的命中窄化。
+    if (
+      !arm.isDefault &&
+      mine.allLiteral &&
+      mine.nullish === null &&
+      mine.prims.length > 0 &&
+      (key === undefined || mine.prims.length === 1)
+    ) {
+      facts.hit = [...mine.prims];
+    }
+    if (key !== undefined) {
+      if (exclPrim.length > 0) facts.exclude = exclPrim;
+    } else if (exclNullish) {
+      facts.excludeNullish = exclNullish;
+    }
+    return facts;
+  });
+}
+
+/**
+ * case 标签窄化在臂体上的应用（Bug 184）。
+ *
+ * 标识符判别式：命中事实 → 影子重绑为该字面量（`$lit(1)` / 多标签 `$join`）；
+ * 排除事实（nullish）→ `$removeNull` / `$removeUndefined` / `$removeNullish`
+ * 影子重绑。成员判别式：命中 → `$narrowMemberEq(..., true)`；排除 →
+ * `$narrowMemberEq(..., false)`（剪掉 key 值域恰为该字面量的成员）。
+ *
+ * 跳过口径与既有窄化通道一致：判别名在 fork 绑定集（臂内写 / 快照重绑）时
+ * 跳过（影子参数会吞掉臂内写）；strict 非法绑定名（arguments / eval）跳过。
+ *
+ * Bug 241（第二形态）：非字面量 case 测试的 nullish 比较事实
+ * （facts.compareExclude）——判别变量名可与判别式无关，各自独立跳过口径。
+ */
+export function narrowCaseLabelArmThunk(
+  thunk: string,
+  facts: SwitchCaseFacts | undefined,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!facts) return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  let out = thunk;
+  // 判别名窄化（既有口径）：判别名在 fork 绑定集（臂内写 / 快照重绑）时跳过
+  if (!(names.has(facts.name) || isStrictIllegalBinding(facts.name))) {
+    if (facts.key !== undefined) {
+      // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
+      for (const v of facts.exclude ?? []) {
+        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false))`;
+      }
+      for (const v of facts.hit ?? []) {
+        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true))`;
+      }
+    } else {
+      if (facts.excludeNullish) {
+        const call =
+          facts.excludeNullish === "null" ? "$removeNull" :
+          facts.excludeNullish === "undefined" ? "$removeUndefined" :
+          "$removeNullish";
+        out = `((${facts.name}) => ${out})(${call}(${facts.name}))`;
+      }
+      const hit = facts.hit ?? [];
+      if (hit.length > 0) {
+        // Bug 1117（P2）：`case 0:` 命中的是 `x === 0` ⇒ 值域含 **-0**
+        // （`-0 === 0` 为真，但 `-0 !== 0`）⇒ 直接重绑 `$lit(0)` 会把 -0
+        // 改成 +0（`const x = -0; switch (x) { case 0: return 1 / x; }`
+        // 原生是 -Infinity，引擎算成 Infinity = **自信的错值**）⇒ 数值 0 的
+        // 标签按**交集细化** `{0, -0}`（`$join($lit(0), $lit(-0))`），
+        // 不改写成单值。
+        const lits: string[] = [];
+        for (const v of hit) {
+          if (typeof v === "number" && v === 0) {
+            lits.push("$lit(0)", "$lit(-0)");
+            continue;
+          }
+          lits.push(`$lit(${JSON.stringify(v)})`);
+        }
+        const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
+        out = `((${facts.name}) => ${out})(${arg})`;
+      }
+    }
+  }
+  // Bug 241（第二形态）：case 测试的 nullish 比较事实（miss 路径收窄）——
+  // 变量名与判别式无关 ⇒ 各自独立判跳过（影子参数会吞掉臂内写）
+  for (const c of facts.compareExclude ?? []) {
+    if (names.has(c.name) || isStrictIllegalBinding(c.name)) continue;
+    const call =
+      c.grain === "null" ? "$removeNull" :
+      c.grain === "undefined" ? "$removeUndefined" :
+      "$removeNullish";
+    out = `((${c.name}) => ${out})(${call}(${c.name}))`;
+  }
+  return out;
+}
+
 // --- 关系守卫（Bug 1）-----------------------------------------------------
 
 /**
@@ -859,10 +1215,27 @@ export type RelGuard = {
   op: "gt" | "ge" | "lt" | "le";
   /** 字面量界 */
   k: number;
+  /**
+   * **复合**关系式（合取 `x > 0 && x < 10`）派生的守卫（族 60 · 第 4 条）。
+   *
+   * 合取为真 ⇒ 每一合取项为真 ⇒ **事实臂**接守卫可靠；
+   * 但 `¬(A ∧ B)` = `¬A ∨ ¬B` **不是**单一关系 ⇒ **补集方向**
+   * （后续路径 / else 臂）**不可**用它 ⇒ 消费方
+   * （`narrowRelComplementArmThunk`）**必须**跳过 `composite: true` 的守卫，
+   * 否则会在「测试为假」的路径上断言 `¬A`（**假绿**）。
+   */
+  composite?: boolean;
+  /**
+   * 复合守卫的**其余**合取项界（**同名**变量；事实臂一并接上）。
+   * `x > 0 && x < 10` ⇒ 主界 `x > 0` + 其余界 `x < 10`
+   * （事实臂同时持有两个界 ⇒ 契约朝任一方向都能证得）。
+   */
+  extra?: Array<{ op: "gt" | "ge" | "lt" | "le"; k: number }>;
 };
 
 export function relGuardOf(test: unknown): RelGuard | undefined {
-  return matchRelIdentLit(test);
+  // 单一关系式优先（行为逐字不变）；复合式（合取）才走复合匹配。
+  return matchRelIdentLit(test) ?? matchRelIdentLitComposite(test);
 }
 
 /** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
@@ -878,5 +1251,12 @@ export function narrowRelArmThunk(
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
   if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
-  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(guard.op)}, ${guard.k}))`;
+  // 复合守卫（合取）的**其余**合取项界一并接上（同名变量）——
+  // 合取为真 ⇒ 每一合取项为真 ⇒ 事实臂同时持有全部界
+  // （只接一个界会在契约朝**另一**方向时把「证不出」变成「证反了」⇒ 假红）。
+  let out = thunk;
+  for (const b of [{ op: guard.op, k: guard.k }, ...(guard.extra ?? [])]) {
+    out = `((${guard.name}) => ${out})($refineRel(${guard.name}, ${JSON.stringify(b.op)}, ${b.k}))`;
+  }
+  return out;
 }

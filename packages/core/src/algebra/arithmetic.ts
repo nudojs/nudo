@@ -15,4 +15,4 @@ export { add, sub } from "./arithmetic/addsub.ts";
 export type { NumBounds } from "./arithmetic/bounds.ts";
 export { numericBounds, isNonNaN } from "./arithmetic/bounds.ts";
 export { mul, div, mod } from "./arithmetic/muldiv.ts";
-export { cmp, trueConstraint, refineAbsForRelTrue, matchRelIdentLit, falseConstraint } from "./arithmetic/cmp.ts";
+export { cmp, trueConstraint, refineAbsForRelTrue, matchRelIdentLit, matchRelIdentLitComposite, falseConstraint } from "./arithmetic/cmp.ts";

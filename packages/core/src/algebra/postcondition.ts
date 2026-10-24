@@ -32,6 +32,7 @@ import { isNullishLitAbs } from "./surface.ts";
 import { isOobUndef } from "./exec/runtime/state.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { getSlot } from "./objects.ts";
+import { accessorReadDomain } from "./accessors.ts";
 import { termEquals } from "./term.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
@@ -42,8 +43,15 @@ export type PostProof =
   | { status: "unprovable"; reason: string };
 
 /**
- * 证明通道选项：phi = 路径前提；seen = lazy thunk 环保护（per-path 副本，
- * 见 assertImplies 入口）。内部 helper 透传同一对象。
+ * 证明通道选项：phi = 路径前提（返回点的 Φ）；seen = lazy thunk 环保护
+ * （per-path 副本，见 assertImplies 入口）。内部 helper 透传同一对象。
+ *
+ * Bug 1080：Φ 侧只按**同项**口径计入证据面（见 `isBoundedEvidenceMissing`）——
+ * 与被约束项无关的前提事实不得把「证不出」升级成「确定违约」。
+ *
+ * Bug 1094：Φ 侧计入证据面的条件收紧为「**同项** ∧ **蕴含**该约束的 pred」
+ * （见 `phiSuppliesConstraint`）——Φ 只能把「证不出」升级成「已证明」，
+ * **绝不**反向制造「确定违约」（error / 假红）。
  */
 type AssertOpts = { phi?: Phi; seen?: Set<object> };
 
@@ -87,19 +95,126 @@ function isValueSetUnknown(ret: Abs): boolean {
 }
 
 /**
- * 值域已知但无 pred 证据（bare prim / 无界表达式）：
+ * 值域**未被跟踪**（派生表达式 / 无 pred 证据）：
  * 后置界义务证不出也反证不了 → unprovable，不得当 disproved。
- * 只有 ret.pred 存在却不蕴含时才有「确定不满足」的证据（F3 点 1）。
+ * 只有**值域已知**（ret.pred 有事实）却不蕴含时才有「确定不满足」的证据（F3 点 1）。
+ *
+ * Bug 1116（回退 Bug 370 的语义降级）：判据是「**ret.pred 有事实**」，不是
+ * 「**带界**证据」。返回契约是对**所有**输入成立的后置 ⇒ 值域已知
+ * （声明域参数 / 字面量 / 带界事实）却不蕴含契约 ⇒ **契约不成立**
+ * （存在违约输入）⇒ 判 `disproved`（error）。
+ * - 旧口径（Bug 370：只有 gt/ge/lt/le 算证据）把 `typeof` 级证据
+ *   （`@nudo:contract x num` 的声明域参数）判成「无证据」⇒ 降级
+ *   `unproven-return`（**warning**）⇒ warning 不改 exit code ⇒
+ *   `nudo check` 门禁空转（假绿）：`return x`（x: number()）对
+ *   `return positive` 是**确定违约**（x=0 即违约）却只报 warning。
+ *   docs/design/cli-semantics.md §5.5：warning 只针对 any/unknown
+ *   （推断失败）——声明域参数不是 any/unknown ⇒ 不得降级。
+ * - `unprovable` 收窄到「**无 pred 证据**」（`return x + 1` /
+ *   `return Math.abs(x)`：值域未被跟踪 ⇒ 证不出也反证不了）。
+ *
+ * Bug 1080：证据面 = **ret.pred（值域事实）∧ Φ 的「同项」界事实（路径事实）**。
+ *
+ * - Φ 侧只认**约束被约束项本身**的界原子（`termEquals` 同项判定）：路径
+ *   前提里的界事实可能约束的是**另一个项**（`if (x > 0) return y` 的
+ *   `x > 0` 与 y 无关）⇒ 拿它当 y 的值域证据 ⇒ 「证不出」被误判成
+ *   「确定不满足」（error）⇒ **假红**（用无关证据制造确定违约）。
+ * - Φ 侧**同项**的界事实才计入（`return y` 且路径前提是 `y > 0` ⇒ 关系
+ *   事实确实落在返回项上 ⇒ 计入证据面 ⇒ 可走蕴含判定 ⇒ 义务可证）。
+ *
+ * Bug 1094：Φ 侧计入证据面的条件再收紧一档——**同项** ∧ **蕴含**该约束的
+ * pred（见 `phiSuppliesConstraint`）：
+ * - 旧口径（只查「同项」）把「Φ 的界弱于契约」（Φ = `y > 0` vs 契约
+ *   `y > 10`）也当成 y 的带界证据 ⇒ 蕴含失败落到 `disproved`（error）——
+ *   而真实结论是「证不出」（返回值可能是 20）⇒ **假红**。
+ * - 新口径下 Φ 只在**足以推出契约**时才算证据 ⇒ Φ 只能把 `unprovable`
+ *   变 `proved`，**永不**产生 `disproved`。
  */
-function isBoundedEvidenceMissing(ret: Abs, constraint: NudoConstraint): boolean {
+function isBoundedEvidenceMissing(
+  ret: Abs,
+  constraint: NudoConstraint,
+  phi: Phi,
+): boolean {
   // 契约无 pred 义务：裸 prim 合格即可
   if (constraint.preds.length === 0 && !constraint.members) return false;
   // 字面量有确定值，可走域隶属 → 不算证据缺失
   if (ret.term?.op === "lit") return false;
-  // ret.pred 存在：可走蕴含判定 → 不算证据缺失
+  // 值域事实（Bug 1116）：`ret.pred` 有事实 ⇒ 该项的值域**已知**
+  // （声明域参数的 typeof 级证据 / 守卫窄化的界事实）⇒ 返回义务**可判定**：
+  // 「不蕴含契约」= 「契约不成立」（契约对**所有**输入成立 ⇒ 值域 ⊄ 契约域
+  // ⇒ 存在违约输入）⇒ 判 `disproved`（error）。**不得**降级成
+  // `unproven-return`（warning）：warning 不改 exit code ⇒ 门禁空转（假绿）。
+  //
+  // ⚠ 只有**带界**原子（gt/ge/lt/le）才算证据是 Bug 370 的口径，已撤销：
+  //   `typeof` 级证据虽不描述值域，但**声明域参数**的值域就是它的声明域
+  //   （`number()` ⇒ 任意 number）⇒ 「不蕴含」确实蕴含「契约不成立」。
   if (ret.pred && ret.pred.op !== "true") return false;
-  // 有约束义务但无 pred 证据（bare number vs gt(0)）→ 不可判定
+  // 路径事实：Φ 里**同项且蕴含该约束**的界事实（Bug 1094）
+  if (phiSuppliesConstraint(phi, constraint, ret)) return false;
+  // 无 pred 证据（bare prim / 派生表达式）⇒ 值域未被跟踪 ⇒ 不可判定
   return true;
+}
+
+/**
+ * Φ（路径前提）能否**单独**证明该约束——即 Φ 是否是「返回项的带界证据」。
+ *
+ * 判据（Bug 1094）：**同项** ∧ **蕴含**：
+ * - 同项：Φ 的界原子约束的是返回项本身（`termEquals`；`length(item)` 形态
+ *   算该项的界）——与返回项无关的前提事实（`if (x > 0) return y` 的 `x > 0`）
+ *   不构成返回值的值域证据。
+ * - 蕴含：Φ ⊢ 该契约的 pred（锚定到返回项）——Φ 的界**弱于**契约时
+ *   （`y > 0` vs `y > 10`）不算证据 ⇒ 判「证不出」而非「确定违约」。
+ *
+ * ⚠ `implies` **不可判**：证不出时返回 false ⇒ 此处按「不满足」处理 ⇒
+ * Φ 侧证据缺失 ⇒ 走 `unprovable`（warning）——**不得**反向当成「不蕴含」
+ * 而制造 `disproved`（error / 假红）。
+ *
+ * 导出给 check 面做**归因**判定（本次证明是否依赖了路径前提）。
+ */
+export function phiSuppliesConstraint(
+  phi: Phi | undefined,
+  constraint: NudoConstraint,
+  ret: Abs,
+): boolean {
+  if (!phi || phi.op === "true") return false;
+  const item = retAnchorTerm(ret);
+  if (!hasSameItemBoundEvidence(phi, item)) return false;
+  return implies(phi, instantiateOnTerm(constraint, item));
+}
+
+/**
+ * Φ（路径前提）里是否含**同项**界原子——即约束**被约束项本身**的界事实。
+ *
+ * 同项判定：界原子的左侧与被约束项 `termEquals`；长度界
+ * （`length(item)` 形态）视为**该项**的界（同一项的长度事实）。
+ * 约束的是**别的项**时不计入（见 `isBoundedEvidenceMissing` 的 Bug 1080 段）。
+ */
+function hasSameItemBoundEvidence(p: Phi | undefined, item: Term): boolean {
+  if (!p) return false;
+  switch (p.op) {
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+      return sameItemTerm(item, p.a);
+    case "and":
+    case "or":
+      return p.args.some((a) => hasSameItemBoundEvidence(a, item));
+    case "not":
+      // `not(gt(item,0))` ≡ `item <= 0` ⇒ 仍是该项的界
+      return hasSameItemBoundEvidence(p.arg, item);
+    default:
+      return false;
+  }
+}
+
+/** 界原子的左侧是否**就是**被约束项（`length(item)` 形态算同一项的界） */
+function sameItemTerm(item: Term, left: Term): boolean {
+  if (termEquals(item, left)) return true;
+  if (left.op === "app" && left.fn === "length" && left.args.length === 1) {
+    return termEquals(item, left.args[0]!);
+  }
+  return false;
 }
 
 /** 扁平化 sum 臂（嵌套 sum 一并拆开）；非 sum 返回自身 */
@@ -181,7 +296,14 @@ function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
 
 /**
  * 统一后置证明：返回 Abs 的值域是否蕴含契约。
- * phi：路径前提（可选，与前置同一 Phi 通道）。
+ * phi：路径前提（可选，与前置同一 Phi 通道）——**返回点的 Φ**（调用方
+ * 传入；缺省 = `pTrue`）。Φ 侧只按**同项**口径计入证据面（Bug 1080）：
+ * 与被约束项无关的前提事实（`if (x > 0) return y` 的 `x > 0`）不构成
+ * 返回值的值域证据 ⇒ 判「证不出」而非「确定违约」。
+ *
+ * Bug 1094：Φ 侧计入证据面的条件 = **同项** ∧ **蕴含**该约束的 pred
+ * （`phiSuppliesConstraint`）⇒ Φ 只能把 `unprovable` 变 `proved`，
+ * **绝不能**产生 `disproved`（error / 假红）。
  *
  * DEC-001 + scalar-over-sum：sum 返回按成员分发（shape/array/scalar 同口径），
  * nullish 臂走契约显式化；union/nullable 对「每个臂 ∃ 契约成员」对账。
@@ -418,7 +540,16 @@ function assertImpliesSingle(
   }
 
   // --- fn 契约：Phase 1 只展示不执法 ---
-  if (constraint.fn) return proved();
+  // Bug 351：旧口径直接 `return proved()` —— fn 形态的返回义务被**整条判为
+  // 「已证明」**（零诊断假绿：「无法执法」≠「已证明」）。现在判 unprovable：
+  // 无法证明 ≠ 已证明 ⇒ 消费方出 warning（nudo:unproven-return），门禁不假装绿。
+  // （正常路径下 fn 形态已在 refine.ts 的 return 段提取里拆成 `fn.returns`
+  //   ——与侧车口径一致——这里只是「万一还有 fn 形态漏到证明通道」的兜底。）
+  if (constraint.fn) {
+    return unprovable(
+      "fn-shaped return contract cannot be enforced (declare the returned value as the fn's returns constraint)",
+    );
+  }
 
   // --- 标量：prim + Pred 蕴含（统一证明通道）---
   return assertScalar(arm, constraint, phi);
@@ -464,7 +595,9 @@ function assertShapeFields(
       }
       continue;
     }
-    const r = assertImplies(slot.value, field.constraint, opts);
+    // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
+    // 按占位槽证明会把 getter 的返回值判成违约（假红），须取 getter 读域。
+    const r = assertImplies(accessorReadDomain(ret, key) ?? slot.value, field.constraint, opts);
     if (r.status === "disproved") {
       return disproved(`field ${key}: ${r.reason}`);
     }
@@ -528,13 +661,27 @@ function assertScalar(
 
   if (constraintPred.op !== "true") {
     if (implies(retPred, constraintPred)) return proved();
+    // Φ 只**加**事实、不减事实 ⇒ ret.pred 单独蕴含时同样成立（合取判定
+    // 口径的防御性回退：接上 Φ 不得让原本可证的义务退化成「证不出」）。
+    if (
+      phi.op !== "true" &&
+      ret.pred &&
+      ret.pred.op !== "true" &&
+      implies(ret.pred, constraintPred)
+    ) {
+      return proved();
+    }
     // numericBoundsImply：src 界更紧可蕴含更宽目标（x>5 ⇒ x>0）
     if (ret.pred && ret.pred.op !== "true" && numericBoundsImplyLocal(ret.pred, constraintPred)) {
       return proved();
     }
+    // Φ 侧单独蕴含该约束 ⇒ 义务可证（路径前提足以推出返回值的界；Bug 1094）
+    // ——Φ 只在这一条上把「证不出」升级成「已证明」；反之（Φ 的界弱于契约）
+    // 一律走下面的「证据缺失 ⇒ 证不出」，**不得**落到 disproved（假红）。
+    if (phiSuppliesConstraint(phi, constraint, ret)) return proved();
     // 有界义务但无 pred 证据（bare prim / 无界表达式 vs gt(0)）→ 不可判定
     // 只有 ret.pred 存在却不蕴含时才是「确定不满足」（F3 点 1）
-    if (isBoundedEvidenceMissing(ret, constraint)) {
+    if (isBoundedEvidenceMissing(ret, constraint, phi)) {
       return unprovable(
         `cannot prove return satisfies ${formatConstraint(constraint)} (no bound evidence on the return value)`,
       );
@@ -561,7 +708,7 @@ function assertScalar(
 
   // 非字面量：pred 蕴含失败但值域已知且有 pred 证据 → 后置证不出 = 违约（fail-closed）
   if (constraintPred.op !== "true" || constraint.preds.length > 0) {
-    if (isBoundedEvidenceMissing(ret, constraint)) {
+    if (isBoundedEvidenceMissing(ret, constraint, phi)) {
       return unprovable(
         `cannot prove return satisfies ${formatConstraint(constraint)} (no bound evidence on the return value)`,
       );

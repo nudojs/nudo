@@ -7,15 +7,24 @@
 
 import type { parseSource } from "./parse-source.ts";
 import type { Abs } from "./abs.ts";
-import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbsMultiline, formatShape } from "./format.ts";
 import { identBoundaryRegex } from "./code-text.ts";
+import { absWithStableTermIds } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { formalParamSignatureNames } from "./param-surface.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
 
-/** L0 命中的 symbolic 对象稳定：display/detail 按 Abs 身份缓存 */
-const sigFormatCache = new WeakMap<Abs, { display: string; detail: string }>();
+/**
+ * L0 命中的 symbolic 对象稳定：display/detail 按 (Abs 身份, 函数名) 缓存。
+ *
+ * Bug 377：缓存键**只有 Abs 对象身份**，但缓存值 `detail` 内嵌**函数名**
+ * （`formatAbsMultiline(absVal, name)`）⇒ 共享同一 Abs 单例（`never` /
+ * `unknown` 是 `abs.ts` 的模块级单例）的第 2/3 个函数**串号**（`detail`
+ * 全写着第一个函数的名字）⇒ JSON 信封里 `name` 与 `detail` 自相矛盾。
+ * ⇒ 键必须覆盖值的全部依赖：Abs 身份 **+** 函数名。
+ */
+const sigFormatCache = new WeakMap<Abs, Map<string, { display: string; detail: string }>>();
 
 /** 入口形参个数估计（CJS / generalize 失败时喂 any 实参） */
 export function estimateEntryParamCount(
@@ -102,6 +111,27 @@ export function isDefaultExportName(source: string, fnName: string): boolean {
   return re.test(source);
 }
 
+/**
+ * 入口形参位 → 展示串（Bug 348 / 965）。
+ *
+ * - `shape.k === "unknown"`：term 是 nullish 字面量（lit null / lit undefined）
+ *   ⇒ 印它自己的名字（`null` / `undefined`），不得与「真 unknown」混淆
+ *   （design §2：真 unknown 不伪装成 any）；否则照旧印 `unknown`。
+ * - 其余：pred 把该项钉死成单个字面量（`eq(self, lit(v))`）时印 `lit(v)`
+ *   ——字面量只活在 **pred** 里（shape 无字面量位），只读 shape 的渲染面
+ *   看不见它（契约面 `(x: lit(1))` / dts / zod / standard 三面都看得见）。
+ */
+export function formatEntryParamShape(t: Abs): string {
+  if (t.shape.k === "unknown") {
+    const term = t.term;
+    if (term?.op === "lit" && (term.value === null || term.value === undefined)) {
+      return formatShape(t);
+    }
+    return "unknown";
+  }
+  return formatShape(t, { showLits: true });
+}
+
 export function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
   const names =
     g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
@@ -109,7 +139,7 @@ export function formatEntrySigLine(name: string, g: PolyFn, throws: string): str
     .map((p, i) => {
       const t = g.typeParams[i]?.value;
       // design §2：无约束 any；真 unknown 不得伪装
-      const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
+      const shown = !t ? "any" : formatEntryParamShape(t);
       return `${p}: ${shown}`;
     })
     .join(", ");
@@ -162,13 +192,34 @@ export function findFnLoc(
   return {};
 }
 
+/**
+ * 签名的多行明细（机器面 `signatures[].detail` 与人类面 `--verbose` **同源**）。
+ *
+ * 形态沿用 `formatAbsMultiline`（首行 = 函数名 —— Bug 377 的「不得串号」
+ * 依赖它）；**term / pred 里的引擎内部计数器 id 换成稳定名**（`len#2` →
+ * `len`）—— 编号随进程漂移 ⇒ 不得进对外载荷（Bug 413），而谓词证据
+ * （`len ≥ 0`）必须保留。
+ */
+function formatSigDetail(absVal: Abs, name: string): string {
+  return formatAbsMultiline(absWithStableTermIds(absVal), name);
+}
+
 export function formatSigCached(absVal: Abs, name: string): { display: string; detail: string } {
-  const hit = sigFormatCache.get(absVal);
+  // 键 = (Abs 身份, 函数名)：detail 内嵌函数名 ⇒ 名字必须进键（Bug 377）
+  let byName = sigFormatCache.get(absVal);
+  if (!byName) {
+    byName = new Map<string, { display: string; detail: string }>();
+    sigFormatCache.set(absVal, byName);
+  }
+  const hit = byName.get(name);
   if (hit) return hit;
   const out = {
-    display: formatAbs(absVal),
-    detail: formatAbsMultiline(absVal, name),
+    // **人类面口径**（`formatShape`）：与 `formatCheckReport` 的签名行**逐字
+    // 同源**（Bug 413：机器面此前用 `formatAbs` ⇒ 把 term / pred 段渲进
+    // 对外载荷，其中混着引擎内部计数器 id `len#N` ⇒ 载荷随参数列表位置漂移）。
+    display: formatShape(absVal),
+    detail: formatSigDetail(absVal, name),
   };
-  sigFormatCache.set(absVal, out);
+  byName.set(name, out);
   return out;
 }

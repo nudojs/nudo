@@ -363,11 +363,19 @@ describe("Bug 80: class expressions route through the class machinery", () => {
 describe("Bug 58: generator calls are total (body throws deferred to iteration)", () => {
   it("explicit throw in body does not surface at call time", () => {
     const r = evalSrc(`export function* genThrow() { throw new Error("e"); }`, "genThrow");
-    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）；体内 throw 仍被
-    // $gen 丢弃式帧吞掉（调用期不表面）
-    expect(r.value).toContain("next");
+    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）——**协议面在运行面**
+    // （`typeof gi.next`），不在**投影面**（Bug 240：协议槽是 internal 槽，
+    // 不进签名面）；体内 throw 仍被 $gen 丢弃式帧吞掉（调用期不表面）
+    expect(r.value).toMatch(/^\{/);
     expect(r.kinds).toEqual([]);
     expect(r.throws).not.toContain("Error");
+    // 协议面负控制（运行面）
+    const p = evalSrc(
+      `export function* genProto() { yield 1; }
+       export function probe() { const gi = genProto(); return typeof gi.next; }`,
+      "probe",
+    );
+    expect(p.value).toBe('"function"');
   });
 
   it("may-throw member access in body does not leak into the entry throws domain", () => {
@@ -462,7 +470,10 @@ describe("Bug 80 (differential): #x in o routes through $in", () => {
 
   it("transpile emits $in($lit(key), recv) — PrivateName not folded to void 0", () => {
     const out = transpileSource(`class A { #x = 1; has() { return #x in this; } }`);
-    expect(out).toContain(`$in($lit("#x"), __this)`);
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // "键是真实私有名（未被折成 void 0）"，不绑死作用域串。接收者名属于
+    // Bug 1160 的载体分配面，不在本断言（只要求是标识符）。
+    expect(out).toMatch(/\$in\(\$lit\("#[^"]*x"\), [A-Za-z_$][\w$]*\)/);
   });
 });
 
@@ -517,6 +528,13 @@ describe("Bug 81 (differential): private-field compound assignment is read-modif
 
   it("transpile emits $add($get(...)) under the $set wrapper", () => {
     const out = transpileSource(`class A { #x = 1; inc() { this.#x += 1; return this.#x; } }`);
-    expect(out).toContain(`(($set(__this, "#x", __v)), __v))($add($get(__this, "#x"), $lit(1))`);
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // "复合赋值是读-改-写（读 $get 与写 $set 用同一私有名键）"，不绑死
+    // 作用域串与具体发射形状
+    const key = /"#[^"]*x"/.exec(out)?.[0];
+    expect(key).toBeDefined();
+    const esc = (key as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(out).toMatch(new RegExp(`\\$add\\(\\$get\\([^,]+, ${esc}\\), \\$lit\\(1\\)\\)`));
+    expect(out).toMatch(new RegExp(`\\$set\\([^,]+, ${esc},`));
   });
 });

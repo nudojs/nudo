@@ -1,15 +1,44 @@
 /**
  * transpile 共享 AST 工具：形参名、match、fold、静态键、作用域收集、mutator receiver 扫描。
  * 不依赖 stmt/expr 发射器（无环）。
+ *
+ * 不变量（@nudo:as / @nudo:replace 指令面）：
+ * - **作用范围按 AST 节点身份**（源文本字符区间 [start, end)）判定，
+ *   不是「同一行号窗口」：多行语句 / 嵌套块 / 同行下一条语句都不再被命中
+ *   （Bug 166）。as 的目标是**承载指令的那条语句**；replace 的目标是该
+ *   语句子树内、**不跨作用域边界**的子表达式节点（边界在收集面划定）。
+ * - **replace 命中的子表达式仍要求值**（副作用与 throws 域保留），只是
+ *   结果被注入值取代（Bug 165）；旧口径整段替换 → 副作用与抛错域消失。
  */
 import type { Statement, Node, Expression } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
 import { HOST_INTRINSIC_SET } from "./intrinsics.ts";
+import { emitTranspileExpression } from "./transpile-dispatch.ts";
+import { NudoUnsupportedError } from "../unsupported.ts";
 
 export function paramDisplayNames(params: unknown[] | undefined): string[] {
   return formalParamDisplayNames(formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]));
+}
+
+/**
+ * Bug 399：逐位「可省略」标记（与 `paramDisplayNames` **同下标同长度**）。
+ *
+ * 用途：默认形参（`f(a, b = 1)`）在形参表面只是**光秃秃的名字**（`b`）
+ * ⇒ 必选元数按名字后缀判时会被计成必选 ⇒ `nudo:assign-mismatch` 假红
+ * （JS 语义下 `(x = 1) => x` 的 `length` 是 0 ⇒ 可零参调用）。
+ *
+ * ⚠ **不能用原生 `fn.length` 代替**：`length` 是「首个默认值/rest **前**的
+ * 形参数」⇒ `f(a, b = 1, c)` 的 length = 1，但 `c` 仍**必选**
+ * （TS 语义：可选参数之后的参数仍必选）⇒ 必选元数 ≠ length。
+ *
+ * 与 `paramDisplayNames` 同源（同一个 `formalParamsFromNodes`）⇒ 下标天然对齐。
+ */
+export function paramOptionalFlags(params: unknown[] | undefined): boolean[] {
+  return formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]).map(
+    (f) => f.optional === true,
+  );
 }
 
 /**
@@ -29,6 +58,41 @@ export function nativeParamArity(params: unknown[] | undefined): number {
 }
 
 /**
+ * Bug 325：**函数种类**戳（async × generator 四象限）——原生
+ * `Object.prototype.toString.call(f)` 据此区分：
+ * 普通 → "[object Function]"、async → "[object AsyncFunction]"、
+ * generator → "[object GeneratorFunction]"、
+ * async generator → "[object AsyncGeneratorFunction]"。
+ *
+ * 发射成 `$fnVal` opts 的 `kind` 片段（`, fnKind: "async"` 等）。箭头函数
+ * 无 kind 域（原生标签恒 "[object Function]"）⇒ 返回空串。
+ *
+ * 单一事实源：函数声明 / 函数表达式（expr/function.ts）、对象方法简写
+ * （expr/object.ts）、类方法（class-emit.ts）三条产生路径共用——此前只有
+ * 函数表达式路径打戳 ⇒ 方法简写 / 类方法 / 函数声明三种形态全折
+ * "[object Function]"（wrong-exact）。
+ */
+export function fnKindSrc(fn: { async?: boolean; generator?: boolean } | null | undefined): string {
+  const kind = fnKindOf(fn);
+  return kind === undefined ? "" : `, fnKind: ${JSON.stringify(kind)}`;
+}
+
+/**
+ * Bug 325：函数种类戳的**值**（async × generator 四象限）——类方法 spec
+ * （methodKinds / staticMethodKinds）需要纯值（不是源码片段）。
+ */
+export function fnKindOf(
+  fn: { async?: boolean; generator?: boolean } | null | undefined,
+): "function" | "async" | "generator" | "async-generator" | undefined {
+  if (!fn) return undefined;
+  if (fn.generator === true) {
+    return fn.async === true ? "async-generator" : "generator";
+  }
+  if (fn.async === true) return "async";
+  return "function";
+}
+
+/**
  * ObjectMethod / 方法型 FunctionExpression 的宿主绑定名：
  * Identifier / 默认参左名 / RestElement 直通；其余占位 `_a`。
  * 与 emitParamBinding 的 sig 同精神，但保持方法简写路径轻量。
@@ -43,13 +107,51 @@ export function methodBindNames(params: unknown[] | undefined): string[] {
   });
 }
 
+/**
+ * Bug 166：@nudo:as 的作用范围 = **承载指令的那条语句**（节点身份：源文本
+ * 字符区间 [stmtStart, stmtEnd)），不是「整条语句的行区间」窗口。
+ *
+ * 旧口径 `line >= a.stmtStart && line <= a.stmtEnd`（只看行号）会让多行语句
+ * （if 块 / 多行 const）内部的嵌套语句、以及同行的下一条语句都被误覆盖——
+ * 违反文档「only affects the immediately following statement」。
+ *
+ * Bug 635：**export 包装**形态的载体身份。`// @nudo:as string()` 写在
+ * `export const raw = 1;` 前面时，指令的载体节点是 **ExportNamedDeclaration**
+ * （Babel 把前置注释挂在 export 语句上），而转译面拿到的声明节点是**内层**
+ * `VariableDeclaration` ⇒ 两个字符区间不重合 ⇒ 覆盖**匹配不到** ⇒
+ * 工具打印「Bindings applied」却类型不变（假成功）。
+ *
+ * 修法：补一条「export 前缀」匹配——**尾端相同**（export 语句与其内层声明
+ * 同一处结尾）+ **前缀恰是 export 引导词**（`export ` / `export default `）
+ * ⇒ 命中。前缀用源文本核对（`opts.source`），避免「同尾不同语句」误命中。
+ */
 export function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
-  if (!opts.asOverrides?.length || !stmt.loc) return null;
-  const line = stmt.loc.start.line;
+  if (!opts.asOverrides?.length) return null;
+  if (typeof stmt.start !== "number" || typeof stmt.end !== "number") return null;
   for (const a of opts.asOverrides) {
-    if (line >= a.stmtStart && line <= a.stmtEnd) return a.varName;
+    if (a.stmtStart === stmt.start && a.stmtEnd === stmt.end) return a.varName;
+    if (
+      a.stmtEnd === stmt.end &&
+      a.stmtStart < stmt.start &&
+      isExportWrapperGap(opts.source, a.stmtStart, stmt.start)
+    ) {
+      return a.varName;
+    }
   }
   return null;
+}
+
+/**
+ * 区间 `[from, to)` 是否**只是 export 引导词**（`export ` / `export default `）。
+ *
+ * 只认 export 引导词 ⇒ export 语句与其内层声明是「同一处结尾」时才算包装；
+ * 其它同尾区间（不同语句凑巧同尾）不误命中。源文本缺失 ⇒ 不认（fail-closed：
+ * 退回 Bug 166 的精确匹配口径）。
+ */
+function isExportWrapperGap(source: string | undefined, from: number, to: number): boolean {
+  if (typeof source !== "string") return false;
+  if (from < 0 || to > source.length || to <= from) return false;
+  return /^export\s+(?:default\s+)?$/.test(source.slice(from, to));
 }
 
 /**
@@ -397,18 +499,54 @@ export function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
 
+/**
+ * Bug 165：正在被「求值式替换」展开的节点集合。
+ * 替换命中后要把**原表达式**再发射一遍（求值），内层那次发射不得再次
+ * 匹配本节点——否则自递归。用 WeakSet（节点身份）而非标志位。
+ */
+const replacingNodes = new WeakSet<Node>();
+
+/**
+ * @nudo:replace 命中面（Bug 165 + Bug 166）。
+ *
+ * - **Bug 166（作用域）**：命中条件是 **AST 节点身份**——节点的源文本字符
+ *   区间与登记区间完全一致（收集面已按「该语句子树内、不跨作用域边界」
+ *   圈定候选）。旧口径是「行号窗口 + 文本匹配」→ 泄漏进嵌套语句与同行
+ *   下一条语句。
+ * - **Bug 165（求值）**：命中的子表达式**仍要求值**（副作用与 throws 域
+ *   保留），只是**结果**被注入值取代——旧口径整段替换 → 副作用与抛错域
+ *   整段消失（L2 门禁假绿 + 错值）。
+ */
 export function matchReplacement(node: Node, opts: TranspileOptions): string | null {
   if (!opts.source || !opts.replacements?.length) return null;
-  if (node.start == null || node.end == null || !node.loc) return null;
-  const src = opts.source.slice(node.start, node.end);
-  const n = normWs(src);
-  const line = node.loc.start.line;
+  if (replacingNodes.has(node)) return null;
+  if (typeof node.start !== "number" || typeof node.end !== "number") return null;
   for (const r of opts.replacements) {
-    if (r.stmtStart != null && line < r.stmtStart) continue;
-    if (r.stmtEnd != null && line > r.stmtEnd) continue;
-    if (normWs(r.target) === n) return r.varName;
+    if (r.stmtStart == null || r.stmtEnd == null) continue;
+    if (r.stmtStart !== node.start || r.stmtEnd !== node.end) continue;
+    if (normWs(r.target) !== normWs(opts.source.slice(node.start, node.end))) continue;
+    return replacedValueSrc(node, r.varName, opts);
   }
   return null;
+}
+
+/**
+ * Bug 165：原表达式求值一次（副作用 + throws 域保留），结果取注入值。
+ * 逗号表达式 `(原表达式, 注入值)`：左值求值后丢弃，右值是本次替换的结果。
+ */
+function replacedValueSrc(node: Node, varName: string, opts: TranspileOptions): string {
+  replacingNodes.add(node);
+  try {
+    const orig = emitTranspileExpression(node as unknown as Expression, opts);
+    return `((${orig}), ${varName})`;
+  } catch (e) {
+    // 引擎**无法 lowering** 该表达式（unsupported）→ 本就无从求值：退回旧
+    // 口径（只给注入值）。否则整模块 fail-closed（unknown）——比修复前更差。
+    if (e instanceof NudoUnsupportedError) return varName;
+    throw e;
+  } finally {
+    replacingNodes.delete(node);
+  }
 }
 
 export function indent(n: number): string {
@@ -640,6 +778,175 @@ export function collectPatternNames(id: unknown, acc: Set<string>): void {
 }
 
 /**
+ * Bug 181：源文本里的**用户标识符**信息（临时名避让用）。
+ *
+ * 转译器发的解构临时名（`_d{n}` / `_n{n}` / `_p{i}` / `_rest{i}` /
+ * `_pd{i}`）此前不带任何避让：用户自己声明了同名标识符时，生成码出现
+ * `const _d0`（用户已有 `let _d0`）⇒ **重复声明 SyntaxError** ⇒ 整个
+ * 模块求值失败 ⇒ 全模块导出退化为 unknown（假 opaque-result）；另一面，
+ * 函数体里的 `const _d0` 会**遮蔽**模块级同名用户绑定 ⇒ 用户读到错值。
+ *
+ * 口径：收集源文本里出现过的**全部标识符词形**（保守超集——含属性名、
+ * 字符串与注释里的词形）。临时名只需避开用户名字，超集落在安全侧。
+ */
+export interface UserIdentInfo {
+  /** 源文本里出现过的标识符词形（保守超集） */
+  names: Set<string>;
+  /** 用户占用的 `_d{n}` / `_n{n}` 序号最大值（-1 = 无占用） */
+  tmpSeqMax: number;
+}
+
+const EMPTY_USER_IDENT: UserIdentInfo = { names: new Set<string>(), tmpSeqMax: -1 };
+
+/** 源文本 → 用户标识符信息（按源文本缓存：同一模块只扫一次） */
+const userIdentCache = new Map<string, UserIdentInfo>();
+
+export function userIdentInfo(source: string | undefined): UserIdentInfo {
+  if (!source) return EMPTY_USER_IDENT;
+  const hit = userIdentCache.get(source);
+  if (hit) return hit;
+  const names = new Set<string>();
+  const re = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) names.add(m[0]);
+  let tmpSeqMax = -1;
+  for (const name of names) {
+    const hitSeq = /^_[dn](\d+)$/.exec(name);
+    if (!hitSeq) continue;
+    const idx = Number(hitSeq[1]);
+    if (idx > tmpSeqMax) tmpSeqMax = idx;
+  }
+  const info: UserIdentInfo = { names, tmpSeqMax };
+  // 缓存按源文本持有——模块多时封顶清空（重扫成本可接受）
+  if (userIdentCache.size >= 64) userIdentCache.clear();
+  userIdentCache.set(source, info);
+  return info;
+}
+
+/**
+ * Bug 181：把共享的解构临时名计数器**推过**用户占用的 `_d{n}` / `_n{n}`
+ * 序号。计数器是 statement.ts 的 `_d{n}` 与 emit.ts 的 `_n{n}` 共用的
+ * （`n++`），推过后两族名都不再与用户标识符相撞。
+ */
+export function bumpDestrTmpSeq(seq: { n: number }, info: UserIdentInfo): void {
+  if (info.tmpSeqMax < 0) return;
+  if (seq.n <= info.tmpSeqMax) seq.n = info.tmpSeqMax + 1;
+}
+
+/**
+ * 词形集 → `_d{n}` / `_n{n}` 序号最大值（-1 = 无占用）。
+ * 与 `userIdentInfo` 的同名计算同口径（供**合并**后的避让集复用）。
+ */
+export function tmpSeqMaxOf(names: ReadonlySet<string>): number {
+  let max = -1;
+  for (const name of names) {
+    const hitSeq = /^_[dn](\d+)$/.exec(name);
+    if (!hitSeq) continue;
+    const idx = Number(hitSeq[1]);
+    if (idx > max) max = idx;
+  }
+  return max;
+}
+
+/**
+ * 避让集 = 源文本词形 ∪ 调用方补给的词形（`opts.userIdents`）。
+ *
+ * 无补充词形时**原样返回**源文本信息（产物逐字不变）；有补充时并集重算
+ * `_d{n}` / `_n{n}` 序号上限（解构临时名计数器同口径）。
+ */
+export function userIdentInfoOf(opts: TranspileOptions): UserIdentInfo {
+  const info = userIdentInfo(opts.source);
+  const extra = opts.userIdents;
+  if (!extra || extra.size === 0) return info;
+  const names = new Set<string>(info.names);
+  for (const n of extra) names.add(n);
+  return { names, tmpSeqMax: Math.max(info.tmpSeqMax, tmpSeqMaxOf(extra)) };
+}
+
+/**
+ * Bug 181：取一个不与用户标识符相撞的临时名（base 为期望基名）。
+ * 撞名时加数字后缀（`_p0` → `_p0_1`）——形参占位名不能改形（签名面按位对齐）。
+ */
+export function safeTmpName(base: string, info: UserIdentInfo): string {
+  if (!info.names.has(base)) return base;
+  let k = 1;
+  while (info.names.has(`${base}_${k}`)) k++;
+  return `${base}_${k}`;
+}
+
+/**
+ * Bug 1058 / Bug 1059：引擎**内部临时名**必须**避开用户标识符**。
+ *
+ * 引擎为转译生成的内部绑定（`arguments` 槽 `__nudoArgs` / try 标记
+ * `__nudoTm_{n}` / catch 载体 `__nudoE_{n}` / try 内 return 载体 `__nudoRet`
+ * / 写回载体 `__mutRet` / 函数体 catch 载体 `__nudoFnRet` …）此前一律用
+ * **固定名**发射 ⇒ 用户源码里写了同名标识符时两种失效形态都成立：
+ * - **同作用域重复词法声明** ⇒ 产物不是合法 JS ⇒ `new Function` 编译期
+ *   SyntaxError ⇒ 求值器 fail-closed（**整模块**导出退化 unknown + 假
+ *   `nudo:opaque-result` ⇒ 门禁假绿）；
+ * - **内层遮蔽**用户同名外层绑定 ⇒ 初始化器自引用 ⇒ TDZ ReferenceError ⇒
+ *   被用户自己的 catch 吞掉 ⇒ 原生值被算成别的值（wrong-exact）。
+ *
+ * 口径：`userIdentInfo(source).names` 是**源文本里出现过的全部标识符词形**
+ * （保守超集）⇒ 避让在**整个转译单元**生效（不做作用域分析——用户在内层
+ * 作用域声明的名字也会遮蔽外层生成的临时名）⇒ 生成名与用户标识符**词形**
+ * 永不相撞。命名 `<base>_<k>`（k 从 1 起跳过已占用名）——与 Bug 181 的
+ * `safeTmpName` 同款且**确定性**（同一源文本 ⇒ 同一名 ⇒ 产物逐字可重现；
+ * 缓存键 / 差分语料依赖它）。**无碰撞时原名返回** ⇒ 产物逐字不变。
+ *
+ * 配对义务：内部名**生成与使用必须同名**（词法槽 / 载体名）⇒ 调用点要把
+ * 算出的名字**存成局部变量**再同时用在声明与引用处，不得各处各算一次
+ * （同源文本下两次计算结果相同，但存变量更抗后续改动）。
+ */
+export function internalTmpName(base: string, opts: TranspileOptions): string {
+  return safeTmpName(base, userIdentInfoOf(opts));
+}
+
+/**
+ * Bug 1160：this 载体名（跨发射器共享的**单一来源**）。
+ *
+ * 载体协议：真函数体 prologue 声明 `let <名> = $rawThis(this)`；类/对象
+ * 方法、访问器 thunk、字段 / 静态块 thunk 把 `<名>` 作宿主首参——声明方与
+ * `thisParam` 读方必须同名。根转译单元（`transpileFile` / `transpileBodyNode`）
+ * 在入口经 `internalTmpName("__this", opts)` 分配一次并写入 `opts.thisSlot`；
+ * 各发射器一律经本函数取同一名（不各自现算）。表达式级公面入口
+ * （`transpileExpression(expr, {})`）无根分配 ⇒ 按同口径现算（确定性：
+ * 同源文本 ⇒ 同名）。**无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。**
+ */
+export function thisCarrierOf(opts: TranspileOptions): string {
+  return opts.thisSlot ?? internalTmpName("__this", opts);
+}
+
+/**
+ * Bug 1127：批量分配内部临时名（**同款避让口径**，一次算避让集）。
+ *
+ * 与 `internalTmpName` 同口径（`userIdentInfoOf(opts)` = 源文本词形 ∪
+ * `opts.userIdents`），但：
+ * - 避让集**只算一次**（逐个调 `internalTmpName` 会把避让集重算 n 次——
+ *   `opts.userIdents` 非空时每次都重建并集）；
+ * - 同一批内**互不撞名**（不同 base 避让后可能落到同一个名字——`<base>_<k>`
+ *   形态下 `X` 与 `X_1` 两族可撞）⇒ 组内去重（`taken` 集）。
+ *
+ * 确定性：同一 opts ⇒ 同一批名（同序）⇒ 产物逐字可重现。
+ */
+export function internalTmpNameSet(bases: readonly string[], opts: TranspileOptions): string[] {
+  const info = userIdentInfoOf(opts);
+  const taken = new Set<string>();
+  const out: string[] = [];
+  for (const base of bases) {
+    let name = safeTmpName(base, info);
+    let k = 1;
+    while (taken.has(name)) {
+      name = safeTmpName(`${base}_${k}`, info);
+      k++;
+    }
+    taken.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
  * var 提升预扫描（Bug 21）：收集函数体（或模块顶层）内全部 `var` 声明名
  * （含嵌套块/循环/try/switch 臂；含 for-init/left 的 var），**不穿越**
  * 函数/方法/类体边界（那些绑定属于内层作用域）。export var（模块顶层
@@ -767,12 +1074,17 @@ export function collectLoopBodyTopLevelDeclNames(body: unknown, acc: Set<string>
  * 计算语句列表层的可见 const 绑定名：
  * childConsts = (parentConsts − 本层 let/var 遮蔽) ∪ 本层 const。
  * 不进入嵌套块/函数体（那些作用域各自计算）。
+ *
+ * 附带登记「本层**初始化器是函数表达式**的 const 绑定名」（见
+ * `constFnNamesOf`）——族 59 · W9（台账族 43 遗留 5）：const 绑定**不可重绑**，
+ * 成员写不得重绑根。
  */
 export function computeConstScope(
   stmts: readonly unknown[],
   parentConsts: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
   const consts = new Set<string>();
+  const fnConsts = new Set<string>();
   const mutables = new Set<string>();
   const walkList = (list: readonly unknown[]): void => {
     for (const s of list) {
@@ -780,13 +1092,25 @@ export function computeConstScope(
       const n = s as {
         type?: string;
         kind?: string;
-        declarations?: Array<{ id?: unknown }>;
+        declarations?: Array<{ id?: unknown; init?: { type?: string } }>;
         id?: unknown;
         body?: unknown;
       };
       if (n.type === "VariableDeclaration") {
-        const target = n.kind === "const" ? consts : mutables;
-        for (const d of n.declarations ?? []) collectPatternNames(d.id, target);
+        const isConst = n.kind === "const";
+        const target = isConst ? consts : mutables;
+        for (const d of n.declarations ?? []) {
+          collectPatternNames(d.id, target);
+          if (!isConst) continue;
+          // 初始化器是函数表达式 / 箭头函数 ⇒ 该 const 绑定的值是引擎的
+          // **fn Abs**（`$fnVal`）——`$set(fnAbs, …)` 就地写（返回同一 Abs）
+          // ⇒ 成员写去掉根重绑**不丢写**（收窄口径，见 constFnNamesOf）。
+          const initType = d.init?.type;
+          if (initType !== "FunctionExpression" && initType !== "ArrowFunctionExpression") continue;
+          const fnNames = new Set<string>();
+          collectPatternNames(d.id, fnNames);
+          for (const nm of fnNames) fnConsts.add(nm);
+        }
         continue;
       }
       if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
@@ -799,13 +1123,115 @@ export function computeConstScope(
   };
   walkList(stmts);
   const out = new Set<string>();
+  const outFn = new Set<string>();
+  const parentFn = parentConsts ? constFnScopeTable.get(parentConsts) : undefined;
   if (parentConsts) {
     for (const name of parentConsts) {
-      if (!mutables.has(name)) out.add(name);
+      if (mutables.has(name)) continue;
+      out.add(name);
+      if (parentFn?.has(name)) outFn.add(name);
     }
   }
   for (const name of consts) out.add(name);
+  for (const name of fnConsts) outFn.add(name);
+  constFnScopeTable.set(out, outFn);
   return out;
+}
+
+/**
+ * const 作用域集的**裁剪复制**（参数 / catch / 循环等遮蔽处）——同时裁剪
+ * fn-const 侧表（族 59 · W9）保持两侧关联（否则侧表丢失 ⇒ 收窄口径失效）。
+ */
+export function copyConstScope(
+  scope: ReadonlySet<string> | undefined,
+  drop: ReadonlySet<string>,
+): Set<string> | undefined {
+  if (!scope) return undefined;
+  const out = new Set<string>();
+  const outFn = new Set<string>();
+  const fn = constFnScopeTable.get(scope);
+  for (const name of scope) {
+    if (drop.has(name)) continue;
+    out.add(name);
+    if (fn?.has(name)) outFn.add(name);
+  }
+  constFnScopeTable.set(out, outFn);
+  return out;
+}
+
+/**
+ * 模块级 const 作用域的 **fn-const 登记**（族 59 · W9）。
+ *
+ * 模块体自身的 `const` 声明不进 `opts.constNames`（该表只收 import 绑定与
+ * 嵌套作用域的 const 面）⇒ 模块级的「const 绑定的函数」写（`const F =
+ * function(){}; F.prototype = {}`）看不到 fn-const 面。此处按模块体登记
+ * fn-const 集（绑定到模块级 const 集对象上，供 member-path 侧查表）。
+ */
+export function registerConstFnScope(
+  moduleConstNames: Set<string>,
+  stmts: readonly unknown[],
+  parentConsts: ReadonlySet<string> | undefined,
+): void {
+  const own = new Set<string>();
+  const mutables = new Set<string>();
+  for (const s of stmts) {
+    if (!s || typeof s !== "object") continue;
+    const n = s as {
+      type?: string;
+      kind?: string;
+      declarations?: Array<{ id?: unknown; init?: { type?: string } }>;
+      id?: unknown;
+    };
+    if (n.type === "VariableDeclaration") {
+      const isConst = n.kind === "const";
+      for (const d of n.declarations ?? []) {
+        if (!isConst) {
+          collectPatternNames(d.id, mutables);
+          continue;
+        }
+        const initType = d.init?.type;
+        if (initType !== "FunctionExpression" && initType !== "ArrowFunctionExpression") continue;
+        const fnNames = new Set<string>();
+        collectPatternNames(d.id, fnNames);
+        for (const nm of fnNames) own.add(nm);
+      }
+      continue;
+    }
+    if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+      collectPatternNames(n.id, mutables);
+    }
+  }
+  const outFn = new Set<string>();
+  const parentFn = parentConsts ? constFnScopeTable.get(parentConsts) : undefined;
+  if (parentFn) {
+    for (const name of parentFn) {
+      if (mutables.has(name)) continue;
+      outFn.add(name);
+    }
+  }
+  for (const name of own) outFn.add(name);
+  constFnScopeTable.set(moduleConstNames, outFn);
+}
+
+/**
+ * 词法作用域 const 集 → 该作用域内**初始化器是函数表达式**的 const 绑定名。
+ *
+ * 族 59 · W9（台账族 43 遗留 5）：`const F = function(){}; F.prototype = {};`
+ * 的写**不得重绑根绑定**——原生 const 不可重绑（`F.prototype = {}` 是对函数
+ * 对象的 [[Set]]，不是对绑定的赋值 ⇒ 原生不报错）。
+ *
+ * 引擎此前的 const 模型只覆盖「用户层直接赋值」（`F = x` ⇒ TypeError），
+ * **成员写**走的是「根绑定重绑」通道 ⇒ const 绑定被内部重绑（污染根绑定）。
+ *
+ * 收窄口径：**只对初始化器是函数表达式的 const 绑定**建模——这类绑定的值是
+ * fn Abs（`$fnVal`），`$set(fnAbs, …)` **就地写**（返回同一 Abs）⇒ 去掉根
+ * 重绑不丢写；其余 const 绑定（值可能是需重绑的形态，如内建 brand）维持
+ * 既有根重绑通道不动。
+ */
+const constFnScopeTable = new WeakMap<ReadonlySet<string>, ReadonlySet<string>>();
+
+export function constFnNamesOf(scope: ReadonlySet<string> | undefined): ReadonlySet<string> | undefined {
+  return scope ? constFnScopeTable.get(scope) : undefined;
 }
 
 /** 赋值/自增目标若是 const 绑定 → 发射 TypeError 抛出 */
@@ -1125,4 +1551,22 @@ export function isExpression(n: { type: string }): n is Expression {
 export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string }): string | null {
   const priv = prop.id?.name ?? prop.name;
   return priv ? JSON.stringify(`#${priv}`) : null;
+}
+
+/**
+ * Bug 133：ES **NamedEvaluation**——类表达式绑定到名字时以该名为类名
+ * （`const K = class {}` → `K.name === "K"`；`K = class {}` /
+ * `{ K: class {} }` 同）。原生只有「类表达式**自身**在具名位置」才取名，
+ * 其余位置（数组元素 / 实参 / 未绑定）类名是空串。
+ *
+ * 只给**类表达式**节点挂 hint：非类表达式原样返回 opts（不得把 hint 泄进
+ * 任意子表达式的类表达式里）。
+ */
+export function withClassNameHint(
+  opts: TranspileOptions,
+  node: Node | null | undefined,
+  name: string | undefined,
+): TranspileOptions {
+  if (name === undefined || node?.type !== "ClassExpression") return opts;
+  return { ...opts, classNameHint: name };
 }

@@ -9,6 +9,8 @@ Nudo reads project configuration from the `nudo` key in `package.json` — there
 
 **Where the config is found:** for each analyzed file, Nudo walks up the directory tree from that file and uses the **nearest `package.json` that contains a `nudo` key**. A `package.json` without a `nudo` key does not stop the search — in a monorepo, a config at the repository root stays visible to sub-packages that have their own `nudo`-less `package.json`.
 
+Presence is what stops the search, not truthiness: a `nudo` key holding a falsy value (`false` / `null` / `0` / `""`) or a malformed value (a string, number, boolean, or array instead of an object) still stops the search — that package is then treated as having **no** nudo config, and ancestor configs are **not** inherited. A malformed key prints a note on stderr rather than being ignored silently.
+
 Keys are normalized leniently: invalid values fall back to the default (and `nudo.check.entryThrows` additionally prints a warning on stderr) rather than failing the run.
 
 ## Minimal example
@@ -58,7 +60,7 @@ The same explicit-beats-preset rule applies inside `package.json` alone (rule 3 
 
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `contract.autoBind` | boolean | `true` | Ambient binding of `*.nudo.js` sidecars for `check`, LSP enforcement, and `contract` printing. `false` stops sidecars from being ambient-loaded. |
+| `contract.autoBind` | boolean | `true` | Ambient binding of `*.nudo.js` sidecars for `check`, LSP enforcement, and `contract` printing. `false` stops sidecars from being ambient-loaded. A non-boolean value is invalid: it falls back to `true` and prints a note on stderr, so `check` and `contract`/`export` never disagree about whether sidecars are bound. |
 | `contract.emit` | string \| string[] (globs, relative to the project root) | `[]` | Allowlist for contract emit (`nudo contract --emit` and the LSP persist lens). Empty = no path filtering. Patterns match the **source file** path (not the sidecar path); an emit target outside the allowlist is refused with an `emit-denied` warning. |
 
 ## `nudo.env` — runtime environments
@@ -73,13 +75,13 @@ See [`@nudo:env`](../concepts/directives.md) for path-based env files and the bu
 
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `analysis.include` | string[] (globs) | `[]` (no path filter) | Path filter for IDE / vite-plugin / watch-scan analysis. |
+| `analysis.include` | string[] (globs or paths) | `[]` (no path filter) | Path filter for IDE / vite-plugin / watch-scan analysis. A pattern with `*` / `?` is a glob (same compiler and anchoring as `analysis.exclude`); a pattern without a wildcard is a **path**: it matches that exact file, or every file under it when it names a directory (`src` → `src/**`). A literal is never a substring search — `include: ["src"]` does not pull in `src-other/x.js`. |
 | `analysis.exclude` | string[] (globs) | `["**/node_modules/**", "**/dist/**", "**/coverage/**"]` | Paths excluded from IDE analysis. An explicitly empty array falls back to this default safety list — the `node_modules` guard cannot be turned off by accident. |
 | `analysis.mode` | `"directives"` \| `"exports"` \| `"all"` | `"exports"` | Which files the IDE / build analyzes: `exports` = files with `export` / sidecar / `@nudo:` directives; `directives` = only annotated files; `all` = every target path. Named-path CLI commands (`nudo check src/lib.js`) analyze the named file regardless of mode. |
 | `analysis.diagnostics` | `"off"` \| `"errors"` \| `"default"` \| `"verbose"` | `"errors"` when `mode` is `"directives"`, else `"default"` | Diagnostic noise level in the IDE. |
 | `analysis.evalMissingSlot` | `"off"` \| `"warning"` | `"off"` | C0.5: emit a `nudo:missing-slot` **warning** when evaluation actually hits a missing field on a known shape. Observation, never an obligation — see [Limits](../concepts/limits.md). |
 | `analysis.callSiteBudget` | integer 1–64 | `3` | Precise call-site cases kept per function (polyvariance). Over-budget sites fold symbolically into `#widened` results. |
-| `analysis.maxForks` | integer ≥ 1 | `5000` | Total branch-expansion (`$fork`) budget. When hit: `nudo:fork-truncated` warning and widened results. `NUDO_MAX_FORKS` wins over this key; invalid values fall back to the default. |
+| `analysis.maxForks` | integer ≥ 1 | `5000` | Total branch-expansion (`$fork`) budget. When hit: `nudo:fork-truncated` info and widened results. `NUDO_MAX_FORKS` wins over this key; invalid values fall back to the default. |
 
 Scope tuning recipes (mixed TS/JS repos, `directives` vs `exports`) are in [Coexisting with TypeScript](../guides/coexistence.md); budget behavior in [Performance](../guides/performance.md).
 
@@ -101,7 +103,7 @@ The VS Code setting `nudo.inlayHints.parameters` (and the Zed `language-servers.
 
 Off by default — a forged cache report could hide violations, so enable it only on trusted machines and gitignore `.nudo/cache`. What lands on disk, fail-open semantics, and CI guidance: [Performance — the `.nudo/cache` disk cache](../guides/performance.md).
 
-**Precedence note:** unlike most keys, any explicit `nudo.cache` value (including `false`) wins over `NUDO_CACHE_DIR`; the env var is only consulted when `nudo.cache` is unset.
+**Precedence note:** unlike most keys, any explicit `nudo.cache` value (including `false` and the empty string `""`) wins over `NUDO_CACHE_DIR`; the env var is only consulted when `nudo.cache` is unset. An explicit `""` means "off", the same as `false`.
 
 ## `nudo.sessionCache` — in-process LRU limits
 
@@ -117,14 +119,14 @@ Off by default — a forged cache report could hide violations, so enable it onl
 
 | Variable | Controls | Default | Values |
 |---|---|---|---|
-| `NUDO_MAX_FORKS` | Branch-expansion budget (same knob as `nudo.analysis.maxForks`) | `5000` | Integer ≥ 1; invalid falls back to the default. Wins over the config key. |
+| `NUDO_MAX_FORKS` | Branch-expansion budget (same knob as `nudo.analysis.maxForks`) | `5000` | Integer ≥ 1; invalid falls back to the default — the **default**, not the config key (a set-but-invalid env value does not fall through to `nudo.analysis.maxForks`). Wins over the config key. |
 | `NUDO_CACHE_DIR` | Project disk cache root (same knob as `nudo.cache`) | unset (off) | Absolute path, or `off` / `0` to disable. Only read when `nudo.cache` is unset. |
 | `NUDO_CACHE_MAX_FILES` | Session LRU `maxFiles` | `64` | Integer; `0` / `off` disables the layer; clamped to 65,536. |
 | `NUDO_CACHE_MAX_FNS` | Session LRU `maxFns` | `1024` | Same rules as above. |
 | `NUDO_CACHE_MAX_EVALRUNS` | Session LRU `maxEvalRuns` | `32` | Same rules as above. |
 | `NUDO_DEPS_CACHE_DIR` | Cross-project `@types` harvest cache root | `~/.cache/nudo/deps` | Path, or `off` / `0` to disable the deps layer. Fail-open; see [Performance](../guides/performance.md). |
 | `NUDO_HARVEST_NODE` | `@types/node` harvest | enabled | `off` disables harvesting Node APIs (explicit skip, not a silent fallback). |
-| `NUDO_DRAFT_FORCE` | Write guard for contract drafts | unset | `1` allows `contract --draft --write` (and the agent draft-write tool) when no project root is found for the file. |
+| `NUDO_DRAFT_FORCE` | Write guard for contract drafts | unset | `1` allows `contract --draft --write` (and the agent draft-write tool) when no project root is found for the file, **and** allows `contract --from-dts --write` to overwrite an existing **machine-generated** draft that differs. A **hand-edited** draft is never overwritten. |
 
 ## Precedence
 

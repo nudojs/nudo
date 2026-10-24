@@ -7,7 +7,7 @@
   "publisher": "wmzy",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages"
@@ -29,6 +29,14 @@
       {
         "command": "nudo.selectCase",
         "title": "Nudo: Select Case"
+      },
+      {
+        "command": "nudo.selectContract",
+        "title": "Nudo: Select Contract (back to contract observation)"
+      },
+      {
+        "command": "nudo.trace",
+        "title": "Nudo: Trace Observation (entry@ / call@)"
       },
       {
         "command": "nudo.contract",

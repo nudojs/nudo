@@ -4,11 +4,44 @@
  * 优先走 core `absToConstraint`（与 interface/check 同一投影语义），
  * 再转成中间层 SchemaNode；投影失败时退回 shape 尽力提取并记 dropped。
  * Dialect 只负责 Node → 源码字符串；Abs 才是真理源。
+ *
+ * 不变量：产物必须**永远可 import**——生成源码里出现的每个标识符都得在
+ * 模块作用域内可解析（zod 产物只 import zod）。故 brand 名只有落在
+ * 「运行时全局构造器」表里才允许进 `z.instanceof(...)`；其余降级
+ * z.unknown() 并记 dropped（Bug 233）。
  */
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
-import { formatObjectKey, sanitizeCommentText, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
+import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
+import { sanitizeLineCommentText } from "./line-comment.ts";
+import { isHiddenInternalSlot } from "./internal-slot.ts";
+
+/**
+ * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
+ *
+ * 「不确切」= widened（多调用点 join 出来的）/ mock（mock 值）/ partial /
+ * opaque（分析没拿到确证）。这类观测里的字面量**不是**函数出口域的确证——
+ * 逐字投影会把「一次兜底观测」写死成 literal（rest 形参的 `xs.length` 被
+ * entry@ 兜底观测成 `1` ⇒ 三个方言把返回值投影成 `literal(1)` ⇒ 导出的
+ * 校验器**拒绝被导出函数自己的返回值** ⇒ 消费方假红）。
+ *
+ * 放宽**只松不紧**（literal(1) → number）：不会造成假红，只少一档精度。
+ * 契约面（手写契约的 `lit(42)`）走的是 pred 通道（term 是 var 而非 lit），
+ * 不受此规则影响 ⇒ 字面量精度保留。
+ *
+ * 不在 `emit/index.ts` 的导出清单里（内部工具，非公开 API）。
+ */
+export function widenUncertainLiteral(a: Abs): Abs | undefined {
+  if (a.term?.op !== "lit") return undefined;
+  const conf = a.conf;
+  if (conf !== "widened" && conf !== "mock" && conf !== "partial" && conf !== "opaque") return undefined;
+  const s = a.shape;
+  if (s.k !== "prim") return undefined;
+  if (s.type !== "number" && s.type !== "string" && s.type !== "boolean") return undefined;
+  // 去掉字面量 term（保留 shape / pred）⇒ 投影面按基类型渲染
+  return { ...a, term: undefined };
+}
 
 export type SchemaDialect = "zod";
 
@@ -313,11 +346,19 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
 function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
+  // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
+  // （放宽只松不紧 ⇒ 不会假红）。契约面（pred 通道）不受影响。
+  const widened = widenUncertainLiteral(a);
+  if (widened) {
+    dropped.push(`literal observation widened to the base type (uncertain confidence: ${a.conf})`);
+    a = widened;
+  }
+
   // lit term 优先（与 projection 一致；NaN 不产 lit）
   if (a.term?.op === "lit") {
     const v = a.term.value;
     if (typeof v === "number" && Number.isNaN(v)) {
-      dropped.push("lit NaN not projected");
+      dropped.push("lit NaN not projected (widened to the number domain)");
     } else if (
       v === null ||
       v === undefined ||
@@ -401,6 +442,10 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
+        // Bug 240：internal 槽（私有字段 / 生成器协议槽）不是自有属性 ⇒ 不进
+        // 产物面（与 core 的约束面 / guard 面 / format 面同判据）。约束投影
+        // （`absToConstraint`）已剔；这里是形状兜底路径（约束不可表达时）。
+        if (isHiddenInternalSlot(key, slot)) continue;
         const sub = absToSchemaNodeB(slot.value, budget);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
@@ -457,6 +502,14 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       };
     }
     case "brand":
+      // Bug 233：brand 名不等于运行时值时**不得**走 z.instanceof——brand 名
+      // 原样当标识符插进产物，模块求值期即抛 ReferenceError，整个产物作废
+      // （GeneratorFunction / AsyncGeneratorFunction / 用户类名 / X.prototype …）。
+      // 降级 z.unknown()（放行不拒收）并把损失记进 dropped 台账。
+      if (!isRuntimeGlobalCtorName(s.name)) {
+        dropped.push(`brand not projected (no runtime constructor): ${s.name}`);
+        return { node: { k: "unknown" }, dropped };
+      }
       return { node: { k: "brand", name: s.name }, dropped };
     default:
       return { node: { k: "unknown" }, dropped };
@@ -464,6 +517,44 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
 }
 
 // --- zod dialect ---
+
+/**
+ * 生成模块里可直接引用的**运行时全局构造器名**。
+ *
+ * zod 产物是一个独立模块（只 import zod），因此 `z.instanceof(X)` 的实参 X
+ * 只能是该模块作用域内可解析的绑定——即全局。brand 名若是「没有运行时值的
+ * 名字」（GeneratorFunction / AsyncGeneratorFunction / Intl.* / 用户类名 /
+ * `X.prototype` / `Object.prototype` …），原样插进产物会让模块**求值即抛**
+ * ReferenceError（Bug 233：整个 zod 产物作废，一个校验器都拿不到）。
+ *
+ * 只收「全局 + 可当构造器用」的名字：Proxy / Math / JSON / Reflect / Intl /
+ * Atomics 是全局但**不是构造器**（`x instanceof Proxy` 抛 TypeError），
+ * 不收——`z.instanceof` 的实参在模块求值期求值，非构造器同样炸。
+ */
+const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
+  "Array", "Object", "Function", "Boolean", "Number", "String", "Symbol", "BigInt",
+  "Date", "RegExp",
+  "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
+  "TypeError", "URIError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "WeakRef", "FinalizationRegistry",
+  "Promise",
+  "ArrayBuffer", "SharedArrayBuffer", "DataView",
+  "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
+  "Int32Array", "Uint32Array", "Float32Array", "Float64Array",
+  "BigInt64Array", "BigUint64Array",
+  "URL", "URLSearchParams", "TextEncoder", "TextDecoder",
+]);
+
+/**
+ * brand 名能否用 `z.instanceof(<name>)` 表达（须是运行时全局构造器名）。
+ *
+ * 同名单也是 **dts 面的 TS 全局类型名名单**（族 15 S11 的 zod 白名单同源）：
+ * 这些名字在 TS 里是环境内建类型名（Date / RegExp / Error / URL …）⇒ 产物里
+ * 原样引用即可，无需声明（dts 面见 `dts-generator.ts` 的 `brandTSType`）。
+ */
+export function isRuntimeGlobalCtorName(name: string): boolean {
+  return RUNTIME_GLOBAL_CTOR_NAMES.has(name);
+}
 
 function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): string {
   let out = base;
@@ -489,62 +580,194 @@ function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): str
   return out;
 }
 
-export function schemaNodeToZod(node: SchemaNode): string {
-  switch (node.k) {
-    case "lit": {
-      const v = node.value;
-      if (v === null) return "z.null()";
-      if (v === undefined) return "z.undefined()";
-      if (typeof v === "string") return `z.literal(${JSON.stringify(v)})`;
-      if (typeof v === "boolean") return `z.literal(${v})`;
-      if (typeof v === "number") return `z.literal(${v})`;
-      return "z.unknown()";
-    }
-    case "prim":
-      return zodApplyRefinements(`z.${node.type}()`, node.refinements);
-    case "obj": {
-      const entries = node.slots
-        .map((slot) => {
-          const inner = schemaNodeToZod(slot.node);
-          // 非标识符键必须 JSON 引号，否则生成非法 JS（foo-bar / a b / 1x）
-          const key = formatJsObjectKey(slot.key);
-          return `${key}: ${slot.optional ? `${inner}.optional()` : inner}`;
-        })
-        .join(", ");
-      return `z.object({ ${entries} })`;
-    }
-    case "arr":
-      return `z.array(${schemaNodeToZod(node.element)})`;
-    case "tuple": {
-      const base = `z.tuple([${node.elements.map(schemaNodeToZod).join(", ")}])`;
-      // rest：zod 3/4 均支持 `.rest()`（`[1, ...number]` → z.tuple([z.literal(1)]).rest(z.number())）
-      return node.rest ? `${base}.rest(${schemaNodeToZod(node.rest)})` : base;
-    }
-    case "union":
-      return `z.union([${node.members.map(schemaNodeToZod).join(", ")}])`;
-    case "fn":
-      return "z.function()";
-    case "promise":
-      return `z.promise(${schemaNodeToZod(node.inner)})`;
-    case "brand":
-      return `z.instanceof(${node.name})`;
-    case "never":
-      return "z.never()";
-    case "unknown":
-    default:
-      return "z.unknown()";
+/**
+ * 字面量值的安全描述（**不抛**、bigint 带 `n` 后缀）——降级台账用。
+ */
+function describeLitValue(v: unknown): string {
+  try {
+    if (typeof v === "bigint") return `${v.toString()}n`;
+    if (typeof v === "string") return JSON.stringify(v);
+    if (typeof v === "symbol") return v.toString();
+    if (v === undefined) return "undefined";
+    if (v === null) return "null";
+    if (typeof v === "number" && Number.isNaN(v)) return "NaN";
+    return String(v);
+  } catch {
+    return "<unserializable>";
   }
 }
 
-const DIALECT_RENDERERS: Record<SchemaDialect, (n: SchemaNode) => string> = {
-  zod: schemaNodeToZod,
+/**
+ * zod 方言渲染（内部）：返回**源码 + 渲染层自己的降级台账**。
+ *
+ * 不变量（Bug 1046）：**渲染层不得把可表达的形态静默放宽成 `z.unknown()`** ——
+ * 降级必须**留痕**（进 `dropped` ⇒ 出现在产物的
+ * `// dropped preds (not projected into zod):` 块里 ⇒ 用户可见）。
+ *
+ * 两层台账各管一段：节点层（`absToSchemaNode`）管「Abs → 节点」的损失；
+ * 这里管「节点 → zod 源码」的损失。改前 bigint 契约字面量恰好**两层都失声**：
+ * 节点层认为「投影成功」（节点是 `{k:"lit",value:1n}`）⇒ 不进 dropped；
+ * 渲染层认不出 bigint 的 lit ⇒ 静默 `z.unknown()` ⇒ **零台账 + 假绿**
+ * ⇒ 与 standard / guard 面的接受集自相矛盾。
+ */
+function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
+  switch (node.k) {
+    case "lit": {
+      const v = node.value;
+      if (v === null) return { source: "z.null()", dropped: [] };
+      if (v === undefined) return { source: "z.undefined()", dropped: [] };
+      if (typeof v === "string") return { source: `z.literal(${JSON.stringify(v)})`, dropped: [] };
+      if (typeof v === "boolean") return { source: `z.literal(${v})`, dropped: [] };
+      if (typeof v === "number") {
+        // Bug 1065：`-0` 与 `0` 身份不同（Object.is / 1/x 可观察），而
+        // `String(-0) === "0"` ⇒ 负号被抹掉 ⇒ 产物写 `z.literal(0)`
+        // ⇒ **比门禁宽**（门禁按 `lit(-0)` 判红、zod 放行 `0`）⇒ 假绿。
+        // ⇒ 这里必须**保真**写 `-0`（不许静默放宽成 `0`）。
+        // ⚠ zod 的 literal 走 `===` 口径 ⇒ `-0` 与 `0` 在运行时**不可区分**
+        // ⇒ 该处**已知有损** ⇒ 就地标注（消费方看得见），不许无声无息。
+        // （zod 运行时行为本次**未独立复现**——环境无 zod 依赖。）
+        if (Object.is(v, -0)) {
+          return {
+            source:
+              "z.literal(-0) /* known lossy: zod literal uses ===, so -0 and 0 are indistinguishable at runtime */",
+            dropped: [],
+          };
+        }
+        return { source: `z.literal(${v})`, dropped: [] };
+      }
+      // Bug 1046：bigint 字面量——zod 的 `z.literal` **原生支持 bigint**
+      // （真 zod v4.6.7 实测：`z.literal(10n)` 收 10n、拒 10 / 42 / "x" / null）。
+      // 改前此处落到兜底 `z.unknown()` ⇒ **契约申报的 bigint 被静默放宽**（假绿）
+      // 且**零台账**（节点已是「投影成功」的 lit 节点 ⇒ 不进 dropped）⇒ 与
+      // standard 面（`{"k":"lit","value":1n}` 保真）**接受集不相交**。
+      if (typeof v === "bigint") {
+        return { source: `z.literal(${v.toString()}n)`, dropped: [] };
+      }
+      // 兜底：字面量值域超出 `LiteralValue`（类型外的运行期值）⇒ 降级 + **留痕**
+      // （静默放宽 = 假绿 ⇒ 降级必须可观测）。
+      return {
+        source: "z.unknown()",
+        dropped: [`lit not projected: ${describeLitValue(v)}`],
+      };
+    }
+    case "prim":
+      // Bug 1001：Abs 的 `number` prim 域 = **全部 JS number**（含 NaN / ±Infinity）
+      // ——`typeof v === "number"` 对 NaN / Infinity 都成立（standard / guard 面
+      // 同口径，门禁面也渲染 `nanZero() => NaN`）。而 zod 的 `z.number()`
+      // **只收有限数**（v4 的 parse：`!Number.isNaN(input) && Number.isFinite(input)`）
+      // ⇒ 直接 `z.number()` 是**收窄**映射（不是合法超近似）⇒ 导出的 schema
+      // **拒绝被导出函数自己的返回值**（`nanZero()` 恒返 NaN）⇒ 消费方假红。
+      // 放宽成「有限数 ∪ NaN ∪ ±Infinity」。
+      //
+      // 带 refinement 的 number **不放宽**：refinement 本身已把非有限值排除
+      // （`x > 5` / `Number.isInteger(x)` 对 NaN / ±Infinity 都为假）⇒
+      // `z.number().gt(5)` 的域与 Abs 域一致（不放宽才是收窄）。
+      if (node.type === "number" && node.refinements.length === 0) {
+        return {
+          source: "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))",
+          dropped: [],
+        };
+      }
+      return { source: zodApplyRefinements(`z.${node.type}()`, node.refinements), dropped: [] };
+    case "obj": {
+      const dropped: string[] = [];
+      const entries = node.slots
+        .map((slot) => {
+          const inner = renderZod(slot.node);
+          dropped.push(...inner.dropped);
+          // 非标识符键必须 JSON 引号，否则生成非法 JS（foo-bar / a b / 1x）
+          const key = formatJsObjectKey(slot.key);
+          return `${key}: ${slot.optional ? `${inner.source}.optional()` : inner.source}`;
+        })
+        .join(", ");
+      return { source: `z.object({ ${entries} })`, dropped };
+    }
+    case "arr": {
+      const inner = renderZod(node.element);
+      return { source: `z.array(${inner.source})`, dropped: inner.dropped };
+    }
+    case "tuple": {
+      const dropped: string[] = [];
+      const elements = node.elements.map((e) => {
+        const inner = renderZod(e);
+        dropped.push(...inner.dropped);
+        return inner.source;
+      });
+      // rest：zod 3/4 均支持 `.rest()`（`[1, ...number]` → z.tuple([z.literal(1)]).rest(z.number())）
+      let rest = "";
+      if (node.rest) {
+        const inner = renderZod(node.rest);
+        dropped.push(...inner.dropped);
+        rest = `.rest(${inner.source})`;
+      }
+      return { source: `z.tuple([${elements.join(", ")}])${rest}`, dropped };
+    }
+    case "union": {
+      const dropped: string[] = [];
+      const members = node.members.map((m) => {
+        const inner = renderZod(m);
+        dropped.push(...inner.dropped);
+        return inner.source;
+      });
+      return { source: `z.union([${members.join(", ")}])`, dropped };
+    }
+    case "fn":
+      return { source: "z.function()", dropped: [] };
+    case "promise": {
+      const inner = renderZod(node.inner);
+      return { source: `z.promise(${inner.source})`, dropped: inner.dropped };
+    }
+    case "brand":
+      // 防御：brand 节点只允许全局构造器名（z.instanceof 的实参在模块求值期
+      // 求值——名字不在作用域内则整个产物 ReferenceError，Bug 233）
+      // 兜底降级 z.unknown() 必须**留痕**（渲染层不许静默放宽）。
+      return isRuntimeGlobalCtorName(node.name)
+        ? { source: `z.instanceof(${node.name})`, dropped: [] }
+        : {
+            source: "z.unknown()",
+            dropped: [`brand not projected (no runtime constructor): ${node.name}`],
+          };
+    case "never":
+      return { source: "z.never()", dropped: [] };
+    case "unknown":
+    default:
+      return { source: "z.unknown()", dropped: [] };
+  }
+}
+
+/**
+ * SchemaNode → zod 源码（**只给源码**；渲染层的降级台账见
+ * `schemaNodeToZodProjection` / `projectAbsToSchema`）。
+ */
+export function schemaNodeToZod(node: SchemaNode): string {
+  return renderZod(node).source;
+}
+
+/**
+ * SchemaNode → zod 源码 + **渲染层**降级台账。
+ *
+ * 内部面（公开面在 `emit/index.ts`）：`projectAbsToSchema` 用它把「节点 → zod
+ * 源码」这一段的损失并进**既有** dropped 通道 ⇒ 产物的
+ * `// dropped preds (not projected into zod):` 块里可见（用户可见的台账）。
+ */
+export function schemaNodeToZodProjection(node: SchemaNode): { source: string; dropped: string[] } {
+  return renderZod(node);
+}
+
+const DIALECT_RENDERERS: Record<
+  SchemaDialect,
+  (n: SchemaNode) => { source: string; dropped: string[] }
+> = {
+  zod: renderZod,
 };
 
 export function projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection {
   const dialect: SchemaDialect = opts?.dialect ?? "zod";
   const { node, dropped } = absToSchemaNode(a);
-  const render = DIALECT_RENDERERS[dialect] ?? schemaNodeToZod;
-  return { source: render(node), dialect, dropped };
+  const render = DIALECT_RENDERERS[dialect] ?? renderZod;
+  const rendered = render(node);
+  // 两层台账合并：节点层（Abs → 节点）+ 渲染层（节点 → zod 源码）
+  return { source: rendered.source, dialect, dropped: [...dropped, ...rendered.dropped] };
 }
 
 export function absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string {
@@ -598,7 +821,7 @@ export function absToZodSchemaModule(
   const droppedBlock =
     dropped.length > 0
       ? `\n// dropped preds (not projected into zod):\n${dropped
-          .map((d) => `//   ${sanitizeCommentText(d)}`)
+          .map((d) => `//   ${sanitizeLineCommentText(d)}`)
           .join("\n")}\n`
       : "";
   const source = `${banner}\n\nimport { z } from "zod";\n${droppedBlock}\n${decls.join("\n\n")}\n`;

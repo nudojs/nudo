@@ -338,7 +338,10 @@ describe("Bug 29: URL component slots", () => {
 describe("Bug 39: Date.prototype.getYear / setYear", () => {
   it("getYear/setYear → number（与同表 33 个兄弟方法一致）", () => {
     expect(evalWithArgs(`export function f() { return new Date(0).getYear(); }`, []).value).toBe("number");
-    expect(evalWithArgs(`export function f() { return new Date(0).setYear(2020); }`, []).value).toBe("number");
+    // Bug 297：setter 真正回写 time value → 返回值是**新 time value**（数字
+    // 字面量，原生同款；此前恒折抽象 "number"）。时区无关断言：数值字面量。
+    expect(evalWithArgs(`export function f() { return new Date(0).setYear(2020); }`, []).value)
+      .toMatch(/^-?\d+$/);
   });
 });
 

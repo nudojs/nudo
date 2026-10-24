@@ -51,6 +51,17 @@ export type Shape =
       paramTypes?: Abs[];
       returnType?: Abs;
       /**
+       * Bug 399：逐位「可省略」标记（与 `params` 同下标，true = 该位有默认值 /
+       * 可省）。缺省 = 无标记（必选元数按名字后缀 `...` / `?` 判）。
+       *
+       * 为什么需要：默认形参（`f(a, b = 1)`）在形参表面上只是光秃秃的名字
+       * （`b`）⇒ 被计成必选元数 ⇒ `f = (x = 1) => x` 触发
+       * `nudo:assign-mismatch` 假红（JS 语义下 `(x = 1) => x` 的 `length` 是 0）。
+       *
+       * 与 `ctor` 同纪律：形态信息，不进指纹 / 展示串；`leq` 读它算必选元数。
+       */
+      optionalParams?: boolean[];
+      /**
        * Dual-facet globals (Number/Array/…): callable AND carries static members.
        * `$get` reads these before falling back to Function.prototype names.
        */

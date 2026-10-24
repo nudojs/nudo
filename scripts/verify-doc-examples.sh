@@ -287,10 +287,15 @@ verify_check quick-start packages/website/docs/getting-started/quick-start.md \
   'formatName(first: string, last: string) => string'
 
 # check: L2 entry may-throw gates; subtract body arith yields number.
+# 摘要计数与两条 `nudo:interface-entry-only` INFO 行也钉住：它们是「CLI 输出面」
+# 的真值锚点 —— 页面输出块抄错时（zh 镜像漂移的根因）这里会红。
 verify_check check packages/website/docs/guides/check.md \
   'nudo:entry-may-throw' \
   'getName(user: any) => any  throws TypeError' \
-  'subtract(a: any, b: any) => number'
+  'subtract(a: any, b: any) => number' \
+  '2 error · 0 warning · 2 info · 3 fn' \
+  "[INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)" \
+  "[INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)"
 
 # mocking: arrow-function fetch mock resolves to the promised shape; the remaining
 # mock forms on the page (stub().returns, number() builder, virtual module) too.
@@ -301,10 +306,10 @@ verify_test mocking packages/website/docs/concepts/mocking.md \
   '=== readConfig ==='
 
 # export-ecosystem: call-site evidence + sidecar contract project to Standard
-# Schema validators (one module per function; names `<fn>_<param>` / `<fn>Return`).
+# Schema validators (one module per function; names `<fn>_<param>` / `<fn>Output`).
 verify_export_standard export-ecosystem packages/website/docs/guides/export-ecosystem.md \
   'export const createUser_input' \
-  'export const createUserReturn' \
+  'export const createUserOutput' \
   'export const iscreateUserOutputOutput' \
   'Standard Schema v1'
 
@@ -314,7 +319,7 @@ verify_export_standard export-ecosystem packages/website/docs/guides/export-ecos
 verify_test semantics packages/website/docs/concepts/semantics.md \
   '() => "a"' \
   '() => 1' \
-  '([1]) => boolean' \
+  '([1]) => true' \
   '() => "HELLO"' \
   '([1, 2, 3]) => 6' \
   '() => ["port", "host"]' \
@@ -463,7 +468,7 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
 # failing gates on purpose (12 errors across the ten scenarios —
 # 2e5aeb35 起场景 6 的无约束 + 亦记 L2 entry-may-throw)。
 verify_check errors-vs-typescript packages/website/docs/guides/errors-vs-typescript.md \
-  '12 error · 0 warning · 0 info · 10 fn' \
+  '12 error · 0 warning · 1 info · 10 fn' \
   'setDelay(ms: number) => number' \
   'greet(u: { id: number, name: string }) => string' \
   'inc(x: any) => number | string' \

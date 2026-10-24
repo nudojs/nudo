@@ -6,11 +6,14 @@
 import {
   type Abs,
   type AbsSigImpl,
+  abs,
+  isNudoThrow,
   litValue,
   numLit,
   strLit,
   boolLit,
   evalGlobalFn,
+  makeAbsApplyResult,
   makeArrayCtorAbs,
   evalPromiseCtor,
   evalDateCtor,
@@ -20,6 +23,7 @@ import {
   arrOf,
   brandOf,
   dateAbs,
+  errBrand,
   errorBrandOf,
   envFn,
   envFnVariadic,
@@ -64,39 +68,224 @@ function numImplVAbs(fn: (...xs: number[]) => number): AbsSigImpl {
   };
 }
 
-function strToStrImplAbs(fn: (s: string) => string): AbsSigImpl {
-  return (args) => {
-    const s = absStrLit(args[0]);
-    return s !== undefined ? strLit(fn(s)) : undefined;
-  };
+/**
+ * URI 族全局（族 29 Bug 864）。
+ *
+ * 此前四个声明走 `strToStrImplAbs(encodeURI)`：宿主 `URIError` 被 envFn 的
+ * apply 包装**吞掉**（旧实现 `catch { return returnType }`）⇒ 引擎判「不抛」
+ * ⇒ L2 门禁失效（**假绿**）；且实参非字面量时**没有** throws 面。
+ *
+ * 本实现**直接委托 core 的 `evalGlobalFn`**（= 宿主回落路径的同一建模，
+ * `packages/core/src/algebra/builtins/global.ts` 的 URI/escape 族分支），
+ * 再把宿主异常折成 **always-throw**（原生对畸形入参**恒抛**）：
+ * - 字面量实参 → 宿主真折叠（精确值）；畸形 % 序列 / 孤立代理项 ⇒
+ *   always-throw `URIError`（abs 面 = never）；
+ * - 抽象实参 → 回落**声明域** `prim.str()`（**不**折原生产不出的自信精确
+ *   字面量），decode* 记 may-throw `URIError`（与 core 宿主路径同口径）。
+ */
+function uriEnvFn(
+  name: "encodeURI" | "decodeURI" | "encodeURIComponent" | "decodeURIComponent",
+): Abs {
+  return envFn(
+    [prim.str()],
+    prim.str(),
+    (args) => {
+      try {
+        const r = evalGlobalFn(name, args);
+        return r ?? prim.str();
+      } catch (e) {
+        // 原生恒抛 ⇒ always-throw（abs 面 = never ⇒ core 抛 NudoThrow）
+        const payload = isNudoThrow(e) ? e.absValue : errBrand("URIError");
+        return makeAbsApplyResult(prim.never, payload);
+      }
+    },
+    { params: ["uri"], throws: errBrand("URIError") },
+  );
 }
 
 export function defineEnv(): EnvDefinition {
-  const voidFn = envFn([prim.unknown], undef());
+  /**
+   * console 成员表（族 29 Bug 861）。
+   *
+   * 此前是 18 个名字的**手写白名单**（log/error/…/assert），缺
+   * `timeStamp` / `dirxml` / `profile` / `profileEnd`（node v26 实测存在）⇒
+   * 闭对象**缺槽**读出 **exact undefined**（不是 unknown）⇒
+   * `console.timeStamp()` 折「调用 undefined」= **定抛 TypeError**，
+   * 而原生**不抛** ⇒ L2 门禁**假红**。
+   *
+   * 成员集 = node v26 `Object.getOwnPropertyNames(console)` 的**公有**方法
+   * （`_stdout` / `_times` / `_ignoreErrors` 等下划线内部件不属 console API
+   * 面，不入表）+ 浏览器 console 共有面。签名按原生拆（此前全部复用同一个
+   * `voidFn` ⇒ 形参面失真：`log` 是变参、`time` 收 `label?`、
+   * `assert` 收 `(condition, ...args)`）。
+   */
+  const consoleMemberSlots: Record<string, Abs> = {
+    // 输出族：变参 (...args) => undefined
+    log: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    info: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    debug: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    warn: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    error: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    trace: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    // 对象输出
+    dir: envFn([prim.unknown, prim.unknown], undef(), undefined, {
+      params: ["item", "options?"],
+    }),
+    dirxml: envFn([prim.unknown], undef(), undefined, { params: ["item"] }),
+    table: envFn([prim.unknown, prim.unknown], undef(), undefined, {
+      params: ["tabularData?", "properties?"],
+    }),
+    // 分组
+    group: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    groupCollapsed: envFnVariadic(prim.unknown, undef(), { restName: "...args" }),
+    groupEnd: envFn([], undef()),
+    // 计数
+    count: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    countReset: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    // 断言：condition + 变参
+    assert: envFn([prim.unknown, prim.unknown], undef(), undefined, {
+      params: ["condition", "...args"],
+    }),
+    // 清屏
+    clear: envFn([], undef()),
+    // 计时
+    time: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    timeLog: envFn([prim.str(), prim.unknown], undef(), undefined, {
+      params: ["label?", "...args"],
+    }),
+    timeEnd: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    timeStamp: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    // 性能剖析（node ≥ 20.5）
+    profile: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    profileEnd: envFn([prim.str()], undef(), undefined, { params: ["label?"] }),
+    // 异步上下文（node ≥ 24）→ ConsoleContext 对象；Nudo 未建模其成员 ⇒ unknown
+    context: envFn([prim.unknown, prim.unknown], prim.unknown, undefined, {
+      params: ["init", "options?"],
+    }),
+    // 任务跟踪（node ≥ 22）→ task 对象
+    createTask: envFn([prim.str(), prim.unknown], prim.unknown, undefined, {
+      params: ["name", "fn"],
+    }),
+  };
 
-  const consoleSlots: Record<string, Abs> = {};
-  for (const name of [
-    "log",
-    "error",
-    "warn",
-    "info",
-    "debug",
-    "trace",
-    "dir",
-    "table",
-    "time",
-    "timeEnd",
-    "timeLog",
-    "clear",
-    "count",
-    "countReset",
-    "group",
-    "groupCollapsed",
-    "groupEnd",
-    "assert",
-  ]) {
-    consoleSlots[name] = voidFn;
-  }
+  const consoleSlots: Record<string, Abs> = {
+    ...consoleMemberSlots,
+    // Console 构造器（node ≥ 10；`Object.getOwnPropertyNames(console)` 里的
+    // `Console`）——实例面复用 console 成员表（`c.log(...)` 可解）。
+    // ⚠️ 原生 `new console.Console()` **不带** stdout 流会抛 TypeError；env
+    // 声明无法判「options 里的流是不是可写流」⇒ 这里**不**记 throws 面
+    // （宁少报也不误报：常见用法 `new console.Console({stdout})` 本身不抛）。
+    Console: envFn(
+      [prim.unknown],
+      brandOf("Console", objAbs(consoleMemberSlots)),
+      undefined,
+      { name: "Console", ctor: true, params: ["options?"] },
+    ),
+  };
+
+  /**
+   * bigint 原语面（`BigInt(x)` 的值域）——core 的 bigint prim（PrimName
+   * 含 "bigint"）。abs-helpers 的 `prim` 表未含 bigint（那是 S0 的文件），
+   * 故此处就地建。
+   */
+  const bigintPrim = (): Abs =>
+    abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
+
+  /**
+   * Intl 命名空间成员（构造器）。
+   *
+   * 族 62（Bug 332）：**实例面**（实例方法值）此前**完全未建模**——
+   * `brandOf(name)` 的 shape 是 `unknown` ⇒ 声明面读 `new Intl.Collator().compare`
+   * 只能是 unknown（原生是 `"function"`）。此处补 **Collator / NumberFormat /
+   * DateTimeFormat** 三个子构造器的实例方法面（方法值 + 参数/返回面）。
+   *
+   * 原生 oracle（node v26.10.0 实测 `Object.getOwnPropertyNames(prototype)`）：
+   * - `Intl.Collator.prototype` = `constructor, resolvedOptions, compare`
+   * - `Intl.NumberFormat.prototype` / `Intl.DateTimeFormat.prototype`
+   *   = `constructor, resolvedOptions, formatToParts, format, formatRange,
+   *      formatRangeToParts`
+   *
+   * ⚠️ 运行时面（引擎读 `new Intl.Collator().compare`）由 core 的
+   * `BUILTIN_BRAND_METHODS`（`packages/core/src/algebra/exec/runtime/members.ts`）
+   * 决定，**不在 env 包**——`Intl` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里
+   * ⇒ 本声明**不会**注入运行时（见交回报告的「口径与已知偏差」）。
+   */
+  const intlCtor = (name: string, instance?: Abs): Abs =>
+    envFn([prim.unknown, prim.unknown], brandOf(name, instance), undefined, {
+      name, ctor: true, params: ["locales?", "options?"],
+    });
+
+  /**
+   * Intl 实例的 `resolvedOptions()`：返回**选项对象**——其成员集各子构造器
+   * 不同（locale / usage / style / calendar / …），**未建模** ⇒ 返回 unknown
+   * （不建闭 obj——闭 obj 缺槽会读出「exact undefined」＝wrong-exact）。
+   */
+  const intlResolvedOptions = (): Abs =>
+    envFn([], prim.unknown, undefined, { params: [] });
+
+  /** `Intl.Collator` 实例面（compare → number；resolvedOptions → unknown）。 */
+  const intlCollatorInstance = (): Abs =>
+    objAbs({
+      compare: envFn(
+        [prim.unknown, prim.unknown],
+        prim.num(),
+        undefined,
+        { params: ["x", "y"] },
+      ),
+      resolvedOptions: intlResolvedOptions(),
+    });
+
+  /**
+   * `Intl.NumberFormat` / `Intl.DateTimeFormat` 实例面（两者原型成员同源：
+   * format / formatToParts / formatRange / formatRangeToParts / resolvedOptions）。
+   */
+  const intlFormatInstance = (): Abs =>
+    objAbs({
+      format: envFn([prim.unknown], prim.str(), undefined, { params: ["value"] }),
+      formatToParts: envFn(
+        [prim.unknown],
+        arrOf(prim.unknown),
+        undefined,
+        { params: ["value"] },
+      ),
+      formatRange: envFn(
+        [prim.unknown, prim.unknown],
+        prim.str(),
+        undefined,
+        { params: ["start", "end"] },
+      ),
+      formatRangeToParts: envFn(
+        [prim.unknown, prim.unknown],
+        arrOf(prim.unknown),
+        undefined,
+        { params: ["start", "end"] },
+      ),
+      resolvedOptions: intlResolvedOptions(),
+    });
+
+  /** TypedArray 全家（12 族）——见 globals 段的 Bug 865 注释 */
+  const typedArrayGlobals = (): Record<string, Abs> => {
+    const out: Record<string, Abs> = {};
+    for (const name of [
+      "Int8Array",
+      "Uint8Array",
+      "Uint8ClampedArray",
+      "Int16Array",
+      "Uint16Array",
+      "Int32Array",
+      "Uint32Array",
+      "Float16Array",
+      "Float32Array",
+      "Float64Array",
+      "BigInt64Array",
+      "BigUint64Array",
+    ]) {
+      out[name] = envFn([prim.unknown], brandOf(name), undefined, {
+        name, ctor: true, params: ["length"],
+      });
+    }
+    return out;
+  };
 
   const jsonStringifyImplAbs: AbsSigImpl = (args) => {
     const a = args[0];
@@ -207,6 +396,20 @@ export function defineEnv(): EnvDefinition {
   const promiseResolveImplAbs: AbsSigImpl = (args) => {
     if (!args[0]) return undefined;
     return promiseOf(args[0]);
+  };
+
+  /**
+   * 族 62（Bug 890 精度）：`Promise.reject(reason)` 的**拒绝 reason 就是实参**
+   * （ES 规范：`Promise.reject(x)` 以 `x` 拒绝）⇒ 把实参装进 promise 的
+   * `rejected` 通道（此前恒 `unknown` ⇒ `catch (e) { e }` 折出 unknown）。
+   * 无实参 ⇒ 原生以 `undefined` 拒绝。
+   *
+   * ⚠️ `Promise` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里 ⇒ 本声明**不会**
+   * 注入运行时（运行时由 core 的 `evalPromiseStatic` 按名派发，那侧已是
+   * 精确 reason）——此处修的是**声明面**（env ≡ ES 标准库声明）。
+   */
+  const promiseRejectImplAbs: AbsSigImpl = (args) => {
+    return promiseOf(prim.never, args[0] ?? undef());
   };
 
   return {
@@ -324,18 +527,12 @@ export function defineEnv(): EnvDefinition {
       parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
       isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
       isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),
-      encodeURI: envFn([prim.str()], prim.str(), strToStrImplAbs(encodeURI)),
-      decodeURI: envFn([prim.str()], prim.str(), strToStrImplAbs(decodeURI)),
-      encodeURIComponent: envFn(
-        [prim.str()],
-        prim.str(),
-        strToStrImplAbs(encodeURIComponent),
-      ),
-      decodeURIComponent: envFn(
-        [prim.str()],
-        prim.str(),
-        strToStrImplAbs(decodeURIComponent),
-      ),
+      // URI 族（Bug 864）：委托 core 的 evalGlobalFn（宿主回落路径同建模）
+      // ⇒ URIError 不再被吞；抽象实参回落声明域 + may-throw URIError。
+      encodeURI: uriEnvFn("encodeURI"),
+      decodeURI: uriEnvFn("decodeURI"),
+      encodeURIComponent: uriEnvFn("encodeURIComponent"),
+      decodeURIComponent: uriEnvFn("decodeURIComponent"),
 
       // issue #106：Error 族带 name（$new 按名派发 evalBuiltinNew →
       // errorBrandAbs，message 槽 tiering 与无 env 宿主路径同口径）+
@@ -365,7 +562,7 @@ export function defineEnv(): EnvDefinition {
         params: ["executor"],
         slots: {
           resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
-          reject: envFn([prim.unknown], promiseOf(prim.never)),
+          reject: envFn([prim.unknown], promiseOf(prim.never), promiseRejectImplAbs),
           all: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(arrOf(prim.unknown))),
           allSettled: envFn(
             [arrOf(promiseOf(prim.unknown))],
@@ -421,6 +618,95 @@ export function defineEnv(): EnvDefinition {
       undefined: undef(),
       NaN: prim.num(),
       Infinity: prim.num(),
+
+      // ---- ES 规范全局补齐（族 29 Bug 865）--------------------------------
+      //
+      // es env 此前只声明 30 个全局；core **已精确建模**的一批 ES 规范全局
+      // （BigInt / RegExp / Error 家族补全 / Intl / ArrayBuffer /
+      // SharedArrayBuffer / DataView / TypedArray 全家 / Map / Set / 弱引用族）
+      // **未声明** ⇒ 同一份报告里既给出精确签名（`() => 1n`）又报
+      // 「Built-in API "BigInt" is not covered」——**自相矛盾**。
+      //
+      // 这些名字都在 core 的 ENV_SHADOW_SKIP_GLOBALS（= NAMESPACE_GLOBALS
+      // 身份路由表）里 ⇒ **env 注入对它们无效**（注入会遮蔽宿主身份路由 →
+      // issue #87）⇒ 在此声明**不会**遮蔽宿主语义；声明只补齐
+      // 「es env = ES 标准库」的全局面。构造面按 **name facet** 走 core 的
+      // `evalBuiltinNew` **按名派发**（精确 builder），不与宿主争。
+      //
+      // ⚠️ 刻意**不**声明的（声明会遮蔽宿主且 env 侧更差，或 core 根本没建模）：
+      // `Function` / `Proxy`（core 有 makeDynamicFunctionAbs / makeProxyAbs
+      // 精确建模，env 无法复刻）、`eval`（动态代码求值不可静态建模，遮蔽会
+      // 真的不执行）、`escape` / `unescape`（core 的 evalGlobalFn 已精确建模，
+      // 遮蔽无收益）、`Atomics` / `Iterator`（core **未**建模 ⇒ 「未被覆盖」
+      // 警告是**正确**的，见交付报告勘误段）。
+      BigInt: envFn([prim.unknown], bigintPrim(), undefined, {
+        name: "BigInt", ctor: false, params: ["value"],
+      }),
+      RegExp: envFn([prim.str(), prim.str()], brandOf("RegExp"), undefined, {
+        name: "RegExp", ctor: true, params: ["pattern", "flags?"],
+      }),
+      AggregateError: envFn(
+        [arrOf(prim.unknown), prim.str(), prim.unknown],
+        errorBrandOf("AggregateError"),
+        undefined,
+        { name: "AggregateError", ctor: true, params: ["errors", "message?", "options?"] },
+      ),
+      EvalError: envFn([prim.str()], errorBrandOf("EvalError"), undefined, {
+        name: "EvalError", ctor: true, params: ["message?"],
+      }),
+      Intl: objAbs({
+        // 族 62（Bug 332）：三个子构造器带**实例面**（实例方法值）。
+        Collator: intlCtor("Intl.Collator", intlCollatorInstance()),
+        DateTimeFormat: intlCtor("Intl.DateTimeFormat", intlFormatInstance()),
+        DisplayNames: intlCtor("Intl.DisplayNames"),
+        ListFormat: intlCtor("Intl.ListFormat"),
+        Locale: intlCtor("Intl.Locale"),
+        NumberFormat: intlCtor("Intl.NumberFormat", intlFormatInstance()),
+        PluralRules: intlCtor("Intl.PluralRules"),
+        RelativeTimeFormat: intlCtor("Intl.RelativeTimeFormat"),
+        Segmenter: intlCtor("Intl.Segmenter"),
+        getCanonicalLocales: envFn([prim.unknown], arrOf(prim.str())),
+        supportedValuesOf: envFn([prim.str()], arrOf(prim.str())),
+      }),
+      ArrayBuffer: envFn([prim.unknown], brandOf("ArrayBuffer"), undefined, {
+        name: "ArrayBuffer", ctor: true, params: ["length"],
+      }),
+      SharedArrayBuffer: envFn(
+        [prim.unknown],
+        brandOf("SharedArrayBuffer"),
+        undefined,
+        { name: "SharedArrayBuffer", ctor: true, params: ["length"] },
+      ),
+      DataView: envFn(
+        [prim.unknown, prim.unknown, prim.unknown],
+        brandOf("DataView"),
+        undefined,
+        { name: "DataView", ctor: true, params: ["buffer", "byteOffset?", "byteLength?"] },
+      ),
+      Map: envFn([prim.unknown], brandOf("Map"), undefined, {
+        name: "Map", ctor: true, params: ["iterable?"],
+      }),
+      Set: envFn([prim.unknown], brandOf("Set"), undefined, {
+        name: "Set", ctor: true, params: ["iterable?"],
+      }),
+      WeakMap: envFn([prim.unknown], brandOf("WeakMap"), undefined, {
+        name: "WeakMap", ctor: true, params: ["iterable?"],
+      }),
+      WeakSet: envFn([prim.unknown], brandOf("WeakSet"), undefined, {
+        name: "WeakSet", ctor: true, params: ["iterable?"],
+      }),
+      WeakRef: envFn([prim.unknown], brandOf("WeakRef"), undefined, {
+        name: "WeakRef", ctor: true, params: ["target"],
+      }),
+      FinalizationRegistry: envFn(
+        [prim.unknown],
+        brandOf("FinalizationRegistry"),
+        undefined,
+        { name: "FinalizationRegistry", ctor: true, params: ["cleanupCallback"] },
+      ),
+      // TypedArray 全家（12 族）——元素域建模在 core（builtins/shared.ts 的
+      // TYPED_ARRAY_ELEMENT 单一事实源），此处只补全局面。
+      ...typedArrayGlobals(),
     },
   };
 }

@@ -23,6 +23,11 @@
 // 17. 仓库 docs/design/*.md 每篇都必须在 design/notes.md 索引页被登记（且链接指向真实文件）。
 // 18. static/llms.txt 的索引段条目必须是 `- [Title](url): summary`，Title 与页面 H1 一致 —— 裸 URL
 //     只能告诉 agent「有哪些页」，不能告诉它「该读哪页」。
+// 19. 诊断术语表的反向对账：文档里的每个 `nudo:*` 码必须真的可发射（详见文件末尾规则 19 段）。
+// 20. `nudo:fork-truncated` 的严重度在文档面处处 = info（详见文件末尾规则 20 段）。
+// 21. zh 镜像的**机器面**与 en 一致：输出块（```text / ```json）形状、CLI 机器输出行
+//     （诊断计数 / 诊断头 / case 见证）、标识符类关键行（配置键 / 诊断码 / 字面量 / 路径）。
+//     规则 14 只比围栏行数与外链集合 ⇒ zh 抄旧 CLI 输出全程静默；这里补上那道闸。
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
@@ -34,7 +39,15 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
+    // 扫描期间条目可能消失（并发任务留下的临时目录被清掉）⇒ 跳过而不是
+    // 让整个闸门崩在 ENOENT 上（扫描结果少一个文件 ≠ 门禁结论）。
+    let isDir = false;
+    try {
+      isDir = statSync(p).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) walk(p, out);
     else out.push(p);
   }
   return out;
@@ -92,17 +105,69 @@ const SIDEBAR_ID_RE = /^[a-z0-9][a-z0-9/-]*$/;
 // 字符串字面量若紧跟这些键（窗口末尾），是元数据值不是 doc id。
 const SIDEBAR_META_KEY_RE = /\b(?:type|label|description|title)\s*:\s*$/;
 // 规则 14 排除生成物：releases/releases-history 由脚本聚合，versioning 由 changesets 生成，
-// api/ 目录整目录生成 —— 它们的 zh 镜像不承诺结构同步。
+// 它们的 zh 镜像不承诺结构同步。
+//
+// ⚠ `api/` **不再整目录排除**：`api/*.md` 的骨架块虽是 `scripts/gen-api-docs.mjs`
+// 生成的，但页面本身是**手写页**（散文 + 选项表 + 输出块），整目录排除等于把
+// 手写内容也架空（`agent.md` / `cli-reference.md` / `lsp.md` 的 zh 漂移因此长期
+// 无人看守）。骨架块由同一脚本成对注入 EN/ZH（标识符列逐字相同）⇒ 进闸门安全。
 const ZH_STRUCT_EXCLUDE = [
   /^releases\.md$/,
   /^releases-history\.md$/,
   /^guides\/versioning\.md$/,
-  /^api\//,
 ];
 // 规则 14 allowlist：zh 缺块/多链的显式豁免（须带理由）。
 const ZH_STRUCT_ALLOWLIST: Record<string, Array<"fences" | "urls">> = {
   // 2026-09 补齐后清空：zh 缺块/多链均已修复（migrating-js、agents、migrating-from-typescript、cli）。
 };
+// ---------------------------------------------------------------------------
+// 规则 21：zh 镜像的**机器面**必须与 en 一致（输出块 + 关键行）。
+// 规则 14 只比「围栏行数」与「外链集合」：zh 把 CLI 输出块抄旧了也照样绿灯 ——
+// 诊断计数少一档、漏抄 `[INFO L1/L5]` 行、case 见证值停在旧版，CI 全程看不见。
+// 这里把几类**语言无关**的面钉住（散文仍由人翻译，不在此列）：
+//   blocks  —— 输出块（```text / ```json 等）的块数与每块行数
+//   machine —— CLI 机器输出行（摘要计数 / 诊断头 / case 行 / debug 见证 / 通过标记）
+//   tokens  —— 标识符类 inline code span（诊断码 / 环境变量 / 点分配置键 / 引号字面量 / 路径）
+//   rows    —— 表格行内的标识符类 inline code span（逐行对齐，行序即语义）
+//   paras   —— 散文段落内的标识符类 inline code span（逐段对齐，段落序即语义）
+// ---------------------------------------------------------------------------
+// 规则 21 allowlist：已知且已复核的 zh/en 机器面差异（须带理由）。
+// 2026-10 逐条复核后：17 条 waiver 里 15 条判为**真实漏译**并已补齐（条目已删），
+// 余下 2 条为 zh 合法多于 en 的中文补充（散文段落数天然不等 ⇒ 逐段对齐不适用）。
+const ZH_MIRROR_ALLOWLIST: Record<string, Array<"blocks" | "machine" | "tokens" | "rows" | "paras">> = {
+  // cli.md 的 `nudo export` 段：zh 多两段 en 没有的中文补充（`--dialect` 当前取值范围
+  // 与「export 是一次性出货命令、不接受 `--watch`」），两段内容已对着源码核对为真
+  // （packages/nudojs/src/export-format.ts：SCHEMA_DIALECTS 仅 ["zod"]；
+  // packages/nudojs/src/commands/export.ts：只有 --format / --dialect / --out）
+  // ⇒ en 28 段 / zh 30 段，逐段索引对齐对本页不适用。
+  "guides/cli.md": ["paras"],
+  // error-faces.md 的开头：zh 多一段中文专有的「深读」指引（指向仓库内中文设计笔记
+  // docs/errors-vs-typescript.md，并说明它已同时是站点页面），en 无对应段落 ⇒
+  // en 9 段 / zh 10 段，逐段索引对齐对本页不适用。
+  "guides/error-faces.md": ["paras"],
+};
+// 输出块围栏的语言标签（CLI 输出一律落在这里）。
+const OUTPUT_FENCE_LANGS = new Set(["text", "json", "console", "output", "txt"]);
+// CLI 机器输出行：语言无关、可逐字比对的输出形态。
+const MACHINE_LINE_RES = [
+  /^\s*\d+ error · \d+ warning · \d+ info · \d+ fn\b/, // 摘要计数（check 的 N error · … · M fn）
+  /^\s*\[(ERROR|WARNING|INFO)\b/, // 诊断头（[ERROR L12 name] …）
+  /^\s*(call@|entry@)\S*\s/, // case 行（call@L14  ([1]) => true）
+  /^\s*debug "/, // debug 见证行
+  /^\s*[✓✗]\s/, // 通过 / 失败标记
+];
+// 标识符类 inline code span：诊断码 / 环境变量 / 旗标与单词型字面量 / 点分配置键 /
+// 引号字面量 / 路径 / 文件名。散文型 inline code（带空格的长句）不算。
+const IDENT_SPAN_RES = [
+  /^nudo[:-][\w:-]+$/, // 诊断码：nudo:constraint-violated
+  /^NUDO_[A-Z0-9_]+$/, // 环境变量：NUDO_MAX_FORKS
+  /^--?[a-z][\w-]*$/, // 旗标 / 单词型字面量：--json / true / false / strict
+  /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+$/, // 点分配置键：analysis.include
+  /^"[^"]*"$/, // 双引号字面量：""
+  /^'[^']*'$/, // 单引号字面量：'es'
+  /^[\w@./-]+\/[\w./*@-]*$/, // 路径：./ 或 src/**
+  /^[\w$.-]+\.(js|ts|mjs|cjs|json|tsx|md)$/, // 文件名：sidecar.mjs
+];
 // 规则 15 allowlist：/blog/ 跨插件链接 Docusaurus 不解析相对 .md，绝对路径是正确形态（baseUrl 自动前缀）。
 const ABS_LINK_ALLOWLIST = [
   "guides/callsite-discovery.md", // ](/blog/attribution-gate)
@@ -229,6 +294,110 @@ function externalUrls(src: string): Set<string> {
       m[0].replace(/[.,;:!?，。；：！？]+$/, ""),
     ),
   );
+}
+
+// 输出块（```text / ```json …）：每个块的行数组（不含围栏线本身）。
+function outputBlocks(src: string): string[][] {
+  const blocks: string[][] = [];
+  let body: string[] | null = null;
+  let lang = "";
+  for (const line of src.split("\n")) {
+    const open = /^```(\w*)/.exec(line);
+    if (body === null) {
+      if (open) {
+        lang = open[1];
+        body = [];
+      }
+      continue;
+    }
+    if (/^```/.test(line)) {
+      if (OUTPUT_FENCE_LANGS.has(lang)) blocks.push(body);
+      body = null;
+      lang = "";
+      continue;
+    }
+    body.push(line);
+  }
+  return blocks;
+}
+
+// CLI 机器输出行（摘要计数 / 诊断头 / case 行 / debug 见证 / 通过标记）。
+function machineLines(blocks: string[][]): string[] {
+  const out: string[] = [];
+  for (const block of blocks) {
+    for (const line of block) {
+      if (MACHINE_LINE_RES.some((re) => re.test(line))) out.push(line.trim());
+    }
+  }
+  return out.sort();
+}
+
+// 标识符类 inline code span（围栏外）。
+function identSpans(src: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of stripFences(src).matchAll(/`([^`\n]+)`/g)) {
+    if (IDENT_SPAN_RES.some((re) => re.test(m[1]))) out.add(m[1]);
+  }
+  return out;
+}
+
+// 表格行内的标识符类 inline code span（逐行，顺序即语义）。
+function tableRowIdentSpans(src: string): string[][] {
+  const rows: string[][] = [];
+  let inFence = false;
+  for (const line of src.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || !/^\s*\|/.test(line)) continue;
+    rows.push(
+      [...line.matchAll(/`([^`\n]+)`/g)]
+        .map((m) => m[1])
+        .filter((s) => IDENT_SPAN_RES.some((re) => re.test(s))),
+    );
+  }
+  return rows;
+}
+
+// 散文段落（连续散文行；标题 / 表格行 / 列表项 / 围栏内容不算段落）。
+// en 与 zh 的段落按序一一对应 ⇒ 段落内的标识符类 token 可逐段比对。
+function proseParagraphs(src: string): string[] {
+  const paras: string[] = [];
+  let inFence = false;
+  let buf: string[] = [];
+  const flush = (): void => {
+    if (buf.length) {
+      paras.push(buf.join("\n"));
+      buf = [];
+    }
+  };
+  for (const line of src.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      flush();
+      continue;
+    }
+    const t = line.trim();
+    const isProse =
+      !inFence &&
+      t !== "" &&
+      !/^#{1,6}\s/.test(t) &&
+      !/^\|/.test(t) &&
+      !/^[-*]\s/.test(t) &&
+      !/^\d+\.\s/.test(t);
+    if (isProse) buf.push(line);
+    else flush();
+  }
+  flush();
+  return paras;
+}
+
+// 一段散文内的标识符类 inline code span。
+function paragraphIdentSpans(para: string): string[] {
+  return [...para.matchAll(/`([^`\n]+)`/g)]
+    .map((m) => m[1])
+    .filter((s) => IDENT_SPAN_RES.some((re) => re.test(s)));
 }
 
 describe("diagnostic code ↔ docs glossary", () => {
@@ -550,20 +719,27 @@ describe("sidebar ↔ doc files pairing (rule 13)", () => {
   });
 });
 
+// 手写页 = en 文档树排除生成物（releases*/versioning/api 整目录）。
+// 规则 14（结构新鲜度）与规则 21（机器面一致）共用这一份范围。
+const HANDWRITTEN_PAGES = walk(EN_DOCS)
+  .filter((f) => f.endsWith(".md"))
+  .map((f) => relative(EN_DOCS, f))
+  .filter((rel) => !ZH_STRUCT_EXCLUDE.some((re) => re.test(rel)))
+  .sort();
+
 describe("zh structural freshness (rule 14)", () => {
-  // 手写页 = en 文档树排除生成物（releases*/versioning/api 整目录）。
-  const handwritten = walk(EN_DOCS)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => relative(EN_DOCS, f))
-    .filter((rel) => !ZH_STRUCT_EXCLUDE.some((re) => re.test(rel)))
-    .sort();
+  const handwritten = HANDWRITTEN_PAGES;
 
   it("exclusion list trims only the generated pages", () => {
     // 排除过宽会把整个门禁架空：抽查手写页必须仍在、生成页必须已排除。
     for (const kept of ["intro.md", "glossary.md", "guides/check.md"]) {
       expect(handwritten, `${kept} must stay in scope`).toContain(kept);
     }
-    for (const dropped of ["releases.md", "releases-history.md", "guides/versioning.md", "api/core.md"]) {
+    // api/ 下的**手写页**必须在范围内（骨架块成对注入 ⇒ 可进闸门）。
+    for (const kept of ["api/agent.md", "api/cli-reference.md", "api/lsp.md"]) {
+      expect(handwritten, `${kept} must stay in scope`).toContain(kept);
+    }
+    for (const dropped of ["releases.md", "releases-history.md", "guides/versioning.md"]) {
       expect(handwritten, `${dropped} must be excluded`).not.toContain(dropped);
     }
   });
@@ -597,6 +773,119 @@ describe("zh structural freshness (rule 14)", () => {
     expect(
       bad,
       `external URL drift, stale zh mirror? (fix zh or extend ZH_STRUCT_ALLOWLIST with justification): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+});
+
+// 规则 21：zh 镜像的机器面（输出块 + 关键行）必须与 en 一致。
+// 规则 14 只比围栏行数与外链集合 ⇒ zh 把 CLI 输出抄旧了（诊断计数少一档、
+// 漏抄 `[INFO L1/L5]` 行、case 见证值停在旧版）全程静默、CI 绿灯。
+// 这里把语言无关的三类面钉住：输出块形状、CLI 机器输出行、标识符类关键行。
+describe("zh mirror machine-surface parity (rule 21)", () => {
+  const waived = (
+    rel: string,
+    rule: "blocks" | "machine" | "tokens" | "rows" | "paras",
+  ): boolean => ZH_MIRROR_ALLOWLIST[rel]?.includes(rule) ?? false;
+
+  it("output blocks have the same shape in en and zh", () => {
+    const bad: string[] = [];
+    for (const rel of HANDWRITTEN_PAGES) {
+      if (waived(rel, "blocks")) continue;
+      const en = outputBlocks(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = outputBlocks(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      if (en.length !== zh.length) {
+        bad.push(`${rel}: output blocks en=${en.length} zh=${zh.length}`);
+        continue;
+      }
+      for (let i = 0; i < en.length; i++) {
+        if (en[i].length !== zh[i].length) {
+          bad.push(`${rel}: output block #${i} lines en=${en[i].length} zh=${zh[i].length}`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `zh output blocks drift (stale CLI transcript in the zh mirror? re-copy from a real run, or extend ZH_MIRROR_ALLOWLIST with justification): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("CLI output lines are identical between en and zh", () => {
+    const bad: string[] = [];
+    for (const rel of HANDWRITTEN_PAGES) {
+      if (waived(rel, "machine")) continue;
+      const en = machineLines(outputBlocks(readFileSync(join(EN_DOCS, rel), "utf8")));
+      const zh = machineLines(outputBlocks(readFileSync(join(ZH_DOCS, rel), "utf8")));
+      const onlyEn = en.filter((l) => !zh.includes(l));
+      const onlyZh = zh.filter((l) => !en.includes(l));
+      if (onlyEn.length || onlyZh.length) {
+        bad.push(
+          `${rel}: only-en [${onlyEn.join(" | ")}] only-zh [${onlyZh.join(" | ")}]`,
+        );
+      }
+    }
+    expect(
+      bad,
+      `zh CLI output lines drift (counts / diagnostic headers / case witnesses must match the en transcript verbatim): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("identifier tokens of the en page are mirrored in zh", () => {
+    const bad: string[] = [];
+    for (const rel of HANDWRITTEN_PAGES) {
+      if (waived(rel, "tokens")) continue;
+      const en = identSpans(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = identSpans(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      const onlyEn = [...en].filter((t) => !zh.has(t)).sort();
+      if (onlyEn.length) bad.push(`${rel}: missing in zh [${onlyEn.join(" ")}]`);
+    }
+    expect(
+      bad,
+      `zh mirror lost product identifiers (config keys / diagnostic codes / literals / paths — the zh page must carry them): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("table rows carry the same identifier tokens in en and zh", () => {
+    const bad: string[] = [];
+    for (const rel of HANDWRITTEN_PAGES) {
+      if (waived(rel, "rows")) continue;
+      const en = tableRowIdentSpans(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = tableRowIdentSpans(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      if (en.length !== zh.length) {
+        bad.push(`${rel}: table rows en=${en.length} zh=${zh.length}`);
+        continue;
+      }
+      for (let i = 0; i < en.length; i++) {
+        const onlyEn = en[i].filter((t) => !zh[i].includes(t));
+        if (onlyEn.length) bad.push(`${rel} row#${i}: missing in zh [${onlyEn.join(" ")}]`);
+      }
+    }
+    expect(
+      bad,
+      `zh table rows dropped product identifiers (a translated cell must keep the same config keys / literals as its en row): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("prose paragraphs keep the same identifier tokens in en and zh", () => {
+    const bad: string[] = [];
+    for (const rel of HANDWRITTEN_PAGES) {
+      if (waived(rel, "paras")) continue;
+      const en = proseParagraphs(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = proseParagraphs(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      if (en.length !== zh.length) {
+        bad.push(`${rel}: prose paragraphs en=${en.length} zh=${zh.length}`);
+        continue;
+      }
+      for (let i = 0; i < en.length; i++) {
+        const zhTokens = new Set(paragraphIdentSpans(zh[i]));
+        const onlyEn = paragraphIdentSpans(en[i]).filter((t) => !zhTokens.has(t));
+        if (onlyEn.length) {
+          bad.push(`${rel} para#${i}: missing in zh [${onlyEn.join(" ")}]`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `zh prose paragraphs lost product identifiers (a translated paragraph must keep the same config keys / literals / paths as its en paragraph): ${bad.join("; ")}`,
     ).toEqual([]);
   });
 });
@@ -791,6 +1080,144 @@ describe("examples guide table ↔ docs/examples matrix (rule 16)", () => {
     expect(
       bad,
       `guides/examples.md exit claims drifted from docs/examples/README.md: ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 规则 19（族 32 / Bug 908）：诊断术语表的**反向**对账 —— 文档里的每个码必须可发射。
+// 既有断言只做单向（「可发射 ⇒ 有文档锚点」），方向缺一半 ⇒ 只写文档、不写实现的码
+// 会变成永久幻影（Bug 908 = `nudo:eval-error`：DIAG 注册表无此项、全仓无发射点）。
+// ---------------------------------------------------------------------------
+
+// 「可发射码」全集 = 既有 emittedCodes()（DIAG 注册表 ∪ src 里 `code: "nudo:…"` 字面量）
+//   ∪ 补充扫描 `code: "nudo-…"`（**无冒号**形态的真实码 —— 例如 `nudo-unreachable`
+//     真发射于 packages/service/src/analyzer-orchestrate-uncached-modules.ts，
+//     但 emittedCodes() 的冒号字面量正则匹配不到它）。
+// emittedCodes() 本身语义不动（既有断言依赖它）；这里只新增一个更宽的辅助函数。
+function emittableCodes(): Set<string> {
+  const codes = new Set(emittedCodes());
+  for (const f of srcFiles()) {
+    for (const m of readFileSync(f, "utf8").matchAll(/code:\s*"(nudo[-\w:]+)"/g)) {
+      codes.add(m[1]);
+    }
+  }
+  return codes;
+}
+
+describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", () => {
+  const en = readFileSync(GLOSSARY_EN, "utf8");
+  const zh = readFileSync(GLOSSARY_ZH, "utf8");
+
+  it("every nudo:* heading in the glossaries is an emittable code (en + zh)", () => {
+    const emittable = emittableCodes();
+    const bad: string[] = [];
+    for (const [label, src] of [["en", en], ["zh", zh]] as const) {
+      // 标题正则沿用规则 3 的那条。
+      for (const m of src.matchAll(/^### `(nudo[\w:-]+)`([^\n]*)$/gm)) {
+        if (!emittable.has(m[1])) bad.push(`${label}: ${m[1]}`);
+      }
+    }
+    expect(
+      bad,
+      `phantom diagnostic codes in the glossary (documented but never emitted — delete the entry or emit the code): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  // 术语表**标题**只是码出现的一个位置：指南 / 参考页 / api 页里的正文引用
+  // （表格里的码、清单里的码）同样会变成永久幻影（Bug 908 = `nudo:eval-error`
+  // 最初就写在术语表标题里，但同形态的漏抄可以出现在任何一页）。
+  // 这里把反向对账扩到**全部手写页**（生成页 releases*/versioning 不入列）。
+  it("every nudo:* code cited on a hand-written doc page is emittable (en + zh)", () => {
+    const emittable = emittableCodes();
+    const bad: string[] = [];
+    for (const [label, root] of [
+      ["en", EN_DOCS],
+      ["zh", ZH_DOCS],
+    ] as const) {
+      for (const rel of HANDWRITTEN_PAGES) {
+        const path = join(root, rel);
+        if (!existsSync(path)) continue;
+        // 只认**行内代码**形态（`nudo:xxx`）：散文里的裸串（`nudo:interface-*`
+        // 通配、`nudo:check` 命令名、`nudo:return` 前缀）不是诊断码。
+        for (const m of readFileSync(path, "utf8").matchAll(/(?<![@\w-])`(nudo:[a-z0-9-]+)`/g)) {
+          if (!emittable.has(m[1])) bad.push(`${label}/${rel}: ${m[1]}`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `phantom diagnostic codes cited on a doc page (documented but never emitted — delete the mention or emit the code): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 规则 20（族 32 / Bug 909）：`nudo:fork-truncated` 的严重度在文档面被手抄了 9 遍，
+// 没有一致性校验 ⇒ 实现（core 写死 severity: "info"，仓库自带回归测试
+// packages/core/src/algebra/__tests__/check-fork-truncated.test.ts 断言 info）
+// 与文档之间会漂移。此处钉住：9 处严重度陈述必须全部 = info。
+// ---------------------------------------------------------------------------
+
+describe("nudo:fork-truncated severity is consistent across the doc surface (rule 20)", () => {
+  // 9 处严重度陈述的落点（en/zh 各 4 处 + 仓库设计真源 1 处）。
+  // releases-history.md 是 changelog 归档页（生成物，不承诺严重度口径），不入列。
+  const SITES: Array<[string, string]> = [
+    ["en reference/diagnostics.md", join(EN_DOCS, "reference/diagnostics.md")],
+    ["zh reference/diagnostics.md", join(ZH_DOCS, "reference/diagnostics.md")],
+    ["en guides/check.md", join(EN_DOCS, "guides/check.md")],
+    ["zh guides/check.md", join(ZH_DOCS, "guides/check.md")],
+    ["en guides/performance.md", join(EN_DOCS, "guides/performance.md")],
+    ["zh guides/performance.md", join(ZH_DOCS, "guides/performance.md")],
+    ["en reference/config.md", join(EN_DOCS, "reference/config.md")],
+    ["zh reference/config.md", join(ZH_DOCS, "reference/config.md")],
+    ["design docs/design/cli-semantics.md", join(repoRoot, "docs/design/cli-semantics.md")],
+  ];
+
+  // 一处「严重度陈述」可能落在两处形态上：术语表里写在词条正文（标题之后、
+  // 下一个 `### ` 之前），其余页写在提到该码的那一行 ⇒ 两处都扫。
+  const severityTokens = (path: string): { tokens: Set<string>; warnLines: number[] } => {
+    const lines = readFileSync(path, "utf8").split("\n");
+    const tokens = new Set<string>();
+    const warnLines: number[] = [];
+    const scan = (text: string, lineNo: number): void => {
+      for (const m of text.matchAll(/\b(warning|info)\b/gi)) tokens.add(m[1].toLowerCase());
+      if (/\bwarning\b/i.test(text)) warnLines.push(lineNo);
+    };
+    for (const [i, line] of lines.entries()) {
+      if (line.includes("nudo:fork-truncated")) scan(line, i + 1);
+    }
+    const head = lines.findIndex((l) => /^###\s+`nudo:fork-truncated`/.test(l));
+    if (head >= 0) {
+      for (let j = head + 1; j < lines.length && !/^###\s/.test(lines[j]); j++) {
+        scan(lines[j], j + 1);
+      }
+    }
+    return { tokens, warnLines };
+  };
+
+  it("no doc statement about nudo:fork-truncated calls it a warning", () => {
+    const bad: string[] = [];
+    for (const [label, path] of SITES) {
+      for (const n of severityTokens(path).warnLines) bad.push(`${label}:${n}`);
+    }
+    expect(
+      bad,
+      `nudo:fork-truncated is severity "info" in core (check.ts fork-truncation branch) — fix these doc statements: ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every doc surface states info as the severity for nudo:fork-truncated", () => {
+    const bad: string[] = [];
+    for (const [label, path] of SITES) {
+      const { tokens } = severityTokens(path);
+      if (!tokens.has("info")) {
+        bad.push(`${label}: severity = [${[...tokens].sort().join(", ") || "none"}] (expected info)`);
+      }
+    }
+    expect(
+      bad,
+      `nudo:fork-truncated severity is not "info" on these doc surfaces: ${bad.join(", ")}`,
     ).toEqual([]);
   });
 });

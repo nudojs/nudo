@@ -77,7 +77,7 @@ Microsoft 的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/
 
 | 探针 | Nudo | TypeScript | 说明 |
 |---|---|---|---|
-| 单文件实时编辑 | `analyzeFile` **0.19 ms**，`checkSource` **0.39 ms** 中位 | `benchmark/micro` 中 `tsc.LS` 量级 **10 ms+**（微基准约 **150×**） | 合成 monorepo / 微负载；见[性能](./performance.md) · [S1 基线报告](https://github.com/nudojs/nudo/blob/main/docs/reports/s1-perf-baseline.md) |
+| 单文件实时编辑 | `analyzeFile` **0.19 ms**，`checkSource` **0.39 ms** 中位 | `benchmark/micro/bench-vs-tsc` 中 `tsc.LS` 量级 **10 ms+**（微基准约 **150×**） | 合成 monorepo / 微负载；见[性能](./performance.md) · [S1 基线报告](https://github.com/nudojs/nudo/blob/main/docs/reports/s1-perf-baseline.md) |
 | Agent 修复（node-semver 历史 bug，约 2.4k LOC） | tokenTotal **569k** · 轮次 **45** · 修复环 **16** · 门禁峰值 RSS **226 MB** | **993k**（**+75%**）· **63** · **21** · **289 MB** | 两侧均 6/6 完成；差距在成本而非检出上限——[OSS-SEMVER 报告](https://github.com/nudojs/nudo/blob/main/benchmark/lsp-rounds/out/OSS-SEMVER.md) |
 | 约束类门禁载荷 | 能检出；token 花在**报告**上 | 常**假绿**（不花 token，缺陷放行） | `pnpm run agent-dx`——TS 的「便宜 token」往往是沉默 |
 

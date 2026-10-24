@@ -10,14 +10,21 @@
  *   withNewTargetReset 包裹（嵌套 new 不串帧）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, litValue, strLit } from "../../abs.ts";
-import { objOf, getSlot, setSlot } from "../../objects.ts";
+import { abs, unknown, never, litValue, strLit } from "../../abs.ts";
+import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { builtinSuperCtorOf, hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
-import { builtinCtorAbs, protoOfRecv } from "../../builtins.ts";
+import {
+  builtinCtorAbs,
+  protoBrandAbs,
+  protoOfRecv,
+  extStateOf,
+  getPropFlags,
+  setPropFlags,
+} from "../../builtins.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
-import { $get, $set, asAbsVal, callAtFunctionBoundary } from "../runtime.ts";
-import { pushCtorFrame, popCtorFrame } from "../runtime/state.ts";
+import { $get, $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred } from "../runtime.ts";
+import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../../abs-fn.ts";
@@ -46,6 +53,165 @@ import {
 
 
 const classImpl = new WeakMap<object, EvalClassSpec>();
+
+/**
+ * Bug 245：派生构造器「本帧已调 super」状态（**模块级 WeakMap 侧表**）。
+ *
+ * 原生语义（ES2023 15.7.1 / 15.7.6）：
+ * - 派生类构造器**必须**在访问 `this` / 返回前调用一次 `super()`；
+ *   一次都不调用 ⇒ ReferenceError（"Must call super constructor in derived
+ *   class before accessing 'this' or returning from derived constructor"）。
+ * - 第二次调用 `super()` ⇒ ReferenceError（"Super constructor may only be
+ *   called once"）。
+ *
+ * 状态键 = 实例 Abs 身份；值 = **已调过 super 的子类名集合**——同一实例
+ * 沿继承链逐层传递（`class D extends B extends A`：B 层的 super() 不得
+ *   被误判成 D 层的「已调」）。`$super` 每次返回**新** brand Abs（内层 obj
+ *   共享），故标记同时落在入参与出参上。
+ *
+ * 选型理由（AGENT-CONTEXT §4 允许「Shape 可选字段」或「模块级 WeakMap」）：
+ * 选**模块级 WeakMap**——该状态是「一次构造过程」的瞬时事实，不是值的
+ * 形状；写进 Shape 会把构造期状态混进类型系统（brand 的 leq / 指纹 /
+ *   展示面都会带上瞬时状态）。WeakMap 随实例 Abs 回收，无泄漏。
+ */
+const superCalledMarks = new WeakMap<object, Set<string>>();
+
+/** 标记「本实例在 childName 这一层已调用过 super()」 */
+export function markSuperCalled(inst: Abs, childName: string): void {
+  if (!inst || typeof inst !== "object") return;
+  let s = superCalledMarks.get(inst as object);
+  if (!s) {
+    s = new Set<string>();
+    superCalledMarks.set(inst as object, s);
+  }
+  s.add(childName);
+}
+
+/** 读「本实例在 childName 这一层是否已调用过 super()」 */
+export function superCalledFor(inst: Abs, childName: string): boolean {
+  if (!inst || typeof inst !== "object") return false;
+  return superCalledMarks.get(inst as object)?.has(childName) ?? false;
+}
+
+/**
+ * Bug 253：bind 产物的 [[Construct]] facet（**模块级 WeakMap 侧表**）。
+ *
+ * 原生：`new (f.bind(thisArg, ...bound))()` 走**绑定目标的 [[Construct]]**
+ * ——以 newTarget.prototype 建新实例、绑定实参前置、`this` = 新实例（**忽略**
+ *   绑定的 thisArg）；普通调用 `f.bind(thisArg)(...)` 才用绑定的 thisArg。
+ * 引擎此前 bind 产物只带 apply 钩子 ⇒ `$new` 复用 `impl.apply(args, thisVal)`
+ *   ⇒ 目标构造器在 `this === boundThis`（常为 null）上执行 ⇒ `new B()` 假抛
+ *   TypeError。
+ *
+ * 选型理由（AGENT-CONTEXT §4 指定）：`AbsFnImpl` 是**公共类型**（algebra/
+ *   index.ts + core/src/index.ts 导出）⇒ 不加 `construct` 成员；改用模块级
+ *   WeakMap 侧表承载「bind 产物可构造」，零公共类型面改动。
+ */
+export type BindCtorFacet = {
+  /** 新实例的 brand 名（取自绑定目标——原生实例属目标构造器）。
+   *  惰性求值：伪父名注册 / 空 spec 注册的副作用不进 bind 期。 */
+  instName: () => string;
+  /** 新实例的 [[Prototype]]（绑定目标的 prototype 载体；不可知时 undefined） */
+  proto: () => Abs | undefined;
+  /** [[Construct]]：以新实例为 this、绑定实参前置调目标构造器 */
+  construct: (instance: Abs, args: Abs[]) => Abs;
+};
+
+const bindCtorFacets = new WeakMap<object, BindCtorFacet>();
+
+/** 登记 bind 产物的构造 facet（invoke.ts 的 bind 臂调用） */
+export function markBindCtorFacet(fn: Abs, facet: BindCtorFacet): void {
+  if (!fn || typeof fn !== "object") return;
+  bindCtorFacets.set(fn as object, facet);
+}
+
+/** 读 bind 产物的构造 facet（非 bind 产物 ⇒ undefined） */
+export function bindCtorFacetOf(fn: Abs): BindCtorFacet | undefined {
+  if (!fn || typeof fn !== "object") return undefined;
+  return bindCtorFacets.get(fn as object);
+}
+
+/**
+ * Bug 250：原生 [[Construct]] 的返回值判定——「返回值是 Object 就用它」。
+ *
+ * 引擎此前只认 `brand|obj` 两个形态 ⇒ 构造器返回**数组 / 函数 / Promise**
+ * 时被静默换回 `this`（`new F()` 返回数组却折成空实例：`Array.isArray`
+ * 假 false、`instanceof F` 假 true）。对象形态全集：obj / arr / tuple /
+ * fn / brand（类实例）/ eff（Promise）——`prim` / nullish 不是对象。
+ */
+function isObjectLikeAbs(v: Abs | undefined | null): boolean {
+  if (!v || typeof v !== "object" || !("shape" in (v as object))) return false;
+  const k = (v as Abs).shape.k;
+  return (
+    k === "brand" || k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "eff"
+  );
+}
+
+/**
+ * Bug 257：IsConstructor(target) 判定——靶是否**可构造**。
+ * true = 可构造；false = 确定不可构造；undefined = 不可判。
+ *
+ * 判据（复用既有机制，不重造）：
+ * - 宿主函数：`hostFnCtorFacet`（Bug 9 机制）——false = 箭头 / 方法 /
+ *   generator / async（原生 IsConstructor 恒 false）；undefined = 未知。
+ * - fn 形 Abs：`shape.ctor` 旗标（Bug 9 机制）——true 可构造 / false 不可 /
+ *   缺省不可判。
+ * - brand 形 Abs：`ctor:true` = 类值（可构造）；其余 brand = 实例 / 原型
+ *   对象（原生 IsConstructor 恒 false）。
+ * - obj / arr / tuple / prim：恒不可构造。
+ */
+function ctorFacetOfTarget(t: Abs | undefined): boolean | undefined {
+  if (typeof t === "function") {
+    const facet = hostFnCtorFacet(t as (...a: unknown[]) => unknown);
+    if (facet === false) return false;
+    if (facet === true) return true;
+    return undefined;
+  }
+  if (!t || typeof t !== "object" || !("shape" in (t as object))) return false;
+  const sh = (t as Abs).shape;
+  if (sh.k === "fn") {
+    if (sh.ctor === true) return true;
+    if (sh.ctor === false) return false;
+    return undefined;
+  }
+  if (sh.k === "brand") {
+    // 代理靶：代理本身的可构造性随**被代理的靶**（ProxyCreate 只在靶可
+    // 构造时装 [[Construct]]）——递归一层（原生代理链可嵌套）。
+    if (sh.name === "Proxy") {
+      const parts = proxyPartsOf(t as Abs);
+      if (!parts) return undefined;
+      return ctorFacetOfTarget(parts.target);
+    }
+    return sh.ctor === true;
+  }
+  if (sh.k === "obj" || sh.k === "arr" || sh.k === "tuple" || sh.k === "prim") return false;
+  return undefined;
+}
+
+/**
+ * Bug 205：fn Abs 构造器的实例 [[Prototype]]（构造期捕获用）。
+ *
+ * - 宿主函数 **facade**（member.ts 的 `$set` 宿主函数臂建）：其
+ *   "prototype" 槽即被替换后的新原型——实例的 [[Prototype]] 就是它
+ *   （原生 `F.prototype = {}` 之后 `new F()` 的实例原型是新对象）。
+ * - 其它 fn Abs（$fnVal 函数表达式 / env 构造器）：按名 protoBrandAbs
+ *   （与 evalProtoChain / `f.prototype` 读同一载体）。
+ */
+export function fnAbsCtorProtoOf(cls: Abs, instName: string): Abs {
+  const sh = cls.shape;
+  if (sh.k === "fn" && sh.slots) {
+    const slot = getSlot(sh.slots, "prototype");
+    if (slot) return slot.value;
+  }
+  return protoBrandAbs(instName);
+}
+
+/**
+ * Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中；与
+ * transpile/class-emit.ts 的同名常量保持一致）。静态块与静态字段同表
+ * （源码序），$class 逐项执行——保留键项只执行块体、不挂静态槽。
+ */
+const STATIC_BLOCK_KEY_PREFIX = "\u0000nudoStaticBlock:";
 
 /**
  * Bug 90：spec 成员记录的 own-property 语义（第一道，源头治理）——
@@ -93,10 +259,13 @@ function wellKnownSymbolKeyOf(v: unknown): string | undefined {
   return wellKnownSymbolKeys.get(v);
 }
 
-/** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
+/** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots）。
+ *  displayName（Bug 133）：对外可见的 **name**（原生无名类名为空串）；缺省
+ *  用内部类名（类声明 / 具名类表达式同口径）。 */
 export function $class(
   name: string,
   spec: Omit<EvalClassSpec, "name"> & { extends?: string | Abs | unknown; hasExtends?: boolean },
+  displayName?: string,
 ): Abs {
   // extends 是活引用：类值取 brand 名、宿主 ctor 取 .name、字符串向后兼容。
   // 原生 ClassDefinitionEvaluation：superclass 须为 null 或 constructor，否则
@@ -104,10 +273,9 @@ export function $class(
   // hasExtends 标记区分「extends undefined（babel Identifier → 活引用 raw
   // undefined）」与「无 extends 子句」——前者定义期即 TypeError。
   const ext = spec.extends;
-  // bindImport 的 JS 可调用 wrapper（fn Abs → 箭头）：回 Abs 面（同 $new）——
-  // wrapper 是箭头，hostFnCtorFacet 会误判不可构造
-  const extAbsFn = (ext as { __nudoAbsFn?: Abs } | undefined)?.__nudoAbsFn;
-  const extVal = extAbsFn ?? ext;
+  // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
+  // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
+  const extVal = ext;
   let superName: string | undefined;
   let superNull = false;
   if (spec.hasExtends) {
@@ -189,8 +357,12 @@ export function $class(
     // Bug 90：记录容器一律换 null 原型副本（见 ownRec 注释）
     methods: ownRec(spec.methods),
     methodParams: ownRec(spec.methodParams),
+    // Bug 325：类方法的函数种类戳（async × generator 四象限）——读取面
+    // classMethodValueAbs 打 impl.fnKind ⇒ 标签面 AsyncFunction / …。
+    ...(spec.methodKinds ? { methodKinds: ownRec(spec.methodKinds) } : {}),
     staticMethods: ownRec(spec.staticMethods),
     staticMethodParams: ownRec(spec.staticMethodParams),
+    ...(spec.staticMethodKinds ? { staticMethodKinds: ownRec(spec.staticMethodKinds) } : {}),
     statics: ownRec(spec.statics),
     instanceFields: spec.instanceFields,
     accessors: ownRec(spec.accessors),
@@ -226,21 +398,49 @@ export function $class(
     }
     const rekey = (rec: Record<string, unknown> | undefined): void => {
       if (!rec) return;
-      for (const [synth, real] of renames) {
-        if (synth in rec && !(real in rec)) {
-          rec[real] = rec[synth];
-          delete rec[synth];
+      // Bug 142：保序重建——synth → 真名的重挂不得打乱记录序（静态元素按
+      // 表序执行：静态块与静态字段交错；重命名后置到表尾会丢类体源码序）。
+      // 口径不变：真名已被占用则不重命名（保留 synth 名）；抽象键摘除。
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rec)) {
+        if (drops.has(k)) continue;
+        const real = renames.get(k);
+        if (real !== undefined && !(real in rec) && !(real in out)) {
+          out[real] = v;
+          continue;
         }
+        out[k] = v;
       }
-      for (const d of drops) delete rec[d];
+      for (const k of Object.keys(rec)) delete rec[k];
+      Object.assign(rec, out);
     };
     rekey(full.methods);
     rekey(full.methodParams);
+    // Bug 325：方法种类戳表随计算键折叠同步换名（否则 synth 名与真名错位）
+    rekey(full.methodKinds);
     rekey(full.staticMethods);
     rekey(full.staticMethodParams);
+    rekey(full.staticMethodKinds);
     rekey(full.statics);
     rekey(full.accessors);
     rekey(full.staticAccessors);
+    // Bug 139：实例字段的计算键（synth 名）同 statics 折叠真名——键表达式
+    // 已在定义期求值（computedKeys 表），此处只把 synth 名换成真名；抽象键
+    // （any/symbol/…）不可静态列举 → 丢弃该字段（不假精确挂名，与旧
+    // 逐实例求值口径的"抽象键跳过"一致）。
+    if (full.instanceFields) {
+      const kept: NonNullable<EvalClassSpec["instanceFields"]> = [];
+      for (const f of full.instanceFields) {
+        if (f.name !== undefined && renames.has(f.name)) {
+          kept.push({ ...f, name: renames.get(f.name)! });
+        } else if (f.name !== undefined && drops.has(f.name)) {
+          // 抽象计算键——不挂名
+        } else {
+          kept.push(f);
+        }
+      }
+      full.instanceFields = kept;
+    }
   }
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
@@ -268,11 +468,23 @@ export function $class(
   // 在 statics 循环里按源序覆盖该槽（原生同名静态字段覆写 Function.name）。
   // 此前尾置：初始化器内 C.name 折 undefined，且用户 static name 被
   // 尾置 strLit(name) 冲回类名（双缺陷，同一处顺序修正）。
-  setSlot(slots, "name", { value: strLit(name) });
+  // Bug 133：name 槽取**对外可见**的类名（无名类为空串——原生口径）；内部
+  // 类名（brand 名 / 类注册键 / super 链键）仍是 name。
+  setSlot(slots, "name", { value: strLit(displayName ?? name) });
   const evalStatic = (v: Abs | ((cls: Abs) => Abs)): Abs =>
     typeof v === "function" ? asAbsVal((v as (cls: Abs) => Abs)(val)) : asAbsVal(v);
   if (full.statics) {
-    for (const [k, v] of Object.entries(full.statics)) setSlot(slots, k, { value: evalStatic(v) });
+    // Bug 142：静态元素按**类体源码序**执行——静态字段初始化器与静态块
+    // 同表（transpile 侧合并），静态块以保留键（NUL 前缀，用户键不可能
+    // 自然命中）入表：执行块体（this = 类值）但不挂静态槽。保留键前缀与
+    // transpile/class-emit.ts 的同名常量保持一致。
+    for (const [k, v] of Object.entries(full.statics)) {
+      if (k.startsWith(STATIC_BLOCK_KEY_PREFIX)) {
+        evalStatic(v);
+        continue;
+      }
+      setSlot(slots, k, { value: evalStatic(v) });
+    }
   }
   // Bug 50：static [Symbol.hasInstance]（方法/字段）以 "@@hasInstance" 槽
   // 挂到类值。R5：静态方法 impl 首参 __this = 类值——适配器把 receiver
@@ -335,9 +547,73 @@ export function findMethod(
   return undefined;
 }
 
+/**
+ * Bug 194：原型方法删除钩子——`delete X.prototype.m` 从**方法注册表**移除
+ * 该方法（原生：类方法就是原型对象的**自有属性**，delete 后原型上（及沿
+ * 原型链继承它的派生类原型上）都没有该方法）。
+ *
+ * 注册表 `spec.methods` 是引擎方法面的单一事实源——移除条目后三面同步缺席：
+ * - 读面（containers/member.ts 沿类链查 `spec.methods`）；
+ * - 调用面（`findMethod`）；
+ * - in 面（`brandHasProtoMember` 查 `spec.methods`）。
+ *
+ * **接线点在 `runtime/members.ts` 的 `$del`**（S1 的文件，本片不改）：删除
+ * 的接收者是 `.prototype` brand（`A.prototype`）时，按名取 owner 类并调用
+ * 本函数。原型对象上本就没有该方法的槽（方法在注册表里），`$del` 只删槽
+ * ⇒ 删除事件此前**不留任何痕迹**（注册表侧无人通知）——这正是本钩子的
+ * 存在理由。原生 `delete` 的返回值恒 true（与是否命中无关），故本函数只
+ * 报告「是否确有该方法条目」。
+ */
+export function deleteProtoMethod(ctorName: string, key: string): boolean {
+  const spec = getEvalClass(ctorName);
+  if (!spec?.methods || !Object.hasOwn(spec.methods, key)) return false;
+  delete spec.methods[key];
+  return true;
+}
+
+/**
+ * Bug 260：类值 **own 静态槽**（静态字段 `static m = 2` / 动态写 `C.m = v`）。
+ *
+ * 原生属性查找序是 own → [[Prototype]] 链：派生类自己声明的同名静态字段
+ * **遮蔽**继承的静态方法（`class A { static m(){} } class B extends A
+ * { static m = 2 }` ⇒ `B.m` 是 own 静态字段 `2`，`B.m()` 原生抛
+ * `TypeError: B.m is not a function`，此前引擎沿链调到 A.m()）。
+ *
+ * 槽位取自类值内层 obj 槽（静态字段的落点，与读面
+ * `runtime/containers/member.ts` 的 own 槽读同一载体）。
+ */
+function ownStaticSlotOf(className: string, key: string): Abs | undefined {
+  const cv = lookupClassValue(className);
+  if (!cv) return undefined;
+  const inner = cv.shape.k === "brand" ? (cv.shape as { shape?: Abs }).shape : undefined;
+  if (inner?.shape.k === "obj") {
+    const slot = getSlot(inner.shape.slots, key);
+    if (slot && !slot.optional) return slot.value;
+  }
+  // fn 伪父（宿主/函数表达式构造器）的 expando 静态槽
+  if (cv.shape.k === "fn" && cv.shape.slots) {
+    const fslot = getSlot(cv.shape.slots, key);
+    if (fslot && !fslot.optional) return fslot.value;
+  }
+  return undefined;
+}
+
+/** 静态槽值是否**确定**非可调用（原生 `B.m is not a function` 的前提） */
+function staticSlotDefinitelyNotCallable(v: Abs): boolean {
+  const k = v.shape.k;
+  if (k === "fn") return false;
+  // brand：ctor 类值可调用；实例 brand（new Map()）不可调用
+  if (k === "brand") return (v.shape as { ctor?: boolean }).ctor !== true;
+  // 抽象值（unknown / any）：不可证非可调用 → 保守不抛
+  if (k === "unknown" || k === "any") return false;
+  return true;
+}
+
 /** 沿继承链找静态方法（Bug 18）：原生静态方法挂构造器 [[Prototype]] 链
  *  （ClassDefinitionEvaluation 设 B.__proto__ = A）——空派生类
- *  `class B extends A {}` 的 B.m() 不得断链（与 findMethod 实例链同口径）。 */
+ *  `class B extends A {}` 的 B.m() 不得断链（与 findMethod 实例链同口径）。
+ *  Bug 260：每级先查**类值 own 静态槽**（静态字段 / 动态写）——原生 own
+ *  属性优先于链上的继承静态成员。 */
 export function findStaticMethod(
   startName: string,
   method: string,
@@ -347,6 +623,26 @@ export function findStaticMethod(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const spec = getEvalClass(cur);
+    // Bug 260：own 静态槽遮蔽继承的静态方法
+    const own = ownStaticSlotOf(cur, method);
+    if (own !== undefined) {
+      // 槽值可调用 → 调用它（this = 类值，与静态方法同口径）
+      if (
+        own.shape.k === "fn" ||
+        (own.shape.k === "brand" && (own.shape as { ctor?: boolean }).ctor === true)
+      ) {
+        const v = own;
+        return (thisVal: Abs, ...args: Abs[]) => $call(v, args, thisVal);
+      }
+      // 槽值确定非可调用 → 原生 TypeError（B.m is not a function）
+      if (staticSlotDefinitelyNotCallable(own)) {
+        return () => {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        };
+      }
+      // 抽象值：自有槽仍遮蔽继承链（不回落找父类方法），但不可证非可调用
+      return undefined;
+    }
     // Bug 90：own-property 取值（D.hasOwnProperty / D.toString 不得命中）
     const sm = ownMember(spec?.staticMethods, method);
     if (sm) return sm;
@@ -392,9 +688,78 @@ export function instanceOwnFaceHasMember(recv: Abs, brandName: string, key: stri
 }
 
 /**
+ * Bug 247：实例字段落地 = **CreateDataPropertyOrThrow**（原生
+ * InitializeInstanceElements → DefineField）：在接收者上**创建自有数据
+ * 属性**，**不沿原型链派发 setter**。
+ *
+ * 引擎此前走 `$set` = `[[Set]]` ⇒ 父类原型上的同名**访问器**拦截了字段
+ * 落地（`class A { get x(){return 1} } class B extends A { x = 2 }` 原生
+ * 读出 2——字段是 B 实例的自有数据属性，父类 getter 不参与；引擎却把
+ * 字段写穿到父类 setter / getter-only 时**假抛 TypeError**）。
+ *
+ * 结构性门禁保留（原生同款）：frozen ⇒ 定抛 TypeError；sealed / 不可扩展
+ * ⇒ 新键定抛 TypeError；自有槽不可写（writable:false）⇒ 定抛 TypeError。
+ */
+function defineOwnDataProperty(
+  target: Abs,
+  key: string,
+  value: Abs,
+  opts?: { internal?: boolean },
+): Abs {
+  const sh = target.shape;
+  if (sh.k === "brand") {
+    const inner = sh.shape;
+    if (inner.shape.k === "obj") {
+      const st = extStateOf(target);
+      if (st === "frozen") throwStrictWrite();
+      const slots = inner.shape.slots;
+      if ((st === "sealed" || st === "nonext") && !getSlot(slots, key)) throwStrictWrite();
+      if (getPropFlags(target)?.get(key)?.writable === false) throwStrictWrite();
+      const prev = getSlot(slots, key);
+      setSlot(slots, key, {
+        value,
+        ...(prev?.internal || opts?.internal ? { internal: true } : {}),
+        ...(prev?.symbolKey ? { symbolKey: true } : {}),
+      });
+      // Bug 66：原型链解析槽（errorBrandAbs 的 name）被自有数据属性覆盖 ⇒
+      // 转**自有可枚举**（原生建自有可枚举属性；$set 同口径）。
+      if (prev?.inherited) setPropFlags(inner, key, { enumerable: true });
+      clearStaleTermPred(target);
+      return target;
+    }
+    return $set(target, key, value, opts);
+  }
+  if (sh.k === "obj") {
+    const st = extStateOf(target);
+    if (st === "frozen") throwStrictWrite();
+    const slots = sh.slots;
+    if ((st === "sealed" || st === "nonext") && !getSlot(slots, key)) throwStrictWrite();
+    if (getPropFlags(target)?.get(key)?.writable === false) throwStrictWrite();
+    const prev = getSlot(slots, key);
+    setSlot(slots, key, {
+      value,
+      ...(prev?.internal || opts?.internal ? { internal: true } : {}),
+      ...(prev?.symbolKey ? { symbolKey: true } : {}),
+    });
+    if (prev?.inherited) setPropFlags(target, key, { enumerable: true });
+    clearStaleTermPred(target);
+    return target;
+  }
+  // 非对象形态（退化副本 / 抽象）：沿通用写面
+  return $set(target, key, value, opts);
+}
+
+/**
  * Bug 59：实例字段落地——以 thisVal 为 this 按源序求值（原生
  * InitializeInstanceElements：基类 ctor 体前 / super() 返回后）。
- * $set 对 brand 实例就地写槽，每构造一个新实例各自持有字段。
+ * 就地写槽，每构造一个新实例各自持有字段。
+ *
+ * Bug 224：实例字段初始化器是**普通函数**（原生：field initializer 里的
+ * `new.target` 恒 undefined——`new.target` 只在构造器体里有值）。$new 的
+ * ctor 帧覆盖「构造器体 + 实例字段初始化器」整段，字段初始化器又**不走
+ * 调用边界**（不经 $call/$invoke ⇒ withNewTargetReset 不触发）⇒ 继承外层
+ * ctor 帧、折成类值。此处求值期清掉 new.target 帧（构造器帧只在构造器体
+ * 内成立；嵌套 new 自带帧，不串）。
  */
 export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
   let cur = thisVal;
@@ -412,7 +777,9 @@ export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
     if (!key) continue;
     // Bug 84：私有字段落地槽打 Slot.internal（introspection 面剔除；
     // $get/$set 直连访问与 $in 存在性不受影响）
-    cur = $set(cur, key, asAbsVal(f.init(cur)), { internal: f.private === true });
+    const initVal = withNewTargetReset(() => f.init(cur));
+    // Bug 247：自有数据属性语义（不走原型链 setter）
+    cur = defineOwnDataProperty(cur, key, asAbsVal(initVal), { internal: f.private === true });
   }
   return cur;
 }
@@ -460,12 +827,14 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
         // 第一形态值，直接返回；brand 产物嫁接内建槽到被构造 brand 名。
         if (built.shape.k !== "brand") return built;
         const instName = thisVal.shape.k === "brand" ? thisVal.shape.name : className;
-        return abs(
-          { k: "brand", name: instName, shape: built.shape.shape },
-          built.term,
-          built.pred,
-          built.conf,
-        );
+        // 内建集合的**条目表按 Abs 身份驻留**（collections.ts 的 WeakMap：
+        // mapTables / setTables）——**重铸 Abs 会丢表** ⇒ 含内建父的类链
+        // （class MyMap extends Map ⇒ new MyMap([["a",1]])）的实例读不到
+        // 条目（`.get` / `.size` 折 unknown = 族 02 遗留「含内建父的类链
+        // 保守不判」）。改为**就地改 brand 名**（Abs 身份不变 ⇒ 侧表存活；
+        // brand 名换成「被构造类名」与原生一致——instanceof 沿类链命中）。
+        built.shape = { ...built.shape, name: instName };
+        return built;
       }
     }
     return thisVal;
@@ -474,6 +843,17 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
     let tv = thisVal;
     if (!spec.superName && !spec.superNull) tv = applyInstanceFields(spec, tv);
     const after = spec.ctor(tv, ...args);
+    // Bug 245：派生类构造器**必须**调用一次 super()——一次都没调 ⇒ 原生
+    // ReferenceError（"Must call super constructor in derived class before
+    // accessing 'this' or returning from derived constructor"）。引擎此前
+    // 无「已调 super」状态通道 ⇒ 不调 super 的派生构造器静默构造成功
+    // （`this.x = 1` 落到未初始化 this 上也不抛）。
+    //
+    // 判定面：$super 在**本层**（className）标记过 ⇒ 已调；未标记 ⇒ 未调。
+    // 基类（无 superName / superNull）不适用本门。
+    if ((spec.superName || spec.superNull) && !superCalledFor(tv, className)) {
+      throw new NudoThrow(errorTypeAbs("ReferenceError"));
+    }
     if (after && after.shape.k === "brand") return after;
     // Bug 17：ES [[Construct]] 返回值语义——undefined（宿主 undefined / lit
     // undefined）→ this；其余原始值（prim 域或字面量；null 折 unknown+
@@ -506,12 +886,46 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
   return applyInstanceFields(spec, thisVal);
 }
 
+/**
+ * Bug 322：`new URL(...)` 实例补 `searchParams` 槽。
+ *
+ * 原生 `new URL(u).searchParams` **恒**是 URLSearchParams 实例（读面不是
+ * undefined）——core 的 URL 组件槽表（`builtins/error/web.ts` 的
+ * urlBrandAbs）只列了 10 个 URL 组件（href/origin/protocol/hostname/
+ * pathname/search/hash/port/username/password），**独缺 searchParams** ⇒
+ * 读它落「槽缺失 ⇒ undefined」⇒ `.get(...)` 在 undefined 上调用 ⇒
+ * **确定 TypeError** ⇒ 返回值折 `never`（错的确定值）⇒ 对完全合法、
+ * 确定性的代码报 `nudo:entry-may-throw` **假红**（L2/L5）。
+ *
+ * 本函数在**构造面**（$new 的宿主构造器分支）补槽：URL brand 的内层 obj
+ * 加一个 `searchParams` 槽，值 = URLSearchParams brand。
+ *
+ * 精度口径（不得折假精确）：URLSearchParams 的**条目表不建模**（仓内既有
+ * 精度债——builtin-coverage-registry 登记 "URLSearchParams.proto.get：
+ * 条目表不建模，接受 unknown"）⇒ `searchParams.get(k)` 折 **unknown**
+ * （原生给具体字符串），但**绝不再折 undefined / never / 假抛**。
+ * 越界诉求：条目表建模（get/has 按查询串取值）须落在
+ * `builtins/error/web.ts`（URLSearchParams brand 建模）+ 品牌方法派发面
+ * ——非本分片地盘，由主 agent 裁决合并。
+ */
+function withUrlSearchParamsSlot(u: Abs): Abs {
+  const sh = u.shape;
+  if (sh.k !== "brand" || sh.name !== "URL") return u;
+  const inner = sh.shape;
+  if (inner.shape.k !== "obj") return u;
+  const slots = inner.shape.slots;
+  if (getSlot(slots, "searchParams") !== undefined) return u;
+  // 就地加槽（brand 内层 obj 由 makeUrlAbs 每次新建 ⇒ 无跨实例共享）
+  setSlot(slots, "searchParams", { value: makeUrlSearchParamsAbs(undefined) });
+  return u;
+}
+
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
-  // bindImport 的 JS 可调用 wrapper（fn Abs → 箭头）：回 Abs 面派发——
-  // wrapper 本身是箭头，hostFnCtorFacet 会误判不可构造（Bug 9 假抛）
-  const wrappedAbs = (cls as { __nudoAbsFn?: Abs } | undefined)?.__nudoAbsFn;
-  if (wrappedAbs) return $new(wrappedAbs, args);
+  // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
+  // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
+  // Abs 一等函数在两条调用面原生可派发（标识符调用走 $callNamed 的 Abs
+  // 分支 → $call(fn,args)；new 走本函数的 Abs 分支）。
   // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发。
   // dual-facet 全局（Array/Date/Promise/Number…）经 env 遮蔽后 cls 是 Abs，
   // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
@@ -526,6 +940,27 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       if (!parts) return unknown; // 退化副本：靶不可知，不凭空造代理/实例
       const trap = proxyTrapOf(parts.handler, "construct");
       if (trap.k === "fn") {
+        // Bug 257：ProxyCreate 只在靶**是构造器**时装 [[Construct]]——
+        // 引擎此前**先查陷阱再派发**，无 IsConstructor(target) 判定 ⇒
+        // 靶不可构造（箭头函数 / 普通对象）时引擎照样派发 construct 陷阱
+        // （陷阱副作用发生、构造"成功"），原生恒抛 TypeError
+        // （"not a constructor"）⇒ 假绿 + 假值。
+        // 判定：true = 可构造；false = 确定不可构造；undefined = 不可判。
+        const targetFacet = ctorFacetOfTarget(parts.target);
+        if (targetFacet === false) {
+          // 确定不可构造 ⇒ 原生 TypeError（且**不派发陷阱**——原生根本没装
+          // [[Construct]]，陷阱副作用不发生）。
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        if (targetFacet === undefined) {
+          // 不可判（fn 形构造性未知）⇒ fail-closed：不派发陷阱（原生语义
+          // 不可判定时不制造副作用），记 may-throw + 值域 never。
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "Proxy construct target constructibility unknown",
+          });
+          return never;
+        }
         // construct(target, argsList, newTarget)；receiver = handler。
         // 原生要求陷阱返 Object（TrapResultValidation：`[[Construct]] … must
         // return an object`）——非对象字面量定抛 TypeError（node 实测
@@ -633,7 +1068,8 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       return makeTypedArrayAbs(clsName, args);
     }
     // Bug 85：new URL(input, base?) —— ToString + 解析校验（合法带 href 槽）
-    if (clsName === "URL") return makeUrlAbs(args[0], args[1]);
+    // Bug 322：构造面补 `searchParams` 槽（见 withUrlSearchParamsSlot）
+    if (clsName === "URL") return withUrlSearchParamsSlot(makeUrlAbs(args[0], args[1]));
     // Bug 22：装箱统一 makeBoxedAbs（[[PrimitiveValue]] 槽 + String 下标槽；
     // Number/String symbol 实参确定 TypeError、any → may——builder 内记）
     if (clsName === "Number" || clsName === "Boolean" || clsName === "String") {
@@ -699,6 +1135,12 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         undefined,
         "path",
       );
+      // Bug 205：构造期捕获实例的真实 [[Prototype]]（宿主函数的 prototype
+      // 载体是 protoBrandAbs 名面——与 `F.prototype` 读同一对象）。捕获后
+      // 原型被替换（`F.prototype = {}`）时，instanceof 沿**记录的链**做
+      // 身份比较：换原型前造的实例记旧原型、换后造的新实例记新原型
+      // （原生 "false|true" 的区分依据）。
+      setInstanceProto(thisVal, protoBrandAbs(clsName));
       // new.target 帧：构造器体内 new.target = 被构造的函数值
       pushCtorFrame(asAbsVal(cls));
       const entered = evalEnterCall(clsName, cls, args);
@@ -710,12 +1152,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         const after = callAtFunctionBoundary(() =>
           (cls as (...a: Abs[]) => Abs).apply(thisVal, args),
         );
-        if (
-          after &&
-          typeof after === "object" &&
-          "shape" in (after as object) &&
-          (after.shape.k === "brand" || after.shape.k === "obj")
-        ) {
+        // Bug 250：原生 [[Construct]]——返回值**是 Object 就用它**（数组 /
+        // 函数 / Promise 都是 Object）。引擎此前只认 brand|obj ⇒ 构造器
+        // 返回数组时静默换回 this（`Array.isArray(new F())` 假 false、
+        // `new F() instanceof F` 假 true）。
+        if (isObjectLikeAbs(after)) {
           return after;
         }
         return thisVal;
@@ -757,14 +1198,49 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (fs.ctor === true) {
-        // P3b：匿名函数表达式构造器——实例 brand 用伪父名（ensureFnParentName
-        // 注册链键），`new Base().x` 沿 memo prototype 折精确、instanceof /
-        // constructor 同链可解；有名 fn（Named NFE）保持声明名。
-        const instName = fs.name ?? ensureFnParentName(cls as Abs);
         // Bug 16：可构造 fn Abs（$fnVal 函数表达式值等）按 [[Construct]]
         // 执行体——apply 钩子承接 Abs thisVal（非 bindThis 的 thisArg 传入），
         // 返回 Abs 对象优先、undefined/原始值忽略（基类语义）
         const impl = getFnImpl(cls as Abs);
+        // P3b：匿名函数表达式构造器——实例 brand 用伪父名（ensureFnParentName
+        // 注册链键），`new Base().x` 沿 memo prototype 折精确、instanceof /
+        // constructor 同链可解；有名 fn（Named NFE）保持声明名。
+        const instName = fs.name ?? ensureFnParentName(cls as Abs);
+        // Bug 253：bind 产物（Function.prototype.bind）**可构造**——原生
+        // `new (f.bind(thisArg, ...bound))()` 走**目标的 [[Construct]]**：以
+        // newTarget.prototype 建实例、绑定实参前置、this = 新实例（**忽略**
+        // 绑定的 thisArg）。引擎此前 bind 产物只有 apply 钩子 ⇒ 复用
+        // impl.apply ⇒ 目标构造器在 this === boundThis（常为 null）上执行
+        // ⇒ `new B()` 假抛 TypeError。
+        // 构造 facet 走 declare.ts 的模块级 WeakMap 侧表（不改公共类型
+        // AbsFnImpl——它在 algebra/index.ts / core/src/index.ts 导出）。
+        const bindFacet = bindCtorFacetOf(cls as Abs);
+        if (bindFacet) {
+          const instName = bindFacet.instName();
+          const thisVal = abs(
+            { k: "brand", name: instName, shape: objOf({}) },
+            undefined,
+            undefined,
+            "path",
+          );
+          const proto = bindFacet.proto();
+          if (proto) setInstanceProto(thisVal, proto);
+          pushCtorFrame(cls as Abs);
+          const entered = evalEnterCall(instName, cls as Abs, args);
+          if (!entered.ok) {
+            popCtorFrame();
+            return evalTruncatedAbs();
+          }
+          try {
+            const after = bindFacet.construct(thisVal, args);
+            // Bug 250：返回值是 Object（brand/obj/arr/tuple/fn/eff）就用它
+            if (isObjectLikeAbs(after)) return after;
+            return thisVal;
+          } finally {
+            evalExitCall();
+            popCtorFrame();
+          }
+        }
         if (impl?.apply) {
           const thisVal = abs(
             { k: "brand", name: instName, shape: objOf({}) },
@@ -772,6 +1248,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
             undefined,
             "path",
           );
+          // Bug 205：构造期捕获实例的真实 [[Prototype]]——fn Abs 构造器
+          // （$fnVal 函数表达式 / 宿主函数 **facade**：prototype 被替换过）
+          // 的 prototype 槽优先，否则按名 protoBrandAbs（与 evalProtoChain
+          // 同一载体）。
+          setInstanceProto(thisVal, fnAbsCtorProtoOf(cls as Abs, instName));
           pushCtorFrame(cls as Abs);
           const entered = evalEnterCall(instName, cls, args);
           if (!entered.ok) {
@@ -787,14 +1268,18 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
               thisVal,
             );
             const after = isAbsApplyResult(afterR) ? afterR.abs : afterR;
-            if (
-              after &&
-              typeof after === "object" &&
-              "shape" in (after as object) &&
-              (after.shape.k === "brand" || after.shape.k === "obj")
-            ) {
+            // Bug 250：返回值是 Object（brand/obj/arr/tuple/fn/eff）就用它
+            if (isObjectLikeAbs(after)) {
               return after;
             }
+            // Bug 242 注记：此处**不**按「apply 返回 unknown」把实例折 unknown——
+            // 匿名函数表达式构造器（$fnVal）空体时 apply 也返回 unknown（引擎
+            // fail-closed 令牌），按该信号收口会误伤 P3b（伪名链键 + 实例
+            // brand）。未建模的宿主类构造器（命名空间成员：Intl.Collator 等）
+            // 由**命名空间成员 fn 投影带 name** 收口——`$new` 取到真名
+            // （`Intl.<Sub>`）即不落内部伪名（`__nudoFnParentN` 是合法 JS
+            // 标识符却从未声明，会泄漏进 nudo check 签名 / dts 产物（TS2304）/
+            // schema 产物（z.instanceof(伪名) ⇒ 加载即 ReferenceError））。
             return thisVal;
           } finally {
             evalExitCall();
@@ -837,6 +1322,9 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   pushCtorFrame(cls);
   try {
     const inst = constructClass(className, thisVal, args);
+    // Bug 205：构造期捕获类实例的真实 [[Prototype]]（= 类原型对象）——
+    // 原型被替换 / setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
+    if (inst.shape.k === "brand") setInstanceProto(inst, protoBrandAbs(className));
     // R2b：每次 new 产出新实例——brand 形打新鲜实例标（=== 折 false；
     // 构造器 return 既有对象时重打只改该 Abs 引用的 id，别名恒等不受影响）
     return inst.shape.k === "brand" ? markFreshInstance(inst) : inst;

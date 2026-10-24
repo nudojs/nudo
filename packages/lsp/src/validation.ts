@@ -6,7 +6,9 @@
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sanitizeErrorMessage } from "./sanitize.ts";
+import { configIgnoreThrows } from "./gate-config.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
@@ -25,6 +27,7 @@ import {
   checkConfig,
   collectSkipReturns,
   collectEnvNames,
+  envPathDependents,
   getPathEnvLoadErrors,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
@@ -37,9 +40,20 @@ import {
   type ModuleGraphCache,
 } from "@nudojs/service";
 import { preloadPathEnvs } from "@nudojs/service/evaluator";
+// Bug 634：门禁面的**注入装配器**与 agent 工具面同源（`buildLspInjection`，
+// packages/lsp/src/agent-tools.ts）——CLI 走 `inject` 通道（`@nudo:mock` /
+// `@nudo:as` / `@nudo:replace` / env 全局），LSP 编辑器面此前**只传
+// `modules`** ⇒ 同一份文件 CLI 绿 / IDE 红（假红）。
+//
+// ⚠ 循环依赖：agent-tools.ts 已 import 本模块的 `evalAnalysisModules`
+// （`evalAnalysisModules` ↔ `buildLspInjection` 互为对偶）⇒ 本模块再
+// import agent-tools 形成环。环上**只有函数声明**被跨模块引用（ESM 的
+// 函数声明在模块实例化期即就绪）⇒ 环是良性的：两侧都只在**函数体内**
+// 调用对方，不存在初始化期读取。
+import { buildLspInjection } from "./agent-tools.ts";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
-import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports } from "@nudojs/core";
+import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports, type CheckIssue } from "@nudojs/core";
 import { parse, extractDirectives, type DirectiveDiag } from "@nudojs/parser";
 import { DIAG, extractAllLoadSpecs, hashSource, loadModuleDepsFingerprint, resolveDepPath, runWithCollectorScope, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
 import type { File } from "@babel/types";
@@ -52,14 +66,23 @@ function sourceFingerprint(s: string): string {
 /**
  * 项目配置指纹：analysis.mode / diagnostics / autoBind / env / callSiteBudget /
  * evalMissingSlot 变更必须 miss analysisCache（与 CLI force-full 同口径）。
+ *
+ * 导出（测试可见）：指纹的**归一口径**是 #487 的契约面——写测试比留
+ * 内部函数更直接。
  */
-function projectConfigFingerprint(filePath: string): string {
+export function projectConfigFingerprint(filePath: string): string {
   try {
     const proj = findProjectConfig(dirname(filePath));
     const cfg = proj?.config ?? {};
+    // autoBind 必须取**归一后**的值（service 侧唯一归一点 `interfaceConfig`）：
+    // 分析面读的是归一值，指纹读原始值 ⇒ 两者口径分裂。写 `"autoBind": "false"`
+    // （非布尔，非法形状）时归一回落 true ⇒ 有效行为与「不写」完全相同，
+    // 但原始指纹不同 ⇒ 用户只改了这处无效写法也会 miss 缓存、全量重算
+    // （#487）。谓词形态（函数）无法 JSON 序列化，落一个稳定标记。
+    const autoBind = interfaceConfig(cfg).autoBind;
     return sourceFingerprint(
       JSON.stringify({
-        autoBind: cfg.contract?.autoBind ?? true,
+        autoBind: typeof autoBind === "function" ? "predicate" : autoBind,
         analysis: cfg.analysis ?? null,
         env: cfg.env ?? null,
         check: cfg.check ?? null,
@@ -98,6 +121,12 @@ export const analysisCache = new Map<
     ast?: File;
     /** checkToLspDiagnostics（已按 analysis.diagnostics 档过滤；getCachedCheckDiags 惰性填） */
     checkDiags?: LspDiagnostic[];
+    /**
+     * 文档逐行字符数（Bug 778）：诊断 range 必须夹到**行尾**以内，而 pull
+     * 通道（server.ts）调 toLspDiagnostic 时**没有源码参数** ⇒ 用会话条目
+     * 里的行长表夹取（push / pull 两条通道同口径）。
+     */
+    lineLengths?: number[];
   }
 >();
 
@@ -239,10 +268,15 @@ function normPath(p: string): string {
  * Canonical key for session path-keyed maps (analysisCache / knownFiles /
  * nudoDepParents / validateGeneration). Accepts a URI or a file path.
  *
- * Unifies Windows drive forms: `file:///c:/x` → `/c:/x` (uriToFilePath) and
- * `c:\x` / `c:/x` / `C:/x` (fs-resolved) all collapse to `c:/x`. Without the
+ * Unifies Windows drive forms: `file:///c:/x` → `c:\x`（Windows 上的
+ * `fileURLToPath`）/ `/c:/x`（POSIX 上的同形）and `c:\x` / `c:/x` / `C:/x`
+ * (fs-resolved) all collapse to `c:/x`. Without the
  * leading-slash strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows
  * and delete/lookup misses the entry written under the URI-derived key.
+ *
+ * ⚠ Bug 748：`uriToFilePath` 改用 `fileURLToPath`（与 `pathToFileURL` 互逆）
+ *   ⇒ 本键的**盘符形态**随之变化（Windows 上不再带前导斜杠）；下面的
+ *   前导斜杠剥离分支**仍保留**（POSIX 形态 `file:///c:/x` 依旧命中）。
  *
  * Drive-form unification is `stablePathKey`（core 单源）——L0 memo 依赖索引与
  * 本键必须同形态，否则 Windows 上定向逐出 miss（FIX-RESIDUAL-3）。
@@ -398,7 +432,29 @@ export async function handleNudoDepFileChanged(
     return;
   }
   const parents = lruRefresh(nudoDepParents, p);
-  const parentSet = new Set<string>(parents ?? []);
+  // **self-排除**（族 26 前置件，给 server.ts 的 didChangeWatchedFiles /
+  // didSave 路径用）：变更文件自己**不是**自己的「父文件」——自依赖边
+  // （文件 import 自己 / 侧车把自己登记成 parent）会把变更文件塞进
+  // parentSet ⇒ 触发对**自己**的 force 重检 ⇒ 自激重检（Bug 776）。
+  const parentSet = new Set<string>();
+  for (const x of parents ?? []) {
+    if (x !== p) parentSet.add(x);
+  }
+  // **path-based `@nudo:env` 模板的反向边**（service 的 env-path-deps 表——
+  // CLI watch 的真源）。
+  //
+  // ⚠ 为什么必须显式接这条边：env 模板**不是 import 边** ⇒ 模块图里没有它；
+  //   LSP 自己的 `nudoDepParents` 登记用的是**未解析**的 spec 路径
+  //   （`resolvePath(dirname, "./custom.env")`）⇒ 与磁盘上的
+  //   `custom.env.ts` **对不上** ⇒ 模板变更找不到依赖它的源文件 ⇒
+  //   **不重检** ⇒ IDE 诊断停在旧状态；而 CLI watch 用同一张表会重检 ⇒
+  //   **两面口径分裂**。
+  // ⇒ 这里直接消费 service 的**同一张表**（不另写一份解析）⇒ IDE 与 CLI 同口径。
+  for (const dependent of envPathDependents(p)) {
+    const parent = cacheKey(dependent);
+    if (parent === p) continue;
+    parentSet.add(parent);
+  }
   // 普通 import/实现文件：从 module graph 取 transitive dependents
   // （外部编辑 utils.js 时打开中的 parent 必须失效）
   if (isNudoTargetPath(p)) {
@@ -407,7 +463,11 @@ export async function handleNudoDepFileChanged(
       // 边目标是 resolveModuleFile 的 fs 原生形态，与 knownFiles 的 cacheKey 形态
       // 跨形态查找会漏边（Windows）——统一过 cacheKey 再算脏集（FIX-J1）
       for (const d of computeDirtySet(cacheKeyGraph(dependents), cacheKey(p))) {
-        parentSet.add(cacheKey(d));
+        // computeDirtySet 的脏集**含种子**（变更文件自己）⇒ 必须排除自身，
+        // 否则变更文件被当成自己的 parent 重检（自激重检，Bug 776）。
+        const parent = cacheKey(d);
+        if (parent === p) continue;
+        parentSet.add(parent);
       }
     } catch {
       /* graph rebuild failure → fall back to nudoDepParents only */
@@ -481,14 +541,40 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  // 与 service analysis-scope.hasNudoDirectives 同口径：指令住注释，字符串内不算
-  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(
+  // 与 service analysis-scope.hasNudoDirectives 同口径：指令住注释，字符串内不算。
+  // 名单是**全部活指令**：parser 侧（case/mock/pure/skip/sample/env/mock-module/
+  // as/replace）+ core 侧（contract/import/assume/invariant/throws/budget）——
+  // 少一个，该指令所在的文件在 mode=directives 下就被整份跳过（静默无诊断）。
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace|assume|invariant|throws|budget)\b/.test(
     stripStringsKeepComments(source),
   );
 }
 
+/**
+ * `file:` URI → 文件路径（Bug 748：**必须与 `filePathToUri` 互逆**）。
+ *
+ * ⚠ 此前本函数是裸 `decodeURIComponent(uri.slice(7))` ⇒ 两个毛病：
+ *   ① **畸形百分号转义**（`%` / `%zz`）抛 **`URIError`** ⇒
+ *      `didOpen` / `didChange` / `didClose` 三个处理器中断 ⇒
+ *      **该文档零诊断**（L2 假绿）；服务端自产的 URI（裸 `%`）**自己解不回来**。
+ *   ② **Windows 盘符**：`slice(7)` 不剥前导斜杠 ⇒ `file:///c:/x` ⇒ `/c:/x`。
+ * ⇒ 改用 Node 内置 **`fileURLToPath`**（与 `pathToFileURL` **天生互逆**、
+ *   跨平台、盘符形态正确）+ **`try/catch` 兜底**：畸形 ⇒ **回退到未解码原文**，
+ *   **绝不抛**（抛异常会让整条通知链断掉）。
+ * ⚠ **非 `file:` scheme**（`untitled:` 等）**原样返回**（行为不变）。
+ */
 export function uriToFilePath(uri: string): string {
-  return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
+  if (!uri.startsWith("file://")) return uri;
+  try {
+    return fileURLToPath(uri);
+  } catch {
+    // 畸形（百分号转义非法 / 非法 host）⇒ 回退：先试旧的解码口径，再退原文。
+    try {
+      return decodeURIComponent(uri.slice(7));
+    } catch {
+      return uri.slice(7);
+    }
+  }
 }
 
 /**
@@ -539,6 +625,7 @@ export function getCachedOrAnalyze(
       casesHash,
       depsHash,
       cfgHash,
+      lineLengths: lineLengthsOf(source),
     });
     lruTrim(analysisCache, fileCap());
   }
@@ -665,14 +752,130 @@ const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
   info: DiagnosticSeverity.Information,
 };
 
-export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
+/**
+ * 指令文法诊断（nudo:directive-syntax）的修复提示文案。
+ *
+ * check 通道（checkToLspDiagnostics 显式 extract）与 eval 通道（service
+ * drain）抽的是**同一条**指令诊断；两通道的诊断合并按 `code + message`
+ * 去重（push 与 pull 同口径，见 validateText / server.languages.diagnostics）
+ * ——文案不一致 → 同一条诊断被发布两次（一条带提示、一条不带）。
+ * 故：提示文案只此一处定义，两通道同渲染。
+ */
+const DIRECTIVE_SYNTAX_HINT = "Fix the directive syntax (see docs/reference/diagnostics.md)";
+
+/**
+ * service 的 `Diagnostic.range` 行号是 **1 基源码行**（Babel `node.loc`；
+ * CLI 报告与 check-json-map 直接印这个值），`line: 0` 是「无源码锚点」的
+ * **占位**（指令文法诊断 / mock 解析失败 / 模块缺失等），不是「第 0 行」。
+ *
+ * LSP 的 `Position.line` 是 0 基 uinteger：1 基 → 0 基要减 1，占位值减 1
+ * 会落成 -1（非法位置，IDE 侧丢弃或错位）——换算后必须钳位到 0。
+ */
+function lspLine(line: number): number {
+  return Math.max(0, line - 1);
+}
+
+/** service 的 column 已是 0 基（Babel）；负值（占位/异常）钳位到 0。 */
+function lspChar(column: number): number {
+  return Math.max(0, column);
+}
+
+/**
+ * 文档逐行字符数（LSP range 夹取用）：LSP 的 `Position` 必须落在文档内，
+ * 而 service 用 `column: 999` 当「整行」哨兵（`nudo:case-expected`，
+ * Bug 778）⇒ 不夹则协议层越界（客户端按 range 渲染会划到行外）。
+ * 字符数按 UTF-16 code unit 计（与 Babel `loc.column` 同口径）。
+ */
+export function lineLengthsOf(source: string): number[] {
+  return source.split(/\r\n|\r|\n/).map((l) => l.length);
+}
+
+/** 列号夹到该行长度以内；行长未知（无源码 / 行不在文档内）⇒ 不夹。 */
+function clampChar(ch: number, line: number, lengths?: number[]): number {
+  if (!lengths) return ch;
+  const len = lengths[line];
+  if (len === undefined) return ch;
+  return Math.min(ch, len);
+}
+
+/**
+ * Diagnostic **range 的唯一计算点**（Bug 778）：
+ * - service / core check 的行号是 1 基源码行 → LSP 0 基（占位 line 0 → 0）；
+ * - 列号夹到**该行长度**以内（`column: 999` 整行哨兵 ⇒ 行尾）；
+ * - 同一行时 end ≥ start（夹取后不得倒挂）。
+ *
+ * eval 通道（toLspDiagnostic）与 check 通道（checkIssueToLspDiagnostic）
+ * 共用本函数 ⇒ 两条通道的 range 口径同源。
+ */
+export function lspDiagnosticRange(
+  start: { line: number; column: number },
+  end: { line: number; column: number },
+  lengths?: number[],
+): {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+} {
+  const sLine = lspLine(start.line);
+  const eLine = lspLine(end.line);
+  const sChar = clampChar(lspChar(start.column), sLine, lengths);
+  const eChar = clampChar(lspChar(end.column), eLine, lengths);
+  return {
+    start: { line: sLine, character: sChar },
+    end: {
+      line: eLine,
+      character: eLine === sLine ? Math.max(sChar, eChar) : Math.max(0, eChar),
+    },
+  };
+}
+
+/**
+ * 会话内已登记的文档行长表（按 cacheKey）：pull 通道（server.ts）调
+ * toLspDiagnostic 时**没有源码参数** ⇒ 用会话条目里的行长表夹取 range
+ * （Bug 778：push / pull 两条通道都必须夹到行尾，同口径）。
+ */
+function cachedLineLengths(uri: string): number[] | undefined {
+  try {
+    return analysisCache.get(cacheKey(uriToFilePath(uri)))?.lineLengths;
+  } catch {
+    return undefined;
+  }
+}
+
+/** eval 通道消息：指令文法诊断补上与 check 通道同文案的修复提示（去重键对齐）。 */
+function evalChannelMessage(d: JsDiagnostic): string {
+  if (d.code !== DIAG.directiveSyntax) return d.message;
+  return d.message.includes(DIRECTIVE_SYNTAX_HINT)
+    ? d.message
+    : `${d.message} · ${DIRECTIVE_SYNTAX_HINT}`;
+}
+
+/**
+ * eval 通道（service Diagnostic → LSP Diagnostic）。
+ *
+ * `source` 缺省时用会话条目里的行长表夹取 range（pull 通道无源码参数）。
+ */
+export function toLspDiagnostic(
+  d: JsDiagnostic,
+  uri: string,
+  source?: string,
+): LspDiagnostic {
+  return toLspDiagnosticWithLengths(
+    d,
+    uri,
+    source !== undefined ? lineLengthsOf(source) : cachedLineLengths(uri),
+  );
+}
+
+/** toLspDiagnostic 的行长表版本（同一批诊断只算一次行长表）。 */
+function toLspDiagnosticWithLengths(
+  d: JsDiagnostic,
+  uri: string,
+  lengths?: number[],
+): LspDiagnostic {
   const diag: LspDiagnostic = {
     severity: severityMap[d.severity],
-    range: {
-      start: { line: d.range.start.line - 1, character: d.range.start.column },
-      end: { line: d.range.end.line - 1, character: d.range.end.column },
-    },
-    message: d.message,
+    range: lspDiagnosticRange(d.range.start, d.range.end, lengths),
+    message: evalChannelMessage(d),
     source: "nudo",
     code: d.code,
     data: { ...((d.data as object) ?? {}), suggestions: d.suggestions },
@@ -684,10 +887,11 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
     diag.relatedInformation = [{
       location: {
         uri,
-        range: {
-          start: { line: d.origin.line - 1, character: d.origin.column },
-          end: { line: d.origin.line - 1, character: d.origin.column },
-        },
+        range: lspDiagnosticRange(
+          { line: d.origin.line, column: d.origin.column },
+          { line: d.origin.line, column: d.origin.column },
+          lengths,
+        ),
       },
       message: "value originates here",
     }];
@@ -764,6 +968,44 @@ export function evalAnalysisModules(
 }
 
 /**
+ * check 通道 issue → LSP Diagnostic 的**唯一转换点**（Bug 778 / 779）：
+ * - **severity（档）与 range（位置）在同一处算出**；env 通道复用同一函数
+ *   ⇒ 与主通道**同档同 range**；
+ * - info 级**不在此处砍掉**：档位取舍归 `filterCheckLspByLevel`
+ *   （`verbose` 才放行 info）。砍在转换之前 ⇒ 下游档位过滤器永远看不到
+ *   info ⇒ `nudo.analysis.diagnostics: "verbose"` 对 check 诊断是**空操作**，
+ *   且 `nudo:assume-relied` / `nudo:invariant-relied` / `nudo:opaque-result`
+ *   永不上屏（Bug 779）。
+ */
+function checkIssueToLspDiagnostic(i: CheckIssue, lengths?: number[]): LspDiagnostic {
+  // core check issue 的 line 是 1 基源码行；无锚点时回落第 1 行，
+  // 换算到 LSP 的 0 基后钳位 ≥ 0（Position.line 是 uinteger）——由
+  // lspDiagnosticRange 统一算（与 eval 通道同源）。
+  const line = i.line ?? 1;
+  const column = i.column ?? 0;
+  const parts = [i.message];
+  if (i.actual) parts.push(`actual: ${i.actual}`);
+  if (i.expected) parts.push(`expected: ${i.expected}`);
+  if (i.suggestion) parts.push(i.suggestion);
+  return {
+    severity: severityMap[i.severity],
+    range: lspDiagnosticRange({ line, column }, { line, column: column + 1 }, lengths),
+    message: parts.join(" · "),
+    source: "nudo-check",
+    code: i.code,
+    data: {
+      actual: i.actual,
+      expected: i.expected,
+      fn: i.fn,
+      suggestion: i.suggestion,
+      suggestions: i.suggestion ? [i.suggestion] : [],
+      reason: i.reason,
+      actions: i.actions,
+    },
+  } satisfies LspDiagnostic;
+}
+
+/**
  * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
  */
 export function checkToLspDiagnostics(
@@ -779,19 +1021,38 @@ export function checkToLspDiagnostics(
     const proj = findProjectConfig(dirname(filePath));
     const autoBind = interfaceConfig(proj?.config).autoBind;
     const cCfg = checkConfig(proj?.config);
+    // ignoreThrows 走**配置面解析**（裸字符串 / 数组内逗号都认）⇒ 与 CLI
+    // `nudo check` 同口径（service checkConfig 的严格 `string[]` 会把
+    // `"TypeError"` / `["TypeError,RangeError"]` 静默丢成空表 ⇒ CLI 绿 / IDE 红）。
+    const ignoreThrows = configIgnoreThrows(proj?.config);
     // 模块图：缺图时跨模块调用 unknown → unproven-return 假红（CLI 有图同文件绿）
     const analysisModules = evalAnalysisModules(filePath, source);
+    // Bug 634：注入包（modules + mocks + env 全局 + replace/as）——与 CLI
+    // `buildCheckInjection` 同源同口径（`buildLspInjection` 是本包的唯一
+    // 装配点，agent 工具面复用同一份）。此前本面只传 `modules` ⇒
+    // `@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局**全部缺席**
+    // ⇒ 被 mock 掉的依赖退化成未知全局 ⇒ 报 `nudo:entry-may-throw`（假红）。
+    const inject = buildLspInjection(filePath, source, {
+      loadModule: loadModule ?? lspLoadModule,
+      modules: analysisModules,
+    });
     const report = checkSource(filePath, source, pTrue, {
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
       entryThrows: cCfg.entryThrows,
-      ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(source),
-      ...(analysisModules ? { modules: analysisModules } : {}),
+      // 与 CLI `checkSource(..., { modules: inject.modules, inject })` 同形：
+      // `modules` 走**并入 env / mock-module 覆盖后**的表（`evalAnalyzeOpts`
+      // 取 `opts.modules ?? inject.modules` ⇒ 两者必须同源，否则 env 模块
+      // 被未并入的旧表顶掉）。
+      ...(Object.keys(inject).length > 0
+        ? { modules: inject.modules as never, inject }
+        : {}),
     });
-    const issues = [...report.issues];
+    const issues: CheckIssue[] = [...report.issues];
     // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径。
     // 显式通道：诊断直接落局部数组（不碰模块级 buffer，无 seq 锚 / 在途窃取窗口）。
     const dirDiags: DirectiveDiag[] = [];
@@ -801,43 +1062,13 @@ export function checkToLspDiagnostics(
         severity: "warning",
         code: d.code,
         message: d.message,
-        suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+        suggestion: DIRECTIVE_SYNTAX_HINT,
       });
     }
-    return issues
-      .filter((i) => i.severity === "error" || i.severity === "warning")
-      .map((i) => {
-        const line = (i.line ?? 1) - 1;
-        const col = i.column ?? 0;
-        const parts = [i.message];
-        if (i.actual) parts.push(`actual: ${i.actual}`);
-        if (i.expected) parts.push(`expected: ${i.expected}`);
-        if (i.suggestion) parts.push(i.suggestion);
-        return {
-          severity:
-            i.severity === "error"
-              ? DiagnosticSeverity.Error
-              : i.severity === "warning"
-                ? DiagnosticSeverity.Warning
-                : DiagnosticSeverity.Information,
-          range: {
-            start: { line, character: col },
-            end: { line, character: col + 1 },
-          },
-          message: parts.join(" · "),
-          source: "nudo-check",
-          code: i.code,
-          data: {
-            actual: i.actual,
-            expected: i.expected,
-            fn: i.fn,
-            suggestion: i.suggestion,
-            suggestions: i.suggestion ? [i.suggestion] : [],
-            reason: i.reason,
-            actions: i.actions,
-          },
-        } satisfies LspDiagnostic;
-      });
+    // 三档（error / warning / info）**全部保留**——档位取舍交给
+    // filterCheckLspByLevel（push / pull 共用同一 helper）。
+    const lengths = lineLengthsOf(source);
+    return issues.map((i) => checkIssueToLspDiagnostic(i, lengths));
   } catch (err) {
     // 不得静默 `return []` 把门禁通道整段丢掉（constraint-violated 等会无端消失）——
     // 失败本身变成一条 Error 诊断，与 push 的 Analysis error 同口径
@@ -862,8 +1093,28 @@ export function checkToLspDiagnostics(
  * analyzeFileAsync 不再 preload，这里显式补一轮（幂等：ESM import 有模块缓存，
  * 常态开销仅 statSync）。只报本轮 env 名单解析出的路径：env 项从配置移除后，
  * 进程级错误表里的陈旧条目不得继续误报。
+ *
+ * 两类条目（service 侧 env-loader 的记录口径）：
+ * - **path 形**：记录的 path = `resolvePath(baseDir, name)`（缺失文件 /
+ *   import 失败 / defineEnv 契约违约）——按解析后路径匹配。
+ * - **按名字形**：记录的 path = **名字本身**（未知 env 名 `bogus` /
+ *   `nodejs`…、非字符串 env 项的 JSON 渲染）——此前只按解析后路径过滤，
+ *   这类条目永远匹配不上 ⇒ 在 IDE 里被整条吃掉（#470 / #937）。
+ *   按**本文件自己的 env 名单**匹配 ⇒ 同目录别的文件的无 path 诊断
+ *   不会误吸进来（`getPathEnvLoadErrors(baseDir)` 已按 baseDir 收窄）。
+ *
+ * **导出面**（族 26 前置件，给 server.ts 的 pull 诊断面用）：本函数此前是
+ * 模块私有的 ⇒ pull handler 拿不到 env 通道（Bug 781 / 992：push 面与
+ * CLI 都报 `nudo:env-unresolved`，pull 面静默）。语义不变：
+ * `envUnresolvedDiags(filePath, source) → Promise<LspDiagnostic[]>`——
+ * live 瞬态收集（不随 analysisCache 缓存）、按本文件 env 名单过滤、
+ * 每条都是 `nudo:env-unresolved` warning（与 check 主通道**同档同 range**，
+ * 转换走同一个 checkIssueToLspDiagnostic）。
  */
-async function envUnresolvedDiags(filePath: string, source: string): Promise<LspDiagnostic[]> {
+export async function envUnresolvedDiags(
+  filePath: string,
+  source: string,
+): Promise<LspDiagnostic[]> {
   let envNames: string[];
   try {
     envNames = collectEnvNames(filePath, source, true);
@@ -871,23 +1122,76 @@ async function envUnresolvedDiags(filePath: string, source: string): Promise<Lsp
     return [];
   }
   if (envNames.length === 0) return [];
+  // Bug 647（两层基准）：项目级 env 按**项目根**解析、文件级按**文件目录**
+  // ——口径与 CLI（`packages/nudojs/src/commands/check.ts`）同款；此前一律
+  // 按文件目录解析 ⇒ 项目级 env 在「项目根之外的文件」上解析到不存在的路径
+  // ⇒ env 全局对那些文件不可见（编辑器面退化 unknown）。
   const baseDir = dirname(filePath);
+  const proj = findProjectConfig(baseDir);
+  const projectEnvBaseDir = proj?.projectDir ?? baseDir;
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv)
+    ? rawProjectEnv.filter((n): n is string => typeof n === "string")
+    : [];
+  const projectEnvSpec = projectEnvNames.map((name) =>
+    name.startsWith("./") || name.startsWith("../")
+      ? resolvePath(projectEnvBaseDir, name)
+      : name,
+  );
+  const fileEnvNames = collectEnvNames(filePath, source, false);
+  // 候选路径（**两层并集**）：本文件自己请求过的 env 解析路径——诊断过滤基准
+  // （项目级按**项目根**、文件级按**文件目录**）。先于预载收集 ⇒ 预载自身
+  // 抛出（stat 竞态等）时过滤基准仍在（诊断不得因预载失败而丢）。
+  const candidates = new Set<string>();
+  for (const n of projectEnvSpec) candidates.add(resolvePath(projectEnvBaseDir, n));
+  for (const n of fileEnvNames) candidates.add(resolvePath(baseDir, n));
   try {
-    await preloadPathEnvs(envNames, baseDir);
+    if (projectEnvSpec.length > 0) {
+      await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+    }
+    if (fileEnvNames.length > 0) {
+      await preloadPathEnvs(fileEnvNames, baseDir);
+    }
   } catch {
     /* preload 自身抛出（stat 竞态等）不拖垮诊断发布 */
   }
-  // preloadPathEnvs 记录的 path = resolvePath(baseDir, name)——同式过滤陈旧条目
-  const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
-  return getPathEnvLoadErrors(baseDir)
-    .filter((e) => candidates.has(e.path))
-    .map((e) => ({
-      severity: DiagnosticSeverity.Warning,
-      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-      message: `path env failed to load: ${e.path} — ${e.error}`,
-      source: "nudo-check",
-      code: DIAG.envUnresolved,
-    }));
+  // 按名字发的诊断：记录 path = 名字本身（未知名）/ JSON 渲染（非法 env 项）
+  const byName = new Set<string>(envNames);
+  for (const raw of envNames as unknown[]) {
+    if (typeof raw === "string") continue;
+    const rendered = JSON.stringify(raw);
+    if (typeof rendered === "string") byName.add(rendered);
+  }
+  const lengths = lineLengthsOf(source);
+  // 两层基准各取一次：文件级按**文件目录**、项目级按**项目根**。
+  // 失败条目按「记录时的 preload 目录」归档（`recordPathEnvError(path, baseDir, e)`），
+  // 只取文件目录 ⇒ 项目级 env 的失败取不到 ⇒ IDE 假绿（诊断不可见）且与 CLI 面
+  // 口径分裂（CLI 同款双取：`packages/nudojs/src/commands/check.ts`）。
+  // 合并后按**两层候选路径的并集**过滤（本文件自己请求过的路径才报）。
+  const seen = new Set<string>();
+  const loadErrors = [
+    ...getPathEnvLoadErrors(baseDir),
+    ...getPathEnvLoadErrors(projectEnvBaseDir),
+  ].filter((e) => {
+    const key = `${e.path}\u0000${e.error}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return loadErrors
+    .filter((e) => candidates.has(e.path) || byName.has(e.path))
+    // 与 check 主通道**同一个转换点**（同档 = warning，同 range = 无锚点
+    // 形态 0:0→0:1）——不得在这里另起一套 range/severity 口径。
+    .map((e) =>
+      checkIssueToLspDiagnostic(
+        {
+          severity: "warning",
+          code: DIAG.envUnresolved,
+          message: `path env failed to load: ${e.path} — ${e.error}`,
+        },
+        lengths,
+      ),
+    );
 }
 
 /**
@@ -943,6 +1247,8 @@ export async function validateText(
     const activeCases = deps.getActiveCases?.(uri);
     const casesHash = casesFingerprint(activeCases);
     const fp = sourceFingerprint(text);
+    // 文档逐行字符数（Bug 778）：诊断 range 夹到行尾用——本轮只算一次
+    const lengths = lineLengthsOf(text);
     const cfgHash = projectConfigFingerprint(filePath);
     const depHash = depsFingerprint(filePath, text, deps.loadModule);
     const prev = analysisCache.get(key);
@@ -999,6 +1305,7 @@ export async function validateText(
         casesHash,
         depsHash: depHash,
         cfgHash,
+        lineLengths: lineLengthsOf(text),
         ...(prevFingerprintHit && prev?.checkDiags ? { checkDiags: prev.checkDiags } : {}),
       });
       lruTrim(analysisCache, fileCap());
@@ -1014,7 +1321,8 @@ export async function validateText(
     const checkDiags = getCachedCheckDiags(filePath, text, deps.loadModule, deps.workspaceRoots);
     const level = diagnosticsLevelForFile(filePath);
     const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
-    const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+    // range 夹到行尾（Bug 778）：源码在本轮手里 ⇒ 传进去，行长表只算一次
+    const evalDiags = evalJs.map((d) => toLspDiagnosticWithLengths(d, uri, lengths));
     // path env 加载失败/缺失：live 瞬态 warning（与 CLI check/test 同源），走
     // check 通道口径（source=nudo-check）并按 analysis.diagnostics 档过滤
     const envDiags = filterCheckLspByLevel(await envUnresolvedDiags(filePath, text), level);

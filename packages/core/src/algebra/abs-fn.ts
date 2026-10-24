@@ -79,11 +79,33 @@ export type AbsFnImpl = {
   env?: AstEnv;
   kind?: string;
   /**
+   * Bug 325：**函数种类**戳（async × generator 四象限）——原生
+   * `Object.prototype.toString.call(f)` 据此给标签（Function /
+   * AsyncFunction / GeneratorFunction / AsyncGeneratorFunction）。
+   *
+   * 与 `kind` 分开：`kind` 是**派发角色**维度（"protoMethod" = 内建原型
+   * 方法值，抑制 $invokeInner 的回退再入），而类方法**同时**可能是
+   * generator（`class A { *m(){} }`）⇒ 两种语义不能共用一个字段。
+   */
+  fnKind?: "function" | "async" | "generator" | "async-generator";
+  /**
    * Bug 9：原生 fn.length（首个默认值/rest 形参前的形参数）——静态已知时
    * 记录（宿主函数 v.length / 全 Identifier 形参的 AST），$len / $get 的
    * f.length 折 exact；未记录（默认值/嵌套默认模式不可判）→ 保守 number≥0。
    */
   length?: number;
+  /**
+   * Bug 399：逐位「可省略」标记（与 `params` **同下标**，`true` = 该位有
+   * 默认值 / 带 `?` / 是 rest ⇒ 调用方可省）。
+   *
+   * 为什么不能靠 `length` 代替：`length` 是「首个默认值/rest **前**的形参数」
+   * ⇒ `f(a, b = 1, c)` 的 length = 1，但 `c` 仍**必选**（TS 语义：可选参数
+   * 之后的参数仍必选）⇒ 必选元数 ≠ length。
+   *
+   * 消费侧：`leq.ts` 的 `fnRequiredArity`（先读本标记，缺省回退
+   * `requiredFnArity` 的名字后缀判据）。
+   */
+  optionalParams?: boolean[];
   /**
    * 调用时直接派发（mock withArgs 等），优先于 body。
    * 返回裸 Abs = 不抛；返回 AbsApplyResult 时 throws 面经 $call 统一路由，
@@ -188,6 +210,9 @@ export function absFunction(
       ...(opts?.returnType ? { returnType: opts.returnType } : {}),
       ...(opts?.slots ? { slots: opts.slots } : {}),
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
+      // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
+      // （默认形参在形参表面只是光秃秃的名字 ⇒ 被计成必选 ⇒ 假红）
+      ...(impl.optionalParams ? { optionalParams: impl.optionalParams } : {}),
     },
     conf: opts?.conf ?? "exact",
   };

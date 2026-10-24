@@ -49,7 +49,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 
 ```text
 @nudo:case "name" (arg1, arg2, ...)
-@nudo:case "name" (arg1, arg2) => expected
+@nudo:case "name" (arg1, arg2) => expectedType
 ```
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
@@ -92,6 +92,8 @@ function len(s) {
   return s.length;
 }
 ```
+
+---
 
 ## @nudo:mock — Mock 外部依赖
 
@@ -183,7 +185,7 @@ function unannotatedHeavy(x) {
 
 ## @nudo:sample — 循环采样（保留，无效果）
 
-`@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
+`@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer-orchestrate-uncached.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
 
 ### 语法
 
@@ -289,7 +291,6 @@ export const nested = fn({ "card.grade": string() }, string());
 ```text
 @nudo:contract <param> <constraint>
 @nudo:contract return <constraint>
-@nudo:contract <param> <constraint>   // 别名
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置

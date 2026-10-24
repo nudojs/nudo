@@ -4,15 +4,14 @@
 import { describe, it, expect } from "vitest";
 import type { CheckIssue, CheckJson, CheckReport } from "@nudojs/core";
 import { checkSource, formatCheckReport, pTrue, serializeCheckJson } from "@nudojs/core";
+import { mergeCheckIssues } from "@nudojs/service";
 import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
   ENV_UNRESOLVED_CODE,
   issueFromCachedJson,
-  mergeCheckIssues,
   mergeJsonIssues,
-  mockFromErrorIssues,
   reportFromCachedJson,
   serializeCheckJsonForCache,
   signatureFromCachedJson,
@@ -194,25 +193,6 @@ describe("docsDiagnosticCodes", () => {
   });
 });
 
-describe("mockFromErrorIssues", () => {
-  it("maps each error with suggestion", () => {
-    const issues = mockFromErrorIssues([
-      { name: "m", fromPath: "./x.js", message: "missing" },
-    ]);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]!.severity).toBe("error");
-    expect(issues[0]!.code).toBe("nudo:module-missing");
-    expect(issues[0]!.message).toBe("missing");
-    expect(issues[0]!.suggestion).toBe(
-      'Create the mock file or fix the path in @nudo:mock m from "./x.js"',
-    );
-  });
-
-  it("empty → []", () => {
-    expect(mockFromErrorIssues([])).toEqual([]);
-  });
-});
-
 describe("domainIssuesFromDiagnostics", () => {
   const base: DomainDiagnosticLike = {
     code: "nudo:interface-domain-exceeds",
@@ -287,47 +267,6 @@ describe("dualEntryIssue", () => {
     const i = dualEntryIssue({ message: "m" });
     expect("line" in i).toBe(true);
     expect(i.line).toBeUndefined();
-  });
-});
-
-describe("mergeCheckIssues", () => {
-  it("appends and bumps summary by severity", () => {
-    const r = mergeCheckIssues(reportOf([]), [
-      { severity: "error", code: "a", message: "1" },
-      { severity: "warning", code: "b", message: "2" },
-      { severity: "info", code: "c", message: "3" },
-    ]);
-    expect(r.issues).toHaveLength(3);
-    expect(r.summary.errors).toBe(1);
-    expect(r.summary.warnings).toBe(1);
-    expect(r.summary.infos).toBe(1);
-    expect(r.summary.functions).toBe(2);
-    expect(r.ok).toBe(false);
-  });
-
-  it("info-only keeps ok", () => {
-    const r = mergeCheckIssues(reportOf([], true), [
-      { severity: "info", code: "c", message: "3" },
-    ]);
-    expect(r.ok).toBe(true);
-  });
-
-  it("error flips ok even if previously ok", () => {
-    expect(mergeCheckIssues(reportOf([], true), [
-      { severity: "error", code: "a", message: "1" },
-    ]).ok).toBe(false);
-  });
-
-  it("already-failed stays failed", () => {
-    expect(mergeCheckIssues(reportOf([], false), [
-      { severity: "warning", code: "a", message: "1" },
-    ]).ok).toBe(false);
-  });
-
-  it("empty issues is identity on counts", () => {
-    const r = mergeCheckIssues(reportOf([{ severity: "error", code: "a", message: "1" }], false), []);
-    expect(r.summary.errors).toBe(0);
-    expect(r.ok).toBe(false);
   });
 });
 
@@ -480,8 +419,11 @@ export function scale(x) { return x * 2 + 1; }
     const scale = cached.signatures.find((s) => s.name === "scale") as CachedCheckSig;
     expect(add.ret).toBe("number | string");
     expect(scale.ret).toBe("number");
-    // display 本体仍含 term 注记（formatAbs 契约面不变）
-    expect(add.display).toContain("= (A1 + A2)");
+    // display 本体是**人类面口径**（formatShape，Bug 413：机器面与人类面
+    // 签名行同源）⇒ term 注记改看 `detail`
+    // （display 带 throws 后缀 ⇒ 与 `ret`（去掉 throws 的返回段）不同形）
+    expect(add.display).toBe("number | string throws TypeError");
+    expect(add.detail).toContain("term: (A1 + A2)");
   });
 
   it("ret consumes through signatureFromCachedJson (display=ret, empty shape)", () => {

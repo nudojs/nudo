@@ -18,20 +18,54 @@ export function registerMatchIter(val: Abs, elements: Abs[]): void {
   tables.set(val as object, elements);
 }
 
-/** 模板标签对象（$tpl，Bug 34）的元素侧表：obj 形状 + @@iterator 槽 +
+/** 模板标签对象（$tpl，Bug 34 / Bug 195）的元素侧表：obj 形状 + @@iterator 槽 +
  *  已知 cooked 元素——spread / for-of / Array.from / join 精确展开
- *  （否则元素折 unknown，`[...s].join()` 假 may-symbol）。 */
+ *  （否则元素折 unknown，`[...s].join()` 假 may-symbol）。
+ *  Bug 195：模板对象是**冻结的数组 exotic**（原生 GetTemplateObject）⇒ 本表
+ *  是它的**元素面**（数组方法 / 展开 / for-of 都按 cooked 精确取）。 */
 const tplIterTables = new WeakMap<object, Abs[]>();
 
 export function registerTplElements(val: Abs, elements: Abs[]): void {
   tplIterTables.set(val as object, elements);
 }
 
+/**
+ * Bug 199：用户 iterable 的**迭代器对象**侧表——元素采集（GetIterator 调
+ * `@@iterator` 拿到的迭代器）登记在此，for-of / 数组解构的**非正常退出**
+ * （break / return / throw）按规范调 `return()`（IteratorClose）时取用。
+ * 键 = 被迭代的 iterable Abs（本表只服务用户协议路径；引擎自建迭代器无
+ * `return` 槽，close 天然空转）。
+ */
+const userIterTables = new WeakMap<object, Abs>();
+
+export function registerUserIter(val: Abs, iter: Abs): void {
+  userIterTables.set(val as object, iter);
+}
+
+export function userIterOf(val: Abs): Abs | undefined {
+  return userIterTables.get(val as object);
+}
+
+/**
+ * Bug 199：用户 iterable 的**确切元素数**（迭代器报告 done 时的收集长度）——
+ * for-of 的迭代次数（原生 N 次）据此确定；未耗尽（步数上界触顶）⇒ 不登记
+ * （长度不可知 ⇒ 沿用 unbounded 单代表口径）。
+ */
+const userIterLenTables = new WeakMap<object, number>();
+
+export function registerUserIterLen(val: Abs, len: number | undefined): void {
+  if (len === undefined) userIterLenTables.delete(val as object);
+  else userIterLenTables.set(val as object, len);
+}
+
+export function userIterLenOf(val: Abs): number | undefined {
+  return userIterLenTables.get(val as object);
+}
+
 /** 生成器对象（$gen，Bug 22）元素侧表：obj 形状 + next/return/throw 方法
  *  槽 + @@iterator——yield 元素挂本表，for-of / spread / Array.from /
  *  yield* / 数组解构按序精确展开（迭代路径从新表示取出元素域）。 */
 const genIterTables = new WeakMap<object, Abs[]>();
-
 export function registerGenElements(val: Abs, elements: Abs[]): void {
   genIterTables.set(val as object, elements);
 }
@@ -100,6 +134,11 @@ export function registerGenDeferred(val: Abs, deferred: GenDeferred): void {
 // makeProxyAbs 的 brand "Proxy"（inner = target Abs）只承载靶形态；
 // target/handler 引用挂本表——get/has/set 陷阱派发（$get/$set/$in）与
 // 无陷阱回退读靶用。独立于 error.ts（leaf 模块，无环）。
+//
+// Bug 300：proxyTrapOf 的陷阱名联合补 "getOwnPropertyDescriptor"
+// （[[GetOwnProperty]]）——此前该陷阱**从不派发**（handler 提供的描述符被
+// 无视，描述符面退化成「靶面 | undefined」并定抛）。ownKeys 陷阱不走本表
+// （proxyOwnKeysTrapKeys 直读 handler 槽，见 builtins/object/descriptor.ts）。
 
 export interface ProxyParts {
   target: Abs;
@@ -139,7 +178,20 @@ export function proxyTrapOf(
     | "setPrototypeOf"
     | "preventExtensions"
     | "getPrototypeOf"
-    | "construct",
+    | "construct"
+    // Bug 300：[[GetOwnProperty]] 陷阱（getOwnPropertyDescriptor）——此前
+    // 陷阱名并集里没有它 ⇒ 陷阱**从不派发**（handler 提供的描述符被无视，
+    // 描述符面退化成「靶面 | undefined」并定抛）。
+    | "getOwnPropertyDescriptor"
+    // Bug 279：[[Call]] 陷阱（apply）——此前陷阱名并集里没有它 ⇒ 代理调用
+    // **从不派发** apply 陷阱（陷阱副作用整体丢失）。
+    | "apply"
+    // Bug 284：[[IsExtensible]] 陷阱（isExtensible）——此前无派发点
+    // （Object.isExtensible(proxy) 恒折 true，原生必抛 TypeError）。
+    | "isExtensible"
+    // Bug 285：[[OwnPropertyKeys]] 陷阱（ownKeys）——for…in 面无视该陷阱
+    // （枚举出靶对象的键，而非陷阱返回的键）。
+    | "ownKeys",
 ): ProxyTrap {
   if (!handler) return { k: "opaque" };
   const s = handler.shape;
@@ -175,6 +227,8 @@ export function copyMatchIterTables(src: Abs, dst: Abs): void {
   const d = dst as object;
   if (tables.has(s)) tables.set(d, tables.get(s)!);
   if (tplIterTables.has(s)) tplIterTables.set(d, tplIterTables.get(s)!);
+  if (userIterTables.has(s)) userIterTables.set(d, userIterTables.get(s)!);
+  if (userIterLenTables.has(s)) userIterLenTables.set(d, userIterLenTables.get(s)!);
   if (genIterTables.has(s)) genIterTables.set(d, genIterTables.get(s)!);
   if (genDrainTables.has(s)) genDrainTables.set(d, genDrainTables.get(s)!);
   if (genDeferredTables.has(s)) genDeferredTables.set(d, genDeferredTables.get(s)!);

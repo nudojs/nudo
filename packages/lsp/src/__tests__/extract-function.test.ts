@@ -98,6 +98,19 @@ describe("extractFunction — guards", () => {
     if (!r.ok) return;
     expect(r.functionName).toBe("extracted");
   });
+
+  // Bug 971：兜底名 `extracted` **空闲时保持不变**（上面那条既有口径不变），
+  // 被占用时才自动改名（占用检查做在 extract-function.ts 内部）。
+  it("renames the fallback when the name is taken", () => {
+    const s = `export function extracted() {\n  return 0;\n}\n\nexport function f() {\n  const x = 1;\n  return x + 1;\n}\n`;
+    const r = extractFunction(s, {
+      start: { line: 6, character: 9 },
+      end: { line: 6, character: 14 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.functionName).toBe("extracted1");
+  });
 });
 
 describe("applyEdits / extractToWorkspaceEdit", () => {
@@ -126,5 +139,43 @@ describe("applyEdits / extractToWorkspaceEdit", () => {
     const r = fullDocumentRange("a\nbb\n");
     expect(r.start).toEqual({ line: 0, character: 0 });
     expect(r.end.line).toBe(2);
+  });
+});
+
+// Bug 450：`applyEdits` 的**坐标口径**混用（排序用原 source、应用用已被改写
+// 的 out）⇒ 区间嵌套（插入点落在替换范围内部）时落点按陈旧坐标漂移 ⇒ 源文件
+// 被搅成垃圾。既有 `applyEdits` 用例只测「两个不相交 edit」⇒ 覆盖缺口 ⇒ 本块
+// 补上「嵌套区间」这一形态（既有用例逐字保留，不改不删）。
+describe("applyEdits — 区间嵌套（Bug 450）", () => {
+  const nested = [
+    { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
+    { range: { start: { line: 0, character: 6 }, end: { line: 0, character: 6 } }, newText: "INS" },
+  ];
+
+  it("插入点落在替换范围内部：插入文本紧贴替换文本之前", () => {
+    // 改前是 "AAAA REPLBBB CCCC"（插入文本被吞进替换文本里）
+    expect(applyEdits("AAAA BBBB CCCC", nested)).toBe("AAAA INSREPL CCCC");
+  });
+
+  it("合成结果与 edit 数组的顺序无关", () => {
+    expect(applyEdits("AAAA BBBB CCCC", [...nested].reverse())).toBe("AAAA INSREPL CCCC");
+  });
+
+  it("插入点与替换范围同起点：插入文本在替换文本之前", () => {
+    expect(
+      applyEdits("AAAA BBBB", [
+        { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
+        { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 5 } }, newText: "INS" },
+      ]),
+    ).toBe("AAAA INSREPL");
+  });
+
+  it("替换范围真的重叠（部分重叠 / 交叉）：fail-closed", () => {
+    expect(() =>
+      applyEdits("AAAA BBBB CCCC", [
+        { range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } }, newText: "REPL" },
+        { range: { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } }, newText: "X" },
+      ]),
+    ).toThrow(RangeError);
   });
 });

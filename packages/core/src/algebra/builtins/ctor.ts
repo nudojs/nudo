@@ -7,7 +7,7 @@ import { objOf, isNullProtoObj, getProtoAbs } from "../objects.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../exec/class-registry.ts";
 import { pTrue } from "../pred.ts";
-import { str, noBody } from "./shared.ts";
+import { str, noBody, typedArrayElementOf } from "./shared.ts";
 import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
 
@@ -138,26 +138,86 @@ export function functionProtoAbs(): Abs {
   return functionProtoCache;
 }
 
+/**
+ * Bug 321：**Error 家族原型**的自有数据属性 name / message。
+ * 原生（node v26 实测 `Object.getOwnPropertyNames(X.prototype)`）：
+ *   Error → ["constructor","name","message","toString"]
+ *   TypeError / RangeError / SyntaxError / ReferenceError / EvalError /
+ *   URIError / AggregateError → ["constructor","name","message"]
+ * 八个家族原型**都**有自有 `name`（值 = 家族名）与 `message`（值 = ""），
+ * 描述符 {writable:true, enumerable:false, configurable:true}。
+ * 其余内建原型**无**自有 name/message（Array.prototype / Object.prototype /
+ * Map.prototype / Promise.prototype… 的 gOPN 里没有）——故本表只列 Error
+ * 家族。（Function.prototype 有自有 name 但无 message——原生面单列，不在
+ * 本表：protoBrandAbs 的 Function 面另走 functionProtoAbs 的 fn 面。）
+ */
+const ERROR_FAMILY_PROTO_NAMES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "ReferenceError",
+  "EvalError",
+  "URIError",
+  "AggregateError",
+]);
+
 export function protoBrandAbs(ctorName: string): Abs {
   // Object.prototype 与 objectProtoBrand() 单例同身份（constructor 槽 +
   // 不可枚举标记），分身会让 === 恒等丢精度
   if (ctorName === "Object") return objectProtoBrand();
   let a = protoBrandByName.get(ctorName);
   if (!a) {
+    // Bug 321：Error 家族原型带**自有数据属性** name / message（原生同上）——
+    // 此前原型面只装 constructor 槽 ⇒ `hasOwnProperty("name")` /
+    // `Object.hasOwn(prototype,"name")` / `"name" in prototype` 全折 false
+    // （原生 true）。槽装**内层 obj**（原型对象的自有面 = 内层槽面）。
+    const isErrFamily = ERROR_FAMILY_PROTO_NAMES.has(ctorName);
+    const slots: Record<string, { value: Abs }> = {
+      constructor: { value: builtinCtorAbs(ctorName) },
+    };
+    if (isErrFamily) {
+      slots.name = { value: strLit(ctorName) };
+      slots.message = { value: strLit("") };
+    }
+    const inner = objOf(slots);
     a = abs(
       {
         k: "brand",
         name: `${ctorName}.prototype`,
-        shape: objOf({ constructor: { value: builtinCtorAbs(ctorName) } }),
+        shape: inner,
       },
       undefined,
       undefined,
       "exact",
     );
+    // 原生：类 / 内建构造器的 prototype 上的 `constructor` 是**不可枚举**
+    // 数据属性（{writable:true, enumerable:false, configurable:true}）⇒
+    // for-in / Object.keys 看不到它。缺这个标记 ⇒ 引擎把 `constructor`
+    // 当可枚举键发布（`for (const k in A.prototype)` 得 ["constructor"]，
+    // 原生是 []）。
+    setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
+    if (isErrFamily) {
+      // Bug 321：name / message 同为**不可枚举**数据属性（原生描述符
+      // enumerable:false）——标记与 `constructor` 同挂**brand 自身**
+      // （枚举视图 isNonEnumerable 与 propertyIsEnumerable 的 flags 兜底
+      // 都读 brand 的表；挂内层会顶掉 propertyIsEnumerable 对
+      // `constructor` 的品牌级标记）。
+      setPropFlags(a, "name", { enumerable: false, writable: true, configurable: true });
+      setPropFlags(a, "message", { enumerable: false, writable: true, configurable: true });
+    }
     protoBrandByName.set(ctorName, a);
   }
   return a;
 }
+
+/**
+ * Bug 328：%TypedArray%.prototype 的引擎名（TypedArray 家族原型的父原型）。
+ * 原生 `Object.getPrototypeOf(Uint8Array.prototype)` 是 %TypedArray%.prototype
+ * （再上一级才是 Object.prototype）——引擎用同一驻留 brand 表达 ⇒ 家族内
+ * 任意两族的原型恒等（原生同款）。
+ */
+const TYPED_ARRAY_PROTO_NAME = "TypedArray";
 
 /**
  * Object.getPrototypeOf 的具体原型投影（constructor 链可解）。
@@ -187,7 +247,15 @@ export function protoOfRecv(a: Abs): Abs {
                 : undefined;
     return ctor ? protoBrandAbs(ctor) : unknown;
   }
-  if (s.k === "fn") return functionProtoAbs();
+  if (s.k === "fn") {
+    // Bug 307：Function.prototype 自身的 [[Prototype]] 是 Object.prototype
+    //（原生 `Object.getPrototypeOf(Function.prototype) === Object.prototype`
+    // 为 true、`typeof` 折 "object"）——通用 fn 臂把「自己」当原型返回
+    //（wrong-exact false + typeof "function"）。驻留单例比对即可精确识别
+    //（用户函数的原型仍是 Function.prototype，走下方通用臂）。
+    if (a === functionProtoAbs()) return objectProtoBrand();
+    return functionProtoAbs();
+  }
   if (s.k === "eff" && s.eff === "promise") return protoBrandAbs("Promise");
   if (s.k === "brand") {
     if (s.name === "Object.prototype") return nullProtoLit;
@@ -230,6 +298,16 @@ export function protoOfRecv(a: Abs): Abs {
       }
       const be = BUILTIN_ERROR_SUPER[owner];
       if (be) return be ? protoBrandAbs(be) : objectProtoBrand();
+      // Bug 328：内建原型的 [[Prototype]] **不都是** Object.prototype——
+      // TypedArray 家族（Uint8Array/Int8Array/Float64Array/BigInt64Array…）
+      // 继承 %TypedArray%.prototype（其上才是 Object.prototype）。此前
+      // 一律折 Object.prototype ⇒ 原型链压扁一级：
+      // `Object.getPrototypeOf(Uint8Array.prototype) === Object.prototype`
+      // 折 exact true（原生 false），二级链反向也错（原生 true / 引擎
+      // false）。原生 oracle 逐个核对：其余内建原型（Map/Set/Date/RegExp/
+      // Promise/ArrayBuffer/DataView/URL/…）确为 Object.prototype 直系
+      // ⇒ 保留既有折法（退 unknown 会丢正确精度）。
+      if (typedArrayElementOf(owner)) return protoBrandAbs(TYPED_ARRAY_PROTO_NAME);
       return objectProtoBrand();
     }
     return protoBrandAbs(s.name);

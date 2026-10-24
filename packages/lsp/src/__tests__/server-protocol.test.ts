@@ -10,7 +10,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import type { Connection } from "vscode-languageserver/node";
+import { ErrorCodes, type Connection } from "vscode-languageserver/node";
 import { createNudoServer } from "../server.ts";
 import {
   NUDO_EXECUTE_COMMANDS,
@@ -140,13 +140,15 @@ describe("createNudoServer — request dispatch", () => {
 });
 
 describe("createNudoServer — error paths", () => {
-  it("unknown executeCommand dispatches to null without throwing", async () => {
+  it("unknown executeCommand raises a protocol-level MethodNotFound error", async () => {
     const mock = startServer();
-    const result = await handler(mock, "workspace/executeCommand")({
-      command: "nudo.notARealCommand",
-      arguments: [{ file: okFile }],
-    });
-    expect(result).toBeNull();
+    // 940：未声明的命令名不再回落 result:null（协议层假成功）——必须走协议层错误。
+    await expect(async () =>
+      handler(mock, "workspace/executeCommand")({
+        command: "nudo.notARealCommand",
+        arguments: [{ file: okFile }],
+      }),
+    ).rejects.toMatchObject({ code: ErrorCodes.MethodNotFound });
   });
 
   it("nudo.check on a missing file returns isError (fail-closed)", async () => {

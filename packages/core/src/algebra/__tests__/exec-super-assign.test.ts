@@ -124,10 +124,20 @@ describe("R2a: super 读闭链缺槽折 undefined（原 unknown → 复合赋值
       `export function f() { class A {} class B extends A { g() { return typeof super.hasOwnProperty; } } return new B().g(); }`,
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
+    // Bug 266：super.constructor = **父类构造器**（原生父类原型上的
+    // "constructor" 自有属性 ⇒ 父类值）——不再是内置 Object（此前本用例
+    // 钉的是错值：super.constructor === Object 折 true）。原生实测：
+    // `super.constructor === Object` → false；`super.constructor === A` → true。
+    // 引擎：与内置 Object 的恒等比较**不可判**（诚实 unknown——假 true 已
+    // 消除）；与父类值的恒等比较恒真（同一 Abs 引用）。
     const r2 = call(
       `export function f() { class A {} class B extends A { g() { return super.constructor === Object; } } return new B().g(); }`,
     );
-    expect(litValue(r2.result)).toEqual({ ok: true, value: true });
+    expect(litValue(r2.result).ok).toBe(false);
+    const r3 = call(
+      `export function f() { class A {} class B extends A { g() { return super.constructor === A; } } return new B().g(); }`,
+    );
+    expect(litValue(r3.result)).toEqual({ ok: true, value: true });
   });
 
   it("开链（extends Array）缺槽保持诚实 unknown（宿主原型面不可枚举）", () => {

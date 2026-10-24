@@ -59,11 +59,11 @@ nudo export src/api/users.js --format standard --out dist
 # 写入 dist/createUser.nudo.standard.ts
 ```
 
-生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——存在返回契约时命名为 **`<fn>Return`**（仅当无契约或只有参数契约时才用 `<fn>Output`）。**契约约束直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
+生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——返回值校验器**恒叫 `<fn>Output`**，与 zod 面同名（名字不再随「有无返回契约」在 `<fn>Return` / `<fn>Output` 之间翻转）。**契约约束直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
 
 ```ts
 // dist/createUser.nudo.standard.ts（节选）
-// （另导出 createUserReturn —— 侧车返回 shape 校验器）
+// （另导出 createUserOutput —— 侧车返回 shape 校验器）
 export const createUser_input = {
   "~standard": {
     version: 1,

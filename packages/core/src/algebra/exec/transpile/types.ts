@@ -9,8 +9,23 @@ export type TranspileOptions = {
   maxLoopIters?: number;
   /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
+  /**
+   * Bug 1160：本转译单元**共享**的 this 载体名（`__this` 基名经
+   * `internalTmpName` 分配）。载体是跨发射器协议——真函数体 prologue
+   * （`let <名> = $rawThis(this)`）与类/对象方法、访问器 thunk、字段 /
+   * 静态块 thunk 的首参**一方声明、多方读**（读方即 `thisParam`）——必须
+   * 同名。根转译单元（`transpileFile` / `transpileBodyNode`）分配一次并
+   * 线程化；无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+   */
+  thisSlot?: string;
   /** 当前类名（super 派发用） */
   className?: string;
+  /**
+   * Bug 133：类表达式的 **NamedEvaluation 名**（`const K = class {}` → "K"）。
+   * 只对**本表达式自身**生效——类体内的嵌套类表达式拿不到该名（原生内层
+   * 仍是无名类）；类自身的名字（`class Named {}`）优先于绑定名。
+   */
+  classNameHint?: string;
   /**
    * 静态方法体内 super 的接收者源（父类构造器——extends 表达式经
    * classSpecOf 前移计算注入）。super.x / super.m() / super[k] 落通用
@@ -24,11 +39,17 @@ export type TranspileOptions = {
   replacements?: Array<{
     target: string;
     varName: string;
-    /** 仅该语句范围内生效（1-based 行） */
+    /**
+     * 仅该**节点**范围内生效——字符区间 `[stmtStart, stmtEnd)`
+     * （Babel 节点的 start/end 偏移），**不是行号**：Bug 166 修法把
+     * 「行号窗口」改成「AST 节点身份」，行号窗口会泄漏进嵌套/同行的
+     * 其它子表达式。
+     */
     stmtStart?: number;
     stmtEnd?: number;
   }>;
-  /** @nudo:as：覆盖紧随语句的 init / return */
+  /** @nudo:as：覆盖紧随语句的 init / return（stmtStart/stmtEnd = 字符区间，
+   *  语义同上——按节点身份定位，不按行号） */
   asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
   inLoop?: number;
@@ -42,6 +63,19 @@ export type TranspileOptions = {
   lenientGlobals?: boolean;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
+  /**
+   * 「块完成 ≠ 函数尾」深度（>0 时**早退提升**走控制流协议而非「返回值」
+   * 协议）。
+   *
+   * 族 65 · BC #28：try / catch / finally **块体**的完成不是函数尾（块跑完
+   * 后函数继续往下走）⇒ 早退提升（fn-body.ts）的 alt 臂（后续路径）跑完后
+   * **不得**把它的值当函数返回值抛出。此前只有 `inTry` 计入 inCtrl ⇒ catch /
+   * finally 体（inTry 不加）落「返回值」协议（`return $fork(...)`）⇒ 后续
+   * 路径的值被当成函数返回值（自信的错值）。
+   *
+   * 与 `inTry` 分开：inTry 另有职责（return 前 drain throwExits）。
+   */
+  inCtrlBlock?: number;
   /** 当前 try 的 mark 变量名（return drain 用；避免全局栈顶污染） */
   tryMarkName?: string;
   /** 当前 try 是否带 catch handler（soft may-throw digest/release 分支） */
@@ -57,6 +91,40 @@ export type TranspileOptions = {
   yieldTryCtx?: number;
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
   conditionalFlow?: number;
+  /**
+   * 当前处在 **async 函数体**内（Bug 201）。
+   *
+   * async 体内的 `await` 是**真挂起点**：发射 `yield <operand>`（宿主生成器
+   * 挂起），由 `$asyncGen` 驱动恢复 ⇒ await 之后的语句不在调用点内联跑完
+   * （原生：恢复点是微任务）。
+   *
+   * 函数/方法体边界重置：async 体 ⇒ true；**非** async 体 ⇒ false（嵌套
+   * 同步函数不得继承——它不是生成器，`yield` 会是语法错误）。
+   */
+  inAsyncBody?: boolean;
+  /**
+   * **强制关闭** async 体的生成器路径（`$async` 同步路径）。
+   *
+   * Bug 1139（安全网）：`await` 的位置表（`async-plan.ts`）与转译侧一旦脱节，
+   * `yield` 会落进嵌套箭头 ⇒ `new Function` SyntaxError ⇒ **整个模块**编译
+   * 失败 ⇒ 全部导出丢失 ⇒ L2 闸门**假绿**（exit 0）。求值引擎在生成器模式
+   * 编译失败时以本开关**重试一次** ⇒ 模块至少编译得出来 ⇒ 导出可见 ⇒ 闸门
+   * 照常判定（宁可少精确，不可整模块消失）。
+   */
+  disableAsyncGen?: boolean;
+  /**
+   * 当前 async 体内**需发挂起门**的 `for await` 语句节点（节点身份）。
+   *
+   * Bug 201：原生 `for await` 每轮一个 await；引擎既有建模是同步驱动 ⇒
+   * 生成器级发**整循环一个**挂起门（循环前 `yield`）。只有落在**生成器级**
+   * 位置（生成器体内联）的 for await 才能发门——分支臂/循环体里的 for await
+   * 是宿主 thunk（`yield` 会是语法错误）⇒ 由 async-plan 判定排除。
+   *
+   * 键 = 源偏移量（`String(node.start)`）——转译侧会**浅拷贝**语句节点
+   * （completeElseChains / flattenEarlyReturnBlocks）⇒ 节点身份不稳定，
+   * 源偏移量在拷贝间稳定。
+   */
+  asyncForAwaitGates?: ReadonlySet<string>;
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
   inFunction?: boolean;
   /**
@@ -85,6 +153,17 @@ export type TranspileOptions = {
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */
   constNames?: ReadonlySet<string>;
+  /**
+   * **调用方补给的**用户标识符词形集（Bug 1058 避让的补充来源）。
+   *
+   * `internalTmpName` 的避让集 = `userIdentInfo(opts.source).names`（源文本
+   * 词形）∪ 本集合。用于**没有源文本**的转译单元——`exec/body-fn.ts` 的
+   * body 编译路径（`transpileBodyNode(impl.body, …)` 原先传空 opts ⇒ 无
+   * source ⇒ 避让集恒空 ⇒ 引擎内部临时名与用户标识符相撞 ⇒ 产物非法 JS
+   * ⇒ 整模块 fail-closed）。该路径的调用方从 **AST** 收标识符词形
+   * （body 内全部 Identifier + 形参名）补进来。
+   */
+  userIdents?: ReadonlySet<string>;
   /**
    * 本作用域已提升到函数体顶部的 var 名（Bug 21）：块内 `var x = init`
    * 改发赋值 `x = init`（绑定由顶部 `let x = $lit(void 0)` 提供）。

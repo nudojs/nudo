@@ -357,7 +357,7 @@ pin 'pnpm run test:cli docs/examples/algebra/a-spread-optional.js' \
   '({  }) => { host: "localhost", port: 8080, debug: false }' \
   '({ host: "api.example.com" }) => { host: "api.example.com", port: 8080, debug: false }'
 pin 'pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts' \
-  'createConfig(options: { port: number; debug: boolean } | {} | { host: string })' \
+  'createConfig(options: { port: number; debug: boolean } | Record<string, never> | { host: string })' \
   ': { host: "localhost"; port: 3000; debug: true } | { host: "localhost"; port: 8080; debug: false } | { host: "api.example.com"; port: 8080; debug: false }' \
   'Case: call@L24'
 pin 'pnpm run test:cli docs/examples/algebra/b-hof-map.js' \
@@ -396,8 +396,10 @@ pin 'pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js' \
   'debug "int"  ("42px") => 42' \
   'debug "float"  ("3.14") => 3.14'
 # sample.js — entry@ fallback; unconstrained params display as any (not unknown).
+# `add` 被 scale/twice 在**导出函数体内**调用 ⇒ 合成 call@ 见证（不是 entry@）；
+# 其余导出无调用点 ⇒ 回落 entry@。
 pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
-  'entry@' '(any, any) => number | string' \
+  'entry@' 'call@L19  (any, 1) => number | string' \
   '(any) => number | string' \
   '{ host: "localhost", port: 8080, debug: false }'
 

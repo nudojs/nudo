@@ -8,6 +8,8 @@
  *   自由 arguments 特判短路）；
  * - i++/i-- 走 $updateAdd/$updateSub（不得走 $add 字符串拼接臂），后缀表达式
  *   值 = ToNumeric 旧值且必须在表达式内立刻写回；
+ * - 成员自增/删除走 member-path 的路径计划（Bug 136/190）：计算键只求值一次、
+ *   引用先于 RHS、[[Set]] 只落末层（中间层只取值）；
  * - delete 成员目标经 ./optional-chain.ts 的链式 delete 发射，非成员目标
  *   unsupported（不得假精确 undefined）；
  * - 顶层逗号序列整体加括号（嵌套位裸发射撕裂宿主结构）。
@@ -26,10 +28,10 @@ import type {
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
 import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "../stmt-predicates.ts";
-import { isExpression, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
+import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { memberPathOf, readPathSrc, readPrefix } from "../member-path.ts";
+import { memberPathOf, memberDeleteIfe, memberReadModifyWriteIfe } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { chainNeedsShortCircuit, flattenChain, emitDeleteChainFrom } from "./optional-chain.ts";
@@ -63,11 +65,13 @@ export function transpileOperatorExpr(
           alwaysSrc: l,
           // 测试用 nullish；返回侧：nullish → right，否则 → left 的**非 nullish 部分**
           // （索引访问/可选字段的左值常携带 undefined 臂，不去则 ?? 的 alt 仍含 undefined）
+          // Bug 134：test / alt 一律引用左操作数的**单次求值绑定**（leftRef），
+          // 不得各自再发一份左操作数源码（getter / 调用 / 计算键跑两次）。
           consSrc: r,
           consNodes: [rNode],
-          altSrc: `$removeNullish(${l})`,
+          altOf: (leftRef) => `$removeNullish(${leftRef})`,
           altNodes: [lNode],
-          testSrc: `$nullishTest(${l})`,
+          testOf: (leftRef) => `$nullishTest(${leftRef})`,
         });
       }
       // && : test=left, cons=right, alt=left(已算)  || : test=left, cons=left, alt=right
@@ -196,17 +200,32 @@ export function transpileOperatorExpr(
             property: Node;
             computed: boolean;
           };
+          const path = memberPathOf(m, opts);
+          // Bug 176：删除在**求值点**发生（自包含 IIFE）——父对象与键各只
+          // 求值一次（Bug 136 的 delete 键双求值同解），删除（$del）与布尔值
+          // （$delRes）**同点**产出 ⇒ 同一条表达式里排在 delete 之后的读看到
+          // **变更后**的状态（原生语义），不再被推迟到整条语句之后。
+          // 注：Proxy 的 deleteProperty 陷阱派发唯一在 $delRes（Bug 172），
+          // $del 只做删除（陷阱在场时靶不动）⇒ 陷阱恰好派发一次。
+          // 写回（品牌类实例的不可变更新）同点完成：可重绑根才写。
+          // Bug 190：删除只作用在**持有末层键的那个对象**上——中间层不再写回
+          // 根（原生不对中间层做 [[Set]]：访问器中间层不得被写）。
+          if (path) {
+            return memberDeleteIfe(path);
+          }
+          // 根不可重绑（foo().x）：父对象与键各一次，无写回
           const keySrc = m.computed
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-          const path = memberPathOf(m, opts);
-          const parentRead =
-            path && path.layers.length >= 2
-              ? readPrefix(path, path.layers.length - 2)
-              : path
-                ? path.rootSrc
-                : transpileExpression(m.object as Expression, opts);
-          return `$delRes(${parentRead}, ${keySrc})`;
+          const parentRead = transpileExpression(m.object as Expression, opts);
+          // Bug 1159：IIFE 体内求值**用户表达式**（父对象 / 计算键）⇒ 写死名
+          // 会撞 TDZ（`const __nudoDelP = <读 __nudoDelP 的用户表达式>`）或遮蔽
+          // 用户同名外层绑定。实际名经分配器；无碰撞时基名原样返回。
+          const [delP, delK, delD] = internalTmpNameSet(
+            ["__nudoDelP", "__nudoDelK", "__nudoDelD"],
+            opts,
+          );
+          return `(() => { const ${delP} = ${parentRead}; const ${delK} = ${keySrc}; const ${delD} = $del(${delP}, ${delK}); return $delRes(${delP}, ${delK}); })()`;
         }
         // 非成员目标的 delete 未 lowering：值应为 boolean，折 undefined 是假精确
         throw new NudoUnsupportedError(
@@ -263,17 +282,34 @@ export function transpileOperatorExpr(
           return `$throwConstAssign()`;
         }
         if (expr.prefix) return `${arg.name} = ${fn}(${arg.name})`;
-        return `((__old) => (${arg.name} = ${fn}(__old), __old))($toNumeric(${arg.name}))`;
+        // Bug 1159：IIFE 体内含**用户标识符**（写目标）⇒ 写死 `__old` 会与
+        // 用户同名绑定相撞（`let __old = 5; __old++` 写成 IIFE 形参的自增 ⇒
+        // 外层绑定不增，表达式值也错）。实际名经分配器；无碰撞时逐字不变。
+        const postOld = internalTmpName("__old", opts);
+        return `((${postOld}) => (${arg.name} = ${fn}(${postOld}), ${postOld}))($toNumeric(${arg.name}))`;
       }
       if (arg.type === "MemberExpression") {
         const m = arg as unknown as { object: Node; property: Node; computed: boolean };
         const path = memberPathOf(m, opts);
         if (path) {
-          const readSrc = readPathSrc(path);
-          // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
-          //（标识符前缀自包含 `n = $updateAdd(n)`，值即新值，无此问题）
-          if (expr.prefix) return `${fn}(${readSrc})`;
-          return `$toNumeric(${readSrc})`;
+          // Bug 155：成员目标**自包含**——原生 `o.p++` 是**一次 Get + 一次
+          // Put**。此前拆成「表达式位求值」+「语句级 rebind 写回」两段，两段
+          // 各自独立发了一次 readPathSrc ⇒ **读了两遍**（getter 跑两次；有状态
+          // getter 第二次读到不同值 → 连返回值也错）。
+          // 修法：读一次、写回下沉到表达式内（语句级 rebind pass 不再补写）。
+          // 前缀：值 = 新值；后缀：值 = 旧值（ToNumeric 后），写回用同一旧值。
+          // Bug 136：计算键**只求值一次**（键绑临时量，读/写共用同一绑定）。
+          // Bug 190：[[Set]] 只落末层（中间层不再写回根——原生不做中间层 Put）。
+          if (expr.prefix) {
+            // 前缀：$updateAdd/$updateSub 内部已 ToNumeric（旧值）
+            return memberReadModifyWriteIfe(path, { newValueOf: (old) => `${fn}(${old})` });
+          }
+          // 后缀：表达式值 = ToNumeric 旧值（原生 oldValue 口径）
+          return memberReadModifyWriteIfe(path, {
+            newValueOf: (old) => `${fn}(${old})`,
+            toNumericOld: true,
+            valueIsOld: true,
+          });
         }
         // Bug 80：this.#x++ / C.#n++——memberPathOf 对 PrivateName 返回
         // null，此前落 update:++ unsupported 令整模块 fail-closed。镜像
@@ -285,10 +321,16 @@ export function transpileOperatorExpr(
           if (key !== null) {
             const obj = transpileExpression(m.object as Expression, opts);
             const cur = `$get(${obj}, ${key})`;
+            // Bug 1159：IIFE 体**重复发射接收者表达式**（`${obj}` 是用户源码）
+            // ⇒ 写死形参名会遮蔽用户同名绑定（`ind = (__v) => { ++__v.#x }`
+            // ⇒ 接收者读成 IIFE 形参的旧值 ⇒ [[Set]] 落错靶 ⇒ TypeError /
+            // 字段不增）。实际名经分配器；无碰撞时基名原样返回。
             if (expr.prefix) {
-              return `((__v) => (($set(${obj}, ${key}, __v)), __v))(${fn}(${cur}))`;
+              const incV = internalTmpName("__v", opts);
+              return `((${incV}) => (($set(${obj}, ${key}, ${incV})), ${incV}))(${fn}(${cur}))`;
             }
-            return `((__old) => (($set(${obj}, ${key}, ${fn}(__old))), __old))($toNumeric(${cur}))`;
+            const postOld = internalTmpName("__old", opts);
+            return `((${postOld}) => (($set(${obj}, ${key}, ${fn}(${postOld}))), ${postOld}))($toNumeric(${cur}))`;
           }
         }
       }
@@ -301,6 +343,13 @@ export function transpileOperatorExpr(
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
+      // Bug 201：async 体内的 await = **真挂起点**——发射 `yield`（宿主生成器
+      // 挂起），被等待值由 `$asyncGen` 的续体解析（promise → inner /
+      // 拒绝 → throw / 悬挂 → unsettled 面）。await 之后的语句因此**不在
+      // 调用点内联跑完**（原生：恢复点是微任务）。
+      //
+      // 非 async 体（原生语法错误路径）保留 `$await` 兜底。
+      if (opts.inAsyncBody) return `(yield ${arg})`;
       return `$await(${arg})`;
     }
     case "YieldExpression": {

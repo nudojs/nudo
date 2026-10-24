@@ -780,7 +780,7 @@ export const ALLOWED_IMPRECISE: Record<string, string> = {
   "global:global": "Node legacy 全局别名未建模，接受 unknown",
   "global:globalThis": "无专属 case；读取走 env 全局绑定口径，接受 unknown",
   "global:process": "Node 宿主对象未建模，接受 unknown",
-  "global:structuredClone": "结构化克隆未建模，接受 unknown",
+  "global:structuredClone": "结构化克隆的值面未建模，接受 unknown；throws 面按实参可克隆性分档（Bug 288：可克隆不记抛 / 不可克隆记 DataCloneError）",
 
   // ---- CJS 模块包装局部（仅 CJS/worker 上下文存在；ESM 源不适用） ---------
   "global:__dirname": "CJS 包装局部，非引擎面；ESM 源不适用，接受 unknown",

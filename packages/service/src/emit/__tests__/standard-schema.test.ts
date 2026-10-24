@@ -8,6 +8,7 @@ import {
   absToStandardSchemaModule,
   validateSchemaNode,
 } from "../standard-schema.ts";
+import { loadGeneratedModule } from "./fixtures.ts";
 
 const positiveNumber = (): Abs => numVar("x", and(gt(v("x"), lit(0))), "exact");
 
@@ -61,22 +62,26 @@ describe("validateSchemaNode", () => {
     expect(validateSchemaNode(u, true).issues).toBeDefined();
   });
 
-  it("promise / fn / brand / unknown pass through without issues", () => {
-    // checkNode 对 promise 是放行（同步投影不 unwrap thenable）。
-    // 该分支曾与 unknown/fn/brand 共用 case 后又重复声明一次（死代码）——
-    // 锁住放行语义，删重复 case 时不得改变行为。
-    const passThrough = [
-      { k: "promise" },
-      { k: "fn" },
-      { k: "brand", name: "Map" },
-      { k: "unknown" },
-    ] as const;
+  it("promise / unknown pass through; fn / brand get a runtime criterion", () => {
+    // checkNode 对 promise 是放行（同步投影不 unwrap thenable），
+    // unknown 放行。
+    // fn / brand 自 Bug 535 / 531 起**不再恒真**：fn 要 `typeof === "function"`、
+    // brand（全局构造器）要 `instanceof` —— 与 zod 面同口径（z.function() /
+    // z.instanceof(Date)）。
     const thenable = { then() {} };
-    for (const node of passThrough) {
+    for (const node of [{ k: "promise" }, { k: "unknown" }] as const) {
       const r = validateSchemaNode(node as never, thenable);
       expect(r.issues).toBeUndefined();
       expect(r.value).toBe(thenable);
     }
+    const fn = validateSchemaNode({ k: "fn" } as never, thenable);
+    expect(fn.issues?.[0]?.message).toContain("expected function");
+    const fnOk = validateSchemaNode({ k: "fn" } as never, () => 1);
+    expect(fnOk.issues).toBeUndefined();
+    const brand = validateSchemaNode({ k: "brand", name: "Map" } as never, thenable);
+    expect(brand.issues?.[0]?.message).toContain("expected Map");
+    const brandOk = validateSchemaNode({ k: "brand", name: "Map" } as never, new Map());
+    expect(brandOk.issues).toBeUndefined();
   });
 
   it("validates overlong tuple elements against rest (BUG-002)", () => {
@@ -96,14 +101,17 @@ describe("validateSchemaNode", () => {
     expect(bad.issues![0]!.message).toContain("number");
   });
 
-  it("fixed tuple without rest keeps no-length-limit behavior (BUG-002)", () => {
+  it("fixed tuple without rest enforces fixed arity (Bug 522)", () => {
     const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
     const { node } = absToSchemaNode(fixed);
-    // 现状语义：standard 面不设长度上限（zod 方言靠 z.tuple 定长）——锁住不回归
-    expect(validateSchemaNode(node, [1, 2])).toEqual({ value: [1, 2] });
+    // 定长元组：长度必须与 elements 一致（引擎 leqAbs 的 tuple arity 判定 +
+    // zod 面 z.tuple 同口径）——旧语义「不设长度上限」是 Bug 522（假绿）。
+    const over = validateSchemaNode(node, [1, 2]);
+    expect(over.issues?.[0]?.message).toContain("expected tuple of length 1");
+    expect(validateSchemaNode(node, [1])).toEqual({ value: [1] });
   });
 
-  it("generated module inline __nudoCheck enforces rest on overlong elements (BUG-002)", () => {
+  it("generated module inline __nudoCheck enforces rest on overlong elements (BUG-002)", async () => {
     // 真执行生成模块（内嵌 CHECK_FN_SOURCE），不是只比对 validateSchemaNode
     const withRest = abs(
       { k: "tuple", elements: [numLit(1)], rest: num() },
@@ -112,16 +120,11 @@ describe("validateSchemaNode", () => {
       "exact",
     );
     const { source } = absToStandardSchema(withRest, { name: "t" });
-    const js = source
-      .replace(/export const (\w+)/g, "var $1")
-      .replace(/} as const;/, "};");
-    const mod = new Function(`${js}\nreturn t;`)() as {
-      "~standard": { validate(value: unknown): unknown };
-    };
-    expect(mod["~standard"].validate([1, 2, 3])).toEqual({ value: [1, 2, 3] });
-    const bad = mod["~standard"].validate([1, "x"]) as { issues: Array<{ path: PropertyKey[] }> };
+    const mod = await loadGeneratedModule(source);
+    expect(mod.t!["~standard"].validate([1, 2, 3])).toEqual({ value: [1, 2, 3] });
+    const bad = mod.t!["~standard"].validate([1, "x"]);
     expect(bad.issues).toBeDefined();
-    expect(bad.issues[0]!.path).toEqual([1]);
+    expect(bad.issues![0]!.path).toEqual([1]);
   });
 });
 
@@ -216,19 +219,12 @@ describe("BUG-018: 缺键 ≠ 显式 undefined（S6-003 第 5 次同族）", () 
     expect(validateSchemaNode(node, { a: "x" }).issues).toBeDefined();
   });
 
-  it("内联校验源（CHECK_FN_SOURCE 副本）与 checkNode 同口径", () => {
+  it("内联校验源（CHECK_FN_SOURCE 副本）与 checkNode 同口径", async () => {
     const o = obj({ a: { value: undefLitAbs() } });
     const { source } = absToStandardSchema(o, { name: "t" });
-    const js = source
-      .replace(/export const (\w+)/g, "var $1")
-      .replace(/} as const;/, "};");
-    const mod = new Function(`${js}\nreturn t;`)() as {
-      "~standard": { validate(value: unknown): unknown };
-    };
-    expect(mod["~standard"].validate({ a: undefined })).toEqual({ value: { a: undefined } });
-    const missing = mod["~standard"].validate({}) as {
-      issues: Array<{ message: string; path: PropertyKey[] }>;
-    };
+    const mod = await loadGeneratedModule(source);
+    expect(mod.t!["~standard"].validate({ a: undefined })).toEqual({ value: { a: undefined } });
+    const missing = mod.t!["~standard"].validate({});
     expect(missing.issues?.[0]?.message).toBe("required");
     expect(missing.issues?.[0]?.path).toEqual(["a"]);
   });

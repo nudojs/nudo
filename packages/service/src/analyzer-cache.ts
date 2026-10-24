@@ -5,6 +5,10 @@
 import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePathKey } from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
+import { pathEnvContentFingerprint } from "./eval-run.ts";
+import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
+import { findProjectConfig } from "./evaluator/config.ts";
+import { dirname } from "node:path";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
@@ -76,7 +80,30 @@ export function analysisFileCacheKey(
   // than the default disk loader — distinguish in the memo key
   const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
   // project nudo.env 变更必须 miss（fn 级键已有 envNames，文件级对齐）
-  const envSeg = projectEnvNames && projectEnvNames.length > 0 ? projectEnvNames.join(",") : "-";
+  // env 名只是维度之一：项目级 **path env 的文件内容**也必须进键
+  // （同名 env 文件改了内容 → 类型面必须跟着变；Bug 501）。
+  // 文件级 `/// @nudo:env` 的同款维度已由 depSeg 覆盖（load-deps-fp 采
+  // 路径 env 内容）——此处只补项目级。
+  //
+  // 解析基准 = **项目根**（不是被分析文件所在目录）：package.json#nudo.env
+  // 是项目级（相对说明符按项目根解析——与 CLI `assembleEnvs` 同口径）。
+  // 旧实现按文件目录解析 ⇒ env 文件在项目根、被分析文件在子目录时，指纹读
+  // 的是**不存在**的 `<proj>/src/env.ts` ⇒ 内容退化成常量哈希 ⇒ 键对该 env
+  // 的内容实际不敏感（Bug 1083）。
+  const projectEnvBaseDir = findProjectConfig(dirname(filePath))?.projectDir ?? dirname(filePath);
+  const envSeg =
+    projectEnvNames && projectEnvNames.length > 0
+      ? `${projectEnvNames.join(",")}#${pathEnvContentFingerprint(
+          projectEnvNames,
+          projectEnvBaseDir,
+        )}`
+      : "-";
+  // **env 预载状态**进键（Bug 993）：path 型 env 只能异步装载，同一份源码
+  // 在「预载前 / 预载后」得到两份不同结果（env 全局可见性不同）。键里已有
+  // env 文件的**内容**（envSeg / depSeg），但没有**预载状态**——「先同步
+  // （未预载）、后异步（已预载）」时后者会命中前者那份「无 env」的陈旧
+  // 结果。此段让两份结果互不串台（预载前 ∅ / 预载后 path=mtime 列表）。
+  const envPreloadSeg = pathEnvPreloadFingerprint() || "-";
   const abSeg = autoBind === false ? "ab0" : autoBind === true ? "ab1" : "ab?";
   // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
   // 指纹失败/truncated/readerr → 禁用共享命中（fail-closed，见 noCache）。
@@ -102,7 +129,7 @@ export function analysisFileCacheKey(
     filePath: stablePathKey(filePath),
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
+    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
     noCache,
   };
 }

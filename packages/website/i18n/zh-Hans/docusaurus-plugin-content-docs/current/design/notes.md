@@ -22,6 +22,8 @@ description: "仓库设计笔记索引——产品页背后的架构真源（Abs
 | [`cache-invalidation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cache-invalidation.md) | 进程内会话缓存的失效契约 | 契约 + 回归钉扎 |
 | [`lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md) | LSP 客户端 UI 缺口——[LSP 客户端](../guides/lsp-clients.md) 背后的跟踪表 | 现行 |
 | [`limitations.md`](https://github.com/nudojs/nudo/blob/main/docs/design/limitations.md) | 仍约束决策的限制与未决项 | 持续维护 |
+| [`generator-laziness.md`](https://github.com/nudojs/nudo/blob/main/docs/design/generator-laziness.md) | 生成器体仍在构造期跑完（Bug 212）：为什么在现有 eager 快照模型下无法实现惰性生成器、受影响的消费面清单，以及把它变成 sound 过近似的最小转译侧路径 | 架构债（已登记） |
+| [`architecture-debt.md`](https://github.com/nudojs/nudo/blob/main/docs/design/architecture-debt.md) | 卡在求值模型 / `Abs` 表示层的 10 条欠账（生成器体 eager、relation/apply 结果缺 throws 通道、union 按成员名分派、fn 形状无 overload 承载位）——为什么它们必须单独排期 | 架构债（台账） |
 
 ## 过程记录
 

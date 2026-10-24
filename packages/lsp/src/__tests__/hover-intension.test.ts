@@ -328,11 +328,16 @@ export const decide = fn(
     expect(hover!.abs).toBeDefined();
   });
 
-  it("unconstrained param / non-call local stay fail-closed null", () => {
+  it("unconstrained param falls back to design §2 `any`; non-call local stays fail-closed null", () => {
     const src = `export function scale(x) {\n  return x * 2;\n}\n`;
-    // 无契约、无提升：参数与局部都不产出（诚实 unknown，不冒充 any）
-    expect(getHoverAtPosition("/t/param-null.js", src, 1, 23)).toBeNull();
+    // 无契约、无提升：**形参**回落 design §2 的「无约束 any」（与函数名面
+    // `scale(x: any)` 同口径——Bug 774：此前形参位 hover **完全为空**，
+    // 同一 hover 的函数名面却显示 `x: any`）
+    expect(getHoverAtPosition("/t/param-null.js", src, 1, 23)?.typeText).toBe(
+      "x: any",
+    );
     const local = `export function f(n) {\n  const local = n + 1;\n  return local;\n}\n`;
+    // 局部（非形参）仍 fail-closed null（诚实无信息）
     expect(getHoverAtPosition("/t/local-null.js", local, 2, 8)).toBeNull();
   });
 });

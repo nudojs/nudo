@@ -4,6 +4,7 @@
  */
 import type { Abs } from "./abs.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
+import type { AbsCallRecord } from "./ast-records.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
 
 /**
@@ -28,9 +29,14 @@ export type CheckOptions = {
   /**
    * L2 入口 may-throw 执法档（design-cli-semantics §3）。
    * error（默认）| warning | off。仅作用于 export/default/CJS 入口函数。
+   *
+   * 同时是该 L2 族的**总闸**：模块装载期必抛（`nudo:module-throw`，顶层
+   * 无条件 `throw` ⇒ 模块未被分析）也按此档执法 / 静默 —— 零 FP 语料库
+   * （check-real-packages 的 `entryThrows: "off"`）因此不受新码影响。
    */
   entryThrows?: "error" | "warning" | "off";
-  /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1 */
+  /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1。
+   *  `nudo:module-throw` 同样消费：句法上判得出的抛出类型名被 ignore 即放行。 */
   ignoreThrows?: string[];
   /** 宿主已求值的依赖导出表（specifier → AbsModuleExports）；
    *  B 与解释路径共用——import/require 按表解析（CLI 经
@@ -49,4 +55,15 @@ export type CheckOptions = {
    * 入口 may-throw（L2）不评估。调用点参数义务（scan）不受影响。
    */
   skips?: ReadonlyMap<string, Abs | null>;
+  /**
+   * 外部调用点证据（Bug 366）：`--from` 采集到的**跨文件**调用点记录。
+   *
+   * drift 判定的「今日域」证据此前**只**来自 checkSource 评估被检查文件
+   * 自身时产生的 AbsCallRecord ⇒ 调用点在别的文件里时，`--from` 写出的
+   * 生成段永远判不出陈旧（假绿）。本字段把跨文件证据接进同一条判定通道。
+   *
+   * 形状 = core 公共导出 AbsCallRecord（fnName = **被调方的导出名**；
+   * callLoc 省略 = 跨文件调用点在本文件内无位置）。
+   */
+  from?: readonly AbsCallRecord[];
 };

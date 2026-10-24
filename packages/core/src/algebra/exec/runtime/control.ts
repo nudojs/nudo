@@ -312,7 +312,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
 export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
-import { applyInvariantsToPack } from "./invariant-apply.ts";
+import { applyExitJoinInvariants, applyInvariantsToPack, hasInvariantSpecs } from "./invariant-apply.ts";
 
 /**
  * for 的惰性展开：生成器只负责「按上限吐状态」。
@@ -362,6 +362,9 @@ export function $for(
     unpack?: (s: Abs) => void;
     /** 标签循环（`outer: for …`）：仅吸收同标签 break/continue 信号 */
     label?: string;
+    /** 循环变量的最新写（Bug 228）：continue 臂取「体退出瞬间的循环变量值」
+     *  ——转译侧在体的 finally 里写回共享槽；缺省（未插桩）时以 state 近似。 */
+    loopVar?: () => Abs;
   },
 ): Abs {
   let state = init;
@@ -446,12 +449,18 @@ export function $for(
           : state;
       }
       if (isNudoContinue(e, opts?.label)) {
-        // 体未走完 return；循环变量已发生的写无法从调用点闭包读取
-        // （init 以字面量入参，JS 作用域无该绑定）——以 state 近似；
+        // 体未走完 return；continue 之前对**循环变量**的写必须传给步进
+        // （原生：for (let i…) 每轮绑定独立，continue 前的 i=5 写进本轮
+        // 绑定 → 下一轮 i++ 得 6）。循环变量是状态线程形参（JS 作用域无该
+        // 绑定），体对它的写在形参槽里——$for 拿不到 ⇒ 转译侧在体的
+        // finally 里把最新值写回共享槽（loopVar 回调），此处取用。
+        // 无共享槽（未插桩的调用）时以 state 近似（旧口径）。
         // 抽象 continue 臂丢失本迭代外层绑定效应 → 标记打断（耗尽出口
         // 宽化）；definite continue 忠实
         if (e.abstract) extWiden?.markInterrupted();
         afterBody = state;
+        const lv = opts?.loopVar?.();
+        if (lv !== undefined) afterBody = lv;
       } else if (isNudoReturn(e)) {
         // Bug 99：抽象条件轮的体内 return——0 迭代/后续退出路径仍活，
         // 令牌冒泡会让函数边界只收体内返回值、post-loop 语句被吞
@@ -714,9 +723,20 @@ export function $whileSeq(
     exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
   };
   const applyExitJoin = (exhausted: boolean): void => {
-    if (!exitJoin || !pack || !unpack) return;
+    if (!pack || !unpack) return;
+    // Bug 215：具体出口（无快照 join）也须实施 @nudo:invariant——否则
+    // while / do-while 的公理被静默丢弃（$for 走 applyExtJoin 有实施）。
+    // 无公理时不取绑定包（零行为变化：取包会暴露转译侧 pack 闭包的既有缺陷）。
+    if (!exitJoin) {
+      if (!hasInvariantSpecs()) return;
+      const cur = pack();
+      const strengthened = applyExitJoinInvariants(cur);
+      if (strengthened !== cur) unpack(strengthened);
+      return;
+    }
     const joined = joinAbs(exitJoin, pack());
-    unpack(exhausted && widen ? widen.widenFinal(joined) : joined);
+    const out = exhausted && widen ? widen.widenFinal(joined) : joined;
+    unpack(applyExitJoinInvariants(out));
   };
   // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
   // 硬上限；硬上限仍具体真 → 截断观测 + 绑定 conf 降级。
@@ -816,6 +836,13 @@ export function $whileSeq(
  * 抽象路径与 $fork 同构：集合 side-table 按臂 overlay，共享 body 只跑一次；
  * 臂内 NudoReturn/NudoThrow 不冒泡污染兄弟臂。
  * **无 default 时必须隐式 fall-through 臂（undef）**，否则无匹配路径被丢掉（P0-2）。
+ *
+ * Bug 241：**字面量判别式 + 非字面量 case 测试**（`switch (true) { case x > 0: … }`）
+ * ——原生里 case 测试是运行时求值的表达式，命中与否取决于测试值；此前字面量
+ * 判别式路径只接受「case 测试也是字面量」的臂，其余臂被**整条丢弃**（永不
+ * 命中）⇒ 臂内返回值从返回域/签名里消失 ⇒ 契约真实违约被漏报（L1 门禁假绿）。
+ * 修法：遇到非字面量 case 测试 ⇒ **分叉**（命中该臂 / 不命中继续后续臂与
+ * default），两路结果并入返回域（switchForked）。
  */
 export function $switch(
   disc: Abs,
@@ -826,11 +853,16 @@ export function $switch(
   // 「是否字面量」必须看 ok：lit(undefined) 的 value 就是 undefined，
   // 用 value !== undefined 当门闩会让 case undefined 永不精确命中。
   if (dvR.ok) {
-    for (const c of cases) {
+    for (let k = 0; k < cases.length; k++) {
+      const c = cases[k]!;
       const tvR = litValue(c.test);
+      if (!tvR.ok) {
+        // 非字面量 case 测试 ⇒ 命中与否不可判定 ⇒ 分叉（Bug 241）
+        return switchForked(cases, dflt, k, dvR.value, new Map());
+      }
       // switch case 匹配是严格相等（===）：NaN 不匹配 NaN case；0 与 -0 互配。
       // Object.is 是 SameValue（NaN 相等），会假匹配 NaN case（假精确）。
-      if (tvR.ok && tvR.value === dvR.value) return asAbsVal(c.run());
+      if (tvR.value === dvR.value) return asAbsVal(c.run());
     }
     return dflt ? asAbsVal(dflt()) : undef();
   }
@@ -903,6 +935,84 @@ export function $switch(
   return valParts.reduce((a, b) => joinAbs(a, b));
 }
 
+/**
+ * Bug 241：字面量判别式下的**非字面量 case 测试** ⇒ 分叉。
+ *
+ * 原生 CaseBlock：case 测试是运行时求值的表达式（`case x > 0:`），命中与否
+ * 取决于测试值 —— 判别式是字面量（`switch (true)`）并不使测试变字面量。
+ * 引擎此前把这类臂当「永不匹配」整条丢弃 ⇒ 臂内返回值从返回域消失
+ * ⇒ 签名谎报（少一个分支）+ 契约真实违约被漏报（L1 门禁假绿）。
+ *
+ * 分叉两路（原生同语义）：
+ * - 命中路径：该臂体（`cases[k]`）；
+ * - 不命中路径：继续按序匹配后续臂（后续臂也可能是非字面量测试 ⇒ 递归分叉），
+ *   全不命中则走 default（无 default ⇒ 隐式 no-match 臂 = undefined）。
+ *
+ * 两路经 $fork 同构机制合并（集合 side-table 按臂 overlay；臂内
+ * NudoReturn/NudoThrow 不冒泡污染兄弟臂）⇒ 返回域 = 两路并集。
+ *
+ * 共享体（`case a: case b:` 合并出的同一 run）只执行一次（同抽象判别式路径
+ * 的 seenRuns 口径）——非幂等副作用不得被分叉放大。
+ */
+function switchForked(
+  cases: Array<{ test: Abs; run: () => Abs }>,
+  dflt: (() => Abs) | undefined,
+  k: number,
+  discValue: unknown,
+  cache: Map<() => Abs, ForkArm>,
+): Abs {
+  const exits = loopExitsAls.getStore();
+  beginCollectionFork();
+  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
+  const armYsList: Array<GenYieldCollector | null> = [];
+  const runArm = (fn: () => Abs): ForkArm => {
+    pushCollectionArm();
+    try {
+      // 分叉臂：命中与否不可判定 ⇒ 臂内 break/continue 信号标记 abstract
+      // （同 $fork 抽象臂）
+      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
+      armYsList.push(r.ys);
+      return r.v;
+    } finally {
+      armOverlays.push(popCollectionArm());
+    }
+  };
+  /** 已执行过的共享体：复用其结局（不重复执行副作用） */
+  const replay = (arm: ForkArm): Abs => {
+    if (arm.kind === "ret") throw new NudoReturn(arm.v);
+    if (arm.kind === "throw") throw new NudoThrow(arm.v);
+    return arm.v;
+  };
+  let a: ForkArm;
+  let b: ForkArm;
+  try {
+    const hit = cases[k]!;
+    const cachedHit = cache.get(hit.run);
+    a = cachedHit ?? runArm(hit.run);
+    if (!cachedHit) cache.set(hit.run, a);
+    b = runArm(() => {
+      for (let j = k + 1; j < cases.length; j++) {
+        const c = cases[j]!;
+        const tvR = litValue(c.test);
+        if (!tvR.ok) return switchForked(cases, dflt, j, discValue, cache);
+        if (tvR.value === discValue) {
+          const cached = cache.get(c.run);
+          if (cached) return replay(cached);
+          return asAbsVal(c.run());
+        }
+      }
+      if (!dflt) return undef();
+      const cachedDflt = cache.get(dflt);
+      if (cachedDflt) return replay(cachedDflt);
+      return asAbsVal(dflt());
+    });
+  } finally {
+    endCollectionFork(armOverlays);
+    if (yieldStack.length > 0) mergeArmYields(armYsList);
+  }
+  return settleForkArms(a, b, exits);
+}
+
 
 // throws
 // --- throws ---
@@ -921,9 +1031,18 @@ export function $isForkExit(e: unknown): boolean {
   return isNudoReturn(e) || isNudoThrow(e);
 }
 
-/** catch 参数：从 NudoThrow 取出 Abs；宿主 Error 补 name/message；否则 unknown */
+/**
+ * catch 参数：从 NudoThrow 取出 Abs；宿主 Error 补 name/message；否则 unknown。
+ *
+ * Bug 211：**控制流信号（break / continue）不是异常**——原生里 `break` 是
+ * 控制流完成值，根本到不了 catch 处理器（catch 体不跑、循环照常退出）。
+ * 引擎的循环信号是 Error 子类 ⇒ 会被 catch 接住；此前 catch 体把信号「吃掉」
+ * （副作用照跑、循环还不退出）。修法：控制流信号在此**重抛** ⇒ catch 体不执行、
+ * 信号透传到循环捕获点（catch 体只吞真异常）。
+ */
 export function $catchVal(e: unknown): Abs {
   if (isNudoThrow(e)) return e.absValue;
+  if (e instanceof NudoLoopSignal) throw e;
   if (e instanceof Error) {
     const name = e.name || "Error";
     const msgAbs: Abs =

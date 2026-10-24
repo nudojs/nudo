@@ -46,7 +46,7 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  2 error · 0 warning · 0 info · 3 fn
+  2 error · 0 warning · 2 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
@@ -64,6 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -108,16 +110,17 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:interface-multi-declarator` | L1 | warning | `@generated` section hand-merged into one multi-declarator export — kept verbatim |
 | `nudo:interface-not-projectable` | L1 | error | Assembled sidecar failed round-trip re-parse — nothing written (engine debt) |
 | **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
+| **`nudo:module-throw`** | **L2** | **error** (default) | The module's top-level code always throws (syntactic unconditional `throw`) ⇒ the module can never be imported and was not analysed — every export is unavailable. Fail-closed; one per module; distinct from `nudo:internal` (engine fallback) and `nudo:unsupported:*` (capability boundary) |
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
 | `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
 | `nudo:builtin-unknown` | engine debt | warning | API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / mock |
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
-| `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | info | Recursive evaluation cut short — `reason: cycle` (same abstract args on stack; a budget cannot lift it) or `depth`/`calls` (budget ran out) |
 | `nudo:loop-truncated` | engine | info | Loop exit condition stayed concrete-true past the iteration budget; loop state widened (not the call budget) |
 | `nudo:fork-truncated` | engine | info | Branch-expansion (`$fork`) budget hit; result widened |
 | `nudo:host-effect-blocked` | engine | info | Host side-effect function (`fetch` / timers / …) not executed during analysis — result widened to `unknown#opaque`. Mock with `@nudo:mock` / `@nudo:env` |
+| `nudo:internal` | engine | error | The check gate could **not** run to completion for this file (engine internal fallback — e.g. the module failed to evaluate) ⇒ the file's exports could not be verified ⇒ **fail-closed**: `nudo check` exits non-zero and `nudo health` reports `Result: FAIL`. Distinct from `nudo:unsupported:*` (capability boundary) and from `nudo:opaque-result` (inference precision) |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
 | `nudo:no-method` | engine | error (primitive receivers) / warning | Member access cannot resolve — ``Method 'x' does not exist on type 'T'``. Distinct from `nudo:unknown-recv` |
 | `nudo:mock-invalid` | engine | warning | `@nudo:mock` expression is not a known pattern (stub/spy/mock, arrow, type expression) |
@@ -196,6 +199,7 @@ issues
 - **Only entry/export functions** — `export` / `export default`, CJS `exports.x =` / `module.exports`.
 - **Internal helpers are not gated.** They may throw; observe them in `nudo test`.
 - `try`/`catch` digests throws on a path (removed from exit effects).
+- **Module load level**: a module whose top-level statement sequence *always* throws (an unconditional `throw`) can never be imported — reported once per module as `nudo:module-throw` (fail-closed: every export is unavailable and the module was not analysed). Conditional throws stay silent (host-dependent), and only syntactic unconditional `throw` statements count — throws the engine infers from its own host-API approximation are never blamed on the program.
 - Refine narrowing the param to a shape removes or downgrades L2 (becomes L1).
 
 The first fix path is declaring the intentional throw on the function with [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) — full syntax (`Error`-family coverage, `*` wildcard, `!! throws` case suffix, sidecar `fn` option) in the directive reference.

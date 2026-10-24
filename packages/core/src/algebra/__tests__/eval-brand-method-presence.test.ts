@@ -261,7 +261,10 @@ describe("URLSearchParams / TextDecoder / Intl 构造器 presence（review 补�
     // 兜底折 honest unknown，typeof 折 string 域（修复前落闭 obj
     // 槽 miss 折精确 "undefined"，对原生恒有成员 wrong-exact）
     expect(val("function f() { return typeof new TextDecoder().encoding; }")).toBe('"string"');
-    expect(val("function f() { return typeof new URLSearchParams('a=1').size; }")).toBe("string");
+    // Bug 322 顺带：URLSearchParams 的 size **已建模**（条目表 → 条目数，
+    // 原生是 number 型 getter）⇒ typeof 精确 "number"（原生一致；此前
+    // 保守折 string 域）。
+    expect(val("function f() { return typeof new URLSearchParams('a=1').size; }")).toBe('"number"');
     expect(val("function f() { return typeof new TextDecoder().fatal; }")).toBe("string");
     expect(val("function f() { return typeof new TextDecoder().ignoreBOM; }")).toBe("string");
   });

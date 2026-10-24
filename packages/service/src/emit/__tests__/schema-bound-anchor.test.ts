@@ -17,6 +17,9 @@ const strWith = (pred: Parameters<typeof abs>[2]) =>
 const numWith = (pred: Parameters<typeof abs>[2]) =>
   abs({ k: "prim", type: "number" }, { op: "var", id: "x" }, pred, "exact");
 
+/** Bug 1001：Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */
+const WIDE_NUMBER = "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))";
+
 describe("schema length/bound anchoring", () => {
   it("length(other) is not a string min", () => {
     const a = strWith(ge(app("length", [v("other")]), lit(1)));
@@ -26,8 +29,8 @@ describe("schema length/bound anchoring", () => {
 
   it("gt(other, 0) is not a number bound", () => {
     const a = numWith(gt(v("other"), lit(0)));
-    expect(absToSchemaSource(a)).toBe("z.number()");
-    expect(projectAbsToSchema(a).source).toBe("z.number()");
+    expect(absToSchemaSource(a)).toBe(WIDE_NUMBER);
+    expect(projectAbsToSchema(a).source).toBe(WIDE_NUMBER);
   });
 
   it("length(self var) still projects min", () => {
@@ -72,8 +75,8 @@ describe("schema length/bound anchoring", () => {
 
   it("eq(get(self,\"x\"), 5) is not z.literal(5)", () => {
     const a = numWith(eq(app("get", [v("x"), lit("y")]), lit(5)));
-    expect(absToSchemaSource(a)).toBe("z.number()");
-    expect(projectAbsToSchema(a).source).toBe("z.number()");
+    expect(absToSchemaSource(a)).toBe(WIDE_NUMBER);
+    expect(projectAbsToSchema(a).source).toBe(WIDE_NUMBER);
   });
 
   it("eq(self, lit) still projects literal", () => {

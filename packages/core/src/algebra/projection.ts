@@ -26,11 +26,12 @@
 import type { Abs, Confidence } from "./abs.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { number, string, boolean, litC, union, array, SELF } from "./constraint.ts";
-import { joinAbs } from "./objects.ts";
+import { joinAbs, canonicalArrayIndex } from "./objects.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { termEquals, v as termVar, type Term, type LiteralValue } from "./term.ts";
 import { app as termApp } from "./term.ts";
 import { ProjectionBudget } from "./projection-budget.ts";
+import { accessorReadDomain } from "./accessors.ts";
 
 /** 投影置信门槛：widened/partial/opaque/mock 不投影 */
 const PROJECTABLE_CONF: ReadonlySet<Confidence> = new Set(["exact", "path"]);
@@ -45,6 +46,25 @@ const ARR_FALLBACK_CONF: ReadonlySet<Confidence> = new Set([
 
 type CmpOp = "gt" | "ge" | "lt" | "le";
 type LitVal = number | string | boolean | bigint;
+
+/**
+ * Bug 240（S21）：**约束面剔除 internal 槽**（内部槽对属性 introspection
+ * 不可见，不是自有属性）。
+ *
+ * 与投影面（`format.ts` 的 `isHiddenInternalSlot`）**同口径**：`Slot.internal`
+ * 为 true 且键**不是**规范数组下标 ⇒ 该槽不进约束产物。
+ *
+ * 不剔会污染约束产物：生成器对象的协议槽（`next` / `return` / `throw` /
+ * `constructor` / `@@iterator`）是 internal 槽——原生挂在原型上、不是自有
+ * 属性，却会被投影成用户可见字段（`@@iterator` 更是 **symbol 键**槽，
+ * 按字符串键发布是错的）。
+ *
+ * 例外：**规范数组下标槽**保留——族 01 的建模口径里生成器的数字下标槽承载
+ * **元素域**（`format.ts` 同例外），不是内部实现细节 ⇒ 不在此剔除。
+ */
+function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean {
+  return slot.internal === true && canonicalArrayIndex(k) === undefined;
+}
 
 /** Abs → 契约；不可表达 → undefined。
  *  `budget`：共享遍历预算（DESIGN-001）——环 / 超深 shape 返回 undefined
@@ -83,7 +103,7 @@ function absToConstraintInner(a: Abs, budget: ProjectionBudget): NudoConstraint 
       // any 只有 or-pred 字面量集携带可表达信息
       return a.pred?.op === "or" ? projectOrLiterals(a) : undefined;
     case "obj":
-      return projectObj(s.slots, s.index, s.open, budget);
+      return projectObj(a, s, budget);
     case "arr":
       return projectArr(s.element, budget);
     case "sum":
@@ -301,16 +321,25 @@ function projectOrLiterals(a: Abs): NudoConstraint | undefined {
 // --- 复合形态投影 ---
 
 function projectObj(
-  slots: Record<string, { value: Abs; optional?: boolean }>,
-  index: { key: Abs; value: Abs } | undefined,
-  open: boolean | undefined,
+  a: Abs,
+  s: Extract<Abs["shape"], { k: "obj" }>,
   budget: ProjectionBudget,
 ): NudoConstraint | undefined {
   // 动态键 / open 对象不是定长形状
-  if (index || open) return undefined;
-  const fields: Record<string, NudoField> = {};
-  for (const [k, slot] of Object.entries(slots)) {
-    const fc = absToConstraint(slot.value, budget);
+  if (s.index || s.open) return undefined;
+  // **无原型字段表**（族 17 Bug 606）：普通对象存槽表 ⇒ 键 `__proto__` 的
+  // 赋值命中 `Object.prototype.__proto__` 的**原型 setter** ⇒ 该键永不成
+  // 自有属性 ⇒ `__proto__` 形参在契约投影里被静默吞掉（zod 产物丢键）。
+  // core 侧消费全走 `Object.entries` / `Object.hasOwn` / `!== undefined`
+  // ⇒ 无原型安全（与 `constraint.ts` 的 `partial()` 同一惯例）。
+  const fields: Record<string, NudoField> = Object.create(null) as Record<string, NudoField>;
+  for (const [k, slot] of Object.entries(s.slots)) {
+    // Bug 240（S21）：internal 槽不进约束面（内部槽不是自有属性）——
+    // 规范数组下标槽除外（承载元素域，族 01 口径）。
+    if (isHiddenInternalSlot(k, slot)) continue;
+    // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——契约投影须取 getter
+    // 读域（否则 zod / standard 面产出 z.undefined() 拒收函数自己的返回值）。
+    const fc = absToConstraint(accessorReadDomain(a, k) ?? slot.value, budget);
     if (!fc) return undefined; // Phase 1 保守：任一字段不可投影 → 整体放弃
     fields[k] = { constraint: fc, ...(slot.optional ? { optional: true } : {}) };
   }

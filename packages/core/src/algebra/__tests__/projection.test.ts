@@ -74,23 +74,29 @@ const len = (t: ReturnType<typeof v>) => app("length", [t]);
 describe("absToConstraint", () => {
   describe("字面量 → lit", () => {
     it("term lit 形态（numLit/strLit/boolLit 工厂）", () => {
-      expect(round(numLit(42))).toBe("x = 42");
-      expect(round(strLit("a"))).toBe('x = "a"');
-      expect(round(boolLit(true))).toBe("x = true");
+      expect(round(numLit(42))).toBe('typeof x = "number" ∧ x = 42');
+      expect(round(strLit("a"))).toBe('typeof x = "string" ∧ x = "a"');
+      expect(round(boolLit(true))).toBe('typeof x = "boolean" ∧ x = true');
     });
 
     it("eq(self, lit) pred 形态（constraintToEntryAbs(lit) 的产物）", () => {
-      expect(round(numVar("n", eq(v("n"), lit(42))))).toBe("x = 42");
-      expect(round(strVar("s", eq(v("s"), lit("a"))))).toBe('x = "a"');
+      expect(round(numVar("n", eq(v("n"), lit(42))))).toBe(
+        'typeof x = "number" ∧ x = 42',
+      );
+      expect(round(strVar("s", eq(v("s"), lit("a"))))).toBe(
+        'typeof x = "string" ∧ x = "a"',
+      );
     });
 
     it("eq 两侧顺序无关", () => {
-      expect(round(numVar("n", eq(lit(42), v("n"))))).toBe("x = 42");
+      expect(round(numVar("n", eq(lit(42), v("n"))))).toBe(
+        'typeof x = "number" ∧ x = 42',
+      );
     });
 
     it("eq 与常数界并存：eq 主导", () => {
       expect(round(numVar("n", and(eq(v("n"), lit(5)), gt(v("n"), lit(0)))))).toBe(
-        "x = 5",
+        'typeof x = "number" ∧ x = 5',
       );
     });
 
@@ -103,13 +109,13 @@ describe("absToConstraint", () => {
 
   describe("number 常数界", () => {
     it("单个 gt 界", () => {
-      expect(round(numVar("n", gt(v("n"), lit(0))))).toBe("x > 0");
+      expect(round(numVar("n", gt(v("n"), lit(0))))).toBe('typeof x = "number" ∧ x > 0');
     });
 
     it("and 链 ge/le", () => {
       expect(
         round(numVar("n", and(ge(v("n"), lit(0)), le(v("n"), lit(100))))),
-      ).toBe("x ≥ 0 ∧ x ≤ 100");
+      ).toBe('typeof x = "number" ∧ x ≥ 0 ∧ x ≤ 100');
     });
 
     it("无界 num() → number()", () => {
@@ -132,7 +138,7 @@ describe("absToConstraint", () => {
       expect(c).toBeDefined();
       // 投影产物是 builder：int 标志经 isIntFlag 统一读取
       expect(isIntFlag(c!)).toBe(true);
-      expect(inst(c!)).toBe("x > 0");
+      expect(inst(c!)).toBe('typeof x = "number" ∧ x > 0');
     });
 
     it("不可满足界集（含冗余 ge/le）→ undefined", () => {
@@ -224,7 +230,7 @@ describe("absToConstraint", () => {
     it("eq(self, true) → lit(true)", () => {
       expect(
         round(abs({ k: "prim", type: "boolean" }, v("b"), eq(v("b"), lit(true)), "path")),
-      ).toBe("x = true");
+      ).toBe('typeof x = "boolean" ∧ x = true');
     });
   });
 
@@ -332,7 +338,7 @@ describe("absToConstraint", () => {
       const c = absToConstraint(arr);
       expect(c).toBeDefined();
       expect(c!.element).toBeDefined();
-      expect(inst(c!.element!)).toBe("x = 3");
+      expect(inst(c!.element!)).toBe('typeof x = "number" ∧ x = 3');
     });
 
     it("元素带界 → array(number().gt(0))", () => {
@@ -439,7 +445,7 @@ describe("joinThenProject（§4.2 先 join 再投影）", () => {
   });
 
   it("单元素直投", () => {
-    expect(inst(joinThenProject([numLit(42)])!)).toBe("x = 42");
+    expect(inst(joinThenProject([numLit(42)])!)).toBe('typeof x = "number" ∧ x = 42');
   });
 
   it("跨 prim 字面量 → union(lit(42), lit(\"a\"))", () => {

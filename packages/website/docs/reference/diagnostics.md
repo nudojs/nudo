@@ -166,10 +166,10 @@ Context: [Call-site discovery ceiling](../concepts/limits.md#call-site-discovery
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text
-emit target 'path/lib.nudo.js' is outside package.json#nudo.contract.emit allowlist
+emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
 ```
 
-`contract --emit` refused to write a sidecar outside the configured allowlist. **Warning** — the write is skipped. Fix: move the target, or extend `package.json#nudo.contract.emit`.
+`contract --emit` refused to write a sidecar outside the configured allowlist. **Warning** — the write is skipped. The allowlist patterns match the **source file path**, not the sidecar path (the message names both). Fix: move the target, or extend `package.json#nudo.contract.emit`.
 
 Context: [Emit generated segments](../guides/contract.md#emit-generated-segments)
 
@@ -212,6 +212,40 @@ export function getName(user) {
 **Fix options:** refine param to a shape; `try/catch` the path; or (while migrating) `--ignore-throws TypeError` / `package.json#nudo.check.ignoreThrows` / `--entry-throws warning`. **L2 does not gate internal helpers.**
 
 Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
+
+### `nudo:module-throw` {#nudo-module-throw}
+
+| | |
+|--|--|
+| **Meaning** | The module's top-level code **always** throws, so the module can never be imported |
+| **Layer** | L2 error (default) |
+| **Display** | `module initializer always throws TypeError — the module cannot be imported …` |
+
+```text
+throw new TypeError("boom");
+export function f() { return 1; }   // never importable: loading the module throws
+```
+
+The evaluator reports the module as **not analysed**: every export is dropped, so
+signatures degrade to `unknown` and no L2 entry evidence exists. Before this code
+existed, that state was indistinguishable from "analysed, found nothing" (`OK`,
+exit 0) — a green gate for a module the engine could not analyse at all.
+
+Only **syntactic** evidence counts: a `throw` statement that the top-level
+statement sequence executes unconditionally (descending through bare blocks
+only). Conditional throws (`if (typeof window === "undefined") throw …`),
+`try/catch`-absorbed throws, and throws the **engine** infers from its own
+approximation of host APIs (a missing dependency modelled as a closed object, for
+example) are **not** reported — real packages (`typescript`, `react-dom`,
+`vitest`) load fine natively while the evaluator fails on them, so the engine's
+"always throws" is not evidence about the program.
+
+**Fix/suppress:** make the throw conditional if the module should be importable;
+if throwing at load is intended, `--ignore-throws <Kind>` (the reported kind) or
+`--entry-throws off` / `package.json#nudo.check.entryThrows`. One diagnostic per
+module, not per entry.
+
+Context: [L2 — entry throws](../guides/check.md#l2--entry-throws)
 
 ## Engine debt / observation
 
@@ -267,12 +301,6 @@ Evaluation returned opaque / uninformative Abs.
 
 Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 
-### `nudo:eval-error` {#nudo-eval-error}
-
-Body evaluation threw during analysis.
-
-Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
-
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
 Recursive evaluation was cut short; the result widened to `unknown#opaque`. The message — and the `reason` field in `check --json` — tells you **which kind**:
@@ -286,7 +314,7 @@ Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Info.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
@@ -381,9 +409,13 @@ Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invaria
 ```text
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
 path env failed to load: ./nope.mjs — path env not found: <resolved-path>
+unknown env name "bogus" (built-in envs: es, web, node; a path env needs a ./ or ../ prefix)
+env file must export a defineEnv() function (got undefined)
 ```
 
 A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to load — either the direct `import()` and the bare-specifier rewrite fallback both failed, or the pointed-to file does not exist. **Warning** — the env falls back to "env off" semantics for that entry, so the analysis silently loses those bindings (a run where the env loads can infer more); do not treat the warning as benign.
+
+The same code also covers two env **contract** failures: an env name that is neither a built-in (`es`, `web`, `node`) nor a path (a path env needs a `./` or `../` prefix), and a path env file that does not export a `defineEnv()` function, exports a non-function, throws while being evaluated, or returns something other than `{ globals }`. Both were silent before: the env simply did not apply and the affected code was then judged to always throw `ReferenceError`. A non-string entry in `package.json#nudo.env` is reported the same way instead of crashing.
 
 **Emitted by:** `nudo check` (issues section), `nudo test` (env warnings section, identical line format; with `--json` the warning goes to stderr so stdout stays a single JSON document), and the LSP (warning diagnostic with this code, same message format). It never gates the exit code.
 
@@ -452,6 +484,26 @@ Module load chain too deep (depth N > M max): a.js -> b.js -> …
 ```
 
 **Fix:** the chain exceeds the loader depth budget — flatten re-export hops or raise the budget.
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:module-unreadable` {#nudo-module-unreadable}
+
+```text
+cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open '/abs/path/dep.js'
+```
+
+**Error.** The dependency **exists** but cannot be read (EACCES / EIO / EMFILE / ESTALE …). Distinct from `nudo:module-missing` (no such file): the file is there, only unreadable — its types stay unknown and the gate fails closed. **Fix:** fix the file permissions (or the module path); the dependency is present but unreadable, so its types are unknown.
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:json-invalid` {#nudo-json-invalid}
+
+```text
+JSON module './data.json' (from main.js) is not valid JSON: <parser message>
+```
+
+**Error.** A `.json` dependency is syntactically invalid JSON. Distinct from `nudo:module-missing` (the file is absent) and `nudo:module-unreadable` (the file cannot be read): the file is there and readable, but its content is not valid JSON, so no value can be imported. **Fix:** correct the JSON syntax — trailing commas, comments and single quotes are not valid JSON.
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
@@ -572,6 +624,16 @@ export --out mkdir failed: out/dir
 A `--out` output-directory IO operation failed (`mkdir` / `write`). **Error** (usage) — the raw `errno` never reaches the product face; check that `--out <dir>` is writable and is a directory path, then re-run. (BUG-023: added so `nudo export` carries the same PathError face as `check` / `test`.)
 
 Context: [nudo export](../api/cli-reference.md#nudo-export)
+
+### `nudo:migrate-strip-failed` {#nudo-migrate-strip-failed}
+
+```text
+migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
+```
+
+`nudo migrate strip --write` refused to write a product that Node cannot parse. **Error** (usage) — the strip pass removes type syntax only; whatever it cannot lower itself must be lowered by hand (or by `tsc`). Class member modifiers (`private` / `public` / `protected` / `readonly` / `abstract` / `override`) and constructor parameter properties **are** lowered by the strip pass now (the modifiers are dropped; a parameter property becomes a field plus a `this.x = x` assignment in the constructor body), so they no longer trip this gate — what still trips it is a construct the pass cannot lower (e.g. a **destructured** constructor parameter property). `migrate` is a one-way gate: a half-written `.js` has no rollback path, so the file is left untouched and named.
+
+Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
 
 ## Reading `actual ⊭ expected`
 

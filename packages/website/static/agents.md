@@ -28,7 +28,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire)
 3. **`@nudo:case` is debug only** — never present it as the interface product.
 4. **`any` vs `unknown`:** unconstrained entry params print as **`any`**; **`unknown` means inference failed**.
 5. **`check` validates; `export` projects** one-way lossy dts/zod/guards.
-6. **L1** = explicit contracts; **L2** = entry may-throw (`nudo:entry-may-throw`). `--ignore-throws` filters L2 only.
+6. **L1** = explicit contracts; **L2** = entry may-throw (`nudo:entry-may-throw`) + module-load throws (`nudo:module-throw`). `--ignore-throws` filters L2 only.
 7. **No body-AST slot invention**; HOF promote ≠ check error (warning suggestion).
 
 ## Canonical pages

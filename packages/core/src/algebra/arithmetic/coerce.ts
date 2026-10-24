@@ -108,9 +108,23 @@ function isNullishLitOperand(a: Abs): boolean {
 }
 
 /**
- * 可能经 ToPrimitive 变成 bigint 的操作数（any/unknown/obj/fn/brand/sum）。
+ * **不得按「确定的非 bigint 数值面」处理**的操作数（any/unknown/obj/fn/brand/
+ * sum，以及数组/元组）。
  * `1n + x`（x:any）在 x 实为 2n 时得 3n、x 为 "s" 时得 "1s"、x 为 1 时才 TypeError——
  * 不得硬抛成 never。
+ *
+ * Bug 946：数组/元组补进清单 —— `1n + []` 原生走 ToPrimitive（数组侧恒
+ * join(",") ⇒ string）得 "1"、**从不抛**；bigint ⊗ 数组不得被当成「已知的
+ * 非 bigint 面」而误折。算术面（`-` / `*` / `/` / `%` 无字符串分支）经
+ * ToNumber(string) → number ⇒ 混型 TypeError **确定**（node 实测 `1n - []`
+ * 恒抛）⇒ foldBigintBinOp 里走**硬抛**分支（可被 catch 吸收），不走软
+ * may-throw 通道（软通道让求值继续 ⇒ catch 分支变死代码）。
+ *
+ * 注意：本清单判的是「不得按确定的非 bigint 数值面处理」，**不是**「ToPrimitive
+ * 可能产 bigint」——数组的 ToPrimitive 恒是字符串，永不产 bigint。ToString/
+ * ToNumber 强转的 may-throw 判据见 isMaybeCoercionThrowOperand（数组/元组被
+ * 排除：它们的 ToPrimitive 恒 string ⇒ 既不会成 bigint 也不会成 Symbol ⇒
+ * `1 + []` / `[] < 1` 原生从不抛，不得记假 may-throw）。
  */
 function isMaybeBigintOperand(a: Abs): boolean {
   // issue #119：lit(null)/lit(undefined)（shape k:"unknown" 携带字面量项）
@@ -130,7 +144,18 @@ function isMaybeBigintOperand(a: Abs): boolean {
     const members = (a.shape as { members: Abs[] }).members;
     return members.length === 0 || members.some((m) => isMaybeBigintOperand(m));
   }
-  return k === "any" || k === "unknown" || k === "obj" || k === "fn" || k === "brand";
+  return (
+    k === "any" ||
+    k === "unknown" ||
+    k === "obj" ||
+    k === "fn" ||
+    k === "brand" ||
+    // Bug 946：数组/元组 —— ToPrimitive 恒 join(",") ⇒ string（不是「可能
+    // 产 bigint」，但也不是「已知的非 bigint 数值面」）⇒ 进清单由
+    // foldBigintBinOp 的数组分支显式分流（硬抛，见该处注释）。
+    k === "arr" ||
+    k === "tuple"
+  );
 }
 
 /**
@@ -139,8 +164,14 @@ function isMaybeBigintOperand(a: Abs): boolean {
  * throws 效果，值域不变。unknown 是引擎 fail-closed 令牌，不在此列
  * （wave 1 口径：may-tier 对 any 记、对 unknown 不记，不把引擎债放大成
  * L2 假报）。
+ *
+ * Bug 946：数组/元组**不在**本通道 —— 它们的 ToPrimitive 恒为字符串
+ * （join），既不会成 bigint 也不会成 Symbol ⇒ `1 + []` / `[] < 1` 原生
+ * 从不抛，不得记假 may-throw（该判据与 isMaybeBigintOperand 的清单
+ * 有意分叉：后者是「不得按确定的非 bigint 数值面处理」的算子侧判据）。
  */
 export function isMaybeCoercionThrowOperand(a: Abs): boolean {
+  if (a.shape.k === "arr" || a.shape.k === "tuple") return false;
   return isMaybeBigintOperand(a) && a.shape.k !== "unknown";
 }
 
@@ -209,6 +240,18 @@ export function foldBigintBinOp(
   // any/unknown/obj/…：可能 ToPrimitive 成 bigint（成功）或 number（TypeError）——
   // 记 soft may-throw，交回上层分流，不得硬抛成 never
   if (isMaybeBigintOperand(other)) {
+    // Bug 946：数组/元组 —— ToPrimitive 恒 join(",") ⇒ string ⇒ ToNumber ⇒
+    // number ⇒ 与 bigint 混型 TypeError **确定**（node 实测 `1n - []` 恒抛）
+    // 且**可被 catch 吸收** ⇒ 硬抛。
+    //
+    // **不得**走下面的软 may-throw 通道：软通道让求值继续（catch 分支变死
+    // 代码）—— 实测 `try { 1n - [] } catch (e) { return 'caught'; }` 原生进
+    // catch（"caught"），软通道下落到 catch 之后（"missed"）⇒ 语义反了。
+    // `+` 的字符串分支在 add() 上游分流（数组臂先于 bigint 臂），到这里即
+    // 算术算子 ⇒ 混型 TypeError 恒定。
+    if (other.shape.k === "arr" || other.shape.k === "tuple") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     recordMayThrow({
       kind: "TypeError",
       cause: "mixed bigint ⊗ abstract operand",

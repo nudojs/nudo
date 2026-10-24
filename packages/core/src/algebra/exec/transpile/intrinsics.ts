@@ -38,6 +38,13 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
   "Reflect",
   "Symbol",
   // Bug 24：进路由表（URL.canParse 静态分派；new URL 走 clsName 派发不受影响）
+  // Bug 322 补记 skip 的**连带后果**：skip 只保住了「宿主身份路由不被 env
+  // 遮蔽」，却让 env 侧更完整的 **URL 实例模型**（packages/env/src/web.ts
+  // 的 `searchParams: URLSearchParams`）**永远到不了构造面**——`new URL(...)`
+  // 走 core 的 makeUrlAbs（exec/class/declare.ts），不看 env 注入 ⇒ env 那
+  // 份模型对构造路径不可达。构造面的实例槽（searchParams 等）由 core 侧
+  // 补齐（declare.ts 的 withUrlSearchParamsSlot）；env 侧建模仍需主 agent
+  // 裁决合并（不擅自解 skip——解 skip 会破 issue #87 的身份路由）。
   "URL",
   // Bug 56：进路由表（X.prototype.<method> 值读借用调用）——parity 门要求
   // 路由名必须同步跳过 env 注入，否则 `const Map = …` 遮蔽宿主身份路由

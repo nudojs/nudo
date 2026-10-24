@@ -244,7 +244,7 @@ Print, draft, or emit each function's effective interface with its source layer.
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
 nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
-nudo contract --from-dts <paths...> [--write] [--dry-run]
+nudo contract --from-dts <paths...> [--write] [--dry-run] [--force]
 ```
 
 **Layers:**
@@ -260,13 +260,14 @@ nudo contract --from-dts <paths...> [--write] [--dry-run]
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
 | `--from-dts` | Reverse TypeScript `.d.ts` / annotated `.ts` sources, or an npm package's types (the positional `<paths...>`), into a reviewable `@nudo:draft` (`*.nudo.draft.js`). **Not enforced** until you review it and copy accepted exports into a `*.nudo.js` sidecar — the contracts step of the TypeScript-retirement path ([Migrate from TypeScript](../guides/migrating-from-typescript.md)) |
-| `--write` | With `--draft` / `--from-dts`: write `*.nudo.draft.js` to disk |
+| `--write` | With `--draft` / `--from-dts`: write `*.nudo.draft.js` to disk. With `--from-dts`, the draft is written **next to the source `.d.ts`** (not into the current directory) and an **existing draft that differs is never silently overwritten** — the command refuses and exits `1`. |
+| `--force` | With `--from-dts --write`: overwrite an existing **machine-generated** draft that differs (same escape hatch as `NUDO_DRAFT_FORCE=1`). A **hand-edited** draft is never overwritten — merge it manually or delete it to regenerate (exit `1`). |
 | `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit --dry-run`: exit `1` when the diff is non-empty |
 | `--from <paths…>` | Usage-site evidence for domain projection |
-| `--json` | With `--draft`: `{ draftSource, diff, entries[] }` for agent review (AI4) |
+| `--json` | Machine face for **print / `--draft` / `--emit`**: the top level is always a JSON **array** (one element per input). `--draft` elements are `{ file, draftPath, draftSource, diff, entries[] }`, `--emit` elements are `{ file, sidecar, changed, written, skipped[], issues[], diff? }`, print elements are `{ file, entries[] }` (AI4) |
 
 **Examples:**
 
@@ -369,9 +370,12 @@ src/lib.js
   · 1 function(s)
   ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
 
-Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
 Result: FAIL (drift or errors found)
 ```
+
+> `case drift` counts **changed witness directives** (`added + removed`) summed over all files —
+> the same unit as the per-file `drift: N witness directive(s) changed` line.
 
 **Exit codes:**
 
@@ -430,9 +434,11 @@ nudo init [path]
 
 Setup verb (aligned with `tsc`'s `init` command): write an adoption baseline into the nearest `package.json` — `"nudo": { "check": { "profile": "adoption" } }` (L2 entry may-throw demoted to warning; L1 contract violations stay `error`).
 
-Idempotent: re-running on a `package.json` that already has a `nudo` key prints the current config without writing.
+Idempotent: re-running on a `package.json` that already has a `nudo` key prints the current config without writing. An **invalid** `nudo` value (`null` / scalar / array) is replaced by the baseline with a warning; an **inheritable** ancestor `nudo` config is never shadowed (refused); a workspace / container root is never written across (refused).
 
-**Exit codes:** `0` on success and idempotent re-runs; `1` on usage / IO errors (no `package.json` found, malformed JSON).
+An **explicit** `nudo init <container-root>` writes the baseline into that root with a scope warning (the `nudo` key then applies to every package below it); only writing **across** the boundary from a subdirectory is refused.
+
+**Exit codes:** `0` on success and idempotent re-runs; `1` on usage / IO errors (no `package.json` found, malformed JSON, shadowing an inheritable ancestor config, writing across a workspace / container root).
 
 ---
 

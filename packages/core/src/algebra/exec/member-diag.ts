@@ -12,7 +12,8 @@
 import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
-import { isNullProtoObj } from "../objects.ts";
+import { getSlot, isNullProtoObj } from "../objects.ts";
+import { getEvalClass } from "./class-registry.ts";
 import { DIAG } from "../diag-codes.ts";
 import {
   createScopedSlot,
@@ -85,10 +86,22 @@ export function recordMemberDiag(d: EvalMemberDiag): void {
  *  必须接近完整 String.prototype 名集：引擎未建模的方法（Bug 72 的
  *  trimStart/localeCompare/…）也在原型上真实存在，漏列会把合法调用
  *  误判「确定缺失」→ 假 may-throw。
- *  Bug 49：导出供 $get 方法值读通道（prim 接收者一等函数投影）复用。 */
+ *  Bug 49：导出供 $get 方法值读通道（prim 接收者一等函数投影）复用。
+ *
+ *  Bug 1055：本表须与**宿主同名集**同源（node 实测
+ *  `Object.getOwnPropertyNames(String.prototype)` 逐名对拍，node v26.10.0
+ *  自有方法 50 个 = 本表 50 个，无漏列 / 无多列）。漏列一个宿主真实存在的
+ *  名字 ⇒ 读通道折 exact `undefined` ⇒ 再调用它 ⇒ 硬 TypeError ⇒ **L2 门禁
+ *  假红**（Bug 1055：`trimLeft` / `trimRight` 两个 ES2017 别名漏列）。
+ *  ⇒ 增删本表项时，**必须**同步对拍宿主自有方法名集（别只照派发面
+ *  `algebra/methods.ts` 抄——两套集合曾因此分裂，见 Bug 1055）。 */
 export const STRING_METHODS = new Set([
   "toUpperCase", "toLowerCase", "toLocaleUpperCase", "toLocaleLowerCase",
-  "trim", "trimStart", "trimEnd", "split", "slice", "substring", "substr",
+  "trim", "trimStart", "trimEnd",
+  // Bug 1055：ES2017 别名（≡ trimStart / trimEnd，原生同一内置）——
+  // 宿主 String.prototype 自有（node 实测），漏列 ⇒ 值读折 exact undefined。
+  "trimLeft", "trimRight",
+  "split", "slice", "substring", "substr",
   "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
   "charCodeAt", "codePointAt", "replace", "toString", "valueOf", "repeat",
   "padStart", "padEnd", "replaceAll", "concat", "match", "matchAll",
@@ -307,16 +320,121 @@ export const ARRAY_PROTO_METHOD_NAMES = new Set([
 ]);
 
 /**
+ * **引擎已为原型面建模**的 brand 名（brand 接收者「确定缺失」判定的排除名单）。
+ *
+ * 这些 brand 的**可调用面不在内层 obj 槽表里**：
+ * - 内建 brand（Date / Map / Set / Promise / Error 家族 / ArrayBuffer 族 /
+ *   URL / URLSearchParams / TextDecoder / WeakRef / FinalizationRegistry /
+ *   typed array 族）——原型可调用面在 `exec/runtime/members.ts` 的
+ *   `BUILTIN_BRAND_METHODS` / `BUILTIN_BRAND_ACCESSORS`；
+ * - 装箱 brand（String / Number / Boolean / Symbol / BigInt）——原型方法表在
+ *   本文件的 `STRING_METHODS` / `NUMBER_PROTO_METHODS` / …；
+ * - Proxy（陷阱可给任意成员）、Intl.* 子构造器、原型对象 brand
+ *   （`X.prototype` / `X.generatorProto`）。
+ *
+ * ⇒ 它们的内层 obj 槽表**不是**可调用面全集 ⇒ 表外名**不可证缺席** ⇒
+ * 一律保守不判（缺席不可证）。
+ *
+ * 名单与引擎表**同源核对**：新钉 `eval-bug-1044-brand-missing-member.test.ts`
+ * 断言 `exec/runtime/members.ts` 的两张表键集 ⊆ 本名单（新增内建 brand 时
+ * 同步此处，否则同步守卫会红）。
+ */
+export const PROTOTYPED_BRAND_NAMES: ReadonlySet<string> = new Set([
+  // 内建 brand 原型方法表 / 访问器表（members.ts BUILTIN_BRAND_* 键集）
+  "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "Promise",
+  "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError",
+  "EvalError", "URIError", "AggregateError",
+  "ArrayBuffer", "SharedArrayBuffer", "DataView",
+  "URL", "URLSearchParams", "TextDecoder", "TextEncoder",
+  "WeakRef", "FinalizationRegistry",
+  // 装箱 brand（原型方法表在本文件：STRING_METHODS / NUMBER_PROTO_METHODS / …）
+  "String", "Number", "Boolean", "Symbol", "BigInt",
+  // 陷阱面 / 迭代器 brand（可调用面不在内层槽表）
+  "Proxy", "Arguments", "RegExpMatchIterator", "RegExpStringIterator",
+  // typed array 族（members.ts 按 TYPED_ARRAY_ELEMENT 逐族登记原型表）
+  "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
+  "Int32Array", "Uint32Array", "Float16Array", "Float32Array", "Float64Array",
+  "BigInt64Array", "BigUint64Array",
+]);
+
+/**
+ * brand 的原型面在引擎里**已被建模** ⇒ 表外名不可证缺席（缺席不可证）。
+ *
+ * - 名单内（`PROTOTYPED_BRAND_NAMES`）；
+ * - 原型对象 brand（`X.prototype` / `X.generatorProto`——类原型方法在
+ *   类注册表，不在原型对象自身的内层槽表）；
+ * - Intl.* 子构造器（`Intl.DateTimeFormat` 等——格式化方法在 builtins 侧
+ *   另有模型）。
+ */
+function brandProtoSurfaceModelled(brandName: string): boolean {
+  if (PROTOTYPED_BRAND_NAMES.has(brandName)) return true;
+  if (brandName.endsWith(".prototype")) return true;
+  if (brandName.endsWith(".generatorProto")) return true;
+  if (brandName.startsWith("Intl.")) return true;
+  return false;
+}
+
+/**
+ * brand 接收者上的「确定不可调用」判定。
+ *
+ * brand 的**内层 obj 槽表**是它的**实例面**（env 声明的 brand：面即声明
+ * 的全部成员；内建 brand：面是自有数据成员，原型面另有模型——见
+ * `brandProtoSurfaceModelled`）。⇒ 成员不在内层槽表里 ⇒ 该 brand 的原型面
+ * 在引擎里是空的 ⇒ 表外名**确定不存在** ⇒ 原生调用恒抛 TypeError。
+ *
+ * 保守边界（命中即不判，缺席不可证）：
+ * - 内层不是闭合 obj（unknown / prim / arr / open / 带 index 键）——域不封闭；
+ * - 内层 conf 非 exact；
+ * - 自有槽在场但可缺省（optional）——可能缺席；
+ * - Object.prototype 名（`toString` 等）——原型上恒有；
+ * - 引擎已为该 brand 建模原型面（内建 / 装箱 / Proxy / Intl.* / 原型对象）；
+ * - 注册用户类（类注册表持有原型方法面——域不同，由
+ *   `callSiteHasNoCallableTarget` 判）。
+ */
+function brandDefinitelyUncallable(recv: Abs, name: string): boolean {
+  const s = recv.shape as { k: "brand"; name: string; shape: Abs };
+  const inner = s.shape;
+  if (!inner || typeof inner !== "object" || !("shape" in inner)) return false;
+  const is = inner.shape as {
+    k?: string;
+    slots?: Record<string, { value: Abs; optional?: boolean }>;
+    open?: boolean;
+    index?: unknown;
+  };
+  if (!is || is.k !== "obj") return false;
+  if (is.open || is.index) return false;
+  if (inner.conf !== "exact") return false;
+  const slots = is.slots ?? {};
+  const own = getSlot(slots, name);
+  if (own) {
+    // 自有槽遮蔽原型：槽值是字面量（prim/null/undefined 非函数）⇒ 确定抛；
+    // fn Abs / 抽象值 ⇒ 调用链已处理或保守。
+    if (own.optional) return false;
+    const sv = own.value;
+    if (!sv) return false;
+    return !!sv.term && sv.term.op === "lit";
+  }
+  if (OBJECT_PROTO_NAMES.has(name)) return false;
+  if (brandProtoSurfaceModelled(s.name)) return false;
+  if (getEvalClass(s.name) !== undefined) return false;
+  return true;
+}
+
+/**
  * 结构上确定不可调用的成员调用（evaluator $invoke）：
  * - null-proto 对象：无 Object.prototype 可回退，缺失自有槽即确定缺失
  * - 闭 exact 对象：slots 是精确键集，非 OP 名缺失即确定缺失（OP 名经
  *   Object.prototype 存在，未建模 → 保守不抛）
  * - 槽存在但值是字面量（prim/null/undefined 非函数）→ 确定抛
+ * - brand 接收者：内层闭合 obj 的槽表是实例面，表外名确定缺失
+ *   （Bug 1044：env 声明的 brand 之前一律不判 ⇒ `Response.json(x).then(cb)`
+ *   假绿；原型面已建模的 brand 走 `brandProtoSurfaceModelled` 排除）
  * 保守边界：open 对象（spread/assign 产物）、非 exact conf（create(proto)
  * 的 path 产物）、OP 原型名一律不判抛——避免假抛 false positive。
  */
 export function definitelyUncallableMember(recv: Abs, name: string): boolean {
   const s = recv.shape;
+  if (s.k === "brand") return brandDefinitelyUncallable(recv, name);
   if (s.k !== "obj") return false;
   const slots = s.slots as Record<string, { value: Abs }>;
   const hasOwn = Object.prototype.hasOwnProperty.call(slots, name);

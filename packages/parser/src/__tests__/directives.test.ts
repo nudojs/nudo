@@ -380,14 +380,27 @@ describe("stripTypes: parse() 统一 TS 剥除", () => {
     );
   });
 
-  it("尖括号断言 <T>x 在 typescript+jsx 插件组合下不可解析（Babel 按 JSX 处理），剥除器仍处理 TSTypeAssertion 节点", () => {
-    // 与 tsc 在 .tsx 中的行为一致：尖括号断言必须写 as。parse 层两个插件
-    // 同时启用，`<string>x` 恒走 JSX 分支，因此 TSTypeAssertion 只能来自
-    // 无歧义位置；unwrapExpression 分支保留以兜底。
-    expect(() => parse("const y = <string>x;")).toThrow();
+  it("尖括号断言 <T>x 解析成功（TS+JSX 硬失败后降级去 jsx 重试），剥除器仍处理 TSTypeAssertion 节点", () => {
+    // Bug 451（口径更新）：`.ts`（非 `.tsx`）里 `<T>x` 是**合法** TS（tsc exit 0）
+    // ⇒ 解析层在 TS+JSX **硬失败**时**去掉 jsx 重试一次**（core 的
+    // `parseWithJsxFallback`）⇒ `<T>x` 回到 TS 语法（TSTypeAssertion）
+    // ⇒ 剥除器仍处理 TSTypeAssertion 节点（unwrapExpression 分支）。
+    // ⚠ 与 tsc 在 **.tsx** 中的行为不同（.tsx 里必须写 `as`）：parse() 拿不到
+    // 扩展名 ⇒ 无法按扩展名分流插件集（路线 B 未采纳）。
+    const ast = parse("const y = <string>x;");
+    expect(ast.program.body).toHaveLength(1);
+    const decl = ast.program.body[0] as any;
+    expect(decl.type).toBe("VariableDeclaration");
+    // 剥除后 init 是**被断言的表达式本身**（不是 TSTypeAssertion 节点）
+    expect(decl.declarations[0].init.type).toBe("Identifier");
+    expect(decl.declarations[0].init.name).toBe("x");
   });
 
-  it("interface / type alias / enum / declare 声明被删除", () => {
+  it("interface / type alias / declare 声明被删除；enum 被合成成运行时对象（Bug 913）", () => {
+    // 口径更新（Bug 913）：TS 的 `enum` **有运行时语义**（tsc 编译成带反向映射的
+    // 对象）⇒ 剥除器不再把它整条删除，而是**合成**一个等价的运行时对象
+    // （`var Color = (function (Color) { … })({})`）⇒ 成员引用不再退化成
+    // 未绑定全局读取。`declare enum`（环境声明）仍然整条删除。
     const ast = parse(`
 interface User { name: string }
 type Alias = { tag: "x" };
@@ -397,9 +410,24 @@ declare function goneFn(): void;
 function kept(n) { return n; }
 `);
     const body = ast.program.body;
+    expect(body).toHaveLength(2);
+    // [0] = 合成的 enum 运行时对象（var Color = …）
+    expect(body[0].type).toBe("VariableDeclaration");
+    expect((body[0] as any).kind).toBe("var");
+    expect((body[0] as any).declarations[0].id.name).toBe("Color");
+    // [1] = 幸存的用户函数
+    expect(body[1].type).toBe("FunctionDeclaration");
+    expect((body[1] as any).id.name).toBe("kept");
+  });
+
+  it("declare enum（环境声明）仍然整条删除", () => {
+    const ast = parse(`
+declare enum Color { Red }
+function kept(n) { return n; }
+`);
+    const body = ast.program.body;
     expect(body).toHaveLength(1);
     expect(body[0].type).toBe("FunctionDeclaration");
-    expect((body[0] as any).id.name).toBe("kept");
   });
 
   it("export 包装的类型声明整体删除", () => {

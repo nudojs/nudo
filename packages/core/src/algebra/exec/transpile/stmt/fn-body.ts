@@ -6,6 +6,14 @@
  *   （emitFnBlockBody / transpileFnBodyStmts）——逐语句 map(transpileStatement)
  *   会绕过早退 if 提升，`if (c) return X; return Y` 的早退值被语句级 $fork
  *   thunk 吞掉（假精确）；
+ * - 早退提升的 alt 臂 = **后续路径**（事实臂已 return/throw 提前退出 ⇒ 测试
+ *   为假）⇒ 该臂**不断言否定关系界**（Bug 1115：¬(x <= k) 含 NaN，不可健全
+ *   表示 ⇒ 断言否定界会把 NaN 排除 ⇒ 假绿；事实臂窄化不受影响）；
+ * - 早退摊平的**送达范围**（Bug 186）：内含早退 if 且**无词法声明**的块
+ *   摊平到当前语句表（flattenEarlyReturnBlocks）——块正常完成 ⇒ 早退测试为
+ *   假；块内有词法声明时不摊平（作用域不外泄）；
+ * - try / catch / finally 的**块体**也走本入口（与函数体顶层同口径）——裸
+ *   map(transpileStatement) 会绕过早退提升；
  * - 函数体边界 var 提升（Bug 21）：skip = 参数模式名；嵌套块不传
  *   varScope（var 已在函数级提升，块内改发赋值）；
  * - P4b 参数遮蔽：继承 constNames 被本函数参数模式名遮蔽时扣除（假
@@ -35,8 +43,10 @@ import {
   collectPatternNames,
   collectVarHoistNames,
   computeConstScope,
+  copyConstScope,
+  internalTmpName,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings } from "../emit.ts";
+import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
@@ -97,6 +107,62 @@ function hoistNonCtorMarkers(stmts: Statement[], depth: number): string {
   return names.map((n) => `${pad}${n}.__nudoNonCtor = 1;`).join("\n") + "\n";
 }
 
+/**
+ * 语句表内是否存在「早退 if」（无 else、cons 体 return）——块内早退的
+ * 存在性判定（Bug 186 跨块早退摊平的前置条件）。
+ */
+function blockHasEarlyReturn(stmts: readonly Statement[]): boolean {
+  return stmts.some(
+    (s) =>
+      (s.type === "IfStatement" && s.alternate == null && stmtReturns(s.consequent)) ||
+      (s.type === "BlockStatement" && blockHasEarlyReturn(s.body)),
+  );
+}
+
+/**
+ * 语句表内是否有**词法声明**（let/const/function/class）——块内**有**词法
+ * 声明时不得把块摊平到外层（作用域会被摊平 ⇒ 名字外泄 / 撞名）。`var`
+ * 是函数级作用域，摊平无差别。
+ */
+function hasLexicalDecl(stmts: readonly Statement[]): boolean {
+  return stmts.some(
+    (s) =>
+      (s.type === "VariableDeclaration" && s.kind !== "var") ||
+      s.type === "FunctionDeclaration" ||
+      s.type === "ClassDeclaration",
+  );
+}
+
+/**
+ * 跨块早退摊平（Bug 186）：把「内含早退 if 且**无词法声明**」的块摊平到
+ * 当前语句表。
+ *
+ * 原生语义：块内 `if (v === null) { return 0; }` 早退 ⇒ **块正常完成**
+ * ⇒ 早退测试为**假** ⇒ 「v 不再是 null」的补集事实作用于**块之后**的
+ * 路径。此前补集窄化只挂在「函数体顶层语句表」上（同层有 `if` + 其后
+ * `rest` 才提升），裸块 / try / catch / finally 块内的同一段代码拿不到
+ * 补集 ⇒ 同一段代码换位置结论相反（L2 假红）。
+ *
+ * 摊平口径：块内**无词法声明** ⇒ 块只是作用域包装，摊平到当前语句表后
+ * 语义无差别（`var` 本就是函数级）；早退 if 随即进入既有的同层提升路径
+ * ——补集事实送达块之后的路径。块内有词法声明时不摊平（宁缺毋假）。
+ */
+function flattenEarlyReturnBlocks(stmts: readonly Statement[]): Statement[] {
+  const out: Statement[] = [];
+  for (const s of stmts) {
+    if (
+      s.type === "BlockStatement" &&
+      !hasLexicalDecl(s.body) &&
+      blockHasEarlyReturn(s.body)
+    ) {
+      out.push(...flattenEarlyReturnBlocks(s.body));
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
+}
+
 export function transpileFnBodyStmts(
   stmtsIn: Statement[],
   depth: number,
@@ -106,7 +172,9 @@ export function transpileFnBodyStmts(
    * var 已在函数级提升，块内按 hoistedVarNames 改发赋值（Bug 21）。 */
   varScope?: { skip: ReadonlySet<string> },
 ): string {
-  const stmts = completeElseChains(stmtsIn);
+  // Bug 186：跨块早退摊平（内含早退 if 的无声明块 → 当前语句表），
+  // 早退的补集事实由此送达块之后的路径
+  const stmts = completeElseChains(flattenEarlyReturnBlocks(stmtsIn));
   // Bug 21：函数体级 var 提升——收集体内（含嵌套块）var 名，顶部发射
   // `let <name> = $lit(void 0);`（声明前置、初始化留原位改发赋值）。
   const varHoist: string[] = [];
@@ -138,9 +206,7 @@ export function transpileFnBodyStmts(
     if (opts.constNames && varScope.skip.size > 0) {
       varOpts = {
         ...varOpts,
-        constNames: new Set(
-          [...opts.constNames].filter((n) => !varScope!.skip.has(n)),
-        ),
+        constNames: copyConstScope(opts.constNames, varScope!.skip),
       };
     }
   }
@@ -192,21 +258,28 @@ export function transpileFnBodyStmts(
     const pad = indent(depth);
     const padIn = indent(depth + 1);
     // 与 IfStatement 同协议：set-flag 哨兵 + forkJoinBindings
-    const wrapArm = (thunk: string, outPrefix: string): string => {
+    // Bug 1151-b：fork 协议内部临时名（快照 `__fk0_*` / 臂槽位 / 臂标志
+    // `__cont` / 结果载体 `__fkR`）**避开用户标识符**——写死名会遮蔽用户
+    // 同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`forkBindingDecls`）
+    // 同源 ⇒ 「成对一致」。
+    const fk = forkTmpNames(names, scopedOpts);
+    const wrapArm = (thunk: string, arm: 0 | 1): string => {
       if (names.length === 0) return thunk;
+      const slots = arm === 0 ? fk.arm1 : fk.arm2;
+      const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
       return [
         `() => {`,
-        ...names.map((n) => `${padIn}${n} = $copy(__fk0_${n});`),
-        `${padIn}let __cont = true;`,
+        ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
+        `${padIn}let ${fk.cont} = true;`,
         `${padIn}try {`,
         `${padIn}  return (${thunk})();`,
         `${padIn}} catch (e) {`,
-        `${padIn}  if ($isForkExit(e)) __cont = false;`,
+        `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
         `${padIn}  throw e;`,
         `${padIn}} finally {`,
-        `${padIn}  if (__cont) {`,
-        ...names.map((n) => `${padIn}    __${outPrefix}${n} = ${n};`),
-        ...names.map((n) => `${padIn}    __${outPrefix}set_${n} = true;`),
+        `${padIn}  if (${fk.cont}) {`,
+        ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
+        ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
         `${padIn}  }`,
         `${padIn}}`,
         `}`,
@@ -248,33 +321,68 @@ export function transpileFnBodyStmts(
       "cons",
       recvSet,
     );
-    const cons = wrapArm(consNarrowed, "fk1_");
-    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
+    const inCtrl =
+      (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0 || (opts.inCtrlBlock ?? 0) > 0;
+    // 标志名避开用户标识符（Bug 1058 同款口径：用户写了同名标识符 ⇒ 重复
+    // 词法声明 ⇒ 产物非法 JS ⇒ 整模块 fail-closed）。
+    const fkConsName = internalTmpName("__fkCons", opts);
+    // 族 65 · BC #28（try/catch 吞控制流信号）：inCtrl 形态（循环体 / try 块
+    // 体内）的早退提升此前发 `$loopReturn($fork(test, cons, alt))`——**测试为
+    // 假**时 $fork 走 alt 臂（后续路径），其值被当成早退值抛出 ⇒ 函数**提前
+    // 返回**后续路径的值（原生：后续路径照常跑完，函数继续走到块外）。
+    // 复现（node v26.10.0 对拍）：
+    //   let n=0; try { if (0) return 42; n++; } catch (e) {} return n;
+    //   原生 1 ⇒ 此前引擎折 undefined（自信的错值：把「块内后续路径的值」
+    //   当成函数返回值）。
+    //
+    // 修法：区分「早退真的发生」与「走后续路径」——
+    // - cons 臂（早退臂）跑 ⇒ 置 `__fkCons` 标志；
+    // - alt 臂（后续路径）内的 `return` 走 $loopReturn 信号（inLoop +1 ⇒
+    //   ReturnStatement 发 $loopReturn）⇒ alt 臂的 return 是**函数级**早退
+    //   （原生语义），不被当成本次提升的返回值；
+    // - 只有 `__fkCons` 为真才 $loopReturn ⇒ 测试为假时**不**早退（后续路径
+    //   照常跑完，函数继续）。
+    // 抽象测试（双臂都跑）：cons 臂置标志 ⇒ 仍按 join 值早退（既有口径不变）。
+    const consMarked = inCtrl
+      ? `() => { ${fkConsName} = true; return (${consNarrowed})(); }`
+      : consNarrowed;
+    const cons = wrapArm(consMarked, 0);
+    const altBody = transpileFnBodyStmts(rest, depth + 1, {
+      ...scopedOpts,
+      inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
+    });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const altNarrowed = narrowRelArmThunk(
-      narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-          earlyTGuard,
-          "alt",
-          recvSet,
-        ),
-        earlyDGuards,
+    // Bug 1115：alt 臂 = **后续路径**（事实臂已 return / throw 提前退出 ⇒ 落到
+    // alt 的路径上测试为**假**）——但**不得**在后续路径上断言**否定关系界**
+    // （`x <= 0` 为假 ⇒ `x > 0`）：JS 里 `¬(x <= k)` 还含 `x` 为 NaN 的情形
+    // （NaN 与任何比较皆假）⇒ 后续路径只能断定 `x > k ∨ x is NaN`，
+    // 断言 `x > k` 会**排除 NaN**（不健全）⇒
+    // - `if (x < 0) return 0; return x;` + `return nonNeg`：后续路径断言
+    //   `x >= 0` ⇒ 契约被「证成」⇒ **0 诊断**（假绿）——原生 x=NaN 时
+    //   `NaN < 0` 为假 ⇒ 走到 `return x` ⇒ 返回 NaN ⇒ 违反 nonNeg。
+    // - 三元写法 `return x < 0 ? 0 : x;` 的 else 臂**没有**否定界窄化 ⇒
+    //   判 `unproven-return` ⇒ 两种等价写法结论不一致。
+    // ⇒ 后续路径**不断言否定界**（与三元路径同口径）：事实臂窄化
+    //   （narrowRelArmThunk）只管「测试为真」的方向（那侧 NaN 不可达）。
+    const altNarrowed = narrowDiscriminantArmThunks(
+      narrowTypeArmThunk(
+        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+        earlyTGuard,
         "alt",
         recvSet,
       ),
-      earlyRGuard,
+      earlyDGuards,
       "alt",
       recvSet,
     );
-    const alt = wrapArm(altNarrowed, "fk2_");
-    const inCtrl = (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0;
-    const applyJoin = names.length ? forkJoinBindings(names, pad).join("\n") : "";
+    const alt = wrapArm(altNarrowed, 1);
+    const applyJoin = names.length ? forkJoinBindings(names, pad, scopedOpts).join("\n") : "";
     if (names.length === 0) {
       const promoted = [
         ...testRebinds,
+        ...(inCtrl ? [`${pad}let ${fkConsName} = false;`] : []),
         inCtrl
-          ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
+          ? `${pad}const ${fk.result} = $fork(${test}, ${cons}, ${alt});\n${pad}if (${fkConsName}) $loopReturn(${fk.result});`
           : `${pad}return $fork(${test}, ${cons}, ${alt});`,
       ].join("\n");
       return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
@@ -282,12 +390,13 @@ export function transpileFnBodyStmts(
     const promoted = [
       `${pad}{`,
       ...testRebinds,
-      ...forkBindingDecls(names, padIn),
-      `${padIn}const __fkR = $fork(${test}, ${cons}, ${alt});`,
+      ...forkBindingDecls(names, padIn, scopedOpts),
+      ...(inCtrl ? [`${padIn}let ${fkConsName} = false;`] : []),
+      `${padIn}const ${fk.result} = $fork(${test}, ${cons}, ${alt});`,
       applyJoin.split("\n").map((l) => l.replace(/^\s*/, padIn)).join("\n"),
       inCtrl
-        ? `${padIn}$loopReturn(__fkR);`
-        : `${padIn}return __fkR;`,
+        ? `${padIn}if (${fkConsName}) $loopReturn(${fk.result});`
+        : `${padIn}return ${fk.result};`,
       `${pad}}`,
     ].join("\n");
     return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
@@ -295,11 +404,34 @@ export function transpileFnBodyStmts(
   return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
 }
 
+/**
+ * 关系守卫的**补集**精化已**整体撤销**（Bug 1115）。
+ *
+ * 原实现（Bug 182）在「测试为假」的后续路径上断言**否定关系界**
+ * （`x <= k` 为假 ⇒ `x > k`，`REL_COMPLEMENT_OP`）——但 JS 里
+ * `¬(x <= k)` 还含 `x` 为 NaN 的情形（NaN 与任何比较皆假）：
+ * 后续路径只能断定 `x > k ∨ x is NaN` ⇒ 断言 `x > k` **排除了 NaN**
+ * （不健全）⇒
+ * - `if (x < 0) return 0; return x;` + `return nonNeg`：后续路径断言
+ *   `x >= 0` ⇒ 契约被「证成」⇒ **0 诊断**（假绿）；原生 x=NaN ⇒
+ *   `NaN < 0` 为假 ⇒ `return x` ⇒ 返回 NaN ⇒ 违反 nonNeg（真违规）。
+ * - 三元写法 `return x < 0 ? 0 : x;` 的 else 臂没有否定界窄化 ⇒ 判
+ *   `unproven-return` ⇒ 两种等价写法结论不一致。
+ *
+ * ⇒ 后续路径**不断言否定界**（事实臂 `narrowRelArmThunk` 保留：那一侧
+ * 「测试为真」⇒ NaN 不可达，断言是健全的）。
+ */
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
   // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
-  const unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  let unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  // Bug 1160：body 单元同样在**入口**分配 this 载体名（与 transpileFile 同
+  // 口径）——本单元内的函数 prologue 与嵌套生成的首参共用；无碰撞时基名
+  // `__this` 原样返回 ⇒ 产物逐字不变。
+  if (!unitOpts.thisSlot) {
+    unitOpts = { ...unitOpts, thisSlot: internalTmpName("__this", unitOpts) };
+  }
   if (isExpression(node as { type: string })) {
     return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }

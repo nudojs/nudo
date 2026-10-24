@@ -286,8 +286,9 @@ describe("Bug 9/11: import bridge constructibility", () => {
   }
 
   it("imported regular function is constructible (wrapper must not read as arrow)", () => {
-    // lib 导出构造函数 → 桥接 fn ctor:true；bindImport 包成 JS 可调用 wrapper
-    //（箭头）——$new 须回 Abs 派发（__nudoAbsFn），不得按箭头误判假抛。
+    // lib 导出构造函数 → 桥接 fn ctor:true；bindImport **原样直出声明 Abs**
+    //（Bug 932 起不再包成 JS 可调用 wrapper）——$new 须回 Abs 派发，不得
+    // 按箭头误判假抛。
     const ctorFn = absFunction([], { apply: () => $lit(1) }, { ctor: true });
     const r = evalWithModule(ctorFn);
     expect(r.throws).toBe("never");

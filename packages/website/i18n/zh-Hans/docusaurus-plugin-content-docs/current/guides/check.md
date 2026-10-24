@@ -46,7 +46,7 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  2 error · 0 warning · 0 info · 3 fn
+  2 error · 0 warning · 2 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
@@ -64,6 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -108,16 +110,17 @@ onboarding
 | `nudo:interface-multi-declarator` | L1 | warning | `@generated` 段被手工合并成多声明导出 —— 原样保留 |
 | `nudo:interface-not-projectable` | L1 | error | 组装侧车 round-trip 重解析失败 —— 不写任何文件（引擎债） |
 | **`nudo:entry-may-throw`** | **L2** | **error**（默认） | 入口/导出函数有未消化 may-throw |
+| **`nudo:module-throw`** | **L2** | **error**（默认） | 模块顶层代码**必然抛**（句法上无条件的 `throw`）⇒ 模块永远无法被导入、未被分析 —— 所有导出都不可用。fail-closed；每模块一条；与 `nudo:internal`（引擎回落）、`nudo:unsupported:*`（能力边界）都不是一回事 |
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
 | `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）—— 入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
 | `nudo:builtin-unknown` | 引擎债 | warning | API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock |
 | `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
-| `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | info | 递归求值被截断 —— `reason: cycle`（同抽象实参在栈上；预算解不开）或 `depth`/`calls`（预算用尽） |
 | `nudo:loop-truncated` | 引擎 | info | 循环退出条件越过迭代预算仍具体真；循环状态拓宽（不是调用预算） |
 | `nudo:fork-truncated` | 引擎 | info | 分支展开（`$fork`）预算用尽；结果拓宽 |
 | `nudo:host-effect-blocked` | 引擎 | info | 宿主副作用函数（`fetch` / 定时器等）分析期不真实执行 —— 结果拓宽为 `unknown#opaque`。用 `@nudo:mock` / `@nudo:env` 打桩 |
+| `nudo:internal` | 引擎 | error | 该文件的检查闸门**没能跑完**（引擎内部回落 —— 例如模块求值失败）⇒ 该文件的导出**无法被验证** ⇒ **fail-closed**：`nudo check` 以非零码退出、`nudo health` 报 `Result: FAIL`。与 `nudo:unsupported:*`（能力边界）、`nudo:opaque-result`（推断精度）都不是一回事 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
 | `nudo:no-method` | 引擎 | error（原始类型接收者）/ warning | 成员访问无法解析 —— ``Method 'x' does not exist on type 'T'``。与 `nudo:unknown-recv` 不同 |
 | `nudo:mock-invalid` | 引擎 | warning | `@nudo:mock` 表达式不是已知形态（stub/spy/mock、箭头函数、类型表达式） |
@@ -196,6 +199,7 @@ issues
 - **仅入口/导出函数** —— `export` / `export default`、CJS `exports.x =` / `module.exports`。
 - **内部 helper 不门禁。** 它们可以 throw；在 `nudo test` 中观察。
 - `try`/`catch` 消化路径上的 throws（从出口效果中移除）。
+- **模块装载层**：顶层语句序列**必然抛**（无条件 `throw`）的模块永远无法被导入 —— 每模块报一条 `nudo:module-throw`（fail-closed：所有导出都不可用、模块未被分析）。条件抛保持静默（取决于宿主）；只有**句法上**无条件的 `throw` 语句才算证据 —— 引擎从自身宿主 API 近似推出的抛永不归咎于程序。
 - refine 把参数收成 shape 后，L2 消失或降为 L1。
 
 首选修复路径是用 [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) 在函数上申报有意的 throw —— 完整语法（`Error` 家族覆盖、`*` 通配、`!! throws` 用例后缀、侧车 `fn` 选项）见指令参考。
@@ -255,6 +259,8 @@ L2 entry-throws 严重级按首个命中解析：
 未捕获异常使 Node 进程以非零码退出。同样，**导出边界**上的未声明/未捕获 throws 使 `nudo check` 失败。内部调用栈中的 throw 是实现细节，由调用方或 L1 处理。
 
 ## 选项
+
+全部旗标与 `package.json#nudo.check` 配置都在 [CLI 参考](../api/cli-reference.md#nudo-check) 里一次性说明。要点如下：
 
 | 选项 | 说明 |
 |------|------|

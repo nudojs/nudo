@@ -166,10 +166,10 @@ Context: [调用点发现上限](../concepts/limits.md#调用点发现上限)
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text
-emit target 'path/lib.nudo.js' is outside package.json#nudo.contract.emit allowlist
+emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
 ```
 
-`contract --emit` 拒绝写配置允许列表之外的侧车。**Warning** —— 该次写入被跳过。修复：移动目标路径，或扩展 `package.json#nudo.contract.emit`。
+`contract --emit` 拒绝写配置允许列表之外的侧车。**Warning** —— 该次写入被跳过。允许列表的匹配口径是**源文件路径**，不是侧车路径（消息里两条路径都会给出）。修复：移动目标路径，或扩展 `package.json#nudo.contract.emit`。
 
 Context: [固化生成段](../guides/contract.md#固化生成段)
 
@@ -212,6 +212,35 @@ export function getName(user) {
 **修复选项：** 把参数 refine 成 shape；对路径 `try/catch`；或（迁移期）`--ignore-throws TypeError` / `package.json#nudo.check.ignoreThrows` / `--entry-throws warning`。**L2 不门禁内部 helper。**
 
 Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
+
+### `nudo:module-throw` {#nudo-module-throw}
+
+| | |
+|--|--|
+| **含义** | 模块顶层代码**必然抛** ⇒ 模块永远无法被导入 |
+| **层** | L2 error（默认） |
+| **展示** | `module initializer always throws TypeError — the module cannot be imported …` |
+
+```text
+throw new TypeError("boom");
+export function f() { return 1; }   // 模块永远不可导入：装载即抛
+```
+
+求值面把该模块判为**未分析**：导出全丢 ⇒ 签名退化成 `unknown`、L2 入口证据
+不存在。此码出现之前，这个状态与「分析过了、什么都没发现」完全不可区分
+（`OK`、exit 0）——引擎**根本没分析**的模块拿到绿灯。
+
+判据只认**句法证据**：顶层语句序列**无条件**执行的 `throw`（只穿过裸块）。
+条件抛（`if (typeof window === "undefined") throw …`）、被 `try/catch` 吸收的
+抛、以及**引擎**从自身宿主 API 近似推出的抛（例如缺失依赖被建模成闭合对象）
+都**不**报——真实包（`typescript`、`react-dom`、`vitest`）原生加载正常而引擎
+失败，引擎的「必抛」不是关于程序的证据。
+
+**修复 / 抑制：** 若模块本应可导入，就把 throw 改成有条件的；若装载即抛是
+有意行为，用 `--ignore-throws <Kind>`（文案里的类型名）或 `--entry-throws off`
+/ `package.json#nudo.check.entryThrows`。每个模块**一条**诊断，不按入口重复。
+
+Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws)
 
 ## 引擎债 / 观察
 
@@ -267,12 +296,6 @@ Context: [@nudo:env](../concepts/directives.md#nudo--运行时环境) · [依赖
 
 Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
-### `nudo:eval-error` {#nudo-eval-error}
-
-分析期间 body 求值抛出。
-
-Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
-
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
 递归求值被截断；结果拓宽为 `unknown#opaque`。文案——以及 `check --json` 的 `reason` 字段——指明**归因**：
@@ -286,7 +309,7 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**info**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
@@ -381,9 +404,13 @@ Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invaria
 ```text
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
 path env failed to load: ./nope.mjs — path env not found: <resolved-path>
+unknown env name "bogus" (built-in envs: es, web, node; a path env needs a ./ or ../ prefix)
+env file must export a defineEnv() function (got undefined)
 ```
 
 **路径型** env 项（`package.json#nudo.env` 的路径项或 `/// @nudo:env <path>`）加载失败——直连 `import()` 与重写回退均失败，或指向的文件不存在。**Warning**——该 env 项退化为「env 关」语义，分析会静默丢失这些绑定（env 正常加载的运行能推断得更多）；不要把该告警当 benign 处理。
+
+同一码还覆盖两类 env **契约**失败：env 名既不是内置（`es`、`web`、`node`）也不是路径（路径型 env 需要 `./` 或 `../` 前缀）；以及路径型 env 文件未导出 `defineEnv()` 函数、导出了非函数、求值时抛错，或返回了 `{ globals }` 以外的值。此前两者都是静默的：env 干脆没生效，受影响的代码随后被判成「必定抛 `ReferenceError`」。`package.json#nudo.env` 里的非字符串项也按同样方式报告，而不是崩掉。
 
 **发射面：** `nudo check`（issues 段）、`nudo test`（env warnings 段，告警行格式完全一致；`--json` 面告警走 stderr，stdout 保持单一 JSON 文档）与 LSP（warning 诊断，code 同名，消息格式同源）。它从不影响退出码。
 
@@ -452,6 +479,26 @@ Module load chain too deep (depth N > M max): a.js -> b.js -> …
 ```
 
 **修复：** 链超过装载深度预算——扁平化 re-export 跳数或调高预算。
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:module-unreadable` {#nudo-module-unreadable}
+
+```text
+cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open '/abs/path/dep.js'
+```
+
+**Error。** 依赖**存在但读不了**（EACCES / EIO / EMFILE / ESTALE…）。与 `nudo:module-missing`（没有这个文件）不同：文件就在那儿，只是读不了 ⇒ 它的类型保持 unknown，门禁 fail-closed。**修复：** 修文件权限（或模块路径）——依赖在，只是读不到，类型因此是 unknown。
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:json-invalid` {#nudo-json-invalid}
+
+```text
+JSON module './data.json' (from main.js) is not valid JSON: <parser message>
+```
+
+**Error。** `.json` 依赖的 JSON 语法非法。与 `nudo:module-missing`（文件不存在）、`nudo:module-unreadable`（读不了）都不同：文件在、也读得到，只是内容不是合法 JSON ⇒ 取不到任何值。**修复：** 修正 JSON 语法——尾逗号、注释与单引号都不是合法 JSON。
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
@@ -572,6 +619,16 @@ export --out mkdir failed: out/dir
 `--out` 输出目录 IO 操作失败（`mkdir` / `write`）。**Error**（usage）——原始 `errno` 不进产品面；检查 `--out <dir>` 可写且为目录路径后重跑。（BUG-023：使 `nudo export` 与 `check` / `test` 同具 PathError 面。）
 
 Context: [nudo export](../api/cli-reference.md#nudo-export)
+
+### `nudo:migrate-strip-failed` {#nudo-migrate-strip-failed}
+
+```text
+migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
+```
+
+`nudo migrate strip --write` 拒绝写出 Node 解析不了的产物。**Error**（usage）——strip 只剥类型语法；它**自己降不了**的构造必须手工降级（或交给 `tsc`）。类成员修饰符（`private` / `public` / `protected` / `readonly` / `abstract` / `override`）与构造器参数属性**已由** strip 降级（修饰符被丢弃；参数属性变成字段 + 构造器体里的 `this.x = x` 赋值）⇒ 它们不再触发本闸门——仍会触发的是 strip 降不了的构造（例如**解构**形态的构造器参数属性）。`migrate` 是一程闸门：半写的 `.js` 没有回退路径 ⇒ 文件一个字节都不落盘，并点名。
+
+Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
 
 ## 读懂 `actual ⊭ expected`
 

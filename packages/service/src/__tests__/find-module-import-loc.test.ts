@@ -19,14 +19,14 @@ describe("findModuleImportLoc is string/comment-aware", () => {
   it("require() specifier is found", () => {
     const src = `const fs = require("fs");\nexport const x = 1;\n`;
     const loc = findModuleImportLoc(src, "fs")!;
-    expect(loc.line).toBe(0);
+    expect(loc.line).toBe(1);
     expect(loc.column).toBe(src.indexOf('"fs"'));
   });
 
   it("import from specifier is found", () => {
     const src = `import fs from "fs";\nexport const x = 1;\n`;
     const loc = findModuleImportLoc(src, "fs")!;
-    expect(loc.line).toBe(0);
+    expect(loc.line).toBe(1);
     expect(loc.column).toBe(src.indexOf('"fs"'));
   });
 
@@ -40,7 +40,7 @@ describe("findModuleImportLoc is string/comment-aware", () => {
   it("dynamic import() specifier is found", () => {
     const src = `export async function load() {\n  return import("path");\n}\n`;
     const loc = findModuleImportLoc(src, "path")!;
-    expect(loc.line).toBe(1);
+    expect(loc.line).toBe(2);
   });
 
   it("template-only mention in a comment is not an import", () => {

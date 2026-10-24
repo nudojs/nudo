@@ -40,6 +40,14 @@ export const DIAG = {
   dualEntry: "nudo:dual-entry",
   entryMayThrow: "nudo:entry-may-throw",
   mayThrow: "nudo:may-throw",
+  /**
+   * 模块**装载期必然抛**（顶层无条件 `throw`）⇒ 模块根本无法被导入 ⇒ 导出
+   * 全丢、L2 无证据。fail-closed：禁用句法证据（`throw` 语句）判「必抛」，
+   * **不**采信引擎的抽象域结论（宿主 API 的近似也会让引擎抛，那是引擎债，
+   * 程序本身能正常加载）。详见 `check-may-throw.ts` 的
+   * `definiteModuleThrowOf`。
+   */
+  moduleThrow: "nudo:module-throw",
   noSignature: "nudo:no-signature",
   // --- 求值精度 / 截断归因 ---
   builtinUnknown: "nudo:builtin-unknown",
@@ -77,8 +85,28 @@ export const DIAG = {
   moduleCycle: "nudo:module-cycle",
   moduleDepth: "nudo:module-depth",
   moduleMissing: "nudo:module-missing",
+  /**
+   * 模块**存在但不可读**（EACCES / EIO / EMFILE…）——与 moduleMissing
+   * （无此文件）严格区分（Bug 499）：文件就在那儿，只是读不了；折叠成
+   * 「不存在」会让诊断与事实相反。service 面（analyzer-orchestrate-uncached）
+   * 已用同一码。
+   */
+  moduleUnreadable: "nudo:module-unreadable",
+  /**
+   * `.json` 依赖**存在但 JSON 语法非法**（Bug 457）——与 moduleMissing
+   * （无此文件）、moduleUnreadable（读不了）都不同：文件在、也读得到，
+   * 只是内容不是合法 JSON ⇒ 取不到任何值。
+   */
+  jsonInvalid: "nudo:json-invalid",
   // --- 宿主面（LSP / CLI pathErrors 信封） ---
   internal: "nudo:internal",
+  /**
+   * `nudo migrate strip` 的**逐文件**失败（语法错 / TS-only 残留）——
+   * 机器面 `pathErrors[].code`。此前 CLI 层直写字面量（绕过注册表），
+   * 术语表反向对账（docs-coverage rule 19）只能靠 src 字面量扫描兜住；
+   * 进注册表后本码的「可发射」由 DIAG 单点保证。
+   */
+  migrateStripFailed: "nudo:migrate-strip-failed",
   pathEmptyDir: "nudo:path-empty-dir",
   pathIo: "nudo:path-io",
   pathMissingCallsite: "nudo:path-missing-callsite",

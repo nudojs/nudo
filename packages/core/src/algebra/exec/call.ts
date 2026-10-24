@@ -10,7 +10,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { never as neverAbs, unknown } from "../abs.ts";
+import { abs, never as neverAbs, unknown } from "../abs.ts";
 import {
   getFnImpl,
   absFunction,
@@ -38,9 +38,12 @@ import {
   exitCall,
   truncatedAbs,
   stableCallId,
+  pureValueKey,
 } from "../call-budget.ts";
 import { BoundedLruMap } from "../lru-map.ts";
 import { refreshLiveImports } from "./live-imports.ts";
+import { proxyPartsOf, proxyTrapOf } from "./match-iter.ts";
+import { classNameOfValue } from "../class-mark.ts";
 
 /** pure memo 内层 Map 上界（防 LSP 长会话无界膨胀；与 session-cache-limits 口径对齐） */
 const PURE_MEMO_MAX = 256;
@@ -53,8 +56,20 @@ export function clearPureMemo(): void {
   pureMemo = new WeakMap();
 }
 
-function pureMemoKey(args: Abs[]): string {
-  return callBudgetKey("pure", "", args);
+/**
+ * pure memo 的**值基**键（Bug 281）。
+ *
+ * 记忆化按**值**承诺 ⇒ 键必须基于值，不能复用「调用身份」口径的
+ * callBudgetKey（那是 shape 种类 + term 的**变量身份**：同一变量重绑定
+ * 为不同值后仍撞同键 ⇒ 命中旧缓存 ⇒ 陈旧结果）。
+ * - 同一变量重绑定为不同值 ⇒ 键不同 ⇒ 缓存失效（重算）；
+ * - 不同变量同值        ⇒ 键相同 ⇒ 缓存命中（按值承诺）。
+ *
+ * 不可比较的实参（fn / 类实例 / 开放对象 / 非字面量项的 prim …）⇒
+ * undefined ⇒ **不缓存**：宁可不算命中，也不能算出错误的命中。
+ */
+function pureMemoKey(args: Abs[]): string | undefined {
+  return pureValueKey(args);
 }
 
 /**
@@ -111,6 +126,121 @@ function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   return faces ? presentCallResultFace(r, faces) : r;
 }
 
+/**
+ * Bug 272：类值判定（被调者是「类」⇒ 不带 new 被调即抛 TypeError）。
+ *
+ * 判据（复用既有 facet，不新造机制）：
+ * - brand 形：类值 brand 带 `ctor: true` facet（$class 声明 / 非空类表达式），
+ *   且带 class-mark 类值身份标记（class-mark 是叶子模块，零依赖面）。
+ *   排除「构造器 brand 但非类值」的情形（如 GeneratorFunction 构造器 brand
+ *   ——原生可调、不抛）。
+ * - fn 形：空类体类表达式走 $classExpr 快路径（fn 形状 + ctor facet +
+ *   单一 rest 形参 "_rest"）。用户函数的形参面被转译成 argN / "...x"
+ *   （rest 形参不进 params 或带 "..." 前缀）⇒ 不与该签名相撞。
+ */
+function isClassValueCallee(v: Abs): boolean {
+  const s = v.shape;
+  if (s.k === "brand") {
+    return s.ctor === true && classNameOfValue(v as object) !== undefined;
+  }
+  if (s.k === "fn") {
+    return (
+      s.ctor === true &&
+      Array.isArray(s.params) &&
+      s.params.length === 1 &&
+      s.params[0] === "_rest"
+    );
+  }
+  return false;
+}
+
+/**
+ * Bug 278：IsCallable 三档判定（true 可调用 / false 确定不可调用 /
+ * undefined 不可判）——Proxy 的 [[Call]] 按**靶**的可调用性分流。
+ *
+ * - fn 形：函数值恒可调用（箭头 / 方法 / 构造器都有 [[Call]] 面）。
+ * - brand 形：Proxy → 递归看靶（代理的可调用性随靶）；类值 brand（ctor
+ *   facet）与内建构造器 brand（Object/Array/…，class-mark 标记）可调用；
+ *   其余 brand（实例 / 原型对象）不可调用。
+ * - prim / obj / arr / tuple / eff：确定不可调用。
+ * - any / unknown / sum / never：不可判。
+ */
+function callableFacetOf(v: Abs | undefined): boolean | undefined {
+  if (!v || typeof v !== "object" || !("shape" in v)) return false;
+  const s = (v as Abs).shape;
+  if (s.k === "fn") return true;
+  if (s.k === "brand") {
+    if (s.name === "Proxy") {
+      const parts = proxyPartsOf(v as Abs);
+      if (!parts) return undefined;
+      return callableFacetOf(parts.target);
+    }
+    return s.ctor === true || classNameOfValue(v as object) !== undefined;
+  }
+  if (
+    s.k === "prim" ||
+    s.k === "obj" ||
+    s.k === "arr" ||
+    s.k === "tuple" ||
+    s.k === "eff"
+  ) {
+    return false;
+  }
+  return undefined;
+}
+
+/**
+ * Bug 278/279：Proxy 的 [[Call]]。
+ *
+ * 规范（ProxyCreate / Proxy [[Call]]）：代理**只在靶可调用时**才装 [[Call]]
+ * 内部槽——靶不可调用时代理没有 [[Call]]，调用它定抛 TypeError（且**不派发**
+ * apply 陷阱）；靶可调用时 [[Call]] 先取 handler 的 apply 陷阱（实参
+ * (target, thisArg, args)），无陷阱才回退靶的 [[Call]]。
+ *
+ * 引擎此前两条路都没有：陷阱名并集里没有 apply（陷阱**从不派发**），
+ * [[Call]] 也不回退靶 ⇒ 代理调用恒 unknown 且**声称永不抛**（L2 假绿）。
+ */
+function callProxyAbs(proxy: Abs, args: Abs[], thisVal: Abs | undefined): Abs {
+  const parts = proxyPartsOf(proxy);
+  if (!parts) {
+    // 退化副本（侧表未随快照迁移）：靶不可知 ⇒ 不凭空造调用面（与 construct
+    // 路径同口径：退化副本 → unknown）。
+    return unknown;
+  }
+  const callable = callableFacetOf(parts.target);
+  if (callable === false) {
+    // 确定不可调用 ⇒ 原生 TypeError（代理没有 [[Call]] 面 ⇒ 陷阱也不派发）
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (callable === undefined) {
+    // 不可判 ⇒ fail-closed：may-throw + 值域 unknown
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "Proxy call target may not be callable",
+    });
+    return unknown;
+  }
+  const trap = proxyTrapOf(parts.handler, "apply");
+  if (trap.k === "fn") {
+    // apply 陷阱实参：(target, thisArg, args)——thisArg 缺省 undefined
+    // （strict this 语义）；args 是实参列表（tuple 面，与 construct 陷阱同口径）。
+    const argsList = abs({ k: "tuple", elements: args }, undefined, undefined, "path");
+    return $call(trap.fn, [parts.target, thisVal ?? undef(), argsList], parts.handler);
+  }
+  // dead：有槽不可调用 —— 原生 GetMethod 定抛 TypeError
+  if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+  // opaque：handler 形态不可判（陷阱可能在）——诚实 unknown + may-throw
+  if (trap.k === "opaque") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "Proxy apply trap may not be callable",
+    });
+    return unknown;
+  }
+  // absent：无 apply 陷阱 ⇒ 回退靶的 [[Call]]（thisArg 透传）
+  return $call(parts.target, args, thisVal);
+}
+
 function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // Bug 46：bindThis impl 的 receiver 统一经 thisVal 通道注入（调用点
   // 正确，不再由调用方手工前插）：成员调用 $invoke 传接收者；直接调用 /
@@ -130,22 +260,32 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (hit !== undefined) return routeApplyThrows(hit.abs, hit.throws);
   }
   const impl = getFnImpl(fn);
+  // Bug 272：类值（class 声明 / 类表达式）**不带 new** 被调 —— 原生定抛
+  // TypeError（"Class constructor A cannot be invoked without 'new'"）。
+  // 类值只有 [[Construct]] 面：被当普通函数调即抛。判据见 isClassValueCallee。
+  if (isClassValueCallee(fn)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
   if (!impl?.body && !impl?.apply) {
     if (impl?.relation || isRelFn(fn)) return instantiateReturn(fn, args);
     // 非函数 callee 的原生 TypeError 不得折成 unknown, throws=never（假「保证不抛」）。
     // prim（含 nullish 字面量）确定不可调用 → hard NudoThrow（tier 1，
     // 调用边界收成 throws）；any（无约束值）→ may-throw（tier 2）。
-    // unknown 是引擎 fail-closed 令牌（桥接/契约包裹后的内部值，如 sidecar
-    // 约束下的导入函数）而非「可能非函数」的用户语义——记 may-throw 会把
-    // 引擎债放大成 L2 假报，不记。
     // Bug 10：obj/arr/tuple 同入 tier 1 定抛——原生 IsCallable 对非函数
     // 恒 false（`({})()` / `[]()` 定抛 TypeError）；引擎内该三形 Abs 从不
     // 携带调用面（attachFnImpl 只产 fn 形状），「可能经桥接可调」论据空置。
-    // brand 保守维持 unknown 不记（new Proxy(fn,{apply}) 是唯一合法可调
-    // 对象逃逸——记 may-throw 会把合法面对放大成 L2 假报）。
+    // Bug 278/279：Proxy brand 按**靶**的可调用性分流（[[Call]] 面）——
+    // 靶不可调用 → 原生定抛；靶可调用 → apply 陷阱优先、无陷阱回退靶。
     const calleeAbs = fn && typeof fn === "object" ? (fn as Abs) : undefined;
     const calleeK = calleeAbs?.shape?.k;
+    if (
+      calleeAbs !== undefined &&
+      calleeAbs.shape.k === "brand" &&
+      calleeAbs.shape.name === "Proxy"
+    ) {
+      return callProxyAbs(calleeAbs, args, thisVal);
+    }
     if (
       calleeK === "prim" ||
       calleeK === "obj" ||
@@ -160,6 +300,24 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
         kind: "TypeError",
         cause: `call on ${calleeK} callee (not a function)`,
       });
+    }
+    // Bug 283：**`unknown` 档不记 may-throw**（原裁决已按 oracle 改判）。
+    //
+    // `unknown` 是引擎的 **fail-closed 令牌**，只说明「引擎不知道被调者」，
+    // **不说明「它不是函数」** ⇒ 在这一档记 `TypeError` 是**对普通代码的假阳性**：
+    // - 未解析的导入绑定（`rewriteUserImports` 折成 unknown Abs）⇒ 原生是
+    //   **模块装载错误**（不是调用点 TypeError）；
+    // - 已解析但形状未知的导入绑定 ⇒ 是**精度债**（`nudo:opaque-result` 已诚实报出）。
+    // 两条实测都会让 `nudo check` 对**合法代码**报 `nudo:entry-may-throw`（error 级）。
+    //
+    // 283 报告的症状（成员调用 `o.a.b()` 原生定抛却不被记）**已由成员读侧覆盖**：
+    // 成员缺失 ⇒ 读侧产出 `nudo:entry-may-throw`（实测：`o.a.b()` 在 number 接收者上
+    // ⇒ error 级 `may throw TypeError`）⇒ 不需要在本档额外记账。
+    // ⇒ 「成员存在但接收者形态不对」（如 `o.toFixed()` 在 number 上）仍不报 ⇒ **独立遗留**
+    // （成员调用面的记账缺口，落点在 `exec/class/invoke.ts`，不在本族）。
+    if (calleeK === "unknown") {
+      // 保持与 `any` 档不同：any 是「无约束值」（可能是非函数）⇒ 记 may；
+      // unknown 是「引擎不知道」⇒ 不记（否则假阳性）。
     }
     return unknown;
   }
@@ -245,7 +403,17 @@ setApplyCallbackHost((cb, args, env, _phi, _budget, thisVal) => {
     if (bound) return $call(bound, args, thisVal);
     const f = e?.fns?.get(node.name);
     if (f) {
-      return $call(absFunction(f.params, { body: f.body, async: f.async, env: e }), args, thisVal);
+      return $call(
+        absFunction(f.params, {
+          body: f.body,
+          async: f.async,
+          env: e,
+          // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
+          ...(f.optionalParams ? { optionalParams: f.optionalParams } : {}),
+        }),
+        args,
+        thisVal,
+      );
     }
     return unknown;
   }

@@ -56,15 +56,15 @@ const boom = badNum(7);
 
   it("unknown-global is not double-reported with builtin-unknown", () => {
     const src = `function f() {
-  return WeakRef;
+  return Atomics;
 }
 const boom = f();
 `;
     const r = analyze(src);
     const globals = r.diagnostics.filter((d) => d.code === "nudo:unknown-global");
     const builtins = r.diagnostics.filter((d) => d.code === "nudo:builtin-unknown");
-    expect(builtins.some((d) => d.message.includes("WeakRef"))).toBe(true);
-    expect(globals.filter((d) => d.message.includes("WeakRef"))).toHaveLength(0);
+    expect(builtins.some((d) => d.message.includes("Atomics"))).toBe(true);
+    expect(globals.filter((d) => d.message.includes("Atomics"))).toHaveLength(0);
   });
 
   it("entry unconstrained param: method on any → throws TypeError (not unknown-recv)", () => {

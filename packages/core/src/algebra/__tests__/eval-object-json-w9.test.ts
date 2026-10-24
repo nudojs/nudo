@@ -165,12 +165,27 @@ describe("Bug 35: Object.getOwnPropertyNames/Symbols/Descriptor", () => {
     ).toEqual(["a", "b"]);
   });
 
-  it("getOwnPropertySymbols returns conservative symbol[]", () => {
+  it("getOwnPropertySymbols folds own symbol keys (native: [] for a plain object)", () => {
+    // 族 65 · Bug 240（BC #44）：自有 symbol 键集**可判**时折精确元组——
+    // 原生 Object.getOwnPropertySymbols({a:1}) === []（node v26.10.0 实测：
+    // 普通对象 / 数组 / 字符串 / 数字 / 函数 / Error 实例 / TA 实例 /
+    // 生成器对象 ⇒ []；Math / JSON / Intl / Reflect ⇒ [Symbol.toStringTag]）。
+    // 此前恒折保守 symbol[]（"可能有任意符号"）⇒ 与原生不符。
+    // 抽象接收者（键集不可判）**仍**是保守域——不折空（空是自信的确切错值）。
     const r = call(`export function f() { return Object.getOwnPropertySymbols({a:1}); }`).result as {
+      shape?: { k?: string };
+    };
+    expect(r.shape?.k).toBe("tuple");
+    expect(tupleEls(call(`export function f() { return Object.getOwnPropertySymbols({a:1}); }`).result)).toEqual([]);
+    const abs = call(
+      `export function f(x) { return Object.getOwnPropertySymbols(x); }`,
+      "f",
+      [anyAbs],
+    ).result as {
       shape?: { k?: string; element?: { shape?: { k?: string; type?: string } } };
     };
-    expect(r.shape?.k).toBe("arr");
-    expect(r.shape?.element?.shape?.type).toBe("symbol");
+    expect(abs.shape?.k).toBe("arr");
+    expect(abs.shape?.element?.shape?.type).toBe("symbol");
   });
 
   it("getOwnPropertyDescriptor folds data descriptors", () => {

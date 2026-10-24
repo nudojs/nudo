@@ -1,6 +1,10 @@
 /**
  * 约束诊断：检查调用点实参是否满足函数的前置约束 / 参数 shape。
  * 输出可行动的建议，而不是 TS 式「类型不匹配」。
+ *
+ * Bug 364：本模块此前**没有生产者**——`checkArg` / `checkCall` 是死码 ⇒
+ * 文档承诺的调用点验证面在产品里整体静默。`checkCallSite` 是接进产品
+ * 路径（`scan-literal-calls.ts` 的调用点扫描）的入口。
  */
 
 import type { Abs } from "./abs.ts";
@@ -10,6 +14,7 @@ import { implies, predToString, pTrue, gt, ge, lt, le } from "./pred.ts";
 import type { Term } from "./term.ts";
 import { termToString, v as termVar, lit } from "./term.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import type { CheckIssue } from "./check-report.ts";
 
 import { formatShape } from "./format.ts";
 import { DIAG } from "./diag-codes.ts";
@@ -27,6 +32,11 @@ export type Diagnostic = {
  * 检查实参是否满足「期望约束」。
  * expect: 相对参数 term 的 pred，例如 term > 0
  * arg: 实际实参 Abs
+ *
+ * Bug 364：`expect` 的主题项是**参数位**的 term（通用化面里的 `A1`），
+ * 而 `arg.pred` 相对**实参** term（`x`）⇒ 两者永不同一 ⇒ 任何非字面量
+ * 实参都被判 `nudo:constraint-unproven`（假红）。⇒ 判定前把主题项
+ * 对齐到实参自身的 term（`alignToArg`）。
  */
 export function checkArg(
   arg: Abs,
@@ -34,11 +44,12 @@ export function checkArg(
   phi: Phi = pTrue,
 ): Diagnostic | undefined {
   if (!expect || expect.op === "true") return undefined;
+  const want = alignToArg(expect, arg);
   if (arg.shape.k === "unknown" && !arg.term) {
     return {
       severity: "warning",
       code: DIAG.argOpaque,
-      message: `argument type is unknown; cannot verify constraint ${predToString(expect)}`,
+      message: `argument type is unknown; cannot verify constraint ${predToString(want)}`,
       suggestion: "add a call site or @nudo:case, or provide preconditions via --assume",
     };
   }
@@ -49,21 +60,21 @@ export function checkArg(
         ? arg.pred
         : { op: "and", args: [phi, arg.pred] }
       : phi;
-  if (implies(combined, expect)) return undefined;
+  if (implies(combined, want)) return undefined;
 
   // 字面量直接判定（tagged：.ok 才是字面量，含 lit(undefined)）
   const lvR = litValue(arg);
   if (
     lvR.ok &&
-    (expect.op === "gt" || expect.op === "ge" || expect.op === "lt" || expect.op === "le")
+    (want.op === "gt" || want.op === "ge" || want.op === "lt" || want.op === "le")
   ) {
-    const ok = decideLitCmp(lvR.value, expect);
+    const ok = decideLitCmp(lvR.value, want);
     if (ok === true) return undefined;
     if (ok === false) {
       return {
         severity: "error",
         code: DIAG.constraintViolated,
-        message: `argument ${JSON.stringify(lvR.value)} does not satisfy ${predToString(expect)}`,
+        message: `argument ${JSON.stringify(lvR.value)} does not satisfy ${predToString(want)}`,
         suggestion: `use a value satisfying the constraint, or relax the function precondition`,
       };
     }
@@ -72,9 +83,47 @@ export function checkArg(
   return {
     severity: "warning",
     code: DIAG.constraintUnproven,
-    message: `cannot prove the argument satisfies ${predToString(expect)}`,
+    message: `cannot prove the argument satisfies ${predToString(want)}`,
     suggestion: `not enough information; use --assume or add a case`,
   };
+}
+
+/**
+ * 把「相对参数位 term」的期望 pred 的**主题项**对齐到实参自身的 term。
+ *
+ * 实参在调用点上占据参数位 ⇒ 参数位的 term 就是实参的 term ⇒ 判定前
+ * 把主题项（比较式的左侧 var）换成实参 term 的 var，蕴含判定才有意义。
+ * 实参无 var term（字面量 / unknown）时保持原样。
+ */
+function alignToArg(expect: Pred, arg: Abs): Pred {
+  const t = arg.term;
+  if (!t || t.op !== "var") return expect;
+  const id = t.id;
+  const walk = (p: Pred): Pred => {
+    switch (p.op) {
+      case "gt":
+        return p.a.op === "var" ? { op: "gt", a: { op: "var", id }, b: p.b } : p;
+      case "ge":
+        return p.a.op === "var" ? { op: "ge", a: { op: "var", id }, b: p.b } : p;
+      case "lt":
+        return p.a.op === "var" ? { op: "lt", a: { op: "var", id }, b: p.b } : p;
+      case "le":
+        return p.a.op === "var" ? { op: "le", a: { op: "var", id }, b: p.b } : p;
+      case "eq":
+        if (p.a.op === "var") return { op: "eq", a: { op: "var", id }, b: p.b };
+        if (p.b.op === "var") return { op: "eq", a: p.a, b: { op: "var", id } };
+        return p;
+      case "and":
+        return { op: "and", args: p.args.map(walk) };
+      case "or":
+        return { op: "or", args: p.args.map(walk) };
+      case "not":
+        return { op: "not", arg: walk(p.arg) };
+      default:
+        return p;
+    }
+  };
+  return walk(expect);
 }
 
 function decideLitCmp(
@@ -100,6 +149,35 @@ function decideLitCmp(
 }
 
 /**
+ * 被调方的**实参位面**（nativeParamArity 口径）：
+ * - `required` = **必填**实参位个数（默认形参 / rest 形参**不吃**实参位）；
+ * - `total` = **非 rest** 形参的总位数——默认形参**占位**（`f(a, b = 1)` 的
+ *   第 2 个实参被 `b` 吃掉 ⇒ 不是「多传」；Bug 1131）；
+ * - `hasRest` = 有 rest 形参（多余实参被它吸收 ⇒ 不算实参个数不符）。
+ */
+function arityFace(g: PolyFn): { required: number; total: number; hasRest: boolean } {
+  const formals = g.formals;
+  const restByName = g.params.filter((p) => p.startsWith("...")).length;
+  const hasRest = (formals?.some((f) => f.kind === "rest") ?? false) || restByName > 0;
+  if (!formals || formals.length === 0) {
+    // 无 formals 面：按展示名推断（rest 位不吃实参位）
+    const total = Math.max(0, g.params.length - restByName);
+    return { required: total, total, hasRest };
+  }
+  let required = 0;
+  let total = 0;
+  for (const f of formals) {
+    if (f.kind === "rest") break;
+    total++;
+    if (f.optional === true) continue;
+    required++;
+  }
+  // 保守：不超过展示名个数（`this` 接收者等不占位）
+  const cap = g.params.length;
+  return { required: Math.min(required, cap), total: Math.min(total, cap), hasRest };
+}
+
+/**
  * 对一次函数调用做诊断：实参 shape + 约束。
  */
 export function checkCall(
@@ -119,22 +197,35 @@ export function checkCall(
     return diags;
   }
 
-  // 参数个数
-  if (args.length !== g.params.length) {
+  // 参数个数（**必填位**口径：默认形参 / rest 形参不吃实参位）
+  const { required, total, hasRest } = arityFace(g);
+  if (args.length < required) {
     diags.push({
       severity: "error",
       code: DIAG.argCount,
-      message: `${fnName} expects ${g.params.length} argument(s), got ${args.length}`,
+      message: `${fnName} expects ${required} argument(s), got ${args.length}`,
       fn: fnName,
     });
     return diags;
   }
+  if (args.length > total && !hasRest) {
+    // JS 允许多余实参（被调方忽略）⇒ 只提示，不判 error（native 语义）
+    //
+    // Bug 1131：上界是**非 rest 形参的总位数**（不是必填位数）——默认形参
+    // **占位**（`f(a, b = 1)` 的第 2 个实参被 `b` 吃掉 ⇒ 不是「多传」）。
+    diags.push({
+      severity: "warning",
+      code: DIAG.argCount,
+      message: `${fnName} takes ${total} argument(s) but ${args.length} were passed`,
+      fn: fnName,
+    });
+  }
 
   // 从符号执行结果提取「对参数的隐含要求」：
   // 若 symbolic.pred 形如 (A1 > 0)，则要求对应实参满足
-  const required = extractParamRequirements(g);
+  const required_ = extractParamRequirements(g);
   args.forEach((arg, i) => {
-    const req = required.get(i);
+    const req = required_.get(i);
     const d = checkArg(arg, req, phi);
     if (d) diags.push({ ...d, fn: fnName, argIndex: i });
   });
@@ -152,6 +243,104 @@ export function checkCall(
   }
 
   return diags;
+}
+
+/**
+ * Bug 364：调用点验证的**产品入口**（把 `checkArg` / `checkCall` 的判定
+ * 面接进产品路径）。
+ *
+ * 产品路径的调用点扫描（`scan-literal-calls.ts`）此前只做**契约面**执法
+ * （`checkReqs` / `checkShapeReqs`）⇒ 本模块的五个诊断码**从不产生**。
+ * 本函数在契约面之外补上**通用化参数面**的调用点验证：
+ * - 实参个数（`nudo:arg-count`）：少传必填位 = 确定性错误；多传实参在
+ *   JS 里合法（被调方忽略）⇒ 只给 warning；
+ * - 实参对通用化面义务的满足（`nudo:arg-opaque` /
+ *   `nudo:constraint-violated` / `nudo:constraint-unproven`）。
+ *
+ * 口径：
+ * - **不**报 `nudo:fn-not-found`——调用点能否解析由调用点扫描判（宿主
+ *   全局 / 跨文件导入另有 `nudo:missing-export` 等码），此处报会误伤。
+ * - 契约面已覆盖的参数位（`skipParams`）不再走通用化面判定 ⇒ 不双报。
+ * - **不**报 `nudo:partial-result`（族 07 收口片 Z）——被调方通用化结果的
+ *   置信度是**被调方**的内部精度问题，把它挂在**每个调用点**上会让
+ *   `nudo check` 的 info 面被同一件事刷屏（真实包 `ms` 的每个导出各挂一条）。
+ *   该码仍是**既有公共 API** `checkCall` 的语义（见上），语义不变、只是
+ *   **不在产品路径的调用点面上产**（与 Bug 364 之前的产品面一致）。
+ */
+export function checkCallSite(
+  source: string,
+  fnName: string,
+  args: Abs[],
+  opts: {
+    /** 语法实参个数（缺省 = args.length） */
+    argCount?: number;
+    /** 实参是否带信息（false ⇒ 只查实参个数，不查实参义务） */
+    hasInfo?: boolean;
+    /** 被调方通用化结果（已算好则复用，避免重复求值） */
+    fn?: PolyFn | undefined;
+    /** 调用点环境假设 */
+    phi?: Phi;
+    /** 契约面已覆盖的参数位（避免与契约面执法双报） */
+    skipParams?: ReadonlySet<number>;
+    /** 展示名（跨文件调用用） */
+    displayName?: string;
+    line?: number;
+    column?: number;
+  } = {},
+): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  const g = opts.fn ?? generalizeFromAst(fnName, source);
+  if (!g) return out;
+  const display = opts.displayName ?? fnName;
+  const argCount = opts.argCount ?? args.length;
+  const { required, total, hasRest } = arityFace(g);
+
+  if (argCount < required) {
+    out.push({
+      severity: "error",
+      code: DIAG.argCount,
+      message: `${display} expects ${required} argument(s), got ${argCount}`,
+      fn: display,
+      line: opts.line,
+      column: opts.column,
+    });
+    return out;
+  }
+  if (argCount > total && !hasRest) {
+    // Bug 1131：上界是**非 rest 形参的总位数**（默认形参占位 ⇒ 不是「多传」）
+    out.push({
+      severity: "warning",
+      code: DIAG.argCount,
+      message: `${display} takes ${total} argument(s) but ${argCount} were passed`,
+      fn: display,
+      line: opts.line,
+      column: opts.column,
+    });
+  }
+
+  // 实参义务：实参无信息时不猜（unknown / any 不猜）
+  if (opts.hasInfo === false) return out;
+  const reqs = extractParamRequirements(g);
+  args.forEach((arg, i) => {
+    if (opts.skipParams?.has(i)) return;
+    const d = checkArg(arg, reqs.get(i), opts.phi);
+    if (d) {
+      out.push({
+        ...d,
+        fn: display,
+        argIndex: i,
+        line: opts.line,
+        column: opts.column,
+      });
+    }
+  });
+
+  // `nudo:partial-result` **不在此产**（族 07 收口片 Z）：被调方的结果置信度
+  // 是**被调方**的精度问题，不是**调用点**的问题 ⇒ 挂在每个调用点上只会把
+  // `nudo check` 的 info 面刷满（同一件事对同一导出报 N 次）。该码仍是既有
+  // 公共 API `checkCall` 的语义（见上），产品面保持 Bug 364 之前的安静。
+
+  return out;
 }
 
 /**

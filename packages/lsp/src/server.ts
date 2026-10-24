@@ -5,20 +5,24 @@ import {
   ProposedFeatures,
   TextDocumentSyncKind,
   type Connection,
+  type ClientCapabilities,
   type InitializeParams,
   type InitializeResult,
   CodeLensRefreshRequest,
   DiagnosticRefreshRequest,
   DiagnosticSeverity,
+  ErrorCodes,
+  ResponseError,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync, existsSync, realpathSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sanitizeErrorMessage } from "./sanitize.ts";
 import { sidecarPathOf } from "@nudojs/core";
 import {
   isNudoTargetPath,
+  isSidecarPath,
   shouldAnalyzeFile,
   findProjectConfig,
   interfaceConfig,
@@ -44,6 +48,7 @@ import {
   getCachedCheckDiags,
   filterCheckLspByLevel,
   bumpValidateGeneration,
+  envUnresolvedDiags,
   type ValidateTextDeps,
 } from "./validation.ts";
 import {
@@ -59,6 +64,8 @@ import {
   contractEmitTool,
   contractPositionalArgs,
   contractEmitPositionalArgs,
+  tracePositionalArgs,
+  positionalCommandParams,
   type AgentToolDeps,
   type AgentToolResult,
 } from "./agent-tools.ts";
@@ -98,6 +105,73 @@ export type NudoServerHandle = {
   /** Start the JSON-RPC transport. Not called in tests. */
   listen: () => void;
 };
+
+/** 设置树节点：普通对象（可深合并）/ 标量。 */
+type SettingsTree = Record<string, unknown>;
+
+function isSettingsObject(value: unknown): value is SettingsTree {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 设置树**深合并**（Bug 777）：新载荷里出现的键覆盖旧值；**未出现的键保留
+ * 旧值**；`null` = 显式重置（删掉该键 ⇒ 回落默认）。
+ *
+ * 此前 server 把 `params.settings.nudo.*` 当整棵子树读，未提及的键直接被
+ * 抹成 `undefined` ⇒ 一次**部分**或**无关**的设置变更就把宿主的
+ * `nudo.analysis.mode` 默认值清掉（分析范围静默收缩、hover 变 null）。
+ */
+function mergeSettingsTree(base: SettingsTree, patch: SettingsTree): SettingsTree {
+  const out: SettingsTree = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete out[key];
+      continue;
+    }
+    if (isSettingsObject(value) && isSettingsObject(out[key])) {
+      out[key] = mergeSettingsTree(out[key] as SettingsTree, value);
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * 设置载荷的**路径展开**（Bug 777）：客户端可能用扁平键
+ * （`"nudo.analysis.mode": "all"`）而不是嵌套树（`{ nudo: { analysis: … } }`）
+ * 发送 ⇒ 扁平键按点号拆成嵌套路径；嵌套树原样保留（同名时嵌套优先）。
+ */
+function flattenSettingsPatches(settings: SettingsTree | undefined): SettingsTree {
+  if (!isSettingsObject(settings)) return {};
+  const flat: SettingsTree = {};
+  const nested: SettingsTree = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (!key.includes(".")) {
+      nested[key] = value;
+      continue;
+    }
+    const parts = key.split(".");
+    let cursor = flat;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i] as string;
+      if (!isSettingsObject(cursor[part])) cursor[part] = {};
+      cursor = cursor[part] as SettingsTree;
+    }
+    cursor[parts[parts.length - 1] as string] = value;
+  }
+  return mergeSettingsTree(flat, nested);
+}
+
+/** 按路径读设置树；缺任一段 ⇒ undefined。 */
+function readSettingsPath(tree: SettingsTree, path: readonly string[]): unknown {
+  let cursor: unknown = tree;
+  for (const key of path) {
+    if (!isSettingsObject(cursor)) return undefined;
+    cursor = cursor[key];
+  }
+  return cursor;
+}
 
 /**
  * Register the full Nudo LSP surface on `connection`.
@@ -147,14 +221,88 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    */
   let clientDefaultInlayParams: boolean | undefined;
 
+  /**
+   * 宿主设置的**合并树**（Bug 777）：`workspace/didChangeConfiguration` 的载荷
+   * 只带**变更部分**（或与 nudo 无关的整棵树）⇒ 直接整棵读会把未提及的键
+   * 抹成 undefined。此处保留累积树，配置变更按**深合并**叠加：
+   * 新载荷出现的键覆盖旧值，未出现的键保留旧值；`null` = 显式重置。
+   */
+  let clientSettingsTree: Record<string, unknown> = {};
+
+  /**
+   * 客户端能力（Bug 749）：`initialize` 时捕获的 `params.capabilities`。
+   *
+   * 协议面必须**按客户端声明的能力作答**：`textDocument/documentSymbol` 的
+   * 返回**形状**（层级式 `DocumentSymbol[]` vs 扁平 `SymbolInformation[]`）
+   * 与 `SymbolKind` **取值**都受客户端能力约束
+   * （`textDocument.documentSymbol.hierarchicalDocumentSymbolSupport` /
+   * `textDocument.documentSymbol.symbolKind.valueSet`）。
+   *
+   * 此前 server **从不保存** `params.capabilities` ⇒ 任何 handler 都无从按
+   * 能力分支（`onDocumentSymbol` 恒回「层级式 + 全量 SymbolKind」）。
+   *
+   * ⚠ **缺省语义**：客户端**没发**该能力段时（老客户端可能根本不发）⇒
+   *   本值保持 `undefined` ⇒ 消费方必须走**默认**：**层级式 + 全量
+   *   SymbolKind**（不得因拿不到能力就退化）。
+   * ⚠ 本项读的是**客户端**能力，与 `NUDO_INITIALIZE_CAPABILITIES`
+   *   （服务端**声明**的能力键清单）不是一回事 ⇒ 冻结表零变更。
+   */
+  let clientCapabilities: ClientCapabilities | undefined;
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /**
+   * 畸形 URI 容错（Bug 784）：`uriToFilePath` 对非法百分号转义抛 `URIError`
+   * （裸 `decodeURIComponent`）⇒ 一个畸形 URI 会让**整个 initialize 抛出去**，
+   * 客户端拿不到 capabilities ⇒ 整个语言服务器会话起不来。
+   * 这里逐个 folder 兜底：跳过畸形项 + 记一条可读告警，其余照常。
+   */
+  function safeUriToFilePath(uri: string | null | undefined): string | undefined {
+    if (!uri) return undefined;
+    try {
+      const p = uriToFilePath(uri);
+      return p ? p : undefined;
+    } catch (err) {
+      connection.console.warn(
+        `[nudo-lsp] ignoring malformed workspace uri (${uri}): ${(err as Error).message}`,
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * 工作区根集合更新（Bug 783）：`workspace/didChangeWorkspaceFolders` 到达时
+   * 增删根（realpath 归一，与 `assertEmitTargetAllowed` 的根口径一致）。
+   * 根集合同时是「agent 写盘边界的授权根」与「错误消息的脱敏根」⇒ 必须随
+   * 客户端的增删同步，否则新加入的目录被误拒、已移出的目录仍被授权。
+   */
+  function updateWorkspaceRoots(added: readonly string[], removed: readonly string[]): void {
+    // 归一口径与 `assertEmitTargetAllowed` 的 `resolvedWorkspaceRoots` 同款
+    // （resolve + realpath）⇒ 增删用的键与写盘边界的比较口径一致。
+    const norm = (p: string): string => {
+      const abs = resolve(p);
+      try {
+        return realpathSync(abs);
+      } catch {
+        return abs;
+      }
+    };
+    const roots = new Set(workspaceRoots.map(norm));
+    for (const r of removed) roots.delete(norm(r));
+    for (const r of added) roots.add(norm(r));
+    workspaceRoots = [...roots];
+  }
+
   connection.onInitialize((params: InitializeParams): InitializeResult => {
+    // 客户端能力（Bug 749）：捕获 `params.capabilities` —— 协议面按能力作答
+    // （形状 / SymbolKind 取值）。⚠ **返回值不变** ⇒
+    // `NUDO_INITIALIZE_CAPABILITIES`（服务端声明的能力键清单）一行不动。
+    clientCapabilities = params.capabilities;
     workspaceRoots = (params.workspaceFolders ?? [])
-      .map((w) => uriToFilePath(w.uri))
-      .filter(Boolean);
+      .map((w) => safeUriToFilePath(w.uri))
+      .filter((p): p is string => p !== undefined);
     if (workspaceRoots.length === 0 && params.rootUri) {
-      const root = uriToFilePath(params.rootUri);
+      const root = safeUriToFilePath(params.rootUri);
       if (root) workspaceRoots = [root];
     }
     // initializationOptions（vscode 扩展等宿主转发的工作区设置）：
@@ -168,6 +316,34 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       (params.initializationOptions as { inlayHints?: { parameters?: unknown } } | undefined)
         ?.inlayHints?.parameters,
     );
+    // 初始化值进合并树：后续 `didChangeConfiguration` 的**部分**载荷不得把
+    // initializationOptions 带来的默认值抹掉（Bug 777）。
+    clientSettingsTree = mergeSettingsTree(
+      {},
+      {
+        nudo: {
+          analysis: { mode: clientDefaultAnalysisMode },
+          inlayHints: { parameters: clientDefaultInlayParams },
+        },
+      },
+    );
+    // 工作区文件夹变更订阅（Bug 783）：真 transport 下
+    // `connection.workspace.onDidChangeWorkspaceFolders` 这个 **getter** 只在
+    // `initialize` 之后才就绪（`remote.initialize(capabilities)` 跑在本处理器
+    // **之前**）⇒ 构造期那次（抛异常，已被兜住）在这里补。
+    //
+    // ⚠ 补的时机 = **下一轮事件循环**（`setTimeout(0)`，宏任务）：
+    //   `vscode-languageserver` 在用户的 `onInitialize` 返回**之后**才跑
+    //   `fillServerCapabilities`（微任务）⇒ 定时器落在其后 ⇒ server 自己声明的
+    //   `workspace.workspaceFolders.changeNotifications` 生效 ⇒ 不会多发一个
+    //   冗余的 `client/registerCapability` 请求（某些客户端没实现它 ⇒ 未处理的
+    //   rejection）。
+    // ⚠ 客户端**没声明** `capabilities.workspace.workspaceFolders` ⇒ getter
+    //   仍抛 ⇒ 被 `subscribeWorkspaceFolders` 的 try 兜住 ⇒ 静默跳过（server 不崩）。
+    // ⚠ **返回值一字不动** ⇒ 服务端声明的能力键清单（冻结表）零变更。
+    setTimeout(() => {
+      subscribeWorkspaceFolders();
+    }, 0);
     return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Full,
@@ -202,6 +378,15 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       executeCommandProvider: {
         commands: [...NUDO_COMMANDS],
       },
+      // Bug 783：声明工作区文件夹变更通知——客户端只在 server 声明
+      // `changeNotifications` 时才会发 `workspace/didChangeWorkspaceFolders`
+      // ⇒ 不声明 = 订阅了也收不到。
+      workspace: {
+        workspaceFolders: {
+          supported: true,
+          changeNotifications: true,
+        },
+      },
       diagnosticProvider: {
         interFileDependencies: false,
         workspaceDiagnostics: false,
@@ -209,6 +394,103 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     },
     };
   });
+
+  /**
+   * 工作区文件夹变更订阅（Bug 783）。
+   *
+   * 此前 server **从不订阅** `workspace/didChangeWorkspaceFolders` ⇒
+   * `workspaceRoots` 在 `initialize` 之后**永久冻结**（三个写入点全在
+   * `onInitialize` 里）⇒ 新加入的目录被写盘边界误拒、已移出的目录仍被授权。
+   *
+   * ⚠ **取值必须防御（会抛异常的 getter）**：
+   *   `connection.workspace.onDidChangeWorkspaceFolders` 在
+   *   `vscode-languageserver@10.1.2` 里是一个 **getter**
+   *   （`lib/common/workspaceFolder.js:38`）：客户端没声明
+   *   `capabilities.workspace.workspaceFolders` 时它**直接抛异常**
+   *   （`Client doesn't support sending workspace folder change events.`）
+   *   ⇒ `?.` **挡不住**（`?.` 只挡 `null` / `undefined`，不挡抛异常）。
+   *   且该 getter 只在 `initialize` **之后**、且客户端**声明了**该能力时
+   *   **才就绪**（`lib/common/server.js:733` 的 `remote.initialize(capabilities)`
+   *   跑在用户的 `onInitialize` 处理器**之前**）⇒ **构造期**取它**必然抛**
+   *   （真 transport 实证：server 启动即崩）。
+   *
+   *   ⇒ 订阅分两处尝试，**两处都不得抛**：
+   *   1. **构造期**（内存 mock / 已就绪的连接）：直接取；
+   *   2. **`initialize` 之后**（真 transport）：再取一次（`onInitialize` 里
+   *      排的 `setTimeout(0)`——落在库自己的 `fillServerCapabilities` 之后）。
+   *   取不到（抛异常 / 不是函数）⇒ **静默跳过订阅**（server 照常启动）。
+   */
+  type WorkspaceFolderChangeEvent = {
+    added: readonly { uri: string; name: string }[];
+    removed: readonly { uri: string; name: string }[];
+  };
+
+  type WorkspaceFoldersFeatureLike = {
+    onDidChangeWorkspaceFolders?: (
+      h: (e: WorkspaceFolderChangeEvent) => void,
+    ) => unknown;
+  };
+
+  /** 订阅是否已建立（同一连接只订阅一次）。 */
+  let workspaceFoldersSubscribed = false;
+
+  const onWorkspaceFoldersChanged = (event: WorkspaceFolderChangeEvent): void => {
+    const added = (event.added ?? [])
+      .map((w) => safeUriToFilePath(w.uri))
+      .filter((p): p is string => p !== undefined);
+    const removed = (event.removed ?? [])
+      .map((w) => safeUriToFilePath(w.uri))
+      .filter((p): p is string => p !== undefined);
+    if (added.length === 0 && removed.length === 0) return;
+    updateWorkspaceRoots(added, removed);
+    // 根集合变了 ⇒ 授权边界与脱敏根都变了：新纳入的已打开文档重检一次
+    // （新纳入 → 出诊断；新排除 → 清诊断），并让客户端重拉 pull 诊断。
+    nudoFileCache.clear();
+    for (const doc of documents.all()) {
+      const fp = uriToFilePath(doc.uri);
+      if (!fp || !isNudoTargetPath(fp)) continue;
+      void validateText(fp, doc.uri, doc.getText(), doc.version, validationDeps());
+    }
+    refreshPullDiagnostics();
+  };
+
+  /**
+   * 订阅工作区文件夹变更（幂等 + **永不抛**）。
+   *
+   * ⚠ `connection.workspace` 可能整个缺失（内存 mock）⇒ 静默跳过。
+   * ⚠ `onDidChangeWorkspaceFolders` 是**会抛异常的 getter** ⇒ 取值必须
+   *   放在 `try` 里（`?.` 挡不住抛异常）。
+   *
+   * @returns 是否订阅成功（false ⇒ 客户端不支持该通知面 ⇒ 降级，不影响启动）。
+   */
+  function subscribeWorkspaceFolders(): boolean {
+    if (workspaceFoldersSubscribed) return true;
+    let subscribe:
+      | ((h: (e: WorkspaceFolderChangeEvent) => void) => unknown)
+      | undefined;
+    try {
+      // ⚠ `connection.workspace` 与它上面的 getter **都**在 try 里取值。
+      const feature = connection.workspace as unknown as
+        | WorkspaceFoldersFeatureLike
+        | undefined;
+      subscribe = feature?.onDidChangeWorkspaceFolders;
+    } catch {
+      // 客户端没声明 `capabilities.workspace.workspaceFolders` ⇒ getter 抛异常
+      return false;
+    }
+    if (typeof subscribe !== "function") return false;
+    try {
+      subscribe(onWorkspaceFoldersChanged);
+    } catch {
+      return false;
+    }
+    workspaceFoldersSubscribed = true;
+    return true;
+  }
+
+  // 构造期先试一次（内存 mock / 已就绪的连接）：真 transport 下这里会抛，
+  // 由上面的 try 兜住 ⇒ 改为在 `initialize` 之后（`onInitialize`）再试。
+  subscribeWorkspaceFolders();
 
   // 打开即验证：didOpen 不会触发 onDidChangeContent，若不在此主动验证，
   // 新打开的文件要等到首次编辑（300ms 防抖后）或客户端 pull 诊断才有结果。
@@ -220,8 +502,41 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       .catch(() => {});
   }
 
+  /**
+   * 已发布诊断的去重指纹（Bug 776）：按 uri 记最近一次 publish 的
+   * (version, 诊断内容) 指纹 ⇒ **同版本同内容**的重复 publish 被吞掉。
+   *
+   * 重复来源：`vscode-languageserver` 的 `TextDocuments.listen()` 在
+   * `didOpen` 时**同时** fire `onDidChangeContent`（textDocuments.js）⇒
+   * 编辑防抖路径对**同一内容**再跑一遍完整校验并再 publish 一次。
+   * 去重按**内容**而非仅按版本：同版本但诊断内容变了（侧车/依赖变更后的
+   * force 重检）仍必须发出去。
+   */
+  const publishedFingerprints = new Map<string, string>();
+
+  /** 最近一次已受理校验的文档指纹（version + 内容）——按 uri 记（Bug 776）。 */
+  const validatedFingerprints = new Map<string, string>();
+
+  function publishDiagnostics(params: {
+    uri: string;
+    diagnostics: unknown[];
+    version?: number;
+  }): void {
+    const fingerprint = `${params.version ?? ""}\0${JSON.stringify(params.diagnostics)}`;
+    if (publishedFingerprints.get(params.uri) === fingerprint) return;
+    publishedFingerprints.set(params.uri, fingerprint);
+    connection.sendDiagnostics(params as Parameters<Connection["sendDiagnostics"]>[0]);
+  }
+
+  function documentFingerprint(document: TextDocument): string {
+    return `${document.version}\0${document.getText()}`;
+  }
+
   documents.onDidOpen((event) => {
     nudoFileCache.delete(event.document.uri);
+    // didOpen 的内容已被本处理器受理 ⇒ 记录指纹，随后的 onDidChangeContent
+    // 回声（同一 version + 同一内容）不再重复跑一遍校验（Bug 776）。
+    validatedFingerprints.set(event.document.uri, documentFingerprint(event.document));
     const openPath = uriToFilePath(event.document.uri);
     // A4：打开侧车（含新建 buffer）→ 立即尝试重检已登记 parent
     if (isNudoDepPath(openPath)) {
@@ -240,6 +555,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
 
   documents.onDidChangeContent((change) => {
     const uri = change.document.uri;
+    // didOpen 回声：同一 version + 同一内容 ⇒ 已由 onDidOpen 受理过，
+    // 不再排一次防抖校验（否则同版本同内容的诊断被 publish 两次）（Bug 776）。
+    if (validatedFingerprints.get(uri) === documentFingerprint(change.document)) return;
+    validatedFingerprints.set(uri, documentFingerprint(change.document));
     const filePath = uriToFilePath(uri);
     nudoFileCache.delete(uri);
     const existing = debounceTimers.get(uri);
@@ -284,7 +603,12 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     // P2：关闭即 bump validateGeneration——在途 validate 的 stillCurrent 门
     // 失效，陈旧结果不会在文件已关闭后再 publish
     bumpValidateGeneration(key);
+    // 清诊断面**必须**送达（不走去重：去重键含内容，清空面与上一次的
+    // 内容不同，但仍直接发以免「关文件后诊断没撤掉」）。
     connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
+    // 重新打开同一 uri 时诊断要能再发一次 ⇒ 丢掉去重指纹
+    publishedFingerprints.delete(event.document.uri);
+    validatedFingerprints.delete(event.document.uri);
   });
 
   const nudoFileCache = new Map<string, boolean>();
@@ -318,19 +642,64 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    * 参数约束 inlay（形参后 `where …`）开关，按文件解析。
    * 优先级：项目 package.json#nudo.inlayHints.parameters 显式值赢；
    * 项目未设置该键时用宿主设置作默认；均缺失 → false（关）。
+   *
+   * **项目侧与宿主侧同一个归一化函数**（Bug 790）：此前项目侧**原样返回**
+   * 原始值 ⇒ 字符串 `"false"` 是真值 ⇒ 反而**开启**参数 inlay，而宿主侧
+   * 同一个 `"false"` 走 `parseInlayParams` ⇒ **关闭** ⇒ 同一个键两套规则、
+   * 行为完全相反。非法值按 `config.md` 的口径**回落默认**（关）。
    */
   function inlayParamsEnabled(filePath: string): boolean {
     const projectValue = findProjectConfig(dirname(filePath))?.config
       ?.inlayHints?.parameters;
-    if (projectValue !== undefined) return projectValue;
+    const projectEnabled = parseInlayParams(projectValue);
+    if (projectEnabled !== undefined) return projectEnabled;
+    if (projectValue !== undefined) {
+      // 非法值：回落默认（关）并留一条可读告警（config.md：非法值回落默认）
+      warnInvalidInlayParams(projectValue);
+    }
     return clientDefaultInlayParams ?? false;
   }
 
+  /** 已告警过的非法取值（同一值只告警一次，避免每次 inlay 请求都刷屏）。 */
+  const warnedInlayParams = new Set<string>();
+
+  function warnInvalidInlayParams(value: unknown): void {
+    const key = JSON.stringify(value) ?? String(value);
+    if (warnedInlayParams.has(key)) return;
+    warnedInlayParams.add(key);
+    connection.console.warn(
+      `[nudo-lsp] invalid nudo.inlayHints.parameters value ${key}; falling back to default (off)`,
+    );
+  }
+
+  /**
+   * 导航面 / IDE 面的**门禁谓词（真源）**（Bug 751）。
+   *
+   * 判据（两层）：
+   * 1. **路径层** `isNudoTargetPath`：`.js` / `.mjs` / `.ts` 可作推断目标，
+   *    并**明确排除**侧车契约文件（`*.nudo.js` / `*.nudo.mjs` / `*.nudo.ts`）
+   *    与 draft 产物（`*.nudo.draft.*`）。
+   * 2. **analysis.mode 层** `shouldAnalyzeFile`：`directives` = 今日行为；
+   *    `exports` / `all` 由 package.json#nudo.analysis 打开无指令分析。
+   *
+   * ⚠ **同一个实例**经 `deps.isNudoFile` 注入 `server-navigation.ts` 与
+   *   `server-ide.ts` ⇒ 两侧门禁口径**必然一致**（Bug 751 的根因就是
+   *   「各请求各写各的门禁」⇒ 同一坐标六种请求三种结论）。
+   *   ⇒ **消费方不得另写一份谓词**。
+   * ⚠ 本谓词要求文档**已打开**（`documents.get(uri)`）⇒ 只适用于「按文档
+   *   发请求」的面；`workspace/symbol` 扫的是**文件路径集合**（可能未打开）
+   *   ⇒ 那条路径用**路径层** `isNudoTargetPath`（本谓词的第一层，同样排除
+   *   侧车），不得用本谓词（否则未打开的文件会被整片误杀）。
+   * ⚠ 侧车排除在此**显式**写一遍（纵深防御）：即便 `isNudoTargetPath` 的
+   *   后缀表将来漂移，导航面也不会把侧车契约文件放进来。
+   */
   function isNudoFile(uri: string): boolean {
     // 路径目标 + analysis.mode（design-cli-semantics §7）：directives=今日行为；
     // exports/all 由 package.json#nudo.analysis 打开无指令分析
-    if (!isNudoTargetPath(uriToFilePath(uri))) return false;
     const filePath = uriToFilePath(uri);
+    if (!isNudoTargetPath(filePath)) return false;
+    // 侧车契约文件（*.nudo.js 等）不是推断目标：导航面一律不认（Bug 751）
+    if (isSidecarPath(filePath)) return false;
     const cached = nudoFileCache.get(uri);
     if (cached !== undefined) return cached;
     const doc = documents.get(uri);
@@ -341,13 +710,18 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   }
 
   connection.onDidChangeConfiguration((params) => {
+    // **深合并**（Bug 777）：载荷只带**变更部分**（或与 nudo 无关的整棵树）
+    // ⇒ 未提及的键必须保留旧值 / 默认值，不能被整棵读抹成 undefined。
+    // 扁平键（`"nudo.analysis.mode"`）等价于嵌套路径，一并识别。
+    clientSettingsTree = mergeSettingsTree(
+      clientSettingsTree,
+      flattenSettingsPatches(params.settings as Record<string, unknown> | undefined),
+    );
     const next = parseAnalysisMode(
-      (params.settings as { nudo?: { analysis?: { mode?: unknown } } } | undefined)
-        ?.nudo?.analysis?.mode,
+      readSettingsPath(clientSettingsTree, ["nudo", "analysis", "mode"]),
     );
     const nextInlayParams = parseInlayParams(
-      (params.settings as { nudo?: { inlayHints?: { parameters?: unknown } } } | undefined)
-        ?.nudo?.inlayHints?.parameters,
+      readSettingsPath(clientSettingsTree, ["nudo", "inlayHints", "parameters"]),
     );
     const inlayChanged = nextInlayParams !== clientDefaultInlayParams;
     if (next === clientDefaultAnalysisMode && !inlayChanged) return;
@@ -369,7 +743,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   });
 
   const watchDeps: WatchDeps = {
-    sendDiagnostics: (params) => connection.sendDiagnostics(params),
+    sendDiagnostics: (params) => publishDiagnostics(params),
     isDocumentOpen: (uri) => documents.get(uri) !== undefined,
     activeCases,
     nudoFileCache,
@@ -387,7 +761,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
 
   function validationDeps(): ValidateTextDeps {
     return {
-      sendDiagnostics: (params) => connection.sendDiagnostics(params),
+      sendDiagnostics: (params) => publishDiagnostics(params),
       isNudoUri: (uri) => isNudoFile(uri),
       getActiveCases: (uri) => getActiveCasesForUri(uri),
       getOpenDocumentByPath: (filePath) =>
@@ -427,6 +801,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     getDocument: (uri) => documents.get(uri),
     listDocuments: () => documents.all(),
     isNudoFile,
+    // 门禁谓词的**路径层**（同一真源）：codeLens（interface 档）用
+    isNudoTargetPath,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
     inlayParamsEnabled,
@@ -442,12 +818,28 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   attachSignatureHelp(ideDeps);
   attachSemanticTokens(ideDeps);
 
-  const navigationDeps: NavigationDeps = {
+  /**
+   * 导航面依赖。
+   *
+   * ⚠ **门禁契约（Bug 751）**：`isNudoFile` 是**同一个实例**（server.ts 的
+   *   真源）⇒ 导航面与 IDE 面口径必然一致；消费方**不得**另写谓词。
+   * ⚠ **能力契约（Bug 749）**：`clientCapabilities` 返回 `initialize` 时
+   *   捕获的客户端能力（`params.capabilities`）。
+   *   · **名字**：`clientCapabilities`
+   *   · **类型**：`() => ClientCapabilities | undefined`
+   *   · **语义**：返回客户端在 `initialize` 里声明的能力；**缺省**
+   *     （`undefined`，老客户端可能根本不发该段）⇒ 消费方必须走
+   *     **层级式 + 全量 SymbolKind** 的默认输出，**不得**因拿不到能力就退化。
+   */
+  const navigationDeps: NavigationDeps & {
+    clientCapabilities?: () => ClientCapabilities | undefined;
+  } = {
     connection,
     getDocument: (uri) => documents.get(uri),
     listDocuments: () => documents.all(),
     isNudoFile,
     knownFiles,
+    clientCapabilities: () => clientCapabilities,
   };
   attachNavigation(navigationDeps);
 
@@ -525,18 +917,33 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       case "nudo.getActiveCases":
         return handleGetActiveCases(arg as Parameters<typeof handleGetActiveCases>[0]);
       default:
-        return null;
+        // 940：未声明的命令名必须走**协议层错误**出口——返回 null 会让
+        // 「无此命令」与「跑了但无输出」在协议层同形（JSON-RPC 成功 + 空结果）。
+        throw new ResponseError(
+          ErrorCodes.MethodNotFound,
+          `Unknown command: ${command}`,
+        );
     }
   }
 
   connection.onExecuteCommand((params) => {
+    // 940：命令名先过白名单（advertise 面与执行面同源）——未声明的命令名
+    // 走协议层错误（MethodNotFound），不再返回 result:null 的假成功。
+    if (!(NUDO_COMMANDS as readonly string[]).includes(params.command)) {
+      throw new ResponseError(
+        ErrorCodes.MethodNotFound,
+        `Unknown command: ${params.command}`,
+      );
+    }
     const args = params.arguments ?? [];
     // CodeLens (and some clients) pass selectCase positionally:
     //   [uri, functionName, caseIndex, caseName]
     // Agent bridges pass a single object: { uri|file, functionName, caseIndex }.
+    // 位置形态只要第一个参数是 uri 串就走位置桥（缺项由 handler 自己报形态
+    // 错误）⇒ 兜底分支的「参数不是对象」检查不会误伤位置形态。
     if (
       params.command === "nudo.selectCase" &&
-      args.length >= 3 &&
+      args.length >= 1 &&
       typeof args[0] === "string"
     ) {
       return handleSelectCase({
@@ -548,7 +955,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     // CodeLens 契约选项位置参数：[uri, functionName]（selectContract）
     if (
       params.command === "nudo.selectContract" &&
-      args.length >= 2 &&
+      args.length >= 1 &&
       typeof args[0] === "string"
     ) {
       return handleSelectContract({
@@ -584,13 +991,40 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         });
       }
     }
-    return dispatchNudoCommand(params.command, (args[0] as Record<string, unknown>) ?? {});
+    // CodeLens 的 `entry@` / `call@` 观察透镜位置参数：[uri, functionName]
+    // （Bug 780）。此前 `nudo.trace` **没有**位置参数桥 ⇒ 落到下面的兜底
+    // 分支，把 uri 字符串当「参数对象」传下去 ⇒ 工具 100% 失败。
+    if (params.command === "nudo.trace") {
+      const bridged = tracePositionalArgs(args);
+      if (bridged) return trace(bridged, agentToolDeps);
+    }
+    // 位置参数 → 参数对象桥（Bug 725）：check / hover / test / whatIf /
+    // suggestCase / getActiveCases 的**位置形态**（`[uri, …]`）此前一律落到
+    // 兜底分支 ⇒ 协议层参数错误 ⇒ 命令 100% 失败（扩展侧只能绕道 slash 请求）。
+    // ⚠ 只在 `args[0]` 是**字符串**时桥接 ⇒ 对象形态（`{ file: … }`）走原通道，
+    // **既有行为不变**；形态不合法 ⇒ 返回 undefined ⇒ 落兜底分支报参数错误。
+    const positional = positionalCommandParams(params.command, args);
+    if (positional) return dispatchNudoCommand(params.command, positional);
+    // 兜底：参数必须是**对象**。把字符串当对象传下去会让工具拿到
+    // `params.file === undefined` ⇒ 每次点击观察透镜只得到一个错误
+    // （Bug 780）⇒ 参数形态不对时直接报**协议层参数错误**。
+    const first = args[0];
+    if (first !== undefined && (typeof first !== "object" || first === null || Array.isArray(first))) {
+      throw new ResponseError(
+        ErrorCodes.InvalidParams,
+        `Invalid arguments for ${params.command}: expected an object argument, got ${typeof first}`,
+      );
+    }
+    return dispatchNudoCommand(params.command, (first as Record<string, unknown>) ?? {});
   });
 
   connection.onRequest("nudo/selectCase", handleSelectCase);
   connection.onRequest("nudo/selectContract", handleSelectContract);
 
-  connection.onRequest("nudo/getActiveCases", handleGetActiveCases);
+  // 结果面：成功 { fn: index }，失败 = 结构化工具错误（isError: true，955）。
+  // 协议层的 onRequest 字符串重载只接受单一结果类型 ⇒ 注册处标 unknown
+  // （运行时返回体不变）。
+  connection.onRequest("nudo/getActiveCases", (params: { uri?: string; file?: string }): unknown => handleGetActiveCases(params));
 
   /** Request aliases share the command handlers; the pinned return type keeps onRequest overload inference happy. */
   function dispatchAgentRequest(
@@ -611,7 +1045,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     connection.onRequest(command, handler);
   }
 
-  connection.languages.diagnostics.on((params) => {
+  connection.languages.diagnostics.on(async (params) => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return { kind: "full", items: [] };
     // 与 push 同门禁：零注解 + 磁盘同名侧车（autoBind）也应出诊断
@@ -654,6 +1088,18 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         }
       } catch {
         /* check 通道失败不影响 evaluator 面 */
+      }
+      // path env 通道（Bug 781 / Bug 992）：push 侧（validateText）会把
+      // `@nudo:env` 指向的 path env 加载失败/缺失作为 `nudo:env-unresolved`
+      // 告警发出去；pull 侧此前**完全没有**这一通道 ⇒ 同一文件 push 有、
+      // pull 没有 ⇒ 两个诊断面互相打脸（IDE 与 CI 结论不一致）。
+      // 这里与 push 同源同档过滤（filterCheckLspByLevel + 同一 level）。
+      for (const d of filterCheckLspByLevel(
+        await envUnresolvedDiags(filePath, text),
+        level,
+      )) {
+        seen.add(`${d.code ?? ""}\0${d.message}`);
+        items.push(d);
       }
       const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
       for (const d of filtered) {

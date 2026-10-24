@@ -10,15 +10,17 @@
  * implicit 导出的返回 inlay 标明 `derived`（展示档，非义务契约）。
  */
 
-import type { Node, FunctionDeclaration } from "@babel/types";
+import type { Node, FunctionDeclaration, ClassDeclaration } from "@babel/types";
 import { parseSource as parse } from "./parse-source.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
+import { localNamedExports } from "./scan-named-exports.ts";
 import { formatShape } from "./format.ts";
 import { predToString } from "./pred.ts";
-import { termToString } from "./term.ts";
+import { termToString, litKeyString, type Term } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
+import type { RunTranspiledOptions } from "./exec/run.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -43,15 +45,49 @@ export type CollectAbsInlaysOpts = InterfaceTierOpts & {
    * generalizeFromAst 看不到跨模块 import → 调用塌缩 unknown（inlay 假空）。
    */
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+  /**
+   * B run 注入包（modules / mocks / envGlobals / replacements / as）——
+   * 透传给 generalizeFromAst（与 CLI `buildCheckInjection` 产出的 inject
+   * 同型）。
+   *
+   * **缺省 = 行内指令全部缺席**（Bug 786）：`@nudo:mock` 的依赖变成未绑定名、
+   * `@nudo:as` / `@nudo:replace` 的覆盖表为空、env 全局未绑定 ⇒ 推导链塌缩成
+   * `unknown`（Nudo 词汇里 = 「推断失败」）⇒ IDE 显示 unknown 而 CLI 门禁
+   * 显示 number（跨产品面自相矛盾）。调用方（LSP）须与 CLI 同源装配 inject。
+   */
+  inject?: RunTranspiledOptions;
 };
 
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
   const file = parse(source);
   const out: Array<{ name: string; node: Node }> = [];
+  /**
+   * 导出面（localNamedExports）：CJS 成员导出键（`exports.f` /
+   * `module.exports.f`）与导出类实例方法键（`Class.method`）都在里面。
+   * 枚举必须与导出面同口径——否则 inlay 面与 CodeLens / hover 面分裂
+   * （CJS 成员导出在 inlay 面整段消失，导出类方法只在 hover 面存在）。
+   */
+  const exported = localNamedExports(source);
   const visitDecl = (decl: Node): void => {
     if (decl.type === "FunctionDeclaration" && (decl as FunctionDeclaration).id) {
       const fd = decl as FunctionDeclaration;
       out.push({ name: fd.id!.name, node: fd });
+    }
+    if (decl.type === "ClassDeclaration") {
+      // 导出类的实例/静态方法 → `Class.method`（契约键同口径，design §3.2）
+      const cd = decl as ClassDeclaration;
+      const clsName = cd.id?.name;
+      if (clsName) {
+        for (const m of cd.body?.body ?? []) {
+          if (m.type !== "ClassMethod") continue;
+          if (m.kind && m.kind !== "method") continue;
+          const keyName = m.key?.type === "Identifier" ? m.key.name : undefined;
+          if (!keyName) continue;
+          const fullName = `${clsName}.${keyName}`;
+          if (!exported.has(fullName)) continue;
+          out.push({ name: fullName, node: m as Node });
+        }
+      }
     }
     if (decl.type === "VariableDeclaration") {
       const dcls = (decl as { declarations?: Array<{ id?: { type?: string; name?: string }; init?: Node }> }).declarations ?? [];
@@ -69,11 +105,47 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
       }
     }
   };
+  /** `exports` / `module.exports` → true */
+  const isExportsTarget = (n: Node | undefined): boolean => {
+    if (!n) return false;
+    if (n.type === "Identifier") return (n as { name?: string }).name === "exports";
+    if (n.type === "MemberExpression") {
+      const me = n as { object?: Node; property?: Node };
+      return (
+        me.object?.type === "Identifier" &&
+        (me.object as { name?: string }).name === "module" &&
+        me.property?.type === "Identifier" &&
+        (me.property as { name?: string }).name === "exports"
+      );
+    }
+    return false;
+  };
+  /** CJS 成员导出：`exports.f = fn` / `module.exports.f = fn`（键名即导出名） */
+  const visitCjsAssign = (stmt: Node): void => {
+    const expr = (stmt as { expression?: Node }).expression;
+    if (!expr || expr.type !== "AssignmentExpression") return;
+    const assign = expr as { operator?: string; left?: Node; right?: Node };
+    if (assign.operator !== "=") return;
+    const left = assign.left;
+    const right = assign.right;
+    if (!left || !right || left.type !== "MemberExpression") return;
+    const me = left as { computed?: boolean; object?: Node; property?: Node };
+    if (me.computed === true) return;
+    if (!isExportsTarget(me.object)) return;
+    const prop = me.property;
+    const propName = prop?.type === "Identifier" ? (prop as { name: string }).name : undefined;
+    if (!propName) return;
+    if (!exported.has(propName)) return;
+    if (right.type !== "FunctionExpression" && right.type !== "ArrowFunctionExpression") return;
+    out.push({ name: propName, node: right });
+  };
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
       visitDecl(stmt.declaration as Node);
     } else if (stmt.type === "ExportDefaultDeclaration" && stmt.declaration) {
       visitDecl(stmt.declaration as Node);
+    } else if (stmt.type === "ExpressionStatement") {
+      visitCjsAssign(stmt as Node);
     } else {
       visitDecl(stmt);
     }
@@ -93,6 +165,30 @@ function renameTypeVars(s: string, varMap: Map<string, string>): string {
 }
 
 /**
+ * Bug 412：内部抽象变量名 → 稳定可读标识。
+ *
+ * `len#N` 由 `exec/runtime/containers/arr-index.ts` 的**模块级自增**计数器
+ * `lenVarSeq` 铸造 ⇒ 它既不是用户可见的类型名，又随重算换号（源码级 memo
+ * 未命中即递增）⇒ 直接上屏＝「内部 id 泄漏 + 同一份源码两次给出不同文本」。
+ *
+ * 口径：`len#<数字>` 一律映射成 `len`（稳定、可读）；其它 var（A1 / α 形参名）
+ * 原样保留，随后由 `renameTypeVars` 改写成形参名。
+ * lit 节点不动 ⇒ 字面量文本（含字符串里的 "len#3"）不受影响。
+ */
+const INTERNAL_LEN_ID_RE = /^len#\d+$/;
+const READABLE_LEN_ID = "len";
+
+function readableTerm(t: Term): Term {
+  if (t.op === "var") {
+    return INTERNAL_LEN_ID_RE.test(t.id) ? { op: "var", id: READABLE_LEN_ID } : t;
+  }
+  if (t.op === "app") {
+    return { op: "app", fn: t.fn, args: t.args.map(readableTerm) };
+  }
+  return t;
+}
+
+/**
  * 返回值 inlay：路径摘要（对应源码 return），不是精化后的外延类型。
  * `double` → `x | x * 2`；`scale` → `x + 1`。
  * `where` / ToNumber 拆分留给 hover 展开。
@@ -108,23 +204,35 @@ function formatReturnDisplay(g: PolyFn): string {
   const stripParens = (t: string): string =>
     t.startsWith("(") && t.endsWith(")") ? t.slice(1, -1) : t;
 
+  /** term → 用户面文本（内部 id 已映射成稳定可读标识；Bug 412） */
+  const termText = (t: Term): string =>
+    stripParens(renameTypeVars(termToString(readableTerm(t)), varMap));
+
   const memberPath = (m: Abs): { key: string; text: string } => {
     if (m.term?.op === "var") {
-      const name = renameTypeVars(m.term.id, varMap);
+      // 内部 id（len#N）→ 稳定可读标识（Bug 412）；去重键与渲染文本同源
+      const name = INTERNAL_LEN_ID_RE.test(m.term.id)
+        ? READABLE_LEN_ID
+        : renameTypeVars(m.term.id, varMap);
       return { key: `var:${name}`, text: name };
     }
     if (m.term?.op === "app") {
-      const t = stripParens(renameTypeVars(termToString(m.term), varMap));
+      const t = termText(m.term);
       return { key: `app:${t}`, text: t };
     }
     const lvR = litValue(m);
     // 「是否字面量」看 ok：lit(undefined) 也是字面量，不得用 value !== undefined 门闩。
     if (lvR.ok) {
       const lv = lvR.value;
-      if (typeof lv === "number" && !Number.isFinite(lv)) {
-        return { key: `lit:${String(lv)}`, text: String(lv) };
-      }
-      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) ?? "undefined" };
+      // 规范口径（Bug 414）：字面量文本走仓库既有渲染（`term.ts` 的
+      // `termToString` / `litKeyString`，与 `format.ts` 的 `formatLitValue`
+      // 同口径）——`JSON.stringify(-0)` 会把负零抹成 "0"（-0 与 0 在
+      // Object.is / 1/x 上可观察不同）。
+      const text = termToString({ op: "lit", value: lv });
+      // 去重键与渲染文本**同源**（否则 `-0` 臂与 `0` 臂键相同 ⇒ `seen`
+      // 把其中一条整个丢掉）；`typeof` 前缀区分 `lit("10")` / `lit(10)`。
+      const key = `lit:${typeof lv}:${litKeyString(lv)}`;
+      return { key, text };
     }
     return { key: `shape:${formatShape(m)}`, text: formatShape(m) };
   };
@@ -132,7 +240,7 @@ function formatReturnDisplay(g: PolyFn): string {
   const abs = g.symbolic;
   // 外层 term：单路径计算形（`x + 1`）
   if (abs.term && abs.term.op !== "lit") {
-    return stripParens(renameTypeVars(termToString(abs.term), varMap));
+    return termText(abs.term);
   }
   if (abs.shape.k === "sum") {
     // 同 term 的精化臂（number>3 | string 都是 A1）合并为一条路径 `x`
@@ -175,6 +283,9 @@ export function collectAbsInlays(
       g = generalizeFromAst(name, source, {
         ...(refineOpts ? { refine: refineOpts } : {}),
         ...(opts?.modules ? { modules: opts.modules } : {}),
+        // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
+        // env 全局缺席 ⇒ 推导链塌缩 unknown（与 CLI 面分叉）。
+        ...(opts?.inject ? { inject: opts.inject } : {}),
       });
     } catch {
       continue;
@@ -202,7 +313,17 @@ export function collectAbsInlays(
       }
     }
 
-    type FnNodeLike = { params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>; body?: { loc?: { start?: { line: number; column: number } } } };
+    type FnNodeLike = {
+      params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>;
+      body?: {
+        /** Babel 节点判别式：`BlockStatement` = 块体，其余 = 表达式体 */
+        type?: string;
+        loc?: {
+          start?: { line: number; column: number };
+          end?: { line: number; column: number };
+        };
+      };
+    };
     const fnNode = node as FnNodeLike;
     const paramList = fnNode.params ?? [];
     for (let i = 0; i < paramList.length; i++) {
@@ -230,9 +351,23 @@ export function collectAbsInlays(
       }
     }
 
-    // 返回：插在函数体 `{` 前——优先 term/路径形；implicit 导出标明 derived
-    const bodyLoc = fnNode.body?.loc;
-    if (bodyLoc?.start) {
+    /**
+     * 返回 inlay 的锚点（Bug 408）：
+     * - **块体**（`BlockStatement`）⇒ `{` 的位置（标注插在 `{` 前，正确）。
+     * - **表达式体** ⇒ 整个表达式的**结束**位置（标注落在表达式之后）。
+     *
+     * 改前无条件取 `body.loc.start`：对块体它等于 `{`（正确），对**表达式体**
+     * 它等于**表达式的起点** ⇒ 标注被插到 `=>` 与表达式之间，把源码行劈开
+     * （`export const arrow = (v) => : v * 2  v * 2;`）。
+     * 口径同 TypeScript 自身的返回类型 inlay（提示落在被标注表达式之后）。
+     */
+    const bodyNode = fnNode.body;
+    const bodyLoc = bodyNode?.loc;
+    const anchor =
+      bodyNode?.type === "BlockStatement"
+        ? bodyLoc?.start
+        : (bodyLoc?.end ?? bodyLoc?.start);
+    if (anchor) {
       let label: string;
       try {
         label = `: ${formatReturnDisplay(g)}`;
@@ -241,8 +376,8 @@ export function collectAbsInlays(
       }
       if (isImplicitExport) label += "  · derived";
       inlays.push({
-        line: bodyLoc.start.line,
-        character: Math.max(0, bodyLoc.start.column),
+        line: anchor.line,
+        character: Math.max(0, anchor.column),
         label: `${label}  `,
         kind: "type",
         ...(tierSrc ? { interfaceSource: tierSrc } : {}),

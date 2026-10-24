@@ -29,10 +29,10 @@ import { LOOP_TRUNCATION_LABEL } from "./exec/runtime/loop-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
+  contractSegmentLocs,
   extractAssumeSegs,
   extractInvariantSegs,
   extractRefineReturnFromSource,
-  extractDeclaredThrows,
   fnTopLevelLocalNames,
   refineDiagCount,
   setRefineDiagCollector,
@@ -46,6 +46,7 @@ import {
   localNamedExports,
   resetSidecarLoadFailureCache,
   setInterfaceDiagCollector,
+  sidecarAutoBindAllowed,
   sidecarClosureFingerprint,
   sidecarPathOf,
   takeInterfaceDiagsSince,
@@ -56,7 +57,12 @@ import {
   type NudoConstraint,
 } from "./constraint.ts";
 import { absToConstraint } from "./projection.ts";
-import { assertImplies } from "./postcondition.ts";
+import {
+  checkReturnConstraint,
+  type ReturnContractSource,
+} from "./check-return.ts";
+// Bug 367：引理消费记账（清账 / 取快照 ⇒ 审计归因只认真正消费过的引理）
+import { assumeConsumed, resetAssumeConsumed } from "./assume-ledger.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import {
   attachContractFaces,
@@ -65,24 +71,35 @@ import {
   type FnContractFaces,
 } from "./contract-face.ts";
 import { resolveDepPath } from "./sidecar-path.ts";
-import { contractParamNameSet, formalParamSignatureNames } from "./param-surface.ts";
+import {
+  contractParamNameSet,
+  formalParamSignatureNames,
+  type FormalParam,
+} from "./param-surface.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
   extractAllLoadSpecs,
+  loadModuleDepsFingerprint,
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
+import { guardLoadModule, type LoadReadFailure } from "./load-guard.ts";
 import { anyAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { and as pAndPred, le as lePred, pTrue } from "./pred.ts";
 import { v as termVar } from "./term.ts";
-import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { formatAbs, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
+// Bug 1096：**类导出入口**（`new C()`）是真实的 L2 入口——构造器必抛必须能
+// 归因到它（否则构造器证据被丢弃 ⇒ 闸门假绿）。`listClassEntryNames` 与
+// `listTopFunctions` 是**两个普查面**（后者是函数普查面，与 service 面
+// `collectTopLevelFunctions` 逐字对齐，不能改它）⇒ 单独取类清单并入入口表。
+import { listClassEntryNames } from "./scan-top-functions.ts";
 import {
   interfaceDriftIssues,
   type DriftCandidate,
@@ -91,14 +108,22 @@ import {
   estimateEntryParamCount,
   isDefaultExportName,
   formatEntrySigLine,
+  formatEntryParamShape,
   findFnLoc,
   formatSigCached,
 } from "./check-signatures.ts";
-import { collectEntryMayThrows, evalAnalyzeOpts } from "./check-may-throw.ts";
+import {
+  collectEntryMayThrows,
+  declaredThrowsForEntry,
+  definiteModuleThrowOf,
+  evalAnalyzeOpts,
+  type DefiniteModuleThrow,
+} from "./check-may-throw.ts";
 import { structuralAssignIssues } from "./check-assign.ts";
 import { scanCaseInconsistency } from "./check-case-scan.ts";
 import {
   tryRunTranspiled,
+  tryRunTranspiledDetailed,
   callTranspiledExportFull,
   bindingsOf,
 } from "./exec/run.ts";
@@ -108,6 +133,7 @@ import type { InvariantSpec } from "./exec/runtime/invariant-apply.ts";
 import { setEvalAssignCollector, setEvalCallCollector, type EvalCallRecord } from "./exec/calls.ts";
 import {
   filterGateThrows,
+  isThrowsIgnored,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
 } from "./exec/may-throw.ts";
@@ -119,7 +145,6 @@ export {
   evictCheckSourceMemoForPaths,
 } from "./check-memo.ts";
 import {
-  checkDepsFingerprint,
   cloneCheckReport,
   checkMemoKey,
   checkMemoGet,
@@ -164,19 +189,47 @@ function checkSourceInScope(
   // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
   // Identity for memo keys stays on the caller's raw loadModule — a fresh
   // wrapper each call would make loadModuleId() unique and defeat the memo.
+  //
+  // Bug 499：依赖**不可读**（EACCES / EIO / EMFILE…）时 loader 抛错——该
+  // 异常不得穿透到 `nudo check` 的整轮外面（stdout 0 字节、无任何报告）。
+  // 本闸把抛错降级为「该依赖不可用」（undefined）+ 一条结构化失败清单，
+  // 清单在报告里收口为一条明确诊断（口径同 service 侧 ModuleReadError 的
+  // 「不可读 ≠ 不存在」：错误轮的报告不得与真 miss 轮共享同一份结论）。
   let callOpts = opts;
+  /** 本轮读失败清单（同一路径只记一次） */
+  const loadReadFailures: LoadReadFailure[] = [];
+  const loadFailureKeys = new Set<string>();
+  /**
+   * **推测性**读 loader（仅指纹用）：不经降级闸 ⇒ 读失败**不**记入分析错误。
+   *
+   * Bug 1124：ambient 侧车的指纹探测是**推测**的（autoBind 关时那份侧车根本
+   * 不会被绑定）⇒ 探测失败不得升级成 error 诊断（门禁假红：没有任何依赖或
+   * 启用的契约需要这次读取）。真正的 ambient 侧车读取走 interface.ts 的
+   * 绑定路径（失败 ⇒ nudo:interface-load，真故障照旧可见）。
+   */
+  let speculativeLoad: ((spec: string, from: string) => string | undefined) | undefined;
   if (opts.loadModule && opts.fromFile) {
     const loadCache = new Map<string, string | undefined>();
     const raw = opts.loadModule;
-    const fromFile = opts.fromFile;
+    /** 单次装载口（per-call 缓存）：抛错不进缓存 ⇒ 下一消费者重试 */
+    const cachedLoad = (spec: string, from: string): string | undefined => {
+      const k = `${from}\0${spec}`;
+      if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
+      return loadCache.get(k);
+    };
     callOpts = {
       ...opts,
-      loadModule: (spec, from) => {
-        const k = `${from}\0${spec}`;
-        if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
-        return loadCache.get(k);
-      },
+      loadModule: guardLoadModule(cachedLoad, (failure) => {
+        const key = `${failure.path}\0${failure.code}`;
+        if (loadFailureKeys.has(key)) return;
+        loadFailureKeys.add(key);
+        loadReadFailures.push(failure);
+      }),
     };
+    // 推测性读：**仅**指纹用（ambient 侧车探测）。不经降级闸 ⇒ 读失败不记
+    // 入分析错误；失败仍让指纹标 readError ⇒ 键不可信、禁 memo（错误轮与
+    // miss 轮不共用键 ⇒ 互不为陈旧命中）。
+    speculativeLoad = cachedLoad;
   }
 
   // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
@@ -194,12 +247,25 @@ function checkSourceInScope(
   // 尾部无 @nudo 的注释/空行不进键：comment-only 编辑复用 CheckReport
   const stable = stableAnalyzeKeySource(source);
   // 一次指纹：check 整文件 memo + 所有 generalize L0 共用（避免 per-fn 重读 dep）
-  const depsFp = checkDepsFingerprint(stable, callOpts);
+  // ambient 侧车探测走**推测性** loader（读失败只标 readError，不升级成分析
+  // 错误——Bug 1124），且按 ambient 绑定资格 gate（autoBind 关 ⇒ 不探测）。
+  const depsFp =
+    callOpts.loadModule && callOpts.fromFile
+      ? loadModuleDepsFingerprint(stable, callOpts.loadModule, callOpts.fromFile, {
+          ...(speculativeLoad ? { ambientLoadModule: speculativeLoad } : {}),
+          ambientAllowed: (sidecarPath) =>
+            sidecarAutoBindAllowed(sidecarPath, opts.autoBind, opts.projectDir),
+        })
+      : { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   // ambient 侧车闭包指纹：进 memo 键（侧车变更 → 报告失效）+ 存在性门控 +
-  // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open
+  // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open。
+  // 纯指纹用途 ⇒ 探测用推测性 loader（读失败不上报为分析错误，Bug 1124）。
   const sidecarFp =
     callOpts.loadModule && callOpts.fromFile
-      ? sidecarClosureFingerprint(callOpts.fromFile, callOpts)
+      ? sidecarClosureFingerprint(callOpts.fromFile, {
+          ...callOpts,
+          ...(speculativeLoad ? { loadModule: speculativeLoad } : {}),
+        })
       : undefined;
   const allowMemo =
     useMemo &&
@@ -207,6 +273,10 @@ function checkSourceInScope(
     // 读错误轮键不可信（#135）：错误轮报告（nudo:interface-load）与真 miss 轮
     // （干净）若共享 miss 键会互为跨次陈旧命中——不读也不写 memo
     !depsFp.readError &&
+    // Bug 499：本闸把读失败降级成 miss（指纹面看不到 readError）——但
+    // 「不可读」轮与「真不存在」轮的报告不同（前者多一条读失败诊断），
+    // 共用同一键会互为陈旧命中 ⇒ 读失败轮一律不碰 memo。
+    loadReadFailures.length === 0 &&
     !(sidecarFp?.startsWith("trunc:") ?? false);
   if (allowMemo) {
     memoKey = checkMemoKey(filePath, stable, opts, depsFp, sidecarFp);
@@ -222,7 +292,12 @@ function checkSourceInScope(
   const signatures: NudoSig[] = [];
   // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
   const file = parse(source);
-  const names = listTopFunctions(source, file);
+  // Bug 1096：类导出入口（`new C()`）并入 L2 入口表——构造器必抛有了真实
+  // 归因落点（此前构造器证据被丢弃 ⇒ 闸门假绿）。
+  const names = [
+    ...listTopFunctions(source, file),
+    ...listClassEntryNames(source, file),
+  ];
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =
@@ -249,7 +324,7 @@ function checkSourceInScope(
       makeSameFileFaceResolver(callOpts, filePath, source, file),
     );
     try {
-      attachCrossModuleContractFaces(callOpts, filePath);
+      const crossModuleIssues = attachCrossModuleContractFaces(callOpts, filePath);
       const report = checkSourceInner(
         filePath,
         source,
@@ -271,8 +346,15 @@ function checkSourceInScope(
         ...takeRefineDiagsSince(refineSince),
         ...takeInterfaceDiagsSince(ifaceSince),
       ]);
-      if (diagIssues.length > 0) {
-        report.issues.push(...diagIssues);
+      // Bug 499：依赖不可读（EACCES/EIO/…）——降级为一条明确诊断，不再
+      // 让异常炸穿整轮 check。诊断码沿用既有的 nudo:module-missing（依赖
+      // 「不可用」），但消息写明**读失败**的事实与 errno（不得谎报
+      // 「文件不存在」）。严重级 error：依赖读不到 ⇒ 其类型面不可信，
+      // 门禁须 fail-closed。
+      const loadIssues = loadReadFailureIssues(loadReadFailures);
+      const allIssues = [...diagIssues, ...loadIssues, ...crossModuleIssues];
+      if (allIssues.length > 0) {
+        report.issues.push(...allIssues);
         const errors = report.issues.filter((i) => i.severity === "error").length;
         const warnings = report.issues.filter((i) => i.severity === "warning").length;
         const infos = report.issues.filter((i) => i.severity === "info").length;
@@ -284,7 +366,10 @@ function checkSourceInScope(
           functions: report.summary.functions,
         };
       }
-      if (memoKey) checkMemoSet(memoKey, report, memoPaths);
+      // 读失败轮不写 memo（键与「真不存在」轮同形 ⇒ 会互为陈旧命中）
+      if (memoKey && loadReadFailures.length === 0) {
+        checkMemoSet(memoKey, report, memoPaths);
+      }
       return cloneCheckReport(report);
     } finally {
       setContractFaceResolver(prevFaceResolver);
@@ -292,6 +377,30 @@ function checkSourceInScope(
   } finally {
     setAbsTruncationCollector(prevTrunc);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bug 499：依赖不可读（EACCES / EIO / EMFILE…）的诊断收口
+// ---------------------------------------------------------------------------
+
+/**
+ * 读失败清单 → 报告诊断。
+ *
+ * 诊断码用 `nudo:module-unreadable`（与 service 面同码）：「存在但不可读」
+ * 必须与 `nudo:module-missing`（「无此文件」）严格区分——文件就在那儿，只是
+ * 读不了，折叠成「不存在」会让诊断与事实相反（Bug 499）。消息带上路径 /
+ * errno / 原因。
+ *
+ * 严重级 error：依赖读不到 ⇒ 其类型面不可信，门禁须 fail-closed。
+ */
+function loadReadFailureIssues(failures: LoadReadFailure[]): CheckIssue[] {
+  return failures.map((f) => ({
+    severity: "error" as const,
+    code: DIAG.moduleUnreadable,
+    message: `cannot read module '${f.path}' (${f.code}): ${f.message}`,
+    suggestion:
+      "fix the file permissions (or the module path) — the dependency is present but unreadable, so its types are unknown",
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -337,34 +446,98 @@ function makeSameFileFaceResolver(
 }
 
 /**
+ * 契约形参名 ∉ 形参表面（C4.5 口径）：展示名 ∪ 契约面名（解构顶层绑定名 /
+ * rest 裸名 / 嵌套点路径）之外的契约形参名 = 对不上的名字。冲突位（合取
+ * 不可满足）不算对不上——它由 nudo:interface-conflict 报。
+ *
+ * **同文件路径与跨模块桥接路径共用这一段计算**（Bug 1023）⇒ 两边口径不再
+ * 分叉：跨模块不得「一边报 mismatch 一边静默丢义务」。
+ */
+function unmatchedContractParams(
+  eff: EffectiveInterface,
+  formalDisplay: string[],
+  formals: FormalParam[],
+): string[] {
+  const contractNames = contractParamNameSet(formals);
+  const display = new Set(formalDisplay);
+  const conflictNames = new Set(eff.conflict?.params ?? []);
+  return eff.params
+    .map((p) => p.param)
+    .filter(
+      (p) =>
+        p &&
+        !display.has(p) &&
+        !contractNames.has(p) &&
+        !conflictNames.has(p),
+    );
+}
+
+/** nudo:interface-param-mismatch 诊断（同文件 / 跨模块共用文案与 severity） */
+function paramMismatchIssue(
+  name: string,
+  unknownParams: string[],
+  formalDisplay: string[],
+  formals: FormalParam[],
+): CheckIssue {
+  const contractNames = contractParamNameSet(formals);
+  const surface = [...contractNames]
+    .filter((n) => !n.startsWith("_p") && n !== "_")
+    .join(", ");
+  return {
+    severity: "error",
+    code: DIAG.interfaceParamMismatch,
+    message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
+    actual: unknownParams.join(", "),
+    expected: surface || formalDisplay.join(", ") || "(no params)",
+    suggestion: `rename the @nudo:contract / sidecar binding parameter to one of: ${
+      surface || formalDisplay.join(", ") || "(function has no params)"
+    }`,
+    fn: name,
+  };
+}
+
+/**
  * 跨模块桥接面：注入模块表（opts.modules ∪ opts.inject.modules）里的
  * fn Abs 逐个按「说明符 → 依赖源码（loadModule）→ 依赖侧车（定义文件
  * 路径 ambient 绑定）」解析契约并 attach。每次 check 现算现挂（覆盖旧面，
  * 进程内长会话不滞留）；loadModule miss（表非 fs 装配）→ 该说明符无面。
+ *
+ * Bug 1023：跨模块路径与同文件路径**同口径**——契约形参名对不上形参表时
+ * 报 nudo:interface-param-mismatch（返回给调用方的诊断列表），不再静默
+ * 丢参数面（那会让该形参的义务在调用方**蒸发** ⇒ 调用点假绿）。
  */
-function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): void {
+function attachCrossModuleContractFaces(
+  opts: CheckOptions,
+  filePath: string,
+): CheckIssue[] {
   const loadModule = opts.loadModule;
   const fromFile = opts.fromFile ?? filePath;
-  if (!loadModule) return;
+  if (!loadModule) return [];
   const tables: Array<Record<string, unknown>> = [];
   for (const t of [opts.modules, opts.inject?.modules]) {
     if (t && typeof t === "object" && !tables.includes(t)) tables.push(t as Record<string, unknown>);
   }
-  if (tables.length === 0) return;
+  if (tables.length === 0) return [];
   const autoBind = opts.autoBind;
   const projectDir = opts.projectDir;
-  const facesCache = new Map<string, FnContractFaces | undefined>();
+  const mismatchIssues: CheckIssue[] = [];
+  const facesCache = new Map<
+    string,
+    { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined }
+  >();
   const facesFor = (
     depSource: string,
     depPath: string,
     name: string,
     paramNames: string[],
-  ): FnContractFaces | undefined => {
+  ): { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined } => {
     const key = `${depPath}\0${name}`;
-    if (facesCache.has(key)) return facesCache.get(key);
+    const hit = facesCache.get(key);
+    if (hit) return hit;
     let faces: FnContractFaces | undefined;
+    let eff: EffectiveInterface | undefined;
     try {
-      const eff = effectiveInterface(depSource, name, {
+      eff = effectiveInterface(depSource, name, {
         loadModule,
         fromFile: depPath,
         ...(autoBind !== undefined ? { autoBind } : {}),
@@ -373,25 +546,40 @@ function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): v
       if (eff) faces = contractFacesFromEffectiveInterface(eff, paramNames);
     } catch {
       faces = undefined;
+      eff = undefined;
     }
-    facesCache.set(key, faces);
-    return faces;
+    const out = { faces, eff };
+    facesCache.set(key, out);
+    return out;
   };
   const attachFnAbs = (v: unknown, depSource: string, depPath: string, name: string): void => {
     if (!v || typeof v !== "object" || !("shape" in (v as object))) return;
     const shape = (v as Abs).shape as { k?: string };
     if (shape.k !== "fn") return;
     // 形参名从依赖源码解析（extractFn）：桥接 Abs 的 shape.params 对
-    // `export function` 声明回退 argN（topLevelFnParams 的既有行为），
-    // 名锚定契约（a/b）对不上位会静默丢参数面。
-    let paramNames: string[];
+    // `export function` 声明回退 argN（topLevelFnParams 的既有行为）。
+    // 名锚定契约（a/b）对不上位时**报 param-mismatch**（同文件路径同口径），
+    // 不再静默丢参数面。
+    let paramNames: string[] = [];
+    let formals: FormalParam[] = [];
     try {
-      paramNames = extractFn(depSource, name)?.params ?? [];
+      const meta = extractFn(depSource, name);
+      paramNames = meta?.params ?? [];
+      formals = meta?.formals ?? [];
     } catch {
       paramNames = [];
+      formals = [];
     }
-    const faces = facesFor(depSource, depPath, name, paramNames);
+    const { faces, eff } = facesFor(depSource, depPath, name, paramNames);
     if (faces) attachContractFaces(v as object, faces);
+    if (eff?.source === "handwritten") {
+      const unknownParams = unmatchedContractParams(eff, paramNames, formals);
+      if (unknownParams.length > 0) {
+        mismatchIssues.push(
+          paramMismatchIssue(name, unknownParams, paramNames, formals),
+        );
+      }
+    }
   };
   for (const table of tables) {
     for (const [spec, mod] of Object.entries(table)) {
@@ -413,6 +601,7 @@ function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): v
       if (def !== undefined) attachFnAbs(def, depSource, depPath, "default");
     }
   }
+  return mismatchIssues;
 }
 
 /**
@@ -425,7 +614,14 @@ function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): v
 // ---------------------------------------------------------------------------
 
 function sidecarDiagIssues(
-  diags: Array<{ code: string; message: string; file?: string }>,
+  diags: Array<{
+    code: string;
+    message: string;
+    file?: string;
+    /** Bug 374：指令文法诊断的位置（refine 侧带行/列） */
+    line?: number;
+    column?: number;
+  }>,
 ): CheckIssue[] {
   const seen = new Set<string>();
   const out: CheckIssue[] = [];
@@ -437,7 +633,14 @@ function sidecarDiagIssues(
       d.code === DIAG.contractSyntax || d.code === DIAG.directiveSyntax
         ? ("warning" as const)
         : ("error" as const);
-    out.push({ severity, code: d.code, message: d.message });
+    out.push({
+      severity,
+      code: d.code,
+      message: d.message,
+      // Bug 374：位置透传（nudo:contract-syntax 不再落在文件第 1 行第 1 列）
+      ...(d.line !== undefined ? { line: d.line } : {}),
+      ...(d.column !== undefined ? { column: d.column } : {}),
+    });
   }
   return out;
 }
@@ -456,6 +659,8 @@ function sidecarDiagIssues(
  * pAnd 成 Phi 供目标函数入口求值种子（withAssumePremises，不随调用链继承）。
  * display = 合法段原文（`d <= max`），供证明成功时的审计标注
  * （nudo:assume-relied——assume 是用户公理，依赖面必须上屏可见）。
+ * premises = 与 display 同序的前提对象（#367：审计归因按**对象身份**认
+ * 「本次证明消费过哪条引理」——代数核记账记的就是这些对象）。
  * 无 assume 行（或全部非法不折）→ undefined（零行为变化）。
  */
 function assumePremisesPhiOf(
@@ -463,7 +668,7 @@ function assumePremisesPhiOf(
   source: string,
   file: ReturnType<typeof parse>,
   issues: CheckIssue[],
-): { phi: Phi; display: string[] } | undefined {
+): { phi: Phi; display: string[]; premises: Pred[] } | undefined {
   const segs = extractAssumeSegs(source, name);
   if (segs.length === 0) return undefined;
   const meta = extractFn(source, name, file);
@@ -479,6 +684,11 @@ function assumePremisesPhiOf(
   const preds: Pred[] = [];
   const display: string[] = [];
   for (const seg of segs) {
+    // Bug 374：位置 = 出错指令行（不是函数声明行 / 文件首行）
+    const pos =
+      seg.line !== undefined
+        ? { line: seg.line, ...(seg.column !== undefined ? { column: seg.column } : {}) }
+        : {};
     if (seg.kind === "bad") {
       issues.push({
         severity: "error",
@@ -489,6 +699,7 @@ function assumePremisesPhiOf(
         suggestion:
           "cross-variable lemmas: @nudo:assume d <= max — constant bounds: sidecar number().le(10)",
         fn: name,
+        ...pos,
       });
       continue;
     }
@@ -502,6 +713,7 @@ function assumePremisesPhiOf(
         expected: surface || "(no params/locals)",
         suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
         fn: name,
+        ...pos,
       });
       continue;
     }
@@ -510,7 +722,7 @@ function assumePremisesPhiOf(
     display.push(`${seg.lhs} <= ${seg.rhs}`);
   }
   if (preds.length === 0) return undefined;
-  return { phi: pAndPred(...preds), display };
+  return { phi: pAndPred(...preds), display, premises: preds };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,8 +742,9 @@ function assumePremisesPhiOf(
  * display = 合法段规范形原文，供证明成功时的审计标注
  * （nudo:invariant-relied——与 assume 同为用户公理，依赖面必须上屏可见）。
  * 无 invariant 行（或全部非法不折）→ undefined（零行为变化）。
- * 注：generalize L0 memo 键不含 specs（与 assume 前提同款已知少精度，
- * 非 unsound——种子 extent 内算出的结果会被无种子上下文复用，方向是少证）。
+ * 注：generalize L0 键不含 specs（与 assume 前提同款）⇒ 种子非平凡时
+ * generalizeFromAst 绕过 L0（既不读也不写）：种子的折后界不得经缓存泄漏给
+ * 无种子上下文，无种子条目的复用也不得让种子求值跳过实施/账本回填。
  */
 function invariantSpecsOf(
   name: string,
@@ -552,6 +765,11 @@ function invariantSpecsOf(
   const specs: InvariantSpec[] = [];
   const display: string[] = [];
   for (const seg of segs) {
+    // Bug 374：位置 = 出错指令行（不是函数声明行 / 文件首行）
+    const pos =
+      seg.line !== undefined
+        ? { line: seg.line, ...(seg.column !== undefined ? { column: seg.column } : {}) }
+        : {};
     if (seg.kind === "bad") {
       issues.push({
         severity: "warning",
@@ -562,6 +780,7 @@ function invariantSpecsOf(
         suggestion:
           "loop-carried bounds: @nudo:invariant dp[*][*] >= 0 — scalar: @nudo:invariant last >= 1",
         fn: name,
+        ...pos,
       });
       continue;
     }
@@ -574,6 +793,7 @@ function invariantSpecsOf(
         expected: surface || "(no params/locals)",
         suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
         fn: name,
+        ...pos,
       });
       continue;
     }
@@ -582,6 +802,54 @@ function invariantSpecsOf(
   }
   if (specs.length === 0) return undefined;
   return { specs, display };
+}
+
+/**
+ * 赋值记录去重（Bug 363 收集窗口扩大后的副作用补偿）。
+ *
+ * 窗口含函数体求值 ⇒ 同一个赋值点会被**多次求值**（模块顶层在每次
+ * generalize 的模块求值里重跑；被调函数在每个调用点的求值里重跑）⇒ 同一处
+ * 赋值会在报告里出现多条同文诊断。
+ *
+ * 去重键 =（点位 + prev/next 值）：同点**同值**的重复求值折叠成一条；
+ * **不同值**（同一处赋值在不同调用点取到不同实参）保留 ⇒ 不丢真实漂移。
+ */
+function dedupeAssignRecords(records: AbsAssignRecord[]): AbsAssignRecord[] {
+  const seen = new Set<string>();
+  const out: AbsAssignRecord[] = [];
+  for (const r of records) {
+    const key = JSON.stringify([
+      r.name,
+      r.line ?? "",
+      r.column ?? "",
+      r.conditional ? "1" : "0",
+      assignValueKey(r.prev),
+      assignValueKey(r.next),
+    ]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
+/**
+ * 赋值记录的 prev/next 值键（Abs → formatAbs；裸宿主值 → 类型标记）。
+ *
+ * S1 语义约定：eval 通道的 prev/next 是**原始运行时值**（Abs 或裸宿主值）
+ * ⇒ 这里自己过 Abs 闸（口径同 exec/run.ts 的 isAbsVal：`shape` + `conf`）。
+ */
+function assignValueKey(v: unknown): string {
+  if (v === undefined) return "-";
+  if (v === null) return "null";
+  if (typeof v !== "object") return `host:${typeof v}:${String(v)}`;
+  const o = v as { shape?: { k?: string }; conf?: string };
+  if (!("shape" in o) || !("conf" in o)) return `host:${typeof v}`;
+  try {
+    return formatAbs(v as Abs);
+  } catch {
+    return `abs:${o.shape?.k ?? "?"}:${o.conf ?? "?"}`;
+  }
 }
 
 /** opaque-result 原始 hint：用调用点 / 指令证据钉住结果面 */
@@ -640,7 +908,10 @@ function checkSourceInner(
   const driftCandidates: DriftCandidate[] = [];
   // 返回后置：符号返回（body  widen）之外，eval 执行态调用点 result 也要对账
   // （循环累加等 body 面常被 widen 成 number，调用点 $arr 具体元组却能精确）
-  const returnContracts = new Map<string, { display: string; constraint: NudoConstraint }>();
+  const returnContracts = new Map<
+    string,
+    { display: string; constraint: NudoConstraint; source: ReturnContractSource }
+  >();
   /** 已对 return 后置报过违例的函数——调用点对账跳过，避免同文双计 */
   const returnViolated = new Set<string>();
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
@@ -667,11 +938,21 @@ function checkSourceInner(
     eiCache.set(key, eff);
     return eff;
   };
+  // Bug 363：赋值记录收集器的**作用域窗口**必须包住**函数体求值**。
+  // 旧窗口只包模块顶层求值，而函数体在 generalize（下面的函数循环里）就求过
+  // 一遍 ⇒ 函数体内的 $assignRecord 全部落空 ⇒ nudo:assign-mismatch 只覆盖
+  // 顶层（真实代码里赋值的主要发生地恰恰是函数体 ⇒ 假绿）。
+  // 窗口 = 函数循环（generalize 的函数体求值）+ 其后的顶层求值段。
+  // 窗口扩大的副作用（同一赋值点被多次求值）由 dedupeAssignRecords 折叠。
+  const records: AbsAssignRecord[] = [];
+  const prevAssign = setEvalAssignCollector((r) => records.push(r));
   for (const name of names) {
     // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
     const assumePhi = assumePremisesPhiOf(name, source, file, issues);
     // #176：@nudo:invariant 校验 + 循环界种子（同上零行为变化）
     const inv = invariantSpecsOf(name, source, file, issues);
+    // #367：引理消费记账——本函数的求值前清账（上一函数的消费不得串台）
+    resetAssumeConsumed();
     // 目标函数入口求值（generalize 内部 invoke / L2）动态域内喂独立槽
     // （assume → 引理 phi；invariant → 循环 join/宽化位消费的 specs）
     const runSeeded = <T>(body: () => T): T => {
@@ -699,6 +980,12 @@ function checkSourceInner(
           contractParam.set(p.param, constraintToEntryAbs(p.constraint, p.param));
         }
       }
+      // 机器面口径（Bug 1140）：与其它路径同款 `formatSigCached` ——
+      // display = **人类面**渲染（formatShape，与终端签名行逐字同源），
+      // detail = 稳定 term id 版。旧口径在这里用 `formatAbs`/`formatAbsMultiline`
+      // ⇒ JSON 里带 `#exact` 与引擎内部 term 文本 ⇒ 机器消费方拿到的文本与
+      // 用户看到的**不一致**（同一函数两个面）。
+      const skipFmt = formatSigCached(retAbs, name);
       signatures.push({
         name,
         params,
@@ -707,8 +994,8 @@ function checkSourceInner(
           return a ? formatShape(a) : "any";
         }),
         abs: retAbs,
-        display: formatAbs(retAbs),
-        detail: formatAbsMultiline(retAbs, name),
+        display: skipFmt.display,
+        detail: skipFmt.detail,
         conf: retAbs.conf,
         ...(isEntryFn ? { entry: true } : {}),
       });
@@ -725,12 +1012,30 @@ function checkSourceInner(
           fromFile: refineFrom,
         });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
-        returnContracts.set(name, { display, constraint: eff.returns.constraint });
+        // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
+        const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
+        returnContracts.set(name, {
+          display,
+          constraint: eff.returns.constraint,
+          source: contractSource,
+        });
         const retIssues = checkReturnConstraint(
           name,
           display,
           eff.returns.constraint,
           declared,
+          {
+            // #369 / #372：issue 构造处带函数声明位置
+            loc: findFnLoc(file, name),
+            source: contractSource,
+            // Bug 1094：返回点的路径前提 Φ（用户引理前提）——skip 分支同样
+            // 透传（函数级公理在 skip 面也成立；证明通道按「同项 ∧ 蕴含」
+            // 口径消费 ⇒ 不会凭空制造确定违约）。assumeDisplay 一并带上 ⇒
+            // Φ 被消费时归因（nudo:assume-relied）仍然可见（不得静默消费）。
+            phi: assumePhi?.phi,
+            phiPremises: assumePhi?.premises,
+            assumeDisplay: assumePhi?.display,
+          },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
@@ -773,7 +1078,7 @@ function checkSourceInner(
         const effects = collectEntryMayThrows(source, name, synthetic, file, phi, opts);
         const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
         const declared =
-          extractDeclaredThrows(source, name) ??
+          declaredThrowsForEntry(source, name) ??
           effectiveInterfaceCached(name)?.throws?.kinds;
         const remaining = filterGateThrows(effects, declared, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
@@ -832,7 +1137,7 @@ function checkSourceInner(
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
       const declared =
-        extractDeclaredThrows(source, name) ??
+        declaredThrowsForEntry(source, name) ??
         effectiveInterfaceCached(name)?.throws?.kinds;
       const remaining = filterGateThrows(effects, declared, ignoreThrows);
       const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
@@ -867,7 +1172,10 @@ function checkSourceInner(
     const paramTypes = g.typeParams.map((t) => {
       if (!t.value) return "any";
       if (t.value.shape.k === "unknown") return "unknown";
-      return formatShape(t.value);
+      // 契约面的字面量保形（Bug 348）：`lit(1)` 的字面量只活在 pred 里 ⇒
+      // 走 widen 路径永远看不见它（`x: number`）⇒ check 签名面与 dts 面
+      // （`x: 1`）与契约面（`x: lit(1)`）三面互相矛盾。
+      return formatEntryParamShape(t.value);
     });
     signatures.push({
       name,
@@ -903,7 +1211,12 @@ function checkSourceInner(
     );
     const budgetExplained =
       truncated.has(name) ||
-      g.symbolic?.conf === "opaque" ||
+      // Bug 389：`conf=opaque` 通常意味着「路径没覆盖」⇒ 已解释；但**因 env
+      // 门禁而 opaque**（源码声明了 `@nudo:env` 而那个 env 没解析出全局 ⇒
+      // 函数体 fail-closed）不是「已解释」——那正是「推断没成功」，唯一能提示
+      // 它的 `nudo:unknown-inference` 不能被吞（否则用户把 env 名写错的那一刻，
+      // 唯一的失败信号恰好消失）。
+      (g.symbolic?.conf === "opaque" && !g.envGated) ||
       (g.symbolic?.shape?.k === "sum" &&
         g.symbolic.shape.members.every((m) => m.shape.k === "unknown" || m.shape.k === "any"));
     const symbolicTrueUnknown =
@@ -919,7 +1232,13 @@ function checkSourceInner(
         message: `${name}: signature has true unknown (inference failed)`,
         actual: where,
         expected: "computable Abs (any = unconstrained, unknown = engine debt)",
-        suggestion: "add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable",
+        // Bug 1062（族 46）：本诊断此前把「`@nudo:replace` 的目标文本没命中」
+        // 说成「推断精度不够」⇒ 归因错误 ⇒ 用户只看到 unknown-inference。
+        // service 侧已加「点名目标文本」的显式诊断（`nudo:directive-syntax`），
+        // 这里补一句归因提示，把「指令没生效」这条可能性点出来。
+        suggestion:
+          "add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable; " +
+          "if you used @nudo:replace, check the target text matches the source",
         fn: name,
       });
     }
@@ -932,35 +1251,27 @@ function checkSourceInner(
       const eff = effectiveInterfaceCached(name);
       if (eff?.source === "handwritten") {
         // C4.1：契约面 = formals（默认参名 / rest 裸名 / 解构顶层绑定名）
-        const contractNames = contractParamNameSet(g.formals ?? []);
-        const formalDisplay = new Set(g.params);
-        const conflictNames = new Set(eff.conflict?.params ?? []);
-        const unknownParams = eff.params
-          .map((p) => p.param)
-          .filter(
-            (p) =>
-              p &&
-              !formalDisplay.has(p) &&
-              !contractNames.has(p) &&
-              !conflictNames.has(p),
-          );
+        // 形参名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）
+        // ——与跨模块桥接路径共用 unmatchedContractParams（Bug 1023 同口径）
+        const unknownParams = unmatchedContractParams(eff, g.params, g.formals ?? []);
         if (unknownParams.length > 0) {
-          const surface = [...contractNames]
-            .filter((n) => !n.startsWith("_p") && n !== "_")
-            .join(", ");
-          issues.push({
-            severity: "error",
-            code: DIAG.interfaceParamMismatch,
-            message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
-            actual: unknownParams.join(", "),
-            expected: surface || g.params.join(", ") || "(no params)",
-            suggestion: `rename the @nudo:contract / sidecar binding parameter to one of: ${
-              surface || g.params.join(", ") || "(function has no params)"
-            }`,
-            fn: name,
-          });
+          issues.push(
+            paramMismatchIssue(name, unknownParams, g.params, g.formals ?? []),
+          );
         }
       }
+      // Bug 374：位置 = 出错的 @nudo:contract 指令行（参数位取该参数的那条段；
+      // 返回位取 `return` 那条段）；找不到指令则省略位置。
+      const contractLocs = contractSegmentLocs(source, name);
+      const locOf = (param: string): { line?: number; column?: number } => {
+        const hit = contractLocs.find((c) => {
+          const head = c.segment.trim().split(/\s+/)[0];
+          return head === param;
+        });
+        return hit?.loc
+          ? { line: hit.loc.line, ...(hit.loc.column !== undefined ? { column: hit.loc.column } : {}) }
+          : {};
+      };
       if (eff?.conflict) {
         if (eff.conflict.params.length > 0) {
           issues.push({
@@ -969,6 +1280,7 @@ function checkSourceInner(
             message: `${name}: handwritten contract conjunction unsatisfiable (${eff.conflict.params.join(", ")})`,
             suggestion: "check whether the source @nudo:contract and the same-name sidecar binding have contradictory constant bounds",
             fn: name,
+            ...locOf(eff.conflict.params[0]!),
           });
         }
         if (eff.conflict.returns) {
@@ -979,8 +1291,36 @@ function checkSourceInner(
             suggestion:
               "check whether the source @nudo:contract return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
             fn: name,
+            ...locOf("return"),
           });
         }
+      }
+      // Bug 1141：合取**不可判定**（结构型组合：union / fn / 结构型∧标量…）
+      // ——不是「不可满足」（既有义务继续执法），但**另一侧**的义务确实没被
+      // 执法 ⇒ 显式报出（warning 级：能力边界不是用户代码矛盾 ⇒ 不该把门禁
+      // 判红；但绝不静默丢掉那一侧）。
+      const undecidable = eff?.undecidable;
+      if (undecidable !== undefined && undecidable.params.length > 0) {
+        issues.push({
+          severity: "warning",
+          code: DIAG.interfaceConflict,
+          message: `${name}: contract conjunction not computable (${undecidable.params.join(", ")}) — only one side is enforced`,
+          suggestion:
+            "structural contracts (shape / array / union / fn) cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
+          fn: name,
+          ...locOf(undecidable.params[0]!),
+        });
+      }
+      if (undecidable?.returns) {
+        issues.push({
+          severity: "warning",
+          code: DIAG.interfaceConflict,
+          message: `${name}: contract conjunction not computable on the return slot — only one side is enforced`,
+          suggestion:
+            "structural return constraints cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
+          fn: name,
+          ...locOf("return"),
+        });
       }
       // 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）；
       // 返回位 conflict（合取不可满足）时跳过——矛盾契约不该误诊为函数体违例
@@ -996,14 +1336,42 @@ function checkSourceInner(
           fromFile: refineFrom,
         });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
-        returnContracts.set(name, { display, constraint: eff.returns.constraint });
+        // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
+        const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
+        returnContracts.set(name, {
+          display,
+          constraint: eff.returns.constraint,
+          source: contractSource,
+        });
+        // #367：本次证明**实际消费过**的引理（记账集 ∩ 本函数声明的合法前提）
+        const consumedAssume = assumePhi
+          ? new Set(
+              assumePhi.display.filter((_, i) =>
+                assumeConsumed().includes(assumePhi.premises[i]!),
+              ),
+            )
+          : undefined;
         const retIssues = checkReturnConstraint(
           name,
           display,
           eff.returns.constraint,
           g.symbolic,
-          assumePhi?.display,
-          inv?.display,
+          {
+            // #369 / #372：issue 构造处带函数声明位置
+            loc: findFnLoc(file, name),
+            source: contractSource,
+            assumeDisplay: assumePhi?.display,
+            invariantDisplay: inv?.display,
+            consumedAssume,
+            // Bug 1094：返回点的**路径前提 Φ** = 用户引理前提
+            //（`@nudo:assume` 的前提 Φ）——证明通道的 Φ 侧。
+            // 项身份：前提项用**真实形参名**（`termVar(name)`），泛化后的返回
+            // 项在形参**有契约**时同样锚在真实名上（`constraintToEntryAbs`）
+            // ⇒ 同项判定能对上；无契约时返回项锚在 α 名（A1…）⇒ 对不上 ⇒
+            // Φ 侧不生效（保守少证，不假红）。
+            phi: assumePhi?.phi,
+            phiPremises: assumePhi?.premises,
+          },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
@@ -1021,7 +1389,12 @@ function checkSourceInner(
 
     // generalize 的 symbolic 已同源求过 body——opaque 判定直接用其 conf
     // （fail-closed：不再重复 analyzeFn；求值失败面由 B 回落观测承担）
-    if (g.symbolic.conf === "opaque" && !truncated.has(name)) {
+    //
+    // Bug 389：**因 env 门禁而 opaque** 不报这条 info——门禁的含义是「那个 env
+    // 没解析出来，函数体没跑」⇒ 正确信号是 `nudo:unknown-inference`（warning，
+    // 「推断失败了」），不是「conf=opaque，加个 @nudo:case 或调用点」（把用户
+    // 引向错误方向）。
+    if (g.symbolic.conf === "opaque" && !truncated.has(name) && !g.envGated) {
       issues.push({
         severity: "info",
         code: DIAG.opaqueResult,
@@ -1128,17 +1501,26 @@ function checkSourceInner(
   // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）。
   // evaluator 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
   // EvalCallRecord）；失败 fail-closed。
-  const records: AbsAssignRecord[] = [];
+  // Bug 363：赋值记录收集器已在函数循环**之前**安装（窗口含函数体求值）——
+  // 这里不再二次安装，只保留调用记录收集器（drift 今日域证据口径不变）。
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
   // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
   const bCalls: EvalCallRecord[] = [];
-  const prevAssign = setEvalAssignCollector((r) => records.push(r));
   const prevCall = setEvalCallCollector((r) => bCalls.push(r));
   let evalBindings: Map<string, unknown> | undefined;
   const evalAnalyze = evalAnalyzeOpts(opts);
+  /** 模块**装载期必然抛**的句法证据（A#1）；只在 `module-throw` 回落时勘测 */
+  let moduleThrow: DefiniteModuleThrow | undefined;
   try {
-    const evalRun = tryRunTranspiled(source, evalAnalyze);
+    const evalAttempt = tryRunTranspiledDetailed(source, evalAnalyze);
+    const evalRun = evalAttempt.run;
+    // 回落原因可观测（Bug 380 的 detailed 面）：`module-throw` 是**程序自己
+    // 的抛**（NudoThrow），导出全丢 ⇒ 下面按**句法证据**判「装载必抛」并
+    // fail-closed（见 `definiteModuleThrowOf`）。
+    if (evalRun === undefined && evalAttempt.fallback?.reason === "module-throw") {
+      moduleThrow = definiteModuleThrowOf(file);
+    }
     evalBindings = evalRun ? bindingsOf(evalRun) : undefined;
     if (evalBindings) {
       for (const [k, v] of evalBindings) {
@@ -1164,6 +1546,41 @@ function checkSourceInner(
   // fail-closed：B 绑定表缺失（eval-incapable 文件）→ 无绑定表；
   // 「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致
   void evalBindings;
+
+  // A#1（module-throw fail-closed）：模块装载期**必然**抛 ⇒ 引擎拿不到任何
+  // 导出（L2 无证据、签名退化成 unknown）⇒ 旧口径零诊断 + exit 0 = **假绿**
+  // （一个引擎完全没能分析的模块被判绿）。
+  //
+  // 只认**句法证据**（顶层无条件 `throw`，见 `definiteModuleThrowOf`）：引擎
+  // 抽象域上的「必抛」混着宿主 API 近似的产物——真实包实测（typescript /
+  // react-dom / vitest 的 6 个文件）顶层没有 `throw` 语句却回落 `module-throw`
+  // （react-dom 的两个 cjs bundle 原生 `require()` 实测成功）⇒ 拿引擎结论做
+  // 门禁 = **假红**。条件抛 / try 内抛 / 引擎近似抛一律不进闸门（现状不变）；
+  // `unsupported:*` / `internal` 两条回落通道也不受影响（各自的 fail-closed
+  // 归因已存在）。
+  //
+  // 抑制口径与其它 L2 诊断同源：`--entry-throws off` 关闸、`--entry-throws
+  // warning` 降档、`--ignore-throws <Kind>` 按抛出类型名放行（只对句法上判得
+  // 出类型的 `throw new X(…)` 生效；判不出类型时不猜）。
+  if (moduleThrow !== undefined && entryThrowsMode !== "off") {
+    const kind = moduleThrow.kind;
+    if (kind === undefined || !isThrowsIgnored(kind, ignoreThrows)) {
+      const thrown = kind !== undefined ? ` ${kind}` : "";
+      issues.push({
+        severity: entryThrowsMode === "warning" ? "warning" : "error",
+        code: DIAG.moduleThrow,
+        message: `module initializer always throws${thrown} — the module cannot be imported, so every export is unavailable (module not analyzed)`,
+        actual: `throw at line ${moduleThrow.line}`,
+        expected: "module initializer that can complete, or a conditional throw",
+        suggestion:
+          kind !== undefined
+            ? `guard the throw if the module should be importable; if throwing at load is intended, ignore it with --ignore-throws ${kind} (or --entry-throws off)`
+            : "guard the throw if the module should be importable; --entry-throws off disables this gate",
+        line: moduleThrow.line,
+        column: moduleThrow.column,
+      });
+    }
+  }
 
   const callIssues = canSkipLiteralCallScan(source, file)
     ? []
@@ -1197,6 +1614,12 @@ function checkSourceInner(
         rc.display,
         rc.constraint,
         rec.result,
+        {
+          // #369 / #372：issue 构造处带函数声明位置（被违约函数的声明处）
+          loc: findFnLoc(file, rec.fnName),
+          // #378：约束来源随 returnContracts 走（源码指令 vs 侧车 fn() 返回槽）
+          source: rc.source,
+        },
       );
       if (retIssues.some((i) => i.severity === "error")) returnViolated.add(rec.fnName);
       issues.push(...retIssues);
@@ -1206,10 +1629,21 @@ function checkSourceInner(
   // T10a：固化生成段 drift——generated 快照 ≠ 今日重算 → warning
   // （在执行态调用记录就绪后跑：今日域证据与 emit 的 callsite case 同源）
   if (driftCandidates.length > 0) {
+    // Bug 366：`--from` 提供的**跨文件**调用点证据进入同一条 drift 判定通道。
+    // 此前「今日域」证据只来自 checkSource 评估**被检查文件自身**时产生的
+    // AbsCallRecord ⇒ 调用点在别的文件里时，生成段永远判不出陈旧（假绿）。
+    //
+    // 位置口径：跨文件调用点在本文件内**没有位置** ⇒ 去掉其 callLoc（不把
+    // 别的文件的行号挂到本文件上）；本文件内的证据在前 ⇒ 有本地调用点时
+    // 位置仍指向本文件。
+    const driftRecords: AbsCallRecord[] =
+      opts.from && opts.from.length > 0
+        ? [...callRecords, ...opts.from.map((r) => ({ fnName: r.fnName, args: r.args, result: r.result }))]
+        : callRecords;
     issues.push(
       // 返回位今日重算经 B（fail-closed：B 失败/类方法 → undefined = 无证据，
       // 宁缺勿滥不判 drift）——闭包缓存一次 run 避免逐调用点重编译
-      ...interfaceDriftIssues(driftCandidates, callRecords, (() => {
+      ...interfaceDriftIssues(driftCandidates, driftRecords, (() => {
         let driftRun: Record<string, unknown> | undefined;
         let driftInit = false;
         return (fnName, args) => {
@@ -1243,7 +1677,18 @@ function checkSourceInner(
   );
 
   // 结构可赋值：赋值语句 prev ⊇ next（Abs leq）
-  issues.push(...structuralAssignIssues(records));
+  // S1：判定层异常降级为一条诊断（nudo:internal）而非腰斩整轮门禁
+  try {
+    issues.push(...structuralAssignIssues(dedupeAssignRecords(records)));
+  } catch (err) {
+    issues.push({
+      severity: "warning",
+      code: DIAG.internal,
+      message: `assign channel check failed: ${(err as Error).message}`,
+      suggestion:
+        "this is an internal error; please report it together with the checked source file",
+    });
+  }
 
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warning").length;
@@ -1269,83 +1714,10 @@ function checkSourceInner(
 // ---------------------------------------------------------------------------
 // L1 返回约束对账（声明 returns vs 推断返回 Abs）
 // 统一证明通道：assertImplies（Pred 蕴含 + 域隶属 + nullish 显式化）
+// 实现见 check-return.ts（族 07 片 S4 抽出：位置面 #369/#372 · 文案面 #378 ·
+// 审计归因面 #367）——本文件只负责喂上下文（函数声明位置 / 约束来源 / 引理
+// 消费集），判定与文案在抽出的模块里。
 // ---------------------------------------------------------------------------
-
-function checkReturnConstraint(
-  fnName: string,
-  cName: string,
-  constraint: NudoConstraint,
-  ret: Abs,
-  assumeDisplay?: string[],
-  invariantDisplay?: string[],
-): CheckIssue[] {
-  const proof = assertImplies(ret, constraint);
-  if (proof.status === "proved") {
-    // #152/#176 审计分层：assume / invariant 都是用户公理（引擎不验证其
-    // 真实性）——依赖了公理的证明必须上屏可见。粒度 = 函数级（本函数声明了
-    // 该指令且返回契约证得；不求值依赖集）。skip 路径/调用点对账不传 → 不标。
-    const relied: CheckIssue[] = [];
-    if (assumeDisplay && assumeDisplay.length > 0) {
-      relied.push({
-        severity: "info",
-        code: DIAG.assumeRelied,
-        message: `${fnName}: return contract proved via @nudo:assume ${assumeDisplay.join("; ")}`,
-        actual: `proof relies on user lemma${assumeDisplay.length > 1 ? "s" : ""}`,
-        expected: "engine verifies the obligation, not the lemma itself",
-        suggestion:
-          "@nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
-        fn: fnName,
-      });
-    }
-    if (invariantDisplay && invariantDisplay.length > 0) {
-      relied.push({
-        severity: "info",
-        code: DIAG.invariantRelied,
-        message: `${fnName}: return contract proved via @nudo:invariant ${invariantDisplay.join("; ")}`,
-        actual: `proof relies on user invariant${invariantDisplay.length > 1 ? "s" : ""}`,
-        expected: "engine verifies the obligation, not the loop invariant itself",
-        suggestion:
-          "@nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
-        fn: fnName,
-      });
-    }
-    return relied;
-  }
-  const push = (
-    severity: "error" | "warning",
-    actual: string,
-    expected: string,
-    suggestion: string,
-  ): CheckIssue[] => [
-    {
-      severity,
-      code: severity === "error" ? DIAG.constraintViolated : DIAG.unprovenReturn,
-      message: `${fnName}: return value ⊭ @nudo:contract return ${cName}`,
-      actual,
-      expected,
-      suggestion,
-      fn: fnName,
-    },
-  ];
-  if (proof.status === "disproved") {
-    return push(
-      "error",
-      formatAbs(ret),
-      proof.reason,
-      proof.reason.includes("nullish")
-        ? `use nullable(${formatConstraint(constraint)}) or union(..., lit(null)) to allow nullish returns`
-        : `return a value satisfying ${formatConstraint(constraint)}`,
-    );
-  }
-  // unprovable：any / unknown=推断失败 / opaque —— 不得伪装成功（warning 可见）
-  // 也不得计 error（gold FP 门禁：opaque/截断误报是已知禁区）
-  return push(
-    "warning",
-    formatAbs(ret),
-    formatConstraint(constraint),
-    `${proof.reason}; add a precondition, narrow the return expression, or relax the return contract`,
-  );
-}
 
 // ---------------------------------------------------------------------------
 // T10a：nudo:interface-drift（固化生成段 ≠ 今日重算，warning）

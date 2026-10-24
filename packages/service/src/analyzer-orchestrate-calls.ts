@@ -1,6 +1,13 @@
 /**
  * env 名收集与调用点发现（collectEnvNames / collectCallRecords / expandTestCallbacks）。
- * 自 analyzer-orchestrate.ts 机械拆出；语义未改。
+ * 自 analyzer-orchestrate.ts 机械拆出。
+ *
+ * 不变量 / Invariants:
+ * - 采集到的记录带**调用现场文件**（`callSiteFile`）——合成 `call@` 见证名
+ *   据此做来源限定（两个现场文件同一行调用同一函数不撞名；名字里的行号
+ *   落在具名文件里可核对）。本文件求值得到的本地记录没有该字段。
+ * - 记录只带行号、不带调用点文件 ⇒ 行号超出被求值文件行数 ⇒ 该调用发生
+ *   在**依赖模块**里 ⇒ 不标现场文件（不把别的文件的行说成现场文件的行）。
  */
 import { dirname } from "node:path";
 import {
@@ -23,6 +30,16 @@ import {
   callRecordFromAbsCall,
 } from "./analyzer-abs-eval.ts";
 import type { CallRecord } from "./evaluator/call-record.ts";
+
+/**
+ * 带「调用现场文件」的调用点记录。
+ *
+ * 外部（`--from` 使用现场）采集的记录带此字段；本文件求值得到的本地
+ * 记录没有。合成 `call@` 见证名用它做**来源限定**——否则两个现场文件
+ * 在同一行调用同一函数会撞名（固化后同一函数里出现两个 `call@L2`），
+ * 且名字里的行号指向的是**现场文件**的行（在被分析文件里无意义）。
+ */
+export type CallSiteRecord = CallRecord & { callSiteFile?: string };
 
 export function collectEnvNames(filePath: string, source: string, includeProject: boolean): string[] {
   const ast = parse(source);
@@ -47,7 +64,7 @@ export function collectEnvNames(filePath: string, source: string, includeProject
  * 只做求值与记录，不产出诊断；求值异常不抛出（使用现场文件可能
  * 依赖未 mock 的全局，收集不到就收集不到，不能拖垮主分析）。
  */
-export function collectCallRecords(filePath: string, source: string): CallRecord[] {
+export function collectCallRecords(filePath: string, source: string): CallSiteRecord[] {
   // 统一 B（exec 模式）：顶层调用 + 测试回调展开（it/describe/test 的
   // 回调体才是真实调用点——以 unknown 实参 $call 展开，队列自然处理
   // describe 嵌套）。Abs 通道仅兜底（B 失败/历史语法）。
@@ -63,7 +80,16 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
       });
       if (run?.calls?.length) {
         const importLocals = buildAbsImportLocalMap(source, filePath);
-        return expandTestCallbacks(run.calls).map((r) => callRecordFromAbsCall(r, importLocals));
+        // 行数上界：记录只带行号、不带调用点文件 ⇒ 依赖模块里的调用会被
+        // 误标成「现场文件」。行号超出被求值文件的行数 ⇒ 该调用不在本文件
+        // （发生在依赖里）⇒ 不标现场文件（名字不指向别的文件的行）。
+        const lineCount = source.split("\n").length;
+        // 标上「调用现场文件」——见证名据此做来源限定（见 CallSiteRecord）
+        return expandTestCallbacks(run.calls).map((r): CallSiteRecord => {
+          const rec = callRecordFromAbsCall(r, importLocals);
+          if (rec.callLoc !== undefined && rec.callLoc.line > lineCount) return rec;
+          return { ...rec, callSiteFile: filePath };
+        });
       }
     } catch {
       /* B 失败 fail-closed */

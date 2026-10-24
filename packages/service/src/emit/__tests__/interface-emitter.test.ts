@@ -161,8 +161,12 @@ describe("emitInterface", () => {
     });
     expect(r.written).toEqual(["scale"]);
     const sidecar = readFileSync(join(dir, "mixed.nudo.js"), "utf-8");
+    // 返回位取**见证值**（调用现场语境下观测到的结果）——两条记录的观测
+    // 结果都是 84 ⇒ 返回位是 lit(84)（旧口径用「目标语境重求值」覆盖观测
+    // 值：x="a" 的重求值是 NaN ⇒ 旧期望是 number()）。见证值 = 观测值是
+    // 族 14 分片 H 的不变量（报告出的调用点真值不得与实际调用结果矛盾）。
     expect(sidecar).toContain(
-      "export const scale = fn({ x: union(lit(42), lit(\"a\")) }, number());",
+      "export const scale = fn({ x: union(lit(42), lit(\"a\")) }, lit(84));",
     );
   });
 

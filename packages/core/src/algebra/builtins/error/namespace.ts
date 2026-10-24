@@ -46,10 +46,16 @@ import { isErrorCtorName } from "./error-family.ts";
 import { evalTypedArrayStatic } from "./binary.ts";
 import { makeIntlFormatAbs } from "./intl.ts";
 
+/**
+ * 命名空间静态分派。Bug 311：thisVal = 静态方法值的 this 绑定（成员读出的
+ * 静态方法被单独调用时的接收者，如 `Promise.resolve.call(null, 1)`）；
+ * 缺席 = 直接命名空间调用（this ≡ 命名空间构造器，合法）。
+ */
 export function evalNamespaceCall(
   ns: string,
   method: string,
   args: Abs[],
+  thisVal?: Abs,
 ): Abs | undefined {
   switch (ns) {
     case "Math":
@@ -67,7 +73,9 @@ export function evalNamespaceCall(
     case "Date":
       return evalDateStatic(method, args);
     case "Promise":
-      return evalPromiseStatic(method, args);
+      // Bug 311：Promise 静态以 this 为接收者（PromiseResolve 要求 this 是
+      // 构造器，否则 TypeError）
+      return evalPromiseStatic(method, args, thisVal);
     case "BigInt":
       return evalBigIntStatic(method, args);
     case "Reflect":

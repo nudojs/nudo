@@ -397,6 +397,140 @@ export function collectHostGlobalFnEntryNames(): string[] {
 }
 
 /**
+ * Bug 288：`structuredClone` 的实参**可克隆性**分档。
+ *
+ * `structuredClone` 是宿主全局里唯一走**结构化克隆算法**（而非 ToString /
+ * ToNumber 强转）的纯函数 ⇒「抽象实参 ⇒ 保守 unknown + may TypeError
+ * （Symbol coercion）」那条通用兜底对它**不成立**（那条推理只对「对实参
+ * 做 ToString / ToNumber」的宿主函数成立：parseInt / Number /
+ * decodeURIComponent / btoa …）：
+ * - **可克隆形态**（普通对象 / 数组 / Date / Map / Set / RegExp /
+ *   ArrayBuffer / TypedArray / 原始值）⇒ 原生**不抛** ⇒ 记抛 = **假红**
+ *   （L1/L2 门禁红，而 native 不抛）；
+ * - **不可克隆形态**（函数 / Symbol / WeakMap / WeakSet / WeakRef /
+ *   Promise / generator）⇒ 原生抛 **DOMException(DataCloneError)** ⇒
+ *   记 `TypeError` = **抛错类型错**（用户写不出 `@nudo:throws
+ *   DataCloneError`，契约面无法申报）。
+ *
+ * 分档只看**实参形态**（禁反模式：Abs 直接进真 JS 函数），不看具体值。
+ */
+type Cloneability = "cloneable" | "not-cloneable" | "unknown";
+
+/** 不可克隆的品牌（宿主内建：Weak 家族 / Promise / Proxy） */
+const NON_CLONEABLE_BRANDS: ReadonlySet<string> = new Set([
+  "WeakMap",
+  "WeakSet",
+  "WeakRef",
+  "Promise",
+  "Proxy",
+]);
+
+/** 可克隆性递归深度阀（自引用结构 ⇒ 判 unknown，不无限递归） */
+const CLONEABILITY_MAX_DEPTH = 8;
+
+/**
+ * 合档（**必然存在**的槽位 / 元素）：不可克隆 > 未知 > 可克隆。
+ * 用于 obj 的自有槽、tuple 的定长元素、brand 的实例槽 —— 这些位置在运行时
+ * 必然存在 ⇒ 该位不可克隆 ⇒ 整体**确定**不可克隆。
+ */
+function mergeCloneability(a: Cloneability, b: Cloneability): Cloneability {
+  if (a === "not-cloneable" || b === "not-cloneable") return "not-cloneable";
+  if (a === "unknown" || b === "unknown") return "unknown";
+  return "cloneable";
+}
+
+/**
+ * 合档（**可能不存在**的位）：不可克隆降级为「未知」。
+ * 用于 sum 的臂、arr 的元素域、obj 的索引槽 —— 这些位在运行时可能不出现
+ * （空数组 / 未命中的分支 / 无该键）⇒ 该位不可克隆只是「**可能**抛」。
+ */
+function mergeMaybeCloneability(a: Cloneability, b: Cloneability): Cloneability {
+  if (a === "not-cloneable" || b === "not-cloneable") return "unknown";
+  if (a === "unknown" || b === "unknown") return "unknown";
+  return "cloneable";
+}
+
+/**
+ * Abs 实参 ⇒ 结构化克隆可克隆性。
+ * - prim（非 symbol）⇒ 可克隆（原始值皆可克隆）
+ * - symbol prim / fn / eff（promise·generator）⇒ **不可克隆**（宿主定抛
+ *   DataCloneError）
+ * - brand ⇒ Weak 家族 / Promise / Proxy 不可克隆；其余（Date / Map / Set /
+ *   RegExp / ArrayBuffer / TypedArray / Error 家族 / 用户类）按实例槽分档
+ *   （用户类的函数属性不可克隆 ⇒ 记 DataCloneError）
+ * - obj / arr / tuple ⇒ 按槽与元素分档（私有字段槽 / symbol 键槽不参与
+ *   结构化克隆 ⇒ 不参与分档）
+ * - any / unknown ⇒ **未知**（实参本身可能是函数）
+ */
+function cloneabilityOf(a: Abs, depth = 0): Cloneability {
+  if (depth > CLONEABILITY_MAX_DEPTH) return "unknown";
+  const s = a.shape;
+  switch (s.k) {
+    case "never":
+      return "cloneable";
+    case "prim":
+      return s.type === "symbol" ? "not-cloneable" : "cloneable";
+    case "fn":
+      return "not-cloneable";
+    case "eff":
+      return "not-cloneable";
+    case "any":
+    case "unknown":
+      return "unknown";
+    case "arr":
+      // 数组可能为空 ⇒ 元素域不可克隆只是「可能」抛
+      return mergeMaybeCloneability(
+        "cloneable",
+        cloneabilityOf(s.element, depth + 1),
+      );
+    case "tuple": {
+      let v: Cloneability = "cloneable";
+      for (const e of s.elements) {
+        v = mergeCloneability(v, cloneabilityOf(e, depth + 1));
+      }
+      if (s.rest) {
+        v = mergeMaybeCloneability(v, cloneabilityOf(s.rest, depth + 1));
+      }
+      return v;
+    }
+    case "obj": {
+      let v: Cloneability = "cloneable";
+      for (const slot of Object.values(s.slots ?? {})) {
+        // 引擎内部槽（私有字段）/ symbol 键槽不是克隆面 ⇒ 不参与分档
+        if (slot.internal || slot.symbolKey) continue;
+        v = mergeCloneability(v, cloneabilityOf(slot.value, depth + 1));
+      }
+      if (s.index) {
+        // 索引槽可能不存在 ⇒ 只算「可能」
+        v = mergeMaybeCloneability(v, cloneabilityOf(s.index.value, depth + 1));
+      }
+      return v;
+    }
+    case "brand": {
+      if (NON_CLONEABLE_BRANDS.has(s.name)) return "not-cloneable";
+      return cloneabilityOf(s.shape, depth + 1);
+    }
+    case "sum": {
+      // 运行时只命中一个臂 ⇒ 臂不可克隆只是「可能」抛
+      let v: Cloneability = "cloneable";
+      for (const m of s.members) {
+        v = mergeMaybeCloneability(v, cloneabilityOf(m, depth + 1));
+      }
+      return v;
+    }
+    default:
+      // 新形态兜底：判未知（可能不可克隆）⇒ 记 DataCloneError
+      return "unknown";
+  }
+}
+
+/** 宿主 structuredClone 身份判定（别名 `const f = structuredClone` 也命中） */
+function isStructuredCloneHost(fn: unknown): boolean {
+  if (typeof fn !== "function") return false;
+  return fn === (globalThis as Record<string, unknown>)["structuredClone"];
+}
+
+/**
  * Bug 20：宿主全局的字面量实参守卫执行——
  * - 全部实参均为 prim 字面量（含 null/undefined/bigint）→ 转真值执行，
  *   宿主异常（URIError/DOMException/…）折 NudoThrow(throwPayloadOf(e))
@@ -405,6 +539,11 @@ export function collectHostGlobalFnEntryNames(): string[] {
  *   保守 unknown + may TypeError（实参可能是抛异常形态——symbol 载体的
  *   ToString 定抛；与 parseInt/Number 的抽象臂同口径）
  * GLOBAL_FNS 的既有折算（evalGlobalFn）不受影响。
+ *
+ * Bug 288：`structuredClone` 走结构化克隆算法（**不对实参做 ToString**）⇒
+ * 上面那条「symbol 载体 ⇒ may TypeError」的推理对它不成立 ⇒ 单独分档：
+ * 可克隆形态**不记抛**（native 也不抛 ⇒ 原口径是假红）；不可克隆形态记
+ * **DataCloneError**（宿主 DOMException 的 name，**不是 TypeError**）。
  */
 function callHostGlobalLiteralOnly(
   name: string,
@@ -412,8 +551,30 @@ function callHostGlobalLiteralOnly(
   args: Abs[],
 ): Abs {
   const jsArgs: unknown[] = [];
+  // Bug 288：structuredClone 身份命中 ⇒ 实参按「可克隆性」分档
+  const structured = isStructuredCloneHost(fn);
+  let cloneVerdict: Cloneability = "cloneable";
+  let abstractArg = false;
   for (const a of args) {
     if (a && typeof a === "object" && "shape" in (a as object)) {
+      if (structured) {
+        // 字面量原始值（string/number/boolean/null/undefined/bigint）⇒ 可克隆
+        // ⇒ 照常真执行（宿主返回精确值）
+        const lv = litValue(a as Abs);
+        if (lv.ok) {
+          jsArgs.push(lv.value);
+          continue;
+        }
+        // 抽象实参：Abs 不可喂宿主 ⇒ 保守 unknown；throws 面按可克隆性分档
+        abstractArg = true;
+        const v = cloneabilityOf(a as Abs);
+        cloneVerdict = mergeCloneability(cloneVerdict, v);
+        if (v === "not-cloneable") {
+          // 宿主确定抛 DOMException(DataCloneError)——**不是 TypeError**
+          throw new NudoThrow(errorTypeAbs("DataCloneError"));
+        }
+        continue;
+      }
       // symbol prim（Symbol() 产物，无 lit 项）：一切 ToString/ToNumber 面
       // 定抛（node 实测 encodeURIComponent/decodeURIComponent/btoa/
       // escape(Symbol()) → TypeError）→ 硬抛，不落保守 may
@@ -434,6 +595,17 @@ function callHostGlobalLiteralOnly(
     } else {
       jsArgs.push(a); // 裸 JS 值（B run 模块函数实参）——真值直传
     }
+  }
+  if (structured && abstractArg) {
+    // 可克隆形态 ⇒ **不记抛**（native 也不抛）；可克隆性未知 ⇒ 记
+    // DataCloneError（实参本身可能是函数等不可克隆形态）
+    if (cloneVerdict === "unknown") {
+      recordMayThrow({
+        kind: "DataCloneError",
+        cause: `${name}(...) host call may throw DataCloneError (argument may not be cloneable)`,
+      });
+    }
+    return unknown;
   }
   try {
     return asAbsVal(fn(...jsArgs));

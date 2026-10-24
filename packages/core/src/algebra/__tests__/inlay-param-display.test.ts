@@ -171,7 +171,8 @@ export const f = fn({ ...base }, string());
     const p = inlays.find((i) => i.kind === "parameter");
     expect(p).toBeDefined();
     // 侧车文本缺席 → 不展示残缺折叠形；指令名单独也不足以代表合取
-    expect(p!.label).not.toContain("∧");
+    // （pred 全展：prim 的类型义务 + 数值界合取 ⇒ 标签含 ∧）
+    expect(p!.label).toContain('where typeof x = "number" ∧ x > 0');
     expect(p!.label).not.toBe("  where positive");
     expect(p!.tooltip).toBeUndefined();
   });

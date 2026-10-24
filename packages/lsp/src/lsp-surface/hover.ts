@@ -26,8 +26,11 @@ import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   collectAbsBindingsFromGraph,
   mockDirectivesToAbsSeeds,
+  type AnalysisResult,
   type LoadModule,
 } from "@nudojs/service";
+import { formatThrowsAbs } from "@nudojs/core/internal";
+import type { RunTranspiledOptions } from "@nudojs/core/exec";
 import { flowFactsAt } from "./facts.ts";
 import { narrowByDiscriminant } from "./narrowing.ts";
 import {
@@ -61,6 +64,12 @@ export type HoverInfo = {
   signature?: string;
   /** CodeLens `● interface` 同源档位（A7）；仅本地 named export */
   interfaceSource?: InterfaceSource;
+  /**
+   * interface 档当前是否**激活**（观察选择器状态；724）。
+   * 与 CodeLens 的 `lens.active` 同源：该函数正观察某个 case ⇒
+   * 契约档转 `○`（`false`）；否则契约档 `●`（`true`）。
+   */
+  interfaceActive?: boolean;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
   interfaceDisplay?: string;
   /**
@@ -73,7 +82,60 @@ export type HoverInfo = {
 };
 
 /** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
-export type HoverInterfaceOpts = InterfaceTierOpts;
+export type HoverInterfaceOpts = InterfaceTierOpts & {
+  /**
+   * B run 注入包（`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局）
+   * —— 透传给 hover 的三处 `generalizeFromAst`（Bug 786）。
+   *
+   * **缺省 = 行内指令全部缺席** ⇒ 被 mock 的依赖变成未绑定名、被 replace
+   * 的变量取其字面量原值 ⇒ 推导链塌缩成 `unknown`（Nudo 词汇里 = 「推断
+   * 失败」）⇒ IDE 显示 `unknown` 而 `nudo check` 显示 `number`（跨产品面
+   * 自相矛盾）。装配器在 LSP 侧（`agent-tools.ts` 的 `buildLspInjection`，
+   * 与 CLI 的 `buildCheckInjection` 同口径）——**core 不新增导出**。
+   */
+  inject?: RunTranspiledOptions;
+};
+
+/**
+ * 见证面 throws 证据 → 展示名（911：与 `nudo check` 签名行同口径）。
+ *
+ * check 面的签名尾缀 `throws X` 来自入口求值的 hard throw ∪ soft
+ * may-throw 效果（core `formatThrowsAbs`）；IDE 侧同一份证据在 service
+ * 的 `CaseResult.throwsAbs`（未抛 = never）⇒ 展示名同源。
+ *
+ * - **函数级承载位优先**（族 54 · item 2）：`fn.entryThrowsAbs` 装的就是
+ *   check 签名行口径的**函数级** throws 域（入口求值的 hard throw ∪ soft
+ *   may-throw）⇒ 读它即与 check 同源。
+ * - 无该承载位时回落：`entry@` 见证优先（check 的入口求值口径）；再回落该函数
+ *   全部见证的并集（指令 case / 调用点见证里的显式 throw）。
+ * - 无证据 ⇒ undefined（**不写 `throws never`**）。
+ *
+ * ⚠ `cases[].throwsAbs` 是「**该条见证自己**观测到的抛」，**不是**函数级域 ——
+ * 它**不得**被当作函数级 throws 域的替身（族 54 的并域做法曾把不抛的调用点
+ * 标成「可能抛」⇒ 草稿面丢返回义务 ⇒ 契约产物变弱）。
+ */
+function throwsDisplayOf(
+  result: AnalysisResult | undefined,
+  fnName: string,
+): string | undefined {
+  if (!result) return undefined;
+  const fn = result.functions.find((f) => f.name === fnName);
+  if (!fn) return undefined;
+  const names = new Set<string>();
+  const add = (t: Abs | undefined): void => {
+    const n = t === undefined ? undefined : formatThrowsAbs(t);
+    if (n !== undefined && n !== "") names.add(n);
+  };
+  if (fn.entryThrowsAbs !== undefined) {
+    add(fn.entryThrowsAbs);
+  } else {
+    const entry = fn.cases.find((c) => c.name.startsWith("entry@"));
+    const pool = entry ? [entry] : fn.cases;
+    for (const c of pool) add(c.throwsAbs);
+  }
+  if (names.size === 0) return undefined;
+  return [...names].sort().join(" | ");
+}
 
 /**
  * LSP hover：优先无损 Abs（类型即计算本体）。
@@ -120,6 +182,18 @@ export function getHoverAtPosition(
       ? interfaceTierOf(source, fnName, filePath, opts ?? {})
       : undefined;
 
+  // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数当前
+  // 正观察某个 case ⇒ 契约档 ○（否则 ●）。与 computeInterfaceLenses 的
+  // `contractActive = !(activeCases?.has(fn.name) ?? false)` 同一公式。
+  const interfaceActive = fnName !== undefined ? !(activeCases?.has(fnName) ?? false) : true;
+
+  // throws 证据（911）：只在**导出**函数上取（tier 在场 ⇔ 本地 named
+  // export，与 check 的 isEntry 同口径——CLI 的 L2 throws 只对 entry 生效）。
+  const throwsDisplay =
+    tier !== undefined && fnName !== undefined
+      ? throwsDisplayOf(reuse?.result, fnName)
+      : undefined;
+
   // intension 候选：先算、不早退，最后合并进 evaluator/TypeValue 结果
   let gDisplay: string | undefined;
   let gAbs: string | undefined;
@@ -137,32 +211,39 @@ export function getHoverAtPosition(
           ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         },
         ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
+        // env 全局缺席 ⇒ 推导链塌缩 unknown（与 `nudo check` 面分叉）。
+        ...(opts?.inject ? { inject: opts.inject } : {}),
       });
       if (g) {
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);
         gMulti = formatAbsMultiline(g.symbolic, fnName);
         // check 同口径签名（check-signatures formatEntrySigLine
-        // 同公式：formalParamSignatureNames + formatShape；throws
-        // 归 check 门禁面）。契约参数优先展示声明形态
-        // （entryReqs.display——判别联合的 formatShape 展开
-        // 可达数万字符）；无契约参数保持推断 shape
-        const reqByParam = new Map(
-          (g.entryReqs ?? []).map((r) => [r.param, r.display]),
-        );
+        // 同公式：formalParamSignatureNames + formatShape）。契约参数
+        // 的展示口径见 contractParamTextOf（Bug 775）
         const names =
           g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
         const ps = names
           .map((p, i) => {
-            const display = reqByParam.get(p);
-            if (display !== undefined) return `${p}: ${display}`;
             const t = g.typeParams[i]?.value;
-            // design §2：无约束 any；真 unknown 不得伪装
-            const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
-            return `${p}: ${shown}`;
+            // 契约参数：union 保留声明形态，其余走 check 同口径推断 shape
+            // （Bug 775）；无契约参数：design §2 无约束 any / 真 unknown
+            const text =
+              contractParamTextOf(g, p, t) ??
+              // design §2：无约束 any；真 unknown 不得伪装
+              (!t ? "any" : formatEntryParamShapeLike(t));
+            return `${p}: ${text}`;
           })
           .join(", ");
-        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic, { maxDepth: 4 })}`;
+        // 返回类型与 check 同预算（951）：`formatShape(g.symbolic)` 走共享
+        // 投影预算 PROJECTION_MAX_DEPTH（check-signatures formatEntrySigLine
+        // 同款）——hover 单方面 maxDepth 4 会让同一 Abs 在产品内渲染成
+        // 三种形态（check 签名行 / inlayHint / hover 签名块）。
+        // throws 尾缀同 check 签名行（911）：见证面 throws 证据（导出函数
+        // 才有——CLI 的 L2 throws 只对 entry 生效）；无证据则省略。
+        const throwsSuffix = throwsDisplay ? `  throws ${throwsDisplay}` : "";
+        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic)}${throwsSuffix}`;
       }
     } catch {
       // ignore
@@ -173,6 +254,9 @@ export function getHoverAtPosition(
     return {
       ...info,
       interfaceSource: tier.source,
+      // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数
+      // 正观察某个 case ⇒ 契约档 ○；否则契约档 ●。
+      interfaceActive,
       ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
     };
   };
@@ -280,6 +364,8 @@ export function getHoverAtPosition(
               ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
             },
             ...(reuse?.modules ? { modules: reuse.modules } : {}),
+            // 注入包透传（Bug 786）——同函数名面
+            ...(opts?.inject ? { inject: opts.inject } : {}),
           });
         } catch {
           // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
@@ -451,6 +537,8 @@ export function getHoverAtPosition(
             ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
           },
           ...(reuse?.modules ? { modules: reuse.modules } : {}),
+          // 注入包透传（Bug 786）——同函数名面
+          ...(opts?.inject ? { inject: opts.inject } : {}),
         });
       } catch {
         // fail-closed：generalize 失败 → 无重放（不拖垮 hover）
@@ -496,12 +584,67 @@ export function getHoverAtPosition(
 }
 
 /**
+ * check 同口径的形参类型文本（core `check-signatures.formatEntryParamShape`
+ * 同公式——core 不新增导出，LSP 侧同口径实现）：
+ * - `shape.k === "unknown"`：term 是 nullish 字面量 ⇒ 印它自己的名字
+ *   （`null` / `undefined`），**不得**与「真 unknown = 推断失败」混淆
+ *   （design §2 / Bug 348 同纪律）；否则 `unknown`；
+ * - 其余走 `formatShape(t, { showLits: true })`——契约面的字面量保形
+ *   （`lit(1)` ⇒ `1`，与 dts 面 / check 签名面一致）。
+ */
+function formatEntryParamShapeLike(t: Abs): string {
+  if (t.shape.k === "unknown") {
+    const term = t.term;
+    if (
+      term?.op === "lit" &&
+      (term.value === null || term.value === undefined)
+    ) {
+      return formatShape(t);
+    }
+    return "unknown";
+  }
+  return formatShape(t, { showLits: true });
+}
+
+/**
+ * 契约形参的展示文本（Bug 775：hover 与 `nudo check` 对同一函数给同一套
+ * 参数类型文本）。
+ *
+ * - **union（和类型）契约参数** ⇒ 保留**声明形态**（`entryReqs.display`
+ *   ——判别联合的 `formatShape` 展开可达数万字符，且臂的身份只由用户
+ *   自己的类型名承载 ⇒ 折叠的原始意图；类型值变量链接也挂这条文本上，
+ *   流窄化（`stripNullableWrappers` / `narrowByDiscriminant`）也在这条
+ *   文本上做）。
+ * - **其余契约参数**（prim / obj / 字面量）⇒ 用 **check 同口径**的推断
+ *   shape ⇒ 不再「IDE 一套侧车 DSL 原文、CLI 一套推断类型」。
+ *
+ * 无契约 ⇒ undefined（调用方回落 design §2 的无约束 `any`）。
+ */
+function contractParamTextOf(
+  g: PolyFn,
+  param: string,
+  inferred: Abs | undefined,
+): string | undefined {
+  const display = g.entryReqs?.find((r) => r.param === param)?.display;
+  if (display === undefined) return undefined;
+  if (inferred !== undefined && inferred.shape.k !== "sum") {
+    return formatEntryParamShapeLike(inferred);
+  }
+  return display;
+}
+
+/**
  * 参数声明形态折叠（名称匹配 + 流窄化）：ident 是形参名且
  * entryReqs 有声明形态（display——侧车表达式原文 / 指令
  * 约束名）时返回 display，替代投影面的判别联合无损展开
  * （可达数万字符单行——lazy 自引用指数展开）。无 display
  * （派生形参 / 无契约 / 解构子属性点路径不匹配）→
  * undefined，回落投影面（诚实降级）。
+ *
+ * **非 union 契约参数改用 check 同口径的推断 shape（Bug 775）**：union
+ * 保留声明形态（判别联合的展开不可读 + 流窄化在这条文本上做），其余
+ * 契约参数（prim / obj / 字面量）用推断 shape ⇒ hover 与 `nudo check`
+ * 对同一函数给同一套参数类型文本。
  *
  * 体内引用位叠加流窄化事实（有界规则集）：
  * - 成员访问对象（`node.x`，非可选链）：访问成立即排除
@@ -529,6 +672,13 @@ function paramDisplayOf(
 ): string | undefined {
   const req = g.entryReqs?.find((r) => r.param === ident);
   if (req?.display === undefined) return undefined;
+  // 非 union 契约参数：check 同口径的推断 shape（Bug 775）
+  const inferred =
+    g.entryShapes?.get(ident)?.abs ??
+    g.typeParams[(g.params ?? []).indexOf(ident)]?.value;
+  if (inferred !== undefined && inferred.shape.k !== "sum") {
+    return formatEntryParamShapeLike(inferred);
+  }
   const facts = flowFactsAt(fnNode, file, ident, line, column);
   let display = req.display;
   if (facts.nonNullish) display = stripNullableWrappers(display);

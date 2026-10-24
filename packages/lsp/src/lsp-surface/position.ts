@@ -105,6 +105,47 @@ export function findFunctionNameAtPosition(
             return;
           }
         }
+        // CJS 成员导出（族 25 · Bug 998）：`exports.f = fn` / `module.exports.f = fn`
+        // —— 标识符 `f` 是 MemberExpression 的 property，左侧必须是 `exports` /
+        // `module.exports`，且整条是「赋值给函数值」。
+        // （此前无此分支 ⇒ CJS 导出的函数名解析不出来 ⇒ hover 回退成无名
+        //   `(x) => ?`，而诊断面 / 符号面却认得它 ⇒ IDE 内部自相矛盾。）
+        if (
+          parent.type === "MemberExpression" &&
+          parent.property === path.node &&
+          !(parent as { computed?: boolean }).computed
+        ) {
+          const obj = (parent as { object?: { type?: string; name?: string } }).object;
+          const isExportsTarget =
+            (obj?.type === "Identifier" && obj.name === "exports") ||
+            (obj?.type === "MemberExpression" &&
+              !(obj as { computed?: boolean }).computed &&
+              (obj as { property?: { type?: string; name?: string } }).property?.type ===
+                "Identifier" &&
+              (obj as { property?: { name?: string } }).property?.name === "exports" &&
+              (obj as { object?: { type?: string; name?: string } }).object?.type ===
+                "Identifier" &&
+              (obj as { object?: { name?: string } }).object?.name === "module");
+          if (isExportsTarget) {
+            // 祖父节点 = AssignmentExpression（Babel 的 `node.parent` 不存在，
+            // 必须走 `path.parentPath.parent`）
+            const assign = path.parentPath?.parent as
+              | { type?: string; left?: unknown; right?: { type?: string } }
+              | undefined;
+            const right = assign?.right;
+            if (
+              assign?.type === "AssignmentExpression" &&
+              assign.left === parent &&
+              right &&
+              (right.type === "ArrowFunctionExpression" ||
+                right.type === "FunctionExpression")
+            ) {
+              found = path.node.name;
+              foundDecl = true;
+              return;
+            }
+          }
+        }
         // 对象/类属性键上的函数值：{ get: function () {} } / { get: () => {} }
         if (
           (parent.type === "ObjectProperty" ||

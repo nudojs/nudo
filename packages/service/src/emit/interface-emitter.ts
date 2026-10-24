@@ -8,10 +8,18 @@
  *   execNudoModule 求值、导出须 isNudoConstraint 且 fn 槽存在）：展示兜底形态
  *   （`x?:` 可选字段、`.eq()` 伪链、`{谓词原文}`）不是合法 DSL，自检拦下 →
  *   not-projectable 跳过，不写垃圾。
- * - 手写导出永不覆盖：目标名已是侧车手写绑定 → 跳过写入并报
- *   `nudo:interface-name-clash`（error，手写优先）。
- * - mode=update：剥离全部生成段再重排（幂等；非目标的既有生成段原样保留，
- *   不随 --fn 丢失）；mode=add：仅追加缺失段。
+ * - 手写**函数契约**永不覆盖：目标名已被侧车的 **fn(...) 形态**绑定占用 →
+ *   跳过写入并报 `nudo:interface-name-clash`（error，手写优先）。口径与 core 的
+ *   effectiveInterface 同源（侧车只认 fn(...) 导出为契约）：**值级 template**
+ *   （number() / lit(…) 等）**不是**契约 → 不算 name-clash；但它占着**导出名**
+ *   → 生成段就地替换该绑定（别名形态不能解决：重复 export = 非法 ESM）。
+ * - 字节保真：侧车的**行尾**（CRLF / LF）、**UTF-8 BOM**、末尾换行状态原样保留；
+ *   生成段一律用**侧车的主导行尾**拼接（不制造混合行尾），BOM 在写回时补回。
+ * - TypeScript 侧车（*.nudo.ts）：生成段用到的 builder 名必须 **import**
+ *   （.js 侧车靠装载期裸注入兜住，.ts 侧车没有裸注入这条后路 → 缺 import
+ *   就是 TS2304，产物编译不过）。
+ * - mode=update：生成段**就地替换**（保持原次序 → 纯内容 diff，无重排假红；
+ *   非目标的既有生成段原样保留，不随 --fn 丢失）；mode=add：仅追加缺失段。
  * - 目标过滤（§7.3）：--fn 白名单 > --all 全量 > 默认只刷新已有生成段
  *   （「无根只处理已存在生成段」；Phase 1 无 root 闭包下行推导）。
  * - autoBind=false 不影响 emit（显式动作，非 ambient 加载）。
@@ -20,6 +28,7 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
+  CONSTRAINT_BUILDER_NAMES,
   execNudoModule,
   formatConstraint,
   interfaceDiagCount,
@@ -35,10 +44,11 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
-import { DIAG, exportedNameOfLocal, runWithCollectorScope, sanitizeCommentText } from "@nudojs/core/internal";
+import { DIAG, exportedNameOfLocal, runWithCollectorScope } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
+import { sanitizeLineCommentText } from "./line-comment.ts";
 import { allocNudoBinding, directBindingOk, exportNameRepr } from "./export-binding.ts";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
@@ -52,7 +62,13 @@ export type EmitInterfaceSkipReason =
   /** package.json#nudo.contract.emit 白名单拒绝 */
   | "emit-denied"
   /** 手工合并的多声明符 @generated 段：按段原子保留，不拆不重写 */
-  | "multi-declarator";
+  | "multi-declarator"
+  /**
+   * 导出名被侧车的**非契约**绑定占用（值级 template / export function 等）：
+   * 契约身份=导出名，同名不能并存（重复 export = 非法 ESM），且该绑定不是
+   * 手写契约（core 口径：侧车只认 fn(...) 导出）→ 不走 name-clash。
+   */
+  | "export-name-taken";
 
 export type EmitInterfaceOpts = {
   /** 目标导出名白名单（Phase 1：只过滤目标文件自身的导出；跨文件 root 闭包 emit 是 Phase 2 下行推导能力） */
@@ -79,7 +95,14 @@ export type EmitInterfaceResult = {
   skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }>;
   changed: boolean;
   diff?: string;
-  issues: Array<{ code: string; severity: "error" | "warning"; message: string }>;
+  /**
+   * 诊断列表。
+   *
+   * severity 三档：`error` / `warning` / `info`。`info` 用于**观察信号**
+   * （如「源里已不存在的导出，其生成段被清理」——与派生路径
+   * `interface-derivation-emit.ts` 同口径，不影响 exit 码）。
+   */
+  issues: Array<{ code: string; severity: "error" | "warning" | "info"; message: string }>;
   /** 侧车绝对路径（新建或已有） */
   sidecarPath: string;
   /**
@@ -106,6 +129,39 @@ type GeneratedSection = {
 };
 
 /**
+ * 侧车顶层名表（**三张表**，口径互不相同，不可混用）：
+ * - `localNames`：全部顶层局部名（变量/函数/类 + **import 局部名**）——
+ *   绑定分配的避让集（撞名 → 走别名形态）。
+ * - `exportNames`：侧车**导出**的名字（export const/function/class/{x as N}）——
+ *   导出名占用集（同名不能并存：重复 export = 非法 ESM）。
+ * - `fnContractNames`：绑定了 **fn(...) 形态约束**的名字 —— 手写**函数契约**
+ *   集（core 的 effectiveInterface 同口径：侧车只认 fn(...) 导出为契约；
+ *   值级 template（number() / lit(…)）**不是**契约）。
+ */
+type SidecarNameTables = {
+  localNames: Set<string>;
+  exportNames: Set<string>;
+  fnContractNames: Set<string>;
+  /** 局部名 → 该局部是否绑定了 fn(...) 形态约束 */
+  fnFormLocals: Set<string>;
+  /** 侧车已从 "@nudojs/core" import 的 builder 局部名（同名即已可用） */
+  coreBuilderLocals: Set<string>;
+  /** 侧车里以 `declare const X: typeof import("@nudojs/core")…` 声明的 builder 名 */
+  declaredBuilders: Set<string>;
+  /** 导出名 → 该导出绑定的语句区间（可整体替换者才允许就地替换） */
+  exportSites: Map<string, ExportNameSite>;
+};
+
+/** 侧车里被**非契约**绑定占用的导出名 → 该绑定的字节区间（可整体替换者） */
+type ExportNameSite = {
+  name: string;
+  start: number;
+  end: number;
+  /** 该绑定是否是可整体替换的简单变量声明（export const N = <expr>） */
+  replaceable: boolean;
+};
+
+/**
  * 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。
  * 诊断 side-channel（round-trip 自检触发的 refine/interface diags）收尾取走丢弃。
  */
@@ -128,6 +184,8 @@ export async function emitInterface(
     const proj = findProjectConfig(dirname(abs));
     const allow = interfaceConfig(proj?.config).emit;
     if (!matchesEmitAllowlist(abs, proj?.projectDir, allow)) {
+      const relSrc = relative(process.cwd(), abs) || abs;
+      const relSidecar = relative(process.cwd(), sidecarPathOf(abs)) || sidecarPathOf(abs);
       return {
         written: [],
         skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "emit-denied" }],
@@ -136,7 +194,10 @@ export async function emitInterface(
           {
             code: DIAG.interfaceEmitDenied,
             severity: "warning",
-            message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.contract.emit allowlist`,
+            // 消息必须指向**被判定的那条路径**（源文件）并说清路径口径：
+            // allowlist 的 glob 匹配的是源文件路径（config.md 同口径）——
+            // 报侧车路径会让用户照着配一个永远命不中的 allowlist（#537）
+            message: `emit target '${relSrc}' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path '${relSidecar}')`,
           },
         ],
         sidecarPath: sidecarPathOf(abs),
@@ -150,21 +211,35 @@ export async function emitInterface(
     const sidecarPath = sidecarPathOf(abs);
     // 侧车 open buffer 与磁盘不一致时由调用方拒绝写盘（防 save 覆盖 emit）；
     // 此处仍以磁盘为合并基（调用方保证 dirty 时不会走到这里）。
-    const sidecarSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
+    const sidecarRaw = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
+    // UTF-8 BOM：读回后剥掉（解析与「有无改动」比较都不该看到它），写回时补回
+    // ——否则 BOM 被静默吃掉：零契约变化也判「有改动」（--exit-on-diff 假红）
+    const bom = sidecarRaw.startsWith("\uFEFF") ? "\uFEFF" : "";
+    const sidecarSrc = bom === "" ? sidecarRaw : sidecarRaw.slice(1);
+    // 行尾口径：取侧车的主导行尾（CRLF 侧车的生成段必须也是 CRLF，否则
+    // 手写段 CRLF + 生成段 LF = 混合行尾；file(1) 报 "CRLF, LF"）
+    const eol = detectEol(sidecarSrc);
     // 源路径锚定侧车自身目录（与 cwd 无关）：monorepo 子包/仓库根两处跑 emit
     // 不再因 `// source:` 行漂移把 no-change 判成 rewrite
     const srcRel = relative(dirname(sidecarPath), abs) || basename(abs);
+    // .ts / .mts 源的侧车是 **.nudo.ts**（core 的 sidecar-path 口径）——它会被
+    // tsc 编译：段里的 builder 名必须是**已 import 的标识符**，不能靠装载期
+    // 的裸注入（.js 侧车才有那条后路）。
+    const isTypeScriptSidecar = sidecarPath.endsWith(".ts");
 
     const sections = collectGeneratedSections(sidecarSrc);
     const generatedNames = new Set(sections.flatMap((s) => s.names));
-    const declared = topLevelDeclaredNames(sidecarSrc);
-    if (declared === undefined) {
+    const tables = sidecarNameTables(sidecarSrc);
+    if (tables === undefined) {
       throw new Error(
         `sidecar '${relative(process.cwd(), sidecarPath) || sidecarPath}' is not parseable; fix it before emitting`,
       );
     }
-    // 手写绑定 = 顶层声明 − 生成段占用（身份名与别名绑定都扣除——别名段的
-    // `const _nudo_1` 与 `export {…as class}` 导出面不是手写）
+    // 手写**函数契约** = fn(...) 形态绑定 − 生成段占用（身份名与别名绑定都
+    // 扣除——别名段的 `const _nudo_1` 与 `export {…as class}` 导出面不是手写）。
+    // 口径与 core 的 effectiveInterface 同源：侧车只认 fn(...) 导出为契约；
+    // 值级 template（number() / lit(…)）**不是**契约 → 不进冲突集（#532）
+    const declared = new Set(tables.fnContractNames);
     for (const s of sections) {
       for (const n of s.names) declared.delete(n);
       for (const b of s.bindings) declared.delete(b);
@@ -179,6 +254,17 @@ export async function emitInterface(
       opts.loadModule,
     );
     const exported = localNamedExports(source);
+    // Bug 542（本地路径）：源里已不存在的导出，其 `@generated` 段要被清理
+    // ——否则侧车里留下运行时不存在的导出，并**永久占住**那个名字；用户为同名
+    // 新函数手写侧车 ⇒ 侧车语法错（`Duplicate export` / `Identifier …`）。
+    // 判据与派生路径（interface-derivation-emit.ts 的 isDeadName）同口径：
+    // 只认普通标识符（`Class.method` 形态不判），活集为空（扫描失败）不判死段。
+    // 仅 update 模式清（add 模式「既有内容不动」）。
+    const deadSections =
+      opts.mode === "update"
+        ? sections.filter((s) => s.names.every((n) => isDeadExportName(n, exported)))
+        : [];
+    const deadSectionSet = new Set(deadSections);
     const fnByName = new Map<string, FunctionAnalysis>();
     for (const f of analysis.functions) {
       if (!fnByName.has(f.name)) fnByName.set(f.name, f);
@@ -219,20 +305,44 @@ export async function emitInterface(
     }
     const targetSet = new Set(targetNames);
 
+    // ---- 冲突位（导出名被侧车的**非契约**绑定占用）----
+    // 契约身份=导出名 ⇒ 同名不能并存（重复 export = 非法 ESM）；而该绑定
+    // 不是手写**函数契约**（core 口径：侧车只认 fn(...) 导出为契约）⇒ 不走
+    // name-clash。可整体替换的简单绑定（export const N = <expr>）→ 生成段
+    // 就地替换它；替换后该名字空出来 ⇒ 绑定分配可用直发形态（幂等：第二次
+    // emit 拿到同样的绑定 → 同样的段文本 → 报「无改动」）。
+    const conflictSites = new Map<string, ExportNameSite>();
+    for (const name of targetNames) {
+      if (declared.has(name)) continue; // 手写 fn 契约 → name-clash（循环内报）
+      if (generatedNames.has(name)) continue; // 既有生成段 → 走段替换
+      const site = tables.exportSites.get(name);
+      if (site !== undefined) conflictSites.set(name, site);
+    }
+
     // ---- 绑定分配（DESIGN-003）：绑定可别名，身份不可 ----
     // update 剥离全部生成段后重排（别名随段剥离→重新分配得同名，幂等）；
-    // add 只追加（既有别名占用 → 新别名顺次递增）
+    // add 只追加（既有别名占用 → 新别名顺次递增）。
+    // 避让集 = 侧车**全部顶层局部名**（含 import 局部名）：import 的局部名
+    // 同样是模块作用域绑定，生成段若用同名 `export const` 直发 ⇒ 整份侧车
+    // 「Identifier has already been declared」装载失败 ⇒ 该文件契约全丢（#548）
     const takenBindings = new Set<string>();
     const claimFrom = (text: string): void => {
-      for (const n of topLevelDeclaredNames(text) ?? []) takenBindings.add(n);
+      const t = sidecarNameTables(text);
+      if (t === undefined) return;
+      for (const n of t.localNames) takenBindings.add(n);
     };
     if (opts.mode === "update") {
       claimFrom(removeSections(sidecarSrc, sections));
       for (const s of sections) {
+        if (deadSectionSet.has(s)) continue; // 死段要被删 ⇒ 它的名字不再占位
         if (!s.names.some((n) => targetSet.has(n))) claimFrom(s.text); // 保留段照旧占名
       }
     } else {
       claimFrom(sidecarSrc);
+    }
+    // 被就地替换的冲突绑定不占名（替换后该名字空出来 → 直发形态）
+    for (const [name, site] of conflictSites) {
+      if (site.replaceable) takenBindings.delete(name);
     }
     const bindingOf = new Map<string, string>();
     for (const name of targetNames) {
@@ -246,8 +356,10 @@ export async function emitInterface(
     const written: string[] = [];
     const skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }> = [];
     const issues: EmitInterfaceResult["issues"] = [];
-    /** 通过全部检查的段落（名字 → 段文本）与既有段文本（update no-change 判定） */
-    const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
+    /** 既有生成段 → 新文本（就地替换；缺项 = 原样保留，update 不重排） */
+    const replacements = new Map<GeneratedSection, string[]>();
+    /** 追加段（此前没有同名生成段的身份） */
+    const appended: string[] = [];
 
     /** 逐名投影计划（dsl + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
     const planCache = new Map<string, { dsl?: string; roundTrip: boolean }>();
@@ -257,11 +369,56 @@ export async function emitInterface(
       const fn = fnByName.get(localOf.get(name) ?? name);
       const dsl = fn === undefined ? undefined : projectFunctionDsl(fn);
       const roundTrip =
-        dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name)), name);
+        dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name), eol), name);
       const rec = { dsl, roundTrip };
       planCache.set(name, rec);
       return rec;
     };
+
+    // ---- TypeScript 侧车的 builder 声明（#541）----
+    // .nudo.ts 会被 tsc 编译：段里的 fn/lit/number… 是**未声明标识符**（.js 侧车
+    // 靠装载期裸注入兜住，.ts 侧车没有这条后路）→ 缺声明 = TS2304，产物编译不过。
+    //
+    // 用 `declare const X: typeof import("@nudojs/core").<导出名>;` 而**不是**
+    // `import { X } from "@nudojs/core"`：
+    // ① 运行时：侧车装载期把 CONSTRAINT_BUILDERS（**表面名** lit/and/…）注入
+    //    模块作用域；import 语句会被装载器改写成「注入表查表」，而注入表里
+    //    没有 core 的导出名（litC/andC）⇒ 走 import 会在装载期报
+    //    「not an injected builder」并把绑定置 undefined ⇒ 侧车装载失败。
+    // ② 类型面：core 的 `lit` 导出是 **Term 构造器**（约束构建器叫 litC），
+    //    直接 import 会让 tsc 报 TS2322（Type 'Term' is not assignable …）。
+    // declare 段是**纯类型**声明：tsc 看得见、运行时被装载器剥掉（与 .js 侧车
+    // 的裸注入同一条运行路径）。
+    const builderAlias = new Map<string, string>(); // builder 名 → 本地别名
+    const neededBuilders = new Set<string>();
+    for (const name of targetNames) {
+      const dsl = planFor(name).dsl;
+      if (dsl === undefined) continue;
+      for (const b of builderNamesUsed(dsl)) neededBuilders.add(b);
+    }
+    /** 侧车里已可用的 builder（已 import 或已 declare） */
+    const builderAvailable = (b: string): boolean =>
+      tables.coreBuilderLocals.has(b) || tables.declaredBuilders.has(b);
+    for (const b of neededBuilders) {
+      // 本地已有同名绑定、且**不是** nudo builder → 声明会撞名（重复标识符）
+      // → 走别名
+      if (tables.localNames.has(b) && !builderAvailable(b)) {
+        let alias = `_nudo_${b}`;
+        let i = 1;
+        while (tables.localNames.has(alias)) alias = `_nudo_${b}_${i++}`;
+        builderAlias.set(b, alias);
+      }
+    }
+    /** DSL 里的 builder 名按别名改写（仅改**调用位置** name( → alias( ） */
+    const aliasDsl = (dsl: string): string => {
+      let out = dsl;
+      for (const [b, alias] of builderAlias) {
+        out = out.replace(new RegExp(`\\b${b}(\\s*)\\(`, "g"), `${alias}$1(`);
+      }
+      return out;
+    };
+    /** 侧车已可用 ⇒ 无需再声明 */
+    const missingBuilders = [...neededBuilders].filter((b) => !builderAvailable(b));
 
     /**
      * 多声明符生成段（手工合并形态，collectGeneratedSections 显式支持）按段
@@ -284,6 +441,10 @@ export async function emitInterface(
     }
     const acceptedAtomic = new Set<GeneratedSection>();
 
+    /** 导出名被非契约绑定占用（值级 template）→ 就地替换的位（#532） */
+    let conflictSite: ExportNameSite | undefined;
+    let conflictText: string | undefined;
+
     for (const name of targetNames) {
       if (!exported.has(name) || !fnByName.has(localOf.get(name) ?? name)) {
         skipped.push({
@@ -293,21 +454,37 @@ export async function emitInterface(
         continue;
       }
       if (declared.has(name)) {
+        // 手写**函数契约**（fn(...) 形态）占着这个名字 → 手写优先，不覆盖
         skipped.push({ fn: name, reason: "name-clash" });
         issues.push({
           code: DIAG.interfaceNameClash,
           severity: "error",
-          message: `sidecar already has a handwritten binding '${name}' (${srcRel}); handwritten wins — skipping emit for it`,
+          message: `sidecar already has a handwritten contract '${name}' (${srcRel}); handwritten wins — skipping emit for it`,
         });
         continue;
       }
+      // 导出名被**非契约**绑定占用（值级 template / export function 等）：该
+      // 绑定不是手写契约（core 口径）→ 不报 name-clash；但契约身份=导出名，
+      // 同名不能并存（重复 export = 非法 ESM）→ 可整体替换的就地替换，
+      // 否则跳过并说明（不销毁用户代码）。
+      const site = conflictSites.get(name);
+      if (site !== undefined && !site.replaceable) {
+        skipped.push({ fn: name, reason: "export-name-taken" });
+        issues.push({
+          code: DIAG.interfaceNameClash,
+          severity: "warning",
+          message: `sidecar already exports '${name}' (${srcRel}) with a non-contract binding; rename or remove it to persist the interface for '${name}'`,
+        });
+        continue;
+      }
+      if (site !== undefined) conflictSite = site;
       const prev = sections.find((s) => s.names.includes(name));
       if (prev !== undefined && atomicSections.has(prev)) {
         // 段原子保留：整段原样归位一次，段内所有名字跳过（防重复声明）
         if (!acceptedAtomic.has(prev)) {
           acceptedAtomic.add(prev);
-          const keptText = normalizeSection(prev.text);
-          accepted.push({ fn: prev.names.join("+"), text: keptText, prevText: keptText });
+          const keptText = normalizeSection(prev.text, eol);
+          replacements.set(prev, [keptText]);
           issues.push({
             code: DIAG.interfaceMultiDeclarator,
             severity: "warning",
@@ -317,56 +494,134 @@ export async function emitInterface(
         skipped.push({ fn: name, reason: "multi-declarator" });
         continue;
       }
-      const prevText = prev === undefined ? undefined : normalizeSection(prev.text);
+      const prevText = prev === undefined ? undefined : normalizeSection(prev.text, eol);
       const plan = planFor(name);
       if (plan.dsl === undefined || !plan.roundTrip) {
         skipped.push({ fn: name, reason: "not-projectable" });
         if (prevText !== undefined) {
           // 既有生成段但今日证据不可得（如 update 未带 --from）：
           // 保留原段不删（update 剥离后归位原文本），绝不因证据缺失删契约
-          accepted.push({ fn: name, text: prevText, prevText });
+          if (prev !== undefined) replacements.set(prev, [prevText]);
         }
         continue;
       }
-      const text = sectionText(name, plan.dsl, srcRel, bindingOf.get(name));
+      const text = sectionText(name, aliasDsl(plan.dsl), srcRel, bindingOf.get(name), eol);
       if (opts.mode === "add" && prev !== undefined) {
         skipped.push({ fn: name, reason: "no-change" });
         continue;
       }
-      if (prevText !== undefined && prevText === normalizeSection(text)) {
+      if (prevText !== undefined && prevText === normalizeSection(text, eol)) {
         skipped.push({ fn: name, reason: "no-change" });
-        accepted.push({ fn: name, text: prevText, prevText }); // update：内容不变也要归位（已剥离）
+        // update：内容不变也要归位（已剥离）——就地保留原文本
+        if (prev !== undefined) replacements.set(prev, [prevText]);
         continue;
       }
       written.push(name);
-      accepted.push({ fn: name, text, prevText });
+      if (conflictSite !== undefined) {
+        // 冲突位（值级非契约绑定）→ 生成段**就地替换**它（不追加：同名不能并存）
+        conflictText = text;
+      } else if (prev !== undefined) {
+        // 多声明符段被拆成单名段：同一段位点上依次放各名字的新文本
+        const list = replacements.get(prev);
+        if (list === undefined) replacements.set(prev, [text]);
+        else list.push(text);
+      } else {
+        appended.push(text);
+      }
     }
 
     // ---- 组装最终内容 ----
+    // 位点替换（就地）：段位点的区间止于语句末尾（不含尾随换行）→ 替换文本
+    // 也要去掉尾随空白，否则每次 emit 都多写一个换行（幂等被破坏）。
+    type Site = { start: number; end: number; replacement?: string };
+    const conflictReplacement: Site | undefined =
+      conflictSite !== undefined && conflictText !== undefined
+        ? {
+            start: conflictSite.start,
+            end: conflictSite.end,
+            replacement: conflictText.replace(/\s+$/, ""),
+          }
+        : undefined;
+    const applySites = (src: string, sites: Site[]): string => {
+      const sorted = [...sites].sort((a, b) => a.start - b.start);
+      let out = "";
+      let pos = 0;
+      for (const s of sorted) {
+        out += src.slice(pos, s.start);
+        out += s.replacement ?? src.slice(s.start, s.end);
+        pos = s.end;
+      }
+      return out + src.slice(pos);
+    };
     let finalContent: string;
     if (opts.mode === "add") {
-      // add：不动既有内容，仅追加缺失段；空接受集保持原样（防尾空白 trim 误报 changed）
-      finalContent =
-        accepted.length === 0 ? sidecarSrc : joinSections(sidecarSrc, accepted.map((a) => a.text));
+      // add：既有内容不动（既有生成段不重写），仅追加缺失段；冲突位是**定点
+      // 替换**（同名不能并存），两种模式都要落。
+      const out =
+        conflictReplacement === undefined ? sidecarSrc : applySites(sidecarSrc, [conflictReplacement]);
+      // 空接受集保持原样（防尾空白 trim 误报 changed）
+      finalContent = appended.length === 0 ? out : joinSections(out, appended, eol);
     } else {
-      // update：剥离全部生成段；非目标段原样保留，目标段用新文本重排（幂等）
-      const base = removeSections(sidecarSrc, sections);
-      const preserved = sections
-        .filter((s) => !s.names.some((n) => targetSet.has(n)))
-        .map((s) => normalizeSection(s.text));
-      finalContent = joinSections(base, [...preserved, ...accepted.map((a) => a.text)]);
+      // update：生成段**就地替换**（保持原次序 → 纯内容 diff，无重排假红）；
+      // 冲突位（值级非契约绑定）就地替换为生成段；新身份追加到末尾。
+      const sites: Site[] = [];
+      for (const s of sections) {
+        if (deadSectionSet.has(s)) {
+          // 死段：整段删除（连同其后的行尾，避免留空行）
+          sites.push({
+            start: s.start,
+            end: withTrailingEol(sidecarSrc, s.end),
+            replacement: "",
+          });
+          issues.push({
+            code: DIAG.interfaceNotProjectable,
+            severity: "info",
+            message: `${s.names.join(", ")}: no longer exported by ${srcRel} — dropping its generated section`,
+          });
+          continue;
+        }
+        const texts = replacements.get(s);
+        sites.push({
+          start: s.start,
+          end: s.end,
+          replacement:
+            texts === undefined
+              ? undefined
+              : texts.map((t) => t.replace(/\s+$/, "")).join(eol),
+        });
+      }
+      if (conflictReplacement !== undefined) sites.push(conflictReplacement);
+      const out = applySites(sidecarSrc, sites);
+      finalContent = appended.length === 0 ? out : joinSections(out, appended, eol);
+    }
+    // TypeScript 侧车：补 builder 的类型声明（缺声明 = 产物编译不过）。
+    // .js 侧车不补——装载期裸注入已把 builder 放进作用域（且改动 .js 侧车会
+    // 引入无谓的 diff）；.nudo.ts 会被 tsc 编译，没有裸注入这条后路。
+    if (
+      isTypeScriptSidecar &&
+      missingBuilders.length > 0 &&
+      (written.length > 0 || conflictText !== undefined)
+    ) {
+      const decls = missingBuilders
+        .map((b) => {
+          const local = builderAlias.get(b) ?? b;
+          return `declare const ${local}: typeof import("@nudojs/core").${coreExportNameOf(b)};`;
+        })
+        .join(eol);
+      finalContent = `${decls}${eol}${eol}${finalContent}`;
     }
 
     const changed = finalContent !== sidecarSrc;
+    // diff 与写盘都带 BOM（读回时剥掉、写出时补回 ⇒ BOM 不被静默吃掉）
     const diff = changed
-      ? unifiedDiff(sidecarSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
+      ? unifiedDiff(sidecarRaw, bom + finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
       : undefined;
     if (changed && !opts.dryRun) {
       // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件。
       // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
       const tmp = `${sidecarPath}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
       try {
-        writeFileSync(tmp, finalContent, "utf-8");
+        writeFileSync(tmp, bom + finalContent, "utf-8");
         renameSync(tmp, sidecarPath);
       } catch (e) {
         // rename 失败清理 tmp，避免长驻会话留下孤儿文件
@@ -402,6 +657,12 @@ export async function emitInterface(
 /**
  * emit 摘要行（CLI runInterfaceEmit 与 LSP agent 面共用；路径由调用方按
  * 展示口径传入——CLI 传 cwd 相对、agent 传绝对路径）。
+ *
+ * 诊断的**唯一渲染点**：issues 渲染后即被**消费**（从 result.issues 移除）——
+ * 调用方若在摘要之外再遍历 result.issues，同一条诊断就会被打印两遍
+ * （#508：CLI 的尾部 error-only 循环与本摘要各渲染一次）。消费掉 ⇒ 第二个
+ * 渲染点自动变空 ⇒ 每条诊断只出一遍，CLI / LSP agent 两个面口径一致。
+ * 同一 (code, message) 只出一行（去重）。
  */
 export function formatEmitSummary(
   sourcePath: string,
@@ -424,7 +685,12 @@ export function formatEmitSummary(
   for (const s of result.skipped.filter((x) => x.reason !== "no-change")) {
     lines.push(`  skipped ${s.fn} (${s.reason})`);
   }
-  for (const i of result.issues) {
+  const issues = result.issues.splice(0);
+  const seen = new Set<string>();
+  for (const i of issues) {
+    const key = `${i.code}\u0000${i.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     lines.push(`  [${i.severity}] ${i.code}: ${i.message}`);
   }
   return lines;
@@ -486,13 +752,16 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
  * 生成段文本（DESIGN-003：身份=fn，绑定可别名）。绑定不安全（保留字 / 非
  * ident / 撞名，binding ≠ fn）时发射 `const <binding> = …; export { <binding>
  * as <fn> };` —— 身份恒为导出名 fn，roundTrips 按 fn 槽自检。
+ *
+ * eol = 侧车的主导行尾（CRLF 侧车的生成段必须也是 CRLF：基底用 slice 原样
+ * 保留、生成段若用裸 LF ⇒ 同一文件两种行尾 = 混合行尾）。
  */
-function sectionText(fn: string, dsl: string, srcRel: string, binding = fn): string {
+function sectionText(fn: string, dsl: string, srcRel: string, binding = fn, eol = "\n"): string {
   const decl =
     binding === fn
       ? `export const ${fn} = ${dsl};`
-      : `const ${binding} = ${dsl};\nexport { ${binding} as ${exportNameRepr(fn)} };`;
-  return `${GENERATED_HEADER}\n// source: ${sanitizeCommentText(`${srcRel}:${fn}`)}\n${decl}\n`;
+      : `const ${binding} = ${dsl};${eol}export { ${binding} as ${exportNameRepr(fn)} };`;
+  return `${GENERATED_HEADER}${eol}// source: ${sanitizeLineCommentText(`${srcRel}:${fn}`)}${eol}${decl}${eol}`;
 }
 
 /**
@@ -518,12 +787,82 @@ function roundTrips(text: string, fn: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * nudo 自己的**生成段标记行**：注释的**首个记号**是 `@generated`，且标注文本
+ * 点名 nudo（`@generated by nudo — do not edit; regenerate with …`）。
+ *
+ * Bug 440/443：旧判定是裸子串 `/@generated/` ⇒ 侧车里任何**散文提及**
+ * （`// 手写契约：这里提到了 @generated 这个词`）都算生成标记 ⇒ 该 export
+ * 被从「手写 fn 契约」集合里删掉 ⇒ `--emit --all` **整段覆盖用户手写契约**
+ * （数据丢失）。口径与 core `scan-named-exports.ts` 的 `isGeneratedMarkerLine`
+ * 及 `interface-derivation-emit.ts` 同源实现一致。
+ */
+function isGeneratedMarkerLine(line: string): boolean {
+  const t = line.trim();
+  let rest: string;
+  if (t.startsWith("//")) rest = t.slice(2);
+  else if (t.startsWith("/*")) rest = t.slice(2);
+  else if (t.startsWith("*")) rest = t.slice(1);
+  else return false;
+  rest = rest.trim();
+  if (!/^@generated\b/.test(rest)) return false;
+  return /\bby\s+nudo\b/.test(rest);
+}
+
+type AstNode = { type?: string; name?: string; computed?: boolean; [k: string]: unknown };
+
+const SKIPPED_NODE_KEYS = new Set([
+  "type",
+  "name",
+  "start",
+  "end",
+  "loc",
+  "range",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "errors",
+]);
+
+/** 节点子树里出现的标识符名（非计算属性键只是键名，不算「引用」） */
+function collectIdentNames(node: unknown, out: Set<string>): void {
+  if (node === null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const n of node) collectIdentNames(n, out);
+    return;
+  }
+  const obj = node as AstNode;
+  if (obj.type === "Identifier" && typeof obj.name === "string") out.add(obj.name);
+  const t = obj.type;
+  const skipKey =
+    obj.computed === false &&
+    (t === "ObjectProperty" ||
+      t === "ObjectMethod" ||
+      t === "ClassMethod" ||
+      t === "ClassProperty" ||
+      t === "ClassPrivateProperty" ||
+      t === "ClassAccessorProperty" ||
+      t === "MemberExpression");
+  for (const key of Object.keys(obj)) {
+    if (SKIPPED_NODE_KEYS.has(key)) continue;
+    if (skipKey && key === "key") continue;
+    if (skipKey && key === "property") continue;
+    collectIdentNames(obj[key], out);
+  }
+}
+
+/**
  * 侧车里的生成段：ExportNamedDeclaration 且（沿紧邻 import/const 链回扫的）
- * 注释块含 `@generated`（识别口径与 core/algebra/interface.ts 的
+ * 注释块含 nudo 自己的 `@generated` 标记（识别口径与 core/algebra 的
  * generatedExportNames 一致）。两种段尾：
  * - 直发：`export const NAME = …`（身份=绑定名）
  * - 别名（DESIGN-003）：`const _nudo_1 = …; export { _nudo_1 as class };`
  *   （身份=导出名，绑定=别名；段切片含 const 与 export 子句两句）
+ *
+ * Bug 432：段内链里的 const 只有**被该 export 引用**时才属段内（组合式 §5.3
+ * 的 prelude const / 别名段的绑定 const）；用户自己的 const 夹在中间 ⇒ 段到此
+ * 为止 ⇒ 上一段的头不落进本段（否则手写段被判成生成段 ⇒ 整段覆盖）。
  */
 function collectGeneratedSections(sidecarSrc: string): GeneratedSection[] {
   if (sidecarSrc.trim() === "") return [];
@@ -543,9 +882,24 @@ function collectGeneratedSections(sidecarSrc: string): GeneratedSection[] {
     // import/prelude 都在 export 之前），链上语句各自上方注释块中最先带
     // @generated 者为段头（链首在前，保证 import 也入段切片）
     const chain: typeof stmts = [];
+    const referenced = new Set<string>();
+    collectIdentNames(stmt, referenced);
     for (let j = i; j >= 0; j--) {
       const p = stmts[j]!;
-      if (j !== i && p.type !== "ImportDeclaration" && p.type !== "VariableDeclaration") break;
+      if (j !== i) {
+        if (p.type === "ImportDeclaration") {
+          // import 恒属段内
+        } else if (p.type === "VariableDeclaration") {
+          const declared: string[] = [];
+          for (const d of p.declarations) {
+            if (d.id.type === "Identifier") declared.push(d.id.name);
+          }
+          if (!declared.some((n) => referenced.has(n))) break; // 用户自己的 const ⇒ 段止于此
+          for (const d of p.declarations) collectIdentNames(d.init, referenced);
+        } else {
+          break;
+        }
+      }
       chain.unshift(p);
     }
     let blockStart: number | undefined;
@@ -597,9 +951,9 @@ function collectGeneratedSections(sidecarSrc: string): GeneratedSection[] {
 }
 
 /**
- * 从语句起点向上找含 `@generated` 的连续注释块的字节起点；块内无标记或
- * 起点上方不是注释块 → undefined（跳过规则与 leadingCommentHas 镜像：
- * 空行与 `\*\/` 可跨，遇代码行停）。
+ * 从语句起点向上找含 nudo 自己 `@generated` 标记的连续注释块的字节起点；
+ * 块内无标记或起点上方不是注释块 → undefined（跳过规则与 leadingCommentHas
+ * 镜像：空行与 `\*\/` 可跨，遇代码行停）。
  */
 function generatedCommentBlockStart(src: string, pos: number): number | undefined {
   const lines = src.slice(0, pos).split("\n");
@@ -610,7 +964,7 @@ function generatedCommentBlockStart(src: string, pos: number): number | undefine
     if (line === "" || line === "*/") continue;
     if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) {
       blockStartLine = i;
-      if (/@generated/.test(line)) sawGenerated = true;
+      if (isGeneratedMarkerLine(line)) sawGenerated = true;
       continue;
     }
     break;
@@ -622,42 +976,164 @@ function generatedCommentBlockStart(src: string, pos: number): number | undefine
 }
 
 /**
- * 侧车顶层声明名表（变量声明/函数/类 + export 列形式），供 name-clash 判定；
+ * 侧车顶层名表（**三张表** + 导出名位点）：
+ * - localNames：全部顶层局部名（变量/函数/类 + **import 局部名**）——
+ *   绑定分配的避让集（import 局部名同样是模块作用域绑定，撞名 ⇒ 整份侧车
+ *   「Identifier has already been declared」装载失败 ⇒ 该文件契约全丢）。
+ * - exportNames / exportSites：侧车**导出**的名字与其语句区间——导出名占用
+ *   集（契约身份=导出名，同名不能并存：重复 export = 非法 ESM）。
+ * - fnContractNames：绑定了 **fn(...) 形态约束**的名字——手写**函数契约**集
+ *   （与 core 的 effectiveInterface 同口径：侧车只认 fn(...) 导出为契约；
+ *   值级 template（number() / lit(…)）**不是**契约）。
  * 解析失败 → undefined（调用方报错，不盲目追加造成重复导出）。
  */
-function topLevelDeclaredNames(sidecarSrc: string): Set<string> | undefined {
-  if (sidecarSrc.trim() === "") return new Set();
+function sidecarNameTables(sidecarSrc: string): SidecarNameTables | undefined {
+  const tables: SidecarNameTables = {
+    localNames: new Set(),
+    exportNames: new Set(),
+    fnContractNames: new Set(),
+    fnFormLocals: new Set(),
+    coreBuilderLocals: new Set(),
+    declaredBuilders: new Set(),
+    exportSites: new Map(),
+  };
+  if (sidecarSrc.trim() === "") return tables;
   let ast: ReturnType<typeof parseSource>;
   try {
     ast = parseSource(sidecarSrc);
   } catch {
     return undefined;
   }
-  const names = new Set<string>();
-  const collect = (stmt: ReturnType<typeof parseSource>["program"]["body"][number]): void => {
+  type Stmt = ReturnType<typeof parseSource>["program"]["body"][number];
+  /** 声明的初始化式是否 fn(...) 形态的调用（fn builder 的本地名集合） */
+  const fnBuilderLocals = new Set<string>(["fn"]);
+  const isFnForm = (init: unknown): boolean => {
+    const e = init as { type?: string; callee?: { type?: string; name?: string } } | null;
+    return (
+      e !== null &&
+      typeof e === "object" &&
+      e.type === "CallExpression" &&
+      e.callee?.type === "Identifier" &&
+      typeof e.callee.name === "string" &&
+      fnBuilderLocals.has(e.callee.name)
+    );
+  };
+  /** 顶层变量声明：局部名 + 导出名 + fn 形态判定 */
+  const collectVar = (decl: any, exported: boolean, stmt: Stmt): void => {
+    if (decl.type !== "VariableDeclaration") return;
+    for (const d of decl.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      const local = d.id.name;
+      tables.localNames.add(local);
+      if (isFnForm(d.init)) tables.fnFormLocals.add(local);
+      if (!exported) continue;
+      tables.exportNames.add(local);
+      if (isFnForm(d.init)) tables.fnContractNames.add(local);
+      // 可整体替换的位点：单声明符的 export const N = <expr>
+      // 位点取**外层语句**（ExportNamedDeclaration）的区间——内层声明从
+      // `const` 起算，会把 `export ` 前缀留在原地（半截语句 = 语法错误）
+      tables.exportSites.set(local, {
+        name: local,
+        start: stmt.start ?? 0,
+        end: stmt.end ?? 0,
+        replaceable: decl.declarations.length === 1,
+      });
+    }
+  };
+  const collect = (stmt: Stmt, exported: boolean, outer?: Stmt): void => {
     if (stmt.type === "VariableDeclaration") {
-      for (const d of stmt.declarations) {
-        if (d.id.type === "Identifier") names.add(d.id.name);
+      // `declare const X: typeof import("@nudojs/core")…` —— 发射器写的 builder
+      // 类型声明（纯类型、运行时被侧车装载器剥掉）：认作「该 builder 已可用」
+      if ((stmt as { declare?: boolean }).declare === true) {
+        const text = sidecarSrc.slice(stmt.start ?? 0, stmt.end ?? 0);
+        if (text.includes('typeof import("@nudojs/core")')) {
+          for (const d of (stmt as any).declarations) {
+            if (d.id.type === "Identifier") {
+              tables.declaredBuilders.add(d.id.name);
+              tables.localNames.add(d.id.name);
+            }
+          }
+          return;
+        }
       }
+      collectVar(stmt, exported, outer ?? stmt);
     } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
-      if (stmt.id) names.add(stmt.id.name);
+      if (stmt.id) {
+        tables.localNames.add(stmt.id.name);
+        if (exported) {
+          tables.exportNames.add(stmt.id.name);
+          tables.exportSites.set(stmt.id.name, {
+            name: stmt.id.name,
+            start: stmt.start ?? 0,
+            end: stmt.end ?? 0,
+            replaceable: false, // 函数/类体是用户代码：不就地替换
+          });
+        }
+      }
     }
   };
   for (const stmt of ast.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      const fromCore = stmt.source.value === "@nudojs/core";
+      for (const spec of stmt.specifiers) {
+        const local = spec.local.name;
+        tables.localNames.add(local); // import 局部名 = 模块作用域绑定
+        if (fromCore) tables.coreBuilderLocals.add(local);
+        if (spec.type === "ImportSpecifier") {
+          const imported =
+            spec.imported.type === "Identifier" ? spec.imported.name : spec.imported.value;
+          if (imported === "fn") fnBuilderLocals.add(local); // import { fn as mkFn }
+        }
+      }
+      continue;
+    }
     if (stmt.type === "ExportNamedDeclaration") {
-      if (stmt.declaration) collect(stmt.declaration);
+      if (stmt.declaration) collect(stmt.declaration, true, stmt);
       // export { x } from "…" 是 re-export，不是本地手写契约——不挡 emit
       // （与 localNamedExports 同口径；否则假 name-clash）
       if (!stmt.source) {
         for (const spec of stmt.specifiers) {
-          names.add(spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value);
+          if (spec.type !== "ExportSpecifier") continue;
+          const exported =
+            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
+          const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
+          tables.exportNames.add(exported);
+          tables.localNames.add(local);
+          if (tables.fnFormLocals.has(local)) tables.fnContractNames.add(exported);
+          tables.exportSites.set(exported, {
+            name: exported,
+            start: stmt.start ?? 0,
+            end: stmt.end ?? 0,
+            replaceable: false, // export { x as N }：不动用户代码
+          });
         }
       }
-    } else {
-      collect(stmt);
+      continue;
     }
+    if (stmt.type === "ExportDefaultDeclaration") {
+      tables.exportNames.add("default");
+      continue;
+    }
+    collect(stmt, false);
   }
-  return names;
+  return tables;
+}
+
+/**
+ * 名字在源里已不存在（只认普通标识符——`Class.method` 形态不判；活集为空
+ * = 扫描失败 ⇒ 一律不判死段）。判据与派生路径同口径（#542）。
+ */
+function isDeadExportName(name: string, live: Set<string>): boolean {
+  if (live.size === 0) return false;
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) return false;
+  return !live.has(name);
+}
+
+/** 位置 pos 之后的行尾（CRLF / LF / 无）——删除整段时连行尾一起删，避免留空行 */
+function withTrailingEol(src: string, pos: number): number {
+  if (src[pos] === "\r" && src[pos + 1] === "\n") return pos + 2;
+  if (src[pos] === "\n") return pos + 1;
+  return pos;
 }
 
 /** 从内容中切除指定生成段（[注释块起点, 语句终点]），其余字节不动 */
@@ -675,17 +1151,52 @@ function removeSections(src: string, sections: GeneratedSection[]): string {
 }
 
 /** 段文本归一：尾随空白（含无空白情形）统一压成单个换行（幂等键比较 / 重排拼接用） */
-function normalizeSection(text: string): string {
-  return text.replace(/\s*$/, "") + "\n";
+function normalizeSection(text: string, eol = "\n"): string {
+  return text.replace(/\s*$/, "") + eol;
 }
 
 /** 基底 + 段落组装：段存在时基底两端空白压净（update 剥离首行生成段后残留的
  *  前导空行一并剥除），段间空一行；空基底段顶格 */
-function joinSections(base: string, sectionTexts: string[]): string {
-  const normalized = sectionTexts.map(normalizeSection).filter((t) => t.trim() !== "");
+function joinSections(base: string, sectionTexts: string[], eol = "\n"): string {
+  const normalized = sectionTexts.map((t) => normalizeSection(t, eol)).filter((t) => t.trim() !== "");
   const tailTrimmed = base.replace(/\s+$/, "");
-  if (normalized.length === 0) return tailTrimmed === "" ? "" : `${tailTrimmed}\n`;
+  if (normalized.length === 0) return tailTrimmed === "" ? "" : `${tailTrimmed}${eol}`;
   const trimmed = tailTrimmed.replace(/^\s+/, "");
-  const lead = trimmed === "" ? "" : `${trimmed}\n\n`;
-  return lead + normalized.join("\n");
+  const lead = trimmed === "" ? "" : `${trimmed}${eol}${eol}`;
+  return lead + normalized.join(eol);
+}
+
+/**
+ * 主导行尾：CRLF 计数 > 裸 LF 计数 ⇒ CRLF，否则 LF（空文件 ⇒ LF）。
+ * 侧车基底用 slice 原样保留（CRLF 不变），生成段必须用**同一个**行尾拼接，
+ * 否则追加即引入混排（file(1) 报 "with CRLF, LF line terminators"）。
+ */
+function detectEol(src: string): "\n" | "\r\n" {
+  const crlf = (src.match(/\r\n/g) ?? []).length;
+  const lf = (src.match(/(?<!\r)\n/g) ?? []).length;
+  return crlf > lf ? "\r\n" : "\n";
+}
+
+/**
+ * DSL 里用到的构建器名（**调用位置** name( 形态；对象键 `x:` 不是调用）。
+ * 名单取 core 的 CONSTRAINT_BUILDER_NAMES（单一真源，禁止另维护一份）。
+ */
+function builderNamesUsed(dsl: string): string[] {
+  const names = new Set<string>();
+  for (const m of dsl.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const n = m[1]!;
+    if (CONSTRAINT_BUILDER_NAMES.includes(n)) names.add(n);
+  }
+  return [...names];
+}
+
+/**
+ * 表面名（DSL 里的 lit/and）→ core 的**导出名**（litC/andC）：core 的 `lit`
+ * 导出是 Term 构造器、`and` 是项级合取——约束构建器另有其名。
+ * 其余构建器表面名与导出名同名。
+ */
+function coreExportNameOf(surface: string): string {
+  if (surface === "lit") return "litC";
+  if (surface === "and") return "andC";
+  return surface;
 }

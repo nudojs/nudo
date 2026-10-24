@@ -1,27 +1,61 @@
 /**
  * nudo contract — 契约：打印 / draft / emit。
  * 从 index.ts 原样迁出，行为不变。
+ *
+ * 族 20 · S0（串行前置重构）：三个分支层函数搬到**同包内部模块**
+ * （`./contract-draft.ts` / `./contract-emit.ts` / `./contract-from-dts.ts`），
+ * 本文件只保留 `registerContractCommand`（**唯一导出**）+ `runContractPrint` + action。
+ * **行为零变化**；新模块不在公开面上（`packages/nudojs/package.json` 的 `exports`
+ * 只有 `"."`）⇒ 零新增公开导出。
  */
-import { readFileSync, existsSync, statSync, writeFileSync, realpathSync, type Stats } from "node:fs";
-import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
+import { resolve, relative } from "node:path";
 import type { Command } from "commander";
-import {
-  formatEmitSummary,
-  formatInterfaceSurfaceLine,
-  unifiedDiff,
-} from "@nudojs/service/emit";
+import { formatInterfaceSurfaceLine } from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
-import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, variadicSwallowError, type PathError } from "./shared.ts";
+import {
+  collectExternalRecords,
+  pathErrorEntry,
+  reportPathErrors,
+  resolveTargetsCollect,
+  variadicSwallowError,
+  type PathError,
+} from "./shared.ts";
+import { runContractDraft } from "./contract-draft.ts";
+import { runContractEmit } from "./contract-emit.ts";
+import { runContractFromDts } from "./contract-from-dts.ts";
 
 // ---------------------------------------------------------------------------
 // contract — 契约：打印 / draft / emit
 // ---------------------------------------------------------------------------
 
-async function runContractPrint(file: string, records?: CallRecord[]): Promise<void> {
+async function runContractPrint(
+  file: string,
+  records?: CallRecord[],
+  opts?: { json?: boolean },
+): Promise<void> {
   const { interfaceSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const entries = await interfaceSurface(filePath, { records });
   const rel = relative(process.cwd(), filePath) || filePath;
+  // 族 21 Bug 670：`--json` 是**机器面** ⇒ stdout 必须是合法 JSON。
+  // 改前本函数完全不看 `opts.json` ⇒ `nudo contract --json` 把人类文本
+  // （`<file>` + 每行签名）写进 stdout ⇒ `JSON.parse(stdout)` 抛错。
+  if (opts?.json === true) {
+    console.log(
+      JSON.stringify(
+        {
+          file: rel,
+          entries: entries.map((e) => ({
+            fn: e.fn,
+            signature: formatInterfaceSurfaceLine(e),
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   console.log(`${rel}`);
   if (entries.length === 0) {
     console.log("  (no top-level functions found)");
@@ -34,328 +68,107 @@ async function runContractPrint(file: string, records?: CallRecord[]): Promise<v
   console.log();
 }
 
+// ---------------------------------------------------------------------------
+// 族 20 · Bug 658 / 661 / 664 —— `--json` 的**跨文件聚合层**
+// ---------------------------------------------------------------------------
+
 /**
- * contract --from-dts：.d.ts / 包类型 → @nudo:draft 契约草稿。
- * 不执法；人工复制进 *.nudo.js 后才成为 L1 义务。
+ * `--json` 聚合信封的**元素**。顶层恒为**数组**（单文件 = 单元素数组），
+ * 元素有三种：
+ * 1. **分支层的单文件机器文档**（print: `{file, entries}`；draft:
+ *    `{file, draftPath, draftSource, diff, entries}`；emit: 片 C 的信封）；
+ * 2. **失败条目** `{file, errors:[{code, message}]}`（某个 root 抛错 ⇒ Bug 664）；
+ * 3. **错误条目** `{pathErrors:[{path, code, message, suggestion}]}`
+ *    （路径错误 / 用法错误 ⇒ Bug 661）。
  */
-async function runContractFromDts(
-  paths: string[],
-  opts: { write: boolean; dryRun: boolean },
-): Promise<void> {
-  const { dtsPathToContractDraft, dtsToContractDraft } = await import("@nudojs/harvester");
-  const { harvestPackage } = await import("@nudojs/harvester");
+type ContractJsonEntry = Record<string, unknown>;
 
-  if (paths.length === 0) {
-    console.error(
-      "Usage error: `nudo contract --from-dts` needs a .d.ts file, a directory, or an npm package name.",
-    );
-    process.exitCode = 1;
-    return;
-  }
+/** 聚合信封里的错误条目（路径错误 / 用法错误共用 `pathErrors[]` 字段）。 */
+type ContractJsonError = {
+  path: string;
+  code: string;
+  message: string;
+  suggestion?: string;
+};
 
-  let label = "dts";
-  let dtsFiles: string[] = [];
-  // 路径形态（./x、/x、含分隔符）必须是存在的文件/目录——拼错路径不得
-  // 回落成 npm 包名（旧实现报误导性 no .d.ts files found）；
-  // 裸名（无分隔符）仍按包名 harvest。
-  const isPathLike = (p: string): boolean =>
-    p.startsWith(".") || isAbsolute(p) || /[/\\]/.test(p);
-  const missingPaths: string[] = [];
-  const barePkgs: string[] = [];
+/** 用法错误的机器面码（与 `check` 的 `usageErrorExit` 同码族）。 */
+const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
-  for (const p of paths) {
-    const abs = resolve(p);
-    // 单次 stat：miss（ENOENT）分类处理；EACCES/EIO 上抛面（error + exit）
-    let st: Stats | undefined;
-    try {
-      st = statSync(abs, { throwIfNoEntry: false });
-    } catch (err) {
-      console.error(`error: cannot access ${p}: ${(err as Error).message}`);
-      process.exitCode = 1;
-      return;
-    }
-    if (!st) {
-      if (isPathLike(p)) missingPaths.push(p);
-      else barePkgs.push(p);
-      continue;
-    }
-    if (st.isDirectory()) {
-      const r = dtsPathToContractDraft(abs, basename(abs));
-      dtsFiles.push(...r.files);
-    } else if (/\.(d\.)?(m)?ts$/.test(abs) && !abs.endsWith(".d.ts.map")) {
-      // .d.ts 或带注解的 .ts 源（迁移：从原 TS 逆向契约）
-      dtsFiles.push(abs);
-    } else {
-      const sibling = abs.replace(/\.[cm]?[jt]sx?$/, ".d.ts");
-      if (existsSync(sibling)) dtsFiles.push(sibling);
-    }
-  }
-  if (missingPaths.length > 0) {
-    console.error(`error: path not found for --from-dts: ${missingPaths.join(", ")}`);
-    process.exitCode = 1;
-    return;
-  }
-  for (const pkg of barePkgs) {
-    const h = harvestPackage(pkg, process.cwd());
-    if ("error" in h) {
-      console.error(h.error);
-      process.exitCode = 1;
-      return;
-    }
-    dtsFiles.push(...h.dtsFiles);
-    label = pkg;
-  }
-  dtsFiles = [...new Set(dtsFiles)];
-  if (dtsFiles.length === 0) {
-    console.error("error: no .d.ts files found for --from-dts");
-    process.exitCode = 1;
-    return;
-  }
-  if (label === "dts" && dtsFiles[0]) {
-    label = basename(dtsFiles[0]).replace(/\.d\.ts$/, "");
-  }
+/** 某个 root 分析失败（解析 / 分析抛错）的机器面码。 */
+const CONTRACT_ANALYSIS_FAILED_CODE = "nudo:contract-analysis-failed";
 
-  const draft = dtsToContractDraft(dtsFiles, label);
-  const base = label.replace(/\.d\.ts$|\.ts$|\.mts$/, "").replace(/[/\\]/g, "-");
-  const outName = `${base}.nudo.draft.js`;
-  const outPath = resolve(outName);
+/** 某个 root 的分支层输出**不是 JSON 文档**（机器面拿不到合法载荷）的机器面码。 */
+const CONTRACT_JSON_PAYLOAD_INVALID_CODE = "nudo:contract-json-payload-invalid";
 
-  if (opts.write) {
-    if (opts.dryRun) {
-      console.log(`[dry-run] would write ${relative(process.cwd(), outPath) || outPath}`);
-      console.log(draft.draftSource);
-    } else {
-      writeFileSync(outPath, draft.draftSource, "utf-8");
-      console.log(
-        `wrote  ${relative(process.cwd(), outPath) || outPath}  (${draft.stats.exports} exports from ${draft.stats.files} d.ts)`,
-      );
-      console.log(
-        `next   review, then copy exports into a *.nudo.js sidecar to accept (not enforced until then)`,
-      );
-    }
-  } else {
-    console.log(draft.draftSource);
-    console.log(
-      `// ${draft.stats.exports} projectable exports · ${draft.stats.skipped} skipped · ${draft.stats.files} d.ts`,
-    );
-    console.log(
-      `// pass --write to save as ${outName}; copy into *.nudo.js to enforce`,
-    );
-  }
+/**
+ * 错误条目（`pathErrors[]`）——路径错误与用法错误同字段（`check` 面同款）。
+ *
+ * 63b：**新增可选** `targetErrors[]`（分析目标闸门错误的**精确**子集）——
+ * `pathErrors[]` 字段名 + 内容 + 顺序**逐字不变**（既有机器消费者零影响）；
+ * `--from` 路径错误**不**进 `targetErrors[]`；无闸门错误 ⇒ 该字段**不出现**。
+ */
+function contractErrorEntry(
+  errors: ContractJsonError[],
+  targetErrors?: PathError[],
+): ContractJsonEntry {
+  return {
+    pathErrors: errors.map((e) => ({
+      path: e.path,
+      code: e.code,
+      message: e.message,
+      ...(e.suggestion ? { suggestion: e.suggestion } : {}),
+    })),
+    // 63b：闸门错误的精确入口（`--from` 路径错误不在其中）
+    ...(targetErrors && targetErrors.length > 0
+      ? { targetErrors: targetErrors.map(pathErrorEntry) }
+      : {}),
+  };
 }
 
-async function runContractDraft(
-  file: string,
-  opts: {
-    fnNames: string[];
-    write: boolean;
-    dryRun: boolean;
-    json?: boolean;
-    records?: CallRecord[];
-    /** --json 面：路径错误并入 draft JSON（绝不静默 ok + exit≠0） */
-    pathErrors?: PathError[];
-  },
-): Promise<void> {
-  const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
-    await import("@nudojs/service/emit");
-  const filePath = resolve(file);
-  const rel = relative(process.cwd(), filePath) || filePath;
-  const result = await draftInterface(filePath, {
-    ...(opts.fnNames.length > 0 ? { fnNames: opts.fnNames } : {}),
-    ...(opts.records ? { records: opts.records } : {}),
-  });
-  const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
-  // AI4：--json → draftSource + unified diff（审阅面）
-  if (opts.json) {
-    let prev = "";
-    try {
-      prev = readFileSync(sidecarDraftPath(filePath), "utf-8");
-    } catch {
-      /* optional: no existing draft — diff against empty */
-    }
-    const diff = unifiedDiff(prev, result.draftSource, draftRel);
-    const pathErrors = opts.pathErrors ?? [];
-    console.log(
-      JSON.stringify(
-        {
-          file: rel,
-          draftPath: draftRel,
-          draftSource: result.draftSource,
-          diff,
-          entries: result.entries.map((e) => ({
-            fn: e.fn,
-            dsl: e.dsl,
-            skipped: e.skipped,
-            paramEvidence: e.paramEvidence,
-            returnEvidence: e.returnEvidence,
-          })),
-          ...(pathErrors.length > 0
-            ? {
-                pathErrors: pathErrors.map((e) => ({
-                  path: e.path,
-                  code: e.code,
-                  message: e.message,
-                  suggestion: e.suggestion,
-                })),
-              }
-            : {}),
-        },
-        null,
-        2,
-      ),
-    );
-    return;
+/**
+ * 收走**一个 root** 的机器面输出（族 20 · Bug 658 / 664）。
+ *
+ * 分支层（`runContractPrint` / `contract-draft.ts` 的 `runContractDraft` /
+ * `contract-emit.ts` 的 `runContractEmit`）各自 `console.log(JSON.stringify(单文件文档))`
+ * ⇒ 命令层对**每个 root** 各跑一次 ⇒ stdout 是 N 份 JSON 首尾相接
+ * （`JSON.parse` 抛 "Unexpected non-whitespace character after JSON"）。
+ *
+ * 修法（**不改分支层签名** ⇒ 分支层照旧吐单文件文档）：命令层在 `--json` 形态下
+ * **临时接管 `console.log`**，把该 root 吐出的文档收进聚合层；循环结束后
+ * **一次** `console.log(JSON.stringify(聚合结果, null, 2))`
+ * ⇒ stdout 恒为**一份**合法 JSON（单文件 = 单元素数组）。
+ *
+ * 失败（抛错 / 输出不是 JSON）也**产 body**（Bug 664）⇒ stdout 永不为空。
+ */
+async function captureRootDocument(
+  run: () => Promise<void>,
+): Promise<
+  { ok: true; doc: unknown } | { ok: false; code: string; message: string; raw: string }
+> {
+  const original = console.log;
+  const chunks: string[] = [];
+  console.log = (...args: unknown[]): void => {
+    chunks.push(args.map((a) => (typeof a === "string" ? a : String(a))).join(" "));
+  };
+  let failure: { code: string; message: string } | undefined;
+  try {
+    await run();
+  } catch (err) {
+    failure = { code: CONTRACT_ANALYSIS_FAILED_CODE, message: (err as Error).message };
+  } finally {
+    console.log = original;
   }
-  if (opts.write) {
-    const draftPath = sidecarDraftPath(filePath);
-    if (/node_modules/.test(filePath) || /node_modules/.test(draftPath)) {
-      console.error(`Error: '${filePath}' is inside node_modules; draft write refused`);
-      process.exitCode = 1;
-      return;
-    }
-    const { findProjectConfig } = await import("@nudojs/service");
-    let projectRoot: string | undefined;
-    const proj = findProjectConfig(dirname(filePath));
-    if (proj?.projectDir) {
-      projectRoot = proj.projectDir;
-    } else {
-      let dir = dirname(filePath);
-      const fsRoot = resolve("/");
-      while (dir !== fsRoot) {
-        if (existsSync(join(dir, "package.json"))) {
-          projectRoot = dir;
-          break;
-        }
-        const parent = dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
-    }
-    if (projectRoot) {
-      const projectRootReal = (() => {
-        try {
-          return realpathSync(projectRoot);
-        } catch {
-          /* optional: realpath failed — use unresolved path */
-          return projectRoot;
-        }
-      })();
-      const fileReal = (() => {
-        try {
-          return realpathSync(filePath);
-        } catch {
-          /* optional: realpath failed — use unresolved path */
-          return filePath;
-        }
-      })();
-      const relToRoot = relative(projectRootReal, fileReal);
-      if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
-        console.error(`Error: '${filePath}' is outside project root '${projectRoot}'; draft write refused`);
-        process.exitCode = 1;
-        return;
-      }
-    } else if (!process.env.NUDO_DRAFT_FORCE) {
-      console.error(
-        `Error: no project root found for '${filePath}'; draft --write refused (set NUDO_DRAFT_FORCE=1 to override)`,
-      );
-      process.exitCode = 1;
-      return;
-    }
-    const write = writeInterfaceDraft(filePath, result.draftSource, {
-      dryRun: opts.dryRun,
-      entries: result.entries,
-      ...(projectRoot ? { projectDir: projectRoot } : {}),
-    });
-    for (const line of formatDraftSummary(rel, draftRel, result, write)) console.log(line);
-  } else {
-    for (const line of formatDraftSummary(rel, draftRel, result)) console.log(line);
-  }
-}
-
-async function runContractEmit(
-  file: string,
-  opts: { fnNames: string[]; all: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
-): Promise<void> {
-  const { emitInterface, emitDerivedFromRoot } = await import("@nudojs/service/emit");
-  const filePath = resolve(file);
-  const rel = relative(process.cwd(), filePath) || filePath;
-  const fnNames = opts.fnNames.length > 0 ? opts.fnNames : undefined;
-
-  let derivedChanged = false;
-  const derived = emitDerivedFromRoot(filePath, {
-    ...(fnNames ? { fnNames } : {}),
-    mode: "update",
-    dryRun: opts.dryRun,
-    ...(!(fnNames || opts.all) ? { refreshExistingOnly: true } : {}),
-  });
-  if (derived.hasRoot) {
-    for (const i of derived.issues ?? []) {
-      console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
-    }
-    for (const sc of derived.sidecars) {
-      const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
-      if (sc.changed && opts.dryRun) {
-        console.log(`[dry-run] would update ${scRel} (derived-from ${derived.roots.join(", ")}):`);
-        console.log(sc.diff ?? "");
-      } else if (sc.changed) {
-        console.log(`Updated ${rel} → ${scRel} (derived-from ${derived.roots.join(", ")})`);
-        console.log(`  written: ${sc.fn}`);
-      } else {
-        console.log(`${scRel}: no derived contract changes (${sc.skipped ?? "no-change"})`);
-      }
-      for (const i of sc.issues) {
-        console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
-        // design §1.3：contract 只读/emit 不因分析诊断挡 CI；
-        // 仅 usage/IO 与 --exit-on-diff（且须 --dry-run）影响 exit
-      }
-      // §1.3「将写盘且有 diff → 1」：changed 即计入（含 dry-run 与 written 为空的
-      // 纯归一化重排），不依赖 sc.written（written.length>0 && changed 的子集）
-      if (sc.changed) derivedChanged = true;
-    }
-  }
-
-  let localFnNames = fnNames;
-  if (fnNames) {
-    try {
-      const { localNamedExports } = await import("@nudojs/core");
-      const local = localNamedExports(readFileSync(filePath, "utf-8"));
-      const filtered = fnNames.filter((n) => local.has(n));
-      localFnNames = filtered.length > 0 ? filtered : undefined;
-    } catch {
-      /* optional: local export scan failed — keep requested fn names */
-      localFnNames = fnNames;
-    }
-  }
-  const result = await emitInterface(filePath, {
-    ...(localFnNames ? { fnNames: localFnNames } : {}),
-    mode: "update",
-    all: opts.all,
-    dryRun: opts.dryRun,
-    records: opts.records,
-  });
-  if (result.changed && opts.dryRun) {
-    console.log(`[dry-run] would update ${rel}:`);
-    console.log(result.diff ?? "");
-    for (const i of result.issues) {
-      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
-    }
-    for (const s of result.skipped) {
-      console.log(`  skipped ${s.fn}: ${s.reason}`);
-    }
-  } else {
-    const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
-    for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
-  }
-  for (const i of result.issues) {
-    if (i.severity === "error") {
-      // 仅打印；contract --emit 的 exit 由 usage/IO 与 --exit-on-diff 决定
-      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
-    }
-  }
-  const anyChanged = result.changed || derivedChanged;
-  if (opts.exitOnDiff && anyChanged) process.exitCode = 1;
-  if (anyChanged && !opts.dryRun) {
-    console.log(`  re-run \`nudo check ${rel}\` to see the persisted contracts in action`);
+  const raw = chunks.join("\n");
+  if (failure) return { ok: false, code: failure.code, message: failure.message, raw };
+  try {
+    return { ok: true, doc: JSON.parse(raw) as unknown };
+  } catch {
+    return {
+      ok: false,
+      code: CONTRACT_JSON_PAYLOAD_INVALID_CODE,
+      message: "branch output is not a JSON document",
+      raw,
+    };
   }
 }
 
@@ -384,7 +197,22 @@ export function registerContractCommand(program: Command): void {
     .option("--dry-run", "With --emit or --draft --write: print instead of writing")
     .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change")
     .option("--from <paths...>", "Usage-site files feeding domain evidence")
-    .option("--json", "With --draft: machine-readable draftSource + unified diff (AI4)")
+    // 族 20 · Bug 1147：帮助文本与**实现**对齐 —— `--json` 是**三形态**通用
+    // （print / `--draft` / `--emit`）且**顶层恒为数组**；元素形状按形态不同。
+    // 改前写的是 "With --draft: …" ⇒ 用户以为 `--json` 只能配 `--draft`。
+    // ⚠ 只改文案，**不改行为**（三形态的 JSON 载荷形状见
+    // `runContractPrint` / `contract-draft.ts` / `contract-emit.ts`）。
+    .option(
+      "--json",
+      "Machine face for print / --draft / --emit: the top level is always a JSON array (one element per input), and the element shape differs per mode. " +
+        "print elements: { file, entries[] }. " +
+        "--draft elements: { file, draftPath, draftSource, diff, entries[] }. " +
+        "--emit elements: { file, sidecar, changed, written, skipped[], issues[], diff? }.",
+    )
+    // 族 20 · Bug 944：`--from-dts --write` 现在拒绝覆盖既有草稿（存在性检查）
+    // ⇒ 需要一条**显式**的覆盖通道（与 `NUDO_DRAFT_FORCE=1` 环境变量等价，
+    // 但走 CLI 面可见、可被脚本审计）。仅对 `--from-dts --write` 生效。
+    .option("--force", "With --from-dts --write: overwrite an existing draft")
     .action(
       async (
         paths: string[],
@@ -393,6 +221,7 @@ export function registerContractCommand(program: Command): void {
           draft?: boolean;
           fromDts?: boolean;
           write?: boolean;
+          force?: boolean;
           fn?: string[];
           all?: boolean;
           dryRun?: boolean;
@@ -401,21 +230,51 @@ export function registerContractCommand(program: Command): void {
           json?: boolean;
         },
       ) => {
-        if (opts.fromDts) {
-          await runContractFromDts(paths, {
-            write: opts.write === true,
-            dryRun: opts.dryRun === true,
-          });
-          return;
-        }
-        if (paths.length === 0) {
+        const jsonMode = opts.json === true;
+        /**
+         * 用法错误出口：人类面 = stderr 文案；`--json` 面 = 聚合信封里的
+         * `pathErrors[]` 条目（`code: nudo:usage-error`）⇒ stdout 永不为空 +
+         * exit 1（口径与 `check` 的 `usageErrorExit` 同款 —— 族 20 · Bug 661
+         * 的不变量：「exit 1 必须有一个可机器读取的理由」）。
+         */
+        const usageError = (message: string, suggestion?: string): void => {
+          if (jsonMode) {
+            console.log(
+              JSON.stringify(
+                [
+                  contractErrorEntry([
+                    {
+                      path: "",
+                      code: CONTRACT_USAGE_ERROR_CODE,
+                      message,
+                      ...(suggestion ? { suggestion } : {}),
+                    },
+                  ]),
+                ],
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.error(message);
+          }
+          process.exitCode = 1;
+        };
+        // ---- 族 20 · Bug 659：模式分派顺序 = 「**先校验、后分派**」----
+        // 改前 `--from-dts` 在**所有用法校验之前**短路 ⇒ `--emit` / `--draft` /
+        // `--json` 被静默吞掉（`--from-dts --emit --draft` 不报互斥、exit 0；
+        // `--from-dts --json` 的 stdout 是 draft 文本、不是 JSON）。
+        // 改后 `--from-dts` 与其它模式**共用同一套校验**，分派在校验**之后**。
+        //
+        // ① 路径面（`--from-dts` 自带专属用法错误 ⇒ 交给 runContractFromDts）
+        if (!opts.fromDts && paths.length === 0) {
           // BUG-024：--from variadic 吞噬其后的位置参数——
           // 定向 usage error（直指旗标 + `--` 终止符解法）
           if (opts.from?.length) {
             variadicSwallowError("contract", ["--from"]);
             return;
           }
-          console.error(
+          usageError(
             "Usage error: `nudo contract` needs at least one path. " +
               (opts.emit
                 ? "Writing filters: --fn <names> / --all (default: only refresh existing @generated segments)."
@@ -423,56 +282,81 @@ export function registerContractCommand(program: Command): void {
                   ? "Draft mode: pass a file or directory."
                   : "Print-only: pass a file or directory."),
           );
-          process.exitCode = 1;
           return;
         }
+        // ② `--emit` / `--draft` 互斥（对所有模式生效，含 `--from-dts`）
         if (opts.emit && opts.draft) {
-          console.error("Usage error: --emit and --draft are mutually exclusive");
-          process.exitCode = 1;
+          usageError("Usage error: --emit and --draft are mutually exclusive");
           return;
         }
-        if (opts.write && !opts.draft) {
-          console.error("Usage error: --write requires --draft");
-          process.exitCode = 1;
+        // ③ `--write` 需要草稿模式：**`--draft` 或 `--from-dts`**
+        //    （help 与 cli-reference 的口径都是「With --draft / --from-dts」）
+        if (opts.write === true && !opts.draft && !opts.fromDts) {
+          usageError("Usage error: --write requires --draft");
           return;
         }
+        // ④ `--exit-on-diff` 需要 `--emit --dry-run`（对所有模式生效，含 `--from-dts`）
         if (opts.exitOnDiff && (!opts.dryRun || !opts.emit)) {
-          console.error("--exit-on-diff requires --emit --dry-run");
-          process.exitCode = 1;
+          usageError("--exit-on-diff requires --emit --dry-run");
+          return;
+        }
+        // ⑤ `--json` 与 `--from-dts` 互斥（`--from-dts` **没有** JSON 载荷契约
+        //    ⇒ 显式拒绝，不许「给了不生效且不报错」）
+        if (jsonMode && opts.fromDts) {
+          usageError(
+            "Usage error: --json cannot be combined with --from-dts",
+            "drop --json (--from-dts prints a reviewable draft, not a machine-readable payload)",
+          );
+          return;
+        }
+        // ⑥ 分派（校验之后）
+        if (opts.fromDts) {
+          await runContractFromDts(paths, {
+            write: opts.write === true,
+            dryRun: opts.dryRun === true,
+            // 族 20 · Bug 944：显式覆盖通道（CLI 面可见；等价于 `NUDO_DRAFT_FORCE=1`）
+            force: opts.force === true,
+          });
           return;
         }
         const fromErrors: PathError[] = [];
         const externalRecords = opts.from?.length
-          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+          ? collectExternalRecords(opts.from, jsonMode ? fromErrors : undefined)
           : undefined;
         const targets: string[] = [];
-        const pathErrors: PathError[] = [];
+        // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
+        // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
+        // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
+        // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
+        const targetErrors: PathError[] = [];
         for (const p of paths) {
           const r = resolveTargetsCollect(p);
           targets.push(...r.targets);
-          pathErrors.push(...r.errors);
+          targetErrors.push(...r.errors);
         }
-        const allPathErrors = [...pathErrors, ...fromErrors];
-        if (!opts.json) reportPathErrors(allPathErrors);
+        const allPathErrors = [...targetErrors, ...fromErrors];
+        if (!jsonMode) reportPathErrors(allPathErrors);
         const roots = targets.filter((t) => isNudoTargetPath(t));
         if (roots.length === 0) {
-          if (opts.json && allPathErrors.length > 0) {
+          if (jsonMode) {
             // --json：路径错误也必须有 body（绝不空 stdout + exit 1）
             console.log(
               JSON.stringify(
-                {
-                  pathErrors: allPathErrors.map((e) => ({
-                    path: e.path,
-                    code: e.code,
-                    message: e.message,
-                    suggestion: e.suggestion,
-                  })),
-                },
+                allPathErrors.length > 0
+                  ? [contractErrorEntry(allPathErrors, targetErrors)]
+                  : [],
                 null,
                 2,
               ),
             );
-            process.exitCode = 1;
+            if (allPathErrors.length > 0) {
+              process.exitCode = 1;
+            } else if (targets.length > 0) {
+              console.error(
+                `Usage error: no nudo analysis targets in the given paths: ${paths.join(", ")}`,
+              );
+              process.exitCode = 1;
+            }
             return;
           }
           if (targets.length > 0) {
@@ -481,17 +365,19 @@ export function registerContractCommand(program: Command): void {
           }
           return;
         }
-        if (opts.json && allPathErrors.length > 0) process.exitCode = 1;
+        if (jsonMode && allPathErrors.length > 0) process.exitCode = 1;
+        // --json：跨文件聚合层（Bug 658）——每个 root 一项，循环后**一次**打印
+        const jsonEntries: ContractJsonEntry[] = [];
         for (const t of roots) {
-          try {
+          const rel = relative(process.cwd(), t) || t;
+          const runRoot = async (): Promise<void> => {
             if (opts.draft) {
               await runContractDraft(t, {
                 fnNames: opts.fn ?? [],
                 write: opts.write === true,
                 dryRun: opts.dryRun === true,
-                json: opts.json === true,
+                json: jsonMode,
                 records: externalRecords,
-                ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
               });
             } else if (opts.emit) {
               await runContractEmit(t, {
@@ -500,14 +386,52 @@ export function registerContractCommand(program: Command): void {
                 dryRun: opts.dryRun === true,
                 exitOnDiff: opts.exitOnDiff === true,
                 records: externalRecords,
+                // 族 20 · Bug 667（片 C）：emit 分支的 JSON 信封由
+                // `contract-emit.ts` 消费 `opts.json`（该字段由片 C 加进 opts 类型）
+                // ⇒ 这里用**展开**传（展开不吃 excess property 检查
+                // ⇒ 片 C 落地前后都能编译）。
+                ...(jsonMode ? { json: true } : {}),
               });
             } else {
-              await runContractPrint(t, externalRecords);
+              await runContractPrint(t, externalRecords, { json: jsonMode });
             }
-          } catch (err) {
-            console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);
-            process.exitCode = 1;
+          };
+          if (!jsonMode) {
+            try {
+              await runRoot();
+            } catch (err) {
+              console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);
+              process.exitCode = 1;
+            }
+            continue;
           }
+          const captured = await captureRootDocument(runRoot);
+          if (captured.ok) {
+            jsonEntries.push(captured.doc as ContractJsonEntry);
+          } else {
+            // Bug 664：失败的 root 也必须进载荷（否则机器面看不到哪个文件失败）
+            const shown = relative(process.cwd(), t);
+            if (captured.code === CONTRACT_ANALYSIS_FAILED_CODE) {
+              console.error(`Error analyzing ${shown}: ${captured.message}`);
+            } else {
+              console.error(`Error: ${shown}: ${captured.message}`);
+            }
+            process.exitCode = 1;
+            jsonEntries.push({
+              file: rel,
+              errors: [{ code: captured.code, message: captured.message }],
+              ...(captured.raw ? { output: captured.raw } : {}),
+            });
+          }
+        }
+        if (jsonMode) {
+          // 路径错误是**命令级**事实（不是某个 root 的）⇒ 独立成一项
+          // （print / emit / draft 三形态统一 —— 族 20 · Bug 661）
+          // 63b：该项里**新增可选** `targetErrors[]`（分析目标闸门错误的精确
+          // 子集）；`pathErrors[]` 逐字不变。
+          if (allPathErrors.length > 0)
+            jsonEntries.push(contractErrorEntry(allPathErrors, targetErrors));
+          console.log(JSON.stringify(jsonEntries, null, 2));
         }
       },
     );

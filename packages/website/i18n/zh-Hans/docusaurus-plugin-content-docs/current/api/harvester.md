@@ -153,7 +153,7 @@ const key = buildKey("docs", "readme");
 - 动态 `require` / 计算模块图（字面量 / 常量折叠子集已解析；其余诚实 `unknown`）
 - 流机器回调（Node Transform 运行时驱动的内部回调）
 - browser/node 双入口变体——调用点记录不跨文件注入
-- **无调用现场**的函数—— `entry@` 兜底是诚实结果，不是缺陷
+- **无调用现场**的函数—— `entry@` 兜底是诚实结果，参数是**无约束的 `any`**；该面上的 entry may-throw 仍是 L2（`nudo:entry-may-throw`），不是免检通行证
 
 另见[语言语义 — mock 边界](../concepts/semantics.md#mock-边界仍建议)。
 
@@ -175,7 +175,7 @@ const key = buildKey("docs", "readme");
 | <a id="depscacheroot"></a>`depsCacheRoot` | fn | 依赖包层缓存根（跨项目）；off/0 关闭 | `depsCacheRoot(): string \| undefined` |
 | <a id="dtsclosurehash"></a>`dtsClosureHash` | fn | dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口） | `dtsClosureHash(files: string[]): string` |
 | <a id="dtscontractdraft"></a>`DtsContractDraft` | type | — | `DtsContractDraft = { label: string; files: string[]; exports: DtsExportDraft[]; draftSource: string; stats: { files: number; exports: num...` |
-| <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; }` |
+| <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; partial?: boolean; }` |
 | <a id="dtspathtocontractdraft"></a>`dtsPathToContractDraft` | fn | 目录/文件入口：内部解析 .d.ts 列表。 | `dtsPathToContractDraft( path: string, label?: string, ): DtsContractDraft` |
 | <a id="dtstocontractdraft"></a>`dtsToContractDraft` | fn | 从 .d.ts 路径列表生成契约草稿（不写盘）。 | `dtsToContractDraft( dtsFiles: string[], label?: string, ): DtsContractDraft` |
 | <a id="emitenvmodule"></a>`emitEnvModule` | fn | — | `emitEnvModule(env: HarvestedEnv, pkgName: string): string` |
@@ -191,7 +191,7 @@ const key = buildKey("docs", "readme");
 | <a id="harvestedenv"></a>`HarvestedEnv` | type | Harvested env：Abs 原生（与 EnvDefinition 同形）。 | `HarvestedEnv = { globals: Record<string, Abs>; modules: Record<string, Record<string, Abs>>; stats: { files: number; symbols: number; ski...` |
 | <a id="harvestedvaluetoabs"></a>`harvestedValueToAbs` | fn | 单个 Abs 导出 → 可调用 mock（fn 槽按 relation α 替换，或返回声明返回类型） | `harvestedValueToAbs(a: Abs): Abs` |
 | <a id="harvestjson"></a>`HarvestJson` | type | — | `HarvestJson = { v: 1; pkg: string; pkgVersion?: string; knobs: { maxFiles: number; abi: string }; dtsHash: string; modules: Record<string...` |
-| <a id="harvestnodestats"></a>`HarvestNodeStats` | type | — | `HarvestNodeStats = { files: number; symbols: number; skipped: number; }` |
+| <a id="harvestnodestats"></a>`HarvestNodeStats` | type | — | `HarvestNodeStats = { files: number; symbols: number; skipped: number; degraded?: number; }` |
 | <a id="harvestnodetypes"></a>`harvestNodeTypes` | fn | harvest @types/node（限制文件数 + 时间预算，避免拖垮启动）。 | `harvestNodeTypes( fromDir?: string, maxFiles: number = HARVEST_NODE_DEFAULT_MAX_FILES, maxMs: number = HARVEST_NODE_DEFAULT_MAX_MS, ): NodeEnvResult` |
 | <a id="harvestpackage"></a>`harvestPackage` | fn | harvest 一个 npm 包（或 @types 包） | `harvestPackage( pkg: string, fromDir?: string, maxFiles = 24, ): PackageHarvest` |
 | <a id="harvestpackagecached"></a>`harvestPackageCached` | fn | — | `harvestPackageCached(pkg: string, fromDir: string): PackageHarvest \| null` |
@@ -207,7 +207,7 @@ const key = buildKey("docs", "readme");
 | <a id="packageharvest"></a>`PackageHarvest` | type | — | `PackageHarvest = { pkg: string; root: string; dtsFiles: string[]; env: HarvestedEnv; }` |
 | <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | — | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
 | <a id="readharvestdisk"></a>`readHarvestDisk` | fn | — | `readHarvestDisk(root: string, key: string): HarvestJson \| undefined` |
-| <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*） | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
+| <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*）。 | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
 | <a id="serializeharvestjson"></a>`serializeHarvestJson` | fn | — | `serializeHarvestJson( pkg: string, env: HarvestedEnv, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestJson` |
 | <a id="summarizenodeenv"></a>`summarizeNodeEnv` | fn | 把 harvest 结果压成「模块名 → 导出名列表」摘要，便于日志/测试 | `summarizeNodeEnv(env: HarvestedEnv)` |
 | <a id="writeharvestdisk"></a>`writeHarvestDisk` | fn | — | `writeHarvestDisk(root: string, key: string, value: HarvestJson): void` |

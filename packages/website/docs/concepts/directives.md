@@ -185,7 +185,7 @@ function unannotatedHeavy(x) {
 
 ## @nudo:sample — Loop Sampling (Reserved, No-Op)
 
-`@nudo:sample` is **parsed but has no consumer** — the analyzer discards it (`void sampleDirective` in `service/src/analyzer.ts`). It does not change loop evaluation: loops already terminate via bounded unrolling (`DEFAULT_MAX_LOOP_ITERS = 8`), so there is no fixed-point phase to switch into. The directive is accepted for source compatibility but has no effect on output; do not rely on it to trade precision for performance.
+`@nudo:sample` is **parsed but has no consumer** — the analyzer discards it (`void sampleDirective` in `service/src/analyzer-orchestrate-uncached.ts`). It does not change loop evaluation: loops already terminate via bounded unrolling (`DEFAULT_MAX_LOOP_ITERS = 8`), so there is no fixed-point phase to switch into. The directive is accepted for source compatibility but has no effect on output; do not rely on it to trade precision for performance.
 
 ### Syntax
 

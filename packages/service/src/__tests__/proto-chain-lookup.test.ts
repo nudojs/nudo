@@ -51,8 +51,14 @@ describe("mock-module partial overlay does not pick Object.prototype names", () 
     const r = applyMockModuleDirectivesFromSource(src, base, {
       fromFile: join(dir, "app.js"),
     });
-    expect(r.errors).toHaveLength(0);
-    expect(r.modules.dep!.named.a).toBeDefined();
+    // Bug 963：**点名**但 mock 没有导出的名字不再静默跳过 ⇒ 走错误出口
+    // （nudo:module-missing / error）且该条指令**不生效**（fail-closed：
+    // 原模块保持原样，绝不产生「一半 mock、一半原模块」的混合程序）。
+    // ⇒ mock 的 `a` 也不会被叠进来（整条指令被拒）。
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]!.message).toContain('does not export "toString"');
+    expect(r.applied).toBe(false);
+    expect(r.modules.dep!.named.a).toBeUndefined();
     // 修复前：mock.named["toString"] 命中原型 → Object.prototype.toString 被叠成 mock 导出
     expect(Object.hasOwn(r.modules.dep!.named, "toString")).toBe(false);
   });

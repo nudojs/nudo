@@ -7,9 +7,21 @@
  *   方法体经 stmt/fn-body.ts emitFnBlockBody（早退 if 提升不被绕过）；
  * - 非计算 __proto__: v 是 ES 原型设定不是自有键（$setProto），方法名
  *   __proto__ 则必须 $setKey 保键；
+ * - Bug 143：同键**后写覆盖先写**——静态键/symbol 键的最终定义形态按
+ *   accDefs 仲裁（data 覆盖 accessor；accessor 的 get/set 半边按原生合并）；
+ *   字面量收尾只对「最终是访问器」的键发 $objAccessor（数据属性后写时
+ *   访问器不得再挂——否则数据属性被吞、写语义塌成定抛）；
+ * - Bug 189：非计算 __proto__ 的**值表达式**在其属性位置求值（原生按
+ *   源码序）——字面量按 __proto__ 位置切段，proto 值夹在相邻段之间求值，
+ *   末尾 $setProto 取最后一段的值；
  * - symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见，Bug 73）；
  * - 数组含 spread 时 hole 下标不可静态确定，$concat 归一（字符串按 code
  *   points 拆）。
+ * - Bug 1149：本文件的引擎内部临时名（`__v` / `__k` / `__nudoObjBase` /
+ *   `__nudoProtoBox`）是**基名**——实际名经 `internalTmpName` 分配（避开用户
+ *   标识符词形）：这些名都是**词法绑定**（IIFE 形参 / thunk 形参），IIFE 与
+ *   访问器 thunk **在自身作用域里求值用户表达式** ⇒ 写死名会遮蔽用户同名
+ *   绑定（自信错值）或撞 TDZ（ReferenceError）。
  */
 import type { Expression, Node, ObjectExpression, ArrayExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
@@ -18,15 +30,43 @@ import {
   staticKeyOf,
   symbolKeyOf,
   paramDisplayNames,
+  paramOptionalFlags,
   nativeParamArity,
   methodBindNames,
   collectForkBindingNames,
+  withClassNameHint,
+  fnKindSrc,
+  internalTmpName,
+  thisCarrierOf,
 } from "../helpers.ts";
 import { emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { emitFnBlockBody } from "../stmt/fn-body.ts";
 import { emitSetterAccessorThunk } from "../class-emit.ts";
 import { paramNamesOfFn } from "./function.ts";
+import { asyncBodyPlan } from "../async-plan.ts";
+
+/**
+ * 对象族的引擎内部临时名（**基名**）——实际名经 `internalTmpName` 分配。
+ *
+ * Bug 1149（同 call.ts / short-circuit.ts 口径）：
+ * - `__v`：setter thunk 的**首参载体**（首参非 Identifier——解构/默认值——
+ *   时用引擎临时名）；thunk 形参会**遮蔽**用户同名外层绑定 ⇒ setter 体读到
+ *   的是引擎临时量而非用户的值（自信错值 ⇒ 假绿）。
+ * - `__k` / `__nudoObjBase`：计算键 IIFE 的形参；IIFE 内在自身作用域求值
+ *   键/值表达式 ⇒ 写死名会遮蔽用户同名绑定（自信错值）。
+ * - `__nudoProtoBox`：proto 段链 IIFE 的形参；proto **值表达式**在该 IIFE
+ *   作用域内求值 ⇒ 写死名会遮蔽用户同名绑定（自信错值）。
+ *
+ * 口径：`userIdentInfoOf(opts)` = 源文本词形 ∪ `opts.userIdents`；撞名加
+ * `_k` 后缀 ⇒ **无碰撞时基名原样返回 ⇒ 产物逐字不变**；同一源文本 ⇒ 同一名
+ * ⇒ 产物确定性（缓存键 / 差分语料依赖它）。
+ */
+const V_BASE = "__v";
+const K_BASE = "__k";
+const OBJ_BASE_BASE = "__nudoObjBase";
+const PROTO_BOX_BASE = "__nudoProtoBox";
+
 /**
  * 对象/数组/展开族：对象字面量（方法简写/访问器/计算键/__proto__）、数组字面量
  * （hole/spread 经 $concat 归一）。
@@ -39,12 +79,51 @@ export function transpileObjectExpr(
 ): string {
   switch (expr.type) {
     case "ObjectExpression": {
+      // Bug 1160：对象族 this 载体名 = 转译单元共享名（方法/访问器 thunk 首参
+      // 与体内 this 读 `thisParam` 同名）。撞名加 `_k` 后缀；无碰撞时基名
+      // `__this` 原样返回 ⇒ 产物逐字不变。
+      const thisSlot = thisCarrierOf(opts);
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
       const props: string[] = [];
-      const accRegs: Array<{ key?: string; get?: string; set?: string }> = [];
-      /** 非计算 `__proto__: v` 的特殊原型设定（ES）；primitive 忽略 */
-      let protoSet: string | null = null;
+      /**
+       * Bug 143：同键「后写覆盖先写」仲裁表。键 = **已引号化**的槽键字面量
+       * （静态键 JSON.stringify(k) / symbol 投影 "@@X"——与 $objAccessor 的
+       * 键口径一致）；值 = 该键的**最终**定义形态：
+       * - data：数据属性（覆盖先写的访问器——访问器半边一并清掉）；
+       * - accessor：访问器（get/set 半边按原生合并——后写的 get 不清先写
+       *   的 set；数据属性夹在中间则整键转 data）。
+       * 字面量收尾只对「最终是访问器」的键发 $objAccessor。
+       */
+      const accDefs = new Map<
+        string,
+        { kind: "data" | "accessor"; get?: string; set?: string }
+      >();
+      /**
+       * Bug 189：非计算 `__proto__: v` 的特殊原型设定（ES）；primitive 忽略。
+       * 值表达式必须在其**属性位置**求值（原生按源码序）——字面量按
+       * `__proto__` 位置切段：protoSegs[i] 是第 i 个 proto 之前的对象段，
+       * protoVals[i] 是第 i 个 proto 的值表达式（段与段之间求值）。
+       */
+      const protoSegs: Array<string | null> = [];
+      const protoVals: string[] = [];
+      /**
+       * Bug 143：动态计算键访问器已就地注册（侧表）——其后同键的数据属性
+       * 须按「定义」语义替换它（清侧表项 + 写数据槽），不能走「set」语义
+       * （后者对 getter-only 键定抛 TypeError）。
+       */
+      let hasDynComputedAccessor = false;
+      // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名
+      // （`__margs`）避开用户标识符——撞名 ⇒ 重复词法声明 ⇒ 产物非法 JS ⇒
+      // 整模块 fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
+      const argsSlot = internalTmpName("__nudoArgs", opts);
+      const margsName = internalTmpName("__margs", opts);
+      // Bug 1149：对象族的引擎内部临时名避开用户标识符词形（IIFE / 访问器
+      // thunk 在自身作用域求值用户表达式 ⇒ 写死名会遮蔽用户同名绑定）。
+      const vName = internalTmpName(V_BASE, opts);
+      const kName = internalTmpName(K_BASE, opts);
+      const objBaseName = internalTmpName(OBJ_BASE_BASE, opts);
+      const protoBoxName = internalTmpName(PROTO_BOX_BASE, opts);
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -85,6 +164,9 @@ export function transpileObjectExpr(
           // 不得进 $obj({ "__proto__": … })——宿主对象字面量会当 proto 设定丢键。
           const isProtoKey = mkey === '"__proto__"';
           const displayNames = paramDisplayNames(prop.params);
+          // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数
+          // 不再靠名字后缀猜（与 `displayNames` 同源同长度 ⇒ 下标对齐）
+          const optionalFlags = paramOptionalFlags(prop.params);
           const bindNames = methodBindNames(prop.params);
           // 方法体是新的函数边界：inLoop/inTry 必须归零；直接/嵌套箭头引用
           // arguments（含参数默认值）时建槽
@@ -100,50 +182,78 @@ export function transpileObjectExpr(
           const omBindFromArgs =
             mHasArgs ||
             (prop.params as Node[]).some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
+          // Bug 201：async 方法体的挂起可行性（体含 await 且所有 await 都在
+          // 生成器级位置 ⇒ 编译成宿主生成器，await = 真挂起点）
+          const omAsync =
+            (prop as { async?: boolean }).async === true && prop.generator !== true;
+          const omPlan = omAsync ? asyncBodyPlan(prop.body, opts.disableAsyncGen) : undefined;
+          const omAsyncGen = omPlan !== undefined && omPlan.hasAwait && omPlan.allSafe;
           const methodOpts: TranspileOptions = {
             ...opts,
             inLoop: 0,
             inTry: 0,
             // 方法体是新函数边界：return 不携带外层 if 臂退出信号
             conditionalFlow: 0,
-            thisParam: "__this",
-            argsBinding: omBindFromArgs ? "__nudoArgs" : undefined,
+            thisParam: thisSlot,
+            argsBinding: omBindFromArgs ? argsSlot : undefined,
             // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
             yieldTryCtx: 0,
+            // Bug 201：async 方法体的 await 发射 `yield`（真挂起点）
+            inAsyncBody: omAsyncGen,
+            ...(omAsyncGen && omPlan ? { asyncForAwaitGates: omPlan.forAwaitGates } : {}),
           };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
             const omVarParams = paramNamesOfFn(prop.params as Node[]);
+            // Bug 151：访问器是**普通函数**——原生里 `arguments` 天然存在
+            // （getter 长度 0 / setter 长度 1）。此前访问器 thunk 不发
+            // `__nudoArgs` 槽绑定 ⇒ 体里的 `arguments` 走 $throwFreeArguments()
+            // ⇒ 定抛 ReferenceError（原生返回 0）。访问器一律给槽绑定。
+            const accOpts: TranspileOptions = { ...methodOpts, argsBinding: argsSlot };
             // thunk 先行构造（get：单表达式体；set：与 stmt.ts 类访问器同口径
             // emitSetterAccessorThunk——内层箭头丢弃体返回值（恒返回 __this）
             // + 别名写接收者回收；N3：setter 形参默认值/解构经 __nudoArgs 槽绑定）
             const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
+            // Bug 1149：首参非 Identifier（解构/默认值）时用引擎临时名承载
+            // 原始实参——thunk 形参会**遮蔽**用户同名外层绑定（setter 体读到
+            // 的是引擎临时量 ⇒ 自信错值）。
+            const omVName =
+              omFirstP?.type === "Identifier"
+                ? (bindNames[0] ?? vName)
+                : vName;
             const thunkSrc =
               prop.kind === "get"
-                ? `(__this) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { varParams: omVarParams })}\n}`
+                ? `(${thisSlot}) => {\n  let ${argsSlot} = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
                 : emitSetterAccessorThunk(
-                    omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v",
-                    emitFnBlockBody(prop.body, 2, methodOpts, {
+                    omVName,
+                    emitFnBlockBody(prop.body, 2, accOpts, {
                       implicitReturn: false,
                       varParams: omVarParams,
                     }),
                     collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n)),
                     1,
-                    omFirstP && omFirstP.type !== "Identifier"
-                      ? [
-                          `    let __nudoArgs = $arguments([__v]);`,
-                          ...emitParamBindingFromArgs(prop.params as Node[], "    ", methodOpts, "__nudoArgs").prologue,
-                        ]
-                      : [],
+                    [
+                      // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
+                      `    let ${argsSlot} = $arguments([${omVName}]);`,
+                      ...(omFirstP && omFirstP.type !== "Identifier"
+                        ? emitParamBindingFromArgs(prop.params as Node[], "    ", accOpts, argsSlot).prologue
+                        : []),
+                    ],
+                    accOpts,
                   );
             // Bug 112：计算键访问器的键表达式只求值一次——此前 computedKeySrc
             // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍
             //（原生键只在字面量位置求值一次）。IIFE 绑定临时键 __k 供两处
             // 共用；注册是侧表插入（与位置无关），键求值保持在字面量位置
+            // Bug 1149：IIFE 形参名避开用户标识符（__k 遮蔽用户同名绑定 ⇒
+            // acc 里重发的用户表达式读到错值）。
             if (computedKeySrc !== null) {
               const getArg = prop.kind === "get" ? thunkSrc : "null";
               const setArg = prop.kind === "set" ? thunkSrc : "null";
-              acc = `((__k) => $objAccessorKey($setKey(${acc ?? "$obj({})"}, __k, $lit(void 0)), __k, ${getArg}, ${setArg}))(${computedKeySrc})`;
+              acc = `((${kName}) => $objAccessorKey($setKey(${acc ?? "$obj({})"}, ${kName}, $lit(void 0)), ${kName}, ${getArg}, ${setArg}))(${computedKeySrc})`;
+              // Bug 143：动态计算键访问器**就地**注册（侧表）——后续同键的
+              // 数据属性须按「定义」语义替换它（见下方 $del 臂）。
+              hasDynComputedAccessor = true;
               continue;
             }
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 派发
@@ -157,23 +267,27 @@ export function transpileObjectExpr(
               props.push(`${mkey}: $lit(void 0)`);
             }
             // 静态键访问器经 $objAccessor 注册（字面量末尾统一应用）
-            accRegs.push(
-              prop.kind === "get"
-                ? { key: mkey ?? undefined, get: thunkSrc }
-                : { key: mkey ?? undefined, set: thunkSrc },
-            );
+            // Bug 143：同键后写覆盖先写——访问器半边按原生合并（后写的 get
+            // 不清先写的 set）；数据属性后写则整键转 data（数据属性分支）。
+            const regKey = mkey ?? "";
+            const prevDef = accDefs.get(regKey);
+            const def: { kind: "data" | "accessor"; get?: string; set?: string } =
+              prevDef?.kind === "accessor" ? prevDef : { kind: "accessor" };
+            if (prop.kind === "get") def.get = thunkSrc;
+            else def.set = thunkSrc;
+            accDefs.set(regKey, def);
             continue;
           }
           let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts, { varParams: paramNamesOfFn(prop.params as Node[]) });
-          let mParams = ["__this", ...bindNames];
+          let mParams = [thisSlot, ...bindNames];
           if (omBindFromArgs) {
-            const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, "__nudoArgs");
+            const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, argsSlot);
             mBodyInner = [
-              `  let __nudoArgs = $arguments(__margs);`,
+              `  let ${argsSlot} = $arguments(${margsName});`,
               ...bound.prologue,
               mBodyInner,
             ].join("\n");
-            mParams = ["__this", "...__margs"];
+            mParams = [thisSlot, `...${margsName}`];
           }
           // Bug 58：generator 对象方法体不在调用期执行——包 $gen（吞调用期
           // throws；yield 收集保持既有 eager 口径，与声明/类方法路径同编）
@@ -187,9 +301,11 @@ export function transpileObjectExpr(
           // Bug 70：async 对象方法体包 $async（此前丢 async 修饰——返回裸体
           // 值而非 Promise）；async *m() 双包（$gen 内、$async 外，镜像类
           // 方法 stmt.ts 路径）
+          // Bug 201：async 方法体走生成器路径 ⇒ `function*(){…}` + `$asyncGen`
+          //（await = 真挂起点；`this` / `arguments` 已是宿主箭头形参 ⇒ 闭包可见）
           if ((prop as { async?: boolean }).async) {
             mBodyInner = [
-              `return $async(() => {`,
+              omAsyncGen ? `return $asyncGen(function* () {` : `return $async(() => {`,
               mBodyInner,
               `});`,
             ].join("\n");
@@ -197,17 +313,27 @@ export function transpileObjectExpr(
           const bodySrc = `{\n${mBodyInner}\n}`;
           // Bug 9：对象方法是方法定义语法，原生不可 new → ctor: false
           // Bug 69：原生 fn.length（首个默认值/rest 前形参；bindThis 的 receiver 注入不占用户形参）
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)} })`;
+          // Bug 325：方法简写也带**函数种类**戳（async / generator / async
+          // generator）——原生 `{async m(){}}` 的标签是 "[object
+          // AsyncFunction]"，此前整族折 "[object Function]"。
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}${fnKindSrc(prop)}, optionalParams: [${optionalFlags.join(", ")}] })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
+            // Bug 143：方法名 __proto__ 是自有**数据**属性（覆盖同键访问器）
+            accDefs.set(mkey ?? "", { kind: "data" });
           } else if (symK !== null) {
             // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
             flushProps();
             acc = `$set(${acc ?? "$obj({})"}, ${symK}, ${fnValSrc}, { symbolKey: true })`;
+            // Bug 143：symbol 键同键后写覆盖先写
+            accDefs.set(symK, { kind: "data" });
           } else if (computedKeySrc !== null) {
             acc = `$setKey(${acc ?? "$obj({})"}, ${computedKeySrc}, ${fnValSrc})`;
+            // 动态计算键：同键仲裁不可静态判（键值运行期才知道）
           } else {
             props.push(`${mkey}: ${fnValSrc}`);
+            // Bug 143：方法简写是自有**数据**属性（覆盖同键访问器）
+            accDefs.set(mkey ?? "", { kind: "data" });
           }
           continue;
         }
@@ -216,26 +342,53 @@ export function transpileObjectExpr(
         if (prop.computed) {
           flushProps();
           const symK = symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0]);
-          const v = transpileExpression(prop.value as Expression, opts);
+          // Bug 133：NamedEvaluation——计算键为**字面量**时以键值为类名
+          // （`{ ["K"]: class {} }` → "K"）；动态键的类名取决于运行期键值，
+          // 不静态回灌。[Symbol.X] 是符号键——原生不给类名。
+          const litKey = (() => {
+            const kk = prop.key as { type?: string; value?: unknown };
+            if (kk?.type === "StringLiteral" || kk?.type === "NumericLiteral") return String(kk.value);
+            return undefined;
+          })();
+          const v = transpileExpression(
+            prop.value as Expression,
+            withClassNameHint(opts, prop.value as Node, litKey),
+          );
           const base = acc === null ? `$obj({})` : acc;
           if (symK !== null) {
             // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
             acc = `$set(${base}, ${symK}, ${v}, { symbolKey: true })`;
+            // Bug 143：symbol 键同键后写覆盖先写（数据属性覆盖先写的访问器）
+            accDefs.set(symK, { kind: "data" });
             continue;
           }
           const k = transpileExpression(prop.key as Expression, opts);
-          acc = `$setKey(${base}, ${k}, ${v})`;
+          if (hasDynComputedAccessor) {
+            // Bug 143：字面量里的数据属性是**定义**语义（CreateDataProperty）——
+            // 同键先写的访问器被**替换**（不是「set」语义：不走 setter、不定抛）。
+            // 动态计算键的同键仲裁只能运行期做：$del 清掉该键的访问器侧表项
+            // （+ 占位槽），随后 $setKey 写数据值。键/基准各求值一次（IIFE
+            // 形参），求值序 = 基准 → 键 → 值（原生同）。
+            // Bug 1149：IIFE 形参名避开用户标识符（__k / __nudoObjBase 遮蔽用户
+            // 同名绑定 ⇒ 值表达式 v 读到引擎临时量 ⇒ 自信错值）。
+            acc = `((${objBaseName}, ${kName}) => $setKey($del(${objBaseName}, ${kName}), ${kName}, ${v}))(${base}, ${k})`;
+          } else {
+            acc = `$setKey(${base}, ${k}, ${v})`;
+          }
           continue;
         }
-        const key = (() => {
-          const k = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
-          return k === null ? null : JSON.stringify(k);
-        })();
+        const rawKey = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+        const key = rawKey === null ? null : JSON.stringify(rawKey);
         if (key === null) continue;
         // 非计算 `__proto__` 是 ES 特殊原型设定，不是自有键
         //（`{ "__proto__": v }` 经宿主 JS 对象字面量会丢键/改 [[Prototype]]）。
         if (!prop.computed && key === '"__proto__"') {
-          protoSet = transpileExpression(prop.value as Expression, opts);
+          // Bug 189：值表达式必须在其**属性位置**求值（原生按源码序）——
+          // 此处切段：当前段到此为止，proto 值在下一段之前求值。
+          flushProps();
+          protoSegs.push(acc);
+          acc = null;
+          protoVals.push(transpileExpression(prop.value as Expression, opts));
           continue;
         }
         // 方法型 FunctionExpression：与 ObjectMethod 同 this 绑定语义
@@ -250,6 +403,9 @@ export function transpileObjectExpr(
           };
           if (!fn.generator) {
             const displayNames = paramDisplayNames(fn.params);
+            // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——与
+            // `displayNames` 同源同长度 ⇒ 下标对齐
+            const optionalFlags = paramOptionalFlags(fn.params);
             const bindNames = methodBindNames(fn.params);
             const mHasArgs = fnBodyHasOwnArguments({
               body: fn.body,
@@ -264,40 +420,77 @@ export function transpileObjectExpr(
               inLoop: 0,
               // 方法型函数表达式体是新函数边界：return 不携带外层 if 臂退出信号
               conditionalFlow: 0,
-              thisParam: "__this",
-              argsBinding: feBindFromArgs ? "__nudoArgs" : undefined,
+              thisParam: thisSlot,
+              argsBinding: feBindFromArgs ? argsSlot : undefined,
             };
             let mBodyInner = emitFnBlockBody(fn.body, 1, methodOpts, {
               varParams: paramNamesOfFn(fn.params as unknown as Node[]),
             });
-            let mParams = ["__this", ...bindNames];
+            let mParams = [thisSlot, ...bindNames];
             if (feBindFromArgs) {
-              const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, "__nudoArgs");
+              const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, argsSlot);
               mBodyInner = [
-                `  let __nudoArgs = $arguments(__margs);`,
+                `  let ${argsSlot} = $arguments(${margsName});`,
                 ...bound.prologue,
                 mBodyInner,
               ].join("\n");
-              mParams = ["__this", "...__margs"];
+              mParams = [thisSlot, `...${margsName}`];
             }
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
+            // Bug 325：函数种类戳（async / generator）
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)} })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}${fnKindSrc(fn)}, optionalParams: [${optionalFlags.join(", ")}] })`,
             );
+            // Bug 143：同键后写覆盖先写（数据属性覆盖先写的访问器）
+            accDefs.set(key, { kind: "data" });
             continue;
           }
         }
-        const valSrc = transpileExpression(prop.value as Expression, opts);
+        const valSrc = transpileExpression(
+          prop.value as Expression,
+          // Bug 133：NamedEvaluation——`{ K: class {} }` 以属性键为类名
+          withClassNameHint(opts, prop.value as Node, rawKey ?? undefined),
+        );
         props.push(`${key}: ${valSrc}`);
+        // Bug 143：同键后写覆盖先写（数据属性覆盖先写的访问器）
+        accDefs.set(key, { kind: "data" });
       }
       flushProps();
-      let result = acc ?? `$obj({})`;
-      for (const r of accRegs) {
-        // 静态键访问器注册（计算键访问器已在属性位就地 $objAccessorKey——Bug 112）
-        result = `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
+      protoSegs.push(acc);
+      let result: string;
+      if (protoVals.length === 0) {
+        result = acc ?? `$obj({})`;
+      } else {
+        // Bug 189：段链 S0 → (P1,S1) → … → (Pk,Sk)。proto 值表达式在相邻
+        // 段之间求值（IIFE 形参承载的盒子只作值传递，不进结果对象）——
+        // 求值序 = 原生源码序（段内属性值按字面量序，proto 值在段间）。
+        let chain: string | null = protoSegs[0] ?? null;
+        for (let i = 0; i < protoVals.length; i++) {
+          const segExpr = protoSegs[i + 1] ?? `$obj({})`;
+          const boxKey = JSON.stringify(`__nudoP${i}`);
+          // 逗号表达式：先写盒子（此处求值 proto 值），再取段表达式
+          const write = `$set(${protoBoxName}, ${boxKey}, ${protoVals[i]})`;
+          chain =
+            chain === null
+              ? `(${write}, ${segExpr})`
+              : `$spread(${chain}, (${write}, ${segExpr}))`;
+        }
+        const objExpr = chain ?? `$obj({})`;
+        const lastKey = JSON.stringify(`__nudoP${protoVals.length - 1}`);
+        // 多个 __proto__ → 最后一个生效（原生如此；重复 __proto__ 本身是
+        // 早期错误，此处只保「后写覆盖」语义）
+        // Bug 1149：IIFE 形参名避开用户标识符（proto 值表达式在该 IIFE
+        // 作用域内求值 ⇒ 写死名遮蔽用户同名绑定 ⇒ 自信错值）。
+        result = `((${protoBoxName}) => $setProto(${objExpr}, $get(${protoBoxName}, ${lastKey})))($obj({}))`;
       }
-      if (protoSet !== null) result = `$setProto(${result}, ${protoSet})`;
+      for (const [key, def] of accDefs) {
+        // 静态键访问器注册（计算键访问器已在属性位就地 $objAccessorKey——Bug 112）
+        // Bug 143：只注册「最终是访问器」的键——数据属性后写时访问器已被
+        // 覆盖（再挂会把数据属性吞掉，且写语义塌成定抛）。
+        if (def.kind !== "accessor") continue;
+        result = `$objAccessor(${result}, ${key}, ${def.get ?? "null"}, ${def.set ?? "null"})`;
+      }
       return result;
     }
     case "ArrayExpression": {

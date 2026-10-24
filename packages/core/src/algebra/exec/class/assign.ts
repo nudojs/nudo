@@ -5,13 +5,16 @@
  * - 确定非对象目标（prim/nullish）原生 TypeError → throwStrictAssign 硬抛；
  *   抽象目标 may-throw 软记录（值域投影不变）。
  * - getter 源成员按源接收者求值后拷为数据槽（原生 [[Get]] 语义）。
+ * - Bug 295：源槽的 **symbolKey 标记随拷贝迁移**（原生 assign 复制可枚举
+ *   **symbol 键**——目标上的该键对 Object.keys/values/entries/JSON.stringify
+ *   不可见；标记丢失 ⇒ "@@X" 投影槽退化成普通字符串键 ⇒ 伪键进枚举面）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, bool, str } from "../../abs.ts";
 import { joinAbs, canonicalArrayIndex, setProtoAbs, setSlot } from "../../objects.ts";
 import { $set, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
 import { extStateOf, isEnumerableView, assignSourceSlots, primTargetAssignThrows, isSymbolAbs } from "../../builtins.ts";
-import { classifyAssignSet } from "../../builtins/object/descriptor.ts";
+import { classifyAssignSet, assignIntoBrandInner } from "../../builtins/object/descriptor.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
@@ -99,7 +102,15 @@ export function runtimeAssignObject(args: Abs[]): Abs {
       //（builtins/object/methods.ts 的 assign 臂同源）。
       const plan = classifyAssignSet(accObj, k, v);
       if (plan.act === "throw") throwStrictAssign();
-      if (plan.act === "write") setSlot(base, k, { value: v }); // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter，键静默丢失）
+      // Bug 295：源槽的 **symbolKey 标记随拷贝迁移**（原生 assign 复制的是
+      // **symbol 键**本身——`Object.keys(target)` 看不到它；此前标记被丢弃 ⇒
+      // "@@X" 投影槽退化成**普通字符串键** ⇒ Object.keys/values/entries/
+      // JSON.stringify 面把伪键当真键发布）。原生 assign 复制可枚举 symbol
+      // 键 ⇒ 该槽**照拷**（值可读 `t[Symbol.X]`），只是标记保留。
+      const srcSlot = s as { value: Abs; symbolKey?: boolean };
+      if (plan.act === "write") {
+        setSlot(base, k, srcSlot.symbolKey ? { value: v, symbolKey: true } : { value: v });
+      } // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter，键静默丢失）
       else if (plan.act === "open") {
         (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open = true;
       } else if (plan.act === "proto") {
@@ -129,6 +140,29 @@ export function runtimeAssignObject(args: Abs[]): Abs {
         // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
         // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
         assignArrayTarget(acc, src, st);
+      } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+        // Bug 200/S4 接线：**原型对象**目标（Object.assign(A.prototype, {…})）——
+        // 原生写的是原型对象的自有属性（for-in 沿原型链可见）。引擎的原型
+        // 对象 = protoBrandAbs(name) 的内层 obj ⇒ 原地写该内层 obj 的槽
+        // （读侧 containers/iterate.ts 的 brandProtoEnumerableKeys 枚举的正是
+        // 它；不可变更新造出的新 brand 无人持有 ⇒ 写了也看不见）。
+        // 分类/写语义复用 builtins/object/descriptor.ts 的 assignIntoBrandInner。
+        const srcEntries = Object.entries(
+          (src.shape as Extract<Abs["shape"], { k: "obj" }>).slots,
+        )
+          .filter(([k]) => isEnumerableView(src, k))
+          .map(([k, s]) => {
+            const a = lookupObjAccessor(src, k);
+            const sv = s as { value: Abs; symbolKey?: boolean };
+            // Bug 295：symbol 键标记随拷贝链传递（原生 assign 复制的是
+            // symbol 键本身；标记丢失 ⇒ symbol 键退化成字符串键）
+            return [k, a?.get ? a.get(src) : sv.value, sv.symbolKey === true] as [
+              string,
+              Abs,
+              boolean,
+            ];
+          });
+        assignIntoBrandInner(acc, srcEntries);
       }
       continue;
     }
@@ -157,6 +191,12 @@ export function runtimeAssignObject(args: Abs[]): Abs {
       } else {
         assignArrayTarget(acc, srcObj, st);
       }
+    } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+      // Bug 200/S4 接线：**原型对象**目标 × 非 obj 源（tuple/字符串下标键）
+      const srcEntries = Object.entries(srcSlots).map(
+        ([k, s]) => [k, s.value] as [string, Abs],
+      );
+      assignIntoBrandInner(acc, srcEntries);
     }
   }
   return acc;

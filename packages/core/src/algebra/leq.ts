@@ -48,6 +48,48 @@ export function requiredFnArity(params: readonly string[] | undefined): number {
   return n;
 }
 
+/**
+ * Bug 1129：fn shape 的**最小实参元数**（= **最后一个必选参数的位置** + 1）。
+ *
+ * 义务要的是「**最后一个必选参数在第几位**」，不是「**有几个**必选参数」：
+ * 可选参数**之后**的必选参数仍然必选（TS 语义）⇒ `(a = 1, b)` 的最小实参
+ * 元数是 **2**（`b` 拿不到就炸：`b.toFixed()`），而「必选参数个数」口径只数出
+ * 1 ⇒ `(a = 1, b) => b.toFixed()` 被接受成**单参**目标 ⇒ 与原生
+ * `g = (x) => f(x); g(1)`（抛 TypeError）**不一致** ⇒ 假绿。
+ *
+ * 判据：优先读 shape 自带的 `optionalParams` 标记数组（与 `params` 同下标，
+ * true = 该位可省略）；缺省回退名字后缀（`...rest` / `x?`）。
+ * rest 位**永远不是必选位**（它吸收 0..n 个实参）。
+ *
+ * `requiredFnArity` 的**公开签名与既有行为一字不改**（它数的是「必选个数」，
+ * 是另一个口径）——既有钉 `__tests__/leq.test.ts` 仍绿。
+ */
+function fnMinArity(shape: { params: string[]; optionalParams?: boolean[] }): number {
+  const opt = shape.optionalParams;
+  let last = -1;
+  for (let i = 0; i < shape.params.length; i++) {
+    const p = shape.params[i];
+    if (!p) continue;
+    if (p.startsWith("...")) continue; // rest 位不是必选位
+    if (opt) {
+      if (opt[i] === true) continue; // 标记说可省 ⇒ 不是必选位
+    } else if (p.endsWith("?")) {
+      continue; // 回退：名字后缀判可省
+    }
+    last = i;
+  }
+  return last + 1;
+}
+
+/**
+ * 字面量文本（诊断用）——`String(-0)` 是 `"0"`，会把 `-0` 与 `0` 渲染成
+ * 同一个串（Bug 398 的失败原因就在这个不可区分性上）。
+ */
+function litText(value: unknown): string {
+  if (typeof value === "number" && Object.is(value, -0)) return "-0";
+  return String(value);
+}
+
 export function leqAbs(
   src: Abs,
   tgt: Abs,
@@ -71,17 +113,19 @@ function leqWithPred(
 
   // 字面量同一性：litValue 哨兵把 lit(undefined) 折成「无字面量」，必须直接看
   // term。null/undefined 字面量的 shape 是 unknown，不得再走「unknown 目标放宽」。
-  // SameValue：NaN 可赋给 NaN（=== 对 NaN 为 false，赋值同一性不可用 ===）
+  //
+  // Bug 398：按注释宣称的 **SameValue** 口径（`Object.is`）判定。原先用
+  // `===` ⇒ `0` 与 `-0` 被判成同一个值 ⇒ `lit(-0)` 满足 `lit(0)` 目标
+  // （native `Object.is(0, -0) === false`，`0 === -0` 才是 true 的那个）⇒
+  // 精确期望被**静默放宽**。SameValue 同时覆盖 NaN ≡ NaN
+  // （`===` 对 NaN 为 false，赋值同一性不可用 `===`）。
   const srcLitTerm = src.term?.op === "lit" ? src.term : undefined;
   const tgtLitTerm = tgt.term?.op === "lit" ? tgt.term : undefined;
   if (tgtLitTerm && srcLitTerm) {
     const sv = srcLitTerm.value;
     const tv = tgtLitTerm.value;
-    const sameLit =
-      sv === tv ||
-      (typeof sv === "number" && typeof tv === "number" && Number.isNaN(sv) && Number.isNaN(tv));
-    if (sameLit) return ok();
-    return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
+    if (Object.is(sv, tv)) return ok();
+    return fail(`lit ${litText(sv)} ⊭ lit ${litText(tv)}`);
   }
   if (tgtLitTerm && !srcLitTerm) {
     // 目标是具体字面量（含 null/undefined），源不是同一字面量：
@@ -299,8 +343,16 @@ function leqShape(
     // TS-like: source assignable iff it does not require more params than the
     // target always provides. Rest src → required tgt is OK; required src →
     // rest tgt fails when source.required > 0 (target may be called with 0 args).
-    const sReq = requiredFnArity(s.params);
-    const tReq = requiredFnArity(t.params);
+    //
+    // Bug 399：逐位「可省略」标记读 fn shape 的 `optionalParams`（默认形参可省），
+    // 缺省回退名字后缀判据（`...rest` / `x?`）。
+    //
+    // Bug 1129：比较的是**最小实参元数**（最后一个必选参数的位置 + 1），
+    // 不是「必选参数个数」——可选参数**之后**的必选参数仍必选 ⇒ `(a = 1, b)`
+    // 的最小元数是 2（原生 `g = (x) => f(x); g(1)` 抛 TypeError）⇒ 按个数
+    // 比较会把 2 误判成 1（假绿）。
+    const sReq = fnMinArity(s);
+    const tReq = fnMinArity(t);
     if (sReq > tReq) {
       return fail(
         `fn arity required ${sReq} ⊭ target required ${tReq} (params ${s.params.length} / ${t.params.length})`,

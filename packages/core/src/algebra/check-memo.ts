@@ -8,11 +8,11 @@
 
 import type { CheckReport } from "./check-report.ts";
 import type { Abs } from "./abs.ts";
+import type { AbsCallRecord } from "./ast-records.ts";
 import { formatAbs } from "./format.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
 import { resetSidecarLoadFailureCache } from "./interface.ts";
 import {
-  loadModuleDepsFingerprint,
   stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
@@ -46,15 +46,16 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
   return id;
 }
 
-export function checkDepsFingerprint(
-  source: string,
-  opts: CheckOptions,
-): LoadDepsFingerprint {
-  if (!opts.loadModule || !opts.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
-  }
-  return loadModuleDepsFingerprint(source, opts.loadModule, opts.fromFile);
-}
+/**
+ * ⚠ `checkDepsFingerprint` 已删除（Bug 1139 修复线引入的副作用）：
+ * 指纹的 **ambient 侧车探测**必须与「分析读」区分（`autoBind:false` 下
+ * 不可读的 ambient 侧车**不得**让门禁变红）⇒ 探测要走**未经降级闸**的
+ * 推测性 loader，并受 `sidecarAutoBindAllowed` 约束 ⇒ 调用点必须直接调
+ * `loadModuleDepsFingerprint`（带上 ambient 选项）⇒ 本包装器（无法传
+ * ambient 选项）失去唯一用途 ⇒ 删。
+ *
+ * `loadModuleDepsFingerprint` 见 `load-deps-fp.ts`。
+ */
 
 function unindexCheckKey(key: string): void {
   const deps = checkKeyDeps.get(key);
@@ -140,6 +141,10 @@ export function checkMemoKey(
     // skips 必须进键：同 source 不同 skip 表（host 解析差异 / 测试注入）
     // 不得回放另一档报告。
     skipsKey(identityOpts.skips),
+    // Bug 366：`from`（--from 的跨文件调用点证据）必须进键——同 source 不同
+    // 证据不得互为陈旧命中：无证据那档会把有证据的 drift 吞掉，有证据那档
+    // 会把 drift 回放进无证据的检查（假阳）。
+    fromKey(identityOpts.from),
   ].join("|");
 }
 
@@ -150,6 +155,21 @@ function skipsKey(skips: ReadonlyMap<string, Abs | null> | undefined): string {
     .map(([name, abs]) => `${name}:${abs ? formatAbs(abs) : "-"}`)
     .sort()
     .join(",");
+}
+
+/**
+ * `from` 证据稳定键（Bug 366）：被调名 + 实参域 + 结果域。
+ * 排序保证与插入序无关；内容指纹保证同内容的新数组不再 miss 键。
+ */
+function fromKey(from: readonly AbsCallRecord[] | undefined): string {
+  if (!from || from.length === 0) return "-";
+  return from
+    .map(
+      (r) =>
+        `${r.fnName}:${r.args.map((a) => formatAbs(a)).join(",")}:${formatAbs(r.result)}`,
+    )
+    .sort()
+    .join(";");
 }
 
 export function checkMemoGet(key: string): CheckReport | null {

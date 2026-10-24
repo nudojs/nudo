@@ -10,7 +10,7 @@
  */
 import { dirname } from "node:path";
 import type { File, Identifier, Node } from "@babel/types";
-import type { Abs, PolyFn } from "@nudojs/core";
+import { abs, type Abs, type PolyFn } from "@nudojs/core";
 import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import { locFromNode, resolveModule, type LoadModule, type SourceLocation } from "@nudojs/service";
 import { computeLineStarts, isNode, lineColToOffset } from "./position.ts";
@@ -313,28 +313,54 @@ export function resolveTypeValueDef(
 }
 
 /**
+ * 无约束形参的 Abs（design §2：入口无约束 = `any`；真 `unknown` 才表示
+ * 「推断失败」）。形参位 hover 的兜底面（Bug 774）：无契约的形参在
+ * 声明形态面（entryReqs.display）与投影面（entryShapes）上都没有条目
+ * ⇒ 此前两条路都空 ⇒ 形参位 hover **完全为空**（同一 hover 的函数名面
+ * 却显示 `x: any`）。这里给出与函数名面同口径的 `any`。
+ */
+function unconstrainedAnyAbs(): Abs {
+  return abs({ k: "any" }, undefined, undefined, "path");
+}
+
+/**
  * 参数 Abs 投影：光标在参数声明/引用上时，从 enclosing 函数的 PolyFn 面
  * （entryShapes + formals）解析标识符：
  * - 直接形参（id/default）→ entryShapes[name]
  * - 解构形参（pattern）→ bound 名经 propKey 投影到 placeholder 对象 slot
  * （rename `{a: b}` 时契约可写 a 或 b，Abs 对象只有 slot a）
  * 与函数名 hover 同源（契约种子 + 模块图在此生效）。
+ *
+ * **无契约形参的兜底（Bug 774）**：命中形参但没有契约条目（entryShapes
+ * 缺席 / 该形参未契约）⇒ 回落 `any`（design §2），不再返回 undefined
+ * 让形参位 hover 空掉。**非形参**标识符仍返回 undefined（诚实无信息）。
  */
 export function projectParamAbs(g: PolyFn, ident: string): Abs | undefined {
   const entry = g.entryShapes;
-  if (!entry) return undefined;
-  for (const f of g.formals ?? []) {
+  const formals = g.formals ?? [];
+  for (const f of formals) {
     if ((f.kind === "id" || f.kind === "default") && f.name === ident) {
-      return entry.get(f.name)?.abs;
+      return entry?.get(f.name)?.abs ?? unconstrainedAnyAbs();
     }
     if (f.kind === "rest" && (f.name === ident || f.display === ident)) {
-      return entry.get(f.name)?.abs ?? entry.get(f.display)?.abs;
+      return (
+        entry?.get(f.name)?.abs ??
+        entry?.get(f.display)?.abs ??
+        unconstrainedAnyAbs()
+      );
     }
     if (f.kind === "pattern" && f.bound.includes(ident)) {
-      const abs = entry.get(f.placeholder)?.abs;
+      const abs = entry?.get(f.placeholder)?.abs;
       const key = f.propKey[ident] ?? ident;
-      if (abs?.shape.k === "obj") return abs.shape.slots[key]?.value;
+      if (abs?.shape.k === "obj") {
+        return abs.shape.slots[key]?.value ?? unconstrainedAnyAbs();
+      }
+      return unconstrainedAnyAbs();
     }
+  }
+  // formals 缺席（generalize 未产出形参表）时按 params 名单兜底
+  if (formals.length === 0 && (g.params ?? []).includes(ident)) {
+    return entry?.get(ident)?.abs ?? unconstrainedAnyAbs();
   }
   return undefined;
 }

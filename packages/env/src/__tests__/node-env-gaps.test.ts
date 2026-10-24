@@ -35,6 +35,15 @@ function walk(a: Abs, ...keys: string[]): Abs | undefined {
     if (cur.shape.k === "brand") {
       cur = cur.shape.shape as Abs | undefined;
     }
+    // fn 形全局（Buffer 等**构造器**）的静态面在 fn 的 slots 上
+    // （Bug 878：Buffer 从 objAbs 改成 envFn + ctor:true）
+    if (cur && cur.shape.k === "fn") {
+      const slots = (cur.shape as { slots?: Record<string, { value: Abs }> }).slots;
+      const fslot = slots?.[k];
+      if (!fslot) return undefined;
+      cur = fslot.value;
+      continue;
+    }
     if (!cur || cur.shape.k !== "obj") return undefined;
     const slot = cur.shape.slots[k];
     cur = slot?.value;

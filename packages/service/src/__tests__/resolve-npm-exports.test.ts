@@ -141,7 +141,14 @@ describe("exports condition keys (browser)", () => {
         "esm/index.js": "export default {};",
       },
     );
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "cjs", "index.js"));
+    // 条件键按**消费形态**分表（Bug 477）：require 面命中嵌套的 require 条件，
+    // import 面 miss 后落到 default —— 固定顺序的表做不到这一点。
+    expect(resolveNpmJsEntryDetailed("pkg", dir, "require").path).toBe(
+      join(pkgDir, "cjs", "index.js"),
+    );
+    expect(resolveNpmJsEntryDetailed("pkg", dir, "import").path).toBe(
+      join(pkgDir, "esm", "index.js"),
+    );
   });
 });
 

@@ -214,7 +214,7 @@ createEnvironment(parent?, bindings?)
 | <a id="anyabs"></a>`anyAbs` | const | Abs constructors / faces | `const anyAbs` |
 | <a id="anyvar"></a>`anyVar` | fn | Abs constructors / faces | `anyVar(id: string, conf: Confidence = "path"): Abs` |
 | <a id="app"></a>`app` | const | term / shape builders | `const app` |
-| <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ): ConstraintBuilder` |
+| <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ...rest: unknown[] ): ConstraintBuilder` |
 | <a id="bigintlit"></a>`bigintLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `bigintLit(value: bigint): Abs` |
 | <a id="bool"></a>`bool` | fn | Abs constructors / faces | `bool(): Abs` |
 | <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |
@@ -222,10 +222,11 @@ createEnvironment(parent?, bindings?)
 | <a id="calltranspiledexport"></a>`callTranspiledExport` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
 | <a id="calltranspiledexportapply"></a>`callTranspiledExportApply` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportApply( exports: Record<string, unknown> \| (() => Record<string, unknown>), name: string, )` |
 | <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; shareArgs?: boolean }, ): TranspiledCallResult` |
-| <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; tagOffset: number; }` |
+| <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; expectedIssue?: string; tagOffset: number; }` |
 | <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
+| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | — |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
 | <a id="confidence"></a>`Confidence` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Confidence = "exact" \| "path" \| "widened" \| "mock" \| "partial" \| "opaque"` |
@@ -282,7 +283,7 @@ createEnvironment(parent?, bindings?)
 | <a id="parseenvpayload"></a>`parseEnvPayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseEnvPayload(payload: string): string[]` |
 | <a id="parsemockmodulepayload"></a>`parseMockModulePayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseMockModulePayload(payload: string): MockModuleRecord \| undefined` |
 | <a id="parsenudoimportpayload"></a>`parseNudoImportPayload` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `parseNudoImportPayload( payload: string, ): NudoImportRecord` |
-| <a id="parsesource"></a>`parseSource` | fn | Babel parse + memo | `parseSource( source: string, opts?: { errorRecovery?: boolean; keepTs?: boolean }, ): File` |
+| <a id="parsesource"></a>`parseSource` | fn | Babel parse + memo | `parseSource( source: string, opts?: { errorRecovery?: boolean; keepTs?: boolean; filename?: string }, ): File` |
 | <a id="phi"></a>`Phi` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Phi = Pred` |
 | <a id="pred"></a>`Pred` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Pred = \| { op: "true" } \| { op: "false" } \| { op: "eq"; a: Term; b: Term } \| { op: "ne"; a: Term; b: Term } \| { op: "lt"; a: Term; b: Ter...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | const | one-way projections | — |
@@ -301,7 +302,7 @@ createEnvironment(parent?, bindings?)
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
 | <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
-| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T): T` |
+| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string, opts?: StripOptions): T` |
 | <a id="strlit"></a>`strLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `strLit(value: string): Abs` |
 | <a id="stub"></a>`stub` | fn | test mock helpers | `stub(): MockHelper` |
 | <a id="term"></a>`Term` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Term = \| { op: "lit"; value: LiteralValue } \| { op: "var"; id: string } \| { op: "app"; fn: string; args: Term[] }` |
@@ -326,19 +327,19 @@ createEnvironment(parent?, bindings?)
 | <a id="$await"></a>`$await` | fn | async / generator | `$await(v: Abs): Abs` |
 | <a id="$callnamed"></a>`$callNamed` | fn | call-site recording for analyze | `$callNamed( name: string, fn: unknown, args: Abs[], loc?: [number, number], argLocs?: Array<[number, number] \| null \| undefined>, ): Abs` |
 | <a id="$catchval"></a>`$catchVal` | fn | control-signal / throw | `$catchVal(e: unknown): Abs` |
-| <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(): Abs` |
+| <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(name?: string): Abs` |
 | <a id="$concat"></a>`$concat` | fn | object / member runtime | `$concat(a: Abs, b: Abs): Abs` |
 | <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs): Abs` |
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string }, ): Abs` |
-| <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[] }, ): Abs` |
+| <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
-| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs): Abs` |
-| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean }, ): Abs` |
+| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
+| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean; symbolKey?: boolean; }, receiver?: Abs, ): Abs` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
@@ -353,7 +354,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$not"></a>`$not` | fn | operator runtime | `$not(a: Abs): Abs` |
 | <a id="$nullishtest"></a>`$nullishTest` | fn | control-flow lowering | `$nullishTest(v: Abs): Abs` |
 | <a id="$obj"></a>`$obj` | fn | object / member runtime | `$obj(slots: Record<string, Abs>): Abs` |
-| <a id="$objrest"></a>`$objRest` | fn | object / member runtime | `$objRest(o: Abs, keys: string[]): Abs` |
+| <a id="$objrest"></a>`$objRest` | fn | object / member runtime | `$objRest(o: Abs, keys: Array<string \| Abs>): Abs` |
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
@@ -386,16 +387,16 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（348）</summary>
+<summary>src/index.ts 其余导出（347）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
 | <a id="absapplyreturn"></a>`AbsApplyReturn` | type | apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult | `AbsApplyReturn = Abs \| AbsApplyResult` |
 | <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
-| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; length?: number; apply?: (args: Abs[], thisVal...` |
+| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; fnKind?: "function" \| "async" \| "generator" \| ...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
-| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; }` |
+| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; interopDefault?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
@@ -418,7 +419,7 @@ createEnvironment(parent?, bindings?)
 | <a id="bitnotabs"></a>`bitnotAbs` | fn | ~ —— ToInt32 后按位取反（bigint 无符号截断） | `bitnotAbs(a: Abs): Abs` |
 | <a id="bitorabs"></a>`bitorAbs` | fn | \| —— ToInt32 两侧后按位或 | `bitorAbs(a: Abs, b: Abs): Abs` |
 | <a id="bitxorabs"></a>`bitxorAbs` | fn | ^ —— ToInt32 两侧后按位异或 | `bitxorAbs(a: Abs, b: Abs): Abs` |
-| <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, ): Abs[]` |
+| <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, bounds?: ReadonlyMap<string, Pred>, ): Abs[]` |
 | <a id="builtinctorabs"></a>`builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | <a id="builtinctornameof"></a>`builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
 | <a id="callabsmethod"></a>`callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
@@ -427,7 +428,6 @@ createEnvironment(parent?, bindings?)
 | <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
 | <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; reason?: "cycle" \| "depth" \|...` |
 | <a id="checkjsonmulti"></a>`CheckJsonMulti` | type | 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 | `CheckJsonMulti = { version: 1; kind: "multi"; ok: boolean; summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean }...` |
-| <a id="checkoptions"></a>`CheckOptions` | type | — | — |
 | <a id="clearbclasses"></a>`clearBClasses` | fn | — | `clearBClasses(): void` |
 | <a id="clearcollectiontables"></a>`clearCollectionTables` | fn | — | `clearCollectionTables(): void` |
 | <a id="clearstaletermpred"></a>`clearStaleTermPred` | fn | 调用方已直接改 shape 时的 term/pred 清理 | `clearStaleTermPred(v: Abs): void` |
@@ -473,14 +473,14 @@ createEnvironment(parent?, bindings?)
 | <a id="evalglobalfn"></a>`evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evaljsonmethod"></a>`evalJsonMethod` | fn | JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） | `evalJsonMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalmathmethod"></a>`evalMathMethod` | fn | — | `evalMathMethod(name: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalnamespacecall"></a>`evalNamespaceCall` | fn | — | `evalNamespaceCall( ns: string, method: string, args: Abs[], ): Abs \| undefined` |
+| <a id="evalnamespacecall"></a>`evalNamespaceCall` | fn | 命名空间静态分派。Bug 311：thisVal = 静态方法值的 this 绑定（成员读出的 静态方法被单独调用时的接收者，如 `Promise.resolve.call(null, 1)`）； 缺席 = 直接命名空间调用（this ≡ 命名空间构造器，合法）。 | `evalNamespaceCall( ns: string, method: string, args: Abs[], thisVal?: Abs, ): Abs \| undefined` |
 | <a id="evalnumberstatic"></a>`evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectprotomethod"></a>`evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalposrecord"></a>`EvalPosRecord` | type | 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）： (1-based 行, 0-based 列) → 该位置表达式求值态 Abs | `EvalPosRecord = { line: number; column: number; abs: Abs; }` |
 | <a id="evalpromisector"></a>`evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
 | <a id="evalpromisemethod"></a>`evalPromiseMethod` | fn | then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise&lt;unknown&gt; | `evalPromiseMethod( name: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
-| <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
+| <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | Bug 311：Promise 静态派发。thisVal = 静态方法值的 this 绑定（成员读出 的静态方法被单独调用时的接收者）；缺席 = 直接命名空间调用（this ≡ Promise 构造器，合法）。非构造器接收者按原生抛 TypeError。 | `evalPromiseStatic( name: string, args: Abs[], thisVal?: Abs, ): Abs \| undefined` |
 | <a id="evalregexpctor"></a>`evalRegExpCtor` | fn | — | `evalRegExpCtor(args: Abs[]): Abs` |
 | <a id="evalregexpmethod"></a>`evalRegExpMethod` | fn | — | `evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
 | <a id="evalstringstatic"></a>`evalStringStatic` | fn | String.fromCharCode / String.fromCodePoint： - fromCharCode：全部字面量 → 按 ToUint16 折成精确字符串（含越界/非整数/ 数字字符串）；symbol 字面量 → TypeError（ToNumber 抛）；任一抽象实参 → 抽象 string（不假精确） - fromCodePoint（Bug 38）：字面量过 ToNumber 后 IsValidCodePoint 校验 （node v26 实测：非整数/NaN/±∞/&lt;0/&gt;0x10FFFF → RangeError "Invalid code point"；null/""/false → 0 合法；"65" → 65；surrogate 0xD800 合法）； symbol/bigint 的 ToNumber → TypeError（fromCodePoint(1n) 原生抛，区别 于 fromCharCode 的 ToUint16 面——bigint ToString 合法但 ToNumber 抛）； 抽象实参 → may RangeError（+ symbol 载体 may TypeError）+ str("path") | `evalStringStatic(name: string, args: Abs[]): Abs \| undefined` |
@@ -499,7 +499,7 @@ createEnvironment(parent?, bindings?)
 | <a id="falseconstraint"></a>`falseConstraint` | fn | — | `falseConstraint(c: Abs): Pred \| undefined` |
 | <a id="fnabs"></a>`FnAbs` | type | — | `FnAbs = Abs & { shape: { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs; }; }` |
 | <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
-| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number } \| { kind: "default"; name: string; index: number } \| { kind: "rest"; name: st...` |
+| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; optional?: boolean; } \| { kind: "default"; name: string; inde...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes(params: AstParam[] \| undefined \| null): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
@@ -512,7 +512,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
-| <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import/const 链）的注释 行含 `@generated` → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
+| <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import 链与**被 export 引用**的 const 链）的注释行是 nudo 自己的 `@generated` 标记 → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
 | <a id="genum"></a>`geNum` | fn | — | `geNum(term: Term, n: number): Pred` |
 | <a id="getabsproperty"></a>`getAbsProperty` | fn | 属性读取：template/string.length 等 | `getAbsProperty(recv: Abs, name: string): Abs \| undefined` |
 | <a id="getevalcallcollector"></a>`getEvalCallCollector` | fn | — | `getEvalCallCollector()` |
@@ -534,7 +534,7 @@ createEnvironment(parent?, bindings?)
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
 | <a id="interface_source_abbr"></a>`INTERFACE_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const INTERFACE_SOURCE_ABBR` |
-| <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string }` |
+| <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="interfacediagcount"></a>`interfaceDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `interfaceDiagCount(): number` |
 | <a id="interfacesource"></a>`InterfaceSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `InterfaceSource = "handwritten" \| "generated" \| "implicit"` |
 | <a id="interfacesourceof"></a>`interfaceSourceOf` | fn | interfaceTierOf 的来源投影；非导出 → undefined | `interfaceSourceOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceSource \| undefined` |
@@ -572,7 +572,7 @@ createEnvironment(parent?, bindings?)
 | <a id="lenum"></a>`leNum` | fn | — | `leNum(term: Term, n: number): Pred` |
 | <a id="leqresult"></a>`LeqResult` | type | — | `LeqResult = { ok: boolean; reason?: string; }` |
 | <a id="listfunctionnames"></a>`listFunctionNames` | fn | 列出源码中的顶层函数名。 | `listFunctionNames(source: string): string[]` |
-| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: number \| string \| boolean \| null \| undefined, c: NudoConstraint, seen?: Set<object>, ): boolean` |
+| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: LiteralValue, c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="littruth"></a>`litTruth` | fn | JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined | `litTruth(a: Abs): boolean \| undefined` |
 | <a id="localnamedexports"></a>`localNamedExports` | fn | 源文件本地导出名表（侧车自动绑定边界）： - ESM：`export function/const/let/var/class` 与本地 `export { x }` / `export { local as exported }`（按**导出名**绑定）； - `export default function add` / `const add = …; export default add`： 按**本地名** `add` 绑定（侧车可 `export const add = fn(…)`）； 同时登记 `"default"`，供侧车 `export default fn(…)` 对齐； - CJS（C4.3）：`module.exports = { a, b }`、`module.exports.a = …`、 `exports.a = …`、`module.exports = localFn`（登记 localFn 名）。 | `localNamedExports(source: string): Set<string>` |
 | <a id="locatecontractparam"></a>`locateContractParam` | fn | 契约参数名 → 形参定位。 | `locateContractParam( formals: FormalParam[], contractName: string, )` |
@@ -627,12 +627,12 @@ createEnvironment(parent?, bindings?)
 | <a id="objectprotobrand"></a>`objectProtoBrand` | fn | Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用）。 | `objectProtoBrand(): Abs` |
 | <a id="objectprotomethodabs"></a>`objectProtoMethodAbs` | fn | Object.prototype.X 一等函数（bindThis：call/apply 把 receiver 注入首参） | `objectProtoMethodAbs(name: string): Abs` |
 | <a id="objof"></a>`objOf` | fn | — | `objOf( slots: Record<string, Slot>, opts?: { index?: { key: Abs; value: Abs }; open?: boolean }, ): Abs` |
-| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层） | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层）。 | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="or"></a>`or` | fn | — | `or(...preds: Pred[]): Pred` |
-| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层） | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
+| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层）。 | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
 | <a id="pfalse"></a>`pFalse` | const | — | `const pFalse` |
 | <a id="phiand"></a>`phiAnd` | const | — | `const phiAnd` |
-| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层） | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层）。 | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="polyfn"></a>`PolyFn` | type | — | `PolyFn = { name: string; params: string[]; typeParams: TypeParam[]; instantiate: (args: Abs[], phi?: Phi) => Abs; symbolic: Abs; display:...` |
 | <a id="popcollectionarm"></a>`popCollectionArm` | fn | — | `popCollectionArm(): ArmOverlay \| undefined` |
 | <a id="popphi"></a>`popPhi` | fn | — | `popPhi(): void` |
@@ -644,7 +644,7 @@ createEnvironment(parent?, bindings?)
 | <a id="primtotypeof"></a>`primToTypeof` | fn | abs prim 标签 → typeof 标签（恒等嵌入）。abs prim 仍是 PrimName 子集。 | `primToTypeof(p: PrimName): TypeofName` |
 | <a id="projectflatmapresult"></a>`projectFlatMapResult` | fn | flatMap 统一结果：展开后的元素 join 成 arr(γ)。 | `projectFlatMapResult( arrConf: Confidence, mapped: Abs[], ): Abs` |
 | <a id="promoteparamshape"></a>`promoteParamShape` | fn | 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。 | `promoteParamShape( env: AstEnv, param: string, promotedShape: Shape, opts?: { loc?: { line: number; column: number }; recordSite?: boolean }, ): boolean` |
-| <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
+| <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
 | <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string): Abs` |
 | <a id="protoofrecv"></a>`protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |
@@ -656,7 +656,7 @@ createEnvironment(parent?, bindings?)
 | <a id="pushphi"></a>`pushPhi` | fn | — | `pushPhi(p: Phi): void` |
 | <a id="pushthrowexit"></a>`pushThrowExit` | fn | — | `pushThrowExit(v: Abs): void` |
 | <a id="queuepromisemicro"></a>`queuePromiseMicro` | fn | — | `queuePromiseMicro(task: () => void): void` |
-| <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string }` |
+| <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="refinediagcount"></a>`refineDiagCount` | fn | 当前诊断累计序号（since 锚） | `refineDiagCount(): number` |
 | <a id="refineentry"></a>`RefineEntry` | type | 同时保留原始 NudoConstraint（shape 字段检查用）。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; name?: string; }` |
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |

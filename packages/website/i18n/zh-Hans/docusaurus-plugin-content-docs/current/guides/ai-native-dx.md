@@ -66,26 +66,32 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 成对夹具（同一 bug：JS+Nudo vs TS+tsc）——`pnpm run agent-dx`：
 
 ```text
+task                | detect n/ts | diagTok n/ts (when fired) | wrongFixGreen n/ts | rounds n/ts
+01-constraint       | RED/SG      | 101/0                     | true/true          | 1/0
+02-shape            | RED/RED     | 96/58                     | true/true          | 1/1
+03-assign           | RED/RED     | 98/44                     | false/true         | 1/1
+04-entry-throws     | RED/SG      | 124/0                     | false/true         | 1/0
+05-return           | RED/SG      | 96/0                      | true/true          | 1/0
+
 detectRate    nudo=5/5   ts=2/5
 silentGreen   nudo=0/5   ts=3/5
 wrongFixGreen nudo=3/5   ts=5/5
-avgDiagTokens (detected) nudo≈103  ts≈51
 ```
 
 **TS 的「便宜 token」往往是沉默（SG）**——agent 根本看不见 bug。Nudo 付的是**检出**的 token。
 
 ```bash
-pnpm run agent-dx
-node benchmark/agent-dx/run.mjs --json
-pnpm run agent-eval
-pnpm run dx-metrics
+pnpm run agent-dx                      # table
+node benchmark/agent-dx/run.mjs --json # ingest
+pnpm run agent-eval                    # Nudo-only 10-task red→green
+pnpm run dx-metrics                    # fix-rate / time-to-green
 ```
 
 源码：[`benchmark/agent-dx/`](https://github.com/nudojs/nudo/tree/main/benchmark/agent-dx)。
 
 ### 更重的成对评测（仓库内）
 
-`agent-dx` 是**静态**门禁载荷探针。要在**多文件模块图 + 真实历史 bug** 上量 LLM 修复环（detect · silentGreen · token/轮次），用 `benchmark/lsp-rounds/`（夹具由本地 `node-semver` checkout 生成）；结论档：`benchmark/lsp-rounds/out/OSS-SEMVER.md`。
+`agent-dx` 是**静态**门禁载荷探针。要在**多文件模块图 + 真实历史 bug** 上量 LLM 修复环（detect · silentGreen · token/轮次），用 `benchmark/lsp-rounds/`（夹具由本地 `node-semver` checkout 生成，脚本为 `oss-semver/build.mjs`）；结论档：`benchmark/lsp-rounds/out/OSS-SEMVER.md`。
 
 **OSS 历史 bug 切片**（node-semver，6 个最近 fix，约 2.4k LOC 多文件）——两侧都 **6/6**：
 

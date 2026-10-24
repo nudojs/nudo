@@ -22,7 +22,7 @@ Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live
 | `nudo.selectCase` | `nudo/selectCase` | Switch the active case used for hover/diagnostics |
 | `nudo.getActiveCases` | `nudo/getActiveCases` | Read the active case index of every function in a file |
 
-`nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract*` return MCP-style text content — `{ content: [{ type: "text", text }] }`. `nudo.selectCase` returns `{ success: true }`; `nudo.getActiveCases` returns `Record<string, number>`. Shared sources are pinned by `AGENT_TOOL_SOURCES` (E5) — agent tools and CLI/LSP commands call the same service/core entrypoints.
+`nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract*` return MCP-style text content — `{ content: [{ type: "text", text }] }`. `nudo.selectCase` / `nudo.selectContract` return `{ success: true }` on success and `{ success: false, error, isError: true }` on rejection (unknown function, out-of-range case index, malformed argument); `nudo.getActiveCases` returns `Record<string, number>` on success and the same `{ success: false, error, isError: true }` shape on failure. Shared sources are pinned by `AGENT_TOOL_SOURCES` (E5) — agent tools and CLI/LSP commands call the same service/core entrypoints.
 
 ## Conventions
 
@@ -61,7 +61,7 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:interface-underivable` | Derived contract row cannot be derived from source evidence (**info**; handwritten contracts never trigger it) |
 | `nudo:interface-drift` | `@generated` segment ≠ recomputed (warning) |
 | `nudo:no-signature` | No symbolic Abs signature (**warning**; L2 may still apply via entry fallback) |
-| `nudo:opaque-result` / `nudo:eval-error` | Opaque evaluation / evaluation threw |
+| `nudo:opaque-result` | Opaque evaluation |
 
 **`actions[]` (additive).** Each `issues[]` entry may carry structured next steps. Agents should prefer `actions[]` over parsing `suggestion` prose:
 
@@ -177,9 +177,10 @@ Suggest `@nudo:case` directives for a function based on its parameter types.
 ```text
 Function "add" has 2 synthesized case(s); suggested directives:
 /**
- * @nudo:case "call@L2" (1, 2)
- * @nudo:case "call@L3" ("x", "y")
+ * @nudo:case "witness@1" (1, 2) => 3
+ * @nudo:case "witness@2" ("x", "y") => "xy"
 */
+Note: witness names are hand-written (not the synthetic call@/entry@ namespace); the expected value is the observed result.
 ```
 
 Cases whose arguments cannot be serialized as directives (functions, Promises, instances, …) are dropped and reported in a trailing `(M case(s) skipped: not serializable as directives)` line; if none of the cases is serializable, the reply falls back to `Function "<functionName>" already has N case(s) (none serializable as directives)`.
@@ -209,7 +210,7 @@ Switch the active case of a function. The active case drives hover types, diagno
 | `functionName` | `string` | Name of the function |
 | `caseIndex` | `number` | 0-based index of the case to activate |
 
-**Returns:** `{ success: true }`. The server revalidates the document with the new active case and refreshes CodeLens.
+**Returns:** `{ success: true }` on success; `{ success: false, error, isError: true }` when the function is unknown, the function has no `@nudo:case` to select, or `caseIndex` is out of range. The server revalidates the document with the new active case and refreshes CodeLens, inlay hints and pull diagnostics.
 
 ## nudo.getActiveCases
 
@@ -221,7 +222,7 @@ Read the active case index of every function in a file.
 |------|------|-------------|
 | `file` | `string` | `file://` URI or path to the JavaScript file |
 
-**Returns:** `Record<string, number>` mapping function name → active case index, e.g. `{ "parse": 1, "greet": 0 }`.
+**Returns:** `Record<string, number>` mapping function name → active case index, e.g. `{ "parse": 1, "greet": 0 }`; on failure `{ success: false, error, isError: true }`.
 
 ## nudo.contract / nudo.contract.draft / nudo.contract.emit
 
@@ -231,7 +232,7 @@ Interface product surface (same data sources as CLI):
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only**. `write: true` is **fail-closed** without a project root (nudo config / `package.json` ancestor) — same as CLI `--draft --write` (override: `NUDO_DRAFT_FORCE=1`) |
-| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
 
 `loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.contract.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
 
@@ -249,6 +250,8 @@ The `type` field of `nudo.whatIf` bindings accepts a primitive or a `|`-separate
 | `string \| null` | Union — "string or null" |
 
 Constraint-builder forms (`number()`, `lit(...)`, `shape({...})`, `union(...)`, `array(...)`) and structural expressions (object/array literals, `=>` functions) parse through the directive grammar (`parseCaseArgExpr`); any other name becomes `unknown`.
+
+A name Nudo cannot express degrades to `unknown` — it is never silently widened to `any`. The `Bindings applied: …` note says what was *actually* injected, so a degraded binding reads `x: unknown (requested "Date" is not expressible; applied as unknown)`. A union with one inexpressible member degrades as a whole (`union(unknown, …)` is not a legal constraint-builder argument).
 
 ## Diagnostics
 
@@ -282,7 +285,7 @@ Agent tools from `AGENT_TOOL_SOURCES` (`packages/lsp/src/agent-tools.ts`), pinne
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
-| <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + serializeCheckJson | `nudo.check \| nudo/check` |
+| <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + mergeCheckIssues + serializeCheckJson | `nudo.check \| nudo/check` |
 | <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeInterfaceLenses + interfaceTierOf | — |
 | <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — interfaceSurface + formatInterfaceSurfaceLine | `nudo.contract \| nudo/contract` |
 | <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftInterface + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
@@ -290,8 +293,8 @@ Agent tools from `AGENT_TOOL_SOURCES` (`packages/lsp/src/agent-tools.ts`), pinne
 | <a id="getactivecases"></a>`getActiveCases` | fn | nudo.getActiveCases / `nudo/getActiveCases` — editor command (not an agent tool) | `nudo.getActiveCases \| nudo/getActiveCases` |
 | <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + interfaceTierOf | `nudo.hover \| nudo/hover` |
 | <a id="selectcase"></a>`selectCase` | fn | nudo.selectCase / `nudo/selectCase` — editor command (not an agent tool) | `nudo.selectCase \| nudo/selectCase` |
-| <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFile + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
-| <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFile + serializeCaseJson | `nudo.test \| nudo/test` |
-| <a id="trace"></a>`trace` | fn | nudo.trace / `nudo/trace` — analyzeFile cases | `nudo.trace \| nudo/trace` |
-| <a id="whatif"></a>`whatIf` | fn | nudo.whatIf / `nudo/whatIf` — injectBindings + analyzeFile | `nudo.whatIf \| nudo/whatIf` |
+| <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFileAsync + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
+| <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFileAsync + buildTestReport + serializeCaseJson | `nudo.test \| nudo/test` |
+| <a id="trace"></a>`trace` | fn | nudo.trace / `nudo/trace` — analyzeFileAsync cases | `nudo.trace \| nudo/trace` |
+| <a id="whatif"></a>`whatIf` | fn | nudo.whatIf / `nudo/whatIf` — injectBindings + analyzeFileAsync | `nudo.whatIf \| nudo/whatIf` |
 <!-- NUDO-API-SKELETON:END -->

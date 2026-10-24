@@ -2,55 +2,161 @@
  * nudo export — 投影：dts | guard | schema (dialect) | standard | all。
  * 从 index.ts 原样迁出；dts 面消费契约证据（sidecar / @nudo:contract /
  * @nudo:case），与 check 签名面同数据源。
+ *
+ * 本文件是**薄调度器**：产物面的实现在 `./export/` 下按面切分
+ * （selection / contract-face / zod-face / standard-face / guard-face /
+ * dts-face / diagnostics / io / stdout）。
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, relative, join, basename, dirname } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve, basename, dirname } from "node:path";
 import type { Command } from "commander";
-import { reportPathErrors, resolveTargetsCollect, displayPathOf, type PathError } from "./shared.ts";
+import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
 import {
-  abs as makeAbs,
   effectiveInterface,
-  constraintToEntryAbs,
-  joinAbs,
-  localNamedExports,
-  obj,
+  abs as makeAbs,
+  anyAbs,
   type Abs,
+  type FormalParam,
 } from "@nudojs/core";
-import { extractDirectives, parse } from "@nudojs/parser";
+import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
 import {
-  absToStandardSchemaModule,
-  absToZodSchemaModule,
-  projectFunctionDts,
-  type SchemaDialect,
-  generateGuardFunctionFromAbs,
-  type DtsContractFace,
-} from "@nudojs/service/emit";
-import {
-  defaultLoadModule,
-  analyzeFileAsync,
-  findProjectConfig,
-  interfaceConfig,
-  mockDirectivesToAbsSeeds,
-  mockSeedsToAbsMocks,
-  tryEvalCall,
-  type CaseResult,
-} from "@nudojs/service";
-import {
-  EXPORT_FORMATS,
   SCHEMA_DIALECTS,
   normalizeDialect,
   normalizeExportFormat,
   schemaDialectOf,
-  schemaFileName,
   wantsSchema,
   wantsStandard,
   type ExportFormat,
 } from "../export-format.ts";
-import { DIAG } from "@nudojs/core/internal";
+import type { SchemaDialect } from "@nudojs/service/emit";
+import {
+  buildEffectiveInterfaceOptions,
+  resolveEvalMocks,
+  selectExportFunctions,
+  selectPublicFunctions,
+} from "./export/selection.ts";
+import { unifiedParamFace, unifiedReturnFace, type ParamFace } from "./export/contract-face.ts";
+import { renderZodModule, zodFaceEntries } from "./export/zod-face.ts";
+import { standardFaceChunk } from "./export/standard-face.ts";
+import { guardFaceChunk } from "./export/guard-face.ts";
+import {
+  dtsEntryNames,
+  dtsFaceEntry,
+  dtsModuleChunk,
+  dtsModuleSurfaceOf,
+  dtsUnevidencedParams,
+  exportFacePredicate,
+  type DtsFaceEntry,
+} from "./export/dts-face.ts";
+import {
+  collectExportDiagnostics,
+  reportExportDiagnostics,
+  reportMockSeedFailure,
+  reportUnevidencedParams,
+} from "./export/diagnostics.ts";
+import { writeExportArtifacts, writtenPathLines } from "./export/io.ts";
+import { printExportStdout } from "./export/stdout.ts";
 
 // ---------------------------------------------------------------------------
 // export — 投影：dts | guard | schema (dialect) | standard | all
 // ---------------------------------------------------------------------------
+
+/**
+ * 一个声明形参在**统一参数面**里可能占用的槽名。
+ *
+ * 槽名与 `unifiedParamFace` 的产出同名：标识 / 默认 / 剩余参数位取形参名
+ * （剩余参数另取带 `...` 的展示名）；解构位取**整参契约名**（占位名 / `_`）
+ * 或**字段级**条目名（顶层绑定名 / 点路径首段）。
+ */
+function formalSlotNames(formal: FormalParam): Set<string> {
+  switch (formal.kind) {
+    case "id":
+    case "default":
+      return new Set([formal.name]);
+    case "rest":
+      return new Set([formal.name, formal.display]);
+    case "pattern":
+      return new Set([formal.placeholder, "_", ...formal.bound]);
+  }
+}
+
+/**
+ * Bug 394：数组解构形参的**输入面**必须是**数组 / 元组**形态。
+ *
+ * 侧车契约按**绑定名**声明（`fn({ a: number() })` 对 `[a, b]` 来说 `a` 是
+ * **下标 0 的元素**，不是属性键）⇒ 统一参数面把它摊成对象槽
+ * （`z.object({ a: … })`）⇒ 产物的输入面与真实形参形态**完全颠倒**：
+ * 合法的数组调用被判红、非法的对象调用被放行。
+ *
+ * 修法（产物面兜底）：把该形参的**字段级**槽合成**一个元组槽**——元素位
+ * 按**下标**寻址（`FormalParam.boundIndex`，core 形参表面模型的扩展）；
+ * 未契约的元素位留 `any`（**无约束**，不是 `unknown`——unknown 表示引擎
+ * 推导失败；契约没写的元素位是「没约束」⇒ any，与入口无约束参数同口径）；
+ * 元组长度 = 模式的**位置数**（声明级 ⇒ 不被单次观测裁剪）。
+ */
+function arrayPatternTupleFace(
+  formal: Extract<FormalParam, { kind: "pattern" }>,
+  own: readonly ParamFace[],
+): ParamFace | undefined {
+  // 只处理**字段级**槽（名字是绑定名）；整参契约（占位名 / `_`）与无契约
+  // 回落（观测面）都已经是**整个实参**形态 ⇒ 原样保留。
+  // 整参契约与字段级契约**同时**存在时也保留原样（用户的整参申报优先）。
+  const fieldLevel = own.filter(
+    (e) => formal.bound.includes(e.name) && e.name !== formal.placeholder && e.name !== "_",
+  );
+  if (fieldLevel.length === 0) return undefined;
+  const indexOf = (name: string): number =>
+    formal.boundIndex?.[name] ?? formal.bound.indexOf(name);
+  const lastIndex = formal.bound.reduce((acc, b) => Math.max(acc, indexOf(b)), -1);
+  const elements: Abs[] = [];
+  for (let i = 0; i <= lastIndex; i++) elements.push(anyAbs);
+  for (const e of fieldLevel) {
+    const idx = indexOf(e.name);
+    if (idx < 0 || idx > lastIndex) continue;
+    elements[idx] = e.abs;
+  }
+  return {
+    name: formal.placeholder,
+    abs: makeAbs({ k: "tuple", elements }, undefined, undefined, "exact"),
+    optional: false,
+  };
+}
+
+/**
+ * Bug 394：把数组解构形参的字段级槽**合成元组槽**（见
+ * {@link arrayPatternTupleFace}）。其余形参原样保留。
+ */
+function arrayPatternParamFaces(
+  fn: FunctionAnalysis,
+  paramExps: readonly ParamFace[],
+): ParamFace[] {
+  const formals = fn.formals ?? [];
+  if (!formals.some((f) => f.kind === "pattern" && f.patternKind === "array")) {
+    return [...paramExps];
+  }
+  const out: ParamFace[] = [];
+  let pi = 0;
+  for (const formal of formals) {
+    // 统一参数面按形参顺序产出 ⇒ 逐形参认领属于自己的槽
+    const names = formalSlotNames(formal);
+    const own: ParamFace[] = [];
+    while (pi < paramExps.length && names.has(paramExps[pi]!.name)) {
+      own.push(paramExps[pi]!);
+      pi++;
+    }
+    if (formal.kind === "pattern" && formal.patternKind === "array") {
+      const tuple = arrayPatternTupleFace(formal, own);
+      if (tuple) {
+        out.push(tuple);
+        continue;
+      }
+    }
+    out.push(...own);
+  }
+  // 契约名与声明形参表对不上的孤儿槽（Bug 607：按契约原样保留）
+  out.push(...paramExps.slice(pi));
+  return out;
+}
 
 async function runExport(
   file: string,
@@ -63,56 +169,66 @@ async function runExport(
   // case 档 "all"：@nudo:case 见证参与投影面（无指令文件不受影响——
   // call@/entry@ 合成与档位无关）
   const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "all");
-  const functions = result.functions.filter((f) => f.cases.length > 0);
+  const functions: FunctionAnalysis[] = selectExportFunctions(result);
+
+  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
+  // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
+  // 项目关 autoBind 时侧车不做 ambient 加载
+  const effOpts = buildEffectiveInterfaceOptions(filePath);
+
+  // 导出面裁剪谓词（dts 只发射导出面：export / export default / CJS exports ——
+  // 与 check entry 表同源 localNamedExports；导出 class 的实例方法按 Class
+  // 前缀放行）。四个产物面**共用**这一道闸门（Bug 621）。
+  const onExportFace = exportFacePredicate(dtsEntryNames(source));
+
+  // 诊断面（Bug 610 / 607 / 625）：契约面装载失败 / 契约形参名与声明形参表
+  // 不匹配 / 契约合取不可满足 ⇒ 产物面会发布一份与契约不符的投影 ⇒ 阻断级：
+  // 真实诊断上屏（stderr）+ exit 1 + **不发布产物**。
+  const diagnostics = collectExportDiagnostics({
+    filePath,
+    source,
+    result,
+    effOpts,
+    onExportFace,
+  });
+  if (diagnostics.blocking) {
+    reportExportDiagnostics(diagnostics);
+    process.exitCode = 1;
+    return;
+  }
 
   if (functions.length === 0) {
     console.log("No analyzed functions found.");
     return;
   }
 
-  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
-  // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
-  // 项目关 autoBind 时侧车不做 ambient 加载
-  const proj = findProjectConfig(dirname(filePath));
-  const autoBindCfg = interfaceConfig(proj?.config).autoBind;
-  const effOpts = {
-    loadModule: defaultLoadModule,
-    fromFile: filePath,
-    ...(autoBindCfg !== undefined ? { autoBind: autoBindCfg } : {}),
-    ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
-  };
   // 契约种子求值的 @nudo:mock 种子（与 analyzer 文件级种子同口径；env 面
   // 不在此装配——env 依赖体 fail-closed 落 unknown，不伪造精度）
-  let evalMocks: Record<string, Abs> | undefined;
-  try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
-      fromFile: filePath,
-      loadModule: defaultLoadModule,
-    });
-    const mocks = mockSeedsToAbsMocks(seeds);
-    evalMocks = Object.keys(mocks).length > 0 ? mocks : undefined;
-  } catch (err) {
+  const mockResult = resolveEvalMocks(source, filePath);
+  if (mockResult.warning !== undefined) {
     // mock 种子求值失败不得静默降级——导出面会无告警变 unknown；
     // 上屏（含原因）后仍降级 undefined（不炸导出）
-    console.error(
-      `warning: @nudo:mock seed evaluation failed for ${filePath}: ${(err as Error).message} — mocks not applied; contract faces may render unknown`,
-    );
-    evalMocks = undefined;
+    reportMockSeedFailure(filePath, mockResult.warning);
   }
-  // dts 只发射导出面（export / export default / CJS exports —— 与 check
-  // entry 表同源 localNamedExports；导出 class 的实例方法按 Class 前缀放行）
-  const entryNames = localNamedExports(source);
-  const onExportFace = (name: string): boolean => {
-    if (entryNames.has(name) || name === "default") return true;
-    const m = /^([A-Za-z_$][\w$]*)\.[A-Za-z_$][\w$]*$/.exec(name);
-    return m !== null && entryNames.has(m[1]!);
-  };
-  /** 契约参数面：eff.params → entry Abs（无 eff / 无参数契约 = 空表） */
-  const contractParamsOf = (eff: ReturnType<typeof effectiveInterface>): Array<{ name: string; abs: Abs }> =>
-    eff ? eff.params.map((p) => ({ name: p.param, abs: constraintToEntryAbs(p.constraint, p.param) })) : [];
+  const evalMocks = mockResult.mocks;
+
+  // 模块导出面（导出名 / 类 / 再导出）：dts 投影按**导出名**声明，类成员进
+  // 类声明（一次一类），再导出面按原样复现（族 15 · S1）。
+  const dtsSurface = dtsModuleSurfaceOf(source);
+  /** dts 逐函数投影（模块面合成用：类声明一次一类 + 再导出 + brand 类） */
+  const dtsEntries: DtsFaceEntry[] = [];
 
   const effectiveDialect = schemaDialectOf(format, dialect);
-  const schemaExports: Record<string, Abs> = {};
+  // zod 导出表：**无原型** + **不折叠同名**（族 17 · Bug 623）——
+  // 普通对象把同名条目后者覆盖前者（实测：同一个类里两个同名方法 ⇒ zod 产物
+  // 只剩 1 个 `C_mInput`，另一个方法的证据凭空消失）⇒ 键侧先去重
+  // （`C_mInput` / `C_mInput_2`），再交给 service 的 `zodExportIdent` 做
+  // 标识符级去重（两层去重各司其职）。
+  const schemaExports: Record<string, Abs> = Object.create(null) as Record<string, Abs>;
+  /** zod 导出名占用表（键侧去重：同名条目各自成一条，不折叠）。 */
+  const zodExportNames = new Set<string>();
+  /** guard 标识符占用表（同一份产物 = 同一作用域 ⇒ 跨函数块共享）。 */
+  const guardIdents = new Set<string>();
   const standardChunks: string[] = [];
   const guardChunks: string[] = [];
   const dtsChunks: string[] = [];
@@ -120,141 +236,90 @@ async function runExport(
   /** 无证据（无契约 / 无 case / 无调用点）而落 unknown 的参数位（stderr 提示用） */
   const unevidencedParams: string[] = [];
 
-  for (const fn of functions) {
+  // 导出面过滤（**循环入口**，四个产物面共用一道闸门）：dts 面此前独有这道
+  // 过滤，zod / standard / guard 三面不裁剪 ⇒ 同一次导出里「哪些函数算公开」
+  // 有四套口径（内部实现照样产出运行时校验器，.d.ts 却静默缺席）——Bug 621。
+  const publicFunctions = selectPublicFunctions(functions, onExportFace);
+
+  for (const fn of publicFunctions) {
     const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
     const eff = effectiveInterface(source, baseName, effOpts);
-    const paramExps: Array<{ name: string; abs: Abs }> = [];
-    let outputAbs: Abs | undefined;
-    if (eff) {
-      for (const p of eff.params) {
-        paramExps.push({
-          name: p.param,
-          abs: constraintToEntryAbs(p.constraint, p.param),
-        });
-      }
-      if (eff.returns) {
-        outputAbs = constraintToEntryAbs(eff.returns.constraint, "return");
-      }
-    }
-    if (paramExps.length === 0) {
-      // 无显式参数契约：对各 case 同槽 argAbs 做 join
-      const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
-      for (let i = 0; i < arity; i++) {
-        const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
-        if (parts.length === 0) continue;
-        const joined = parts.reduce((a, b) => joinAbs(a, b));
-        paramExps.push({ name: fn.paramNames[i] ?? `arg${i}`, abs: joined });
-      }
-    }
-    if (!outputAbs) {
-      outputAbs = fn.combinedAbs ?? caseResults[0]?.abs;
-    }
+    // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
+    const faceCtx = {
+      source,
+      filePath,
+      ...(evalMocks ? { mocks: evalMocks } : {}),
+    };
+    const paramExps = arrayPatternParamFaces(fn, unifiedParamFace(fn, eff, caseResults));
+    const outputAbs = unifiedReturnFace(fn, eff, caseResults, faceCtx);
 
     if (wantsSchema(format)) {
       // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
-      const inputSlots: Record<string, { value: Abs; optional?: boolean }> = {};
-      for (const p of paramExps) {
-        inputSlots[p.name] = { value: p.abs };
-      }
-      schemaExports[`${baseName}Input`] = obj(inputSlots);
-      if (outputAbs) {
-        schemaExports[`${baseName}Output`] = outputAbs;
+      for (const [name, abs] of zodFaceEntries(baseName, paramExps, outputAbs)) {
+        // 同名条目不折叠（Bug 623）：占用表命中 ⇒ 加 `_2` / `_3` … 后缀
+        let key = name;
+        for (let i = 2; zodExportNames.has(key); i++) {
+          key = `${name}_${i}`;
+        }
+        zodExportNames.add(key);
+        schemaExports[key] = abs;
       }
     }
 
     if (wantsStandard(format)) {
-      const exports: Record<string, Abs> = {};
-      if (eff) {
-        for (const p of eff.params) {
-          exports[`${baseName}_${p.param}`] = constraintToEntryAbs(p.constraint, p.param);
-        }
-        if (eff.returns) {
-          exports[`${baseName}Return`] = constraintToEntryAbs(eff.returns.constraint, "return");
-        }
-      }
-      if (Object.keys(exports).length === 0) {
-        // 无显式契约：输出用 combinedAbs；参数位对各 case 同槽 argAbs 做 join
-        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
-        for (const p of paramExps) {
-          exports[`${baseName}_${p.name}`] = p.abs;
-        }
-      } else if (!exports[`${baseName}Return`]) {
-        // 仅有参数契约、无返回契约时，用观察 combined 作 Output
-        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
-      }
-      if (Object.keys(exports).length > 0) {
-        const mod = absToStandardSchemaModule(exports);
-        standardChunks.push(`\n// === ${baseName} Standard Schema ===\n${mod.source}`);
-        for (const note of mod.dropped) {
-          droppedNotes.push(`${baseName} ${note}`);
+      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs, faceCtx);
+      if (chunk) {
+        standardChunks.push(chunk.source);
+        for (const note of chunk.dropped) {
+          droppedNotes.push(note);
         }
       }
     }
 
     if (format === "guard" || format === "all") {
-      const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
-      const absForGuard = fn.combinedAbs ?? caseResults[0]?.abs;
-      if (absForGuard) {
-        lines.push(generateGuardFunctionFromAbs(`is${baseName}Output`, absForGuard));
-      }
-      guardChunks.push(lines.join("\n"));
+      // 守卫消费**统一返回面**（契约面优先，599 / 613）⇒ 与 zod / standard /
+      // dts 三个面同一口径（出口域 = 契约申报的域，不再是单次调用点字面量）
+      guardChunks.push(guardFaceChunk(baseName, outputAbs, guardIdents));
     }
 
     if (format === "dts" || format === "all") {
       // 只发射导出面：非 export 的顶层函数是模块内部实现，不进 .d.ts
       if (onExportFace(fn.name)) {
-        // 契约面优先：手写契约参数/返回投影；无返回契约但有参数契约时用
-        // 契约种子求值折返回（与 check 的 refine 种子同向：
-        // u: { name: string } ⇒ u.name: string）
-        const contractParams = contractParamsOf(eff);
-        let contractReturn: Abs | undefined = eff?.returns
-          ? constraintToEntryAbs(eff.returns.constraint, "return")
-          : undefined;
-        if (contractReturn === undefined && contractParams.length > 0) {
-          const byName = new Map(contractParams.map((p) => [p.name, p.abs]));
-          const seedArgs = fn.paramNames.map(
-            (n) =>
-              byName.get(n.startsWith("...") ? n.slice(3) : n) ??
-              makeAbs({ k: "any" }, undefined, undefined, "path"),
-          );
-          // fail-closed：求值失败/不可求值 → undefined，返回位落 case 观察
-          contractReturn =
-            tryEvalCall(source, filePath, fn.name, seedArgs, evalMocks ? { mocks: evalMocks } : {}) ??
-            undefined;
-        }
-        const contractFace: DtsContractFace | undefined =
-          contractParams.length > 0 || contractReturn !== undefined
-            ? {
-                params: contractParams,
-                ...(contractReturn !== undefined ? { return: contractReturn } : {}),
-              }
-            : undefined;
-        const dts = projectFunctionDts(fn, contractFace);
-        if (dts.lines.length > 0) {
-          dtsChunks.push(dts.lines.join("\n"));
-          for (const p of dts.params) {
-            if (p.type === "unknown") unevidencedParams.push(`${baseName}.${p.name}`);
-          }
+        const entry = dtsFaceEntry(
+          fn,
+          baseName,
+          eff,
+          source,
+          filePath,
+          evalMocks,
+          dtsSurface,
+        );
+        // 函数声明行由**模块面**统一合成（类声明一次一类、再导出面）⇒ 这里
+        // 只收集，不单独 push（否则同一条声明出两遍）。
+        dtsEntries.push(entry);
+        for (const p of dtsUnevidencedParams(entry, baseName)) {
+          unevidencedParams.push(p);
         }
       }
     }
   }
 
+  // 模块面合成：类声明（一次一类）+ 再导出面 + brand 类声明
+  if (format === "dts" || format === "all") {
+    const mod = dtsModuleChunk(dtsSurface, dtsEntries);
+    if (mod !== undefined) dtsChunks.push(mod);
+  }
+
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
-  const schemaModule =
-    Object.keys(schemaExports).length > 0
-      ? absToZodSchemaModule(schemaExports)
-      : undefined;
+  const schemaModule = renderZodModule(schemaExports);
 
   // 无证据参数的 stderr 提示（docs/design/cli-semantics.md §2 的 unknown
   // 例外面）：指向三条补证据路径，stdout 投影面保持可钉住
-  if ((format === "dts" || format === "all") && unevidencedParams.length > 0) {
-    console.error(
-      `note: ${unevidencedParams.join(", ")} rendered as unknown (no contract/case evidence) — add a sidecar contract (*.nudo.js), @nudo:contract, or @nudo:case / call-site evidence`,
-    );
+  if (format === "dts" || format === "all") {
+    reportUnevidencedParams(unevidencedParams);
   }
 
   // dts 是模块面投影：函数存在但无导出声明面时如实说明（非错误，exit 0）
@@ -265,72 +330,42 @@ async function runExport(
     return;
   }
 
+  // 模块无公开面 ⇒ 四个产物面都无产物（Bug 621：四口径统一）——如实说明，
+  // 不静默零产物。
+  if (publicFunctions.length === 0 && functions.length > 0) {
+    console.log(
+      "No exported declarations found — export projects the module surface (export / export default / CJS exports).",
+    );
+    return;
+  }
+
   if (output) {
-    // BUG-023：--out IO 失败转 nudo:path-io 面（路径相对
-    // cwd 展示，errno 原文不进 CI 日志），与 check/test 的
-    // 路径错误面同构（message + fix: 提示 + exit 1）。
-    const outDir = resolve(output);
-    const ioError = (op: string): PathError => ({
-      path: outDir,
-      code: DIAG.pathIo,
-      message: `export --out ${op} failed: ${displayPathOf(outDir)}`,
-      suggestion: `check --out <dir> is writable and the path is a directory, then re-run nudo export`,
+    const result2 = writeExportArtifacts(resolve(output), {
+      stem,
+      // 模块标识 = 源文件路径（族 17 · Bug 609 / 622）：没有它，模块身份只能
+      // 靠「stem + 导出签名」猜 ⇒ 同 stem **且**导出名集合也相同的两个模块
+      // 会被判成同一模块（后者覆盖前者），且改名后重导会换唯一名、留下陈旧副本。
+      moduleKey: filePath,
+      dialect: effectiveDialect,
+      ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
+      standardChunks,
+      guardChunks,
+      dtsChunks,
     });
-    try {
-      mkdirSync(outDir, { recursive: true });
-    } catch {
-      reportPathErrors([ioError("mkdir")]);
-      return;
-    }
-    const written: string[] = [];
-    try {
-      if (schemaModule) {
-        const p = join(outDir, schemaFileName(stem, effectiveDialect));
-        writeFileSync(p, schemaModule.source, "utf-8");
-        written.push(p);
-      }
-      if (standardChunks.length > 0) {
-        // 每函数一份模块（各自内联 __nudoCheck，避免合并文件时 helper 重复定义）
-        for (const chunk of standardChunks) {
-          const m = chunk.match(/\/\/ === (\S+) Standard Schema ===/);
-          const fnStem = m?.[1] ?? stem;
-          const p = join(outDir, `${fnStem}.nudo.standard.ts`);
-          const header = `// @generated by nudo export --format standard — Standard Schema v1 (vendor: nudo)\n`;
-          const body = chunk.startsWith("\n") ? chunk.slice(1) : chunk;
-          writeFileSync(p, body.includes("@generated") ? body + "\n" : header + body + "\n", "utf-8");
-          written.push(p);
-        }
-      }
-      if (guardChunks.length > 0) {
-        const p = join(outDir, `${stem}.nudo.guard.ts`);
-        writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
-        written.push(p);
-      }
-      if (dtsChunks.length > 0) {
-        const p = join(outDir, `${stem}.d.ts`);
-        writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
-        written.push(p);
-      }
-    } catch {
-      reportPathErrors([ioError("write")]);
-      return;
-    }
-    for (const p of written) {
-      console.log(`wrote ${relative(process.cwd(), p)}`);
+    if (!result2.ok) return;
+    for (const line of writtenPathLines(result2.written)) {
+      console.log(line);
     }
     return;
   }
 
-  const chunks: string[] = [];
-  if (schemaModule) chunks.push(schemaModule.source);
-  chunks.push(...standardChunks, ...guardChunks, ...dtsChunks);
-  for (const chunk of chunks) {
-    console.log(chunk);
-  }
-  if (droppedNotes.length > 0) {
-    console.log(`\n// dropped preds (not projected into ${effectiveDialect}):`);
-    for (const n of droppedNotes) console.log(`//   ${n}`);
-  }
+  printExportStdout({
+    ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
+    standardChunks,
+    guardChunks,
+    dtsChunks,
+    droppedNotes,
+  });
 }
 
 export function registerExportCommand(program: Command): void {

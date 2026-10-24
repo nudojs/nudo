@@ -255,6 +255,18 @@ function walkAbs(a: Abs | undefined, path: string[]): { found: Abs | undefined; 
     // brand carries its payload as shape.shape (an Abs), not as obj slots
     if (cur.shape.k === "brand") {
       cur = cur.shape.shape as Abs | undefined;
+      // brand 的 payload 可能缺失（shape.shape 是可选位）——解包后必须重新
+      // 过空值守卫，否则下一轮 cur.shape 会抛 TypeError 而不是返回未命中。
+      if (!cur) return { found: undefined };
+    }
+    // 族 29：构造器改成 fn + slots（dual-facet）后，静态成员住在
+    // `fn` shape 的 `slots` 上（如 `Buffer.from` / `Buffer.alloc`）——
+    // 只认 obj 会把这些探针误判成「missing from env globals」。
+    if (cur.shape.k === "fn") {
+      const slot = cur.shape.slots?.[key];
+      if (!slot) return { found: undefined };
+      cur = slot.value;
+      continue;
     }
     if (!cur || cur.shape.k !== "obj") return { found: undefined };
     const slot = cur.shape.slots[key];

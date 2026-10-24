@@ -86,12 +86,20 @@ export function isNodeModulesPath(p: string): boolean {
  * 源文件的旁路侧车路径：.js/.mjs → 同名 .nudo.js；.ts/.mts → 同名 .nudo.ts。
  * 其他扩展名（.cjs/.jsx/无扩展名…）不做替换，直接追加 .nudo.js——侧车约定
  * 只覆盖四类入口；host loadModule 对不存在的路径返回 miss，自然无侧车来源。
+ *
+ * **幂等**（Bug 362）：输入本身已是侧车（`lib.nudo.js` / `lib.nudo.ts`）时
+ * **不再追加第二段** `.nudo`。旧口径产出 `lib.nudo.nudo.js`——该路径不是任何
+ * 源码的侧车 ⇒ 契约永久静默失效；草稿面还会落到 `lib.nudo.nudo.draft.js`
+ * 并指示用户「copy it into lib.nudo.nudo.js」（一个不存在的侧车名）。
  */
 export function sidecarPathOf(file: string): string {
   const f = normPath(file);
-  if (f.endsWith(".mjs")) return f.slice(0, -4) + ".nudo.js";
-  if (f.endsWith(".js")) return f.slice(0, -3) + ".nudo.js";
-  if (f.endsWith(".mts")) return f.slice(0, -4) + ".nudo.ts";
-  if (f.endsWith(".ts")) return f.slice(0, -3) + ".nudo.ts";
-  return `${f}.nudo.js`;
+  // 已有 `.nudo` 段 ⇒ 先剥掉再挂目标扩展名（`.nudo` 段本身不是扩展名）
+  const withExt = (base: string, ext: string): string =>
+    (base.endsWith(".nudo") ? base.slice(0, -5) : base) + ext;
+  if (f.endsWith(".mjs")) return withExt(f.slice(0, -4), ".nudo.js");
+  if (f.endsWith(".js")) return withExt(f.slice(0, -3), ".nudo.js");
+  if (f.endsWith(".mts")) return withExt(f.slice(0, -4), ".nudo.ts");
+  if (f.endsWith(".ts")) return withExt(f.slice(0, -3), ".nudo.ts");
+  return withExt(f, ".nudo.js");
 }

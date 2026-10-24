@@ -54,6 +54,8 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 | Nudo | Abs（shape × term × pred） | Abs（展示时外延渲染） | 覆盖抽象集合中的所有值 |
 | TypeScript | AST（不执行） | 类型 | 覆盖所有语法路径 |
 
+Nudo 对 `transform` 传入抽象字符串输入时执行求值，引擎把这个 Abs 沿函数体一路传播。在 `typeof x === "string"` 处，引擎知道该分支会被取；在 `x.toUpperCase()` 处，结果仍是 string 形态。结果不是一个具体值——它是一个 **Abs**。
+
 ---
 
 ## 2. 类型系统：Abs

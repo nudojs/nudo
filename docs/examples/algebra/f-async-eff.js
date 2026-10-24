@@ -5,11 +5,12 @@
 // → promise<{ id: 1, name: "ada" }> #path：fetch 返回 { ok: true, json: fn }，
 // res.ok=true 使 throw 分支不可达；res.json() 经 mock 闭包求值
 //
-// 注意：@nudo:mock 必填——求值引擎（默认路径）会执行转译后的真实
-// 全局 fetch，拿 Abs 当 URL 直接 ERR_INVALID_URL 崩溃（exit 1）。这里用块注释
+// 注意：@nudo:mock 必填——宿主副作用全局（fetch 等）在分析期被拦下、
+// 不真实执行：结果加宽 unknown#opaque，并上报 nudo:host-effect-blocked
+// （Info）——整轮不崩、退出码不受影响，只是类型精度退化。这里用块注释
 // 形态（行注释 // @nudo:mock 同样生效，但看起来像被注释掉的代码，易误读）。
 //
-// 坑：@nudo:mock 缺失时 求值引擎会真实执行全局 fetch 崩溃（见上）；另顶层
+// 坑：@nudo:mock 缺失时 fetch 的返回值退成 unknown（见上）；另顶层
 // this（模块级 this 访问）会让转译抛 unsupported → 静默回落解释路径
 // （能力判定在转译点，非源码正则；注释内容不影响判定）。
 
