@@ -47,7 +47,7 @@ function nodeCheck(path: string): { status: number; stderr: string } {
 }
 
 describe("Bug 968 —— 文件级指令随被删语句消失（产物面 + 门禁行为）", () => {
-  it("挂在被删语句上的 `/// @nudo:import` 必须在产物里存活", { timeout: 30_000 }, () => {
+  it("挂在被删语句上的 `/// @nudo:import` 必须在产物里存活", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-968-"));
     dirs.push(dir);
     writeFileSync(join(dir, "shapes.nudo.js"), SHAPES_NUDO_JS, "utf-8");
@@ -68,7 +68,7 @@ describe("Bug 968 —— 文件级指令随被删语句消失（产物面 + 门�
     expect(check.status, `${product}\n${check.stderr}`).toBe(0);
   });
 
-  it("门禁行为正确：源红 / 产物**同样红**（契约仍被绑定 ⇒ 不是假绿）", { timeout: 30_000 }, () => {
+  it("门禁行为正确：源红 / 产物**同样红**（契约仍被绑定 ⇒ 不是假绿）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-968b-"));
     dirs.push(dir);
     writeFileSync(join(dir, "shapes.nudo.js"), SHAPES_NUDO_JS, "utf-8");

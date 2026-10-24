@@ -55,7 +55,7 @@ function brokenPkg(name: string): string {
 }
 
 describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多目标 / JSON 契约）", () => {
-  it("Bug 668：status 审计全部目标（不得静默只报第一个）", { timeout: 30_000 }, () => {
+  it("Bug 668：status 审计全部目标（不得静默只报第一个）", () => {
     const a = retirable("wiring-a");
     const b = retirable("wiring-b");
     const r = runCliTsx(["migrate", "status", a, b]);
@@ -86,7 +86,7 @@ describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多
     expect(r.stdout).toContain(b);
   });
 
-  it("Bug 675：retire --json 的顶层形状恒为数组（1 个包也是数组）", { timeout: 30_000 }, () => {
+  it("Bug 675：retire --json 的顶层形状恒为数组（1 个包也是数组）", () => {
     const a = retirable("wiring-json-1");
     const one = runCliTsx(["migrate", "retire", a, "--json"]);
     expect(one.status, one.stderr).toBe(0);
@@ -113,7 +113,7 @@ describe("族 16 接线 —— migrate 命令层（status 多路径 / retire 多
     expect(r.stderr).toContain("package.json parse failed");
   });
 
-  it("Bug 567：「无可退役」是正常结果 ⇒ exit 0（不是错误）", { timeout: 30_000 }, () => {
+  it("Bug 567：「无可退役」是正常结果 ⇒ exit 0（不是错误）", () => {
     const plain = nothingToRetire("wiring-plain");
     const r = runCliTsx(["migrate", "retire", plain]);
     expect(r.status, r.stderr).toBe(0);

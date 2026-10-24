@@ -107,7 +107,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
     expect(parsed.pathErrors![0]!.path).toBe("bad.ts");
   });
 
-  it("验收 3：全部成功 + --write ⇒ 人类面照旧打 `wrote`，产物真实落盘，标记为「已写盘」", { timeout: 30_000 }, () => {
+  it("验收 3：全部成功 + --write ⇒ 人类面照旧打 `wrote`，产物真实落盘，标记为「已写盘」", () => {
     const dir = dirWith({ "good.ts": GOOD });
 
     const r = runCliTsx(["migrate", "strip", "--write", "."], { cwd: dir });
@@ -124,7 +124,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
     expect(parsed[0]!.writeStatus).toBe("written");
   });
 
-  it("验收 4：退出码语义不变（有失败 ⇒ 非 0；全成功 ⇒ 0）", { timeout: 30_000 }, () => {
+  it("验收 4：退出码语义不变（有失败 ⇒ 非 0；全成功 ⇒ 0）", () => {
     const bad = dirWith({ "good.ts": GOOD, "bad.ts": BAD });
     const good = dirWith({ "good.ts": GOOD });
 
@@ -134,7 +134,7 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
     expect(runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: good }).status).toBe(0);
   });
 
-  it("负控：dry-run（不带 --write）⇒ 人类面是 `dry`（不是 `wrote`），标记为「计划」", { timeout: 30_000 }, () => {
+  it("负控：dry-run（不带 --write）⇒ 人类面是 `dry`（不是 `wrote`），标记为「计划」", () => {
     const dir = dirWith({ "good.ts": GOOD });
 
     const r = runCliTsx(["migrate", "strip", "."], { cwd: dir });

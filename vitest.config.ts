@@ -33,6 +33,12 @@ export default defineConfig({
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
     maxWorkers: 4,
+    // 默认 5s 是**单测**口径；CLI e2e（`nudojs/src/__tests__` 里 spawn
+    // `tsx <cli src>` 的那批）每条用例 spawn 1–5 个 tsx 子进程，单次 ≈1.5–2.5s
+    // ——在 4 worker / 2 core 的 CI shard 上会因 CPU 争用翻到 5s 以上（同一用例
+    // 上一轮 2s 通过、下一轮超时，纯抖动）。故把默认放宽到 30s；更重的用例仍按
+    // 需在 it 上显式 60s/120s。真 hang 仍会被兜住（只是晚 25s 报）。
+    testTimeout: 30_000,
     coverage: {
       provider: "v8",
       reporter: ["json", "text-summary"],

@@ -48,7 +48,7 @@ function esmReadEnum(path: string): { status: number; stdout: string; stderr: st
 }
 
 describe("Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门禁行为）", () => {
-  it("产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`", { timeout: 30_000 }, () => {
+  it("产物含运行时 enum 对象 ⇒ `node --check` 过且 `E.A === 1`", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-913-"));
     dirs.push(dir);
     writeFileSync(join(dir, "enum.ts"), ENUM_TS, "utf-8");
@@ -72,7 +72,7 @@ describe("Bug 913 —— TS enum 被合成成运行时对象（产物面 + 门�
     expect(load.stdout).toContain("VALUE: 1");
   });
 
-  it("门禁行为正确：`.ts` 源与 `.js` 产物都绿，签名是 `f() => 1`（不再是 never）", { timeout: 30_000 }, () => {
+  it("门禁行为正确：`.ts` 源与 `.js` 产物都绿，签名是 `f() => 1`（不再是 never）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cli-bug-913b-"));
     dirs.push(dir);
     writeFileSync(join(dir, "enum.ts"), ENUM_TS, "utf-8");
