@@ -9,7 +9,8 @@ description: "在 Zed 中安装 Nudo 语言服务器：hover 类型、诊断、C
 ## 前置条件
 
 - Zed 内置 Node 运行时（用于启动服务器）
-- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp)——扩展会通过 Zed 托管 npm 自动安装，无需手动准备
+- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp)——扩展会通过 Zed 托管 npm
+  自动安装，无需手动准备
 
 0.5.0+ 自带 `dist/server.js` 与 `nudo-lsp` shebang 入口，并在未传 transport 参数时默认走 stdio。
 
@@ -87,12 +88,7 @@ git clone https://github.com/nudojs/nudo-zed
 
 ## 服务器解析
 
-扩展通过 Zed 托管 npm 安装 `@nudojs/lsp`（`npm_install_package`），并以
-
-`<node_binary_path>/node_modules/@nudojs/lsp/dist/server.js --stdio`
-
-启动——与其它 Zed language-server 扩展同一模式。若用户配置了
-`lsp.nudo.binary`，则优先使用该覆盖路径。
+扩展通过 Zed 托管 npm 安装 `@nudojs/lsp`（`npm_install_package`），并以 `<node_binary_path>/node_modules/@nudojs/lsp/dist/server.js --stdio` 启动——与其它 Zed language-server 扩展同一模式。用户若配置了 `lsp.nudo.binary`，则优先使用该覆盖路径。
 
 ## Zed 中的能力
 

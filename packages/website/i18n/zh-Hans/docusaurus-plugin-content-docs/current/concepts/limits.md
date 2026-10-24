@@ -5,6 +5,8 @@ description: 边界与非目标 — Nudo 不宣称什么、调用点上限、求
 
 # 边界与非目标
 
+**正在判断 Nudo 是否是你的正确工具时，先读本页。** 本页汇总 Nudo 不宣称什么、推导在何处有意退化为 `unknown` 或 `any`，以及哪些场景该用另一道门禁。
+
 边界是产品纪律，不是 bug。本页是面向用户的边界摘编——完整工程笔记在 monorepo（`docs/design/limitations.md`）。替代维度对照：[Nudo vs TypeScript](../guides/vs-typescript.md)。
 
 ## 非目标
@@ -36,7 +38,7 @@ description: 边界与非目标 — Nudo 不宣称什么、调用点上限、求
 
 ## 求值器缺口（摘要）
 
-部分构造仍会退化为 `unknown`（带引擎债诊断）。优先使用[语言语义](../concepts/semantics.md)中已建模的替代：例如 `Object.keys` 而非 `Object.prototype` 方法、对 `new Promise` 内部用 `@nudo:mock` + 异步包装。
+部分构造仍会退化（形态诚实，不伪造精度）：JSX → `unknown`；`import.meta` → `{ url: string }`；`import()` → 开放模块命名空间的 `Promise`；无法判定是加法还是拼接的混合 `+` → `number | string`。优先使用[语言语义](../concepts/semantics.md)中已建模的替代。
 
 Env harvest 覆盖率**不是**完备性承诺。
 

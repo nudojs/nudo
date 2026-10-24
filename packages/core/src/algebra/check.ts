@@ -979,6 +979,13 @@ function checkSourceInner(
             // #369 / #372：issue 构造处带函数声明位置
             loc: findFnLoc(file, name),
             source: contractSource,
+            // Bug 1094：返回点的路径前提 Φ（用户引理前提）——skip 分支同样
+            // 透传（函数级公理在 skip 面也成立；证明通道按「同项 ∧ 蕴含」
+            // 口径消费 ⇒ 不会凭空制造确定违约）。assumeDisplay 一并带上 ⇒
+            // Φ 被消费时归因（nudo:assume-relied）仍然可见（不得静默消费）。
+            phi: assumePhi?.phi,
+            phiPremises: assumePhi?.premises,
+            assumeDisplay: assumePhi?.display,
           },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
@@ -1280,6 +1287,14 @@ function checkSourceInner(
             assumeDisplay: assumePhi?.display,
             invariantDisplay: inv?.display,
             consumedAssume,
+            // Bug 1094：返回点的**路径前提 Φ** = 用户引理前提
+            //（`@nudo:assume` 的前提 Φ）——证明通道的 Φ 侧。
+            // 项身份：前提项用**真实形参名**（`termVar(name)`），泛化后的返回
+            // 项在形参**有契约**时同样锚在真实名上（`constraintToEntryAbs`）
+            // ⇒ 同项判定能对上；无契约时返回项锚在 α 名（A1…）⇒ 对不上 ⇒
+            // Φ 侧不生效（保守少证，不假红）。
+            phi: assumePhi?.phi,
+            phiPremises: assumePhi?.premises,
           },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);

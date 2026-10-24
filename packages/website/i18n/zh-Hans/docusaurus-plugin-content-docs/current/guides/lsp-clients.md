@@ -39,7 +39,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 
 | 能力 | 服务器 handler | 说明 |
 |------|----------------|------|
-| Diagnostics | `validateText`（push） | 自适应防抖 300/400/800 ms；过期 generation 可取消（A8） |
+| Diagnostics | `validateText`（push）+ `diagnosticProvider`（pull） | 自适应防抖 300/400/800 ms；过期 generation 可取消（A8）；pull 仅在 version + casesHash + depsHash 全匹配时命中缓存 |
 | Hover | `onHover` | Abs / intension；导出函数名首行 `● contract / hw\|gen\|imp`（A7） |
 | 补全（`.`） | `onCompletion` | 按推断类型给出 property/method |
 | CodeLens | `onCodeLens` | **观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update；`●/○ case "…"` 选项跟随（`nudo.selectCase` / `nudo.selectContract`） |
@@ -54,6 +54,8 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
 **文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 完整门禁语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
+
+**Zed / Nvim 协议冒烟（B4）：** `pnpm --filter @nudojs/lsp run smoke` 走一遍 stdio `initialize` → `textDocument/hover` → `textDocument/publishDiagnostics`——正是这些编辑器需要的基本面。VS Code 包有自带的 `smoke`（捆绑 server + initialize）。
 
 ## 客户端支持矩阵
 
@@ -71,14 +73,16 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 文档符号 | Y | Y | Y | Y | Y |
 | Signature help | Y | Y | Y | C | Y |
 | Code actions / Quickfix | Y | Y | Y | Y | C |
+| Code actions — extract / **inline var** / **change signature** | Y | Y | Y | Y | C |
 | Semantic tokens | Y | C（`semantic_tokens: "combined"`） | C | C | C |
 | Active-case 装饰 | Y（扩展） | N | N | N | N |
 | Agent 命令（`nudo.check` / `nudo.hover` / …） | Y（executeCommand / MCP 桥） | Y（agent / custom request） | Y（custom LSP request） | C | Y |
 | 未保存侧车 buffer（A4） | Y | Y | Y | Y | Y |
+| buffer 感知的 interface agent 工具（E5） | Y | Y | Y | Y | Y |
 
 ## 配置要点（可复制最小配置）
 
-先确保 `nudo-lsp` 在 `PATH` 上（项目内 `npm i -D @nudojs/lsp` 或全局安装）。冻结清单见 [`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API](../api/lsp.md)。
+安装 `@nudojs/lsp`，让 `nudo-lsp` 在 `PATH` 上（项目内 `npm i -D @nudojs/lsp` 或全局安装）。冻结清单见 [`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API](../api/lsp.md)。
 
 ### VS Code
 
@@ -124,6 +128,8 @@ vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
 
 -- 可选：CodeLens UI 插件（glance / nvim-code-action-menu 等）
 ```
+
+无编辑器也能做的基本面检查：`pnpm --filter @nudojs/lsp run smoke`（stdio 上的 hover + push diagnostics）。
 
 旧版 lspconfig：
 
@@ -185,8 +191,8 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | Semantic tokens 默认关闭 | Zed、Neovim、Helix（**VS Code 可染色**） | VS Code 自带 `semanticTokenScopes`。其它客户端按 Setup notes 打开（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | **LSP-G3** — VS Code 已可；其余仍配置债 |
 | 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | VS Code：命令 `Nudo: Apply coexistence settings`。或收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — 配置面；VS Code 可自助 + [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | 文件探测 / `analysis.mode` 文档 | 文档 | 真值：[`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — 已关闭（文档已对齐 `exports` 默认） |
-| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径必 publish（`validateText` / didOpen）；pull 为可选增强 | **LSP-G6** — push 面已有测试钉住 |
-| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 服务端：真实参数/返回 + `@nudo:` 指令补全。UI 仍薄时用 hover + `nudo check` / `nudo test` | **LSP-G7** — 服务端已强化；Helix UI 仍为客户端限制 |
+| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径必 publish（`validateText` / didOpen）；客户端可能忽略 `diagnosticProvider`——pull 是可选增强 | **LSP-G6** — push 面已有测试钉住 |
+| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 服务端：真实参数/返回 + `@nudo:` 指令补全（触发符 `@`）。UI 仍薄时用 hover + `nudo.check`（agent 命令；CLI 侧为 `nudo check`）/ `nudo test` | **LSP-G7** — 服务端已强化；Helix UI 仍为客户端限制 |
 
 ## 同源保证
 

@@ -76,7 +76,7 @@ npx nudojs check packages/legacy-js/src
 
 `.ts` 文件交给 tsc。Nudo LSP 仍会对匹配 `include` 且 `analysis.mode` 为 `exports` / `all` 的已打开 `.js` 文件提供 hover/inlay。
 
-> **默认注意**：`nudo.analysis.mode` 出厂默认为 `exports`（含 `export` / 侧车 / 指令的文件进引擎）；`all` 可全量分析，`directives` 可回到保守门禁。具名路径的 CLI（`nudo check src/lib.js`）不受 mode 限制。
+> **默认注意**：`nudo.analysis.mode` 出厂默认为 `"exports"`——含 `export` / 侧车 / 指令的文件进 IDE 分析；设 `"all"` 可全量分析，设 `"directives"` 可回到保守门禁。具名路径的 CLI（`nudo check src/lib.js`）不受 mode 限制。
 
 ### 何时用 `mode=directives` vs `mode=exports`
 
@@ -117,9 +117,7 @@ npx nudojs check packages/legacy-js/src
 
 ## IDE
 
-在已有 TS server 旁安装 Nudo VS Code 扩展即可共存：TS 处理 `.ts`，Nudo 按 `nudo.analysis.mode` 分析 `.js`。
-
-> **默认注意**：`analysis.mode` 出厂默认为 `exports`（含 `export` / 侧车 / 指令的文件进引擎）；`all` 可全量分析，`directives` 可回到保守门禁。
+在已有 TS server 旁安装 Nudo VS Code 扩展即可共存：TS 处理 `.ts`，Nudo 按 `nudo.analysis.mode` 分析 `.js`。**出厂默认是 `"exports"`**——含 `export` / 侧车 / 指令的文件进 IDE 分析；想覆盖所有目标路径设 `"all"`，想回到保守门禁设 `"directives"`。
 
 维护者打包 / 发布说明清单：[`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md)。LSP 公开面：[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)。
 

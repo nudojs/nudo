@@ -145,7 +145,7 @@ export function fmt(v) {
 Do **not** annotate `@returns string` to silence `unknown`. That is the TypeScript lie Nudo refuses.  
 `@nudo:mock` is for **imported module** faces (and is still uneven on free globals — prefer a computable body or real evidence).
 
-### `nudo:assign-missing` / `assign-mismatch` — keep the shape
+### `nudo:assign-mismatch` — keep the shape
 
 ```js
 // bad — drops port

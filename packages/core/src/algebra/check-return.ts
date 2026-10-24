@@ -9,6 +9,10 @@
  *   ⇒ LSP / vite / GHA / GitLab / JSON 机器面不再兜底到第 1 行。
  * - **#378**：文案反映**真实约束来源**（源码 `@nudo:contract return` 指令 vs
  *   侧车 `fn()` 返回槽）——侧车来源不再被说成「源码里那条指令」。
+ * - **#1094**：返回点的**路径前提 Φ**（`audit.phi`）透传给证明通道；Φ 侧
+ *   只按「同项 ∧ 蕴含」计入证据面 ⇒ Φ 只能把「证不出」升级成「已证明」，
+ *   **绝不**制造「确定违约」（假红）。Φ 真的被依赖时，构成 Φ 的前提记进
+ *   引理账本 ⇒ `nudo:assume-relied` 归因可见（公理不得被静默消费）。
  *
  * 零新增公共导出：本模块只被 `check.ts` 相对导入，不进任何 barrel
  * （`algebra/index.ts` / `core/src/index.ts` / `internal.ts` 均无新增）。
@@ -16,8 +20,9 @@
 import type { Abs } from "./abs.ts";
 import type { NudoConstraint } from "./constraint.ts";
 import type { CheckIssue } from "./check-report.ts";
-import type { Phi } from "./pred.ts";
-import { assertImplies } from "./postcondition.ts";
+import type { Phi, Pred } from "./pred.ts";
+import { assertImplies, phiSuppliesConstraint } from "./postcondition.ts";
+import { noteAssumeConsumed } from "./assume-ledger.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
 import { DIAG } from "./diag-codes.ts";
@@ -59,8 +64,20 @@ export type ReturnContractAudit = {
    * 前提（如 `if (x > 0) return y` 里的 `x > 0`）**不构成**返回值的值域
    * 证据——证明通道按「同项」口径消费（见 `postcondition.ts` 的同项判定），
    * 不得用无关证据把「证不出」升级成「确定违约」（假红）。
+   *
+   * Bug 1094：Φ 侧计入证据面的条件再收紧一档 = 同项 ∧ **蕴含**该约束的
+   * pred ⇒ Φ 只能把「证不出」升级成「已证明」，**绝不**制造「确定违约」。
    */
   phi?: Phi;
+  /**
+   * Φ 的构成前提对象（`@nudo:assume` 引理）——**记账用**（对象身份即引理
+   * 身份，与 `assume-ledger.ts` 的去重口径一致）。
+   *
+   * 与 `assumeDisplay` **同序**（第 i 条 display 对应第 i 条 premise）。
+   * Φ 真的被证明**依赖**时（去掉 Φ 就证不出），命中的前提记进账本 ⇒
+   * `nudo:assume-relied` 归因可见——用户公理不得被静默消费。
+   */
+  phiPremises?: readonly Pred[];
 };
 
 /**
@@ -84,10 +101,32 @@ export function checkReturnConstraint(
     invariantDisplay,
     consumedAssume,
     phi,
+    phiPremises,
   } = audit;
   // Bug 1080：Φ 侧（返回点路径前提）进证明通道——证据面 = ret.pred ∧ Φ 的
   // 「同项」界事实（与被约束项无关的前提事实不得制造确定违约）。
+  // Bug 1094：Φ 侧只按「同项 ∧ 蕴含」计入 ⇒ Φ 只能把「证不出」升级成
+  // 「已证明」，绝不制造「确定违约」（假红）。
   const proof = assertImplies(ret, constraint, phi ? { phi } : undefined);
+  // Bug 1094：**Φ 依赖判定 + 记账**——去掉 Φ 就证不出 ⇒ 本次证明依赖路径
+  // 前提 ⇒ 把命中的前提记进账本（对象身份）⇒ 归因面（nudo:assume-relied）
+  // 可见：用户公理不得被静默消费。
+  const phiUsedIdx = new Set<number>();
+  if (phi && proof.status === "proved" && phiPremises && phiPremises.length > 0) {
+    const withoutPhi = assertImplies(ret, constraint);
+    if (withoutPhi.status !== "proved") {
+      // 逐条定位「哪条前提真的产出了界」：单独蕴含该约束的那条；单条都不够
+      // （靠合取才成立）⇒ 全部记上（宁可多记，也不得静默消费公理）。
+      const solo = phiPremises.filter((p) =>
+        phiSuppliesConstraint(p, constraint, ret),
+      );
+      const used = solo.length > 0 ? solo : [...phiPremises];
+      for (const p of used) noteAssumeConsumed(p);
+      phiPremises.forEach((p, i) => {
+        if (used.includes(p)) phiUsedIdx.add(i);
+      });
+    }
+  }
   // #369 / #372：issue 构造处带位置（函数声明位置）⇒ 消费面不再兜底首行
   const where = (): { line?: number; column?: number } => {
     if (loc?.line === undefined) return {};
@@ -103,9 +142,10 @@ export function checkReturnConstraint(
     // 真实性）——依赖了公理的证明必须上屏可见。
     // #367：粒度从「函数级（声明了就算）」收紧到「**本次证明消费过**」
     // （消费集由代数核在引理消费点记账 ⇒ 只认真产出了界的那条引理）。
+    // Bug 1094：Φ 侧消费的前提同样进归因集（公理不得被静默消费）。
     const relied: CheckIssue[] = [];
     const usedAssume = (assumeDisplay ?? []).filter(
-      (d) => consumedAssume?.has(d) === true,
+      (d, i) => consumedAssume?.has(d) === true || phiUsedIdx.has(i),
     );
     if (usedAssume.length > 0) {
       relied.push({

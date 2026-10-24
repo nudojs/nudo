@@ -5,6 +5,8 @@ description: nudo test —— Abs 上逐调用点真值报告；合成 call@/ent
 
 # nudo test
 
+`nudo test` 是 **debug / 场景报告器，不是 CI 门禁。** 门禁是 [`nudo check`](./check.md)（L1 契约 + L2 入口 throws）——只有签名、约束违例与 throws 进入 CI。用 `test` 来查看 Nudo 如何执行用例（`call@` / `entry@` / `debug` 见证）、驱动声明的 `@nudo:case` 断言，或用 `--freeze` 钉住回归。
+
 **读完你将获得：** 默认 case 报告的读法（`call@` / `entry@` / `debug` 见证）、声明断言 —— 唯一能让运行失败的东西 —— `--freeze` 见证固化，以及 `test` 与 `check` 的清晰分工。
 
 `nudo test` 是 Nudo 的 **case 报告**：Abs 上逐调用点的真值。它是**观察面**，不是 CI 门禁。

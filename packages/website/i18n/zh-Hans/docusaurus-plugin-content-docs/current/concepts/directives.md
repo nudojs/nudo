@@ -49,7 +49,7 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 
 ```text
 @nudo:case "name" (arg1, arg2, ...)
-@nudo:case "name" (arg1, arg2) => expected
+@nudo:case "name" (arg1, arg2) => expectedType
 ```
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
@@ -92,6 +92,8 @@ function len(s) {
   return s.length;
 }
 ```
+
+---
 
 ## @nudo:mock — Mock 外部依赖
 
@@ -289,7 +291,6 @@ export const nested = fn({ "card.grade": string() }, string());
 ```text
 @nudo:contract <param> <constraint>
 @nudo:contract return <constraint>
-@nudo:contract <param> <constraint>   // 别名
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置

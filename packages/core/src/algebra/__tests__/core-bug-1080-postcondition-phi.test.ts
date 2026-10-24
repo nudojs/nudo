@@ -12,6 +12,10 @@
  * 口径计入证据面（界原子的左侧与被约束项 `termEquals`；`length(item)`
  * 形态算同一项的界）；`check-return.ts` 的审计上下文开 `phi` 口子
  * （返回点的路径前提）。
+ *
+ * Bug 1094 追加：Φ 侧计入证据面的条件再收紧为「同项 ∧ **蕴含**该约束的
+ * pred」——同项但**界弱于**契约的 Φ（`y > 0` vs `y > 5`）不再被当成返回值
+ * 的带界证据 ⇒ 判「证不出」而非「确定违约」（旧口径 ⇒ **假红**）。
  */
 import { describe, it, expect } from "vitest";
 import { abs, gt, v } from "../index.ts";
@@ -73,10 +77,19 @@ describe("Bug 1080: Φ 侧只按「同项」口径计入证据面", () => {
   });
 
   it("同项 Φ 与 ret.pred 同口径：界弱于契约 ⇒ 判确定违约（fail-closed 既有约定）", () => {
-    // Φ 的 `y > 0` 与 ret.pred 的 `y > 0` 是同一类证据（返回项的界）⇒
-    // 同口径：契约 `y > 5` 蕴含失败 ⇒ 确定违约（与守卫弱于契约的既有
-    // 口径一致，见 check-return-constraint-guard.test.ts）。
-    const r = assertImplies(retY, number().gt(5), { phi: phiOnY });
+    // ret.pred 侧（引擎自己把返回值收窄到的界）界弱于契约 ⇒ 确定违约
+    // （与守卫弱于契约的既有口径一致，见 check-return-constraint-guard.test.ts）。
+    const r = assertImplies(retYWithPred, number().gt(5), { phi: phiOnY });
     expect(r.status).toBe("disproved");
+  });
+
+  it("Bug 1094：Φ 侧的同项界**弱于**契约 ⇒ 判『证不出』，不得判『确定违约』", () => {
+    // Φ = `y > 0`（同项）但**不足以**蕴含契约 `y > 5` ⇒ 返回值可能是 20
+    // （满足契约）⇒ 真实结论是「证不出」；旧口径（只查「同项」）把它当成
+    // y 的带界证据 ⇒ 蕴含失败落到 `disproved`（error）⇒ **假红**。
+    // 口径：Φ 侧计入证据面的条件 = 同项 ∧ **蕴含**该约束（见
+    // `postcondition.ts` 的 `phiSuppliesConstraint`）。
+    const r = assertImplies(retY, number().gt(5), { phi: phiOnY });
+    expect(r.status).toBe("unprovable");
   });
 });

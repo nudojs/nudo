@@ -148,6 +148,7 @@ export function fmt(v) {
 
 ```js
 // 错 — 丢 port
+export let config = { host: "localhost", port: 8080 };
 config = { host: "y" };
 // 对
 config = { host: "y", port: 8080 };

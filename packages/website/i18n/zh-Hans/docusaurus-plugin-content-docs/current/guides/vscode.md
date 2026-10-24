@@ -78,12 +78,7 @@ function upper(s) {
 - **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
 - **● / ○ case "name"** —— 点击选择类型重放的激活 case（`nudo.selectCase`）；契约选项随之转 `○`
 
-悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● contract / hw\|gen\|imp`（A7）。VS Code 中当前激活 case 以不同样式高亮。
-
-- **● case "name"** — 当前激活
-- **○ case "name"** — 点击激活
-
-这样可以在不修改文件的情况下查看不同输入下的类型。
+悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● contract / hw\|gen\|imp`（A7）。VS Code 中当前激活 case 以不同样式高亮。这样可以在不修改文件的情况下查看不同输入下的类型。
 
 ### 内联提示
 
@@ -129,6 +124,8 @@ createUser(  // ← signature help shows: (name: string, age: number)
 当 Nudo 报告诊断时，可使用快速修复建议。点击灯泡图标或按 `Cmd+.` / `Ctrl+.` 查看可用修复：
 
 - **移除不可达代码** ——针对 `return`/`throw` 之后的代码
+- **给调用点 / 侧车形状补字段** ——在调用点与（若存在）`*.nudo.js` 形状里插入 `field: undefined`
+- **放宽侧车契约** ——对 refine / domain 违例，把手写侧车上的数值 pred（`number().gt(0)` → `number()`）改写掉
 
 ### 语义标记
 

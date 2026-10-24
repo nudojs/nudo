@@ -13,7 +13,7 @@ Nudo **不要求**先写注解。迁移路径是**代码优先**：保留实现�
 ## 0. 前置
 
 ```bash
-pnpm add -D nudojs @nudojs/lsp
+pnpm add -D nudojs @nudojs/lsp   # 或 npx nudojs
 # package.json 可选配置
 {
   "nudo": {
@@ -59,6 +59,8 @@ pnpm run migrate-demo
 
 ## 3. 审阅清单
 
+逐个草稿导出审阅：
+
 1. **参数** — 调用点形状是否过窄？可放宽（`number()` vs `lit(21)`）。
 2. **body 读到的字段** — 仅当**所有**调用方都必须提供时才写成 `shape({ name })`（那才是义务）。
 3. **返回** — 写你想执法的契约，不是历史上每一个结果。
@@ -98,8 +100,10 @@ nudo check src/lib.js --json
 
 ```bash
 nudo contract --emit src/lib.js --fn double --from test/
-nudo contract --emit src/lib.js --dry-run --exit-on-diff
+nudo contract --emit src/lib.js --dry-run --exit-on-diff   # CI 漂移门禁
 ```
+
+`contract --emit` 按**观测到的**实参写出 `@generated` 段。只在你信任的调用点用它；想强制的 API 面仍由手写契约承担。
 
 ## 6. IDE / agent
 

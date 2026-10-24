@@ -120,34 +120,19 @@ const ZH_STRUCT_ALLOWLIST: Record<string, Array<"fences" | "urls">> = {
 //   paras   —— 散文段落内的标识符类 inline code span（逐段对齐，段落序即语义）
 // ---------------------------------------------------------------------------
 // 规则 21 allowlist：已知且已复核的 zh/en 机器面差异（须带理由）。
+// 2026-10 逐条复核后：17 条 waiver 里 15 条判为**真实漏译**并已补齐（条目已删），
+// 余下 2 条为 zh 合法多于 en 的中文补充（散文段落数天然不等 ⇒ 逐段对齐不适用）。
 const ZH_MIRROR_ALLOWLIST: Record<string, Array<"blocks" | "machine" | "tokens" | "rows" | "paras">> = {
-  // 2026-10 复核：directives.md 的 alias 段 zh 多一行说明（en 2 行 / zh 3 行）——
-  // 已知形态差异；散文段落数也随之差 1。
-  "concepts/directives.md": ["blocks", "paras"],
-  // ai-native-dx.md 的 OSS 流程输出块 en 10 行 / zh 4 行（zh 只摘了关键几步）；
-  // 另有一段散文 zh 未提 `oss-semver/build.mjs` —— 已知精简。
-  "guides/ai-native-dx.md": ["blocks", "tokens", "paras"],
-  // limits.md 提到 `import.meta` 时 zh 用散文描述而非行内代码 —— 已知表述差异。
-  "concepts/limits.md": ["tokens", "paras"],
-  // lsp-clients.md 的表 zh 少 2 行（表格行数不同 ⇒ 逐行对齐不适用）、散文段落数也不同。
-  "guides/lsp-clients.md": ["tokens", "rows", "paras"],
-  // migrating-from-typescript.md / vs-typescript.md：zh 省略了若干路径与工作流名 —— 已知省略。
-  "guides/migrating-from-typescript.md": ["tokens", "rows", "paras"],
-  "guides/vs-typescript.md": ["tokens", "rows"],
-  // agents.md 提到 `nudo:assign-missing`（en 侧多出的一处）—— 已知差异。
-  "reference/agents.md": ["tokens"],
-  // contributing.md 的 fence meta 表：zh 行内代码里少了 `@nudojs/env` 一项 —— 已知省略。
-  "contributing.md": ["rows"],
-  // 以下页面的 zh 散文段落数与 en 不同（翻译时合并 / 拆分段落）⇒ 段落逐一对齐不适用。
-  "design/design-doc.md": ["paras"],
+  // cli.md 的 `nudo export` 段：zh 多两段 en 没有的中文补充（`--dialect` 当前取值范围
+  // 与「export 是一次性出货命令、不接受 `--watch`」），两段内容已对着源码核对为真
+  // （packages/nudojs/src/export-format.ts：SCHEMA_DIALECTS 仅 ["zod"]；
+  // packages/nudojs/src/commands/export.ts：只有 --format / --dialect / --out）
+  // ⇒ en 28 段 / zh 30 段，逐段索引对齐对本页不适用。
   "guides/cli.md": ["paras"],
-  "guides/coexistence.md": ["paras"],
+  // error-faces.md 的开头：zh 多一段中文专有的「深读」指引（指向仓库内中文设计笔记
+  // docs/errors-vs-typescript.md，并说明它已同时是站点页面），en 无对应段落 ⇒
+  // en 9 段 / zh 10 段，逐段索引对齐对本页不适用。
   "guides/error-faces.md": ["paras"],
-  "guides/health.md": ["paras"],
-  "guides/migrating-js.md": ["paras"],
-  "guides/test.md": ["paras"],
-  "guides/vscode.md": ["paras"],
-  "guides/zed.md": ["paras"],
 };
 // 输出块围栏的语言标签（CLI 输出一律落在这里）。
 const OUTPUT_FENCE_LANGS = new Set(["text", "json", "console", "output", "txt"]);

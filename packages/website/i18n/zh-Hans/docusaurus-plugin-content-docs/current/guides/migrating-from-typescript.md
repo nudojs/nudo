@@ -54,10 +54,12 @@ npx nudojs migrate retire ./my-pkg          # 先加 --dry-run
 
 | 步骤 | 做什么 | 何时结束 |
 |------|--------|----------|
-| `status` | 统计 `.ts`/`.tsx`、找 `tsc` scripts 与 `typescript` 依赖、列 **blockers** | 知道面有多大 |
+| `status` | 统计 `.ts`/`.tsx`、找 `tsc` scripts 与 `typescript` 依赖、列 **blockers**（含 workflow 里的 tsc 行） | 知道面有多大 |
 | `strip` | `.ts` → `.js`（注解出、运行时留）。`--write` 写盘 + 尽力生成侧车草稿（`--no-draft` 跳过） | 源码是纯 JS |
 | `verify` | 在剥离后的 JS 上跑 `nudo check` | 门禁绿 |
-| `retire` | 摘掉 `typescript` 依赖、把 `tsc` scripts 改成 `nudo check`、写 `.nudo/migrate-retired.json` | **tsc 没了** |
+| `retire` | 摘掉 `typescript` 依赖、把 `tsc` scripts 改成 `nudo check`、**改写 `.github/workflows` 里的 tsc 行**、写 `.nudo/migrate-retired.json` | **tsc 没了** |
+
+monorepo 批量：`npx nudojs migrate retire ./repo --all` 会走遍每个仍带 `tsc` / `typescript` 的 workspace 包。`--no-workflows` 让 CI YAML 保持原样。
 
 `status` 样例：
 
@@ -88,6 +90,8 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 | [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) | 公开 **checkout-demo**：TS+tsc → JS+nudo（before/after 门） |
 | [`docs/examples/retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real) | 真实 npm **`ms`** 消费方退役 tsc；依赖不动 |
 
+同一个故事，一张表：
+
 | | before | after `migrate retire` |
 |---|---|---|
 | 语言 | `.ts` + 注解 | 普通 `.js` |
@@ -97,9 +101,11 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 
 ## Path A —— 先在 TS 应用旁起步，再退役该包
 
+典型 monorepo：`apps/*` 仍是 TS，`packages/*` 是你想摘掉 `tsc` 的工具层。
+
 1. **范围** — 一个包（CLI、worker、脚本层）。
-2. **观察** — `npx nudojs check packages/tool/src`。
-3. **契约** — 逻辑优先（`contract --draft --from tests/`）或契约优先。
+2. **观察** — `npx nudojs check packages/tool/src`。读签名；无约束入口显示为 **`any`**。
+3. **契约** — 逻辑优先（`contract --draft --from tests/`）或契约优先（侧车 / `@nudo:contract`）。
 4. **门禁** — 在工作流中对该包路径跑 `nudo check`。
 5. **退役该包** — 对它跑 `migrate status` / `strip` / `verify` / `retire`。不要把 `tsc` 留成永久第二门禁。
 6. **生态** — 仍要给消费方类型时：
@@ -109,7 +115,7 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
    ```
 7. **IDE** — VS Code / Zed 扩展。
 
-双门禁只应**存在于迁移过程中**。
+双门禁只应**存在于迁移过程中**——它不是产品终态。
 
 ## Path B —— 「TS 形态」但拒绝永久标注的逻辑
 
