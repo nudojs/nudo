@@ -1,5 +1,5 @@
 ---
-"@nudojs/service": major
+"@nudojs/service": minor
 ---
 
 **BREAKING**: 重复声明 `@nudo:mock-module` 的诊断**码**与**默认严重级**变了 ——

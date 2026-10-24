@@ -1,5 +1,5 @@
 ---
-"@nudojs/service": major
+"@nudojs/service": minor
 ---
 
 **BREAKING**: standard 面的**导出集**变了 —— 解构形参的字段级校验器

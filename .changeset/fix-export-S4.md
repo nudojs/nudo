@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo export --out` 的**产物文件名**变了，且**不再覆盖**不是自己

@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo migrate retire --all --json` 的**顶层 JSON 形状**现在**恒为

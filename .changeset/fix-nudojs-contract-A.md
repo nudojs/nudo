@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo contract --json` 的**顶层载荷形状**从「一个对象」变成

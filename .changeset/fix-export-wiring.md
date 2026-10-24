@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: standard 面的返回面导出名**恒为** `<fn>Output`（此前「有返回契约时」

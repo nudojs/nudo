@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo contract --from-dts --write` 的**草稿落盘位置**变了

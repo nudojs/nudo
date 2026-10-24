@@ -1,16 +1,21 @@
 ---
 "@nudojs/core": minor
 "@nudojs/service": minor
-"nudojs": major
+"nudojs": minor
 ---
 
 `@nudojs/core` 新增公开可选项 `TranspileOptions.disableAsyncGen`（async 生成器路径的**安全网**开关）、
 `@nudojs/service` 新增公开导出 `analyzeFileWithEvalFailures` / `analyzeFileAsyncWithEvalFailures` /
 `FileEvalFailure` ⇒ 均为纯**增量** ⇒ minor。
 
-`nudojs` 为 **major**：模块级求值失败（引擎内部回落）现在**不再**让闸门静默放绿 ——
+`nudojs` 的**闸门口径翻转**（模块级求值失败 ⇒ 不再静默放绿）按 **minor** 发布：
 `nudo check` 以 **error 级 `nudo:internal`** 报出并以**非零码**退出，`nudo health` 的
 `Result` 不再报 `OK`。**这是闸门口径的翻转**（详见下方「BREAKING」）。
+
+> **bump 级别说明**：本项目**尚无外部用户**，本批 1.x 包的破坏性变更统一以 **minor**
+> 发布并保留 `**BREAKING**:` 标注（谁会坏 + 怎么迁移照旧写全）⇒ 不占用 major 跳版，
+> 也不触发发布侧 `gate-major` 的人工确认闸门。一旦有外部用户依赖这些包面，
+> 即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」政策。
 
 fix: review 报告 34 条缺陷收口（闸门假红/假绿 · 契约面宽松 · 机器面谎报 · 文档与 changeset 漂移）
 
@@ -179,8 +184,9 @@ fix: review 报告 34 条缺陷收口（闸门假红/假绿 · 契约面宽松 �
 ### 文档 · changeset · 诊断注册表（4 条）
 
 - **自称破坏性的 vite-plugin changeset 声明为 patch**（`.changeset/fix-vite-plugin-s{1,3,4}.md`
-  等 32 个）：按 `docs/versioning.md` 逐个复核并**升级 bump 级别**（pre-1.0 的破坏性 ⇒ minor；
-  1.x+ 的 JSON 形状变更 / 默认严重级变更 ⇒ major），并补 `**BREAKING**:` 与迁移说明。
+  等 32 个）：按 `docs/versioning.md` 逐个复核并**校正 bump 级别**（pre-1.0 的破坏性 ⇒ minor；
+  1.x+ 的 JSON 形状变更 / 默认严重级变更本应 ⇒ major，但**本项目尚无外部用户** ⇒ 本批
+  统一以 **minor** 发布，见上方「bump 级别说明」），并补 `**BREAKING**:` 与迁移说明。
 - **设计文档引用了被 gitignore 的产物**（`docs/design/generator-laziness.md` ·
   `docs/design/architecture-debt.md`）：`tmp/…` 路径（读者不可达）、`bun` 命令、过时行号、
   `$gen` 发射点数目（3 ⇒ 实为 4）。修法：删交接笔记、引用**符号名**、指向仓内回归钉。

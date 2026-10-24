@@ -1,6 +1,6 @@
 ---
-"@nudojs/service": major
-"nudojs": major
+"@nudojs/service": minor
+"nudojs": minor
 ---
 
 **BREAKING**: 产物面（dts / zod / standard / case）的**形参位形状**变了 ——

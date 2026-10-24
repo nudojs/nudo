@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo export --format all`（stdout）的**导出名**变了 —— 同一模块

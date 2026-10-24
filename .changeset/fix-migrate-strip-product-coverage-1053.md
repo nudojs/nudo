@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo check` 的**同 stem 选源规则**变了 —— 同名 `.js` 产物现在

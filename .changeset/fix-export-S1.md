@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo export` 的产物面（zod / standard / dts / guard）**参数位与返回位

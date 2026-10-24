@@ -1,6 +1,6 @@
 ---
-"@nudojs/service": major
-"nudojs": major
+"@nudojs/service": minor
+"nudojs": minor
 ---
 
 **BREAKING**: dts 面的**投影形状**变了 —— `.d.ts` 现在按**模块面**装配

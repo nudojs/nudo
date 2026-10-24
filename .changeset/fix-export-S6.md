@@ -1,5 +1,5 @@
 ---
-"@nudojs/service": major
+"@nudojs/service": minor
 ---
 
 **BREAKING**: standard 面的**返回面导出名**从 `<fn>Return` 改名成 `<fn>Output`

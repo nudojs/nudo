@@ -1,5 +1,5 @@
 ---
-"nudojs": major
+"nudojs": minor
 ---
 
 **BREAKING**: `nudo export` 的四个产物面现在共用**同一条导出面规则**，且**硬失败**

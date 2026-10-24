@@ -1,5 +1,5 @@
 ---
-"@nudojs/lsp": major
+"@nudojs/lsp": minor
 "@nudojs/service": patch
 ---
 

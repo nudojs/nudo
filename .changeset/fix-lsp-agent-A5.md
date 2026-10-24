@@ -1,5 +1,5 @@
 ---
-"@nudojs/lsp": major
+"@nudojs/lsp": minor
 ---
 
 **BREAKING**: LSP **协议契约**变了（`packages/lsp/PUBLIC_API.md` 这份**冻结清单**
