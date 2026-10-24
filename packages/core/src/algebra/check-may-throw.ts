@@ -16,12 +16,15 @@
  * 构造器改在**独立 may-throw 会话**里跑（效果与硬抛都不归因给方法），
  * 方法体自身的证据照常收集。
  *
- * **fail-closed 口径（Bug 380）**：入口**没被分析**（转译器拒绝构造 ⇒ 模块
- * 整体未求值）时，may-throw **不可判定**——不得与「分析出没有 may-throw」
- * 混同（旧口径把二者都当空 effects ⇒ 门禁由红转绿）。此类入口记一条
- * fail-closed 证据（kind=Error：不可判定 ⇒ 入口**可能**抛 Error）。
+ * **fail-closed 口径（Bug 380 / Bug 1153）**：入口**没被分析**（转译器拒绝
+ * 构造 ⇒ 模块整体未求值）时，may-throw **不可判定**——不得与「分析出没有
+ * may-throw」混同（旧口径把二者都当空 effects ⇒ 门禁由红转绿）。此类入口记
+ * 一条 fail-closed 证据（kind=Error：不可判定 ⇒ 入口**可能**抛 Error）。
+ * 归因按**可达性**：构造落在入口自身跨度内，或落在入口可达的顶层辅助函数 /
+ * 类内（`reachableTopBindings`）⇒ 该入口背账；不可达的陪葬入口不背。
  */
 
+import type { Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
 import { abs, never } from "./abs.ts";
 import type { Phi } from "./pred.ts";
@@ -48,6 +51,7 @@ import {
 } from "./exec/may-throw.ts";
 import { MAX_CHECK_MEMO } from "./check-memo.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
+import { reachableTopBindings } from "./fn-fp.ts";
 import { extractDeclaredThrows } from "./refine.ts";
 import type { parseSource } from "./parse-source.ts";
 
@@ -95,7 +99,8 @@ export function collectEntryMayThrows(
         // **归因**：转译失败是**模块级**的（一个函数体里的不支持构造让整个
         // 模块未求值）⇒ 若对同模块的**所有**入口都发「可能抛 Error」，那
         // 是**不 sound 的过度断言**（原生下那些入口根本不抛）⇒ 只对**自身
-        // 源码跨度内含该构造**的入口发证据。
+        // 源码跨度内含该构造**（或经顶层辅助函数 / 类**可达**该构造，
+        // Bug 1153）的入口发证据。
         if (!unsupportedFallsInside(file, fnName, outcome.loc)) return effects;
         effects.push({
           kind: "Error",
@@ -409,16 +414,9 @@ function classMethodIsStatic(
     if (!c || c.type !== "ClassDeclaration") continue;
     if (c.id?.name !== clsName) continue;
     for (const m of c.body?.body ?? []) {
-      const mem = m as {
-        kind?: string;
-        static?: boolean;
-        key?: { name?: string; value?: unknown };
-      };
+      const mem = m as ClassMemberNode;
       if (mem.kind === "constructor") continue;
-      const key = mem.key;
-      const name =
-        key?.name ?? (typeof key?.value === "string" ? (key.value as string) : undefined);
-      if (name !== methodName) continue;
+      if (classMemberName(mem) !== methodName) continue;
       return mem.static === true;
     }
     return undefined;
@@ -522,17 +520,187 @@ function spanOf(node: unknown): SourceSpan | undefined {
   };
 }
 
+/** Babel 类成员的宽松形状（ClassMethod / ClassProperty / StaticBlock…）。 */
+type ClassMemberNode = {
+  type?: string;
+  kind?: string;
+  static?: boolean;
+  key?: { name?: string; value?: unknown };
+  value?: unknown;
+};
+
+/** 类成员的入口键名（字符串/数字字面量键；私有名 / computed 不算）。 */
+function classMemberName(m: ClassMemberNode): string | undefined {
+  const key = m.key;
+  if (!key) return undefined;
+  return key.name ?? (typeof key.value === "string" ? key.value : undefined);
+}
+
+/** `exports` / `module.exports`（与 `scan-named-exports.ts` 的入口枚举同口径）。 */
+function isExportsTarget(node: unknown): boolean {
+  const n = node as
+    | { type?: string; name?: string; object?: unknown; property?: unknown }
+    | undefined;
+  if (!n) return false;
+  if (n.type === "Identifier") return n.name === "exports";
+  if (n.type !== "MemberExpression") return false;
+  const obj = n.object as { type?: string; name?: string } | undefined;
+  const prop = n.property as { name?: string } | undefined;
+  return obj?.type === "Identifier" && obj.name === "module" && prop?.name === "exports";
+}
+
+/** `exports.f` / `module.exports.f` 的导出键（computed 不算，同入口枚举）。 */
+function cjsExportName(left: unknown): string | undefined {
+  const l = left as
+    | { type?: string; computed?: boolean; object?: unknown; property?: unknown }
+    | undefined;
+  if (!l || l.type !== "MemberExpression" || l.computed === true) return undefined;
+  if (!isExportsTarget(l.object)) return undefined;
+  const prop = l.property as { name?: string } | undefined;
+  return prop?.name;
+}
+
+/** 对象键 / 标识符名（字符串字面量键也认：`module.exports = { "f": … }`）。 */
+function keyNameOf(node: unknown): string | undefined {
+  const n = node as { type?: string; name?: string; value?: unknown } | undefined;
+  if (!n) return undefined;
+  if (n.type === "Identifier" && typeof n.name === "string") return n.name;
+  if (n.type === "StringLiteral" && typeof n.value === "string") return n.value;
+  return undefined;
+}
+
+/** 可作为入口**值**的节点（函数 / 箭头 / 类）：其跨度覆盖入口体。 */
+function entryValueNode(node: unknown): Node | undefined {
+  const n = node as { type?: string } | undefined;
+  if (!n) return undefined;
+  return n.type === "FunctionDeclaration" ||
+    n.type === "FunctionExpression" ||
+    n.type === "ArrowFunctionExpression" ||
+    n.type === "ClassDeclaration" ||
+    n.type === "ClassExpression"
+    ? (node as Node)
+    : undefined;
+}
+
 /**
- * 入口（顶层函数 / 类方法）的源码跨度。
+ * 类方法入口的执行节点：方法自身 +（实例方法）构造器与实例字段初始化器 /
+ * （静态方法）静态字段初始化器与静态块。
  *
- * 只用于**归因**：把「转译器拒绝的构造」定位到**它所在的入口**⇒ 该入口的
- * total 性才真的不可判定（同模块的其它入口只是**陪葬**——它们没被分析，
- * 但原生下并不抛 ⇒ 对它们断言「可能抛」是过度断言）。
+ * 归因取**保守并集**：`new C()` 会跑构造器与字段初始化器、类定义期会跑静态
+ * 面 ⇒ 这些节点里被转译器拒绝的构造，同样让该入口的 total 性不可判定。同类
+ * 的**其它**方法不并（那是 `C.m` 的陪葬，不是它的执行路径）。
  */
-function entrySpanOf(file: ParsedFile | undefined, fnName: string): SourceSpan | undefined {
-  if (!file) return undefined;
+function classMethodEntryNodes(
+  cls: { body?: { body?: unknown[] } },
+  methodName: string,
+): Node[] | undefined {
+  const members = (cls.body?.body ?? []) as ClassMemberNode[];
+  let method: ClassMemberNode | undefined;
+  for (const m of members) {
+    if (m.kind === "constructor") continue;
+    if (classMemberName(m) !== methodName) continue;
+    method = m;
+    break;
+  }
+  if (!method) return undefined;
+  const isStatic = method.static === true;
+  const nodes: Node[] = [method as Node];
+  for (const m of members) {
+    if (m === method) continue;
+    if (m.kind === "constructor") {
+      if (!isStatic) nodes.push(m as Node);
+      continue;
+    }
+    if (m.type === "StaticBlock") {
+      if (isStatic) nodes.push(m as Node);
+      continue;
+    }
+    if (m.type === "ClassProperty" || m.type === "ClassPrivateProperty") {
+      if ((m.static === true) !== isStatic) continue;
+      nodes.push((m.value as Node | undefined) ?? (m as Node));
+    }
+  }
+  return nodes;
+}
+
+/**
+ * CJS 入口形态的执行节点（`exports.f = …` / `module.exports = { f: … }`）。
+ *
+ * 入口集合由 `scan-named-exports.ts` 枚举（`cjsPropName` / `module.exports`
+ * 对象属性）；这里只把**已枚举的**名字映射到源码节点——不新造入口。任意
+ * 表达式右值（模块顶层求值）**不**归因（模块顶层口径另案）。
+ */
+function cjsEntryNodes(
+  file: ParsedFile,
+  expression: unknown,
+  fnName: string,
+  depth: number,
+): Node[] | undefined {
+  const e = expression as
+    | { type?: string; operator?: string; left?: unknown; right?: unknown }
+    | undefined;
+  if (!e || e.type !== "AssignmentExpression" || e.operator !== "=") return undefined;
+  const right = e.right as { type?: string; name?: string; properties?: unknown[] } | undefined;
+  if (!right) return undefined;
+  /** 右值 → 入口执行节点：函数/类值直接用；标识符递归解析到其顶层绑定。 */
+  const fromValue = (node: unknown): Node[] | undefined => {
+    const value = entryValueNode(node);
+    if (value) return [value];
+    const ident = node as { type?: string; name?: string } | undefined;
+    if (ident?.type === "Identifier" && ident.name) {
+      return entryNodesOf(file, ident.name, depth + 1);
+    }
+    return undefined;
+  };
+  // exports.f = <值> / module.exports.f = <值>
+  if (cjsExportName(e.left) === fnName) return fromValue(right);
+  // module.exports = { … } / exports = { … }
+  if (!isExportsTarget(e.left)) return undefined;
+  if (right.type === "ObjectExpression") {
+    for (const p of right.properties ?? []) {
+      const prop = p as { type?: string; key?: unknown; value?: unknown };
+      if (keyNameOf(prop.key) !== fnName) continue;
+      // ObjectMethod（`{ f() {} }`）：属性节点本身就是入口体
+      if (prop.type === "ObjectMethod") return [prop as Node];
+      return fromValue(prop.value);
+    }
+    return undefined;
+  }
+  // module.exports = api（api 是顶层绑定 ⇒ 按名解析）
+  if (right.type === "Identifier" && right.name === fnName) {
+    return entryNodesOf(file, fnName, depth + 1);
+  }
+  return undefined;
+}
+
+/**
+ * 入口的**执行节点**（归因用）：把入口名映射到「该构造会随入口执行」的源码
+ * 节点集合。判不出入口形态 ⇒ `undefined`（**不**发任何断言——宁可少报，也
+ * 不对陪葬入口做过度断言）。
+ *
+ * - 顶层函数声明 / `const f = () => …` ⇒ 函数节点；
+ * - 类入口 `C` ⇒ **整个类声明**（`$new` 跑构造器 + 字段初始化器）；
+ * - 类方法入口 `C.m` ⇒ 方法 + 构造器/字段初始化器（见 {@link classMethodEntryNodes}）；
+ * - `export default function/class` ⇒ 默认导出节点；
+ * - CJS `exports.f = …` 等形态 ⇒ 见 {@link cjsEntryNodes}。
+ *
+ * 归因范围 = 这些节点的跨度 ∪ 从它们**可达**的顶层绑定
+ * （{@link unsupportedFallsInside}）；同一函数体内联与拆到顶层辅助函数结论一致。
+ */
+function entryNodesOf(
+  file: ParsedFile | undefined,
+  fnName: string,
+  depth = 0,
+): Node[] | undefined {
+  if (!file || depth > 3) return undefined;
   for (const stmt of file.program.body as unknown[]) {
-    const s = stmt as { type?: string; declaration?: unknown };
+    const s = stmt as { type?: string; declaration?: unknown; expression?: unknown };
+    // CJS：exports.f = … / module.exports = { f }
+    if (s.type === "ExpressionStatement") {
+      const hit = cjsEntryNodes(file, s.expression, fnName, depth);
+      if (hit) return hit;
+      continue;
+    }
     let decl: unknown = stmt;
     if (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration") {
       decl = s.declaration;
@@ -546,38 +714,33 @@ function entrySpanOf(file: ParsedFile | undefined, fnName: string): SourceSpan |
         }
       | undefined;
     if (!d || typeof d !== "object") continue;
-    // 类方法（Class.method）
+    // 类方法（Class.method）——只认类声明里的成员
     if (fnName.includes(".")) {
       const [clsName, methodName] = fnName.split(".", 2);
       if (d.type !== "ClassDeclaration" || d.id?.name !== clsName) continue;
-      for (const m of d.body?.body ?? []) {
-        const mem = m as {
-          kind?: string;
-          key?: { name?: string; value?: unknown };
-        };
-        if (mem.kind === "constructor") continue;
-        const key = mem.key;
-        const name =
-          key?.name ?? (typeof key?.value === "string" ? (key.value as string) : undefined);
-        if (name !== methodName) continue;
-        return spanOf(mem);
-      }
-      return undefined;
+      return classMethodEntryNodes(d, methodName ?? "");
     }
     // 顶层函数声明
-    if (d.type === "FunctionDeclaration" && d.id?.name === fnName) return spanOf(d);
-    // export default function（无名 / 有名皆算）
+    if (d.type === "FunctionDeclaration" && d.id?.name === fnName) return [d as Node];
+    // export default：函数 / 类（无名函数也算）
     if (fnName === "default" && s.type === "ExportDefaultDeclaration") {
       const t = d.type;
-      if (t === "FunctionDeclaration" || t === "ArrowFunctionExpression" || t === "FunctionExpression") {
-        return spanOf(d);
+      if (
+        t === "FunctionDeclaration" ||
+        t === "ArrowFunctionExpression" ||
+        t === "FunctionExpression" ||
+        t === "ClassDeclaration"
+      ) {
+        return [d as Node];
       }
     }
-    // 变量声明（const f = () => …）
+    // 类入口 C ⇒ 整个类声明
+    if (d.type === "ClassDeclaration" && d.id?.name === fnName) return [d as Node];
+    // 变量声明（const f = () => … / const C = class …）
     if (d.type === "VariableDeclaration") {
       for (const dec of d.declarations ?? []) {
         const id = (dec as { id?: { name?: string } }).id;
-        if (id?.name === fnName) return spanOf(dec);
+        if (id?.name === fnName) return [dec as Node];
       }
     }
   }
@@ -597,17 +760,31 @@ function locInSpan(
 }
 
 /**
- * 被拒绝的构造是否落在**该入口自己的**源码跨度内。
+ * 被拒绝的构造是否会随**该入口**执行。
  *
- * 跨度判不出（入口形态特殊 / 构造无位置）⇒ **不归因**给该入口 ⇒ 不发
- * 「可能抛」断言（宁可少报，也不做过度断言）。
+ * 判据 = 构造的 loc 落在入口的执行节点内 **或** 落在入口**可达**的顶层绑定
+ * （辅助函数 / 类）内 —— 同一函数体内联与拆到顶层辅助函数，结论必须一致
+ * （Bug 380 的 `g().x++` 拆进 helper 后不得由红转绿）。可达闭包由
+ * `reachableTopBindings` 计算（`seen` 收敛 ⇒ 互递归必终止）。
+ *
+ * 跨度判不出 / 构造无位置 / 入口不可达该构造 ⇒ **不归因**（宁可少报，也不
+ * 做过度断言：同模块的陪葬入口不背这条账）。
  */
 function unsupportedFallsInside(
   file: ParsedFile | undefined,
   fnName: string,
   loc: { line: number; column: number } | undefined,
 ): boolean {
-  const span = entrySpanOf(file, fnName);
-  if (!span) return false;
-  return locInSpan(loc, span);
+  if (!file || !loc) return false;
+  const entryNodes = entryNodesOf(file, fnName);
+  if (!entryNodes || entryNodes.length === 0) return false;
+  for (const node of entryNodes) {
+    if (locInSpan(loc, spanOf(node))) return true;
+  }
+  for (const node of entryNodes) {
+    for (const reach of reachableTopBindings(file, node, { includeClasses: true })) {
+      if (locInSpan(loc, spanOf(reach.node))) return true;
+    }
+  }
+  return false;
 }

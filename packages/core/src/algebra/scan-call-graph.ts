@@ -19,17 +19,55 @@ import { localNamedExports } from "./scan-named-exports.ts";
 export type ExternalFnRef = { source: string; fnName: string; fromFile?: string };
 
 /**
+ * 类成员 AST 事实（Bug 1154）：**只收可确定的 own 成员**。
+ *
+ * - `instance` / `static`：类体里 `kind === "method"` 且键是标识符（非 computed）
+ *   的方法名；
+ * - `ctorAssigned`：构造器里 `this.<name> = …` 赋过名 ⇒ 该实例成员不是类体方法
+ *   （可能是任意值）⇒ 实例调用点**不解析**（守卫假红）；
+ * - `uncertain`：同名 getter / setter ⇒ 语义不是普通方法 ⇒ 不解析。
+ *
+ * 继承成员**不进表**（只扫 own body）⇒ `extends` 的类里没自己声明 `m` 时
+ * 解析不到 ⇒ 跳过（守卫假红）。
+ */
+export type ClassMemberInfo = {
+  instance: Set<string>;
+  static: Set<string>;
+  ctorAssigned: Set<string>;
+  uncertain: Set<string>;
+};
+
+/** 类绑定（Bug 1154）：名字 → 类定义 + own 成员事实 */
+export type ClassBinding = {
+  /** 类定义源码（本地类 = 当前文件源码；导入类 = 定义模块源码） */
+  source: string;
+  /** 定义文件虚拟路径（导入类；本地类省略） */
+  fromFile?: string;
+  /** 类在定义源码里的名字（`K.m` / `K.static.m` 的键前缀） */
+  className: string;
+  /** 本地类（同一文件）——本地类成员走 knownFns 闸门；导入类走外部描述 */
+  local: boolean;
+  members: ClassMemberInfo;
+};
+
+/**
  * 词法**作用域帧**（Bug 1106 / 1107）。
  *
  * - `names`：本作用域**声明**的名字（形参 / `let` / `const` / `var` / 局部函数
  *   / for-of 绑定 / 解构绑定）⇒ 用于判「同名遮蔽」；
  * - `aliases`：别名绑定（`const f = knownFn`）⇒ 名字 → 源码函数名；
  * - `members`：成员绑定（`const c = new C()` ⇒ `c.m` → `C.m`）。
+ * - `classes`：类绑定（导入类 / 模块级本地类）⇒ `K.s` / `new K().m` 的解析源
+ *   （Bug 1154）；`names` 命中而没有 `classes` ⇒ 同名遮蔽 ⇒ 不解析。
+ * - `externalMembers`：外部成员绑定（导入类实例 `c = new K()` ⇒ `c.m` →
+ *   定义模块的 `K.m`，Bug 1154）。
  */
 export type ScopeFrame = {
   names: Set<string>;
   aliases: Map<string, string>;
   members: Map<string, string>;
+  classes: Map<string, ClassBinding>;
+  externalMembers: Map<string, ExternalFnRef>;
   /**
    * 外部绑定（import / require / 动态 import 解构）⇒ 名字 → 外部模块函数。
    *
@@ -69,7 +107,14 @@ export type CallResolve = {
 };
 
 function newScopeFrame(): ScopeFrame {
-  return { names: new Set(), aliases: new Map(), members: new Map(), externals: new Map() };
+  return {
+    names: new Set(),
+    aliases: new Map(),
+    members: new Map(),
+    classes: new Map(),
+    externalMembers: new Map(),
+    externals: new Map(),
+  };
 }
 
 /** 作用域 id：外层链 + 本层节点的源码起点（`start` 缺失 ⇒ -1） */
@@ -266,31 +311,256 @@ export function resolveScopedName(
 }
 
 /**
- * 作用域链上「成员调用 `obj.prop`」的解析（Bug 1107）。
+ * 作用域链上「成员调用 `obj.prop`」的解析（Bug 1107 / 1154）。
  *
  * 沿作用域链找 `obj` 的绑定：
- * - 本作用域有 `obj.prop` 的成员绑定 ⇒ 用它；
+ * - 本作用域有 `obj.prop` 的成员绑定（本地函数名或外部模块函数）⇒ 用它；
  * - 本作用域**声明**了 `obj`（但没有 `obj.prop` 的成员绑定）⇒ **遮蔽**
  *   ⇒ 不回落外层（外层的 `obj` 不是这里的 `obj`）；
  * - 都没命中 ⇒ 继续外层。
  *
  * 键**按作用域**分桶（不再只按变量名）⇒ 同名局部 / 参数不再互相串味。
  */
+export type ScopedMemberBinding =
+  | { kind: "fn"; fn: string }
+  | { kind: "external"; ref: ExternalFnRef };
+
 export function resolveScopedMember(
   resolve: CallResolve,
   chain: ScopeChain,
   objName: string,
   propName: string,
-): string | undefined {
+): ScopedMemberBinding | undefined {
   const key = `${objName}.${propName}`;
   for (const sid of chain) {
     const f = resolve.scopes.frames.get(sid);
     if (!f) continue;
+    // Bug 1154：导入类实例的外部成员绑定优先于同名声明判定（与 `members`
+    // 同序：绑定本身就在本作用域 ⇒ 不是遮蔽）。
+    const ext = f.externalMembers.get(key);
+    if (ext !== undefined) return { kind: "external", ref: ext };
     const hit = f.members.get(key);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) return { kind: "fn", fn: hit };
     if (f.names.has(objName)) return undefined;
   }
   return undefined;
+}
+
+/**
+ * 作用域链上「类绑定」的解析（Bug 1154）。
+ *
+ * - 命中类绑定 ⇒ 该类（导入类 / 模块级本地类）；
+ * - 命中同名声明（形参 / 局部 `const` / 局部 class …）⇒ **遮蔽** ⇒ 不解析；
+ * - 链上都没有 ⇒ undefined（不回落「看起来像类名」的猜测）。
+ *
+ * 导入绑定 / 本地类声明都落在**模块帧**；内层同名声明（`names`）优先 ⇒
+ * `function f(K) { new K().m(-1) }` 不会把模块类 K 的契约套到形参上。
+ */
+function resolveScopedClass(
+  resolve: CallResolve,
+  chain: ScopeChain,
+  name: string,
+): ClassBinding | undefined {
+  for (const sid of chain) {
+    const f = resolve.scopes.frames.get(sid);
+    if (!f) continue;
+    const cls = f.classes.get(name);
+    if (cls !== undefined) return cls;
+    if (f.names.has(name)) return undefined;
+  }
+  return undefined;
+}
+
+/** 类体 own 方法名的事实（kind=method、非 computed；ctor 赋值另记） */
+function classMemberInfoOf(decl: object): ClassMemberInfo {
+  const info: ClassMemberInfo = {
+    instance: new Set(),
+    static: new Set(),
+    ctorAssigned: new Set(),
+    uncertain: new Set(),
+  };
+  const body =
+    ((decl as { body?: { body?: unknown[] } }).body?.body as unknown[] | undefined) ?? [];
+  for (const m of body) {
+    const mem = m as {
+      type?: string;
+      kind?: string;
+      static?: boolean;
+      computed?: boolean;
+      key?: { type?: string; name?: string };
+      body?: unknown;
+    };
+    // 类字段（`m = …`）与原型方法同名时字段在实例上覆盖方法（静态字段同理）
+    // ⇒ 成员值不可确定 ⇒ 两个方向都不解析（只多跳过 ⇒ 不产假红）。
+    if (mem.type === "PropertyDefinition" || mem.type === "ClassProperty") {
+      if (mem.computed !== true && mem.key?.type === "Identifier" && mem.key.name) {
+        info.uncertain.add(mem.key.name);
+      }
+      continue;
+    }
+    if (mem.type !== "ClassMethod" && mem.type !== "MethodDefinition") continue;
+    const key =
+      mem.computed === true
+        ? undefined
+        : mem.key?.type === "Identifier"
+          ? mem.key.name
+          : undefined;
+    if (!key) continue; // computed / 字符串键 / 私有名 ⇒ 不可确定
+    const kind = mem.kind ?? "method";
+    if (kind === "constructor") {
+      collectThisAssignments(mem.body, info.ctorAssigned);
+      continue;
+    }
+    if (kind !== "method") {
+      info.uncertain.add(key); // getter / setter
+      continue;
+    }
+    (mem.static === true ? info.static : info.instance).add(key);
+  }
+  return info;
+}
+
+/** 构造器里的 `this.<name> = …`（含嵌套箭头；只多跳过 ⇒ 不产假红） */
+function collectThisAssignments(node: unknown, out: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const obj = node as Record<string, unknown> & { type?: string };
+  if (obj.type === "AssignmentExpression") {
+    const left = obj.left as
+      | { type?: string; object?: { type?: string }; property?: { type?: string; name?: string }; computed?: boolean }
+      | undefined;
+    if (
+      left?.type === "MemberExpression" &&
+      left.object?.type === "ThisExpression" &&
+      left.computed !== true &&
+      left.property?.type === "Identifier" &&
+      typeof left.property.name === "string"
+    ) {
+      out.add(left.property.name);
+    }
+  }
+  for (const key of Object.keys(obj)) {
+    if (key === "loc" || key === "start" || key === "end" || key === "leadingComments") continue;
+    const val = obj[key];
+    if (Array.isArray(val)) val.forEach((x) => collectThisAssignments(x, out));
+    else if (val && typeof val === "object") collectThisAssignments(val, out);
+  }
+}
+
+/** 模块顶层 `class <name>` 声明（含 export 包装） */
+function findClassDecl(
+  file: ReturnType<typeof parse>,
+  name: string,
+): object | undefined {
+  for (const stmt of file.program.body) {
+    const decl =
+      (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt) as { type?: string; id?: { name?: string } } | undefined;
+    if (decl?.type === "ClassDeclaration" && decl.id?.name === name) return decl;
+  }
+  return undefined;
+}
+
+/**
+ * 导出名 → 类在定义源码里的**本地名**（Bug 1154）。
+ *
+ * 契约 / 签名面按类名取方法体（`generalizeFromAst("K.m")`）⇒ 导入别名
+ * （`import { Foo as K }`）与再导出别名（`export { Foo as K }`）必须落回
+ * `Foo`；找不到类声明 ⇒ undefined（fail-closed：不猜）。
+ */
+function exportedClassLocalName(
+  file: ReturnType<typeof parse>,
+  exportName: string,
+): string | undefined {
+  if (findClassDecl(file, exportName)) return exportName;
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration" || (stmt as { declaration?: unknown }).declaration) {
+      continue;
+    }
+    if ((stmt as { source?: unknown }).source) continue;
+    const specs = ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Array<
+      Record<string, unknown>
+    >;
+    for (const sp of specs) {
+      if (sp.type !== "ExportSpecifier") continue;
+      const exported = sp.exported as
+        | { type?: string; name?: string; value?: unknown }
+        | undefined;
+      const exportedName =
+        exported?.type === "Identifier"
+          ? exported.name
+          : exported && "value" in exported
+            ? String(exported.value ?? "")
+            : undefined;
+      const local = sp.local as { type?: string; name?: string } | undefined;
+      if (exportedName !== exportName || local?.type !== "Identifier" || !local.name) continue;
+      if (findClassDecl(file, local.name)) return local.name;
+    }
+  }
+  return undefined;
+}
+
+/** 外部模块源码 + 导出名 → 类绑定（不是类 ⇒ undefined） */
+function classBindingOf(
+  source: string,
+  exportName: string,
+  fromFile: string | undefined,
+): ClassBinding | undefined {
+  let file: ReturnType<typeof parse>;
+  try {
+    file = parse(source);
+  } catch {
+    return undefined;
+  }
+  const className = exportedClassLocalName(file, exportName);
+  if (!className) return undefined;
+  const decl = findClassDecl(file, className);
+  if (!decl) return undefined;
+  return {
+    source,
+    ...(fromFile ? { fromFile } : {}),
+    className,
+    local: false,
+    members: classMemberInfoOf(decl),
+  };
+}
+
+/**
+ * 类成员 → 调用图描述（Bug 1154）。
+ *
+ * 本地类走**与 `c.m` 同一条** obligation 路径：命中 `knownFns`（普查面）才
+ * 返回函数名 ⇒ 未导出 / 普查面未登记的类保持零诊断（不扩面）。导入类走
+ * 外部模块描述（`checkExternalCall`），`fnName` 用定义源码里的类名。
+ */
+function classMemberRef(
+  cls: ClassBinding,
+  propName: string,
+  kind: "instance" | "static",
+  knownFns: Set<string>,
+): string | { external: ExternalFnRef } | undefined {
+  const { members } = cls;
+  if (members.uncertain.has(propName)) return undefined;
+  if (kind === "instance") {
+    if (!members.instance.has(propName) || members.ctorAssigned.has(propName)) return undefined;
+  } else if (!members.static.has(propName)) {
+    return undefined;
+  }
+  // Bug 425 口径：static 与实例同名 ⇒ 静态方法的 scope 名是 `C.static.m`
+  // （普查面不登记静态同名 ⇒ 只能走外部描述，不能走 knownFns 字符串路径）。
+  const collides = kind === "static" && members.instance.has(propName);
+  const fnName = collides
+    ? `${cls.className}.static.${propName}`
+    : `${cls.className}.${propName}`;
+  if (cls.local && !collides) {
+    return knownFns.has(fnName) ? fnName : undefined;
+  }
+  return {
+    external: {
+      source: cls.source,
+      fnName,
+      ...(cls.fromFile ? { fromFile: cls.fromFile } : {}),
+    },
+  };
 }
 
 function requireSpecOf(init: Record<string, unknown>): string | undefined {
@@ -560,6 +830,11 @@ export function collectCallResolvers(
   const memberToFn = moduleFrame.members;
   const externalFn = new Map<string, ExternalFnRef>();
   const externalMember = new Map<string, ExternalFnRef>();
+  /**
+   * 最终对外形状（帧表 / 映射都是**活体**，走查期间可直接查询）——Bug 1154
+   * 的 `new C()` 实例绑定要在走查中就查类绑定（`resolveScopedClass`）。
+   */
+  const resolveOut: CallResolve = { aliasToFn, memberToFn, externalFn, externalMember, scopes };
   const file = opts?.file ?? parse(source);
   const load = opts?.loadModule;
   const fromFile = opts?.fromFile ?? "";
@@ -584,6 +859,18 @@ export function collectCallResolvers(
     fromFile ? resolveDepPath(fromFile, spec) : undefined;
   /** 当前走查节点所属作用域的帧（`visit` 每轮更新；`bindExternal` 用它落外部绑定） */
   let currentFrame: ScopeFrame | undefined = moduleFrame;
+  /**
+   * (源码, 导出名) → 类绑定（Bug 1154）：同一模块被多次 import 时只解析一次；
+   * 不是类的导出 ⇒ undefined 记忆（不重复 parse）。
+   */
+  const classBindingCache = new Map<string, ClassBinding | undefined>();
+  const importedClassBinding = (ref: ExternalFnRef): ClassBinding | undefined => {
+    const key = `${ref.fromFile ?? ""}\0${ref.fnName}\0${ref.source}`;
+    if (!classBindingCache.has(key)) {
+      classBindingCache.set(key, classBindingOf(ref.source, ref.fnName, ref.fromFile));
+    }
+    return classBindingCache.get(key);
+  };
   const bindExternal = (local: string, modSrc: string, fnName: string, spec: string): void => {
     const r = resolveExportSource(modSrc, fnName, loadSpecFrom, 0, fromFile, extFromFile(spec) ?? "");
     const ref: ExternalFnRef = {
@@ -595,6 +882,10 @@ export function collectCallResolvers(
     // 外部绑定也要**按作用域**记（局部解构的 import 绑定会遮蔽模块级的同名
     // 绑定 ⇒ 若不记在这里，局部解构会把自己遮住 ⇒ 跨文件调用点解析不出）。
     currentFrame?.externals.set(local, ref);
+    // Bug 1154：导入的**类**也要登记类绑定（`new K()` / `K.s()` 的解析源）。
+    // 不是类（普通函数 / 值）⇒ 不登记 ⇒ 该类解析面保持今天的零诊断。
+    const cls = importedClassBinding(ref);
+    if (cls) currentFrame?.classes.set(local, cls);
   };
   /** 首跳加载：相对当前调用方文件（与既有口径一致） */
   const loadSpec = (spec: string): string | undefined => loadSpecFrom(spec, fromFile);
@@ -770,28 +1061,26 @@ export function collectCallResolvers(
             }
           }
         }
-        // Bug 441：本地类实例（const c = new C()）⇒ c.m ⇒ C.m。
+        // Bug 441 / 1154：本地类实例（const c = new C()）⇒ c.m ⇒ C.m。
         // 此前 memberToFn 只收**对象字面量**成员 ⇒ `c.m(-1)` 这类成员调用
         // 解析不出被调名 ⇒ 整条调用被跳过 ⇒ 类方法的侧车契约在任何调用点
         // 都不执法（假绿）；而契约绑定面（interface.ts 的 C_m ↔ C.m）认得。
         //
-        // 方法名取自 knownFns（listTopFunctions 的 `Class.method` 命名空间）：
-        // 与执法面的 knownFns 闸门（checkOneCall）**同源** ⇒ 不会映到执法面
-        // 认不出的名字；也不必再写一份类方法抽取（scan-top-functions.ts 的
-        // collectClassMethods）⇒ 无双实现、无求值时序依赖。
-        //
-        // Bug 1107：绑定进**当前作用域**的帧（不再只按变量名建一张全局表）
-        // ⇒ 两个函数里的同名局部（`const c = new A()` / `const c = new B()`）
-        // 不再互相串味。
+        // Bug 1154：绑定改由**类 AST 事实**驱动（own 实例方法；静态方法 /
+        // 构造器 `this.m = …` / getter-setter / computed 不收）⇒ 不再按
+        // knownFns 前缀把静态方法也映成实例成员；导入类则落 `externalMembers`
+        // （定义模块的 `K.m` + 定义文件路径 ⇒ 侧车契约可解析）。
+        // 类绑定不可得（形参遮蔽 / 类表达式）⇒ **不回落**前缀猜测（守卫假红）。
         if (init.type === "NewExpression") {
           const ctor = init.callee as { type?: string; name?: string } | undefined;
           if (ctor?.type === "Identifier" && typeof ctor.name === "string") {
-            const prefix = `${ctor.name}.`;
-            for (const known of knownSet) {
-              if (!known.startsWith(prefix)) continue;
-              const method = known.slice(prefix.length);
-              if (!method) continue;
-              frame.members.set(`${id.name}.${method}`, known);
+            const cls = resolveScopedClass(resolveOut, chain, ctor.name);
+            if (cls) {
+              for (const method of cls.members.instance) {
+                const ref = classMemberRef(cls, method, "instance", knownSet);
+                if (typeof ref === "string") frame.members.set(`${id.name}.${method}`, ref);
+                else if (ref) frame.externalMembers.set(`${id.name}.${method}`, ref.external);
+              }
             }
           }
         }
@@ -801,6 +1090,8 @@ export function collectCallResolvers(
     // Bug 1107：**重新赋值**使别名 / 成员绑定失效
     // （`let c = new C(); c = {m:x=>x}; c.m(-1)` ⇒ `c` 已不是那个实例 ⇒
     // 旧的 `c.m ⇒ C.m` 绑定必须作废，否则把**别的对象**的契约套上来）。
+    // Bug 1154：外部成员绑定（导入类实例）与类绑定（`K = …` 之后 `K.s()`
+    // 不再是那个类）同口径失效。
     if (obj.type === "AssignmentExpression" && obj.operator === "=") {
       const left = obj.left as { type?: string; name?: string } | undefined;
       if (left?.type === "Identifier" && typeof left.name === "string") {
@@ -809,12 +1100,39 @@ export function collectCallResolvers(
         for (const key of [...frame.members.keys()]) {
           if (key.startsWith(prefix)) frame.members.delete(key);
         }
+        for (const key of [...frame.externalMembers.keys()]) {
+          if (key.startsWith(prefix)) frame.externalMembers.delete(key);
+        }
+        frame.classes.delete(left.name);
       }
     }
   };
+  /**
+   * Bug 1154：**模块级本地类**的绑定（与导入类同一张表）。
+   *
+   * 本地类成员解析仍以 `knownFns`（普查面）为闸门 —— 未导出 / 普查面未登记
+   * 的类保持零诊断（不扩面）；这里只提供「own 实例 / 静态方法」的 AST 事实
+   * ⇒ `L.s()` 不会被当成实例成员，`new L().m()` 不会用到静态成员。
+   */
+  for (const stmt of file.program.body) {
+    const decl = (
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt
+    ) as { type?: string; id?: { name?: string } } | undefined;
+    if (decl?.type !== "ClassDeclaration" || !decl.id?.name) continue;
+    moduleFrame.classes.set(decl.id.name, {
+      source,
+      ...(fromFile ? { fromFile } : {}),
+      className: decl.id.name,
+      local: true,
+      members: classMemberInfoOf(decl),
+    });
+  }
+
   // 语句容器 walk：不进表达式树，O(语句) 而非 O(全部节点)
   walkStatements(file, visit);
-  return { aliasToFn, memberToFn, externalFn, externalMember, scopes };
+  return resolveOut;
 }
 
 /**
@@ -848,16 +1166,31 @@ export function resolveCalleeFn(
     return undefined;
   }
   if (callee.type === "MemberExpression") {
-    const obj = callee.object as { type?: string; name?: string } | undefined;
+    const obj = callee.object as
+      | { type?: string; name?: string; callee?: { type?: string; name?: string } }
+      | undefined;
     const prop = callee.property as { type?: string; name?: string } | undefined;
+    const propOk = !callee.computed && prop?.type === "Identifier" && typeof prop.name === "string";
+    // Bug 1154：`new K().m(…)`（构造 + 实例方法调用同表达式）⇒ 与
+    // `const c = new K(); c.m(…)` 同一条 obligation 路径（本地类走 knownFns，
+    // 导入类走外部描述）。own 实例方法之外（静态 / ctor 赋值 / 继承 / getter）
+    // 一律不解析（守卫假红）。
+    if (propOk && chain && obj?.type === "NewExpression") {
+      const ctor = obj.callee as { type?: string; name?: string } | undefined;
+      if (ctor?.type === "Identifier" && typeof ctor.name === "string") {
+        const cls = resolveScopedClass(resolve, chain, ctor.name);
+        if (cls) {
+          const ref = classMemberRef(cls, prop!.name!, "instance", knownFns);
+          if (ref) return ref;
+        }
+      }
+    }
     if (
-      !callee.computed &&
+      propOk &&
       obj?.type === "Identifier" &&
-      obj.name &&
-      prop?.type === "Identifier" &&
-      prop.name
+      obj.name
     ) {
-      const key = `${obj.name}.${prop.name}`;
+      const key = `${obj.name}.${prop!.name!}`;
       const extM = resolve.externalMember.get(key);
       if (extM) return { external: extM };
       // m = require(...)；调用 m.fn
@@ -866,21 +1199,36 @@ export function resolveCalleeFn(
         return {
           external: {
             source: mod.source,
-            fnName: prop.name,
+            fnName: prop!.name!,
             ...(mod.fromFile ? { fromFile: mod.fromFile } : {}),
           },
         };
+      }
+      // Bug 1154：**静态**类成员调用 `K.s(…)`（本地 / 导入类）。按类 AST
+      // 事实判定 static（同名静态用 `K.static.s` 的 scope 名，Bug 425）——
+      // 实例成员 / 继承成员 / computed / getter-setter 不解析。
+      if (chain) {
+        const cls = resolveScopedClass(resolve, chain, obj.name);
+        if (cls) {
+          const ref = classMemberRef(cls, prop!.name!, "static", knownFns);
+          if (ref) return ref;
+        }
       }
       // 同文件成员：对象字面量成员（const api = { f }）与**本地类实例**
       // （const c = new C() ⇒ c.m ⇒ C.m，收集侧建好）——
       // 两者都按 `接收者.属性` 取到源码函数名（Bug 441）。
       //
       // Bug 1107：给了作用域链就**按作用域**找绑定（同名局部 / 参数不再互相
-      // 串味；被遮蔽的接收者不回落外层）。
+      // 串味；被遮蔽的接收者不回落外层）。Bug 1154：导入类实例的成员是
+      // 外部描述（定义模块 + 定义文件路径）。
       const local = chain
-        ? resolveScopedMember(resolve, chain, obj.name, prop.name)
-        : resolve.memberToFn.get(key);
-      if (local) return local;
+        ? resolveScopedMember(resolve, chain, obj.name, prop!.name!)
+        : undefined;
+      if (local) return local.kind === "fn" ? local.fn : { external: local.ref };
+      if (!chain) {
+        const m = resolve.memberToFn.get(key);
+        if (m) return m;
+      }
     }
   }
   return undefined;

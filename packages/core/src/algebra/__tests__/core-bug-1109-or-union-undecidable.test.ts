@@ -45,10 +45,11 @@ const SIDE = `import { number, string, lit, union } from "@nudojs/core";
 export const posOrLit = union(number().gt(0), lit("a"));
 export const litOrLit = union(lit(1), lit("a"));
 export const numOrStr = union(number(), string());
+export const posOrNull = union(number().gt(0), lit(null));
 `;
 
 function check(src: string, file = "/t/union.js") {
-  const imp = `/// @nudo:import { posOrLit, litOrLit, numOrStr } from "./std.nudo.js"\n`;
+  const imp = `/// @nudo:import { posOrLit, litOrLit, numOrStr, posOrNull } from "./std.nudo.js"\n`;
   return checkSource(file, imp + src, pTrue, sidecarOpts("std.nudo", SIDE, file));
 }
 
@@ -95,6 +96,34 @@ export function use() { return u(true); }
     const r = check(`/** @nudo:contract x posOrLit */
 function u(x) { return x; }
 export function use() { return u("a"); }
+`);
+    expect(violations(r)).toBe(0);
+  });
+});
+
+/**
+ * A3 残留回归钉（review F34 其它线索）：`union(number().gt(0), lit(null))`
+ * 收到**对象 / 数组**实参时，数值界成员「不可判定」且 null 成员类型为假
+ * ⇒ 旧口径会把「不可判定」当「不违反」静默放过。三值聚合修法后，域不兼容
+ * （object / array vs number|null）⇒ **不得**静默 ⇒ 必须报 1 条违例；
+ * 合法成员（null / 正数字面量）仍不报。
+ */
+describe("Bug 1109 残留 —— union(number().gt(0), lit(null)) 的域不兼容实参不得静默", () => {
+  it.each([["{}"], ["[]"]])(
+    "对象/数组实参 %s ⇒ 恰好 1 条 nudo:constraint-violated",
+    (arg) => {
+      const r = check(`/** @nudo:contract x posOrNull */
+function u(x) { return x; }
+export function use() { return u(${arg}); }
+`);
+      expect(violations(r)).toBe(1);
+    },
+  );
+
+  it.each([["null"], ["1"]])("合法成员 %s ⇒ 不报", (arg) => {
+    const r = check(`/** @nudo:contract x posOrNull */
+function u(x) { return x; }
+export function use() { return u(${arg}); }
 `);
     expect(violations(r)).toBe(0);
   });

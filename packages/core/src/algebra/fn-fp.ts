@@ -124,9 +124,32 @@ function collectSiblingRefs(node: unknown, known: Set<string>, out: Set<string>)
   }
 }
 
-function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
-  const top: Array<{ name: string; slice: string; fnNode: Node }> = [];
-  const contextParts: string[] = [];
+/** 顶层函数绑定（own 片按声明器；指纹与可达性共用同一份勘测）。 */
+type TopFnBinding = {
+  name: string;
+  fnNode: Node;
+  /** own 片起点（首个声明器含语句前导注释，后续声明器含自身前导注释）。 */
+  sliceStart: number;
+  /** own 片终点（已按 `Math.max(end, sliceStart)` 收敛）。 */
+  sliceEnd: number;
+};
+
+/**
+ * 顶层绑定勘测（**唯一**一份）：函数绑定 + 类声明 + 非函数顶层语句。
+ *
+ * 指纹（`computeFnFingerprints` 的 own/deps/context）与可达性归因
+ * （`reachableTopBindings`）共用本函数 ⇒「哪些顶层声明算函数/类」只有一个口径。
+ * `contextStmts` 是非函数顶层语句（import / class / 顶层 const…），指纹把它
+ * 整段折进 deps 的 context 哈希（保守：类或常量改动让所有函数变脏）。
+ */
+function topLevelBindings(file: File): {
+  fns: TopFnBinding[];
+  classes: Array<{ name: string; node: Node }>;
+  contextStmts: Node[];
+} {
+  const fns: TopFnBinding[] = [];
+  const classes: Array<{ name: string; node: Node }> = [];
+  const contextStmts: Node[] = [];
 
   for (const stmt of file.program.body) {
     let decl: Node = stmt;
@@ -150,13 +173,137 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
               info.fnNode.start ??
               lead);
         const end = info.fnNode.end ?? info.declaratorStart ?? decl.end ?? stmt.end ?? sliceStart;
-        top.push({
+        fns.push({
           name: info.name,
-          slice: source.slice(sliceStart, Math.max(end, sliceStart)),
           fnNode: info.fnNode,
+          sliceStart,
+          sliceEnd: Math.max(end, sliceStart),
         });
       }
-    } else if (typeof stmt.start === "number" && typeof stmt.end === "number") {
+    } else {
+      if (decl.type === "ClassDeclaration" && decl.id) {
+        classes.push({ name: decl.id.name, node: decl });
+      }
+      contextStmts.push(stmt);
+    }
+  }
+  return { fns, classes, contextStmts };
+}
+
+/** 顶层绑定引用图（函数绑定；`includeClasses` 时类声明也是节点）。 */
+type ReachGraph = {
+  nodes: Map<string, Node>;
+  /** 名 → 直接引用的兄弟顶层绑定名。 */
+  edges: Map<string, Set<string>>;
+};
+
+/** 同一份 AST 的图缓存：`computeFnFingerprints` 每个函数查一次闭包，
+ *  不缓存就是 O(函数数 × AST) 的重复遍历。 */
+const reachGraphCache = new WeakMap<File, { fnsOnly?: ReachGraph; withClasses?: ReachGraph }>();
+
+/**
+ * 顶层可达性图。
+ *
+ * 类节点只在 `includeClasses` 时为节点：指纹的 deps 只认**兄弟函数**
+ * （类名进图会改变 `nRefs`/deps ⇒ generalize memo 键漂移），而归因面需要
+ * 「函数入口 `new K()` ⇒ K 的构造器/方法体可达」。两种图各自缓存。
+ */
+function reachGraphOf(file: File, includeClasses: boolean): ReachGraph {
+  const cached = reachGraphCache.get(file);
+  const hit = includeClasses ? cached?.withClasses : cached?.fnsOnly;
+  if (hit) return hit;
+
+  const nodes = new Map<string, Node>();
+  const bindings = topLevelBindings(file);
+  for (const fn of bindings.fns) nodes.set(fn.name, fn.fnNode);
+  if (includeClasses) {
+    for (const cls of bindings.classes) {
+      // 同名不覆盖（合法源码里函数/类不能同名；重复 var 声明按首个节点保守处理）
+      if (!nodes.has(cls.name)) nodes.set(cls.name, cls.node);
+    }
+  }
+
+  const edges = new Map<string, Set<string>>();
+  const known = new Set(nodes.keys());
+  for (const [name, node] of nodes) {
+    const refs = new Set<string>();
+    collectSiblingRefs(node, known, refs);
+    edges.set(name, refs);
+  }
+
+  const graph: ReachGraph = { nodes, edges };
+  const slot = cached ?? {};
+  if (includeClasses) slot.withClasses = graph;
+  else slot.fnsOnly = graph;
+  reachGraphCache.set(file, slot);
+  return graph;
+}
+
+/** 从直接引用集合出发的传递闭包（`seen` 收敛 ⇒ 互递归必终止）。 */
+function closureFrom(edges: Map<string, Set<string>>, startRefs: Iterable<string>): Set<string> {
+  const seen = new Set<string>();
+  const stack = [...startRefs];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const next of edges.get(cur) ?? []) {
+      if (!seen.has(next)) stack.push(next);
+    }
+  }
+  return seen;
+}
+
+/** 可达的顶层绑定（名字 + AST 节点）。 */
+export type TopBindingReach = { name: string; node: Node };
+
+/**
+ * 从入口节点出发**可达**的顶层绑定（传递闭包）。
+ *
+ * L2 fail-closed 归因用：转译器拒绝的构造落在入口**可达的辅助函数 / 类**
+ * 里时，该入口的 total 性同样不可判定（同一函数体内联与拆到辅助函数等价）。
+ *
+ * - `start` 为字符串 ⇒ 按顶层绑定名取节点（函数绑定或类声明）；
+ * - `start` 为 AST 节点 ⇒ 直接以该节点为起点（类方法入口用**方法节点**，
+ *   不牵连同类的其它方法）；直接引用的扫描范围 = 该节点整棵子树。
+ * - `includeClasses`（默认 `true`）：类声明也是图节点。指纹侧传 `false`
+ *   ⇒ 输出与改造前逐字节一致。
+ *
+ * 结果**不含**起点自身（除非环回：递归/互递归会把它带回来）。互递归靠
+ * `closureFrom` 的 `seen` 收敛 ⇒ 必终止。
+ */
+export function reachableTopBindings(
+  file: File,
+  start: string | Node,
+  opts: { includeClasses?: boolean } = {},
+): TopBindingReach[] {
+  const graph = reachGraphOf(file, opts.includeClasses !== false);
+  const startNode = typeof start === "string" ? graph.nodes.get(start) : start;
+  if (!startNode) return [];
+  // 字符串起点 = 图节点 ⇒ 直接复用它预先算好的直接引用（免二次扫描）；
+  // AST 节点起点（类方法等非图节点）现扫该子树。两种口径都是
+  // `collectSiblingRefs`。
+  const refs =
+    typeof start === "string"
+      ? (graph.edges.get(start) ?? new Set<string>())
+      : (() => {
+          const s = new Set<string>();
+          collectSiblingRefs(startNode, new Set(graph.nodes.keys()), s);
+          return s;
+        })();
+  const out: TopBindingReach[] = [];
+  for (const name of closureFrom(graph.edges, refs)) {
+    const node = graph.nodes.get(name);
+    if (node) out.push({ name, node });
+  }
+  return out;
+}
+
+function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
+  const { fns, contextStmts } = topLevelBindings(file);
+  const contextParts: string[] = [];
+  for (const stmt of contextStmts) {
+    if (typeof stmt.start === "number" && typeof stmt.end === "number") {
       contextParts.push(source.slice(stmt.start, stmt.end));
     } else {
       contextParts.push(stmt.type);
@@ -164,37 +311,22 @@ function computeFnFingerprints(source: string, file: File): Map<string, FnFp> {
   }
 
   const context = hashSource(contextParts.join("\n "));
-  const names = new Set(top.map((t) => t.name));
   const own = new Map<string, string>();
-  for (const t of top) own.set(t.name, hashSource(t.slice));
-
-  const edges = new Map<string, Set<string>>();
-  for (const t of top) {
-    const refs = new Set<string>();
-    // Whole fn node (params defaults + body), not body alone
-    collectSiblingRefs(t.fnNode, names, refs);
-    edges.set(t.name, refs);
-  }
+  for (const fn of fns) own.set(fn.name, hashSource(source.slice(fn.sliceStart, fn.sliceEnd)));
 
   const result = new Map<string, FnFp>();
-  for (const t of top) {
-    const seen = new Set<string>();
-    const stack = [...(edges.get(t.name) ?? [])];
+  for (const fn of fns) {
+    // 按**名字**取闭包（与改造前的 `edges.get(name)` 同口径：重名 var 声明
+    // 取最后一条）；`includeClasses:false` ⇒ deps 只含兄弟函数。
     const depParts: string[] = [];
-    while (stack.length > 0) {
-      const cur = stack.pop()!;
-      if (seen.has(cur)) continue;
-      seen.add(cur);
-      depParts.push(`${cur}=${own.get(cur) ?? "?"}`);
-      for (const next of edges.get(cur) ?? []) {
-        if (!seen.has(next)) stack.push(next);
-      }
+    for (const reach of reachableTopBindings(file, fn.name, { includeClasses: false })) {
+      depParts.push(`${reach.name}=${own.get(reach.name) ?? "?"}`);
     }
     depParts.sort();
-    result.set(t.name, {
-      own: own.get(t.name)!,
+    result.set(fn.name, {
+      own: own.get(fn.name)!,
       deps: hashSource(`${depParts.join(",")} ${context}`),
-      nRefs: seen.size,
+      nRefs: depParts.length,
     });
   }
   return result;

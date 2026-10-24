@@ -17,12 +17,11 @@ import {
   type CheckJson,
   type CheckReport,
 } from "@nudojs/core";
-import { entryVariantIssueForFile } from "@nudojs/service";
+import { entryVariantIssueForFile, mergeCheckIssues } from "@nudojs/service";
 import { runAbsView } from "./shared.ts";
 import {
   docsDiagnosticCodes,
   dualEntryIssue,
-  mergeCheckIssues,
   mergeJsonIssues,
   serializeCheckJsonForCache,
   stripConfigShapeIssues,

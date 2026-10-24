@@ -17,16 +17,18 @@ the types of the arguments they are given.
   `"Error"` as the fallback for a non-`Error` throw. Declarations whose
   host throws a brand that is not a standard error name — `atob` and
   `btoa` throw a `DOMException` named `InvalidCharacterError` — pass the
-  brand explicitly through the new `throws` option.
-- The new `enforceArgs` option checks each argument against the declared
-  parameter type before the host call happens. An argument that
-  definitely does not fit makes the call throw a `TypeError`; an
-  argument the engine cannot pin down (an `unknown`, an `any`, or a value
-  that is not exact) makes the call possibly throw a `TypeError`. The
-  check is opt-in, per declaration.
+  brand explicitly through the new declaration-side `throws` option.
+- The new declaration-side `enforceArgs` option checks each argument
+  against the declared parameter type before the host call happens. An
+  argument that definitely does not fit makes the call throw a
+  `TypeError`; an argument the engine cannot pin down (an `unknown`, an
+  `any`, or a value that is not exact) makes the call possibly throw a
+  `TypeError`. The check is opt-in, per declaration.
 - `envFnVariadic` accepts the same `throws` and `enforceArgs` options and
   passes them on; for a variadic declaration only the required
   parameters are checked.
-- Two helpers are exported for the declaration side: `errBrand(name)`
-  builds an error-brand value, and `EnvApplyImpl` is the apply
-  signature an env declaration may use.
+- The declaration helpers involved — `envFn`, `envFnVariadic`,
+  `errBrand(name)` (builds an error-brand value) and the `EnvApplyImpl`
+  apply signature — are internal to the package (`src/abs-helpers.ts`)
+  and are not part of its `exports` surface: `@nudojs/env/es`, `/web` and
+  `/node` export only `defineEnv` and the `EnvDefinition` type.

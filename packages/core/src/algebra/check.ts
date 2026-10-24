@@ -738,8 +738,9 @@ function assumePremisesPhiOf(
  * display = 合法段规范形原文，供证明成功时的审计标注
  * （nudo:invariant-relied——与 assume 同为用户公理，依赖面必须上屏可见）。
  * 无 invariant 行（或全部非法不折）→ undefined（零行为变化）。
- * 注：generalize L0 memo 键不含 specs（与 assume 前提同款已知少精度，
- * 非 unsound——种子 extent 内算出的结果会被无种子上下文复用，方向是少证）。
+ * 注：generalize L0 键不含 specs（与 assume 前提同款）⇒ 种子非平凡时
+ * generalizeFromAst 绕过 L0（既不读也不写）：种子的折后界不得经缓存泄漏给
+ * 无种子上下文，无种子条目的复用也不得让种子求值跳过实施/账本回填。
  */
 function invariantSpecsOf(
   name: string,

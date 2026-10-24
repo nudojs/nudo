@@ -18,6 +18,5 @@ The same holds for a method shorthand (`{ async m() {} }.m`), for a
 class method (`class A { async m() {} }` → `A.prototype.m`) and for a
 static class method.
 
-A function *declaration* (`export async function f() {}`) still reports
-`"[object Function]"`: the declared function is a host function, and
-the engine cannot recover the kind from it.
+A plain `function f() {}` declaration reports `"[object Function]"` —
+the label the language gives it.

@@ -47,6 +47,7 @@ import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
+import { currentAssumePremises, currentInvariantSpecs } from "./exec/runtime/state.ts";
 import { $new, $invoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
@@ -892,6 +893,15 @@ export function generalizeFromAst(
     inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
+  // 种子动态域（@nudo:assume / @nudo:invariant）**不进 L0 键**（键只按源码/
+  // 依赖/预算等静态身份；把种子塞进去会拆碎跨调用的缓存复用）⇒ 有种子时必须
+  // 绕过 L0：命中缓存会跳过重新求值 ⇒ ① 引理消费账本不填（漏
+  // `nudo:assume-relied`）；② 无种子条目被种子求值复用 → 漏折界（反之带折后
+  // 界的 PolyFn 经 L0 泄漏给无种子调用）。种子仅在目标函数入口求值窗口内
+  // 非平凡 ⇒ 该窗口内既不读也不写 L0。
+  if (currentAssumePremises().op !== "true" || currentInvariantSpecs().length > 0) {
+    return generalizeFromAstUncached(fnName, source, opts);
+  }
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
   // 截断/读错误指纹不可信：不读也不写 L0
   if (!truncated) {

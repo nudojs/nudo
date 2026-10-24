@@ -151,41 +151,6 @@ export function docsDiagnosticCodes(issues: Array<{ code?: string }>): string[] 
   ];
 }
 
-export function mockFromErrorIssues(
-  mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }>,
-): CheckIssue[] {
-  return mockFromErrors.map((fe) => {
-    const isExpr = fe.code === DIAG.mockInvalid;
-    return {
-      // 表达式认不出（mockInvalid）= **指令被忽略**（mock 不生效），按文档是
-      // warning（reference/diagnostics.md#nudo-mock-invalid「Warning」；
-      //  guides/check.md 诊断表「nudo:mock-invalid | engine | warning」）；
-      // mock 文件缺失 / 加载失败（moduleMissing）才是 error。
-      // 旧实现**无条件**提到 error ⇒ 与 service 侧同一分流
-      // （analyzer-orchestrate-uncached.ts:311 `isExpr ? "warning" : "error"`）
-      // 自相矛盾：同一文件里两条通道一 warning 一 error（#460）。
-      severity: isExpr ? ("warning" as const) : ("error" as const),
-      code: (fe.code ?? DIAG.moduleMissing) as string,
-      message: fe.message,
-      suggestion: isExpr
-        ? "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)"
-        : `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
-    };
-  });
-}
-
-/** D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit） */
-export function directiveDiagIssues(
-  diags: Array<{ code: string; message: string }>,
-): CheckIssue[] {
-  return diags.map((d) => ({
-    severity: "warning" as const,
-    code: d.code,
-    message: d.message,
-    suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
-  }));
-}
-
 export type DomainDiagnosticLike = {
   code?: string;
   severity: string;
@@ -514,30 +479,6 @@ export function dualEntryIssue(dual: {
     line: dual.line,
     column: dual.column,
     suggestion: dual.suggestion,
-  };
-}
-
-type Summarized = {
-  issues: CheckIssue[];
-  ok: boolean;
-  summary: { errors: number; warnings: number; infos: number; functions: number };
-};
-
-/** 追加 issues 并同步 summary/ok（有新 error 则 ok=false） */
-export function mergeCheckIssues<T extends Summarized>(report: T, issues: CheckIssue[]): T {
-  const errors = issues.filter((i) => i.severity === "error").length;
-  const warnings = issues.filter((i) => i.severity === "warning").length;
-  const infos = issues.filter((i) => i.severity === "info").length;
-  return {
-    ...report,
-    issues: [...report.issues, ...issues],
-    ok: report.ok && errors === 0,
-    summary: {
-      ...report.summary,
-      errors: report.summary.errors + errors,
-      warnings: report.summary.warnings + warnings,
-      infos: report.summary.infos + infos,
-    },
   };
 }
 

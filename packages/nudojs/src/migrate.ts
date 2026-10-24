@@ -2460,19 +2460,17 @@ export async function migrateVerify(
     checkConfig,
     collectSkipReturns,
     defaultLoadModule,
+    directiveDiagIssues,
     findProjectConfig,
     interfaceConfig,
+    mergeCheckIssues,
+    mockFromErrorIssues,
   } = await import("@nudojs/service");
   const { preloadPathEnvs } = await import("@nudojs/service/evaluator");
   const { checkGateFromConfig, mergeIgnoreThrows, resolveEntryThrows } = await import(
     "./check-gate-config.ts"
   );
-  const {
-    directiveDiagIssues,
-    domainIssuesFromDiagnostics,
-    mergeCheckIssues,
-    mockFromErrorIssues,
-  } = await import("./check-json-map.ts");
+  const { domainIssuesFromDiagnostics } = await import("./check-json-map.ts");
   const results: VerifyResult[] = [];
   const files: string[] = [];
   /** 空集 / 非目标：与 nudo check 同口径判红（不能给「无东西可验」发绿灯通行证） */

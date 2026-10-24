@@ -2,7 +2,7 @@
 "@nudojs/env": patch
 ---
 
-族 62（片 W12）：env 的 **ES / Web 内建构造器声明面**精度 —— 5 条台账里 **1 条 env 侧真修**、**4 条定位到 core 侧**（不改 core，见随附报告）。
+族 62（片 W12）：env 的 **ES / Web 内建构造器声明面**精度 —— 5 条台账里 **1 条 env 侧真修**、**3 条由同批 core 收口**、**1 条复核后为非缺陷**。
 
 **真修 · 第 5 条（Bug 890 精度）：env promise 的拒绝 reason 逐声明可见。**
 `promiseOf(inner)` 加**可选**拒绝 reason（缺省仍是 `unknown` ⇒ 其余声明逐字不变），
@@ -22,13 +22,12 @@
 补上原生原型成员（`compare` / `format` / `formatToParts` / `formatRange` /
 `formatRangeToParts` / `resolvedOptions`），方法值 + 参数/返回面齐备。
 
-**未改（定位到 core 侧，报告里给了确切文件与修法）**：第 1 条的**运行时**面
-（`new Intl.Collator().compare` 仍折 unknown 域 ⇒ core 的
-`BUILTIN_BRAND_METHODS` 缺 `Intl.Collator`）、第 2 条（台账前提与原生不符：
-原生 `new AggregateError()` **抛 TypeError**，不是 `errors = []`）、
-第 3 条（继承的 `cause` 仍读出「确定不存在」⇒ core 的 `errorBrandAbs`）、
-第 4 条（类型化数组元素面整体未建模 ⇒ core 的 `TYPED_ARRAY_ELEMENT` 家族）。
-这些在 `packages/env/src/__tests__/env-bug-62-es-web-surface.test.ts` 里以
-`it.fails` 旗标钉住（原生期望 + TODO 标记）——引擎修好后旗标会翻红提醒摘除。
+**其余 3 条已由同批 core 收口**（`fix-core-remaining-65`）：第 1 条的**运行时**面
+（`typeof new Intl.Collator().compare` 现折精确 `"function"`）、第 3 条
+（继承的 `cause` 不再折「确定不存在」，现为 `unknown` —— 原生是 `1`，
+引擎取**不假精确**的口径）、第 4 条（`new Int8Array(["3"])[0]` 折 `3`，
+类型化数组元素值面已建模）。第 2 条不是缺陷：原生 `new AggregateError()`
+**抛 TypeError**，引擎同判（该入口报 `nudo:entry-may-throw` TypeError），
+台账「`errors = []`」的前提与原生不符。
 
 **env 包的 `exports` map 未动**（无新增导出面）；`promiseOf` 只加了**可选**形参。

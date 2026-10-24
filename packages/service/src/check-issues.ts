@@ -17,17 +17,14 @@
  * （`packages/lsp/src/agent-tools.ts` 的 `checkTool`）**一份都没有** ⇒ 同一
  * 文件三个面给出三份 issue 集（agent 面把「指令写错了」整条吞掉）。
  *
- * **本模块是那份并入逻辑的落点**：三面都调它 ⇒ 不再分叉。
+ * **本模块是那份并入逻辑的落点**：三个宿主面都调它 ⇒ 不再分叉；CLI 侧原有的
+ * 私有副本（`mockFromErrorIssues` / `directiveDiagIssues` / `mergeCheckIssues`）
+ * 已删除，改为直接 import 本模块。
  *
- * 与 CLI 的既有实现保持**逐字同源**（并入顺序：指令文法 → mock 装载 →
- * env 未解析；severity / code / message 逐字一致）。
- *
- * ⚠ **suggestion 例外**：mock 装载失败的 suggestion 已按**错误种类**细分
+ * 并入顺序（指令文法 → mock 装载 → env 未解析）与 severity / code / message
+ * 逐字口径是三面共用的事实；mock 装载失败的 suggestion 按**错误种类**细分
  * （重复声明 / 导出名缺失 / 表达式解析失败 / 文件缺失，见
- * {@link mockFromErrorSuggestion}）⇒ 与 CLI 侧那份拷贝
- * （`packages/nudojs/src/check-json-map.ts` 的 `mockFromErrorIssues`）在
- * **重复声明 / 导出名缺失**两族上**不再逐字一致**（CLI 侧仍是通用句）
- * ⇒ 待 CLI 侧同步（两份实现应收敛回一处）。
+ * {@link mockFromErrorSuggestion}）。
  */
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";

@@ -22,8 +22,8 @@
  * - `crypto.subtle.digest` 失败 → `OperationError` DOMException
  * - `navigator.clipboard.readText()` 权限被拒 → `NotAllowedError` DOMException
  *
- * 旗标口径（同 core 的 `it.fails` 惯例）：引擎修好后 `it.fails` 会**翻红**，
- * 提醒摘旗标并把期望转正门禁。
+ * 旗标口径：族 62 的 3 条已由族 65 收口 ⇒ 本文件**无** `it.fails`；
+ * 全部断言均为正门禁（引擎退化即翻红）。
  */
 import { describe, it, expect } from "vitest";
 import {
