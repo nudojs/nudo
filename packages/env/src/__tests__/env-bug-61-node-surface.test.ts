@@ -16,11 +16,11 @@
  * - **第 4 条**：**已随族 35 关闭**（`navigator.userAgent` 已是 `prim.str()`；
  *   node env 全局表里已无 unknown 值的槽）⇒ 本文件钉成**回归钉**（防回退）。
  * - **第 5 条**：ESM 上下文宿主平台全局（v26 = 141：184 − 43 个 Node 内建模块
- *   命名空间）vs env 声明 **130** ⇒ 实测缺口是 **13** 个（台账的「11」是
+ *   命名空间）vs env 声明 **130** ⇒ v26 上实测缺口 **13** 个（台账的「11」是
  *   平台全局−130 的粗算，未扣 env 多出的 `__dirname` / `__filename`）⇒ 逐个
  *   给出**不声明**的理由（多数是**金标要求**），并钉住「不许悄悄漂移」。
- *   **宿主总面随 Node major 漂移**（v24 = 177：少的 7 个全是内建模块命名空间
- *   全局）⇒ 只钉版本无关的台账等式（平台 − 声明），不钉 184 / 141 这种绝对值。
+ *   **宿主面随 Node 版本漂移**（v24.11 平台全局 135）⇒ 两个方向都按**逐名**
+ *   对账（未声明的宿主必有理由 / 声明的宿主缺失项必有登记），不钉 184 / 141。
  * - **第 6 条**：env 覆盖基线剩下的 2 条 mock-required + 6 条 signature-level
  *   **都是设计边界**（不是缺口）⇒ 钉住「新声明是 leaf-clean」+「报告是脚本
  *   生成的」。
@@ -503,7 +503,7 @@ describe("族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env �
     // 少的是 Float16Array / DisposableStack 这类新平台 API）⇒ 钉两个**逐名**方向，
     // 而不是 184 / 141 这种绝对值（钉绝对值的版本 CI 上红过两次）：
     //   (a) 宿主有、env 没声明 ⇒ **必须**在 UNDECLARED_REASONS 里逐条给理由；
-    //   (b) env 声明、宿主没有 ⇒ **只许**是 CJS 作用域的 __dirname / __filename。
+    //   (b) env 声明、宿主没有 ⇒ **只许**是 CJS 作用域名或登记过的超前声明。
     const undeclared = platform.filter((g) => !declared.includes(g));
     for (const name of undeclared) {
       expect(UNDECLARED_REASONS[name], `宿主全局 ${name} 未声明却没有理由（不许悄悄漂移）`)
