@@ -146,10 +146,13 @@ function topLevelBindings(file: File): {
   fns: TopFnBinding[];
   classes: Array<{ name: string; node: Node }>;
   contextStmts: Node[];
+  /** 全部顶层语句（含函数声明语句；执行期归属勘测用，不参与指纹）。 */
+  stmts: Node[];
 } {
   const fns: TopFnBinding[] = [];
   const classes: Array<{ name: string; node: Node }> = [];
   const contextStmts: Node[] = [];
+  const stmts: Node[] = file.program.body;
 
   for (const stmt of file.program.body) {
     let decl: Node = stmt;
@@ -187,7 +190,153 @@ function topLevelBindings(file: File): {
       contextStmts.push(stmt);
     }
   }
-  return { fns, classes, contextStmts };
+  return { fns, classes, contextStmts, stmts };
+}
+
+/** 源码跨度（行 1-based / 列 0-based，与 Babel `loc` 同口径）。 */
+export type SourceSpan = {
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+};
+
+/** 节点的源码跨度（无 loc ⇒ undefined）。 */
+export function nodeSpan(node: unknown): SourceSpan | undefined {
+  const loc = (
+    node as
+      | {
+          loc?: {
+            start?: { line?: number; column?: number };
+            end?: { line?: number; column?: number };
+          };
+        }
+      | undefined
+  )?.loc;
+  const st = loc?.start;
+  const en = loc?.end;
+  if (!st || !en || st.line === undefined || en.line === undefined) return undefined;
+  return {
+    startLine: st.line,
+    startColumn: st.column ?? 0,
+    endLine: en.line,
+    endColumn: en.column ?? 0,
+  };
+}
+
+/** 下钻时跳过的非 AST 键（位置 / 注释 / 原始文本缓存）。 */
+const NON_AST_KEYS = new Set([
+  "loc",
+  "start",
+  "end",
+  "range",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "tokens",
+  "errors",
+]);
+
+type MemberLikeNode = Node & {
+  computed?: boolean;
+  static?: boolean;
+  key?: unknown;
+  value?: unknown;
+  params?: unknown[];
+  body?: unknown;
+  decorators?: unknown[];
+};
+
+/**
+ * 收集**装载期之外**（推迟执行）的源码跨度。
+ *
+ * 判据只看**执行时机**（不是绑定名勘测；顶层语句清单来自
+ * {@link topLevelBindings}，不另做一份勘测）：
+ * - 函数（声明 / 表达式 / 箭头）整棵推迟 —— 调用时才跑（含参数默认值）；
+ * - 方法（对象 / 类）：函数体与参数默认值推迟；**计算键**不推迟（定义期求值）；
+ * - 类字段：实例字段初始化器推迟（`new` 时跑）；静态字段初始化器不推迟
+ *   （装载期跑），但其内部的函数体照常推迟；计算键不推迟；
+ * - `static {}` 块不推迟（装载期跑），内部函数体照常推迟。
+ *
+ * 装饰器表达式在定义期求值 ⇒ 不推迟（内部函数体照常按上面规则推迟）。
+ */
+function collectDeferredSpans(node: unknown, out: SourceSpan[]): void {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const x of node) collectDeferredSpans(x, out);
+    return;
+  }
+  const n = node as MemberLikeNode;
+  const t = n.type;
+  if (
+    t === "FunctionDeclaration" ||
+    t === "FunctionExpression" ||
+    t === "ArrowFunctionExpression"
+  ) {
+    const span = nodeSpan(n);
+    if (span) out.push(span);
+    return;
+  }
+  if (t === "ObjectMethod" || t === "ClassMethod" || t === "ClassPrivateMethod") {
+    // 计算键在类/对象**定义期**求值 ⇒ 键子树照常下钻（其中的函数体仍推迟）
+    if (n.computed === true) collectDeferredSpans(n.key, out);
+    collectDeferredSpans(n.decorators, out);
+    for (const p of n.params ?? []) {
+      const span = nodeSpan(p);
+      if (span) out.push(span);
+    }
+    const bodySpan = nodeSpan(n.body);
+    if (bodySpan) out.push(bodySpan);
+    return;
+  }
+  if (
+    t === "ClassProperty" ||
+    t === "ClassPrivateProperty" ||
+    t === "ClassAccessorProperty"
+  ) {
+    if (n.computed === true) collectDeferredSpans(n.key, out);
+    collectDeferredSpans(n.decorators, out);
+    if (n.static === true) {
+      // 静态初始化器在装载期执行 ⇒ 不推迟（内部函数体照常下钻）
+      collectDeferredSpans(n.value, out);
+    } else {
+      // 实例字段初始化器在 `new` 时执行 ⇒ 整段推迟
+      const span = nodeSpan(n.value);
+      if (span) out.push(span);
+    }
+    return;
+  }
+  const fields = n as unknown as Record<string, unknown>;
+  for (const key of Object.keys(fields)) {
+    if (NON_AST_KEYS.has(key)) continue;
+    collectDeferredSpans(fields[key], out);
+  }
+}
+
+/** 同一份 AST 的推迟跨度缓存（归因面每个入口查一次，不缓存就是 O(入口数 × AST)）。 */
+const deferredSpanCache = new WeakMap<File, SourceSpan[]>();
+
+/**
+ * **装载期之外**（推迟执行）的源码跨度清单 —— L2 fail-closed 归因用。
+ *
+ * 装载期（module-init）= 顶层语句体 / 顶层初始化表达式 / 类定义期执行面
+ * （`static {}`、静态字段初始化器、计算键、`extends` 表达式）：这些东西先于
+ * **任何**入口调用执行。位置落在返回的跨度**内** = 某次调用 / `new` 才跑 ⇒
+ * 归因按入口可达性（Bug 1153）；落在**外** = 装载期 ⇒ 归因到**每个**入口
+ * （Bug 1155）。
+ *
+ * 保守边界：立即调用函数表达式（IIFE）的函数体按 AST 结构属于函数体 ⇒
+ * 记入推迟面（不归因；与改造前一致，宁可少报）。
+ */
+export function deferredExecutionSpans(file: File): SourceSpan[] {
+  const hit = deferredSpanCache.get(file);
+  if (hit) return hit;
+  const out: SourceSpan[] = [];
+  for (const stmt of topLevelBindings(file).stmts) collectDeferredSpans(stmt, out);
+  deferredSpanCache.set(file, out);
+  return out;
 }
 
 /** 顶层绑定引用图（函数绑定；`includeClasses` 时类声明也是节点）。 */

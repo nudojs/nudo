@@ -67,9 +67,15 @@ export function localNamedExports(source: string): Set<string> {
     const idName = identName(s.id as NodeLike | undefined);
     if (idName) localClasses.set(idName, s);
   }
-  const addClassMethodKeys = (out: Set<string>, decl: NodeLike | undefined) => {
+  const addClassMethodKeys = (
+    out: Set<string>,
+    decl: NodeLike | undefined,
+    nameOverride?: string,
+  ) => {
     if (!decl || decl.type !== "ClassDeclaration") return;
-    const idName = identName(decl.id as NodeLike | undefined);
+    // Bug 1156：匿名 `export default class {}` 没有本地名 ⇒ 成员键前缀用导出
+    // 槽名 "default"（与 generalize / 指令 scope / 类绑定同口径）。
+    const idName = identName(decl.id as NodeLike | undefined) ?? nameOverride;
     if (!idName) return;
     const body = (decl.body as { body?: NodeLike[] } | undefined)?.body ?? [];
     for (const m of body) {
@@ -188,6 +194,10 @@ export function localNamedExports(source: string): Set<string> {
           if (d.type === "ClassDeclaration" && idName) {
             addClassMethodKeys(out, d);
           }
+        } else if (d.type === "ClassDeclaration") {
+          // Bug 1156：匿名 `export default class {}` ⇒ 成员契约键 `default.m`
+          // （源导出面必须含它，侧车自动绑定才会为匿名默认类的方法加载）。
+          addClassMethodKeys(out, d, "default");
         } else if (
           d.type === "ArrowFunctionExpression" ||
           d.type === "FunctionExpression"

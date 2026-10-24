@@ -20,8 +20,11 @@
  * 构造 ⇒ 模块整体未求值）时，may-throw **不可判定**——不得与「分析出没有
  * may-throw」混同（旧口径把二者都当空 effects ⇒ 门禁由红转绿）。此类入口记
  * 一条 fail-closed 证据（kind=Error：不可判定 ⇒ 入口**可能**抛 Error）。
- * 归因按**可达性**：构造落在入口自身跨度内，或落在入口可达的顶层辅助函数 /
- * 类内（`reachableTopBindings`）⇒ 该入口背账；不可达的陪葬入口不背。
+ * 归因按**执行时机**：构造落在**模块装载期**代码里（顶层语句体 / 顶层初始化
+ * 表达式 / 类定义期的 `static {}`、静态字段初始化器、计算键、`extends` 表达式
+ * ——Bug 1155）⇒ **每个**入口都不可判定（装载期先于所有入口执行）；否则按
+ * **可达性**：构造落在入口自身跨度内，或落在入口可达的顶层辅助函数 / 类内
+ * （`reachableTopBindings`）⇒ 该入口背账；不可达的陪葬入口不背。
  */
 
 import type { Node } from "@babel/types";
@@ -51,7 +54,13 @@ import {
 } from "./exec/may-throw.ts";
 import { MAX_CHECK_MEMO } from "./check-memo.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
-import { reachableTopBindings } from "./fn-fp.ts";
+/** 节点跨度 / 装载期判定共用 `fn-fp.ts` 的勘测（`nodeSpan`）与推迟面清单。 */
+import {
+  deferredExecutionSpans,
+  nodeSpan,
+  reachableTopBindings,
+  type SourceSpan,
+} from "./fn-fp.ts";
 import { extractDeclaredThrows } from "./refine.ts";
 import type { parseSource } from "./parse-source.ts";
 
@@ -100,8 +109,10 @@ export function collectEntryMayThrows(
         // 模块未求值）⇒ 若对同模块的**所有**入口都发「可能抛 Error」，那
         // 是**不 sound 的过度断言**（原生下那些入口根本不抛）⇒ 只对**自身
         // 源码跨度内含该构造**（或经顶层辅助函数 / 类**可达**该构造，
-        // Bug 1153）的入口发证据。
-        if (!unsupportedFallsInside(file, fnName, outcome.loc)) return effects;
+        // Bug 1153）的入口发证据；构造落在**装载期**代码里时（Bug 1155：
+        // 顶层语句体 / 初始化表达式 / 类定义期面）则**所有**入口都不可判定
+        // ——装载期先于任何入口执行，归属与入口可达性无关。
+        if (!unsupportedFallsInside(file, fnName, outcome.reason, outcome.loc)) return effects;
         effects.push({
           kind: "Error",
           cause: `entry not analyzed (${outcome.reason}) ⇒ may-throw undeterminable`,
@@ -498,28 +509,6 @@ function bareInstanceOf(clsAbs: Abs, clsName: string): Abs {
   );
 }
 
-/** 源码跨度（行/列，1-based 行） */
-type SourceSpan = {
-  startLine: number;
-  startColumn: number;
-  endLine: number;
-  endColumn: number;
-};
-
-/** 节点的源码跨度（无 loc → undefined） */
-function spanOf(node: unknown): SourceSpan | undefined {
-  const loc = (node as { loc?: { start?: { line?: number; column?: number }; end?: { line?: number; column?: number } } } | undefined)?.loc;
-  const st = loc?.start;
-  const en = loc?.end;
-  if (!st || !en || st.line === undefined || en.line === undefined) return undefined;
-  return {
-    startLine: st.line,
-    startColumn: st.column ?? 0,
-    endLine: en.line,
-    endColumn: en.column ?? 0,
-  };
-}
-
 /** Babel 类成员的宽松形状（ClassMethod / ClassProperty / StaticBlock…）。 */
 type ClassMemberNode = {
   type?: string;
@@ -760,12 +749,56 @@ function locInSpan(
 }
 
 /**
+ * 构造的位置是否落在**模块装载期**执行的代码里（module-init）。
+ *
+ * 装载期 = 顶层语句体 / 顶层初始化表达式 / 类定义期执行面（`static {}`、
+ * 静态字段初始化器、计算键、`extends` 表达式）——这些东西先于**任何**入口
+ * 调用执行。函数体 / 参数默认值（调用时跑）与实例字段初始化器 / 构造器 /
+ * 方法体（`new` 时跑）不算，由 `deferredExecutionSpans` 列出并排除。
+ *
+ * 保守边界：IIFE 的函数体按 AST 结构属于函数体 ⇒ 记入推迟面（不归因；与
+ * 改造前一致，宁可少报）。
+ */
+function isModuleInitLoc(
+  file: ParsedFile,
+  loc: { line: number; column: number } | undefined,
+): boolean {
+  if (!loc) return false;
+  if (!locInSpan(loc, nodeSpan(file.program))) return false;
+  for (const span of deferredExecutionSpans(file)) {
+    if (locInSpan(loc, span)) return false;
+  }
+  return true;
+}
+
+/**
+ * TS-only 声明语句（`namespace` / `import x = require()` …）的转译拒绝理由前缀。
+ *
+ * Bug 895 × Bug 1155：`.ts` 源码里的 TS-only 语法**不得**把 `nudo check` /
+ * 构建弄红。这类构造是**类型层 / 声明层**语法，运行时效果只是值声明
+ * （`namespace` 体里「程序自己的抛」属于 module-throw 族，门禁面已静默）；
+ * 它们不是「入口可能抛」的证据 ⇒ **不**做模块装载期归因。
+ *
+ * 只豁免装载期分支：入口可达性归因（Bug 1153）不受影响——TS 声明语句不可能
+ * 出现在函数体里。探测结论（`.ts` 顶层，转译器实际拒绝的唯一两种）：
+ * `TSModuleDeclaration`（含 export 形态；`declare namespace` / `declare module`
+ * 已被剥除）与 `TSImportEqualsDeclaration`；enum / interface / type alias /
+ * `declare` 变量·函数·类 / `export =` / `export as namespace` / `as const` /
+ * `satisfies` / 抽象类均转译通过。
+ */
+const TS_ONLY_STATEMENT_REASON_PREFIX = "unsupported:statement:TS";
+
+/**
  * 被拒绝的构造是否会随**该入口**执行。
  *
- * 判据 = 构造的 loc 落在入口的执行节点内 **或** 落在入口**可达**的顶层绑定
- * （辅助函数 / 类）内 —— 同一函数体内联与拆到顶层辅助函数，结论必须一致
- * （Bug 380 的 `g().x++` 拆进 helper 后不得由红转绿）。可达闭包由
- * `reachableTopBindings` 计算（`seen` 收敛 ⇒ 互递归必终止）。
+ * 判据（按序）：
+ * 1. 构造的 loc 落在**模块装载期**代码里（{@link isModuleInitLoc}）⇒ **每个**
+ *    入口都不可判定（装载期先于所有入口执行，转译失败 ⇒ 整个模块未求值）；
+ *    但 TS-only 声明语句（{@link TS_ONLY_STATEMENT_REASON_PREFIX}）除外；
+ * 2. 否则落在入口的执行节点内 **或** 落在入口**可达**的顶层绑定（辅助函数 /
+ *    类）内 —— 同一函数体内联与拆到顶层辅助函数，结论必须一致（Bug 380 的
+ *    `g().x++` 拆进 helper 后不得由红转绿）。可达闭包由
+ *    `reachableTopBindings` 计算（`seen` 收敛 ⇒ 互递归必终止）。
  *
  * 跨度判不出 / 构造无位置 / 入口不可达该构造 ⇒ **不归因**（宁可少报，也不
  * 做过度断言：同模块的陪葬入口不背这条账）。
@@ -773,17 +806,27 @@ function locInSpan(
 function unsupportedFallsInside(
   file: ParsedFile | undefined,
   fnName: string,
+  reason: string,
   loc: { line: number; column: number } | undefined,
 ): boolean {
   if (!file || !loc) return false;
+  // Bug 1155：装载期构造 ⇒ 所有入口的 total 性都不可判定（此前归因只认
+  // 入口自身/可达面 ⇒ 顶层语句里的构造无人背账 ⇒ L2 静默转绿）。
+  // Bug 895：TS-only 声明语句不在此列（TS 源码必须保持零诊断）。
+  if (
+    !reason.startsWith(TS_ONLY_STATEMENT_REASON_PREFIX) &&
+    isModuleInitLoc(file, loc)
+  ) {
+    return true;
+  }
   const entryNodes = entryNodesOf(file, fnName);
   if (!entryNodes || entryNodes.length === 0) return false;
   for (const node of entryNodes) {
-    if (locInSpan(loc, spanOf(node))) return true;
+    if (locInSpan(loc, nodeSpan(node))) return true;
   }
   for (const node of entryNodes) {
     for (const reach of reachableTopBindings(file, node, { includeClasses: true })) {
-      if (locInSpan(loc, spanOf(reach.node))) return true;
+      if (locInSpan(loc, nodeSpan(reach.node))) return true;
     }
   }
   return false;

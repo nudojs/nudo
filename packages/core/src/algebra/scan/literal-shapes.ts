@@ -52,6 +52,18 @@
  *   - 任务③：`or` 聚合臂的 `unknown` 语义收紧为「**全部成员都判不了**才算
  *     不可判定」⇒ 有一个成员判为 false 就报违例
  *
+ * ── 1157 落地注记（非标量字面量实参；两处 brand 拆壳）────────────────────
+ * 抽取层（`literal-args.ts` 的 `parseCallArgs`）把函数/箭头/类表达式、内建 `new`、
+ * 正则、模板、`Symbol(...)`、`NaN` / `Infinity`、`void` 从 `unknown` 变成**确定
+ * Abs** 之后，本模块补两处，让「顶层执行态回退」与「函数体静态扫描」同口径：
+ *   - `typeof` 通道（`argTypeofName`）：`brand` 拆壳 —— `new Date(0)` / `/re/` /
+ *     `new Map()`（brand obj）此前落 `actualPrim === undefined` ⇒ 裸 prim 契约
+ *     （`positive` / `number()` / `string()`）**零义务**，而 union 面的
+ *     `typeofNameOf` 会拆 ⇒ 同一个实参两种裁决
+ *   - `checkShapeAgainstAbs`：`brand` 拆壳 —— brand 的内层是对象，`shape({})`
+ *     （= 任意对象）不再把它误报成「object shape at x」；带必填字段的 shape
+ *     仍按内层槽判 missing field
+ *
  * ── 本模块的公开（内部模块级）签名 ────────────────────────────────────────
  *   - `projectArgPath(arg: Abs, segments: string[]): Abs | undefined`
  *   - `checkReqs(ctx, displayName, reqs, paramNames, absArgs, argIndexOf, loc?)`
@@ -175,6 +187,28 @@ function argScalarKind(arg: Abs): string | undefined {
   if (s.k === "obj" || s.k === "arr" || s.k === "tuple") return "object";
   if (s.k === "fn") return "function";
   return undefined;
+}
+
+/**
+ * 实参的 JS `typeof` 名（`typeof` 通道用；brand 拆壳）。
+ *
+ * Bug 1157：`brand` 包装（`new Date(0)` / `/re/` / `new Map()` / boxed prim …）
+ * 此前在本通道直接落 `undefined` ⇒ 裸 prim 契约（`number()` / `string()` /
+ * `positive`）对 brand 实参**零义务**（假绿）；而同一条 `typeof` 判据在
+ * `literal-preds.ts` 的 `typeofNameOf`（union 面）**会**拆 brand ⇒ 同一个
+ * 实参、同一个 `typeof` 原子，两条通道两种裁决（引擎内第 2 套 typeof 口径）。
+ * `argScalarKind` 已拆 brand ⇒ 这里与它同口径。
+ *
+ * nullish 回落 "undefined" 是**本通道原有语义**（`isExactUndef` 把 null 与
+ * undefined 合成一档；`lit(null)` 的字面量域由 eq 通道另行分档）。
+ */
+function argTypeofName(arg: Abs): string | undefined {
+  const sh = arg.shape;
+  if (sh.k === "brand") return argTypeofName(sh.shape);
+  if (sh.k === "prim") return sh.type;
+  if (sh.k === "obj" || sh.k === "arr" || sh.k === "tuple") return "object";
+  if (sh.k === "fn") return "function";
+  return isExactUndef(arg) ? "undefined" : undefined;
 }
 
 /**
@@ -448,16 +482,9 @@ export function checkReqs(
       if (p.op === "typeof") {
         if (p.t.op !== "var") continue;
         const expected = p.type;
-        const actualPrim =
-          arg.shape.k === "prim"
-            ? (arg.shape as { type: string }).type
-            : arg.shape.k === "obj" || arg.shape.k === "arr" || arg.shape.k === "tuple"
-              ? "object"
-              : arg.shape.k === "fn"
-                ? "function"
-                : argIsUndef
-                  ? "undefined"
-                  : undefined;
+        // Bug 1157：brand 拆壳（`new Date(0)` / `/re/` / `new Map()` …）——
+        // 此前 brand 落 `undefined` ⇒ 裸 prim 契约对 brand 实参零义务。
+        const actualPrim = argTypeofName(arg);
         // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
         if (actualPrim !== undefined && actualPrim !== expected) {
           typeofReported = true;
@@ -724,12 +751,18 @@ export function checkShapeAgainstAbs(
   // （包装自身 `fields` 为空 ⇒ 不 deref 就被下面的 `!constraint.fields` 丢掉）
   const c = derefDeep(constraint);
   if (!c.fields) return false;
+  // Bug 1157：brand 拆壳——`new Date(0)` / `/re/` / boxed prim 的内层是**对象**
+  // （`typeof` 为 "object"）。此前这里只认 `shape.k === "obj"` ⇒ 同一个
+  // 「对象」实参两种裁决：字面量 `{}` 对 `shape({})` 放行，brand 对象却报
+  // 「object shape at x」假红。拆壳后字段义务照查（Date 没有 `id` ⇒
+  // `shape({ id: … })` 仍是 missing field）。
+  const value = absArg.shape.k === "brand" ? absArg.shape.shape : absArg;
   // unknown 实参：无信息，不猜
-  if (absArg.shape.k === "unknown" && !absArg.term) return false;
+  if (value.shape.k === "unknown" && !value.term) return false;
 
   const slots =
-    absArg.shape.k === "obj"
-      ? (absArg.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
+    value.shape.k === "obj"
+      ? (value.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
       : undefined;
 
   if (!slots) {
@@ -744,8 +777,8 @@ export function checkShapeAgainstAbs(
     // （假绿：同一实参位上 `number()` 判违例、`shape()` 静默放行 ⇒ 引擎内
     // 第 4 套「nullish 是否满足契约」口径）。⇒ 有 term 的 nullish 现在与
     // 其它「有信息但不是 object」的实参同口径判违例。
-    const k = absArg.shape.k;
-    const noInfo = k === "never" || ((k === "unknown" || k === "any") && !absArg.term);
+    const k = value.shape.k;
+    const noInfo = k === "never" || ((k === "unknown" || k === "any") && !value.term);
     if (!noInfo) {
       out.push({
         severity: "error",

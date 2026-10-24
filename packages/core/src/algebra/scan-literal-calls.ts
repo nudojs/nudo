@@ -48,6 +48,7 @@ import { getFnImpl } from "./abs-fn.ts";
 import {
   collectCallResolvers,
   collectForwarders,
+  localClassMemberNames,
   resolveCalleeFn,
   scopeChainChild,
   type ExternalFnRef,
@@ -88,6 +89,26 @@ function hofFnArgOk(src: Abs, tgt: Abs): boolean {
 // 字面量调用点违例扫描（scanLiteralCalls）
 // ---------------------------------------------------------------------------
 
+/**
+ * 调用点扫描的 knownFns + 模块级本地类成员名（Bug 1156）。
+ *
+ * 只扩**调用点扫描**：签名普查面（`listTopFunctions`）与 L2 入口表不动 ⇒
+ * `nudo check` 的输出面不因本地类扩面。返回新数组（不改调用方传入的表）。
+ */
+function withLocalClassMembers(
+  knownFns: string[],
+  source: string,
+  file: ReturnType<typeof parse>,
+): string[] {
+  const extra = localClassMemberNames(source, file);
+  if (extra.length === 0) return knownFns;
+  const out = knownFns.slice();
+  for (const n of extra) {
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
 /** 找 `name(literalArgs)` / `alias(lit)` / `obj.fn(lit)` / require 导入，检查约束 */
 export function scanLiteralCalls(
   source: string,
@@ -116,8 +137,14 @@ export function scanLiteralCalls(
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const file = opts?.file ?? parse(source);
-  const knownSet = new Set(knownFns);
-  const resolve = collectCallResolvers(source, knownFns, opts);
+  // Bug 1156：模块级**本地类**的 own 方法名并入调用点扫描的 knownFns ——
+  // 普通函数普查面（`listTopFunctions`）本就收未导出的本地函数（调用点义务
+  // 同一路径），类成员此前只有导出类才进表 ⇒ 未导出本地类的方法在调用点
+  // 静默（与本地函数规则不一致 = 假绿）。**不改**签名普查面：`nudo check`
+  // 的签名列表不因本地类扩面；未契约的方法仍零诊断。
+  const scanKnownFns = withLocalClassMembers(knownFns, source, file);
+  const knownSet = new Set(scanKnownFns);
+  const resolve = collectCallResolvers(source, scanKnownFns, opts);
   const forwards = collectForwarders(source, knownSet, resolve, file);
   const varAbs = opts?.varAbs ?? new Map<string, Abs>();
   /** fnName@line → 执行态实参表（同名同行多调用按序消费） */
@@ -212,7 +239,7 @@ export function scanLiteralCalls(
   /** 共享 ctx（族 11 S0 共享契约①）：显式传给三个内部模块 */
   const ctx: LiteralScanCtx = {
     out,
-    knownFns,
+    knownFns: scanKnownFns,
     opts,
     source,
     file,
@@ -225,7 +252,7 @@ export function scanLiteralCalls(
     args: Array<Record<string, unknown>>,
     loc?: { start: { line: number; column: number } },
   ): void => {
-    if (!knownFns.includes(fnName)) return;
+    if (!scanKnownFns.includes(fnName)) return;
 
     // 传参结构：实参字面量 Abs ≤ 形参必填 slot
     checkArgStructures(fnName, source, args, loc);

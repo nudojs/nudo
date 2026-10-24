@@ -147,6 +147,30 @@ function boolLitAbs(value: boolean): Abs {
   };
 }
 
+/**
+ * 全局常量字面量（`NaN` / `Infinity`）：未被顶层绑定遮蔽（`varAbs` 未命中）时
+ * 值确定。Bug 1157：此前落兜底 `absUnknown()` ⇒ `hasInfo=false` ⇒ **函数体内**
+ * 整条调用点被跳过（假绿：`NaN ⊭ number().gt(0)` 是确定事实）。
+ */
+const GLOBAL_CONST_ABSS: Readonly<Record<string, Abs>> = {
+  NaN: numLit(Number.NaN),
+  Infinity: numLit(Number.POSITIVE_INFINITY),
+};
+
+/**
+ * `new X()` 产物**确定是对象/数组**的全局构造器（Bug 1157）。
+ *
+ * 只收这些名字：任意构造器的 `new` 可能**返回原语**
+ * （`new (function(){ return 1 })()` === 1）⇒ 不能按「new ⇒ object」一刀切
+ * （引擎对这种形态也折成 brand 对象 ⇒ 按它执法会是假红）。名字被顶层绑定
+ * 遮蔽（`varAbs` 命中）⇒ 不是全局构造器 ⇒ 不猜。
+ */
+const GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
+  "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet",
+  "Array", "Object", "Error", "TypeError", "RangeError",
+  "SyntaxError", "ReferenceError", "EvalError", "URIError",
+]);
+
 /** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */
 export function evalArgAbs(
   node: Record<string, unknown>,
@@ -185,15 +209,19 @@ export function isExplicitUndefinedArg(node: unknown): boolean {
 /**
  * 实参抽取的**快路径分派表**（契约③）。
  *
- * 分派顺序固定：`NumericLiteral` / `BigIntLiteral` / `Unary(-)` /
- * `ObjectExpression` / `ArrayExpression` / `StringLiteral` / `NullLiteral` /
- * `BooleanLiteral` / `Identifier` / `MemberExpression` / `SpreadElement` /
- * `CallExpression` / 兜底。**兜底 = `absUnknown()`** ⇒ `hasInfo` 保持 false ⇒
- * 该调用点整条跳过执法（静态路径），只剩执行态实参回退（顶层语句才有）⇒
- * 「位置决定裁决」。
+ * 分派顺序固定：`NumericLiteral` / `BigIntLiteral` / `Unary(-)`（数字 / bigint /
+ * 全局常量 `NaN`·`Infinity`）/ `ObjectExpression` / `ArrayExpression` /
+ * `StringLiteral` / `NullLiteral` / `BooleanLiteral` / `Identifier`（含全局
+ * `NaN`·`Infinity`）/ `MemberExpression` / `SpreadElement` / `CallExpression`
+ * （含 `Symbol(...)`）/ `void` / 形态确定的字面量（函数·类表达式 / 正则 /
+ * 模板 / 全局构造器 `new`）/ 兜底。**兜底 = `absUnknown()`** ⇒ `hasInfo`
+ * 保持 false ⇒ 该调用点整条跳过执法（静态路径），只剩执行态实参回退
+ * （顶层语句才有）⇒ 「位置决定裁决」。
  *
  * Bug 430：`BooleanLiteral` 分支是 S0 新增的（此前布尔字面量落兜底）。
  * Bug 1020：`BigIntLiteral` 分支是 S6 新增的（此前 bigint 字面量落兜底）。
+ * Bug 1157：全局常量 / `void` / 形态确定字面量分支（此前落兜底 ⇒ 函数体内
+ * 整条调用点跳过）。
  */
 export function parseCallArgs(
   ctx: LiteralScanCtx,
@@ -262,6 +290,18 @@ export function parseCallArgs(
       const big = (a as { argument: { value: bigint } }).argument;
       absArgs.push(bigintLit(-big.value));
       hasInfo = true;
+    } else if (
+      a.type === "UnaryExpression" &&
+      (a as { operator?: string }).operator === "-" &&
+      (a as { argument?: Record<string, unknown> }).argument?.type === "Identifier" &&
+      !varAbs.has((a as { argument: { name: string } }).argument.name) &&
+      ((a as { argument: { name: string } }).argument.name === "Infinity" ||
+        (a as { argument: { name: string } }).argument.name === "NaN")
+    ) {
+      // `-Infinity` / `-NaN`（Bug 1157）：全局常量取负，值确定。
+      const name = (a as { argument: { name: string } }).argument.name;
+      absArgs.push(numLit(name === "Infinity" ? Number.NEGATIVE_INFINITY : Number.NaN));
+      hasInfo = true;
     } else if (a.type === "ObjectExpression") {
       const abs = evalArgAbs(a, (n) => varAbs.get(n));
       absArgs.push(abs ?? absUnknown());
@@ -301,6 +341,13 @@ export function parseCallArgs(
         continue;
       }
       const abs = varAbs.get(a.name);
+      // Bug 1157：全局常量（NaN / Infinity）——未被顶层绑定遮蔽时值确定。
+      const globalConst = abs ? undefined : GLOBAL_CONST_ABSS[a.name];
+      if (globalConst) {
+        absArgs.push(globalConst);
+        hasInfo = true;
+        continue;
+      }
       absArgs.push(abs ?? absUnknown());
       note(abs);
     } else if (a.type === "MemberExpression") {
@@ -353,10 +400,49 @@ export function parseCallArgs(
         argCountUnknown = true;
         if (spreadAt === undefined) spreadAt = absArgs.length - 1;
       }
+    } else if (
+      a.type === "CallExpression" &&
+      (a as { callee?: { type?: string; name?: string } }).callee?.type === "Identifier" &&
+      (a as { callee: { name: string } }).callee.name === "Symbol" &&
+      !varAbs.has("Symbol")
+    ) {
+      // `Symbol(...)` 恒返回 symbol（全局 Symbol 未被顶层绑定遮蔽）⇒ 形态确定
+      // （Bug 1157）：`number()` / `string()` 契约**确定违例**。此前落下面的
+      // CallExpression 兜底 unknown ⇒ 函数体内调用点整条跳过。
+      absArgs.push({ shape: { k: "prim", type: "symbol" }, conf: "partial" });
+      hasInfo = true;
     } else if (a.type === "CallExpression") {
       // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
       // $lit(undefined) 假精确，静态不猜——交给 eval 执行态实参回退。
       absArgs.push(absUnknown());
+    } else if (
+      a.type === "UnaryExpression" &&
+      (a as { operator?: string }).operator === "void"
+    ) {
+      // `void <expr>` 恒求值为 undefined（Bug 1157）——不执行 operand，值确定。
+      absArgs.push(absLit(undefined));
+      hasInfo = true;
+    } else if (
+      a.type === "ArrowFunctionExpression" ||
+      a.type === "FunctionExpression" ||
+      a.type === "ClassExpression" ||
+      a.type === "RegExpLiteral" ||
+      a.type === "TemplateLiteral" ||
+      (a.type === "NewExpression" &&
+        (a as { callee?: { type?: string; name?: string } }).callee?.type === "Identifier" &&
+        GLOBAL_CTOR_NAMES.has((a as { callee: { name: string } }).callee.name) &&
+        !varAbs.has((a as { callee: { name: string } }).callee.name))
+    ) {
+      // 形态**语法上确定**的字面量实参（Bug 1157）：函数 / 箭头 / 类表达式
+      // （恒为 function）、正则字面量（恒为对象）、模板字面量（恒为 string）、
+      // 已知全局构造器的 `new`（恒为对象）。此前全部落兜底 `absUnknown()`
+      // ⇒ hasInfo=false ⇒ **函数体内**整条调用点被跳过（假绿：`f(() => 1)` /
+      // `f(new Date(0))` 对 `number()` 契约零义务）。值与形态交给 evaluator
+      // 求（与 ObjectExpression / ArrayExpression 同款）；求不出来 ⇒ 仍是
+      // unknown ⇒ 不猜（fail-closed）。
+      const abs = evalArgAbs(a, (n) => varAbs.get(n));
+      absArgs.push(abs ?? absUnknown());
+      note(abs);
     } else {
       absArgs.push(absUnknown());
     }

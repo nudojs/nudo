@@ -618,7 +618,9 @@ export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
       return;
     }
     if (d.type === "ClassDeclaration" || d.type === "ClassExpression") {
-      const cname = d.id?.name ?? "<anonymous>";
+      // Bug 1156：匿名 `export default class {}` ⇒ 导出槽名 "default" 是方法键
+      // 前缀（`default.m`）。具名类 / 变量绑定的类表达式仍用本地名。
+      const cname = d.id?.name ?? "default";
       const body = (d.body as { body?: unknown[] })?.body ?? [];
       // Bug 425：同 `visit` 的 ClassDeclaration 分支（static / 实例同名消歧）
       const instanceKeys = classInstanceKeys(body);

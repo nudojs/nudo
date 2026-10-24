@@ -615,9 +615,16 @@ export function extractFn(
         formalsByName.set("default", formals);
       }
     }
-    if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
+    if (
+      decl.type === "ClassDeclaration" &&
+      ((decl as { id?: { name?: string } }).id?.name ||
+        // Bug 1156：匿名 `export default class {}` 没有本地名 ⇒ 导出槽名
+        // "default" 就是方法键前缀（`default.m`，与指令 scope / 类绑定同口径）。
+        (stmt.type === "ExportDefaultDeclaration" &&
+          !(decl as { id?: { name?: string } }).id))
+    ) {
       // C4.2：导出 class 实例/静态方法 → `Class.method`
-      const cname = (decl as { id: { name: string } }).id.name;
+      const cname = (decl as { id?: { name?: string } }).id?.name ?? "default";
       const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
       for (const m of body) {
         const mem = m as {
