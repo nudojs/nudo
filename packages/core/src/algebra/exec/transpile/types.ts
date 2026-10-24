@@ -9,6 +9,15 @@ export type TranspileOptions = {
   maxLoopIters?: number;
   /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
+  /**
+   * Bug 1160：本转译单元**共享**的 this 载体名（`__this` 基名经
+   * `internalTmpName` 分配）。载体是跨发射器协议——真函数体 prologue
+   * （`let <名> = $rawThis(this)`）与类/对象方法、访问器 thunk、字段 /
+   * 静态块 thunk 的首参**一方声明、多方读**（读方即 `thisParam`）——必须
+   * 同名。根转译单元（`transpileFile` / `transpileBodyNode`）分配一次并
+   * 线程化；无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+   */
+  thisSlot?: string;
   /** 当前类名（super 派发用） */
   className?: string;
   /**

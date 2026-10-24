@@ -471,8 +471,9 @@ describe("Bug 80 (differential): #x in o routes through $in", () => {
   it("transpile emits $in($lit(key), recv) — PrivateName not folded to void 0", () => {
     const out = transpileSource(`class A { #x = 1; has() { return #x in this; } }`);
     // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
-    // "键是真实私有名（未被折成 void 0）"，不绑死作用域串
-    expect(out).toMatch(/\$in\(\$lit\("#[^"]*x"\), __this\)/);
+    // "键是真实私有名（未被折成 void 0）"，不绑死作用域串。接收者名属于
+    // Bug 1160 的载体分配面，不在本断言（只要求是标识符）。
+    expect(out).toMatch(/\$in\(\$lit\("#[^"]*x"\), [A-Za-z_$][\w$]*\)/);
   });
 });
 

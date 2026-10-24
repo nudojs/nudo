@@ -127,6 +127,22 @@ export const getName = fn({ user: shape({ name: string() }) }, string());
 
 迁移期逃生舱（不是类型修复）：`npx nudojs check --ignore-throws TypeError`。
 
+### `nudo:module-throw` — 给装载期 throw 加守卫
+
+```js
+// 错 — 模块永远无法被导入：装载即抛
+throw new TypeError("config missing");
+
+// 对 — 只在真正不可用的路径上抛
+if (process.env.NODE_ENV === "production" && !config) {
+  throw new TypeError("config missing");
+}
+```
+
+装载即抛是**有意**行为（`react-dom/client.react-server.js` 那种模式）？
+保留它并显式声明：`npx nudojs check --ignore-throws TypeError`（或 `--entry-throws off`）。
+每模块一条诊断 —— 该模块**未被分析**（所有导出都不可用）。
+
 ### `nudo:unknown-inference` / `nudo:opaque-result` — 让返回面可计算，禁止编造
 
 ```js

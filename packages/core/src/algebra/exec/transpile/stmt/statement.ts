@@ -79,6 +79,8 @@ import {
   userIdentInfoOf,
   bumpDestrTmpSeq,
   internalTmpName,
+  internalTmpNameSet,
+  thisCarrierOf,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -390,6 +392,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const argsSlot = internalTmpName("__nudoArgs", opts);
       // Bug 1058：函数体自吸收 catch 的载体名同样避开用户标识符
       const fnRetCarrier = internalTmpName("__nudoFnRet", opts);
+      // Bug 1160：this 载体名 = 转译单元共享名（prologue / 宿主生成器 hoist /
+      // 体内 this 读三方同名；撞名经 `internalTmpName` 加 `_k` 后缀）。
+      const thisSlot = thisCarrierOf(opts);
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
@@ -400,7 +405,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 必须归零（嵌套同步函数不是生成器——`yield` 会是语法错误）
         inAsyncBody: asyncGen,
         ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
-        ...(hasThis ? { thisParam: "__this" } : {}),
+        ...(hasThis ? { thisParam: thisSlot } : {}),
         argsBinding: hasArgs ? argsSlot : undefined,
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
         yieldTryCtx: 0,
@@ -435,7 +440,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // `arguments`（生成器函数有自己的 this 绑定、无 arguments 绑定）⇒
       // 两个槽提到**宿主函数作用域**（生成器体闭包读它们，语义不变）。
       const thisPrologue = hasThis
-        ? `${indent(depth + 2)}let __this = $rawThis(this);\n`
+        ? `${indent(depth + 2)}let ${thisSlot} = $rawThis(this);\n`
         : "";
       // 真实 function 有宿主 arguments → 投成独立 tuple（不破坏下方 restBind）
       const argsPrologue = hasArgs
@@ -443,7 +448,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         : "";
       // 生成器路径：宿主函数作用域里的 this / arguments 捕获（生成器体内不再发）
       const genHoist = [
-        ...(hasThis ? [`${indent(depth + 1)}let __this = $rawThis(this);`] : []),
+        ...(hasThis ? [`${indent(depth + 1)}let ${thisSlot} = $rawThis(this);`] : []),
         ...(hasArgs ? [`${indent(depth + 1)}let ${argsSlot} = $arguments(arguments);`] : []),
       ];
       const bodyStmts =
@@ -1030,19 +1035,24 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc}, ${extra} }`
             : `, { ${extra} }`;
         })();
+        // Bug 1159：$for 的状态线程形参名在**用户表达式的作用域里**（测试
+        // thunk / 体 thunk 都直接内联用户源码）⇒ 写死 `__n` 会遮蔽用户同名
+        // 绑定（条件与体读到合成计数器而非用户绑定 ⇒ 自信错值）。实际名经
+        // 分配器；无碰撞时逐字不变。
+        const forState = internalTmpName("__n", opts);
         const stepSrc = updateSrc
-          ? `(__n) => { ${updateSrc}; return $add(__n, $lit(1)); }`
-          : `(__n) => $add(__n, $lit(1))`;
+          ? `(${forState}) => { ${updateSrc}; return $add(${forState}, $lit(1)); }`
+          : `(${forState}) => $add(${forState}, $lit(1))`;
         return [
           initSrc,
           `${pad}// for (fallback: non-declaration init) → $for (bounded unroll, max=${max})`,
           `${pad}$for(`,
           `${indent(depth + 1)}$lit(0),`,
-          `${indent(depth + 1)}(__n) => ${testSrc},`,
+          `${indent(depth + 1)}(${forState}) => ${testSrc},`,
           `${indent(depth + 1)}${stepSrc},`,
-          `${indent(depth + 1)}(__n) => {`,
+          `${indent(depth + 1)}(${forState}) => {`,
           bodyNarrowed,
-          `${indent(depth + 1)}  return __n;`,
+          `${indent(depth + 1)}  return ${forState};`,
           `${indent(depth + 1)}},`,
           `${indent(depth + 1)}${max}${optsSrc}`,
           `${pad});`,
@@ -1280,8 +1290,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 源有 default 则每臂一槽；无 default 时多一个「no-match=快照」槽
       const nArms = merged.filter((a) => !a.isDefault).length + (defaultArm ? 1 : 0) + (defaultArm ? 0 : 1);
       // Bug 147：switch 臂的 break 标签——带标签的 break 信号不被外层循环
-      // 吸收（$isBreakTo 只匹配同标签），由 switch 臂入口的 catch 吸收
-      const breakLabel = `__nudoSw${switchBreakSeq++}`;
+      // 吸收（$isBreakTo 只匹配同标签），由 switch 臂入口的 catch 吸收。
+      // Bug 1159：标签是**信号字符串**（`$loopBreak(标签)` / `$isBreakTo` 按
+      // 字符串比对）⇒ 写死名会与用户同名标签（`__nudoSw0: { … break; }`）相撞：
+      // 臂内无标签 break 的信号被用户的**标签块** catch 吸收 ⇒ 不退出 switch
+      // （少执行/多执行后续语句 ⇒ 自信错值）。实际名经分配器避让用户词形；
+      // 无碰撞时基名原样返回 ⇒ 产物逐字不变。
+      const breakLabel = internalTmpName(`__nudoSw${switchBreakSeq++}`, opts);
       // Bug 168：case 测试**惰性**求值——$switch 的 cases 实参数组在调用前
       // 全部求值（JS 实参语义）⇒ 命中第一个 case 后后续 case 测试仍会执行。
       // 修法：test 改为 getter（$switch 按序匹配时才读 c.test）⇒ 命中即停
@@ -1293,13 +1308,36 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 用户同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`decls`）同源
       // ⇒ 「成对一致」。
       const sw = switchTmpNames(names, nArms, opts);
+      // Bug 1159：case 测试机制 / 共享体的**块级**内部名同样避开用户标识符
+      // ——测试 thunk（`() => (用户 case 表达式)`）与臂 thunk 都在本块作用域
+      // 里求值用户表达式 ⇒ 写死名 `__swT` / `__swTestRead` / `__swEval` /
+      // `__swAllDone` 会**遮蔽**用户同名外层绑定（`const __swAllDone = 42`
+      // 被读成引擎的 false ⇒ 自信错值）或撞 **TDZ**（`let __swTestRead` 在
+      // 臂体顶层 ⇒ 臂入口的 `if (!__swTestRead)` 抛 ReferenceError）。
+      // 同 `switchTmpNames` 口径（批内一次分配）；无碰撞时基名原样返回 ⇒
+      // 产物逐字不变。
+      const [swT, swTV, swTD, swAllDone, swTestRead, swEval, swEvalAll, swI, swJ] =
+        internalTmpNameSet(
+          [
+            "__swT",
+            "__swTV",
+            "__swTD",
+            "__swAllDone",
+            "__swTestRead",
+            "__swEval",
+            "__swEvalAll",
+            "__swI",
+            "__swJ",
+          ],
+          opts,
+        );
       const wrapArmThunk = (thunk: string, outIdx: number): string => {
         // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
         const lines: string[] = [`() => {`];
         // 抽象判别式路径（$switch 不读 case 测试 getter）→ 臂入口补求值全部
         // case 测试（原生：case 测试按序求值到命中为止；抽象路径判不出命中
         // ⇒ 全部求值 = 上界）
-        if (hasTests) lines.push(`${indent(depth + 1)}if (!__swTestRead) __swEvalAll();`);
+        if (hasTests) lines.push(`${indent(depth + 1)}if (!${swTestRead}) ${swEvalAll}();`);
         if (names.length > 0) {
           lines.push(...names.map((n, i) => `${indent(depth + 1)}${n} = $copy(${sw.snap[i]});`));
           lines.push(`${indent(depth + 1)}let ${sw.cont} = true;`);
@@ -1346,7 +1384,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           const thunk = wrapArmThunk(rawThunk, armSeq);
           armSeq++;
           const shared = arm.tests.length > 1 && !arm.isDefault;
-          const runRef = shared ? `__swBody${bodyIdxBase + bodyIdx++}` : thunk;
+          const runRef = shared
+            ? internalTmpName(`__swBody${bodyIdxBase + bodyIdx++}`, opts)
+            : thunk;
           if (shared) {
             sharedBodyDecls.push(`${pad}const ${runRef} = ${thunk};`);
           }
@@ -1358,7 +1398,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               testSrcs.push(t);
               // Bug 168：test 为 getter——$switch 按序匹配时才求值（命中即停）
               caseLines.push(
-                `{ get test() { __swTestRead = true; return __swEval(${testIdx}); }, run: ${runRef} },`,
+                `{ get test() { ${swTestRead} = true; return ${swEval}(${testIdx}); }, run: ${runRef} },`,
               );
             }
           }
@@ -1376,31 +1416,31 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const switchCall = (discRef: string): string =>
         `$switch(${discRef}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
       // Bug 168/169：case 测试的惰性求值机制（test thunk + 缓存 + 抽象路径
-      // 补求值）+ 基线刷新（case 测试求值后刷新 __sw0_* ⇒ 臂入口恢复的是
-      // 「测试之后」的状态 ⇒ 测试里的写不被抹掉）。
+      // 补求值）+ 基线刷新（case 测试求值后刷新快照槽 ⇒ 臂入口恢复的是
+      // 「测试之后」的状态 ⇒ 测试里的写不被抹掉）。名称经 Bug 1159 分配器。
       const testHelpers: string[] = [];
       if (testSrcs.length > 0) {
         const refresh = names.map((n, i) => `${indent(depth + 2)}${sw.snap[i]} = $copy(${n});`);
         testHelpers.push(
-          `${pad}const __swT = [${testSrcs.map((t) => `() => (${t})`).join(", ")}];`,
-          `${pad}const __swTV = [];`,
-          `${pad}const __swTD = [];`,
-          `${pad}let __swAllDone = false;`,
-          `${pad}let __swTestRead = false;`,
-          // 形参名用 __sw 前缀——不得与用户绑定同名（`i` 之类会遮蔽用户的
-          // 判别绑定 ⇒ 基线刷新拷到错误的值）
-          `${pad}const __swEval = (__swI) => {`,
-          `${indent(depth + 1)}if (!__swTD[__swI]) {`,
-          `${indent(depth + 2)}__swTD[__swI] = true;`,
-          `${indent(depth + 2)}__swTV[__swI] = __swT[__swI]();`,
+          `${pad}const ${swT} = [${testSrcs.map((t) => `() => (${t})`).join(", ")}];`,
+          `${pad}const ${swTV} = [];`,
+          `${pad}const ${swTD} = [];`,
+          `${pad}let ${swAllDone} = false;`,
+          `${pad}let ${swTestRead} = false;`,
+          // 形参 / 循环变量同样经分配器——不得与用户绑定同名（用户 case
+          // 表达式在该块作用域里求值 ⇒ `__swI` 之类若写死会遮蔽用户绑定）
+          `${pad}const ${swEval} = (${swI}) => {`,
+          `${indent(depth + 1)}if (!${swTD}[${swI}]) {`,
+          `${indent(depth + 2)}${swTD}[${swI}] = true;`,
+          `${indent(depth + 2)}${swTV}[${swI}] = ${swT}[${swI}]();`,
           ...refresh,
           `${indent(depth + 1)}}`,
-          `${indent(depth + 1)}return __swTV[__swI];`,
+          `${indent(depth + 1)}return ${swTV}[${swI}];`,
           `${pad}};`,
-          `${pad}const __swEvalAll = () => {`,
-          `${indent(depth + 1)}if (__swAllDone) return;`,
-          `${indent(depth + 1)}__swAllDone = true;`,
-          `${indent(depth + 1)}for (let __swJ = 0; __swJ < __swT.length; __swJ++) __swEval(__swJ);`,
+          `${pad}const ${swEvalAll} = () => {`,
+          `${indent(depth + 1)}if (${swAllDone}) return;`,
+          `${indent(depth + 1)}${swAllDone} = true;`,
+          `${indent(depth + 1)}for (let ${swJ} = 0; ${swJ} < ${swT}.length; ${swJ}++) ${swEval}(${swJ});`,
           `${pad}};`,
         );
       }
@@ -1758,7 +1798,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       let recvSrc = "";
       if (isIn && !isPureForInRecv(stmt.right as Expression)) {
         // 同块多个 for-in 不得重复声明：模块级计数器唯一化
-        const recvTmp = `__fir${++forInRecvSeq}`;
+        // Bug 1159：接收者临时名同样避开用户标识符——`const __fir1 = (用户
+        // 表达式)` 的初始化器与循环体都在该块里求值用户代码 ⇒ 写死名会撞
+        // TDZ / 遮蔽；首轮编译失败后的 Bug 1139 重试虽会推高计数器「撞巧」
+        // 成功，但两次尝试的序号都被用户占用时（`__fir1` … `__fir{n}`）重试
+        // 仍 SyntaxError ⇒ 宿主异常冒出。实际名经分配器；无碰撞时逐字不变。
+        const recvTmp = internalTmpName(`__fir${++forInRecvSeq}`, opts);
         recvPre = [`${pad}const ${recvTmp} = (${emitTranspileExpression(stmt.right as Expression, opts)});`];
         recvSrc = recvTmp;
       } else {
@@ -2124,13 +2169,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // （原生 do-while 首轮**先**跑体、后求值条件 ⇒ 首轮不求值 T），
       // 此后各轮先过 T 再跑 B₂。B₁ / B₂ 两份拷贝沿用既有形态（首轮不收窄、
       // 次轮收窄——issue #118 v3：收窄事实来自 T，首轮 T 尚未求值）。
+      //
+      // Bug 1159：首轮标记是**块级词法绑定**，而体 thunk 里内联用户体源码
+      // ⇒ 写死 `__nudoDwFirst` 会遮蔽用户同名绑定（体读到引擎布尔而非用户值）。
+      // 实际名经分配器；无碰撞时逐字不变。
+      const dwFirst = internalTmpName("__nudoDwFirst", opts);
       return [
         `${pad}// do-while → $whileSeq (体恒在 thunk 内，bounded, max=${max})`,
         `${pad}{`,
-        `${indent(depth + 1)}let __nudoDwFirst = true;`,
-        `${indent(depth + 1)}$whileSeq(() => __nudoDwFirst ? $lit(true) : ${test}, () => {`,
-        `${indent(depth + 2)}if (__nudoDwFirst) {`,
-        `${indent(depth + 3)}__nudoDwFirst = false;`,
+        `${indent(depth + 1)}let ${dwFirst} = true;`,
+        `${indent(depth + 1)}$whileSeq(() => ${dwFirst} ? $lit(true) : ${test}, () => {`,
+        `${indent(depth + 2)}if (${dwFirst}) {`,
+        `${indent(depth + 3)}${dwFirst} = false;`,
         bodyStmts,
         `${indent(depth + 2)}} else {`,
         innerBody,

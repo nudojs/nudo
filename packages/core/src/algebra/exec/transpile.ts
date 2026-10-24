@@ -28,6 +28,7 @@ import {
   userIdentInfo,
   bumpDestrTmpSeq,
   registerConstFnScope,
+  internalTmpName,
 } from "./transpile/helpers.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
@@ -54,6 +55,10 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   bumpDestrTmpSeq(destrTmpSeq, userIdentInfo(opts.source));
   // Bug 42：try 临时名单调计数器（`__nudoTm_`/`__nudoE_` 同口径）
   const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
+  // Bug 1160：this 载体名在根单元**分配一次**——真函数 prologue、类/对象
+  // 方法首参、访问器 / 字段 / 静态块 thunk 首参共用（声明与 `thisParam`
+  // 读方同名）。无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+  const thisSlot = opts.thisSlot ?? internalTmpName("__this", opts);
   // Bug 21：模块级 var 提升（模块体是单作用域——块内 var 提升到模块顶；
   // export var 保持声明面不发提升 let，但名字留在发射集——块内同名 var
   // 仍改发赋值，写到导出绑定）
@@ -96,6 +101,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
+    thisSlot,
     constNames: moduleConstNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),

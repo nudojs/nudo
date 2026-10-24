@@ -295,6 +295,7 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
 | `nudo:fork-truncated` | 分支展开（$fork 总次数）截断（**info**）；结果 widen。上限可调：`NUDO_MAX_FORKS` / `nudo.analysis.maxForks` |
 | **`nudo:entry-may-throw`** | **L2：入口未消化 may-throw（默认 error）** |
+| **`nudo:module-throw`** | **L2：模块装载期无条件 `throw` ⇒ 模块未被分析、导出全丢（默认 error；只认句法证据，引擎近似抛不报）** |
 | `nudo:may-throw` / `nudo-unreachable` | 路径可能抛出（case 线索 / warning）/ 不可达代码 |
 | `nudo:unknown-inference` | 引擎债：出口或签名出现真 `unknown` |
 | `nudo:unknown-recv` | 引擎债：unknown 接收者成员访问；**不得**替代 L2 throws 建模 |

@@ -213,6 +213,35 @@ export function getName(user) {
 
 Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
 
+### `nudo:module-throw` {#nudo-module-throw}
+
+| | |
+|--|--|
+| **含义** | 模块顶层代码**必然抛** ⇒ 模块永远无法被导入 |
+| **层** | L2 error（默认） |
+| **展示** | `module initializer always throws TypeError — the module cannot be imported …` |
+
+```text
+throw new TypeError("boom");
+export function f() { return 1; }   // 模块永远不可导入：装载即抛
+```
+
+求值面把该模块判为**未分析**：导出全丢 ⇒ 签名退化成 `unknown`、L2 入口证据
+不存在。此码出现之前，这个状态与「分析过了、什么都没发现」完全不可区分
+（`OK`、exit 0）——引擎**根本没分析**的模块拿到绿灯。
+
+判据只认**句法证据**：顶层语句序列**无条件**执行的 `throw`（只穿过裸块）。
+条件抛（`if (typeof window === "undefined") throw …`）、被 `try/catch` 吸收的
+抛、以及**引擎**从自身宿主 API 近似推出的抛（例如缺失依赖被建模成闭合对象）
+都**不**报——真实包（`typescript`、`react-dom`、`vitest`）原生加载正常而引擎
+失败，引擎的「必抛」不是关于程序的证据。
+
+**修复 / 抑制：** 若模块本应可导入，就把 throw 改成有条件的；若装载即抛是
+有意行为，用 `--ignore-throws <Kind>`（文案里的类型名）或 `--entry-throws off`
+/ `package.json#nudo.check.entryThrows`。每个模块**一条**诊断，不按入口重复。
+
+Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws)
+
 ## 引擎债 / 观察
 
 ### `nudo:unknown-inference` {#nudo-unknown-inference}

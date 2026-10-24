@@ -213,6 +213,40 @@ export function getName(user) {
 
 Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
 
+### `nudo:module-throw` {#nudo-module-throw}
+
+| | |
+|--|--|
+| **Meaning** | The module's top-level code **always** throws, so the module can never be imported |
+| **Layer** | L2 error (default) |
+| **Display** | `module initializer always throws TypeError — the module cannot be imported …` |
+
+```text
+throw new TypeError("boom");
+export function f() { return 1; }   // never importable: loading the module throws
+```
+
+The evaluator reports the module as **not analysed**: every export is dropped, so
+signatures degrade to `unknown` and no L2 entry evidence exists. Before this code
+existed, that state was indistinguishable from "analysed, found nothing" (`OK`,
+exit 0) — a green gate for a module the engine could not analyse at all.
+
+Only **syntactic** evidence counts: a `throw` statement that the top-level
+statement sequence executes unconditionally (descending through bare blocks
+only). Conditional throws (`if (typeof window === "undefined") throw …`),
+`try/catch`-absorbed throws, and throws the **engine** infers from its own
+approximation of host APIs (a missing dependency modelled as a closed object, for
+example) are **not** reported — real packages (`typescript`, `react-dom`,
+`vitest`) load fine natively while the evaluator fails on them, so the engine's
+"always throws" is not evidence about the program.
+
+**Fix/suppress:** make the throw conditional if the module should be importable;
+if throwing at load is intended, `--ignore-throws <Kind>` (the reported kind) or
+`--entry-throws off` / `package.json#nudo.check.entryThrows`. One diagnostic per
+module, not per entry.
+
+Context: [L2 — entry throws](../guides/check.md#l2--entry-throws)
+
 ## Engine debt / observation
 
 ### `nudo:unknown-inference` {#nudo-unknown-inference}

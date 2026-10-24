@@ -37,6 +37,7 @@ import {
   withClassNameHint,
   fnKindSrc,
   internalTmpName,
+  thisCarrierOf,
 } from "../helpers.ts";
 import { emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -78,6 +79,10 @@ export function transpileObjectExpr(
 ): string {
   switch (expr.type) {
     case "ObjectExpression": {
+      // Bug 1160：对象族 this 载体名 = 转译单元共享名（方法/访问器 thunk 首参
+      // 与体内 this 读 `thisParam` 同名）。撞名加 `_k` 后缀；无碰撞时基名
+      // `__this` 原样返回 ⇒ 产物逐字不变。
+      const thisSlot = thisCarrierOf(opts);
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
       const props: string[] = [];
@@ -189,7 +194,7 @@ export function transpileObjectExpr(
             inTry: 0,
             // 方法体是新函数边界：return 不携带外层 if 臂退出信号
             conditionalFlow: 0,
-            thisParam: "__this",
+            thisParam: thisSlot,
             argsBinding: omBindFromArgs ? argsSlot : undefined,
             // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
             yieldTryCtx: 0,
@@ -218,7 +223,7 @@ export function transpileObjectExpr(
                 : vName;
             const thunkSrc =
               prop.kind === "get"
-                ? `(__this) => {\n  let ${argsSlot} = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
+                ? `(${thisSlot}) => {\n  let ${argsSlot} = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
                 : emitSetterAccessorThunk(
                     omVName,
                     emitFnBlockBody(prop.body, 2, accOpts, {
@@ -234,6 +239,7 @@ export function transpileObjectExpr(
                         ? emitParamBindingFromArgs(prop.params as Node[], "    ", accOpts, argsSlot).prologue
                         : []),
                     ],
+                    accOpts,
                   );
             // Bug 112：计算键访问器的键表达式只求值一次——此前 computedKeySrc
             // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍
@@ -273,7 +279,7 @@ export function transpileObjectExpr(
             continue;
           }
           let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts, { varParams: paramNamesOfFn(prop.params as Node[]) });
-          let mParams = ["__this", ...bindNames];
+          let mParams = [thisSlot, ...bindNames];
           if (omBindFromArgs) {
             const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, argsSlot);
             mBodyInner = [
@@ -281,7 +287,7 @@ export function transpileObjectExpr(
               ...bound.prologue,
               mBodyInner,
             ].join("\n");
-            mParams = ["__this", `...${margsName}`];
+            mParams = [thisSlot, `...${margsName}`];
           }
           // Bug 58：generator 对象方法体不在调用期执行——包 $gen（吞调用期
           // throws；yield 收集保持既有 eager 口径，与声明/类方法路径同编）
@@ -414,13 +420,13 @@ export function transpileObjectExpr(
               inLoop: 0,
               // 方法型函数表达式体是新函数边界：return 不携带外层 if 臂退出信号
               conditionalFlow: 0,
-              thisParam: "__this",
+              thisParam: thisSlot,
               argsBinding: feBindFromArgs ? argsSlot : undefined,
             };
             let mBodyInner = emitFnBlockBody(fn.body, 1, methodOpts, {
               varParams: paramNamesOfFn(fn.params as unknown as Node[]),
             });
-            let mParams = ["__this", ...bindNames];
+            let mParams = [thisSlot, ...bindNames];
             if (feBindFromArgs) {
               const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, argsSlot);
               mBodyInner = [
@@ -428,7 +434,7 @@ export function transpileObjectExpr(
                 ...bound.prologue,
                 mBodyInner,
               ].join("\n");
-              mParams = ["__this", `...${margsName}`];
+              mParams = [thisSlot, `...${margsName}`];
             }
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）

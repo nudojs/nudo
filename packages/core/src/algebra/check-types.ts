@@ -29,9 +29,14 @@ export type CheckOptions = {
   /**
    * L2 入口 may-throw 执法档（design-cli-semantics §3）。
    * error（默认）| warning | off。仅作用于 export/default/CJS 入口函数。
+   *
+   * 同时是该 L2 族的**总闸**：模块装载期必抛（`nudo:module-throw`，顶层
+   * 无条件 `throw` ⇒ 模块未被分析）也按此档执法 / 静默 —— 零 FP 语料库
+   * （check-real-packages 的 `entryThrows: "off"`）因此不受新码影响。
    */
   entryThrows?: "error" | "warning" | "off";
-  /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1 */
+  /** L2 --ignore-throws：按 throws 类型名过滤；不吞 L1。
+   *  `nudo:module-throw` 同样消费：句法上判得出的抛出类型名被 ignore 即放行。 */
   ignoreThrows?: string[];
   /** 宿主已求值的依赖导出表（specifier → AbsModuleExports）；
    *  B 与解释路径共用——import/require 按表解析（CLI 经

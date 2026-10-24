@@ -25,6 +25,13 @@
  * ——Bug 1155）⇒ **每个**入口都不可判定（装载期先于所有入口执行）；否则按
  * **可达性**：构造落在入口自身跨度内，或落在入口可达的顶层辅助函数 / 类内
  * （`reachableTopBindings`）⇒ 该入口背账；不可达的陪葬入口不背。
+ *
+ * **module-throw（附录 A#1）**：模块装载期**必然抛**（顶层无条件 `throw`）
+ * 时导出全丢 ⇒ 本模块的入口证据面仍返回 `absent`（不逐入口做「可能抛」的
+ * 过度断言），fail-closed 改在**模块级**发一条 `nudo:module-throw`（check.ts
+ * 消费 {@link definiteModuleThrowOf}）。判据只认**句法证据**：引擎在抽象域上
+ * 的「必抛」混着宿主 API 近似的产物（原生能正常加载）⇒ 拿引擎结论做门禁 =
+ * 假红。条件抛 / try 内抛 / 引擎近似抛不报。
  */
 
 import type { Node } from "@babel/types";
@@ -236,6 +243,8 @@ export function evalThrowsOutcome(
       // 只有**能力边界**（unsupported:*）走这条：module-throw（程序自己的
       // 顶层抛 ⇒ 原生模块装载失败 ⇒ 根本没有这个入口）与 internal（引擎
       // 缺陷）不是「入口可能抛」的问题 ⇒ 沿用旧口径（无证据）。
+      // 例外：module-throw 的 fail-closed 在**模块级**（`nudo:module-throw`，
+      // check.ts 消费 `definiteModuleThrowOf`）——不在每个入口上重复断言。
       const reason = attempt.fallback?.reason ?? "transpile failed";
       if (reason.startsWith("unsupported:")) {
         const loc = attempt.fallback?.loc;
@@ -769,6 +778,112 @@ function isModuleInitLoc(
     if (locInSpan(loc, span)) return false;
   }
   return true;
+}
+
+/**
+ * 模块顶层**必然执行**的显式 `throw`：定位 + 可静态判出的抛出类型名。
+ *
+ * `kind` 只在句法上能确定时给出（`throw new TypeError(…)` / `throw Error(…)`
+ * 的构造器名）；`throw someExpr` 不带——**不**拿引擎的抽象域结论补（引擎抛的
+ * 类型可能来自宿主 API 的近似，见 {@link definiteModuleThrowOf}）。
+ */
+export type DefiniteModuleThrow = {
+  line: number;
+  /** Babel 原生 0-based column */
+  column: number;
+  kind?: string;
+};
+
+/**
+ * 模块顶层**必然执行**的显式 `throw` 勘测（附录 A#1 · module-throw fail-closed）。
+ *
+ * 为什么只认**句法证据**、不认「引擎已经判定必抛」：引擎的「所有抽象路径都抛」
+ * 里混着**宿主 API 近似的产物**——`$get` 对被近似成 nullish 的绑定抛 TypeError、
+ * `Object.defineProperty` 的建模抛 TypeError、缺失依赖被建模成没有该方法的闭合
+ * 对象……真实包实测（node_modules 的 6 个文件：`typescript/lib/_tsserver.js`、
+ * `react-dom/cjs/*`、`vitest/dist/chunks/*`）引擎回落 `module-throw` 但顶层
+ * **没有** `throw` 语句（= 引擎近似；react-dom 的两个 cjs bundle 原生
+ * `require()` 实测成功）⇒ 把引擎结论当门禁证据 = 假红。显式 `throw` 语句是
+ * 程序自己的代码，与引擎近似无关：它只可能在「引擎没执行到」时不抛。
+ *
+ * 「必然执行」判据（保守，只收**无歧义**形态）：
+ * - 从 `program.body` **顺序**下钻，只穿过裸块 `{ … }`（无条件的语句序列）；
+ * - 命中 `throw` ⇒ 模块装载必定抛（在它之前的语句即便自己抛，模块照样装载失败
+ *   ⇒「必抛」仍然成立）；
+ * - 遇到可以**非抛**方式离开本序列的语句（`return` / `if` / `switch` / `try` /
+ *   循环 / `label` / `with`）⇒ 放弃：后续 `throw` 可能不可达 ⇒ **不报**（宁可
+ *   少报，也不对「有正常装载路径」的模块做必抛断言）；
+ * - 函数体 / 类体**不**下钻（延迟执行，不是装载期）。
+ *
+ * 条件抛（`if (typeof window === "undefined") throw …`）一律不报：那是**环境
+ * 相关**行为，由宿主决定；引擎在抽象条件上也只把单臂 throw 收进 throwExits
+ * （不会冲出模块体），两边口径一致。
+ */
+export function definiteModuleThrowOf(
+  file: ParsedFile | undefined,
+): DefiniteModuleThrow | undefined {
+  return file ? scanDefiniteThrowSeq(file.program.body as unknown[]) : undefined;
+}
+
+/** 顺序扫描语句序列（判据见 {@link definiteModuleThrowOf}）。 */
+function scanDefiniteThrowSeq(
+  stmts: readonly unknown[],
+): DefiniteModuleThrow | undefined {
+  for (const stmt of stmts) {
+    const s = stmt as {
+      type?: string;
+      loc?: { start?: { line?: number; column?: number } };
+      argument?: unknown;
+      body?: unknown[];
+    };
+    switch (s.type) {
+      case "ThrowStatement": {
+        const at = s.loc?.start;
+        if (at?.line === undefined) return undefined;
+        const kind = thrownKindOf(s.argument);
+        return {
+          line: at.line,
+          column: at.column ?? 0,
+          ...(kind !== undefined ? { kind } : {}),
+        };
+      }
+      // 裸块 = 无条件的语句序列 ⇒ 继续下钻
+      case "BlockStatement": {
+        const hit = scanDefiniteThrowSeq(s.body ?? []);
+        if (hit) return hit;
+        continue;
+      }
+      case "ReturnStatement":
+        return undefined;
+      case "IfStatement":
+      case "SwitchStatement":
+      case "TryStatement":
+      case "ForStatement":
+      case "ForInStatement":
+      case "ForOfStatement":
+      case "WhileStatement":
+      case "DoWhileStatement":
+      case "LabeledStatement":
+      case "WithStatement":
+        // 可能以非抛方式离开本序列（或让后续语句不可达）⇒ 必抛不成立
+        return undefined;
+      default:
+        continue;
+    }
+  }
+  return undefined;
+}
+
+/** `throw <expr>` 的静态类型名：`new X(…)`；`X(…)` 只认 `*Error` 构造器调用。 */
+function thrownKindOf(arg: unknown): string | undefined {
+  const a = arg as { type?: string; callee?: unknown } | undefined;
+  const callee = a?.callee as { type?: string; name?: string } | undefined;
+  if (callee?.type !== "Identifier" || typeof callee.name !== "string") return undefined;
+  if (a?.type === "NewExpression") return callee.name;
+  // `throw Error("…")` / `throw TypeError("…")`（不带 new 的原生调用同义）
+  return a?.type === "CallExpression" && callee.name.endsWith("Error")
+    ? callee.name
+    : undefined;
 }
 
 /**

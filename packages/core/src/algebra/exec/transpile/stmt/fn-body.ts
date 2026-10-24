@@ -425,7 +425,13 @@ export function transpileFnBodyStmts(
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
   // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
-  const unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  let unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  // Bug 1160：body 单元同样在**入口**分配 this 载体名（与 transpileFile 同
+  // 口径）——本单元内的函数 prologue 与嵌套生成的首参共用；无碰撞时基名
+  // `__this` 原样返回 ⇒ 产物逐字不变。
+  if (!unitOpts.thisSlot) {
+    unitOpts = { ...unitOpts, thisSlot: internalTmpName("__this", unitOpts) };
+  }
   if (isExpression(node as { type: string })) {
     return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }

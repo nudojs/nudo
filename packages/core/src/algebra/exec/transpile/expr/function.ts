@@ -46,6 +46,7 @@ import {
   safeTmpName,
   userIdentInfo,
   internalTmpName,
+  thisCarrierOf,
   copyConstScope,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
@@ -213,13 +214,16 @@ export function transpileFunctionExpr(
       // Bug 174：本函数有自己的 this 时，默认表达式的 this 读**本函数**的
       // __this 槽（不读外层 thisParam）——__this 由 thisPrologue 在默认
       // 值求值**之前**建立（见 allPrologue 顺序）。
+      // Bug 1160：载体名是**转译单元共享名**（`thisCarrierOf`），prologue /
+      // 宿主形参 / 体内 this 读三方同名。
+      const thisSlot = thisCarrierOf(opts);
       const paramOpts: TranspileOptions = {
         ...opts,
         // Bug 201：默认参数表达式不是 async 体的生成器段（原生：await 在
         // 默认值里是语法错误）⇒ 归零（保持既有 `$await` 兜底）
         inAsyncBody: false,
         ...(!isArrow && hasArgs ? { argsBinding: argsSlot } : {}),
-        ...(hasThis ? { thisParam: "__this" } : {}),
+        ...(hasThis ? { thisParam: thisSlot } : {}),
       };
       // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
       // 只对 effectFree 回调真执行——副作用回调多执行不可回滚）
@@ -258,7 +262,7 @@ export function transpileFunctionExpr(
         inAsyncBody: asyncGen,
         ...(asyncGen && asyncPlan ? { asyncForAwaitGates: asyncPlan.forAwaitGates } : {}),
         ...(fnBodyConstNames !== opts.constNames ? { constNames: fnBodyConstNames } : {}),
-        ...(hasThis ? { thisParam: "__this" } : {}),
+        ...(hasThis ? { thisParam: thisSlot } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? argsSlot : undefined }),
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
         yieldTryCtx: 0,
@@ -270,7 +274,10 @@ export function transpileFunctionExpr(
       // （DEC-006 K1b：rest.length 直接 $len 炸）。useArgsSlot 路径已由
       // emitParamBindingFromArgs 的 $arrRest 处理。Bug 44：经 $restBind——
       // 签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）
-      const restRaw = rest && !useArgsSlot ? `__rest_raw` : rest;
+      // Bug 1159：宿主 rest 形参名（`__rest_raw`）是**词法绑定**，函数体是
+      // 用户源码 ⇒ 写死名与用户同名 rest 形参/外层绑定相撞（重复声明
+      // SyntaxError，或遮蔽外层绑定）。实际名经分配器；无碰撞时逐字不变。
+      const restRaw = rest && !useArgsSlot ? internalTmpName("__rest_raw", opts) : rest;
       const restPrologue = rest && !useArgsSlot && restRaw
         ? [`  const ${rest} = $restBind(${restRaw}, 0);`]
         : [];
@@ -304,10 +311,11 @@ export function transpileFunctionExpr(
         : fn.async === true
           ? `, fnKind: "async"`
           : `, fnKind: "function"`;
-      // Bug 16：__this 必须 let——`this.s = v` 的赋值包装发射
-      // `__this = $set(__this, …)` 重绑（构造调用 this 是对象时执行到），
+      // Bug 16：this 载体必须 let——`this.s = v` 的赋值包装发射
+      // `<thisSlot> = $set(<thisSlot>, …)` 重绑（构造调用 this 是对象时执行到），
       // const 重绑宿主 TypeError
-      const thisPrologue = hasThis ? [`let __this = $rawThis(this);`] : [];
+      // Bug 1160：名字经单元共享分配（`thisCarrierOf`），避开用户标识符。
+      const thisPrologue = hasThis ? [`let ${thisSlot} = $rawThis(this);`] : [];
       let argsSlotPrologue: string[] = [];
       let argsParamParts = paramParts;
       if (useArgsSlot) {

@@ -28,7 +28,7 @@ import type {
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
 import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "../stmt-predicates.ts";
-import { isExpression, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
+import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { memberPathOf, memberDeleteIfe, memberReadModifyWriteIfe } from "../member-path.ts";
@@ -218,7 +218,14 @@ export function transpileOperatorExpr(
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
           const parentRead = transpileExpression(m.object as Expression, opts);
-          return `(() => { const __nudoDelP = ${parentRead}; const __nudoDelK = ${keySrc}; const __nudoDelD = $del(__nudoDelP, __nudoDelK); return $delRes(__nudoDelP, __nudoDelK); })()`;
+          // Bug 1159：IIFE 体内求值**用户表达式**（父对象 / 计算键）⇒ 写死名
+          // 会撞 TDZ（`const __nudoDelP = <读 __nudoDelP 的用户表达式>`）或遮蔽
+          // 用户同名外层绑定。实际名经分配器；无碰撞时基名原样返回。
+          const [delP, delK, delD] = internalTmpNameSet(
+            ["__nudoDelP", "__nudoDelK", "__nudoDelD"],
+            opts,
+          );
+          return `(() => { const ${delP} = ${parentRead}; const ${delK} = ${keySrc}; const ${delD} = $del(${delP}, ${delK}); return $delRes(${delP}, ${delK}); })()`;
         }
         // 非成员目标的 delete 未 lowering：值应为 boolean，折 undefined 是假精确
         throw new NudoUnsupportedError(
@@ -275,7 +282,11 @@ export function transpileOperatorExpr(
           return `$throwConstAssign()`;
         }
         if (expr.prefix) return `${arg.name} = ${fn}(${arg.name})`;
-        return `((__old) => (${arg.name} = ${fn}(__old), __old))($toNumeric(${arg.name}))`;
+        // Bug 1159：IIFE 体内含**用户标识符**（写目标）⇒ 写死 `__old` 会与
+        // 用户同名绑定相撞（`let __old = 5; __old++` 写成 IIFE 形参的自增 ⇒
+        // 外层绑定不增，表达式值也错）。实际名经分配器；无碰撞时逐字不变。
+        const postOld = internalTmpName("__old", opts);
+        return `((${postOld}) => (${arg.name} = ${fn}(${postOld}), ${postOld}))($toNumeric(${arg.name}))`;
       }
       if (arg.type === "MemberExpression") {
         const m = arg as unknown as { object: Node; property: Node; computed: boolean };
@@ -310,10 +321,16 @@ export function transpileOperatorExpr(
           if (key !== null) {
             const obj = transpileExpression(m.object as Expression, opts);
             const cur = `$get(${obj}, ${key})`;
+            // Bug 1159：IIFE 体**重复发射接收者表达式**（`${obj}` 是用户源码）
+            // ⇒ 写死形参名会遮蔽用户同名绑定（`ind = (__v) => { ++__v.#x }`
+            // ⇒ 接收者读成 IIFE 形参的旧值 ⇒ [[Set]] 落错靶 ⇒ TypeError /
+            // 字段不增）。实际名经分配器；无碰撞时基名原样返回。
             if (expr.prefix) {
-              return `((__v) => (($set(${obj}, ${key}, __v)), __v))(${fn}(${cur}))`;
+              const incV = internalTmpName("__v", opts);
+              return `((${incV}) => (($set(${obj}, ${key}, ${incV})), ${incV}))(${fn}(${cur}))`;
             }
-            return `((__old) => (($set(${obj}, ${key}, ${fn}(__old))), __old))($toNumeric(${cur}))`;
+            const postOld = internalTmpName("__old", opts);
+            return `((${postOld}) => (($set(${obj}, ${key}, ${fn}(${postOld}))), ${postOld}))($toNumeric(${cur}))`;
           }
         }
       }

@@ -267,7 +267,8 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      expect(js).toContain("(__this, __v) => {");
+      // 载体名（Bug 1160 起经单元共享分配）不属于本测试的断言面——只钉
+      // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
     });
 
@@ -280,7 +281,8 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      expect(js).toContain("(__this, __v) => {");
+      // 载体名（Bug 1160 起经单元共享分配）不属于本测试的断言面——只钉
+      // 1151 自己的 `__v` 基名不遭改名。
       expect(js).not.toMatch(/__v[A-Za-z0-9_]*_1\b/);
     });
 
@@ -293,8 +295,8 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
 
     it("撞名时改名后 thunk 形参与 args 槽引用同名（成对一致）", () => {
       const js = transpileSource(SRC_A1, { source: SRC_A1 });
-      // thunk 形参：(__this, __v_1) => {
-      expect(js).toContain("(__this, __v_1) => {");
+      // thunk 形参：<载体>, __v_1（载体名不钉；只钉 `__v_1` 位与 args 槽成对）
+      expect(js).toMatch(/\([A-Za-z_$][\w$]*, __v_1\) => \{/);
       // args 槽载同名：$arguments([__v_1])
       expect(js).toContain("$arguments([__v_1])");
       expect(js).not.toContain("__v_1_1");

@@ -903,6 +903,21 @@ export function internalTmpName(base: string, opts: TranspileOptions): string {
 }
 
 /**
+ * Bug 1160：this 载体名（跨发射器共享的**单一来源**）。
+ *
+ * 载体协议：真函数体 prologue 声明 `let <名> = $rawThis(this)`；类/对象
+ * 方法、访问器 thunk、字段 / 静态块 thunk 把 `<名>` 作宿主首参——声明方与
+ * `thisParam` 读方必须同名。根转译单元（`transpileFile` / `transpileBodyNode`）
+ * 在入口经 `internalTmpName("__this", opts)` 分配一次并写入 `opts.thisSlot`；
+ * 各发射器一律经本函数取同一名（不各自现算）。表达式级公面入口
+ * （`transpileExpression(expr, {})`）无根分配 ⇒ 按同口径现算（确定性：
+ * 同源文本 ⇒ 同名）。**无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。**
+ */
+export function thisCarrierOf(opts: TranspileOptions): string {
+  return opts.thisSlot ?? internalTmpName("__this", opts);
+}
+
+/**
  * Bug 1127：批量分配内部临时名（**同款避让口径**，一次算避让集）。
  *
  * 与 `internalTmpName` 同口径（`userIdentInfoOf(opts)` = 源文本词形 ∪

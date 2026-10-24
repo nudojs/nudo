@@ -40,6 +40,14 @@ export const DIAG = {
   dualEntry: "nudo:dual-entry",
   entryMayThrow: "nudo:entry-may-throw",
   mayThrow: "nudo:may-throw",
+  /**
+   * 模块**装载期必然抛**（顶层无条件 `throw`）⇒ 模块根本无法被导入 ⇒ 导出
+   * 全丢、L2 无证据。fail-closed：禁用句法证据（`throw` 语句）判「必抛」，
+   * **不**采信引擎的抽象域结论（宿主 API 的近似也会让引擎抛，那是引擎债，
+   * 程序本身能正常加载）。详见 `check-may-throw.ts` 的
+   * `definiteModuleThrowOf`。
+   */
+  moduleThrow: "nudo:module-throw",
   noSignature: "nudo:no-signature",
   // --- 求值精度 / 截断归因 ---
   builtinUnknown: "nudo:builtin-unknown",

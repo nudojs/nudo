@@ -110,6 +110,7 @@ onboarding
 | `nudo:interface-multi-declarator` | L1 | warning | `@generated` 段被手工合并成多声明导出 —— 原样保留 |
 | `nudo:interface-not-projectable` | L1 | error | 组装侧车 round-trip 重解析失败 —— 不写任何文件（引擎债） |
 | **`nudo:entry-may-throw`** | **L2** | **error**（默认） | 入口/导出函数有未消化 may-throw |
+| **`nudo:module-throw`** | **L2** | **error**（默认） | 模块顶层代码**必然抛**（句法上无条件的 `throw`）⇒ 模块永远无法被导入、未被分析 —— 所有导出都不可用。fail-closed；每模块一条；与 `nudo:internal`（引擎回落）、`nudo:unsupported:*`（能力边界）都不是一回事 |
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
 | `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）—— 入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
@@ -198,6 +199,7 @@ issues
 - **仅入口/导出函数** —— `export` / `export default`、CJS `exports.x =` / `module.exports`。
 - **内部 helper 不门禁。** 它们可以 throw；在 `nudo test` 中观察。
 - `try`/`catch` 消化路径上的 throws（从出口效果中移除）。
+- **模块装载层**：顶层语句序列**必然抛**（无条件 `throw`）的模块永远无法被导入 —— 每模块报一条 `nudo:module-throw`（fail-closed：所有导出都不可用、模块未被分析）。条件抛保持静默（取决于宿主）；只有**句法上**无条件的 `throw` 语句才算证据 —— 引擎从自身宿主 API 近似推出的抛永不归咎于程序。
 - refine 把参数收成 shape 后，L2 消失或降为 L1。
 
 首选修复路径是用 [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) 在函数上申报有意的 throw —— 完整语法（`Error` 家族覆盖、`*` 通配、`!! throws` 用例后缀、侧车 `fn` 选项）见指令参考。

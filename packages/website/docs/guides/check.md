@@ -110,6 +110,7 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:interface-multi-declarator` | L1 | warning | `@generated` section hand-merged into one multi-declarator export — kept verbatim |
 | `nudo:interface-not-projectable` | L1 | error | Assembled sidecar failed round-trip re-parse — nothing written (engine debt) |
 | **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
+| **`nudo:module-throw`** | **L2** | **error** (default) | The module's top-level code always throws (syntactic unconditional `throw`) ⇒ the module can never be imported and was not analysed — every export is unavailable. Fail-closed; one per module; distinct from `nudo:internal` (engine fallback) and `nudo:unsupported:*` (capability boundary) |
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
 | `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
@@ -198,6 +199,7 @@ issues
 - **Only entry/export functions** — `export` / `export default`, CJS `exports.x =` / `module.exports`.
 - **Internal helpers are not gated.** They may throw; observe them in `nudo test`.
 - `try`/`catch` digests throws on a path (removed from exit effects).
+- **Module load level**: a module whose top-level statement sequence *always* throws (an unconditional `throw`) can never be imported — reported once per module as `nudo:module-throw` (fail-closed: every export is unavailable and the module was not analysed). Conditional throws stay silent (host-dependent), and only syntactic unconditional `throw` statements count — throws the engine infers from its own host-API approximation are never blamed on the program.
 - Refine narrowing the param to a shape removes or downgrades L2 (becomes L1).
 
 The first fix path is declaring the intentional throw on the function with [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) — full syntax (`Error`-family coverage, `*` wildcard, `!! throws` case suffix, sidecar `fn` option) in the directive reference.

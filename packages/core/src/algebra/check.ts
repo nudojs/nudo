@@ -115,12 +115,15 @@ import {
 import {
   collectEntryMayThrows,
   declaredThrowsForEntry,
+  definiteModuleThrowOf,
   evalAnalyzeOpts,
+  type DefiniteModuleThrow,
 } from "./check-may-throw.ts";
 import { structuralAssignIssues } from "./check-assign.ts";
 import { scanCaseInconsistency } from "./check-case-scan.ts";
 import {
   tryRunTranspiled,
+  tryRunTranspiledDetailed,
   callTranspiledExportFull,
   bindingsOf,
 } from "./exec/run.ts";
@@ -130,6 +133,7 @@ import type { InvariantSpec } from "./exec/runtime/invariant-apply.ts";
 import { setEvalAssignCollector, setEvalCallCollector, type EvalCallRecord } from "./exec/calls.ts";
 import {
   filterGateThrows,
+  isThrowsIgnored,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
 } from "./exec/may-throw.ts";
@@ -1506,8 +1510,17 @@ function checkSourceInner(
   const prevCall = setEvalCallCollector((r) => bCalls.push(r));
   let evalBindings: Map<string, unknown> | undefined;
   const evalAnalyze = evalAnalyzeOpts(opts);
+  /** 模块**装载期必然抛**的句法证据（A#1）；只在 `module-throw` 回落时勘测 */
+  let moduleThrow: DefiniteModuleThrow | undefined;
   try {
-    const evalRun = tryRunTranspiled(source, evalAnalyze);
+    const evalAttempt = tryRunTranspiledDetailed(source, evalAnalyze);
+    const evalRun = evalAttempt.run;
+    // 回落原因可观测（Bug 380 的 detailed 面）：`module-throw` 是**程序自己
+    // 的抛**（NudoThrow），导出全丢 ⇒ 下面按**句法证据**判「装载必抛」并
+    // fail-closed（见 `definiteModuleThrowOf`）。
+    if (evalRun === undefined && evalAttempt.fallback?.reason === "module-throw") {
+      moduleThrow = definiteModuleThrowOf(file);
+    }
     evalBindings = evalRun ? bindingsOf(evalRun) : undefined;
     if (evalBindings) {
       for (const [k, v] of evalBindings) {
@@ -1533,6 +1546,41 @@ function checkSourceInner(
   // fail-closed：B 绑定表缺失（eval-incapable 文件）→ 无绑定表；
   // 「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致
   void evalBindings;
+
+  // A#1（module-throw fail-closed）：模块装载期**必然**抛 ⇒ 引擎拿不到任何
+  // 导出（L2 无证据、签名退化成 unknown）⇒ 旧口径零诊断 + exit 0 = **假绿**
+  // （一个引擎完全没能分析的模块被判绿）。
+  //
+  // 只认**句法证据**（顶层无条件 `throw`，见 `definiteModuleThrowOf`）：引擎
+  // 抽象域上的「必抛」混着宿主 API 近似的产物——真实包实测（typescript /
+  // react-dom / vitest 的 6 个文件）顶层没有 `throw` 语句却回落 `module-throw`
+  // （react-dom 的两个 cjs bundle 原生 `require()` 实测成功）⇒ 拿引擎结论做
+  // 门禁 = **假红**。条件抛 / try 内抛 / 引擎近似抛一律不进闸门（现状不变）；
+  // `unsupported:*` / `internal` 两条回落通道也不受影响（各自的 fail-closed
+  // 归因已存在）。
+  //
+  // 抑制口径与其它 L2 诊断同源：`--entry-throws off` 关闸、`--entry-throws
+  // warning` 降档、`--ignore-throws <Kind>` 按抛出类型名放行（只对句法上判得
+  // 出类型的 `throw new X(…)` 生效；判不出类型时不猜）。
+  if (moduleThrow !== undefined && entryThrowsMode !== "off") {
+    const kind = moduleThrow.kind;
+    if (kind === undefined || !isThrowsIgnored(kind, ignoreThrows)) {
+      const thrown = kind !== undefined ? ` ${kind}` : "";
+      issues.push({
+        severity: entryThrowsMode === "warning" ? "warning" : "error",
+        code: DIAG.moduleThrow,
+        message: `module initializer always throws${thrown} — the module cannot be imported, so every export is unavailable (module not analyzed)`,
+        actual: `throw at line ${moduleThrow.line}`,
+        expected: "module initializer that can complete, or a conditional throw",
+        suggestion:
+          kind !== undefined
+            ? `guard the throw if the module should be importable; if throwing at load is intended, ignore it with --ignore-throws ${kind} (or --entry-throws off)`
+            : "guard the throw if the module should be importable; --entry-throws off disables this gate",
+        line: moduleThrow.line,
+        column: moduleThrow.column,
+      });
+    }
+  }
 
   const callIssues = canSkipLiteralCallScan(source, file)
     ? []

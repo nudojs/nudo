@@ -128,6 +128,22 @@ export const getName = fn({ user: shape({ name: string() }) }, string());
 
 Migration-only escape (not a type fix): `npx nudojs check --ignore-throws TypeError`.
 
+### `nudo:module-throw` — guard the load-time throw
+
+```js
+// bad — the module can never be imported: loading it always throws
+throw new TypeError("config missing");
+
+// good — throw only on the path that truly cannot work
+if (process.env.NODE_ENV === "production" && !config) {
+  throw new TypeError("config missing");
+}
+```
+
+Intentional load-time failure (the `react-dom/client.react-server.js` pattern)?
+Keep it and declare it: `npx nudojs check --ignore-throws TypeError` (or `--entry-throws off`).
+One diagnostic per module — the module was **not analysed** (all exports unavailable).
+
 ### `nudo:unknown-inference` / `nudo:opaque-result` — make the face computable, never invent
 
 ```js

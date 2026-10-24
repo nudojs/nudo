@@ -23,6 +23,8 @@ import {
   nativeParamArity,
   fnKindOf,
   internalTmpName,
+  internalTmpNameSet,
+  thisCarrierOf,
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
@@ -59,23 +61,39 @@ export function emitSetterAccessorThunk(
   aliasNames: readonly string[],
   depth: number,
   /** N3：setter 形参默认值/解构绑定行（__nudoArgs 槽，见类/对象 setter 发射位） */
-  paramPrologue: string[] = [],
+  paramPrologue: string[],
+  /** 求值侧 opts（Bug 1159：别名载体名经 `internalTmpNameSet` 避让用户词形） */
+  opts: TranspileOptions,
 ): string {
   const pad = indent(depth);
-  const lines: string[] = [`(__this, ${vname}) => {`];
+  // Bug 1159：别名载体 `__nab{i}` / 回收载体 `__nabs` 是 thunk 作用域的**词法
+  // 绑定**，而 thunk 体内求值**用户 setter 体**（内层 IIFE）⇒ 写死名会遮蔽
+  // 用户同名外层绑定（`const __nab0 = 100; set x(v) { out = __nab0; }` 引擎读到
+  // thunk 里的别名副本 ⇒ 自信错值）。实际名经分配器（同 Bug 1149 口径）；
+  // 无碰撞时基名原样返回 ⇒ 产物逐字不变。
+  const nabNames = internalTmpNameSet(
+    [...aliasNames.map((_, i) => `__nab${i}`), "__nabs"],
+    opts,
+  );
+  const nabsName = nabNames[aliasNames.length]!;
+  // Bug 1160：thunk 首参是 this 载体（声明方）——名字取单元共享名，避开用户
+  // 同名绑定（`const __this = 100; set x(v) { out = __this; }` 原生读用户绑定，
+  // 写死名会读到载体 ⇒ 自信错值）。无碰撞时基名 `__this` ⇒ 产物逐字不变。
+  const thisSlot = thisCarrierOf(opts);
+  const lines: string[] = [`(${thisSlot}, ${vname}) => {`];
   lines.push(...paramPrologue);
-  aliasNames.forEach((n, i) => lines.push(`${pad}const __nab${i} = ${n};`));
+  aliasNames.forEach((n, i) => lines.push(`${pad}const ${nabNames[i]!} = ${n};`));
   lines.push(`${pad}(() => {`, bodySrc, `${pad}})();`);
   if (aliasNames.length === 1) {
-    lines.push(`${pad}if (__nab0 === __this && ${aliasNames[0]} !== __nab0) return ${aliasNames[0]};`);
+    lines.push(`${pad}if (${nabNames[0]!} === ${thisSlot} && ${aliasNames[0]} !== ${nabNames[0]!}) return ${aliasNames[0]};`);
   } else if (aliasNames.length > 1) {
-    lines.push(`${pad}let __nabs;`);
+    lines.push(`${pad}let ${nabsName};`);
     aliasNames.forEach((n, i) =>
-      lines.push(`${pad}if (__nab${i} === __this && ${n} !== __nab${i}) __nabs = __nabs ? $join(__nabs, ${n}) : ${n};`),
+      lines.push(`${pad}if (${nabNames[i]!} === ${thisSlot} && ${n} !== ${nabNames[i]!}) ${nabsName} = ${nabsName} ? $join(${nabsName}, ${n}) : ${n};`),
     );
-    lines.push(`${pad}if (__nabs !== undefined) return __nabs;`);
+    lines.push(`${pad}if (${nabsName} !== undefined) return ${nabsName};`);
   }
-  lines.push(`${pad}return __this;`, `${indent(depth - 1)}}`);
+  lines.push(`${pad}return ${thisSlot};`, `${indent(depth - 1)}}`);
   return lines.join("\n");
 }
 
@@ -142,6 +160,11 @@ export function classSpecOf(
   // fail-closed（导出全退化 unknown + 假 nudo:opaque-result）。
   const argsSlot = internalTmpName("__nudoArgs", opts);
   const margsName = internalTmpName("__margs", opts);
+  // Bug 1160：本类全部 this 载体（方法/构造器/访问器 thunk 首参、字段 /
+  // 静态块 / @@hasInstance 安装 thunk 首参）共用**转译单元分配名**——与
+  // methodOptsBase.thisParam（体内 this 读）同名；撞名加 `_k` 后缀，
+  // 无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+  const thisSlot = thisCarrierOf(opts);
   // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
   // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
   const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
@@ -279,7 +302,7 @@ export function classSpecOf(
 
   /** thunk（单表达式）多行安全包装 */
   const thunkOf = (src: string, d: number): string =>
-    [`(__this) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
+    [`(${thisSlot}) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
 
   /**
    * Bug 203：普通字符串键 `static "@@hasInstance"` 的**类值自有槽安装**
@@ -289,9 +312,9 @@ export function classSpecOf(
    */
   const hasInstanceInstallSrc = (valueSrc: string, selfName: string | undefined): string =>
     [
-      `(__this) => {`,
-      ...(selfName ? [`${indent(depth + 3)}let ${selfName} = __this;`] : []),
-      `${indent(depth + 3)}$set(__this, ${JSON.stringify(HAS_INSTANCE_KEY)}, ${valueSrc});`,
+      `(${thisSlot}) => {`,
+      ...(selfName ? [`${indent(depth + 3)}let ${selfName} = ${thisSlot};`] : []),
+      `${indent(depth + 3)}$set(${thisSlot}, ${JSON.stringify(HAS_INSTANCE_KEY)}, ${valueSrc});`,
       `${indent(depth + 3)}return $lit(void 0);`,
       `${indent(depth + 2)}}`,
     ].join("\n");
@@ -329,7 +352,7 @@ export function classSpecOf(
     // 方法体是新函数边界：return 不携带外层 if 臂退出信号
     conditionalFlow: 0,
     inFunction: true,
-    thisParam: "__this",
+    thisParam: thisSlot,
     className: name,
     constNames: selfConstNames,
     // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
@@ -351,7 +374,7 @@ export function classSpecOf(
       // 有绑定——this 走 __this（类值），类名引用保持自由（原生 TDZ）。
       const blkOpts: TranspileOptions = {
         ...methodOptsBase,
-        thisParam: stmt.id?.name ?? "__this",
+        thisParam: stmt.id?.name ?? thisSlot,
         ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
       };
       // StaticBlock.body 直接是语句数组（无 BlockStatement 包装）
@@ -362,12 +385,12 @@ export function classSpecOf(
       const selfName = stmt.id?.name;
       const blockSrc = selfName
         ? [
-            `(__this) => {`,
-            `${indent(depth + 3)}let ${selfName} = __this;`,
+            `(${thisSlot}) => {`,
+            `${indent(depth + 3)}let ${selfName} = ${thisSlot};`,
             stmts,
             `${indent(depth + 2)}}`,
           ].join("\n")
-        : [`(__this) => {`, stmts, `${indent(depth + 2)}}`].join("\n");
+        : [`(${thisSlot}) => {`, stmts, `${indent(depth + 2)}}`].join("\n");
       staticParts.push(
         `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}${staticBlockSeq++}`)}: ${blockSrc},`,
       );
@@ -410,8 +433,8 @@ export function classSpecOf(
         const selfName = stmt.id?.name;
         const initSrc = selfName
           ? [
-              `(__this) => {`,
-              `${indent(depth + 3)}let ${selfName} = __this;`,
+              `(${thisSlot}) => {`,
+              `${indent(depth + 3)}let ${selfName} = ${thisSlot};`,
               `${indent(depth + 3)}return ${vsrc};`,
               `${indent(depth + 2)}}`,
             ].join("\n")
@@ -497,7 +520,7 @@ export function classSpecOf(
         // 访问器体是新函数边界：return 不携带外层 if 臂退出信号
         conditionalFlow: 0,
         inFunction: true,
-        thisParam: "__this",
+        thisParam: thisSlot,
         className: name,
         // Bug 151：访问器是普通函数——原生 `arguments` 天然存在（getter 长度
         // 0 / setter 长度 1）。此前访问器体无 args 绑定 ⇒ 体里的 arguments
@@ -514,7 +537,7 @@ export function classSpecOf(
       if (m.kind === "get") {
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
         // Bug 151：getter 的 arguments 长度 = 0
-        def.get = `(__this) => {\n${indent(depth + 3)}let ${argsSlot} = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
+        def.get = `(${thisSlot}) => {\n${indent(depth + 3)}let ${argsSlot} = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const setParams = (m.params ?? []) as Node[];
         const firstP = setParams[0] as { type?: string; name?: string } | undefined;
@@ -548,7 +571,7 @@ export function classSpecOf(
           const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, argsSlot);
           setPrologue = [...setPrologue, ...bound.prologue];
         }
-        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
+        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue, accBodyOpts);
       }
       target.set(mname, def);
       if (computedKeySrc) {
@@ -656,7 +679,7 @@ export function classSpecOf(
       // 方法口径）；槽无 symbolKey 标记 ⇒ 不是钩子。
       if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
         const fnSrc = [
-          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
           ...(staticAsync
             ? [
                 `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
@@ -679,7 +702,7 @@ export function classSpecOf(
       }
       staticMethodParts.push(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         ...(staticAsync
           ? [
               `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
@@ -700,15 +723,15 @@ export function classSpecOf(
       // P2b：.length = 首个默认值/rest 形参前的形参数（Bug 69 同口径）
       ctorLength = nativeParamArity(m.params);
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        `${indent(depth + 2)}ctor: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
-        `${indent(depth + 3)}return __this;`,
+        `${indent(depth + 3)}return ${thisSlot};`,
         `${indent(depth + 2)}},`,
       );
     } else if (m.async === true && m.generator !== true) {
       // Bug 141：async generator 方法不进 $async（原生返 AsyncGenerator 本身）
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         `${indent(depth + 4)}return ${cmAsyncGen ? "$asyncGen(function* () {" : "$async(() => {"}`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -718,7 +741,7 @@ export function classSpecOf(
       methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${thisSlot}, ${bindFromArgs ? `...${margsName}` : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );

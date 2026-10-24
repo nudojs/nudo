@@ -16,7 +16,7 @@
  */
 import type { Expression, Node, AssignmentExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, withClassNameHint, internalTmpName, internalTmpNameSet } from "../helpers.ts";
+import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, withClassNameHint, internalTmpName, internalTmpNameSet, thisCarrierOf } from "../helpers.ts";
 import { COMPOUND_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { emitDestructure } from "../emit.ts";
@@ -62,8 +62,13 @@ export function transpileAssignmentExpr(
       if (expr.operator === "=" && (expr.left.type === "ArrayPattern" || expr.left.type === "ObjectPattern")) {
         const right = transpileExpression(expr.right, opts);
         const out: string[] = [];
-        emitDestructure(expr.left as Node, "__d", "", "", opts, out, { n: 0 });
-        return `((__d) => { ${out.join(" ")} return __d; })(${right})`;
+        // Bug 1159：解构 IIFE 形参是**词法绑定**，而默认值表达式是用户源码
+        // （`({ a = __d } = o)` 的 `__d` 在 IIFE 体内求值）⇒ 写死 `__d` 会遮蔽
+        // 用户同名绑定（默认值读到 IIFE 实参对象 ⇒ 自信错值）。实际名经
+        // 分配器；无碰撞时基名原样返回 ⇒ 产物逐字不变。
+        const destrSrc = internalTmpName("__d", opts);
+        emitDestructure(expr.left as Node, destrSrc, "", "", opts, out, { n: 0 });
+        return `((${destrSrc}) => { ${out.join(" ")} return ${destrSrc}; })(${right})`;
       }
       const compoundFn = COMPOUND_OPS[expr.operator];
       // Bug 133：NamedEvaluation——`K = class {}`（左值是**标识符**）以绑定名
@@ -292,7 +297,9 @@ export function transpileAssignmentExpr(
         // 字面量方法（无 className）走 home object 面 $setSuperObj。静态
         // 方法体不拦截（静态面在上方 R5 分支处理）。
         if (m.object.type === "Super" && !opts.staticSuperSrc) {
-          const recv = opts.thisParam ?? "__this";
+          // Bug 1160：this 载体名走单元共享分配（与声明方/其它读方同名）；
+          // 无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+          const recv = opts.thisParam ?? thisCarrierOf(opts);
           const keySrc = m.computed
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
