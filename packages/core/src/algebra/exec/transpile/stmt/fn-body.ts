@@ -45,6 +45,7 @@ import {
   computeConstScope,
   copyConstScope,
   internalTmpName,
+  shadowedIntrinsicsOf,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
@@ -294,7 +295,7 @@ export function transpileFnBodyStmts(
     // 属性读在测试真值臂内，守卫事实（成员真值）作用于该臂。
     // issue #118 v3 / #120：多名复合测试（`obj == null || node.p == null`）
     // 经 nullishGuardsOf 一臂多事实齐用。
-    const earlyGuards = nullishGuardsOf(stmt.test);
+    const earlyGuards = nullishGuardsOf(stmt.test, scopedOpts.shadowedIntrinsics?.has("undefined") !== true);
     const earlyTGuard = typeGuardOf(stmt.test);
     const earlyDGuards = discriminantGuardsOf(stmt.test);
     // 关系守卫（Bug 1）：早退提升路径与 IfStatement 分叉路径同口径——
@@ -432,6 +433,10 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   if (!unitOpts.thisSlot) {
     unitOpts = { ...unitOpts, thisSlot: internalTmpName("__this", unitOpts) };
   }
+  // 宿主内建名遮蔽：本单元 body 的声明扫描 ∪ 调用方补给（body-fn 的形参 /
+  // 闭包绑定名，见 exec/body-fn.ts）。无命中不写字段（产物逐字节不变）。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(node, unitOpts.shadowedIntrinsics);
+  if (shadowedIntrinsics) unitOpts = { ...unitOpts, shadowedIntrinsics };
   if (isExpression(node as { type: string })) {
     return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }

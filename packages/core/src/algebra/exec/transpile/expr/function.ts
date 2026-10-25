@@ -34,10 +34,7 @@ import type {
 import type { TranspileOptions } from "../types.ts";
 import { withImplicitReturn } from "../stmt-predicates.ts";
 import {
-  fnBodyHasThis,
-  fnBodyHasOwnArguments,
-  fnBodyIsEffectFree,
-  fnBodyIsClosed,
+  getFnFacets,
   indent,
   paramDisplayNames,
   paramOptionalFlags,
@@ -79,28 +76,8 @@ export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
  */
 export function fnParamsHaveThis(params: Node[] | undefined | null): boolean {
   if (!params || params.length === 0) return false;
-  const seen = new Set<Node>();
-  const walk = (n: Node): boolean => {
-    if (n.type === "ThisExpression") return true;
-    if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") return false;
-    if (seen.has(n)) return false;
-    seen.add(n);
-    for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) {
-          if (item && typeof item === "object" && "type" in (item as object)) {
-            if (walk(item as Node)) return true;
-          }
-        }
-      } else if (v && typeof v === "object" && "type" in (v as object)) {
-        if (walk(v as Node)) return true;
-      }
-    }
-    return false;
-  };
-  for (const p of params) if (walk(p)) return true;
-  return false;
+  // 形参面由 getFnFacets 的一次遍历给出（与体面/arguments/effectFree/closed 同源）
+  return getFnFacets({ params }).hasParamsThis;
 }
 
 /**
@@ -197,10 +174,12 @@ export function transpileFunctionExpr(
       // 作用域的 this。fnBodyHasThis 只扫 body ⇒ 形参默认值里的 this 不可见
       // ⇒ 默认表达式沿用外层 thisParam（外层方法体里拿到**外层对象**——
       // 自信错值 + 漏抛 TypeError）。故形参面一并扫描（fnParamsHaveThis）。
-      const hasThis = !isArrow && (fnBodyHasThis(fn) || fnParamsHaveThis(fn.params));
+      // 五个 facet 一次遍历（同节点 memo）；hasParamsThis 是形参默认值面。
+      const facets = getFnFacets(fn);
+      const hasThis = !isArrow && (facets.hasThis || facets.hasParamsThis);
       // 非箭头且体直接引用 arguments：建独立 tuple 槽。箭头不建槽（沿外层
       // argsBinding；无绑定 → $unknown()，见 Identifier 分支）。
-      const hasArgs = !isArrow && fnBodyHasOwnArguments(fn);
+      const hasArgs = !isArrow && facets.hasOwnArguments;
       // Bug 1058：arguments 槽名（`__nudoArgs`）与宿主 rest 形参名
       // （`__allArgs`）必须避开用户标识符——用户自己声明同名绑定时，生成的
       // `let __nudoArgs = …` 与之**重复词法声明** ⇒ 产物非法 JS ⇒ 整模块
@@ -227,9 +206,9 @@ export function transpileFunctionExpr(
       };
       // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
       // 只对 effectFree 回调真执行——副作用回调多执行不可回滚）
-      const effectFree = fnBodyIsEffectFree(fn);
+      const effectFree = facets.effectFree;
       // R3：封闭 facet（不读外层可变态）——promise then/catch 的同步执行门
-      const closed = fnBodyIsClosed(fn);
+      const closed = facets.closed;
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), paramOpts);
       // 函数边界：return 不是循环提前返回；非箭头清掉外层 argsBinding
       // P4b：参数遮蔽扣除（箭头**表达式体**不经 transpileFnBodyStmts 的

@@ -106,6 +106,7 @@ function replayFnAbsNodes(
     });
     callTranspiledExportFull(exports, opts.fnName, opts.args, {
       phi: opts.phi,
+      preferLocal: true,
     });
     return collected;
   } catch {
@@ -459,7 +460,10 @@ function collectEnclosingFnLocals(
           ? g.entryReqs[0]!.pred
           : ({ op: "and", args: g.entryReqs.map((r) => r.pred) } as Phi)
         : undefined;
-    callTranspiledExportFull(run, enc.name, args, phi ? { phi } : undefined);
+    callTranspiledExportFull(run, enc.name, args, {
+      ...(phi ? { phi } : {}),
+      preferLocal: true,
+    });
   } catch {
     // fail-closed：求值失败 → 无局部面（不拖垮 hover）
     return null;

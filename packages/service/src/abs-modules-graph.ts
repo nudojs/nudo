@@ -510,7 +510,14 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
         for (const d of decl.declarations ?? []) record(d.id?.name, declaredParams(d.init));
       }
     }
-    if (stmt.type === "ExportDefaultDeclaration") record("default", declaredParams(decl));
+    if (stmt.type === "ExportDefaultDeclaration") {
+      record("default", declaredParams(decl));
+      // 具名 default（export default function main）的本地绑定名也进
+      // bindingsOf 分析槽——合成表转换按同一 source paramTable 取形参。
+      if (decl?.type === "FunctionDeclaration" && decl.id) {
+        record(decl.id.name, declaredParams(decl));
+      }
+    }
     if (stmt.type === "VariableDeclaration") {
       for (const d of stmt.declarations ?? []) record(d.id?.name, declaredParams(d.init));
     }
@@ -1171,15 +1178,33 @@ export function collectAbsBindingsFromGraph(
       ...inj,
     });
     if (!run) return out;
-    // 顶层 const/let（$recordBinding 通道，Abs 值）
+    const file = parse(source);
+    // 顶层 const/let（$recordBinding 通道，Abs 值）+ 私有顶层函数声明
+    // （宿主 JS 函数，见 core bindingsOf）
     const binds = bindingsOf(run);
+    const hostFns: Record<string, unknown> = {};
     if (binds) {
       for (const [name, v] of binds) {
         if (isAbsVal(v)) out.set(name, v);
+        else if (typeof v === "function") hostFns[name] = v;
+      }
+    }
+    // 私有顶层函数：复用**导出面**的宿主 fn → Abs 转换（同一 source
+    // paramTable / ctor facet / apply 桥口径），不另立 second convention。
+    // 合成表是普通对象（无 ANALYSIS_SLOTS）⇒ apply 桥回落自身属性（直接调
+    // 宿主函数）；独立指纹前缀避免与真实导出桥的预算键撞车。
+    if (Object.keys(hostFns).length > 0) {
+      const fnExports = evalExportsToModuleExports(
+        hostFns,
+        file,
+        `eval:bindings-fn:${filePath}`,
+      );
+      for (const [name, v] of Object.entries(fnExports.named)) {
+        if (!out.has(name)) out.set(name, v);
       }
     }
     // 导出名（export function/const + specifier/star/default）→ fn Abs 桥接
-    const exports = evalExportsToModuleExports(run, parse(source), `eval:bindings:${filePath}`);
+    const exports = evalExportsToModuleExports(run, file, `eval:bindings:${filePath}`);
     for (const [name, v] of Object.entries(exports.named)) {
       if (!out.has(name)) out.set(name, v);
     }

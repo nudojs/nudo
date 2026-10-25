@@ -80,8 +80,9 @@ function bump() { acc = acc + a; }
 bump();
 export function f() { return acc; }
 export const k = a + 1;`);
-    // bump：顶层 function 一律带 export 前缀（exportKw 口径，见 run-export-names.test.ts）
-    expect(Object.keys(run).sort()).toEqual(["bump", "f", "k"]);
+    // bump 是私有顶层函数：不出现在导出面（Object.keys），但仍可按名分析
+    expect(Object.keys(run).sort()).toEqual(["f", "k"]);
+    expect(Object.hasOwn(run, "bump")).toBe(true);
     expect(litOf(callF(run))).toBe(1);
     expect(litOf(run["k"])).toBe(2);
   });
@@ -134,7 +135,9 @@ g();
 export const a = 1;
 export const b = 2;
 export function h() { return g(); }`);
-    expect(Object.keys(run).sort()).toEqual(["a", "b", "g", "h"]);
+    // g 是私有顶层函数（不是导出）：导出面只列 a/b/h；h 内部仍能调到 g
+    expect(Object.keys(run).sort()).toEqual(["a", "b", "h"]);
+    expect(Object.hasOwn(run, "g")).toBe(true);
     expect(litOf(run["a"])).toBe(1);
     expect(litOf(run["b"])).toBe(2);
     expect(litOf(callF(run, "h"))).toBe(7);

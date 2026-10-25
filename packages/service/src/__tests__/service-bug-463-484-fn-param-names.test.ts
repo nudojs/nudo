@@ -54,7 +54,9 @@ describe("Bug 463/483/484 跨模块 fn 形参面（声明形参，非假名）",
     const dir = makeTmpProject("nudo-b463-", { "main.js": SRC });
     const params = paramsOf(SRC, dir);
     expect(params.get("expDefault")).toEqual(["a", "b"]);
-    expect(params.get("plainDefault")).toEqual(["a", "b"]);
+    // plainDefault 是私有本地绑定（仅经别名 aliasedDefault 导出）——不得
+    // 作为独立导出名出现；别名槽仍保留声明形参真名。
+    expect(params.get("plainDefault")).toBeUndefined();
     expect(params.get("aliasedDefault")).toEqual(["a", "b"]);
   });
 

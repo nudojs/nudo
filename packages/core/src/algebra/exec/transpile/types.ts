@@ -154,6 +154,24 @@ export type TranspileOptions = {
    */
   constNames?: ReadonlySet<string>;
   /**
+   * 本转译单元内被用户绑定**遮蔽**的宿主内建名（undefined / NaN / Infinity
+   * 的子集，保守单位级）。
+   *
+   * 名字是**宿主全局**但用户可合法遮蔽（`const undefined = 5`、形参名
+   * `undefined`、`let NaN`、import 绑定）。命中者 Identifier 读点发
+   * `$absVal(<名>)`，由 JS 词法绑定决定读值；未命中者恢复字面量精确折叠
+   * （`$lit(void 0)` / `$lit(0/0)` / `$lit(1/0)`，与旧产物逐字节一致）。
+   *
+   * 计算：`transpileFile` 从源 AST 声明扫描（任意作用域，保守单位级）；
+   * `transpileBodyNode` 从 body AST 计算并并入调用方补给；body-fn 补给
+   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名；run.ts 补给
+   * @nudo:mock 注入的内建名（env 注入本就跳过这三个名字）。
+   *
+   * 静态窄化面：`x === undefined` / `case undefined:` 只在**未遮蔽**时作
+   * 字面量事实——遮蔽后该标识符是普通绑定，比较值是绑定值（如 5）。
+   */
+  shadowedIntrinsics?: ReadonlySet<string>;
+  /**
    * **调用方补给的**用户标识符词形集（Bug 1058 避让的补充来源）。
    *
    * `internalTmpName` 的避让集 = `userIdentInfo(opts.source).names`（源文本
@@ -175,6 +193,21 @@ export type TranspileOptions = {
    * 声明语句），此类名字从提升集扣除、不发改赋值。
    */
   keepVarDecl?: boolean;
+  /**
+   * 本文件**真实**的静态声明导出名（源 AST：`export function|class|const|let`
+   * / `var`，多声明符全收；解构声明不收内部名）。
+   *
+   * 只有顶层 FunctionDeclaration 的名字命中本集合时才发射 `export ` 前缀
+   * ——此前所有顶层函数一律带 export（发射 quirk）⇒ run.ts 的文本回收把
+   * 私有顶层函数当导出 ⇒ `export *` 被本地私有同名函数遮蔽、私有名泄漏进
+   * 模块导出面、转译产物作为真实 ESM 时多出导出。
+   *
+   * `export { f }` specifier 名**不**在此集合（同名声明未必是声明式导出；
+   * run.ts 在运行时把 specifier 改写成 __nudoExportLazy）。
+   * transpileFile 从已解析 AST 计算并线程化；缺省（直接调用
+   * transpileStatement 的低层单元）⇒ 不发 export。
+   */
+  exportedDeclNames?: ReadonlySet<string>;
   /**
    * issue #165：文件含 `@nudo:assume` 引理——transpileFile 顶层对源文本
    * 做一次 includes 判定后置位。文件级快速门：无引理的文件不进锚定收集，

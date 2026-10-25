@@ -270,6 +270,49 @@ describe("pure memo cleanup paths (R2B-001)", () => {
     expect(calls).toBe(2);
   });
 
+  it("clearPureMemo invalidates both call paths (shared registry)", () => {
+    // $call 路径实例
+    let bodyCalls = 0;
+    const bodyFn = absFunction([], {
+      apply: () => {
+        bodyCalls += 1;
+        return makeAbsApplyResult(numLit(1), neverAbs);
+      },
+      pureName: "sharedClearBody",
+    });
+    runWithLoopExits(() => {
+      $call(bodyFn, []);
+    });
+    expect(bodyCalls).toBe(1);
+
+    // $callNamed 路径实例（宿主 memo + 内部 $call memo 两层）
+    let namedCalls = 0;
+    const namedFn = absFunction([], {
+      apply: () => {
+        namedCalls += 1;
+        return makeAbsApplyResult(numLit(2), neverAbs);
+      },
+    });
+    markPureFn(namedFn as object, "sharedClearNamed");
+    runWithLoopExits(() => {
+      $callNamed("sharedClearNamed", namedFn, []);
+    });
+    expect(namedCalls).toBe(1);
+
+    // 只调一个清理 API：两条路径的旧缓存都必须失效（否则任一陈旧命中
+    // 都让下面计数停在 1）
+    clearPureMemo();
+
+    runWithLoopExits(() => {
+      $call(bodyFn, []);
+    });
+    runWithLoopExits(() => {
+      $callNamed("sharedClearNamed", namedFn, []);
+    });
+    expect(bodyCalls).toBe(2);
+    expect(namedCalls).toBe(2);
+  });
+
   it("resetEvalCallBudget clears both pure memos", () => {
     const throws = errorTypeAbs("TypeError");
     const ok = numLit(1);

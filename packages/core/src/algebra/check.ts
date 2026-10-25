@@ -1653,7 +1653,9 @@ function checkSourceInner(
               driftInit = true;
             }
             if (!driftRun || !(fnName in driftRun)) return undefined;
-            return callTranspiledExportFull(driftRun, fnName, args).result;
+            return callTranspiledExportFull(driftRun, fnName, args, {
+              preferLocal: true,
+            }).result;
           } catch {
             return undefined;
           }

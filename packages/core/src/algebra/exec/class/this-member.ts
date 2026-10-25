@@ -22,10 +22,13 @@ import {
   noteEvalCallRecord,
 } from "../calls.ts";
 import { throwPayloadOf } from "../may-throw.ts";
+// 共享 nullish 判定（无环：member-diag 只依赖 class-registry/may-throw/objects）
+import { isNullishAbs } from "../member-diag.ts";
 
 import { $invoke } from "./invoke.ts";
 import { specOf, findStaticMethod } from "./declare.ts";
 
+/** @deprecated 转译层不再发射、内部无调用；保留导出仅为公共 API 兼容。 */
 export function $thisGet(thisVal: Abs, key: string): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
@@ -37,6 +40,7 @@ export function $thisGet(thisVal: Abs, key: string): Abs {
   return unknown;
 }
 
+/** @deprecated 转译层不再发射、内部无调用；保留导出仅为公共 API 兼容。 */
 export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
@@ -91,13 +95,6 @@ export function isDefinitelyUndefinedAbs(v: Abs | undefined): boolean {
   return false;
 }
 
-function isNullishAbs(v: Abs): boolean {
-  // 仅明确 null/undefined 字面量；对象等无 term 不算 nullish
-  if (!v || v.term?.op !== "lit") return false;
-  const lv = v.term.value;
-  return lv === null || lv === undefined;
-}
-
 /** 可选链 a?.b：nullish 短路为 undefined 字面量。非 nullish 臂的属性读对
  *  非 nullish 值原生不抛 → silent（不记 any may-throw，Bug 3）。
  *  opts.symbolKey（Bug 149）：键来自符号投影（"[Symbol.X]" → "@@X"）——
@@ -127,7 +124,9 @@ export function $optionalInvoke(thisVal: Abs, method: string, args: Abs[]): Abs 
   return $invoke(thisVal, method, args);
 }
 
-/** 静态方法：cls.staticMethod(args) */
+/** 静态方法：cls.staticMethod(args)
+ *  @deprecated 转译层不再发射；剩余内部调用方仅 check-may-throw.ts 的类方法桥。
+ *  保留导出仅为公共 API 兼容。 */
 export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   // Bug 79：静态方法调用是普通调用面——new.target 归 undefined
   return withNewTargetReset(() => {

@@ -4,9 +4,11 @@ import { transpile } from "../transpile.ts";
 
 /**
  * 锁定 stripStaticExportDecls 从 transpile 生成 JS 回收的导出名（格式耦合面）。
- * 这些期望值刻意固定历史上被发现的名称（含 quirk）：多声明式只收首个绑定、
- * 非 export 顶层 function 也带 export 前缀故被发现。解构导出不再收内部临时名
- * （Bug 156：真实绑定走 `export { … }` 形态）。
+ * 这些期望值刻意固定历史上被发现的名称：多声明式只收首个绑定。
+ * `export ` 前缀只发给**真实源导出**（transpileFile 从源 AST 收集
+ * exportedDeclNames）——未导出的顶层 function 不再被本函数回收；它们由
+ * `sourceTopLevelFunctionNames` 交给 run.ts 建非枚举分析槽。
+ * 解构导出不再收内部临时名（Bug 156：真实绑定走 `export { … }` 形态）。
  * 若 transpile 发射格式变化导致失败，须同步 stripStaticExportDecls 与本测试。
  */
 describe("stripStaticExportDecls：导出名回收（与 transpile 发射格式耦合）", () => {
@@ -16,8 +18,10 @@ describe("stripStaticExportDecls：导出名回收（与 transpile 发射格式�
     expect(namesOf("export function foo(a){return a}")).toEqual(["foo"]);
   });
 
-  it("非 export 顶层 function 也带 export 前缀（exportKw）故被回收", () => {
-    expect(namesOf("function bar(a){return a}")).toEqual(["bar"]);
+  it("非 export 顶层 function 不带 export 前缀 ⇒ 不被回收（私有函数不是导出）", () => {
+    expect(namesOf("function bar(a){return a}")).toEqual([]);
+    // 源 AST 口径同样不把私有函数当导出
+    expect(stripStaticExportDecls(transpile("function bar(a){return a}"), "function bar(a){return a}").names).toEqual([]);
   });
 
   it("export const / export let 被回收", () => {

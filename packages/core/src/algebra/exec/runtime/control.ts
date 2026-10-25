@@ -617,6 +617,8 @@ function widenLoopJoinInner(a: Abs): Abs {
 /**
  * 有界 while：state 线程穿 test/step（与 $for 同折叠语义）。
  * 抽象条件无法诚实终止——必须 maxIters。
+ * @deprecated 转译层不再发射调用（while/do-while 走 $whileSeq）、内部无调用；
+ *  保留导出仅为公共 API 兼容。
  */
 export function $while(
   init: Abs,

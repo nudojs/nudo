@@ -4,7 +4,7 @@
  * 值类型是 Abs；副作用与模块仍由 host mock/注入。
  *
  * 实现按语句/表达式/模式拆在 transpile/*.ts；本文件是 re-export facade，
- * 对外符号面保持不变（exec/index.ts `export * from "./transpile.ts"`）。
+ * 对外符号面保持不变（exec/index.ts 对公开符号做显式具名导出）。
  *
  * 不变量（解构临时名，Bug 181）：
  * - 模块级解构临时名计数器（`destrTmpSeq`）在**创建处**即预置避让：序号
@@ -22,6 +22,11 @@ export {
   foldStaticStringExpr,
   foldRequireSpecArg,
 } from "./transpile/helpers.ts";
+// 运行时 import 面单一真值源（import 行 / 剥离正则都在叶子模块；本 facade
+// 保持 `runtimeImportOf` 的公开路径不变，另导出名单供漂移守卫比对）。
+import { runtimeImportOf } from "./transpile/runtime-import.ts";
+export { RUNTIME_IMPORT_NAMES } from "./transpile/runtime-import.ts";
+export { runtimeImportOf };
 import {
   collectVarHoistNames,
   collectExportVarNames,
@@ -29,18 +34,15 @@ import {
   bumpDestrTmpSeq,
   registerConstFnScope,
   internalTmpName,
+  shadowedIntrinsicsOf,
 } from "./transpile/helpers.ts";
+import { staticExportDeclNamesOfProgram } from "./export-names.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
 
 export function transpileSource(source: string, opts: TranspileOptions = {}): string {
   const file = parseSource(source);
   return transpileFile(file, { ...opts, source: opts.source ?? source });
-}
-
-/** 运行时 import 行（body-fn 编译执行拼接用） */
-export function runtimeImportOf(runtime: string): string {
-  return `import { $absVal, $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $toNumeric, $updateAdd, $updateSub, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $objAccessorKey, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $setProto, $while, $whileSeq, $arr, $arrWithHoles, $restBind, $idx, $idxSet, $len, $call, $throw, $loopReturn, $catchReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $invokeSuperObj, $invokeSuperKey, \$getSuper, \$getSuperObj, \$setSuper, \$setSuperObj, \$setSuperStatic, \$staticSuperInvoke, \$super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $iterCheck, $catchVal, $switch, $staticInvoke, $setKey, $gen, $newTarget, $staticInit, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, \$refineRel, \$removeNullish, $removeNull, $removeUndefined, $removeMemberNullish, $narrowMemberEq, $narrowTypeOf, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $elems, $arguments, $isForkExit, $rawThis, $isBreakTo, $yieldStar, $tpl, $fnKindStamp } from ${JSON.stringify(runtime)};`;
 }
 
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
@@ -59,6 +61,11 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // 方法首参、访问器 / 字段 / 静态块 thunk 首参共用（声明与 `thisParam`
   // 读方同名）。无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
   const thisSlot = opts.thisSlot ?? internalTmpName("__this", opts);
+  // 宿主内建名遮蔽判定（undefined / NaN / Infinity）：源 AST 任意作用域出现
+  // 同名绑定 ⇒ 本单元按「已遮蔽」发射标识符读点（$absVal + 绑定语义），否则
+  // 保持字面量精确折叠（旧产物逐字节不变）。调用方补给（mock/env 注入名）
+  // 一并并入；无命中不写字段。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(file.program, opts.shadowedIntrinsics);
   // Bug 21：模块级 var 提升（模块体是单作用域——块内 var 提升到模块顶；
   // export var 保持声明面不发提升 let，但名字留在发射集——块内同名 var
   // 仍改发赋值，写到导出绑定）
@@ -81,6 +88,13 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // assumeDirectiveFile（transpileFnBodyStmts 在函数体边界收待锚定
   // declarator）；无引理的文件锚定收集整体跳过，发射产物逐字节不变。
   const assumeFile = (opts.source ?? "").includes("@nudo:assume");
+  // 真实静态声明导出名（源 AST）：顶层 FunctionDeclaration 的 `export `
+  // 前缀判据。历史发射 quirk（所有顶层函数一律带 export）已修——否则
+  // run.ts 的文本回收会把私有顶层函数并入模块导出面（`export *` 被本地
+  // 私有同名函数遮蔽 / 私有名可被跨模块 import / 产物作为真实 ESM 时多出
+  // 导出）。只在 AST 上算一次（与 stripStaticExportDecls 的源 AST 名回收
+  // 同一口径），不依赖转译产物文本。
+  const exportedDeclNames = new Set(staticExportDeclNamesOfProgram(file.program));
   // Bug ②：ESM import 绑定对用户代码不可变（再赋值 TypeError，
   // "Assignment to constant variable"）——import 本地名进模块级 const 面：
   // 标识符赋值/自增/逻辑赋值走既有 $throwConstAssign 通道；嵌套作用域
@@ -103,12 +117,15 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
     tryTmpSeq,
     thisSlot,
     constNames: moduleConstNames,
+    ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
+    // 顶层函数 `export ` 前缀判据（空集也传——缺省语义是「不发 export」）
+    exportedDeclNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
-    `import { $absVal, $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $toNumeric, $updateAdd, $updateSub, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $objAccessorKey, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $setProto, $while, $whileSeq, $arr, $arrWithHoles, $restBind, $idx, $idxSet, $len, $call, $throw, $loopReturn, $catchReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $invokeSuperObj, $invokeSuperKey, \$getSuper, \$getSuperObj, \$setSuper, \$setSuperObj, \$setSuperStatic, \$staticSuperInvoke, \$super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $iterCheck, $catchVal, $switch, $staticInvoke, $setKey, $gen, $newTarget, $staticInit, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, \$refineRel, \$removeNullish, $removeNull, $removeUndefined, $removeMemberNullish, $narrowMemberEq, $narrowTypeOf, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $elems, $arguments, $isForkExit, $rawThis, $isBreakTo, $yieldStar, $tpl, $fnKindStamp } from ${JSON.stringify(runtime)};`,
+    runtimeImportOf(runtime),
     ``,
   ];
   if (varHoistLine) lines.push(varHoistLine);

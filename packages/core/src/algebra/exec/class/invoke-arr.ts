@@ -129,11 +129,42 @@ function arrayLiveEntries(
  * （arr-methods.ts）承担——两臂共用同一实现，杜绝分叉。
  */
 
-/** arr/tuple 上的 map/reduce/filter/join/includes/flatMap */
-export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined {
-  const shape = arr.shape as
-    | { k: "arr"; element: Abs }
-    | { k: "tuple"; elements: Abs[]; holes?: number[] };
+/**
+ * 数组 / 元组接收者形态（mutator 就地改写后 shape 换新 ⇒ 经 liveShape 逐次重读）。
+ */
+type ArrShape =
+  | { k: "arr"; element: Abs }
+  | { k: "tuple"; elements: Abs[]; holes?: number[] };
+
+/**
+ * 数组方法族共享的上下文（见 makeArrCtx）：容器 live 读视图、回调桥、
+ * 数组样接收者槽面。所有闭包捕获 `arr` 而非某个具体 shape。
+ */
+interface ArrCtx {
+  arr: Abs;
+  method: string;
+  args: Abs[];
+  /** 进体前快照（长度口径 / 返回值快照） */
+  shape: ArrShape;
+  holes: number[];
+  isHole(i: number): boolean;
+  liveShape(): ArrShape;
+  liveAt(i: number): { present: boolean; el: Abs };
+  liveGet(i: number): Abs;
+  unknownIdx(): Abs;
+  callbackTruth(r: Abs): boolean | undefined;
+  callFn(fn: unknown, thisVal: Abs | undefined, ...fnArgs: Abs[]): Abs;
+  isRelationOnly(fn: unknown): fn is Abs;
+  arrayLikeLen(): number | undefined;
+  arrayLikeAt(i: number): Abs | undefined;
+}
+
+/**
+ * 构造数组方法族的共享上下文。只在入口调用一次；闭包本身不保存陈旧 shape
+ * （见 liveShape / liveAt / liveGet）。
+ */
+function makeArrCtx(arr: Abs, method: string, args: Abs[]): ArrCtx {
+  const shape = arr.shape as ArrShape;
   const holes = shape.k === "tuple" ? ((arr.shape as { holes?: number[] }).holes ?? []) : [];
   const isHole = (i: number): boolean => holes.includes(i);
   /**
@@ -151,9 +182,6 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
    * 多跑、length 缩短也不会少跑（少跑靠 `HasProperty` 缺席达成）。本实现按此
    * 口径固定迭代上界，逐位只把**在场判定与元素值**换成现读。
    */
-  type ArrShape =
-    | { k: "arr"; element: Abs }
-    | { k: "tuple"; elements: Abs[]; holes?: number[] };
   /** 当前容器形态（就地改写后 shape 换新 ⇒ 必须每步重读） */
   const liveShape = (): ArrShape => arr.shape as ArrShape;
   /**
@@ -247,351 +275,493 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
     if (impl?.body || impl?.apply) return false;
     return !!(impl?.relation || isRelFn(a));
   };
-  if (method === "map") {
-    // Bug 55：GetCallback 前置校验——空接收者零迭代也要抛（undefined 同抛）
-    validateCallableArg(args[0], "map callback may not be callable");
-    if (shape.k === "tuple") {
-      // Bug 248：len 进体前取一次（原生 ToLength(O.length) 只读一次）；逐位
-      // 现读当前容器（Get/HasProperty）——缺席位在结果里留**空洞**（原生
-      // map 的 `k in O` 判定：不在场 ⇒ 结果同位是 hole，不回调）。
-      const len = shape.elements.length;
-      const mapped: Abs[] = [];
-      const mappedHoles: number[] = [];
-      for (let i = 0; i < len; i++) {
-        const live = liveAt(i);
-        if (!live.present) {
-          mapped.push(undefAbs());
-          mappedHoles.push(i);
-          continue;
-        }
-        mapped.push(callFn(args[0], args[1], live.el, $lit(i), arr));
+
+  /** 数组样接收者（obj）的 length 槽 → 具体长度（不可判定 → undefined） */
+  const arrayLikeLen = (): number | undefined => {
+    const s = arr.shape as { k: string; slots?: Record<string, { value: Abs }> };
+    if (s.k !== "obj" || !s.slots) return undefined;
+    const lenAbs = getSlot(s.slots, "length")?.value;
+    if (lenAbs === undefined) return 0;
+    const lvR = litValue(lenAbs);
+    const lv = lvR.ok ? lvR.value : undefined;
+    if (lv === undefined) return lenAbs.term?.op === "lit" ? 0 : undefined;
+    if (typeof lv === "bigint" || typeof lv === "symbol") return undefined;
+    const n = typeof lv === "number" ? lv : Number(lv); // string / boolean / null
+    if (Number.isNaN(n)) return 0;
+    return Math.min(Math.max(Math.trunc(n), 0), Number.MAX_SAFE_INTEGER);
+  };
+  /** 数组样接收者的第 i 位槽值（缺席 → undefined） */
+  const arrayLikeAt = (i: number): Abs | undefined => {
+    const s = arr.shape as { k: string; slots?: Record<string, { value: Abs }> };
+    if (s.k !== "obj" || !s.slots) return undefined;
+    return getSlot(s.slots, String(i))?.value;
+  };
+
+  return {
+    arr,
+    method,
+    args,
+    shape,
+    holes,
+    isHole,
+    liveShape,
+    liveAt,
+    liveGet,
+    unknownIdx,
+    callbackTruth,
+    callFn,
+    isRelationOnly,
+    arrayLikeLen,
+    arrayLikeAt,
+  };
+}
+
+/**
+ * arr/tuple 上的 map/reduce/filter/join/includes/flatMap 等数组方法分派。
+ *
+ * 共享上下文（live 读容器 / 回调桥 / 数组样接收者）由 makeArrCtx 一次构造，
+ * 各族实现见下方 hof* / arr* 内部函数——本函数只做 method → 族的映射。
+ */
+export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined {
+  const ctx = makeArrCtx(arr, method, args);
+  switch (method) {
+    // 迭代 / HOF
+    case "map":
+      return hofMap(ctx);
+    case "filter":
+      return hofFilter(ctx);
+    case "forEach":
+      return hofForEach(ctx);
+    case "some":
+    case "every":
+      return hofSomeEvery(ctx);
+    case "find":
+      return hofFind(ctx);
+    case "findIndex":
+      return hofFindIndex(ctx);
+    case "findLast":
+    case "findLastIndex":
+      return hofFindLast(ctx);
+    case "reduce":
+      return hofReduce(ctx);
+    case "reduceRight":
+      return hofReduceRight(ctx);
+    case "flatMap":
+      return hofFlatMap(ctx);
+    // 迭代器（live 视图）
+    case "keys":
+    case "values":
+    case "entries":
+      return arrIterators(ctx);
+    // 变更（就地 / 拷贝）
+    case "fill":
+    case "sort":
+    case "toSorted":
+    case "reverse":
+    case "toReversed":
+      return arrMutInPlace(ctx);
+    case "push":
+    case "unshift":
+    case "pop":
+    case "shift":
+      return arrMutLength(ctx);
+    case "splice":
+      return arrSplice(ctx);
+    case "copyWithin":
+      return arrCopyWithin(ctx);
+    // 非变更变换
+    case "toSpliced":
+      return arrToSpliced(ctx);
+    case "with":
+      return arrWith(ctx);
+    case "concat":
+      return arrConcat(ctx);
+    case "slice":
+      return arrSlice(ctx);
+    case "flat":
+      return arrFlat(ctx);
+    // 查找 / 序列化
+    case "indexOf":
+    case "lastIndexOf":
+      return arrIndexOf(ctx);
+    case "includes":
+      return arrIncludes(ctx);
+    case "at":
+      return arrAt(ctx);
+    case "join":
+      return arrJoin(ctx);
+    case "toString":
+    case "toLocaleString":
+      return arrToString(ctx);
+    default:
+      return undefined;
+  }
+}
+
+/** map：tuple 保留 holes / 子序列精度；arr 走元素域（mapElementFallback）。 */
+function hofMap(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn } = ctx;
+  // Bug 55：GetCallback 前置校验——空接收者零迭代也要抛（undefined 同抛）
+  validateCallableArg(args[0], "map callback may not be callable");
+  if (shape.k === "tuple") {
+    // Bug 248：len 进体前取一次（原生 ToLength(O.length) 只读一次）；逐位
+    // 现读当前容器（Get/HasProperty）——缺席位在结果里留**空洞**（原生
+    // map 的 `k in O` 判定：不在场 ⇒ 结果同位是 hole，不回调）。
+    const len = shape.elements.length;
+    const mapped: Abs[] = [];
+    const mappedHoles: number[] = [];
+    for (let i = 0; i < len; i++) {
+      const live = liveAt(i);
+      if (!live.present) {
+        mapped.push(undefAbs());
+        mappedHoles.push(i);
+        continue;
       }
-      return abs(
-        { k: "tuple", elements: mapped, holes: mappedHoles.length > 0 ? mappedHoles : undefined },
-        undefined,
-        undefined,
-        "path",
-      );
+      mapped.push(callFn(args[0], args[1], live.el, $lit(i), arr));
     }
-    const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
-    const el = mapElementFallback(asAbs(args[0]), shape.element, out);
-    // fallback 强制 partial，否则 confJoin(arr, out)
-    const conf =
-      el === out ? confJoin(arr.conf, out.conf) : "partial";
+    return abs(
+      { k: "tuple", elements: mapped, holes: mappedHoles.length > 0 ? mappedHoles : undefined },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
+  const el = mapElementFallback(asAbs(args[0]), shape.element, out);
+  // fallback 强制 partial，否则 confJoin(arr, out)
+  const conf =
+    el === out ? confJoin(arr.conf, out.conf) : "partial";
+  return abs({ k: "arr", element: el }, undefined, undefined, conf);
+}
+
+/** filter：具体谓词保留精确子序列；不确定谓词枚举子集或降 arr。 */
+function hofFilter(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn, callbackTruth } = ctx;
+  // Bug 55：GetCallback 前置校验（空元组零谓词也要抛）
+  validateCallableArg(args[0], "filter callback may not be callable");
+  // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
+  // hole 跳过谓词且不出现在结果里（原生 filter 收紧数组）。
+  if (shape.k === "tuple") {
+    const kept: Abs[] = [];
+    let anyUncertain = false;
+    // Bug 248：逐位现读当前容器（Get/HasProperty）——体内变异对后续位可见。
+    const len = shape.elements.length;
+    for (let i = 0; i < len; i++) {
+      const live = liveAt(i);
+      if (!live.present) continue;
+      const p = callFn(args[0], args[1], live.el, $lit(i), arr);
+      const t = callbackTruth(p);
+      if (t === false) continue;
+      if (t === undefined) anyUncertain = true;
+      kept.push(live.el);
+    }
+    if (kept.length === 0) {
+      // 每个现存元素的谓词都 definitely-false（空元组平凡成立）→ 结果恒为 []。
+      // 旧口径折 unknown[]（无界长度）既失真又在 assign 对账面制造假
+      // mismatch（OSS 语料 semver/bin/semver.js L109 的 L1 FP）。
+      return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arr.conf, "path"));
+    }
+    // 谓词全具体 → 精确子序列保留 tuple 字面量精度
+    if (!anyUncertain) {
+      return abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(arr.conf, "path"));
+    }
+    // 不确定谓词：结果是 kept 的**子序列**（长度 ≤ kept.length，filter 不增元素）。
+    // 小元组枚举子集和（精确且有界）；更大的枚举指数膨胀 → 退回无界 arr
+    // （sound，旧口径，仅长度上界失真）。
+    const conf = confJoin(arr.conf, "path");
+    if (kept.length <= 3) {
+      let acc: Abs | undefined;
+      const total = 1 << kept.length;
+      for (let mask = 0; mask < total; mask++) {
+        const els = kept.filter((_, bit) => (mask & (1 << bit)) !== 0);
+        const sub = abs({ k: "tuple", elements: els }, undefined, undefined, conf);
+        acc = acc === undefined ? sub : joinAbs(acc, sub);
+      }
+      return acc!;
+    }
+    const el = kept.reduce((a, b) => joinAbs(a, b));
     return abs({ k: "arr", element: el }, undefined, undefined, conf);
   }
-  if (method === "reduce") {
-    // Bug 55：GetCallback 前置校验（[1].reduce(Symbol()) 单元素无初值路径
-    // 不调回调也原生抛——校验必须在取首元素之前）
-    validateCallableArg(args[0], "reduce callback may not be callable");
-    const fn = args[0]!;
-    const noInitial = args.length < 2;
-    // Bug 6：无初值累加器 = 首元素（原生语义）——抽象数组首元素域 =
-    // 元素域（shape.element），不得钉 unknown（回调内 unknown + number →
-    // number | string 凭空多出 `+` 的字符串拼接臂）；tuple 路径的 acc 随
-    // 后按原生语义取首个在场元素覆盖
-    let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
-    // Bug 18：抽象数组（长度未知可能为空）无初值 → 原生 may TypeError
-    // （Reduce of empty array with no initial value）
-    if (noInitial && shape.k === "arr") {
-      recordMayThrow({
-        kind: "TypeError",
-        cause: "reduce of possibly-empty array with no initial value",
-      });
-    }
-    // 仅 relation → 一次 join，不动点只在有 body 时跑
-    if (isRelationOnly(fn) && shape.k === "arr") {
-      const d = instantiateReturn(fn, [acc, shape.element]);
-      return joinAbs(acc, d);
-    }
-    if (shape.k === "tuple") {
-      // Bug 248：原生 reduce 的 len 进体前取一次；**首元素**取「首个在场
-      // 元素」（HasProperty 现查），其后逐位现读当前容器（Get 现读）。
-      const len = shape.elements.length;
-      if (noInitial) {
-        // Bug 18：原生无初值语义——acc 取首个在场元素（hole 跳过），回调自
-        // 次元素起；空/仅 hole → 确定 TypeError；单元素 → 不调回调直接返回
-        let firstIdx = -1;
-        let firstEl: Abs | undefined;
-        for (let i = 0; i < len; i++) {
-          const live = liveAt(i);
-          if (!live.present) continue;
-          firstIdx = i;
-          firstEl = live.el;
-          break;
-        }
-        if (firstIdx === -1 || firstEl === undefined) {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
-        }
-        let acc2 = firstEl;
-        for (let i = firstIdx + 1; i < len; i++) {
-          const live = liveAt(i);
-          if (!live.present) continue;
-          acc2 = callFn(fn, undefined, acc2, live.el, $lit(i), arr);
-        }
-        return acc2;
-      }
-      for (let i = 0; i < len; i++) {
-        const live = liveAt(i);
-        if (!live.present) continue;
-        acc = callFn(fn, undefined, acc, live.el, $lit(i), arr);
-      }
-      return acc;
-    }
-    return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
+  // arr：filter 保持元素类型（不传播回调 pred）
+  return arr;
+}
+
+/** flatMap：回调结果投影摊平（projectFlatMapResult）。 */
+function hofFlatMap(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn } = ctx;
+  // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
+  validateCallableArg(args[0], "flatMap callback may not be callable");
+  if (shape.k === "tuple") {
+    // Bug 248：逐位现读当前容器（Get/HasProperty）——hole 位不回调（原生
+    // flatMap 的 `k in O` 判定），缺席位在结果里是空元组（摊平后不留）。
+    const len = shape.elements.length;
+    const mapped = shape.elements.map((_el, i) => {
+      const live = liveAt(i);
+      if (!live.present) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      return callFn(args[0], args[1], live.el, $lit(i), arr);
+    });
+    return projectFlatMapResult(arr.conf, mapped);
   }
-  if (method === "reduceRight") {
-    // Bug 55：GetCallback 前置校验（同 reduce——单元素无初值不调回调也抛）
-    validateCallableArg(args[0], "reduceRight callback may not be callable");
-    const fn = args[0]!;
-    const noInitial = args.length < 2;
-    // Bug 6：同 reduce——无初值累加器 = 尾元素，域 = 元素域（tuple 路径
-    // 随后按原生语义取末个在场元素覆盖）
-    let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
-    if (shape.k === "tuple") {
-      // Bug 248：同 reduce——len 进体前取一次，逐位现读当前容器（自尾向前）。
-      const len = shape.elements.length;
-      if (noInitial) {
-        // Bug 18：同 reduce（自尾向前）
-        let lastIdx = -1;
-        let lastEl: Abs | undefined;
-        for (let i = len - 1; i >= 0; i--) {
-          const live = liveAt(i);
-          if (!live.present) continue;
-          lastIdx = i;
-          lastEl = live.el;
-          break;
-        }
-        if (lastIdx === -1 || lastEl === undefined) {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
-        }
-        let acc2 = lastEl;
-        for (let i = lastIdx - 1; i >= 0; i--) {
-          const live = liveAt(i);
-          if (!live.present) continue;
-          acc2 = callFn(fn, undefined, acc2, live.el, $lit(i), arr);
-        }
-        return acc2;
-      }
-      for (let i = len - 1; i >= 0; i--) {
-        const live = liveAt(i);
-        if (!live.present) continue;
-        acc = callFn(fn, undefined, acc, live.el, $lit(i), arr);
-      }
-      return acc;
+  const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
+  return projectFlatMapResult(arr.conf, [out]);
+}
+
+/** forEach：仅副作用；恒返回 undefined。 */
+function hofForEach(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn } = ctx;
+  // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
+  validateCallableArg(args[0], "forEach callback may not be callable");
+  if (shape.k === "tuple") {
+    // Bug 248：逐位现读当前容器（Get/HasProperty）——len 进体前取一次。
+    const len = shape.elements.length;
+    for (let i = 0; i < len; i++) {
+      const live = liveAt(i);
+      if (!live.present) continue;
+      callFn(args[0], args[1], live.el, $lit(i), arr);
     }
-    // Bug 18：抽象数组无初值 → may TypeError
-    if (noInitial) {
-      recordMayThrow({
-        kind: "TypeError",
-        cause: "reduceRight of possibly-empty array with no initial value",
-      });
-    }
-    return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
+  } else {
+    callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
   }
-  if (method === "filter") {
-    // Bug 55：GetCallback 前置校验（空元组零谓词也要抛）
-    validateCallableArg(args[0], "filter callback may not be callable");
-    // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
-    // hole 跳过谓词且不出现在结果里（原生 filter 收紧数组）。
-    if (shape.k === "tuple") {
-      const kept: Abs[] = [];
-      let anyUncertain = false;
-      // Bug 248：逐位现读当前容器（Get/HasProperty）——体内变异对后续位可见。
-      const len = shape.elements.length;
-      for (let i = 0; i < len; i++) {
-        const live = liveAt(i);
-        if (!live.present) continue;
-        const p = callFn(args[0], args[1], live.el, $lit(i), arr);
-        const t = callbackTruth(p);
-        if (t === false) continue;
-        if (t === undefined) anyUncertain = true;
-        kept.push(live.el);
+  return undefAbs();
+}
+
+/** some / every：逐位短路；hole 跳过（HasProperty 语义）。 */
+function hofSomeEvery(ctx: ArrCtx): Abs {
+  const { arr, method, args, shape, liveAt, callFn, callbackTruth } = ctx;
+  // Bug 55：GetCallback 前置校验（[].some(Symbol()) 零迭代不再折假 false/true）
+  validateCallableArg(args[0], `${method} callback may not be callable`);
+  // 逐位短路：具体命中即停（some: truthy / every: falsy），副作用计数与原生一致。
+  // 规范 some/every 检查 HasProperty：hole 位置跳过回调（与 find/findIndex 相反）。
+  let undecided = false;
+  if (shape.k === "tuple") {
+    // Bug 248：逐位现读当前容器（Get/HasProperty）。
+    const len = shape.elements.length;
+    for (let i = 0; i < len; i++) {
+      const live = liveAt(i);
+      if (!live.present) continue;
+      const t = callbackTruth(callFn(args[0], args[1], live.el, $lit(i), arr));
+      if (t === undefined) {
+        undecided = true;
+        continue;
       }
-      if (kept.length === 0) {
-        // 每个现存元素的谓词都 definitely-false（空元组平凡成立）→ 结果恒为 []。
-        // 旧口径折 unknown[]（无界长度）既失真又在 assign 对账面制造假
-        // mismatch（OSS 语料 semver/bin/semver.js L109 的 L1 FP）。
-        return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arr.conf, "path"));
-      }
-      // 谓词全具体 → 精确子序列保留 tuple 字面量精度
-      if (!anyUncertain) {
-        return abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(arr.conf, "path"));
-      }
-      // 不确定谓词：结果是 kept 的**子序列**（长度 ≤ kept.length，filter 不增元素）。
-      // 小元组枚举子集和（精确且有界）；更大的枚举指数膨胀 → 退回无界 arr
-      // （sound，旧口径，仅长度上界失真）。
-      const conf = confJoin(arr.conf, "path");
-      if (kept.length <= 3) {
-        let acc: Abs | undefined;
-        const total = 1 << kept.length;
-        for (let mask = 0; mask < total; mask++) {
-          const els = kept.filter((_, bit) => (mask & (1 << bit)) !== 0);
-          const sub = abs({ k: "tuple", elements: els }, undefined, undefined, conf);
-          acc = acc === undefined ? sub : joinAbs(acc, sub);
-        }
-        return acc!;
-      }
-      const el = kept.reduce((a, b) => joinAbs(a, b));
-      return abs({ k: "arr", element: el }, undefined, undefined, conf);
+      if (method === "some" && t) return boolLit(true);
+      if (method === "every" && !t) return boolLit(false);
     }
-    // arr：filter 保持元素类型（不传播回调 pred）
-    return arr;
+  } else {
+    const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
+    // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
+    if (t === undefined) return bool();
+    if (method === "some" && t) return boolLit(true);
+    if (method === "every" && !t) return boolLit(false);
+    return bool();
   }
-  if (method === "flatMap") {
-    // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
-    validateCallableArg(args[0], "flatMap callback may not be callable");
-    if (shape.k === "tuple") {
-      // Bug 248：逐位现读当前容器（Get/HasProperty）——hole 位不回调（原生
-      // flatMap 的 `k in O` 判定），缺席位在结果里是空元组（摊平后不留）。
-      const len = shape.elements.length;
-      const mapped = shape.elements.map((_el, i) => {
-        const live = liveAt(i);
-        if (!live.present) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
-        return callFn(args[0], args[1], live.el, $lit(i), arr);
-      });
-      return projectFlatMapResult(arr.conf, mapped);
+  if (undecided) return bool();
+  return boolLit(method === "some" ? false : true);
+}
+
+/** find：Get 语义（hole 位照样回调）；命中返回元素。 */
+function hofFind(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveGet, callFn, callbackTruth } = ctx;
+  // Bug 55：GetCallback 前置校验
+  validateCallableArg(args[0], "find callback may not be callable");
+  if (shape.k === "tuple") {
+    let undecided = false;
+    // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
+    const len = shape.elements.length;
+    for (let i = 0; i < len; i++) {
+      const el = liveGet(i);
+      const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
+      if (t === true) return el;
+      if (t === undefined) undecided = true;
     }
-    const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
-    return projectFlatMapResult(arr.conf, [out]);
-  }
-  if (method === "forEach") {
-    // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
-    validateCallableArg(args[0], "forEach callback may not be callable");
-    if (shape.k === "tuple") {
-      // Bug 248：逐位现读当前容器（Get/HasProperty）——len 进体前取一次。
-      const len = shape.elements.length;
-      for (let i = 0; i < len; i++) {
-        const live = liveAt(i);
-        if (!live.present) continue;
-        callFn(args[0], args[1], live.el, $lit(i), arr);
-      }
-    } else {
-      callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
+    if (undecided) {
+      const joined = shape.elements.reduce((a, b) => joinAbs(a, b));
+      return joinAbs(joined, undefAbs());
     }
     return undefAbs();
   }
-  if (method === "some" || method === "every") {
-    // Bug 55：GetCallback 前置校验（[].some(Symbol()) 零迭代不再折假 false/true）
-    validateCallableArg(args[0], `${method} callback may not be callable`);
-    // 逐位短路：具体命中即停（some: truthy / every: falsy），副作用计数与原生一致。
-    // 规范 some/every 检查 HasProperty：hole 位置跳过回调（与 find/findIndex 相反）。
+  const el = markDomainShared(shape.element);
+  const t = callbackTruth(callFn(args[0], args[1], el, fromIdxAbs(), arr));
+  if (t === true) return el;
+  if (t === false) return undefAbs();
+  return joinAbs(el, undefAbs());
+}
+
+/** findIndex：Get 语义；命中返回下标。 */
+function hofFindIndex(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveGet, callFn, callbackTruth, unknownIdx } = ctx;
+  // Bug 73：GetCallback 前置校验——[].findIndex(Symbol()) 零迭代不得折 -1 #exact
+  validateCallableArg(args[0], "findIndex callback may not be callable");
+  if (shape.k === "tuple") {
     let undecided = false;
-    if (shape.k === "tuple") {
-      // Bug 248：逐位现读当前容器（Get/HasProperty）。
-      const len = shape.elements.length;
-      for (let i = 0; i < len; i++) {
-        const live = liveAt(i);
-        if (!live.present) continue;
-        const t = callbackTruth(callFn(args[0], args[1], live.el, $lit(i), arr));
-        if (t === undefined) {
-          undecided = true;
-          continue;
-        }
-        if (method === "some" && t) return boolLit(true);
-        if (method === "every" && !t) return boolLit(false);
-      }
-    } else {
-      const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
-      // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
-      if (t === undefined) return bool();
-      if (method === "some" && t) return boolLit(true);
-      if (method === "every" && !t) return boolLit(false);
-      return bool();
+    // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
+    const len = shape.elements.length;
+    for (let i = 0; i < len; i++) {
+      const t = callbackTruth(callFn(args[0], args[1], liveGet(i), $lit(i), arr));
+      if (t === true) return $lit(i);
+      if (t === undefined) undecided = true;
     }
-    if (undecided) return bool();
-    return boolLit(method === "some" ? false : true);
+    if (undecided) return joinAbs(unknownIdx(), $lit(-1));
+    return $lit(-1);
   }
-  if (method === "find") {
-    // Bug 55：GetCallback 前置校验
-    validateCallableArg(args[0], "find callback may not be callable");
-    if (shape.k === "tuple") {
-      let undecided = false;
+  const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
+  if (t === true) return unknownIdx();
+  if (t === false) return $lit(-1);
+  return joinAbs(unknownIdx(), $lit(-1));
+}
+
+/** findLast / findLastIndex：自尾向前首个命中（Bug 74）。 */
+function hofFindLast(ctx: ArrCtx): Abs {
+  const { arr, method, args, shape, liveGet, callFn, callbackTruth, unknownIdx } = ctx;
+  // Bug 74：find/findIndex 的逆序孪生——自尾向前首个命中
+  validateCallableArg(args[0], `${method} callback may not be callable`);
+  const wantIndex = method === "findLastIndex";
+  if (shape.k === "tuple") {
+    let undecided = false;
+    for (let i = shape.elements.length - 1; i >= 0; i--) {
       // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
-      const len = shape.elements.length;
-      for (let i = 0; i < len; i++) {
-        const el = liveGet(i);
-        const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
-        if (t === true) return el;
-        if (t === undefined) undecided = true;
-      }
-      if (undecided) {
-        const joined = shape.elements.reduce((a, b) => joinAbs(a, b));
-        return joinAbs(joined, undefAbs());
-      }
-      return undefAbs();
+      const el = liveGet(i);
+      const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
+      if (t === true) return wantIndex ? $lit(i) : el;
+      if (t === undefined) undecided = true;
     }
-    const el = markDomainShared(shape.element);
-    const t = callbackTruth(callFn(args[0], args[1], el, fromIdxAbs(), arr));
-    if (t === true) return el;
-    if (t === false) return undefAbs();
-    return joinAbs(el, undefAbs());
+    if (undecided) {
+      const joined = shape.elements.length
+        ? shape.elements.reduce((a, b) => joinAbs(a, b))
+        : unknown;
+      return wantIndex ? joinAbs(unknownIdx(), $lit(-1)) : joinAbs(joined, undefAbs());
+    }
+    return wantIndex ? $lit(-1) : undefAbs();
   }
-  if (method === "findIndex") {
-    // Bug 73：GetCallback 前置校验——[].findIndex(Symbol()) 零迭代不得折 -1 #exact
-    validateCallableArg(args[0], "findIndex callback may not be callable");
-    if (shape.k === "tuple") {
-      let undecided = false;
-      // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
-      const len = shape.elements.length;
-      for (let i = 0; i < len; i++) {
-        const t = callbackTruth(callFn(args[0], args[1], liveGet(i), $lit(i), arr));
-        if (t === true) return $lit(i);
-        if (t === undefined) undecided = true;
-      }
-      if (undecided) return joinAbs(unknownIdx(), $lit(-1));
-      return $lit(-1);
-    }
-    const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
+  const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
+  if (wantIndex) {
     if (t === true) return unknownIdx();
     if (t === false) return $lit(-1);
     return joinAbs(unknownIdx(), $lit(-1));
   }
-  if (method === "findLast" || method === "findLastIndex") {
-    // Bug 74：find/findIndex 的逆序孪生——自尾向前首个命中
-    validateCallableArg(args[0], `${method} callback may not be callable`);
-    const wantIndex = method === "findLastIndex";
-    if (shape.k === "tuple") {
-      let undecided = false;
-      for (let i = shape.elements.length - 1; i >= 0; i--) {
-        // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
-        const el = liveGet(i);
-        const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
-        if (t === true) return wantIndex ? $lit(i) : el;
-        if (t === undefined) undecided = true;
+  if (t === true) return shape.element;
+  if (t === false) return undefAbs();
+  return joinAbs(shape.element, undefAbs());
+}
+
+/** reduce：len 进体前取一次；tuple 按首个在场元素起算（Bug 6/18）。 */
+function hofReduce(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn, isRelationOnly } = ctx;
+  // Bug 55：GetCallback 前置校验（[1].reduce(Symbol()) 单元素无初值路径
+  // 不调回调也原生抛——校验必须在取首元素之前）
+  validateCallableArg(args[0], "reduce callback may not be callable");
+  const fn = args[0]!;
+  const noInitial = args.length < 2;
+  // Bug 6：无初值累加器 = 首元素（原生语义）——抽象数组首元素域 =
+  // 元素域（shape.element），不得钉 unknown（回调内 unknown + number →
+  // number | string 凭空多出 `+` 的字符串拼接臂）；tuple 路径的 acc 随
+  // 后按原生语义取首个在场元素覆盖
+  let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
+  // Bug 18：抽象数组（长度未知可能为空）无初值 → 原生 may TypeError
+  // （Reduce of empty array with no initial value）
+  if (noInitial && shape.k === "arr") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "reduce of possibly-empty array with no initial value",
+    });
+  }
+  // 仅 relation → 一次 join，不动点只在有 body 时跑
+  if (isRelationOnly(fn) && shape.k === "arr") {
+    const d = instantiateReturn(fn, [acc, shape.element]);
+    return joinAbs(acc, d);
+  }
+  if (shape.k === "tuple") {
+    // Bug 248：原生 reduce 的 len 进体前取一次；**首元素**取「首个在场
+    // 元素」（HasProperty 现查），其后逐位现读当前容器（Get 现读）。
+    const len = shape.elements.length;
+    if (noInitial) {
+      // Bug 18：原生无初值语义——acc 取首个在场元素（hole 跳过），回调自
+      // 次元素起；空/仅 hole → 确定 TypeError；单元素 → 不调回调直接返回
+      let firstIdx = -1;
+      let firstEl: Abs | undefined;
+      for (let i = 0; i < len; i++) {
+        const live = liveAt(i);
+        if (!live.present) continue;
+        firstIdx = i;
+        firstEl = live.el;
+        break;
       }
-      if (undecided) {
-        const joined = shape.elements.length
-          ? shape.elements.reduce((a, b) => joinAbs(a, b))
-          : unknown;
-        return wantIndex ? joinAbs(unknownIdx(), $lit(-1)) : joinAbs(joined, undefAbs());
+      if (firstIdx === -1 || firstEl === undefined) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      return wantIndex ? $lit(-1) : undefAbs();
+      let acc2 = firstEl;
+      for (let i = firstIdx + 1; i < len; i++) {
+        const live = liveAt(i);
+        if (!live.present) continue;
+        acc2 = callFn(fn, undefined, acc2, live.el, $lit(i), arr);
+      }
+      return acc2;
     }
-    const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
-    if (wantIndex) {
-      if (t === true) return unknownIdx();
-      if (t === false) return $lit(-1);
-      return joinAbs(unknownIdx(), $lit(-1));
+    for (let i = 0; i < len; i++) {
+      const live = liveAt(i);
+      if (!live.present) continue;
+      acc = callFn(fn, undefined, acc, live.el, $lit(i), arr);
     }
-    if (t === true) return shape.element;
-    if (t === false) return undefAbs();
-    return joinAbs(shape.element, undefAbs());
+    return acc;
   }
-  if (method === "join") {
-    // Bug 36：join 逐元素 ToString——symbol 元素确定 TypeError（[Symbol()].join()
-    // 原生抛）；any/真 unknown 元素 may（validateJoinElements 与一等 join 路径
-    // 共用）。字面量分隔符 + 全字面量元组 → 精确折叠（原生 ToString 语义，
-    // 含 hole→""、nullish 元素→""）；其余合法路径保持 path-string（不假精确）。
-    const folded = arrayJoinWithSep(arr, args[0]);
-    if (folded !== undefined) return folded;
-    validateJoinElements(arr);
-    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
+}
+
+/** reduceRight：reduce 的逆序孪生（保持原口径：无 relation-only 快路径）。 */
+function hofReduceRight(ctx: ArrCtx): Abs {
+  const { arr, args, shape, liveAt, callFn } = ctx;
+  // Bug 55：GetCallback 前置校验（同 reduce——单元素无初值不调回调也抛）
+  validateCallableArg(args[0], "reduceRight callback may not be callable");
+  const fn = args[0]!;
+  const noInitial = args.length < 2;
+  // Bug 6：同 reduce——无初值累加器 = 尾元素，域 = 元素域（tuple 路径
+  // 随后按原生语义取末个在场元素覆盖）
+  let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
+  if (shape.k === "tuple") {
+    // Bug 248：同 reduce——len 进体前取一次，逐位现读当前容器（自尾向前）。
+    const len = shape.elements.length;
+    if (noInitial) {
+      // Bug 18：同 reduce（自尾向前）
+      let lastIdx = -1;
+      let lastEl: Abs | undefined;
+      for (let i = len - 1; i >= 0; i--) {
+        const live = liveAt(i);
+        if (!live.present) continue;
+        lastIdx = i;
+        lastEl = live.el;
+        break;
+      }
+      if (lastIdx === -1 || lastEl === undefined) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      let acc2 = lastEl;
+      for (let i = lastIdx - 1; i >= 0; i--) {
+        const live = liveAt(i);
+        if (!live.present) continue;
+        acc2 = callFn(fn, undefined, acc2, live.el, $lit(i), arr);
+      }
+      return acc2;
+    }
+    for (let i = len - 1; i >= 0; i--) {
+      const live = liveAt(i);
+      if (!live.present) continue;
+      acc = callFn(fn, undefined, acc, live.el, $lit(i), arr);
+    }
+    return acc;
   }
-  if (method === "toString" || method === "toLocaleString") {
-    // Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError
-    return arrayJoinToString(arr);
+  // Bug 18：抽象数组无初值 → may TypeError
+  if (noInitial) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "reduceRight of possibly-empty array with no initial value",
+    });
   }
+  return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
+}
+
+/** keys / values / entries：原生 Array Iterator 的 live 视图（Bug 198）。 */
+function arrIterators(ctx: ArrCtx): Abs | undefined {
+  const { arr, method, shape, unknownIdx } = ctx;
   if (method === "keys") {
     if (shape.k === "tuple") {
       // Bug 63：原生返回 Array Iterator 对象（非数组）——Map/Set 的
@@ -643,6 +813,11 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
       ),
     );
   }
+}
+
+/** fill / sort / toSorted / reverse / toReversed：就地变更与拷贝变更。 */
+function arrMutInPlace(ctx: ArrCtx): Abs | undefined {
+  const { arr, method, args, shape } = ctx;
   if (method === "fill") {
     // Bug 255：原生 `fill()` **零实参**合法——value 缺省 ⇒ 整条被填成
     // undefined（[0,1,2,3].fill() → [undefined×4]，length 不变）。此前
@@ -691,416 +866,10 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
     }
     return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
   }
-  if (method === "flat") {
-    // Bug 66：depth 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
-    // 抽象 → may）。字面量 depth 递归展开（缺省/undefined → 1；负数/NaN → 0
-    // 即浅拷贝不展开）；抽象 depth 保守并「不展开」与「全展开」两域。
-    validateIndexArg(args[0], "flat depth may not be convertible to a number");
-    const depthRaw = toIOI(args[0]);
-    const holeSet = new Set(holes);
-    /** 递归展开：返回 null = 途中遇到抽象 arr（长度未知）→ 整体降 arr */
-    const rec = (
-      els: Abs[],
-      hs: Set<number>,
-      d: number,
-    ): { els: Abs[]; degraded: boolean } | null => {
-      const out: Abs[] = [];
-      let degraded = false;
-      for (let i = 0; i < els.length; i++) {
-        if (hs.has(i)) continue; // 原生 flat 跳过 hole（不产 undefined）
-        const el = els[i]!;
-        if (d > 0 && el.shape.k === "tuple") {
-          const sub = rec(
-            el.shape.elements,
-            new Set(el.shape.holes ?? []),
-            d - 1,
-          );
-          if (sub === null) return null;
-          out.push(...sub.els);
-          degraded = degraded || sub.degraded;
-          continue;
-        }
-        if (d > 0 && el.shape.k === "arr") return null;
-        out.push(el);
-      }
-      return { els: out, degraded };
-    };
-    if (shape.k === "arr") {
-      // 抽象数组：元素可能本身是数组（展开并入其元素域）也可能原样保留
-      const es = shape.element.shape;
-      const innerEls =
-        es.k === "tuple"
-          ? es.elements.length
-            ? es.elements.reduce((x, y) => joinAbs(x, y))
-            : unknown
-          : es.k === "arr"
-            ? es.element
-            : undefined;
-      const el = innerEls !== undefined ? joinAbs(shape.element, innerEls) : shape.element;
-      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-    }
-    if (depthRaw === null) {
-      // 抽象 depth：0..∞ 皆可能 → 元素域 = 浅层元素 ∪ 全展开元素
-      recordMayThrow({
-        kind: "TypeError",
-        cause: "flat depth may not be convertible to a number",
-      });
-      const shallow = rec(shape.elements, holeSet, 0);
-      const deep = rec(shape.elements, holeSet, Number.MAX_SAFE_INTEGER);
-      if (shallow !== null && deep !== null) {
-        const el = [...shallow.els, ...deep.els].reduce((x, y) => joinAbs(x, y));
-        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-      }
-      return unknown;
-    }
-    const depth = depthRaw === undefined ? 1 : Math.max(depthRaw, 0);
-    const r = rec(shape.elements, holeSet, depth);
-    if (r === null) {
-      // 含抽象 arr 展开：长度未知 → arr（元素 join）
-      const shallow = rec(shape.elements, holeSet, 0);
-      const el = shallow && shallow.els.length
-        ? shallow.els.reduce((x, y) => joinAbs(x, y))
-        : unknown;
-      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-    }
-    if (r.degraded) {
-      const el = r.els.length ? r.els.reduce((x, y) => joinAbs(x, y)) : unknown;
-      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-    }
-    return abs(
-      { k: "tuple", elements: r.els },
-      undefined,
-      undefined,
-      confJoin(arr.conf, "path"),
-    );
-  }
-  if (method === "toSpliced") {
-    // Bug 66：start/skipCount 经 ToIntegerOrInfinity（symbol/bigint → 确定
-    // TypeError；抽象 → may）；items 原样插入（值实参不转换）；窗口 clamp
-    // （OOB 不抛——与 with 不同）
-    // Bug 270：删除窗口走 spliceWindow（单一事实源）——`toSpliced()` 零实参
-    // ⇒ start 缺省 ⇒ **不删**（原生原样保留）；`toSpliced(0, undefined)` ⇒
-    // skipCount 在场（undefined ⇒ 0）⇒ **不删**。
-    validateIndexArg(args[0], "toSpliced start may not be convertible to a number");
-    validateIndexArg(args[1], "toSpliced skipCount may not be convertible to a number");
-    const items = args.slice(2);
-    if (shape.k === "tuple") {
-      const len = shape.elements.length;
-      const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
-      if (win === "unknown") {
-        // 抽象窗口：任意删除都可能 → 元素 ∪ items join 降 arr
-        const parts = [...shape.elements.filter((_, i) => !isHole(i)), ...items];
-        const el = parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
-        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-      }
-      const { a, skip } = win;
-      const solid = (el: Abs, i: number): Abs => (isHole(i) ? undefAbs() : el);
-      const els = [
-        ...shape.elements.slice(0, a).map(solid),
-        ...items,
-        ...shape.elements.slice(a + skip).map((el, i) => solid(el, a + skip + i)),
-      ];
-      return abs(
-        { k: "tuple", elements: els },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    const parts = [shape.element, ...items];
-    return abs(
-      { k: "arr", element: parts.reduce((x, y) => joinAbs(x, y)) },
-      undefined,
-      undefined,
-      "partial",
-    );
-  }
-  if (method === "with") {
-    // Bug 66：index 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError）；
-    // OOB 字面量（idx ∉ [0, len)，负数自尾相对）→ 确定 RangeError；抽象下标
-    // → may RangeError + 每位 join(value)；with 写实 → 该位不再是 hole
-    validateIndexArg(args[0], "with index may not be convertible to a number");
-    const v = args[1] ?? undefAbs();
-    if (shape.k === "tuple") {
-      const iv = toIOI(args[0]) ?? 0;
-      if (iv === null) {
-        recordMayThrow({ kind: "RangeError", cause: "with index may be out of range" });
-        return abs(
-          { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
-          undefined,
-          undefined,
-          "partial",
-        );
-      }
-      const len = shape.elements.length;
-      const idx = iv < 0 ? len + iv : iv;
-      if (idx < 0 || idx >= len) throw new NudoThrow(errorTypeAbs("RangeError"));
-      // 原生 with 逐位 CreateDataProperty——非目标 hole 也写实 undefined
-      const els = shape.elements.map((el, i) =>
-        i === idx ? v : isHole(i) ? undefAbs() : el,
-      );
-      return abs(
-        { k: "tuple", elements: els },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    return abs(
-      { k: "arr", element: joinAbs(shape.element, v) },
-      undefined,
-      undefined,
-      "partial",
-    );
-  }
-  if (method === "concat") {
-    // Bug 66：数组实参展开、其余原样追加；任一实参为抽象 arr → 结果长度未知
-    // 降 arr。hole 保留（原生 concat 走 HasProperty/CreateDataProperty——
-    // 接收者与 tuple 实参的 hole 平移存活）
-    // Bug 83：native 对每个实参先查 o[Symbol.isConcatSpreadable]（计算符号键
-    // 投影槽 "@@isConcatSpreadable"，只有 obj / brand inner 槽面可携带——
-    // tuple shape 无 slots 字段，且 $set 对 tuple 的非索引键写直接降级 arr
-    // （widenTupleToArr），「native 数组被抑制展开」子面在本引擎不可表达，
-    // lit-false 抑制只对 obj 实参生效，属接受近似）：
-    // - lit true（ToBoolean）→ 按 array-like 展开：length 槽 lit number →
-    //   ToLength（截断/负数夹 0/NaN→0；无槽/undefined → 0），逐位读
-    //   String(i) 槽——缺席位 native Get 得 undefined（fail-closed 同口径）；
-    //   length 非字面量/Infinity/超物化上限 → 整体降 arr
-    // - lit false → 单元素追加（不展开）
-    // - 槽缺席 → 默认行为：tuple/arr 展开、其余单元素（Bug 66 口径不变）
-    // - 槽存在但抽象 → 展开性未知 → 整体降 arr（sound）
-    /** 实参槽面：obj 直读 / brand inner obj；tuple/arr 等无 slots 的 shape → undefined */
-    const argObjShapeOf = (
-      v: Abs,
-    ): { slots: Record<string, { value: Abs }>; index?: { key: Abs; value: Abs } } | undefined => {
-      const s = v.shape;
-      if (s.k === "obj") return s;
-      if (s.k === "brand" && s.shape.shape.k === "obj") return s.shape.shape;
-      return undefined;
-    };
-    /** @@isConcatSpreadable 投影槽判定（lit → ToBoolean；抽象 → "abstract"） */
-    const spreadableOf = (v: Abs): "absent" | "true" | "false" | "abstract" => {
-      const o = argObjShapeOf(v);
-      const slot = o ? getSlot(o.slots, "@@isConcatSpreadable") : undefined;
-      if (!slot) return "absent";
-      const lv = litValue(slot.value);
-      if (!lv.ok) return "abstract";
-      const w = lv.value;
-      // ToBoolean（与 callbackTruth 同口径；lit undefined 哨兵归 false）
-      if (
-        w === undefined || w === null || w === false || w === "" ||
-        (w as unknown) === 0n ||
-        (typeof w === "number" && (w === 0 || Number.isNaN(w)))
-      ) {
-        return "false";
-      }
-      return "true";
-    };
-    /** lit-true 展开的 array-like 元素：length 非字面量/巨长稀疏 → null（整体降 arr） */
-    const spreadElsOf = (v: Abs): Abs[] | null => {
-      const o = argObjShapeOf(v);
-      if (!o) return null;
-      const lenAbs = getSlot(o.slots, "length")?.value;
-      if (!lenAbs || isNullishLitAbs(lenAbs)) return []; // Get length undefined → ToLength 0
-      const lv = litValue(lenAbs);
-      if (!lv.ok || typeof lv.value !== "number") return null;
-      const t = Math.trunc(lv.value);
-      if (t > TUPLE_MATERIALIZE_CAP) return null;
-      const n = t < 0 ? 0 : t; // NaN → 循环不执行（ToLength(NaN)=0）
-      const els: Abs[] = [];
-      for (let i = 0; i < n; i++) els.push(getSlot(o.slots, String(i))?.value ?? undefAbs());
-      return els;
-    };
-    /** 降级并集（展开性/长度未知）：索引槽值 ∪ 计算索引值 ∪ 自身（不展开臂）∪ undefined */
-    const spreadPossiblesOf = (v: Abs): Abs => {
-      const o = argObjShapeOf(v);
-      const parts: Abs[] = [v, undefAbs()];
-      if (o) {
-        for (const [k, s] of Object.entries(o.slots)) {
-          if (canonicalArrayIndex(k) !== undefined) parts.push(s.value);
-        }
-        if (o.index) parts.push(o.index.value);
-      }
-      return parts.reduce((x, y) => joinAbs(x, y));
-    };
-    if (shape.k === "tuple") {
-      const out: Abs[] = [...shape.elements];
-      const holesC = new Set(holes);
-      let degraded = false;
-      for (const a of args) {
-        const aa = asAbs(a) ?? unknown;
-        const spread = spreadableOf(aa);
-        if (spread === "true") {
-          const els = spreadElsOf(aa);
-          if (els === null) {
-            out.push(spreadPossiblesOf(aa));
-            degraded = true;
-          } else out.push(...els);
-        } else if (spread === "false") {
-          // native 抑制展开：单元素追加
-          out.push(aa);
-        } else if (spread === "abstract") {
-          // 展开性未知 → 降 arr（sound）
-          out.push(spreadPossiblesOf(aa));
-          degraded = true;
-        } else if (aa.shape.k === "tuple") {
-          const argHoles = aa.shape.holes ?? [];
-          const base = out.length;
-          for (let i = 0; i < aa.shape.elements.length; i++) {
-            if (argHoles.includes(i)) holesC.add(base + i);
-          }
-          out.push(...aa.shape.elements);
-        } else if (aa.shape.k === "arr") {
-          out.push(aa.shape.element);
-          degraded = true;
-        } else out.push(aa);
-      }
-      if (degraded) {
-        const el = out.length ? out.reduce((x, y) => joinAbs(x, y)) : unknown;
-        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-      }
-      const holesOut = [...holesC];
-      return abs(
-        {
-          k: "tuple",
-          elements: out,
-          holes: holesOut.length > 0 ? holesOut : undefined,
-        },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    // arr 接收者：结果本就降 arr（element join）；Bug 83 同一槽判定并入
-    // join——lit true 展开 array-like 元素、lit false 自身、抽象 → 展开并集
-    const parts: Abs[] = [shape.element];
-    for (const a of args) {
-      const aa = asAbs(a) ?? unknown;
-      const spread = spreadableOf(aa);
-      if (spread === "true") {
-        const els = spreadElsOf(aa);
-        if (els === null) parts.push(spreadPossiblesOf(aa));
-        else parts.push(...els);
-      } else if (spread === "false") {
-        parts.push(aa);
-      } else if (spread === "abstract") {
-        parts.push(spreadPossiblesOf(aa));
-      } else if (aa.shape.k === "arr") {
-        parts.push(aa.shape.element);
-      } else if (aa.shape.k === "tuple") {
-        parts.push(
-          aa.shape.elements.length
-            ? aa.shape.elements.reduce((x, y) => joinAbs(x, y))
-            : unknown,
-        );
-      } else parts.push(aa);
-    }
-    return abs(
-      { k: "arr", element: parts.reduce((x, y) => joinAbs(x, y)) },
-      undefined,
-      undefined,
-      "partial",
-    );
-  }
-  if (method === "slice") {
-    // Bug 66：start/end 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
-    // 抽象 → may）；字面量窗口精确子元组（holes 随窗口平移保留）
-    validateIndexArg(args[0], "slice start may not be convertible to a number");
-    validateIndexArg(args[1], "slice end may not be convertible to a number");
-    if (shape.k === "tuple") {
-      const st = toIOI(args[0]);
-      const en = toIOI(args[1]);
-      if (st === null || en === null) {
-        const el = shape.elements.length
-          ? shape.elements.reduce((x, y) => joinAbs(x, y))
-          : unknown;
-        return abs({ k: "arr", element: el }, undefined, undefined, "partial");
-      }
-      const len = shape.elements.length;
-      const s = st === undefined ? 0 : st < 0 ? Math.max(len + st, 0) : Math.min(st, len);
-      const e = en === undefined ? len : en < 0 ? Math.max(len + en, 0) : Math.min(en, len);
-      if (e <= s) {
-        return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arr.conf, "exact"));
-      }
-      const holesS = (shape.holes ?? [])
-        .filter((h) => h >= s && h < e)
-        .map((h) => h - s);
-      return abs(
-        {
-          k: "tuple",
-          elements: shape.elements.slice(s, e),
-          holes: holesS.length > 0 ? holesS : undefined,
-        },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
-  }
-  if (method === "indexOf" || method === "lastIndexOf") {
-    // Bug 66：严格等号扫描（hole 跳过——原生 HasProperty 语义；NaN !== NaN）；
-    // fromIndex 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
-    // 抽象 → may）；全字面量可判 → 精确下标或 -1，否则 number path
-    // Bug 1051：fromIndex 的**第三态**（缺省 / 显式 undefined / 数值）——
-    // 原生 lastIndexOf(x) 起始下标 = len-1；lastIndexOf(x, undefined) 起始
-    // 下标 = 0（ToIntegerOrInfinity(undefined) = 0）⇒ 两者语义不同；此前
-    // toIOI 把两者都折成 undefined ⇒ lastIndexOf(2, undefined) 扫全表（1）
-    // 而非只扫第 0 位（原生 -1）。
-    validateIndexArg(args[1], `${method} fromIndex may not be convertible to a number`);
-    if (shape.k === "tuple") {
-      const els = shape.elements;
-      const search = args[0];
-      const searchLit =
-        search !== undefined && search.term?.op === "lit" ? litValue(search) : undefined;
-      const hasLitSearch = search !== undefined && search.term?.op === "lit";
-      // Bug 1051：fromIndex 第三态——缺省（undefined）与显式 undefined（= 0）
-      // 语义不同：lastIndexOf 缺省 ⇒ 起始 len-1；显式 undefined ⇒ 起始 0。
-      const fromArg = toIOIArg(args[1]);
-      if (fromArg.kind === "unknown") return unknownIdx();
-      const from = fromArg.kind === "absent" ? undefined : fromArg.n;
-      const len = els.length;
-      if (!hasLitSearch || !els.every((el, i) => isHole(i) || el.term?.op === "lit")) {
-        // 抽象 search 或抽象元素：可能命中任意位（空元组除外）
-        if (len === 0 || els.every((_, i) => isHole(i))) return $lit(-1);
-        return unknownIdx();
-      }
-      const sv = searchLit!.ok ? searchLit!.value : undefined;
-      const eq = (el: Abs): boolean | undefined => {
-        const r = litValue(el);
-        if (!r.ok) return undefined;
-        return r.value === sv; // 严格等号（NaN !== NaN 由 === 自然成立）
-      };
-      if (method === "indexOf") {
-        let start = from === undefined ? 0 : from < 0 ? Math.max(len + from, 0) : Math.min(from, len - 1);
-        for (let i = start; i < len; i++) {
-          if (isHole(i)) continue;
-          const t = eq(els[i]!);
-          if (t === undefined) return unknownIdx();
-          if (t) return $lit(i);
-        }
-        return $lit(-1);
-      }
-      let start = from === undefined ? len - 1 : from < 0 ? len + from : Math.min(from, len - 1);
-      for (let i = start; i >= 0; i--) {
-        if (isHole(i)) continue;
-        const t = eq(els[i]!);
-        if (t === undefined) return unknownIdx();
-        if (t) return $lit(i);
-      }
-      return $lit(-1);
-    }
-    return unknownIdx();
-  }
-  if (method === "includes") {
-    // Bug 1040：原生 `includes(searchElement, fromIndex)` 的 fromIndex 经
-    // ToIntegerOrInfinity——bigint/symbol **确定 TypeError**
-    // （node: [1,2,3].includes(0, 1n) → TypeError: Cannot convert a BigInt
-    // value to a number）。此前本臂**完全不校验** fromIndex ⇒ 引擎判「不抛」
-    // ⇒ L2 entry-may-throw 门禁假绿。校验口径与 indexOf 同款。
-    validateIndexArg(args[1], "includes fromIndex may not be convertible to a number");
-    return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
-  }
+}
+
+function arrMutLength(ctx: ArrCtx): Abs | undefined {
+  const { arr, method, args, shape, arrayLikeLen, arrayLikeAt } = ctx;
   // C1.4 / Bug 49/51：mutator 在 $invoke 调用点就地变更（writeInPlace 保持
   // Abs 身份 → 变量别名 / 成员槽 / Map 条目同步可见），表达式内连续
   // mutator 按求值顺序生效；返回值按 JS 语义（push/unshift → 新长度）
@@ -1108,26 +877,7 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
   // Bug 254：泛型接收者（数组样对象 `{length, 0: …}`）——原生 mutator 家族
   // 只要求接收者有可写的 length 与索引属性 ⇒ 返回值同样按数组语义算
   // （push/unshift → 新长度、pop/shift → 被移除的元素）。
-  /** 数组样接收者（obj）的 length 槽 → 具体长度（不可判定 → undefined） */
-  const arrayLikeLen = (): number | undefined => {
-    const s = arr.shape as { k: string; slots?: Record<string, { value: Abs }> };
-    if (s.k !== "obj" || !s.slots) return undefined;
-    const lenAbs = getSlot(s.slots, "length")?.value;
-    if (lenAbs === undefined) return 0;
-    const lvR = litValue(lenAbs);
-    const lv = lvR.ok ? lvR.value : undefined;
-    if (lv === undefined) return lenAbs.term?.op === "lit" ? 0 : undefined;
-    if (typeof lv === "bigint" || typeof lv === "symbol") return undefined;
-    const n = typeof lv === "number" ? lv : Number(lv); // string / boolean / null
-    if (Number.isNaN(n)) return 0;
-    return Math.min(Math.max(Math.trunc(n), 0), Number.MAX_SAFE_INTEGER);
-  };
-  /** 数组样接收者的第 i 位槽值（缺席 → undefined） */
-  const arrayLikeAt = (i: number): Abs | undefined => {
-    const s = arr.shape as { k: string; slots?: Record<string, { value: Abs }> };
-    if (s.k !== "obj" || !s.slots) return undefined;
-    return getSlot(s.slots, String(i))?.value;
-  };
+
   if (method === "push" || method === "unshift") {
     const preLen =
       shape.k === "tuple"
@@ -1189,91 +939,550 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
     $arrMutContainer(arr, method, args);
     return ret;
   }
-  if (method === "at") {
-    // ToIntegerOrInfinity：缺省/undefined/null/NaN → 0；true → 1；'1' → 1；
-    // 1.9 → 1；±∞ → OOB undefined。抽象下标 join 全部元素 ∪ undefined。
-    // Bug 67：symbol/bigint 下标确定 TypeError（shape 判定——无 lit 项）；
-    // 抽象下标 → may TypeError 后走保守 join
-    validateIndexArg(args[0], "at index may not be convertible to a number");
-    const iv = toIntegerOrInfinityLit(args[0]);
-    if (shape.k === "tuple") {
-      const els = shape.elements;
-      if (iv === undefined) {
-        if (els.length === 0) return undefAbs();
-        return joinAbs(els.reduce((a, b) => joinAbs(a, b)), undefAbs());
-      }
-      const idx = iv < 0 ? els.length + iv : iv;
-      if (idx >= 0 && idx < els.length) return els[idx] ?? unknown;
-      return undefAbs();
-    }
-    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+}
+
+/** splice：返回被删元素（变更前快照），调用点经 $arrMutContainer 就地变更。 */
+function arrSplice(ctx: ArrCtx): Abs {
+  const { arr, args, method, shape, isHole, arrayLikeLen, arrayLikeAt } = ctx;
+  // Bug 33/49：返回被删元素 tuple（取自变更前快照），调用点经
+  // $arrMutContainer 就地变更。start/deleteCount 经 ToIntegerOrInfinity
+  //（symbol/bigint 确定 TypeError；抽象 → may——与 $arrMutContainer
+  // 同款校验）；items 实参不校验（原生存储不转换）。native：缺省
+  // deleteCount（仅 start）→ 删到尾；显式 undefined → 0；start ≥ len →
+  // 空删。抽象 arr 接收者 / 不可判定下标 → 保守 arr（元素域）。
+  validateIndexArg(args[0], "splice start may not be convertible to a number");
+  validateIndexArg(args[1], "splice deleteCount may not be convertible to a number");
+  if (shape.k === "arr") {
+    $arrMutContainer(arr, method, args);
+    return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
   }
-  if (method === "splice") {
-    // Bug 33/49：返回被删元素 tuple（取自变更前快照），调用点经
-    // $arrMutContainer 就地变更。start/deleteCount 经 ToIntegerOrInfinity
-    //（symbol/bigint 确定 TypeError；抽象 → may——与 $arrMutContainer
-    // 同款校验）；items 实参不校验（原生存储不转换）。native：缺省
-    // deleteCount（仅 start）→ 删到尾；显式 undefined → 0；start ≥ len →
-    // 空删。抽象 arr 接收者 / 不可判定下标 → 保守 arr（元素域）。
-    validateIndexArg(args[0], "splice start may not be convertible to a number");
-    validateIndexArg(args[1], "splice deleteCount may not be convertible to a number");
-    if (shape.k === "arr") {
+  if ((arr.shape as { k: string }).k === "obj") {
+    // Bug 254：泛型接收者（数组样对象）——被删元素按**变更前**的索引槽读
+    // （缺席 ⇒ undefined）；写面由 $arrMutContainer 的数组样分支承担。
+    const len = arrayLikeLen();
+    if (len === undefined) {
       $arrMutContainer(arr, method, args);
-      return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+      return unknown;
     }
-    if ((arr.shape as { k: string }).k === "obj") {
-      // Bug 254：泛型接收者（数组样对象）——被删元素按**变更前**的索引槽读
-      // （缺席 ⇒ undefined）；写面由 $arrMutContainer 的数组样分支承担。
-      const len = arrayLikeLen();
-      if (len === undefined) {
-        $arrMutContainer(arr, method, args);
-        return unknown;
-      }
-      const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
-      if (win === "unknown") {
-        $arrMutContainer(arr, method, args);
-        return unknown;
-      }
-      const removedEls: Abs[] = [];
-      for (let k = win.a; k < win.a + win.skip; k++) {
-        removedEls.push(arrayLikeAt(k) ?? undefAbs());
-      }
-      $arrMutContainer(arr, method, args);
-      return abs(
-        { k: "tuple", elements: removedEls },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    const len = shape.elements.length;
-    // Bug 270：删除窗口走 spliceWindow（与 toSpliced 臂共用的单一事实源）——
-    // `splice()` 零实参 ⇒ 不删；`splice(0)` ⇒ deleteCount 缺省 ⇒ 删到尾；
-    // `splice(0, undefined)` ⇒ deleteCount 在场（undefined ⇒ 0）⇒ 不删。
     const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
     if (win === "unknown") {
-      const el = len ? shape.elements.reduce((x, y) => joinAbs(x, y)) : unknown;
-      const removed = abs({ k: "arr", element: el }, undefined, undefined, "partial");
       $arrMutContainer(arr, method, args);
-      return removed;
+      return unknown;
     }
-    const { a: start, skip: del } = win;
-    const removed = abs(
-      { k: "tuple", elements: shape.elements
-        .slice(start, start + del)
-        .map((el, i) => (isHole(start + i) ? undefAbs() : el)) },
+    const removedEls: Abs[] = [];
+    for (let k = win.a; k < win.a + win.skip; k++) {
+      removedEls.push(arrayLikeAt(k) ?? undefAbs());
+    }
+    $arrMutContainer(arr, method, args);
+    return abs(
+      { k: "tuple", elements: removedEls },
       undefined,
       undefined,
       confJoin(arr.conf, "path"),
     );
+  }
+  const len = shape.elements.length;
+  // Bug 270：删除窗口走 spliceWindow（与 toSpliced 臂共用的单一事实源）——
+  // `splice()` 零实参 ⇒ 不删；`splice(0)` ⇒ deleteCount 缺省 ⇒ 删到尾；
+  // `splice(0, undefined)` ⇒ deleteCount 在场（undefined ⇒ 0）⇒ 不删。
+  const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
+  if (win === "unknown") {
+    const el = len ? shape.elements.reduce((x, y) => joinAbs(x, y)) : unknown;
+    const removed = abs({ k: "arr", element: el }, undefined, undefined, "partial");
     $arrMutContainer(arr, method, args);
     return removed;
   }
-  if (method === "copyWithin") {
-    // Bug 33/49：调用点经 $arrMutContainer 就地变更（copyWithinTuple——
-    // 窗口 clamp/holes/倒序重叠全一致），返回接收者容器；抽象 arr → 元素域保持
-    validateIndexArg(args[0], "copyWithin target may not be convertible to a number");
-    return $arrMutContainer(arr, method, args);
+  const { a: start, skip: del } = win;
+  const removed = abs(
+    { k: "tuple", elements: shape.elements
+      .slice(start, start + del)
+      .map((el, i) => (isHole(start + i) ? undefAbs() : el)) },
+    undefined,
+    undefined,
+    confJoin(arr.conf, "path"),
+  );
+  $arrMutContainer(arr, method, args);
+  return removed;
+}
+
+/** copyWithin：窗口 clamp / holes / 倒序重叠由 runtime 的 copyWithinTuple 承担。 */
+function arrCopyWithin(ctx: ArrCtx): Abs {
+  const { arr, args, method } = ctx;
+  // Bug 33/49：调用点经 $arrMutContainer 就地变更（copyWithinTuple——
+  // 窗口 clamp/holes/倒序重叠全一致），返回接收者容器；抽象 arr → 元素域保持
+  validateIndexArg(args[0], "copyWithin target may not be convertible to a number");
+  return $arrMutContainer(arr, method, args);
+}
+
+/** toSpliced：非变更拷贝；删除窗口与 splice 共用 spliceWindow（Bug 270）。 */
+function arrToSpliced(ctx: ArrCtx): Abs {
+  const { arr, args, shape, isHole } = ctx;
+  // Bug 66：start/skipCount 经 ToIntegerOrInfinity（symbol/bigint → 确定
+  // TypeError；抽象 → may）；items 原样插入（值实参不转换）；窗口 clamp
+  // （OOB 不抛——与 with 不同）
+  // Bug 270：删除窗口走 spliceWindow（单一事实源）——`toSpliced()` 零实参
+  // ⇒ start 缺省 ⇒ **不删**（原生原样保留）；`toSpliced(0, undefined)` ⇒
+  // skipCount 在场（undefined ⇒ 0）⇒ **不删**。
+  validateIndexArg(args[0], "toSpliced start may not be convertible to a number");
+  validateIndexArg(args[1], "toSpliced skipCount may not be convertible to a number");
+  const items = args.slice(2);
+  if (shape.k === "tuple") {
+    const len = shape.elements.length;
+    const win = spliceWindow(len, toIOIArg(args[0]), toIOIArg(args[1]), args.length === 0);
+    if (win === "unknown") {
+      // 抽象窗口：任意删除都可能 → 元素 ∪ items join 降 arr
+      const parts = [...shape.elements.filter((_, i) => !isHole(i)), ...items];
+      const el = parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    const { a, skip } = win;
+    const solid = (el: Abs, i: number): Abs => (isHole(i) ? undefAbs() : el);
+    const els = [
+      ...shape.elements.slice(0, a).map(solid),
+      ...items,
+      ...shape.elements.slice(a + skip).map((el, i) => solid(el, a + skip + i)),
+    ];
+    return abs(
+      { k: "tuple", elements: els },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
   }
-  return undefined;
+  const parts = [shape.element, ...items];
+  return abs(
+    { k: "arr", element: parts.reduce((x, y) => joinAbs(x, y)) },
+    undefined,
+    undefined,
+    "partial",
+  );
+}
+
+/** with：非变更拷贝；OOB 字面量下标确定 RangeError（Bug 66）。 */
+function arrWith(ctx: ArrCtx): Abs {
+  const { arr, args, shape, isHole } = ctx;
+  // Bug 66：index 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError）；
+  // OOB 字面量（idx ∉ [0, len)，负数自尾相对）→ 确定 RangeError；抽象下标
+  // → may RangeError + 每位 join(value)；with 写实 → 该位不再是 hole
+  validateIndexArg(args[0], "with index may not be convertible to a number");
+  const v = args[1] ?? undefAbs();
+  if (shape.k === "tuple") {
+    const iv = toIOI(args[0]) ?? 0;
+    if (iv === null) {
+      recordMayThrow({ kind: "RangeError", cause: "with index may be out of range" });
+      return abs(
+        { k: "tuple", elements: shape.elements.map((el) => joinAbs(el, v)) },
+        undefined,
+        undefined,
+        "partial",
+      );
+    }
+    const len = shape.elements.length;
+    const idx = iv < 0 ? len + iv : iv;
+    if (idx < 0 || idx >= len) throw new NudoThrow(errorTypeAbs("RangeError"));
+    // 原生 with 逐位 CreateDataProperty——非目标 hole 也写实 undefined
+    const els = shape.elements.map((el, i) =>
+      i === idx ? v : isHole(i) ? undefAbs() : el,
+    );
+    return abs(
+      { k: "tuple", elements: els },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  }
+  return abs(
+    { k: "arr", element: joinAbs(shape.element, v) },
+    undefined,
+    undefined,
+    "partial",
+  );
+}
+
+/** concat：数组实参展开 / @@isConcatSpreadable 槽面判定（Bug 66/83）。 */
+function arrConcat(ctx: ArrCtx): Abs {
+  const { arr, args, shape, holes } = ctx;
+  // Bug 66：数组实参展开、其余原样追加；任一实参为抽象 arr → 结果长度未知
+  // 降 arr。hole 保留（原生 concat 走 HasProperty/CreateDataProperty——
+  // 接收者与 tuple 实参的 hole 平移存活）
+  // Bug 83：native 对每个实参先查 o[Symbol.isConcatSpreadable]（计算符号键
+  // 投影槽 "@@isConcatSpreadable"，只有 obj / brand inner 槽面可携带——
+  // tuple shape 无 slots 字段，且 $set 对 tuple 的非索引键写直接降级 arr
+  // （widenTupleToArr），「native 数组被抑制展开」子面在本引擎不可表达，
+  // lit-false 抑制只对 obj 实参生效，属接受近似）：
+  // - lit true（ToBoolean）→ 按 array-like 展开：length 槽 lit number →
+  //   ToLength（截断/负数夹 0/NaN→0；无槽/undefined → 0），逐位读
+  //   String(i) 槽——缺席位 native Get 得 undefined（fail-closed 同口径）；
+  //   length 非字面量/Infinity/超物化上限 → 整体降 arr
+  // - lit false → 单元素追加（不展开）
+  // - 槽缺席 → 默认行为：tuple/arr 展开、其余单元素（Bug 66 口径不变）
+  // - 槽存在但抽象 → 展开性未知 → 整体降 arr（sound）
+  /** 实参槽面：obj 直读 / brand inner obj；tuple/arr 等无 slots 的 shape → undefined */
+  const argObjShapeOf = (
+    v: Abs,
+  ): { slots: Record<string, { value: Abs }>; index?: { key: Abs; value: Abs } } | undefined => {
+    const s = v.shape;
+    if (s.k === "obj") return s;
+    if (s.k === "brand" && s.shape.shape.k === "obj") return s.shape.shape;
+    return undefined;
+  };
+  /** @@isConcatSpreadable 投影槽判定（lit → ToBoolean；抽象 → "abstract"） */
+  const spreadableOf = (v: Abs): "absent" | "true" | "false" | "abstract" => {
+    const o = argObjShapeOf(v);
+    const slot = o ? getSlot(o.slots, "@@isConcatSpreadable") : undefined;
+    if (!slot) return "absent";
+    const lv = litValue(slot.value);
+    if (!lv.ok) return "abstract";
+    const w = lv.value;
+    // ToBoolean（与 callbackTruth 同口径；lit undefined 哨兵归 false）
+    if (
+      w === undefined || w === null || w === false || w === "" ||
+      (w as unknown) === 0n ||
+      (typeof w === "number" && (w === 0 || Number.isNaN(w)))
+    ) {
+      return "false";
+    }
+    return "true";
+  };
+  /** lit-true 展开的 array-like 元素：length 非字面量/巨长稀疏 → null（整体降 arr） */
+  const spreadElsOf = (v: Abs): Abs[] | null => {
+    const o = argObjShapeOf(v);
+    if (!o) return null;
+    const lenAbs = getSlot(o.slots, "length")?.value;
+    if (!lenAbs || isNullishLitAbs(lenAbs)) return []; // Get length undefined → ToLength 0
+    const lv = litValue(lenAbs);
+    if (!lv.ok || typeof lv.value !== "number") return null;
+    const t = Math.trunc(lv.value);
+    if (t > TUPLE_MATERIALIZE_CAP) return null;
+    const n = t < 0 ? 0 : t; // NaN → 循环不执行（ToLength(NaN)=0）
+    const els: Abs[] = [];
+    for (let i = 0; i < n; i++) els.push(getSlot(o.slots, String(i))?.value ?? undefAbs());
+    return els;
+  };
+  /** 降级并集（展开性/长度未知）：索引槽值 ∪ 计算索引值 ∪ 自身（不展开臂）∪ undefined */
+  const spreadPossiblesOf = (v: Abs): Abs => {
+    const o = argObjShapeOf(v);
+    const parts: Abs[] = [v, undefAbs()];
+    if (o) {
+      for (const [k, s] of Object.entries(o.slots)) {
+        if (canonicalArrayIndex(k) !== undefined) parts.push(s.value);
+      }
+      if (o.index) parts.push(o.index.value);
+    }
+    return parts.reduce((x, y) => joinAbs(x, y));
+  };
+  if (shape.k === "tuple") {
+    const out: Abs[] = [...shape.elements];
+    const holesC = new Set(holes);
+    let degraded = false;
+    for (const a of args) {
+      const aa = asAbs(a) ?? unknown;
+      const spread = spreadableOf(aa);
+      if (spread === "true") {
+        const els = spreadElsOf(aa);
+        if (els === null) {
+          out.push(spreadPossiblesOf(aa));
+          degraded = true;
+        } else out.push(...els);
+      } else if (spread === "false") {
+        // native 抑制展开：单元素追加
+        out.push(aa);
+      } else if (spread === "abstract") {
+        // 展开性未知 → 降 arr（sound）
+        out.push(spreadPossiblesOf(aa));
+        degraded = true;
+      } else if (aa.shape.k === "tuple") {
+        const argHoles = aa.shape.holes ?? [];
+        const base = out.length;
+        for (let i = 0; i < aa.shape.elements.length; i++) {
+          if (argHoles.includes(i)) holesC.add(base + i);
+        }
+        out.push(...aa.shape.elements);
+      } else if (aa.shape.k === "arr") {
+        out.push(aa.shape.element);
+        degraded = true;
+      } else out.push(aa);
+    }
+    if (degraded) {
+      const el = out.length ? out.reduce((x, y) => joinAbs(x, y)) : unknown;
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    const holesOut = [...holesC];
+    return abs(
+      {
+        k: "tuple",
+        elements: out,
+        holes: holesOut.length > 0 ? holesOut : undefined,
+      },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  }
+  // arr 接收者：结果本就降 arr（element join）；Bug 83 同一槽判定并入
+  // join——lit true 展开 array-like 元素、lit false 自身、抽象 → 展开并集
+  const parts: Abs[] = [shape.element];
+  for (const a of args) {
+    const aa = asAbs(a) ?? unknown;
+    const spread = spreadableOf(aa);
+    if (spread === "true") {
+      const els = spreadElsOf(aa);
+      if (els === null) parts.push(spreadPossiblesOf(aa));
+      else parts.push(...els);
+    } else if (spread === "false") {
+      parts.push(aa);
+    } else if (spread === "abstract") {
+      parts.push(spreadPossiblesOf(aa));
+    } else if (aa.shape.k === "arr") {
+      parts.push(aa.shape.element);
+    } else if (aa.shape.k === "tuple") {
+      parts.push(
+        aa.shape.elements.length
+          ? aa.shape.elements.reduce((x, y) => joinAbs(x, y))
+          : unknown,
+      );
+    } else parts.push(aa);
+  }
+  return abs(
+    { k: "arr", element: parts.reduce((x, y) => joinAbs(x, y)) },
+    undefined,
+    undefined,
+    "partial",
+  );
+}
+
+/** slice：字面量窗口精确子元组（holes 随窗口平移保留）。 */
+function arrSlice(ctx: ArrCtx): Abs {
+  const { arr, args, shape } = ctx;
+  // Bug 66：start/end 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
+  // 抽象 → may）；字面量窗口精确子元组（holes 随窗口平移保留）
+  validateIndexArg(args[0], "slice start may not be convertible to a number");
+  validateIndexArg(args[1], "slice end may not be convertible to a number");
+  if (shape.k === "tuple") {
+    const st = toIOI(args[0]);
+    const en = toIOI(args[1]);
+    if (st === null || en === null) {
+      const el = shape.elements.length
+        ? shape.elements.reduce((x, y) => joinAbs(x, y))
+        : unknown;
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    const len = shape.elements.length;
+    const s = st === undefined ? 0 : st < 0 ? Math.max(len + st, 0) : Math.min(st, len);
+    const e = en === undefined ? len : en < 0 ? Math.max(len + en, 0) : Math.min(en, len);
+    if (e <= s) {
+      return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arr.conf, "exact"));
+    }
+    const holesS = (shape.holes ?? [])
+      .filter((h) => h >= s && h < e)
+      .map((h) => h - s);
+    return abs(
+      {
+        k: "tuple",
+        elements: shape.elements.slice(s, e),
+        holes: holesS.length > 0 ? holesS : undefined,
+      },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  }
+  return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+}
+
+/** flat：depth 经 ToIntegerOrInfinity；字面量 depth 递归展开（Bug 66）。 */
+function arrFlat(ctx: ArrCtx): Abs {
+  const { arr, args, shape, holes } = ctx;
+  // Bug 66：depth 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
+  // 抽象 → may）。字面量 depth 递归展开（缺省/undefined → 1；负数/NaN → 0
+  // 即浅拷贝不展开）；抽象 depth 保守并「不展开」与「全展开」两域。
+  validateIndexArg(args[0], "flat depth may not be convertible to a number");
+  const depthRaw = toIOI(args[0]);
+  const holeSet = new Set(holes);
+  /** 递归展开：返回 null = 途中遇到抽象 arr（长度未知）→ 整体降 arr */
+  const rec = (
+    els: Abs[],
+    hs: Set<number>,
+    d: number,
+  ): { els: Abs[]; degraded: boolean } | null => {
+    const out: Abs[] = [];
+    let degraded = false;
+    for (let i = 0; i < els.length; i++) {
+      if (hs.has(i)) continue; // 原生 flat 跳过 hole（不产 undefined）
+      const el = els[i]!;
+      if (d > 0 && el.shape.k === "tuple") {
+        const sub = rec(
+          el.shape.elements,
+          new Set(el.shape.holes ?? []),
+          d - 1,
+        );
+        if (sub === null) return null;
+        out.push(...sub.els);
+        degraded = degraded || sub.degraded;
+        continue;
+      }
+      if (d > 0 && el.shape.k === "arr") return null;
+      out.push(el);
+    }
+    return { els: out, degraded };
+  };
+  if (shape.k === "arr") {
+    // 抽象数组：元素可能本身是数组（展开并入其元素域）也可能原样保留
+    const es = shape.element.shape;
+    const innerEls =
+      es.k === "tuple"
+        ? es.elements.length
+          ? es.elements.reduce((x, y) => joinAbs(x, y))
+          : unknown
+        : es.k === "arr"
+          ? es.element
+          : undefined;
+    const el = innerEls !== undefined ? joinAbs(shape.element, innerEls) : shape.element;
+    return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+  }
+  if (depthRaw === null) {
+    // 抽象 depth：0..∞ 皆可能 → 元素域 = 浅层元素 ∪ 全展开元素
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "flat depth may not be convertible to a number",
+    });
+    const shallow = rec(shape.elements, holeSet, 0);
+    const deep = rec(shape.elements, holeSet, Number.MAX_SAFE_INTEGER);
+    if (shallow !== null && deep !== null) {
+      const el = [...shallow.els, ...deep.els].reduce((x, y) => joinAbs(x, y));
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    return unknown;
+  }
+  const depth = depthRaw === undefined ? 1 : Math.max(depthRaw, 0);
+  const r = rec(shape.elements, holeSet, depth);
+  if (r === null) {
+    // 含抽象 arr 展开：长度未知 → arr（元素 join）
+    const shallow = rec(shape.elements, holeSet, 0);
+    const el = shallow && shallow.els.length
+      ? shallow.els.reduce((x, y) => joinAbs(x, y))
+      : unknown;
+    return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+  }
+  if (r.degraded) {
+    const el = r.els.length ? r.els.reduce((x, y) => joinAbs(x, y)) : unknown;
+    return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+  }
+  return abs(
+    { k: "tuple", elements: r.els },
+    undefined,
+    undefined,
+    confJoin(arr.conf, "path"),
+  );
+}
+
+/** indexOf / lastIndexOf：严格等号扫描（hole 跳过）；Bug 1051 fromIndex 第三态。 */
+function arrIndexOf(ctx: ArrCtx): Abs {
+  const { args, method, shape, isHole, unknownIdx } = ctx;
+  // Bug 66：严格等号扫描（hole 跳过——原生 HasProperty 语义；NaN !== NaN）；
+  // fromIndex 经 ToIntegerOrInfinity（symbol/bigint → 确定 TypeError；
+  // 抽象 → may）；全字面量可判 → 精确下标或 -1，否则 number path
+  // Bug 1051：fromIndex 的**第三态**（缺省 / 显式 undefined / 数值）——
+  // 原生 lastIndexOf(x) 起始下标 = len-1；lastIndexOf(x, undefined) 起始
+  // 下标 = 0（ToIntegerOrInfinity(undefined) = 0）⇒ 两者语义不同；此前
+  // toIOI 把两者都折成 undefined ⇒ lastIndexOf(2, undefined) 扫全表（1）
+  // 而非只扫第 0 位（原生 -1）。
+  validateIndexArg(args[1], `${method} fromIndex may not be convertible to a number`);
+  if (shape.k === "tuple") {
+    const els = shape.elements;
+    const search = args[0];
+    const searchLit =
+      search !== undefined && search.term?.op === "lit" ? litValue(search) : undefined;
+    const hasLitSearch = search !== undefined && search.term?.op === "lit";
+    // Bug 1051：fromIndex 第三态——缺省（undefined）与显式 undefined（= 0）
+    // 语义不同：lastIndexOf 缺省 ⇒ 起始 len-1；显式 undefined ⇒ 起始 0。
+    const fromArg = toIOIArg(args[1]);
+    if (fromArg.kind === "unknown") return unknownIdx();
+    const from = fromArg.kind === "absent" ? undefined : fromArg.n;
+    const len = els.length;
+    if (!hasLitSearch || !els.every((el, i) => isHole(i) || el.term?.op === "lit")) {
+      // 抽象 search 或抽象元素：可能命中任意位（空元组除外）
+      if (len === 0 || els.every((_, i) => isHole(i))) return $lit(-1);
+      return unknownIdx();
+    }
+    const sv = searchLit!.ok ? searchLit!.value : undefined;
+    const eq = (el: Abs): boolean | undefined => {
+      const r = litValue(el);
+      if (!r.ok) return undefined;
+      return r.value === sv; // 严格等号（NaN !== NaN 由 === 自然成立）
+    };
+    if (method === "indexOf") {
+      let start = from === undefined ? 0 : from < 0 ? Math.max(len + from, 0) : Math.min(from, len - 1);
+      for (let i = start; i < len; i++) {
+        if (isHole(i)) continue;
+        const t = eq(els[i]!);
+        if (t === undefined) return unknownIdx();
+        if (t) return $lit(i);
+      }
+      return $lit(-1);
+    }
+    let start = from === undefined ? len - 1 : from < 0 ? len + from : Math.min(from, len - 1);
+    for (let i = start; i >= 0; i--) {
+      if (isHole(i)) continue;
+      const t = eq(els[i]!);
+      if (t === undefined) return unknownIdx();
+      if (t) return $lit(i);
+    }
+    return $lit(-1);
+  }
+  return unknownIdx();
+}
+
+/** includes：fromIndex 需 ToIntegerOrInfinity 校验（Bug 1040）。 */
+function arrIncludes(ctx: ArrCtx): Abs {
+  const { args } = ctx;
+  // Bug 1040：原生 `includes(searchElement, fromIndex)` 的 fromIndex 经
+  // ToIntegerOrInfinity——bigint/symbol **确定 TypeError**
+  // （node: [1,2,3].includes(0, 1n) → TypeError: Cannot convert a BigInt
+  // value to a number）。此前本臂**完全不校验** fromIndex ⇒ 引擎判「不抛」
+  // ⇒ L2 entry-may-throw 门禁假绿。校验口径与 indexOf 同款。
+  validateIndexArg(args[1], "includes fromIndex may not be convertible to a number");
+  return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+}
+
+/** at：ToIntegerOrInfinity 下标；OOB → undefined。 */
+function arrAt(ctx: ArrCtx): Abs | undefined {
+  const { args, shape } = ctx;
+  // ToIntegerOrInfinity：缺省/undefined/null/NaN → 0；true → 1；'1' → 1；
+  // 1.9 → 1；±∞ → OOB undefined。抽象下标 join 全部元素 ∪ undefined。
+  // Bug 67：symbol/bigint 下标确定 TypeError（shape 判定——无 lit 项）；
+  // 抽象下标 → may TypeError 后走保守 join
+  validateIndexArg(args[0], "at index may not be convertible to a number");
+  const iv = toIntegerOrInfinityLit(args[0]);
+  if (shape.k === "tuple") {
+    const els = shape.elements;
+    if (iv === undefined) {
+      if (els.length === 0) return undefAbs();
+      return joinAbs(els.reduce((a, b) => joinAbs(a, b)), undefAbs());
+    }
+    const idx = iv < 0 ? els.length + iv : iv;
+    if (idx >= 0 && idx < els.length) return els[idx] ?? unknown;
+    return undefAbs();
+  }
+  if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+}
+
+/** join：字面量精确折叠；symbol 元素确定 TypeError（Bug 36）。 */
+function arrJoin(ctx: ArrCtx): Abs {
+  const { arr, args } = ctx;
+  // Bug 36：join 逐元素 ToString——symbol 元素确定 TypeError（[Symbol()].join()
+  // 原生抛）；any/真 unknown 元素 may（validateJoinElements 与一等 join 路径
+  // 共用）。字面量分隔符 + 全字面量元组 → 精确折叠（原生 ToString 语义，
+  // 含 hole→""、nullish 元素→""）；其余合法路径保持 path-string（不假精确）。
+  const folded = arrayJoinWithSep(arr, args[0]);
+  if (folded !== undefined) return folded;
+  validateJoinElements(arr);
+  return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+}
+
+/** toString / toLocaleString = join(",")（Array.prototype.toString）。 */
+function arrToString(ctx: ArrCtx): Abs {
+  const { arr } = ctx;
+  // Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError
+  return arrayJoinToString(arr);
 }

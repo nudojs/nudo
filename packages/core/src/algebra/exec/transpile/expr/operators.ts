@@ -80,7 +80,7 @@ export function transpileOperatorExpr(
       // `(m = f())` 赋值即守卫）全部适用；|| 的右侧在 left 假值下求值——
       // 各守卫的 alt 事实适用（`!p || …` / `p == null || …`）。
       // typeof 类型守卫（Bug 23）同口径：右臂按 left 守卫的臂语义绑匹配/补集。
-      const leftGuards = nullishGuardsOf(expr.left);
+      const leftGuards = nullishGuardsOf(expr.left, opts.shadowedIntrinsics?.has("undefined") !== true);
       const andTypeGuard = typeGuardOf(expr.left);
       const leftDiscGuards = discriminantGuardsOf(expr.left);
       return op === "&&"
@@ -125,7 +125,7 @@ export function transpileOperatorExpr(
         // Bug 23：`typeof v === "string" ? v + "!" : 0`；#118 v3/#120：多名复合
         // `obj == null || node.p == null ? … : node.p.name` 一臂多事实）；
         // 判别等值守卫（issue #126）：`node.type === 'TL' ? node.quasis[0] : null`
-        narrowGuards: nullishGuardsOf(expr.test),
+        narrowGuards: nullishGuardsOf(expr.test, opts.shadowedIntrinsics?.has("undefined") !== true),
         typeGuard: typeGuardOf(expr.test),
         discGuards: discriminantGuardsOf(expr.test),
         // 关系守卫（Bug 1）：`x >= 0 ? x : 0` 事实臂影子重绑

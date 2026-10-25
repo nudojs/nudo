@@ -1,9 +1,20 @@
 /**
- * 宿主内建标识符：转译折叠 + env/mock 注入 skip 同源。
+ * 宿主内建标识符名单：Identifier 发射判据 + env/mock 注入 skip 同源。
  *
- * 这三个名字由转译器硬编码折叠成**无标识符**表达式（`void 0` / `0/0` / `1/0`），
- * 不读模块作用域绑定。env 全局若注入 `const undefined = …` 会遮蔽宿主内建，
- * 让产物里的裸标识符/`$lit(...)` 实参拿到 Abs——故注入侧必须 skip（见 run.ts）。
+ * 这三个名字是宿主全局，但**用户可以合法遮蔽**（`const undefined = 5`、
+ * 函数形参名 `undefined`、`const NaN = 5`）。转译器按**本单元遮蔽判定**
+ * （opts.shadowedIntrinsics，见 helpers.ts 的 shadowedIntrinsicsOf）分态：
+ * - 未遮蔽 → 字面量精确折叠（`void 0` / `0/0` / `1/0`），产物与旧版逐字节
+ *   一致，且 `0 === NaN` 等比较保留字面量身份；
+ * - 已遮蔽 → 标识符读点发射标识符本身，由 JS 词法绑定决定（外层 `$absVal`
+ *   把遮蔽绑定的 Abs 原样返回；见 expr/atom.ts 的 Identifier 臂）。
+ *
+ * env 注入是另一条通道：run.ts 的 ENV_SHADOW_SKIP（= 本文件
+ * ENV_SHADOW_SKIP_GLOBALS）跳过这三个名字，避免模块级
+ * `let <name> = __nudoEnv[...]` 遮蔽宿主全局（NaN/Infinity 的 env 声明是
+ * 抽象 number ⇒ 字面量身份丢失，`0 === NaN` 从恒 false 退化成 boolean）。
+ * @nudo:mock 不走该 skip（Bug 274：mock 遮蔽宿主全局正是意图）——mock 名进
+ * 转译选项的 shadowedIntrinsics，标识符读点按绑定语义解析，mock 值因此生效。
  */
 export const HOST_INTRINSIC_NAMES = ["undefined", "NaN", "Infinity"] as const;
 export type HostIntrinsicName = (typeof HOST_INTRINSIC_NAMES)[number];
@@ -13,7 +24,10 @@ export const HOST_INTRINSIC_SET: ReadonlySet<string> = new Set(HOST_INTRINSIC_NA
 
 /**
  * env 注入跳过（不遮蔽宿主内建）：
- * - undefined/NaN/Infinity：转译已硬编码折叠为无标识符源，注入无收益且危害已修
+ * - undefined/NaN/Infinity：标识符读点按 JS 绑定语义解析（未遮蔽 → 宿主
+ *   裸值经 $absVal 收成 Abs，遮蔽绑定生效）。env 注入仍是模块级
+ *   `let <name> = __nudoEnv[...]` 遮蔽：NaN/Infinity 被 env 声明成抽象
+ *   number ⇒ 字面量身份丢失（`0 === NaN` 退化 boolean），故跳过。
  * - Math/Number/JSON/Object/Array/String/Date/Promise/BigInt/Reflect/Symbol：这些
  *   名字在 namespaceNameOf 里按宿主对象身份路由到 Abs builtin 表（数学/集合/
  *   date 等），
@@ -92,18 +106,3 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
 
 /** 生成代码里的 undefined 值源——刻意避开标识符 `undefined` */
 export const UNDEF_LIT = "$lit(void 0)";
-
-/** 标识符 → `$lit(...)` 发射源；非内建 → undefined */
-export function hostIntrinsicLit(name: string): string | undefined {
-  switch (name) {
-    case "undefined":
-      return UNDEF_LIT;
-    case "NaN":
-      // `0/0` 无标识符依赖，宿主求值即 NaN
-      return "$lit(0/0)";
-    case "Infinity":
-      return "$lit(1/0)";
-    default:
-      return undefined;
-  }
-}

@@ -24,27 +24,12 @@ export const MAX_TOTAL_CALLS = 20_000;
  */
 export type AbsTruncationReason = "cycle" | "depth" | "calls";
 
-let _absCallDepth = 0;
-let _absTotalCalls = 0;
-let _activeCallKeys: string[] = [];
 const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
-/** 本轮是否发生调用预算截断（A2 可观测） */
-let _callTruncated = false;
-/** 本轮 A 路径是否发生 cycle 截断（cycle ≠ 预算；与 B 探针结果 OR） */
-let _cycleTruncated = false;
 /** 本轮是否发生循环迭代预算截断（#loop-iterations；与调用预算不同轴） */
 let _loopTruncated = false;
 /** 调用截断原因集合（A+B 经 noteAbsTruncation 单点收集；宿主入口重置） */
 let _truncReasons = new Set<AbsTruncationReason>();
-/** A 路径（enterCall）本轮截断原因——与 B 探针 reasons 分流：上屏归因要指到具体预算 */
-const _aTruncReasons = new Set<AbsTruncationReason>();
-/** A 路径本轮最大进入深度 */
-let _absMaxDepth = 0;
-/** A 路径 depth 截断现场（首次触发时的深度与当时生效上限——@nudo:budget 覆盖期间
- *  触发时，快照上限必须取现场值，否则 depth 计数会与已恢复的全局上限错位） */
-let _absDepthTruncDepth: number | null = null;
-let _absDepthTruncLimit: number | null = null;
 
 /**
  * 循环迭代预算截断（两段 maxIters 抽象 / MAX_CONCRETE_LOOP_ITERS 硬上限
@@ -55,9 +40,160 @@ export function noteLoopTruncation(label: string): void {
   _loopTruncated = true;
   noteAbsTruncation(label);
 }
-/** 当前生效的调用预算（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
-let _callDepthLimit = MAX_CALL_DEPTH;
-let _totalCallsLimit = MAX_TOTAL_CALLS;
+
+/** 调用预算上限（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
+export type CallBudgetLimits = {
+  maxDepth: number;
+  maxCalls: number;
+};
+
+/** 预算状态机快照（A/B 两实例同形；A 上屏 callReasons，B 上屏 evalReasons） */
+export type CallBudgetStats = {
+  /** 进入次数（观测累计；宿主入口内跨执行会话累计） */
+  calls: number;
+  /** 当前生效上限 */
+  maxCalls: number;
+  callTruncated: boolean;
+  cycleTruncated: boolean;
+  /** 最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+  depth: number;
+  /** 当前生效 depth 上限；depth 截断时 = 触发时生效上限 */
+  maxDepth: number;
+  /** 本实例截断原因（稳定排序） */
+  reasons: AbsTruncationReason[];
+};
+
+export type CallBudget = {
+  /** 当前进入深度（只读；resetSession 后归零） */
+  readonly depth: number;
+  /** 进入调用：cycle/超限 → 返回原因（并上报截断）；未命中 → undefined */
+  enter(key: string, label: string): AbsTruncationReason | undefined;
+  exit(): void;
+  /** 新执行会话：只清 depth/totalCalls/activeKeys（观测累计与上限保留） */
+  resetSession(): void;
+  /** 观测累计清零（宿主入口） */
+  resetObservability(): void;
+  /** 全清：会话计数 + 观测累计 + 上限回默认 */
+  reset(): void;
+  getLimits(): CallBudgetLimits;
+  setLimits(limits: Partial<CallBudgetLimits>): void;
+  getState(): { depth: number; totalCalls: number; activeKeys: number };
+  stats(): CallBudgetStats;
+};
+
+/**
+ * 调用预算状态机（A 抽象调用 / B 命名调用各一实例）。
+ *
+ * 归因顺序 = 守卫顺序（cycle 先于 depth 先于 calls）：同指纹调用已在栈上
+ * 时无论预算多深都会立即截断——报 cycle 而不是预算（#158）。
+ *
+ * 两个计数轴：
+ * - 会话计数（depth/totalCalls/activeKeys）——B 在 enterEvalCallBudgetSession
+ *   最外层清零（新会话拿满额度）；
+ * - 观测累计（observedCalls/截断旗标/reasons/最大深度/depth 截断现场）——
+ *   会话切换**不**清，宿主入口（resetAbsCallBudget / resetEvalCallBudget）
+ *   才清：stats 必须反映整个宿主入口，而不是最后一个会话。
+ */
+export function createCallBudget(config: CallBudgetLimits): CallBudget {
+  const defaultMaxDepth = config.maxDepth;
+  const defaultMaxCalls = config.maxCalls;
+  let depth = 0;
+  let totalCalls = 0;
+  let activeKeys: string[] = [];
+  let maxDepthLimit = defaultMaxDepth;
+  let maxCallsLimit = defaultMaxCalls;
+  // 观测累计（跨执行会话；宿主入口才清）
+  let observedCalls = 0;
+  let callTruncated = false;
+  let cycleTruncated = false;
+  const reasons = new Set<AbsTruncationReason>();
+  let maxDepthSeen = 0;
+  let depthTruncDepth: number | null = null;
+  let depthTruncLimit: number | null = null;
+
+  const resetSession = (): void => {
+    depth = 0;
+    totalCalls = 0;
+    activeKeys = [];
+  };
+  const resetObservability = (): void => {
+    observedCalls = 0;
+    callTruncated = false;
+    cycleTruncated = false;
+    reasons.clear();
+    maxDepthSeen = 0;
+    depthTruncDepth = null;
+    depthTruncLimit = null;
+  };
+
+  return {
+    get depth(): number {
+      return depth;
+    },
+    enter(key: string, label: string): AbsTruncationReason | undefined {
+      const reason: AbsTruncationReason | undefined = activeKeys.includes(key)
+        ? "cycle"
+        : depth >= maxDepthLimit
+          ? "depth"
+          : totalCalls >= maxCallsLimit
+            ? "calls"
+            : undefined;
+      if (reason) {
+        callTruncated = true;
+        reasons.add(reason);
+        if (reason === "cycle") cycleTruncated = true;
+        // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对，
+        // 否则 @nudo:budget 覆盖期间触发、恢复后快照会显示「未到顶」
+        if (reason === "depth" && depthTruncDepth === null) {
+          depthTruncDepth = depth;
+          depthTruncLimit = maxDepthLimit;
+        }
+        noteAbsTruncation(label, reason);
+        return reason;
+      }
+      activeKeys.push(key);
+      depth++;
+      if (depth > maxDepthSeen) maxDepthSeen = depth;
+      totalCalls++;
+      observedCalls++;
+      return undefined;
+    },
+    exit(): void {
+      // 禁止负数：嵌套 reset 后 exit 会把 depth 打穿
+      if (depth > 0) depth--;
+      if (activeKeys.length > 0) activeKeys.pop();
+    },
+    resetSession,
+    resetObservability,
+    reset(): void {
+      resetSession();
+      resetObservability();
+      maxDepthLimit = defaultMaxDepth;
+      maxCallsLimit = defaultMaxCalls;
+    },
+    getLimits: () => ({ maxDepth: maxDepthLimit, maxCalls: maxCallsLimit }),
+    setLimits(limits: Partial<CallBudgetLimits>): void {
+      if (typeof limits.maxDepth === "number") maxDepthLimit = limits.maxDepth;
+      if (typeof limits.maxCalls === "number") maxCallsLimit = limits.maxCalls;
+    },
+    getState: () => ({ depth, totalCalls, activeKeys: activeKeys.length }),
+    stats: () => ({
+      calls: observedCalls,
+      maxCalls: maxCallsLimit,
+      callTruncated,
+      cycleTruncated,
+      depth: depthTruncDepth ?? maxDepthSeen,
+      maxDepth: depthTruncLimit ?? maxDepthLimit,
+      reasons: [...reasons].sort(),
+    }),
+  };
+}
+
+/** A 路径（抽象调用 enterCall）预算实例 */
+const _aBudget = createCallBudget({
+  maxDepth: MAX_CALL_DEPTH,
+  maxCalls: MAX_TOTAL_CALLS,
+});
 
 /** A2：预算/截断快照（check --json / health 上屏） */
 export type AbsBudgetStats = {
@@ -96,23 +232,12 @@ export type AbsBudgetStats = {
 };
 
 /**
- * B 命名调用预算可观测探针（issue #158）：exec/calls.ts 的计数/旗标住在
- * calls.ts（反向 import call-budget 破环不可静态引用），模块加载时注册，
+ * B 命名调用预算可观测探针（issue #158）：B 路径的预算实例住在 exec/calls.ts
+ * （call-budget 不能反向 import exec 模块 → 注册式），模块加载时注册；
  * `getAbsCallBudgetStats` 合并、`resetAbsCallBudget` 联动重置。
  */
 export type EvalCallBudgetProbe = {
-  stats(): {
-    calls: number;
-    maxCalls: number;
-    callTruncated: boolean;
-    cycleTruncated: boolean;
-    /** B 路径最大进入深度；depth 截断时 = 触发时深度 */
-    depth: number;
-    /** B 路径 depth 上限；depth 截断时 = 触发时生效上限 */
-    maxDepth: number;
-    /** B 路径本轮截断原因（A/B 分流归因） */
-    reasons: AbsTruncationReason[];
-  };
+  stats(): CallBudgetStats;
   resetObservability(): void;
 };
 
@@ -124,25 +249,25 @@ export function registerEvalCallBudgetProbe(probe: EvalCallBudgetProbe | null): 
 
 export function getAbsCallBudgetStats(): AbsBudgetStats {
   const b = _evalCallProbe?.stats();
+  const a = _aBudget.stats();
   return {
-    calls: _absTotalCalls,
-    maxCalls: _totalCallsLimit,
+    calls: a.calls,
+    maxCalls: a.maxCalls,
     forks: _evalForkObsCount,
     maxForks: _evalForkBudgetLimit,
-    callTruncated: _callTruncated,
+    callTruncated: a.callTruncated,
     forkTruncated: _evalForkTruncNoted,
-    truncated:
-      _callTruncated || (b?.callTruncated ?? false) || _evalForkTruncNoted || _loopTruncated,
+    truncated: a.callTruncated || (b?.callTruncated ?? false) || _evalForkTruncNoted || _loopTruncated,
     evalCalls: b?.calls ?? 0,
     maxEvalCalls: b?.maxCalls ?? MAX_TOTAL_CALLS,
     evalCallTruncated: b?.callTruncated ?? false,
-    cycleTruncated: _cycleTruncated || (b?.cycleTruncated ?? false),
+    cycleTruncated: a.cycleTruncated || (b?.cycleTruncated ?? false),
     loopTruncated: _loopTruncated,
     reasons: [..._truncReasons].sort(),
-    callReasons: [..._aTruncReasons].sort(),
-    depth: _absDepthTruncDepth ?? _absMaxDepth,
-    maxDepth: _absDepthTruncLimit ?? _callDepthLimit,
-    evalReasons: [...(b?.reasons ?? [])].sort(),
+    callReasons: a.reasons,
+    depth: a.depth,
+    maxDepth: a.maxDepth,
+    evalReasons: b?.reasons ?? [],
     evalDepth: b?.depth ?? 0,
     maxEvalDepth: b?.maxDepth ?? MAX_CALL_DEPTH,
   };
@@ -150,19 +275,9 @@ export function getAbsCallBudgetStats(): AbsBudgetStats {
 
 /** 宿主入口（runTranspiled / callTranspiledExportFull / check）前重置 */
 export function resetAbsCallBudget(): void {
-  _absCallDepth = 0;
-  _absTotalCalls = 0;
-  _activeCallKeys = [];
-  _callTruncated = false;
-  _cycleTruncated = false;
+  _aBudget.reset();
   _loopTruncated = false;
   _truncReasons = new Set();
-  _aTruncReasons.clear();
-  _absMaxDepth = 0;
-  _absDepthTruncDepth = null;
-  _absDepthTruncLimit = null;
-  _callDepthLimit = MAX_CALL_DEPTH;
-  _totalCallsLimit = MAX_TOTAL_CALLS;
   // B 观测累计同轮生命周期（截断旗标跨执行会话 latch，宿主入口统一清）
   _evalCallProbe?.resetObservability();
   resetEvalForkBudget();
@@ -176,14 +291,13 @@ export function withFnBudgetOverride(
   budget: { depth?: number; calls?: number; forks?: number },
   run: () => void,
 ): void {
-  const prevDepth = _callDepthLimit;
-  const prevCalls = _totalCallsLimit;
+  const prev = _aBudget.getLimits();
   const prevForks = _evalForkBudgetLimit;
   if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
-    _callDepthLimit = Math.floor(budget.depth);
+    _aBudget.setLimits({ maxDepth: Math.floor(budget.depth) });
   }
   if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
-    _totalCallsLimit = Math.floor(budget.calls);
+    _aBudget.setLimits({ maxCalls: Math.floor(budget.calls) });
   }
   if (typeof budget.forks === "number" && Number.isFinite(budget.forks) && budget.forks >= 1) {
     setEvalForkBudgetLimit(Math.floor(budget.forks));
@@ -191,8 +305,7 @@ export function withFnBudgetOverride(
   try {
     run();
   } finally {
-    _callDepthLimit = prevDepth;
-    _totalCallsLimit = prevCalls;
+    _aBudget.setLimits(prev);
     setEvalForkBudgetLimit(prevForks);
   }
 }
@@ -227,11 +340,12 @@ const PURE_MEMO_KEY_KIND = "pure";
  * - pureValueKey = **值**键（形状内容 + 字面量值）⇒ 服务 **@nudo:pure
  *   记忆化**：按**值**承诺 ⇒ 同值必须同键（变量身份不同但值相同 ⇒ 同键）。
  *
- * @nudo:pure 记忆化通道（kind = "pure" 且 id 为空 —— 两个 pure memo 站点
- * 「$call 路径」与「$callNamed 宿主路径」的唯一调用形态）在此**分流**到值
+ * @nudo:pure 记忆化通道（kind = "pure" 且 id 为空）在此**分流**到值
  * 基键：记忆化键若带**变量身份**，同一变量重绑定为不同值后仍命中旧缓存
  * ⇒ **陈旧结果**（Bug 281）。预算/环检测通道（kind = absfn / absbody /
  * coerce-hook / 命名调用名，且 id 非空）**口径不变**。
+ * pure memo 本体（exec/pure-memo.ts）直接调用 pureValueKey；本分支保留为
+ * callBudgetKey 的既有对外语义（同一值基承诺），不改调用方行为。
  */
 export function callBudgetKey(kind: string, id: string, args: unknown[]): string {
   if (kind === PURE_MEMO_KEY_KIND && id === "") {
@@ -442,40 +556,14 @@ export function noteAbsTruncation(label: string, reason?: AbsTruncationReason): 
 }
 
 /** 进入调用：cycle/超限则不执行 body，返回 opaque。
- *  归因顺序 = 守卫顺序（cycle 先于 depth 先于 calls）：同指纹调用已在栈上
- *  时无论预算多深都会立即截断——报 cycle 而不是预算（#158）。 */
+ *  归因顺序 = 守卫顺序（本状态机内）：同指纹调用已在栈上时无论预算多深
+ *  都会立即截断——报 cycle 而不是预算（#158）。 */
 export function enterCall(key: string, label: string): boolean {
-  const reason: AbsTruncationReason | undefined = _activeCallKeys.includes(key)
-    ? "cycle"
-    : _absCallDepth >= _callDepthLimit
-      ? "depth"
-      : _absTotalCalls >= _totalCallsLimit
-        ? "calls"
-        : undefined;
-  if (reason) {
-    _callTruncated = true;
-    _aTruncReasons.add(reason);
-    if (reason === "cycle") _cycleTruncated = true;
-    // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对，
-    // 否则 @nudo:budget 覆盖期间触发、恢复后快照会显示「未到顶」
-    if (reason === "depth" && _absDepthTruncDepth === null) {
-      _absDepthTruncDepth = _absCallDepth;
-      _absDepthTruncLimit = _callDepthLimit;
-    }
-    noteAbsTruncation(label, reason);
-    return false;
-  }
-  _activeCallKeys.push(key);
-  _absCallDepth++;
-  if (_absCallDepth > _absMaxDepth) _absMaxDepth = _absCallDepth;
-  _absTotalCalls++;
-  return true;
+  return _aBudget.enter(key, label) === undefined;
 }
 
 export function exitCall(): void {
-  // 禁止负数：嵌套 reset 后 exit 会把 depth 打穿
-  if (_absCallDepth > 0) _absCallDepth--;
-  if (_activeCallKeys.length > 0) _activeCallKeys.pop();
+  _aBudget.exit();
 }
 
 // --- B $fork 总次数预算 -------------------------------------------------------

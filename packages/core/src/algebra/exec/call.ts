@@ -38,38 +38,18 @@ import {
   exitCall,
   truncatedAbs,
   stableCallId,
-  pureValueKey,
 } from "../call-budget.ts";
-import { BoundedLruMap } from "../lru-map.ts";
 import { refreshLiveImports } from "./live-imports.ts";
 import { proxyPartsOf, proxyTrapOf } from "./match-iter.ts";
 import { classNameOfValue } from "../class-mark.ts";
+import { clearAllPureMemos, createPureMemo } from "./pure-memo.ts";
 
-/** pure memo 内层 Map 上界（防 LSP 长会话无界膨胀；与 session-cache-limits 口径对齐） */
-const PURE_MEMO_MAX = 256;
+/** @nudo:pure 调用结果缓存（$call 路径实例；值基键见 pure-memo.ts） */
+const pureMemo = createPureMemo();
 
-/** @nudo:pure 调用结果缓存（fn 对象身份 → args key → {abs, throws}） */
-let pureMemo = new WeakMap<object, BoundedLruMap<AbsApplyResult>>();
-
-/** 清空 pure memo（宿主入口 / 会话缓存失效） */
+/** 清空 pure memo（宿主入口 / 会话缓存失效；清**全部**实例——两条调用路径） */
 export function clearPureMemo(): void {
-  pureMemo = new WeakMap();
-}
-
-/**
- * pure memo 的**值基**键（Bug 281）。
- *
- * 记忆化按**值**承诺 ⇒ 键必须基于值，不能复用「调用身份」口径的
- * callBudgetKey（那是 shape 种类 + term 的**变量身份**：同一变量重绑定
- * 为不同值后仍撞同键 ⇒ 命中旧缓存 ⇒ 陈旧结果）。
- * - 同一变量重绑定为不同值 ⇒ 键不同 ⇒ 缓存失效（重算）；
- * - 不同变量同值        ⇒ 键相同 ⇒ 缓存命中（按值承诺）。
- *
- * 不可比较的实参（fn / 类实例 / 开放对象 / 非字面量项的 prim …）⇒
- * undefined ⇒ **不缓存**：宁可不算命中，也不能算出错误的命中。
- */
-function pureMemoKey(args: Abs[]): string | undefined {
-  return pureValueKey(args);
+  clearAllPureMemos();
 }
 
 /**
@@ -253,10 +233,9 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // @nudo:pure：同实参直接命中缓存（无副作用契约）。缓存 {abs, throws} 双面——
   // 只缓存 abs 会在命中时丢掉 throws 通道（may-throw 假「不抛」）。
   const pureName = pureFnNameOf(fn);
-  const fnObj = fn && typeof fn === "object" ? (fn as object) : undefined;
-  const pk = pureName && fnObj ? pureMemoKey(args) : undefined;
-  if (fnObj && pk !== undefined) {
-    const hit = pureMemo.get(fnObj)?.get(pk);
+  const memoEntry = pureName ? pureMemo.keyOf(fn, args) : undefined;
+  if (memoEntry) {
+    const hit = pureMemo.get(memoEntry);
     if (hit !== undefined) return routeApplyThrows(hit.abs, hit.throws);
   }
   const impl = getFnImpl(fn);
@@ -330,14 +309,7 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     try {
       try {
         const full = normalizeApplyReturn(impl.apply(args, thisVal));
-        if (fnObj && pk !== undefined) {
-          let m = pureMemo.get(fnObj);
-          if (!m) {
-            m = new BoundedLruMap<AbsApplyResult>(PURE_MEMO_MAX);
-            pureMemo.set(fnObj, m);
-          }
-          m.set(pk, full);
-        }
+        if (memoEntry) pureMemo.set(memoEntry, full);
         // H1：throws 面经返回值通道统一路由（不再由各桥自行 re-throw / pushThrowExit）
         return routeApplyThrows(full.abs, full.throws);
       } catch (e) {
@@ -370,15 +342,8 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
       // NudoReturn 收成返回值、帧内 exits join、throwExits 转发——
       // 与 apply 路径（callAtFunctionBoundary 包裹）同口径。
       const r = callAtFunctionBoundary(() => compiled(args));
-      if (fnObj && pk !== undefined) {
-        let m = pureMemo.get(fnObj);
-        if (!m) {
-          m = new BoundedLruMap<AbsApplyResult>(PURE_MEMO_MAX);
-          pureMemo.set(fnObj, m);
-        }
-        // always-throw 在异常前不缓存；may-throw 捕获 throws 面入缓存。
-        m.set(pk, makeAbsApplyResult(r, joinThrowsSince(throwMark)));
-      }
+      // always-throw 在异常前不缓存；may-throw 捕获 throws 面入缓存。
+      if (memoEntry) pureMemo.set(memoEntry, makeAbsApplyResult(r, joinThrowsSince(throwMark)));
       return r;
     } finally {
       exitCall();

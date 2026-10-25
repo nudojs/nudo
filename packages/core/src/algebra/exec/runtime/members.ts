@@ -674,20 +674,14 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
   Symbol: new Set(["description"]),
 };
 
-/** evaluator 品牌链（**成员查找链**）：registry extends 优先，内建错误层级回退
- *  （限深防环）。
- *  Bug 192：".prototype" 后缀名（protoBrandAbs 品牌）的链**含 owner 类**——
- *  owner 的实例方法就挂在 owner.prototype 上（`A.prototype.m` 原生是函数、
- *  `"m" in A.prototype` 原生 true）。此前链只从 owner 的**父类**起走
- *  （`evalClassChain("A.prototype") === ["A.prototype"]`）→ 成员读 / in 双双
- *  折 exact undefined / false（wrong-exact）。
- *  owner 仅在**已注册**时入链（内建构造器名不在 registry——其原型面走
- *  BUILTIN_BRAND_* 表，链语义保持不变）。 */
-export function evalClassChain(name: string): string[] {
+/** 链构造单一实现：registry extends 优先，内建错误层级回退（限深防环）。
+ *  includeOwner 只影响 ".prototype" 名（owner 是否入链）——两个导出包装的
+ *  唯一差异。 */
+function classChain(name: string, includeOwner: boolean): string[] {
   const ownerOf = name.endsWith(".prototype") ? name.slice(0, -".prototype".length) : name;
   const out = [name];
-  // Bug 192：owner 入链（其实例方法挂 owner.prototype）
-  if (ownerOf !== name && getEvalClass(ownerOf)) out.push(ownerOf);
+  // Bug 192：owner 入链（其实例方法挂 owner.prototype）——仅成员查找链
+  if (includeOwner && ownerOf !== name && getEvalClass(ownerOf)) out.push(ownerOf);
   let cur: string | undefined = ownerOf;
   let depth = 0;
   while (cur && depth++ < 32) {
@@ -700,6 +694,19 @@ export function evalClassChain(name: string): string[] {
   return out;
 }
 
+/** evaluator 品牌链（**成员查找链**）：registry extends 优先，内建错误层级回退
+ *  （限深防环）。
+ *  Bug 192：".prototype" 后缀名（protoBrandAbs 品牌）的链**含 owner 类**——
+ *  owner 的实例方法就挂在 owner.prototype 上（`A.prototype.m` 原生是函数、
+ *  `"m" in A.prototype` 原生 true）。此前链只从 owner 的**父类**起走
+ *  （`evalClassChain("A.prototype") === ["A.prototype"]`）→ 成员读 / in 双双
+ *  折 exact undefined / false（wrong-exact）。
+ *  owner 仅在**已注册**时入链（内建构造器名不在 registry——其原型面走
+ *  BUILTIN_BRAND_* 表，链语义保持不变）。 */
+export function evalClassChain(name: string): string[] {
+  return classChain(name, true);
+}
+
 /**
  * evaluator 品牌链（**[[Prototype]] 链**语义）："X.prototype" 的链**不含
  * owner**——OrdinaryHasInstance 从 O.[[Prototype]] 起步：`X.prototype
@@ -710,18 +717,7 @@ export function evalClassChain(name: string): string[] {
  * 成员查找（方法 / 访问器 / 数据槽）走 evalClassChain。
  */
 export function evalProtoChain(name: string): string[] {
-  const ownerOf = name.endsWith(".prototype") ? name.slice(0, -".prototype".length) : name;
-  const out = [name];
-  let cur: string | undefined = ownerOf;
-  let depth = 0;
-  while (cur && depth++ < 32) {
-    const spec = getEvalClass(cur);
-    const parent: string | undefined = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
-    if (!parent || out.includes(parent)) break;
-    out.push(parent);
-    cur = parent;
-  }
-  return out;
+  return classChain(name, false);
 }
 
 /** P3a：NAMESPACE_GLOBALS 路由表内、hostBuiltinCtorName 名单外的可扩展

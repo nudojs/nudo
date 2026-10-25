@@ -1,5 +1,10 @@
 /**
- * evaluator 运行时绑定表（惰性单例）：
+ * evaluator 运行时绑定表（惰性单例）+ 编译单元脚手架：
+ * - rtAllBindings / runtimeArgNames / runtimeArgValues：new Function 的运行时
+ *   形参与值（按名字同序）；
+ * - compileRuntimeUnit：`new Function(...运行时形参, extra, code)` 的唯一
+ *   拼装点（run.ts 模块体 / evalExprAbs / body-fn 三处共用）。
+ *
  * 从 run.ts 拆出——body-fn（$call 编译执行）与 run.ts 共用，避免
  * run → calls → call → body-fn → run 的模块初始化环（rtAll 顶层
  * spread 会在环内触发 ReferenceError）。
@@ -41,4 +46,42 @@ export function rtAllBindings(): Record<string, unknown> {
     cached.$asyncGen = $asyncGen;
   }
   return cached;
+}
+
+/**
+ * 编译单元的运行时形参名（与 runtimeArgValues 一一对应）。
+ *
+ * - `dollarOnly = true`（模块体路径）：只取 `$` 前缀的运算符名——`__nudo*`
+ *   宿主注入名由 run.ts 追加；非 `$` 的绑定（isNudoReturn / takeThrowExits
+ *   等）不进模块体形参面（模块体不按这些名字引用，旧口径如此）。
+ * - `dollarOnly = false`（evalExprAbs / body-fn 单单元路径）：全部绑定名。
+ *
+ * 键序 = rtAllBindings 的插入序（缓存对象，稳定）；名字与值必须同序取。
+ */
+export function runtimeArgNames(dollarOnly = false): string[] {
+  const keys = Object.keys(rtAllBindings());
+  return dollarOnly ? keys.filter((k) => k.startsWith("$")) : keys;
+}
+
+/** runtimeArgNames 同序的绑定值（同一缓存表，逐名读取）。 */
+export function runtimeArgValues(dollarOnly = false): unknown[] {
+  const all = rtAllBindings();
+  return runtimeArgNames(dollarOnly).map((n) => all[n]);
+}
+
+/**
+ * 编译运行时单元：`new Function(...运行时形参, ...extraNames, code)`。
+ *
+ * 返回值仍需由调用方按 `[...runtimeArgValues(...), ...extraValues]` 同序调用
+ * （编译与执行分离：模块体路径的编译失败必须发生在 sink/epoch 建立之前，
+ * 与重构前的「先 new Function、后 beginClassEpoch」时序一致）。
+ * 形参/值顺序与三处旧展开逐项一致：运行时绑定在前，extraNames 在后。
+ */
+export function compileRuntimeUnit<T = unknown>(
+  code: string,
+  extraNames: readonly string[] = [],
+  opts: { dollarOnly?: boolean } = {},
+): (...vals: unknown[]) => T {
+  const names = [...runtimeArgNames(opts.dollarOnly ?? false), ...extraNames];
+  return new Function(...names, code) as (...vals: unknown[]) => T;
 }

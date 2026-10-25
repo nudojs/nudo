@@ -1263,7 +1263,7 @@ function generalizeFromAstUncached(
           }
           return a;
         });
-        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
+        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true }).result;
       } else {
         // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
         // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
@@ -1286,7 +1286,12 @@ function generalizeFromAstUncached(
           if (dAbs.shape.k !== "obj") return undefined;
           return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
         }
-        return callTranspiledExportFull(evalRun, slot.key, evalArgs, { phi }).result;
+        // 本地名分析：default/具名槽按源码本地绑定解析（CJS 成员桥保持
+        // 导出对象语义，preferLocal 不适用）。
+        return callTranspiledExportFull(evalRun, slot.key, evalArgs, {
+          phi,
+          preferLocal: true,
+        }).result;
       }
     } catch (e) {
       // Bug 1031：这里**不是**「B run 本身失败」（那条路径是 evalRun 为

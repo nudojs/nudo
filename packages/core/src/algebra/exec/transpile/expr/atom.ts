@@ -2,8 +2,10 @@
  * 原子/字面量族发射（expr 按域拆分之一；主分派在 ./transpile.ts）。
  *
  * 不变量：
- * - 内建标识符（undefined/NaN/Infinity …）折「无标识符源」（void 0 / 0/0 / 1/0），
- *   不读模块作用域绑定（intrinsics hostIntrinsicLit）；
+ * - 宿主内建标识符（undefined/NaN/Infinity）按 **opts.shadowedIntrinsics**
+ *   分态：未遮蔽 → 字面量精确折叠（$lit(void 0) / $lit(0/0) / $lit(1/0)）；
+ *   已遮蔽（用户绑定：`const undefined = 5` / 形参名）→ 发射标识符本身 +
+ *   外层 `$absVal(...)`，由 JS 词法绑定决定读值（见 Identifier 臂）；
  * - 自由 arguments（无 argsBinding）→ $throwFreeArguments() 定抛 ReferenceError；
  * - 顶层 this（无 thisParam）= $lit(void 0)（ESM 语义）；
  * - JSX 未 lowering → $unknown()（显式 unknown，不连坐整文件 fail-closed）。
@@ -26,7 +28,7 @@ import type {
   JSXFragment,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { hostIntrinsicLit, HOST_INTRINSIC_SET } from "../intrinsics.ts";
+import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 /**
  * 原子/字面量族：标量字面量、标识符/this 解析、模板与标签模板、import() 与 JSX。
@@ -74,9 +76,25 @@ export function transpileAtomExpr(
     case "NullLiteral":
       return `$lit(null)`;
     case "Identifier": {
-      // 内建标识符折无标识符源（void 0 / 0/0 / 1/0）——不读模块作用域绑定
-      const intrinsic = hostIntrinsicLit(expr.name);
-      if (intrinsic) return intrinsic;
+      // 宿主内建名（undefined/NaN/Infinity）分两态发射：
+      // - **未遮蔽**（本转译单元无同名绑定）：恢复字面量精确折叠
+      //   （$lit(void 0) / $lit(0/0) / $lit(1/0)）——宿主全局读取即该字面量，
+      //   折叠保 exact 精度，且与旧产物逐字节一致；
+      // - **已遮蔽**（用户合法绑定：模块级 `const undefined = 5`、形参名
+      //   `undefined`、`let NaN`、@nudo:mock 注入）：发射**标识符本身**，由
+      //   JS 词法绑定决定读值，外层 `$absVal` 只把「遮蔽绑定是 Abs」的情形
+      //   原样返回（未遮蔽面本分支已折字面量，不会读到裸值）。
+      //
+      // 遮蔽判定见 helpers.ts 的 shadowedIntrinsicsOf（opts.shadowedIntrinsics
+      // 由 transpileFile / transpileBodyNode / body-fn / evalExprAbs 线程化）。
+      // 静态窄化（stmt-predicates）同用该标记：`x === undefined` / `case
+      // undefined:` 在遮蔽后比较的是绑定值，不得当 nullish 字面量事实。
+      if (HOST_INTRINSIC_SET.has(expr.name)) {
+        if (opts.shadowedIntrinsics?.has(expr.name)) return `$absVal(${expr.name})`;
+        if (expr.name === "undefined") return "$lit(void 0)";
+        if (expr.name === "NaN") return "$lit(0/0)";
+        return "$lit(1/0)";
+      }
       if (expr.name === "arguments") {
         // 词法外层 arguments：非箭头函数体（或其嵌套箭头）引用时建
         // argsBinding——箭头沿该绑定词法继承。无绑定（模块顶层）→ 自由

@@ -7,6 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { setPropFlags } from "../builtins/invariants.ts";
+import { ERROR_CTOR_NAMES } from "../error-names.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
 export { markClassValue, classNameOfValue };
@@ -93,17 +94,13 @@ export type EvalClassSpec = {
 
 /** 内建错误层级（Error 为根，registry 无 superName 时回退）。
  *  放本叶子模块：evalClassChain（exec/runtime/members.ts）与
- *  protoOfRecv（builtins/ctor.ts）共用，后者不可反向引 members（环）。 */
-export const BUILTIN_ERROR_SUPER: Record<string, string> = {
-  Error: "",
-  RangeError: "Error",
-  TypeError: "Error",
-  ReferenceError: "Error",
-  SyntaxError: "Error",
-  URIError: "Error",
-  EvalError: "Error",
-  AggregateError: "Error",
-};
+ *  protoOfRecv（builtins/ctor.ts）共用，后者不可反向引 members（环）。
+ *  键集与 algebra/error-names.ts 的 ERROR_CTOR_NAMES 同源（该叶子不 import
+ *  任何模块——本文件不可反引 builtins/error/error-family.ts，那条链经
+ *  exec/may-throw 回到本文件，会成环）。 */
+export const BUILTIN_ERROR_SUPER: Record<string, string> = Object.fromEntries(
+  [...ERROR_CTOR_NAMES].map((name): [string, string] => [name, name === "Error" ? "" : "Error"]),
+);
 
 const classRegistry = new Map<string, EvalClassSpec>();
 /** BUG-026：注册 epoch——同名类碰撞只在同一次求值

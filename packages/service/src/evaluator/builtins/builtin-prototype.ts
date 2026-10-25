@@ -15,8 +15,10 @@ function hasOwnProp(props: Record<string, unknown>, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, name);
 }
 
+// LSP 补全近似表：须与 packages/core/src/algebra/error-names.ts 的 ERROR_CTOR_NAMES 保持同步。
 const BUILTIN_ERROR_CLASSES = new Set([
   "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
+  "AggregateError",
 ]);
 
 const BUILTIN_PROTOTYPE_CLASSES = new Set([

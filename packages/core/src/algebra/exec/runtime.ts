@@ -155,6 +155,10 @@ export {
   $asyncReturn,
   $await,
   $gen,
+  $yield,
+  $yieldStar,
+} from "./runtime/async.ts";
+export {
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,
@@ -163,6 +167,4 @@ export {
   $removeNull,
   $removeNullish,
   $removeUndefined,
-  $yield,
-  $yieldStar,
-} from "./runtime/async.ts";
+} from "./runtime/narrow.ts";

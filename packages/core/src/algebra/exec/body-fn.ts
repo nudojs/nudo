@@ -11,10 +11,10 @@ import type { Abs } from "../abs.ts";
 import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
 import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
-import { rtAllBindings } from "./rt.ts";
+import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
+import { compileRuntimeUnit, runtimeArgValues } from "./rt.ts";
 import { noteEvalFallback } from "./run.ts";
-
-const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
+import { RUNTIME_IMPORT_RE } from "./transpile/runtime-import.ts";
 
 const compiledByImpl = new WeakMap<object, (args: Abs[]) => Abs>();
 /** 自名注入的 Abs 按 body 对象缓存——$callNamed cycle 键（对象身份）可立即命中 */
@@ -211,8 +211,20 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     // Bug 1058 遗留 3（族 59 · W9）：本路径**无 source** ⇒ 转译侧内部临时名
     // 的避让集恒空 ⇒ 用户标识符与引擎临时名相撞 ⇒ 产物非法 JS ⇒ 整模块
     // fail-closed。补上 AST 词形（body 内全部 Identifier + 形参）作为避让源。
+    //
+    // 宿主内建遮蔽：形参名（`function f(undefined)`）与 env 可解析的闭包绑定
+    // （模块级 `const undefined = 5` 经 impl.env.vars 注入首参）都必须在转译
+    // 单元里按「已遮蔽」发射标识符读点；否则未遮蔽面的字面量折叠会绕过闭包
+    // 注入的值（读成宿主全局）。body 内局部声明的遮蔽由 transpileBodyNode 自
+    // 行扫描。
+    const intrinsicExtra = new Set<string>(impl.params);
+    for (const name of free) {
+      if (impl.env?.vars.has(name) || impl.env?.fns.has(name)) intrinsicExtra.add(name);
+    }
+    const shadowedIntrinsics = shadowedIntrinsicsOf(impl.body, intrinsicExtra);
     const bodySrc = transpileBodyNode(impl.body, {
       userIdents: bodyIdentNames(impl.body, impl.params),
+      ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
     });
     const js = [
       runtimeImportOf("@nudojs/core/exec"),
@@ -222,9 +234,8 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
       "return __body;",
     ].join("\n");
     const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
-    const argNames = [...Object.keys(rtAllBindings()), ...closureArgs];
-    const factory = new Function(...argNames, cleaned) as (...vals: unknown[]) => (...a: Abs[]) => Abs;
-    const bodyFn = factory(...Object.values(rtAllBindings()), ...closureVals);
+    const factory = compileRuntimeUnit<(...a: Abs[]) => Abs>(cleaned, closureArgs);
+    const bodyFn = factory(...runtimeArgValues(), ...closureVals);
     runner = (args: Abs[]) => bodyFn(...args);
     compiledByImpl.set(implKey, runner);
   } catch (e) {

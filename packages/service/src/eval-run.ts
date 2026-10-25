@@ -771,7 +771,12 @@ export function tryEvalCallFull(
         ? setMemberDiagCollector((d) => memberDiags.push(d))
         : undefined;
     try {
-      const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
+      // 按源码本地函数名分析（@nudo:case 见证 / symbolic 聚合）：同名
+      // re-export / CJS 合并不得顶替本地私有函数 ⇒ preferLocal。
+      const full = callTranspiledExportFull(run.exports, fnName, args, {
+        preferLocal: true,
+        ...(opts.phi ? { phi: opts.phi } : {}),
+      });
       const all = [...(run.memberDiags ?? []), ...memberDiags];
       return {
         ...full,
