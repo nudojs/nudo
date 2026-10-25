@@ -5,7 +5,7 @@
  * （静态字段初始化器 + static 块）按**类体源码顺序**依次执行。
  *
  * 修复前：静态块恒在**全部**静态字段初始化器之后（两块分表：静态字段进
- * statics 表由 $class 求值，static 块另走 $staticInit 尾段）——类体源码
+ * statics 表由 $class 求值，static 块另走独立尾段）——类体源码
  * 顺序丢失：`class A { static { A.q = 1 } static r = A.q + 1 }` 原生 r=2，
  * 引擎折 NaN（q 未定义）。
  */

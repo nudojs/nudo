@@ -3,6 +3,12 @@
 > **Status:** `@nudojs/core` is **3.0.0**. This file is the freeze inventory:
 > what the package exposes, and what counts as **public** vs **internal**.
 >
+> **4.0 breaking reduction:** the dead public engine symbols that 3.x kept for
+> compatibility (`phi` stack, `$while` / `$forIter` / `$asyncReturn` /
+> `$staticInit` / `$thisGet` / `$thisSet`, HOF promotion helpers, `generalizeAll`)
+> are removed. `$staticInvoke` remains engine-internal for the `check-may-throw`
+> class bridge.
+>
 > **3.0 breaking reduction:** engine machinery (leak / call-budget / hash /
 > derivation / inlay / template / language / scan extras / may-throw ·
 > member-diag collectors) no longer ships on `.` or `./exec`. Hosts that need
@@ -52,7 +58,7 @@ changing the signature of any row below is **major**.
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
 | `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | **public** |
-| `generalizeFromAst`, `generalizeAll` | value | symbolic α generalization | **public** |
+| `generalizeFromAst` | value | symbolic α generalization | **public** |
 | `parseSource`, `resetParseSourceCache`, `getParseSourceCacheSize` | value | Babel parse + memo | **public** |
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
 | `MockHelper`, `stub`, `spy`, `mock` | value/type | test mock helpers | **public** |
@@ -74,11 +80,11 @@ changing the signature of any row below is **major**.
 | `transpile`, `transpileSource`, `transpileFile`, `transpileExpression`, `transpileBodyNode`, `runtimeImportOf`, `TranspileOptions` | JS AST → `$op` program | **public** |
 | `foldStaticStringExpr`, `foldRequireSpecArg` | static folding helpers | **public** |
 | `$add`…`$pow`, `$eq`…`$ge`, `$neg`/`$not`/`$typeof`, `$join` | operator runtime | **public** |
-| `$fork`, `$for`, `$forIter`, `$while`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
+| `$fork`, `$for`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
 | `$arr`, `$idx`, `$idxSet`, `$len`, `$arrMutContainer`, `$copy`, `fillTuple`, `$arrWithHoles`, `$arguments`, `isArrMutator` | array runtime | **public** |
 | `$obj`, `$get`, `$set`, `$del`, `$spread`, `$objRest`, `$arrRest`, `$concat`, `$elems`, `$tpl` | object / member runtime | **public** |
 | `$fnVal`, `$rawThis`, `$lit`, `asAbsVal`, `$classExpr`, `$instanceof`, `$in` | value / class runtime | **public** |
-| `$async`, `$await`, `$asyncReturn`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
+| `$async`, `$await`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
 | `$throw`, `$catchVal`, `$loopReturn`, `$loopBreak`, `$loopContinue`, `NudoReturn`, `NudoLoopSignal`, `NudoThrow` | control-signal / throw | **public** |
 | `$callNamed`, `$assignRecord`, `$recordBinding`, `EvalCallRecord`, `setEvalCallCollector` | call-site recording for analyze | **public** (additive) |
 | `runTranspiled`, `runtimeImportOf` | execution entry | **public** |

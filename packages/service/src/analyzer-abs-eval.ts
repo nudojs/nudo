@@ -709,6 +709,9 @@ export function safeAbsOrUnknown(a: unknown): Abs {
     const fn = a as (...args: Abs[]) => unknown;
     const n = Math.max(0, fn.length);
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
+    // 严格性不可得：本入口只拿得到宿主函数值（body 是**合成空块**，派发由
+    // apply 接管），调用方未透传分析源种类 ⇒ 不写 strict（sloppy，保守）。
+    // 真实模块函数声明走 abs-modules-graph 的导出桥（按模块 AST 判定）。
     return absFunction(params, {
       body: { type: "BlockStatement", body: [], directives: [] } as never,
       apply: (args: Abs[]) => {

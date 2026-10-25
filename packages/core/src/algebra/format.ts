@@ -10,7 +10,7 @@ import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "./projection-budget.ts";
 import { accessorReadDomain } from "./accessors.ts";
-import { canonicalArrayIndex } from "./objects.ts";
+import { isHiddenInternalSlot } from "./slot-visibility.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -142,24 +142,6 @@ function formatShapeB(a: Abs, budget: ProjectionBudget, ind: string = ""): strin
 
 /** pretty 断行的复合 shape（union 臂断行条件——map/set 即 brand） */
 const PRETTY_COMPOSITE_SHAPES = new Set(["obj", "arr", "tuple", "fn", "brand", "eff"]);
-
-/**
- * Bug 240：**投影面剔除 internal 槽**（内部槽对属性 introspection 不可见）。
- *
- * `Slot.internal`（Bug 84 私有槽机制）是仓里既有的「该槽不是自有属性」标记：
- * 枚举面 / 自有面早已过滤它（`builtins/invariants.ts` 的 `enumOwnKeys`、
- * `builtins/object/methods.ts` 的 `enumKeys`、`builtins/json.ts` 的序列化
- * 面），但**投影面**（本文件）此前不过滤 ⇒ 签名面把内部实现细节当用户
- * 可见属性发布（生成器对象的 `next` / `return` / `throw` / `constructor` /
- * `@@iterator` 五个协议槽）。
- *
- * 例外：**规范数组下标槽**保留——族 01 的建模口径里生成器的数字下标槽承载
- * **元素域**（签名面靠它发布元素域面：`eval-spread-iter-elems` 钉住
- * `"0": string`），不是内部实现细节 ⇒ 不在此剔除。
- */
-function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean {
-  return slot.internal === true && canonicalArrayIndex(k) === undefined;
-}
 
 /**
  * 字面量值 → JS 字面量拼法（`JSON.stringify` 对 bigint **直接抛**、

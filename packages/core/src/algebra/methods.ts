@@ -14,7 +14,8 @@ import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
-import { regexParts, matchIteratorAbs } from "./exec/class-regex.ts";
+import { regexParts, matchIteratorAbs } from "./exec/regexp-runtime.ts";
+import { isRegExpBrandAbs } from "./builtins/regexp.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -48,10 +49,10 @@ function strArr(conf: Abs["conf"] = "path"): Abs {
 /**
  * replace 回调桥接的最小环境：宿主 applyCallbackHost 由 exec/call.ts
  * 注册（evaluator `$call` 宿主）；fn Abs 的 impl.env（闭包）优先，此 env
- * 仅作 hofCollect 等字段兜底。
+ * 仅作空字段兜底。
  */
 function callbackEnv(): unknown {
-  return { vars: new Map(), fns: new Map(), hofCollect: undefined };
+  return { vars: new Map(), fns: new Map() };
 }
 
 function isStrRecv(recv: Abs): boolean {
@@ -166,13 +167,6 @@ export function enforceToStringArg(x: Abs | undefined, what: string): void {
   }
 }
 
-/** RegExp brand 判定（Bug 69 IsRegExp 守卫 / replace pattern 合法臂共用） */
-function isRegExpBrandAbs(x: Abs | undefined): boolean {
-  // Bug 179：自由标识符实参（宿主全局值）不是 Abs —— 不得读 .shape。
-  if (!x || typeof x !== "object" || !("shape" in (x as object))) return false;
-  return x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
-}
-
 /**
  * Bug 252：字面量 pattern 的 **RegExpCreate 形态**（ES2023 RegExpCreate
  * 步 1-2：pattern 为 undefined → P = ""；否则 P = ToString(pattern)）。
@@ -247,7 +241,7 @@ function validateLocalesArg(x: Abs | undefined, what: string): void {
 
 /** Bug 2：match 的保守返回域——null | 匹配数组（global → string[]，
  *  非 global → 捕获可为 undefined），与 execRegexBrand 抽象 subject 臂
- *  （class-regex.ts）同款保守并。 */
+ *  （exec/regexp-runtime.ts）同款保守并。 */
 function matchResultDomain(): Abs {
   const matchArr = abs(
     { k: "arr", element: joinAbs(str(), undefAbs()) },

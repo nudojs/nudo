@@ -466,7 +466,7 @@ function isNonJsonTopLevel(a: Abs): boolean {
 
 /** replacer 回调执行环境（methods.ts callbackEnv 同口径） */
 function replacerEnv(): unknown {
-  return { vars: new Map(), fns: new Map(), hofCollect: undefined };
+  return { vars: new Map(), fns: new Map() };
 }
 
 /** space 实参折叠：number/string 原样；缺省/null/undefined → 紧凑；

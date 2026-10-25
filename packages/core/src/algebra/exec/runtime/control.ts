@@ -1,5 +1,5 @@
 /**
- * 控制流：loop/try 退出栈、$fork/$for/$while、$throw。
+ * 控制流：loop/try 退出栈、$fork/$for/$whileSeq、$throw。
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
@@ -315,39 +315,6 @@ import { makeLoopWidener } from "./loop-widen.ts";
 import { applyExitJoinInvariants, applyInvariantsToPack, hasInvariantSpecs } from "./invariant-apply.ts";
 
 /**
- * for 的惰性展开：生成器只负责「按上限吐状态」。
- * 抽象条件无法诚实终止——消费者必须自带 maxIters。
- */
-export function* $forIter(
-  init: Abs,
-  test: (s: Abs) => Abs,
-  step: (s: Abs) => Abs,
-  body: (s: Abs) => Abs,
-  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
-): Generator<{ state: Abs; test: Abs; afterBody: Abs }, void, void> {
-  let s = init;
-  for (let i = 0; i < maxIters; i++) {
-    const t = test(s);
-    if (isDefinitelyFalse(t)) {
-      yield { state: s, test: t, afterBody: s };
-      return;
-    }
-    let afterBody: Abs = s;
-    let broke = false;
-    try {
-      afterBody = body(s);
-    } catch (e) {
-      if (isNudoBreak(e)) broke = true;
-      else if (isNudoContinue(e)) afterBody = s; // 体提前结束
-      else throw e;
-    }
-    yield { state: s, test: t, afterBody };
-    if (broke) return;
-    s = step(afterBody);
-  }
-}
-
-/**
  * 有界 for：unroll ≤ maxIters，每步「可能退出」的态 join；
  * 相邻态 leq 视为不动点提前停。
  */
@@ -372,7 +339,7 @@ export function $for(
   let extJoin: Abs | undefined;
   const pack = opts?.pack;
   const unpack = opts?.unpack;
-  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：计数器
+  // 循环携带绑定宽化器（Bug 48，与 $forOf 同一机制）：计数器
   // （state 线程）与外层绑定（extJoin 打包）各一个——抽象条件预算耗尽的
   // 有界快照 join（{0..8}，conf exact）对任意迭代次数欠近似；增长槽位
   // 宽化到无上界域（sound），join-幂等绑定不动
@@ -613,86 +580,6 @@ function widenLoopJoinInner(a: Abs): Abs {
   return widenValue(a);
 }
 
-// while
-/**
- * 有界 while：state 线程穿 test/step（与 $for 同折叠语义）。
- * 抽象条件无法诚实终止——必须 maxIters。
- * @deprecated 转译层不再发射调用（while/do-while 走 $whileSeq）、内部无调用；
- *  保留导出仅为公共 API 兼容。
- */
-export function $while(
-  init: Abs,
-  test: (s: Abs) => Abs,
-  step: (s: Abs) => Abs,
-  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
-): Abs {
-  let state = init;
-  let exitJoin: Abs | undefined;
-  // 循环携带绑定宽化器（Bug 48）：抽象条件预算耗尽时出口 join 是有界
-  // 快照 {0..8}——常步长计数器对任意迭代次数欠近似（n=100 → 100 ∉
-  // {0..8}）且 conf exact 是硬声称；增长槽位宽化到无上界域（sound）
-  const widen = makeLoopWidener();
-  // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
-  // 硬上限；硬上限仍具体真 → 截断观测 + conf 降级。
-  let limit = maxIters;
-  let extended = false;
-  let concreteExhausted = false;
-
-  for (let i = 0; i < limit; i++) {
-    const t = test(state);
-    if (isDefinitelyFalse(t)) {
-      return exitJoin ? joinAbs(exitJoin, state) : state;
-    }
-    const abstractTest = !isDefinitelyTrue(t);
-    if (abstractTest) {
-      if (extended) break;
-      // N5：出口臂（同 $for——无 post-loop settle 覆盖则悬挂）
-      enterPromiseForkArm();
-      leavePromiseForkArm();
-      widen.observe(state);
-      exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
-    }
-    // N5：抽象条件迭代 = 条件路径（体 settle 不得覆盖出口臂）
-    let next: Abs;
-    if (abstractTest) enterPromiseForkArm();
-    try {
-      next = step(state);
-    } finally {
-      if (abstractTest) leavePromiseForkArm();
-    }
-    if (i > 0) {
-      const nvR = litValue(next);
-      const svR = litValue(state);
-      // 同上：.ok 判字面量，禁止 value !== undefined 哨兵。
-      const stuck =
-        (nvR.ok && svR.ok && nvR.value === svR.value) ||
-        ((!nvR.ok || nvR.value === undefined) &&
-          (!svR.ok || svR.value === undefined) &&
-          leqAbs(next, state).ok);
-      if (stuck) {
-        return exitJoin ? joinAbs(exitJoin, next) : next;
-      }
-    }
-    state = next;
-    if (i + 1 === limit && isDefinitelyTrue(test(state))) {
-      if (limit < MAX_CONCRETE_LOOP_ITERS) {
-        limit = MAX_CONCRETE_LOOP_ITERS;
-        extended = true;
-      } else {
-        concreteExhausted = true;
-      }
-    }
-  }
-  if (concreteExhausted) {
-    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
-    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
-    notePromiseExecutorHang();
-    return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
-  }
-  // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
-  return exitJoin ? widen.widenFinal(joinAbs(exitJoin, state)) : state;
-}
-
 /**
  * 顺序 while（具体/可变闭包）：body 内对 JS 变量赋值。
  * 提供 pack/unpack 时，抽象条件的可能出口会 join 回绑定（P0 健全）；
@@ -714,7 +601,7 @@ export function $whileSeq(
   const pack = opts?.pack;
   const unpack = opts?.unpack;
   let exitJoin: Abs | undefined;
-  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：抽象条件
+  // 循环携带绑定宽化器（Bug 48，与 $forOf 同一机制）：抽象条件
   // 预算耗尽的出口 join 是有界快照并集（{0..8}，conf exact）——常步长
   // 计数器对任意迭代次数欠近似；增长槽位宽化到无上界域（sound）
   const widen = pack ? makeLoopWidener() : undefined;

@@ -10,81 +10,269 @@
 import type { Abs } from "../abs.ts";
 import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
-import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
+import { transpileBodyNode } from "./transpile.ts";
 import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
 import { compileRuntimeUnit, runtimeArgValues } from "./rt.ts";
 import { noteEvalFallback } from "./run.ts";
-import { RUNTIME_IMPORT_RE } from "./transpile/runtime-import.ts";
 
 const compiledByImpl = new WeakMap<object, (args: Abs[]) => Abs>();
 /** 自名注入的 Abs 按 body 对象缓存——$callNamed cycle 键（对象身份）可立即命中 */
 const selfAbsByBody = new WeakMap<object, Abs>();
 
+/** 词法作用域：`fn` = 函数级 var 作用域边界（函数体 / class 静态块），否则块作用域。 */
+type FreeScope = { names: Set<string>; fn: boolean };
+
 /** body 的自由标识符集合（参数/词法声明之外引用的名字）。
+ *
+ *  作用域模型（与 JS 词法一致，不再「函数边界一刀切」）：
+ *  - 函数作用域：形参、`var`、函数体顶层的函数声明；
+ *  - 块作用域：BlockStatement / SwitchStatement（各 case 共享一块）/
+ *    For/ForIn/ForOf（头 + 体）/ CatchClause 参数 / class 体；
+ *  - class 静态块（StaticBlock）是**独立 var 作用域**（var/函数声明不漏到
+ *    外层函数）；class 体（方法 / 静态块 / 字段 / 计算键）恒 strict，块级
+ *    函数声明在 class 体内永无 Annex B 提升——即使源文件是 sloppy CJS；
+ *  - `let`/`const`/`class` 与块级函数声明只绑定块作用域；sloppy
+ *    （`strict === false`）下（class 体外）块级函数声明另有 Annex B 函数
+ *    作用域绑定（原生 sloppy 语义：块外可见）；ESM/strict 源无此提升。
+ *  - `var` 一律提升到最近函数作用域。
+ *
  *  嵌套函数 params/声明只作用于其词法作用域（不污染外层）；
  *  非计算 property key（o.x / {x: 1} / {x(){}}）不计数。 */
-export function freeIdentifiers(body: Node, params: string[]): Set<string> {
+export function freeIdentifiers(body: Node, params: string[], strict = false): Set<string> {
   const free = new Set<string>();
-  const scopes: Set<string>[] = [new Set(params)];
-  const declare = (name: string): void => {
-    scopes[scopes.length - 1]!.add(name);
+  const scopes: FreeScope[] = [{ names: new Set(params), fn: true }];
+  // 当前词法上下文是否 strict：源种类之外，**class 体恒 strict**（类定义
+  // 整体是 strict mode code，含方法体/静态块/字段初始值）。class 体内部
+  // 的块级函数声明因此永不做 Annex B 提升，即使源文件是 sloppy CJS。
+  let inStrictCtx = strict;
+  const currentScope = (): FreeScope => scopes[scopes.length - 1]!;
+  const nearestFnScope = (): FreeScope => {
+    for (let i = scopes.length - 1; i >= 0; i--) if (scopes[i]!.fn) return scopes[i]!;
+    return scopes[0]!;
+  };
+  const declare = (name: string, scope: FreeScope = currentScope()): void => {
+    scope.names.add(name);
+  };
+  const declareVar = (name: string): void => {
+    declare(name, nearestFnScope());
   };
   const isDeclared = (name: string): boolean => {
     for (let i = scopes.length - 1; i >= 0; i--) {
-      if (scopes[i]!.has(name)) return true;
+      if (scopes[i]!.names.has(name)) return true;
     }
     return false;
   };
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const o = n as { type?: string; [k: string]: unknown };
-    if (o.type === "Identifier" && typeof (o as { name?: unknown }).name === "string") {
-      const name = (o as { name: string }).name;
-      if (!isDeclared(name)) free.add(name);
-      return;
-    }
-    if (o.type === "VariableDeclarator") {
-      const id = o.id as { type?: string; name?: string } | undefined;
-      if (id?.type === "Identifier" && id.name) declare(id.name);
-      // 只扫 init：id 已按声明处理（解构 id 保守当引用，保持既有覆盖面）
-      if (o.init && typeof o.init === "object") visit(o.init);
-      return;
-    }
-    const isFnLike =
-      o.type === "ArrowFunctionExpression" ||
-      o.type === "FunctionExpression" ||
-      o.type === "FunctionDeclaration" ||
-      o.type === "ObjectMethod" ||
-      o.type === "ClassMethod";
-    if (o.type === "FunctionDeclaration") {
-      const id = o.id as { type?: string; name?: string } | undefined;
-      // 函数名进外层作用域（提升）
-      if (id?.type === "Identifier" && id.name) declare(id.name);
-    }
-    if (isFnLike) {
-      scopes.push(new Set());
-      try {
-        const rawParams = (o.params as Array<{ type?: string; name?: string; argument?: { type?: string; name?: string } }>) ?? [];
-        for (const p of rawParams) {
-          if (p.type === "Identifier" && p.name) declare(p.name);
-          if (p.type === "RestElement" && p.argument?.type === "Identifier" && p.argument.name) {
-            declare(p.argument.name);
+  const pushScope = (fn: boolean): void => {
+    scopes.push({ names: new Set(), fn });
+  };
+  const popScope = (): void => {
+    scopes.pop();
+  };
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const child = (v: unknown): { type?: string; [k: string]: unknown } | undefined =>
+    v && typeof v === "object" ? (v as { type?: string; [k: string]: unknown }) : undefined;
+
+  /** 绑定模式：声明其中的名字；默认值 / 计算键只作引用访问。 */
+  function bindPattern(p: unknown, declareName: (name: string) => void): void {
+    const b = child(p);
+    if (!b) return;
+    switch (b.type) {
+      case "Identifier":
+        if (typeof b.name === "string") declareName(b.name);
+        return;
+      case "RestElement":
+        bindPattern(b.argument, declareName);
+        return;
+      case "AssignmentPattern":
+        bindPattern(b.left, declareName);
+        if (b.right) visit(b.right);
+        return;
+      case "ObjectPattern":
+        for (const prop of arr(b.properties)) {
+          const pp = child(prop);
+          if (!pp) continue;
+          if (pp.type === "RestElement") {
+            bindPattern(pp.argument, declareName);
+            continue;
           }
+          if (pp.computed === true) visit(pp.key);
+          bindPattern(pp.value, declareName);
         }
-        for (const p of rawParams as unknown[]) {
-          if (!p || typeof p !== "object") continue;
-          const pe = p as { type?: string; right?: unknown; [k: string]: unknown };
-          if (pe.type === "AssignmentPattern") {
-            if (pe.right && typeof pe.right === "object") visit(pe.right);
-          } else if (pe.type !== "Identifier" && pe.type !== "RestElement") {
-            visit(p);
-          }
-        }
-        if (o.body && typeof o.body === "object") visit(o.body);
-      } finally {
-        scopes.pop();
+        return;
+      case "ArrayPattern":
+        for (const el of arr(b.elements)) if (el) bindPattern(el, declareName);
+        return;
+      case "TSParameterProperty":
+        bindPattern(b.parameter, declareName);
+        return;
+      default:
+        // 未知绑定形态：保守当引用（宁可多注入，不可漏注入）
+        visit(p);
+    }
+  }
+
+  function visitFunction(o: { type?: string; [k: string]: unknown }): void {
+    const id = child(o.id);
+    const name =
+      id?.type === "Identifier" && typeof id.name === "string" ? id.name : undefined;
+    if (o.type === "FunctionDeclaration" && name) {
+      // 函数声明名进外层作用域（块级 → 块作用域；函数体顶层 → 函数作用域）。
+      declare(name);
+      // sloppy 且不在 class 体内：块级函数声明另有 Annex B 函数作用域绑定
+      if (!inStrictCtx && !currentScope().fn) declareVar(name);
+    }
+    if (
+      (o.type === "ObjectMethod" || o.type === "ClassMethod" || o.type === "ClassPrivateMethod") &&
+      o.computed === true
+    ) {
+      visit(o.key);
+    }
+    pushScope(true);
+    try {
+      // FunctionExpression 自名仅自身作用域可见（FunctionDeclaration 名亦然）
+      if (name) declare(name);
+      for (const p of arr(o.params)) bindPattern(p, declare);
+      const bodyNode = child(o.body);
+      if (bodyNode?.type === "BlockStatement") {
+        // 函数体块不额外开块：顶层 let/const 与 var 同属函数作用域（对自由
+        // 名判定无差），顶层函数声明保持函数作用域提升口径。
+        for (const st of arr(bodyNode.body)) visit(st);
+      } else if (bodyNode) {
+        visit(bodyNode);
       }
+    } finally {
+      popScope();
+    }
+  }
+
+  function visitClass(o: { type?: string; [k: string]: unknown }): void {
+    const id = child(o.id);
+    const name =
+      id?.type === "Identifier" && typeof id.name === "string" ? id.name : undefined;
+    if (o.type === "ClassDeclaration" && name) declare(name);
+    // heritage / decorators 在外层（可能 sloppy）上下文求值
+    if (o.superClass) visit(o.superClass);
+    if (o.decorators) visit(o.decorators);
+    const prevStrictCtx = inStrictCtx;
+    // class 体（方法 / 静态块 / 字段 / 计算键）恒 strict
+    inStrictCtx = true;
+    pushScope(false);
+    try {
+      // 类体内自名可见（ClassExpression 亦然）
+      if (name) declare(name);
+      visit(o.body);
+    } finally {
+      popScope();
+      inStrictCtx = prevStrictCtx;
+    }
+  }
+
+  function visit(n: unknown): void {
+    const o = child(n);
+    if (!o) return;
+    if (o.type === "Identifier") {
+      if (typeof o.name === "string" && !isDeclared(o.name)) free.add(o.name);
       return;
+    }
+    switch (o.type) {
+      case "VariableDeclaration": {
+        // `var` 提升到最近函数作用域；let/const/using 绑定当前块
+        const declareName = o.kind === "var" ? declareVar : declare;
+        for (const d of arr(o.declarations)) {
+          const decl = child(d);
+          if (!decl) continue;
+          bindPattern(decl.id, declareName);
+          if (decl.init) visit(decl.init);
+        }
+        return;
+      }
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ObjectMethod":
+      case "ClassMethod":
+      case "ClassPrivateMethod":
+      case "TSDeclareMethod":
+        visitFunction(o);
+        return;
+      case "ClassDeclaration":
+      case "ClassExpression":
+        visitClass(o);
+        return;
+      case "StaticBlock": {
+        // class 静态块自带独立 var 作用域（ClassStaticBlockDeclaration 的
+        // var 环境）：`var` 与函数声明不得漏到外层函数。按函数作用域边界
+        // 压栈（nearestFnScope 在此停止），且块内类体上下文已恒 strict。
+        pushScope(true);
+        try {
+          for (const st of arr(o.body)) visit(st);
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      case "BlockStatement": {
+        pushScope(false);
+        try {
+          for (const st of arr(o.body)) visit(st);
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      case "SwitchStatement": {
+        if (o.discriminant) visit(o.discriminant);
+        // case 子句共享一个块作用域（let/const/函数声明的 switch 块语义）
+        pushScope(false);
+        try {
+          for (const c of arr(o.cases)) {
+            const cc = child(c);
+            if (!cc) continue;
+            if (cc.test) visit(cc.test);
+            for (const st of arr(cc.consequent)) visit(st);
+          }
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      case "ForStatement": {
+        // for 头部的 let/const 绑定只覆盖头 + 体
+        pushScope(false);
+        try {
+          if (o.init) visit(o.init);
+          if (o.test) visit(o.test);
+          if (o.update) visit(o.update);
+          if (o.body) visit(o.body);
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      case "ForInStatement":
+      case "ForOfStatement": {
+        pushScope(false);
+        try {
+          if (o.left) visit(o.left);
+          if (o.right) visit(o.right);
+          if (o.body) visit(o.body);
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      case "CatchClause": {
+        pushScope(false);
+        try {
+          if (o.param) bindPattern(o.param, declare);
+          if (o.body) visit(o.body);
+        } finally {
+          popScope();
+        }
+        return;
+      }
+      default:
+        break;
     }
     for (const key of Object.keys(o)) {
       if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
@@ -93,10 +281,13 @@ export function freeIdentifiers(body: Node, params: string[]): Set<string> {
       const isNonComputedKey =
         (key === "property" || key === "key") &&
         (o.type === "MemberExpression" ||
+          o.type === "OptionalMemberExpression" ||
           o.type === "ObjectProperty" ||
           o.type === "ObjectMethod" ||
           o.type === "ClassMethod" ||
-          o.type === "ClassProperty") &&
+          o.type === "ClassPrivateMethod" ||
+          o.type === "ClassProperty" ||
+          o.type === "ClassPrivateProperty") &&
         (o as { computed?: boolean }).computed !== true;
       if (isNonComputedKey) continue;
       const v = o[key];
@@ -106,7 +297,8 @@ export function freeIdentifiers(body: Node, params: string[]): Set<string> {
         visit(v);
       }
     }
-  };
+  }
+
   visit(body);
   return free;
 }
@@ -161,6 +353,49 @@ export function bodyIdentNames(body: Node, params: readonly string[]): Set<strin
 }
 
 /**
+ * body 的**严格后代**节点集合（不含 root 自身）。
+ *
+ * 用途：闭包注入时排除「body 内部的嵌套函数声明」——它在本编译单元里有
+ * 自己的原生作用域（块级函数声明在 strict 下块外不可见、sloppy 下 Annex B
+ * 提升；顶层声明/表达式本就随产物一起编译）。把它当外层闭包注入会把块级
+ * 函数「救活」到块外，抹平 strict 语义（应有 ReferenceError 的引用被折成
+ * 嵌套函数值）。自名条目的 body === root ⇒ 不在集合内，递归注入不受影响。
+ */
+function nestedBodyNodes(root: object): WeakSet<object> {
+  const nested = new WeakSet<object>();
+  const seen = new WeakSet<object>();
+  const walk = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const obj = n as object;
+    if (seen.has(obj)) return;
+    seen.add(obj);
+    if (obj !== root) nested.add(obj);
+    for (const key of Object.keys(obj as Record<string, unknown>)) {
+      if (
+        key === "loc" ||
+        key === "start" ||
+        key === "end" ||
+        key === "tokens" ||
+        key === "comments" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments"
+      ) {
+        continue;
+      }
+      const v = (obj as Record<string, unknown>)[key];
+      if (Array.isArray(v)) {
+        for (const item of v) walk(item);
+      } else if (v && typeof v === "object") {
+        walk(v);
+      }
+    }
+  };
+  walk(root);
+  return nested;
+}
+
+/**
  * 编译 body → (args) => Abs。自由标识符（闭包）从 impl.env 解析注入：
  * vars → Abs 值；fns → absFunction 包装（调走 $callNamed → $call，递归预算保留）。
  * 全局名不注入——编译产物经 new Function 全局作用域解析（未定义名
@@ -171,7 +406,15 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
   const implKey = impl as unknown as object;
   const hit = compiledByImpl.get(implKey);
   if (hit !== undefined) return hit;
-  const free = freeIdentifiers(impl.body, impl.params);
+  // 严格性按**源码种类**（impl.strict 由源 AST 生产者写入 ESM/CJS 面判定）：
+  // 只影响块级函数声明/未声明赋值等 sloppy↔strict 分叉，不按函数猜。
+  const strict = impl.strict === true;
+  const free = freeIdentifiers(impl.body, impl.params, strict);
+  // env.fns 里 body 内部的嵌套声明（extractFn 的指令作用域登记面）不是
+  // 外层闭包：它们随本 body 一起编译，原生作用域语义（块级可见性 / 提升）
+  // 由产物自身承担。注入会把块级函数错误地「救活」到块外。
+  const nestedBodies =
+    impl.env && impl.env.fns.size > 0 ? nestedBodyNodes(impl.body as object) : undefined;
   // 闭包注入面：env 可解析名注入（vars → Abs；fns → absFunction 包装）；
   // 自名（env 条目指向同一 body）经 per-body 缓存的同一 Abs 注入——递归
   // 走 $callNamed（eval 调用预算：cycle 键按对象身份，同一 Abs → 立即截断，
@@ -188,19 +431,32 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
       continue;
     }
     const f = impl.env?.fns.get(name);
-    if (f) {
+    if (f && !nestedBodies?.has(f.body as object)) {
       closureArgs.push(name);
       // Bug 9：闭包函数值透传声明名（f.name 值读折 exact；env 键即声明名）
       const fnOpts = { name };
+      // 同源闭包继承同一严格性（env 条目自带则优先）
+      const closureStrict = f.strict ?? impl.strict;
+      const strictOpt = closureStrict !== undefined ? { strict: closureStrict } : {};
       if (f.body === impl.body) {
         let selfAbs = selfAbsByBody.get(f.body);
         if (selfAbs === undefined) {
-          selfAbs = absFunction(f.params, { body: f.body, async: f.async, env: impl.env }, fnOpts);
+          selfAbs = absFunction(
+            f.params,
+            { body: f.body, async: f.async, env: impl.env, ...strictOpt },
+            fnOpts,
+          );
           selfAbsByBody.set(f.body, selfAbs);
         }
         closureVals.push(selfAbs);
       } else {
-        closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }, fnOpts));
+        closureVals.push(
+          absFunction(
+            f.params,
+            { body: f.body, async: f.async, env: impl.env, ...strictOpt },
+            fnOpts,
+          ),
+        );
       }
       continue;
     }
@@ -227,14 +483,16 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
       ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
     });
     const js = [
-      runtimeImportOf("@nudojs/core/exec"),
+      // ESM 源与 B run 的 strict 前缀同口径；CJS/sloppy 不发射。指令必须
+      // 位于编译单元首语句（运行时符号由 compileRuntimeUnit 以形参注入，
+      // 单元不拼运行时 import 行）。
+      ...(strict ? [`"use strict";`] : []),
       `function __body(${impl.params.join(", ")}) {`,
       bodySrc,
       `}`,
       "return __body;",
     ].join("\n");
-    const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
-    const factory = compileRuntimeUnit<(...a: Abs[]) => Abs>(cleaned, closureArgs);
+    const factory = compileRuntimeUnit<(...a: Abs[]) => Abs>(js, closureArgs);
     const bodyFn = factory(...runtimeArgValues(), ...closureVals);
     runner = (args: Abs[]) => bodyFn(...args);
     compiledByImpl.set(implKey, runner);

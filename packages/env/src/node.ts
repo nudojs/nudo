@@ -2268,7 +2268,7 @@ function assertRegexpPattern(
   // 建模口径（**不把宿主内建遮蔽成比宿主更差的声明**）：
   // - core 已有**精确**建模的全局（URL / URLSearchParams / TextDecoder /
   //   Proxy / Error 族 / TypedArray 族 / Map / Set …）⇒ **不声明**——它们走
-  //   宿主身份路由（ENV_SHADOW_SKIP_GLOBALS）或 core 的 `$new` 精确派发，
+  //   宿主身份路由（getEnvShadowSkipGlobals）或 core 的 `$new` 精确派发，
   //   env 声明反而会遮蔽精确的 throws 面（Bug 884 同族：遮蔽 ⇒ throws 面
   //   消失 ⇒ 假绿）。
   // - 宿主**可构造**的构造器 ⇒ `{ ctor: true }` + 实例面。

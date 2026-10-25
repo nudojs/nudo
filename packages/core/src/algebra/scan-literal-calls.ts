@@ -16,7 +16,7 @@
  *                               `parseCallArgs`（快路径分派表：Bug 430 在此）
  *                               + `absUnknown` / `restArgAbs` / `arrayLengthOf`
  *                               + `defaultArgAbss`（Bug 444 的默认值实参）
- *   - `scan/literal-preds.ts`  字面量判定：`isExactUndef` / `nullishKindOf` /
+ *   - `scan/literal-preds.ts`  字面量判定：`isNullishLitAbs` / `nullishKindOf` /
  *                               `predEqLiteral` / `predEqNullish` /
  *                               `judgeLiteralPred`
  *   - `scan/literal-shapes.ts` 结构执法：`checkReqs` / `checkShapeAgainstAbs` /

@@ -15,16 +15,18 @@
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
 import { transpileStatement } from "./transpile/stmt.ts";
-import type { TranspileOptions } from "./transpile/types.ts";
+import type { TranspileMeta, TranspileOptions } from "./transpile/types.ts";
+import { computeTranspileMeta } from "./transpile/meta.ts";
+import { analyzeTopLevelStatements } from "./transpile/analyze-strip.ts";
 
-export type { TranspileOptions } from "./transpile/types.ts";
+export type { TranspileOptions, TranspileMeta } from "./transpile/types.ts";
 export {
   foldStaticStringExpr,
   foldRequireSpecArg,
 } from "./transpile/helpers.ts";
 // 运行时 import 面单一真值源（import 行 / 剥离正则都在叶子模块；本 facade
 // 保持 `runtimeImportOf` 的公开路径不变，另导出名单供漂移守卫比对）。
-import { runtimeImportOf } from "./transpile/runtime-import.ts";
+import { DEFAULT_RUNTIME_IMPORT, runtimeImportOf } from "./transpile/runtime-import.ts";
 export { RUNTIME_IMPORT_NAMES } from "./transpile/runtime-import.ts";
 export { runtimeImportOf };
 import {
@@ -45,8 +47,54 @@ export function transpileSource(source: string, opts: TranspileOptions = {}): st
   return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
+/**
+ * 解析 + transpile + 模块元数据（**单次 parse**）。
+ *
+ * `code` 与同参 `transpileSource` 逐字节一致；`meta` 从同一棵源 AST 计算
+ * （imports / 导出面 / 顶层声明 / 顶层 this / ESM 形态 / 运行时说明符）。
+ */
+export function transpileModule(
+  source: string,
+  opts: TranspileOptions = {},
+): { code: string; meta: TranspileMeta } {
+  const file = parseSource(source);
+  return transpileFileDetailed(file, { ...opts, source: opts.source ?? source }, true);
+}
+
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
-  const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
+  return transpileFileDetailed(file, opts, false).code;
+}
+
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: true,
+): { code: string; meta: TranspileMeta };
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: false,
+): { code: string; meta: TranspileMeta | null };
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: boolean,
+): { code: string; meta: TranspileMeta | null } {
+  // 元数据按需计算：默认 esm target 的既有调用方不为未使用字段付扫描成本；
+  // host target 需要 imports 面生成 live refresh，必须算。
+  const meta =
+    wantMeta || opts.target === "host" ? computeTranspileMeta(file, opts) : null;
+  const hostRefresh =
+    opts.target === "host"
+      ? {
+          binds: hostImportRefreshBindsOf(meta?.imports ?? [], opts.mockNames),
+          done: false,
+        }
+      : null;
+  const runtime =
+    opts.target === "host" || opts.runtimeImport === null
+      ? null
+      : (opts.runtimeImport ?? DEFAULT_RUNTIME_IMPORT);
   // Bug 15：解构临时名单调计数器（跨语句/prologue 唯一，与源行号解耦）
   const destrTmpSeq = opts.destrTmpSeq ?? { n: 0 };
   // Bug 181：计数器创建处**预置避让**——用户自己声明了 `_d{n}` / `_n{n}`
@@ -94,7 +142,9 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // 私有同名函数遮蔽 / 私有名可被跨模块 import / 产物作为真实 ESM 时多出
   // 导出）。只在 AST 上算一次（与 stripStaticExportDecls 的源 AST 名回收
   // 同一口径），不依赖转译产物文本。
-  const exportedDeclNames = new Set(staticExportDeclNamesOfProgram(file.program));
+  const exportedDeclNames = new Set(
+    meta?.staticExportNames ?? staticExportDeclNamesOfProgram(file.program),
+  );
   // Bug ②：ESM import 绑定对用户代码不可变（再赋值 TypeError，
   // "Assignment to constant variable"）——import 本地名进模块级 const 面：
   // 标识符赋值/自增/逻辑赋值走既有 $throwConstAssign 通道；嵌套作用域
@@ -122,17 +172,55 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
     exportedDeclNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
+    ...(hostRefresh !== null ? { hostImportRefresh: hostRefresh } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
-    runtimeImportOf(runtime),
-    ``,
   ];
+  if (runtime !== null) lines.push(runtimeImportOf(runtime));
+  lines.push(``);
+  // Bug 456：refresh 闭包由模块域变量强持有（注册表是弱引用）——host 形态
+  // 与 run.ts 文本改写同口径。
+  if (hostRefresh !== null && hostRefresh.binds.length > 0) {
+    lines.push(`let __nudoRefreshKeep;`);
+  }
   if (varHoistLine) lines.push(varHoistLine);
-  for (const stmt of file.program.body) {
+  // analyze 模式：**发射期**剥离顶层效应语句（源 AST 口径——提升行在上方
+  // 已按原始 body 计算，块内 var 仍有模块顶绑定）。保留语句的发射字节与
+  // exec 模式一致，调用方无需再解析生成产物做二次剥离。
+  const emitBody =
+    opts.mode === "analyze"
+      ? analyzeTopLevelStatements(file.program.body)
+      : file.program.body;
+  for (const stmt of emitBody) {
     lines.push(transpileStatement(stmt, 0, scopedOpts));
   }
-  return lines.join("\n") + "\n";
+  return { code: lines.join("\n") + "\n", meta };
+}
+
+/**
+ * host target 的 live import refresh 赋值（源序；mock 绑定不刷新——刷新会
+ * 把 mock 冲掉）。注册闭包在首个产生绑定的 import 语句后一次性发射。
+ */
+function hostImportRefreshBindsOf(
+  imports: TranspileMeta["imports"],
+  mockNames: ReadonlySet<string> | undefined,
+): string[] {
+  const out: string[] = [];
+  for (const imp of imports) {
+    const local = imp.local;
+    if (local === undefined || mockNames?.has(local) === true) continue;
+    if (imp.kind === "named") {
+      out.push(
+        `${local} = __nudoBindImport(${JSON.stringify(imp.spec)}, ${JSON.stringify(imp.imported)});`,
+      );
+    } else if (imp.kind === "default") {
+      out.push(`${local} = __nudoBindImport(${JSON.stringify(imp.spec)}, "default");`);
+    } else if (imp.kind === "namespace") {
+      out.push(`${local} = __nudoBindNamespace(${JSON.stringify(imp.spec)});`);
+    }
+  }
+  return out;
 }
 
 /** 解析 + transpile */

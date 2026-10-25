@@ -4,10 +4,9 @@
  * for-of iteratee）同口径——source 序到达优先（首提升赢）、refine/已有
  * 具体形状拒绝提升（contract-first）、fn 应用点才记 HofSite。
  *
- * 扫描范围：函数体语句/表达式（含内联箭头/函数表达式体——回调执行期
- * 同样携带 hofCollect；不含嵌套函数声明体——独立执行单元）。
- * α 编号按求值顺序（receiver 先于实参、reduce 先 acc 后 item）与
- * 运行时 ctx.freshSeq 一致。
+ * 扫描范围：函数体语句/表达式（含内联箭头/函数表达式体；不含嵌套函数
+ * 声明体——独立执行单元）。α 编号按求值顺序（receiver 先于实参、reduce
+ * 先 acc 后 item）。
  */
 import type { Node } from "@babel/types";
 import type { Abs, Shape } from "./abs.ts";
@@ -78,7 +77,7 @@ function alphaTermOf(arg: Node | undefined, ctx: Ctx): Term {
   return alphaOfTerm(undefined, ctx);
 }
 
-/** 到达优先写形状 + 产品（与 hof.promoteParamShape 同口径；
+/** 到达优先写形状 + 产品（与求值期到达优先规则同口径；
  *  recordSite=false = 调用方自己记 site（direct-call/callback）） */
 function promoteShape(
   ctx: Ctx,

@@ -9,7 +9,7 @@
  *   元素侧表」给出（Bug 290）——形状仍是 obj（容器 arr/tuple 无侧槽，
  *   #136 的槽读面依赖它）。
  */
-import type { Abs } from "../abs.ts";
+import type { Abs, Shape } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import { objOf, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
@@ -165,8 +165,13 @@ export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
   }
 }
 
-/** RegExp brand 判定（species 构造路径不走 ToString） */
-function isRegExpBrandAbs(x: Abs): boolean {
+/** RegExp brand 判定（species 构造路径不走 ToString）。
+ *  Bug 179：实参可能是自由标识符（宿主全局值）而非 Abs——读 .shape 前必须
+ *  守门；methods.ts（IsRegExp 守卫 / replace pattern 合法臂）共用本实现。 */
+export function isRegExpBrandAbs(
+  x: Abs | undefined,
+): x is Abs & { shape: Extract<Shape, { k: "brand" }> } {
+  if (!x || typeof x !== "object" || !("shape" in (x as object))) return false;
   return x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
 }
 

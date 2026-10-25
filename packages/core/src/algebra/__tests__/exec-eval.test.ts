@@ -5,11 +5,9 @@ import {
   $lit,
   $fork,
   $for,
-  $forIter,
   $obj,
   $get,
   $set,
-  $while,
   $whileSeq,
   num,
   numVar,
@@ -81,19 +79,6 @@ describe("evaluator $for (bounded)", () => {
     expect(r).toBeDefined();
     expect(r.conf).not.toBe("opaque");
   });
-
-  it("generator yields at most maxIters", () => {
-    const states = [
-      ...$forIter(
-        $lit(0),
-        () => $lit(true),
-        (s) => $add(s, $lit(1)),
-        (s) => s,
-        5,
-      ),
-    ];
-    expect(states.length).toBe(5);
-  });
 });
 
 describe("evaluator objects", () => {
@@ -114,19 +99,7 @@ describe("evaluator objects", () => {
   });
 });
 
-describe("evaluator $while", () => {
-  it("concrete countdown", () => {
-    const r = $while(
-      $obj({ i: $lit(3), acc: $lit(0) }),
-      (s) => $lt($lit(0), $get(s, "i")),
-      (s) => $set($set(s, "acc", $add($get(s, "acc"), $get(s, "i"))), "i", $lit(0)),
-      8,
-    );
-    // i>0 false immediately after first step sets i=0... actually first test 0<3 true
-    // step: acc=0+3=3, i=0 → next test 0<0 false → exit  {i:0, acc:3}
-    expect(litValue($get(r, "acc"))).toEqual({ ok: true, value: 3 });
-  });
-
+describe("evaluator $whileSeq", () => {
   it("$whileSeq runs body while test true", () => {
     let i = $lit(0);
     const hits: number[] = [];

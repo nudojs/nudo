@@ -69,8 +69,8 @@ function normalizeApplyReturn(raw: Abs | AbsApplyResult): AbsApplyResult {
   return isAbsApplyResult(raw) ? raw : makeAbsApplyResult(raw, neverAbs);
 }
 
-/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
-function joinThrowsSince(mark: number): Abs {
+/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获；$call / $callNamed 共用） */
+export function joinThrowsSince(mark: number): Abs {
   const items = peekThrowExitsSince(mark);
   if (items.length === 0) return neverAbs;
   if (items.length === 1) return items[0]!;
@@ -284,7 +284,7 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     //
     // `unknown` 是引擎的 **fail-closed 令牌**，只说明「引擎不知道被调者」，
     // **不说明「它不是函数」** ⇒ 在这一档记 `TypeError` 是**对普通代码的假阳性**：
-    // - 未解析的导入绑定（`rewriteUserImports` 折成 unknown Abs）⇒ 原生是
+    // - 未解析的导入绑定（host 发射折成 unknown Abs）⇒ 原生是
     //   **模块装载错误**（不是调用点 TypeError）；
     // - 已解析但形状未知的导入绑定 ⇒ 是**精度债**（`nudo:opaque-result` 已诚实报出）。
     // 两条实测都会让 `nudo check` 对**合法代码**报 `nudo:entry-may-throw`（error 级）。
@@ -375,6 +375,8 @@ setApplyCallbackHost((cb, args, env, _phi, _budget, thisVal) => {
           env: e,
           // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
           ...(f.optionalParams ? { optionalParams: f.optionalParams } : {}),
+          // 源种类严格性（env 条目写入）⇒ body 编译单元与模块运行同口径
+          ...(f.strict !== undefined ? { strict: f.strict } : {}),
         }),
         args,
         thisVal,

@@ -21,6 +21,7 @@
 import type { Abs } from "../../abs.ts";
 import { litValue } from "../../abs.ts";
 import { getProtoAbs, getSlot, type ObjShape } from "../../objects.ts";
+import { MAX_PROTO_DEPTH, ownPropHolder } from "./proto-walk.ts";
 
 /** 数组 length 域判定结果（ToNumber → 整数 → [0, 2^32-1]） */
 export type LengthNumber =
@@ -32,19 +33,6 @@ export type LengthNumber =
   | { kind: "typeerror" }
   /** 不可判定 → 不抛（sound 回退） */
   | { kind: "abstract" };
-
-/** 原型链深度上限（防 [[Prototype]] 环） */
-const MAX_PROTO_DEPTH = 16;
-
-/** 该 Abs 的「自有属性持有者」：obj 自身 / brand 的内层 obj */
-function ownPropHolder(p: Abs): Abs | undefined {
-  if (p.shape.k === "obj") return p;
-  if (p.shape.k === "brand") {
-    const inner = p.shape.shape;
-    return inner.shape.k === "obj" ? inner : undefined;
-  }
-  return undefined;
-}
 
 /**
  * 对象是否可能有**自定义**数值转换（valueOf / toString）——ToPrimitive

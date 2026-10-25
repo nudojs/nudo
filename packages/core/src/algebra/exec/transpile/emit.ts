@@ -747,8 +747,9 @@ export interface ForkTmpNames {
  *
  * ⚠ **成对一致是硬约束**：同一批名字在「声明点」与「**全部**引用点」必须
  * 同名 ⇒ 声明点（`forkBindingDecls`）与引用点（`forkArmThunk` /
- * `forkJoinBindings` / `stmt/statement.ts` 与 `stmt/fn-body.ts` 的 inline
- * `wrapArm` 副本）**一律走本分配器**（纯函数 + 确定性 ⇒ 两侧同名）。
+ * `forkArmThunkExpr` / `forkJoinBindings`）**一律走本分配器**（纯函数 +
+ * 确定性 ⇒ 两侧同名）。语句位 if 分叉（`stmt/statement.ts`）与早退提升
+ * （`stmt/fn-body.ts`）共用 `forkArmThunkExpr`，不得再各自内联副本。
  */
 export function forkTmpNames(names: readonly string[], opts: TranspileOptions): ForkTmpNames {
   const bases: string[] = [];
@@ -866,6 +867,53 @@ export function forkArmThunk(
     ...names.map((n, i) => `      ${sets[i]} = true;`),
     `    }`,
     `  }`,
+    `}`,
+  ].join("\n");
+}
+
+/**
+ * fork 臂 thunk（**thunk 表达式形态**）：`thunkExpr` 是已发射的 thunk
+ * 表达式源（如 `transpileBlockAsThunk` 的 `() => { … }` 产物）——臂入口把
+ * 绑定恢复到快照基线，臂尾把结束态写入本臂槽位。
+ *
+ * 与 {@link forkArmThunk}（body-lines 形态，`expr/short-circuit.ts` 的短路
+ * 臂协议）**同协议、不同载体**：本函数把整个 thunk 当一条 `return (…)();`
+ * 表达式，body-lines 形态直接内联语句行（缩进 / 换行不同，各自被既有产物
+ * 快照钉住，故保留两个入口）。
+ *
+ * `stmt/statement.ts`（语句位 if 分叉）与 `stmt/fn-body.ts`（早退提升）此前
+ * 各有逐字相同的 inline 副本——名字成对一致靠手工同步；现统一走本函数。
+ * 无 fork 绑定时原样返回 `thunkExpr`（调用方依赖该早退：不引入包装层）。
+ *
+ * @param arm 臂序（0 = cons 臂 / 1 = alt 臂）
+ * @param padIn 臂内缩进（调用方 `indent(depth + 1)`；与既有产物逐字一致）
+ */
+export function forkArmThunkExpr(
+  thunkExpr: string,
+  arm: 0 | 1,
+  names: string[],
+  padIn: string,
+  opts: TranspileOptions,
+): string {
+  if (names.length === 0) return thunkExpr;
+  const t = forkTmpNames(names, opts);
+  const slots = arm === 0 ? t.arm1 : t.arm2;
+  const sets = arm === 0 ? t.arm1Set : t.arm2Set;
+  return [
+    `() => {`,
+    ...names.map((n, i) => `${padIn}${n} = $copy(${t.snap[i]});`),
+    `${padIn}let ${t.cont} = true;`,
+    `${padIn}try {`,
+    `${padIn}  return (${thunkExpr})();`,
+    `${padIn}} catch (e) {`,
+    `${padIn}  if ($isForkExit(e)) ${t.cont} = false;`,
+    `${padIn}  throw e;`,
+    `${padIn}} finally {`,
+    `${padIn}  if (${t.cont}) {`,
+    ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
+    ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
+    `${padIn}  }`,
+    `${padIn}}`,
     `}`,
   ].join("\n");
 }

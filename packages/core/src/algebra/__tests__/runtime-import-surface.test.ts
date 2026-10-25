@@ -7,7 +7,6 @@
  * 多出未使用导入（且暗示该符号已不再发射）。名字清单与剥离正则的单一真值
  * 源是 `exec/transpile/runtime-import.ts`（本测试按公开路径 + 叶子双面校验）。
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as execSurface from "../exec/index.ts";
 import {
@@ -20,6 +19,9 @@ import {
   runtimeImportOf,
 } from "../exec/transpile/runtime-import.ts";
 import { RUNTIME_IMPORT_RE as RUN_RUNTIME_IMPORT_RE } from "../exec/run.ts";
+import { compiledBodyOf } from "../exec/body-fn.ts";
+import { parseSource } from "../parse-source.ts";
+import { litValue, numLit } from "../abs.ts";
 
 /** 解析生成 import 行的具名表（同时钉住行格式）。 */
 function importNamesOf(line: string): { spec: string; names: string[] } {
@@ -112,19 +114,26 @@ describe("runtime import surface", () => {
     }
   });
 
-  it("RUNTIME_IMPORT_RE 单一真值源（run.ts 与叶子同一对象；body-fn 不再本地定义）", () => {
+  it("RUNTIME_IMPORT_RE 单一真值源（run.ts 与叶子同一对象；宿主单元不再生成/剥离 import 行）", () => {
     // 公开路径不变：transpile.ts facade / run.ts / exec/index.ts 都指向同一定义
     expect(facadeRuntimeImportOf).toBe(runtimeImportOf);
     expect(execSurface.runtimeImportOf).toBe(runtimeImportOf);
     expect(RUN_RUNTIME_IMPORT_RE).toBe(RUNTIME_IMPORT_RE);
     expect(execSurface.RUNTIME_IMPORT_RE).toBe(RUNTIME_IMPORT_RE);
-    // 生成行必须被整行命中（宿主 new Function 前按它剥离）
+    // 生成行必须被整行命中（transpile 产物剥离/校验面的既有口径）
     expect(RUNTIME_IMPORT_RE.test(runtimeImportOf("@nudojs/core/exec"))).toBe(true);
     // 单引号说明符不匹配（runtimeImportOf 产物口径；用户 import 另行改写）
     expect(RUNTIME_IMPORT_RE.test(`import { $lit } from './x.js';`)).toBe(false);
-    const bodyFnSrc = readFileSync(new URL("../exec/body-fn.ts", import.meta.url), "utf8");
-    expect(bodyFnSrc).not.toMatch(/const RUNTIME_IMPORT_RE\s*=/);
-    expect(bodyFnSrc).toContain('from "./transpile/runtime-import.ts"');
+    // body-fn 宿主单元由 compileRuntimeUnit 以形参注入运行时符号 ⇒ 单元内
+    // 不拼运行时 import 行（也不再有剥离步骤）。行为面验证：body 编译可执行
+    // ——new Function 体内若残留 import 语句会抛 SyntaxError ⇒ 编译成功本身
+    // 即证明宿主单元没有 import 行（不再 grep 源码文本）。
+    const decl = parseSource(`function __nudoProbe(x) { return x + 1; }`).program.body[0];
+    expect(decl?.type).toBe("FunctionDeclaration");
+    if (decl?.type !== "FunctionDeclaration") throw new Error("unreachable");
+    const runner = compiledBodyOf({ params: ["x"], body: decl.body });
+    expect(runner).toBeTypeOf("function");
+    expect(litValue(runner!([numLit(41)]))).toEqual({ ok: true, value: 42 });
   });
 });
 

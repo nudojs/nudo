@@ -30,7 +30,7 @@
  * `scan-literal-calls.ts` 的 `checkOneCall` / `checkExternalCall`。
  *
  * ── 本模块的公开（内部模块级）签名 ────────────────────────────────────────
- *   - `isExactUndef(a: Abs): boolean`
+ *   - `isNullishLitAbs(a: Abs): boolean`
  *   - `nullishKindOf(a: Abs): "null" | "undefined" | undefined`
  *   - `predEqLiteral(p: Pred): number | string | boolean | bigint | undefined`
  *   - `predEqNullish(p: Pred): { value: null | undefined } | undefined`
@@ -44,7 +44,7 @@
  * `-0` 判成不同 ⇒ `-0` 的既有放行变报红）。
  *
  * **口径② null / undefined 分档**：`null` 与 `undefined` 是**两个值域**
- * ——`predEqNullish`（契约端）+ `nullishKindOf` / `isExactUndef`（实参端）。
+ * ——`predEqNullish`（契约端）+ `nullishKindOf` / `isNullishLitAbs`（实参端）。
  *
  * **口径③ `typeof`（`ptypeof`）谓词可判定**：`union(number(), string())`
  * 的成员实例化成 `or(typeof(x,"number"), typeof(x,"string"))` ⇒ 消费侧
@@ -70,7 +70,7 @@ import { TYPEOF_NAMES } from "../pred.ts";
  * ⇒ **值域分档**（null 与 undefined 是两个域）走 `nullishKindOf` /
  * `predEqNullish`，**不动本函数的「nullish 一档」语义**。
  */
-export function isExactUndef(a: Abs): boolean {
+export function isNullishLitAbs(a: Abs): boolean {
   return (
     a.term?.op === "lit" &&
     ((a.term.value as unknown) === undefined || (a.term.value as unknown) === null)
@@ -80,7 +80,7 @@ export function isExactUndef(a: Abs): boolean {
 /**
  * 实参的 nullish 身份（Bug 965）：`null` / `undefined` / 非 nullish。
  *
- * `isExactUndef` 把 null 与 undefined 合成**一档**（消费侧只问「是不是
+ * `isNullishLitAbs` 把 null 与 undefined 合成**一档**（消费侧只问「是不是
  * nullish」）——判**值域**时必须分档：`lit(null)` 契约只收 null，
  * `lit(undefined)` 契约只收 undefined，两者是不同的域。
  */

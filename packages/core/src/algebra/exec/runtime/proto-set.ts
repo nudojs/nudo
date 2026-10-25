@@ -31,6 +31,7 @@ import { getProtoAbs, getSlot, type ObjShape } from "../../objects.ts";
 import { extStateOf, getPropFlags } from "../../builtins/invariants.ts";
 import { lookupObjAccessor } from "../../accessors.ts";
 import { protoOfRecv } from "../../builtins/ctor.ts";
+import { MAX_PROTO_DEPTH, ownPropHolder } from "./proto-walk.ts";
 
 /** 原型链写门判定结果 */
 export type ProtoSetVerdict =
@@ -40,19 +41,6 @@ export type ProtoSetVerdict =
   | { kind: "deny" }
   /** 命中带 setter 的访问器 → 派发 setter（this = receiver，原生同） */
   | { kind: "setter"; setter: (t: Abs, v: Abs) => Abs };
-
-/** 原型链深度上限（防 [[Prototype]] 环） */
-const MAX_PROTO_DEPTH = 16;
-
-/** 该 Abs 的「自有属性持有者」：obj 自身 / brand 的内层 obj；其余形态无自有槽模型 */
-function ownPropHolder(p: Abs): Abs | undefined {
-  if (p.shape.k === "obj") return p;
-  if (p.shape.k === "brand") {
-    const inner = p.shape.shape;
-    return inner.shape.k === "obj" ? inner : undefined;
-  }
-  return undefined;
-}
 
 /**
  * Bug 197：receiver 的 [[Prototype]] 解析——**两个来源**：

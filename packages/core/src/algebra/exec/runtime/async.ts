@@ -596,13 +596,6 @@ export function $await(v: Abs): Abs {
   return v;
 }
 
-/** async 直接 return 的 coerce
- *  @deprecated 转译层不再发射、内部无调用；保留导出仅为公共 API 兼容。 */
-export function $asyncReturn(v: Abs): Abs {
-  if (v.shape.k === "eff") return v;
-  return wrapPromiseAbs(v);
-}
-
 // --- 生成器 ---
 // yieldStack / genPathSensitive / genJoinOverride 在文件前部（fork 隔离用）
 

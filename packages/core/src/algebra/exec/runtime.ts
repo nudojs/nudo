@@ -109,12 +109,10 @@ export {
 export {
   $catchVal,
   $for,
-  $forIter,
   $fork,
   $isForkExit,
   $switch,
   $throw,
-  $while,
   $whileSeq,
   DEFAULT_MAX_LOOP_ITERS,
   MAX_CONCRETE_LOOP_ITERS,
@@ -152,7 +150,6 @@ export {
 } from "./runtime/containers.ts";
 export {
   $async,
-  $asyncReturn,
   $await,
   $gen,
   $yield,

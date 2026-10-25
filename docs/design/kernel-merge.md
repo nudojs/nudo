@@ -52,7 +52,7 @@ parser ──▶ core
 ## 约束如何传播
 
 1. 调用点参数 `tagParamArg` 挂 `var(name)` 项身份（WeakMap 旁路）。
-2. `if (x > 5)` → `phiFromTest` 提取 Pred，`pushPhi` 进路径前提 Φ。
+2. `if (x > 5)` → 真臂以 `withExecPhi(Φ ∧ test.pred)` 作用域进入路径前提 Φ（假臂合取否定）。
 3. 分支内 `x+1` / `x>=3` 读 Φ 与自身 pred，单调性推出新约束。
 4. narrow 产生的 range refined 保留 term，`toAbsWithTerms` 编码成 `ge/le` Pred。
 5. `nudo check`：`checkSource` 做蕴含门禁（调用前置 vs clamp 不算违例）。

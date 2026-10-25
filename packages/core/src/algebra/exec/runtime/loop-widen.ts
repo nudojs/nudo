@@ -1,7 +1,7 @@
 /**
  * 循环携带绑定宽化器（Bug 47/48 同一「迭代 join/widen」机制的两个形态）：
  * - for-of 单代表迭代（containers.$forOf unbounded 分支）；
- * - while / for / do-while 抽象条件预算耗尽（control.$while/$for/$whileSeq）。
+ * - while / for / do-while 抽象条件预算耗尽（control.$for/$whileSeq）。
  * 两处都把循环携带绑定折叠成**有界快照的 join**（`{0,1}` / `{0..8}`）并
  * 继承 exact conf——对任意迭代次数（原生 `xs.length` / `n=100`）是欠近似
  * （`2 ∉ {0,1}`），且引擎自身的具体求值（`count([1,2,3]) => 3 #exact`）
@@ -410,7 +410,7 @@ export function makeLoopWidener(): LoopCarriedWidener {
       const g: GrowthTree = interrupted ? true : growth;
       // #176：宽化/收敛产物上实施 @nudo:invariant（applyInvariantsToPack
       // 对非 obj / 无 specs 原样直通——counter 线程（state）零行为变化）。
-      // 覆盖 $for / $while / $whileSeq / $forOf 全部 widenFinal 消费方。
+      // 覆盖 $for / $whileSeq / $forOf 全部 widenFinal 消费方。
       if (g === null) {
         // #156 残留：无增长但快照 join 是数组族 sum（参数位 arr 绑定的顺序
         // 状态：unknown 吸收 push 值 → 元素域增长检测不到，joinAbs 把

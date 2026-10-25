@@ -80,7 +80,7 @@ import {
   bindCtorFacetOf,
 } from "./declare.ts";
 import { runtimeAssignObject } from "./assign.ts";
-import { execRegexBrand, stringRegexMethod } from "../class-regex.ts";
+import { execRegexBrand, stringRegexMethod } from "../regexp-runtime.ts";
 
 /**
  * Bug 107：Number.prototype digits/radix 字面量实参域检查（接收者无关——
@@ -928,7 +928,7 @@ function dispatchInstanceMethod(
   loc?: [number, number],
 ): Abs | undefined {
   // Bug 244：实例 / 原型上的**方法写**（monkey-patch）优先于注册表
-  // 方法体——原生查找序 own → prototype。写侧（$set / $thisSet /
+  // 方法体——原生查找序 own → prototype。写侧（$set /
   // Object.defineProperty）把值落进 brand 内层 obj 槽面（实例 = 实例
   // brand 的内层 obj；原型对象 = protoBrandAbs(name) 的内层 obj），
   // 读面（chainProtoSlotOf）看得见，但**派发面此前只查注册表** ⇒

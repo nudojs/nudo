@@ -11,10 +11,9 @@
 
 import type { Abs, Shape } from "./abs.ts";
 import { litValue } from "./abs.ts";
-import type { Phi, Pred } from "./pred.ts";
+import type { Phi } from "./pred.ts";
 import { pTrue, implies, predToString } from "./pred.ts";
-import { termEquals } from "./term.ts";
-import type { Term } from "./term.ts";
+import { numericBoundsImply } from "./pred-bounds.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { getClassChain } from "./language.ts";
 import { getSlot } from "./objects.ts";
@@ -163,50 +162,6 @@ function leqPred(src: Abs, tgt: Abs, phi: Phi, depth: number): LeqResult {
   // 数值界：src 更严可赋给更宽目标（x>5 ≤ x>0）
   if (numericBoundsImply(sp, tp)) return ok();
   return fail(`pred ⊭ ${predToString(tp)}`);
-}
-
-/** gt/ge/lt/le 单比较 pred（a/b 两侧均为 Term） */
-type CmpPred = Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }>;
-
-/** 数值界蕴含：src 的界更紧则可赋给更宽 tgt */
-function numericBoundsImply(src: Pred, tgt: Pred): boolean {
-  // 单比较：x > n_src ⇒ x > n_tgt 当 n_src ≥ n_tgt（gt）；对称处理 ge
-  const one = (p: Pred): p is CmpPred =>
-    p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le";
-  if (!one(src) || !one(tgt)) return false;
-  if (src.op !== tgt.op) {
-    // gt ⇒ ge；lt ⇒ le
-    if (src.op === "gt" && tgt.op === "ge") {
-      return sameTermSide(src, tgt) && litGE(src.b, tgt.b);
-    }
-    if (src.op === "lt" && tgt.op === "le") {
-      return sameTermSide(src, tgt) && litLE(src.b, tgt.b);
-    }
-    return false;
-  }
-  if (!sameTermSide(src, tgt)) return false;
-  const sb = src.b.op === "lit" ? src.b.value : undefined;
-  const tb = tgt.b.op === "lit" ? tgt.b.value : undefined;
-  if (typeof sb !== "number" || typeof tb !== "number") return false;
-  if (src.op === "gt" || src.op === "ge") {
-    return sb >= tb; // 更大的下界 ⇒ 更小的下界
-  }
-  return sb <= tb; // 更小的上界 ⇒ 更大的上界
-}
-
-function sameTermSide(a: CmpPred, b: CmpPred): boolean {
-  // termEquals 走结构比较，避免 sum×sum 场景 JSON.stringify 爆炸
-  return termEquals(a.a, b.a);
-}
-
-function litGE(a: Term, b: Term): boolean {
-  if (a.op !== "lit" || b.op !== "lit") return false;
-  return typeof a.value === "number" && typeof b.value === "number" && a.value >= b.value;
-}
-
-function litLE(a: Term, b: Term): boolean {
-  if (a.op !== "lit" || b.op !== "lit") return false;
-  return typeof a.value === "number" && typeof b.value === "number" && a.value <= b.value;
 }
 
 function leqShape(

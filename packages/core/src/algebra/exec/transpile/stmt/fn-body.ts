@@ -47,7 +47,7 @@ import {
   internalTmpName,
   shadowedIntrinsicsOf,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
+import { emitArrMutatorRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
@@ -264,28 +264,6 @@ export function transpileFnBodyStmts(
     // 同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`forkBindingDecls`）
     // 同源 ⇒ 「成对一致」。
     const fk = forkTmpNames(names, scopedOpts);
-    const wrapArm = (thunk: string, arm: 0 | 1): string => {
-      if (names.length === 0) return thunk;
-      const slots = arm === 0 ? fk.arm1 : fk.arm2;
-      const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
-      return [
-        `() => {`,
-        ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
-        `${padIn}let ${fk.cont} = true;`,
-        `${padIn}try {`,
-        `${padIn}  return (${thunk})();`,
-        `${padIn}} catch (e) {`,
-        `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
-        `${padIn}  throw e;`,
-        `${padIn}} finally {`,
-        `${padIn}  if (${fk.cont}) {`,
-        ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
-        ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
-        `${padIn}  }`,
-        `${padIn}}`,
-        `}`,
-      ].join("\n");
-    };
     const testRebinds = emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad);
     // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
     // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
@@ -347,7 +325,7 @@ export function transpileFnBodyStmts(
     const consMarked = inCtrl
       ? `() => { ${fkConsName} = true; return (${consNarrowed})(); }`
       : consNarrowed;
-    const cons = wrapArm(consMarked, 0);
+    const cons = forkArmThunkExpr(consMarked, 0, names, padIn, scopedOpts);
     const altBody = transpileFnBodyStmts(rest, depth + 1, {
       ...scopedOpts,
       inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
@@ -376,7 +354,7 @@ export function transpileFnBodyStmts(
       "alt",
       recvSet,
     );
-    const alt = wrapArm(altNarrowed, 1);
+    const alt = forkArmThunkExpr(altNarrowed, 1, names, padIn, scopedOpts);
     const applyJoin = names.length ? forkJoinBindings(names, pad, scopedOpts).join("\n") : "";
     if (names.length === 0) {
       const promoted = [

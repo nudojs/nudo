@@ -31,3 +31,13 @@ export function markFreshInstance(a: Abs): Abs {
 export function freshInstanceIdOf(a: Abs): number | undefined {
   return instanceIds.get(a as object);
 }
+
+/**
+ * 快照副本的实例身份迁移（$copy/fork 用）：副本代表**同一次创建事件**，
+ * 必须沿用同一 id——不得重新打标（新 id 会让 strictEq 折 false），
+ * 也不得丢标（丢标会让「副本 === 另一次创建」从 false 退化成 unknown）。
+ */
+export function migrateFreshInstance(from: Abs, to: Abs): void {
+  const id = instanceIds.get(from as object);
+  if (id !== undefined) instanceIds.set(to as object, id);
+}

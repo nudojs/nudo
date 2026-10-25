@@ -5,11 +5,11 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, litValue, never as neverAbs, unknown } from "../abs.ts";
+import { abs, litValue, unknown } from "../abs.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
-import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
+import { $call, routeApplyThrows, clearPureMemo, joinThrowsSince } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
 import { setHostGlobalFnCall } from "./runtime/state.ts";
 import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
@@ -31,8 +31,7 @@ import {
   pushCallLoc,
   popCallLoc,
 } from "./member-diag.ts";
-import { peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
-import { joinAbs } from "../objects.ts";
+import { throwExitsMark } from "./runtime/state.ts";
 import { clearAllPureMemos, createPureMemo } from "./pure-memo.ts";
 import {
   createScopedSlot,
@@ -66,14 +65,6 @@ const pureCallMemo = createPureMemo();
 /** 清空 pure memo（宿主入口 / 会话缓存失效；清**全部**实例——两条调用路径） */
 export function clearPureCallMemo(): void {
   clearAllPureMemos();
-}
-
-/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
-function joinThrowsSince(mark: number): Abs {
-  const items = peekThrowExitsSince(mark);
-  if (items.length === 0) return neverAbs;
-  if (items.length === 1) return items[0]!;
-  return items.reduce((a, b) => joinAbs(a, b));
 }
 
 /** 调用点 collector（作用域化：runWithCollectorScope 内各分析互不串台；

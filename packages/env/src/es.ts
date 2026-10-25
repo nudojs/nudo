@@ -207,7 +207,7 @@ export function defineEnv(): EnvDefinition {
    *
    * ⚠️ 运行时面（引擎读 `new Intl.Collator().compare`）由 core 的
    * `BUILTIN_BRAND_METHODS`（`packages/core/src/algebra/exec/runtime/members.ts`）
-   * 决定，**不在 env 包**——`Intl` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里
+   * 决定，**不在 env 包**——`Intl` 在 core 的 env-skip 派生（`getEnvShadowSkipGlobals`） 里
    * ⇒ 本声明**不会**注入运行时（见交回报告的「口径与已知偏差」）。
    */
   const intlCtor = (name: string, instance?: Abs): Abs =>
@@ -404,7 +404,7 @@ export function defineEnv(): EnvDefinition {
    * `rejected` 通道（此前恒 `unknown` ⇒ `catch (e) { e }` 折出 unknown）。
    * 无实参 ⇒ 原生以 `undefined` 拒绝。
    *
-   * ⚠️ `Promise` 在 core 的 `ENV_SHADOW_SKIP_GLOBALS` 里 ⇒ 本声明**不会**
+   * ⚠️ `Promise` 在 core 的 env-skip 派生（`getEnvShadowSkipGlobals`） 里 ⇒ 本声明**不会**
    * 注入运行时（运行时由 core 的 `evalPromiseStatic` 按名派发，那侧已是
    * 精确 reason）——此处修的是**声明面**（env ≡ ES 标准库声明）。
    */
@@ -627,8 +627,8 @@ export function defineEnv(): EnvDefinition {
       // **未声明** ⇒ 同一份报告里既给出精确签名（`() => 1n`）又报
       // 「Built-in API "BigInt" is not covered」——**自相矛盾**。
       //
-      // 这些名字都在 core 的 ENV_SHADOW_SKIP_GLOBALS（= NAMESPACE_GLOBALS
-      // 身份路由表）里 ⇒ **env 注入对它们无效**（注入会遮蔽宿主身份路由 →
+      // 这些名字都在 core 的 env-skip 派生（= NAMESPACE_GLOBALS 身份路由表 +
+      // 宿主内建名）里 ⇒ **env 注入对它们无效**（注入会遮蔽宿主身份路由 →
       // issue #87）⇒ 在此声明**不会**遮蔽宿主语义；声明只补齐
       // 「es env = ES 标准库」的全局面。构造面按 **name facet** 走 core 的
       // `evalBuiltinNew` **按名派发**（精确 builder），不与宿主争。

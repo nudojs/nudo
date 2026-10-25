@@ -461,7 +461,7 @@ let lenVarSeq = 0;
 
 /** 该 Abs 是否是「**确切的** undefined」（$len 的 undefined 臂：RegExp 匹配
  *  迭代器等）——shape 是 unknown 令牌 + term 是 lit undefined。 */
-function isExactUndef(a: Abs): boolean {
+function isUndefinedLitAbs(a: Abs): boolean {
   return (
     a.shape.k === "unknown" &&
     a.term?.op === "lit" &&
@@ -564,7 +564,7 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
         hasUndefArm = true;
         continue;
       }
-      if (isExactUndef(l)) {
+      if (isUndefinedLitAbs(l)) {
         arms.push(l); // 长度**就是** undefined（exact）
         hasUndefArm = true;
         continue;

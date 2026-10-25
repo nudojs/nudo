@@ -4,8 +4,44 @@
 import type { Node } from "@babel/types";
 
 export type TranspileOptions = {
-  /** 运行时 import 说明符 */
-  runtimeImport?: string;
+  /**
+   * 运行时 import 说明符。
+   *
+   * `null` = **不发射**运行时 import 行（宿主编译：`new Function` 单元以
+   * 形参注入运行符号）。缺省 = `@nudojs/core/exec`。
+   */
+  runtimeImport?: string | null;
+  /**
+   * 发射目标（缺省 `"esm"`，既有产物逐字节不变）：
+   * - `"esm"`：保留标准 `import` / `export` 语句（run.ts 后处理改写）；
+   * - `"host"`：直接发射宿主编译形态——import → `__nudoBindImport` /
+   *   `__nudoBindNamespace` 绑定，export → `__nudoExport*` 调用，不残留任何
+   *   `import` / `export` 语句，也不发射运行时 import 行（宿主以形参注入）。
+   */
+  target?: "esm" | "host";
+  /**
+   * 发射模式（缺省 `"exec"`）：
+   * - `"exec"`：完整发射（全部顶层语句，含副作用）；
+   * - `"analyze"`：**发射期**剥离顶层效应语句——顶层 `if` / `for` /
+   *   `for-in` / `while`、危险或未知全局调用（判定表见
+   *   `transpile/analyze-strip.ts`）；`var` 提升仍按**原始**源 AST 计算。
+   *   调用方（run.ts 的 analyze 模式）不再解析生成产物做二次剥离；保留
+   *   语句的发射字节与 `"exec"` 完全一致，剥离只减少语句。
+   */
+  mode?: "exec" | "analyze";
+  /**
+   * host target 的 mock 名集：命中的 import 本地名绑定 `__nudoEnv[<名>]`
+   * 而非 `__nudoBindImport` / `__nudoBindNamespace`，且不登记 live refresh
+   * （刷新会把 mock 冲掉）。esm target 忽略（run.ts 的文本改写负责 mock）。
+   */
+  mockNames?: ReadonlySet<string>;
+  /**
+   * @internal host target 的 live import refresh 发射状态（transpileFile
+   * 创建并跨语句线程化）：`binds` 是全量刷新赋值文本（按源序，已排除
+   * mock），`done` 标记注册行是否已随首个「产生绑定」的 import 语句发射。
+   * 直接调用 `transpileStatement` 的低层单元不传 ⇒ 不发射注册行。
+   */
+  hostImportRefresh?: { readonly binds: readonly string[]; done: boolean };
   maxLoopIters?: number;
   /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
@@ -232,4 +268,48 @@ export type TranspileOptions = {
    * 承担插桩开销；仅 replayFnAbsNodes 重放开。
    */
   recordPositions?: boolean;
+};
+
+/**
+ * 模块元数据 —— 从**源 AST**（单次解析）回收的模块结构。
+ *
+ * 这些字段此前由 run.ts 用正则 / 二次解析从转译产物文本恢复；现由
+ * `transpileModule` 在解析同一次 AST 时直接给出（口径与 export-names.ts
+ * 共用，见 `transpile/meta.ts`）。
+ *
+ * - `imports`：源序 import 绑定（一条声明多个 specifier ⇒ 多项；副作用
+ *   import 仅 `{ spec, kind: "side" }`）；
+ * - `staticExportNames`：`export function|class|const|let|var` 的**声明名**
+ *   （多声明符全收；解构声明不 collect 内部名——与 staticExportDeclNamesOfProgram
+ *   同口径）；
+ * - `explicitExportNames`：显式导出名（`export { … }` / re-export /
+ *   `export * as ns` / 解构导出的真实绑定名），不含静态声明名与 default
+ *   （default 由 `hasDefault` 表达；`export { x as default }` 会出现在本表）；
+ * - `exportStars`：`export * from "<spec>"` 的说明符（源序）；
+ * - `hasDefault`：存在 `export default`;
+ * - `topLevelFnNames`：顶层函数声明名（export/default 包裹展开；私有函数
+ *   也在内——它们不是导出名，但按名分析需要）；
+ * - `declaredNames`：顶层绑定名（声明 / 解构 / import 本地名）＋ CJS 前导
+ *   占用的 `exports` / `module` / `__nudoCjsOrig` / `__nudoCjsThis`；
+ * - `usesTopLevelThis`：模块顶层 `this`（或捕获它的顶层箭头函数）使用；
+ * - `isEsm`：源含 ESM 语法（import/export 声明或 `import.meta`）；
+ * - `runtimeImportName`：发射的运行时 import 行的说明符；未发射（host
+ *   target 或 `runtimeImport: null`）⇒ null。
+ */
+export type TranspileMeta = {
+  imports: Array<{
+    spec: string;
+    kind: "named" | "default" | "namespace" | "side";
+    imported?: string;
+    local?: string;
+  }>;
+  staticExportNames: string[];
+  explicitExportNames: string[];
+  exportStars: string[];
+  hasDefault: boolean;
+  topLevelFnNames: string[];
+  declaredNames: string[];
+  usesTopLevelThis: boolean;
+  isEsm: boolean;
+  runtimeImportName: string | null;
 };

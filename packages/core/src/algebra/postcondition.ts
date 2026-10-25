@@ -20,6 +20,7 @@ import type { Term } from "./term.ts";
 import { v as termVar, lit as termLit, app as termApp } from "./term.ts";
 import type { Pred, Phi } from "./pred.ts";
 import { implies, pTrue, and as pAnd } from "./pred.ts";
+import { numericBoundsImply } from "./pred-bounds.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
 import {
   SELF,
@@ -672,7 +673,7 @@ function assertScalar(
       return proved();
     }
     // numericBoundsImply：src 界更紧可蕴含更宽目标（x>5 ⇒ x>0）
-    if (ret.pred && ret.pred.op !== "true" && numericBoundsImplyLocal(ret.pred, constraintPred)) {
+    if (ret.pred && ret.pred.op !== "true" && numericBoundsImply(ret.pred, constraintPred)) {
       return proved();
     }
     // Φ 侧单独蕴含该约束 ⇒ 义务可证（路径前提足以推出返回值的界；Bug 1094）
@@ -720,52 +721,6 @@ function assertScalar(
 
   // 契约无 pred（裸 prim）：shape 合格即 proved
   return proved();
-}
-
-/** 本地 numericBoundsImply（与 leq.ts 同语义；不改 leq 可见性） */
-function numericBoundsImplyLocal(src: Pred, tgt: Pred): boolean {
-  const one = (p: Pred): p is Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }> =>
-    p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le";
-  if (!one(src) || !one(tgt)) return false;
-  if (src.op !== tgt.op) {
-    if (src.op === "gt" && tgt.op === "ge") {
-      return sameTermSide(src, tgt) && litGE(src.b, tgt.b);
-    }
-    if (src.op === "lt" && tgt.op === "le") {
-      return sameTermSide(src, tgt) && litLE(src.b, tgt.b);
-    }
-    return false;
-  }
-  if (!sameTermSide(src, tgt)) return false;
-  const sb = src.b.op === "lit" ? src.b.value : undefined;
-  const tb = tgt.b.op === "lit" ? tgt.b.value : undefined;
-  if (typeof sb !== "number" || typeof tb !== "number") return false;
-  if (src.op === "gt" || src.op === "ge") return sb >= tb;
-  return sb <= tb;
-}
-
-function sameTermSide(
-  a: { a: Term; b: Term },
-  b: { a: Term; b: Term },
-): boolean {
-  // 只比左侧（被约束项）；右端是不同的字面量界
-  return a.a.op === b.a.op && termEquals(a.a, b.a);
-}
-
-function litGE(
-  a: { op: string; value?: unknown },
-  b: { op: string; value?: unknown },
-): boolean {
-  if (a.op !== "lit" || b.op !== "lit") return false;
-  return typeof a.value === "number" && typeof b.value === "number" && a.value >= b.value;
-}
-
-function litLE(
-  a: { op: string; value?: unknown },
-  b: { op: string; value?: unknown },
-): boolean {
-  if (a.op !== "lit" || b.op !== "lit") return false;
-  return typeof a.value === "number" && typeof b.value === "number" && a.value <= b.value;
 }
 
 function primOfAbs(

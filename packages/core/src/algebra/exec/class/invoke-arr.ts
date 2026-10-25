@@ -26,6 +26,7 @@ import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import {
   applyCallbackAbs,
   asAbs,
+  dispatchSumArg,
   instantiateReturn,
   isRelFn,
   mapElementFallback,
@@ -233,20 +234,9 @@ function makeArrCtx(arr: Abs, method: string, args: Abs[]): ArrCtx {
   // 它作为回调调用的宿主 this（字面量对象透传，回调体 $rawThis 原样接到）；
   // 缺省 undefined ≡ 现状（strict 普通调用的 this）
   const callFn = (fn: unknown, thisVal: Abs | undefined, ...fnArgs: Abs[]): Abs => {
-    const sumIdx = fnArgs.findIndex(
-      (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
-    );
-    if (sumIdx >= 0) {
-      const members = (fnArgs[sumIdx] as Abs & { shape: { k: "sum"; members: Abs[] } }).shape
-        .members;
-      let acc: Abs | undefined;
-      for (const m of members) {
-        const next = fnArgs.map((a, i) => (i === sumIdx ? m : a));
-        const r = callFn(fn, thisVal, ...next);
-        acc = acc === undefined ? r : joinAbs(acc, r);
-      }
-      return acc ?? unknown;
-    }
+    // sum 成员分发与 applyCallbackAbs 共用 dispatchSumArg（首个 sum 下标语义）
+    const sum = dispatchSumArg(fnArgs, (next) => callFn(fn, thisVal, ...next));
+    if (sum.handled) return sum.result;
     if (typeof fn === "function") {
       // Bug 26：宿主全局函数值回调（[1,2].map(Number) 等）——Abs 实参直喂
       // 宿主函数会 ToPrimitive 假值再被弃成 unknown；经桥按被调用位语义

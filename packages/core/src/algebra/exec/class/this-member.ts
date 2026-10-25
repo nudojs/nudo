@@ -1,16 +1,15 @@
 /**
- * this/可选链/静态成员读写：$thisGet/$thisSet/$optionalGet/$staticInvoke/$setKey。
+ * this/可选链/静态成员读写：$optionalGet/$staticInvoke/$setKey。
  *
  * Invariants:
- * - 类方法体内 this 成员读经 $thisGet（内层 obj 槽优先）；可选链臂
- *   （?.）已过 nullish 排除——不重复记 may-throw。
+ * - 可选链臂（?.）已过 nullish 排除——不重复记 may-throw。
  * - $setKey 计算键写：非字面量 key → open + index join（不得写成字面
  *   槽 "?"）；对象字面量计算键 __proto__ 是自有数据属性（与 $set 的
  *   setter 语义分流）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../../abs.ts";
-import { objOf, joinAbs, getSlot, setSlot, propertyKeyOf } from "../../objects.ts";
+import { objOf, joinAbs, setSlot, propertyKeyOf } from "../../objects.ts";
 import { builtinSuperCtorOf } from "../runtime/members.ts";
 import { $get, $set, asAbsVal, clearStaleTermPred } from "../runtime.ts";
 import { withNewTargetReset } from "../runtime/state.ts";
@@ -27,38 +26,6 @@ import { isNullishAbs } from "../member-diag.ts";
 
 import { $invoke } from "./invoke.ts";
 import { specOf, findStaticMethod } from "./declare.ts";
-
-/** @deprecated 转译层不再发射、内部无调用；保留导出仅为公共 API 兼容。 */
-export function $thisGet(thisVal: Abs, key: string): Abs {
-  if (thisVal.shape.k === "brand") {
-    const inner = thisVal.shape.shape;
-    if (inner.shape.k === "obj") {
-      const slot = getSlot(inner.shape.slots, key);
-      if (slot) return slot.value;
-    }
-  }
-  return unknown;
-}
-
-/** @deprecated 转译层不再发射、内部无调用；保留导出仅为公共 API 兼容。 */
-export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
-  if (thisVal.shape.k === "brand") {
-    const inner = thisVal.shape.shape;
-    const slots = inner.shape.k === "obj" ? { ...inner.shape.slots } : {};
-    setSlot(slots, key, { value: asAbsVal(value) });
-    return abs(
-      {
-        k: "brand",
-        name: thisVal.shape.name,
-        shape: objOf(slots),
-      },
-      thisVal.term,
-      thisVal.pred,
-      confJoin(thisVal.conf, value.conf),
-    );
-  }
-  return unknown;
-}
 
 /** 解构默认值：undefined（含 sum 成员 / 可能缺失）时用 default 并入非 undefined 部分 */
 export function $orDefault(v: Abs, dflt: () => Abs): Abs {
@@ -124,9 +91,12 @@ export function $optionalInvoke(thisVal: Abs, method: string, args: Abs[]): Abs 
   return $invoke(thisVal, method, args);
 }
 
-/** 静态方法：cls.staticMethod(args)
- *  @deprecated 转译层不再发射；剩余内部调用方仅 check-may-throw.ts 的类方法桥。
- *  保留导出仅为公共 API 兼容。 */
+/**
+ * 静态方法调用：cls.staticMethod(args)。
+ *
+ * 引擎内部面：转译层不再发射；唯一调用方是 `check-may-throw.ts` 的类方法桥
+ * （不经公共 barrel 导出）。
+ */
 export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   // Bug 79：静态方法调用是普通调用面——new.target 归 undefined
   return withNewTargetReset(() => {

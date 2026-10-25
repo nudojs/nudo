@@ -6,6 +6,7 @@ import {
   $arr,
   litValue,
   formatAbs,
+  undefAbs,
 } from "@nudojs/core";
 import { callLit as call } from "./eval-helpers.ts";
 
@@ -257,5 +258,20 @@ export function sumFor(arr) {
     const arr = $arr([$lit(1), $lit(2), $lit(3), $lit(4)]);
     const r = callTranspiledExportFull(exports, "sumFor", [arr]);
     expect(litValue(r.result)).toEqual({ ok: true, value: 10 });
+  });
+});
+
+describe("undefAbs 单一实现（collections 复用 hof）", () => {
+  it("Map 字面量 miss 与 hof.undefAbs 同形（pred 归一 undefined、exact）", () => {
+    const r = call(
+      `export function miss() { const m = new Map(); return m.get("x"); }`,
+      "miss",
+    );
+    const u = undefAbs();
+    expect(r.result.shape).toEqual(u.shape);
+    expect(r.result.term).toEqual(u.term);
+    expect(r.result.pred).toBe(u.pred);
+    expect(r.result.conf).toBe(u.conf);
+    expect(formatAbs(r.result)).toBe(formatAbs(u));
   });
 });

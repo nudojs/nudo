@@ -32,6 +32,7 @@ import { generalizeFromAst } from "./generalize.ts";
 import { effectiveInterface, formatConstraint } from "./interface.ts";
 import { locateContractParam } from "./param-surface.ts";
 import { getSlot } from "./objects.ts";
+import { projectAbsPath } from "./scan/path-projection.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
 import { DIAG } from "./diag-codes.ts";
@@ -507,21 +508,6 @@ function witnessViolations(
   return [];
 }
 
-/** C4.1：case 见证的解构字段投影（与 scan.projectArgPath 同口径）；
- *  #137：路径感知——嵌套点路径（'card.grade'）逐段下钻 */
-function projectCaseArgField(arg: Abs, fieldPath: string[]): Abs | undefined {
-  let cur: Abs | undefined = arg;
-  for (const seg of fieldPath) {
-    if (!cur) return undefined;
-    if (cur.shape.k === "brand") {
-      cur = cur.shape.shape as Abs;
-    }
-    if (cur.shape.k !== "obj") return undefined;
-    cur = getSlot(cur.shape.slots, seg)?.value;
-  }
-  return cur;
-}
-
 /**
  * case 是契约的见证：`@nudo:case` 实参 ⊄ refine → nudo:case-inconsistency。
  * 只检查字面量实参（数字/字符串/布尔/null）；非字面量跳过，不猜。
@@ -664,7 +650,7 @@ export function scanCaseInconsistency(
       // 缺字段不能静默跳过（与 scan.checkReqs 同口径，报 case 见证违例）
       // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
       if (fieldPath) {
-        const projected = projectCaseArgField(arg, fieldPath);
+        const projected = projectAbsPath(arg, fieldPath);
         if (!projected) {
           const k = arg.shape.k;
           if (k !== "unknown" && k !== "any") {

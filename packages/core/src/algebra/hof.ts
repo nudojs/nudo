@@ -14,25 +14,11 @@ import { getSlot, joinAbs, makeSum } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
-import type { AstEnv, HofCollectCtx, HofSite, RelSource } from "./hof-types.ts";
+import type { HofSite, RelSource } from "./hof-types.ts";
 
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
 
-export type { RelSource, HofSite, HofCollectCtx } from "./hof-types.ts";
-
-export function createHofCollectCtx(
-  paramNames: ReadonlySet<string>,
-  alphaIds: Iterable<string>,
-): HofCollectCtx {
-  return {
-    paramNames,
-    alphaIds: new Set(alphaIds),
-    freshSeq: { n: 0 },
-    sites: [],
-    fnRels: new Map(),
-    entryShapes: new Map(),
-  };
-}
+export type { RelSource, HofSite } from "./hof-types.ts";
 
 /**
  * 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。
@@ -40,7 +26,7 @@ export function createHofCollectCtx(
  */
 export function alphaOf(
   absOrTerm: Abs | Term | undefined,
-  ctx: HofCollectCtx,
+  ctx: { alphaIds: Set<string>; freshSeq: { n: number } },
 ): Term {
   const t =
     absOrTerm && typeof absOrTerm === "object" && "shape" in absOrTerm
@@ -58,203 +44,6 @@ export function betaOf(param: string): Term {
   return termVar(`B:${param}`);
 }
 
-/**
- * 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。
- * arrival-first：已有 fn/arr 形状 → 拒绝新观测。
- * 返回是否真正写入。
- */
-export function promoteParamShape(
-  env: AstEnv,
-  param: string,
-  promotedShape: Shape,
-  opts?: { loc?: { line: number; column: number }; recordSite?: boolean },
-): boolean {
-  const prev = env.vars.get(param);
-  if (!prev) return false;
-  // 已有具体形状（含 refine 契约）→ 契约/先到优先，不提升
-  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return false;
-
-  const next: Abs = {
-    shape: promotedShape,
-    term: prev.term,
-    pred: prev.pred,
-    conf: "path",
-  };
-  // 替换 map 项，不 mutate prev
-  env.vars.set(param, next);
-
-  const hc = env.hofCollect;
-  if (hc && hc.paramNames.has(param)) {
-    if (promotedShape.k === "fn") {
-      if (!hc.fnRels.has(param) && !hc.entryShapes.has(param)) {
-        hc.fnRels.set(param, { abs: { ...next }, source: "promote" });
-      }
-    } else {
-      if (!hc.fnRels.has(param) && !hc.entryShapes.has(param)) {
-        hc.entryShapes.set(param, { abs: { ...next }, source: "promote" });
-      }
-    }
-    // HofSite 只记「函数形参的应用点」；arr 提升不是应用点，禁止污染 sites
-    if (opts?.recordSite !== false && promotedShape.k === "fn") {
-      const result =
-        promotedShape.returnType ?? next;
-      hc.sites.push({
-        param,
-        argTerms: [],
-        result,
-        loc: opts?.loc,
-      });
-    }
-  }
-  return true;
-}
-
-const HOF_ARR_METHODS = new Set(["map", "filter", "reduce", "flatMap"]);
-
-/** 形参 any → arr(自身 var) 的共享提升；挂载点①/for-of 共用 */
-function promoteParamAsArr(
-  env: AstEnv,
-  name: string,
-  loc?: { line: number; column: number },
-): Abs | undefined {
-  const hc = env.hofCollect;
-  if (!hc || !hc.paramNames.has(name)) return undefined;
-  const prev = env.vars.get(name);
-  if (!prev) return undefined;
-  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return undefined;
-  const element = prev.term
-    ? abs(prev.shape, prev.term, prev.pred, "path")
-    : abs({ k: "any" }, undefined, undefined, "path");
-  const arrShape: Shape = { k: "arr", element };
-  promoteParamShape(env, name, arrShape, { loc });
-  return env.vars.get(name);
-}
-
-/**
- * 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知，
- * 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。
- */
-export function tryPromoteReceiverAsArr(
-  env: AstEnv,
-  receiverName: string,
-  method: string,
-  loc?: { line: number; column: number },
-): Abs | undefined {
-  if (!HOF_ARR_METHODS.has(method)) return undefined;
-  return promoteParamAsArr(env, receiverName, loc);
-}
-
-/**
- * for-of 迭代对象提升（applyEach 型）：`for (const x of items)`，
- * items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。
- */
-export function tryPromoteForOfIteratee(
-  env: AstEnv,
-  iterateeName: string,
-  loc?: { line: number; column: number },
-): Abs | undefined {
-  return promoteParamAsArr(env, iterateeName, loc);
-}
-
-/**
- * 挂载点②：CallExpression callee = 形参 Identifier 直接调用 p(x) / p(a,b)。
- * 提升为 fn(paramTypes=[αOf(args)], returnType=B:param)。
- */
-export function tryPromoteDirectCall(
-  env: AstEnv,
-  calleeName: string,
-  args: Abs[],
-  loc?: { line: number; column: number },
-): Abs | undefined {
-  const hc = env.hofCollect;
-  if (!hc || !hc.paramNames.has(calleeName)) return undefined;
-  const prev = env.vars.get(calleeName);
-  if (!prev) return undefined;
-  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") {
-    // 已有形状：只记 hofSites，不改形状；result 用 returnType，不是整个 fn Abs
-    if (prev.shape.k === "fn") {
-      hc.sites.push({
-        param: calleeName,
-        argTerms: args.map((a) => a.term ?? { op: "var", id: "_" }),
-        result: prev.shape.returnType ?? prev,
-        loc,
-      });
-    }
-    return undefined;
-  }
-  const paramTypes = args.map((a) =>
-    abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
-  );
-  const ret = abs({ k: "any" }, betaOf(calleeName), undefined, "path");
-  const fnShape: Shape = {
-    k: "fn",
-    params: args.map((_, i) => `x${i}`),
-    paramTypes,
-    returnType: ret,
-  };
-  promoteParamShape(env, calleeName, fnShape, { loc, recordSite: false });
-  hc.sites.push({
-    param: calleeName,
-    argTerms: args.map((a) => a.term ?? { op: "var", id: "_" }),
-    result: ret,
-    loc,
-  });
-  return env.vars.get(calleeName);
-}
-
-/**
- * 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。
- * 按方法名提升：map/flatMap → fn([αOf(el)], B:param)；filter → fn([αOf(el)], bool)；
- * reduce → fn([αOf(init), αOf(el)], B:param)。
- */
-export function tryPromoteHofCallback(
-  env: AstEnv,
-  cevalName: string,
-  method: string,
-  argAbses: Abs[],
-  loc?: { line: number; column: number },
-): Abs | undefined {
-  const hc = env.hofCollect;
-  if (!hc || !hc.paramNames.has(cevalName)) return undefined;
-  const prev = env.vars.get(cevalName);
-  if (!prev) return undefined;
-  if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return undefined;
-
-  let paramTypes: Abs[];
-  let returnType: Abs;
-  if (method === "filter") {
-    paramTypes = argAbses.map((a) =>
-      abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
-    );
-    returnType = abs({ k: "prim", type: "boolean" }, undefined, undefined, "path");
-  } else if (method === "reduce") {
-    paramTypes = argAbses.map((a) =>
-      abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
-    );
-    returnType = abs({ k: "any" }, betaOf(cevalName), undefined, "path");
-  } else {
-    // map / flatMap / 默认
-    paramTypes = argAbses.map((a) =>
-      abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
-    );
-    returnType = abs({ k: "any" }, betaOf(cevalName), undefined, "path");
-  }
-  const fnShape: Shape = {
-    k: "fn",
-    params: argAbses.map((_, i) => `x${i}`),
-    paramTypes,
-    returnType,
-  };
-  promoteParamShape(env, cevalName, fnShape, { loc, recordSite: false });
-  hc.sites.push({
-    param: cevalName,
-    argTerms: argAbses.map((a) => a.term ?? { op: "var", id: "_" }),
-    result: returnType,
-    loc,
-  });
-  return env.vars.get(cevalName);
-}
-
 /** deep-ish copy for snapshot（新对象，不是 env.vars 同一引用） */
 export function snapshotAbs(a: Abs): Abs {
   const shape = a.shape;
@@ -263,51 +52,58 @@ export function snapshotAbs(a: Abs): Abs {
       case "arr":
         return { ...s, element: snapshotAbs(s.element) };
       case "tuple": {
-        const next: Shape = {
-          k: "tuple",
+        const out: Shape = {
+          ...s,
           elements: s.elements.map(snapshotAbs),
         };
-        if (s.rest) next.rest = snapshotAbs(s.rest);
-        return next;
+        if (s.rest) out.rest = snapshotAbs(s.rest);
+        if (s.holes) out.holes = [...s.holes]; // 空洞下标（读 undefined / in false）
+        return out;
       }
       case "fn": {
-        const next: Shape = { k: "fn", params: [...s.params] };
-        if (s.name !== undefined) next.name = s.name;
-        if (s.paramTypes) next.paramTypes = s.paramTypes.map(snapshotAbs);
-        if (s.returnType) next.returnType = snapshotAbs(s.returnType);
-        if (s.ctor !== undefined) next.ctor = s.ctor; // Bug 9 facet：快照不改可构造性
-        return next;
+        const out: Shape = { ...s, params: [...s.params] };
+        if (s.paramTypes) out.paramTypes = s.paramTypes.map(snapshotAbs);
+        if (s.returnType) out.returnType = snapshotAbs(s.returnType);
+        if (s.optionalParams) out.optionalParams = [...s.optionalParams];
+        if (s.slots) {
+          const slots: NonNullable<Extract<Shape, { k: "fn" }>["slots"]> = {};
+          for (const [k, slot] of Object.entries(s.slots)) {
+            const nextSlot = { ...slot, value: snapshotAbs(slot.value) };
+            Object.defineProperty(slots, k, {
+              value: nextSlot, enumerable: true, writable: true, configurable: true,
+            });
+          }
+          out.slots = slots;
+        }
+        return out;
       }
       case "sum":
         return { ...s, members: s.members.map(snapshotAbs) };
       case "obj": {
-        const slots: Record<
-          string,
-          { value: Abs; optional?: boolean; readonly?: boolean }
-        > = {};
+        const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
         for (const [k, slot] of Object.entries(s.slots)) {
-          const nextSlot: { value: Abs; optional?: boolean; readonly?: boolean } =
-            { value: snapshotAbs(slot.value) };
-          if (slot.optional) nextSlot.optional = true;
-          if (slot.readonly) nextSlot.readonly = true;
+          // slot 标志（optional/readonly/internal/inherited/symbolKey）全保留
+          const nextSlot = { ...slot, value: snapshotAbs(slot.value) };
           Object.defineProperty(slots, k, {
             value: nextSlot, enumerable: true, writable: true, configurable: true,
           });
         }
-        const next: Shape = { k: "obj", slots };
+        const out: Shape = { ...s, slots };
         if (s.index) {
-          next.index = {
+          out.index = {
             key: snapshotAbs(s.index.key),
             value: snapshotAbs(s.index.value),
           };
         }
-        if (s.open) next.open = true;
-        return next;
+        return out;
       }
       case "brand":
         return { ...s, shape: snapshotAbs(s.shape) };
-      case "eff":
-        return { ...s, inner: snapshotAbs(s.inner) };
+      case "eff": {
+        const out: Shape = { ...s, inner: snapshotAbs(s.inner) };
+        if (s.rejected) out.rejected = snapshotAbs(s.rejected);
+        return out;
+      }
       default:
         return s;
     }
@@ -1012,6 +808,29 @@ export function applyCallbackValue(
   return unknown;
 }
 
+/**
+ * sum 实参的成员级分发（applyCallbackAbs 与 exec/class invokeArr callFn 共用）：
+ * 只看**首个** sum 下标（其余位置原样），逐成员递归后 `joinAbs` 左折；
+ * 空 sum 无成员 → unknown（JS 不会产生，保守兜底）。
+ * 未命中 sum → `handled: false`，调用方继续自己的回调分派。
+ */
+export function dispatchSumArg(
+  args: Abs[],
+  recurse: (nextArgs: Abs[]) => Abs,
+): { handled: boolean; result: Abs } {
+  const sumIdx = args.findIndex(
+    (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
+  );
+  if (sumIdx < 0) return { handled: false, result: unknown };
+  const members = (args[sumIdx] as Abs & { shape: { k: "sum"; members: Abs[] } }).shape.members;
+  let acc: Abs | undefined;
+  for (const m of members) {
+    const r = recurse(args.map((a, i) => (i === sumIdx ? m : a)));
+    acc = acc === undefined ? r : joinAbs(acc, r);
+  }
+  return { handled: true, result: acc ?? unknown };
+}
+
 export function applyCallbackAbs(
   cb: Abs | { type: string },
   args: Abs[],
@@ -1021,19 +840,10 @@ export function applyCallbackAbs(
   thisVal?: Abs,
 ): Abs {
   // sum 实参按成员分发再 join（joinAbs 字面量枚举后 map/filter 元素常为 sum）
-  const sumIdx = args.findIndex(
-    (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
+  const sum = dispatchSumArg(args, (nextArgs) =>
+    applyCallbackAbs(cb, nextArgs, env, phi, budget, thisVal),
   );
-  if (sumIdx >= 0) {
-    const members = (args[sumIdx] as Abs & { shape: { k: "sum"; members: Abs[] } }).shape.members;
-    let acc: Abs | undefined;
-    for (const m of members) {
-      const nextArgs = args.map((a, i) => (i === sumIdx ? m : a));
-      const r = applyCallbackAbs(cb, nextArgs, env, phi, budget, thisVal);
-      acc = acc === undefined ? r : joinAbs(acc, r);
-    }
-    return acc ?? unknown;
-  }
+  if (sum.handled) return sum.result;
   if (!applyCallbackHost) {
     // fallback：纯 Abs 关系路径（测试/无宿主）
     if (cb && typeof cb === "object" && "shape" in cb) {

@@ -7,7 +7,7 @@
  * 值**原样透传**（不 ToString：() => 5 得 number）；实参布局
  * (string, replValue)；槽值非函数且非 undefined/null → GetMethod 定抛。
  *
- * 注：match/search/matchAll 的 @@match/@@search 半边由 class-regex.ts 承接
+ * 注：match/search/matchAll 的 @@match/@@search 半边由 exec/regexp-runtime.ts 承接
  * （本文件只钉 replace/replaceAll 面）。
  */
 import { describe, it, expect } from "vitest";

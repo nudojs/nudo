@@ -16,10 +16,6 @@ export {
 } from "./pred.ts";
 
 export {
-  currentPhi, describePhi, popPhi, pushPhi, resetPhi, withPhiConstraint
-} from "./phi.ts";
-
-export {
   type Abs, type Confidence, type LitValueResult, type Shape, abs, absToString, anyAbs, anyVar,
   bigintLit, bool, boolLit, confJoin, isBigPrim, isExactLit, isNumPrim,
   isStrPrim, litValue, never, num, numLit, numVar, obj, shapeOfTerm,
@@ -35,12 +31,11 @@ export {
 } from "./abs-fn.ts";
 
 export {
-  type HofCollectCtx, type HofSite, type RelSource, alphaOf,
-  applyCallbackAbs, applyCallbackValue, asAbs, betaOf, createHofCollectCtx,
+  type HofSite, type RelSource, alphaOf,
+  applyCallbackAbs, applyCallbackValue, asAbs, betaOf,
   instantiateReturn, isRelFn, mapElementFallback, projectFlatMapResult,
-  promoteParamShape, setApplyCallbackHost, snapshotAbs, substAbs,
-  substPredAbs, tryPromoteDirectCall, tryPromoteForOfIteratee,
-  tryPromoteHofCallback, tryPromoteReceiverAsArr, undefAbs
+  setApplyCallbackHost, snapshotAbs, substAbs,
+  substPredAbs, undefAbs
 } from "./hof.ts";
 
 export {
@@ -112,7 +107,7 @@ export {
 
 export {
   type PolyFn, type TypeParam, buildArgsFromAssume, collectAbsFreeVars,
-  evictGeneralizeMemoForPaths, extractFn, generalizeAll, generalizeFromAst,
+  evictGeneralizeMemoForPaths, extractFn, generalizeFromAst,
   getGeneralizeMemoSize, listFunctionNames, resetGeneralizeMemo
 } from "./generalize.ts";
 
@@ -182,22 +177,22 @@ export {
 
 export {
   $add, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles,
-  $assignRecord, $async, $asyncReturn, $await, $bitand, $bitnot, $bitor,
+  $assignRecord, $async, $await, $bitand, $bitnot, $bitor,
   $bitxor, $call, $callNamed, $catchVal, $class, $classExpr,
   $collectionForEach, $concat, $copy, $del, $delRes, $div, $dynamicImport,
-  $elems, $eq, $eqLoose, $fnVal, $for, $forInKeys, $forIter, $forOf, $fork,
+  $elems, $eq, $eqLoose, $fnVal, $for, $forInKeys, $forOf, $fork,
   $ge, $gen, $get, $gt, $idx, $idxSet, $importMeta, $in, $instanceof,
   $instanceofNonIdent, $invoke, $invokeSuper, $isBreakTo, $isForkExit,
   $join, $le, $len, $lit, $loopBreak, $loopContinue, $loopReturn, $lt,
   $mod, $mul, $ne, $neLoose, $neg, $new, $not, $nullishTest, $obj,
   $objAccessor, $objRest, $optionalGet, $optionalInvoke, $orDefault, $pow,
   $pushLoopExit, $rawThis, $reStateCall, $recordBinding, $regex,
-  $rethrowIfNudoReturn, $set, $setKey, $shl, $shr, $spread, $staticInvoke,
-  $sub, $super, $switch, $thisGet, $thisSet, $throw, $toNumber, $toNumeric, $updateAdd, $updateSub,
+  $rethrowIfNudoReturn, $set, $setKey, $shl, $shr, $spread,
+  $sub, $super, $switch, $throw, $toNumber, $toNumeric, $updateAdd, $updateSub,
   $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
-  $unknown, $ushr, $while, $whileSeq, $yield, type EvalAbsAssignRecord,
+  $unknown, $ushr, $whileSeq, $yield, type EvalAbsAssignRecord,
   type EvalCallRecord, type EvalClassSpec, type EvalFallback,
   DEFAULT_MAX_LOOP_ITERS, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS,
   NudoLoopSignal, NudoReturn, NudoThrow, NudoUnsupportedError,

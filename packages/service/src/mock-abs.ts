@@ -144,6 +144,8 @@ function constantMockFn(result: Abs): Abs {
     retKey = "?";
   }
   return stampFingerprint(
+    // 合成 body（return 环境常量），非源文件函数声明 ⇒ 无源种类通道：
+    // 不写 strict（sloppy，保守）。
     markMockConf(absFunction(["...args"], { body, env: mockEnv })),
     `ret=${retKey}`,
   );
@@ -205,6 +207,7 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: Abs[]; returnValue: 
     .join("|");
   return stampFingerprint(
     markMockConf(
+      // 合成 dummy body（派发由 apply 接管）⇒ 不写 strict（无源种类，保守）。
       absFunction(["...args"], {
         body: dummyBody,
         env: emptyEnv(),
@@ -226,6 +229,8 @@ function absFromMockHelper(h: MockHelper): Abs {
   if (h.callsFakeImpl) {
     const { params, body, async } = h.callsFakeImpl;
     return stampFingerprint(
+      // callsFake 载荷是 **mock 表达式**（独立解析的箭头/函数字面量）——源种类
+      // （ESM/CJS）未随指令表达式流转 ⇒ 不写 strict（sloppy，保守）。
       absFunction(params, { body: body as never, async: async ?? false }),
       `fake=${params.join(",")}:${astContentKey(body)}`,
     );
@@ -405,6 +410,8 @@ function loadFromMockBinding(
       // $call 统一路由——mock 桥与导出桥同一通道（BUG-006 根治）。
       apply: callTranspiledExportApply(run!, name),
       kind: "eval-export",
+      // mock 模块源码种类未随 evalMockFileWithDeps 的 run 结果暴露 ⇒ 不写
+      // strict（sloppy，保守）；真实模块导出桥在 abs-modules-graph 按 AST 判定。
       fingerprint: `from-mock=${fromPath}#${name}`,
     }, ctorFacet !== undefined ? { ctor: ctorFacet } : undefined);
   } else {
@@ -437,6 +444,8 @@ export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
 
 /** seedFns 条目 → Abs 函数绑定（可构造性 facet 随条目走，Bug 482） */
 function absOfSeedFn(fn: AbsMockSeeds["seedFns"][string]): Abs {
+  // seedFns body 是 **@nudo:mock 指令表达式**的 AST（独立解析，非模块源函数
+  // 声明）⇒ 条目无源种类字段，不写 strict（sloppy，保守）。
   return absFunction(
     fn.params,
     { body: fn.body, async: fn.async ?? false },

@@ -177,6 +177,9 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$fnKindStamp",
 ];
 
+/** 转译单元的缺省运行时说明符（meta.runtimeImportName / import 行共用）。 */
+export const DEFAULT_RUNTIME_IMPORT = "@nudojs/core/exec";
+
 /**
  * 运行时 import 行（body-fn 编译执行 / evalExprAbs / 模块体拼接用）。
  * 产出形态：`import { $a, $b } from "<runtime>";`（单行，双引号说明符）。
@@ -186,11 +189,12 @@ export function runtimeImportOf(runtime: string): string {
 }
 
 /**
- * 宿主编译前**剥离**上面那行 import 的正则。
+ * 宿主编译前**剥离**上面那行 import 的正则（默认 ESM 产物 / 旧调用方）。
  *
  * `new Function` 单元没有 ESM 导入面——运行符号是形参注入（rt.ts 的
- * compileRuntimeUnit），所以生成源码里的 import 行必须先删掉。只认**双引号**
- * 说明符（runtimeImportOf 的产物）；用户源码的单引号 import 由
- * rewriteUserImports 另行改写。
+ * compileRuntimeUnit）。host target（`runtimeImport: null`）不发射该行；
+ * 默认 ESM 产物若被宿主直接编译，仍需本正则剥离。只认**双引号**说明符
+ * （runtimeImportOf 的产物）；用户源码的 import 由 host target 的
+ * `emitHostImportDeclaration` 直接发射绑定。
  */
 export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;

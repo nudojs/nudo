@@ -71,6 +71,8 @@ import {
   getSlot,
   setSlot,
   canonicalArrayIndex,
+  isUserFnSlotOwner,
+  markUserFnSlots,
 } from "../../../objects.ts";
 import {
   mapSizeAbs,
@@ -197,10 +199,12 @@ function hostCtorNameOf(v: object): string | undefined {
  * 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象
  * （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。
  *
- * 表内名字与 transpile/intrinsics.ts 的 ENV_SHADOW_SKIP_GLOBALS（去
- * HOST_INTRINSIC_NAMES 后）1:1 手工同步：路由名必须 env-skip（否则注入遮蔽
- * 身份路由，issue #87），skip 名必须有路由收益（否则用户代码退化）。
- * parity 由 __tests__/env-shadow-parity.test.ts 钉住。
+ * 本表同时是 env 注入 skip 的**单一事实源**：run.ts 的 env-skip 名单
+ * （getEnvShadowSkipGlobals）= HOST_INTRINSIC_NAMES ∪ 本表名字（派生，非
+ * 手工同步）。路由名必须 env-skip（否则注入遮蔽身份路由，issue #87），而
+ * 派生关系保证 skip 名必有路由收益（否则用户代码退化）。表自身的完整性
+ * （名字/宿主对象无重复、namespaceNameOf 配对）由
+ * __tests__/env-shadow-parity.test.ts 钉住。
  */
 export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   ["Math", Math],
@@ -1833,8 +1837,9 @@ function getSumMember(ctx: GetCtx): Abs {
 }
 
 /** P3b：$set fn 臂自建槽的 fn Abs 集（与出生自带 slots 的 dual-facet env fn
- *  区分——后者就地突变会跨 run 泄漏，维持只读）。 */
-const userFnSlots = new WeakSet<object>();
+ *  区分——后者就地突变会跨 run 泄漏，维持只读）。登记表在 objects.ts
+ *（$copy 快照需迁移所有权，跨模块共享避免 obj↔member 环）。 */
+const userFnSlots = { has: isUserFnSlotOwner, add: markUserFnSlots };
 
 /** Bug 291：fn 是否有自有该键（expando 槽）——sealed/nonext 的新键写门用 */
 function hasFnOwnKey(o: Abs, key: string): boolean {

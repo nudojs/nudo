@@ -5,12 +5,16 @@
  * - $copy 是 fork/switch/循环 pack 的状态分离机制：所有可挂侧表的形状
  *   （extState/propFlags/accessorTable/nullProto/matchIter）必须随快照
  *   迁移，副本丢失侧表 = 臂内写不再硬抛 / 延迟异常静默丢弃。
+ * - fn 形状同样是可扩展对象：expando 槽面（含 optionalParams/ctor/类型
+ *   侧信息）逐臂独立复制（共享槽面会让兄弟臂写互相覆盖）；impl 身份、
+ *   槽面写权限侧表（objects.ts 的 userFnSlotOwners）、null-proto 标记与
+ *   新鲜实例 id 随副本迁移（侧表丢失 ⇒ `__proto__` 读翻转 / `===` 退化）。
  * - $spread 原生语义会**调用**源对象 getter 并把结果拷为数据槽——必须
  *   用 getter 求值后的副本（accessorTable 求值，抛/失败折 unknown）。
  * - $objRest 同理：原生 CopyDataProperties 对保留键发 Get ⇒ getter 必须
  *   被调用（副作用发生），rest 槽落 getter 的**返回值**（非占位 undefined）。
  */
-import type { Abs } from "../../../abs.ts";
+import type { Abs, Shape } from "../../../abs.ts";
 import { abs, confJoin, litValue, unknown } from "../../../abs.ts";
 import {
   joinAbs,
@@ -20,10 +24,12 @@ import {
   type ObjShape,
   type Slot,
   migrateNullProto,
+  migrateUserFnSlots,
   getSlot,
   setSlot,
   setProtoAbs,
 } from "../../../objects.ts";
+import { getFnImpl, attachFnImpl } from "../../../abs-fn.ts";
 import {
   migrateInvariants,
   enumOwnKeys,
@@ -37,7 +43,7 @@ import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts"
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, classInstanceInnerOf } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
-import { markFreshInstance } from "../../../instance-id.ts";
+import { markFreshInstance, migrateFreshInstance } from "../../../instance-id.ts";
 import {
   NudoThrow,
   clearStaleTermPred,
@@ -78,7 +84,7 @@ export function privateNameGuard(o: unknown, key: string): void {
     if (!spec) throw new NudoThrow(errorTypeAbs("TypeError"));
     if (classNameOfValue(o as object) === s.name) {
       // 类值接收者：私有静态成员（静态槽/静态访问器/静态方法；
-      // 声明的静态字段——$staticInit 初始化期槽尚未存在）
+      // 声明的静态字段——$class 求值期槽尚未存在）
       if (
         spec.staticAccessors?.[key] ||
         spec.staticMethods?.[key] ||
@@ -192,12 +198,45 @@ export function $copy(a: Abs): Abs {
     copyMatchIterTables(a, next);
     return next;
   }
+  if (s.k === "fn") {
+    /**
+     * 函数对象亦是**可扩展对象**：expando 槽 / optionalParams / ctor 随
+     * 快照独立复制——fork 臂共享同一槽面会让兄弟臂的写互相覆盖
+     *（`if (cond) { g.x = 1 } else { g.x = 2 }` 折成 `2 #exact`）。
+     * impl / 槽面所有权是身份侧表，副本必须继承：否则臂内调用退化
+     * unknown、臂内再写 expando 静默丢弃。term/pred/conf 同其它分支。
+     */
+    const shape: Extract<Shape, { k: "fn" }> = { ...s, params: [...s.params] };
+    if (s.paramTypes) shape.paramTypes = s.paramTypes.map($copy);
+    if (s.returnType) shape.returnType = $copy(s.returnType);
+    if (s.optionalParams) shape.optionalParams = [...s.optionalParams];
+    if (s.slots) {
+      const slots: NonNullable<Extract<Shape, { k: "fn" }>["slots"]> = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        setSlot(slots, k, { ...slot, value: $copy(slot.value) });
+      }
+      shape.slots = slots;
+    }
+    const next = abs(shape, a.term, a.pred, a.conf);
+    const impl = getFnImpl(a);
+    if (impl) attachFnImpl(next, impl);
+    migrateUserFnSlots(a, next);
+    migrateInvariants(a, next);
+    // 侧表身份不得随副本丢失：null-proto 标记（`f.__proto__` 读 undefined）
+    // 与新鲜实例 id（strictEq 对不创建事件折 false）。
+    migrateNullProto(a, next);
+    migrateFreshInstance(a, next);
+    return next;
+  }
   if (s.k === "brand") {
     const inner = $copy(s.shape);
     const next = abs({ k: "brand", name: s.name, shape: inner }, a.term, a.pred, a.conf);
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
     migrateInvariants(a, next);
+    // 新鲜实例 id 随快照迁移（fork 副本 = 同一次创建事件）：否则
+    // `a === new C()` 从 false 退化成 unknown（同 fn 分支的缺口）。
+    migrateFreshInstance(a, next);
     // RegExpMatchIterator brand：匹配项侧表随副本迁移
     copyMatchIterTables(a, next);
     return next;

@@ -109,6 +109,7 @@ import {
   forkBindingDecls,
   forkJoinBindings,
   forkTmpNames,
+  forkArmThunkExpr,
   switchTmpNames,
   matchOptionalRequire,
   catchMayRethrow,
@@ -242,6 +243,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return emitExportNamedDeclaration(stmt, depth, opts);
     case "ExportAllDeclaration": {
       if (depth !== 0) return `${pad}/* nested export * skipped */`;
+      if (opts.target === "host") {
+        return `${pad}__nudoExportStar(${JSON.stringify(stmt.source.value)});`;
+      }
       return `${pad}export * from ${JSON.stringify(stmt.source.value)};`;
     }
     case "ImportDeclaration":
@@ -251,7 +255,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
         // 匿名默认函数/类合成名字（原 <anonymous fn skipped> 整条丢失）；
         // 输出 `function X {}` + `export default X;`——真实 ESM 与 run.ts
-        // 后处理（→ __nudoExport("default", X)）都合法。
+        // 后处理（→ __nudoExport("default", X)）都合法。host target 直接
+        // 发 `__nudoExport("default", X)`（不残留 export 语句）。
         // Bug 1058：匿名默认导出的合成名避开用户标识符（模块级绑定，撞名
         // ⇒ 重复词法声明 ⇒ 整模块 fail-closed）
         const name =
@@ -261,7 +266,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             : internalTmpName("__nudoDefaultClass", opts));
         const named = d.id ? d : ({ ...d, id: { type: "Identifier", name } } as Statement);
         const inner = transpileStatement(named, depth + 1, opts);
+        if (opts.target === "host") {
+          return `${inner}\n${pad}__nudoExport("default", ${name});`;
+        }
         return `${inner}\n${pad}export default ${name};`;
+      }
+      if (opts.target === "host") {
+        return `${pad}__nudoExport("default", ${emitTranspileExpression(d as Expression, opts)});`;
       }
       return `${pad}export default ${emitTranspileExpression(d as Expression, opts)};`;
     }
@@ -369,6 +380,7 @@ function emitExportNamedDeclaration(
   depth: number,
   opts: TranspileOptions,
 ): string {
+  if (opts.target === "host") return emitHostExportNamedDeclaration(stmt, depth, opts);
   const pad = indent(depth);
   const decl = stmt.declaration;
   if (!decl) {
@@ -452,6 +464,7 @@ function emitImportDeclaration(
   depth: number,
   opts: TranspileOptions,
 ): string {
+  if (opts.target === "host") return emitHostImportDeclaration(stmt, depth, opts);
   const pad = indent(depth);
   // 保留 import；run.ts 会改写为 __nudoBindImport
   const src = JSON.stringify(stmt.source.value);
@@ -495,6 +508,144 @@ function emitImportDeclaration(
   return `${pad}import { ${specs.join(", ")} } from ${src};`;
 }
 
+/** ModuleExportName（Identifier | StringLiteral）→ 运行时字符串名。 */
+function moduleExportNameOf(name: {
+  type?: string;
+  name?: string;
+  value?: string;
+}): string {
+  return name.type === "Identifier" ? (name.name ?? "") : (name.value ?? "");
+}
+
+/**
+ * host target import：import 绑定 → `__nudoBindImport` / `__nudoBindNamespace`
+ * 直接绑定；mock 名改读 `__nudoEnv[<local>]` 且不登记 live refresh。
+ *
+ * live refresh：全部非 mock 绑定的刷新赋值在**首个产生绑定**的 import 语句后
+ * 一次性注册（闭包在模块装载后才被刷新器调用，因此可引用文本上更晚声明的
+ * 绑定）。
+ */
+function emitHostImportDeclaration(
+  stmt: ImportDeclaration,
+  depth: number,
+  opts: TranspileOptions,
+): string {
+  const pad = indent(depth);
+  if (depth !== 0) return `${pad}/* nested import skipped */`;
+  const spec = JSON.stringify(stmt.source.value);
+  // 无绑定副作用 import → 仅触发模块求值
+  if (stmt.specifiers.length === 0) {
+    return `${pad}void __nudoBindNamespace(${spec});`;
+  }
+  const lines: string[] = [];
+  let liveBinds = 0;
+  const bind = (local: string, init: string): void => {
+    if (opts.mockNames?.has(local) === true) {
+      lines.push(`${pad}let ${local} = __nudoEnv[${JSON.stringify(local)}];`);
+      return;
+    }
+    liveBinds++;
+    lines.push(`${pad}let ${local} = ${init};`);
+  };
+  for (const s of stmt.specifiers) {
+    switch (s.type) {
+      case "ImportDefaultSpecifier":
+        bind(s.local.name, `__nudoBindImport(${spec}, "default")`);
+        break;
+      case "ImportNamespaceSpecifier":
+        bind(s.local.name, `__nudoBindNamespace(${spec})`);
+        break;
+      case "ImportSpecifier":
+        bind(
+          s.local.name,
+          `__nudoBindImport(${spec}, ${JSON.stringify(moduleExportNameOf(s.imported))})`,
+        );
+        break;
+    }
+  }
+  const refresh = opts.hostImportRefresh;
+  if (liveBinds > 0 && refresh !== undefined && !refresh.done) {
+    refresh.done = true;
+    lines.push(
+      `${pad}__nudoRegisterImportRefresh(__nudoRefreshKeep = () => { ${refresh.binds.join(" ")} });`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/** export 声明携带的真实绑定名（函数/类 id；变量声明的解构模式展开）。 */
+function exportedDeclBindingNames(decl: Statement): string[] {
+  if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+    return decl.id ? [decl.id.name] : [];
+  }
+  if (decl.type === "VariableDeclaration") {
+    const names = new Set<string>();
+    for (const d of decl.declarations) collectPatternNames(d.id, names);
+    return [...names];
+  }
+  return [];
+}
+
+/**
+ * host target export：不残留 `export` 语句，全部落成 `__nudoExport*` 调用。
+ *
+ * - 声明导出（`export function|class|const|let|var`）：本地声明（无前缀）+
+ *   `__nudoExportLazy(<名>, () => <绑定>)`（ESM live binding 口径）；
+ * - 本地 specifier（`export { a as b }`）：`__nudoExportLazy("b", () => a)`；
+ * - re-export（`export { a as b } from "s"`）：lazy getter 读
+ *   `__nudoBindImport("s", "a")`（依赖内部变异对导入方可见）；
+ * - `export * as ns from "s"`：lazy namespace；
+ * - `export * from "s"`：`__nudoExportStar("s")`（保留 export * 的显式面
+ *   优先级语义，由宿主实现）。
+ */
+function emitHostExportNamedDeclaration(
+  stmt: ExportNamedDeclaration,
+  depth: number,
+  opts: TranspileOptions,
+): string {
+  const pad = indent(depth);
+  if (depth !== 0) return `${pad}/* nested export skipped */`;
+  const decl = stmt.declaration;
+  if (!decl) {
+    const spec = stmt.source ? JSON.stringify(stmt.source.value) : null;
+    const lines: string[] = [];
+    for (const s of stmt.specifiers) {
+      if (s.type === "ExportNamespaceSpecifier") {
+        if (spec === null) continue;
+        lines.push(
+          `${pad}__nudoExportLazy(${JSON.stringify(moduleExportNameOf(s.exported))}, () => __nudoBindNamespace(${spec}));`,
+        );
+        continue;
+      }
+      if (s.type !== "ExportSpecifier") continue;
+      const exported = JSON.stringify(moduleExportNameOf(s.exported));
+      if (spec !== null) {
+        lines.push(
+          `${pad}__nudoExportLazy(${exported}, () => __nudoBindImport(${spec}, ${JSON.stringify(moduleExportNameOf(s.local))}));`,
+        );
+      } else {
+        lines.push(
+          `${pad}__nudoExportLazy(${exported}, () => ${moduleExportNameOf(s.local)});`,
+        );
+      }
+    }
+    return lines.join("\n");
+  }
+  const inner = transpileStatement(decl as Statement, depth, {
+    ...opts,
+    // Bug 21：export var 保持声明面（与 esm target 同口径——名字从模块级
+    // 提升集扣除，声明留在原语句，供导出绑定读取）
+    ...(decl.type === "VariableDeclaration" && decl.kind === "var"
+      ? { keepVarDecl: true }
+      : {}),
+  });
+  const lines = [inner];
+  for (const name of exportedDeclBindingNames(decl as Statement)) {
+    lines.push(`${pad}__nudoExportLazy(${JSON.stringify(name)}, () => ${name});`);
+  }
+  return lines.filter((l) => l !== "").join("\n");
+}
+
 function emitFunctionDeclaration(
   stmt: FunctionDeclaration,
   depth: number,
@@ -510,7 +661,9 @@ function emitFunctionDeclaration(
   // 同名函数遮蔽 / 私有名能被跨模块 import（漏 nudo:missing-export）/
   // 转译产物作为真实 ESM 时多出导出。缺省（低层单元未传集合）不发。
   const exportKw =
-    depth === 0 && opts.exportedDeclNames?.has(stmt.id.name) === true
+    opts.target !== "host" &&
+    depth === 0 &&
+    opts.exportedDeclNames?.has(stmt.id.name) === true
       ? "export "
       : "";
   // Bug 174：默认参数表达式在**本函数作用域**求值 ⇒ 其中的 `this` 是
@@ -984,28 +1137,6 @@ function emitIfStatement(
   // ——写死名会遮蔽用户同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点
   // （`forkBindingDecls`）同源 ⇒ 「成对一致」。
   const fk = forkTmpNames(names, opts);
-  const wrapArm = (thunk: string, arm: 0 | 1): string => {
-    if (names.length === 0) return thunk;
-    const slots = arm === 0 ? fk.arm1 : fk.arm2;
-    const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
-    return [
-      `() => {`,
-      ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
-      `${padIn}let ${fk.cont} = true;`,
-      `${padIn}try {`,
-      `${padIn}  return (${thunk})();`,
-      `${padIn}} catch (e) {`,
-      `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
-      `${padIn}  throw e;`,
-      `${padIn}} finally {`,
-      `${padIn}  if (${fk.cont}) {`,
-      ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
-      ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
-      `${padIn}  }`,
-      `${padIn}}`,
-      `}`,
-    ].join("\n");
-  };
   const consRaw = transpileBlockAsThunk(stmt.consequent, depth, {
     ...opts,
     conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
@@ -1059,12 +1190,18 @@ function emitIfStatement(
           "alt",
           recvSet,
         );
-  const cons = wrapArm(consNarrowed, 0);
+  const cons = forkArmThunkExpr(consNarrowed, 0, names, padIn, opts);
   // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
   // 那是标识符，被遮蔽后会把 Abs 当 alternate 函数传进去）；有 fork 绑定时
   // 需要真 alternate 参与 join，折 UNDEF_LIT。
   const alt = names.length
-    ? wrapArm(altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed, 1)
+    ? forkArmThunkExpr(
+        altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed,
+        1,
+        names,
+        padIn,
+        opts,
+      )
     : altNarrowed;
   const altArg = alt === null ? "" : `, ${alt}`;
   // Bug 135：fork 快照（__fk0_*）是**臂的基线**——基线必须取自**测试
@@ -1517,6 +1654,11 @@ function emitSwitchStatement(
       ],
       opts,
     );
+  // 本函数与 `forkArmThunkExpr` **刻意不共用**：switch 臂协议多出
+  // ①抽象判别式的 case 测试补求值 prologue（`__swTestRead` / `__swEvalAll`）、
+  // ②break 信号吸收（`$isBreakTo` —— if-fork 臂不吸收 break）、
+  // ③多臂槽位按 `outIdx` 取、④finally 仅在存在绑定名时发射。共享面只剩
+  // 快照恢复 / try-catch-finally 骨架；强行参数化会把 break 语义藏进标志位。
   const wrapArmThunk = (thunk: string, outIdx: number): string => {
     // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
     const lines: string[] = [`() => {`];
