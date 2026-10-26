@@ -59,6 +59,12 @@
  *   assign(freeze({}), {a:1}) 抛 TypeError）——源零可枚举自有键 ⇒ 不抛；
  *   源键集不可判 ⇒ may-throw（不定抛）；键集已知非空 ⇒ 逐键判定（新建键 /
  *   不可写数据属性 / 改原型 ⇒ TypeError，setter 派发 ⇒ 成功）。
+ * - sealed / nonext 目标的写门（**obj 与 brand 同规则**）：只拒绝**新自有
+ *   键**（不可扩展 ⇒ [[Set]] 建键失败 ⇒ TypeError）；已有自有可写数据属性 /
+ *   自有 setter 照常成功（seal 不改 writable、不禁访问器）。brand 目标的自有
+ *   面 = 内层 obj 槽 + 访问器侧表 + owner 类的自有方法/访问器（brandKeyIsNew）；
+ *   自有键集不可判（内层开箱 / 内建原型品牌无类注册表条目）⇒ 不抛（保守）。
+ *   frozen brand 仍走 frozenBrandGuard 的整目标拒写门。
  * - Bug 210：Proxy [[OwnPropertyKeys]] 的单一实现（proxyOwnKeysTrapKeys
  *   派发 + enforceProxyOwnKeysInvariant 校验）——重复名 / 非字符串键 /
  *   漏靶的不可配置自有键 / 不可扩展靶的多余键 → 原生定抛 TypeError；
@@ -100,7 +106,7 @@ import {
   enumOwnKeys,
 } from "../invariants.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
-import { classInstanceInnerOf } from "../../exec/class-registry.ts";
+import { classInstanceInnerOf, getEvalClass } from "../../exec/class-registry.ts";
 import { typedArrayEnumKeyView } from "./enum-entries.ts";
 import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
 import { proxyTargetInnerObj, asAbsVal, clearStaleTermPred } from "../../exec/runtime/state.ts";
@@ -1283,28 +1289,6 @@ export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined)
 }
 
 /**
- * Bug 200/S4 接线：**brand 目标**（原型对象 `A.prototype`）——原生
- * `Object.assign(A.prototype, {…})` 写的是原型对象的**自有属性**（for-in
- * 沿原型链可见）。引擎的原型对象 = protoBrandAbs(name) 的**内层 obj** ⇒
- * 逐键写该内层 obj 的槽（**原地**）——读侧
- * （exec/runtime/containers/iterate.ts 的 brandProtoEnumerableKeys）枚举的
- * 正是内层 obj 的可枚举槽，写侧必须落在同一处；不可变更新会造出新 brand，
- * 类注册表 / 实例原型链仍持旧 brand ⇒ 写了也看不见。
- *
- * [[Set]] 语义同 Object.assign 的其它目标（Set(target, key, value,
- * throw=true)）：自有访问器 → setter（无 setter → TypeError）；自有非可写
- * 数据属性 → TypeError；其余 → 建/覆写自有数据槽。
- *
- * 消费方：单一实现 performObjectAssign 的 brand 目标臂
- * （assignBrandFromObj / assignBrandFromSlots）——runtime 直接面
- * （exec/class/assign.ts 的 runtimeAssignObject）与 second-class 静态面
- * （builtins/object/methods.ts 的 assign 臂）都经它。
- *
- * @param target 目标（brand——原型对象）
- * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
- *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
- */
-/**
  * 写进 brand 内层 obj 的键值对。
  * Bug 295：条目可选带第三元 `symbolKey`（true = 该键是**真 symbol 键**）。
  * 原生 `Object.assign(A.prototype, {a:1, [Symbol.toStringTag]:2})` 复制的是
@@ -1314,7 +1298,84 @@ export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined)
  */
 export type BrandAssignEntry = [string, Abs] | [string, Abs, boolean];
 
-export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): void {
+/**
+ * 「自有属性」判定（不可扩展目标的「新键」门共用）——自有数据槽 **或** 自有
+ * 访问器 ⇒ 已有关键。自有属性 ≠ 自有槽：访问器住 accessorTable 侧表（槽位
+ * 只是占位，可能缺席——原生 `Object.seal` 不改访问器机制）。
+ *
+ * 普通对象目标传目标自身；brand 目标传**内层 obj**（自有面在那里）。
+ */
+function hasOwnKeyView(holder: Abs, key: string): boolean {
+  if (holder.shape.k === "obj") {
+    const slots = (holder.shape as ObjShape).slots as Record<string, { value: Abs }>;
+    if (getSlot(slots, key) !== undefined) return true;
+  }
+  return lookupObjAccessor(holder, key) !== undefined;
+}
+
+/**
+ * Object.assign × **不可扩展品牌目标**（sealed / nonext）的「新自有键」判定。
+ *
+ * 规则与普通对象目标（mergeAssignObject 的同名前置检查）**同一口径**：
+ * 自有数据属性（槽）或自有访问器 ⇒ 已有关键（访问器住 accessorTable 侧表——
+ * 原生 seal 不改访问器机制）⇒ 写成功；都不存在 ⇒ 新建自有属性 ⇒ 原生
+ * [[Set]] 在不可扩展目标上失败 ⇒ TypeError。
+ *
+ * brand 的**独有面**：自有属性落内层 obj（原型对象 / 类实例字段），另外
+ * owner 类的自有方法 / 访问器原生就是原型对象的自有属性（引擎把它们放在
+ * 类注册表而非内层槽）——同样算已有关键。
+ *
+ * 自有键集不可判（内层开箱 / 内建原型品牌没有类注册表事实源）⇒ 不抛
+ * （sound 保守：宁可漏抛，不造假 TypeError）。
+ */
+function brandKeyIsNew(target: Abs, key: string): boolean {
+  const sh = target.shape;
+  if (sh.k !== "brand" || sh.shape.shape.k !== "obj") return false;
+  const inner = sh.shape;
+  const ishape = inner.shape as ObjShape;
+  if (hasOwnKeyView(inner, key)) return false;
+  if (ishape.open) return false; // 键集不可判 ⇒ 保守不抛
+  if (sh.name.endsWith(".prototype")) {
+    const spec = getEvalClass(sh.name.slice(0, -".prototype".length));
+    if (!spec) return false; // 内建原型品牌：自有键集无事实源 ⇒ 保守不抛
+    if (Object.hasOwn(spec.methods ?? {}, key) || Object.hasOwn(spec.accessors ?? {}, key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Bug 200/S4 接线：**brand 目标**（原型对象 `A.prototype` / 类实例）——原生
+ * `Object.assign(A.prototype, {…})` 写的是原型对象的**自有属性**（for-in
+ * 沿原型链可见）。引擎的原型对象 = protoBrandAbs(name) 的**内层 obj** ⇒
+ * 逐键写该内层 obj 的槽（**原地**）——读侧
+ * （exec/runtime/containers/iterate.ts 的 brandProtoEnumerableKeys）枚举的
+ * 正是内层 obj 的可枚举槽，写侧必须落在同一处；不可变更新会造出新 brand，
+ * 类注册表 / 实例原型链仍持旧 brand ⇒ 写了也看不见。
+ *
+ * [[Set]] 语义同 Object.assign 的其它目标（Set(target, key, value,
+ * throw=true)）：自有访问器 → setter（无 setter → TypeError）；sealed /
+ * nonext 目标上的**新自有键** → TypeError（不可扩展 ⇒ 建键失败；
+ * brandKeyIsNew 与普通对象目标同一口径）；自有非可写数据属性 → TypeError；
+ * 其余 → 建/覆写自有数据槽。
+ *
+ * 消费方：单一实现 performObjectAssign 的 brand 目标臂
+ * （assignBrandFromObj / assignBrandFromSlots）——runtime 直接面
+ * （exec/class/assign.ts 的 runtimeAssignObject）与 second-class 静态面
+ * （builtins/object/methods.ts 的 assign 臂）都经它。
+ *
+ * @param target 目标（brand——原型对象 / 类实例）
+ * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
+ *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
+ * @param st 目标的 extState（performObjectAssign 传入）——sealed / nonext 时
+ *   新键写失败；frozen 由 frozenBrandGuard 前置整目标拒写
+ */
+export function assignIntoBrandInner(
+  target: Abs,
+  entries: BrandAssignEntry[],
+  st?: "nonext" | "sealed" | "frozen",
+): void {
   const inner = target.shape.k === "brand" ? target.shape.shape : undefined;
   if (!inner || inner.shape.k !== "obj") return;
   const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
@@ -1326,6 +1387,12 @@ export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): 
       if (!ownAcc.set) throw new NudoThrow(errorTypeAbs("TypeError"));
       ownAcc.set(target, v);
       continue;
+    }
+    // sealed / nonext 目标：**新建自有属性**的 [[Set]] 失败（原生 TypeError）；
+    // 已有自有可写数据属性照常写（seal 保留 writable / preventExtensions 不动
+    // 既有属性）——与普通对象目标同规则。
+    if ((st === "sealed" || st === "nonext") && brandKeyIsNew(target, k)) {
+      throwAssignTypeError();
     }
     if (getSlot(slots, k) !== undefined && getPropFlags(inner)?.get(k)?.writable === false) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -1443,8 +1510,7 @@ function mergeAssignObject(
     // `Object.seal` 不改访问器机制），不是新键 ⇒ 不拒。
     if (
       (st === "sealed" || st === "nonext") &&
-      getSlot(ts.slots, k) === undefined &&
-      lookupObjAccessor(target, k) === undefined
+      !hasOwnKeyView(target, k)
     ) {
       throwAssignTypeError();
     }
@@ -1494,7 +1560,7 @@ function assignBrandFromObj(
     (k) => [k, readProperty(src, k), ss.slots[k]?.symbolKey === true] as [string, Abs, boolean],
   );
   frozenBrandGuard(target, entries, st);
-  assignIntoBrandInner(target, entries);
+  assignIntoBrandInner(target, entries, st);
 }
 
 /** brand（原型对象）目标 × 非 obj 源（tuple / 字符串下标键投影）。 */
@@ -1505,7 +1571,7 @@ function assignBrandFromSlots(
 ): void {
   const entries = Object.entries(srcSlots).map(([k, s]) => [k, s.value] as [string, Abs]);
   frozenBrandGuard(target, entries, st);
-  assignIntoBrandInner(target, entries);
+  assignIntoBrandInner(target, entries, st);
 }
 
 /**
@@ -1601,7 +1667,8 @@ function assignArrayTarget(
  *   下标写定抛 / number·bool 安全返原值；抽象目标 may-throw 只记账）；
  * - 键写语义：源 [[OwnPropertyKeys]] × enumerable 过滤 + 目标逐键 [[Set]]
  *   （classifyAssignSet：自有/继承访问器、__proto__ 原型 setter、非可写
- *   拦截、frozen/sealed 写门）。
+ *   拦截、frozen/sealed 写门；brand 目标经 assignIntoBrandInner 同口径——
+ *   sealed / nonext 的新自有键 ⇒ TypeError）。
  */
 export function performObjectAssign(args: Abs[]): Abs {
   if (!args.length) return unknown;

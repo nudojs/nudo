@@ -197,10 +197,13 @@ export type TranspileOptions = {
    * 直接 const 别名组（`const a = {...}; const b = a;`）。
    *
    * fork/循环 pack 只按「被写绑定」收集快照名；别名伙伴不在集合里时，
-   * 臂/轮次结束把 `a` 重绑为副本会断开 `b` 的引用语义。transpileFnBodyStmts
-   * 从函数体**开头连续 const 声明**计算该表（只收 init 为同作用域 const
-   * 标识符的声明，避免 TDZ 与可重绑 let），fork/pack 发射时据此扩展
-   * snapshot 集合。嵌套函数体在自身边界重算，不继承外层组。
+   * 臂/轮次结束把 `a` 重绑为副本会断开 `b` 的引用语义。该表在**作用域
+   * 边界**上计算（只收 init 为同作用域、此前已声明 const 的标识符，避免
+   * TDZ 与可重绑 let）：函数/方法体与嵌套块由 transpileFnBodyStmts 算，
+   * **模块顶层**（模块体逐语句发射、不经函数体入口）由 transpile.ts 算。
+   * 嵌套作用域**继承**外层组并按自身遮蔽名过滤（未被遮蔽 ⇒ 同一绑定，
+   * 展开安全；被遮蔽 ⇒ 该组在本处指向不同绑定，丢弃），fork/pack 发射时
+   * 据此扩展 snapshot 集合。
    */
   aliasGroups?: ReadonlyArray<readonly string[]>;
   /**

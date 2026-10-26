@@ -15,6 +15,14 @@
  * D2：sealed/nonext 的「新键」判定此前只看 `shape.slots`——自有访问器住
  * accessorTable 侧表（槽位只是占位，可能缺席）⇒ 访问器键被误判成新键硬抛。
  * 原生 Object.seal 不改访问器机制：自有 setter 仍然可用。
+ *
+ * D3：**brand 目标**（原型对象 `A.prototype` / 类实例）的 sealed/nonext 写门
+ * 缺失——brand 臂只接了 frozen 门（frozenBrandGuard），sealed/nonext 直接
+ * 落槽 ⇒ 原生本应 TypeError 的新键写静默成功（`Object.assign(Object.seal(
+ * A.prototype), {x:1})` 折 success）。现 brand 臂与普通对象目标**同规则**：
+ * 新自有键（内层槽 / 内层访问器 / owner 类自有方法·访问器都不命中）⇒
+ * TypeError；已有自有可写键 / 自有 setter ⇒ 成功；frozen 门不变。逐键推进
+ * ⇒ 抛错前的既有键写已落地（原生 partial 语义）。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, anyAbs, litValue, type Abs } from "../abs.ts";
@@ -262,3 +270,227 @@ describe("Object.assign × sealed/nonext 目标：自有访问器不是「新键
     expect(seen.length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D3：brand 目标（原型对象 `A.prototype` / 类实例）的 sealed / nonext 写门。
+//
+// 每条用例用**独立类名**：protoBrandAbs 按名驻留（X.prototype 原生唯一共享），
+// 同名类复用同一 brand Abs ⇒ 前面用例打的 extState 会泄漏到后面（不是本引擎
+// 的缺陷，是测试卫生要求）。
+// ---------------------------------------------------------------------------
+
+/** 直调面 brand 目标（名不以 .prototype 结尾 ⇒ 判定不查 owner 类注册表） */
+function brandTarget(inner: Abs, name: string): Abs {
+  return abs({ k: "brand", name, shape: inner }, undefined, undefined, "exact");
+}
+
+/** 单键 obj 源 */
+function objSource(key: string, value: Abs): Abs {
+  return abs({ k: "obj", slots: { [key]: { value } } }, undefined, undefined, "exact");
+}
+
+describe("Object.assign × sealed/nonext brand 目标：新自有键 ⇒ TypeError（D3）", () => {
+  it("sealed 原型 + 新键 → TypeError（此前静默写穿）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealNew {}
+      Object.seal(BrandSealNew.prototype);
+      Object.assign(BrandSealNew.prototype, { x: 1 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("preventExtensions 原型 + 新键 → TypeError（与 sealed 同规则）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandNonextNew {}
+      Object.preventExtensions(BrandNonextNew.prototype);
+      Object.assign(BrandNonextNew.prototype, { x: 1 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("frozen 原型 + 新键 → 仍 TypeError（frozen 门不变，负控）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandFrozenNew {}
+      Object.freeze(BrandFrozenNew.prototype);
+      Object.assign(BrandFrozenNew.prototype, { x: 1 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("sealed 原型 + 既有自有可写键 → 不抛且写入（seal 不改 writable）", () => {
+    expect(
+      val(`export function f() {
+        class BrandSealExisting {}
+        BrandSealExisting.prototype.k = 1;
+        Object.seal(BrandSealExisting.prototype);
+        Object.assign(BrandSealExisting.prototype, { k: 2 });
+        return BrandSealExisting.prototype.k;
+      }`),
+    ).toEqual({ ok: true, value: 2 });
+  });
+
+  it("preventExtensions 原型 + 既有自有键 → 不抛且写入", () => {
+    expect(
+      val(`export function f() {
+        class BrandNonextExisting {}
+        BrandNonextExisting.prototype.k = 1;
+        Object.preventExtensions(BrandNonextExisting.prototype);
+        Object.assign(BrandNonextExisting.prototype, { k: 2 });
+        return BrandNonextExisting.prototype.k;
+      }`),
+    ).toEqual({ ok: true, value: 2 });
+  });
+
+  it("sealed 原型 + 既有 constructor 键 → 不抛（原型自有键，非新键）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealCtor {}
+      Object.seal(BrandSealCtor.prototype);
+      Object.assign(BrandSealCtor.prototype, { constructor: 5 });
+      return 1;
+    }`)).toBe(false);
+  });
+
+  it("sealed 原型 + owner 类自有方法名 → 不抛（方法原生就是原型自有属性）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealMethod { m() {} }
+      Object.seal(BrandSealMethod.prototype);
+      Object.assign(BrandSealMethod.prototype, { m: 1 });
+      return 1;
+    }`)).toBe(false);
+  });
+
+  it("sealed 原型 + 自有 setter（defineProperty 装原型）→ setter 派发、不抛", () => {
+    expect(
+      val(`export function f() {
+        class BrandSealSetter {}
+        let seen = 0;
+        Object.defineProperty(BrandSealSetter.prototype, "s", {
+          set(v) { seen = v; },
+          configurable: true,
+        });
+        Object.seal(BrandSealSetter.prototype);
+        Object.assign(BrandSealSetter.prototype, { s: 7 });
+        return seen;
+      }`),
+    ).toEqual({ ok: true, value: 7 });
+  });
+
+  it("sealed 原型 + getter-only 自有访问器 → TypeError（[[Set]] 无 setter）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealGetterOnly {}
+      Object.defineProperty(BrandSealGetterOnly.prototype, "g", {
+        get() { return 1; },
+        configurable: true,
+      });
+      Object.seal(BrandSealGetterOnly.prototype);
+      Object.assign(BrandSealGetterOnly.prototype, { g: 2 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("sealed 原型 + 既有不可写数据键 → TypeError（数据属性写失败）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealReadonly {}
+      Object.defineProperty(BrandSealReadonly.prototype, "ro", {
+        value: 1,
+        writable: false,
+        configurable: true,
+      });
+      Object.seal(BrandSealReadonly.prototype);
+      Object.assign(BrandSealReadonly.prototype, { ro: 2 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("sealed 类实例：新键 → TypeError；既有字段 → 写入且不抛", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandInstSealNew { constructor() { this.a = 1; } }
+      const x = new BrandInstSealNew();
+      Object.seal(x);
+      Object.assign(x, { b: 2 });
+      return 1;
+    }`)).toBe(true);
+    expect(
+      val(`export function f() {
+        class BrandInstSealExisting { constructor() { this.a = 1; } }
+        const x = new BrandInstSealExisting();
+        Object.seal(x);
+        Object.assign(x, { a: 9 });
+        return x.a;
+      }`),
+    ).toEqual({ ok: true, value: 9 });
+  });
+
+  it("sealed 原型 + 零可枚举键源（{} / null / \"\"）→ 不抛（无 [[Set]] 即无失败）", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealEmptySrc {}
+      const p = BrandSealEmptySrc.prototype;
+      Object.seal(p);
+      Object.assign(p, {}, null, "");
+      return 1;
+    }`)).toBe(false);
+  });
+
+  it("second-class 面（const g = Object.assign）同口径", () => {
+    expect(throwsTypeError(`export function f() {
+      class BrandSealSecondClass {}
+      Object.seal(BrandSealSecondClass.prototype);
+      const g = Object.assign;
+      g(BrandSealSecondClass.prototype, { x: 1 });
+      return 1;
+    }`)).toBe(true);
+  });
+
+  it("逐键顺序：既有键先写入、随后新键抛 TypeError（原生 partial 语义）", () => {
+    expect(
+      val(`export function f() {
+        class BrandSealPartial {}
+        BrandSealPartial.prototype.k = 1;
+        Object.seal(BrandSealPartial.prototype);
+        try {
+          Object.assign(BrandSealPartial.prototype, { k: 2, z: 3 });
+        } catch (e) {
+          return "partial:" + BrandSealPartial.prototype.k;
+        }
+        return "no-throw";
+      }`),
+    ).toEqual({ ok: true, value: "partial:2" });
+  });
+
+  it("直调面：sealed brand + 内层自有访问器（无槽，仅侧表）→ setter 派发、不抛", () => {
+    const inner = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
+    const brand = brandTarget(inner, "D3UnitSetterBrand");
+    const seen: Abs[] = [];
+    $objAccessor(inner, "x", null, (_t, v) => {
+      seen.push(v);
+      return v;
+    });
+    markExtState(brand, "sealed");
+    expect(() => performObjectAssign([brand, objSource("x", numLit(7))])).not.toThrow();
+    expect(seen.length).toBe(1);
+    expect(litValue(seen[0]!)).toEqual({ ok: true, value: 7 });
+  });
+
+  it("直调面：sealed brand + 内层闭箱新键 → TypeError；既有自有键 → 写入", () => {
+    const inner = abs(
+      { k: "obj", slots: { own: { value: numLit(1) } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const brand = brandTarget(inner, "D3UnitClosedBrand");
+    markExtState(brand, "sealed");
+    expect(() => performObjectAssign([brand, objSource("fresh", numLit(2))])).toThrow();
+    expect(() => performObjectAssign([brand, objSource("own", numLit(9))])).not.toThrow();
+    const slots = (inner.shape as { slots: Record<string, { value: Abs }> }).slots;
+    expect(litValue(slots.own!.value)).toEqual({ ok: true, value: 9 });
+  });
+
+  it("直调面：sealed brand + 内层开箱（键集不可判）→ 保守不抛", () => {
+    const inner = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "exact");
+    const brand = brandTarget(inner, "D3UnitOpenBrand");
+    markExtState(brand, "sealed");
+    expect(() => performObjectAssign([brand, objSource("maybe", numLit(1))])).not.toThrow();
+  });
+});
+

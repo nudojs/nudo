@@ -14,6 +14,18 @@
  * - switch 的 case 测试**惰性**求值（test 为 getter，$switch 按序匹配时才
  *   读）⇒ 命中即停（原生 CaseBlock 语义）；臂入口在抽象判别式路径补求值
  *   全部 case 测试（$switch 抽象路径不读 getter）；
+ * - switch 的 **pack/join 绑定集**（`names`）按**逐臂**自由写计算
+ *   （`collectForkBindingNames(...arm.stmts)` 后再并集），且发射在**外层
+ *   作用域**（快照 `__sw0_<name>` / 臂入口恢复 / 结束后 join）。因此集合里
+ *   **不得**出现臂内声明的同名局部绑定——否则外层同名绑定被 $copy 后重绑
+ *   ⇒ 外层别名身份断开 ⇒ 自信错值。剔除靠 `collectFreeAssignedNames` 的
+ *   `batchDecl` + walk 遮蔽（覆盖：直接 let/const/function/class、任意深度
+ *   嵌套块、for/for-of/for-in 头、catch 形参、嵌套函数形参与其体内
+ *   let/const）；`var` 是**函数**作用域绑定，不按 arm-local 剔除（同函数
+ *   作用域内与外层 `var` 同名即同一绑定，必须留在协议里）。已知边界：
+ *   嵌套函数**体内**的 `var` 未在 helpers 的 walk 中提升遮蔽（if-fork /
+ *   三元同病）——修法在 `collectFreeAssignedNames`，不在本文件；
+ *   不变量与形状矩阵见 `exec/__tests__/switch-arm-local-scope.test.ts`；
  * - case 标签窄化（Bug 184）：命中 / 排除事实经 switchCaseFacts 计算，
  *   经 narrowCaseLabelArmThunk 影子重绑进臂体；
  * - 语句级 emit 协议（fork 臂隔离/mutator rebinds/守卫剪影）与表达式侧

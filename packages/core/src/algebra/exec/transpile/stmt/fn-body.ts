@@ -46,6 +46,7 @@ import {
   computeConstScope,
   copyConstScope,
   internalTmpName,
+  leadingConstAliasGroups,
   mergeAliasGroups,
   shadowedIntrinsicsOf,
   expandAliasNames,
@@ -167,58 +168,6 @@ function flattenEarlyReturnBlocks(stmts: readonly Statement[]): Statement[] {
   return out;
 }
 
-/**
- * **作用域边界**语句表开头连续 const 声明里的直接别名组
- * （`const a = {...}; const b = a;`）。
- *
- * 只收 init 为同作用域、此前已声明 const 的标识符：这样别名声明一定在
- * 所有后续语句之前初始化，fork/pack 带上 `b` 不会踩 TDZ；`let`/`var` 可
- * 重绑，不能当作稳定别名。非连续（中间隔了其它语句）的别名不收集——
- * 保守漏收只会保留旧的别名缺陷，不会引入错误绑定。
- *
- * 边界口径：函数/方法体与嵌套块都算本层组（嵌套块的组与函数体同权——
- * 块内 `const x = …; const y = x;` 的别名同样要跨 fork 保持身份）。
- */
-function leadingConstAliasGroups(stmts: readonly Statement[]): string[][] {
-  const parent = new Map<string, string>();
-  const declared = new Set<string>();
-  const find = (x: string): string => {
-    let root = x;
-    while (parent.has(root) && parent.get(root) !== root) root = parent.get(root)!;
-    let cur = x;
-    while (parent.has(cur) && parent.get(cur) !== cur) {
-      const next = parent.get(cur)!;
-      parent.set(cur, root);
-      cur = next;
-    }
-    return root;
-  };
-  const union = (a: string, b: string): void => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent.set(ra, rb);
-  };
-  for (const stmt of stmts) {
-    if (stmt.type !== "VariableDeclaration" || stmt.kind !== "const") break;
-    for (const d of stmt.declarations) {
-      if (d.id.type !== "Identifier") continue;
-      if (d.init?.type === "Identifier" && declared.has(d.init.name)) {
-        union(d.id.name, d.init.name);
-      }
-      parent.set(d.id.name, parent.get(d.id.name) ?? d.id.name);
-      declared.add(d.id.name);
-    }
-  }
-  const groups = new Map<string, string[]>();
-  for (const name of parent.keys()) {
-    const root = find(name);
-    const group = groups.get(root);
-    if (group) group.push(name);
-    else groups.set(root, [name]);
-  }
-  return [...groups.values()].filter((g) => g.length > 1);
-}
-
 export function transpileFnBodyStmts(
   stmtsIn: Statement[],
   depth: number,
@@ -299,6 +248,11 @@ export function transpileFnBodyStmts(
   // 边界口径：函数/方法体（varScope 存在）与**嵌套块**（transpileBlockAsThunk
   // → 本入口，无 varScope）都是作用域边界 ⇒ 两处都算本层组。形参也遮蔽
   // 外层绑定（varScope.skip = 参数模式名）。
+  //
+  // **模块顶层**同样是作用域边界，但它不经本入口（模块体由 transpile.ts
+  // 逐语句发射）⇒ 模块的自有组在 transpile.ts 算好后经 opts.aliasGroups
+  // 下发，本入口按上面的「继承组」口径并入：嵌套函数体未遮蔽时保持外层
+  // 别名身份，遮蔽时丢组。
   const ownAliasGroups = leadingConstAliasGroups(stmts);
   const shadowNames = collectScopeShadowNames(stmts);
   if (varScope) for (const n of varScope.skip) shadowNames.add(n);
@@ -307,10 +261,11 @@ export function transpileFnBodyStmts(
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
     ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
-    // **总是覆写**（含空数组）：条件展开（`aliasGroups.length > 0 ? … : {}`）
-    // 会让**外层**的组经 `...varOpts` 漏进本层——嵌套函数体拿到外层别名组
-    // ⇒ 体内 fork 把外层伙伴拉进绑定集 ⇒ 复制/重绑外层绑定 ⇒ 别名身份
-    // 断开（自信错值）。
+    // **总是覆写**（含空数组）：`aliasGroups` 是**本层已裁决**的结果（继承
+    // 组已按本层遮蔽名过滤 + 本层自有组）——条件展开（`aliasGroups.length
+    // > 0 ? … : {}`）会让 `...varOpts` 里的**未过滤**外层组漏进本层 ⇒ 被
+    // 本层遮蔽的成员仍被当成同一绑定 ⇒ 复制/重绑了不同绑定 ⇒ 别名身份
+    // 断开（自信错值）。恒覆写保证「本层看到的组」= 本层算出的组。
     aliasGroups,
   };
   for (let i = 0; i < stmts.length; i++) {

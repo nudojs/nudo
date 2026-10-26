@@ -36,6 +36,7 @@ import {
   bumpDestrTmpSeq,
   registerConstFnScope,
   internalTmpName,
+  leadingConstAliasGroups,
   shadowedIntrinsicsOf,
 } from "./transpile/helpers.ts";
 import { staticExportDeclNamesOfProgram } from "./export-names.ts";
@@ -161,12 +162,29 @@ function transpileFileDetailed(
   const moduleConstNames = new Set<string>(opts.constNames ?? []);
   for (const name of importConstNames) moduleConstNames.add(name);
   registerConstFnScope(moduleConstNames, file.program.body, opts.constNames);
+  // analyze 模式：**发射期**剥离顶层效应语句（源 AST 口径——提升行在上方
+  // 已按原始 body 计算，块内 var 仍有模块顶绑定）。保留语句的发射字节与
+  // exec 模式一致，调用方无需再解析生成产物做二次剥离。
+  const emitBody =
+    opts.mode === "analyze"
+      ? analyzeTopLevelStatements(file.program.body)
+      : file.program.body;
+  // 模块顶层是**作用域边界**（与函数体同级）：模块体是**逐语句**发射的，
+  // 不经函数体入口（transpileFnBodyStmts）⇒ 模块作用域此前**没有**别名组
+  // ⇒ 顶层 fork（`if (…) { a.x = … }`）只快照/重绑 `a` ⇒ 别名伙伴 `b` 仍
+  // 指向 fork 前的对象 ⇒ 后续经 `a` 的写对 `b` 不可见（自信错值）。
+  // 本层自有组 = 前导连续 const 声明里的直接别名（同函数体边界口径）；
+  // 嵌套函数体按 fn-body.ts 的口径**继承**本组并按自身遮蔽名过滤。
+  const moduleAliasGroups = leadingConstAliasGroups(emitBody);
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
     thisSlot,
     constNames: moduleConstNames,
+    // **总是覆写**（含空数组）：模块是最外层作用域边界——外层组不得漏进
+    // 模块作用域（同 fn-body.ts 的作用域边界口径）。
+    aliasGroups: moduleAliasGroups,
     ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
     // 顶层函数 `export ` 前缀判据（空集也传——缺省语义是「不发 export」）
     exportedDeclNames,
@@ -185,13 +203,6 @@ function transpileFileDetailed(
     lines.push(`let __nudoRefreshKeep;`);
   }
   if (varHoistLine) lines.push(varHoistLine);
-  // analyze 模式：**发射期**剥离顶层效应语句（源 AST 口径——提升行在上方
-  // 已按原始 body 计算，块内 var 仍有模块顶绑定）。保留语句的发射字节与
-  // exec 模式一致，调用方无需再解析生成产物做二次剥离。
-  const emitBody =
-    opts.mode === "analyze"
-      ? analyzeTopLevelStatements(file.program.body)
-      : file.program.body;
   for (const stmt of emitBody) {
     lines.push(transpileStatement(stmt, 0, scopedOpts));
   }

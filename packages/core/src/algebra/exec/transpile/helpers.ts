@@ -10,7 +10,7 @@
  * - **replace 命中的子表达式仍要求值**（副作用与 throws 域保留），只是
  *   结果被注入值取代（Bug 165）；旧口径整段替换 → 副作用与抛错域消失。
  */
-import type { Node, Expression } from "@babel/types";
+import type { Node, Expression, Statement, VariableDeclaration } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
@@ -1156,34 +1156,42 @@ export function collectExportVarNames(stmts: readonly unknown[]): Set<string> {
 }
 
 /**
- * 收集子树内 **词法声明** 名（let/const/function/class；不含 var——函数作用域）。
- * 不进入嵌套函数（那些绑定属于内层作用域）。
- * 用于 fork 协议：臂内声明不是「自由写」，不得 `$copy(未定义名)`。
+ * **单条语句**在本层语句表里声明的词法名（let/const/class/function；`var`
+ * 是函数作用域 ⇒ 不收）。**不下降**到嵌套块 / 嵌套函数体：那些声明只
+ * shadow 各自作用域，不 shadow 同一语句表里的兄弟语句。
+ *
+ * 用途（fork 协议的「臂内声明不是自由写」判定）：同批节点是**同一语句表**
+ * 里的兄弟语句——`case 1: let a = …; a = 2` 的 `let a` 必须 shadow 兄弟
+ * `a = 2`（否则 `$copy(a)` 撞 const/TDZ），而 `case 1: { let a = … } a = 2`
+ * 的块内 `let a` 不得外泄到兄弟语句（否则外层 `a` 的合法自由写被吞 ⇒
+ * 臂不再隔离）。嵌套块的遮蔽由 walk 的 BlockStatement 分支自己处理。
  */
-export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
-  if (!node || typeof node !== "object") return;
-  const n = node as {
-    type?: string;
-    kind?: string;
-    id?: unknown;
-    declarations?: Array<{ id?: unknown }>;
-    [k: string]: unknown;
-  };
-  if (FUNCTION_SCOPE_TYPES.has(n.type as string) && n.type !== "BlockStatement") {
-    // 函数本体的词法名属于内层；只收函数名（若 FunctionDeclaration）
-    if (n.type === "FunctionDeclaration") collectPatternNames(n.id, acc);
+function collectListStatementDeclNames(stmt: unknown, acc: Set<string>): void {
+  const n = stmt as
+    | {
+        type?: string;
+        kind?: string;
+        id?: unknown;
+        declarations?: Array<{ id?: unknown }>;
+        declaration?: {
+          type?: string;
+          kind?: string;
+          id?: unknown;
+          declarations?: Array<{ id?: unknown }>;
+        };
+      }
+    | null
+    | undefined;
+  if (!n) return;
+  // `export const/let/class …`：导出包装不改变绑定的层级（声明本体在本层）
+  const node = n.type === "ExportNamedDeclaration" && n.declaration ? n.declaration : n;
+  if (node.type === "VariableDeclaration") {
+    if (node.kind === "var") return;
+    for (const d of node.declarations ?? []) collectPatternNames(d.id, acc);
     return;
   }
-  if (n.type === "VariableDeclaration" && n.kind !== "var") {
-    for (const d of n.declarations ?? []) collectPatternNames(d.id, acc);
-  } else if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
-    collectPatternNames(n.id, acc);
-  }
-  for (const key of Object.keys(n)) {
-    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
-    const child = n[key];
-    if (Array.isArray(child)) child.forEach((c) => collectLexicalDeclNames(c, acc));
-    else if (child && typeof child === "object") collectLexicalDeclNames(child, acc);
+  if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+    collectPatternNames(node.id, acc);
   }
 }
 
@@ -1200,14 +1208,7 @@ export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
 export function collectLoopBodyTopLevelDeclNames(body: unknown, acc: Set<string>): void {
   const n = body as { type?: string; body?: unknown } | null | undefined;
   if (!n || n.type !== "BlockStatement" || !Array.isArray(n.body)) return;
-  for (const s of n.body as unknown[]) {
-    const stmt = s as { type?: string; kind?: string; id?: unknown; declarations?: Array<{ id?: unknown }> };
-    if (stmt.type === "VariableDeclaration" && stmt.kind !== "var") {
-      for (const d of stmt.declarations ?? []) collectPatternNames(d.id, acc);
-    } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
-      collectPatternNames(stmt.id, acc);
-    }
-  }
+  for (const s of n.body as unknown[]) collectListStatementDeclNames(s, acc);
 }
 
 /**
@@ -1413,10 +1414,13 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
   const markFree = (name: string | undefined, shadowed: Set<string>): void => {
     if (name && !HOST_INTRINSIC_SET.has(name) && !shadowed.has(name)) free.add(name);
   };
-  // 同批节点内的词法声明（let/const/function）遮蔽本批自由写——
-  // 臂内 `let shares = []; shares.push` 不得进外层 fork 协议（$copy(TDZ)）。
+  // 同批节点是**同一语句表**里的兄弟语句（switch 臂语句 / if 分支体 /
+  // 函数体余下语句）——本层声明（let/const/class/function）遮蔽本批自由写：
+  // 臂内 `let shares = []; shares.push(1)` 不得进外层 fork 协议（$copy(TDZ)）。
+  // 只收**本层**声明（不下降嵌套块）：块内 `let a` 只 shadow 该块，
+  // `case 1: { let a = … } a.v = 7` 的外层 `a` 仍是合法自由写。
   const batchDecl = new Set<string>();
-  for (const node of nodes) collectLexicalDeclNames(node, batchDecl);
+  for (const node of nodes) collectListStatementDeclNames(node, batchDecl);
   const walk = (node: unknown, shadowed: Set<string>): void => {
     if (!node || typeof node !== "object") return;
     const n = node as {
@@ -1454,11 +1458,29 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       const bound = new Set<string>();
       collectPatternNames(n.id, bound);
       for (const p of n.params ?? []) collectPatternNames(p, bound);
+      // 内层函数体的**函数级**绑定（`var` 提升 + 本层函数声明）属于内层
+      // 作用域 ⇒ 写到它们不是对**外层**绑定的自由写。缺这一层时
+      // `function g() { var a = 1; a = 2 }` 会把外层（多半不存在的）`a`
+      // 拉进 fork/pack 协议 ⇒ 发射 `$copy(a)` 运行时 ReferenceError ⇒
+      // 假 never / L2 假 throws（臂内 var 是**内层**绑定，外层无同名绑定）。
+      // 箭头函数表达式体没有提升层（表达式体不是语句列表）。
+      const bodyStmts =
+        (n.body as { type?: string; body?: unknown[] } | undefined)?.type === "BlockStatement"
+          ? ((n.body as { body?: unknown[] }).body ?? [])
+          : [];
+      for (const name of collectVarHoistNames(bodyStmts)) bound.add(name);
+      for (const s of bodyStmts) {
+        const st = s as { type?: string; id?: unknown } | null | undefined;
+        if (st?.type === "FunctionDeclaration") collectPatternNames(st.id, bound);
+      }
       pushShadow(bound);
     } else if (n.type === "BlockStatement") {
+      // 块作用域：块**本层**的词法声明（TDZ 覆盖整个块 ⇒ 先整体 shadow，
+      // 再看增量语句序）。不下降嵌套块——`{ { let a = … } a.v = 7 }` 的内层
+      // `let a` 只 shadow 内层，外层 `a` 仍是自由写。
       const bound = new Set<string>();
       for (const stmt of (n.body as unknown[] | undefined) ?? []) {
-        collectLexicalDeclNames(stmt, bound);
+        collectListStatementDeclNames(stmt, bound);
       }
       pushShadow(bound);
     } else if (n.type === "VariableDeclaration") {
@@ -1651,6 +1673,99 @@ export function collectScopeShadowNames(stmts: readonly unknown[]): Set<string> 
 }
 
 /**
+ * 前导 run 的单步归一：const 声明本体 / 「不打断 run」/ 「打断 run」。
+ *
+ * - `const`：本步是一条 const 声明（可直接参与别名并查）；
+ * - `skip`：本步不初始化任何绑定、也不观察别名绑定 ⇒ 不打断前导 run；
+ * - `break`：本步打断前导 run（其后的声明不再参与本层别名组）。
+ */
+type AliasRunStep =
+  | { kind: "const"; decl: VariableDeclaration }
+  | { kind: "skip" }
+  | { kind: "break" };
+
+/**
+ * 前导 run 的单步归一口径：
+ * - `import` 声明 → `skip`（依赖模块的求值发生在模块体之前，不观察本
+ *   模块的别名绑定；别名声明仍在任何后续语句之前初始化 ⇒ 无 TDZ 风险）；
+ * - `export const …` → `const`（导出包装不改变初始化时序）；
+ * - `export { a }` / `export * from …`（无声明体）→ `skip`（同 import）；
+ * - 其余（`let`/`var` 声明、函数/类声明、表达式语句、`export default …`）
+ *   → `break`。
+ */
+function aliasRunStepOf(stmt: Statement): AliasRunStep {
+  if (stmt.type === "ImportDeclaration") return { kind: "skip" };
+  if (stmt.type === "ExportNamedDeclaration") {
+    const decl = stmt.declaration;
+    if (!decl) return { kind: "skip" };
+    if (decl.type === "VariableDeclaration") {
+      return decl.kind === "const" ? { kind: "const", decl } : { kind: "break" };
+    }
+    return { kind: "break" };
+  }
+  if (stmt.type === "VariableDeclaration") {
+    return stmt.kind === "const" ? { kind: "const", decl: stmt } : { kind: "break" };
+  }
+  return { kind: "break" };
+}
+
+/**
+ * **作用域边界**语句表开头连续 const 声明里的直接别名组
+ * （`const a = {...}; const b = a;`）。
+ *
+ * 只收 init 为同作用域、此前已声明 const 的标识符：这样别名声明一定在
+ * 所有后续语句之前初始化，fork/pack 带上 `b` 不会踩 TDZ；`let`/`var` 可
+ * 重绑，不能当作稳定别名。非连续（中间隔了其它语句）的别名不收集——
+ * 保守漏收只会保留旧的别名缺陷，不会引入错误绑定。
+ *
+ * 边界口径：函数/方法体、嵌套块与**模块顶层**都算本层组（嵌套块的组与
+ * 函数体同权——块内 `const x = …; const y = x;` 的别名同样要跨 fork 保持
+ * 身份）。模块顶层**不经**函数体入口（模块体是逐语句发射的），其本层组
+ * 由 transpile.ts 单独计算并下发（见 TranspileOptions.aliasGroups）。
+ */
+export function leadingConstAliasGroups(stmts: readonly Statement[]): string[][] {
+  const parent = new Map<string, string>();
+  const declared = new Set<string>();
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.has(root) && parent.get(root) !== root) root = parent.get(root)!;
+    let cur = x;
+    while (parent.has(cur) && parent.get(cur) !== cur) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const stmt of stmts) {
+    const step = aliasRunStepOf(stmt);
+    if (step.kind === "skip") continue;
+    if (step.kind === "break") break;
+    for (const d of step.decl.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      if (d.init?.type === "Identifier" && declared.has(d.init.name)) {
+        union(d.id.name, d.init.name);
+      }
+      parent.set(d.id.name, parent.get(d.id.name) ?? d.id.name);
+      declared.add(d.id.name);
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const name of parent.keys()) {
+    const root = find(name);
+    const group = groups.get(root);
+    if (group) group.push(name);
+    else groups.set(root, [name]);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
+/**
  * 别名组按遮蔽名过滤：组内**任一成员**在本处被重新声明 ⇒ 该成员在本处
  * 指向**不同绑定** ⇒ 该组不得用于扩展（否则 fork/pack 会把「伙伴」当成本
  * 处的绑定复制/重绑 ⇒ 断开别名身份 ⇒ 自信错值）。
@@ -1714,10 +1829,11 @@ export function mergeAliasGroups(
  * 把 fork/pack 绑定集扩展到直接 const 别名伙伴。
  *
  * `const a = {...}; const b = a;` 只有 `a` 被写时，快照/ pack 若不带上 `b`，
- * 臂结束重绑 `a` 会断开 `b` 的引用。别名组由 transpileFnBodyStmts 在**作
- * 用域边界**上计算（见 TranspileOptions.aliasGroups）：本层自有组 + 外层组
- * 按本层遮蔽名过滤后的结果 ⇒ 展开只在「组内成员在本处指向同一绑定」时
- * 发生（名字匹配，不做绑定身份判定）。
+ * 臂结束重绑 `a` 会断开 `b` 的引用。别名组在**作用域边界**上计算（见
+ * TranspileOptions.aliasGroups）：函数/方法体与嵌套块由
+ * `transpileFnBodyStmts` 算，模块顶层由 transpile.ts 算；每层 = 本层自有组
+ * + 外层组按本层遮蔽名过滤后的结果 ⇒ 展开只在「组内成员在本处指向同一
+ * 绑定」时发生（名字匹配，不做绑定身份判定）。
  */
 export function expandAliasNames(
   names: Iterable<string>,
