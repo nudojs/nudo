@@ -30,19 +30,22 @@ import { resolveEvalInjection } from "./eval-injection.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /**
- * 模块 AST 的源面种类：ESM（静态 import/export 声明或任意位置 `import.meta`）
- * → true；CJS/sloppy → false。
+ * 模块 AST 的**源面严格性**（原生 strict mode code 判据）：
+ * - ESM（静态 import/export 声明或任意位置 `import.meta`）→ true；
+ * - **或** Program 指令序言含 `"use strict"`（CJS 风格脚本首部的指令同样使
+ *   整个源 strict——块级函数声明失去 Annex B 提升）；
+ * - 其余 CJS/sloppy → false。
  *
- * 与 core 的 `code-text.ts#sourceHasEsmSyntax`（B run 模块体 strict 前缀）/
+ * 与 core 的 `code-text.ts#sourceIsStrict`（B run 模块体 strict 前缀）/
  * `exec/transpile/meta.ts#isEsmProgram` 同口径。core 未把该判据导出到冻结的
  * 公开面（`.`/`./exec`/`./internal` 不得新增符号）⇒ host 侧按**已解析的 AST**
- * 判定（不重扫文本、不按函数猜）。AST 由 core 的 parseSource LRU 复用 ⇒ 按
- * 对象身份缓存，同一模块 AST 只走一次。
+ * 判定（不重扫文本、不按函数猜，指令是字符串字面量、文本扫描看不见）。AST
+ * 由 core 的 parseSource LRU 复用 ⇒ 按对象身份缓存，同一模块 AST 只走一次。
  */
-const esmByModuleAst = new WeakMap<object, boolean>();
+const strictByModuleAst = new WeakMap<object, boolean>();
 
-function moduleSourceIsEsm(file: Node): boolean {
-  const cached = esmByModuleAst.get(file);
+function moduleSourceIsStrict(file: Node): boolean {
+  const cached = strictByModuleAst.get(file);
   if (cached !== undefined) return cached;
   const isEsmNode = (n: Node): boolean => {
     if (
@@ -67,9 +70,19 @@ function moduleSourceIsEsm(file: Node): boolean {
     return false;
   };
   const root = (file as unknown as { program?: Node }).program ?? file;
-  const isEsm = isEsmNode(root);
-  esmByModuleAst.set(file, isEsm);
-  return isEsm;
+  // 指令序言：Program.directives 是 AST 面（文本扫描剥字符串后不可见）。
+  const isStrict = hasUseStrictDirective(root) || isEsmNode(root);
+  strictByModuleAst.set(file, isStrict);
+  return isStrict;
+}
+
+/** AST 节点的指令序言是否含 `"use strict"`（Program / 函数体 BlockStatement）。 */
+function hasUseStrictDirective(node: Node): boolean {
+  const dirs = (node as unknown as {
+    directives?: Array<{ value?: { value?: unknown } }>;
+  }).directives;
+  if (!Array.isArray(dirs)) return false;
+  return dirs.some((d) => d?.value?.value === "use strict");
 }
 
 /**
@@ -617,9 +630,10 @@ export function evalExportsToModuleExports(
   let def: Abs | undefined;
   let defGetter: (() => unknown) | undefined;
   const paramTable = topLevelFnParams(file);
-  // 源面严格性（模块 AST 判定一次，所有桥接 fn 同值）：ESM 模块的导出函数
-  // 与模块体同口径（strict），CJS/sloppy 源保持 sloppy。缺省不写 = sloppy。
-  const sourceStrict = moduleSourceIsEsm(file);
+  // 源面严格性（模块 AST 判定一次，所有桥接 fn 同值）：ESM 模块**或**带
+  // `"use strict"` 指令序言的脚本，其导出函数与模块体同口径（strict）；
+  // 其余 CJS/sloppy 源保持 sloppy（显式 false，不是缺省不写）。
+  const sourceStrict = moduleSourceIsStrict(file);
   // Bug ②（ESM live binding）：run 表的导出槽是 getter（run.ts ret 挂载），
   // 读取时解析模块作用域当前值。转换侧同样挂 getter 保持 liveness——
   // 若此处按值快照（Object.entries 求值），依赖内部变异对导入方不可见。
@@ -649,8 +663,8 @@ export function evalExportsToModuleExports(
         // $call 统一路由——桥内不得再手拆 .result / 自行 re-throw（BUG-006 根治）。
         apply: callTranspiledExportApply(run, k),
         kind: "eval-export",
-        // 源种类严格性：ESM 模块的导出函数按 strict 面记录（body 编译单元 /
-        // 下游桥接与模块运行同口径）；CJS/sloppy 源为 false。
+        // 源面严格性：ESM 模块或 `"use strict"` 脚本的导出函数按 strict 面
+        // 记录（body 编译单元 / 下游桥接与模块运行同口径）；纯 sloppy 源为 false。
         strict: sourceStrict,
         // 无 body 的桥接 fn 预算键 = fingerprint ?? anon#N——缺省会让所有
         // 桥接导出共享 anon#1，嵌套跨模块调用（a 调 b 调 a'）撞

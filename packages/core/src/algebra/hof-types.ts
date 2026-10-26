@@ -46,9 +46,11 @@ export type AstEnv = {
        */
       optionalParams?: boolean[];
       /**
-       * 源码面严格性（ESM → true；CJS / sloppy → false）：env 条目被包装成
-       * Abs fn（`absFunction`）时透传为 `AbsFnImpl.strict`，供 body 编译单元
-       * 发射 `"use strict";`。按**源文件种类**判定，不按函数猜。
+       * 源码面严格性（strict mode code → true；sloppy → false）：ESM 源 ∨
+       * `"use strict"` 序言（`code-text.ts#sourceIsStrict`），strict 代码区内
+       * 词法继承，class 方法体恒 true。env 条目被包装成 Abs fn
+       * （`absFunction`）时透传为 `AbsFnImpl.strict`，供 body 编译单元发射
+       * `"use strict";`。按**源面严格性**判定，不按函数猜。
        */
       strict?: boolean;
     }

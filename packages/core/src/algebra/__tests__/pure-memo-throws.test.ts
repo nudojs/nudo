@@ -313,6 +313,49 @@ describe("pure memo cleanup paths (R2B-001)", () => {
     expect(namedCalls).toBe(2);
   });
 
+  it("clearPureCallMemo invalidates both call paths (shared registry)", () => {
+    // 反方向：清理 API 的两个公开入口都要清**全部** memo 实例——只调
+    // clearPureCallMemo 时 body 路径（$call 的 pureMemo）缓存也不得残留。
+    let bodyCalls = 0;
+    const bodyFn = absFunction([], {
+      apply: () => {
+        bodyCalls += 1;
+        return makeAbsApplyResult(numLit(1), neverAbs);
+      },
+      pureName: "sharedClearCallBody",
+    });
+    runWithLoopExits(() => {
+      $call(bodyFn, []);
+    });
+    expect(bodyCalls).toBe(1);
+
+    let namedCalls = 0;
+    const namedFn = absFunction([], {
+      apply: () => {
+        namedCalls += 1;
+        return makeAbsApplyResult(numLit(2), neverAbs);
+      },
+    });
+    markPureFn(namedFn as object, "sharedClearCallNamed");
+    runWithLoopExits(() => {
+      $callNamed("sharedClearCallNamed", namedFn, []);
+    });
+    expect(namedCalls).toBe(1);
+
+    // 只调另一个清理入口：两条路径都必须重算（任一陈旧命中都会让下面的
+    // 计数停在 1——body 路径的残留正是本方向要抓的回归）。
+    clearPureCallMemo();
+
+    runWithLoopExits(() => {
+      $call(bodyFn, []);
+    });
+    runWithLoopExits(() => {
+      $callNamed("sharedClearCallNamed", namedFn, []);
+    });
+    expect(bodyCalls).toBe(2);
+    expect(namedCalls).toBe(2);
+  });
+
   it("resetEvalCallBudget clears both pure memos", () => {
     const throws = errorTypeAbs("TypeError");
     const ok = numLit(1);

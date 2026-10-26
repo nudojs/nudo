@@ -28,7 +28,7 @@ export {
 // 保持 `runtimeImportOf` 的公开路径不变，另导出名单供漂移守卫比对）。
 import { DEFAULT_RUNTIME_IMPORT, runtimeImportOf } from "./transpile/runtime-import.ts";
 export { RUNTIME_IMPORT_NAMES } from "./transpile/runtime-import.ts";
-export { runtimeImportOf };
+export { runtimeImportOf } from "./transpile/runtime-import.ts";
 import {
   collectVarHoistNames,
   collectExportVarNames,

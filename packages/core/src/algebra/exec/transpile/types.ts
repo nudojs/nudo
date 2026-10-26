@@ -23,10 +23,14 @@ export type TranspileOptions = {
    * 发射模式（缺省 `"exec"`）：
    * - `"exec"`：完整发射（全部顶层语句，含副作用）；
    * - `"analyze"`：**发射期**剥离顶层效应语句——顶层 `if` / `for` /
-   *   `for-in` / `while`、危险或未知全局调用（判定表见
-   *   `transpile/analyze-strip.ts`）；`var` 提升仍按**原始**源 AST 计算。
-   *   调用方（run.ts 的 analyze 模式）不再解析生成产物做二次剥离；保留
-   *   语句的发射字节与 `"exec"` 完全一致，剥离只减少语句。
+   *   `while`、危险或未知全局调用（判定表见 `transpile/analyze-strip.ts`）；
+   *   `var` 提升仍按**原始**源 AST 计算。调用方（run.ts 的 analyze 模式）
+   *   不再解析生成产物做二次剥离；保留语句的发射字节与 `"exec"` 完全一致，
+   *   剥离只减少语句。
+   *
+   * `for-in` / `for-of` **不剥离**（判定表无该臂）：二者按发射形态落顶层
+   * `$forOf(...)` 调用（循环体随该调用在模块顶层执行）⇒ analyze 模式保留
+   * 其语义；标签 `for` / `while` 随标签一并剥离。
    */
   mode?: "exec" | "analyze";
   /**
@@ -204,13 +208,21 @@ export type TranspileOptions = {
    * 的子集，保守单位级）。
    *
    * 名字是**宿主全局**但用户可合法遮蔽（`const undefined = 5`、形参名
-   * `undefined`、`let NaN`、import 绑定）。命中者 Identifier 读点发
-   * `$absVal(<名>)`，由 JS 词法绑定决定读值；未命中者恢复字面量精确折叠
-   * （`$lit(void 0)` / `$lit(0/0)` / `$lit(1/0)`，与旧产物逐字节一致）。
+   * `undefined`、`let NaN`、import 绑定）。命中者按**位置**分态：
+   * - Identifier 读点（含标签模板位）→ `$absVal(<名>)`，由 JS 词法绑定
+   *   决定读值；
+   * - 调用位 callee → `$callNamed(<名>, <名>, …)`（绑定是 Abs 值，宿主裸
+   *   调用会把它当非函数调 ⇒ 假抛 TypeError）。
+   *
+   * 未命中者：读点恢复字面量精确折叠（`$lit(void 0)` / `$lit(0/0)` /
+   * `$lit(1/0)`，与旧产物逐字节一致），调用位保留宿主裸调用（原生
+   * `undefined(1)` / `NaN(1)` 定抛 TypeError，抛点与原生一致）。
    *
    * 计算：`transpileFile` 从源 AST 声明扫描（任意作用域，保守单位级）；
    * `transpileBodyNode` 从 body AST 计算并并入调用方补给；body-fn 补给
-   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名；run.ts 补给
+   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名 **∪ 表达式 AST
+   * 声明扫描**；表达式入口（exec/transpile/expr.ts 的 `transpileExpression`）
+   * 同补声明扫描（表达式内部的形参 / 局部声明此前不可见）；run.ts 补给
    * @nudo:mock 注入的内建名（env 注入本就跳过这三个名字）。
    *
    * 静态窄化面：`x === undefined` / `case undefined:` 只在**未遮蔽**时作

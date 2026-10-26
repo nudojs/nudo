@@ -1902,8 +1902,11 @@ export function $set(
   privateNameGuard(o, key);
   const ctx: SetCtx = { o, key, value, opts };
   // DEC-006 B/C：非 Abs 目标 fail-closed 返回原接收者（宿主函数另有 facade 写面）
-  const hostHit = setHostMember(ctx);
-  if (hostHit !== undefined) return hostHit;
+  // 处置信号用判别对象（hit）而非 undefined 哨兵：fail-closed 的返回值
+  // **就是原接收者**，可能正是 undefined——与「处理器未命中」同形会落穿
+  // 到下面的 `o.shape.k`（读 undefined 的宿主 TypeError，炸宿主）。
+  const host = setHostMember(ctx);
+  if (host.hit) return host.value;
   // 形状分派：每个 kind 处理器内部复刻原单函数的守卫次序；未命中落非 obj 写面
   switch (o.shape.k) {
     case "brand":
@@ -1921,8 +1924,13 @@ export function $set(
   }
 }
 
+/** 宿主值写面的处置结果：hit=false = 本处理器不接管（继续形状分派）。
+ *  不用 undefined 哨兵：fail-closed 时返回值**就是原接收者**（可能是
+ *  undefined 本身），与「未命中」不可区分（会落穿读 .shape 炸宿主）。 */
+type HostSetResult = { hit: true; value: Abs } | { hit: false };
+
 /** 宿主值目标：宿主函数 facade（prototype 写）/ 冻结门；其余 no-op。 */
-function setHostMember({ o, key, value }: SetCtx): Abs | undefined {
+function setHostMember({ o, key, value }: SetCtx): HostSetResult {
   // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
   // 非 Abs 目标 fail-closed 返回原接收者（调用点 `root = $set(root, …)` 重绑
   // 为自赋值 no-op），禁止读 .shape 炸宿主 TypeError（$get 同口径）
@@ -1933,7 +1941,7 @@ function setHostMember({ o, key, value }: SetCtx): Abs | undefined {
     // **facade**（一等 fn Abs 承载 prototype 槽）并返回——调用点根绑定
     // 重绑到它（`F = $set(F, "prototype", v)`），原型替换遂可观测。
     if (typeof o === "function" && key === "prototype") {
-      return hostFnPrototypeSet(o as Function, value);
+      return { hit: true, value: hostFnPrototypeSet(o as Function, value) };
     }
     // Bug 291 顺带：宿主函数（转译的**函数声明**）的**任意键**写也要过
     // 不变性门——原生 `Object.freeze(f); f.x = 1` 在 strict 下定抛 TypeError
@@ -1948,9 +1956,10 @@ function setHostMember({ o, key, value }: SetCtx): Abs | undefined {
         throwStrictWrite();
       }
     }
-    return o;
+    // fail-closed：原接收者原样返回（undefined/null 等空值亦然）
+    return { hit: true, value: o };
   }
-  return undefined;
+  return { hit: false };
 }
 
 /** brand 形状写：Arguments / Proxy / 类值与实例面 / 内层不可变重建。 */

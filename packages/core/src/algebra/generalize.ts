@@ -9,9 +9,13 @@
  */
 
 import { parseSource as babelParse } from "./parse-source.ts";
-import { stripStringsKeepComments, sourceHasEsmSyntax } from "./code-text.ts";
+import {
+  stripStringsKeepComments,
+  sourceIsStrict,
+  hasUseStrictDirective,
+} from "./code-text.ts";
 import { listFnDirectiveScopes } from "./directive-scan.ts";
-import type { Node } from "@babel/types";
+import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -454,6 +458,62 @@ export type PolyFn = {
   envGated?: boolean;
 };
 
+/**
+ * 严格代码区（原生 strict mode code 的**词法**面）：按 AST 对象身份缓存。
+ *
+ * 严格性沿词法作用域**继承**——带 `"use strict"` 序言的函数体、class 体
+ * （方法/字段/静态块/计算键整体是 strict code）内部的嵌套函数同样是 strict
+ * code。只按条目自身 body 的指令判定会把嵌套函数的 body 判成 sloppy ⇒ 块级
+ * 函数声明被 Annex B 提升（原生 ReferenceError 被折成 total）。
+ *
+ * 区间 = 函数体 BlockStatement / class 节点；区内子树不必再收（包含关系）。
+ * 缓存键是 `parseSource` 返回的 File（LRU ⇒ 同文件复用同一对象）。
+ */
+const strictRegionCache = new WeakMap<
+  object,
+  Array<{ start: number; end: number }>
+>();
+
+function strictRegionsOf(file: object): Array<{ start: number; end: number }> {
+  const cached = strictRegionCache.get(file);
+  if (cached !== undefined) return cached;
+  const out: Array<{ start: number; end: number }> = [];
+  const add = (n: Node): void => {
+    if (typeof n.start === "number" && typeof n.end === "number") {
+      out.push({ start: n.start, end: n.end });
+    }
+  };
+  const walk = (n: Node): void => {
+    if (n.type === "ClassDeclaration" || n.type === "ClassExpression") {
+      add(n);
+      return;
+    }
+    // 指令序言只出现在函数体的 BlockStatement（Program 面由源级判据接管）⇒
+    // 命中即「整个函数体是 strict code」区。
+    if (n.type === "BlockStatement" && hasUseStrictDirective(n)) {
+      add(n);
+      return;
+    }
+    for (const key of VISITOR_KEYS[n.type] ?? []) {
+      const child = (n as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const c of child) {
+          if (c && typeof c === "object" && typeof (c as Node).type === "string") {
+            walk(c as Node);
+          }
+        }
+      } else if (child && typeof child === "object") {
+        // 类型注解/注释等非 Node 对象没有 type ⇒ 跳过（不等于漏走：@babel 的
+        // VISITOR_KEYS 只列真子节点键，这里的防御只为类型安全）
+        if (typeof (child as Node).type === "string") walk(child as Node);
+      }
+    }
+  };
+  walk(file as unknown as Node);
+  strictRegionCache.set(file, out);
+  return out;
+}
+
 export function extractFn(
   source: string,
   fnName: string,
@@ -462,10 +522,29 @@ export function extractFn(
   const file = fileAst ?? babelParse(source);
   const env = emptyEnv();
   const formalsByName = new Map<string, FormalParam[]>();
-  // 源码面严格性：ESM 源（静态 import/export）按 strict 编译/执行；Node 默认
-  // CJS（无 ESM 语法）保持 sloppy。与 B run 模块体的 strict 前缀同一判据
-  // （run.ts 的 sourceHasEsmSyntax）。env 条目透传给 body 编译单元。
-  const fnStrict = sourceHasEsmSyntax(source);
+  // 源码面严格性（原生 strict mode code）：ESM 源（静态 import/export）**或**
+  // Program 指令序言含 `"use strict"` ⇒ strict；Node 默认 CJS 无二者 ⇒ sloppy。
+  // 与 B run 模块体的 strict 前缀同一判据（run.ts 的 sourceIsStrict）。env 条目
+  // 透传给 body 编译单元。
+  const fnStrict = sourceIsStrict(source, file);
+  // 源级已 strict ⇒ 全部条目 strict，无需再收区间
+  const strictRegions: ReadonlyArray<{ start: number; end: number }> = fnStrict
+    ? []
+    : strictRegionsOf(file);
+  const inStrictRegion = (node: Node): boolean => {
+    const start = node.start;
+    const end = node.end;
+    if (typeof start !== "number" || typeof end !== "number") return false;
+    return strictRegions.some((r) => start >= r.start && end <= r.end);
+  };
+  /**
+   * 条目严格性 = 源级严格 **∨** 函数体自身的指令序言 **∨** 函数体位于严格
+   * 代码区（strict 函数体 / class 体内部——严格性沿词法作用域继承；body 区间
+   * 落在区内即继承）。class 方法另有显式恒 strict 规则（类体本就是 strict
+   * mode code，不依赖区间命中）。
+   */
+  const entryStrict = (body: Node): boolean =>
+    fnStrict || hasUseStrictDirective(body) || inStrictRegion(body);
 
   for (const stmt of file.program.body) {
     // export function / export const = fn / export default function
@@ -485,7 +564,7 @@ export function extractFn(
         optionalParams: formals.map((f) => f.optional === true),
         body: decl.body,
         async: decl.async === true,
-        strict: fnStrict,
+        strict: entryStrict(decl.body),
       });
       formalsByName.set(decl.id.name, formals);
       // export default function named：同时登记 "default"（与 localNamedExports C4.4 同口径）
@@ -532,7 +611,9 @@ export function extractFn(
           optionalParams: formals.map((f) => f.optional === true),
           body: mem.body,
           async: mem.async === true,
-          strict: fnStrict,
+          // class 体恒 strict（原生：类定义整体是 strict mode code，与所在
+          // 文件种类无关）⇒ 方法体内的块级函数声明不得 Annex B 提升。
+          strict: true,
         });
         formalsByName.set(fullName, formals);
       }
@@ -558,7 +639,7 @@ export function extractFn(
             optionalParams: formals.map((f) => f.optional === true),
             body: init.body,
             async: init.async === true,
-            strict: fnStrict,
+            strict: entryStrict(init.body),
           });
           formalsByName.set(d.id.name, formals);
         }
@@ -584,7 +665,7 @@ export function extractFn(
         optionalParams: formals.map((f) => f.optional === true),
         body: init.body,
         async: init.async === true,
-        strict: fnStrict,
+        strict: entryStrict(init.body),
       });
       formalsByName.set("default", formals);
     }
@@ -613,7 +694,8 @@ export function extractFn(
       optionalParams: formals.map((f) => f.optional === true),
       body: node.body,
       async: node.async === true,
-      strict: fnStrict,
+      // ClassMethod（防御面）恒 strict；其余按源级 ∨ 函数体指令 ∨ 严格区继承。
+      strict: node.type === "ClassMethod" ? true : entryStrict(node.body),
     });
     formalsByName.set(key, formals);
   };
@@ -745,6 +827,11 @@ export function extractFn(
     ) {
       continue;
     }
+    // class 方法恒 strict（原生：类体是 strict mode code，与所在文件种类
+    // 无关）⇒ 方法体内块级函数声明不得 Annex B 提升；ObjectMethod 不在此列
+    // （按源级 ∨ 函数体自身指令序言）。
+    const isClassMethod =
+      n.type === "ClassMethod" || n.type === "ClassPrivateMethod";
     const formals = formalParamsFromNodes((n.params ?? []) as never);
     env.fns.set(scope.name, {
       params: formalParamDisplayNames(formals),
@@ -753,7 +840,7 @@ export function extractFn(
       optionalParams: formals.map((f) => f.optional === true),
       body: n.body,
       async: n.async === true,
-      strict: fnStrict,
+      strict: isClassMethod ? true : entryStrict(n.body),
     });
     formalsByName.set(scope.name, formals);
   }
@@ -1085,7 +1172,12 @@ function generalizeFromAstUncached(
   const boundNames = formals.flatMap((f) =>
     f.kind === "pattern" ? f.bound : [f.name],
   );
-  const envGated = envGatedSource && freeIdentifiers(body, boundNames, sourceHasEsmSyntax(source)).size > 0;
+  // 自由标识符分析的严格性取该函数 env 条目的**已解析**值（源级 ∨ 函数体
+  // 指令序言 ∨ class 方法恒 strict）——Annex B 提升只存在于 sloppy 体：按
+  // ESM 面一刀切会把严格体里的块级函数名误当函数作用域绑定 ⇒ 漏报自由
+  // 标识符 ⇒ env 门禁假放行（B run 无注入执行宿主调用 ⇒ 假 throws）。
+  const fnBodyStrict = env.fns.get(fnName)?.strict === true;
+  const envGated = envGatedSource && freeIdentifiers(body, boundNames, fnBodyStrict).size > 0;
   const replaceGated = /@nudo:replace\b/.test(directiveSrc) && !hasReps;
   const evalEligible =
     !unresolvableImports &&

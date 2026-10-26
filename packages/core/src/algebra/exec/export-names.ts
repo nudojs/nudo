@@ -27,7 +27,11 @@ import { parseSource } from "../parse-source.ts";
  * 导出名整条被丢（Bug 287）：导出函数**从不被分析** ⇒ 签名塌 `unknown` ⇒
  * 追加**假** `nudo:unknown-inference` ⇒ L2 门禁**假绿**。
  *
- * 本模块与 run.ts 的 `export * as` 捕获组共用此模式源（同一口径）。
+ * 本模式源**只**服务本模块的两个文本口径正则（`export function` /
+ * `export (const|let)`）。`export * as` 的发射/回收走 AST 口径
+ * （transpile/stmt/statement.ts 的 moduleExportNameOf——按 ModuleExportName
+ * 节点取 Identifier / 字符串字面量名，不用正则），不消费本模式源；两边仅在
+ * 「合法标识符名」的语义上同源。
  */
 export const IDENT_NAME_SRC = "[$_\\p{ID_Start}][$_\\u200C\\u200D\\p{ID_Continue}]*";
 

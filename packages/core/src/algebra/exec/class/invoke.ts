@@ -21,6 +21,8 @@ import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, 
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
+// 数组 mutator 名——发射面/执行面共享的**唯一事实源**（不得本地重抄）。
+import { ARR_MUTATORS } from "../method-names.ts";
 import { $get, $lit, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
@@ -1329,7 +1331,6 @@ function invokePropertyValue(
     // 方法槽 returnType 渐进填入（未调用前展示 `() => ?` 的残余）
     refineFnReturnType(prop as Abs, result);
   }
-  return undefined;
 }
 
 /**
@@ -1718,15 +1719,17 @@ function brandCheckBrandOf(home: string, name: string): string | undefined {
   if (BRAND_CHECK_METHODS[mapped]?.has(name)) return mapped;
   return undefined;
 }
-/** Array.prototype 写方法（**字符串**接收者上原生定抛；读方法走物化泛型） */
-const ARRAY_MUTATOR_METHODS = new Set([
-  "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin",
-]);
 /**
  * Array.prototype 的「就地操作并返回 this」方法（Bug 267）——与「返回新数组」
  * 的方法（slice / map / filter / concat / with / toSorted…）分族。
+ *
+ * 是共享 `ARR_MUTATORS` 的**真子集**：只有这四个 mutator 返回 this
+ * （push/unshift → length、pop/shift → 元素、splice → 被删数组）。按共享表
+ * 取交集推导，避免再手抄一份名单（共享表增删自动生效）。
  */
-const ARRAY_INPLACE_METHODS = new Set(["sort", "reverse", "fill", "copyWithin"]);
+const ARRAY_INPLACE_METHODS = new Set(
+  ["sort", "reverse", "fill", "copyWithin"].filter((n) => ARR_MUTATORS.has(n)),
+);
 /** 接收者 brand；不可判（any/unknown/sum/Proxy 陷阱壳）→ undefined（不抛）。
  *  nullish 字面量 → "nullish"（与一切 brand 不匹配，定抛）。 */
 function borrowedRecvBrandOf(recv: Abs): string | undefined {
@@ -2146,7 +2149,7 @@ setProtoMethodDispatch((home, name, thisVal, args, origin) => {
     // symbol）ToObject 后是**普通可扩展对象**（length 0）⇒ mutator 正常
     // 成功（node 实测 push.call(5,1) → 1、pop.call(5) → undefined）——此前
     // 一刀切定抛 ⇒ 假抛（L2 门禁假红）。读方法（slice/join/at/…）保持泛型。
-    if (recvIsStrPrim && ARRAY_MUTATOR_METHODS.has(name)) {
+    if (recvIsStrPrim && ARR_MUTATORS.has(name)) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     // Bug 254（端到端接线）：mutator（push/pop/shift/…）在**数组样对象**接收者
@@ -2155,7 +2158,7 @@ setProtoMethodDispatch((home, name, thisVal, args, origin) => {
     // `push.call({length:0},5)` 之后 `o.length` 仍 0、`o[0]` 仍 undefined。
     // ⇒ mutator 走**原接收者**（invokeArrMethod 的泛型接收者臂 → $arrMutContainer
     // → mutateArrayLike 就地写），其余读方法保持物化通道。
-    if (ARRAY_MUTATOR_METHODS.has(name) && recv.shape.k === "obj") {
+    if (ARR_MUTATORS.has(name) && recv.shape.k === "obj") {
       const direct = invokeArrMethod(recv, name, args);
       if (direct !== undefined) return direct;
     }

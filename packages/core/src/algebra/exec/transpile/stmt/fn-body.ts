@@ -41,10 +41,12 @@ import {
   indent,
   collectForkBindingNames,
   collectPatternNames,
+  collectScopeShadowNames,
   collectVarHoistNames,
   computeConstScope,
   copyConstScope,
   internalTmpName,
+  mergeAliasGroups,
   shadowedIntrinsicsOf,
   expandAliasNames,
 } from "../helpers.ts";
@@ -166,12 +168,16 @@ function flattenEarlyReturnBlocks(stmts: readonly Statement[]): Statement[] {
 }
 
 /**
- * 函数体**开头连续 const 声明**里的直接别名组（`const a = {...}; const b = a;`）。
+ * **作用域边界**语句表开头连续 const 声明里的直接别名组
+ * （`const a = {...}; const b = a;`）。
  *
  * 只收 init 为同作用域、此前已声明 const 的标识符：这样别名声明一定在
  * 所有后续语句之前初始化，fork/pack 带上 `b` 不会踩 TDZ；`let`/`var` 可
  * 重绑，不能当作稳定别名。非连续（中间隔了其它语句）的别名不收集——
  * 保守漏收只会保留旧的别名缺陷，不会引入错误绑定。
+ *
+ * 边界口径：函数/方法体与嵌套块都算本层组（嵌套块的组与函数体同权——
+ * 块内 `const x = …; const y = x;` 的别名同样要跨 fork 保持身份）。
  */
 function leadingConstAliasGroups(stmts: readonly Statement[]): string[][] {
   const parent = new Map<string, string>();
@@ -282,14 +288,30 @@ export function transpileFnBodyStmts(
     }
   }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
-  const aliasGroups = varScope
-    ? leadingConstAliasGroups(stmts)
-    : opts.aliasGroups;
+  //
+  // 别名组（**作用域边界**）：本层**自有**组 = 本层开头连续 const 声明里的
+  // 直接别名（`const a = {...}; const b = a;`）——同层声明 ⇒ 同绑定 ⇒ 展开
+  // 安全；**继承**组（外层作用域）按本层**遮蔽名**过滤后并入——本层重新
+  // 声明了组内任一成员时，该成员在本层指向**不同绑定**（展开会把外层伙伴
+  // 当成本层绑定复制/重绑 ⇒ 断开别名身份 ⇒ 自信错值）；未被遮蔽时外层
+  // 伙伴在本层仍是同一绑定（嵌套函数写外层别名成员时靠它保持身份）。
+  //
+  // 边界口径：函数/方法体（varScope 存在）与**嵌套块**（transpileBlockAsThunk
+  // → 本入口，无 varScope）都是作用域边界 ⇒ 两处都算本层组。形参也遮蔽
+  // 外层绑定（varScope.skip = 参数模式名）。
+  const ownAliasGroups = leadingConstAliasGroups(stmts);
+  const shadowNames = collectScopeShadowNames(stmts);
+  if (varScope) for (const n of varScope.skip) shadowNames.add(n);
+  const aliasGroups = mergeAliasGroups(opts.aliasGroups, ownAliasGroups, shadowNames);
   const scopedOpts: TranspileOptions = {
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
     ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
-    ...(aliasGroups && aliasGroups.length > 0 ? { aliasGroups } : {}),
+    // **总是覆写**（含空数组）：条件展开（`aliasGroups.length > 0 ? … : {}`）
+    // 会让**外层**的组经 `...varOpts` 漏进本层——嵌套函数体拿到外层别名组
+    // ⇒ 体内 fork 把外层伙伴拉进绑定集 ⇒ 复制/重绑外层绑定 ⇒ 别名身份
+    // 断开（自信错值）。
+    aliasGroups,
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;

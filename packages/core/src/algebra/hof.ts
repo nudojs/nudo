@@ -6,7 +6,7 @@
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, anyAbs, confJoin, unknown } from "./abs.ts";
 import type { Term } from "./term.ts";
-import { simplifyTerm, v as termVar, termToString } from "./term.ts";
+import { simplifyTerm, termToString } from "./term.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
@@ -19,30 +19,6 @@ import type { HofSite, RelSource } from "./hof-types.ts";
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
 
 export type { RelSource, HofSite } from "./hof-types.ts";
-
-/**
- * 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。
- * 绝不把调用点具体值/字面量冻进关系。
- */
-export function alphaOf(
-  absOrTerm: Abs | Term | undefined,
-  ctx: { alphaIds: Set<string>; freshSeq: { n: number } },
-): Term {
-  const t =
-    absOrTerm && typeof absOrTerm === "object" && "shape" in absOrTerm
-      ? (absOrTerm as Abs).term
-      : (absOrTerm as Term | undefined);
-  if (t?.op === "var" && ctx.alphaIds.has(t.id)) return t;
-  ctx.freshSeq.n += 1;
-  const id = `T${ctx.freshSeq.n}`;
-  ctx.alphaIds.add(id);
-  return termVar(id);
-}
-
-/** 共享输出变量 B:${param}（§5.1 P2 钉死） */
-export function betaOf(param: string): Term {
-  return termVar(`B:${param}`);
-}
 
 /** deep-ish copy for snapshot（新对象，不是 env.vars 同一引用） */
 export function snapshotAbs(a: Abs): Abs {

@@ -143,7 +143,7 @@ leqAbs(src, tgt)              // 可赋值性（代数的子类型检查）
 
 - `core/src/algebra/surface.ts` — `typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`（一元运算与严格相等，在 Abs 上）。
 - `core/src/algebra/arithmetic.ts` — 二元算术（`add` / `sub` / `mul` / `div` / `mod` / `cmp`）：单调性 + 常量折叠 + 约束传播，在 Abs 上。
-- `service/src/evaluator/abs-route.ts` — 分支合并对象形状时的对象 `join` / φ 合并辅助。
+- `core/src/algebra/objects.ts` — 分支合并对象形状时的对象 `join`（`joinAbs` / `joinObjects`）/ φ 合并辅助。
 
 ```typescript
 // 二元算术经代数路由：
@@ -177,7 +177,7 @@ parser ──▶ core
 | **Directive Extractor** | 提取 `@nudo:*`；refine/import 在 core 解析 |
 | **algebra (Abs)** | 类型即计算：eval / check / leq / generalize |
 | **Evaluator（Abs 原生）** | 仅 evaluator 转译+执行；B 不可托管源 fail-closed |
-| **surface / arithmetic / abs-route** | 算术、比较、一元、spread 经代数路由 |
+| **surface / arithmetic / objects** | 算术、比较、一元、spread 与分支合并 join 经代数路由 |
 | **Environment** | 变量绑定（名称 → Abs） |
 
 ### 3.2 求值规则

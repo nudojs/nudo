@@ -31,8 +31,8 @@ export {
 } from "./abs-fn.ts";
 
 export {
-  type HofSite, type RelSource, alphaOf,
-  applyCallbackAbs, applyCallbackValue, asAbs, betaOf,
+  type HofSite, type RelSource,
+  applyCallbackAbs, applyCallbackValue, asAbs,
   instantiateReturn, isRelFn, mapElementFallback, projectFlatMapResult,
   setApplyCallbackHost, snapshotAbs, substAbs,
   substPredAbs, undefAbs

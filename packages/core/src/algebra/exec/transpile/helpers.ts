@@ -1619,11 +1619,105 @@ export function collectForkBindingNames(...nodes: Array<unknown>): string[] {
 }
 
 /**
+ * 本层语句表**直接**声明的遮蔽名（let / const / class / function）。
+ *
+ * 口径与 computeConstScope 的 walkList 同源：只看**本层**声明，不进入嵌套
+ * 块 / 嵌套函数体（那些作用域各自算自己的遮蔽——嵌套块的 let 只在该块内
+ * 遮蔽，嵌套函数的形参/局部名只在该函数体内遮蔽）。
+ *
+ * `var` 不收：var 是**函数**作用域绑定，与外层 const 同名是 SyntaxError
+ * ⇒ 不可能遮蔽别名组成员（组成员恒为 const 声明名）。
+ */
+export function collectScopeShadowNames(stmts: readonly unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of stmts) {
+    if (!s || typeof s !== "object") continue;
+    const n = s as {
+      type?: string;
+      kind?: string;
+      id?: unknown;
+      declarations?: Array<{ id?: unknown }>;
+    };
+    if (n.type === "VariableDeclaration") {
+      if (n.kind === "var") continue;
+      for (const d of n.declarations ?? []) collectPatternNames(d.id, out);
+      continue;
+    }
+    if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+      collectPatternNames(n.id, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * 别名组按遮蔽名过滤：组内**任一成员**在本处被重新声明 ⇒ 该成员在本处
+ * 指向**不同绑定** ⇒ 该组不得用于扩展（否则 fork/pack 会把「伙伴」当成本
+ * 处的绑定复制/重绑 ⇒ 断开别名身份 ⇒ 自信错值）。
+ *
+ * 例：外层 `const a = {}; const b = a;`，内层块 `let a = {}` 遮蔽 `a`
+ * ⇒ 块内的 fork 写 `a` 时不得把外层 `b` 拉进绑定集。
+ */
+export function filterAliasGroups(
+  groups: ReadonlyArray<readonly string[]> | undefined,
+  shadow: ReadonlySet<string> | undefined,
+): ReadonlyArray<readonly string[]> | undefined {
+  if (!groups || groups.length === 0) return groups;
+  if (!shadow || shadow.size === 0) return groups;
+  const out: string[][] = [];
+  for (const g of groups) {
+    if (g.length === 0) continue;
+    let hit = false;
+    for (const n of g) {
+      if (shadow.has(n)) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+    out.push([...g]);
+  }
+  return out;
+}
+
+/**
+ * 作用域边界的别名组合并：
+ * - **继承**组（外层作用域）按本层遮蔽名过滤后并入——本层重新声明了组内
+ *   任一成员时该成员在本层指向不同绑定（展开会复制/重绑外层伙伴 ⇒ 别名
+ *   身份断开）；未被遮蔽时外层伙伴在本层仍是同一绑定（嵌套函数写外层别名
+ *   成员时靠它保持身份）。
+ * - **自有**组（本层开头连续 const 声明的直接别名）无条件并入——同层声明
+ *   ⇒ 同绑定 ⇒ 展开安全。
+ */
+export function mergeAliasGroups(
+  inherited: ReadonlyArray<readonly string[]> | undefined,
+  own: ReadonlyArray<readonly string[]> | undefined,
+  shadow: ReadonlySet<string> | undefined,
+): ReadonlyArray<readonly string[]> {
+  const out: string[][] = [];
+  const seen = new Set<string>();
+  const push = (g: readonly string[]): void => {
+    const key = [...g].sort().join("\u0000");
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push([...g]);
+  };
+  for (const g of filterAliasGroups(inherited, shadow) ?? []) push(g);
+  for (const g of own ?? []) {
+    if (g.length === 0) continue;
+    push(g);
+  }
+  return out;
+}
+
+/**
  * 把 fork/pack 绑定集扩展到直接 const 别名伙伴。
  *
  * `const a = {...}; const b = a;` 只有 `a` 被写时，快照/ pack 若不带上 `b`，
- * 臂结束重绑 `a` 会断开 `b` 的引用。别名组由 transpileFnBodyStmts 在函数
- * 体开头连续 const 声明上计算（见 TranspileOptions.aliasGroups）。
+ * 臂结束重绑 `a` 会断开 `b` 的引用。别名组由 transpileFnBodyStmts 在**作
+ * 用域边界**上计算（见 TranspileOptions.aliasGroups）：本层自有组 + 外层组
+ * 按本层遮蔽名过滤后的结果 ⇒ 展开只在「组内成员在本处指向同一绑定」时
+ * 发生（名字匹配，不做绑定身份判定）。
  */
 export function expandAliasNames(
   names: Iterable<string>,

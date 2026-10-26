@@ -1,8 +1,8 @@
 /**
  * 依赖感知 LRU memo 的通用契约（check 整文件报告 / generalize L0 共用）。
  *
- * 重点：命中刷新队尾、set 时满即逐最旧、`undefined` 值命中不等于 miss、
- * 定向逐出只删依赖目标路径的条目（路径归一 stablePathKey）。
+ * 重点：命中刷新队尾、新 key 满即逐最旧（重设活 key 不驱逐他者）、`undefined`
+ * 值命中不等于 miss、定向逐出只删依赖目标路径的条目（路径归一 stablePathKey）。
  */
 import { describe, it, expect } from "vitest";
 import { DependencyMemo } from "../memo-store.ts";
@@ -31,14 +31,29 @@ describe("DependencyMemo：有界 LRU", () => {
     expect(m.lookup("c")).toEqual({ hit: true, value: 3 });
   });
 
-  it("set 时满即逐最旧（即使 key 已存在，与两处原实现一致）", () => {
+  it("重设已存在的 key 不驱逐他者（容量按唯一 key 计）", () => {
     const m = new DependencyMemo<number>(2);
     m.set("a", 1, []);
     m.set("b", 2, []);
     m.set("b", 20, []);
-    // 原实现先删最旧，再 set 已存在的 key（不移动其插入位）
-    expect(m.lookup("a").hit).toBe(false);
+    expect(m.size).toBe(2);
+    expect(m.lookup("a")).toEqual({ hit: true, value: 1 });
     expect(m.lookup("b")).toEqual({ hit: true, value: 20 });
+  });
+
+  it("重设已存在的 key 不刷新插入位（下一次逐出仍是最旧者）", () => {
+    const m = new DependencyMemo<number>(3);
+    m.set("a", 1, []);
+    m.set("b", 2, []);
+    m.set("c", 3, []);
+    m.set("a", 10, []);
+    // 重设 a 不驱逐任何条目，也没有把 a 移到队尾：新 key 到来时逐出的仍是最旧的 a
+    m.set("d", 4, []);
+    expect(m.size).toBe(3);
+    expect(m.lookup("a").hit).toBe(false);
+    expect(m.lookup("b")).toEqual({ hit: true, value: 2 });
+    expect(m.lookup("c")).toEqual({ hit: true, value: 3 });
+    expect(m.lookup("d")).toEqual({ hit: true, value: 4 });
   });
 });
 

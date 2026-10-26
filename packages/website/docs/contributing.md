@@ -81,7 +81,7 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
 
 1. **Binary arithmetic / comparison** — `packages/core/src/algebra/arithmetic.ts` (Abs-to-Abs). Unary ops and strict equality live in `packages/core/src/algebra/surface.ts` (`typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs`).
 
-2. **Branch merge helpers** — `packages/service/src/evaluator/abs-route.ts` (`tryAbsJoinObjects`, φ-constraint helpers) joins object shapes when branches merge.
+2. **Branch merge helpers** — `packages/core/src/algebra/objects.ts` (`joinAbs` / `joinObjects`, φ-constraint helpers in `pred.ts`) joins object shapes when branches merge.
 
 3. **Add tests** in `packages/core/src/algebra/__tests__/` (e.g. `surface.test.ts`, `arithmetic.test.ts`) or `packages/service/src/__tests__/`.
 

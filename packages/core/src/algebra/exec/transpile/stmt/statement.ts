@@ -99,6 +99,8 @@ import {
   internalTmpName,
   internalTmpNameSet,
   expandAliasNames,
+  filterAliasGroups,
+  collectScopeShadowNames,
   thisCarrierOf,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
@@ -511,13 +513,18 @@ function emitImportDeclaration(
   // 不到命名空间分支（`*` 不紧跟 `{`）⇒ 具名分支把 `*` 当成被导入的
   // 名字 ⇒ __nudoBindImport(spec, "*") ⇒ 命名空间绑定折 unknown。
   // 改发**标准 ESM 形态**（run.ts 有对应的改写分支）。
-  if (defaultName && nsName) {
-    return `${pad}import ${defaultName}, * as ${nsName} from ${src};`;
+  //
+  // 命名空间**独占**形态 `import * as ns from "…"` 同理：`{ * as ns }` 不是
+  // 合法 ESM（node: SyntaxError）⇒ 整模块求值失败 ⇒ 导出退化 unknown
+  // （假 opaque-result）。发标准形态。
+  if (nsName) {
+    return defaultName
+      ? `${pad}import ${defaultName}, * as ${nsName} from ${src};`
+      : `${pad}import * as ${nsName} from ${src};`;
   }
   const specs = [
     ...named,
     ...(defaultName ? [`default as ${defaultName}`] : []),
-    ...(nsName ? [`* as ${nsName}`] : []),
   ];
   if (specs.length === 0) {
     return `${pad}import ${src};`;
@@ -1320,6 +1327,13 @@ function emitForStatement(
       return emitTranspileExpression(u as Expression, updateOpts);
     };
     const updateSrc = stmt.update ? stepPart(stmt.update as Node) : null;
+    // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
+    // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
+    // 集：伙伴名在体内指向的是体局部绑定 ⇒ 复制/重绑它会断开外层别名身份）。
+    // pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过滤的组。
+    const bodyLocalDecls = new Set<string>();
+    collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+    const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
     const forBodyOpts: TranspileOptions = {
       ...opts,
       inLoop: (opts.inLoop ?? 0) + 1,
@@ -1332,6 +1346,7 @@ function emitForStatement(
         stmt.body.type === "BlockStatement" ? stmt.body.body : [],
         opts.constNames,
       ),
+      ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
     };
     const bodyStmts =
       stmt.body.type === "BlockStatement"
@@ -1343,8 +1358,6 @@ function emitForStatement(
     collectAssignedIds(stmt.test, assigned);
     collectAssignedIds(stmt.update, assigned);
     collectArrMutatorReceivers(stmt.body, assigned);
-    const bodyLocalDecls = new Set<string>();
-    collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
     const names = expandAliasNames([...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
     // Bug 183：for 循环体接守卫事实（nullish + 关系）——测试在每轮迭代
     // 前求值、为真则进体，语义与 `if`/`while` 的事实臂等价（此前 for
@@ -1422,6 +1435,13 @@ function emitForStatement(
     opts.constNames && opts.constNames.has(initName)
       ? copyConstScope(opts.constNames, new Set([initName]))
       : opts.constNames;
+  // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
+  // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
+  // 集）。pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过
+  // 滤的组。
+  const bodyLocalDecls = new Set<string>();
+  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
   const forBodyOpts: TranspileOptions = {
     ...opts,
     inLoop: (opts.inLoop ?? 0) + 1,
@@ -1434,6 +1454,7 @@ function emitForStatement(
       stmt.body.type === "BlockStatement" ? stmt.body.body : [],
       loopParentConsts,
     ),
+    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
   };
   const bodyStmts =
     stmt.body.type === "BlockStatement"
@@ -1445,8 +1466,6 @@ function emitForStatement(
   collectAssignedIds(stmt.test, assigned);
   collectAssignedIds(stmt.update, assigned);
   collectArrMutatorReceivers(stmt.body, assigned);
-  const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
   const names = expandAliasNames([...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
   // Bug 183：for 循环体接守卫事实（nullish + 关系）——同 fallback 路径。
   // 循环变量本身（状态线程形参 initName）排除：影子参数会顶掉状态
@@ -1710,10 +1729,21 @@ function emitSwitchStatement(
   try {
     for (let armIdx = 0; armIdx < merged.length; armIdx++) {
       const arm = merged[armIdx]!;
+      // 臂体是**块作用域**（臂 thunk 内）——臂内词法声明在臂内遮蔽外层绑定
+      // ⇒ 别名组按臂内声明过滤（臂内 fork 不得把外层别名伙伴拉进绑定集：
+      // 伙伴名在臂内指向臂局部绑定 ⇒ 复制/重绑它会断开外层别名身份）。
+      // switch 自身的 pack/join 发射在**外层**作用域 ⇒ 用未过滤的组。
+      const armAliasGroups = filterAliasGroups(
+        armOpts.aliasGroups,
+        collectScopeShadowNames(arm.stmts),
+      );
+      const armBodyOpts: TranspileOptions = armAliasGroups
+        ? { ...armOpts, aliasGroups: armAliasGroups }
+        : armOpts;
       const body =
         arm.stmts.length === 0
           ? ""
-          : arm.stmts.map((s) => transpileStatement(s, depth + 2, armOpts)).join("\n");
+          : arm.stmts.map((s) => transpileStatement(s, depth + 2, armBodyOpts)).join("\n");
       // Bug 184：case 标签窄化——命中 / 排除事实影子重绑进臂体
       const rawThunk = narrowCaseLabelArmThunk(
         `() => {\n${body}\n${indent(depth + 1)}}`,
@@ -2286,6 +2316,12 @@ function emitForInStatement(
       { n: 0 },
     );
   }
+  // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
+  // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
+  // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
+  const bodyLocalDecls = new Set<string>();
+  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
   const bodyOpts: TranspileOptions = {
     ...opts,
     // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（在循环头
@@ -2299,6 +2335,7 @@ function emitForInStatement(
     // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
     // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
     inSwitchArm: false,
+    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
   };
   const bodyStmts =
     stmt.body.type === "BlockStatement"
@@ -2341,8 +2378,6 @@ function emitForInStatement(
     if (opts.constNames?.has(n)) continue;
     assigned.add(n);
   }
-  const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
   const names = expandAliasNames(
     [...assigned].filter(
       (n) =>
@@ -2401,6 +2436,12 @@ function emitWhileStatement(
 ): string {
   const pad = indent(depth);
   const test = emitTranspileExpression(stmt.test, opts);
+  // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
+  // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
+  // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
+  const bodyLocalDecls = new Set<string>();
+  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
   const bodyOpts: TranspileOptions = {
     ...opts,
     // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
@@ -2413,6 +2454,7 @@ function emitWhileStatement(
     // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
     // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
     inSwitchArm: false,
+    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
   };
   const body =
     stmt.body.type === "BlockStatement"
@@ -2425,8 +2467,6 @@ function emitWhileStatement(
   const assigned = new Set<string>();
   collectAssignedIds(stmt.body, assigned);
   collectAssignedIds(stmt.test, assigned);
-  const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
   // while 守卫收窄（issue #118 v3）：测试的 cons 臂事实作用于循环体——
   // `while ((m = re.exec(s)))` 每轮测试真值 ⇒ 该轮体内 m 非 nullish，
   // `m[2].trim()` 不再撞 null 臂记假 may-throw（#97/#118 臂剪影的循环
@@ -2471,6 +2511,12 @@ function emitDoWhileStatement(
   const pad = indent(depth);
   // do { body } while (test) ≡ body; while (test) { body }（有界、可 instrument）
   const test = emitTranspileExpression(stmt.test, opts);
+  // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
+  // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
+  // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
+  const bodyLocalDecls = new Set<string>();
+  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
   const bodyOpts: TranspileOptions = {
     ...opts,
     // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
@@ -2483,6 +2529,7 @@ function emitDoWhileStatement(
     // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
     // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
     inSwitchArm: false,
+    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
   };
   const bodyStmts =
     stmt.body.type === "BlockStatement"
@@ -2493,8 +2540,6 @@ function emitDoWhileStatement(
   collectAssignedIds(stmt.body, assigned);
   collectAssignedIds(stmt.test, assigned);
   collectArrMutatorReceivers(stmt.body, assigned);
-  const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
   // do-while 守卫收窄（issue #118 v3）：**只**收窄内层 $whileSeq 的体
   // 拷贝（第 2 轮起先过测试，cons 臂事实成立）；首次独立拷贝先于任何
   // 测试求值执行（`do { m[0] } while ((m = f()))` 首轮 m 可能

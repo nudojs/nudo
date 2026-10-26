@@ -32,6 +32,7 @@ import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf, defaultImportBindingOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpileModule, transpileExpression } from "./transpile.ts";
+import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
 import { RUNTIME_IMPORT_RE } from "./transpile/runtime-import.ts";
 import { HOST_INTRINSIC_NAMES, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NAMESPACE_GLOBALS } from "./runtime/containers.ts";
@@ -40,7 +41,7 @@ import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros, errorBrandAbs } from "../builtins.ts";
-import { sourceHasCjsExports, sourceHasEsmSyntax } from "../code-text.ts";
+import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset, NudoThrow } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { refineFnReturnType } from "./class.ts";
@@ -455,6 +456,13 @@ function runTranspiledInner(
   // 文本口径补回这一面；JS 源与 AST 口径恒同（注释/字符串/动态 import 都排除）。
   // 旧实现的判据就是文本口径 ⇒ 这里保持行为等价（不因 .ts 类型面变成 sloppy）。
   const isEsmSource = meta.isEsm || sourceHasEsmSyntax(source);
+  // 模块体 strict 口径 = 原生 **strict mode code**：ESM 面**或**源码 Program
+  // 的指令序言 `"use strict"`（CJS 风格脚本首部的指令同样是 strict——块级
+  // 函数声明失去 Annex B 提升、块外引用 ⇒ ReferenceError）。转译产物把源
+  // 指令留在 IIFE 内部，**不会**成为 new Function 的序言 ⇒ 必须在此补发
+  // 前缀，否则 CJS+指令源按 sloppy 求值（原生抛的 ReferenceError 被折叠成
+  // total）。CJS 无指令 ⇒ 保持 sloppy。
+  const sourceStrict = isEsmSource || sourceIsStrict(source);
   // 源里有顶层 this（函数体内的 this 不折成本绑定）⇒ 该源需要顶层 this
   // 绑定（否则模块体引用它 → ReferenceError → 整文件求值失败）。
   const usesCjsThis = meta.usesTopLevelThis;
@@ -750,14 +758,18 @@ function runTranspiledInner(
   // 应保 undefined/null）。指令前缀必须是函数体首语句（envBinds/CJS prelude
   // 之前拼入）。注：宿主面折叠不覆盖 arguments.callee 读——$arguments 是纯
   // Abs 构造，该面由 $get 的 Arguments brand 毒丸接管（C1 提交另落）。
-  // 修订（benchmark 回退）：strict 只对 ESM 面生效（meta.isEsm——源 AST 含
-  // 静态 import/export 或 import.meta）；无 ESM 语法的源按 Node `.js` 默认
-  // CJS（sloppy）口径。强制 strict 会让 CJS 里合法的 sloppy 语法（yargs 的
+  // 修订（benchmark 回退）：strict 只对**原生 strict 面**生效——ESM 源
+  // （静态 import/export 或 import.meta）**或** Program 指令序言含
+  // `"use strict"`（`sourceStrict`）；无二者的源按 Node `.js` 默认 CJS
+  // （sloppy）口径。强制 strict 会让 CJS 里合法的 sloppy 语法（yargs 的
   // `arguments` 绑定/赋值等）在 new Function 编译期直接 SyntaxError
   // （"Unexpected eval or arguments in strict mode"）→ 整模块 fail-closed
   // 空导出，且求值失败不进 memo → 每次全量重转译（yargs check 5.5x）。
-  // 源码自身的 "use strict" 指令前缀经 transpile 原样保留，不受此开关影响。
-  const strictPrefix = isEsmSource ? `"use strict";\n` : "";
+  // 源自身的 `"use strict"` 指令**不能**指望 transpile 保留成 new Function
+  // 序言（产物是 IIFE，指令留在函数体内部）⇒ 脚本形态的 strict 也必须在此
+  // 补发前缀；否则块级函数声明走 Annex B 提升（原生 ReferenceError 被折成
+  // total）。
+  const strictPrefix = sourceStrict ? `"use strict";\n` : "";
   const fn = compileRuntimeModuleUnit<Record<string, unknown>>(
     `${strictPrefix}${js}\n${ret}`,
     hostArgNames,
@@ -841,11 +853,15 @@ export function evalExprAbs(
   expr: import("@babel/types").Expression,
   bindings: Record<string, Abs> = {},
 ): Abs {
-  // bindings 以编译单元形参注入 ⇒ 同名宿主内建（undefined/NaN/Infinity）被
-  // **遮蔽**：转译必须发标识符读点（$absVal）而不是字面量折叠，否则注入值
-  // 被静默丢弃。
-  const shadowed = Object.keys(bindings).filter((n) => HOST_INTRINSIC_SET.has(n));
-  const src = transpileExpression(expr, shadowed.length > 0 ? { shadowedIntrinsics: new Set(shadowed) } : {});
+  // 宿主内建（undefined/NaN/Infinity）遮蔽判定 = **声明扫描 ∪ 注入名**：
+  // - bindings 以编译单元形参注入 ⇒ 同名宿主内建被**遮蔽**：转译必须发标识符
+  //   读点（$absVal）而不是字面量折叠，否则注入值被静默丢弃；
+  // - 表达式**内部**的声明（形参名 undefined / let / const / var / catch 参数）
+  //   同样遮蔽——此前只按 bindings 键判定 ⇒ 表达式体内的 undefined 仍折
+  //   $lit(void 0)（原生读的是形参/局部绑定）。
+  // 判据见 helpers.ts 的 shadowedIntrinsicsOf（声明扫描 ∪ extra 名）。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(expr, new Set(Object.keys(bindings)));
+  const src = transpileExpression(expr, shadowedIntrinsics ? { shadowedIntrinsics } : {});
   // 运行时符号由 compileRuntimeUnit 以形参注入 ⇒ 单元不拼运行时 import 行
   // （宿主编译单元一律无 import/export 语句）。
   const js = [

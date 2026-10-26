@@ -4,7 +4,7 @@
  *
  * 按域拆分（barrel 保持原导入面不变）：
  * - declare     类声明/注册/构造（$class/$new + registry 辅助）
- * - assign      Object.assign 语义（runtimeAssignObject/assignArrayTarget）
+ * - assign      Object.assign 运行时入口（runtimeAssignObject → builtins/object/descriptor.ts 的 performObjectAssign，单一实现）
  * - invoke      调用派发总入口（$invoke/$invokeInner + protoMethod 注册）
  * - invoke-arr  数组方法族模拟（invokeArrMethod）
  * - super       super 家族（$super/$invokeSuper/$getSuper/静态 super）

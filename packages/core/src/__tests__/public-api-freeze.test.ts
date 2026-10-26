@@ -1,15 +1,16 @@
 /**
  * Public API freeze regression — @nudojs/core.
  *
- * Collects export names from `src/algebra/index.ts`, `src/index.ts`, and
- * `src/internal.ts` via the TypeScript compiler API and compares them to
- * `public-api.snapshot.json`. Unplanned add / remove / rename fails CI.
- * Intentional changes must edit the snapshot in the same PR
- * (see packages/core/PUBLIC_API.md).
+ * Collects export names from `src/algebra/index.ts`, `src/index.ts`,
+ * `src/algebra/exec/index.ts`, and `src/internal.ts` via the TypeScript
+ * compiler API and compares them to `public-api.snapshot.json`. Unplanned
+ * add / remove / rename fails CI. Intentional changes must edit the snapshot
+ * in the same PR (see packages/core/PUBLIC_API.md).
  *
- * The snapshot freezes the product face (`.` / algebra) and the engine
- * machinery face (`./internal`) separately. Removing a `.` export is **major**;
- * `./internal` may churn in minor.
+ * The snapshot freezes the product face (`.` / algebra), the published
+ * `./exec` subpath, and the engine machinery face (`./internal`) separately.
+ * Removing a `.` or `./exec` export is **major**; `./internal` may churn in
+ * minor.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,13 +23,15 @@ const corePkgRoot = resolve(here, "..", "..");
 const snapshotPath = join(corePkgRoot, "public-api.snapshot.json");
 const publicApiMdPath = join(corePkgRoot, "PUBLIC_API.md");
 
-type Kind = "value" | "type";
+type SectionKey = "algebra" | "core" | "exec" | "internal";
+type Section = { values: string[]; types: string[] };
 type Snapshot = {
   package: string;
   subpaths: string[];
-  algebra: { values: string[]; types: string[] };
-  core: { values: string[]; types: string[] };
-  internal: { values: string[]; types: string[] };
+  algebra: Section;
+  core: Section;
+  exec: Section;
+  internal: Section;
 };
 
 function isTypeOnlySymbol(checker: ts.TypeChecker, sym: ts.Symbol): boolean {
@@ -99,11 +102,33 @@ describe("public-api freeze — export name snapshot", () => {
     expect(actual.types).toEqual(snap.internal.types);
   });
 
+  it("src/algebra/exec/index.ts (./exec) export names match the snapshot", { timeout: 60_000 }, () => {
+    const snap = loadSnapshot();
+    const actual = collectExports("src/algebra/exec/index.ts");
+    expect(actual.values).toEqual(snap.exec.values);
+    expect(actual.types).toEqual(snap.exec.types);
+  });
+
+  it("every published subpath has a frozen snapshot section", () => {
+    const snap = loadSnapshot();
+    const sectionFor: Record<string, SectionKey> = {
+      ".": "core",
+      "./exec": "exec",
+      "./internal": "internal",
+    };
+    for (const subpath of snap.subpaths) {
+      const key = sectionFor[subpath];
+      expect(key, `subpath ${subpath} has no snapshot section`).toBeDefined();
+      expect(Array.isArray(snap[key].values)).toBe(true);
+      expect(Array.isArray(snap[key].types)).toBe(true);
+    }
+  });
+
   it("product face does not leak engine machinery names", () => {
     const snap = loadSnapshot();
     const leaked = snap.core.values.filter((n) => snap.internal.values.includes(n));
     // Allowed overlap: none — internal is a disjoint face. Host may re-export
-    // nothing from internal on `.` after the 3.0 reduction.
+    // nothing from internal on `.` after the engine-internal split.
     expect(leaked).toEqual([]);
     const leakedTypes = snap.core.types.filter((n) => snap.internal.types.includes(n));
     expect(leakedTypes).toEqual([]);
@@ -129,6 +154,8 @@ describe("public-api freeze — export name snapshot", () => {
       snap.algebra.types,
       snap.core.values,
       snap.core.types,
+      snap.exec.values,
+      snap.exec.types,
       snap.internal.values,
       snap.internal.types,
     ]) {

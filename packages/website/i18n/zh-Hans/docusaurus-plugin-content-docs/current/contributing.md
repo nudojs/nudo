@@ -81,7 +81,7 @@ pnpm exec nudo test path/to/file.js
 
 1. **二元算术 / 比较** — `packages/core/src/algebra/arithmetic.ts`（Abs → Abs）。一元运算与严格相等在 `packages/core/src/algebra/surface.ts`（`typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`）。
 
-2. **分支合并辅助** — `packages/service/src/evaluator/abs-route.ts`（`tryAbsJoinObjects`、φ 约束辅助）在分支合并时 join 对象形状。
+2. **分支合并辅助** — `packages/core/src/algebra/objects.ts`（`joinAbs` / `joinObjects`，φ 约束辅助在 `pred.ts`）在分支合并时 join 对象形状。
 
 3. **添加测试**，位于 `packages/core/src/algebra/__tests__/`（如 `surface.test.ts`、`arithmetic.test.ts`）或 `packages/service/src/__tests__/`。
 

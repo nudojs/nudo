@@ -59,7 +59,12 @@ describe("module export bridge propagates source-kind strictness", () => {
 
   it("unrecorded strict stays undefined (sloppy, conservative)", () => {
     const f = exportedBlockFn(undefined);
-    expect(getFnImpl(f)?.strict).toBeUndefined();
+    // 「没有实现」与「有实现但没记录 strict」是两种状态：单看
+    // `getFnImpl(f)?.strict` 时前者也 pass（可选链吞掉 undefined）——
+    // 先钉实现存在，回归（桥丢 impl）才会红。
+    const impl = getFnImpl(f);
+    expect(impl).toBeDefined();
+    expect(impl?.strict).toBeUndefined();
     expect(litValue($call(f, []))).toEqual({ ok: true, value: 3 });
   });
 });

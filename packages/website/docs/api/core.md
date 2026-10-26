@@ -97,8 +97,8 @@ Operators are algebraic on Abs. Arithmetic, comparison, unary, and spread live i
 | Where | What |
 |-------|------|
 | `core/src/algebra/surface.ts` | `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops + strict equality) |
-| `core/src/algebra/arithmetic.ts` | Binary arithmetic (`+` `-` `*` `/` `%`) and comparison |
-| `service/src/evaluator/abs-route.ts` | Union member-wise routing of binary/unary ops and object spread |
+| `core/src/algebra/arithmetic.ts` | Binary arithmetic (`+` `-` `*` `/` `%`) and comparison, including union member-wise distribution |
+| `core/src/algebra/objects.ts` | Object spread (`spread`) and branch-merge join (`joinAbs` → `joinObjects` / `joinFunctions`) |
 
 The single evaluation engine is evaluator (`core/algebra/exec`: transpile → `new Function` with Abs values). eval-incapable sources fail closed to `unknown` / empty exports.
 
@@ -327,7 +327,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$catchval"></a>`$catchVal` | fn | control-signal / throw | `$catchVal(e: unknown): Abs` |
 | <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(name?: string): Abs` |
 | <a id="$concat"></a>`$concat` | fn | object / member runtime | `$concat(a: Abs, b: Abs): Abs` |
-| <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs): Abs` |
+| <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs, memo?: WeakMap<object, Abs>): Abs` |
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
@@ -373,7 +373,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="nudoloopsignal"></a>`NudoLoopSignal` | type | control-signal / throw | `NudoLoopSignal extends Error { readonly kind: "break" \| "continue"; readonly label: string \| undefined; readonly abstract: boolean; const...` |
 | <a id="nudoreturn"></a>`NudoReturn` | type | control-signal / throw | `NudoReturn extends Error { readonly absValue: Abs; constructor(absValue: Abs) { super("nudo:return"); this.name = "NudoReturn"; this.absV...` |
 | <a id="nudothrow"></a>`NudoThrow` | type | control-signal / throw | — |
-| <a id="runtimeimportof"></a>`runtimeImportOf` | const | JS AST → `$op` program | — |
+| <a id="runtimeimportof"></a>`runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf(runtime: string): string` |
 | <a id="setevalcallcollector"></a>`setEvalCallCollector` | fn | call-site recording for analyze | `setEvalCallCollector( collector: ((r: EvalCallRecord) => void) \| null, )` |
 | <a id="transpile"></a>`transpile` | fn | JS AST → `$op` program | `transpile(source: string, opts?: TranspileOptions): string` |
 | <a id="transpilebodynode"></a>`transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
@@ -383,7 +383,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (334)</summary>
+<summary>Additional exports from src/index.ts (332)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -399,7 +399,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
-| <a id="alphaof"></a>`alphaOf` | fn | 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。 | `alphaOf( absOrTerm: Abs \| Term \| undefined, ctx: { alphaIds: Set<string>; freshSeq: { n: number } }, ): Term` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
@@ -408,7 +407,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="astenv"></a>`AstEnv` | type | — | — |
 | <a id="attachfnimpl"></a>`attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
 | <a id="begincollectionfork"></a>`beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
-| <a id="betaof"></a>`betaOf` | fn | 共享输出变量 B:$&#123;param&#125;（§5.1 P2 钉死） | `betaOf(param: string): Term` |
 | <a id="bindimports"></a>`bindImports` | fn | 把 import 说明符绑定进 env（宿主已求值依赖） | `bindImports( node: ImportDeclaration, env: AstEnv, modules: Record<string, AbsModuleExports>, ): void` |
 | <a id="bindingsof"></a>`bindingsOf` | fn | run 表的**顶层绑定表**： - 顶层 const/let（`$recordBinding` 通道，Abs 值）； - **私有**顶层函数声明（宿主 JS 函数；与 ANALYSIS_SLOTS 同源，导出面同名 可枚举键不重复登记——导出函数只走导出表）。 | `bindingsOf(run: Record<string, unknown>): Map<string, unknown> \| undefined` |
 | <a id="bitandabs"></a>`bitandAbs` | fn | &amp; —— ToInt32 两侧后按位与 | `bitandAbs(a: Abs, b: Abs): Abs` |

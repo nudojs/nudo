@@ -726,20 +726,29 @@ export function $whileSeq(
  * switch 臂的统一运行器：`$switch`（抽象判别式）与 `switchForked`（非字面量
  * case 测试）共用同一套臂协议——collection overlay 入栈、生成器 yield 隔离、
  * 抽象 break/continue 标记、promise settle 臂 token。
+ *
+ * `run(fn, { collectYields: false })`：该臂不贡献 yield 收集器（记 null，
+ * 同 `$fork` 隐式 else 口径）——隐式 no-match 臂体是 `() => undef()`，本就
+ * 无 yield；它的空收集器会把单臂 switch 翻成多臂 join（`mergeArmYields`
+ * 按非 null 收集器个数分流）⇒ 生成器元素类型被降级成 unknown。
  */
 function beginSwitchArms(): {
-  run: (fn: () => Abs) => ForkArm;
+  run: (fn: () => Abs, opts?: { collectYields?: boolean }) => ForkArm;
   finish: () => void;
 } {
   beginCollectionFork();
   const overlays: Array<ReturnType<typeof popCollectionArm>> = [];
   const ysList: Array<GenYieldCollector | null> = [];
   return {
-    run(fn) {
+    run(fn, opts) {
       pushCollectionArm();
       try {
         const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
-        ysList.push(r.ys);
+        // 隐式 no-match 臂不贡献 yield 收集器（collectYields:false ⇒ 记
+        // null，同 $fork 隐式 else 口径）：空收集器会把单臂 switch 翻成
+        // 多臂 join（genPathSensitive + genJoinOverride ⇒ 元素类型降
+        // unknown）。该臂体是 `() => undef()`——本就不产出 yield。
+        ysList.push(opts?.collectYields === false ? null : r.ys);
         return r.v;
       } finally {
         overlays.push(popCollectionArm());
@@ -793,7 +802,9 @@ export function $switch(
       // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
       // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
       // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
-      results.push(runArm(() => undef()));
+      // collectYields:false（同 $fork 隐式 else 记 null）——隐式臂无 yield，
+      // 不得让它的空收集器把单臂 switch 翻成多臂 join（元素类型降 unknown）
+      results.push(runArm(() => undef(), { collectYields: false }));
     }
   } finally {
     arms.finish();

@@ -2,7 +2,7 @@
  * 依赖感知的有界 LRU memo（check 整文件报告 / generalize L0 共用）。
  *
  * 从 `check-memo.ts` 与 `generalize.ts` 的重复基建抽出：
- * - 值表（命中后移到队尾；set 时满即逐最旧——两处原口径一致）；
+ * - 值表（命中后移到队尾；**新** key 且满时逐最旧——重设活 key 不驱逐他者）；
  * - `key -> string[]` 依赖表 + `path -> Set<key>` 反向索引；
  * - 按路径定向逐出（`*.nudo.js` 变更后只失效依赖它的条目）。
  *
@@ -40,8 +40,9 @@ export class DependencyMemo<V> {
   }
 
   set(key: string, value: V, depPaths: readonly string[]): void {
-    // set-time 逐出：满即删最旧（与两处原实现一致——即使 key 已存在）
-    if (this.values.size >= this.max) {
+    // set-time 逐出：仅**新 key** 且已满时删最旧——重设已有 key 不得驱逐无关的
+    // 活条目（容量按唯一 key 计；Map.set 对已有 key 保持原插入位，不刷新 recency）。
+    if (!this.values.has(key) && this.values.size >= this.max) {
       const oldest = this.values.keys().next().value;
       if (oldest !== undefined) {
         this.values.delete(oldest);

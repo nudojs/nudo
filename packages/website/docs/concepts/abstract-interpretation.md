@@ -46,7 +46,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 | **Parser** | Parse JS/TS source into AST (delegates to Babel) |
 | **Directive Extractor** | Extract `@nudo:*` directives from comments |
 | **Evaluator** | evaluator transpile+exec (single engine): evaluate each node with Abs |
-| **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
+| **surface / arithmetic / objects** | Operator semantics on Abs for arithmetic, comparison, unary, spread, and branch-merge join |
 | **Environment** | Manage variable scopes and bindings (name → Abs) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
 | **Type Emitter** | Serialize final Abs results (optionally to TypeScript types) |

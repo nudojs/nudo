@@ -60,9 +60,31 @@ describe("transpileModule：默认 esm target 逐字节不变", () => {
     const code = transpileModule(SRC).code;
     expect(code).toContain('from "@nudojs/core/exec"');
     expect(code).toContain('import { a as b, "x-y" as xy, default as d } from "./m.js";');
-    expect(code).toContain('import { * as ns } from "./n.js";');
+    // 命名空间独占形态发**标准 ESM**：`import { * as ns }` 不是合法 JS
+    // （node: SyntaxError）⇒ 整模块求值失败 ⇒ 导出退化 unknown
+    expect(code).toContain('import * as ns from "./n.js";');
+    expect(code).not.toContain("import { * as ns }");
     expect(code).toContain("export function f");
     expect(code).toContain('export * from "./star.js";');
+  });
+
+  it("esm target 产物是**合法 ESM**（@babel/parser sourceType=module 可解析）", () => {
+    // 回归护栏：命名空间 import 曾摊平成 `import { * as ns } from "…"`
+    // （非法 ESM ⇒ node SyntaxError ⇒ 整模块 fail-closed ⇒ 导出退化
+    // unknown）——本断言让非法发射再次红。
+    const code = transpileModule(SRC, { runtimeImport: null }).code;
+    expect(() => parse(code, { sourceType: "module" })).not.toThrow();
+    expect(() =>
+      parse(transpileModule(`import * as ns from "./n.js";`, { runtimeImport: null }).code, {
+        sourceType: "module",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      parse(
+        transpileModule(`import d, * as ns from "./n.js";`, { runtimeImport: null }).code,
+        { sourceType: "module" },
+      ),
+    ).not.toThrow();
   });
 
   it("runtimeImport: null 只省略运行时 import 行（其余 ESM 面保留）", () => {

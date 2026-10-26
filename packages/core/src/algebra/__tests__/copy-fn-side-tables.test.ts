@@ -82,5 +82,43 @@ describe("$copy 新鲜实例 id 随快照迁移", () => {
     expect(freshInstanceIdOf(c1)).toBe(freshInstanceIdOf(f));
     expect(freshInstanceIdOf(c2)).toBe(freshInstanceIdOf(f));
     expect(makeSum(f, f)).toBe(f);
+
+    // 端到端（fork 快照 → 臂内复原副本 → join → strictEq）：`a` 在臂内被写
+    // ⇒ 进入 fork 协议（快照 $copy），`s` 是同一实例的别名。两臂写**同一
+    // 值**时 join 保留带迁移 id 的副本，与 `s`（原 id）比较——同一创建事件
+    // 的两份快照必须**不是** false（若 $copy 给副本重新打标成新创建事件，
+    // strictEq 的新鲜实例 id 臂立刻折 false）。注意不能改成两臂写不同值：
+    // 那样 join 产物丢侧表 id，比较退化成 unknown，本断言就测不到 id 面。
+    const sameSnapshots = call(
+      `export function f(cond) {
+        class C { constructor(){ this.x = 0; } }
+        const a = new C();
+        const s = a;
+        if (cond) { a.x = 1; } else { a.x = 1; }
+        return a === s;
+      }`,
+      "f",
+      [unknown],
+    );
+    expect(sameSnapshots.throws.shape.k).toBe("never");
+    expect(sameSnapshots.result.shape.k).toBe("prim");
+    expect(litValue(sameSnapshots.result)).not.toEqual({ ok: true, value: false });
+
+    // 同不变量的 join 面：两臂写不同值 ⇒ join 产物是两个不同 Abs，但仍是
+    // 同一实例的两次快照，strictEq 不得按「不同创建事件」折 false。
+    const joinedSnapshots = call(
+      `export function f(cond) {
+        class C { constructor(){ this.x = 0; } }
+        const a = new C();
+        const s = a;
+        if (cond) { a.x = 1; } else { a.x = 2; }
+        return a === s;
+      }`,
+      "f",
+      [unknown],
+    );
+    expect(joinedSnapshots.throws.shape.k).toBe("never");
+    expect(joinedSnapshots.result.shape.k).toBe("prim");
+    expect(litValue(joinedSnapshots.result)).not.toEqual({ ok: true, value: false });
   });
 });

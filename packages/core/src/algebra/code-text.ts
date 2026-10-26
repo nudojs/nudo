@@ -15,7 +15,9 @@
  *   目标是探测器正确，不做完整 JS 词法。
  */
 
+import type { File } from "@babel/types";
 import { BoundedLruMap } from "./lru-map.ts";
+import { parseSource } from "./parse-source.ts";
 
 /**
  * 源级扫描结果 memo（三个包装器各一个）。
@@ -402,11 +404,15 @@ export function sourceHasCjsExports(source: string): boolean {
 /**
  * 真实 ESM 模块语法：静态 import 声明 / 任意 export 语句（忽略字符串/
  * 注释/正则）。有则该文件**必是 ESM**——二者在 CJS 里都是 SyntaxError；
- * 无则按 Node `.js` 无 `type:"module"` 的默认口径视为 CJS/脚本（sloppy）。
- * 动态 `import(...)` 不是模块语法（CJS 合法，排除）。供求值引擎模块体的
- * strict 前缀判定（Bug 116 修订）：强制 strict 会让 CJS 里合法的 sloppy
- * 语法（`arguments` 作绑定名/赋值目标等）在 new Function **编译期**直接
- * SyntaxError → 整模块 fail-closed 空导出且失败不进 memo（每次全量重转译）。
+ * 无则按 Node `.js` 无 `type:"module"` 的默认口径视为 CJS/脚本。动态
+ * `import(...)` 不是模块语法（CJS 合法，排除）。
+ *
+ * 严格性判定**不只用**本函数：脚本形态的 `"use strict"` 指令序言同样是
+ * strict mode code，但文本扫描先剥掉了字符串 ⇒ 看不见。源级严格性见
+ * `sourceIsStrict`（= 本函数 ∨ 指令序言）。强制 strict 只对真 strict 源
+ * 生效：CJS 里合法的 sloppy 语法（`arguments` 作绑定名/赋值目标等）在
+ * new Function **编译期**直接 SyntaxError → 整模块 fail-closed 空导出且
+ * 失败不进 memo（每次全量重转译）。
  */
 export function sourceHasEsmSyntax(source: string): boolean {
   const s = stripCommentsAndStrings(source);
@@ -417,6 +423,61 @@ export function sourceHasEsmSyntax(source: string): boolean {
   // export 同为保留字：属性位 `.export` 排除，对象字面量键 `export:` 由
   // `(?!:)` 排除；合法剩余面只剩 export 语句。
   return /(?<![\w$.])export\b(?!:)/.test(s);
+}
+
+/** AST 上承载指令序言的节点形状（Program / 函数体 BlockStatement）。 */
+type DirectiveHost = {
+  directives?:
+    | ReadonlyArray<{
+        value?: { value?: unknown; extra?: { raw?: unknown } | null } | null;
+      } | null>
+    | null;
+};
+
+/**
+ * AST 节点的**指令序言**是否含 `"use strict"`。
+ *
+ * Program（脚本/模块）与函数体 BlockStatement 都带 `directives`——文本扫描
+ * （`sourceHasEsmSyntax`）先剥字符串/注释，**看不见**指令，故严格性判定必须
+ * 走 AST。带转义序列的字符串（`"use\x20strict"`）按规范**不是** Use Strict
+ * Directive ⇒ 有 raw 原文时要求无 `\`。参数按 `unknown` 收：`Node` 联合类型
+ * 没有公共 `directives` 属性，由本函数内窄化。
+ */
+export function hasUseStrictDirective(node: unknown): boolean {
+  const dirs = (node as DirectiveHost | null | undefined)?.directives;
+  if (!Array.isArray(dirs)) return false;
+  return dirs.some((d) => {
+    const lit = d?.value;
+    if (!lit || lit.value !== "use strict") return false;
+    const raw = lit.extra?.raw;
+    return typeof raw !== "string" || !raw.includes("\\");
+  });
+}
+
+/**
+ * 源级严格性（原生 **strict mode code** 判据）：
+ * ESM 源（静态 import/export / `import.meta`）**或** Program 指令序言含
+ * `"use strict"`。二者在原生 JS 里都使整个源 strict——CJS 风格脚本首部的
+ * `"use strict"` 同样让块级函数声明失去 Annex B 函数作用域提升（块外引用
+ * ⇒ ReferenceError），引擎不得按「无 ESM 语法 = sloppy」一刀切。
+ *
+ * `file` 可传入已解析 AST（调用方已有则省一次 parse；parseSource 自带 LRU，
+ * 重复调用同样便宜）。解析失败 ⇒ 只看 ESM 文本面（无可观测的指令序言）。
+ * 函数体**自身**的指令序言同理经 `hasUseStrictDirective(body)` 判定——
+ * sloppy 文件内的 `function f() { "use strict"; … }` 是严格函数体。
+ */
+export function sourceIsStrict(source: string, file?: File | null): boolean {
+  if (sourceHasEsmSyntax(source)) return true;
+  if (file) return hasUseStrictDirective(file.program);
+  // 指令字面量只可能是 `"use strict"` / `'use strict'` 原文（任何转义序列都
+  // 使字符串**不是** Use Strict Directive）⇒ 文本面粗筛不改变结论，只是让
+  // 常见「无指令」源免掉一次 parse。注释里的同形文本会进 parse 面被 AST 否掉。
+  if (!/"use strict"|'use strict'/.test(source)) return false;
+  try {
+    return hasUseStrictDirective(parseSource(source).program);
+  } catch {
+    return false;
+  }
 }
 
 /** 标识符/导出名插入 RegExp 前转义（`$` `.` `Class.method` 等） */

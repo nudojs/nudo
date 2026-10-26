@@ -32,8 +32,12 @@ export type PureMemo = {
   clear(): void;
 };
 
-/** 全部 memo 实例（清理 API 统一清空，避免一条路径留下陈旧缓存） */
-const instances = new Set<PureMemo>();
+/** 全部 memo 实例（清理 API 统一清空，避免一条路径留下陈旧缓存）。
+ *
+ * 持 `WeakRef` 而非强引用：两条既有路径的实例由模块级绑定强持有，语义不变；
+ * 未来按会话创建的实例在无人引用后可被 GC，`clearAllPureMemos` 遍历时顺带
+ * 摘除已解引用的条目——注册表不会只增不减，也不会让无关的清理长期持有它们。 */
+const instances = new Set<WeakRef<PureMemo>>();
 
 function fnObjectOf(fn: unknown): object | undefined {
   if (typeof fn === "object" && fn !== null) return fn;
@@ -67,11 +71,19 @@ export function createPureMemo(maxEntries = PURE_MEMO_MAX): PureMemo {
       memo = new WeakMap();
     },
   };
-  instances.add(instance);
+  instances.add(new WeakRef(instance));
   return instance;
 }
 
-/** 清空全部 pure memo 实例（clearPureMemo / clearPureCallMemo 共用实现） */
+/** 清空全部存活 memo 实例（clearPureMemo / clearPureCallMemo 共用实现）；
+ *  遍历时摘除已解引用的注册项（Set 迭代中 delete 当前项安全）。 */
 export function clearAllPureMemos(): void {
-  for (const instance of instances) instance.clear();
+  for (const ref of instances) {
+    const instance = ref.deref();
+    if (instance === undefined) {
+      instances.delete(ref);
+      continue;
+    }
+    instance.clear();
+  }
 }

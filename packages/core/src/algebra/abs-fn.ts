@@ -140,10 +140,13 @@ export type AbsFnImpl = {
   /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
   pureName?: string;
   /**
-   * 源码面严格性（ESM source → true；CJS / sloppy → false；未知不写）。
-   * body 编译单元（`exec/body-fn.ts`）据此发射 `"use strict";`——块级函数
-   * 声明、未声明赋值、形参/`arguments` 等 sloppy↔strict 分叉必须与模块
-   * 运行（B run 的 ESM strict 前缀）同口径，不能按函数猜。
+   * 源码面严格性（strict mode code → true；sloppy → false；未知不写）：
+   * ESM 源 **∨** 序言含 `"use strict"` 指令（`code-text.ts#sourceIsStrict`），
+   * 且 strict 代码区内词法继承（strict 函数体 / class 体内恒 strict）；
+   * class 方法体恒 true。body 编译单元（`exec/body-fn.ts`）据此发射
+   * `"use strict";`——块级函数声明、未声明赋值、形参/`arguments` 等
+   * sloppy↔strict 分叉必须与模块运行（B run 的 strict 前缀）同口径，
+   * 不能按函数猜。
    */
   strict?: boolean;
   /**

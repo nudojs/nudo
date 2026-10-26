@@ -5,6 +5,7 @@
  * 消费方：
  * - transpile/ops.ts（发射面判定：语句位重绑 / lastIndex 写回）
  * - runtime/containers/arr-methods.ts（执行面 isArrMutator）
+ * - class/invoke.ts（借用面：字符串接收者定抛 / 数组样接收者就地派发）
  *
  * 发射面与执行面的集合必须同源——两处各自维护曾在 copyWithin/fill 上
  * 漏项（语句位不重绑容器 ⇒ unsound 精确断言）。
