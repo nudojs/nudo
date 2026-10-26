@@ -11,7 +11,13 @@
  * analyze 的剥离在**发射期**完成：本文件不再解析生成产物做二次剥除。
  */
 
-import { rtAllBindings, compileRuntimeUnit, runtimeArgValues } from "./rt.ts";
+import {
+  rtAllBindings,
+  compileRuntimeModuleUnit,
+  compileRuntimeUnit,
+  runtimeArgValues,
+  runtimeModuleArgValues,
+} from "./rt.ts";
 import {
   enterEvalCallBudgetSession,
   exitEvalCallBudgetSession,
@@ -752,10 +758,9 @@ function runTranspiledInner(
   // 空导出，且求值失败不进 memo → 每次全量重转译（yargs check 5.5x）。
   // 源码自身的 "use strict" 指令前缀经 transpile 原样保留，不受此开关影响。
   const strictPrefix = isEsmSource ? `"use strict";\n` : "";
-  const fn = compileRuntimeUnit<Record<string, unknown>>(
+  const fn = compileRuntimeModuleUnit<Record<string, unknown>>(
     `${strictPrefix}${js}\n${ret}`,
     hostArgNames,
-    { dollarOnly: true },
   );
   setEvalBindingSink(bindings);
   // BUG-026：开新求值 epoch——同名类碰撞只在
@@ -763,7 +768,7 @@ function runTranspiledInner(
   // last-wins 覆盖语义见 class-registry.ts）
   beginClassEpoch();
   try {
-    const result = fn(...runtimeArgValues(true), ...hostArgs) as Record<string, unknown>;
+    const result = fn(...runtimeModuleArgValues(), ...hostArgs) as Record<string, unknown>;
     // 私有顶层函数进**绑定表**（LSP completion / collectAbsBindingsFromGraph）：
     // 它们既不在导出面（Object.keys）也不走 $recordBinding（只记录 const/let）。
     // 只补**非枚举**名——导出面同名 re-export / CJS 合并等枚举名不重复登记
@@ -1064,9 +1069,12 @@ function callTranspiledExportFullInner(
     // 引用：JS 引用语义下被调方变异必须写回 caller 帧（h.n = v 后 caller
     // 读 h.n 得 v，back === h 折 true）——复制会让 caller 绑定读到 stale
     // 值（假 exact），与同文件闭包调用（直达、无副本）语义分叉。
+    // 一次调用内共用身份图 memo：`f(obj, obj)` 的两个实参必须映射到同一个
+    // 副本（原生别名语义）；自引用实参也不能让快照栈溢出。
+    const copyMemo = new WeakMap<object, Abs>();
     const callArgs = args.map((a) => {
       if (!(a && typeof a === "object" && "shape" in (a as object))) return asAbsVal(a);
-      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs);
+      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs, copyMemo);
     });
     return runExportCallGuarded(() => {
       const invoke = () =>

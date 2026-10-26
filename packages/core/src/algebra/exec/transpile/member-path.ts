@@ -14,10 +14,10 @@
  * - 引擎的**不可变更新**（$set/$del 返回新 Abs）才把新值补写回上层：原生是
  *   就地改，补写只是引擎建模的可见性补偿。
  */
-import type { Node, Expression } from "@babel/types";
+import type { Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, symbolKeyOf, constFnNamesOf, internalTmpNameSet } from "./helpers.ts";
+import { constFnNamesOf, internalTmpNameSet } from "./helpers.ts";
+import { emitMemberKey } from "./member-key.ts";
 
 /**
  * Bug 1127：成员路径发射用的**内部临时名**集合（已避开用户标识符）。
@@ -125,64 +125,35 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
   while (cur.type === "MemberExpression") {
     const mm = cur as unknown as { object: Node; property: Node; computed: boolean };
     const k = mm.property;
-    if (mm.computed) {
-      if (k.type === "NumericLiteral") {
-        layers.unshift({
-          keySrc: `$lit(${k.value})`,
-          keyAbs: `$lit(${k.value})`,
-          keyConst: true,
-          get: (b, key) => `$idx(${b}, ${key})`,
-          set: (b, key, v) => `$idxSet(${b}, ${key}, ${v})`,
-        });
-      } else if (k.type === "StringLiteral") {
-        layers.unshift({
-          keySrc: JSON.stringify(k.value),
-          keyAbs: `$lit(${JSON.stringify(k.value)})`,
-          keyConst: true,
-          get: (b, key) => `$get(${b}, ${key})`,
-          set: (b, key, v) => `$set(${b}, ${key}, ${v})`,
-        });
-      } else if (isExpression(k)) {
-        // [Symbol.X] 计算键 → "@@X" 字符串槽（镜像成员读 / 对象字面量计算键
-        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）；
-        // 写入打 Slot.symbolKey 标记（Bug 73——JSON 枚举面不可见）
-        const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
-        if (symK !== null) {
-          layers.unshift({
-            keySrc: symK,
-            // delete 通道的键要**运行时符号值**（$del/$delRes 收 Abs 键；
-            // 符号 Abs 经陷阱边界还原成真 symbol——Bug 149）。读/写侧用
-            // 投影槽键 "@@X" + symbolKey 标记（$get/$set 收字符串键）。
-            keyAbs: `$get(Symbol, ${JSON.stringify((k as unknown as { property: { name: string } }).property.name)})`,
-            keyConst: true,
-            // Bug 149：读侧同样带 symbolKey 标记——陷阱边界把 "@@X" 还原成
-            // 真 symbol（规范 PropertyKey）
-            get: (b, key) => `$get(${b}, ${key}, { symbolKey: true })`,
-            set: (b, key, v) => `$set(${b}, ${key}, ${v}, { symbolKey: true })`,
-          });
-        } else {
-          layers.unshift({
-            // Bug 136：计算键**只求值一次**——键绑到临时量，读/写共用。
-            keySrc: emitTranspileExpression(k, opts),
-            keyAbs: "",
-            keyConst: false,
-            get: (b, key) => `$idx(${b}, ${key})`,
-            set: (b, key, v) => `$idxSet(${b}, ${key}, ${v})`,
-          });
-        }
-      } else {
-        return null;
-      }
-    } else if (k.type === "Identifier") {
+    // PrivateName 不建路径：成员写的私有名分支必须内联写槽（$set(obj,"#x",v)），
+    // 不能重绑根绑定；memberPathOf 返回 null 交给 assignment/update 的专用臂。
+    if (!mm.computed && k.type !== "Identifier") return null;
+    const mk = emitMemberKey(k as Node, mm.computed === true, opts);
+    if (mk === null) return null;
+    if (mk.kind === "get") {
+      const keyRef = JSON.stringify(mk.key);
+      const keyAbs =
+        mk.symbol !== undefined
+          ? `$get(Symbol, ${JSON.stringify(mk.symbol)})`
+          : `$lit(${keyRef})`;
+      const symOpt = mk.symbol !== undefined ? ", { symbolKey: true }" : "";
       layers.unshift({
-        keySrc: JSON.stringify(k.name),
-        keyAbs: `$lit(${JSON.stringify(k.name)})`,
+        keySrc: keyRef,
+        keyAbs,
         keyConst: true,
-        get: (b, key) => `$get(${b}, ${key})`,
-        set: (b, key, v) => `$set(${b}, ${key}, ${v})`,
+        get: (b, key) => `$get(${b}, ${key}${symOpt})`,
+        set: (b, key, v) => `$set(${b}, ${key}, ${v}${symOpt})`,
       });
     } else {
-      return null;
+      const constNumber = mk.constNumber;
+      layers.unshift({
+        // 计算键**只求值一次**——键绑到临时量，读/写共用。
+        keySrc: mk.keySrc,
+        keyAbs: constNumber !== undefined ? `$lit(${constNumber})` : "",
+        keyConst: constNumber !== undefined,
+        get: (b, key) => `$idx(${b}, ${key})`,
+        set: (b, key, v) => `$idxSet(${b}, ${key}, ${v})`,
+      });
     }
     cur = mm.object;
   }
@@ -235,22 +206,6 @@ export function readPathSrc(p: MemberPath): string {
  */
 export function setPathSrc(p: MemberPath, valSrc: string): string {
   return memberWriteRootIfe(p, valSrc);
-}
-
-/** 前 j 层的读取源 */
-export function readPrefix(p: MemberPath, j: number): string {
-  return p.layers.slice(0, j + 1).reduce((acc, l) => l.get(acc, l.keySrc), p.rootSrc);
-}
-
-/** 路径「去掉最后一层」的写回源：delete o.a.b ⇒ o = $set(o, "a", $del($get(o,"a"), "b")) */
-export function setParentPathSrc(p: MemberPath, valSrc: string): string {
-  let acc = valSrc;
-  for (let i = p.layers.length - 2; i >= 0; i--) {
-    const l = p.layers[i]!;
-    const base = i === 0 ? p.rootSrc : readPrefix(p, i - 1);
-    acc = l.set(base, l.keySrc, acc);
-  }
-  return acc;
 }
 
 /* ------------------------------------------------------------------ *

@@ -13,21 +13,15 @@
  * deleteProtoMethod 钩子）；delete 返回值恒 true（原生同）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, litValue, strLit, unknown } from "../../abs.ts";
 import { lit } from "../../term.ts";
-import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
+
+import { pTrue } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs, getInstanceProto } from "../../objects.ts";
+import { joinAbs, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs, getInstanceProto } from "../../objects.ts";
 import { isNullishLitAbs } from "../../surface.ts";
-import { isMapAbs, isSetAbs, mapSizeAbs, setSizeAbs } from "../../collections.ts";
-import {
-  evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
-  isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES,
-  symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoOfRecv, hostBuiltinCtorName, protoBrandAbs,
-} from "../../builtins.ts";
-import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
+import { extStateOf, getPropFlags, isObjectProtoBrand, objectProtoBrand, protoOfRecv, hostBuiltinCtorName, protoBrandAbs } from "../../builtins.ts";
+import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
@@ -38,9 +32,8 @@ import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
-import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
-import { $typeof, $eq, $ne } from "./ops.ts";
-import { $objAccessor, lookupObjAccessor, migrateAccessors, accessorTable } from "../../accessors.ts";
+import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth } from "./state.ts";
+import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
 // Bug 230：Proxy [[Delete]] 规范不变量的单一实现（S9 落在 builtins/object/
 // descriptor.ts）——delete 运算符路径（$delRes）接线；Reflect.deleteProperty
 // 臂已由 S9 接线。
@@ -190,14 +183,7 @@ export function findStaticClassAccessor(
   return undefined;
 }
 
-/** JS 访问器派发（$get/$set 共用）：obj 走侧表，brand 走 class 注册表 */
-export function findAccessor(
-  o: Abs,
-  key: string,
-): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
-  if (o.shape.k === "brand") return findClassAccessor(o.shape.name, key);
-  return lookupObjAccessor(o, key);
-}
+
 
 // in / instanceof / classExpr / delete
 // --- in / instanceof / delete（transpile 运算符路由） ---
@@ -1408,7 +1394,7 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
 
 /** instanceof 右操作数非标识符（表达式/成员路径）：RHS 值传入时先做原生
  *  非对象校验（definite / may TypeError）；构造器值未知 → 抽象 boolean */
-export function $instanceofNonIdent(left: Abs, right?: Abs): Abs {
+export function $instanceofNonIdent(_left: Abs, right?: Abs): Abs {
   if (right !== undefined) validateInstanceofRhs(asAbsVal(right));
   return bool();
 }

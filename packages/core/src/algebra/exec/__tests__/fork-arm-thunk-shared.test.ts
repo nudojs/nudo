@@ -18,7 +18,8 @@ const THUNK = `() => {\n  return $lit(1);\n}`;
 /** 无碰撞时 cons 臂的完整包装（与 refactor 前 inline 副本逐字相同） */
 const CONS_WRAPPER = [
   `() => {`,
-  `  a = $copy(__fk0_a);`,
+  `  const __fkArmMemo = new WeakMap();`,
+  `  a = $copy(__fk0_a, __fkArmMemo);`,
   `  let __cont = true;`,
   `  try {`,
   `    return (() => {`,
@@ -55,7 +56,8 @@ describe("forkArmThunkExpr：if 分叉与早退提升共用臂包装", () => {
       userIdents: new Set(["__cont", "__fk0_a"]),
     });
     // 快照名与臂标志名避让（`_1` 后缀）；槽位名未撞 ⇒ 基名
-    expect(js).toContain("a = $copy(__fk0_a_1);");
+    expect(js).toContain("const __fkArmMemo = new WeakMap();");
+    expect(js).toContain("a = $copy(__fk0_a_1, __fkArmMemo);");
     expect(js).toContain("let __cont_1 = true;");
     expect(js).toContain("if ($isForkExit(e)) __cont_1 = false;");
     expect(js).toContain("__fk1_a = a;");
@@ -78,11 +80,11 @@ describe("forkArmThunkExpr：if 分叉与早退提升共用臂包装", () => {
     const ifJs = transpileSource(ifSrc, { source: ifSrc });
     const earlyJs = transpileSource(earlySrc, { source: earlySrc });
     // if 分叉：快照恢复（两臂同）+ 槽位写回（cons 臂 / alt 臂各一份）
-    expect(ifJs).toContain(`() => {\n      out = $copy(__fk0_out);\n      a = $copy(__fk0_a);\n      let __cont = true;`);
+    expect(ifJs).toContain(`() => {\n      const __fkArmMemo = new WeakMap();\n      out = $copy(__fk0_out, __fkArmMemo);\n      a = $copy(__fk0_a, __fkArmMemo);\n      let __cont = true;`);
     expect(ifJs).toContain(`          __fk1_out = out;\n          __fk1_a = a;\n          __fk1_set_out = true;\n          __fk1_set_a = true;`);
     expect(ifJs).toContain(`          __fk2_out = out;\n          __fk2_a = a;\n          __fk2_set_out = true;\n          __fk2_set_a = true;`);
     // 早退提升：同一包装骨架（cons 臂只含 out）
-    expect(earlyJs).toContain(`() => {\n      out = $copy(__fk0_out);\n      let __cont = true;`);
+    expect(earlyJs).toContain(`() => {\n      const __fkArmMemo = new WeakMap();\n      out = $copy(__fk0_out, __fkArmMemo);\n      let __cont = true;`);
     expect(earlyJs).toContain(`          __fk1_out = out;\n          __fk1_set_out = true;`);
     expect(earlyJs).toContain(`          __fk2_out = out;\n          __fk2_set_out = true;`);
   });

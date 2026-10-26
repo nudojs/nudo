@@ -190,6 +190,16 @@ export type TranspileOptions = {
    */
   constNames?: ReadonlySet<string>;
   /**
+   * 直接 const 别名组（`const a = {...}; const b = a;`）。
+   *
+   * fork/循环 pack 只按「被写绑定」收集快照名；别名伙伴不在集合里时，
+   * 臂/轮次结束把 `a` 重绑为副本会断开 `b` 的引用语义。transpileFnBodyStmts
+   * 从函数体**开头连续 const 声明**计算该表（只收 init 为同作用域 const
+   * 标识符的声明，避免 TDZ 与可重绑 let），fork/pack 发射时据此扩展
+   * snapshot 集合。嵌套函数体在自身边界重算，不继承外层组。
+   */
+  aliasGroups?: ReadonlyArray<readonly string[]>;
+  /**
    * 本转译单元内被用户绑定**遮蔽**的宿主内建名（undefined / NaN / Infinity
    * 的子集，保守单位级）。
    *

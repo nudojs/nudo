@@ -10,7 +10,7 @@
  * - **replace 命中的子表达式仍要求值**（副作用与 throws 域保留），只是
  *   结果被注入值取代（Bug 165）；旧口径整段替换 → 副作用与抛错域消失。
  */
-import type { Statement, Node, Expression } from "@babel/types";
+import type { Node, Expression } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
@@ -800,12 +800,7 @@ export const FUNCTION_SCOPE_TYPES = new Set([
   "ClassPrivateMethod",
 ]);
 
-export const BINDING_SCOPE_TYPES = new Set([
-  ...FUNCTION_SCOPE_TYPES,
-  "CatchClause",
-  "ForOfStatement",
-  "ForInStatement",
-]);
+
 
 export type IdentNode = {
   type?: string;
@@ -1621,6 +1616,43 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
  */
 export function collectForkBindingNames(...nodes: Array<unknown>): string[] {
   return collectFreeAssignedNames(...nodes);
+}
+
+/**
+ * 把 fork/pack 绑定集扩展到直接 const 别名伙伴。
+ *
+ * `const a = {...}; const b = a;` 只有 `a` 被写时，快照/ pack 若不带上 `b`，
+ * 臂结束重绑 `a` 会断开 `b` 的引用。别名组由 transpileFnBodyStmts 在函数
+ * 体开头连续 const 声明上计算（见 TranspileOptions.aliasGroups）。
+ */
+export function expandAliasNames(
+  names: Iterable<string>,
+  opts: TranspileOptions,
+): string[] {
+  const out = new Set<string>(names);
+  const groups = opts.aliasGroups;
+  if (!groups || groups.length === 0) return [...out];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const group of groups) {
+      let hit = false;
+      for (const n of group) {
+        if (out.has(n)) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) continue;
+      for (const n of group) {
+        if (!out.has(n)) {
+          out.add(n);
+          changed = true;
+        }
+      }
+    }
+  }
+  return [...out];
 }
 
 

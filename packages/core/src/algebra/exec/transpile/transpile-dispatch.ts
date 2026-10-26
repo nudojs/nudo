@@ -41,12 +41,3 @@ export function emitTranspileExpression(expr: Expression, opts: TranspileOptions
   if (!fn) throw new Error("transpileExpression not bound (expr.ts not loaded)");
   return fn(expr, opts);
 }
-
-export function emitTranspileShortCircuit(
-  opts: TranspileOptions,
-  parts: ShortCircuitParts,
-): string {
-  const fn = dispatch.shortCircuit;
-  if (!fn) throw new Error("transpileShortCircuitExpr not bound (expr.ts not loaded)");
-  return fn(opts, parts);
-}

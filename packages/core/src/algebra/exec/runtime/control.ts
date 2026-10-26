@@ -1,11 +1,11 @@
 /**
  * 控制流：loop/try 退出栈、$fork/$for/$whileSeq、$throw。
  */
-import { AsyncLocalStorage } from "node:async_hooks";
+import "node:async_hooks";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, never, numLit, unknown, type Confidence } from "../../abs.ts";
-import { lit } from "../../term.ts";
+import { abs, confJoin, litValue, never, unknown } from "../../abs.ts";
+import "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import {
@@ -15,18 +15,7 @@ import {
   pushCollectionArm,
 } from "../../collections.ts";
 import { joinAbs, objOf } from "../../objects.ts";
-import {
-  errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame,
-  orphanMayThrowEffects, recordMayThrow, type MayThrowEffect,
-} from "../may-throw.ts";
-import {
-  NudoThrow, isNudoThrow, noBody, undef, oobUndef, writeInPlace, clearStaleTermPred,
-  asAbsVal, callAtFunctionBoundary, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse,
-  currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked,
-  NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
-  runWithLoopExits, takeLoopExits, takeThrowExits, pushLoopExit, pushThrowExit, $pushLoopExit,
-} from "./state.ts";
-import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
+import { NudoThrow, isNudoThrow, undef, oobUndef, asAbsVal, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked, NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, pushThrowExit } from "./state.ts";
 import { $arr } from "./containers.ts";
 import {
   notePromiseExecutorFork,
@@ -733,6 +722,36 @@ export function $whileSeq(
  * 修法：遇到非字面量 case 测试 ⇒ **分叉**（命中该臂 / 不命中继续后续臂与
  * default），两路结果并入返回域（switchForked）。
  */
+/**
+ * switch 臂的统一运行器：`$switch`（抽象判别式）与 `switchForked`（非字面量
+ * case 测试）共用同一套臂协议——collection overlay 入栈、生成器 yield 隔离、
+ * 抽象 break/continue 标记、promise settle 臂 token。
+ */
+function beginSwitchArms(): {
+  run: (fn: () => Abs) => ForkArm;
+  finish: () => void;
+} {
+  beginCollectionFork();
+  const overlays: Array<ReturnType<typeof popCollectionArm>> = [];
+  const ysList: Array<GenYieldCollector | null> = [];
+  return {
+    run(fn) {
+      pushCollectionArm();
+      try {
+        const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
+        ysList.push(r.ys);
+        return r.v;
+      } finally {
+        overlays.push(popCollectionArm());
+      }
+    },
+    finish() {
+      endCollectionFork(overlays);
+      if (yieldStack.length > 0) mergeArmYields(ysList);
+    },
+  };
+}
+
 export function $switch(
   disc: Abs,
   cases: Array<{ test: Abs; run: () => Abs }>,
@@ -757,20 +776,8 @@ export function $switch(
   }
 
   const exits = loopExitsAls.getStore();
-  beginCollectionFork();
-  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<GenYieldCollector | null> = [];
-  const runArm = (fn: () => Abs): ForkArm => {
-    pushCollectionArm();
-    try {
-      // 抽象 disc 臂：臂内 break/continue 信号标记 abstract（同 $fork）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
-      armYsList.push(r.ys);
-      return r.v;
-    } finally {
-      armOverlays.push(popCollectionArm());
-    }
-  };
+  const arms = beginSwitchArms();
+  const runArm = arms.run;
   const results: ForkArm[] = [];
   try {
     // 共享 body（case 1: case 2: …）只执行一次，避免非幂等副作用被放大
@@ -786,19 +793,10 @@ export function $switch(
       // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
       // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
       // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
-      pushCollectionArm();
-      try {
-        results.push(
-          promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() },
-        );
-        armYsList.push(null);
-      } finally {
-        armOverlays.push(popCollectionArm());
-      }
+      results.push(runArm(() => undef()));
     }
   } finally {
-    endCollectionFork(armOverlays);
-    if (yieldStack.length > 0) mergeArmYields(armYsList);
+    arms.finish();
   }
   if (results.length === 0) return undef();
 
@@ -851,21 +849,8 @@ function switchForked(
   cache: Map<() => Abs, ForkArm>,
 ): Abs {
   const exits = loopExitsAls.getStore();
-  beginCollectionFork();
-  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<GenYieldCollector | null> = [];
-  const runArm = (fn: () => Abs): ForkArm => {
-    pushCollectionArm();
-    try {
-      // 分叉臂：命中与否不可判定 ⇒ 臂内 break/continue 信号标记 abstract
-      // （同 $fork 抽象臂）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
-      armYsList.push(r.ys);
-      return r.v;
-    } finally {
-      armOverlays.push(popCollectionArm());
-    }
-  };
+  const arms = beginSwitchArms();
+  const runArm = arms.run;
   /** 已执行过的共享体：复用其结局（不重复执行副作用） */
   const replay = (arm: ForkArm): Abs => {
     if (arm.kind === "ret") throw new NudoReturn(arm.v);
@@ -896,8 +881,7 @@ function switchForked(
       return asAbsVal(dflt());
     });
   } finally {
-    endCollectionFork(armOverlays);
-    if (yieldStack.length > 0) mergeArmYields(armYsList);
+    arms.finish();
   }
   return settleForkArms(a, b, exits);
 }

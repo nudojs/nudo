@@ -46,6 +46,7 @@ import {
   copyConstScope,
   internalTmpName,
   shadowedIntrinsicsOf,
+  expandAliasNames,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
@@ -164,6 +165,54 @@ function flattenEarlyReturnBlocks(stmts: readonly Statement[]): Statement[] {
   return out;
 }
 
+/**
+ * 函数体**开头连续 const 声明**里的直接别名组（`const a = {...}; const b = a;`）。
+ *
+ * 只收 init 为同作用域、此前已声明 const 的标识符：这样别名声明一定在
+ * 所有后续语句之前初始化，fork/pack 带上 `b` 不会踩 TDZ；`let`/`var` 可
+ * 重绑，不能当作稳定别名。非连续（中间隔了其它语句）的别名不收集——
+ * 保守漏收只会保留旧的别名缺陷，不会引入错误绑定。
+ */
+function leadingConstAliasGroups(stmts: readonly Statement[]): string[][] {
+  const parent = new Map<string, string>();
+  const declared = new Set<string>();
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.has(root) && parent.get(root) !== root) root = parent.get(root)!;
+    let cur = x;
+    while (parent.has(cur) && parent.get(cur) !== cur) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const stmt of stmts) {
+    if (stmt.type !== "VariableDeclaration" || stmt.kind !== "const") break;
+    for (const d of stmt.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      if (d.init?.type === "Identifier" && declared.has(d.init.name)) {
+        union(d.id.name, d.init.name);
+      }
+      parent.set(d.id.name, parent.get(d.id.name) ?? d.id.name);
+      declared.add(d.id.name);
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const name of parent.keys()) {
+    const root = find(name);
+    const group = groups.get(root);
+    if (group) group.push(name);
+    else groups.set(root, [name]);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
 export function transpileFnBodyStmts(
   stmtsIn: Statement[],
   depth: number,
@@ -233,10 +282,14 @@ export function transpileFnBodyStmts(
     }
   }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
+  const aliasGroups = varScope
+    ? leadingConstAliasGroups(stmts)
+    : opts.aliasGroups;
   const scopedOpts: TranspileOptions = {
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
     ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
+    ...(aliasGroups && aliasGroups.length > 0 ? { aliasGroups } : {}),
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -255,7 +308,7 @@ export function transpileFnBodyStmts(
       ...collectForkBindingNames(stmt.test),
       ...collectForkBindingNames(...rest),
     ]);
-    const names = [...recvSet];
+    const names = expandAliasNames(recvSet, scopedOpts);
     const pad = indent(depth);
     const padIn = indent(depth + 1);
     // 与 IfStatement 同协议：set-flag 哨兵 + forkJoinBindings

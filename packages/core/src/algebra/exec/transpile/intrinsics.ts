@@ -18,7 +18,6 @@
  * 转译选项的 shadowedIntrinsics，标识符读点按绑定语义解析，mock 值因此生效。
  */
 export const HOST_INTRINSIC_NAMES = ["undefined", "NaN", "Infinity"] as const;
-export type HostIntrinsicName = (typeof HOST_INTRINSIC_NAMES)[number];
 
 export const HOST_INTRINSIC_SET: ReadonlySet<string> = new Set(HOST_INTRINSIC_NAMES);
 

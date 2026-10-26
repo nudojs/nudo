@@ -98,6 +98,7 @@ import {
   bumpDestrTmpSeq,
   internalTmpName,
   internalTmpNameSet,
+  expandAliasNames,
   thisCarrierOf,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
@@ -181,6 +182,22 @@ function memberHeadRootName(m: Node): string | null {
  *  （transpileFile / transpileBodyNode 经 opts.shadowedIntrinsics 线程化）。 */
 function undefinedIsIntrinsicOf(opts: TranspileOptions): boolean {
   return opts.shadowedIntrinsics?.has("undefined") !== true;
+}
+
+/**
+ * 循环 pack 源：同一次 pack 的绑定集合共享一个身份图 memo。
+ *
+ * memo 必须是**每次 pack 调用**新建的：循环/测试里的就地写会让同一个原始
+ * Abs 的值变化，复用旧 memo 会拿回上一轮的陈旧副本。
+ */
+function packSrcOf(names: readonly string[], opts: TranspileOptions): string {
+  const memo = internalTmpName("__packCopyMemo", opts);
+  return `((${memo}) => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n}, ${memo})`).join(", ")} }))(new WeakMap())`;
+}
+
+/** 循环 unpack 源：从 pack 槽逐名读回（不复制——pack 已是本轮私有副本）。 */
+function unpackSrcOf(names: readonly string[]): string {
+  return `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
 }
 
 /**
@@ -1128,7 +1145,7 @@ function emitIfStatement(
     ...collectForkBindingNames(stmt.alternate),
   ]);
   const testRebinds = emitArrMutatorRebinds(stmt.test as Node, opts, pad);
-  const names = [...recvSet];
+  const names = expandAliasNames(recvSet, opts);
   const padIn = indent(depth + 1);
   // 块级作用域：同一函数内多个 if 都改 errors 时，__fk0_* 不得重复声明
   const padDecl = names.length > 0 ? padIn : pad;
@@ -1328,7 +1345,7 @@ function emitForStatement(
     collectArrMutatorReceivers(stmt.body, assigned);
     const bodyLocalDecls = new Set<string>();
     collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-    const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+    const names = expandAliasNames([...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
     // Bug 183：for 循环体接守卫事实（nullish + 关系）——测试在每轮迭代
     // 前求值、为真则进体，语义与 `if`/`while` 的事实臂等价（此前 for
     // 分支一条都没接 ⇒ `for (; v !== null; )` 与 `while (v !== null)`
@@ -1338,14 +1355,8 @@ function emitForStatement(
     collectArrMutatorReceivers(stmt.body, bodyWrites);
     const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites, undefined, undefinedIsIntrinsicOf(opts));
     const bodyNarrowed = narrowLoopBody(bodyStmts, loopGuards, depth + 1, names);
-    const packSrc =
-      names.length === 0
-        ? null
-        : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
-    const unpackSrc =
-      names.length === 0
-        ? null
-        : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+    const packSrc = names.length === 0 ? null : packSrcOf(names, opts);
+    const unpackSrc = names.length === 0 ? null : unpackSrcOf(names);
     const optsSrc = (() => {
       const extra = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (!extra) return packSrc && unpackSrc
@@ -1436,7 +1447,7 @@ function emitForStatement(
   collectArrMutatorReceivers(stmt.body, assigned);
   const bodyLocalDecls = new Set<string>();
   collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+  const names = expandAliasNames([...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
   // Bug 183：for 循环体接守卫事实（nullish + 关系）——同 fallback 路径。
   // 循环变量本身（状态线程形参 initName）排除：影子参数会顶掉状态
   // 线程（`for (let i = 0; i < 3; i++)` 的 i 是状态线程，不得被影子
@@ -1452,14 +1463,8 @@ function emitForStatement(
     undefinedIsIntrinsicOf(opts),
   );
   const bodyNarrowed = narrowLoopBody(bodyStmts, loopGuards, depth + 1, names);
-  const packSrc =
-    names.length === 0
-      ? null
-      : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
-  const unpackSrc =
-    names.length === 0
-      ? null
-      : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+  const packSrc = names.length === 0 ? null : packSrcOf(names, opts);
+  const unpackSrc = names.length === 0 ? null : unpackSrcOf(names);
   // Bug 228：循环变量（状态线程形参 initName）在体里是**形参槽**——体对它的
   // 写在 continue 抛出信号时随信号丢失（$for 拿不到「体退出瞬间的值」）。
   // 原生：for (let i…) 每轮绑定独立，continue 前的 `i = 5` 写进本轮绑定
@@ -1609,7 +1614,7 @@ function emitSwitchStatement(
     ...merged.flatMap((a) => collectForkBindingNames(...a.stmts)),
     ...collectForkBindingNames(stmt.discriminant as Node),
   ]);
-  const names = [...recvSet];
+  const names = expandAliasNames(recvSet, opts);
   // 源有 default 则每臂一槽；无 default 时多一个「no-match=快照」槽
   const nArms = merged.filter((a) => !a.isDefault).length + (defaultArm ? 1 : 0) + (defaultArm ? 0 : 1);
   // Bug 147：switch 臂的 break 标签——带标签的 break 信号不被外层循环
@@ -1631,6 +1636,11 @@ function emitSwitchStatement(
   // 用户同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`decls`）同源
   // ⇒ 「成对一致」。
   const sw = switchTmpNames(names, nArms, opts);
+  // 快照/恢复/测试刷新各自的身份图 memo：一次操作内的别名绑定共享副本，
+  // 循环引用也不会在 switch 臂里栈溢出。
+  const swCopyMemo = internalTmpName("__swCopyMemo", opts);
+  const swArmMemo = internalTmpName("__swArmMemo", opts);
+  const swRefreshMemo = internalTmpName("__swRefreshMemo", opts);
   // Bug 1159：case 测试机制 / 共享体的**块级**内部名同样避开用户标识符
   // ——测试 thunk（`() => (用户 case 表达式)`）与臂 thunk 都在本块作用域
   // 里求值用户表达式 ⇒ 写死名 `__swT` / `__swTestRead` / `__swEval` /
@@ -1667,7 +1677,8 @@ function emitSwitchStatement(
     // ⇒ 全部求值 = 上界）
     if (hasTests) lines.push(`${indent(depth + 1)}if (!${swTestRead}) ${swEvalAll}();`);
     if (names.length > 0) {
-      lines.push(...names.map((n, i) => `${indent(depth + 1)}${n} = $copy(${sw.snap[i]});`));
+      lines.push(`${indent(depth + 1)}const ${swArmMemo} = new WeakMap();`);
+      lines.push(...names.map((n, i) => `${indent(depth + 1)}${n} = $copy(${sw.snap[i]}, ${swArmMemo});`));
       lines.push(`${indent(depth + 1)}let ${sw.cont} = true;`);
     }
     lines.push(`${indent(depth + 1)}try {`);
@@ -1685,7 +1696,7 @@ function emitSwitchStatement(
       lines.push(`${indent(depth + 1)}finally {`);
       lines.push(`${indent(depth + 2)}if (${sw.cont}) {`);
       lines.push(...names.map((n, i) => `${indent(depth + 3)}${sw.arm[outIdx]![i]} = ${n};`));
-      lines.push(...names.map((n, i) => `${indent(depth + 3)}${sw.armSet[outIdx]![i]} = true;`));
+      lines.push(...names.map((_n, i) => `${indent(depth + 3)}${sw.armSet[outIdx]![i]} = true;`));
       lines.push(`${indent(depth + 2)}}`);
       lines.push(`${indent(depth + 1)}}`);
     }
@@ -1748,7 +1759,7 @@ function emitSwitchStatement(
   // 「测试之后」的状态 ⇒ 测试里的写不被抹掉）。名称经 Bug 1159 分配器。
   const testHelpers: string[] = [];
   if (testSrcs.length > 0) {
-    const refresh = names.map((n, i) => `${indent(depth + 2)}${sw.snap[i]} = $copy(${n});`);
+    const refresh = names.map((n, i) => `${indent(depth + 2)}${sw.snap[i]} = $copy(${n}, ${swRefreshMemo});`);
     testHelpers.push(
       `${pad}const ${swT} = [${testSrcs.map((t) => `() => (${t})`).join(", ")}];`,
       `${pad}const ${swTV} = [];`,
@@ -1761,6 +1772,7 @@ function emitSwitchStatement(
       `${indent(depth + 1)}if (!${swTD}[${swI}]) {`,
       `${indent(depth + 2)}${swTD}[${swI}] = true;`,
       `${indent(depth + 2)}${swTV}[${swI}] = ${swT}[${swI}]();`,
+      `${indent(depth + 2)}const ${swRefreshMemo} = new WeakMap();`,
       ...refresh,
       `${indent(depth + 1)}}`,
       `${indent(depth + 1)}return ${swTV}[${swI}];`,
@@ -1789,13 +1801,16 @@ function emitSwitchStatement(
   // 且 armSeq ≡ merged.length ⇒ 两支下都等于 nArms）⇒ 分配器按 nArms 分配
   // 即可覆盖全部槽位（`sw.arm` / `sw.armSet` 的长度 = nArms）。
   const slotCount = Math.max(nArms, armSeq + (defaultArm ? 0 : 1));
-  const decls = names.flatMap((n, ni) => [
-    // 基线可被 case 测试求值刷新（Bug 169）——故 let 而非 const
-    `${pad}let ${sw.snap[ni]} = $copy(${n});`,
-    ...Array.from({ length: slotCount }, (_, i) =>
-      `${pad}let ${sw.arm[i]![ni]}; let ${sw.armSet[i]![ni]} = false;`,
-    ),
-  ]);
+  const decls = [
+    `${pad}const ${swCopyMemo} = new WeakMap();`,
+    ...names.flatMap((n, ni) => [
+      // 基线可被 case 测试求值刷新（Bug 169）——故 let 而非 const
+      `${pad}let ${sw.snap[ni]} = $copy(${n}, ${swCopyMemo});`,
+      ...Array.from({ length: slotCount }, (_, i) =>
+        `${pad}let ${sw.arm[i]![ni]}; let ${sw.armSet[i]![ni]} = false;`,
+      ),
+    ]),
+  ];
   const joins = names.map((n, ni) => {
     const slots = Array.from(
       { length: slotCount },
@@ -2213,9 +2228,7 @@ function emitForInStatement(
   const bodyLines: string[] = [];
   // for (const x of …) 头绑定在循环体内不可再赋
   const loopConstNames = copyConstScope(opts.constNames, new Set()) ?? new Set<string>();
-  let loopBindIsConst = false;
   if (stmt.left.type === "VariableDeclaration" && stmt.left.kind === "const") {
-    loopBindIsConst = true;
     if (stmt.left.declarations[0]?.id.type === "Identifier") {
       loopConstNames.add(stmt.left.declarations[0].id.name);
     } else if (
@@ -2330,15 +2343,18 @@ function emitForInStatement(
   }
   const bodyLocalDecls = new Set<string>();
   collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const names = [...assigned].filter(
-    (n) =>
-      n !== bindName &&
-      !HOST_INTRINSIC_SET.has(n) &&
-      !bodyLocalDecls.has(n) &&
-      // 报告外发现：头解构（let/const）的子名是回调内块级绑定——pack/unpack
-      // 闭包在回调外，引用它 ⇒ ReferenceError（`for (let {a} of arr)` 抽象
-      // 出口直接抛）。排除：它们不是外层绑定（每轮独立 / const 不可再赋）。
-      !headLocalNames.has(n),
+  const names = expandAliasNames(
+    [...assigned].filter(
+      (n) =>
+        n !== bindName &&
+        !HOST_INTRINSIC_SET.has(n) &&
+        !bodyLocalDecls.has(n) &&
+        // 报告外发现：头解构（let/const）的子名是回调内块级绑定——pack/unpack
+        // 闭包在回调外，引用它 ⇒ ReferenceError（`for (let {a} of arr)` 抽象
+        // 出口直接抛）。排除：它们不是外层绑定（每轮独立 / const 不可再赋）。
+        !headLocalNames.has(n),
+    ),
+    opts,
   );
   const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
   const forAwaitOpt = isForAwait ? "forAwait: true" : "";
@@ -2355,7 +2371,7 @@ function emitForInStatement(
       ? tailOpts
         ? `, { ${tailOpts} }`
         : ""
-      : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${tailOpts ? `, ${tailOpts}` : ""} }`;
+      : `, { pack: () => ${packSrcOf(names, opts)}, unpack: ${unpackSrcOf(names)}${tailOpts ? `, ${tailOpts}` : ""} }`;
   return [
     ...recvPre,
     // Bug 201：`for await` 的挂起门——原生每轮一个 await；引擎既有建模
@@ -2426,7 +2442,7 @@ function emitWhileStatement(
   // （此前 while 只接 nullish ⇒ 同一机制内部不自洽：`while (x > 0)`
   // 的体内 x 折不出 > 0 事实）。事实臂 = 测试为真 ⇒ 体内成立。
   const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites, undefined, undefinedIsIntrinsicOf(opts));
-  const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+  const names = expandAliasNames([...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
   const bodyNarrowed = narrowLoopBody(body, loopGuards, depth, names);
   const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
   if (names.length === 0) {
@@ -2437,8 +2453,8 @@ function emitWhileStatement(
       `${pad}}, ${max}${loopOpts ? `, { ${loopOpts} }` : ""});`,
     ].join("\n");
   }
-  const packSrc = `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
-  const unpackSrc = `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+  const packSrc = packSrcOf(names, opts);
+  const unpackSrc = unpackSrcOf(names);
   return [
     `${pad}// while → $whileSeq (instrumented bindings: ${names.join(", ")})`,
     `${pad}$whileSeq(() => ${test}, () => {`,
@@ -2487,7 +2503,7 @@ function emitDoWhileStatement(
   const bodyWrites = new Set<string>();
   collectAssignedIds(stmt.body, bodyWrites);
   collectArrMutatorReceivers(stmt.body, bodyWrites);
-  const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+  const names = expandAliasNames([...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
   // Bug 185 同构缺口：do-while 的**关系守卫**（`x > 0`）此前没接进体侧
   // （只接了 nullish 守卫）⇒ 体内 x 折不出 > 0 事实（同一机制内部不
   // 自洽：for / while 都接了）。改用 loopBodyGuardsOf + narrowLoopBody
@@ -2495,14 +2511,8 @@ function emitDoWhileStatement(
   // 关系走 $refineRel 影子参数（事实臂；补集方向不可健全表示）。
   const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites, undefined, undefinedIsIntrinsicOf(opts));
   const innerBody = narrowLoopBody(bodyStmts, loopGuards, depth, names);
-  const packSrc =
-    names.length === 0
-      ? null
-      : `$obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} })`;
-  const unpackSrc =
-    names.length === 0
-      ? null
-      : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+  const packSrc = names.length === 0 ? null : packSrcOf(names, opts);
+  const unpackSrc = names.length === 0 ? null : unpackSrcOf(names);
   const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
   const optsSrc =
     packSrc && unpackSrc

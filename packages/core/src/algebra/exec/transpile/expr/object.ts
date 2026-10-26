@@ -507,7 +507,9 @@ export function transpileObjectExpr(
           }
           items.push(transpileExpression(el as Expression, opts));
         }
-        return `$arrWithHoles([${items.join(", ")}], [${holes.join(", ")}])`;
+        return holes.length === 0
+          ? `$arr([${items.join(", ")}])`
+          : `$arrWithHoles([${items.join(", ")}], [${holes.join(", ")}])`;
       }
       let acc: string | null = null;
       for (const el of expr.elements) {

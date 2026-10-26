@@ -808,9 +808,13 @@ export function $callNamed(
       if (al) tagAbsOrigin(args[i]!, { line: al[0], column: al[1] });
     }
   }
-  // D1：调用前快照实参——mutator（pop/push）会就地改写，记录必须是入参态
+  // D1：调用前快照实参——mutator（pop/push）会就地改写，记录必须是入参态。
+  // 同一次调用共享身份图 memo：`f(obj, obj)` 的两个实参保持别名。
+  const snapshotMemo = new WeakMap<object, Abs>();
   const argsSnapshot = args.map((a) =>
-    a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : (a as Abs),
+    a && typeof a === "object" && "shape" in (a as object)
+      ? $copy(a, snapshotMemo)
+      : (a as Abs),
   );
   if (loc) pushCallLoc({ line: loc[0], column: loc[1] });
   try {

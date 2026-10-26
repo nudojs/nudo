@@ -13,17 +13,10 @@ import type { Abs } from "../../abs.ts";
 import { abs, unknown, never, litValue, strLit } from "../../abs.ts";
 import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
-import { builtinSuperCtorOf, hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
-import {
-  builtinCtorAbs,
-  protoBrandAbs,
-  protoOfRecv,
-  extStateOf,
-  getPropFlags,
-  setPropFlags,
-} from "../../builtins.ts";
+import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
+import { protoBrandAbs, extStateOf, getPropFlags, setPropFlags } from "../../builtins.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
-import { $get, $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred } from "../runtime.ts";
+import { $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred } from "../runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "../calls.ts";

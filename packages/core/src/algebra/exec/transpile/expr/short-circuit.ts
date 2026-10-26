@@ -25,7 +25,7 @@ import {
   narrowDiscriminantArmThunks,
   narrowRelArmThunk,
 } from "../stmt-predicates.ts";
-import { collectForkBindingNames, internalTmpNameSet } from "../helpers.ts";
+import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
 import { emitArrMutatorRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
 
 /**
@@ -124,7 +124,7 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   // 臂内写回的绑定（逻辑赋值的写回根等）——必须进 fork 绑定-join 协议，
   // 否则臂内的写会泄漏到 fork 之后的绑定（两臂都跑时后跑臂覆盖先跑臂）。
   for (const n of parts.extraBindingNames ?? []) branchNames.add(n);
-  const names = [...branchNames];
+  const names = expandAliasNames(branchNames, opts);
   const alwaysRebinds: string[] = [];
   for (const n of parts.alwaysNodes) {
     alwaysRebinds.push(...emitArrMutatorRebinds(n, opts, ""));

@@ -31,10 +31,34 @@ import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "
 import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { memberPathOf, memberDeleteIfe, memberReadModifyWriteIfe } from "../member-path.ts";
+import { memberPathOf, memberDeleteIfe, memberReadModifyWriteIfe, memberWriteRootIfe } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { chainNeedsShortCircuit, flattenChain, emitDeleteChainFrom } from "./optional-chain.ts";
+/**
+ * 可选链节点去除 `optional` 标记（只用于建**写回路径**，不用于求值）：
+ * `memberPathOf` 只认 MemberExpression；短路语义由链式 delete 的 fork 守卫
+ * 单独表达，写回路径只在非短路臂执行。
+ */
+function stripOptionalChainNodes(n: Node): Node {
+  const t = (n as { type?: string }).type;
+  if (t === "OptionalMemberExpression") {
+    return {
+      ...(n as object),
+      type: "MemberExpression",
+      optional: false,
+      object: stripOptionalChainNodes((n as unknown as { object: Node }).object),
+    } as unknown as Node;
+  }
+  if (t === "MemberExpression") {
+    return {
+      ...(n as object),
+      object: stripOptionalChainNodes((n as unknown as { object: Node }).object),
+    } as unknown as Node;
+  }
+  return n;
+}
+
 /**
  * 运算符/条件族：&&/||/??、三元、二元、一元（含 delete/typeof）、自增自减、await/yield、逗号序列。
  * 短路臂守卫剪影与 stmt.ts IfStatement 同源。
@@ -178,7 +202,8 @@ export function transpileOperatorExpr(
     }
     case "UnaryExpression": {
       if (expr.operator === "delete") {
-        // delete 的表达式值是布尔结果；容器写回由语句级 emitDeleteRebinds 负责
+        // delete 的表达式值是布尔结果；容器写回在 memberDeleteIfe /
+        // emitDeleteChainFrom 的求值点 IIFE 内同点完成（无语句级二次发射）
         const arg = expr.argument as Expression;
         const argType = (arg as { type?: string }).type;
         if (argType === "MemberExpression" || argType === "OptionalMemberExpression") {
@@ -187,7 +212,25 @@ export function transpileOperatorExpr(
           // OptionalMemberExpression 不在处理面 → unsupported 假抛/unknown
           if (chainNeedsShortCircuit(arg as Node)) {
             const flat = flattenChain(arg, opts);
-            const delSrc = flat && emitDeleteChainFrom(flat.hops, 0, flat.baseSrc);
+            // 删除目标 = 最外层成员；写回目标 = 它的父对象路径。
+            // 可选链短路臂不执行删除，故写回只挂在「链走通」的 delOpSrc 内。
+            const parentPath = flat
+              ? memberPathOf(
+                  stripOptionalChainNodes(
+                    (arg as { object: Node }).object,
+                  ) as Parameters<typeof memberPathOf>[0],
+                  opts,
+                )
+              : null;
+            const writeback =
+              parentPath && (parentPath.layers.length > 0 || parentPath.rootRebindable)
+                ? (newParentSrc: string): string =>
+                    parentPath.layers.length === 0
+                      ? `${parentPath.rootTarget} = ${newParentSrc};`
+                      : `${memberWriteRootIfe(parentPath, newParentSrc)};`
+                : undefined;
+            const delSrc =
+              flat && emitDeleteChainFrom(flat.hops, 0, flat.baseSrc, writeback);
             if (delSrc !== undefined) return delSrc;
             // 链含 call/invoke 等不可删除中缀 → 维持 unsupported fail-closed
             throw new NudoUnsupportedError(

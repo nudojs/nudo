@@ -25,7 +25,7 @@ import {
   undef,
   asAbsVal,
 } from "../state.ts";
-import { $in } from "../members.ts";
+import "../members.ts";
 
 /** 容器策略单点（containers.ts）：≤cap → tuple；>cap → arr（元素 join，path） */
 export function tupleOrWiden(els: Abs[], conf: Confidence): Abs {

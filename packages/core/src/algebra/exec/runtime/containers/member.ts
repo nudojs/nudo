@@ -59,7 +59,7 @@
  */
 import type { Abs, Shape } from "../../../abs.ts";
 import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
-import { lit } from "../../../term.ts";
+import "../../../term.ts";
 import { absFunction, hostFnCtorFacet, getFnImpl } from "../../../abs-fn.ts";
 import {
   joinAbs,
@@ -135,22 +135,10 @@ import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, freshInstanceIdOf } from "../../../instance-id.ts";
-import {
-  NudoThrow,
-  undef,
-  isOobUndef,
-  throwStrictWrite,
-  clearStaleTermPred,
-  asAbsVal,
-  $lit,
-  $fnVal,
-  noBody,
-  enforceProxyGetInvariant,
-  hostFnKindOf,
-} from "../state.ts";
-import { $typeof } from "../ops.ts";
+import { NudoThrow, undef, isOobUndef, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
+import "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
-import { findClassAccessor, findStaticClassAccessor, $in, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
+import { findClassAccessor, findStaticClassAccessor, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
 // 族 58 · Bug 4：%GeneratorPrototype% 协议面方法值（next/return/throw）——
 // generator 原型对象的内层 obj 槽装配点（见 generatorProtoBrandOf）。
 import { generatorProtoProtocolMember } from "../async.ts";

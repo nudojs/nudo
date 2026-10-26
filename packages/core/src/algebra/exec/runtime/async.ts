@@ -23,23 +23,11 @@ import { abs, boolLit, confJoin, litValue, strLit, unknown, never, type Confiden
 import { joinAbs, objOf, getSlot, type ObjShape } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import {
-  NudoThrow, isNudoThrow, undef, litTruth, isDefinitelyTrue, isDefinitelyFalse,
-  currentExecPhi, $lit, asAbsVal, $fnVal, noBody, writeInPlace, clearStaleTermPred,
-  isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits,
-} from "./state.ts";
+import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
-import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
-import {
-  yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
-  withIsolatedYields, runForkArm, type ForkArm, type GenYieldCollector,
-  setGenJoinOverride, bumpGenPathSensitive,
-  YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS,
-  YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN,
-} from "./control.ts";
-import { beginCollectionFork, endCollectionFork, popCollectionArm, pushCollectionArm } from "../../collections.ts";
+import { yieldStack, genPathSensitive, genJoinOverride, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive, YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "./control.ts";
 import { $arr, $yieldStarElems, $get } from "./containers.ts";
 import { $call } from "../call.ts";
 import { loopExitsAls } from "./state.ts";

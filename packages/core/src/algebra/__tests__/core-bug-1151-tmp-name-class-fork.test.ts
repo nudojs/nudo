@@ -323,10 +323,10 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
 
     it("撞名时快照名改名（`__fk0_a` → `__fk0_a_1`）且声明点与引用点同名", () => {
       const js = transpileSource(SRC_B1, { source: SRC_B1 });
-      // 声明点：const __fk0_a_1 = $copy(a);
-      expect(js).toContain("const __fk0_a_1 = $copy(a);");
-      // 引用点（臂入口恢复基线）：a = $copy(__fk0_a_1);
-      expect(js).toContain("a = $copy(__fk0_a_1);");
+      // 声明点：const __fk0_a_1 = $copy(a, __fkCopyMemo);（一次分支快照共享身份图）
+      expect(js).toContain("const __fk0_a_1 = $copy(a, __fkCopyMemo);");
+      // 引用点（臂入口恢复基线）：a = $copy(__fk0_a_1, __fkArmMemo);
+      expect(js).toContain("a = $copy(__fk0_a_1, __fkArmMemo);");
       // 用户绑定仍是 __fk0_a（未被引擎改名）
       expect(js).toContain("let __fk0_a = $lit(42);");
       expect(js).not.toContain("const __fk0_a = $copy(a);");
@@ -349,7 +349,7 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      expect(js).toContain("const __fk0_out = $copy(out);");
+      expect(js).toContain("const __fk0_out = $copy(out, __fkCopyMemo);");
       expect(js).toContain("let __cont = true;");
       expect(js).toContain("const __fkT = ($eq(a, $lit(0)));");
     });

@@ -12,61 +12,46 @@
 import * as runtime from "./runtime.ts";
 import * as classRt from "./class.ts";
 import * as callsRt from "./calls.ts";
-import {
-  isNudoThrow,
-  isNudoReturn,
-  $isForkExit,
-  runWithLoopExits,
-  takeLoopExits,
-  takeThrowExits,
-} from "./runtime.ts";
 // Bug 201：async 体的真挂起驱动（生成器路径）——**内部**运行时符号：
 // 不进 runtime.ts facade（facade 只再导出公开符号面），只进绑定表。
 import { $asyncGen } from "./runtime/async.ts";
 import { $call } from "./call.ts";
-// Bug 325：函数**声明**形态的种类戳（宿主普通函数无法回推 async/generator）
-import { $fnKindStamp } from "./runtime/state.ts";
 
 let cached: Record<string, unknown> | undefined;
 
 export function rtAllBindings(): Record<string, unknown> {
   if (!cached) {
     cached = { ...runtime, ...classRt, ...callsRt };
-    // ensure control-flow helpers are present even if a re-export layer omits them
-    cached.isNudoReturn = isNudoReturn;
-    cached.isNudoThrow = isNudoThrow;
-    cached.$isForkExit = $isForkExit;
-    cached.runWithLoopExits = runWithLoopExits;
-    cached.takeLoopExits = takeLoopExits;
-    cached.takeThrowExits = takeThrowExits;
+    // facade 之外的内部符号（不进 runtime.ts 公开面，但转译产物按名引用）
     cached.$call = $call;
-    // Bug 325：种类戳符号（产物代码按名 import 的同一符号，见 exec/index.ts）
-    cached.$fnKindStamp = $fnKindStamp;
     // Bug 201：async 体（含 await）编译成宿主生成器，由本符号驱动挂起/恢复
     cached.$asyncGen = $asyncGen;
   }
   return cached;
 }
 
-/**
- * 编译单元的运行时形参名（与 runtimeArgValues 一一对应）。
- *
- * - `dollarOnly = true`（模块体路径）：只取 `$` 前缀的运算符名——`__nudo*`
- *   宿主注入名由 run.ts 追加；非 `$` 的绑定（isNudoReturn / takeThrowExits
- *   等）不进模块体形参面（模块体不按这些名字引用，旧口径如此）。
- * - `dollarOnly = false`（evalExprAbs / body-fn 单单元路径）：全部绑定名。
- *
- * 键序 = rtAllBindings 的插入序（缓存对象，稳定）；名字与值必须同序取。
- */
-export function runtimeArgNames(dollarOnly = false): string[] {
-  const keys = Object.keys(rtAllBindings());
-  return dollarOnly ? keys.filter((k) => k.startsWith("$")) : keys;
+/** 编译单元的运行时形参名（与 runtimeArgValues 一一对应）。 */
+export function runtimeArgNames(): string[] {
+  return Object.keys(rtAllBindings());
 }
 
 /** runtimeArgNames 同序的绑定值（同一缓存表，逐名读取）。 */
-export function runtimeArgValues(dollarOnly = false): unknown[] {
+export function runtimeArgValues(): unknown[] {
   const all = rtAllBindings();
-  return runtimeArgNames(dollarOnly).map((n) => all[n]);
+  return runtimeArgNames().map((n) => all[n]);
+}
+
+/** 模块体单元的运行时形参名：只取 `$` 前缀的运算符名——`__nudo*` 宿主
+ *  注入名由 run.ts 追加；非 `$` 的绑定（isNudoReturn / takeThrowExits 等）
+ *  不进模块体形参面（模块体不按这些名字引用）。 */
+export function runtimeModuleArgNames(): string[] {
+  return runtimeArgNames().filter((k) => k.startsWith("$"));
+}
+
+/** runtimeModuleArgNames 同序的绑定值。 */
+export function runtimeModuleArgValues(): unknown[] {
+  const all = rtAllBindings();
+  return runtimeModuleArgNames().map((n) => all[n]);
 }
 
 /**
@@ -80,8 +65,16 @@ export function runtimeArgValues(dollarOnly = false): unknown[] {
 export function compileRuntimeUnit<T = unknown>(
   code: string,
   extraNames: readonly string[] = [],
-  opts: { dollarOnly?: boolean } = {},
 ): (...vals: unknown[]) => T {
-  const names = [...runtimeArgNames(opts.dollarOnly ?? false), ...extraNames];
+  const names = [...runtimeArgNames(), ...extraNames];
+  return new Function(...names, code) as (...vals: unknown[]) => T;
+}
+
+/** 模块体编译单元：只注入 `$` 前缀运行时符号 + 调用方 extra。 */
+export function compileRuntimeModuleUnit<T = unknown>(
+  code: string,
+  extraNames: readonly string[] = [],
+): (...vals: unknown[]) => T {
+  const names = [...runtimeModuleArgNames(), ...extraNames];
   return new Function(...names, code) as (...vals: unknown[]) => T;
 }

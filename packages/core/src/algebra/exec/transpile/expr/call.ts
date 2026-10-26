@@ -33,6 +33,7 @@ import { isExpression, foldRequireSpecArg, internalTmpName, internalTmpNameSet }
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { memberPathOf, setPathSrc } from "../member-path.ts";
+import { emitArgList } from "../call-args.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 /**
  * 引擎内部临时名的**基名**（实际名见下）。
@@ -95,13 +96,7 @@ export function transpileCallExpr(
       const callee = expr.callee;
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(void 0)";
-      const args = expr.arguments
-        .map((a) =>
-          a.type === "SpreadElement"
-            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-            : transpileExpression(a as Expression, opts),
-        )
-        .join(", ");
+      const args = emitArgList(expr.arguments, opts);
       return `$new(${cname}, [${args}])`;
     }
     case "CallExpression":
@@ -116,13 +111,7 @@ export function transpileCallExpr(
       const callee = expr.callee;
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
       // super.method(args) / super[k](args) → $invokeSuper(...)（类实例方法）；
@@ -133,13 +122,7 @@ export function transpileCallExpr(
         callee.object.type === "Super" &&
         (callee.property.type === "Identifier" || callee.computed === true)
       ) {
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         const keySrc = callee.computed
           ? transpileExpression(callee.property as Expression, opts)
           : `$lit(${JSON.stringify((callee.property as { name: string }).name)})`;
@@ -205,13 +188,7 @@ export function transpileCallExpr(
         const defR = internalTmpName(DEF_R_BASE, opts);
         const rebind = definePropRebindSrc(expr.arguments[0] as Node, opts, defR);
         if (rebind !== null) {
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
+          const args = emitArgList(expr.arguments, opts);
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
           return `(() => { const ${defR} = $invoke(Object, ${JSON.stringify(methodName)}, [${args}]${locArg}); ${rebind}; return ${defR}; })()`;
@@ -224,13 +201,7 @@ export function transpileCallExpr(
         (callee.property.type === "Identifier" || callee.property.type === "PrivateName")
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         const propName =
           callee.property.type === "PrivateName"
             ? // Bug 78：this.#m() → "#m" 混淆键
@@ -285,13 +256,7 @@ export function transpileCallExpr(
           (keyNode?.type === "StringLiteral" || keyNode?.type === "NumericLiteral")
         ) {
           const recv = transpileExpression(callee.object as Expression, opts);
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
+          const args = emitArgList(expr.arguments, opts);
           const name = JSON.stringify(String(keyNode.value));
           const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
           const loc = expr.loc;
@@ -320,13 +285,7 @@ export function transpileCallExpr(
         ) {
           const recv = transpileExpression(callee.object as Expression, opts);
           const keySrc = transpileExpression(keyNode as Expression, opts);
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
+          const args = emitArgList(expr.arguments, opts);
           const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
@@ -361,13 +320,7 @@ export function transpileCallExpr(
           : callee.name;
         return `$callNamed(${JSON.stringify(callee.name)}, ${calleeRef}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
-      const args = expr.arguments
-        .map((a) =>
-          a.type === "SpreadElement"
-            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-            : transpileExpression(a as Expression, opts),
-        )
-        .join(", ");
+      const args = emitArgList(expr.arguments, opts);
       const c =
         callee.type === "Identifier"
           ? callee.name

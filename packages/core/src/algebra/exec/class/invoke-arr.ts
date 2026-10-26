@@ -17,7 +17,7 @@ import { abs, unknown, confJoin, litValue, bool, boolLit, numLit } from "../../a
 import { joinAbs, canonicalArrayIndex, getSlot } from "../../objects.ts";
 import { fromIdxAbs } from "../../builtins.ts";
 import { markDomainShared } from "../../len-sharing.ts";
-import { $set, $lit, $arrMutContainer, callAtFunctionBoundary } from "../runtime.ts";
+import { $lit, $arrMutContainer, callAtFunctionBoundary } from "../runtime.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl } from "../../abs-fn.ts";
 import { collectionIteratorAbs, abstractSeqIteratorAbs } from "../../builtins.ts";
@@ -484,7 +484,6 @@ function hofFlatMap(ctx: ArrCtx): Abs {
   if (shape.k === "tuple") {
     // Bug 248：逐位现读当前容器（Get/HasProperty）——hole 位不回调（原生
     // flatMap 的 `k in O` 判定），缺席位在结果里是空元组（摊平后不留）。
-    const len = shape.elements.length;
     const mapped = shape.elements.map((_el, i) => {
       const live = liveAt(i);
       if (!live.present) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");

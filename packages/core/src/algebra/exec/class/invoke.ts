@@ -1253,7 +1253,7 @@ function invokeNumberPrim(
 function invokeBooleanPrim(
   thisVal: Abs,
   method: string,
-  args: Abs[],
+  _args: Abs[],
 ): Abs | undefined {
   const s = thisVal.shape;
   if (s.k !== "prim" || s.type !== "boolean") return undefined;
