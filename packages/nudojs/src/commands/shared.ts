@@ -40,7 +40,7 @@ import {
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, extractAssumeSegs } from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
@@ -904,6 +904,9 @@ export async function runAbsView(
   opts: { fn?: string; assume?: string[]; generalize?: boolean },
 ): Promise<void> {
   const algebra = await import("@nudojs/core");
+  // BUG-085：源码级 `@nudo:assume` 走**前提槽**（与门禁 core check.ts 同源），
+  // 该槽只经 `@nudojs/core/exec` 的 withAssumePremises 播种（不是公共 index 面）。
+  const { withAssumePremises } = await import("@nudojs/core/exec");
   const source = readFileSync(filePath, "utf8");
   let phi = algebra.pTrue;
   const assumeIds = new Set<string>();
@@ -1045,9 +1048,26 @@ export async function runAbsView(
           : c;
       }
     }
+    // BUG-085（issue #152 用户引理）：源码级 `@nudo:assume d <= max` 是**用户
+    // 公理**，门禁在目标函数入口以 `withAssumePremises` 种**前提槽**——不是
+    // phi（前提**不随调用链继承**，callee 帧一律见空；phi 是路径条件且调用
+    // 边界不重置 ⇒ 当成 phi 种会漏给 callee，同名形参误染 = unsound 假精度）。
+    // `--abs` 此前只种 CLI `--assume` 的 phi ⇒ 同一函数在 `check --json`
+    // （`number where /(d, max) ≤ 1`）与 `check --abs`（`number`，无 pred）
+    // 两个面互斥；`@nudo:assume` 行一删两面又一致 ⇒ 差异精确来自这条指令。
+    // `>=` 段已由 extractAssumeSegs 翻转为 le（消费方只见 le，与 core 同口径）；
+    // 文法外段由门禁报 nudo:assume-invalid，观察面不重复裁定。
+    const premises = extractAssumeSegs(source, name).flatMap((seg) =>
+      seg.kind === "ok" ? [algebra.le(algebra.v(seg.lhs), algebra.v(seg.rhs))] : [],
+    );
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
-    const evalResult = tryEvalCall(source, filePath, name, args, { phi });
+    const evalResult =
+      premises.length === 0
+        ? tryEvalCall(source, filePath, name, args, { phi })
+        : withAssumePremises(algebra.and(...premises), () =>
+            tryEvalCall(source, filePath, name, args, { phi }),
+          );
     const result = evalResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));

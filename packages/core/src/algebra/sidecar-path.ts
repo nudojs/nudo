@@ -91,15 +91,30 @@ export function isNodeModulesPath(p: string): boolean {
  * **不再追加第二段** `.nudo`。旧口径产出 `lib.nudo.nudo.js`——该路径不是任何
  * 源码的侧车 ⇒ 契约永久静默失效；草稿面还会落到 `lib.nudo.nudo.draft.js`
  * 并指示用户「copy it into lib.nudo.nudo.js」（一个不存在的侧车名）。
+ *
+ * **`.d.ts` / `.d.mts` 先剥 `.d` 段**（BUG-264）：`api.d.ts` 旧口径剥 `.ts`
+ * 得 `api.d` 再挂 `.nudo.ts` ⇒ `api.d.nudo.ts`——basename 里含 `.d.` ⇒
+ * TypeScript 的 `getDeclarationFileExtension` 判它是**声明文件** ⇒
+ * `export const x = <表达式>` 在 ambient context 非法（TS1254）⇒ 侧车/草稿
+ * 都过不了消费端 `tsc --strict`。现在 `api.d.ts → api.nudo.ts`
+ * （草稿 `api.nudo.draft.ts`，同样不含 `.d.`）。
+ * 旧名 `api.d.nudo.ts` 也归一到新名（升级时不会留下两套视图）。
  */
 export function sidecarPathOf(file: string): string {
   const f = normPath(file);
   // 已有 `.nudo` 段 ⇒ 先剥掉再挂目标扩展名（`.nudo` 段本身不是扩展名）
-  const withExt = (base: string, ext: string): string =>
-    (base.endsWith(".nudo") ? base.slice(0, -5) : base) + ext;
+  const stripNudo = (base: string): string =>
+    base.endsWith(".nudo") ? base.slice(0, -5) : base;
+  const withExt = (base: string, ext: string): string => stripNudo(base) + ext;
+  // `.d` 段不是模块名的一部分：`.d.ts` / `.d.mts` 的声明文件源
+  // （顺序：先剥 `.nudo` 再剥 `.d`——`api.d.nudo.ts` 也要归一到 `api.nudo.ts`）
+  const declBase = (base: string): string => {
+    const b = stripNudo(base);
+    return b.endsWith(".d") ? b.slice(0, -2) : b;
+  };
   if (f.endsWith(".mjs")) return withExt(f.slice(0, -4), ".nudo.js");
   if (f.endsWith(".js")) return withExt(f.slice(0, -3), ".nudo.js");
-  if (f.endsWith(".mts")) return withExt(f.slice(0, -4), ".nudo.ts");
-  if (f.endsWith(".ts")) return withExt(f.slice(0, -3), ".nudo.ts");
+  if (f.endsWith(".mts")) return declBase(f.slice(0, -4)) + ".nudo.ts";
+  if (f.endsWith(".ts")) return declBase(f.slice(0, -3)) + ".nudo.ts";
   return withExt(f, ".nudo.js");
 }

@@ -70,11 +70,15 @@ describe("Bug 659 —— --from-dts 不得绕过用法校验（先校验、后�
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote");
     // ⚠ 族 20 · Bug 944（片 C）起：草稿落点是**贴着源 `.d.ts`**的
-    //   `sidecarDraftPath` 口径（`types.d.ts` ⇒ `types.d.nudo.draft.ts`），
-    //   **不再**是以 CWD 为基准的 `types.nudo.draft.js`（那会静默覆盖
-    //   同基名的另一个文件的草稿）⇒ 本断言按新口径更新（用例意图不变：
-    //   「--from-dts + --write」是合法组合，不被用法校验误伤）。
-    expect(existsSync(join(dir, "types.d.nudo.draft.ts"))).toBe(true);
+    //   `sidecarDraftPath` 口径，**不再**是以 CWD 为基准的
+    //   `types.nudo.draft.js`（那会静默覆盖同基名的另一个文件的草稿）。
+    //   ⚠ 落点名的 `.d.` 段按 BUG-264（`tmp/bug-report/sections/BUG-264.md`
+    //   + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
+    //   **不得含 `.d.`**（basename 含 `.d.` ⇒ TypeScript 判成声明文件 ⇒
+    //   草稿与它建议的复制落点都过不了 `tsc --strict`，TS1254）⇒
+    //   `types.d.ts` ⇒ `types.nudo.draft.ts`（**不是** `types.d.nudo.draft.ts`）。
+    //   用例意图不变：「--from-dts + --write」是合法组合，不被用法校验误伤。
+    expect(existsSync(join(dir, "types.nudo.draft.ts"))).toBe(true);
     expect(existsSync(join(dir, "types.nudo.draft.js"))).toBe(false);
   });
 

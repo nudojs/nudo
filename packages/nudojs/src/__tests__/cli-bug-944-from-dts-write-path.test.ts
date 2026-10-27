@@ -9,6 +9,14 @@
  * ② 写盘前做**存在性检查**（已存在且内容不同 ⇒ **拒绝覆盖** + 提示、exit 1）;
  * ③ 写盘**复用** service 的写盘助手（五重保护）；
  * ④ 「next」提示**点名目标侧车路径**。
+ *
+ * ⚠ 落点名的 `.d.` 段按 **BUG-264**（`tmp/bug-report/sections/BUG-264.md`
+ *   + `.changeset/fix-bug-cat-09-cli-check.md`）：`.d.ts` 源的侧车/草稿名
+ *   **不得含 `.d.`** —— basename 含 `.d.` ⇒ TypeScript 的
+ *   `getDeclarationFileExtension` 判它是**声明文件** ⇒ 草稿与工具建议的
+ *   复制落点都过不了 `tsc --strict`（TS1254）⇒ `types/index.d.ts` 的草稿是
+ *   `types/index.nudo.draft.ts`、侧车是 `types/index.nudo.ts`
+ *   （**不是** `types/index.d.nudo.draft.ts` / `types/index.d.nudo.ts`）。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -52,8 +60,8 @@ describe("nudo contract --from-dts --write · Bug 944 · 落盘位置与覆盖�
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
 
     expect(r.status).toBe(0);
-    // 产物贴着源 .d.ts
-    const draft = join(dir, "types", "index.d.nudo.draft.ts");
+    // 产物贴着源 .d.ts（落点名不含 `.d.` 段 —— BUG-264）
+    const draft = join(dir, "types", "index.nudo.draft.ts");
     expect(existsSync(draft)).toBe(true);
     expect(readFileSync(draft, "utf-8")).toContain("export const mul");
     // CWD 里**不再**出现新草稿
@@ -68,7 +76,7 @@ describe("nudo contract --from-dts --write · Bug 944 · 落盘位置与覆盖�
     const r = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
 
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("types/index.d.nudo.ts");
+    expect(r.stdout).toContain("types/index.nudo.ts");
   }, 60000); // 1 个 CLI 子进程
 
   it("目标已存在且内容不同 ⇒ **拒绝覆盖**（exit 1）+ 提示 + 既有草稿逐字不变", () => {
@@ -76,7 +84,7 @@ describe("nudo contract --from-dts --write · Bug 944 · 落盘位置与覆盖�
     // 先写一次（产物落盘）
     const first = runCli(["contract", "--from-dts", "types/index.d.ts", "--write"], { cwd: dir });
     expect(first.status).toBe(0);
-    const draft = join(dir, "types", "index.d.nudo.draft.ts");
+    const draft = join(dir, "types", "index.nudo.draft.ts");
     const written = readFileSync(draft, "utf-8");
     // 源 .d.ts 变了 ⇒ 草稿内容会变
     writeFileSync(
@@ -90,7 +98,7 @@ describe("nudo contract --from-dts --write · Bug 944 · 落盘位置与覆盖�
     // 拒绝覆盖 ⇒ 非 0 退出 + 可诊断的理由
     expect(second.status).toBe(1);
     expect(second.stderr).toContain("refusing to overwrite");
-    expect(second.stderr).toContain("types/index.d.nudo.draft.ts");
+    expect(second.stderr).toContain("types/index.nudo.draft.ts");
     // 既有草稿逐字不变（没有静默丢内容）
     expect(readFileSync(draft, "utf-8")).toBe(written);
     // 没有谎报成功

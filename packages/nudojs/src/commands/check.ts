@@ -4,7 +4,7 @@
  * 在 check-report.ts；commander 装配在 check-command.ts）；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { resolve, dirname, isAbsolute } from "node:path";
 import type { File } from "@babel/types";
 import { paint } from "../ui.ts";
@@ -68,7 +68,14 @@ import {
   getPathEnvLoadErrors,
   getPathEnvDepContents,
 } from "@nudojs/service/evaluator";
-import { emitCheckReport, formatSyntaxErrorBlock, syntaxErrorInfo, ANALYSIS_FAILED_PREFIX } from "./check-report.ts";
+import {
+  emitCheckReport,
+  emitHardErrorCiAnnotations,
+  formatSyntaxErrorBlock,
+  syntaxErrorInfo,
+  ANALYSIS_FAILED_PREFIX,
+  type CiHardError,
+} from "./check-report.ts";
 import {
   collectNudoFiles,
   displayPathOf,
@@ -981,6 +988,10 @@ function reportInputReadError(
   } else {
     reportPathErrors([pathError]);
   }
+  // BUG-284：文件级硬错误也必须进 CI 注解通道（--gitlab 恰好一份数组 /
+  // --gha 至少一条 ::error）——旧实现只喂 --json 与人类面 ⇒ 两个机器通道
+  // 对同一个失败文件给出 0 条。
+  emitHardErrorCiAnnotations([pathError], opts);
   // #1 指纹：读输入失败是非 L2 error（不得触发 onboarding 块）
   if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
   process.exitCode = 1;
@@ -1018,15 +1029,21 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   //   ⇒ 该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
   //   ⇒ **闸门假绿**（合法代码与违约代码都判绿）。
   //
-  // ⇒ 只收 `internal`；`unsupported:*` / `module-throw` 进了这里就是**假红**
-  // （大面积误判 ⇒ 用户 CI 卡死）。
+  // ⇒ 判据是**可见性**（core 的 `gateFatal`，与标签是两个维度），不是标签：
+  // - `internal`（引擎/宿主边界违约）⇒ 收（既有语义）；
+  // - **装载期逃逸的原生异常**（标签 `module-throw`，`gateFatal === true`）⇒ 也收：
+  //   模块装载失败 ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0 = **假绿**（BUG-072）；
+  //   无句法证据的装载失败（顶层 `JSON.parse(userInput)` / 顶层调用会抛的函数）
+  //   只有这条通道能兜住。
+  // - `unsupported:*`（能力边界）与**建模内**的 `NudoThrow`（catch 可吸收）
+  //   `gateFatal === false` ⇒ **不收**（进了就是**假红**，大面积误判 ⇒ 用户 CI 卡死）。
   //
   // collector 是**进程级单槽**（core 的 `setEvalFallbackCollector`）：本函数
   // 安装期间覆盖全进程 ⇒ 只能有一个观察者（service 的观测面 API 不在本路径
   // 上调用，见 `analyzer-orchestrate.ts` 的 `analyzeFileWithEvalFailures`）。
   const evalFailures: EvalFallback[] = [];
   setEvalFallbackCollector((f: EvalFallback) => {
-    if (f.reason === "internal") evalFailures.push(f);
+    if (f.reason === "internal" || f.gateFatal === true) evalFailures.push(f);
   });
   if (cache.cachedJson) {
     // env-unresolved 是 live 瞬态：旧缓存可能已持久化该条目（命中轮 live
@@ -1056,6 +1073,18 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
       // --json 面并入信封 pathErrors（与路径错误同字段，ok:false）。
       const syntax = syntaxErrorInfo(err);
       if (syntax) {
+        const syntaxSuggestion =
+          "fix the syntax error; run `nudo check` without --json for a source excerpt with a caret";
+        // BUG-284：文件级硬错误的事实面（--gitlab / --gha 也要拿到）——
+        // 旧实现只有 --json 与人类块两个分支 ⇒ 两个 CI 机器通道完全静默。
+        const hardError: CiHardError = {
+          path: filePath,
+          code: "syntax-error",
+          message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
+          line: syntax.line,
+          column: syntax.column,
+          suggestion: syntaxSuggestion,
+        };
         if (opts.json) {
           // json ⇒ gateFlags 必在（action 层 1273/1290 两侧都装配）；自愈式
           // 兜底防未来调用面漏传导致静默丢 ok:false
@@ -1063,13 +1092,13 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
           (flags.syntaxPathErrors ??= []).push({
             path: filePath,
             code: "syntax-error",
-            message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
-            suggestion:
-              "fix the syntax error; run `nudo check` without --json for a source excerpt with a caret",
+            message: hardError.message,
+            suggestion: syntaxSuggestion,
           });
         } else {
           console.error(paint(formatSyntaxErrorBlock(filePath, source, syntax)));
         }
+        emitHardErrorCiAnnotations([hardError], opts);
         injectionSetupFailed = true;
         if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
         // #1 指纹：语法错是非 L2 error（不得触发 onboarding 块）
@@ -1163,14 +1192,21 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   // failure surfaced as a diagnostic (check gate could not run to completion)"）
   // ⇒ 不新增第二套码表。机器面判据：`issues[].code === "nudo:internal"`
   // 且 `severity === "error"`。
-  if (evalFailures.length > 0) {
+  // 两条通道分开发诊断（**标签 ≠ 可见性**，BUG-073 + BUG-072）：
+  // - `internal`（引擎/宿主边界违约）⇒ `nudo:internal` + 「报引擎 bug」文案；
+  // - **装载期逃逸的用户代码异常**（标签 `module-throw`、`gateFatal === true`）⇒
+  //   `nudo:module-throw` + 指向**用户代码**的文案（BUG-073：不得让用户去报
+  //   引擎 bug），但同样 fail-closed（BUG-072：模块装载失败不得判绿）。
+  const engineFailures = evalFailures.filter((f) => f.reason === "internal");
+  const loadThrows = evalFailures.filter((f) => f.reason !== "internal");
+  if (engineFailures.length > 0) {
     // 同一原因会被多个求值通道各记一条（模块图 / 分析器 / checkSource）⇒
     // 文案去重（条数仍如实报回落**总**数）。
-    const detail = [...new Set(evalFailures.map((f) => f.message))].join("; ");
+    const detail = [...new Set(engineFailures.map((f) => f.message))].join("; ");
     const issue: CheckIssue = {
       severity: "error",
       code: DIAG.internal,
-      message: `${ANALYSIS_FAILED_PREFIX} (engine internal fallback ×${evalFailures.length}): ${filePath} — ${detail}`,
+      message: `${ANALYSIS_FAILED_PREFIX} (engine internal fallback ×${engineFailures.length}): ${filePath} — ${detail}`,
       suggestion:
         "the module could not be evaluated (engine internal failure) — the gate could not decide this file; fix the reported cause, or report it as an engine bug together with the checked source file",
     };
@@ -1178,9 +1214,24 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     // 人类面：明确的失败行（哪个文件 + 什么原因）——走 stderr（--json 面的
     // stdout 是机器契约，不得混入自由文本；与「注入装配失败」同一通道）。
     console.error(
-      `error: analysis failed for ${filePath}: module evaluation failed (engine internal fallback ×${evalFailures.length}) — ${detail}`,
+      `error: analysis failed for ${filePath}: module evaluation failed (engine internal fallback ×${engineFailures.length}) — ${detail}`,
     );
     // #1 指纹：分析失败是非 L2 error（不得触发 onboarding 块）
+    if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
+  }
+  if (loadThrows.length > 0) {
+    const detail = [...new Set(loadThrows.map((f) => f.message))].join("; ");
+    const issue: CheckIssue = {
+      severity: "error",
+      code: DIAG.moduleThrow,
+      message: `${filePath} — module evaluation failed: ${detail} (the module throws while loading)`,
+      suggestion:
+        "the module could not be evaluated — its top-level code throws (the gate could not decide this file); fix the reported cause",
+    };
+    report = mergeCheckIssues(report, [issue]);
+    console.error(
+      `error: analysis failed for ${filePath}: module evaluation failed ×${loadThrows.length} — ${detail}`,
+    );
     if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
   }
 
@@ -1294,6 +1345,30 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
 // #69：`nudo check --fix` — 复用物化层；默认 dry-run 打 unified diff
 // ---------------------------------------------------------------------------
 
+/**
+ * BUG-067：与 `file` **共用同一侧车路径**的兄弟模块（存在时才返回）。
+ *
+ * 侧车约定把同 stem 的 `.js` 与 `.mjs`（`.ts` 与 `.mts`）映射到**同一个**
+ * `<stem>.nudo.js`（`<stem>.nudo.ts`）⇒ 目录里两者并存时，`--fix --write`
+ * 写出的侧车会同时成为**两个模块**的契约面：给未被修复的兄弟模块**新增**
+ * `nudo:interface-load` error，且自己的修复随后被复检降级 ⇒ 静默丢弃。
+ */
+function sharedSidecarSiblingOf(file: string): string | undefined {
+  const families: Array<[RegExp, string]> = [
+    [/\.mjs$/, ".js"],
+    [/\.js$/, ".mjs"],
+    [/\.mts$/, ".ts"],
+    [/\.ts$/, ".mts"],
+  ];
+  for (const [re, ext] of families) {
+    const m = re.exec(file);
+    if (!m) continue;
+    const sibling = file.slice(0, m.index) + ext;
+    return existsSync(sibling) ? sibling : undefined;
+  }
+  return undefined;
+}
+
 export async function runCheckFix(opts: {
   targets: string[];
   only?: string[];
@@ -1320,6 +1395,11 @@ export async function runCheckFix(opts: {
   // error」会让用户误以为修复已生效，故末尾显式点出码集迁移。
   const beforeErrorCodes = new Set<string>();
   const afterErrorCodes = new Set<string>();
+  // BUG-048：`--only` 命中的码（末尾报「未匹配到任何诊断」用）——旧实现里
+  // 拼错码与「这些诊断没有可自动应用的修复」输出完全一样（静默 no-op）。
+  const onlyMatched = new Set<string>();
+  // BUG-067：拒绝落盘的侧车写（同侧车路径被兄弟模块共享）
+  let refusedSidecarWrites = 0;
 
   for (const file of opts.targets) {
     let source: string;
@@ -1338,6 +1418,10 @@ export async function runCheckFix(opts: {
     // CLI profile > pkg entryThrows > pkg profile > 默认 error）+
     // mergeIgnoreThrows（加法合并）
     const { entryThrows, ignoreThrows } = resolveGateForFile(file, opts);
+    // BUG-047：`source` = **计划文本**（逐条 fix 推进；dry-run 也推进 ⇒
+    // 后续 issue 的计划/diff 以已计划文本为基准，与 --write 的结果一致）；
+    // `diskSource` = 磁盘原文（dry-run 的门禁复检基准：磁盘确实没变）。
+    const diskSource = source;
     // —— 分析输入装配：与 plain check **同源**（Bug 640）——
     // 旧实现只传 loadModule / fromFile / ignoreThrows / entryThrows / skips，
     // 少传 autoBind / projectDir / inject·modules ⇒ 同一文件两条命令结论相反。
@@ -1368,7 +1452,7 @@ export async function runCheckFix(opts: {
     // ⇒ 零诊断 ⇒ --fix 面判绿，而 plain check 判红）。
     const evalFailures: EvalFallback[] = [];
     setEvalFallbackCollector((f: EvalFallback) => {
-      if (f.reason === "internal") evalFailures.push(f);
+      if (f.reason === "internal" || f.gateFatal === true) evalFailures.push(f);
     });
     let report: CheckReport;
     try {
@@ -1398,7 +1482,7 @@ export async function runCheckFix(opts: {
     if (evalFailures.length > 0) {
       const detail = [...new Set(evalFailures.map((f) => f.message))].join("; ");
       console.error(
-        `error: analysis failed for ${file}: module evaluation failed (engine internal fallback ×${evalFailures.length}) — ${detail}`,
+        `error: analysis failed for ${file}: module evaluation failed ×${evalFailures.length} — ${detail}`,
       );
       residualErrors++;
     }
@@ -1419,9 +1503,17 @@ export async function runCheckFix(opts: {
       }
       sidecarText = undefined;
     }
+    // BUG-067：侧车路径冲突——`.js` 与 `.mjs`（`.ts` 与 `.mts`）映射到
+    // **同一个** `<stem>.nudo.js`（`<stem>.nudo.ts`）⇒ 落盘会同时改写兄弟
+    // 模块的契约面：给未被修复的兄弟**新增** error（interface-load），且
+    // 自己的修复随后被复检降级 ⇒ 静默丢弃。有冲突 ⇒ 拒绝写侧车并点名共享者。
+    const sharedSidecarSibling = sharedSidecarSiblingOf(file);
 
     for (const issue of report.issues) {
       if (only && !only.has(issue.code)) continue;
+      // BUG-048：命中记账（在 warning 过滤之前——降级成 warning 的码也算
+      // 「匹配到了诊断」，只是不物化）
+      if (only) onlyMatched.add(issue.code);
       // 门禁档（profile / entryThrows）把 L2 **降级成 warning** 时，用户已
       // 明确说「不拦」⇒ --fix 不得替用户写契约（Bug 640 第三方向：
       // `--profile adoption --fix --write` 曾为一条 warning 级诊断落盘侧车）。
@@ -1477,10 +1569,24 @@ export async function runCheckFix(opts: {
           const relPath = displayPathOf(file);
           console.log(`\nfix: ${relPath}  (${plan.title})`);
           console.log(unifiedDiff(source, next, relPath) || "(no line diff)");
+          // BUG-047：推进到**计划文本**必须在 `--write` 分支**之外**——
+          // 放在写盘分支内 ⇒ dry-run 的后续 issue 仍按修改前的文本算
+          // （同一文件两份互相冲突的「新建文件」diff ⇒ `git apply` 打不上，
+          // 且 dry-run 打印的计划 ≠ `--write` 真正写入的结果）。
+          source = next;
           if (opts.write) {
-            writeFileSync(file, next, "utf-8");
-            source = next;
-            written++;
+            // BUG-049：写盘失败不得抛裸 Node 异常中断整次运行——与读路径
+            // 同口径（`cannot read` 的对称面）：上屏 + 计入残余 error，
+            // 其余目标继续处理。
+            try {
+              writeFileSync(file, next, "utf-8");
+              written++;
+            } catch (err) {
+              console.error(
+                `error: check --fix cannot write ${file}: ${(err as Error).message}`,
+              );
+              residualErrors++;
+            }
           }
         }
       }
@@ -1489,15 +1595,33 @@ export async function runCheckFix(opts: {
         const cur = sidecarText ?? "";
         const next = plan.sidecar.newText;
         if (next !== cur) {
+          // BUG-067：同侧车路径被兄弟模块共享 ⇒ 拒绝落盘（dry-run 也不打印
+          // 会被拒绝的 diff：那份计划永远不可执行）。可见提示 + 点名共享者。
+          if (sharedSidecarSibling !== undefined) {
+            console.error(
+              `error: check --fix refuses to write sidecar ${displayPathOf(plan.sidecar.path)}: it is shared with ${displayPathOf(sharedSidecarSibling)} (both modules map to the same sidecar path) — writing it would add errors to that module and drop this fix; give one module a distinct sidecar, then re-run`,
+            );
+            refusedSidecarWrites++;
+            continue;
+          }
           planned++;
           // 648：同源码编辑分支——单份头 + 相对路径 + 说明文字在 diff 之外
           const relPath = displayPathOf(plan.sidecar.path);
           console.log(`\nfix: ${relPath}  (${plan.title})`);
           console.log(unifiedDiff(cur, next, relPath) || "(new file)");
+          // BUG-047：同源码编辑——计划文本推进在写盘分支之外
+          sidecarText = next;
           if (opts.write) {
-            writeFileSync(plan.sidecar.path, next, "utf-8");
-            sidecarText = next;
-            written++;
+            // BUG-049：写失败不中断整次运行（同源码编辑分支）
+            try {
+              writeFileSync(plan.sidecar.path, next, "utf-8");
+              written++;
+            } catch (err) {
+              console.error(
+                `error: check --fix cannot write ${plan.sidecar.path}: ${(err as Error).message}`,
+              );
+              residualErrors++;
+            }
           }
         }
       }
@@ -1510,16 +1634,19 @@ export async function runCheckFix(opts: {
     // 红）。门禁解析与首次 checkSource 同一 per-file 值。
     // 残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
     if (report.issues.some((i) => i.severity === "error")) {
+      // 复检基准：`--write` ⇒ 计划文本（= 落盘内容）；dry-run ⇒ **磁盘原文**
+      // （磁盘确实没变 ⇒ 复检 = 磁盘现状的真实门禁状态 ⇒ dry-run 保持红）。
+      const gateSource = opts.write ? source : diskSource;
       // 复检：**同一套**分析输入（Bug 640）——复检必须与首次分析同口径，
       // 否则「残余 error」是另一套输入下的结论（--fix 面比 check 面更松/更紧）。
       const post = mergeCheckIssues(
         checkSource(
           file,
-          source,
+          gateSource,
           pTrue,
           checkSourceOptions({
             filePath: file,
-            source,
+            source: gateSource,
             autoBind,
             projectDir: proj?.projectDir,
             entryThrows,
@@ -1540,6 +1667,22 @@ export async function runCheckFix(opts: {
   console.log(
     `\ncheck --fix: ${planned} edit(s) ${mode}${opts.write ? `, ${written} applied` : " — pass --write to apply"}`,
   );
+  // BUG-067：被拒绝的侧车写必须可见（旧实现里兄弟模块的 fix 连 diff 都没有）
+  if (refusedSidecarWrites > 0) {
+    console.log(
+      `check --fix: ${refusedSidecarWrites} sidecar write(s) refused — the sidecar path is shared with a sibling module (see the errors above)`,
+    );
+  }
+  // BUG-048：`--only` 的码一条诊断都没命中 ⇒ 显式报出（旧实现与「没有可
+  // 自动应用的修复」完全同形 ⇒ 拼错码时用户无从得知）
+  if (only) {
+    const unmatched = [...only].filter((c) => !onlyMatched.has(c));
+    if (unmatched.length > 0) {
+      console.log(
+        `check --fix: --only ${unmatched.join(", ")} matched no diagnostic in the checked target(s) — check the code spelling (\`nudo check\` prints the codes this file reports)`,
+      );
+    }
+  }
   if (!opts.write && planned > 0) {
     console.log(
       "hint: only [fix]/[adjust] are auto-applied; [silence]/[review] need a human (or LSP quickfix)",
