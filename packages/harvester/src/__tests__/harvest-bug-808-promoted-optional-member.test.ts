@@ -44,16 +44,18 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-describe("Bug 808 —— 提升成模块级全局时保留 `?` 可选标记", () => {
+describe("Bug 808 —— 提升成模块级成员时保留 `?` 可选标记", () => {
   it("提升出的可选属性是 `number | undefined`（不是 `number`）", () => {
     const p = writeTemp(
       "optmem.d.ts",
-      `export interface Opt { a?: number; }
-export declare const opt: Opt;
+      `declare module "m" {
+  export interface Opt { a?: number; }
+  export declare const opt: Opt;
+}
 `,
     );
     const env = harvestDts([p]);
-    const promoted = env.globals.a!;
+    const promoted = env.modules.m!.a!;
     expect(promoted).toBeDefined();
     expect(formatShape(promoted)).toBe("number | undefined");
     expect(formatShape(promoted)).not.toBe("number");
@@ -62,34 +64,40 @@ export declare const opt: Opt;
   it("brand 面与提升面同口径（同一成员两个类型 ⇒ 不得出现）", () => {
     const p = writeTemp(
       "optmem.d.ts",
-      `export interface Opt { a?: number; }
-export declare const opt: Opt;
+      `declare module "m" {
+  export interface Opt { a?: number; }
+  export declare const opt: Opt;
+}
 `,
     );
     const env = harvestDts([p]);
-    const member = slots(env.globals.opt!).a!;
-    expect(formatShape(member)).toBe(formatShape(env.globals.a!));
+    const member = slots(env.modules.m!.opt!).a!;
+    expect(formatShape(member)).toBe(formatShape(env.modules.m!.a!));
   });
 
   it("对照：必选属性不被加上 undefined", () => {
     const p = writeTemp(
       "reqmem.d.ts",
-      `export interface Req { b: number; }
-export declare const req: Req;
+      `declare module "m" {
+  export interface Req { b: number; }
+  export declare const req: Req;
+}
 `,
     );
     const env = harvestDts([p]);
-    expect(formatShape(env.globals.b!)).toBe("number");
+    expect(formatShape(env.modules.m!.b!)).toBe("number");
   });
 
   it("对照：brand 面本来就保留 `?`（既有口径不被破坏）", () => {
     const p = writeTemp(
       "optmem.d.ts",
-      `export interface Opt { a?: number; }
-export declare const opt: Opt;
+      `declare module "m" {
+  export interface Opt { a?: number; }
+  export declare const opt: Opt;
+}
 `,
     );
     const env = harvestDts([p]);
-    expect(formatShape(slots(env.globals.opt!).a!)).toBe("number | undefined");
+    expect(formatShape(slots(env.modules.m!.opt!).a!)).toBe("number | undefined");
   });
 });

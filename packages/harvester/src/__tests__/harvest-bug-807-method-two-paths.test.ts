@@ -50,20 +50,22 @@ function slots(a: Abs): Record<string, Abs> {
   return {};
 }
 
-const OVERLOADS = `export interface M {
-  three(a: number): string;
-  three(a: string): number;
-  three(a: boolean): boolean;
+const OVERLOADS = `declare module "m" {
+  export interface M {
+    three(a: number): string;
+    three(a: string): number;
+    three(a: boolean): boolean;
+  }
+  export declare const m: M;
 }
-export declare const m: M;
 `;
 
 describe("Bug 807 —— 同一接口方法在两条收割路径上必须是同一个类型", () => {
-  it("brand 成员与模块级提升全局的形态完全一致", () => {
+  it("brand 成员与**模块级**提升成员的形态完全一致（BUG-253：提升只对模块作用域成立）", () => {
     const p = writeTemp("ifmeth.d.ts", OVERLOADS);
     const env = harvestDts([p]);
-    const member = slots(env.globals.m!).three!;
-    const promoted = env.globals.three!;
+    const member = slots(env.modules.m!.m!).three!;
+    const promoted = env.modules.m!.three!;
     expect(promoted).toBeDefined();
     expect(JSON.stringify(promoted.shape)).toBe(JSON.stringify(member.shape));
   });
@@ -71,7 +73,7 @@ describe("Bug 807 —— 同一接口方法在两条收割路径上必须是同�
   it("重载集保留全部返回类型（不是只剩第一个 overload）", () => {
     const p = writeTemp("ifmeth.d.ts", OVERLOADS);
     const env = harvestDts([p]);
-    const member = slots(env.globals.m!).three!;
+    const member = slots(env.modules.m!.m!).three!;
     expect(member.shape.k).toBe("fn");
     if (member.shape.k !== "fn") return;
     const ret = formatShape(member.shape.returnType!);
@@ -83,13 +85,15 @@ describe("Bug 807 —— 同一接口方法在两条收割路径上必须是同�
   it("对照：单签名方法两条路径同样一致", () => {
     const p = writeTemp(
       "single.d.ts",
-      `export interface S { one(a: number): string; }
-export declare const s: S;
+      `declare module "m" {
+  export interface S { one(a: number): string; }
+  export declare const s: S;
+}
 `,
     );
     const env = harvestDts([p]);
-    const member = slots(env.globals.s!).one!;
-    const promoted = env.globals.one!;
+    const member = slots(env.modules.m!.s!).one!;
+    const promoted = env.modules.m!.one!;
     expect(promoted).toBeDefined();
     expect(JSON.stringify(promoted.shape)).toBe(JSON.stringify(member.shape));
     expect(formatShape(member.shape.k === "fn" ? member.shape.returnType! : member)).toBe("string");
@@ -98,17 +102,20 @@ export declare const s: S;
   it("泛型接口：brand 面用类型实参（string），提升面不产出未绑定 α", () => {
     const p = writeTemp(
       "gen.d.ts",
-      `export interface Box<T> { get(): T; }
-export declare const box: Box<string>;
+      `declare module "m" {
+  export interface Box<T> { get(): T; }
+  export declare const box: Box<string>;
+}
 `,
     );
     const env = harvestDts([p]);
-    const member = slots(env.globals.box!).get!;
+    const member = slots(env.modules.m!.box!).get!;
     expect(member.shape.k).toBe("fn");
     if (member.shape.k !== "fn") return;
     // brand 面：T 已被实参 string 代入
     expect(formatShape(member.shape.returnType!)).toBe("string");
     // 提升路径看不到实参 ⇒ 泛型接口的成员不提升（否则两条路径分叉）
+    expect(env.modules.m!.get).toBeUndefined();
     expect(env.globals.get).toBeUndefined();
   });
 });

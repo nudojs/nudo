@@ -12,10 +12,11 @@ import {
 } from "@nudojs/core";
 import type { AbsModuleExports } from "@nudojs/core";
 import { dirname } from "node:path";
-import { harvestDts } from "./harvest-dts.ts";
+import { harvestDts, promotedNamesOf } from "./harvest-dts.ts";
 import {
   dtsFileScan,
   packageAmbientNames,
+  packagePrivateNames,
   packageExportSurface,
   resolveSubpathEntry,
   type PackageHarvest,
@@ -94,9 +95,12 @@ export function packageHarvestToAbsModules(
 
   const convertRecord = (
     rec: Record<string, Abs>,
+    /** 不算导出的名字（提升出来的接口成员：不是模块导出，Bug 123） */
+    skip?: ReadonlySet<string>,
   ): Record<string, Abs> => {
     const named: Record<string, Abs> = {};
     for (const [k, v] of Object.entries(rec)) {
+      if (skip?.has(k)) continue;
       named[k] = harvestedValueToAbs(v);
     }
     return named;
@@ -109,7 +113,9 @@ export function packageHarvestToAbsModules(
 
   // ① 模块记录（`declare module "x" { … }`）：只登记到**它自己的**键
   for (const [mod, rec] of Object.entries(h.env.modules)) {
-    const named = convertRecord(rec);
+    // `declare module "x" { … }` 块里的**接口成员**（提升出来的）不是模块导出
+    // （TS：接口成员只在类型内部可见 ⇒ `import { x }` 是 TS2305）⇒ 不登记（Bug 123）
+    const named = convertRecord(rec, promotedNamesOf(rec));
     const exports: AbsModuleExports = { named };
     const def = rec["default"];
     if (def) exports.default = harvestedValueToAbs(def);
@@ -139,9 +145,19 @@ function packageRootExports(pkg: string, h: PackageHarvest): AbsModuleExports {
   const surface = packageExportSurface(h);
   const named: Record<string, Abs> = {};
   if (surface.unresolved) {
+    // 公开面不可知（`export * from "<外部包>"`）⇒ 退回 globals 袋，但**扣掉**
+    //   - ambient（`declare global { … }` / script 模式顶层声明）
+    //   - 模块私有顶层声明（module 模式里从未 `export` ⇒ TS2459，Bug 265）
+    //   - 提升出来的接口成员（不是导出，Bug 123）
     const ambient = packageAmbientNames(h);
+    const priv = packagePrivateNames(h);
+    const promoted = promotedNamesOf(globals);
     for (const [k, v] of Object.entries(globals)) {
       if (ambient.has(k)) continue;
+      // 「模块私有」只对**未导出**的名字成立：`declare function f(); export { f };`
+      // 的 f 既在 private 袋里也在导出面里 ⇒ 以导出面为准。
+      if (priv.has(k) && !surface.names.has(k)) continue;
+      if (promoted.has(k)) continue;
       named[k] = harvestedValueToAbs(v);
     }
   } else {
@@ -159,7 +175,9 @@ function packageRootExports(pkg: string, h: PackageHarvest): AbsModuleExports {
   // 模块增强：本包自己的 `.d.ts` 里的 `declare module "<pkg>" { … }`
   const aug = Object.hasOwn(h.env.modules, pkg) ? h.env.modules[pkg] : undefined;
   if (aug) {
+    const promoted = promotedNamesOf(aug);
     for (const [k, v] of Object.entries(aug)) {
+      if (promoted.has(k)) continue;
       if (Object.hasOwn(named, k)) continue;
       named[k] = harvestedValueToAbs(v);
     }
@@ -205,6 +223,7 @@ export function bareSpecToAbsModules(
   spec: string,
   fromFile: string,
 ): AbsModuleExports | undefined {
+
   // node: 内建交给 env，不 harvest
   if (!spec || spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:")) {
     return undefined;

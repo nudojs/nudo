@@ -12,7 +12,17 @@ import {
   relationFn,
   getFnImpl,
 } from "@nudojs/core";
-import type { HarvestedEnv } from "./harvest-dts.ts";
+import {
+  boundedAbsKey,
+  markPromotedNames,
+  promotedNamesOf,
+  type HarvestedEnv,
+} from "./harvest-dts.ts";
+
+/** 有界签名指纹（与 harvest-dts 的 `sigFingerprint` 同口径） */
+function boundedAbsKeyFingerprint(pts: readonly Abs[], ret: Abs): string {
+  return `harv(${pts.map((p) => boundedAbsKey(p)).join(",")})=>${boundedAbsKey(ret)}`;
+}
 
 /**
  * 无原型字典（own-property 纪律）。
@@ -53,6 +63,8 @@ export type HarvestSig =
       params: string[];
       paramTypes: HarvestSig[];
       returns: HarvestSig;
+      /** 逐位「可省略」标记（可选 / rest 形参，Bug 126）——不投影则回读后元数偏大 */
+      opt?: boolean[];
       ctor?: boolean;
       slots?: Record<string, HarvestSig>;
       /** 族 27 Bug 821 残留：条件类型的 `infer` 绑定线索。不投影 ⇒ 磁盘缓存
@@ -89,8 +101,18 @@ export type HarvestSig =
  * ⑤模块作用域的命名空间不再摊平进模块记录（`export = ns` 的模块导出面仍摊平）；
  * ⑥`stats.degraded` 记录「类型未建模」降级；⑦匿名默认导出不再被丢掉。
  * ①②③④⑦ 都会让旧缓存的物化结果与新收割器**不一致** ⇒ 必须让旧缓存 miss。
+ *
+ * **v11 → v12**：族 16 改了五处收割/投影语义 —— ①同名 namespace 的第二份声明
+ * 合并成员（Bug 141）；②`namespace` 先声明 + `function` 后到时保留函数
+ * （Bug 212）；③`export declare namespace` 进导出面（Bug 143）；④可选/rest 形参
+ * 的 `optionalParams` 落盘（Bug 126）；⑤磁盘回读把**声明的**字面量恢复成
+ * `exact`（Bug 280：`mock` 会被放宽成基类型 ⇒ 冷/热缓存产物不同）。
+ *
+ * **v12 → v13**：磁盘投影新增**提升 provenance**（`promoted`）—— 接口成员提升
+ * 出来的名字既不是导出、也不是全局（Bug 123 / 253）⇒ 记录级标记必须一起往返，
+ * 否则热缓存又把幽灵导出 / 幽灵全局放回来。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v11";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v13";
 
 export type HarvestJson = {
   v: 1;
@@ -102,6 +124,12 @@ export type HarvestJson = {
   dtsHash: string;
   modules: Record<string, Record<string, HarvestSig>>;
   globals: Record<string, HarvestSig>;
+  /**
+   * 提升出来的接口成员（值位置接口声明）：它们既不是模块导出、也不是全局
+   * （Bug 123 / 253）⇒ 记录级 provenance 必须一起往返，否则磁盘命中后
+   * 「冷 / 热」两面又分叉（幽灵导出 / 幽灵全局随缓存冷热出现）。
+   */
+  promoted?: { globals?: string[]; modules?: Record<string, string[]> };
   /**
    * 收割统计（族 52 第 6 条）。
    *
@@ -180,6 +208,7 @@ export function absToHarvestSig(a: Abs): HarvestSig {
         params: s.params,
         paramTypes,
         returns: absToHarvestSig(retSrc),
+        ...(s.optionalParams ? { opt: [...s.optionalParams] } : {}),
         ...(s.ctor !== undefined ? { ctor: s.ctor } : {}),
         ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
         ...(rel?.inferFrom ? { inferFrom: rel.inferFrom } : {}),
@@ -228,6 +257,11 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
     case "never":
       return mark(abs({ k: "never" }, undefined, undefined, "mock"));
     case "lit": {
+      // Bug 280：磁盘投影里的 `lit` **只**来自 `.d.ts` 的**声明**（磁盘层没有
+      // 「观测」数据）⇒ 它的置信度是 `exact`，不是「不确观测」。此前统一
+      // `confJoin(..., "mock")` ⇒ 声明的字面量被 `widenUncertainLiteral`
+      // 放宽成基类型 ⇒ 同一份 `.d.ts` 冷 / 热缓存发布**不同**的 zod / standard
+      // 产物（热产物接受集更宽 ⇒ 消费端假绿）。
       const t =
         typeof sig.value === "number"
           ? "number"
@@ -239,17 +273,13 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
                 ? "bigint"
                 : null;
       if (sig.value === null || t === null) {
-        return mark(
-          abs({ k: "unknown" }, { op: "lit", value: sig.value }, undefined, "mock"),
-        );
+        return abs({ k: "unknown" }, { op: "lit", value: sig.value }, undefined, "exact");
       }
-      return mark(
-        abs(
-          { k: "prim", type: t as "number" | "string" | "boolean" | "bigint" },
-          { op: "lit", value: sig.value },
-          undefined,
-          "mock",
-        ),
+      return abs(
+        { k: "prim", type: t as "number" | "string" | "boolean" | "bigint" },
+        { op: "lit", value: sig.value },
+        undefined,
+        "exact",
       );
     }
     case "arr":
@@ -302,6 +332,8 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
       const fn = relationFn(paramTypes, returnType, {
         params: sig.params,
         conf: "mock",
+        // Bug 213：有界指纹（core 缺省指纹在共享 DAG 上指数级）
+        fingerprint: boundedAbsKeyFingerprint(paramTypes, returnType),
         // 族 27 Bug 821 残留：条件元数据必须一起往返，否则缓存命中后
         // `infer` 绑定与假支丢失 ⇒ 冷/热缓存结论不一致。
         ...(sig.inferFrom ? { inferFrom: sig.inferFrom } : {}),
@@ -318,9 +350,13 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
         }
         fn.shape = {
           ...fnShape,
+          ...(sig.opt ? { optionalParams: [...sig.opt] } : {}),
           ...(sig.ctor !== undefined ? { ctor: sig.ctor } : {}),
           ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
         };
+        // impl 与 shape 不得分叉（core 的必选元数两处都读）
+        const impl = getFnImpl(fn);
+        if (impl && sig.opt) impl.optionalParams = [...sig.opt];
       }
       return mark(fn);
     }
@@ -372,6 +408,12 @@ export function serializeHarvestJson(
   }
   const globals: Record<string, HarvestSig> = nullDict();
   for (const [k, v] of Object.entries(env.globals)) globals[k] = absToHarvestSig(v);
+  const promotedGlobals = [...promotedNamesOf(env.globals)];
+  const promotedModules: Record<string, string[]> = nullDict();
+  for (const [mod, rec] of Object.entries(env.modules)) {
+    const names = [...promotedNamesOf(rec)];
+    if (names.length > 0) promotedModules[mod] = names;
+  }
   return {
     v: 1,
     pkg,
@@ -380,6 +422,14 @@ export function serializeHarvestJson(
     dtsHash: meta.dtsHash,
     modules,
     globals,
+    ...(promotedGlobals.length > 0 || Object.keys(promotedModules).length > 0
+      ? {
+          promoted: {
+            ...(promotedGlobals.length > 0 ? { globals: promotedGlobals } : {}),
+            ...(Object.keys(promotedModules).length > 0 ? { modules: promotedModules } : {}),
+          },
+        }
+      : {}),
     stats: env.stats,
   };
 }
@@ -402,6 +452,12 @@ export function materializeHarvestJson(j: unknown): HarvestedEnv | null {
     const globals: Record<string, Abs> = nullDict();
     for (const [k, sig] of Object.entries(h.globals ?? {})) {
       globals[k] = harvestSigToAbs(sig);
+    }
+    // 提升 provenance 重放（记录级、不进 globals/modules 的键面）
+    if (h.promoted?.globals) markPromotedNames(globals, h.promoted.globals);
+    for (const [mod, names] of Object.entries(h.promoted?.modules ?? {})) {
+      const rec = Object.hasOwn(modules, mod) ? modules[mod] : undefined;
+      if (rec) markPromotedNames(rec, names);
     }
     return {
       globals,
