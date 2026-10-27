@@ -31,7 +31,8 @@ import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { effectiveInterface, formatConstraint } from "./interface.ts";
 import { locateContractParam } from "./param-surface.ts";
-import { getSlot } from "./objects.ts";
+import { getSlot, getProtoAbs } from "./objects.ts";
+import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "./leq.ts";
 import { projectAbsPath } from "./scan/path-projection.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
@@ -454,7 +455,21 @@ function witnessViolations(
         }
         continue;
       }
-      out.push(...witnessViolations(field.constraint, slot.value, fieldPath, depth + 1));
+      // BUG-246：可选槽**吸收 undefined**（TS 默认
+      // `exactOptionalPropertyTypes: false`）——与 `leqAbs`（`leq.ts`）和 L1 调用点
+      // 面（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）同口径，共享
+      // `mayBeUndefinedAbs` / `nonUndefinedAbsValues`：见证值里剥掉 undefined 臂后
+      // **剩余成员仍须**满足字段约束 ⇒ `{ a: undefined }` 不报、
+      // `{ a: number | undefined }` 对 `string()` 仍报；必填槽不受影响
+      // （`{ a: undefined }` 对 `shape({ a: string() })` 仍报 case-inconsistency）。
+      const optionalField = field.optional || field.constraint.isOptional;
+      const fieldValues =
+        optionalField && mayBeUndefinedAbs(slot.value)
+          ? nonUndefinedAbsValues(slot.value)
+          : [slot.value];
+      for (const fieldValue of fieldValues) {
+        out.push(...witnessViolations(field.constraint, fieldValue, fieldPath, depth + 1));
+      }
     }
     return out;
   }

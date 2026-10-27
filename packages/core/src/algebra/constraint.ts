@@ -561,6 +561,11 @@ export function constraintAdmitsNullish(
     s.add(c.lazy);
     return constraintAdmitsNullish(derefConstraint(c), s);
   }
+  // Bug 088：`.optional()` 位**可为 undefined**（可缺省）⇒ 契约域含 nullish。
+  // 此前整条丢失 ⇒ 返回位把 `return undefined`（契约**明确允许**）判成违约
+  // （假红），且修复建议把用户引向 `nullable(number().optional())` 绕过
+  // ——因为引擎**没读懂** `.optional()`。
+  if (c.isOptional) return true;
   if (c.members)
     return c.members.some((m) => constraintAdmitsNullish(m, seen));
   // any()（无 prim、无 preds、无 shape）接受一切含 nullish
@@ -687,7 +692,14 @@ export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilde
     };
   }
   assertFieldTableIntact("partial", Object.keys(d.fields).length, fields);
-  return makeBuilder(d.prim, d.preds, { fields });
+  // Bug 209：partial 是**纯结构变换**（字段全可选）⇒ **被包进去的那个 shape
+  // 自身的可选性必须保留**（此前只搬 fields ⇒ `d.isOptional` 被丢弃 ⇒
+  // `shape({ s: partial(shape({…}).optional()) })` 的 `s` 变必填 ⇒ 契约被
+  // 静默收紧 ⇒ 合法调用被判违约（假红）+ 签名 / dts 少一个 `?`）。
+  return makeBuilder(d.prim, d.preds, {
+    fields,
+    ...(d.isOptional ? { optional: true } : {}),
+  });
 }
 
 /** 值的可读描述（DSL 诊断用；不外泄宿主原文） */
@@ -751,7 +763,13 @@ export function pick(
     kept++;
   }
   assertFieldTableIntact("pick", kept, fields);
-  return makeBuilder(d.prim, d.preds, { fields });
+  // Bug 209：pick 是**纯结构变换**（选子集）⇒ 被包进去的 shape 自身的
+  // 可选性必须保留（此前只搬 fields ⇒ `d.isOptional` 被丢弃 ⇒ 契约被静默
+  // 收紧 ⇒ 合法调用被判违约（假红）+ 签名 / dts 少一个 `?`）。
+  return makeBuilder(d.prim, d.preds, {
+    fields,
+    ...(d.isOptional ? { optional: true } : {}),
+  });
 }
 
 /**
@@ -779,7 +797,13 @@ export function omit(
     kept++;
   }
   assertFieldTableIntact("omit", kept, fields);
-  return makeBuilder(d.prim, d.preds, { fields });
+  // Bug 209：omit 是**纯结构变换**（删字段）⇒ 被包进去的 shape 自身的
+  // 可选性必须保留（此前只搬 fields ⇒ `d.isOptional` 被丢弃 ⇒ 契约被静默
+  // 收紧 ⇒ 合法调用被判违约（假红）+ 签名 / dts 少一个 `?`）。
+  return makeBuilder(d.prim, d.preds, {
+    fields,
+    ...(d.isOptional ? { optional: true } : {}),
+  });
 }
 
 /**
@@ -889,6 +913,24 @@ function substPred(p: Pred, paramName: string): Pred {
   return substPredOn(p, termVar(paramName));
 }
 
+/**
+ * Bug 088：`.optional()` 位的**可缺省 / 可为 undefined** 语义折进实例化谓词。
+ *
+ * 顶层标量位的 `.optional()`（`number().optional()`）此前在实例化时**整条丢失**
+ * ⇒ 调用点前置条件只剩 `typeof x = "number"` ⇒ 契约**明确允许**的 `undefined`
+ * 实参被判违约（**假红**，直接卡 CI）。
+ *
+ * 编码口径 = `union(lit(undefined), <base>)` 的同款析取（另一条等价写法，
+ * 实测正常）⇒ 两种写法结论一致。
+ *
+ * ⚠ `base` 恒真（`any()` 之类无义务的约束）时**不**加析取支——无义务的契约
+ * 本就接受一切（含 undefined）。
+ */
+function optionalizePred(base: Pred, paramName: string): Pred {
+  if (base.op === "true") return base;
+  return or(base, eq(termVar(paramName), termLit(undefined)));
+}
+
 /** 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred（lazy 按 depth 预算展开） */
 export function instantiateConstraint(
   c: NudoConstraint,
@@ -922,7 +964,9 @@ export function instantiateConstraint(
       ...c.members.map((m) => instantiateOnTerm(m, termVar(paramName), depth)),
     );
     const own = c.preds.map((p) => substPred(p, paramName));
-    return own.length === 0 ? disj : pAnd(...own, disj);
+    const base = own.length === 0 ? disj : pAnd(...own, disj);
+    // Bug 088：union 自身 `.optional()` ⇒ 整个位可为 undefined
+    return c.isOptional ? optionalizePred(base, paramName) : base;
   }
 
   // fn 形态出现在参数位：Phase 1 只展示不执法 → 恒真
@@ -938,9 +982,14 @@ export function instantiateConstraint(
   // 且报错时给出误导性 expected（把数字当长度比）。
   if (c.prim) {
     const typePred = ptypeof(termVar(paramName), primToTypeof(c.prim));
-    return preds.length === 0 ? typePred : pAnd(typePred, ...preds);
+    const base = preds.length === 0 ? typePred : pAnd(typePred, ...preds);
+    // Bug 088：顶层标量位 `.optional()` ⇒ 该位可为 undefined（可缺省）
+    return c.isOptional ? optionalizePred(base, paramName) : base;
   }
-  return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
+  const tail: Pred =
+    preds.length === 0 ? pTrue : preds.length === 1 ? preds[0]! : pAnd(...preds);
+  // Bug 088：无 prim 的标量位（`lit(null)` 等）`.optional()` ⇒ 同样可为 undefined
+  return c.isOptional ? optionalizePred(tail, paramName) : tail;
 }
 
 /** 在给定项上实例化约束（shape 字段/union 成员递归用；assertImplies 统一证明通道；lazy 按 depth 预算展开） */
@@ -991,6 +1040,20 @@ export function instantiateOnTerm(
  * 契约 → 函数入口 param Abs（infer/hover 用）。
  * 标量：prim + pred；shape：obj slots 递归；union：成员 joinAbs；
  * fn 形态：一等 fn shape（paramTypes/returnType），供 refine→error / 展示。
+ *
+ * Bug 088：**顶层标量位**的 `.optional()`（可缺省 / 可为 undefined）在入口 Abs
+ * 投影里此前**整条丢失** ⇒ 下游全部按「该位必填且非 undefined」执法：
+ *   - L1 调用点前置条件 ⇒ 契约**明确允许**的 `undefined` 实参被判违约（假红）；
+ *   - L1 返回后置条件 ⇒ 同款假红；
+ *   - check 签名面渲染 `f(x: number)` ⇒ 与 .d.ts 的 `f(x?: number)` 矛盾。
+ *
+ * 修法：可选位的入口 Abs 带 **undefined 臂**（与 `union(lit(undefined), <base>)`
+ * 这条等价写法**同构**——该写法实测正常 ⇒ 两种写法结论一致）。
+ *
+ * ⚠ **只作用于顶层位**：对象**字段位**的 `.optional()` 语义是「键可缺席」，
+ * 由槽位的 `optional` 标记承载（`constraintOnTermAbs` 不加 undefined 臂）——
+ * 否则字段槽渲染从 `{ a?: number }` 变成 `{ a?: number | undefined }`
+ * （与 dts 面的 `k?: T` 约定冲突）。
  */
 export function constraintToEntryAbs(
   c: NudoConstraint,
@@ -1012,9 +1075,26 @@ export function constraintToEntryAbs(
           : {}),
       };
     }
-    return abs({ k: "obj", slots }, t, undefined, "path");
+    const objAbs = abs({ k: "obj", slots }, t, undefined, "path");
+    return c.isOptional ? joinAbs(objAbs, undefinedArmAbs(t)) : objAbs;
   }
-  return constraintOnTermAbs(c, t, depth);
+  // lazy（issue #120）：预算内解一层 ⇒ 内层的可选位语义随之而来
+  if (c.lazy) {
+    if (depth <= 0) return abs({ k: "any" }, t, undefined, "path");
+    const inner = constraintToEntryAbs(derefConstraint(c), paramName, depth - 1);
+    return c.isOptional ? joinAbs(inner, undefinedArmAbs(t)) : inner;
+  }
+  const base = constraintOnTermAbs(c, t, depth);
+  return c.isOptional ? joinAbs(base, undefinedArmAbs(t)) : base;
+}
+
+/**
+ * undefined 臂的 Abs（`lit(undefined)` 的入口 Abs 形态）：
+ * unknown 形状 + term = 字面量 undefined + pred 锚在参数项上
+ * （与 `constraintOnTermAbs(litC(undefined))` 同款 ⇒ 渲染面显示 "undefined"）。
+ */
+function undefinedArmAbs(t: Term): Abs {
+  return abs({ k: "unknown" }, termLit(undefined), eq(t, termLit(undefined)), "path");
 }
 
 /**
@@ -1088,8 +1168,13 @@ function samePrimLiteralUnionAbs(
  * 编码口径 = 投影层解码器 `projection.ts` 的 `isIntZeroModOne`：
  * `eq(self % 1, 0)`（app 项 fn = "%"）。解码器**早于**本编码存在，生产路径上
  * 一直命中不了——整性在 Abs 面上没有任何承载位。
+ *
+ * ⚠ **单一编码源**：返回后置通道（`postcondition.ts` 的 `assertScalar`）也
+ * 需要同一份整性编码（Bug 002：`.int()` 是**数据标志**，不带 pred ⇒ 返回
+ * 义务在非字面量返回值上被整条蒸发 ⇒ 假绿）⇒ 本函数导出给同包消费
+ * （**不进公共 barrel** ⇒ 公共 API 面不变）。
  */
-function intPredOnTerm(t: Term): Pred {
+export function intPredOnTerm(t: Term): Pred {
   return eq(termApp("%", [t, termLit(1)]), termLit(0));
 }
 
@@ -1247,6 +1332,15 @@ export function fnConstraintToEntryReqs(
 /**
  * fn(..., { throws }) / throws 约束 → 申报的 throws 类型名。
  * `"Error"` / `lit("Error")` / brand / union 成员 / `*` 全收。
+ *
+ * Bug 208：**字符串字面量的 kind 名按分隔符拆分**（`,` / 空白 / `|`）——
+ * 与指令面 `@nudo:throws` 的切分口径**同源**（`directive-scan.ts` 的
+ * `scanThrowsDecl` 用同一个分隔符集 `/[,\s|]+/`）。
+ * 此前侧车槽把整串当成**一个** kind 名（`"TypeError, RangeError"` ⇒ 一个名
+ * `TypeError, RangeError`）⇒ 申报**静默失效零诊断** ⇒ L2 门禁把「已申报
+ * TypeError」的代码判成「未申报」⇒ **假红**；而**完全等价**的
+ * `@nudo:throws TypeError, RangeError` 与 `union("TypeError","RangeError")`
+ * 都是绿的 ⇒ 同一语义两种写法结论不同。
  */
 export function throwConstraintToKinds(
   c: NudoConstraint | undefined,
@@ -1256,9 +1350,17 @@ export function throwConstraintToKinds(
   let any = false;
   // lazy 环经 thunk 身份 seen 终止（issue #120）：union(lazy(() => self), lit("Error"))
   const seen = new Set<() => NudoConstraint | ConstraintBuilder>();
-  const note = (s: string): void => {
-    if (s === "*" || s === "any") any = true;
-    else if (s) out.add(s);
+  const note = (raw: string): void => {
+    if (!raw) return;
+    // Bug 208：按分隔符拆（与 `scanThrowsDecl` 同口径）⇒ 一个 kind 名里
+    // 不得再藏第二个错误名（整串当一名 ⇒ 声明静默失效 ⇒ L2 假红）。
+    for (const part of raw
+      .split(/[,\s|]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)) {
+      if (part === "*" || part === "any") any = true;
+      else out.add(part);
+    }
   };
   const walk = (x: NudoConstraint): void => {
     if (x.lazy) {

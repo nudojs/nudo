@@ -8,8 +8,8 @@
  * facade 单向无环）；若发现需要反向依赖，说明切分线选错，重切而不是加边。
  */
 
-import type { LiteralValue } from "../term.ts";
-import { app, lit, simplifyTerm } from "../term.ts";
+import type { LiteralValue, Term } from "../term.ts";
+import { app, lit, simplifyTerm, termEquals } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
 import { nextUp, nextDown } from "../pred.ts";
 import type { Abs } from "../abs.ts";
@@ -124,7 +124,93 @@ export function ieeeStrictEndpoint(E: number, w: number, claim: "lo" | "hi"): nu
 }
 
 /** 数值界端点（NumBounds 的单侧）：value 为界值，strict 为严格性 */
-export type Endpoint = { value: number; strict: boolean };
+export type Endpoint = {
+  value: number;
+  strict: boolean;
+  /**
+   * Bug 224：该端点一侧的**最紧可达值**（strict=false 时不使用）。
+   * 缺省 = 未知 ⇒ 见证取 `nextUp(value)` / `nextDown(value)`（「下一个
+   * 可表示数」是安全的，但**未必可达**：`x + x` 的界是 `> 0`，而它的
+   * 最紧可达值是 `fl(5e-324 + 5e-324) = 1e-323`）。
+   * 见 `attainEndpoint`（只在可精确反解的缩放形态上填）。
+   */
+  attain?: number;
+};
+
+/**
+ * Bug 224：给 strict 端点补「最紧可达值」，供 `synthEndpoint` 造见证。
+ *
+ * 端点值 E 只说明「该项 > E」。合成见证此前一律取 `nextUp(E)`——那是
+ * 「大于 E 的**最松**可表示数」，当该项的真下界更高（`x + x` ⇒ 1e-323）
+ * 时见证**不可达** ⇒ 下一步运算的见证下溢回端点（`fl(5e-324 / 2) = 0`）
+ * ⇒ `ieeeStrictEndpoint` 退到 `nextDown(E)` ⇒ 界被放松整整一个 binade
+ * （`(x + x) / 2` 印 `> -5e-324`）⇒ L1 契约 `return > 0` 证不出 ⇒ **假红**，
+ * 且同一语义的 `x` 判绿（结论互斥）。
+ *
+ * 只对**可精确反解**的形态填 attain（其余保留 nextUp 见证 = 保守）：
+ *   - `t + t`：IEEE 加倍精确（`fl(t+t) = 2t`）⇒ T > E ⟺ t > E/2
+ *     ⇒ inf T = 2·nextUp(fl(E/2))；
+ *   - `t × k`（k 为 2 的正幂）：`fl(t·k) = t·k` 精确 ⇒ T > E ⟺ t > E/k
+ *     ⇒ inf T = k·nextUp(fl(E/k))。
+ * 上侧（dir="down"）对偶（nextDown / 下确界）。`nextUp(fl(r)) > r` 恒成立
+ * （r 落在两个相邻浮点之间时，向上取整的那一侧加一步仍严格大于 r）⇒
+ * 结果是该项值域的**可达下界**（≤ 真下确界）⇒ 只收紧见证，不改变声音性。
+ */
+export function attainEndpoint(
+  term: Term | undefined,
+  ep: Endpoint,
+  dir: "up" | "down",
+): Endpoint {
+  if (!ep.strict || ep.attain !== undefined) return ep;
+  if (!term || term.op !== "app") return ep;
+  const E = ep.value;
+  if (!Number.isFinite(E)) return ep;
+  const step = (r: number): number | undefined => {
+    if (!Number.isFinite(r)) return undefined;
+    return dir === "up" ? nextUp(r) : nextDown(r);
+  };
+  const over = (v: number | undefined): Endpoint => {
+    // 只接受「确实在端点严格一侧」的可达值（否则保留原见证口径）
+    if (v === undefined || !Number.isFinite(v)) return ep;
+    if (dir === "up" ? !(v > E) : !(v < E)) return ep;
+    return { ...ep, attain: v };
+  };
+  // t + t（同项相加；IEEE 加倍精确）
+  if (
+    term.fn === "+" &&
+    term.args.length === 2 &&
+    term.args[0]!.op !== "lit" &&
+    termEquals(term.args[0]!, term.args[1]!)
+  ) {
+    const half = step(E / 2);
+    return over(half === undefined ? undefined : 2 * half);
+  }
+  // t × k（k 为 2 的正幂：乘法精确）
+  if (term.fn === "*" && term.args.length === 2) {
+    const kOf = (a: Term, b: Term): number | undefined =>
+      a.op === "lit" && typeof a.value === "number" && b.op !== "lit"
+        ? a.value
+        : undefined;
+    const k = kOf(term.args[1]!, term.args[0]!) ?? kOf(term.args[0]!, term.args[1]!);
+    if (k !== undefined && k > 0 && Number.isFinite(k) && isPow2(k)) {
+      const q = step(E / k);
+      return over(q === undefined ? undefined : k * q);
+    }
+  }
+  return ep;
+}
+
+function isPow2(n: number): boolean {
+  // 正有限数：1 / 2 / 4 / …（分数幂 0.5 亦精确；用取整判定避开位运算）
+  if (!(n > 0) || !Number.isFinite(n)) return false;
+  let x = n;
+  while (x < 1) x *= 2;
+  while (x > 1) {
+    if (x % 2 !== 0) return false;
+    x /= 2;
+  }
+  return true;
+}
 
 /**
  * 端点合成 + strict 见证校准的统一入口（Bug A，addsub/muldiv 全消费点）。
@@ -152,8 +238,18 @@ export function synthEndpoint(
   const strict = a.strict || (b?.strict ?? false);
   const E = b === undefined ? f(a.value, 0) : f(a.value, b.value);
   if (!strict) return ieeeBound(E);
-  const aW = a.strict ? (dirA === "up" ? nextUp(a.value) : nextDown(a.value)) : a.value;
-  const bW = b === undefined ? 0 : b.strict ? (dirB === "up" ? nextUp(b.value) : nextDown(b.value)) : b.value;
+  // Bug 224：strict 见证优先用端点自带的**最紧可达值**（见 attainEndpoint）——
+  // nextUp(bound) 只是「大于界的最松可表示数」，当该项真下界更高时它不可达，
+  // 会让下一步运算的见证下溢回端点 ⇒ 界被放松一个 binade。
+  const aW = a.strict
+    ? (a.attain ?? (dirA === "up" ? nextUp(a.value) : nextDown(a.value)))
+    : a.value;
+  const bW =
+    b === undefined
+      ? 0
+      : b.strict
+        ? (b.attain ?? (dirB === "up" ? nextUp(b.value) : nextDown(b.value)))
+        : b.value;
   return ieeeStrictEndpoint(E, f(aW, bW), claim);
 }
 

@@ -92,12 +92,24 @@ describe("Example 0: add is the computation itself", () => {
 });
 
 describe("comparison implies under Φ", () => {
-  it("x>0 ⊢ x+1 > 1 is true", () => {
+  it("x>0 ⊬ x+1 > 1（IEEE 吸收：x = MIN_VALUE 时 fl(x+1) === 1）", () => {
+    // 重钉（BUG-200，parent 授权）：旧断言 `{ ok: true, value: true }` 是**假事实**
+    // ——它正是 cmp.ts「implies(phi, pred) ⇒ boolLit(true)」这条**造值点**。
+    // 原生反例：x = Number.MIN_VALUE 时 x > 0 真、fl(x+1) === 1 ⇒ x+1 > 1 假。
+    // 依据 BUG-200 section:14-16,27,30（`x>0 ⊢ x+1>1` 是假证）。
+    expect(Number.MIN_VALUE > 0).toBe(true);
+    expect(Number.MIN_VALUE + 1).toBe(1);
     const phi = gtNum(v("x"), 0);
     const x = numVar("x", gtNum(v("x"), 0));
     const sum = add(x, numLit(1), phi);
-    const c = cmp("gt", sum, numLit(1), phi);
-    expect(litValue(c)).toEqual({ ok: true, value: true });
+    // Φ 不决定该比较（x = MIN_VALUE ⇒ false；x = 1 ⇒ true）⇒ 不可折成字面量。
+    // 这不是「实现退化为不可判定」：两个见证在 Φ 下都合法，故诚实的答案是
+    // 不可判定；把 `{ ok: false }` 换成 `{ ok: true, value: false }` 反而是造值。
+    expect(litValue(cmp("gt", sum, numLit(1), phi))).toEqual({ ok: false });
+    // 恒真的是 ge 变体（section:18：`x>0 ⇒ x+1 >= 1` 在 IEEE 下恒成立）。
+    expect(litValue(cmp("ge", sum, numLit(1), phi))).toEqual({ ok: true, value: true });
+    // `x+1 < 1` 由 ge 恒真排除 ⇒ 可判定为 false（保留「确定 false 可判定」口径）。
+    expect(litValue(cmp("lt", sum, numLit(1), phi))).toEqual({ ok: true, value: false });
   });
 
   it("string concat keeps string shape", () => {

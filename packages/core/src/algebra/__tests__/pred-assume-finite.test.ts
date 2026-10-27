@@ -235,8 +235,13 @@ describe("健全性不回退：Inf/NaN 仍不得假证", () => {
 });
 
 describe("真线性事实不受影响", () => {
-  it("y>1 ⊢ y+1>2（原有精度不丢）", () => {
-    expect(implies(gt(y, tLit(1)), gt(app("+", [y, tLit(1)]), tLit(2)))).toBe(true);
+  it("y>1 ⊬ y+1>2（吸收：fl(nextUp(1) + 1) ties-to-even 回 2）", () => {
+    // 重钉（BUG-200，parent 授权）：旧断言 true 是**假证**。y > 1 ⇒ y ≥ nextUp(1)
+    // = 1 + 2^-52，(1+2^-52)+1 恰为 2 与 2+2^-51 的中点 ⇒ ties-to-even ⇒ 2，
+    // 不 > 2。依据：BUG-200 section「触发形态」`x>1 ⊢ x+1>2`；
+    // 原生反例 `node -e '(1+2**-52)+1'` === 2。
+    expect((1 + 2 ** -52) + 1).toBe(2);
+    expect(implies(gt(y, tLit(1)), gt(app("+", [y, tLit(1)]), tLit(2)))).toBe(false);
   });
 
   it("x>2 ⊢ 2*x>4（单原子缩放始终可用）", () => {

@@ -87,6 +87,7 @@ export {
   $sub,
   $toNumber,
   $toNumeric,
+  $toStr,
   $updateAdd,
   $updateSub,
   $typeof,

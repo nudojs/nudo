@@ -313,7 +313,7 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       //（未知成员可能含 coercer）落到下方 may。判缺收口
       // objects.isNullProtoWithoutCoercer（含 @@toPrimitive 槽，
       // 与 arithmetic/template 的 `+` 臂单一事实源）
-      if (isNullProtoWithoutCoercer(args[0])) {
+      if (isNullProtoWithoutCoercer(args[0], "string")) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       // Bug 331：抽象臂（any/obj/fn/brand/sum）ToPrimitive 可能抛

@@ -21,7 +21,9 @@ import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
-import { abs, never, unknown } from "./abs.ts";
+import { abs, never, unknown, bigintLit, boolLit, numLit, strLit } from "./abs.ts";
+import { joinAbs } from "./objects.ts";
+import { leqAbs } from "./leq.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
@@ -53,8 +55,8 @@ import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
-import { currentAssumePremises, currentInvariantSpecs } from "./exec/runtime/state.ts";
-import { $invoke } from "./exec/class.ts";
+import { currentAssumePremises, currentInvariantSpecs, litAbsFromJs } from "./exec/runtime/state.ts";
+import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
@@ -895,6 +897,89 @@ export function generalizeFromAst(
   return result;
 }
 
+/**
+ * BUG-082：默认参数初始化式 → Abs（**字面量面**）。
+ *
+ * 契约路径把形参域**整体替换**成契约 Abs（`constraintToEntryAbs`）⇒ 默认值
+ * 初始化式从未参与被调方的门禁路径 ⇒ 一份自相矛盾的契约（`s = "abc"` 配
+ * `s: number()`）在被调方文件上判绿（假绿；调用点面已执法）。
+ *
+ * 修法：契约绑定时把默认值类型并入形参定义域（契约域 ∪ 默认值类型），交由
+ * 既有的 L1 返回契约对账通道执法（形参域变宽 ⇒ 返回面随之变宽 ⇒ 违约可见）。
+ * 只有**字面量初始化式**在此静态求值；其余形态（调用/引用/对象构造…）保持
+ * 旧口径（不猜——默认值本身仍由运行期与调用点面求值）。
+ */
+function defaultInitAbsOf(node: unknown): Abs | undefined {
+  const n = node as
+    | {
+        type?: string;
+        value?: unknown;
+        name?: string;
+        operator?: string;
+        argument?: unknown;
+        expressions?: unknown[];
+        quasis?: Array<{ value?: { cooked?: unknown } }>;
+      }
+    | undefined;
+  if (!n || typeof n.type !== "string") return undefined;
+  switch (n.type) {
+    case "StringLiteral":
+      return typeof n.value === "string" ? strLit(n.value) : undefined;
+    case "NumericLiteral":
+      return typeof n.value === "number" ? numLit(n.value) : undefined;
+    case "BooleanLiteral":
+      return typeof n.value === "boolean" ? boolLit(n.value) : undefined;
+    case "NullLiteral":
+      return litAbsFromJs(null);
+    case "BigIntLiteral": {
+      try {
+        return bigintLit(BigInt(String(n.value)));
+      } catch {
+        return undefined;
+      }
+    }
+    case "Identifier":
+      // `= undefined` 是显式的 undefined 字面量；其余标识符是引用（不猜）
+      return n.name === "undefined" ? litAbsFromJs(undefined) : undefined;
+    case "TemplateLiteral": {
+      if ((n.expressions?.length ?? 0) > 0) return undefined;
+      const cooked = n.quasis?.[0]?.value?.cooked;
+      return typeof cooked === "string" ? strLit(cooked) : undefined;
+    }
+    case "UnaryExpression": {
+      const arg = n.argument as { type?: string; value?: unknown } | undefined;
+      if (
+        (n.operator === "-" || n.operator === "+") &&
+        arg?.type === "NumericLiteral" &&
+        typeof arg.value === "number"
+      ) {
+        return numLit(n.operator === "-" ? -arg.value : arg.value);
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * BUG-082：函数的形参 AST 节点（`FormalParam` 只有名字/种类，不带表达式节点）。
+ * 同名遮蔽：取**最浅层**（与 directive-scan 的 depth 口径一致）。
+ */
+function fnParamNodesOf(
+  file: ReturnType<typeof babelParse>,
+  fnName: string,
+): readonly unknown[] {
+  let best: { depth: number; node: unknown } | undefined;
+  for (const s of listFnDirectiveScopes(file)) {
+    if (s.name !== fnName) continue;
+    const depth = s.depth ?? 0;
+    if (best === undefined || depth < best.depth) best = { depth, node: s.node };
+  }
+  const params = (best?.node as { params?: unknown[] } | undefined)?.params;
+  return params ?? [];
+}
+
 function generalizeFromAstUncached(
   fnName: string,
   source: string,
@@ -922,6 +1007,44 @@ function generalizeFromAstUncached(
   const { params, body, env, formals } = extracted;
   const budget = opts.budget ?? defaultLeakBudget;
   const label = opts.label ?? "A";
+
+  /**
+   * BUG-082：契约形参的**默认值初始化式**类型（惰性——只有契约命中带默认值
+   * 的形参时才回 AST 取；契约不含默认形参的常见路径零开销）。
+   */
+  let defaultInitByParam: Map<string, Abs | undefined> | undefined;
+  const defaultInitAbsOfParam = (paramName: string): Abs | undefined => {
+    if (defaultInitByParam === undefined) {
+      defaultInitByParam = new Map();
+      const fileAst = opts.file ?? babelParse(source);
+      for (const p of fnParamNodesOf(fileAst, fnName)) {
+        const ap = p as
+          | { type?: string; left?: { type?: string; name?: string }; right?: unknown }
+          | undefined;
+        if (ap?.type !== "AssignmentPattern") continue;
+        const left = ap.left;
+        if (left?.type !== "Identifier" || typeof left.name !== "string") continue;
+        defaultInitByParam.set(left.name, defaultInitAbsOf(ap.right));
+      }
+    }
+    return defaultInitByParam.get(paramName);
+  };
+
+  /**
+   * 契约形参的定义域 = **契约域 ∪ 默认值类型**（默认值落在契约域内时保持
+   * 契约域原样，合法形态零行为变化）。
+   */
+  const contractDomainOf = (
+    entryAbs: Abs,
+    paramName: string,
+    formalIdx: number,
+  ): Abs => {
+    if (formals[formalIdx]?.kind !== "default") return entryAbs;
+    const initAbs = defaultInitAbsOfParam(paramName);
+    if (initAbs === undefined) return entryAbs;
+    if (leqAbs(initAbs, entryAbs).ok) return entryAbs;
+    return joinAbs(entryAbs, initAbs);
+  };
 
   const typeParams: TypeParam[] = params.map((p, i) => {
     // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
@@ -979,7 +1102,13 @@ function generalizeFromAstUncached(
           const idx = params.indexOf(e.param);
           if (idx >= 0) {
             // 契约挂入口：term 用真实参数名，pred 一并带上
-            const entryAbs = constraintToEntryAbs(e.constraint, e.param);
+            // BUG-082：默认值初始化式的类型并入定义域（契约域 ∪ 默认值类型）
+            // ——否则 `s = "abc"` 配 `s: number()` 在被调方 L1 面判绿（假绿）。
+            const entryAbs = contractDomainOf(
+              constraintToEntryAbs(e.constraint, e.param),
+              e.param,
+              idx,
+            );
             typeParams[idx] = {
               id: typeParams[idx]!.id,
               value: entryAbs,

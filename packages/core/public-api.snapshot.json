@@ -1255,6 +1255,7 @@
       "$throwFreeArguments",
       "$toNumber",
       "$toNumeric",
+      "$toStr",
       "$tpl",
       "$tryCurrentMark",
       "$tryDetachSoftCatch",

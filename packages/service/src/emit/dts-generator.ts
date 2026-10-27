@@ -765,11 +765,43 @@ function tsLiteralType(v: LiteralValue): string {
  * 它（`lit(42)` → `number`）。契约面是**声明级证据**（用户申报的调用域，
  * 权威）⇒ 形参位与返回位同口径保形（Bug 348：形参位此前不接这条 ⇒ dts 面
  * 对「x 必须是字面量 1」零表达，而 zod / standard 面都当真 ⇒ 双门禁对撞）。
+ *
+ * Bug 027：**union 臂逐成员取字面量集后合并**（与 zod 面同源——zod 遍历
+ * `c.members`，dts 此前**只读顶层 pred**）：
+ * - 同 prim 字面量 union（`union(lit(0), lit(1))`）在 Abs 面上被特化成
+ *   「prim 臂 + or(eq…) 谓词」⇒ 顶层 pred 就是析取 ⇒ 本就保形 ✓；
+ * - **非同 prim** 字面量 union（`union(lit(1), lit("x"))`）落成 **sum 形状**
+ *   ⇒ 字面量挂在**各成员自己的** pred 上、顶层 pred 为空 ⇒ 此前取不到
+ *   ⇒ **拓宽**成 `number | string` ⇒ 发布的 .d.ts **允许契约违约的调用**
+ *   （`pick(99)` 编译通过、运行时被 nudo 门禁判违约 ⇒ 双门禁对撞）。
  */
 function contractLiteralTSType(a: Abs): string | undefined {
+  // sum 臂（union 的 entry Abs）：逐成员取字面量集 → 合并（成员里有一个不是
+  // 字面量域 ⇒ 整条不是字面量域 ⇒ undefined ⇒ 回落 widen 口径）。
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    const parts: string[] = [];
+    for (const m of members) {
+      const s = contractLiteralTSType(m);
+      if (s === undefined) return undefined;
+      parts.push(s);
+    }
+    const uniq = [...new Set(parts)];
+    if (uniq.length === 0) return undefined;
+    return uniq.length === 1 ? uniq[0]! : uniq.join(" | ");
+  }
   if (a.term === undefined) return undefined;
   const set = predLiteralSet(a.pred, a.term);
-  if (set === undefined || set.length === 0) return undefined;
+  if (set === undefined || set.length === 0) {
+    // **nullish** 字面量在 **term** 里（`lit(null)` / `lit(undefined)` 的 Abs
+    // 形态：term 就是字面量本身，pred 锚在参数项上）⇒ 取 term 的字面量值。
+    // 非 nullish 的 lit term 不在此列（观测面 / 契约面的标量字面量走 pred 或
+    // widen 口径——不得把它当成「契约声明的字面量域」）。
+    if (a.term.op === "lit" && (a.term.value === null || a.term.value === undefined)) {
+      return tsLiteralType(a.term.value);
+    }
+    return undefined;
+  }
   const parts = [...new Set(set.map(tsLiteralType))];
   if (parts.length === 1) return parts[0]!;
   return parts.join(" | ");
@@ -920,6 +952,29 @@ function contractParamType(a: Abs, isRest: boolean): string {
     if (lit !== undefined) return lit;
   }
   return restParamType(widenParamAbs(a), isRest);
+}
+
+/**
+ * 契约可选位（Bug 088）：入口 Abs 带 **undefined 臂**（`.optional()` 的
+ * 「可为 undefined」语义在 core 的入口投影里保真）⇒ dts 面的 `?` 已经表达
+ * 同一件事 ⇒ 类型串**不再**重复 `| undefined`（与对象槽 `k?: T` 约定同款
+ * ——Bug 543/560）。否则同一形参会渲染成 `x?: number | undefined`。
+ */
+function dropUndefinedArm(a: Abs): Abs {
+  if (a.shape.k !== "sum") return a;
+  const members = (a.shape as { members: Abs[] }).members;
+  const kept = members.filter(
+    (m) => !(m.term?.op === "lit" && m.term.value === undefined),
+  );
+  if (kept.length === members.length || kept.length === 0) return a;
+  if (kept.length === 1) return kept[0]!;
+  return makeAbs({ k: "sum", members: kept }, a.term, a.pred, a.conf);
+}
+
+/** 契约参数位 → 渲染用 Abs（可选位去掉 undefined 臂，见 `dropUndefinedArm`） */
+function contractParamRenderAbs(hit: { abs?: Abs; optional?: boolean }): Abs | undefined {
+  if (!hit.abs) return undefined;
+  return hit.optional === true ? dropUndefinedArm(hit.abs) : hit.abs;
 }
 
 type MainSignature = {
@@ -1206,8 +1261,9 @@ function computeMainSignature(
     //   2. TS 声明注解（Bug 479，`.ts` 源）—— 源码里写下的类型，原文保留；
     //   3. case-widen —— 观测值 join + 逆变 widen（无声明时的既有回落）。
     const annotation = tsParamAnnotation(fn, i, isRest);
-    const typeStr = contractHit.abs
-      ? contractParamType(contractHit.abs, isRest)
+    const contractRender = contractParamRenderAbs(contractHit);
+    const typeStr = contractRender
+      ? contractParamType(contractRender, isRest)
       : (annotation ?? paramTypeFromAbs(members, isRest));
     // 声明名：解构形参用**绑定模式**形态 `{ a, b }`（公共 API 声明不该出现
     // 求值占位 `_p0`；Bug 538）。键不全（契约/观测都拿不到该绑定）时回落
@@ -1262,8 +1318,8 @@ function computeMainSignature(
       type: typeStr,
       optional,
       ...(optional
-        ? contractHit.abs
-          ? { unionText: absUnionUndefined(widenParamAbs(contractHit.abs)) }
+        ? contractRender
+          ? { unionText: absUnionUndefined(widenParamAbs(contractRender)) }
           : annotation
             ? { unionText: textUnionUndefined(annotation) }
             : {}
@@ -1485,8 +1541,9 @@ function contractOnlySignature(
     }
     usedNames.add(name);
     const annotation = tsParamAnnotation(fn, i, isRest);
-    const typeStr = hit.abs
-      ? contractParamType(hit.abs, isRest)
+    const hitRender = contractParamRenderAbs(hit);
+    const typeStr = hitRender
+      ? contractParamType(hitRender, isRest)
       : (annotation ?? (isRest ? "unknown[]" : "unknown"));
     // 可选性（与 computeMainSignature 同口径）：契约级 > 声明级（默认值）
     const optional =
@@ -1500,8 +1557,8 @@ function contractOnlySignature(
       type: typeStr,
       optional,
       ...(optional
-        ? hit.abs
-          ? { unionText: absUnionUndefined(widenParamAbs(hit.abs)) }
+        ? hitRender
+          ? { unionText: absUnionUndefined(widenParamAbs(hitRender)) }
           : annotation
             ? { unionText: textUnionUndefined(annotation) }
             : {}

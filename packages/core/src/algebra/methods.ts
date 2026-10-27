@@ -745,10 +745,13 @@ export function callAbsMethod(
     case "valueOf":
       return lit !== undefined ? strLit(lit) : strPrim("path");
     case "concat": {
-      // 逐参 ToPrimitive：闭 null-proto 无 coercer → 定抛（字面量接收者
-      // 折叠臂与抽象接收者共用；'x'.concat(o) node 实测 TypeError）
+      // 逐参 ToString ⇒ ToPrimitive(**string hint**，BUG-058)：toString 先、
+      // 无自有 toString 不回退 valueOf；闭 null-proto 无 coercer → 定抛
+      //（字面量接收者折叠臂与抽象接收者共用；'x'.concat(o) node 实测 TypeError）
       for (const a of args) {
-        if (isNullProtoWithoutCoercer(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (isNullProtoWithoutCoercer(a, "string")) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
       }
       if (lit !== undefined) {
         let s = lit;

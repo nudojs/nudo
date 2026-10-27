@@ -198,9 +198,14 @@ describe("implies", () => {
   it("x>5 ⊢ x>0", () => {
     expect(implies(gtNum(v("x"), 5), gtNum(v("x"), 0))).toBe(true);
   });
-  it("x>0 ⊢ x+1>1", () => {
+  it("x>0 ⊬ x+1>1（IEEE 吸收：fl(MIN_VALUE + 1) === 1）", () => {
+    // 重钉（BUG-200，parent 授权）：旧断言 true 是**假证**。x = Number.MIN_VALUE
+    // 时 x > 0 为真，而 fl(x + 1) === 1 ⇒ `x+1 > 1` 为假。依据 BUG-200 section
+    // 「触发形态」`x>0 ⊢ x+1>1`（应 false）；同命题的 ge 变体才是 IEEE 恒真。
+    expect(Number.MIN_VALUE > 0).toBe(true);
+    expect(Number.MIN_VALUE + 1 > 1).toBe(false);
     const phi = gtNum(v("x"), 0);
-    expect(implies(phi, gtNum(app("+", [v("x"), lit(1)]), 1))).toBe(true);
+    expect(implies(phi, gtNum(app("+", [v("x"), lit(1)]), 1))).toBe(false);
   });
   it("x>0 ⊬ x+1>2", () => {
     const phi = gtNum(v("x"), 0);

@@ -78,6 +78,7 @@
 import { litValue } from "../abs.ts";
 import type { Abs } from "../abs.ts";
 import { getSlot } from "../objects.ts";
+import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "../leq.ts";
 import { projectAbsPath } from "./path-projection.ts";
 import {
   derefConstraint,
@@ -807,15 +808,32 @@ export function checkShapeAgainstAbs(
       }
       continue;
     }
-    checkFieldConstraint(
-      ctx,
-      displayName,
-      paramName,
-      field.constraint,
-      slot.value,
-      fieldPath,
-      loc,
-    );
+    // BUG-246：可选槽**吸收 undefined**（TS 默认
+    // `exactOptionalPropertyTypes: false` ⇒ `{ a?: string }` 的槽类型是
+    // `string | undefined`）⇒ `{ a: undefined }` 是合法实参。
+    // 修前这里只对「**缺槽**」看可选位（上方 `if (!slot)` 的 continue），
+    // 槽存在但值是 undefined 时照样进 prim 门 ⇒ 假红
+    // `typeof a = "string"`（与签名面 `a?: string` 自相矛盾）。
+    // 判定与 `leqAbs` 的槽规则**同口径**（共享 `mayBeUndefinedAbs` /
+    // `nonUndefinedAbsValues`）：剥掉 undefined 臂后**剩余成员仍须**满足字段
+    // 约束 ⇒ `{ a: string | undefined }` 按 string 判、`{ a: number | undefined }`
+    // 仍判红；`null` 不被吸收（strictNullChecks）。必填字段不受影响。
+    const optionalField = field.optional || field.constraint.isOptional;
+    const fieldValues =
+      optionalField && mayBeUndefinedAbs(slot.value)
+        ? nonUndefinedAbsValues(slot.value)
+        : [slot.value];
+    for (const fieldValue of fieldValues) {
+      checkFieldConstraint(
+        ctx,
+        displayName,
+        paramName,
+        field.constraint,
+        fieldValue,
+        fieldPath,
+        loc,
+      );
+    }
   }
   return false;
 }
