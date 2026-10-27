@@ -55,6 +55,7 @@ import {
   type ValidateTextDeps,
 } from "./validation.ts";
 import {
+  buildLspInjection,
   computeInterfaceLenses,
   computeObservationLenses,
   type AgentToolDeps,
@@ -122,11 +123,20 @@ export function attachHover(deps: IdeDeps): void {
       const ast = cachedAstFor(filePath, source);
       // intension generalize 需要模块图：缺图 → 跨模块调用 unknown
       const analysisModules = evalAnalysisModules(filePath, source);
+      // BUG-024：**协议面**必须与 agent 工具面同源装配注入包
+      // （`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局）——
+      // 此前只有 agent 面建了 inject，协议 hover 不传 ⇒ 覆盖表缺席 ⇒
+      // 推导链塌缩成 `unknown`（= 推断失败）⇒ IDE 显示 unknown、CLI 精确。
+      const inject = buildLspInjection(filePath, source, {
+        loadModule: activeLoadModule,
+        ...(analysisModules ? { modules: analysisModules } : {}),
+      });
       // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
       // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
         loadModule: activeLoadModule,
         ...(autoBind === false ? { autoBind: false } : {}),
+        ...(Object.keys(inject).length > 0 ? { inject } : {}),
       }, {
         ...(ast !== undefined ? { ast } : {}),
         result,
@@ -519,12 +529,19 @@ export function attachInlayHint(deps: IdeDeps): void {
       // A7：default 走 symbolic + entryReqs；与 CodeLens interface 档同源
       // modules：缺图时 generalize 看不到跨模块 import → 调用塌缩 unknown
       const analysisModules = evalAnalysisModules(filePath, source);
+      // BUG-024：inlayHint 与 hover 同源装配注入包（缺 inject ⇒ 被 mock /
+      // replace 的推导链塌缩 unknown ⇒ IDE 显示 unknown）
+      const inject = buildLspInjection(filePath, source, {
+        loadModule: activeLoadModule,
+        ...(analysisModules ? { modules: analysisModules } : {}),
+      });
       try {
         for (const abs of collectAbsInlays(source, {
           loadModule: activeLoadModule,
           fromFile: filePath,
           ...(autoBind === false ? { autoBind: false } : {}),
           ...(analysisModules ? { modules: analysisModules } : {}),
+          ...(Object.keys(inject).length > 0 ? { inject } : {}),
         })) {
           // 参数约束 inlay（`where …`）：nudo.inlayHints.parameters
           // 默认关——契约判别联合外延展开可达数万字符；返回 inlay
@@ -672,7 +689,14 @@ export function attachSignatureHelp(deps: IdeDeps): void {
           cases,
           { result, ast },
         );
-        if (fnAbs && fnAbs.shape.k === "fn") {
+        // BUG-104：绑定面里的 fn Abs 常是 `fnOf()` 造的**声明空壳**
+        // （`{ k: "fn", params }`，无 `paramTypes` / `returnType`）⇒ 会把它
+        // 渲染成「形参一律 any、返回 unknown」的假签名，并**抢占**下方
+        // generalize 内涵面（同一时刻 hover 给精确签名 ⇒ 同一 LSP 面自相矛盾）。
+        // 与 hover 的 `deferIfArityOnlyFn` 同款闸门：`returnType` 槽空的
+        // arity-only fn **不采纳**，回落路径③（`resolveCalleePolyFn`）。
+        const arityOnly = fnAbs?.shape.k === "fn" && fnAbs.shape.returnType === undefined;
+        if (fnAbs && fnAbs.shape.k === "fn" && !arityOnly) {
           const help = buildSignatureHelp(fnAbs, callInfo.currentParamIndex);
           if (help) return help;
         }

@@ -179,8 +179,35 @@ describe("Bug 196（LSP 面）：contract.emit 的根侧车单写者", () => {
       // 判「段已存在 ⇒ no-change」⇒ 直写正文**永不上盘**。
       expect(after).toContain("export const wrap = fn({ text: number() }, string());");
       expect(after).toContain("export const tag = fn({ n: number().gt(0) }, string());");
+      // BUG-196（add 面）：add 面新建的直写段也必须带 `// derived-from:`
+      // 溯源行（改前 add 面把直写新建段当成「既有段」跳过 ⇒ 溯源行永不落盘）。
+      expect(after).toContain("// derived-from: lib.js:tag");
+      // 合并不是复制：同一段只有一份（就地替换，不是追加）
+      expect(after.match(/export const wrap/g)?.length).toBe(1);
+      // add 面与 update 面收敛到同一份字节（同一段只有一个写者、同一顺序）
+      expect(after).toBe(SIDECAR_CONVERGED);
       expect(sidecarWrites(sidecar)).toHaveLength(1);
       expect(r.content[0].text).toContain("written: wrap");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("add 幂等：第二次逐字不变、不写盘", async () => {
+    const { dir, libJs, sidecar } = makeFixture();
+    try {
+      await contractEmitTool(
+        { file: libJs, functionName: "wrap", mode: "add" },
+        { workspaceRoots: [dir] },
+      );
+      writes.renames = [];
+      const again = await contractEmitTool(
+        { file: libJs, functionName: "wrap", mode: "add" },
+        { workspaceRoots: [dir] },
+      );
+      expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
+      expect(sidecarWrites(sidecar)).toHaveLength(0);
+      expect(again.content[0].text).not.toContain("Updated");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -16,6 +16,7 @@ import { isNudoTargetPath } from "@nudojs/service";
 import {
   documentSymbols,
   findIdentifierAtPosition,
+  findSidecarContractDefinition,
   isLocalAliasSymbol,
   isMemberAccessAt,
   resolveDefinition,
@@ -294,6 +295,9 @@ connection.onDocumentSymbol((params) => {
 
 connection.onWorkspaceSymbol((params) => {
   const query = params.query.toLowerCase();
+  // BUG-188：`workspace/symbol` 的**专属** kind 能力（与 documentSymbol 段
+  // 是两个独立键；客户端没发 ⇒ undefined ⇒ 不夹取）
+  const wsSymbolValueSet = deps.clientCapabilities?.()?.workspace?.symbol?.symbolKind?.valueSet;
   const out: SymbolInformation[] = [];
   // 统一 cacheKey 形态：knownFiles 是 cacheKey 键，open doc 是 uri 形态——混形态会
   // 漏掉打开中的 buffer，或同一文件被扫两遍（FIX-J1）
@@ -329,9 +333,17 @@ connection.onWorkspaceSymbol((params) => {
       const flatten = (items: DocumentSymbolItem[], container: string | undefined): void => {
         for (const sym of items) {
           if (!query || sym.name.toLowerCase().includes(query)) {
-            const entry: SymbolInformation = {
+            // BUG-188：`workspace/symbol` 有**专属**的 kind 能力段
+            // （`workspace.symbol.symbolKind.valueSet`，协议原文：“Specific
+            // capabilities for the `SymbolKind` in the `workspace/symbol`
+            // request.”）⇒ 必须**单独读它**（documentSymbol 段是另一个键）。
+            // 旧实现裸转写 kind ⇒ 回客户端明说显示不了的取值，而同 server 的
+            // documentSymbol 已夹取 ⇒ 两个符号面口径相反。
+            const kind = clampSymbolKind(sym.kind as LspSymbolKind, wsSymbolValueSet);
+            const entry: SymbolInformation & { detail?: string } = {
               name: sym.name,
-              kind: sym.kind as LspSymbolKind,
+              kind,
+              detail: symbolDetail(sym.detail, kind, sym.kind as LspSymbolKind),
               location: {
                 uri,
                 range: {
@@ -533,6 +545,26 @@ connection.onRenameRequest((params) => {
         uri: ref.uri ? filePathToUri(ref.uri) : params.textDocument.uri,
         loc: ref.loc,
       });
+    }
+    // BUG-105：**侧车契约绑定**（`export const <name> = fn(…)`）是符号的一部分
+    // （`definition` 的第三档已经把它报成定义位）⇒ rename 必须把它算进编辑集。
+    // 旧实现只取 `resolveDefinition`（**单数** = 第一个定义位 = 本地声明）+ refs
+    // ⇒ 侧车契约成孤儿 ⇒ 契约档 `hw`→`imp`，**已报的 L1 `nudo:constraint-violated`
+    // 诊断静默消失**（门禁结论被 LSP 自己的编辑改掉）。
+    if (!localAlias) {
+      const sidecarTargets = new Set<string>([filePath]);
+      if (def && def.filePath !== filePath) sidecarTargets.add(def.filePath);
+      for (const target of sidecarTargets) {
+        try {
+          const sc = findSidecarContractDefinition(target, identAtPos, {
+            extraFiles: navigationExtraFiles(target),
+            sourceProvider,
+          });
+          if (sc) locations.push({ uri: filePathToUri(sc.filePath), loc: sc.loc });
+        } catch {
+          /* 侧车探测 best-effort：读不到就不改（不拖垮改名） */
+        }
+      }
     }
     const changes = buildRenameEdits(params.newName, locations);
     if (Object.keys(changes).length === 0) return null;

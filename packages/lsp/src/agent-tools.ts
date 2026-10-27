@@ -60,6 +60,7 @@ import {
   targetPathError,
   formatPathErrorText,
   type CallRecord,
+  type Diagnostic,
   type PathError,
 } from "@nudojs/service";
 import {
@@ -90,12 +91,14 @@ import {
   extractFileEnvNames,
   type Abs,
   type AbsModuleExports,
+  type CheckIssue,
   type InterfaceSource,
   type RunTranspiledOptions,
 } from "@nudojs/core";
 import type { CheckJson, CheckJsonMulti } from "@nudojs/core";
 import { collectAbsInlays, DIAG } from "@nudojs/core/internal";
 import { lspLoadModule, evalAnalysisModules } from "./validation.ts";
+import { exportedNamesOfLocal } from "./symbols.ts";
 import {
   injectBindings,
   typeExprToDirective,
@@ -106,6 +109,7 @@ import {
   collectEnvGlobals,
   collectEnvModules,
   collectEvalReplacements,
+  mergeHarvestUnderEnv,
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
 } from "@nudojs/service";
@@ -468,10 +472,16 @@ export function buildLspInjection(
   // applyMockModuleDirectivesFromSource 签名）；LSP 侧的图类型更宽
   // （`AbsModuleExports | Record<string, unknown>`），运行期取值仍是
   // AbsModuleExports ⇒ 窄化只发生在类型层。
-  let mergedMods: Record<string, AbsModuleExports> = {
-    ...((baseModules ?? {}) as Record<string, AbsModuleExports>),
-    ...(Object.keys(envMods).length > 0 ? envMods : {}),
-  };
+  //
+  // BUG-227：**必须走 `mergeHarvestUnderEnv`**（与 CLI `buildCheckInjection`
+  // / service 求值面同口径）——旧实现用对象展开（`{ ...base, ...envMods }`）
+  // ⇒ 手工 env 与 harvest **同名模块**时，harvest 的非冲突导出被整体丢弃
+  // ⇒ IDE 侧签名塌缩成 `unknown` + 多报 `nudo:unknown-inference`
+  // （Nudo 词汇里 unknown = 推断失败），而 CLI 显示精确类型。
+  let mergedMods: Record<string, AbsModuleExports> = mergeHarvestUnderEnv(
+    (baseModules ?? {}) as Record<string, AbsModuleExports>,
+    envMods,
+  );
   // `@nudo:mock-module`：覆盖 import 说明符导出（全量/局部）
   mergedMods = applyMockModuleDirectivesFromSource(source, mergedMods, {
     fromFile: filePath,
@@ -505,6 +515,67 @@ export function buildLspInjection(
       ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
       : {}),
   };
+}
+
+/**
+ * 分析器通道白名单（`check` 报告面承诺可见的诊断码集合）。
+ *
+ * ⚠ **与 CLI `check-json-map.ts` 的 `CHECK_FACE_DIAG_CODES` 同一份口径**：
+ * LSP 不反向依赖产品包 `nudojs`（落点约束），核心面也没有该常量 ⇒ 这里
+ * 按码表**显式**重列（`DIAG` 仍是唯一字符串真值源 ⇒ 无拼写漂移）。
+ *
+ * 为什么需要这条通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断
+ * 由**分析器**（`analyzeFile*`）产出，`checkSource` 永远看不到 ⇒ agent 面
+ * 只并补充通道时会**假绿**（「nudo check OK」），而 CLI 与 LSP 编辑器面
+ * 都判红。
+ */
+const CHECK_FACE_DIAG_CODES: readonly string[] = [
+  // interface 家族
+  DIAG.interfaceDomainExceeds,
+  DIAG.interfaceEntryOnly,
+  // 模块装载问题族
+  DIAG.moduleMissing,
+  DIAG.missingExport,
+  DIAG.moduleCycle,
+  DIAG.moduleDepth,
+  DIAG.jsonInvalid,
+  DIAG.exportsUnresolved,
+  // env 家族
+  DIAG.envHarvestConflict,
+];
+
+/**
+ * 分析器诊断 → `CheckIssue`（check 面消费分析器诊断的唯一入口）。
+ *
+ * severity 口径与 CLI 同源：`interface-entry-only` 固定 info（观察面提示，
+ * 不挡门禁）；其余按分析器给的 severity 走（error ⇒ 挡门禁）。
+ */
+function analysisChannelIssues(
+  diagnostics: readonly Diagnostic[],
+): CheckIssue[] {
+  const allowed = new Set(CHECK_FACE_DIAG_CODES);
+  return diagnostics
+    .filter((d): d is Diagnostic & { code: string } =>
+      d.code !== undefined && allowed.has(d.code),
+    )
+    .map((d) => {
+      const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
+      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
+      return {
+        severity: isEntryOnly
+          ? ("info" as const)
+          : d.severity === "error"
+            ? ("error" as const)
+            : ("warning" as const),
+        code: d.code,
+        message: d.message,
+        line: d.range.start.line,
+        column: d.range.start.column,
+        ...(typeof data.actual === "string" ? { actual: data.actual } : {}),
+        ...(typeof data.expected === "string" ? { expected: data.expected } : {}),
+        ...(d.suggestions?.[0] !== undefined ? { suggestion: d.suggestions[0] } : {}),
+      };
+    });
 }
 
 /**
@@ -580,9 +651,33 @@ export function checkTool(
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(source),
     });
+    // 分析器通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断由
+    // `analyzeFile` 产出 —— `checkSource` **看不到**它们 ⇒ 缺模块（原生必炸）
+    // 的文件在 agent 面假绿（「nudo check OK」），而 CLI 与 LSP 编辑器面都判红。
+    // 白名单与 CLI 同源（{@link CHECK_FACE_DIAG_CODES}），不放大诊断面。
+    let reportWithAnalysis = report;
+    try {
+      const analysis = analyzeFile(
+        filePath,
+        source,
+        undefined,
+        undefined,
+        loadModule,
+        "none",
+      );
+      // 同一事实可能两通道同文（mock 文件缺失 ⇒ module-missing）⇒ 按
+      // (code, message) 去重（与 CLI `dedupeAgainstIssues` 同键）
+      const seen = new Set(report.issues.map((i) => `${i.code}\u0000${i.message}`));
+      const analysisIssues = analysisChannelIssues(analysis.diagnostics).filter(
+        (i) => !seen.has(`${i.code}\u0000${i.message}`),
+      );
+      reportWithAnalysis = mergeCheckIssues(report, analysisIssues);
+    } catch {
+      /* 分析器通道失败不得拖垮 check（与 CLI 同口径：诊断面降级，不造门禁） */
+    }
     // 补充诊断通道（Bug 752 / 991）：与 CLI / LSP 编辑器面同一份并入实现
     const supplemented = mergeCheckIssues(
-      report,
+      reportWithAnalysis,
       collectCheckSupplementIssues(filePath, source, {
         ...(analysisModules ? { modules: analysisModules } : {}),
         loadModule,
@@ -1280,7 +1375,14 @@ export async function trace(
       params.loadModule ?? deps.loadModule ?? lspLoadModule,
       "all",
     );
-    const fn = result.functions.find((f) => f.name === params.functionName);
+    // BUG-146：跨模块观察镜（`call@…` 挂在**调用方**文件的调用点行）携带的
+    // fn 名是**被导入函数**的名字 —— `result.functions` 只含本文件的本地函数
+    // ⇒ 必然落空 ⇒ 镜面标题说这个事实存在、点了却报「函数不存在」。
+    // `externalFunctions` 装的正是「跨文件调用点合成出来的被导入函数」⇒ 回落它。
+    // ⚠ 本文件的同名本地函数优先（同文件 `call@` 镜一直是好的）。
+    const fn =
+      result.functions.find((f) => f.name === params.functionName) ??
+      result.externalFunctions?.find((f) => f.name === params.functionName);
 
     if (!fn) {
       return toolError(`Function "${params.functionName}" not found`);
@@ -1648,6 +1750,11 @@ function derivedEmit(
      * `// derived-from:` 标签行并进去（直写正文优先）。
      */
     directSections?: Set<string>;
+    /**
+     * BUG-196（add 面）：**本轮直写分支新建**的段名 ⇒ 派生分支可就地并把
+     * `// derived-from:` 溯源行并进去（否则 add 面写出的段永远缺溯源行）。
+     */
+    directCreatedSections?: Set<string>;
   },
 ): EmitDerivedResult {
   const loadModule = extra.loadModule;
@@ -1686,6 +1793,9 @@ function derivedEmit(
       ...(extra.baseContent ? { baseContent: extra.baseContent } : {}),
       ...(extra.skipWrite ? { skipWrite: extra.skipWrite } : {}),
       ...(extra.directSections ? { directSections: extra.directSections } : {}),
+      ...(extra.directCreatedSections
+        ? { directCreatedSections: extra.directCreatedSections }
+        : {}),
     });
   } catch (err) {
     // 推导是**附加**步骤：它失败不应吃掉本地侧车的写盘（错误如实呈现）。
@@ -1802,6 +1912,10 @@ function serializedEmit(
         : {}),
       skipWrite: [rootSidecarPath],
       directSections: directOwned,
+      // BUG-196（add 面）：add 模式下 `direct.written` = 本轮**新建**的段
+      // （既有段一律 skipped no-change）⇒ 派生分支可把溯源行并进这些段；
+      // update 模式无此语义（既有段本就整体重写），故不传。
+      ...(mode === "add" ? { directCreatedSections: new Set(direct.written) } : {}),
     });
 
     // ---- ③ 根侧车最终文本 M（= 真写盘的内容）----
@@ -2215,6 +2329,27 @@ export function computeInterfaceLenses(
     getCasesForFile(filePath, source).map((f) => [f.functionName, f] as const),
   );
 
+  // BUG-236：**导出名身份**（`export { inner as aliased }`）——侧车的
+  // `@generated` 段按**导出名**落盘（`generatedExportNames`），而
+  // `localNamedExports` 与 `fn.name` 都是**本地名** ⇒ 别名导出恒判「未持久化」
+  // （`mode="add"` ⇒ lens 事实为假 + 动作空转）。⇒ 查键必须换算到导出名。
+  // 解析失败（语法错文件）⇒ 空表 ⇒ 全部回落「add」（与旧行为一致）。
+  let astForExports: ReturnType<typeof parse> | undefined;
+  try {
+    astForExports = parse(source);
+  } catch {
+    astForExports = undefined;
+  }
+  const persistedFor = (localName: string): boolean => {
+    if (persisted.has(localName)) return true;
+    if (!astForExports) return false;
+    try {
+      return exportedNamesOfLocal(astForExports, localName).some((n) => persisted.has(n));
+    } catch {
+      return false;
+    }
+  };
+
   const pushCaseLenses = (fnName: string, line: number): void => {
     const fc = fnCases.get(fnName);
     if (!fc) return;
@@ -2254,7 +2389,8 @@ export function computeInterfaceLenses(
           kind: "emit",
           fn: fn.name,
           line: fn.line,
-          mode: persisted.has(fn.name) ? "update" : "add",
+          // BUG-236：查**导出名**（见 persistedFor）
+          mode: persistedFor(fn.name) ? "update" : "add",
         });
         // F6：代码优先草稿（与 CLI --draft / agent nudo.contract.draft 同源）
         lenses.push({ kind: "draft", fn: fn.name, line: fn.line });
@@ -2290,7 +2426,12 @@ type AnalysisCase = ReturnType<typeof analyzeFile>["functions"][number]["cases"]
  * 合成 call@ / entry@ 观察 lens（CLI `nudo test` 的源码内投影）。
  * - 跳过 `@nudo:case` 指令 case（已有 case 副层 lens）
  * - call@ 挂调用点行；entry@ / call@symbolic 挂函数声明行
- * - 标题与 test 报告同形：`call@L6  (5, 3) => 2`
+ * - **标题与 test 报告同形**（`call@L6  (5, 3) => 2`；带 throws 时
+ *   `call@L1  (x) => y   throws TypeError`——与 CLI `formatCaseLine` **逐字符**
+ *   一致，**唯一**差异是 CLI 报告多一层列表缩进（CLI 侧 2 空格行首缩进，
+ *   由报告容器负责；lens 标题不带容器缩进）⇒ 比对口径 =
+ *   `cliLine.trimStart()`（BUG-136：此前本函数手写 2 空格 throws，与 CLI 的
+ *   3 空格不符 ⇒ 同一事实两面渲染不一致）。
  * - **跨模块**（1034）：外部函数的 call@ 事实落在**本文件**的调用点行——
  *   只消费 externalFunctions 的 call@（entry@ 属于被导入模块，不在调用方落镜）
  */
@@ -2317,7 +2458,8 @@ export function computeObservationLenses(source: string, filePath: string): Obse
       result = "unknown";
     }
     const argsStr = args.join(", ");
-    return `${c.name}  (${argsStr}) => ${result}${c.throwsAbs && c.throwsAbs.shape.k !== "never" ? `  throws ${formatShape(c.throwsAbs)}` : ""}`;
+    // throws 前 **3 空格**（CLI `formatCaseLine` 同款——BUG-136）
+    return `${c.name}  (${argsStr}) => ${result}${c.throwsAbs && c.throwsAbs.shape.k !== "never" ? `   throws ${formatShape(c.throwsAbs)}` : ""}`;
   };
   for (const fn of analysis.functions) {
     const fnLine = fn.loc.start.line;

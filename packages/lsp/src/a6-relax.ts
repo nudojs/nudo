@@ -1,6 +1,12 @@
 /**
  * A6：把侧车里 fn/param 上的数值谓词放宽为基类型（保守文本改写）。
  * 只在目标 fn 导出绑定附近改写，避免污染其它导出。
+ *
+ * BUG-135：`nudo:unproven-return` 的 relax 动作**承诺**「放宽到推断面」⇒
+ * 落盘必须是**推断面**（`any()` / 推断面基类型），不是 `stripNumericPreds`
+ * 的副产品（基类型 `number()`——那既不是推断面、也消不掉诊断）。
+ * ⇒ 新增 {@link relaxSidecarReturnToSurface}：把 `fn(…, <返回槽>)` 的
+ * **第二个顶层实参**整体改写成给定的约束文本。
  */
 import { matchSidecarFnDecl } from "@nudojs/service/emit";
 
@@ -123,4 +129,115 @@ export function relaxSidecarConstraint(
     }
   }
   return undefined;
+}
+
+/**
+ * `fn( … )` 调用的**顶层实参**切分（平衡括号 + 字符串/注释感知）。
+ *
+ * 返回槽 = **第二个**顶层实参（`fn({ … }, <返回槽>)`）；实参不足两个 ⇒
+ * undefined（没有返回槽可改写）。
+ *
+ * 字符串字面量（含模板串）与注释里的括号/逗号不是定界符——侧车 DSL 里
+ * `lit("a,b")` 这类字面量必须整段跳过，否则实参切分会切错。
+ */
+function fnCallArgs(
+  region: string,
+): { start: number; end: number }[] | undefined {
+  const m = /fn\s*\(/.exec(region);
+  if (!m) return undefined;
+  const open = m.index + m[0].length - 1;
+  const args: { start: number; end: number }[] = [];
+  let depth = 0;
+  let argStart = open + 1;
+  let quote: '"' | "'" | "`" | undefined;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = open; i < region.length; i++) {
+    const ch = region[i]!;
+    if (lineComment) {
+      if (ch === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (ch === "*" && region[i + 1] === "/") {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote !== undefined) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === "/" && region[i + 1] === "/") {
+      lineComment = true;
+      i++;
+      continue;
+    }
+    if (ch === "/" && region[i + 1] === "*") {
+      blockComment = true;
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      continue;
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 0) {
+        args.push({ start: argStart, end: i });
+        return args;
+      }
+      continue;
+    }
+    if (ch === "," && depth === 1) {
+      args.push({ start: argStart, end: i });
+      argStart = i + 1;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * BUG-135：把侧车里目标 fn 的**返回槽**（`fn({ … }, <返回槽>)` 的第二个顶层
+ * 实参）改写成给定的约束文本（推断面）。
+ *
+ * 与 {@link relaxSidecarConstraint} 的区别：后者只**剥数值谓词**（产出基类型
+ * `number()`——既不是推断面、也消不掉 `nudo:unproven-return`）；本函数按
+ * **调用方给的推断面文本**整体替换返回槽（`any()` / `number()` / …）。
+ *
+ * 找不到返回槽（`fn({ … })` 无返回实参 / 目标 fn 不在侧车里）⇒ undefined
+ * ⇒ 调用方不下发动作（宁可没有建议，也不给一个写坏侧车的编辑）。
+ */
+export function relaxSidecarReturnToSurface(
+  sidecarSource: string,
+  fnName: string,
+  surfaceText: string,
+): string | undefined {
+  if (!surfaceText) return undefined;
+  return replaceInFnRegion(sidecarSource, fnName, (region) => {
+    const args = fnCallArgs(region);
+    if (!args || args.length < 2) return undefined;
+    const slot = args[1]!;
+    const current = region.slice(slot.start, slot.end);
+    // 空白槽（`fn({}, )` 非法写法）⇒ 没有返回槽可放宽
+    if (current.trim() === "") return undefined;
+    // 只替换**非空白**内芯：逗号后的缩进/空格原样保留
+    // （否则 `fn({}, any())` 会被写成 `fn({},any())`）
+    const lead = /^\s*/.exec(current)![0].length;
+    const trail = /\s*$/.exec(current)![0].length;
+    const start = slot.start + lead;
+    const end = slot.end - trail;
+    if (region.slice(start, end) === surfaceText) return undefined;
+    return region.slice(0, start) + surfaceText + region.slice(end);
+  });
 }

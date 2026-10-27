@@ -449,12 +449,37 @@ function parseReceiver(textBefore: string): Receiver | null {
  * 纯数字段沿用旧口径）：ASCII-only 的 `\w+` 认不出非 ASCII 接收者
  * （`对象.`）⇒ 尾随点不被消毒 ⇒ 原文语法非法 ⇒ 整个文件的分析/绑定解析抛
  * ⇒ 成员补全清零（Bug 782）。
+ *
+ * **点后跟任意 token**（BUG-185）：真实编辑流里最常见的形态是「在既有
+ * `;` / `)` / `,` / `]` / `}` 前插入一个点」（`cfg.;`、`cfg.)`）——旧正则
+ * 的 `\.\s*$`（配合 `m`）**只认「点恰好是行尾」**⇒ 这些形态不被消毒 ⇒
+ * 原文语法非法 ⇒ 分析与绑定解析抛 ⇒ 成员 / 变量两个补全面板**一起清零**
+ * （静默失败）。⇒ 追加第二条规则：点后**紧跟**上述标点时同样改写为成员访问。
+ *
+ * 两条规则都在 `maskCommentsAndStrings` 的**掩码**上定位（与原文等长）⇒
+ * 字符串 / 注释里的点不会被改写（`/a./` 这类正则字面量里的点后是 `/`，
+ * 不在标点集合内 ⇒ 也不受影响）。
  */
 export function sanitizeSourceForParsing(source: string): string {
-  return source.replace(
-    /([\p{ID_Start}$_][\p{ID_Continue}$_]*|\d[\d_]*)\.\s*$/gmu,
-    "$1._ ",
-  );
+  const masked = maskCommentsAndStrings(source);
+  /** A) 点后仅空白（⇒ 行尾）：原口径 */
+  const tailDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*|\d[\d_]*)\.\s*$/gmu;
+  /** B) 点后紧跟标点 token：编辑中间态（BUG-185） */
+  const punctDot = /([\p{ID_Start}$_][\p{ID_Continue}$_]*)\.(?=[;),\]}])/gu;
+  const dots = new Set<number>();
+  for (const re of [tailDot, punctDot]) {
+    for (const m of masked.matchAll(re)) {
+      const dot = (m.index ?? 0) + (m[1]?.length ?? 0);
+      dots.add(dot);
+    }
+  }
+  if (dots.size === 0) return source;
+  // 从右向左插 `_ `（保持前面的下标有效）
+  let out = source;
+  for (const dot of [...dots].sort((a, b) => b - a)) {
+    out = `${out.slice(0, dot + 1)}_ ${out.slice(dot + 1)}`;
+  }
+  return out;
 }
 
 /** 光标所在的词法上下文。 */
@@ -566,7 +591,7 @@ function getVariableCompletions(
         // 顶层 fn 绑定 = **函数**（不是某对象的成员）⇒ "function" 档
         // （"method" 只留给成员函数）——Bug 717。
         kind: info.abs.shape.k === "fn" ? "function" : "variable",
-        detail: absDetail(info.abs),
+        detail: bindingDetail(name, info.abs),
       });
     }
     if (completions.length > 0) return completions;
@@ -595,7 +620,7 @@ function getVariableCompletions(
         completions.push({
           label: name,
           kind: absVal.shape.k === "fn" ? "function" : "variable",
-          detail: absDetail(absVal),
+          detail: bindingDetail(name, absVal),
         });
       }
       if (completions.length > 0) return completions;
@@ -688,6 +713,40 @@ function absDetail(a: Abs): string {
   } catch {
     return formatAbs(a);
   }
+}
+
+/**
+ * **函数绑定**的 detail（BUG-091）：与 hover 签名 / `nudo check` 签名**同形**
+ * ——`ident(x: any) => any`（不是 `(x) => ?`）。
+ *
+ * 旧实现整条 detail 走 `formatShape`（同一份 `absDetail`）⇒ fn 形态在
+ * `returnType` 槽为空（arity-only fn Abs——未被调用观测过）时回落**占位符**
+ * `?`（`core/format.ts` 的 fn 分支）⇒ 同一 LSP 面的 hover 给
+ * `ident(x: any) => any`、补全给 `(x) => ?`，且 `?` 既不是 TS 类型也不是
+ * Nudo 类型（用户没法读）。⇒ 函数形态改走 **check 签名公式**：
+ * 形参名 + `formatShape(形参 Abs)`（缺失 = `any`——design §2 的「无约束」，
+ * 不是 `?`）、返回 = `formatShape(返回 Abs)`（缺失 = `any`）。
+ *
+ * 非函数形态 ⇒ undefined（调用方回落 {@link absDetail}）。
+ */
+function fnBindingDetail(name: string, a: Abs): string | undefined {
+  if (a.shape.k !== "fn") return undefined;
+  const s = a.shape;
+  const params = s.params ?? [];
+  const types = s.paramTypes;
+  const ps = params
+    .map((p, i) => {
+      const t = types?.[i];
+      return `${p}: ${t ? formatShape(t) : "any"}`;
+    })
+    .join(", ");
+  const ret = s.returnType ? formatShape(s.returnType) : "any";
+  return `${name}(${ps}) => ${ret}`;
+}
+
+/** 绑定面 detail：函数走 check 同形签名，其余走外延渲染（BUG-091） */
+function bindingDetail(name: string, a: Abs): string {
+  return fnBindingDetail(name, a) ?? absDetail(a);
 }
 
 function absIsFn(a: Abs): boolean {

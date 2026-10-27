@@ -178,6 +178,27 @@ function renameTypeVars(s: string, varMap: Map<string, string>): string {
 const INTERNAL_LEN_ID_RE = /^len#\d+$/;
 const READABLE_LEN_ID = "len";
 
+/**
+ * term 树里是否藏着 invariant 铸造的内部 id（`inv#N`）。
+ *
+ * BUG-247（inlay 面）：`@nudo:invariant` 折出的循环值没有可读词根（不像
+ * `len#N` 有 `len`）⇒ **不能**上屏 ⇒ 读值面必须**退形状**（check 面在同
+ * 一位置印的也是形状）。
+ *
+ * 旧口径只在**顶层 var** 上判（`m.term.op === "var"`）⇒ 藏在 **app 项**里
+ * 的 `inv#N`（`inv#2 + 1`——循环值参与算术）**漏网** ⇒ 内部 id 直接上屏：
+ *
+ *   : inv#2 + 1 | NaN  · derived
+ *
+ * 而 check（CLI）面同一位置印的是 `number | NaN` ⇒ 跨面矛盾 + 内部 id 泄漏。
+ * ⇒ 判据下沉到**整棵 term 树**：任一层出现 `inv#N` ⇒ 整个 term 退形状。
+ */
+function hasInternalInvId(t: Term): boolean {
+  if (t.op === "var") return INTERNAL_INV_ID_RE.test(t.id);
+  if (t.op === "app") return t.args.some(hasInternalInvId);
+  return false;
+}
+
 function readableTerm(t: Term): Term {
   if (t.op === "var") {
     return INTERNAL_LEN_ID_RE.test(t.id) ? { op: "var", id: READABLE_LEN_ID } : t;
@@ -217,6 +238,12 @@ function formatReturnDisplay(g: PolyFn): string {
       return { key: `var:${name}`, text: name };
     }
     if (m.term?.op === "app") {
+      // BUG-247：app 项里藏 `inv#N`（循环值参与算术）⇒ 整个 term 退形状
+      // （无词根可留 ⇒ 内部 id 不上屏；与 check 面同位置的形状渲染同源）。
+      if (hasInternalInvId(m.term)) {
+        const text = formatShape(m);
+        return { key: `shape:${text}`, text };
+      }
       const t = termText(m.term);
       return { key: `app:${t}`, text: t };
     }
@@ -239,7 +266,9 @@ function formatReturnDisplay(g: PolyFn): string {
 
   const abs = g.symbolic;
   // 外层 term：单路径计算形（`x + 1`）
-  if (abs.term && abs.term.op !== "lit") {
+  // BUG-247：外层 term 里藏 `inv#N` ⇒ 退形状（内部 id 不上屏；与 check 面
+  // 同一位置的形状渲染同源 ⇒ IDE 两面不再互斥）。
+  if (abs.term && abs.term.op !== "lit" && !hasInternalInvId(abs.term)) {
     return termText(abs.term);
   }
   if (abs.shape.k === "sum") {

@@ -25,6 +25,7 @@ import {
   findProjectConfig,
   interfaceConfig,
   checkConfig,
+  collectCheckSupplementIssues,
   collectSkipReturns,
   collectEnvNames,
   envPathDependents,
@@ -53,8 +54,8 @@ import { preloadPathEnvs } from "@nudojs/service/evaluator";
 import { buildLspInjection } from "./agent-tools.ts";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
-import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports, type CheckIssue } from "@nudojs/core";
-import { parse, extractDirectives, type DirectiveDiag } from "@nudojs/parser";
+import { checkSource, parseSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports, type CheckIssue } from "@nudojs/core";
+import { parse } from "@nudojs/parser";
 import { DIAG, extractAllLoadSpecs, hashSource, loadModuleDepsFingerprint, resolveDepPath, runWithCollectorScope, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
 import type { File } from "@babel/types";
 import { createHash } from "node:crypto";
@@ -951,8 +952,15 @@ export function makeBufferAwareLoadModule(
  * （hover `(_p0: A1) => unknown`、inlay 空、check 假红 unproven-return）。
  *
  * `evalAbsModuleGraph` 走 abs-modules-graph 内容缓存（stat 自愈失效），
- * 同一 (source, deps) 重复调用廉价。cycle → 不注入（fail-closed，
- * 与 CLI hasCycle 分支同语义：宁缺图不注入环）。
+ * 同一 (source, deps) 重复调用廉价。
+ *
+ * **检出环不再丢弃整张依赖图**（BUG-090）：旧实现 `cycle → undefined`
+ * 自称「与 CLI hasCycle 分支同语义」，但 **CLI 早已废弃该分支**（Bug 456：
+ * 「检出环就丢图」⇒ 环内 import 全部落空 ⇒ 环内函数恒 unknown；引擎已能
+ * 有界处理环——装载层按环返回部分导出、求值层由 call-budget 截断并归因
+ * `nudo:recursion-truncated`）⇒ LSP 落后于 CLI ⇒ **同一文件 CLI 报 3 条诊断、
+ * IDE 只报 2 条**（少的那条正是截断归因）。环本身仍由 `nudo:module-cycle`
+ * 报告，不靠丢图来「避免」环。
  */
 export function evalAnalysisModules(
   filePath: string,
@@ -960,8 +968,7 @@ export function evalAnalysisModules(
 ): Record<string, AbsModuleExports | Record<string, unknown>> | undefined {
   try {
     const graph = evalAbsModuleGraph(source, filePath);
-    if (graph.issues.some((i) => i.kind === "cycle")) return undefined;
-    return graph.modules;
+    return Object.keys(graph.modules).length > 0 ? graph.modules : undefined;
   } catch {
     return undefined;
   }
@@ -1006,6 +1013,58 @@ function checkIssueToLspDiagnostic(i: CheckIssue, lengths?: number[]): LspDiagno
 }
 
 /**
+ * **严格解析**闸门（BUG-274）：`.js` 里的 TS-only 语法（`x: number` /
+ * `private x` / `as T` / `interface` / `enum` …）与 CLI 同口径判红。
+ *
+ * 为什么 LSP 面必须单独做：严格解析（按扩展名选 Babel 插件）挂在 **CLI 的
+ * 装配层**（`parseForCheck` → core `parseSource(source, { filename })`），
+ * 而 `checkSource` 自己不按扩展名收紧；LSP 的所有 `parse(source)` 调用都
+ * **不传文件名** ⇒ `parseModeFor(undefined)` 恒返回 `"ts"` ⇒ typescript 插件
+ * 恒开 ⇒ 不可执行文件在 IDE 里**零诊断**（`node --check` 都拒绝它），
+ * 门禁却 exit 1 ⇒ IDE 假绿 + 跨面矛盾。
+ *
+ * 口径与 CLI `tsOnlySyntaxError` 同文案同码（`syntax-error`，非 `nudo:*` 的
+ * file 级事实码）：
+ * - 严格解析失败 + 宽松解析成功 ⇒ TS-only 语法 ⇒ **error** 诊断（并早退，不
+ *   再产出基于不可执行源码的类型诊断）；
+ * - 两者都失败 ⇒ 真语法错 ⇒ 返回 undefined（交给既有的 `Check error:` 通道）。
+ */
+function tsOnlySyntaxDiagnostic(
+  filePath: string,
+  source: string,
+): LspDiagnostic | undefined {
+  try {
+    parseSource(source, { filename: filePath });
+    return undefined;
+  } catch (err) {
+    let lenientOk = false;
+    try {
+      parseSource(source);
+      lenientOk = true;
+    } catch {
+      lenientOk = false;
+    }
+    if (!lenientOk) return undefined;
+    const e = err as { message?: string; loc?: { line?: number; column?: number } };
+    const raw = String(e?.message ?? err);
+    const essence = raw.replace(/\s*\(\d+:\d+\)\s*$/, "").trim();
+    const line = e?.loc?.line ?? 1;
+    const column = e?.loc?.column ?? 0;
+    return {
+      severity: DiagnosticSeverity.Error,
+      range: lspDiagnosticRange(
+        { line, column },
+        { line, column: column + 1 },
+        lineLengthsOf(source),
+      ),
+      message: `syntax error: TypeScript-only syntax is not valid in a .js file: ${essence}`,
+      source: "nudo-check",
+      code: "syntax-error",
+    };
+  }
+}
+
+/**
  * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
  */
 export function checkToLspDiagnostics(
@@ -1016,6 +1075,9 @@ export function checkToLspDiagnostics(
   workspaceRoots?: string[],
 ): LspDiagnostic[] {
   try {
+    // BUG-274：与 CLI 同款的严格解析闸门（`.js` 里的 TS-only 语法判红）
+    const tsOnly = tsOnlySyntaxDiagnostic(filePath, source);
+    if (tsOnly) return [tsOnly];
     // package.json#nudo.contract.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
     // —— 与 CLI runCheck 同源（design-cli-semantics §3.4）
     const proj = findProjectConfig(dirname(filePath));
@@ -1053,17 +1115,40 @@ export function checkToLspDiagnostics(
         : {}),
     });
     const issues: CheckIssue[] = [...report.issues];
-    // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径。
-    // 显式通道：诊断直接落局部数组（不碰模块级 buffer，无 seq 锚 / 在途窃取窗口）。
-    const dirDiags: DirectiveDiag[] = [];
-    extractDirectives(parse(source), { diags: dirDiags });
-    for (const d of dirDiags) {
-      issues.push({
-        severity: "warning",
-        code: d.code,
-        message: d.message,
-        suggestion: DIRECTIVE_SYNTAX_HINT,
-      });
+    // **补充诊断通道**（BUG-262）：指令文法 / mock 装载 / env 未解析三条旁路
+    // 通道与 CLI / agent 工具面共用 service 的**同一份**实现
+    // （`collectCheckSupplementIssues`）。
+    //
+    // 旧实现只跑 `extractDirectives`（parser 级）这一条 ⇒ **看不到分析期**
+    // 产生的指令文法诊断（`@nudo:replace` / `@nudo:as` 的畸形形态由
+    // `collectEvalReplacements` 发出）、也看不到 mock 装载失败与 env 未解析
+    // ⇒ CLI 判红的文件在 IDE 里静默（假绿），而 `check-issues.ts` 自述的
+    // 「三面共用同一份实现 ⇒ issue 集不再分叉」不变量被违反。
+    try {
+      const seen = new Set(issues.map((i) => `${i.code}\u0000${i.message}`));
+      for (const i of collectCheckSupplementIssues(filePath, source, {
+        ...(analysisModules ? { modules: analysisModules } : {}),
+        ...(loadModule ? { loadModule } : {}),
+      })) {
+        // **env 未解析（`nudo:env-unresolved`）不在 check 通道里发**——
+        // editor 面有**专属**的 env 通道（`envUnresolvedDiags`，live 瞬态
+        // + 按**本文件自己的 env 名单**收窄）。两条通道同时发同一事实 ⇒
+        // ① 同一文件同一 env 失败**报两遍**（重复诊断）；
+        // ② check 通道那份（service `envUnresolvedIssues`）对「按名字记录」
+        //    的条目（未知名 env / 非法 env 项——记录的 path 是**名字本身**，
+        //    非绝对路径）**不按本文件 env 名单过滤** ⇒ 同目录**别的文件**的
+        //    env 诊断被误吸进来（#470 / #937）。
+        //
+        // 事实归属：editor 面（push `validateText` / pull `server.ts`）都
+        // 显式接了 `envUnresolvedDiags` ⇒ 去掉 check 通道这份**不丢诊断**，
+        // 只去掉重复与串台。agent 工具面（`agent-tools.ts`）不经过这里，
+        // 仍由 `collectCheckSupplementIssues` 自己供数（口径不变）。
+        if (i.code === DIAG.envUnresolved) continue;
+        if (seen.has(`${i.code}\u0000${i.message}`)) continue;
+        issues.push(i);
+      }
+    } catch {
+      /* 补充通道降级：不造诊断（与 CLI 同口径） */
     }
     // 三档（error / warning / info）**全部保留**——档位取舍交给
     // filterCheckLspByLevel（push / pull 共用同一 helper）。
