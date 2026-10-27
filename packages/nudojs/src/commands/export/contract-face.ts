@@ -330,7 +330,10 @@ export function unifiedParamFace(
     out.push({
       name: formal.name,
       abs: observedSlotAbs(domainCases, formal.index) ?? anyEntryAbs(),
-      optional: formal.kind === "default" || formal.index >= minArity,
+      // BUG-169：TS 可选形参 `b?: T` 与 JS 默认值同待遇（`FormalParam.optional`
+      // 是唯一事实源：dts 的 `?` / standard 的可选槽 / 本处 zod 槽同源）。
+      // 未带 `?` 的声明仍按观测到的最少实参元数放宽。
+      optional: formal.optional === true || formal.kind === "default" || formal.index >= minArity,
     });
   }
   // 契约名与声明形参表**对不上**的契约参数位：按契约原样保留（不静默丢位；

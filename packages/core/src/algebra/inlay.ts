@@ -15,7 +15,9 @@ import { parseSource as parse } from "./parse-source.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { localNamedExports } from "./scan-named-exports.ts";
 import { formatShape } from "./format.ts";
-import { predToString } from "./pred.ts";
+import { pTrue, predToString } from "./pred.ts";
+import { entrySeedsOfFn } from "./check.ts";
+import { withAssumePremises, withInvariantSpecs } from "./exec/runtime/state.ts";
 import { termToString, litKeyString, type Term } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
@@ -104,6 +106,20 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
         }
       }
     }
+    // BUG-147：**匿名 default 导出**（`export default (a) => …` /
+    // `export default function (a) {…}`）没有声明节点 ⇒ 上面三个分支全不匹配
+    // ⇒ 返回 inlay 整段消失，而同文件 codeLens / hover 有类型（inlay 面自述的
+    // 「枚举与导出面同口径」被破）。匿名 default 在 env 里的登记名是 `default`
+    // （`generalize.ts` 的 ExportDefaultDeclaration 分支）。
+    // 注：`export default function (a) {…}` 在 Babel 里是**无 id 的
+    // FunctionDeclaration**（不是 FunctionExpression）⇒ 也要收。
+    if (
+      decl.type === "ArrowFunctionExpression" ||
+      decl.type === "FunctionExpression" ||
+      (decl.type === "FunctionDeclaration" && !(decl as FunctionDeclaration).id)
+    ) {
+      out.push({ name: "default", node: decl });
+    }
   };
   /** `exports` / `module.exports` → true */
   const isExportsTarget = (n: Node | undefined): boolean => {
@@ -150,7 +166,14 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
       visitDecl(stmt);
     }
   }
-  return out;
+  // BUG-145：**同名槽**（`function f` + `exports.f = …`；类实例方法与静态方法
+  // 同名）⇒ 锚点按节点取、取值按名字取（`generalizeFromAst(name)` 按名唯一）
+  // ⇒ IDE 里显示**别的函数**的计算式（文件里根本不存在的表达式）。
+  // 按名唯一化无法把「名字」还原成「节点」⇒ 同名槽一律**不产 inlay**
+  // （宁可少一条提示，也不能渲染别人的计算式）。
+  const count = new Map<string, number>();
+  for (const e of out) count.set(e.name, (count.get(e.name) ?? 0) + 1);
+  return out.filter((e) => count.get(e.name) === 1);
 }
 
 /** A1 → 源码参数名，便于 inlay 阅读 */
@@ -177,6 +200,13 @@ function renameTypeVars(s: string, varMap: Map<string, string>): string {
  */
 const INTERNAL_LEN_ID_RE = /^len#\d+$/;
 const READABLE_LEN_ID = "len";
+/**
+ * BUG-247：`@nudo:invariant` 的循环界 term 由 `exec/runtime/invariant-apply.ts`
+ * 的模块级计数器铸造（`inv#N`）——内部 id 不是用户面文本（Bug 412 同款），
+ * 且编号随重算漂移。它没有可读词根可留，故读值面直接退形状（check 面在
+ * 同一位置的签名印的也是形状）。
+ */
+const INTERNAL_INV_ID_RE = /^inv#\d+$/;
 
 /**
  * term 树里是否藏着 invariant 铸造的内部 id（`inv#N`）。
@@ -232,9 +262,15 @@ function formatReturnDisplay(g: PolyFn): string {
   const memberPath = (m: Abs): { key: string; text: string } => {
     if (m.term?.op === "var") {
       // 内部 id（len#N）→ 稳定可读标识（Bug 412）；去重键与渲染文本同源
-      const name = INTERNAL_LEN_ID_RE.test(m.term.id)
-        ? READABLE_LEN_ID
-        : renameTypeVars(m.term.id, varMap);
+      if (INTERNAL_LEN_ID_RE.test(m.term.id)) {
+        return { key: `var:${READABLE_LEN_ID}`, text: READABLE_LEN_ID };
+      }
+      // BUG-247：invariant 折出的内部 term id 不上屏（无词根可留 ⇒ 退形状）
+      if (INTERNAL_INV_ID_RE.test(m.term.id)) {
+        const text = formatShape(m);
+        return { key: `shape:${text}`, text };
+      }
+      const name = renameTypeVars(m.term.id, varMap);
       return { key: `var:${name}`, text: name };
     }
     if (m.term?.op === "app") {
@@ -309,13 +345,26 @@ export function collectAbsInlays(
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
-      g = generalizeFromAst(name, source, {
-        ...(refineOpts ? { refine: refineOpts } : {}),
-        ...(opts?.modules ? { modules: opts.modules } : {}),
-        // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
-        // env 全局缺席 ⇒ 推导链塌缩 unknown（与 CLI 面分叉）。
-        ...(opts?.inject ? { inject: opts.inject } : {}),
-      });
+      const generalize = () =>
+        generalizeFromAst(name, source, {
+          ...(refineOpts ? { refine: refineOpts } : {}),
+          ...(opts?.modules ? { modules: opts.modules } : {}),
+          // 注入包透传（Bug 786）：@nudo:mock / @nudo:as / @nudo:replace /
+          // env 全局缺席 ⇒ 推导链塌缩 unknown（与 CLI 面分叉）。
+          ...(opts?.inject ? { inject: opts.inject } : {}),
+        });
+      // BUG-247：`@nudo:assume`（引理前提）/ `@nudo:invariant`（循环界）是
+      // **求值动态域**的种子——checkSource 播种后才折出 `0 | number`。inlay
+      // 自算 generalize 若不播种，同一文件的角标与 CLI `check` 签名跨面矛盾
+      // （IDE 印出「没有那条公理的程序」的类型）。种子非平凡时
+      // generalizeFromAst 自动绕过 L0（见其注释），不污染无种子上下文。
+      const seed = entrySeedsOfFn(name, source);
+      g =
+        seed.assumePhi !== undefined || seed.invSpecs.length > 0
+          ? withAssumePremises(seed.assumePhi ?? pTrue, () =>
+              withInvariantSpecs(seed.invSpecs, generalize),
+            )
+          : generalize();
     } catch {
       continue;
     }

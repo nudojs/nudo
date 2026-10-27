@@ -54,7 +54,7 @@ export function locFromNode(node: Node): SourceLocation {
  * 据此读回用户在源码里写下的类型。无注解（.js 源 / 未标注）⇒ 无 `tsType`
  * ⇒ 两个面都走既有路径（any / case-widen），行为不变。
  */
-export function extractFormals(node: Node): FormalParam[] {
+export function extractFormals(node: Node, source?: string): FormalParam[] {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
   let params: unknown[] | undefined;
   if (
@@ -72,7 +72,9 @@ export function extractFormals(node: Node): FormalParam[] {
       params = init.params;
     }
   }
-  const formals = formalParamsFromNodes(params as never);
+  // BUG-169：把源码文本透传给 core —— TS 可选形参 `b?: T` 的 `?` 在
+  // strip-types 阶段被删，只能从源码文本判定（`tsOptionalParams`）。
+  const formals = formalParamsFromNodes(params as never, source);
   // Bug 479（core 侧缺口的服务侧兜底）：Babel 8 把 **rest 形参**的类型注解
   // 挂在 RestElement 节点上（`...rest: number[]` ⇒ RestElement.nudoTypeText）。
   // core `param-surface.ts` 现已优先读节点侧旁路（内层标识符为老口径兜底），

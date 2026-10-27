@@ -730,6 +730,29 @@ function assumePremisesPhiOf(
 // ---------------------------------------------------------------------------
 
 /**
+ * BUG-247（inlay / 展示面）：取某函数的 `@nudo:assume` 前提与
+ * `@nudo:invariant` 循环界种子，**不产生诊断**（展示面不报语法错；那由
+ * check 面统一报）。
+ *
+ * 为什么必须共用：`@nudo:invariant` 只在**求值的动态域**里播种
+ * （checkSource 的 `withAssumePremises` + `withInvariantSpecs`）⇒ 同一次
+ * `generalizeFromAst` 带种子与不带种子会印出「有/没有那条公理」两种类型。
+ * inlay（`collectAbsInlays`）自算 generalize 时若不播种，同一文件的 IDE
+ * 角标与 CLI `check` 签名跨面矛盾（hover 已改取 checkSource 签名，inlay
+ * 是本函数的对齐点）。
+ */
+export function entrySeedsOfFn(
+  name: string,
+  source: string,
+): { assumePhi?: Phi; invSpecs: InvariantSpec[] } {
+  const file = parse(source);
+  const sink: CheckIssue[] = [];
+  const assumePhi = assumePremisesPhiOf(name, source, file, sink)?.phi;
+  const invSpecs = invariantSpecsOf(name, source, file, sink)?.specs ?? [];
+  return assumePhi === undefined ? { invSpecs } : { assumePhi, invSpecs };
+}
+
+/**
  * `@nudo:invariant <name><path> <rel> <number>`（如 `dp[*][*] >= 0`）：
  * - 文法外形态（`==`、字面量缺号、非 `[*]`/`.ident` 路径）→ warning
  *   nudo:invariant-invalid（不折；warning 而非 assume 的 error——循环界

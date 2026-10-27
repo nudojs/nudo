@@ -558,7 +558,7 @@ export function analyzeFileUncachedInner(
     // Bug 479：形参表面（与 paramNames 同源 ⇒ 下标对齐）。`.ts` 源的形参
     // 带**声明类型文本**（`FormalParam.tsType`）⇒ 产物面（dts 参数位）
     // 据此保留源码里写下的类型。
-    const formals = extractFormals(fn.node);
+    const formals = extractFormals(fn.node, source);
     const analysis: FunctionAnalysis = {
       name: fn.name,
       loc: fnLoc,
@@ -759,7 +759,7 @@ export function analyzeFileUncachedInner(
     // A statement carrying @nudo directives is already analyzed through the
     // directive path above (possibly under its "<anonymous>" name).
     if (directiveFnStmts.has(stmt)) continue;
-    const synthFormals = extractFormals(node);
+    const synthFormals = extractFormals(node, source);
     const analysis: FunctionAnalysis = {
       name,
       loc: locFromNode(node),

@@ -118,7 +118,44 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   const src = widened ?? abs;
   const body = denoteGuard(src, "data");
   const valueType = guardValueType(src);
-  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  const data = value as ${valueType};\n  return ${body};\n}`;
+  // BUG-250：身份子句会收窄 `data` ⇒ 索引读报 TS7053（见 hasIdentityClause）
+  const dataDecl = hasIdentityClause(src) ? `const data: any = ` : `const data = `;
+  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${body};\n}`;
+}
+
+/**
+ * BUG-250：形态树里是否含**身份子句**（`brand` / `eff` 的 `instanceof`）。
+ *
+ * 身份子句把被检查值放进 `instanceof` 的**左操作数** ⇒ TS 对它做**类型收窄**
+ * ⇒ `data` 的静态类型从 `Record<string, any>` 变成
+ * `<内建类型> | Record<string, any>` ⇒ 随后 `data["0"]` 报 **TS7053**（内建
+ * 类型上没有该属性）⇒ 产物在 strict 工程里编不过，而 `nudo export` 静默
+ * exit 0。声明成 `: any` 后收窄不再限制索引读（`any` 收窄仍是 `any`）。
+ */
+function hasIdentityClause(a: Abs, seen: Set<Abs> = new Set()): boolean {
+  // 求值器产出的 Abs 是**允许成环**的 DAG（DESIGN-001）⇒ 递归必须带 visited，
+  // 否则环形结构直接把栈打爆（projection-cycle-depth）。
+  if (seen.has(a)) return false;
+  seen.add(a);
+  const s = a.shape;
+  switch (s.k) {
+    case "brand":
+    case "eff":
+      return true;
+    case "obj":
+      return Object.values(s.slots).some((slot) => hasIdentityClause(slot.value, seen));
+    case "arr":
+      return hasIdentityClause(s.element, seen);
+    case "tuple":
+      return (
+        s.elements.some((el) => hasIdentityClause(el, seen)) ||
+        (s.rest !== undefined && hasIdentityClause(s.rest, seen))
+      );
+    case "sum":
+      return s.members.some((m) => hasIdentityClause(m, seen));
+    default:
+      return false;
+  }
 }
 
 /** 兼容别名：Abs 路径唯一（`used` 语义同上）。 */

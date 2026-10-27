@@ -7,7 +7,7 @@
  * | 契约面 `nudo contract` | `x: lit(1)` | `x: lit(1)` ✔ |
  * | zod 产物面 | `z.literal(1)` | `z.literal(1)` ✔ |
  * | **dts 产物面** | `f(x: number)` | `f(x: 1)` ✔ |
- * | **check 签名面** | `f(x: number)` | `f(x: lit(1))` ✔ |
+ * | **check 签名面** | `f(x: number)` | `f(x: 1)` ✔（BUG-087：签名面渲染类型而非契约 DSL）|
  *
  * 改前 dts 面把「x 必须是字面量 1」印成 `number` ⇒ 消费方 tsc 放行违反契约的
  * 调用，而同一份代码 `nudo check` 判红 ⇒ **双门禁对撞**。
@@ -47,7 +47,7 @@ describe("Bug 348：lit() 的字面量在签名面保形", () => {
     const r = checkSource("/test/file.js", SRC, pTrue, optsWithSidecar(LIT_SIDE));
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
-    expect(sig!.paramTypes?.[0]).toBe("lit(1)");
+    expect(sig!.paramTypes?.[0]).toBe("1");
     expect(sig!.paramTypes?.[0]).not.toBe("number");
   });
 

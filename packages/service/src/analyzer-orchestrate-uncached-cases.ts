@@ -1119,7 +1119,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
     // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
     // 面写 number ⇒ 四方言矛盾。
-    const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
+    const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
       f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
     );
     // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
@@ -1225,7 +1225,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // ⇒ 该观测不确信（conf `partial`）⇒ 投影面可放宽成基类型，不把这次兜底
     // 观测当出口域（zod/standard/guard 投影成 literal(1) ⇒ 导出校验器拒绝被
     // 导出函数自己的返回值；dts 面写 number ⇒ 四方言矛盾）。
-    const hasRestFormal = (fnNode ? extractFormals(fnNode) : []).some((f) => f.kind === "rest");
+    const hasRestFormal = (fnNode ? extractFormals(fnNode, env.source) : []).some((f) => f.kind === "rest");
     const entryWitnessAbs =
       hasRestFormal && entryAbs && entryAbs.conf === "exact"
         ? { ...entryAbs, conf: "partial" as const }
@@ -1321,7 +1321,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
 export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
   const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
-  const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
+  const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
     f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
   );
   let hardThrowsAbs: Abs = neverAbs;

@@ -15,7 +15,7 @@ import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { sanitizeLineCommentText } from "./line-comment.ts";
-import { isHiddenInternalSlot } from "./internal-slot.ts";
+import { isHiddenInternalSlot, isInvisibleObjSlot } from "./internal-slot.ts";
 
 /**
  * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
@@ -51,11 +51,19 @@ export type SchemaRefinement =
   | { kind: "strMin"; n: number }
   | { kind: "strMax"; n: number };
 
+/** 规范数组下标（"0" / "12"；无前导零）——数组视图的元素槽判据（BUG-258） */
+const CANONICAL_INDEX = /^(?:0|[1-9]\d*)$/;
+
 export type SchemaNode =
   | { k: "lit"; value: import("@nudojs/core").LiteralValue }
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: SchemaRefinement[] }
-  | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> }
-  | { k: "arr"; element: SchemaNode }
+  // BUG-258：`arrayView` = 数组视图（`Shape.view === "array"`，RegExpExecArray
+  // 等）——承载的槽（下标 / length / index / input / groups）与普通对象相同，
+  // 但运行时**必须**是数组 ⇒ zod 面用 `z.tuple`（`z.object` 会按对象校验）。
+  | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }>; arrayView?: boolean }
+  // BUG-094：数组**自身**的长度界（`array(T).min(n)` / `.max(n)`）此前无处承载
+  // ⇒ zod / standard 面整段丢掉长度域、guard 面保留 ⇒ 跨面矛盾 + 零台账。
+  | { k: "arr"; element: SchemaNode; minLen?: number; maxLen?: number }
   | { k: "tuple"; elements: SchemaNode[]; rest?: SchemaNode }
   | { k: "union"; members: SchemaNode[] }
   | { k: "fn" }
@@ -179,6 +187,41 @@ function lengthBound(p: Pred, self?: Term): { dir: "min" | "max"; n: number } | 
   return { dir: "max", n: Math.ceil(n) - 1 };
 }
 
+/**
+ * BUG-094：数组**自身**的长度界（`length(self) op n`）→ `minLen` / `maxLen`。
+ *
+ * 两条投影路径（约束 `c.element` 分支 / 形状兜底）此前都直接 `return` 元素节点
+ * ⇒ 数组级 preds 静默消失（zod / standard 面放行违约数组）且**零 dropped 台账**
+ * ⇒ 与 guard 面矛盾。不可投影的数组级 pred 一律进 `dropped`（有损必须可观测）。
+ */
+function arrayLengthBounds(
+  preds: Pred | readonly Pred[] | undefined,
+  self: Term | undefined,
+): { minLen?: number; maxLen?: number; dropped: string[] } {
+  const dropped: string[] = [];
+  let minLen: number | undefined;
+  let maxLen: number | undefined;
+  // 单条 pred 可能是 and 链（Abs 面）⇒ 先展平；展不平的（or/not）原样记账
+  const list = preds === undefined ? [] : Array.isArray(preds) ? preds : [preds];
+  const leaves: Pred[] = [];
+  for (const p of list) {
+    const sub = predLeaves(p);
+    if (sub === "unexpressible") leaves.push(p);
+    else leaves.push(...sub);
+  }
+  for (const p of leaves) {
+    if (p.op === "true" || p.op === "typeof") continue;
+    const lb = lengthBound(p, self);
+    if (!lb) {
+      dropped.push(`pred not projected: ${predToString(p)}`);
+      continue;
+    }
+    if (lb.dir === "min") minLen = minLen === undefined ? lb.n : Math.max(minLen, lb.n);
+    else maxLen = maxLen === undefined ? lb.n : Math.min(maxLen, lb.n);
+  }
+  return { minLen, maxLen, dropped };
+}
+
 function primOfType(type: string): SchemaNode["k"] extends never ? never : Extract<SchemaNode, { k: "prim" }>["type"] {
   if (type === "number" || type === "string" || type === "boolean" || type === "bigint" || type === "symbol") {
     return type;
@@ -267,7 +310,15 @@ export function constraintToSchemaNode(c: NudoConstraint): SchemaNode {
     };
   }
   if (c.element) {
-    return { k: "arr", element: constraintToSchemaNode(c.element) };
+    // BUG-094：数组级 preds（`length(self) op n`）必须落进节点——此前直接
+    // `return` 元素节点 ⇒ 长度域整段丢失（zod / standard 面放行违约数组）。
+    const { minLen, maxLen } = arrayLengthBounds(c.preds, undefined);
+    return {
+      k: "arr",
+      element: constraintToSchemaNode(c.element),
+      ...(minLen !== undefined ? { minLen } : {}),
+      ...(maxLen !== undefined ? { maxLen } : {}),
+    };
   }
 
   const preds = c.preds ?? [];
@@ -323,6 +374,10 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
       return;
     }
     if (n.element) {
+      // BUG-094：数组级 preds 也要进台账（不可投影的长度界 / 其它 pred）。
+      // 投影进 `minLen` / `maxLen` 的不记账；其余逐条记 —— 有损投影必须可观测。
+      const bounds = arrayLengthBounds(n.preds, undefined);
+      for (const d of bounds.dropped) out.push(path ? `${path}: ${d}` : d);
       visit(n.element, `${path}[]`);
       return;
     }
@@ -368,8 +423,12 @@ function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode;
     ) {
       return { node: { k: "lit", value: v }, dropped };
     } else if (typeof v === "bigint") {
+      // BUG-032：bigint 字面量保**基类型**（`z.bigint()` / `{"k":"prim","type":"bigint"}`）。
+      // 退化成 `unknown` 会让 zod / standard 两个方言接受**任何**值（字符串 /
+      // 对象 / 数字都行）⇒ 校验器与 guard 面（`data === 10n`）接受集不相交。
+      // 字面量精度另记台账（有损投影必须可观测）。
       dropped.push(`lit bigint not projected: ${String(v)}`);
-      return { node: { k: "unknown" }, dropped };
+      return { node: { k: "prim", type: "bigint", refinements: [] }, dropped };
     }
   }
 
@@ -382,7 +441,38 @@ function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode;
   // undefined（不可表达），落到下方 shape 尽力路径。
   const projected = absToConstraint(a, budget);
   if (projected) {
-    const node = constraintToSchemaNode(projected);
+    let node = constraintToSchemaNode(projected);
+    // BUG-094：core 的 `projectArr` 只投影元素域，**不承载数组自身的 preds**
+    // ⇒ 长度界在契约通道上整段消失。这里按 Abs 自身的 preds 补挂长度界，
+    // 并把它表达不了的数组级 pred 记进 dropped（与形状兜底同口径）。
+    if (node.k === "arr" && a.shape.k === "arr") {
+      const bounds = arrayLengthBounds(a.pred, a.term);
+      dropped.push(...bounds.dropped);
+      if (bounds.minLen !== undefined || bounds.maxLen !== undefined) {
+        node = {
+          ...node,
+          ...(bounds.minLen !== undefined ? { minLen: bounds.minLen } : {}),
+          ...(bounds.maxLen !== undefined ? { maxLen: bounds.maxLen } : {}),
+        };
+      }
+    }
+    // BUG-130 / BUG-131：core 的约束投影（`projectObj`）只剔 `internal` 槽，
+    // **不看 `symbolKey`**、也保留「数字下标」例外 ⇒ symbol 槽与生成器元素槽
+    // 仍会以字符串字段进产物（运行时不存在的属性 / 生成器没有任何自有属性）。
+    // 这里按 Abs 槽表把不可见槽从节点上摘掉（与形状兜底路径同判据）。
+    if (node.k === "obj" && a.shape.k === "obj") {
+      const objSlots = a.shape.slots;
+      node = {
+        ...node,
+        slots: node.slots.filter((s) => {
+          const slot = objSlots[s.key];
+          if (!slot) return true;
+          const hidden = isInvisibleObjSlot(s.key, slot, objSlots);
+          if (hidden) dropped.push(`${s.key}: hidden slot not projected (symbol/internal key)`);
+          return !hidden;
+        }),
+      };
+    }
     dropped.push(...constraintDropped(projected));
     return { node, dropped };
   }
@@ -442,23 +532,40 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
-        // Bug 240：internal 槽（私有字段 / 生成器协议槽）不是自有属性 ⇒ 不进
-        // 产物面（与 core 的约束面 / guard 面 / format 面同判据）。约束投影
-        // （`absToConstraint`）已剔；这里是形状兜底路径（约束不可表达时）。
-        if (isHiddenInternalSlot(key, slot)) continue;
+        // Bug 240 / BUG-130 / BUG-131：symbol 槽与生成器元素槽不是自有属性 ⇒
+        // 不进产物面（与 core 的约束面 / guard 面 / format 面同判据；判据见
+        // `internal-slot.ts`）。约束投影（`absToConstraint`）漏掉的槽在此兜住。
+        if (isInvisibleObjSlot(key, slot, s.slots)) continue;
         const sub = absToSchemaNodeB(slot.value, budget);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
-      return { node: { k: "obj", slots }, dropped };
+      return {
+        node: {
+          k: "obj",
+          slots,
+          // BUG-258：数组视图 facet 必须进节点——丢了它，zod 面就按
+          // `z.object({...})` 校验真实数组（拒绝实现自己的返回值）。
+          ...(s.view === "array" ? { arrayView: true } : {}),
+        },
+        dropped,
+      };
     }
     case "arr": {
-      if (a.pred && a.pred.op !== "true") {
-        dropped.push(`arr pred not projected: ${predToString(a.pred)}`);
-      }
+      // BUG-094：数组自身 preds → minLen / maxLen；表达不了的进台账（不静默丢）
+      const bounds = arrayLengthBounds(a.pred, a.term);
+      dropped.push(...bounds.dropped);
       const sub = absToSchemaNodeB(s.element, budget);
       dropped.push(...sub.dropped);
-      return { node: { k: "arr", element: sub.node }, dropped };
+      return {
+        node: {
+          k: "arr",
+          element: sub.node,
+          ...(bounds.minLen !== undefined ? { minLen: bounds.minLen } : {}),
+          ...(bounds.maxLen !== undefined ? { maxLen: bounds.maxLen } : {}),
+        },
+        dropped,
+      };
     }
     case "tuple": {
       // hole 槽（`in` 为 false）≠ 显式 undefined 槽。zod tuple 无空槽概念，
@@ -568,15 +675,49 @@ function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): str
         else out += `.lte(${r.n})`;
         break;
       case "strMin":
-        out += `.min(${r.n})`;
+        // BUG-203：Abs 的长度语义 = `length(x)`（**UTF-16 码元**，与 JS
+        // `.length` / guard 面 `data.length >= n` / standard 面 `strMin` 同源），
+        // 而 zod v4 的 `.min()/.max()` 按 **Unicode 码点**计 ⇒ 含星平面字符时
+        // zod 面与另外三面裁决相反（min 假红 / max 假绿）。
+        // ⇒ 用 `refine` 显式写 UTF-16 长度，不得直接映射 `.min()/.max()`。
+        out += `.refine((s) => s.length >= ${r.n})`;
         break;
       case "strMax":
-        out += `.max(${r.n})`;
+        out += `.refine((s) => s.length <= ${r.n})`;
         break;
       default:
         break;
     }
   }
+  return out;
+}
+
+/**
+ * BUG-093：带 refinement 的 number prim 里，**哪些非有限值仍满足全部 refinement**
+ * ⇒ 追加 `.or(z.literal(±Infinity))`（保留 refinement 语义，不退化成 `z.number()`）。
+ *
+ * 判据逐条按运行时语义求值（与 standard 面的 `numBound` 实现同判据）：
+ * - `int`（`Number.isInteger`）对 ±Infinity 为假 ⇒ 整个不放宽；
+ * - `numBound`（`gt/ge/lt/le`）对 ±Infinity 按数学比较 ⇒ `gt/ge` 只允许
+ *   `+Infinity`、`lt/le` 只允许 `-Infinity`；
+ * - 其余 refinement（`strMin/strMax`）对 number 不适用（standard 面亦不检查）⇒ 不影响。
+ */
+function widenZodNumberInfinities(refinements: SchemaRefinement[], source: string): string {
+  if (refinements.some((r) => r.kind === "int")) return source;
+  const bounds = refinements.filter(
+    (r): r is Extract<SchemaRefinement, { kind: "numBound" }> => r.kind === "numBound",
+  );
+  if (bounds.length === 0) return source;
+  const satisfies = (v: number): boolean =>
+    bounds.every((r) => {
+      if (r.op === "gt") return v > r.n;
+      if (r.op === "ge") return v >= r.n;
+      if (r.op === "lt") return v < r.n;
+      return v <= r.n;
+    });
+  let out = source;
+  if (satisfies(Infinity)) out += ".or(z.literal(Infinity))";
+  if (satisfies(-Infinity)) out += ".or(z.literal(-Infinity))";
   return out;
 }
 
@@ -659,19 +800,76 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
       // **拒绝被导出函数自己的返回值**（`nanZero()` 恒返 NaN）⇒ 消费方假红。
       // 放宽成「有限数 ∪ NaN ∪ ±Infinity」。
       //
-      // 带 refinement 的 number **不放宽**：refinement 本身已把非有限值排除
-      // （`x > 5` / `Number.isInteger(x)` 对 NaN / ±Infinity 都为假）⇒
-      // `z.number().gt(5)` 的域与 Abs 域一致（不放宽才是收窄）。
+      // 带 refinement 的 number **不一律**放宽（见下方 BUG-093 的逐条判定）。
       if (node.type === "number" && node.refinements.length === 0) {
         return {
           source: "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))",
           dropped: [],
         };
       }
-      return { source: zodApplyRefinements(`z.${node.type}()`, node.refinements), dropped: [] };
+      // BUG-093：只有 `int`（`Number.isInteger`）真的排除非有限值。`gt / ge /
+      // lt / le` 对 ±Infinity **按数学语义成立**（`Infinity > 5` 为真、
+      // `-Infinity < 5` 也为真）⇒ 不放宽就是**收窄**：`number().gt(0)` 的 zod 面
+      // 拒绝 `Infinity`（被导出函数自己的返回值）而 guard / standard / dts 三面
+      // 接受 ⇒ 假红。逐条按「该端是否满足全部 numBound」判定，只放宽真正允许的
+      // 那一端（`lt(n)` 只放宽 `-Infinity`，不把违约的 `Infinity` 放进来）；
+      // NaN 不放宽——任何 numBound 对 NaN 都为假（与 guard / standard 同判据）。
+      return {
+        source: widenZodNumberInfinities(
+          node.refinements,
+          zodApplyRefinements(`z.${node.type}()`, node.refinements),
+        ),
+        dropped: [],
+      };
     case "obj": {
       const dropped: string[] = [];
+      // BUG-258：**数组视图**（RegExpExecArray 等）→ `z.tuple([...])`。
+      // `z.object({...})` 把真实数组按对象校验 ⇒ zod 面拒绝实现自己的返回值，
+      // 而 guard / standard / dts 三面都判定它是数组。`z.tuple` 自带
+      // `Array.isArray` + 定长 + 逐位校验 ⇒ 四面同判据。
+      // - `length` 由元组长度隐含（在 exec 结果上与下标槽数恒相等）；
+      // - 其余非下标槽（`index` / `input` / `groups`）`z.tuple` 不校验，进台账
+      //   （不静默丢：guard / standard 面仍逐槽判）。
+      if (node.arrayView) {
+        const idx = node.slots
+          .filter((slot) => CANONICAL_INDEX.test(slot.key))
+          .sort((x, y) => Number(x.key) - Number(y.key));
+        const last = idx.length > 0 ? Number(idx[idx.length - 1]!.key) : -1;
+        const elements: string[] = [];
+        let holes = false;
+        for (let i = 0; i <= last; i++) {
+          const slot = idx.find((s) => Number(s.key) === i);
+          if (slot === undefined) {
+            // 洞位（缺下标槽）：元组无空槽语法 ⇒ 不校验该位。
+            elements.push("z.unknown()");
+            holes = true;
+            continue;
+          }
+          const inner = renderZod(slot.node);
+          dropped.push(...inner.dropped);
+          elements.push(inner.source);
+        }
+        if (holes) dropped.push("array view: hole slots rendered as z.unknown()");
+        const sideKeys = node.slots
+          .filter((slot) => !CANONICAL_INDEX.test(slot.key) && slot.key !== "length")
+          .map((slot) => slot.key);
+        if (sideKeys.length > 0) {
+          dropped.push(
+            `array view: non-index slots not validated by z.tuple (${sideKeys.join(", ")})`,
+          );
+        }
+        return {
+          source: elements.length > 0 ? `z.tuple([${elements.join(", ")}])` : "z.array(z.unknown())",
+          dropped,
+        };
+      }
+      // BUG-156：zod v4 在 shape 阶段对 `__proto__` **整条跳过**
+      // （`if (key === "__proto__") continue;`）⇒ 声明的必填字段**从不被校验**
+      // ⇒ 违约值被静默放行（假绿），而 dts / guard / standard 三面都要求它。
+      // 故把该槽剔出 shape，改用 `.superRefine()` 显式校验**自有数据属性**。
+      const protoSlots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       const entries = node.slots
+        .filter((slot) => (slot.key === "__proto__" ? (protoSlots.push(slot), false) : true))
         .map((slot) => {
           const inner = renderZod(slot.node);
           dropped.push(...inner.dropped);
@@ -680,11 +878,55 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
           return `${key}: ${slot.optional ? `${inner.source}.optional()` : inner.source}`;
         })
         .join(", ");
-      return { source: `z.object({ ${entries} })`, dropped };
+      let source = `z.object({ ${entries} })`;
+      // BUG-096：键存在性口径三面统一 —— 规则是「自有属性 或 原型链上的键，
+      // 但 `Object.prototype` 自身的成员（污染键 `toString` / `valueOf` /
+      // `constructor` / `hasOwnProperty` …）不算在场」。guard 面
+      // （core `denote.ts` 的 `hasPropertyClause`）与 standard 面
+      // （`standard-schema.ts` 的 `hasProperty` / `__nudoHasProperty`）都按
+      // 这条子句判；`z.object` 原生按 `in` 判在场（含 Object.prototype 成员）
+      // ⇒ 槽名撞污染键时 zod 比另两面**松**（`Object.create({ toString: "s" })`
+      // 被放行）。这里用 `.superRefine` 补上同一条子句 ⇒ 三面逐值同裁决。
+      //
+      // 只对**必填**的污染键槽补：其余键 `!(k in Object.prototype)` ⇒ 子句
+      // 退化成 `k in value`（即 zod 原生判据），无需额外代码。
+      for (const slot of node.slots) {
+        if (slot.optional) continue;
+        if (!Object.hasOwn(Object.prototype, slot.key)) continue;
+        const k = JSON.stringify(slot.key);
+        source +=
+          `\n  .superRefine((value, ctx) => {\n` +
+          `    if (!(Object.hasOwn(value, ${k}) || (${k} in value && !Object.hasOwn(Object.prototype, ${k})))) {\n` +
+          `      ctx.addIssue({ code: "custom", message: "required", path: [${k}] });\n` +
+          `    }\n` +
+          `  })`;
+      }
+      for (const slot of protoSlots) {
+        const inner = renderZod(slot.node);
+        dropped.push(...inner.dropped);
+        dropped.push(
+          `__proto__: zod v4 skips this key in object shapes ⇒ validated via .superRefine (own data property only)`,
+        );
+        source +=
+          `\n  .superRefine((value, ctx) => {\n` +
+          `    const desc = Object.getOwnPropertyDescriptor(value, "__proto__");\n` +
+          (slot.optional
+            ? `    if (!desc) return;\n`
+            : `    if (!desc) { ctx.addIssue({ code: "custom", message: "required", path: ["__proto__"] }); return; }\n`) +
+          `    const parsed = (${inner.source}).safeParse(desc.value);\n` +
+          `    if (!parsed.success) ctx.addIssue({ code: "custom", message: parsed.error.issues.map((i) => i.message).join("; ") || "invalid", path: ["__proto__"] });\n` +
+          `  })`;
+      }
+      return { source, dropped };
     }
     case "arr": {
       const inner = renderZod(node.element);
-      return { source: `z.array(${inner.source})`, dropped: inner.dropped };
+      // BUG-094：数组长度界必须落成 `.min() / .max()`（zod 原生支持 ⇒ 不是
+      // 「不可表达」，不得静默丢）。guard 面一直保留它 ⇒ 丢掉即跨面矛盾。
+      let bounds = "";
+      if (node.minLen !== undefined) bounds += `.min(${node.minLen})`;
+      if (node.maxLen !== undefined) bounds += `.max(${node.maxLen})`;
+      return { source: `z.array(${inner.source})${bounds}`, dropped: inner.dropped };
     }
     case "tuple": {
       const dropped: string[] = [];

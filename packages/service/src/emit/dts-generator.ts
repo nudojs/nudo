@@ -146,6 +146,10 @@ function formatPropKey(k: string): string {
  * 公共面 `lookupObjAccessor` 同口径实现，不改 core 公共 API 形状。
  */
 function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
+  // BUG-167：占位槽 `unknown` = 读域**不可判**（非纯 getter / defineProperty 装的
+  // 访问器）⇒ 不得为投影执行用户 getter（分析期副作用 + 末次读被冻结成「确定值」
+  // ⇒ dts 面自信错值）；直接投影 unknown。
+  if (fallback.term === undefined) return fallback;
   const acc = lookupObjAccessor(a, k);
   if (!acc?.get) return fallback;
   try {
@@ -412,6 +416,51 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
       // `for (const v of gen(1))` 报 TS2488（产物拒绝实现本身允许的用法）。
       const iter = iteratorTSType(a, typeVars, budget);
       if (iter !== undefined) return iter;
+      // BUG-258：**数组视图**（`view: "array"`，RegExpExecArray 等）必须投影成
+      // **数组类型**。逐槽摊平得到的是对象字面量类型（`{ "0": "abc"; … }`）⇒
+      // 消费方 `.map` / 下标读全报 TS2339，而同一份 Abs 在 guard / standard 面
+      // 要求 `Array.isArray`（产物与判据五面矛盾）。
+      // 下标槽（规范数组下标）→ 元组元素（洞位无语法可表 ⇒ `undefined`，与读值
+      // 同形）；`length` 由元组自带，不重复写；`index` / `input` / `groups` 等
+      // 引擎附带的**自有**槽 → 元组与对象类型的交集（`.map` 等数组成员仍可用）。
+      if (a.shape.view === "array") {
+        const idxNums = Object.keys(a.shape.slots)
+          .filter((k) => CANONICAL_INDEX.test(k))
+          .map(Number)
+          .sort((x, y) => x - y);
+        let arrayPart = "unknown[]";
+        if (idxNums.length > 0) {
+          const elems: string[] = [];
+          for (let i = 0; i <= idxNums[idxNums.length - 1]!; i++) {
+            const key = String(i);
+            const slot = a.shape.slots[key];
+            elems.push(
+              slot === undefined
+                ? "undefined"
+                : wrapComplexAbs(slotAbsOf(a, key, slot.value), typeVars, budget),
+            );
+          }
+          arrayPart = `[${elems.join(", ")}]`;
+        }
+        const sideEntries: string[] = [];
+        for (const [k, slot] of Object.entries(a.shape.slots)) {
+          if (CANONICAL_INDEX.test(k) || k === "length") continue;
+          if (isHiddenInternalSlot(k, slot)) continue;
+          if (slot.symbolKey === true) {
+            const line = symbolMemberLine(k, slot, typeVars, budget);
+            if (line !== undefined) sideEntries.push(line);
+            continue;
+          }
+          const slotAbs = slotAbsOf(a, k, slot.value);
+          const inner = absToTSTypeB(slotAbs, typeVars, budget);
+          sideEntries.push(
+            slot.optional
+              ? `${formatPropKey(k)}?: ${wrapComplexAbs(slotAbs, typeVars, budget)}`
+              : `${formatPropKey(k)}: ${inner}`,
+          );
+        }
+        return sideEntries.length === 0 ? arrayPart : `${arrayPart} & { ${sideEntries.join("; ")} }`;
+      }
       const entries: string[] = [];
       for (const [k, slot] of Object.entries(a.shape.slots)) {
         // Bug 240 / 554：内部槽（internal）不是用户可见属性（私有字段 `#x` /
@@ -605,7 +654,18 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
           ...(slot.symbolKey === true ? { symbolKey: true } : {}),
         };
       }
-      return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+      return makeAbs(
+        {
+          k: "obj",
+          slots,
+          // BUG-258：数组视图 facet 必须透传——widen 造新 shape 时丢掉它 ⇒
+          // 形参位投影回对象字面量类型（`.map` TS2339）。
+          ...(s.view !== undefined ? { view: s.view } : {}),
+        },
+        undefined,
+        undefined,
+        "exact",
+      );
     }
     case "eff":
       return makeAbs(
@@ -630,6 +690,69 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
       );
     default:
       return a;
+  }
+}
+
+/**
+ * BUG-214：**纯调用点观测**的返回位拓宽。
+ *
+ * 只有 `call@` 见证（没有 `@nudo:case` 断言、也没有入口泛化）时，返回 Abs 是
+ * **一次**调用点的取值 ⇒ 对象槽里的字面量是那次调用的实参流进来的，不是函数
+ * 的类型（`mk(1)` ⇒ `{ a: 1; b: "s" }`，而 `mk("x")` 返回 `{ a: "x" }`）。
+ * 把这种字面量发布成 `.d.ts` 会让消费端对**合法代码**报 TS2345 / TS2367。
+ *
+ * → 对象槽里的标量字面量剥到基类型（`{ a: number; b: string }`）。
+ * 非纯观测证据（入口泛化 / 带断言的 case）维持「嵌套精度保留」。
+ */
+function widenObservedReturnAbs(a: Abs, budget: ProjectionBudget = new ProjectionBudget()): Abs {
+  const stop = budget.enter(a);
+  if (stop) return a;
+  try {
+    const s = a.shape;
+    if (s.k === "prim") {
+      if (a.term?.op === "lit" && a.term.value !== null && a.term.value !== undefined) {
+        return makeAbs(s, undefined, undefined, "exact");
+      }
+      return a;
+    }
+    if (s.k === "obj") {
+      const slots: Record<
+        string,
+        { value: Abs; optional?: boolean; internal?: boolean; symbolKey?: boolean }
+      > = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        const src = slotAbsOf(a, k, slot.value);
+        slots[k] = {
+          ...slot,
+          value: widenObservedReturnAbs(src, budget),
+        };
+      }
+      return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
+    }
+    if (s.k === "arr") {
+      return makeAbs(
+        { k: "arr", element: widenObservedReturnAbs(s.element, budget) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    if (s.k === "tuple") {
+      return makeAbs(
+        {
+          k: "tuple",
+          elements: s.elements.map((e) => widenObservedReturnAbs(e, budget)),
+          ...(s.rest ? { rest: widenObservedReturnAbs(s.rest, budget) } : {}),
+          ...(s.holes?.length ? { holes: [...s.holes] } : {}),
+        },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    return a;
+  } finally {
+    budget.exit();
   }
 }
 
@@ -864,10 +987,97 @@ function getParamName(fn: FunctionAnalysis, index: number): string {
  * - rest 位的注解不是数组类型（TS 硬规则：A rest parameter must be of an
  *   array type）——放行会产出不可编译的 .d.ts。
  */
-function tsParamAnnotation(fn: FunctionAnalysis, index: number, isRest: boolean): string | undefined {
+/**
+ * dts 投影上下文（BUG-168）。
+ *
+ * 注解原文的**可解析性**判据需要模块面（哪些类型名在产物里会有声明）；
+ * 注解引用到的名字要回传给模块面 —— 本地类 ⇒ 补 `declare class`，
+ * 别的模块的 import ⇒ 补 `import type`（否则消费方 tsc 报 TS2304）。
+ */
+type DtsProjectionCtx = {
+  surface?: DtsModuleSurface;
+  /** 注解原文引用到的**模块面类型名**（本地类 / import） */
+  typeRefs?: Set<string>;
+  /** 被丢弃的注解（引用了产物里不可解析的类型名）——台账用 */
+  dropped?: string[];
+};
+
+/**
+ * TS 类型文本里**不需要产物声明**的词（关键字 / 基元 / TS 内建类型名）。
+ *
+ * 判据来源：TS 关键字 + lib.d.ts 的全局类型名（与 `isRuntimeGlobalCtorName`
+ * 的运行时构造器名单同源，另加工具类型与迭代协议）。
+ */
+const TS_TYPE_TOKENS: ReadonlySet<string> = new Set([
+  // 关键字 / 基元
+  "string", "number", "boolean", "bigint", "symbol", "object", "unknown", "any",
+  "never", "void", "undefined", "null", "this", "true", "false", "readonly",
+  "keyof", "typeof", "infer", "extends", "in", "is", "asserts", "unique",
+  "satisfies", "declare", "abstract", "const", "new", "import",
+  // 工具类型 / 内建泛型
+  "Array", "ReadonlyArray", "Promise", "PromiseLike", "Readonly", "Partial",
+  "Required", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Record",
+  "Parameters", "ConstructorParameters", "ReturnType", "InstanceType",
+  "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "Uppercase",
+  "Lowercase", "Capitalize", "Uncapitalize", "PropertyKey", "TemplateStringsArray",
+  "ArrayLike", "Iterable", "Iterator", "IterableIterator", "AsyncIterable",
+  "AsyncIterator", "AsyncIterableIterator", "Generator", "AsyncGenerator",
+  "GeneratorFunction", "AsyncGeneratorFunction", "Map", "ReadonlyMap", "WeakMap",
+  "Set", "ReadonlySet", "WeakSet", "WeakRef", "FinalizationRegistry",
+  "JSON", "Math", "Reflect", "Intl", "Proxy",
+]);
+
+/**
+ * 注解原文里引用的**类型名**（BUG-168）。
+ *
+ * 跳过：限定访问的后半段（`Intl.DateTimeFormat` 只解析 `Intl`——产物里要解析的
+ * 只是根名）、对象类型里的**属性键** / 索引签名参数名（`{ a: number }` 的 `a`）。
+ * 其余标识符一律视为类型引用，由调用方核对「产物里可解析」。
+ */
+function annotationTypeRefs(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
+    const name = m[0];
+    const at = m.index ?? 0;
+    if (at > 0 && text[at - 1] === ".") continue;
+    // 属性键 / 索引签名参数名：`a: T` / `a?: T`
+    if (/^\?*\s*:/.test(text.slice(at + name.length))) continue;
+    out.push(name);
+  }
+  return out;
+}
+
+function tsParamAnnotation(
+  fn: FunctionAnalysis,
+  index: number,
+  isRest: boolean,
+  ctx?: DtsProjectionCtx,
+): string | undefined {
   const text = tsAnnotationTypeText(fn.formals?.[index]?.tsType);
   if (!text) return undefined;
   if (isRest && !isArrayTypeText(text)) return undefined;
+  // BUG-168：注解原文里的类型名必须在**产物里可解析**才放行 —— 类型形参
+  // （`<T>(x: T)`）/ 本地 interface / type 别名 / 未导入的类型名落进 `.d.ts`
+  // 就是 TS2304（整份产物编译不过，而 `nudo export` exit 0、零台账）。
+  // 不可解析 ⇒ 不放行，回落 `paramTypeFromAbs` 的观测口径（与 check 面一致）
+  // 并留台账；可解析 ⇒ 记下引用名，模块面据此补 `declare class` / `import type`。
+  for (const name of annotationTypeRefs(text)) {
+    if (TS_TYPE_TOKENS.has(name)) continue;
+    const surface = ctx?.surface;
+    // 可解析 = 环境内建类型名（Date / Error / URL …）/ 产物里会声明的本地类 /
+    // 产物里会补 `import type` 的导入名。
+    const resolvable =
+      isRuntimeGlobalCtorName(name) ||
+      (surface !== undefined &&
+        (surface.classes.has(name) || surface.imports?.has(name) === true));
+    if (!resolvable) {
+      ctx?.dropped?.push(`${fn.name}.${getParamName(fn, index)}: ${name}`);
+      return undefined;
+    }
+    if (surface?.classes.has(name) || surface?.imports?.has(name) === true) {
+      ctx?.typeRefs?.add(name);
+    }
+  }
   return text;
 }
 
@@ -1027,7 +1237,10 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
         case "id":
           return {
             name: f.name,
-            hasDefault: false,
+            // BUG-169：TS 可选形参（`b?: T`）可省 —— `FormalParam.optional`
+            // 现在由 core 从源码文本判定并写回（`tsOptionalParams`），与
+            // JS 默认值同一条通道 ⇒ `.d.ts` 的 `?` 不再丢（消费端 TS2554）。
+            hasDefault: f.optional === true,
             isRest: false,
             isPattern: false,
             bound: [],
@@ -1057,7 +1270,10 @@ function declaredParams(fn: FunctionAnalysis): DeclaredParam[] {
         case "pattern":
           return {
             name: f.placeholder,
-            hasDefault: false,
+            // BUG-107：解构形参的**默认值存在性**由解析器如实给出
+            // （`FormalParam.optional`，`{ a } = {}` ⇒ true）。硬编码 false
+            // ⇒ `.d.ts` 把可省形参**必填化** ⇒ 合法调用报 TS2554。
+            hasDefault: f.optional === true,
             isRest: false,
             isPattern: true,
             patternKind: f.patternKind ?? "object",
@@ -1222,6 +1438,7 @@ function textUnionUndefined(t: string): string {
 function computeMainSignature(
   fn: FunctionAnalysis,
   contract?: DtsContractFace,
+  ctx?: DtsProjectionCtx,
 ): MainSignature {
   const contractByParam = contractParamMap(contract);
   const declared = declaredParams(fn);
@@ -1260,7 +1477,7 @@ function computeMainSignature(
     //      口径「声明位取侧车契约」；`Case:` 行才是观测值）；
     //   2. TS 声明注解（Bug 479，`.ts` 源）—— 源码里写下的类型，原文保留；
     //   3. case-widen —— 观测值 join + 逆变 widen（无声明时的既有回落）。
-    const annotation = tsParamAnnotation(fn, i, isRest);
+    const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const contractRender = contractParamRenderAbs(contractHit);
     const typeStr = contractRender
       ? contractParamType(contractRender, isRest)
@@ -1305,14 +1522,21 @@ function computeMainSignature(
     //   1. 契约级（Bug 536）—— 手写契约申报的调用域，权威；
     //   2. 声明级（Bug 526 / 553）—— 实现签名带默认值（JS 语义：可省略）；
     //   3. 观测级 —— 最短观测调用省略了该位（观测证明存在更短的合法调用）。
+    // BUG-108：契约覆盖该位时**契约级 ∪ 声明级**（旧实现只看契约级 ⇒ 与
+    // standard 面的「契约级 ∪ 声明级」互斥；标准面才是对的）。
     // rest 位不可选（TS：剩余参数不能带 `?`）；解构位不可选（TS：绑定模式
-    // 参数不能带 `?`）。
+    // 参数不能带 `?`）——**但**未绑定展开时渲染名是求值占位（`_p0`，普通
+    // 标识符），此时可省性可以表达（BUG-107：`{ a } = {}` ⇒ `_p0?: any`）。
+    const patternOptional =
+      decl?.isPattern === true && decl.hasDefault === true && !boundCovered;
     const optional =
-      isRest || decl?.isPattern === true
+      isRest
         ? false
-        : contractHit.abs
-          ? contractHit.optional === true
-          : decl?.hasDefault === true || i >= observedMinArity;
+        : decl?.isPattern === true
+          ? patternOptional
+          : contractHit.abs
+            ? contractHit.optional === true || decl?.hasDefault === true
+            : decl?.hasDefault === true || i >= observedMinArity;
     slots.push({
       name,
       type: typeStr,
@@ -1330,12 +1554,19 @@ function computeMainSignature(
   }
   const params = renderParamSlots(slots);
   const retAbs = contract?.return ?? returnAbsOf(fn);
+  // BUG-214：**纯调用点观测**（只有 call@ 见证）的返回位是**一次调用**的取值，
+  // 不是函数的类型 ⇒ 对象槽里的字面量必须拓宽（否则发布的 .d.ts 让消费端对
+  // 合法代码报 TS2345 / TS2367）。
+  const observedOnly =
+    fn.cases.length > 0 && fn.cases.every((c) => c.source === "callsite");
   // 契约返回位（声明级证据，权威）⇒ 保形（Bug 520：lit(42) → 42，与 zod /
   // standard / check 三面同口径）；观测返回位沿用调用面 widen 口径。
   const returnType = retAbs
     ? contract?.return
       ? contractReturnTSType(contract.return)
-      : absToTSType(widenTopLevelAbs(retAbs))
+      : absToTSType(
+          observedOnly ? widenObservedReturnAbs(widenTopLevelAbs(retAbs)) : widenTopLevelAbs(retAbs),
+        )
     : "unknown";
   return { params, paramNames, paramTypes, returnType };
 }
@@ -1392,6 +1623,7 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
  */
 function computeHofSignature(
   fn: FunctionAnalysis,
+  ctx?: DtsProjectionCtx,
 ):
   | {
       typeParams: string[];
@@ -1478,7 +1710,7 @@ function computeHofSignature(
     const promoted = byParam.get(fn.paramNames[i] ?? rawName) ?? byParam.get(rawName);
     // Bug 479：TS 声明注解优先于 HOF 提升位（声明 > 泛型快照；契约面已在
     // 上游挡住——有契约参数时本函数根本不会被调用）。
-    const typeStr = tsParamAnnotation(fn, i, isRest)
+    const typeStr = tsParamAnnotation(fn, i, isRest, ctx)
       ?? (promoted
         ? absToTSType(promoted, typeVars)
         : isRest
@@ -1510,12 +1742,18 @@ export interface DtsFunctionProjection {
    * 成员声明进 `declare class C { … }`，类声明由 projectModuleDts 合成。
    */
   classMember?: { className: string; member: string; lines: string[] };
+  /**
+   * BUG-168：注解原文引用到的**模块面类型名**（本地类 / import）——模块面
+   * 据此补 `declare class` / `import type`（否则产物里是 TS2304）。
+   */
+  typeRefs?: string[];
 }
 
 /** 契约-only 参数签名（skip / 无 case 函数 + 手写契约参数位）：具名参数 + 声明返回 */
 function contractOnlySignature(
   fn: FunctionAnalysis,
   contract: DtsContractFace,
+  ctx?: DtsProjectionCtx,
 ): MainSignature {
   const byName = contractParamMap(contract);
   const declared = declaredParams(fn);
@@ -1540,18 +1778,18 @@ function contractOnlySignature(
       name = `${name}${n}`;
     }
     usedNames.add(name);
-    const annotation = tsParamAnnotation(fn, i, isRest);
+    const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const hitRender = contractParamRenderAbs(hit);
     const typeStr = hitRender
       ? contractParamType(hitRender, isRest)
       : (annotation ?? (isRest ? "unknown[]" : "unknown"));
-    // 可选性（与 computeMainSignature 同口径）：契约级 > 声明级（默认值）
+    // 可选性（与 computeMainSignature 同口径）：契约级 ∪ 声明级（默认值）。
+    // BUG-108：契约覆盖该位时旧实现**只看契约级** ⇒ `fn({ a: num })` +
+    // `function f(a = 1)` 的 dts 面把 `a` 印成必填，而 standard 面
+    // （契约级 ∪ 声明级）印成可选 ⇒ 三面互斥；声明级默认值是 JS 语义的
+    // 「可省略」，契约没否决它 ⇒ 两来源取并。
     const optional =
-      isRest || decl.isPattern
-        ? false
-        : hit.abs
-          ? hit.optional === true
-          : decl.hasDefault;
+      isRest || decl.isPattern ? false : hit.abs ? hit.optional === true || decl.hasDefault : decl.hasDefault;
     slots.push({
       name,
       type: typeStr,
@@ -1597,16 +1835,40 @@ export function projectFunctionDts(
 ): DtsFunctionProjection {
   // Bug 233：brand 类名只在**产物里可解析**时才保留（本地声明 / 已 import /
   // TS 全局类型名）——作用域覆盖整条投影链（JSDoc / 签名 / 返回位）。
-  return withBrandScope(brandScopeOf(surface), () =>
-    projectFunctionDtsInner(fn, contract, surface),
+  // BUG-168：注解原文的可解析性需要同一份模块面；引用到的名字回传到投影上
+  // （模块面据此补 `declare class` / `import type`），被丢弃的注解落台账。
+  const ctx: DtsProjectionCtx = { ...(surface ? { surface } : {}), typeRefs: new Set(), dropped: [] };
+  const proj = withBrandScope(brandScopeOf(surface), () =>
+    projectFunctionDtsInner(fn, contract, ctx),
   );
+  const typeRefs = [...(ctx.typeRefs ?? [])];
+  const ledger = (ctx.dropped ?? []).map(
+    (n) =>
+      `// nudo:dropped-type-annotation ${n} — type not declared in this module (falls back to the observed type)`,
+  );
+  if (typeRefs.length === 0 && ledger.length === 0) return proj;
+  const withMeta: DtsFunctionProjection = {
+    ...proj,
+    ...(typeRefs.length > 0 ? { typeRefs } : {}),
+  };
+  if (ledger.length === 0) return withMeta;
+  return proj.classMember
+    ? {
+        ...withMeta,
+        classMember: {
+          ...proj.classMember,
+          lines: [...ledger, ...proj.classMember.lines],
+        },
+      }
+    : { ...withMeta, lines: [...ledger, ...proj.lines] };
 }
 
 function projectFunctionDtsInner(
   fn: FunctionAnalysis,
-  contract?: DtsContractFace,
-  surface?: DtsModuleSurface,
+  contract: DtsContractFace | undefined,
+  ctx: DtsProjectionCtx,
 ): DtsFunctionProjection {
+  const surface = ctx.surface;
   // Bug 518/550：类成员（`C.m`）**不是模块级导出**——模块级没有 `C_m` 这个
   // 名字（那是凭空造导出；#494 的清洗只让它可解析，不让它正确）。
   // 成员声明进类体，类声明由模块面合成（一次一类）。
@@ -1622,7 +1884,7 @@ function projectFunctionDtsInner(
     const decl = dtsFunctionDeclaration(memberFn, contract, {
       kind: "member",
       memberName: member,
-    });
+    }, ctx);
     return {
       lines: [],
       params: decl.params,
@@ -1636,7 +1898,7 @@ function projectFunctionDtsInner(
     if (!memberMatch) {
       const form = dtsExportForm(fn.name, surface);
       if (form.kind === "none") return { lines: [], params: [] };
-      const decl = dtsFunctionDeclaration(fn, contract, form);
+      const decl = dtsFunctionDeclaration(fn, contract, form, ctx);
       return {
         lines: decl.lines,
         params: decl.params,
@@ -1655,7 +1917,7 @@ function projectFunctionDtsInner(
   const safeName = dtsIdentifier(emitFn.name);
   const named = safeName !== emitFn.name ? { ...emitFn, name: safeName } : emitFn;
 
-  const decl = dtsFunctionDeclaration(named, contract, form);
+  const decl = dtsFunctionDeclaration(named, contract, form, ctx);
   return {
     lines: decl.lines,
     params: decl.params,
@@ -1671,11 +1933,12 @@ function dtsFunctionDeclaration(
   fn: FunctionAnalysis,
   contract: DtsContractFace | undefined,
   form: DtsExportForm,
+  ctx?: DtsProjectionCtx,
 ): { lines: string[]; params: Array<{ name: string; type: string }> } {
   // 手写契约参数面优先于 HOF 泛型快照：契约是用户申报的调用面；混合投影
   // （部分契约位 + 部分泛型位）会让泛型变元失去与 promoted 形参的定义关系
   const hasContractParams = (contract?.params.length ?? 0) > 0;
-  const hofSig = hasContractParams ? undefined : computeHofSignature(fn);
+  const hofSig = hasContractParams ? undefined : computeHofSignature(fn, ctx);
   if (hofSig) {
     const returnType = contract?.return
       ? contractReturnTSType(contract.return)
@@ -1714,7 +1977,7 @@ function dtsFunctionDeclaration(
     // combinedAbs 来自 @nudo:skip => 声明，case 不参与 dts 面合成。
     // 例外：手写契约参数位是申报面的一部分，具名投影。
     if (hasContractParams) {
-      const sig = contractOnlySignature(fn, contract!);
+      const sig = contractOnlySignature(fn, contract!, ctx);
       return {
         lines: dtsExportDeclaration(form, `(${sig.params.join(", ")}): ${sig.returnType}`),
         params: sig.paramNames.map((name, i) => ({ name, type: sig.paramTypes[i]! })),
@@ -1728,10 +1991,18 @@ function dtsFunctionDeclaration(
         params: [],
       };
     }
-    return { lines: [], params: [] };
+    // BUG-079：`@nudo:skip` 且**未声明返回类型**（combinedAbs 为 null）时，
+    // 旧实现 `return { lines: [] }` ⇒ 该导出被**整条从产物里删掉**（不是降级
+    // 成 any），而 `nudo check`（core checkSource）为同一函数合成 `any`
+    // ⇒ 两面结论相反、消费端 `import { boom }` 直接 TS2305。
+    // ⇒ 与 check 同源：产物面投影成 `any`。
+    return {
+      lines: dtsExportDeclaration(form, `(...args: unknown[]): any`),
+      params: [],
+    };
   }
 
-  const sig = computeMainSignature(fn, contract);
+  const sig = computeMainSignature(fn, contract, ctx);
   const jsdoc = generateJSDoc(fn, sig);
   const lines: string[] = [];
   if (jsdoc) lines.push(jsdoc);
@@ -1781,6 +2052,14 @@ export function generateDts(result: AnalysisResult): string {
 export interface DtsClassSurface {
   /** 导出名（未导出 ⇒ undefined；`export default class C` ⇒ "default"） */
   exportName?: string;
+  /**
+   * BUG-189：**全部**导出名（具名导出优先，其后的别名 / default 逐条补发）。
+   *
+   * 同一个本地绑定可以同时是具名导出与 default 导出
+   * （`export class C {}` + `export { C as default }`）——旧实现只留一个名字
+   * ⇒ 发布的 `.d.ts` 缺 default 导出 ⇒ 消费端 default import 报 TS2349/TS2351。
+   */
+  exportNames?: string[];
   /** 导出形态是 default（`export default class C`） */
   isDefault: boolean;
   /** 实例方法（名 + 形参名，源码序） */
@@ -1789,6 +2068,62 @@ export interface DtsClassSurface {
   staticMethods: Array<{ name: string; params: string[] }>;
   /** 构造器形参名（无显式构造器 ⇒ undefined ⇒ 不发构造器声明） */
   ctorParams?: string[];
+  /**
+   * BUG-168：源码声明的**类型形参名**（`class Box<T>` ⇒ `["T"]`）。
+   *
+   * 缺了类型形参槽，泛型类只能发射成裸类名 ⇒ 消费端 `new Box<string>(…)`
+   * 报 TS2558（"Expected 0 type arguments"）——实现允许的调用被产物判非法。
+   */
+  typeParams?: string[];
+  /**
+   * BUG-151：超类的**本地名**（`class B extends A` ⇒ `"A"`）。
+   *
+   * 缺了 extends 子句 ⇒ 产物的继承链整条断掉 ⇒ 消费端 TS2339（继承成员不可见）
+   * + TS2741（子类不可赋给父类）——运行时成员全在，两条都是假红。
+   * 只在**产物里可解析**的类名上采集（否则 `extends Unknown` 是 TS2304）。
+   */
+  superClass?: string;
+  /**
+   * 实例字段（BUG-151）：构造器里的 `this.x = …` 与类属性初始化器。
+   *
+   * 分析面对 `class C` 绑定给出的 brand 是**构造器面**（实例形状只有 `name`）
+   * ⇒ 实例字段只能从源码面采集；类型取初始化器的基类型（字面量 → number /
+   * string / boolean，其余 `unknown`——声明面有字段但类型不猜）。
+   */
+  instanceFields?: Array<{ name: string; type: string }>;
+}
+
+/**
+ * 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。
+ *
+ * 这些绑定在导出面表里**已登记**（`exportBindings`），但旧实现只发射函数与类
+ * ⇒ 发布的 `.d.ts` 里从不出现 ⇒ 消费端 `import { VERSION }` 报 TS2305
+ * （而运行时确实有这些导出）。
+ */
+export interface DtsValueSurface {
+  /** 声明种类（`const` / `let` / `var` / TS `enum`） */
+  kind: "const" | "let" | "var" | "enum";
+  /** enum 成员（源码序 + 字面量初始化器；非 enum ⇒ undefined） */
+  enumMembers?: Array<{ name: string; init?: string }>;
+}
+
+/**
+ * namespace 面（BUG-191）：`export namespace NS { … }` 的成员声明文本。
+ *
+ * 为什么需要：namespace 在运行时是**真实对象**（求值器把 `NS.x` 物化出来），
+ * 但 dts 的导出名表与声明发射只认函数/类/变量 ⇒ 发布的 `.d.ts` 里没有 `NS`
+ * ⇒ 消费端 `import { NS }` 报 TS2305，而运行时确实有该导出。
+ *
+ * 成员按**源码声明**渲染（`keepTs` 的 AST 上类型注解仍在 ⇒ 直接从源码文本切），
+ * 无注解的成员退 `unknown`（推理失败口径，不假造 any）。
+ */
+export interface DtsNamespaceSurface {
+  /** 导出名（未导出 ⇒ undefined） */
+  exportName?: string;
+  /** 全部导出名（具名优先，其后的别名逐条补发） */
+  exportNames?: string[];
+  /** 成员声明行（`export const x: number;` / `export function f(a: string): void;` …） */
+  members: string[];
 }
 
 /**
@@ -1821,6 +2156,18 @@ export interface DtsModuleSurface {
    * （`import X from "…"` ⇒ 键 "X"，补 `import type X from "…"`）。
    */
   imports?: Map<string, DtsImportSurface>;
+  /**
+   * 模块级**值声明**（本地名 → 形态）——`export const/let/var` 与 TS `enum`
+   * （BUG-190）。声明种类决定发射写法（`export declare const`/`let`/`var`，
+   * enum 另发成员表）。
+   */
+  values: Map<string, DtsValueSurface>;
+  /**
+   * namespace 面（本地名 → 成员声明行）。BUG-191：`export namespace NS { … }`
+   * 在运行时是真实对象（求值器物化了它），旧实现只发射函数/类/值 ⇒ 产物里
+   * 没有 `NS` ⇒ 消费端 TS2305。
+   */
+  namespaces?: Map<string, DtsNamespaceSurface>;
 }
 
 /** AST 节点最小形状（Babel AST 的鸭子类型——不引 @babel/types） */
@@ -1866,18 +2213,87 @@ function surfaceMemberFn(member: SurfaceNode): SurfaceNode {
   return member;
 }
 
-/** 类声明面扫描（实例方法 / 静态方法 / 构造器形参） */
-function scanClassSurface(decl: SurfaceNode): {
+/**
+ * 类声明面扫描（实例方法 / 静态方法 / 构造器形参 / 类型形参 / 超类）。
+ *
+ * `isResolvable` = 「该名字在产物里可解析」判据（本地类 / import / TS 全局名）：
+ * 只有可解析的超类名才进产物（`extends Unknown` 会产出 TS2304）。
+ */
+function scanClassSurface(
+  decl: SurfaceNode,
+  isResolvable: (name: string) => boolean = () => false,
+): {
   instanceMethods: Array<{ name: string; params: string[] }>;
   staticMethods: Array<{ name: string; params: string[] }>;
   ctorParams?: string[];
+  typeParams?: string[];
+  superClass?: string;
+  instanceFields?: Array<{ name: string; type: string }>;
 } {
   const body = (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
+  // BUG-168：源码声明的类型形参名（`class Box<T, U>`）——产物必须有类型形参槽，
+  // 否则消费端 `new Box<string>(…)` 报 TS2558。
+  // Babel 的形参节点是 `TSTypeParameter`（`name` 可能是标识符节点，也可能是
+  // 字符串——两版 Babel 都见过）⇒ 两种形态都读。
+  const typeParamNameOf = (p: SurfaceNode | undefined): string | undefined => {
+    if (!p) return undefined;
+    if (typeof p.name === "string") return p.name;
+    return surfaceName(p.name as SurfaceNode | undefined) ?? surfaceName(p);
+  };
+  const typeParams = (
+    (decl.typeParameters as { params?: SurfaceNode[] } | undefined)?.params ?? []
+  )
+    .map((p) => typeParamNameOf(p))
+    .filter((n): n is string => n !== undefined);
+  // BUG-151：超类（`class B extends A`）——只在可解析的名字上采集。
+  const superName = surfaceName(decl.superClass as SurfaceNode | undefined);
+  const superClass = superName && isResolvable(superName) ? superName : undefined;
   const instanceMethods: Array<{ name: string; params: string[] }> = [];
   const staticMethods: Array<{ name: string; params: string[] }> = [];
   let ctorParams: string[] | undefined;
+  /** BUG-151：实例字段（构造器 `this.x = …` 与类属性初始化器） */
+  const instanceFields: Array<{ name: string; type: string }> = [];
+  const fieldNames = new Set<string>();
+  const addField = (name: string, init: SurfaceNode | undefined): void => {
+    if (fieldNames.has(name)) return;
+    fieldNames.add(name);
+    instanceFields.push({ name, type: classFieldType(init) });
+  };
+  /** 类体里的 `this.<k> = <expr>`（含嵌套语句块） */
+  const collectThisAssignments = (node: SurfaceNode | undefined): void => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "AssignmentExpression" || node.type === "AssignmentPattern") {
+      const left = node.left as SurfaceNode | undefined;
+      const obj = left?.object as SurfaceNode | undefined;
+      if (left?.type === "MemberExpression" && obj?.type === "ThisExpression") {
+        const key = surfaceName(left.property as SurfaceNode | undefined);
+        if (key) addField(key, node.right as SurfaceNode | undefined);
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          if (v && typeof v === "object") collectThisAssignments(v as SurfaceNode);
+        }
+        continue;
+      }
+      if (value && typeof value === "object") collectThisAssignments(value as SurfaceNode);
+    }
+  };
   for (const raw of body) {
-    const mem = raw as SurfaceNode & { kind?: string; static?: boolean };
+    const mem = raw as SurfaceNode & { kind?: string; static?: boolean; value?: SurfaceNode };
+    // 类属性（`x = 1` / `x;`）——源码面字段。
+    if (
+      (mem.type === "ClassProperty" ||
+        mem.type === "PropertyDefinition" ||
+        mem.type === "ClassPrivateProperty" ||
+        mem.type === "ClassAccessorProperty") &&
+      mem.static !== true
+    ) {
+      const key = surfaceName(mem.key as SurfaceNode | undefined);
+      if (key) addField(key, mem.value as SurfaceNode | undefined);
+      continue;
+    }
     const isMethod =
       mem.type === "MethodDefinition" ||
       mem.type === "ClassMethod" ||
@@ -1890,6 +2306,8 @@ function scanClassSurface(decl: SurfaceNode): {
     const params = surfaceParamNames(fnNode.params as SurfaceNode[] | undefined);
     if (kind === "constructor") {
       if (ctorParams === undefined) ctorParams = params;
+      // 构造器里的 `this.x = …` ⇒ 实例字段（含嵌套语句块与 super() 之后的赋值）
+      collectThisAssignments(fnNode.body as SurfaceNode | undefined);
       continue;
     }
     // getter / setter 不是可调用入口（与 sidecar 键口径一致）
@@ -1897,7 +2315,195 @@ function scanClassSurface(decl: SurfaceNode): {
     if (mem.static) staticMethods.push({ name: keyName, params });
     else instanceMethods.push({ name: keyName, params });
   }
-  return { instanceMethods, staticMethods, ctorParams };
+  return {
+    instanceMethods,
+    staticMethods,
+    ...(ctorParams !== undefined ? { ctorParams } : {}),
+    ...(typeParams.length > 0 ? { typeParams } : {}),
+    ...(superClass !== undefined ? { superClass } : {}),
+    ...(instanceFields.length > 0 ? { instanceFields } : {}),
+  };
+}
+
+/**
+ * enum 成员初始化器 → 字面量文本（BUG-190）。
+ *
+ * 只投影**字面量**（字符串 / 数字 / 负数）：声明面不猜表达式求值结果
+ * （`A = other.length` 这类保持无名成员，语义仍可用）。字符串枚举的成员类型
+ * 是字面量类型 ⇒ 丢掉 `= "a"` 会把成员降级成数值 enum。
+ */
+function enumInitText(node: SurfaceNode | undefined): string | undefined {
+  if (!node) return undefined;
+  if (node.type === "StringLiteral") {
+    return typeof node.value === "string" ? JSON.stringify(node.value) : undefined;
+  }
+  if (node.type === "NumericLiteral") {
+    return typeof node.value === "number" ? String(node.value) : undefined;
+  }
+  if (node.type === "UnaryExpression" && node.operator === "-") {
+    const arg = node.argument as SurfaceNode | undefined;
+    if (arg?.type === "NumericLiteral" && typeof arg.value === "number") {
+      return `-${String(arg.value)}`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 类字段初始化器 → dts 类型串（BUG-151）。
+ *
+ * 只映射**初始化器的形状**（字面量 → 基类型、数组 / 对象 → 宽类型）；表达式
+ * 一律 `unknown`（声明面有该字段，但类型不猜——与入口无约束参数的口径一致）。
+ */
+function classFieldType(init: SurfaceNode | undefined): string {
+  if (!init) return "unknown";
+  switch (init.type) {
+    case "NumericLiteral":
+      return "number";
+    case "StringLiteral":
+    case "TemplateLiteral":
+      return "string";
+    case "BooleanLiteral":
+      return "boolean";
+    case "ArrayExpression":
+      return "unknown[]";
+    case "ObjectExpression":
+    case "NewExpression":
+      return "object";
+    case "NullLiteral":
+      // `state = null` —— TS 对类字段的推断就是 `null`（不是 any/unknown）
+      return "null";
+    case "UnaryExpression": {
+      // `-1` / `+1`
+      const arg = init.argument as SurfaceNode | undefined;
+      return arg?.type === "NumericLiteral" ? "number" : "unknown";
+    }
+    default:
+      return "unknown";
+  }
+}
+
+/** 源码片段（`keepTs` 的 AST 上类型注解仍在 ⇒ 直接切原文；越界 ⇒ undefined） */
+function surfaceSlice(source: string, n: SurfaceNode | undefined): string | undefined {
+  const start = n?.start;
+  const end = n?.end;
+  if (typeof start !== "number" || typeof end !== "number") return undefined;
+  const text = source.slice(start, end).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+/** 形参的类型注解文本（`: T`；无注解 ⇒ 空串） */
+function surfaceParamType(source: string, n: SurfaceNode | undefined): string {
+  const ta = n?.typeAnnotation as SurfaceNode | undefined;
+  const t = surfaceSlice(source, ta?.typeAnnotation as SurfaceNode | undefined);
+  return t ? `: ${t}` : "";
+}
+
+/**
+ * namespace 成员形参（ambient 上下文：**默认值非法** ⇒ `a = 1` 降成 `a?: T`）。
+ * 解构形参在 ambient 里无法平移到声明位 ⇒ 记 `argN: unknown`（不假造类型）。
+ */
+function surfaceNamespaceParam(p: SurfaceNode | undefined, index: number, source: string): string {
+  if (!p) return `arg${index}: unknown`;
+  if (p.type === "RestElement") {
+    const arg = p.argument as SurfaceNode | undefined;
+    return `...${surfaceName(arg) ?? `arg${index}`}${surfaceParamType(source, arg)}`;
+  }
+  if (p.type === "AssignmentPattern") {
+    const left = p.left as SurfaceNode | undefined;
+    return `${surfaceName(left) ?? `arg${index}`}?${surfaceParamType(source, left)}`;
+  }
+  if (p.type === "Identifier") {
+    const opt = p.optional === true ? "?" : "";
+    return `${surfaceName(p) ?? `arg${index}`}${opt}${surfaceParamType(source, p)}`;
+  }
+  return `arg${index}: unknown`;
+}
+
+/**
+ * namespace 成员声明行（BUG-191）：让 `.d.ts` 的 `NS` 与源导出面同形。
+ *
+ * 只渲染**有运行时值**的成员（const/let/var/function/class/enum/嵌套 namespace）
+ * 与可镜像的类型成员（interface / type 别名，直接切源码原文——类型是 erasable 的，
+ * 原文进 ambient 上下文合法）。class 只发空体：ambient 类体不允许初始化器 /
+ * 方法实现，切原文会让整份产物编译不过（TS1039）。
+ */
+function namespaceMemberLines(
+  decl: SurfaceNode | null | undefined,
+  source: string,
+): string[] {
+  if (!decl) return [];
+  switch (decl.type) {
+    case "VariableDeclaration": {
+      const kindRaw = String(decl.kind ?? "let");
+      const kind = kindRaw === "const" || kindRaw === "var" ? kindRaw : "let";
+      const out: string[] = [];
+      for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+        const id = d.id as SurfaceNode | undefined;
+        const name = surfaceName(id);
+        if (!name) continue;
+        const t = surfaceParamType(source, id).slice(2) || "unknown";
+        out.push(`export ${kind} ${name}: ${t};`);
+      }
+      return out;
+    }
+    case "FunctionDeclaration": {
+      const name = surfaceName(decl.id as SurfaceNode | undefined);
+      if (!name) return [];
+      const params = ((decl.params as SurfaceNode[] | undefined) ?? []).map((p, i) =>
+        surfaceNamespaceParam(p, i, source),
+      );
+      const rt = decl.returnType as SurfaceNode | undefined;
+      const ret = surfaceSlice(source, rt?.typeAnnotation as SurfaceNode | undefined) ?? "unknown";
+      return [`export function ${name}(${params.join(", ")}): ${ret};`];
+    }
+    case "ClassDeclaration": {
+      const name = surfaceName(decl.id as SurfaceNode | undefined);
+      return name ? [`export class ${name} {}`] : [];
+    }
+    case "TSEnumDeclaration":
+    case "TSInterfaceDeclaration":
+    case "TSTypeAliasDeclaration": {
+      // 枚举成员初始化器在 ambient 上下文合法；interface / type 别名本就是
+      // 纯类型 ⇒ 三者都可以直接镜像源码原文。
+      const text = surfaceSlice(source, decl);
+      if (!text) return [];
+      const lines = text.split("\n");
+      return [`export ${lines[0]!.trim()}`, ...lines.slice(1)];
+    }
+    case "TSModuleDeclaration": {
+      const name = surfaceName(decl.id as SurfaceNode | undefined);
+      if (!name) return [];
+      return [
+        `export namespace ${name} {`,
+        ...namespaceMembersOf(decl, source).map((l) => `  ${l}`),
+        `}`,
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
+/** namespace 体 → 成员行（`namespace A.B` 的尾段挂在嵌套 TSModuleDeclaration 上） */
+function namespaceMembersOf(decl: SurfaceNode, source: string): string[] {
+  const body = decl.body as SurfaceNode | undefined;
+  if (body && body.type === "TSModuleDeclaration") {
+    const name = surfaceName(body.id as SurfaceNode | undefined);
+    if (!name) return [];
+    return [
+      `export namespace ${name} {`,
+      ...namespaceMembersOf(body, source).map((l) => `  ${l}`),
+      `}`,
+    ];
+  }
+  const out: string[] = [];
+  for (const stmt of (body?.body as SurfaceNode[] | undefined) ?? []) {
+    // 只有 `export` 的成员对外可见（未导出成员是 namespace 内部绑定）
+    if (stmt.type !== "ExportNamedDeclaration") continue;
+    out.push(...namespaceMemberLines(stmt.declaration as SurfaceNode | null | undefined, source));
+  }
+  return out;
 }
 
 /**
@@ -1913,10 +2519,15 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     reexports: [],
     classes: new Map(),
     imports: new Map(),
+    values: new Map(),
+    namespaces: new Map(),
   };
   let ast: { program: { body: SurfaceNode[] } };
   try {
-    ast = parseSource(source, { errorRecovery: true }) as unknown as {
+    // `keepTs`：导出面扫描要看到 **TS 语法本身** —— `import type`（BUG-168：
+    // 注解原文引用的类型名要能补 `import type`）、`export type`、类类型形参
+    // （`class Box<T>`）、TS `enum`（BUG-190）在剥除后的 AST 上**都已消失**。
+    ast = parseSource(source, { errorRecovery: true, keepTs: true }) as unknown as {
       program: { body: SurfaceNode[] };
     };
   } catch {
@@ -2041,13 +2652,30 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       }
       const decl = stmt.declaration as SurfaceNode | null | undefined;
       if (decl) {
-        if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+        if (
+          decl.type === "FunctionDeclaration" ||
+          decl.type === "ClassDeclaration" ||
+          // BUG-190：`export enum Mode` 也是一条导出声明（旧实现漏登记 ⇒
+          // 值声明永远不落地；`keepTs` 下 enum 不再是 VariableDeclaration）。
+          decl.type === "TSEnumDeclaration"
+        ) {
           const id = surfaceName(decl.id as SurfaceNode | undefined);
           if (id) bind(id, id);
         } else if (decl.type === "VariableDeclaration") {
           for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
             const id = surfaceName(d.id as SurfaceNode | undefined);
             if (id) bind(id, id);
+          }
+        } else if (decl.type === "TSModuleDeclaration") {
+          // BUG-191：`export namespace NS { … }` 的 dts 模块面——旧实现只认
+          // 函数/类/枚举/变量 ⇒ namespace 不登记、不发射 ⇒ 产物里没有 NS
+          // （消费端 TS2305）。成员按源码形态镜像（见 namespaceMembersOf）。
+          const id = surfaceName(decl.id as SurfaceNode | undefined);
+          if (id) {
+            bind(id, id);
+            surface.namespaces!.set(id, {
+              members: namespaceMembersOf(decl, source),
+            });
           }
         }
         continue;
@@ -2111,51 +2739,123 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     }
   }
 
-  // ── 类面（导出名 + 成员） ──
-  for (const [local, decl] of classDecls) {
-    const scanned = scanClassSurface(decl);
-    let exportName: string | undefined;
-    let isDefault = false;
-    for (const [ename, elocal] of surface.exportBindings) {
-      if (elocal !== local) continue;
-      if (ename === local) {
-        exportName = local;
-        break;
+  // ── 模块级值声明（BUG-190）──
+  // `export const/let/var` 与 TS `enum` 在导出名表里已登记，但旧实现只发射
+  // 函数与类 ⇒ 这些绑定**被登记但从不落地** ⇒ 发布的 `.d.ts` 里没有它们
+  // ⇒ 消费端 `import { VERSION }` 报 TS2305，而运行时确实有该导出。
+  // 这里只采集**声明形态**（种类 + enum 成员名）；值的类型来自分析面绑定
+  // （`projectModuleDts` 的 `values` 实参）。
+  const noteValueDecl = (decl: SurfaceNode | null | undefined): void => {
+    if (!decl) return;
+    if (decl.type === "VariableDeclaration") {
+      const raw = String(decl.kind ?? "");
+      const kind = raw === "const" || raw === "var" ? raw : "let";
+      for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+        const id = surfaceName(d.id as SurfaceNode | undefined);
+        if (id && !surface.values.has(id)) surface.values.set(id, { kind });
       }
-      if (ename === "default") {
-        if (exportName === undefined) {
-          exportName = "default";
-          isDefault = true;
-        }
-        continue;
-      }
-      if (exportName === undefined) exportName = ename;
+      return;
     }
-    surface.classes.set(local, { ...scanned, exportName, isDefault });
+    if (decl.type === "TSEnumDeclaration") {
+      const id = surfaceName(decl.id as SurfaceNode | undefined);
+      if (!id) return;
+      // Babel 的 enum 成员数组有两种形态：旧版直接挂 `members`，新版包在
+      // `TSEnumBody` 里（`body.members`）——都读。
+      const enumBody = decl.body as SurfaceNode | undefined;
+      const members = Array.isArray(decl.members)
+        ? (decl.members as SurfaceNode[])
+        : Array.isArray(enumBody)
+          ? (enumBody as SurfaceNode[])
+          : Array.isArray(enumBody?.members)
+            ? (enumBody!.members as SurfaceNode[])
+            : [];
+      const enumMembers = members
+        .map((m) => {
+          const name =
+            surfaceName(m.id as SurfaceNode | undefined) ??
+            surfaceName(m.key as SurfaceNode | undefined);
+          if (!name) return undefined;
+          const init = enumInitText(m.initializer as SurfaceNode | undefined);
+          return init !== undefined ? { name, init } : { name };
+        })
+        .filter((m): m is { name: string; init?: string } => m !== undefined);
+      surface.values.set(id, { kind: "enum", enumMembers });
+    }
+  };
+  for (const stmt of body) {
+    if (stmt.type === "VariableDeclaration" || stmt.type === "TSEnumDeclaration") {
+      noteValueDecl(stmt);
+      continue;
+    }
+    if (stmt.type === "ExportNamedDeclaration") {
+      noteValueDecl(stmt.declaration as SurfaceNode | null | undefined);
+    }
+  }
+
+  // ── 类面（导出名 + 成员） ──
+  // 可解析判据：本地类 / 已 import 的名字 / TS 全局构造器名（与 `brandTSType`
+  // 同一口径）——只在这种名字上放行 `extends`。
+  const isResolvableName = (name: string): boolean =>
+    classDecls.has(name) || imports.has(name) || isRuntimeGlobalCtorName(name);
+  for (const [local, decl] of classDecls) {
+    const scanned = scanClassSurface(decl, isResolvableName);
+    // BUG-189：一个本地绑定可同时是具名导出与 default 导出 ⇒ 全部记下，
+    // 主形态取第一个（具名优先），其余在声明后逐条补 `export { … as … }`。
+    const exportNames = dtsExportNamesOf(surface, local);
+    const exportName = exportNames[0];
+    surface.classes.set(local, {
+      ...scanned,
+      ...(exportName !== undefined ? { exportName } : {}),
+      ...(exportNames.length > 0 ? { exportNames } : {}),
+      isDefault: exportName === "default",
+    });
   }
   return surface;
 }
 
-/** 本地绑定名 → 导出名（模块面）：未导出 ⇒ undefined */
-function dtsExportNameOf(surface: DtsModuleSurface, localName: string): string | undefined {
+/**
+ * 本地绑定名 → **全部**导出名（模块面）：未导出 ⇒ `[]`。
+ *
+ * BUG-189：同一个绑定可以同时是具名导出与 default 导出
+ * （`export function foo(){}` + `export { foo as default }`，或 `export default foo;`）。
+ * 旧实现拿到第一个命中就 `return`（且优先具名）⇒ default 别名被丢弃 ⇒ 发布的
+ * `.d.ts` 里 default 导出**整个消失**（消费端 default import 报 TS2349 / TS2351，
+ * 而运行时 default 与具名导出同时存在）。
+ *
+ * 具名导出（本地名即导出名）排在最前 = 主声明形态；其余名字按源码序补发。
+ */
+function dtsExportNamesOf(surface: DtsModuleSurface, localName: string): string[] {
   // 匿名 default（普查名 "default"）
-  if (localName === "default") return "default";
-  let alias: string | undefined;
+  if (localName === "default") return ["default"];
+  const names: string[] = [];
   for (const [exportName, local] of surface.exportBindings) {
     if (local !== localName) continue;
-    if (exportName === localName) return exportName;
-    if (alias === undefined) alias = exportName;
+    if (!names.includes(exportName)) names.push(exportName);
   }
-  return alias;
+  const self = names.indexOf(localName);
+  if (self > 0) {
+    names.splice(self, 1);
+    names.unshift(localName);
+  }
+  return names;
 }
+
+/** 主声明之外的附加导出名（补一条 `export { <declared> as <name> };`） */
+type DtsExportExtra = { exportNameRepr: string };
 
 /** 导出形态 → 声明写法 */
 type DtsExportForm =
   | { kind: "none" }
-  | { kind: "named"; exportName: string }
+  | { kind: "named"; exportName: string; extras?: DtsExportExtra[] }
   | { kind: "member"; memberName: string }
-  | { kind: "default"; localName: string }
-  | { kind: "alias"; exportName: string; exportNameRepr: string; localName: string };
+  | { kind: "default"; localName: string; extras?: DtsExportExtra[] }
+  | {
+      kind: "alias";
+      exportName: string;
+      exportNameRepr: string;
+      localName: string;
+      extras?: DtsExportExtra[];
+    };
 
 /** 导出形态解析（模块面优先；无模块面 ⇒ 普查名即导出名） */
 function dtsExportForm(
@@ -2166,24 +2866,29 @@ function dtsExportForm(
     if (localName === "default") return { kind: "default", localName: "" };
     return { kind: "named", exportName: dtsIdentifier(localName) };
   }
-  const exportName = dtsExportNameOf(surface, localName);
+  const names = dtsExportNamesOf(surface, localName);
+  const exportName = names[0];
   if (exportName === undefined) return { kind: "none" };
+  const extras = names.slice(1).map((n) => ({ exportNameRepr: exportNameRepr(n) }));
+  const withExtras = extras.length > 0 ? { extras } : {};
   if (exportName === "default") {
     // 匿名 default（普查名 "default"）⇒ `export default function (…)`
-    return { kind: "default", localName: localName === "default" ? "" : localName };
+    return {
+      kind: "default",
+      localName: localName === "default" ? "" : localName,
+      ...withExtras,
+    };
   }
-  if (exportName === localName) {
-    return { kind: "named", exportName: dtsIdentifier(exportName) };
-  }
-  if (!isJsBindingIdent(localName)) {
+  if (exportName === localName || !isJsBindingIdent(localName)) {
     // 本地名不是合法绑定名 ⇒ 不能 `declare function <local>` + 别名导出
-    return { kind: "named", exportName: dtsIdentifier(exportName) };
+    return { kind: "named", exportName: dtsIdentifier(exportName), ...withExtras };
   }
   return {
     kind: "alias",
     exportName,
     exportNameRepr: exportNameRepr(exportName),
     localName,
+    ...withExtras,
   };
 }
 
@@ -2201,21 +2906,37 @@ function dtsFormExportName(form: DtsExportForm): string | undefined {
   }
 }
 
+/** 主声明之外的导出名 → `export { <declared> as <name> };` 行 */
+function dtsExtraExportLines(
+  declared: string | undefined,
+  extras: DtsExportExtra[] | undefined,
+): string[] {
+  if (declared === undefined) return [];
+  return (extras ?? []).map((e) => `export { ${declared} as ${e.exportNameRepr} };`);
+}
+
 /** 声明行（按导出形态；`signature` = `(<params>): <ret>`，可含类型参数） */
 function dtsExportDeclaration(form: DtsExportForm, signature: string): string[] {
   switch (form.kind) {
     case "named":
-      return [`export declare function ${form.exportName}${signature};`];
+      return [
+        `export declare function ${form.exportName}${signature};`,
+        ...dtsExtraExportLines(form.exportName, form.extras),
+      ];
     case "member":
       return [`${form.memberName}${signature};`];
     case "default":
       return form.localName
-        ? [`export default function ${form.localName}${signature};`]
+        ? [
+            `export default function ${form.localName}${signature};`,
+            ...dtsExtraExportLines(form.localName, form.extras),
+          ]
         : [`export default function ${signature};`];
     case "alias":
       return [
         `declare function ${form.localName}${signature};`,
         `export { ${form.localName} as ${form.exportNameRepr} };`,
+        ...dtsExtraExportLines(form.localName, form.extras),
       ];
     default:
       return [];
@@ -2241,6 +2962,20 @@ export interface DtsModuleProjection {
  * - 产物里**无法解析**的类名（既没本地声明、也没 import、也不是 TS 全局类型名）
  *   ⇒ 降级为 unknown，并在产物头部留**降级台账**（可诊断）
  */
+/**
+ * 模块面合成的**分析面补充证据**（函数入口之外的事实：模块级绑定 Abs）。
+ *
+ * `values`（BUG-190）：`export const/let/var` / `enum` 的类型来源。
+ *
+ * 注：类实例 brand **不能**从这里取 —— 分析面 `bindings` 里的 `class C` 绑定是
+ * **构造器面**的 brand（实例形状只有 `name`），不是实例形状；类体字段改由源码面
+ * 采集（`DtsClassSurface.instanceFields`，BUG-151）。
+ */
+export interface DtsModuleExtras {
+  /** 模块级值声明的类型来源（本地名 → Abs；分析面的 `bindings`） */
+  values?: ReadonlyMap<string, Abs>;
+}
+
 export function projectModuleDts(
   surface: DtsModuleSurface | undefined,
   entries: ReadonlyArray<{
@@ -2248,10 +2983,11 @@ export function projectModuleDts(
     projection: DtsFunctionProjection;
     contract?: DtsContractFace;
   }>,
+  extras?: DtsModuleExtras,
 ): DtsModuleProjection {
   // Bug 233：类字段声明（brand 实例形状）也要在 brand 解析口径内渲染。
   return withBrandScope(brandScopeOf(surface), () =>
-    projectModuleDtsInner(surface, entries),
+    projectModuleDtsInner(surface, entries, extras),
   );
 }
 
@@ -2262,13 +2998,17 @@ function projectModuleDtsInner(
     projection: DtsFunctionProjection;
     contract?: DtsContractFace;
   }>,
+  extras?: DtsModuleExtras,
 ): DtsModuleProjection {
+  const values = extras?.values;
   const lines: string[] = [];
   const params: Array<{ name: string; type: string }> = [];
   /** 类名 → 实例方法声明（分析面） */
   const members = new Map<string, Array<{ member: string; lines: string[] }>>();
   /** brand 类名 → brand Abs（实例形状 → 字段） */
   const brands = new Map<string, Abs>();
+  /** 注解原文引用到的 import 名（BUG-168：补 `import type` 用） */
+  const annotationRefs = new Set<string>();
 
   for (const { fn, projection, contract } of entries) {
     if (projection.classMember) {
@@ -2282,6 +3022,7 @@ function projectModuleDtsInner(
       lines.push(...projection.lines);
     }
     params.push(...projection.params);
+    for (const n of projection.typeRefs ?? []) annotationRefs.add(n);
     collectBrandAbs(fn, contract, brands);
   }
 
@@ -2294,23 +3035,112 @@ function projectModuleDtsInner(
     for (const name of brands.keys()) {
       if (surface.classes.has(name)) classNames.add(name);
     }
+    // BUG-168：注解原文引用的**本地类**同样要声明（否则产物里那个名字是
+    // TS2304）；这类类不是导出面成员 ⇒ 只发 `declare class`（不导出）。
+    for (const name of annotationRefs) {
+      if (surface.classes.has(name)) classNames.add(name);
+    }
+    // BUG-151：作为**超类**被引用的类同样要在产物里可解析（`extends Base`
+    // 里的 Base 不声明就是 TS2304）——本地类补 `declare class`，导入类补
+    // `import type`。传递闭包：基类的基类也要落地。
+    const superQueue = [...classNames];
+    while (superQueue.length > 0) {
+      const name = superQueue.pop()!;
+      const base = surface.classes.get(name)?.superClass;
+      if (base === undefined) continue;
+      if (surface.imports?.has(base) === true) annotationRefs.add(base);
+      if (!surface.classes.has(base) || classNames.has(base)) continue;
+      classNames.add(base);
+      superQueue.push(base);
+    }
   }
+  // BUG-151：类体字段取**源码面**（构造器里的 `this.x = …` 与类属性初始化器）
+  // —— 分析面 `bindings` 的 `class C` 绑定是构造器面 brand（实例形状只有
+  // `name`），不是实例形状。
+  /** 类名 → 该类的实例字段（brand 字段 ∪ 构造器赋值，去重） */
+  const classFields = new Map<string, Array<{ name: string; type: string }>>();
+  const resolving = new Set<string>();
+  const fieldsOf = (className: string): Array<{ name: string; type: string }> => {
+    const cached = classFields.get(className);
+    if (cached) return cached;
+    if (resolving.has(className)) return []; // 自引用（非法继承）⇒ 停止
+    resolving.add(className);
+    const memberNames = new Set((members.get(className) ?? []).map((m) => m.member));
+    const out: Array<{ name: string; type: string }> = [];
+    const seen = new Set<string>();
+    // brand 字段优先（分析面观测，更精确）
+    for (const f of brandFieldLines(brands.get(className), memberNames)) {
+      if (seen.has(f.name)) continue;
+      seen.add(f.name);
+      out.push(f);
+    }
+    const cls = surface?.classes.get(className);
+    for (const f of cls?.instanceFields ?? []) {
+      if (seen.has(f.name)) continue;
+      if (memberNames.has(f.name)) continue; // 与实例方法同名 ⇒ 方法是权威
+      seen.add(f.name);
+      out.push(f);
+    }
+    // 继承来的字段不再重复声明（TS2416：子类属性类型必须与基类兼容）
+    const superName = cls?.superClass;
+    const inherited = new Set<string>();
+    if (superName) {
+      for (const f of fieldsOf(superName)) inherited.add(f.name);
+    }
+    resolving.delete(className);
+    const filtered = out.filter((f) => !inherited.has(f.name));
+    classFields.set(className, filtered);
+    return filtered;
+  };
   for (const className of classNames) {
     lines.push(
       ...dtsClassDeclaration(
         className,
         surface?.classes.get(className),
         members.get(className) ?? [],
-        brands.get(className),
+        fieldsOf(className),
+        // BUG-151：`extends <base>`——基类泛型时补 `any` 实参（TS2314：泛型基类
+        // 缺类型实参会让整份产物编译不过）。
+        superClauseText(className, surface),
       ),
     );
+  }
+
+  // ── 模块级值声明（BUG-190）──
+  // 已作为函数 / 类声明发射的本地绑定不再发值声明（`export const f = () => …`
+  // 被分析成函数；再发一条 `declare const f` 就是 TS2300 Duplicate identifier）。
+  const declaredLocals = new Set<string>(entries.map((e) => e.fn.name));
+  lines.push(...dtsValueDeclarations(surface, values, declaredLocals));
+
+  // ── namespace 声明（BUG-191）──
+  // `export namespace NS { export const x: number = 1 }` 在运行时是真实对象
+  // （求值器把 NS.x 物化出来），但旧实现只发射函数/类/值声明 ⇒ 产物里没有 NS
+  // ⇒ 消费端 `import { NS }` 报 TS2305。这里按源码成员形态镜像
+  // （`export declare namespace NS { export const x: number; }`）。
+  if (surface?.namespaces) {
+    for (const [local, ns] of surface.namespaces) {
+      const names = dtsExportNamesOf(surface, local);
+      const exportName = names[0];
+      const declaredName = dtsIdentifier(exportName === undefined ? local : exportName);
+      lines.push(
+        `${exportName === undefined ? "declare" : "export declare"} namespace ${declaredName} {`,
+        ...ns.members.map((m) => `  ${m}`),
+        "}",
+      );
+      // 同一绑定另有导出名（`export { NS as Other }`）⇒ 补别名导出语句
+      for (const extra of names.slice(1)) {
+        lines.push(`export { ${declaredName} as ${exportNameRepr(extra)} };`);
+      }
+    }
   }
 
   // ── Bug 233：brand 引用的类来自 import ⇒ 补 import type（否则 TS2304）──
   const importLines: string[] = [];
   if (surface?.imports) {
     for (const [name, imp] of surface.imports) {
-      if (!brands.has(name)) continue; // 只为**被引用**的类补 import
+      // 只为**被引用**的名字补 import：brand 类名（Bug 233）或注解原文引用的
+      // 类型名（BUG-168：注解放行的前提是它在产物里可解析）。
+      if (!brands.has(name) && !annotationRefs.has(name)) continue;
       if (surface.classes.has(name)) continue; // 本地已声明 ⇒ 走 declare class
       const src = JSON.stringify(imp.specifier);
       importLines.push(
@@ -2343,12 +3173,13 @@ function projectModuleDtsInner(
   return { lines: [...importLines, ...ledger, ...lines], params };
 }
 
-/** 类声明行（导出形态 + 构造器 + 实例方法 + 静态方法 + 实例字段） */
+/** 类声明行（导出形态 + 类型形参 + 超类 + 构造器 + 实例方法 + 静态方法 + 实例字段） */
 function dtsClassDeclaration(
   className: string,
   cls: DtsClassSurface | undefined,
   memberList: Array<{ member: string; lines: string[] }>,
-  brand: Abs | undefined,
+  fields: Array<{ name: string; type: string }>,
+  superText = "",
 ): string[] {
   const body: string[] = [];
   const methodNames = new Set<string>();
@@ -2367,28 +3198,128 @@ function dtsClassDeclaration(
     const params = m.params.map((p, i) => classParamDecl(p, i)).join(", ");
     body.push(`static ${m.name}(${params}): unknown;`);
   }
-  // 实例字段（brand 实例形状——有观测才有字段）
-  for (const f of brandFieldLines(brand, methodNames)) {
+  // 实例字段（brand 实例形状 ∪ 构造器赋值——见 projectModuleDtsInner 的 fieldsOf）
+  for (const f of fields) {
+    if (methodNames.has(f.name)) continue;
     body.push(`${formatPropKey(f.name)}: ${f.type};`);
   }
+  // BUG-168：类型形参槽（`class Box<T>`）——缺了它消费端 `new Box<string>(…)`
+  // 报 TS2558（"Expected 0 type arguments"）。
+  const typeParams = cls?.typeParams ?? [];
+  const typeParamsText = typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "";
   const inner =
     body.length > 0
       ? `\n${body.map((l) => (l.trim() === "" ? l : `  ${l}`)).join("\n")}\n`
       : "";
-  const exportName = cls?.exportName;
-  if (exportName === undefined) return [`declare class ${className} {${inner}}`];
-  if (exportName === "default") return [`export default class ${className} {${inner}}`];
-  if (exportName === className) return [`export declare class ${className} {${inner}}`];
+  const header = `${className}${typeParamsText}${superText}`;
+  const exportNames =
+    cls?.exportNames ?? (cls?.exportName !== undefined ? [cls.exportName] : []);
+  const exportName = exportNames[0];
+  // BUG-189：同一个类可同时是具名导出与 default 导出 ⇒ 主声明之后逐条补
+  // `export { C as <name> };`（旧实现只发一个名字 ⇒ default 导出消失）。
+  const extras = exportNames
+    .slice(1)
+    .map((n) => `export { ${className} as ${exportNameRepr(n)} };`);
+  if (exportName === undefined) return [`declare class ${header} {${inner}}`];
+  if (exportName === "default") return [`export default class ${header} {${inner}}`, ...extras];
+  if (exportName === className) return [`export declare class ${header} {${inner}}`, ...extras];
   return [
-    `declare class ${className} {${inner}}`,
+    `declare class ${header} {${inner}}`,
     `export { ${className} as ${exportNameRepr(exportName)} };`,
+    ...extras,
   ];
 }
 
-/** 类形参声明（类型未知；rest 形参是数组） */
+/**
+ * 类声明的超类子句（BUG-151）：` extends A`；基类是泛型 ⇒ 补 `any` 实参
+ * （TS2314：泛型基类缺类型实参会让整份产物编译不过）。
+ */
+function superClauseText(
+  className: string,
+  surface: DtsModuleSurface | undefined,
+): string {
+  const superName = surface?.classes.get(className)?.superClass;
+  if (!superName) return "";
+  const builtin = BUILTIN_GENERIC_BRANDS.get(superName);
+  if (builtin !== undefined) return ` extends ${builtin}`;
+  const baseParams = surface?.classes.get(superName)?.typeParams ?? [];
+  const args = baseParams.length > 0 ? `<${baseParams.map(() => "any").join(", ")}>` : "";
+  return ` extends ${superName}${args}`;
+}
+
+/**
+ * 模块级值声明（BUG-190）：`export const/let/var` 与 TS `enum`。
+ *
+ * 只有**导出面**上的值声明落地（`dtsExportNamesOf` 非空）；类型取自分析面的
+ * 绑定 Abs（顶层字面量 widen 到基类型——声明面是取值面，不是 case 台账）；
+ * 拿不到绑定 ⇒ `unknown` + 产物内台账（可诊断，不静默）。
+ */
+function dtsValueDeclarations(
+  surface: DtsModuleSurface | undefined,
+  values: ReadonlyMap<string, Abs> | undefined,
+  declaredLocals: ReadonlySet<string>,
+): string[] {
+  if (!surface) return [];
+  const out: string[] = [];
+  for (const [local, value] of surface.values) {
+    const names = dtsExportNamesOf(surface, local);
+    const primary = names[0];
+    if (primary === undefined) continue; // 未导出 ⇒ 不在公开面
+    // 已被模块级函数声明占用（`export const f = () => …` 被分析成函数）⇒
+    // 再发一条值声明会产出 TS2300（Duplicate identifier）。
+    if (declaredLocals.has(local)) continue;
+    if (surface.classes.has(local)) continue;
+    const abs = values?.get(local);
+    let decl: string;
+    if (value.kind === "enum") {
+      // 成员带上**字面量**初始化器（字符串 enum 的成员类型是字面量类型：
+      // 丢掉 `= "a"` 会把它变成数值 enum ⇒ 消费端的 `Mode.A` 类型语义反转）。
+      const body = (value.enumMembers ?? [])
+        .map(
+          (m) =>
+            `  ${isJsBindingIdent(m.name) ? m.name : JSON.stringify(m.name)}${
+              m.init !== undefined ? ` = ${m.init}` : ""
+            },`,
+        )
+        .join("\n");
+      decl = `declare enum ${local} {${body ? `\n${body}\n` : ""}}`;
+    } else {
+      if (abs === undefined) {
+        out.push(
+          `// nudo:unresolved-value ${local} — no analysis binding (projected as unknown)`,
+        );
+      }
+      const typeText = abs ? absToTSType(widenTopLevelAbs(abs)) : "unknown";
+      decl = `declare ${value.kind} ${local}: ${typeText};`;
+    }
+    if (primary === local) {
+      out.push(`export ${decl}`);
+      out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
+      continue;
+    }
+    out.push(decl);
+    out.push(`export { ${local} as ${exportNameRepr(primary)} };`);
+    out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
+  }
+  return out;
+}
+
+/**
+ * 类形参声明（构造器 / 静态方法）。
+ *
+ * BUG-003：这里曾是**硬编码 `unknown`** —— 与 `CLAUDE.md` 的分面约定相悖
+ * （入口**无约束**形参应显示 `any`；真正的 `unknown` 表示**推断失败**），
+ * 也与同一文件上 `nudo check` 的签名面（`Widget(w: any, h: any)`）矛盾。
+ * 构造器 / 静态方法的形参**没有任何类型证据**（分析面不产出其 Abs）⇒ 按
+ * 「无约束 ⇒ any」投影（与 dts 参数位的无证据口径一致）。
+ *
+ * 遗留（已上报）：实例方法 / 静态方法的**返回类型**仍落在 `unknown` ——
+ * 类成员通道只吃 case / combinedAbs 证据，而分析面对类成员给出的
+ * `combinedAbs` 就是 `unknown`（证据通道在 analyzer 侧，不在本文件可修范围）。
+ */
 function classParamDecl(name: string, index: number): string {
   const safe = sanitizeParamName(name, index);
-  return safe.startsWith("...") ? `${safe}: unknown[]` : `${safe}: unknown`;
+  return safe.startsWith("...") ? `${safe}: any[]` : `${safe}: any`;
 }
 
 /** brand 实例形状 → 字段声明（排除方法名——方法进类体，不进字段） */

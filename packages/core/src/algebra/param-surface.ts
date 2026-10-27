@@ -285,7 +285,10 @@ function tsTypeOf(p: AstParam | undefined): { tsType?: string } {
   return t ? { tsType: t } : {};
 }
 
-export function formalParamsFromNodes(params: AstParam[] | undefined | null): FormalParam[] {
+export function formalParamsFromNodes(
+  params: AstParam[] | undefined | null,
+  source?: string,
+): FormalParam[] {
   const list = params ?? [];
   const out: FormalParam[] = [];
   for (const p of list) {
@@ -392,7 +395,12 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
       ...tsTypeOf(p),
     });
   }
-  return out;
+  // BUG-169：TS 可选形参 `b?: T` 的 `?` 标记在 strip-types 阶段就被删掉
+  // （它不进 JS 产物）⇒ 只能从**源码文本**判定（与字面量实参扫描共用
+  // `tsOptionalParams` 同一判据）。接到 `optional` 之后，产物三面（dts 的
+  // `?` / standard 的可选槽 / zod 的 `.optional()`）与 core 的必选元数同源，
+  // 不再把源码合法的少实参调用判成必填（TS2554 + 运行时 required 假红）。
+  return withOptionalParams(out, tsOptionalParams(params as unknown[] | undefined, source)) ?? out;
 }
 
 /**
