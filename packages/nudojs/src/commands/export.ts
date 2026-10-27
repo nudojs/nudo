@@ -7,8 +7,8 @@
  * （selection / contract-face / zod-face / standard-face / guard-face /
  * dts-face / diagnostics / io / stdout）。
  */
-import { readFileSync } from "node:fs";
-import { resolve, basename, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve, basename, dirname, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
 import {
@@ -158,6 +158,60 @@ function arrayPatternParamFaces(
   return out;
 }
 
+/**
+ * 最近的含 `package.json` 的祖先目录（无 ⇒ undefined）。
+ */
+function packageRootOf(startDir: string): string | undefined {
+  let dir = startDir;
+  for (;;) {
+    if (existsSync(join(dir, "package.json"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/** 包名（`package.json#name`，读不到 / 非字符串 ⇒ undefined）。 */
+function packageNameOf(root: string): string | undefined {
+  try {
+    const pkg: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+    if (pkg !== null && typeof pkg === "object") {
+      const name = (pkg as { name?: unknown }).name;
+      if (typeof name === "string" && name !== "") return name;
+    }
+  } catch {
+    /* 读不到 / 解析失败 ⇒ 退回相对路径口径 */
+  }
+  return undefined;
+}
+
+/**
+ * 模块标识（**与绝对路径无关**的稳定 id）——写进产物 marker，并作为
+ * 「同一模块 ⇒ 原地覆盖」的判定键（BUG-016）。
+ *
+ * - 文件在**包根**（最近的含 `package.json` 的祖先目录）内 ⇒
+ *   `<包名>/<相对包根的路径>`。同一份源码在不同 checkout / 不同机器上得到
+ *   **同一个** id ⇒ 产物字节可复现，且不同文件仍得到不同 id；
+ * - 包外（临时目录 / 单文件导出）⇒ `<stem>|<导出名集合>`：同一份源码放在不同
+ *   绝对路径下仍是**同一模块**（第二次导出原地覆盖，不再新增 hash 后缀副本），
+ *   导出名不同的同名文件仍是不同模块。改函数体不改导出名 ⇒ id 不变 ⇒
+ *   重导仍是原地覆盖（BUG-231）。
+ *
+ * 旧口径直接把**绝对源路径**当模块标识 ⇒ 「同一模块」挂在本机路径上：
+ * 换目录重导 ⇒ 多一份陈旧副本，且产物内嵌构建机绝对路径。
+ */
+function moduleIdOf(filePath: string, source: string): string {
+  const root = packageRootOf(dirname(filePath));
+  if (root !== undefined) {
+    const name = packageNameOf(root);
+    const rel = relative(root, filePath).split(sep).join("/");
+    return name === undefined ? rel : `${name}/${rel}`;
+  }
+  const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+  const exports = [...dtsEntryNames(source)].sort().join(",");
+  return `${stem}|${exports}`;
+}
+
 async function runExport(
   file: string,
   format: ExportFormat,
@@ -166,9 +220,16 @@ async function runExport(
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  // case 档 "all"：@nudo:case 见证参与投影面（无指令文件不受影响——
-  // call@/entry@ 合成与档位无关）
-  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "all");
+  // case 档 "none"：与**门禁面**（check / health / migrate）同口径 —— 发布面
+  // **不**消费 `@nudo:case`。文档明文（`docs/concepts/directives.md:44`）：
+  // 「Cases are debug witnesses … not the contract product」。旧实现用 "all"
+  // ⇒ 一条调试用的 `@nudo:case "dom" (number())` 就成了被**发布**出去的类型
+  // （dts `f(x: number): number` / zod `z.number()` / guard `typeof data ===
+  // "number"`），而实现允许 `f("s")` ⇒ 四个产物面一致地拒绝实现允许的调用，
+  // 且与 `nudo check` 的签名相反（BUG-044）。
+  //
+  // call@ / entry@ 合成与档位无关 ⇒ 调用点观测与入口观测照旧参与投影面。
+  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "none");
   const functions: FunctionAnalysis[] = selectExportFunctions(result);
 
   // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
@@ -197,7 +258,20 @@ async function runExport(
     return;
   }
 
-  if (functions.length === 0) {
+  // 模块面（导出名 / 类 / 再导出）：**早于**空函数早退组装 —— 纯 barrel
+  // （`export { x } from "./y.js"`，本文件无函数）也要出模块面产物；早退在
+  // 模块面组装之前 ⇒ 再导出被整个丢掉（BUG-033）。
+  const dtsSurface = dtsModuleSurfaceOf(source);
+
+  // 空产物的唯一判据：**既无本地函数，也无模块面可发射内容**（BUG-033 的再导出 /
+  // BUG-190 的模块级值导出）。
+  const wantsDtsFace = format === "dts" || format === "all";
+  const hasValueExport = [...dtsSurface.exportBindings.values()].some(
+    (local) => local !== "" && dtsSurface.values.has(local),
+  );
+  const hasModuleSurface =
+    wantsDtsFace && (dtsSurface.reexports.length > 0 || hasValueExport);
+  if (functions.length === 0 && !hasModuleSurface) {
     console.log("No analyzed functions found.");
     return;
   }
@@ -213,8 +287,8 @@ async function runExport(
   const evalMocks = mockResult.mocks;
 
   // 模块导出面（导出名 / 类 / 再导出）：dts 投影按**导出名**声明，类成员进
-  // 类声明（一次一类），再导出面按原样复现（族 15 · S1）。
-  const dtsSurface = dtsModuleSurfaceOf(source);
+  // 类声明（一次一类），再导出面按原样复现（族 15 · S1）。`dtsSurface` 已在
+  // 空函数早退之前组装（BUG-033：纯 barrel 也要出模块面产物）。
   /** dts 逐函数投影（模块面合成用：类声明一次一类 + 再导出 + brand 类） */
   const dtsEntries: DtsFaceEntry[] = [];
 
@@ -307,9 +381,13 @@ async function runExport(
     }
   }
 
-  // 模块面合成：类声明（一次一类）+ 再导出面 + brand 类声明
+  // 模块面合成：类声明（一次一类）+ 再导出面 + brand 类声明 + 模块级值声明
+  // （BUG-190：`export const/let/var` / `enum` 的类型取自分析面绑定；
+  //  BUG-151：`class C` 的实例 brand 取自同一张绑定表 ⇒ 类体字段可见）
   if (format === "dts" || format === "all") {
-    const mod = dtsModuleChunk(dtsSurface, dtsEntries);
+    const values = new Map<string, Abs>();
+    for (const [name, info] of result.bindings) values.set(name, info.abs);
+    const mod = dtsModuleChunk(dtsSurface, dtsEntries, { values });
     if (mod !== undefined) dtsChunks.push(mod);
   }
 
@@ -342,10 +420,10 @@ async function runExport(
   if (output) {
     const result2 = writeExportArtifacts(resolve(output), {
       stem,
-      // 模块标识 = 源文件路径（族 17 · Bug 609 / 622）：没有它，模块身份只能
-      // 靠「stem + 导出签名」猜 ⇒ 同 stem **且**导出名集合也相同的两个模块
-      // 会被判成同一模块（后者覆盖前者），且改名后重导会换唯一名、留下陈旧副本。
-      moduleKey: filePath,
+      // 模块标识 = **与绝对路径无关**的稳定 id（BUG-016）：绝对源路径会让
+      // 「同一模块」的判定挂在本机 checkout 路径上 ⇒ 换目录重导多一份陈旧
+      // 副本，且产物内嵌构建机路径（不可复现构建）。
+      moduleKey: moduleIdOf(filePath, source),
       dialect: effectiveDialect,
       ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
       standardChunks,

@@ -604,7 +604,13 @@ export async function interfaceSurface(
   const exported = localNamedExports(source);
   const kindOf = (fnName: string): "export" | "local" => (exported.has(fnName) ? "export" : "local");
 
-  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records, loadModule);
+  // BUG-044：`caseMode` 与**门禁面**（check / health / migrate）同口径 =
+  // `"none"`。`@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），
+  // 不是契约；默认值 `"all"` 会让 instruction case 的域形状实参渗进 implicit
+  // 展示（`@nudo:case "dom" (number())` ⇒ 打印面变成 `(x: number) => number`，
+  // 而门禁面是 `(x: any) => number | string`）⇒ 打印的 interface 与门禁结论
+  // 分裂（BUG-044）。发布面（export dts/schema/guard）同样走 `"none"`。
+  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records, loadModule, "none");
 
   // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
   // buffer 源 / 注入 loadModule / callsites 时禁用磁盘缓存（键不含 buffer）

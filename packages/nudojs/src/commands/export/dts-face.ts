@@ -11,6 +11,7 @@ import {
   projectModuleDts,
   type DtsContractFace,
   type DtsFunctionProjection,
+  type DtsModuleExtras,
   type DtsModuleSurface,
 } from "@nudojs/service/emit";
 import { tryEvalCall, type FunctionAnalysis } from "@nudojs/service";
@@ -105,8 +106,10 @@ export function dtsFaceEntry(
 export function dtsModuleChunk(
   surface: DtsModuleSurface | undefined,
   entries: readonly DtsFaceEntry[],
+  /** 分析面补充证据（值声明类型 / 类实例 brand）——BUG-190 / BUG-151 */
+  extras?: DtsModuleExtras,
 ): string | undefined {
-  const mod = projectModuleDts(surface, entries);
+  const mod = projectModuleDts(surface, entries, extras);
   if (mod.lines.length === 0) return undefined;
   return mod.lines.join("\n");
 }

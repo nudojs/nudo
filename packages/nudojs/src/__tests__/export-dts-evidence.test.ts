@@ -2,7 +2,9 @@
  * export --format dts 的证据面（DX 批次）：
  * 1. sidecar（*.nudo.js）与 inline @nudo:contract 契约进参数/返回投影
  *    （与 check 签名面同数据源 effectiveInterface）；
- * 2. @nudo:case 见证进投影；
+ * 2. @nudo:case 见证**不进**投影（BUG-044）：见证是调试见证，契约义务在
+ *    `*.nudo.js` 侧车 / `@nudo:contract`；`nudo export` 以 `caseMode: "none"`
+ *    调分析器 ⇒ 见证既不 widen 形参/返回，也不产出 `Case:` 行；
  * 3. 非导出顶层函数不泄漏进 .d.ts（导出面 = export / export default /
  *    CJS exports，与 check entry 表同源 localNamedExports）；
  * 4. 无任何证据的参数位保持 unknown + stderr 单行提示（三条补证据路径）；
@@ -57,7 +59,7 @@ function fixtureDir(files: Record<string, string>): string {
   return dir;
 }
 
-describe("export dts — 契约/case 证据进投影", () => {
+describe("export dts — 契约证据进投影（case 见证不进投影）", () => {
   it("sidecar 契约：参数投影契约形态、返回由契约种子求值折出", () => {
     const dir = fixtureDir({
       "mini.js": `export function greet(u) { return u.name; }\n`,
@@ -89,7 +91,7 @@ describe("export dts — 契约/case 证据进投影", () => {
     expect(r.stderr).not.toContain("rendered as unknown");
   }, 30000);
 
-  it("@nudo:case 见证：参数/返回投影 case widen 形态，Case 行保留", () => {
+  it("调试见证不进导出面（BUG-044）：@nudo:case 不 widen 投影，也不产出 Case 行", () => {
     const dir = fixtureDir({
       "cased.js": [
         `/** @nudo:case "named" ({ name: "Ada" }) */`,
@@ -99,8 +101,12 @@ describe("export dts — 契约/case 证据进投影", () => {
     });
     const r = runCliTsx(["export", "cased.js", "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("export declare function greet3(u: { name: string }): string;");
-    expect(r.stdout).toContain('Case: named ({ name: "Ada" }) => "Ada"');
+    // BUG-044：`@nudo:case` 是**调试见证**，不是契约产品（契约义务在
+    // `*.nudo.js` 侧车 / `@nudo:contract`）⇒ `nudo export` 以
+    // `caseMode: "none"` 调分析器，见证不进投影：形参/返回都无证据 ⇒ any。
+    expect(r.stdout).toContain("export declare function greet3(u: any): any;");
+    // 见证也不产出 `Case:` 行（Case 行只出现在 debug / `nudo test` / LSP 面）
+    expect(r.stdout).not.toContain("Case:");
   }, 30000);
 });
 
@@ -127,9 +133,12 @@ describe("export dts — 导出面过滤与 unknown 例外", () => {
     });
     const r = runCliTsx(["export", "defs.js", "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
-    // default 导出进导出面，且保持 `export default` 形态：局部绑定名
-    // `makeGreeting` **不是**导出名（Bug 515）⇒ 不得声明成命名导出
-    expect(r.stdout).toContain("export default function makeGreeting");
+    // default 导出进导出面：形态由 BUG-189 统一为「声明 + 别名导出」
+    // （`declare function makeGreeting(...)` + `export { … as default }`），
+    // 语义等价于 `export default function makeGreeting`。
+    expect(r.stdout).toContain("makeGreeting");
+    expect(r.stdout).toContain("as default");
+    // 局部绑定名 `makeGreeting` **不是**导出名（Bug 515）⇒ 不得声明成命名导出
     expect(r.stdout).not.toContain("export declare function makeGreeting");
   }, 30000);
 

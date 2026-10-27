@@ -174,7 +174,7 @@ L2 `entryThrows` 解析顺序：
 - 把 `unknown` 与 `any` 在表格里并成同一格（如 `unknown`/`any` = 全集）。
 - 在 check 中对 `unknown`（失败）静默通过而不报引擎债相关诊断。
 
-**已记录例外（export 投影面）：** `nudo export` 的 `.d.ts` 投影把**未被调用（未观测）**的 export 参数按「不猜测」原则渲染为 `unknown`——这是 `entry@L…` 回退的诚实边界，不是推导失败，也不改变 check 签名面对入口无约束参数打 `any` 的契约。见 `packages/website/docs/guides/export-ecosystem.md`（en / zh-Hans 镜像同步维护）。
+**已记录例外（export 投影面）：** `nudo export` 的 `.d.ts` 投影对**未被调用（未观测）**的 export 参数按「不猜测」原则渲染为 `any`——与 check 签名面**同一口径**（入口无约束参数一律 `any`），导出面**不因缺证据而改用 `unknown`**。导出面与 check 面共用同一份签名数据源（契约 / 调用点证据 / `entry@` 入口兜底）——**`@nudo:case` 调试见证不进导出面**（`caseMode: "none"`，与 check / LSP validate / vite 同档；见 BUG-044）；只有真正**推导失败**时导出面才出现 `unknown`，并由 `nudo:unknown-inference` 之类引擎债诊断标注。见 `packages/website/docs/guides/export-ecosystem.md`（en / zh-Hans 镜像同步维护）。
 
 **允许（代数层已如此）：**
 

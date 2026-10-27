@@ -264,12 +264,18 @@ function resolveTarget(
   if (!isGeneratedByNudo(existing)) return { refuse: canonical }; // 手写产物：拒绝覆盖
   if (isSameModule(art, existing, tag)) return { path: canonical };
   // 别的模块占了规范名 ⇒ 换唯一名（带模块键后缀）；仍占用 ⇒ 加序号。
+  //
+  // 唯一名分支与规范名分支**同口径**（BUG-231）：自己此前写出的唯一名文件
+  // 属于**同一模块** ⇒ 原地覆盖更新，不追加序号副本。旧实现只判「内容一致」
+  // 与「是本工具产物」⇒ 同模块改源重导每次都新增 `.2` / `.3` …，输出目录里
+  // 同一模块留下**内容互斥**的多份投影（`=> 3` vs `=> 201`）并无界膨胀。
   let candidate = join(outDir, uniqueName(art.base, art.suffix, tag));
   let i = 2;
   while (existsSync(candidate)) {
     const body = safeRead(candidate);
     if (body === content) return { path: candidate };
     if (body !== undefined && !isGeneratedByNudo(body)) return { refuse: candidate };
+    if (body !== undefined && isSameModule(art, body, tag)) return { path: candidate };
     candidate = join(outDir, `${art.base}.${shortHash(tag)}.${i}${art.suffix}`);
     i++;
   }
