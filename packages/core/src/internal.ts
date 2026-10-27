@@ -11,6 +11,9 @@
 // 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
 export { DIAG, type DiagCode } from "./algebra/diag-codes.ts";
 
+// BUG-021/199：调用点观测拓宽（emit 写盘面与 interface-drift 对账面共用）
+export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
+
 // leak / budgets / memo keys
 export {
   stripCommentsAndStrings, stripStringsKeepComments,

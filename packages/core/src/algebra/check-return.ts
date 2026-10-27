@@ -56,6 +56,13 @@ export type ReturnContractAudit = {
    */
   consumedAssume?: ReadonlySet<string>;
   /**
+   * 本次求值**实际实施过**的 `@nudo:invariant` 展示串（BUG-084 记账集，
+   * 与 `assume-ledger.ts` 的 invariant 账本同源）。
+   * 缺省 = 未知 ⇒ 不宣称依赖；给出 = 只宣称集合内（真正在循环 join/宽化位
+   * 产出了界）的那几条——「声明了」不等于「证明依赖了」。
+   */
+  consumedInvariant?: ReadonlySet<string>;
+  /**
    * 返回点的**路径前提**（Φ）——证明通道的 Φ 侧（Bug 1080）。
    *
    * 缺省 = 无路径前提（`pTrue`）：证据面只有 `ret.pred`（值域事实）。
@@ -100,6 +107,7 @@ export function checkReturnConstraint(
     assumeDisplay,
     invariantDisplay,
     consumedAssume,
+    consumedInvariant,
     phi,
     phiPremises,
   } = audit;
@@ -180,12 +188,19 @@ export function checkReturnConstraint(
         ...where(),
       });
     }
-    if (invariantDisplay && invariantDisplay.length > 0) {
+    // BUG-084：口径与 assume 族对齐——只宣称**本次求值真正实施过**的不变式
+    // （账本集）。旧口径「声明了 + 证明成功 ⇒ 无条件归因」会在**没有循环**、
+    // 对证明零贡献的函数上印「return contract proved via @nudo:invariant …」
+    // ⇒ 审计归因说谎（文档口径是「When a proof relies on it」）。
+    const usedInvariant = (invariantDisplay ?? []).filter(
+      (d) => consumedInvariant?.has(d) === true,
+    );
+    if (usedInvariant.length > 0) {
       relied.push({
         severity: "info",
         code: DIAG.invariantRelied,
-        message: `${fnName}: return contract proved via @nudo:invariant ${invariantDisplay.join("; ")}`,
-        actual: `proof relies on user invariant${invariantDisplay.length > 1 ? "s" : ""}`,
+        message: `${fnName}: return contract proved via @nudo:invariant ${usedInvariant.join("; ")}`,
+        actual: `proof relies on user invariant${usedInvariant.length > 1 ? "s" : ""}`,
         expected: "engine verifies the obligation, not the loop invariant itself",
         suggestion:
           "@nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",

@@ -126,26 +126,50 @@ function alignToArg(expect: Pred, arg: Abs): Pred {
   return walk(expect);
 }
 
+/**
+ * 字面量 × 常数界的三值判定。
+ *
+ * BUG-211：比较式**左项必须是纯 self 项**（`var`）才能当数值比较。此前不看左项
+ * ⇒ `ge(length(x), 1)` 被当成「数字 ≥ 1」（`3 >= 1` ⇒ 满足）⇒ **假绿**，而返回
+ * 通道（`literalMeetsConstraint`）按**长度语义**读同一个谓词 ⇒ 判违反（假红）
+ * ⇒ 同一约束两个执法通道结论相反。
+ *
+ * 现在按左项分派：
+ * - 纯 `var` ⇒ 数值比较（原语义）；
+ * - `length(t)` 应用项 ⇒ **长度语义**（字符串字面量取 `.length`；其它形态
+ *   ——数字 / 布尔 / 数组（`litValue` 只产标量字面量）——**不可判定** ⇒
+ *   `undefined`，由调用方按「不可证明」处理，不猜）；
+ * - 其余形态（字段访问 `get(u, k)` 等）⇒ 不可判定。
+ */
 function decideLitCmp(
   lv: import("./term.ts").LiteralValue,
   p: Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }>,
 ): boolean | undefined {
-  if (typeof lv !== "number" || p.b.op !== "lit" || typeof p.b.value !== "number") {
-    return undefined;
-  }
+  if (p.b.op !== "lit" || typeof p.b.value !== "number") return undefined;
   const n = p.b.value;
-  switch (p.op) {
-    case "gt":
-      return lv > n;
-    case "ge":
-      return lv >= n;
-    case "lt":
-      return lv < n;
-    case "le":
-      return lv <= n;
-    default:
-      return undefined;
+  const cmp = (got: number): boolean => {
+    switch (p.op) {
+      case "gt":
+        return got > n;
+      case "ge":
+        return got >= n;
+      case "lt":
+        return got < n;
+      case "le":
+        return got <= n;
+      default:
+        return false;
+    }
+  };
+  // 长度语义通道（与返回位的 literalMeetsConstraint 同口径）
+  if (p.a.op === "app" && p.a.fn === "length") {
+    if (typeof lv !== "string") return undefined;
+    return cmp(lv.length);
   }
+  // 只有纯 self 项才是数值比较的合法左项
+  if (p.a.op !== "var") return undefined;
+  if (typeof lv !== "number") return undefined;
+  return cmp(lv);
 }
 
 /**
@@ -154,22 +178,36 @@ function decideLitCmp(
  * - `total` = **非 rest** 形参的总位数——默认形参**占位**（`f(a, b = 1)` 的
  *   第 2 个实参被 `b` 吃掉 ⇒ 不是「多传」；Bug 1131）；
  * - `hasRest` = 有 rest 形参（多余实参被它吸收 ⇒ 不算实参个数不符）。
+ *
+ * BUG-197：`contractOptional` = **契约级**可选位（`constraint.isOptional`，按
+ * 形参位次）。产物面（dts / schema）把契约级可选性当权威（Bug 536 的「三来源」
+ * 序：契约 > 实现签名）⇒ 执法面必须同源，否则同一份契约「产物说可省、check
+ * 说必填」⇒ TS 合法调用被判 `nudo:arg-count` 假红。契约位优先于实现签名
+ * （与产物面同序）；两侧都不报可选才计入 `required`。
  */
-function arityFace(g: PolyFn): { required: number; total: number; hasRest: boolean } {
+function arityFace(
+  g: PolyFn,
+  contractOptional?: ReadonlySet<number>,
+): { required: number; total: number; hasRest: boolean } {
   const formals = g.formals;
   const restByName = g.params.filter((p) => p.startsWith("...")).length;
   const hasRest = (formals?.some((f) => f.kind === "rest") ?? false) || restByName > 0;
   if (!formals || formals.length === 0) {
     // 无 formals 面：按展示名推断（rest 位不吃实参位）
     const total = Math.max(0, g.params.length - restByName);
-    return { required: total, total, hasRest };
+    // 契约级可选位：没有 formals 时按展示名位次扣减（同一位次口径）
+    const contractRequired = Array.from({ length: total }, (_, i) => i)
+      .filter((i) => contractOptional?.has(i) !== true).length;
+    return { required: contractRequired, total, hasRest };
   }
   let required = 0;
   let total = 0;
-  for (const f of formals) {
+  for (let i = 0; i < formals.length; i++) {
+    const f = formals[i]!;
     if (f.kind === "rest") break;
     total++;
     if (f.optional === true) continue;
+    if (contractOptional?.has(i) === true) continue;
     required++;
   }
   // 保守：不超过展示名个数（`this` 接收者等不占位）
@@ -282,6 +320,12 @@ export function checkCallSite(
     phi?: Phi;
     /** 契约面已覆盖的参数位（避免与契约面执法双报） */
     skipParams?: ReadonlySet<number>;
+    /**
+     * BUG-197：**契约级**可选位（`constraint.isOptional` → 形参位次）。
+     * 产物面（dts / schema）以契约为可选性的权威来源 ⇒ 元数面同源，
+     * 否则「产物说可省、check 说必填」⇒ TS 合法调用被判 `nudo:arg-count`。
+     */
+    contractOptional?: ReadonlySet<number>;
     /** 展示名（跨文件调用用） */
     displayName?: string;
     line?: number;
@@ -293,7 +337,7 @@ export function checkCallSite(
   if (!g) return out;
   const display = opts.displayName ?? fnName;
   const argCount = opts.argCount ?? args.length;
-  const { required, total, hasRest } = arityFace(g);
+  const { required, total, hasRest } = arityFace(g, opts.contractOptional);
 
   if (argCount < required) {
     out.push({

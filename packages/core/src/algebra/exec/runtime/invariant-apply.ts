@@ -44,6 +44,7 @@ import { lit, v as termVar } from "../../term.ts";
 import type { Pred } from "../../pred.ts";
 import { and, ge, gt, implies, le, lt, not } from "../../pred.ts";
 import { currentInvariantSpecs } from "./state.ts";
+import { noteInvariantConsumed } from "../../assume-ledger.ts";
 
 /** `@nudo:invariant <name><path> <rel> <number>` 的解析产物（check.ts 构造） */
 export type InvariantSpec = {
@@ -164,6 +165,19 @@ export function applyInvariantsToPack(pack: Abs): Abs {
   for (const spec of specs) {
     const cur = (slots ?? s.slots)[spec.name];
     if (!cur) continue; // 绑定名不在本包（未携带/标量线程）：静默
+    // BUG-084：本 spec 在本函数的**循环 join/宽化位命中了它的绑定** ⇒ 记进
+    // 消费账本（审计归因 nudo:invariant-relied 只认账本）。
+    //
+    // 旧口径「声明了 + 证明成功 ⇒ 无条件归因」会在**根本没有循环**、对证明
+    // 零贡献的函数上印「return contract proved via @nudo:invariant …」
+    // （审计归因说谎；文档口径是「When a proof relies on it」）。记账点是
+    // **循环 join/宽化位**（本函数只从 widenLoopJoin / widenFinal /
+    // $whileSeq·$forOf 的出口 join 调用）⇒ 无循环 ⇒ 一次都不记。
+    //
+    // 记账号粒度与 assume 族一致（body 期被消费过，而非「返回证明非它不可」）：
+    // 强化可能因域已蕴含该界而恒等，此时公理仍参与了该循环的域（不宣称依赖
+    // 反而是漏报）。记账不参与判定。
+    noteInvariantConsumed(spec);
     const w = drill(cur.value, spec.path, spec);
     if (w === cur.value) continue;
     if (!slots) slots = { ...s.slots };

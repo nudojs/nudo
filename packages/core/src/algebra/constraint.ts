@@ -205,6 +205,30 @@ function makeBuilder(
     return finiteBoundArg(method, n);
   };
   /**
+   * 长度界链（min / max / length）只在**有长度语义**的链上成立：`string()` 与
+   * `array(...)`（+ 无 prim 的开放链 `any()`）。
+   *
+   * BUG-211：此前 `number().min(1)` 静默产出 `ge(length(self), 1)` ⇒
+   * ① 该约束对数字**恒假**（`data.length` 是 undefined）⇒ 发布的 guard 产物拒绝
+   * **全部**合法输出；② 同一约束在两个执法通道给出**相反**结论（参数位把
+   * `length(x)` 当普通数值比较 ⇒ 假绿；返回位按长度语义 ⇒ 假红）。
+   * ⇒ 与 `gt/ge/lt/le`、`.int()` 同口径：不可能满足的链在**构造期**拒绝。
+   *
+   * 允许的形态：`prim === "string"`（长度界的主体）、无 prim 的 `array(...)`
+   * （`element` 在场，Bug 922 的数组自身长度界）与 `any()`；`shape` / `union` /
+   * `fn` 是结构型，长度界无意义 ⇒ 与数值界同口径拒绝。
+   */
+  const lengthChain = (method: string): void => {
+    if (fields || members || fnSlot || lazySlot)
+      throw new Error(
+        `nudo ${method}(): only string / array length chains are allowed (shape/union/fn are not supported)`,
+      );
+    if (prim !== undefined && prim !== "string")
+      throw new Error(
+        `nudo ${method}(): only string / array length chains are allowed (prim=${prim})`,
+      );
+  };
+  /**
    * 长度界链（min / max / length）的界必须**非负**。
    *
    * 此前 `string().length(-3)` 产出 `len(self) === -3` ⇒ **恒假** ⇒ 每个合法
@@ -214,7 +238,11 @@ function makeBuilder(
    * 「2.5 合法」⇒ 只护栏 NaN / Infinity，不加严）。
    */
   const lengthBound = (method: string, n: number): number => {
+    // 实参形态守卫先行（issue #152 的既有口径：**非有限数值实参**的提示优先——
+    // `number().min(Infinity)` 先报「finite numeric bound」，与既有门禁一致）
     const bound = finiteBoundArg(method, n);
+    // 再判链的 prim 语义（BUG-211：数值 / 布尔链上不可能有长度语义）
+    lengthChain(method);
     if (bound < 0)
       throw new Error(
         `nudo ${method}(): length bound must be a non-negative integer, got ${bound}`,

@@ -232,6 +232,39 @@ export function scanLiteralCalls(
     return entries;
   };
 
+  /**
+   * BUG-197：**契约级可选位**（`constraint.isOptional`）→ 形参位次表。
+   *
+   * `.optional()` 在产物面（`nudo export --format dts` 的 `b?: number`、schema
+   * 的 `.optional()`）是「该位可省略」的**权威**来源（Bug 536 的「三来源」序：
+   * 契约级 > 实现签名）⇒ 执法面的元数检查必须同源，否则同一份契约
+   * 「产物说可省、check 说必填」⇒ TS 合法调用被判 `nudo:arg-count`（假红，
+   * BUG-197）。位次映射与 `interfaceToIndexed` **同一套规则**（展示名直接命中
+   * → `locateContractParam`），本地调用与跨文件调用共用本函数 ⇒ 两面同口径。
+   *
+   * §3.3 执法分档：只有 handwritten 契约执法（generated 段是事实快照、implicit
+   * 无契约）⇒ 其它来源返回空集，与 `checkReqs` 的执法面一致。
+   */
+  const contractOptionalIndexes = (
+    ei: EffectiveInterface | undefined,
+    paramNames: string[],
+    formals?: FormalParam[],
+  ): ReadonlySet<number> => {
+    const optional = new Set<number>();
+    if (ei?.source !== "handwritten") return optional;
+    const conflict = new Set(ei.conflict?.params ?? []);
+    for (const { param, constraint } of ei.params) {
+      if (!param || conflict.has(param)) continue;
+      if (constraint.isOptional !== true) continue;
+      let idx = paramNames.indexOf(param);
+      if (idx < 0 && formals && formals.length > 0) {
+        idx = locateContractParam(formals, param)?.index ?? -1;
+      }
+      if (idx >= 0) optional.add(idx);
+    }
+    return optional;
+  };
+
   // nudo:interface-conflict 只在 check.ts fn 级报告（权威面）：conflict 必然
   // 蕴含源文件含 @nudo:contract/@nudo:contract，fn 级门恒开且必然已报——
   // 调用点级再报一次只会双报两种消息形态（此处历史上曾重复，已收口）。
@@ -322,6 +355,18 @@ export function scanLiteralCalls(
       optionalParamNames(fnName, source, file),
     );
     const fnFace = gWithOptional && g ? { ...g, formals: gWithOptional } : g;
+    // BUG-197：**契约级**可选位（`constraint.isOptional`）必须与产物面（dts /
+    // schema）同源 ⇒ 元数检查之前先取有效契约。此前 arityFace 只看实现签名
+    // （`x?: T` / 默认参）⇒ 契约 `.optional()` 位在 check 面被当必填 ⇒ TS 合法
+    // 调用被判 `nudo:arg-count`（假红），而同一契约的 dts 产物写 `b?: number`。
+    const optsR: EffectiveInterfaceOpts = {
+      loadModule: opts?.loadModule,
+      fromFile: opts?.fromFile ?? "",
+      ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
+    };
+    const ownEi = effectiveInterfaceOf(fnName, source, optsR);
+    const contractOptional = contractOptionalIndexes(ownEi, g?.params ?? [], g?.formals);
     out.push(
       ...checkCallSite(source, fnName, absArgs, {
         // Bug 1105：个数不可判（非字面量展开）⇒ NaN ⇒ 元数检查两个比较恒假
@@ -330,6 +375,8 @@ export function scanLiteralCalls(
         hasInfo,
         fn: fnFace,
         phi,
+        // BUG-197：契约级可选位（本地调用与跨文件调用**同口径**）
+        contractOptional,
         line: loc?.start.line,
         column: loc?.start.column,
       }),
@@ -343,13 +390,6 @@ export function scanLiteralCalls(
       parsed.spreadAt !== undefined ? absArgs.slice(0, parsed.spreadAt) : absArgs;
 
     const paramNames = g?.params ?? [];
-    const optsR: EffectiveInterfaceOpts = {
-      loadModule: opts?.loadModule,
-      fromFile: opts?.fromFile ?? "",
-      ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
-      ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
-    };
-    const ownEi = effectiveInterfaceOf(fnName, source, optsR);
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
       const ownFull = interfaceToIndexed(ownEi, paramNames, g?.formals);
@@ -473,18 +513,6 @@ export function scanLiteralCalls(
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
-      // Bug 364：调用点验证面接进产品路径（跨文件被调方）
-      out.push(
-        ...checkCallSite(ext.source, ext.fnName, absArgs, {
-          argCount: syntacticArgCount ?? Number.NaN,
-          hasInfo,
-          fn: g,
-          phi,
-          displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        }),
-      );
       paramNames = g?.params ?? [];
       // 跨文件侧车只在拿到定义文件路径时 ambient 绑定（防误绑到本文件侧车）
       const eiOpts: EffectiveInterfaceOpts = {
@@ -495,6 +523,22 @@ export function scanLiteralCalls(
         ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       };
       const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
+      // BUG-197：契约级可选位 —— 与本地调用**共用** `contractOptionalIndexes`
+      // （同一套位次映射 + 同一 handwritten 档）⇒ 本地 / 跨文件两面同结论。
+      const contractOptional = contractOptionalIndexes(ei, paramNames, g?.formals);
+      // Bug 364：调用点验证面接进产品路径（跨文件被调方）
+      out.push(
+        ...checkCallSite(ext.source, ext.fnName, absArgs, {
+          argCount: syntacticArgCount ?? Number.NaN,
+          hasInfo,
+          fn: g,
+          phi,
+          contractOptional,
+          displayName,
+          line: loc?.start.line,
+          column: loc?.start.column,
+        }),
+      );
       // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
       if (ei?.source === "handwritten") {
         full = interfaceToIndexed(ei, paramNames, g?.formals);

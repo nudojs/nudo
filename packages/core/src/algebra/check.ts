@@ -12,7 +12,7 @@
 
 import { isBuiltin } from "node:module";
 import { parseSource as parse } from "./parse-source.ts";
-import { stripStringsKeepComments } from "./code-text.ts";
+import { identBoundaryRegex, stripStringsKeepComments } from "./code-text.ts";
 import { extractFileEnvNames } from "./directive-scan.ts";
 import {
   setAbsTruncationCollector,
@@ -62,7 +62,11 @@ import {
   type ReturnContractSource,
 } from "./check-return.ts";
 // Bug 367：引理消费记账（清账 / 取快照 ⇒ 审计归因只认真正消费过的引理）
-import { assumeConsumed, resetAssumeConsumed } from "./assume-ledger.ts";
+import {
+  assumeConsumed,
+  invariantConsumed,
+  resetAssumeConsumed,
+} from "./assume-ledger.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import {
   attachContractFaces,
@@ -136,6 +140,8 @@ import {
   isThrowsIgnored,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
+  throwsKindCovered,
+  type MayThrowEffect,
 } from "./exec/may-throw.ts";
 
 // --- 整文件 CheckReport memo → check-memo.ts（对外形状经 re-export 保持不变） ---
@@ -725,6 +731,82 @@ function assumePremisesPhiOf(
   return { phi: pAndPred(...preds), display, premises: preds };
 }
 
+/**
+ * 真 unknown（引擎债）判据：shape 恰为 `unknown`，**或** sum 里含真 unknown
+ * 成员（`unknown` 是顶类型 ⇒ 含 unknown 的 union 语义上就是 unknown）。
+ *
+ * BUG-137：旧判据只认裸 `unknown` ⇒ `unknown | null`（env 对未建模宿主对象
+ * 的建模形态，如 `document.getElementById`）**不报**引擎债诊断 ⇒ 同一个
+ * `document` 对象上「一个报一个不报」；而 docs/design/cli-semantics.md 明文
+ * **禁止**「在 check 中对 unknown（失败）静默通过而不报引擎债相关诊断」。
+ * 带 `lit` term 的 unknown 是有值证据（`undefined` 值 / 契约字面量成员，
+ * Bug 22 口径）⇒ 排除。
+ */
+function isTrueUnknownAbs(a: Abs | undefined): boolean {
+  if (!a) return false;
+  if (a.shape.k === "unknown") return a.term?.op !== "lit";
+  if (a.shape.k === "sum") return a.shape.members.some((m) => isTrueUnknownAbs(m));
+  return false;
+}
+
+/**
+ * L2 入口 may-throw 的**申报建议**：`@nudo:throws <kind 集合>`。
+ *
+ * BUG-128：旧口径只取 `remaining[0].kind` ⇒ 剩余效果 kind 不唯一时（显式
+ * `throw new Error` + 抽象操作数比较的隐式 `TypeError`）建议的声明**盖不住**
+ * 全部剩余效果 ⇒ 照建议声明仍 FAILED（建议不可执行），LSP `[silence]` 一键
+ * quickfix 插入的正是这条无效声明（假修复按钮）。
+ *
+ * 口径 = **门禁同源**：取全部剩余 kind 去重；全部落在 Error 族且多于一条 ⇒
+ * 折成 `Error`（`@nudo:throws Error` 覆盖整族，与 `formatThrowsAbs` 的门禁
+ * 展示一致）；否则逗号分隔（`@nudo:throws A, B` 是 extractDeclaredThrows
+ * 支持的形态）。
+ */
+function throwsDeclarationFor(remaining: readonly MayThrowEffect[]): string {
+  const kinds = [...new Set(remaining.map((e) => e.kind))];
+  if (kinds.length > 1 && kinds.every((k) => throwsKindCovered(k, ["Error"]))) return "Error";
+  return kinds.join(", ");
+}
+
+/** 源码里 `export { … } from "…"` 的**本地绑定名**（re-export 不产局部绑定） */
+function reexportedLocalNames(source: string): string[] {
+  const out: string[] = [];
+  const re = /export\s*\{([^}]*)\}\s*from\b/g;
+  for (const m of source.matchAll(re)) {
+    for (const part of m[1]!.split(",")) {
+      const local = part.trim().split(/\s+as\s+/)[0]?.trim();
+      if (local && /^[A-Za-z_$][\w$]*$/.test(local)) out.push(local);
+    }
+  }
+  return out;
+}
+
+/**
+ * ReferenceError 的**归因**建议（BUG-138）。
+ *
+ * 旧文案无条件断言「re-export `export { x } from` 不是局部绑定」，且标识符
+ * `x` 是**硬编码**的：
+ * - 对「未定义全局 / 拼错的全局名 / env 缺项」这类最常见成因**指错方向**
+ *   （文件里根本没有 re-export）；
+ * - 即便真是 re-export 形态，点名的也未必是用户 re-export 的那个名字。
+ *
+ * 新口径：在源码里找到**真实**的 re-export 本地名，且该名字确实在别处被读
+ * ⇒ 点名它（`export { y } from` ⇒ 改 `import { y }`）；否则给「未绑定标识符」
+ * 的通用归因（检查 import / env / 拼写）。可执行半边（`@nudo:throws
+ * ReferenceError`）始终保留。
+ */
+function referenceErrorSuggestion(source: string): string {
+  // 去掉 re-export 语句本身：语句里的名字不是「被读到的未绑定标识符」。
+  const body = source.replace(/export\s*\{[^}]*\}\s*from\b[^;\n]*/g, "");
+  const hit = reexportedLocalNames(source).find((n) =>
+    new RegExp(identBoundaryRegex(n)).test(body),
+  );
+  if (hit !== undefined) {
+    return `re-export \`export { ${hit} } from\` 不是局部绑定——改 \`import { ${hit} }\` / @nudo:throws ReferenceError`;
+  }
+  return "ReferenceError: an identifier read here is not bound (check a missing import / an env global / the spelling) — or declare @nudo:throws ReferenceError";
+}
+
 // ---------------------------------------------------------------------------
 // #176：@nudo:invariant 循环携带界（文法/绑定名校验 + spec 构造）
 // ---------------------------------------------------------------------------
@@ -961,14 +1043,69 @@ function checkSourceInner(
     eiCache.set(key, eff);
     return eff;
   };
+  /**
+   * L2 **申报集合** = 源码 `@nudo:throws` ∪ 有效接口的 throws（并集口径）。
+   *
+   * BUG-210：旧口径 `declaredThrowsForEntry(...) ?? effectiveInterfaceCached(...).throws.kinds`
+   * 的 `??` 短路 ⇒ 源码一有声明，侧车 `fn(..., { throws })` **整份被丢弃**
+   * ⇒ 已申报的 `RangeError` 仍报「未申报」（假红）+ 加一条声明反而让门禁更红
+   * （非单调）。而 interface.ts 的 `mergedThrows` 算的就是**并集** ⇒ 两个
+   * 模型对同一份声明给出相反答案。这里与接口模型同源（并集，`*` 优先）。
+   * `declaredThrowsForEntry` 仍参与并集：它额外覆盖**类构造器**作用域
+   * （`C.constructor`）的申报，接口模型看不到。
+   */
+  const declaredThrowsMerged = (fnName: string): string[] | "*" | undefined => {
+    const fromSource = declaredThrowsForEntry(source, fnName);
+    const fromInterface = effectiveInterfaceCached(fnName)?.throws?.kinds;
+    if (fromSource === "*" || fromInterface === "*") return "*";
+    const set = new Set<string>([...(fromSource ?? []), ...(fromInterface ?? [])]);
+    return set.size > 0 ? [...set] : undefined;
+  };
+  /**
+   * L2 入口 may-throw 的**建议**文本（两个 issue 构造点共用，同一口径）：
+   * - kind 集合 = 门禁要求的**全部**剩余 kind（BUG-128，见 throwsDeclarationFor）；
+   * - ReferenceError 走**真实归因**（BUG-138，见 referenceErrorSuggestion）。
+   */
+  const entryThrowsSuggestion = (
+    remaining: readonly MayThrowEffect[],
+    cause: string | undefined,
+  ): string => {
+    const decl = throwsDeclarationFor(remaining);
+    const referenceError = remaining[0]?.kind === "ReferenceError";
+    const tail = referenceError
+      ? referenceErrorSuggestion(source)
+      : `@nudo:throws ${decl}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`;
+    return cause ? `${cause} → ${tail}` : tail;
+  };
   // Bug 363：赋值记录收集器的**作用域窗口**必须包住**函数体求值**。
   // 旧窗口只包模块顶层求值，而函数体在 generalize（下面的函数循环里）就求过
   // 一遍 ⇒ 函数体内的 $assignRecord 全部落空 ⇒ nudo:assign-mismatch 只覆盖
   // 顶层（真实代码里赋值的主要发生地恰恰是函数体 ⇒ 假绿）。
   // 窗口 = 函数循环（generalize 的函数体求值）+ 其后的顶层求值段。
   // 窗口扩大的副作用（同一赋值点被多次求值）由 dedupeAssignRecords 折叠。
+  //
+  // BUG-023（同一窗口口径）：**执行态调用记录**（AbsCallRecord）的窗口同理
+  // ——旧窗口只包模块顶层求值 ⇒ 函数体内的调用点（绝大多数真实调用点）
+  // 从不进 drift 的「今日域」证据表 ⇒ 陈旧 `@generated` 段在函数体调用时
+  // **零告警**（假绿），而同一段挪到模块顶层就报 drift。窗口 = 函数循环
+  // （generalize 的函数体求值：`caller()` 体内 `add(1, 2)` 会被执行）+ 其后的
+  // 顶层求值段，与 emit 的 callsite case（真正执行过的调用）同源。
   const records: AbsAssignRecord[] = [];
   const prevAssign = setEvalAssignCollector((r) => records.push(r));
+  const callRecords: AbsCallRecord[] = [];
+  /**
+   * BUG-023：**函数体求值期**（generalize 各函数体）的执行态调用记录，单独
+   * 留存——只在「顶层执行态对某函数没有任何调用点证据」时作为**回退**证据
+   * 交给漂移闸门（见 interfaceDriftIssues 的 fallback 参数）。
+   *
+   * 默认口径（顶层执行态证据）必须保持不变：兄弟函数体内**从未被调用**的
+   * 调用点不得进今日域，否则 fresh emit 后立即误报 drift 且重跑 emit 无法
+   * 消除（`check-interface-drift.test`「执行态证据」回归）。
+   */
+  const bodyCallRecords: AbsCallRecord[] = [];
+  // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
+  const bCalls: EvalCallRecord[] = [];
+  const prevCall = setEvalCallCollector((r) => bCalls.push(r));
   for (const name of names) {
     // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
     const assumePhi = assumePremisesPhiOf(name, source, file, issues);
@@ -1100,13 +1237,10 @@ function checkSourceInner(
         } as unknown as PolyFn;
         const effects = collectEntryMayThrows(source, name, synthetic, file, phi, opts);
         const throwsDisplayFallback = formatThrowsAbs(mayThrowEffectsToAbs(effects));
-        const declared =
-          declaredThrowsForEntry(source, name) ??
-          effectiveInterfaceCached(name)?.throws?.kinds;
+        const declared = declaredThrowsMerged(name);
         const remaining = filterGateThrows(effects, declared, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
         if (gateDisplay && remaining.length > 0) {
-          const first = remaining[0]!;
           const loc = findFnLoc(file, name);
           issues.push({
             severity: entryThrowsMode === "warning" ? "warning" : "error",
@@ -1114,11 +1248,9 @@ function checkSourceInner(
             message: `${name} (export): may throw ${gateDisplay}`,
             actual: `${name}(…)    throws ${gateDisplay}`,
             expected: "entry total, or @nudo:throws / try-catch",
-            suggestion: first.cause
-              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`}`
-              : first.kind === "ReferenceError"
-                ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-                : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`,
+            // BUG-128 / BUG-138：建议与门禁同源（全部剩余 kind），
+            // ReferenceError 走真实归因
+            suggestion: entryThrowsSuggestion(remaining, remaining[0]?.cause),
             fn: name,
             ...(loc.line !== undefined ? { line: loc.line } : {}),
             ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -1159,13 +1291,10 @@ function checkSourceInner(
       const effects = runSeeded(() => collectEntryMayThrows(source, name, g, file, phi, opts));
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
-      const declared =
-        declaredThrowsForEntry(source, name) ??
-        effectiveInterfaceCached(name)?.throws?.kinds;
+      const declared = declaredThrowsMerged(name);
       const remaining = filterGateThrows(effects, declared, ignoreThrows);
       const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
       if (gateDisplay && remaining.length > 0) {
-        const first = remaining[0]!;
         const loc = findFnLoc(file, name);
         issues.push({
           severity: entryThrowsMode === "warning" ? "warning" : "error",
@@ -1173,11 +1302,9 @@ function checkSourceInner(
           message: `${name} (export): may throw ${gateDisplay}`,
           actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
           expected: "entry total, or @nudo:throws / try-catch",
-          suggestion: first.cause
-            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`}`
-            : first.kind === "ReferenceError"
-              ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-              : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`,
+          // BUG-128 / BUG-138：建议与门禁同源（全部剩余 kind），
+          // ReferenceError 走真实归因
+          suggestion: entryThrowsSuggestion(remaining, remaining[0]?.cause),
           fn: name,
           ...(loc.line !== undefined ? { line: loc.line } : {}),
           ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -1228,9 +1355,8 @@ function checkSourceInner(
     const unknownParamIdx = g.typeParams.findIndex(
       // Bug 22/24 同口径：unknown 形状 + lit term（undefAbs / 契约 lit(null)·
       // lit(undefined) 成员）是有值证据，不是引擎债——与 symbolicTrueUnknown
-      // 的排除一致。
-      (t) =>
-        t.value && t.value.shape.k === "unknown" && t.value.term?.op !== "lit",
+      // 的排除一致。BUG-137：判据走 isTrueUnknownAbs（含「sum 里有 unknown」）。
+      (t) => isTrueUnknownAbs(t.value),
     );
     const budgetExplained =
       truncated.has(name) ||
@@ -1242,8 +1368,7 @@ function checkSourceInner(
       (g.symbolic?.conf === "opaque" && !g.envGated) ||
       (g.symbolic?.shape?.k === "sum" &&
         g.symbolic.shape.members.every((m) => m.shape.k === "unknown" || m.shape.k === "any"));
-    const symbolicTrueUnknown =
-      g.symbolic?.shape?.k === "unknown" && g.symbolic.term?.op !== "lit";
+    const symbolicTrueUnknown = isTrueUnknownAbs(g.symbolic);
     if ((symbolicTrueUnknown || unknownParamIdx >= 0) && !budgetExplained) {
       const where =
         symbolicTrueUnknown
@@ -1374,6 +1499,17 @@ function checkSourceInner(
               ),
             )
           : undefined;
+        // BUG-084：本次求值**实际实施过**的循环不变式（账本 ∩ 本函数声明的
+        // 合法 spec，display 与 specs 同序）。声明了但零贡献（无循环 / 结构
+        // 不匹配）的 spec 不在账本里 ⇒ 不再被说成「证明依赖了它」。
+        const consumedInvariant = inv
+          ? new Set(
+              inv.display.filter((_, i) => {
+                const spec = inv.specs[i];
+                return spec !== undefined && invariantConsumed().includes(spec);
+              }),
+            )
+          : undefined;
         const retIssues = checkReturnConstraint(
           name,
           display,
@@ -1386,6 +1522,7 @@ function checkSourceInner(
             assumeDisplay: assumePhi?.display,
             invariantDisplay: inv?.display,
             consumedAssume,
+            consumedInvariant,
             // Bug 1094：返回点的**路径前提 Φ** = 用户引理前提
             //（`@nudo:assume` 的前提 Φ）——证明通道的 Φ 侧。
             // 项身份：前提项用**真实形参名**（`termVar(name)`），泛化后的返回
@@ -1399,13 +1536,26 @@ function checkSourceInner(
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
       }
-      // T10a drift 候选：generated 段是 emit 时的固化快照，与今日重算的
-      // 语义差异在 interfaceDriftIssues 统一判定（warning，generated 不执法）
-      if (eff && eff.source === "generated") {
+      // T10a drift 候选：**落盘的 `@generated` 段**（不是「有效契约的来源」）。
+      //
+      // 生成段是 emit 时刻的固化快照，它的陈旧性与「谁在有效契约里赢」无关。
+      // BUG-251：旧门槛 `eff.source === "generated"` ⇒ 源码 `@nudo:contract`
+      // 一出现，该函数的落盘生成段就**永不**进漂移候选 ⇒ 陈旧生成段零告警
+      // （假绿），而**同一文件** `contract --emit --exit-on-diff` 判「会变 /
+      // exit 1」⇒ 两面结论相反；加一行注释就让告警整条消失（非单调）。
+      const generatedSegment = eff?.generated;
+      if (generatedSegment !== undefined) {
         driftCandidates.push({
           fnName: name,
           paramNames: g.params,
-          eff,
+          eff: {
+            fnName: name,
+            params: generatedSegment.params,
+            ...(generatedSegment.returns !== undefined
+              ? { returns: generatedSegment.returns }
+              : {}),
+            source: "generated",
+          },
         });
       }
     }
@@ -1524,13 +1674,11 @@ function checkSourceInner(
   // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）。
   // evaluator 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
   // EvalCallRecord）；失败 fail-closed。
-  // Bug 363：赋值记录收集器已在函数循环**之前**安装（窗口含函数体求值）——
-  // 这里不再二次安装，只保留调用记录收集器（drift 今日域证据口径不变）。
+  // Bug 363 / BUG-023：赋值记录与**调用记录**收集器都已在函数循环**之前**
+  // 安装（窗口含函数体求值）——这里不再二次安装，只消费累积的记录。
   const varAbs = new Map<string, Abs>();
-  const callRecords: AbsCallRecord[] = [];
-  // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
-  const bCalls: EvalCallRecord[] = [];
-  const prevCall = setEvalCallCollector((r) => bCalls.push(r));
+  // 函数循环（含 generalize 的函数体求值）结束 ⇒ 此后的记录才是**顶层执行态**
+  const bodyCallCount = bCalls.length;
   let evalBindings: Map<string, unknown> | undefined;
   const evalAnalyze = evalAnalyzeOpts(opts);
   /** 模块**装载期必然抛**的句法证据（A#1）；只在 `module-throw` 回落时勘测 */
@@ -1551,14 +1699,14 @@ function checkSourceInner(
           varAbs.set(k, v as Abs);
         }
       }
-      callRecords.push(
-        ...bCalls.map((r) => ({
-          fnName: r.fnName,
-          args: r.args,
-          result: r.result,
-          callLoc: r.callLoc,
-        })),
-      );
+      const toRecord = (r: EvalCallRecord): AbsCallRecord => ({
+        fnName: r.fnName,
+        args: r.args,
+        result: r.result,
+        callLoc: r.callLoc,
+      });
+      callRecords.push(...bCalls.slice(bodyCallCount).map(toRecord));
+      bodyCallRecords.push(...bCalls.slice(0, bodyCallCount).map(toRecord));
     }
   } catch {
     /* B 失败 fail-closed（无 Abs 兜底） */
@@ -1614,7 +1762,9 @@ function checkSourceInner(
         fromFile: refineFrom,
         file,
         varAbs,
-        bCalls,
+        // 只用**顶层执行态**记录：函数体求值期（generalize）的记录只作
+        // drift 的无顶层证据回退（BUG-023），不得改写调用点实参解析
+        bCalls: bCalls.slice(bodyCallCount),
         ...(autoBind !== undefined ? { autoBind } : {}),
         ...(projectDir !== undefined ? { projectDir } : {}),
       });
@@ -1683,7 +1833,10 @@ function checkSourceInner(
             return undefined;
           }
         };
-      })()),
+      })(),
+      // BUG-023：函数体求值期的调用点只在**没有顶层证据**时回退使用
+      bodyCallRecords,
+      ),
     );
   }
 
