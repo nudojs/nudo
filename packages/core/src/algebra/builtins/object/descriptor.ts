@@ -169,7 +169,10 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
     const inner = classInstanceInnerOf(src);
     if (inner) {
       const slots: Record<string, { value: Abs }> = {};
-      for (const k of enumOwnKeys(inner, (inner.shape as ObjShape).slots)) {
+      // Bug 276：flags 载体取 **brand**（src）——enumOwnKeys → isNonEnumerable
+      // 会并查 brand 自身与其内层 obj 两套载体（defineProperty 的 flags 记在
+      // brand 上；只查 inner ⇒ 不可枚举自有键被拷进 assign 结果）
+      for (const k of enumOwnKeys(src, (inner.shape as ObjShape).slots)) {
         setSlot(slots, k, getSlot((inner.shape as ObjShape).slots as Record<string, { value: Abs }>, k)!);
       }
       return slots;
@@ -930,10 +933,23 @@ function applyPropertyDescriptorCore(
     if (out.shape.name.endsWith(".prototype")) {
       putProtoSlotsInPlace(out.shape.shape);
     } else {
-      const inner = putSlots(out.shape.shape);
-      if (inner !== out.shape.shape) {
-        out = abs({ k: "brand", name: out.shape.name, shape: inner }, out.term, out.pred, out.conf);
+      const prevBrand = out;
+      const brandName = out.shape.name;
+      const prevInner = out.shape.shape;
+      const inner = putSlots(prevInner);
+      const brandInner = inner !== prevInner ? inner : prevInner;
+      if (inner !== prevInner) {
+        out = abs({ k: "brand", name: brandName, shape: inner }, out.term, out.pred, out.conf);
+        // 旧 brand 的不变性侧表（flags / extState）迁到新 brand——否则先前
+        // defineProperty 记在 brand 上的 flags 随 brand 换身份而丢
+        migrateInvariants(prevBrand, out);
       }
+      // Bug 276：flags **并落内层 obj**——枚举面（Object.keys / values /
+      // entries / JSON.stringify / Object.assign / spread）查的是**内层 obj
+      // 的槽表**，只记 brand 一套载体 ⇒ enumerable:false 的自有键被当可
+      //枚举键发布（与 for-in 面互斥）。原型 brand 路径本就两处都记
+      //（putProtoSlotsInPlace 记 inner、末尾记 brand）——此处补齐同一口径。
+      setPropFlags(brandInner, key, flags);
     }
   }
   setPropFlags(out, key, flags);

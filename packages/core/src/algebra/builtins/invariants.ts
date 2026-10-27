@@ -60,7 +60,11 @@ export function enumOwnKeys(o: Abs, slots: Record<string, unknown>): string[] {
   return Object.keys(slots).filter(
     (k) =>
       !isNonEnumerable(o, k, flags) &&
-      (slots[k] as { internal?: boolean } | undefined)?.internal !== true,
+      (slots[k] as { internal?: boolean } | undefined)?.internal !== true &&
+      // Bug 275：inherited 槽是原型链解析槽（Object.create 镜像的 proto
+      // 字段 / Error 的 name）——CopyDataProperties 只复制**自有**属性，
+      // 原型链可达的键不计（原生 `{...Object.create({a:1})}` → {}）。
+      (slots[k] as { inherited?: boolean } | undefined)?.inherited !== true,
   );
 }
 
@@ -86,6 +90,9 @@ export function enumOwnStringKeys(o: Abs, slots: Record<string, unknown>): strin
     (k) =>
       !isNonEnumerable(o, k, flags) &&
       (slots[k] as { internal?: boolean } | undefined)?.internal !== true &&
+      // Bug 275：inherited 原型链槽不进自有键视图（Object.create 镜像的
+      // proto 字段在原生是原型链属性——keys/JSON/for-in 均不可见）
+      (slots[k] as { inherited?: boolean } | undefined)?.inherited !== true &&
       (slots[k] as { symbolKey?: boolean } | undefined)?.symbolKey !== true,
   );
 }

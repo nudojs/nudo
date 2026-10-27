@@ -22,6 +22,7 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "@nudojs/service";
 import type { Abs } from "@nudojs/core";
+import { joinObjects } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { dtsModuleSurface, projectFunctionDts } from "../dts-generator.ts";
 import { absToSchemaNode, absToZodSchemaModule } from "../schema-generator.ts";
@@ -113,12 +114,15 @@ describe("BUG-258 产物面：数组视图投影成数组（四面同判据）",
   it("多见证 join：两条数组视图见证 ⇒ facet 仍在；混入普通对象 ⇒ facet 消失", () => {
     const multi = `/**
  * @nudo:case "one" ("abc")
- * @nudo:case "two" ("aXbc")
+ * @nudo:case "two" ("aXc")
  */
-export function m2(s) { return /a(b)c/.exec(s); }
+export function m2(s) { return /a(.)c/.exec(s); }
 `;
     const fn2 = analyzeFile("/test/array-view-multi.js", multi).functions.find((f) => f.name === "m2")!;
-    const joined = fn2.combinedAbs!;
+    const witness = (fn: { cases?: Array<{ name: string; abs: Abs }> }, name: string): Abs =>
+      fn.cases!.find((c) => c.name === name)!.abs;
+    // 两条见证都是数组视图 ⇒ join（core 的 joinObjects）后 facet 仍在
+    const joined = joinObjects(witness(fn2, "one"), witness(fn2, "two"));
     expect(joined.shape.k).toBe("obj");
     expect(joined.shape.k === "obj" ? joined.shape.view : undefined).toBe("array");
 
@@ -126,10 +130,11 @@ export function m2(s) { return /a(b)c/.exec(s); }
  * @nudo:case "arr" ("abc")
  * @nudo:case "obj" ("")
  */
-export function m3(s) { return s === "" ? { a: 1 } : /a(b)c/.exec(s); }
+export function m3(s) { return s === "" ? { a: 1 } : /a(.)c/.exec(s); }
 `;
     const fn3 = analyzeFile("/test/array-view-mixed.js", mixed).functions.find((f) => f.name === "m3")!;
-    const mixedJoin = fn3.combinedAbs!;
+    // 数组视图 + 普通对象 ⇒ join 后不再是数组视图（facet 保守丢弃）
+    const mixedJoin = joinObjects(witness(fn3, "arr"), witness(fn3, "obj"));
     expect(mixedJoin.shape.k === "obj" ? mixedJoin.shape.view : undefined).not.toBe("array");
   });
 });

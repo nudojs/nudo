@@ -232,15 +232,60 @@ export function absFunction(
   return a;
 }
 
+/** IsConstructor 探针的靶：空体普通函数（反射探针不执行被探函数本体）。 */
+const ctorProbeNoop = function nudoCtorProbe(): void {};
+
+/**
+ * Bug 182：`[[Construct]]` **恒抛**的宿主内建——`Symbol` / `BigInt` 按规范
+ * 声明为「If NewTarget is not undefined, throw a TypeError」（ES2024
+ * 20.4.1.1 / 21.2.1.1）⇒ IsConstructor 为真（探针放行），但作 `new` /
+ * `Reflect.construct` 的 **target** 恒抛 TypeError。`ctor` facet 的操作语义
+ * 是「能否被构造」⇒ 两者记 false（与 `$new` 的宿主探针 probeHostGlobalCtor
+ * 结论一致）。
+ */
+const CTOR_ALWAYS_THROWS: ReadonlySet<unknown> = new Set<unknown>([Symbol, BigInt]);
+
+/** 探针缓存（IsConstructor 是函数对象的不可变内部槽 ⇒ 结果恒定）。 */
+const ctorProbeCache = new WeakMap<object, boolean>();
+
+/**
+ * Bug 182：规范的 IsConstructor 探针（ES2024 7.3.6 Reflect.construct step 4：
+ * newTarget 非构造器 ⇒ TypeError）。靶是空体 noop ⇒ **不执行** v 本体，只按
+ * v 作 newTarget 铸一个空对象（零可观察副作用）。
+ *
+ * 不得再用「有 prototype 属性」代理：`Proxy` 无 prototype 但**是**构造器
+ * （假红），`Symbol` / `BigInt` 有 prototype 但恒抛（假绿）。
+ */
+function probeIsConstructor(v: Function): boolean {
+  const cached = ctorProbeCache.get(v);
+  if (cached !== undefined) return cached;
+  let ok: boolean;
+  try {
+    Reflect.construct(ctorProbeNoop, [], v as unknown as new () => object);
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  ctorProbeCache.set(v, ok);
+  return ok;
+}
+
 /**
  * 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、
- * 箭头、内建方法（无 .prototype）不可 new；bind 产物取决于目标（未知）。
+ * 箭头、内建方法不可 new；bind 产物取决于目标（未知）。
  * 函数声明/宿主构造器 → 可构造。求值引擎的函数声明编译成真实宿主函数，
  * `$new` / `$class(extends)` / 桥接包装按此 stamping。
+ *
+ * Bug 182：判据换成**规范 IsConstructor 探针**（probeIsConstructor）+ 恒抛
+ * 内建表（CTOR_ALWAYS_THROWS）——此前用「有无 prototype 属性」代理，两个
+ * 方向都错：`Proxy`（无 prototype，可构造）假红、`Symbol` / `BigInt`
+ * （有 prototype，不可构造）假绿 ⇒ 同一值在 `new` 面与 `Reflect.construct`
+ * 面给出相反结论。
  */
 export function hostFnCtorFacet(v: Function): boolean | undefined {
   // Bug 9 求值引擎标记：transpile 把 generator/async 声明去种类化成普通
   // function——声明后挂 __nudoNonCtor，运行时按此识别不可 new
+  // （先于探针：标记可在函数对象落地后的任意时刻挂上，不进探针缓存）
   if ((v as { __nudoNonCtor?: unknown }).__nudoNonCtor === 1) return false;
   const protoCtor = Object.getPrototypeOf(v)?.constructor?.name;
   if (
@@ -250,10 +295,11 @@ export function hostFnCtorFacet(v: Function): boolean | undefined {
   ) {
     return false;
   }
+  // bind 产物：可构造性随目标（原生 [[Construct]] 转发目标）；此处不探
+  // （探针会走通并返回 true，但保守口径保持不变——既有钉面）
   if (typeof v.name === "string" && v.name.startsWith("bound ")) return undefined;
-  // 箭头与内建方法（Array.prototype.map 等）没有 prototype 属性
-  if (!(v as { prototype?: unknown }).prototype) return false;
-  return true;
+  if (CTOR_ALWAYS_THROWS.has(v)) return false;
+  return probeIsConstructor(v);
 }
 
 // --- stable key（relationFn fingerprint）---

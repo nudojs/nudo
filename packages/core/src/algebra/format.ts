@@ -243,7 +243,16 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
           const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
           // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
           // 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact undefined。
-          const slotAbs = accessorReadDomain(a, k) ?? slot.value;
+          // BUG-167：占位槽 `unknown` = 读域**不可判**（非纯 getter / defineProperty
+          // 装的访问器）⇒ 不得为投影执行用户 getter（分析期副作用 + 末次读被冻结
+          // 成「确定值」⇒ 签名面自信错值）；直接用占位值（presence-only）。
+          // 判据用 **term 缺失**（`unknown` Abs 无 term；纯 getter 的占位是
+          // `$lit(void 0)`，term = {op:"lit"}）——`$lit(void 0)` 的 shape.k 也是
+          // "unknown"（typeof undefined），按 shape 判会把**所有**访问器都判死。
+          const slotAbs =
+            slot.value.term === undefined
+              ? slot.value
+              : (accessorReadDomain(a, k) ?? slot.value);
           let val = formatShapeB(slotAbs, budget, `${ind}  `);
           if (budget.showLits) {
             const plvs = litPredValues(slotAbs);

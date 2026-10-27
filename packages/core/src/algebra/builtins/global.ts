@@ -381,10 +381,22 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       //   InvalidCharacterError（DOMException name）；encode*/escape* total；
       // - obj/fn/any 载体 → 另记 may TypeError（Symbol coercer）+ string。
       const a0 = args[0];
+      // Bug 183：btoa/atob 的 "input" 是**必填**实参——宿主缺参抛
+      // TypeError: The "input" argument must be specified；显式
+      // `undefined` 仍是合法 ToString（"undefined"）。此前「缺参 ≡ 显式
+      // undefined」合并 ⇒ btoa() 折 "dW5kZWZpbmVk"（假绿 + 值错）、
+      // atob() 抛 InvalidCharacterError（宿主抛 TypeError ⇒ L2 建议不可
+      // 执行）。其余 6 个（encodeURI*/decodeURI*/escape/unescape）缺参
+      // ≡ ToString(undefined) 与原注释一致，不受此门影响。
+      if ((name === "btoa" || name === "atob") && args.length === 0) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (a0 && isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
       const lvR = a0 ? litValue(a0) : { ok: true as const, value: undefined };
       if (lvR.ok) {
-        // 缺省 / lit(undefined) ≡ ToString(undefined)="undefined"（原生同款）
+        // lit(undefined)（btoa/atob 的显式 undefined，其余 6 个的缺省同款）
+        // ≡ ToString(undefined)="undefined"（原生同款；btoa/atob **缺参**
+        // 已在上方 Bug 183 门定抛）
         const v = lvR.value;
         if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError")); // 防御死代码
         try {

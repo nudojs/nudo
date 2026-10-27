@@ -142,7 +142,15 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget, arrayLike = fa
           : safeMemberAccess(v, key);
         // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——守卫须按 getter 读域
         // 判定（原生读 `data.ab` 走 getter），否则对函数自己的返回值报假红。
-        const slotAbs = accessorReadDomain(a, key) ?? slot.value;
+        // BUG-167：占位槽 `unknown` = 读域**不可判**（非纯 getter / defineProperty
+        // 装的访问器）⇒ 不得为守卫执行用户 getter，也不得把冻结末值写成必等式
+        //（那样 guard 对自己的返回值恒假）；落到占位值 → 只判 presence。
+        // 判据是 **term 缺失**（`unknown` 无 term；纯 getter 占位 `$lit(void 0)`
+        // 的 term = {op:"lit"}）——按 shape.k 判会误伤所有访问器。
+        const slotAbs =
+          slot.value.term === undefined
+            ? slot.value
+            : (accessorReadDomain(a, key) ?? slot.value);
         const inner = denoteGuardB(slotAbs, access, budget);
         if (slot.optional) {
           // 可选槽本就允许缺键 ⇒ 不产存在性子句（standard 面同口径）。

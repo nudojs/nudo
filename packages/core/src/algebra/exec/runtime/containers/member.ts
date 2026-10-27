@@ -58,7 +58,7 @@
  *   原生 prototype）——prototype 面读该戳。
  */
 import type { Abs, Shape } from "../../../abs.ts";
-import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
+import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown, isArrayView } from "../../../abs.ts";
 import "../../../term.ts";
 import { absFunction, hostFnCtorFacet, getFnImpl } from "../../../abs-fn.ts";
 import {
@@ -106,16 +106,13 @@ import {
 import { arrayMethodAbs } from "../../../builtins/array.ts";
 // Bug 315：接收者 toString 解析钩子注册（直连 builtins/object-proto.ts，
 // 不经 barrel——barrel 未导出该注册函数，且本分片不改 barrel；同下方
-// collectionIteratorFor / isMatchArrayView 的直连口径）。
+// collectionIteratorFor 的直连口径）。
 import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
 // Bug 198（S20）：集合迭代器的 **live 视图** 构造器（collectionIteratorFor）——
 // 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
 // 未导出该函数，且本分片不改 barrel）。
 import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
 import { urlSearchParamsSizeAbs } from "../../../builtins/error/web.ts";
-// Bug 195：数组视图标注（模板对象 / RegExp exec 结果——原生都是**数组 exotic**）
-// 判身份；直连 builtins/regexp.ts 不经 barrel（与 iterate.ts 同款口径）。
-import { isMatchArrayView } from "../../../builtins/regexp.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
@@ -1687,7 +1684,17 @@ function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
         // Bug 105：bigint prim 的 toString/toLocaleString 是 BigInt.prototype
         // 自有方法——OP 泛型版折 "[object BigInt]"（假精确，原生是十进制/
         // 本地化数字串），必须走 prim 通道（apply 钩子 → $invoke bigint 臂）
-        ((o.shape as { type?: string }).type === "bigint" && (key === "toString" || key === "toLocaleString")))
+        ((o.shape as { type?: string }).type === "bigint" && (key === "toString" || key === "toLocaleString")) ||
+        // Bug 7：number / boolean prim 的 toString / toLocaleString / valueOf
+        // 同理——OP 泛型版折 "[object Number]" / "[object Boolean]"（错值）
+        // 且**丢 brand check**（`(5).toString.call("x")` 原生定抛 TypeError，
+        // 引擎却照常返回值 ⇒ L2 门禁假绿）。走 prim 通道（apply 钩子 →
+        // $invoke number/boolean 臂；PRIM_HOME_BRAND 映射 number→Number /
+        // boolean→Boolean ⇒ 借用调用 brand check 生效）。
+        ((o.shape as { type?: string }).type === "number" &&
+          (key === "toString" || key === "toLocaleString" || key === "valueOf")) ||
+        ((o.shape as { type?: string }).type === "boolean" &&
+          (key === "toString" || key === "valueOf")))
     ) {
       // Bug 49：prim 专有原型方法（trim/toFixed/…）——方法值读通道：
       // apply 钩子转发 callAbsMethod 既有派发
@@ -1796,8 +1803,9 @@ function getObjMember(ctx: GetCtx): Abs | undefined {
     // 上的**数组原型方法**（join / indexOf / concat / map / slice…）可派发：
     // 原生模板对象继承 Array.prototype。此前 obj 接收者的数组方法面只认
     // tuple/arr 形状 ⇒ 方法读落「确定不存在」折 exact undefined ⇒ 调用
-    // **假抛 TypeError**（原生不抛）。
-    if (ARRAY_PROTO_METHOD_NAMES.has(key) && isMatchArrayView(o)) {
+    // **假抛 TypeError**（原生不抛）。判定读形状 facet（abs.ts 的
+    // isArrayView，BUG-258 前的身份侧表已删除）。
+    if (ARRAY_PROTO_METHOD_NAMES.has(key) && isArrayView(o)) {
       return arrayViewMethodAbs(key);
     }
     // Object.prototype 方法（非 null-proto）：一等函数读取
@@ -2092,13 +2100,19 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     // `a.y = 1` 静默写穿（原生定抛，门禁假绿）。
     // 类字面量访问器由上方 findClassAccessor 覆盖（注册表面）；此处补
     // **动态装到原型上**的访问器 / 只读数据属性（原型槽面）。
-    if (!getSlot(inner.shape.slots, key)) {
+    // Bug 275 联动：`inherited` 槽是**原型链解析槽**（Object.create(proto) 的
+    // proto 槽 / Error 家族的 name）——原生不是自有属性 ⇒ 对 [[Set]] 写门而
+    // 言 receiver「无自有该键」必须成立，否则原型链上的 getter-only /
+    // writable:false / frozen 原型会被静默写穿（`o.a = 5` 原生定抛 TypeError）。
+    const ownSlotAtWrite = getSlot(inner.shape.slots, key);
+    const hasOwnSlotAtWrite = ownSlotAtWrite !== undefined && ownSlotAtWrite.inherited !== true;
+    if (!hasOwnSlotAtWrite) {
       const verdict = protoChainSetVerdict(o, key);
       if (verdict.kind === "deny") throwStrictWrite();
       if (verdict.kind === "setter") return verdict.setter(o, value);
     }
     const st = extStateOf(o);
-    if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
+    if ((st === "sealed" || st === "nonext") && !hasOwnSlotAtWrite) {
       throwStrictWrite(); // 不可扩展：新键写 TypeError
     }
     if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
@@ -2109,12 +2123,21 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     //（原生 e.name = "X" / 子类 name 字段建自有可枚举属性；message/
     // stack 自有不可枚举槽覆写不受影响，侧表保持）
     const prevSlot = getSlot(inner.shape.slots, key);
+    // Bug 278：inherited 槽（errorBrandAbs 的 name——原型链解析槽）的**公有
+    // 覆写**在原生里是**新建一个自有属性**（`CreateDataProperty`），因此追加
+    // 到**自有属性序末尾**。此前走「原地改槽值」⇒ 该键仍留在继承期的位置
+    // ⇒ `Object.getOwnPropertyNames(e)` 次序与宿主相反
+    //（引擎 ["stack","name","message"] vs 宿主 ["stack","message","name"]），
+    // 且 dts 产物原样发布错次序。
+    // 修法：先删槽再写回 ⇒ 键重新追加到槽表末尾（= 原生自有属性序）。
+    const becomesOwn = prevSlot?.inherited === true && !opts?.internal;
+    if (becomesOwn) delete inner.shape.slots[key];
     setSlot(inner.shape.slots, key, {
       value: asAbsVal(value),
       ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
       ...(prevSlot?.symbolKey || opts?.symbolKey ? { symbolKey: true } : {}),
     });
-    if (prevSlot?.inherited && !opts?.internal) {
+    if (becomesOwn) {
       setPropFlags(inner, key, { enumerable: true });
     }
     clearStaleTermPred(o);
@@ -2299,7 +2322,13 @@ function setNonObjMember({ o, key, value }: SetCtx): Abs {
 function setObjMember({ o, key, value, opts }: SetCtx): Abs {
   const shape = o.shape as ObjShape;
   const st = extStateOf(o);
-  const hasKey = Object.prototype.hasOwnProperty.call(shape.slots, key);
+  // Bug 275 联动：`inherited` 槽是**原型链解析槽**（Object.create(proto) 的
+  // proto 槽 / Error 家族的 name）——原生不是自有属性 ⇒ 写门的「receiver 无
+  // 自有该键」判定必须把它排除，否则原型链上的 getter-only / writable:false /
+  // frozen 原型会被静默写穿（`Object.create({get a(){return 7}}).a = 5` 原生
+  // 定抛 TypeError）。
+  const ownSlotAtWrite = getSlot(shape.slots, key);
+  const hasKey = ownSlotAtWrite !== undefined && ownSlotAtWrite.inherited !== true;
   // frozen：全写 TypeError；sealed/nonext：新键 TypeError（strict 硬抛）
   if (st === "frozen") throwStrictWrite();
   if ((st === "sealed" || st === "nonext") && !hasKey) throwStrictWrite();
@@ -2328,7 +2357,10 @@ function setObjMember({ o, key, value, opts }: SetCtx): Abs {
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
   // Bug 84：覆写保留既有 internal 标记 / opts.internal 新打标
   // Bug 73：symbol 键投影标记同语义保留 / opts.symbolKey 新打标
+  // Bug 278：inherited → own 的公有覆写是**新建自有属性**（追加到自有属性序
+  // 末尾）⇒ 先删槽再写回。
   const prevSlot = getSlot(shape.slots, key);
+  if (prevSlot?.inherited === true && !opts?.internal) delete shape.slots[key];
   setSlot(shape.slots, key, {
     value: asAbsVal(value),
     ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
@@ -2354,8 +2386,8 @@ function setObjMember({ o, key, value, opts }: SetCtx): Abs {
  * 以接收者为 this 调用」。
  *
  * 直接 import builtins/object-proto.ts（不经 barrel）——barrel 未导出该
- * 注册函数，且本分片不改 barrel（与上方 collectionIteratorFor /
-// isMatchArrayView 的直连口径同款）。
+ * 注册函数，且本分片不改 barrel（与上方 collectionIteratorFor 的直连口径
+ * 同款）。
  */
 setReceiverToStringResolver((recv: Abs): Abs | undefined => {
   // prim 接收者：走 **prim 原型方法通道**（Bug 49/105/219 口径）——通用 OP

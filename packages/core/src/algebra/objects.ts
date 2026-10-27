@@ -675,7 +675,16 @@ export function joinObjects(a: Abs, b: Abs): Abs {
     conf = confJoin(conf, jv.conf);
     setSlot(slots, k, { value: jv, optional });
   }
-  const joined: Abs = { shape: { k: "obj", slots }, conf };
+  // BUG-258：数组视图 facet（`view: "array"`）在 join 里**两侧都带**才传递。
+  // 一侧是普通对象 ⇒ join 结果不是「数组视图」⇒ 丢弃 facet（保守方向：
+  // 丢 facet 只是退化成普通对象投影；多带上则会让 guard / standard / dts /
+  // zod 四面按「运行时是数组」的判据校验一个可能是普通对象的值 ⇒ 假红）。
+  const view =
+    a.shape.view === "array" && b.shape.view === "array" ? ("array" as const) : undefined;
+  const joined: Abs = {
+    shape: { k: "obj", slots, ...(view !== undefined ? { view } : {}) },
+    conf,
+  };
   for (const [k, def] of sameDefs) $objAccessor(joined, k, def.get ?? null, def.set ?? null);
   return joined;
 }

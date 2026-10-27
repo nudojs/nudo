@@ -35,6 +35,15 @@ export type Shape =
       slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; symbolKey?: boolean; inherited?: boolean }>;
       index?: { key: Abs; value: Abs };
       open?: boolean;
+      /**
+       * 「数组视图」facet：引擎按 obj 形状建模（自有下标槽 "0".."n-1" +
+       * length 槽读面）、原生却是**数组 exotic**（IsArray = true）的值——
+       * RegExpExecArray / String.match 结果 / 标签模板对象。消费方
+       * （Array.isArray / JSON 序列化视图 / 数组方法派发 / emit 产物）只读
+       * 本 facet：形状是唯一事实源，不再有身份侧表；浅拷贝（`{ ...abs }`）
+       * 天然携带。
+       */
+      view?: "array";
     }
   | { k: "arr"; element: Abs }
   | {
@@ -181,6 +190,22 @@ export function obj(
   slots: Record<string, { value: Abs; optional?: boolean }>,
 ): Abs {
   return { shape: { k: "obj", slots }, conf: "exact" };
+}
+
+/**
+ * 标注**数组视图**（原生数组 exotic，形状仍是 obj）：不可变替换 shape ——
+ * facet 成为形状的一部分，浅拷贝（`{ ...abs }` / `{ ...shape }`）天然携带
+ * （身份侧表会在这里丢失）。非 obj 形状不标注（数组视图只对按 obj 建模的
+ * 数组 exotic 有意义）。
+ */
+export function markArrayView(a: Abs): void {
+  if (a.shape.k !== "obj") return;
+  a.shape = { ...a.shape, view: "array" };
+}
+
+/** 数组视图判定（形状 facet 为唯一事实源） */
+export function isArrayView(a: Abs): boolean {
+  return a.shape.k === "obj" && a.shape.view === "array";
 }
 
 export function confJoin(a: Confidence, b: Confidence): Confidence {

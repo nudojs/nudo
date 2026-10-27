@@ -481,6 +481,14 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
     "append", "delete", "entries", "forEach", "get", "getAll",
     "has", "keys", "set", "sort", "toString", "values",
   ]),
+  // Bug 163（toJSON 半）：`URL.prototype` 的自有方法面——node v26.10.0
+  // 实测 `Object.getOwnPropertyNames(URL.prototype)` 的方法位 =
+  // ["toString", "toJSON"]（其余是组件访问器）。此前表内无 URL 键 ⇒
+  // `u.toJSON` 落闭 obj 槽 miss 折 exact undefined（wrong-exact：
+  // `u.toJSON === undefined` 判 true、`"toJSON" in u` 折 exact false）。
+  // 组件槽（href/host/…）由 urlBrandAbs 的 componentKeys 承载，访问器名
+  // 另在 BUILTIN_BRAND_ACCESSORS 登记（$in 面）。
+  URL: new Set(["toString", "toJSON"]),
   TextDecoder: new Set(["decode"]),
   "Intl.NumberFormat": new Set([
     "format", "formatRange", "formatRangeToParts", "formatToParts", "resolvedOptions",
@@ -701,6 +709,15 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
     "dotAll", "sticky", "unicode", "unicodeSets", "hasIndices",
   ]),
   URLSearchParams: new Set(["size"]),
+  // Bug 163（toJSON 半）：`URL.prototype` 的自有组件访问器（node v26.10.0
+  // `Object.getOwnPropertyNames(URL.prototype)`）——值读多由 urlBrandAbs 的
+  // componentKeys 精确槽承载，本表补 `$in` presence 与「槽未建模时诚实
+  // unknown」的访问器面（`"href" in u` / `"searchParams" in u` 此前对
+  // 未入 componentKeys 的名字折 exact false）。
+  URL: new Set([
+    "href", "origin", "protocol", "username", "password", "host",
+    "hostname", "port", "pathname", "search", "searchParams", "hash",
+  ]),
   TextDecoder: new Set(["encoding", "fatal", "ignoreBOM"]),
   // Bug 214 / 238：内建**原型对象**上的 brand check 访问器（`"size" in
   // Map.prototype` 原生 true；值读定抛 TypeError——见

@@ -36,6 +36,7 @@ import {
   collectForkBindingNames,
   withClassNameHint,
   fnKindSrc,
+  getFnFacets,
   internalTmpName,
   thisCarrierOf,
 } from "../helpers.ts";
@@ -241,6 +242,11 @@ export function transpileObjectExpr(
                     ],
                     accOpts,
                   );
+            // 占位槽恒为 `$lit(void 0)`（Bug 191 / Bug 152 口径）：调用点派发按
+            // 槽值判「已知非函数」并决定求值序，改成 `$unknown()` 会让非函数
+            // 调用点静默不抛（Bug 152 的 mbT 断红）。BUG-167 的读域不可判由
+            // **投影面**判定：占位槽无 term（`unknown`，如 Object.defineProperty
+            // 装的访问器）⇒ 不执行 getter、只判 presence（format.ts / denote.ts）。
             // Bug 112：计算键访问器的键表达式只求值一次——此前 computedKeySrc
             // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍
             //（原生键只在字面量位置求值一次）。IIFE 绑定临时键 __k 供两处
@@ -316,7 +322,12 @@ export function transpileObjectExpr(
           // Bug 325：方法简写也带**函数种类**戳（async / generator / async
           // generator）——原生 `{async m(){}}` 的标签是 "[object
           // AsyncFunction]"，此前整族折 "[object Function]"。
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}${fnKindSrc(prop)}, optionalParams: [${optionalFlags.join(", ")}] })`;
+          // BUG-167：与 `expr/function.ts` 的函数表达式路径**同口径**发
+          // `effectFree` / `closed` facet——此前对象方法简写不发，同一函数体
+          // 写成方法或函数字面量在「有无副作用 / 是否闭合」上结论相反
+          //（sort 比较器 / promise 回调 / 访问器纯度判定全部按 facet 判定）。
+          const mFacets = getFnFacets(prop);
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}, effectFree: ${mFacets.effectFree}, closed: ${mFacets.closed}${fnKindSrc(prop)}, optionalParams: [${optionalFlags.join(", ")}] })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
             // Bug 143：方法名 __proto__ 是自有**数据**属性（覆盖同键访问器）
@@ -439,8 +450,10 @@ export function transpileObjectExpr(
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
             // Bug 325：函数种类戳（async / generator）
+            // BUG-167：facet 与 ObjectMethod / 函数表达式路径同口径
+            const feFacets = getFnFacets(fn as { body?: Node | null; params?: Node[] });
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}${fnKindSrc(fn)}, optionalParams: [${optionalFlags.join(", ")}] })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}, effectFree: ${feFacets.effectFree}, closed: ${feFacets.closed}${fnKindSrc(fn)}, optionalParams: [${optionalFlags.join(", ")}] })`,
             );
             // Bug 143：同键后写覆盖先写（数据属性覆盖先写的访问器）
             accDefs.set(key, { kind: "data" });
