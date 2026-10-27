@@ -6,11 +6,13 @@ import { type Abs, type AbsSigImpl, strLit, numLit } from "@nudojs/core";
 import { absStrLit } from "@nudojs/core/internal";
 import {
   arrOf,
+  brandOf,
   envFn,
   errBrand,
   nullLit,
   objAbs,
   promiseOf,
+  tupleOf,
   undef,
   unionOf,
   prim,
@@ -20,7 +22,7 @@ import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 export type { EnvDefinition };
 
 function makeURLObj(url: URL): Abs {
-  return objAbs({
+  return brandOf("URL", objAbs({
     href: strLit(url.href),
     origin: strLit(url.origin),
     protocol: strLit(url.protocol),
@@ -49,23 +51,52 @@ function makeURLObj(url: URL): Abs {
     hash: strLit(url.hash),
     toString: envFn([], prim.str(), () => strLit(url.href)),
     toJSON: envFn([], prim.str(), () => strLit(url.href)),
-  });
+  }));
 }
 
 export function defineEnv(): EnvDefinition {
   const esEnv = defineEsEnv();
 
-  const Headers = objAbs({
+  /**
+   * 迭代器面（族 15 · BUG-154）：WHATWG 的 `Headers.keys/values/entries()`、
+   * `FormData.*`、`URLSearchParams.*` 返回**迭代器**（`Iterator`），**不是数组**。
+   *
+   * 旧 web 面声明成 `prim.unknown` ⇒ core 的可迭代性分类落 "may" ⇒
+   * `[...h.keys()]` 记 **may-throw TypeError**（假红，挡住合法的 `for…of` /
+   * 展开）；node 面则相反地声明成数组（`Array.isArray` 折 `true`，自信错值）。
+   *
+   * 迭代器面 = **带 `@@iterator` 槽的 obj**：core 的 `iterabilityKind` 对
+   * 「有 `@@iterator` 槽的闭 obj」判 **total**（可迭代、不抛）。
+   */
+  const iteratorOf = (element: Abs): Abs =>
+    objAbs({
+      next: envFn([], objAbs({ value: element, done: prim.bool() })),
+      "@@iterator": envFn([], prim.unknown),
+    });
+
+  /**
+   * 族 15 · BUG-161：浏览器构造器的实例面**必须带 brand**（`brandOf(...)`）。
+   *
+   * 旧面全部是 `objAbs(...)`（普通对象面、无 brand）⇒ `new Event("t")` 的值
+   * 是闭 obj ⇒ `instanceof Event` **恒 false**、`constructor.name` 恒
+   * `"Object"` ⇒ 与宿主**相反**（宿主恒 true / `"Event"`）⇒ 真实分支被消成
+   * 死代码。node env 的全部构造器都是 brand ⇒ 两 env 结论相反。
+   */
+  const Headers = brandOf("Headers", objAbs({
     append: envFn([prim.str(), prim.str()], undef()),
     delete: envFn([prim.str()], undef()),
     get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
     has: envFn([prim.str()], prim.bool()),
     set: envFn([prim.str(), prim.str()], undef()),
+    // 族 15 · BUG-148：`Headers.getSetCookie()` 是 WHATWG Fetch 标准成员
+    // （node v26 / 浏览器都有；node env 早已声明）⇒ 缺槽 ⇒
+    // `new Headers().getSetCookie()` 判「确定抛 TypeError」（假红）。
+    getSetCookie: envFn([], arrOf(prim.str())),
     forEach: envFn([prim.unknown], undef()),
-    entries: envFn([], prim.unknown),
-    keys: envFn([], prim.unknown),
-    values: envFn([], prim.unknown),
-  });
+    entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.str()]))),
+    keys: envFn([], iteratorOf(prim.str())),
+    values: envFn([], iteratorOf(prim.str())),
+  }));
 
   /**
    * Request / Response **共有**面（Bug 887）：body 读取族 + headers/url/bodyUsed。
@@ -90,6 +121,10 @@ export function defineEnv(): EnvDefinition {
     headers: Headers,
     url: prim.str(),
     bodyUsed: prim.bool(),
+    // 族 15 · BUG-148：`body` 是 WHATWG Fetch 的标准成员（`ReadableStream |
+    // null`；node env 早已声明）⇒ 缺槽 ⇒ `new Response("hi").body.getReader()`
+    // 读出 **exact undefined** ⇒ 判「确定抛 TypeError」（假红）。
+    body: prim.unknown,
   };
 
   /**
@@ -105,13 +140,13 @@ export function defineEnv(): EnvDefinition {
     type: prim.str(),
   };
 
-  const Response = objAbs({ ...bodyReadSlots, ...responseStatusSlots });
+  const Response = brandOf("Response", objAbs({ ...bodyReadSlots, ...responseStatusSlots }));
 
   /**
    * Request **自有**成员表（Bug 887）：**不**展开 Response 的状态面
    * （原生读出恒 `undefined`）⇒ 展开即错值。
    */
-  const Request = objAbs({
+  const Request = brandOf("Request", objAbs({
     ...bodyReadSlots,
     method: prim.str(),
     body: unionOf(prim.unknown, nullLit()),
@@ -126,8 +161,16 @@ export function defineEnv(): EnvDefinition {
     keepalive: prim.bool(),
     duplex: prim.str(),
     destination: prim.str(),
-  });
+  }));
 
+  /**
+   * ⚠️ `URLSearchParams` 是 **12+1** 里的例外：core 按 **brand 名**路由内建
+   * 建模（实测 `brandOf("URLSearchParams", objAbs({ get … }))` 读 `.get` 折
+   * **unknown**，env 的槽表被忽略）⇒ 加 brand 会丢掉 `get` 的
+   * `string | null` 精确面（`env-bug-930` 回归）。
+   * ⇒ 暂保持**无 brand**（`instanceof URLSearchParams` 仍是 false，属 core
+   * 的品牌派发面缺陷，env 侧无法修）；其余 12 个浏览器构造器已全部带 brand。
+   */
   const URLSearchParams = objAbs({
     append: envFn([prim.str(), prim.str()], undef()),
     delete: envFn([prim.str()], undef()),
@@ -137,14 +180,15 @@ export function defineEnv(): EnvDefinition {
     set: envFn([prim.str(), prim.str()], undef()),
     sort: envFn([], undef()),
     toString: envFn([], prim.str()),
-    entries: envFn([], prim.unknown),
-    keys: envFn([], prim.unknown),
-    values: envFn([], prim.unknown),
+    // 族 15 · BUG-154：迭代器面（不是数组，见 iteratorOf）
+    entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.str()]))),
+    keys: envFn([], iteratorOf(prim.str())),
+    values: envFn([], iteratorOf(prim.str())),
     forEach: envFn([prim.unknown], undef()),
     size: prim.num(),
   });
 
-  const URLObj = objAbs({
+  const URLObj = brandOf("URL", objAbs({
     href: prim.str(),
     origin: prim.str(),
     protocol: prim.str(),
@@ -159,12 +203,12 @@ export function defineEnv(): EnvDefinition {
     hash: prim.str(),
     toString: envFn([], prim.str()),
     toJSON: envFn([], prim.str()),
-  });
+  }));
 
-  const AbortController = objAbs({
+  const AbortController = brandOf("AbortController", objAbs({
     signal: prim.unknown,
     abort: envFn([], undef()),
-  });
+  }));
 
   const Storage = objAbs({
     getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
@@ -175,11 +219,11 @@ export function defineEnv(): EnvDefinition {
     length: prim.num(),
   });
 
-  const EventTarget = objAbs({
+  const EventTarget = brandOf("EventTarget", objAbs({
     addEventListener: envFn([prim.str(), prim.unknown], undef()),
     removeEventListener: envFn([prim.str(), prim.unknown], undef()),
     dispatchEvent: envFn([prim.unknown], prim.bool()),
-  });
+  }));
 
   /**
    * Event 实例面（Bug 860）：`Event` / `CustomEvent` 共有成员
@@ -200,19 +244,19 @@ export function defineEnv(): EnvDefinition {
     stopImmediatePropagation: envFn([], undef()),
   };
 
-  const EventInstance = objAbs(eventSlots);
+  const EventInstance = brandOf("Event", objAbs(eventSlots));
 
   /** CustomEvent 实例面：Event 共有面 + `detail`（DOM `CustomEvent`）。 */
-  const CustomEventInstance = objAbs({ ...eventSlots, detail: prim.unknown });
+  const CustomEventInstance = brandOf("CustomEvent", objAbs({ ...eventSlots, detail: prim.unknown }));
 
   /**
    * 浏览器构造器实例面（Bug 870）。
    */
-  const DOMParserInstance = objAbs({
+  const DOMParserInstance = brandOf("DOMParser", objAbs({
     parseFromString: envFn([prim.str(), prim.str()], prim.unknown),
-  });
+  }));
 
-  const XMLHttpRequestInstance = objAbs({
+  const XMLHttpRequestInstance = brandOf("XMLHttpRequest", objAbs({
     open: envFn([prim.str(), prim.str(), prim.bool()], undef()),
     send: envFn([prim.unknown], undef()),
     abort: envFn([], undef()),
@@ -231,9 +275,9 @@ export function defineEnv(): EnvDefinition {
     upload: prim.unknown,
     addEventListener: envFn([prim.str(), prim.unknown], undef()),
     removeEventListener: envFn([prim.str(), prim.unknown], undef()),
-  });
+  }));
 
-  const WorkerInstance = objAbs({
+  const WorkerInstance = brandOf("Worker", objAbs({
     postMessage: envFn([prim.unknown], undef()),
     terminate: envFn([], undef()),
     onmessage: prim.unknown,
@@ -241,9 +285,9 @@ export function defineEnv(): EnvDefinition {
     onmessageerror: prim.unknown,
     addEventListener: envFn([prim.str(), prim.unknown], undef()),
     removeEventListener: envFn([prim.str(), prim.unknown], undef()),
-  });
+  }));
 
-  const FileReaderInstance = objAbs({
+  const FileReaderInstance = brandOf("FileReader", objAbs({
     readAsText: envFn([prim.unknown], undef()),
     readAsDataURL: envFn([prim.unknown], undef()),
     readAsArrayBuffer: envFn([prim.unknown], undef()),
@@ -257,14 +301,14 @@ export function defineEnv(): EnvDefinition {
     onerror: prim.unknown,
     addEventListener: envFn([prim.str(), prim.unknown], undef()),
     removeEventListener: envFn([prim.str(), prim.unknown], undef()),
-  });
+  }));
 
-  const IntersectionObserverInstance = objAbs({
+  const IntersectionObserverInstance = brandOf("IntersectionObserver", objAbs({
     observe: envFn([prim.unknown], undef()),
     unobserve: envFn([prim.unknown], undef()),
     disconnect: envFn([], undef()),
     takeRecords: envFn([], arrOf(prim.unknown)),
-  });
+  }));
 
   const urlCtorImpl: AbsSigImpl = (args) => {
     const href = absStrLit(args[0]);
@@ -276,6 +320,89 @@ export function defineEnv(): EnvDefinition {
     } catch {
       return undefined;
     }
+  };
+
+  /**
+   * `Location` 实例面——**独立全局** `location` 与 `document.location`
+   * **同源**（DOM：`document.location === location`）。
+   *
+   * 族 15 · BUG-148：旧面只在**独立全局**处内联了一份 ⇒ `document.location`
+   * 不在 document 槽表里 ⇒ 读出 **exact `undefined`** ⇒
+   * `document.location.href` 判「确定抛 TypeError」（L2 假红），而同一个文件
+   * 里的 `document.title` 是绿的（列了 `title`）⇒ 系统性漏槽。
+   */
+  const Location = objAbs({
+    href: prim.str(),
+    origin: prim.str(),
+    protocol: prim.str(),
+    host: prim.str(),
+    hostname: prim.str(),
+    port: prim.str(),
+    pathname: prim.str(),
+    search: prim.str(),
+    hash: prim.str(),
+    // Bug 930：Location 实例恒带 searchParams（URLSearchParams）——缺槽 ⇒
+    // `location.searchParams.get("q")` 被判「确定抛 TypeError」（假红）。
+    searchParams: URLSearchParams,
+    assign: envFn([prim.str()], undef()),
+    replace: envFn([prim.str()], undef()),
+    reload: envFn([], undef()),
+  });
+
+  /**
+   * `PerformanceEntry` 实例面（`PerformanceMark` / `PerformanceMeasure` 共用）。
+   *
+   * 族 15 · BUG-149：web env 的 `performance.mark` **返回类型被写死成
+   * `undefined`**（`mark: envFn([prim.str()], undef())`），而宿主返回
+   * `PerformanceMark`（`.name` 是 string）⇒ `m.name` 读在 undefined 上
+   * ⇒ 判「确定抛 TypeError」（L2 假红）；node env 同 API 声明是
+   * `brandOf("PerformanceMark")` ⇒ 两 env 互斥。
+   */
+  const performanceEntrySlots = {
+    name: prim.str(),
+    entryType: prim.str(),
+    startTime: prim.num(),
+    duration: prim.num(),
+    toJSON: envFn([], prim.unknown),
+  };
+
+  /**
+   * WebCrypto 成员声明（族 15 · BUG-150）。
+   *
+   * **静态**声明保持 `OperationError`（WebCrypto Level 1/2 的规范面：
+   * digest / encrypt / decrypt / sign / verify / generateKey / deriveKey /
+   * deriveBits / wrapKey / unwrapKey / exportKey 的「执行失败」原因）。
+   *
+   * **调用面**的拒绝 reason = `OperationError ∪ TypeError`——参数类型非法
+   * （非 BufferSource / 非 CryptoKey / 非整数）时宿主的拒绝是 **`TypeError`**
+   * （node v26 实测 `crypto.subtle.encrypt("AES-GCM", 1, 2)` ⇒
+   * `e.name === "TypeError"`）。旧面把**整族**一刀切成 `OperationError`
+   * ⇒ `catch (e) { if (e.name === "TypeError") … }` 的**真分支被判不可达**
+   * ⇒ 分支体从签名面消失 ⇒ **假绿**（用户会以为那段是废代码而删掉）。
+   */
+  const webCryptoFn = (paramTypes: Abs[], ret: Abs, staticReason?: Abs): Abs =>
+    staticReason === undefined
+      ? // `unknown` 已经覆盖全部拒绝路径（含 TypeError）⇒ 调用面同样保持 unknown
+        envFn(paramTypes, promiseOf(ret))
+      : envFn(paramTypes, promiseOf(ret, staticReason), () =>
+          promiseOf(ret, unionOf(errBrand("OperationError"), errBrand("TypeError"))),
+        );
+
+  /**
+   * 流实例面（`ReadableStream` / `WritableStream` 共用；族 15 · BUG-153）。
+   * 与 node env 的 `streamSlots` 同源——两 env 对同一标准 API 必须一致。
+   */
+  const streamInstanceSlots = {
+    locked: prim.bool(),
+    cancel: envFn([prim.unknown], undef()),
+    close: envFn([], undef()),
+    abort: envFn([prim.unknown], undef()),
+    getReader: envFn([], brandOf("ReadableStreamDefaultReader")),
+    getWriter: envFn([], brandOf("WritableStreamDefaultWriter")),
+    pipeTo: envFn([prim.unknown], promiseOf(prim.unknown)),
+    pipeThrough: envFn([prim.unknown, prim.unknown], prim.unknown),
+    tee: envFn([], arrOf(prim.unknown)),
+    write: envFn([prim.unknown], promiseOf(prim.unknown)),
   };
 
   const webGlobals: Record<string, Abs> = {
@@ -381,6 +508,10 @@ export function defineEnv(): EnvDefinition {
       body: prim.unknown,
       head: prim.unknown,
       documentElement: prim.unknown,
+      // 族 15 · BUG-148：`document.location` 与独立全局 `location` 同一对象
+      // （DOM 规范）；旧槽表里没有它 ⇒ `document.location.href` 判「确定抛
+      // TypeError」（假红），而 `document.title` 是绿的。
+      location: Location,
       title: prim.str(),
       cookie: prim.str(),
       readyState: prim.str(),
@@ -415,23 +546,7 @@ export function defineEnv(): EnvDefinition {
         writeText: envFn([prim.str()], promiseOf(undef(), errBrand("NotAllowedError"))),
       }),
     }),
-    location: objAbs({
-      href: prim.str(),
-      origin: prim.str(),
-      protocol: prim.str(),
-      host: prim.str(),
-      hostname: prim.str(),
-      port: prim.str(),
-      pathname: prim.str(),
-      search: prim.str(),
-      hash: prim.str(),
-      // Bug 930：Location 实例恒带 searchParams（URLSearchParams）——缺槽 ⇒
-      // `location.searchParams.get("q")` 被判「确定抛 TypeError」（假红）。
-      searchParams: URLSearchParams,
-      assign: envFn([prim.str()], undef()),
-      replace: envFn([prim.str()], undef()),
-      reload: envFn([], undef()),
-    }),
+    location: Location,
     history: objAbs({
       length: prim.num(),
       state: prim.unknown,
@@ -468,8 +583,14 @@ export function defineEnv(): EnvDefinition {
     // exact undefined ⇒ 调用即「确定抛 TypeError」（假红）。
     performance: objAbs({
       now: envFn([], prim.num()),
-      mark: envFn([prim.str()], undef()),
-      measure: envFn([prim.str(), prim.str(), prim.str()], prim.unknown),
+      // 族 15 · BUG-149：mark / measure 返回 PerformanceMark / PerformanceMeasure
+      // （宿主实测 `performance.mark("start").constructor.name ===
+      // "PerformanceMark"`、`.name === "start"`）——不是 undefined / unknown。
+      mark: envFn([prim.str()], brandOf("PerformanceMark", objAbs(performanceEntrySlots))),
+      measure: envFn(
+        [prim.str(), prim.str(), prim.str()],
+        brandOf("PerformanceMeasure", objAbs(performanceEntrySlots)),
+      ),
       getEntries: envFn([], arrOf(prim.unknown)),
       getEntriesByName: envFn([prim.str()], arrOf(prim.unknown)),
       getEntriesByType: envFn([prim.str()], arrOf(prim.unknown)),
@@ -486,47 +607,48 @@ export function defineEnv(): EnvDefinition {
       randomUUID: envFn([], prim.str()),
       getRandomValues: envFn([prim.unknown], prim.unknown),
       subtle: objAbs({
-        // 族 62（Bug 890 精度）：WebCrypto 的**拒绝 reason = OperationError**
-        // （WebCrypto Level 1/2：digest / encrypt / decrypt / sign / verify /
-        // generateKey / deriveKey / deriveBits / wrapKey / unwrapKey /
-        // exportKey 的**唯一**拒绝原因是 `OperationError` DOMException）。
-        // ⚠️ `importKey` 例外：它可能以 `DataError` / `NotSupportedError`
-        // 拒绝（不止一种）⇒ 保持 `unknown`（宁可 unknown，不假精确）。
-        digest: envFn(
-          [prim.str(), prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
-        ),
-        encrypt: envFn(
+        // 族 62（Bug 890 精度）+ 族 15（BUG-150）：静态 reason 是
+        // `OperationError`（WebCrypto 规范面），**调用面** reason 放宽为
+        // `OperationError ∪ TypeError`（参数非法时宿主给的是 TypeError）。
+        // ⚠️ `importKey` 例外：静态声明保持 `unknown`（可能以 `DataError` /
+        // `NotSupportedError` 拒绝，不止一种 ⇒ 不假精确）。
+        digest: webCryptoFn([prim.str(), prim.unknown], prim.unknown, errBrand("OperationError")),
+        encrypt: webCryptoFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        decrypt: envFn(
+        decrypt: webCryptoFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        sign: envFn(
+        sign: webCryptoFn(
           [prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        verify: envFn(
+        verify: webCryptoFn(
           [
             prim.unknown,
             prim.unknown,
             prim.unknown,
             prim.unknown,
           ],
-          promiseOf(prim.bool(), errBrand("OperationError")),
+          prim.bool(),
+          errBrand("OperationError"),
         ),
-        generateKey: envFn(
+        generateKey: webCryptoFn(
           [prim.unknown, prim.bool(), arrOf(prim.str())],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
         // Bug 1049：WebCrypto Level 1 / Level 2 标准 API——旧表只有 8 个键
         // ⇒ 缺的这 4 个读出 **exact undefined** ⇒ 调用即「确定抛 TypeError」
         // ⇒ 合法浏览器代码被判「必抛」（L2 门禁假红）；node env 同一对象
         // 早已声明 `deriveKey` / `deriveBits` ⇒ 两 env 自相矛盾。补齐后
         // 两 env 的 `crypto.subtle` 成员集合同源。
-        deriveKey: envFn(
+        deriveKey: webCryptoFn(
           [
             prim.unknown,
             prim.unknown,
@@ -534,21 +656,25 @@ export function defineEnv(): EnvDefinition {
             prim.bool(),
             arrOf(prim.str()),
           ],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        deriveBits: envFn(
+        deriveBits: webCryptoFn(
           [prim.unknown, prim.unknown, prim.num()],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        wrapKey: envFn(
+        wrapKey: webCryptoFn(
           [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        unwrapKey: envFn(
+        unwrapKey: webCryptoFn(
           [prim.unknown, prim.unknown, prim.unknown, prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
-        importKey: envFn(
+        importKey: webCryptoFn(
           [
             prim.str(),
             prim.unknown,
@@ -556,12 +682,13 @@ export function defineEnv(): EnvDefinition {
             prim.bool(),
             arrOf(prim.str()),
           ],
-          // 拒绝 reason 有多种（DataError / NotSupportedError）⇒ 保持 unknown。
-          promiseOf(prim.unknown),
+          // 静态拒绝 reason 有多种（DataError / NotSupportedError）⇒ unknown。
+          prim.unknown,
         ),
-        exportKey: envFn(
+        exportKey: webCryptoFn(
           [prim.str(), prim.unknown],
-          promiseOf(prim.unknown, errBrand("OperationError")),
+          prim.unknown,
+          errBrand("OperationError"),
         ),
       }),
     }),
@@ -593,6 +720,130 @@ export function defineEnv(): EnvDefinition {
     FileReader: envFn([prim.unknown], FileReaderInstance, undefined, {
       name: "FileReader", ctor: true,
     }),
+
+    // ── 族 15 · BUG-153：13 个**浏览器标准全局**在 web env 里根本没声明
+    // ⇒ 落 core 的「未建模 brand」兜底 ⇒ **成员读折 exact `undefined`**
+    // ⇒ 该全局的**全体**成员调用判「确定抛 TypeError」⇒ L2 门禁假红
+    // （exit 1），而运行时完全正常；node env 早已声明（同一套 Web 标准面）。
+    // 宿主实测反例：`new FormData().append("a","b")` 不抛、`new Blob([]).slice()`
+    // 返回 Blob、`ReadableStream.prototype.cancel` 存在。
+    Blob: envFn([arrOf(prim.unknown), prim.unknown], brandOf("Blob", objAbs({
+      type: prim.str(),
+      size: prim.num(),
+      slice: envFn([prim.num(), prim.num(), prim.str()], brandOf("Blob")),
+      arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
+      text: envFn([], promiseOf(prim.str())),
+      bytes: envFn([], promiseOf(arrOf(prim.num()))),
+      stream: envFn([], brandOf("ReadableStream")),
+    })), undefined, { name: "Blob", ctor: true, params: ["parts", "options?"] }),
+
+    BroadcastChannel: envFn([prim.str()], brandOf("BroadcastChannel", objAbs({
+      name: prim.str(),
+      onmessage: prim.unknown,
+      onmessageerror: prim.unknown,
+      postMessage: envFn([prim.unknown], undef()),
+      close: envFn([], undef()),
+    })), undefined, { name: "BroadcastChannel", ctor: true, params: ["name"] }),
+
+    DisposableStack: envFn([prim.unknown], brandOf("DisposableStack", objAbs({
+      use: envFn([prim.unknown], prim.unknown),
+      adopt: envFn([prim.unknown, prim.unknown], prim.unknown),
+      defer: envFn([prim.unknown], undef()),
+      move: envFn([], brandOf("DisposableStack")),
+      dispose: envFn([], undef()),
+      disposed: prim.bool(),
+    })), undefined, { name: "DisposableStack", ctor: true, params: ["options?"] }),
+
+    AsyncDisposableStack: envFn([prim.unknown], brandOf("AsyncDisposableStack", objAbs({
+      use: envFn([prim.unknown], prim.unknown),
+      adopt: envFn([prim.unknown, prim.unknown], prim.unknown),
+      defer: envFn([prim.unknown], undef()),
+      move: envFn([], brandOf("AsyncDisposableStack")),
+      disposeAsync: envFn([], promiseOf(prim.unknown)),
+      disposed: prim.bool(),
+    })), undefined, { name: "AsyncDisposableStack", ctor: true, params: ["options?"] }),
+
+    FormData: envFn([prim.unknown], brandOf("FormData", objAbs({
+      append: envFn([prim.str(), prim.unknown], undef()),
+      delete: envFn([prim.str()], undef()),
+      get: envFn([prim.str()], prim.unknown),
+      getAll: envFn([prim.str()], arrOf(prim.unknown)),
+      has: envFn([prim.str()], prim.bool()),
+      set: envFn([prim.str(), prim.unknown], undef()),
+      // BUG-154：迭代器面（不是数组，见 iteratorOf）
+      keys: envFn([], iteratorOf(prim.str())),
+      values: envFn([], iteratorOf(prim.unknown)),
+      entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.unknown]))),
+      forEach: envFn([prim.unknown], undef()),
+    })), undefined, { name: "FormData", ctor: true, params: ["form?"] }),
+
+    PerformanceMark: envFn([prim.str(), prim.unknown], brandOf(
+      "PerformanceMark",
+      objAbs({ ...performanceEntrySlots, detail: prim.unknown }),
+    ), undefined, { name: "PerformanceMark", ctor: true, params: ["name", "options?"] }),
+
+    PerformanceObserver: envFn([prim.unknown], brandOf("PerformanceObserver", objAbs({
+      observe: envFn([prim.unknown], undef()),
+      disconnect: envFn([], undef()),
+      takeRecords: envFn([], arrOf(brandOf("PerformanceEntry"))),
+    })), undefined, { name: "PerformanceObserver", ctor: true, params: ["callback"] }),
+
+    ReadableStream: envFn([prim.unknown, prim.unknown], brandOf(
+      "ReadableStream",
+      objAbs(streamInstanceSlots),
+    ), undefined, { name: "ReadableStream", ctor: true, params: ["underlyingSource?", "strategy?"] }),
+
+    WritableStream: envFn([prim.unknown, prim.unknown], brandOf(
+      "WritableStream",
+      objAbs(streamInstanceSlots),
+    ), undefined, { name: "WritableStream", ctor: true, params: ["underlyingSink?", "strategy?"] }),
+
+    ReadableStreamDefaultReader: envFn([brandOf("ReadableStream")], brandOf(
+      "ReadableStreamDefaultReader",
+      objAbs({
+        closed: promiseOf(prim.unknown),
+        read: envFn([], promiseOf(prim.unknown)),
+        cancel: envFn([prim.unknown], promiseOf(prim.unknown)),
+        releaseLock: envFn([], undef()),
+      }),
+    ), undefined, { name: "ReadableStreamDefaultReader", ctor: true, params: ["stream"] }),
+
+    ReadableStreamBYOBReader: envFn([brandOf("ReadableStream")], brandOf(
+      "ReadableStreamBYOBReader",
+      objAbs({
+        closed: promiseOf(prim.unknown),
+        read: envFn([arrOf(prim.num())], promiseOf(prim.unknown)),
+        cancel: envFn([prim.unknown], promiseOf(prim.unknown)),
+        releaseLock: envFn([], undef()),
+      }),
+    ), undefined, { name: "ReadableStreamBYOBReader", ctor: true, params: ["stream"] }),
+
+    WritableStreamDefaultWriter: envFn([brandOf("WritableStream")], brandOf(
+      "WritableStreamDefaultWriter",
+      objAbs({
+        closed: promiseOf(prim.unknown),
+        desiredSize: prim.num(),
+        ready: promiseOf(prim.unknown),
+        write: envFn([prim.unknown], promiseOf(prim.unknown)),
+        close: envFn([], promiseOf(prim.unknown)),
+        abort: envFn([prim.unknown], promiseOf(prim.unknown)),
+        releaseLock: envFn([], undef()),
+      }),
+    ), undefined, { name: "WritableStreamDefaultWriter", ctor: true, params: ["stream"] }),
+
+    URLPattern: envFn([prim.unknown, prim.str()], brandOf("URLPattern", objAbs({
+      protocol: prim.str(),
+      username: prim.str(),
+      password: prim.str(),
+      hostname: prim.str(),
+      port: prim.str(),
+      pathname: prim.str(),
+      search: prim.str(),
+      hash: prim.str(),
+      hasRegExpGroups: prim.bool(),
+      exec: envFn([prim.unknown], prim.unknown),
+      test: envFn([prim.unknown], prim.bool()),
+    })), undefined, { name: "URLPattern", ctor: true, params: ["input?", "baseURL?"] }),
 
     // Bug 870 扩围（同一机制，源自 Bug 865 的扩围段）：另 5 个**真实存在**的
     // 浏览器全局，同样因「未声明」被判 ReferenceError。

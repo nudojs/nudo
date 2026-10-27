@@ -101,9 +101,20 @@ describe("族 64-1 · 全局 TextEncoder 是 class（裸调必抛 TypeError，�
     const out = checkNode(`export function f(){ return new TextEncoder().encoding; }`, true);
     expect(out.signatures[0]!.display, "env 面的实例面必须保留").toBe("string");
     expect(out.issues, "new TextEncoder() 原生不抛 ⇒ 零诊断").toEqual([]);
-    // 负控：删声明回落宿主 ⇒ encoding 退成 undefined（**确定的错值**，宿主真值 "utf-8"）
+    // 负控：删声明回落宿主 ⇒ 走**宿主建模**的 TextEncoder 实例面。
+    //
+    // 旧负控钉的是「回落宿主 ⇒ encoding 退成 undefined（**确定的错值**）」——
+    // 那时宿主路**没有** TextEncoder 的实例面建模（成员读折 exact undefined）。
+    // **BUG-160**（`tmp/bug-report/sections/BUG-160.md` §期望 vs 实际）已声明
+    // 宿主路的正确行为：「`TextEncoder` 的实例面 = `encoding`（只读访问器，
+    // 恒 `"utf-8"`）+ `encode` / `encodeInto`（方法）⇒ **成员读不得折
+    // undefined**」（宿主实测 `new TextEncoder().encoding === "utf-8"`）。
+    // ⇒ 「退成 undefined」这个前提已被 BUG-160 推翻：宿主路现在也拿得到
+    // **真值** `"utf-8"`（env 声明面给的是放宽的 `string`，宿主建模给的是
+    // 精确字面量 `"utf-8"`）⇒ 负控改钉宿主路的**真值**，不再钉已被
+    // BUG-160 判死的「假值 undefined」。
     const hostOut = checkNode(`export function f(){ return new TextEncoder().encoding; }`, false);
-    expect(hostOut.signatures[0]!.display).toBe("undefined");
+    expect(hostOut.signatures[0]!.display).toBe('"utf-8"');
   });
 
   it("1.3 类值声明：ctor:true + 单一 rest 形参（core 的 Bug 272 判据）", () => {
