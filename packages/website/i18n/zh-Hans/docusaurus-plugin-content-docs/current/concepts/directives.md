@@ -751,6 +751,8 @@ import { debounce, throttle } from "lodash";
 
 覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 求值引擎上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
+解构声明同样受支持：覆盖施加在初始化表达式上，且**每个解构出的名字各自绑定自己推断出的类型**。若标注在其它语句形态上（循环头、`if`/`while` 体、表达式语句、函数声明），那里没有可覆盖的值 ⇒ 指令会显式报 warning `nudo:directive-syntax`，不再被静默忽略。
+
 ### 语法
 
 ```text

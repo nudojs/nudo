@@ -20,6 +20,13 @@ const ENV_REGEX = /^\/?\s*@nudo:env\s+(.+)/;
 // 地丢弃 ⇒ env 未解析 ⇒ 全局 `unknown`。⇒ 单独识别并给诊断。
 const ENV_BARE_REGEX = /^\/?\s*@nudo:env\b[ \t]*$/;
 const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+(.+)/;
+/**
+ * BUG-195：`@nudo:import` 的行注释形态同样受「文件级指令不得落在嵌套体内」
+ * 位置闸门约束（core 文本路 `nudoImportPayloads` 的 inHeader 闸），此前
+ * AST 路只在**块注释**形态告警、行注释形态**零诊断** ⇒ 同一指令两形态
+ * 口径相反 + 引用它的 `@nudo:contract` 静默失效（门禁假绿）。
+ */
+const IMPORT_REGEX = /^\/?\s*@nudo:import\b/;
 
 /**
  * JSDoc/块注释内的文件级指令族标签检测：抽取器只认行注释，块注释形态的
@@ -60,13 +67,15 @@ function warnMisplacedFileTags(blockText: string): void {
  * 与块注释形态对称：块形态被忽略且告警，行形态此前被**静默提升**成整文件作用域
  * （Bug 847）——现在同样忽略 + 告警。
  */
-function warnMisplacedFileTagLine(tag: "env" | "mock-module"): void {
+function warnMisplacedFileTagLine(tag: "env" | "mock-module" | "import"): void {
   emitDirectiveDiag({
     code: DIAG.directiveSyntax,
     message:
       tag === "env"
         ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (line comment inside a function/class/object/array/destructuring body is ignored)`
-        : `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (line comment inside a function/class/object/array/destructuring body is ignored)`,
+        : tag === "mock-module"
+          ? `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (line comment inside a function/class/object/array/destructuring body is ignored)`
+          : `@nudo:import is a file-level directive — use '/// @nudo:import { a } from "./x.nudo.js"' at the top of the file (line comment inside a function/class/object/array/destructuring body is ignored)`,
   });
 }
 
@@ -209,6 +218,9 @@ function collectFileDirectives(ast: Node): FileDirective[] {
     if (misplaced) {
       if (MOCK_MODULE_REGEX.test(text)) warnMisplacedFileTagLine("mock-module");
       else if (ENV_REGEX.test(text) || ENV_BARE_REGEX.test(text)) warnMisplacedFileTagLine("env");
+      // BUG-195：行注释形态的 `@nudo:import` 与块注释形态（FILE_TAG_IN_BLOCK_REGEX）
+      // 同口径——嵌套体内一律「不提升 + 告警」。此前落在这里的是无声 continue。
+      else if (IMPORT_REGEX.test(text)) warnMisplacedFileTagLine("import");
       continue;
     }
 

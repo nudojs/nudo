@@ -13,7 +13,7 @@
  */
 import { noteEvalFallback, type Abs } from "@nudojs/core";
 import { parse, extractInlineDirectives, type DirectiveDiag } from "@nudojs/parser";
-import { isStatement } from "@babel/types";
+import { isExpression, isStatement } from "@babel/types";
 
 /** 收集结果：@nudo:replace 匹配表 + @nudo:as 覆盖表 */
 export type EvalReplacements = {
@@ -119,8 +119,6 @@ function collectInto(
   // 通用下钻：遍历 AST 全部节点（语句 + 表达式 + 各类容器），
   // 只在**语句载体**上收集行内指令（Bug 454）。
   const seenNodes = new Set<object>();
-  /** 指令挂在非语句节点上（无处可施）——收集表为空时上报 */
-  const orphanCount = { n: 0 };
   const visitNode = (node: DirectiveStmtNode): void => {
     if (seenNodes.has(node)) return;
     seenNodes.add(node);
@@ -134,7 +132,7 @@ function collectInto(
           const varName = `__rep${acc.i++}`;
           acc.values[varName] = d.typeAbs;
           // 作用域内文本命中的**每个**节点各登记一条（节点身份 = 字符区间）
-          const ranges = replaceCandidateRanges(node, source, d.targetSource);
+          const { ranges, blocked } = replaceCandidateRanges(node, source, d.targetSource);
           if (ranges.length === 0) {
             // 目标文本在本语句作用域内**无对应节点**（写法与源码不符）：
             // 登记一条**无作用域**条目——指令仍在场（注入包在场 → B run
@@ -149,9 +147,16 @@ function collectInto(
             // 非语句节点上 ⇒ 无处可施 ⇒ 指令被忽略」同码）：同族的另外三种
             // 失败形态（类型表达式不认识 / 目标与类型分不开 / 挂在非语句上）
             // 都走这个码 ⇒ 「指令写了但没生效」是同一族。
+            //
+            // BUG-013：文案必须与事实一致——目标**只**落在嵌套作用域里时，
+            // 不是「作用域内没有该表达式」，而是「作用域边界挡住了」。
             opts?.diags?.push({
               code: "nudo:directive-syntax",
-              message: `@nudo:replace target "${d.targetSource}" matched no expression in the scope of the statement it annotates — the directive has no effect`,
+              message:
+                blocked > 0
+                  ? `@nudo:replace target "${d.targetSource}" appears only inside a nested scope (nested function / statement block) of the statement it annotates — directives do not descend into nested scopes, so the directive has no effect`
+                  : `@nudo:replace target "${d.targetSource}" matched no expression in the scope of the statement it annotates — the directive has no effect`,
+              ...(siteOf(node) ? { at: siteOf(node) } : {}),
             });
           } else {
             for (const range of ranges) {
@@ -168,6 +173,19 @@ function collectInto(
           acc.asValues[varName] = d.typeAbs;
           // @nudo:as 只覆盖**承载指令的那条语句**的 init / return 值
           if (typeof node.start === "number" && typeof node.end === "number") {
+            // BUG-080 残留：目标形态**不支持**覆盖时，此前**静默失效**
+            // （指令被采集 ⇒ 孤儿诊断不触发 ⇒ 零诊断的假绿：类型没变，
+            // 用户毫无痕迹）。按 BUG-080 的修复方向（不许静默）⇒ 这里
+            // 发一条显式 `nudo:directive-syntax`（既有码，不另造新码）。
+            if (!asOverrideApplies(node)) {
+              opts?.diags?.push({
+                code: "nudo:directive-syntax",
+                message:
+                  `@nudo:as applies to the initializer of a variable declaration or to the value of a return statement — the statement it annotates is neither, so the directive has no effect`,
+                ...(siteOf(node) ? { at: siteOf(node) } : {}),
+              });
+              continue;
+            }
             acc.asTargets.push({
               varName,
               stmtStart: node.start,
@@ -177,7 +195,19 @@ function collectInto(
         }
       }
     } else if (hasInlineDirectiveComment(node)) {
-      orphanCount.n++;
+      // BUG-086：孤儿诊断**逐条**上报（按指令粒度）。此前只在「收集表全空」
+      // 时才合并报一条 ⇒ 同文件里任意一条**生效**的 @nudo:as / @nudo:replace
+      // 都让这条失效指令的诊断消失 ⇒ 诊断覆盖度取决于无关代码。
+      // 位置进身份（Bug 848）：同文件多处的同文案孤儿各报一条。
+      if (opts?.diags) {
+        const site = siteOf(node);
+        opts.diags.push({
+          code: "nudo:directive-syntax",
+          message:
+            "inline directive (@nudo:as / @nudo:replace) is not attached to a statement — it has no effect",
+          ...(site ? { at: site } : {}),
+        });
+      }
     }
     // 子节点通用下钻（不看节点类型——容器 / 表达式都在其内）
     for (const [k, v] of Object.entries(node)) {
@@ -205,15 +235,6 @@ function collectInto(
     }
   };
   visitNode(program as DirectiveStmtNode);
-  // 静默丢弃 → 可见失败：源码里有行内指令、但一条都没进收集表
-  // （指令挂在非语句节点上 / 文法不成立）→ 发显式诊断。
-  if (opts?.diags && acc.targets.length === 0 && acc.asTargets.length === 0 && orphanCount.n > 0) {
-    opts.diags.push({
-      code: "nudo:directive-syntax",
-      message:
-        "inline directive (@nudo:as / @nudo:replace) is not attached to a statement — it has no effect",
-    });
-  }
 }
 
 /**
@@ -266,6 +287,8 @@ type DirectiveStmtNode = {
   type?: string;
   start?: number | null;
   end?: number | null;
+  computed?: boolean;
+  loc?: { start?: { line?: number; column?: number } | null } | null;
   body?: unknown;
   block?: unknown;
   consequent?: unknown;
@@ -287,6 +310,31 @@ function isDirectiveCarrier(node: DirectiveStmtNode): boolean {
   if (typeof type !== "string") return false;
   if (type === "FunctionExpression") return true;
   return isStatement(node as never);
+}
+
+/**
+ * `@nudo:as` 的**适用形态**——与 core 转译面 `matchAsOverride` 的命中面
+ * 同口径（文档口径：`VariableDeclaration` 的 init 与 `ReturnStatement`
+ * 的值）：
+ * - `VariableDeclaration` ⇒ 直接命中（覆盖 init 的值）；
+ * - `ReturnStatement` ⇒ 直接命中（覆盖 return 的值）；
+ * - `ExportNamedDeclaration` 且声明体是 `VariableDeclaration` ⇒ 命中
+ *   **内层**声明（export 包装形态：core 侧按「export 引导词」的区间差
+ *   匹配内层声明，见 `matchAsOverride` 的 export 前缀分支）；
+ * - 其余语句形态（for 头 / for-init / if / while / 表达式语句 / 函数声明 …）
+ *   ⇒ **无适用目标** ⇒ 覆盖无处可施。
+ *
+ * BUG-080：「已采集但目标形态不支持」的指令此前**静默失效**（零诊断的假绿）
+ * ⇒ 这里判为不适用，由收集侧发一条显式 `nudo:directive-syntax`。
+ */
+function asOverrideApplies(node: DirectiveStmtNode): boolean {
+  const type = node.type;
+  if (type === "VariableDeclaration" || type === "ReturnStatement") return true;
+  if (type === "ExportNamedDeclaration") {
+    const decl = node.declaration as DirectiveStmtNode | null | undefined;
+    return decl?.type === "VariableDeclaration";
+  }
+  return false;
 }
 
 /**
@@ -337,47 +385,197 @@ function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
 
+/** 节点起始位置（诊断身份用；缺 loc 时返回 undefined ⇒ 退回旧身份） */
+function siteOf(node: DirectiveStmtNode): { line: number; column: number } | undefined {
+  const start = node.loc?.start;
+  if (!start) return undefined;
+  const line = start.line;
+  const column = start.column;
+  return typeof line === "number" && typeof column === "number" ? { line, column } : undefined;
+}
+
+/** 遍历时跳过的非 AST 字段（注释 / 位置 / 原始 token） */
+const WALK_SKIP_KEYS = new Set([
+  "loc",
+  "start",
+  "end",
+  "range",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "tokens",
+  "extra",
+]);
+
+/**
+ * 模式节点族（绑定位）：内部只有 `AssignmentPattern.right`（默认值）与
+ * **计算键**是**值位**，其余（元素 / 属性 / 左值 / 绑定名）一律不是表达式位。
+ */
+const PATTERN_NODE_TYPES = new Set([
+  "ObjectPattern",
+  "ArrayPattern",
+  "AssignmentPattern",
+  "RestElement",
+]);
+
+/** 绑定名占位槽（声明符 id / 形参 / catch 形参）⇒ 其子树是**模式** */
+function opensPattern(parentType: string, key: string): boolean {
+  if (key === "params") return true;
+  if (parentType === "VariableDeclarator" && key === "id") return true;
+  if (parentType === "CatchClause" && key === "param") return true;
+  return false;
+}
+
+/**
+ * **非值位**槽（BUG-184）：转译面只在**表达式发射入口**
+ * （`transpileExpressionImpl` → `matchReplacement`）做替换 ⇒ 绑定位 /
+ * 对象属性键位 / 形参 / 标签 / 导入导出说明符上的 target **永远不会被替换**。
+ * 收集面把它们算作「命中」会绕过「matched no expression」告警 ⇒
+ * 指令静默失效且零诊断。⇒ 收集面与转译面同口径：只认**值位**的表达式节点。
+ */
+function isNonValueSlot(parent: DirectiveStmtNode, key: string): boolean {
+  const type = parent.type ?? "";
+  if (
+    (type === "MemberExpression" || type === "OptionalMemberExpression") &&
+    key === "property"
+  ) {
+    return parent.computed !== true;
+  }
+  // 对象 / 类属性与方法的键：计算键才是表达式位
+  if (key === "key") return parent.computed !== true;
+  if (key === "id") {
+    // 声明 / 方法 / 类的名字是绑定名，不是表达式
+    return (
+      type === "FunctionDeclaration" ||
+      type === "FunctionExpression" ||
+      type === "ArrowFunctionExpression" ||
+      type === "ClassDeclaration" ||
+      type === "ClassExpression" ||
+      type === "ClassMethod" ||
+      type === "ClassPrivateMethod" ||
+      type === "ObjectMethod" ||
+      type === "ClassProperty" ||
+      type === "ClassPrivateProperty" ||
+      type === "ClassAccessorProperty" ||
+      type === "TSDeclareFunction"
+    );
+  }
+  if (key === "label") return true;
+  if (
+    type === "ImportSpecifier" ||
+    type === "ImportDefaultSpecifier" ||
+    type === "ImportNamespaceSpecifier" ||
+    type === "ExportSpecifier" ||
+    type === "ExportDefaultSpecifier" ||
+    type === "ExportNamespaceSpecifier"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 节点源文本（归一化）是否等于 target */
+function nodeTextMatches(n: DirectiveStmtNode, source: string, want: string): boolean {
+  const start = n.start;
+  const end = n.end;
+  if (typeof start !== "number" || typeof end !== "number" || end <= start) return false;
+  // 归一化后长度 ≤ 原文长度：原文更短则不可能命中（省一次切片）
+  if (end - start < want.length) return false;
+  return normWs(source.slice(start, end)) === want;
+}
+
+/** 子树内（**不**看作用域边界）源文本命中的节点数——诊断文案用 */
+function countTextMatches(node: DirectiveStmtNode, source: string, want: string): number {
+  const seen = new Set<object>();
+  let count = 0;
+  const visit = (n: DirectiveStmtNode): void => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    if (nodeTextMatches(n, source, want)) count++;
+    for (const [k, v] of Object.entries(n)) {
+      if (WALK_SKIP_KEYS.has(k)) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) {
+            visit(item as DirectiveStmtNode);
+          }
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        visit(v as DirectiveStmtNode);
+      }
+    }
+  };
+  visit(node);
+  return count;
+}
+
 /**
  * 指令语句子树内、文本命中 target 的**候选节点区间**（Bug 166）。
  * 不跨作用域边界（SCOPE_BOUNDARY_TYPES）；返回节点的源文本字符区间——
  * 转译面按区间（节点身份）命中，不再按行号窗口。
+ *
+ * 两个口径修正：
+ * - **根节点不受作用域边界限制**（BUG-013）：被标注语句本身是裸块 /
+ *   函数表达式时它就是指令的作用域根 ⇒ 必须下钻；把守卫也施加在根上会让
+ *   候选恒空（指令零效果），而诊断还谎称「作用域内没有匹配」。
+ * - **只收值位的表达式节点**（BUG-184）：绑定位 / 属性键位上永远走不到
+ *   转译面的替换入口。
+ *
+ * `blocked`：候选为空时，落在嵌套作用域里的同文节点数——诊断据此区分
+ * 「边界挡住」与「作用域内确实没有该表达式」。
  */
 function replaceCandidateRanges(
   stmt: DirectiveStmtNode,
   source: string,
   target: string,
-): Array<{ start: number; end: number }> {
+): { ranges: Array<{ start: number; end: number }>; blocked: number } {
   const want = normWs(target);
-  if (want === "") return [];
-  const out: Array<{ start: number; end: number }> = [];
+  const ranges: Array<{ start: number; end: number }> = [];
+  if (want === "") return { ranges, blocked: 0 };
   const seen = new Set<object>();
-  const walk = (n: DirectiveStmtNode): void => {
+  const blockedRoots: DirectiveStmtNode[] = [];
+  const walk = (
+    n: DirectiveStmtNode,
+    valueSlot: boolean,
+    pattern: boolean,
+    isRoot: boolean,
+  ): void => {
     if (seen.has(n)) return;
     seen.add(n);
-    if (n.type && SCOPE_BOUNDARY_TYPES.has(n.type)) return;
-    const start = n.start;
-    const end = n.end;
-    if (typeof start === "number" && typeof end === "number" && end > start) {
-      // 归一化后长度 ≤ 原文长度：原文更短则不可能命中（省一次切片）
-      if (end - start >= want.length && normWs(source.slice(start, end)) === want) {
-        out.push({ start, end });
-      }
+    if (!isRoot && n.type && SCOPE_BOUNDARY_TYPES.has(n.type)) {
+      blockedRoots.push(n);
+      return;
     }
+    if (valueSlot && isExpression(n as never) && nodeTextMatches(n, source, want)) {
+      ranges.push({ start: n.start as number, end: n.end as number });
+    }
+    const inPattern =
+      pattern || (typeof n.type === "string" && PATTERN_NODE_TYPES.has(n.type));
     for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "range") continue;
-      if (k === "leadingComments" || k === "trailingComments" || k === "innerComments") continue;
-      if (k === "comments" || k === "tokens" || k === "extra") continue;
+      if (WALK_SKIP_KEYS.has(k)) continue;
+      // 绑定槽（声明符 id / 形参 / catch 形参）既是**模式**入口，也**不是**值位
+      const patternSlot = inPattern ? false : opensPattern(n.type ?? "", k);
+      const childValue = inPattern
+        ? (n.type === "AssignmentPattern" && k === "right") ||
+          (k === "key" && n.computed === true)
+        : !isNonValueSlot(n, k) && !patternSlot;
+      const childPattern = inPattern ? !childValue : patternSlot;
       if (Array.isArray(v)) {
         for (const item of v) {
           if (item && typeof item === "object" && "type" in (item as object)) {
-            walk(item as DirectiveStmtNode);
+            walk(item as DirectiveStmtNode, childValue, childPattern, false);
           }
         }
       } else if (v && typeof v === "object" && "type" in (v as object)) {
-        walk(v as DirectiveStmtNode);
+        walk(v as DirectiveStmtNode, childValue, childPattern, false);
       }
     }
   };
-  walk(stmt);
-  return out;
+  walk(stmt, false, false, true);
+  let blocked = 0;
+  if (ranges.length === 0) {
+    for (const root of blockedRoots) blocked += countTextMatches(root, source, want);
+  }
+  return { ranges, blocked };
 }

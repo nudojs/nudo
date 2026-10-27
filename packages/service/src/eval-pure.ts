@@ -14,7 +14,7 @@
  * 调用点解析到同一对象身份。
  */
 import { bindingsOf, markPureFn } from "@nudojs/core";
-import { extractDirectivesQuiet } from "@nudojs/parser";
+import { extractDirectivesQuiet, listFnDirectiveScopes } from "@nudojs/parser";
 
 /**
  * 纯度标记：Abs fn 值走 core 的 `markPureFn`；**宿主 JS 函数对象** core 的
@@ -35,14 +35,24 @@ export function markPureTarget(target: unknown, name: string): void {
 /**
  * 源码里的纯函数名（`@nudo:pure` 的函数作用域）——与 analyzer 的
  * `functions` 口径同源（`extractDirectives` 的 pure 指令、skip 除外）。
+ *
+ * BUG-283 同族：按名消费 ⇒ 与 `collectSkipReturns` 同一「同名取词法最浅」
+ * 裁决（内层同名函数的 `@nudo:pure` 不得标记到外层导出函数上）。
  */
 export function pureFnNamesOfAst(ast: unknown): string[] {
   const fns = extractDirectivesQuiet(ast as never);
   const out: string[] = [];
+  const shallowest = new Map<string, number>();
+  for (const scope of listFnDirectiveScopes(ast as never)) {
+    const depth = scope.depth ?? 0;
+    const prev = shallowest.get(scope.name);
+    if (prev === undefined || depth < prev) shallowest.set(scope.name, depth);
+  }
   for (const fn of fns) {
     if (typeof fn.name !== "string" || fn.name.length === 0) continue;
     if (!fn.directives.some((d) => d.kind === "pure")) continue;
     if (fn.directives.some((d) => d.kind === "skip")) continue;
+    if ((fn.depth ?? 0) !== (shallowest.get(fn.name) ?? 0)) continue;
     out.push(fn.name);
   }
   return out;
