@@ -269,6 +269,10 @@ export function mergeDiagnostics(input: MergeInput): AnalysisResult {
  * 与 CLI / LSP 同源同码同文案（`path env failed to load: <path> — <error>`）：
  * - 只报**本文件** env 名单解析出的路径（env 项被移除后进程级错误表里的
  *   陈旧条目不得继续误报）——与 LSP `envUnresolvedDiags` 同口径；
+ * - **两层基准**（Bug 647 / BUG-222）：文件级按文件目录、项目级按项目根
+ *   各取一次失败表，按「本文件的两层候选路径并集」过滤 ⇒ 项目级 env 的
+ *   装载失败不再被静默丢弃（旧实现只取文件目录 ⇒ 项目级写法零提示，
+ *   而完全等价的文件级写法有提示 ⇒ 同一语义两种结论）；
  * - `seen` 去重：同 baseDir 多文件构建时同一条失败只报一次。
  */
 export function envUnresolvedDiagnostics(
@@ -276,30 +280,68 @@ export function envUnresolvedDiagnostics(
   code: string,
   seen: Set<string>,
 ): Diagnostic[] {
-  let envNames: string[];
+  let fileEnvNames: string[];
   try {
-    envNames = collectEnvNames(id, code, true);
+    fileEnvNames = collectEnvNames(id, code, false);
   } catch {
     // env 名单解析失败不拖垮构建（分析器自身已 fail-closed）
     return [];
   }
-  if (envNames.length === 0) return [];
   const baseDir = dirname(id);
-  // preloadPathEnvs 记录的 path = resolve(baseDir, name)——同式过滤陈旧条目
-  const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
+  // **两层基准**（Bug 647 / BUG-222）：项目级 env（`package.json#nudo.env`）
+  // 按**项目根**解析，文件级（`/// @nudo:env`）按**文件目录**解析。
+  // 失败条目按「记录时的 preload 目录」归档（`recordPathEnvError(path, baseDir, e)`）
+  // ——旧实现只取 `getPathEnvLoadErrors(dirname(id))` ⇒ 项目级 env 的失败
+  // （baseDir = 项目根）**永远匹配不上** ⇒ 被静默丢弃 ⇒ 构建期 env 失效零提示
+  // （假绿），而 CLI / IDE 都报 `nudo:env-unresolved`。
+  // 与 CLI `packages/nudojs/src/commands/check.ts`（双 baseDir + 期望路径集过滤）
+  // 和 LSP `packages/lsp/src/validation.ts` 的 `envUnresolvedDiags` 同款。
+  const proj = findProjectConfig(baseDir);
+  const projectEnvBaseDir = proj?.projectDir ?? baseDir;
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvRaw: unknown[] = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
+  // 项目级**相对说明符**先绝对化（按项目根）——与 `preloadPathEnvs` 的
+  // 记录口径（`resolve(baseDir, name)`）对齐；非字符串项原样保留（下方按
+  // 名字匹配非法 env 项诊断）。
+  const projectEnvSpec = projectEnvRaw.map((name) =>
+    typeof name === "string" && (name.startsWith("./") || name.startsWith("../"))
+      ? resolvePath(projectEnvBaseDir, name)
+      : name,
+  );
+  // 本文件自己的 env 名单（项目级原始 ∪ 文件级）：空 ⇒ 本文件与 env 无关
+  const envNames: unknown[] = [...new Set([...projectEnvRaw, ...fileEnvNames])];
+  if (envNames.length === 0) return [];
+  // 候选路径（**两层并集**）：本文件自己请求过的 env 解析路径——诊断过滤基准
+  const candidates = new Set<string>();
+  for (const n of projectEnvSpec) {
+    if (typeof n === "string") candidates.add(resolvePath(projectEnvBaseDir, n));
+  }
+  for (const n of fileEnvNames) candidates.add(resolvePath(baseDir, n));
   // **按名字**发的诊断（未知 env 名 / 非字符串 env 项）记录的 path 是
   // **名字本身**（不是解析后的路径）——只按 candidates 过滤 ⇒ 这类条目
   // 永远匹配不上 ⇒ 构建日志里零诊断（与 LSP 面同一个洞，#470/#937）。
-  // 按**本文件自己的 env 名单**匹配 ⇒ 同目录别的文件的无 path 诊断
-  // 不会误吸进来（getPathEnvLoadErrors(baseDir) 已按 baseDir 收窄）。
-  const byName = new Set<string>(envNames);
-  for (const raw of envNames as unknown[]) {
-    if (typeof raw === "string") continue;
+  const byName = new Set<string>();
+  for (const raw of envNames) {
+    if (typeof raw === "string") {
+      byName.add(raw);
+      continue;
+    }
     const rendered = JSON.stringify(raw);
     if (typeof rendered === "string") byName.add(rendered);
   }
+  // 两层基准各取一次；同一失败条目可能被两层都记录 ⇒ 按 path+error 去重
+  const seenLoadError = new Set<string>();
+  const loadErrors = [
+    ...getPathEnvLoadErrors(baseDir),
+    ...getPathEnvLoadErrors(projectEnvBaseDir),
+  ].filter((e) => {
+    const loadKey = `${e.path}\0${e.error}`;
+    if (seenLoadError.has(loadKey)) return false;
+    seenLoadError.add(loadKey);
+    return true;
+  });
   const diags: Diagnostic[] = [];
-  for (const e of getPathEnvLoadErrors(baseDir)) {
+  for (const e of loadErrors) {
     if (!candidates.has(e.path) && !byName.has(e.path)) continue;
     const key = `${e.baseDir}\0${e.path}\0${e.error}`;
     if (seen.has(key)) continue;

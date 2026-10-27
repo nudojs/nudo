@@ -8,7 +8,7 @@
  */
 import { dirname } from "node:path";
 import { setEvalFallbackCollector, type EvalFallback } from "@nudojs/core";
-import { runWithCollectorScope } from "@nudojs/core/internal";
+import { DIAG, getEvalFallbackStats, runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { absolutizeEnvSpec, preloadPathEnvs } from "./evaluator/env-loader.ts";
@@ -17,6 +17,7 @@ import { analysisFileCacheKey, cloneAnalysisResult } from "./analyzer-cache.ts";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
+  Diagnostic,
   DirectiveCaseMode,
 } from "./analyzer-types.ts";
 import type { CallRecord } from "./evaluator/call-record.ts";
@@ -86,6 +87,45 @@ export async function analyzeFileAsync(
 }
 
 /**
+ * 引擎内部回落（`internal` fallback）→ **error 级 `nudo:internal` 诊断**
+ * （1145 / BUG-140）。
+ *
+ * CLI 的 check 编排在**包装层**（`packages/nudojs/src/commands/check.ts`）用
+ * `setEvalFallbackCollector` 观测本文件的 `internal` 回落，并据此产出一条
+ * error 级 `nudo:internal`（「the gate could not decide this file」）⇒ exit 1。
+ * 但那条通道**只存在于 CLI 包装层**：不经过它的消费方（LSP 的
+ * `validateText`、agent 工具、vite-plugin 的 evaluator 面）拿不到**任何**
+ * 信号 ⇒ 同一个文件 **CI 红 / IDE 零诊断**（编辑器里看起来干干净净）。
+ *
+ * ⇒ 把「分析失败」提升为 **service 层**的诊断：所有消费方都从
+ * `AnalysisResult.diagnostics` 拿 ⇒ CLI / IDE / 构建期**同源**地看到
+ * 「这个文件没分析成功」。
+ *
+ * 观测手段是 core 的 `getEvalFallbackStats()`（**始终累计**的进程级计数器，
+ * 与 `setEvalFallbackCollector` 的单槽 collector 无关）⇒ 本函数**不抢占**
+ * 宿主的 collector（CLI 包装层那条通道照常工作，插件 / IDE 不再假绿）。
+ * `analyzeFile` 是**同步**的 ⇒ 前后两次快照之间不会插进别的分析。
+ */
+function internalEvalFailureDiagnostic(
+  filePath: string,
+  count: number,
+): Diagnostic {
+  return {
+    severity: "error",
+    code: DIAG.internal,
+    message:
+      `analysis failed: module evaluation failed (engine internal fallback ×${count}) — ` +
+      `${filePath} could not be evaluated, so the gate could not decide this file`,
+    suggestions: [
+      "fix the cause reported for this module, or file it as an engine bug together with the analysed file",
+    ],
+    // 无源位置：service 的占位约定（与 `analyzer-diagnose.ts` 同款）——
+    // 引擎内部回落定位不到某一行，编造第 1 行会把读者引向错误的源码位置。
+    range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+  };
+}
+
+/**
  * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
  * 不再每次 clearEvalCache：求值引擎按本文件 source 键控。
  *
@@ -137,7 +177,10 @@ export function analyzeFile(
         return cloneAnalysisResult(hit);
       }
     }
-    const result = analyzeFileUncached(
+    // BUG-140：本文件求值期间的 `internal` 回落观测起点（见
+    // `internalEvalFailureDiagnostic`）。同步窗口 ⇒ 快照不会串台。
+    const internalBefore = getEvalFallbackStats().internal;
+    let result = analyzeFileUncached(
       filePath,
       source,
       activeCases,
@@ -145,6 +188,22 @@ export function analyzeFile(
       loadModule,
       caseMode,
     );
+    // 引擎内部回落 = 该模块求值失败 ⇒ 闸门无法裁决（CLI 面 exit 1）。
+    // 不追加 ⇒ 不经过 CLI 包装层的消费方（LSP / agent / 插件）零诊断
+    // ⇒ IDE 面假绿（BUG-140）。
+    const internalFallbacks = Math.max(
+      0,
+      getEvalFallbackStats().internal - internalBefore,
+    );
+    if (internalFallbacks > 0) {
+      result = {
+        ...result,
+        diagnostics: [
+          ...result.diagnostics,
+          internalEvalFailureDiagnostic(filePath, internalFallbacks),
+        ],
+      };
+    }
     if (!k.noCache) {
       analysisCacheSet(k.filePath, k.source, k.auxKey, result);
     }
