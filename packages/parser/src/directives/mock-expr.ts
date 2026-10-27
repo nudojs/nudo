@@ -87,6 +87,8 @@ export function parseSinonExpr(expr: string): SinonExpression | null {
     if (arrowFn) {
       return {
         type: "stub",
+        // 严格性不可得：mock 表达式是**独立解析的载荷文本**，enclosing 源
+        // 文件的 ESM/CJS 种类未随指令流转 ⇒ 不写 strict（sloppy，保守）。
         returnValue: absFunction(arrowFn.params, {
           body: arrowFn.body,
         }),

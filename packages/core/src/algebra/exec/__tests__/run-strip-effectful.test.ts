@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../run.ts";
 
 /**
- * analyze 模式顶层剥离（stripEffectfulTopLevel）的语义等价护栏。
+ * analyze 模式顶层剥离的语义等价护栏。
  *
- * 旧实现是行级正则 + `endsWith(";")` / 括号计数启发式，三类输入静默改变
+ * 历史实现是行级正则 + `endsWith(";")` / 括号计数启发式，三类输入静默改变
  * 程序语义（均已实证为旧行为）：
  * 1. 多行语句（回调体内行以 `;`/`}` 结尾）提前终止跳过 → 语句尾悬空
  *    → `new Function` SyntaxError（`setTimeout(fn, 100)` 整模块不可分析）；
@@ -13,9 +13,10 @@ import { runTranspiled, callTranspiledExportFull } from "../run.ts";
  * 3. 列 0 的 `catch (` 头匹配「未知全局调用」正则 → catch 头被剥 →
  *    顶层 try/catch 一律 SyntaxError。
  *
- * 现实现为结构化（Babel 解析 transpile 产物，按顶层语句整条剥除）。本文件
- * 双向锁：剥离对象仍被整体剥除（不执行副作用、不 ReferenceError），未被
- * 剥离的语句与导出面保持语义等价（值 exact、导出名齐全）。
+ * 现实现为**发射期源 AST 过滤**（`transpile/analyze-strip.ts`，run.ts 不再
+ * 解析生成产物）。本文件是语义契约：剥离对象仍被整体剥除（不执行副作用、
+ * 不 ReferenceError），未被剥离的语句与导出面保持语义等价（值 exact、导出
+ * 名齐全）。
  */
 
 function analyze(src: string): Record<string, unknown> {
@@ -80,8 +81,9 @@ function bump() { acc = acc + a; }
 bump();
 export function f() { return acc; }
 export const k = a + 1;`);
-    // bump：顶层 function 一律带 export 前缀（exportKw 口径，见 run-export-names.test.ts）
-    expect(Object.keys(run).sort()).toEqual(["bump", "f", "k"]);
+    // bump 是私有顶层函数：不出现在导出面（Object.keys），但仍可按名分析
+    expect(Object.keys(run).sort()).toEqual(["f", "k"]);
+    expect(Object.hasOwn(run, "bump")).toBe(true);
     expect(litOf(callF(run))).toBe(1);
     expect(litOf(run["k"])).toBe(2);
   });
@@ -134,7 +136,9 @@ g();
 export const a = 1;
 export const b = 2;
 export function h() { return g(); }`);
-    expect(Object.keys(run).sort()).toEqual(["a", "b", "g", "h"]);
+    // g 是私有顶层函数（不是导出）：导出面只列 a/b/h；h 内部仍能调到 g
+    expect(Object.keys(run).sort()).toEqual(["a", "b", "h"]);
+    expect(Object.hasOwn(run, "g")).toBe(true);
     expect(litOf(run["a"])).toBe(1);
     expect(litOf(run["b"])).toBe(2);
     expect(litOf(callF(run, "h"))).toBe(7);

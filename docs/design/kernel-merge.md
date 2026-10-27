@@ -40,19 +40,19 @@ parser ──▶ core
 | `+ - * / %` 数值/字符串 | 代数 `add/sub/mul/div/mod` |
 | `< <= > >=` 数值/字符串字面量 | 代数 `cmp` |
 | `=== !==`（含 nullish） | 代数 `strictEqAbs` / `cmp` |
-| `typeof` / `!` / 一元 `-` | 代数 `surface.ts`（`tryAbsUnary`） |
+| `typeof` / `!` / 一元 `-` | 代数 `surface.ts`（`typeofAbs` / `notAbs` / `negAbs`） |
 | 对象 spread / join | 代数 `spread` / `joinAbs` |
 | range narrow | Pred 编码进 Abs |
 | union | 逐成员代数 |
 | refined 方法/属性 | `dispatchMethod/Property`（宿主扩展） |
 | 混合 `+` / 无法判定的比较 | 粗化回 shape 基类型（Abs 内部，不传播约束） |
 
-路由：`algebra/surface.ts` + `service/evaluator/abs-route.ts`。
+路由：`algebra/surface.ts`（一元/相等）+ `algebra/arithmetic.ts`（二元算术/比较）+ `algebra/objects.ts`（spread/join）。
 
 ## 约束如何传播
 
 1. 调用点参数 `tagParamArg` 挂 `var(name)` 项身份（WeakMap 旁路）。
-2. `if (x > 5)` → `phiFromTest` 提取 Pred，`pushPhi` 进路径前提 Φ。
+2. `if (x > 5)` → 真臂以 `withExecPhi(Φ ∧ test.pred)` 作用域进入路径前提 Φ（假臂合取否定）。
 3. 分支内 `x+1` / `x>=3` 读 Φ 与自身 pred，单调性推出新约束。
 4. narrow 产生的 range refined 保留 term，`toAbsWithTerms` 编码成 `ge/le` Pred。
 5. `nudo check`：`checkSource` 做蕴含门禁（调用前置 vs clamp 不算违例）。

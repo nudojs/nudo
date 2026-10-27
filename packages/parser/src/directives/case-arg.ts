@@ -307,6 +307,9 @@ function parseLiteralOrStructure(expr: string, depth: number): Abs {
   if (findTopLevelArrow(s) !== -1 || /^function\s*[\w$]*\s*\(/.test(s)) {
     const fnExpr = parseArrowFunctionExpr(s);
     if (fnExpr) {
+      // 严格性不可得：本文法只拿到**指令表达式文本**，enclosing 源文件的
+      // ESM/CJS 种类未随 `@nudo:case` 流转 ⇒ 不写 strict（sloppy，保守；
+      // body-fn 只看 `strict === true`）。不得按表达式形态猜。
       return absFunction(fnExpr.params, { body: fnExpr.body });
     }
   }

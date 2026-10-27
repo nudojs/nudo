@@ -50,6 +50,21 @@
  * - classifyAssignSet（Bug 128）是 Object.assign 逐键 [[Set]] 单一分类：
  *   自有访问器 setter / __proto__ 原型 setter（null|对象设原型、原始值
  *   忽略、抽象 open）/ 自有·继承非可写定抛 / 其余建自有键。
+ * - performObjectAssign 是 Object.assign 的**单一实现**（runtime 直接面
+ *   exec/class/assign.ts 与 second-class 静态面 methods.ts 共用）：obj /
+ *   tuple / brand（原型对象）目标**就地**写并返回同一 Abs（原生引用语义——
+ *   别名/语句位可见），prim/boxed 目标的抛错域与降级口径不变。
+ * - frozen 目标的抛错门：**只在实际执行 Set(target, key, value, true) 时**
+ *   失败（原生 oracle：assign(freeze({}), {}) / assign(freeze({}), null) 不抛，
+ *   assign(freeze({}), {a:1}) 抛 TypeError）——源零可枚举自有键 ⇒ 不抛；
+ *   源键集不可判 ⇒ may-throw（不定抛）；键集已知非空 ⇒ 逐键判定（新建键 /
+ *   不可写数据属性 / 改原型 ⇒ TypeError，setter 派发 ⇒ 成功）。
+ * - sealed / nonext 目标的写门（**obj 与 brand 同规则**）：只拒绝**新自有
+ *   键**（不可扩展 ⇒ [[Set]] 建键失败 ⇒ TypeError）；已有自有可写数据属性 /
+ *   自有 setter 照常成功（seal 不改 writable、不禁访问器）。brand 目标的自有
+ *   面 = 内层 obj 槽 + 访问器侧表 + owner 类的自有方法/访问器（brandKeyIsNew）；
+ *   自有键集不可判（内层开箱 / 内建原型品牌无类注册表条目）⇒ 不抛（保守）。
+ *   frozen brand 仍走 frozenBrandGuard 的整目标拒写门。
  * - Bug 210：Proxy [[OwnPropertyKeys]] 的单一实现（proxyOwnKeysTrapKeys
  *   派发 + enforceProxyOwnKeysInvariant 校验）——重复名 / 非字符串键 /
  *   漏靶的不可配置自有键 / 不可扩展靶的多余键 → 原生定抛 TypeError；
@@ -62,7 +77,7 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, litValue, strLit, boolLit, numLit, unknown } from "../../abs.ts";
+import { abs, litValue, strLit, boolLit, numLit, unknown, confJoin, str } from "../../abs.ts";
 import {
   joinAbs,
   objOf,
@@ -91,10 +106,11 @@ import {
   enumOwnKeys,
 } from "../invariants.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
-import { classInstanceInnerOf } from "../../exec/class-registry.ts";
+import { classInstanceInnerOf, getEvalClass } from "../../exec/class-registry.ts";
 import { typedArrayEnumKeyView } from "./enum-entries.ts";
 import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
-import { proxyTargetInnerObj } from "../../exec/runtime/state.ts";
+import { proxyTargetInnerObj, asAbsVal, clearStaleTermPred } from "../../exec/runtime/state.ts";
+import { isSymbolAbs } from "../../symbol-id.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 
 export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {
@@ -147,8 +163,8 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
   }
   // Bug 84：用户类实例源（Object.assign({}, new A())）——拷贝公有可枚举自有
   // 槽（私有 Slot.internal / enumerable:false 剔除；此前 brand 源键集不可判
-  // → undefined 保守降级，公有字段全丢）。evaluator runtimeAssignObject 与
-  // evalObjectMethod("assign") 共用此处。
+  // → undefined 保守降级，公有字段全丢）。单一实现 performObjectAssign 的
+  // 源投影共用此处。
   {
     const inner = classInstanceInnerOf(src);
     if (inner) {
@@ -165,6 +181,36 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
 }
 
 /**
+ * 源对「可枚举自有键」的**贡献分类**（Object.assign 的 frozen 门用）：
+ * - "none"：确定零键——null/undefined 源（原生直接跳过）、无数组的空 obj、
+ *   空元组、空字符串字面量、无自有可枚举键的 prim/eff/never ⇒ 原生**不执行
+ *   任何** [[Set]] ⇒ 不可能抛；
+ * - "some"：键集**完全已知**且非空 ⇒ 至少一次 [[Set]]（逐键判定成败）；
+ * - "unknown"：键集不可判（arr / sum / fn / open 空箱…）⇒ 结果不确定
+ *   （可能抛也可能不抛）⇒ 只能记 may-throw。
+ *
+ * 原生 oracle（node 26）：`Object.assign(Object.freeze({}), {})` 不抛、
+ * `Object.assign(Object.freeze({}), null)` 不抛、
+ * `Object.assign(Object.freeze({}), {a:1})` 抛 TypeError——抛错**只在实际
+ * 执行 Set(target, key, value, true) 时**发生。
+ */
+function assignSourceKeyCardinality(src: Abs): "none" | "some" | "unknown" {
+  // null / undefined 源：原生 Object.assign 跳过（不贡献任何键）
+  if (isNullishLitAbs(src)) return "none";
+  const s = src.shape;
+  if (s.k === "obj") {
+    if (enumOwnKeys(src, s.slots).length > 0) {
+      // 有已知键：但 open 尾键不可判 ⇒ 整体仍不确定
+      return s.open ? "unknown" : "some";
+    }
+    return s.open ? "unknown" : "none";
+  }
+  const slots = assignSourceSlots(src);
+  if (slots === undefined) return "unknown";
+  return Object.keys(slots).length > 0 ? "some" : "none";
+}
+
+/**
  * M5：装箱 prim target 的 Object.assign 键写抛错域（node 实测）：
  * - bigint → 恒定抛 TypeError（`assign(1n)` 无源也抛）；
  * - string 字面量（长 L）→ 任一源的可枚举自有键含 canonical 数组下标
@@ -174,7 +220,7 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
  *   抽象）→ may；
  * - number / boolean → wrapper expando 合法 → 恒安全（原生返回原始值）。
  * symbol target 走既有 Bug 76 定抛路径，不进本判定（返回 "unhandled"）。
- * 非可枚举 / internal 键不写（与 mergeObj/enumKeys 同口径）不计入。
+ * 非可枚举 / internal 键不写（与枚举视图/enumKeys 同口径）不计入。
  */
 export function primTargetAssignThrows(
   target: Abs,
@@ -1243,27 +1289,6 @@ export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined)
 }
 
 /**
- * Bug 200/S4 接线：**brand 目标**（原型对象 `A.prototype`）——原生
- * `Object.assign(A.prototype, {…})` 写的是原型对象的**自有属性**（for-in
- * 沿原型链可见）。引擎的原型对象 = protoBrandAbs(name) 的**内层 obj** ⇒
- * 逐键写该内层 obj 的槽（**原地**）——读侧
- * （exec/runtime/containers/iterate.ts 的 brandProtoEnumerableKeys）枚举的
- * 正是内层 obj 的可枚举槽，写侧必须落在同一处；不可变更新会造出新 brand，
- * 类注册表 / 实例原型链仍持旧 brand ⇒ 写了也看不见。
- *
- * [[Set]] 语义同 Object.assign 的其它目标（Set(target, key, value,
- * throw=true)）：自有访问器 → setter（无 setter → TypeError）；自有非可写
- * 数据属性 → TypeError；其余 → 建/覆写自有数据槽。
- *
- * 消费方：exec/class/assign.ts 的 runtimeAssignObject（Object.assign 的
- * **运行时**路径——invoke.ts 分派到它，非 builtins/object/methods.ts 的
- * evalObjectMethod("assign")）与 builtins/object/methods.ts 的 assign 臂。
- *
- * @param target 目标（brand——原型对象）
- * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
- *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
- */
-/**
  * 写进 brand 内层 obj 的键值对。
  * Bug 295：条目可选带第三元 `symbolKey`（true = 该键是**真 symbol 键**）。
  * 原生 `Object.assign(A.prototype, {a:1, [Symbol.toStringTag]:2})` 复制的是
@@ -1273,7 +1298,84 @@ export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined)
  */
 export type BrandAssignEntry = [string, Abs] | [string, Abs, boolean];
 
-export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): void {
+/**
+ * 「自有属性」判定（不可扩展目标的「新键」门共用）——自有数据槽 **或** 自有
+ * 访问器 ⇒ 已有关键。自有属性 ≠ 自有槽：访问器住 accessorTable 侧表（槽位
+ * 只是占位，可能缺席——原生 `Object.seal` 不改访问器机制）。
+ *
+ * 普通对象目标传目标自身；brand 目标传**内层 obj**（自有面在那里）。
+ */
+function hasOwnKeyView(holder: Abs, key: string): boolean {
+  if (holder.shape.k === "obj") {
+    const slots = (holder.shape as ObjShape).slots as Record<string, { value: Abs }>;
+    if (getSlot(slots, key) !== undefined) return true;
+  }
+  return lookupObjAccessor(holder, key) !== undefined;
+}
+
+/**
+ * Object.assign × **不可扩展品牌目标**（sealed / nonext）的「新自有键」判定。
+ *
+ * 规则与普通对象目标（mergeAssignObject 的同名前置检查）**同一口径**：
+ * 自有数据属性（槽）或自有访问器 ⇒ 已有关键（访问器住 accessorTable 侧表——
+ * 原生 seal 不改访问器机制）⇒ 写成功；都不存在 ⇒ 新建自有属性 ⇒ 原生
+ * [[Set]] 在不可扩展目标上失败 ⇒ TypeError。
+ *
+ * brand 的**独有面**：自有属性落内层 obj（原型对象 / 类实例字段），另外
+ * owner 类的自有方法 / 访问器原生就是原型对象的自有属性（引擎把它们放在
+ * 类注册表而非内层槽）——同样算已有关键。
+ *
+ * 自有键集不可判（内层开箱 / 内建原型品牌没有类注册表事实源）⇒ 不抛
+ * （sound 保守：宁可漏抛，不造假 TypeError）。
+ */
+function brandKeyIsNew(target: Abs, key: string): boolean {
+  const sh = target.shape;
+  if (sh.k !== "brand" || sh.shape.shape.k !== "obj") return false;
+  const inner = sh.shape;
+  const ishape = inner.shape as ObjShape;
+  if (hasOwnKeyView(inner, key)) return false;
+  if (ishape.open) return false; // 键集不可判 ⇒ 保守不抛
+  if (sh.name.endsWith(".prototype")) {
+    const spec = getEvalClass(sh.name.slice(0, -".prototype".length));
+    if (!spec) return false; // 内建原型品牌：自有键集无事实源 ⇒ 保守不抛
+    if (Object.hasOwn(spec.methods ?? {}, key) || Object.hasOwn(spec.accessors ?? {}, key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Bug 200/S4 接线：**brand 目标**（原型对象 `A.prototype` / 类实例）——原生
+ * `Object.assign(A.prototype, {…})` 写的是原型对象的**自有属性**（for-in
+ * 沿原型链可见）。引擎的原型对象 = protoBrandAbs(name) 的**内层 obj** ⇒
+ * 逐键写该内层 obj 的槽（**原地**）——读侧
+ * （exec/runtime/containers/iterate.ts 的 brandProtoEnumerableKeys）枚举的
+ * 正是内层 obj 的可枚举槽，写侧必须落在同一处；不可变更新会造出新 brand，
+ * 类注册表 / 实例原型链仍持旧 brand ⇒ 写了也看不见。
+ *
+ * [[Set]] 语义同 Object.assign 的其它目标（Set(target, key, value,
+ * throw=true)）：自有访问器 → setter（无 setter → TypeError）；sealed /
+ * nonext 目标上的**新自有键** → TypeError（不可扩展 ⇒ 建键失败；
+ * brandKeyIsNew 与普通对象目标同一口径）；自有非可写数据属性 → TypeError；
+ * 其余 → 建/覆写自有数据槽。
+ *
+ * 消费方：单一实现 performObjectAssign 的 brand 目标臂
+ * （assignBrandFromObj / assignBrandFromSlots）——runtime 直接面
+ * （exec/class/assign.ts 的 runtimeAssignObject）与 second-class 静态面
+ * （builtins/object/methods.ts 的 assign 臂）都经它。
+ *
+ * @param target 目标（brand——原型对象 / 类实例）
+ * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
+ *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
+ * @param st 目标的 extState（performObjectAssign 传入）——sealed / nonext 时
+ *   新键写失败；frozen 由 frozenBrandGuard 前置整目标拒写
+ */
+export function assignIntoBrandInner(
+  target: Abs,
+  entries: BrandAssignEntry[],
+  st?: "nonext" | "sealed" | "frozen",
+): void {
   const inner = target.shape.k === "brand" ? target.shape.shape : undefined;
   if (!inner || inner.shape.k !== "obj") return;
   const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
@@ -1286,6 +1388,12 @@ export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): 
       ownAcc.set(target, v);
       continue;
     }
+    // sealed / nonext 目标：**新建自有属性**的 [[Set]] 失败（原生 TypeError）；
+    // 已有自有可写数据属性照常写（seal 保留 writable / preventExtensions 不动
+    // 既有属性）——与普通对象目标同规则。
+    if ((st === "sealed" || st === "nonext") && brandKeyIsNew(target, k)) {
+      throwAssignTypeError();
+    }
     if (getSlot(slots, k) !== undefined && getPropFlags(inner)?.get(k)?.writable === false) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
@@ -1294,8 +1402,8 @@ export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): 
 }
 
 /**
- * Bug 128：Object.assign 逐键 [[Set]]（OrdinarySet）分类——evaluator
- * mergeObj（就地）与 evalObjectMethod("assign")（不可变）共用。原生
+ * Bug 128：Object.assign 逐键 [[Set]]（OrdinarySet）分类——单一实现
+ * performObjectAssign 的写路径共用（obj 目标走 mergeAssignObject）。原生
  * Object.assign 对目标逐键执行 Set(target, key, value, throw=true)：
  * - 自有访问器 → setter 调用（getter-only → TypeError）
  * - "__proto__" 键非自有且目标非 null-proto → Object.prototype 的原型
@@ -1363,6 +1471,321 @@ export function classifyAssignSet(target: Abs, key: string, value: Abs): AssignS
     cur = getProtoAbs(cur);
   }
   return { act: "write" };
+}
+
+// ---------------------------------------------------------------------------
+// Object.assign 单一实现（runtime 直接调用面 + second-class 静态读面共用）
+//
+// 原生 Object.assign 是**引用语义**：目标对象就地 [[Set]]，返回同一对象，
+// 别名（`const u = t`）看得见写。两条调用路径此前各自实现：
+// - `runtimeAssignObject`（exec/class/assign.ts，invoke 的 Object.assign
+//   直接调用面）就地写；
+// - `evalObjectMethod("assign")`（`const g = Object.assign; g(t, s)` /
+//   `.call` / `.apply` 等 second-class 面）**不可变**构造新 Abs ⇒ 别名读
+//   不到写（`u.b` 折 undefined，#exact 假精确）。
+// 现两条路径都调本文件的 performObjectAssign（exec/class/assign.ts 的
+// runtimeAssignObject 只是运行时入口名，methods.ts 的 assign 臂直接调本
+// 函数）：目标 obj/tuple/brand（原型对象）**就地**写并返回原 Abs；
+// prim/boxed 目标的既有抛错域/降级口径不变（不写）。
+// ---------------------------------------------------------------------------
+
+/** strict [[Set]] 写失败：原生 TypeError（catch 可吸收）。 */
+function throwAssignTypeError(): never {
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/** obj 目标 × obj 源：逐键 [[Set]]（分类共享 classifyAssignSet）就地写。 */
+function mergeAssignObject(
+  target: Abs,
+  src: Abs,
+  st: "nonext" | "sealed" | "frozen" | undefined,
+): void {
+  const ts = target.shape as ObjShape;
+  const ss = src.shape as ObjShape;
+  // 源键视图 = CopyDataProperties（枚举且非 internal；含 symbol 投影槽）
+  for (const k of enumOwnKeys(src, ss.slots)) {
+    // sealed/nonext 目标新键：strict [[Set]] 建键失败 → TypeError。
+    // 「自有属性」≠「自有槽」：访问器住 accessorTable 侧表（槽位只是占位）⇒
+    // 自有访问器键走 setter（Object.seal 保留 setter 可用——原生
+    // `Object.seal` 不改访问器机制），不是新键 ⇒ 不拒。
+    if (
+      (st === "sealed" || st === "nonext") &&
+      !hasOwnKeyView(target, k)
+    ) {
+      throwAssignTypeError();
+    }
+    const srcSlot = ss.slots[k]!;
+    const v = readProperty(src, k); // 源值走 [[Get]]（getter 求值）
+    const plan = classifyAssignSet(target, k, v);
+    if (st === "frozen") {
+      // 原生 [[Set]] 在 frozen 目标上的失败面（不可扩展 + 数据属性不可写）：
+      // 新建键 / 改不可写数据属性 / 改原型 ⇒ TypeError；setter 派发成功
+      // （原生 freeze 不禁 setter：访问器属性无 [[Writable]]）。
+      if (plan.act === "setter" || plan.act === "ignore") {
+        // 成功（setter 派发 / __proto__ setter 对原始值静默忽略）
+      } else if (plan.act === "open") {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "Object.assign to frozen target may write a non-writable property",
+        });
+      } else {
+        // "write"（新建键 / 改不可写数据属性）| "throw" | "proto"（改原型）
+        throwAssignTypeError();
+      }
+    }
+    if (plan.act === "throw") throwAssignTypeError();
+    if (plan.act === "write") {
+      // Bug 295：源槽的 symbolKey 标记随拷贝迁移（原生复制的是 symbol 键）
+      setSlot(ts.slots, k, srcSlot.symbolKey ? { value: v, symbolKey: true } : { value: v });
+    } else if (plan.act === "open") {
+      ts.open = true;
+    } else if (plan.act === "proto") {
+      setProtoAbs(target, plan.proto);
+    } else if (plan.act === "setter") {
+      plan.set(target, v);
+    }
+    // "ignore"：__proto__ setter 对原始值静默忽略
+  }
+  if (ss.open) ts.open = true;
+}
+
+/** brand（原型对象）目标 × obj 源：写内层 obj 的可枚举自有键值对。 */
+function assignBrandFromObj(
+  target: Abs,
+  src: Abs,
+  st: "nonext" | "sealed" | "frozen" | undefined,
+): void {
+  const ss = src.shape as ObjShape;
+  const entries = enumOwnKeys(src, ss.slots).map(
+    (k) => [k, readProperty(src, k), ss.slots[k]?.symbolKey === true] as [string, Abs, boolean],
+  );
+  frozenBrandGuard(target, entries, st);
+  assignIntoBrandInner(target, entries, st);
+}
+
+/** brand（原型对象）目标 × 非 obj 源（tuple / 字符串下标键投影）。 */
+function assignBrandFromSlots(
+  target: Abs,
+  srcSlots: Record<string, { value: Abs }>,
+  st: "nonext" | "sealed" | "frozen" | undefined,
+): void {
+  const entries = Object.entries(srcSlots).map(([k, s]) => [k, s.value] as [string, Abs]);
+  frozenBrandGuard(target, entries, st);
+  assignIntoBrandInner(target, entries, st);
+}
+
+/**
+ * frozen 原型对象（brand）目标：数据属性不可写 + 不可扩展 ⇒ 除 setter
+ * 派发外任何键写都失败（原生 TypeError）。
+ */
+function frozenBrandGuard(
+  target: Abs,
+  entries: (readonly [string, Abs] | readonly [string, Abs, boolean])[],
+  st: "nonext" | "sealed" | "frozen" | undefined,
+): void {
+  if (st !== "frozen") return;
+  const inner = target.shape.k === "brand" ? target.shape.shape : undefined;
+  if (!inner || inner.shape.k !== "obj") return;
+  for (const [k] of entries) {
+    const ownAcc = lookupObjAccessor(inner, k);
+    if (ownAcc?.set) continue; // setter 派发 ⇒ 成功（原生 freeze 不禁 setter）
+    throwAssignTypeError(); // getter-only / 数据属性 / 新建键 ⇒ TypeError
+  }
+}
+
+/**
+ * 数组 target 的逐键写：与原生同序处理 length 键与下标键（先写后截断可
+ * 抹掉写入）。getter 源键调用 getter；frozen/sealed 新下标 strict TypeError。
+ */
+function assignArrayTarget(
+  target: Abs,
+  src: Abs,
+  st: "nonext" | "sealed" | "frozen" | undefined,
+): void {
+  const ts = target.shape as Extract<Abs["shape"], { k: "tuple" }>;
+  const ss = src.shape as ObjShape;
+  // 就地改槽（同 $set 引用语义：语句位置无需重绑、别名同步）
+  const elements = ts.elements;
+  let holes = ts.holes ?? [];
+  let len = elements.length;
+  const origLen = len;
+  for (const [k, s] of Object.entries(ss.slots)) {
+    if (st === "frozen") {
+      // frozen 数组：length 与下标皆不可写、且不可扩展 ⇒ 任何写都 TypeError
+      // （原生 `Object.assign(Object.freeze([1]), {0: 2})` 抛 TypeError）
+      throwAssignTypeError();
+    }
+    if (k === "length") {
+      const a = lookupObjAccessor(src, k);
+      const vAbs = a?.get ? a.get(src) : s.value;
+      const lv = vAbs.term?.op === "lit" ? vAbs.term.value : undefined;
+      if (typeof lv !== "number" || !Number.isInteger(lv) || lv < 0) {
+        // 非法/非字面量 length 写：原生 RangeError（"Invalid array length"）
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      if (lv > TUPLE_MATERIALIZE_CAP) {
+        // 合法但巨大：不物化巨 tuple，就地降 arr
+        const el = elements.length ? elements.reduce((x, y) => joinAbs(x, y)) : unknown;
+        target.shape = { k: "arr", element: el };
+        target.conf = "partial";
+        clearStaleTermPred(target);
+        return;
+      }
+      if (lv < len) {
+        elements.length = lv;
+        holes = holes.filter((h) => h < lv);
+      } else {
+        for (let j = len; j < lv; j++) holes.push(j);
+      }
+      len = lv;
+      continue;
+    }
+    const idx = canonicalArrayIndex(k);
+    if (idx === undefined) continue; // expando：Abs 数组不存（length 不受影响）
+    if (idx >= origLen && (st === "sealed" || st === "nonext")) {
+      throwAssignTypeError();
+    }
+    const a = lookupObjAccessor(src, k);
+    const vAbs = a?.get ? a.get(src) : s.value;
+    if (idx >= len) len = idx + 1;
+    if (idx >= elements.length) elements.length = idx + 1;
+    elements[idx] = vAbs;
+    holes = holes.filter((h) => h !== idx);
+  }
+  elements.length = len;
+  target.shape = { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined };
+  clearStaleTermPred(target);
+}
+
+/**
+ * Object.assign 的**单一实现**（invoke.ts 的运行时直接面与
+ * builtins/object/methods.ts 的 second-class 静态面共用）。
+ *
+ * - obj / tuple / brand（原型对象）目标：**就地**写并返回传入的同一个 Abs
+ *   （原生引用语义；别名/语句位可见）；
+ * - prim / boxed 目标：抛错域与降级口径不变（M5：bigint 恒抛 / string
+ *   下标写定抛 / number·bool 安全返原值；抽象目标 may-throw 只记账）；
+ * - 键写语义：源 [[OwnPropertyKeys]] × enumerable 过滤 + 目标逐键 [[Set]]
+ *   （classifyAssignSet：自有/继承访问器、__proto__ 原型 setter、非可写
+ *   拦截、frozen/sealed 写门；brand 目标经 assignIntoBrandInner 同口径——
+ *   sealed / nonext 的新自有键 ⇒ TypeError）。
+ */
+export function performObjectAssign(args: Abs[]): Abs {
+  if (!args.length) return unknown;
+  // target 字面量：null/undefined → TypeError 硬抛；装箱 prim → M5 抛错域
+  const t0 = asAbsVal(args[0]!);
+  if (t0.term?.op === "lit") {
+    if (t0.term.value === null || t0.term.value === undefined) {
+      throwAssignTypeError();
+    }
+    const dom = primTargetAssignThrows(t0, args.slice(1));
+    if (dom === "definite") throwAssignTypeError();
+    if (dom === "may") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "Object.assign boxed target index write may be read-only",
+      });
+      return t0;
+    }
+    if (dom === "never") {
+      // string → 折原始串；number/bool → 原生返回带 expando 的 wrapper →
+      // 有源时降级
+      const type = (t0.shape as { k: "prim"; type: string }).type;
+      if (args.length === 1 || type === "string") return t0;
+    }
+    return unknown;
+  }
+  // Bug 76：symbol prim target（无 lit 项——Symbol() 调用产物）→ ToObject 定抛
+  if (isSymbolAbs(t0)) throwAssignTypeError();
+  // Bug 50：抽象 target（无 lit 项）可能 nullish → ToObject may TypeError
+  {
+    const tk = t0.shape.k;
+    const memberMayNullish = (m: Abs): boolean =>
+      m.shape.k === "any" ||
+      m.shape.k === "unknown" ||
+      (m.term?.op === "lit" && (m.term.value === null || m.term.value === undefined));
+    if (
+      tk === "any" ||
+      tk === "unknown" ||
+      (tk === "sum" && (t0.shape as unknown as { members: Abs[] }).members.some(memberMayNullish))
+    ) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "Object.assign target may be nullish (ToObject throws)",
+      });
+    }
+  }
+  let acc = args[0]!;
+  for (let i = 1; i < args.length; i++) {
+    acc = asAbsVal(acc);
+    const st = extStateOf(acc);
+    const src = asAbsVal(args[i]!);
+    if (st === "frozen") {
+      // 原生 Object.assign 只在**实际执行 Set(target, key, value, true)** 时
+      // 失败：源零可枚举自有键（{} / null / undefined）⇒ 无 [[Set]] ⇒ 不抛；
+      // 源键集不可判 ⇒ 结果不确定（记 may-throw，不定抛）；键集已知非空 ⇒
+      // 逐键判定（写路径的 frozen 分支：新建键 / 不可写数据属性 / 改原型
+      // ⇒ TypeError，setter 派发 ⇒ 成功）。
+      const card = assignSourceKeyCardinality(src);
+      if (card === "none") continue; // 本源不贡献键 ⇒ 不写不抛
+      if (card === "unknown") {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "Object.assign to frozen target may write a non-writable property",
+        });
+        continue; // 键集不可判 ⇒ 不写具体键（frozen 目标键集封闭）
+      }
+    }
+    if (src.shape.k === "obj") {
+      if (acc.shape.k === "obj") {
+        mergeAssignObject(acc, src, st);
+        acc.conf = confJoin(acc.conf, src.conf);
+        clearStaleTermPred(acc);
+      } else if (acc.shape.k === "tuple") {
+        assignArrayTarget(acc, src, st);
+      } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+        // Bug 200/S4：原型对象目标 → 写引擎持有的内层 obj（就地）
+        assignBrandFromObj(acc, src, st);
+      } else if (st === "frozen") {
+        // 无写臂的 frozen 目标形状（arr / fn / 非 obj 内层的 brand…）：
+        // 键集已知非空 ⇒ 任何 [[Set]] 都失败（原生 TypeError）
+        throwAssignTypeError();
+      }
+      continue;
+    }
+    const srcSlots = assignSourceSlots(src);
+    if (srcSlots === undefined) {
+      // 键集未知（strPrim 非字面量 / arr / brand / sum / fn…）：保守降级，
+      // 不得折「无变化」假精确
+      if (acc.shape.k === "obj") {
+        acc.shape.open = true;
+      } else if (acc.shape.k === "tuple") {
+        const els = acc.shape.elements;
+        const joined = els.length ? els.reduce((x, y) => joinAbs(x, y)) : str();
+        acc.shape = { k: "arr", element: joinAbs(joined, str()) };
+        acc.conf = "partial";
+        clearStaleTermPred(acc);
+      }
+      continue;
+    }
+    if (acc.shape.k === "obj" || acc.shape.k === "tuple") {
+      // tuple / 字符串字面量源：合成 obj 源走同一逐键写链（无 getter/length 键）
+      const srcObj = abs({ k: "obj", slots: srcSlots }, undefined, undefined, "exact");
+      if (acc.shape.k === "obj") {
+        mergeAssignObject(acc, srcObj, st);
+        acc.conf = confJoin(acc.conf, src.conf);
+        clearStaleTermPred(acc);
+      } else {
+        assignArrayTarget(acc, srcObj, st);
+      }
+    } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+      assignBrandFromSlots(acc, srcSlots, st);
+    } else if (st === "frozen") {
+      // 同上一臂：无写臂的 frozen 目标形状 + 非空已知键集 ⇒ TypeError
+      throwAssignTypeError();
+    }
+  }
+  return acc;
 }
 
 // ---------------------------------------------------------------------------

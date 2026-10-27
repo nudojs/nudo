@@ -1,18 +1,21 @@
 /**
- * 静态声明导出名回收 —— run.ts 与测试共用。
+ * 静态声明导出名回收 —— 源 AST 口径（transpile/meta）与历史文本口径（回归
+ * 测试）共用同一套名字判定。
  *
- * 格式耦合点：求值引擎 transpile 的发射约定是——顶层 function 声明一律带
- * `export ` 前缀（含未写 export 的，见 stmt.ts exportKw），顶层 export
- * const/let/class 以 `export (const|let) <name>` 发射（class 折成 `let X = $class`）。
- * 因此用正则从生成文本回收导出名。刻意不走 AST——历史口径要复现既有 quirk：
- * 非 export 的顶层 function 也带 export 前缀故被回收。
- * 解构导出（`export const {p}=obj`）**不再**收内部临时名（Bug 156）——它发射为
- * `export { p }` 形态，由运行时改写成 __nudoExportLazy（显式导出面另由
- * run.ts 的 rewriteExportStatements 回收）。
+ * 生产消费方：`transpile/meta.ts` 的 `staticExportDeclNamesOfProgram` /
+ * `topLevelFunctionNamesOfProgram`（单次 parse 的 TranspileMeta）——run.ts 已
+ * 改吃 meta，**不再**从转译产物文本回收任何名字。
  *
- * 若 transpile 改发射格式，本函数与 __tests__/run-export-names.test.ts 须同步。
- * 本模块刻意不进 exec/index.ts 桶导出（不属公开面），仅 run.ts + 测试引用。
+ * 文本口径（`stripStaticExportDecls` / `sourceStaticExportNames`）保留为
+ * 回归测试面：它锁定历史发射约定（顶层 function 只在源导出名命中时带
+ * `export ` 前缀；export const/let/class 以 `export (const|let) <name>` 发射）
+ * 与多声明符/解构导出的名字回收结果（Bug 156 / 280 / 287 / 1121）。
+ *
+ * 本模块刻意不进 exec/index.ts 桶导出（不属公开面），仅 transpile/meta.ts +
+ * 测试引用。
  */
+
+import type { FunctionDeclaration, Statement } from "@babel/types";
 
 import { parseSource } from "../parse-source.ts";
 
@@ -24,7 +27,11 @@ import { parseSource } from "../parse-source.ts";
  * 导出名整条被丢（Bug 287）：导出函数**从不被分析** ⇒ 签名塌 `unknown` ⇒
  * 追加**假** `nudo:unknown-inference` ⇒ L2 门禁**假绿**。
  *
- * 本模块与 run.ts 的 `export * as` 捕获组共用此模式源（同一口径）。
+ * 本模式源**只**服务本模块的两个文本口径正则（`export function` /
+ * `export (const|let)`）。`export * as` 的发射/回收走 AST 口径
+ * （transpile/stmt/statement.ts 的 moduleExportNameOf——按 ModuleExportName
+ * 节点取 Identifier / 字符串字面量名，不用正则），不消费本模式源；两边仅在
+ * 「合法标识符名」的语义上同源。
  */
 export const IDENT_NAME_SRC = "[$_\\p{ID_Start}][$_\\u200C\\u200D\\p{ID_Continue}]*";
 
@@ -74,14 +81,23 @@ export function stripStaticExportDecls(
  * 解析失败（语法错 / 超限）→ 空名单（调用方按「文本口径」降级，不抛）。
  */
 export function sourceStaticExportNames(source: string): string[] {
-  let body: import("@babel/types").Statement[];
   try {
-    body = parseSource(source).program.body;
+    return staticExportDeclNamesOfProgram(parseSource(source).program);
   } catch {
     return [];
   }
+}
+
+/**
+ * 程序体（源 AST）的静态声明导出名。transpileFile 用它决定顶层
+ * FunctionDeclaration 是否发 `export ` 前缀——与 `sourceStaticExportNames`
+ * 同源（后者只是解析 + 本函数），避免「发射口径」与「回收口径」分叉。
+ */
+export function staticExportDeclNamesOfProgram(program: {
+  body: readonly Statement[];
+}): string[] {
   const out: string[] = [];
-  for (const stmt of body) {
+  for (const stmt of program.body) {
     if (stmt.type !== "ExportNamedDeclaration") continue;
     const decl = stmt.declaration;
     if (!decl) continue;
@@ -93,6 +109,31 @@ export function sourceStaticExportNames(source: string): string[] {
       for (const d of decl.declarations) {
         if (d.id.type === "Identifier") out.push(d.id.name);
       }
+    }
+  }
+  return out;
+}
+
+/** 程序体的顶层函数声明名（源序去重；export / default 包裹展开）。 */
+export function topLevelFunctionNamesOfProgram(program: {
+  body: readonly Statement[];
+}): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (decl: FunctionDeclaration | null | undefined): void => {
+    if (!decl?.id?.name) return;
+    if (seen.has(decl.id.name)) return;
+    seen.add(decl.id.name);
+    out.push(decl.id.name);
+  };
+  for (const stmt of program.body) {
+    if (stmt.type === "FunctionDeclaration") push(stmt);
+    else if (
+      (stmt.type === "ExportNamedDeclaration" ||
+        stmt.type === "ExportDefaultDeclaration") &&
+      stmt.declaration?.type === "FunctionDeclaration"
+    ) {
+      push(stmt.declaration);
     }
   }
   return out;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
-import { evalAbsModuleGraph } from "@nudojs/service";
+import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "@nudojs/service";
 import { runTranspiled, callTranspiledExportFull, litValue, numLit, type Abs } from "@nudojs/core";
 import { tmpProject as makeTmpProject } from "./tmp-project.ts";
 
@@ -224,5 +224,18 @@ export function f(x) { return maybe(x); }
     const res = callTranspiledExportFull(run, "f", [numLit(1)]);
     // may-throw：throws 面必须非 never（不得丢弃）
     expect(res.throws.shape.k).not.toBe("never");
+  });
+
+  it("collectAbsBindingsFromGraph exposes private top-level fn declarations as fn Abs", () => {
+    const src = `const x = 42;
+function add(a, b) { return a + b; }
+export { x };
+`;
+    const binds = collectAbsBindingsFromGraph(src, "/tmp/bindings-private-fn.js");
+    const add = binds.get("add");
+    expect(add).toBeDefined();
+    // 私有函数不在导出面（Object.keys），但绑定面按源码形参表转成 fn Abs
+    expect(add!.shape.k).toBe("fn");
+    expect((add!.shape as { params?: string[] }).params).toEqual(["a", "b"]);
   });
 });

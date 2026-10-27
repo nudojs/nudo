@@ -366,8 +366,16 @@ const assignGuardTarget = (n: unknown): string | undefined => {
  * 守卫变量在该臂内以 $removeNullish/$removeNull/$removeUndefined/
  * $removeMemberNullish 影子重绑，成员读写不再记 may-throw（issue #97：
  * `if (p === null) return -1; p.major`；#118：`if (o.p) return o.p.q`）。
+ *
+ * `undefinedIsIntrinsic = false`（本单元内 `undefined` 被用户绑定遮蔽）：
+ * AST 标识符 `undefined` 是普通绑定值（如 `const undefined = 5`）——不作为
+ * nullish 字面量识别（宽松/严格、左右任一位置皆同）。`typeof x ===
+ * "undefined"` 是字符串字面量，不受影响。
  */
-export function nullishGuardOf(test: unknown): NullishGuard | undefined {
+export function nullishGuardOf(
+  test: unknown,
+  undefinedIsIntrinsic = true,
+): NullishGuard | undefined {
   const t = test as {
     type?: string;
     operator?: string;
@@ -376,7 +384,7 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
     argument?: { type?: string; name?: string };
     name?: string;
   };
-  if (t?.type === "LogicalExpression") return compositeNullishGuardOf(t);
+  if (t?.type === "LogicalExpression") return compositeNullishGuardOf(t, undefinedIsIntrinsic);
   if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument?.type === "Identifier" && t.argument.name) {
     return { name: t.argument.name, arm: "alt", grain: "nullish" };
   }
@@ -415,7 +423,10 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   const litGrain = (lit: unknown): "null" | "undefined" | "nullish" | undefined => {
     const ln = lit as { type?: string; name?: string };
     const isNull = ln?.type === "NullLiteral";
-    if (!isNull && ln?.name !== "undefined") return undefined;
+    // 遮蔽的 `undefined` 是普通绑定（如 `const undefined = 5`）⇒ 比较值不是
+    // nullish 字面量，不产守卫事实（宁缺毋假）。
+    const isUndef = undefinedIsIntrinsic && ln?.name === "undefined";
+    if (!isNull && !isUndef) return undefined;
     // 宽松等价：null/undefined 互通（`null == undefined` 为真）→ 假值臂全剪
     if (op === "==" || op === "!=") return "nullish";
     return isNull ? "null" : "undefined";
@@ -438,7 +449,7 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   if (op === "==" || op === "!=") {
     const nullishLit = (n: unknown): boolean => {
       const ln = n as { type?: string; name?: string };
-      return ln?.type === "NullLiteral" || ln?.name === "undefined";
+      return ln?.type === "NullLiteral" || (undefinedIsIntrinsic && ln?.name === "undefined");
     };
     const lm = memberGuardTarget(t.left);
     const rm = memberGuardTarget(t.right);
@@ -464,12 +475,15 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
  * - 两侧都是 nullish 守卫但**异名** → 保守 undefined（与既有语义一致：
  *   只重绑单名的影子机制无法同时表达双事实，宁缺毋假）。
  */
-function compositeNullishGuardOf(test: unknown): NullishGuard | undefined {
+function compositeNullishGuardOf(
+  test: unknown,
+  undefinedIsIntrinsic = true,
+): NullishGuard | undefined {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
   if (t?.type !== "LogicalExpression" || (t.operator !== "||" && t.operator !== "&&")) return undefined;
   const wantArm = t.operator === "||" ? "alt" : "cons";
-  const l = nullishGuardOf(t.left);
-  const r = nullishGuardOf(t.right);
+  const l = nullishGuardOf(t.left, undefinedIsIntrinsic);
+  const r = nullishGuardOf(t.right, undefinedIsIntrinsic);
   const lg = l && l.arm === wantArm ? l : undefined;
   const rg = r && r.arm === wantArm ? r : undefined;
   if (lg && rg) {
@@ -630,18 +644,21 @@ function appendReceiverGuards(test: unknown, out: NullishGuard[]): void {
  * 走本入口。issue #136 (c)：非复合测试式额外并入方法调用接收者事实
  * （collectReceiverFacts，含臂归属的短路方向推理）。
  */
-export function nullishGuardsOf(test: unknown): NullishGuard[] {
+export function nullishGuardsOf(test: unknown, undefinedIsIntrinsic = true): NullishGuard[] {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
   if (t?.type === "LogicalExpression" && (t.operator === "||" || t.operator === "&&")) {
     const wantArm: "cons" | "alt" = t.operator === "||" ? "alt" : "cons";
     const out: NullishGuard[] = [];
-    for (const g of [...nullishGuardsOf(t.left), ...nullishGuardsOf(t.right)]) {
+    for (const g of [
+      ...nullishGuardsOf(t.left, undefinedIsIntrinsic),
+      ...nullishGuardsOf(t.right, undefinedIsIntrinsic),
+    ]) {
       if (g.arm !== wantArm) continue;
       mergeGuardInto(out, g);
     }
     return out;
   }
-  const g = nullishGuardOf(test);
+  const g = nullishGuardOf(test, undefinedIsIntrinsic);
   const out: NullishGuard[] = g ? [g] : [];
   appendReceiverGuards(test, out);
   return out;
@@ -893,10 +910,12 @@ type CaseLabelKind =
   | { k: "undefined" };
 
 /** case 测试节点的标签事实（非字面量 → undefined＝不产事实） */
-function caseLabelOf(node: unknown): CaseLabelKind | undefined {
+function caseLabelOf(node: unknown, undefinedIsIntrinsic = true): CaseLabelKind | undefined {
   const t = node as { type?: string; name?: string };
   if (t?.type === "NullLiteral") return { k: "null" };
-  if (t?.type === "Identifier" && t.name === "undefined") return { k: "undefined" };
+  // 遮蔽的 `undefined`（`const undefined = 5`）是普通绑定 ⇒ case 标签是绑定值
+  // （如 5），不是 undefined 字面量。
+  if (undefinedIsIntrinsic && t?.type === "Identifier" && t.name === "undefined") return { k: "undefined" };
   if (isPrimLitNode(node)) return { k: "prim", v: (node as { value: CaseLabelValue }).value };
   return undefined;
 }
@@ -918,12 +937,12 @@ type ArmLabels = {
 };
 
 /** 收集一臂的 case 标签事实（prim 去重；null/undefined 合并粒度） */
-function armLabelsOf(tests: readonly unknown[]): ArmLabels {
+function armLabelsOf(tests: readonly unknown[], undefinedIsIntrinsic = true): ArmLabels {
   const prims: CaseLabelValue[] = [];
   let nullish: "null" | "undefined" | "nullish" | null = null;
   let allLiteral = true;
   for (const t of tests) {
-    const l = caseLabelOf(t);
+    const l = caseLabelOf(t, undefinedIsIntrinsic);
     if (!l) {
       // 非字面量测试（`case v === null:`）⇒ 该臂的命中值不可由标签确定
       allLiteral = false;
@@ -962,7 +981,7 @@ type NullishCompare = {
 };
 
 /** case 测试节点的 nullish 比较事实（`X === null` / `X == null` / …） */
-function nullishCompareOf(test: unknown): NullishCompare | undefined {
+function nullishCompareOf(test: unknown, undefinedIsIntrinsic = true): NullishCompare | undefined {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
   if (t?.type !== "BinaryExpression") return undefined;
   const op = t.operator;
@@ -973,6 +992,7 @@ function nullishCompareOf(test: unknown): NullishCompare | undefined {
   };
   const isNullLit = (n: unknown): boolean => (n as { type?: string })?.type === "NullLiteral";
   const isUndefIdent = (n: unknown): boolean => {
+    if (!undefinedIsIntrinsic) return false;
     const x = n as { type?: string; name?: string };
     return x?.type === "Identifier" && x.name === "undefined";
   };
@@ -1003,10 +1023,10 @@ function nullishCompareOf(test: unknown): NullishCompare | undefined {
 function singleNullishCompare(arm: {
   tests: readonly unknown[];
   isDefault: boolean;
-}): NullishCompare | undefined {
+}, undefinedIsIntrinsic = true): NullishCompare | undefined {
   if (arm.isDefault) return undefined;
   if (arm.tests.length !== 1) return undefined;
-  return nullishCompareOf(arm.tests[0]);
+  return nullishCompareOf(arm.tests[0], undefinedIsIntrinsic);
 }
 
 /**
@@ -1022,12 +1042,13 @@ function singleNullishCompare(arm: {
 function booleanDiscCaseFacts(
   arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
   i: number,
+  undefinedIsIntrinsic = true,
 ): SwitchCaseFacts | undefined {
   const cmpExclude: { name: string; grain: "null" | "undefined" | "nullish" }[] = [];
-  const own = singleNullishCompare(arms[i]!);
+  const own = singleNullishCompare(arms[i]!, undefinedIsIntrinsic);
   if (own && own.negated) cmpExclude.push({ name: own.name, grain: own.grain });
   for (let j = 0; j < i; j++) {
-    const c = singleNullishCompare(arms[j]!);
+    const c = singleNullishCompare(arms[j]!, undefinedIsIntrinsic);
     if (c && !c.negated) cmpExclude.push({ name: c.name, grain: c.grain });
   }
   if (cmpExclude.length === 0) return undefined;
@@ -1046,10 +1067,15 @@ function booleanDiscCaseFacts(
  *   命中值 ⇒ 与其它臂的标签值互斥）；
  * - default 臂：**之前**的非 default 臂的标签（default 之后的臂可被贯穿
  *   进入——那条路径上判别值可能是它们的标签值 ⇒ 不可排除）。
+ *
+ * `undefinedIsIntrinsic = false`（`undefined` 被用户绑定遮蔽）：`case
+ * undefined:` 是普通表达式（比较绑定值，如 5），不产 undefined 标签事实；
+ * `case v === undefined:` 同理不产 nullish 比较事实。
  */
 export function switchCaseFacts(
   discriminant: unknown,
   arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+  undefinedIsIntrinsic = true,
 ): (SwitchCaseFacts | undefined)[] {
   const disc = discriminant as { type?: string; name?: string; value?: unknown };
   // Bug 241（第二形态）：判别式是**字面量 true** + 非字面量 case 测试
@@ -1058,7 +1084,7 @@ export function switchCaseFacts(
   // 「该测试为假」⇒ 落到后续臂 / default 的路径上，被比较的变量不含该
   // nullish 粒度。判别值是其它值时「未命中」不蕴含「测试为假」⇒ 不产事实。
   if (disc?.type === "BooleanLiteral" && disc.value === true) {
-    return arms.map((_arm, i) => booleanDiscCaseFacts(arms, i));
+    return arms.map((_arm, i) => booleanDiscCaseFacts(arms, i, undefinedIsIntrinsic));
   }
   let name: string;
   let key: string | undefined;
@@ -1070,7 +1096,7 @@ export function switchCaseFacts(
     name = m.name;
     key = m.key;
   }
-  const labels = arms.map((a) => armLabelsOf(a.tests));
+  const labels = arms.map((a) => armLabelsOf(a.tests, undefinedIsIntrinsic));
   return arms.map((arm, i) => {
     const mine = labels[i]!;
     const exclPrim: CaseLabelValue[] = [];

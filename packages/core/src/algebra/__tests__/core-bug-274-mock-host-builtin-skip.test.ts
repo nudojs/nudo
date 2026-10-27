@@ -2,7 +2,7 @@
  * Bug 274 —— `@nudo:mock Math|Date|JSON|Promise|…` 被**静默忽略**。
  *
  * 改前：mock 与 env **合进同一张注入表**，而过滤用的是 **env 专用**的
- * 「不遮蔽宿主内建」跳过表（ENV_SHADOW_SKIP_GLOBALS）⇒ 名单内的 mock 名
+ * 「不遮蔽宿主内建」env-skip 名单（getEnvShadowSkipGlobals）⇒ 名单内的 mock 名
  * 在注入前就被丢弃（no-op）——用户以为 mock 生效，实际跑的是宿主内建。
  *
  * 改后：跳过名单**只作用于 env 全局**；mock 键集不过滤（mock 的值本身

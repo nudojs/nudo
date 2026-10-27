@@ -11,12 +11,11 @@
  * - 共享计数器（`opts.destrTmpSeq`）跨语句/跨形参唯一：`_d{n}`（语句位
  *   init 临时）与 `_n{n}`（子模式临时）共用同一序号源，不得各自新建。
  */
-import type { Statement, Expression, Node } from "@babel/types";
+import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
-import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
-import type { MemberPath } from "./member-path.ts";
+import { memberPathOf, setPathSrc } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
 
@@ -101,21 +100,6 @@ function emitMemberTargetAssign(
  */
 
 /**
- * Bug 111：delete o?.a 链的 OptionalMemberExpression 节点按普通 member 层
- * 处理——object 链递归替换 type（memberPathOf 只读 type/object/property/
- * computed，property/computed 子树浅拷贝原样）；nullish 短路语义由调用方的
- * fork 守卫单独表达，层本身无差别。
- */
-function memberChainSansOptional(n: Node): Node {
-  if ((n as { type?: string }).type !== "OptionalMemberExpression") return n;
-  return {
-    ...(n as unknown as Record<string, unknown>),
-    type: "MemberExpression",
-    object: memberChainSansOptional((n as unknown as { object: Node }).object),
-  } as unknown as Node;
-}
-
-/**
  * 语句位写回收集（历史名保留）：defineProperty/defineProperties 第一实参
  * 与 delete 成员路径的绑定写回。数组 mutator 的写回已随 Bug 49/51 的
  * $invoke 就地变更移除（此处不再发射 $arrMutContainer 行）。
@@ -157,105 +141,13 @@ export function emitArrMutatorRebinds(
     // 数组 mutator（push/pop/…）不再需要语句位写回：$invoke 在调用点经
     // $arrMutContainer 就地变更（Bug 49/51——表达式内连续 mutator 按求值
     // 顺序生效；非可重绑接收者 m.get(k).push(x) 经共享容器别名持久）。
-    // 下方仅保留**可选链** delete 的语句位写回。
-    // Bug 137/176：Object.defineProperty / defineProperties 的写回**下沉到
-    // 求值点**（表达式位自包含 IIFE：实参只求值一次 + 写回同点完成）——
-    // 语句位不得再重发整条调用（实参副作用翻倍），也不得把写回推迟到整条
-    // 语句之后（同表达式内后续读看到变更前的状态）。
-    // delete obj[key] / delete o?.a：语句位置把删键后的容器写回绑定（表达式
-    // 值 $delRes 由 transpile 负责）。Bug 111：OptionalMemberExpression 形
-    // （delete o?.a）此前不匹配该 pass——表达式值对但从未真删（$delRes 是
-    // 非变更值通道）；写回经 nullish 守卫 fork：守卫真（链短路）保根原值，
-    // 假（链走通）从去 nullish 的守卫基删键写回。
-    if (
-      node.type === "UnaryExpression" &&
-      (node as { operator?: string }).operator === "delete" &&
-      (node as { argument?: unknown }).argument &&
-      (((node as { argument?: unknown }).argument as { type?: string }).type === "MemberExpression" ||
-        ((node as { argument?: unknown }).argument as { type?: string }).type ===
-          "OptionalMemberExpression")
-    ) {
-      const m = (node as { argument: unknown }).argument as unknown as {
-        object: Node;
-        property: Node;
-        computed: boolean;
-        type: string;
-      };
-      // optional 链按普通 member 层处理（memberPathOf 只读 type/object/
-      // property/computed；nullish 短路语义由外层 fork 守卫单独表达）
-      const path = memberPathOf(
-        (m.type === "OptionalMemberExpression"
-          ? memberChainSansOptional(m as unknown as Node)
-          : m) as Parameters<
-          typeof memberPathOf
-        >[0],
-        opts,
-      );
-      if (path) {
-        // 求值序首个 optional hop 的层号（链上 `?.` 跳点节点带 optional
-        // 标记——其后的外层链接同为 OptionalMemberExpression 类型但无标记；
-        // walk 深度 s 的标记节点对应层 N-1-s，其 object 即守卫基）；-1 = 无
-        let guardLayer = -1;
-        if (m.type === "OptionalMemberExpression") {
-          let cur: unknown = m;
-          let s = 0;
-          while (cur && typeof cur === "object") {
-            const c = cur as { type?: string; optional?: boolean; object?: unknown };
-            if (c.type === "OptionalMemberExpression" && c.optional === true) {
-              guardLayer = path.layers.length - 1 - s;
-              break;
-            }
-            if (c.type !== "MemberExpression" && c.type !== "OptionalMemberExpression") break;
-            cur = c.object;
-            s++;
-          }
-        }
-        // Bug 176：**非**可选链的 delete 写回已下沉到**求值点**（表达式位
-        // 自包含 IIFE：删除与布尔值同点产出）——语句位不得再写（否则写回被
-        // 推迟到整条语句之后，同表达式内后续读看到变更前的状态）。
-        if (guardLayer >= 0) {
-          const parentRead =
-            path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
-          // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
-          // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
-          const keySrc = m.computed
-            ? emitTranspileExpression(m.property as Expression, opts)
-            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-          // 守卫基 = 首个 optional hop 的 object 读；删键链从 $removeNullish
-          // 收窄后的守卫基重建（守卫抽象时 sum 的 nullish 成员不得进 del 臂，
-          // 否则误记 may-throw——原生 delete o?.a 恒不抛）
-          const guardSrc = guardLayer === 0 ? path.rootSrc : readPrefix(path, guardLayer - 1);
-          // narrow / 前缀路径只作**读**用（$get / $set 的基读）——rootTarget
-          // 沿用外层根的裸绑定名（写回目标永远是外层根）。
-          const narrow: MemberPath = {
-            rootSrc: `$removeNullish(${guardSrc})`,
-            rootTarget: path.rootTarget,
-            layers: path.layers.slice(guardLayer),
-            rootRebindable: path.rootRebindable,
-          };
-          const narrowParent =
-            narrow.layers.length >= 2
-              ? readPrefix(narrow, narrow.layers.length - 2)
-              : narrow.rootSrc;
-          const innerDel = setParentPathSrc(narrow, `$del(${narrowParent}, ${keySrc})`);
-          const armSrc =
-            guardLayer === 0
-              ? innerDel
-              : setPathSrc(
-                  {
-                    rootSrc: path.rootSrc,
-                    rootTarget: path.rootTarget,
-                    layers: path.layers.slice(0, guardLayer),
-                    rootRebindable: path.rootRebindable,
-                  } as MemberPath,
-                  innerDel,
-                );
-          lines.push(
-            `${pad}${path.rootTarget} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
-          );
-        }
-      }
-    }
+    // Object.defineProperty / defineProperties 的写回也**下沉到求值点**
+    // （表达式位自包含 IIFE：实参只求值一次 + 写回同点完成）——语句位不得
+    // 再重发整条调用，否则实参副作用翻倍 / 同表达式后续读看到旧状态。
+    // delete 的语句位写回已整体移除：表达式级 IIFE 自包含完成删除与布尔值
+    // （memberDeleteIfe / emitDeleteChainFrom：$del + $delRes 同点产出，
+    // Proxy 陷阱恰好一次）。语句位若再补写回，可选链的计算键会二次求值、
+    // deleteProperty 陷阱会被调用两次（原生恰好一次）。
     // Bug 96：语句位 String.prototype.match/replace/replaceAll 的**参数位**
     // RegExp 状态写回（spec @@match/@replace 对原正则 Set lastIndex；值通道
     // stringRegexMethod 在实参 regex 的副本上执行）。仅字面量字符串接收者 +
@@ -747,8 +639,9 @@ export interface ForkTmpNames {
  *
  * ⚠ **成对一致是硬约束**：同一批名字在「声明点」与「**全部**引用点」必须
  * 同名 ⇒ 声明点（`forkBindingDecls`）与引用点（`forkArmThunk` /
- * `forkJoinBindings` / `stmt/statement.ts` 与 `stmt/fn-body.ts` 的 inline
- * `wrapArm` 副本）**一律走本分配器**（纯函数 + 确定性 ⇒ 两侧同名）。
+ * `forkArmThunkExpr` / `forkJoinBindings`）**一律走本分配器**（纯函数 +
+ * 确定性 ⇒ 两侧同名）。语句位 if 分叉（`stmt/statement.ts`）与早退提升
+ * （`stmt/fn-body.ts`）共用 `forkArmThunkExpr`，不得再各自内联副本。
  */
 export function forkTmpNames(names: readonly string[], opts: TranspileOptions): ForkTmpNames {
   const bases: string[] = [];
@@ -851,9 +744,13 @@ export function forkArmThunk(
   const t = forkTmpNames(names, opts);
   const slots = arm === 0 ? t.arm1 : t.arm2;
   const sets = arm === 0 ? t.arm1Set : t.arm2Set;
+  // 同一次恢复共用身份图 memo：别名绑定必须落到同一个副本，自引用容器
+  // 也不能在恢复期栈溢出。
+  const memo = internalTmpName("__fkArmMemo", opts);
   return [
     `() => {`,
-    ...names.map((n, i) => `  ${n} = $copy(${t.snap[i]});`),
+    `  const ${memo} = new WeakMap();`,
+    ...names.map((n, i) => `  ${n} = $copy(${t.snap[i]}, ${memo});`),
     `  let ${t.cont} = true;`,
     `  try {`,
     ...bodyLines.map((l) => `    ${l}`),
@@ -863,21 +760,77 @@ export function forkArmThunk(
     `  } finally {`,
     `    if (${t.cont}) {`,
     ...names.map((n, i) => `      ${slots[i]} = ${n};`),
-    ...names.map((n, i) => `      ${sets[i]} = true;`),
+    ...names.map((_n, i) => `      ${sets[i]} = true;`),
     `    }`,
     `  }`,
     `}`,
   ].join("\n");
 }
 
+/**
+ * fork 臂 thunk（**thunk 表达式形态**）：`thunkExpr` 是已发射的 thunk
+ * 表达式源（如 `transpileBlockAsThunk` 的 `() => { … }` 产物）——臂入口把
+ * 绑定恢复到快照基线，臂尾把结束态写入本臂槽位。
+ *
+ * 与 {@link forkArmThunk}（body-lines 形态，`expr/short-circuit.ts` 的短路
+ * 臂协议）**同协议、不同载体**：本函数把整个 thunk 当一条 `return (…)();`
+ * 表达式，body-lines 形态直接内联语句行（缩进 / 换行不同，各自被既有产物
+ * 快照钉住，故保留两个入口）。
+ *
+ * `stmt/statement.ts`（语句位 if 分叉）与 `stmt/fn-body.ts`（早退提升）此前
+ * 各有逐字相同的 inline 副本——名字成对一致靠手工同步；现统一走本函数。
+ * 无 fork 绑定时原样返回 `thunkExpr`（调用方依赖该早退：不引入包装层）。
+ *
+ * @param arm 臂序（0 = cons 臂 / 1 = alt 臂）
+ * @param padIn 臂内缩进（调用方 `indent(depth + 1)`；与既有产物逐字一致）
+ */
+export function forkArmThunkExpr(
+  thunkExpr: string,
+  arm: 0 | 1,
+  names: string[],
+  padIn: string,
+  opts: TranspileOptions,
+): string {
+  if (names.length === 0) return thunkExpr;
+  const t = forkTmpNames(names, opts);
+  const slots = arm === 0 ? t.arm1 : t.arm2;
+  const sets = arm === 0 ? t.arm1Set : t.arm2Set;
+  // 同 forkArmThunk：一次恢复一组绑定，共享身份图 memo。
+  const memo = internalTmpName("__fkArmMemo", opts);
+  return [
+    `() => {`,
+    `${padIn}const ${memo} = new WeakMap();`,
+    ...names.map((n, i) => `${padIn}${n} = $copy(${t.snap[i]}, ${memo});`),
+    `${padIn}let ${t.cont} = true;`,
+    `${padIn}try {`,
+    `${padIn}  return (${thunkExpr})();`,
+    `${padIn}} catch (e) {`,
+    `${padIn}  if ($isForkExit(e)) ${t.cont} = false;`,
+    `${padIn}  throw e;`,
+    `${padIn}} finally {`,
+    `${padIn}  if (${t.cont}) {`,
+    ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
+    ...names.map((_n, i) => `${padIn}    ${sets[i]} = true;`),
+    `${padIn}  }`,
+    `${padIn}}`,
+    `}`,
+  ].join("\n");
+}
+
 /** fork 绑定声明：snapshot（深拷贝——容器写已就地化，臂间必须状态隔离）+ 两臂槽位 + ran 标志 */
 export function forkBindingDecls(names: string[], pad = "", opts: TranspileOptions): string[] {
+  if (names.length === 0) return [];
   const t = forkTmpNames(names, opts);
-  return names.flatMap((n, i) => [
-    `${pad}const ${t.snap[i]} = $copy(${n});`,
-    `${pad}let ${t.arm1[i]}; let ${t.arm2[i]};`,
-    `${pad}let ${t.arm1Set[i]} = false; let ${t.arm2Set[i]} = false;`,
-  ]);
+  // 同一组快照共享 memo：别名绑定指向同一副本，共享子图不重复深拷贝。
+  const memo = internalTmpName("__fkCopyMemo", opts);
+  return [
+    `${pad}const ${memo} = new WeakMap();`,
+    ...names.flatMap((n, i) => [
+      `${pad}const ${t.snap[i]} = $copy(${n}, ${memo});`,
+      `${pad}let ${t.arm1[i]}; let ${t.arm2[i]};`,
+      `${pad}let ${t.arm1Set[i]} = false; let ${t.arm2Set[i]} = false;`,
+    ]),
+  ];
 }
 
 /** fork 后把各臂结束态 join 回绑定（仅 join **未**以 return/throw 退出的臂） */

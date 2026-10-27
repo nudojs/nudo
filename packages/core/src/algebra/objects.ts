@@ -3,11 +3,8 @@
  * 纪律：积之和默认；optional 塌缩是显式损失；函数并保输入→输出相关性。
  */
 
-import type { Term } from "./term.ts";
-import { termToString, litKeyString } from "./term.ts";
-import type { Pred } from "./pred.ts";
-import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
+import { absKey } from "./abs-key.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
 import { enumOwnKeys, setPropFlags, getPropFlags } from "./builtins/invariants.ts";
@@ -53,6 +50,34 @@ export function canonicalArrayIndex(v: unknown): number | undefined {
     if (n < 4294967295) return n;
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// 函数 expando 槽面所有权（$set fn 臂与 $copy 快照共用）
+//
+// fn Abs 的 slots 有两种来源：
+// - 出生自带（env 的 dual-facet 静态面如 Number.isFinite）——就地突变会
+//   跨 run 泄漏，写路径必须维持只读；
+// - 求值期 expando（`g.x = 1`）——引用语义可写。
+// 登记表放本模块（叶子侧）避免 containers/obj.ts ↔ containers/member.ts
+// 互相 import 形成模块环（环会让 run.ts 的 transpile 绑定在求值期为
+// undefined）。
+// ---------------------------------------------------------------------------
+const userFnSlotOwners = new WeakSet<object>();
+
+/** 标记 fn Abs 的槽面归求值引擎所有（可写 expando）。 */
+export function markUserFnSlots(a: Abs): void {
+  userFnSlotOwners.add(a as object);
+}
+
+/** 该 fn Abs 的槽面是否可写（引擎自建 expando）。 */
+export function isUserFnSlotOwner(a: Abs): boolean {
+  return userFnSlotOwners.has(a as object);
+}
+
+/** $copy 快照迁移：源槽面可写 ⇒ 副本同样可写（副本独立、臂内写不丢失）。 */
+export function migrateUserFnSlots(from: Abs, to: Abs): void {
+  if (userFnSlotOwners.has(from as object)) userFnSlotOwners.add(to as object);
 }
 
 // ---------------------------------------------------------------------------
@@ -741,10 +766,14 @@ function flattenSum(xs: Abs[]): Abs[] {
   }
   // 去重按结构 key，不能按「shape 粗等」——`fn:2`/`sum:2`/`other` 会把
   // 不同重载 / 不同数组元素 / 不同 brand 塌缩成一个（历史 soundness bug）。
+  // fn 额外带**实现身份**：同一 shape 的两个不同函数体是不同值
+  // （`cond ? (() => 1) : (() => 2)` 调用结果不是 single exact）。
+  // 注：absShapeKey 保持纯结构契约（env-loader 的「同一声明」去重依赖
+  // 结构相等），实现身份只在 makeSum 去重面生效。
   const seen = new Set<string>();
   const deduped: Abs[] = [];
   for (const x of out) {
-    const key = absShapeKey(x);
+    const key = sumDedupeKey(x);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(x);
@@ -752,73 +781,103 @@ function flattenSum(xs: Abs[]): Abs[] {
   return deduped;
 }
 
-export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
-  if (seen.has(a)) return "cycle";
+/** makeSum 去重键：结构键 + 递归的 fn 实现身份与 conf。
+ *
+ * absShapeKey 是**纯结构**键（env-loader 的「同一 env 声明」去重依赖它；
+ * 不含函数体/conf）。makeSum 还必须区分「结构相同但值不同」的情形：
+ * - 嵌套 fn（obj 槽 / tuple 元素 / paramTypes / returnType / slots /
+ *   brand·eff 内层 / sum 成员）的函数体身份逐层进键——否则
+ *   `if (cond) { g.x = () => 1 } else { g.x = () => 2 }` 会被去重成一个；
+ * - 每个 Abs 节点的 conf 进键（同结构不同置信度不是同一值）。
+ */
+function sumDedupeKey(a: Abs): string {
+  return `${absShapeKey(a)}${identitySuffix(a)}`;
+}
+
+/** per-process fn impl id（同 impl = 同一函数值；$copy 副本共享 impl）。 */
+function fnImplIdOf(impl: object): number {
+  let id = fnImplIds.get(impl);
+  if (id === undefined) {
+    id = ++fnImplIdSeq;
+    fnImplIds.set(impl, id);
+  }
+  return id;
+}
+
+/** 递归收集每个节点的 conf + fn 实现身份（sumDedupeKey 的附加面）。 */
+function identitySuffix(a: Abs, seen: Set<object> = new Set()): string {
+  if (seen.has(a)) return "";
   seen.add(a);
   try {
+    let out = `|c:${a.conf}`;
     const s = a.shape;
-    // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
-    if (s.k === "prim") {
-      // litValue 哨兵对 lit(undefined) 折成 undefined，须看 term。
-      // -0/0 身份不同（joinValues 用 Object.is），键走 litKeyString 防 String 折叠
-      if (a.term?.op === "lit") return `prim:${s.type}:${litKeyString(a.term.value)}`;
-      const t = a.term ? termToString(a.term) : "";
-      const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
-      return `prim:${s.type}:${t}:${p}`;
-    }
-    if (s.k === "never") return "never";
-    if (s.k === "any") return "any";
-    if (s.k === "unknown") {
-      // lit null/undefined 与真 unknown 不可合并（存在性语义）。
-      // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term。
-      if (a.term?.op === "lit") {
-        const v = a.term.value;
-        if (v === undefined) return "unknown:undefined";
-        if (v === null) return "unknown:null";
-        return `unknown:lit:${typeof v}:${litKeyString(v)}`;
+    switch (s.k) {
+      case "arr":
+        out += identitySuffix(s.element, seen);
+        break;
+      case "tuple": {
+        out += `|t:${s.elements.map((e) => identitySuffix(e, seen)).join(",")}`;
+        if (s.rest) out += `|tr:${identitySuffix(s.rest, seen)}`;
+        break;
       }
-      // 非字面量 term（var/app）不得与真 unknown 同键
-      if (a.term) return `unknown:${termToString(a.term)}`;
-      return "unknown";
+      case "fn": {
+        const impl = getFnImpl(a);
+        out += impl ? `|impl#${fnImplIdOf(impl as object)}` : "|impl:none";
+        if (s.paramTypes) {
+          out += `|p:${s.paramTypes.map((t) => identitySuffix(t, seen)).join(",")}`;
+        }
+        if (s.returnType) out += `|r:${identitySuffix(s.returnType, seen)}`;
+        if (s.slots) {
+          for (const k of Object.keys(s.slots).sort()) {
+            out += `|s:${k}${identitySuffix(s.slots[k]!.value, seen)}`;
+          }
+        }
+        break;
+      }
+      case "obj": {
+        for (const k of Object.keys(s.slots).sort()) {
+          out += `|o:${k}${identitySuffix(s.slots[k]!.value, seen)}`;
+        }
+        if (s.index) {
+          out += `|ik:${identitySuffix(s.index.key, seen)}|iv:${identitySuffix(s.index.value, seen)}`;
+        }
+        break;
+      }
+      case "brand":
+        out += identitySuffix(s.shape, seen);
+        break;
+      case "eff": {
+        out += identitySuffix(s.inner, seen);
+        if (s.rejected) out += `|rj:${identitySuffix(s.rejected, seen)}`;
+        out += s.unsettled ? "|uns" : "";
+        break;
+      }
+      case "sum":
+        out += `|m:${s.members.map((m) => identitySuffix(m, seen)).join(",")}`;
+        break;
+      default:
+        break;
     }
-    if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
-    if (s.k === "tuple") {
-      // holes 必须进 key：[1,,3] 与 [1, undefined, 3] 可观察不同，不得去重合并
-      const holes = s.holes && s.holes.length > 0 ? `holes:${[...s.holes].sort((a, b) => a - b).join(",")}` : "";
-      const els = s.elements.map((e) => absShapeKey(e, seen)).join(",");
-      const rest = s.rest ? `...${absShapeKey(s.rest, seen)}` : "";
-      return `tuple[${els}${rest}${holes ? `;${holes}` : ""}]`;
-    }
-    if (s.k === "brand") return `brand:${s.name}(${absShapeKey(s.shape, seen)})`;
-    if (s.k === "eff") return `eff:${s.eff}<${absShapeKey(s.inner, seen)}>`;
-    if (s.k === "obj") {
-      const slots = Object.keys(s.slots)
-        .sort()
-        .map((k) => {
-          const slot = s.slots[k]!;
-          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
-          return `${k}${flags}:${absShapeKey(slot.value, seen)}`;
-        })
-        .join(",");
-      const idx = s.index
-        ? `idx(${absShapeKey(s.index.key, seen)}→${absShapeKey(s.index.value, seen)})`
-        : "";
-      const open = s.open ? "open" : "";
-      return `obj{${slots}}${idx}${open}`;
-    }
-    if (s.k === "fn") {
-      const pts = (s.paramTypes ?? []).map((t) => absShapeKey(t, seen)).join(",");
-      const ret = s.returnType ? absShapeKey(s.returnType, seen) : "?";
-      const name = s.name ? `#${s.name}` : "";
-      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
-    }
-    if (s.k === "sum") {
-      return `sum(${s.members.map((m) => absShapeKey(m, seen)).join("|")})`;
-    }
-    return "other";
+    return out;
   } finally {
     seen.delete(a);
   }
+}
+
+/** 稳定 per-process 函数实现身份（去重键用）：同一 impl 对象 = 同一函数值。
+ *  `$copy` fork 快照共享 impl ⇒ 副本同键（可安全去重）；不同函数体
+ *  （含匿名箭头）各有 impl ⇒ 不同键（不得因同名同形塌缩）。 */
+const fnImplIds = new WeakMap<object, number>();
+let fnImplIdSeq = 0;
+
+/**
+ * 结构键的最小面（join 去重 / 槽相等 / env 声明去重共用）。
+ * 实现见 abs-key.ts（shape × term × pred 的单一序列化）；本函数保持
+ * **纯结构**契约——fn 实现身份不进键（env-loader 的「同一声明」去重依赖
+ * 结构相等）。makeSum/flattenSum 的去重键另有 sumDedupeKey 附加 impl 身份。
+ */
+export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
+  return absKey(a, seen);
 }
 
 // --- 函数重载并 ---
@@ -842,7 +901,77 @@ export function fnOf(params: string[], name?: string): Abs {
 }
 
 /**
+ * 同签名函数 join 的**可观察元数据**是否相同（相同才允许折叠成 `a`）。
+ *
+ * 为什么不能只看 name+params：函数对象是**可扩展对象**——expando 槽
+ * （`g.x = 1`）与 paramTypes/returnType/optionalParams/ctor 都影响后续
+ * 读取/调用/构造。任一处不同 ⇒ 两侧是不同值，折叠成 `a` 是假精确
+ * （`if (cond) { g.x = 1 } else { g.x = 2 }` 折成 `2 #exact`）。
+ * 不同时由 joinFunctions 返 makeSum（成员各自保留 impl/槽面，读/调用
+ * 逐成员派发后 join）。
+ */
+function sameFnObservables(
+  a: Extract<Shape, { k: "fn" }>,
+  b: Extract<Shape, { k: "fn" }>,
+): boolean {
+  if (a.ctor !== b.ctor) return false;
+  const ao = a.optionalParams;
+  const bo = b.optionalParams;
+  const arity = Math.max(ao?.length ?? 0, bo?.length ?? 0);
+  for (let i = 0; i < arity; i++) {
+    if ((ao?.[i] === true) !== (bo?.[i] === true)) return false;
+  }
+  if (!sameAbsList(a.paramTypes, b.paramTypes)) return false;
+  if (!sameOptionalAbs(a.returnType, b.returnType)) return false;
+  return sameFnSlots(a.slots, b.slots);
+}
+
+/** 值相等（同引用或结构键 + conf 一致——不拿不可判当相同）。
+ *  函数值额外比对 impl 身份：两个匿名箭头 shape 完全相同但函数体不同
+ *  （`g.h = () => 1` vs `() => 2`）时，结构键无法区分 ⇒ 必须视为不同值。 */
+function sameOptionalAbs(a: Abs | undefined, b: Abs | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const aFn = a.shape.k === "fn";
+  const bFn = b.shape.k === "fn";
+  if (aFn || bFn) {
+    if (!aFn || !bFn) return false;
+    if (getFnImpl(a) !== getFnImpl(b)) return false;
+  }
+  return a.conf === b.conf && absShapeKey(a) === absShapeKey(b);
+}
+
+function sameAbsList(a: Abs[] | undefined, b: Abs[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!sameOptionalAbs(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+function sameFnSlots(
+  a: Extract<Shape, { k: "fn" }>["slots"],
+  b: Extract<Shape, { k: "fn" }>["slots"],
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  for (const k of ak) {
+    const sa = getSlot(a, k);
+    const sb = getSlot(b, k);
+    if (!sa || !sb) return false;
+    if ((sa.optional === true) !== (sb.optional === true)) return false;
+    if ((sa.readonly === true) !== (sb.readonly === true)) return false;
+    if (!sameOptionalAbs(sa.value, sb.value)) return false;
+  }
+  return true;
+}
+
+/**
  * 函数 join：签名并（重载），禁止 (A|C)→(B|D)。
+ * 同名同参且**可观察元数据全同** → 同一值（折叠成 a）；否则 sum。
  */
 export function joinFunctions(a: Abs, b: Abs): Abs {
   const sa = a.shape;
@@ -855,7 +984,10 @@ export function joinFunctions(a: Abs, b: Abs): Abs {
       sa.params.length === sb.params.length &&
       sa.params.every((p, i) => p === sb.params[i])
     ) {
-      return a;
+      // 函数实现身份同样必须相同：同名同参不同函数体（不同 impl）不是同一值
+      return getFnImpl(a) === getFnImpl(b) && sameFnObservables(sa, sb)
+        ? a
+        : makeSum(a, b);
     }
   }
   return makeSum(a, b);

@@ -5,12 +5,16 @@
  * - $copy 是 fork/switch/循环 pack 的状态分离机制：所有可挂侧表的形状
  *   （extState/propFlags/accessorTable/nullProto/matchIter）必须随快照
  *   迁移，副本丢失侧表 = 臂内写不再硬抛 / 延迟异常静默丢弃。
+ * - fn 形状同样是可扩展对象：expando 槽面（含 optionalParams/ctor/类型
+ *   侧信息）逐臂独立复制（共享槽面会让兄弟臂写互相覆盖）；impl 身份、
+ *   槽面写权限侧表（objects.ts 的 userFnSlotOwners）、null-proto 标记与
+ *   新鲜实例 id 随副本迁移（侧表丢失 ⇒ `__proto__` 读翻转 / `===` 退化）。
  * - $spread 原生语义会**调用**源对象 getter 并把结果拷为数据槽——必须
  *   用 getter 求值后的副本（accessorTable 求值，抛/失败折 unknown）。
  * - $objRest 同理：原生 CopyDataProperties 对保留键发 Get ⇒ getter 必须
  *   被调用（副作用发生），rest 槽落 getter 的**返回值**（非占位 undefined）。
  */
-import type { Abs } from "../../../abs.ts";
+import type { Abs, Shape } from "../../../abs.ts";
 import { abs, confJoin, litValue, unknown } from "../../../abs.ts";
 import {
   joinAbs,
@@ -20,10 +24,12 @@ import {
   type ObjShape,
   type Slot,
   migrateNullProto,
+  migrateUserFnSlots,
   getSlot,
   setSlot,
   setProtoAbs,
 } from "../../../objects.ts";
+import { getFnImpl, attachFnImpl } from "../../../abs-fn.ts";
 import {
   migrateInvariants,
   enumOwnKeys,
@@ -37,17 +43,17 @@ import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts"
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, classInstanceInnerOf } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
-import { markFreshInstance } from "../../../instance-id.ts";
+import { markFreshInstance, migrateFreshInstance } from "../../../instance-id.ts";
 import {
   NudoThrow,
   clearStaleTermPred,
   asAbsVal,
 } from "../state.ts";
-import { $in, evalClassChain } from "../members.ts";
+import { evalClassChain } from "../members.ts";
 import { migrateAccessors, accessorTable } from "../../../accessors.ts";
 import { copyMatchIterTables } from "../../match-iter.ts";
 import { slotKeyOfSymbolAbs } from "../symbol-key.ts";
-import { $call } from "../../call.ts";
+import "../../call.ts";
 
 /**
  * 私有名接收者校验（Bug 78 "#" 混淆键设计）：原生
@@ -78,7 +84,7 @@ export function privateNameGuard(o: unknown, key: string): void {
     if (!spec) throw new NudoThrow(errorTypeAbs("TypeError"));
     if (classNameOfValue(o as object) === s.name) {
       // 类值接收者：私有静态成员（静态槽/静态访问器/静态方法；
-      // 声明的静态字段——$staticInit 初始化期槽尚未存在）
+      // 声明的静态字段——$class 求值期槽尚未存在）
       if (
         spec.staticAccessors?.[key] ||
         spec.staticMethods?.[key] ||
@@ -141,41 +147,66 @@ export function privateNameGuard(o: unknown, key: string): void {
  * 深拷贝可变容器（fork/switch 快照与循环 pack 用）。
  * 容器写就地进行后（引用语义），分析分支/迭代的状态分离必须靠拷贝——
  * 浅引用快照会让臂间/迭代间互相污染。
+ *
+ * `memo` 是**身份图**：同一原始 Abs 在同一次快照里必须映射到同一个副本。
+ * - 循环引用（`o.self = o`）靠「先占位、后填空」终止递归；
+ * - 共享子图（DAG）不再指数复制；
+ * - 同一次快照/调用边界里的多个绑定保持别名关系（memo 必须由调用方共享；
+ *   `$copy(a)` 单参调用只为兼容旧行为，等价于每次新建 memo）。
+ *
+ * 注意：这只能保证**被复制集合内部**的身份关系。若 `b` 是 `a` 的别名但
+ * 不在同一次快照的绑定集合里，fork/pack 仍会断开 `a`/`b`；调用方必须把
+ * 别名伙伴一起纳入复制集合（见 transpile 的 aliasGroups）。
  */
-export function $copy(a: Abs): Abs {
+export function $copy(a: Abs, memo?: WeakMap<object, Abs>): Abs {
+  return copyWithMemo(a, memo ?? new WeakMap());
+}
+
+function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
+  const hit = memo.get(a as object);
+  if (hit) return hit;
   const s = a.shape;
   // 所有可能挂 extState/propFlags 的形状都必须迁移不变性侧表：
   // fork/switch 用 $copy 做快照，副本丢失 frozen/sealed 会让臂内写不再硬抛
   if (s.k === "tuple") {
+    const elements: Abs[] = [];
     const next = abs(
       {
         k: "tuple",
-        elements: s.elements.map($copy),
-        // rest 槽必须随快照迁移（与 hof snapshotAbs 同口径），否则副本丢尾段
-        ...(s.rest ? { rest: $copy(s.rest) } : {}),
+        elements,
         holes: s.holes ? [...s.holes] : undefined,
       },
       a.term,
       a.pred,
       a.conf,
     );
+    memo.set(a, next);
+    for (const el of s.elements) elements.push(copyWithMemo(el, memo));
+    // rest 槽必须随快照迁移（与 hof snapshotAbs 同口径），否则副本丢尾段
+    if (s.rest) (next.shape as Extract<Shape, { k: "tuple" }>).rest = copyWithMemo(s.rest, memo);
     migrateInvariants(a, next);
     return next;
   }
   if (s.k === "arr") {
-    const next = abs({ k: "arr", element: $copy(s.element) }, a.term, a.pred, a.conf);
+    const next = abs({ k: "arr", element: unknown }, a.term, a.pred, a.conf);
+    memo.set(a, next);
+    (next.shape as Extract<Shape, { k: "arr" }>).element = copyWithMemo(s.element, memo);
     migrateInvariants(a, next);
     return next;
   }
   if (s.k === "obj") {
     const slots: Record<string, Slot> = {};
+    const next = objOf(slots, { open: s.open });
+    memo.set(a, next);
     for (const [k, v] of Object.entries(s.slots)) {
-      setSlot(slots, k, { ...v, value: $copy(v.value) });
+      setSlot(slots, k, { ...v, value: copyWithMemo(v.value, memo) });
     }
-    const next = objOf(slots, {
-      index: s.index ? { key: $copy(s.index.key), value: $copy(s.index.value) } : undefined,
-      open: s.open,
-    });
+    if (s.index) {
+      (next.shape as Extract<Shape, { k: "obj" }>).index = {
+        key: copyWithMemo(s.index.key, memo),
+        value: copyWithMemo(s.index.value, memo),
+      };
+    }
     next.conf = a.conf;
     // term/pred 随快照迁移（与 tuple/arr/sum/eff 分支及 snapshotAbs 同口径；
     // objOf 不带项位——此前 obj 副本丢项，导出桥 $copy 实参后递归各层的
@@ -192,24 +223,70 @@ export function $copy(a: Abs): Abs {
     copyMatchIterTables(a, next);
     return next;
   }
+  if (s.k === "fn") {
+    /**
+     * 函数对象亦是**可扩展对象**：expando 槽 / optionalParams / ctor 随
+     * 快照独立复制——fork 臂共享同一槽面会让兄弟臂的写互相覆盖
+     *（`if (cond) { g.x = 1 } else { g.x = 2 }` 折成 `2 #exact`）。
+     * impl / 槽面所有权是身份侧表，副本必须继承：否则臂内调用退化
+     * unknown、臂内再写 expando 静默丢弃。term/pred/conf 同其它分支。
+     */
+    const shape: Extract<Shape, { k: "fn" }> = { ...s, params: [...s.params] };
+    const next = abs(shape, a.term, a.pred, a.conf);
+    memo.set(a, next);
+    if (s.paramTypes) shape.paramTypes = s.paramTypes.map((t) => copyWithMemo(t, memo));
+    if (s.returnType) shape.returnType = copyWithMemo(s.returnType, memo);
+    if (s.optionalParams) shape.optionalParams = [...s.optionalParams];
+    if (s.slots) {
+      const slots: NonNullable<Extract<Shape, { k: "fn" }>["slots"]> = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        setSlot(slots, k, { ...slot, value: copyWithMemo(slot.value, memo) });
+      }
+      shape.slots = slots;
+    }
+    const impl = getFnImpl(a);
+    if (impl) attachFnImpl(next, impl);
+    migrateUserFnSlots(a, next);
+    migrateInvariants(a, next);
+    // 侧表身份不得随副本丢失：null-proto 标记（`f.__proto__` 读 undefined）
+    // 与新鲜实例 id（strictEq 对不创建事件折 false）。
+    migrateNullProto(a, next);
+    migrateFreshInstance(a, next);
+    return next;
+  }
   if (s.k === "brand") {
-    const inner = $copy(s.shape);
-    const next = abs({ k: "brand", name: s.name, shape: inner }, a.term, a.pred, a.conf);
+    // 先占位（inner 暂 unknown），再解引用 inner：brand 自引用（类实例字段
+    // 指回自身）也由 memo 终止。
+    const next = abs({ ...s, shape: unknown }, a.term, a.pred, a.conf);
+    memo.set(a, next);
+    (next.shape as Extract<Shape, { k: "brand" }>).shape = copyWithMemo(s.shape, memo);
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
     migrateInvariants(a, next);
+    // 新鲜实例 id 随快照迁移（fork 副本 = 同一次创建事件）：否则
+    // `a === new C()` 从 false 退化成 unknown（同 fn 分支的缺口）。
+    migrateFreshInstance(a, next);
     // RegExpMatchIterator brand：匹配项侧表随副本迁移
     copyMatchIterTables(a, next);
     return next;
   }
   if (s.k === "eff") {
-    const next = abs({ k: "eff", eff: s.eff, inner: $copy(s.inner) }, a.term, a.pred, a.conf);
+    // rejected/unsettled 是 promise 的可观测态——副本必须保留（旧实现只
+    // 复制 inner，fork 后拒绝臂/悬挂面静默丢失）。
+    const next = abs({ ...s, inner: unknown }, a.term, a.pred, a.conf);
+    memo.set(a, next);
+    (next.shape as Extract<Shape, { k: "eff" }>).inner = copyWithMemo(s.inner, memo);
+    if (s.rejected) (next.shape as Extract<Shape, { k: "eff" }>).rejected = copyWithMemo(s.rejected, memo);
     migrateInvariants(a, next);
     return next;
   }
   if (s.k === "sum") {
-    return abs({ k: "sum", members: s.members.map($copy) }, a.term, a.pred, a.conf);
+    const next = abs({ k: "sum", members: [] }, a.term, a.pred, a.conf);
+    memo.set(a, next);
+    (next.shape as Extract<Shape, { k: "sum" }>).members = s.members.map((m) => copyWithMemo(m, memo));
+    return next;
   }
+  // prim / never / any / unknown：不可变，无需复制（也不可能有环）
   return a;
 }
 

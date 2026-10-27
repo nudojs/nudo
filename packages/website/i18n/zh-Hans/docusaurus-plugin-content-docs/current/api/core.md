@@ -97,8 +97,8 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | 位置 | 内容 |
 |-------|------|
 | `core/src/algebra/surface.ts` | `typeofAbs`、`negAbs`、`notAbs`、`strictEqAbs`（一元运算 + 严格相等） |
-| `core/src/algebra/arithmetic.ts` | 二元算术（`+` `-` `*` `/` `%`）与比较 |
-| `service/src/evaluator/abs-route.ts` | 二元/一元运算与对象 spread 的 union 逐成员路由 |
+| `core/src/algebra/arithmetic.ts` | 二元算术（`+` `-` `*` `/` `%`）与比较，含 union 逐成员分配 |
+| `core/src/algebra/objects.ts` | 对象 spread（`spread`）与分支合并 join（`joinAbs` → `joinObjects` / `joinFunctions`） |
 
 唯一求值引擎是 evaluator（`core/algebra/exec`：转译 → 以 Abs 值执行 `new Function`）。B 不可托管源 fail-closed（`unknown` / 空导出）。
 
@@ -221,7 +221,7 @@ createEnvironment(parent?, bindings?)
 | <a id="boollit"></a>`boolLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `boolLit(value: boolean): Abs` |
 | <a id="calltranspiledexport"></a>`callTranspiledExport` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
 | <a id="calltranspiledexportapply"></a>`callTranspiledExportApply` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportApply( exports: Record<string, unknown> \| (() => Record<string, unknown>), name: string, )` |
-| <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; shareArgs?: boolean }, ): TranspiledCallResult` |
+| <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean }, ): TranspiledCallResult` |
 | <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; expectedIssue?: string; tagOffset: number; }` |
 | <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
@@ -250,7 +250,6 @@ createEnvironment(parent?, bindings?)
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
-| <a id="generalizeall"></a>`generalizeAll` | fn | symbolic α generalization | `generalizeAll( source: string, opts: { budget?: LeakBudget } = {}, ): PolyFn[]` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveInterfaceOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
@@ -323,19 +322,17 @@ createEnvironment(parent?, bindings?)
 | <a id="$arrwithholes"></a>`$arrWithHoles` | fn | array runtime | `$arrWithHoles(items: Abs[], holes: number[]): Abs` |
 | <a id="$assignrecord"></a>`$assignRecord` | fn | call-site recording for analyze | `$assignRecord( name: string, prev: Abs \| undefined, next: Abs, line: number, column: number, conditional: boolean, ): void` |
 | <a id="$async"></a>`$async` | fn | async / generator | `$async(thunk: () => Abs): Abs` |
-| <a id="$asyncreturn"></a>`$asyncReturn` | fn | async / generator | `$asyncReturn(v: Abs): Abs` |
 | <a id="$await"></a>`$await` | fn | async / generator | `$await(v: Abs): Abs` |
 | <a id="$callnamed"></a>`$callNamed` | fn | call-site recording for analyze | `$callNamed( name: string, fn: unknown, args: Abs[], loc?: [number, number], argLocs?: Array<[number, number] \| null \| undefined>, ): Abs` |
 | <a id="$catchval"></a>`$catchVal` | fn | control-signal / throw | `$catchVal(e: unknown): Abs` |
 | <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(name?: string): Abs` |
 | <a id="$concat"></a>`$concat` | fn | object / member runtime | `$concat(a: Abs, b: Abs): Abs` |
-| <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs): Abs` |
+| <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs, memo?: WeakMap<object, Abs>): Abs` |
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
 | <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[] }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
-| <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
 | <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
@@ -364,7 +361,6 @@ createEnvironment(parent?, bindings?)
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
 | <a id="$tpl"></a>`$tpl` | const | object / member runtime | — |
 | <a id="$typeof"></a>`$typeof` | fn | operator runtime | `$typeof(a: Abs): Abs` |
-| <a id="$while"></a>`$while` | fn | control-flow lowering | `$while( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, ): Abs` |
 | <a id="$whileseq"></a>`$whileSeq` | fn | control-flow lowering | `$whileSeq( test: () => Abs, body: () => void, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): void` |
 | <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs, tryCtx = 0): Abs` |
 | <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
@@ -387,7 +383,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（347）</summary>
+<summary>src/index.ts 其余导出（332）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -397,13 +393,12 @@ createEnvironment(parent?, bindings?)
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; fnKind?: "function" \| "async" \| "generator" \| ...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; interopDefault?: boolean; }` |
-| <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
+| <a id="absshapekey"></a>`absShapeKey` | fn | 结构键的最小面（join 去重 / 槽相等 / env 声明去重共用）。 | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
-| <a id="alphaof"></a>`alphaOf` | fn | 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。 | `alphaOf( absOrTerm: Abs \| Term \| undefined, ctx: HofCollectCtx, ): Term` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
@@ -412,9 +407,8 @@ createEnvironment(parent?, bindings?)
 | <a id="astenv"></a>`AstEnv` | type | — | — |
 | <a id="attachfnimpl"></a>`attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
 | <a id="begincollectionfork"></a>`beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
-| <a id="betaof"></a>`betaOf` | fn | 共享输出变量 B:$&#123;param&#125;（§5.1 P2 钉死） | `betaOf(param: string): Term` |
 | <a id="bindimports"></a>`bindImports` | fn | 把 import 说明符绑定进 env（宿主已求值依赖） | `bindImports( node: ImportDeclaration, env: AstEnv, modules: Record<string, AbsModuleExports>, ): void` |
-| <a id="bindingsof"></a>`bindingsOf` | fn | — | `bindingsOf(run: Record<string, unknown>): Map<string, unknown> \| undefined` |
+| <a id="bindingsof"></a>`bindingsOf` | fn | run 表的**顶层绑定表**： - 顶层 const/let（`$recordBinding` 通道，Abs 值）； - **私有**顶层函数声明（宿主 JS 函数；与 ANALYSIS_SLOTS 同源，导出面同名 可枚举键不重复登记——导出函数只走导出表）。 | `bindingsOf(run: Record<string, unknown>): Map<string, unknown> \| undefined` |
 | <a id="bitandabs"></a>`bitandAbs` | fn | &amp; —— ToInt32 两侧后按位与 | `bitandAbs(a: Abs, b: Abs): Abs` |
 | <a id="bitnotabs"></a>`bitnotAbs` | fn | ~ —— ToInt32 后按位取反（bigint 无符号截断） | `bitnotAbs(a: Abs): Abs` |
 | <a id="bitorabs"></a>`bitorAbs` | fn | \| —— ToInt32 两侧后按位或 | `bitorAbs(a: Abs, b: Abs): Abs` |
@@ -442,15 +436,12 @@ createEnvironment(parent?, bindings?)
 | <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
-| <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
 | <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量、symbol 字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象（IsObject）：prim 条目（含字符串实参的 每个字符、tuple/Set 元素）与 nullish 字面量条目 → TypeError （Bug 8：null/undefined/symbol 字面量挂 shape unknown + lit term， 旧 primEntry 只查 prim 形态 → 漏抛） - WeakMap 键 = Get(entry, "0") 须可弱持有（classifyCanBeHeldWeakly 同 口径）：零/一元组、闭对象/fn/无 0 槽 brand 条目键 undefined、prim/ nullish 键 → TypeError（Bug 8：旧口径只查 ≥2 元组首元素 prim） - WeakSet 元素须可弱持有：prim/nullish 字面量元素（含字符串字符）→ TypeError；symbol 元素合法（node 实测 new WeakSet([Symbol()]) 不抛） - Bug 8 gate 面：抽象外层 iterable（any/unknown/开放 obj/fn/其它 brand） 可能非可迭代、抽象元素（含抽象字符串实参的字符臂）可能非 entry/ 非弱键 → recordMayThrow（三个分派点共用本判定，集中记录） | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
 | <a id="ctornameofrecv"></a>`ctorNameOfRecv` | fn | 接收者 → 原型链 constructor 名（`.constructor` 折叠）。 | `ctorNameOfRecv(recv: Abs): string \| undefined` |
 | <a id="currentexecphi"></a>`currentExecPhi` | fn | — | `currentExecPhi(): Phi` |
-| <a id="currentphi"></a>`currentPhi` | fn | — | `currentPhi(): Phi` |
 | <a id="default_max_loop_iters"></a>`DEFAULT_MAX_LOOP_ITERS` | const | 循环展开上限（leaf）—— 从 control.ts 拆出，打断 control ↔ containers 环。 | `const DEFAULT_MAX_LOOP_ITERS` |
 | <a id="definitelynotnullishshape"></a>`definitelyNotNullishShape` | fn | 该 shape 在 JS 上一定不是 null/undefined | `definitelyNotNullishShape(s: Shape): boolean` |
 | <a id="derefconstraint"></a>`derefConstraint` | fn | 解一层 lazy：调用 thunk 一次、校验产物是约束、toPlainConstraint 归一化， 并按 thunk 记忆化（重复 deref 同一闭包 → 同一对象）。 | `derefConstraint(c: NudoConstraint): NudoConstraint` |
-| <a id="describephi"></a>`describePhi` | fn | — | `describePhi(): string` |
 | <a id="diagnostic"></a>`Diagnostic` | type | — | `Diagnostic = { severity: "error" \| "warning" \| "info"; code: string; message: string; suggestion?: string; fn?: string; argIndex?: number; }` |
 | <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs` |
 | <a id="drainpromisemicros"></a>`drainPromiseMicros` | fn | — | `drainPromiseMicros(): void` |
@@ -526,7 +517,6 @@ createEnvironment(parent?, bindings?)
 | <a id="gitlabcodequalityissue"></a>`GitlabCodeQualityIssue` | type | — | `GitlabCodeQualityIssue = { description: string; check_name: string; fingerprint: string; severity: "major" \| "minor" \| "info" \| "blocker"...` |
 | <a id="gt"></a>`gt` | const | — | `const gt` |
 | <a id="gtnum"></a>`gtNum` | fn | 便捷：数字下界 | `gtNum(term: Term, n: number): Pred` |
-| <a id="hofcollectctx"></a>`HofCollectCtx` | type | — | — |
 | <a id="hofsite"></a>`HofSite` | type | — | — |
 | <a id="hostbuiltinctorname"></a>`hostBuiltinCtorName` | fn | 宿主全局构造器身份（Number === (42).constructor 折叠用） | `hostBuiltinCtorName(v: unknown): string \| undefined` |
 | <a id="hostfnctorfacet"></a>`hostFnCtorFacet` | fn | 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、 箭头、内建方法（无 .prototype）不可 new；bind 产物取决于目标（未知）。 | `hostFnCtorFacet(v: Function): boolean \| undefined` |
@@ -597,8 +587,8 @@ createEnvironment(parent?, bindings?)
 | <a id="marknullprotoobj"></a>`markNullProtoObj` | fn | — | `markNullProtoObj(o: Abs): Abs` |
 | <a id="markpurefn"></a>`markPureFn` | fn | 标记纯函数（@nudo:pure）：调用结果可按实参记忆化 | `markPureFn(target: object, name: string): void` |
 | <a id="matchrelidentlit"></a>`matchRelIdentLit` | fn | 从 Identifier 在比较中的位置解析「对哪个变量、用哪个关系」。 | `matchRelIdentLit( test: unknown, )` |
-| <a id="max_eval_call_depth"></a>`MAX_EVAL_CALL_DEPTH` | const | — | `const MAX_EVAL_CALL_DEPTH` |
-| <a id="max_eval_total_calls"></a>`MAX_EVAL_TOTAL_CALLS` | const | 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的 规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到 ~3s——截断 → opaque（更保守，zero-FP 安全）。 | `const MAX_EVAL_TOTAL_CALLS` |
+| <a id="max_eval_call_depth"></a>`MAX_EVAL_CALL_DEPTH` | const | B 命名调用深度上限——与 A 路径同值（@nudo:budget 可逐函数抬高） | `const MAX_EVAL_CALL_DEPTH` |
+| <a id="max_eval_total_calls"></a>`MAX_EVAL_TOTAL_CALLS` | const | B 命名调用总调用上限——与 A 路径同值（递归×循环×分支展开的规模阀） | `const MAX_EVAL_TOTAL_CALLS` |
 | <a id="mergecollectionarms"></a>`mergeCollectionArms` | fn | 合并 fork 各臂 overlay → 全局表（由 endCollectionFork 实现）。 | `mergeCollectionArms(arms: Array<ArmOverlay \| undefined \| null>): void` |
 | <a id="migrateinvariants"></a>`migrateInvariants` | fn | 写路径产生新副本时迁移不变性侧表（同 migrateAccessors 模式）。 | `migrateInvariants(from: Abs, to: Abs): void` |
 | <a id="migratenullproto"></a>`migrateNullProto` | fn | 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 | `migrateNullProto(from: Abs, to: Abs): Abs` |
@@ -635,7 +625,6 @@ createEnvironment(parent?, bindings?)
 | <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层）。 | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="polyfn"></a>`PolyFn` | type | — | `PolyFn = { name: string; params: string[]; typeParams: TypeParam[]; instantiate: (args: Abs[], phi?: Phi) => Abs; symbolic: Abs; display:...` |
 | <a id="popcollectionarm"></a>`popCollectionArm` | fn | — | `popCollectionArm(): ArmOverlay \| undefined` |
-| <a id="popphi"></a>`popPhi` | fn | — | `popPhi(): void` |
 | <a id="powabs"></a>`powAbs` | fn | —— 幂（右结合由 AST 保证）；负指数 bigint 原生 RangeError → 不可折叠 | `powAbs(a: Abs, b: Abs): Abs` |
 | <a id="predequals"></a>`predEquals` | fn | — | `predEquals(a: Pred, b: Pred): boolean` |
 | <a id="predtostring"></a>`predToString` | fn | — | `predToString(p: Pred): string` |
@@ -643,7 +632,6 @@ createEnvironment(parent?, bindings?)
 | <a id="primname"></a>`PrimName` | type | — | `PrimName = "number" \| "string" \| "boolean" \| "bigint" \| "symbol"` |
 | <a id="primtotypeof"></a>`primToTypeof` | fn | abs prim 标签 → typeof 标签（恒等嵌入）。abs prim 仍是 PrimName 子集。 | `primToTypeof(p: PrimName): TypeofName` |
 | <a id="projectflatmapresult"></a>`projectFlatMapResult` | fn | flatMap 统一结果：展开后的元素 join 成 arr(γ)。 | `projectFlatMapResult( arrConf: Confidence, mapped: Abs[], ): Abs` |
-| <a id="promoteparamshape"></a>`promoteParamShape` | fn | 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。 | `promoteParamShape( env: AstEnv, param: string, promotedShape: Shape, opts?: { loc?: { line: number; column: number }; recordSite?: boolean }, ): boolean` |
 | <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
 | <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string): Abs` |
@@ -653,7 +641,6 @@ createEnvironment(parent?, bindings?)
 | <a id="purefnnameof"></a>`pureFnNameOf` | fn | 读纯函数标记（Abs impl 或对象属性 `_memoize`） | `pureFnNameOf(fn: unknown): string \| undefined` |
 | <a id="pushcollectionarm"></a>`pushCollectionArm` | fn | — | `pushCollectionArm(): void` |
 | <a id="pushloopexit"></a>`pushLoopExit` | fn | — | `pushLoopExit(v: Abs): void` |
-| <a id="pushphi"></a>`pushPhi` | fn | — | `pushPhi(p: Phi): void` |
 | <a id="pushthrowexit"></a>`pushThrowExit` | fn | — | `pushThrowExit(v: Abs): void` |
 | <a id="queuepromisemicro"></a>`queuePromiseMicro` | fn | — | `queuePromiseMicro(task: () => void): void` |
 | <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
@@ -663,7 +650,7 @@ createEnvironment(parent?, bindings?)
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
 | <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
 | <a id="registerevalclass"></a>`registerEvalClass` | fn | — | `registerEvalClass(spec: EvalClassSpec): void` |
-| <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制） | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
+| <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制）。 | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
 | <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |
 | <a id="relsource"></a>`RelSource` | type | — | — |
 | <a id="requiredfnarity"></a>`requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
@@ -671,9 +658,8 @@ createEnvironment(parent?, bindings?)
 | <a id="resetevalcallbudget"></a>`resetEvalCallBudget` | fn | 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 | `resetEvalCallBudget(): void` |
 | <a id="resetgeneralizememo"></a>`resetGeneralizeMemo` | fn | — | `resetGeneralizeMemo(): void` |
 | <a id="resetnudomoduleexeccache"></a>`resetNudoModuleExecCache` | fn | — | `resetNudoModuleExecCache(): void` |
-| <a id="resetphi"></a>`resetPhi` | fn | — | `resetPhi(): void` |
 | <a id="resetsidecarloadfailurecache"></a>`resetSidecarLoadFailureCache` | fn | 与 resetNudoModuleExecCache 同口径：分析会话/测试间清空失败去重表 | `resetSidecarLoadFailureCache(): void` |
-| <a id="runtime_import_re"></a>`RUNTIME_IMPORT_RE` | const | — | `const RUNTIME_IMPORT_RE` |
+| <a id="runtime_import_re"></a>`RUNTIME_IMPORT_RE` | const | — | — |
 | <a id="runtranspiledoptions"></a>`RunTranspiledOptions` | type | — | `RunTranspiledOptions = { modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; maxLoopIters?: number; mode?: "exec" \| "an...` |
 | <a id="runtranspiledoptionsmemokey"></a>`runTranspiledOptionsMemoKey` | fn | inject/modules **内容**指纹（memo 键）。对象身份对「每次新建同内容」 的 CLI 注入不稳——同一语义的 inject 跨 checkSource 调用会 miss 缓存。 | `runTranspiledOptionsMemoKey( opts: RunTranspiledOptions \| undefined, ): string` |
 | <a id="runwithloopexits"></a>`runWithLoopExits` | fn | 函数求值作用域：收集抽象分支上的 early-return / throw 值；try 标记栈同边界 | `runWithLoopExits<T>(body: () => T): T` |
@@ -724,10 +710,6 @@ createEnvironment(parent?, bindings?)
 | <a id="tonumberabs"></a>`toNumberAbs` | fn | 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 | `toNumberAbs(a: Abs): Abs` |
 | <a id="trueconstraint"></a>`trueConstraint` | fn | 从比较结果 Abs 提取「若为真」的额外约束（供 if 使用） | `trueConstraint(c: Abs): Pred \| undefined` |
 | <a id="trymakeregexabs"></a>`tryMakeRegexAbs` | fn | new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）： - 无参 → /(?:)/（原生 source 归一） - symbol pattern/flags → 确定 TypeError（ToString 抛；shape 判定——Symbol() 无 lit 项，原先的 lit 分支内检查是死代码，Bug 29/52） - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString） → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果） - 抽象 pattern/flags → undefined（调用方保守）+ 档位打点（见各分支）： obj/fn/brand/sum/any → may TypeError（自定义 coercer 可能产 Symbol）； 抽象 prim string pattern → ToString total（非法 pattern 的 SyntaxError 面不计）；抽象 prim string flags → may SyntaxError；抽象 prim number/bool/bigint flags → ToString 恒非法 flags → 确定 SyntaxError （node 实测 new RegExp('a', 1n) → SyntaxError） | `tryMakeRegexAbs(args: Abs[]): Abs \| undefined` |
-| <a id="trypromotedirectcall"></a>`tryPromoteDirectCall` | fn | 挂载点②：CallExpression callee = 形参 Identifier 直接调用 p(x) / p(a,b)。 | `tryPromoteDirectCall( env: AstEnv, calleeName: string, args: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
-| <a id="trypromoteforofiteratee"></a>`tryPromoteForOfIteratee` | fn | for-of 迭代对象提升（applyEach 型）：`for (const x of items)`， items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。 | `tryPromoteForOfIteratee( env: AstEnv, iterateeName: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
-| <a id="trypromotehofcallback"></a>`tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cevalName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
-| <a id="trypromotereceiverasarr"></a>`tryPromoteReceiverAsArr` | fn | 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知， 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。 | `tryPromoteReceiverAsArr( env: AstEnv, receiverName: string, method: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="tryruntranspiled"></a>`tryRunTranspiled` | fn | — | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
 | <a id="typeof_names"></a>`TYPEOF_NAMES` | const | typeof 标签全集（否定展开用；顺序稳定） | `const TYPEOF_NAMES` |
 | <a id="typeofabs"></a>`typeofAbs` | fn | JS typeof：结果域永远是 string | `typeofAbs(a: Abs): Abs` |
@@ -736,7 +718,6 @@ createEnvironment(parent?, bindings?)
 | <a id="undefabs"></a>`undefAbs` | fn | undefined 值的统一 Abs 表示（forEach/find 等） | `undefAbs(): Abs` |
 | <a id="ushrabs"></a>`ushrAbs` | fn | &gt;&gt;&gt; —— 逻辑右移（rhs ToUint32 &amp; 31；bigint 无此运算符 → 不可折叠） | `ushrAbs(a: Abs, b: Abs): Abs` |
 | <a id="withexecphi"></a>`withExecPhi` | fn | — | `withExecPhi<T>(p: Phi, body: () => T): T` |
-| <a id="withphiconstraint"></a>`withPhiConstraint` | fn | 在当前 Φ 上合取额外约束，body 结束后恢复 | `withPhiConstraint(extra: Phi, body: () => void): void` |
 | <a id="withvar"></a>`withVar` | fn | — | `withVar(env: AstEnv, name: string, value: Abs): AstEnv` |
 
 </details>

@@ -187,7 +187,7 @@ export function classSpecOf(
   /** Bug 142：静态元素有序表（静态字段 + 静态块按**类体源码顺序**混排）——
    *  原生 InitializeStaticElements 源序执行（静态块与静态字段初始化器
    *  交错）。此前静态块恒在全部静态字段初始化器之后（两块分表：静态字段
-   *  进 statics 表由 $class 求值，静态块另走 $staticInit 尾巴）→ 类体
+   *  进 statics 表由 $class 求值，静态块另走独立尾段）→ 类体
    *  源码顺序丢失（`static { A.q = 1 } static r = A.q + 1` 折 NaN）。
    *  静态块以保留键入同表（不挂静态槽——$class 侧识别保留键改走"执行块"
    *  分支，见 STATIC_BLOCK_KEY_PREFIX）。 */
@@ -864,7 +864,7 @@ export function classSpecOf(
     );
   }
   // Bug 142：静态块已并入 statics 表（与静态字段同序执行）——不再需要
-  // $staticInit 尾段（静态块恒在全部静态字段之后 = 源码顺序丢失）。
+  // 独立静态块尾段（否则静态块恒在全部静态字段之后 = 源码顺序丢失）。
   const staticInitLines: string[] = [];
   // Bug 203：类体声明了**符号键** `static [Symbol.hasInstance]` → 类值同名
   // 槽打 **symbolKey 标记**（读面据此把它与普通字符串键槽分开；同族 01 的

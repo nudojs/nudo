@@ -2,11 +2,10 @@
  * 运算符重载面（transpile 目标）：$add/$sub/…、比较/位运算。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
-import { lit, termEquals, type Term } from "../../term.ts";
-import type { Phi, Pred } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
-import { add, sub, mul, div, mod, cmp, falseConstraint } from "../../arithmetic.ts";
+import { abs, bool, boolLit, strLit } from "../../abs.ts";
+import { termEquals, type Term } from "../../term.ts";
+import type { Pred } from "../../pred.ts";
+import { add, sub, mul, div, mod, cmp } from "../../arithmetic.ts";
 import {
   typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, bitandAbs, bitorAbs,
   bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs,
@@ -14,7 +13,7 @@ import {
 } from "../../surface.ts";
 import { joinAbs } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
-import { asAbsVal, currentExecPhi, currentAssumePremises, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, noBody, undef, throwStrictWrite, NudoThrow } from "./state.ts";
+import { asAbsVal, currentExecPhi, currentAssumePremises } from "./state.ts";
 
 
 export function $unknown(): Abs {

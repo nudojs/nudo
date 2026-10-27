@@ -1,5 +1,5 @@
 /**
- * 类声明/注册/构造：$class/$new/$staticInit + registry 辅助。
+ * 类声明/注册/构造：$class/$new + registry 辅助。
  *
  * Invariants:
  * - classImpl（WeakMap）是 spec 的唯一私有挂载点：Abs 对象身份 → 定义
@@ -13,17 +13,10 @@ import type { Abs } from "../../abs.ts";
 import { abs, unknown, never, litValue, strLit } from "../../abs.ts";
 import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
-import { builtinSuperCtorOf, hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
-import {
-  builtinCtorAbs,
-  protoBrandAbs,
-  protoOfRecv,
-  extStateOf,
-  getPropFlags,
-  setPropFlags,
-} from "../../builtins.ts";
+import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
+import { protoBrandAbs, extStateOf, getPropFlags, setPropFlags } from "../../builtins.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
-import { $get, $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred } from "../runtime.ts";
+import { $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred } from "../runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "../calls.ts";
@@ -1331,14 +1324,4 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   } finally {
     popCtorFrame();
   }
-}
-
-/**
- * Bug 77：静态块在类定义期执行（原生 ClassDefinitionEvaluation 的
- * InitializeStaticElements）。transpile 在 `let C = $class(...)` 绑定完成
- * **之后**发射本调用——块体内类名按词法可见（原生 static 块内类绑定已
- * 初始化）；this 绑定类值；块内 throw 在定义点表面（NudoThrow 上浮）。
- */
-export function $staticInit(cls: Abs, thunks: Array<(thisVal: Abs) => unknown>): void {
-  for (const t of thunks) t(cls);
 }

@@ -1,108 +1,25 @@
 /**
  * Abs 键 / α-rename（从 generalize.ts 拆出的纯结构变换）。
+ *
+ * 结构键的唯一实现在 abs-key.ts（shape × term × pred）；本模块只保留
+ * generalize 侧需要的能力：α-rename、自由变元收集、instantiate 记忆键。
  */
 import type { Abs, Shape } from "./abs.ts";
 import type { Term } from "./term.ts";
-import { v as termVar, litKeyString } from "./term.ts";
+import { v as termVar } from "./term.ts";
 import type { Pred, Phi } from "./pred.ts";
+import { absKey, predKey, termKey, type VarRename } from "./abs-key.ts";
 
-export type VarRename = ReadonlyMap<string, string>;
+export { termKey, predKey, type VarRename };
 
-export function termKey(t: Term, rename?: VarRename): string {
-  switch (t.op) {
-    case "lit":
-      // -0/0 身份不同：键走 litKeyString（String(-0)==="0" 会折叠）
-      return `L:${typeof t.value}:${litKeyString(t.value)}`;
-    case "var":
-      return `V:${rename?.get(t.id) ?? t.id}`;
-    case "app":
-      return `A:${t.fn}(${t.args.map((a) => termKey(a, rename)).join(",")})`;
-  }
-}
-
-/** L2：and/or 子约束按键排序，交换律不造成 miss */
-export function predKey(p: Pred, rename?: VarRename): string {
-  switch (p.op) {
-    case "true":
-      return "T";
-    case "false":
-      return "F";
-    case "eq":
-    case "ne":
-    case "lt":
-    case "le":
-    case "gt":
-    case "ge":
-      return `${p.op}(${termKey(p.a, rename)},${termKey(p.b, rename)})`;
-    case "and":
-    case "or": {
-      const keys = p.args.map((a) => predKey(a, rename)).sort();
-      return `${p.op}(${keys.join(",")})`;
-    }
-    case "not":
-      return `not(${predKey(p.arg, rename)})`;
-    case "typeof":
-      return `typeof(${termKey(p.t, rename)},${p.type})`;
-    case "assumeFinite":
-      return `assumeFinite(${termKey(p.t, rename)})`;
-  }
-}
-
-/** 结构键：shape + term + pred；不含 conf（置信度不参与语义输入） */
-function shapeKey(s: Shape, seen: Set<object>, rename?: VarRename): string {
-  switch (s.k) {
-    case "never":
-    case "any":
-    case "unknown":
-      return s.k;
-    case "prim":
-      return `p:${s.type}`;
-    case "brand":
-      return `b:${s.name}(${absKeyInner(s.shape, seen, rename)})`;
-    case "eff":
-      return `e:${s.eff}<${absKeyInner(s.inner, seen, rename)}>`;
-    case "arr":
-      return `arr(${absKeyInner(s.element, seen, rename)})`;
-    case "tuple": {
-      const els = s.elements.map((e) => absKeyInner(e, seen, rename)).join(",");
-      const rest = s.rest ? `...${absKeyInner(s.rest, seen, rename)}` : "";
-      return `tup[${els}${rest}]`;
-    }
-    case "fn": {
-      const pts = (s.paramTypes ?? [])
-        .map((t) => absKeyInner(t, seen, rename))
-        .join(",");
-      const ret = s.returnType ? absKeyInner(s.returnType, seen, rename) : "?";
-      const name = s.name ? `#${s.name}` : "";
-      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
-    }
-    case "sum":
-      return `sum(${s.members.map((m) => absKeyInner(m, seen, rename)).join("|")})`;
-    case "obj": {
-      const slots = Object.keys(s.slots)
-        .sort()
-        .map((k) => {
-          const slot = s.slots[k]!;
-          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
-          return `${k}${flags}:${absKeyInner(slot.value, seen, rename)}`;
-        })
-        .join(",");
-      const idx = s.index
-        ? `idx(${absKeyInner(s.index.key, seen, rename)}→${absKeyInner(s.index.value, seen, rename)})`
-        : "";
-      const open = s.open ? "open" : "";
-      return `obj{${slots}}${idx}${open}`;
-    }
-  }
-}
-
+/**
+ * 结构键：shape + term + pred；不含 conf（置信度不参与语义输入）。
+ * `seen` 由调用方持有（实例化键按实参逐个新建）；实现见 abs-key.ts。
+ */
 export function absKeyInner(a: Abs, seen: Set<object>, rename?: VarRename): string {
-  if (seen.has(a)) return "cycle";
-  seen.add(a);
-  const t = a.term ? `=${termKey(a.term, rename)}` : "";
-  const p = a.pred ? `@${predKey(a.pred, rename)}` : "";
-  return `${shapeKey(a.shape, seen, rename)}${t}${p}`;
+  return absKey(a, seen, rename);
 }
+
 
 // --- free vars + α-rename (L2) ---
 
@@ -240,43 +157,58 @@ export function renameShape(s: Shape, map: VarRename): Shape {
     case "prim":
       return s;
     case "brand":
-      return { k: "brand", name: s.name, shape: renameAbs(s.shape, map) };
-    case "eff":
-      return { k: "eff", eff: s.eff, inner: renameAbs(s.inner, map) };
+      // 全字段 spread（ctor / tv 等 facet 不因 α 改名丢失）
+      return { ...s, shape: renameAbs(s.shape, map) };
+    case "eff": {
+      const out: Shape = { ...s, inner: renameAbs(s.inner, map) };
+      // rejected 通道（Bug 36）同样承载 Abs——必须递归改名
+      if (s.rejected) out.rejected = renameAbs(s.rejected, map);
+      return out;
+    }
     case "arr":
-      return { k: "arr", element: renameAbs(s.element, map) };
+      return { ...s, element: renameAbs(s.element, map) };
     case "tuple": {
       const out: Shape = {
-        k: "tuple",
+        ...s,
         elements: s.elements.map((e) => renameAbs(e, map)),
       };
       if (s.rest) out.rest = renameAbs(s.rest, map);
+      if (s.holes) out.holes = [...s.holes]; // 空洞下标（读 undefined / in false）
       return out;
     }
     case "fn": {
-      const out: Shape = { k: "fn", params: s.params };
-      if (s.name !== undefined) out.name = s.name;
+      const out: Shape = { ...s, params: [...s.params] };
       if (s.paramTypes) out.paramTypes = s.paramTypes.map((t) => renameAbs(t, map));
       if (s.returnType) out.returnType = renameAbs(s.returnType, map);
-      if (s.ctor !== undefined) out.ctor = s.ctor; // Bug 9 facet：α 改名不改可构造性
+      if (s.optionalParams) out.optionalParams = [...s.optionalParams];
+      if (s.slots) {
+        const slots: NonNullable<Extract<Shape, { k: "fn" }>["slots"]> = {};
+        for (const [k, slot] of Object.entries(s.slots)) {
+          // defineProperty：键名 "__proto__" 的直接赋值会踩宿主原型 setter
+          Object.defineProperty(slots, k, {
+            value: { ...slot, value: renameAbs(slot.value, map) },
+            enumerable: true, writable: true, configurable: true,
+          });
+        }
+        out.slots = slots;
+      }
       return out;
     }
     case "sum":
-      return { k: "sum", members: s.members.map((m) => renameAbs(m, map)) };
+      return { ...s, members: s.members.map((m) => renameAbs(m, map)) };
     case "obj": {
-      const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
+      const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
       for (const [k, slot] of Object.entries(s.slots)) {
-        slots[k] = {
-          value: renameAbs(slot.value, map),
-          ...(slot.optional ? { optional: true } : {}),
-          ...(slot.readonly ? { readonly: true } : {}),
-        };
+        // slot 标志（optional/readonly/internal/inherited/symbolKey）全保留
+        Object.defineProperty(slots, k, {
+          value: { ...slot, value: renameAbs(slot.value, map) },
+          enumerable: true, writable: true, configurable: true,
+        });
       }
-      const out: Shape = { k: "obj", slots };
+      const out: Shape = { ...s, slots };
       if (s.index) {
         out.index = { key: renameAbs(s.index.key, map), value: renameAbs(s.index.value, map) };
       }
-      if (s.open) out.open = true;
       return out;
     }
   }

@@ -1,5 +1,6 @@
 /**
- * Error 家族（ERROR_CTOR_NAMES/isErrorCtorName/errorBrandAbs）+ 宿主构造器
+ * Error 家族（isErrorCtorName/errorBrandAbs；构造器名集合在
+ * algebra/error-names.ts 叶子）+ 宿主构造器
  * 实参校验谓词（sumHasPrimMember/isNullishLit/enforceCanBeHeldWeakly/
  * isDefinitelyUndefinedArg）+ Proxy 构造（makeProxyAbs）。
  *
@@ -34,21 +35,9 @@ import { isSymbolAbs } from "../symbol.ts";
 import { str } from "../shared.ts";
 import { enforceIterableStaticArg } from "../promise.ts";
 
-/** JS Error 家族构造器名（求值引擎 evalBuiltinNew / $new 共用） */
-const ERROR_CTOR_NAMES = new Set([
-  "Error",
-  "TypeError",
-  "RangeError",
-  "SyntaxError",
-  "ReferenceError",
-  "URIError",
-  "EvalError",
-  "AggregateError",
-]);
-
-export function isErrorCtorName(name: string | undefined): boolean {
-  return !!name && ERROR_CTOR_NAMES.has(name);
-}
+/** JS Error 家族构造器名集合在 algebra/error-names.ts（无依赖叶子；
+ *  exec/class-registry.ts 的 BUILTIN_ERROR_SUPER 键集同源）。 */
+export { isErrorCtorName } from "../../error-names.ts";
 
 /** Error 构造器 message 槽：原生恒为字符串（缺省/undefined → ""；非字符串
  *  字面量 → ToString）。非字面量保守（字符串保持、其余 strPrim）。

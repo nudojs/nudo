@@ -1,7 +1,7 @@
 /**
  * loop-fix 审查修复差分回归：$in class 原型成员、instanceof 非标识符 RHS、
  * 静态访问器、对象字面量 delete 访问器、own 槽优先、bigint >>>、
- * classChainNames env 回退、generator instanceof。
+ * generator instanceof。
  * 每条断言与 Node 真实执行结果对齐（或明确为 sound 的 unknown/boolean）。
  */
 import { describe, it, expect, afterAll } from "vitest";
@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { transpile, litValue, formatShape, abs, type Abs } from "@nudojs/core";
-import { instanceOf } from "@nudojs/core/internal";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -29,15 +28,6 @@ async function execTranspiled(source: string, exportName = "run") {
   writeFileSync(modPath, js, "utf-8");
   const mod = await import(pathToFileURL(modPath).href);
   return mod[exportName] as (...args: unknown[]) => Abs;
-}
-
-function brandAbs(name: string): Abs {
-  return abs(
-    { k: "brand", name, shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
-    undefined,
-    undefined,
-    "exact",
-  );
 }
 
 describe("review-fix: $in on class prototype members", () => {
@@ -194,34 +184,5 @@ describe("review-fix: bigint >>> is TypeError, not bigint", () => {
   it("5n >>> 1n hard-throws TypeError (no bigint/unknown value claim)", async () => {
     const run = await execTranspiled(`export function run(){ return 5n >>> 1n; }`);
     expect(() => run()).toThrow();
-  });
-});
-
-describe("review-fix: classChainNames env fallback (ast-eval path)", () => {
-  const envWithUser = {
-    classes: new Map([
-      ["User", { name: "User", superClass: undefined, methods: new Map(), statics: new Map() }],
-    ]),
-  } as never;
-
-  it("RangeError instanceof Error with non-empty env", () => {
-    const r = instanceOf(brandAbs("RangeError"), "Error", envWithUser);
-    expect(litValue(r)).toEqual({ ok: true, value: true });
-  });
-
-  it("RangeError instanceof Error with empty env", () => {
-    const r = instanceOf(brandAbs("RangeError"), "Error", { classes: new Map() } as never);
-    expect(litValue(r)).toEqual({ ok: true, value: true });
-  });
-
-  it("user class chain with env", () => {
-    const env = {
-      classes: new Map([
-        ["A", { name: "A", superClass: undefined, methods: new Map(), statics: new Map() }],
-        ["B", { name: "B", superClass: "A", methods: new Map(), statics: new Map() }],
-      ]),
-    } as never;
-    expect(litValue(instanceOf(brandAbs("B"), "A", env))).toEqual({ ok: true, value: true });
-    expect(litValue(instanceOf(brandAbs("B"), "Error", env))).toEqual({ ok: true, value: false });
   });
 });

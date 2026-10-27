@@ -7,6 +7,7 @@
 import type { Abs } from "./abs.ts";
 import { abs, anyAbs, litValue, unknown, confJoin, strLit, boolLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
+import { undefAbs } from "./hof.ts";
 import { isDomainShared } from "./len-sharing.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
@@ -860,10 +861,6 @@ export function mapClearEntries(mapAbs: Abs): Abs {
   return undefAbs();
 }
 
-function undefAbs(): Abs {
-  return abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
-}
-
 function joinAll(els: Abs[]): Abs | undefined {
   if (els.length === 0) return undefined;
   return els.reduce((a, b) => joinAbs(a, b));
@@ -971,9 +968,7 @@ function keyAbsFromLitKey(k: LitKey): Abs {
   if (k === null) {
     return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
   }
-  if (k === undefined) {
-    return abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
-  }
+  if (k === undefined) return undefAbs();
   if (typeof k === "string") return abs({ k: "prim", type: "string" }, { op: "lit", value: k }, undefined, "exact");
   if (typeof k === "number") return abs({ k: "prim", type: "number" }, { op: "lit", value: k }, undefined, "exact");
   return abs({ k: "prim", type: "boolean" }, { op: "lit", value: k }, undefined, "exact");
@@ -1029,7 +1024,7 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
  * Bug 88：引用身份键条目计入（union 并集原生含对象键；其余运算经
  * setMethodFold 的全字面量门自然保守回落）。
  */
-export function mapKeysAbs(mapAbs: Abs): Abs[] {
+function mapKeysAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
   const keys: Abs[] = [];

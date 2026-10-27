@@ -4,7 +4,7 @@
  * 值类型是 Abs；副作用与模块仍由 host mock/注入。
  *
  * 实现按语句/表达式/模式拆在 transpile/*.ts；本文件是 re-export facade，
- * 对外符号面保持不变（exec/index.ts `export * from "./transpile.ts"`）。
+ * 对外符号面保持不变（exec/index.ts 对公开符号做显式具名导出）。
  *
  * 不变量（解构临时名，Bug 181）：
  * - 模块级解构临时名计数器（`destrTmpSeq`）在**创建处**即预置避让：序号
@@ -15,13 +15,20 @@
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
 import { transpileStatement } from "./transpile/stmt.ts";
-import type { TranspileOptions } from "./transpile/types.ts";
+import type { TranspileMeta, TranspileOptions } from "./transpile/types.ts";
+import { computeTranspileMeta } from "./transpile/meta.ts";
+import { analyzeTopLevelStatements } from "./transpile/analyze-strip.ts";
 
-export type { TranspileOptions } from "./transpile/types.ts";
+export type { TranspileOptions, TranspileMeta } from "./transpile/types.ts";
 export {
   foldStaticStringExpr,
   foldRequireSpecArg,
 } from "./transpile/helpers.ts";
+// 运行时 import 面单一真值源（import 行 / 剥离正则都在叶子模块；本 facade
+// 保持 `runtimeImportOf` 的公开路径不变，另导出名单供漂移守卫比对）。
+import { DEFAULT_RUNTIME_IMPORT, runtimeImportOf } from "./transpile/runtime-import.ts";
+export { RUNTIME_IMPORT_NAMES } from "./transpile/runtime-import.ts";
+export { runtimeImportOf } from "./transpile/runtime-import.ts";
 import {
   collectVarHoistNames,
   collectExportVarNames,
@@ -29,7 +36,10 @@ import {
   bumpDestrTmpSeq,
   registerConstFnScope,
   internalTmpName,
+  leadingConstAliasGroups,
+  shadowedIntrinsicsOf,
 } from "./transpile/helpers.ts";
+import { staticExportDeclNamesOfProgram } from "./export-names.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
 
@@ -38,13 +48,54 @@ export function transpileSource(source: string, opts: TranspileOptions = {}): st
   return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
-/** 运行时 import 行（body-fn 编译执行拼接用） */
-export function runtimeImportOf(runtime: string): string {
-  return `import { $absVal, $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $toNumeric, $updateAdd, $updateSub, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $objAccessorKey, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $setProto, $while, $whileSeq, $arr, $arrWithHoles, $restBind, $idx, $idxSet, $len, $call, $throw, $loopReturn, $catchReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $invokeSuperObj, $invokeSuperKey, \$getSuper, \$getSuperObj, \$setSuper, \$setSuperObj, \$setSuperStatic, \$staticSuperInvoke, \$super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $iterCheck, $catchVal, $switch, $staticInvoke, $setKey, $gen, $newTarget, $staticInit, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, \$refineRel, \$removeNullish, $removeNull, $removeUndefined, $removeMemberNullish, $narrowMemberEq, $narrowTypeOf, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $elems, $arguments, $isForkExit, $rawThis, $isBreakTo, $yieldStar, $tpl, $fnKindStamp } from ${JSON.stringify(runtime)};`;
+/**
+ * 解析 + transpile + 模块元数据（**单次 parse**）。
+ *
+ * `code` 与同参 `transpileSource` 逐字节一致；`meta` 从同一棵源 AST 计算
+ * （imports / 导出面 / 顶层声明 / 顶层 this / ESM 形态 / 运行时说明符）。
+ */
+export function transpileModule(
+  source: string,
+  opts: TranspileOptions = {},
+): { code: string; meta: TranspileMeta } {
+  const file = parseSource(source);
+  return transpileFileDetailed(file, { ...opts, source: opts.source ?? source }, true);
 }
 
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
-  const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
+  return transpileFileDetailed(file, opts, false).code;
+}
+
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: true,
+): { code: string; meta: TranspileMeta };
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: false,
+): { code: string; meta: TranspileMeta | null };
+function transpileFileDetailed(
+  file: File,
+  opts: TranspileOptions,
+  wantMeta: boolean,
+): { code: string; meta: TranspileMeta | null } {
+  // 元数据按需计算：默认 esm target 的既有调用方不为未使用字段付扫描成本；
+  // host target 需要 imports 面生成 live refresh，必须算。
+  const meta =
+    wantMeta || opts.target === "host" ? computeTranspileMeta(file, opts) : null;
+  const hostRefresh =
+    opts.target === "host"
+      ? {
+          binds: hostImportRefreshBindsOf(meta?.imports ?? [], opts.mockNames),
+          done: false,
+        }
+      : null;
+  const runtime =
+    opts.target === "host" || opts.runtimeImport === null
+      ? null
+      : (opts.runtimeImport ?? DEFAULT_RUNTIME_IMPORT);
   // Bug 15：解构临时名单调计数器（跨语句/prologue 唯一，与源行号解耦）
   const destrTmpSeq = opts.destrTmpSeq ?? { n: 0 };
   // Bug 181：计数器创建处**预置避让**——用户自己声明了 `_d{n}` / `_n{n}`
@@ -59,6 +110,11 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // 方法首参、访问器 / 字段 / 静态块 thunk 首参共用（声明与 `thisParam`
   // 读方同名）。无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
   const thisSlot = opts.thisSlot ?? internalTmpName("__this", opts);
+  // 宿主内建名遮蔽判定（undefined / NaN / Infinity）：源 AST 任意作用域出现
+  // 同名绑定 ⇒ 本单元按「已遮蔽」发射标识符读点（$absVal + 绑定语义），否则
+  // 保持字面量精确折叠（旧产物逐字节不变）。调用方补给（mock/env 注入名）
+  // 一并并入；无命中不写字段。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(file.program, opts.shadowedIntrinsics);
   // Bug 21：模块级 var 提升（模块体是单作用域——块内 var 提升到模块顶；
   // export var 保持声明面不发提升 let，但名字留在发射集——块内同名 var
   // 仍改发赋值，写到导出绑定）
@@ -81,6 +137,15 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // assumeDirectiveFile（transpileFnBodyStmts 在函数体边界收待锚定
   // declarator）；无引理的文件锚定收集整体跳过，发射产物逐字节不变。
   const assumeFile = (opts.source ?? "").includes("@nudo:assume");
+  // 真实静态声明导出名（源 AST）：顶层 FunctionDeclaration 的 `export `
+  // 前缀判据。历史发射 quirk（所有顶层函数一律带 export）已修——否则
+  // run.ts 的文本回收会把私有顶层函数并入模块导出面（`export *` 被本地
+  // 私有同名函数遮蔽 / 私有名可被跨模块 import / 产物作为真实 ESM 时多出
+  // 导出）。只在 AST 上算一次（与 stripStaticExportDecls 的源 AST 名回收
+  // 同一口径），不依赖转译产物文本。
+  const exportedDeclNames = new Set(
+    meta?.staticExportNames ?? staticExportDeclNamesOfProgram(file.program),
+  );
   // Bug ②：ESM import 绑定对用户代码不可变（再赋值 TypeError，
   // "Assignment to constant variable"）——import 本地名进模块级 const 面：
   // 标识符赋值/自增/逻辑赋值走既有 $throwConstAssign 通道；嵌套作用域
@@ -97,25 +162,76 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const moduleConstNames = new Set<string>(opts.constNames ?? []);
   for (const name of importConstNames) moduleConstNames.add(name);
   registerConstFnScope(moduleConstNames, file.program.body, opts.constNames);
+  // analyze 模式：**发射期**剥离顶层效应语句（源 AST 口径——提升行在上方
+  // 已按原始 body 计算，块内 var 仍有模块顶绑定）。保留语句的发射字节与
+  // exec 模式一致，调用方无需再解析生成产物做二次剥离。
+  const emitBody =
+    opts.mode === "analyze"
+      ? analyzeTopLevelStatements(file.program.body)
+      : file.program.body;
+  // 模块顶层是**作用域边界**（与函数体同级）：模块体是**逐语句**发射的，
+  // 不经函数体入口（transpileFnBodyStmts）⇒ 模块作用域此前**没有**别名组
+  // ⇒ 顶层 fork（`if (…) { a.x = … }`）只快照/重绑 `a` ⇒ 别名伙伴 `b` 仍
+  // 指向 fork 前的对象 ⇒ 后续经 `a` 的写对 `b` 不可见（自信错值）。
+  // 本层自有组 = 前导连续 const 声明里的直接别名（同函数体边界口径）；
+  // 嵌套函数体按 fn-body.ts 的口径**继承**本组并按自身遮蔽名过滤。
+  const moduleAliasGroups = leadingConstAliasGroups(emitBody);
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
     thisSlot,
     constNames: moduleConstNames,
+    // **总是覆写**（含空数组）：模块是最外层作用域边界——外层组不得漏进
+    // 模块作用域（同 fn-body.ts 的作用域边界口径）。
+    aliasGroups: moduleAliasGroups,
+    ...(shadowedIntrinsics ? { shadowedIntrinsics } : {}),
+    // 顶层函数 `export ` 前缀判据（空集也传——缺省语义是「不发 export」）
+    exportedDeclNames,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
+    ...(hostRefresh !== null ? { hostImportRefresh: hostRefresh } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
-    `import { $absVal, $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $toNumeric, $updateAdd, $updateSub, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $objAccessorKey, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $setProto, $while, $whileSeq, $arr, $arrWithHoles, $restBind, $idx, $idxSet, $len, $call, $throw, $loopReturn, $catchReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $invokeSuperObj, $invokeSuperKey, \$getSuper, \$getSuperObj, \$setSuper, \$setSuperObj, \$setSuperStatic, \$staticSuperInvoke, \$super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $iterCheck, $catchVal, $switch, $staticInvoke, $setKey, $gen, $newTarget, $staticInit, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, \$refineRel, \$removeNullish, $removeNull, $removeUndefined, $removeMemberNullish, $narrowMemberEq, $narrowTypeOf, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $elems, $arguments, $isForkExit, $rawThis, $isBreakTo, $yieldStar, $tpl, $fnKindStamp } from ${JSON.stringify(runtime)};`,
-    ``,
   ];
+  if (runtime !== null) lines.push(runtimeImportOf(runtime));
+  lines.push(``);
+  // Bug 456：refresh 闭包由模块域变量强持有（注册表是弱引用）——host 形态
+  // 与 run.ts 文本改写同口径。
+  if (hostRefresh !== null && hostRefresh.binds.length > 0) {
+    lines.push(`let __nudoRefreshKeep;`);
+  }
   if (varHoistLine) lines.push(varHoistLine);
-  for (const stmt of file.program.body) {
+  for (const stmt of emitBody) {
     lines.push(transpileStatement(stmt, 0, scopedOpts));
   }
-  return lines.join("\n") + "\n";
+  return { code: lines.join("\n") + "\n", meta };
+}
+
+/**
+ * host target 的 live import refresh 赋值（源序；mock 绑定不刷新——刷新会
+ * 把 mock 冲掉）。注册闭包在首个产生绑定的 import 语句后一次性发射。
+ */
+function hostImportRefreshBindsOf(
+  imports: TranspileMeta["imports"],
+  mockNames: ReadonlySet<string> | undefined,
+): string[] {
+  const out: string[] = [];
+  for (const imp of imports) {
+    const local = imp.local;
+    if (local === undefined || mockNames?.has(local) === true) continue;
+    if (imp.kind === "named") {
+      out.push(
+        `${local} = __nudoBindImport(${JSON.stringify(imp.spec)}, ${JSON.stringify(imp.imported)});`,
+      );
+    } else if (imp.kind === "default") {
+      out.push(`${local} = __nudoBindImport(${JSON.stringify(imp.spec)}, "default");`);
+    } else if (imp.kind === "namespace") {
+      out.push(`${local} = __nudoBindNamespace(${JSON.stringify(imp.spec)});`);
+    }
+  }
+  return out;
 }
 
 /** 解析 + transpile */

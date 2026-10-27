@@ -252,7 +252,10 @@ describe("strict seam: guard shadow bindings × ESM/CJS source face", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: "caught:ReferenceError" });
   });
 
-  it("源码自身 \"use strict\" 前缀经 transpile 保留（无 ESM 语法的 strict 脚本）", () => {
+  it("ESM 源叠加显式 \"use strict\" 前缀：未声明写仍冒 ReferenceError", () => {
+    // 注：本夹具含 `export`（ESM ⇒ 恒 strict），断言的是「显式前缀不改变
+    // strict 面」；真正的非 ESM strict 脚本由 module-strict-directive.test.ts
+    // 覆盖（序言指令 ⇒ sourceIsStrict）。
     const r = call(
       `"use strict";
        function g() { q3 = 1; return "ok"; }

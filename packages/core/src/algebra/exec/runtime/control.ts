@@ -1,11 +1,11 @@
 /**
- * 控制流：loop/try 退出栈、$fork/$for/$while、$throw。
+ * 控制流：loop/try 退出栈、$fork/$for/$whileSeq、$throw。
  */
-import { AsyncLocalStorage } from "node:async_hooks";
+import "node:async_hooks";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, never, numLit, unknown, type Confidence } from "../../abs.ts";
-import { lit } from "../../term.ts";
+import { abs, confJoin, litValue, never, unknown } from "../../abs.ts";
+import "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import {
@@ -15,18 +15,7 @@ import {
   pushCollectionArm,
 } from "../../collections.ts";
 import { joinAbs, objOf } from "../../objects.ts";
-import {
-  errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame,
-  orphanMayThrowEffects, recordMayThrow, type MayThrowEffect,
-} from "../may-throw.ts";
-import {
-  NudoThrow, isNudoThrow, noBody, undef, oobUndef, writeInPlace, clearStaleTermPred,
-  asAbsVal, callAtFunctionBoundary, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse,
-  currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked,
-  NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
-  runWithLoopExits, takeLoopExits, takeThrowExits, pushLoopExit, pushThrowExit, $pushLoopExit,
-} from "./state.ts";
-import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
+import { NudoThrow, isNudoThrow, undef, oobUndef, asAbsVal, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked, NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, pushThrowExit } from "./state.ts";
 import { $arr } from "./containers.ts";
 import {
   notePromiseExecutorFork,
@@ -315,39 +304,6 @@ import { makeLoopWidener } from "./loop-widen.ts";
 import { applyExitJoinInvariants, applyInvariantsToPack, hasInvariantSpecs } from "./invariant-apply.ts";
 
 /**
- * for 的惰性展开：生成器只负责「按上限吐状态」。
- * 抽象条件无法诚实终止——消费者必须自带 maxIters。
- */
-export function* $forIter(
-  init: Abs,
-  test: (s: Abs) => Abs,
-  step: (s: Abs) => Abs,
-  body: (s: Abs) => Abs,
-  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
-): Generator<{ state: Abs; test: Abs; afterBody: Abs }, void, void> {
-  let s = init;
-  for (let i = 0; i < maxIters; i++) {
-    const t = test(s);
-    if (isDefinitelyFalse(t)) {
-      yield { state: s, test: t, afterBody: s };
-      return;
-    }
-    let afterBody: Abs = s;
-    let broke = false;
-    try {
-      afterBody = body(s);
-    } catch (e) {
-      if (isNudoBreak(e)) broke = true;
-      else if (isNudoContinue(e)) afterBody = s; // 体提前结束
-      else throw e;
-    }
-    yield { state: s, test: t, afterBody };
-    if (broke) return;
-    s = step(afterBody);
-  }
-}
-
-/**
  * 有界 for：unroll ≤ maxIters，每步「可能退出」的态 join；
  * 相邻态 leq 视为不动点提前停。
  */
@@ -372,7 +328,7 @@ export function $for(
   let extJoin: Abs | undefined;
   const pack = opts?.pack;
   const unpack = opts?.unpack;
-  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：计数器
+  // 循环携带绑定宽化器（Bug 48，与 $forOf 同一机制）：计数器
   // （state 线程）与外层绑定（extJoin 打包）各一个——抽象条件预算耗尽的
   // 有界快照 join（{0..8}，conf exact）对任意迭代次数欠近似；增长槽位
   // 宽化到无上界域（sound），join-幂等绑定不动
@@ -613,84 +569,6 @@ function widenLoopJoinInner(a: Abs): Abs {
   return widenValue(a);
 }
 
-// while
-/**
- * 有界 while：state 线程穿 test/step（与 $for 同折叠语义）。
- * 抽象条件无法诚实终止——必须 maxIters。
- */
-export function $while(
-  init: Abs,
-  test: (s: Abs) => Abs,
-  step: (s: Abs) => Abs,
-  maxIters: number = DEFAULT_MAX_LOOP_ITERS,
-): Abs {
-  let state = init;
-  let exitJoin: Abs | undefined;
-  // 循环携带绑定宽化器（Bug 48）：抽象条件预算耗尽时出口 join 是有界
-  // 快照 {0..8}——常步长计数器对任意迭代次数欠近似（n=100 → 100 ∉
-  // {0..8}）且 conf exact 是硬声称；增长槽位宽化到无上界域（sound）
-  const widen = makeLoopWidener();
-  // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
-  // 硬上限；硬上限仍具体真 → 截断观测 + conf 降级。
-  let limit = maxIters;
-  let extended = false;
-  let concreteExhausted = false;
-
-  for (let i = 0; i < limit; i++) {
-    const t = test(state);
-    if (isDefinitelyFalse(t)) {
-      return exitJoin ? joinAbs(exitJoin, state) : state;
-    }
-    const abstractTest = !isDefinitelyTrue(t);
-    if (abstractTest) {
-      if (extended) break;
-      // N5：出口臂（同 $for——无 post-loop settle 覆盖则悬挂）
-      enterPromiseForkArm();
-      leavePromiseForkArm();
-      widen.observe(state);
-      exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
-    }
-    // N5：抽象条件迭代 = 条件路径（体 settle 不得覆盖出口臂）
-    let next: Abs;
-    if (abstractTest) enterPromiseForkArm();
-    try {
-      next = step(state);
-    } finally {
-      if (abstractTest) leavePromiseForkArm();
-    }
-    if (i > 0) {
-      const nvR = litValue(next);
-      const svR = litValue(state);
-      // 同上：.ok 判字面量，禁止 value !== undefined 哨兵。
-      const stuck =
-        (nvR.ok && svR.ok && nvR.value === svR.value) ||
-        ((!nvR.ok || nvR.value === undefined) &&
-          (!svR.ok || svR.value === undefined) &&
-          leqAbs(next, state).ok);
-      if (stuck) {
-        return exitJoin ? joinAbs(exitJoin, next) : next;
-      }
-    }
-    state = next;
-    if (i + 1 === limit && isDefinitelyTrue(test(state))) {
-      if (limit < MAX_CONCRETE_LOOP_ITERS) {
-        limit = MAX_CONCRETE_LOOP_ITERS;
-        extended = true;
-      } else {
-        concreteExhausted = true;
-      }
-    }
-  }
-  if (concreteExhausted) {
-    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
-    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
-    notePromiseExecutorHang();
-    return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
-  }
-  // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
-  return exitJoin ? widen.widenFinal(joinAbs(exitJoin, state)) : state;
-}
-
 /**
  * 顺序 while（具体/可变闭包）：body 内对 JS 变量赋值。
  * 提供 pack/unpack 时，抽象条件的可能出口会 join 回绑定（P0 健全）；
@@ -712,7 +590,7 @@ export function $whileSeq(
   const pack = opts?.pack;
   const unpack = opts?.unpack;
   let exitJoin: Abs | undefined;
-  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：抽象条件
+  // 循环携带绑定宽化器（Bug 48，与 $forOf 同一机制）：抽象条件
   // 预算耗尽的出口 join 是有界快照并集（{0..8}，conf exact）——常步长
   // 计数器对任意迭代次数欠近似；增长槽位宽化到无上界域（sound）
   const widen = pack ? makeLoopWidener() : undefined;
@@ -844,6 +722,45 @@ export function $whileSeq(
  * 修法：遇到非字面量 case 测试 ⇒ **分叉**（命中该臂 / 不命中继续后续臂与
  * default），两路结果并入返回域（switchForked）。
  */
+/**
+ * switch 臂的统一运行器：`$switch`（抽象判别式）与 `switchForked`（非字面量
+ * case 测试）共用同一套臂协议——collection overlay 入栈、生成器 yield 隔离、
+ * 抽象 break/continue 标记、promise settle 臂 token。
+ *
+ * `run(fn, { collectYields: false })`：该臂不贡献 yield 收集器（记 null，
+ * 同 `$fork` 隐式 else 口径）——隐式 no-match 臂体是 `() => undef()`，本就
+ * 无 yield；它的空收集器会把单臂 switch 翻成多臂 join（`mergeArmYields`
+ * 按非 null 收集器个数分流）⇒ 生成器元素类型被降级成 unknown。
+ */
+function beginSwitchArms(): {
+  run: (fn: () => Abs, opts?: { collectYields?: boolean }) => ForkArm;
+  finish: () => void;
+} {
+  beginCollectionFork();
+  const overlays: Array<ReturnType<typeof popCollectionArm>> = [];
+  const ysList: Array<GenYieldCollector | null> = [];
+  return {
+    run(fn, opts) {
+      pushCollectionArm();
+      try {
+        const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
+        // 隐式 no-match 臂不贡献 yield 收集器（collectYields:false ⇒ 记
+        // null，同 $fork 隐式 else 口径）：空收集器会把单臂 switch 翻成
+        // 多臂 join（genPathSensitive + genJoinOverride ⇒ 元素类型降
+        // unknown）。该臂体是 `() => undef()`——本就不产出 yield。
+        ysList.push(opts?.collectYields === false ? null : r.ys);
+        return r.v;
+      } finally {
+        overlays.push(popCollectionArm());
+      }
+    },
+    finish() {
+      endCollectionFork(overlays);
+      if (yieldStack.length > 0) mergeArmYields(ysList);
+    },
+  };
+}
+
 export function $switch(
   disc: Abs,
   cases: Array<{ test: Abs; run: () => Abs }>,
@@ -868,20 +785,8 @@ export function $switch(
   }
 
   const exits = loopExitsAls.getStore();
-  beginCollectionFork();
-  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<GenYieldCollector | null> = [];
-  const runArm = (fn: () => Abs): ForkArm => {
-    pushCollectionArm();
-    try {
-      // 抽象 disc 臂：臂内 break/continue 信号标记 abstract（同 $fork）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
-      armYsList.push(r.ys);
-      return r.v;
-    } finally {
-      armOverlays.push(popCollectionArm());
-    }
-  };
+  const arms = beginSwitchArms();
+  const runArm = arms.run;
   const results: ForkArm[] = [];
   try {
     // 共享 body（case 1: case 2: …）只执行一次，避免非幂等副作用被放大
@@ -897,19 +802,12 @@ export function $switch(
       // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
       // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
       // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
-      pushCollectionArm();
-      try {
-        results.push(
-          promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() },
-        );
-        armYsList.push(null);
-      } finally {
-        armOverlays.push(popCollectionArm());
-      }
+      // collectYields:false（同 $fork 隐式 else 记 null）——隐式臂无 yield，
+      // 不得让它的空收集器把单臂 switch 翻成多臂 join（元素类型降 unknown）
+      results.push(runArm(() => undef(), { collectYields: false }));
     }
   } finally {
-    endCollectionFork(armOverlays);
-    if (yieldStack.length > 0) mergeArmYields(armYsList);
+    arms.finish();
   }
   if (results.length === 0) return undef();
 
@@ -962,21 +860,8 @@ function switchForked(
   cache: Map<() => Abs, ForkArm>,
 ): Abs {
   const exits = loopExitsAls.getStore();
-  beginCollectionFork();
-  const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<GenYieldCollector | null> = [];
-  const runArm = (fn: () => Abs): ForkArm => {
-    pushCollectionArm();
-    try {
-      // 分叉臂：命中与否不可判定 ⇒ 臂内 break/continue 信号标记 abstract
-      // （同 $fork 抽象臂）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
-      armYsList.push(r.ys);
-      return r.v;
-    } finally {
-      armOverlays.push(popCollectionArm());
-    }
-  };
+  const arms = beginSwitchArms();
+  const runArm = arms.run;
   /** 已执行过的共享体：复用其结局（不重复执行副作用） */
   const replay = (arm: ForkArm): Abs => {
     if (arm.kind === "ret") throw new NudoReturn(arm.v);
@@ -1007,8 +892,7 @@ function switchForked(
       return asAbsVal(dflt());
     });
   } finally {
-    endCollectionFork(armOverlays);
-    if (yieldStack.length > 0) mergeArmYields(armYsList);
+    arms.finish();
   }
   return settleForkArms(a, b, exits);
 }

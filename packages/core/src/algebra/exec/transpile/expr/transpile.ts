@@ -8,14 +8,14 @@
  * - positionRecordWrap 只包一次：内部递归一律经 transpileExpression 入口，
  *   族模块回环经 transpile-dispatch 别名（emitTranspileExpression）；
  * - SSR 加载序陷阱：模块体尾部的 dispatch bind 是加载期副作用——必须直接
- *   import leaf（transpile-dispatch）与定义模块（./short-circuit.ts），不经
- *   facade/barrel 中转（vite SSR 下 barrel 再导出不是实例化期绑定）。
+ *   import leaf（transpile-dispatch），不经 facade/barrel 中转（vite SSR 下
+ *   barrel 再导出不是实例化期绑定）；短路发射（./short-circuit.ts）不由
+ *   dispatch 注册，消费方（assignment/operators）直接 import。
  */
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
 import { matchReplacement } from "../helpers.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { tryTranspileOptionalChain } from "./optional-chain.ts";
 import { transpileAtomExpr } from "./atom.ts";
 import { transpileOperatorExpr } from "./operators.ts";
@@ -24,10 +24,7 @@ import { transpileCallExpr } from "./call.ts";
 import { transpileObjectExpr } from "./object.ts";
 import { transpileAssignmentExpr } from "./assignment.ts";
 import { transpileFunctionExpr } from "./function.ts";
-import {
-  bindTranspileExpression,
-  bindTranspileShortCircuit,
-} from "../transpile-dispatch.ts";
+import { bindTranspileExpression } from "../transpile-dispatch.ts";
 /**
  * 表达式发射入口（位置插桩包装层）。recordPositions 时把
  * Identifier 值读 / 静态成员读的转译输出包 `$nodoPos`——
@@ -148,4 +145,3 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
 
 // Register leaf dispatch so stmt/emit/member-path need not import this module.
 bindTranspileExpression(transpileExpression);
-bindTranspileShortCircuit(transpileShortCircuitExpr);

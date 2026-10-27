@@ -662,7 +662,9 @@ function deriveOneRoot(
           $invoke(inst, methodName ?? "", entryArgs);
         }
       } else if (plan.fnName in run) {
-        callTranspiledExportFull(run, plan.fnName, entryArgs);
+        // plan.fnName 来自 topLevelFnNames（含私有声明）⇒ 分析面语义：
+        // 同名 re-export / CJS 合并不得顶替本地私有函数。
+        callTranspiledExportFull(run, plan.fnName, entryArgs, { preferLocal: true });
       }
       calls.push(
         ...bCalls.map((r) => ({

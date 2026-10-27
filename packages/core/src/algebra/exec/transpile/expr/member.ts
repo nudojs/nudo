@@ -9,9 +9,9 @@
  * - 私有名（this.#x / C.#x）→ "#x" 混淆键槽（公有名不含 "#"，无碰撞）；
  * - 写目标的重绑路径在 ./assignment.ts（member-path 写回链），此处只读。
  */
-import type { Expression, MemberExpression, OptionalMemberExpression } from "@babel/types";
+import type { Expression, MemberExpression, Node, OptionalMemberExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, privateNameKeySrc } from "../helpers.ts";
+import { emitMemberKey } from "../member-key.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 /**
@@ -40,76 +40,38 @@ export function transpileMemberExpr(
         }
         return `$getSuperObj(${opts.thisParam}, ${keySrc})`;
       }
-      if (expr.computed) {
-        const obj = transpileExpression(expr.object as Expression, opts);
-        const key = expr.property;
-        if (key.type === "StringLiteral") {
-          return optional
-            ? `$optionalGet(${obj}, ${JSON.stringify(key.value)})`
-            : `$get(${obj}, ${JSON.stringify(key.value)})`;
-        }
-        if (key.type === "NumericLiteral") {
-          return optional
-            ? `$optionalGet(${obj}, ${JSON.stringify(String(key.value))})`
-            : `$idx(${obj}, $lit(${key.value}))`;
-        }
-        // 宿主 Symbol 常量键（m[Symbol.iterator]）：投影为 "@@name" 字符串键，
-        // runtime $get 对内建 brand 解析为可 typeof 的方法形状。
-        // Bug 149：同时标记「本键来自符号投影」——陷阱边界据此把 "@@name"
-        // 还原成真 symbol（规范 PropertyKey；字面量串键 "@@name" 不带标记，
-        // 仍是字符串键——两者是不同的 PropertyKey，不得混叠）。
-        if (
-          key.type === "MemberExpression" &&
-          key.computed !== true &&
-          key.object.type === "Identifier" &&
-          key.object.name === "Symbol" &&
-          key.property.type === "Identifier"
-        ) {
-          const symKey = JSON.stringify(`@@${key.property.name}`);
-          return optional
-            ? `$optionalGet(${obj}, ${symKey}, { symbolKey: true })`
-            : `$get(${obj}, ${symKey}, { symbolKey: true })`;
-        }
-        if (isExpression(key)) {
-          const k = transpileExpression(key, opts);
-          return `$idx(${obj}, ${k})`;
-        }
-        // 计算属性键非 Expression：抛 unsupported 交消费方回落（不得假精确 undefined）
-        throw new NudoUnsupportedError(
-          `member:computed`,
-          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
-        );
-      }
-      if (expr.property.type === "PrivateName") {
-        // Bug 78：this.#x / C.#x → "#x" 混淆键槽读写（公有名不含 "#"，
-        // 无碰撞）；不再抛 unsupported 令整模块 fail-closed
-        const recv = transpileExpression(expr.object as Expression, opts);
-        const key = privateNameKeySrc(
-          expr.property as { id?: { name?: string }; name?: string },
-        );
-        if (!key) {
-          throw new NudoUnsupportedError(
-            `member:PrivateName`,
-            expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
-          );
-        }
-        return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
-      }
-      if (expr.property.type !== "Identifier") {
-        // 其余非 Identifier 属性：抛 unsupported 交消费方回落
-        const ptype = (expr.property as { type: string }).type;
-        throw new NudoUnsupportedError(
-          `member:${ptype}`,
-          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
-        );
-      }
-      // o.length
-      if (expr.property.name === "length") {
+      // o.length：静态属性走 $len（长度/诊断通道，不是普通槽读）。
+      if (!expr.computed && expr.property.type === "Identifier" && expr.property.name === "length") {
         return `$len(${transpileExpression(expr.object as Expression, opts)})`;
       }
+      const memberKey = emitMemberKey(
+        expr.property as Node,
+        expr.computed === true,
+        opts,
+      );
+      if (memberKey === null) {
+        const ptype = (expr.property as { type?: string }).type ?? "unknown";
+        throw new NudoUnsupportedError(
+          `member:${expr.computed ? "computed" : ptype}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
+      }
       const recv = transpileExpression(expr.object as Expression, opts);
-      const key = JSON.stringify(expr.property.name);
-      return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
+      if (memberKey.kind === "get") {
+        const key = JSON.stringify(memberKey.key);
+        // Bug 149：符号投影键带 symbolKey 标记——Proxy 陷阱边界据此把
+        // "@@name" 还原成真 symbol（字面量串键 "@@name" 不带标记）。
+        const opt = memberKey.symbol !== undefined ? `, { symbolKey: true }` : "";
+        return optional
+          ? `$optionalGet(${recv}, ${key}${opt})`
+          : `$get(${recv}, ${key}${opt})`;
+      }
+      if (memberKey.constNumber !== undefined) {
+        return optional
+          ? `$optionalGet(${recv}, ${JSON.stringify(String(memberKey.constNumber))})`
+          : `$idx(${recv}, ${memberKey.keySrc})`;
+      }
+      return `$idx(${recv}, ${memberKey.keySrc})`;
     }
   }
 }

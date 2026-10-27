@@ -130,6 +130,10 @@ function fnToAbs(env: AstEnv, name: string): Abs | undefined {
     env,
     // Bug 399：逐位「可省略」标记 ⇒ 必选元数不再靠名字后缀猜
     ...(impl.optionalParams ? { optionalParams: impl.optionalParams } : {}),
+    // 源种类严格性（env 条目由源 AST 生产者按 ESM/CJS 面写入）⇒ 导出 fn
+    // 的 body 编译单元与模块运行同口径，不按函数猜；未记录（合成 env / 老
+    // 调用方）⇒ 不写 = sloppy（body-fn 只看 `strict === true`）。
+    ...(impl.strict !== undefined ? { strict: impl.strict } : {}),
   });
 }
 

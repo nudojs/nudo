@@ -13,21 +13,15 @@
  * deleteProtoMethod 钩子）；delete 返回值恒 true（原生同）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, litValue, strLit, unknown } from "../../abs.ts";
 import { lit } from "../../term.ts";
-import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
+
+import { pTrue } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs, getInstanceProto } from "../../objects.ts";
+import { joinAbs, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs, getInstanceProto } from "../../objects.ts";
 import { isNullishLitAbs } from "../../surface.ts";
-import { isMapAbs, isSetAbs, mapSizeAbs, setSizeAbs } from "../../collections.ts";
-import {
-  evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
-  isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES,
-  symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoOfRecv, hostBuiltinCtorName, protoBrandAbs,
-} from "../../builtins.ts";
-import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
+import { extStateOf, getPropFlags, isObjectProtoBrand, objectProtoBrand, protoOfRecv, hostBuiltinCtorName, protoBrandAbs } from "../../builtins.ts";
+import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
@@ -38,9 +32,8 @@ import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
-import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
-import { $typeof, $eq, $ne } from "./ops.ts";
-import { $objAccessor, lookupObjAccessor, migrateAccessors, accessorTable } from "../../accessors.ts";
+import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth } from "./state.ts";
+import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
 // Bug 230：Proxy [[Delete]] 规范不变量的单一实现（S9 落在 builtins/object/
 // descriptor.ts）——delete 运算符路径（$delRes）接线；Reflect.deleteProperty
 // 臂已由 S9 接线。
@@ -190,14 +183,7 @@ export function findStaticClassAccessor(
   return undefined;
 }
 
-/** JS 访问器派发（$get/$set 共用）：obj 走侧表，brand 走 class 注册表 */
-export function findAccessor(
-  o: Abs,
-  key: string,
-): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
-  if (o.shape.k === "brand") return findClassAccessor(o.shape.name, key);
-  return lookupObjAccessor(o, key);
-}
+
 
 // in / instanceof / classExpr / delete
 // --- in / instanceof / delete（transpile 运算符路由） ---
@@ -674,20 +660,14 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
   Symbol: new Set(["description"]),
 };
 
-/** evaluator 品牌链（**成员查找链**）：registry extends 优先，内建错误层级回退
- *  （限深防环）。
- *  Bug 192：".prototype" 后缀名（protoBrandAbs 品牌）的链**含 owner 类**——
- *  owner 的实例方法就挂在 owner.prototype 上（`A.prototype.m` 原生是函数、
- *  `"m" in A.prototype` 原生 true）。此前链只从 owner 的**父类**起走
- *  （`evalClassChain("A.prototype") === ["A.prototype"]`）→ 成员读 / in 双双
- *  折 exact undefined / false（wrong-exact）。
- *  owner 仅在**已注册**时入链（内建构造器名不在 registry——其原型面走
- *  BUILTIN_BRAND_* 表，链语义保持不变）。 */
-export function evalClassChain(name: string): string[] {
+/** 链构造单一实现：registry extends 优先，内建错误层级回退（限深防环）。
+ *  includeOwner 只影响 ".prototype" 名（owner 是否入链）——两个导出包装的
+ *  唯一差异。 */
+function classChain(name: string, includeOwner: boolean): string[] {
   const ownerOf = name.endsWith(".prototype") ? name.slice(0, -".prototype".length) : name;
   const out = [name];
-  // Bug 192：owner 入链（其实例方法挂 owner.prototype）
-  if (ownerOf !== name && getEvalClass(ownerOf)) out.push(ownerOf);
+  // Bug 192：owner 入链（其实例方法挂 owner.prototype）——仅成员查找链
+  if (includeOwner && ownerOf !== name && getEvalClass(ownerOf)) out.push(ownerOf);
   let cur: string | undefined = ownerOf;
   let depth = 0;
   while (cur && depth++ < 32) {
@@ -700,6 +680,19 @@ export function evalClassChain(name: string): string[] {
   return out;
 }
 
+/** evaluator 品牌链（**成员查找链**）：registry extends 优先，内建错误层级回退
+ *  （限深防环）。
+ *  Bug 192：".prototype" 后缀名（protoBrandAbs 品牌）的链**含 owner 类**——
+ *  owner 的实例方法就挂在 owner.prototype 上（`A.prototype.m` 原生是函数、
+ *  `"m" in A.prototype` 原生 true）。此前链只从 owner 的**父类**起走
+ *  （`evalClassChain("A.prototype") === ["A.prototype"]`）→ 成员读 / in 双双
+ *  折 exact undefined / false（wrong-exact）。
+ *  owner 仅在**已注册**时入链（内建构造器名不在 registry——其原型面走
+ *  BUILTIN_BRAND_* 表，链语义保持不变）。 */
+export function evalClassChain(name: string): string[] {
+  return classChain(name, true);
+}
+
 /**
  * evaluator 品牌链（**[[Prototype]] 链**语义）："X.prototype" 的链**不含
  * owner**——OrdinaryHasInstance 从 O.[[Prototype]] 起步：`X.prototype
@@ -710,18 +703,7 @@ export function evalClassChain(name: string): string[] {
  * 成员查找（方法 / 访问器 / 数据槽）走 evalClassChain。
  */
 export function evalProtoChain(name: string): string[] {
-  const ownerOf = name.endsWith(".prototype") ? name.slice(0, -".prototype".length) : name;
-  const out = [name];
-  let cur: string | undefined = ownerOf;
-  let depth = 0;
-  while (cur && depth++ < 32) {
-    const spec = getEvalClass(cur);
-    const parent: string | undefined = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
-    if (!parent || out.includes(parent)) break;
-    out.push(parent);
-    cur = parent;
-  }
-  return out;
+  return classChain(name, false);
 }
 
 /** P3a：NAMESPACE_GLOBALS 路由表内、hostBuiltinCtorName 名单外的可扩展
@@ -1412,7 +1394,7 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
 
 /** instanceof 右操作数非标识符（表达式/成员路径）：RHS 值传入时先做原生
  *  非对象校验（definite / may TypeError）；构造器值未知 → 抽象 boolean */
-export function $instanceofNonIdent(left: Abs, right?: Abs): Abs {
+export function $instanceofNonIdent(_left: Abs, right?: Abs): Abs {
   if (right !== undefined) validateInstanceofRhs(asAbsVal(right));
   return bool();
 }

@@ -140,7 +140,7 @@ Arithmetic, comparison, unary, and spread are algebraic on Abs — there is no s
 
 - `core/src/algebra/surface.ts` — `typeofAbs`, `negAbs`, `notAbs`, `strictEqAbs` (unary ops and strict equality, on Abs).
 - `core/src/algebra/arithmetic.ts` — binary arithmetic (`add` / `sub` / `mul` / `div` / `mod` / `cmp`): monotonicity + constant folding + constraint propagation, on Abs.
-- `service/src/evaluator/abs-route.ts` — object `join` / φ-merge helpers when branches must merge object shapes.
+- `core/src/algebra/objects.ts` — object `join` (`joinAbs` / `joinObjects`) / φ-merge helpers when branches must merge object shapes.
 
 ```typescript
 // Binary arithmetic routes through the algebra:
@@ -174,7 +174,7 @@ parser ──▶ core
 | **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
 | **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
 | **Evaluator (Abs-native)** | evaluator transpile+exec only; fail-closed for eval-incapable sources |
-| **surface / arithmetic / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
+| **surface / arithmetic / objects** | Arithmetic, comparison, unary, spread, and branch-merge join routed through algebra |
 | **Environment** | Variable bindings (name → Abs) |
 
 ### 3.2 Evaluation Rules

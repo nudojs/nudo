@@ -3599,7 +3599,7 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
   `disproved`」的性质不变式）；既有 `core-bug-1080` 的一条断言随假红消除同步
   更新（fail-closed 语义改由 `ret.pred` 侧承载，Φ 侧单列「证不出」）。
   
-  **已知边界**：当前 `@nudo:assume` 文法只允许「名 <= 名」，而蕴含判定的区间
+  **已知边界**：当前 `@nudo:assume` 文法只允许「`名 <= 名`」，而蕴含判定的区间
   上下文只提取**数值**界 ⇒ 前提推不出字面界契约 ⇒ Φ 接线虽已生效（生产路径
   确实把 Φ 交到证明通道），但**暂不翻转任何判据**。要让 Φ 真正生效，需要其一：
   ① `@nudo:assume` 文法支持字面界（如 `d <= 10`）；② 把形参契约事实并入返回点
@@ -10475,7 +10475,7 @@ Older versions (57) → [Full release history](./releases-history.md#pkg-lsp)
   
   **第 4 条 · `crypto.subtle` 的拒绝 reason（不改，保持 `unknown`，已钉）。**
   宿主实测：node 的 WebCrypto 与浏览器**不同**——拒绝 reason ∈
-  {NotSupportedError, TypeError, OperationError, DataError}（**从不是**
+  `{NotSupportedError, TypeError, OperationError, DataError}`（**从不是**
   OperationError 唯一值）⇒ 按 `promiseOf` 的契约（reason 必须是**全部**拒绝
   路径的公共上界，否则是 wrong-exact）node env 的 reason 必须保持 `unknown`；
   web env 的 `OperationError` 是**浏览器口径**（WebCrypto 规范）⇒ 跨 env

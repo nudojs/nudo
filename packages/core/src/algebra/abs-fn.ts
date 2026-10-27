@@ -4,11 +4,9 @@
  */
 
 import type { Node } from "@babel/types";
-import type { Abs, Confidence, Shape } from "./abs.ts";
+import type { Abs, Confidence } from "./abs.ts";
 import { abs } from "./abs.ts";
-import type { Term } from "./term.ts";
-import { litKeyString } from "./term.ts";
-import type { Pred } from "./pred.ts";
+import { absKey } from "./abs-key.ts";
 import type { AstEnv } from "./hof-types.ts";
 
 /** Abs 原生 env/builtin 实现（evaluator 优先） */
@@ -142,6 +140,16 @@ export type AbsFnImpl = {
   /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
   pureName?: string;
   /**
+   * 源码面严格性（strict mode code → true；sloppy → false；未知不写）：
+   * ESM 源 **∨** 序言含 `"use strict"` 指令（`code-text.ts#sourceIsStrict`），
+   * 且 strict 代码区内词法继承（strict 函数体 / class 体内恒 strict）；
+   * class 方法体恒 true。body 编译单元（`exec/body-fn.ts`）据此发射
+   * `"use strict";`——块级函数声明、未声明赋值、形参/`arguments` 等
+   * sloppy↔strict 分叉必须与模块运行（B run 的 strict 前缀）同口径，
+   * 不能按函数猜。
+   */
+  strict?: boolean;
+  /**
    * M4：transpile 静态判定的「无副作用面」facet（保守：任意赋值/自增/
    * 调用/delete/标签模板/非白名单 new 都算有副作用）。sort 等原生调用
    * 次数取决于算法内部的内建，仅在该 facet 在场时才真执行回调比较——
@@ -250,102 +258,16 @@ export function hostFnCtorFacet(v: Function): boolean | undefined {
 
 // --- stable key（relationFn fingerprint）---
 
-function termKey(t: Term): string {
-  // -0/0 身份不同：键走 litKeyString（String(-0)==="0" 会折叠）
-  if (t.op === "lit") return `L:${typeof t.value}:${litKeyString(t.value)}`;
-  if (t.op === "var") return `V:${t.id}`;
-  return `A:${t.fn}(${t.args.map(termKey).join(",")})`;
-}
-
-function predKey(p: Pred): string {
-  switch (p.op) {
-    case "true":
-      return "T";
-    case "false":
-      return "F";
-    case "eq":
-    case "ne":
-    case "lt":
-    case "le":
-    case "gt":
-    case "ge":
-      return `${p.op}(${termKey(p.a)},${termKey(p.b)})`;
-    case "and":
-    case "or":
-      return `${p.op}(${p.args.map(predKey).sort().join(",")})`;
-    case "not":
-      return `not(${predKey(p.arg)})`;
-    case "typeof":
-      return `typeof(${termKey(p.t)},${p.type})`;
-    case "assumeFinite":
-      return `assumeFinite(${termKey(p.t)})`;
-  }
-}
-
-function shapeStableKey(s: Shape, seen: Set<object>): string {
-  switch (s.k) {
-    case "never":
-    case "any":
-    case "unknown":
-      return s.k;
-    case "prim":
-      return `p:${s.type}`;
-    case "brand":
-      return `b:${s.name}(${absStableKey(s.shape, seen)})`;
-    case "eff":
-      return `e:${s.eff}<${absStableKey(s.inner, seen)}>`;
-    case "arr":
-      return `arr(${absStableKey(s.element, seen)})`;
-    case "tuple": {
-      const els = s.elements.map((e) => absStableKey(e, seen)).join(",");
-      const rest = s.rest ? `...${absStableKey(s.rest, seen)}` : "";
-      return `tup[${els}${rest}]`;
-    }
-    case "fn": {
-      const pts = (s.paramTypes ?? []).map((t) => absStableKey(t, seen)).join(",");
-      const ret = s.returnType ? absStableKey(s.returnType, seen) : "?";
-      const name = s.name ? `#${s.name}` : "";
-      const slots = s.slots
-        ? `{${Object.keys(s.slots)
-            .sort()
-            .map((k) => `${k}:${absStableKey(s.slots![k]!.value, seen)}`)
-            .join(",")}}`
-        : "";
-      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}${slots}`;
-    }
-    case "sum":
-      return `sum(${s.members.map((m) => absStableKey(m, seen)).join("|")})`;
-    case "obj": {
-      const slots = Object.keys(s.slots)
-        .sort()
-        .map((k) => {
-          const slot = s.slots[k]!;
-          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
-          return `${k}${flags}:${absStableKey(slot.value, seen)}`;
-        })
-        .join(",");
-      const idx = s.index
-        ? `idx(${absStableKey(s.index.key, seen)}→${absStableKey(s.index.value, seen)})`
-        : "";
-      return `obj{${slots}}${idx}${s.open ? "open" : ""}`;
-    }
-  }
-}
-
-function absStableKey(a: Abs, seen: Set<object> = new Set()): string {
-  if (seen.has(a)) return "cycle";
-  seen.add(a);
-  const t = a.term ? `=${termKey(a.term)}` : "";
-  const p = a.pred ? `@${predKey(a.pred)}` : "";
-  return `${shapeStableKey(a.shape, seen)}${t}${p}`;
-}
-
-/** relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制） */
+/**
+ * relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制）。
+ * 结构序列化统一走 abs-key.ts（覆盖 holes / fn slots / optionalParams /
+ * ctor / obj 槽标志 / eff rejected / brand tv；无 α-rename）。
+ */
 export function relationFingerprint(
   paramTypes: Abs[],
   returnType: Abs,
 ): string {
-  return `rel(${paramTypes.map((p) => absStableKey(p)).join(",")})=>${absStableKey(returnType)}`;
+  return `rel(${paramTypes.map((p) => absKey(p)).join(",")})=>${absKey(returnType)}`;
 }
 
 /**

@@ -21,6 +21,8 @@ import type { TranspileOptions } from "../types.ts";
 import { isExpression, internalTmpNameSet } from "../helpers.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
+import { emitArgList } from "../call-args.ts";
+import { emitMemberKey } from "../member-key.ts";
 
 /**
  * Bug 1149：可选链族的引擎内部临时名（**基名**）——实际名经
@@ -44,6 +46,8 @@ const FN_BASE = "$__fn";
 const DEL_OC_BASE = "__oc";
 const DEL_P_BASE = "__nudoDelP";
 const DEL_K_BASE = "__nudoDelK";
+const DEL_N_BASE = "__nudoDelN";
+const DEL_R_BASE = "__nudoDelR";
 const RE_ARGS_BASE = "__nudoReArgs";
 const RE_RES_BASE = "__v";
 
@@ -59,6 +63,10 @@ type ChainTmpNames = {
   delP: string;
   /** delete 键载体 */
   delK: string;
+  /** delete 新父对象载体（写回用） */
+  delN: string;
+  /** delete 布尔结果载体 */
+  delR: string;
   /** 正则状态写回：实参数组载体 */
   reArgs: string;
   /** 正则状态写回：结果载体 */
@@ -72,6 +80,8 @@ const DEFAULT_CHAIN_TMP: ChainTmpNames = {
   delOc: DEL_OC_BASE,
   delP: DEL_P_BASE,
   delK: DEL_K_BASE,
+  delN: DEL_N_BASE,
+  delR: DEL_R_BASE,
   reArgs: RE_ARGS_BASE,
   reRes: RE_RES_BASE,
 };
@@ -88,7 +98,7 @@ const chainTmpNames = new WeakMap<ChainHop[], ChainTmpNames>();
 /** 链级临时名分配（避让口径同 Bug 1058/1059 / 1127 / 1146） */
 function allocChainTmpNames(opts: TranspileOptions): ChainTmpNames {
   const n = internalTmpNameSet(
-    [OC_BASE, FN_BASE, DEL_OC_BASE, DEL_P_BASE, DEL_K_BASE, RE_ARGS_BASE, RE_RES_BASE],
+    [OC_BASE, FN_BASE, DEL_OC_BASE, DEL_P_BASE, DEL_K_BASE, DEL_N_BASE, DEL_R_BASE, RE_ARGS_BASE, RE_RES_BASE],
     opts,
   );
   return {
@@ -97,8 +107,10 @@ function allocChainTmpNames(opts: TranspileOptions): ChainTmpNames {
     delOc: n[2]!,
     delP: n[3]!,
     delK: n[4]!,
-    reArgs: n[5]!,
-    reRes: n[6]!,
+    delN: n[5]!,
+    delR: n[6]!,
+    reArgs: n[7]!,
+    reRes: n[8]!,
   };
 }
 
@@ -112,7 +124,15 @@ function tmpNamesOf(hops: ChainHop[]): ChainTmpNames {
 // **剩余整条链**（含非可选访问/调用）不得再求值。此前每跳独立 `$optionalGet`，
 // 下一跳 `$get(undefined, "x")` 硬抛 TypeError。
 export type ChainHop =
-  | { kind: "get"; key: string; optional: boolean; posArg: string }
+  | {
+      kind: "get";
+      key: string;
+      optional: boolean;
+      posArg: string;
+      /** 符号投影键：读面带 symbolKey 标记；delKeySrc 是 $del 的 Abs 键源 */
+      symbolKey?: boolean;
+      delKeySrc?: string;
+    }
   | { kind: "idx"; keySrc: string; optional: boolean; posArg: string }
   | { kind: "len"; optional: boolean; posArg: string }
   | { kind: "call"; argsSrc: string; optional: boolean; locArg: string }
@@ -202,13 +222,7 @@ export function flattenChain(
   while (isChainLink(cur)) {
     const optional = linkIsOptional(cur);
     if (cur.type === "CallExpression" || cur.type === "OptionalCallExpression") {
-      const args = (cur.arguments ?? [])
-        .map((a) =>
-          (a as { type?: string }).type === "SpreadElement"
-            ? "$unknown()"
-            : transpileExpression(a as Expression, opts),
-        )
-        .join(", ");
+      const args = emitArgList(cur.arguments ?? [], opts);
       const loc = cur.loc;
       const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
       // obj.method(args) / obj?.method(args) / obj.method?.() —— $invoke 保 this
@@ -278,37 +292,40 @@ export function flattenChain(
     }
     // member
     const optionalM = optional;
-    if (cur.computed) {
-      const key = cur.property as { type?: string; value?: unknown };
-      // 计算成员：记表达式起始位（与 positionRecordWrap 同口径）
-      if (key?.type === "StringLiteral") {
-        hops.unshift({ kind: "get", key: JSON.stringify(key.value), optional: optionalM, posArg: posArgOf(cur) });
-      } else if (key?.type === "NumericLiteral") {
-        hops.unshift({ kind: "idx", keySrc: `$lit(${key.value})`, optional: optionalM, posArg: posArgOf(cur) });
-      } else if (isExpression(cur.property as Node)) {
-        hops.unshift({
-          kind: "idx",
-          keySrc: transpileExpression(cur.property as Expression, opts),
-          optional: optionalM,
-          posArg: posArgOf(cur),
-        });
-      } else {
-        return undefined;
-      }
-      cur = cur.object as typeof cur;
-      continue;
-    }
-    const prop = cur.property as {
-      type?: string;
-      name?: string;
-      loc?: { start: { line: number; column: number } } | null;
-    };
-    if (prop?.type !== "Identifier") return undefined;
-    // 静态属性：记属性位（hover 属性名直读槽位 Abs）
-    if (prop.name === "length") {
-      hops.unshift({ kind: "len", optional: optionalM, posArg: posArgOf(prop) });
+    const memberKey = emitMemberKey(
+      cur.property as Node,
+      cur.computed === true,
+      opts,
+    );
+    if (memberKey === null) return undefined;
+    if (
+      !cur.computed &&
+      cur.property?.type === "Identifier" &&
+      cur.property.name === "length"
+    ) {
+      hops.unshift({ kind: "len", optional: optionalM, posArg: posArgOf(cur.property) });
+    } else if (memberKey.kind === "get") {
+      hops.unshift({
+        kind: "get",
+        key: JSON.stringify(memberKey.key),
+        optional: optionalM,
+        // 静态属性记属性位；计算成员记表达式起始位（与 positionRecordWrap 同口径）
+        posArg: posArgOf(!cur.computed ? (cur.property as Node) : (cur as Node)),
+        ...(memberKey.symbol !== undefined
+          ? {
+              symbolKey: true,
+              // delete 的键要运行时真 symbol（$del 收 Abs 键），读侧用 "@@X"
+              delKeySrc: `$get(Symbol, ${JSON.stringify(memberKey.symbol)})`,
+            }
+          : { delKeySrc: `$lit(${JSON.stringify(memberKey.key)})` }),
+      });
     } else {
-      hops.unshift({ kind: "get", key: JSON.stringify(prop.name), optional: optionalM, posArg: posArgOf(prop) });
+      hops.unshift({
+        kind: "idx",
+        keySrc: memberKey.keySrc,
+        optional: optionalM,
+        posArg: posArgOf(cur),
+      });
     }
     cur = cur.object as typeof cur;
   }
@@ -330,13 +347,22 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
   const tmp = tmpNamesOf(hops);
   const rest = (recv: string): string => emitChainFrom(hops, i + 1, recv);
   switch (hop.kind) {
-    case "get":
+    case "get": {
       // 可选跳的非 nullish 臂：?. 守卫已排除 nullish，对非 nullish 值的属性读
       // 原生不抛 → silent（不记 any may-throw，Bug 3）。链上后续跳仍走 $get
       //（x?.a.b 的 .b 保持 may-throw）。
+      // 符号投影键与非链路径同口径带 symbolKey 标记（Proxy 陷阱边界还原）。
+      const getOpts = (silent: boolean): string => {
+        const parts = [
+          silent ? "silent: true" : null,
+          hop.symbolKey ? "symbolKey: true" : null,
+        ].filter((x): x is string => x !== null);
+        return parts.length === 0 ? "" : `, { ${parts.join(", ")} }`;
+      };
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => posWrap(`$get(${r}, ${hop.key}, { silent: true })`, hop.posArg), hops, i, tmp.oc)
-        : rest(posWrap(`$get(${valSrc}, ${hop.key})`, hop.posArg));
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$get(${r}, ${hop.key}${getOpts(true)})`, hop.posArg), hops, i, tmp.oc)
+        : rest(posWrap(`$get(${valSrc}, ${hop.key}${getOpts(false)})`, hop.posArg));
+    }
     case "idx":
       return hop.optional
         ? shortCircuitHop(valSrc, (r) => posWrap(`$idx(${r}, ${hop.keySrc}, { silent: true })`, hop.posArg), hops, i, tmp.oc)
@@ -354,15 +380,16 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
     case "invoke": {
       // 调用体（this 绑 recv）。
       const callOf = (recv: string): string => {
-        let call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
+        // 实参 thunk：成员读（$invoke 预读）先于实参求值，与非链路径
+        // Bug 152 同口径。spread 已由 emitArgList 展开成 ...$elems(...)。
+        let call = `$invoke(${recv}, ${hop.method}, () => ${hop.argsSrc}${hop.locArg})`;
         // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
         // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
-        // Bug 171：实参**只求值一次**——argsSrc 同一份数组字面量内联进 $invoke
-        // 与 $reStateCall 两处会让实参表达式跑两遍（副作用翻倍）；改为先物化
-        // 成 __a，两个通道共用同一份值。
+        // 实参只求值一次：thunk 内把实参数组挂到盒子上，$invoke 与
+        // $reStateCall 消费同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const ${tmp.reArgs} = ${hop.argsSrc}; const ${tmp.reRes} = $invoke(${recv}, ${hop.method}, ${tmp.reArgs}${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, ${tmp.reArgs}); return ${tmp.reRes}; })()`;
+          call = `(() => { const ${tmp.reArgs} = {}; const ${tmp.reRes} = $invoke(${recv}, ${hop.method}, () => (${tmp.reArgs}._a = ${hop.argsSrc})${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, ${tmp.reArgs}._a); return ${tmp.reRes}; })()`;
         }
         return call;
       };
@@ -395,7 +422,7 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // 键/接收者源文本内联两次与 invoke hop 的 fnCheck 同取舍（保派发，
       // 副作用键表达式会跑两遍）。
       const callOf = (recv: string): string =>
-        `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
+        `$invokeKey(${recv}, ${hop.keySrc}, () => ${hop.argsSrc}${hop.locArg})`;
       const contOf = (recv: string): string =>
         i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
       if (hop.fnOptional) {
@@ -454,10 +481,26 @@ function shortCircuitHop(
  * 求值父对象与键表达式** ⇒ 写死名会遮蔽用户同名绑定（自信错值）或撞 TDZ
  * （ReferenceError）。
  */
-function delOpSrc(parentSrc: string, keySrc: string, tmp: ChainTmpNames): string {
-  return `(() => { const ${tmp.delP} = ${parentSrc}; const ${tmp.delK} = ${keySrc}; $del(${tmp.delP}, ${tmp.delK}); return $delRes(${tmp.delP}, ${tmp.delK}); })()`;
+function delOpSrc(
+  parentSrc: string,
+  keySrc: string,
+  tmp: ChainTmpNames,
+  writeback?: (newParentSrc: string) => string,
+): string {
+  if (!writeback) {
+    return `(() => { const ${tmp.delP} = ${parentSrc}; const ${tmp.delK} = ${keySrc}; $del(${tmp.delP}, ${tmp.delK}); return $delRes(${tmp.delP}, ${tmp.delK}); })()`;
+  }
+  // 可选链删除与非可选成员删除同口径：$del 产出新父对象后必须写回持有者
+  // 路径（const 函数根例外——不重绑根）。写回在 $delRes 之后，Proxy 的
+  // deleteProperty 陷阱仍只经 $delRes 派发一次。
+  return `(() => { const ${tmp.delP} = ${parentSrc}; const ${tmp.delK} = ${keySrc}; const ${tmp.delN} = $del(${tmp.delP}, ${tmp.delK}); const ${tmp.delR} = $delRes(${tmp.delP}, ${tmp.delK}); ${writeback(tmp.delN)} return ${tmp.delR}; })()`;
 }
-export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string): string | undefined {
+export function emitDeleteChainFrom(
+  hops: ChainHop[],
+  i: number,
+  valSrc: string,
+  writeback?: (newParentSrc: string) => string,
+): string | undefined {
   if (i >= hops.length) return undefined;
   const hop = hops[i]!;
   // Bug 1149：delete 链的引擎内部临时名（守卫基绑定 / 父对象载体 / 键载体）
@@ -467,28 +510,40 @@ export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string)
   const delShortCircuit = (recv: string, body: string): string =>
     `((${tmp.delOc}) => $fork($nullishTest(${tmp.delOc}), () => $lit(true), () => ${body}))(${recv})`;
   if (hop.kind === "get") {
+    const delKey = hop.delKeySrc ?? `$lit(${hop.key})`;
+    const readOpts = hop.symbolKey ? ", { symbolKey: true }" : "";
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, hop.key, tmp))
-        : delOpSrc(valSrc, hop.key, tmp);
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, delKey, tmp, writeback))
+        : delOpSrc(valSrc, delKey, tmp, writeback);
     }
     if (hop.optional) {
-      const rest = emitDeleteChainFrom(hops, i + 1, `$get($removeNullish(${tmp.delOc}), ${hop.key})`);
+      const rest = emitDeleteChainFrom(
+        hops,
+        i + 1,
+        `$get($removeNullish(${tmp.delOc}), ${hop.key}${readOpts})`,
+        writeback,
+      );
       return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
     }
-    return emitDeleteChainFrom(hops, i + 1, `$get(${valSrc}, ${hop.key})`);
+    return emitDeleteChainFrom(hops, i + 1, `$get(${valSrc}, ${hop.key}${readOpts})`, writeback);
   }
   if (hop.kind === "idx") {
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, hop.keySrc, tmp))
-        : delOpSrc(valSrc, hop.keySrc, tmp);
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(${tmp.delOc})`, hop.keySrc, tmp, writeback))
+        : delOpSrc(valSrc, hop.keySrc, tmp, writeback);
     }
     if (hop.optional) {
-      const rest = emitDeleteChainFrom(hops, i + 1, `$idx($removeNullish(${tmp.delOc}), ${hop.keySrc})`);
+      const rest = emitDeleteChainFrom(
+        hops,
+        i + 1,
+        `$idx($removeNullish(${tmp.delOc}), ${hop.keySrc})`,
+        writeback,
+      );
       return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
     }
-    return emitDeleteChainFrom(hops, i + 1, `$idx(${valSrc}, ${hop.keySrc})`);
+    return emitDeleteChainFrom(hops, i + 1, `$idx(${valSrc}, ${hop.keySrc})`, writeback);
   }
   return undefined; // call/invoke/invokeKey/len 中缀：delete 目标父链不可发射
 }

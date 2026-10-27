@@ -12,7 +12,7 @@ import { abs, unknown } from "../../abs.ts";
 import { getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../../objects.ts";
 import { findClassAccessor, findStaticClassAccessor } from "../runtime/members.ts";
 import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv, protoBrandAbs } from "../../builtins.ts";
-import { $get, $set, $lit, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
+import { $set, $lit, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
 import { withNewTargetReset, throwStrictWrite, undef } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { getFnImpl } from "../../abs-fn.ts";

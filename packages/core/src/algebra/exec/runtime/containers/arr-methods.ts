@@ -16,7 +16,7 @@
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, numLit, unknown, type Confidence } from "../../../abs.ts";
-import { lit } from "../../../term.ts";
+import "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
 import {
@@ -42,17 +42,11 @@ import {
   $lit,
 } from "../state.ts";
 
-export const ARR_MUTATORS = new Set([
-  "push",
-  "unshift",
-  "pop",
-  "shift",
-  "splice",
-  "reverse",
-  "sort",
-  "copyWithin",
-  "fill",
-]);
+import { ARR_MUTATORS } from "../../method-names.ts";
+
+// 单一事实源在 exec/method-names.ts（发射面 transpile/ops.ts 同源）；
+// 此处 re-export 维持 containers barrel / PUBLIC_API 的既有导出面。
+export { ARR_MUTATORS };
 
 export function isArrMutator(name: string): boolean {
   return ARR_MUTATORS.has(name);

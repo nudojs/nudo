@@ -110,11 +110,7 @@ export {
   safeMemberAccess, sanitizeCommentText, toJsBindingIdent
 } from "./algebra/codegen-escape.ts";
 export {
-  type ClassDef, type MethodDef, awaitAbs, classChainNames,
-  classFromMethods, coerceAsyncReturn, defineClass, getClass,
-  getClassChain, instanceOf, instantiateClass, lookupMethod,
-  lookupMethodWithOwner, lookupSuperMethod, projectBrand, superNameOf,
-  wrapPromise
+  type ClassDef, type MethodDef, getClassChain, wrapPromise
 } from "./algebra/language.ts";
 
 // scan extras used by service (rest of scan stays check-internal)

@@ -5,34 +5,34 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, litValue, never as neverAbs, unknown } from "../abs.ts";
+import { abs, litValue, unknown } from "../abs.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
-import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
+import { $call, routeApplyThrows, clearPureMemo, joinThrowsSince } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
 import { setHostGlobalFnCall } from "./runtime/state.ts";
 import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";
-import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
+import { pureFnNameOf, makeAbsApplyResult } from "../abs-fn.ts";
 import {
-  noteAbsTruncation,
+  MAX_CALL_DEPTH,
+  MAX_TOTAL_CALLS,
   callBudgetKey,
+  createCallBudget,
   resetEvalForkBudget,
   resetEvalForkCount,
   noteHostEffectBlocked,
   registerEvalCallBudgetProbe,
-  type AbsTruncationReason,
 } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
   popCallLoc,
 } from "./member-diag.ts";
-import { peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
-import { joinAbs } from "../objects.ts";
-import { BoundedLruMap } from "../lru-map.ts";
+import { throwExitsMark } from "./runtime/state.ts";
+import { clearAllPureMemos, createPureMemo } from "./pure-memo.ts";
 import {
   createScopedSlot,
   registerCollectorScopeParticipant,
@@ -59,23 +59,12 @@ export type EvalCallRecord = {
   depth?: number;
 };
 
-/** pureCallMemo 内层 Map 上界（与 pureMemo 同口径） */
-const PURE_CALL_MEMO_MAX = 256;
+/** @nudo:pure 宿主调用结果缓存（$callNamed 路径实例；值基键见 pure-memo.ts） */
+const pureCallMemo = createPureMemo();
 
-/** @nudo:pure 宿主调用结果缓存（fn 对象身份 → args key → {abs, throws}） */
-let pureCallMemo = new WeakMap<object, BoundedLruMap<AbsApplyResult>>();
-
-/** 清空 pureCallMemo（宿主入口 / 会话缓存失效） */
+/** 清空 pure memo（宿主入口 / 会话缓存失效；清**全部**实例——两条调用路径） */
 export function clearPureCallMemo(): void {
-  pureCallMemo = new WeakMap();
-}
-
-/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
-function joinThrowsSince(mark: number): Abs {
-  const items = peekThrowExitsSince(mark);
-  if (items.length === 0) return neverAbs;
-  if (items.length === 1) return items[0]!;
-  return items.reduce((a, b) => joinAbs(a, b));
+  clearAllPureMemos();
 }
 
 /** 调用点 collector（作用域化：runWithCollectorScope 内各分析互不串台；
@@ -132,7 +121,7 @@ export function $assignRecord(
       column: column || undefined,
       conditional,
       // 调用方帧深度（与 EvalCallRecord.depth 同口径——局部量投影按帧过滤）
-      depth: evalCallDepth,
+      depth: evalBudget.depth,
     });
   } catch {
     /* collector 不得打断执行 */
@@ -177,7 +166,7 @@ export function getPosCollector(): ((r: EvalPosRecord) => void) | null {
  * 记入活跃 collector 并**原样返回**（语义恒等）；无收集器时
  * 直通（热路径零开销——仅重放开插桩）。
  *
- * 仅记最外层求值帧（evalCallDepth === 0）：递归函数的内层帧
+ * 仅记最外层求值帧（evalBudget.depth === 0）：递归函数的内层帧
  * （$callNamed/$new 预算帧）会以重入态重执行同一源码位置——
  * 自递归类型（lazy 自引用契约）下内层帧携带 cycle 截断的
  * opaque unknown，first-wins 记录会以外层正确值被污染为序；
@@ -185,7 +174,7 @@ export function getPosCollector(): ((r: EvalPosRecord) => void) | null {
  */
 export function $nodoPos(v: Abs, line: number, column: number): Abs {
   const collector = evalPosCollectorSlot.get();
-  if (collector && evalCallDepth === 0) {
+  if (collector && evalBudget.depth === 0) {
     try {
       collector({ line, column, abs: v });
     } catch {
@@ -655,61 +644,31 @@ setHostGlobalFnCall(callHostGlobalFn);
 // 命名调用（transpile 的 $callNamed 是 B run 全部标识符调用的派发点）此前无
 // 预算：直接自递归/互递归裸奔原生 JS 递归 → 栈溢出，RangeError 被
 // callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。预算：
-// 深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
+// 深度 64 / 总调用 20k / cycle（同 name+arg 指纹）→ 截断 opaque。
+// 状态机住在 call-budget.ts（与 A 路径同一实现），本模块只是第二个实例；
+// 会话/观测两轴语义见 createCallBudget 注释。
 
-export const MAX_EVAL_CALL_DEPTH = 64;
-/** 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的
- *  规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到
- *  ~3s——截断 → opaque（更保守，zero-FP 安全）。 */
-export const MAX_EVAL_TOTAL_CALLS = 20_000;
+/** B 命名调用深度上限——与 A 路径同值（@nudo:budget 可逐函数抬高） */
+export const MAX_EVAL_CALL_DEPTH = MAX_CALL_DEPTH;
+/** B 命名调用总调用上限——与 A 路径同值（递归×循环×分支展开的规模阀） */
+export const MAX_EVAL_TOTAL_CALLS = MAX_TOTAL_CALLS;
 
-let evalCallDepth = 0;
-let evalTotalCalls = 0;
-let evalActiveCallKeys: string[] = [];
+/** B 路径预算实例（session 重置/观测累计由状态机区分） */
+const evalBudget = createCallBudget({
+  maxDepth: MAX_EVAL_CALL_DEPTH,
+  maxCalls: MAX_EVAL_TOTAL_CALLS,
+});
+
 /** 执行会话嵌套深度：导出桥 re-entry 是被调帧，不是宿主入口 */
 let evalBudgetSessionDepth = 0;
-/** 当前生效上限（@nudo:budget 可逐函数抬高） */
-let evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
-let evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
-// --- B 调用预算可观测累计（issue #158）-------------------------------------
-// 会话（enterEvalCallBudgetSession 最外层）重置预算计数 depth/totalCalls/
-// activeKeys，但**不**重置这三个：check --json 的 budget 块要反映整个宿主
-// 入口（一次 check 内 generalize / tryRunTranspiled 会开多个会话），否则
-// `truncated:false` 与 nudo:recursion-truncated 共存自相矛盾。
-// 宿主入口清零路径 = resetAbsCallBudget（经探针）与 resetEvalCallBudget。
-let evalObsCalls = 0;
-let evalObsCallTruncated = false;
-let evalObsCycleTruncated = false;
-// B 路径归因分流（A/B 同名预算上屏要指到具体路径）+ depth 现场快照：
-// depth 截断时计数/上限取首次触发现场（@nudo:budget 覆盖期间触发亦如实）。
-const evalObsReasons = new Set<AbsTruncationReason>();
-let evalObsMaxDepth = 0;
-let evalObsDepthTruncDepth: number | null = null;
-let evalObsDepthTruncLimit: number | null = null;
-
-// 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）
+// 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）。
+// 观测累计跨执行会话（check --json 的 budget 块要反映整个宿主入口）。
 registerEvalCallBudgetProbe({
-  stats: () => ({
-    calls: evalObsCalls,
-    maxCalls: evalTotalCallsLimit,
-    callTruncated: evalObsCallTruncated,
-    cycleTruncated: evalObsCycleTruncated,
-    depth: evalObsDepthTruncDepth ?? evalObsMaxDepth,
-    maxDepth: evalObsDepthTruncLimit ?? evalCallDepthLimit,
-    reasons: [...evalObsReasons].sort(),
-  }),
-  resetObservability: () => {
-    evalObsCalls = 0;
-    evalObsCallTruncated = false;
-    evalObsCycleTruncated = false;
-    evalObsReasons.clear();
-    evalObsMaxDepth = 0;
-    evalObsDepthTruncDepth = null;
-    evalObsDepthTruncLimit = null;
-  },
+  stats: () => evalBudget.stats(),
+  resetObservability: () => evalBudget.resetObservability(),
 });
 
 function evalStableId(obj: object): string {
@@ -723,25 +682,13 @@ function evalStableId(obj: object): string {
 
 /** 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 */
 export function resetEvalCallBudget(): void {
-  evalCallDepth = 0;
-  evalTotalCalls = 0;
-  evalActiveCallKeys = [];
+  evalBudget.reset();
   evalBudgetSessionDepth = 0;
-  evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
-  evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
-  // 观测累计同轮生命周期（与 resetAbsCallBudget 经探针的清零同口径）
-  evalObsCalls = 0;
-  evalObsCallTruncated = false;
-  evalObsCycleTruncated = false;
-  evalObsReasons.clear();
-  evalObsMaxDepth = 0;
-  evalObsDepthTruncDepth = null;
-  evalObsDepthTruncLimit = null;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
-  // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
+  // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀；
+  // clearPureMemo 已清全部实例——两个 clear API 共享同一清理面）
   clearPureMemo();
-  clearPureCallMemo();
 }
 
 /** @nudo:budget：在 run 期间抬高 B 路径 depth/calls 上限；finally 恢复 */
@@ -749,19 +696,17 @@ export function withEvalBudgetOverride(
   budget: { depth?: number; calls?: number },
   run: () => void,
 ): void {
-  const prevDepth = evalCallDepthLimit;
-  const prevCalls = evalTotalCallsLimit;
+  const prev = evalBudget.getLimits();
   if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
-    evalCallDepthLimit = Math.floor(budget.depth);
+    evalBudget.setLimits({ maxDepth: Math.floor(budget.depth) });
   }
   if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
-    evalTotalCallsLimit = Math.floor(budget.calls);
+    evalBudget.setLimits({ maxCalls: Math.floor(budget.calls) });
   }
   try {
     run();
   } finally {
-    evalCallDepthLimit = prevDepth;
-    evalTotalCallsLimit = prevCalls;
+    evalBudget.setLimits(prev);
   }
 }
 
@@ -772,9 +717,7 @@ export function withEvalBudgetOverride(
  */
 export function enterEvalCallBudgetSession(): void {
   if (evalBudgetSessionDepth === 0) {
-    evalCallDepth = 0;
-    evalTotalCalls = 0;
-    evalActiveCallKeys = [];
+    evalBudget.resetSession();
     // 只清 fork 预算计数（新会话拿满额度）；截断旗标/观测累计 latch 到
     // 宿主入口（#158：stats 不得与已上报诊断矛盾）
     resetEvalForkCount();
@@ -795,9 +738,7 @@ export function getEvalCallBudgetState(): {
   sessionDepth: number;
 } {
   return {
-    depth: evalCallDepth,
-    totalCalls: evalTotalCalls,
-    activeKeys: evalActiveCallKeys.length,
+    ...evalBudget.getState(),
     sessionDepth: evalBudgetSessionDepth,
   };
 }
@@ -821,38 +762,12 @@ function evalCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
  *  depth/calls 判定——与守卫的短路顺序一致。 */
 export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
   const key = evalCallBudgetKey(name, fn, args);
-  const reason: AbsTruncationReason | undefined = evalActiveCallKeys.includes(key)
-    ? "cycle"
-    : evalCallDepth >= evalCallDepthLimit
-      ? "depth"
-      : evalTotalCalls >= evalTotalCallsLimit
-        ? "calls"
-        : undefined;
-  if (reason) {
-    evalObsCallTruncated = true;
-    evalObsReasons.add(reason);
-    if (reason === "cycle") evalObsCycleTruncated = true;
-    // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对
-    //（与 call-budget.ts enterCall 的 A 路径同口径）
-    if (reason === "depth" && evalObsDepthTruncDepth === null) {
-      evalObsDepthTruncDepth = evalCallDepth;
-      evalObsDepthTruncLimit = evalCallDepthLimit;
-    }
-    noteAbsTruncation(name, reason);
-    return { ok: false };
-  }
-  evalActiveCallKeys.push(key);
-  evalCallDepth++;
-  if (evalCallDepth > evalObsMaxDepth) evalObsMaxDepth = evalCallDepth;
-  evalTotalCalls++;
-  evalObsCalls++;
+  if (evalBudget.enter(key, name) !== undefined) return { ok: false };
   return { ok: true, key };
 }
 
 export function evalExitCall(): void {
-  // 禁止负数：嵌套 reset 曾把 depth 清零后再 --，守卫从此失效
-  if (evalCallDepth > 0) evalCallDepth--;
-  if (evalActiveCallKeys.length > 0) evalActiveCallKeys.pop();
+  evalBudget.exit();
 }
 
 export function $callNamed(
@@ -872,12 +787,12 @@ export function $callNamed(
     : undefined;
   if (faces && fnObj) attachContractFaces(fnObj, faces);
   const execArgs = faces ? adoptCallArgsToFaces(args, faces) : args;
-  // @nudo:pure：宿主 JS 函数 / Abs 上的 `_memoize` 标记 → 同实参命中缓存
+  // @nudo:pure：宿主 JS 函数 / Abs 上的 `_memoize` 标记 → 同实参命中缓存。
+  // 键取采用后实参（与执行一致）：面存在与否改变执行世界，键随之区分。
   const pureName = pureFnNameOf(fn);
-  // 键取采用后实参（与执行一致）：面存在与否改变执行世界，键随之区分
-  const pk = pureName && fnObj ? callBudgetKey("pure", "", execArgs) : undefined;
-  if (fnObj && pk !== undefined) {
-    const hit = pureCallMemo.get(fnObj)?.get(pk);
+  const memoEntry = pureName ? pureCallMemo.keyOf(fn, execArgs) : undefined;
+  if (memoEntry) {
+    const hit = pureCallMemo.get(memoEntry);
     if (hit !== undefined) {
       const routed = routeApplyThrows(hit.abs, hit.throws);
       return faces ? presentCallResultFace(routed, faces) : routed;
@@ -893,9 +808,13 @@ export function $callNamed(
       if (al) tagAbsOrigin(args[i]!, { line: al[0], column: al[1] });
     }
   }
-  // D1：调用前快照实参——mutator（pop/push）会就地改写，记录必须是入参态
+  // D1：调用前快照实参——mutator（pop/push）会就地改写，记录必须是入参态。
+  // 同一次调用共享身份图 memo：`f(obj, obj)` 的两个实参保持别名。
+  const snapshotMemo = new WeakMap<object, Abs>();
   const argsSnapshot = args.map((a) =>
-    a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : (a as Abs),
+    a && typeof a === "object" && "shape" in (a as object)
+      ? $copy(a, snapshotMemo)
+      : (a as Abs),
   );
   if (loc) pushCallLoc({ line: loc[0], column: loc[1] });
   try {
@@ -960,15 +879,10 @@ export function $callNamed(
     throw e;
   } finally {
     if (loc) popCallLoc();
-    if (fnObj && pk !== undefined && !threw) {
-      let m = pureCallMemo.get(fnObj);
-      if (!m) {
-        m = new BoundedLruMap<AbsApplyResult>(PURE_CALL_MEMO_MAX);
-        pureCallMemo.set(fnObj, m);
-      }
+    if (memoEntry && !threw) {
       // 捕获本帧新增 throws 面（body/apply 路径的 pushThrowExit 已入帧）；
       // 命中时 routeApplyThrows 重放（只缓存 abs 会在命中时假「不抛」）。
-      m.set(pk, makeAbsApplyResult(result, joinThrowsSince(throwMark)));
+      pureCallMemo.set(memoEntry, makeAbsApplyResult(result, joinThrowsSince(throwMark)));
     }
     const evalCallCollector = evalCallCollectorSlot.get();
     if (evalCallCollector) {
@@ -982,7 +896,7 @@ export function $callNamed(
           // 调用方帧深度（evalEnterCall 已弹栈后记录）：0 = 最外层
           // 求值帧。递归内层帧的重入记录与顶层帧同 callLoc——局部量
           // 投影（collectEnclosingFnLocals）按帧过滤，与 $nodoPos 同口径
-          depth: evalCallDepth,
+          depth: evalBudget.depth,
         });
       } catch {
         /* collector 不得打断 */

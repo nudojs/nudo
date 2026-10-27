@@ -78,6 +78,18 @@ describe("parseCaseArgExpr", () => {
     expect(getFnImpl(result)?.body?.type).toBe("BlockStatement");
   });
 
+  it("arrow / function literals leave strict unrecorded (enclosing source kind unknown)", () => {
+    // 本文法只拿到指令表达式文本：ESM/CJS 种类未随 @nudo:case 流转 ⇒ 不写
+    // strict（sloppy，保守）——不得按表达式形态猜。
+    for (const expr of ["(x) => x * 2", "function(x) { return x * 2; }"]) {
+      // 同 abs-modules-strict：实现缺失时 `?.strict` 也是 undefined ⇒ 先钉
+      // impl 存在，再钉 strict 未记录。
+      const impl = getFnImpl(parseCaseArgExpr(expr));
+      expect(impl).toBeDefined();
+      expect(impl?.strict).toBeUndefined();
+    }
+  });
+
   it("does not treat strings containing => as functions", () => {
     const result = parseCaseArgExpr('"a => b"');
     expect(litValue(result)).toEqual({ ok: true, value: "a => b" });

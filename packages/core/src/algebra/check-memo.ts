@@ -18,32 +18,18 @@ import {
 } from "./load-deps-fp.ts";
 import { runTranspiledOptionsMemoKey } from "./exec/run.ts";
 import type { CheckOptions } from "./check-types.ts";
+import { DependencyMemo } from "./memo-store.ts";
+import { loadModuleId, moduleMapId } from "./memo-identity.ts";
 
-const checkReportMemo = new Map<string, CheckReport>();
-const checkKeyDeps = new Map<string, string[]>();
-const checkDepIndex = new Map<string, Set<string>>();
-const loadModuleIds = new WeakMap<object, number>();
-let nextLoadModuleId = 1;
 export const MAX_CHECK_MEMO = 256;
+const checkReportMemo = new DependencyMemo<CheckReport>(MAX_CHECK_MEMO);
 
 export function resetCheckSourceMemo(): void {
-  checkReportMemo.clear();
-  checkKeyDeps.clear();
-  checkDepIndex.clear();
+  checkReportMemo.reset();
   resetHashSourceCache();
   // 侧车加载失败去重表（#64）与 check memo 同生命周期：测试/会话清空时一并丢弃，
   // 否则同一侧车失败在后续分析里被吞掉。
   resetSidecarLoadFailureCache();
-}
-
-function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
-  if (!fn) return 0;
-  let id = loadModuleIds.get(fn);
-  if (id === undefined) {
-    id = nextLoadModuleId++;
-    loadModuleIds.set(fn, id);
-  }
-  return id;
 }
 
 /**
@@ -57,32 +43,9 @@ function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefine
  * `loadModuleDepsFingerprint` 见 `load-deps-fp.ts`。
  */
 
-function unindexCheckKey(key: string): void {
-  const deps = checkKeyDeps.get(key);
-  if (!deps) return;
-  for (const p of deps) {
-    const set = checkDepIndex.get(p);
-    if (!set) continue;
-    set.delete(key);
-    if (set.size === 0) checkDepIndex.delete(p);
-  }
-  checkKeyDeps.delete(key);
-}
-
 /** `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存。查找与索引同走 stablePathKey */
 export function evictCheckSourceMemoForPaths(paths: string[]): number {
-  let n = 0;
-  for (const raw of paths) {
-    const p = stablePathKey(raw);
-    const keys = checkDepIndex.get(p);
-    if (!keys) continue;
-    for (const key of [...keys]) {
-      checkReportMemo.delete(key);
-      unindexCheckKey(key);
-      n++;
-    }
-  }
-  return n;
+  return checkReportMemo.evictForPaths(paths);
 }
 
 export function cloneCheckReport(r: CheckReport): CheckReport {
@@ -98,19 +61,6 @@ export function cloneCheckReport(r: CheckReport): CheckReport {
     summary: { ...r.summary },
     ...(r.budget ? { budget: { ...r.budget } } : {}),
   };
-}
-
-/** 模块表身份（与 loadModuleId 同信任模型） */
-const moduleMapIds = new WeakMap<object, number>();
-let moduleMapIdSeq = 0;
-function moduleMapId(m: object | undefined): string {
-  if (!m) return "-";
-  let id = moduleMapIds.get(m);
-  if (id === undefined) {
-    id = ++moduleMapIdSeq;
-    moduleMapIds.set(m, id);
-  }
-  return `m${id}`;
 }
 
 export function checkMemoKey(
@@ -173,33 +123,10 @@ function fromKey(from: readonly AbsCallRecord[] | undefined): string {
 }
 
 export function checkMemoGet(key: string): CheckReport | null {
-  if (!checkReportMemo.has(key)) return null;
-  const v = checkReportMemo.get(key)!;
-  checkReportMemo.delete(key);
-  checkReportMemo.set(key, v);
-  return v;
+  const hit = checkReportMemo.lookup(key);
+  return hit.hit ? hit.value : null;
 }
 
 export function checkMemoSet(key: string, value: CheckReport, depPaths: string[]): void {
-  if (checkReportMemo.size >= MAX_CHECK_MEMO) {
-    const oldest = checkReportMemo.keys().next().value;
-    if (oldest !== undefined) {
-      checkReportMemo.delete(oldest);
-      unindexCheckKey(oldest);
-    }
-  }
-  checkReportMemo.set(key, value);
-  if (depPaths.length > 0) {
-    // 索引与逐出同走 stablePathKey：deps.paths / 侧车路径形态由 fromFile 决定
-    const normDeps = [...new Set(depPaths.map(stablePathKey))];
-    checkKeyDeps.set(key, normDeps);
-    for (const p of normDeps) {
-      let set = checkDepIndex.get(p);
-      if (!set) {
-        set = new Set();
-        checkDepIndex.set(p, set);
-      }
-      set.add(key);
-    }
-  }
+  checkReportMemo.set(key, value, depPaths);
 }

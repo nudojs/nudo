@@ -109,12 +109,10 @@ export {
 export {
   $catchVal,
   $for,
-  $forIter,
   $fork,
   $isForkExit,
   $switch,
   $throw,
-  $while,
   $whileSeq,
   DEFAULT_MAX_LOOP_ITERS,
   MAX_CONCRETE_LOOP_ITERS,
@@ -152,9 +150,12 @@ export {
 } from "./runtime/containers.ts";
 export {
   $async,
-  $asyncReturn,
   $await,
   $gen,
+  $yield,
+  $yieldStar,
+} from "./runtime/async.ts";
+export {
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,
@@ -163,6 +164,4 @@ export {
   $removeNull,
   $removeNullish,
   $removeUndefined,
-  $yield,
-  $yieldStar,
-} from "./runtime/async.ts";
+} from "./runtime/narrow.ts";

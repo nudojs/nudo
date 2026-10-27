@@ -35,8 +35,8 @@
  *   （无公理时不取绑定包——零行为变化）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, bool, confJoin, litValue, numLit, str, unknown } from "../../../abs.ts";
-import { lit } from "../../../term.ts";
+import { abs, confJoin, litValue, numLit, str, unknown } from "../../../abs.ts";
+import "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { absFunction } from "../../../abs-fn.ts";
 import {
@@ -56,7 +56,7 @@ import {
 } from "../../../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
 import { registerTplElements, matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, registerUserIter, userIterOf, registerUserIterLen, userIterLenOf } from "../../match-iter.ts";
-import { getPropFlags, enumOwnStringKeys, enterPromiseForkArm, leavePromiseForkArm, protoBrandAbs, markExtState, setPropFlags } from "../../../builtins.ts";
+import { enumOwnStringKeys, enterPromiseForkArm, leavePromiseForkArm, protoBrandAbs, markExtState, setPropFlags } from "../../../builtins.ts";
 // Bug 195：模板对象是**数组 exotic**（原生 GetTemplateObject → CreateArrayFromList
 // + SetIntegrityLevel(frozen)）⇒ JSON.stringify 走数组序列化面（数组视图标注，
 // 与 RegExp exec 结果同款机制；直连 regexp.ts 不经 barrel）。
@@ -69,18 +69,7 @@ import {
   anyMemberResult,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
-import {
-  NudoThrow,
-  undef,
-  asAbsVal,
-  $lit,
-  isNudoReturn,
-  isNudoBreak,
-  isNudoContinue,
-  noBody,
-  confPartialPacked,
-  litTruth,
-} from "../state.ts";
+import { NudoThrow, undef, asAbsVal, $lit, isNudoBreak, isNudoContinue, noBody, confPartialPacked, litTruth } from "../state.ts";
 import { markDomainShared } from "../../../len-sharing.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf } from "../../class-registry.ts";
@@ -90,7 +79,7 @@ import { makeLoopWidener } from "../loop-widen.ts";
 // 无公理时不取绑定包（零行为变化，见 invariant-apply.ts 的 hasInvariantSpecs 注释）。
 import { applyExitJoinInvariants, hasInvariantSpecs } from "../invariant-apply.ts";
 import { noteLoopTruncation } from "../../../call-budget.ts";
-import { isNudoThrow, callAtFunctionBoundary } from "../state.ts";
+import { callAtFunctionBoundary } from "../state.ts";
 import { $call } from "../../call.ts";
 import { $arr, tupleOrWiden, drainTupleOrWiden } from "./arr-make.ts";
 // $get 放在 builtins 之后导入：member.ts → builtins.ts → array.ts → iterate.ts

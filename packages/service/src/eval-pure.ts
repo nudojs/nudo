@@ -59,8 +59,16 @@ export function applyPureMarkers(
 ): void {
   if (!exports || names.length === 0) return;
   const binds = bindingsOf(exports);
+  // 分析面本地函数表（Symbol.for("nudo.analysis")）：同名 re-export / CJS
+  // 合并会占住字符串导出槽，但按名分析的调用点解析到的是本地绑定 ⇒
+  // 纯度标记也必须落在本地函数对象上（markPureTarget 幂等）。
+  const analysis = (exports as Record<PropertyKey, unknown>)[Symbol.for("nudo.analysis")];
   for (const name of names) {
     if (Object.hasOwn(exports, name)) markPureTarget(exports[name], name);
     markPureTarget(binds?.get(name), name);
+    if (analysis !== null && typeof analysis === "object" && Object.hasOwn(analysis, name)) {
+      const read = (analysis as Record<string, unknown>)[name];
+      if (typeof read === "function") markPureTarget((read as () => unknown)(), name);
+    }
   }
 }

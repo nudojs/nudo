@@ -9,9 +9,13 @@
  */
 
 import { parseSource as babelParse } from "./parse-source.ts";
-import { stripStringsKeepComments } from "./code-text.ts";
+import {
+  stripStringsKeepComments,
+  sourceIsStrict,
+  hasUseStrictDirective,
+} from "./code-text.ts";
 import { listFnDirectiveScopes } from "./directive-scan.ts";
-import type { Node } from "@babel/types";
+import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
@@ -39,16 +43,18 @@ import { formalParamsFromNodes, formalParamDisplayNames, formalParamSignatureNam
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
-  stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
+import { DependencyMemo } from "./memo-store.ts";
+import { loadModuleId, moduleMapId } from "./memo-identity.ts";
+import { instanceForMethodBridge } from "./bridge-instance.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { currentAssumePremises, currentInvariantSpecs } from "./exec/runtime/state.ts";
-import { $new, $invoke } from "./exec/class.ts";
+import { $invoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
@@ -116,54 +122,6 @@ function evalRunOf(
 }
 
 /** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
-/**
- * 类方法桥的实例（**Bug 1093**）：构造器**抛**时不得把方法体的推断一起拖垮。
- *
- * 此前 `$new` 抛 ⇒ 异常逃出 `runCore` ⇒ 方法签名退 unknown + 误导的
- * info 级 `nudo:opaque-result`（把「构造器必抛」谎报成「推断失败」）。
- * 构造器抛**不等于**方法抛 ⇒ 方法体仍应被求值（方法可能是 total 的）。
- *
- * 口径与 `check-may-throw.ts` 的 `instanceForMethodBridge` 一致（那处**反向
- * import 本文件**的 `ctorParamCountOf` ⇒ 此处**就地复刻**，不跨模块耦合以免
- * 成包环）：构造器抛 ⇒ 退到**裸实例**（跳过构造器）继续求值方法体 ⇒ 方法体
- * 自身的推断照常产出（闸门不整体关掉）。
- *
- * **Bug 1096**：裸实例的**内层是 unknown，不是空 obj**——构造器写过的字段
- * 是**不可知**，不是「确定不存在」：空 obj 会把 `this.v` 折成**确定的
- * undefined**（自信的错值）⇒ 连带 `this.v.toFixed()` 在**虚构实例**上抛
- * TypeError ⇒ 方法签名被折成 `never`（谎称「该方法必抛、恒返回 never」）
- * ⇒ 连带 error 级 `nudo:entry-may-throw`（假红，直接卡 CI）。内层 unknown
- * ⇒ 字段读 = unknown（不可知）⇒ 成员调用不产 may-throw ⇒ 签名不折 never
- * （兜底实例的 TypeError 不得决定方法签名），而方法体**自己**的推断照常
- * 产出（不退化成整体 opaque）。
- *
- * 与 `check-may-throw.ts` 的同名孪生实现**同构**（那处是证据域通道）——
- * 两处必须一起改，否则证据域与值域口径漂移。
- */
-function instanceForMethodBridge(clsAbs: Abs, clsName: string, ctorArgs: Abs[]): Abs {
-  try {
-    return $new(clsAbs, ctorArgs);
-  } catch {
-    // 裸实例：brand 名取**类值**的 brand 名（类值即 brand ⇒ `export default
-    // class` 同口径），内层是 **unknown**（构造器写过的字段 = 不可知，
-    // 不是「确定不存在」⇒ 不折确定的 undefined / 不在虚构实例上抛）
-    const name =
-      clsAbs.shape.k === "brand" && clsAbs.shape.name.length > 0
-        ? clsAbs.shape.name
-        : clsName;
-    return abs(
-      {
-        k: "brand",
-        name,
-        shape: abs({ k: "unknown" }, undefined, undefined, "partial"),
-      },
-      undefined,
-      undefined,
-      "path",
-    );
-  }
-}
-
 /** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0）
  *
  *  导出（模块内）：check-may-throw.ts 的**实例方法桥**（Bug 379）须与此处
@@ -311,21 +269,12 @@ function bodyReferencesName(body: Node, name: string): boolean {
 }
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
-const generalizeMemo = new Map<string, PolyFn | undefined>();
-/** key → 依赖的规范化路径（供定向逐出） */
-const memoKeyDeps = new Map<string, string[]>();
-/** 依赖路径 → keys */
-const memoDepIndex = new Map<string, Set<string>>();
-const loadModuleIds = new WeakMap<object, number>();
-let nextLoadModuleId = 1;
-
 /** L3：会话常驻 + 上限，超出按 LRU 逐出最旧条目 */
 const MAX_GENERALIZE_MEMO = 1024;
+const generalizeMemo = new DependencyMemo<PolyFn | undefined>(MAX_GENERALIZE_MEMO);
 
 export function resetGeneralizeMemo(): void {
-  generalizeMemo.clear();
-  memoKeyDeps.clear();
-  memoDepIndex.clear();
+  generalizeMemo.reset();
   resetFnFpCache();
   resetHashSourceCache();
 }
@@ -334,45 +283,12 @@ export function getGeneralizeMemoSize(): number {
   return generalizeMemo.size;
 }
 
-function unindexMemoKey(key: string): void {
-  const deps = memoKeyDeps.get(key);
-  if (!deps) return;
-  for (const p of deps) {
-    const set = memoDepIndex.get(p);
-    if (!set) continue;
-    set.delete(key);
-    if (set.size === 0) memoDepIndex.delete(p);
-  }
-  memoKeyDeps.delete(key);
-}
-
 /**
  * LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。
  * 返回删除的条目数。查找与索引同走 stablePathKey——跨 Windows 盘符形态命中。
  */
 export function evictGeneralizeMemoForPaths(paths: string[]): number {
-  let n = 0;
-  for (const raw of paths) {
-    const p = stablePathKey(raw);
-    const keys = memoDepIndex.get(p);
-    if (!keys) continue;
-    for (const key of [...keys]) {
-      generalizeMemo.delete(key);
-      unindexMemoKey(key);
-      n++;
-    }
-  }
-  return n;
-}
-
-function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {
-  if (!fn) return 0;
-  let id = loadModuleIds.get(fn);
-  if (id === undefined) {
-    id = nextLoadModuleId++;
-    loadModuleIds.set(fn, id);
-  }
-  return id;
+  return generalizeMemo.evictForPaths(paths);
 }
 
 type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
@@ -386,19 +302,6 @@ function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): Load
     return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   }
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
-}
-
-/** 模块表身份（WeakMap）——调用方同表对象跨调用 → 键稳定（与 loadModuleId 同信任模型） */
-const moduleMapIds = new WeakMap<object, number>();
-let moduleMapIdSeq = 0;
-function moduleMapId(m: object | undefined): string {
-  if (!m) return "-";
-  let id = moduleMapIds.get(m);
-  if (id === undefined) {
-    id = ++moduleMapIdSeq;
-    moduleMapIds.set(m, id);
-  }
-  return `m${id}`;
 }
 
 function generalizeMemoKey(
@@ -456,12 +359,8 @@ function generalizeMemoKey(
 }
 
 function generalizeMemoGet(key: string): PolyFn | undefined | null {
-  if (!generalizeMemo.has(key)) return null;
-  const v = generalizeMemo.get(key);
-  // LRU：命中后移到队尾
-  generalizeMemo.delete(key);
-  generalizeMemo.set(key, v);
-  return v;
+  const hit = generalizeMemo.lookup(key);
+  return hit.hit ? hit.value : null;
 }
 
 function generalizeMemoSet(
@@ -469,28 +368,7 @@ function generalizeMemoSet(
   value: PolyFn | undefined,
   depPaths: string[],
 ): void {
-  if (generalizeMemo.size >= MAX_GENERALIZE_MEMO) {
-    const oldest = generalizeMemo.keys().next().value;
-    if (oldest !== undefined) {
-      generalizeMemo.delete(oldest);
-      unindexMemoKey(oldest);
-    }
-  }
-  generalizeMemo.set(key, value);
-  if (depPaths.length > 0) {
-    // 索引与逐出同走 stablePathKey：deps.paths / scPath 形态由 fromFile 决定，
-    // 混形态会让 evictGeneralizeMemoForPaths 跨形态 miss（FIX-RESIDUAL-3）
-    const normDeps = [...new Set(depPaths.map(stablePathKey))];
-    memoKeyDeps.set(key, normDeps);
-    for (const p of normDeps) {
-      let set = memoDepIndex.get(p);
-      if (!set) {
-        set = new Set();
-        memoDepIndex.set(p, set);
-      }
-      set.add(key);
-    }
-  }
+  generalizeMemo.set(key, value, depPaths);
 }
 
 /** L1/L2 只缓存完整可复用结果；截断/失败产生的 partial|opaque 不进缓存 */
@@ -580,6 +458,62 @@ export type PolyFn = {
   envGated?: boolean;
 };
 
+/**
+ * 严格代码区（原生 strict mode code 的**词法**面）：按 AST 对象身份缓存。
+ *
+ * 严格性沿词法作用域**继承**——带 `"use strict"` 序言的函数体、class 体
+ * （方法/字段/静态块/计算键整体是 strict code）内部的嵌套函数同样是 strict
+ * code。只按条目自身 body 的指令判定会把嵌套函数的 body 判成 sloppy ⇒ 块级
+ * 函数声明被 Annex B 提升（原生 ReferenceError 被折成 total）。
+ *
+ * 区间 = 函数体 BlockStatement / class 节点；区内子树不必再收（包含关系）。
+ * 缓存键是 `parseSource` 返回的 File（LRU ⇒ 同文件复用同一对象）。
+ */
+const strictRegionCache = new WeakMap<
+  object,
+  Array<{ start: number; end: number }>
+>();
+
+function strictRegionsOf(file: object): Array<{ start: number; end: number }> {
+  const cached = strictRegionCache.get(file);
+  if (cached !== undefined) return cached;
+  const out: Array<{ start: number; end: number }> = [];
+  const add = (n: Node): void => {
+    if (typeof n.start === "number" && typeof n.end === "number") {
+      out.push({ start: n.start, end: n.end });
+    }
+  };
+  const walk = (n: Node): void => {
+    if (n.type === "ClassDeclaration" || n.type === "ClassExpression") {
+      add(n);
+      return;
+    }
+    // 指令序言只出现在函数体的 BlockStatement（Program 面由源级判据接管）⇒
+    // 命中即「整个函数体是 strict code」区。
+    if (n.type === "BlockStatement" && hasUseStrictDirective(n)) {
+      add(n);
+      return;
+    }
+    for (const key of VISITOR_KEYS[n.type] ?? []) {
+      const child = (n as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const c of child) {
+          if (c && typeof c === "object" && typeof (c as Node).type === "string") {
+            walk(c as Node);
+          }
+        }
+      } else if (child && typeof child === "object") {
+        // 类型注解/注释等非 Node 对象没有 type ⇒ 跳过（不等于漏走：@babel 的
+        // VISITOR_KEYS 只列真子节点键，这里的防御只为类型安全）
+        if (typeof (child as Node).type === "string") walk(child as Node);
+      }
+    }
+  };
+  walk(file as unknown as Node);
+  strictRegionCache.set(file, out);
+  return out;
+}
+
 export function extractFn(
   source: string,
   fnName: string,
@@ -588,6 +522,29 @@ export function extractFn(
   const file = fileAst ?? babelParse(source);
   const env = emptyEnv();
   const formalsByName = new Map<string, FormalParam[]>();
+  // 源码面严格性（原生 strict mode code）：ESM 源（静态 import/export）**或**
+  // Program 指令序言含 `"use strict"` ⇒ strict；Node 默认 CJS 无二者 ⇒ sloppy。
+  // 与 B run 模块体的 strict 前缀同一判据（run.ts 的 sourceIsStrict）。env 条目
+  // 透传给 body 编译单元。
+  const fnStrict = sourceIsStrict(source, file);
+  // 源级已 strict ⇒ 全部条目 strict，无需再收区间
+  const strictRegions: ReadonlyArray<{ start: number; end: number }> = fnStrict
+    ? []
+    : strictRegionsOf(file);
+  const inStrictRegion = (node: Node): boolean => {
+    const start = node.start;
+    const end = node.end;
+    if (typeof start !== "number" || typeof end !== "number") return false;
+    return strictRegions.some((r) => start >= r.start && end <= r.end);
+  };
+  /**
+   * 条目严格性 = 源级严格 **∨** 函数体自身的指令序言 **∨** 函数体位于严格
+   * 代码区（strict 函数体 / class 体内部——严格性沿词法作用域继承；body 区间
+   * 落在区内即继承）。class 方法另有显式恒 strict 规则（类体本就是 strict
+   * mode code，不依赖区间命中）。
+   */
+  const entryStrict = (body: Node): boolean =>
+    fnStrict || hasUseStrictDirective(body) || inStrictRegion(body);
 
   for (const stmt of file.program.body) {
     // export function / export const = fn / export default function
@@ -607,6 +564,7 @@ export function extractFn(
         optionalParams: formals.map((f) => f.optional === true),
         body: decl.body,
         async: decl.async === true,
+        strict: entryStrict(decl.body),
       });
       formalsByName.set(decl.id.name, formals);
       // export default function named：同时登记 "default"（与 localNamedExports C4.4 同口径）
@@ -653,6 +611,9 @@ export function extractFn(
           optionalParams: formals.map((f) => f.optional === true),
           body: mem.body,
           async: mem.async === true,
+          // class 体恒 strict（原生：类定义整体是 strict mode code，与所在
+          // 文件种类无关）⇒ 方法体内的块级函数声明不得 Annex B 提升。
+          strict: true,
         });
         formalsByName.set(fullName, formals);
       }
@@ -678,6 +639,7 @@ export function extractFn(
             optionalParams: formals.map((f) => f.optional === true),
             body: init.body,
             async: init.async === true,
+            strict: entryStrict(init.body),
           });
           formalsByName.set(d.id.name, formals);
         }
@@ -703,6 +665,7 @@ export function extractFn(
         optionalParams: formals.map((f) => f.optional === true),
         body: init.body,
         async: init.async === true,
+        strict: entryStrict(init.body),
       });
       formalsByName.set("default", formals);
     }
@@ -731,6 +694,8 @@ export function extractFn(
       optionalParams: formals.map((f) => f.optional === true),
       body: node.body,
       async: node.async === true,
+      // ClassMethod（防御面）恒 strict；其余按源级 ∨ 函数体指令 ∨ 严格区继承。
+      strict: node.type === "ClassMethod" ? true : entryStrict(node.body),
     });
     formalsByName.set(key, formals);
   };
@@ -862,6 +827,11 @@ export function extractFn(
     ) {
       continue;
     }
+    // class 方法恒 strict（原生：类体是 strict mode code，与所在文件种类
+    // 无关）⇒ 方法体内块级函数声明不得 Annex B 提升；ObjectMethod 不在此列
+    // （按源级 ∨ 函数体自身指令序言）。
+    const isClassMethod =
+      n.type === "ClassMethod" || n.type === "ClassPrivateMethod";
     const formals = formalParamsFromNodes((n.params ?? []) as never);
     env.fns.set(scope.name, {
       params: formalParamDisplayNames(formals),
@@ -870,6 +840,7 @@ export function extractFn(
       optionalParams: formals.map((f) => f.optional === true),
       body: n.body,
       async: n.async === true,
+      strict: isClassMethod ? true : entryStrict(n.body),
     });
     formalsByName.set(scope.name, formals);
   }
@@ -1144,7 +1115,7 @@ function generalizeFromAstUncached(
 
   // 提升前置化：静态扫描替代求值期挂载点（§promote-scan）。
   // symbolic/instantiate 共用同一决策；refine 形状（非 any typeParam）
-  // 到达优先拒绝提升（与运行时 promoteParamShape 同口径）。
+  // 到达优先拒绝提升（与运行时提升同口径）。
   const promoteScan = scanPromotions(
     body,
     params,
@@ -1201,7 +1172,12 @@ function generalizeFromAstUncached(
   const boundNames = formals.flatMap((f) =>
     f.kind === "pattern" ? f.bound : [f.name],
   );
-  const envGated = envGatedSource && freeIdentifiers(body, boundNames).size > 0;
+  // 自由标识符分析的严格性取该函数 env 条目的**已解析**值（源级 ∨ 函数体
+  // 指令序言 ∨ class 方法恒 strict）——Annex B 提升只存在于 sloppy 体：按
+  // ESM 面一刀切会把严格体里的块级函数名误当函数作用域绑定 ⇒ 漏报自由
+  // 标识符 ⇒ env 门禁假放行（B run 无注入执行宿主调用 ⇒ 假 throws）。
+  const fnBodyStrict = env.fns.get(fnName)?.strict === true;
+  const envGated = envGatedSource && freeIdentifiers(body, boundNames, fnBodyStrict).size > 0;
   const replaceGated = /@nudo:replace\b/.test(directiveSrc) && !hasReps;
   const evalEligible =
     !unresolvableImports &&
@@ -1227,7 +1203,9 @@ function generalizeFromAstUncached(
         /* B 失败 fail-closed */
         return undefined;
       } else if (fnName.includes(".")) {
-        // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
+        // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke。
+        // 构造器抛 ⇒ 裸实例兜底（Bug 1093）：共享实现在 bridge-instance.ts；
+        // 值域不传 isolate（证据域 check-may-throw 传 runWithMayThrowSession）。
         const [clsName, methodName] = fnName.split(".", 2);
         // Bug 489 同源：`export default class C {…}` 的类只挂在 default 槽 ⇒
         // 按类名查表落空 ⇒ 方法签名退成 unknown。同一套导出槽兜底。
@@ -1263,7 +1241,7 @@ function generalizeFromAstUncached(
           }
           return a;
         });
-        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
+        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true }).result;
       } else {
         // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
         // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
@@ -1286,7 +1264,12 @@ function generalizeFromAstUncached(
           if (dAbs.shape.k !== "obj") return undefined;
           return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
         }
-        return callTranspiledExportFull(evalRun, slot.key, evalArgs, { phi }).result;
+        // 本地名分析：default/具名槽按源码本地绑定解析（CJS 成员桥保持
+        // 导出对象语义，preferLocal 不适用）。
+        return callTranspiledExportFull(evalRun, slot.key, evalArgs, {
+          phi,
+          preferLocal: true,
+        }).result;
       }
     } catch (e) {
       // Bug 1031：这里**不是**「B run 本身失败」（那条路径是 evalRun 为
@@ -1461,35 +1444,6 @@ function formatPoly(
       ? `  where ${predToString(symbolic.pred)}`
       : "";
   return `${name}: (${ps}) => ${ret}${predPart}`;
-}
-
-export function generalizeAll(
-  source: string,
-  opts: { budget?: LeakBudget } = {},
-): PolyFn[] {
-  const file = babelParse(source);
-  const names: string[] = [];
-  for (const stmt of file.program.body) {
-    if (stmt.type === "FunctionDeclaration" && stmt.id) names.push(stmt.id.name);
-    if (stmt.type === "VariableDeclaration") {
-      for (const d of stmt.declarations) {
-        if (
-          d.id.type === "Identifier" &&
-          d.init &&
-          (d.init.type === "ArrowFunctionExpression" ||
-            d.init.type === "FunctionExpression")
-        ) {
-          names.push(d.id.name);
-        }
-      }
-    }
-  }
-  const out: PolyFn[] = [];
-  for (const n of names) {
-    const g = generalizeFromAst(n, source, opts);
-    if (g) out.push(g);
-  }
-  return out;
 }
 
 /**

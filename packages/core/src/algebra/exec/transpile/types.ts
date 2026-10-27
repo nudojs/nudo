@@ -4,8 +4,48 @@
 import type { Node } from "@babel/types";
 
 export type TranspileOptions = {
-  /** 运行时 import 说明符 */
-  runtimeImport?: string;
+  /**
+   * 运行时 import 说明符。
+   *
+   * `null` = **不发射**运行时 import 行（宿主编译：`new Function` 单元以
+   * 形参注入运行符号）。缺省 = `@nudojs/core/exec`。
+   */
+  runtimeImport?: string | null;
+  /**
+   * 发射目标（缺省 `"esm"`，既有产物逐字节不变）：
+   * - `"esm"`：保留标准 `import` / `export` 语句（run.ts 后处理改写）；
+   * - `"host"`：直接发射宿主编译形态——import → `__nudoBindImport` /
+   *   `__nudoBindNamespace` 绑定，export → `__nudoExport*` 调用，不残留任何
+   *   `import` / `export` 语句，也不发射运行时 import 行（宿主以形参注入）。
+   */
+  target?: "esm" | "host";
+  /**
+   * 发射模式（缺省 `"exec"`）：
+   * - `"exec"`：完整发射（全部顶层语句，含副作用）；
+   * - `"analyze"`：**发射期**剥离顶层效应语句——顶层 `if` / `for` /
+   *   `while`、危险或未知全局调用（判定表见 `transpile/analyze-strip.ts`）；
+   *   `var` 提升仍按**原始**源 AST 计算。调用方（run.ts 的 analyze 模式）
+   *   不再解析生成产物做二次剥离；保留语句的发射字节与 `"exec"` 完全一致，
+   *   剥离只减少语句。
+   *
+   * `for-in` / `for-of` **不剥离**（判定表无该臂）：二者按发射形态落顶层
+   * `$forOf(...)` 调用（循环体随该调用在模块顶层执行）⇒ analyze 模式保留
+   * 其语义；标签 `for` / `while` 随标签一并剥离。
+   */
+  mode?: "exec" | "analyze";
+  /**
+   * host target 的 mock 名集：命中的 import 本地名绑定 `__nudoEnv[<名>]`
+   * 而非 `__nudoBindImport` / `__nudoBindNamespace`，且不登记 live refresh
+   * （刷新会把 mock 冲掉）。esm target 忽略（run.ts 的文本改写负责 mock）。
+   */
+  mockNames?: ReadonlySet<string>;
+  /**
+   * @internal host target 的 live import refresh 发射状态（transpileFile
+   * 创建并跨语句线程化）：`binds` 是全量刷新赋值文本（按源序，已排除
+   * mock），`done` 标记注册行是否已随首个「产生绑定」的 import 语句发射。
+   * 直接调用 `transpileStatement` 的低层单元不传 ⇒ 不发射注册行。
+   */
+  hostImportRefresh?: { readonly binds: readonly string[]; done: boolean };
   maxLoopIters?: number;
   /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
@@ -154,6 +194,45 @@ export type TranspileOptions = {
    */
   constNames?: ReadonlySet<string>;
   /**
+   * 直接 const 别名组（`const a = {...}; const b = a;`）。
+   *
+   * fork/循环 pack 只按「被写绑定」收集快照名；别名伙伴不在集合里时，
+   * 臂/轮次结束把 `a` 重绑为副本会断开 `b` 的引用语义。该表在**作用域
+   * 边界**上计算（只收 init 为同作用域、此前已声明 const 的标识符，避免
+   * TDZ 与可重绑 let）：函数/方法体与嵌套块由 transpileFnBodyStmts 算，
+   * **模块顶层**（模块体逐语句发射、不经函数体入口）由 transpile.ts 算。
+   * 嵌套作用域**继承**外层组并按自身遮蔽名过滤（未被遮蔽 ⇒ 同一绑定，
+   * 展开安全；被遮蔽 ⇒ 该组在本处指向不同绑定，丢弃），fork/pack 发射时
+   * 据此扩展 snapshot 集合。
+   */
+  aliasGroups?: ReadonlyArray<readonly string[]>;
+  /**
+   * 本转译单元内被用户绑定**遮蔽**的宿主内建名（undefined / NaN / Infinity
+   * 的子集，保守单位级）。
+   *
+   * 名字是**宿主全局**但用户可合法遮蔽（`const undefined = 5`、形参名
+   * `undefined`、`let NaN`、import 绑定）。命中者按**位置**分态：
+   * - Identifier 读点（含标签模板位）→ `$absVal(<名>)`，由 JS 词法绑定
+   *   决定读值；
+   * - 调用位 callee → `$callNamed(<名>, <名>, …)`（绑定是 Abs 值，宿主裸
+   *   调用会把它当非函数调 ⇒ 假抛 TypeError）。
+   *
+   * 未命中者：读点恢复字面量精确折叠（`$lit(void 0)` / `$lit(0/0)` /
+   * `$lit(1/0)`，与旧产物逐字节一致），调用位保留宿主裸调用（原生
+   * `undefined(1)` / `NaN(1)` 定抛 TypeError，抛点与原生一致）。
+   *
+   * 计算：`transpileFile` 从源 AST 声明扫描（任意作用域，保守单位级）；
+   * `transpileBodyNode` 从 body AST 计算并并入调用方补给；body-fn 补给
+   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名 **∪ 表达式 AST
+   * 声明扫描**；表达式入口（exec/transpile/expr.ts 的 `transpileExpression`）
+   * 同补声明扫描（表达式内部的形参 / 局部声明此前不可见）；run.ts 补给
+   * @nudo:mock 注入的内建名（env 注入本就跳过这三个名字）。
+   *
+   * 静态窄化面：`x === undefined` / `case undefined:` 只在**未遮蔽**时作
+   * 字面量事实——遮蔽后该标识符是普通绑定，比较值是绑定值（如 5）。
+   */
+  shadowedIntrinsics?: ReadonlySet<string>;
+  /**
    * **调用方补给的**用户标识符词形集（Bug 1058 避让的补充来源）。
    *
    * `internalTmpName` 的避让集 = `userIdentInfo(opts.source).names`（源文本
@@ -175,6 +254,21 @@ export type TranspileOptions = {
    * 声明语句），此类名字从提升集扣除、不发改赋值。
    */
   keepVarDecl?: boolean;
+  /**
+   * 本文件**真实**的静态声明导出名（源 AST：`export function|class|const|let`
+   * / `var`，多声明符全收；解构声明不收内部名）。
+   *
+   * 只有顶层 FunctionDeclaration 的名字命中本集合时才发射 `export ` 前缀
+   * ——此前所有顶层函数一律带 export（发射 quirk）⇒ run.ts 的文本回收把
+   * 私有顶层函数当导出 ⇒ `export *` 被本地私有同名函数遮蔽、私有名泄漏进
+   * 模块导出面、转译产物作为真实 ESM 时多出导出。
+   *
+   * `export { f }` specifier 名**不**在此集合（同名声明未必是声明式导出；
+   * run.ts 在运行时把 specifier 改写成 __nudoExportLazy）。
+   * transpileFile 从已解析 AST 计算并线程化；缺省（直接调用
+   * transpileStatement 的低层单元）⇒ 不发 export。
+   */
+  exportedDeclNames?: ReadonlySet<string>;
   /**
    * issue #165：文件含 `@nudo:assume` 引理——transpileFile 顶层对源文本
    * 做一次 includes 判定后置位。文件级快速门：无引理的文件不进锚定收集，
@@ -199,4 +293,48 @@ export type TranspileOptions = {
    * 承担插桩开销；仅 replayFnAbsNodes 重放开。
    */
   recordPositions?: boolean;
+};
+
+/**
+ * 模块元数据 —— 从**源 AST**（单次解析）回收的模块结构。
+ *
+ * 这些字段此前由 run.ts 用正则 / 二次解析从转译产物文本恢复；现由
+ * `transpileModule` 在解析同一次 AST 时直接给出（口径与 export-names.ts
+ * 共用，见 `transpile/meta.ts`）。
+ *
+ * - `imports`：源序 import 绑定（一条声明多个 specifier ⇒ 多项；副作用
+ *   import 仅 `{ spec, kind: "side" }`）；
+ * - `staticExportNames`：`export function|class|const|let|var` 的**声明名**
+ *   （多声明符全收；解构声明不 collect 内部名——与 staticExportDeclNamesOfProgram
+ *   同口径）；
+ * - `explicitExportNames`：显式导出名（`export { … }` / re-export /
+ *   `export * as ns` / 解构导出的真实绑定名），不含静态声明名与 default
+ *   （default 由 `hasDefault` 表达；`export { x as default }` 会出现在本表）；
+ * - `exportStars`：`export * from "<spec>"` 的说明符（源序）；
+ * - `hasDefault`：存在 `export default`;
+ * - `topLevelFnNames`：顶层函数声明名（export/default 包裹展开；私有函数
+ *   也在内——它们不是导出名，但按名分析需要）；
+ * - `declaredNames`：顶层绑定名（声明 / 解构 / import 本地名）＋ CJS 前导
+ *   占用的 `exports` / `module` / `__nudoCjsOrig` / `__nudoCjsThis`；
+ * - `usesTopLevelThis`：模块顶层 `this`（或捕获它的顶层箭头函数）使用；
+ * - `isEsm`：源含 ESM 语法（import/export 声明或 `import.meta`）；
+ * - `runtimeImportName`：发射的运行时 import 行的说明符；未发射（host
+ *   target 或 `runtimeImport: null`）⇒ null。
+ */
+export type TranspileMeta = {
+  imports: Array<{
+    spec: string;
+    kind: "named" | "default" | "namespace" | "side";
+    imported?: string;
+    local?: string;
+  }>;
+  staticExportNames: string[];
+  explicitExportNames: string[];
+  exportStars: string[];
+  hasDefault: boolean;
+  topLevelFnNames: string[];
+  declaredNames: string[];
+  usesTopLevelThis: boolean;
+  isEsm: boolean;
+  runtimeImportName: string | null;
 };

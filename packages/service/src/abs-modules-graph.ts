@@ -21,7 +21,7 @@ import {
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
-import type { Node } from "@babel/types";
+import { VISITOR_KEYS, type Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
 import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
@@ -29,7 +29,70 @@ import { moduleResolveCandidates, loadModuleOutcome, type ModuleLoadOutcome } fr
 import { resolveEvalInjection } from "./eval-injection.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
-/** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
+/**
+ * 模块 AST 的**源面严格性**（原生 strict mode code 判据）：
+ * - ESM（静态 import/export 声明或任意位置 `import.meta`）→ true；
+ * - **或** Program 指令序言含 `"use strict"`（CJS 风格脚本首部的指令同样使
+ *   整个源 strict——块级函数声明失去 Annex B 提升）；
+ * - 其余 CJS/sloppy → false。
+ *
+ * 与 core 的 `code-text.ts#sourceIsStrict`（B run 模块体 strict 前缀）/
+ * `exec/transpile/meta.ts#isEsmProgram` 同口径。core 未把该判据导出到冻结的
+ * 公开面（`.`/`./exec`/`./internal` 不得新增符号）⇒ host 侧按**已解析的 AST**
+ * 判定（不重扫文本、不按函数猜，指令是字符串字面量、文本扫描看不见）。AST
+ * 由 core 的 parseSource LRU 复用 ⇒ 按对象身份缓存，同一模块 AST 只走一次。
+ */
+const strictByModuleAst = new WeakMap<object, boolean>();
+
+function moduleSourceIsStrict(file: Node): boolean {
+  const cached = strictByModuleAst.get(file);
+  if (cached !== undefined) return cached;
+  const isEsmNode = (n: Node): boolean => {
+    if (
+      n.type === "ImportDeclaration" ||
+      n.type === "ExportNamedDeclaration" ||
+      n.type === "ExportDefaultDeclaration" ||
+      n.type === "ExportAllDeclaration"
+    ) {
+      return true;
+    }
+    if (n.type === "MetaProperty" && n.meta.name === "import") return true;
+    for (const key of VISITOR_KEYS[n.type] ?? []) {
+      const child = (n as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const c of child) {
+          if (c && typeof c === "object" && isEsmNode(c as Node)) return true;
+        }
+      } else if (child && typeof child === "object" && isEsmNode(child as Node)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const root = (file as unknown as { program?: Node }).program ?? file;
+  // 指令序言：Program.directives 是 AST 面（文本扫描剥字符串后不可见）。
+  const isStrict = hasUseStrictDirective(root) || isEsmNode(root);
+  strictByModuleAst.set(file, isStrict);
+  return isStrict;
+}
+
+/** AST 节点的指令序言是否含 `"use strict"`（Program / 函数体 BlockStatement）。 */
+function hasUseStrictDirective(node: Node): boolean {
+  const dirs = (node as unknown as {
+    directives?: Array<{ value?: { value?: unknown } }>;
+  }).directives;
+  if (!Array.isArray(dirs)) return false;
+  return dirs.some((d) => d?.value?.value === "use strict");
+}
+
+/**
+ * seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖）。
+ *
+ * 严格性：mock 载荷是 **@nudo:mock 指令表达式**（独立解析的 AST），不是本
+ * 模块源的函数声明——`seedFns` 条目没有源种类通道 ⇒ 不写 `strict`
+ * （= sloppy，保守）。mock 函数是合成值（apply/常量返回为主），body 仅作
+ * 关系面兜底；真实模块导出函数走 `evalExportsToModuleExports`（带源种类）。
+ */
 function seedFnsToMocks(
   seedVars: Record<string, Abs>,
   seedFns: Record<string, { params: string[]; body: unknown; async?: boolean }>,
@@ -510,7 +573,14 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
         for (const d of decl.declarations ?? []) record(d.id?.name, declaredParams(d.init));
       }
     }
-    if (stmt.type === "ExportDefaultDeclaration") record("default", declaredParams(decl));
+    if (stmt.type === "ExportDefaultDeclaration") {
+      record("default", declaredParams(decl));
+      // 具名 default（export default function main）的本地绑定名也进
+      // bindingsOf 分析槽——合成表转换按同一 source paramTable 取形参。
+      if (decl?.type === "FunctionDeclaration" && decl.id) {
+        record(decl.id.name, declaredParams(decl));
+      }
+    }
     if (stmt.type === "VariableDeclaration") {
       for (const d of stmt.declarations ?? []) record(d.id?.name, declaredParams(d.init));
     }
@@ -560,6 +630,10 @@ export function evalExportsToModuleExports(
   let def: Abs | undefined;
   let defGetter: (() => unknown) | undefined;
   const paramTable = topLevelFnParams(file);
+  // 源面严格性（模块 AST 判定一次，所有桥接 fn 同值）：ESM 模块**或**带
+  // `"use strict"` 指令序言的脚本，其导出函数与模块体同口径（strict）；
+  // 其余 CJS/sloppy 源保持 sloppy（显式 false，不是缺省不写）。
+  const sourceStrict = moduleSourceIsStrict(file);
   // Bug ②（ESM live binding）：run 表的导出槽是 getter（run.ts ret 挂载），
   // 读取时解析模块作用域当前值。转换侧同样挂 getter 保持 liveness——
   // 若此处按值快照（Object.entries 求值），依赖内部变异对导入方不可见。
@@ -589,6 +663,9 @@ export function evalExportsToModuleExports(
         // $call 统一路由——桥内不得再手拆 .result / 自行 re-throw（BUG-006 根治）。
         apply: callTranspiledExportApply(run, k),
         kind: "eval-export",
+        // 源面严格性：ESM 模块或 `"use strict"` 脚本的导出函数按 strict 面
+        // 记录（body 编译单元 / 下游桥接与模块运行同口径）；纯 sloppy 源为 false。
+        strict: sourceStrict,
         // 无 body 的桥接 fn 预算键 = fingerprint ?? anon#N——缺省会让所有
         // 桥接导出共享 anon#1，嵌套跨模块调用（a 调 b 调 a'）撞
         // _activeCallKeys 递归守卫被误截断为 opaque。按 模块#导出 唯一化。
@@ -1086,7 +1163,7 @@ export function evalAbsModuleGraph(
   return { modules, byPath: cache, issues };
 }
 
-/** import 本地名 → 依赖模块导出（与 run.ts rewriteUserImports/__nudoBindImport 同语义） */
+/** import 本地名 → 依赖模块导出（与 core host 发射的 __nudoBindImport 同语义） */
 function importLocalBindings(
   source: string,
   modules: Record<string, AbsModuleExports>,
@@ -1171,15 +1248,33 @@ export function collectAbsBindingsFromGraph(
       ...inj,
     });
     if (!run) return out;
-    // 顶层 const/let（$recordBinding 通道，Abs 值）
+    const file = parse(source);
+    // 顶层 const/let（$recordBinding 通道，Abs 值）+ 私有顶层函数声明
+    // （宿主 JS 函数，见 core bindingsOf）
     const binds = bindingsOf(run);
+    const hostFns: Record<string, unknown> = {};
     if (binds) {
       for (const [name, v] of binds) {
         if (isAbsVal(v)) out.set(name, v);
+        else if (typeof v === "function") hostFns[name] = v;
+      }
+    }
+    // 私有顶层函数：复用**导出面**的宿主 fn → Abs 转换（同一 source
+    // paramTable / ctor facet / apply 桥口径），不另立 second convention。
+    // 合成表是普通对象（无 ANALYSIS_SLOTS）⇒ apply 桥回落自身属性（直接调
+    // 宿主函数）；独立指纹前缀避免与真实导出桥的预算键撞车。
+    if (Object.keys(hostFns).length > 0) {
+      const fnExports = evalExportsToModuleExports(
+        hostFns,
+        file,
+        `eval:bindings-fn:${filePath}`,
+      );
+      for (const [name, v] of Object.entries(fnExports.named)) {
+        if (!out.has(name)) out.set(name, v);
       }
     }
     // 导出名（export function/const + specifier/star/default）→ fn Abs 桥接
-    const exports = evalExportsToModuleExports(run, parse(source), `eval:bindings:${filePath}`);
+    const exports = evalExportsToModuleExports(run, file, `eval:bindings:${filePath}`);
     for (const [name, v] of Object.entries(exports.named)) {
       if (!out.has(name)) out.set(name, v);
     }

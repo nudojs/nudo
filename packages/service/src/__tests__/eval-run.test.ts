@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runTranspiled, callTranspiledExport, $lit, litValue } from "@nudojs/core";
-import { tryEvalCall, analyzeFile } from "@nudojs/service";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, $lit, litValue, numLit } from "@nudojs/core";
+import { tryEvalCall, tryEvalCallFull, analyzeFile } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
 import { tmpProject } from "./tmp-project.ts";
 
@@ -79,6 +79,48 @@ export function make() {
     expect(slots.arrow.value.shape.params).toEqual(["y"]);
     // 声明函数引用无参数名可恢复 → argN 回退（与 analyzer extractParamNames 口径一致）
     expect(slots.ref.value.shape.params).toEqual(["arg0", "arg1"]);
+  });
+});
+
+describe("service analysis prefers source-local function over same-name re-export", () => {
+  const MAIN = `function g() { return 2; }
+export { g } from "./dd.js";
+`;
+
+  it("tryEvalCallFull resolves local g; export face/call stays the re-export", () => {
+    const dir = tmpProject("nudo-eval-collision-", {
+      "main.js": MAIN,
+      "dd.js": `export const g = 1;\n`,
+    });
+    const mainPath = join(dir, "main.js");
+
+    // 分析面：service 真实入口（tryEvalCall / derivation 共用 tryEvalCallFull
+    // => preferLocal）读源码本地 g，而不是同名 re-export。
+    const full = tryEvalCallFull(MAIN, mainPath, "g", []);
+    expect(full).toBeDefined();
+    expect(litValue(full!.result)).toEqual({ ok: true, value: 2 });
+
+    // 导出面：run 表键只有 g（re-export 值 1）；默认调用走导出槽。
+    const run = runTranspiled(MAIN, {
+      mode: "exec",
+      modules: { "./dd.js": { named: { g: numLit(1) }, evaluated: true } },
+    });
+    expect(Object.keys(run)).toEqual(["g"]);
+    expect(litValue(callTranspiledExportFull(run, "g", []).result)).toEqual({
+      ok: true,
+      value: 1,
+    });
+
+    // 分析面 Symbol 仍存在且非枚举（preferLocal 依赖它；上面的 service
+    // 入口结果 2 已实证它在真实链路上存活）。
+    const analysisSym = Object.getOwnPropertySymbols(run).find(
+      (s) => s === Symbol.for("nudo.analysis"),
+    );
+    expect(analysisSym).toBeDefined();
+    expect(Object.getOwnPropertyDescriptor(run, analysisSym!)?.enumerable).toBe(false);
+    expect(
+      litValue(callTranspiledExportFull(run, "g", [], { preferLocal: true }).result),
+    ).toEqual({ ok: true, value: 2 });
   });
 });
 

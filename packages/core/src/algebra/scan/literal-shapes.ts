@@ -14,7 +14,9 @@
  *   （语义见 `literal-args.ts` 文件头）。
  *
  * **契约② 零新增 core 导出**：本目录（`algebra/scan/`）下的模块**只被
- * `scan-literal-calls.ts` 相对 import**，不得从 `algebra/index.ts` /
+ * `scan-literal-calls.ts` 相对 import**（例外：共享叶子
+ * `scan/path-projection.ts` 同时被 `algebra/check-case-scan.ts` import——
+ * 只共享路径投影本身，不引入扫描编排依赖），不得从 `algebra/index.ts` /
  * `src/index.ts` / `internal.ts` 再导出。
  *
  * **契约③ `parseCallArgs` 快路径分派表（定型；Bug 430 的修法在此）**：
@@ -65,7 +67,8 @@
  *     仍按内层槽判 missing field
  *
  * ── 本模块的公开（内部模块级）签名 ────────────────────────────────────────
- *   - `projectArgPath(arg: Abs, segments: string[]): Abs | undefined`
+ *   - `projectAbsPath(arg: Abs, segments: readonly string[]): Abs | undefined`
+ *     （共享叶子 `scan/path-projection.ts`；与 `check-case-scan.ts` 同源）
  *   - `checkReqs(ctx, displayName, reqs, paramNames, absArgs, argIndexOf, loc?)`
  *   - `checkShapeAgainstAbs(ctx, displayName, paramName, constraint, absArg, path, loc?)`
  *   - `checkFieldConstraint(ctx, displayName, paramName, constraint, fieldAbs, fieldPath, loc?, actualOf?)`
@@ -75,6 +78,7 @@
 import { litValue } from "../abs.ts";
 import type { Abs } from "../abs.ts";
 import { getSlot } from "../objects.ts";
+import { projectAbsPath } from "./path-projection.ts";
 import {
   derefConstraint,
   isIntFlag,
@@ -92,7 +96,7 @@ import { formatAbs } from "../format.ts";
 import { DIAG } from "../diag-codes.ts";
 import { arrayLengthOf, restArgAbs, type LiteralScanCtx } from "./literal-args.ts";
 import {
-  isExactUndef,
+  isNullishLitAbs,
   judgeLiteralPred,
   nullishKindOf,
   predEqLiteral,
@@ -199,7 +203,7 @@ function argScalarKind(arg: Abs): string | undefined {
  * 实参、同一个 `typeof` 原子，两条通道两种裁决（引擎内第 2 套 typeof 口径）。
  * `argScalarKind` 已拆 brand ⇒ 这里与它同口径。
  *
- * nullish 回落 "undefined" 是**本通道原有语义**（`isExactUndef` 把 null 与
+ * nullish 回落 "undefined" 是**本通道原有语义**（`isNullishLitAbs` 把 null 与
  * undefined 合成一档；`lit(null)` 的字面量域由 eq 通道另行分档）。
  */
 function argTypeofName(arg: Abs): string | undefined {
@@ -208,7 +212,7 @@ function argTypeofName(arg: Abs): string | undefined {
   if (sh.k === "prim") return sh.type;
   if (sh.k === "obj" || sh.k === "arr" || sh.k === "tuple") return "object";
   if (sh.k === "fn") return "function";
-  return isExactUndef(arg) ? "undefined" : undefined;
+  return isNullishLitAbs(arg) ? "undefined" : undefined;
 }
 
 /**
@@ -373,20 +377,6 @@ function judgeOrUnion(
   return hasFalse ? false : undefined;
 }
 
-/** 解构/默认参契约名 → 实参字段路径投影（C4.1 平铺；#137 嵌套点路径逐段下钻） */
-function projectArgPath(arg: Abs, segments: string[]): Abs | undefined {
-  let cur: Abs | undefined = arg;
-  for (const seg of segments) {
-    if (!cur) return undefined;
-    if (cur.shape.k === "brand") {
-      cur = cur.shape.shape as Abs;
-    }
-    if (cur.shape.k !== "obj") return undefined;
-    cur = getSlot(cur.shape.slots, seg)?.value;
-  }
-  return cur;
-}
-
 /**
  * 形参位的谓词执法：逐条 Pred 裁决实参是否满足。
  *
@@ -433,7 +423,7 @@ export function checkReqs(
     // C4.1：解构契约字段投影后再判 pred；缺字段不能静默跳过（FN）
     // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
     if (fieldPath) {
-      const projected = projectArgPath(arg, fieldPath);
+      const projected = projectAbsPath(arg, fieldPath);
       if (!projected) {
         const k = arg.shape.k;
         // unknown/any 无法证明缺字段；其余已知形态（含 obj 缺槽）→ 违例
@@ -463,7 +453,7 @@ export function checkReqs(
     // 长度界整条被跳过 ⇒ 门禁假绿）。
     const argLen = typeof lv === "string" ? lv.length : arrayLengthOf(arg);
     // 确定 undefined：不进 positive/nonEmpty 等 typed 域（any 仍放行）
-    const argIsUndef = isExactUndef(arg);
+    const argIsUndef = isNullishLitAbs(arg);
     const flat = flattenPred(pred);
     // 本条 req 的谓词里是否有**挂在参数自身**的 typeof 原子（`lit(1)` 的 prim
     // 门会实例化出 `typeof(x,"number")`）⇒ 类型不匹配由 typeof 通道独家报 ⇒
@@ -1109,7 +1099,7 @@ export function checkShapeReqs(
     // Bug 436：「投影失败 → missing field」**只由 checkReqs 报一次**——两条
     // 并行通道各发一份会让同一条违例被上报两次（`nudo check` 错误计数翻倍）。
     if (fieldPath) {
-      const projected = projectArgPath(arg, fieldPath);
+      const projected = projectAbsPath(arg, fieldPath);
       if (!projected) {
         // 缺字段诊断由 checkReqs 独占（同一组 reqs 两条通道都会跑）
         continue;
@@ -1156,7 +1146,7 @@ export function checkShapeReqs(
           );
         });
       } else if (
-        isExactUndef(arg) ||
+        isNullishLitAbs(arg) ||
         (arg.shape.k !== "unknown" && arg.shape.k !== "any")
       ) {
         out.push({

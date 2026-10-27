@@ -16,10 +16,10 @@
  *   builtins/object/descriptor.ts（enforceProxyOwnKeysInvariant）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
-import { lit } from "../../term.ts";
+import { abs, litValue, strLit, unknown } from "../../abs.ts";
+import "../../term.ts";
 import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
+import { pTrue } from "../../pred.ts";
 import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
 import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { registerSymbolMeta } from "../../symbol-id.ts";

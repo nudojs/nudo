@@ -4,7 +4,7 @@
  * undefined 折空模式（(?:)。null 保持 "null"（String(null)，非字面缺参）。
  * 修复：builtins/regexp.ts 构造分支 pv === undefined 折 ""。
  * 注意：String.prototype.search/match/matchAll 的 undefined pattern 折空
- * 模式在 class-regex.ts（另一半修复面，独立批次）。
+ * 模式在 exec/regexp-runtime.ts（另一半修复面，独立批次）。
  */
 import { describe, it, expect } from "vitest";
 import { val } from "./eval-helpers.ts";

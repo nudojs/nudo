@@ -41,12 +41,17 @@ import {
   indent,
   collectForkBindingNames,
   collectPatternNames,
+  collectScopeShadowNames,
   collectVarHoistNames,
   computeConstScope,
   copyConstScope,
   internalTmpName,
+  leadingConstAliasGroups,
+  mergeAliasGroups,
+  shadowedIntrinsicsOf,
+  expandAliasNames,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
+import { emitArrMutatorRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
@@ -232,10 +237,36 @@ export function transpileFnBodyStmts(
     }
   }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
+  //
+  // 别名组（**作用域边界**）：本层**自有**组 = 本层开头连续 const 声明里的
+  // 直接别名（`const a = {...}; const b = a;`）——同层声明 ⇒ 同绑定 ⇒ 展开
+  // 安全；**继承**组（外层作用域）按本层**遮蔽名**过滤后并入——本层重新
+  // 声明了组内任一成员时，该成员在本层指向**不同绑定**（展开会把外层伙伴
+  // 当成本层绑定复制/重绑 ⇒ 断开别名身份 ⇒ 自信错值）；未被遮蔽时外层
+  // 伙伴在本层仍是同一绑定（嵌套函数写外层别名成员时靠它保持身份）。
+  //
+  // 边界口径：函数/方法体（varScope 存在）与**嵌套块**（transpileBlockAsThunk
+  // → 本入口，无 varScope）都是作用域边界 ⇒ 两处都算本层组。形参也遮蔽
+  // 外层绑定（varScope.skip = 参数模式名）。
+  //
+  // **模块顶层**同样是作用域边界，但它不经本入口（模块体由 transpile.ts
+  // 逐语句发射）⇒ 模块的自有组在 transpile.ts 算好后经 opts.aliasGroups
+  // 下发，本入口按上面的「继承组」口径并入：嵌套函数体未遮蔽时保持外层
+  // 别名身份，遮蔽时丢组。
+  const ownAliasGroups = leadingConstAliasGroups(stmts);
+  const shadowNames = collectScopeShadowNames(stmts);
+  if (varScope) for (const n of varScope.skip) shadowNames.add(n);
+  const aliasGroups = mergeAliasGroups(opts.aliasGroups, ownAliasGroups, shadowNames);
   const scopedOpts: TranspileOptions = {
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
     ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
+    // **总是覆写**（含空数组）：`aliasGroups` 是**本层已裁决**的结果（继承
+    // 组已按本层遮蔽名过滤 + 本层自有组）——条件展开（`aliasGroups.length
+    // > 0 ? … : {}`）会让 `...varOpts` 里的**未过滤**外层组漏进本层 ⇒ 被
+    // 本层遮蔽的成员仍被当成同一绑定 ⇒ 复制/重绑了不同绑定 ⇒ 别名身份
+    // 断开（自信错值）。恒覆写保证「本层看到的组」= 本层算出的组。
+    aliasGroups,
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -254,7 +285,7 @@ export function transpileFnBodyStmts(
       ...collectForkBindingNames(stmt.test),
       ...collectForkBindingNames(...rest),
     ]);
-    const names = [...recvSet];
+    const names = expandAliasNames(recvSet, scopedOpts);
     const pad = indent(depth);
     const padIn = indent(depth + 1);
     // 与 IfStatement 同协议：set-flag 哨兵 + forkJoinBindings
@@ -263,28 +294,6 @@ export function transpileFnBodyStmts(
     // 同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`forkBindingDecls`）
     // 同源 ⇒ 「成对一致」。
     const fk = forkTmpNames(names, scopedOpts);
-    const wrapArm = (thunk: string, arm: 0 | 1): string => {
-      if (names.length === 0) return thunk;
-      const slots = arm === 0 ? fk.arm1 : fk.arm2;
-      const sets = arm === 0 ? fk.arm1Set : fk.arm2Set;
-      return [
-        `() => {`,
-        ...names.map((n, i) => `${padIn}${n} = $copy(${fk.snap[i]});`),
-        `${padIn}let ${fk.cont} = true;`,
-        `${padIn}try {`,
-        `${padIn}  return (${thunk})();`,
-        `${padIn}} catch (e) {`,
-        `${padIn}  if ($isForkExit(e)) ${fk.cont} = false;`,
-        `${padIn}  throw e;`,
-        `${padIn}} finally {`,
-        `${padIn}  if (${fk.cont}) {`,
-        ...names.map((n, i) => `${padIn}    ${slots[i]} = ${n};`),
-        ...names.map((n, i) => `${padIn}    ${sets[i]} = true;`),
-        `${padIn}  }`,
-        `${padIn}}`,
-        `}`,
-      ].join("\n");
-    };
     const testRebinds = emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad);
     // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
     // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
@@ -294,7 +303,7 @@ export function transpileFnBodyStmts(
     // 属性读在测试真值臂内，守卫事实（成员真值）作用于该臂。
     // issue #118 v3 / #120：多名复合测试（`obj == null || node.p == null`）
     // 经 nullishGuardsOf 一臂多事实齐用。
-    const earlyGuards = nullishGuardsOf(stmt.test);
+    const earlyGuards = nullishGuardsOf(stmt.test, scopedOpts.shadowedIntrinsics?.has("undefined") !== true);
     const earlyTGuard = typeGuardOf(stmt.test);
     const earlyDGuards = discriminantGuardsOf(stmt.test);
     // 关系守卫（Bug 1）：早退提升路径与 IfStatement 分叉路径同口径——
@@ -346,7 +355,7 @@ export function transpileFnBodyStmts(
     const consMarked = inCtrl
       ? `() => { ${fkConsName} = true; return (${consNarrowed})(); }`
       : consNarrowed;
-    const cons = wrapArm(consMarked, 0);
+    const cons = forkArmThunkExpr(consMarked, 0, names, padIn, scopedOpts);
     const altBody = transpileFnBodyStmts(rest, depth + 1, {
       ...scopedOpts,
       inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
@@ -375,7 +384,7 @@ export function transpileFnBodyStmts(
       "alt",
       recvSet,
     );
-    const alt = wrapArm(altNarrowed, 1);
+    const alt = forkArmThunkExpr(altNarrowed, 1, names, padIn, scopedOpts);
     const applyJoin = names.length ? forkJoinBindings(names, pad, scopedOpts).join("\n") : "";
     if (names.length === 0) {
       const promoted = [
@@ -432,6 +441,10 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   if (!unitOpts.thisSlot) {
     unitOpts = { ...unitOpts, thisSlot: internalTmpName("__this", unitOpts) };
   }
+  // 宿主内建名遮蔽：本单元 body 的声明扫描 ∪ 调用方补给（body-fn 的形参 /
+  // 闭包绑定名，见 exec/body-fn.ts）。无命中不写字段（产物逐字节不变）。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(node, unitOpts.shadowedIntrinsics);
+  if (shadowedIntrinsics) unitOpts = { ...unitOpts, shadowedIntrinsics };
   if (isExpression(node as { type: string })) {
     return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }

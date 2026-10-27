@@ -50,7 +50,6 @@ import {
   isExactLit,
 } from "../../abs.ts";
 import {
-  joinAbs,
   markNullProtoObj,
   canonicalArrayIndex,
   setProtoAbs,
@@ -65,7 +64,6 @@ import {
   keySetIncompleteAbs,
   type ObjShape,
 } from "../../objects.ts";
-import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { mapEntriesAbs } from "../../collections.ts";
 import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
@@ -86,6 +84,7 @@ import { classInstanceInnerOf, getEvalClass } from "../../exec/class-registry.ts
 import { classNameOfValue } from "../../class-mark.ts";
 import { protoOfRecv, objectProtoBrand } from "../ctor.ts";
 import { isErrorCtorName } from "../error.ts";
+import { isRegExpBrandAbs } from "../regexp.ts";
 // Bug 124：Object.* 的 Proxy 对象级陷阱前置派发（deleteProperty 在 $del/
 // $delRes；此处 getPrototypeOf/setPrototypeOf/preventExtensions/defineProperty）
 import { proxyBooleanTrap, proxyGetProtoTrap, protoBrandOwnMember } from "../../exec/runtime/members.ts";
@@ -93,12 +92,9 @@ import { $get } from "../../exec/runtime/containers.ts";
 
 import {
   applyPropertyDescriptor,
-  assignSourceSlots,
-  assignIntoBrandInner,
-  classifyAssignSet,
   maybePropDescAbs,
   mkPropDescAbs,
-  primTargetAssignThrows,
+  performObjectAssign,
   proxyOwnKeysTrapKeys,
   proxyTargetEnumerableStringKeys,
   proxyTargetOwnStringKeys,
@@ -1241,216 +1237,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return setProtoAbs(t0, p0);
     }
     case "assign": {
-      // Object.assign(a, b) ≈ spread
-      if (!args.length) return unknown;
-      // target 字面量：null/undefined → TypeError 硬抛；装箱 prim → M5
-      // 抛错域判定（bigint 恒抛 / string 下标写定抛 / number·bool 安全返原值）
-      const t0 = args[0];
-      if (t0 && t0.term?.op === "lit") {
-        if (t0.term.value === null || t0.term.value === undefined) {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
-        }
-        const dom = primTargetAssignThrows(t0, args.slice(1));
-        if (dom === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
-        if (dom === "may") {
-          recordMayThrow({
-            kind: "TypeError",
-            cause: "Object.assign boxed target index write may be read-only",
-          });
-          return t0;
-        }
-        if (dom === "never") {
-          // string → 原生返回 String wrapper（expando 键不进 JSON 序列化面，
-          // 序列化同原始串）→ 折原始串；number/bool → 原生返回带 expando 的
-          // Number/Boolean wrapper（值域 ≠ 原始值）→ 有源时降级
-          const type = (t0.shape as { k: "prim"; type: string }).type;
-          if (args.length === 1 || type === "string") return t0;
-        }
-        return unknown;
-      }
-      // Bug 76：symbol prim target（无 lit 项——Symbol() 调用产物）→ 宿主
-      // ToObject 定抛「Cannot convert a Symbol value to a string」（node
-      // 实测 assign(Symbol()) 无源也抛）；number/string/boolean/bigint
-      // target 装箱合法——维持既有装箱 bail（return unknown）
-      if (isSymbolAbs(t0)) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
-      // Bug 50：抽象 target（无 lit 项）可能 nullish → ToObject may TypeError
-      //（仅补 throws 效果，值域不变；对象形态 target 原生全定）
-      noteRecvMayNullish(t0, "Object.assign target may be nullish (ToObject throws)");
-      let acc = args[0]!;
-      for (let i = 1; i < args.length; i++) {
-        const pre = acc; // Bug 128：accessorTable/protoTable 按 Abs 身份注册——拷贝丢身份，分类用拷贝前原 Abs
-        acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
-        const src = args[i]!;
-        if (acc.shape.k === "obj" && src.shape.k === "obj") {
-          const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
-          const over = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
-          // enumerable:false 自有键不拷贝（EnumerableOwnProperties）；symbol
-          // 投影槽随拷（@@X 标记保留——原生 assign 复制可枚举 symbol 键）
-          const filtered: Record<string, { value: Abs }> = { ...base };
-          let opened = false;
-          let protoSet: Abs | undefined;
-          for (const k of enumKeys(over as Record<string, unknown>, src, true)) {
-            // Bug 128：逐键 [[Set]]（OrdinarySet）语义——此前直写自有槽：
-            // __proto__ 继承访问器不触发（原型污染面：JSON.parse 源键被折
-            // 成自有数据键）、自有访问器 setter 被数据覆写、继承非可写数据
-            // 属性不拦截不抛。分类共享 classifyAssignSet（evaluator 的
-            // mergeObj 就地同源）。源值走 [[Get]]（readProperty——getter
-            // 求值，不再拷访问器占位槽）。
-            const v = readProperty(src, k);
-            const plan = classifyAssignSet(pre, k, v);
-            if (plan.act === "throw") {
-              throw new NudoThrow(errorTypeAbs("TypeError"));
-            } else if (plan.act === "write") {
-              setSlot(filtered, k, { value: v }); // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter）
-            } else if (plan.act === "open") {
-              opened = true;
-            } else if (plan.act === "proto") {
-              protoSet = plan.proto;
-            } else if (plan.act === "setter") {
-              plan.set(acc, v);
-            }
-          }
-          acc = abs(
-            { k: "obj", slots: filtered, ...(opened ? { open: true } : {}) },
-            undefined,
-            undefined,
-            confJoin(acc.conf, src.conf),
-          );
-          if (protoSet !== undefined) setProtoAbs(acc, protoSet);
-        } else if (src.shape.k !== "obj") {
-          // 非 obj 源：tuple（下标键、hole 跳过）/字符串字面量（码元键）/
-          // number/boolean/nullish（无键忽略）；键集未知 → 保守降级（与
-          // evaluator runtimeAssignObject 同口径——此前整体忽略折假精确）
-          const srcSlots = assignSourceSlots(src);
-          if (srcSlots === undefined) {
-            if (acc.shape.k === "obj") {
-              const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
-              acc = abs({ k: "obj", slots: { ...base }, open: true }, undefined, undefined, acc.conf);
-            } else if (acc.shape.k === "tuple") {
-              const els = acc.shape.elements;
-              const joined = els.length ? els.reduce((x, y) => joinAbs(x, y)) : str();
-              acc = abs(
-                { k: "arr", element: joinAbs(joined, str()) },
-                undefined,
-                undefined,
-                "partial",
-              );
-            }
-          } else if (acc.shape.k === "obj") {
-            const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
-            // Bug 128：非 obj 源（tuple/字符串——下标键）同样逐键 [[Set]]
-            //（目标自有访问器 setter / 非可写拦截；下标键不会是 __proto__）
-            const filtered: Record<string, { value: Abs }> = { ...base };
-            let opened = false;
-            for (const [k, s] of Object.entries(srcSlots)) {
-              const plan = classifyAssignSet(pre, k, s.value);
-              if (plan.act === "throw") {
-                throw new NudoThrow(errorTypeAbs("TypeError"));
-              } else if (plan.act === "write") {
-                setSlot(filtered, k, { value: s.value }); // "__proto__" 自有键经 setSlot
-              } else if (plan.act === "open") {
-                opened = true;
-              } else if (plan.act === "setter") {
-                plan.set(acc, s.value);
-              }
-            }
-            acc = abs(
-              { k: "obj", slots: filtered, ...(opened ? { open: true } : {}) },
-              undefined,
-              undefined,
-              confJoin(acc.conf, src.conf),
-            );
-          } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
-            // Bug 200/S4 接线：原型对象目标 × 非 obj 源（tuple/字符串下标键）
-            assignIntoBrandInner(
-              acc,
-              Object.entries(srcSlots).map(([k, s]) => [k, s.value] as [string, Abs]),
-            );
-          } else if (acc.shape.k === "tuple") {
-            // 数组 target × tuple/字符串源：下标键按下标写（与 obj 源分支同口径；
-            // 无 length 键/getter，直接逐位写）
-            let elements = [...acc.shape.elements];
-            let holes = [...(acc.shape.holes ?? [])];
-            let len = elements.length;
-            for (const [k, s] of Object.entries(srcSlots)) {
-              const idx = canonicalArrayIndex(k);
-              if (idx === undefined) continue;
-              if (idx >= len) len = idx + 1;
-              if (idx >= elements.length) elements.length = idx + 1;
-              elements[idx] = s.value;
-              holes = holes.filter((h) => h !== idx);
-            }
-            elements.length = len;
-            acc = abs(
-              { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
-              undefined,
-              undefined,
-              confJoin(acc.conf, src.conf),
-            );
-          }
-        } else if (
-          acc.shape.k === "brand" &&
-          acc.shape.shape.shape.k === "obj" &&
-          src.shape.k === "obj"
-        ) {
-          // Bug 200/S4 接线：原型对象目标（Object.assign(A.prototype, {…})）——
-          // 写进原型对象的内层 obj（for-in 沿原型链可见）
-          const srcSlots = src.shape.slots as Record<string, { symbolKey?: boolean }>;
-          assignIntoBrandInner(
-            acc,
-            enumKeys(srcSlots, src, true).map(
-              (k) =>
-                [k, readProperty(src, k), srcSlots[k]?.symbolKey === true] as [
-                  string,
-                  Abs,
-                  boolean,
-                ],
-            ),
-          );        } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
-          // 数组 target：与 evaluator runtimeAssignObject 同口径——数字键按下标写
-          // （扩展 length）、length 键截断/延长（延长段 hole、非法原生
-          // RangeError）、非规范键 expando 忽略；源键序 = 原生属性序
-          const slots = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
-          let elements = [...acc.shape.elements];
-          let holes = [...(acc.shape.holes ?? [])];
-          let len = elements.length;
-          for (const [k, s] of Object.entries(slots)) {
-            if (k === "length") {
-              const lv = s.value.term?.op === "lit" ? s.value.term.value : undefined;
-              if (typeof lv !== "number" || !Number.isInteger(lv) || lv < 0) {
-                throw new NudoThrow(errorTypeAbs("RangeError"));
-              }
-              if (lv > TUPLE_MATERIALIZE_CAP) {
-                return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
-              }
-              if (lv < len) {
-                elements.length = lv;
-                holes = holes.filter((h) => h < lv);
-              } else {
-                for (let j = len; j < lv; j++) holes.push(j);
-              }
-              len = lv;
-              continue;
-            }
-            const idx = canonicalArrayIndex(k);
-            if (idx === undefined) continue;
-            if (idx >= len) len = idx + 1;
-            if (idx >= elements.length) elements.length = idx + 1;
-            elements[idx] = s.value;
-            holes = holes.filter((h) => h !== idx);
-          }
-          elements.length = len;
-          acc = abs(
-            { k: "tuple", elements, holes: holes.length > 0 ? holes : undefined },
-            undefined,
-            undefined,
-            confJoin(acc.conf, src.conf),
-          );
-        }
-      }
-      return acc;
+      // 单一实现（descriptor.ts 的 performObjectAssign）：obj/tuple/brand
+      // 目标就地写（引用语义——别名与语句位可见）；prim/boxed 目标口径不变。
+      return performObjectAssign(args);
     }
     case "is": {
       // SameValue：±0 区分、NaN 自等（与 -0 语义同族入口）
@@ -2256,11 +2045,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // gOPD(/x/,"lastIndex").writable === true）；此前整 brand 落
       // 「descriptor | undefined」⇒ 读 .writable 即定抛 TypeError。
       // source/flags/global 等是**原型访问器**（非自有键）⇒ 不在此臂。
-      if (
-        key === "lastIndex" &&
-        a0.shape.k === "brand" &&
-        (a0.shape as { name?: string }).name === "RegExp"
-      ) {
+      if (key === "lastIndex" && isRegExpBrandAbs(a0)) {
         const rInner = a0.shape.shape;
         if (rInner.shape.k === "obj" && !rInner.shape.open) {
           const rSlots = (rInner.shape as ObjShape)

@@ -5,7 +5,7 @@
  * 属性）、`a.m = fn` / `this.m = fn`（写实例的自有属性）都**遮住**类注册表
  * 里的方法体 ⇒ `new A().m()` 跑的是用户写的函数。
  *
- * 引擎此前：写侧（$set / $thisSet / defineProperty）把值落进 brand 内层 obj
+ * 引擎此前：写侧（$set / this 成员写 / defineProperty）把值落进 brand 内层 obj
  * 槽面（读面 chainProtoSlotOf 看得见），但**派发面只查注册表** ⇒ monkey-patch
  * 全部静默失效（跑的还是旧方法体）；写成非函数时也**不抛** TypeError。
  *

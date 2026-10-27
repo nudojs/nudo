@@ -10,7 +10,7 @@
  * - **replace 命中的子表达式仍要求值**（副作用与 throws 域保留），只是
  *   结果被注入值取代（Bug 165）；旧口径整段替换 → 副作用与抛错域消失。
  */
-import type { Statement, Node, Expression } from "@babel/types";
+import type { Node, Expression, Statement, VariableDeclaration } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
@@ -201,29 +201,7 @@ export function finalizerBits(node: Node): { yields: boolean; returns: boolean }
 }
 
 export function fnBodyHasThis(fn: { body?: Node | null }): boolean {
-  const body = fn.body;
-  if (!body) return false;
-  const seen = new Set<Node>();
-  const walk = (n: Node): boolean => {
-    if (n.type === "ThisExpression") return true;
-    if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") return false;
-    if (seen.has(n)) return false;
-    seen.add(n);
-    for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) {
-          if (item && typeof item === "object" && "type" in (item as object)) {
-            if (walk(item as Node)) return true;
-          }
-        }
-      } else if (v && typeof v === "object" && "type" in (v as object)) {
-        if (walk(v as Node)) return true;
-      }
-    }
-    return false;
-  };
-  return walk(body);
+  return getFnFacets(fn).hasThis;
 }
 
 /**
@@ -234,42 +212,7 @@ export function fnBodyHasThis(fn: { body?: Node | null }): boolean {
  * → 自由 arguments 读折 $throwFreeArguments()（原生 ReferenceError）。
  */
 export function fnBodyHasOwnArguments(fn: { body?: Node | null; params?: Node[] }): boolean {
-  const body = fn.body;
-  if (!body) return false;
-  const seen = new Set<Node>();
-  const walk = (n: Node): boolean => {
-    if (n.type === "Identifier" && (n as { name?: string }).name === "arguments") return true;
-    if (
-      n.type === "FunctionDeclaration" ||
-      n.type === "FunctionExpression" ||
-      n.type === "ObjectMethod" ||
-      n.type === "ClassMethod"
-    ) {
-      // 箭头不在此列：词法继承外层 arguments，继续下降（箭头自身的
-      // params 默认值同属外层绑定作用域）
-      return false;
-    }
-    if (seen.has(n)) return false;
-    seen.add(n);
-    for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) {
-          if (item && typeof item === "object" && "type" in (item as object)) {
-            if (walk(item as Node)) return true;
-          }
-        }
-      } else if (v && typeof v === "object" && "type" in (v as object)) {
-        if (walk(v as Node)) return true;
-      }
-    }
-    return false;
-  };
-  // 参数默认值先于 body 扫描（同为函数作用域求值面）
-  for (const p of fn.params ?? []) {
-    if (walk(p)) return true;
-  }
-  return walk(body);
+  return getFnFacets(fn).hasOwnArguments;
 }
 
 /**
@@ -292,67 +235,7 @@ const SAFE_CTOR_NAMES = new Set([
 ]);
 
 export function fnBodyIsEffectFree(fn: { body?: Node | null; params?: Node[] }): boolean {
-  const body = fn.body;
-  if (!body) return false;
-  let dirty = false;
-  const seen = new Set<Node>();
-  const walk = (n: Node): void => {
-    if (dirty || !n || typeof n !== "object") return;
-    switch (n.type) {
-      case "AssignmentExpression":
-      case "UpdateExpression":
-      case "TaggedTemplateExpression":
-      case "CallExpression":
-      case "OptionalCallExpression":
-      case "NewExpression":
-        if (n.type === "NewExpression") {
-          const callee = (n as unknown as { callee: Node }).callee;
-          if (callee.type === "Identifier" && SAFE_CTOR_NAMES.has((callee as { name: string }).name)) {
-            break; // 白名单 ctor：无外写
-          }
-        }
-        dirty = true;
-        return;
-      case "UnaryExpression":
-        if ((n as unknown as { operator: string }).operator === "delete") {
-          dirty = true;
-          return;
-        }
-        break;
-      case "ForInStatement":
-      case "ForOfStatement": {
-        const left = (n as unknown as { left: Node }).left;
-        if (left.type !== "VariableDeclaration") {
-          dirty = true;
-          return;
-        }
-        break;
-      }
-      case "FunctionDeclaration":
-      case "FunctionExpression":
-      case "ArrowFunctionExpression":
-      case "ObjectMethod":
-      case "ClassMethod":
-        return; // 嵌套函数体不执行（除非被调用——Call 脏标记覆盖）
-      default:
-        break;
-    }
-    if (seen.has(n)) return;
-    seen.add(n);
-    for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) {
-          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
-        }
-      } else if (v && typeof v === "object" && "type" in (v as object)) {
-        walk(v as Node);
-      }
-    }
-  };
-  for (const p of fn.params ?? []) walk(p);
-  walk(body);
-  return !dirty;
+  return getFnFacets(fn).effectFree;
 }
 
 /**
@@ -374,125 +257,298 @@ const CLOSED_GLOBAL_NAMES = new Set<string>([
   ...SAFE_CTOR_NAMES,
 ]);
 
-export function fnBodyIsClosed(fn: { body?: Node | null; params?: Node[] }): boolean {
-  const body = fn.body;
-  if (!body) return false;
-  const bound = new Set<string>();
-  const seen = new Set<Node>();
-  let dirty = false;
+/** 一次遍历得到的五个 facet（按函数节点对象 memo——WeakMap 节点身份） */
+export interface FnFacets {
+  hasThis: boolean;
+  hasParamsThis: boolean;
+  hasOwnArguments: boolean;
+  effectFree: boolean;
+  closed: boolean;
+}
 
-  // 绑定模式（形参 / 声明 id / catch 形参）递归收名；默认值表达式照走读检查
-  const bindPattern = (p: Node | null | undefined): void => {
-    if (!p || typeof p !== "object") return;
-    switch (p.type) {
-      case "Identifier":
-        bound.add((p as unknown as { name: string }).name);
-        return;
-      case "AssignmentPattern": {
-        const q = p as unknown as { left: Node; right: Node };
-        bindPattern(q.left);
-        walk(q.right);
-        return;
+const fnFacetsCache = new WeakMap<object, FnFacets>();
+
+/** facet 位掩码：一次下降同时算五面；某位清零 = 该面已收敛（命中/边界/脏） */
+const FACET_THIS = 1;
+const FACET_PARAMS_THIS = 2;
+const FACET_ARGS = 4;
+const FACET_EFFECT_FREE = 8;
+const FACET_CLOSED = 16;
+
+/** 特殊形态自定义孩子顺序时，通用下降要跳过已处理的孩子键 */
+const MEMBER_CHILD_KEYS: ReadonlySet<string> = new Set(["object", "property"]);
+const OBJECT_PROPERTY_CHILD_KEYS: ReadonlySet<string> = new Set(["key", "value"]);
+
+/**
+ * 五个 facet 的**单次遍历**（把原先 4-5 次独立 AST 扫描合并）。
+ *
+ * 每个 facet 的停止边界 / 脏标记用独立位表达——同一节点下降时只对仍活跃
+ * 的面做判定，因此各面结果与独立实现逐条一致：
+ * - this / 形参 this：嵌套 FunctionDeclaration/FunctionExpression 有自己的
+ *   this 边界（停止），箭头词法继承（下降）；
+ * - arguments：嵌套函数 / 对象方法 / 类方法有自己的绑定（停止），箭头
+ *   下降，参数默认值一并扫描；
+ * - effectFree / closed：形参默认值 + 体；嵌套函数体不执行（不下降），
+ *   closed 另停类体；closed 的绑定集按原 DFS 顺序建立（声明前引用仍按
+ *   原口径判自由）。
+ * 结果按函数节点对象 memo：同一节点上的多个 wrapper 调用共享一次遍历。
+ */
+export function getFnFacets(fn: { body?: Node | null; params?: Node[] }): FnFacets {
+  const cached = fnFacetsCache.get(fn);
+  if (cached) return cached;
+
+  const body = fn.body ?? null;
+  const params = fn.params ?? [];
+  let hasThis = false;
+  let hasParamsThis = false;
+  let hasOwnArguments = false;
+  let effectDirty = false;
+  let closedDirty = false;
+  const bound = new Set<string>();
+  // 节点去重（AST 是树；保留环 / 共享节点防御）
+  const seen = new Set<Node>();
+
+  /** 通用孩子下降：跳过元数据键与调用方已特殊处理的孩子键 */
+  const walkChildren = (n: Node, mask: number, skip?: ReadonlySet<string>): void => {
+    if (mask === 0) return;
+    for (const [k, v] of Object.entries(n)) {
+      if (skip?.has(k)) continue;
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node, mask);
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as Node, mask);
       }
-      case "RestElement":
-        bindPattern((p as unknown as { argument: Node }).argument);
-        return;
-      case "ObjectPattern":
-        for (const prop of (p as unknown as { properties: Node[] }).properties) {
-          if (prop.type === "RestElement") {
-            bindPattern(prop);
-          } else if (prop.type === "ObjectProperty") {
-            const q = prop as unknown as { key: Node; value: Node; computed: boolean };
-            if (q.computed) walk(q.key); // 计算键是引用面（`{[x]: v}` 读 x）
-            bindPattern(q.value);
-          }
-        }
-        return;
-      case "ArrayPattern":
-        for (const el of (p as unknown as { elements: (Node | null)[] }).elements) {
-          bindPattern(el);
-        }
-        return;
-      default:
-        return;
     }
   };
 
   const checkRef = (n: Node): void => {
     const name = (n as unknown as { name: string }).name;
-    if (!bound.has(name) && !CLOSED_GLOBAL_NAMES.has(name)) dirty = true;
+    if (!bound.has(name) && !CLOSED_GLOBAL_NAMES.has(name)) closedDirty = true;
   };
 
-  const walk = (n: Node | null | undefined): void => {
-    if (dirty || !n || typeof n !== "object") return;
-    switch (n.type) {
-      case "Identifier":
-        checkRef(n);
-        return;
-      case "ThisExpression":
-      case "Super":
-      case "MetaProperty":
-        dirty = true;
-        return;
-      // 嵌套函数体不执行（effectFree 已保证）；名也不绑定外层读
-      case "FunctionDeclaration":
-      case "FunctionExpression":
-      case "ArrowFunctionExpression":
-      case "ObjectMethod":
-      case "ClassMethod":
-      case "ClassExpression":
-      case "ClassDeclaration":
-        return;
-      case "VariableDeclarator": {
-        const q = n as unknown as { id: Node; init: Node | null };
-        bindPattern(q.id);
-        walk(q.init);
-        return;
-      }
-      case "CatchClause": {
-        const q = n as unknown as { param: Node | null; body: Node };
-        bindPattern(q.param);
-        walk(q.body);
-        return;
-      }
-      case "LabeledStatement":
-        walk((n as unknown as { body: Node }).body);
-        return;
-      case "BreakStatement":
-      case "ContinueStatement":
-        return; // label 非引用
-      case "MemberExpression":
-      case "OptionalMemberExpression": {
-        const q = n as unknown as { object: Node; property: Node; computed: boolean };
-        walk(q.object);
-        if (q.computed) walk(q.property);
-        return;
-      }
-      case "ObjectProperty": {
-        const q = n as unknown as { key: Node; value: Node; computed: boolean };
-        if (q.computed) walk(q.key);
-        walk(q.value);
-        return;
-      }
-      default:
-        break;
-    }
-    if (seen.has(n)) return;
+  const walk = (n: Node | null | undefined, mask: number): void => {
+    if (mask === 0 || !n || typeof n !== "object") return;
+    if (effectDirty) mask &= ~FACET_EFFECT_FREE;
+    if (closedDirty) mask &= ~FACET_CLOSED;
+    if (mask === 0 || seen.has(n)) return;
     seen.add(n);
-    for (const [k, v] of Object.entries(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) {
-          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
+
+    // ---- 词法 this（体 / 形参两个独立入口，边界一致）----
+    if (mask & (FACET_THIS | FACET_PARAMS_THIS)) {
+      if (n.type === "ThisExpression") {
+        if (mask & FACET_THIS) {
+          hasThis = true;
+          mask &= ~FACET_THIS;
         }
-      } else if (v && typeof v === "object" && "type" in (v as object)) {
-        walk(v as Node);
+        if (mask & FACET_PARAMS_THIS) {
+          hasParamsThis = true;
+          mask &= ~FACET_PARAMS_THIS;
+        }
+      } else if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") {
+        mask &= ~(FACET_THIS | FACET_PARAMS_THIS);
       }
+    }
+
+    // ---- arguments（自身绑定；箭头词法继承外层，下降）----
+    if (mask & FACET_ARGS) {
+      if (n.type === "Identifier" && (n as unknown as { name?: string }).name === "arguments") {
+        hasOwnArguments = true;
+        mask &= ~FACET_ARGS;
+      } else if (
+        n.type === "FunctionDeclaration" ||
+        n.type === "FunctionExpression" ||
+        n.type === "ObjectMethod" ||
+        n.type === "ClassMethod"
+      ) {
+        mask &= ~FACET_ARGS;
+      }
+    }
+
+    // ---- 无副作用面 ----
+    if (mask & FACET_EFFECT_FREE) {
+      switch (n.type) {
+        case "AssignmentExpression":
+        case "UpdateExpression":
+        case "TaggedTemplateExpression":
+        case "CallExpression":
+        case "OptionalCallExpression":
+        case "NewExpression":
+          if (n.type === "NewExpression") {
+            const callee = (n as unknown as { callee: Node }).callee;
+            if (callee.type === "Identifier" && SAFE_CTOR_NAMES.has((callee as unknown as { name: string }).name)) {
+              break; // 白名单 ctor：无外写
+            }
+          }
+          effectDirty = true;
+          mask &= ~FACET_EFFECT_FREE;
+          break;
+        case "UnaryExpression":
+          if ((n as unknown as { operator: string }).operator === "delete") {
+            effectDirty = true;
+            mask &= ~FACET_EFFECT_FREE;
+          }
+          break;
+        case "ForInStatement":
+        case "ForOfStatement": {
+          const left = (n as unknown as { left: Node }).left;
+          if (left.type !== "VariableDeclaration") {
+            effectDirty = true;
+            mask &= ~FACET_EFFECT_FREE;
+          }
+          break;
+        }
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "ArrowFunctionExpression":
+        case "ObjectMethod":
+        case "ClassMethod":
+          mask &= ~FACET_EFFECT_FREE; // 嵌套函数体不执行（被调用已由 Call 脏标记覆盖）
+          break;
+        default:
+          break;
+      }
+    }
+
+    // ---- 封闭面（绑定集 + 引用面；特殊形态自定义孩子顺序以保持原 DFS）----
+    if (mask & FACET_CLOSED) {
+      switch (n.type) {
+        case "Identifier":
+          checkRef(n);
+          mask &= ~FACET_CLOSED; // 原 walk 在 Identifier 处返回（不再下降）
+          break;
+        case "ThisExpression":
+        case "Super":
+        case "MetaProperty":
+          closedDirty = true;
+          mask &= ~FACET_CLOSED;
+          break;
+        // 嵌套函数体不执行（effectFree 已保证）；名也不绑定外层读
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "ArrowFunctionExpression":
+        case "ObjectMethod":
+        case "ClassMethod":
+        case "ClassExpression":
+        case "ClassDeclaration":
+          mask &= ~FACET_CLOSED;
+          break;
+        case "VariableDeclarator": {
+          const q = n as unknown as { id: Node; init: Node | null };
+          patternWalk(q.id, mask);
+          walk(q.init, mask);
+          return;
+        }
+        case "CatchClause": {
+          const q = n as unknown as { param: Node | null; body: Node };
+          patternWalk(q.param, mask);
+          walk(q.body, mask);
+          return;
+        }
+        case "LabeledStatement":
+          // label 非引用（closed 面）；其余面照常走
+          walk((n as unknown as { label: Node }).label, mask & ~FACET_CLOSED);
+          walk((n as unknown as { body: Node }).body, mask);
+          return;
+        case "BreakStatement":
+        case "ContinueStatement":
+          walk((n as unknown as { label?: Node | null }).label, mask & ~FACET_CLOSED);
+          return;
+        case "MemberExpression":
+        case "OptionalMemberExpression": {
+          const q = n as unknown as { object: Node; property: Node; computed: boolean };
+          walk(q.object, mask);
+          walk(q.property, q.computed ? mask : mask & ~FACET_CLOSED);
+          walkChildren(n, mask & ~FACET_CLOSED, MEMBER_CHILD_KEYS);
+          return;
+        }
+        case "ObjectProperty": {
+          const q = n as unknown as { key: Node; value: Node; computed: boolean };
+          walk(q.key, q.computed ? mask : mask & ~FACET_CLOSED);
+          walk(q.value, mask);
+          walkChildren(n, mask & ~FACET_CLOSED, OBJECT_PROPERTY_CHILD_KEYS);
+          return;
+        }
+        default:
+          break;
+      }
+    }
+
+    walkChildren(n, mask);
+  };
+
+  /**
+   * 绑定模式（形参 / 声明 id / catch 形参）递归收名；默认值 / 计算键是
+   * 引用面。非 closed 面照常下降（不能因绑定语义跳过它们的扫描）。
+   */
+  const patternWalk = (p: Node | null | undefined, mask: number): void => {
+    if (mask === 0 || !p || typeof p !== "object") return;
+    if (effectDirty) mask &= ~FACET_EFFECT_FREE;
+    if (closedDirty) mask &= ~FACET_CLOSED;
+    if (mask === 0) return;
+    switch (p.type) {
+      case "Identifier":
+        if (mask & FACET_CLOSED) bound.add((p as unknown as { name: string }).name);
+        // 其余面按通用口径走该标识符（绑定名 `arguments` 同样计入）
+        walk(p, mask & ~FACET_CLOSED);
+        return;
+      case "AssignmentPattern": {
+        const q = p as unknown as { left: Node; right: Node };
+        patternWalk(q.left, mask);
+        walk(q.right, mask);
+        return;
+      }
+      case "RestElement":
+        patternWalk((p as unknown as { argument: Node }).argument, mask);
+        return;
+      case "ObjectPattern":
+        for (const prop of (p as unknown as { properties: Node[] }).properties) {
+          if (prop.type === "RestElement") {
+            patternWalk(prop, mask);
+          } else if (prop.type === "ObjectProperty") {
+            const q = prop as unknown as { key: Node; value: Node; computed: boolean };
+            // 计算键是引用面（`{[x]: v}` 读 x）；非计算键不是引用
+            walk(q.key, q.computed ? mask : mask & ~FACET_CLOSED);
+            patternWalk(q.value, mask);
+          } else {
+            // 原 bindPattern 忽略该形态；其余面仍按通用口径下降
+            walk(prop, mask & ~FACET_CLOSED);
+          }
+        }
+        return;
+      case "ArrayPattern":
+        for (const el of (p as unknown as { elements: (Node | null)[] }).elements) {
+          patternWalk(el, mask);
+        }
+        return;
+      default:
+        // 原 bindPattern 不处理的形态（不绑定）；其余面照常下降
+        walk(p, mask & ~FACET_CLOSED);
+        return;
     }
   };
-  for (const p of fn.params ?? []) bindPattern(p);
-  walk(body);
-  return !dirty;
+
+  // 形参面：hasParamsThis 恒扫；其余面仅在体存在时有意义（既有实现缺体 → false）
+  const paramsMask =
+    FACET_PARAMS_THIS | (body ? FACET_ARGS | FACET_EFFECT_FREE | FACET_CLOSED : 0);
+  for (const p of params) patternWalk(p, paramsMask);
+  if (body) walk(body, FACET_THIS | FACET_ARGS | FACET_EFFECT_FREE | FACET_CLOSED);
+
+  const facets: FnFacets = {
+    hasThis,
+    hasParamsThis,
+    hasOwnArguments,
+    effectFree: body !== null && !effectDirty,
+    closed: body !== null && !closedDirty,
+  };
+  fnFacetsCache.set(fn, facets);
+  return facets;
+}
+
+export function fnBodyIsClosed(fn: { body?: Node | null; params?: Node[] }): boolean {
+  return getFnFacets(fn).closed;
 }
 
 export function normWs(s: string): string {
@@ -744,12 +800,7 @@ export const FUNCTION_SCOPE_TYPES = new Set([
   "ClassPrivateMethod",
 ]);
 
-export const BINDING_SCOPE_TYPES = new Set([
-  ...FUNCTION_SCOPE_TYPES,
-  "CatchClause",
-  "ForOfStatement",
-  "ForInStatement",
-]);
+
 
 export type IdentNode = {
   type?: string;
@@ -775,6 +826,95 @@ export function collectPatternNames(id: unknown, acc: Set<string>): void {
   } else if (n.type === "ArrayPattern") {
     for (const el of n.elements ?? []) collectPatternNames(el, acc);
   }
+}
+
+/**
+ * 声明绑定名扫描（宿主内建遮蔽判定用）：收集 AST/Program 内**全部绑定
+ * 位置**的名字——变量声明模式（含解构 / 默认值 / rest）、函数 / 类声明与
+ * 表达式自身名、各类函数形态的形参、catch 参数、import specifier local、
+ * TS 参数属性。
+ *
+ * 保守口径：**任意作用域**出现同名绑定都计入（不做词法作用域归属）。调用
+ * 方只需要「本单元内该名字是否被用户绑定过」的单位级事实；读点发射标识符
+ * 本身时由 JS 词法绑定决定读值，全单元保守遮蔽只损失字面量折叠精度，不改
+ * 语义。loc / comments 等非 AST 面键直接跳过（无绑定信息，纯开销）。
+ */
+const BINDING_SCAN_SKIP_KEYS: ReadonlySet<string> = new Set([
+  "loc", "start", "end", "range", "extra",
+  "leadingComments", "trailingComments", "innerComments", "comments", "tokens", "errors",
+]);
+
+export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = new Set()): Set<string> {
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    if (Array.isArray(n)) {
+      for (const c of n) visit(c);
+      return;
+    }
+    const o = n as { type?: string; [k: string]: unknown };
+    switch (o.type) {
+      case "VariableDeclarator":
+        collectPatternNames(o.id, acc);
+        break;
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ObjectMethod":
+      case "ClassMethod":
+      case "ClassPrivateMethod":
+        // 函数 / 对象方法 / 类方法：自身名（函数表达式可具名）+ 形参模式
+        collectPatternNames(o.id, acc);
+        for (const p of (o.params as unknown[] | undefined) ?? []) collectPatternNames(p, acc);
+        break;
+      case "ClassDeclaration":
+      case "ClassExpression":
+        collectPatternNames(o.id, acc);
+        break;
+      case "CatchClause":
+        collectPatternNames(o.param, acc);
+        break;
+      case "ImportSpecifier":
+      case "ImportDefaultSpecifier":
+      case "ImportNamespaceSpecifier":
+        collectPatternNames(o.local, acc);
+        break;
+      case "TSParameterProperty":
+        collectPatternNames(o.parameter, acc);
+        break;
+      default:
+        break;
+    }
+    for (const key of Object.keys(o)) {
+      if (BINDING_SCAN_SKIP_KEYS.has(key)) continue;
+      const v = o[key];
+      if (v && typeof v === "object") visit(v);
+    }
+  };
+  visit(node);
+  return acc;
+}
+
+/**
+ * 本转译单元**遮蔽宿主内建**的名字集（undefined / NaN / Infinity 的子集）。
+ *
+ * 判据 = 声明绑定扫描命中 ∪ 调用方补给（`extra`：mock/env 注入名、body-fn
+ * 的形参 / 闭包绑定名）。无命中 → undefined（调用方不写 opts 字段，产物逐
+ * 字节不变）。
+ */
+export function shadowedIntrinsicsOf(
+  node: unknown,
+  extra?: ReadonlySet<string>,
+): ReadonlySet<string> | undefined {
+  let out: Set<string> | undefined;
+  for (const name of collectDeclaredBindingNames(node)) {
+    if (HOST_INTRINSIC_SET.has(name)) (out ??= new Set()).add(name);
+  }
+  if (extra) {
+    for (const name of extra) {
+      if (HOST_INTRINSIC_SET.has(name)) (out ??= new Set()).add(name);
+    }
+  }
+  return out;
 }
 
 /**
@@ -1016,34 +1156,42 @@ export function collectExportVarNames(stmts: readonly unknown[]): Set<string> {
 }
 
 /**
- * 收集子树内 **词法声明** 名（let/const/function/class；不含 var——函数作用域）。
- * 不进入嵌套函数（那些绑定属于内层作用域）。
- * 用于 fork 协议：臂内声明不是「自由写」，不得 `$copy(未定义名)`。
+ * **单条语句**在本层语句表里声明的词法名（let/const/class/function；`var`
+ * 是函数作用域 ⇒ 不收）。**不下降**到嵌套块 / 嵌套函数体：那些声明只
+ * shadow 各自作用域，不 shadow 同一语句表里的兄弟语句。
+ *
+ * 用途（fork 协议的「臂内声明不是自由写」判定）：同批节点是**同一语句表**
+ * 里的兄弟语句——`case 1: let a = …; a = 2` 的 `let a` 必须 shadow 兄弟
+ * `a = 2`（否则 `$copy(a)` 撞 const/TDZ），而 `case 1: { let a = … } a = 2`
+ * 的块内 `let a` 不得外泄到兄弟语句（否则外层 `a` 的合法自由写被吞 ⇒
+ * 臂不再隔离）。嵌套块的遮蔽由 walk 的 BlockStatement 分支自己处理。
  */
-export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
-  if (!node || typeof node !== "object") return;
-  const n = node as {
-    type?: string;
-    kind?: string;
-    id?: unknown;
-    declarations?: Array<{ id?: unknown }>;
-    [k: string]: unknown;
-  };
-  if (FUNCTION_SCOPE_TYPES.has(n.type as string) && n.type !== "BlockStatement") {
-    // 函数本体的词法名属于内层；只收函数名（若 FunctionDeclaration）
-    if (n.type === "FunctionDeclaration") collectPatternNames(n.id, acc);
+function collectListStatementDeclNames(stmt: unknown, acc: Set<string>): void {
+  const n = stmt as
+    | {
+        type?: string;
+        kind?: string;
+        id?: unknown;
+        declarations?: Array<{ id?: unknown }>;
+        declaration?: {
+          type?: string;
+          kind?: string;
+          id?: unknown;
+          declarations?: Array<{ id?: unknown }>;
+        };
+      }
+    | null
+    | undefined;
+  if (!n) return;
+  // `export const/let/class …`：导出包装不改变绑定的层级（声明本体在本层）
+  const node = n.type === "ExportNamedDeclaration" && n.declaration ? n.declaration : n;
+  if (node.type === "VariableDeclaration") {
+    if (node.kind === "var") return;
+    for (const d of node.declarations ?? []) collectPatternNames(d.id, acc);
     return;
   }
-  if (n.type === "VariableDeclaration" && n.kind !== "var") {
-    for (const d of n.declarations ?? []) collectPatternNames(d.id, acc);
-  } else if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
-    collectPatternNames(n.id, acc);
-  }
-  for (const key of Object.keys(n)) {
-    if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
-    const child = n[key];
-    if (Array.isArray(child)) child.forEach((c) => collectLexicalDeclNames(c, acc));
-    else if (child && typeof child === "object") collectLexicalDeclNames(child, acc);
+  if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+    collectPatternNames(node.id, acc);
   }
 }
 
@@ -1060,14 +1208,7 @@ export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
 export function collectLoopBodyTopLevelDeclNames(body: unknown, acc: Set<string>): void {
   const n = body as { type?: string; body?: unknown } | null | undefined;
   if (!n || n.type !== "BlockStatement" || !Array.isArray(n.body)) return;
-  for (const s of n.body as unknown[]) {
-    const stmt = s as { type?: string; kind?: string; id?: unknown; declarations?: Array<{ id?: unknown }> };
-    if (stmt.type === "VariableDeclaration" && stmt.kind !== "var") {
-      for (const d of stmt.declarations ?? []) collectPatternNames(d.id, acc);
-    } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
-      collectPatternNames(stmt.id, acc);
-    }
-  }
+  for (const s of n.body as unknown[]) collectListStatementDeclNames(s, acc);
 }
 
 /**
@@ -1273,10 +1414,13 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
   const markFree = (name: string | undefined, shadowed: Set<string>): void => {
     if (name && !HOST_INTRINSIC_SET.has(name) && !shadowed.has(name)) free.add(name);
   };
-  // 同批节点内的词法声明（let/const/function）遮蔽本批自由写——
-  // 臂内 `let shares = []; shares.push` 不得进外层 fork 协议（$copy(TDZ)）。
+  // 同批节点是**同一语句表**里的兄弟语句（switch 臂语句 / if 分支体 /
+  // 函数体余下语句）——本层声明（let/const/class/function）遮蔽本批自由写：
+  // 臂内 `let shares = []; shares.push(1)` 不得进外层 fork 协议（$copy(TDZ)）。
+  // 只收**本层**声明（不下降嵌套块）：块内 `let a` 只 shadow 该块，
+  // `case 1: { let a = … } a.v = 7` 的外层 `a` 仍是合法自由写。
   const batchDecl = new Set<string>();
-  for (const node of nodes) collectLexicalDeclNames(node, batchDecl);
+  for (const node of nodes) collectListStatementDeclNames(node, batchDecl);
   const walk = (node: unknown, shadowed: Set<string>): void => {
     if (!node || typeof node !== "object") return;
     const n = node as {
@@ -1314,11 +1458,29 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       const bound = new Set<string>();
       collectPatternNames(n.id, bound);
       for (const p of n.params ?? []) collectPatternNames(p, bound);
+      // 内层函数体的**函数级**绑定（`var` 提升 + 本层函数声明）属于内层
+      // 作用域 ⇒ 写到它们不是对**外层**绑定的自由写。缺这一层时
+      // `function g() { var a = 1; a = 2 }` 会把外层（多半不存在的）`a`
+      // 拉进 fork/pack 协议 ⇒ 发射 `$copy(a)` 运行时 ReferenceError ⇒
+      // 假 never / L2 假 throws（臂内 var 是**内层**绑定，外层无同名绑定）。
+      // 箭头函数表达式体没有提升层（表达式体不是语句列表）。
+      const bodyStmts =
+        (n.body as { type?: string; body?: unknown[] } | undefined)?.type === "BlockStatement"
+          ? ((n.body as { body?: unknown[] }).body ?? [])
+          : [];
+      for (const name of collectVarHoistNames(bodyStmts)) bound.add(name);
+      for (const s of bodyStmts) {
+        const st = s as { type?: string; id?: unknown } | null | undefined;
+        if (st?.type === "FunctionDeclaration") collectPatternNames(st.id, bound);
+      }
       pushShadow(bound);
     } else if (n.type === "BlockStatement") {
+      // 块作用域：块**本层**的词法声明（TDZ 覆盖整个块 ⇒ 先整体 shadow，
+      // 再看增量语句序）。不下降嵌套块——`{ { let a = … } a.v = 7 }` 的内层
+      // `let a` 只 shadow 内层，外层 `a` 仍是自由写。
       const bound = new Set<string>();
       for (const stmt of (n.body as unknown[] | undefined) ?? []) {
-        collectLexicalDeclNames(stmt, bound);
+        collectListStatementDeclNames(stmt, bound);
       }
       pushShadow(bound);
     } else if (n.type === "VariableDeclaration") {
@@ -1476,6 +1638,231 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
  */
 export function collectForkBindingNames(...nodes: Array<unknown>): string[] {
   return collectFreeAssignedNames(...nodes);
+}
+
+/**
+ * 本层语句表**直接**声明的遮蔽名（let / const / class / function）。
+ *
+ * 口径与 computeConstScope 的 walkList 同源：只看**本层**声明，不进入嵌套
+ * 块 / 嵌套函数体（那些作用域各自算自己的遮蔽——嵌套块的 let 只在该块内
+ * 遮蔽，嵌套函数的形参/局部名只在该函数体内遮蔽）。
+ *
+ * `var` 不收：var 是**函数**作用域绑定，与外层 const 同名是 SyntaxError
+ * ⇒ 不可能遮蔽别名组成员（组成员恒为 const 声明名）。
+ */
+export function collectScopeShadowNames(stmts: readonly unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of stmts) {
+    if (!s || typeof s !== "object") continue;
+    const n = s as {
+      type?: string;
+      kind?: string;
+      id?: unknown;
+      declarations?: Array<{ id?: unknown }>;
+    };
+    if (n.type === "VariableDeclaration") {
+      if (n.kind === "var") continue;
+      for (const d of n.declarations ?? []) collectPatternNames(d.id, out);
+      continue;
+    }
+    if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+      collectPatternNames(n.id, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * 前导 run 的单步归一：const 声明本体 / 「不打断 run」/ 「打断 run」。
+ *
+ * - `const`：本步是一条 const 声明（可直接参与别名并查）；
+ * - `skip`：本步不初始化任何绑定、也不观察别名绑定 ⇒ 不打断前导 run；
+ * - `break`：本步打断前导 run（其后的声明不再参与本层别名组）。
+ */
+type AliasRunStep =
+  | { kind: "const"; decl: VariableDeclaration }
+  | { kind: "skip" }
+  | { kind: "break" };
+
+/**
+ * 前导 run 的单步归一口径：
+ * - `import` 声明 → `skip`（依赖模块的求值发生在模块体之前，不观察本
+ *   模块的别名绑定；别名声明仍在任何后续语句之前初始化 ⇒ 无 TDZ 风险）；
+ * - `export const …` → `const`（导出包装不改变初始化时序）；
+ * - `export { a }` / `export * from …`（无声明体）→ `skip`（同 import）；
+ * - 其余（`let`/`var` 声明、函数/类声明、表达式语句、`export default …`）
+ *   → `break`。
+ */
+function aliasRunStepOf(stmt: Statement): AliasRunStep {
+  if (stmt.type === "ImportDeclaration") return { kind: "skip" };
+  if (stmt.type === "ExportNamedDeclaration") {
+    const decl = stmt.declaration;
+    if (!decl) return { kind: "skip" };
+    if (decl.type === "VariableDeclaration") {
+      return decl.kind === "const" ? { kind: "const", decl } : { kind: "break" };
+    }
+    return { kind: "break" };
+  }
+  if (stmt.type === "VariableDeclaration") {
+    return stmt.kind === "const" ? { kind: "const", decl: stmt } : { kind: "break" };
+  }
+  return { kind: "break" };
+}
+
+/**
+ * **作用域边界**语句表开头连续 const 声明里的直接别名组
+ * （`const a = {...}; const b = a;`）。
+ *
+ * 只收 init 为同作用域、此前已声明 const 的标识符：这样别名声明一定在
+ * 所有后续语句之前初始化，fork/pack 带上 `b` 不会踩 TDZ；`let`/`var` 可
+ * 重绑，不能当作稳定别名。非连续（中间隔了其它语句）的别名不收集——
+ * 保守漏收只会保留旧的别名缺陷，不会引入错误绑定。
+ *
+ * 边界口径：函数/方法体、嵌套块与**模块顶层**都算本层组（嵌套块的组与
+ * 函数体同权——块内 `const x = …; const y = x;` 的别名同样要跨 fork 保持
+ * 身份）。模块顶层**不经**函数体入口（模块体是逐语句发射的），其本层组
+ * 由 transpile.ts 单独计算并下发（见 TranspileOptions.aliasGroups）。
+ */
+export function leadingConstAliasGroups(stmts: readonly Statement[]): string[][] {
+  const parent = new Map<string, string>();
+  const declared = new Set<string>();
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.has(root) && parent.get(root) !== root) root = parent.get(root)!;
+    let cur = x;
+    while (parent.has(cur) && parent.get(cur) !== cur) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const stmt of stmts) {
+    const step = aliasRunStepOf(stmt);
+    if (step.kind === "skip") continue;
+    if (step.kind === "break") break;
+    for (const d of step.decl.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      if (d.init?.type === "Identifier" && declared.has(d.init.name)) {
+        union(d.id.name, d.init.name);
+      }
+      parent.set(d.id.name, parent.get(d.id.name) ?? d.id.name);
+      declared.add(d.id.name);
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const name of parent.keys()) {
+    const root = find(name);
+    const group = groups.get(root);
+    if (group) group.push(name);
+    else groups.set(root, [name]);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
+/**
+ * 别名组按遮蔽名过滤：组内**任一成员**在本处被重新声明 ⇒ 该成员在本处
+ * 指向**不同绑定** ⇒ 该组不得用于扩展（否则 fork/pack 会把「伙伴」当成本
+ * 处的绑定复制/重绑 ⇒ 断开别名身份 ⇒ 自信错值）。
+ *
+ * 例：外层 `const a = {}; const b = a;`，内层块 `let a = {}` 遮蔽 `a`
+ * ⇒ 块内的 fork 写 `a` 时不得把外层 `b` 拉进绑定集。
+ */
+export function filterAliasGroups(
+  groups: ReadonlyArray<readonly string[]> | undefined,
+  shadow: ReadonlySet<string> | undefined,
+): ReadonlyArray<readonly string[]> | undefined {
+  if (!groups || groups.length === 0) return groups;
+  if (!shadow || shadow.size === 0) return groups;
+  const out: string[][] = [];
+  for (const g of groups) {
+    if (g.length === 0) continue;
+    let hit = false;
+    for (const n of g) {
+      if (shadow.has(n)) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+    out.push([...g]);
+  }
+  return out;
+}
+
+/**
+ * 作用域边界的别名组合并：
+ * - **继承**组（外层作用域）按本层遮蔽名过滤后并入——本层重新声明了组内
+ *   任一成员时该成员在本层指向不同绑定（展开会复制/重绑外层伙伴 ⇒ 别名
+ *   身份断开）；未被遮蔽时外层伙伴在本层仍是同一绑定（嵌套函数写外层别名
+ *   成员时靠它保持身份）。
+ * - **自有**组（本层开头连续 const 声明的直接别名）无条件并入——同层声明
+ *   ⇒ 同绑定 ⇒ 展开安全。
+ */
+export function mergeAliasGroups(
+  inherited: ReadonlyArray<readonly string[]> | undefined,
+  own: ReadonlyArray<readonly string[]> | undefined,
+  shadow: ReadonlySet<string> | undefined,
+): ReadonlyArray<readonly string[]> {
+  const out: string[][] = [];
+  const seen = new Set<string>();
+  const push = (g: readonly string[]): void => {
+    const key = [...g].sort().join("\u0000");
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push([...g]);
+  };
+  for (const g of filterAliasGroups(inherited, shadow) ?? []) push(g);
+  for (const g of own ?? []) {
+    if (g.length === 0) continue;
+    push(g);
+  }
+  return out;
+}
+
+/**
+ * 把 fork/pack 绑定集扩展到直接 const 别名伙伴。
+ *
+ * `const a = {...}; const b = a;` 只有 `a` 被写时，快照/ pack 若不带上 `b`，
+ * 臂结束重绑 `a` 会断开 `b` 的引用。别名组在**作用域边界**上计算（见
+ * TranspileOptions.aliasGroups）：函数/方法体与嵌套块由
+ * `transpileFnBodyStmts` 算，模块顶层由 transpile.ts 算；每层 = 本层自有组
+ * + 外层组按本层遮蔽名过滤后的结果 ⇒ 展开只在「组内成员在本处指向同一
+ * 绑定」时发生（名字匹配，不做绑定身份判定）。
+ */
+export function expandAliasNames(
+  names: Iterable<string>,
+  opts: TranspileOptions,
+): string[] {
+  const out = new Set<string>(names);
+  const groups = opts.aliasGroups;
+  if (!groups || groups.length === 0) return [...out];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const group of groups) {
+      let hit = false;
+      for (const n of group) {
+        if (out.has(n)) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) continue;
+      for (const n of group) {
+        if (!out.has(n)) {
+          out.add(n);
+          changed = true;
+        }
+      }
+    }
+  }
+  return [...out];
 }
 
 

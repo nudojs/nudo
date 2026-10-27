@@ -4,12 +4,20 @@
  *
  * mode:
  * - "exec"（默认）：执行全部顶层（含副作用）
- * - "analyze"：只保留函数声明与纯字面量 const；跳过顶层表达式/循环/if
- *   ——分析入口安全，不触发 fetch 等顶层副作用
+ * - "analyze"：transpile 阶段只发射非效应顶层语句（`TranspileOptions.mode`;
+ *   判定见 transpile/analyze-strip.ts）——跳过顶层表达式/循环/if 的副作用，
+ *   分析入口安全，不触发 fetch 等顶层副作用
+ *
+ * analyze 的剥离在**发射期**完成：本文件不再解析生成产物做二次剥除。
  */
 
-import { rtAllBindings } from "./rt.ts";
-import { parse as babelParse } from "@babel/parser";
+import {
+  rtAllBindings,
+  compileRuntimeModuleUnit,
+  compileRuntimeUnit,
+  runtimeArgValues,
+  runtimeModuleArgValues,
+} from "./rt.ts";
 import {
   enterEvalCallBudgetSession,
   exitEvalCallBudgetSession,
@@ -23,15 +31,17 @@ import { makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf, defaultImportBindingOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
-import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
-import { ENV_SHADOW_SKIP_GLOBALS, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
+import { transpileModule, transpileExpression } from "./transpile.ts";
+import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
+import { RUNTIME_IMPORT_RE } from "./transpile/runtime-import.ts";
+import { HOST_INTRINSIC_NAMES, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
+import { NAMESPACE_GLOBALS } from "./runtime/containers.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
-import { stripStaticExportDecls, IDENT_NAME_SRC } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros, errorBrandAbs } from "../builtins.ts";
-import { sourceHasCjsExports, sourceHasEsmSyntax } from "../code-text.ts";
+import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset, NudoThrow } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { refineFnReturnType } from "./class.ts";
@@ -114,348 +124,11 @@ export function runTranspiledOptionsMemoKey(
   return fmt(opts);
 }
 
-export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
-
-/** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用）。
- *  ESM live binding（Bug ②）：绑定是间接引用——首个 import 语句后注册
- *  refresh 闭包，$call 出口重读依赖当前导出值（见 live-imports.ts）。
- *
- *  Bug 273：mock 名与**模块级绑定**同名时，前置注入的 `let <名> = …` 与这里
- *  生成的 `let <名> = …` **重复声明** ⇒ new Function SyntaxError ⇒ 整文件
- *  求值失败（fail-closed unknown ⇒ 门禁绿灯 exit 0）。口径：**mock 覆盖
- *  import 绑定**（mock 是显式指令）——改写时直接读 mock 值，且**不**登记
- *  live-import 刷新（刷新会把 mock 冲掉）。 */
-function rewriteUserImports(js: string, mockTable?: Record<string, Abs>): string {
-  const refreshBinds: string[] = [];
-  const mocked = (bind: string): boolean =>
-    mockTable !== undefined && Object.hasOwn(mockTable, bind);
-  const namedBindSrc = (bind: string, spec: string, imported: string): string => {
-    if (mocked(bind)) {
-      return `let ${bind} = __nudoEnv[${JSON.stringify(bind)}];`;
-    }
-    refreshBinds.push(
-      `${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`,
-    );
-    return `let ${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`;
-  };
-  const nsBindSrc = (local: string, spec: string): string => {
-    if (mocked(local)) {
-      return `let ${local} = __nudoEnv[${JSON.stringify(local)}];`;
-    }
-    refreshBinds.push(`${local} = __nudoBindNamespace(${JSON.stringify(spec)});`);
-    return `let ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`;
-  };
-  let registered = false;
-  const registerAfter = (line: string): string => {
-    if (registered) return line;
-    registered = true;
-    return `${line}\n__NUDO_LIVE_IMPORT_REGISTER__;`;
-  };
-  // 混合形态：默认 + 命名空间 `import d, * as ns from "…"`（Bug 153）
-  // ——默认走具名绑定（导出名 "default"），命名空间走 __nudoBindNamespace
-  js = js.replace(
-    /^import\s+([A-Za-z_$][\w$]*)\s*,\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];\s*$/gm,
-    (_all, def: string, local: string, spec: string) =>
-      registerAfter(`${namedBindSrc(def, spec, "default")}\n${nsBindSrc(local, spec)}`),
-  );
-  // namespace：transpile 会写成 `import { * as ns } from "…"`
-  js = js.replace(
-    /^import\s*\{\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*from\s*["']([^"']+)["'];\s*$/gm,
-    (_all, local: string, spec: string) => registerAfter(nsBindSrc(local, spec)),
-  );
-  // 无绑定副作用 import → 仅触发模块求值
-  js = js.replace(
-    /^import\s*["']([^"']+)["'];\s*$/gm,
-    (_all, spec: string) => `void __nudoBindNamespace(${JSON.stringify(spec)});`,
-  );
-  js = js.replace(
-    /^import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
-    (_all, names: string, spec: string) => {
-      const parts = names
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      return registerAfter(
-        parts
-          .map((p) => {
-            const [imported, local] = p.split(/\s+as\s+/).map((x) => x.trim());
-            const bind = local ?? imported;
-            // Bug 177：任意模块导出名（`import { "a-b" as x }`）——重写时
-            // 名字带引号，须去引号才是真正的导出名（带引号查不到 → unknown）
-            const importedName = imported.replace(/^["'](.*)["']$/, "$1");
-            return namedBindSrc(bind, spec, importedName);
-          })
-          .join("\n"),
-      );
-    },
-  );
-  // 多条 import 语句：注册闭包引用全部绑定（占位符在首个 import 位置，
-  // 全部 rewrite 完成后替换为全量绑定——后续 import 的 `let` 文本位置在其后，
-  // refresh 命中 TDZ 由 refreshLiveImports 容忍——绑定创建时读到的已是当前值）
-  // Bug 456：闭包存进**模块域变量**（`__nudoRefreshKeep`）——注册表持弱引用
-  // （live-imports.ts），闭包须由模块域强持有，否则模块域一死闭包即被回收，
-  // 跨轮复用的模块实例（会话缓存）其 import 绑定就永久停在快照上。
-  if (registered) {
-    js = js.replace(
-      "__NUDO_LIVE_IMPORT_REGISTER__;",
-      `__nudoRegisterImportRefresh(__nudoRefreshKeep = () => { ${refreshBinds.join(" ")} });`,
-    );
-    js = `let __nudoRefreshKeep;\n${js}`;
-  }
-  return js;
-}
-
-/**
- * 分析模式：strip 顶层危险副作用与未知全局调用；保留本地函数调用（诊断依赖）。
- *
- * 结构化实现：Babel 解析 transpile 产物，按顶层语句节点整条剥除。历史上的
- * 行级正则 + `endsWith(";")` / 括号计数启发式在多类输入上静默改变程序语义：
- * - 多行语句（回调体内部行以 `;` / `}` 结尾）提前终止跳过 → 语句尾部悬空
- *   → `new Function` SyntaxError（与下方 $for 悬空修复同源的问题类）；
- * - 字符串/模板字面量里的未配对 `(`（如 `"fetch("`）被计入括号平衡 →
- *   连带误删后续顶层语句（export function 整体消失，导出静默 unknown）；
- * - 列 0 的 `catch (` 头匹配「未知全局调用」正则 → catch 头被剥 →
- *   顶层 try/catch 一律悬空 SyntaxError。
- * 剥除对象不变：transpile + import/export 改写后的 JS（runTranspiledInner 内序）。
- */
-function stripEffectfulTopLevel(js: string): string {
-  let body: import("@babel/types").Statement[];
-  try {
-    body = babelParse(js, {
-      sourceType: "module",
-      allowReturnOutsideFunction: true,
-      attachComment: false,
-    }).program.body;
-  } catch {
-    // transpile 产物按构造是可解析 JS；解析失败按「全部保留」降级，
-    // 不让 strip 阶段引入新的失败面
-    return js;
-  }
-
-  // 本文件内可解析的绑定名（函数/类/const/let/var/import）。先全量收集
-  // 再判定——与旧实现两遍口径一致（顶层调用可先于声明文本出现）
-  const declared = new Set<string>();
-  for (const stmt of body) collectTopLevelDeclared(stmt, declared);
-
-  const cuts: Array<[number, number]> = [];
-  for (const stmt of body) {
-    if (isEffectfulTopLevelStmt(stmt, declared)) cuts.push([stmt.start!, stmt.end!]);
-  }
-  if (cuts.length === 0) return js;
-
-  // 按源区间整条切除，未动语句保持字节级原文——stripStaticExportDecls 等
-  // 后续行锚定正则依赖行结构
-  let out = "";
-  let pos = 0;
-  for (const [start, end] of cuts) {
-    out += js.slice(pos, start);
-    pos = end;
-    // 吞掉语句残余 `;`；本行仅剩空白时连同换行一起吞（避免空行堆积）
-    while (pos < js.length && js[pos] === ";") pos++;
-    const nl = js.indexOf("\n", pos);
-    const lineRest = js.slice(pos, nl === -1 ? js.length : nl);
-    if (/^\s*$/.test(lineRest)) pos = nl === -1 ? js.length : nl + 1;
-  }
-  return out + js.slice(pos);
-}
-
-/** 顶层声明名收集（export 包裹展开；rewriteUserImports 已把 import 改写成
- *  let 绑定，ImportDeclaration 分支为未改写形态兜底） */
-function collectTopLevelDeclared(
-  stmt: import("@babel/types").Statement,
-  declared: Set<string>,
-): void {
-  const decl =
-    stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
-      ? stmt.declaration
-      : stmt;
-  if (!decl) return;
-  if (
-    (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") &&
-    decl.id
-  ) {
-    declared.add(decl.id.name);
-    return;
-  }
-  if (decl.type === "VariableDeclaration") {
-    for (const d of decl.declarations) {
-      if (d.id.type === "Identifier") declared.add(d.id.name);
-    }
-    return;
-  }
-  if (decl.type === "ImportDeclaration") {
-    for (const spec of decl.specifiers) declared.add(spec.local.name);
-  }
-}
-
-/**
- * 模块级绑定名（顶层声明 + import 改写产生的 let + 引擎注入绑定）——env/mock
- * 注入的**撞名判定**用（Bug 273）。
- *
- * 解析失败 → null（调用方按「不注入」降级：宁可少注入，也不要再造一次重复
- * 声明 SyntaxError——那会把整个模块打成 fail-closed unknown）。
- * 解析口径先 module 后 script：module 严（strict-only 语法在 module 下报错），
- * script 松（sloppy CJS 源在 module 下解析失败）。
- */
-function moduleLevelBindingNames(js: string): Set<string> | null {
-  let body: import("@babel/types").Statement[] | null = null;
-  for (const sourceType of ["module", "script"] as const) {
-    try {
-      body = babelParse(js, {
-        sourceType,
-        allowReturnOutsideFunction: true,
-        attachComment: false,
-      }).program.body;
-      break;
-    } catch {
-      // 试下一种口径
-    }
-  }
-  if (body === null) return null;
-  const names = new Set<string>();
-  for (const stmt of body) {
-    collectTopLevelDeclared(stmt, names);
-    const decl =
-      stmt.type === "ExportNamedDeclaration" ||
-      stmt.type === "ExportDefaultDeclaration"
-        ? stmt.declaration
-        : stmt;
-    if (decl && decl.type === "VariableDeclaration") {
-      // 解构声明的绑定名（collectTopLevelDeclared 只收 Identifier）
-      for (const d of decl.declarations) {
-        collectBindingPatternNames(
-          d.id as unknown as import("@babel/types").PatternLike,
-          names,
-        );
-      }
-    }
-  }
-  // CJS 前导（后于注入拼入）占用的名字——撞名同样是重复声明
-  names.add("exports");
-  names.add("module");
-  names.add("__nudoCjsOrig");
-  names.add(CJS_THIS_BIND);
-  return names;
-}
-
-/** 绑定模式里的名字（解构 `const {a, b} = x` → a / b）。 */
-function collectBindingPatternNames(
-  pattern: import("@babel/types").PatternLike,
-  out: Set<string>,
-): void {
-  switch (pattern.type) {
-    case "Identifier":
-      out.add(pattern.name);
-      return;
-    case "ObjectPattern":
-      for (const p of pattern.properties) {
-        if (p.type === "RestElement") {
-          collectBindingPatternNames(p.argument, out);
-        } else {
-          collectBindingPatternNames(
-            p.value as unknown as import("@babel/types").PatternLike,
-            out,
-          );
-        }
-      }
-      return;
-    case "ArrayPattern":
-      for (const el of pattern.elements) {
-        if (el) collectBindingPatternNames(el, out);
-      }
-      return;
-    case "AssignmentPattern":
-      collectBindingPatternNames(pattern.left, out);
-      return;
-    case "RestElement":
-      collectBindingPatternNames(pattern.argument, out);
-      return;
-    default:
-      return;
-  }
-}
-
-/**
- * 顶层副作用语句判定（剥除口径与旧行级实现一致）：
- * - 源形态危险全局：`console.*` 成员调用 / `fetch`·`setTimeout`·`setInterval`
- *   裸调用（transpile 后均已插桩为 $invoke/$callNamed，此分支为未插桩输入兜底）；
- * - `$callNamed("X", …)` 且 X 非本文件声明（fetch 等未知全局）→ 剥；
- * - 其它未知全局裸调用（非 `$` 前缀插桩、非 `__nudo*` 簿记、非本文件声明）→ 剥；
- * - 插桩控制流 `$for` / `$fork` / `$while*` 与源形态 if/for/while → 剥
- *   （顶层控制流依赖自由标识符，执行即 ReferenceError）。
- * 保留：函数/导出声明、本地调用、`$forOf`/`$switch`/`$throw`、赋值 IIFE、
- * `__nudoExport` 等簿记、try/catch。
- */
-function isEffectfulTopLevelStmt(
-  stmt: import("@babel/types").Statement,
-  declared: Set<string>,
-): boolean {
-  switch (stmt.type) {
-    case "ExpressionStatement":
-      return isEffectfulTopLevelExpr(stmt.expression, declared);
-    // 源形态控制流（transpile 后不出现，兜底口径与旧正则一致；do-while 旧正则不剥，保持）
-    case "IfStatement":
-    case "ForStatement":
-    case "ForInStatement":
-    case "ForOfStatement":
-    case "WhileStatement":
-      return true;
-    default:
-      return false;
-  }
-}
-
-function isEffectfulTopLevelExpr(
-  expr: import("@babel/types").Expression,
-  declared: Set<string>,
-): boolean {
-  if (expr.type !== "CallExpression") return false;
-  const callee = expr.callee;
-  // 源形态危险全局：console.* （链根为 console 的成员调用）
-  if (
-    callee.type === "MemberExpression" &&
-    memberChainRoot(callee) === "console"
-  ) {
-    return true;
-  }
-  // 方法链/函数值调用（$invoke 包裹等）外层非标识符 → 整条保留
-  if (callee.type !== "Identifier") return false;
-  const name = callee.name;
-  // 源形态危险全局：裸 fetch/setTimeout/setInterval
-  if (name === "fetch" || name === "setTimeout" || name === "setInterval") return true;
-  // 顶层调用：$callNamed("localFn", …) 仅当 localFn 已声明时保留
-  //（诊断需要执行本地顶层调用）；未知全局剥
-  if (name === "$callNamed") {
-    const first = expr.arguments[0];
-    return first?.type === "StringLiteral" && !declared.has(first.value);
-  }
-  // 插桩控制流（$while 前缀含 $whileSeq）
-  if (name === "$for" || name === "$fork" || name.startsWith("$while")) return true;
-  // 其它未知全局裸调用；__nudoExport/__nudoExportStar/__nudoRecordBinding/
-  // __nudoRecordAssign/__nudoRegisterImportRefresh 是簿记（rewrite/插桩产物），
-  // 非副作用，保留（live import 注册剥离会让 analyze 模式丢失绑定刷新）
-  return (
-    !name.startsWith("$") &&
-    name !== "__nudoExport" &&
-    name !== "__nudoExportLazy" &&
-    name !== "__nudoExportStar" &&
-    name !== "__nudoRecordBinding" &&
-    name !== "__nudoRecordAssign" &&
-    name !== "__nudoRegisterImportRefresh" &&
-    !declared.has(name)
-  );
-}
-
-/** 成员链最左根标识符名（非标识符根返回 undefined） */
-function memberChainRoot(member: import("@babel/types").MemberExpression): string | undefined {
-  let node: import("@babel/types").Expression | import("@babel/types").Super = member.object;
-  while (node.type === "MemberExpression") node = node.object;
-  return node.type === "Identifier" ? node.name : undefined;
-}
-
-function runtimeArgNames(): string[] {
-  return Object.keys(rtAllBindings()).filter((k) => k.startsWith("$"));
-}
+/** 运行时 import 行正则：单一真值源在 `transpile/runtime-import.ts`。
+ *  宿主编译单元（模块体 / body-fn / evalExprAbs）已不再拼运行时 import 行
+ *  （运行时符号由 compileRuntimeUnit 以形参注入）；本文件按**公开面**原样
+ *  再导出（exec/index.ts 的公开符号，运行时消费方按它剥离生成物）。 */
+export { RUNTIME_IMPORT_RE };
 
 /**
  * 具名导入的绑定物化：**原样直出声明 Abs**（不再把 fn Abs 包成 JS 箭头 wrapper）。
@@ -596,167 +269,52 @@ function requireOptionalFromModules(
   return unknown;
 }
 
-/** 导出语句后处理：specifier / re-export / star / default → __nudoExport 调用。
- *  静态声明导出（export function/const/let）走既有正则扫描 + 返回对象；
- *  冲突语义：显式导出（decl / specifier / 显式 re-export）压过 export *
- *  （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
- *  与 collectAbsExports 顺序口径一致）。 */
-function rewriteExportStatements(js: string): { js: string; exportedNames: string[] } {
-  // export { x as y } from "spec"：绑定经 modules 表注入。
-  // ESM live binding（Bug ②）：re-export 是间接引用——导出槽挂 getter，
-  // 读取时经 __nudoBindImport 解析依赖当前值（依赖内部变异对导入方可见）。
-  js = js.replace(
-    /^export\s*\{([^}]*)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
-    (_all, names: string, spec: string) =>
-      names
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((p) => {
-          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
-          const exp = exported ?? local;
-          return `__nudoExportLazy(${JSON.stringify(exp)}, () => __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
-        })
-        .join("\n"),
-  );
-  // export * as ns from "spec"：命名空间 re-export（与 importLocalBindings 的
-  // namespace open-obj 口径一致——__nudoBindNamespace 建 live 槽命名空间）
-  // Bug 289：ES2022 **任意模块导出名**（`export * as "my-ns" from "…"`）此前
-  // 不匹配本正则 ⇒ 语句原样泄漏 ⇒ new Function SyntaxError ⇒ **整个模块**
-  // 求值失败 ⇒ 全部导出被静默清空 ⇒ L1 门禁假绿。名可标识符或**字符串
-  // 字面量**（标识符口径与 export-names.ts 同一 IDENT_NAME_SRC）。
-  js = js.replace(
-    new RegExp(
-      `^export\\s*\\*\\s+as\\s+(?:(${IDENT_NAME_SRC})|"([^"]*)"|'([^']*)')\\s*from\\s+["']([^"']+)["'];\\s*$`,
-      "gmu",
-    ),
-    (
-      _all,
-      ident: string | undefined,
-      dq: string | undefined,
-      sq: string | undefined,
-      spec: string,
-    ) => {
-      const ns = ident ?? dq ?? sq ?? "";
-      return `__nudoExportLazy(${JSON.stringify(ns)}, () => __nudoBindNamespace(${JSON.stringify(spec)}));`;
-    },
-  );
-  // export * from "spec"：并入 named（不含 default，ESM 语义）。
-  // 描述符拷贝保留来源 getter（来源 named 表 live 化后传递 liveness）
-  js = js.replace(
-    /^export\s*\*\s*from\s*["']([^"']+)["'];\s*$/gm,
-    (_all, spec: string) => `__nudoExportStar(${JSON.stringify(spec)});`,
-  );
-  // export { a, b as c }：本地绑定重命名导出。
-  // ESM live binding（Bug ②）：specifier 导出是绑定引用非值快照——
-  // `export { x }; x = 2` 后导入方读 2（getter 读模块作用域当前值）
-  js = js.replace(
-    /^export\s*\{([^}]*)\};\s*$/gm,
-    (_all, names: string) =>
-      names
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((p) => {
-          const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
-          return `__nudoExportLazy(${JSON.stringify(exported ?? local)}, () => ${local});`;
-        })
-        .join("\n"),
-  );
-  // Bug 156：`export { … }` 形态（解构导出 / 源级具名导出 / 再导出）的**导出名**
-  // 收进显式导出面——此前只有 `export const|let` / `export function` 的静态声明名
-  // 进该面（导出名回收正则认那两种形态），解构导出的真实名不在面内 ⇒ 与
-  // `export *` 同时出现时优先级判错。
-  const exportedNames: string[] = [];
-  // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）。
-  // 表达式默认值（块体箭头/含方法对象）转译产物跨多行——`.` 不匹配换行的
-  // 单行正则会整条漏改写（default 槽静默丢失）。按语句边界切分：从
-  // `export default ` 起做括号深度扫描（跳过字符串字面量），深度归零且剩余
-  // 仅 `;` 即语句完结。
-  const rewritten = rewriteExportDefaults(js);
-  // 显式导出名：从改写产物（__nudoExportLazy("<名>", …)）回收——本地具名导出与
-  // 再导出都是显式导出（ESM 早错保证不与 export * 撞名）。
-  for (const m of rewritten.matchAll(/__nudoExportLazy\(\s*"([^"]+)"/g)) {
-    exportedNames.push(m[1]!);
-  }
-  return { js: rewritten, exportedNames };
-}
-
-/** export default 语句完结判定：括号深度归零处剩余仅 `;`（+尾随空白）。
- *  完结时返回去 `;` 的表达式文本，否则 null。 */
-function exportDefaultExprOf(expr: string): string | null {
-  let depth = 0;
-  for (let k = 0; k < expr.length; k++) {
-    const c = expr[k]!;
-    if (c === '"' || c === "'") {
-      const quote = c;
-      k++;
-      while (k < expr.length && expr[k] !== quote) {
-        if (expr[k] === "\\") k++;
-        k++;
-      }
-      continue;
-    }
-    if (c === "(" || c === "[" || c === "{") depth++;
-    else if (c === ")" || c === "]" || c === "}") depth--;
-    else if (c === ";" && depth === 0) {
-      return /^;\s*$/.test(expr.slice(k)) ? expr.slice(0, k) : null;
-    }
-  }
-  return null;
-}
-
-function rewriteExportDefaults(js: string): string {
-  const lines = js.split("\n");
-  const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (!/^export default /.test(line)) {
-      out.push(line);
-      continue;
-    }
-    let expr = line.slice("export default ".length);
-    let done = exportDefaultExprOf(expr);
-    let j = i;
-    while (done === null && j + 1 < lines.length) {
-      j++;
-      expr += "\n" + lines[j]!;
-      done = exportDefaultExprOf(expr);
-    }
-    if (done === null) {
-      // 未完结（不应发生——transpile 产物语句完整）：原样保留
-      out.push(line);
-      continue;
-    }
-    out.push(`__nudoExport("default", ${done});`);
-    i = j;
-  }
-  return out.join("\n");
-}
-
 /** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */
 const runBindings = new WeakMap<object, Map<string, unknown>>();
 
 /**
- * env 全局注入时**不得**遮蔽的宿主内建名 = `HOST_INTRINSIC_SET`（与转译折叠同源）。
+ * env 全局注入时**不得**遮蔽的宿主内建名——**派生**自两张单一事实源，
+ * 不再手工维护第三份名单：
  *
- * 注入形式是模块级 `let <name> = __nudoEnv["<name>"]`（可写绑定，原生
- * globalThis 属性可赋值），会遮蔽宿主全局。
- * 转译产物对这三个名字发**无标识符**源（`void 0` / `0/0` / `1/0` → `$lit`），
- * 但产物里仍有依赖宿主 `undefined` 身份的省略哨兵（`$fork` 缺 else 臂的第三参
- * 省略），且用户源里裸标识符一经遮蔽也会把 Abs 送进 `$lit`/调用位。
+ * - `HOST_INTRINSIC_NAMES`（未遮蔽 → 转译器按字面量折叠：`void 0` / `0/0` /
+ *   `1/0`；被用户绑定遮蔽时标识符读点发 `$absVal(<标识符>)`，按 JS 词法
+ *   绑定决定读值）。注入形式是模块级 `let <name> = __nudoEnv["<name>"]`
+ *   （可写绑定，原生 globalThis 属性可赋值），会**取代**宿主全局；env 注入
+ *   还绕过源 AST 声明扫描（转译器看不到注入，无法判定遮蔽）。
+ *   典型故障（已修）：env 把 `undefined` 绑成 Abs 后，
+ *   `$fork(test, cons, undefined)` 的第三参从「省略」变成 truthy 非函数 →
+ *   调用炸 → fail-closed unknown；`NaN` 绑成抽象 number 时 `0 === NaN` 从
+ *   恒 false 退化成 boolean。env 注入对这三个名字无收益 → 跳过。
+ * - `NAMESPACE_GLOBALS` 名字（namespaceNameOf 的宿主对象身份路由表）：
+ *   env 若注入 `const Math = …` 会把 `$get`/`$invoke` 接收者从宿主对象换成
+ *   Abs 表项 ⇒ 路由失效、区间透传/内建语义回退（issue #87）。跳过后接收者
+ *   回到宿主身份，等价于 env 关。名单与路由表同源 ⇒ 路由名必 skip、skip 名
+ *   必有路由收益，两个方向的漂移都从结构上消失。
  *
- * 典型故障（已修）：env 把 `undefined` 绑成 Abs 后，`$fork(test, cons, undefined)`
- * 的第三参从「省略」变成 truthy 非函数 → 调用炸 → fail-closed unknown，
- * 循环内提前 return 整条折 unknown；`NaN` 绑 `prim.num()` 时 `$lit(NaN)` 丢
- * NaN 字面量身份，`0 === NaN` 从恒 false 退化成 boolean。
+ * 表外全局（console / document / process …）不跳过：没有身份路由收益的
+ * 跳过只会丢弃用户的 env 声明、让代码退化 unknown。
  *
- * 转译器已自行处理这三个名字，注入 const 无收益 → 跳过（等同未声明）。
+ * @nudo:mock 相反——mock 遮蔽宿主全局正是意图（Bug 274），其名字进转译
+ * 选项 shadowedIntrinsics（见下方 mockedIntrinsicNames），不经过本名单。
  *
- * 宿主命名空间名（Math/JSON/…）若注入会遮蔽 namespaceNameOf 的对象身份路由
- * → 区间透传/内建语义回退（issue #87）→ 一并跳过（ENV_SHADOW_SKIP_GLOBALS）。
+ * Bug 322（连带后果记录）：URL 的 skip 保住了「宿主身份路由不被 env 遮蔽」，
+ * 却让 env 侧更完整的 URL 实例模型（packages/env/src/web.ts 的
+ * `searchParams: URLSearchParams`）永远到不了构造面——`new URL(...)` 走 core
+ * 的 makeUrlAbs（exec/class/declare.ts），不看 env 注入；构造面的实例槽由
+ * core 侧补齐（declare.ts 的 withUrlSearchParamsSlot）。
+ *
+ * **延迟派生**：run.ts 位于模块图的环上（body-fn / call ↔ run ↔
+ * runtime/containers/member），模块求值期 `NAMESPACE_GLOBALS` 可能仍是 TDZ
+ * ——不能顶层 `new Set([...NAMESPACE_GLOBALS])`。首次注入时派生并记忆。
  */
-const ENV_SHADOW_SKIP = ENV_SHADOW_SKIP_GLOBALS;
+let envShadowSkipGlobalsCache: ReadonlySet<string> | undefined;
+
+export function getEnvShadowSkipGlobals(): ReadonlySet<string> {
+  return (envShadowSkipGlobalsCache ??= new Set([
+    ...HOST_INTRINSIC_NAMES,
+    ...NAMESPACE_GLOBALS.map(([name]) => name),
+  ]));
+}
 
 /**
  * CJS 顶层 `this` 的模块级绑定名（Bug 277）：Node CJS 把模块体包在
@@ -767,6 +325,28 @@ const ENV_SHADOW_SKIP = ENV_SHADOW_SKIP_GLOBALS;
  */
 const CJS_THIS_BIND = "__nudoCjsThis";
 
+/**
+ * 分析面槽位表（Symbol 键，非枚举）——run 表返回对象的**第二个面**：
+ * 键 = 顶层函数**本地名**，值 = 读取本地绑定的 thunk。
+ *
+ * 为什么需要：run 表的字符串键是**导出面**（同名 re-export / 别名会覆盖
+ * 私有本地函数名）。按函数名分析（generalize / 调用点 / LSP replay）必须以
+ * **源码绑定**为准，不能走导出槽——否则 `function g(){}` +
+ * `export { g } from "./dd.js"` 会把依赖的 g 当成待分析函数。
+ * `Object.keys(run)` 不受影响（Symbol + 非枚举）。
+ */
+const ANALYSIS_SLOTS_KEY = "nudo.analysis";
+const ANALYSIS_SLOTS = Symbol.for(ANALYSIS_SLOTS_KEY);
+
+/**
+ * run 表的**顶层绑定表**：
+ * - 顶层 const/let（`$recordBinding` 通道，Abs 值）；
+ * - **私有**顶层函数声明（宿主 JS 函数；与 ANALYSIS_SLOTS 同源，导出面同名
+ *   可枚举键不重复登记——导出函数只走导出表）。
+ *
+ * 后者供 LSP completion / collectAbsBindingsFromGraph 与导出面复用同一套
+ * 宿主函数 → Abs 转换（源码形参表 / ctor facet）。
+ */
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);
 }
@@ -824,10 +404,38 @@ function runTranspiledInner(
   // - 纯 ESM ⇒ 绑 undefined（原生 ESM 顶层 this 就是 undefined）；
   // - 非 ESM 且无 CJS 面（Node `.js` 默认 CJS）⇒ 绑空对象（module.exports
   //   的初始形态）。
-  const isEsmSource = sourceHasEsmSyntax(source);
   const hasCjsExports = sourceHasCjsExports(source);
-  let js = transpile(source, {
-    runtimeImport: "@nudojs/core/exec",
+  // @nudo:replace / @nudo:as 绑定（模块级 const，在发射产物前注入）。注入名
+  // 先算出——它们要并入转译避让集（见下方 userIdents）。
+  const reps = opts.replacements ?? {};
+  const asVals = opts.asOverrides ?? {};
+  const allInject = { ...reps, ...asVals };
+  const injectNames = Object.keys(allInject);
+  // @nudo:mock 可遮蔽宿主内建（Bug 274：mock 遮蔽宿主全局正是意图）——mock
+  // 名以模块级绑定发射（`let <名> = __nudoEnv[...]`），转译器必须按「已遮蔽」
+  // 发射标识符读点（$absVal(<名>)），否则未遮蔽面的字面量折叠（$lit(...)）
+  // 会让 mock 值被静默丢弃。源内已有的同名绑定由 transpileFile 自行扫描
+  // （重复并入无副作用）。
+  const mockedIntrinsicNames = Object.keys(opts.mocks ?? {}).filter((n) => HOST_INTRINSIC_SET.has(n));
+  const mockNames = new Set(Object.keys(opts.mocks ?? {}));
+  // host target：单次 parse 同时产出代码与结构元数据；import/export 在发射期
+  // 直接落成 __nudoBind* / __nudoExport*，不再有文本改写阶段。mock 名由发射器
+  // 绑定到 __nudoEnv 且不登记 live refresh（刷新会把 mock 冲掉，Bug 274）。
+  //
+  // env/mock/replace/as 注入名并入转译避让集：host 发射的内部临时名（解构
+  // `_d0` / 匿名默认 `__nudoDefaultFn` …）必须避开这些模块级注入名，否则
+  // 重复词法声明 ⇒ new Function SyntaxError ⇒ 整文件 fail-closed。源级同名
+  // 绑定由 meta.declaredNames 的撞名跳过处理（模块级绑定优先，Bug 273 口径）。
+  const transpiled = transpileModule(source, {
+    target: "host",
+    runtimeImport: null,
+    mockNames,
+    mode: opts.mode,
+    userIdents: new Set([
+      ...injectNames,
+      ...Object.keys(opts.envGlobals ?? {}),
+      ...Object.keys(opts.mocks ?? {}),
+    ]),
     maxLoopIters: opts.maxLoopIters,
     source,
     replacements: opts.replacementTargets,
@@ -836,23 +444,29 @@ function runTranspiledInner(
     recordPositions: opts.recordPositions,
     thisParam: CJS_THIS_BIND,
     disableAsyncGen: opts.disableAsyncGen,
+    ...(mockedIntrinsicNames.length > 0
+      ? { shadowedIntrinsics: new Set(mockedIntrinsicNames) }
+      : {}),
   });
-  js = js.replace(RUNTIME_IMPORT_RE, "");
-  // 顶层 this 出现在产物里（函数体内的 this 不折成本绑定）⇒ 该源需要顶层
-  // this 绑定（否则模块体引用它 → ReferenceError → 整文件求值失败）。
-  const usesCjsThis = js.includes(CJS_THIS_BIND);
-  js = rewriteUserImports(js, opts.mocks);
-  const exportRewrite = rewriteExportStatements(js);
-  js = exportRewrite.js;
-  if (opts.mode === "analyze") {
-    js = stripEffectfulTopLevel(js);
-  }
+  let js = transpiled.code;
+  const meta = transpiled.meta;
+  // 文件口味（strict 前缀 / 顶层 this 的 ESM 值）：meta.isEsm 是 AST 口径，
+  // 但 meta 基于**已剥除 TS 的 AST** —— `import type` / `export type` 在剥除
+  // 后不留节点，而 .ts 源码因它们**仍是模块**（strict、顶层 this === undefined）。
+  // 文本口径补回这一面；JS 源与 AST 口径恒同（注释/字符串/动态 import 都排除）。
+  // 旧实现的判据就是文本口径 ⇒ 这里保持行为等价（不因 .ts 类型面变成 sloppy）。
+  const isEsmSource = meta.isEsm || sourceHasEsmSyntax(source);
+  // 模块体 strict 口径 = 原生 **strict mode code**：ESM 面**或**源码 Program
+  // 的指令序言 `"use strict"`（CJS 风格脚本首部的指令同样是 strict——块级
+  // 函数声明失去 Annex B 提升、块外引用 ⇒ ReferenceError）。转译产物把源
+  // 指令留在 IIFE 内部，**不会**成为 new Function 的序言 ⇒ 必须在此补发
+  // 前缀，否则 CJS+指令源按 sloppy 求值（原生抛的 ReferenceError 被折叠成
+  // total）。CJS 无指令 ⇒ 保持 sloppy。
+  const sourceStrict = isEsmSource || sourceIsStrict(source);
+  // 源里有顶层 this（函数体内的 this 不折成本绑定）⇒ 该源需要顶层 this
+  // 绑定（否则模块体引用它 → ReferenceError → 整文件求值失败）。
+  const usesCjsThis = meta.usesTopLevelThis;
 
-  // @nudo:replace / @nudo:as 绑定
-  const reps = opts.replacements ?? {};
-  const asVals = opts.asOverrides ?? {};
-  const allInject = { ...reps, ...asVals };
-  const injectNames = Object.keys(allInject);
   if (injectNames.length > 0) {
     const binds = injectNames
       .map((n) => `const ${n} = __nudoReplaces[${JSON.stringify(n)}];`)
@@ -860,23 +474,53 @@ function runTranspiledInner(
     js = `${binds}\n${js}`;
   }
 
-  // 源文本一并传入：多声明符导出（`export const a = 1, b = 2`）的第 2+ 个
-  // 声明符在转译产物里**丢了 export 前缀**（且与「独立声明 + 独立 export」
-  // 逐字相同）⇒ 只能回源 AST 回收（Bug 280）。
-  const { names, js: stripped } = stripStaticExportDecls(js, source);
-  js = stripped;
+  // 导出面来自源 AST（meta）：host 产物不残留 export 语句，无需文本回收。
+  // 多声明符导出（`export const a = 1, b = 2`）的静态名由源 AST 回收
+  // （Bug 280）；发射面已按**真实导出**加 __nudoExport* 调用（私有顶层函数
+  // 不再带）⇒ 静态名只含真实导出；私有函数名由下方 hiddenFnNames 单独建
+  // 非枚举槽。
+  // 静态声明导出名（多声明符全收；解构名走 explicit 面）来自源 AST。
+  const staticExportNames = meta.staticExportNames;
   const dynExports: Record<string, unknown> = {};
-  // ESM：显式导出（静态 decl 名 + __nudoExport 的 specifier/re-export）恒压过
+  // ESM：显式导出（静态 decl 名 + specifier/re-export/default）恒压过
   // export *。star 只填「从未显式导出」的名；star×star 仍按源序后者覆盖。
-  const explicitExportNames = new Set<string>([...names, ...exportRewrite.exportedNames]);
+  // 初始化即完整（host 发射的运行期 __nudoExport* 仍会并入——幂等）。
+  const explicitExportNames = new Set<string>([
+    ...staticExportNames,
+    ...meta.explicitExportNames,
+    ...(meta.hasDefault ? ["default"] : []),
+  ]);
+  // 私有顶层函数**不是**模块导出，但 generalize / 调用点分析仍要能按名直接
+  // 调用（callTranspiledExportFull 用 own-property 查表）。它们以**非枚举**
+  // 槽先进返回对象——Object.keys(run) 恒等于真正的导出面（service
+  // evalExportsToModuleExports 的枚举口径），直接属性访问照常可用。
+  // 真实导出名（静态 / specifier）不进私有面 ⇒ 导出槽的插入序与旧实现一致。
+  // 名单只能来自源 AST（meta.topLevelFnNames）——转译产物已按真实导出发射
+  // __nudoExport* 调用，用它回收会再次把二者混同。
+  const topLevelFnNames = meta.topLevelFnNames;
+  // 与显式导出同名的私有本地函数不建 hidden 槽（导出槽归导出值）；按名分析
+  // 仍由 nudo.analysis 表读**本地绑定**（见下方 analysisSlots）。
+  const hiddenFnNames = topLevelFnNames.filter(
+    (n) => !explicitExportNames.has(n),
+  );
+  // 静态槽插入序沿用旧文本回收口径：先**全部导出函数名**（topLevelFnNames
+  // 的源序），再其它静态声明名（const/let/class/var、多声明符第 2+ 名；
+  // meta.staticExportNames 的源序）。meta 本身是源序，与旧口径在函数/const
+  // 混排时不同——这里显式分组，键序不随 meta 实现漂移。
+  const staticExportNameSet = new Set(staticExportNames);
+  const staticFnNames = topLevelFnNames.filter((n) => staticExportNameSet.has(n));
+  const staticFnSet = new Set(staticFnNames);
+  const staticExportSlots = [
+    ...staticFnNames,
+    ...staticExportNames.filter((n) => !staticFnSet.has(n)),
+  ];
   const bindings = new Map<string, unknown>();
   // Bug 276：模块**装载期**标志——模块体求值中为 true，模块装载完成后为
   // false（导出函数被调用时为 false）。缺失 require 的抛/不抛按此分（见
   // requireFromModules 注释）：装载期缺失 = 装载失败（引擎保持降级），
   // 调用期缺失 = 抛（原生 MODULE_NOT_FOUND ⇒ catch 臂是活代码）。
   let moduleLoading = true;
-  const argNames = [
-    ...runtimeArgNames(),
+  const hostArgNames = [
     "__nudoModules",
     "__nudoBindImport",
     "__nudoBindNamespace",
@@ -890,7 +534,7 @@ function runTranspiledInner(
     "__nudoExportStar",
     "__nudoExports",
   ];
-  const args = argNames.map((n) => {
+  const hostArgs = hostArgNames.map((n) => {
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {
       return (spec: string, name: string) => bindImport(modules, spec, name);
@@ -957,7 +601,7 @@ function runTranspiledInner(
 
   // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）。
   //
-  // Bug 274：ENV_SHADOW_SKIP（「不遮蔽宿主内建」名单）此前作用在**合并表**上
+  // Bug 274：env-skip 名单（getEnvShadowSkipGlobals，「不遮蔽宿主内建」）此前作用在**合并表**上
   // ⇒ `@nudo:mock Math` / `JSON` / `Date` 被**静默丢弃**（no-op）——用户以为
   // mock 生效，实际跑的是宿主内建。口径：skip 名单**只作用于 env 全局**
   // ——mock 的值本身就是一个 Abs，没有宿主对象身份需要保全；遮蔽宿主全局
@@ -969,20 +613,23 @@ function runTranspiledInner(
   // 返回值折 unknown + entry-may-throw）。
   const envTable = opts.envGlobals ?? {};
   const mockTable = opts.mocks ?? {};
-  const envInjectNames = Object.keys(envTable).filter((k) => !ENV_SHADOW_SKIP.has(k));
+  const envInjectNames = Object.keys(envTable).filter((k) => !getEnvShadowSkipGlobals().has(k));
   const mockInjectNames = Object.keys(mockTable);
   const injectCandidates = [...new Set([...envInjectNames, ...mockInjectNames])];
   if (injectCandidates.length > 0) {
     // Bug 273：注入的 `let <名> = …` 与**模块级同名绑定**重复声明 ⇒
     // new Function SyntaxError ⇒ 整文件求值失败（fail-closed unknown ⇒
     // L2 门禁绿灯 exit 0）。口径：**模块级绑定优先**——撞名的注入跳过
-    // （import 绑定的 mock 已在 rewriteUserImports 里改写为读 mock 值，
-    //  此处不再二次注入；用户自己声明的同名顶层绑定胜出）。
-    const occupied = moduleLevelBindingNames(js);
-    const injectable =
-      occupied === null
-        ? []
-        : injectCandidates.filter((k) => !occupied.has(k));
+    // （import 绑定的 mock 已在发射期改写为读 __nudoEnv 值，此处不再二次
+    // 注入；用户自己声明的同名顶层绑定胜出）。占用名 = 源顶层声明 / import
+    // 本地名 / CJS 前导 + 发射器条件绑定的 refresh keep 变量 + 上方已拼入的
+    // @nudo:replace / @nudo:as 注入绑定。
+    const occupied = new Set<string>([
+      ...meta.declaredNames,
+      "__nudoRefreshKeep",
+      ...injectNames,
+    ]);
+    const injectable = injectCandidates.filter((k) => !occupied.has(k));
     if (injectable.length > 0) {
       const envBinds = injectable
         .map((k) => `let ${k} = __nudoEnv[${JSON.stringify(k)}];`)
@@ -1026,23 +673,82 @@ function runTranspiledInner(
   // 优先级与旧展开形态一致：dyn → cjs → 静态名（显式压过 star/default 合并）。
   // getter 带 converting setter：宿主侧对 run 表槽位再赋值（mock 桥替换、
   // 测试探针）首次写即降级为普通数据槽——对象保持可写，行为与旧快照面兼容。
+  //
+  // 分析面槽位表（Symbol，非枚举）：**所有**顶层函数本地名 → 读本地绑定的
+  // thunk。与导出面解耦——同名 re-export / 别名覆盖本地名时 run[name] 是
+  // 导出值，但按函数名分析（generalize / 调用点 / LSP）仍须拿本地绑定。
+  // computed key 避免 `__proto__` 字面量走原型设置特例。
+  const analysisSlots =
+    topLevelFnNames.length === 0
+      ? []
+      : [
+          `  Object.defineProperty(__nudoRet, Symbol.for(${JSON.stringify(ANALYSIS_SLOTS_KEY)}), {`,
+          "    enumerable: false, configurable: true,",
+          "    value: {",
+          ...topLevelFnNames.map((n) => `      [${JSON.stringify(n)}]: () => ${n},`),
+          "    },",
+          "  });",
+        ];
+  // 私有顶层函数（hiddenFnNames）先以**非枚举**槽定义：按名分析可用，但
+  // Object.keys(run)（模块导出面）看不到。真实导出槽在定义前先 delete 同名
+  // 非枚举槽——属性重定义会保留原插入位置，delete 后重建才能让导出键序与
+  // 旧实现（dyn → cjs → 静态名）一致。hidden setter 同样 delete 后重建
+  // （Object.assign 的 CJS 合并键命中私有槽时，合并名必须是可枚举导出）。
+  const hiddenSlots =
+    hiddenFnNames.length === 0
+      ? []
+      : [
+          "  const __nudoHidden = (__nudoK, __nudoGet) => Object.defineProperty(__nudoRet, __nudoK, {",
+          "    enumerable: false, configurable: true,",
+          "    get: __nudoGet,",
+          "    set: (__nudoV) => {",
+          "      delete __nudoRet[__nudoK];",
+          "      Object.defineProperty(__nudoRet, __nudoK, { enumerable: true, configurable: true, writable: true, value: __nudoV });",
+          "    },",
+          "  });",
+          ...hiddenFnNames.map((n) => `  __nudoHidden(${JSON.stringify(n)}, () => ${n});`),
+        ];
+  // 只有存在非枚举槽时才需要「先删后建」保序；无私有函数时不引入 delete 开销。
+  const clearSlots =
+    hiddenFnNames.length === 0 ? [] : ["    delete __nudoRet[__nudoK];"];
   const ret = [
     "return (() => {",
     "  const __nudoRet = {};",
-    "  const __nudoSlot = (__nudoK, __nudoGet) => Object.defineProperty(__nudoRet, __nudoK, {",
-    "    enumerable: true, configurable: true,",
-    "    get: __nudoGet,",
-    "    set: (__nudoV) => Object.defineProperty(__nudoRet, __nudoK, { enumerable: true, configurable: true, writable: true, value: __nudoV }),",
-    "  });",
+    ...analysisSlots,
+    ...hiddenSlots,
+    "  const __nudoSlot = (__nudoK, __nudoGet) => {",
+    ...clearSlots,
+    "    Object.defineProperty(__nudoRet, __nudoK, {",
+    "      enumerable: true, configurable: true,",
+    "      get: __nudoGet,",
+    "      set: (__nudoV) => Object.defineProperty(__nudoRet, __nudoK, { enumerable: true, configurable: true, writable: true, value: __nudoV }),",
+    "    });",
+    "  };",
     "  for (const __nudoK of Reflect.ownKeys(__nudoExports)) {",
+    // host 发射对静态声明也发 __nudoExportLazy（live binding）——这里跳过，
+    // 由末尾的静态名槽统一建：键插入序保持 dyn → cjs → 静态名（旧实现口径）。
+    // 名字集合**内联**在循环里（不建 IIFE 局部绑定）——IIFE 局部名会遮蔽
+    // 同名模块级导出（静态槽 getter 读到的就不是用户绑定了）。
+    ...(staticExportSlots.length === 0
+      ? []
+      : [
+          `    if ([${staticExportSlots.map((n) => JSON.stringify(n)).join(", ")}].includes(__nudoK)) continue;`,
+        ]),
     "    const __nudoD = Object.getOwnPropertyDescriptor(__nudoExports, __nudoK);",
     "    if (__nudoD && __nudoD.enumerable) {",
     "      if (__nudoD.get) __nudoSlot(__nudoK, __nudoD.get);",
-    "      else Object.defineProperty(__nudoRet, __nudoK, __nudoD);",
+    ...(hiddenFnNames.length === 0
+      ? ["      else Object.defineProperty(__nudoRet, __nudoK, __nudoD);"]
+      : [
+          "      else {",
+          "        delete __nudoRet[__nudoK];",
+          "        Object.defineProperty(__nudoRet, __nudoK, __nudoD);",
+          "      }",
+        ]),
     "    }",
     "  }",
     `  Object.assign(__nudoRet, ${cjsMerge});`,
-    ...names.map((n) => `  __nudoSlot(${JSON.stringify(n)}, () => ${n});`),
+    ...staticExportSlots.map((n) => `  __nudoSlot(${JSON.stringify(n)}, () => ${n});`),
     "  return __nudoRet;",
     "})();",
   ].join("\n");
@@ -1052,22 +758,41 @@ function runTranspiledInner(
   // 应保 undefined/null）。指令前缀必须是函数体首语句（envBinds/CJS prelude
   // 之前拼入）。注：宿主面折叠不覆盖 arguments.callee 读——$arguments 是纯
   // Abs 构造，该面由 $get 的 Arguments brand 毒丸接管（C1 提交另落）。
-  // 修订（benchmark 回退）：strict 只对 ESM 面生效（sourceHasEsmSyntax——
-  // 静态 import/export 必是 ESM）；无 ESM 语法的源按 Node `.js` 默认 CJS
+  // 修订（benchmark 回退）：strict 只对**原生 strict 面**生效——ESM 源
+  // （静态 import/export 或 import.meta）**或** Program 指令序言含
+  // `"use strict"`（`sourceStrict`）；无二者的源按 Node `.js` 默认 CJS
   // （sloppy）口径。强制 strict 会让 CJS 里合法的 sloppy 语法（yargs 的
   // `arguments` 绑定/赋值等）在 new Function 编译期直接 SyntaxError
   // （"Unexpected eval or arguments in strict mode"）→ 整模块 fail-closed
   // 空导出，且求值失败不进 memo → 每次全量重转译（yargs check 5.5x）。
-  // 源码自身的 "use strict" 指令前缀经 transpile 原样保留，不受此开关影响。
-  const strictPrefix = isEsmSource ? `"use strict";\n` : "";
-  const fn = new Function(...argNames, `${strictPrefix}${js}\n${ret}`);
+  // 源自身的 `"use strict"` 指令**不能**指望 transpile 保留成 new Function
+  // 序言（产物是 IIFE，指令留在函数体内部）⇒ 脚本形态的 strict 也必须在此
+  // 补发前缀；否则块级函数声明走 Annex B 提升（原生 ReferenceError 被折成
+  // total）。
+  const strictPrefix = sourceStrict ? `"use strict";\n` : "";
+  const fn = compileRuntimeModuleUnit<Record<string, unknown>>(
+    `${strictPrefix}${js}\n${ret}`,
+    hostArgNames,
+  );
   setEvalBindingSink(bindings);
   // BUG-026：开新求值 epoch——同名类碰撞只在
   // 本 run 内判定（跨 run 重注册是常态，
   // last-wins 覆盖语义见 class-registry.ts）
   beginClassEpoch();
   try {
-    const result = fn(...args) as Record<string, unknown>;
+    const result = fn(...runtimeModuleArgValues(), ...hostArgs) as Record<string, unknown>;
+    // 私有顶层函数进**绑定表**（LSP completion / collectAbsBindingsFromGraph）：
+    // 它们既不在导出面（Object.keys）也不走 $recordBinding（只记录 const/let）。
+    // 只补**非枚举**名——导出面同名 re-export / CJS 合并等枚举名不重复登记
+    // （导出语义仍走导出槽；按名分析另走 ANALYSIS_SLOTS + preferLocal）。
+    const analysis = (result as Record<PropertyKey, unknown>)[ANALYSIS_SLOTS];
+    if (analysis !== null && typeof analysis === "object") {
+      for (const [n, read] of Object.entries(analysis)) {
+        if (Object.getOwnPropertyDescriptor(result, n)?.enumerable === true) continue;
+        if (typeof read !== "function") continue;
+        bindings.set(n, (read as () => unknown)());
+      }
+    }
     runBindings.set(result, bindings);
     return result;
   } finally {
@@ -1128,17 +853,24 @@ export function evalExprAbs(
   expr: import("@babel/types").Expression,
   bindings: Record<string, Abs> = {},
 ): Abs {
-  const src = transpileExpression(expr, {});
+  // 宿主内建（undefined/NaN/Infinity）遮蔽判定 = **声明扫描 ∪ 注入名**：
+  // - bindings 以编译单元形参注入 ⇒ 同名宿主内建被**遮蔽**：转译必须发标识符
+  //   读点（$absVal）而不是字面量折叠，否则注入值被静默丢弃；
+  // - 表达式**内部**的声明（形参名 undefined / let / const / var / catch 参数）
+  //   同样遮蔽——此前只按 bindings 键判定 ⇒ 表达式体内的 undefined 仍折
+  //   $lit(void 0)（原生读的是形参/局部绑定）。
+  // 判据见 helpers.ts 的 shadowedIntrinsicsOf（声明扫描 ∪ extra 名）。
+  const shadowedIntrinsics = shadowedIntrinsicsOf(expr, new Set(Object.keys(bindings)));
+  const src = transpileExpression(expr, shadowedIntrinsics ? { shadowedIntrinsics } : {});
+  // 运行时符号由 compileRuntimeUnit 以形参注入 ⇒ 单元不拼运行时 import 行
+  // （宿主编译单元一律无 import/export 语句）。
   const js = [
-    runtimeImportOf("@nudojs/core/exec"),
     // Bug 116：case 实参等单表达式面同模块体 ESM 语义——strict 前缀
     `"use strict";`,
     `return (${src});`,
   ].join("\n");
-  const cleaned = js.replace(RUNTIME_IMPORT_RE, "");
-  const names = [...Object.keys(rtAllBindings()), ...Object.keys(bindings)];
-  const factory = new Function(...names, cleaned) as (...vals: unknown[]) => Abs;
-  return factory(...Object.values(rtAllBindings()), ...Object.values(bindings));
+  const factory = compileRuntimeUnit<Abs>(js, Object.keys(bindings));
+  return factory(...runtimeArgValues(), ...Object.values(bindings));
 }
 
 /** 回落计数（D6-A：internal 可暴露为 health 指标，不静默吞） */
@@ -1263,6 +995,9 @@ export function isAbsVal(v: unknown): v is Abs {
  *  callTranspiledExportApply）传引用——被调方对容器实参的变异必须对
  *  caller 帧可见（与同文件闭包调用同语义）；宿主重放（case/记录/LSP）
  *  不传，保持 D1 防御副本。
+ *  opts.preferLocal：**分析面**语义——按源码本地函数名解析
+ *  （nudo.analysis 表优先）。默认 false = 导出语义（callTranspiledExportApply
+ *  跨模块导出桥必须走导出槽；同名 re-export / CJS 合并值不得被本地函数顶替）。
  *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。
  *  #152 assume 前提不设选项位：播种统一走 withAssumePremises 动态域
  *  包裹（check.ts 的 runSeeded extent），单一机制无第二路径。 */
@@ -1270,7 +1005,7 @@ export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; shareArgs?: boolean },
+  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean },
 ): TranspiledCallResult {
   // collector 作用域（幂等）：同 runTranspiled——最外层宿主入口开 store，
   // 嵌套（同一次分析内的逐导出调用 / 导出桥）复用外层。
@@ -1300,15 +1035,45 @@ export function callTranspiledExportFull(
   });
 }
 
+/**
+ * 调用目标解析。默认 = **导出语义**：`exports[name]`（own-property；含
+ * 无同名导出冲突时的私有 hidden 槽）。`preferLocal` = **分析面语义**：
+ * 先查 nudo.analysis 表（源码本地绑定），再回落导出槽。
+ *
+ * run 表的字符串键是导出面——同名 re-export / CJS 合并会覆盖私有本地函数名。
+ * 按函数名分析（generalize / 调用点 / LSP replay）必须显式 preferLocal；
+ * 导出桥（callTranspiledExportApply）必须保持默认，否则跨模块 import 的
+ * 被调方会被同名的本地私有函数顶替。
+ */
+function callTargetOf(
+  exports: Record<string, unknown>,
+  name: string,
+  preferLocal: boolean,
+): unknown {
+  if (preferLocal) {
+    const analysis = (exports as Record<PropertyKey, unknown>)[ANALYSIS_SLOTS];
+    if (
+      analysis !== null &&
+      typeof analysis === "object" &&
+      Object.hasOwn(analysis, name)
+    ) {
+      const read = (analysis as Record<string, unknown>)[name];
+      // 生成表值恒为 thunk（读本地绑定，保持 live 语义）
+      return typeof read === "function" ? (read as () => unknown)() : read;
+    }
+  }
+  // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
+  // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
+  return Object.hasOwn(exports, name) ? exports[name] : undefined;
+}
+
 function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; shareArgs?: boolean },
+  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean },
 ): TranspiledCallResult {
-  // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
-  // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
-  const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
+  const fn = callTargetOf(exports, name, opts?.preferLocal === true);
   if (typeof fn === "function") {
     // 宿主裸值（raw string/array/number…）先经 asAbsVal 收成 Abs（与 $fork
     // 对缺参/宿主裸值同口径）：否则裸值流进代数算子（$not/$forOf/…）读
@@ -1320,83 +1085,30 @@ function callTranspiledExportFullInner(
     // 引用：JS 引用语义下被调方变异必须写回 caller 帧（h.n = v 后 caller
     // 读 h.n 得 v，back === h 折 true）——复制会让 caller 绑定读到 stale
     // 值（假 exact），与同文件闭包调用（直达、无副本）语义分叉。
+    // 一次调用内共用身份图 memo：`f(obj, obj)` 的两个实参必须映射到同一个
+    // 副本（原生别名语义）；自引用实参也不能让快照栈溢出。
+    const copyMemo = new WeakMap<object, Abs>();
     const callArgs = args.map((a) => {
       if (!(a && typeof a === "object" && "shape" in (a as object))) return asAbsVal(a);
-      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs);
+      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs, copyMemo);
     });
-    return runWithLoopExits(() => {
-      try {
-        const invoke = () =>
-          withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
-        const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
-        // 微任务（then/catch 回调）在同步返回值算完后才跑
-        drainPromiseMicros();
-        // Bug 26：宿主裸值（裸全局标识符 return parseInt 等）先经 asAbsVal
-        // 收成 Abs（与上方 D1 入参同口径）——宿主函数折一等 fn Abs，裸
-        // 原始值折字面量，不再弃成 unknown
-        if (!isAbsVal(r)) return joinControlExits(asAbsVal(r));
-        // 抽象分支 early-return / throw 记入 exits，与正常出口 join
-        return joinControlExits(r);
-      } catch (e) {
-        drainPromiseMicros();
-        // C2.1：循环体 $loopReturn → 函数返回值（与 exits join）
-        if (isNudoReturn(e)) {
-          return joinControlExits(e.absValue);
-        }
-        if (isNudoThrow(e)) {
-          // 全臂 throw：兄弟 throw 已在 throwExits；与早退 exits 一并考虑
-          const result = joinLoopExits(never);
-          const throws = joinThrowExits(e.absValue);
-          return { result, throws };
-        }
-        // 原生 ReferenceError：class TDZ / 未声明引用——原生必抛，记入 throws
-        if (e instanceof ReferenceError) {
-          return {
-            result: joinLoopExits(never),
-            throws: joinThrowExits(errorTypeAbs("ReferenceError")),
-          };
-        }
-        // 其余原生异常（TypeError/RangeError/栈溢出/引擎缺陷…）也必须进 throws 域：
-        // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
-        // result 保持 fail-closed unknown（不谎称 never）。
-        // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落（不静默吞）。
-        noteEvalFallback(e);
-        return {
-          result: joinLoopExits(unknown),
-          throws: joinThrowExits(throwPayloadOf(e)),
-        };
-      }
+    return runExportCallGuarded(() => {
+      const invoke = () =>
+        withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
+      return opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
     });
   }
   if (isAbsVal(fn)) {
     // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply
     if (fn.shape.k === "fn") {
-      return runWithLoopExits(() => {
-        try {
-          const r = $call(fn, args);
-          // 与 JS 函数分支同口径：同步返回值算完后排空微队列
-          drainPromiseMicros();
-          const joined = joinControlExits(r);
-          // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
-          // 不回写分析）——arity-only fn Abs 调用后携带真实返回
-          refineFnReturnType(fn, joined.result);
-          return joined;
-        } catch (e) {
-          drainPromiseMicros();
-          if (isNudoReturn(e)) {
-            return joinControlExits(e.absValue);
-          }
-          if (isNudoThrow(e)) {
-            return { result: joinLoopExits(never), throws: joinThrowExits(e.absValue) };
-          }
-          // 同上：原生异常不得折成 throws=never（result 保持 fail-closed unknown）
-          // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落
-          noteEvalFallback(e);
-          return {
-            result: joinLoopExits(unknown),
-            throws: joinThrowExits(throwPayloadOf(e)),
-          };
-        }
+      return runExportCallGuarded(() => $call(fn, args), {
+        // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
+        // 不回写分析）——arity-only fn Abs 调用后携带真实返回
+        onNormal: (r) => refineFnReturnType(fn, r),
+        // $call 内冒出的原生 ReferenceError（编译体自由名）属引擎回落面：
+        // 保持 noteEvalFallback + fail-closed unknown，不走 JS 导出分支的
+        // 「原生必抛」TDZ 路由（throws 面两路一致，结果面为既有差异）。
+        referenceErrorIsFallback: true,
       });
     }
     drainPromiseMicros();
@@ -1404,6 +1116,77 @@ function callTranspiledExportFullInner(
   }
   drainPromiseMicros();
   return { result: unknown, throws: never };
+}
+
+/**
+ * 导出调用的**单一**调用/退出/异常骨架（JS 函数导出与一等 fn Abs 导出共用）。
+ *
+ * 契约（两个导出分支不得各自长回一份）：
+ * - `runWithLoopExits` 框住 invoke + catch：invoke 期间记入的 loop/throw exits
+ *   与正常出口 / 异常出口在同一作用域内 join；
+ * - 正常返回：先 `drainPromiseMicros()`（同步返回值算完后跑 then/catch 回调），
+ *   再经 asAbsVal 收形（宿主裸值 → Abs），`joinControlExits` join 早退 exits，
+ *   最后 `onNormal(joined.result)`（Abs fn 分支的 returnType 观测回填）；
+ * - `NudoReturn` → 返回值（与 exits join）；`NudoThrow` → result=never + throws=载荷；
+ * - 原生 ReferenceError → result=never + throws=ReferenceError（`referenceErrorIsFallback`
+ *   时按引擎回落处理：见选项）；
+ * - 其余原生异常 → `noteEvalFallback(e)`（D6-A canary，不静默吞）+ result=unknown
+ *   （fail-closed，不谎称 never）+ throws=throwPayloadOf(e)。
+ *
+ * 每个出口（正常 / NudoReturn / NudoThrow / 原生异常）都先排空微队列，与旧
+ * 两份骨架逐路径一致。
+ */
+function runExportCallGuarded(
+  invoke: () => unknown,
+  opts?: {
+    /** 正常出口 join 后、返回前（Abs fn 分支的 fn.returnType 观测回填） */
+    onNormal?: (r: Abs) => void;
+    /** Abs fn 分支：$call 冒出的原生 ReferenceError 按引擎回落处理
+     *  （noteEvalFallback + unknown），而非 JS 导出分支的「原生必抛」never */
+    referenceErrorIsFallback?: boolean;
+  },
+): TranspiledCallResult {
+  return runWithLoopExits(() => {
+    try {
+      const r = invoke();
+      // 微任务（then/catch 回调）在同步返回值算完后才跑
+      drainPromiseMicros();
+      // Bug 26：宿主裸值（裸全局标识符 return parseInt 等）先经 asAbsVal
+      // 收成 Abs（与调用入参同口径）——宿主函数折一等 fn Abs，裸
+      // 原始值折字面量，不再弃成 unknown
+      const joined = joinControlExits(isAbsVal(r) ? r : asAbsVal(r));
+      opts?.onNormal?.(joined.result);
+      return joined;
+    } catch (e) {
+      drainPromiseMicros();
+      // C2.1：循环体 $loopReturn → 函数返回值（与 exits join）
+      if (isNudoReturn(e)) {
+        return joinControlExits(e.absValue);
+      }
+      if (isNudoThrow(e)) {
+        // 全臂 throw：兄弟 throw 已在 throwExits；与早退 exits 一并考虑
+        const result = joinLoopExits(never);
+        const throws = joinThrowExits(e.absValue);
+        return { result, throws };
+      }
+      // 原生 ReferenceError：class TDZ / 未声明引用——原生必抛，记入 throws
+      if (!opts?.referenceErrorIsFallback && e instanceof ReferenceError) {
+        return {
+          result: joinLoopExits(never),
+          throws: joinThrowExits(errorTypeAbs("ReferenceError")),
+        };
+      }
+      // 其余原生异常（TypeError/RangeError/栈溢出/引擎缺陷…）也必须进 throws 域：
+      // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
+      // result 保持 fail-closed unknown（不谎称 never）。
+      // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落（不静默吞）。
+      noteEvalFallback(e);
+      return {
+        result: joinLoopExits(unknown),
+        throws: joinThrowExits(throwPayloadOf(e)),
+      };
+    }
+  });
 }
 
 function joinLoopExits(normal: Abs): Abs {
@@ -1443,6 +1226,9 @@ export function callTranspiledExport(
  * 宿主重放不走此工厂，保持 D1 防御副本。
  *
  * `exports` 可传惰性 getter（互递归模块桥：导出表在桥创建后才赋值）。
+ *
+ * **不传 preferLocal**：跨模块 import 桥必须调用**导出值**（同名 re-export /
+ * CJS 合并不得被本地私有函数顶替）；按名分析由调用方显式 preferLocal。
  */
 export function callTranspiledExportApply(
   exports: Record<string, unknown> | (() => Record<string, unknown>),

@@ -3,19 +3,21 @@
 
 export {
   $add, $absVal, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles, $restBind,
-  $async, $asyncReturn, $await, $bitand, $bitnot, $bitor, $bitxor,
-  $catchVal, $classExpr, $collectionForEach, $concat, $copy, $del, $delRes,
+  $assumeAnchor,
+  $async, $await, $bitand, $bitnot, $bitor, $bitxor,
+  $catchReturn, $catchVal, $classExpr, $collectionForEach, $concat, $copy, $del, $delRes,
   $div, $dynamicImport, $elems, $eq, $eqLoose, $fnKindStamp, $fnVal, $for, $forInKeys,
-  $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
+  $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
-  $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
+  $isForkExit, $join, $le, $len, $lit, $litTruth, $loopBreak, $loopContinue,
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $narrowMemberEq, $narrowTypeOf, $not, $nullishTest, $newTarget,
   $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex, $refineRel,
   $removeMemberNullish, $removeNull, $removeNullish, $removeUndefined, $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
+  $throwConstAssign, $throwFreeArguments,
   $toNumber, $toNumeric, $tpl, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
-  $unknown, $ushr, $while, $whileSeq, $yield, $yieldStar, DEFAULT_MAX_LOOP_ITERS,
+  $unknown, $ushr, $whileSeq, $yield, $yieldStar, DEFAULT_MAX_LOOP_ITERS,
   NudoLoopSignal, NudoReturn, NudoThrow, asAbsVal, callAtFunctionBoundary,
   clearStaleTermPred, currentAssumePremises, currentExecPhi, fillTuple,
   isArrMutator,
@@ -24,6 +26,12 @@ export {
   pushLoopExit, pushThrowExit, runWithLoopExits, takeLoopExits,
   takeThrowExits, withAssumePremises, withExecPhi
 } from "./runtime.ts";
+
+// Bug 201：async 体的生成器驱动。转译产物按名 import `$asyncGen`，因此它
+// 必须能从 `@nudojs/core/exec` 具名导入——否则 transpileSource 产物作为
+// 真实 ESM 装载时缺符号。runtime.ts facade 刻意不含它（facade 只再导出
+// 既有公开面），此处直接给具名导出，不进 other subpath。
+export { $asyncGen } from "./runtime/async.ts";
 
 export {
   type TranspileOptions, foldRequireSpecArg, foldStaticStringExpr,
@@ -37,9 +45,9 @@ export {
 
 export {
   $class, $invoke, $invokeKey, $optionalInvokeKey, $invokeSuper, $invokeSuperObj, $new, $optionalGet, $optionalInvoke,
-  $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $invokeSuperKey, $super, $getSuper,
-  $getSuperObj, $setSuper, $setSuperObj, $thisGet, $setSuperStatic, $staticSuperInvoke,
-  $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
+  $orDefault, $reStateCall, $setKey, $invokeSuperKey, $super, $getSuper,
+  $getSuperObj, $setSuper, $setSuperObj, $setSuperStatic, $staticSuperInvoke,
+  type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
 } from "./class.ts";
 
 export {

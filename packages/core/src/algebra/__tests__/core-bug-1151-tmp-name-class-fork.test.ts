@@ -25,9 +25,10 @@
  *   引擎 0 与 `true` ⇒ 修后 42）：
  *   新增**共享分配器** `emit.ts` 的 `forkTmpNames` / `switchTmpNames`（走
  *   `internalTmpNameSet` / `internalTmpName`）——声明点（`forkBindingDecls`）
- *   与**全部**引用点（`forkArmThunk` / `forkJoinBindings` /
- *   `stmt/statement.ts` 与 `stmt/fn-body.ts` 的 inline `wrapArm` 副本 /
- *   `expr/short-circuit.ts` 的调用点）**同源分配** ⇒ 「成对一致」不破。
+ *   与**全部**引用点（`forkArmThunk` / `forkArmThunkExpr` /
+ *   `forkJoinBindings` / `expr/short-circuit.ts` 的调用点）**同源分配**
+ *   ⇒ 「成对一致」不破（`stmt/statement.ts` 与 `stmt/fn-body.ts` 共用
+ *   `forkArmThunkExpr`，不再各自内联副本）。
  *   覆盖三条发射路径：`if` 分叉（statement.ts）、**早退提升**（fn-body.ts）、
  *   **短路协议**（short-circuit.ts）+ switch 臂。
  * - 1151-c（`exec/transpile/expr/assignment.ts`）：赋值 IIFE 形参 `__v`
@@ -157,7 +158,7 @@ const SRC_B3 = `export function f(x) {
 }`;
 
 /**
- * 触发 B4：**早退提升路径**（`stmt/fn-body.ts` 的 inline `wrapArm` 副本）臂标志
+ * 触发 B4：**早退提升路径**（`stmt/fn-body.ts` 的早退提升臂）臂标志
  * `__cont` 遮蔽用户同名绑定 ⇒ 原生 42（修前：true）。**已修**。
  */
 const SRC_B4 = `export function f() {
@@ -322,10 +323,10 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
 
     it("撞名时快照名改名（`__fk0_a` → `__fk0_a_1`）且声明点与引用点同名", () => {
       const js = transpileSource(SRC_B1, { source: SRC_B1 });
-      // 声明点：const __fk0_a_1 = $copy(a);
-      expect(js).toContain("const __fk0_a_1 = $copy(a);");
-      // 引用点（臂入口恢复基线）：a = $copy(__fk0_a_1);
-      expect(js).toContain("a = $copy(__fk0_a_1);");
+      // 声明点：const __fk0_a_1 = $copy(a, __fkCopyMemo);（一次分支快照共享身份图）
+      expect(js).toContain("const __fk0_a_1 = $copy(a, __fkCopyMemo);");
+      // 引用点（臂入口恢复基线）：a = $copy(__fk0_a_1, __fkArmMemo);
+      expect(js).toContain("a = $copy(__fk0_a_1, __fkArmMemo);");
       // 用户绑定仍是 __fk0_a（未被引擎改名）
       expect(js).toContain("let __fk0_a = $lit(42);");
       expect(js).not.toContain("const __fk0_a = $copy(a);");
@@ -348,7 +349,7 @@ describe("Bug 1151：类 setter thunk 形参载体（__v）避开用户标识符
         return out;
       }`;
       const js = transpileSource(src, { source: src });
-      expect(js).toContain("const __fk0_out = $copy(out);");
+      expect(js).toContain("const __fk0_out = $copy(out, __fkCopyMemo);");
       expect(js).toContain("let __cont = true;");
       expect(js).toContain("const __fkT = ($eq(a, $lit(0)));");
     });

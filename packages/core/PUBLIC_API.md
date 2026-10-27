@@ -1,9 +1,21 @@
 # @nudojs/core — Public API Freeze Inventory
 
-> **Status:** `@nudojs/core` is **3.0.0**. This file is the freeze inventory:
-> what the package exposes, and what counts as **public** vs **internal**.
+> **Status:** freeze inventory for the next major cut — what the package
+> exposes, and what counts as **public** vs **internal**. The package version
+> lives in [`package.json`](./package.json) and bumps are changeset-driven at
+> release; this file tracks the surface, not the version number.
 >
-> **3.0 breaking reduction:** engine machinery (leak / call-budget / hash /
+> **This major cut (breaking reduction):** the dead public engine symbols that
+> earlier releases kept for compatibility (`phi` stack, `$while` / `$forIter` /
+> `$asyncReturn` / `$staticInit` / `$thisGet` / `$thisSet`, HOF promotion
+> helpers `createHofCollectCtx` / `promoteParamShape` / `tryPromote*` /
+> `HofCollectCtx` / `AstEnv.hofCollect`, dead relation helpers `alphaOf` /
+> `betaOf`, `generalizeAll`) are removed.
+> `$staticInvoke` also leaves the public surface — it was exported from `.` and
+> `./exec` before this cut and is now engine-internal, still implemented for
+> the `check-may-throw` class bridge.
+>
+> **Earlier breaking reduction:** engine machinery (leak / call-budget / hash /
 > derivation / inlay / template / language / scan extras / may-throw ·
 > member-diag collectors) no longer ships on `.` or `./exec`. Hosts that need
 > it import **`@nudojs/core/internal`**. Product faces (`check` / `test` /
@@ -52,7 +64,7 @@ changing the signature of any row below is **major**.
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
 | `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | **public** |
-| `generalizeFromAst`, `generalizeAll` | value | symbolic α generalization | **public** |
+| `generalizeFromAst` | value | symbolic α generalization | **public** |
 | `parseSource`, `resetParseSourceCache`, `getParseSourceCacheSize` | value | Babel parse + memo | **public** |
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
 | `MockHelper`, `stub`, `spy`, `mock` | value/type | test mock helpers | **public** |
@@ -74,17 +86,19 @@ changing the signature of any row below is **major**.
 | `transpile`, `transpileSource`, `transpileFile`, `transpileExpression`, `transpileBodyNode`, `runtimeImportOf`, `TranspileOptions` | JS AST → `$op` program | **public** |
 | `foldStaticStringExpr`, `foldRequireSpecArg` | static folding helpers | **public** |
 | `$add`…`$pow`, `$eq`…`$ge`, `$neg`/`$not`/`$typeof`, `$join` | operator runtime | **public** |
-| `$fork`, `$for`, `$forIter`, `$while`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
+| `$fork`, `$for`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
 | `$arr`, `$idx`, `$idxSet`, `$len`, `$arrMutContainer`, `$copy`, `fillTuple`, `$arrWithHoles`, `$arguments`, `isArrMutator` | array runtime | **public** |
 | `$obj`, `$get`, `$set`, `$del`, `$spread`, `$objRest`, `$arrRest`, `$concat`, `$elems`, `$tpl` | object / member runtime | **public** |
 | `$fnVal`, `$rawThis`, `$lit`, `asAbsVal`, `$classExpr`, `$instanceof`, `$in` | value / class runtime | **public** |
-| `$async`, `$await`, `$asyncReturn`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
+| `$async`, `$await`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
 | `$throw`, `$catchVal`, `$loopReturn`, `$loopBreak`, `$loopContinue`, `NudoReturn`, `NudoLoopSignal`, `NudoThrow` | control-signal / throw | **public** |
 | `$callNamed`, `$assignRecord`, `$recordBinding`, `EvalCallRecord`, `setEvalCallCollector` | call-site recording for analyze | **public** (additive) |
 | `runTranspiled`, `runtimeImportOf` | execution entry | **public** |
 
-`./exec` does **not** re-export may-throw / member-diag collectors (3.0).
-Those live on `./internal`.
+`./exec` is a **published, frozen surface**: its export names are pinned in
+`public-api.snapshot.json` (§5) and generated code imports the `$op` runtime
+from it by name. It does **not** re-export may-throw / member-diag collectors;
+those live on `./internal`.
 
 ## 3. Internal — `@nudojs/core/internal`
 
@@ -125,12 +139,15 @@ Unconstrained entry params display as **`any`** (unconstrained), never as
 
 `src/__tests__/public-api-freeze.test.ts`:
 
-1. Collects export names from `src/algebra/index.ts`, `src/index.ts`, and
-   `src/internal.ts` via the TypeScript compiler API.
-2. Compares the sorted `value:` / `type:` name lists to
-   `public-api.snapshot.json`.
-3. Fails on any unplanned add / remove / rename, and on product-face leakage
-   of `./internal` names into `.`.
+1. Collects export names from `src/algebra/index.ts`, `src/index.ts`,
+   `src/algebra/exec/index.ts`, and `src/internal.ts` via the TypeScript
+   compiler API.
+2. Compares the sorted `value:` / `type:` name lists to the matching
+   `public-api.snapshot.json` sections (`algebra` / `core` / `exec` /
+   `internal`) — every published subpath (`.`, `./exec`, `./internal`) has a
+   frozen section.
+3. Fails on any unplanned add / remove / rename (including on `./exec`), and
+   on product-face leakage of `./internal` names into `.`.
 
 Updating the snapshot is intentional only: edit `public-api.snapshot.json` in
 the same PR as the export change and say why in the PR body. Unplanned drift

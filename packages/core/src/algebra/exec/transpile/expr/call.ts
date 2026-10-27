@@ -2,14 +2,18 @@
  * 调用族发射（expr 按域拆分之一；主分派在 ./transpile.ts）。
  *
  * 不变量：
- * - 标识符调用走 $callNamed（call@ 采集 + 实参 provenance）；内建名
- *   （undefined/NaN/Infinity）不走 callNamed（调用位读标识符绑定）；
+ * - 标识符调用走 $callNamed（call@ 采集 + 实参 provenance）；宿主内建名
+ *   （undefined/NaN/Infinity）**未遮蔽**时不走 callNamed（调用位读宿主全局，
+ *   原生 `undefined(1)` 定抛 TypeError ⇒ 保留宿主裸调用）；**已遮蔽**（用户
+ *   绑定 / 形参 / mock 注入）时走 callNamed（绑定是 Abs 值，宿主裸调用会
+ *   假抛 TypeError）；
  * - require(spec) 可折叠说明符 → __nudoRequire；真动态 → 诚实 $unknown()；
  * - RegExp test/exec 的 lastIndex 写回必须发生在表达式内部（元素顺序副作用），
  *   receiver 为本地绑定时内联「求值 + 写回」IIFE；
  * - 计算字面量键调用（obj["m"]()/obj[1]()）同走 $invoke 保 this 绑定；
  * - 计算非字面量键调用（obj[key]()，key 运行时求值）走 $invokeKey
- *   （键折叠槽名 + $invoke 派发），接收者不丢；
+ *   （键折叠槽名 + $invoke 派发），接收者不丢；成员键分类走**单一实现**
+ *   （member-key.ts 的 emitMemberKey——读/写/可选链共用）；
  * - Bug 152：成员调用的实参包 **thunk**（`() => [args]`）——原生顺序是
  *   「引用取值（getter 触发）→ 实参 → 调用」；实参直接内联进实参数组会
  *   让实参先于成员读求值（getter 跑晚了）。thunk 形态由 $invoke 先读成员
@@ -33,6 +37,8 @@ import { isExpression, foldRequireSpecArg, internalTmpName, internalTmpNameSet }
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { memberPathOf, setPathSrc } from "../member-path.ts";
+import { emitMemberKey } from "../member-key.ts";
+import { emitArgList } from "../call-args.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 /**
  * 引擎内部临时名的**基名**（实际名见下）。
@@ -80,6 +86,20 @@ function definePropRebindSrc(target: Node, opts: TranspileOptions, defR: string)
   return null;
 }
 /**
+ * 宿主内建名（undefined / NaN / Infinity）**未遮蔽**判据：调用位读的是宿主
+ * 全局（原生 `undefined(1)` 定抛 TypeError）⇒ 保留宿主裸调用。
+ * 已遮蔽（用户绑定 / 形参 / mock 注入）⇒ 读的是 Abs 绑定 ⇒ 必须走
+ * $callNamed 的 Abs 派发面。
+ *
+ * 遮蔽判定与读点（expr/atom.ts）、标签模板位同源：opts.shadowedIntrinsics
+ * （由 transpileFile / transpileBodyNode / body-fn / evalExprAbs 线程化，
+ * 判据见 helpers.ts 的 shadowedIntrinsicsOf）。
+ */
+function isUnshadowedHostIntrinsic(name: string, opts: TranspileOptions): boolean {
+  return HOST_INTRINSIC_SET.has(name) && opts.shadowedIntrinsics?.has(name) !== true;
+}
+
+/**
  * 调用族：new、super()、super.m()、obj.m()、计算字面量键调用、标识符 $callNamed、
  * require/require.resolve 折叠与表达式 callee $call。
  */
@@ -95,13 +115,7 @@ export function transpileCallExpr(
       const callee = expr.callee;
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(void 0)";
-      const args = expr.arguments
-        .map((a) =>
-          a.type === "SpreadElement"
-            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-            : transpileExpression(a as Expression, opts),
-        )
-        .join(", ");
+      const args = emitArgList(expr.arguments, opts);
       return `$new(${cname}, [${args}])`;
     }
     case "CallExpression":
@@ -116,13 +130,7 @@ export function transpileCallExpr(
       const callee = expr.callee;
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
       // super.method(args) / super[k](args) → $invokeSuper(...)（类实例方法）；
@@ -133,13 +141,7 @@ export function transpileCallExpr(
         callee.object.type === "Super" &&
         (callee.property.type === "Identifier" || callee.computed === true)
       ) {
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         const keySrc = callee.computed
           ? transpileExpression(callee.property as Expression, opts)
           : `$lit(${JSON.stringify((callee.property as { name: string }).name)})`;
@@ -205,13 +207,7 @@ export function transpileCallExpr(
         const defR = internalTmpName(DEF_R_BASE, opts);
         const rebind = definePropRebindSrc(expr.arguments[0] as Node, opts, defR);
         if (rebind !== null) {
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
+          const args = emitArgList(expr.arguments, opts);
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
           return `(() => { const ${defR} = $invoke(Object, ${JSON.stringify(methodName)}, [${args}]${locArg}); ${rebind}; return ${defR}; })()`;
@@ -224,13 +220,7 @@ export function transpileCallExpr(
         (callee.property.type === "Identifier" || callee.property.type === "PrivateName")
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
-        const args = expr.arguments
-          .map((a) =>
-            a.type === "SpreadElement"
-              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-              : transpileExpression(a as Expression, opts),
-          )
-          .join(", ");
+        const args = emitArgList(expr.arguments, opts);
         const propName =
           callee.property.type === "PrivateName"
             ? // Bug 78：this.#m() → "#m" 混淆键
@@ -273,72 +263,73 @@ export function transpileCallExpr(
       }
       // obj["m"](args) / obj[1](args) → $invoke：计算字面量键（Bug 60 数字键
       // 原生 ToPropertyKey 成串）——this 仍绑 recv；$call($idx(...)) 路径丢
-      // this 且方法在类注册表而非实例槽上
-      {
-        const keyNode = (callee as { computed?: boolean; property?: { type?: string; value?: unknown } })
-          .property as { type?: string; value?: unknown } | undefined;
-        const calleeComputed = (callee as { computed?: boolean }).computed === true;
-        if (
-          (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
-          calleeComputed &&
-          callee.object.type !== "Super" &&
-          (keyNode?.type === "StringLiteral" || keyNode?.type === "NumericLiteral")
-        ) {
-          const recv = transpileExpression(callee.object as Expression, opts);
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
-          const name = JSON.stringify(String(keyNode.value));
-          const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
-          const loc = expr.loc;
-          const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
-          // Bug 152：实参包 thunk（同上：成员读先于实参求值）
-          return opt
-            ? `$optionalInvoke(${recv}, ${name}, [${args}])`
-            : `$invoke(${recv}, ${name}, () => [${args}]${locArg})`;
-        }
-      }
+      // this 且方法在类注册表而非实例槽上。
       // obj[key](args)（计算**非字面量**键：标识符/调用/成员链/Symbol 常量
       // 读等）→ $invokeKey：键运行时求值折叠槽名后走 $invoke 既有派发，
       // 接收者不丢（此前落通用 $call($idx(...))——$call 无接收者参数，方法体
       // this 读失败/内建 brand 校验假定抛 → 假 never）。super 接收者由上方
       // 专用分支接管，不在此列。
+      //
+      // 键分类走**单一实现**（member-key.ts 的 emitMemberKey——读/写/可选链
+      // 共用）：字符串字面量 → 静态槽键；数字字面量 → 静态槽键（ToPropertyKey
+      // 成串，与读/写面同口径）；Symbol.X → 符号投影（无静态槽名 ⇒ 落回运行时
+      // 键，键值运行时求值）；其余 → 运行时下标键。
       {
         const calleeComputed = (callee as { computed?: boolean }).computed === true;
-        const keyNode = calleeComputed
-          ? (callee as { property?: { type?: string } }).property
-          : undefined;
         if (
           (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
-          keyNode !== undefined &&
-          isExpression(keyNode as Node) &&
+          calleeComputed &&
           callee.object.type !== "Super"
         ) {
-          const recv = transpileExpression(callee.object as Expression, opts);
-          const keySrc = transpileExpression(keyNode as Expression, opts);
-          const args = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement"
-                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-                : transpileExpression(a as Expression, opts),
-            )
-            .join(", ");
-          const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
-          const loc = expr.loc;
-          const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
-          // Bug 152：实参包 thunk（键求值 → 成员读 → 实参 → 调用，原生顺序）
-          return opt
-            ? `$optionalInvokeKey(${recv}, ${keySrc}, [${args}])`
-            : `$invokeKey(${recv}, ${keySrc}, () => [${args}]${locArg})`;
+          const memberKey = emitMemberKey(callee.property as Node, calleeComputed, opts);
+          // 静态槽键：计算字符串字面量（obj["m"]()）与数字字面量（obj[1]()）。
+          const staticKey =
+            memberKey !== null && memberKey.kind === "get" && memberKey.symbol === undefined
+              ? memberKey.key
+              : memberKey !== null &&
+                  memberKey.kind === "idx" &&
+                  memberKey.constNumber !== undefined
+                ? String(memberKey.constNumber)
+                : null;
+          if (staticKey !== null) {
+            const recv = transpileExpression(callee.object as Expression, opts);
+            const args = emitArgList(expr.arguments, opts);
+            const name = JSON.stringify(staticKey);
+            const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+            const loc = expr.loc;
+            const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+            // Bug 152：实参包 thunk（同上：成员读先于实参求值）
+            return opt
+              ? `$optionalInvoke(${recv}, ${name}, [${args}])`
+              : `$invoke(${recv}, ${name}, () => [${args}]${locArg})`;
+          }
+          // 运行时键（obj[key]()）：键运行时求值 → $invokeKey 派发。
+          if (memberKey !== null) {
+            const recv = transpileExpression(callee.object as Expression, opts);
+            const keySrc =
+              memberKey.kind === "idx"
+                ? memberKey.keySrc
+                : transpileExpression(callee.property as Expression, opts);
+            const args = emitArgList(expr.arguments, opts);
+            const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+            const loc = expr.loc;
+            const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+            // Bug 152：实参包 thunk（键求值 → 成员读 → 实参 → 调用，原生顺序）
+            return opt
+              ? `$optionalInvokeKey(${recv}, ${keySrc}, [${args}])`
+              : `$invokeKey(${recv}, ${keySrc}, () => [${args}]${locArg})`;
+          }
         }
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）
-      // 内建名（undefined/NaN/Infinity）不走 callNamed：调用位读的是标识符绑定
-      if (callee.type === "Identifier" && !HOST_INTRINSIC_SET.has(callee.name)) {
+      // 宿主内建名（undefined/NaN/Infinity）**未遮蔽**时不走 callNamed：调用位
+      // 读的是宿主全局（原生 `undefined(1)` / `NaN(1)` 定抛 TypeError ⇒ 保留
+      // 宿主裸调用，抛点与原生一致）。
+      // **已遮蔽**（用户合法绑定：`const NaN = (x) => x` / 形参名 undefined /
+      // @nudo:mock 注入）时必须走 callNamed——用户绑定是 **Abs** 值，宿主裸
+      // 调用会把它当真 JS 函数调（非函数 ⇒ 宿主 TypeError ⇒ 假抛；真函数则
+      // 静默错值）。读点（expr/atom.ts）与标签模板位同口径按遮蔽分态。
+      if (callee.type === "Identifier" && !isUnshadowedHostIntrinsic(callee.name, opts)) {
         const argSrcs: string[] = [];
         const argLocSrcs: string[] = [];
         for (const a of expr.arguments) {
@@ -361,13 +352,7 @@ export function transpileCallExpr(
           : callee.name;
         return `$callNamed(${JSON.stringify(callee.name)}, ${calleeRef}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
-      const args = expr.arguments
-        .map((a) =>
-          a.type === "SpreadElement"
-            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
-            : transpileExpression(a as Expression, opts),
-        )
-        .join(", ");
+      const args = emitArgList(expr.arguments, opts);
       const c =
         callee.type === "Identifier"
           ? callee.name

@@ -19,7 +19,9 @@
  * 锚定值均为 node 原生实测（各断言注释）。
  */
 import { describe, it, expect } from "vitest";
-import { litValue } from "../abs.ts";
+import { abs, litValue, type Abs } from "../abs.ts";
+import { objOf } from "../objects.ts";
+import { isRegExpBrandAbs, regexBrandAbsFrom } from "../builtins/regexp.ts";
 import { call } from "./eval-helpers.ts";
 import { transpileSource } from "../exec/transpile.ts";
 
@@ -124,5 +126,26 @@ describe("访问器里的 arguments（151）", () => {
   it("类方法的 arguments 不受影响 → 2", () => {
     const r = call(`export function f() { class A { m(){ return arguments.length; } } return new A().m(1,2); }`, "f");
     expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
+  });
+});
+
+describe("isRegExpBrandAbs 共用守卫（regexp.ts 单一实现）", () => {
+  it("宿主值 / 非 Abs 值安全返回 false（不得读 .shape）", () => {
+    expect(isRegExpBrandAbs(undefined)).toBe(false);
+    expect(isRegExpBrandAbs(null as unknown as Abs)).toBe(false);
+    expect(isRegExpBrandAbs("re" as unknown as Abs)).toBe(false);
+    expect(isRegExpBrandAbs(Math as unknown as Abs)).toBe(false);
+    expect(isRegExpBrandAbs({} as unknown as Abs)).toBe(false);
+  });
+
+  it("RegExp brand 判 true，其它 brand 判 false", () => {
+    expect(isRegExpBrandAbs(regexBrandAbsFrom("a", "g"))).toBe(true);
+    const other = abs(
+      { k: "brand", name: "Map", shape: objOf({}) },
+      undefined,
+      undefined,
+      "path",
+    );
+    expect(isRegExpBrandAbs(other)).toBe(false);
   });
 });

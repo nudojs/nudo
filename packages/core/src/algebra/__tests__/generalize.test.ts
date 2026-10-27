@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   generalizeFromAst,
-  generalizeAll,
   numLit,
   numVar,
   gtNum,
@@ -67,15 +66,6 @@ describe("generalize", () => {
     if (!g) return;
     const ts = termToString(g.symbolic.term!);
     expect(ts === "((A1 + 1) + 1)" || ts === "(A1 + 2)").toBe(true);
-  });
-
-  it("generalizeAll finds all functions", () => {
-    const all = generalizeAll(SRC);
-    const names = all.map((g) => g.name).sort();
-    expect(names).toContain("add");
-    expect(names).toContain("scale");
-    expect(names).toContain("twice");
-    expect(names).toContain("id");
   });
 
   it("display mentions type params", () => {

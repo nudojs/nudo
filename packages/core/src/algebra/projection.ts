@@ -26,7 +26,8 @@
 import type { Abs, Confidence } from "./abs.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
 import { number, string, boolean, litC, union, array, SELF } from "./constraint.ts";
-import { joinAbs, canonicalArrayIndex } from "./objects.ts";
+import { joinAbs } from "./objects.ts";
+import { isHiddenInternalSlot } from "./slot-visibility.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { termEquals, v as termVar, type Term, type LiteralValue } from "./term.ts";
 import { app as termApp } from "./term.ts";
@@ -46,25 +47,6 @@ const ARR_FALLBACK_CONF: ReadonlySet<Confidence> = new Set([
 
 type CmpOp = "gt" | "ge" | "lt" | "le";
 type LitVal = number | string | boolean | bigint;
-
-/**
- * Bug 240（S21）：**约束面剔除 internal 槽**（内部槽对属性 introspection
- * 不可见，不是自有属性）。
- *
- * 与投影面（`format.ts` 的 `isHiddenInternalSlot`）**同口径**：`Slot.internal`
- * 为 true 且键**不是**规范数组下标 ⇒ 该槽不进约束产物。
- *
- * 不剔会污染约束产物：生成器对象的协议槽（`next` / `return` / `throw` /
- * `constructor` / `@@iterator`）是 internal 槽——原生挂在原型上、不是自有
- * 属性，却会被投影成用户可见字段（`@@iterator` 更是 **symbol 键**槽，
- * 按字符串键发布是错的）。
- *
- * 例外：**规范数组下标槽**保留——族 01 的建模口径里生成器的数字下标槽承载
- * **元素域**（`format.ts` 同例外），不是内部实现细节 ⇒ 不在此剔除。
- */
-function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean {
-  return slot.internal === true && canonicalArrayIndex(k) === undefined;
-}
 
 /** Abs → 契约；不可表达 → undefined。
  *  `budget`：共享遍历预算（DESIGN-001）——环 / 超深 shape 返回 undefined
