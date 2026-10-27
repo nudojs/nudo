@@ -143,13 +143,83 @@ export function reportPathErrors(errors: PathError[]): void {
   if (errors.length > 0) process.exitCode = 1;
 }
 
+/**
+ * 把 `target` 的函数声明**锚点**换到 `base` 的坐标系，其余（含 case 名）不动。
+ *
+ * BUG-019：`insertGeneratedCaseDirectives` 用 `fn.loc.start.line` 定位插入点，
+ * 而 case 名里的行号来自分析所用的那份文本 ⇒ 二者**必须是同一个坐标系**。
+ * 「写入后文本」的分析给出**正确的见证名**（`call@L8`），但它的锚点也在
+ * 写入后坐标；插入基源（已剥离生成块）在基源坐标 ⇒ 只换锚点、不换名字。
+ */
+function withAnchorsOf(target: AnalysisResult, base: AnalysisResult): AnalysisResult {
+  const lineOf = new Map(base.functions.map((f) => [f.name, f.loc.start.line] as const));
+  return {
+    ...target,
+    functions: target.functions.map((f) => {
+      const line = lineOf.get(f.name);
+      if (line === undefined || line === f.loc.start.line) return f;
+      return { ...f, loc: { ...f.loc, start: { ...f.loc.start, line } } };
+    }),
+  };
+}
+
+/**
+ * 在**写盘基源坐标系**上插入生成指令，但用**写入后文本**的坐标命名见证
+ * （BUG-019 的核心）。
+ *
+ * 两步：
+ * 1. `insert(base, baseAnalysis)` 得到「结构候选」（块位置/内容都正确，唯有
+ *    名字仍是基源坐标：块插在声明上方 ⇒ 其下方调用点整体下移，名字指错行）。
+ * 2. 对候选文本再分析一次 **`caseMode: "none"`**：不评估指令 case ⇒ 不受
+ *    same-run exclusivity 掩盖 ⇒ 拿到**候选坐标**下的活调用点见证（`call@L8`）；
+ *    把它的锚点换回基源坐标后重新插入一次 ⇒ 块结构逐字相同、名字是最终坐标。
+ *
+ * 结构长度不一致（极端：二次分析的 callsite 集合变了）⇒ 保守回退首轮结果，
+ * 绝不写错位置。
+ */
+async function emitWithFinalCoordinates(
+  filePath: string,
+  base: string,
+  baseAnalysis: AnalysisResult,
+  from?: CallRecord[],
+): Promise<EmitResult> {
+  const candidate = insertGeneratedCaseDirectives(base, baseAnalysis);
+  if (candidate.source === base) return candidate; // 无插入 ⇒ 基源坐标即写盘坐标
+  const settled = await analyzeFileAsync(
+    filePath,
+    candidate.source,
+    undefined,
+    from,
+    undefined,
+    "none",
+  );
+  const final = insertGeneratedCaseDirectives(base, withAnchorsOf(settled, baseAnalysis));
+  return final.source.split("\n").length === candidate.source.split("\n").length
+    ? final
+    : candidate;
+}
+
 export async function reemitUpdate(
   filePath: string,
   source: string,
   from?: CallRecord[],
 ): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
+  // BUG-019：**不得在剥离后的坐标系上产出落盘文本**。
+  //
+  // 旧实现 `分析(剥离源) → 插入(剥离源)`：见证名里的行号来自**剥离坐标系**
+  // （先前生成的指令行已被删掉），却按原文件路径写回 ⇒
+  // ① 正确的见证行号被改错（`call@L8` → `call@L5`）；
+  // ② 已过期的见证与新调用点**撞名** ⇒ 判「已经是最新」⇒ 永不刷新；
+  // ③ 展示面行号整体偏移（少掉被剥离的行数）；
+  // ④ 已冻结的指令 case 在 `--freeze` 运行里整个消失（剥离后再也没被分析）。
+  //
+  // ⇒ 写盘基源 = 剥离后的源码（唯一能重写生成块的位置），但**名字必须按
+  // 写入后文本的坐标命名**（{@link emitWithFinalCoordinates}：先结构候选、
+  // 再用 `caseMode "none"` 的候选分析取活调用点 → 换锚点后重插）。
+  // 展示面（`result`）必须来自**最终要写的那份文本**：指令 case 在、
+  // 行号就是用户打开文件时看到的行号。
   const stripped = stripGeneratedCaseDirectives(source);
-  const result = await analyzeFileAsync(
+  const baseAnalysis = await analyzeFileAsync(
     filePath,
     stripped.source,
     undefined,
@@ -157,7 +227,24 @@ export async function reemitUpdate(
     undefined,
     "all",
   );
-  const emitOut = insertGeneratedCaseDirectives(stripped.source, result);
+  const emitOut = await emitWithFinalCoordinates(filePath, stripped.source, baseAnalysis, from);
+  if (emitOut.source === source) {
+    // 文件不需要改：源文件里已有生成块 ⇒ 基源分析看不到指令 case（①）⇒
+    // 展示面必须重新分析**原文件**；剥离前无生成块时两份源码相同，可直接复用。
+    const result =
+      stripped.source === source
+        ? baseAnalysis
+        : await analyzeFileAsync(filePath, source, undefined, from, undefined, "all");
+    return { result, emitOut, removed: stripped.removed };
+  }
+  const result = await analyzeFileAsync(
+    filePath,
+    emitOut.source,
+    undefined,
+    from,
+    undefined,
+    "all",
+  );
   return { result, emitOut, removed: stripped.removed };
 }
 

@@ -2,11 +2,11 @@
  * nudo health — 项目体检：未覆盖函数、witness drift、契约 drift、分析错误。
  * 从 index.ts 原样迁出，行为不变。
  */
-import { readFileSync, statSync, type Stats } from "node:fs";
+import { readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
-import type { RunTranspiledOptions } from "@nudojs/core";
+import type { RunTranspiledOptions, Abs } from "@nudojs/core";
 import { paintOne } from "../ui.ts";
 import { projectConfigShapeIssue } from "../config-shape.ts";
 import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
@@ -57,6 +57,12 @@ type HealthReport = {
    * 没有冻结见证时无可判定项（0 drift 属实）。
    */
   frozenWitnesses?: number;
+  /**
+   * 本条 error 已作为**路径级错误**进 `pathErrors[]`（BUG-038：路径不存在
+   * 既是文件条目、也是路径级错误）⇒ 文件级错误计数**不再重复计**它
+   * （687：错误计数单一来源 ⇒ 同一个缺失路径只算 1 个错）。
+   */
+  pathLevelError?: boolean;
   error?: string;
 };
 
@@ -86,16 +92,38 @@ function sourceWitnesses(source: string): Witness[] {
 }
 
 /**
- * 见证身份 = **调用点行号**（见证名里的 `L<行号>` 后缀）。
+ * 见证身份 = **调用点**（BUG-036）。
  *
- * 见证名带不带现场文件前缀（`call@<site>:L<n>` vs `call@L<n>`）只是**命名方案**
- * 的差异（service 侧 `callsiteCaseName` 的两种形态：调用点在本文件内 / 在
- * `--from` 现场文件里）——**同一调用点**不得因此被计成「+1 new / -1 removed」
- * 两条变更（682）。`call@symbolic` 之类无行号的见证名按原名当身份。
+ * **唯一身份 = 现场 + 行号**（`call@<site>:L<n>`）：不同现场文件里的**同一个
+ * 行号**是**两个不同的调用点** ⇒ 身份不得无条件剥掉现场前缀（旧口径把
+ * `call@a.js:L2` 与 `call@b.js:L2` 折叠成同一个 `call@L2` ⇒ 调用点被**删除**
+ * 时 health 静默放过：「调用被挪走抓得住、调用被删掉抓不住」）。
+ *
+ * 「命名方案归一」只在一侧带现场、另一侧不带时成立（service 侧
+ * `callsiteCaseName` 的两种形态：调用点在本文件内 → `call@L<n>`；在 `--from`
+ * 现场文件里 → `call@<site>:L<n>`）——**同一调用点**不得因此被计成
+ * 「+1 new / -1 removed」两条变更（682）。
+ *
+ * `call@symbolic` 之类无行号的见证名按原名当身份。
  */
-function witnessKey(name: string): string {
-  const m = /^call@[^:]*:L(\d+)$/.exec(name);
-  return m ? `call@L${m[1]}` : name;
+type WitnessIdentity = {
+  /** 严格身份：保留现场组件（`call@<site>:L<n>`） */
+  strict: string;
+  /** 归一身份：剥掉现场组件（`call@L<n>`）——只用于「命名方案归一」比较 */
+  loose: string;
+  /** 见证名是否带现场组件 */
+  hasSite: boolean;
+};
+
+function witnessIdentity(name: string): WitnessIdentity {
+  const m = /^call@([^:]*):L(\d+)$/.exec(name);
+  if (!m) return { strict: name, loose: name, hasSite: false };
+  const site = m[1] ?? "";
+  return {
+    strict: `call@${site}:L${m[2]}`,
+    loose: `call@L${m[2]}`,
+    hasSite: site !== "",
+  };
 }
 
 /**
@@ -108,8 +136,13 @@ function witnessKey(name: string): string {
  * 新口径（两侧都从**源码**取见证——`newSource` = 重新固化后的源码）：
  *  - 身份相同 + 内容相同 ⇒ 未变；
  *  - 身份相同 + 内容不同 ⇒ **改写**（只计 1 次，计入新增侧）；
+ *  - **命名方案归一**（一侧带现场、另一侧不带 + 行号相同）⇒ 同一调用点 ⇒
+ *    按「改写」计（不得算成 +1 new / -1 removed 两条变更，682）；
  *  - 新侧独有的身份 ⇒ 新增；旧侧独有的身份 ⇒ 删除。
  * ⇒ `added + removed` == **实际变更条数**（文本面 `added + removed` 口径自洽）。
+ *
+ * BUG-036：身份**保留现场组件** ⇒ 不同现场文件里的同号调用点**不再相撞**
+ * ⇒ 调用点被**删除**时（旧侧有、今日没有）如实计入 `removed`。
  */
 function witnessDrift(
   oldSource: string,
@@ -121,24 +154,44 @@ function witnessDrift(
   let added = 0;
   let changed = 0;
   for (const w of newWs) {
-    const key = witnessKey(w.name);
-    const same = oldWs.findIndex((o, i) => !used[i] && witnessKey(o.name) === key && o.text === w.text);
+    const id = witnessIdentity(w.name);
+    // 1) 同身份 + 同文本 ⇒ 未变
+    const same = oldWs.findIndex(
+      (o, i) => !used[i] && witnessIdentity(o.name).strict === id.strict && o.text === w.text,
+    );
     if (same >= 0) {
       used[same] = true;
       continue;
     }
-    const sameKey = oldWs.findIndex((o, i) => !used[i] && witnessKey(o.name) === key);
+    // 2) 同身份 + 不同文本 ⇒ 改写（只计 1 次，计入新增侧）
+    const sameKey = oldWs.findIndex(
+      (o, i) => !used[i] && witnessIdentity(o.name).strict === id.strict,
+    );
     if (sameKey >= 0) {
       used[sameKey] = true;
       changed += 1;
+      added += 1;
+      continue;
+    }
+    // 3) 命名方案归一：**一侧带现场、另一侧不带** + 行号相同 ⇒ 同一调用点
+    //    （两侧都带现场 ⇒ 是**不同**调用点，不得归一——BUG-036）
+    const renamed = oldWs.findIndex((o, i) => {
+      if (used[i]) return false;
+      const oid = witnessIdentity(o.name);
+      return oid.loose === id.loose && oid.hasSite !== id.hasSite;
+    });
+    if (renamed >= 0) {
+      used[renamed] = true;
+      changed += 1;
+      added += 1;
+      continue;
     }
     added += 1;
   }
-  const newKeys = new Set(newWs.map((w) => witnessKey(w.name)));
   let removed = 0;
   for (let i = 0; i < oldWs.length; i++) {
     if (used[i]) continue;
-    if (!newKeys.has(witnessKey(oldWs[i].name))) removed += 1;
+    removed += 1;
   }
   return { added, removed, changed };
 }
@@ -166,9 +219,27 @@ async function buildHealthInjection(
   } = await import("@nudojs/service");
   const { extractDirectives, extractFileDirectives, parse } = await import("@nudojs/parser");
   const { preloadPathEnvs } = await import("@nudojs/service/evaluator");
-  const allEnvNames = collectEnvNames(filePath, source, true);
+  // BUG-228：env 名**分层**解析（与 `nudo check` 的 assembleEnvs **同口径**）：
+  // · 项目级（package.json#nudo.env）相对说明符按**项目根**解析并绝对化；
+  // · 文件级（`/// @nudo:env ./myenv.js`）按**文件所在目录**解析。
+  // 旧口径把两者一并按项目根解析 ⇒ 文件级 env 静默丢失（`<root>/myenv.js`
+  // 不存在）⇒ env 全局为空 ⇒ 契约漂移的「今日重算域」无证据 ⇒ 同一份陈旧
+  // `@generated` 段，check 报 `nudo:interface-drift` 而 health 报「0 contract
+  // drift」（假绿 + 跨动词漂移计数相反）。
   const proj = findProjectConfig(dirname(filePath));
-  await preloadPathEnvs(allEnvNames, proj?.projectDir ?? dirname(filePath));
+  const fileEnvBaseDir = dirname(filePath);
+  const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
+  const projectEnvSpec = projectEnvNames.map((name) =>
+    typeof name === "string" && (name.startsWith("./") || name.startsWith("../"))
+      ? resolve(projectEnvBaseDir, name)
+      : name,
+  );
+  const fileEnvNames = collectEnvNames(filePath, source, false);
+  await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+  await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
+  const allEnvNames = [...new Set([...projectEnvSpec, ...fileEnvNames])];
   const graph = evalAbsModuleGraph(source, filePath);
   const reps = collectEvalReplacements(source, { diags: [] });
   const ast = parse(source);
@@ -195,6 +266,51 @@ async function buildHealthInjection(
       ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
       : {}),
   };
+}
+
+/**
+ * 模块路径归一（realpath 对齐符号链接；读不到时回落原路径）——
+ * 与 `commands/check.ts` 的同名私有函数同口径。
+ */
+function normalizeModulePath(p: string): string {
+  try {
+    return realpathSync(resolve(p));
+  } catch {
+    return resolve(p);
+  }
+}
+
+/**
+ * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord
+ * （BUG-054）。
+ *
+ * 与 `commands/check.ts` 的 `externalAbsCallRecords` **同口径**（同源实现：
+ * check.ts:138）：只收**可归因到本文件**的记录（targetModule / fnModule 命中
+ * 本文件）⇒ 别的模块里的同名函数不污染本文件的判定；`fnName` 取被调方在
+ * 目标模块里的导出名（targetExport）；**不携带 callLoc**（跨文件调用点在本
+ * 文件内没有位置）。
+ */
+function externalAbsCallRecords(
+  filePath: string,
+  records: readonly CallRecord[] | undefined,
+): { fnName: string; args: Abs[]; result: Abs }[] {
+  if (!records || records.length === 0) return [];
+  const current = normalizeModulePath(filePath);
+  const out: { fnName: string; args: Abs[]; result: Abs }[] = [];
+  for (const r of records) {
+    const attributed =
+      (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === current) ||
+      (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === current);
+    if (!attributed) continue;
+    const targetExport = r.targetExport;
+    const fnName =
+      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
+        ? targetExport
+        : r.fnName;
+    if (!fnName) continue;
+    out.push({ fnName, args: r.argAbs, result: r.resultAbs });
+  }
+  return out;
 }
 
 async function healthFile(filePath: string, records?: CallRecord[]): Promise<HealthReport> {
@@ -254,7 +370,12 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     if (analysisErrors.length > 0) {
       report.error = analysisErrors.map((d) => `${d.message} (${d.code})`).join("; ");
     }
-    if (records) {
+    // BUG-037：漂移判定必须以「**存在待验证的冻结见证**」为门槛——
+    // 从未冻结过的文件**没有**可验证的见证 ⇒ 今日多出来的见证**不是漂移**
+    // （旧口径只以「有调用记录」为门槛 ⇒ `--from` 一给记录就给假红）。
+    // 代码自己的不变量（683）：「只有存在待验证的冻结见证时才判『无法判定』——
+    // 没有冻结见证时『0 drift』属实（不得因此给合法用法发假红）」。
+    if (records && (report.frozenWitnesses ?? 0) > 0) {
       const { emitOut } = await reemitUpdate(filePath, source, records);
       if (emitOut.source !== source) {
         // 682：实际变更条数（见证身份 = 调用点）——不是「新集合 + 旧集合」
@@ -264,7 +385,7 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
         if (d.added > 0 || d.removed > 0 || d.changed > 0) report.drift = d;
       }
     }
-    const drift = await countInterfaceDrift(filePath);
+    const drift = await countInterfaceDrift(filePath, records);
     report.interfaceDrift = drift.count;
     if (drift.error) {
       report.error = report.error ? `${report.error}; ${drift.error}` : drift.error;
@@ -280,7 +401,10 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
   return report;
 }
 
-async function countInterfaceDrift(filePath: string): Promise<{ count: number; error?: string }> {
+async function countInterfaceDrift(
+  filePath: string,
+  records?: CallRecord[],
+): Promise<{ count: number; error?: string }> {
   const { sidecarPathOf, checkSource, pTrue } = await import("@nudojs/core");
   const { defaultLoadModule } = await import("@nudojs/service");
   const { existsSync: ex, readFileSync: rf } = await import("node:fs");
@@ -305,6 +429,12 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
     // 同口径）——否则同一份陈旧生成段，check 报 nudo:interface-drift 而 health
     // 报 0 contract drift / OK / exit 0（假绿 + 跨动词自相矛盾）。
     const inject = await buildHealthInjection(abs, source);
+    // BUG-054：`--from` 的**跨文件调用点证据**必须进契约漂移判定通道
+    // （与 `nudo check` 的 `checkSourceOptions.from` 同源）——否则调用点在
+    // 别的文件里时，「今日域」为空 ⇒ 漂移**恒判 0** ⇒ 同一份陈旧生成段，
+    // check 报 `nudo:interface-drift` 而 health 报「0 contract drift /
+    // OK / exit 0」（跨动词结论矛盾 + 假绿）。
+    const from = externalAbsCallRecords(abs, records);
     const r = checkSource(abs, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: abs,
@@ -312,12 +442,49 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
       ...(Object.keys(inject).length > 0
         ? { modules: inject.modules as never, inject }
         : {}),
+      ...(from.length > 0 ? { from } : {}),
       // 与 nudo check 同源：@nudo:skip 的函数不评估 body，不产出 drift 候选
       skips: collectSkipReturns(source),
     });
-    return { count: r.issues.filter((i) => i.code === DIAG.interfaceDrift).length };
+    const slotDrift = r.issues.filter((i) => i.code === DIAG.interfaceDrift).length;
+    // BUG-199：**段文本口径**与 `nudo contract --emit` **同源**。
+    // health 旧口径只数 `checkSource` 的 `nudo:interface-drift`（判据 =
+    // **@generated 槽的内容**），而 emit 的判据 = **整段文本**（含段头标签
+    // `// derived-from:`）⇒ 段头漂移**只对 emit 可见** ⇒ 同一份侧车
+    // health「0 contract drift / OK / exit 0」、emit「会变 / exit 1」
+    // （两面结论矛盾）。这里补一条「直写发射器说侧车会变 ⇒ 也是漂移」的
+    // 通道：`dryRun` **不写盘**，只回答「今天的重算会不会改写这份侧车」
+    // （= emit 的 `changed` 判据，逐字同源）。
+    if (slotDrift > 0) return { count: slotDrift };
+    return { count: slotDrift + (await sectionTextDrift(abs, records)) };
   } catch (e) {
     return { count: 0, error: `checkSource failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * 段文本漂移（BUG-199）：直写发射器（`emitInterface`，`nudo contract --emit`
+ * 的后写者/唯一权威）说侧车**会变** ⇒ 1 段漂移，否则 0。
+ *
+ * 与 `checkSource` 的槽级判据互补：槽级判据看不见**段头标签**（
+ * `// source:` / `// derived-from:`）的漂移，而 emit 的判据是**整段文本**。
+ * `dryRun` ⇒ 只读（发射器仅在 `changed && !dryRun` 时写盘）。
+ * 发射失败 ⇒ 0（宁缺勿滥，不凭发射器异常造门禁）。
+ */
+async function sectionTextDrift(
+  filePath: string,
+  records?: CallRecord[],
+): Promise<number> {
+  try {
+    const { emitInterface } = await import("@nudojs/service/emit");
+    const em = await emitInterface(filePath, {
+      mode: "update",
+      dryRun: true,
+      ...(records && records.length > 0 ? { records } : {}),
+    });
+    return em.changed ? 1 : 0;
+  } catch {
+    return 0;
   }
 }
 
@@ -373,7 +540,24 @@ async function runHealth(
       continue;
     }
     if (!st) {
-      reports.push({ file: displayPathOf(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${displayPathOf(abs)}` });
+      // BUG-038：**路径不存在**也是「分析目标闸门」错误 ⇒ 必须进
+      // `pathErrors[]` / `targetErrors[]`（与 check / test 同口径：机器消费方
+      // 拿得到机器码 + 修复建议，而不只是一句自然语言）。
+      // 旧口径在这里直接 `continue`（该分支在 resolveTargetsCollect **之前**）
+      // ⇒ 路径错误永远进不了这两个数组 ⇒ `health --json` 的机器面只剩
+      // `ok:false` + 一个没有机器码的字符串。
+      const { errors } = resolveTargetsCollect(p);
+      pathErrorSink.push(...errors);
+      targetErrors.push(...errors);
+      reports.push({
+        file: displayPathOf(abs),
+        functions: 0,
+        entryOnly: 0,
+        uncovered: [],
+        error: `File not found: ${displayPathOf(abs)}`,
+        // 同一条错误已进 pathErrorSink ⇒ 不在文件级再计一次（687 单一来源）
+        pathLevelError: true,
+      });
       continue;
     }
     // 947/948：**分析目标闸门**（与 nudo check / nudo test 同口径）——
@@ -418,8 +602,14 @@ async function runHealth(
     (n, r) => n + (r.drift ? r.drift.added + r.drift.removed : 0),
     0,
   );
-  const ifaceDriftCount = reports.filter((r) => (r.interfaceDrift ?? 0) > 0).length;
-  const errorCount = reports.filter((r) => r.error).length;
+  // BUG-039：contract drift 的摘要数与明细行**同量纲**（**@generated 槽数**）
+  // ——旧口径计的是「有漂移的**文件数**」⇒ 同一份报告里明细行说「4 个槽」而
+  // Summary 说「1」（两个 N 不同量纲 ⇒ 用户低估问题规模）。
+  // 与 case drift 的口径一致（Σ 各文件明细行的条数）。
+  const ifaceDriftCount = reports.reduce((n, r) => n + (r.interfaceDrift ?? 0), 0);
+  // BUG-038：路径级错误（缺失路径）已进 pathErrorSink ⇒ 文件级错误计数
+  // 不重复计它（否则同一个缺失路径被算成 2 个错）。
+  const errorCount = reports.filter((r) => r.error && !r.pathLevelError).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
   // 1145：**引擎内部回落**（internal fallback）= 模块级求值失败 ⇒ 该文件的
   // 事实不完整（导出丢失 / 求值中断）⇒ health **不得**报 OK。
@@ -530,6 +720,21 @@ async function runHealth(
       console.log(`${r.file}`);
       if (r.error) {
         console.log(paintOne(`  ✗ error: ${r.error}`));
+        // 1145：internal 回落已是**门禁失败** ⇒ 本文件走 error 早退分支。
+        // 回落计数仍必须上屏（`--json` 面一直带着 `internal_fallbacks`）——
+        // 否则人类面只剩一行错误、机器面却有计数 ⇒ 两面不对称。
+        if ((r.internalFallbacks ?? 0) > 0) {
+          console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
+        }
+        // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
+        // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
+        if ((r.interfaceDrift ?? 0) > 0) {
+          console.log(
+            paintOne(
+              `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+            ),
+          );
+        }
         continue;
       }
       const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
@@ -639,14 +844,27 @@ export function registerHealthCommand(program: Command): void {
       //    同款 variadic 面（此处「received no paths」**属实**）。
       if (opts.from?.length) {
         if (paths.length === 0) {
+          // BUG-113：`--json` 下**失败也必须产出合法 JSON 信封**——旧口径在
+          // 打印信封之前就 exit 1（只写 stderr）⇒ stdout **0 字节** ⇒ 机器
+          // 消费方 `JSON.parse("")` 直接抛（`--json` 的输出契约：stdout 永不为空）。
+          const message =
+            opts.from.length > 1
+              ? `error: \`nudo health\` received no paths — variadic flag(s) --from consumed the following arguments`
+              : `error: \`nudo health\` --from requires explicit paths when used without positional paths (previously defaulted to cwd scan)`;
+          const suggestion =
+            opts.from.length > 1
+              ? `separate variadic flags from paths with \`--\` (e.g. \`nudo health --from a.js -- b.js\`) or list paths before the flags`
+              : `use: \`nudo health . --from usage.js\``;
+          if (opts.json) {
+            emitJsonDoc({ ok: false, error: message, suggestion }, opts.watch === true);
+            process.exitCode = 1;
+            return;
+          }
           if (opts.from.length > 1) {
             variadicSwallowError("health", ["--from"]);
           } else {
-            console.error(
-              "error: `nudo health` --from requires explicit paths when used without positional paths " +
-                "(previously defaulted to cwd scan)",
-            );
-            console.error("fix:  use: `nudo health . --from usage.js`");
+            console.error(message);
+            console.error(`fix:  ${suggestion}`);
           }
           process.exitCode = 1;
           return;

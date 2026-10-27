@@ -215,6 +215,8 @@ function findInheritableAncestorConfig(dir: string): { path: string; value: unkn
 /** 顶层 JSON 成员（位置化） */
 type TopMember = {
   key: string;
+  /** 键的起点（引号） */
+  keyStart: number;
   /** 值的起点 */
   valueStart: number;
   /** 值的终点（exclusive） */
@@ -322,7 +324,7 @@ function scanTopObject(text: string): TopObjectScan | null {
     const valueEnd = skipJsonValue(text, i);
     if (valueEnd < 0) return null;
     i = valueEnd;
-    members.push({ key, valueStart, valueEnd, lead });
+    members.push({ key, keyStart, valueStart, valueEnd, lead });
     skipWs();
     if (text[i] === ",") {
       i++;
@@ -358,14 +360,24 @@ function indentOf(lead: string): string {
  * - 没有 `nudo` 键 ⇒ 在最后一个顶层成员之后、闭合 `}` 之前插入
  *   `,` + 换行 + 原缩进 + `"nudo": …`；
  * - 缩进单位 / 冒号后空格 / 换行风格 / 尾换行状态全部沿用原文件。
+ *
+ * BUG-229：**重复的同名 `nudo` 成员**（合并冲突残留）——加载器按
+ * `JSON.parse` 读 ⇒ **后者胜** ⇒ 生效成员是**最后一个**；旧口径改的是
+ * **第一个** ⇒ 写入被后面的同名成员遮蔽 ⇒ init 报「已写入 adoption
+ * baseline」而**生效配置仍是旧的非法值**（陈述与事实相反）。
+ * 现在：**改生效成员（最后一个）**，并把前面的重复成员**删掉** ⇒ 落盘只剩
+ * 一个 `nudo` 成员（不再主动写出带重复键的 package.json）。
  */
-function writeNudoKeyMinimally(raw: string, baseline: unknown): string {
+function writeNudoKeyMinimally(
+  raw: string,
+  baseline: unknown,
+): { content: string; collapsedDuplicates: number } {
   const scan = scanTopObject(raw);
   if (!scan) {
     // 兜底：理论上到不了（调用方已 JSON.parse 成功）⇒ 退回整文件重排
     const pkg = JSON.parse(raw) as Record<string, unknown>;
     pkg.nudo = baseline;
-    return `${JSON.stringify(pkg, null, 2)}\n`;
+    return { content: `${JSON.stringify(pkg, null, 2)}\n`, collapsedDuplicates: 0 };
   }
   const newline = raw.includes("\r\n") ? "\r\n" : "\n";
   const unit = detectIndentUnit(raw);
@@ -382,21 +394,50 @@ function writeNudoKeyMinimally(raw: string, baseline: unknown): string {
   };
   const colonSep = scan.colonSpace ? ": " : ":";
   const key = `"nudo"`;
-  const existing = scan.members.find((m) => m.key === "nudo");
+  const nudoMembers = scan.members.filter((m) => m.key === "nudo");
+  const existing = nudoMembers[nudoMembers.length - 1];
   if (existing) {
     const base = indentOf(existing.lead);
-    return raw.slice(0, existing.valueStart) + render(base) + raw.slice(existing.valueEnd);
+    // 1) 改**生效成员**（JSON.parse 后者胜 ⇒ 最后一个）
+    let content =
+      raw.slice(0, existing.valueStart) + render(base) + raw.slice(existing.valueEnd);
+    // 2) 删掉前面的重复成员（它们都在生效成员**之前** ⇒ 区间不受上一步影响）
+    const dropped = nudoMembers.slice(0, -1);
+    for (let k = dropped.length - 1; k >= 0; k--) {
+      const m = dropped[k]!;
+      const idx = scan.members.indexOf(m);
+      const isLastMember = idx === scan.members.length - 1;
+      let start: number;
+      let end: number;
+      if (isLastMember) {
+        // 删最后一个成员 ⇒ 连带它前面的逗号（否则留下悬空逗号）
+        const prev = scan.members[idx - 1];
+        start = prev ? prev.valueEnd : m.keyStart - m.lead.length;
+        end = m.valueEnd;
+      } else {
+        start = m.keyStart - m.lead.length;
+        end = content[m.valueEnd] === "," ? m.valueEnd + 1 : m.valueEnd;
+      }
+      content = content.slice(0, start) + content.slice(end);
+    }
+    return { content, collapsedDuplicates: dropped.length };
   }
   if (scan.members.length === 0) {
     // 空对象：{} ⇒ {"nudo": …}（不引入逗号）
     const base = compact ? "" : (unit as string);
-    return raw.slice(0, scan.objectEnd) + key + colonSep + render(base) + raw.slice(scan.objectEnd);
+    return {
+      content: raw.slice(0, scan.objectEnd) + key + colonSep + render(base) + raw.slice(scan.objectEnd),
+      collapsedDuplicates: 0,
+    };
   }
   const last = scan.members[scan.members.length - 1]!;
   const base = indentOf(last.lead);
   const sep = compact ? "" : newline;
   const insert = `,${sep}${base}${key}${colonSep}${render(base)}`;
-  return raw.slice(0, last.valueEnd) + insert + raw.slice(last.valueEnd);
+  return {
+    content: raw.slice(0, last.valueEnd) + insert + raw.slice(last.valueEnd),
+    collapsedDuplicates: 0,
+  };
 }
 
 /**
@@ -486,7 +527,7 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
       return 1;
     }
   }
-  const content = writeNudoKeyMinimally(read.raw, ADOPTION_BASELINE);
+  const { content, collapsedDuplicates } = writeNudoKeyMinimally(read.raw, ADOPTION_BASELINE);
   try {
     writeFileSync(pkgPath, content);
   } catch (err) {
@@ -494,6 +535,14 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
     io.err(`error: cannot write ${display} (${errorText(err)}) — nothing written`);
     io.err("fix:  check the file's write permissions (and that it is a regular file), then re-run");
     return 1;
+  }
+  if (collapsedDuplicates > 0) {
+    // BUG-229：同名 `nudo` 成员重复（合并冲突残留）⇒ 加载器按 JSON.parse
+    // **后者胜** ⇒ 旧口径改的是第一个 ⇒ 写入被遮蔽 ⇒ 「已写入」是假话。
+    // 现在改的是**生效成员**并删掉了其余重复成员 ⇒ 落盘只剩一个 `nudo`。
+    io.err(
+      `warning: ${display} had ${collapsedDuplicates} duplicate "nudo" key(s) — the loader reads the last one (JSON.parse); collapsed them into a single "nudo" key holding the adoption baseline`,
+    );
   }
   if (state.present) {
     // 键存在但形状非法 ⇒ 加载器按「无配置」处理 ⇒ 这里替换成基线

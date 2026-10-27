@@ -160,7 +160,8 @@ const TEST_CLEAN_JSON_BEFORE = `{
     "functions": 1,
     "externalFunctions": 0,
     "cases": 1,
-    "diagnostics": 1
+    "diagnostics": 1,
+    "errors": 0
   },
   "functions": [
     {
@@ -223,7 +224,8 @@ const TEST_CLEAN_JSON_BEFORE = `{
     "passed": 0,
     "failed": 0,
     "unchecked": 0
-  }
+  },
+  "ok": true
 }
 `;
 

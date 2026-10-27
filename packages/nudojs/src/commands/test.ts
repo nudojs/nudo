@@ -16,10 +16,19 @@ import {
   type AnalysisResult,
   type CallRecord,
 } from "@nudojs/service";
+import {
+  setEvalFallbackCollector,
+  type EvalFallback,
+} from "@nudojs/core";
+import { DIAG } from "@nudojs/core/internal";
 import { ENV_UNRESOLVED_CODE } from "../check-json-map.ts";
 import { paint, paintOne } from "../ui.ts";
 import { buildTestReport, entryContractNoteFns, formatTestReport } from "../run-test.ts";
-import { formatSyntaxErrorBlock, syntaxErrorInfo } from "./check-report.ts";
+import {
+  ANALYSIS_FAILED_PREFIX,
+  formatSyntaxErrorBlock,
+  syntaxErrorInfo,
+} from "./check-report.ts";
 import {
   attachTargetErrors,
   collectExternalRecords,
@@ -167,23 +176,44 @@ function syntaxErrorExit(
 
 /** 分析结果 / 语法错的二分返回（Bug 650：解析失败不再上浮到顶层 catch）。 */
 type AnalysisOutcome =
-  | { ok: true; result: AnalysisResult }
+  | { ok: true; result: AnalysisResult; evalFailures: EvalFallback[] }
   | { ok: false; syntax: { line: number; column: number; essence: string } };
 
+/**
+ * `nudo test` 的分析入口：与 check 面同款收集**引擎内部回落**（BUG-014）。
+ *
+ * 模块级求值失败（`internal` 回落 = 生成模块编译失败 / 求值抛内部错误）⇒
+ * 该模块**全部导出丢失** ⇒ 观察面只拿到编造的 `entry@… => unknown` synthetic
+ * case ⇒ 「0 passed · 0 failed · 0 unchecked」+ exit 0 ⇒ **假绿**。
+ * CLI `check` / `health` 都按 Bug 1145 硬化过（「模块级求值失败必须红」），
+ * `test` 漏了：从不安装 `setEvalFallbackCollector` ⇒ 内部回落**不可观测**。
+ *
+ * 只收 `internal`（`unsupported:*` 是能力边界、`module-throw` 是程序自身抛
+ * ⇒ 收进来就是假红，与 check 同一分档）。
+ *
+ * collector 是**进程级单槽** ⇒ 本函数内装、`finally` 卸（否则下一文件的
+ * 回落会被记到本文件名下）。
+ */
 async function analyzeForTest(
   filePath: string,
   source: string,
   from: CallRecord[] | undefined,
 ): Promise<AnalysisOutcome> {
+  const evalFailures: EvalFallback[] = [];
+  setEvalFallbackCollector((f: EvalFallback) => {
+    if (f.reason === "internal") evalFailures.push(f);
+  });
   try {
     const result = await analyzeFileAsync(filePath, source, undefined, from, undefined, "all");
-    return { ok: true, result };
+    return { ok: true, result, evalFailures };
   } catch (err) {
     // 语法错 ⇒ 结构化出口（人类面块 / --json 面 pathErrors）；
     // 非语法类失败（装配失败等）**行为不变**：继续上浮到顶层 catch。
     const syntax = syntaxErrorInfo(err);
     if (!syntax) throw err;
     return { ok: false, syntax };
+  } finally {
+    setEvalFallbackCollector(null);
   }
 }
 
@@ -221,6 +251,38 @@ async function runTest(
     return;
   }
   let result = analysis.result;
+  // BUG-014：模块级求值失败（引擎 `internal` 回落）⇒ 与 check 面同源的
+  // **error 级诊断**（同码 `nudo:internal`、同文案前缀）⇒ 观察面可见、退出码
+  // 判红（不再「0 passed · 0 failed · 0 unchecked」+ exit 0 的假绿）。
+  // 与 check 一致：同一原因被多个求值通道各记一条 ⇒ 文案去重，条数如实报
+  // 回落**总**数。
+  if (analysis.evalFailures.length > 0) {
+    const detail = [...new Set(analysis.evalFailures.map((f) => f.message))].join("; ");
+    result = {
+      ...result,
+      diagnostics: [
+        ...result.diagnostics,
+        {
+          range: {
+            start: { line: 0, column: 0 },
+            end: { line: 0, column: 0 },
+          },
+          severity: "error",
+          code: DIAG.internal,
+          message:
+            `${ANALYSIS_FAILED_PREFIX} (engine internal fallback ×${analysis.evalFailures.length}): ` +
+            `${filePath} — ${detail}`,
+          suggestions: [
+            "the module could not be evaluated (engine internal failure) — the observed cases are NOT trustworthy; fix the reported cause, or report it as an engine bug together with the tested source file",
+          ],
+        },
+      ],
+    };
+  }
+  /** 分析诊断里的 error 级条目（BUG-014：必须挡退出码——与 check / health 同口径） */
+  const analysisErrorCount = result.diagnostics.filter(
+    (d) => d.severity === "error",
+  ).length;
 
   let emitOut: EmitResult | undefined;
   if (opts.freeze) {
@@ -261,11 +323,23 @@ async function runTest(
     // 63b：**新增可选** `targetErrors[]`（分析目标闸门错误的精确子集）——
     // `pathErrors[]` 逐字不变；无闸门错误 ⇒ 该字段不出现。
     const targetErrors = opts.targetErrors ?? [];
+    // BUG-014：error 级分析诊断（含模块求值失败）也挡 exit —— 与 check /
+    // health 的「模块级求值失败必须红」同口径；`--json` 面同时补 `ok` 与
+    // error 计数（CI 消费方不必解析 diagnostics[] 才能发现失败）。
+    const ok = report.failed === 0 && pathErrors.length === 0 && analysisErrorCount === 0;
+    json.ok = ok;
+    json.summary = {
+      ...((json.summary as Record<string, unknown> | undefined) ?? {}),
+      errors: analysisErrorCount,
+    };
     // 63：watch 面 ⇒ **JSON Lines**（一行一份完整 JSON 文档）；非 watch
     // 面 ⇒ 一份 pretty 文档（既有形态，逐字不变）。
     emitJsonDoc(attachTargetErrors(json, targetErrors), opts.jsonLines === true);
-    if (report.failed > 0 || pathErrors.length > 0) process.exitCode = 1;
-    else process.exitCode = 0;
+    if (report.failed > 0 || pathErrors.length > 0 || analysisErrorCount > 0) {
+      process.exitCode = 1;
+    } else {
+      process.exitCode = 0;
+    }
   } else if (opts.abs) {
     // 观察面仍走 abs，但声明断言失败必须可见 + 挡 exit（design §1.3 / §0）
     const report = buildTestReport(displayPathOf(filePath), result);
@@ -280,7 +354,7 @@ async function runTest(
     }
     console.log("");
     console.log(paint(formatTestReport(report)));
-    if (report.failed > 0) process.exitCode = 1;
+    if (report.failed > 0 || analysisErrorCount > 0) process.exitCode = 1;
   } else {
     // 人类默认面：entry@ 回退 × 有效契约（check 同判定）加注解行；
     // --json / --abs 输出面不碰
@@ -288,7 +362,7 @@ async function runTest(
       entryContractNotes: entryContractNoteFns(filePath, source, result),
     });
     console.log(paint(formatTestReport(report)));
-    if (report.failed > 0) process.exitCode = 1;
+    if (report.failed > 0 || analysisErrorCount > 0) process.exitCode = 1;
   }
 
   // path env 加载失败必须可见（issue #88 原始复现面）：与 check 同格式告警，
@@ -311,7 +385,10 @@ async function runTest(
     }
   }
 
-  // diagnostics：分析错误上屏（不挡 test exit，除非无结果）
+  // diagnostics：分析错误上屏
+  //
+  // BUG-014：**error 级**诊断同时挡 exit（与 check / health 的「模块级求值
+  // 失败必须红」同口径）；warning 级只上屏、不影响退出码。
   //
   // Bug 919：`--abs` **不**排除诊断上屏 ⇒ 默认面 / `--json` 面 / `--abs`
   // 面**对**同一文件的**诊断条数一致**（此前 `--abs` 把整段 diagnostics 吞掉
@@ -377,6 +454,20 @@ export function registerTestCommand(program: Command): void {
           abs?: boolean;
         },
       ) => {
+        // BUG-018：`--freeze` 是 CLI 上**唯一**的「可选取值」选项
+        // （`.option("--freeze [mode]")`）⇒ commander 把紧跟其后的**非选项
+        // 参数当成该选项的取值** ⇒ `nudo test --freeze <path>` 的路径被吞成
+        // 取值 ⇒ 必然报「needs at least one path」（惯用调用形式下该功能不可达）。
+        // 修法：取值**白名单**（`update` / `add`，与 --help 承诺一致）——
+        // 白名单外的字符串**不是模式**，它是**路径** ⇒ 还原成路径 + 省略取值
+        // （默认 add，帮助文本承诺「取值省略时默认 add」）。
+        if (paths.length === 0 && typeof opts.freeze === "string") {
+          const mode = opts.freeze;
+          if (mode !== "update" && mode !== "add") {
+            paths = [mode];
+            opts.freeze = true;
+          }
+        }
         // BUG-024：--from variadic 吞噬其后的位置参数——
         // paths 空且 --from 非空时定向 usage error
         // （直指旗标 + `--` 终止符解法）
