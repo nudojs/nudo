@@ -5,7 +5,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { parse } from "@nudojs/parser";
+import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   absFunction,
   bindingsOf,
@@ -27,6 +27,7 @@ import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/co
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates, loadModuleOutcome, type ModuleLoadOutcome } from "./load-module.ts";
 import { resolveEvalInjection } from "./eval-injection.ts";
+import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /**
@@ -621,6 +622,68 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
  * apply 优先于 body 派发（callFunctionUnchecked 第三路径），跨边界调用
  * 由 callTranspiledExportFull 回进 evaluator 函数执行。
  */
+
+/** BUG-180：依赖模块自己的 `@nudo:mock` 按声明函数作用域注入。
+ *
+ * 无 mock 指令 ⇒ 零开销直接返回（绝大多数依赖）。有指令时每个作用域各跑
+ * 一次模块求值（只保留该作用域声明的 mock），用其同名导出覆盖基线导出；
+ * 基线（无 mock）保其它函数为真实依赖语义。这与根侧 generalize 的
+ * `scopeSelectedInject` 同口径 ⇒ 同一文件「作为目标」与「作为依赖」一致。
+ */
+function applyDependencyScopedMocks(
+  source: string,
+  absPath: string,
+  inj: ReturnType<typeof resolveEvalInjection>,
+  modules: Record<string, AbsModuleExports>,
+  exports: AbsModuleExports,
+  loadModule?: AbsGraphOptions["loadModule"],
+): void {
+  try {
+    const directives = extractDirectivesQuiet(parse(source));
+    if (directives.length === 0) return;
+    const seeds = mockDirectivesToAbsSeeds(directives, {
+      fromFile: absPath,
+      ...(loadModule ? { loadModule } : {}),
+    });
+    const scoped = seeds.scoped;
+    if (!scoped || scoped.length === 0) return;
+    const file = parse(source);
+    for (const scopeSeeds of scoped) {
+      const scope = scopeSeeds.scope;
+      if (!scope || typeof exports.named[scope] === "undefined") continue;
+      const mocks = mockSeedsToAbsMocks({
+        seedVars: scopeSeeds.seedVars,
+        seedFns: scopeSeeds.seedFns,
+      });
+      if (Object.keys(mocks).length === 0) continue;
+      const scopedRun = tryRunTranspiled(source, {
+        mode: "analyze",
+        modules,
+        ...inj,
+        mocks,
+      });
+      if (!scopedRun) continue;
+      const scopedExports = evalExportsToModuleExports(
+        scopedRun,
+        file,
+        `eval:${absPath}#mock:${scope}`,
+      );
+      const replacement = scopedExports.named[scope];
+      if (replacement !== undefined) {
+        // live 槽是 getter（configurable）⇒ 用 defineProperty 覆盖
+        Object.defineProperty(exports.named, scope, {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: replacement,
+        });
+      }
+    }
+  } catch {
+    /* mock 指令解析/装载失败 ⇒ 保持无 mock 基线（不阻断模块装载） */
+  }
+}
+
 export function evalExportsToModuleExports(
   run: Record<string, unknown>,
   file: Node,
@@ -1052,6 +1115,19 @@ export function evalAbsModuleGraph(
         // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
         // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
         exports = { named: {} };
+      }
+      // BUG-180（二）：依赖模块**自己声明**的 `@nudo:mock` 此前完全不注入
+      // （graph 只传根 seeds）⇒ 同一个函数「作为目标」与「作为依赖」给出
+      // 互斥结论。按**声明函数作用域**逐份重求值：mock 只覆盖该函数导出，
+      // 其它函数保留无 mock 基线（`@nudo:mock` 是函数级指令，不泄漏）。
+      applyDependencyScopedMocks(source, absPath, inj, modules, exports, opts.loadModule);
+      // `export *` 同名冲突 ⇒ 歧义名不导出（Bug 269）：宿主链接期 SyntaxError，
+      // 引擎不得给确定值 ⇒ 剔除后导入方走 missing-export。
+      // 只在 **JS 模块**分支做（JSON 源不是 JS，`parse` 会抛）。
+      try {
+        dropAmbiguousStarExports(parse(source), modules, exports);
+      } catch {
+        /* 解析失败（非常规源）⇒ 不做歧义剪枝（fail-open：保留既有导出表） */
       }
     }
     // named import / re-export 缺名（仅 evaluated 表；fail-closed 空表不报）

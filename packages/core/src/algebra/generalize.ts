@@ -31,8 +31,8 @@ import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
 import { type RefineResolveOpts, extractFnBudget } from "./refine.ts";
 import { withFnBudgetOverride } from "./call-budget.ts";
-import { withEvalBudgetOverride } from "./exec/calls.ts";
-import { constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
+import { withEvalBudgetOverride, runEvalCallBudgetTrial } from "./exec/calls.ts";
+import { LAZY_TEMPLATE_DEPTH, constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
   effectiveInterface,
 
@@ -51,6 +51,7 @@ import { DependencyMemo } from "./memo-store.ts";
 import { loadModuleId, moduleMapId } from "./memo-identity.ts";
 import { instanceForMethodBridge } from "./bridge-instance.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
+import { currentEvalRoundEpoch } from "./collector-scope.ts";
 import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
@@ -62,8 +63,29 @@ import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./export-slot.ts";
 import { absShapeForTsTypeText } from "./ts-type-shape.ts";
 
-/** generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参） */
-const evalRunMemo = new Map<string, Record<string, unknown>>;
+/**
+ * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
+ *
+ * BUG-056：表里存的是**活的 run 表**（模块级 `let` 绑定就住在那儿）⇒ 只
+ * 在**一轮分析**内可复用。跨轮复用会让上一轮（analyzer 的一次 generalize）
+ * 已经 ++ 过的实例漏给下一轮（check 闸门）⇒ 同一份源码在不同路径下读出
+ * 1 / 2 / 3。按键带 epoch 无法表达「整表作废」，故按轮清空：
+ * {@link currentEvalRoundEpoch} 变了 ⇒ 全表作废（LRU 上限仍保留，键不会
+ * 无界增长）。
+ */
+const evalRunMemo = new Map<string, Record<string, unknown>>();
+/** evalRunMemo 建立时的轮次；与当前轮次不等 ⇒ 表内全是上一轮的活状态 */
+
+/**
+ * 取 evalRunMemo。**不清表**：轮次身份由**键前缀**表达（见 evalRunOf）。
+ *
+ * #120：活 run 表承载的不只是 `let` 状态，还有**对象身份**——递归泛化靠同一
+ * 份 run 表让副本保住 term 指纹；轮内清表会让同一份源码换一个实例，递归指纹
+ * 坍缩成 `unknown`。按轮**分键**既满足 BUG-056（跨轮不复用），又保住轮内身份。
+ */
+function evalRunMemoForRound(): Map<string, Record<string, unknown>> {
+  return evalRunMemo;
+}
 
 /**
  * 函数作用域 mock 覆盖表的载体键（Bug 455）。
@@ -75,19 +97,95 @@ const evalRunMemo = new Map<string, Record<string, unknown>>;
  */
 const MOCK_SCOPE_OVERRIDES: unique symbol = Symbol.for("nudo.mock.scopeOverrides");
 
-/** 按被求值的函数作用域选 mock 覆盖（无覆盖 ⇒ 原 inject） */
+/** `@nudo:mock <name> = …` / `@nudo:mock <name> from "…"` 的声明名。 */
+const MOCK_DECL_RE = /@nudo:mock\s+([A-Za-z_$][\w$]*)\s*(?:=|from\b)/;
+
+type MockScopeDecls = {
+  /** 每个声明作用域声明的 mock 名 */
+  byScope: Map<string, Set<string>>;
+  /** 全文件被任何作用域声明过的 mock 名（含无作用域兜底） */
+  all: Set<string>;
+};
+
+const mockScopeDeclsCache = new WeakMap<object, MockScopeDecls | undefined>();
+
+/** 从源码 AST 读 `@nudo:mock` 的**函数级**声明作用域（BUG-020/180）。 */
+function mockScopeDeclsOf(
+  fileAst: ReturnType<typeof babelParse> | undefined,
+): MockScopeDecls | undefined {
+  if (!fileAst) return undefined;
+  if (mockScopeDeclsCache.has(fileAst)) return mockScopeDeclsCache.get(fileAst);
+  let out: MockScopeDecls | undefined;
+  try {
+    const byScope = new Map<string, Set<string>>();
+    const all = new Set<string>();
+    for (const scope of listFnDirectiveScopes(fileAst)) {
+      for (const line of scope.commentLines) {
+        const m = MOCK_DECL_RE.exec(line);
+        if (!m) continue;
+        const name = m[1]!;
+        all.add(name);
+        const set = byScope.get(scope.name) ?? new Set<string>();
+        set.add(name);
+        byScope.set(scope.name, set);
+      }
+    }
+    if (all.size > 0) out = { byScope, all };
+  } catch {
+    out = undefined;
+  }
+  mockScopeDeclsCache.set(fileAst, out);
+  return out;
+}
+
+/** 按被求值的函数作用域选 mock 覆盖（无覆盖 ⇒ 原 inject）。
+ *
+ * BUG-020 / BUG-180：`@nudo:mock` 是**函数级**指令。service 侧只为「同名
+ * 冲突」构建覆盖表（Bug 455），未冲突的 mock 落在平表 ⇒ 文件内所有函数都
+ * 看得见（泄漏）。这里按**源码里的函数级声明**再做一次过滤：被任何函数
+ * 声明过的 mock 名，只在该函数自己的作用域里保留；其它函数（以及模块顶层）
+ * 看不到它。平表中不属于任何声明作用域的注入名（手工 inject / 老路径）
+ * 原样保留，兼容既有调用方。 */
 function scopeSelectedInject(
   inject: RunTranspiledOptions | undefined,
   fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
 ): RunTranspiledOptions | undefined {
   const mocks = inject?.mocks;
   if (!mocks) return inject;
+  const decls = mockScopeDeclsOf(fileAst);
+  let table: RunTranspiledOptions["mocks"] = mocks;
+  if (decls) {
+    const own = decls.byScope.get(fnName);
+    // 没有任何声明作用域归属的注入名 = 兜底面，保留
+    const filtered = { ...mocks } as Record<string, Abs>;
+    let changed = false;
+    for (const name of decls.all) {
+      if (own?.has(name)) continue;
+      if (Object.hasOwn(filtered, name)) {
+        delete filtered[name];
+        changed = true;
+      }
+    }
+    if (changed) table = filtered;
+  }
   const overrides = (
     mocks as unknown as Record<symbol, Record<string, Record<string, Abs>> | undefined>
   )[MOCK_SCOPE_OVERRIDES];
-  const own = overrides?.[fnName];
-  if (!own) return inject;
-  return { ...inject, mocks: { ...mocks, ...own } };
+  const ownOverride = overrides?.[fnName];
+  if (!ownOverride) {
+    return table === mocks ? inject : { ...inject, mocks: table };
+  }
+  return { ...inject, mocks: { ...table, ...ownOverride } };
+}
+
+/** check-may-throw 的 L2 入口求值共用同一套作用域过滤。 */
+export function injectForFunctionScope(
+  inject: RunTranspiledOptions | undefined,
+  fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
+): RunTranspiledOptions | undefined {
+  return scopeSelectedInject(inject, fnName, fileAst);
 }
 
 function evalRunOf(
@@ -102,12 +200,15 @@ function evalRunOf(
   scopeKey?: string,
 ): Record<string, unknown> | undefined {
   // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
-  const mKey = `${source}|${scopeKey ?? ""}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
-  if (evalRunMemo.size >= 256) {
-    const oldest = evalRunMemo.keys().next().value;
-    if (oldest !== undefined) evalRunMemo.delete(oldest);
+  // BUG-056：键带**轮次前缀**（跨轮不复用活状态；整表作废会破坏轮内身份）
+  const mKey = `${currentEvalRoundEpoch()}#${source}|${scopeKey ?? ""}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
+  // BUG-056：按轮取表（上一轮的活 `let` 状态不得跨轮复用）
+  const memo = evalRunMemoForRound();
+  if (memo.size >= 256) {
+    const oldest = memo.keys().next().value;
+    if (oldest !== undefined) memo.delete(oldest);
   }
-  let run = evalRunMemo.get(mKey);
+  let run = memo.get(mKey);
   if (run === undefined) {
     // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 evalAnalyzeOpts 同口径）
     const merged = modules ?? inject?.modules;
@@ -118,7 +219,7 @@ function evalRunOf(
     });
     if (r === undefined) return undefined;
     run = r;
-    evalRunMemo.set(mKey, run);
+    memo.set(mKey, run);
   }
   return run;
 }
@@ -194,6 +295,50 @@ function ctorFormalsOf(
 }
 
 /**
+/**
+ * 类方法的静态/实例判定（按**源码类声明**；判不出 → undefined = 静态）。
+ *
+ * BUG-004：值域类方法桥（本文件 runCore）与证据域桥（check-may-throw.ts）
+ * 必须同口径——静态方法挂在**类值**上，实例桥 `$new` + `$invoke` 会把
+ * 「接收者是实例 ⇒ 查不到静态方法」折成硬抛 ⇒ 签名退 never。helper 由
+ * 两处共用，避免再次漂移。
+ */
+export function classMethodIsStatic(
+  file: ReturnType<typeof babelParse> | undefined,
+  clsName: string,
+  methodName: string,
+): boolean | undefined {
+  if (!file) return undefined;
+  for (const stmt of file.program.body as unknown[]) {
+    const s = stmt as { type?: string; declaration?: unknown };
+    let decl: unknown = stmt;
+    if (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration") {
+      decl = s.declaration;
+    }
+    const c = decl as
+      | { type?: string; id?: { name?: string }; body?: { body?: unknown[] } }
+      | undefined;
+    if (!c || c.type !== "ClassDeclaration") continue;
+    if (c.id?.name !== clsName) continue;
+    for (const m of c.body?.body ?? []) {
+      const mem = m as {
+        kind?: string;
+        static?: boolean;
+        key?: { name?: string; value?: unknown };
+      };
+      if (mem.kind === "constructor") continue;
+      const key = mem.key;
+      if (!key) continue;
+      const name = key.name ?? (typeof key.value === "string" ? key.value : undefined);
+      if (name !== methodName) continue;
+      return mem.static === true;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
  * 类导出入口的签名（**Bug 1096**）。
  *
  * `export class C {}` 的**类值本身**是一个导出符号：`new C(x)` 是**真实
@@ -214,7 +359,7 @@ function classEntryPolyFn(
   },
 ): PolyFn | undefined {
   const fileAst = opts.file ?? babelParse(source);
-  const evalRun = evalRunOf(source, opts.modules, scopeSelectedInject(opts.inject, fnName));
+  const evalRun = evalRunOf(source, opts.modules, scopeSelectedInject(opts.inject, fnName, fileAst));
   if (!evalRun) return undefined;
   const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
   // 槽位口径与类方法桥同源（export-slot.ts：cjs-member 与 named 同键取值）
@@ -270,15 +415,88 @@ function bodyReferencesName(body: Node, name: string): boolean {
   return found;
 }
 
+/** 函数体内对 name 的**引用次数**（非计算 property key 不计数；与
+ *  {@link bodyReferencesName} 同遍历口径）。用于识别**多自引用**递归。 */
+function bodyReferenceCount(body: Node, name: string): number {
+  let count = 0;
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+      count++;
+      return;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
+      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
+        continue;
+      }
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (item && typeof item === "object") visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(body);
+  return count;
+}
+
+/** BUG-248：顶层函数对**自身名**的引用次数（类方法面返回 0——方法名不在
+ *  导出表，递归经 `$invoke` 而非顶层名调用）。L2 入口 may-throw 求值用：
+ *  多自引用（>1）的 α 实参 term 会让求值预算键按分支指数增长、且环检测
+ *  键含 term 身份 ⇒ 每层都不同 ⇒ 堆在预算生效前爆掉。剥掉 term 身份
+ *  求值即恢复「同抽象实参 = 同键」的环检测语义。 */
+export function entrySelfReferenceCount(
+  source: string,
+  fnName: string,
+  fileAst?: ReturnType<typeof babelParse>,
+): number {
+  if (fnName.includes(".")) return 0;
+  const ex = extractFn(source, fnName, fileAst);
+  return ex ? bodyReferenceCount(ex.body, fnName) : 0;
+}
+
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 /** L3：会话常驻 + 上限，超出按 LRU 逐出最旧条目 */
 const MAX_GENERALIZE_MEMO = 1024;
 const generalizeMemo = new DependencyMemo<PolyFn | undefined>(MAX_GENERALIZE_MEMO);
 
+/**
+ * BUG-248：自递归函数在 B（求值）路径上**有界试算**的默认上限。
+ *
+ * 口径 = 「递归在抽象域里的**收敛半径**」：可收敛的自递归都是结构投影型
+ * （`staticName(node.object)`），层数被 lazy 模板的展开预算
+ * （{@link LAZY_TEMPLATE_DEPTH}）封住，再留一帧给入口。**不可**按「够深
+ * 就好」取值：病态递归的单帧开销随层数**乘性**放大（实测 `bin(n-1)+bin(n-2)`
+ * 试算 depth=5 即 2GB 堆爆，depth=4 几十帧内收敛并报截断），所以 depth 必须
+ * 贴着收敛半径而不是贴着全局预算（64）。
+ *
+ * 两个维度都收紧：depth 防单帧乘性放大，calls 防分支宽爆。
+ */
+const SELF_RECURSION_TRIAL_DEPTH = LAZY_TEMPLATE_DEPTH + 1;
+const SELF_RECURSION_TRIAL_CALLS = 512;
+
+/**
+ * 试算上限：默认值 ── 但显式 `@nudo:budget depth=/calls=` 抬得更高时照常
+ * 生效（用户显式要的宽度，与探针/eval 预算同一旋钮）。
+ */
+function selfRecursionTrialLimits(
+  fnBudget: { depth?: number; calls?: number } | undefined,
+): { depth: number; calls: number } {
+  return {
+    depth: Math.max(SELF_RECURSION_TRIAL_DEPTH, fnBudget?.depth ?? 0),
+    calls: Math.max(SELF_RECURSION_TRIAL_CALLS, fnBudget?.calls ?? 0),
+  };
+}
+
 export function resetGeneralizeMemo(): void {
   generalizeMemo.reset();
   resetFnFpCache();
   resetHashSourceCache();
+  // BUG-056：evaluator 的 run 表同样要清（活模块状态，跨轮不可复用）
+  evalRunMemo.clear();
 }
 
 export function getGeneralizeMemoSize(): number {
@@ -1308,6 +1526,14 @@ function generalizeFromAstUncached(
   const fnBodyStrict = env.fns.get(fnName)?.strict === true;
   const envGated = envGatedSource && freeIdentifiers(body, boundNames, fnBodyStrict).size > 0;
   const replaceGated = /@nudo:replace\b/.test(directiveSrc) && !hasReps;
+  // BUG-248：自递归在 B（求值）路径上的风险是**抽象实参的 term 逐层变形**
+  // ⇒ 环检测键永不重复 ⇒ 展开只受 depth/calls 封顶，而每层分支的 term 成员
+  // 数随层数**指数**增长（`bin(n-1)+bin(n-2)`）⇒ 预算生效前堆先爆。但
+  // 「自递归」本身不是判据的反面：结构投影递归（`staticName(node.object)`）
+  // 在 lazy 模板深度处被环检测收住，几层即收敛，产物远精确于解释面（#120）。
+  // 故自递归**不**在静态门上排除，改由 runCore 里的**有界试算**动态判定
+  // （runEvalCallBudgetTrial：撞 depth/calls ⇒ 回落 fail-closed）。
+  const selfRecursive = !fnName.includes(".") && bodyReferencesName(body, fnName);
   const evalEligible =
     !unresolvableImports &&
     !mockGated &&
@@ -1321,85 +1547,106 @@ function generalizeFromAstUncached(
     if (!evalEligible) return undefined;
     try {
       // 同名 mock 按作用域各生效（Bug 455）：覆盖存在时按作用域名分键求值
-      const scopedInject = scopeSelectedInject(opts.inject, fnName);
+      const scopedInject = scopeSelectedInject(opts.inject, fnName, fileAst);
       const evalRun = evalRunOf(
         source,
         opts.modules,
         scopedInject,
         scopedInject === opts.inject ? undefined : fnName,
       );
-      if (!evalRun) {
-        /* B 失败 fail-closed */
-        return undefined;
-      } else if (fnName.includes(".")) {
-        // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke。
-        // 构造器抛 ⇒ 裸实例兜底（Bug 1093）：共享实现在 bridge-instance.ts；
-        // 值域不传 isolate（证据域 check-may-throw 传 runWithMayThrowSession）。
-        const [clsName, methodName] = fnName.split(".", 2);
-        // Bug 489 同源：`export default class C {…}` 的类只挂在 default 槽 ⇒
-        // 按类名查表落空 ⇒ 方法签名退成 unknown。同一套导出槽兜底。
-        const clsSlot = resolveExportSlotCall(fileAst, clsName ?? "", evalRun);
-        const clsAbs = clsSlot
-          ? evalRun[clsSlot.kind === "cjs-member" ? clsSlot.key : clsSlot.key]
-          : undefined;
-        if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
-          const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
-          const inst = instanceForMethodBridge(
-            clsAbs as Abs,
-            clsName ?? "",
-            Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
-          );
-          try {
-            return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
-          } catch (e) {
-            // Bug 379：方法体**必抛** ⇒ 返回位 never（与顶层导出同口径：
-            // callTranspiledExportFull 对 NudoThrow 折 result=never）。
-            // 此前落进外层 catch ⇒ 签名退 unknown + 误导的 nudo:opaque-result
-            // （把「方法必抛」谎报成「推断失败」）。
-            if (isNudoThrow(e)) return never;
-            throw e;
+      // BUG-248：自递归函数的 B 路径**有界试算**（见 runEvalCallBudgetTrial）。
+      // 收敛（环检测收住）⇒ 采用；撞 depth/calls ⇒ 回落 fail-closed。
+      const invoke = (): Abs | undefined => {
+        if (!evalRun) {
+          /* B 失败 fail-closed */
+          return undefined;
+        } else if (fnName.includes(".")) {
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke。
+          // 构造器抛 ⇒ 裸实例兜底（Bug 1093）：共享实现在 bridge-instance.ts；
+          // 值域不传 isolate（证据域 check-may-throw 传 runWithMayThrowSession）。
+          const [clsName, methodName] = fnName.split(".", 2);
+          // Bug 489 同源：`export default class C {…}` 的类只挂在 default 槽 ⇒
+          // 按类名查表落空 ⇒ 方法签名退成 unknown。同一套导出槽兜底。
+          const clsSlot = resolveExportSlotCall(fileAst, clsName ?? "", evalRun);
+          const clsAbs = clsSlot
+            ? evalRun[clsSlot.kind === "cjs-member" ? clsSlot.key : clsSlot.key]
+            : undefined;
+          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+            // BUG-004：静态 / 实例按**源码类声明**分流——静态方法挂在类值上，
+            // 实例桥（$new + $invoke）查不到 ⇒ 方法体被当必抛 ⇒ 签名折 never
+            // （底类型，并吞掉 may-throw 证据）。判不出 → 静态（与证据域
+            // check-may-throw.ts 同口径；helper 两处共用）。
+            const isStatic =
+              classMethodIsStatic(fileAst, clsName ?? "", methodName ?? "") !== false;
+            if (isStatic) {
+              try {
+                return withExecPhi(phi, () => $staticInvoke(clsAbs as Abs, methodName ?? "", args));
+              } catch (e) {
+                if (isNudoThrow(e)) return never;
+                throw e;
+              }
+            }
+            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
+            const inst = instanceForMethodBridge(
+              clsAbs as Abs,
+              clsName ?? "",
+              Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")),
+            );
+            try {
+              return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+            } catch (e) {
+              // Bug 379：方法体**必抛** ⇒ 返回位 never（与顶层导出同口径：
+              // callTranspiledExportFull 对 NudoThrow 折 result=never）。
+              // 此前落进外层 catch ⇒ 签名退 unknown + 误导的 nudo:opaque-result
+              // （把「方法必抛」谎报成「推断失败」）。
+              if (isNudoThrow(e)) return never;
+              throw e;
+            }
           }
+          return undefined;
+        } else if (fnName in evalRun) {
+          // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
+          const evalArgs = args.map((a, i) => {
+            const shape = promoteScan.promotedShapes.get(params[i]!);
+            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+            }
+            return a;
+          });
+          return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true }).result;
+        } else {
+          // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
+          // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
+          // 查表落空会让签名退成 unknown + 一条指向错误的 nudo:opaque-result。
+          const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
+          if (!slot) return undefined;
+          // 提升形状预绑定到实参（同具名槽口径）
+          const evalArgs = args.map((a, i) => {
+            const shape = promoteScan.promotedShapes.get(params[i]!);
+            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+            }
+            return a;
+          });
+          if (slot.kind === "cjs-member") {
+            // CJS：module.exports = { f: fn } —— 成员挂在 default 槽这个对象上
+            const d = evalRun[slot.key];
+            if (!d || typeof d !== "object" || !("shape" in (d as object))) return undefined;
+            const dAbs = d as Abs;
+            if (dAbs.shape.k !== "obj") return undefined;
+            return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
+          }
+          // 本地名分析：default/具名槽按源码本地绑定解析（CJS 成员桥保持
+          // 导出对象语义，preferLocal 不适用）。
+          return callTranspiledExportFull(evalRun, slot.key, evalArgs, {
+            phi,
+            preferLocal: true,
+          }).result;
         }
-        return undefined;
-      } else if (fnName in evalRun) {
-        // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
-        const evalArgs = args.map((a, i) => {
-          const shape = promoteScan.promotedShapes.get(params[i]!);
-          if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
-            return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
-          }
-          return a;
-        });
-        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi, preferLocal: true }).result;
-      } else {
-        // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
-        // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
-        // 查表落空会让签名退成 unknown + 一条指向错误的 nudo:opaque-result。
-        const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
-        if (!slot) return undefined;
-        // 提升形状预绑定到实参（同具名槽口径）
-        const evalArgs = args.map((a, i) => {
-          const shape = promoteScan.promotedShapes.get(params[i]!);
-          if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
-            return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
-          }
-          return a;
-        });
-        if (slot.kind === "cjs-member") {
-          // CJS：module.exports = { f: fn } —— 成员挂在 default 槽这个对象上
-          const d = evalRun[slot.key];
-          if (!d || typeof d !== "object" || !("shape" in (d as object))) return undefined;
-          const dAbs = d as Abs;
-          if (dAbs.shape.k !== "obj") return undefined;
-          return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
-        }
-        // 本地名分析：default/具名槽按源码本地绑定解析（CJS 成员桥保持
-        // 导出对象语义，preferLocal 不适用）。
-        return callTranspiledExportFull(evalRun, slot.key, evalArgs, {
-          phi,
-          preferLocal: true,
-        }).result;
-      }
+      };
+      if (!selfRecursive) return invoke();
+      const trial = runEvalCallBudgetTrial(selfRecursionTrialLimits(fnBudget), invoke);
+      return trial.budgetTruncated ? undefined : trial.result;
     } catch (e) {
       // Bug 1031：这里**不是**「B run 本身失败」（那条路径是 evalRun 为
       // undefined ⇒ 上一分支已 return undefined），而是**桥内部异常**（引擎

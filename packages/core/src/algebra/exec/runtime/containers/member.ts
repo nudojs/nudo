@@ -132,13 +132,13 @@ import {
   OBJECT_PROTO_NAMES,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
-import { getEvalClass, lookupClassValue, fnProtoOf, type EvalClassSpec } from "../../class-registry.ts";
+import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, freshInstanceIdOf } from "../../../instance-id.ts";
 import { NudoThrow, undef, isOobUndef, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
 import "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
-import { findClassAccessor, findStaticClassAccessor, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
+import { findClassAccessor, findStaticClassAccessor, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, classChainLinks, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
 // 族 58 · Bug 4：%GeneratorPrototype% 协议面方法值（next/return/throw）——
 // generator 原型对象的内层 obj 槽装配点（见 generatorProtoBrandOf）。
 import { generatorProtoProtocolMember } from "../async.ts";
@@ -1335,8 +1335,7 @@ function getBrandClassValueMember(ctx: GetCtx): Abs | undefined {
   // 返回同一函数 Abs（=== 折 true）。
   if (key !== "name" && key !== "prototype") {
     let level = 0;
-    for (const n of evalClassChain(o.shape.name)) {
-      const spec = getEvalClass(n);
+    for (const { name: n, spec } of classChainLinks(o.shape.name, classSpecOfAbs(o))) {
       // Bug 90：own-property 取值——D.constructor / D.toString 值读不得
       // 命中宿主 Object.prototype 继承名
       if (spec && ownRecValue(spec.staticMethods, key) !== undefined) {
@@ -1367,7 +1366,7 @@ function getBrandClassValueMember(ctx: GetCtx): Abs | undefined {
   // transpile 期经 spec.ctorLength 通道记录；未记录通道（手写 spec /
   // mock）→ 诚实 unknown（不假 0）。
   if (key === "length") {
-    const ownSpec = getEvalClass(o.shape.name);
+    const ownSpec = classSpecOfAbs(o) ?? getEvalClass(o.shape.name);
     return ownSpec?.ctorLength !== undefined ? numLit(ownSpec.ctorLength) : unknown;
   }
   // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
@@ -1406,8 +1405,7 @@ function getBrandInstanceMember(ctx: GetCtx): Abs | undefined {
   // 未调用方法槽带 AST 形参展示名（不再假零参）。
   // P2a：驻留按（定义 spec, 键）——a.m 与 b.m（跨实例/跨派生）解析到
   // 同一 spec 条目返回同一函数 Abs（原生挂 .prototype，=== 折 true）。
-  for (const n of evalClassChain(o.shape.name)) {
-    const spec = getEvalClass(n);
+  for (const { name: n, spec } of classChainLinks(o.shape.name, classSpecOfAbs(o))) {
     // Bug 90：own-property 取值——c.constructor / c.__proto__ 值读不得
     // 命中宿主 Object.prototype 继承名（此前折假 false 的根因）
     if (spec && ownRecValue(spec.methods, key) !== undefined) {
@@ -1758,6 +1756,26 @@ function getGenericTail({ o, key, silent }: GetCtx): Abs {
     noteObjSlotMissing(o, key);
   }
   return unknown;
+}
+
+/**
+ * BUG-217 的**收窄判据**：接收者在该键上是否真有访问器（对象字面量侧表 /
+ * 类访问器沿注册链）。
+ *
+ * `$idx`（计算键 `o[k]`）只有在这种情况下才必须委派 `$get`：访问器的真值
+ * 存在侧表 / 类注册表里，槽面只有 transpile 落的 `$lit(void 0)` 占位。
+ * 无访问器时槽读语义就是正确语义，委派 `$get` 反而会把原型链名
+ * （`o["toString"]`，闭 shape 自有槽缺席）折成继承来的函数、并对
+ * TypedArray 元素读丢掉「长度未建模 ⇒ `| undefined`」的诚实臂。
+ */
+export function hasOwnAccessorOf(o: Abs, key: string): boolean {
+  if (!o || typeof o !== "object" || !("shape" in (o as object))) return false;
+  const target = o.shape.k === "brand" ? o.shape.shape : o;
+  if (lookupObjAccessor(target, key) !== undefined) return true;
+  if (o.shape.k === "brand" && o.shape.name) {
+    return findClassAccessor(o.shape.name, key) !== undefined;
+  }
+  return false;
 }
 
 /** obj 形状：访问器 / 自有槽 / 数组视图方法 / Object.prototype / open 索引 / 缺槽诊断。 */

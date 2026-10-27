@@ -25,6 +25,8 @@ import { NudoThrow } from "../runtime.ts";
 import {
   getEvalClass,
   lookupClassValue,
+  classSpecOfAbs,
+  carryClassSpec,
 } from "../class-registry.ts";
 
 import { findMethod, findStaticMethod, constructClass, applyInstanceFields, markSuperCalled, superCalledFor } from "./declare.ts";
@@ -35,7 +37,12 @@ import { $setKey } from "./this-member.ts";
  * transpile: super(a,b) → __this = $super(__this, "Child", [a,b])
  */
 export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
-  const child = getEvalClass(childName);
+  // BUG-172：子类规格优先取**实例随身携带的那一份**（$new 从类值身份取得）
+  // ——裸名回表在多模块同名类下会拿到别的模块的类定义。
+  // 仅当随身规格**就是本层子类**时采用：派生链上 this 携带的是最派生类的
+  // 规格，内层 `super() …("Parent")` 必须按本层名字取（Bug 245）。
+  const carried = classSpecOfAbs(thisVal);
+  const child = carried && carried.name === childName ? carried : getEvalClass(childName);
   // Bug 245：派生构造器**只能调一次** super()——第二次定抛 ReferenceError
   // （"Super constructor may only be called once"）。状态在 declare.ts 的
   // 模块级 WeakMap 侧表（markSuperCalled / superCalledFor）——键 = 实例
@@ -52,7 +59,8 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
   }
   const parentName = child?.superName;
   if (!parentName) return thisVal;
-  let after = constructClass(parentName, thisVal, args);
+  // BUG-172：父类规格随 extends 身份传递（跨模块同名父类不串味）
+  let after = constructClass(parentName, thisVal, args, child?.superSpec);
   // Bug 59：super() 返回后初始化子类实例字段（原生 InitializeInstanceElements）
   if (child) after = applyInstanceFields(child, after);
   if (after && after.shape.k === "brand") {
@@ -65,11 +73,14 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
       markSuperCalled(after, childName);
       return after;
     }
-    const next = abs(
-      { k: "brand", name: childName, shape: after.shape.shape },
-      after.term,
-      after.pred,
-      after.conf,
+    const next = carryClassSpec(
+      thisVal,
+      abs(
+        { k: "brand", name: childName, shape: after.shape.shape },
+        after.term,
+        after.pred,
+        after.conf,
+      ),
     );
     // Bug 245：$super 返回**新** brand Abs（内层 obj 共享）——「已调 super」
     // 标记随实例传递到出参，第二次 super() 才拦得住。

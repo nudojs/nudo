@@ -34,16 +34,18 @@
  * 假红。条件抛 / try 内抛 / 引擎近似抛不报。
  */
 
-import type { Node } from "@babel/types";
+import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
 import { abs, never } from "./abs.ts";
 import type { Phi } from "./pred.ts";
 import { pTrue } from "./pred.ts";
 import { formatShape } from "./format.ts";
 import type { PolyFn } from "./generalize.ts";
-import { ctorParamCountOf } from "./generalize.ts";
+import { classMethodIsStatic, ctorParamCountOf, entrySelfReferenceCount, injectForFunctionScope } from "./generalize.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "./exec/index.ts";
+import { currentEvalRoundEpoch } from "./collector-scope.ts";
+import { stablePathKey } from "./sidecar-path.ts";
 import { $staticInvoke } from "./exec/class/this-member.ts";
 import {
   tryRunTranspiledDetailed,
@@ -97,12 +99,26 @@ export function collectEntryMayThrows(
 ): MayThrowEffect[] {
   const effects: MayThrowEffect[] = [];
   const entryArgs = g.typeParams.map((t) => t.value);
+  // BUG-248：多自引用递归（`bin(n-1)+bin(n-2)`）的 α 实参 term 逐层加深，
+  // 每层预算键都不同 ⇒ 环检测失效，深展到 depth 64 时堆先爆（进程 OOM、
+  // check 无输出）。L2 只关心 throws 域，term 身份不参与判定 ⇒ 剥掉 term
+  // 让同抽象实参撞同一个键，恢复环检测（秒级 analyzed）。
+  const evalArgs =
+    entrySelfReferenceCount(source, fnName, file) > 1
+      ? entryArgs.map((a) => ({ ...a, term: undefined }))
+      : entryArgs;
+  // BUG-020 / BUG-180：`@nudo:mock` 函数级作用域——L2 入口求值也只注入
+  // 本函数声明的那一份（平表里其它函数的 mock 不得泄漏）。
+  const scopedOpts: CheckOptions = {
+    ...opts,
+    inject: injectForFunctionScope(opts.inject, fnName, file),
+  };
   return runWithMayThrowSession(() => {
     setMayThrowCollector((e) => effects.push(e));
     try {
       // P2-a：L2 throws 求值 evaluator 优先（may-throw 效果通道共享
       // recordMayThrow）。
-      const outcome = evalThrowsOutcome(source, fnName, entryArgs, opts, phi, file);
+      const outcome = evalThrowsOutcome(source, fnName, evalArgs, scopedOpts, phi, file);
       if (outcome.kind === "unanalyzable") {
         // Bug 380：转译器拒绝构造 ⇒ 整条 L2 证据缺失 ⇒ 记 fail-closed
         // 证据（kind=Error ⇒ 「入口可能抛 Error」是 sound 的过近似：
@@ -156,8 +172,18 @@ export function collectEntryMayThrows(
 }
 
 /** L2 throws 的 evaluator 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
- *  类方法桥（静态 `$staticInvoke` / 实例 `$new`+`$invoke`）。 */
+ *  类方法桥（静态 `$staticInvoke` / 实例 `$new`+`$invoke`）。
+ *
+ * BUG-056：表里存的是**活的 run 表**（模块级 `let` 状态就在其中）⇒ 只在
+ * 一轮分析内可复用；轮次变了整表作废（见 generalize.ts 的 evalRunMemo 与
+ * collector-scope.ts 的 currentEvalRoundEpoch）。 */
 const evalRunMemo = new Map<string, Record<string, unknown>>();
+/** evalRunMemo 建立时的轮次；与当前轮次不等 ⇒ 表内全是上一轮的活状态 */
+
+/** 取 evalRunMemo。不清表：轮次身份由 runKey 前缀表达（保留轮内实例身份）。 */
+function evalRunMemoForRound(): Map<string, Record<string, unknown>> {
+  return evalRunMemo;
+}
 /** B analyze 选项：inject（mocks/env/replace/modules）与 opts.modules 同源合并。
  *  mode 恒为 analyze（inject 不得覆盖）；modules 优先 opts.modules，缺则用 inject.modules。 */
 export function evalAnalyzeOpts(opts: CheckOptions): RunTranspiledOptions {
@@ -232,12 +258,16 @@ export function evalThrowsOutcome(
 ): ThrowsOutcome {
   // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
   //（提升是假设、不消除危险），约束与无约束入口都走 B。
-  const runKey = `${source}|${runTranspiledOptionsMemoKey(opts.inject)}|${runTranspiledOptionsMemoKey(opts.modules ? { modules: opts.modules } : undefined)}`;
-  if (evalRunMemo.size >= MAX_CHECK_MEMO) {
-    const oldest = evalRunMemo.keys().next().value;
-    if (oldest !== undefined) evalRunMemo.delete(oldest);
+  // BUG-056：键里带**调用点路径**——两个字节相同的文件（不同路径）不得共用
+  // 同一份活模块实例；缺 fromFile 时只靠按轮作废（evalRunMemoForRound）。
+  const pathKey = opts.fromFile ? stablePathKey(opts.fromFile) : "";
+  const runKey = `${currentEvalRoundEpoch()}#${pathKey}|${source}|${runTranspiledOptionsMemoKey(opts.inject)}|${runTranspiledOptionsMemoKey(opts.modules ? { modules: opts.modules } : undefined)}`;
+  const memo = evalRunMemoForRound();
+  if (memo.size >= MAX_CHECK_MEMO) {
+    const oldest = memo.keys().next().value;
+    if (oldest !== undefined) memo.delete(oldest);
   }
-  let exports = evalRunMemo.get(runKey);
+  let exports = memo.get(runKey);
   if (exports === undefined) {
     const attempt = tryRunTranspiledDetailed(source, evalAnalyzeOpts(opts));
     if (attempt.run === undefined) {
@@ -257,7 +287,7 @@ export function evalThrowsOutcome(
       return { kind: "absent" };
     }
     exports = attempt.run;
-    evalRunMemo.set(runKey, exports);
+    memo.set(runKey, exports);
   }
   const isAbsVal = (v: unknown): v is Abs =>
     !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
@@ -412,41 +442,6 @@ function classEntryThrows(
     () => runWithMayThrowSession(() => $new(clsAbs, ctorAnyArgs(file, clsName))),
     phi,
   );
-}
-
-/**
- * 类方法静态/实例判定（按**源码类声明**；判不出 → undefined）。
- *
- * 判据来源必须是源码而非运行期：静态桥 `$staticInvoke` 对**不存在**的静态
- * 方法折 unknown（**不抛**）⇒ 运行期无法用「返回值」区分「静态方法存在但
- * 返回 unknown」与「这是实例方法」⇒ 必须看声明。
- */
-function classMethodIsStatic(
-  file: ParsedFile | undefined,
-  clsName: string,
-  methodName: string,
-): boolean | undefined {
-  if (!file) return undefined;
-  for (const stmt of file.program.body as unknown[]) {
-    const s = stmt as { type?: string; declaration?: unknown };
-    let decl: unknown = stmt;
-    if (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration") {
-      decl = s.declaration;
-    }
-    const c = decl as
-      | { type?: string; id?: { name?: string }; body?: { body?: unknown[] } }
-      | undefined;
-    if (!c || c.type !== "ClassDeclaration") continue;
-    if (c.id?.name !== clsName) continue;
-    for (const m of c.body?.body ?? []) {
-      const mem = m as ClassMemberNode;
-      if (mem.kind === "constructor") continue;
-      if (classMemberName(mem) !== methodName) continue;
-      return mem.static === true;
-    }
-    return undefined;
-  }
-  return undefined;
 }
 
 /** 构造实参（any 补位；与 generalize.ts 的类方法桥同口径） */
@@ -759,56 +754,727 @@ export type DefiniteModuleThrow = {
 export function definiteModuleThrowOf(
   file: ParsedFile | undefined,
 ): DefiniteModuleThrow | undefined {
-  return file ? scanDefiniteThrowSeq(file.program.body as unknown[]) : undefined;
+  if (!file) return undefined;
+  const ctx = buildDefiniteCtx(file);
+  return scanDefiniteThrowSeq(file.program.body as unknown[], ctx);
+}
+
+/** BUG-072/073：模块装载期「必抛」勘测的上下文。 */
+type DefiniteCtx = {
+  /** `const x = null/undefined` 绑定（响应成员访问必抛 TypeError）。 */
+  nullish: Set<string>;
+  /** 顶层函数声明 / const 函数表达式（顶层调用时按体勘测）。 */
+  fns: Map<string, unknown>;
+  /** 源码中**任意位置**声明过的名字（函数参数 / 局部变量也算）——
+   *  未解析标识符判据的保守上界（只可能漏报，不会把已声明名当未声明）。 */
+  declared: Set<string>;
+  /** 出现 `@nudo:env` / `@nudo:mock` / `@nudo:as` / `@nudo:replace` 指令 ⇒
+   *  注入面可以定义自由标识符 ⇒ 放弃「未解析名 = ReferenceError」判据。 */
+  injectionsMayDefine: boolean;
+  /** 正在勘测的函数体（递归防护）。 */
+  visiting: Set<string>;
+};
+
+type AnyAst = {
+  type?: string;
+  [k: string]: unknown;
+};
+
+const GLOBAL_ALLOW = new Set([
+  "require",
+  "module",
+  "exports",
+  "__dirname",
+  "__filename",
+  "arguments",
+  "global",
+  "globalThis",
+  "undefined",
+  "NaN",
+  "Infinity",
+]);
+
+/** 名字是否可解析为宿主全局（`in globalThis`；Node 已定义的都算）。 */
+function isResolvableGlobal(name: string): boolean {
+  if (GLOBAL_ALLOW.has(name)) return true;
+  return name in globalThis;
+}
+
+/** 建立顶层绑定 / 声明名 / 注入指令上下文。 */
+function buildDefiniteCtx(file: ParsedFile): DefiniteCtx {
+  const ctx: DefiniteCtx = {
+    nullish: new Set(),
+    fns: new Map(),
+    declared: new Set(),
+    injectionsMayDefine: false,
+    visiting: new Set(),
+  };
+  const fileAny = file as unknown as {
+    comments?: Array<{ value?: string }>;
+    program: { body: unknown[] };
+  };
+  const comments = fileAny.comments ?? [];
+  for (const c of comments) {
+    if (/@nudo:(env|mock|as|replace)\b/.test(c.value ?? "")) {
+      ctx.injectionsMayDefine = true;
+      break;
+    }
+  }
+  // 声明名（全文件，含函数/参数/局部）——保守上界
+  const walkNames = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const o = n as AnyAst;
+    const t = o.type;
+    if (t === "VariableDeclarator") {
+      collectPatternNames(o.id, ctx.declared);
+    } else if (
+      t === "FunctionDeclaration" ||
+      t === "FunctionExpression" ||
+      t === "ArrowFunctionExpression"
+    ) {
+      const id = o.id as { name?: string } | null | undefined;
+      if (id?.name) ctx.declared.add(id.name);
+      for (const p of (o.params as unknown[] | undefined) ?? []) collectPatternNames(p, ctx.declared);
+    } else if (t === "ClassDeclaration" || t === "ClassExpression") {
+      const id = o.id as { name?: string } | null | undefined;
+      if (id?.name) ctx.declared.add(id.name);
+    } else if (
+      t === "ImportSpecifier" ||
+      t === "ImportDefaultSpecifier" ||
+      t === "ImportNamespaceSpecifier"
+    ) {
+      const local = o.local as { name?: string } | undefined;
+      if (local?.name) ctx.declared.add(local.name);
+    } else if (t === "CatchClause") {
+      collectPatternNames(o.param, ctx.declared);
+    }
+    const keys = VISITOR_KEYS[t ?? ""];
+    if (!keys) return;
+    for (const key of keys) {
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) walkNames(item);
+      } else if (v && typeof v === "object") {
+        walkNames(v);
+      }
+    }
+  };
+  walkNames(fileAny.program);
+  // 顶层函数（FunctionDeclaration / const fn = function|arrow）
+  for (const raw of fileAny.program.body) {
+    const stmt = raw as AnyAst;
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt.declaration as AnyAst | null | undefined)
+        : stmt;
+    if (!decl) continue;
+    if (decl.type === "FunctionDeclaration") {
+      const id = decl.id as { name?: string } | null | undefined;
+      if (id?.name) ctx.fns.set(id.name, decl);
+    } else if (decl.type === "VariableDeclaration") {
+      for (const d of (decl.declarations as AnyAst[] | undefined) ?? []) {
+        const id = d.id as AnyAst | undefined;
+        const init = d.init as AnyAst | undefined;
+        if (id?.type !== "Identifier" || typeof id.name !== "string" || !init) continue;
+        if (
+          init.type === "FunctionExpression" ||
+          init.type === "ArrowFunctionExpression"
+        ) {
+          ctx.fns.set(id.name as string, init);
+        }
+      }
+    }
+  }
+  return ctx;
+}
+
+/** 解构 / 标识符绑定的名字集合。 */
+function collectPatternNames(pat: unknown, out: Set<string>): void {
+  if (!pat || typeof pat !== "object") return;
+  const p = pat as AnyAst;
+  switch (p.type) {
+    case "Identifier":
+      if (typeof p.name === "string") out.add(p.name);
+      return;
+    case "ObjectPattern":
+      for (const prop of (p.properties as unknown[] | undefined) ?? []) {
+        const pr = prop as AnyAst;
+        if (pr.type === "RestElement") collectPatternNames(pr.argument, out);
+        else collectPatternNames(pr.value, out);
+      }
+      return;
+    case "ArrayPattern":
+      for (const el of (p.elements as unknown[] | undefined) ?? []) collectPatternNames(el, out);
+      return;
+    case "AssignmentPattern":
+      collectPatternNames(p.left, out);
+      return;
+    case "RestElement":
+      collectPatternNames(p.argument, out);
+      return;
+    case "TSParameterProperty":
+      collectPatternNames(p.parameter, out);
+      return;
+    default:
+      return;
+  }
+}
+
+type ThrowSite = DefiniteModuleThrow;
+
+function siteOf(node: AnyAst, kind?: string): ThrowSite | undefined {
+  const loc = (node.loc as { start?: { line?: number; column?: number } } | undefined)?.start;
+  if (loc?.line === undefined) return undefined;
+  return {
+    line: loc.line,
+    column: loc.column ?? 0,
+    ...(kind !== undefined ? { kind } : {}),
+  };
+}
+
+/** 表达式是否必为 null/undefined。 */
+function isNullishValue(node: unknown, ctx: DefiniteCtx): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as AnyAst;
+  if (n.type === "NullLiteral") return true;
+  if (n.type === "Identifier" && n.name === "undefined") return true;
+  if (n.type === "UnaryExpression" && n.operator === "void") return true;
+  if (n.type === "Identifier" && typeof n.name === "string" && ctx.nullish.has(n.name)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 被调值**确定不可调用**：nullish（`null` / `undefined` / `void x` /
+ * `const x = null`）与原始字面量（数字 / 字符串 / 布尔）。原生对这些值的
+ * 调用恒抛 TypeError（`undefined()`、`(1)()`、`("s")()`）——装载期必抛的
+ * 确定证据。
+ */
+function isDefinitelyNonCallable(node: unknown, ctx: DefiniteCtx): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as AnyAst;
+  if (n.type === "NumericLiteral" || n.type === "StringLiteral" || n.type === "BooleanLiteral") {
+    return true;
+  }
+  if (n.type === "TemplateLiteral") return true;
+  return isNullishValue(n, ctx);
 }
 
 /** 顺序扫描语句序列（判据见 {@link definiteModuleThrowOf}）。 */
 function scanDefiniteThrowSeq(
   stmts: readonly unknown[],
-): DefiniteModuleThrow | undefined {
+  ctx: DefiniteCtx,
+): ThrowSite | undefined {
   for (const stmt of stmts) {
-    const s = stmt as {
-      type?: string;
-      loc?: { start?: { line?: number; column?: number } };
-      argument?: unknown;
-      body?: unknown[];
-    };
-    switch (s.type) {
-      case "ThrowStatement": {
-        const at = s.loc?.start;
-        if (at?.line === undefined) return undefined;
-        const kind = thrownKindOf(s.argument);
-        return {
-          line: at.line,
-          column: at.column ?? 0,
-          ...(kind !== undefined ? { kind } : {}),
-        };
+    const hit = scanDefiniteStmt(stmt, ctx);
+    if (hit !== undefined) return hit ?? undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 单条语句：返回 ThrowSite = 命中必抛；null = 该语句可以非抛离开（放弃）；
+ * undefined = 继续下一条。
+ */
+function scanDefiniteStmt(stmt: unknown, ctx: DefiniteCtx): ThrowSite | null | undefined {
+  const s = stmt as AnyAst;
+  switch (s.type) {
+    case "ThrowStatement": {
+      return thrownKindOf(s.argument) !== undefined
+        ? siteOf(s as AnyAst, thrownKindOf(s.argument))
+        : siteOf(s);
+    }
+    // 裸块 = 无条件的语句序列 ⇒ 继续下钻
+    case "BlockStatement": {
+      return scanDefiniteThrowSeq((s.body as unknown[] | undefined) ?? [], ctx) ?? undefined;
+    }
+    case "ExportNamedDeclaration":
+    case "ExportDefaultDeclaration": {
+      const d = s.declaration as AnyAst | null | undefined;
+      if (!d) return undefined;
+      if (d.type === "FunctionDeclaration") return undefined;
+      if (d.type === "ClassDeclaration") {
+        return scanClassDefiniteThrow(d, ctx) ?? undefined;
       }
-      // 裸块 = 无条件的语句序列 ⇒ 继续下钻
-      case "BlockStatement": {
-        const hit = scanDefiniteThrowSeq(s.body ?? []);
-        if (hit) return hit;
-        continue;
+      if (d.type === "VariableDeclaration") {
+        return scanVarDeclDefiniteThrow(d, ctx) ?? undefined;
       }
-      case "ReturnStatement":
-        return undefined;
-      case "IfStatement":
-      case "SwitchStatement":
-      case "TryStatement":
-      case "ForStatement":
-      case "ForInStatement":
-      case "ForOfStatement":
-      case "WhileStatement":
-      case "DoWhileStatement":
-      case "LabeledStatement":
-      case "WithStatement":
-        // 可能以非抛方式离开本序列（或让后续语句不可达）⇒ 必抛不成立
-        return undefined;
-      default:
-        continue;
+      return exprDefiniteThrow(d, ctx);
+    }
+    case "FunctionDeclaration":
+    case "ImportDeclaration":
+    case "EmptyStatement":
+    case "TSInterfaceDeclaration":
+    case "TSTypeAliasDeclaration":
+      return undefined;
+    case "ClassDeclaration":
+      return scanClassDefiniteThrow(s, ctx) ?? undefined;
+    case "VariableDeclaration":
+      return scanVarDeclDefiniteThrow(s, ctx) ?? undefined;
+    case "ExpressionStatement":
+      return exprDefiniteThrow(s.expression, ctx);
+    case "ReturnStatement":
+      return null;
+    case "IfStatement":
+    case "SwitchStatement":
+    case "TryStatement":
+    case "ForStatement":
+    case "ForInStatement":
+    case "ForOfStatement":
+    case "WhileStatement":
+    case "DoWhileStatement":
+    case "LabeledStatement":
+    case "WithStatement":
+      // 可能以非抛方式离开本序列（或让后续语句不可达）⇒ 必抛不成立
+      return null;
+    default:
+      return undefined;
+  }
+}
+
+/** 类声明期执行面：static block / static 字段初始化器。 */
+function scanClassDefiniteThrow(cls: AnyAst, ctx: DefiniteCtx): ThrowSite | undefined {
+  const body = cls.body as AnyAst | undefined;
+  for (const el of (body?.body as AnyAst[] | undefined) ?? []) {
+    if (el.type === "StaticBlock") {
+      const scoped = scopedCtx(ctx);
+      const hit =
+        scanDefiniteThrowSeq((el.body as unknown[] | undefined) ?? [], scoped) ??
+        scanSeqForUnresolved((el.body as unknown[] | undefined) ?? [], scoped);
+      if (hit) return hit;
+    } else if (el.static === true && el.value) {
+      const hit = exprDefiniteThrow(el.value, scopedCtx(ctx));
+      if (hit) return hit;
     }
   }
   return undefined;
+}
+
+/** 变量声明：初始化表达式与「解构 null」都在装载期执行。 */
+function scanVarDeclDefiniteThrow(d: AnyAst, ctx: DefiniteCtx): ThrowSite | undefined {
+  for (const raw of (d.declarations as AnyAst[] | undefined) ?? []) {
+    const id = raw.id as AnyAst | undefined;
+    const init = raw.init;
+    // 解构 null/undefined ⇒ TypeError
+    if (
+      id &&
+      (id.type === "ObjectPattern" || id.type === "ArrayPattern") &&
+      isNullishValue(init, ctx)
+    ) {
+      return siteOf(id, "TypeError") ?? siteOf(raw, "TypeError");
+    }
+    if (!init) continue;
+    if (id?.type === "Identifier" && typeof id.name === "string" && isNullishValue(init, ctx)) {
+      // 仅 const 视为不可重赋的 nullish 绑定（保守）
+      if (d.kind === "const") ctx.nullish.add(id.name as string);
+    }
+    const hit = exprDefiniteThrow(init, ctx);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function scopedCtx(ctx: DefiniteCtx): DefiniteCtx {
+  return { ...ctx, nullish: new Set(ctx.nullish) };
+}
+
+/**
+ * 表达式在装载期求值时是否必抛。
+ *
+ * `opts.callArg`：本表达式处在**调用实参**位置。未解析标识符在该位置**不**
+ * 判 ReferenceError——引擎对自由标识符的既定模型是 fail-closed unknown
+ * （宿主/全局注入面：bundler shim、`describe/it/fetch` 一类运行期全局），
+ * 把它当「装载期必抛」是假红（`check-shape-gold` 的
+ * 「ok: unknown identifier arg (no false positive)」与 interface-drift 的
+ * 「无证据（unknown 实参）不判 drift」都钉这条）。必抛证据只保留**值读**
+ * 形态（变量初始化 / 表达式语句里的裸读，见 Identifier 臂）与**已知值面**
+ * 形态（nullish 成员访问 / 确定不可调用的被调值）。
+ */
+function exprDefiniteThrow(
+  expr: unknown,
+  ctx: DefiniteCtx,
+  opts?: { callArg?: boolean },
+): ThrowSite | undefined {
+  if (!expr || typeof expr !== "object") return undefined;
+  const e = expr as AnyAst;
+  switch (e.type) {
+    case "OptionalMemberExpression":
+    case "OptionalCallExpression": {
+      // 可选链本身不抛；对象求值面仍可能抛（保守跳过，宁可少报）
+      return undefined;
+    }
+    case "MemberExpression": {
+      if (isNullishValue(e.object, ctx)) return siteOf(e, "TypeError");
+      const objHit = exprDefiniteThrow(e.object, ctx);
+      if (objHit) return objHit;
+      if (e.computed === true) return exprDefiniteThrow(e.property, ctx);
+      return undefined;
+    }
+    case "CallExpression": {
+      const callee = e.callee as AnyAst | undefined;
+      // 参数先于调用求值（实参位置：未解析名不判 ReferenceError，见函数头）
+      for (const a of (e.arguments as unknown[] | undefined) ?? []) {
+        const hit = exprDefiniteThrow(a, ctx, { callArg: true });
+        if (hit) return hit;
+      }
+      // 确定不可调用的被调值（`undefined()` / `null()` / `(1)()` /
+      // `const f = null; f()`）⇒ 原生 TypeError——值面已知，属装载期必抛的
+      // 确定证据（与「nullish 成员访问」同源）。未解析**被调名**不在此列：
+      // 自由标识符的调用是宿主注入面（unknown callee，fail-closed），不得
+      // 判成 ReferenceError（否则 `getPayload()` 一类代码全成假红）。
+      if (isDefinitelyNonCallable(callee, ctx)) return siteOf(callee as AnyAst, "TypeError");
+      // JSON.parse(<非法字符串字面量>) ⇒ SyntaxError（确定性宿主行为）
+      if (
+        callee?.type === "MemberExpression" &&
+        !callee.computed &&
+        (callee.object as AnyAst | undefined)?.type === "Identifier" &&
+        ((callee.object as AnyAst).name as string) === "JSON" &&
+        (callee.property as AnyAst | undefined)?.type === "Identifier" &&
+        ((callee.property as AnyAst).name as string) === "parse"
+      ) {
+        const arg = (e.arguments as AnyAst[] | undefined)?.[0];
+        if (arg?.type === "StringLiteral" && typeof arg.value === "string") {
+          try {
+            JSON.parse(arg.value as string);
+          } catch {
+            return siteOf(e, "SyntaxError");
+          }
+        }
+      }
+      if (callee?.type === "Identifier" && typeof callee.name === "string") {
+        const fn = ctx.fns.get(callee.name);
+        if (fn) {
+          const hit = fnBodyDefiniteThrow(callee.name, fn, ctx);
+          if (hit) return hit;
+        }
+        // 未解析被调名：宿主注入面（unknown callee，fail-closed）——不作
+        // ReferenceError 证据（见函数头 callArg 的说明）。
+        return undefined;
+      }
+      // IIFE / 其它被调表达式：函数表达式体按「立即执行」勘测
+      if (
+        callee?.type === "FunctionExpression" ||
+        callee?.type === "ArrowFunctionExpression"
+      ) {
+        const body = callee.body as AnyAst | undefined;
+        if (body?.type === "BlockStatement") {
+          const scoped = scopedCtx(ctx);
+          return (
+            scanDefiniteThrowSeq((body.body as unknown[] | undefined) ?? [], scoped) ??
+            scanSeqForUnresolved((body.body as unknown[] | undefined) ?? [], scoped)
+          );
+        }
+        return exprDefiniteThrow(callee.body, ctx);
+      }
+      return exprDefiniteThrow(callee, ctx);
+    }
+    case "NewExpression": {
+      for (const a of (e.arguments as unknown[] | undefined) ?? []) {
+        const hit = exprDefiniteThrow(a, ctx);
+        if (hit) return hit;
+      }
+      return exprDefiniteThrow(e.callee, ctx);
+    }
+    case "SequenceExpression": {
+      for (const x of (e.expressions as unknown[] | undefined) ?? []) {
+        const hit = exprDefiniteThrow(x, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "ConditionalExpression": {
+      // 分支可能不执行 ⇒ 只勘测 test
+      return exprDefiniteThrow(e.test, ctx);
+    }
+    case "LogicalExpression": {
+      const hit = exprDefiniteThrow(e.left, ctx);
+      if (hit) return hit;
+      // && / || / ?? 的右侧可能短路
+      return e.operator === "&&" || e.operator === "||" || e.operator === "??"
+        ? undefined
+        : exprDefiniteThrow(e.right, ctx);
+    }
+    case "AssignmentExpression": {
+      // 左侧是写入：ESM/strict 里未声明名写入会抛，但 CJS sloppy 会建全局
+      // ⇒ 两侧口径不一，不拿它当确定性证据（只勘测右侧）。
+      return exprDefiniteThrow(e.right, ctx);
+    }
+    case "BinaryExpression": {
+      const hit = exprDefiniteThrow(e.left, ctx);
+      if (hit) return hit;
+      return exprDefiniteThrow(e.right, ctx);
+    }
+    case "UnaryExpression": {
+      // `typeof <未声明名>` 不抛（安全探测）；其余操作数照常求值。
+      if (e.operator === "typeof" && (e.argument as AnyAst | undefined)?.type === "Identifier") {
+        return undefined;
+      }
+      return exprDefiniteThrow(e.argument, ctx);
+    }
+    case "UpdateExpression":
+      // 自增/自减写面：sloppy 下未声明名不抛 ⇒ 不作确定性证据
+      return undefined;
+    case "AwaitExpression": {
+      return exprDefiniteThrow(e.argument, ctx);
+    }
+    case "TemplateLiteral": {
+      for (const x of (e.expressions as unknown[] | undefined) ?? []) {
+        const hit = exprDefiniteThrow(x, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "TaggedTemplateExpression": {
+      const hit = exprDefiniteThrow(e.tag, ctx);
+      if (hit) return hit;
+      return exprDefiniteThrow(e.quasi, ctx);
+    }
+    case "ArrayExpression": {
+      for (const x of (e.elements as unknown[] | undefined) ?? []) {
+        if (!x) continue;
+        const hit = exprDefiniteThrow((x as AnyAst).type === "SpreadElement" ? (x as AnyAst).argument : x, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "ObjectExpression": {
+      for (const prop of (e.properties as AnyAst[] | undefined) ?? []) {
+        if (prop.type === "SpreadElement") {
+          const hit = exprDefiniteThrow(prop.argument, ctx);
+          if (hit) return hit;
+          continue;
+        }
+        if (prop.computed === true) {
+          const kh = exprDefiniteThrow(prop.key, ctx);
+          if (kh) return kh;
+        }
+        const hit = exprDefiniteThrow(prop.value, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "Identifier": {
+      // 实参位置的自由标识符：不判（见函数头）
+      if (opts?.callArg) return undefined;
+      if (
+        !ctx.declared.has(e.name as string) &&
+        !isResolvableGlobal(e.name as string) &&
+        !ctx.injectionsMayDefine
+      ) {
+        return siteOf(e, "ReferenceError");
+      }
+      return undefined;
+    }
+    case "FunctionExpression":
+    case "ArrowFunctionExpression":
+    case "ClassExpression":
+    case "Literal":
+    case "StringLiteral":
+    case "NumericLiteral":
+    case "BooleanLiteral":
+    case "NullLiteral":
+    case "RegExpLiteral":
+    case "ThisExpression":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** 被顶层调用的本地函数体：显式必抛 / 未解析标识符（ReferenceError）。 */
+function fnBodyDefiniteThrow(
+  name: string,
+  fn: unknown,
+  ctx: DefiniteCtx,
+): ThrowSite | undefined {
+  if (ctx.visiting.has(name)) return undefined;
+  const f = fn as AnyAst;
+  const body = f.body as AnyAst | undefined;
+  if (!body) return undefined;
+  ctx.visiting.add(name);
+  try {
+    const scoped = scopedCtx(ctx);
+    if (body.type === "BlockStatement") {
+      return (
+        scanDefiniteThrowSeq((body.body as unknown[] | undefined) ?? [], scoped) ??
+        scanSeqForUnresolved((body.body as unknown[] | undefined) ?? [], scoped)
+      );
+    }
+    return exprDefiniteThrow(body, scoped);
+  } finally {
+    ctx.visiting.delete(name);
+  }
+}
+
+/** 执行面语句序列里的**未解析标识符**（ReferenceError；只走无歧义执行面）。 */
+function scanSeqForUnresolved(
+  stmts: readonly unknown[],
+  ctx: DefiniteCtx,
+): ThrowSite | undefined {
+  for (const stmt of stmts) {
+    const s = stmt as AnyAst;
+    switch (s.type) {
+      case "ExpressionStatement": {
+        const hit = unresolvedInExpr(s.expression, ctx);
+        if (hit) return hit;
+        break;
+      }
+      case "VariableDeclaration": {
+        for (const d of (s.declarations as AnyAst[] | undefined) ?? []) {
+          const hit = d.init ? unresolvedInExpr(d.init, ctx) : undefined;
+          if (hit) return hit;
+        }
+        break;
+      }
+      case "ReturnStatement":
+      case "ThrowStatement": {
+        const hit = s.argument ? unresolvedInExpr(s.argument, ctx) : undefined;
+        if (hit) return hit;
+        break;
+      }
+      case "BlockStatement": {
+        const hit = scanSeqForUnresolved((s.body as unknown[] | undefined) ?? [], ctx);
+        if (hit) return hit;
+        break;
+      }
+      case "ExportNamedDeclaration":
+      case "ExportDefaultDeclaration": {
+        const d = s.declaration as AnyAst | null | undefined;
+        if (d?.type === "VariableDeclaration") {
+          const hit = scanSeqForUnresolved([d], ctx);
+          if (hit) return hit;
+        } else if (d && d.type !== "FunctionDeclaration" && d.type !== "ClassDeclaration") {
+          const hit = unresolvedInExpr(d, ctx);
+          if (hit) return hit;
+        }
+        break;
+      }
+      case "ClassDeclaration": {
+        const hit = scanClassUnresolved(s, ctx);
+        if (hit) return hit;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return undefined;
+}
+
+function scanClassUnresolved(cls: AnyAst, ctx: DefiniteCtx): ThrowSite | undefined {
+  const body = cls.body as AnyAst | undefined;
+  for (const el of (body?.body as AnyAst[] | undefined) ?? []) {
+    if (el.type === "StaticBlock") {
+      const hit = scanSeqForUnresolved((el.body as unknown[] | undefined) ?? [], scopedCtx(ctx));
+      if (hit) return hit;
+    } else if (el.static === true && el.value) {
+      const hit = unresolvedInExpr(el.value, scopedCtx(ctx));
+      if (hit) return hit;
+    }
+  }
+  return undefined;
+}
+
+/** 执行面表达式中的未解析标识符（跳过属性名 / 非计算键 / 未执行分支）。 */
+function unresolvedInExpr(expr: unknown, ctx: DefiniteCtx): ThrowSite | undefined {
+  if (!expr || typeof expr !== "object") return undefined;
+  const e = expr as AnyAst;
+  if (e.type === "Identifier") {
+    if (
+      !ctx.declared.has(e.name as string) &&
+      !isResolvableGlobal(e.name as string) &&
+      !ctx.injectionsMayDefine
+    ) {
+      return siteOf(e, "ReferenceError");
+    }
+    return undefined;
+  }
+  if (
+    e.type === "FunctionExpression" ||
+    e.type === "ArrowFunctionExpression" ||
+    e.type === "ClassExpression" ||
+    e.type === "Literal" ||
+    e.type === "StringLiteral" ||
+    e.type === "NumericLiteral" ||
+    e.type === "BooleanLiteral" ||
+    e.type === "NullLiteral" ||
+    e.type === "RegExpLiteral" ||
+    e.type === "ThisExpression" ||
+    e.type === "Super"
+  ) {
+    return undefined;
+  }
+  switch (e.type) {
+    case "MemberExpression": {
+      const hit = unresolvedInExpr(e.object, ctx);
+      if (hit) return hit;
+      return e.computed === true ? unresolvedInExpr(e.property, ctx) : undefined;
+    }
+    case "OptionalMemberExpression": {
+      const hit = unresolvedInExpr(e.object, ctx);
+      if (hit) return hit;
+      return e.computed === true ? unresolvedInExpr(e.property, ctx) : undefined;
+    }
+    case "CallExpression":
+    case "NewExpression":
+    case "OptionalCallExpression": {
+      // 参数只在调用真正发生时求值 ⇒ 只勘测 callee（乐观短路）
+      return unresolvedInExpr(e.callee, ctx);
+    }
+    case "ConditionalExpression":
+      return unresolvedInExpr(e.test, ctx);
+    case "LogicalExpression":
+      return unresolvedInExpr(e.left, ctx);
+    case "AssignmentPattern":
+      return unresolvedInExpr(e.left, ctx);
+    case "ObjectExpression": {
+      for (const prop of (e.properties as AnyAst[] | undefined) ?? []) {
+        if (prop.type === "SpreadElement") {
+          const hit = unresolvedInExpr(prop.argument, ctx);
+          if (hit) return hit;
+          continue;
+        }
+        if (prop.computed === true) {
+          const kh = unresolvedInExpr(prop.key, ctx);
+          if (kh) return kh;
+        }
+        const hit = unresolvedInExpr(prop.value, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "ObjectProperty": {
+      if (e.computed === true) {
+        const kh = unresolvedInExpr(e.key, ctx);
+        if (kh) return kh;
+      }
+      return unresolvedInExpr(e.value, ctx);
+    }
+    case "ArrayExpression":
+    case "TemplateLiteral":
+    case "SequenceExpression": {
+      const arr =
+        (e.elements as unknown[] | undefined) ??
+        (e.expressions as unknown[] | undefined) ??
+        [];
+      for (const x of arr) {
+        if (!x) continue;
+        const hit = unresolvedInExpr(x, ctx);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    case "SpreadElement":
+      return unresolvedInExpr(e.argument, ctx);
+    case "TaggedTemplateExpression": {
+      const hit = unresolvedInExpr(e.tag, ctx);
+      if (hit) return hit;
+      return unresolvedInExpr(e.quasi, ctx);
+    }
+    default:
+      return undefined;
+  }
 }
 
 /** `throw <expr>` 的静态类型名：`new X(…)`；`X(…)` 只认 `*Error` 构造器调用。 */

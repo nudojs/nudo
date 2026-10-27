@@ -25,6 +25,7 @@ import { implies } from "./pred.ts";
 import { add, sub, builtinBrandToPrimitive } from "./arithmetic.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { isDomainShared } from "./len-sharing.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
@@ -646,6 +647,13 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   // 同一 Abs 引用：对象/函数/Symbol 恒等（NaN 字面量例外——NaN !== NaN）。
   // unknown/any 共享单例不得据此折 true（Object.getPrototypeOf 未建模时会假精确）。
   if (a === b) {
+    // 域共享门（len-sharing.ts）：`arr` 只有一个元素域 Abs，`$idx` / 回调
+    // 元素实参等**分发位**把**同一对象**交给两个下标位（`xs[0]` 与 `xs[1]`
+    // 共享 `shape.element`）——「同一 Abs 引用」在这里**不代表同一具体值**
+    // ⇒ 不得折 true（`xs[0] === xs[1]` 原生可为 false）。与 `arithmetic/
+    // addsub.ts` 的 sub 自反折叠门同口径：同一机制在仓内已明文记录为
+    // **不可依赖**（域共享标记即为此设）。
+    if (isDomainShared(a) || isDomainShared(b)) return undefined;
     if (a.term?.op === "lit" && typeof a.term.value === "number" && Number.isNaN(a.term.value)) {
       return false;
     }
@@ -679,6 +687,9 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   // 同 var 恒等：number/any/unknown 可能是 NaN，x === x 对 NaN 为 false
   //（与同 Abs 引用路径一致——只对引用语义/非 number 原语恒等）。
   if (a.term && b.term && a.term.op === "var" && b.term.op === "var" && a.term.id === b.term.id) {
+    // 域共享门（同 `a === b` 分支）：同一带项 Abs 经元素域分发到两个下标位
+    // ⇒ term 相同但代表不同具体值 ⇒ 不得折 true。
+    if (isDomainShared(a) || isDomainShared(b)) return undefined;
     const k = a.shape.k;
     if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
       return true;

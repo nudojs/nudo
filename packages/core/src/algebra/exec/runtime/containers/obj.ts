@@ -41,7 +41,7 @@ import {
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
-import { getEvalClass, classInstanceInnerOf } from "../../class-registry.ts";
+import { getEvalClass, classInstanceInnerOf, carryClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, migrateFreshInstance } from "../../../instance-id.ts";
 import {
@@ -159,6 +159,13 @@ export function privateNameGuard(o: unknown, key: string): void {
  * 别名伙伴一起纳入复制集合（见 transpile 的 aliasGroups）。
  */
 export function $copy(a: Abs, memo?: WeakMap<object, Abs>): Abs {
+  // DEC-006 B/C 同口径（$get / $set 已各自实施）：free identifier 可能把
+  // **宿主值**漏进转译产物（fork 快照对 `globalThis` / `process` / `Math`… 
+  // 这类未遮蔽的宿主全局发射 `$copy(<宿主对象>)`）——非 Abs 目标
+  // fail-closed **返回原值**（调用点 `x = $copy(x)` 重绑为自赋值 no-op），
+  // 禁止裸读 `.shape` 抛宿主 TypeError（那会被 run.ts 的 evalFallbackOf
+  // 归为 nudo:internal ⇒ 合法代码门禁假红 + 引擎内部异常原文泄漏）。
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
   return copyWithMemo(a, memo ?? new WeakMap());
 }
 
@@ -262,6 +269,9 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     (next.shape as Extract<Shape, { k: "brand" }>).shape = copyWithMemo(s.shape, memo);
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
+    // BUG-172：类规格随值携带——快照副本必须继承（否则 fork 臂里的实例
+    // 退回裸名回表，跨模块同名类再次串味）。
+    carryClassSpec(a, next);
     migrateInvariants(a, next);
     // 新鲜实例 id 随快照迁移（fork 副本 = 同一次创建事件）：否则
     // `a === new C()` 从 false 退化成 unknown（同 fn 分支的缺口）。

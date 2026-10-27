@@ -11,7 +11,7 @@ import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, litValue } from "../../abs.ts";
 import { objOf, joinAbs, setSlot, propertyKeyOf } from "../../objects.ts";
 import { builtinSuperCtorOf } from "../runtime/members.ts";
-import { $get, $set, asAbsVal, clearStaleTermPred } from "../runtime.ts";
+import { $get, $set, asAbsVal, clearStaleTermPred, NudoThrow } from "../runtime.ts";
 import { withNewTargetReset } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
@@ -20,12 +20,14 @@ import { $call } from "../call.ts";
 import {
   noteEvalCallRecord,
 } from "../calls.ts";
-import { throwPayloadOf } from "../may-throw.ts";
+import { throwPayloadOf, errorTypeAbs } from "../may-throw.ts";
 // 共享 nullish 判定（无环：member-diag 只依赖 class-registry/may-throw/objects）
 import { isNullishAbs } from "../member-diag.ts";
 
 import { $invoke } from "./invoke.ts";
 import { specOf, findStaticMethod } from "./declare.ts";
+// BUG-259：符号键的槽寻址与 $idxSet 同口径（运行期 symbol → @@sym#N / @@X）。
+import { symbolSlotKeyOf } from "../runtime/containers/symbol-slot.ts";
 
 /** 解构默认值：undefined（含 sum 成员 / 可能缺失）时用 default 并入非 undefined 部分 */
 export function $orDefault(v: Abs, dflt: () => Abs): Abs {
@@ -153,6 +155,15 @@ export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
       return o;
     }
     return $set(o, ks, value);
+  }
+  // BUG-259：**运行期 symbol 键**与 $idxSet（arr-index.ts）同口径——映射成
+  // 具名内部槽键（@@X / @@sym#N，带 symbolKey 标记），不得落「抽象键 ⇒
+  // open + index」。此前对象字面量 `{ [s]: v }` 因此被标成 open ⇒ JSON.stringify
+  // 保守判 may-throw（宿主的 symbol 键对 JSON 不可见、定不抛）⇒ L2 假红；
+  // 且与赋值写法 `o[s] = v` 两面结论相反。
+  const symSlot = symbolSlotKeyOf(key);
+  if (symSlot !== undefined) {
+    return $set(o, symSlot, asAbsVal(value), { symbolKey: true });
   }
   const val = asAbsVal(value);
   if (o.shape.k === "brand") {

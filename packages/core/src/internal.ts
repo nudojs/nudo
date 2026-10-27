@@ -145,3 +145,5 @@ export {
   // 字面量助手：env 声明（es/node/web 内建折叠）+ harvester .d.ts 物化共享
   absLit, absNumLit, absStrLit, allAbsStr
 } from "./algebra/abs.ts";
+export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
+export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";

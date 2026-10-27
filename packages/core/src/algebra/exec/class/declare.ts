@@ -2,8 +2,10 @@
  * 类声明/注册/构造：$class/$new + registry 辅助。
  *
  * Invariants:
- * - classImpl（WeakMap）是 spec 的唯一私有挂载点：Abs 对象身份 → 定义
- *   spec；同名类跨 run last-wins 重注册换新 spec（驻留侧表随旧 spec 回收）。
+ * - 类值/实例的 spec 挂载在 class-registry.ts 的**随值携带**侧表（WeakMap：
+ *   Abs 对象身份 → 定义 spec，BUG-172）：类值在 $class 建值处 attachClassSpec，
+ *   brand 形状重造/快照处 carryClassSpec 过户。同名类跨 run last-wins
+ *   重注册换新 spec（驻留侧表随旧 spec 回收）。
  * - 实例字段就地突变（applyInstanceFields 落 inner obj 槽）：原生引用共享
  *   语义——方法内 this.x = v 对调用点持有的同一实例 Abs 可见。
  * - new 的 ctor 帧走 pushCtorFrame/popCtorFrame；new.target 通道由
@@ -40,12 +42,24 @@ import {
   lookupClassValue,
   markClassValue,
   getEvalClass,
+  attachClassSpec,
+  classSpecOfAbs,
+  carryClassSpec,
   ensureFnParentName,
   type EvalClassSpec,
 } from "../class-registry.ts";
+import {
+  markSuperCalled,
+  superCalledFor,
+  notePendingSuper,
+  clearPendingSuper,
+} from "../super-access.ts";
 
 
-const classImpl = new WeakMap<object, EvalClassSpec>();
+/** 类值/实例 → 定义 spec 的身份查询（BUG-172：侧表在 class-registry.ts） */
+function isDeclaredClassValue(v: object): boolean {
+  return classSpecOfAbs(v as Abs) !== undefined;
+}
 
 /**
  * Bug 245：派生构造器「本帧已调 super」状态（**模块级 WeakMap 侧表**）。
@@ -67,24 +81,12 @@ const classImpl = new WeakMap<object, EvalClassSpec>();
  * 形状；写进 Shape 会把构造期状态混进类型系统（brand 的 leq / 指纹 /
  *   展示面都会带上瞬时状态）。WeakMap 随实例 Abs 回收，无泄漏。
  */
-const superCalledMarks = new WeakMap<object, Set<string>>();
-
-/** 标记「本实例在 childName 这一层已调用过 super()」 */
-export function markSuperCalled(inst: Abs, childName: string): void {
-  if (!inst || typeof inst !== "object") return;
-  let s = superCalledMarks.get(inst as object);
-  if (!s) {
-    s = new Set<string>();
-    superCalledMarks.set(inst as object, s);
-  }
-  s.add(childName);
-}
-
-/** 读「本实例在 childName 这一层是否已调用过 super()」 */
-export function superCalledFor(inst: Abs, childName: string): boolean {
-  if (!inst || typeof inst !== "object") return false;
-  return superCalledMarks.get(inst as object)?.has(childName) ?? false;
-}
+/*
+ * Bug 245 的「本帧已调 super」状态侧表已下沉到 exec/super-access.ts（叶子，
+ * 供 $get/$set/$idx/$idxSet/$invoke 的 this 访问门共用，避免 declare ↔
+ * containers 的模块环）。本文件保留同名 re-export 维持既有 import 面。
+ */
+export { markSuperCalled, superCalledFor } from "../super-access.ts";
 
 /**
  * Bug 253：bind 产物的 [[Construct]] facet（**模块级 WeakMap 侧表**）。
@@ -435,6 +437,12 @@ export function $class(
       full.instanceFields = kept;
     }
   }
+  // BUG-172：父类**规格身份**随 extends 活引用取得（只认随值携带的身份，
+  // 不按名牌回表——回表正是串味的来源）。内建父无身份 ⇒ 不挂。
+  if (!superNull && extVal && typeof extVal === "object" && "shape" in (extVal as object)) {
+    const sup = classSpecOfAbs(extVal as Abs);
+    if (sup) full.superSpec = sup;
+  }
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
   // R5：类值先行创建（共享空槽 brand）——静态字段 thunk 以类值为 this
@@ -450,7 +458,8 @@ export function $class(
     undefined,
     "exact",
   );
-  classImpl.set(val as object, full);
+  // BUG-172：规格随类值携带（成员查表按值自己的规格解析，不再裸名回表）
+  attachClassSpec(val, full);
   markClassValue(val as object, name);
   // Bug 58：类值入名 → Abs 注册表——protoOfRecv 的父构造器投影按
   // superName 回取同一引用（Object.getPrototypeOf(B) === A 折 exact）
@@ -517,7 +526,8 @@ export function $class(
 }
 
 export function specOf(cls: Abs): EvalClassSpec | undefined {
-  if (classImpl.has(cls as object)) return classImpl.get(cls as object);
+  const mounted = classSpecOfAbs(cls);
+  if (mounted) return mounted;
   if (cls.shape.k === "brand") return getEvalClass(cls.shape.name);
   return undefined;
 }
@@ -526,12 +536,18 @@ export function specOf(cls: Abs): EvalClassSpec | undefined {
 export function findMethod(
   startName: string,
   method: string,
+  startSpec?: EvalClassSpec,
 ): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   let cur: string | undefined = startName;
   const seen = new Set<string>();
+  // BUG-172：首环用接收者**随身携带的规格**（跨模块同名类不串味），
+  // 其余环沿 superName 走既有名牌回表。
+  let first: EvalClassSpec | undefined = startSpec;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getEvalClass(cur);
+    // 显式标注：cur 的流类型反过来依赖 spec（上一轮 cur = spec?.superName）
+    const spec: EvalClassSpec | undefined = first ?? getEvalClass(cur);
+    first = undefined;
     // Bug 90：own-property 取值——宿主 Object.prototype 继承名不得命中
     const m = ownMember(spec?.methods, method);
     if (m) return m;
@@ -785,8 +801,16 @@ export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
  * - 隐式 ctor（constructor(...a){ super(...a) }）：递归父构造，返回后
  *   应用本类实例字段；extends null 链隐式 super 原生抛 TypeError。
  */
-export function constructClass(className: string, thisVal: Abs, args: Abs[]): Abs {
-  const spec = getEvalClass(className);
+export function constructClass(
+  className: string,
+  thisVal: Abs,
+  args: Abs[],
+  specIn?: EvalClassSpec,
+): Abs {
+  // BUG-172：带进来的规格优先——`$new` 从类值身份取到的是**本模块那一份**
+  // 类定义；裸名回表（getEvalClass）在多模块同名类下会拿到别的模块的构造
+  // 体（A 的实例被跑 B 的 ctor：`this.b = 2` 落地、`this.a` 从未初始化）。
+  const spec = specIn ?? getEvalClass(className);
   if (!spec) {
     // issue #110：env/宿主内建构造器作基类（class X extends Error）——此前
     // 原样返回 thisVal，super(message) 静默 no-op：args 被丢弃，e.message /
@@ -835,37 +859,58 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
   if (spec.ctor) {
     let tv = thisVal;
     if (!spec.superName && !spec.superNull) tv = applyInstanceFields(spec, tv);
-    const after = spec.ctor(tv, ...args);
-    // Bug 245：派生类构造器**必须**调用一次 super()——一次都没调 ⇒ 原生
-    // ReferenceError（"Must call super constructor in derived class before
-    // accessing 'this' or returning from derived constructor"）。引擎此前
-    // 无「已调 super」状态通道 ⇒ 不调 super 的派生构造器静默构造成功
-    // （`this.x = 1` 落到未初始化 this 上也不抛）。
-    //
-    // 判定面：$super 在**本层**（className）标记过 ⇒ 已调；未标记 ⇒ 未调。
-    // 基类（无 superName / superNull）不适用本门。
-    if ((spec.superName || spec.superNull) && !superCalledFor(tv, className)) {
+    const derived = !!(spec.superName || spec.superNull);
+    // BUG-173：派生类构造器体执行期间登记「尚未调 super」——构造器体里的
+    // this 读写（$get/$set/$idx/$idxSet/$invoke）据此硬抛 ReferenceError
+    // （原生 GetThisBinding）。构造器返回/抛出后清登记。
+    if (derived) notePendingSuper(tv, className);
+    const after = (() => {
+      try {
+        return spec.ctor(tv, ...args);
+      } finally {
+        if (derived) clearPendingSuper(tv, className);
+      }
+    })();
+    // 「构造体返回的就是本实例」判定：类构造器发射面**恒**以
+    // `return <thisSlot>` 收尾（用户没写 return 时也一样），所以「返回值是
+    // 对象」不等于「用户 return 了一个替代对象」——必须把**本实例**（同
+    // Abs 身份，或 super() 重铸的同内层 shape brand）排除在外，否则 Bug 245
+    // 的「一次都没调 super」门会被静默绕过。
+    const isOwnInstance = (v: Abs): boolean =>
+      v === tv ||
+      (v.shape.k === "brand" &&
+        v.shape.name === className &&
+        tv.shape.k === "brand" &&
+        v.shape.shape === tv.shape.shape);
+    // BUG-177 / Bug 17：ES [[Construct]] 的返回值语义——**顺序即规范顺序**：
+    // ① 构造体返回**替代对象**（不是本实例）⇒ 直接返回它（派生类
+    //    `return {…}` **合法**，不需要、也不检查 super() 是否被调用——此前
+    //    「必须调 super」的门放在返回值语义之前 ⇒ 这种惯用法被误报
+    //    ReferenceError（假红））；
+    // ② 结果是 undefined 或本实例 ⇒ 才要求「本层已调 super」（未调 ⇒
+    //    ReferenceError，Bug 245）；
+    // ③ 结果是原始值（含 null）⇒ 派生类 TypeError（"Derived constructors
+    //    may only return object or undefined"），基类忽略 → this。
+    if (isObjectLikeAbs(after) && !isOwnInstance(after)) return after;
+    if (derived && !superCalledFor(tv, className)) {
+      // Bug 245：派生类构造器**必须**调用一次 super()——一次都没调 ⇒ 原生
+      // ReferenceError（"Must call super constructor in derived class before
+      // accessing 'this' or returning from derived constructor"）。
+      // 判定面：$super 在**本层**（className）标记过 ⇒ 已调；未标记 ⇒ 未调。
+      // 基类（无 superName / superNull）不适用本门。
       throw new NudoThrow(errorTypeAbs("ReferenceError"));
     }
-    if (after && after.shape.k === "brand") return after;
-    // Bug 17：ES [[Construct]] 返回值语义——undefined（宿主 undefined / lit
-    // undefined）→ this；其余原始值（prim 域或字面量；null 折 unknown+
-    // lit(null)）：基类忽略 → this，派生类 TypeError（Derived constructors
-    // may only return object or undefined）。
-    if (after === undefined || after === null) return tv;
-    if (after && typeof after === "object" && "shape" in (after as object)) {
-      if (isDefinitelyUndefinedAbs(after)) return tv;
-      if (
-        after.shape.k === "prim" ||
-        (after.term?.op === "lit" && after.term.value === null)
-      ) {
-        if (spec.superName || spec.superNull) {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
-        }
-        return tv;
-      }
+    if (after === undefined || after === null || isDefinitelyUndefinedAbs(after)) return tv;
+    // 原始值（含 `null` 字面量——它在 Abs 里未必落在 `prim` 形状上）：
+    // 派生类 TypeError，基类忽略 → this。
+    if (
+      after.shape.k === "prim" ||
+      (after.term?.op === "lit" && after.term.value === null)
+    ) {
+      if (derived) throw new NudoThrow(errorTypeAbs("TypeError"));
+      return tv;
     }
-    return after ?? tv;
+    return after;
   }
   if (spec.superNull) {
     // Bug 11：extends null 链上的隐式构造器等价 super(...args)，原生抛
@@ -873,7 +918,7 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (spec.superName) {
-    const afterSuper = constructClass(spec.superName, thisVal, args);
+    const afterSuper = constructClass(spec.superName, thisVal, args, spec.superSpec);
     return applyInstanceFields(spec, afterSuper);
   }
   return applyInstanceFields(spec, thisVal);
@@ -913,7 +958,70 @@ function withUrlSearchParamsSlot(u: Abs): Abs {
   return u;
 }
 
+/**
+ * BUG-159：宿主全局构造器的**原生探测**（IsConstructor + 零实参构造）。
+ *
+ * `$new` 的宿主全局兜底此前无条件铸空 brand：既不查 `IsConstructor`，也不查
+ * 宿主构造器本身是否恒抛 ⇒ 「恒不可构造」的宿主类（`Storage` / `Crypto` /
+ * `Iterator` / `Navigator` …，原生 "Illegal constructor" / "Abstract class …
+ * not directly constructable"）被判「不抛」⇒ L2 假绿；而无 env 时目标
+ * runtime 就是分析器自己的宿主 ⇒ 与自身 runtime 矛盾。
+ *
+ * 两项探针都不执行被分析代码（Abs 实参绝不喂真 JS 函数）：
+ * 1. `Reflect.construct(Object, [], cls)` —— spec 只校验 `cls` 可作
+ *    **newTarget**（`IsConstructor(newTarget)` 为假 ⇒ TypeError），**不调用**
+ *    构造器本体 ⇒ 零副作用；不可构造 ⇒ 原生 `new cls()` 定抛 TypeError。
+ * 2. 零实参构造：仅当本次 `new` 调用**没有实参**时探 `new cls()`——与用户
+ *    代码同形，抛即原生必抛（WebIDL 必填实参缺失 / Illegal constructor /
+ *    "Constructor cannot be called"）。实参在场时不探测：必填参数可能被补齐，
+ *    且真构造的副作用不可回滚。
+ *
+ * 错误 kind 统一记 **TypeError**（WebIDL / ES 口径："Illegal constructor" 是
+ * TypeError；宿主个别实现抛裸 Error，不改变规范面）。
+ */
+function probeHostGlobalCtor(cls: Function, args: Abs[]): void {
+  try {
+    Reflect.construct(Object, [], cls as unknown as new () => object);
+  } catch {
+    // IsConstructor(cls) === false ⇒ `new cls()` 确定抛 TypeError
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (args.length > 0) return;
+  try {
+    Reflect.construct(cls as unknown as new () => object, []);
+  } catch {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+}
+
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
+/**
+ * BUG-160：TextEncoder 的实例面建模（宿主全局分支 / 无专门 builtin 表条目）。
+ *
+ * `PROTOTYPED_BRAND_NAMES` 登记 TextEncoder 为「原型面已建模」，但
+ * `BUILTIN_BRAND_METHODS` / `ACCESSORS` 没有条目 ⇒ 空 brand ⇒ 三个成员读
+ * 折 **exact undefined**（`e.encoding === undefined` 静态判 true，运行时
+ * false）。宿主真值：encoding 恒 "utf-8"、encode / encodeInto 是函数
+ * （encode 返回 Uint8Array；调用面返回 unknown 诚实，不折假值）。
+ */
+function makeTextEncoderAbs(): Abs {
+  const method = (): Abs => absFunction([], { apply: () => unknown }, { ctor: false });
+  return abs(
+    {
+      k: "brand",
+      name: "TextEncoder",
+      shape: objOf({
+        encoding: { value: strLit("utf-8"), readonly: true },
+        encode: { value: method() },
+        encodeInto: { value: method() },
+      }),
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
   // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
   // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
@@ -987,8 +1095,18 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         ? cs.name
         : builtinCtorNameOf(cls) ?? (cs.k === "fn" ? (cs.name ?? undefined) : undefined);
     if (ctorName) {
-      const built = evalBuiltinNew(ctorName, args);
-      if (built !== undefined) return built;
+      // BUG-166：用户类**遮蔽**同名宿主全局（JS 词法作用域语义）——`class
+      // URL { … }` / `class Map { … }` 的类值与内建构造器**同名**。本 Abs
+      // 若就是 $class 产出的类值（随值规格身份命中），必须走用户类构造链
+      //（下方 specOf/constructClass）；此前直接 evalBuiltinNew 按名派发 ⇒
+      // 用户的构造体从未执行（`this.a = 1` 从未发生）⇒ 假红（URL/Promise
+      // 判必须抛）+ 自信的错类型（Error/Map/Date 给内建 brand）+ guard 面
+      // 恒假。身份判定（不用裸名查注册表）⇒ 内建 Abs 不受跨 run 同名用户
+      // 类污染。
+      if (!isDeclaredClassValue(cls as object)) {
+        const built = evalBuiltinNew(ctorName, args);
+        if (built !== undefined) return built;
+      }
     }
   }
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
@@ -1099,7 +1217,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // new TextDecoder(label?) —— encoding label 校验（非法字符确定
     // RangeError / 知名 label 正常构造 / 未知 ASCII 形与抽象 → may）
     if (clsName === "TextDecoder") {
-      return makeTextDecoderAbs(args[0]);
+      return makeTextDecoderAbs(args[0], args[1]);
+    }
+    // BUG-160：TextEncoder 实例面（encoding / encode / encodeInto）
+    if (clsName === "TextEncoder") {
+      return makeTextEncoderAbs();
     }
     // new URLSearchParams(init?) —— 序列实参校验（非二元组元素确定
     // TypeError / 字面量正常构造 / 开放数组与抽象 → may）
@@ -1158,6 +1280,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         popCtorFrame();
       }
     }
+    // BUG-159：宿主全局函数兜底**必须先过原生构造面探测**——恒不可构造的
+    // 宿主构造器（Storage / Crypto / Iterator / Navigator …）与不可构造的
+    // 宿主函数（parseInt 等，已在 hostFnCtorFacet 拦下）都不得铸空 brand。
+    if (isHostGlobalFn(cls)) probeHostGlobalCtor(cls, args);
     const shape = objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }
@@ -1310,11 +1436,17 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     undefined,
     "path",
   );
+  // BUG-172：新实例随值携带**自己的**类规格（构造链 / 成员查表按此解析，
+  // 同名类在不同模块并存时不再串味）。
+  if (spec) attachClassSpec(thisVal, spec);
   // Bug 79：new.target 帧——构造器体/实例字段初始化器内 new.target = 被构造
   // 的类值；嵌套普通调用（$call/$invoke 面已清空）读 undefined（原生语义）。
   pushCtorFrame(cls);
   try {
-    const inst = constructClass(className, thisVal, args);
+    const inst = constructClass(className, thisVal, args, spec);
+    // BUG-172：构造器返回替代对象（brand 重铸 / Error·内建父嫁接）时规格
+    // 过户——值身份换了，规格不能丢。
+    if (spec) carryClassSpec(thisVal, inst);
     // Bug 205：构造期捕获类实例的真实 [[Prototype]]（= 类原型对象）——
     // 原型被替换 / setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
     if (inst.shape.k === "brand") setInstanceProto(inst, protoBrandAbs(className));

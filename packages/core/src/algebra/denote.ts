@@ -12,6 +12,7 @@ import { accessorReadDomain } from "./accessors.ts";
 import { isHiddenInternalSlot } from "./slot-visibility.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 import { ProjectionBudget } from "./projection-budget.ts";
+import { getEvalClass } from "./exec/class-registry.ts";
 import { SELF } from "./constraint.ts";
 
 /**
@@ -182,7 +183,12 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       // Bug 1130：**没有可用 prototype** 的构造器（`Proxy` 等）⇒ `instanceof`
       // 原生抛错 ⇒ 身份子句**跳过**（守卫必须能跑；身份信息在守卫面不可表达
       // ⇒ 只保留内层 shape 判定）。
-      if (hasUnusablePrototype(s.name)) return inner;
+      // BUG-166：brand 名属于**用户类**（`class URL { … }` 与宿主全局同名，
+      // 原生词法作用域 ⇒ 用户类遮蔽全局）时，`Reflect.get(globalThis, "URL")`
+      // 拿到的是**宿主**构造器 ⇒ 用户实例 `instanceof` 恒 false ⇒ 守卫拒绝
+      // 导出函数**自己的返回值**（恒假）。身份信息在守卫面不可表达 ⇒ 跳过
+      // 身份子句，只保留内层 shape 判定（宁可少判，不得恒假）。
+      if (hasUnusablePrototype(s.name) || getEvalClass(s.name) !== undefined) return inner;
       const identity = brandIdentityClause(s.name, v);
       if (inner === "true") return identity;
       return `(${identity}) && (${inner})`;

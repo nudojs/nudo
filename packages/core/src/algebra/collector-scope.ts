@@ -65,6 +65,24 @@ export function registerCollectorScopeParticipant(
 const scopeActive = new AsyncLocalStorage<boolean>();
 
 /**
+ * 求值轮次（epoch）：**最外层** {@link runWithCollectorScope} 开新作用域时 +1。
+ *
+ * 为什么需要（BUG-056）：模块求值结果里可能住着**活的模块级 `let` 状态**
+ * （generalize.ts / check-may-throw.ts 的 evaluator 缓存直接复用 run 表，
+ * 表里就是活的 `let` 绑定）。这种状态只在**一轮分析**内有意义：跨轮复用
+ * 等于把上一次分析（例如 analyzer 的一次 generalize）已经 ++ 过的实例递给
+ * 下一次（check 闸门）⇒ 同一份源码在不同路径下读出 1 / 2 / 3，且
+ * `contract --emit` 与 `check` 永不收敛。缓存键带 epoch ⇒ 每轮重新求值；
+ * 嵌套入口走幂等路径共享外层 epoch（不涨轮）。
+ */
+let evalRoundEpoch = 0;
+
+/** 当前求值轮次（供**按轮**缓存做键；见 {@link runWithCollectorScope}） */
+export function currentEvalRoundEpoch(): number {
+  return evalRoundEpoch;
+}
+
+/**
  * 进入一次完整分析的 collector 生命周期作用域。幂等（已在作用域内 →
  * 直接执行）。body 可返回 Promise：async 续体沿 ALS 链继承 store，
  * await 窗口内交错开启的其它作用域互不可见。
@@ -79,5 +97,7 @@ export function runWithCollectorScope<R>(body: () => R): R {
     const inner = scoped;
     scoped = () => enter(inner);
   }
+  // 新的一轮分析 ⇒ 涨轮（按轮缓存据此作废，见 currentEvalRoundEpoch）
+  evalRoundEpoch++;
   return scopeActive.run(true, scoped);
 }

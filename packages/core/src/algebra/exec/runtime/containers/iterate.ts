@@ -15,6 +15,10 @@
  * - unbounded（长度未知）单代表迭代只跑一次：0 次/出口臂由 fork-arm +
  *   snapExit join 承接；break/continue 打断代表体 → widen.markInterrupted
  *   （完整迭代效应不可观测，累加器域整体宽化）。
+ * - Bug 220：无界迭代的**代表元素**是**元素域**（已采集元素 join；采集触顶 /
+ *   条目过多折 unknown），**不得**取首个具体元素去决定分支——否则
+ *   `if (x > 0) break` 被首元素判假，then 臂与其 IteratorClose（`return()`）
+ *   一并静默丢弃（引擎结论与宿主相反）。
  * - Bug 195：标签模板对象是**冻结的数组 exotic**（原生 GetTemplateObject →
  *   CreateArrayFromList + SetIntegrityLevel(frozen)）⇒ 元槽（length / raw /
  *   @@iterator）**非枚举**、对象**冻结**（extState）、JSON 走**数组序列化面**
@@ -1155,6 +1159,34 @@ function arrayLiveForOf(
   };
 }
 
+/** 无界迭代代表元的 join 上限（Bug 220）：用户迭代器采集可达
+ *  USER_ITER_MAX_STEPS（1024）条，1024 路字面量并集会把下游算术/成员读
+ *  拖死；超过即折 unknown（等价抽象、廉价）。 */
+const UNBOUNDED_ITEM_JOIN_CAP = 8;
+
+/**
+ * Bug 220：无界（长度未知）迭代的**代表元素** = 已采集元素的元素域 join。
+ *
+ * 不得取 `items[0]` 这种具体值：`for (const x of o) { if (x > 0) break }`
+ * 会被首元素 `0` **决定性**判假 ⇒ then 臂根本没被求值 ⇒ break 的
+ * IteratorClose（`return()`）静默消失，引擎出口值与宿主相反。具体元素
+ * 只能贡献「该值必然成立」的正向事实；代表元必须对整个未知元素域成立
+ * （join 后条件两侧都会被探索）。
+ *
+ * 成本：采集触顶（尾域已折 unknown，见 elemsOf）或条目过多 ⇒ 元素域不可
+ * 静态刻画 ⇒ 直接折 unknown（不得造 1024 路并集）。
+ */
+function abstractIterItem(items: Abs[]): Abs {
+  if (items.length === 0) return unknown;
+  // 尾域 unknown = 元素列表被截断（步数上界触顶 / done 抽象不可判）
+  if (items.length > UNBOUNDED_ITEM_JOIN_CAP || items[items.length - 1] === unknown) {
+    return unknown;
+  }
+  let acc = items[0]!;
+  for (let i = 1; i < items.length; i++) acc = joinAbs(acc, items[i]!);
+  return acc;
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
@@ -1318,6 +1350,11 @@ export function $forOf(
         : 0;
   const concreteOverrun = knownLen !== undefined && knownLen > concreteCap;
 
+  // Bug 220：无界（长度未知）代表元 = 元素域 join（见 abstractIterItem）——
+  // 单代表迭代只跑一次，但这一次必须代表**整个未知元素域**，不得用首个
+  // 具体元素去决定分支（否则 break 的 then 臂 + IteratorClose 被静默丢弃）。
+  const unboundedItem = unbounded ? abstractIterItem(items) : undefined;
+
   for (let i = 0; i < n; i++) {
     let item: Abs;
     if (liveColl) {
@@ -1331,7 +1368,8 @@ export function $forOf(
       if (e === undefined) break; // 迭代耗尽（原生 done）
       item = e;
     } else {
-      item = items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
+      // Bug 220：无界代表元（元素域 join）；有界具体迭代仍逐元素取（精确）
+      item = unbounded ? unboundedItem! : items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
     }
     // Bug 98：for-in 快照键进体前重查在场——被 delete 的键跳过本迭代
     //（体副作用不发生；skip 在 fork 臂外，不产悬挂 arm）

@@ -17,7 +17,7 @@
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit, isBigPrim } from "../../abs.ts";
 import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
-import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain, BUILTIN_BRAND_METHODS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
+import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain, BUILTIN_BRAND_METHODS, ITERABLE_BRANDS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
@@ -67,10 +67,12 @@ import {
   classNameOfValue,
   ensureFnParentName,
   getEvalClass,
+  classSpecOfAbs,
   registerEvalClass,
 } from "../class-registry.ts";
 
 import { invokeArrMethod } from "./invoke-arr.ts";
+import { assertThisAccessible } from "../super-access.ts";
 import {
   findMethod,
   findStaticMethod,
@@ -151,6 +153,12 @@ export function $invoke(
   method: string,
   args: Abs[] | (() => Abs[]),
   loc?: [number, number],
+  /**
+   * BUG-216：调用点**已经读过**的成员值（可选链 `o.m?.()` 的 nullish 判定
+   * 必须先读一次；派发复用同一值 ⇒ 有状态 getter 只跑一次）。`undefined`
+   * = 未预读（本函数按既有口径自行预读）。
+   */
+  preReadGiven?: Abs,
 ): Abs {
   // Bug 152：实参 thunk（`() => [args]`）——调用点成员**先于实参**求值
   // （原生 CallExpression：引用取值（getter 触发）→ 实参 → 调用）。
@@ -159,11 +167,15 @@ export function $invoke(
   // 值（generic 臂不再二次读 ⇒ getter 只跑一次）。
   // 预读对 sum（union）接收者跳过：派发按成员各读一次（$invokeInner 的
   // sum 臂），预读会与成员读重复（getter 跑两次）。
+  // BUG-173：派生构造器体在 super() 之前调用 this.m() ⇒ 原生 ReferenceError。
+  if (thisVal && typeof thisVal === "object" && "shape" in (thisVal as object)) {
+    assertThisAccessible(thisVal);
+  }
   let preRead: Abs | undefined;
   let argList: Abs[];
   if (typeof args === "function") {
     if (thisVal?.shape?.k !== "sum") {
-      preRead = $get(thisVal, method, { silent: true });
+      preRead = preReadGiven ?? $get(thisVal, method, { silent: true });
     }
     argList = args();
   } else {
@@ -260,6 +272,8 @@ export function $invokeKey(
   key: Abs,
   args: Abs[] | (() => Abs[]),
   loc?: [number, number],
+  /** BUG-216：调用点已读出的成员值（`o[k]?.()` 的 nullish 判定读；派发复用）。 */
+  preReadGiven?: Abs,
 ): Abs {
   const k = invokeKeySlotOf(key);
   if (k === undefined) {
@@ -275,7 +289,7 @@ export function $invokeKey(
       return it;
     }
   }
-  return $invoke(thisVal, k, args, loc);
+  return $invoke(thisVal, k, args, loc, preReadGiven);
 }
 
 /** 可选链计算键调用（a?.[k]() / a[k]?.() 的非链路径）：nullish 接收者
@@ -946,7 +960,7 @@ function dispatchInstanceMethod(
       return $call(written, args, thisVal);
     }
   }
-  const m = findMethod(brandName, method);
+  const m = findMethod(brandName, method, classSpecOfAbs(thisVal));
   if (m) {
     // 类实例方法调用点收集（T5）：`Class.method`
     let result: Abs = unknown;
@@ -1022,6 +1036,23 @@ function invokeBrandReceiver(
   if (taR !== undefined) return taR;
   const builtinR = invokeBuiltinBrandMethod(thisVal, brandName, method, args);
   if (builtinR !== undefined) return builtinR;
+  // BUG-165：@@iterator 的调用面——读面（ITERABLE_BRANDS 臂）折「是函数」，
+  // 但调用面没有对应派发 ⇒ 此前落「确定缺席」硬抛 TypeError（假红）或
+  // 折 exact undefined（自信的错值，TypedArray 家族）。这里给出迭代器面：
+  // 数组样 brand 走 abstractSeqIteratorAbs（元素域不可知 → unknown）；
+  // 其余 @@ 方法由 invokeUnresolvedMember 的豁免落 unknown（不抛）。
+  if (method === "@@iterator") {
+    const it = iteratorFaceOf(thisVal);
+    if (it !== undefined) return it;
+    if (
+      brandName !== "Map" &&
+      brandName !== "Set" &&
+      brandName !== "String" &&
+      ITERABLE_BRANDS.has(brandName)
+    ) {
+      return abstractSeqIteratorAbs(unknown);
+    }
+  }
   // Bug 1035：**类值接收者**（`A.m()`）的派发**先查静态面**。
   //
   // 原生：类值是构造器函数，`A.m` 沿构造器 [[Prototype]] 链解析（= 静态
@@ -1346,6 +1377,14 @@ function invokeUnresolvedMember(
   prop: Abs,
   loc?: [number, number],
 ): Abs {
+  // BUG-165：well-known Symbol 方法（@@match / @@matchAll / @@search /
+  // @@replace / @@split / @@toPrimitive / @@iterator …）的**读面**已建模
+  // （BUILTIN_SYMBOL_MEMBERS / ITERABLE_BRANDS 折「是函数」），而调用面的
+  // 存在性判定只查 BUILTIN_BRAND_METHODS / BUILTIN_BRAND_ACCESSORS（两张表
+  // 都没有 `@@` 前缀条目）⇒ 判「确定缺席」⇒ 硬抛 TypeError ⇒ 对永不抛的
+  // 代码报 L2 error（假红）。读面说在场 ⇒ 调用面不得判缺席：无法精确派发
+  // 的 @@ 方法落诚实 unknown（不抛、不折 never）。
+  if (method.startsWith("@@") && thisVal?.shape?.k === "brand") return unknown;
   // 结构上确定不可调用（null-proto 缺失名 / 闭 exact 对象非 OP 名缺失 /
   // 字面量非函数槽）→ 原生 TypeError hard throw（catch 可吸收）
   if (definitelyUncallableMember(thisVal, method)) {

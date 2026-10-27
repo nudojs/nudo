@@ -197,9 +197,10 @@ describe("Bug 33: 合法控制组值面不回退（@@hasInstance / class / D 类
     expect(catchFace(`export function f() { return undefined instanceof Array ? "true" : "false"; }`)).toBe("false");
   });
 
-  it("fn 形状 RHS 不校验：boolean 而非定抛（箭头原生 TypeError，generator 原生合法——见文件头）", () => {
-    // 普通函数 / 箭头 RHS：引擎折抽象 boolean（$instanceofNonIdent）
+  it("fn 形状 RHS：普通函数折 boolean 不抛；箭头 RHS 无 .prototype ⇒ 定抛 TypeError（BUG-175）", () => {
+    // 普通函数有 .prototype ⇒ 合法，折布尔不抛。
     expect(catchFace(thrown("(function () {})"))).not.toBe("TypeError");
-    expect(catchFace(thrown("((v) => true)"))).not.toBe("TypeError");
+    // 箭头函数无 .prototype ⇒ OrdinaryHasInstance 定抛（node 实测）。
+    expect(catchFace(thrown("((v) => true)"))).toBe("TypeError");
   });
 });

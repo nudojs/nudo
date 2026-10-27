@@ -119,7 +119,13 @@ function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
  *   （rest 形参不进 params 或带 "..." 前缀）⇒ 不与该签名相撞。
  */
 function isClassValueCallee(v: Abs): boolean {
-  const s = v.shape;
+  // 防御：被调者可能是非 Abs 值（宿主函数 / undefined 槽读出的值）。旧实现
+  // 直接读 `v.shape.k` ⇒ 自身抛原生 TypeError（"Cannot read properties of
+  // undefined (reading 'k')"），被求值回落层误记成用户代码的 `module-throw`
+  // （引擎缺陷伪装成用户缺陷，差分语料的零回落闸门因此变红）。
+  if (!v || typeof v !== "object" || !("shape" in (v as object))) return false;
+  const s = (v as Abs).shape;
+  if (!s || typeof s !== "object") return false;
   if (s.k === "brand") {
     return s.ctor === true && classNameOfValue(v as object) !== undefined;
   }

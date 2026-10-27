@@ -109,6 +109,7 @@ export function transpileAtomExpr(
       // 顶层 this（无 thisParam 且不在函数体）：ESM 语义 this === undefined。
       // 读 → undefined；写（this.x = 1）经写路径 strict 语义硬抛 TypeError
       // （模块装载失败，与原生一致）。函数体 this 由 thisParam/降级处理。
+      //
       return opts.thisParam ?? "$lit(void 0)";
     case "RegExpLiteral": {
       return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;

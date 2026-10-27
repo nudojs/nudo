@@ -157,14 +157,19 @@ export function f(){ return 1; }`;
     expect(moduleThrowIssues(r)).toEqual([]);
   });
 
-  it("负控：无 throw 语句的定抛形态（JSON.parse 坏字面量 / null 成员）⇒ 不报", () => {
+  // BUG-072 口径变更（本测试原为负控）：`JSON.parse("<非法字面量>")` 与
+  // 字面量 null 的成员访问是**源码层面的确定性抛**（不是引擎对宿主 API 的
+  // 近似产物），与 react-dom / typescript 那类「引擎近似抛但原生可装载」
+  // 不同 ⇒ 必须进 `nudo:module-throw`。引擎近似的负控见上一条。
+  it("确定性句法抛（JSON.parse 坏字面量 / null 成员）⇒ 报 module-throw", () => {
     const json = `export const v = JSON.parse("{");
 export function f(){ return 1; }`;
     expect(tryRunTranspiledDetailed(json, { mode: "analyze" }).fallback?.reason).toBe(
       "module-throw",
     );
     const rj = checkSource("b1158-10a.js", json, pTrue);
-    expect(moduleThrowIssues(rj)).toEqual([]);
+    expect(moduleThrowIssues(rj)).toHaveLength(1);
+    expect(moduleThrowIssues(rj)[0]!.message).toContain("SyntaxError");
 
     const nullish = `const o = null;
 export const v = o.x;
@@ -173,7 +178,8 @@ export function f(){ return 1; }`;
       tryRunTranspiledDetailed(nullish, { mode: "analyze" }).fallback?.reason,
     ).toBe("module-throw");
     const rn = checkSource("b1158-10b.js", nullish, pTrue);
-    expect(moduleThrowIssues(rn)).toEqual([]);
+    expect(moduleThrowIssues(rn)).toHaveLength(1);
+    expect(moduleThrowIssues(rn)[0]!.message).toContain("TypeError");
   });
 
   it("真实包锚点缩形：React Server 入口 stub（确定要抛）⇒ 报 Error", () => {
