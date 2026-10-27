@@ -1,5 +1,14 @@
 # @nudojs/env
 
+## 0.5.4
+
+### Patch Changes
+
+- f1d4958: Update env source comments: the env-skip list is now the derived `getEnvShadowSkipGlobals` (namespace identity routing + host intrinsic names) rather than the old `ENV_SHADOW_SKIP_GLOBALS` constant. Comment-only; no runtime behaviour change.
+- Updated dependencies [0438f10]
+- Updated dependencies [6ebf5a4]
+  - @nudojs/core@1.17.0
+
 ## 0.5.3
 
 ### Patch Changes
