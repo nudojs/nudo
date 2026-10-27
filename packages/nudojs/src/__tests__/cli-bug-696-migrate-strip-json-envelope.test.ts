@@ -51,7 +51,11 @@ describe("Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
     expect(r.stdout.length).toBeGreaterThan(0);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状**恒为数组**（失败信封是单元素数组）
+    const envelope = JSON.parse(r.stdout) as StripEnvelope[];
+    expect(Array.isArray(envelope)).toBe(true);
+    expect(envelope).toHaveLength(1);
+    const parsed = envelope[0]!;
     expect(parsed.ok).toBe(false);
     expect(parsed.action).toBe("strip");
     expect(parsed.pathErrors?.length ?? 0).toBeGreaterThan(0);
@@ -64,7 +68,9 @@ describe("Bug 696 — migrate strip --json 的失败面（stdout 永不为空 + 
     const r = runCliTsx(["migrate", "strip", "--json", bad, good]);
     expect(r.status).toBe(1);
     expect(r.stdout.length).toBeGreaterThan(0);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    const envelope = JSON.parse(r.stdout) as StripEnvelope[];
+    expect(Array.isArray(envelope)).toBe(true);
+    const parsed = envelope[0]!;
     expect(parsed.ok).toBe(false);
     expect(parsed.results?.length ?? 0).toBe(1);
     expect(parsed.results?.[0]?.file).toContain("good.ts");

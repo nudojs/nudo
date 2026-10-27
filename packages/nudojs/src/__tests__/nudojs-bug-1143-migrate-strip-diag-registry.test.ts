@@ -56,7 +56,9 @@ describe("Bug 1143 —— migrate strip 的失败码走 DIAG 注册表", () => {
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
     // 非空字符串（防「两边都是 undefined ⇒ 断言空过」）
     expect(typeof parsed.pathErrors![0]!.code).toBe("string");

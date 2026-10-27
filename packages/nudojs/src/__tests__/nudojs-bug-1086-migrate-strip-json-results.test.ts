@@ -51,7 +51,9 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
     expect(parsed.action).toBe("strip");
     // 成功文件的行**仍在** results 里（旧行为：整目标丢弃 ⇒ results 为空）
@@ -64,7 +66,9 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     expect(parsed.pathErrors?.length ?? 0).toBe(1);
     const p = parsed.pathErrors![0]!.path;
     // 是**文件**（旧行为：目标目录 "."）
@@ -82,7 +86,9 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     const paths = (parsed.pathErrors ?? []).map((e) => e.path);
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) {
@@ -97,7 +103,9 @@ describe("Bug 1086 — migrate strip --json 的逐文件隔离与 path 量纲", 
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
     // 成功行仍在 results 里，且带「未写盘」注记（不被误读成已写盘）
     expect(parsed.results?.length ?? 0).toBe(1);

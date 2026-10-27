@@ -207,10 +207,13 @@ describe("族 56 · CLI 面 3 条", () => {
 
     const j = runCliTsx(["migrate", "retire", a.dir, b.dir, "--json"]);
     expect(j.status).toBe(0);
-    const parsed = JSON.parse(j.stdout) as {
+    // BUG-017：`--json` 顶层形状**恒为数组**（成功信封也是单元素数组）
+    const envelope = JSON.parse(j.stdout) as Array<{
       ok: boolean;
       failedTargets?: Array<{ target: string; message: string }>;
-    };
+    }>;
+    expect(Array.isArray(envelope)).toBe(true);
+    const parsed = envelope[0]!;
     expect(parsed.ok).toBe(true);
     expect(parsed.failedTargets).toHaveLength(2);
     expect(parsed.failedTargets!.map((f) => f.target)).toEqual([a.dir, b.dir]);

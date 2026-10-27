@@ -124,7 +124,17 @@ type StripOptions = {
   report?: {
     enumRemoved?: boolean;
     enumSynthesized?: boolean;
+    /**
+     * enum 的**计算成员**里的成员引用被改写成了 `E["KEY"]`（Bug 234）。
+     *
+     * 旧实现把初始化表达式**原样**抄进 IIFE ⇒ `B = A * 10` 里的 `A` 是
+     * **未绑定全局** ⇒ 产物运行期 ReferenceError。tsc 的 emit 会把成员引用
+     * 改写成 `E["A"]`（或折叠成常量）⇒ 现在同口径。
+     */
+    enumComputedMemberRewritten?: boolean;
     namespaceKept?: boolean;
+    /** `import x = require(...)`（TS-only 导入语法）被**保留** ⇒ 产物不是合法 JS */
+    importEqualsKept?: boolean;
     exportAssignmentRemoved?: boolean;
     thisParamRemoved?: boolean;
     typeOnlyImportRemoved?: boolean;
@@ -600,6 +610,88 @@ function enumMemberAccess(enumName: string, key: string): Record<string, unknown
 }
 
 /**
+ * enum **成员引用**改写（Bug 234）。
+ *
+ * 计算成员（`B = A * 10`）的初始化表达式里，`A` 是**这个 enum 的成员引用**
+ * ——tsc 的 emit 把它改写成 `E["A"]`（必要时再折叠常量）。旧实现把表达式
+ * **原样**抄进 IIFE ⇒ 产物里 `A` 是**未绑定全局** ⇒ 运行期 ReferenceError。
+ *
+ * 改写口径：
+ * - 只改写**裸标识符**（值位置）——`A` ⇒ `E["A"]`；
+ * - **非引用位置**不动：非计算的对象键（`{ A: 1 }`）、非计算的属性名
+ *   （`obj.A`）、`label:`（`break A`）——它们不是「读一个绑定」；
+ * - 计算位置（`{ [A]: 1 }` / `obj[A]`）是引用位置 ⇒ 照常改写。
+ */
+function rewriteEnumMemberRefs(
+  value: unknown,
+  enumName: string,
+  memberKeys: ReadonlySet<string>,
+  isRef: boolean = true,
+  seen: Set<object> = new Set(),
+): void {
+  if (!value || typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) rewriteEnumMemberRefs(item, enumName, memberKeys, isRef, seen);
+    return;
+  }
+  const node = value as Record<string, unknown>;
+  const type = typeof node.type === "string" ? node.type : "";
+  if (type === "Identifier") {
+    if (!isRef) return;
+    const name = typeof node.name === "string" ? node.name : "";
+    if (name === "" || !memberKeys.has(name)) return;
+    delete node.name;
+    Object.assign(node, enumMemberAccess(enumName, name));
+    return;
+  }
+  for (const key of Object.keys(node)) {
+    if (SKIP_KEYS.has(key)) continue;
+    const child = node[key];
+    if (child === null || typeof child !== "object") continue;
+    // 子位置是不是「引用位置」
+    let childIsRef = isRef;
+    if (key === "label") {
+      childIsRef = false; // break A / continue A —— 标签不是绑定
+    } else if (key === "property" && (type === "MemberExpression" || type === "OptionalMemberExpression")) {
+      childIsRef = isRef && node.computed === true; // obj.A 的 A 不是引用
+    } else if (key === "key") {
+      childIsRef = isRef && node.computed === true; // { A: 1 } 的 A 不是引用
+    }
+    rewriteEnumMemberRefs(child, enumName, memberKeys, childIsRef, seen);
+  }
+}
+
+/**
+ * 计算成员的值的**静态形态**（Bug 234）——字符串值 ⇒ tsc **不**建反向映射
+ * （`E["B"] = "ab"`，而不是 `E[E["B"] = "ab"] = "B"`）。
+ *
+ * 只在**静态可判定**时给结论（拿不准 ⇒ 按数值处理 ⇒ 建反向映射）：
+ * - 字面量字符串 ⇒ 字符串；
+ * - `+` 连接的任一侧是字符串 ⇒ 字符串（JS 语义）；
+ * - 裸标识符且指向一个**字符串成员** ⇒ 字符串。
+ */
+function computedMemberIsString(
+  init: Record<string, unknown> | undefined,
+  memberKinds: ReadonlyMap<string, "string" | "number">,
+): boolean {
+  if (!init) return false;
+  if (init.type === "StringLiteral") return true;
+  if (init.type === "Identifier") {
+    const name = typeof init.name === "string" ? init.name : "";
+    return name !== "" && memberKinds.get(name) === "string";
+  }
+  if (init.type === "BinaryExpression" && init.operator === "+") {
+    return (
+      computedMemberIsString(init.left as Record<string, unknown>, memberKinds) ||
+      computedMemberIsString(init.right as Record<string, unknown>, memberKinds)
+    );
+  }
+  return false;
+}
+
+/**
  * enum 成员的赋值语句。
  *
  * - **数值成员**（tsc 建反向映射）：`E[E["KEY"] = <value>] = "KEY"`
@@ -674,6 +766,21 @@ function synthesizeEnum(
   const stmts: unknown[] = [];
   let prevValue: number | undefined; // 上一个成员的数值（自动递增用）
   let prevKey: string | undefined; // 上一个成员的键（自动递增的运行期兜底用）
+  // 本 enum 的**全部成员键**（计算成员的成员引用改写用 · Bug 234）
+  const memberKeys = new Set<string>();
+  // 成员值的**静态形态**（"string" / "number"）——计算成员要不要建反向映射
+  // 取决于它的值是不是字符串（tsc 口径：字符串成员**不**建反向映射）。
+  const memberKinds = new Map<string, "string" | "number">();
+  for (const m of members) {
+    const member = m as Record<string, unknown>;
+    const mid = member.id as { type?: string; name?: string; value?: unknown } | undefined;
+    const key = mid?.type === "StringLiteral" ? String(mid.value ?? "") : (mid?.name ?? "");
+    if (key === "") continue;
+    memberKeys.add(key);
+    const init = member.initializer as Record<string, unknown> | undefined;
+    if (init?.type === "StringLiteral") memberKinds.set(key, "string");
+    else if (init?.type === "NumericLiteral") memberKinds.set(key, "number");
+  }
   for (const m of members) {
     const member = m as Record<string, unknown>;
     const mid = member.id as { type?: string; name?: string; value?: unknown } | undefined;
@@ -723,9 +830,15 @@ function synthesizeEnum(
       prevKey = key;
       continue;
     }
-    // 计算成员：原样保留初始化表达式（tsc 的 emit 也是原样内联）
+    // 计算成员：初始化表达式里的**成员引用**必须改写成 `E["KEY"]`
+    // （Bug 234）——裸标识符在产物里是**未绑定全局** ⇒ 运行期 ReferenceError。
+    // tsc 的 emit 同口径（`B = A * 10` ⇒ `E[E["B"] = E["A"] * 10]`）。
     const expr = transformValue(init, source, opts, ctx) as Record<string, unknown>;
-    stmts.push(enumMemberAssign(name, key, expr, true));
+    rewriteEnumMemberRefs(expr, name, memberKeys);
+    if (opts?.report) opts.report.enumComputedMemberRewritten = true;
+    // 字符串值的计算成员**不**建反向映射（tsc 口径）——静态可判定时同口径。
+    const isStringValue = computedMemberIsString(init, memberKinds);
+    stmts.push(enumMemberAssign(name, key, expr, !isStringValue));
     prevValue = undefined;
     prevKey = key;
   }
@@ -1217,6 +1330,11 @@ function transformNode(
     } else if (node.type === "TSModuleDeclaration" && !isTsDeclareLike(node)) {
       // 非 declare 的 namespace 有运行时语义 ⇒ 保留 ⇒ 「可能打印不干净」提示成立
       opts.report.namespaceKept = true;
+    } else if (node.type === "TSImportEqualsDeclaration") {
+      // `import x = require(...)` —— TS-only 导入语法 ⇒ 剥除器**保留**它
+      // ⇒ 产物不是合法 JavaScript（Node 解析不了）⇒ 命令层据此拒绝写盘
+      // （Bug 050）。
+      opts.report.importEqualsKept = true;
     } else if (node.type === "TSExportAssignment" || node.type === "TSNamespaceExportDeclaration") {
       // Bug 446：TS-only 的模块出口语句被剥除
       opts.report.exportAssignmentRemoved = true;
