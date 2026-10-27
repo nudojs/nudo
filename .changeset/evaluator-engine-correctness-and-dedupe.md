@@ -1,5 +1,5 @@
 ---
-"@nudojs/core": major
+"@nudojs/core": minor
 "@nudojs/service": patch
 "@nudojs/parser": patch
 ---
@@ -17,5 +17,7 @@ Evaluator engine correctness, host transpile cutover, and dedupe.
 - Module top level is now an alias-group scope boundary: `const b = a` at module scope keeps its alias identity across a top-level fork instead of leaving one name on the pre-fork object.
 - `Object.assign` onto a sealed / non-extensible brand (prototype) target now rejects a new own key with TypeError (native parity) while existing writable keys, own setters and owner-class members still assign.
 - Dedupe shared machinery: fork-arm wrapper, structural Abs keys, dependency-aware memo store + module identities, class-instance bridge, numeric bounds, internal-slot visibility, env-skip derivation from `NAMESPACE_GLOBALS`, proto walk, path projection, sum-arg dispatch, `undefAbs`, RegExp brand predicate, export-call exception skeleton.
-- Remove the dead public engine symbols instead of deprecating them: the module-level `phi` stack (`currentPhi`/`pushPhi`/`popPhi`/`resetPhi`/`withPhiConstraint`/`describePhi`), `$while`/`$forIter`/`$asyncReturn`/`$staticInit`/`$thisGet`/`$thisSet`, the HOF promotion helpers (`createHofCollectCtx`/`promoteParamShape`/`tryPromote*`/`HofCollectCtx`/`AstEnv.hofCollect`), the dead relation helpers `alphaOf`/`betaOf`, and `generalizeAll`. `$staticInvoke` also leaves the public surface (previously exported from `.` and `./exec`): it is now engine-internal, still implemented for the `check-may-throw` class bridge. Retire dead internal `language.ts` exports (keep `getClassChain`/`wrapPromise`).
+- **BREAKING**: Remove the dead public engine symbols instead of deprecating them: the module-level `phi` stack (`currentPhi`/`pushPhi`/`popPhi`/`resetPhi`/`withPhiConstraint`/`describePhi`), `$while`/`$forIter`/`$asyncReturn`/`$staticInit`/`$thisGet`/`$thisSet`, the HOF promotion helpers (`createHofCollectCtx`/`promoteParamShape`/`tryPromote*`/`HofCollectCtx`/`AstEnv.hofCollect`), the dead relation helpers `alphaOf`/`betaOf`, and `generalizeAll`. `$staticInvoke` also leaves the public surface (previously exported from `.` and `./exec`): it is now engine-internal, still implemented for the `check-may-throw` class bridge. Retire dead internal `language.ts` exports (keep `getClassChain`/`wrapPromise`).
+
+  Migration: every removed name was a dead engine internal with no product-surface consumer — drop the imports from `@nudojs/core` / `@nudojs/core/exec`; `$staticInvoke` is no longer reachable from a host.
 - Rename `exec/class-regex.ts` to `exec/regexp-runtime.ts` to match its RegExp-brand role.
