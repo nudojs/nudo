@@ -49,9 +49,19 @@ export type EmitDerivedResult = {
     sidecarPath: string;
     fn: string;
     written: boolean;
+    /** 本分支实际写入该侧车的导出名（段文本有变）——调用方据此拼台账 */
+    writtenNames?: string[];
     changed: boolean;
     skipped?: "name-clash" | "not-projectable" | "underivable" | "no-change";
     diff?: string;
+    /**
+     * BUG-196：本分支为该侧车算出的**最终文本**（逐字节等于真写盘的结果）。
+     *
+     * 同一个侧车同一段只能有**一个写者**：调用方自己写盘时（`skipWrite`）
+     * 用它决定落盘内容 ⇒ 写盘与比对（`--dry-run` 预览 / `--exit-on-diff`）
+     * **同源**，不会出现「预览里有、盘上没有」的差异。
+     */
+    finalContent?: string;
     issues: Array<{ code: string; severity: "error" | "warning" | "info"; message: string }>;
   }>;
   hasRoot: boolean;
@@ -176,6 +186,23 @@ export function emitDerivedFromRoot(
     autoBind?: boolean;
     /** 只刷新目标侧车里已存在的 @generated 段（不发明新下游契约） */
     refreshExistingOnly?: boolean;
+    /**
+     * BUG-196：**调用方给定的基底内容**（按侧车路径）——调用方自己决定该侧车
+     * 的最终形态（如 CLI：直写分支的产物）⇒ 派生分支据此算出最终文本，
+     * 写盘与比对同源。回调返回 `undefined` ⇒ 该侧车照旧从磁盘读。
+     */
+    baseContent?: (sidecarPath: string) => string | undefined;
+    /**
+     * BUG-196：这些侧车由**调用方**写盘（派生分支只算不写）⇒ 同一侧车同一段
+     * 只有一个写者（直写分支/派生分支不再各写各的）。
+     */
+    skipWrite?: string[];
+    /**
+     * BUG-196：**直写分支负责**的导出名——这些名字的段正文归直写分支，派生
+     * 分支**不整段覆盖**，只把 `// derived-from:` 标签行并进去（标签行丢失
+     * 是旧实现最大的坑：直写分支随后整段重写 ⇒ 标签被抹掉）。
+     */
+    directSections?: Set<string>;
   },
 ): EmitDerivedResult {
   const abs = resolve(rootFile);
@@ -232,10 +259,21 @@ export function emitDerivedFromRoot(
     bySidecar.set(sp, list);
   }
 
+  // BUG-196：调用方写盘的侧车（CLI 的根侧车）⇒ 本分支只算不写
+  const skipWritePaths = new Set((opts.skipWrite ?? []).map((p) => resolve(p)));
+
   for (const [sidecarPath, rows0] of bySidecar) {
     const targetFile = rows0[0]!.file;
     const targetSidecarDir = dirname(sidecarPath);
-    const prevSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
+    // BUG-196：基底内容可由调用方注入（= 该侧车真写盘时的基底）⇒ 本分支
+    // 算出的最终文本与调用方写盘的内容**同源**。
+    const injectedBase = opts.baseContent?.(sidecarPath);
+    const prevSrc =
+      injectedBase !== undefined
+        ? injectedBase
+        : existsSync(sidecarPath)
+          ? readFileSync(sidecarPath, "utf-8")
+          : "";
 
     // refreshExistingOnly：只碰已有生成段的导出，不发明新契约
     const rows = opts.refreshExistingOnly
@@ -334,10 +372,20 @@ export function emitDerivedFromRoot(
       // 并集取**最宽**者（x>5 ⊆ x>1 → 并集 = x>1），标签取并集（排序 → 顺序无关）。
       const rowLabels = splitLabels(row.derivedFrom);
       const prevLabels = prevSection !== undefined ? derivedFromLabels(prevSection) : [];
+      // BUG-196：段归**直写分支**所有（调用方点名）⇒ 派生分支**不整段覆盖**，
+      // 只把 `// derived-from:` 标签行并进去：直写分支的正文优先（同一段只
+      // 有一个写者），标签行不再被随后那次整段重写抹掉。
+      const directOwned =
+        opts.directSections !== undefined && opts.directSections.has(row.fn);
       const needsMerge =
         prevSection !== undefined && prevLabels.length > 0 && !sameLabelSet(prevLabels, rowLabels);
       let section: string;
-      if (needsMerge) {
+      if (directOwned && prevSection !== undefined) {
+        section = withDerivedFromLabelLine(
+          prevSection,
+          prevLabels.length > 0 ? mergeLabels(prevLabels, rowLabels) : rowLabels,
+        );
+      } else if (needsMerge) {
         const mergedLabels = mergeLabels(prevLabels, rowLabels);
         const decision = mergeDecision(row, prevSection!, sidecarPath, loadModule);
         if (decision === undefined) {
@@ -433,7 +481,8 @@ export function emitDerivedFromRoot(
       ? unifiedDiff(prevSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
       : undefined;
 
-    if (changed && !opts.dryRun) {
+    // BUG-196：调用方写盘的侧车 ⇒ 本分支**只算不写**（唯一写者）
+    if (changed && !opts.dryRun && !skipWritePaths.has(resolve(sidecarPath))) {
       const tmp = `${sidecarPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
       try {
         writeFileSync(tmp, finalContent, "utf-8");
@@ -453,9 +502,12 @@ export function emitDerivedFromRoot(
       sidecarPath,
       fn: rows.map((r) => r.fn).join(","),
       written: written.length > 0 && changed,
+      writtenNames: written,
       changed,
       ...(anySkip ? { skipped: anySkip } : {}),
       ...(diff !== undefined ? { diff } : {}),
+      // BUG-196：最终文本随结果回传 ⇒ 调用方（唯一写者）落盘时逐字节一致
+      finalContent,
       issues,
     });
   }
@@ -794,6 +846,27 @@ function withDerivedFromLabels(sectionText: string, labels: string[]): string {
     /^(\s*\/\/\s*derived-from:).*$/m,
     (_m, p1: string) => `${p1} ${sanitizeLineCommentText(labels.join(", "))}`,
   );
+}
+
+/**
+ * BUG-196：把 `// derived-from:` 标签行**并进**既有段文本。
+ *
+ * 段内已有标签行 ⇒ 替换标签内容（调用方已决定合并后的标签集）；
+ * 没有 ⇒ **插入**一行：优先插在 `// source:` 行之后（与派生段自身的版式
+ * 一致），没有 source 行则插在 `@generated` 标记行之后，都没有则插在
+ * 段首。行尾沿用既有段的 CRLF/LF ⇒ 不制造混合行尾。
+ */
+function withDerivedFromLabelLine(sectionText: string, labels: string[]): string {
+  if (derivedFromLabels(sectionText).length > 0) {
+    return withDerivedFromLabels(sectionText, labels);
+  }
+  const eol = sectionText.includes("\r\n") ? "\r\n" : "\n";
+  const lines = sectionText.split(/\r?\n/);
+  const srcIdx = lines.findIndex((l) => /^\s*\/\/\s*source:/.test(l));
+  const genIdx = lines.findIndex((l) => isGeneratedMarkerLine(l));
+  const at = srcIdx >= 0 ? srcIdx + 1 : genIdx >= 0 ? genIdx + 1 : 0;
+  lines.splice(at, 0, `// derived-from: ${sanitizeLineCommentText(labels.join(", "))}`);
+  return lines.join(eol);
 }
 
 /** 既有生成段的 fn 约束（参数位 + 返回位） */

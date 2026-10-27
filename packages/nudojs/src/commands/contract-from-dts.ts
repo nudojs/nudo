@@ -27,6 +27,17 @@
  *    不越出项目根 / 内容未变不写 / 空草稿不落盘）；
  * ④ 「next」提示**点名目标侧车路径**（`sidecarPathOf` 口径，与 `--draft --write`
  *    的 `formatDraftSummary` 同款）。
+ *
+ * ── 族 20 · 片 C 的续修（944 · dry-run 预览）─────────────────────────────
+ * 改前：`--from-dts --write --dry-run` 打的是**整份草稿正文**（全文 dump）⇒
+ * 看不到「改了什么」；且「既有草稿不同 ⇒ 拒绝覆盖」那一关跑在 dry-run 分支
+ * **之前** ⇒ dry-run 遇到既有草稿直接报错退出，**连 diff 都看不到**。
+ *
+ * 改后：dry-run 打 **unified diff**（复用 `@nudojs/service/emit` 的
+ * `unifiedDiff`，与 `--draft --write --dry-run` 同款；对照面 = 既有草稿文件的
+ * 磁盘内容，文件不存在 ⇒ 空串 ⇒ 整份都是新增行），标签行
+ * 「[dry-run] would write <path>」保留；退出码**镜像真写盘**（真写会被拒 ⇒
+ * dry-run 也 exit 1，但 diff 照打）。dry-run **绝不写盘**。
  */
 import { readFileSync, existsSync, statSync, type Stats } from "node:fs";
 import { resolve, relative, basename, dirname, join, isAbsolute } from "node:path";
@@ -88,7 +99,9 @@ export async function runContractFromDts(
 ): Promise<void> {
   const { dtsPathToContractDraft, dtsToContractDraft } = await import("@nudojs/harvester");
   const { harvestPackage } = await import("@nudojs/harvester");
-  const { sidecarDraftPath, writeInterfaceDraft } = await import("@nudojs/service/emit");
+  const { sidecarDraftPath, writeInterfaceDraft, unifiedDiff } = await import(
+    "@nudojs/service/emit"
+  );
   const { sidecarPathOf } = await import("@nudojs/core");
 
   if (paths.length === 0) {
@@ -187,6 +200,23 @@ export async function runContractFromDts(
     // **拒绝覆盖** + 提示（`opts.force` / `NUDO_DRAFT_FORCE=1` 才覆盖）。
     const force = opts.force === true || process.env.NUDO_DRAFT_FORCE === "1";
     const prev = existsSync(outPath) ? readFileSync(outPath, "utf-8") : undefined;
+    // 族 20 · Bug 944（续）——`--dry-run` 打 **unified diff**，不再倾倒草稿全文。
+    //
+    // 改前：dry-run 只打一行「[dry-run] would write <path>」+ **整份草稿正文**
+    // ⇒ stdout 是全文 dump（几千行）⇒ 用户看不到「**改了什么**」；
+    // 而 CLI Reference 承诺 `--dry-run` = "print instead of writing"（一个
+    // **预览**），兄弟命令 `--draft --write --dry-run` 打的是 unified diff。
+    //
+    // 改后：**复用同一个 diff 生成器**（`unifiedDiff` 已在
+    // `@nudojs/service/emit` ⇒ 零新增导出），对照面 = **既有草稿文件**的磁盘
+    // 内容（文件不存在 ⇒ 空串 ⇒ 整份都是新增行，= 新建文件口径）。
+    // ⚠ dry-run **绝不写盘**（写盘助手拿到的仍是 `dryRun: true`）。
+    if (opts.dryRun) {
+      console.log(`[dry-run] would write ${outRel}`);
+      const diff = unifiedDiff(prev ?? "", draftSource, outRel);
+      // 两侧逐字相同 ⇒ 无差异 ⇒ 不打空 diff（与 `--draft --write --dry-run` 同款）
+      if (diff !== "") console.log(diff);
+    }
     if (prev !== undefined && prev !== draftSource && !force) {
       console.error(`error: draft exists and differs: ${outRel} — refusing to overwrite`);
       // 族 20 · Bug 1147：提示**同时**给出两个放行口子（CLI 旗标 `--force`
@@ -226,10 +256,9 @@ export async function runContractFromDts(
       process.exitCode = 1;
       return;
     }
-    if (opts.dryRun) {
-      console.log(`[dry-run] would write ${outRel}`);
-      console.log(draftSource);
-    } else {
+    // dry-run 的预览（标签行 + unified diff）已在上面打完 ⇒ 这里**只**处理
+    // 真写盘的结果面（`--dry-run` 绝不声称已写盘，也不再倾倒草稿全文）。
+    if (!opts.dryRun) {
       if (!write.draftable) {
         console.log(`${outRel}: draft has no writable exports; nothing written`);
       } else if (write.written) {

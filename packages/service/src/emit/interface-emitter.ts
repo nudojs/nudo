@@ -96,6 +96,14 @@ export type EmitInterfaceResult = {
   changed: boolean;
   diff?: string;
   /**
+   * 侧车的**最终写盘文本**（含 BOM，与真实落盘逐字节相同）。
+   *
+   * BUG-196：「写盘 / 判定 / dry-run 预览同源」是幂等性的前提。调用方拿到它
+   * 就能把「本分支的产物」与别处的段级合并拼在一起（同一侧车同一段只有一个
+   * 写者），而不是从 `diff` 反解自己刚算出来的文本。
+   */
+  finalContent?: string;
+  /**
    * 诊断列表。
    *
    * severity 三档：`error` / `warning` / `info`。`info` 用于**观察信号**
@@ -641,6 +649,7 @@ export async function emitInterface(
       skipped,
       changed,
       ...(diff !== undefined ? { diff } : {}),
+      finalContent: bom + finalContent,
       issues,
       sidecarPath,
       ...(opts.fnNames && opts.fnNames.length > 0

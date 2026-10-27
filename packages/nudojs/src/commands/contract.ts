@@ -10,7 +10,10 @@
  */
 import { resolve, relative } from "node:path";
 import type { Command } from "commander";
-import { formatInterfaceSurfaceLine } from "@nudojs/service/emit";
+import {
+  formatInterfaceSurfaceLine,
+  type InterfaceSurfaceEntry,
+} from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
 import {
   collectExternalRecords,
@@ -48,12 +51,16 @@ async function runContractPrint(
           entries: entries.map((e) => ({
             fn: e.fn,
             signature: formatInterfaceSurfaceLine(e),
+            // BUG-081：机器面必须带同名字段（此前冲突 / 不可判定在契约面上完全无痕）
+            ...(e.conflict !== undefined ? { conflict: e.conflict } : {}),
+            ...(e.undecidable !== undefined ? { undecidable: e.undecidable } : {}),
           })),
         },
         null,
         2,
       ),
     );
+    reportContractMarks(entries);
     return;
   }
   console.log(`${rel}`);
@@ -66,6 +73,48 @@ async function runContractPrint(
     console.log(formatInterfaceSurfaceLine(e));
   }
   console.log();
+  reportContractMarks(entries);
+}
+
+/**
+ * BUG-081 —— **结论对齐**：`nudo check` 对无解契约报 `nudo:interface-conflict`
+ * error（exit 1），`nudo export` 拒绝出货（exit 1），而 `nudo contract` 此前把
+ * 同一个契约印成**有效契约**并 exit 0 ⇒ 三个一级动词对同一事实给出相反结论。
+ *
+ * 契约面是「我的契约是什么」的权威读取口 ⇒ 必须同结论：
+ * - `conflict`（合取不可满足）⇒ stderr 报同码 error + `process.exitCode = 1`；
+ * - `undecidable`（结构型组合算不出交集，另一侧义务未执法）⇒ error 级**不**成立
+ *   （check 面是 warning，能力边界不是用户代码矛盾）⇒ 只报 warning，不改退出码，
+ *   但绝不静默（行尾标记 + `--json` 字段已经透出）。
+ */
+function reportContractMarks(entries: readonly InterfaceSurfaceEntry[]): void {
+  for (const e of entries) {
+    if (e.conflict !== undefined) {
+      if (e.conflict.params.length > 0) {
+        console.error(
+          `error: [nudo:interface-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable (${e.conflict.params.join(", ")})`,
+        );
+      }
+      if (e.conflict.returns === true) {
+        console.error(
+          `error: [nudo:interface-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable on the return slot`,
+        );
+      }
+      process.exitCode = 1;
+    }
+    if (e.undecidable !== undefined) {
+      if (e.undecidable.params.length > 0) {
+        console.error(
+          `warning: [nudo:interface-undecidable] ${e.fn}: contract conjunction not computable (${e.undecidable.params.join(", ")}) — only one side is enforced`,
+        );
+      }
+      if (e.undecidable.returns === true) {
+        console.error(
+          `warning: [nudo:interface-undecidable] ${e.fn}: contract conjunction not computable on the return slot — only one side is enforced`,
+        );
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +243,10 @@ export function registerContractCommand(program: Command): void {
       [] as string[],
     )
     .option("--all", "With --emit: target every top-level export (prefer --fn)")
-    .option("--dry-run", "With --emit or --draft --write: print instead of writing")
+    .option(
+      "--dry-run",
+      "With --emit, --draft --write or --from-dts --write: print a unified diff instead of writing",
+    )
     .option("--exit-on-diff", "With --emit + --dry-run: exit 1 when the sidecar would change")
     .option("--from <paths...>", "Usage-site files feeding domain evidence")
     // 族 20 · Bug 1147：帮助文本与**实现**对齐 —— `--json` 是**三形态**通用
@@ -309,7 +361,31 @@ export function registerContractCommand(program: Command): void {
           );
           return;
         }
-        // ⑥ 分派（校验之后）
+        // ⑥ BUG-100：`--from-dts` 与 `--emit` / `--fn` / `--all` 互斥
+        //
+        // 改前：分派只把 `write` / `dryRun` / `force` 交给 `runContractFromDts`，
+        // `opts.emit` / `opts.fn` / `opts.all` **既没转发也没校验** ⇒
+        // `nudo contract --from-dts --emit --all --dry-run --exit-on-diff x.d.ts`
+        // 与单跑 `--from-dts` **逐字节相同**：exit 0、无侧车、无警告 ⇒
+        // 漂移门禁**恒绿**（`--exit-on-diff` 永不生效）；`--fn` / `--all` 的过滤
+        // 同样被吞（以为在筛某个函数，实际是全量草稿）。
+        //
+        // 改后：与 ⑤（`--json`）**同一条策略** —— 「不许『给了不生效且不报错』」
+        // ⇒ 显式拒绝并指明替代命令。
+        const fromDtsConflicts = [
+          opts.emit ? "--emit" : undefined,
+          opts.fn && opts.fn.length > 0 ? "--fn" : undefined,
+          opts.all ? "--all" : undefined,
+        ].filter((f): f is string => f !== undefined);
+        if (opts.fromDts && fromDtsConflicts.length > 0) {
+          usageError(
+            `Usage error: --from-dts cannot be combined with ${fromDtsConflicts.join(" / ")}`,
+            `drop ${fromDtsConflicts.join(" / ")} (--from-dts prints a reviewable draft, never sidecars; ` +
+              "use `nudo contract --emit <file>` to write sidecars)",
+          );
+          return;
+        }
+        // ⑦ 分派（校验之后）
         if (opts.fromDts) {
           await runContractFromDts(paths, {
             write: opts.write === true,

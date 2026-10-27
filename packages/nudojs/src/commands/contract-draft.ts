@@ -81,6 +81,49 @@ export async function runContractDraft(
     ...(opts.fnNames.length > 0 ? { fnNames: opts.fnNames } : {}),
     ...(opts.records ? { records: opts.records } : {}),
   });
+  // -------------------------------------------------------------------------
+  // BUG-042 —— `--draft --fn <写错的名字>` 改前是**静默 no-op**（空草稿 + exit 0）
+  //
+  // 改前：`fnNames` 原样传进 `draftInterface`，**没有「一个都没命中」的门禁**
+  // ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的空草稿、exit 0
+  // ⇒ 名字拼错在 CI / agent 流程里**不可见**（同一个 `--fn` 名单，`--emit` 面
+  //   报用法错误并列出可用导出名 ⇒ 同命令族两套语义）。
+  //
+  // 改后：复用 `--emit` 面的规则（`contract-emit.ts` 的同款门禁）——
+  // `--fn` 名单**一处都没命中草稿条目** ⇒ 用法错误：列出可用导出名、
+  // exit 1、**不落盘**。
+  // ⚠ 判据是**草稿条目**而不是「名字是不是导出」：非导出的本地函数会产出
+  //   一条 `not-an-export` 条目（那是**可见反馈**，不是静默 no-op）⇒ 不误伤。
+  // -------------------------------------------------------------------------
+  if (
+    opts.fnNames.length > 0 &&
+    !opts.fnNames.some((n) => result.entries.some((e) => e.fn === n))
+  ) {
+    let candidates: string[] = [];
+    try {
+      const { localNamedExports } = await import("@nudojs/core");
+      candidates = [...localNamedExports(readFileSync(filePath, "utf-8"))].sort();
+    } catch {
+      /* optional: local export scan failed — report without candidates */
+    }
+    const message =
+      `Usage error: --fn ${opts.fnNames.map((n) => `\`${n}\``).join(", ")} matched no export in ${rel}; nothing was written` +
+      (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");
+    if (opts.json) {
+      // 机器面：stdout 必须是一份合法 JSON 文档（命令层的聚合层把它收进数组外壳）
+      console.log(
+        JSON.stringify(
+          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(message);
+    }
+    process.exitCode = 1;
+    return;
+  }
   const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
   // AI4：--json → draftSource + unified diff（审阅面）
   if (opts.json) {
