@@ -168,6 +168,20 @@ export type TranspileOptions = {
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
   inFunction?: boolean;
   /**
+   * 当前**函数体作用域**的形参名（含解构 / rest 模式名）。
+   *
+   * 用途：标识符赋值的结构检查插桩（`$assignRecord` 第 7 实参
+   * `paramBinding`）——JS 形参没有声明类型，分析面看到的「旧值」是本次
+   * 调用实参的形状而非绑定的声明的域 ⇒ 形参重赋值不参与
+   * `nudo:assign-mismatch`（归一化形参 `x = [].concat(x)` 是常规写法，
+   * 否则真实包假阳性）。
+   *
+   * 生命周期：函数/方法体边界由 `transpileFnBodyStmts` 按该体自身的形参
+   * 重算（嵌套函数体不继承外层的表）；模块顶层无此表。**表达式体箭头**
+   * （`(x) => (x = 1)`）不经语句表 ⇒ 无表（该形态不插标）。
+   */
+  paramNames?: ReadonlySet<string>;
+  /**
    * 当前词法作用域的 `arguments` 绑定名（非箭头函数 prologue 里 `$arguments(...)`）。
    * 箭头沿外层继承；无绑定（模块顶层 / 仅嵌套箭头引用）→ Identifier 分支折 $unknown()。
    */

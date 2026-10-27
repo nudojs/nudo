@@ -199,6 +199,15 @@ export function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[]
     if (!isAbsLike(r.prev) || !isAbsLike(r.next)) continue;
     // 分支/循环体内的重赋值：路径并集是合法 JS（特性检测等模式），不报
     if (r.conditional) continue;
+    // 形参重赋值：JS 形参**没有声明类型**，`prev` 只是本次调用实参的形状
+    // （不是绑定的声明的域）。归一化形参是常规写法——yargs 的
+    // `global(globals) { globals = [].concat(globals); … }` 在实参为
+    // `"_"` 的调用点上 `prev = "_"`、`next = ["_"]` ⇒ 结构检查假阳性
+    // （真实域 `string | string[]`）。⇒ 本通道只对**有声明值的绑定**负
+    // 义务；形参的实参形状义务归契约 / `nudo:arg-structure` 通道。
+    // 标记来自 transpile 插桩：函数体边界把该体形参名表写进 opts.paramNames
+    // （见 AbsAssignRecord.paramBinding）。
+    if (r.paramBinding === true) continue;
     // 跳过 unknown / never 源（无信息）
     if (r.next.shape.k === "unknown" && !r.next.term) continue;
     if (r.prev.shape.k === "unknown" && !r.prev.term) continue;

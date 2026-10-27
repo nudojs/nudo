@@ -202,7 +202,13 @@ export function transpileFnBodyStmts(
     }
     // 函数体边界：重算提升集；keepVarDecl 只属于模块顶层 export var 的
     // 直接声明发射，不得泄漏进嵌套函数体（否则块内 var 误发块级 let）
-    varOpts = { ...opts, hoistedVarNames: hoisted, keepVarDecl: undefined };
+    // paramNames：形参重赋值不参与 assign-mismatch（见 types.ts 该字段说明）
+    varOpts = {
+      ...opts,
+      hoistedVarNames: hoisted,
+      keepVarDecl: undefined,
+      paramNames: varScope.skip,
+    };
     // P4b：函数边界参数遮蔽——继承的 constNames（外层 const / 类体不可变
     // 自有名）被本函数参数模式名遮蔽时必须扣除：`function f(K) { K = 5 }`
     // 外层 `const K` / 类名 K，体内写的是参数绑定（原生 no-throw），不得

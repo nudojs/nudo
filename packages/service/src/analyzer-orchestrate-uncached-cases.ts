@@ -441,10 +441,13 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
   const registry = env.entryOnlyCandidates;
   if (!registry || registry.size === 0) return;
   const currentModulePath = normalizeModulePath(env.filePath);
+  // 导出名表整文件算一次（原先在循环里逐候选调用 ⇒ 同名扫描重复 N 次；
+  // 该扫描虽然已按源码 memo，循环外取一次连 memo 查找都省掉）。
+  const exportNames = localNamedExports(env.source);
   for (const [name, entry] of [...registry.entries()]) {
     // 只处理**导出**函数：调用点域丢失的缺陷面是「导出函数没有调用点域
     // ⇒ 误报 entry-only / 无法固化」；本地非导出函数的入口面保持原样。
-    if (!localNamedExports(env.source).has(name)) continue;
+    if (!exportNames.has(name)) continue;
     const records = dedupeCallRecords(
       env.callRecords.filter(
         (r) => !isLeakedCallRecord(r) && recordMatchesCandidate(r, name, currentModulePath),

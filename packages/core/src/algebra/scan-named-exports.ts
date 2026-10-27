@@ -14,6 +14,42 @@ import { parseSource } from "./parse-source.ts";
 // ---------------------------------------------------------------------------
 
 /**
+ * 文件内 memo（键 = 源码文本）。
+ *
+ * 本模块的扫描入口走 `parseSource(source, { errorRecovery: true })`——那条路
+ * **不进** parse-source 的 AST LRU（errorRecovery / keepTs 是有意绕过缓存的
+ * 兜底路径）⇒ 同一份源码在「逐候选 / 逐函数 / 逐产物面」的调用里会被反复
+ * 整文件 reparse + strip。实测：单文件分析（commander/lib/command.js）里
+ * 5 151 次调用 ⇒ 451 MB 重复解析、stripTypes 单项 36.6s（基线 ~0.4s）。
+ *
+ * 扫描是**纯函数**（source → 名字表）：同一 source 永远同一结果 ⇒ 可以安全
+ * memo。返回副本：调用方拿到的 Set 互不共享（公共 API 面保持值语义，
+ * 调用方改自己的 Set 不会污染缓存）。
+ *
+ * LRU 上限与 parse-source 的 AST 缓存同量级（16）：键是源码文本（与 AST
+ * 缓存同源），16 × 1MB 源码 ≈ 16MB 上界。
+ */
+const LOCAL_EXPORTS_CACHE_MAX = 16;
+const localExportsCache = new Map<string, ReadonlySet<string>>();
+
+function memoizedLocalExports(source: string, compute: () => Set<string>): Set<string> {
+  const hit = localExportsCache.get(source);
+  if (hit !== undefined) {
+    // LRU bump
+    localExportsCache.delete(source);
+    localExportsCache.set(source, hit);
+    return new Set(hit);
+  }
+  const out = compute();
+  if (localExportsCache.size >= LOCAL_EXPORTS_CACHE_MAX) {
+    const oldest = localExportsCache.keys().next().value;
+    if (oldest !== undefined) localExportsCache.delete(oldest);
+  }
+  localExportsCache.set(source, out);
+  return new Set(out);
+}
+
+/**
  * 源文件本地导出名表（侧车自动绑定边界）：
  * - ESM：`export function/const/let/var/class` 与本地 `export { x }` /
  *   `export { local as exported }`（按**导出名**绑定）；
@@ -23,8 +59,15 @@ import { parseSource } from "./parse-source.ts";
  * - CJS（C4.3）：`module.exports = { a, b }`、`module.exports.a = …`、
  *   `exports.a = …`、`module.exports = localFn`（登记 localFn 名）。
  * 排除 re-export（`export {x} from` / `export *`）。
+ *
+ * 结果按源码文本 memo（见 `memoizedLocalExports`）——本函数在逐候选循环里
+ * 被反复调用，没有 memo 时每次都是整文件 reparse + strip。
  */
 export function localNamedExports(source: string): Set<string> {
+  return memoizedLocalExports(source, () => computeLocalNamedExports(source));
+}
+
+function computeLocalNamedExports(source: string): Set<string> {
   const out = new Set<string>();
   let ast: ReturnType<typeof parseSource>;
   try {

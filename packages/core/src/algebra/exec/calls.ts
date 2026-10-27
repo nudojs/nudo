@@ -82,6 +82,8 @@ export type EvalAbsAssignRecord = {
   line?: number;
   column?: number;
   conditional?: boolean;
+  /** 写目标是函数形参（AbsAssignRecord.paramBinding） */
+  paramBinding?: boolean;
   /** 调用方帧深度（0 = 最外层求值帧；与 EvalCallRecord.depth 同口径） */
   depth?: number;
 };
@@ -109,6 +111,8 @@ export function $assignRecord(
   line: number,
   column: number,
   conditional: boolean,
+  /** 写目标是函数形参（可选；缺省 false ⇒ 产物逐字不变） */
+  paramBinding?: boolean,
 ): void {
   const evalAssignCollector = evalAssignCollectorSlot.get();
   if (!evalAssignCollector) return;
@@ -120,6 +124,7 @@ export function $assignRecord(
       line: line || undefined,
       column: column || undefined,
       conditional,
+      ...(paramBinding === true ? { paramBinding: true } : {}),
       // 调用方帧深度（与 EvalCallRecord.depth 同口径——局部量投影按帧过滤）
       depth: evalBudget.depth,
     });

@@ -20,7 +20,7 @@ import { BoundedLruMap } from "./lru-map.ts";
 import { parseSource } from "./parse-source.ts";
 
 /**
- * 源级扫描结果 memo（三个包装器各一个）。
+ * 源级扫描结果 memo（四个字符串包装器各一个；词法扫描本身另有单源 memo）。
  *
  * 分析期同一源被多个抽取器反复整文件词法扫描：directive-scan 的
  * env / mock-module / import / malformed 各 extractor、refine /
@@ -40,6 +40,9 @@ const stripStringsKeepCommentsCache = new BoundedLruMap<string>(
   SOURCE_SCAN_CACHE_MAX,
 );
 const maskCommentsAndStringsCache = new BoundedLruMap<string>(
+  SOURCE_SCAN_CACHE_MAX,
+);
+const maskStringsKeepCommentsCache = new BoundedLruMap<string>(
   SOURCE_SCAN_CACHE_MAX,
 );
 
@@ -138,11 +141,30 @@ function scanRegex(source: string, start: number): number {
 }
 
 /**
+ * 词法扫描结果的单源 memo（条数 LRU；比上面的字符串结果缓存小一个量级——
+ * 一个 `ScanResult` 持有全部 span 对象）。
+ *
+ * 消费面有六个（strip×3 / mask×2 / scanStringLiterals），没有这层 memo 时
+ * 同一源被整文件扫描 4 次以上（实测 `nudo check` 全语料里 code-text 的
+ * 扫描循环占自身耗时 ~17%）。结果**只读共享**：`scanStringLiterals` 返回
+ * 副本，其余消费方只遍历。
+ */
+const scanSourceCache = new BoundedLruMap<ScanResult>(8);
+
+function scanSource(source: string): ScanResult {
+  const hit = scanSourceCache.get(source);
+  if (hit !== undefined) return hit;
+  const out = scanSourceUncached(source);
+  scanSourceCache.set(source, out);
+  return out;
+}
+
+/**
  * 单遍词法切片：code / comment / string。
  * 模板的 cooked 段算 string（含定界符与相邻的 `${` / `}`）；
  * `${…}` 插值区按 code 扫描。正则字面量算 string（不进 literals）。
  */
-function scanSource(source: string): ScanResult {
+function scanSourceUncached(source: string): ScanResult {
   const spans: TextSpan[] = [];
   const literals: StringLiteralSpan[] = [];
   const n = source.length;
@@ -373,16 +395,20 @@ export function maskCommentsAndStrings(source: string): string {
  * 若夹着契约注释，注释一旦成空白会被导出前缀的空白匹配吞掉，反向扫描扫不到契约。
  */
 export function maskStringsKeepComments(source: string): string {
+  const hit = maskStringsKeepCommentsCache.get(source);
+  if (hit !== undefined) return hit;
   let out = "";
   for (const span of scanSource(source).spans) {
     out += span.kind === "string" ? span.text.replace(/[^\n]/g, " ") : span.text;
   }
+  maskStringsKeepCommentsCache.set(source, out);
   return out;
 }
 
 /** 代码区字符串/模板字面量（注释内引号不算；插值模板不报整体，正则不报） */
 export function scanStringLiterals(source: string): StringLiteralSpan[] {
-  return scanSource(source).literals;
+  // 扫描结果按源 memo ⇒ 返回**副本**（公共面保持「调用方拿到的数组归自己」）
+  return [...scanSource(source).literals];
 }
 
 /** 真实 `require(` 调用（忽略字符串/注释/正则；模板插值内可见） */

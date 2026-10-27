@@ -1,36 +1,36 @@
 {
-  "note": "Regression envelope — gate fails only when worse than these. Regenerate with a trusted run. 2026-10-17 refresh: post-#135 statSync-exception fix (b6495c6e regression) + two weeks of precision features (#123/#136/#170/#175/#176 adoption/regex/exclusions/len-sharing) re-priced; envelope = observed max of 4 quiet runs ×1.10 on the dev box (was trusted-Apple-Silicon Oct-02 capture).",
-  "generatedAt": "2026-10-16T22:39:29.454Z",
+  "note": "Regression envelope — gate fails only when worse than these. Regenerate with a trusted run. 2026-10-27 refresh: after the #193 host-transpile cutover + the OSS-benchmark perf batch (per-candidate whole-file reparse 5 151x → 1x; directive-scope / lexer-scan / gate-range memos; JS-mode strip skip) — envelope = observed max of 4 quiet runs ×1.10 on the dev box. The 2026-10-16 envelope priced the pre-cutover engine.",
+  "generatedAt": "2026-10-27T07:22:21.977Z",
   "node": "v26.10.0",
   "totals": {
     "maxFpCount": 0,
-    "maxColdAnalyzeMs": 6002.6,
-    "maxCheckAllMs": 2357.4
+    "maxColdAnalyzeMs": 14608.5,
+    "maxCheckAllMs": 9847.3
   },
   "packages": [
     {
       "name": "commander",
       "minFiles": 5,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 1474.9,
-      "maxCheckAllMs": 808.8,
-      "maxHubDirtyMedianMs": 1014.8
+      "maxColdAnalyzeMs": 4710.8,
+      "maxCheckAllMs": 999.3,
+      "maxHubDirtyMedianMs": 4182.1
     },
     {
       "name": "yargs",
       "minFiles": 18,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 3400.4,
-      "maxCheckAllMs": 1035.5,
-      "maxHubDirtyMedianMs": 1901.3
+      "maxColdAnalyzeMs": 7769.6,
+      "maxCheckAllMs": 5973.2,
+      "maxHubDirtyMedianMs": 5659.8
     },
     {
       "name": "semver",
       "minFiles": 39,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 1708.5,
-      "maxCheckAllMs": 517.1,
-      "maxHubDirtyMedianMs": 1548.4
+      "maxColdAnalyzeMs": 2153,
+      "maxCheckAllMs": 2887.2,
+      "maxHubDirtyMedianMs": 1990.3
     }
   ]
 }

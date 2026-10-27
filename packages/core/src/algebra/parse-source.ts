@@ -127,7 +127,14 @@ function parseUncached(
   // 区间——rewriteSidecarSource 据此切掉类型注解/声明）
   // 剥除时把**类型注解文本**留在节点上（nudoTypeText / nudoReturnTypeText）——
   // .ts 源的形参声明类型据此进推断（Bug 479）；纯 JS 源无注解 ⇒ 结构性 no-op。
-  return opts?.keepTs === true ? ast : stripTypes(ast, source);
+  //
+  // **js 模式整趟跳过**：js 模式只挂 `jsx` 插件，Babel 产不出任何 TS-only
+  // 节点/字段（TSAsExpression / typeAnnotation / enum / 参数属性 … 结构上
+  // 不可能出现）⇒ 剥除 pass 是严格 no-op，却要付两趟全 AST 遍历
+  // （collectValueReferences + transformNode）。实测 OSS 语料（79 个纯 JS
+  // 文件）：strip-types 占 `nudo check` 自身耗时 ~11%、占每次 parse 的近半。
+  if (opts?.keepTs === true || mode === "js") return ast;
+  return stripTypes(ast, source);
 }
 
 export function parseSource(

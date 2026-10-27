@@ -1309,7 +1309,9 @@ export function stripTypes<T extends Node>(ast: T, source?: string, opts?: Strip
   const { valueRefs, typeRefs, ambiguousRefs } = collectValueReferences(ast);
   const ctx: StripContext = { valueRefs, typeRefs, ambiguousRefs };
   // Bug 968：剥除**前后**的 `@nudo:` 指令条数比对（兜底自检）。
-  const directivesBefore = countNudoDirectives(ast);
+  // 只在调用方要 report 时才算——分析面不传 opts ⇒ 这趟全 AST 遍历本来是
+  // 纯 dead work（实测占 TS 源 parse 的 ~15%）。
+  const directivesBefore = opts?.report ? countNudoDirectives(ast) : 0;
   transformValue(ast, source, opts, ctx);
   if (opts?.report) {
     const directivesAfter = countNudoDirectives(ast);

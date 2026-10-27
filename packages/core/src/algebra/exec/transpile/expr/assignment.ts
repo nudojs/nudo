@@ -424,10 +424,13 @@ export function transpileAssignmentExpr(
         const locCol = expr.loc?.start.column ?? 0;
         const valSrc = compoundFn ? `${compoundFn}(${name}, ${right})` : right;
         // 顶层绑定表跟重赋值（final 值语义；函数/箭头体不在顶层作用域）
+        // 形参重赋值：标 paramBinding ⇒ 不参与 assign-mismatch（形参没有
+        // 声明类型，prev 只是本次实参的形状；见 types.ts paramNames）
+        const paramFlag = opts.paramNames?.has(name) === true ? ", true" : "";
         const bindSrc = !opts.inFunction
           ? ` $recordBinding(${JSON.stringify(name)}, ${assignV});`
           : "";
-        return `((${assignV}) => { $assignRecord(${JSON.stringify(name)}, ${name}, ${assignV}, ${locLine}, ${locCol}, ${cond});${bindSrc} return ${name} = ${assignV}; })(${valSrc})`;
+        return `((${assignV}) => { $assignRecord(${JSON.stringify(name)}, ${name}, ${assignV}, ${locLine}, ${locCol}, ${cond}${paramFlag});${bindSrc} return ${name} = ${assignV}; })(${valSrc})`;
       }
       throw new NudoUnsupportedError(
         `assign-target`,

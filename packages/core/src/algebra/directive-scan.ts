@@ -17,6 +17,7 @@
 
 import type { Comment, File, Node } from "@babel/types";
 import { maskStringsKeepComments } from "./code-text.ts";
+import { BoundedLruMap } from "./lru-map.ts";
 import { parseSource } from "./parse-source.ts";
 
 // ---------------------------------------------------------------------------
@@ -969,6 +970,23 @@ function nestedBodyRanges(source: string): [number, number][] {
 }
 
 /**
+ * 位置闸门区间表按源 memo（条数 LRU；区间表很小，键是源码文本）。
+ *
+ * `bodyGateRanges` = 一次 AST 解析 + 一次 scope 表 + 一次**全 AST 递归遍历**
+ * （nestedBodyRanges）。而文件级指令的三个 extractor（`@nudo:env` /
+ * `@nudo:mock-module` / `@nudo:import`）**各自**调它 ⇒ 同一源被重复走多次
+ * 全 AST 遍历（实测 OSS 真包语料：directive-scan 占 `nudo check` 自身耗时
+ * ~23%，其中绝大部分是这趟重复遍历）。
+ *
+ * 纯函数（source → 区间表）⇒ 可 memo；区间表**只读共享**（调用方只做
+ * `inBodyRange` 判定）。
+ */
+const BODY_GATE_RANGES_CACHE_MAX = 16;
+const bodyGateRangesCache = new BoundedLruMap<[number, number][]>(
+  BODY_GATE_RANGES_CACHE_MAX,
+);
+
+/**
  * 位置闸门的**全部**区间（函数体 + 类体 / 对象字面量体 / 数组字面量体 /
  * 解构模式体）。
  *
@@ -976,7 +994,11 @@ function nestedBodyRanges(source: string): [number, number][] {
  * 三条同源洞的合流口径。
  */
 function bodyGateRanges(source: string): [number, number][] {
-  return [...functionBodyRanges(source), ...nestedBodyRanges(source)];
+  const hit = bodyGateRangesCache.get(source);
+  if (hit !== undefined) return hit;
+  const out = [...functionBodyRanges(source), ...nestedBodyRanges(source)];
+  bodyGateRangesCache.set(source, out);
+  return out;
 }
 
 /** 偏移是否落在某个「函数体 / 类体 / 对象字面量体 / 数组字面量体 / 解构模式体」内 */
