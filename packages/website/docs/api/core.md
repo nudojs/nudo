@@ -320,7 +320,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$arrmutcontainer"></a>`$arrMutContainer` | fn | array runtime | `$arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs` |
 | <a id="$arrrest"></a>`$arrRest` | fn | object / member runtime | `$arrRest(a: Abs, start: number): Abs` |
 | <a id="$arrwithholes"></a>`$arrWithHoles` | fn | array runtime | `$arrWithHoles(items: Abs[], holes: number[]): Abs` |
-| <a id="$assignrecord"></a>`$assignRecord` | fn | call-site recording for analyze | `$assignRecord( name: string, prev: Abs \| undefined, next: Abs, line: number, column: number, conditional: boolean, ): void` |
+| <a id="$assignrecord"></a>`$assignRecord` | fn | call-site recording for analyze | `$assignRecord( name: string, prev: Abs \| undefined, next: Abs, line: number, column: number, conditional: boolean, paramBinding?: boolean, ): void` |
 | <a id="$async"></a>`$async` | fn | async / generator | `$async(thunk: () => Abs): Abs` |
 | <a id="$await"></a>`$await` | fn | async / generator | `$await(v: Abs): Abs` |
 | <a id="$callnamed"></a>`$callNamed` | fn | call-site recording for analyze | `$callNamed( name: string, fn: unknown, args: Abs[], loc?: [number, number], argLocs?: Array<[number, number] \| null \| undefined>, ): Abs` |
@@ -388,7 +388,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
 | <a id="absapplyreturn"></a>`AbsApplyReturn` | type | apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult | `AbsApplyReturn = Abs \| AbsApplyResult` |
-| <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
+| <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; paramBinding?: boolean; }` |
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; fnKind?: "function" \| "async" \| "generator" \| ...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
@@ -452,7 +452,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="enterpromiseexecutorscope"></a>`enterPromiseExecutorScope` | fn | — | `enterPromiseExecutorScope(): void` |
 | <a id="eq"></a>`eq` | const | — | `const eq` |
 | <a id="errorbrandabs"></a>`errorBrandAbs` | fn | Error brand：shape 带 name/message（字面量 message 保精确）。 | `errorBrandAbs(name: string, args: Abs[]): Abs` |
-| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; depth?: nu...` |
+| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; paramBindi...` |
 | <a id="evalarraystatic"></a>`evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
