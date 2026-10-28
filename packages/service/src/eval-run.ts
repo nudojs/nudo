@@ -5,7 +5,7 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl, namespaceAbsOf } from "@nudojs/core";
+import { $invoke, runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, isNudoThrow, never, withExecPhi, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl, namespaceAbsOf } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
 import { parse, type FileDirective } from "@nudojs/parser";
 import { existsSync, readFileSync } from "node:fs";
@@ -20,6 +20,7 @@ import { getSessionCacheLimits } from "./session-cache-limits.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { collectEvalReplacementsFromProgram } from "./eval-injection.ts";
+import { cjsObjectExportMemberNames } from "./analyzer-ast.ts";
 import { applyPureMarkers, pureFnNamesOfAst } from "./eval-pure.ts";
 
 /**
@@ -593,7 +594,14 @@ export function tryRunEval(
       const topCalls: EvalCallRecord[] = [];
       // collector 先于模块图：import 函数体在 evalAbsModuleGraph 内的 method-missing 也要收
       const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
-      const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
+      const prevTrunc = setAbsTruncationCollector((label, reason) => {
+        truncated.add(label);
+        // BUG-099：**链式**转发。collector 是单槽，装自己的就把外层的截断观察
+        // 面（analyzer 的诊断映射、宿主回调）静默掐断——`nudo test` / `--json`
+        // 面因此看不到任何递归/预算截断。setter 只存槽不回调，故闭包内引用
+        // `prevTrunc` 时它已初始化。
+        prevTrunc?.(label, reason);
+      });
       const prevCall = setEvalCallCollector((r) => topCalls.push(r));
       try {
         // 单一组装入口（与 analyzer 共用）；宿主已组装时直接复用；
@@ -660,7 +668,11 @@ export function tryRunEval(
     } catch (e) {
       // 与 tryRunTranspiled 同口径：失败可观测，且不得写入 memo
       // （瞬时失败入缓存会把该 source 固化成永久空导出）
-      noteEvalFallback(e);
+      //
+      // **装载期**失败 ⇒ 该文件的模块装载失败（导出全丢）⇒ 闸门看不到任何
+      // 入口 ⇒ 假绿（BUG-072）⇒ 标 loadFailure：可见性（fail-closed）与
+      // 标签（BUG-073：用户代码的原生异常 ⇒ module-throw）**分列两维**。
+      noteEvalFallback(e, "module", { loadFailure: true });
       out = null;
     }
     if (out !== null && canCache) {
@@ -702,6 +714,54 @@ export function tryRunEval(
     }
     return out ?? undefined;
   });
+}
+
+/**
+ * CJS 对象字面量导出（`module.exports = { h(){} }`）的成员派发接收者（BUG-045）。
+ *
+ * 只在**导出表里没有同名槽**时调用（具名槽优先，既有解析口径不变）。AST 判据
+ * 与普查同源（{@link cjsObjectExportMemberNames}）：只有普查登记过的成员键才允许
+ * 从 `default` 槽派发——`export default { … }` 的成员不在此列（它没有 CJS 导出槽
+ * 语义，按名求值不该命中）。接收者必须是 `obj` Abs（`$invoke` 的通用槽位面）。
+ */
+function cjsMemberReceiverOf(
+  source: string,
+  exports: Record<string, unknown>,
+  fnName: string,
+): Abs | undefined {
+  const recv = exports["default"];
+  if (!isAbsVal(recv) || recv.shape.k !== "obj") return undefined;
+  try {
+    return cjsObjectExportMemberNames(parse(source)).has(fnName) ? recv : undefined;
+  } catch {
+    /* 解析失败 ⇒ 不猜（与普查同源的前提不成立） */
+    return undefined;
+  }
+}
+
+/**
+ * CJS 成员调用：接收者 = `module.exports` 对象 ⇒ 方法体内的 `this` 绑定正确
+ * （对象字面量方法可能读写 `this`，按裸值 apply 会丢绑定）。
+ *
+ * 异常口径与 `callTranspiledExportFull` 的调用骨架一致：`NudoThrow` ⇒
+ * `result = never` + `throws = 载荷`；其它原生异常属引擎缺陷 ⇒ 记回落
+ * （`noteEvalFallback`，不静默吞）并 fail-closed（`undefined`）。
+ */
+function invokeCjsMember(
+  recv: Abs,
+  member: string,
+  args: Abs[],
+  phi: Phi | undefined,
+): TranspiledCallResult | undefined {
+  try {
+    const call = () => $invoke(recv, member, args);
+    const result = phi ? withExecPhi(phi, call) : call();
+    return isAbsVal(result) ? { result, throws: never } : undefined;
+  } catch (e) {
+    if (isNudoThrow(e)) return { result: never, throws: e.absValue };
+    noteEvalFallback(e);
+    return undefined;
+  }
 }
 
 /**
@@ -753,15 +813,33 @@ export function tryEvalCallFull(
     });
     if (!run) return undefined;
     // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用
-    if (!Object.hasOwn(run.exports, fnName)) return undefined;
+    const namedSlot = Object.hasOwn(run.exports, fnName);
+    // BUG-045：CJS 对象字面量导出的成员（`module.exports = { h(){} }`）既不是模块
+    // 作用域绑定、也不是顶层导出槽 ⇒ 按名取落空。导出面（dts / schema / guard）与
+    // `nudo check` 必须同源 ⇒ 按 core 的导出槽口径（export-slot.ts 的 cjs-member）
+    // 从 `default` 槽派发成员调用；否则三方言一起退化成 unknown / z.unknown() /
+    // `return true`（校验器变空操作 = 假绿）。
+    const cjsReceiver = namedSlot ? undefined : cjsMemberReceiverOf(source, run.exports, fnName);
+    if (!namedSlot && cjsReceiver === undefined) return undefined;
     const collected: EvalCallRecord[] = [];
     const memberDiags: EvalMemberDiag[] = [];
+    // CJS 成员派发是**合成的入口调用**（源码里没有这个调用点）⇒ `$invoke` 打的
+    // 那条调用点记录（无 `callLoc`）不是见证证据：滤掉。否则它会凭空合成一条
+    // `call@L<成员定义行>`（`callsiteCaseName` 的 fallbackLine 兜底）——冻结与
+    // `contract --emit` 会把一个不存在的调用点写进源码，且真实调用点域名被
+    // 这条假记录支撑（假绿方向）。
+    const skipSyntheticEntryRecord = cjsReceiver !== undefined;
     // undefined = 本次未安装（finally 不动全局）；null = 之前就是空
     const prevCall:
       | ((r: EvalCallRecord) => void)
       | null
       | undefined = opts.collectCalls
-        ? setEvalCallCollector((r) => collected.push(r))
+        ? setEvalCallCollector((r) => {
+            if (skipSyntheticEntryRecord && r.callLoc === undefined && r.fnName === fnName) {
+              return;
+            }
+            collected.push(r);
+          })
         : undefined;
     const wantMember = opts.collectMemberDiags ?? true;
     const prevMember:
@@ -773,10 +851,14 @@ export function tryEvalCallFull(
     try {
       // 按源码本地函数名分析（@nudo:case 见证 / symbolic 聚合）：同名
       // re-export / CJS 合并不得顶替本地私有函数 ⇒ preferLocal。
-      const full = callTranspiledExportFull(run.exports, fnName, args, {
-        preferLocal: true,
-        ...(opts.phi ? { phi: opts.phi } : {}),
-      });
+      const full =
+        cjsReceiver !== undefined
+          ? invokeCjsMember(cjsReceiver, fnName, args, opts.phi)
+          : callTranspiledExportFull(run.exports, fnName, args, {
+              preferLocal: true,
+              ...(opts.phi ? { phi: opts.phi } : {}),
+            });
+      if (!full) return undefined;
       const all = [...(run.memberDiags ?? []), ...memberDiags];
       return {
         ...full,
@@ -818,10 +900,14 @@ export function tryEvalCall(
     // 守卫 + 回落观测（旧实现 !r 死检查：缺 result
     // 的记录静默 undefined，原因不可观测）
     if (!isAbsVal(r)) {
+      // **引擎自身违约**（producer 产出了非 Abs 值）⇒ 不是用户代码抛 ⇒ 标签
+      // 仍是 internal（BUG-073 的 module-throw 只归用户代码求值时的原生异常）
+      // ⇒ 闸门必须红（引擎缺陷）。
       noteEvalFallback(
         new Error(
           `tryEvalCall: '${fnName}' result is not an Abs value (producer contract violation)`,
         ),
+        "engine",
       );
       return undefined;
     }

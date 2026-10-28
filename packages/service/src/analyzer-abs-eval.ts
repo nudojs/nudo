@@ -478,16 +478,23 @@ function resolveExportSiteAt(
       }
     );
   }
-  // 4. `export * from "m"`：m 定义了该名才认（改名 barrel 的别名路另见 targetExport）
+  // 4. `export * from "m"`：m 定义了该名才认。同名来自**不同模块** ⇒ 歧义
+  //    （ESM 规范：该名不可用）⇒ 解析不出（Bug 269，与 abs-modules 的合并
+  //    口径一致——两条路径都不得给歧义名一个确定定义位点）。
+  const starHits: ExportSite[] = [];
   for (const spec of idx.starSpecs) {
     const target = safeResolveImport(spec, modulePath);
     if (!target) continue;
     const sub = moduleExportIndex(target);
     if (!sub) continue;
-    const r = resolveExportSiteAt(sub, target, exportName, hop + 1, seen);
-    if (r) return r;
+    const r = resolveExportSiteAt(sub, target, exportName, hop + 1, new Set(seen));
+    if (!r) continue;
+    if (starHits.some((h) => h.modulePath === r.modulePath && h.exportName === r.exportName)) {
+      continue;
+    }
+    starHits.push(r);
   }
-  return undefined;
+  return starHits.length === 1 ? starHits[0] : undefined;
 }
 
 /**

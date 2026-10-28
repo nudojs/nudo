@@ -257,9 +257,20 @@ export function collectTopLevelFunctions(
     // ⇒ 复用 parser **已导出**的 `getClassMembers` / `classMemberKeyName` /
     //   `methodFunctionNode`（**parser 导出面零新增** ✓）。
     for (const member of getClassMembers(decl)) {
-      const m = member as { static?: boolean; kind?: string };
+      const m = member as { static?: boolean; kind?: string; type?: string };
       if (m.static !== true) continue;
-      if (m.kind !== undefined && m.kind !== "method") continue; // skip ctor / get / set
+      // 白名单式：只收**方法**节点。Babel 的类字段是 `ClassProperty`，它
+      // **没有** `kind` 字段（只有 ClassMethod / MethodDefinition 才有
+      // `kind: "method"|"get"|"set"`）⇒ 旧的 `m.kind !== undefined && …`
+      // 过滤会**放行静态字段** ⇒ 字段被当成方法收进函数表（Bug 139：dts 面
+      // 把 `K.s` 投影成实例方法 `s(): unknown`、check 面看不见、运行时不符）。
+      if (
+        m.type !== "ClassMethod" &&
+        m.type !== "MethodDefinition" &&
+        m.type !== "TSDeclareMethod"
+      ) {
+        continue; // 类字段 / 构造器 / 访问器都跳过（访问器另行处理）
+      }
       const keyName = classMemberKeyName(member);
       const methodNode = methodFunctionNode(member);
       if (typeof keyName !== "string" || !methodNode) continue;
@@ -308,6 +319,12 @@ export function collectTopLevelFunctions(
       if (d?.type === "ClassDeclaration" && defaultClassName) {
         classDecls.set(defaultClassName, { node: d, stmt });
         exportedClassNames.add(defaultClassName);
+      } else if (d?.type === "ClassDeclaration") {
+        // **匿名** `export default class { … }`（Bug 152）：没有本地名，导出槽名
+        // 就是 "default" ⇒ 按槽名登记（否则两个分支都落空 ⇒ 该类的成员
+        // 在函数普查里完全消失：`nudo export` 早退、消费端 TS2307）。
+        classDecls.set("default", { node: d, stmt });
+        exportedClassNames.add("default");
       } else {
         const idName = asIdentifier(d as Node)?.name;
         if (idName) exportedClassNames.add(idName);
@@ -477,6 +494,43 @@ export function findSingleModuleExportsFunction(ast: Node): Node | null {
     found = fn;
   }
   return found;
+}
+
+/**
+ * CJS 对象字面量导出的**可调用成员键**（`module.exports = { h(){} }` → `{"h"}`）。
+ *
+ * BUG-045：这类成员既不是模块作用域绑定，也不是顶层导出槽 —— 按名取必然落空
+ * （求值面 ⇒ `unknown` ⇒ dts/schema/guard 三方言一起退化，guard 变 `return true`）。
+ * 普查（{@link collectTopLevelFunctions} 的 CJS 分支）与 core 的导出槽解析
+ * （`algebra/export-slot.ts` 的 `cjsMemberSlotsOf`）都以**成员键**为导出槽口径
+ * ⇒ 求值面必须按同一张表派发成员调用，三面才同源。
+ *
+ * 口径与普查逐项一致：只收对象方法（`kind === "method"`——getter/setter 读出的
+ * 是值不是可调用入口）与**函数值**属性；键名只认稳定键（计算键无槽名）。
+ */
+export function cjsObjectExportMemberNames(ast: Node): Set<string> {
+  const out = new Set<string>();
+  if (ast.type !== "File") return out;
+  for (const stmt of programBody(ast)) {
+    const expr = getExpressionStatementExpression(stmt);
+    if (expr?.type !== "AssignmentExpression") continue;
+    if (!isModuleExportsTarget(expr.left as Node)) continue;
+    const objLit = expr.right as Node | null | undefined;
+    if (objLit?.type !== "ObjectExpression") continue;
+    for (const prop of objLit.properties) {
+      if (prop.type === "ObjectMethod") {
+        if (prop.kind !== "method") continue;
+        const key = objectMemberKeyName(prop);
+        if (key) out.add(key);
+        continue;
+      }
+      if (prop.type !== "ObjectProperty") continue;
+      if (!isFnExprValue(prop.value as Node)) continue;
+      const name = objectMemberKeyName(prop) ?? namedFnExprId(prop.value as Node);
+      if (name) out.add(name);
+    }
+  }
+  return out;
 }
 
 export function collectBindings(

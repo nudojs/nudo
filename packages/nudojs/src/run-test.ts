@@ -19,6 +19,8 @@ import {
 import {
   caseExpectedSatisfied,
   defaultLoadModule,
+  formatExpected,
+  inferenceFailed,
   findProjectConfig,
   interfaceConfig,
   type AnalysisResult,
@@ -78,27 +80,6 @@ function formatCaseLine(c: CaseResult): string {
     line += `   throws ${formatShape(c.throwsAbs)}`;
   }
   return line;
-}
-
-/**
- * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定）。
- *
- * 判据（**报告面本地**判）：
- * - `shape.k === "unknown"`：core 的 unknown 语义 = 「分析拿不到信息
- *   （求值失败 / 泄漏）」⇒ 实测值**没推出来**；
- * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
- *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
- *
- * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
- * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
- * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
- * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
- *
- * 为什么不放在 service 的判定函数里：`caseExpectedSatisfied` 是**二值**判定
- * （片 C 冻结），第三态是**报告面**的事（能不能下断言结论）⇒ 本地判。
- */
-function inferenceFailed(actual: Abs): boolean {
-  return actual.shape.k === "unknown" || actual.conf === "opaque";
 }
 
 /**
@@ -224,7 +205,7 @@ export function buildTestReport(
         });
         continue;
       }
-      const expected = formatShape(c.expected as Abs);
+      const expected = formatExpected(c.expected as Abs);
       // Bug 950 第三态：引擎**未能推断**实测值（unknown / conf=opaque）⇒
       // **无法判定** ⇒ 记 unchecked（既不是失败，也不是空洞通过）。
       // ⚠ 判在**判定调用之前** ⇒ `any()` / `unknown()` 这类「放宽的期望」

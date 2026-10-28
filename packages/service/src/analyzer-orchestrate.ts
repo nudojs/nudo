@@ -212,33 +212,44 @@ export function analyzeFile(
 }
 
 // ---------------------------------------------------------------------------
-// 1145：模块级求值失败（引擎内部回落）——**按文件**观测
+// 1145：模块级求值失败（闸门无法裁决该文件）——**按文件**观测
 // ---------------------------------------------------------------------------
 
 /**
- * 引擎内部回落（`internal` fallback）的**按文件**观测结果。
+ * 闸门**无法裁决该文件**的引擎回落的**按文件**观测结果。
  *
- * core 的回落三分类（`packages/core/src/algebra/exec/run.ts` 的 `evalFallbackOf`）：
- * - `unsupported:*` —— **能力边界**（transpile 未 lowering 的构造）：既有口径，
- *   **不得**变成闸门失败（否则大面积假红）；
- * - `module-throw` —— **程序自身抛**（NudoThrow；catch 可吸收）：既有口径，
- *   **不得**变成闸门失败；
- * - `internal` —— **引擎内部缺陷**（生成模块编译失败 / 求值抛内部错误）：
- *   该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
- *   ⇒ **闸门假绿**（1145）。这是唯一进失败信号的回落。
+ * core 的回落两维（`packages/core/src/algebra/exec/run.ts` 的 `evalFallbackOf`
+ * / `gateFatalOf`）：
+ * - **标签（谁的责任）**：`unsupported:*`（能力边界）/ `module-throw`（程序
+ *   自身抛：建模内抛 NudoThrow，或用户代码求值时逃逸的原生异常——BUG-073）/
+ *   `internal`（引擎 / 宿主边界自身违约）；
+ * - **可见性（闸门能不能裁决）**：`gateFatal` —— 装载期逃逸 ⇒ 该模块装载
+ *   失败（导出全丢）⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0 ⇒ **闸门假绿**
+ *   （1145 / BUG-072）。
+ *
+ * ⇒ 进失败信号的是**可见性**（`gateFatal`），不是标签：
+ * `internal`（引擎缺陷）恒进；`module-throw` 仅**装载期**逃逸时进（调用期的
+ * 逃逸由该次调用的 throws 面承载）；`unsupported:*`（能力边界）**不进**
+ * （不得大面积假红）。
  */
 export type FileEvalFailure = {
   /** 被分析文件（绝对路径） */
   file: string;
-  /** 回落原因（当前只有 `internal` = 引擎内部缺陷） */
+  /** 回落原因（`internal` = 引擎缺陷 / `module-throw` = 装载期逃逸） */
   reason: string;
   /** 回落消息（引擎给出的失败详情） */
   message: string;
 };
 
-/** 只有 `internal`（引擎内部缺陷）进失败信号；能力边界 / 程序自身抛不进。 */
+/**
+ * 是否进失败信号（闸门必须 fail-closed）。
+ *
+ * `gateFatal` 是 core 侧算好的**可见性**维度（标签 ≠ 可见性）；`internal`
+ * 兜底（老事件无 `gateFatal` 字段时仍按引擎缺陷处理）。
+ */
 function isGateFatalFallback(f: EvalFallback): boolean {
-  return f.reason === "internal";
+  if (f.reason === "internal") return true;
+  return f.gateFatal === true;
 }
 
 /**

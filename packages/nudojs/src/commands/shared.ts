@@ -317,22 +317,41 @@ export function collectExternalRecords(
   errorSink?: PathError[],
 ): CallRecord[] | undefined {
   const records: CallRecord[] = [];
+  // 同一路径给几次就登记几次错误、跑几次求值探针（Bug 171）⇒ resolve 后去重。
+  // 用户写重复的 `--from a.js --from a.js` 不是两次不同的现场。
+  const seenSites = new Set<string>();
+  const pushPathError = (err: PathError): void => {
+    if (errorSink) errorSink.push(err);
+    else reportPathErrors([err]);
+  };
   for (const site of sites) {
     const sitePath = resolve(site);
+    if (seenSites.has(sitePath)) continue;
+    seenSites.add(sitePath);
     // 单次 stat：miss（ENOENT）→ PathError；EACCES/EIO 上抛（顶层 CLI catch，不伪装 miss）
     const siteStat = statSync(sitePath, { throwIfNoEntry: false });
     if (!siteStat) {
-      const err: PathError = {
+      pushPathError({
         path: sitePath,
         code: DIAG.pathMissingCallsite,
         message: `Callsite file not found: ${sitePath}`,
         suggestion: `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
-      };
-      if (errorSink) errorSink.push(err);
-      else reportPathErrors([err]);
+      });
       continue;
     }
     const siteFiles = siteStat.isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
+    // 空目录是「0 条记录」的**第三种**同形情形（Bug 129）：文件缺失 / 读失败
+    // 各有 PathError，空目录此前静默通过 ⇒ 现场啥也没采到却 exit 0。
+    // 与 target 面同一码（`nudo:path-empty-dir`）⇒ 两面路径解析口径一致。
+    if (siteFiles.length === 0) {
+      pushPathError({
+        path: sitePath,
+        code: DIAG.pathEmptyDir,
+        message: `Callsite directory contains no analyzable files: ${sitePath}`,
+        suggestion: `add .js/.mjs/.cjs/.ts/.mts/.cts sources to the directory or pass --from <file> instead`,
+      });
+      continue;
+    }
     for (const sf of siteFiles) {
       const source = readFileSync(sf, "utf-8");
       // 探针**先行**（不再挂在「0 条记录」分支上）：

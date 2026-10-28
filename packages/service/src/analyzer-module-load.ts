@@ -3,10 +3,10 @@
  * 自 analyzer.ts 机械拆出；语义未改。
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import { stablePathKey, stablePathKeyGraph } from "@nudojs/core/internal";
-import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
+import { resolveNpmJsEntryDetailed, resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { MODULE_RESOLVE_EXTS, resolveModuleFile } from "./load-module.ts";
 import { collectDependencySpecs } from "./static-imports.ts";
 
@@ -116,10 +116,15 @@ export function buildModuleGraph(
 }
 
 /**
- * 磁盘直读并解析单个文件，抽取其相对依赖边（读取/解析失败返回空数组）。
+ * 磁盘直读并解析单个文件，抽取其依赖边（读取/解析失败返回空数组）。
  * 与求值侧 importSpecs 同口径：ImportDeclaration + ExportNamed/ExportAll 的
  * source（re-export）+ require()/require.resolve()（collectDependencySpecs，
  * AST 走、foldStaticStringExpr 折叠说明符——字符串/注释里的假 require 不进边）。
+ *
+ * **裸包也成边**（Bug 240）：脏传播的消费者与相对依赖完全等价（宿主两路取到
+ * 同一实现）——跳过裸包说明符会让「依赖实现变更 ⇒ 消费者重算」缺边，长驻面
+ * （watch / LSP）永不重算。解析用求值侧同一套 `resolveNpmJsEntryDetailed`，
+ * 失败按普通 miss（不进边）。
  */
 function extractImportEdges(file: string): string[] {
   const edges: string[] = [];
@@ -130,15 +135,23 @@ function extractImportEdges(file: string): string[] {
     return edges;
   }
   for (const specifier of collectDependencySpecs(ast)) {
-    if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
-    // stat 级读故障（EACCES/ESTALE/EIO…，#135 起 resolveModuleFile
-    // 抛 ModuleReadError）：该边不可判 → 不进边（直读兜底仍覆盖
-    // file 自身内容；抛穿会炸垮 watch 增量图 / LSP 脏传播）
     let resolved: string | null;
-    try {
-      resolved = resolveImportPath(specifier, file);
-    } catch {
-      continue;
+    if (specifier.startsWith(".") || specifier.startsWith("/")) {
+      // stat 级读故障（EACCES/ESTALE/EIO…，#135 起 resolveModuleFile
+      // 抛 ModuleReadError）：该边不可判 → 不进边（直读兜底仍覆盖
+      // file 自身内容；抛穿会炸垮 watch 增量图 / LSP 脏传播）
+      try {
+        resolved = resolveImportPath(specifier, file);
+      } catch {
+        continue;
+      }
+    } else {
+      if (specifier.startsWith("node:")) continue;
+      try {
+        resolved = resolveNpmJsEntryDetailed(specifier, dirname(file)).path;
+      } catch {
+        continue;
+      }
     }
     if (resolved) edges.push(resolved);
   }

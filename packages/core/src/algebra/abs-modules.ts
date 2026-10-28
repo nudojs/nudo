@@ -156,8 +156,13 @@ export function collectAbsExports(
   const named: Record<string, Abs> = {};
   let defaultExport: Abs | undefined;
   // ESM：显式导出（decl / specifier / 显式 re-export）恒压过 export *。
-  // star 只填「从未显式导出」的名；star×star 仍按源序后者覆盖（已知偏差）。
+  // star 只填「从未显式导出」的名。
   const explicitNames = new Set<string>();
+  // `export *` 的歧义记账（ESM ResolveExport 语义，Bug 269）：同名导出若来自
+  // **不同模块** ⇒ 该名歧义 ⇒ **不导出**（宿主的导入方在链接期 SyntaxError）。
+  // 旧实现按源序后者覆盖 ⇒ 门禁给一个宿主不可能产出的确定值。
+  const starProviders = new Map<string, Abs>();
+  const ambiguousNames = new Set<string>();
 
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration") {
@@ -246,14 +251,23 @@ export function collectAbsExports(
       }
     } else if (stmt.type === "ExportAllDeclaration" && stmt.source && modules) {
       // export * from "mod"：并入 named（不含 default，与 ESM 一致）；
-      // 不得覆盖显式导出（explicit wins）。star×star 仍按源序后者覆盖。
+      // 不得覆盖显式导出（explicit wins）。同名星号导出来自**不同模块** ⇒ 歧义
+      // ⇒ 该名**不导出**（宿主链接期 SyntaxError，Bug 269）。
       // （Babel 8：`export * as ns` 走 ExportNamedDeclaration + ExportNamespaceSpecifier）
       const mod = Object.hasOwn(modules, stmt.source.value)
         ? modules[stmt.source.value]
         : undefined;
       if (mod?.named) {
         for (const [k, v] of Object.entries(mod.named)) {
-          if (!explicitNames.has(k)) named[k] = v;
+          if (explicitNames.has(k) || ambiguousNames.has(k)) continue;
+          const prev = starProviders.get(k);
+          if (prev !== undefined && prev !== v) {
+            ambiguousNames.add(k);
+            delete named[k];
+            continue;
+          }
+          starProviders.set(k, v);
+          named[k] = v;
         }
       }
     } else if (stmt.type === "ExportDefaultDeclaration") {
