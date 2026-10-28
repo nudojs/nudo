@@ -50,12 +50,12 @@
   },
   "dependencies": {
     "@babel/traverse": "^8.0.7",
-    "@babel/types": "^8.0.6",
+    "@babel/types": "^8.0.8",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
     "vscode-languageserver": "^10.1.2",
-    "vscode-languageserver-textdocument": "^1.0.15"
+    "vscode-languageserver-textdocument": "^1.0.16"
   },
   "scripts": {
     "build": "tsup",

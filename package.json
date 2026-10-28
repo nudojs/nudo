@@ -51,10 +51,10 @@
     "branch:hygiene": "node scripts/branch-hygiene.mjs"
   },
   "devDependencies": {
-    "@babel/parser": "^8.0.7",
+    "@babel/parser": "^8.0.8",
     "@babel/traverse": "^8.0.7",
-    "@babel/types": "^8.0.6",
-    "@types/lodash": "^4.17.26",
+    "@babel/types": "^8.0.8",
+    "@types/lodash": "^4.17.27",
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.5",
     "commander": "^15.0.0",

@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@babel/generator": "^8.0.6",
-    "@babel/types": "^8.0.6",
+    "@babel/types": "^8.0.8",
     "@nudojs/core": "workspace:*",
     "@nudojs/env": "workspace:*",
     "@nudojs/harvester": "workspace:*",
