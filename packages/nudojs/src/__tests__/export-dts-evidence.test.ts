@@ -7,7 +7,11 @@
  *    调分析器 ⇒ 见证既不 widen 形参/返回，也不产出 `Case:` 行；
  * 3. 非导出顶层函数不泄漏进 .d.ts（导出面 = export / export default /
  *    CJS exports，与 check entry 表同源 localNamedExports）；
- * 4. 无任何证据的参数位保持 unknown + stderr 单行提示（三条补证据路径）；
+ * 4. 无证据参数位的既定口径（BUG-076）：主路径（普通导出函数）投影 **`any`**
+ *    （Abs any ≠ unknown：Bug 544 / concepts/abs.md:100）且 stderr **不**打提示；
+ *    `unknown` + `note: <fn>.<param> rendered as unknown …` 只出现在窄路径
+ *    （`@nudo:skip` / 无 case + 手写契约参数位，见
+ *    `cli-bug-076-unevidenced-any.test.ts`）；
  * 5. 有函数但无导出声明时 stdout 如实说明（exit 0）。
  *
  * runner 注：spawn 型 CLI 子进程对 @nudojs/* 的解析不经 vitest 别名——

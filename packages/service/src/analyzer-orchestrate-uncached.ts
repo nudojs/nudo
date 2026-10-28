@@ -920,6 +920,15 @@ export function analyzeFileUncachedInner(
         ...(externalCallRecords ?? []).filter(matchingExternal),
       ].filter((r) => !isLeakedCallRecord(r)),
     );
+    // BUG-035（证据范围）：只要**外部记录**（`--from` 使用现场调用）参与了本
+    // 函数的域合成，就在分析结果上打标 —— 侧车把这条事实落进生成段的
+    // `// evidence:` 行 ⇒ 之后本函数「今天没证据」时**不得**按「证据消失」
+    // 删段（跨文件证据本轮可能压根没采集）。判据取**去重前**的匹配集：
+    // 一条外部记录即便与本地记录载荷相同而被去重，也照旧打标（保守方向 =
+    // 多保留，绝不误删）。
+    if ((externalCallRecords ?? []).filter(matchingExternal).length > 0) {
+      candidate.analysis.externalEvidence = true;
+    }
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
     // 带 case 指令的函数已在上面的指令循环里报过 ⇒ 不重复报（Bug 511 接线
     // 后指令函数也会进合成路径，两处都会触发 ⇒ 同一条诊断出两遍）。

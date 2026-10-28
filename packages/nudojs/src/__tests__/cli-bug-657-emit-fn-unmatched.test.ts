@@ -12,6 +12,11 @@
  * ② **部分命中** ⇒ 未命中的名字**原样**传给发射器 ⇒ 走发射器**已存在**的
  *    `skipped <fn> (not-an-export)` 通道（与 LSP / agent 面同款文案）；
  * ③ 对照组：名字正确时**只**改那一个（作用域没被放大）。
+ *
+ * ⚠ **BUG-021 口径变更后的重钉**（对照组里的 alpha 段）：调用点**点观测**不再
+ * 直接成为字面量契约 —— 先 `widenObservationAbs` 再 `joinThenProject` ⇒ 一次
+ * 调用 `alpha({ x: 5 })` 折出 `shape({ x: number() })` / `number()`，而不是
+ * `shape({ x: lit(5) })` / `lit(5)`。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
@@ -123,7 +128,10 @@ describe("nudo contract --emit --fn 未命中 · Bug 657 · 过滤器不降级",
     );
 
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("+export const alpha = fn({ p: shape({ x: lit(5) }) }, lit(5));");
+    // BUG-021：调用点**点观测**不再直接成为字面量契约 —— 先 `widenObservationAbs`
+    // 再 `joinThenProject` ⇒ 一次调用 `alpha({ x: 5 })` 折出
+    // `shape({ x: number() })` / `number()`（不是 `lit(5)`）。
+    expect(r.stdout).toContain("+export const alpha = fn({ p: shape({ x: number() }) }, number());");
     // beta 的生成段**不在**改动面里（只作为 diff 上下文出现）
     expect(r.stdout).not.toContain("-export const beta");
     expect(r.stdout).not.toContain("+export const beta");

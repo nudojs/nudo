@@ -140,7 +140,10 @@ describe("Bug 1046 — 契约申报的 bigint 字面量在 zod 面不得被静�
       "exact",
     );
     const { node, dropped } = absToSchemaNode(observed);
-    expect(node).toEqual({ k: "unknown" });
+    // BUG-032：观测路径的 bigint 字面量改保**基类型**（`{k:"prim",type:"bigint"}`
+    // ⇒ `z.bigint()`）；改前是 `{k:"unknown"}` ⇒ 校验器接受**任何**值
+    // （字符串 / 对象 / 数字都行），与 guard 面 `data === 10n` 接受集不相交。
+    expect(node).toEqual({ k: "prim", type: "bigint", refinements: [] });
     expect(dropped.some((d) => d.includes("bigint"))).toBe(true);
   });
 

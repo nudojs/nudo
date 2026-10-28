@@ -38,6 +38,7 @@ import {
   resolveTargetsCollect,
   startWatch,
   reemitUpdate,
+  emitWiringOf,
   runAbsView,
   displayPathOf,
   variadicSwallowError,
@@ -285,13 +286,18 @@ async function runTest(
   ).length;
 
   let emitOut: EmitResult | undefined;
+  /** BUG-119：update 链**净删除**的生成态见证（汇总必须如实报出） */
+  let removedWitnesses: string[] = [];
   if (opts.freeze) {
     if (opts.freeze.mode === "update") {
       const re = await reemitUpdate(filePath, source, opts.from);
       result = re.result;
       emitOut = re.emitOut;
+      removedWitnesses = re.removedWitnesses;
     } else {
-      emitOut = insertGeneratedCaseDirectives(source, result);
+      // BUG-055：写回必须用**被写方自己的有效契约**守门 ⇒ 契约定位的宿主接线
+      // （侧车 / fromFile / autoBind / projectDir）与 check 面同口径。
+      emitOut = insertGeneratedCaseDirectives(source, result, await emitWiringOf(filePath));
     }
   }
 
@@ -406,13 +412,16 @@ async function runTest(
   if (opts.freeze && emitOut) {
     const relPath = displayPathOf(filePath);
     const skippedLines = emitOut.skipped.map((s) => `  ${s.fn}: ${s.reason}${s.detail ? ` (${s.detail})` : ""}`);
+    /** 删除面的单行摘要（净删除 0 条时不出现——不制造噪音） */
+    const removedNote =
+      removedWitnesses.length > 0 ? `, ${removedWitnesses.length} removed` : "";
     if (emitOut.source === source) {
       console.log("\nfreeze: no changes.");
       for (const line of skippedLines) console.log(line);
       return;
     }
     if (opts.freeze.dryRun) {
-      console.log(`\nfreeze: would write cases → ${relPath} (dry run)`);
+      console.log(`\nfreeze: would write cases → ${relPath} (dry run${removedNote})`);
       for (const w of emitOut.written) console.log(`  ${w.fn}: ${w.cases.join(", ")}`);
       for (const line of skippedLines) console.log(line);
       process.stdout.write(unifiedDiff(source, emitOut.source, relPath));
@@ -422,9 +431,10 @@ async function runTest(
     writeFileSync(filePath, emitOut.source, "utf-8");
     const directiveCount = emitOut.written.reduce((n, w) => n + w.cases.length, 0);
     console.log(
-      `\nfreeze → ${relPath} (${directiveCount} directive(s) across ${emitOut.written.length} function(s))`,
+      `\nfreeze → ${relPath} (${directiveCount} directive(s) across ${emitOut.written.length} function(s)${removedNote})`,
     );
     for (const w of emitOut.written) console.log(`  ${w.fn}: ${w.cases.join(", ")}`);
+    for (const name of removedWitnesses) console.log(`  - ${name}`);
     for (const line of skippedLines) console.log(line);
   }
 }

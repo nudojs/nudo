@@ -37,17 +37,19 @@ describe("schema length/bound anchoring", () => {
     // fallback 路径（absToConstraint 对 length(s) 会改写为 __nudo_self__；
     // 这里直接断言锚定 length(s) 仍可投影）
     const a = strWith(ge(app("length", [v("s")]), lit(1)));
-    expect(absToSchemaSource(a)).toBe("z.string().min(1)");
+    // BUG-203：长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
+    expect(absToSchemaSource(a)).toBe("z.string().refine((s) => s.length >= 1)");
   });
 
   it("length(__nudo_self__) projects min (constraint path)", () => {
     const a = strWith(ge(app("length", [v(SELF)]), lit(1)));
-    expect(absToSchemaSource(a)).toBe("z.string().min(1)");
+    // BUG-203：长度界按 **UTF-16 码元** 判定（refine），不映射 zod 的码点 API
+    expect(absToSchemaSource(a)).toBe("z.string().refine((s) => s.length >= 1)");
   });
 
   it("gt(self var) still projects bound", () => {
     const a = numWith(gt(v("x"), lit(0)));
-    expect(absToSchemaSource(a)).toBe("z.number().gt(0)");
+    expect(absToSchemaSource(a)).toBe("z.number().gt(0).or(z.literal(Infinity))");
   });
 
   // --- eq 路径（与 anchoredEqLit 同口径：只认 self var 锚定）---

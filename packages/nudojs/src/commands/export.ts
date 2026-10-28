@@ -424,6 +424,9 @@ async function runExport(
       // 「同一模块」的判定挂在本机 checkout 路径上 ⇒ 换目录重导多一份陈旧
       // 副本，且产物内嵌构建机路径（不可复现构建）。
       moduleKey: moduleIdOf(filePath, source),
+      // BUG-232：**另一个**可选字段（模块身份仍与路径无关，BUG-016 不回归）——
+      // 只用于 `--out` 落盘时重基 dts 产物里的相对说明符。
+      sourcePath: filePath,
       dialect: effectiveDialect,
       ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
       standardChunks,

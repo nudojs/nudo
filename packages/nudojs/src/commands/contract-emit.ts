@@ -374,6 +374,11 @@ export async function runContractEmit(
           changed: mainResult.changed,
           written: mainResult.written,
           skipped: mainResult.skipped.map((s) => ({ fn: s.fn, reason: s.reason })),
+          // BUG-035 残留收口：证据消失 ⇒ 生成段被删（不是「保留原段」），
+          // 机器面必须能看见删除清单（人类面走 formatEmitSummary 的 `removed:` 行）。
+          ...(mainResult.removed && mainResult.removed.length > 0
+            ? { removed: mainResult.removed }
+            : {}),
           issues: mainResult.issues,
           ...(mainResult.diff !== undefined ? { diff: mainResult.diff } : {}),
           ...(mainResult.emptyDefaultTargets ? { emptyDefaultTargets: true } : {}),

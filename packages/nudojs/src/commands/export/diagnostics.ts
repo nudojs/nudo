@@ -155,7 +155,12 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
     entries,
     interfaceLoad: entries.filter((d) => d.code === DIAG.interfaceLoad),
     conflicts: entries.filter((d) => d.code === DIAG.interfaceConflict),
-    blocking: entries.some((d) => d.severity === "error"),
+    // BUG-233：阻断判据必须与 `EXPORT_BLOCKING_CODES` **按码**对齐（`toExportDiagnostic`
+    // 已把非阻断族丢弃）——只看 `severity === "error"` 会放过 warning 级的
+    // `nudo:interface-conflict` ⇒ 已收集的诊断既不上屏也不阻断（产物只编码了一半契约）。
+    blocking: entries.some(
+      (d) => d.severity === "error" || EXPORT_BLOCKING_CODES.includes(d.code),
+    ),
   };
 }
 

@@ -144,6 +144,84 @@ export function reportPathErrors(errors: PathError[]): void {
 }
 
 /**
+ * 固化写回的**宿主接线**（BUG-055 / BUG-119）：有效契约（源码 `@nudo:contract`
+ * + 侧车 `*.nudo.js`）的定位需要 `loadModule` / `fromFile` / `autoBind` /
+ * `projectDir` —— 与 `contractOf` / `checkSource` 的侧车施加点同口径
+ * （不同口径 ⇒ 同一份契约在两个面上落到不同的位）。
+ */
+export async function emitWiringOf(filePath: string): Promise<{
+  filePath: string;
+  loadModule: (spec: string, fromFile: string) => string | undefined;
+  autoBind: boolean | undefined;
+  projectDir: string | undefined;
+}> {
+  const { defaultLoadModule, findProjectConfig, interfaceConfig } = await import(
+    "@nudojs/service"
+  );
+  const proj = findProjectConfig(dirname(filePath));
+  return {
+    filePath,
+    loadModule: defaultLoadModule,
+    autoBind: interfaceConfig(proj?.config).autoBind,
+    projectDir: proj?.projectDir,
+  };
+}
+
+/** 生成态见证行（与 service/emit 的 GENERATED_CASE_LINE_REGEX 同口径） */
+const GENERATED_WITNESS_LINE = /^\s*\*?\s*@nudo:case\s+"(call@[^"]*)"/;
+
+/** 源码里已固化的生成态见证名（按出现顺序） */
+function generatedWitnessNames(source: string): string[] {
+  const body = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source;
+  const out: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const m = GENERATED_WITNESS_LINE.exec(line);
+    if (m) out.push(m[1] ?? "");
+  }
+  return out;
+}
+
+/**
+ * 见证身份（BUG-036 口径，与 health 的 `witnessIdentity` 同源）：
+ * 严格 = **现场 + 行号**（`call@a.js:L2` 与 `call@b.js:L2` 是两个调用点）；
+ * 归一 = 剥掉现场段（只用于「一侧带现场、另一侧不带」的命名方案归一）。
+ */
+function witnessIdentity(name: string): { strict: string; loose: string; hasSite: boolean } {
+  const m = /^call@([^:]*):L(\d+)$/.exec(name);
+  if (!m) return { strict: name, loose: name, hasSite: false };
+  const site = m[1] ?? "";
+  return { strict: `call@${site}:L${m[2]}`, loose: `call@L${m[2]}`, hasSite: site !== "" };
+}
+
+/**
+ * **净删除**的生成态见证：被剥离、且写回后**不再存在**的那些（按身份逐条配对）。
+ *
+ * BUG-119：`--freeze=update` 的汇总此前只数**新写出**的条数 ⇒ 一次「剥离 1 条、
+ * 重建 0 条」的净删除被印成「0 directive(s)」（汇总说谎）。配对时同一调用点
+ * 的**行号漂移**（块插回后行号复原失败）不得算成删除。
+ */
+export function netRemovedWitnesses(oldNames: string[], newNames: string[]): string[] {
+  const used = new Array<boolean>(newNames.length).fill(false);
+  const out: string[] = [];
+  for (const old of oldNames) {
+    const oid = witnessIdentity(old);
+    let hit = newNames.findIndex(
+      (n, k) => !used[k] && witnessIdentity(n).strict === oid.strict,
+    );
+    if (hit < 0) {
+      hit = newNames.findIndex((n, k) => {
+        if (used[k]) return false;
+        const id = witnessIdentity(n);
+        return id.loose === oid.loose && id.hasSite !== oid.hasSite;
+      });
+    }
+    if (hit >= 0) used[hit] = true;
+    else out.push(old);
+  }
+  return out;
+}
+
+/**
  * 把 `target` 的函数声明**锚点**换到 `base` 的坐标系，其余（含 case 名）不动。
  *
  * BUG-019：`insertGeneratedCaseDirectives` 用 `fn.loc.start.line` 定位插入点，
@@ -181,9 +259,12 @@ async function emitWithFinalCoordinates(
   filePath: string,
   base: string,
   baseAnalysis: AnalysisResult,
-  from?: CallRecord[],
+  from: CallRecord[] | undefined,
+  wiring: Awaited<ReturnType<typeof emitWiringOf>>,
 ): Promise<EmitResult> {
-  const candidate = insertGeneratedCaseDirectives(base, baseAnalysis);
+  // 重建阶段（update 链）：按见证身份逐条重建，手写 case 只挡同名（BUG-119）。
+  const insertOpts = { ...wiring, rebuildGenerated: true };
+  const candidate = insertGeneratedCaseDirectives(base, baseAnalysis, insertOpts);
   if (candidate.source === base) return candidate; // 无插入 ⇒ 基源坐标即写盘坐标
   const settled = await analyzeFileAsync(
     filePath,
@@ -193,7 +274,7 @@ async function emitWithFinalCoordinates(
     undefined,
     "none",
   );
-  const final = insertGeneratedCaseDirectives(base, withAnchorsOf(settled, baseAnalysis));
+  const final = insertGeneratedCaseDirectives(base, withAnchorsOf(settled, baseAnalysis), insertOpts);
   return final.source.split("\n").length === candidate.source.split("\n").length
     ? final
     : candidate;
@@ -203,7 +284,14 @@ export async function reemitUpdate(
   filePath: string,
   source: string,
   from?: CallRecord[],
-): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
+): Promise<{
+  result: AnalysisResult;
+  emitOut: EmitResult;
+  removed: string[];
+  /** BUG-119：**净删除**的生成态见证（汇总必须如实报出，不能印 0）。 */
+  removedWitnesses: string[];
+}> {
+  const wiring = await emitWiringOf(filePath);
   // BUG-019：**不得在剥离后的坐标系上产出落盘文本**。
   //
   // 旧实现 `分析(剥离源) → 插入(剥离源)`：见证名里的行号来自**剥离坐标系**
@@ -227,7 +315,18 @@ export async function reemitUpdate(
     undefined,
     "all",
   );
-  const emitOut = await emitWithFinalCoordinates(filePath, stripped.source, baseAnalysis, from);
+  const emitOut = await emitWithFinalCoordinates(
+    filePath,
+    stripped.source,
+    baseAnalysis,
+    from,
+    wiring,
+  );
+  // BUG-119：净删除 = 被剥离且写回后**不再存在**的生成态见证（按身份逐条配对）。
+  const removedWitnesses = netRemovedWitnesses(
+    stripped.removed,
+    generatedWitnessNames(emitOut.source),
+  );
   if (emitOut.source === source) {
     // 文件不需要改：源文件里已有生成块 ⇒ 基源分析看不到指令 case（①）⇒
     // 展示面必须重新分析**原文件**；剥离前无生成块时两份源码相同，可直接复用。
@@ -235,7 +334,7 @@ export async function reemitUpdate(
       stripped.source === source
         ? baseAnalysis
         : await analyzeFileAsync(filePath, source, undefined, from, undefined, "all");
-    return { result, emitOut, removed: stripped.removed };
+    return { result, emitOut, removed: stripped.removed, removedWitnesses };
   }
   const result = await analyzeFileAsync(
     filePath,
@@ -245,7 +344,7 @@ export async function reemitUpdate(
     undefined,
     "all",
   );
-  return { result, emitOut, removed: stripped.removed };
+  return { result, emitOut, removed: stripped.removed, removedWitnesses };
 }
 
 /**

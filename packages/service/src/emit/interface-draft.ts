@@ -29,6 +29,8 @@ import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
+  CONSTRAINT_BUILDER_NAMES,
+  checkSource,
   constraintToEntryAbs,
   effectiveInterface,
   execNudoModule,
@@ -40,14 +42,18 @@ import {
   joinThenProject,
   leqAbs,
   localNamedExports,
+  pTrue,
   refineDiagCount,
+  scanThrowsDecl,
   sidecarPathOf,
   takeRefineDiagsSince,
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
 import {
+  DIAG,
   exportedNameOfLocal,
+  formatThrowsAbs,
   isJsBindingIdent,
   toJsBindingIdent,
 } from "@nudojs/core/internal";
@@ -93,6 +99,15 @@ export type InterfaceDraftEntry = {
   returns?: { constraint?: NudoConstraint; display: string; projected: boolean };
   paramEvidence: DraftEvidence;
   returnEvidence: DraftEvidence;
+  /**
+   * 抛错证据（BUG-198）：`declared` = 源码 `@nudo:throws` / 侧车 `fn(…, …, { throws })`
+   * 已申报；否则是引擎算出的入口抛错域（`nudo:entry-may-throw` 的同一来源）。
+   *
+   * 旧实现**只**投影参数与返回证据 ⇒ draft 不含 throws 槽 ⇒ 拿它当补救
+   * （`nudo:entry-may-throw` 的 `fix:` 建议）时诊断原样还在；源码里显式声明的
+   * `@nudo:throws` 也会在 draft 里彻底消失（draft 与源码矛盾）。
+   */
+  throws?: { kinds: string[]; declared: boolean };
   skipped?: "handwritten" | "not-an-export" | "not-projectable";
   /** 草稿 DSL：`fn({ … }, …)`；handwritten / 非导出 / 不可投影时 undefined */
   dsl?: string;
@@ -696,8 +711,138 @@ function hasRestParam(fn: FunctionAnalysis): boolean {
   return fn.paramNames.some((n) => n.startsWith("..."));
 }
 
+/**
+ * 入口**可能抛错**的种类表（BUG-198）：`fn → [kind…]`。
+ *
+ * 草稿分析面（`analyzeFileAsync`）不产出 `entryThrowsAbs`（那是 check 面入口
+ * 求值的产物，见 `analyzer-orchestrate-uncached-cases.ts`）⇒ 草稿此前无从知道
+ * 「这个入口会抛 TypeError」。这里直接跑**同一门禁**（`checkSource`）并读
+ * `nudo:entry-may-throw` 诊断 ⇒ 草稿与 check 面用同一个事实，不另算一份。
+ *
+ * fail-closed：check 抛错 ⇒ 返回空表（草稿退化成原来的行为，不臆造 throws 槽）。
+ */
+function entryMayThrowKinds(
+  filePath: string,
+  source: string,
+  loadModule: LoadModule,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  try {
+    const r = checkSource(filePath, source, pTrue, { loadModule, fromFile: filePath });
+    for (const i of r.issues) {
+      if (i.code !== DIAG.entryMayThrow) continue;
+      const fnName = i.fn;
+      if (fnName === undefined || out.has(fnName)) continue;
+      const m = /may throw ([A-Za-z_$][\w$]*(?:\s*\|\s*[A-Za-z_$][\w$]*)*)/.exec(i.message);
+      if (!m) continue;
+      out.set(
+        fnName,
+        m[1]!.split("|").map((k) => k.trim()).filter(Boolean),
+      );
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+
+/**
+ * 声明行**前置 JSDoc 块**里的 `@nudo:throws` 申报（BUG-198）。
+ *
+ * 无契约时 `effectiveInterface` 拿不到抛错申报（`eff` 本身就是 undefined）⇒
+ * 直接扫紧邻声明上方的注释块（与 check 面 `scanThrowsDecl` 同一解析器，
+ * 不另立文法）。`"*"`（任意错误都可接受）写不进 throws 槽 ⇒ 不发明名字。
+ */
+function declaredThrowsOf(source: string, declLine: number): string[] | undefined {
+  const lines = source.split("\n");
+  const block: string[] = [];
+  for (let i = declLine - 2; i >= 0; i--) {
+    const raw = lines[i] ?? "";
+    if (/^\s*$/.test(raw)) continue;
+    if (!/^\s*(\/\*\*|\*|\/\/)/.test(raw)) break;
+    block.push(raw.trim().replace(/^(\/\*\*|\*\/|\*|\/\/)\s?/, ""));
+  }
+  if (block.length === 0) return undefined;
+  const spec = scanThrowsDecl(block.reverse());
+  if (spec === undefined || spec === "*") return undefined;
+  const kinds = spec.split(",").filter(Boolean);
+  return kinds.length > 0 ? kinds : undefined;
+}
+
+/**
+ * 草稿的抛错证据（BUG-198）。
+ *
+ * 旧实现只投影参数 / 返回证据 ⇒ 草稿 DSL 永远是 `fn({…})`——**不含 throws 槽**
+ * ⇒ 拿它当 `nudo:entry-may-throw` 的补救（`fix:` 建议指向 `nudo contract --draft`）
+ * 时诊断原样还在；源码里显式 `@nudo:throws` 也会在草稿里彻底消失（草稿与源码
+ * 矛盾）。
+ *
+ * 口径：
+ * 1. **已申报**（源码 `@nudo:throws` / 侧车 `fn(…, …, { throws })`）⇒ 原样带上；
+ * 2. 否则取**引擎算出的入口抛错域**（`entryThrowsAbs`，与 `nudo:entry-may-throw`
+ *    同一来源）⇒ `{ throws: "TypeError" }`；
+ * 3. `"*"`（任何错误都可接受）与 `any`/`unknown` 写不进 throws 槽（该槽要求
+ *    具名错误）⇒ 不发明名字，留空。
+ */
+function draftThrowsKinds(
+  eff: ReturnType<typeof effectiveInterface>,
+  fn: FunctionAnalysis,
+  source: string,
+  mayThrow: ReadonlyMap<string, string[]>,
+): InterfaceDraftEntry["throws"] {
+  const declared = eff?.throws?.kinds;
+  if (declared !== undefined) {
+    if (declared === "*") return undefined;
+    if (declared.length > 0) return { kinds: [...declared], declared: true };
+  }
+  // 源码里显式 `@nudo:throws` 的：**原样**带上（此前连手写声明都会在草稿里消失）。
+  // 无契约时 `effectiveInterface` 是 undefined ⇒ 直接扫声明行的前置 JSDoc 块。
+  const fromSource = declaredThrowsOf(source, fn.loc.start.line);
+  if (fromSource !== undefined) return { kinds: fromSource, declared: true };
+  const gateKinds = mayThrow.get(fn.name);
+  if (gateKinds !== undefined && gateKinds.length > 0) {
+    return { kinds: [...gateKinds], declared: false };
+  }
+  const computed = formatThrowsAbs(fn.entryThrowsAbs);
+  if (computed === undefined) return undefined;
+  const names = computed.split(" | ").filter((n) => n !== "any" && n !== "unknown");
+  return names.length > 0 ? { kinds: names, declared: false } : undefined;
+}
+
+/**
+ * throws 槽文本（`fn(params, returns, { throws: … })` 的第三实参；无抛错证据 ⇒ ""）。
+ *
+ * 多错误名走 `union(lit(…), lit(…))`（`fn` 的 throws 槽要求能抽出错误名）。
+ */
+function draftThrowsSlot(throws: InterfaceDraftEntry["throws"]): string {
+  if (!throws || throws.kinds.length === 0) return "";
+  const value =
+    throws.kinds.length === 1
+      ? JSON.stringify(throws.kinds[0])
+      : `union(${throws.kinds.map((n) => `lit(${JSON.stringify(n)})`).join(", ")})`;
+  return `, { throws: ${value} }`;
+}
+
+/**
+ * `fn(params[, returns][, { throws }])` 的实参拼装（BUG-198）。
+ *
+ * throws 是**第三实参** ⇒ 缺返回位时必须补 `any()` 占位
+ * （`fn({}, any(), { throws: "TypeError" })` —— 对照组实测能把
+ * `nudo:entry-may-throw` 消掉）。
+ */
+function draftCall(
+  obj: string,
+  ret: string | undefined,
+  throws: InterfaceDraftEntry["throws"],
+): string {
+  const throwsPart = draftThrowsSlot(throws);
+  const retText = ret === undefined || ret === "" ? undefined : ret;
+  const retSlot = retText ?? (throwsPart ? "any()" : undefined);
+  return retSlot === undefined ? `fn(${obj})` : `fn(${obj}, ${retSlot}${throwsPart})`;
+}
+
 /** 仅把可投影槽写进 DSL；body 建议 / 无证据槽不发明约束 */
-function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): string {
+function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns" | "throws">): string {
   const parts = entry.params
     .filter((p) => p.projected && p.constraint !== undefined)
     .map((p) => {
@@ -709,7 +854,7 @@ function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): strin
     entry.returns?.projected && entry.returns.constraint !== undefined
       ? toDraftBuilderDsl(formatConstraint(entry.returns.constraint))
       : undefined;
-  return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
+  return draftCall(obj, ret, entry.throws);
 }
 
 /**
@@ -721,6 +866,7 @@ function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): strin
 function suggestedBodyDsl(
   params: InterfaceDraftEntry["params"],
   returns?: InterfaceDraftEntry["returns"],
+  throws?: InterfaceDraftEntry["throws"],
 ): string | undefined {
   const hasBody = (p: InterfaceDraftEntry["params"][number]) =>
     p.bodyAccesses !== undefined && p.bodyAccesses.length > 0 && !p.projected;
@@ -741,7 +887,7 @@ function suggestedBodyDsl(
     returns?.projected && returns.constraint !== undefined
       ? toDraftBuilderDsl(formatConstraint(returns.constraint))
       : undefined;
-  return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
+  return draftCall(obj, ret, throws);
 }
 
 /**
@@ -762,17 +908,29 @@ export async function draftInterface(
   // E5：draft 分析与 hover/interface 同口径（buffer-aware loadModule）
   const analysis = await analyzeFileAsync(filePath, source, undefined, opts.records, loadModule);
   const exported = localNamedExports(source);
-  const selected =
-    opts.fnNames && opts.fnNames.length > 0 ? new Set(opts.fnNames) : exported;
   const bodyMap = wantBody ? collectParamBodyAccesses(source) : new Map();
   const bodyReadTypes = wantBody ? collectParamBodyReadTypes(source) : new Map();
+  // BUG-198：入口抛错种类（与 `nudo check` 同一次门禁计算）——草稿的 throws 槽来源
+  const mayThrow = entryMayThrowKinds(filePath, source, loadModule);
 
   const entries: InterfaceDraftEntry[] = [];
+  /** 未申报但门禁判「可能抛」的补救提示（写进草稿头；不改 DSL） */
+  const throwsHints: string[] = [];
   for (const fn of analysis.functions) {
-    if (!selected.has(fn.name) && !opts.fnNames?.includes(fn.name)) continue;
+    // BUG-040：契约身份恒为**导出名**（DESIGN-003）——`--fn renamed` 传的是
+    // 导出名，而 `fn.name` 是**本地名**。不做 `exportedNameOfLocal` 映射 ⇒
+    // 别名导出永远匹配不上 ⇒ 静默产出空草稿且 exit 0。
+    const exportedIdentity = draftIdentity(fn.name, source);
+    const requested =
+      opts.fnNames?.includes(fn.name) || opts.fnNames?.includes(exportedIdentity);
+    if (opts.fnNames && opts.fnNames.length > 0) {
+      if (!requested) continue;
+    } else if (!exported.has(fn.name) && !exported.has(exportedIdentity)) {
+      continue;
+    }
 
-    if (!exported.has(fn.name)) {
-      if (opts.fnNames?.includes(fn.name)) {
+    if (!exported.has(fn.name) && !exported.has(exportedIdentity)) {
+      if (requested) {
         entries.push({
           fn: fn.name,
           params: fn.paramNames.map((n) => ({
@@ -834,7 +992,21 @@ export async function draftInterface(
     }
 
     const identity = draftIdentity(fn.name, source);
-    const dsl = draftDsl({ params, returns });
+    // BUG-198：抛错证据（已申报优先，其次引擎算出的入口抛错域）也进草稿 DSL
+    const throwsEvidence = draftThrowsKinds(eff, fn, source, mayThrow);
+    // 已申报（源码/@sidecar）⇒ 进 DSL（草稿不再与源码矛盾）；
+    // 仅**门禁算出**的（未申报）⇒ 不擅自写进 DSL（那会把「可能抛」变成草稿义务），
+    // 只在草稿头给一条可照抄的补救提示（BUG-198 的 `fix:` 建议因此可执行）。
+    const throwsInfo =
+      throwsEvidence !== undefined && throwsEvidence.declared ? { throws: throwsEvidence } : {};
+    if (throwsEvidence !== undefined && !throwsEvidence.declared) {
+      throwsHints.push(
+        `// nudo:entry-may-throw ${fn.name} → add { throws: ${throwsEvidence.kinds
+          .map((k) => JSON.stringify(k))
+          .join(", ")} } as the third \`fn()\` argument to clear it`,
+      );
+    }
+    const dsl = draftDsl({ params, returns, ...throwsInfo });
     // 装不上就不写：rest 形参 / 非法展示兜底形态 ⇒ not-projectable（与 `--emit` 面同闸）
     if (hasRestParam(fn) || !draftDslRoundTrips(dsl)) {
       entries.push({
@@ -842,6 +1014,7 @@ export async function draftInterface(
         identity,
         params,
         returns,
+        ...(throwsEvidence !== undefined ? { throws: throwsEvidence } : {}),
         paramEvidence: evidence,
         returnEvidence,
         skipped: "not-projectable",
@@ -854,13 +1027,14 @@ export async function draftInterface(
       identity,
       params,
       returns,
+      ...(throwsEvidence !== undefined ? { throws: throwsEvidence } : {}),
       paramEvidence: evidence,
       returnEvidence,
       dsl,
     });
   }
 
-  const draftSource = formatDraftModule(filePath, entries, sidecarPath);
+  const draftSource = formatDraftModule(filePath, entries, sidecarPath, throwsHints);
   return { file: filePath, entries, draftSource, sidecarPath };
 }
 
@@ -875,28 +1049,51 @@ export function formatDraftModule(
   filePath: string,
   entries: InterfaceDraftEntry[],
   sidecarPath?: string,
+  throwsHints?: readonly string[],
 ): string {
   const target = sidecarPath ?? sidecarPathOf(filePath);
   const draftName = sidecarDraftPath(filePath).split(/[/\\]/).pop() ?? "*.nudo.draft.js";
   const draftable = entries.filter((e) => e.dsl !== undefined && e.skipped === undefined);
   // 只 import 草稿里实际用到的 builder（避免恒注入未使用符号）
-  const BUILDERS = ["fn", "number", "string", "boolean", "any", "shape", "array", "lit", "union"] as const;
+  // BUG-272：判据必须是**调用位**（`name(`），不是词边界（`\bname\b`）——
+  // 词边界会把**字段名** / 注释里的 builder 名拖进 import（观测对象里有个
+  // 字段叫 `lit` ⇒ 草稿 import core 的 `lit` = Term 构造器，绑定的类型面
+  // 就是坏的）。名单取 core 的 CONSTRAINT_BUILDER_NAMES（单一真源）；
+  // **顺序**沿用历史展示序（`fn, number, …`）以保证 import 行稳定，
+  // 其余构建器追加在后。
+  const LEGACY_ORDER = [
+    "fn",
+    "number",
+    "string",
+    "boolean",
+    "any",
+    "shape",
+    "array",
+    "lit",
+    "union",
+  ];
+  const BUILDERS = [
+    ...LEGACY_ORDER,
+    ...CONSTRAINT_BUILDER_NAMES.filter((b) => !LEGACY_ORDER.includes(b)),
+  ];
   const used = new Set<string>(["fn"]);
   for (const e of draftable) {
-    const blob = `${e.dsl ?? ""}\n${suggestedBodyDsl(e.params, e.returns) ?? ""}`;
+    const blob = `${e.dsl ?? ""}\n${suggestedBodyDsl(e.params, e.returns, e.throws) ?? ""}`;
     for (const b of BUILDERS) {
-      if (new RegExp(`\\b${b}\\b`).test(blob)) used.add(b);
+      if (new RegExp(`(?<![\\w$])${b}\\s*\\(`).test(blob)) used.add(b);
     }
   }
   const importList = BUILDERS.filter((b) => used.has(b)).join(", ");
   const importNames = new Set<string>(used);
   const exportUsed = new Set<string>();
+  const hintLines = (throwsHints ?? []).map((h) => sanitizeLineCommentText(h));
   const lines: string[] = [
     "// @nudo:draft",
     `// Generated by \`nudo contract --draft\` from ${sanitizeLineCommentText(filePath)}`,
     `// This ${sanitizeLineCommentText(draftName)} file is NOT loaded as a sidecar contract.`,
     `// Review each export, then copy it into ${sanitizeLineCommentText(target)} to accept.`,
     "//",
+    ...(throwsHints ?? []).map((h) => sanitizeLineCommentText(h)),
     "// Evidence: callsite/directive = observed args; body = fields the",
     "// implementation reads (suggestion only — never a check obligation);",
     "// symbolic = generalize; omitted params = no evidence.",

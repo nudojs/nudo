@@ -71,6 +71,9 @@ export {
   type DtsFunctionProjection,
   type DtsModuleSurface,
   type DtsModuleProjection,
+  type DtsModuleExtras,
+  type DtsValueSurface,
+  type DtsClassSurface,
 } from "./dts-generator.ts";
 
 export {
@@ -122,6 +125,7 @@ export {
   unifiedDiff,
   type EmitSkipReason,
   type EmitResult,
+  type InsertCaseOptions,
 } from "./case-emitter.ts";
 
 // ─── Quickfix 物化（#69：action-map → 文本编辑；LSP + `check --fix` 共用） ─

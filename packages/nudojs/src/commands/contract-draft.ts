@@ -95,9 +95,12 @@ export async function runContractDraft(
   // ⚠ 判据是**草稿条目**而不是「名字是不是导出」：非导出的本地函数会产出
   //   一条 `not-an-export` 条目（那是**可见反馈**，不是静默 no-op）⇒ 不误伤。
   // -------------------------------------------------------------------------
+  // BUG-040：`--fn` 传的是**导出名**（DESIGN-003：契约身份恒为导出名），而
+  //   草稿条目的 `fn` 是**本地名**、`identity` 才是导出名。只比 `fn` ⇒
+  //   `--fn renamed`（`export { localFn as renamed }`）被误判成「没命中」。
   if (
     opts.fnNames.length > 0 &&
-    !opts.fnNames.some((n) => result.entries.some((e) => e.fn === n))
+    !opts.fnNames.some((n) => result.entries.some((e) => e.fn === n || e.identity === n))
   ) {
     let candidates: string[] = [];
     try {

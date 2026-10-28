@@ -100,6 +100,17 @@ export type FunctionAnalysis = {
     /** 符号返回 Abs（含自由 α / B:param） */
     symbolic?: Abs;
   };
+  /**
+   * BUG-035（证据范围）：该函数的 callsite 证据里**混入了外部记录**
+   * （`--from` 采集的使用现场调用 —— 不属于模块图闭包，本轮没采集
+   * ≠ 证据消失）。
+   *
+   * 侧车生成段据此落 `// evidence: local|external`：只有 `local` 段在
+   * 「今天没证据」时可证「证据没了」⇒ 才允许删段（**宽域段也适用**，
+   * 这是 BUG-035 最后一条残差的收口点）；`external` 段与旧侧车（无标记）
+   * 一律保守保留。
+   */
+  externalEvidence?: boolean;
 };
 
 export type BindingInfo = {

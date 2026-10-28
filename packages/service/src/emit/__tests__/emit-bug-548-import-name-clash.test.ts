@@ -27,7 +27,10 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const SRC = `/** @nudo:case "default" (1, 2) */
+// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// 产物 ⇒ 夹具的 case 改为**带断言的域声明**（`=> 期望值`），生成段形态
+// （`export const positive = fn(…)`）与 import 局部绑定语义不变。
+const SRC = `/** @nudo:case "default" (1, 2) => 3 */
 export function positive(a, b) { return a + b; }
 export function other(n) { return n > 0; }
 `;

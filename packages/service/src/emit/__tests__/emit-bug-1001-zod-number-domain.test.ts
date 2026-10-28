@@ -43,8 +43,12 @@ describe("Bug 1001 — zod 的 number prim 必须覆盖 Abs 的全部 JS number 
     expect(source).toContain("z.literal(-Infinity)");
   });
 
-  it("带 refinement 的 number prim 不放宽（域已被 refinement 收窄）", () => {
-    expect(absToSchemaSource(numWith(gt(v("x"), lit(5))))).toBe("z.number().gt(5)");
+  it("带 numBound 的 number prim 只放宽满足该界的那一端（BUG-093 收口）", () => {
+    // `x > 5` 对 Infinity 为真、对 -Infinity 为假 ⇒ 只放宽 +Infinity
+    // （`z.number()` 只收有限数 ⇒ 不放宽即**收窄**，见 BUG-093）。
+    expect(absToSchemaSource(numWith(gt(v("x"), lit(5))))).toBe(
+      "z.number().gt(5).or(z.literal(Infinity))",
+    );
   });
 
   it("共享节点形态不变（standard 面不受影响——S4 的决定）", () => {
