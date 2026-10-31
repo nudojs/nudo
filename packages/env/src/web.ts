@@ -9,6 +9,7 @@ import {
   brandOf,
   envFn,
   errBrand,
+  eventInstanceSlots,
   nullLit,
   objAbs,
   promiseOf,
@@ -227,22 +228,10 @@ export function defineEnv(): EnvDefinition {
 
   /**
    * Event 实例面（Bug 860）：`Event` / `CustomEvent` 共有成员
-   * （DOM `Event` 接口 + `EventTarget` 继承面）。
+   * （DOM `Event` 接口 + `EventTarget` 继承面）——槽表与 node env 共享
+   * （abs-helpers `eventInstanceSlots`，本表即 canonical）。
    */
-  const eventSlots = {
-    type: prim.str(),
-    target: unionOf(prim.unknown, nullLit()),
-    currentTarget: unionOf(prim.unknown, nullLit()),
-    bubbles: prim.bool(),
-    cancelable: prim.bool(),
-    composed: prim.bool(),
-    defaultPrevented: prim.bool(),
-    isTrusted: prim.bool(),
-    timeStamp: prim.num(),
-    preventDefault: envFn([], undef()),
-    stopPropagation: envFn([], undef()),
-    stopImmediatePropagation: envFn([], undef()),
-  };
+  const eventSlots = eventInstanceSlots();
 
   const EventInstance = brandOf("Event", objAbs(eventSlots));
 

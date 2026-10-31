@@ -479,3 +479,35 @@ export const prim = {
   nullLit,
   any: anyAbs,
 };
+
+/**
+ * `Event` 实例共有槽（DOM `Event` 接口自身成员 + 事件方法）——web / node
+ * 两 env 共用的单一真值源（`Event` 与 `CustomEvent : Event` 实例面由此
+ * 派生：继承面 + `detail` 扩展，见各 env 的消费点）。
+ *
+ * 此前 web.ts（Bug 860）与 node.ts（族 15 · BUG-148）各持一份手工表且已
+ * 漂移（node 版 `target` / `currentTarget` 丢了 may-null 面）。以 web 版
+ * 为 canonical：`target` / `currentTarget` 是 `EventTarget | null` ⇒
+ * `unionOf(prim.unknown, nullLit())`（值未知，但 may-null 的事实不丢）。
+ *
+ * 族 15 · BUG-148 反向钉：`CustomEvent` 品牌不得只列部分槽（否则
+ * `new CustomEvent("t").preventDefault()` / `.timeStamp` 读出 exact
+ * `undefined` ⇒ 判「确定抛 TypeError」L2 假红）——两 env 的派生面必须
+ * 从**本表整体**扩展，不得另列子集。
+ */
+export function eventInstanceSlots(): Record<string, Abs> {
+  return {
+    type: prim.str(),
+    target: unionOf(prim.unknown, nullLit()),
+    currentTarget: unionOf(prim.unknown, nullLit()),
+    bubbles: prim.bool(),
+    cancelable: prim.bool(),
+    composed: prim.bool(),
+    defaultPrevented: prim.bool(),
+    isTrusted: prim.bool(),
+    timeStamp: prim.num(),
+    preventDefault: envFn([], undef()),
+    stopPropagation: envFn([], undef()),
+    stopImmediatePropagation: envFn([], undef()),
+  };
+}

@@ -20,6 +20,7 @@ import {
   envFn,
   envFnVariadic,
   errBrand,
+  eventInstanceSlots,
   nullLit,
   objAbs,
   openObjBrand,
@@ -2395,7 +2396,10 @@ function assertRegexpPattern(
 
   /**
    * `Event` 实例面——`Event` 与 `CustomEvent` **共用**（DOM：
-   * `CustomEvent : Event`，成员**继承**）。
+   * `CustomEvent : Event`，成员**继承**）。槽表与 web env 共享
+   * （abs-helpers `eventInstanceSlots`，web 版 canonical：`target` /
+   * `currentTarget` = `EventTarget | null` 的 may-null 面保留——旧 node
+   * 表裸 `prim.unknown` 是漂移）。
    *
    * 族 15 · BUG-148：`CustomEvent` 的 brand 内层只列了 5 个槽
    * （`type` / `detail` / `bubbles` / `cancelable` / `defaultPrevented`）
@@ -2403,20 +2407,7 @@ function assertRegexpPattern(
    * **exact `undefined`** ⇒ 判「确定抛 TypeError」（L2 假红）；而同文件的
    * `Event` 面是全的 ⇒ **表内不自洽**。
    */
-  const eventInstanceSlots = {
-    type: prim.str(),
-    target: prim.unknown,
-    currentTarget: prim.unknown,
-    bubbles: prim.bool(),
-    cancelable: prim.bool(),
-    composed: prim.bool(),
-    defaultPrevented: prim.bool(),
-    isTrusted: prim.bool(),
-    timeStamp: prim.num(),
-    preventDefault: envFn([], undef()),
-    stopPropagation: envFn([], undef()),
-    stopImmediatePropagation: envFn([], undef()),
-  };
+  const eventSlots = eventInstanceSlots();
 
   /**
    * 迭代器面（族 15 · BUG-154）：WHATWG 的 `Headers.keys/values/entries()` 与
@@ -2735,7 +2726,7 @@ function assertRegexpPattern(
     Event: ctorOf(
       "Event",
       [prim.str(), prim.unknown],
-      brandOf("Event", objAbs(eventInstanceSlots)),
+      brandOf("Event", objAbs(eventSlots)),
       { params: ["type", "options?"] },
     ),
     CustomEvent: ctorOf(
@@ -2744,7 +2735,7 @@ function assertRegexpPattern(
       brandOf(
         "CustomEvent",
         // DOM `CustomEvent : Event` —— 继承面 + `detail`（BUG-148）
-        objAbs({ ...eventInstanceSlots, detail: prim.unknown }),
+        objAbs({ ...eventSlots, detail: prim.unknown }),
       ),
       { params: ["type", "options?"] },
     ),

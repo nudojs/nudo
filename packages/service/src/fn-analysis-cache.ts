@@ -8,83 +8,24 @@
  */
 import type { Abs } from "@nudojs/core";
 import { stablePathKey } from "@nudojs/core/internal";
+// 单一真值源：analysis 面直接取 analyzer-types 的 FunctionAnalysis（此前
+// 手工镜像全字段，已两次漂移：externalEvidence / CaseResult.source）。
+// 两处均为 types-only 导入——emit 后消失，本模块运行时仍是叶子（不环入
+// analyzer / evaluator）。
+import type { CaseHint, Diagnostic, FunctionAnalysis } from "./analyzer-types.ts";
+import type { CallRecord } from "./evaluator/call-record.ts";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";
 
-// Structural types — avoid importing analyzer (cycle).
-export type CachedSourceLocation = {
-  start: { line: number; column: number };
-  end: { line: number; column: number };
-};
-
-export type CachedDiagnostic = {
-  range: CachedSourceLocation;
-  severity: "error" | "warning" | "info";
-  message: string;
-  tags?: string[];
-  code?: string;
-  suggestions?: string[];
-  data?: unknown;
-  origin?: { line: number; column: number };
-};
-
-export type CachedCaseHint = {
-  line: number;
-  label: string;
-  ok: boolean;
-};
-
-export type CachedCallRecord = {
-  // opaque; cloned shallowly. Position fields that need lineDelta shift
-  // (currently only callLoc) are listed on CallRecord in evaluator.ts —
-  // keep shiftCallRecordLines in sync when adding any.
-  [k: string]: unknown;
-};
-
 export type CachedFnAnalysis = {
-  analysis: {
-    name: string;
-    loc: CachedSourceLocation;
-    paramNames: string[];
-    cases: Array<{
-      name: string;
-      argAbs: Abs[];
-      abs: Abs;
-      throwsAbs: Abs;
-      throwLoc?: CachedSourceLocation;
-      source?: string;
-      expected?: Abs;
-      aggregatedFrom?: number;
-      intension?: Record<string, unknown>;
-    }>;
-    combinedAbs?: Abs;
-    entryOnly?: boolean;
-    /** 函数级 throws 域（族 54 · item 2）—— 与 case 自身的 throwsAbs 分属两面 */
-    entryThrowsAbs?: Abs;
-    skipped?: boolean;
-    noDeclaration?: boolean;
-    fromModule?: string;
-    hof?: {
-      fnRels?: Array<{ param: string; abs: Abs }>;
-      entryShapes?: Array<{ param: string; abs: Abs }>;
-      symbolic?: Abs;
-    };
-    /** C4.1 formal param surface（draft 解构槽依赖；与 cloneFunctionAnalysis 同步） */
-    formals?: Array<{
-      kind: string;
-      name?: string;
-      display?: string;
-      placeholder?: string;
-      bound?: string[];
-      propKey?: Record<string, string>;
-      nested?: string[];
-      index: number;
-      /** Bug 479：TS 声明类型文本（.ts 源形参注解；缺省 = 无注解） */
-      tsType?: string;
-    }>;
-  };
-  diagnostics: CachedDiagnostic[];
-  caseHints: CachedCaseHint[];
-  callRecords: CachedCallRecord[];
+  /** cloneFunctionAnalysis 的深拷贝产物——形状即 FunctionAnalysis，同源同步 */
+  analysis: FunctionAnalysis;
+  diagnostics: Diagnostic[];
+  caseHints: CaseHint[];
+  // CallRecord opaque; cloned shallowly. Position fields that need lineDelta
+  // shift (currently only callLoc) are listed on CallRecord in
+  // evaluator/call-record.ts — keep shiftCallRecordLines in sync when adding
+  // any.
+  callRecords: CallRecord[];
 };
 
 const fnAnalysisCache = new Map<string, CachedFnAnalysis>();

@@ -267,6 +267,47 @@ function narrowLoopBody(
   return out;
 }
 
+/**
+ * 循环体 TranspileOptions 工厂（`for` 主/回退路径、`for-in`/`for-of`、
+ * `while`、`do-while` 共用的 ~27 行样板，单一真值源）：
+ *
+ * - 体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层绑定
+ *   ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定集）；
+ *   pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
+ * - `bodyLocalDecls`（体顶层声明名）由**调用方分配**、此处填充——守卫
+ *   跳过规则（loopBodyGuardsOf）与 pack 名集过滤都还要用它。
+ * - `parentConsts` = 体所处外层 const 面，逐发射器不同：`while` /
+ *   `do-while` / `for` 回退路径 = `opts.constNames`；`for` 主路径 =
+ *   扣除循环变量后的面（循环变量是状态线程形参，遮蔽外层同名 const）；
+ *   `for-in`/`for-of` = 循环头名单之上的面（loopConstNames）。
+ *
+ * 热路径约束：只是把各发射器原有的对象字面量搬进函数体——不新增任何
+ * 分配（bodyLocalDecls 由调用方持有）或闭包。
+ */
+function loopBodyOptsOf(
+  body: Statement,
+  opts: TranspileOptions,
+  parentConsts: ReadonlySet<string> | undefined,
+  bodyLocalDecls: Set<string>,
+): TranspileOptions {
+  collectLoopBodyTopLevelDeclNames(body, bodyLocalDecls);
+  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
+  return {
+    ...opts,
+    inLoop: (opts.inLoop ?? 0) + 1,
+    loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
+    // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+    // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+    inSwitchArm: false,
+    // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
+    constNames: computeConstScope(
+      body.type === "BlockStatement" ? body.body : [],
+      parentConsts,
+    ),
+    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
+  };
+}
+
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
@@ -1372,22 +1413,7 @@ function emitForStatement(
     // 集：伙伴名在体内指向的是体局部绑定 ⇒ 复制/重绑它会断开外层别名身份）。
     // pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过滤的组。
     const bodyLocalDecls = new Set<string>();
-    collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-    const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
-    const forBodyOpts: TranspileOptions = {
-      ...opts,
-      inLoop: (opts.inLoop ?? 0) + 1,
-      loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
-      // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
-      // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
-      inSwitchArm: false,
-      // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
-      constNames: computeConstScope(
-        stmt.body.type === "BlockStatement" ? stmt.body.body : [],
-        opts.constNames,
-      ),
-      ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
-    };
+    const forBodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
     const bodyStmts =
       stmt.body.type === "BlockStatement"
         ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
@@ -1480,22 +1506,7 @@ function emitForStatement(
   // 集）。pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过
   // 滤的组。
   const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
-  const forBodyOpts: TranspileOptions = {
-    ...opts,
-    inLoop: (opts.inLoop ?? 0) + 1,
-    loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
-    // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
-    // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
-    inSwitchArm: false,
-    // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
-    constNames: computeConstScope(
-      stmt.body.type === "BlockStatement" ? stmt.body.body : [],
-      loopParentConsts,
-    ),
-    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
-  };
+  const forBodyOpts = loopBodyOptsOf(stmt.body, opts, loopParentConsts, bodyLocalDecls);
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
@@ -2360,23 +2371,7 @@ function emitForInStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
-  const bodyOpts: TranspileOptions = {
-    ...opts,
-    // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（在循环头
-    // 名单之上再叠本作用域的 const 面）
-    constNames: computeConstScope(
-      stmt.body.type === "BlockStatement" ? stmt.body.body : [],
-      loopConstNames,
-    ),
-    inLoop: (opts.inLoop ?? 0) + 1,
-    loopLabel: undefined,
-    // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
-    // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
-    inSwitchArm: false,
-    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
-  };
+  const bodyOpts = loopBodyOptsOf(stmt.body, opts, loopConstNames, bodyLocalDecls);
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, bodyOpts)).join("\n")
@@ -2480,22 +2475,7 @@ function emitWhileStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
-  const bodyOpts: TranspileOptions = {
-    ...opts,
-    // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
-    constNames: computeConstScope(
-      stmt.body.type === "BlockStatement" ? stmt.body.body : [],
-      opts.constNames,
-    ),
-    inLoop: (opts.inLoop ?? 0) + 1,
-    loopLabel: undefined,
-    // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
-    // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
-    inSwitchArm: false,
-    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
-  };
+  const bodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
   const body =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
@@ -2555,22 +2535,7 @@ function emitDoWhileStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-  const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
-  const bodyOpts: TranspileOptions = {
-    ...opts,
-    // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
-    constNames: computeConstScope(
-      stmt.body.type === "BlockStatement" ? stmt.body.body : [],
-      opts.constNames,
-    ),
-    inLoop: (opts.inLoop ?? 0) + 1,
-    loopLabel: undefined,
-    // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
-    // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
-    inSwitchArm: false,
-    ...(bodyAliasGroups ? { aliasGroups: bodyAliasGroups } : {}),
-  };
+  const bodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
