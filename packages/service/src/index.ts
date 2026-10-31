@@ -273,6 +273,7 @@ export {
 } from "./check-issues.ts";
 export {
   buildTestReport,
+  formatTestReport,
   ENTRY_CONTRACT_NOTE,
   type CaseTestOutcome,
   type TestReport,

@@ -22,6 +22,7 @@ import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
 import { draftInterface, writeInterfaceDraft } from "@nudojs/service/emit";
+import { buildEvalInjection, type MockFromError } from "./commands/shared.ts";
 
 export type MigrateStatusRow = {
   root: string;
@@ -2481,6 +2482,10 @@ function tscBaselineForFile(run: TscRun, file: string): { ok: boolean; output: s
  * 同口径：模块图（evalAbsModuleGraph）+ env modules + `@nudo:mock-module` 覆盖
  * + `@nudo:mock` seeds + env 全局 + `@nudo:as` / `@nudo:replace` 替换。
  *
+ * 装配本体是 `commands/shared.ts` 的 buildEvalInjection（#9 去重，与 check
+ * 同一实现）；此处只注入 verify 面的解析策略——parser 的宽松 `parse`
+ * （verify 的 TS-only 拦截在自己的严格解析步骤里，Bug 114，不在装配点）。
+ *
  * 缺了它 ⇒ verify 跑在「没有模块图、没有 mock」的世界里 ⇒ 与 `nudo check`
  * **判相反**（跨模块 ⇒ 假绿；`@nudo:mock` ⇒ 假红 + 误导诊断）。
  */
@@ -2490,65 +2495,18 @@ async function buildVerifyInjection(
   allEnvNames: string[],
 ): Promise<{
   inject: VerifyInject;
-  mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }>;
+  mockFromErrors: MockFromError[];
   dirDiags: VerifyDirectiveDiag[];
 }> {
-  const {
-    applyMockModuleDirectivesFromSource,
-    collectEnvGlobals,
-    collectEnvModules,
-    collectEvalReplacements,
-    evalAbsModuleGraph,
-    mergeHarvestUnderEnv,
-    mockDirectivesToAbsSeeds,
-    mockSeedsToAbsMocks,
-  } = await import("@nudojs/service");
-  const { extractDirectives, extractFileDirectives, parse, runWithDirectiveDiags } =
-    await import("@nudojs/parser");
   const dirDiags: VerifyDirectiveDiag[] = [];
-  const graph = evalAbsModuleGraph(source, filePath);
-  const reps = collectEvalReplacements(source, { diags: dirDiags });
-  const seedPkg = runWithDirectiveDiags(dirDiags, () => {
-    const ast = parse(source);
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
-    // D1 同族：JSDoc 块内错位的文件级指令族标签不再静默
-    extractFileDirectives(ast);
-    return seeds;
-  });
-  let mockFromErrors = seedPkg.fromErrors ?? [];
-  const mocks = mockSeedsToAbsMocks(seedPkg);
-  const envGlobals = collectEnvGlobals(allEnvNames);
-  const envMods = collectEnvModules(allEnvNames);
-  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
-  // （与 `nudo check` / test / service 面同口径）——手工 env 与 harvest
-  // **同名模块**时，env 赢同名槽、harvest 填 env 的**空位**（B8）。
-  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
-  // harvest 的**非冲突导出被整体丢弃** ⇒ verify 面报 `unknown` + 误导性
-  // `nudo:unknown-inference`，而 check 面报**精确值** ⇒ 两个产品面互相矛盾
-  //（Bug 226 / 同族 Bug 1037）。
-  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
-  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, { fromFile: filePath });
-  mergedMods = mm.modules;
-  mockFromErrors = [
-    ...mockFromErrors,
-    ...mm.errors.map((e) => ({
-      name: e.name,
-      fromPath: e.fromPath,
-      message: e.message,
-      ...(e.code !== undefined ? { code: e.code } : {}),
-    })),
-  ];
-  const inject: VerifyInject = {
-    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
+  const { parse } = await import("@nudojs/parser");
+  const { inject, mockFromErrors } = buildEvalInjection(
+    filePath,
+    source,
+    allEnvNames,
+    dirDiags,
+    (_filePath, src) => parse(src),
+  );
   return { inject, mockFromErrors, dirDiags };
 }
 

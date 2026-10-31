@@ -30,11 +30,8 @@ import {
 import {
   analysisConfig,
   analyzeFileAsync,
-  applyMockModuleDirectivesFromSource,
   checkCacheKey,
   checkConfig,
-  collectEnvGlobals,
-  collectEnvModules,
   collectEvalReplacements,
   collectLoadDepContents,
   collectSkipReturns,
@@ -42,23 +39,17 @@ import {
   directiveDiagIssues,
   DiskCache,
   diskCacheRoot,
-  evalAbsModuleGraph,
   findProjectConfig,
   interfaceConfig,
   mergeCheckIssues,
-  mergeHarvestUnderEnv,
-  mockDirectivesToAbsSeeds,
   mockFromErrorIssues,
-  mockSeedsToAbsMocks,
   resolveModule,
   type CallRecord,
 } from "@nudojs/service";
 import {
-  extractDirectives,
   extractDirectivesQuiet,
   extractFileDirectives,
   parse,
-  runWithDirectiveDiags,
   type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
@@ -80,6 +71,8 @@ import {
   collectNudoFiles,
   displayPathOf,
   reportPathErrors,
+  buildEvalInjection,
+  type MockFromError,
   type PathError,
 } from "./shared.ts";
 import {
@@ -699,8 +692,25 @@ async function loadCheckCache(
 //（模块图 + mocks + env 全局 + replace/as）
 // ---------------------------------------------------------------------------
 
-/** `@nudo:mock name from "path"` 解析失败（缺文件/缺绑定/求值失败） */
-type MockFromError = { name: string; fromPath: string; message: string; code?: string };
+/**
+ * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
+ * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
+ * （checkSource/generalize memo 键按对象身份）。
+ *
+ * 装配本体是 `shared.ts` 的 buildEvalInjection（#9 去重，与 migrate verify
+ * 同一实现）；此处只注入 check 面的解析策略——`parseForCheck`（按扩展名
+ * 选插件，Bug 633：`.js` 里的 TS-only 语法在此**抛错** ⇒ 走语法错通道
+ * （人类面 tsc 风格块 / --json 面 pathErrors），不静默判绿）。
+ */
+function buildCheckInjection(
+  filePath: string,
+  source: string,
+  allEnvNames: string[],
+  dirDiags: DirectiveDiag[],
+): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
+  return buildEvalInjection(filePath, source, allEnvNames, dirDiags, parseForCheck);
+}
+
 /**
  * 严格解析（按扩展名）是否失败——**只**用于「不吃旧磁盘缓存」判定，不抛错。
  *
@@ -758,88 +768,6 @@ function tsOnlySyntaxError(err: unknown): SyntaxError {
     (next as SyntaxError & { loc?: { line: number; column: number } }).loc = src.loc;
   }
   return next;
-}
-
-/**
- * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
- * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
- * （checkSource/generalize memo 键按对象身份）。
- *
- * `dirDiags`：D1 指令文法诊断显式落袋。三个发射源同袋——
- *  - collectEvalReplacements：行内 @nudo:as/@nudo:replace（语句级独立去重）
- *  - extractDirectives：函数级 case/mock/skip/sample
- *  - mockDirectivesToAbsSeeds 对 @nudo:mock 类型值表达式的 parseCaseArgExpr
- *    复解析（与 extract 共域去重：同文案在 extract 已报则不再双报）
- */
-function buildCheckInjection(
-  filePath: string,
-  source: string,
-  allEnvNames: string[],
-  dirDiags: DirectiveDiag[],
-): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
-  const graph = evalAbsModuleGraph(source, filePath);
-  const reps = collectEvalReplacements(source, { diags: dirDiags });
-  const seedPkg = runWithDirectiveDiags(dirDiags, () => {
-    // 按扩展名选插件的解析（Bug 633）：`.js` 里的 TS-only 语法在此**抛错**
-    // ⇒ 走语法错通道（人类面 tsc 风格块 / --json 面 pathErrors），不静默判绿。
-    const ast = parseForCheck(filePath, source);
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), {
-      fromFile: filePath,
-    });
-    // D1 同族：JSDoc 块内错位的文件级指令族标签（@nudo:env / @nudo:mock-module）
-    // 不再静默——纯查询 extract 落本域（提取面不变，仍只认行注释）
-    extractFileDirectives(ast);
-    return seeds;
-  });
-  let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
-  const mocks = mockSeedsToAbsMocks(seedPkg);
-  const envGlobals = collectEnvGlobals(allEnvNames);
-  const envMods = collectEnvModules(allEnvNames);
-  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
-  // （与 test/service 面同口径）——手工 env 与 harvest **同名模块**时，
-  // env 赢同名槽、harvest 填 env 的**空位**（B8）。
-  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
-  // harvest 的**非冲突导出被整体丢弃** ⇒ check 面报 `unknown` + 误导性
-  // `nudo:unknown-inference`，而 test 面报**精确值** ⇒ 两个产品面互相矛盾
-  // （Bug 1037）。
-  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
-  // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
-  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
-    fromFile: filePath,
-  });
-  mergedMods = mm.modules;
-  mockFromErrors = [
-    ...mockFromErrors,
-    ...mm.errors.map((e) => ({
-      name: e.name,
-      fromPath: e.fromPath,
-      message: e.message,
-      ...(e.code !== undefined ? { code: e.code } : {}),
-    })),
-  ];
-  const inject: RunTranspiledOptions = {
-    // Bug 456：**不再**因为「检出环」就丢弃整张依赖图。旧实现在检出 cycle
-    // 时把 modules 降级成「只有 env 模块」⇒ 环内文件的 import 全部落空 ⇒
-    // 环内函数在 check 面恒为 unknown（原生是确定值）。
-    // 引擎侧已能正确处理环（core exec/run.ts 调用入口刷新 live import
-    // 绑定 + live-imports.ts 弱引用注册表），环内求值**有界**：
-    // - 装载层：模块图检出环即返回「环内已部分求值的导出 / 空导出」
-    //   （abs-modules-graph.ts evalDep 的 cycle 分支），不递归装载；
-    // - 求值层：调用/分支预算是硬闸（call-budget.ts），递归必被截断成
-    //   `nudo:recursion-truncated`（info），不会无限求值。
-    // ⇒ 无需「整图丢弃」这种有损降级；环本身仍由诊断面（`nudo:module-cycle`
-    // warning）报告，不靠丢图来「避免」环。
-    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
-  return { inject, mockFromErrors };
 }
 
 /**
