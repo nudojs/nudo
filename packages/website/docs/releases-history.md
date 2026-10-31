@@ -11,19 +11,38 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.17.0 |
-| `@nudojs/service` | 1.10.1 |
-| `nudojs (CLI)` | 1.7.1 |
-| `@nudojs/parser` | 1.5.4 |
-| `@nudojs/lsp` | 1.8.1 |
-| `@nudojs/env` | 0.5.4 |
-| `@nudojs/harvester` | 0.4.4 |
-| `vite-plugin-nudo` | 0.6.1 |
-| `nudo-vscode` | 0.3.52 |
+| `@nudojs/core` | 1.17.1 |
+| `@nudojs/service` | 1.10.2 |
+| `nudojs (CLI)` | 1.7.2 |
+| `@nudojs/parser` | 1.5.5 |
+| `@nudojs/lsp` | 1.8.2 |
+| `@nudojs/env` | 0.5.5 |
+| `@nudojs/harvester` | 0.4.5 |
+| `vite-plugin-nudo` | 0.6.2 |
+| `nudo-vscode` | 0.3.53 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.17.0 {#pkg-core}
+## @nudojs/core 1.17.1 {#pkg-core}
+
+## 1.17.1
+
+### Patch Changes
+
+- d726525: Fix the OSS real-package benchmark regressions (perf) and the `nudo:assign-mismatch` false positive.
+  
+  **Perf** — the analysis pipeline repeated whole-file work per candidate:
+  
+  - `localNamedExports` (source → local export-name table) is now memoized per source text and computed **once** per candidate loop instead of once per candidate. It parses with `errorRecovery`, which deliberately bypasses the AST LRU ⇒ a single-file analysis re-parsed the whole file **5 151 times** (451 MB of repeated parsing; the TS strip pass alone 36.6 s). A single `commander/lib/command.js` analysis went from **59.2 s → 4.1 s**.
+  - Function-directive scopes (`listFnDirectiveScopes`) are memoized per AST object (the scope walk was repeated per function × per refine site).
+  - The source-level lexer scan (`scanSource`) and the file-level directive gate ranges (`bodyGateRanges`) are memoized per source text — the three file-level directive extractors each re-walked the whole AST.
+  - The TS strip pass is skipped for JS-mode sources: the `jsx`-only plugin set cannot produce TS-only nodes, so the pass was a structural no-op that still paid two full AST walks per parse.
+  - The `@nudo:` directive count inside the strip pass now runs only when the caller asks for a report (it was dead work on every parse).
+  
+  **Fix** — `nudo:assign-mismatch` no longer fires on **function parameter** reassignment. A JS parameter has no declared type: the analysed "previous value" is the shape of the actual argument at that call site, so normalising a parameter (`global(globals) { globals = [].concat(globals); … }` in yargs) was reported as `arr ⊭ prim string` — a false positive on the OSS corpus. The check keeps its obligation for bindings with a declared value (`let n = 1; n = "str"` still reports).
+
+<details>
+<summary>Version history (56)</summary>
 
 ## 1.17.0
 
@@ -57,9 +76,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - Dedupe the A/B call budgets and the two `@nudo:pure` memo caches behind shared factories; either public clear API now invalidates both.
   - Single-pass, memoized function facet analysis; dedupe Error/mutator/class-chain/nullish tables; remove dead service evaluator modules.
   - Split the evaluator's largest dispatch functions (`$invokeInner`, `$get`/`$set`, `invokeArrMethod`, `transpileStatement`) and move narrowing ops out of `runtime/async.ts`.
-
-<details>
-<summary>Version history (55)</summary>
 
 ## 1.16.0
 
@@ -5477,7 +5493,31 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.10.1 {#pkg-service}
+## @nudojs/service 1.10.2 {#pkg-service}
+
+## 1.10.2
+
+### Patch Changes
+
+- d726525: Fix the OSS real-package benchmark regressions (perf) and the `nudo:assign-mismatch` false positive.
+  
+  **Perf** — the analysis pipeline repeated whole-file work per candidate:
+  
+  - `localNamedExports` (source → local export-name table) is now memoized per source text and computed **once** per candidate loop instead of once per candidate. It parses with `errorRecovery`, which deliberately bypasses the AST LRU ⇒ a single-file analysis re-parsed the whole file **5 151 times** (451 MB of repeated parsing; the TS strip pass alone 36.6 s). A single `commander/lib/command.js` analysis went from **59.2 s → 4.1 s**.
+  - Function-directive scopes (`listFnDirectiveScopes`) are memoized per AST object (the scope walk was repeated per function × per refine site).
+  - The source-level lexer scan (`scanSource`) and the file-level directive gate ranges (`bodyGateRanges`) are memoized per source text — the three file-level directive extractors each re-walked the whole AST.
+  - The TS strip pass is skipped for JS-mode sources: the `jsx`-only plugin set cannot produce TS-only nodes, so the pass was a structural no-op that still paid two full AST walks per parse.
+  - The `@nudo:` directive count inside the strip pass now runs only when the caller asks for a report (it was dead work on every parse).
+  
+  **Fix** — `nudo:assign-mismatch` no longer fires on **function parameter** reassignment. A JS parameter has no declared type: the analysed "previous value" is the shape of the actual argument at that call site, so normalising a parameter (`global(globals) { globals = [].concat(globals); … }` in yargs) was reported as `arr ⊭ prim string` — a false positive on the OSS corpus. The check keeps its obligation for bindings with a declared value (`let n = 1; n = "str"` still reports).
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+  - @nudojs/env@0.5.5
+  - @nudojs/harvester@0.4.5
+  - @nudojs/parser@1.5.5
+
+<details>
+<summary>Version history (58)</summary>
 
 ## 1.10.1
 
@@ -5515,9 +5555,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.17.0
   - @nudojs/parser@1.5.4
   - @nudojs/harvester@0.4.4
-
-<details>
-<summary>Version history (57)</summary>
 
 ## 1.10.0
 
@@ -8754,7 +8791,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.7.1 {#pkg-nudojs}
+## nudojs (CLI) 1.7.2 {#pkg-nudojs}
+
+## 1.7.2
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+  - @nudojs/service@1.10.2
+  - @nudojs/env@0.5.5
+  - @nudojs/harvester@0.4.5
+  - @nudojs/parser@1.5.5
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 1.7.1
 
@@ -8776,9 +8827,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/service@1.10.1
   - @nudojs/parser@1.5.4
   - @nudojs/harvester@0.4.4
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 1.7.0
 
@@ -11772,7 +11820,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.5.4 {#pkg-parser}
+## @nudojs/parser 1.5.5 {#pkg-parser}
+
+## 1.5.5
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 1.5.4
 
@@ -11798,9 +11856,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [0438f10]
 - Updated dependencies [6ebf5a4]
   - @nudojs/core@1.17.0
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 1.5.3
 
@@ -13065,7 +13120,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.8.1 {#pkg-lsp}
+## @nudojs/lsp 1.8.2 {#pkg-lsp}
+
+## 1.8.2
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+  - @nudojs/service@1.10.2
+  - @nudojs/parser@1.5.5
+
+<details>
+<summary>Version history (59)</summary>
 
 ## 1.8.1
 
@@ -13084,9 +13151,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.17.0
   - @nudojs/service@1.10.1
   - @nudojs/parser@1.5.4
-
-<details>
-<summary>Version history (58)</summary>
 
 ## 1.8.0
 
@@ -15492,7 +15556,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.5.4 {#pkg-env}
+## @nudojs/env 0.5.5 {#pkg-env}
+
+## 0.5.5
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 0.5.4
 
@@ -15502,9 +15576,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [0438f10]
 - Updated dependencies [6ebf5a4]
   - @nudojs/core@1.17.0
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 0.5.3
 
@@ -16697,7 +16768,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.4.4 {#pkg-harvester}
+## @nudojs/harvester 0.4.5 {#pkg-harvester}
+
+## 0.4.5
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+  - @nudojs/env@0.5.5
+  - @nudojs/parser@1.5.5
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 0.4.4
 
@@ -16709,9 +16792,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.5.4
   - @nudojs/core@1.17.0
   - @nudojs/parser@1.5.4
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 0.4.3
 
@@ -17899,7 +17979,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.6.1 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.6.2 {#pkg-vite-plugin}
+
+## 0.6.2
+
+### Patch Changes
+
+- Updated dependencies [d726525]
+  - @nudojs/core@1.17.1
+  - @nudojs/service@1.10.2
+
+<details>
+<summary>Version history (58)</summary>
 
 ## 0.6.1
 
@@ -17909,9 +18000,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [6ebf5a4]
   - @nudojs/core@1.17.0
   - @nudojs/service@1.10.1
-
-<details>
-<summary>Version history (57)</summary>
 
 ## 0.6.0
 
