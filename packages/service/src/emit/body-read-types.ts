@@ -10,8 +10,9 @@
  * 只有叶子环才携带用法推断类型。中间环写 any() 会让"读它的属性"继续
  * counted 为 may-throw——动作自废（见 #76）。
  */
-import { parse } from "@nudojs/parser";
 import type { Node } from "@babel/types";
+
+import { walkTopCallables } from "./walk-top-callables.ts";
 
 export type BodyReadField = {
   field: string;
@@ -596,111 +597,6 @@ const scalarOf = (
   return merged;
 };
 
-/** 遍历源文件全部顶层函数（含类方法），逐函数回调；解析失败返回 false */
-function forEachTopFn(
-  source: string,
-  visitFn: (fnName: string, fnNode: Node, paramNames: Set<string>) => void,
-): boolean {
-  let ast: ReturnType<typeof parse>;
-  try {
-    ast = parse(source);
-  } catch {
-    return false;
-  }
-  const paramSet = (fnNode: Node): Set<string> => {
-    const names = new Set<string>();
-    const params = (fnNode as { params?: Node[] }).params ?? [];
-    for (const p of params) {
-      if (!p) continue;
-      if (p.type === "Identifier") names.add(p.name);
-      else if (p.type === "AssignmentPattern" && (p.left as Node)?.type === "Identifier") {
-        names.add((p.left as { name: string }).name);
-      } else if (p.type === "RestElement" && (p.argument as Node)?.type === "Identifier") {
-        names.add((p.argument as { name: string }).name);
-      } else if (p.type === "ObjectPattern") {
-        for (const prop of (p as { properties?: Node[] }).properties ?? []) {
-          if (prop.type === "ObjectProperty") {
-            const v = prop.value as Node;
-            if (v.type === "Identifier") names.add(v.name);
-            else if (v.type === "AssignmentPattern" && (v.left as Node)?.type === "Identifier") {
-              names.add((v.left as { name: string }).name);
-            }
-          }
-        }
-      }
-    }
-    return names;
-  };
-
-  const visitClassMethods = (className: string, classNode: Node): void => {
-    const body = (classNode as { body?: { body?: Node[] } }).body?.body ?? [];
-    for (const m of body) {
-      const mem = m as {
-        type?: string;
-        kind?: string;
-        static?: boolean;
-        key?: { type?: string; name?: string };
-        value?: Node;
-      };
-      const isMethod =
-        mem.type === "MethodDefinition" ||
-        mem.type === "ClassMethod" ||
-        mem.type === "TSDeclareMethod";
-      if (!isMethod || mem.static) continue;
-      if (mem.kind && mem.kind !== "method") continue;
-      const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
-      if (!keyName) continue;
-      const methodNode =
-        mem.type === "MethodDefinition" ? (mem.value as Node | undefined) : (mem as unknown as Node);
-      if (!methodNode) continue;
-      visitFn(`${className}.${keyName}`, methodNode, paramSet(methodNode));
-    }
-  };
-
-  const considerDecl = (decl: Node | null | undefined, exported: boolean): void => {
-    if (!decl) return;
-    if (decl.type === "FunctionDeclaration" && (decl as { id?: Node }).id) {
-      const id = decl.id as { name: string };
-      visitFn(id.name, decl, paramSet(decl));
-      return;
-    }
-    if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
-      visitClassMethods((decl.id as { name: string }).name, decl);
-      return;
-    }
-    if (decl.type === "VariableDeclaration") {
-      for (const d of (decl as { declarations?: Array<{ id?: Node; init?: Node }> }).declarations ?? []) {
-        const id = d.id;
-        const init = d.init;
-        if (
-          exported &&
-          id?.type === "Identifier" &&
-          init &&
-          (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")
-        ) {
-          visitFn((id as { name: string }).name, init, paramSet(init));
-        }
-      }
-    }
-  };
-
-  const program = (ast as { program?: { body?: Node[] } }).program;
-  const bodyStmts = program?.body ?? [];
-  for (const stmt of bodyStmts) {
-    if (stmt.type === "ExportNamedDeclaration") {
-      considerDecl((stmt as { declaration?: Node }).declaration, true);
-    } else if (stmt.type === "ExportDefaultDeclaration") {
-      considerDecl((stmt as { declaration?: Node }).declaration, true);
-    } else if (stmt.type === "ClassDeclaration") {
-      const id = (stmt as { id?: { name?: string } }).id;
-      if (id?.name) visitClassMethods(id.name, stmt);
-    } else if (stmt.type === "FunctionDeclaration") {
-      considerDecl(stmt, false);
-    }
-  }
-  return true;
-}
-
 /**
  * 收集每个函数形参成员读取 + 用法推断类型。
  * `fnName → paramName → fields[]`。
@@ -709,17 +605,21 @@ function forEachTopFn(
  */
 export function collectParamBodyReadTypes(source: string): BodyReadTypes {
   const out: BodyReadTypes = new Map();
-  forEachTopFn(source, (fnName, fnNode, paramNames) => {
-    if (paramNames.size === 0) return;
-    const reads = collectReads(fnNode, paramNames);
-    const fieldsOf = new Map<string, BodyReadField[]>();
-    for (const [pname, pathMap] of reads.paths) {
-      const fields = fieldsFromPaths([pathMap]);
-      if (fields.length > 0) fieldsOf.set(pname, fields);
-    }
-    if (fieldsOf.size === 0) return;
-    out.set(fnName, fieldsOf);
-  });
+  walkTopCallables(
+    source,
+    (fnName, fnNode, paramNames) => {
+      if (paramNames.size === 0) return;
+      const reads = collectReads(fnNode, paramNames);
+      const fieldsOf = new Map<string, BodyReadField[]>();
+      for (const [pname, pathMap] of reads.paths) {
+        const fields = fieldsFromPaths([pathMap]);
+        if (fields.length > 0) fieldsOf.set(pname, fields);
+      }
+      if (fieldsOf.size === 0) return;
+      out.set(fnName, fieldsOf);
+    },
+    { includeLocalFunctions: true },
+  );
   return out;
 }
 
@@ -731,17 +631,21 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
  */
 export function collectParamContracts(source: string): ParamContracts {
   const out: ParamContracts = new Map();
-  forEachTopFn(source, (fnName, fnNode, paramNames) => {
-    if (paramNames.size === 0) return;
-    const reads = collectReads(fnNode, paramNames);
-    const byParam = new Map<string, ParamContractEvidence>();
-    for (const pname of paramNames) {
-      const ev = contractOf(reads, pname);
-      if (ev !== undefined) byParam.set(pname, ev);
-    }
-    if (byParam.size === 0) return;
-    out.set(fnName, byParam);
-  });
+  walkTopCallables(
+    source,
+    (fnName, fnNode, paramNames) => {
+      if (paramNames.size === 0) return;
+      const reads = collectReads(fnNode, paramNames);
+      const byParam = new Map<string, ParamContractEvidence>();
+      for (const pname of paramNames) {
+        const ev = contractOf(reads, pname);
+        if (ev !== undefined) byParam.set(pname, ev);
+      }
+      if (byParam.size === 0) return;
+      out.set(fnName, byParam);
+    },
+    { includeLocalFunctions: true },
+  );
   return out;
 }
 
