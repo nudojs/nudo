@@ -1,5 +1,867 @@
 # @nudojs/core
 
+## 1.17.2
+
+### Patch Changes
+
+- 51e69f8: Fix bug-report category 01 (predicate algebra / arithmetic / constraint・leq / postcondition).
+  
+  - BUG-001: a same-prim literal union used as a **return** contract is no longer reported
+    violated when the value's predicate already proves membership — the union branch now
+    tries the aggregate (arm ⇒ merged-disjunction) implication before falling back to
+    per-member checks.
+  - BUG-002: `number().int()`'s return obligation is enforced for non-literal returns;
+    failure is reported as `nudo:unproven-return` instead of silently staying green.
+  - BUG-027: `export --format dts` no longer widens a non-same-prim literal union to its
+    base type, so the published `.d.ts` matches the enforced contract.
+  - BUG-088: `.optional()`'s omittable / may-be-undefined semantics survive the
+    contract ⇒ entry-Abs projection; call-site and return positions agree, and the check
+    signature and `.d.ts` now express the same optionality.
+  - BUG-208: sidecar `fn()`'s `throws` slot splits separators like `@nudo:throws`, so
+    `throws: "TypeError, RangeError"` no longer silently becomes one unknown kind.
+  - BUG-209: `pick()` / `omit()` / `partial()` preserve the `optional` flag, so legal
+    calls are no longer judged violating and `dts` keeps the `?`.
+  
+  Regression tests: `core-bug-001-*`, `core-bug-002-*`, `core-bug-088-*`,
+  `core-bug-208-*`, `core-bug-209-*`, `service-bug-027-*`.
+  
+  ### 追加：BUG-077 / 083 / 106 / 200 已修（IEEE 舍入不再是实数环）+ 4 处授权重钉
+  
+  根因族：线性区间层把 `+ - *` 当**实数环**运算、比较归一精确抵消常量 ⇒ 舍入（吸收 / ties-to-even）
+  被抹掉 ⇒ 假证。修法是统一机制，不是逐例特判：
+  
+  - `pred.ts` 的 `Lin` 新增 `rounds`（舍入运算次数）与 `addConstMag`（参与舍入的加性常量最大量级）；
+    `applyCmp` 把界按**舍入前像区间**外扩 `slack = rounds × ½ulp(max(|k|, addConstMag))`，方向保持
+    （`gt → lo−`、`lt → hi+`、`eq → 两侧`）；`rounds === 0`（纯 var/lit、2 的幂缩放、`x+x` 精确加倍）
+    仍是精确点反解（BUG-077，取 section 方案 B：保真且不丢信息）。
+  - `proveInCtx` 在 `linInterval` 后按同一 slack 把端点外移（`nextDown` / `nextUp` 各再退一格），
+    strict 语义保留 ⇒ `x>0 ⊬ x+1>1`，而 `x>0 ⊨ x+1>=1`（直接比较路径）与 `x>1 ⊨ x+1>1` 仍可证
+    （BUG-083）。
+  - `linInterval` 按 atom key **稳定排序**后累加 ⇒ `x+y` 与 `y+x` 同结论（BUG-200 的独立根因，
+    `Map` 插入序曾让同一加法换序得出相反结论）；`linFormsEqual` 要求**两形都精确**
+    （`rounds === 0`）⇒ `x*6` 与 `x+x+x+x+x+x` 不再判「同值」（BUG-106，此前把 IEEE 加法当结合律 /
+    分配律，抛臂被消 ⇒ L2 假绿）。
+  - 「有限证据 ⇒ 环语义」闸门：`atomsFinite(ctx, lin)`（所有原子有 `assumeFinite`，或
+    `typeof=number ∧ 双侧有限界自动导出`）成立时 slack 归零、`linFormsEqual` 的 `ringOk` 放行 ——
+    与 `linOf` 既有的 `ieeeOk` 口径一致（`@nudo:assume-finite` 的环消去 / 分配律契约不变）。
+  
+  **重钉 4 处（依据 section 声明，不是放宽断言）**：
+  
+  | 文件 | 原断言 | 新断言 | 依据 |
+  |---|---|---|---|
+  | `pred-linof-ieee.test.ts` `y>1 ⊢ y+1>2` | `true` | `false` | BUG-200:136 触发形态；`(1+2**-52)+1 === 2`（ties-to-even） |
+  | `pred-assume-finite.test.ts` 同款 | `true` | `false` | 同上 |
+  | `arithmetic.test.ts` `x>0 ⊢ x+1>1` | `true` | `false` | BUG-200:14-16,27,30；反例 `Number.MIN_VALUE` |
+  | `example0.test.ts` `cmp("gt", x+1, 1)` | `{ok:true,value:true}` | `{ok:false}`（另新增 `ge` ⇒ `{ok:true,value:true}`、`lt` ⇒ `{ok:true,value:false}` 对照） | 同上；`{ok:false}` 是**真·不可判定**（Φ 内既有 `x=MIN_VALUE` 的 false 也有 `x=1` 的 true），「确定 false 可判定」的口径由新增 `lt` 断言单独钉住 |
+  
+  回归：`core-bug-077-rounding-preimage` / `core-bug-083-goal-const-cancel` /
+  `core-bug-106-linforms-eq-ieee` / `core-bug-200-strict-endpoint-const-cancel`（45 例）。
+  全量 `packages/core/src/algebra/__tests__`：967 文件 / 10 368 测试 / 0 失败。
+  
+  未改动：`arithmetic/cmp.ts:88` 的造值点本身无错 —— 假事实消除后它自然不再折 `true`。
+  遗留提示（docs 面，本轮未改）：`docs/design/cli-semantics.md:347`、`docs/examples/README.md:29`、
+  `docs/examples/constraints/README.md:4` 仍把 `x>0 ⇒ x+1>1` 当示例口径。
+  
+  ### 追加：BUG-005 / 006 / 224 / 225 / 010 已修（返回通道漏评 + 端点见证步进 + 项化简域守卫）
+  
+  - **BUG-005（`array(...)` 的长度界在返回位不执法 ⇒ 假绿）**：`assertImpliesSingle` 的 `element`
+    分支只对账元素域就 `proved()`；`array(...)` / `shape(...)` 无 `prim` ⇒ 约束自身的 `preds`
+    （`ge(length(self), n)`）永远走不到 `assertScalar`。修：新增 `assertStructuralPreds` —— 结构对账
+    通过后**只**实例化约束自身的 `preds`（摘掉 `fields/element/members/prim/fn`，否则
+    `instantiateOnTerm` 的 fields 分支会把 preds 丢掉），把 `length(<返回项>)` 用**已知结构长度**
+    （tuple 元素数 / obj 自有非 internal/symbol/inherited 键数）接地后三值判定：真 ⇒ proved、
+    假 ⇒ disproved、接地不了 ⇒ unprovable（不再伪装 proved）。
+  - **BUG-006（`lit(null)` / `lit(undefined)` 成员的 union 无法证违结构化返回值 ⇒ 只 warning）**：
+    `prim` 缺失让值相等义务落到「无证据」兜底，而 union 的「任一成员 unprovable ⇒ 整体 unprovable」
+    把已证伪的 `number()` 成员掩盖。修：`isBoundedEvidenceMissing` **只对带界原子**
+    （`gt/ge/lt/le`）保留「证据缺失」语义；新增 `valueEqualityDecidable` —— `eq` 义务的字面量域与
+    返回项形状域**不相交**（结构形状 vs 任何字面量；prim vs 域外字面量 / nullish）即可判定 ⇒
+    不蕴含即 `disproved`。只认 `eq`（`ne` 在域不相交时是**成立**，纳入会造假红）；同域 `eq` 仍是
+    unprovable（护栏有测试钉住）。
+  - **BUG-224（端点合成丢「最紧可达值」⇒ `(x+x)/2` 假红）**：`Endpoint` 增加 `attain?`，
+    `synthEndpoint` 用 `a.attain ?? nextUp(...)`；新增 `attainEndpoint` 只对**可精确反解**的缩放形态
+    给可达下界（`t + t` ⇒ `2·nextUp(E/2)`；`t × 2^k` ⇒ `k·nextUp(E/k)`，上侧对偶），在 mul/div
+    两端点调用点接入（`addsub.ts` 未改：`x+x` 的 attain 由调用点从分子结构与分子自身 strict 界反解）。
+  - **BUG-225（`roundingAbs` 丢 strict 见证步进 ⇒ `Math.ceil` 假红）**：strict 端点做见证步进
+    `impl(nextUp(lo))` / `impl(nextDown(hi))`，结果记「可达」（不透传 strict，否则会宣称
+    `ceil(x) > 1` 造成新的假红）。
+  - **BUG-010（`simplifyTerm` 的 `x - 0 = x` 缺 number 域守卫）**：加与 `surviveMulOne` 同口径的
+    守卫 —— 非 number 字面量走 ToNumber（`"abc" → NaN`、`true → 1`、`null → 0`、`"5" → 5`、
+    `undefined → NaN`），bigint 混型保留原 app；非字面量项仍走 `x - 0 → x`。
+  
+  回归：`core-bug-005-*` / `core-bug-006-*` / `core-bug-224-*` / `core-bug-225-*` /
+  `core-bug-010-*`（38 例）；gold 面 `check-gold` / `check-recall-gold` / `check-shape-gold` /
+  `engine-depth-gold` 全绿（248 通过 + 1 expected fail）。既有测试零改动、零重钉。
+  未改：`interface.ts` 的 `formatConstraint` 仍不渲染 array/shape 长度链（违例文案在 postcondition
+  侧本地补 `length(return) ≥ n`）。
+  
+  ### 追加：BUG-245 / BUG-246 已修（union 源不得重跑聚合谓词；可选槽吸收 undefined）
+  
+  - **BUG-245**：`leqWithPred` 在 `leqShape` 的 sum 源分支**逐成员**跑过
+    `leqWithPred(m, tgt, …)`（各自含 `leqPred`）后，又在尾部跑一次**聚合** `leqPred(src = sum, tgt)`；
+    而 sum 不带顶层 pred（`makeSum` 与 `constraintToCaseArgAbs` 都不产）⇒ 聚合检查走「源无谓词」
+    分支 ⇒ 目标带谓词时即 false ⇒ `union(number().gt(0), number().gt(5)) ⊭ number().gt(0)`
+    —— 假红，且两侧渲染成同一文本。修：sum 源且**自身无顶层 pred**
+    （`!src.pred || src.pred.op === "true"`）时跳过聚合 `leqPred`。该 pred 守卫是必要的：
+    `narrow.ts` 的 `{...a, shape: sum}` 会保留 `a.pred`，真正带顶层 pred 的 sum 仍需聚合检查。
+  - **BUG-246（两面根因）**：① `leq.ts` 的 obj 槽分支只对**缺失**槽认 `slot.optional`，
+    present-but-`undefined` 直接进 `leqWithPred` ⇒ `undefined ⊭ string`。改为一条**对称**规则：
+    目标可选 ⇔ 源侧「缺失**或** undefined」可赋；源槽可选对 required 目标仍失败，纯 `undefined`
+    对 required 目标仍失败。② `scan/literal-shapes.ts` 的 `checkShapeAgainstAbs` 才是 `nudo check`
+    侧 `nudo:constraint-violated` 的**生产者**（实测：对该夹具 `leqAbs` 调用 **0** 次，而同族的
+    BUG-245 夹具 3 次），它同样只对缺失槽认 `field.optional`，随后 prim 门禁报
+    `typeof o.a = "string"` —— 与签名面 `a?: string` 自相矛盾。修：同一共享判定。
+    共享 helper（`leq.ts` 导出，**不经** `algebra/index.ts` 再导出 ⇒ 无公共 API / 快照变化）：
+    `isUndefinedAbs`（本仓 `PrimName` 不含 `undefined`；`undefined` 是
+    `shape unknown + term lit(undefined)`）、`mayBeUndefinedAbs`（含 sum 成员递归；`null` 排除，
+    对齐 `strictNullChecks`）、`nonUndefinedAbsValues`（剥掉 undefined 臂，`[]` 表示全 undefined）。
+    两处都**先剥后执法**，因此 `{a: number | undefined}` 对 optional `string` 仍失败（未放宽）。
+  
+  回归：`core-bug-245-union-source-leq.test.ts`（7 例）、
+  `core-bug-246-optional-slot-undefined.test.ts`（13 例：9 代数 + 4 L1 门禁）；gold 面 331 通过 +
+  1 expected fail；`public-api-freeze` 9/9。e2e：optional 夹具 `nudo check` exit 0 且无
+  `nudo:constraint-violated`（tsc 亦通过），required 夹具 exit 1 且有该码（tsc TS2322）—— 引擎与 tsc
+  结论一致。三面同源：`check-case-scan.ts` 的 `witnessViolations` 字段循环（`@nudo:case` 见证面）
+  也改用同一判定；并补真 CLI e2e `cli-bug-246-optional-slot-undefined.test.ts`（optional 夹具 exit 0
+  且零 `nudo:constraint-violated`、required 夹具 exit 1 且恰好一条、required + 合法值 exit 0）。
+  
+  ### 追加：BUG-082 / BUG-058 已修（契约 ∪ 默认值域；`String()` 走 string hint）
+  
+  - **BUG-082**：契约路径把形参 Abs **整体替换**成 `constraintToEntryAbs(...)`，默认值初始化式从未参与
+    ⇒ 形参域被收窄、返回面随之收窄 ⇒ `pick(s = "abc")` 配 `fn({s: number()}, number())` 在被调方
+    判绿（`OK`, exit 0），而同一契约在零调用点面正确报红。修（section 方案 1）：契约绑定时把**默认值
+    类型并入形参定义域**（契约域 ∪ 默认值类型；默认值落在域内时保持契约域原样 ⇒ 合法形态零变化）。
+    实现为 `generalize.ts` 内三个纯函数：`defaultInitAbsOf`（AST 字面量 → Abs）、`fnParamNodesOf`
+    （按名取最浅层函数节点的形参 AST）、惰性闭包 `defaultInitAbsOfParam` + `contractDomainOf`
+    （`leqAbs(initAbs, entryAbs)` 通过则原样返回，否则 `joinAbs`）。冲突经**既有** L1 返回契约对账
+    通道执法，未新增诊断码。局限（如实记录）：只并入**字面量**初始化式，`s = compute()` 这类不猜
+    （避免假红）。`.d.ts` 可省性在 HEAD 上已正确（`pick(s?: number)`），本次用测试钉住其上游事实
+    （契约路径下 `formals[0]` 仍是 `{kind:"default", optional:true}`）。
+  - **BUG-058**：`isNullProtoWithoutCoercer` 是 ToPrimitive 前置闸门的统一调用面，却把 hint 写死
+    `"default"`；`String()` 复用它而没传 `"string"` ⇒ 原生**不调** `valueOf` 的路径被调（用户副作用
+    凭空多出）。修：`isNullProtoWithoutCoercer(a, hint: CoercionHint = "default")`（默认值保持
+    `"default"` ⇒ `+` 面调用点无需改动、语义不变），`builtins/global.ts` 的 `String()` 改传
+    `"string"`；`"string"` hint 下**无自有 `toString` 钩子时绝不回退** `valueOf`；用户 `toString`
+    返回**非原语**时仍回退 `valueOf` —— 这是 ES `OrdinaryToPrimitive` 的规定（node 实测
+    `String({toString:()=>({}), valueOf(){c++;return 1}})` ⇒ `"1"`, c=1），删掉回退反而偏离原生。
+  
+  回归：`core-bug-082-contract-default-param.test.ts`（7 例）、`core-bug-058-string-hint.test.ts`
+  （8 例）。CLI 取证：`viaString() => 10` 变为 `=> 0`（native 0），`only-viaPlus.js` 仍 `=> 10`
+  （native 10）。同族仍未改：`methods.ts` 的 `String.prototype.concat` 与**模板插值**的降级点
+  （`${o}` 现被降级成 `$add($add($lit(""), o), $lit(""))`，与用户写的 `"" + o` 逐字同形 ⇒ 信息在
+  降级处丢失，需专用 `$toStr` op）。
+  
+  ### 追加：BUG-058 模板插值 / `String.prototype.concat` 面已修（专用 `$toStr` op）
+  
+  `${o}` 原先被降级成 `$add($add($lit(""), o), $lit(""))`，与用户写的 `"" + o` **逐字同形**；而 `+`
+  必须用 default hint（原生 `"" + o` 会调 `valueOf`）、模板插值必须用 **string hint** ⇒ 信息在降级处
+  丢失，无法靠调用点区分。修：`exec/runtime/ops.ts` 新增 `$toStr(a)` —— 走
+  `isNullProtoWithoutCoercer(a, "string")` + `invokeToPrimitiveHook(a, "string")`；`Symbol` ⇒ 抛
+  `TypeError`；字面量 ⇒ 字符串字面量；否则 `string()` 并记 may-throw。
+  `exec/transpile/expr/atom.ts` 的 `TemplateLiteral` 插值位包一层 `$toStr`；`exec/index.ts` 导出并
+  在 `runtime-import.ts` 的 `RUNTIME_IMPORT_NAMES` 登记。另：`methods.ts` 的
+  `String.prototype.concat` 是 ToString 面，也改传 `"string"`。
+  
+  回归：`core-bug-058-string-hint.test.ts` 扩到含模板插值与 `concat` 的副作用计数；coercion 家族
+  （`concat-spreadable`、`eval-arith-coercion-throws`、`core-bug-381`、`core-bug-1121`、
+  `core-bug-261/262/402` 等）221 例全绿。
+  
+  ### 追加：`public-api.snapshot.json` 记录 `./exec` 新增的 `$toStr`
+  
+  模板插值的 `$toStr` op 是 `./exec` 的导出（`exec/index.ts`），快照面必须同步记录——
+  `public-api-freeze` 的 `./exec` 分母因此从 208 变 209。该条目属于**快照正常演进**
+  （导出面确实多了一个算子），不是放宽门禁。
+- 51b510a: Fix bug-report category 02 (core check gate / L1 + L2) — 11 of 13 defects.
+  
+  - BUG-023: call records are split into a top-level phase and a function-body phase, so a
+    call inside a sibling function body is no longer invisible to `nudo:interface-drift`
+    (the "unexecuted sibling body is not today's domain" rule is preserved). `inner.js` now
+    reports the same three drifts as `top.js`.
+  - BUG-029: drift comparison normalises union spellings recursively before `leqAbs`, so a
+    nested-literal union and its flat spelling stop producing a false drift (and `health`
+    stops exiting 1).
+  - BUG-030: a contract conflict between two disjoint finite literal sets is an **error**
+    that short-circuits the undecidable path, so `@nudo:assume` bounds no longer produce a
+    contradictory "not computable" warning alongside a green gate.
+  - BUG-084: `@nudo:invariant` attribution is driven by a consumption ledger, so
+    `nudo:invariant-relied` is emitted only for invariants actually consumed.
+  - BUG-128: the `nudo:entry-may-throw` suggestion lists the gate's full remaining kind set
+    (folding the Error family to `Error`, else a comma list) instead of an arbitrary first
+    kind, so acting on the suggestion clears the diagnostic.
+  - BUG-137: a `sum` containing a true `unknown` member is reported as inference failure,
+    so `nudo:unknown-inference` is no longer missed inside a union.
+  - BUG-138: a `ReferenceError` suggestion names the real unbound local / re-exported
+    identifier in the file, or says the identifier is not bound at all.
+  - BUG-210: declared throws are the union of `declaredThrowsForEntry` and
+    `effectiveInterface().throws.kinds` (`*` wins), so a sidecar's `throws` is no longer lost
+    when the source carries `@nudo:throws`.
+  - BUG-223: `interfaceTierOf` classifies only real top-level function bindings (same
+    criterion as the LSP's `topLevelFunctionSlots`), so an export alias is no longer given
+    its own tier.
+  - BUG-251: the generated segment is reported layer-agnostically, so drift candidates are
+    found even when a source-level `@nudo:contract` exists (a persisted `@generated`
+    section is no longer a dead artifact).
+  - BUG-261: the return-position contract parse uses the same "is a valid constraint name"
+    test as the parameter side, so an invalid return segment yields
+    `nudo:contract-syntax` instead of silently evaporating.
+  
+  Regression tests: `core-bug-{023,029,030,084,128,137,138,210,223,251,261}-*`
+  (11 files / 35 tests).
+  
+  Known follow-ups NOT covered here: BUG-099 (needs
+  `service/src/analyzer-orchestrate-uncached-cases.ts` or `nudojs/src/commands/test.ts` —
+  `nudo test` never calls `checkSource`, so `nudo:recursion-truncated` cannot reach it);
+  BUG-247 (needs axiom seeding in `core/algebra/generalize.ts` or the LSP `hover.ts` /
+  `inlay.ts` callers).
+  
+  ## 追加：drift 与写盘面的域口径对齐（BUG-199 的 core 侧根因）
+  
+  `nudo:interface-drift` 的「今日重算」与 `contract --emit` 的写盘面此前不是同一
+  域口径 ⇒ `--emit` 把单点观测写成 `number()` 之后，`nudo health` 立刻报 2 条永久
+  漂移（永不收敛、每次 refresh 后复发）。现两侧共用
+  `core/src/algebra/widen-observation.ts`：
+  
+  - `widenObservationAbs` —— 点观测 Abs 剥到基类型（从 service emit 移入 core，
+    经 `@nudojs/core/internal` 单点导出，杜绝两份实现分叉）；
+  - `isPointConstraint` —— 「观测集只覆盖一个点」判据（无析取成员）。多值观测域
+    （`union(lit(1), lit(-2))`）**不**拓宽：它是真实观测域，被 `number()` 吸收是
+    真漂移（既有回归钉住的正是这一点）；
+  - 每个槽位的新鲜判据 = 「固化段 == 今日原始域」**或**「固化段 == 今日点拓宽域」，
+    即「`--emit` 会不会改写这一位」。既有 drift 套件（25 例，含 BUG-023/029/251/366）
+    语义不变、零改动通过。
+  
+  ### 追加：BUG-211 / BUG-197 已修（长度链构造期门禁 + 契约可省性进入元数面）
+  
+  - **BUG-211（`min` / `max` / `length` 用在数值 prim 上无法执法 / 两通道互斥）**：① 构造期门禁
+    `lengthChain(method)`（与 `gt/ge/lt/le`、`.int()` 同口径）：`fields` / `members` / `fn` / `lazy`
+    直接抛；`prim !== undefined && prim !== "string"` 抛；允许 `string()`、`array(...)`（`element`
+    在场、无 prim）与 `any()`。`lengthBound` 的顺序是 `finiteBoundArg` → `lengthChain` → 负界校验
+    （保住既有「有限数值界」提示的优先级，`check-assume-directive-152` 的断言不变）。②
+    `decideLitCmp` 按**左项**分派：`length(t)` 走长度语义（字符串字面量取 `.length`；数字等 ⇒
+    不可判定），非 `var` 左项 ⇒ 不可判定，纯 `var` ⇒ 原数值比较。③ `scan/literal-shapes.ts` 的
+    `checkReqs` 数值界分支跳过 `app(length, …)` —— 长度谓词只由 length 通道裁决，`argLen` 不可判时
+    不再当数值比较（修掉 `0 >= 1` 假红与 `3 >= 1` 假绿）。残留（诚实边界）：数字 prim + **手写裸
+    pred** 在返回位仍判 violated —— 该形态已无法经构建器构造。
+  - **BUG-197（`nudo:arg-count` 不认契约 `.optional()`）**：`checkOneCall`（本地）与
+    `checkExternalCall`（跨文件）都在取 `effectiveInterface` **之前**调 `checkCallSite()` ⇒
+    `arityFace` 只看实现签名，契约级 `constraint.isOptional` 从未进入元数面，而产物面把契约级当
+    可选性权威 ⇒「产物说可省、check 说必填」。修：`arityFace(g, contractOptional?)` 让契约可选位
+    **优先**；`checkCallSite` 透传；`scan-literal-calls.ts` 新增
+    `contractOptionalIndexes(ei, paramNames, formals)`（位次映射与 `interfaceToIndexed` 同一套，
+    §3.3 只对 `handwritten` 生效），本地与跨文件路径都先算 `ei` 再走同一 helper ⇒ 两面同口径。
+    公共 API `checkCall` 语义不变。
+  
+  回归：`core-bug-211-min-max-prim-gate.test.ts`（14 例，含手写纯数据约束与返回位同结论）、
+  `core-bug-197-arity-contract-optional.test.ts`（5 例，本地 / 跨文件 + 真缺必填对照）；mutation
+  反向验证（删掉那一行 / 退回旧调用 ⇒ 恰好对应断言失败）。相关面 363 通过 + 1 expected fail。
+- aed8e00: Fix bug-report category 03 (evaluation engine) — verified subset.
+  
+  - BUG-194: `$copy` / `$set` on a host global no longer crash the engine with a bare
+    TypeError (`nudo:internal` false red); the fork/copy path handles host objects.
+  - BUG-218: Proxy `has` trap gains the ES invariant check, so a trap that violates
+    [[HasProperty]] is a definite TypeError instead of a false green, and the engine no
+    longer prints a `false` the host can never produce.
+  - BUG-219: `delete <host global>.x` / `"x" in <host global>` route through `$del` /
+    `$in` correctly instead of raising a bare TypeError.
+  - BUG-243: `Array.prototype.indexOf` no longer clamps `fromIndex` to `len - 1`;
+    `fromIndex >= length` returns `-1` like the host (the sibling `lastIndexOf` clamp was
+    already correct).
+  - BUG-244: array-like receivers are no longer mis-reported as may-throw for
+    `sort` / `reverse` / `copyWithin` / `fill`, and a comparator returning bigint is
+    recorded as `TypeError` (host kind) rather than a generic `Error`.
+  - BUG-249: `strictEqAbs`'s "same Abs ⇒ same value" fold now honours the domain-sharing
+    gate, so `xs[0] === xs[1]` over a contract-typed array no longer folds to `true`.
+  - BUG-254: env-global injection no longer splices names verbatim into `let` bindings, so
+    a strict-mode reserved word can no longer produce a `new Function` SyntaxError that
+    fails the whole module closed.
+  
+  Regression tests: `core-bug-194-*`, `core-bug-218-*`, `core-bug-219-*`,
+  `core-bug-243-*`, `core-bug-249-*`, `core-bug-254-*`.
+  
+  Known follow-ups NOT covered here (still reproducing): BUG-072, BUG-073, BUG-078,
+  BUG-159, BUG-162, BUG-166, BUG-173, BUG-175, BUG-177.
+  
+  ### 追加：本轮求值引擎修复
+  
+  已修复（`tmp/verify-bug.sh` exit 1 的标注为脚本实证；其余为观察型 fixture，证据是 CLI
+  签名与回归测试）：
+  
+  - **BUG-004**：类静态方法走 `$staticInvoke`（`D.s1 => 42`、`D.instance => 7`、`D => D`）。
+  - **BUG-020 / BUG-180**：`@nudo:mock` 作用域收回到**声明它的函数**（`scopeSelectedInject`
+    按函数自身的 mock 表过滤），依赖包内的函数同理 ⇒ `fa() => { from: "A" }`、
+    `fb()` 不再误用 A 的 mock、`callMock() => "mocked"`。既有负控制
+    `service-bug-455-mock-scope.test.ts` 原先钉住「非冲突 mock 是文件级」——**与 BUG-020
+    声明的正确行为相反**，已改写为按函数作用域可见。
+  - **BUG-072**：`definiteModuleThrowOf` 认确定性的装载期抛错（IIFE 抛、顶层调用恒抛的
+    本地函数、nullish 成员读取、非法 `JSON.parse` 字面量、类静态块抛）⇒ error 级
+    `nudo:module-throw`；`typeof missing` / 条件分支 / 可选访问的负控制保持干净。
+    既有 `core-bug-1158-module-throw-failclosed.test.ts` 的负控制原先断言
+    `JSON.parse("{")` / null 成员读取**不得**上报——同样与正确行为相反，已改写。
+  - **BUG-073**：`evalFallbackOf` 把用户代码的原生异常归类为 `module-throw`（不再是
+    `internal`），fallback reason 直接断言。
+    连带的口径收口（不是放宽断言）：模块级原生异常此前会让分析器产出一条 error 级
+    `nudo:internal`（"analysis failed for … engine internal fallback"），现在它是**可裁决
+    的** `nudo:module-throw` error —— `nudo check` 依旧红、`--json` 依旧
+    `ok:false` + error issue、IDE 面依旧可见（`lsp-bug-140` 与
+    `nudojs-bug-1145` 两个回归用例已改到新码，契约文案随之更新）。`nudo health` 的
+    判据是 drift / case drift / path error / **internal 回落**，「代码本身必抛」属于
+    check 的职责 ⇒ health 对该 fixture 报 OK（`internal` → FAIL 的反向仍由
+    `unsupported:*` 负控制与 CLI 内部路径守住）。
+  - **BUG-078 / 159 / 166 / 175 / 177**：`renameAbs` 保留 `optionalParams` / `holes`
+    （稀疏元组仍不可赋给稠密元组）；`new Storage()` 不再自信地判成 `Storage` 品牌；
+    用户 `URL`/`Error`/`Map`/`Date`/`Promise` 类遮蔽宿主全局；`instanceof` 的
+    Proxy/箭头/方法 RHS 产原生 `TypeError`（生成器 RHS 仍是布尔）；派生构造器返回对象
+    时 `derivedReturnObj => { q: 1 }` 且无 may-throw。
+  - **BUG-160 / 162**：`TextEncoder` 的 `encoding`/`encode`/`encodeInto` 齐备、
+    `TextDecoder.encoding => "utf-8"`；web env 保留 `Event`/`CustomEvent`/`Request`，
+    node env 诚实报 `never throws TypeError`。
+  - **BUG-165**：零 `TypeError` / `entry-may-throw` 噪音；迭代器 symbol 调用产出迭代器面。
+  - **BUG-173**：派生构造器 `super()` 前访问 `this` ⇒ 原生 `ReferenceError`
+    （`exec/super-access.ts` 的访问门，构造器体执行期登记）。
+  - **BUG-215 / 216 / 217**：不可调用的 `@@iterator` 槽确定抛 `TypeError`；可选调用只读
+    一次 getter（`1`，不是 `"two"`）；计算键成员读走访问器（`o[k]` → `42`）。
+  - **BUG-242 / 248 / 259**：`indexOf(3,5) => -1` / `lastIndexOf(3,5) => 2`；二元自递归
+    走解释路径 + L2 α 项剥离（`bin => unknown` + `nudo:recursion-truncated`，快且不 OOM，
+    线性对照不受影响）；symbol 键读写（读 `1`、计算写读 `7`、
+    `getOwnPropertySymbols().length => 1`）。
+  
+  ### 追加：BUG-172 / BUG-220 已修
+  
+  - **BUG-172（同名类跨模块互相覆盖）**：注册表本体仍按裸名键（进程级 `Map`，清理语义不变），
+    但**类规格改为随值携带**：`exec/class-registry.ts` 新增
+    `classSpecByValue: WeakMap` + `attachClassSpec` / `classSpecOfAbs` / `carryClassSpec`，
+    `EvalClassSpec.superSpec` 记录父规格。`exec/class/declare.ts` 去掉私有 `classImpl` 表，
+    `$class` 把规格挂到**类值**、`superSpec` 取自**父值身份**（不再按名），`$new` 把规格串进
+    构造与实例，`findMethod` 首链**规格优先**；`class/super.ts` 仅在携带规格的 `name` 等于
+    当前子类名时使用它（否则派生链会误取最派生规格）；`runtime/members.ts` 新增
+    `classChainLinks`（首链规格优先、其后名字链，保留既有 last-wins 语义）；
+    `containers/member.ts` 的静态/实例成员与 `ownSpec` 规格优先；`containers/obj.ts` 的 fork
+    快照分支携带规格。回归 `core-bug-172-class-registry-scope.test.ts`：3 模块图，两边同名
+    `Config` 各读各的（`readA()===1` / `readB()===2`，互不可见，`kindA/kindB` 正确）。
+    残留（已在 changeset 声明）：只拿名字、拿不到接收者值的面（`Object.prototype.*`、`Reflect`、
+    `JSON`、`denote.ts`）保持既有 last-wins 口径。
+  - **BUG-220（无界迭代代表元素 + IteratorClose）**：无界分支的代表元素由
+    「第一个具体元素」改为**已收集元素的 join**（`abstractIterItem` +
+    `UNBOUNDED_ITEM_JOIN_CAP = 8`；空集/超限 ⇒ `unknown`），且在无界步之前只提升一次 ⇒
+    guard 不再被折叠成确定 false，`break` 臂得以探索。`IteratorClose` 经复核**无需改动**
+    （`catch` → `isNudoBreak` → `iteratorClose(userIter)` 已可达，`return()` 的写入能到达
+    循环出口）。回归 `core-bug-220-unbounded-iterator.test.ts`（5 例：复现改 `"CLOSED"`、
+    有界 break/自然耗尽、精度不受损、元素域为 `unknown` 而非字面 `0`、两分支都探索）。
+    残留（代码内已注明）：元素域**永不满足** break 条件的无界迭代器仍分析成 `"CLOSED" #exact`；
+    要让 `closed` 进循环 pack 需要把写改到循环体内，与验收口径冲突，故不做特例。
+  
+  ### 追加：回落分类改为「标签 × 来源 × 可见性」三维（BUG-073 收口）
+  
+  `EvalFallback` 现带 `origin`（`"engine" | "host" | "module"`）与 `gateFatal`（可见性）：
+  
+  - **标签**（`reason`）：`module` 来源（transpiled 用户代码）⇒ `module-throw`（BUG-073：
+    用户代码的原生 ReferenceError / TypeError 是**程序自身抛**，不是「引擎缺陷」）；
+    `host`（宿主 `apply` 钩子 / 宿主函数边界）与 `engine`（引擎自身违约：编译体生成失败、
+    引擎产出非 Abs 值）⇒ `internal`（DEC-006 canary 保留）。
+  - **可见性**（`gateFatal`）：装载期逃逸 ⇒ 闸门无法裁决该文件 ⇒ `true`
+    （`tryRunTranspiled` / `tryRunTranspiledDetailed` / 模块求值 catch 标
+    `{ loadFailure: true }`）；能力边界 `unsupported:*` 与**建模内**的 `NudoThrow` ⇒ `false`
+    （不得假红）；调用期异常 ⇒ `false`（该次调用的 `throws` 面承载）。
+  - `runExportCallGuarded` 的 Abs-fn 分支按 `getFnImpl(fn)?.apply ? "host" : "module"` 传来源，
+    与 `$callDispatch` 的派发顺序（apply 先于编译体）一致；`body-fn.ts` 的编译失败改记
+    `engine`（否则 transpiler 失败会被误贴成用户代码的抛）。
+  
+  `run-export-guarded` 中一条既有断言钉的是 `internal ×1`，与 BUG-073 直接冲突（编译体自由名
+  的原生 ReferenceError 是**用户代码**的抛）⇒ 重钉为 `module-throw ×1`，并改成**两个维度各
+  断言一条**（internal 增量 0 / module-throw 增量 1）；可观测面（result unknown +
+  throws ReferenceError）不变。
+  
+  ### 回归修复：`nudo health` 与 `nudo check` 的预算归因必须同源
+  
+  同一文件在 `nudo check --json` 与 `nudo health` 两面必须给出同一预算归因（既有
+  `health-budget-truth` 断言）。
+  
+  **根因**：自递归「有界试算」`runEvalCallBudgetTrial` 用一次性预算实例跑探针，探针撞
+  depth/calls 时结果被丢弃（调用方回落 fail-closed），而「撞了预算」这件事只随探针实例一起
+  被丢弃（`withSpeculativeEvalObservability` 还把截断观测静默了）⇒ 宿主预算面上只剩旁证的
+  cycle 归因：health 报「call cycle — not a budget limit」，而 check 面（证据域真跑到 64 层）报
+  「eval depth 64/64」——两面口径分裂，且把「抬 `@nudo:budget` 有效」的深递归误报成「抬预算也
+  解不开的环」。
+  
+  **修法**：探针截断后把「撞了哪条预算」**重新记账**到宿主预算实例上
+  （`CallBudget.noteTruncation`，仅类型成员、**无新增导出名** ⇒ public API 冻结不变）。
+  计数/上限取**宿主实例的生效上限**（`@nudo:budget` 覆盖期间取覆盖值）——试算内部阈值
+  （depth=5 / calls=512）是实现细节，不上屏。状态机补 calls 截断现场（`callsTruncCalls/Limit`），
+  上屏计数必到顶，不出现「3/20000 却标 truncated」。重新记账**只进预算面**（实例 reasons +
+  共享原因集），**不**触发诊断 collector —— 诊断归因（cycle vs 预算，#158）仍由真正跑那条求值的
+  路径上报，否则会把 `service-bug-099` 钉住的 cycle 归因改写成「抬预算可解」。
+  
+  **是否有重钉**：无（未改任何测试断言）。
+  
+  **残留**：① 诊断面措辞仍按各自求值路径分脸（分析器面 cycle / check 面 depth）——HEAD 既有
+  差异，本次刻意不动；② 重新记账的 depth 取宿主生效上限而非探针阈值；③ 探针阈值
+  （`generalize.ts`，depth=5 / calls=512）未动 ⇒ 收敛半径 6..64 的自递归仍 fail-closed。
+- e4190b5: Fix bug-report category 04 (core builtins / collections) — 17 of 26 defects.
+  
+  - BUG-007: a primitive's prototype method dispatches correctly instead of being
+    reported as absent.
+  - BUG-008: `Object.getOwnPropertyDescriptor(fn, ...)` models a function's own
+    `name` / `length` / `prototype` slots.
+  - BUG-009: a regexp literal's flags are canonicalised, so `/a/gi` and `/a/ig` agree.
+  - BUG-132: a boxed primitive's internal slot is modelled.
+  - BUG-157: `URLSearchParams` `entries()`/`keys()`/`values()` are no longer reported as
+    carrying an internal slot.
+  - BUG-164: the `Object.prototype` legacy accessor allowlist and the descriptor table are
+    now the same source of truth.
+  - BUG-176: `Reflect.construct` on a user class is no longer reported as may-throw.
+  - BUG-181: `Reflect.set` with a primitive receiver is a definite `TypeError`, not a false
+    red.
+  - BUG-182: a host function's constructibility facet is decided by IsConstructor, not by
+    the presence of a `prototype` property.
+  - BUG-230 / BUG-260: `Set` / `Map` cardinality from an abstract iterable is no longer a
+    definite value, and `MapTable` carries insertion order so key iteration matches the
+    host and `new Set(xs).size` agrees with `Array.from(new Set(xs)).length`.
+  - BUG-276: class-instance enumerable flags are correct, so `getOwnPropertyDescriptor` /
+    `Object.keys` agree with the host.
+  - BUG-277: a builtin brand's user-defined keys are enumerated (`entries` /
+    `getOwnPropertyNames` / `getOwnPropertyDescriptors` / `JSON.stringify`).
+  - BUG-278: an `Error` subclass's inherited `name` ordering matches the host.
+  - BUG-281: `getOwnPropertyDescriptors` on a brand instance matches `keys`/`values`.
+  - BUG-282: a nested same-name `@nudo:case` scope resolves to the nearest binding, and
+    shape contracts fall back to a prototype-chain `HasProperty` check.
+  
+  Regression tests: `core-bug-{007,008,009,132,157,164,176,181,182,230,260,276,277,278,281,
+  282}-*` (16 files / 106 tests).
+  
+  Known follow-ups NOT covered here (root cause outside this category's file set):
+  BUG-058, BUG-130, BUG-131, BUG-160, BUG-165, BUG-167, BUG-174, BUG-258, BUG-275; and
+  BUG-163's `toJSON` half (needs `exec/runtime/members.ts` `BUILTIN_BRAND_METHODS.URL` —
+  its `host` half is fixed and tested).
+  
+  ### 追加：本轮内建面修复
+  
+  已修复（带新回归测试）：
+  
+  - **BUG-163（`toJSON` 半边，至此完整）**：`BUILTIN_BRAND_METHODS.URL` 增加
+    `toString` / `toJSON`，`BUILTIN_BRAND_ACCESSORS.URL` 补组件访问器 ⇒
+    `urlToJsonIsUndef() => false`、`urlToJsonIn() => true`（修复前 `true` / `false`）。
+    测试：`core-bug-163-url-tojson-brand-face.test.ts`。
+  - **BUG-174**：`TextDecoder` 构造参数按宿主顺序校验（label 的 ToString → options 字典
+    → label 查找），抽象 prim / 全 prim 联合的 options 确定抛 `TypeError`，`any` 只记
+    may-throw。测试：`core-bug-174-textdecoder-options.test.ts`。
+  - **BUG-183**：`btoa` / `atob` 缺参确定抛 `TypeError`（其余 6 个全局函数保持把缺参当
+    `undefined`）。测试：`core-bug-183-btoa-atob-missing-arg.test.ts`；
+    `tmp/verify-bug.sh BUG-183` → exit 1。
+  - **BUG-275**：`Object.create(proto)` 的基对象镜像 proto 自有槽为 `Slot.inherited`
+    （只表示存在性，值为 `unknown`），自有键视图（`Object.keys/values/entries`、for-in、
+    spread、JSON）排除 `inherited` ⇒ 与原生一致。测试：
+    `core-bug-275-object-create-inherited-slot.test.ts`；`verify-bug.sh BUG-275` → exit 1。
+  
+  ### 追加：BUG-167 已修（构造点对齐 facet + 投影面读域判定）
+  
+  - **BUG-167**：两个 `$fnVal` 构造点（`ObjectMethod` 简写与方法型 `FunctionExpression`）改为发
+    `effectFree` / `closed` facet（`getFnFacets` 静态保守判定，与 `expr/function.ts:366-373` 同口径）
+    ⇒ 同一函数体写成方法 vs 写成函数字面量，在 sort 比较器闸门、promise 回调、访问器纯度判定上
+    不再得出相反结论。叠加的第二处根因：`Object.defineProperty(o,k,{get})` 装的访问器占位槽是
+    `unknown`，而三个投影面（`format.ts`、`denote.ts`、`service/emit/dts-generator.ts#slotAbsOf`）
+    会**无条件执行用户 getter**，把分析期末次读值冻结进签名与 guard ⇒ 签名自信错值、
+    `data.b === <literal>` 恒假。修法：投影面加**读域不可判**判定（占位槽**无 term** ⇒ 不执行
+    getter，presence-only）。判据必须用 `term === undefined` 而**不是** `shape.k === "unknown"`
+    —— `$lit(void 0)` 的 `shape.k` 也是 `"unknown"`，按 shape 判会把所有访问器判死（首版即此错）。
+    回归 `core-bug-167-side-effect-getter-not-frozen.test.ts`（10 例，含 Bug 191 / 152 的负控制）；
+    验收组 11 文件 / 148 例全绿（含 `eval-call-position`、`eval-match-json-view`、
+    `exec-join-accessors`、`exec-define-property-accessor`）。
+    残留（如实记录）：**对象字面量** `get` 访问器的占位槽必须是 `$lit(void 0)`（Bug 191 的读域投影
+    与 Bug 152 的调用点求值序钉住它，换 `$unknown()` 会同时打红两处），彻底修法需在 slot 上引入
+    显式「读域不可判」标记（`abs.ts` slot 类型 + `exec/runtime/state.ts` 的 `$set` 选项 +
+    `descriptor.ts` 写入）；`projection.ts`（zod / standard-schema 经 `absToConstraint` 取读域）
+    同样仍是执行 getter 的老路。BUG-167 section 的验收 repro 是 `Object.defineProperty` 形态，
+    本修复已覆盖。
+  - **BUG-258（facet 已落地，投影面见 cat-05）**：数组视图信息原先由 `builtins/regexp.ts` 的
+    `WeakSet` 侧表（按 Abs 身份）承载，只有 `Array.isArray` / JSON 序列化 / 数组方法派发消费，类型面
+    看不见。修：`abs.ts` 的 `{k:"obj"}` 形状增加 `view?: "array"` facet +
+    `markArrayView` / `isArrayView`（不导出到公开面 ⇒ 快照零变化；`markArrayView` 是**替换** shape 而
+    非就地改共享 shape），`regexp.ts` 删除侧表、`markMatchArrayView` / `isMatchArrayView` 降为薄包装，
+    消费面（`array.ts` / `json.ts` / `member.ts` 派发）只读 facet；运行形状仍是 `k:"obj"`（未改 tuple）
+    ⇒ `eval-call-position.test.ts:344-350` 的渲染钉不变。回归
+    `core-bug-258-array-view-facet.test.ts`。未完成：dts / zod / standard / guard 四个**产物面**尚未按
+    `shape.view === "array"` 分支；多 case join 时 `joinObjects` 重建 shape 不带 `view`（需一侧传递）。
+- 6daa52e: Fix bug-report category 05 (rendering / projection / emit generators) — 11 of 17 defects.
+  
+  - BUG-025: the standard-schema `promise` node tests `instanceof Promise` in both the
+    library and the inlined copy, so a non-promise value is rejected instead of accepted.
+  - BUG-031: `litPredValue` became `litPredValues` and recognises
+    `or(eq(...arm), ...)`, so a literal-union contract renders as `1 | 2 | 3` in the
+    signature face, matching the dts face byte for byte.
+  - BUG-087: `showLits` renders the **type** (`3`, `"a"`) instead of leaking the contract
+    DSL spelling (`lit(3)`) into signatures and slot displays.
+  - BUG-092: `predAsJs` / `termIsValue` emit `Number.isInteger(v)` for a `%1 === 0`
+    predicate and compare field items by value, so nested numeric bounds agree across all
+    four faces.
+  - BUG-095: the `arr` branch uses `Array.from(v).every(...)` (holes filled with
+    `undefined`), matching the standard face — `[1, , 3]` is no longer accepted by the
+    guard.
+  - BUG-097: a slot named like an `Object.prototype` own member is read with bracket
+    access, so the guard compiles under `tsc --strict` (TS2367 gone).
+  - BUG-098: the `brand` branch drops observed literals deeply, so a brand built from an
+    observed `/abc/i` or `new TypeError("boom")` accepts the real value.
+  - BUG-145: a same-name slot produces no inlay hint (it previously rendered another
+    binding's derivation).
+  - BUG-147: inlay hints cover anonymous default exports (arrow, function expression, and
+    a `FunctionDeclaration` without an id).
+  - BUG-158: an `Arguments` brand no longer emits an `Array.isArray` premise while keeping
+    its length/index semantics, so the guard accepts `arguments` at runtime.
+  - BUG-250: the guard declares `const data: any` when the contract carries an identity
+    clause, so `instanceof` narrowing no longer blocks index reads
+    (`tsc --strict` TS7053 gone).
+  
+  Also updates `core-bug-348-lit-literal-signature.test.ts`, which pinned the
+  `f(x: lit(1))` spelling that BUG-087 declares wrong, to the corrected `f(x: 1)`.
+  
+  Regression tests: `core-bug-{031,087,092,095,097,098,145,147,158}-*`,
+  `service-bug-{025,250}-*`.
+  
+  Known follow-ups NOT covered here (root cause outside this category's file set):
+  BUG-091 (needs `lsp/src/lsp-surface/completions.ts`), BUG-096 (needs
+  `schema-generator.ts`), BUG-108 / BUG-169 (need `dts-generator.ts` + `schema-generator.ts`),
+  BUG-156 (needs `schema-generator.ts`), BUG-191 (needs `dts-generator.ts:1986-1995`).
+  
+  ### 追加：BUG-096 / BUG-169 / BUG-191 已修 + BUG-258 的 facet 与投影面
+  
+  - **BUG-096（键存在性三面不一致）**：zod 面原生用 `key in data`（含 `Object.prototype` 成员），
+    guard / standard 面减污染键 ⇒ `Object.create({toString:"s"})` 在 zod 面被放行。反向改
+    guard/standard 会改 `hasPropertyClause` 的子句文本，而该文本被 `eval-bug-191-accessor-projection`
+    与 `eval-bug-240-guard-internal-slots` **逐字钉住** ⇒ 只能把 zod 面补齐：`schema-generator.ts`
+    对「**必填**且键名是 `Object.prototype` 自有成员」的槽追加 `.superRefine`（沿用同文件 `__proto__`
+    槽的既有模式），子句与 guard **逐字同口径**；非污染键不加码（`z.object` 原生判据已与另两面等价）。
+    同时修正三处自述注释（`denote.ts` / `standard-schema.ts` / 产物 `__nudoHasProperty`）为「三面唯一
+    规则」。guard / standard 的**代码未变**。回归 `service-bug-096-key-presence-parity.test.ts`。
+  - **BUG-169（TS 可选形参 `b?: T` 丢失）**：`?` 在 strip-types 阶段被删（param 节点 `optional`
+    为 `undefined`），`formalParamsFromNodes` 的 `kind:"id"` 硬写 `optional:false`；dts 的
+    `declaredParams` case `"id"` 硬写 `hasDefault:false`；standard 只认 `kind==="default"`。
+    修：`param-surface.ts` 的 `formalParamsFromNodes(params, source?)` 末尾接
+    `withOptionalParams(out, tsOptionalParams(params, source))`（**无 source 时集合为空 ⇒ 零行为变化**，
+    `generalize.ts` / `exec/transpile` 等未传 source 的调用点不受影响）；`dts-generator.ts` 的
+    `case "id"` 改 `hasDefault: f.optional === true`；`standard-schema.ts` 的 `declarationOptional`
+    认 `kind === "default"` ∪ (`kind === "id"` && `optional`)。服务面 `extractFormals(node, source?)`
+    与 3 处调用点只做 **source 透传**（无语义改动）。回归 `emit-bug-169-ts-optional-params.test.ts`
+    （差分口径：三面可省性 ≡ 源码 JS 默认值 ∪ TS `?`）。
+  - **BUG-191（`export namespace` 缺失）**：`scan-named-exports.ts` 的 `ExportNamedDeclaration`
+    声明分支只认 Function/Class/Variable ⇒ `TSModuleDeclaration` 落 `continue` 被静默丢弃；
+    `dts-generator.ts` 同款缺口且从不发射 ⇒ 消费端 TS2305，而求值器确实物化了 `NS`。修：
+    `scan-named-exports.ts` 新增 `TSModuleDeclaration` 分支（登记 `NS` + 运行时成员键
+    `NS.x` / `NS.f` / 嵌套 `NS.Inner.y`；interface / type 是纯类型**不**登记，`addNamespaceMemberKeys`
+    只认 `export` 过的成员）；`dts-generator.ts` 增加 `namespaces` 面并发射
+    `export declare namespace NS { … }` + 别名导出（class 发空体；enum/interface/type 镜像原文；
+    嵌套递归；`namespace A.B` 认尾段）。回归 `emit-bug-191-export-namespace.test.ts`。
+  - **BUG-258（数组视图 facet）**：数组视图信息原由 `builtins/regexp.ts` 的 `WeakSet` 侧表（按 Abs
+    身份）承载，只有 `Array.isArray` / JSON 序列化 / 数组方法派发消费，类型面完全看不见 ⇒ 同一个值在
+    引擎内两个结论。修：`abs.ts` 的 `{k:"obj"}` 形状增加 `view?: "array"` facet +
+    `markArrayView` / `isArrayView`（**不**导出到公开面 ⇒ 快照零变化；`markArrayView` 是**替换** shape，
+    不是就地改共享 shape）；`regexp.ts` 删除 WeakSet 侧表，`markMatchArrayView` / `isMatchArrayView`
+    保留同名同签名降为 facet 薄包装；消费面（`array.ts` / `json.ts` / `member.ts` 派发）只读 facet。
+    运行形状仍是 `k:"obj"`（**未**改 tuple）⇒ `eval-call-position.test.ts:344-350` 的
+    `"0":"b"` / `index:1` / `input:"abc"` 仍成立。回归 `core-bug-258-array-view-facet.test.ts`。
+    未完成（已定位）：四个产物面（dts / zod / standard / guard 的 obj 分支）尚未按
+    `shape.view === "array"` 分支；多 case join 时 `joinObjects` 重建 shape 不带 `view`，需一侧传递。
+  
+  ### 追加：BUG-258 四产物面 + BUG-169 zod 面
+  
+  - **BUG-258 产物面**（facet 本体见 cat-04）：**guard 面**（`denote.ts`）obj 分支改判
+    `shape.view === "array"` ⇒ `Array.isArray(v)`（取代 `typeof/object` + `!Array.isArray`；槽判据一字
+    未动 —— exec 结果的 `0/1/length/index/input/groups` 全是自有属性）；**dts 面**
+    （`dts-generator.ts`）数组视图投影成**元组** + 其余自有槽的交集（`length` 由元组隐含），
+    `widenParamAbs` 透传 `view` facet（否则形参位会退回对象字面量）；**zod 面**
+    （`schema-generator.ts`）`SchemaNode.obj` 增 `arrayView?: boolean`，渲染 `z.tuple(...)`
+    （`z.object` 会拒真实数组），非下标槽记台账 `non-index slots not validated by z.tuple`；
+    **standard 面**（`standard-schema.ts`）库函数版与产物版都要求 `Array.isArray(value)`，
+    `arrayView` 随节点序列化，产物类型别名 `NudoSchemaNode` 补 `arrayView?: boolean`
+    —— 这是**修产物类型**，不是放宽 `emit-bug-519-989` 的 strict 编译门禁。
+  - **BUG-169 zod 面**：`nudojs/src/commands/export/contract-face.ts` 的 `unifiedParamFace` 常规形参
+    分支改为 `formal.optional === true || formal.kind === "default" || formal.index >= minArity`
+    —— `FormalParam.optional`（已接通 TS `?`）成为唯一事实源；无 `?` 的声明仍按观测最少实参元数放宽。
+    回归用「一键实参」观测把 `minArity` 钉在 1，使下标 1 的可省性只可能来自 TS `?`。
+  
+  回归：`core-bug-258-array-view-facet.test.ts`（6 例）、
+  `service-bug-258-array-view-products.test.ts`（5 例）、`emit-bug-169-ts-optional-params.test.ts`
+  （5 例）；`service/src/emit/__tests__` 114 文件 / 798 例、core algebra 973 文件 / 10 431 例、
+  service 242 文件 / 1 318 例全绿。残留：多 case join 的 `joinObjects` facet 传递（`objects.ts`）。
+- 0650ef0: fix(service): 分析器 / 模块图 / 缓存面（BUG-011/012/070/089/101/127/129/139/152/170/171/205/206/207/238/239/240/241/267/268/269/270/273）
+  
+  模块解析与缓存：
+  
+  - BUG-238/240 — 裸包 `import` 的 spec 现在携带 `mode` 并解析到真实文件（而非包名占位），模块图边与调用点记录据此建立。
+  - BUG-239 — `exports` 条件键按 package.json **声明顺序**求值；`browser` 仅作兜底，不再无条件优先。
+  - BUG-267 — pattern 键按 Node `PATTERN_KEY_COMPARE` 取最具体匹配（`./x/*` vs `./x/*.js`）。
+  - BUG-268 — 裸包解析在**最近的已存在** `node_modules` 停止；未命中的 `exports` 不再被上层包无声清空为 `exportsUnresolved=false`。
+  - BUG-269 — 歧义 `export *` 名称不再导出；导入方得到 `nudo:missing-export`，与 Node 的「模糊即不存在」一致。
+  - BUG-270 — `exports` 数组回退只发生在 target **非法**时；合法但文件缺失是终止态（`ERR_MODULE_NOT_FOUND`）。
+  - BUG-273 — `esm` 目录导入不再猜测 `index.*`；`legacy main` 保留该行为。
+  - BUG-241 — 磁盘缓存键的入口维度带项目根指纹，依赖维度仍可移植（跨项目不再互相污染）。
+  - BUG-012 — 函数缓存 `envKeyFn` 补上 `@nudo:env` 内容指纹，与另外两层缓存口径一致。
+  
+  调用点与报告：
+  
+  - BUG-070/170/171 — 同名调用点仅在冲突时加列号（`call@L6C9`）；`--from` 目录与重复调用点在合成前去重（先解析再按站点点位去重）。
+  - BUG-089 — 仅当本文件在该行列确实存在调用表达式时才附加 `callSiteFile`。
+  - BUG-127 — `dedupeCallRecords` 的键纳入调用点身份，不同站点的同名调用不再互相吞并。
+  - BUG-205 — 期望值判定统一走共享 `inferenceFailed`，并检查 `term`：`lit(null)` / `lit(undefined)` 是 exact，不是第三种「推断失败」态。
+  - BUG-206 — `never` 期望不再走「满足」短路。
+  - BUG-207 — 嵌套槽位谓词（`shape({ n: number().gt(0) })`）参与判定并按递归 `formatExpected` 渲染；CLI 报告面改用 service 的 `formatExpected`。
+  - BUG-011 — 空调用记录不再解引用 `deduped[0]`。
+  - BUG-101 — `isNudoTargetPath` 接受 `.cjs/.mts/.cts`（排除 `.d.mts/.d.cts`），`migrate retire` 的 `nudo check .` 与 `VERIFY_TARGET_EXTS` 对齐。
+  - BUG-129 — 空 `--from` 目录报 `nudo:path-empty-dir`。
+  - BUG-139 — 静态成员扫描白名单化节点类型，`ClassProperty` 不再被当作方法。
+  - BUG-152 — 匿名 `export default class` 注册到 `default` 槽位。
+  
+  已更新的既有测试（原断言钉住声明的错误行为）：
+  
+  - `service/src/__tests__/resolve-npm-exports.test.ts` — 数组回退改为「首个合法 target 即终止（即使文件缺失）」。
+  - `service/src/__tests__/disk-cache.test.ts` — 入口缓存键带项目身份，依赖键保持可移植。
+  - `service/src/__tests__/target-path.test.ts` — `.cjs` 由拒绝改为接受，新增 `.mts/.cts`。
+  
+  已知未修（根因在本类文件之外，另行跟踪）：BUG-019（行号重映射在 `emit/case-emitter.ts`）、BUG-022（entry 结算重入语义未定）、BUG-045（CJS `module.exports` 成员导出面）、BUG-069（生成比较在 `emit/case-emitter.ts`）、BUG-085（`withAssumePremises` 未从 core 导出）。
+  
+  ### 追加：本轮分析器面修复
+  
+  - **BUG-022**：`settleEntryOnlyCandidates` 不再删除注册表条目；记录增长时先摘掉上次合成的 case
+    再按**全量**记录重合成 ⇒ 调用点先出现 `f(3)` 与后出现 `f(3)` 得到同一组见证
+    （`3 witnesses，call@L5/8/11`）与**逐字节相同**的 `--emit --dry-run` 契约。
+    测试：`service-bug-022-callsite-domain-order.test.ts`。
+  - **BUG-045**：`tryEvalCallFull` 走 core 的 cjs-member 语义（对 `exports["default"]` 做
+    `$invoke`），并在合成调用记录里过滤无位置记录 ⇒ `obj.js`（`module.exports = {…}`）与
+    `dot.js`（逐成员导出）在 dts/schema/guard 三面**逐字节一致**（dts 由 `unknown` →
+    `number | string`）。测试：`service-bug-045-cjs-object-export-member`、
+    `cli-bug-045-cjs-object-export-face`。
+  - **BUG-099（递归 / fork 两臂）**：分析器为**整轮**装截断收集器（串到 `eval-run` 的嵌套
+    collector，否则单槽会被静默覆盖），标签映射到 `nudo:recursion-truncated` /
+    `nudo:fork-truncated`，文案与 `check` 同口径 ⇒ `nudo test` 与 `--json`
+    （`summary.diagnostics`）都可见。测试：`service-bug-099-*`、`cli-bug-099-*`。
+    循环臂（`nudo:loop-truncated`）此前缺 core 导出，现已补
+    `LOOP_TRUNCATION_LABEL`（`@nudojs/core/internal`），接线待做。
+  - **BUG-069** 的发射侧（见证等价按「文件 + 实参载荷」）已由 emit 类修复并回归；
+    本条**未修的是 CLI `--freeze` 新增模式的坐标**（见 BUG-019）。
+  - **BUG-085** 已修：`runAbsView` 现把 `extractAssumeSegs` 的 `ok` 段折进**前提槽**
+    （`withAssumePremises`，不是 `phi`），详见 cat-09 changeset。
+  - **BUG-099 循环臂已修**：`truncationDiagnostics` 增加 `label === LOOP_TRUNCATION_LABEL`
+    分支，且必须排在 `label.startsWith("#")` 兜底**之前**（兜底会把 `#loop-iterations`
+    静默吞掉）。`nudo test` / `--json` 现报 `nudo:loop-truncated`，文案与 `check` 面逐字一致
+    （「A loop did not terminate within its iteration budget …」），anchor 为文件起点 1:0
+    （事件不带函数归属，check 面同样无位置）。回归：
+    `service/src/__tests__/service-bug-099-loop-truncated.test.ts`。
+    注：loop 迭代预算不在 `@nudo:budget` 覆盖范围内，故建议文案不提该指令。
+  
+  ### 追加：可见性判据（`gateFatal`）与 `./internal` 快照
+  
+  - `analyzer-orchestrate.ts` 的 per-file 失败信号判据改为
+    `f.reason === "internal" || f.gateFatal === true`（**标签 ≠ 可见性**）：BUG-073 把装载期
+    逃逸改标 `module-throw` 后，原判据（只收 `internal`）会让 `evalFailures` 变空 ⇒ 闸门丢掉
+    「模块装载失败 ⇒ 不得判绿」（BUG-072）。三条假红防线（`unsupported:*` / 建模内
+    `NudoThrow` / 干净文件）不变。
+  - `service/eval-run.ts` 的「引擎产出非 Abs 值」回落改传 `origin: "engine"`（引擎自身违约
+    ⇒ `internal`，与该 guard 的既有语义一致）。
+  - `packages/core/public-api.snapshot.json` 追加 4 个 `./internal` 导出（引擎机件面，语义上
+    允许 minor 变动）：`LOOP_TRUNCATION_LABEL`、`extractAssumeSegs`、`isPointConstraint`、
+    `widenObservationAbs`，以及类型 `AssumeSeg`；`public-api-freeze` 测试随之复绿。
+- 250f0ba: Fix bug-report category 09 (`nudo check` gate) — 10 of 15 defects.
+  
+  - BUG-046: a variadic flag no longer silently consumes the following path; a value the
+    flag cannot accept that exists on disk is reported as a usage error, so `check
+    clean.js --only <code> broken.js` no longer exits 0 with `broken.js` unchecked.
+  - BUG-047: `check --fix` advances its plan text outside the `--write` branch, so a second
+    hunk is `@@ -1,2 +1,3 @@` instead of a conflicting `@@ -0,0 +1,2 @@`, and dry-run output
+    matches `--write`.
+  - BUG-048: `--only` values are validated against the diagnostic registry (unknown codes
+    are a usage error; valid-but-unmatched codes are reported) instead of silently
+    producing `0 edits`.
+  - BUG-049: a sidecar write failure is reported (`check --fix cannot write <path>`) instead
+    of aborting the whole run with a bare `EACCES`.
+  - BUG-066: `--quiet` is evaluated before `--abs`, so `--abs --quiet` prints one line
+    instead of the full signature block.
+  - BUG-067: `--fix` refuses to write a sidecar that would conflict with a sibling file
+    (`.js` / `.mjs`, `.ts` / `.mts`) and names the sibling.
+  - BUG-115: the `--json` envelope gains an unambiguous `summary.pathErrors`, so path
+    failures are readable from the summary (the green shape is unchanged).
+  - BUG-264: `sidecarPathOf` strips `.d` **after** `.nudo`, so a `.d.ts` source yields
+    `api.nudo.ts` (and a `.nudo.draft.ts`-style draft) instead of a `.d.` name that
+    TypeScript treats as a declaration file.
+  - BUG-284: hard errors (input read failures / syntax errors) feed both CI channels, so
+    `--gitlab` always emits exactly one parseable array and `--gha` emits `::error`.
+  - BUG-285: GHA annotations move to stderr when GitLab owns stdout, so `--gha --gitlab`
+    emits its `::error` lines instead of dropping them.
+  
+  Regression tests: `cli-bug-046-*`, `cli-bug-047-*`, `cli-bug-048-*`, `cli-bug-049-*`,
+  `cli-bug-066-*`, `cli-bug-067-*`, `cli-bug-115-*`, `cli-bug-284-*`, `cli-bug-285-*`,
+  `core-bug-264-sidecar-dts-name`.
+  
+  Known follow-ups NOT covered here: BUG-014 (needs `commands/test.ts`), BUG-015 / BUG-114
+  (need `migrate.ts`, handed to the migrate category), BUG-262 (needs
+  `packages/lsp/src/validation.ts`), BUG-056 (needs per-round module isolation; `check`
+  still prints `bump() => 2`).
+  
+  ### BUG-056 诊断追加（未修复，定位已收窄）
+  
+  同文件在同一进程被求值两轮时，闸门读到被上一轮写脏的结果（`bump() => 2`，原生 `1`；
+  连带 `main() => 11`、`once() => 1`、`nudo:interface-drift` 把干净侧车判成陈旧）。
+  
+  已排除（逐一实测，均无效）：
+  
+  - service `evictAbsModuleCacheFiles` / `evictEvalCacheForFiles`：驱逐前后
+    `getAbsModuleCacheSize()` 都是 `0`、`getEvalCacheSize()` 由 `1` 归 `0`，闸门仍是 `2`；
+  - core `evictGeneralizeMemoForPaths`：仍是 `2`；
+  - core `resetNudoModuleExecCache`（侧车模块执行表）：仍是 `2`。
+  
+  已定位的方向：**`checkSource` 的整文件 memo**（`packages/core/src/algebra/check-memo.ts`）。
+  探针（同一进程内先跑分析器再跑闸门）在每次 `checkSource` 前 `resetCheckSourceMemo()`
+  后结果稳定为 `1`（不重置则 `2`，且第二次调用仍 `2`）⇒ 陈旧 `CheckReport` 被跨轮复用，
+  不是模块实例泄漏。收口方向 = 在 CLI 轮边界按路径驱逐
+  `evictCheckSourceMemoForPaths([filePath])`（该 API 已从 `@nudojs/core` 导出，无需动
+  public-api 快照）；未落地的原因是上述探针全部跑在**修复前的 `dist/`** 上（`@nudojs/*`
+  经 package `exports` 解析到 `dist`），需要在源码构建上复核后再改 —— 否则无法区分
+  「memo 陈旧」与「模块实例脏」两种成因。
+  
+  ### 追加：BUG-056 已修（根因与落法）
+  
+  根因（实测确认，不是推测）：`packages/core/src/algebra/generalize.ts` 与
+  `check-may-throw.ts` 各有一张 `evalRunMemo`，缓存的是**活的 run 表**——模块级 `let` 状态
+  **和对象身份**都住在里面；键**只有 source（+ mock scope + inject 指纹）**，没有路径、
+  没有轮次。后果：
+  
+  - 分析器一轮 generalize 与闸门一轮共用同一实例 ⇒ `bump() => 2` / `main() => 11` /
+    `once() => 1`（同一文件在同一进程里被读作 1 / 2 / 3，字节相同的两个不同文件也共用）；
+  - `contract --emit` 写分析器的干净值、`check` 打印被污染的值 ⇒ `nudo:interface-drift`
+    永不收敛（health 永久假红，重跑 `--emit` 无法自愈）。
+  
+  落法：引入单调**求值轮次**（`collector-scope.ts`），最外层 `runWithCollectorScope` 创建
+  作用域时涨轮；两张 run 表的键都带轮次前缀 ⇒ 跨轮不复用活状态；**不做整表作废**（整表
+  作废会让轮内的对象身份变化，递归泛化的 term 指纹随之坍缩成 `unknown`）；`resetGeneralizeMemo`
+  同时清 run 表。已排除的无效方案（逐条实测）：service `evictAbsModuleCacheFiles` /
+  `evictEvalCacheForFiles`、core `evictGeneralizeMemoForPaths`、`resetNudoModuleExecCache`、
+  按路径驱逐 `checkSource` 报告 memo —— 全部无法触及这两张表。
+  
+  回归：`core-bug-056-eval-round-identity.test.ts`（3 例：分析器轮之后闸门仍读 1、字节相同的
+  第二个文件各自读 1、同一文件重复分析每次读 1）；CLI 侧 `cli-bug-056-check-single-eval.test.ts`
+  钉住 `bump() => 1`、`once() => never throws Error`、无 `nudo:interface-drift`。
+  
+  ### 追加：BUG-085 已修（`--abs` 观测面吃 `@nudo:assume` 前提）
+  
+  根因不在 core 的假定折叠，而在 **CLI 观测面没喂前提**：`nudojs/src/commands/shared.ts::
+  runAbsView` 直接 `tryEvalCall(...)`，`@nudo:assume d <= max` 从未进入求值。
+  
+  落法（关键点：喂**前提槽**，不是 `phi`）：每个待观测函数先从
+  `extractAssumeSegs(source, fnName)` 取 `ok` 段，折成 `ale(v(lhs), v(rhs))` 后
+  `withAssumePremises(phi, () => tryEvalCall(...))`。`div` 的关系折叠只读
+  `assumePremiseList(assume)`（`core/algebra/arithmetic/muldiv.ts:141`），而前提槽在调用边界
+  会被清空；折进 `phi` 会既拿不到谓词、又把前提泄漏给被调方（不健全）。
+  
+  回归：`nudojs/src/__tests__/cli-bug-085-abs-assume-premises.test.ts`（3 例）——
+  `check --abs` 打印 `pred: /(d, max) ≤ 1`（此前缺失而 `--json` 已给出 `where`，两面不一致）、
+  无 assume 行的对照两面都无谓词、`nudo test --abs` 同源同结论。
+  
+  ### 追加：CLI fail-closed 判据改为「可见性」，诊断按标签分两条通道
+  
+  `packages/nudojs/src/commands/check.ts`：per-file collector 由「只收 `internal`」改为
+  「`internal` **或** `gateFatal === true`」（plain check 与 `--fix` 两处采集点同口径），
+  并把诊断拆成两条：
+  
+  - `internal`（引擎 / 宿主边界违约）⇒ `nudo:internal` + 「报引擎 bug」文案（既有）；
+  - 装载期逃逸的**用户代码**异常（标签 `module-throw` 且 `gateFatal === true`）⇒
+    `nudo:module-throw` + 指向**用户代码**的文案（BUG-073：不得让用户去报引擎 bug）。
+  
+  这补上 BUG-072 在 CLI 侧的最后一个缺口：**无句法证据**的装载失败（模块顶层
+  `JSON.parse(userInput)`、顶层调用会抛的导入函数）此前零诊断 + exit 0（**假绿**），现在按
+  `gateFatal` 判红。`unsupported:*`（能力边界）与建模内 `NudoThrow` 的
+  `gateFatal === false` ⇒ 仍不入闸门（假红防线不变，1145 的 unsupported 用例守反向）。
+  
+  ### 重钉：BUG-264 带来的落点改名（`.d.ts` 源的草稿名不再含 `.d.`）
+  
+  BUG-264 修了「`.d.ts` 源的侧车 / 草稿名含 `.d.` ⇒ TypeScript 判成声明文件 ⇒ TS1254」，
+  把落点从 `api.d.nugo.draft.ts` / `api.d.nugo.ts` 改成 `api.nugo.draft.ts` / `api.nugo.ts`。
+  该修复落地时**只更新了 core 侧自己的钉**，漏了 3 个 nudojs 侧的旧断言 ⇒ 它们的期望仍写着旧拼写。
+  
+  按 BUG-264 的权威规格重钉（**保留旧拼写等于把 BUG-264 重新引回来**）：
+  - `cli-bug-659-from-dts-usage-order.test.ts`：`types.d.nudo.draft.ts` → `types.nugo.draft.ts`
+    （「CWD 里的同名草稿不存在」那条断言未动）。
+  - `cli-bug-944-from-dts-write-path.test.ts`（3 处）：落点、`next` 提示里的侧车名、拒绝覆盖提示里的路径
+    全部改成 `types/index.nugo.draft.ts` / `types/index.nugo.ts`（CWD 无同名草稿、既有草稿逐字不变
+    等行为断言未动）。
+  - `nudojs-bug-1147-contract-cli-text.test.ts`（3 处）：共享的 `draftPathOf` 辅助函数改成新落点
+    （拒绝提示双口子 / 人工改过永不被覆盖 / `--force` 覆盖成功三条的语义断言未动）。
+  
+  新增 `cli-bug-944-from-dts-draft-invariants.test.ts`（7 例）：钉**规则**而不是拼写 —— 落点贴着源
+  `.d.ts` 且 basename 不含 `.d.`、「next」侧车名不含 `.d.`（旧名不得出现）、目标已存在 ⇒ 拒绝覆盖
+  （exit 1 + `--force` 与 `NUDO_DRAFT_FORCE` 双口子 + 提示含 `hand-edited` + 既有草稿逐字不变 +
+  不谎报 `wrote `）、内容未变 ⇒ 不拒绝、`--force` 与 `NUDO_DRAFT_FORCE` 各自可覆盖机器原稿、
+  人工改过的草稿 `--force` 也不放行。
+  
+  **零源码改动**：实现的落点、拒绝、双口子与「人工改过不覆盖」规则本就符合 944/1147 的规格
+  （逐条手测复核过），只有断言的**拼写**过时。
+  
+  **残留**：① `--from-dts --write` 在没有 `package.json` 祖先目录时**无项目根守卫**，
+  而 `--draft --write` 在同场景要求 `NUDO_DRAFT_FORCE=1` —— 944/1147 夹具（无 `package.json`）钉住
+  前者成功 ⇒ 对齐会与被钉住的行为冲突，故未动；
+  ② `--from-dts --write --dry-run` 在既有草稿不同时**拒绝**（exit 1）而非给 diff 预览，
+  与 `--draft --write --dry-run` 不一致（未动）。
+- d4ab7fb: Fix bug-report category 13 (`nudo migrate` status / strip / verify / retire) — 20 of 21
+  bugs, plus two defects that were filed under other categories but live in `migrate.ts`.
+  
+  - BUG-234: `migrate strip` rewrites an enum's **computed member** references to
+    `E["KEY"]` (reference-position aware) instead of leaving the initializer verbatim, so
+    the stripped product no longer throws ReferenceError; string-valued computed members
+    skip the reverse mapping like tsc. A `enumComputedMemberRewritten` report flag records
+    the rewrite.
+  - BUG-050: `strip` refuses to write when a TS-only construct survives the stripper
+    (`namespace`, `import x = require(...)`) instead of writing a `.js` that fails
+    `node --check`/`nudo check` with exit 0.
+  - BUG-226: `migrate verify`'s env merge uses `mergeHarvestUnderEnv` (the `check` path), so
+    harvest-only exports are no longer dropped ⇒ `verify` no longer reports `unknown` where
+    `check` reports a precise type.
+  - BUG-064: `migrate verify` resolves project-level env against the project root and
+    file-level env against the file's directory, and surfaces env load errors as
+    `nudo:env-unresolved`.
+  - BUG-061: `migrate verify` installs the eval-fallback collector, so an internal analysis
+    failure is an error-level `nudo:internal` (same code/severity as `check`).
+  - BUG-114: `migrate verify` runs the strict, extension-aware parse first, so TS-only
+    syntax inside a `.js` file is a per-file `syntax-error` instead of `verify` saying
+    `nudoOk: true`.
+  - BUG-015: `migrate`'s `ignoreThrows` uses the same lenient parser as `check`.
+  - BUG-051 / BUG-052 / BUG-103 / BUG-117 / BUG-118: retire batch semantics — a mixed batch
+    retries the work-bearing targets and reports the skipped ones; `retire --all` shares
+    `retireScope` with the single-target path; a leftover `migrate-retiring.json` is
+    recovered; a repeat run reports `already retired` with a zero delta (the ledger no
+    longer leaks into this run's result); a multi-root failure reports every bad root.
+  - BUG-053 / BUG-112 / BUG-179: JSON/human faces — dry-run results carry `dryRun`; an
+    unknown action emits a JSON error envelope instead of empty stdout; the human face
+    prints only this run's deltas.
+  - BUG-062 / BUG-063 / BUG-065 / BUG-102 / BUG-116: retire/status plumbing — the gate
+    script test is command-text based and reports the real `from`; the workflow dedup key
+    includes the line so the rewrite count is exact; a corrupt marker fails closed and is
+    left byte-identical; `status` and `retire` share the same workflow scope; the product
+    specifier is tried verbatim before candidate rewriting.
+  - BUG-178: `migrate status` uses retire's gate/compiler split for blockers and reports a
+    `preserved` field; `next:` branches on state instead of being unconditional.
+  
+  Regression tests: `migrate-bug-{015,050,051,052,053,061,062,063,064,065,102,103,112,114,
+  116,117,118,178,179,226,234}-*` and `core-bug-234-*`.
+  
+  Known follow-up NOT covered here: BUG-017 (`--json` top-level shape) is blocked because
+  existing tests pin **both** an object envelope for failures and an array for success; a
+  single shape breaks at least two of `cli-bug-696-migrate-strip-json-envelope`,
+  `migrate-bug-cli-wiring`, `cli-bug-56-cli-face`, `cli-bug-675-migrate-retire-json-shape`,
+  `migrate-bug-1028-marker-json-same-shape`. Every failure path now uses the same object
+  envelope (including the previously empty-stdout unknown-action path).
+  
+  ## 追加：BUG-017 `migrate --json` 顶层形状恒为数组
+  
+  成功路径早已是数组，动作级失败路径却输出对象信封（`{ ok:false, action, targets,
+  error }`）⇒ 消费方 `JSON.parse(stdout).map(...)` 在失败路径抛异常。现统一为
+  **数组**：失败/正常终止信封一律包成单元素数组（`[ { ok:false, … } ]`），
+  `status` / `verify` / `strip` / `retire` 四个 action 与未知 action 分支同口径。
+  
+  已有测试更新（原先钉住对象信封）：
+  
+  - `cli-bug-696-migrate-strip-json-envelope.test.ts`（失败面读 `[0]`，并断言
+    `Array.isArray`）
+  - `migrate-bug-cli-wiring.test.ts`（Bug 1006 失败面同上）
+  - `cli-bug-56-cli-face.test.ts`（正常终止信封 `failedTargets` 同上）
+  
+  成功路径的数组形状（`cli-bug-675` / `migrate-bug-1028`）不变。
+
 ## 1.17.1
 
 ### Patch Changes
