@@ -4,7 +4,9 @@
  * owns：SurfaceReuse 复用载荷、引擎节点级 Abs 重放（replayFnAbsNodes +
  * LRU 缓存 + absNodeAtPosition——流敏感窄化为引擎求值语义）、标识符
  * 绑定面（absFromEval / absFromCaseReplay）、公共位置查询
- * （getAbsAtPosition / getTypeAtPosition 及 async 预加载变体）、
+ * （getAbsAtPosition 及 async 预加载变体；公共别名
+ * `getTypeAtPosition` 由包面 `index.ts` 以 re-export 别名保住——
+ * 此前的字面透传包装已删）、
  * 体内局部投影（执行记录插桩 runTranspiled + callTranspiledExportFull
  * → projectLocalAbs，按源指纹缓存）。
  *
@@ -270,7 +272,7 @@ export async function getTypeAtPositionAsync(
   if (envNames.length > 0) {
     await preloadPathEnvs(envNames, dirname(filePath));
   }
-  return getTypeAtPosition(filePath, source, line, column, activeCases);
+  return getAbsAtPosition(filePath, source, line, column, activeCases);
 }
 
 /** Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） */
@@ -384,18 +386,6 @@ export function getAbsAtPosition(
   }
 
   return null;
-}
-
-/** 光标处类型（Abs）。evaluator 节点表优先；用例函数体走 Abs 重放。 */
-export function getTypeAtPosition(
-  filePath: string,
-  source: string,
-  line: number,
-  column: number,
-  activeCases?: Map<string, number>,
-  reuse?: SurfaceReuse,
-): Abs | null {
-  return getAbsAtPosition(filePath, source, line, column, activeCases, reuse);
 }
 
 /**

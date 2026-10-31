@@ -14,7 +14,7 @@ import {
 } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import {
-  getTypeAtPosition,
+  getAbsAtPosition,
   getHoverAtPosition,
   getCompletionsAtPosition,
 } from "./lsp-surface.ts";
@@ -127,10 +127,7 @@ export function attachHover(deps: IdeDeps): void {
       // （`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局）——
       // 此前只有 agent 面建了 inject，协议 hover 不传 ⇒ 覆盖表缺席 ⇒
       // 推导链塌缩成 `unknown`（= 推断失败）⇒ IDE 显示 unknown、CLI 精确。
-      const inject = buildLspInjection(filePath, source, {
-        loadModule: activeLoadModule,
-        ...(analysisModules ? { modules: analysisModules } : {}),
-      });
+      const inject = buildLspInjection(filePath, source);
       // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
       // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
@@ -531,10 +528,7 @@ export function attachInlayHint(deps: IdeDeps): void {
       const analysisModules = evalAnalysisModules(filePath, source);
       // BUG-024：inlayHint 与 hover 同源装配注入包（缺 inject ⇒ 被 mock /
       // replace 的推导链塌缩 unknown ⇒ IDE 显示 unknown）
-      const inject = buildLspInjection(filePath, source, {
-        loadModule: activeLoadModule,
-        ...(analysisModules ? { modules: analysisModules } : {}),
-      });
+      const inject = buildLspInjection(filePath, source);
       try {
         for (const abs of collectAbsInlays(source, {
           loadModule: activeLoadModule,
@@ -660,7 +654,7 @@ export function attachSignatureHelp(deps: IdeDeps): void {
       if (!callInfo) return null;
 
       // 被调者解析（4 形态，同一份源码给同一份签名）：
-      //  ① 裸标识符 → 同源绑定面（getTypeAtPosition：模块级绑定 / import 本地名）
+      //  ① 裸标识符 → 同源绑定面（getAbsAtPosition：模块级绑定 / import 本地名）
       //  ② 成员表达式 `obj.method(…)` → 接收者 Abs 沿形状**逐段下钻**（Bug 720）
       //  ③ ①② miss → **AST 定位回落** generalizeFromAst（与 hover 面同源）：
       //     `export default function defFn`（Bug 985）与函数体内的局部 callee
@@ -681,7 +675,7 @@ export function attachSignatureHelp(deps: IdeDeps): void {
           if (help) return help;
         }
       } else {
-        const fnAbs = getTypeAtPosition(
+        const fnAbs = getAbsAtPosition(
           filePath,
           source,
           callInfo.calleeLine,
@@ -728,7 +722,7 @@ function resolveMemberCalleeAbs(
   reuse: { result: ReturnType<typeof getCachedOrAnalyze>; ast: File },
   path: { segments: string[]; receiverLine: number; receiverCol: number },
 ): Abs | null {
-  let cur = getTypeAtPosition(
+  let cur = getAbsAtPosition(
     filePath,
     source,
     path.receiverLine,

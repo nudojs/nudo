@@ -6,10 +6,10 @@ import {
   absToTSType,
   absToSchemaSource,
   generateDts,
-  generateGuardFunction,
+  generateGuardFunctionFromAbs,
 } from "@nudojs/service/emit";
 import {
-  getTypeAtPosition,
+  getAbsAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
 } from "../lsp-surface.ts";
@@ -122,14 +122,14 @@ function foo(x) {
   return x + 1;
 }
 `;
-      const tv = getTypeAtPosition("/test/simple.js", simpleCode, 3, 10);
+      const tv = getAbsAtPosition("/test/simple.js", simpleCode, 3, 10);
       // May return null if position is not in the right place, but should not throw
       expect(true).toBe(true);
     });
 
     it("returns null for non-nudo files", () => {
       const plainCode = `function foo(x) { return x; }`;
-      const tv = getTypeAtPosition("/test/plain.js", plainCode, 1, 22);
+      const tv = getAbsAtPosition("/test/plain.js", plainCode, 1, 22);
       expect(tv).toBeNull();
     });
   });
@@ -555,10 +555,10 @@ describe("LSP Integration - Type Generation", () => {
 
   it("generates guard functions for inferred types", () => {
     // Verify the function exists and can be called
-    expect(typeof generateGuardFunction).toBe("function");
+    expect(typeof generateGuardFunctionFromAbs).toBe("function");
     // Test with a mock literal Abs
     const mockLiteral = numLit(42);
-    const guard = generateGuardFunction("is42", mockLiteral);
+    const guard = generateGuardFunctionFromAbs("is42", mockLiteral);
     expect(guard).toContain("function is42");
     expect(guard).toContain("return");
     expect(guard).toContain("42");

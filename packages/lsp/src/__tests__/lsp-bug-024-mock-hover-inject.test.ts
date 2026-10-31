@@ -66,7 +66,7 @@ describe("Bug 024 — 协议面 hover 必须带注入包（@nudo:mock 覆盖表�
       expect(withoutInject).toBe("getUser() => unknown  throws ReferenceError");
 
       const withInject = getHoverAtPosition(file, SRC, 4, 16, undefined, {
-        inject: buildLspInjection(file, SRC, {}),
+        inject: buildLspInjection(file, SRC),
       })?.signature;
       expect(withInject).toBe(PRECISE_SIG);
     } finally {

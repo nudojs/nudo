@@ -7,7 +7,6 @@
  */
 export {
   type CaseInfo,
-  getTypeAtPosition,
   getTypeAtPositionAsync,
   getAbsAtPosition,
   getAbsAtPositionAsync,
@@ -16,6 +15,10 @@ export {
   getCompletionsAtPosition,
   getCasesForFile,
 } from "./lsp-surface.ts";
+
+// 公共名保留（双入口合一）：replay.ts 的 `getTypeAtPosition` 字面透传包装
+// 已删——它就是 `getAbsAtPosition`，这里以别名保住既有公共 API 名。
+export { getAbsAtPosition as getTypeAtPosition } from "./lsp-surface.ts";
 
 export {
   buildSemanticTokens,

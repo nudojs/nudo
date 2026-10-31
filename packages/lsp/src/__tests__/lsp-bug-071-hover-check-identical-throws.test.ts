@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getHoverAtPosition } from "../lsp-surface/hover.ts";
-import { lspLoadModule } from "../validation.ts";
+import { defaultLoadModule } from "@nudojs/service";
 import { withLspServer } from "./helpers.ts";
 
 const JS_SRC = ["export function up(s) {", "  return s.toUpperCase();", "}", ""].join("\n");
@@ -65,9 +65,9 @@ describe("Bug 071 — 侧车契约收窄形参时 hover 不得多报 throws（ch
       writeFileSync(join(dir, "up.nudo.js"), SIDECAR_SRC, "utf-8");
       // line 是 **1-based**（= LSP position.line + 1）；column 0-based = 16
       // 侧车契约靠 `loadModule` 装载（协议面由 server 传 `activeLoadModule`，
-      // 缺省回落 `lspLoadModule` 读盘）——纯面显式给同一读盘装载器
+      // 缺省回落 service 的 `defaultLoadModule` 读盘）——纯面显式给同一读盘装载器
       const hover = getHoverAtPosition(jsFile, JS_SRC, 1, 16, undefined, {
-        loadModule: lspLoadModule,
+        loadModule: defaultLoadModule,
       });
       expect(hover?.signature).toBe(CHECK_SIG);
       expect(hover?.signature ?? "").not.toContain("throws");

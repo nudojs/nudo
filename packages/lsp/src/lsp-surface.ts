@@ -15,7 +15,6 @@
 export {
   getAbsAtPosition,
   getAbsAtPositionAsync,
-  getTypeAtPosition,
   getTypeAtPositionAsync,
   type SurfaceReuse,
 } from "./lsp-surface/replay.ts";

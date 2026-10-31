@@ -651,7 +651,7 @@ function depsFingerprint(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): string {
   try {
-    const fp = loadModuleDepsFingerprint(source, loadModule ?? lspLoadModule, filePath);
+    const fp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
     // truncated/readerr（#135）：读错误轮键不可信 → 唯一指纹（永不命中）
     if (fp.truncated || fp.readError) {
       return `${fp.truncated ? "trunc" : "readerr"}:${fp.paths.length}#${truncDepsSeq++}`;
@@ -900,11 +900,6 @@ function toLspDiagnosticWithLengths(
   return diag;
 }
 
-/** CLI 与 LSP 共用的相对 require 解析（service defaultLoadModule） */
-export function lspLoadModule(spec: string, fromFile: string): string | undefined {
-  return defaultLoadModule(spec, fromFile);
-}
-
 /**
  * A4：侧车未保存 buffer 优先。
  * openText(filePath) 返回编辑器内未落盘文本；命中则覆盖磁盘内容。
@@ -1094,12 +1089,9 @@ export function checkToLspDiagnostics(
     // 装配点，agent 工具面复用同一份）。此前本面只传 `modules` ⇒
     // `@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局**全部缺席**
     // ⇒ 被 mock 掉的依赖退化成未知全局 ⇒ 报 `nudo:entry-may-throw`（假红）。
-    const inject = buildLspInjection(filePath, source, {
-      loadModule: loadModule ?? lspLoadModule,
-      modules: analysisModules,
-    });
+    const inject = buildLspInjection(filePath, source);
     const report = checkSource(filePath, source, pTrue, {
-      loadModule: loadModule ?? lspLoadModule,
+      loadModule: loadModule ?? defaultLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),

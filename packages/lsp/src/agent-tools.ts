@@ -46,6 +46,8 @@ import { configIgnoreThrows } from "./gate-config.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
+  buildEvalInjection,
+  defaultLoadModule,
   findProjectConfig,
   interfaceConfig,
   checkConfig,
@@ -68,7 +70,6 @@ import {
   programBody,
   getClassMembers,
   classMemberKeyName,
-  extractDirectives,
 } from "@nudojs/parser";
 import {
   abs,
@@ -90,28 +91,22 @@ import {
   takeInterfaceDiagsSince,
   extractFileEnvNames,
   type Abs,
-  type AbsModuleExports,
   type CheckIssue,
   type InterfaceSource,
   type RunTranspiledOptions,
 } from "@nudojs/core";
 import type { CheckJson, CheckJsonMulti } from "@nudojs/core";
-import { collectAbsInlays, DIAG } from "@nudojs/core/internal";
-import { lspLoadModule, evalAnalysisModules } from "./validation.ts";
+import {
+  CHECK_FACE_DIAG_CODES,
+  collectAbsInlays,
+  DIAG,
+} from "@nudojs/core/internal";
+import { evalAnalysisModules } from "./validation.ts";
 import { exportedNamesOfLocal } from "./symbols.ts";
 import {
   injectBindings,
   typeExprToDirective,
   type TypeBinding,
-} from "@nudojs/service";
-import {
-  applyMockModuleDirectivesFromSource,
-  collectEnvGlobals,
-  collectEnvModules,
-  collectEvalReplacements,
-  mergeHarvestUnderEnv,
-  mockDirectivesToAbsSeeds,
-  mockSeedsToAbsMocks,
 } from "@nudojs/service";
 // env 说明符绝对化（项目级按**项目根**、文件级按**文件目录**）——与 CLI
 // `assembleEnvs` 同款；service 侧唯一事实源。
@@ -134,7 +129,7 @@ export type AgentToolDeps = {
   workspaceRoots?: string[];
   /**
    * E5：与 validate/hover 同源的侧车装载（server 注入 buffer-aware loadModule）。
-   * 缺省回落 lspLoadModule 读盘。
+   * 缺省回落 defaultLoadModule（service）读盘。
    */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
@@ -406,11 +401,21 @@ export type CheckToolParams = {
  * 且 hover / inlayHint 签名面显示 `unknown`（Nudo 词汇里 = 「推断失败」）
  * 而 CLI 显示 `number`（Bug 786）。
  *
- * **落点约束**：CLI 是产品包、LSP 是库 ⇒ **不许从 lsp 反向 import nudojs**。
- * 本函数用 service / core 已导出的装配件（`collectEvalReplacements` /
- * `mockDirectivesToAbsSeeds` / `mockSeedsToAbsMocks` / `collectEnvGlobals` /
- * `collectEnvModules` / `applyMockModuleDirectivesFromSource`）复刻
- * `buildCheckInjection` 的口径 ⇒ **零新增 core / service 导出**。
+ * **装配主体已单源化**：`@nudojs/service` 的 `buildEvalInjection`
+ * （`service/src/inject-assembly.ts`，与 CLI check / migrate / health 同一
+ * 实现）——模块图（`evalAbsModuleGraph`，内容缓存 ⇒ 同文件重复装配廉价）
+ * + env modules 并入（**必须走 `mergeHarvestUnderEnv`**，BUG-227：手工 env
+ * 与 harvest 同名模块时 env 赢同名槽、harvest 填空位；对象展开会整段丢
+ * harvest 的非冲突导出 ⇒ IDE 签名塌 `unknown` + 多报
+ * `nudo:unknown-inference`，而 CLI 显示精确类型）+ `@nudo:mock-module`
+ * 覆盖 + `@nudo:mock` seeds + env 全局 + `@nudo:as` / `@nudo:replace`。
+ * 本函数只保留 LSP 面特有的部分：env 名单分层组装（项目级按项目根 /
+ * 文件级按文件目录）与宽松解析策略（parser 的 `parse`）。D1 指令文法
+ * 诊断 LSP 面原本就丢（各采集步骤均不带 diags 袋）⇒ 传 `[]` 保持现状
+ * （不扩面）。装配失败 throw ⇒ 各消费面（本文件 checkTool / hoverTool、
+ * server-ide hover / inlayHint、validation 的 checkToLspDiagnostics）自带
+ * catch 降级——语法错文件本就会在下游 parse 处进同一 catch，门禁面的
+ * 语法错仍由 `checkSource` 自己的抛错通道上屏。
  *
  * **返回语义**：core 的 `inject` 包（`RunTranspiledOptions`）——
  * - `modules`：跨模块导出表 + env 模块 + `@nudo:mock-module` 覆盖；
@@ -430,17 +435,7 @@ export type CheckToolParams = {
 export function buildLspInjection(
   filePath: string,
   source: string,
-  opts?: {
-    /** buffer-aware 侧车/依赖装载（LSP 注入；缺省 service 默认装载器） */
-    loadModule?: (spec: string, fromFile: string) => string | undefined;
-    /**
-     * 预解析的 eval 模块图（调用方已算好时传入，避免重复求值）。
-     * 缺省时按 LSP 既有口径现场求值（`evalAnalysisModules`：检出环 ⇒ 不注入图）。
-     */
-    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
-  },
 ): RunTranspiledOptions {
-  const loadModule = opts?.loadModule;
   // env 名单：文件级 `@nudo:env`（文本扫描，不 parse ⇒ 语法错文件也不炸）
   // ∪ 项目级 package.json#nudo.env —— 与 CLI `allEnvNames` 同口径。
   //
@@ -461,88 +456,31 @@ export function buildLspInjection(
   const envNames = [
     ...new Set([...projectEnvNames, ...extractFileEnvNames(source)]),
   ];
-  const envGlobals = collectEnvGlobals(envNames);
-  const envMods = collectEnvModules(envNames);
-  // 模块图：调用方给了就复用（同一文件一次求值），否则现场求值
-  const baseModules =
-    opts?.modules ??
-    evalAnalysisModules(filePath, source) ??
-    undefined;
-  // mock-module 覆盖的基底是**窄型**导出表（service 的
-  // applyMockModuleDirectivesFromSource 签名）；LSP 侧的图类型更宽
-  // （`AbsModuleExports | Record<string, unknown>`），运行期取值仍是
-  // AbsModuleExports ⇒ 窄化只发生在类型层。
-  //
-  // BUG-227：**必须走 `mergeHarvestUnderEnv`**（与 CLI `buildCheckInjection`
-  // / service 求值面同口径）——旧实现用对象展开（`{ ...base, ...envMods }`）
-  // ⇒ 手工 env 与 harvest **同名模块**时，harvest 的非冲突导出被整体丢弃
-  // ⇒ IDE 侧签名塌缩成 `unknown` + 多报 `nudo:unknown-inference`
-  // （Nudo 词汇里 unknown = 推断失败），而 CLI 显示精确类型。
-  let mergedMods: Record<string, AbsModuleExports> = mergeHarvestUnderEnv(
-    (baseModules ?? {}) as Record<string, AbsModuleExports>,
-    envMods,
+  // 装配主体：service 的 buildEvalInjection（单一实现——模块图 / env 并入
+  // （BUG-227）/ mock-module 覆盖 / mock seeds / env 全局 / as / replace 全在
+  // 里面）。解析策略 = parser 的宽松 `parse`（与 migrate verify / health 同款）。
+  // D1 指令文法诊断传 `[]`：本面原本就丢，保持现状（见函数头注）。
+  const { inject } = buildEvalInjection(
+    filePath,
+    source,
+    envNames,
+    [],
+    (_filePath, src) => parse(src),
   );
-  // `@nudo:mock-module`：覆盖 import 说明符导出（全量/局部）
-  mergedMods = applyMockModuleDirectivesFromSource(source, mergedMods, {
-    fromFile: filePath,
-  }).modules;
-  // `@nudo:mock`：函数级 mock 覆盖表（含同函数作用域表）
-  // 语法错文件 ⇒ parse 抛 ⇒ mock 表留空（**不**让装配器把整个工具打挂：
-  // hover 面对语法错文件是「无 hover」而不是「工具报错」；门禁面仍由
-  // checkSource 自己抛语法错 ⇒ 错误照常上屏）。
-  let mocks: Record<string, Abs> = {};
-  try {
-    const ast = parse(source);
-    mocks = mockSeedsToAbsMocks(
-      mockDirectivesToAbsSeeds(extractDirectives(ast), {
-        fromFile: filePath,
-        ...(loadModule ? { loadModule } : {}),
-      }),
-    );
-  } catch {
-    mocks = {};
-  }
-  // 行内指令：`@nudo:replace` / `@nudo:as` 的覆盖表
-  const reps = collectEvalReplacements(source);
-  return {
-    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
+  return inject;
 }
 
 /**
- * 分析器通道白名单（`check` 报告面承诺可见的诊断码集合）。
- *
- * ⚠ **与 CLI `check-json-map.ts` 的 `CHECK_FACE_DIAG_CODES` 同一份口径**：
- * LSP 不反向依赖产品包 `nudojs`（落点约束），核心面也没有该常量 ⇒ 这里
- * 按码表**显式**重列（`DIAG` 仍是唯一字符串真值源 ⇒ 无拼写漂移）。
+ * 分析器通道白名单（`check` 报告面承诺可见的诊断码集合）——单一真源
+ * `@nudojs/core/internal` 的 `CHECK_FACE_DIAG_CODES`（与 CLI
+ * `check-json-map.ts` 同表：此前两包各手抄一份，core 新增可发射码后漏抄
+ * ⇒ agent 面静默吞诊断，Bug 632 / 1038 都栽在这张表上）。
  *
  * 为什么需要这条通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断
  * 由**分析器**（`analyzeFile*`）产出，`checkSource` 永远看不到 ⇒ agent 面
  * 只并补充通道时会**假绿**（「nudo check OK」），而 CLI 与 LSP 编辑器面
  * 都判红。
  */
-const CHECK_FACE_DIAG_CODES: readonly string[] = [
-  // interface 家族
-  DIAG.interfaceDomainExceeds,
-  DIAG.interfaceEntryOnly,
-  // 模块装载问题族
-  DIAG.moduleMissing,
-  DIAG.missingExport,
-  DIAG.moduleCycle,
-  DIAG.moduleDepth,
-  DIAG.jsonInvalid,
-  DIAG.exportsUnresolved,
-  // env 家族
-  DIAG.envHarvestConflict,
-];
 
 /**
  * 分析器诊断 → `CheckIssue`（check 面消费分析器诊断的唯一入口）。
@@ -553,7 +491,7 @@ const CHECK_FACE_DIAG_CODES: readonly string[] = [
 function analysisChannelIssues(
   diagnostics: readonly Diagnostic[],
 ): CheckIssue[] {
-  const allowed = new Set(CHECK_FACE_DIAG_CODES);
+  const allowed: ReadonlySet<string> = new Set(CHECK_FACE_DIAG_CODES);
   return diagnostics
     .filter((d): d is Diagnostic & { code: string } =>
       d.code !== undefined && allowed.has(d.code),
@@ -631,15 +569,12 @@ export function checkTool(
     // 调用塌缩 unknown → nudo:unproven-return 假红（CLI/LSP
     // 同文件干净，agent 面分叉——E5 同源契约）
     const analysisModules = evalAnalysisModules(filePath, source);
-    const loadModule = params.loadModule ?? deps.loadModule ?? lspLoadModule;
+    const loadModule = params.loadModule ?? deps.loadModule ?? defaultLoadModule;
     // 注入装配（Bug 785）：与 CLI `buildCheckInjection` 同源 —— 行内指令
     // （`@nudo:as` / `@nudo:replace`）+ `@nudo:mock` + env 全局必须进包，
     // 否则 IDE 与 CLI 对同一文件给出**相反**的门禁结论（IDE 假红：
     // 用户声明过 `raw` 是 number，IDE 仍按 string 判 `raw.toFixed` 不存在）。
-    const inject = buildLspInjection(filePath, source, {
-      loadModule,
-      ...(analysisModules ? { modules: analysisModules } : {}),
-    });
+    const inject = buildLspInjection(filePath, source);
     const report = checkSource(filePath, source, pTrue, {
       loadModule,
       fromFile: filePath,
@@ -812,7 +747,7 @@ export function hoverTool(
     const { line, column } = position;
     const filePath = normalizeFilePath(params.file);
     const source = params.source ?? readSource(filePath, deps);
-    const loadModule = params.loadModule ?? deps.loadModule ?? lspLoadModule;
+    const loadModule = params.loadModule ?? deps.loadModule ?? defaultLoadModule;
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     // 模块图（与 LSP hover 同源）：缺图时跨模块调用塌缩
     // unknown（intension `(_p0: A1) => unknown`——E5 同源契约）
@@ -821,10 +756,7 @@ export function hoverTool(
     // 塌缩 unknown（Nudo 词汇里 = 「推断失败」）而 CLI 面显示 number。
     // 传递协议：inject 随 opts 进 hover 的 generalizeFromAst（hover.ts 由
     // 片 C 接线：`HoverInterfaceOpts.inject`），随 opts 进 collectAbsInlays。
-    const inject = buildLspInjection(filePath, source, {
-      loadModule,
-      ...(analysisModules ? { modules: analysisModules } : {}),
-    });
+    const inject = buildLspInjection(filePath, source);
     const hoverOpts: HoverInterfaceOpts & { inject?: RunTranspiledOptions } = {
       loadModule,
       ...(autoBind === false ? { autoBind: false } : {}),
@@ -946,7 +878,7 @@ export async function testTool(
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
       "all",
     );
     let json = serializeCaseJson(result, filePath);
@@ -1160,7 +1092,7 @@ export async function whatIf(
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
     );
     const binding = result.bindings.get(target);
     // 无损 Abs
@@ -1280,7 +1212,7 @@ export async function suggestCase(
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
       "all",
     );
     const fn = result.functions.find((f) => f.name === params.functionName);
@@ -1372,7 +1304,7 @@ export async function trace(
       source,
       undefined,
       undefined,
-      params.loadModule ?? deps.loadModule ?? lspLoadModule,
+      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
       "all",
     );
     // BUG-146：跨模块观察镜（`call@…` 挂在**调用方**文件的调用点行）携带的
@@ -1502,7 +1434,7 @@ export type ContractToolParams = {
    * 采集到的顶层调用记录参与契约求解（与 CLI `nudo contract --from` 同口径）。
    */
   from?: string[];
-  /** .nudo.js 侧车装载（测试注入）；缺省 lspLoadModule 真实读盘 */
+  /** .nudo.js 侧车装载（测试注入）；缺省 defaultLoadModule（service）真实读盘 */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   /**
    * 测试注入用。客户端不能借此把项目 `autoBind: false` 打开——有效值与
@@ -1598,7 +1530,7 @@ export async function contractTool(
     const open = _deps.getOpenText?.(filePath);
     const source = params.source ?? open?.text;
     const entries = await interfaceSurface(filePath, {
-      loadModule: params.loadModule ?? _deps.loadModule ?? lspLoadModule,
+      loadModule: params.loadModule ?? _deps.loadModule ?? defaultLoadModule,
       autoBind,
       ...(source !== undefined ? { source } : {}),
       ...(from.records ? { records: from.records } : {}),
@@ -1842,12 +1774,39 @@ function writeSidecarAtomic(sidecarPath: string, content: string): void {
   }
 }
 
-/** 侧车文本（不存在 ⇒ 空串）——**净效果**判定的唯一依据：写前 vs 写后。 */
+/**
+ * 侧车读取失败的结构化信封（`pathErrors` 面；Bug 956/630 同族——原始
+ * errno 不进产品面）。由 {@link readSidecarText} 对非 ENOENT 读错误抛出，
+ * `contractEmitTool` 的 catch 折成 `fix:` 提示面。
+ */
+class SidecarReadError extends Error {
+  readonly pathError: PathError;
+  constructor(pathError: PathError) {
+    super(pathError.message);
+    this.pathError = pathError;
+  }
+}
+
+/** 侧车文本（不存在 ⇒ 空串）——**净效果**判定的唯一依据：写前 vs 写后。
+ *
+ * 读错误不得折成「无侧车」：EACCES / EIO 等被吞成 `""` ⇒ 净效果判定把
+ * 「读不了」当「不存在」⇒ 首次固化虚报 written、diff 基线错。ENOENT
+ * 例外——侧车不存在是首固化的正常态 ⇒ 空串；其它 errno ⇒ 结构化
+ * `nudo:path-io` 上抛（Bug 956/630 先例：同文件 `checkTool` / `testTool`
+ * 的路径错误通道同形态）。 */
 function readSidecarText(sidecarPath: string): string {
   try {
     return readFileSync(sidecarPath, "utf-8");
-  } catch {
-    return "";
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return "";
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new SidecarReadError({
+      path: sidecarPath,
+      code: DIAG.pathIo,
+      message: `Cannot read sidecar ${sidecarPath}: ${reason}`,
+      suggestion:
+        "check the sidecar path exists and is readable (file permissions / IO); fix access, then re-run",
+    });
   }
 }
 
@@ -2059,6 +2018,12 @@ export async function contractEmitTool(
       ].join("\n"),
     );
   } catch (err) {
+    // 侧车读取失败（readSidecarText）走结构化 pathErrors 面（Bug 956/630
+    // 同族）——一行原因 + `fix:` 提示，与 checkTool / testTool 的路径错误
+    // 文本面同口径；其余异常走 analysisError（脱敏）。
+    if (err instanceof SidecarReadError) {
+      return toolError(formatPathErrorText([err.pathError]));
+    }
     return analysisError(err, deps);
   }
 }

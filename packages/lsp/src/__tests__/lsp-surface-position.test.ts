@@ -2,18 +2,18 @@
  * getTypeAtPosition / getCompletionsAtPosition（自 analyzer.test.ts 拆出）。
  */
 import { describe, it, expect } from "vitest";
-import { getTypeAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
+import { getAbsAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
 
 describe("getTypeAtPosition", () => {
   it("returns type for identifier at position", () => {
     const source = `const x = 42;\nconst y = x;\n`;
-    const tv = getTypeAtPosition("/test/pos.js", source, 1, 6);
+    const tv = getAbsAtPosition("/test/pos.js", source, 1, 6);
     expect(tv).not.toBeNull();
   });
 
   it("returns null for empty position", () => {
     const source = `\n\n\n`;
-    const tv = getTypeAtPosition("/test/empty.js", source, 2, 0);
+    const tv = getAbsAtPosition("/test/empty.js", source, 2, 0);
     expect(tv).toBeNull();
   });
 });

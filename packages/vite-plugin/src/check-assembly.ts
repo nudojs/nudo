@@ -53,8 +53,9 @@
  *   `validation.ts` / `agent-tools.ts` 的 `ignoreThrows` 走
  *   `lsp/src/gate-config.ts` 的 `configIgnoreThrows`（裸字符串 / 数组内逗号
  *   都认），而 `checkConfig` 的严格 `string[]` 过滤会静默丢成空表。故本层
- *   只把 `entryThrows` 交给 `checkConfig`，`ignoreThrows` 走同语义的
- *   `parseIgnoreThrows`（见其注释）⇒ 插件面才真正与 CLI / IDE 判同。
+ *   只把 `entryThrows` 交给 `checkConfig`，`ignoreThrows` 走 service 的
+ *   `configIgnoreThrows`（BUG-110 单一实现，裸字符串 / 数组内逗号都认）
+ *   ⇒ 插件面才真正与 CLI / IDE 判同。
  * - **898 / 983（**已被族 18 的 `buildViteCheckInjection` 闭合**）**：
  *   Abs 模块图（`evalAbsModuleGraph`）早就在 `buildViteCheckInjection` 里
  *   求值，并以 `modules` + `inject` **同时**传给 `checkSource`
@@ -82,23 +83,20 @@ import {
   findProjectConfig,
   interfaceConfig,
   checkConfig,
+  configIgnoreThrows,
   collectSkipReturns,
   collectEnvNames,
-  collectEnvGlobals,
-  collectEnvModules,
-  collectEvalReplacements,
-  evalAbsModuleGraph,
-  applyMockModuleDirectivesFromSource,
-  mergeHarvestUnderEnv,
-  mockSeedsForSource,
+  buildEvalInjection,
   type Diagnostic,
 } from "@nudojs/service";
-import { dirname, resolve as resolvePath } from "node:path";
+// env 说明符绝对化（项目级按**项目根**、文件级按**文件目录**）——与 CLI
+// `assembleEnvs` / LSP / health 同款；service 侧唯一事实源。
+import { absolutizeEnvSpec } from "@nudojs/service/evaluator";
+import { dirname } from "node:path";
 import {
   checkSource,
+  parseSource,
   pTrue,
-  type Abs,
-  type AbsModuleExports,
   type RunTranspiledOptions,
 } from "@nudojs/core";
 
@@ -128,11 +126,10 @@ export type CheckProjection = { diagnostics: Diagnostic[]; failure?: string };
  * 本插件的 check 面不并入那条（构建期的加载失败由分析器通道
  * `analyzeFileAsync` 的 diagnostics 负责）。
  *
- * 装配失败（语法错文件 / 模块图不可用）**降级为空注入**——不把构建打挂
- * （诊断面仍由 `checkSource` 自己的报错通道出）。
+ * 装配失败（语法错文件 / 模块图不可用）**上抛**——由 `assembleCheckOutcome`
+ * 的 try/catch 折成 `failure` 可见降级（BUG-023），诊断面不吞成空注入。
  */
 function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions {
-  const inject: RunTranspiledOptions = {};
   // env 名单：文件级 `@nudo:env` ∪ 项目级 `package.json#nudo.env`。
   //
   // **项目级说明符先按项目根绝对化**（BUG-221）：service 的 env 解析基准是
@@ -142,106 +139,46 @@ function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions
   // `"./env/web.ts"` 被解析成 `<fileDir>/env/web.ts` ⇒ 项目级全局丢失
   // ⇒ 门禁面报 `never` / `ReferenceError`，而**同一文件**的 evaluator 面仍是
   // `99`（env 预载走绝对化后的名单）⇒ 同一个插件的两个面互相打脸。
-  // 口径与 CLI `assembleEnvs`（`packages/nudojs/src/commands/check.ts`：
-  // 项目级先按项目根绝对化、文件级按文件目录）逐项一致。
+  // 口径与 CLI `assembleEnvs`（项目级先按项目根绝对化、文件级按文件目录）
+  // 逐项一致；绝对化本身走 `absolutizeEnvSpec`（service/evaluator 单一
+  // 事实源，与 CLI / LSP / health 同一实现），文件级保持相对。
   let envNames: string[] = [];
-  let envGlobals: Record<string, Abs> = {};
-  let envMods: Record<string, AbsModuleExports> = {};
   try {
     const fileEnvBaseDir = dirname(id);
     const proj = findProjectConfig(fileEnvBaseDir);
     const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
     const rawProjectEnv = proj?.config.env;
-    const projectEnvNames = (Array.isArray(rawProjectEnv) ? rawProjectEnv : []).filter(
-      (n): n is string => typeof n === "string",
-    );
-    const projectEnvSpec = projectEnvNames.map((name) =>
-      name.startsWith("./") || name.startsWith("../")
-        ? resolvePath(projectEnvBaseDir, name)
-        : name,
+    const projectEnvSpec = absolutizeEnvSpec(
+      Array.isArray(rawProjectEnv) ? rawProjectEnv : [],
+      projectEnvBaseDir,
     );
     envNames = [...new Set([...projectEnvSpec, ...collectEnvNames(id, code, false)])];
-    envGlobals = collectEnvGlobals(envNames);
-    envMods = collectEnvModules(envNames);
   } catch {
     envNames = [];
-    envGlobals = {};
-    envMods = {};
   }
-  // 模块图（跨模块 import/require）+ env 模块并入 + `@nudo:mock-module` 覆盖
-  let modules: Record<string, AbsModuleExports> = {};
-  try {
-    const graph = evalAbsModuleGraph(code, id);
-    // env 模块（fs/path/node:*…）并入模块图：**必须走 `mergeHarvestUnderEnv`**
-    // （与 CLI / test / service 面同口径）——手工 env 与 harvest **同名模块**时，
-    // env 赢同名槽、harvest 填 env 的**空位**（B8）。
-    // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下 harvest 的
-    // **非冲突导出被整体丢弃** ⇒ 插件面绑定缺失 ⇒ 误报 `nudo:unknown-inference`，
-    // 而 CLI 面同文件无诊断、签名精确（Bug 1037 / BUG-111）。
-    modules = mergeHarvestUnderEnv(graph.modules, envMods);
-    modules = applyMockModuleDirectivesFromSource(code, modules, {
-      fromFile: id,
-    }).modules;
-  } catch {
-    modules = {};
-  }
-  // `@nudo:mock`：函数级 mock 覆盖表（语法错文件 ⇒ 空表，不打挂构建）
-  let mocks: Record<string, never> = {};
-  try {
-    mocks = mockSeedsForSource(code, { fromFile: id }) as Record<string, never>;
-  } catch {
-    mocks = {};
-  }
-  // 行内指令：`@nudo:replace` / `@nudo:as` 的覆盖表
-  let reps: ReturnType<typeof collectEvalReplacements> = {
-    targets: [],
-    values: {},
-    asTargets: [],
-    asValues: {},
-  };
-  try {
-    reps = collectEvalReplacements(code);
-  } catch {
-    reps = { targets: [], values: {}, asTargets: [], asValues: {} };
-  }
-  return {
-    ...(Object.keys(modules).length > 0 ? { modules } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks: mocks as never } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
-}
-
-/**
- * `package.json#nudo.check.ignoreThrows` 的**配置面解析**（BUG-110）。
- *
- * 语义真源 = CLI 的 `parseIgnoreThrows`
- * （`packages/nudojs/src/check-gate-config.ts`）；LSP 的
- * `packages/lsp/src/gate-config.ts` 是它的同语义镜像。service 的
- * `checkConfig` 只认**严格 `string[]`**（`Array.isArray` + 逐项
- * `typeof === "string"`）⇒ 裸字符串 `"TypeError"` 被**静默丢成空表**、
- * `["TypeError,RangeError"]` 不被切分（永远匹配不上任何 throw 类）
- * ⇒ 插件面该 throw 类照报（构建红），而 CLI / IDE 认这两种写法（绿）
- * ⇒ **同一份 `package.json` 三面三口径**，`failOnError: true` 时直接中断构建。
- *
- * 本插件此前是唯一还走 `checkConfig` 严格解析的面（LSP 早已改成自己的
- * 宽松解析器）⇒ 这里是那第三份**同语义**实现，改动时三处必须同步。
- *
- * 语义：裸字符串 / 字符串数组都接受；数组元素内部**也**按逗号切分；
- * trim 后丢空串；非字符串元素忽略；全空 ⇒ 空表（=「没设」）。
- */
-function parseIgnoreThrows(raw: unknown): string[] {
-  if (raw === undefined || raw === null) return [];
-  const parts = Array.isArray(raw) ? raw : [raw];
-  return parts
-    .flatMap((s) => (typeof s === "string" ? s.split(",") : []))
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  // 装配主体：service 的 `buildEvalInjection`（单一实现：模块图
+  // （`evalAbsModuleGraph`）+ env modules 并入（**`mergeHarvestUnderEnv`**，
+  // Bug 1037 / BUG-111——手工对象展开会丢 harvest 的非冲突导出）
+  // + `@nudo:mock-module` 覆盖 + `@nudo:mock` seeds + env 全局
+  // + `@nudo:as` / `@nudo:replace`）。解析策略 = core 的 `parseSource`
+  // （parser `parse` 的委托实现，本包不依赖 parser；宽松口径与 LSP /
+  // migrate verify / health 同款）。
+  //
+  // 装配失败 throw ⇒ 由 `assembleCheckOutcome` 的 try/catch 唯一收口折成
+  // `failure`（BUG-023 可见降级）。此前逐段 try/catch 折「空注入」的兜底
+  // 不再保留：会崩的场（语法错源码）本就会在 `checkSource` 处进同一收口，
+  // 语义等价且失败原因更早暴露；依赖模块的装载失败在图内 fail-closed
+  // 成 issue，不会到这里。
+  // D1 指令文法诊断传 `[]`：本面原本就丢（`collectEvalReplacements` 不带
+  // diags 袋），保持现状（不扩面）。
+  const { inject } = buildEvalInjection(
+    id,
+    code,
+    envNames,
+    [],
+    (_filePath, src) => parseSource(src),
+  );
+  return inject;
 }
 
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
@@ -260,12 +197,10 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
     // L2 门禁档位：`entryThrows` 走 service 的 `checkConfig`（三面同源）；
     // `ignoreThrows` **不走它**——`checkConfig` 的严格 `string[]` 过滤会把
     // 裸字符串 / 逗号写法静默丢成空表 ⇒ 插件面与 CLI / IDE 判不同
-    // （BUG-110，见 `parseIgnoreThrows` 的注释）。CLI 的旗标层覆盖不在
-    // 插件面（插件没有 CLI 旗标）。
+    // （BUG-110）。统一走 service 的 `configIgnoreThrows`（单一实现，全空 ⇒
+    // 空表 =「没设」；CLI 的旗标层覆盖不在插件面——插件没有 CLI 旗标）。
     const gate = checkConfig(projConfig);
-    const ignoreThrows = parseIgnoreThrows(
-      (projConfig?.check as { ignoreThrows?: unknown } | undefined)?.ignoreThrows,
-    );
+    const ignoreThrows = configIgnoreThrows(projConfig);
     const inject = buildViteCheckInjection(id, code);
     const report = checkSource(id, code, pTrue, {
       loadModule,
