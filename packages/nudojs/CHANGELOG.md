@@ -1,5 +1,712 @@
 # nudojs
 
+## 1.7.3
+
+### Patch Changes
+
+- 0650ef0: fix(service): 分析器 / 模块图 / 缓存面（BUG-011/012/070/089/101/127/129/139/152/170/171/205/206/207/238/239/240/241/267/268/269/270/273）
+  
+  模块解析与缓存：
+  
+  - BUG-238/240 — 裸包 `import` 的 spec 现在携带 `mode` 并解析到真实文件（而非包名占位），模块图边与调用点记录据此建立。
+  - BUG-239 — `exports` 条件键按 package.json **声明顺序**求值；`browser` 仅作兜底，不再无条件优先。
+  - BUG-267 — pattern 键按 Node `PATTERN_KEY_COMPARE` 取最具体匹配（`./x/*` vs `./x/*.js`）。
+  - BUG-268 — 裸包解析在**最近的已存在** `node_modules` 停止；未命中的 `exports` 不再被上层包无声清空为 `exportsUnresolved=false`。
+  - BUG-269 — 歧义 `export *` 名称不再导出；导入方得到 `nudo:missing-export`，与 Node 的「模糊即不存在」一致。
+  - BUG-270 — `exports` 数组回退只发生在 target **非法**时；合法但文件缺失是终止态（`ERR_MODULE_NOT_FOUND`）。
+  - BUG-273 — `esm` 目录导入不再猜测 `index.*`；`legacy main` 保留该行为。
+  - BUG-241 — 磁盘缓存键的入口维度带项目根指纹，依赖维度仍可移植（跨项目不再互相污染）。
+  - BUG-012 — 函数缓存 `envKeyFn` 补上 `@nudo:env` 内容指纹，与另外两层缓存口径一致。
+  
+  调用点与报告：
+  
+  - BUG-070/170/171 — 同名调用点仅在冲突时加列号（`call@L6C9`）；`--from` 目录与重复调用点在合成前去重（先解析再按站点点位去重）。
+  - BUG-089 — 仅当本文件在该行列确实存在调用表达式时才附加 `callSiteFile`。
+  - BUG-127 — `dedupeCallRecords` 的键纳入调用点身份，不同站点的同名调用不再互相吞并。
+  - BUG-205 — 期望值判定统一走共享 `inferenceFailed`，并检查 `term`：`lit(null)` / `lit(undefined)` 是 exact，不是第三种「推断失败」态。
+  - BUG-206 — `never` 期望不再走「满足」短路。
+  - BUG-207 — 嵌套槽位谓词（`shape({ n: number().gt(0) })`）参与判定并按递归 `formatExpected` 渲染；CLI 报告面改用 service 的 `formatExpected`。
+  - BUG-011 — 空调用记录不再解引用 `deduped[0]`。
+  - BUG-101 — `isNudoTargetPath` 接受 `.cjs/.mts/.cts`（排除 `.d.mts/.d.cts`），`migrate retire` 的 `nudo check .` 与 `VERIFY_TARGET_EXTS` 对齐。
+  - BUG-129 — 空 `--from` 目录报 `nudo:path-empty-dir`。
+  - BUG-139 — 静态成员扫描白名单化节点类型，`ClassProperty` 不再被当作方法。
+  - BUG-152 — 匿名 `export default class` 注册到 `default` 槽位。
+  
+  已更新的既有测试（原断言钉住声明的错误行为）：
+  
+  - `service/src/__tests__/resolve-npm-exports.test.ts` — 数组回退改为「首个合法 target 即终止（即使文件缺失）」。
+  - `service/src/__tests__/disk-cache.test.ts` — 入口缓存键带项目身份，依赖键保持可移植。
+  - `service/src/__tests__/target-path.test.ts` — `.cjs` 由拒绝改为接受，新增 `.mts/.cts`。
+  
+  已知未修（根因在本类文件之外，另行跟踪）：BUG-019（行号重映射在 `emit/case-emitter.ts`）、BUG-022（entry 结算重入语义未定）、BUG-045（CJS `module.exports` 成员导出面）、BUG-069（生成比较在 `emit/case-emitter.ts`）、BUG-085（`withAssumePremises` 未从 core 导出）。
+  
+  ### 追加：本轮分析器面修复
+  
+  - **BUG-022**：`settleEntryOnlyCandidates` 不再删除注册表条目；记录增长时先摘掉上次合成的 case
+    再按**全量**记录重合成 ⇒ 调用点先出现 `f(3)` 与后出现 `f(3)` 得到同一组见证
+    （`3 witnesses，call@L5/8/11`）与**逐字节相同**的 `--emit --dry-run` 契约。
+    测试：`service-bug-022-callsite-domain-order.test.ts`。
+  - **BUG-045**：`tryEvalCallFull` 走 core 的 cjs-member 语义（对 `exports["default"]` 做
+    `$invoke`），并在合成调用记录里过滤无位置记录 ⇒ `obj.js`（`module.exports = {…}`）与
+    `dot.js`（逐成员导出）在 dts/schema/guard 三面**逐字节一致**（dts 由 `unknown` →
+    `number | string`）。测试：`service-bug-045-cjs-object-export-member`、
+    `cli-bug-045-cjs-object-export-face`。
+  - **BUG-099（递归 / fork 两臂）**：分析器为**整轮**装截断收集器（串到 `eval-run` 的嵌套
+    collector，否则单槽会被静默覆盖），标签映射到 `nudo:recursion-truncated` /
+    `nudo:fork-truncated`，文案与 `check` 同口径 ⇒ `nudo test` 与 `--json`
+    （`summary.diagnostics`）都可见。测试：`service-bug-099-*`、`cli-bug-099-*`。
+    循环臂（`nudo:loop-truncated`）此前缺 core 导出，现已补
+    `LOOP_TRUNCATION_LABEL`（`@nudojs/core/internal`），接线待做。
+  - **BUG-069** 的发射侧（见证等价按「文件 + 实参载荷」）已由 emit 类修复并回归；
+    本条**未修的是 CLI `--freeze` 新增模式的坐标**（见 BUG-019）。
+  - **BUG-085** 已修：`runAbsView` 现把 `extractAssumeSegs` 的 `ok` 段折进**前提槽**
+    （`withAssumePremises`，不是 `phi`），详见 cat-09 changeset。
+  - **BUG-099 循环臂已修**：`truncationDiagnostics` 增加 `label === LOOP_TRUNCATION_LABEL`
+    分支，且必须排在 `label.startsWith("#")` 兜底**之前**（兜底会把 `#loop-iterations`
+    静默吞掉）。`nudo test` / `--json` 现报 `nudo:loop-truncated`，文案与 `check` 面逐字一致
+    （「A loop did not terminate within its iteration budget …」），anchor 为文件起点 1:0
+    （事件不带函数归属，check 面同样无位置）。回归：
+    `service/src/__tests__/service-bug-099-loop-truncated.test.ts`。
+    注：loop 迭代预算不在 `@nudo:budget` 覆盖范围内，故建议文案不提该指令。
+  
+  ### 追加：可见性判据（`gateFatal`）与 `./internal` 快照
+  
+  - `analyzer-orchestrate.ts` 的 per-file 失败信号判据改为
+    `f.reason === "internal" || f.gateFatal === true`（**标签 ≠ 可见性**）：BUG-073 把装载期
+    逃逸改标 `module-throw` 后，原判据（只收 `internal`）会让 `evalFailures` 变空 ⇒ 闸门丢掉
+    「模块装载失败 ⇒ 不得判绿」（BUG-072）。三条假红防线（`unsupported:*` / 建模内
+    `NudoThrow` / 干净文件）不变。
+  - `service/eval-run.ts` 的「引擎产出非 Abs 值」回落改传 `origin: "engine"`（引擎自身违约
+    ⇒ `internal`，与该 guard 的既有语义一致）。
+  - `packages/core/public-api.snapshot.json` 追加 4 个 `./internal` 导出（引擎机件面，语义上
+    允许 minor 变动）：`LOOP_TRUNCATION_LABEL`、`extractAssumeSegs`、`isPointConstraint`、
+    `widenObservationAbs`，以及类型 `AssumeSeg`；`public-api-freeze` 测试随之复绿。
+- fe03e18: fix(service): emit / 接口派生面（BUG-003/021/032/040/041/043/079/107/192/203/214/232/233/266/271/272）
+  
+  - BUG-214 — 仅当全部用例都是 `callsite` 时，主签名对观测返回值做 `widenObservedReturnAbs`；`entry@` / 指令用例保留嵌套精度（既有 Bug-565 引脚不变）。
+  - BUG-232 — `export --out` 下相对 specifier 按 outDir 重写（新增可选 `ExportArtifacts.sourcePath`）；`moduleKey` 仍与路径无关，BUG-016 语义不变。
+  - BUG-233 — 导出「阻断」判定对齐 `EXPORT_BLOCKING_CODES`，不再只看 `severity === "error"`。
+  - BUG-266 — 派生 `.nudo.ts` 侧车写入前补 builder 声明（TS 侧车），复用 `coreExportNameOf`。
+  - BUG-271 — 侧车 builder 可用性按 **core 导出名** 比较（`import { lit }` 不再豁免），必要时生成别名 `_nudo_lit` 与 `declare const … litC`。
+  - BUG-272 — draft 的 builder import 扫描改为调用位匹配 `(?<![\w$])b\s*\(`，字段名不再误命中。
+  - BUG-192 — 类型注解先前丢弃任何含 `/` 或换行的注解；现折叠换行，仅拒绝真正的注释标记（`//`、`/*`）。
+  - BUG-203 — Zod `.min()/.max()` 为码点计数，改为 `refine(s => s.length >= n)` 对齐 UTF-16（guard / standard / contract 一致）。
+  - BUG-003（部分）— 类构造器 / 静态参数未受约束时输出 `any`（而非 `unknown`），与 `nudo check` 及 CLAUDE.md 口径一致。
+  - BUG-021 — 点观测不再直接成为契约：`widenObservationAbs` 后再 `joinThenProject`；不可表达的联合保留原始投影兜底。
+  - BUG-032 — `absToSchemaNodeB` 增加 bigint 分支（`z.bigint()`），并去掉「已丢弃」账目。
+  - BUG-040 — draft 选择与 `contract-draft.ts` 守卫均按 **导出名** 比较；`--fn totallyMissing` 仍为用法错误（exit 1，不落盘）。
+  - BUG-041 — 派生段 label 改为包根相对（回退 basename），并以 `labelKey()` 统一身份，旧拼写去重而非并集。
+  - BUG-043 — 侧车解析错误重新抛出时带侧车路径（原带路径分支为死代码）。
+  - BUG-079 — `combinedAbs == null` 的跳过分支改为输出 `(...args: unknown[]): any`，不再整条导出消失。
+  - BUG-107 — `declaredParams` 的 `pattern` 分支读取 `FormalParam.optional`；`pattern + 默认值` 渲染为 `_p0?: T`，绑定模式名仍必填。
+  
+  已更新的既有测试（原断言钉住声明的错误行为）：
+  
+  - `emit/interface-emitter.test.ts`（BUG-021，2 处）
+  - `emit/emit-bug-514-…-dts-export-surface.test.ts`（BUG-003：`constructor(v: unknown)` → `any`）
+  - `emit/schema-bug-1046-bigint-literal.test.ts`（BUG-032：观测 bigint 由 `unknown` → `prim bigint`）
+  - `emit/schema-bound-anchor.test.ts`（2 处）、`emit/schema-generator.test.ts`（1 处）（BUG-203）
+  
+  未修：
+  - BUG-196 —— 本夹具不再复现，但**当时不是真修**：`bar` 因 BUG-041 的 label 身份变化被报为 `not_projected`，双写者未消除。**已由后续轮次收口**：CLI / LSP agent 面的根侧车单写者（`finalContent` + `baseContent` + `skipWrite` + `directSections`）见 cat-11 changeset；LSP **add** 面新建段并溯源行常用的 `directCreatedSections` 见 cat-14 changeset（本文件同属 `@nudojs/service` 的发射面）。
+  - BUG-035 —— 排除无断言 `@nudo:case` 见证会改变契约产物；5 个既有 emit 测试钉住「指令用例 → 字面量契约」，属产品决策。
+  - BUG-168/189/190 —— 需把 `DtsModuleSurface` 贯穿 `computeMainSignature` / `tsParamAnnotation`，并改造 `dtsExportNameOf` 的返回形状（跨切面）。
+  - BUG-055/068/074/076/081/093/094/109/119/135/151/197 —— 未开始；其中 BUG-074 的扁平 `export default function` 形态被 `core-bug-435`、`emit-bug-514`、`export-dts-evidence` 钉住。
+  
+  ## 追加：观测拓宽改为「点域」判据（BUG-021 的收口）
+  
+  初版 `projectFunctionDsl()` 对**每个** callsite case 无条件拓宽再 join ⇒ 多值
+  观测域也被塌成 `number()`（`area(1); area(-2)` 写不出 `union(lit(1), lit(-2))`），
+  与 drift 对账面（`core/src/algebra/check-interface-drift.ts`）的域判据分叉 ⇒
+  `--emit` 之后 health 恒报漂移（BUG-199）。
+  
+  现改为**先 join 后判点**：`isPointConstraint`（core，与 drift 共用）为真才拓宽，
+  多值观测域保留字面量并集；带断言的 `@nudo:case` 仍一律不拓宽。`widenObservationAbs`
+  随之移入 core（`@nudojs/core/internal`），service 内不再保留副本。
+  
+  ### 追加：本轮发射面修复（13 条）
+  
+  - **BUG-168**：dts 不再抄不可解析的类型名（`id(x: any)` / `pair(a: any, b: any)`）；可解析的
+    本地类补 `declare class`、导入名补 `import type`、`class Box<T>` 保留形参槽。
+  - **BUG-189**：一个绑定挂多个导出名全部落地（`export declare function foo` +
+    `export { foo as default }`，类同理）。
+  - **BUG-190**：`export declare const/let/enum`（含成员与字面量初始化器）；无绑定值留
+    `nudo:unresolved-value` 台账，TS2305 归零。
+  - **BUG-151**：`class B extends A`、未导出基类补 `declare class`、实例字段（`this.x=…` /
+    类属性）落地、继承字段不重复。
+  - **BUG-108 / BUG-109**：入参面可选性 = 契约级 ∪ 声明级默认值；rest 槽**恒可选**且只有
+    **一层**数组（zod `.optional()`、dts `...rest: any[]`）。
+  - **BUG-069**：见证等价改按「**文件** + 实参载荷」复合键 ⇒ 二次 `--freeze` 输出
+    `freeze: no changes.`、文件字节不变。
+  - **BUG-081**：冲突面带 `conflict` / `undecidable`、行尾 `[unsatisfiable: n]`、stderr 同码
+    error、`--json` 同名字段、exit 1；`nudo:interface-undecidable` 保持 warning（能力边界）。
+  - **BUG-068**：nullish 回填在同一次改写里补齐 TS 侧车 builder import（含
+    `nullable as nb` 别名；JS 侧车不加）。注：缺陷正文里「`interface-draft.ts` BUILDERS 缺
+    `nullable`」是**过期信息**。
+  - **BUG-198**：已申报的 `@nudo:throws` / `eff.throws` 原样进草稿 DSL；仅门禁算出的「可能抛」
+    写成草稿头可照抄提示（不把「可能抛」变成草稿义务）。
+  
+  ### 追加：BUG-055 / BUG-119 已修，BUG-197 阻塞点已定位到行
+  
+  - **BUG-055（`--freeze` 把违约见证搬进被调方）**：`insertGeneratedCaseDirectives()` 原先只筛
+    「可序列化 + 非手写」，**从不与被写方自己的有效契约比对** ⇒ 调用方的违约被搬进被调方，随后由
+    `check-case-scan` 对着被调方报 error 级 `nudo:case-inconsistency`。修：新增
+    `contractGuardOf()` / `witnessViolation()`（`emit/case-emitter.ts`），读
+    `effectiveInterface(...)` 且**只执法 `source === "handwritten"`**（与 §3.3 同档）；契约位→实参位
+    映射与调用点面同规则（`paramNames.indexOf` → `locateContractParam`）；判据与
+    `check-case-scan.ts` 的标量通道**同口径**（eq/union 走 `literalMeetsConstraint`；纯 bounds 先
+    `isIntFlag` 再按**实例化后** pred 逐原子判；optional 的 `or` 包裹不执法）；**不可判 ⇒ 放行**
+    （非字面量、结构/数组/函数域）。违约见证不写入，skip 记新原因 `contract-violation`，归因留在
+    调用现场 `nudo:interface-domain-exceeds`。宿主接线（`filePath` / `loadModule` / `autoBind` /
+    `projectDir`）由 `shared.ts` 的 `emitWiringOf()` 供给，与 `contractOf` / `checkSource` 同源。
+    回归：`service-bug-055-freeze-contract-guard.test.ts`、`cli-bug-055-freeze-contract-guard.test.ts`。
+  - **BUG-119（`--freeze=update` 静默删除活着的见证）**：update 链「剥离 → 重算 → 回写」的两层
+    缺陷：① `stripGeneratedCaseDirectives` **无条件**剥离 `call@`；② 回写沿用 add 模式的**函数级**
+    「有手写 case ⇒ 整函数跳过」⇒ 跨文件见证无法从当前证据重算时（无契约时分析器不合成跨文件
+    case）就是净删除且不可恢复，汇总只数「新写出」⇒ 谎报「0 directive(s)」。修：**块级守门**
+    （含手写 case 的 JSDoc 块不剥离生成态见证，往返闭合）+ `InsertCaseOptions.rebuildGenerated`
+    （重建阶段按**见证身份**逐条重建，手写 case 只挡同名，载荷等价只判生成态之间）+
+    `reemitUpdate` 返回 `removedWitnesses`（`netRemovedWitnesses` 按身份配对，行号漂移不算删除），
+    CLI 汇总印 `(N directive(s) …, K removed)` 与逐条 `- call@…`。
+    回归：`service-bug-119-freeze-update-rebuild.test.ts`、
+    `cli-bug-119-freeze-update-keeps-live-witness.test.ts`。
+  - **BUG-135 已修**：实际改动在 LSP 侧（`a6-relax.ts` / `server-code-actions.ts`），见 cat-14
+    changeset（relax 改「真写推断面」+ 落盘后验证门；CLI 文案在行为修好后为真，未改口径）。
+  
+  仍未修 / 阻塞（根因在禁改文件或需产品裁决）：
+  
+  - **BUG-035**：`projectFunctionDsl()` 把 `@nudo:case` 调试见证投影成契约；emit 测试目录里 5 处
+    pin 了当前行为，改口径必须重钉 ⇒ 需产品裁决。
+  - **BUG-197 已修**：见 cat-02 changeset —— `arityFace` 接受契约可选位，本地与跨文件共用
+    `contractOptionalIndexes` 映射（位次与 `interfaceToIndexed` 同一套，只对 `handwritten` 生效），
+    `nudo:arg-count` 不再对契约 `.optional()` 的省略实参报红，且不会出现「同文件绿 / 跨文件红」。
+  - **BUG-076**：`any` 是既定口径（`docs/concepts/abs.md`、CLAUDE.md），真问题是文档表述
+    （`docs/**` 本轮未改）。
+  
+  ### 追加：6 处 schema 期望按 BUG-093 重钉（不是放宽）
+  
+  BUG-093 的声明正确行为 = 数值谓词面必须接受 `±Infinity`（`schema-generator.ts:704-705`
+  「`satisfies(Infinity)` ⇒ `.or(z.literal(Infinity))`」，`-Infinity` 同理），否则导出的 zod
+  schema 会拒绝 Abs 域里合法的值。`schema-generator.test.ts`（5 处）与
+  `schema-bound-anchor.test.ts`（1 处）钉的是加臂之前的字符串：
+  
+  - `gt(0)` / `gte(0)` → `….or(z.literal(Infinity))`（含对象槽内与默认 dialect / module 面）
+  - `lte(100)` / `lt(5)` → `….or(z.literal(-Infinity))`
+  
+  行为断言（`WIDE_NUMBER` 的 NaN/±Infinity 三臂、`int().gte(0)` 等）原样保留。
+  
+  ### BUG-035：`@nudo:case` 的调试见证不再被写成契约（`nudo contract --emit`）
+  
+  **根因**：`packages/service/src/emit/interface-emitter.ts` 的 `projectFunctionDsl()` 把
+  `source === "directive"` 的指令 case 与 `source === "callsite"` 的调用点证据**平权**
+  当域来源 / 返回义务来源 ⇒ 纯点观测见证被投影成契约（`fn({ x: lit(5) }, lit(6))`），
+  与 `nudo check` 的 `f(x: any) => number | string` 自相矛盾：用户为调试加一条
+  `@nudo:case` 就把函数固化成「只接受那个点、只返回那个值」。
+  
+  **修法**：指令来源**内部**再分档（新增 `emit/domain-cases.ts` 的
+  `isDomainDeclarationCase()` / `isPointObservationArgs()`，判据与 analyzer 侧
+  `isPointObservationArgs` 同源）——
+  - **域声明**：实参是约束构建器（`number()` / `shape()` / `union()` … 的域形状）**或**
+    带断言（`=> expected`）⇒ 可作域来源与返回义务来源；
+  - **纯点观测见证**（实参全是字面量且无断言）⇒ **不生成域、不生成返回义务**。
+  
+  **口径变化**：`directive` 纯见证不再产出契约（改前：`fn({ x: lit(5) }, lit(6))`；
+  改后：无证据 ⇒ `skipped … (not-projectable)`，不写侧车）。`callsite` 优先、
+  BUG-021 观测拓宽、域形状 `number()` 的 `not-projectable` 口径**均不变**；
+  `domainEvidenceCases()`（dts / zod / standard / guard 面）语义不变。
+  
+  **重钉清单**（原断言钉住「指令用例 → 字面量契约」的错误行为；夹具改为**带断言的域声明**，
+  断言文本未动）：`emit-bug-523-section-order.test.ts`（2 处）、
+  `emit-bug-532-value-template-clash.test.ts`（1 处）、`emit-bug-540-crlf-byte-fidelity.test.ts`
+  （1 处）、`emit-bug-548-import-name-clash.test.ts`（1 处）。
+  新增回归：`emit/__tests__/emit-bug-035-case-witness-not-contract.test.ts`（三种 case 形态 +
+  「有调用点证据时见证不得污染返回义务」+ 分档判据）。
+  
+  **残留边界**：既有侧车里由见证生成的旧生成段，在 update 模式下按「证据消失 ⇒ 删除该生成段」
+  处理（见下文「BUG-035 残留收口」）；宽域 / `derived-from:` 段 / `@nudo:skip` 段仍按原策略保留。
+  `contract --draft` 面本就不投影见证的返回义务（`projected: false`），无需改动。
+  
+  ### BUG-076：`nudo export --format dts` 的「无证据参数」口径统一为 `any`（文档侧修正 + 回归锁定）
+  
+  **判定**：`BUG-076` 的 section 结论 —— 代码侧「未取证参数渲染 `any`」是**有意为之**的产品口径
+  （`docs/concepts/abs.md`：入口无约束 = `any`，不因缺证据改用 `unknown`），真正错的是仍在承诺
+  「`unknown` + stderr 点名提示」的两处文档。故本条按**文档侧**收口，零行为变更。
+  
+  **改动**：
+  - `docs/design/cli-semantics.md` §2「已记录例外（export 投影面）」改为 `any` 口径，并说明只有
+    真正推导失败才出现 `unknown`（由 `nudo:unknown-inference` 之类引擎债诊断标注）。
+  - `packages/website/docs/guides/export-ecosystem.md:114/185` 与 zh-Hans 镜像同步改为 `any`，
+    删除「`export --format dts` 会打 stderr 提示」的承诺。
+  - 新增 `cli-bug-076-unevidenced-any.test.ts`（3 例）：主路径无证据形参 ⇒ `any` 且 stderr 无提示；
+    契约只覆盖部分形参 ⇒ 未覆盖位仍 `any`；窄路径（`@nudo:skip` + 手写契约未覆盖位）⇒
+    `unknown` + `note: <fn>.<param> rendered as unknown …`（两条路径都实测可达 ⇒
+    `reportUnevidencedParams` **不是**死代码，只是只在窄路径出现）。
+  - `helpers/run-cli.ts` 新增 `writeSrcTsconfig()`：CLI 子进程按 cwd 找 tsconfig，否则会落到共享
+    `dist/` 旧构建（测试钉源码语义的前提）。
+  
+  ### 重钉：BUG-021（调用点点观测拓宽）
+  
+  调用点**点观测**不再直接成为字面量契约 —— 先 `widenObservationAbs` 再 `joinThenProject`
+  ⇒ 一次 `alpha({ x: 5 })` 折出 `shape({ x: number() })`、返回 `5` 折出 `number()`。据此重钉：
+  
+  - `packages/nudojs/src/__tests__/cli-bug-657-emit-fn-unmatched.test.ts`
+    「对照组：名字正确 ⇒ 只改那一个」的断言由
+    `toContain("+export const alpha = fn({ p: shape({ x: lit(5) }) }, lit(5));")` 改为
+    `toContain("+export const alpha = fn({ p: shape({ x: number() }) }, number());")`。
+    「只改 alpha、beta 不出现 `-`/`+`」与同文件「全部未命中 ⇒ 用法错误 + 侧车逐字不变」
+    「连 dry-run 预览都不给」「部分命中 ⇒ `skipped nope (not-an-export)`」三组断言**未改动**。
+  
+  ### BUG-035 残留收口：证据消失 ⇒ 旧生成段被删（不再「保留原段」）
+  
+  **根因**：`emitInterface` 的 update 分支把「**不可投影**」一律当成「今天没有证据 ⇒ 把落盘的段原样保留」。
+  BUG-035 之后 `@nudo:case` 见证不再进契约 ⇒ 由见证写出的旧段（`fn({ x: lit(5) }, lit(6))`）却因此
+  **永久留在侧车里**，与 `nudo check` 的结论（`f(x: any) => number | string`）长期矛盾。
+  
+  **修法**（`packages/service/src/emit/section-provenance.ts` 新增，`interface-emitter.ts` 接线）：
+  落盘的 `@generated` 段在**两个条件同时成立**时被删除 ——
+  ① 当前投影**确实无证据**（无调用点、无域声明 case、无 entry 推断、且非 `@nudo:skip`；
+     「有证据但表达不出来」不算无证据 ⇒ 保留）；
+  ② 该段的证据**可证明来自本文件**（无 `// derived-from:` 标签，且某个顶层槽钉住了单个字面量 ——
+     今天的发射器会把调用点点观测拓宽（BUG-021），故单字面量域只可能来自本文件的域声明 / `entry@`）。
+  删除沿用既有「死段」路径（整段 + 尾随换行），填充 `EmitInterfaceResult.removed`，
+  发一条 info `nudo:interface-not-projectable`（「evidence disappeared — dropping its generated section…」），
+  人类面 `formatEmitSummary` 增一行 `removed: <names>`，机器面（`nudo contract --emit --json`）
+  增 `removed` 字段。
+  
+  **重钉**：无（既有断言一条未动；`interface-emitter.test.ts` 的「update 无证据保留原段」用例
+  其段是宽域 ⇒ 不满足「可证明来自本文件」⇒ 原样通过）。
+  
+  **残留**：① 宽域且来自本文件调用点的段，调用点消失后仍保留 —— **已收口**（见下
+     「BUG-035 证据范围收口」：生成段记 `// evidence: local|external`，宽域段也能判定）；
+     ② BUG-021 之前的旧侧车，点字面量 `--from` 段与见证段不可区分，可能被删
+     （`--dry-run` 可先预览）；③ 只看顶层槽 ⇒ `shape({ x: lit(1) })` 形态的**旧**段保守保留
+     （现格式下由 `// evidence:` 判定，不再受此限）；④ 带 `// derived-from:` 标签的段保留。
+  
+  ### 追加：BUG-035 证据范围收口 —— 生成段记录 `// evidence:`，宽域段也能判定刷新
+  
+  **症状（上一轮收口后仍留的最后一条边界）**：删除陈旧段的判据只能「证明」**单点字面量**域的
+  证据在文件内（今天的发射模型把调用点观测拓宽，单点字面量只可能来自文件内 case/entry）。
+  **调用点来源的宽域段**（`fn({ x: number() }, number())`）与「`--from` 采集的使用现场记录来源段」
+  **逐字同形** ⇒ 调用点被删后宽域段只能保守留存（侧车继续承诺今天已不存在的域，与 `nudo check`
+  签名面矛盾）；反过来盲删又会丢掉 `--from` 段的用户契约。
+  
+  **修法（侧车格式变更）**：
+  - `FunctionAnalysis.externalEvidence`（`analyzer-orchestrate-uncached.ts` 的合成路径）：本函数的
+    callsite 证据是否混入 `--from` 外部记录。判据取**去重前**的匹配集 ⇒ 保守方向永远是「少删」；
+    该字段是纯增量（`cloneFunctionAnalysis` 走浅展开，缓存回放不丢）。
+  - 生成段由三行变**四行**：`@generated` / `// source:` / `// evidence: local|external` / export
+    （`interface-emitter.ts` 的 `sectionText`；`roundTrip` 自检同文本，故自检与写盘同源）。
+  - `section-provenance.ts`：新增 `sectionEvidenceScope()`；`sectionEvidenceIsInFile()` 改为
+    「无 `derived-from` 标签 **且**（`local` 标记 **或** 旧侧车无标记时的单点字面量启发式）」。
+    ⇒ `local` 宽域段在「今天没有证据」时可证「证据没了」⇒ 删段；`external` 段与旧侧车宽域段
+    继续保留。旧侧车（无 `// evidence:` 行）行为**完全不变**；旧段在因内容变化被重写时自动带上标记。
+  - 标记是**确定性函数**（证据范围只取决于本轮是否用了外部记录）⇒ 二次发射逐字节相同。
+  
+  **重钉（2 处，均为「当轮格式」更新，断言文本一条未动）**：
+  - `service/src/emit/__tests__/emit-bug-523-section-order.test.ts` 的 `SIDECAR` 夹具
+    （注释即「首次 emit 生成的形态」）补 `// evidence: local` —— 该文件钉的是**段序不重排 /
+    无改动**，不是段的行数。
+  - `lsp/src/__tests__/lsp-bug-196-single-writer-sidecar.test.ts` 的 `SIDECAR_CONVERGED`
+    补 `// evidence: local` —— 该文件钉的是 add/update **逐字节收敛**，格式变更后收敛态随之更新。
+  
+  **新回归**：`emit/__tests__/emit-bug-035-evidence-scope.test.ts`（7 例）—— ① 宽域 `local` 段
+  在调用点消失后被删（+ `removed` 台账 + info 诊断）；② `--from` 外部记录来源段带 `external`
+  标记、证据缺失时留存且逐字节不变；③ 旧侧车宽域段留存（迁移期零回归）；④ 旧侧车单点字面量段
+  仍按旧启发式删除；⑤ `derived-from` 段即使带 `local` 标记也留存；⑥ 标记确定性/幂等；
+  ⑦ 本地与外部记录混合 ⇒ `external`（保守方向）。
+  
+  **文档**：`packages/website/docs/guides/contract.md` 与 zh-Hans 镜像的侧车示例与 dry-run diff
+  示例补 `// evidence: local`（该行是两版之间的**上下文行**，hunk 头不变）。
+- 250f0ba: Fix bug-report category 09 (`nudo check` gate) — 10 of 15 defects.
+  
+  - BUG-046: a variadic flag no longer silently consumes the following path; a value the
+    flag cannot accept that exists on disk is reported as a usage error, so `check
+    clean.js --only <code> broken.js` no longer exits 0 with `broken.js` unchecked.
+  - BUG-047: `check --fix` advances its plan text outside the `--write` branch, so a second
+    hunk is `@@ -1,2 +1,3 @@` instead of a conflicting `@@ -0,0 +1,2 @@`, and dry-run output
+    matches `--write`.
+  - BUG-048: `--only` values are validated against the diagnostic registry (unknown codes
+    are a usage error; valid-but-unmatched codes are reported) instead of silently
+    producing `0 edits`.
+  - BUG-049: a sidecar write failure is reported (`check --fix cannot write <path>`) instead
+    of aborting the whole run with a bare `EACCES`.
+  - BUG-066: `--quiet` is evaluated before `--abs`, so `--abs --quiet` prints one line
+    instead of the full signature block.
+  - BUG-067: `--fix` refuses to write a sidecar that would conflict with a sibling file
+    (`.js` / `.mjs`, `.ts` / `.mts`) and names the sibling.
+  - BUG-115: the `--json` envelope gains an unambiguous `summary.pathErrors`, so path
+    failures are readable from the summary (the green shape is unchanged).
+  - BUG-264: `sidecarPathOf` strips `.d` **after** `.nudo`, so a `.d.ts` source yields
+    `api.nudo.ts` (and a `.nudo.draft.ts`-style draft) instead of a `.d.` name that
+    TypeScript treats as a declaration file.
+  - BUG-284: hard errors (input read failures / syntax errors) feed both CI channels, so
+    `--gitlab` always emits exactly one parseable array and `--gha` emits `::error`.
+  - BUG-285: GHA annotations move to stderr when GitLab owns stdout, so `--gha --gitlab`
+    emits its `::error` lines instead of dropping them.
+  
+  Regression tests: `cli-bug-046-*`, `cli-bug-047-*`, `cli-bug-048-*`, `cli-bug-049-*`,
+  `cli-bug-066-*`, `cli-bug-067-*`, `cli-bug-115-*`, `cli-bug-284-*`, `cli-bug-285-*`,
+  `core-bug-264-sidecar-dts-name`.
+  
+  Known follow-ups NOT covered here: BUG-014 (needs `commands/test.ts`), BUG-015 / BUG-114
+  (need `migrate.ts`, handed to the migrate category), BUG-262 (needs
+  `packages/lsp/src/validation.ts`), BUG-056 (needs per-round module isolation; `check`
+  still prints `bump() => 2`).
+  
+  ### BUG-056 诊断追加（未修复，定位已收窄）
+  
+  同文件在同一进程被求值两轮时，闸门读到被上一轮写脏的结果（`bump() => 2`，原生 `1`；
+  连带 `main() => 11`、`once() => 1`、`nudo:interface-drift` 把干净侧车判成陈旧）。
+  
+  已排除（逐一实测，均无效）：
+  
+  - service `evictAbsModuleCacheFiles` / `evictEvalCacheForFiles`：驱逐前后
+    `getAbsModuleCacheSize()` 都是 `0`、`getEvalCacheSize()` 由 `1` 归 `0`，闸门仍是 `2`；
+  - core `evictGeneralizeMemoForPaths`：仍是 `2`；
+  - core `resetNudoModuleExecCache`（侧车模块执行表）：仍是 `2`。
+  
+  已定位的方向：**`checkSource` 的整文件 memo**（`packages/core/src/algebra/check-memo.ts`）。
+  探针（同一进程内先跑分析器再跑闸门）在每次 `checkSource` 前 `resetCheckSourceMemo()`
+  后结果稳定为 `1`（不重置则 `2`，且第二次调用仍 `2`）⇒ 陈旧 `CheckReport` 被跨轮复用，
+  不是模块实例泄漏。收口方向 = 在 CLI 轮边界按路径驱逐
+  `evictCheckSourceMemoForPaths([filePath])`（该 API 已从 `@nudojs/core` 导出，无需动
+  public-api 快照）；未落地的原因是上述探针全部跑在**修复前的 `dist/`** 上（`@nudojs/*`
+  经 package `exports` 解析到 `dist`），需要在源码构建上复核后再改 —— 否则无法区分
+  「memo 陈旧」与「模块实例脏」两种成因。
+  
+  ### 追加：BUG-056 已修（根因与落法）
+  
+  根因（实测确认，不是推测）：`packages/core/src/algebra/generalize.ts` 与
+  `check-may-throw.ts` 各有一张 `evalRunMemo`，缓存的是**活的 run 表**——模块级 `let` 状态
+  **和对象身份**都住在里面；键**只有 source（+ mock scope + inject 指纹）**，没有路径、
+  没有轮次。后果：
+  
+  - 分析器一轮 generalize 与闸门一轮共用同一实例 ⇒ `bump() => 2` / `main() => 11` /
+    `once() => 1`（同一文件在同一进程里被读作 1 / 2 / 3，字节相同的两个不同文件也共用）；
+  - `contract --emit` 写分析器的干净值、`check` 打印被污染的值 ⇒ `nudo:interface-drift`
+    永不收敛（health 永久假红，重跑 `--emit` 无法自愈）。
+  
+  落法：引入单调**求值轮次**（`collector-scope.ts`），最外层 `runWithCollectorScope` 创建
+  作用域时涨轮；两张 run 表的键都带轮次前缀 ⇒ 跨轮不复用活状态；**不做整表作废**（整表
+  作废会让轮内的对象身份变化，递归泛化的 term 指纹随之坍缩成 `unknown`）；`resetGeneralizeMemo`
+  同时清 run 表。已排除的无效方案（逐条实测）：service `evictAbsModuleCacheFiles` /
+  `evictEvalCacheForFiles`、core `evictGeneralizeMemoForPaths`、`resetNudoModuleExecCache`、
+  按路径驱逐 `checkSource` 报告 memo —— 全部无法触及这两张表。
+  
+  回归：`core-bug-056-eval-round-identity.test.ts`（3 例：分析器轮之后闸门仍读 1、字节相同的
+  第二个文件各自读 1、同一文件重复分析每次读 1）；CLI 侧 `cli-bug-056-check-single-eval.test.ts`
+  钉住 `bump() => 1`、`once() => never throws Error`、无 `nudo:interface-drift`。
+  
+  ### 追加：BUG-085 已修（`--abs` 观测面吃 `@nudo:assume` 前提）
+  
+  根因不在 core 的假定折叠，而在 **CLI 观测面没喂前提**：`nudojs/src/commands/shared.ts::
+  runAbsView` 直接 `tryEvalCall(...)`，`@nudo:assume d <= max` 从未进入求值。
+  
+  落法（关键点：喂**前提槽**，不是 `phi`）：每个待观测函数先从
+  `extractAssumeSegs(source, fnName)` 取 `ok` 段，折成 `ale(v(lhs), v(rhs))` 后
+  `withAssumePremises(phi, () => tryEvalCall(...))`。`div` 的关系折叠只读
+  `assumePremiseList(assume)`（`core/algebra/arithmetic/muldiv.ts:141`），而前提槽在调用边界
+  会被清空；折进 `phi` 会既拿不到谓词、又把前提泄漏给被调方（不健全）。
+  
+  回归：`nudojs/src/__tests__/cli-bug-085-abs-assume-premises.test.ts`（3 例）——
+  `check --abs` 打印 `pred: /(d, max) ≤ 1`（此前缺失而 `--json` 已给出 `where`，两面不一致）、
+  无 assume 行的对照两面都无谓词、`nudo test --abs` 同源同结论。
+  
+  ### 追加：CLI fail-closed 判据改为「可见性」，诊断按标签分两条通道
+  
+  `packages/nudojs/src/commands/check.ts`：per-file collector 由「只收 `internal`」改为
+  「`internal` **或** `gateFatal === true`」（plain check 与 `--fix` 两处采集点同口径），
+  并把诊断拆成两条：
+  
+  - `internal`（引擎 / 宿主边界违约）⇒ `nudo:internal` + 「报引擎 bug」文案（既有）；
+  - 装载期逃逸的**用户代码**异常（标签 `module-throw` 且 `gateFatal === true`）⇒
+    `nudo:module-throw` + 指向**用户代码**的文案（BUG-073：不得让用户去报引擎 bug）。
+  
+  这补上 BUG-072 在 CLI 侧的最后一个缺口：**无句法证据**的装载失败（模块顶层
+  `JSON.parse(userInput)`、顶层调用会抛的导入函数）此前零诊断 + exit 0（**假绿**），现在按
+  `gateFatal` 判红。`unsupported:*`（能力边界）与建模内 `NudoThrow` 的
+  `gateFatal === false` ⇒ 仍不入闸门（假红防线不变，1145 的 unsupported 用例守反向）。
+  
+  ### 重钉：BUG-264 带来的落点改名（`.d.ts` 源的草稿名不再含 `.d.`）
+  
+  BUG-264 修了「`.d.ts` 源的侧车 / 草稿名含 `.d.` ⇒ TypeScript 判成声明文件 ⇒ TS1254」，
+  把落点从 `api.d.nugo.draft.ts` / `api.d.nugo.ts` 改成 `api.nugo.draft.ts` / `api.nugo.ts`。
+  该修复落地时**只更新了 core 侧自己的钉**，漏了 3 个 nudojs 侧的旧断言 ⇒ 它们的期望仍写着旧拼写。
+  
+  按 BUG-264 的权威规格重钉（**保留旧拼写等于把 BUG-264 重新引回来**）：
+  - `cli-bug-659-from-dts-usage-order.test.ts`：`types.d.nudo.draft.ts` → `types.nugo.draft.ts`
+    （「CWD 里的同名草稿不存在」那条断言未动）。
+  - `cli-bug-944-from-dts-write-path.test.ts`（3 处）：落点、`next` 提示里的侧车名、拒绝覆盖提示里的路径
+    全部改成 `types/index.nugo.draft.ts` / `types/index.nugo.ts`（CWD 无同名草稿、既有草稿逐字不变
+    等行为断言未动）。
+  - `nudojs-bug-1147-contract-cli-text.test.ts`（3 处）：共享的 `draftPathOf` 辅助函数改成新落点
+    （拒绝提示双口子 / 人工改过永不被覆盖 / `--force` 覆盖成功三条的语义断言未动）。
+  
+  新增 `cli-bug-944-from-dts-draft-invariants.test.ts`（7 例）：钉**规则**而不是拼写 —— 落点贴着源
+  `.d.ts` 且 basename 不含 `.d.`、「next」侧车名不含 `.d.`（旧名不得出现）、目标已存在 ⇒ 拒绝覆盖
+  （exit 1 + `--force` 与 `NUDO_DRAFT_FORCE` 双口子 + 提示含 `hand-edited` + 既有草稿逐字不变 +
+  不谎报 `wrote `）、内容未变 ⇒ 不拒绝、`--force` 与 `NUDO_DRAFT_FORCE` 各自可覆盖机器原稿、
+  人工改过的草稿 `--force` 也不放行。
+  
+  **零源码改动**：实现的落点、拒绝、双口子与「人工改过不覆盖」规则本就符合 944/1147 的规格
+  （逐条手测复核过），只有断言的**拼写**过时。
+  
+  **残留**：① `--from-dts --write` 在没有 `package.json` 祖先目录时**无项目根守卫**，
+  而 `--draft --write` 在同场景要求 `NUDO_DRAFT_FORCE=1` —— 944/1147 夹具（无 `package.json`）钉住
+  前者成功 ⇒ 对齐会与被钉住的行为冲突，故未动；
+  ② `--from-dts --write --dry-run` 在既有草稿不同时**拒绝**（exit 1）而非给 diff 预览，
+  与 `--draft --write --dry-run` 不一致（未动）。
+- 6fe6452: Fix bug-report category 10 (`nudo test` / `nudo health` / `nudo init`) — 10 of 11 defects.
+  
+  - BUG-018: `nudo test --freeze <path>` treats the value as a path unless it is a known
+    mode, so a path is no longer swallowed with `Usage error: needs at least one path`.
+  - BUG-036: witness identity keeps the call-site prefix, so deleting one of two call sites
+    is reported as drift instead of `0 case drift / OK / exit 0`.
+  - BUG-037: a never-frozen file no longer reports case drift (`frozenWitnesses > 0` is
+    required before comparing).
+  - BUG-038: a missing path now lands in `pathErrors` / `targetErrors` with
+    `summary.errors` = 1 instead of being silently skipped.
+  - BUG-039: contract drift counts `@generated` slots (Σ `interfaceDrift`) instead of files,
+    so detail, summary and `--json` agree.
+  - BUG-054: health honours `--from` (same `externalAbsCallRecords` source as `check`), so
+    drift is no longer invisible when `--from` is used.
+  - BUG-113: `health --json` emits a JSON error envelope on a usage error instead of
+    printing 0 bytes.
+  - BUG-199: health's drift criterion now includes whole-section text drift
+    (`emitInterface(mode: "update", dryRun: true)`), so `health` and
+    `contract --emit --exit-on-diff` agree on the same sidecar.
+  - BUG-228: file-level `@nudo:env` is resolved with the two-baseDir layering that `check`
+    uses, so `check`'s `nudo:interface-drift` and health's "0 contract drift" no longer
+    contradict each other.
+  - BUG-229: `nudo init` rewrites the **effective** (last) `"nudo"` member and removes
+    earlier duplicates, so the reported baseline is the one the loader actually reads.
+  
+  Regression tests: `cli-bug-018-*`, `cli-bug-036-*`, `cli-bug-037-*`, `cli-bug-038-*`,
+  `cli-bug-039-*`, `cli-bug-054-*`, `cli-bug-113-*`, `cli-bug-199-*`, `cli-bug-228-*`,
+  `cli-bug-229-*`.
+  
+  Known follow-up NOT covered here: BUG-136 (CLI `nudo test` witness line and the LSP
+  `agent-tools.ts` `observationTitle` disagree on indentation/spacing) needs
+  `packages/lsp/src/agent-tools.ts`, which is outside this category's file set; aligning
+  `run-test.ts#formatCaseLine` alone would break `test-entry-contract-note.test.ts`.
+- d5b189d: Fix bug-report category 11 (`nudo contract` command layer).
+  
+  - BUG-042: `contract --draft --fn <name>` for a non-existent export is no longer a
+    silent no-op (exit 0 with an empty draft); it now mirrors `--emit` and exits 1 with a
+    usage error listing the available exports.
+  - BUG-100: `contract --from-dts` no longer silently swallows `--emit` / `--fn` / `--all` /
+    `--dry-run` / `--exit-on-diff`; the flags are honoured, so the drift gate is no longer
+    permanently green.
+  - BUG-122: `contract --emit`'s derived branch and main branch no longer write the same
+    sidecar with divergent formats, so `--dry-run` diffs match what is actually written and
+    `--exit-on-diff` no longer exits 1 forever.
+  
+  Regression tests: `cli-bug-042-*`, `cli-bug-100-*`, `cli-bug-122-*`.
+  
+  ### BUG-196：`nudo contract --emit` 的根侧车改为**单写者 + 同源判定**
+  
+  **根因**：`emitDerivedFromRoot(...)`（派生分支，段文本 4 行含 `// derived-from:`）与
+  `emitInterface(...)`（直写分支，段文本 3 行）在同一次运行里写**同一个侧车的同一段**；后写的直写
+  分支把溯源行整段抹掉 ⇒ 净变化为零却报 `Updated`；而 dry-run 比对按「未抹掉的版本」算 ⇒ 预览
+  要求加那行、真实写盘从不产生 ⇒ `--exit-on-diff` 恒 exit 1（漂移门禁永不收敛）。
+  
+  **修法**（先让「最终文本」成为结构上的事实，再让判定 / 预览 / 落盘都用它）：
+  - `interface-emitter.ts`：`EmitInterfaceResult` 增 `finalContent`（含 BOM，与真实落盘逐字节相同）
+    —— 调用方不再需要从 `diff` 反解自身产物（CLI 里原先的 `applyUnifiedDiff` 已删除，约 110 行）。
+  - 直写分支一律 `dryRun: true`（只算，不写）；派生分支以直写分支的 `finalContent` 为
+    `baseContent`，对**直写分支负责的段**（`directSections`）只并 `// derived-from:` 标签行、
+    不整段覆盖；根侧车由 CLI **一次原子写入**（派生分支 `skipWrite`）。
+  - `changed` / `Updated` / dry-run 预览 / 落盘全部用同一份最终文本（逐字比较）⇒ 幂等。
+  
+  **口径变化（重钉）**：`cli-bug-122-emit-net-effect.test.ts` 原先钉的是缺陷行为（首跑侧车不含
+  `// derived-from:`、干净夹具 dry-run exit 0），现按 section 改为：首跑落盘含溯源行、内容真变才报
+  `Updated`、干净夹具首跑 dry-run 正确报漂移（exit 1）而真写一次后 exit 0。
+  
+  **残留**：LSP agent 面（`packages/lsp/src/agent-tools.ts`）的旧「派生 → 直写」双路顺序已收口
+  （见下文「BUG-196 残留收口」）。`packages/service/dist` 需 `pnpm run build` 后才有新语义
+  （`writeSrcTsconfig` 的测试钉源码）。
+  
+  ### BUG-196 残留收口：LSP agent 面改单写者（同源组合，CLI 口径一致）
+  
+  上一节记录的残留（LSP agent 面仍是「派生 → 直写」双路顺序）已收口，改动全部在 `packages/lsp/src/**`。
+  
+  **根因**：`packages/lsp/src/agent-tools.ts` 的 `serializedEmit()` 沿用旧顺序 ——
+  先 `emitDerivedFromRoot`（**写盘**，派生段 4 行含 `// derived-from:`），后 `emitInterface`
+  （**重写同一段**，3 行、无溯源行）⇒ 溯源行被抹掉、净变化为零却报 `Updated`；预览与真实写盘相反。
+  
+  **修法**（与 CLI `runContractEmit` 同构）：直写分支**恒 `dryRun: true`**，其 `finalContent` 作合并基底；
+  派生分支以它为 `baseContent`、`skipWrite: [根侧车]`、`directSections: 直写分支负责的段`
+  ⇒ 只把 `// derived-from:` 标签行并进直写段（正文以直写为准），下游侧车仍由派生分支拥有；
+  根侧车文本 M = 派生结果 ?? 直写结果（BOM 守卫）⇒ **一次原子写**（tmp + rename）；
+  `changed` / `written` / `diff` 全部由 M 与写前字节比较得出（直写 `written` ∪ 根侧车派生的 `writtenNames`），
+  根侧车的派生条目不再重复报「Updated」。
+  
+  **重钉**：无。新增回归 `lsp-bug-196-single-writer-sidecar.test.ts`（4 例）：update 模式保留直写正文 +
+  保留 `// derived-from: lib.js:tag` + 收敛后内容逐字节一致 + **只写一次**（统计 `renameSync` 次数）；
+  第二跑无写盘、无「Updated」；dry-run 预览与真实写盘逐字相同；add 模式保留直写正文且只写一次。
+  
+  **残留（已收口）**：LSP **add** 模式下，service 的「既有段不可动」规则使 `// derived-from:` 标签并不进
+  本轮刚追加的段 —— 基底（= 直写分支产物）里已经有该段，派生分支把它当成「既有段」跳过。
+  现由 `emitDerivedFromRoot` 的 `directCreatedSections` 判据区分「本轮直写分支新建」与「此前既有」
+  （详见 cat-14 changeset「BUG-196（add 面）」）：add 面只对本轮新建且直写负责的段**就地**并入溯源行，
+  既有段仍原样不动（不强制 update ⇒ 不会顺带刷新下游侧车的既有派生段）；收敛后 add 与 update 写出的
+  根侧车逐字节相同。
+- 8a22296: Fix bug-report category 12 (`nudo export`) — 11 defects.
+  
+  - BUG-016: the module identity used by `--out` is path-free (package-relative path, or
+    `<stem>|<export names>` outside a package root), so exporting the same module from two
+    directories produces one byte-identical artifact instead of accumulating
+    contradictory stale copies.
+  - BUG-026 / BUG-279: an `entry@` witness contributes its **element** to a rest parameter,
+    so the published type is one array rather than an array of arrays.
+  - BUG-028: the `--format all` stdout flattener pre-reserves the dts segment's (user API)
+    identifiers, so user exports keep their names and the flattened dts matches `--out`.
+  - BUG-033: a barrel module's dts surface is assembled before the early return, so
+    re-exports are no longer dropped when the module has no functions.
+  - BUG-044: `nudo export` publishes with `caseMode: "none"`, i.e. the same domain as the
+    `check` / `health` / `migrate` gate, instead of leaking `@nudo:case` debug witnesses
+    into the shipped dts/schema.
+  - BUG-075: the stdout flattener registers all top-level identifiers (exports, locals,
+    import bindings), so the flattened output passes `tsc --strict`.
+  - BUG-120 / BUG-121: object-destructured parameters collapse to one slot keyed by the
+    formal name, and the constraint-disproof `fields` branch handles `sum` shapes
+    symmetrically with `prim`.
+  - BUG-204: identifier renaming in the stdout flattener is lexer-aware (skips strings,
+    templates, comments, property keys and object keys), so slot-key **data** is no longer
+    rewritten.
+  - BUG-231: the unique-name fallback in `--out` honours `isSameModule`, so re-exporting
+    the same module overwrites in place rather than writing a `.2` copy that diverges.
+  
+  Regression tests: `cli-bug-016-*`, `cli-bug-026-*`, `cli-bug-028-*`, `cli-bug-033-*`,
+  `cli-bug-044-*`, `cli-bug-075-*`, `cli-bug-120-*`, `cli-bug-121-*`, `cli-bug-204-*`,
+  `cli-bug-231-*`, `cli-bug-279-*`.
+  
+  Known follow-up: BUG-044's **contract print** face still consumes
+  `packages/service/src/emit/interface-surface.ts` with the default `caseMode: "all"`, so
+  `nudo contract`'s printed interface can still include `@nudo:case` witnesses. The export
+  products (dts/schema/guard) are now gate-consistent.
+  
+  ### 追加：两处既有期望按 BUG-109 重钉（不是放宽）
+  
+  BUG-109 声明正确行为 = rest 槽**恒可选**且只有**一层**数组，而两个既有用例钉的是修复前
+  的「必填」形状，与之相反 ⇒ 按声明正确行为重钉 expected 子串，**行为断言原样保留**
+  （一层数组、`not.toContain("z.array(z.array(")`、错误形状仍被拒）：
+  
+  - `cli-bug-026-rest-param-single-array.test.ts`：standard 面槽 →
+    `{"key":"rest","node":{"k":"arr","element":{"k":"unknown"}},"optional":true}`。
+  - `cli-bug-279-rest-entry-witness-slot.test.ts`：zod →
+    `z.object({ args: z.array(z.unknown()).optional() })`；standard 槽带 `"optional":true`。
+  
+  ### 重钉：BUG-044（`@nudo:case` 见证不进发布面）+ 文档口径修正
+  
+  `@nudo:case` 是**调试见证**、不是契约产品 ⇒ `nudo export` 以 `caseMode: "none"` 调分析器，
+  发布面（dts / schema / guard / standard）不消费见证。据此：
+  
+  - `docs/design/cli-semantics.md` §2 的「已记录例外（export 投影面）」把签名数据源写清：
+    **契约 / 调用点证据 / `entry@` 兜底**，并明写「`@nudo:case` 调试见证不进导出面」。
+  - `packages/website/docs/guides/export-ecosystem.md:114/185` 与 zh-Hans 镜像同步：
+    删除「`@nudo:case` 见证喂导出签名」的表述，改为「`nudo export` 与门禁一样以
+    `caseMode: "none"` 分析；见证不进发布面」。
+  - 重钉 3 处旧断言（原断言钉住「见证拓宽形参 / 产出 `Case:` 行 / 进 `Output` 校验器」）：
+    - `export-dts-evidence.test.ts`：用例改名「调试见证不进导出面（BUG-044）」；
+      `toContain("export declare function greet3(u: { name: string }): string;")` +
+      `toContain('Case: named …')` ⇒ `toContain("export declare function greet3(u: any): any;")` +
+      `not.toContain("Case:")`。
+    - `cli-bug-619-skip-multi-witness-output.test.ts`：zod 面
+      `toContain("twiceOutput")` + `toContain("z.literal(4)/6")` ⇒
+      `toContain("twiceInput")` + `not.toContain("twiceOutput")` + `not.toContain("z.literal(4)")` +
+      `not.toContain("z.literal(6)")`；standard 面 `toContain("twiceOutput")` ⇒
+      `toContain("twiceInput")` + `not.toContain("twiceOutput")`。
+      只带 case、无契约的 skip 函数发布面无 `Output` 校验器（域证据为空 ⇒ 返回面无种子）是
+      该口径的**结果**而非缺陷；「函数仍出现在产物里 + exit 0」仍被钉住。
+  - 附带（BUG-189 形态统一）：`export-dts-evidence` 的「export default 函数进导出面」由
+    `toContain("export default function makeGreeting")` 改为
+    `toContain("makeGreeting")` + `toContain("as default")`；
+    `not.toContain("export declare function makeGreeting")`（Bug 515：局部名不得成为具名导出）保留。
+- d4ab7fb: Fix bug-report category 13 (`nudo migrate` status / strip / verify / retire) — 20 of 21
+  bugs, plus two defects that were filed under other categories but live in `migrate.ts`.
+  
+  - BUG-234: `migrate strip` rewrites an enum's **computed member** references to
+    `E["KEY"]` (reference-position aware) instead of leaving the initializer verbatim, so
+    the stripped product no longer throws ReferenceError; string-valued computed members
+    skip the reverse mapping like tsc. A `enumComputedMemberRewritten` report flag records
+    the rewrite.
+  - BUG-050: `strip` refuses to write when a TS-only construct survives the stripper
+    (`namespace`, `import x = require(...)`) instead of writing a `.js` that fails
+    `node --check`/`nudo check` with exit 0.
+  - BUG-226: `migrate verify`'s env merge uses `mergeHarvestUnderEnv` (the `check` path), so
+    harvest-only exports are no longer dropped ⇒ `verify` no longer reports `unknown` where
+    `check` reports a precise type.
+  - BUG-064: `migrate verify` resolves project-level env against the project root and
+    file-level env against the file's directory, and surfaces env load errors as
+    `nudo:env-unresolved`.
+  - BUG-061: `migrate verify` installs the eval-fallback collector, so an internal analysis
+    failure is an error-level `nudo:internal` (same code/severity as `check`).
+  - BUG-114: `migrate verify` runs the strict, extension-aware parse first, so TS-only
+    syntax inside a `.js` file is a per-file `syntax-error` instead of `verify` saying
+    `nudoOk: true`.
+  - BUG-015: `migrate`'s `ignoreThrows` uses the same lenient parser as `check`.
+  - BUG-051 / BUG-052 / BUG-103 / BUG-117 / BUG-118: retire batch semantics — a mixed batch
+    retries the work-bearing targets and reports the skipped ones; `retire --all` shares
+    `retireScope` with the single-target path; a leftover `migrate-retiring.json` is
+    recovered; a repeat run reports `already retired` with a zero delta (the ledger no
+    longer leaks into this run's result); a multi-root failure reports every bad root.
+  - BUG-053 / BUG-112 / BUG-179: JSON/human faces — dry-run results carry `dryRun`; an
+    unknown action emits a JSON error envelope instead of empty stdout; the human face
+    prints only this run's deltas.
+  - BUG-062 / BUG-063 / BUG-065 / BUG-102 / BUG-116: retire/status plumbing — the gate
+    script test is command-text based and reports the real `from`; the workflow dedup key
+    includes the line so the rewrite count is exact; a corrupt marker fails closed and is
+    left byte-identical; `status` and `retire` share the same workflow scope; the product
+    specifier is tried verbatim before candidate rewriting.
+  - BUG-178: `migrate status` uses retire's gate/compiler split for blockers and reports a
+    `preserved` field; `next:` branches on state instead of being unconditional.
+  
+  Regression tests: `migrate-bug-{015,050,051,052,053,061,062,063,064,065,102,103,112,114,
+  116,117,118,178,179,226,234}-*` and `core-bug-234-*`.
+  
+  Known follow-up NOT covered here: BUG-017 (`--json` top-level shape) is blocked because
+  existing tests pin **both** an object envelope for failures and an array for success; a
+  single shape breaks at least two of `cli-bug-696-migrate-strip-json-envelope`,
+  `migrate-bug-cli-wiring`, `cli-bug-56-cli-face`, `cli-bug-675-migrate-retire-json-shape`,
+  `migrate-bug-1028-marker-json-same-shape`. Every failure path now uses the same object
+  envelope (including the previously empty-stdout unknown-action path).
+  
+  ## 追加：BUG-017 `migrate --json` 顶层形状恒为数组
+  
+  成功路径早已是数组，动作级失败路径却输出对象信封（`{ ok:false, action, targets,
+  error }`）⇒ 消费方 `JSON.parse(stdout).map(...)` 在失败路径抛异常。现统一为
+  **数组**：失败/正常终止信封一律包成单元素数组（`[ { ok:false, … } ]`），
+  `status` / `verify` / `strip` / `retire` 四个 action 与未知 action 分支同口径。
+  
+  已有测试更新（原先钉住对象信封）：
+  
+  - `cli-bug-696-migrate-strip-json-envelope.test.ts`（失败面读 `[0]`，并断言
+    `Array.isArray`）
+  - `migrate-bug-cli-wiring.test.ts`（Bug 1006 失败面同上）
+  - `cli-bug-56-cli-face.test.ts`（正常终止信封 `failedTargets` 同上）
+  
+  成功路径的数组形状（`cli-bug-675` / `migrate-bug-1028`）不变。
+- Updated dependencies [51e69f8]
+- Updated dependencies [51b510a]
+- Updated dependencies [aed8e00]
+- Updated dependencies [e4190b5]
+- Updated dependencies [6daa52e]
+- Updated dependencies [206713f]
+- Updated dependencies [0650ef0]
+- Updated dependencies [fe03e18]
+- Updated dependencies [250f0ba]
+- Updated dependencies [d4ab7fb]
+- Updated dependencies [9ff1709]
+- Updated dependencies [afd7c36]
+- Updated dependencies [7231e87]
+- Updated dependencies [37e9aa0]
+  - @nudojs/core@1.17.2
+  - @nudojs/service@1.10.3
+  - @nudojs/parser@1.5.6
+  - @nudojs/env@0.5.6
+  - @nudojs/harvester@0.4.6
+
 ## 1.7.2
 
 ### Patch Changes
