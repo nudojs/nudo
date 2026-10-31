@@ -33,7 +33,7 @@ import {
   materializeHarvestJson,
   serializeHarvestJson,
 } from "./harvest-json.ts";
-import { BoundedLruMap } from "./lru-map.ts";
+import { BoundedLruMap } from "@nudojs/core/internal";
 
 /** IDE-startup budgets for @types/node harvest. Do not raise casually. */
 export const HARVEST_NODE_DEFAULT_MAX_FILES = 12;

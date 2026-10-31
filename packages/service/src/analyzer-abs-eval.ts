@@ -10,7 +10,7 @@
  *   （generalize）解析不出被调方（跨模块 import 的绑定）时退成 bare unknown，
  *   此时 display 改由**求值面**结果合成——`unknown` 只在真的推断失败时出现。
  */
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { File, Node } from "@babel/types";
 import {
@@ -29,7 +29,7 @@ import {
 } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { sourceHasModuleDependency, sourceHasRequireCall } from "@nudojs/core/internal";
-import { resolveModuleFile } from "./load-module.ts";
+import { resolveModuleFile, statFingerprint } from "./load-module.ts";
 import {
   neverAbs,
   type CallRecord,
@@ -406,12 +406,13 @@ function buildModuleExportIndex(
 
 /** 模块导出索引（读盘 + 解析；mtime+size 命中即复用） */
 function moduleExportIndex(modulePath: string): ModuleExportIndex | undefined {
-  let st: { mtimeMs: number; size: number };
+  let st: { mtimeMs: number; size: number } | undefined;
   try {
-    st = statSync(modulePath);
+    st = statFingerprint(modulePath);
   } catch {
     return undefined;
   }
+  if (st === undefined) return undefined;
   const cached = moduleIndexCache.get(modulePath);
   if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) return cached;
   let source: string;

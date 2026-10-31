@@ -13,7 +13,7 @@
 
 import { statSync, readFileSync, existsSync } from "node:fs";
 import { dirname, resolve, join, extname } from "node:path";
-import { BoundedLruMap } from "./lru-map.ts";
+import { BoundedLruMap } from "@nudojs/core/internal";
 
 export type LoadModule = (spec: string, fromFile: string) => string | undefined;
 
@@ -147,6 +147,19 @@ export function resolveModuleFile(
     if (st !== undefined && !st.isDirectory()) return cand;
   }
   return undefined;
+}
+
+/**
+ * 会话缓存指纹（mtimeMs + size）——abs-modules-graph / moduleExportIndex /
+ * ModuleGraphCache 三处命中判定的共享样板。
+ *
+ * 错误分类同 resolveModuleFile（#135）：ENOENT/ENOTDIR 零异常返 undefined
+ * （`throwIfNoEntry: false`），其余（EACCES / EIO / EMFILE …）是真实读故障、
+ * 照抛——由各调用方按自身口径兜底（不得在此折叠，瞬态故障会被缓存钉死整场）。
+ */
+export function statFingerprint(path: string): { mtimeMs: number; size: number } | undefined {
+  const st = statSync(path, { throwIfNoEntry: false });
+  return st === undefined ? undefined : { mtimeMs: st.mtimeMs, size: st.size };
 }
 
 /**

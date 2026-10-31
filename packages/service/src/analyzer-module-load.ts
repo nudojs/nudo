@@ -7,7 +7,7 @@ import { dirname, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import { stablePathKey, stablePathKeyGraph } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed, resolveNpmNudo } from "./evaluator/resolve-npm.ts";
-import { MODULE_RESOLVE_EXTS, resolveModuleFile } from "./load-module.ts";
+import { MODULE_RESOLVE_EXTS, resolveModuleFile, statFingerprint } from "./load-module.ts";
 import { collectDependencySpecs } from "./static-imports.ts";
 
 export { stablePathKey, stablePathKeyGraph };
@@ -94,9 +94,9 @@ export function buildModuleGraph(
     let edges: string[];
     if (cache) {
       // stat 仅取元数据不读内容；mtimeMs+size 均一致视为命中，复用边并跳过磁盘读取与解析
-      let stat: ReturnType<typeof statSync> | null = null;
+      let stat: { mtimeMs: number; size: number } | undefined;
       try {
-        stat = statSync(file);
+        stat = statFingerprint(file);
       } catch {
         /* stat 失败（文件被删等）按未命中处理，走直读兜底 */
       }

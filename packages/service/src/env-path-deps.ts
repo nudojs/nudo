@@ -2,9 +2,8 @@
  * path-based `@nudo:env` / `@nudo:mock-module` 反向依赖（watch 失效）。
  * named env（es/node/web）不进此表——它们不随工作区文件变更。
  */
-import { extractAllLoadSpecs, stablePathKey } from "@nudojs/core/internal";
+import { BoundedLruMap, extractAllLoadSpecs, stablePathKey } from "@nudojs/core/internal";
 import { resolveModuleFile } from "./load-module.ts";
-import { BoundedLruMap } from "./lru-map.ts";
 
 /**
  * env 模板绝对路径 → 引用它的分析源文件集合。

@@ -22,7 +22,7 @@ import {
   type PackageHarvest,
 } from "./harvest-package.ts";
 import { harvestPackageCached } from "./harvest-auto.ts";
-import { BoundedLruMap } from "./lru-map.ts";
+import { BoundedLruMap } from "@nudojs/core/internal";
 
 function markMockConf(a: Abs): Abs {
   a.conf = confJoin(a.conf, "mock");

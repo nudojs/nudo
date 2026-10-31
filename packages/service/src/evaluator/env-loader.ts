@@ -13,11 +13,14 @@ import {
   type ObjShape,
   type Slot,
 } from "@nudojs/core";
-import { createScopedSlot, registerCollectorScopeParticipant } from "@nudojs/core/internal";
+import {
+  BoundedLruMap,
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "@nudojs/core/internal";
 import { defineEnv as defineEsEnv } from "@nudojs/env/es";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
 import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
-import { BoundedLruMap } from "../lru-map.ts";
 
 /** Abs 原生 env 定义（内置 es/web/node 与 harvest 产物） */
 type EnvDefinition = {

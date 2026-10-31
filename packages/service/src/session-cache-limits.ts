@@ -7,7 +7,7 @@
  * 覆盖面：analysis-file-cache（maxFiles）/ fn-analysis-cache（maxFns）/
  * eval-run（maxEvalRuns）。其余驻留结构（harvest-auto / harvest-node /
  * abs-modules-graph / env-loader path-env / env-path-deps）用各自的硬上限常量，
- * 见各文件与 lru-map.ts。所有上限加起来给出大仓分析后 retained 内存的上界。
+ * 见各文件与 @nudojs/core/internal 的 BoundedLruMap。所有上限加起来给出大仓分析后 retained 内存的上界。
  */
 export type SessionCacheLimits = {
   /** 整文件 AnalysisResult LRU；0 = 关闭 */

@@ -8,7 +8,7 @@ import { join, resolve, dirname, basename } from "node:path";
 import ts from "typescript";
 import { harvestDts, type HarvestedEnv } from "./harvest-dts.ts";
 import { formatShape } from "@nudojs/core";
-import { BoundedLruMap } from "./lru-map.ts";
+import { BoundedLruMap } from "@nudojs/core/internal";
 
 /** 包本体是否自带声明（package.json types/typings → index.d.ts） */
 function packageDeclaresTypes(root: string): boolean {

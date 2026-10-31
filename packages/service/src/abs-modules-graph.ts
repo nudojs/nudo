@@ -3,7 +3,7 @@
  * 读 fs / 解析路径 / harvest 在这里；core 只收 modules 表。
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
@@ -23,12 +23,11 @@ import {
 } from "@nudojs/core";
 import { VISITOR_KEYS, type Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/core/internal";
+import { hashSource, stablePathKey, clearLiveImportRefreshers, BoundedLruMap } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed, type NpmLoadMode } from "./evaluator/resolve-npm.ts";
-import { moduleResolveCandidates, loadModuleOutcome, type ModuleLoadOutcome } from "./load-module.ts";
+import { moduleResolveCandidates, loadModuleOutcome, statFingerprint, type ModuleLoadOutcome } from "./load-module.ts";
 import { resolveEvalInjection } from "./eval-injection.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
-import { BoundedLruMap } from "./lru-map.ts";
 
 /**
  * 模块 AST 的**源面严格性**（原生 strict mode code 判据）：
@@ -1009,8 +1008,8 @@ export function evalAbsModuleGraph(
           preloaded = viaLoader;
           hit = hashSource(viaLoader) === shared.contentHash;
         } else {
-          const st = statSync(absPath);
-          hit = st.mtimeMs === shared.mtimeMs && st.size === shared.size;
+          const st = statFingerprint(absPath);
+          hit = st !== undefined && st.mtimeMs === shared.mtimeMs && st.size === shared.size;
           // custom loader 在场但当前不接管该路径：条目可能是 loader 时期的
           // 覆写内容（如 LSP buffer 未保存即关闭回退磁盘），stat 只证明磁盘
           // 未动、不证明条目内容 == 磁盘内容——补内容 hash 复核（宁冷勿陈旧；
@@ -1276,8 +1275,7 @@ export function evalAbsModuleGraph(
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;
     try {
-      const st = statSync(absPath);
-      fingerprint = { mtimeMs: st.mtimeMs, size: st.size };
+      fingerprint = statFingerprint(absPath);
     } catch {
       /* 无指纹（如自定义 loader 的虚拟文件）→ 不入会话缓存 */
     }

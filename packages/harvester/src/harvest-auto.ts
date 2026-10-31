@@ -5,10 +5,9 @@
 
 import { parse } from "@nudojs/parser";
 import type { Abs } from "@nudojs/core";
-import { collectDependencySpecs } from "./collect-specs.ts";
+import { BoundedLruMap, collectDependencySpecs } from "@nudojs/core/internal";
 import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
 import { harvestPackageWithDisk } from "./harvest-disk.ts";
-import { BoundedLruMap } from "./lru-map.ts";
 
 /**
  * Node builtin module names (with or without `node:` prefix). Bare imports of

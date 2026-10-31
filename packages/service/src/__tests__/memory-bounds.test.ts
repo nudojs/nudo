@@ -35,7 +35,7 @@ import {
   clearEnvPathDeps,
   noteEnvPathDeps,
 } from "../env-path-deps.ts";
-import { BoundedLruMap } from "../lru-map.ts";
+import { BoundedLruMap } from "@nudojs/core/internal";
 
 function writeBatch(dir: string, n: number, prefix = "m"): string[] {
   const files: string[] = [];
