@@ -461,8 +461,11 @@ export function generatedExportNames(sidecarSrc: string): Set<string> {
  * （`// 手写契约：这里提到了 @generated 这个词`、块注释里的
  * `this is NOT a @generated block`）都算生成标记 ⇒ 手写段的 L1 义务整体消失
  * + emit 侧整段覆盖手写契约（Bug 443）。用户**引用**nudo 的提示语 ≠ nudo 写的段头。
+ *
+ * 导出供 service emit 面（interface-derivation-emit / interface-emitter）
+ * 复用——此前两处逐字拷贝靠注释「口径与 core 一致」手工同步。
  */
-function isGeneratedMarkerLine(line: string): boolean {
+export function isGeneratedMarkerLine(line: string): boolean {
   const t = line.trim();
   let rest: string;
   if (t.startsWith("//")) rest = t.slice(2);
@@ -492,8 +495,8 @@ const SKIPPED_NODE_KEYS = new Set([
   "errors",
 ]);
 
-/** 节点子树里出现的标识符名（非计算属性键只是键名，不算「引用」） */
-function collectIdentNames(node: unknown, out: Set<string>): void {
+/** 节点子树里出现的标识符名（非计算属性键只是键名，不算「引用」）；导出供 service emit 面复用 */
+export function collectIdentNames(node: unknown, out: Set<string>): void {
   if (node === null || typeof node !== "object") return;
   if (Array.isArray(node)) {
     for (const n of node) collectIdentNames(n, out);
@@ -529,9 +532,14 @@ function collectIdentNames(node: unknown, out: Set<string>): void {
  * region ⇒ **手写段被判成生成段** ⇒ 「手写优先」保护被绕过。
  * 判据收紧为「const 的绑定被 export 引用」（引用集合按链**传递闭包**扩展：
  * 多步 prelude 的中间量只被后一步引用）。
+ *
+ * 导出供 service emit 面复用（interface-derivation-emit 的 `regionHasGeneratedMarker` /
+ * interface-emitter 的段切片）。
  */
-function sectionChainIndices(
-  stmts: ReturnType<typeof parseSource>["program"]["body"],
+export type ProgramStmts = ReturnType<typeof parseSource>["program"]["body"];
+
+export function sectionChainIndices(
+  stmts: ProgramStmts,
   exportIdx: number,
 ): Set<number> {
   const chain = new Set<number>([exportIdx]);
@@ -556,6 +564,14 @@ function sectionChainIndices(
     break;
   }
   return chain;
+}
+
+/**
+ * `sectionChainIndices` 的**升序语句数组**形态（interface-emitter 的段切片
+ * 需要「链首在前」的顺序——import 也入段切片）。
+ */
+export function sectionChainList(stmts: ProgramStmts, exportIdx: number): ProgramStmts {
+  return [...sectionChainIndices(stmts, exportIdx)].sort((a, b) => a - b).map((i) => stmts[i]!);
 }
 
 /**

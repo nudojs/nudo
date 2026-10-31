@@ -919,51 +919,59 @@ function functionBodyRanges(source: string): [number, number][] {
  * `const [` 之前）仍是合法的顶层位置 ⇒ 放行。
  *
  * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
+ *
+ * 走查器 `collectNestedBodyRanges` 导出经 `@nudojs/core/internal` 供 parser
+ * 的 file-directives 通道复用——此前两条通道各留一份逐字拷贝（含整段
+ * Bug 847/1101 注释）靠手工同步。
  */
+export function collectNestedBodyRanges(ast: unknown): [number, number][] {
+  const out: [number, number][] = [];
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    const n = node as {
+      type?: string;
+      start?: number | null;
+      end?: number | null;
+      [key: string]: unknown;
+    };
+    if (
+      (n.type === "ClassBody" ||
+        n.type === "ObjectExpression" ||
+        n.type === "ArrayExpression" ||
+        n.type === "ObjectPattern" ||
+        n.type === "ArrayPattern") &&
+      typeof n.start === "number" &&
+      typeof n.end === "number"
+    ) {
+      out.push([n.start, n.end]);
+    }
+    for (const key of Object.keys(n)) {
+      // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
+      if (
+        key === "loc" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments" ||
+        key === "comments" ||
+        key === "tokens" ||
+        key === "extra"
+      ) {
+        continue;
+      }
+      visit(n[key]);
+    }
+  };
+  visit(ast);
+  return out;
+}
+
 function nestedBodyRanges(source: string): [number, number][] {
   try {
-    const out: [number, number][] = [];
-    const visit = (node: unknown): void => {
-      if (!node || typeof node !== "object") return;
-      if (Array.isArray(node)) {
-        for (const item of node) visit(item);
-        return;
-      }
-      const n = node as {
-        type?: string;
-        start?: number | null;
-        end?: number | null;
-        [key: string]: unknown;
-      };
-      if (
-        (n.type === "ClassBody" ||
-          n.type === "ObjectExpression" ||
-          n.type === "ArrayExpression" ||
-          n.type === "ObjectPattern" ||
-          n.type === "ArrayPattern") &&
-        typeof n.start === "number" &&
-        typeof n.end === "number"
-      ) {
-        out.push([n.start, n.end]);
-      }
-      for (const key of Object.keys(n)) {
-        // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
-        if (
-          key === "loc" ||
-          key === "leadingComments" ||
-          key === "trailingComments" ||
-          key === "innerComments" ||
-          key === "comments" ||
-          key === "tokens" ||
-          key === "extra"
-        ) {
-          continue;
-        }
-        visit(n[key]);
-      }
-    };
-    visit(parseSource(source));
-    return out;
+    return collectNestedBodyRanges(parseSource(source));
   } catch {
     return [];
   }

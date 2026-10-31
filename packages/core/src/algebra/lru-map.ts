@@ -1,7 +1,12 @@
 /**
- * 有界 LRU Map（core 层，与 service BoundedLruMap 同语义）。
- * 用途：pure memo 内层 Map 等进程内驻留结构的硬内存上界。
- * 超过 max 时淘汰最旧；命中移到队尾。max <= 0 关闭缓存。
+ * 有界 LRU Map（插入序 = 最近使用序）。core 唯一实现，service / harvester
+ * 经 `@nudojs/core/internal` 复用（此前三包各留一份手工同步的拷贝）。
+ *
+ * 上限与淘汰：超过 `max` 时删掉最旧（最久未命中/写入）的键；命中会把键移到队尾。
+ * `max <= 0` 表示关闭缓存（get 恒 miss、set 丢弃），与 session-cache-limits 口径一致。
+ *
+ * 用途：进程内驻留结构（pure memo 内层 Map、会话级模块/指纹缓存等）的硬内存
+ * 上界，让大仓分析后的 retained 内存可预测。
  */
 export class BoundedLruMap<V> {
   private readonly map = new Map<string, V>();
@@ -15,6 +20,7 @@ export class BoundedLruMap<V> {
     return this.map.size;
   }
 
+  /** 当前上限（可动态收紧；收紧时立刻按 LRU 压到新上限） */
   getMax(): number {
     return this.max;
   }
@@ -31,13 +37,20 @@ export class BoundedLruMap<V> {
   get(key: string): V | undefined {
     const hit = this.map.get(key);
     if (hit === undefined) return undefined;
+    // LRU：命中移到队尾
     this.map.delete(key);
     this.map.set(key, hit);
     return hit;
   }
 
+  /** 命中不改变 LRU 序（只读探测） */
+  peek(key: string): V | undefined {
+    return this.map.get(key);
+  }
+
   set(key: string, value: V): void {
     if (this.max <= 0) return;
+    // 覆盖已有键不涨 size，也不挤掉别人
     while (this.map.size >= this.max && !this.map.has(key)) {
       const oldest = this.map.keys().next().value;
       if (oldest === undefined) break;
@@ -55,6 +68,19 @@ export class BoundedLruMap<V> {
     this.map.clear();
   }
 
+  keys(): IterableIterator<string> {
+    return this.map.keys();
+  }
+
+  values(): IterableIterator<V> {
+    return this.map.values();
+  }
+
+  entries(): IterableIterator<[string, V]> {
+    return this.map.entries();
+  }
+
+  /** 压到当前 max（调低上限时收内存） */
   trim(): void {
     while (this.map.size > this.max) {
       const oldest = this.map.keys().next().value;

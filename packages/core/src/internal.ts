@@ -150,3 +150,17 @@ export {
 } from "./algebra/abs.ts";
 export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
 export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";
+
+// ── 跨包共享原语（service / harvester / parser 复用；此前各包留拷贝靠手工同步） ──
+export { BoundedLruMap } from "./algebra/lru-map.ts";
+export { collectNestedBodyRanges } from "./algebra/directive-scan.ts";
+export {
+  collectDependencySpecs,
+} from "./algebra/scan-deps.ts";
+export {
+  collectIdentNames,
+  isGeneratedMarkerLine,
+  sectionChainIndices,
+  sectionChainList,
+  type ProgramStmts,
+} from "./algebra/scan-named-exports.ts";
