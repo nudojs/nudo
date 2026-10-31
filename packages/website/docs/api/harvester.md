@@ -173,7 +173,7 @@ See also [Language Semantics — mock boundary](../concepts/semantics.md#mock-bo
 | <a id="collectbarepackages"></a>`collectBarePackages` | fn | — | `collectBarePackages(source: string): string[]` |
 | <a id="collectdtsfromentry"></a>`collectDtsFromEntry` | fn | 从入口 .d.ts 沿 reference path / 相对 import 做 BFS 收集。 | `collectDtsFromEntry(entry: string, maxFiles = 200): string[]` |
 | <a id="depscacheroot"></a>`depsCacheRoot` | fn | 依赖包层缓存根（跨项目）；off/0 关闭 | `depsCacheRoot(): string \| undefined` |
-| <a id="dtsclosurehash"></a>`dtsClosureHash` | fn | dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口） | `dtsClosureHash(files: string[]): string` |
+| <a id="dtsclosurehash"></a>`dtsClosureHash` | fn | dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口）；读故障语义见 dtsClosureHashDetailed | `dtsClosureHash(files: string[]): string` |
 | <a id="dtscontractdraft"></a>`DtsContractDraft` | type | — | `DtsContractDraft = { label: string; files: string[]; exports: DtsExportDraft[]; draftSource: string; stats: { files: number; exports: num...` |
 | <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; partial?: boolean; }` |
 | <a id="dtspathtocontractdraft"></a>`dtsPathToContractDraft` | fn | 目录/文件入口：内部解析 .d.ts 列表。 | `dtsPathToContractDraft( path: string, label?: string, ): DtsContractDraft` |

@@ -324,10 +324,9 @@ Abs → **Standard Schema v1** runtime module source (`~standard`, `vendor: "nud
 
 ---
 
-## generateGuardFunction
+## generateGuardFunctionFromAbs
 
 ```typescript
-generateGuardFunction(name: string, abs: Abs): string
 generateGuardFunctionFromAbs(name: string, abs: Abs): string
 ```
 
@@ -335,7 +334,7 @@ Generates a zero-dependency runtime type guard function as a string. The generat
 
 **Example:**
 ```typescript
-generateGuardFunction("isUser", obj({ name: str() }))
+generateGuardFunctionFromAbs("isUser", obj({ name: str() }))
 // → "function isUser(data) { ... }"
 ```
 
@@ -655,6 +654,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="bodyreadfieldsfor"></a>`bodyReadFieldsFor` | fn | 某函数某形参的 body-read 字段类型（供 draft / quickfix） | `bodyReadFieldsFor( map: BodyReadTypes, fnName: string, paramName: string, ): BodyReadField[] \| undefined` |
 | <a id="bodyreadtypes"></a>`BodyReadTypes` | type | — | `BodyReadTypes = Map<string, Map<string, BodyReadField[]>>` |
 | <a id="buildcasedirective"></a>`buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |
+| <a id="buildevalinjection"></a>`buildEvalInjection` | fn | — | `buildEvalInjection( filePath: string, source: string, allEnvNames: string[], dirDiags: DirectiveDiag[], parseAst: (filePath: string, source: string) => ReturnType<typeof parse>, )` |
 | <a id="buildmodulegraph"></a>`buildModuleGraph` | fn | Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). | `buildModuleGraph( files: string[], cache?: ModuleGraphCache, )` |
 | <a id="buildtestreport"></a>`buildTestReport` | fn | 汇总一份 case 报告的断言结果（+ 逐函数展示行）。 | `buildTestReport( file: string, result: AnalysisResult, opts: TestReportOptions = {}, ): TestReport` |
 | <a id="callrecord"></a>`CallRecord` | type | — | — |
@@ -681,7 +681,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="collectcallrecords"></a>`collectCallRecords` | fn | 调用点发现（阶段一）：在"使用现场"文件（测试 / 上层应用）中求值 顶层代码，收集它对（外部模块导出的）函数的调用记录。每条记录带 真实的实参类型与结果类型——后续 analyzeFile 将其注入合成 case， 使被使用方从 entry-only（参数全 unknown）升级为真实调用形态。 | `collectCallRecords(filePath: string, source: string): CallSiteRecord[]` |
 | <a id="collectcallsiterecords"></a>`collectCallsiteRecords` | fn | 采集使用点记录（`--from` 等价通道）。 | `collectCallsiteRecords(sites: string[]): CallsiteRecords` |
 | <a id="collectchecksupplementissues"></a>`collectCheckSupplementIssues` | fn | 采集三条补充诊断通道（指令文法 / mock 装载 / env 未解析）→ CheckIssue[]。 | `collectCheckSupplementIssues( filePath: string, source: string, opts: CheckSupplementOptions = {}, ): CheckIssue[]` |
-| <a id="collectdependencyspecs"></a>`collectDependencySpecs` | fn | 从 AST 收集静态相对依赖（ESM import + CJS require） | `collectDependencySpecs(ast: File): string[]` |
+| <a id="collectdependencyspecs"></a>`collectDependencySpecs` | const | — | — |
 | <a id="collectenvglobals"></a>`collectEnvGlobals` | fn | — | `collectEnvGlobals(envNames: string[]): Record<string, Abs>` |
 | <a id="collectenvmodules"></a>`collectEnvModules` | fn | Bug 282：env 模块是 **CJS 互操作**模块——Node 的 `node:fs` 的默认导出就是 模块对象本身（具名导出挂在它上面）⇒ ESM **默认导入** （`import fs from "node:fs"`）必须绑到**命名空间**。 | `collectEnvModules(envNames: string[]): Record<string, AbsModuleExports>` |
 | <a id="collectenvnames"></a>`collectEnvNames` | fn | — | `collectEnvNames(filePath: string, source: string, includeProject: boolean): string[]` |
@@ -700,6 +700,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="composedevalmodules"></a>`ComposedEvalModules` | type | 模块图组装的共享产物：analyzer 与 tryRunEval 走同一序列 （evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv → applyMockModule*），单一事实源，不再各自漂移。 | `ComposedEvalModules = { modules: Record<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; mockErrors: string[]; }` |
 | <a id="composeevalmodules"></a>`composeEvalModules` | fn | 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入 （手写 env wins，B8）→ @nudo:mock-module 覆盖。 | `composeEvalModules( source: string, filePath: string, opts: { envNames?: string[]; seedVars?: Record<string, Abs>; seedFns?: AbsGraphOptions["seedFns"]; loadModule?: LoadModule; fileDirectives?: FileDirective[]; } = {}, ): ComposedEvalModules` |
 | <a id="computedirtyset"></a>`computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
+| <a id="configignorethrows"></a>`configIgnoreThrows` | fn | package.json#nudo.check.ignoreThrows 的**原始**值 → 与 CLI 同口径的列表 （679：配置面复用本解析器，不再走各面自己的严格 `string[]` 过滤—— 裸字符串 `"TypeError"` 曾被静默丢成空表 ⇒ 门禁假红）。 | `configIgnoreThrows( config: { check?: unknown } \| null \| undefined, ): string[]` |
 | <a id="constraintsourceexpr"></a>`ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
 | <a id="constrainttoschemanode"></a>`constraintToSchemaNode` | fn | NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） | `constraintToSchemaNode(c: NudoConstraint): SchemaNode` |
 | <a id="contractdslof"></a>`contractDslOf` | fn | 契约证据 → constraint-builder DSL 文本（`array(shape({ … }))` 等） | `contractDslOf(ev: ParamContractEvidence): string` |
@@ -778,10 +779,10 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="formatexpected"></a>`formatExpected` | fn | 期望值的可读文本（带谓词）：`number (> 0)` / `{ n: number (> 0) }`。 | `formatExpected(expected: Abs): string` |
 | <a id="formatinterfacesurfaceline"></a>`formatInterfaceSurfaceLine` | fn | 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） | `formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string` |
 | <a id="formatpatherrortext"></a>`formatPathErrorText` | fn | 路径错误的**非 JSON 面**文案（CLI 的 usage error 面同口径）： 一行原因 + 一行 `fix:` 提示。 | `formatPathErrorText(errors: PathError[]): string` |
+| <a id="formattestreport"></a>`formatTestReport` | fn | — | `formatTestReport(r: TestReport): string` |
 | <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; cases: CaseResult[]; combinedAbs?:...` |
 | <a id="generatedts"></a>`generateDts` | fn | — | `generateDts(result: AnalysisResult): string` |
 | <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | — | `generateFunctionDtsLines( fn: FunctionAnalysis, contract?: DtsContractFace, ): string[]` |
-| <a id="generateguardfunction"></a>`generateGuardFunction` | fn | 兼容别名：Abs 路径唯一（`used` 语义同上）。 | `generateGuardFunction(name: string, abs: Abs, used?: Set<string>): string` |
 | <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | 守卫源码：`export function <name>(value: unknown): boolean { … }`。 | `generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<string>): string` |
 | <a id="getabsmodulecachesize"></a>`getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
 | <a id="getanalysisfilecachesize"></a>`getAnalysisFileCacheSize` | fn | — | `getAnalysisFileCacheSize(): number` |
@@ -832,10 +833,12 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="moduleexports"></a>`ModuleExports` | type | — | `ModuleExports = { path: string; named: Map<string, string>; defaultExport?: string; source: string; poly: Map<string, PolyFn>; }` |
 | <a id="modulegraphcache"></a>`ModuleGraphCache` | type | mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 | `ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>` |
 | <a id="modulereaderror"></a>`ModuleReadError` | fn | 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
+| <a id="normalizerealpath"></a>`normalizeRealPath` | fn | — | `normalizeRealPath(p: string): string` |
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="paramcontractevidence"></a>`ParamContractEvidence` | type | 参数契约证据（quickfix 侧车发射面）： - array：参数被当数组方法接收者调用（`items.reduce(…)`）；element 为 回调元素位合成的元素契约（无证据 → array(any())） - shape：参数被成员读取（既有 body-read 字段面） - scalar：参数本体直接用法（`1 + tax` → number()）——多参函数只收窄 一个参数仍消不掉 L2（残余 may-throw 来自其余未约束位） 优先级：array &gt; shape &gt; scalar（数组方法读是最强形态证据）。 | `ParamContractEvidence = \| { kind: "array"; element?: ParamContractEvidence } \| { kind: "shape"; fields: BodyReadField[] } \| { kind: "scal...` |
 | <a id="paramcontracts"></a>`ParamContracts` | type | fnName → paramName → 契约证据（参数按声明序插入） | `ParamContracts = Map<string, Map<string, ParamContractEvidence>>` |
+| <a id="parseignorethrows"></a>`parseIgnoreThrows` | fn | `--ignore-throws` / `package.json#nudo.check.ignoreThrows` 解析的 **单一实现**（CLI / LSP / vite-plugin 三面共享）。 | `parseIgnoreThrows(raw?: unknown): string[] \| undefined` |
 | <a id="pathenvpreloadfingerprint"></a>`pathEnvPreloadFingerprint` | fn | **预载状态**指纹（已驻留的 path env 文件：路径 + mtimeMs）。 | `pathEnvPreloadFingerprint(): string` |
 | <a id="patherror"></a>`PathError` | type | 路径错误（--json 信封的 pathErrors 面；非 JSON 面走 usage error）。 | `PathError = { path: string; code: PathErrorCode; message: string; suggestion: string; }` |
 | <a id="patherrorcode"></a>`PathErrorCode` | type | 路径错误码（与 CLI 的 `PathError` 码集一致）。 | `PathErrorCode = \| typeof DIAG.pathNotFound \| typeof DIAG.pathEmptyDir \| typeof DIAG.pathNotTarget \| typeof DIAG.pathMissingCallsite \| typ...` |

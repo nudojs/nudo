@@ -375,7 +375,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="nudothrow"></a>`NudoThrow` | type | control-signal / throw | — |
 | <a id="runtimeimportof"></a>`runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf(runtime: string): string` |
 | <a id="setevalcallcollector"></a>`setEvalCallCollector` | fn | call-site recording for analyze | `setEvalCallCollector( collector: ((r: EvalCallRecord) => void) \| null, )` |
-| <a id="transpile"></a>`transpile` | fn | JS AST → `$op` program | `transpile(source: string, opts?: TranspileOptions): string` |
 | <a id="transpilebodynode"></a>`transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
 | <a id="transpileexpression"></a>`transpileExpression` | fn | JS AST → `$op` program | `transpileExpression(expr: Expression, opts: TranspileOptions = {}): string` |
 | <a id="transpilefile"></a>`transpileFile` | fn | JS AST → `$op` program | `transpileFile(file: File, opts: TranspileOptions = {}): string` |
