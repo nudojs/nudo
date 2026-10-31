@@ -5,9 +5,9 @@
  * - Bug 202：`Array.from(用户 iterable)` **实际驱动**用户迭代器（GetIterator
  *   + IteratorNext，元素按迭代序取）——与 elemsOf / for-of / spread 同款
  *   协议；迭代器报告 done ⇒ 元素数确切 ⇒ exact 元组。
- * - Bug 195：`Array.isArray` 认**数组视图标注**（markMatchArrayView）的对象
- *   ——标签模板对象是冻结的数组 exotic（原生 true）；RegExp exec/match
- *   结果同款（原生亦是真数组）。
+ * - Bug 195：`Array.isArray` 认**数组视图**的对象（形状 facet
+ *   `view: "array"`，abs.ts）——标签模板对象是冻结的数组 exotic（原生
+ *   true）；RegExp exec/match 结果同款（原生亦是真数组）。
  * - Bug 294：array-like 读数（length / 逐索引）**先经访问器侧表**
  *   （accessorReadDomain）——真 getter 住侧表、shape 里只有占位槽；
  *   裸读槽 ⇒ length 被当 undefined（折空数组）+ getter 副作用消失。
@@ -18,7 +18,7 @@
  *   **nullish** ⇒ 定抛 TypeError（ToObject）——不记抛 ⇒ L2 门禁假绿。
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown, isArrayView } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import { markDomainShared } from "../len-sharing.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -41,11 +41,6 @@ import { absFunction } from "../abs-fn.ts";
 import { boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
 import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
-// Bug 195：标签模板对象是**数组 exotic**（原生 GetTemplateObject →
-// CreateArrayFromList + SetIntegrityLevel(frozen)）⇒ Array.isArray(s) 恒 true。
-// 引擎用「数组视图」标注（markMatchArrayView——与 RegExp exec/match 结果
-// 同款机制，json.ts 消费）标记这类对象 ⇒ isArray 与该标注同口径。
-import { isMatchArrayView } from "./regexp.ts";
 
 export function makeArrayCtorAbs(args: Abs[]): Abs {
   /**
@@ -493,9 +488,10 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       // Bug 195：**数组视图标注**的对象是数组 exotic——原生
       // GetTemplateObject = CreateArrayFromList + SetIntegrityLevel(frozen)
       // ⇒ 标签模板对象是**冻结的数组**（`Array.isArray(s)` 恒 true）；RegExp
-      // exec/match 结果同款（原生亦是真数组）。标注机制与 json.ts 的数组
-      // 序列化面同源（markMatchArrayView）。
-      if (isMatchArrayView(a0)) return boolLit(true);
+      // exec/match 结果同款（原生亦是真数组）。标注为**形状 facet**
+      // （Shape.view = "array"，abs.ts 的 isArrayView）——与 json.ts 的数组
+      // 序列化面 / 数组方法派发 / emit 产物同源（BUG-258）。
+      if (isArrayView(a0)) return boolLit(true);
       // Bug 57：Proxy 剥 brand 即靶形态（ArrayCreate 保留靶 IsArray 槽）
       const s = peelBrand(a0.shape);
       if (s.k === "arr" || s.k === "tuple") return boolLit(true);

@@ -74,7 +74,7 @@ describe("Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", 
       });
       expect(res).not.toBeNull();
       const label = res!.signatures[0]!.label;
-      expect(label).toBe("(x: any) => unknown");
+      expect(label).toBe("(x: any) => any");
       expect(res!.signatures[0]!.parameters).toHaveLength(1);
       expect(res!.activeParameter).toBe(0);
       // 负控制：不得是外层的 3 参签名
@@ -102,7 +102,10 @@ describe("Bug 711 signatureHelp：嵌套调用弹**最内层**函数的签名", 
         position: { line: 2, character: COL_OUTER_ARG2 },
       });
       expect(res).not.toBeNull();
-      expect(res!.signatures[0]!.label).toBe("(a: any, b: any, c: any) => unknown");
+      // BUG-104：裸标识符 callee 落到与 hover 同源的 poly-fn 签名 ⇒ 返回位是
+      // 真实推断（`a + b + c` ⇒ `number | string`），不再是 arity-only 占位
+      // `unknown`。本用例的主断言（弹 outer 的 3 参签名 / activeParameter）不变。
+      expect(res!.signatures[0]!.label).toBe("(a: any, b: any, c: any) => number | string");
       expect(res!.activeParameter).toBe(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

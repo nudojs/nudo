@@ -25,6 +25,7 @@ import {
   resetEvalForkCount,
   noteHostEffectBlocked,
   registerEvalCallBudgetProbe,
+  withSpeculativeEvalObservability,
 } from "../call-budget.ts";
 import {
   tagAbsOrigin,
@@ -658,8 +659,9 @@ export const MAX_EVAL_CALL_DEPTH = MAX_CALL_DEPTH;
 /** B 命名调用总调用上限——与 A 路径同值（递归×循环×分支展开的规模阀） */
 export const MAX_EVAL_TOTAL_CALLS = MAX_TOTAL_CALLS;
 
-/** B 路径预算实例（session 重置/观测累计由状态机区分） */
-const evalBudget = createCallBudget({
+/** B 路径预算实例（session 重置/观测累计由状态机区分）。
+ *  `let` 而非 `const`：{@link runEvalCallBudgetTrial} 的试算期换成一次性实例。 */
+let evalBudget = createCallBudget({
   maxDepth: MAX_EVAL_CALL_DEPTH,
   maxCalls: MAX_EVAL_TOTAL_CALLS,
 });
@@ -713,6 +715,74 @@ export function withEvalBudgetOverride(
   } finally {
     evalBudget.setLimits(prev);
   }
+}
+
+/**
+ * BUG-248：自递归函数在 B（求值）路径上的**有界试算**。
+ *
+ * 自递归的风险不是「递归」本身：结构投影递归（`staticName(node.object)`）
+ * 在 lazy 模板深度处被环检测收住，几层即收敛，产物远精确于解释面。风险在
+ * 抽象实参的 term 逐层**变形**（`bin(n-1)`）⇒ 环检测键永不重复 ⇒ 展开只
+ * 受 depth/calls 封顶，而每层分支的 term 成员数随层数**指数**增长
+ * （`bin(n-1)+bin(n-2)` 第 d 层 ~2^d 成员）⇒ 预算生效之前堆先爆。
+ *
+ * 判据因此是**动态**的：换一次性预算实例（depth/calls 收紧）跑一遍，只有
+ * 「没撞预算」的试算才算收敛；撞 depth/calls ⇒ `budgetTruncated`，调用方
+ * 回落到「不评估」（即 BUG-248 的 fail-closed，签名仍是 unknown + L2 证据）。
+ *
+ * 试算可能被丢弃 ⇒ 观测必须可回滚：截断观测与 fork 计数由
+ * withSpeculativeEvalObservability 隔离；一次性预算实例天然不污染共享
+ * 预算状态机；被丢弃时连 pure memo 一并清账（低预算下写入的记忆化结果
+ * 比真实求值更宽，留着就是陈旧值）。
+ *
+ * 但「这次求值被预算截断」这个**事实**必须回到宿主预算面（否则宿主面
+ * 只看到旁证的 cycle ⇒ health 与 check 对同一文件给出不同归因，见函数体
+ * 末的重新记账）：回滚的是试算的**内部阈值与计数**，不是「撞了预算」这件事。
+ */
+export function runEvalCallBudgetTrial<R>(
+  limits: { depth: number; calls: number },
+  body: () => R,
+): { result: R; budgetTruncated: boolean } {
+  const outerBudget = evalBudget;
+  const outerSessionDepth = evalBudgetSessionDepth;
+  const trial = createCallBudget({ maxDepth: limits.depth, maxCalls: limits.calls });
+  evalBudget = trial;
+  evalBudgetSessionDepth = 0;
+  let result!: R;
+  let budgetTruncated = false;
+  let budgetReason: "depth" | "calls" | undefined;
+  try {
+    result = withSpeculativeEvalObservability(body);
+    const reasons = trial.stats().reasons;
+    budgetTruncated = reasons.includes("depth") || reasons.includes("calls");
+    // 守卫顺序 = cycle → depth → calls ⇒ depth 先于 calls ⇒ 两者同报时取 depth
+    budgetReason = reasons.includes("depth")
+      ? "depth"
+      : reasons.includes("calls")
+        ? "calls"
+        : undefined;
+  } finally {
+    evalBudget = outerBudget;
+    evalBudgetSessionDepth = outerSessionDepth;
+  }
+  if (budgetTruncated) {
+    // **重新记账**（根因修复）：试算是**探针**——结果被丢弃 ⇒ 调用方回落
+    // fail-closed ⇒「这次求值被预算截断」正是结果变 unknown 的原因，必须
+    // 回到宿主**预算面**（budget 块 / 上屏归因）。
+    //
+    // 不做这一步的后果（#health-budget 单一实现）：宿主面只看到旁证的
+    // cycle（探针把 depth 吞了）⇒ health 报「call cycle — not a budget
+    // limit」，而同一文件 check 面报「eval depth 64/64」⇒ 两面口径分裂，
+    // 且把「抬 @nudo:budget 有效」误报成「抬预算也解不开的环」。
+    //
+    // 计数口径：**宿主实例的生效上限**（试算的内部阈值不上屏——它既不是
+    // 宿主预算，也不是用户能调的旋钮；@nudo:budget 覆盖期间取覆盖值）。
+    // 诊断面（cycle vs 预算，#158）**不**动：归因由真正跑那条求值的路径
+    // 上报，探针撞的是探针阈值、不是用户的预算。
+    if (budgetReason) outerBudget.noteTruncation(budgetReason);
+    clearPureMemo();
+  }
+  return { result, budgetTruncated };
 }
 
 /**

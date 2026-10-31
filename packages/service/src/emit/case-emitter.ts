@@ -1,4 +1,14 @@
-import { type Abs } from "@nudojs/core";
+import {
+  type Abs,
+  type NudoConstraint,
+  type Pred,
+  derefConstraint,
+  effectiveInterface,
+  instantiateConstraint,
+  isIntFlag,
+  literalMeetsConstraint,
+  locateContractParam,
+} from "@nudojs/core";
 import { ProjectionBudget } from "@nudojs/core/internal";
 import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { CaseDirective } from "@nudojs/parser";
@@ -211,18 +221,30 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
 }
 
 /**
- * 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。
- * 任一实参不可序列化、或名字含双引号/换行（名字正则 `"([^"]+)"` 承载不了）→ 整体 null。
+ * case 实参的**规范文本**（`a, b`；任一实参不可序列化 ⇒ null）。
+ *
+ * 既是指令载荷（{@link buildCaseDirective}），也是**见证等价判定**的键：
+ * BUG-069 —— 同一调用点在固化插块后行号会漂（`call@L6` → `call@L9`），
+ * 名字对不上，但实参载荷相同 ⇒ 同一条见证（不得再写一条）。
  */
-export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null {
-  if (name.includes('"') || /[\r\n]/.test(name)) return null;
+export function serializeCaseArgs(argsAbs: Abs[]): string | null {
   const parts: string[] = [];
   for (const arg of argsAbs) {
     const s = serializeCaseArg(arg);
     if (s === null) return null;
     parts.push(s);
   }
-  return ` * @nudo:case "${name}" (${parts.join(", ")})`;
+  return parts.join(", ");
+}
+
+/**
+ * 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。
+ * 任一实参不可序列化、或名字含双引号/换行（名字正则 `"([^"]+)"` 承载不了）→ 整体 null。
+ */
+export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null {
+  if (name.includes('"') || /[\r\n]/.test(name)) return null;
+  const payload = serializeCaseArgs(argsAbs);
+  return payload === null ? null : ` * @nudo:case "${name}" (${payload})`;
 }
 
 /**
@@ -241,7 +263,35 @@ export function stripGeneratedCaseDirectives(source: string): { source: string; 
   const drop = new Array<boolean>(lines.length).fill(false);
 
   // 第一遍：标记 call@ 指令行
+  //
+  // BUG-119：**含手写 case 的 JSDoc 块不剥离生成态见证**。
+  // update 链是「剥离 → 重算 → 回写」；只要该函数上的生成态见证**无法从当前
+  // 证据重算出来**（跨文件见证只在被调方有契约、且 `--from` 给出域证据时才
+  // 合成），剥离就是**净删除且不可恢复**——残留的手写 case 又让 add 模式按
+  // 「整函数跳过」拒绝重建 ⇒ 活着的证据被 update 吃掉，health 随后转绿（假绿）。
+  // 判据是**块级**（一个 JSDoc 块 = 一个声明 = 一个函数的指令集）：块内有任何
+  // 非 `call@` 命名的 case ⇒ 该块的生成态见证原样保留（「剥离 → 回写」往返闭合）。
+  const handwrittenBlock = new Array<boolean>(lines.length).fill(false);
   for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*\/\*\*/.test(lines[i])) continue;
+    let j = i;
+    if (!/\*\//.test(lines[i].slice(2))) {
+      j = i + 1;
+      while (j < lines.length && !/\*\//.test(lines[j])) j++;
+    }
+    if (j >= lines.length) continue; // 未闭合的块：保守不动（下面的块删除逻辑自会放弃）
+    let hasHandwritten = false;
+    for (let k = i; k <= j; k++) {
+      if (/^\s*\*?\s*@nudo:case\s+"(?!call@)/.test(lines[k])) {
+        hasHandwritten = true;
+        break;
+      }
+    }
+    if (hasHandwritten) for (let k = i; k <= j; k++) handwrittenBlock[k] = true;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (handwrittenBlock[i]) continue;
     const m = lines[i].match(GENERATED_CASE_LINE_REGEX);
     if (m) {
       drop[i] = true;
@@ -292,6 +342,12 @@ export type EmitSkipReason =
   | "entry-only"
   | "no-serializable-cases"
   | "no-declaration"
+  /**
+   * 候选见证**违反被调方自己的手写契约**（BUG-055）⇒ 不写入。
+   * 归因仍留在调用现场（`nudo:interface-domain-exceeds`），不被固化搬进
+   * 被调方换成一条针对被调方的 `nudo:case-inconsistency`。
+   */
+  | "contract-violation"
   | "skipped";
 
 export type EmitResult = {
@@ -342,12 +398,187 @@ function dominantEol(source: string): "\r\n" | "\n" {
 }
 
 /**
+ * 见证名里的**文件限定段**（`call@site.js:L2` ⇒ `site.js`；`call@L6` ⇒ ""）。
+ *
+ * 见证等价判定按「文件 + 实参载荷」：**不同文件**的同实参调用点是**不同的
+ * 见证**（BUG-465 的 `call@<file>:L<n>` 口径），只有**同一文件内**行号漂移
+ * 才视为同一条见证（BUG-069）。
+ */
+function witnessFileKey(name: string): string {
+  const m = /^call@(.+):L\d+$/.exec(name);
+  return m ? m[1]! : "";
+}
+
+/**
+ * 固化写回的宿主接线（BUG-055 / BUG-119）——全部可选：
+ * 缺省时行为与改前**逐字一致**（只认源码内指令契约、add 模式的整函数跳过）。
+ */
+export type InsertCaseOptions = {
+  /**
+   * 被写文件的路径：有效契约的定位起点（`fromFile` —— 侧车 `*.nudo.js` 与
+   * 相对导入都按它解析）。缺省 ⇒ 只有源码内 `@nudo:contract` 可读。
+   */
+  filePath?: string;
+  /** 模块装载口（宿主接线；core 不碰 fs） */
+  loadModule?: (spec: string, fromFile: string) => string | undefined;
+  /** 侧车 ambient 绑定开关（host 从 package.json#nudo.contract.autoBind 解析） */
+  autoBind?: boolean;
+  /** 项目根：树外侧车不 ambient 绑定 */
+  projectDir?: string;
+  /**
+   * 重生成（BUG-119）：`--freeze=update` 的**重建**阶段置 true。
+   *
+   * - false（默认，add 模式）：函数上已有**手写** case ⇒ 整函数跳过
+   *   （不碰用户手写的块）；
+   * - true：生成态见证按**身份**逐条重建 —— 手写 case 只挡**同名**，
+   *   不挡 `call@…` 见证的重建（否则「剥离 → 重算 → 回写」不是往返闭合的：
+   *   剥离掉生成态见证后，残留的手写 case 会让整函数再次被跳过 ⇒ 活着的
+   *   见证被净删除，且 add 模式永远补不回来）。
+   */
+  rebuildGenerated?: boolean;
+};
+
+/** lazy 约束解引用预算（与 core 的 LAZY_TEMPLATE_DEPTH 同义：解到不动点为止） */
+const LAZY_DEREF_DEPTH = 12;
+
+/** lazy 链解引用到不动点（本面只做形态识别，不做展开求值） */
+function derefDeepConstraint(c: NudoConstraint): NudoConstraint {
+  let cur = c;
+  for (let i = 0; i < LAZY_DEREF_DEPTH && cur.lazy; i++) cur = derefConstraint(cur);
+  return cur;
+}
+
+/** 合取展平（`and` 一层层剥开；与 core check-case-scan 的 flatten 同口径） */
+function flattenAnd(p: Pred): Pred[] {
+  return p.op === "and" ? p.args.flatMap(flattenAnd) : p.op === "true" ? [] : [p];
+}
+
+/**
+ * 单个候选见证实参是否**可证明**违反该契约位。返回违反原因（undefined = 不违约）。
+ *
+ * **判据与 `nudo:case-inconsistency`（`core/algebra/check-case-scan.ts`）的标量
+ * 通道同口径** —— 固化面与见证面必须对同一份证据给同一裁决，否则「固化写进去
+ * 的见证」与「随后 check 判红的见证」又是两个判据（BUG-055 的根因之一）：
+ *
+ * - **结构 / 数组 / 函数域不复刻**：见证面另有逐字段通道；本面判不了就**放行**
+ *   （不写 = 丢证据，比写错更危险）；
+ * - **非字面量实参不可判** ⇒ 放行（只有字面量才有具体值可比）；
+ * - eq / union 形态（`lit()` / `union()` 契约）走**域隶属**；
+ * - 纯 bounds 形态：先 `.int()` 标志，再按数值界逐原子判；界用**实例化后**的
+ *   pred —— `.optional()` 的 `or` 包裹不执法（与见证面一致）。
+ */
+function witnessViolation(
+  arg: Abs,
+  constraint: NudoConstraint,
+  param: string,
+): string | undefined {
+  const cc = derefDeepConstraint(constraint);
+  if (cc.fields || cc.element || cc.fn) return undefined;
+  const term = arg.term;
+  if (!term || term.op !== "lit") return undefined;
+  const lv = term.value;
+  if (
+    typeof lv !== "number" &&
+    typeof lv !== "string" &&
+    typeof lv !== "boolean" &&
+    typeof lv !== "bigint" &&
+    lv !== null &&
+    lv !== undefined
+  ) {
+    return undefined;
+  }
+  const preds = Array.isArray(cc.preds) ? cc.preds : [];
+  const hasEqOr = (cc.members?.length ?? 0) > 0 || preds.some((p) => p.op === "eq");
+  if (hasEqOr) {
+    return literalMeetsConstraint(lv, cc)
+      ? undefined
+      : `value is outside the declared domain (${param})`;
+  }
+  if (typeof lv !== "number") return undefined;
+  if (isIntFlag(cc) && !Number.isInteger(lv)) {
+    return `value is not an integer (${param})`;
+  }
+  for (const p of flattenAnd(instantiateConstraint(constraint, param))) {
+    if (
+      (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
+      p.b.op === "lit" &&
+      typeof p.b.value === "number"
+    ) {
+      const n = p.b.value;
+      const ok =
+        p.op === "gt" ? lv > n : p.op === "ge" ? lv >= n : p.op === "lt" ? lv < n : lv <= n;
+      if (!ok) return `value violates ${p.op} ${n} (${param})`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 契约闸（BUG-055）：把候选见证与被调方**自己的有效契约**逐位比对，返回
+ * 「违约原因」或 undefined（不违约）。
+ *
+ * 只对 **handwritten** 契约成立 —— 与 `nudo:case-inconsistency` 的执法分档
+ * 同源（§3.3）：generated 段是事实快照、implicit 只是复述实现，都不构成
+ * 「被调方申报的域」。无契约 / 读契约失败 ⇒ 无闸（固化行为与改前一致）。
+ *
+ * 契约位 → 实参位的映射与见证面 / 调用点面同一条规则：
+ * 展示名直命中（`paramNames.indexOf`），失败再走
+ * `locateContractParam`（默认 / rest / 解构顶层名）。
+ */
+function contractGuardOf(
+  fn: AnalysisResult["functions"][number],
+  source: string,
+  opts: InsertCaseOptions,
+): ((args: Abs[]) => string | undefined) | undefined {
+  let eff;
+  try {
+    eff = effectiveInterface(source, fn.name, {
+      ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+      fromFile: opts.filePath ?? "",
+      ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+      ...(opts.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
+    });
+  } catch {
+    return undefined; // 契约读不出来 = 无闸（不得让固化崩）
+  }
+  if (!eff || eff.source !== "handwritten") return undefined;
+  const conflict = new Set(eff.conflict?.params ?? []);
+  const formals = fn.formals;
+  const entries: Array<{ idx: number; param: string; constraint: NudoConstraint }> = [];
+  for (const p of eff.params) {
+    if (!p.param || conflict.has(p.param)) continue;
+    let idx = fn.paramNames.indexOf(p.param);
+    if (idx < 0 && formals && formals.length > 0) {
+      const hit = locateContractParam(formals, p.param);
+      if (hit) idx = hit.index;
+    }
+    if (idx < 0) continue; // 契约位对不上形参（arity 谎言另由 interface-param-mismatch 报）
+    entries.push({ idx, param: p.param, constraint: p.constraint });
+  }
+  if (entries.length === 0) return undefined;
+  return (args: Abs[]): string | undefined => {
+    for (const e of entries) {
+      const arg = args[e.idx];
+      if (arg === undefined) continue;
+      const why = witnessViolation(arg, e.constraint, e.param);
+      if (why) return why;
+    }
+    return undefined;
+  };
+}
+
+/**
  * 把 analysis 中的合成 case（source === "callsite"）固化为源码指令：
  *
- * 1. 源码已有任何非 call@ 命名的 case → skip "hand-written"。
+ * 1. 源码已有任何非 call@ 命名的 case → skip "hand-written"（`rebuildGenerated`
+ *    ⇒ 改为按见证身份逐条重建，手写 case 只挡同名，见 InsertCaseOptions）。
  * 2. fn.skipped / fn.noDeclaration / fn.entryOnly → 对应 skip。
  * 3. 逐 case 序列化；个别不可序列化的丢弃并在 skipped 记
  *    no-serializable-cases（函数整体仍写可序列化子集，全不可序列化才整函数跳过）。
+ * 3b. **契约闸（BUG-055）**：候选见证与被调方的**有效手写契约**逐位比对，
+ *    违反的见证不写入（skipped 记 contract-violation）——写回动作必须用
+ *    「被写方自己的契约」守门，否则固化会把调用方的违约搬进被调方，把它
+ *    从绿改成红。
  * 4. **已固化的见证按「见证身份（名字）」逐条比对**：同名（同一调用点）不
  *    重复写，新调用点照写——二次 freeze 不再因「函数上已有 case 指令」
  *    而静默丢弃新增调用点（本次固化全在 ⇒ skip "already-generated"）。
@@ -359,7 +590,11 @@ function dominantEol(source: string): "\r\n" | "\n" {
  *    行号漂移。
  * 6. 新插入的行沿用**源文件的主导行尾**（CRLF 文件写回后不得混入裸 LF）。
  */
-export function insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult {
+export function insertGeneratedCaseDirectives(
+  source: string,
+  analysis: AnalysisResult,
+  opts: InsertCaseOptions = {},
+): EmitResult {
   const written: EmitResult["written"] = [];
   const skipped: EmitResult["skipped"] = [];
   // BOM 单独保管：对**不含 BOM** 的正文做行级编辑，写回时把 BOM 放回**文件
@@ -374,7 +609,12 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
 
   for (const fn of analysis.functions) {
     const existingCases = existing.get(fn.name) ?? [];
-    if (existingCases.some((c) => !c.name.startsWith(GENERATED_PREFIX))) {
+    // BUG-119：add 模式「有手写 case ⇒ 整函数不碰」是**只增不改**的安全规则；
+    // 但 update 链是「先剥离生成态指令 → 再回写」⇒ 残留的手写 case 会让整函数
+    // 再次被跳过 ⇒ 活着的 `call@…` 见证被净删除（且 add 模式补不回来）。
+    // 重建阶段（rebuildGenerated）改按**见证身份**逐条判：手写 case 只挡**同名**。
+    const handWritten = existingCases.filter((c) => !c.name.startsWith(GENERATED_PREFIX));
+    if (handWritten.length > 0 && !opts.rebuildGenerated) {
       skipped.push({ fn: fn.name, reason: "hand-written" });
       continue;
     }
@@ -401,12 +641,49 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
     }
     // 已固化的见证身份（名字）：同一调用点不重复写；新调用点照写。
     const existingNames = new Set(existingCases.map((c) => c.name));
+    // BUG-069：见证身份**不能只看名字**。固化会把 JSDoc 块插到函数声明之上 ⇒
+    // 同一次调用点的行号整体下移（`call@L6` → `call@L9`）⇒ 名字漂移 ⇒ 同一调用
+    // 点被当成「新见证」反复固化（源码每跑一次长一条、`--exit-on-diff` 第二次
+    // 就红）。⇒ 「**同一文件** + 相同实参载荷」即视为**同一条见证**。
+    // 文件段必须参与键：跨文件的同实参调用点是不同见证（BUG-465）。
+    const witnessKeyOf = (name: string, args: Abs[]): string | undefined => {
+      const payload = serializeCaseArgs(args);
+      return payload === null ? undefined : `${witnessFileKey(name)}\u0000${payload}`;
+    };
+    const existingPayloads = new Set(
+      // 载荷等价只判**生成态**见证之间：手写 case 是另一条证据（名字自带语义），
+      // 它的载荷与新调用点相同**不**意味着「已经固化过」——把它算进来会在重建阶段
+      // 让一条活着的调用点见证被手写 case 顶掉（BUG-119 的同类净损失）。
+      existingCases
+        .filter((c) => c.name.startsWith(GENERATED_PREFIX))
+        .map((c) => witnessKeyOf(c.name, c.argsAbs))
+        .filter((k): k is string => k !== undefined),
+    );
     const built: string[] = [];
     const names: string[] = [];
-    /** 本轮因「不可序列化」被丢弃的见证数（逐 case 已记 skip） */
+    /** 本轮被丢弃的见证数（不可序列化 / 违反契约——两类都已逐 case 记 skip） */
     let dropped = 0;
+    // BUG-055：被调方**自己的手写契约**是写回的守门人。违反它的候选见证不写入
+    // ——否则固化会把调用现场的违约搬进被调方，随后由 `nudo:case-inconsistency`
+    // 对着被调方判红（一个本来绿色的文件被自己的 freeze 操作变成红色）。
+    const contractGuard = contractGuardOf(fn, body, opts);
     for (const c of callsiteCases) {
       if (existingNames.has(c.name)) continue;
+      const key = witnessKeyOf(c.name, c.argAbs ?? []);
+      if (key !== undefined && existingPayloads.has(key)) {
+        // 同文件、同实参的见证已固化（行号漂移 / 重复调用点）⇒ 不重复写
+        continue;
+      }
+      const violation = contractGuard?.(c.argAbs ?? []);
+      if (violation !== undefined) {
+        skipped.push({
+          fn: fn.name,
+          reason: "contract-violation",
+          detail: `case ${c.name}: ${violation}`,
+        });
+        dropped++;
+        continue;
+      }
       const directive = buildCaseDirective(c.name, c.argAbs ?? []);
       if (directive === null) {
         skipped.push({ fn: fn.name, reason: "no-serializable-cases", detail: `case ${c.name} not serializable` });
@@ -414,6 +691,7 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
       } else {
         built.push(directive);
         names.push(c.name);
+        if (key !== undefined) existingPayloads.add(key);
       }
     }
     if (built.length === 0) {

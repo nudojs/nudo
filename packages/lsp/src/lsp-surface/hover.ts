@@ -11,20 +11,24 @@
  */
 import type { File, Node } from "@babel/types";
 import {
+  checkSource,
   formatAbs,
   formatAbsMultiline,
   formatShape,
   formalParamSignatureNames,
   generalizeFromAst,
   interfaceTierOf,
+  pTrue,
   type Abs,
   type InterfaceSource,
   type InterfaceTierOpts,
+  type NudoSig,
   type PolyFn,
 } from "@nudojs/core";
 import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   collectAbsBindingsFromGraph,
+  collectSkipReturns,
   mockDirectivesToAbsSeeds,
   type AnalysisResult,
   type LoadModule,
@@ -97,15 +101,15 @@ export type HoverInterfaceOpts = InterfaceTierOpts & {
 };
 
 /**
- * 见证面 throws 证据 → 展示名（911：与 `nudo check` 签名行同口径）。
+ * 见证面 throws 证据 → 展示名。
  *
- * check 面的签名尾缀 `throws X` 来自入口求值的 hard throw ∪ soft
- * may-throw 效果（core `formatThrowsAbs`）；IDE 侧同一份证据在 service
- * 的 `CaseResult.throwsAbs`（未抛 = never）⇒ 展示名同源。
+ * ⚠ **这是回落面，不是 check 口径**（BUG-034 / BUG-071）：check 的签名域是
+ * 「契约种子化 + 公理播种」的入口求值（`collectEntryMayThrows`），而本函数读
+ * 的是 service 的入口见证（`fn.entryThrowsAbs`）——后者的形参域是**无约束
+ * 入口域**（一律 `any`）⇒ 有手写契约时会多报（`s: string` 却报
+ * `throws TypeError`），类方法（`C.m`）更是根本派发不到入口求值 ⇒ 恒空。
+ * 唯一同源的取法是 {@link checkSigOf}；只有它拿不到时才用本函数。
  *
- * - **函数级承载位优先**（族 54 · item 2）：`fn.entryThrowsAbs` 装的就是
- *   check 签名行口径的**函数级** throws 域（入口求值的 hard throw ∪ soft
- *   may-throw）⇒ 读它即与 check 同源。
  * - 无该承载位时回落：`entry@` 见证优先（check 的入口求值口径）；再回落该函数
  *   全部见证的并集（指令 case / 调用点见证里的显式 throw）。
  * - 无证据 ⇒ undefined（**不写 `throws never`**）。
@@ -135,6 +139,49 @@ function throwsDisplayOf(
   }
   if (names.size === 0) return undefined;
   return [...names].sort().join(" | ");
+}
+
+/**
+ * **check 签名面**（BUG-034 / BUG-071 / BUG-247）：hover 的返回位与 `throws`
+ * 尾缀必须与 `nudo check` 签名行**同源**（`PUBLIC_API.md` 的
+ * “check-identical signature” 承诺）。
+ *
+ * 为什么不能自己算：
+ * - `throws` 的证据在 check 面是 `collectEntryMayThrows(source, name, g, …)`，
+ *   `g` 是**契约种子化**的 PolyFn（门禁口径）；service 的入口见证
+ *   （`fn.entryThrowsAbs`）用的是**无约束入口域**（形参一律 `any`）⇒ 有手写
+ *   侧车契约时 hover 会多报 `throws X`（BUG-071），而类方法（点号名
+ *   `C.m`）的入口求值根本派发不到 ⇒ 见证恒空 ⇒ 尾缀整段丢失（BUG-034）。
+ * - 用户公理（`@nudo:invariant` / `@nudo:assume`）只由 check 的动态域播种
+ *   （`check.ts` 的 `withAssumePremises` / `withInvariantSpecs`）⇒ 自算的
+ *   返回位印的是「没有那条公理的程序」的类型（BUG-247）。
+ *
+ * ⇒ 唯一同源做法：直接读 `checkSource` 的 `NudoSig`（整文件 memo 命中后 O(1)）。
+ * 拿不到（语法错 / 非 check 入口）⇒ undefined，调用方回落既有推导面。
+ */
+function checkSigOf(
+  filePath: string,
+  source: string,
+  fnName: string,
+  opts: HoverInterfaceOpts | undefined,
+  modules: SurfaceReuse["modules"] | undefined,
+): NudoSig | undefined {
+  try {
+    const report = checkSource(filePath, source, pTrue, {
+      ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+      fromFile: filePath,
+      ...(typeof opts?.autoBind === "boolean" ? { autoBind: opts.autoBind } : {}),
+      ...(modules ? { modules: modules as never } : {}),
+      ...(opts?.inject ? { inject: opts.inject } : {}),
+      // `@nudo:skip` 改变签名域（声明返回）⇒ 与 check 同口径；无该指令时
+      // 不建空表（check memo 的 skips 键按内容，空表与缺省等价）
+      ...(source.includes("@nudo:skip") ? { skips: collectSkipReturns(source) } : {}),
+    });
+    return report.signatures.find((s) => s.name === fnName);
+  } catch {
+    // fail-closed：check 面跑不动（语法错等）⇒ 回落既有推导面
+    return undefined;
+  }
 }
 
 /**
@@ -240,10 +287,19 @@ export function getHoverAtPosition(
         // 投影预算 PROJECTION_MAX_DEPTH（check-signatures formatEntrySigLine
         // 同款）——hover 单方面 maxDepth 4 会让同一 Abs 在产品内渲染成
         // 三种形态（check 签名行 / inlayHint / hover 签名块）。
-        // throws 尾缀同 check 签名行（911）：见证面 throws 证据（导出函数
-        // 才有——CLI 的 L2 throws 只对 entry 生效）；无证据则省略。
-        const throwsSuffix = throwsDisplay ? `  throws ${throwsDisplay}` : "";
-        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic)}${throwsSuffix}`;
+        //
+        // **返回位 + throws 尾缀取 check 面**（BUG-034 / BUG-071 / BUG-247）：
+        // check 的签名域是契约种子化 + 公理播种的**唯一**权威（自算的返回位
+        // 看不见用户公理；自算的 throws 读的是无约束入口见证 ⇒ 两套域）。
+        // 不按 interface 档门禁：**类方法**（`C.m`）没有 A7 档，却正是
+        // check 签名行会印 throws 的形态（BUG-034）。
+        const checkSig = checkSigOf(filePath, source, fnName, opts, reuse?.modules);
+        const retText = checkSig ? formatShape(checkSig.abs) : formatShape(g.symbolic);
+        // **check 面拿到就当权威**：它说「不抛」就是「不抛」（`undefined` 不得
+        // 回落到无约束入口见证——那正是 BUG-071 的假 `throws`）
+        const throwsName = checkSig ? checkSig.throws : throwsDisplay;
+        const throwsSuffix = throwsName ? `  throws ${throwsName}` : "";
+        gSig = `${fnName}(${ps}) => ${retText}${throwsSuffix}`;
       }
     } catch {
       // ignore

@@ -40,7 +40,7 @@ import {
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, extractAssumeSegs } from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
@@ -143,13 +143,171 @@ export function reportPathErrors(errors: PathError[]): void {
   if (errors.length > 0) process.exitCode = 1;
 }
 
+/**
+ * 固化写回的**宿主接线**（BUG-055 / BUG-119）：有效契约（源码 `@nudo:contract`
+ * + 侧车 `*.nudo.js`）的定位需要 `loadModule` / `fromFile` / `autoBind` /
+ * `projectDir` —— 与 `contractOf` / `checkSource` 的侧车施加点同口径
+ * （不同口径 ⇒ 同一份契约在两个面上落到不同的位）。
+ */
+export async function emitWiringOf(filePath: string): Promise<{
+  filePath: string;
+  loadModule: (spec: string, fromFile: string) => string | undefined;
+  autoBind: boolean | undefined;
+  projectDir: string | undefined;
+}> {
+  const { defaultLoadModule, findProjectConfig, interfaceConfig } = await import(
+    "@nudojs/service"
+  );
+  const proj = findProjectConfig(dirname(filePath));
+  return {
+    filePath,
+    loadModule: defaultLoadModule,
+    autoBind: interfaceConfig(proj?.config).autoBind,
+    projectDir: proj?.projectDir,
+  };
+}
+
+/** 生成态见证行（与 service/emit 的 GENERATED_CASE_LINE_REGEX 同口径） */
+const GENERATED_WITNESS_LINE = /^\s*\*?\s*@nudo:case\s+"(call@[^"]*)"/;
+
+/** 源码里已固化的生成态见证名（按出现顺序） */
+function generatedWitnessNames(source: string): string[] {
+  const body = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source;
+  const out: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const m = GENERATED_WITNESS_LINE.exec(line);
+    if (m) out.push(m[1] ?? "");
+  }
+  return out;
+}
+
+/**
+ * 见证身份（BUG-036 口径，与 health 的 `witnessIdentity` 同源）：
+ * 严格 = **现场 + 行号**（`call@a.js:L2` 与 `call@b.js:L2` 是两个调用点）；
+ * 归一 = 剥掉现场段（只用于「一侧带现场、另一侧不带」的命名方案归一）。
+ */
+function witnessIdentity(name: string): { strict: string; loose: string; hasSite: boolean } {
+  const m = /^call@([^:]*):L(\d+)$/.exec(name);
+  if (!m) return { strict: name, loose: name, hasSite: false };
+  const site = m[1] ?? "";
+  return { strict: `call@${site}:L${m[2]}`, loose: `call@L${m[2]}`, hasSite: site !== "" };
+}
+
+/**
+ * **净删除**的生成态见证：被剥离、且写回后**不再存在**的那些（按身份逐条配对）。
+ *
+ * BUG-119：`--freeze=update` 的汇总此前只数**新写出**的条数 ⇒ 一次「剥离 1 条、
+ * 重建 0 条」的净删除被印成「0 directive(s)」（汇总说谎）。配对时同一调用点
+ * 的**行号漂移**（块插回后行号复原失败）不得算成删除。
+ */
+export function netRemovedWitnesses(oldNames: string[], newNames: string[]): string[] {
+  const used = new Array<boolean>(newNames.length).fill(false);
+  const out: string[] = [];
+  for (const old of oldNames) {
+    const oid = witnessIdentity(old);
+    let hit = newNames.findIndex(
+      (n, k) => !used[k] && witnessIdentity(n).strict === oid.strict,
+    );
+    if (hit < 0) {
+      hit = newNames.findIndex((n, k) => {
+        if (used[k]) return false;
+        const id = witnessIdentity(n);
+        return id.loose === oid.loose && id.hasSite !== oid.hasSite;
+      });
+    }
+    if (hit >= 0) used[hit] = true;
+    else out.push(old);
+  }
+  return out;
+}
+
+/**
+ * 把 `target` 的函数声明**锚点**换到 `base` 的坐标系，其余（含 case 名）不动。
+ *
+ * BUG-019：`insertGeneratedCaseDirectives` 用 `fn.loc.start.line` 定位插入点，
+ * 而 case 名里的行号来自分析所用的那份文本 ⇒ 二者**必须是同一个坐标系**。
+ * 「写入后文本」的分析给出**正确的见证名**（`call@L8`），但它的锚点也在
+ * 写入后坐标；插入基源（已剥离生成块）在基源坐标 ⇒ 只换锚点、不换名字。
+ */
+function withAnchorsOf(target: AnalysisResult, base: AnalysisResult): AnalysisResult {
+  const lineOf = new Map(base.functions.map((f) => [f.name, f.loc.start.line] as const));
+  return {
+    ...target,
+    functions: target.functions.map((f) => {
+      const line = lineOf.get(f.name);
+      if (line === undefined || line === f.loc.start.line) return f;
+      return { ...f, loc: { ...f.loc, start: { ...f.loc.start, line } } };
+    }),
+  };
+}
+
+/**
+ * 在**写盘基源坐标系**上插入生成指令，但用**写入后文本**的坐标命名见证
+ * （BUG-019 的核心）。
+ *
+ * 两步：
+ * 1. `insert(base, baseAnalysis)` 得到「结构候选」（块位置/内容都正确，唯有
+ *    名字仍是基源坐标：块插在声明上方 ⇒ 其下方调用点整体下移，名字指错行）。
+ * 2. 对候选文本再分析一次 **`caseMode: "none"`**：不评估指令 case ⇒ 不受
+ *    same-run exclusivity 掩盖 ⇒ 拿到**候选坐标**下的活调用点见证（`call@L8`）；
+ *    把它的锚点换回基源坐标后重新插入一次 ⇒ 块结构逐字相同、名字是最终坐标。
+ *
+ * 结构长度不一致（极端：二次分析的 callsite 集合变了）⇒ 保守回退首轮结果，
+ * 绝不写错位置。
+ */
+async function emitWithFinalCoordinates(
+  filePath: string,
+  base: string,
+  baseAnalysis: AnalysisResult,
+  from: CallRecord[] | undefined,
+  wiring: Awaited<ReturnType<typeof emitWiringOf>>,
+): Promise<EmitResult> {
+  // 重建阶段（update 链）：按见证身份逐条重建，手写 case 只挡同名（BUG-119）。
+  const insertOpts = { ...wiring, rebuildGenerated: true };
+  const candidate = insertGeneratedCaseDirectives(base, baseAnalysis, insertOpts);
+  if (candidate.source === base) return candidate; // 无插入 ⇒ 基源坐标即写盘坐标
+  const settled = await analyzeFileAsync(
+    filePath,
+    candidate.source,
+    undefined,
+    from,
+    undefined,
+    "none",
+  );
+  const final = insertGeneratedCaseDirectives(base, withAnchorsOf(settled, baseAnalysis), insertOpts);
+  return final.source.split("\n").length === candidate.source.split("\n").length
+    ? final
+    : candidate;
+}
+
 export async function reemitUpdate(
   filePath: string,
   source: string,
   from?: CallRecord[],
-): Promise<{ result: AnalysisResult; emitOut: EmitResult; removed: string[] }> {
+): Promise<{
+  result: AnalysisResult;
+  emitOut: EmitResult;
+  removed: string[];
+  /** BUG-119：**净删除**的生成态见证（汇总必须如实报出，不能印 0）。 */
+  removedWitnesses: string[];
+}> {
+  const wiring = await emitWiringOf(filePath);
+  // BUG-019：**不得在剥离后的坐标系上产出落盘文本**。
+  //
+  // 旧实现 `分析(剥离源) → 插入(剥离源)`：见证名里的行号来自**剥离坐标系**
+  // （先前生成的指令行已被删掉），却按原文件路径写回 ⇒
+  // ① 正确的见证行号被改错（`call@L8` → `call@L5`）；
+  // ② 已过期的见证与新调用点**撞名** ⇒ 判「已经是最新」⇒ 永不刷新；
+  // ③ 展示面行号整体偏移（少掉被剥离的行数）；
+  // ④ 已冻结的指令 case 在 `--freeze` 运行里整个消失（剥离后再也没被分析）。
+  //
+  // ⇒ 写盘基源 = 剥离后的源码（唯一能重写生成块的位置），但**名字必须按
+  // 写入后文本的坐标命名**（{@link emitWithFinalCoordinates}：先结构候选、
+  // 再用 `caseMode "none"` 的候选分析取活调用点 → 换锚点后重插）。
+  // 展示面（`result`）必须来自**最终要写的那份文本**：指令 case 在、
+  // 行号就是用户打开文件时看到的行号。
   const stripped = stripGeneratedCaseDirectives(source);
-  const result = await analyzeFileAsync(
+  const baseAnalysis = await analyzeFileAsync(
     filePath,
     stripped.source,
     undefined,
@@ -157,8 +315,36 @@ export async function reemitUpdate(
     undefined,
     "all",
   );
-  const emitOut = insertGeneratedCaseDirectives(stripped.source, result);
-  return { result, emitOut, removed: stripped.removed };
+  const emitOut = await emitWithFinalCoordinates(
+    filePath,
+    stripped.source,
+    baseAnalysis,
+    from,
+    wiring,
+  );
+  // BUG-119：净删除 = 被剥离且写回后**不再存在**的生成态见证（按身份逐条配对）。
+  const removedWitnesses = netRemovedWitnesses(
+    stripped.removed,
+    generatedWitnessNames(emitOut.source),
+  );
+  if (emitOut.source === source) {
+    // 文件不需要改：源文件里已有生成块 ⇒ 基源分析看不到指令 case（①）⇒
+    // 展示面必须重新分析**原文件**；剥离前无生成块时两份源码相同，可直接复用。
+    const result =
+      stripped.source === source
+        ? baseAnalysis
+        : await analyzeFileAsync(filePath, source, undefined, from, undefined, "all");
+    return { result, emitOut, removed: stripped.removed, removedWitnesses };
+  }
+  const result = await analyzeFileAsync(
+    filePath,
+    emitOut.source,
+    undefined,
+    from,
+    undefined,
+    "all",
+  );
+  return { result, emitOut, removed: stripped.removed, removedWitnesses };
 }
 
 /**
@@ -230,22 +416,41 @@ export function collectExternalRecords(
   errorSink?: PathError[],
 ): CallRecord[] | undefined {
   const records: CallRecord[] = [];
+  // 同一路径给几次就登记几次错误、跑几次求值探针（Bug 171）⇒ resolve 后去重。
+  // 用户写重复的 `--from a.js --from a.js` 不是两次不同的现场。
+  const seenSites = new Set<string>();
+  const pushPathError = (err: PathError): void => {
+    if (errorSink) errorSink.push(err);
+    else reportPathErrors([err]);
+  };
   for (const site of sites) {
     const sitePath = resolve(site);
+    if (seenSites.has(sitePath)) continue;
+    seenSites.add(sitePath);
     // 单次 stat：miss（ENOENT）→ PathError；EACCES/EIO 上抛（顶层 CLI catch，不伪装 miss）
     const siteStat = statSync(sitePath, { throwIfNoEntry: false });
     if (!siteStat) {
-      const err: PathError = {
+      pushPathError({
         path: sitePath,
         code: DIAG.pathMissingCallsite,
         message: `Callsite file not found: ${sitePath}`,
         suggestion: `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
-      };
-      if (errorSink) errorSink.push(err);
-      else reportPathErrors([err]);
+      });
       continue;
     }
     const siteFiles = siteStat.isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
+    // 空目录是「0 条记录」的**第三种**同形情形（Bug 129）：文件缺失 / 读失败
+    // 各有 PathError，空目录此前静默通过 ⇒ 现场啥也没采到却 exit 0。
+    // 与 target 面同一码（`nudo:path-empty-dir`）⇒ 两面路径解析口径一致。
+    if (siteFiles.length === 0) {
+      pushPathError({
+        path: sitePath,
+        code: DIAG.pathEmptyDir,
+        message: `Callsite directory contains no analyzable files: ${sitePath}`,
+        suggestion: `add .js/.mjs/.cjs/.ts/.mts/.cts sources to the directory or pass --from <file> instead`,
+      });
+      continue;
+    }
     for (const sf of siteFiles) {
       const source = readFileSync(sf, "utf-8");
       // 探针**先行**（不再挂在「0 条记录」分支上）：
@@ -817,6 +1022,9 @@ export async function runAbsView(
   opts: { fn?: string; assume?: string[]; generalize?: boolean },
 ): Promise<void> {
   const algebra = await import("@nudojs/core");
+  // BUG-085：源码级 `@nudo:assume` 走**前提槽**（与门禁 core check.ts 同源），
+  // 该槽只经 `@nudojs/core/exec` 的 withAssumePremises 播种（不是公共 index 面）。
+  const { withAssumePremises } = await import("@nudojs/core/exec");
   const source = readFileSync(filePath, "utf8");
   let phi = algebra.pTrue;
   const assumeIds = new Set<string>();
@@ -958,9 +1166,26 @@ export async function runAbsView(
           : c;
       }
     }
+    // BUG-085（issue #152 用户引理）：源码级 `@nudo:assume d <= max` 是**用户
+    // 公理**，门禁在目标函数入口以 `withAssumePremises` 种**前提槽**——不是
+    // phi（前提**不随调用链继承**，callee 帧一律见空；phi 是路径条件且调用
+    // 边界不重置 ⇒ 当成 phi 种会漏给 callee，同名形参误染 = unsound 假精度）。
+    // `--abs` 此前只种 CLI `--assume` 的 phi ⇒ 同一函数在 `check --json`
+    // （`number where /(d, max) ≤ 1`）与 `check --abs`（`number`，无 pred）
+    // 两个面互斥；`@nudo:assume` 行一删两面又一致 ⇒ 差异精确来自这条指令。
+    // `>=` 段已由 extractAssumeSegs 翻转为 le（消费方只见 le，与 core 同口径）；
+    // 文法外段由门禁报 nudo:assume-invalid，观察面不重复裁定。
+    const premises = extractAssumeSegs(source, name).flatMap((seg) =>
+      seg.kind === "ok" ? [algebra.le(algebra.v(seg.lhs), algebra.v(seg.rhs))] : [],
+    );
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
-    const evalResult = tryEvalCall(source, filePath, name, args, { phi });
+    const evalResult =
+      premises.length === 0
+        ? tryEvalCall(source, filePath, name, args, { phi })
+        : withAssumePremises(algebra.and(...premises), () =>
+            tryEvalCall(source, filePath, name, args, { phi }),
+          );
     const result = evalResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));

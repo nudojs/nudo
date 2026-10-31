@@ -32,13 +32,49 @@ let _loopTruncated = false;
 let _truncReasons = new Set<AbsTruncationReason>();
 
 /**
+ * 试算期截断观测静默开关：**可能被整体丢弃**的试算（见
+ * {@link withSpeculativeEvalObservability}）不得在观测面留账。
+ */
+const truncNoteQuietSlot = createScopedSlot<boolean>(() => false);
+
+/**
  * 循环迭代预算截断（两段 maxIters 抽象 / MAX_CONCRETE_LOOP_ITERS 硬上限
  * 仍未终止）。与调用预算不同轴：`@nudo:budget calls=/depth=` 抬不动它，
  * 不进 reasons——但计入 truncated 可观测（诊断与 budget 块不得矛盾）。
  */
 export function noteLoopTruncation(label: string): void {
+  if (truncNoteQuietSlot.get()) return;
   _loopTruncated = true;
   noteAbsTruncation(label);
+}
+
+/**
+ * 试算期（speculative eval）观测隔离：把一次**可能被调用方丢弃**的试算
+ * 对共享观测面的写入整体回滚——截断观测（collector + 原因集 + 循环/fork
+ * 截断旗标）静默，fork 计数（会话计数与观测累计）恢复原值。
+ *
+ * 为什么必须回滚（#158）：试算被丢弃时调用方回落成「不评估」，于是签名
+ * 说没算过、budget/诊断却说算到被截断——这正是 #158 禁止的自相矛盾
+ * （`truncated:false` 与 `nudo:recursion-truncated` 不得共存，反之亦然）。
+ * 调用预算实例由调用方自带（exec/calls.ts 的 runEvalCallBudgetTrial 换
+ * 一次性实例），故本函数只管**共享**面。
+ */
+export function withSpeculativeEvalObservability<R>(body: () => R): R {
+  const prevQuiet = truncNoteQuietSlot.get();
+  const loopTruncated = _loopTruncated;
+  const forkCount = _evalForkCount;
+  const forkObs = _evalForkObsCount;
+  const forkNoted = _evalForkTruncNoted;
+  truncNoteQuietSlot.set(true);
+  try {
+    return body();
+  } finally {
+    truncNoteQuietSlot.set(prevQuiet);
+    _loopTruncated = loopTruncated;
+    _evalForkCount = forkCount;
+    _evalForkObsCount = forkObs;
+    _evalForkTruncNoted = forkNoted;
+  }
 }
 
 /** 调用预算上限（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
@@ -49,9 +85,9 @@ export type CallBudgetLimits = {
 
 /** 预算状态机快照（A/B 两实例同形；A 上屏 callReasons，B 上屏 evalReasons） */
 export type CallBudgetStats = {
-  /** 进入次数（观测累计；宿主入口内跨执行会话累计） */
+  /** 进入次数（观测累计；宿主入口内跨执行会话累计）；calls 截断时 = 触发时计数（== 触发时生效上限） */
   calls: number;
-  /** 当前生效上限 */
+  /** 当前生效上限；calls 截断时 = 触发时生效上限 */
   maxCalls: number;
   callTruncated: boolean;
   cycleTruncated: boolean;
@@ -79,6 +115,24 @@ export type CallBudget = {
   setLimits(limits: Partial<CallBudgetLimits>): void;
   getState(): { depth: number; totalCalls: number; activeKeys: number };
   stats(): CallBudgetStats;
+  /**
+   * 记账一次**外部判定**的预算截断（试算探针撞 depth/calls ⇒ 调用方
+   * 回落 fail-closed ⇒ 该截断就是本次求值被放弃的原因，必须回到宿主
+   * 观测面）。
+   *
+   * 与 {@link CallBudget.enter} 的区别：enter 是**本实例自己**撞守卫时
+   * 顺带记账；本方法把别处（一次性试算实例）判定的截断记到**本实例**
+   * 的生效上限上——试算的内部阈值是实现细节，不得上屏（否则上屏的
+   * 「depth 5/5」既不是宿主预算、也不是用户能调的旋钮）。
+   *
+   * 计数口径与 enter 一致：depth ⇒ 计数/上限取**本实例生效上限**
+   * （`@nudo:budget` 覆盖亦如实），calls ⇒ 同理取生效 calls 上限。
+   *
+   * 只进**预算面**（本实例 reasons + 共享原因集），**不**触发诊断
+   * collector：诊断归因（cycle vs 预算，#158）必须由真正跑那条求值的
+   * 路径上报。
+   */
+  noteTruncation(reason: "depth" | "calls"): void;
 };
 
 /**
@@ -110,6 +164,8 @@ export function createCallBudget(config: CallBudgetLimits): CallBudget {
   let maxDepthSeen = 0;
   let depthTruncDepth: number | null = null;
   let depthTruncLimit: number | null = null;
+  let callsTruncCalls: number | null = null;
+  let callsTruncLimit: number | null = null;
 
   const resetSession = (): void => {
     depth = 0;
@@ -124,6 +180,8 @@ export function createCallBudget(config: CallBudgetLimits): CallBudget {
     maxDepthSeen = 0;
     depthTruncDepth = null;
     depthTruncLimit = null;
+    callsTruncCalls = null;
+    callsTruncLimit = null;
   };
 
   return {
@@ -147,6 +205,12 @@ export function createCallBudget(config: CallBudgetLimits): CallBudget {
         if (reason === "depth" && depthTruncDepth === null) {
           depthTruncDepth = depth;
           depthTruncLimit = maxDepthLimit;
+        }
+        // calls 截断现场（首次）：同上——calls 计数上屏必须用触发时的
+        // 计数/上限对（未到顶却标 truncated 是自相矛盾）
+        if (reason === "calls" && callsTruncCalls === null) {
+          callsTruncCalls = totalCalls;
+          callsTruncLimit = maxCallsLimit;
         }
         noteAbsTruncation(label, reason);
         return reason;
@@ -177,9 +241,30 @@ export function createCallBudget(config: CallBudgetLimits): CallBudget {
       if (typeof limits.maxCalls === "number") maxCallsLimit = limits.maxCalls;
     },
     getState: () => ({ depth, totalCalls, activeKeys: activeKeys.length }),
+    noteTruncation: (reason: "depth" | "calls"): void => {
+      // 外部判定（试算探针）的截断记到**本实例的生效上限**上：试算的内部
+      // 阈值（探针深度/调用上限）是实现细节，不是宿主预算，也不是用户能
+      // 调的旋钮——上屏必须是「宿主预算被撞满」这一事实（@nudo:budget
+      // 覆盖期间亦取覆盖后的生效上限）。
+      //
+      // 只进**预算面**（本实例的 reasons + 共享原因集）：诊断归因（cycle vs
+      // 预算，#158）由真正跑那条求值的路径上报——探针撞的是**探针阈值**，
+      // 把它说成「用户的预算被撞满」会把 cycle 归因误报成「抬预算可解」。
+      callTruncated = true;
+      reasons.add(reason);
+      if (reason === "depth" && depthTruncDepth === null) {
+        depthTruncDepth = maxDepthLimit;
+        depthTruncLimit = maxDepthLimit;
+      }
+      if (reason === "calls" && callsTruncCalls === null) {
+        callsTruncCalls = maxCallsLimit;
+        callsTruncLimit = maxCallsLimit;
+      }
+      recordTruncReason(reason);
+    },
     stats: () => ({
-      calls: observedCalls,
-      maxCalls: maxCallsLimit,
+      calls: callsTruncCalls ?? observedCalls,
+      maxCalls: callsTruncLimit ?? maxCallsLimit,
       callTruncated,
       cycleTruncated,
       depth: depthTruncDepth ?? maxDepthSeen,
@@ -544,7 +629,23 @@ export function setAbsTruncationCollector(
   return prev;
 }
 
+/**
+ * 记录截断原因到**共享原因集**（A+B 合并；上屏 JSON 的 `reasons`）。
+ *
+ * 与 {@link noteAbsTruncation} 的区别：**不**触发诊断 collector——诊断通道
+ * 回答的是「这个函数的求值为什么被放弃」（cycle=抬预算解不开，#158），
+ * 归因必须由**真正跑那条求值的路径**上报；外部判定（例如试算探针撞了
+ * 探针阈值）只进**预算面**，不得改写诊断归因。
+ */
+function recordTruncReason(reason: AbsTruncationReason): void {
+  // 试算期静默：结果可能被丢弃，不得在观测面留账（见 withSpeculativeEvalObservability）
+  if (truncNoteQuietSlot.get()) return;
+  _truncReasons.add(reason);
+}
+
 export function noteAbsTruncation(label: string, reason?: AbsTruncationReason): void {
+  // 试算期静默：结果可能被丢弃，不得在观测面留账（见 withSpeculativeEvalObservability）
+  if (truncNoteQuietSlot.get()) return;
   if (reason) _truncReasons.add(reason);
   const absTruncCollector = absTruncCollectorSlot.get();
   if (!absTruncCollector) return;

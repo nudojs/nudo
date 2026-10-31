@@ -8,7 +8,7 @@
  * 跨 root 文件的合并在写盘侧做（见 interface-derivation-emit.ts）。
  */
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
   constraintToEntryAbs,
@@ -280,6 +280,20 @@ type CallAgg = {
 };
 
 /**
+ * 包根（从文件所在目录向上找 `package.json`）；无（临时目录 / 单文件）⇒ undefined。
+ * 用于让写进产物的**溯源身份**与 cwd 无关（BUG-041）。
+ */
+function packageRootOfFile(abs: string): string | undefined {
+  let cur = dirname(abs);
+  for (;;) {
+    if (existsSync(join(cur, "package.json"))) return cur;
+    const parent = dirname(cur);
+    if (parent === cur) return undefined;
+    cur = parent;
+  }
+}
+
+/**
  * 入口：对 filePath 做 root 驱动下行推导。
  */
 export function deriveFromRoot(
@@ -373,9 +387,15 @@ export function deriveFromRoot(
   try {
     const aggs: RootCalleeAgg[] = [];
     for (const plan of plans) {
-      // 展示口径：cwd 相对（cwd 外用 basename），避免 /tmp fixture 出现 ../../ 链
-      const relRoot = relative(process.cwd(), abs);
-      const label = `${relRoot === "" || relRoot.startsWith("..") ? basename(abs) : relRoot}:${plan.fnName}`;
+      // BUG-041：溯源标签是**合并身份**（`sameLabelSet` / `mergeLabels` 用它判
+      // 「是不是同一个 root」）⇒ 必须与 **cwd 无关**。旧实现用 cwd 相对路径
+      // ⇒ 同一个 root 在不同 cwd 下得到两种拼写 ⇒ 并集分支 ⇒ 重复条目永久留存。
+      // 新口径：**包根相对**（无 package.json 的临时目录 ⇒ basename），
+      // 两者都与执行位置无关。
+      const pkgRoot = packageRootOfFile(abs);
+      const relRoot =
+        pkgRoot !== undefined ? relative(pkgRoot, abs).split(sep).join("/") : basename(abs);
+      const label = `${relRoot}:${plan.fnName}`;
       aggs.push(...deriveOneRoot(plan, source, abs, modules, importLocals, label));
     }
     // 跨 root 合并（Bug 524）：同一 (file, fn) 的多份证据合成**一条**派生行

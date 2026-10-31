@@ -115,6 +115,8 @@ import {
   boxedStringEnumEntries,
   builtinBrandNoEnumKeys,
   builtinBrandOwnKeyNames,
+  builtinBrandUserEnumEntries,
+  builtinBrandUserOwnKeys,
   foldGroupBy,
   typedArrayEnumKeyView,
 } from "./enum-entries.ts";
@@ -543,13 +545,20 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
 /** enumerable:false（defineProperty 记录）/ internal 私有槽（Bug 84）的键
  *  从枚举视图剔除；includeSymbols 供 assign/defineProperties（原生
  *  [[OwnPropertyKeys]] 含可枚举 symbol——经 "@@X" 投影槽），默认剔除
- *  （Object.keys/values/entries 是字符串键视图，Bug 117） */
+ *  （Object.keys/values/entries 是字符串键视图，Bug 117）
+ *
+ *  Bug 276：可枚举性判定走 `isEnumerableView`（invariants.ts）——flags 表
+ *  有**两套载体**（brand 自身 / brand 的内层 obj），必须并查，否则漏判
+ *  （defineProperty 记在 brand 上、枚举面查 inner ⇒ 不可枚举自有键被当
+ *  可枚举键发布，与 for-in 面互斥）。 */
   const enumKeys = (slots: Record<string, unknown>, target: Abs, includeSymbols = false): string[] => {
-    const flags = getPropFlags(target);
     return Object.keys(slots).filter(
       (k) =>
-        flags?.get(k)?.enumerable !== false &&
+        isEnumerableView(target, k) &&
         (slots[k] as { internal?: boolean })?.internal !== true &&
+        // Bug 275：inherited 槽是**原型链**解析槽（Object.create 镜像的
+        // proto 字段 / Error 的 name）——原生自有键视图一律看不到
+        (slots[k] as { inherited?: boolean })?.inherited !== true &&
         (includeSymbols || (slots[k] as { symbolKey?: boolean })?.symbolKey !== true),
     );
   };
@@ -564,7 +573,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     const inner = a0 ? classInstanceInnerOf(a0) : undefined;
     if (!inner) return undefined;
     const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
-    return enumKeys(slots, inner).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
+    // Bug 276：flags 载体取 **brand**（a0）——isEnumerableView 会并查 brand
+    // 自身与其内层 obj 两套载体（defineProperty 的 flags 记在 brand 上）
+    return enumKeys(slots, a0!).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
   };
 
   /** Bug 125：TA brand 枚举投影素材——typedArrayEnumKeyView（exact/open/
@@ -607,6 +618,41 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     }
   };
 
+/**
+ * Bug 275：`Object.create(proto)` 的对象 Abs 必须**可见** proto 上的字段
+ * （运行时 HasProperty / TS 结构类型口径）——此前只记原型身份
+ * （protoTable）、槽面是空 obj ⇒ L1 shape 契约逐字段对账只查自有槽
+ * （scan/literal-shapes.ts 的 checkShapeAgainstObj）⇒ `Object.create({a:1})`
+ * 被报 `missing field`（门禁假红），而宿主 `"a" in o` 为 true、TS 结构
+ * 类型接受、引擎自己的 guard / zod / standard 三个产物（HasProperty 语义）
+ * 也全部接受 ⇒ 同一引擎四个面三个接受、一个拒绝。
+ *
+ * 表示法：把 proto 的自有槽**键**镜像到新对象并打 `Slot.inherited`——
+ * 自有键面（Object.keys/values/entries / gOPN / JSON / for-in /
+ * CopyDataProperties）按原生语义剔除继承槽，`$get`/`$in` 仍可见。
+ * 值折 `unknown`（原型链取值仍是精度债：`Object.create({x:1}).x` 维持
+ * 既有保守 unknown pin——只承诺**存在性**，不冒充确定值）。
+ * proto 侧已被标记 inherited 的槽照抄（多层 Object.create 链的传递性）。
+ */
+function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited: boolean }> {
+  const inner =
+    proto.shape.k === "brand"
+      ? proto.shape.shape.shape.k === "obj"
+        ? proto.shape.shape.shape
+        : undefined
+      : proto.shape.k === "obj"
+        ? proto.shape
+        : undefined;
+  if (!inner) return {};
+  const out: Record<string, { value: Abs; inherited: boolean }> = {};
+  for (const [k, s] of Object.entries((inner as ObjShape).slots)) {
+    // internal 私有槽 / symbol 投影槽不是字符串属性面（原生不可见）
+    if (s.internal === true || s.symbolKey === true) continue;
+    out[k] = { value: unknown, inherited: true };
+  }
+  return out;
+}
+
   switch (name) {
     case "create": {
       // null 原型：空闭对象 + nullProto 标记（in 不回退 Object.prototype）。
@@ -626,7 +672,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         base = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
         nullProto = true;
       } else if (typeof protoV === "object") {
-        base = abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        // Bug 275：宿主字面量对象原型（protoV 可判）——镜像其 Abs 槽键
+        base = abs({ k: "obj", slots: inheritedProtoSlots(a0) }, undefined, undefined, "path");
       } else if (a0.term?.op === "lit") {
         // number/string/bool/bigint/symbol 字面量 proto：原生 TypeError
         throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -641,10 +688,18 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         recordMayThrow({ kind: "TypeError", cause: "Object.create proto must be an object or null" });
       } else {
         // Bug 41：obj/tuple/arr/fn/brand/eff proto——合法对象（ToObject 全
-        // 定、下游 keys 家族恒 total 不再假 may-throw）；动态继承不建模：
-        // open obj（缺槽读保守 unknown，兼容「不得折成 false」pin；keys
-        // 家族走 obj 分支精确枚举自有槽）
-        base = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
+        // 定、下游 keys 家族恒 total 不再假 may-throw）。
+        // Bug 275：动态继承**至少**在存在性面建模——proto 的自有槽键镜像为
+        // inherited 槽（值 unknown），否则 shape 契约逐字段对账看不到原型链
+        // 可达字段（门禁假红，与宿主 / TS / guard / zod / standard 相反）。
+        // open 保持（缺槽读保守 unknown，兼容「不得折成 false」pin；keys
+        // 家族走 obj 分支精确枚举自有槽——inherited 槽被枚举面剔除）。
+        base = abs(
+          { k: "obj", slots: inheritedProtoSlots(a0), open: true },
+          undefined,
+          undefined,
+          "path",
+        );
         protoToRecord = a0;
       }
       // Bug 32：第二实参 propertiesObject——逐（可枚举字符串键）描述符经
@@ -834,6 +889,18 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (brandKeys) {
           return abs({ k: "tuple", elements: brandKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
         }
+        // Bug 277：内建 brand 实例上**用户新增的自有可枚举键**（e.code /
+        // m.foo / d.bar）——内层槽表投影；此前 builtinBrandNoEnumKeys 直接
+        // 短路面族表 ⇒ 折 exact 空（自信的确切错值，且与 gOPN/gOPD 面互斥）
+        const brandUserKeys = builtinBrandUserEnumEntries(a0);
+        if (brandUserKeys && brandUserKeys.length > 0) {
+          return abs(
+            { k: "tuple", elements: brandUserKeys.map(([k]) => strLit(k)) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
         if (builtinBrandNoEnumKeys(a0)) {
           // Bug 308 口径分离：此处是「**可枚举**自有键」视图（Object.keys
           // 语义）——RegExp 的 `lastIndex` 是自有但**非可枚举** ⇒ 不入
@@ -928,6 +995,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         const brandVals = boxedStringEnumEntries(a0);
         if (brandVals) {
           return abs({ k: "tuple", elements: brandVals.map(([, v]) => v) }, undefined, undefined, "exact");
+        }
+        // Bug 277：内建 brand 实例上**用户新增的自有可枚举值**（内层槽表投影）
+        const brandUserVals = builtinBrandUserEnumEntries(a0);
+        if (brandUserVals && brandUserVals.length > 0) {
+          return abs(
+            { k: "tuple", elements: brandUserVals.map(([, v]) => v) },
+            undefined,
+            undefined,
+            "exact",
+          );
         }
         if (builtinBrandNoEnumKeys(a0)) {
           // Bug 308 口径分离：此处是「**可枚举**自有值」视图——RegExp 的
@@ -1047,6 +1124,21 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             {
               k: "tuple",
               elements: brandEntries.map(([k, v]) =>
+                abs({ k: "tuple", elements: [strLit(k), v] }, undefined, undefined, "exact"),
+              ),
+            },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+        // Bug 277：内建 brand 实例上**用户新增的自有可枚举键值对**
+        const brandUserEntries = builtinBrandUserEnumEntries(a0);
+        if (brandUserEntries && brandUserEntries.length > 0) {
+          return abs(
+            {
+              k: "tuple",
+              elements: brandUserEntries.map(([k, v]) =>
                 abs({ k: "tuple", elements: [strLit(k), v] }, undefined, undefined, "exact"),
               ),
             },
@@ -1600,8 +1692,103 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         // number/boolean/bigint/symbol 装箱：无自有字符串键
         return abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
       }
-      // arr/brand/fn/sum/any/unknown：键集不可判 → 开放 obj
-      return abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial");
+      if (a0.shape.k === "brand") {
+        /**
+         * Bug 281：**复数** gOPDs 此前没有 brand 分支 ⇒ 类实例 / 内建 brand
+         * 一路落「键集不可判 → 开放 obj」兜底（零槽）⇒ `Object.keys(gOPDs(x))`
+         * 折 **exact 空元组**（自信的确切错值），而同一引擎的 gOPN（exact
+         * 键集）与 gOPD(单数)（exact 描述符）都说键在 ⇒ 三面互斥。
+         *
+         * 键源与 gOPN 面同口径：内层闭 obj 槽表（剔除 internal 私有槽 /
+         * inherited 原型链槽）+ 已知自有键（builtinBrandOwnKeyNames——
+         * RegExp 的 lastIndex / 原型 brand 的自有成员）；flags 并查 brand 与
+         * 内层 obj 两套载体。TA brand 走 typedArrayEnumKeyView（整数索引
+         * 自有键）。
+         */
+        {
+          const ta = taEnumInfo(a0);
+          if (ta) {
+            if (ta.view.k !== "exact") {
+              // 长度不可判 ⇒ 键集不可判，诚实降级（打键集不完备标记）
+              return markKeySetOpenAbs(
+                abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"),
+              );
+            }
+            const entries: Array<[string, Abs]> = Array.from(
+              { length: ta.view.count },
+              (_, i) => [String(i), ta.elem] as [string, Abs],
+            );
+            return descSlotsOf(entries, () => ({
+              writable: true,
+              enumerable: true,
+              configurable: true,
+            }));
+          }
+          const brandName = (a0.shape as { name?: string }).name ?? "";
+          const bInner = a0.shape.shape;
+          const bObj =
+            bInner.shape.k === "obj" &&
+            !(bInner.shape as ObjShape).open &&
+            !(bInner.shape as ObjShape).index
+              ? bInner
+              : undefined;
+          const bSlots = bObj
+            ? ((bObj.shape as ObjShape).slots as Record<
+                string,
+                { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }
+              >)
+            : undefined;
+          if (bSlots) {
+            const isProtoBrand = brandName.endsWith(".prototype");
+            const entries: Array<[string, Abs]> = [];
+            const seen = new Set<string>();
+            for (const [key, slot] of Object.entries(bSlots)) {
+              // Bug 84：internal 私有槽非自有属性；Bug 66：inherited 槽是
+              // 原型链解析槽（如 Error 家族的 name）⇒ 均不产 descriptor
+              if (slot.internal === true || slot.inherited === true) continue;
+              entries.push([key, slot.value]);
+              seen.add(key);
+            }
+            // gOPN 面的已知自有键（RegExp 的 lastIndex / 原型 brand 的成员）
+            for (const key of builtinBrandOwnKeyNames(a0) ?? []) {
+              if (seen.has(key)) continue;
+              entries.push([key, $get(a0, key)]);
+              seen.add(key);
+            }
+            return descSlotsOfWithAccessors(
+              a0,
+              entries,
+              (key) => {
+                const f = getPropFlags(a0)?.get(key) ?? getPropFlags(bInner)?.get(key);
+                if (f) {
+                  return {
+                    writable: f.writable !== false,
+                    enumerable: f.enumerable !== false,
+                    configurable: f.configurable !== false,
+                  };
+                }
+                // 无 flags ⇒ 族默认：RegExp 的 lastIndex 可写/不可枚举/不可
+                // 配置（ECMA-262 §22.2.6）；原型 brand 的自有成员不可枚举、
+                // 可配置（与 gOPD 的 proto 臂同口径）；其余数据槽全真
+                if (key === "lastIndex" && isRegExpBrandAbs(a0)) {
+                  return { writable: true, enumerable: false, configurable: false };
+                }
+                if (isProtoBrand) {
+                  return { writable: true, enumerable: false, configurable: true };
+                }
+                return { writable: true, enumerable: true, configurable: true };
+              },
+              (key) => bSlots[key]?.symbolKey === true,
+            );
+          }
+        }
+      }
+      // arr/fn/sum/any/unknown/开放 brand：键集不可判 → 开放 obj
+      // Bug 281：兜底对象**必须**打「键集不完备」标记——否则键家族面把它当
+      // 闭对象 ⇒ 折 exact 空元组（自信的确切错值）而不是诚实的 partial。
+      return markKeySetOpenAbs(
+        abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"),
+      );
     }
     case "getOwnPropertyNames": {
       // Bug 35：ToObject 接收者校验 + 自有**字符串**键投影（含不可枚举键
@@ -1728,6 +1915,23 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         // 可精确列举时（引擎已建模成员的原型）折精确元组；键集不可判（其余
         // 原型）⇒ 保守 partial string[]（**不**折空——空是自信的确切错值：
         // 原生 gOPN(Array.prototype) 有 41 个键）。
+        // Bug 277：内建 brand 实例上**用户新增的自有键**（m.foo / d.bar…）
+        // ——gOPN 语义 = **全部**自有键（含不可枚举）⇒ 内层槽表投影；
+        // 与 builtinBrandOwnKeyNames 的已知自有键（RegExp 的 lastIndex /
+        // 原型 brand 的成员）并集，已知键在前（原生安装序）。
+        {
+          const userOwn = builtinBrandUserOwnKeys(a0);
+          if (userOwn && userOwn.length > 0) {
+            const known = builtinBrandOwnKeyNames(a0) ?? [];
+            const names = [...known, ...userOwn.filter((n) => !known.includes(n))];
+            return abs(
+              { k: "tuple", elements: names.map((n) => strLit(n)) },
+              undefined,
+              undefined,
+              "exact",
+            );
+          }
+        }
         {
           const protoOwn = builtinBrandOwnKeyNames(a0);
           if (protoOwn) {
@@ -1900,6 +2104,57 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           );
         }
         if (a0.conf === "exact") return undefAbs();
+        return maybeDesc();
+      }
+      /**
+       * Bug 8：**函数 / 类**接收者——`name` / `length` / `prototype` 是函数
+       * **自有属性**（原生恒有描述符；node v26 实测：
+       *   gOPD(function f(){}, "name")  = {value:"f", writable:false, enumerable:false, configurable:true}
+       *   gOPD(function f(){}, "length") = {value:0,   writable:false, enumerable:false, configurable:true}
+       *   gOPD(function f(){}, "prototype") = {value:{}, writable:true,  enumerable:false, configurable:false}
+       *   gOPD(class A{}, "prototype")    = {value:{}, writable:false, enumerable:false, configurable:false}
+       * ）⇒ 折**精确描述符**。
+       *
+       * 此前函数接收者一路落兜底 `maybeDesc()`（descriptor | undefined 并集）
+       * ⇒ 再读 `.value` / `.writable` 即**定抛 TypeError**（假 TypeError——
+       * 引擎比原生更悲观）。对照：引擎对 `fn.name` / `fn.length` /
+       * `fn.prototype` 的**直接读取**是正确的 ⇒ 同一族方法内部的建模不一致。
+       *
+       * 其它键仍走保守并（原生 gOPD(f, "x") = undefined ⇒ 读 `.value` 定抛，
+       * 与并集语义一致）。
+       */
+      if (a0.shape.k === "fn" && key !== undefined) {
+        const fnSlots = (a0.shape as { slots?: Record<string, { value: Abs; optional?: boolean }> })
+          .slots;
+        const ownSlot = fnSlots ? getSlot(fnSlots, key) : undefined;
+        if (ownSlot && !ownSlot.optional) {
+          const flags = getPropFlags(a0)?.get(key);
+          return mkDesc(
+            ownSlot.value,
+            flags?.writable !== false,
+            flags?.enumerable !== false,
+            flags?.configurable !== false,
+          );
+        }
+        if (key === "name") {
+          const nm = (a0.shape as { name?: string }).name;
+          return mkDesc(typeof nm === "string" && nm ? strLit(nm) : str(), false, false, true);
+        }
+        if (key === "length") {
+          return mkDesc($get(a0, "length"), false, false, true);
+        }
+        if (key === "prototype") {
+          // 箭头 / 方法简写**没有** prototype 自有属性 ⇒ 无描述符
+          if ((a0.shape as { ctor?: boolean }).ctor === false) return undefAbs();
+          // 类值的 prototype 不可写（原生 class A{} 的 prototype
+          // writable:false），普通函数的 prototype 可写。类值判据：注册类
+          // 值标记（classNameOfValue）+ **空类体类表达式快路径**
+          // （$classExpr → fn 形状 + noBody impl + ctor facet）。
+          const isClassVal =
+            classNameOfValue(a0 as object) !== undefined ||
+            (a0.shape as { params?: string[] }).params?.[0] === "_rest";
+          return mkDesc($get(a0, "prototype"), !isClassVal, false, false);
+        }
         return maybeDesc();
       }
       /**

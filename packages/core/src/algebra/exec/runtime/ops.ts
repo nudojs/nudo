@@ -11,7 +11,12 @@ import {
   bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs,
   toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
-import { joinAbs } from "../../objects.ts";
+import { joinAbs, isNullProtoWithoutCoercer } from "../../objects.ts";
+import { isSymbolAbs } from "../../symbol-id.ts";
+import { concatString } from "../../template.ts";
+import { noteCoercionMayThrow } from "../../arithmetic/coerce.ts";
+import { NudoThrow } from "../../nudo-throw.ts";
+import { errorTypeAbs } from "../../may-throw.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { asAbsVal, currentExecPhi, currentAssumePremises } from "./state.ts";
 
@@ -53,6 +58,40 @@ export function $dynamicImport(_spec: Abs): Abs {
 
 export function $add(a: Abs, b: Abs): Abs {
   return add(a, b, currentExecPhi());
+}
+/**
+ * BUG-058：模板插值位的 ToString 面（**string hint**）。
+ *
+ * `${x}` 的原生语义是 ToString(x) ⇒ ToPrimitive(**string hint**)：先试
+ * `toString`；对象没有自有 `toString` ⇒ 继承 `Object.prototype.toString` ⇒
+ * 恒返回原语 ⇒ **再也不会回退 `valueOf`**（`${ {valueOf(){n++}} }` 原生
+ * `n` 保持 0）。
+ *
+ * 修前模板被降级成 `$add($lit(""), x)`——与用户手写的 `"" + x` **逐字
+ * 同形**，而 `+` 必须走 default hint（原生 `"" + o` 会调 valueOf）⇒ 插值位
+ * 的 hint 在降级处丢失 ⇒ `${o}` 凭空多调一次 `valueOf`（用户副作用）。
+ *
+ * 值面沿用既有拼接臂（`concatString`：**纯判定**版，不重复调钩子）——
+ * 与旧路径逐字同源，只改 hint 面。
+ */
+export function $toStr(a: Abs): Abs {
+  // Symbol 的隐式 ToString 原生 TypeError（`${Symbol()}` / `"" + Symbol()`；
+  // 与 `String(sym)` 的 SymbolDescriptiveString 不同）
+  if (isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  // 闸门 = null-proto 无 coercer 判定 **+** 按 hint 调一次用户钩子（string
+  // hint：toString 先、无自有 toString 不回退 valueOf）。⚠ 它内部已调用
+  // `invokeToPrimitiveHook`——此处**不得**再调一次（原生每次 ToPrimitive
+  // 只调一次钩子；多调即凭空多出副作用）。
+  if (isNullProtoWithoutCoercer(a, "string")) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // 抽象操作数的 Symbol/bigint 强转可能抛（与 `+` 拼接臂同打点口径）；
+  // **字面量操作数恒 total**（`${1n}` 原生是 "1"，不是 TypeError）⇒ 不记
+  if (a.term?.op !== "lit") {
+    noteCoercionMayThrow(a, a, "ToString coercion of abstract operand (Symbol)");
+  }
+  // 值面：`"" + x` 的拼接臂（纯判定 ⇒ 同一次强转不重调钩子）
+  return concatString(strLit(""), a);
 }
 export function $sub(a: Abs, b: Abs): Abs {
   // issue #175：用户引理前提（@nudo:assume d <= max ⇒ max-d ≥ 0）参与

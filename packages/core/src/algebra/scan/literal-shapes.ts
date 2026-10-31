@@ -78,6 +78,7 @@
 import { litValue } from "../abs.ts";
 import type { Abs } from "../abs.ts";
 import { getSlot } from "../objects.ts";
+import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "../leq.ts";
 import { projectAbsPath } from "./path-projection.ts";
 import {
   derefConstraint,
@@ -675,6 +676,13 @@ export function checkReqs(
         const n = p.b.value;
         // length(t) 形式已在**上面的 length 通道**判完（字符串 / 数组）⇒
         // 走到这里的是普通数值界。
+        //
+        // BUG-211：长度谓词**只由** length 通道裁决——那里要求 `argLen` 可判
+        // （字符串 `.length` / 数组元素个数）。长度不可判的实参（数字 / 布尔 …）
+        // 在此处属于**不可判定**，不得落进下面的数值比较：`3 >= 1` 会造出假绿
+        // （参数位放行、返回位按长度语义判违反）、`0 >= 1` 会造出假红。返回位读
+        // 的是同一个谓词的长度语义 ⇒ 两通道同口径。
+        if (p.a.op === "app" && p.a.fn === "length") continue;
         // boolean/null 不进数值域（includes/every/some 返回 boolean 误当收窄）
         if (typeof lv === "boolean" || lv === null) {
           // Bug 1114：typeof 通道已报（类型都不对）⇒ 数值界判据对实参**没有
@@ -807,15 +815,32 @@ export function checkShapeAgainstAbs(
       }
       continue;
     }
-    checkFieldConstraint(
-      ctx,
-      displayName,
-      paramName,
-      field.constraint,
-      slot.value,
-      fieldPath,
-      loc,
-    );
+    // BUG-246：可选槽**吸收 undefined**（TS 默认
+    // `exactOptionalPropertyTypes: false` ⇒ `{ a?: string }` 的槽类型是
+    // `string | undefined`）⇒ `{ a: undefined }` 是合法实参。
+    // 修前这里只对「**缺槽**」看可选位（上方 `if (!slot)` 的 continue），
+    // 槽存在但值是 undefined 时照样进 prim 门 ⇒ 假红
+    // `typeof a = "string"`（与签名面 `a?: string` 自相矛盾）。
+    // 判定与 `leqAbs` 的槽规则**同口径**（共享 `mayBeUndefinedAbs` /
+    // `nonUndefinedAbsValues`）：剥掉 undefined 臂后**剩余成员仍须**满足字段
+    // 约束 ⇒ `{ a: string | undefined }` 按 string 判、`{ a: number | undefined }`
+    // 仍判红；`null` 不被吸收（strictNullChecks）。必填字段不受影响。
+    const optionalField = field.optional || field.constraint.isOptional;
+    const fieldValues =
+      optionalField && mayBeUndefinedAbs(slot.value)
+        ? nonUndefinedAbsValues(slot.value)
+        : [slot.value];
+    for (const fieldValue of fieldValues) {
+      checkFieldConstraint(
+        ctx,
+        displayName,
+        paramName,
+        field.constraint,
+        fieldValue,
+        fieldPath,
+        loc,
+      );
+    }
   }
   return false;
 }

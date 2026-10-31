@@ -22,9 +22,60 @@
  * ⇒ 不会 TS2304）；产物**必可编译**（strict）。
  */
 
-import type { Abs } from "@nudojs/core";
+import type { Abs, Slot } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
+import { isInvisibleObjSlot } from "./internal-slot.ts";
 import { safeExportIdent, widenUncertainLiteral } from "./schema-generator.ts";
+
+/**
+ * BUG-130 / BUG-131：把**产物面不可见**的槽从 Abs 树上摘掉，再交给 core 的
+ * `denoteGuard`。
+ *
+ * 判据在 `internal-slot.ts`（symbol 键槽 + 生成器数字下标槽都不可见）。
+ * `denoteGuard` 只剔 `internal` 且**保留**规范数组下标的例外 ⇒ 「数字下标承载
+ * 元素域」的口径直接落到产物面 ⇒ 守卫要求一个运行时不存在的自有属性
+ * （`Object.hasOwn(gen(), "0")` 恒假）⇒ **拒绝被导出函数自己的返回值**。
+ *
+ * 拷贝是浅层重建 + memo（Abs 是允许成环的 DAG，见 `hasIdentityClause`）：
+ * 环上的节点返回同一个副本，不会无限递归。
+ */
+function stripInvisibleSlots(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
+  const hit = memo.get(a);
+  if (hit) return hit;
+  const copy: Abs = { ...a };
+  memo.set(a, copy);
+  const s = a.shape;
+  switch (s.k) {
+    case "obj": {
+      const slots: Record<string, Slot> = {};
+      for (const [k, slot] of Object.entries(s.slots)) {
+        if (isInvisibleObjSlot(k, slot, s.slots)) continue;
+        slots[k] = { ...slot, value: stripInvisibleSlots(slot.value, memo) };
+      }
+      copy.shape = { ...s, slots };
+      break;
+    }
+    case "arr":
+      copy.shape = { ...s, element: stripInvisibleSlots(s.element, memo) };
+      break;
+    case "tuple":
+      copy.shape = {
+        ...s,
+        elements: s.elements.map((e) => stripInvisibleSlots(e, memo)),
+        ...(s.rest ? { rest: stripInvisibleSlots(s.rest, memo) } : {}),
+      };
+      break;
+    case "sum":
+      copy.shape = { ...s, members: s.members.map((m) => stripInvisibleSlots(m, memo)) };
+      break;
+    case "eff":
+      copy.shape = { ...s, inner: stripInvisibleSlots(s.inner, memo) };
+      break;
+    default:
+      break;
+  }
+  return copy;
+}
 
 /** 结构形态的动态对象形状（守卫读嵌套成员 ⇒ 槽位取 any）。 */
 const DYNAMIC_OBJECT_TYPE = "Record<string, any>";
@@ -115,10 +166,47 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
   // （否则守卫写成 `data === 1`，把「一次兜底观测」钉成出口域）。
   const widened = widenUncertainLiteral(abs);
-  const src = widened ?? abs;
+  const src = stripInvisibleSlots(widened ?? abs);
   const body = denoteGuard(src, "data");
   const valueType = guardValueType(src);
-  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  const data = value as ${valueType};\n  return ${body};\n}`;
+  // BUG-250：身份子句会收窄 `data` ⇒ 索引读报 TS7053（见 hasIdentityClause）
+  const dataDecl = hasIdentityClause(src) ? `const data: any = ` : `const data = `;
+  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${body};\n}`;
+}
+
+/**
+ * BUG-250：形态树里是否含**身份子句**（`brand` / `eff` 的 `instanceof`）。
+ *
+ * 身份子句把被检查值放进 `instanceof` 的**左操作数** ⇒ TS 对它做**类型收窄**
+ * ⇒ `data` 的静态类型从 `Record<string, any>` 变成
+ * `<内建类型> | Record<string, any>` ⇒ 随后 `data["0"]` 报 **TS7053**（内建
+ * 类型上没有该属性）⇒ 产物在 strict 工程里编不过，而 `nudo export` 静默
+ * exit 0。声明成 `: any` 后收窄不再限制索引读（`any` 收窄仍是 `any`）。
+ */
+function hasIdentityClause(a: Abs, seen: Set<Abs> = new Set()): boolean {
+  // 求值器产出的 Abs 是**允许成环**的 DAG（DESIGN-001）⇒ 递归必须带 visited，
+  // 否则环形结构直接把栈打爆（projection-cycle-depth）。
+  if (seen.has(a)) return false;
+  seen.add(a);
+  const s = a.shape;
+  switch (s.k) {
+    case "brand":
+    case "eff":
+      return true;
+    case "obj":
+      return Object.values(s.slots).some((slot) => hasIdentityClause(slot.value, seen));
+    case "arr":
+      return hasIdentityClause(s.element, seen);
+    case "tuple":
+      return (
+        s.elements.some((el) => hasIdentityClause(el, seen)) ||
+        (s.rest !== undefined && hasIdentityClause(s.rest, seen))
+      );
+    case "sum":
+      return s.members.some((m) => hasIdentityClause(m, seen));
+    default:
+      return false;
+  }
 }
 
 /** 兼容别名：Abs 路径唯一（`used` 语义同上）。 */

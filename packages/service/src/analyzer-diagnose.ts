@@ -98,7 +98,13 @@ export function dedupeCallRecords(records: CallRecord[]): CallRecord[] {
     // key 必须含结果形态：同实参形状但不同结果（错误路径 never+throws vs
     // 成功路径 Promise<...>）是不同的 case，只按实参去重会把成功记录吞进
     // 首条错误记录里（parseChunked 的 Promise 记录曾被 L203 的 throw 吞掉）。
+    //
+    // 还必须含**调用点身份**（Bug 127）：两个不同现场的调用只要实参/结果/
+    // throws 形状相同就会被判成同一条 ⇒ 后到现场的见证被吞（`--from` 顺序
+    // 决定谁活下来）。去重意图是「同一调用点被重复采集」，不是「同形态合并」。
     const key =
+      `${rec.callLoc?.line ?? 0}:${rec.callLoc?.column ?? 0}` +
+      "\u0000" +
       rec.argAbs.map(absStructureKey).join(",") +
       "=>" +
       absStructureKey(rec.resultAbs) +
@@ -148,6 +154,10 @@ export function synthesizeExternalFunctions(
   const out: FunctionAnalysis[] = [];
   for (const { module, exportName, records } of groups.values()) {
     const deduped = dedupeCallRecords(records);
+    // 记录全部超限被丢（`isOversizedCallRecord`）⇒ 本组**无证据**：整组跳过，
+    // 不得解引用空数组（Bug 011 —— 旧实现 `deduped[0].callLoc` 抛
+    // TypeError，`nudo check` 吞掉异常后判绿）。
+    if (deduped.length === 0) continue;
     const arity = Math.max(...deduped.map((r) => r.argAbs.length));
     const analysis: FunctionAnalysis = {
       name: exportName,

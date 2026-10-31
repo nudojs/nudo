@@ -3,7 +3,8 @@
  * 把分析产出的调用点域投影（joinThenProject，先 Abs join 再投影）固化为侧车
  * `*.nudo.js` / `*.nudo.ts` 的 `@generated` 段——`export const <fn> = fn({…}, …)`。
  *
- * - 生成段 = 三行：`@generated` 头注释 + `// source: <相对file>:<fn>` + export 行。
+ * - 生成段 = 四行：`@generated` 头注释 + `// source: <相对file>:<fn>` +
+ *   `// evidence: local|external`（证据范围，BUG-035）+ export 行。
  *   DSL 由 formatConstraint 产出，**写入前 round-trip 自检**（生成文本经
  *   execNudoModule 求值、导出须 isNudoConstraint 且 fn 槽存在）：展示兜底形态
  *   （`x?:` 可选字段、`.eq()` 伪链、`{谓词原文}`）不是合法 DSL，自检拦下 →
@@ -29,6 +30,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 
 import { basename, dirname, relative, resolve } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
+  abs as makeAbs,
   execNudoModule,
   formatConstraint,
   interfaceDiagCount,
@@ -44,10 +46,12 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
-import { DIAG, exportedNameOfLocal, runWithCollectorScope } from "@nudojs/core/internal";
+import { DIAG, exportedNameOfLocal, isPointConstraint, runWithCollectorScope, widenObservationAbs } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
+import { isDomainDeclarationCase } from "./domain-cases.ts";
+import { sectionEvidenceIsInFile, type EvidenceScope } from "./section-provenance.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { allocNudoBinding, directBindingOk, exportNameRepr } from "./export-binding.ts";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "../analyzer.ts";
@@ -95,6 +99,23 @@ export type EmitInterfaceResult = {
   skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }>;
   changed: boolean;
   diff?: string;
+  /**
+   * 本次被**删除**的生成段身份（证据消失 ⇒ 段不再描述任何真实行为）。
+   *
+   * BUG-035 残留：证据没了还留着旧生成段 ⇒ 侧车继续承诺一个不存在的契约
+   * （与 `nudo check` 的签名面互相矛盾）。只有**可证**证据已消失的段才删
+   * （判据见 section-provenance.ts）；跨文件证据（--from）本轮没采集时
+   * 「没看到证据」≠「证据没了」⇒ 那类段保留（不误删用户契约）。
+   */
+  removed?: string[];
+  /**
+   * 侧车的**最终写盘文本**（含 BOM，与真实落盘逐字节相同）。
+   *
+   * BUG-196：「写盘 / 判定 / dry-run 预览同源」是幂等性的前提。调用方拿到它
+   * 就能把「本分支的产物」与别处的段级合并拼在一起（同一侧车同一段只有一个
+   * 写者），而不是从 `diff` 反解自己刚算出来的文本。
+   */
+  finalContent?: string;
   /**
    * 诊断列表。
    *
@@ -227,7 +248,18 @@ export async function emitInterface(
     // 的裸注入（.js 侧车才有那条后路）。
     const isTypeScriptSidecar = sidecarPath.endsWith(".ts");
 
-    const sections = collectGeneratedSections(sidecarSrc);
+    // BUG-043：`collectGeneratedSections` 解析失败时抛的是**无路径**的消息，
+    // 而下方带路径的 `tables === undefined` 分支因此**永远走不到**（注释里
+    // 「由调用方补充路径上下文」的机制从未实现）⇒ 诊断点名了被分析的源文件
+    // 而不是真正该修的侧车。这里把路径上下文补上再重抛。
+    let sections: GeneratedSection[];
+    try {
+      sections = collectGeneratedSections(sidecarSrc);
+    } catch {
+      throw new Error(
+        `sidecar '${relative(process.cwd(), sidecarPath) || sidecarPath}' is not parseable; fix it before emitting`,
+      );
+    }
     const generatedNames = new Set(sections.flatMap((s) => s.names));
     const tables = sidecarNameTables(sidecarSrc);
     if (tables === undefined) {
@@ -356,21 +388,39 @@ export async function emitInterface(
     const written: string[] = [];
     const skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }> = [];
     const issues: EmitInterfaceResult["issues"] = [];
+    /** 本次被删除的生成段身份（证据消失 ⇒ 段不再描述任何真实行为） */
+    const removed: string[] = [];
     /** 既有生成段 → 新文本（就地替换；缺项 = 原样保留，update 不重排） */
     const replacements = new Map<GeneratedSection, string[]>();
+    /**
+     * 证据已消失（**可证**在文件内）⇒ 整段删除的生成段（BUG-035 残留）。
+     * 与死段（导出已不存在）同类处理，但判据不同：死段 = 导出没了；陈旧段 =
+     * 导出还在、但今天的分析对它**没有证据** ⇒ 段描述的行为已不存在。
+     */
+    const staleSections = new Set<GeneratedSection>();
     /** 追加段（此前没有同名生成段的身份） */
     const appended: string[] = [];
 
-    /** 逐名投影计划（dsl + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
-    const planCache = new Map<string, { dsl?: string; roundTrip: boolean }>();
-    const planFor = (name: string): { dsl?: string; roundTrip: boolean } => {
+    /** 逐名投影计划（dsl + 证据面 + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
+    const planCache = new Map<
+      string,
+      { dsl?: string; noEvidence: boolean; roundTrip: boolean; evidence: EvidenceScope }
+    >();
+    const planFor = (
+      name: string,
+    ): { dsl?: string; noEvidence: boolean; roundTrip: boolean; evidence: EvidenceScope } => {
       const hit = planCache.get(name);
       if (hit) return hit;
       const fn = fnByName.get(localOf.get(name) ?? name);
-      const dsl = fn === undefined ? undefined : projectFunctionDsl(fn);
+      const proj: FunctionProjection = fn === undefined ? { dsl: undefined } : projectFunctionDsl(fn);
+      const dsl = proj.dsl;
+      // BUG-035（证据范围）：段的证据是否混入 `--from` 外部记录（见
+      // FunctionAnalysis.externalEvidence）——落进 `// evidence:` 行。
+      const evidence: EvidenceScope = fn?.externalEvidence === true ? "external" : "local";
       const roundTrip =
-        dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name), eol), name);
-      const rec = { dsl, roundTrip };
+        dsl !== undefined &&
+        roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name), eol, evidence), name);
+      const rec = { dsl, noEvidence: proj.noEvidence === true, roundTrip, evidence };
       planCache.set(name, rec);
       return rec;
     };
@@ -498,14 +548,42 @@ export async function emitInterface(
       const plan = planFor(name);
       if (plan.dsl === undefined || !plan.roundTrip) {
         skipped.push({ fn: name, reason: "not-projectable" });
-        if (prevText !== undefined) {
-          // 既有生成段但今日证据不可得（如 update 未带 --from）：
-          // 保留原段不删（update 剥离后归位原文本），绝不因证据缺失删契约
-          if (prev !== undefined) replacements.set(prev, [prevText]);
+        if (prev !== undefined && prevText !== undefined) {
+          // BUG-035 残留：今天的分析对该导出**没有证据** ⇒ 既有生成段描述的
+          // 行为已不存在 ⇒ 该段必须被刷新（删掉）：留着它 = 侧车继续承诺一个
+          // 不存在的契约（`nudo check` 的签名面说 `f(x: any) => number |
+          // string`，侧车却说「只接受 x = 5」——两面互相矛盾）。
+          //
+          // 但**只删「可证」证据已消失的段**，两条同时成立才动：
+          // ① `plan.noEvidence`——真的**完全没有证据**（不是「证据在但投影不出」
+          //    也不是 `@nudo:skip` 关掉分析；那两种情形既有段必须保留）；
+          // ② `sectionEvidenceIsInFile(...)`——跨文件证据（--from 调用记录）本轮
+          //    可能压根没采集 ⇒「没看到证据」≠「证据没了」⇒ 不得据此删用户的
+          //    契约（无证据 ⇒ 无从判断）。判据见 section-provenance.ts：
+          //    **现格式**看段头的 `// evidence: local|external`（local 才可证，
+          //    宽域段也适用）；旧侧车没这行 ⇒ 退回「单点字面量域 ⇒ 证据必在
+          //    文件内」的启发式。
+          if (
+            opts.mode === "update" &&
+            plan.noEvidence &&
+            sectionEvidenceIsInFile(prev.text, name)
+          ) {
+            staleSections.add(prev);
+            continue;
+          }
+          // 不可证 ⇒ 原段归位（update 剥离后放回原文本），绝不因证据缺失删契约
+          replacements.set(prev, [prevText]);
         }
         continue;
       }
-      const text = sectionText(name, aliasDsl(plan.dsl), srcRel, bindingOf.get(name), eol);
+      const text = sectionText(
+        name,
+        aliasDsl(plan.dsl),
+        srcRel,
+        bindingOf.get(name),
+        eol,
+        plan.evidence,
+      );
       if (opts.mode === "add" && prev !== undefined) {
         skipped.push({ fn: name, reason: "no-change" });
         continue;
@@ -580,6 +658,22 @@ export async function emitInterface(
           });
           continue;
         }
+        if (staleSections.has(s)) {
+          // 陈旧段（BUG-035 残留）：今天的分析对该导出**没有证据** ⇒ 段描述的
+          // 行为已不存在 ⇒ 整段删除（同死段：连行尾一起删，不留空行）
+          sites.push({
+            start: s.start,
+            end: withTrailingEol(sidecarSrc, s.end),
+            replacement: "",
+          });
+          removed.push(...s.names);
+          issues.push({
+            code: DIAG.interfaceNotProjectable,
+            severity: "info",
+            message: `${s.names.join(", ")}: evidence disappeared — dropping its generated section (the sidecar must not keep describing behavior that no longer exists)`,
+          });
+          continue;
+        }
         const texts = replacements.get(s);
         sites.push({
           start: s.start,
@@ -640,7 +734,9 @@ export async function emitInterface(
       written,
       skipped,
       changed,
+      ...(removed.length > 0 ? { removed } : {}),
       ...(diff !== undefined ? { diff } : {}),
+      finalContent: bom + finalContent,
       issues,
       sidecarPath,
       ...(opts.fnNames && opts.fnNames.length > 0
@@ -673,6 +769,9 @@ export function formatEmitSummary(
   if (result.changed) {
     lines.push(`Updated ${sourcePath} → ${sidecarRel}`);
     lines.push(`  written: ${result.written.join(", ") || "(none)"}`);
+    if (result.removed !== undefined && result.removed.length > 0) {
+      lines.push(`  removed: ${result.removed.join(", ")}`);
+    }
   } else {
     lines.push(`${sourcePath}: no interface changes`);
     // 首次 --emit（默认只刷已有生成段、侧车尚无生成段）：把 no-op 解释成用法
@@ -701,47 +800,103 @@ export function formatEmitSummary(
 // ---------------------------------------------------------------------------
 
 /**
+ * 单函数域投影结果。
+ *
+ * `dsl === undefined` 有两种截然不同的原因，**删既有生成段只能认第一种**：
+ * - `noEvidence: true` —— 今天的分析对该函数**完全没有证据**（没有调用点、
+ *   没有域声明、也没有入口推断，且不是 `@nudo:skip`）⇒ 既有生成段描述的行为
+ *   已不存在 ⇒ update 模式下该段必须被刷新（删掉，见 section-provenance.ts）；
+ * - `noEvidence` 未置位 —— 证据**在**但不可表达 / 用户 `@nudo:skip` 关掉分析
+ *   ⇒ 不是「行为没了」⇒ 既有段必须原样保留（不得误删）。
+ */
+type FunctionProjection = { dsl?: string; noEvidence?: boolean };
+
+/**
  * 单函数域投影（§4.2 工件聚合口径）：调用点域优先——callsite case 的逐位实参
- * Abs 先 join 再投影；无调用记录退 directive case；再无（entry-only）用 entry
- * 推断（仅返回位；entry 实参恒 unknown，参数位无证据不产约束）。
+ * Abs 先 join 再投影；无调用记录退**域声明**的 directive case；再无（entry-only）
+ * 用 entry 推断（仅返回位；entry 实参恒 unknown，参数位无证据不产约束）。
  * 任一有证据位 joinThenProject 落空 → undefined（not-projectable，不产垃圾）。
  */
-function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
+function projectFunctionDsl(fn: FunctionAnalysis): FunctionProjection {
   // #176：skip 函数不产侧车契约——@nudo:case 现已照常求值（运行时见证），
   // 但见证不参与面合成；skip 的面是 @nudo:skip => 声明（若有）。与旧口径
   // 一致：此前 skip 无 case → 无证据 → not-projectable。
-  if (fn.skipped) return undefined;
+  //
+  // noEvidence **不置位**：skip 是用户显式关掉分析（不是「行为没了」）⇒
+  // 既有生成段必须保留，不得按「证据消失」删。
+  if (fn.skipped) return { dsl: undefined };
   const callsite = fn.cases.filter((c) => c.source === "callsite");
-  const directive = fn.cases.filter((c) => c.source === "directive");
-  const paramCases = callsite.length > 0 ? callsite : directive;
-  const returnCases = callsite.length > 0 ? callsite : directive.length > 0 ? directive : fn.cases;
+  // BUG-035：`@nudo:case` 指令的**调试见证**不是契约产物——指令来源内部还要
+  // 再分档（`isDomainDeclarationCase`）：
+  // - **域声明**（实参是约束构建器 `number()`/`shape()`/`union()` … 的域形状，
+  //   或带断言 `=> expected`）⇒ 可作域来源与返回义务来源；
+  // - **纯点观测见证**（实参全是字面量且无断言）⇒ **不产任何契约**（不生成域、
+  //   不生成返回义务）——与 analyzer 侧「点观测不得独占返回面」的禁令同口径。
+  // 改前：指令见证与调用点证据**平权**当域来源 ⇒ 纯点观测被写成契约
+  // （`fn({ x: lit(5) }, lit(6))`），与 `nudo check` 的
+  // `f(x: any) => number | string` 自相矛盾（用户为调试加一条 case 就把函数
+  // 固化成只接受那个点）。
+  const declaredDirective = fn.cases.filter(
+    (c) => c.source === "directive" && isDomainDeclarationCase(c),
+  );
+  const paramCases = callsite.length > 0 ? callsite : declaredDirective;
+  const returnCases =
+    callsite.length > 0
+      ? callsite
+      : declaredDirective.length > 0
+        ? declaredDirective
+        : // 既无调用点证据、也无域声明 ⇒ 只剩入口推断（entry@）；指令见证是
+          // 观测、不是声明 ⇒ 不得进返回义务。
+          fn.cases.filter((c) => c.source !== "directive");
+  // BUG-021：调用点观测是**点**——观测集只覆盖一个点（无析取成员）时，
+  // 进投影器前剥到基类型（精度留在 `Case:` 见证里）。多值观测域
+  // （`union(lit(1), lit(-2))`）是**真实观测域**，保留字面量并集：拓宽会把它
+  // 塌成 `number()`，drift 对账再也看不见域变化（BUG-199 的两面对账必须与
+  // 写盘同判据，见 core `isPointConstraint`）。带断言的 `@nudo:case` 是
+  // **域声明** ⇒ 一律不拓宽。
+  const projectObserved = (absList: Abs[], allowWiden: boolean): NudoConstraint | undefined => {
+    const raw = joinThenProject(absList);
+    if (raw === undefined) return undefined;
+    if (!allowWiden || !isPointConstraint(raw)) return raw;
+    // 拓宽后不可表达（如 number|string 的 union 没有判别字面量）⇒ 回落原始
+    // 观测投影：宁可窄，也不能让整条契约消失（not-projectable）。
+    return joinThenProject(absList.map((a) => widenObservationAbs(a))) ?? raw;
+  };
 
   const paramParts: string[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
-    const argAbs: Abs[] = [];
+    const rawAbs: Abs[] = [];
     for (const c of paramCases) {
       const a = c.argAbs[i];
-      if (a !== undefined) argAbs.push(a);
+      if (a !== undefined) rawAbs.push(a);
     }
-    if (argAbs.length === 0) continue; // 无证据：参数位留空（不产约束）
-    const constraint = joinThenProject(argAbs);
-    if (constraint === undefined) return undefined;
+    if (rawAbs.length === 0) continue; // 无证据：参数位留空（不产约束）
+    const constraint = projectObserved(rawAbs, paramCases[0]?.source !== "directive");
+    // 证据在、但投影不出 ⇒ noEvidence 不置位（既有段必须保留，不得误删）
+    if (constraint === undefined) return { dsl: undefined };
     paramParts.push(`${fn.paramNames[i]!}: ${formatConstraint(constraint)}`);
   }
 
   // 返回位：排除 throw case（其 result 是抛出值不是返回值）
-  const retAbs: Abs[] = [];
+  const retRaw: Abs[] = [];
   for (const c of returnCases) {
-    if (c.throwsAbs.shape.k !== "never") continue;
-    retAbs.push(c.abs);
+    if (c.throwsAbs.shape.k === "never") retRaw.push(c.abs);
   }
   const retConstraint: NudoConstraint | undefined =
-    retAbs.length > 0 ? joinThenProject(retAbs) : undefined;
-  if (retConstraint === undefined && paramParts.length === 0) return undefined; // 完全无证据
-  if (retAbs.length > 0 && retConstraint === undefined) return undefined; // 有证据但不可表达
+    retRaw.length > 0
+      ? projectObserved(retRaw, returnCases[0]?.source !== "directive")
+      : undefined;
+  // 完全无证据（形参位与返回位都没有可投影证据）⇒ 今天的分析对该函数**什么
+  // 都没看到** ⇒ 既有生成段描述的行为已不存在（BUG-035 残留：见证段/失效段
+  // 必须被刷新掉）。这是唯一允许删既有段的投影失败出口。
+  if (retConstraint === undefined && paramParts.length === 0) {
+    return { dsl: undefined, noEvidence: true };
+  }
+  // 有证据但不可表达 ⇒ 不是「证据没了」⇒ 既有段必须保留
+  if (retRaw.length > 0 && retConstraint === undefined) return { dsl: undefined };
 
   const ret = retConstraint === undefined ? "" : `, ${formatConstraint(retConstraint)}`;
-  return `fn({ ${paramParts.join(", ")} }${ret})`;
+  return { dsl: `fn({ ${paramParts.join(", ")} }${ret})` };
 }
 
 // ---------------------------------------------------------------------------
@@ -755,13 +910,29 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
  *
  * eol = 侧车的主导行尾（CRLF 侧车的生成段必须也是 CRLF：基底用 slice 原样
  * 保留、生成段若用裸 LF ⇒ 同一文件两种行尾 = 混合行尾）。
+ *
+ * BUG-035（证据范围）：`// evidence: local|external` 行记录**这段的证据来自哪里**
+ * ——`local` = 全部来自本项目分析（模块图 / 文件内指令 / 入口推断，每次运行都会
+ * 重新推导）⇒ 今天的分析「没证据」时可证「证据没了」⇒ update 面允许删段；
+ * `external` = 混入 `--from` 采集的使用现场记录（不属于模块图闭包，本轮没采集
+ * ≠ 证据消失）⇒ 保守保留。旧侧车没有这一行 ⇒ 走旧的「单点字面量」启发式。
  */
-function sectionText(fn: string, dsl: string, srcRel: string, binding = fn, eol = "\n"): string {
+function sectionText(
+  fn: string,
+  dsl: string,
+  srcRel: string,
+  binding = fn,
+  eol = "\n",
+  evidence: EvidenceScope = "local",
+): string {
   const decl =
     binding === fn
       ? `export const ${fn} = ${dsl};`
       : `const ${binding} = ${dsl};${eol}export { ${binding} as ${exportNameRepr(fn)} };`;
-  return `${GENERATED_HEADER}${eol}// source: ${sanitizeLineCommentText(`${srcRel}:${fn}`)}${eol}${decl}${eol}`;
+  return (
+    `${GENERATED_HEADER}${eol}// source: ${sanitizeLineCommentText(`${srcRel}:${fn}`)}` +
+    `${eol}// evidence: ${evidence}${eol}${decl}${eol}`
+  );
 }
 
 /**
@@ -1078,11 +1249,28 @@ function sidecarNameTables(sidecarSrc: string): SidecarNameTables | undefined {
       for (const spec of stmt.specifiers) {
         const local = spec.local.name;
         tables.localNames.add(local); // import 局部名 = 模块作用域绑定
-        if (fromCore) tables.coreBuilderLocals.add(local);
-        if (spec.type === "ImportSpecifier") {
-          const imported =
-            spec.imported.type === "Identifier" ? spec.imported.name : spec.imported.value;
-          if (imported === "fn") fnBuilderLocals.add(local); // import { fn as mkFn }
+        // BUG-271：「已 import」只有在**它绑定的就是那个约束构建器**时才算就位。
+        // 侧车里已有的 `import { lit } from "@nudojs/core"` 绑定的是 core 的
+        // **Term 构造器**（约束构建器叫 litC）⇒ 若把它当成「builder 已就位」，
+        // `declare const lit: …litC;` 会被抑制掉，产物里 `lit(1)` 的类型面就
+        // 是坏的（TS2322 / TS2345）。判据必须比对 **core 导出名**。
+        const imported =
+          spec.type === "ImportSpecifier"
+            ? spec.imported.type === "Identifier"
+              ? spec.imported.name
+              : spec.imported.value
+            : spec.type === "ImportDefaultSpecifier"
+              ? "default"
+              : "*";
+        if (
+          fromCore &&
+          CONSTRAINT_BUILDER_NAMES.includes(local) &&
+          imported === coreExportNameOf(local)
+        ) {
+          tables.coreBuilderLocals.add(local);
+        }
+        if (spec.type === "ImportSpecifier" && imported === "fn") {
+          fnBuilderLocals.add(local); // import { fn as mkFn }
         }
       }
       continue;
@@ -1195,7 +1383,7 @@ function builderNamesUsed(dsl: string): string[] {
  * 导出是 Term 构造器、`and` 是项级合取——约束构建器另有其名。
  * 其余构建器表面名与导出名同名。
  */
-function coreExportNameOf(surface: string): string {
+export function coreExportNameOf(surface: string): string {
   if (surface === "lit") return "litC";
   if (surface === "and") return "andC";
   return surface;

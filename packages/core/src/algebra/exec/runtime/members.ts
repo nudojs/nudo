@@ -30,9 +30,9 @@ import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 // "@@sym#<身份 id>"）——普通对象面的符号槽寻址单一事实源（片 W7 建）。
 import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
-import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth } from "./state.ts";
+import { NudoThrow, noBody, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, litTruth, proxyTargetInnerObj } from "./state.ts";
 import { $objAccessor, lookupObjAccessor, accessorTable } from "../../accessors.ts";
 // Bug 230：Proxy [[Delete]] 规范不变量的单一实现（S9 落在 builtins/object/
 // descriptor.ts）——delete 运算符路径（$delRes）接线；Reflect.deleteProperty
@@ -185,8 +185,58 @@ export function findStaticClassAccessor(
 
 
 
+/**
+ * Bug 218：Proxy `has` 陷阱的**规范不变量**（ES2023 `[[HasProperty]]` 第 8 步）。
+ *
+ * 陷阱返回 falsy 时取靶的 `[[GetOwnProperty]](P)`：存在且
+ * `[[Configurable]]` 为 false ⇒ 原生**定抛** TypeError
+ * （`'has' on proxy: trap returned falsish for property 'x' which exists in the
+ * proxy target as non-configurable`）。靶上无该自有键 / 该键可配置 / 键不可判
+ * ⇒ 维持现行为（不抛）。
+ *
+ * 同族不变式引擎都已接线（get 陷阱的非配置+不可写、ownKeys 的重复项/漏键、
+ * deleteProperty 的同款非配置门——{@link enforceProxyDeleteInvariant}），
+ * 唯独 `has` 缺这一格 ⇒ 引擎判「键不存在」且不抛：既是宿主**不可能产出**的
+ * 值（`"x" in p` 印 `false`），也让 `nudo check` 对必抛代码**假绿**。
+ */
+function enforceProxyHasInvariant(proxy: Abs, key: string): void {
+  const parts = proxyPartsOf(proxy);
+  if (!parts) return;
+  const inner = proxyTargetInnerObj(parts.target);
+  if (!inner) return;
+  const slots = (inner.shape as ObjShape).slots as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) {
+    // 自有访问器同样是自有属性（槽位只是占位，可能缺席）
+    if (lookupObjAccessor(inner, key) === undefined) return;
+  }
+  const st = extStateOf(inner);
+  const nonConfigurable =
+    getPropFlags(inner)?.get(key)?.configurable === false ||
+    st === "frozen" ||
+    st === "sealed";
+  if (!nonConfigurable) return;
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
 // in / instanceof / classExpr / delete
 // --- in / instanceof / delete（transpile 运算符路由） ---
+
+/**
+ * Bug 219（DEC-006 B/C）：接收者位是否漏进了**宿主真值**。
+ *
+ * 转译层把 `globalThis` / `process` / `Math` / `JSON` … 这类自由标识符**原样**
+ * 当接收者发射（它们不是 Abs——没有 `.shape`）。`$get`（containers/member.ts
+ * 的 `getHostMember`）、`$set`/`$len`/`$idx`/`$idxSet` 都已有非-Abs 守卫，
+ * 唯独 `$in` / `$del` / `$delRes` 三个入口直接读 `o.shape.k` ⇒
+ * `TypeError: Cannot read properties of undefined (reading 'k')` ⇒ 引擎裸崩
+ * ⇒ 回落 `internal` ⇒ **整个模块 fail-closed** ⇒ 对完全合法的
+ * `"x" in globalThis` / `delete globalThis.x` 判红（同语义的读/写却不崩）。
+ *
+ * 口径与 `$set` 同款：非 Abs 接收者 **fail-closed**，禁止读 `.shape` 炸宿主。
+ */
+function isNonAbsReceiver(o: unknown): boolean {
+  return !o || typeof o !== "object" || !("shape" in (o as object));
+}
 
 /**
  * `key in obj`：闭形状精确判定（含 Object.prototype/Array.prototype 名、
@@ -195,6 +245,9 @@ export function findStaticClassAccessor(
  * unknown；抽象键/开形状 → boolean。
  */
 export function $in(key: Abs, o: Abs): Abs {
+  // Bug 219：宿主真对象接收者（globalThis 等）键集不可判 ⇒ unknown
+  // （原生 `"x" in globalThis` 合法；引擎不得因此崩）。
+  if (isNonAbsReceiver(o)) return unknown;
   if (o.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
     // nullish 成员（null|obj 等 union）：整体只 may 抛（守卫分支只读非空侧）
@@ -278,7 +331,15 @@ export function $in(key: Abs, o: Abs): Abs {
         // 直接当判定结果（number 0 折「有」、空串折「有」：wrong-exact）。
         const r = $call(trap.fn, [parts.target, symSlotKey !== undefined ? key : strLit(String(kv))], parts.handler);
         const truth = litTruth(r);
-        if (truth !== undefined) return boolLit(truth);
+        if (truth !== undefined) {
+          // Bug 218：陷阱返 falsy 且靶上该是**不可配置**自有属性 ⇒ 定抛
+          // TypeError（ES2023 [[HasProperty]] 不变式）。符号键槽（"@@X" 投影）
+          // 与抽象键不在此列——原生键身份与靶槽寻址不同源，宁可少报。
+          if (truth === false && symSlotKey === undefined) {
+            enforceProxyHasInvariant(o, String(kv));
+          }
+          return boolLit(truth);
+        }
         return bool();
       }
       if (trap.k === "dead" || trap.k === "opaque") {
@@ -420,6 +481,14 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
     "append", "delete", "entries", "forEach", "get", "getAll",
     "has", "keys", "set", "sort", "toString", "values",
   ]),
+  // Bug 163（toJSON 半）：`URL.prototype` 的自有方法面——node v26.10.0
+  // 实测 `Object.getOwnPropertyNames(URL.prototype)` 的方法位 =
+  // ["toString", "toJSON"]（其余是组件访问器）。此前表内无 URL 键 ⇒
+  // `u.toJSON` 落闭 obj 槽 miss 折 exact undefined（wrong-exact：
+  // `u.toJSON === undefined` 判 true、`"toJSON" in u` 折 exact false）。
+  // 组件槽（href/host/…）由 urlBrandAbs 的 componentKeys 承载，访问器名
+  // 另在 BUILTIN_BRAND_ACCESSORS 登记（$in 面）。
+  URL: new Set(["toString", "toJSON"]),
   TextDecoder: new Set(["decode"]),
   "Intl.NumberFormat": new Set([
     "format", "formatRange", "formatRangeToParts", "formatToParts", "resolvedOptions",
@@ -640,6 +709,15 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
     "dotAll", "sticky", "unicode", "unicodeSets", "hasIndices",
   ]),
   URLSearchParams: new Set(["size"]),
+  // Bug 163（toJSON 半）：`URL.prototype` 的自有组件访问器（node v26.10.0
+  // `Object.getOwnPropertyNames(URL.prototype)`）——值读多由 urlBrandAbs 的
+  // componentKeys 精确槽承载，本表补 `$in` presence 与「槽未建模时诚实
+  // unknown」的访问器面（`"href" in u` / `"searchParams" in u` 此前对
+  // 未入 componentKeys 的名字折 exact false）。
+  URL: new Set([
+    "href", "origin", "protocol", "username", "password", "host",
+    "hostname", "port", "pathname", "search", "searchParams", "hash",
+  ]),
   TextDecoder: new Set(["encoding", "fatal", "ignoreBOM"]),
   // Bug 214 / 238：内建**原型对象**上的 brand check 访问器（`"size" in
   // Map.prototype` 原生 true；值读定抛 TypeError——见
@@ -692,6 +770,41 @@ function classChain(name: string, includeOwner: boolean): string[] {
 export function evalClassChain(name: string): string[] {
   return classChain(name, true);
 }
+/**
+ * BUG-172：**规格优先**的成员查找链。
+ *
+ * `classChain(name)` 的每一环都按名牌回注册表——两个模块各自定义
+ * `class Config` 时，A 的实例会被解析到 B 的 spec（真成员判不存在、
+ * 不存在的成员判有值，双向错）。有接收者值时可拿到它**随身携带的规格**
+ * （class-registry.ts 的 classSpecOfAbs）：首环直接用那份规格，其余环沿
+ * superName 走既有 registry + 内建错误层级回退。
+ *
+ * 返回 (名牌, 规格) 对：名牌供 BUILTIN_BRAND_* 表命中（内建祖先仍是裸名），
+ * 规格供用户类成员表读取（首环已经精确）。
+ * `.prototype` 品牌名与规格名不一致时退回按名牌链（原型面语义不变）。
+ */
+export function classChainLinks(
+  startName: string,
+  startSpec: EvalClassSpec | undefined,
+): Array<{ name: string; spec: EvalClassSpec | undefined }> {
+  if (!startSpec || startName !== startSpec.name) {
+    return evalClassChain(startName).map((n) => ({ name: n, spec: getEvalClass(n) }));
+  }
+  const out: Array<{ name: string; spec: EvalClassSpec | undefined }> = [
+    { name: startSpec.name, spec: startSpec },
+  ];
+  const seen = new Set<string>([startSpec.name]);
+  let cur: string | undefined = startSpec.superName;
+  let depth = 0;
+  while (cur && depth++ < 32 && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = getEvalClass(cur);
+    out.push({ name: cur, spec });
+    cur = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
+  }
+  return out;
+}
+
 
 /**
  * evaluator 品牌链（**[[Prototype]] 链**语义）："X.prototype" 的链**不含
@@ -1009,6 +1122,50 @@ function brandHasInstanceSlot(rv: Abs): Slot | undefined {
 }
 
 /**
+ * Bug 175：RHS **fn 形状 Abs** 的 `prototype` 面（原生 `OrdinaryHasInstance`
+ * 在走原型链**之前**先 `Get(C, "prototype")`，结果非对象 ⇒ 定抛 TypeError）。
+ *
+ * 返回：
+ * - `"object"`——宿主确有 `.prototype` 对象（普通 function 声明/表达式、类表达式、
+ *   generator / async-generator 函数）；
+ * - `"undefined"`——宿主 `prototype === undefined`（**箭头函数**、对象/类**方法**、
+ *   **async 函数**、**bind 产物**、**`Proxy`**——node 实测 `Proxy.prototype`
+ *   就是 `undefined` 且无自有 `prototype`）；
+ * - `"unknown"`——不可判（不得据此定抛）。
+ *
+ * 判据次序（不可调换）：
+ * 1. 显式 `prototype` 槽（`F.prototype = …` 的写落点）——最权威；
+ * 2. bind 产物（`bindCtorFacetOf`）：可构造但无 `.prototype`；
+ * 3. 宿主名：`Proxy`、`bound …`——原生无 `.prototype`；
+ * 4. `fnKind`：generator / async-generator 有 `.prototype`；async 无；
+ * 5. `ctor === true`（可构造）——普通函数 ⇒ 有 `.prototype`
+ *    （**必须在 fnKind 之前**：`$fnVal` 给普通函数也盖 `fnKind: "function"`）；
+ * 6. `ctor === false`——其余不可构造形态（箭头 / 方法）⇒ 无 `.prototype`。
+ *
+ * 之前这里不看宿主真值 ⇒ 一律合成 `protoBrandAbs`（一个**对象** brand）⇒
+ * Bug 205 的「prototype 非对象 ⇒ 定抛」门永不触发 ⇒ `x instanceof Proxy`
+ * 漏判必抛 TypeError（假绿）。
+ */
+function fnPrototypeState(rv: Abs): "object" | "undefined" | "unknown" {
+  const sh = rv.shape;
+  if (sh.k !== "fn") return "unknown";
+  const slot = sh.slots ? getSlot(sh.slots, "prototype") : undefined;
+  if (slot) return isDefinitelyNonObjectAbs(slot.value) ? "undefined" : "object";
+  // bind 产物**不在此列**：原生 OrdinaryHasInstance 对带 [[BoundTargetFunction]]
+  // 的 RHS 会**委托给目标**（`({}) instanceof (function(){}).bind(null)` →
+  // false；目标无 .prototype 才抛）⇒ 取决定目标 ⇒ 不可判。
+  const nm = (sh as { name?: string }).name;
+  // 宿主 `Proxy.prototype` 原生就是 undefined（node 实测：无自有 prototype）。
+  if (nm === "Proxy") return "undefined";
+  const kind = getFnImpl(rv)?.fnKind;
+  if (kind === "generator" || kind === "async-generator") return "object";
+  if (sh.ctor === true) return "object";
+  if (kind === "async" || kind === "function") return "undefined";
+  if (sh.ctor === false) return "undefined";
+  return "unknown";
+}
+
+/**
  * Bug 205：RHS 构造器的 prototype（原生 OrdinaryHasInstance 的
  * `Get(C, "prototype")`）。
  *
@@ -1032,6 +1189,13 @@ function rhsPrototypeOf(
     if (sh.slots) {
       const slot = getSlot(sh.slots, "prototype");
       if (slot) return { proto: slot.value, ctorName: nm };
+    }
+    // Bug 175：宿主 `.prototype` 是 undefined 的 fn 形状（箭头 / 方法 /
+    // async / bind 产物 / Proxy）——不得合成 brand 原型（那是个**对象**，
+    // Bug 205 的「prototype 非对象 ⇒ 定抛」门就永不触发）。返回 undefined
+    // Abs ⇒ isDefinitelyNonObjectAbs 为真 ⇒ 门自然触发（与原生信息一致）。
+    if (fnPrototypeState(rv) === "undefined") {
+      return { proto: $lit(undefined), ctorName: nm };
     }
     return { proto: protoBrandAbs(nm), ctorName: nm };
   }
@@ -1395,7 +1559,16 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
 /** instanceof 右操作数非标识符（表达式/成员路径）：RHS 值传入时先做原生
  *  非对象校验（definite / may TypeError）；构造器值未知 → 抽象 boolean */
 export function $instanceofNonIdent(_left: Abs, right?: Abs): Abs {
-  if (right !== undefined) validateInstanceofRhs(asAbsVal(right));
+  if (right !== undefined) {
+    const rv = asAbsVal(right);
+    validateInstanceofRhs(rv);
+    // Bug 175：RHS 是 fn 形状但宿主 `.prototype` 是 undefined（箭头 / 方法 /
+    // async / bind 产物 / Proxy）⇒ OrdinaryHasInstance 在走原型链前定抛
+    // TypeError（原生 "Function has non-object prototype 'undefined' in
+    // instanceof check"）。此前一律折抽象 boolean ⇒ 漏判必抛（假绿）。
+    // generator / async-generator / 普通函数有 `.prototype` ⇒ 不抛（原生 false）。
+    if (fnPrototypeState(rv) === "undefined") throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   return bool();
 }
 
@@ -1428,6 +1601,8 @@ export function $classExpr(name?: string): Abs {
  * → 保持 unknown 折叠；any/unknown 接收者可能 nullish → may TypeError。
  */
 export function $delRes(o: Abs, _key: Abs): Abs {
+  // Bug 219：非 Abs 宿主接收者 ⇒ 删除结果不可判（unknown），不得读 .shape 炸宿主
+  if (isNonAbsReceiver(o)) return unknown;
   if (isNullishLitAbs(o) || o.shape.k === "never") {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
@@ -1520,6 +1695,9 @@ export function $delRes(o: Abs, _key: Abs): Abs {
  * TypeError（Bug 230）；无法表达的形态原样返回。
  */
 export function $del(o: Abs, key: Abs): Abs {
+  // Bug 219：非 Abs 宿主接收者 ⇒ 删除是自赋值 no-op（写回通道
+  // `o = $del(o, k)` 重绑回原值），不得读 .shape 炸宿主
+  if (isNonAbsReceiver(o)) return o;
   // ToPropertyKey：null/undefined/boolean → "null"/"undefined"/"true"
   //
   // 族 57 · 第 6 条 ②（外-02 符号键槽寻址 · 第二半）：符号键的槽寻址键用

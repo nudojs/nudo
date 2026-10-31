@@ -6,7 +6,8 @@
  * - mock 种子表按**函数作用域**组织（`mock-abs.ts` 的 `scoped` + 覆盖表）
  * - 按**被求值的函数**取作用域覆盖（core `generalize.ts` 的按函数求值边界）
  *
- * 负控制：未冲突的 mock 仍是文件级可见（不被本条波及）。
+ * 负控制（BUG-020 / BUG-180 口径修正）：未冲突的 mock **只在其声明函数内**
+ * 生效，不再文件级可见——函数级指令不得泄漏到同文件其它函数。
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, litValue } from "@nudojs/core";
@@ -51,7 +52,7 @@ export function readA() {
 }
 `;
 
-/** 负控制：只有一个 mock 名（无冲突）⇒ 文件级可见 */
+/** 负控制：只有一个 mock 名（无冲突）⇒ 只在声明函数内可见 */
 const ONE_MOCK = `/**
  * @nudo:mock getPort = stub().returns(8080)
  */
@@ -109,10 +110,16 @@ describe("Bug 455 — 同名 @nudo:mock 按函数作用域各生效", () => {
   });
 });
 
-describe("Bug 455 负控制 —— 未冲突的 mock 仍是文件级可见", () => {
-  it("单个 mock 被两个函数共用时两边取值一致", () => {
+// BUG-020 / BUG-180：旧负控断言「未冲突的 mock 文件级可见」正是那两条 bug
+// 的假绿根因（同文件其它函数被 mock 掩盖真实 ReferenceError）。按
+// `docs/design/directive-scope.md`，`@nudo:mock` 是**函数级**指令 ⇒ 只在
+// 声明它的函数体内生效。
+describe("Bug 455 负控制 —— 未冲突的 mock 只在声明函数内生效", () => {
+  it("声明函数取值一致；未声明函数看不到该 mock", () => {
     expect(sigValue(ONE_MOCK, "/tmp/bug455-f.js", "readA")).toBe(8080);
-    expect(sigValue(ONE_MOCK, "/tmp/bug455-g.js", "readB")).toBe(8080);
+    expect(sigValue(ONE_MOCK, "/tmp/bug455-g.js", "readB")).toBe(
+      "never throws ReferenceError",
+    );
   });
 
   it("无冲突时不产生作用域覆盖表（不留冗余状态）", () => {

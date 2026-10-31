@@ -109,6 +109,7 @@ export function transpileAtomExpr(
       // 顶层 this（无 thisParam 且不在函数体）：ESM 语义 this === undefined。
       // 读 → undefined；写（this.x = 1）经写路径 strict 语义硬抛 TypeError
       // （模块装载失败，与原生一致）。函数体 this 由 thisParam/降级处理。
+      //
       return opts.thisParam ?? "$lit(void 0)";
     case "RegExpLiteral": {
       return `$regex(${JSON.stringify(expr.pattern)}${expr.flags ? `, ${JSON.stringify(expr.flags)}` : ""})`;
@@ -116,7 +117,12 @@ export function transpileAtomExpr(
     case "TemplateLiteral": {
       const quasis = expr.quasis;
       const exprs = expr.expressions;
-      // `a${b}c` → $add($add($lit("a"), b), $lit("c"))
+      // `a${b}c` → $add($add($lit("a"), $toStr(b)), $lit("c"))
+      //
+      // BUG-058：插值位必须包 `$toStr`（ToString ⇒ ToPrimitive **string
+      // hint**：toString 先、无自有 toString 不回退 valueOf）。裸 `$add`
+      // 与用户手写的 `"" + b` 逐字同形，而 `+` 的 ToPrimitive 走 default
+      // hint（原生 `"" + o` 会调 valueOf）⇒ 不包就凭空多出 valueOf 副作用。
       let acc: string | null = null;
       for (let i = 0; i < quasis.length; i++) {
         const cooked = quasis[i]!.value.cooked ?? quasis[i]!.value.raw;
@@ -124,7 +130,7 @@ export function transpileAtomExpr(
         acc = acc === null ? piece : `$add(${acc}, ${piece})`;
         if (i < exprs.length) {
           const e = transpileExpression(exprs[i] as Expression, opts);
-          acc = `$add(${acc}, ${e})`;
+          acc = `$add(${acc}, $toStr(${e}))`;
         }
       }
       return acc ?? `$lit("")`;

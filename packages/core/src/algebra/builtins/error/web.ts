@@ -40,6 +40,10 @@ function urlBrandAbs(u?: URL): Abs {
     "href",
     "origin",
     "protocol",
+    // Bug 163：`host`（含端口；`hostname` 不含）是 `URL.prototype` 的
+    // 真实访问器——主机面漏建模 ⇒ `u.host` 折 exact undefined（假绿）+
+    // `"host" in u` 折 exact false（假红）。
+    "host",
     "hostname",
     "pathname",
     "search",
@@ -171,23 +175,87 @@ function textDecoderBrandAbs(encoding?: string): Abs {
 }
 
 /**
- * new TextDecoder(label?) —— label 过 ToString（symbol → TypeError）后按
- * WHATWG encoding label 匹配（strip ASCII 空白 + 小写）：
+ * Bug 174：`new TextDecoder(label, options?)` 的 **options 位**（WebIDL
+ * dictionary 转换）——此前建模函数只收 label，`args[1]` 被整段丢弃 ⇒
+ * `new TextDecoder("utf-8", "x")` 宿主必抛 TypeError、引擎判不抛（假绿）。
+ *
+ * 宿主 node v26.10.0 实测口径：
+ * - undefined / null ≡ 空字典；对象 / 数组 / 函数 → 合法（不抛）；
+ * - string / number / boolean / bigint / symbol → 确定
+ *   `TypeError: The "options" argument must be of type object.`；
+ * - 抽象 options（any/unknown / 含对象臂的 union）→ 可能非对象 ⇒ may；
+ *   **全 prim 臂的 union** → 定抛。
+ * 校验顺序同宿主：label ToString（symbol TypeError）→ options 字典转换 →
+ * label 查找（RangeError）。
+ */
+function validateTextDecoderOptions(options: Abs | undefined): void {
+  if (!options) return;
+  if (isSymbolAbs(options)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  /** 该 Abs 是否**确定**非对象（字面量 prim / prim 形态；null/undefined ≡ 空字典） */
+  const definitelyNonObject = (a: Abs): boolean => {
+    const v = litValue(a);
+    if (v.ok) {
+      return (
+        v.value !== null &&
+        v.value !== undefined &&
+        typeof v.value !== "object" &&
+        typeof v.value !== "function"
+      );
+    }
+    return a.shape.k === "prim";
+  };
+  const vR = litValue(options);
+  if (vR.ok) {
+    if (definitelyNonObject(options)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    return; // null / 对象 / 函数 / 数组
+  }
+  const s = options.shape;
+  if (s.k === "prim") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (s.k === "sum") {
+    const members = (s as { members?: Abs[] }).members ?? [];
+    if (members.length > 0 && members.every(definitelyNonObject)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    recordMayThrow({
+      kind: "TypeError",
+      cause: 'TextDecoder options may be a non-object (WebIDL dictionary)',
+    });
+    return;
+  }
+  if (s.k === "any" || s.k === "unknown") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: 'TextDecoder options may be a non-object (WebIDL dictionary)',
+    });
+    return;
+  }
+  // obj/brand/tuple/arr/fn/eff → 对象形态，字典转换合法
+}
+
+/**
+ * new TextDecoder(label?, options?) —— label 过 ToString（symbol → TypeError）
+ * 后按 WHATWG encoding label 匹配（strip ASCII 空白 + 小写）：
  * - 含 label 字符集（[A-Za-z0-9_.:()/-]）外字符（如 `$`/空格）→ 任何
  *   label 表都不含 → 确定 RangeError（node: new TextDecoder("bad-$$")）；
  * - 知名 label（utf-8/utf8/utf-16le/iso-8859-1/latin1/ascii…）→ 正常构造
  *   （encoding 槽取 canonical 名）；缺省/undefined 字面量 ≡ 默认 utf-8；
  * - 其余 ASCII 形 label（表未枚举，宿主 ICU 表有差异）→ 保守 may
  *   RangeError；非 string 字面量 ToString 折叠后同判（123 → "123"）；
- * - 抽象 label → may RangeError。options（fatal/ignoreBOM）布尔面不校验。
+ * - 抽象 label → may RangeError。
+ * - Bug 174：options（第二实参）过 WebIDL 字典转换（非对象 → 确定
+ *   TypeError，见 validateTextDecoderOptions）；fatal/ignoreBOM 的**值**
+ *   面仍不校验（ToBoolean 不抛）。
  */
-export function makeTextDecoderAbs(label: Abs | undefined): Abs {
+export function makeTextDecoderAbs(label: Abs | undefined, options?: Abs): Abs {
+  // WebIDL 实参转换序：label ToString（symbol → TypeError）先于 options
+  // 字典转换（node 实测 new TextDecoder(Symbol(), 42) → Symbol TypeError）
+  if (label && isSymbolAbs(label)) throw new NudoThrow(errorTypeAbs("TypeError")); // ToString(symbol)
+  validateTextDecoderOptions(options);
   // 缺省 ≡ undefined 字面量：WebIDL 默认 label = "utf-8"（node 实测
   // new TextDecoder(undefined) → encoding "utf-8"）
   if (!label || (label.term?.op === "lit" && label.term.value === undefined)) {
     return textDecoderBrandAbs("utf-8");
   }
-  if (isSymbolAbs(label)) throw new NudoThrow(errorTypeAbs("TypeError")); // ToString(symbol)
   const vR = litValue(label);
   let labelStr: string | undefined;
   if (vR.ok) labelStr = String(vR.value); // 非 string 字面量按 ToString 折叠
@@ -228,9 +296,15 @@ export type UrlSearchParamsEntry = [string, string];
 
 /** URLSearchParams brand：entries 缺席 = 条目表不可知（unknown 域） */
 function urlSearchParamsBrandAbs(entries?: UrlSearchParamsEntry[]): Abs {
-  const slots: Record<string, { value: Abs }> = {};
+  const slots: Record<string, { value: Abs; internal?: boolean }> = {};
   if (entries !== undefined) {
+    // Bug 157：`@@entries` 是**内部槽**（原生不可枚举 / 不可见——
+    // `Object.getOwnPropertyNames(new URLSearchParams("a=1"))` 是 `[]`）⇒
+    // 必须打 `internal` 标记，否则投影面（format / denote / projection /
+    // service internal-slot 都按 `internal` 剔除）把它当**必填自有属性**
+    // 发布 ⇒ guard 产物对被导出函数自己的返回值**恒假**。
     slots[URL_SEARCH_PARAMS_ENTRIES_SLOT] = {
+      internal: true,
       value: abs(
         {
           k: "tuple",

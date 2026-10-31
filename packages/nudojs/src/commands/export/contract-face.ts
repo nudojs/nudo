@@ -47,8 +47,12 @@ export type ParamFace = {
    * 2. 契约未覆盖 ⇒ 声明级默认值（`formals` 里 `kind === "default"`）；
    * 3. 再退 ⇒ 观测级（该位在最简观测调用里缺席）。
    *
-   * 剩余参数位与解构位**恒不可选**（dts 面同口径：TS 的 `...rest` / 绑定模式
-   * 参数不能带 `?`）。
+   * 1 与 2 **取并**（BUG-108）：契约没写 `optional` 不等于否决实现签名里的
+   * 默认值——声明级默认值是 JS 语义的「可省略」，standard 面一直这么算。
+   *
+   * 剩余参数位在**对象槽面**上恒可选（BUG-109）：槽缺省 = 空 rest 数组 =
+   * 零实参调用。dts 面走独立路径（`...rest: T[]`，TS 的剩余参数不能带 `?`），
+   * 两者语义一致（`g()` 合法）。解构位恒不可选（TS：绑定模式参数不能带 `?`）。
    */
   optional?: boolean;
   /** 剩余参数位（槽值是**数组**：rest 之后的实参合成） */
@@ -119,22 +123,47 @@ function observedSlotAbs(cases: readonly CaseResult[], index: number): Abs | und
 }
 
 /**
- * 剩余参数位的观测证据：rest 之后的实参合成**数组** Abs（元素 join）。
+ * 入口见证（`entry@`）？—— 它是引擎的**兜底求值**，剩余参数位编码成
+ * **一个数组实参**（`restEntryArgAbs`），不是「每个实参一个槽」。
+ */
+function isEntryWitness(c: CaseResult): boolean {
+  return c.name.startsWith("entry@");
+}
+
+/**
+ * 剩余参数位的观测证据：rest 实参合成**数组** Abs（元素 join）。
  *
  * 剩余参数在调用面是**一个数组**（不是一个标量实参）⇒ 槽值是数组 Abs，
  * 不是「rest 位之后每个实参一个槽」（Bug 604）。
+ *
+ * 两种见证的 `argAbs` 编码**不同**（BUG-026 / BUG-279）：
+ * - **入口见证**（`entry@`）：剩余参数是**一个数组实参**（`entry@L1 (any[])`）
+ *   ⇒ 它的**元素**才是 rest 实参，直接取该数组，**不得**再包一层（否则
+ *   产物槽成 `array(array(unknown))` ⇒ 导出的入参 schema 拒绝该函数自己的
+ *   合法调用）；
+ * - **调用点 / 指令见证**（`call@` / `@nudo:case`）：每个剩余实参**各占一槽**
+ *   ⇒ 逐槽取实参再合成数组。
  */
 function observedRestAbs(cases: readonly CaseResult[], restIndex: number): Abs | undefined {
-  const parts: Abs[] = [];
+  const elements: Abs[] = [];
+  /** 入口见证数组自身的 conf（只有兜底见证时保留它的确信度） */
+  let restConf: Abs["conf"] | undefined;
   for (const c of cases) {
+    const first = c.argAbs[restIndex];
+    if (!first) continue;
+    if (isEntryWitness(c) && first.shape.k === "arr") {
+      elements.push(first.shape.element);
+      restConf ??= first.conf;
+      continue;
+    }
     for (let i = restIndex; i < c.argAbs.length; i++) {
       const a = c.argAbs[i];
-      if (a) parts.push(a);
+      if (a) elements.push(a);
     }
   }
-  if (parts.length === 0) return undefined;
-  const element = parts.reduce((a, b) => joinAbs(a, b));
-  return makeAbs({ k: "arr", element }, undefined, undefined, element.conf);
+  if (elements.length === 0) return undefined;
+  const element = elements.reduce((a, b) => joinAbs(a, b));
+  return makeAbs({ k: "arr", element }, undefined, undefined, restConf ?? element.conf);
 }
 
 /** 观测面最短调用元数（可选性第三来源；无 case = 0，与 dts 面同口径）。 */
@@ -227,13 +256,26 @@ export function unifiedParamFace(
           optionals.set(key, (optionals.get(key) ?? false) || l.p.optional === true);
           paths.set(key, path);
         }
-        for (const [key, tree] of trees) {
-          out.push({
-            name: key,
-            abs: treeAbs(tree),
-            optional: optionals.get(key) === true,
-            ...(paths.get(key) ? { fieldPath: paths.get(key) } : {}),
-          });
+        if (formal.patternKind === "array") {
+          // 数组解构：绑定名是**下标**（不是属性键）⇒ 逐键槽交给产物面合成
+          // **元组槽**（export.ts 的 `arrayPatternTupleFace`，Bug 394）。
+          for (const [key, tree] of trees) {
+            out.push({
+              name: key,
+              abs: treeAbs(tree),
+              optional: optionals.get(key) === true,
+              ...(paths.get(key) ? { fieldPath: paths.get(key) } : {}),
+            });
+          }
+        } else {
+          // 对象解构（BUG-120）：顶层键取**形参名**（`FormalParam.placeholder`），
+          // 值是那个实参对象的形状 —— 与无契约的解构分支、数组解构分支、普通
+          // 形参分支**同口径** ⇒ `<fn>Input` 的顶层键集合 ≡ 形参名集合。
+          // 旧实现逐绑定名建顶层键（`{a, b}`）⇒ 与普通形参的「实参包」语义相反
+          // ⇒ `plainInput` 拒绝 `.d.ts` 明文声明的调用形态。
+          const slots = Object.create(null) as Record<string, { value: Abs }>;
+          for (const [key, tree] of trees) slots[key] = { value: treeAbs(tree) };
+          out.push({ name: formal.placeholder, abs: obj(slots), optional: false });
         }
       }
       if (wholeIdx < 0 && fieldHits.length === 0) {
@@ -258,19 +300,29 @@ export function unifiedParamFace(
         out.push({
           name: formal.name,
           abs: makeAbs({ k: "arr", element: p.abs }, undefined, undefined, p.abs.conf),
-          optional: false,
+          // BUG-109：对象槽面上「`rest` 键缺省」= 空 rest 数组 = 零实参调用
+          // （`g()` 是合法调用）⇒ 该槽可选；渲染成**必填**槽会让函数的每一次
+          // 合法调用都被入参 schema 拒绝。
+          optional: true,
           isRest: true,
         });
         continue;
       }
-      out.push({ name: formal.name, abs: p.abs, optional: p.optional === true });
+      // BUG-108：契约级 ∪ 声明级（默认形参）——与 standard 面同口径；
+      // 只取契约级会让 zod 面把带默认值的位印成必填（三面互斥）。
+      out.push({
+        name: formal.name,
+        abs: p.abs,
+        optional: p.optional === true || formal.kind === "default",
+      });
       continue;
     }
     if (formal.kind === "rest") {
       out.push({
         name: formal.name,
         abs: observedRestAbs(domainCases, formal.index) ?? anyEntryAbs(),
-        optional: false,
+        // BUG-109：同上——rest 槽在对象槽面上恒可选（缺省 = 空数组）。
+        optional: true,
         isRest: true,
       });
       continue;
@@ -278,7 +330,10 @@ export function unifiedParamFace(
     out.push({
       name: formal.name,
       abs: observedSlotAbs(domainCases, formal.index) ?? anyEntryAbs(),
-      optional: formal.kind === "default" || formal.index >= minArity,
+      // BUG-169：TS 可选形参 `b?: T` 与 JS 默认值同待遇（`FormalParam.optional`
+      // 是唯一事实源：dts 的 `?` / standard 的可选槽 / 本处 zod 槽同源）。
+      // 未带 `?` 的声明仍按观测到的最少实参元数放宽。
+      optional: formal.optional === true || formal.kind === "default" || formal.index >= minArity,
     });
   }
   // 契约名与声明形参表**对不上**的契约参数位：按契约原样保留（不静默丢位；
@@ -459,7 +514,14 @@ function constraintDisproved(actual: Abs, constraint: NudoConstraint): boolean {
     return !constraint.members.some((m) => !constraintDisproved(actual, m));
   }
   if (constraint.fields) {
-    // shape 契约：非对象即证否；对象的字段细节不判
+    // shape 契约：非对象即证否；对象的字段细节不判。
+    //
+    // union 实际值（BUG-121）：与上面 `prim` 分支的 sum 处理**对称** —— 任一
+    // 成员可能是对象 ⇒ 不可判定（不证否）。缺这道判定时 identity 函数把
+    // 「shape 的 union」原样返回 ⇒ 逐个成员下探时一律「已证否」⇒ 契约返回 Abs
+    // 被丢弃 ⇒ zod / standard / guard 三面塌缩成「接受一切」（假绿、零台账），
+    // 而 dts / check 仍保留 union ⇒ 四面互斥。
+    if (shape.k === "sum") return !shape.members.some((m) => m.shape.k === "obj");
     return shape.k !== "obj";
   }
   // fn / element / 空约束 ⇒ 不可判定

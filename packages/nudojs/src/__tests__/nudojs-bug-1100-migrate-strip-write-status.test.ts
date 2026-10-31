@@ -91,7 +91,9 @@ describe("Bug 1100 —— migrate strip --write 的写盘状态（人类面不�
 
     const r = runCliTsx(["migrate", "strip", "--json", "--write", "."], { cwd: dir });
 
-    const parsed = JSON.parse(r.stdout) as StripEnvelope;
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as StripEnvelope[];
+    const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
     expect(parsed.action).toBe("strip");
     // 结果**不丢**（成功行仍在 results[] 里）

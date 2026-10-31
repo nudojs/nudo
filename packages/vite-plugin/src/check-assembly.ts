@@ -45,12 +45,16 @@
  *
  * - **897（真修）**：`assembleCheckOutcome` 从**同一份项目配置**
  *   （`findProjectConfig(dirname(id))?.config`）取 L2 档位
- *   （`checkConfig(...)` ⇒ `entryThrows` / `ignoreThrows`）并传给
- *   `checkSource`。此前**不传** ⇒ `checkSource` 用默认最严档
- *   （`entryThrows:"error"` / `ignoreThrows:[]`）⇒ 项目配置的
- *   `nudo.check.*` 被无视（插件自己却读了同源配置的 `autoBind`）。
- *   口径与 **LSP**（`validation.ts` / `agent-tools.ts` 也走 `checkConfig`）
- *   逐字一致 ⇒ 插件面与 IDE 面判同。
+ *   （`entryThrows` / `ignoreThrows`）并传给 `checkSource`。此前**不传**
+ *   ⇒ `checkSource` 用默认最严档（`entryThrows:"error"` /
+ *   `ignoreThrows:[]`）⇒ 项目配置的 `nudo.check.*` 被无视（插件自己却读了
+ *   同源配置的 `autoBind`）。
+ *   ⚠ **勘误（BUG-110）**：LSP **不再**走 service 的 `checkConfig` ——
+ *   `validation.ts` / `agent-tools.ts` 的 `ignoreThrows` 走
+ *   `lsp/src/gate-config.ts` 的 `configIgnoreThrows`（裸字符串 / 数组内逗号
+ *   都认），而 `checkConfig` 的严格 `string[]` 过滤会静默丢成空表。故本层
+ *   只把 `entryThrows` 交给 `checkConfig`，`ignoreThrows` 走同语义的
+ *   `parseIgnoreThrows`（见其注释）⇒ 插件面才真正与 CLI / IDE 判同。
  * - **898 / 983（**已被族 18 的 `buildViteCheckInjection` 闭合**）**：
  *   Abs 模块图（`evalAbsModuleGraph`）早就在 `buildViteCheckInjection` 里
  *   求值，并以 `modules` + `inject` **同时**传给 `checkSource`
@@ -85,10 +89,11 @@ import {
   collectEvalReplacements,
   evalAbsModuleGraph,
   applyMockModuleDirectivesFromSource,
+  mergeHarvestUnderEnv,
   mockSeedsForSource,
   type Diagnostic,
 } from "@nudojs/service";
-import { dirname } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import {
   checkSource,
   pTrue,
@@ -128,12 +133,34 @@ export type CheckProjection = { diagnostics: Diagnostic[]; failure?: string };
  */
 function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions {
   const inject: RunTranspiledOptions = {};
-  // env 名单：文件级 `@nudo:env` ∪ 项目级 package.json#nudo.env
+  // env 名单：文件级 `@nudo:env` ∪ 项目级 `package.json#nudo.env`。
+  //
+  // **项目级说明符先按项目根绝对化**（BUG-221）：service 的 env 解析基准是
+  // **进程级单槽**（`env-loader` 的 `lastEnvBaseDir` = **最后一次** preload 的
+  // 目录），而 preload 顺序是「项目级 → 文件级」⇒ 被检文件里只要有一行
+  // **文件级** `@nudo:env`，基准就落在**文件目录** ⇒ 项目级相对说明符
+  // `"./env/web.ts"` 被解析成 `<fileDir>/env/web.ts` ⇒ 项目级全局丢失
+  // ⇒ 门禁面报 `never` / `ReferenceError`，而**同一文件**的 evaluator 面仍是
+  // `99`（env 预载走绝对化后的名单）⇒ 同一个插件的两个面互相打脸。
+  // 口径与 CLI `assembleEnvs`（`packages/nudojs/src/commands/check.ts`：
+  // 项目级先按项目根绝对化、文件级按文件目录）逐项一致。
   let envNames: string[] = [];
   let envGlobals: Record<string, Abs> = {};
   let envMods: Record<string, AbsModuleExports> = {};
   try {
-    envNames = collectEnvNames(id, code, true);
+    const fileEnvBaseDir = dirname(id);
+    const proj = findProjectConfig(fileEnvBaseDir);
+    const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+    const rawProjectEnv = proj?.config.env;
+    const projectEnvNames = (Array.isArray(rawProjectEnv) ? rawProjectEnv : []).filter(
+      (n): n is string => typeof n === "string",
+    );
+    const projectEnvSpec = projectEnvNames.map((name) =>
+      name.startsWith("./") || name.startsWith("../")
+        ? resolvePath(projectEnvBaseDir, name)
+        : name,
+    );
+    envNames = [...new Set([...projectEnvSpec, ...collectEnvNames(id, code, false)])];
     envGlobals = collectEnvGlobals(envNames);
     envMods = collectEnvModules(envNames);
   } catch {
@@ -145,10 +172,13 @@ function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions
   let modules: Record<string, AbsModuleExports> = {};
   try {
     const graph = evalAbsModuleGraph(code, id);
-    modules = {
-      ...graph.modules,
-      ...(Object.keys(envMods).length > 0 ? envMods : {}),
-    };
+    // env 模块（fs/path/node:*…）并入模块图：**必须走 `mergeHarvestUnderEnv`**
+    // （与 CLI / test / service 面同口径）——手工 env 与 harvest **同名模块**时，
+    // env 赢同名槽、harvest 填 env 的**空位**（B8）。
+    // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下 harvest 的
+    // **非冲突导出被整体丢弃** ⇒ 插件面绑定缺失 ⇒ 误报 `nudo:unknown-inference`，
+    // 而 CLI 面同文件无诊断、签名精确（Bug 1037 / BUG-111）。
+    modules = mergeHarvestUnderEnv(graph.modules, envMods);
     modules = applyMockModuleDirectivesFromSource(code, modules, {
       fromFile: id,
     }).modules;
@@ -187,6 +217,33 @@ function buildViteCheckInjection(id: string, code: string): RunTranspiledOptions
   };
 }
 
+/**
+ * `package.json#nudo.check.ignoreThrows` 的**配置面解析**（BUG-110）。
+ *
+ * 语义真源 = CLI 的 `parseIgnoreThrows`
+ * （`packages/nudojs/src/check-gate-config.ts`）；LSP 的
+ * `packages/lsp/src/gate-config.ts` 是它的同语义镜像。service 的
+ * `checkConfig` 只认**严格 `string[]`**（`Array.isArray` + 逐项
+ * `typeof === "string"`）⇒ 裸字符串 `"TypeError"` 被**静默丢成空表**、
+ * `["TypeError,RangeError"]` 不被切分（永远匹配不上任何 throw 类）
+ * ⇒ 插件面该 throw 类照报（构建红），而 CLI / IDE 认这两种写法（绿）
+ * ⇒ **同一份 `package.json` 三面三口径**，`failOnError: true` 时直接中断构建。
+ *
+ * 本插件此前是唯一还走 `checkConfig` 严格解析的面（LSP 早已改成自己的
+ * 宽松解析器）⇒ 这里是那第三份**同语义**实现，改动时三处必须同步。
+ *
+ * 语义：裸字符串 / 字符串数组都接受；数组元素内部**也**按逗号切分；
+ * trim 后丢空串；非字符串元素忽略；全空 ⇒ 空表（=「没设」）。
+ */
+function parseIgnoreThrows(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  const parts = Array.isArray(raw) ? raw : [raw];
+  return parts
+    .flatMap((s) => (typeof s === "string" ? s.split(",") : []))
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 export function assembleCheckOutcome(id: string, code: string): CheckProjection {
   try {
@@ -200,10 +257,15 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
     // `vite build` 红，`failOnError: true` 时直接中断构建）。
     const projConfig = findProjectConfig(dirname(id))?.config;
     const autoBind = interfaceConfig(projConfig).autoBind;
-    // L2 门禁档位：与 CLI / LSP **同源**（service 的 `checkConfig` ——
-    // LSP 的 `validation.ts` / `agent-tools.ts` 也走它）⇒ 插件面与 IDE 面
-    // 判同；CLI 的旗标层覆盖不在插件面（插件没有 CLI 旗标）。
+    // L2 门禁档位：`entryThrows` 走 service 的 `checkConfig`（三面同源）；
+    // `ignoreThrows` **不走它**——`checkConfig` 的严格 `string[]` 过滤会把
+    // 裸字符串 / 逗号写法静默丢成空表 ⇒ 插件面与 CLI / IDE 判不同
+    // （BUG-110，见 `parseIgnoreThrows` 的注释）。CLI 的旗标层覆盖不在
+    // 插件面（插件没有 CLI 旗标）。
     const gate = checkConfig(projConfig);
+    const ignoreThrows = parseIgnoreThrows(
+      (projConfig?.check as { ignoreThrows?: unknown } | undefined)?.ignoreThrows,
+    );
     const inject = buildViteCheckInjection(id, code);
     const report = checkSource(id, code, pTrue, {
       loadModule,
@@ -212,7 +274,7 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
       // Bug 897：L2 档位必须随配置传下去 —— 不传 ⇒ `checkSource` 用默认
       // `entryThrows:"error"` / `ignoreThrows:[]`（最严档）。
       entryThrows: gate.entryThrows,
-      ...(gate.ignoreThrows.length > 0 ? { ignoreThrows: gate.ignoreThrows } : {}),
+      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(code),
       // 与 CLI `checkSource(..., { modules: inject.modules, inject })` 同形：
       // `modules` 必须是**并入 env / mock-module 覆盖后**的表（core 的

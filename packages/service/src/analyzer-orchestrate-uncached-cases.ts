@@ -166,6 +166,24 @@ export type EntryOnlyCandidate = {
   candidate: SynthCandidate;
   /** entry@ 见证（settle 时撤掉，改合成 call@） */
   entryCase: CaseResult;
+  /**
+   * 上次结算时 `env.callRecords` 的长度（BUG-022 增量判据）。
+   *
+   * 候选**不再在首次结算时逐出注册表**：调用点证据随分析推进持续累积
+   * （调用点在别的候选函数体内 ⇒ 后处理才出现），首次结算看到的记录只是
+   * 前缀 ⇒ 域随声明顺序被截断。改为每次结算都用**当前全部**记录重合成；
+   * 该字段用来跳过「自上次结算以来没有新记录」的候选（避免每轮重扫全部
+   * 记录 ⇒ 分析退化成 O(n²)）。
+   */
+  settledAtRecordCount?: number;
+  /**
+   * 上轮结算合成出来的见证（按对象身份记账）。
+   *
+   * 重结算时先撤掉这批见证再按当前全集重新合成——否则域只扩不缩地并进
+   * `combinedAbs`，新增调用点在台账里没有见证行，且 `call@symbolic` 聚合会
+   * 停留在旧前缀算出的宽度上。
+   */
+  synthesized?: CaseResult[];
 };
 
 /** entry@ 兜底候选（无 @nudo:case 指令函数 + 顶层无指令函数） */
@@ -307,21 +325,60 @@ function sameLiteralValue(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定，不是「不匹配」）。
+ *
+ * 判据：
+ * - `shape.k === "unknown"` **且 term 不是精确字面量**：core 的 unknown 语义 =
+ *   「分析拿不到信息（求值失败 / 泄漏）」⇒ 实测值**没推出来**。
+ *   ⚠ 必须同时看 `term`（Bug 205）：`null` / `undefined` 字面量的 Abs 是
+ *   `shape.k === "unknown"` + `term = {op:"lit", …}` + `conf === "exact"` ——
+ *   值是**精确的**（`format.ts` 正是按 `term` 把它们渲染成 `null` /
+ *   `undefined`，与真 unknown 分开）。只看 `shape.k` 会把精确字面量误判成
+ *   推导失败，与 `--json` 面的 `conf=exact` 和 check 签名面 `=> null` 三面互斥。
+ * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
+ *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
+ *
+ * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
+ * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
+ * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
+ * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
+ *
+ * 报告面（`test-report.ts`）与诊断面（`nudo:opaque-result`）共用这份判定
+ * ⇒ 两侧口径不再分叉（Bug 205 之前报告面判「推不出来」、诊断面判「推不出来」
+ * 但 `--json` 面 conf=exact）。
+ */
+export function inferenceFailed(actual: Abs): boolean {
+  if (actual.conf === "opaque") return true;
+  if (actual.shape.k !== "unknown") return false;
+  // shape unknown 但 term 是**精确字面量** ⇒ 值推出来了（null / undefined）
+  return actual.term?.op !== "lit";
+}
+
+/**
  * 实际值是否满足期望（结构面 leqAbs + 对象槽字面量严格面 + 值面谓词）。
  * 实际值不是字面量（unknown / 结构值）时**不**做值级判定（判不了 ⇒ 不满足）。
  *
- * Bug 649：**实测是 `never` ⇒ 不得判 ok**。`never` 是类型格的**底元素**
- * （`never ⊑ 任何类型` 恒真）⇒ 抛错函数的 case 带 `=> expected` 时，
+ * Bug 649：**实测是 `never` 且期望不是 `never` ⇒ 不得判 ok**。`never` 是类型格
+ * 的**底元素**（`never ⊑ 任何类型` 恒真）⇒ 抛错函数的 case 带 `=> expected` 时，
  * 结构面判定必然通过 ⇒ 断言**恒真**（假绿）：抛错函数无论期望什么都「通过」。
  * 这里加一道**前置条件**把「实测 never」拦在判定层之外。
+ *
+ * Bug 206：期望**本身**是 `never` 时 `never ⊑ never` 成立 ⇒ 必须可判 ok
+ * （旧守卫无条件拒绝 ⇒ 报告印出两个相同的 `never` 却判 FAIL）。
  *
  * ⚠ 只拦「判 ok / 不 ok」这一层——**展示形态不变**：`comparableExpected`
  * 在不满足时原样返回 expected ⇒ 期望文本（`number (> 0)` 这类谓词期望）
  * 不跟着变形（见同文件 `comparableExpected`）。
  */
 export function caseExpectedSatisfied(actual: Abs, expected: Abs): boolean {
-  // 底元素实测（抛错 / 不发散不出值）⇒ 期望**不可能**被满足 ⇒ 不得判 ok
-  if (actual.shape.k === "never") return false;
+  // 底元素实测（抛错 / 不发散不出值）⇒ 期望**不可能**被满足 ⇒ 不得判 ok；
+  // 期望也是 never ⇒ never ⊑ never 成立，照常判定。
+  if (actual.shape.k === "never" && expected.shape.k !== "never") return false;
+  return valueLevelExpectedSatisfied(actual, expected) && expectedSlotPredicatesHold(actual, expected, 0);
+}
+
+/** 顶层值级判定（谓词面）；结构面回退在 `expectedStructurallySatisfied`。 */
+function valueLevelExpectedSatisfied(actual: Abs, expected: Abs): boolean {
   const pred = expected.pred;
   if (!pred || pred.op === "true") return expectedStructurallySatisfied(actual, expected);
   const anchored = anchorPredOnSelf(pred, expectedSelfIds(expected));
@@ -337,19 +394,96 @@ export function caseExpectedSatisfied(actual: Abs, expected: Abs): boolean {
   return literalMeetsConstraint(lv.value, constraint);
 }
 
-/** 期望的结构面判定：`leqAbs` + 对象槽字面量严格面（Bug 396）。 */
+/**
+ * 期望**对象槽上的值级谓词**递归执法（Bug 207）：`shape({ n: number().gt(0) })`
+ * 这类嵌套谓词此前既不比较也不显示（顶层谓词才走值级判定）⇒ 同一谓词放顶层
+ * 判 `[ok]`、放槽里判 `[FAIL]`，同语义两写法结论不同。
+ */
+function expectedSlotPredicatesHold(actual: Abs, expected: Abs, depth: number): boolean {
+  if (depth > 16) return true;
+  const e = expected.shape;
+  if (e.k !== "obj") return true;
+  const a = actual.shape;
+  const aSlots =
+    a.k === "obj"
+      ? a.slots
+      : a.k === "brand" && a.shape.shape.k === "obj"
+        ? a.shape.shape.slots
+        : undefined;
+  // 实际值不是对象 ⇒ 形态不合（由 `leqAbs` 判定），此处不重复加严
+  if (!aSlots) return true;
+  for (const [key, slot] of Object.entries(e.slots)) {
+    const srcSlot = aSlots[key];
+    if (!srcSlot) continue; // 缺槽判定归 `leqAbs`
+    const ev = slot.value;
+    if (ev.pred && ev.pred.op !== "true") {
+      if (!valueLevelExpectedSatisfied(srcSlot.value, ev)) return false;
+    }
+    if (!expectedSlotPredicatesHold(srcSlot.value, ev, depth + 1)) return false;
+  }
+  return true;
+}
+
+/** 期望的结构面判定：`leqAbs` + 对象槽字面量严格面（Bug 396）。
+ *
+ * 槽上的**值级谓词**不参与结构面（Bug 207）：core 的 `leqAbs` 会拿谓词里的
+ * `__arg` 去比实测槽的字面量，必然失败（`3 ⊑ number where __arg > 0` 判 false）
+ * ——那部分由 `expectedSlotPredicatesHold` 单独执法。顶层谓词不受影响
+ * （由 `valueLevelExpectedSatisfied` 判定）。 */
 function expectedStructurallySatisfied(actual: Abs, expected: Abs): boolean {
-  if (!leqAbs(actual, expected).ok) return false;
+  if (!leqAbs(actual, stripNestedSlotPreds(expected)).ok) return false;
   return expectedSlotLiteralsHold(actual, expected, 0);
 }
 
-/** 期望值的可读文本（带谓词）：`number (> 0)` / `number`。 */
+/**
+ * 剔除**槽上**（及更深层）的谓词，保留顶层谓词与结构。
+ * 仅用于结构面 `leqAbs`；值级执法见 `expectedSlotPredicatesHold`。
+ */
+function stripNestedSlotPreds(abs: Abs, depth = 0): Abs {
+  if (depth > 16) return abs;
+  const s = abs.shape;
+  if (s.k !== "obj") return abs;
+  const slots: typeof s.slots = {};
+  let changed = false;
+  for (const [k, slot] of Object.entries(s.slots)) {
+    const v = slot.value;
+    const inner = stripNestedSlotPreds(v, depth + 1);
+    const nv = inner.pred && inner.pred.op !== "true" ? { ...inner, pred: undefined } : inner;
+    if (nv !== v) changed = true;
+    slots[k] = { ...slot, value: nv };
+  }
+  return changed ? { ...abs, shape: { ...s, slots } } : abs;
+}
+
+/** 期望值的可读文本（带谓词）：`number (> 0)` / `{ n: number (> 0) }`。 */
 export function formatExpected(expected: Abs): string {
   const base = formatShape(expected);
   const pred = expected.pred;
-  if (!pred || pred.op === "true") return base;
+  if (!pred || pred.op === "true") {
+    // Bug 207：槽上的谓词同样必须可读（否则报告印出的 expected 与 actual
+    // 看上去一致，用户无从判断判定依据）。
+    return formatExpectedSlots(expected) ?? base;
+  }
   const rendered = renderExpectedPred(pred, expectedSelfIds(expected));
   return rendered ? `${base} (${rendered})` : base;
+}
+
+/**
+ * 对象槽上的谓词递归渲染（`{ n: number (> 0) }`）。
+ * 无槽谓词 ⇒ undefined（调用方回落 `formatShape`，输出逐字不变）。
+ */
+function formatExpectedSlots(expected: Abs): string | undefined {
+  const s = expected.shape;
+  if (s.k !== "obj") return undefined;
+  const entries = Object.entries(s.slots);
+  if (entries.length === 0) return undefined;
+  let any = false;
+  const parts = entries.map(([k, slot]) => {
+    const v = slot.value;
+    if (v.pred && v.pred.op !== "true") any = true;
+    return `${k}: ${formatExpected(v)}`;
+  });
+  return any ? `{ ${parts.join(", ")} }` : undefined;
 }
 
 function renderExpectedPred(p: Pred, selfIds: Set<string>): string | undefined {
@@ -441,12 +575,18 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
   const registry = env.entryOnlyCandidates;
   if (!registry || registry.size === 0) return;
   const currentModulePath = normalizeModulePath(env.filePath);
-  // 导出名表整文件算一次（原先在循环里逐候选调用 ⇒ 同名扫描重复 N 次；
-  // 该扫描虽然已按源码 memo，循环外取一次连 memo 查找都省掉）。
-  const exportNames = localNamedExports(env.source);
+  // 导出名单**按需**构建一次（settle 每轮都跑，别 per-candidate 重建）
+  let exportNames: Set<string> | undefined;
   for (const [name, entry] of [...registry.entries()]) {
+    // BUG-022 增量判据：自上次结算以来没有新记录 ⇒ 域不变，跳过。
+    // 候选**不再在首次命中时逐出注册表**（那会把域钉在「首次结算时已知的
+    // 记录」= 当前记录前缀上 ⇒ 结论随声明顺序变化）。没有这条判据，保留候选
+    // 会让每轮结算重扫全部记录（候选数 × 记录数 ⇒ O(n²)）。
+    if (entry.settledAtRecordCount === env.callRecords.length) continue;
+    entry.settledAtRecordCount = env.callRecords.length;
     // 只处理**导出**函数：调用点域丢失的缺陷面是「导出函数没有调用点域
     // ⇒ 误报 entry-only / 无法固化」；本地非导出函数的入口面保持原样。
+    exportNames ??= localNamedExports(env.source);
     if (!exportNames.has(name)) continue;
     const records = dedupeCallRecords(
       env.callRecords.filter(
@@ -454,7 +594,6 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
       ),
     );
     if (records.length === 0) continue;
-    registry.delete(name);
     // 撤掉 entry@ 见证（改由 call@ 见证承担调用点域）
     const cases = entry.candidate.analysis.cases;
     const idx = cases.indexOf(entry.entryCase);
@@ -477,12 +616,24 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
         d.message.includes(`export '${name}'`),
     );
     if (di >= 0) env.diagnostics.splice(di, 1);
+    // 重结算：先按身份撤掉上一轮合成的见证，再按**当前全部**记录重合成
+    // （BUG-022）。撤掉旧的而不是增量追加：`call@symbolic` 聚合的宽度取决于
+    // 记录全集（`callSiteBudget` 之外的余量），只追加会留下按旧前缀算出的
+    // 聚合；而且见证名/顺序也随之稳定（同一份证据 ⇒ 同一批见证）。
+    const prior = entry.synthesized;
+    if (prior && prior.length > 0) {
+      for (let i = cases.length - 1; i >= 0; i--) {
+        if (prior.includes(cases[i]!)) cases.splice(i, 1);
+      }
+    }
+    const synthesizedBefore = cases.length;
     synthesizeCallSiteCases(
       env,
       entry.candidate,
       records,
       analysisConfig(findProjectConfig(dirname(env.filePath))?.config).callSiteBudget,
     );
+    entry.synthesized = cases.slice(synthesizedBefore);
     // 函数级 throws 域落在**函数级**承载位（不并进调用点见证的 throwsAbs ——
     // 那是「这条见证自己观测到的抛」；见上面注释里的口径说明）。
     // 两份证据都是 never ⇒ 无证据 ⇒ **不写**（保持「无证据 ⇒ 不写 throws never」）。
@@ -535,6 +686,31 @@ export function callsiteCaseName(
   const site = (rec as CallSiteRecord).callSiteFile;
   if (site === undefined) return `call@L${line}`;
   return `call@${siteLabel(analyzedFilePath, site)}:L${line}`;
+}
+
+/**
+ * 同一行多个调用点 ⇒ 见证名加**列维度**（`call@L6C10`）使「见证名 = 调用点
+ * 身份」在同文件同行上依然成立（Bug 070）。只对撞名的记录加列，唯一名保持
+ * 原格式（既有固化见证名不漂移）。列缺失（合成记录 / 历史记录）时退回序号。
+ */
+export function disambiguateCallsiteNames(
+  records: CallRecord[],
+  analyzedFilePath: string,
+  fallbackLine: number,
+): string[] {
+  const base = records.map((r) => callsiteCaseName(r, analyzedFilePath, fallbackLine));
+  const counts = new Map<string, number>();
+  for (const n of base) counts.set(n, (counts.get(n) ?? 0) + 1);
+  const used = new Set<string>();
+  return base.map((n, i) => {
+    if ((counts.get(n) ?? 0) <= 1) return n;
+    const col = records[i]?.callLoc?.column;
+    let cand = col !== undefined ? `${n}C${col}` : n;
+    let k = 2;
+    while (used.has(cand)) cand = `${n}#${k++}`;
+    used.add(cand);
+    return cand;
+  });
 }
 
 /** 现场文件相对被分析文件的路径（POSIX 分隔；树外退到 basename）。 */
@@ -855,7 +1031,7 @@ export function evaluateCaseDirectives(
           // ⚠ 判据必须在 `ok` **之外**：期望写成 `any()` 时 `caseExpectedSatisfied`
           // 会借 core `leqAbs` 的「目标放宽 ⇒ 通过」捷径返回 true ⇒ 若只看 `!ok`，
           // 这一支就不会触发 ⇒ 分析面会**静默**，与报告面的 `unchecked` 分叉。
-          if (caseAbs.shape.k === "unknown" || caseAbs.conf === "opaque") {
+          if (inferenceFailed(caseAbs)) {
             diagnostics.push({
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "info",
@@ -971,7 +1147,15 @@ export function synthesizeCallSiteCases(
         .sort((a, b) => informativeness(a.r) - informativeness(b.r) || a.i - b.i)
         .map(({ r }) => r);
       const precise = ordered.slice(0, callSiteBudget);
-      for (const rec of precise) {
+      // 见证名 = 调用点身份（Bug 070）：同一行的两个调用点此前都叫 `call@L6`
+      // ⇒ 一个现场的见证凭空消失 / 固化后两条同名指令。只对**撞名**的那些
+      // 记录追加列维度（唯一名保持原格式 ⇒ 既有固化名字不漂移）。
+      const caseNames = disambiguateCallsiteNames(
+        precise,
+        filePath,
+        candidate.analysis.loc.start.line,
+      );
+      for (const [idx, rec] of precise.entries()) {
         // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
         let absRaw: Abs | undefined;
         let absResult: Abs | undefined;
@@ -992,7 +1176,7 @@ export function synthesizeCallSiteCases(
         // （模块状态不同 ⇒ 值可能不同），不得越过闸门覆盖观测值。
         const caseAbs = absResult ?? rec.resultAbs;
         const caseResult: CaseResult = {
-          name: callsiteCaseName(rec, filePath, candidate.analysis.loc.start.line),
+          name: caseNames[idx]!,
           argAbs: [...rec.argAbs],
           abs: caseAbs,
           throwsAbs: rec.throwsAbs,
@@ -1003,6 +1187,11 @@ export function synthesizeCallSiteCases(
         // 「观测值已足够精确」时用**目标语境**的值覆盖**现场语境**的观测值
         // （模块状态不同时值不同 ⇒ 报告出的调用点真值与实际调用结果矛盾）。
         if (absRaw) attachAbsToIntension(caseResult, caseAbs, candidate.name);
+        // 单一见证名只出现一次（Bug 170）：外部调用点可能被两条合成路径各自
+        // 变成 case（已固化的 directive 见证 + 主候选循环的 callsite 见证）
+        // ⇒ 台账里同名两条、人类面打印两遍、`summary.cases` 重复计数。
+        // 追加端统一查重（含 directive 来源）⇒ 谁先合成谁保留。
+        if (candidate.analysis.cases.some((c) => c.name === caseResult.name)) continue;
         candidate.analysis.cases.push(caseResult);
       }
       // symbolic 聚合只用全已知实参的记录：含 unknown 分量的记录不可重求值
@@ -1068,7 +1257,9 @@ export function synthesizeCallSiteCases(
         };
         tryAttachIntension(symCase, source, candidate.name);
         if (symAbs) attachAbsToIntension(symCase, symAbs, candidate.name);
-        candidate.analysis.cases.push(symCase);
+        if (!candidate.analysis.cases.some((c) => c.name === symCase.name)) {
+          candidate.analysis.cases.push(symCase);
+        }
       }
       // Combined covers every observed call site (not just the retained
       // cases), so a large set of same-base literal results collapses to
@@ -1119,7 +1310,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
     // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
     // 面写 number ⇒ 四方言矛盾。
-    const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
+    const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
       f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
     );
     // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
@@ -1225,7 +1416,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // ⇒ 该观测不确信（conf `partial`）⇒ 投影面可放宽成基类型，不把这次兜底
     // 观测当出口域（zod/standard/guard 投影成 literal(1) ⇒ 导出校验器拒绝被
     // 导出函数自己的返回值；dts 面写 number ⇒ 四方言矛盾）。
-    const hasRestFormal = (fnNode ? extractFormals(fnNode) : []).some((f) => f.kind === "rest");
+    const hasRestFormal = (fnNode ? extractFormals(fnNode, env.source) : []).some((f) => f.kind === "rest");
     const entryWitnessAbs =
       hasRestFormal && entryAbs && entryAbs.conf === "exact"
         ? { ...entryAbs, conf: "partial" as const }
@@ -1321,7 +1512,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
 export function evaluateThrowsOnly(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const { source, filePath, envNames, seeds, loadModule, fnDepSeg } = env;
   const fnNode = candidate.node ? resolveFunctionNode(candidate.node) : undefined;
-  const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
+  const argAbsEntry = (fnNode ? extractFormals(fnNode, env.source) : []).map((f) =>
     f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
   );
   let hardThrowsAbs: Abs = neverAbs;

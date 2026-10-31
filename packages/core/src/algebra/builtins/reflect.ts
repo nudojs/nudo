@@ -32,6 +32,14 @@
  *   在前、symbol 键段在后（各段内部维持既有顺序）；此前按槽插入序混排。
  * - **Proxy gOPD 不变量**（Bug 1074）：Reflect.getOwnPropertyDescriptor 的
  *   陷阱结果照 [[GetOwnProperty]] 不变量校验（靶一致性）——违者定抛。
+ * - **construct 可构造性判据**（Bug 176 / 182）：target / newTarget 的
+ *   `ctor` facet 是唯一判据——brand 形**类值**（`ctor: true`，$class 与类注册
+ *   表产出）恒可构造；fn 形 ctor 缺省时查类注册表（命中 ⇒ 类定义 ⇒ 可构造）；
+ *   `ctor: false` 定抛。facet 本身由 abs-fn 的规范 IsConstructor 探针盖章
+ *   （Bug 182）⇒ `new` 面与 Reflect.construct 面结论一致。
+ * - **非对象 receiver 不抛**（Bug 181）：Reflect.set 的第 4 实参非对象时
+ *   `[[Set]]` 返 false（accessor 臂则派发 setter ⇒ true）⇒ 返回面 boolean，
+ *   与写面族的「失败返 false 不抛」同口径。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
@@ -63,6 +71,7 @@ import { proxyPartsOf, proxyTrapOf } from "../exec/match-iter.ts";
 import { slotKeyOfSymbolAbs, symbolAbsForSlotKey } from "../exec/runtime/symbol-key.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
 import { getFnImpl } from "../abs-fn.ts";
+import { getEvalClass } from "../exec/class-registry.ts";
 
 /** target 三档：object（确定对象）/ prim（确定非对象）/ may（可能是 prim） */
 type TargetClass = { k: "object" } | { k: "prim" } | { k: "may" };
@@ -92,6 +101,17 @@ function enforceReflectTarget(a: Abs | undefined, what: string): void {
   if (c.k === "may") {
     recordMayThrow({ kind: "TypeError", cause: `Reflect.${what} called on non-object` });
   }
+}
+
+/**
+ * Bug 176：fn 形 Abs 是否是**已注册类**的值（名字命中类注册表）——
+ * 类定义恒有 `[[Construct]]`（ES2024 ClassDefinitionEvaluation 建构造器时
+ * 装 [[Construct]]）⇒ `Reflect.construct` 恒不抛。ctor facet 缺省的 fn 面
+ * （mock / 桥接 / 命名空间一等函数）里面，只有类值这一支可从注册表证明可构造；
+ * 其余（Math.max 等）保持既有保守 may 口径。
+ */
+function isRegisteredClassFn(s: { name?: string }): boolean {
+  return s.name !== undefined && getEvalClass(s.name) !== undefined;
 }
 
 /** apply/construct 的 argsList（CreateListFromArrayLike）：非对象 → 定抛 */
@@ -153,6 +173,22 @@ function ownHolderOf(o: Abs): Abs | undefined {
 }
 
 /**
+ * Bug 275 联动：`inherited` 槽是 `Object.create(proto)` 镜像来的**原型链**
+ * 解析槽（值 unknown，仅承诺存在性）——原生它不是该对象的自有属性 ⇒
+ * 「自有该键」判定必须剔除，否则 [[Set]] 会被判成「靶有自有可写数据属性」
+ * 而绕过原型链写门（getter-only / writable:false 原语被静默写穿），且
+ * Reflect.set 的失败面从 false 变成 $set 的 strict TypeError。
+ */
+function hasOwnSlotOf(
+  slots: Record<string, { value: Abs }> | undefined,
+  key: string,
+): boolean {
+  if (!slots) return false;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return false;
+  return (slots[key] as { inherited?: boolean }).inherited !== true;
+}
+
+/**
  * Bug 299/320：Reflect.set ≡ [[Set]]（ES2024 13.15.2
  * OrdinarySetWithOwnDescriptor）——**第 4 实参 receiver** 参与写语义：
  * - 靶有自有**数据**属性（可写）：receiver 无自有该键 → receiver **建自有
@@ -174,7 +210,7 @@ function reflectSetOnTarget(
     ? (tHolder.shape as { slots: Record<string, { value: Abs }> }).slots
     : undefined;
   const tAcc = tHolder ? lookupObjAccessor(tHolder, key) : undefined;
-  const tHasOwn = tSlots ? Object.prototype.hasOwnProperty.call(tSlots, key) : false;
+  const tHasOwn = hasOwnSlotOf(tSlots, key);
   const tFlags =
     getPropFlags(target)?.get(key) ??
     (tHolder && tHolder !== target ? getPropFlags(tHolder)?.get(key) : undefined);
@@ -217,7 +253,7 @@ function reflectSetOnTarget(
   const rSlots = rHolder
     ? (rHolder.shape as { slots: Record<string, { value: Abs }> }).slots
     : undefined;
-  const rHasOwn = rSlots ? Object.prototype.hasOwnProperty.call(rSlots, key) : false;
+  const rHasOwn = hasOwnSlotOf(rSlots, key);
   if (rHasOwn) {
     const rAcc = lookupObjAccessor(rHolder!, key);
     // receiver 自有访问器 → false（原生：不得改写 accessor 机制）
@@ -242,7 +278,7 @@ function reflectCreateDataOnReceiver(receiver: Abs, key: string, value: Abs): Ab
     ? (rHolder.shape as { slots: Record<string, { value: Abs }> }).slots
     : undefined;
   if (rSlots) {
-    const has = Object.prototype.hasOwnProperty.call(rSlots, key);
+    const has = hasOwnSlotOf(rSlots, key);
     const rAcc = lookupObjAccessor(rHolder!, key);
     // receiver 自有**访问器**属性 → 写门失败（原生：不得改写访问机制）
     if (rAcc) return boolLit(false);
@@ -386,22 +422,16 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // target）写槽成功；此前只校验不写（o.a 后续读折 undefined 错误值）。
       // 就地写回（writeInPlace 保 Abs 身份——别名可见），返回值照原生 boolean。
       enforceReflectTarget(args[0], "set");
-      // 第 4 实参 receiver：非对象 → TypeError（缺省 ≡ target）
+      // Bug 181：第 4 实参 receiver 为**非对象**时不抛——规范（ES2024 10.1.9.2
+      // OrdinarySetWithOwnDescriptor）data 臂「If Receiver is not an Object,
+      // return false」；accessor 臂照常派发 setter（this = 原始值）⇒ true。
+      // 哪一臂取决于 target 的键形态 ⇒ 返回面是 **boolean**（不折 exact false、
+      // 不记 may-throw）。与文件头不变量「Reflect.* 的写面失败一律返 false
+      // 不抛」一致；此前字面量 / 抽象 prim 臂**定抛** TypeError ⇒ L2 假红，
+      // 而 null（同样非对象）却因 `!== null` 例外偶然判 boolean（同门两口径）。
       const recvArg = args[3];
-      if (recvArg !== undefined) {
-        if (recvArg.term?.op === "lit") {
-          if (recvArg.term.value !== null && typeof recvArg.term.value !== "object") {
-            throw new NudoThrow(errorTypeAbs("TypeError"));
-          }
-        } else if (recvArg.shape.k === "prim") {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
-        } else if (
-          recvArg.shape.k === "any" ||
-          recvArg.shape.k === "unknown" ||
-          recvArg.shape.k === "sum"
-        ) {
-          recordMayThrow({ kind: "TypeError", cause: "Reflect.set receiver must be an object" });
-        }
+      if (recvArg !== undefined && classifyReflectTarget(recvArg).k !== "object") {
+        return boolPrim();
       }
       const t0 = args[0]!;
       // Bug 299：第 4 实参 receiver 参与写语义（缺省 ≡ target）
@@ -738,15 +768,27 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         }
         // Bug 14：apply 的 fn target 恒可调用（ctor facet 只与 construct 相关，
         // Math.max 等命名空间一等函数 ctor 缺省）——仅 construct 记 may
-        if (method === "construct" && ctor === undefined) {
+        // Bug 176：ctor 缺省时先查**类注册表**——名字命中已注册类 ⇒ 该值是类
+        // 定义（恒可构造）⇒ 不记 may（真·命名空间一等函数如 Math.max 不
+        // 在表内，保持既有保守口径）。
+        if (
+          method === "construct" &&
+          ctor === undefined &&
+          !isRegisteredClassFn(s as { name?: string })
+        ) {
           recordMayThrow({ kind: "TypeError", cause: `Reflect.${method} target may not be ${what}` });
         }
-      } else if (
-        s.k === "brand" ||
-        s.k === "any" ||
-        s.k === "unknown" ||
-        s.k === "sum"
-      ) {
+      } else if (s.k === "brand") {
+        // Bug 176：brand 形**类值**带 `ctor: true` facet（$class / 类注册表
+        // 产出）⇒ 恒可构造 ⇒ construct 面不记 may；此前 brand 一律折「可能
+        // 不可构造」⇒ Reflect.construct(用户类, …) 误记 TypeError ⇒ L2 假红。
+        // apply 面不变：类值**不可调用**（原生 "Class constructor A cannot be
+        // invoked without 'new'"）⇒ 维持保守 may。
+        const bctor = (s as { ctor?: boolean }).ctor;
+        if (!(method === "construct" && bctor === true)) {
+          recordMayThrow({ kind: "TypeError", cause: `Reflect.${method} target may not be ${what}` });
+        }
+      } else if (s.k === "any" || s.k === "unknown" || s.k === "sum") {
         recordMayThrow({ kind: "TypeError", cause: `Reflect.${method} target may not be ${what}` });
       } else {
         // prim（含 nullish 字面量）/ obj / tuple / arr / eff：确定不可调用
@@ -768,7 +810,9 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         if (ns.k === "fn") {
           const nctor = (ns as { ctor?: boolean }).ctor;
           if (nctor === false) throw new NudoThrow(errorTypeAbs("TypeError"));
-          if (nctor !== true) {
+          // Bug 176：与 target 侧同口径——ctor 缺省但名字命中类注册表 ⇒ 类值
+          //（恒可构造）⇒ 不记 may
+          if (nctor !== true && !isRegisteredClassFn(ns as { name?: string })) {
             recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
           }
         } else if (ns.k === "brand") {

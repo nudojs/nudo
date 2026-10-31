@@ -182,7 +182,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       // ② Abs 面（evalBuiltinNew）与宿主面（$new 的 clsName 分支）口径分裂。
       // label 校验（非法字符确定 RangeError / 知名 label 正常构造 /
       // 未知 ASCII 形与抽象 → may）与 $new 宿主分支同 builder。
-      return makeTextDecoderAbs(args[0]);
+      return makeTextDecoderAbs(args[0], args[1]);
     case "Intl.NumberFormat":
     case "Intl.DateTimeFormat":
       // Bug 44：makeIntlCtorAbs 的 fn name 按名派发——locale 校验构造

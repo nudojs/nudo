@@ -379,32 +379,37 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
     case "invoke": {
       // 调用体（this 绑 recv）。
-      const callOf = (recv: string): string => {
+      const callOf = (recv: string, preRead?: string): string => {
         // 实参 thunk：成员读（$invoke 预读）先于实参求值，与非链路径
         // Bug 152 同口径。spread 已由 emitArgList 展开成 ...$elems(...)。
-        let call = `$invoke(${recv}, ${hop.method}, () => ${hop.argsSrc}${hop.locArg})`;
+        // BUG-216：fnOptional 臂已先读一次方法值（nullish 判定）——把该值
+        // 作为 preRead 传给 $invoke，派发复用它（有状态 getter 只跑一次；
+        // 此前 $get + $invoke 各读一次 ⇒ 返回值取第二轮）。
+        const tail = preRead === undefined ? hop.locArg : `${hop.locArg || ", undefined"}, ${preRead}`;
+        let call = `$invoke(${recv}, ${hop.method}, () => ${hop.argsSrc}${tail})`;
         // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
         // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
         // 实参只求值一次：thunk 内把实参数组挂到盒子上，$invoke 与
         // $reStateCall 消费同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const ${tmp.reArgs} = {}; const ${tmp.reRes} = $invoke(${recv}, ${hop.method}, () => (${tmp.reArgs}._a = ${hop.argsSrc})${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, ${tmp.reArgs}._a); return ${tmp.reRes}; })()`;
+          call = `(() => { const ${tmp.reArgs} = {}; const ${tmp.reRes} = $invoke(${recv}, ${hop.method}, () => (${tmp.reArgs}._a = ${hop.argsSrc})${tail}); $reStateCall(${hop.recvName}, ${hop.method}, ${tmp.reArgs}._a); return ${tmp.reRes}; })()`;
         }
         return call;
       };
       // 剩余链的接收者 = 调用结果——调用体包一层 IIFE，惰性求值于 else 臂内
       // （无剩余链时不包：保持既有发射形态不变）。
-      const contOf = (recv: string): string =>
-        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      const contOf = (recv: string, preRead?: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv, preRead)})()`) : callOf(recv, preRead);
       if (hop.fnOptional) {
-        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
-        // 取舍——保 builtin 派发，getter 会跑两遍）。
+        // o.m?.()：方法值 nullish 短路；this 仍绑 recv。BUG-216：读出的
+        // 方法值经 preRead 交给派发 ⇒ **一次 Get**（宿主语义；有状态 getter
+        // 不再被读两遍）。
         // Bug 187：ES 的可选链短路是**整链**语义——方法值 nullish 时整条链
         // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
         // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
         const fnFork = (recv: string): string =>
-          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv)}))($get(${recv}, ${hop.method}))`;
+          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))($get(${recv}, ${hop.method}))`;
         if (hop.recvOptional) {
           // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
           return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
@@ -421,14 +426,15 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // nullish 检查读 $idx(recv, key)——计算键无静态名（$get 不可用）。
       // 键/接收者源文本内联两次与 invoke hop 的 fnCheck 同取舍（保派发，
       // 副作用键表达式会跑两遍）。
-      const callOf = (recv: string): string =>
-        `$invokeKey(${recv}, ${hop.keySrc}, () => ${hop.argsSrc}${hop.locArg})`;
-      const contOf = (recv: string): string =>
-        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      const callOf = (recv: string, preRead?: string): string =>
+        `$invokeKey(${recv}, ${hop.keySrc}, () => ${hop.argsSrc}${preRead === undefined ? hop.locArg : `${hop.locArg || ", undefined"}, ${preRead}`})`;
+      const contOf = (recv: string, preRead?: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv, preRead)})()`) : callOf(recv, preRead);
       if (hop.fnOptional) {
-        // 同 invoke hop（Bug 187）：方法值 nullish → 整链短路，剩余链进 else 臂
+        // 同 invoke hop（Bug 187）：方法值 nullish → 整链短路，剩余链进 else 臂。
+        // BUG-216：已读出的方法值经 preRead 复用（一次 Get）。
         const fnFork = (recv: string): string =>
-          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv)}))($idx(${recv}, ${hop.keySrc}))`;
+          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))($idx(${recv}, ${hop.keySrc}))`;
         if (hop.recvOptional) {
           return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
         }

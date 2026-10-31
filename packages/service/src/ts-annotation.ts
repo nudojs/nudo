@@ -68,12 +68,15 @@ export function tsAnnotationArgAbs(text: string | undefined): Abs {
  */
 export function tsAnnotationTypeText(text: string | undefined): string | undefined {
   if (!text) return undefined;
-  const t = text.trim();
+  // BUG-192：**换行不是拒绝理由**——TS 的 `.d.ts` 类型注解允许多行；把注解
+  // 压成单行（声明行仍是单行）就保住**同一个类型**。旧口径「含换行 ⇒ 丢弃」
+  // 让多行对象类型注解整段丢失（消费端假绿），同一注解写一行/多行产出**相反**
+  // 的 `.d.ts`（产物随源码排版翻转）。
+  const t = text.replace(/\s*[\r\n\u2028\u2029]+\s*/g, " ").trim();
   if (t.length === 0) return undefined;
-  // 斜杠：块注释与行注释的记号（注释会提前闭合 JSDoc / 破坏 .d.ts 结构）
-  if (/[/]/.test(t)) return undefined;
-  // 换行（.d.ts 声明行是单行）
-  if (/[\r\n\u2028\u2029]/.test(t)) return undefined;
+  // 只挡**真正的注释记号**（`//` / `/*`）：它们会提前闭合 JSDoc / 破坏 .d.ts
+  // 结构。旧口径挡「文本里出现 `/`」⇒ 字符串字面量里的 `"/"` 也被误伤。
+  if (t.includes("//") || t.includes("/*")) return undefined;
   // 控制字符
   if (/[\u0000-\u001f\u007f]/.test(t)) return undefined;
   return t;

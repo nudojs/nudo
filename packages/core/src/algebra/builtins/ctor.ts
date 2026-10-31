@@ -333,6 +333,16 @@ export const OBJECT_PROTO_METHOD_NAMES = new Set([
   "valueOf",
   "toString",
   "toLocaleString",
+  // Bug 164：legacy 四访问器（`Object.getOwnPropertyNames(Object.prototype)`
+  // 实测恒有）——此前**只**登记在 `in` 判定用的那张表（member-diag.ts 的
+  // `OBJECT_PROTO_NAMES`，Bug 15 补的），**值读面**这张表漏了 ⇒
+  // `({}).__defineGetter__ === undefined` 折 exact undefined（假绿）而
+  // `"__defineGetter__" in {}` 折 true ⇒ 同一引擎两面结论相反。
+  // 两张表必须同口径（`__proto__` / `constructor` 走专门臂，不在此列）。
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
 ]);
 
 let objectProtoSingleton: Abs | undefined;

@@ -21,6 +21,12 @@ export type EvalClassSpec = {
   name: string;
   superName?: string;
   /**
+   * BUG-172：父类的**规格身份**（`extends` 活引用在定义期解析所得）。
+   * 裸名 superName 在多模块同名父类下会解析到别的模块那一份；构造递归
+   * / 原型与静态链优先用本字段，缺失才按 superName 回表（内建父无此槽）。
+   */
+  superSpec?: EvalClassSpec;
+  /**
    * Bug 11：`class C extends null`（合法——原型链无 super，但构造受限）。
    * 隐式 ctor 等价 super(...args)，原生 new C() 抛 TypeError
    * （Super constructor null … is not a constructor）；显式 super() 同抛（$super）。
@@ -101,6 +107,51 @@ export type EvalClassSpec = {
 export const BUILTIN_ERROR_SUPER: Record<string, string> = Object.fromEntries(
   [...ERROR_CTOR_NAMES].map((name): [string, string] => [name, name === "Error" ? "" : "Error"]),
 );
+
+// ---- BUG-172：类规格**随值携带** -----------------------------------------
+/**
+ * 注册表以**裸类名**为主键：两个模块各自定义 `class Config` 时后者覆盖
+ * 前者 ⇒ 从 A 模块拿到的实例，读成员时按 B 模块的成员表解析（真成员判
+ * 不存在、不存在的成员判有值，双向错且零诊断）。
+ *
+ * 修法（本文件负责的一半）：`$class` 产出的**规格对象本身**就是每次注册
+ * 唯一的值——把它随 brand 值携带（WeakMap：Abs 身份 → 规格）。成员查表
+ * 处（exec/runtime/members.ts、builtins/ctor.ts）优先用**值自己的规格**，
+ * 不再按名回表；名牌回表（last-wins）保留为回退面：内建 brand、以及只
+ * 拿得到名牌的观测面（format / denote / 部分 builtins）口径不变。
+ *
+ * 为什么不是给 brand 名加命名空间：brand 名是用户可见的类型名
+ * （algebra/format.ts 的 brand 臂直接渲染 `s.name`），加前缀会漏进签名 /
+ * dts / schema 产物。
+ * 为什么不改注册表主键：名牌查表面散布在 60+ 处（多数在 builtins/ 与
+ * objects.ts，不在本片可改范围），改主键会牵动整个观测面。随值携带是
+ * **局部精确化**：有接收者值的地方精确，只有名牌的地方维持既有语义。
+ *
+ * 副本：`$copy` / fork 快照会重造 Abs 包装（exec/runtime/containers/obj.ts
+ * 的 brand 分支），迁移点统一调 carryClassSpec——与 migrateFreshInstance /
+ * copyMatchIterTables 的既有做法同口径。键是 Abs 对象身份（WeakMap），
+ * 不会滞留规格对象 ⇒ 无记忆泄漏。
+ */
+const classSpecByValue = new WeakMap<object, EvalClassSpec>();
+
+/** 类规格挂到类值 / 实例 brand 上（`$class` / `$new` / `$super` 建值处） */
+export function attachClassSpec(v: Abs, spec: EvalClassSpec): Abs {
+  classSpecByValue.set(v as object, spec);
+  return v;
+}
+
+/** 值上随带的类规格（非用户类值 / 内建 brand → undefined） */
+export function classSpecOfAbs(v: Abs | undefined): EvalClassSpec | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  return classSpecByValue.get(v as object);
+}
+
+/** 规格过户（brand 形状重造处统一调用——副本 / 换形后身份不丢） */
+export function carryClassSpec(from: Abs, to: Abs): Abs {
+  const spec = classSpecByValue.get(from as object);
+  if (spec !== undefined) classSpecByValue.set(to as object, spec);
+  return to;
+}
 
 const classRegistry = new Map<string, EvalClassSpec>();
 /** BUG-026：注册 epoch——同名类碰撞只在同一次求值
@@ -283,7 +334,9 @@ export function classInstanceInnerOf(a: Abs): Abs | undefined {
   const s = a.shape;
   if (s.k !== "brand") return undefined;
   if (classNameOfValue(a as object) === s.name) return undefined;
-  if (!classRegistry.has(s.name)) return undefined;
+  // BUG-172：随值携带的规格即身份——同名类被别的模块覆盖后（注册表里
+  // 只剩 last-wins 那一份）实例面仍须认自己是用户类实例。
+  if (classSpecOfAbs(a) === undefined && !classRegistry.has(s.name)) return undefined;
   const inner = s.shape;
   const is = inner.shape;
   if (is.k !== "obj" || is.open || is.index) return undefined;

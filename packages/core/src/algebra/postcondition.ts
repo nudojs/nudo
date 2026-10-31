@@ -26,6 +26,7 @@ import {
   SELF,
   constraintAdmitsNullish,
   derefConstraint,
+  intPredOnTerm,
   isIntFlag,
   instantiateOnTerm,
 } from "./constraint.ts";
@@ -34,7 +35,7 @@ import { isOobUndef } from "./exec/runtime/state.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { getSlot } from "./objects.ts";
 import { accessorReadDomain } from "./accessors.ts";
-import { termEquals } from "./term.ts";
+import { termEquals, termToString } from "./term.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
 
@@ -150,10 +151,78 @@ function isBoundedEvidenceMissing(
   //   `typeof` 级证据虽不描述值域，但**声明域参数**的值域就是它的声明域
   //   （`number()` ⇒ 任意 number）⇒ 「不蕴含」确实蕴含「契约不成立」。
   if (ret.pred && ret.pred.op !== "true") return false;
+  // Bug 006：**值相等义务**（eq 对**域外**字面量）在返回项形状已确定时属可判定
+  // ⇒ 不是「证据缺失」⇒ 不蕴含即 `disproved`。旧口径把 eq 与带界原子
+  // （gt/ge/lt/le）一并归入「带界义务」⇒ `lit(null)` / `lit(undefined)`
+  // 成员（无 prim，域靠 eq 承载）落到兜底 true ⇒ unprovable ⇒ union 整体
+  // 降级 warning ⇒ 门禁空转（假绿）。
+  if (valueEqualityDecidable(ret, constraint)) return false;
   // 路径事实：Φ 里**同项且蕴含该约束**的界事实（Bug 1094）
   if (phiSuppliesConstraint(phi, constraint, ret)) return false;
   // 无 pred 证据（bare prim / 派生表达式）⇒ 值域未被跟踪 ⇒ 不可判定
   return true;
+}
+
+/** 返回项形状的值域判别（Bug 006：值相等义务的可判定性依据） */
+type ShapeValueDomain = { kind: "prim"; type: string } | { kind: "object" };
+
+/**
+ * 形状 → 值域判别。`any` / `unknown` / `sum` / `never` 无判别力 ⇒ undefined
+ * （不得据此把义务判死）。
+ */
+function shapeValueDomain(a: Abs): ShapeValueDomain | undefined {
+  switch (a.shape.k) {
+    case "prim":
+      return { kind: "prim", type: a.shape.type };
+    case "obj":
+    case "arr":
+    case "tuple":
+    case "fn":
+    case "brand":
+    case "eff":
+      // 结构形状的值**恒为对象**（字面量一定是原始值）——与 nullish 也必然不相交
+      return { kind: "object" };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Bug 006：契约 preds 是否**全部**是「可被返回项形状判定的值相等义务」。
+ *
+ * 判据：每个原子都是 `eq(<返回项>, lit(v))` 且 v 的域与返回项形状**不相交**
+ * （结构形状 vs 任何原始字面量；prim 形状 vs 域外字面量 / nullish）。
+ * 这类义务不蕴含 ⇒ 确定不成立 ⇒ `disproved`（error）。
+ *
+ * ⚠ 只认 `eq`：`ne` 在域不相交时是**成立**的，若在这里返回「可判定」，
+ * 调用侧会走到 disproved（假红）。带界原子（gt/ge/lt/le）与 typeof 一律不认
+ * （仍需值域证据 ⇒ 保持「证据缺失」口径）。
+ */
+function valueEqualityDecidable(ret: Abs, constraint: NudoConstraint): boolean {
+  if (constraint.preds.length === 0) return false;
+  const dom = shapeValueDomain(ret);
+  if (dom === undefined) return false;
+  return constraint.preds.every((p) => eqObligationOutsideDomain(p, dom));
+}
+
+function eqObligationOutsideDomain(p: Pred, dom: ShapeValueDomain): boolean {
+  switch (p.op) {
+    case "true":
+    case "false":
+      return true;
+    case "eq": {
+      const litSide = p.a.op === "lit" ? p.a : p.b.op === "lit" ? p.b : undefined;
+      if (!litSide) return false;
+      const v: unknown = litSide.value;
+      if (dom.kind === "object") return true; // 字面量恒非对象
+      if (v === null || v === undefined) return true; // nullish 不属于任何 prim 域
+      return typeof v !== dom.type;
+    }
+    case "and":
+      return p.args.every((a) => eqObligationOutsideDomain(a, dom));
+    default:
+      return false;
+  }
 }
 
 /**
@@ -485,6 +554,24 @@ function assertImpliesSingle(
 
   // --- union 契约（含 nullable）：本臂任一成员蕴含即 proved ---
   if (constraint.members && constraint.members.length > 0) {
+    // Bug 001：**先试整体蕴含**（臂的值域事实 ⇒ union 的**合并析取**）。
+    //
+    // 同 prim 字面量 union（`union(lit(0), lit(1))`）在 Abs 面上被**特化**成
+    // 「单个 prim 臂 + 析取谓词」（`samePrimLiteralUnionAbs`）⇒ 该 union 的
+    // 语义落在**谓词**上（`x = 0 ∨ x = 1`），而不是「多个可判别臂」上。
+    // 逐成员检查问的是「整条臂蕴含**某一个**成员」⇒ `x = 0 ∨ x = 1` 不蕴含
+    // `x = 0`（x 可能是 1）⇒ 两个成员都不成立 ⇒ 落到 `disproved` ⇒
+    // **合法的、已被证明满足契约的返回值被判违约**（假红，直接卡 CI）。
+    //
+    // 整体蕴含只**升级**为 proved（证不出时返回 false ⇒ 回落逐成员检查）⇒
+    // 不制造新的假绿，也不改变其它 union 形态的判定。
+    if (unionDisjunctionImplies(arm, constraint, phi)) return proved();
+    // Bug 006：聚合规则区分「成员**被证伪**」与「成员**不可判定**」——
+    // 全部成员证伪 ⇒ `disproved`（error）；存在不可判定成员时该成员**仍可能
+    // 成立**（∃-成员语义）⇒ 只能 `unprovable`（warning）。
+    // 此前 nullable(...) 的结构化返回值正是因为成员级把值相等义务
+    // （`eq(self, null)`，无 prim）误分类成「带界证据缺失」而落 unprovable，
+    // 把已被确定证伪的 `number()` 成员掩盖 ⇒ 整体降级 ⇒ 假绿。
     let sawUnprovable = false;
     for (const m of constraint.members) {
       const r = assertImplies(arm, m, opts);
@@ -498,7 +585,11 @@ function assertImpliesSingle(
 
   // --- shape 契约：结构字段对账 ---
   if (constraint.fields) {
-    return assertShapeFields(arm, constraint, opts);
+    const r = assertShapeFields(arm, constraint, opts);
+    if (r.status !== "proved") return r;
+    // Bug 005：`shape(...).min/max(n)` 的长度界住在约束自身的 `preds` 里
+    // （`length(self) ≥ n`），结构对账通道不看 preds ⇒ 界整条丢弃（假绿）。
+    return assertStructuralPreds(arm, constraint, phi);
   }
 
   // --- array 契约 ---
@@ -524,9 +615,9 @@ function assertImpliesSingle(
         }
         if (r.status === "unprovable") sawUnprovable = true;
       }
-      return sawUnprovable
-        ? unprovable("array element: some elements unprovable")
-        : proved();
+      if (sawUnprovable) return unprovable("array element: some elements unprovable");
+      // Bug 005：`array(...).min/max/length(n)` 的长度界在约束 preds 里 ⇒ 同样须执法
+      return assertStructuralPreds(arm, constraint, phi);
     }
     const el = (arm.shape as { element: Abs }).element;
     const r = assertImplies(el, constraint.element, opts);
@@ -535,9 +626,10 @@ function assertImpliesSingle(
         `array element ⊭ ${formatConstraint(constraint.element)} (${r.reason})`,
       );
     }
-    return r.status === "unprovable"
-      ? unprovable(`array element: ${r.reason}`)
-      : proved();
+    if (r.status === "unprovable") return unprovable(`array element: ${r.reason}`);
+    // Bug 005：元素域已对账 ⇒ 再评长度界（抽象 arr 无长度事实 ⇒ unprovable，
+    // 不得像旧口径那样直接 proved —— 「证不出」≠「已证明」）
+    return assertStructuralPreds(arm, constraint, phi);
   }
 
   // --- fn 契约：Phase 1 只展示不执法 ---
@@ -554,6 +646,35 @@ function assertImpliesSingle(
 
   // --- 标量：prim + Pred 蕴含（统一证明通道）---
   return assertScalar(arm, constraint, phi);
+}
+
+/**
+ * Bug 001：union 契约的**整体蕴含**判定——「臂的值域事实 ⇒ union 的合并析取」。
+ *
+ * union 的语义在 Abs 面上落在**析取谓词**里（`samePrimLiteralUnionAbs` 把同 prim
+ * 字面量 union 特化成「prim 臂 + or(eq…) 谓词」）⇒ 逐成员检查（臂 ⇒ 某一个
+ * 成员）对这种形态**必然失败**（`x = 0 ∨ x = 1` 不蕴含 `x = 0`）⇒ 假红。
+ *
+ * 判据与 `assertScalar` 的证据面同口径：臂的 `pred`（值域事实）+ 路径前提 Φ。
+ * 本判据**只升级**为 proved（证不出 ⇒ false ⇒ 回落逐成员检查）⇒ 不制造假绿。
+ */
+function unionDisjunctionImplies(
+  arm: Abs,
+  constraint: NudoConstraint,
+  phi: Phi,
+): boolean {
+  const t = retAnchorTerm(arm);
+  // union 契约在返回项上的实例化 = 各成员的析取（`instantiateOnTerm` 的 members 分支）
+  const unionPred = instantiateOnTerm(constraint, t);
+  if (unionPred.op === "true") return false;
+  const armPred = arm.pred && arm.pred.op !== "true" ? arm.pred : undefined;
+  const src: Phi = armPred
+    ? phi.op === "true"
+      ? armPred
+      : pAnd(phi, armPred)
+    : phi;
+  if (src.op === "true") return false;
+  return implies(src, unionPred);
 }
 
 /** any()：无 prim / preds / shape / members / fn（lazy 包装不算——先 deref） */
@@ -610,6 +731,205 @@ function assertShapeFields(
   return proved();
 }
 
+/**
+ * Bug 005：结构契约（`array(...)` / `shape(...)`）**自身**的 `preds`（长度界
+ * `length(self) ≥ n` 等）在返回位此前**整条被丢弃**（假绿）：
+ * `fields` / `element` 分支只对账结构就 `proved()` 返回，而这两类约束
+ * **没有 prim** ⇒ 通用谓词通道 `assertScalar` 根本走不到 ⇒ 返回空数组
+ * （明确违反 `array(number()).min(1)`）也判 OK。同一条契约在**参数**位
+ * 由 `scan/literal-shapes.ts` 的独立 length 通道正确执法 ⇒ 两个通道口径不一致。
+ *
+ * 这里在结构对账通过后补评约束自身的 preds：
+ * - `length(<返回项>)` 用**已知结构长度**（tuple 元素数 / obj 自有键数）接地
+ *   后判定 ⇒ 违反即 `disproved`（error）；
+ * - 接地不了（抽象 arr / open obj / rest 槽）⇒ 先问值域事实 + Φ，仍证不出
+ *   一律 `unprovable`（**不得**像旧口径那样伪装 `proved`）。
+ */
+function assertStructuralPreds(
+  arm: Abs,
+  constraint: NudoConstraint,
+  phi: Phi,
+): PostProof {
+  if (constraint.preds.length === 0) return proved();
+  const t = retAnchorTerm(arm);
+  // 只实例化 preds（结构面已单独对账；`instantiateOnTerm` 的 fields 分支会
+  // 把自身 preds 整段丢掉，故先摘掉 fields/element/members/prim/fn）
+  const pred = instantiateOnTerm(
+    {
+      ...constraint,
+      fields: undefined,
+      element: undefined,
+      members: undefined,
+      prim: undefined,
+      fn: undefined,
+      int: undefined,
+    },
+    t,
+  );
+  if (pred.op === "true") return proved();
+  const len = knownStructuralLength(arm);
+  const ground = len === undefined ? pred : groundLengthPred(pred, t, len);
+  const verdict = evalGroundPred(ground);
+  if (verdict === true) return proved();
+  if (verdict === false) {
+    return disproved(
+      len === undefined
+        ? `return ${formatAbs(arm)} ⊭ ${formatConstraint(constraint)}`
+        : `length(return) = ${len} ⊭ ${describeStructuralBounds(constraint)}`,
+    );
+  }
+  // 接地不了：值域事实 + Φ 可能仍能证明（与 assertScalar 同证据面）
+  const src: Phi =
+    arm.pred && arm.pred.op !== "true"
+      ? phi.op === "true"
+        ? arm.pred
+        : pAnd(phi, arm.pred)
+      : phi;
+  if (src.op !== "true" && implies(src, pred)) return proved();
+  return unprovable(
+    `cannot prove return satisfies ${formatConstraint(constraint)} (structural bound not decidable on the return value)`,
+  );
+}
+
+/**
+ * 结构契约自身 preds 的人类可读描述（`length(return) ≥ 1`）——
+ * `formatConstraint(array(number()).min(1))` 不渲染长度链（只有元素面），
+ * 违例信息必须自己说清是哪条界。
+ */
+function describeStructuralBounds(constraint: NudoConstraint): string {
+  const OP_SYM: Record<string, string> = { gt: ">", ge: "≥", lt: "<", le: "≤", eq: "=", ne: "≠" };
+  const atoms: string[] = [];
+  const walk = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(walk);
+      return;
+    }
+    const sym = OP_SYM[p.op];
+    if (!sym) return;
+    const rel = p as { a: Term; b: Term };
+    atoms.push(`${renderBoundSide(rel.a)} ${sym} ${renderBoundSide(rel.b)}`);
+  };
+  constraint.preds.forEach(walk);
+  return atoms.length > 0 ? atoms.join(" ∧ ") : formatConstraint(constraint);
+}
+
+function renderBoundSide(t: Term): string {
+  return isLengthSelfTerm(t) ? "length(return)" : termToString(t);
+}
+
+/** 返回项的结构长度（tuple 元素数 / obj 自有键数）；未知 ⇒ undefined */
+function knownStructuralLength(a: Abs): number | undefined {
+  if (a.shape.k === "tuple") {
+    const ts = a.shape as { elements: Abs[]; rest?: Abs };
+    return ts.rest ? undefined : ts.elements.length;
+  }
+  if (a.shape.k === "obj") {
+    const o = a.shape as {
+      slots: Record<string, { internal?: boolean; symbolKey?: boolean; inherited?: boolean }>;
+      index?: unknown;
+      open?: boolean;
+    };
+    // 索引签名 / open 对象：键数无界 ⇒ 不可判定（不得接地成活界）
+    if (o.index || o.open) return undefined;
+    return Object.entries(o.slots).filter(
+      ([, s]) => !s.internal && !s.symbolKey && !s.inherited,
+    ).length;
+  }
+  if (a.shape.k === "brand") return knownStructuralLength(a.shape.shape);
+  return undefined;
+}
+
+/** 把 `length(<返回项>)` 子项替换成已知长度字面量（接地） */
+function groundLengthTerm(term: Term, target: Term, n: number): Term {
+  if (
+    term.op === "app" &&
+    term.fn === "length" &&
+    term.args.length === 1 &&
+    termEquals(term.args[0]!, target)
+  ) {
+    return termLit(n);
+  }
+  return term;
+}
+
+function groundLengthPred(p: Pred, target: Term, n: number): Pred {
+  switch (p.op) {
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+    case "eq":
+    case "ne":
+      return {
+        op: p.op,
+        a: groundLengthTerm(p.a, target, n),
+        b: groundLengthTerm(p.b, target, n),
+      };
+    case "and":
+      return pAnd(...p.args.map((a) => groundLengthPred(a, target, n)));
+    case "or":
+      return { op: "or", args: p.args.map((a) => groundLengthPred(a, target, n)) };
+    case "not":
+      return { op: "not", arg: groundLengthPred(p.arg, target, n) };
+    default:
+      return p;
+  }
+}
+
+/** 三值接地判定：true / false / 不可判定（undefined） */
+function evalGroundPred(p: Pred): boolean | undefined {
+  switch (p.op) {
+    case "true":
+      return true;
+    case "false":
+      return false;
+    case "and": {
+      let unknown = false;
+      for (const a of p.args) {
+        const v = evalGroundPred(a);
+        if (v === false) return false;
+        if (v === undefined) unknown = true;
+      }
+      return unknown ? undefined : true;
+    }
+    case "or": {
+      let unknown = false;
+      for (const a of p.args) {
+        const v = evalGroundPred(a);
+        if (v === true) return true;
+        if (v === undefined) unknown = true;
+      }
+      return unknown ? undefined : false;
+    }
+    case "not": {
+      const v = evalGroundPred(p.arg);
+      return v === undefined ? undefined : !v;
+    }
+    case "eq":
+    case "ne": {
+      if (p.a.op !== "lit" || p.b.op !== "lit") return undefined;
+      // 字面量等值：`0 === -0` 在约束面等价（lit 不归一负零，但等值判定等价）
+      const same = p.a.value === p.b.value;
+      return p.op === "eq" ? same : !same;
+    }
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le": {
+      if (p.a.op !== "lit" || p.b.op !== "lit") return undefined;
+      const l = p.a.value;
+      const r = p.b.value;
+      if (typeof l !== "number" || typeof r !== "number") return undefined;
+      if (p.op === "gt") return l > r;
+      if (p.op === "ge") return l >= r;
+      if (p.op === "lt") return l < r;
+      return l <= r;
+    }
+    default:
+      return undefined;
+  }
+}
+
 function assertScalar(
   ret: Abs,
   constraint: NudoConstraint,
@@ -632,6 +952,15 @@ function assertScalar(
     }
   }
 
+  // 值域事实（ret.pred）+ 路径前提 Φ：后置通道的统一判据面
+  const t = retAnchorTerm(ret);
+  const retPred: Phi =
+    ret.pred && ret.pred.op !== "true"
+      ? phi.op === "true"
+        ? ret.pred
+        : pAnd(phi, ret.pred)
+      : phi;
+
   // int 位
   if (isIntFlag(constraint) && constraint.prim === "number") {
     const lvR = litValue(ret);
@@ -639,17 +968,34 @@ function assertScalar(
     if (typeof lv === "number" && !Number.isInteger(lv)) {
       return disproved(`return ${lv} ⊭ int`);
     }
+    // Bug 002：**非字面量**返回值的整性义务此前**整条蒸发**（假绿）。
+    //
+    // `.int()` 是约束对象上的**数据标志**，不是 pred ⇒ `instantiateOnTerm` 不
+    // 编码它 ⇒ `number().int()` 的 `constraintPred` 只剩 `typeof(x) = "number"`
+    // ⇒ 下面「仅有 auto-typeof」的早退分支直接 `proved()`。唯一生效的是上面的
+    // 字面量特判（`1.5` 报、`x + 0.5` 不报）。
+    //
+    // 这里**单独**判整性义务（不并入 `constraintPred`）：并入会让 base 的
+    // typeof 义务与整性义务互相拖累——`implies(x > 0 ∧ x % 1 = 0,
+    // typeof(x) = "number")` 证不出 ⇒ 已证明整数返回被误判违约（假红）。
+    //
+    // ⚠ 判不出时一律落 **unprovable（warning）**，不落 disproved（error）：
+    // 整性是**不可判定的算术性质**（`x + 1` 对整数 x 仍是整数、`x + 0.5` 不是，
+    // 引擎都证不出）⇒ 用「值域有 pred 证据」当「确定违约」的证据会制造假红
+    // （`x + 1` 是最常见的合法写法）。warning 不改 exit code 但**不得静默**
+    // ——这正是 check-return 的 unprovable 口径（warning，不得伪装成功）。
+    if (!lvR.ok) {
+      const intWant = intPredOnTerm(t);
+      if (!implies(retPred, intWant)) {
+        return unprovable(
+          `cannot prove return satisfies ${formatConstraint(constraint)} (no integrality evidence on the return value)`,
+        );
+      }
+    }
   }
 
   // Pred 蕴含（统一证明通道）：constraint preds 锚定到 ret.term
-  const t = retAnchorTerm(ret);
   const constraintPred = instantiateOnTerm(constraint, t);
-  const retPred: Phi =
-    ret.pred && ret.pred.op !== "true"
-      ? phi.op === "true"
-        ? ret.pred
-        : pAnd(phi, ret.pred)
-      : phi;
 
   // 契约无 pred 义务（裸 prim / any()）：prim 门已过即 proved
   if (constraint.preds.length === 0 && constraintPred.op === "true") {

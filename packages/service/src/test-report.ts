@@ -19,7 +19,7 @@
  *   与分析面同口径（裸 leqAbs 不做值级判定会让 `number().gt(0)` 恒假红）。
  */
 import { formatShape, type Abs } from "@nudojs/core";
-import { caseExpectedSatisfied } from "./analyzer-orchestrate-uncached-cases.ts";
+import { caseExpectedSatisfied, inferenceFailed } from "./analyzer-orchestrate-uncached-cases.ts";
 import type { AnalysisResult, CaseResult } from "./analyzer.ts";
 
 export type CaseTestOutcome = {
@@ -79,27 +79,6 @@ function formatCaseLine(c: CaseResult): string {
     line += `   throws ${formatShape(c.throwsAbs)}`;
   }
   return line;
-}
-
-/**
- * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定）。
- *
- * 判据（**报告面本地**判）：
- * - `shape.k === "unknown"`：core 的 unknown 语义 = 「分析拿不到信息
- *   （求值失败 / 泄漏）」⇒ 实测值**没推出来**；
- * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
- *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
- *
- * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
- * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
- * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
- * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
- *
- * 为什么不放在判定函数里：`caseExpectedSatisfied` 是**二值**判定（片 C 冻结），
- * 第三态是**报告面**的事（能不能下断言结论）⇒ 本地判。
- */
-function inferenceFailed(actual: Abs): boolean {
-  return actual.shape.k === "unknown" || actual.conf === "opaque";
 }
 
 /**

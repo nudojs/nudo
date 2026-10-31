@@ -31,7 +31,8 @@ import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { effectiveInterface, formatConstraint } from "./interface.ts";
 import { locateContractParam } from "./param-surface.ts";
-import { getSlot } from "./objects.ts";
+import { getSlot, getProtoAbs } from "./objects.ts";
+import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "./leq.ts";
 import { projectAbsPath } from "./scan/path-projection.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
@@ -439,9 +440,30 @@ function witnessViolations(
       if (witnessNoInfo(w)) return [];
       return [{ actual: w, expected: formatConstraint(cc), path, missing: false }];
     }
+    // Bug 275：shape 契约的字段存在性按**运行时 HasProperty 口径**——缺失
+    // 自有槽时沿 [[Prototype]] 链回查。`Object.create(proto)` 的 Abs 只记
+    // 原型**身份**（protoTable）、不带 proto 的槽 ⇒ 逐字段对账找不到槽 ⇒
+    // 报 `missing field`（假红），而宿主 `"a" in Object.create({a:1})` 为
+    // true、TypeScript 结构类型接受、引擎自己的 guard / zod / standard 三个
+    // 产物也都是 HasProperty 语义（`standard-schema.ts` 明文自述）⇒
+    // 同一引擎四个面三个接受、一个拒绝。链上可达的字段**不得**判违约。
+    const chainSlotOf = (recv: Abs, k: string): { value: Abs } | undefined => {
+      let cur: Abs | undefined = recv;
+      for (let d = 0; cur !== undefined && d < 8; d++) {
+        const proto = getProtoAbs(cur);
+        if (proto === undefined) return undefined;
+        const ps = proto.shape.k === "brand" ? proto.shape.shape.shape : proto.shape;
+        if (ps.k === "obj") {
+          const s = getSlot(ps.slots, k);
+          if (s) return s;
+        }
+        cur = proto;
+      }
+      return undefined;
+    };
     const out: WitnessViolation[] = [];
     for (const [key, field] of Object.entries(cc.fields)) {
-      const slot = getSlot(shape.slots, key);
+      const slot = getSlot(shape.slots, key) ?? chainSlotOf(w, key);
       const fieldPath = path === "" ? key : `${path}.${key}`;
       if (!slot) {
         if (!field.optional && !field.constraint.isOptional) {
@@ -454,7 +476,21 @@ function witnessViolations(
         }
         continue;
       }
-      out.push(...witnessViolations(field.constraint, slot.value, fieldPath, depth + 1));
+      // BUG-246：可选槽**吸收 undefined**（TS 默认
+      // `exactOptionalPropertyTypes: false`）——与 `leqAbs`（`leq.ts`）和 L1 调用点
+      // 面（`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）同口径，共享
+      // `mayBeUndefinedAbs` / `nonUndefinedAbsValues`：见证值里剥掉 undefined 臂后
+      // **剩余成员仍须**满足字段约束 ⇒ `{ a: undefined }` 不报、
+      // `{ a: number | undefined }` 对 `string()` 仍报；必填槽不受影响
+      // （`{ a: undefined }` 对 `shape({ a: string() })` 仍报 case-inconsistency）。
+      const optionalField = field.optional || field.constraint.isOptional;
+      const fieldValues =
+        optionalField && mayBeUndefinedAbs(slot.value)
+          ? nonUndefinedAbsValues(slot.value)
+          : [slot.value];
+      for (const fieldValue of fieldValues) {
+        out.push(...witnessViolations(field.constraint, fieldValue, fieldPath, depth + 1));
+      }
     }
     return out;
   }
@@ -771,8 +807,26 @@ export function scanCaseInconsistency(
 
   // D6=G2 + D5=F1：case 标签与 parser 同源（directive-scan scope 绑定 + scanCaseTags），
   // nested function / class method 上的见证同样可见。
-  for (const scope of listFnDirectiveScopes(file)) {
+  //
+  // Bug 282：**同名嵌套函数的作用域裁决**。契约面走
+  // `findFnDirectiveScope`（同名取**词法最浅**），而 case 面此前只按**裸名字**
+  // 匹配 `knownFns` ⇒ 导出函数体内同名辅助函数上的 `@nudo:case` 见证被拿去
+  // 对着**外层**函数的契约执法 ⇒ `nudo:case-inconsistency`（error）⇒ 门禁
+  // **假红 / exit 1**（严格单变量对照：只把内层函数改名立刻变绿 ⇒ 缺陷只与
+  // 同名有关）。
+  //
+  // 口径（与 `findFnDirectiveScope` 同款 depth 裁决）：同名 scope 中只有
+  // **最浅**的那个参与契约对账；更深层同名 scope 的见证不对外层契约负责。
+  const caseScopes = listFnDirectiveScopes(file);
+  const minDepthByName = new Map<string, number>();
+  for (const s of caseScopes) {
+    const d = s.depth ?? 0;
+    const cur = minDepthByName.get(s.name);
+    if (cur === undefined || d < cur) minDepthByName.set(s.name, d);
+  }
+  for (const scope of caseScopes) {
     if (!knownFns.includes(scope.name)) continue;
+    if ((scope.depth ?? 0) !== minDepthByName.get(scope.name)) continue;
     for (let ci = 0; ci < scope.commentTexts.length; ci++) {
       const text = scope.commentTexts[ci]!;
       const startLine = scope.commentStartLines[ci] ?? 0;

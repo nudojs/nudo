@@ -44,6 +44,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$pow",
   "$toNumber",
   "$toNumeric",
+  "$toStr",
   "$updateAdd",
   "$updateSub",
   "$in",

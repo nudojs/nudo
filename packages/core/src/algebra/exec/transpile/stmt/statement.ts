@@ -1136,7 +1136,17 @@ function emitVariableDeclaration(
     // 计数器的转译单元（transpileBodyNode 等）。
     bumpDestrTmpSeq(tmpSeq, userIdentInfoOf(opts));
     const tmp = `_d${tmpSeq.n++}`;
-    lines.push(`${pad}const ${tmp} = ${initSrc};`);
+    // BUG-080：@nudo:as 的覆盖同样适用于**解构声明**——此前解构分支从头
+    // 到尾不读 asVar ⇒ 指令被采集（asTargets 非空）却**静默失效**
+    // （零诊断的假绿：两条语法等价的声明给出相反的类型）。
+    //
+    // 修法（与 Identifier 分支同口径）：覆盖值取代 init 的**值**，原 init
+    // 仍求值（副作用 + throws 域保留——@nudo:as 是**类型覆盖**不是求值
+    // 替换）。随后逐项 $get / $idx 从**覆盖值**取槽 ⇒ 每个绑定各自从
+    // 覆盖形状取自己的槽（const { a, b } = expr ⇒ a 取槽 a、b 取槽 b）；
+    // 槽缺 / 非对象覆盖 ⇒ 走既有成员读口径（原生同形）。
+    const destrInit = asVar ? `((${initSrc}), ${asVar})` : initSrc;
+    lines.push(`${pad}const ${tmp} = ${destrInit};`);
     lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
     // var 解构：名字已提升 → kw ""（赋值模式）；未提升（参数遮蔽 /
     // export var）→ host `var` 声明
@@ -1147,6 +1157,24 @@ function emitVariableDeclaration(
       destrKw = [...patNames].some((n) => hoistedVar?.has(n)) ? "" : "var";
     }
     emitDestructure(d.id as Node, tmp, destrKw, pad, opts, lines, tmpSeq);
+    // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）——
+    // 解构声明的子名与 Identifier 声明**同口径**登记。
+    //
+    // BUG-080 残留：此前**只**登记 Identifier 声明 ⇒ 解构子名在绑定表里
+    // **缺席**（不是 any，是根本没有）⇒ 该名字在别处被当作实参时解析不出
+    // 类型 ⇒ 调用点的契约检查被整条跳过 ⇒ **假绿**（同一份值走 Identifier
+    // 形态会报 `nudo:constraint-violated`，走解构形态一声不吭）。
+    //
+    // 登记时机 = 解构绑定**之后**（值已就位）；范围 = 顶层（depth 0）——
+    // 块内 / 形参 / catch / for 头的解构子名不是顶层绑定（与 Identifier
+    // 分支的 depth 0 口径一致）。
+    if (depth === 0) {
+      const boundNames = new Set<string>();
+      collectPatternNames(d.id, boundNames);
+      for (const n of boundNames) {
+        lines.push(`${pad}$recordBinding(${JSON.stringify(n)}, ${n});`);
+      }
+    }
   }
   return lines.join("\n");
 }

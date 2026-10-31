@@ -148,6 +148,20 @@ export type EffectiveInterfaceOpts = RefineResolveOpts & {
   projectDir?: string;
 };
 
+/**
+ * 落盘 `@generated` 段（BUG-251）：**与「谁在有效契约里赢」解耦**的独立视图。
+ *
+ * 生成段的语义是「emit 时刻的固化事实快照：不执法，只 drift」——它的陈旧性
+ * 与源码 `@nudo:contract` 是否在场无关。旧口径把漂移闸门搭在
+ * `eff.source === "generated"` 上 ⇒ 只要有一条源码契约，落盘生成段就**永不**
+ * 进漂移候选 ⇒ 陈旧生成段零告警（假绿），而同一文件
+ * `contract --emit --exit-on-diff` 判「会变 / exit 1」⇒ 两面结论相反。
+ */
+export type GeneratedSegment = {
+  params: Array<{ param: string; constraint: NudoConstraint; display?: string }>;
+  returns?: { constraint: NudoConstraint };
+};
+
 export type EffectiveInterface = {
   fnName: string;
   /** display = 表达式原文/约束名折叠形（运行时标志）；缺席 = 消费端回落 pred 全展 */
@@ -174,6 +188,14 @@ export type EffectiveInterface = {
    * 独立于 `conflict`：conflict 的语义是「矛盾 ⇒ 跳过该位执法」，两者不可混。
    */
   undecidable?: { params: string[]; returns?: boolean };
+  /**
+   * 侧车里**落盘的 `@generated` 段**（BUG-251）：有效契约来源是
+   * `generated` 时与 params/returns 同源；来源是 `handwritten` 时它**不**
+   * 进合取层（生成的语义 = 不执法、只 drift），但必须能被漂移闸门拿到
+   * ——否则落盘生成段成「完全死件」（不在有效契约、不在打印面、不在
+   * 漂移监督里）。
+   */
+  generated?: GeneratedSegment;
 };
 
 /** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
@@ -734,6 +756,39 @@ function boundExcludes(bounds: Bound[], term: string, v: number): boolean {
 }
 
 /**
+ * 有限字面量集（BUG-030）：`lit(v)` / `union(lit(a), lit(b), …)`（嵌套 union
+ * 递归展平）这类**可枚举**的域。
+ *
+ * 返回 undefined = 域不是有限字面量集（`number()` / 结构型 / 数组 / fn /
+ * 无 eq 锚定）——此时不判「可判定矛盾」，留给 undecidable 通道。
+ *
+ * 成员必须锚在**同一个** self 项上（否则两侧集合不可比）。模板约束的 self
+ * 是 `__nudo_self__`，两侧同为模板时项名一致；一侧已实例化（term = 形参名）
+ * 时项名不同 ⇒ 保守返回 undefined（不制造假冲突）。
+ */
+function finiteLitSetOf(
+  c: NudoConstraint,
+): { term: string; lits: Term[] } | undefined {
+  const d = derefConstraint(c);
+  if (d.members !== undefined) {
+    let acc: { term: string; lits: Term[] } | undefined;
+    for (const m of d.members) {
+      const sub = finiteLitSetOf(m);
+      if (sub === undefined) return undefined;
+      if (acc === undefined) acc = { term: sub.term, lits: [...sub.lits] };
+      else if (acc.term !== sub.term) return undefined;
+      else acc.lits.push(...sub.lits);
+    }
+    return acc;
+  }
+  if (d.fields !== undefined || d.element !== undefined || d.fn !== undefined) return undefined;
+  // 恰好一条 eq(self, lit)：域 = {v}（eq 与其它界并存仍是单元素域）
+  const eqs = eqLitsOf(c);
+  if (eqs.length !== 1) return undefined;
+  return { term: eqs[0]!.term, lits: [eqs[0]!.lit] };
+}
+
+/**
  * 最小 unsat：同参两约束的
  * - 常数界交叉矛盾（§2.1：x>0 ∧ x<0；双非严格界仅在开区间为空时矛盾）
  * - eq 字面量冲突（lit(42) ∧ lit(43)）
@@ -765,6 +820,20 @@ function crossBoundConflict(a: NudoConstraint, b: NudoConstraint): boolean {
   }
   for (const eq of eqB) {
     if (typeof eq.value === "number" && boundExcludes(A, eq.term, eq.value)) return true;
+  }
+  // BUG-030：两侧都是**有限字面量集**（`lit(v)` / `union(lit…)`，嵌套展平）
+  // 且交集为空 ⇒ **可判定的不可满足**（= 真冲突），不是「合取不可计算」。
+  //
+  // 旧口径只读各侧**顶层** preds（`boundsOf` / `eqLitsOf` 不下钻 `members`）
+  // ⇒ `x = 42` ∧ `x ∈ {43,44}` 的矛盾看不见 ⇒ 落进 `isNonScalarForm` 的
+  // undecidable 通道 ⇒ warning + exit 0（假绿），而**同一个矛盾**写成平铺
+  // 字面量（`lit(43)`）就是 error ⇒ 走过 `samePrimLiteralUnionAbs` 快速
+  // 归一化的有限集必须在这里显式判交集。
+  const fa = finiteLitSetOf(a);
+  const fb = finiteLitSetOf(b);
+  if (fa !== undefined && fb !== undefined && fa.term === fb.term) {
+    const overlap = fa.lits.some((x) => fb.lits.some((y) => termEquals(x, y)));
+    if (!overlap) return true;
   }
   return false;
 }
@@ -966,6 +1035,22 @@ export function effectiveInterface(
     else if (!list.includes(e.name)) list.push(e.name);
   }
   const sidecarReturns = sidecarFn?.fn.returns;
+  /**
+   * 落盘生成段的独立视图（BUG-251）：**不看**手写层是否在场。
+   * `source === "generated"` 时它就是有效契约层；`source === "handwritten"`
+   * 时它不进合取层（按设计生成的语义是「不执法、只 drift」），但漂移闸门
+   * 必须能拿到它（否则陈旧生成段永不被告警 ⇒ 假绿）。
+   */
+  const generatedSegment: GeneratedSegment | undefined =
+    sidecarFn !== undefined && sidecarGenerated
+      ? {
+          params: sidecarParams.map(({ param, constraint }) => {
+            const display = sidecarTexts.get(param);
+            return display !== undefined ? { param, constraint, display } : { param, constraint };
+          }),
+          ...(sidecarReturns !== undefined ? { returns: { constraint: sidecarReturns } } : {}),
+        }
+      : undefined;
   const sidecarThrowsKinds = throwConstraintToKinds(sidecarFn?.fn.throws);
   /** 源码申报 ∪ 侧车 fn.throws（`*` 优先） */
   const mergedThrows: string[] | "*" | undefined = ((): string[] | "*" | undefined => {
@@ -1001,6 +1086,7 @@ export function effectiveInterface(
             }
           : {}),
         source: "generated",
+        ...(generatedSegment !== undefined ? { generated: generatedSegment } : {}),
       };
     }
     return undefined; // implicit：调用方自行处理隐式
@@ -1048,8 +1134,13 @@ export function effectiveInterface(
     for (const { param, constraint } of sidecarParams) {
       const prev = params.get(param);
       if (prev !== undefined) {
-        if (crossBoundConflict(prev, constraint) && !conflictParams.includes(param)) {
-          conflictParams.push(param);
+        // BUG-030：**可判定**矛盾（常数界交叉 / eq 字面量冲突 / 有限字面量集
+        // 交集为空）⇒ 保 prev、标 conflict，且**不再**落进 undecidable 通道
+        // ——矛盾 ≠ 「不可计算」，同一份合取不该同时印「不可满足」与「不可
+        // 计算、只有一侧生效」两条互相矛盾的归因。
+        if (crossBoundConflict(prev, constraint)) {
+          if (!conflictParams.includes(param)) conflictParams.push(param);
+          continue;
         }
         params.set(
           param,
@@ -1083,17 +1174,22 @@ export function effectiveInterface(
   /** 返回位合取不可判定（结构型组合）——Bug 1141：显式报出 */
   let undecidableReturns = false;
   if (r1 !== undefined && r2 !== undefined) {
-    if (crossBoundConflict(r1, r2)) conflictReturns = true;
-    returnsC = conjoinOrConflict(
-      r1,
-      r2,
-      () => {
-        conflictReturns = true;
-      },
-      () => {
-        undecidableReturns = true;
-      },
-    );
+    // BUG-030 同口径：可判定矛盾 ⇒ 保 r1、标 conflict，不进 undecidable 通道
+    if (crossBoundConflict(r1, r2)) {
+      conflictReturns = true;
+      returnsC = r1;
+    } else {
+      returnsC = conjoinOrConflict(
+        r1,
+        r2,
+        () => {
+          conflictReturns = true;
+        },
+        () => {
+          undecidableReturns = true;
+        },
+      );
+    }
   } else {
     returnsC = r1 ?? r2;
   }
@@ -1153,6 +1249,10 @@ export function effectiveInterface(
           },
         }
       : {}),
+    // BUG-251：手写在场时落盘生成段**不进合取层**（生成的语义 = 不执法只
+    // drift），但必须随有效契约一起交出去 —— 漂移闸门据此**永远**监督落盘
+    // 生成段（不再依赖 `source === "generated"`）。
+    ...(generatedSegment !== undefined ? { generated: generatedSegment } : {}),
   };
 }
 
@@ -1436,7 +1536,91 @@ export function interfaceTierOf(
       ...(eff.sidecarLine !== undefined ? { sidecarLine: eff.sidecarLine } : {}),
     };
   }
+  // BUG-223：`implicit` 档只承诺「这是一个**没有契约的函数导出**」。
+  // 旧口径只看 `localNamedExports` ⇒ `export const alias = target;` 这种
+  // **导出别名**也拿到 implicit 档 ⇒ semantic tokens 判「函数 + 契约档
+  // (derived)」，而 CodeLens（`topLevelFunctionSlots`）与 hover 判「不在
+  // 契约档」、documentSymbol 判 Variable ⇒ 同一绑定三面互斥，破掉本函数
+  // 明写的「同源」承诺。⇒ 无契约时只有**真正的顶层函数位**才进档。
+  if (!isTopLevelFunctionBinding(source, fnName)) return undefined;
   return { source: src };
+}
+
+/**
+ * 顶层**函数位**判定（与 lsp `topLevelFunctionSlots` 同口径）：
+ * `function f(){}` / `export default function(){}` / `const f = () => …` /
+ * `const f = function (){}`。
+ *
+ * 只在 `interfaceTierOf` 的 implicit 回落用：把「函数导出」与「导出别名 /
+ * 变量导出」分开（BUG-223 的单一读取口修正）。
+ */
+function isTopLevelFunctionBinding(source: string, name: string): boolean {
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(source, { errorRecovery: true });
+  } catch {
+    return false; // 解析失败：不冒充 implicit 档（宁可不在档里）
+  }
+  type NodeLike = {
+    type?: string;
+    id?: { type?: string; name?: string } | null;
+    declaration?: NodeLike | null;
+    declarations?: Array<{ id?: { type?: string; name?: string } | null; init?: NodeLike | null }>;
+  };
+  const body = ((ast as unknown as { program?: { body?: NodeLike[] } }).program?.body ?? []) as NodeLike[];
+  for (const stmt of body) {
+    // export default：匿名函数 = `default`；具名取本地名
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const decl = stmt.declaration;
+      if (!decl) continue;
+      if (decl.type === "FunctionDeclaration") {
+        if ((decl.id?.name ?? "default") === name) return true;
+      } else if (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression") {
+        if (name === "default") return true;
+      }
+      continue;
+    }
+    // CJS 成员导出（Bug 998）：`module.exports.alpha = function …` /
+    // `exports.beta = (y) => …` —— 左值是成员表达式（属性名即导出名），右值
+    // 是函数 ⇒ 与 ESM 具名导出同档。BUG-223 的收窄只针对**导出别名**
+    // （`export { inner as aliased }`），不应把 CJS 成员导出一起排除。
+    if (stmt.type === "ExpressionStatement") {
+      const expr = (stmt as unknown as {
+        expression?: {
+          type?: string;
+          left?: { type?: string; property?: { type?: string; name?: string } | null } | null;
+          right?: { type?: string } | null;
+        };
+      }).expression;
+      const prop = expr?.left?.property;
+      if (
+        expr?.type === "AssignmentExpression" &&
+        expr.left?.type === "MemberExpression" &&
+        prop?.type === "Identifier" &&
+        prop.name === name
+      ) {
+        const rhs = expr.right?.type;
+        if (rhs === "FunctionExpression" || rhs === "ArrowFunctionExpression") return true;
+      }
+      continue;
+    }
+    const d = stmt.type === "ExportNamedDeclaration" ? stmt.declaration : stmt;
+    if (!d) continue;
+    if (d.type === "FunctionDeclaration") {
+      if (d.id?.name === name) return true;
+      continue;
+    }
+    if (d.type === "VariableDeclaration") {
+      for (const decl of d.declarations ?? []) {
+        if (decl.id?.type !== "Identifier" || decl.id.name !== name) continue;
+        const init = decl.init;
+        if (init && (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /** interfaceTierOf 的来源投影；非导出 → undefined */

@@ -56,9 +56,16 @@ function makeDtsFixture(): string {
   return dir;
 }
 
-/** `--from-dts --write` 的落盘路径（贴着源 `.d.ts`，`sidecarDraftPath` 口径） */
+/**
+ * `--from-dts --write` 的落盘路径（贴着源 `.d.ts`，`sidecarDraftPath` 口径）。
+ *
+ * ⚠ 落点名**不含 `.d.` 段**（BUG-264：`tmp/bug-report/sections/BUG-264.md`
+ *   + `.changeset/fix-bug-cat-09-cli-check.md`）—— basename 含 `.d.` ⇒
+ *   TypeScript 判成声明文件 ⇒ 草稿与它建议的复制落点都过不了 `tsc --strict`
+ *   ⇒ `types/index.d.ts` ⇒ `types/index.nudo.draft.ts`。
+ */
 function draftPathOf(dir: string): string {
-  return join(dir, "types", "index.d.nudo.draft.ts");
+  return join(dir, "types", "index.nudo.draft.ts");
 }
 
 describe("nudo contract --help · Bug 1147-a · `--json` 的三形态口径", () => {

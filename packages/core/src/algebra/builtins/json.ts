@@ -14,7 +14,7 @@
  *   callable 回调**真执行**（副作用通道不丢），返回值域保守（unknown）。
  */
 import type { Abs } from "../abs.ts";
-import { abs, numLit, strLit, boolLit, unknown, litValue } from "../abs.ts";
+import { abs, numLit, strLit, boolLit, unknown, litValue, isArrayView } from "../abs.ts";
 import { getSlot, setSlot, coercionHookOf } from "../objects.ts";
 import { undefAbs, applyCallbackAbs } from "../hof.ts";
 import { defaultLeakBudget } from "../leak.ts";
@@ -26,9 +26,9 @@ import { classNameOfValue } from "../class-mark.ts";
 import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand, TYPED_ARRAY_ELEMENT } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
-import { isMatchArrayView } from "./regexp.ts";
 import { classInstanceInnerOf, classChainHasJsonUserFace } from "../exec/class-registry.ts";
 import { readProperty } from "./object.ts";
+import { builtinBrandUserEnumEntries } from "./object/enum-entries.ts";
 import { accessorTable } from "../accessors.ts";
 import { boxedPrimitiveValue } from "./error/boxed.ts";
 
@@ -244,7 +244,7 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
   if (s.k === "obj") {
     // Bug「match/exec 结果 JSON 视图」：match/exec 结果按数组序列化——
     // total 性只看下标元素（侧槽不进枚举面）
-    if (isMatchArrayView(a)) {
+    if (isArrayView(a)) {
       const els = matchArrayViewElements(a);
       if (!els) return false;
       if (seen.has(a as object)) return false;
@@ -301,8 +301,8 @@ function jsonEnumerableEntries(a: Abs): Array<[string, Abs]> | undefined {
 }
 
 /**
- * Bug「match/exec 结果 JSON 视图」：match/exec 结果（isMatchArrayView 标注
- * 的闭 obj）的下标元素序列——length 槽字面量定长，元素取 "0".."n-1" 槽。
+ * Bug「match/exec 结果 JSON 视图」：match/exec 结果（Shape.view = "array"
+ * facet 标注的闭 obj）的下标元素序列——length 槽字面量定长，元素取 "0".."n-1" 槽。
  * 原生 RegExpExecArray 是 Array：SerializeJSONArray 只产下标元素（["b"]）
  * ——index/input/groups 虽可枚举但非数组下标、length 非枚举，均不进 JSON
  * 面。length 非字面量 / 槽缺 → undefined（调用方按不可折处理）。
@@ -399,7 +399,7 @@ function absToJsonNative(
       seen.delete(a as object);
     }
   }
-  if (s.k === "obj" && isMatchArrayView(a)) {
+  if (s.k === "obj" && isArrayView(a)) {
     // Bug「match/exec 结果 JSON 视图」：match/exec 结果原生是 Array——按下标
     // 槽序列化（["b"]），index/input/groups 非数组下标、length 非枚举，均
     // 不进 JSON 面（undefined 元素经宿主 JSON.stringify 输出 null，与原生
@@ -566,7 +566,7 @@ function stringifyFnReplacer(
         path.delete(r as object);
       }
     }
-    if (s.k === "obj" && isMatchArrayView(r)) {
+    if (s.k === "obj" && isArrayView(r)) {
       // Bug「match/exec 结果 JSON 视图」：replacer 逐项桥接按下标键走数组
       // 形（原生数组键序 ""→"0".."n-1"，非枚举侧槽不可见）
       const els = matchArrayViewElements(r);
@@ -775,6 +775,18 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       const brandName = a0Abs.shape.k === "brand" ? a0Abs.shape.name : undefined;
       if (inner && brandName !== undefined && !classChainHasJsonUserFace(brandName)) {
         jsonArg = inner;
+      } else if (a0Abs.shape.k === "brand") {
+        // Bug 277：内建 brand 实例上**用户新增的自有可枚举属性**
+        //（`e.code = 42` / `m.foo = 1` / `d.bar = 2`）——原生 JSON.stringify
+        // 只序列化**自有可枚举字符串键**。此前 jsonArg 保持 brand（
+        // classInstanceInnerOf 对未注册的内建 brand 恒 undefined）⇒ brand 臂
+        // 折 "{}"，即自信的确切错值。内层槽表里构造期装的内部槽（Error 家族
+        // 的 stack/message/name）皆标 enumerable:false ⇒ 由
+        // jsonEnumerableEntries 的 flags 过滤剔除（同 Object.keys 口径）。
+        const userEntries = builtinBrandUserEnumEntries(a0Abs);
+        if (userEntries && userEntries.length > 0) {
+          jsonArg = (a0Abs.shape as { shape: Abs }).shape;
+        }
       }
     }
     // Bug 381：toJSON 步（原生 SerializeJSONProperty 步骤 2）——用户 toJSON

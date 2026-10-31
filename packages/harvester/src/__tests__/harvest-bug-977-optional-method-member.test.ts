@@ -58,15 +58,18 @@ function hasUndefined(a: Abs | undefined): boolean {
   return false;
 }
 
-const HOLDER = `export interface Holder { m?(): void; p?: number; q(): string; }
-export declare const h: Holder;
+// BUG-253：成员提升只对**模块作用域**成立（顶层值位置声明不得泄漏成全局）
+const HOLDER = `declare module "holder" {
+  export interface Holder { m?(): void; p?: number; q(): string; }
+  export declare const h: Holder;
+}
 `;
 
 describe("Bug 977 —— 可选方法成员与可选属性同口径", () => {
   it("可选方法的槽位含 undefined（可能不存在，不是必定存在）", () => {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
-    const s = slots(env.globals.h!);
+    const s = slots(env.modules.holder!.h!);
     expect(s.m).toBeDefined();
     expect(hasUndefined(s.m!)).toBe(true);
   });
@@ -74,7 +77,7 @@ describe("Bug 977 —— 可选方法成员与可选属性同口径", () => {
   it("可选方法与可选属性的可省性口径一致（两者都含 undefined）", () => {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
-    const s = slots(env.globals.h!);
+    const s = slots(env.modules.holder!.h!);
     expect(hasUndefined(s.m!)).toBe(hasUndefined(s.p!));
     expect(formatShape(s.p!)).toBe("number | undefined");
   });
@@ -82,15 +85,15 @@ describe("Bug 977 —— 可选方法成员与可选属性同口径", () => {
   it("必选方法不被加上 undefined", () => {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
-    const s = slots(env.globals.h!);
+    const s = slots(env.modules.holder!.h!);
     expect(hasUndefined(s.q!)).toBe(false);
     expect(s.q!.shape.k).toBe("fn");
   });
 
-  it("提升面同口径（可选方法提升出的全局也含 undefined）", () => {
+  it("提升面同口径（可选方法提升出的模块成员也含 undefined）", () => {
     const p = writeTemp("holder.d.ts", HOLDER);
     const env = harvestDts([p]);
-    const promoted = env.globals.m!;
+    const promoted = env.modules.holder!.m!;
     expect(promoted).toBeDefined();
     expect(hasUndefined(promoted)).toBe(true);
   });

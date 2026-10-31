@@ -527,7 +527,15 @@ function collectFnDirectives(ast: Node): FunctionWithDirectives[] {
       })),
     );
     if (directives.length === 0) continue;
-    results.push({ node: scope.node, name: scope.name, directives });
+    // depth 必须一路带下去（BUG-283）：消费面（`@nudo:skip` / `@nudo:pure`）
+    // 按名建表，没有 depth 就无法做「同名取词法最浅」的裁决 ⇒ 内层同名函数
+    // 的声明会顶掉外层 / 越界到导出函数上。
+    results.push({
+      node: scope.node,
+      name: scope.name,
+      directives,
+      ...(scope.depth !== undefined ? { depth: scope.depth } : {}),
+    });
   }
   return results;
 }

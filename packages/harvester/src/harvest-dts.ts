@@ -42,11 +42,15 @@ type NamedTypeDecl = ts.InterfaceDeclaration | ts.ClassDeclaration;
  * regardless of file order).
  */
 type PendingSymbol =
-  | { t: "fn"; scope: Scope; name: string; decls: ts.SignatureDeclaration[] }
-  | { t: "var"; scope: Scope; name: string; typeNode?: ts.TypeNode }
+  /**
+   * `promoted`：该符号是**接口成员提升**的产物（值位置接口声明），不是模块/全局
+   * 里的真实声明 ⇒ 它既不是模块导出、也不是全局（Bug 123 / 253）。
+   */
+  | { t: "fn"; scope: Scope; name: string; decls: ts.SignatureDeclaration[]; promoted?: true }
+  | { t: "var"; scope: Scope; name: string; typeNode?: ts.TypeNode; promoted?: true }
   /** class / value-position interface re-export; `lookup` is the symbol-table name when the exported name differs */
   | { t: "value"; scope: Scope; name: string; lookup?: string }
-  | { t: "enum"; scope: Scope; name: string }
+  | { t: "enum"; scope: Scope; name: string; decl: ts.EnumDeclaration }
   /**
    * 值位置接口展开（lodash `const _: _.LoDashStatic` 等）。
    * **推迟到 materialize**：interface 会跨文件 augmentation，
@@ -209,13 +213,33 @@ function absFnSig(
     inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
     condFallback?: Abs;
   },
+  /**
+   * 逐位「可省略」标记（Bug 126）：可选形参（`b?: T`）与 rest 形参
+   * （`...xs: T[]`）都**不是**必选位。
+   *
+   * 此前可选性只被折进类型（`T | undefined`），元数不减 ⇒ 收割出的 fn
+   * **不满足它自己声明的类型**（core 的 `fnMinArity` 与 TS 的
+   * `minArgumentCount` 不一致）。
+   */
+  optionalParams?: boolean[],
 ): Abs {
   // relationFn 双写 shape + impl.relation → 调用点 instantiateReturn 做 α 替换
-  return relationFn(paramTypes, returnType, {
+  const fn = relationFn(paramTypes, returnType, {
     params: paramTypes.map((_, i) => `_arg${i}`),
     conf: "exact",
+    // Bug 213：缺省 fingerprint 是 `absKey(returnType)`（共享 DAG 上指数级）
+    // ⇒ 显式给出**有界**指纹。
+    fingerprint: sigFingerprint(paramTypes, returnType),
     ...(extra ?? {}),
   });
+  if (optionalParams && optionalParams.some(Boolean)) {
+    // relationFn 不收 optionalParams ⇒ 两个载体都补上（core 各处读 shape，
+    // 但 impl 与 shape 不得分叉）。
+    (fn.shape as { optionalParams?: boolean[] }).optionalParams = optionalParams;
+    const impl = getFnImpl(fn);
+    if (impl) impl.optionalParams = optionalParams;
+  }
+  return fn;
 }
 
 /** 泛型形参（T）→ 可被 α 替换的 var Abs */
@@ -223,10 +247,71 @@ function typeVarAbs(name: string): Abs {
   return makeAbs({ k: "any" }, termVar(name), undefined, "path");
 }
 
+/**
+ * 并集规模护栏（Bug 213）。
+ *
+ * `joinAbs` → `joinValues` → `makeSum` → `flattenSum` 用 core 的 `absShapeKey`
+ * 做**去重键**，而 `absShapeKey` 的 `seen` 是**路径级**的（只断环、不断重复访问）
+ * ⇒ 收割面的 `instanceCache` 让同一接口在多处共享同一个 Abs 对象（DAG）⇒
+ * 键长 = **路径数** = 随层数**指数增长** ⇒ `RangeError: Invalid string length`
+ * （或进程 OOM）。可选成员（`m?: T` ⇒ `T | undefined`）正是触发点：
+ * 必选形态 8ms，可选形态 17s 后抛错 ⇒ 收割异常被上游吞掉 ⇒ 整包类型消失。
+ *
+ * 护栏：结构节点数（按对象身份记忆化 ⇒ DAG 只数一次）超限时**直接构造 sum**
+ * （语义仍是并集；不做 flatten 的 lit 吸收 —— 那是精度优化，不是正确性）。
+ */
+const MAX_JOIN_PATHS = 256;
+
+/**
+ * 结构**路径数**（键长 ∝ 路径数）：共享 DAG 上每个分叉都重新展开，
+ * 所以 `absKey` 的开销是**指数级**。这里按 cap 提前返回（有界 DFS，
+ * 只做环检测、不做记忆化 —— 记忆化会把路径数错算成节点数）。
+ */
+function absPathCost(a: Abs, cap: number, stack: Set<Abs>): number {
+  if (cap <= 0) return 1;
+  if (stack.has(a)) return 1; // 环：算一条路径
+  stack.add(a);
+  try {
+    const s = a.shape;
+    const kids: Abs[] = [];
+    if (s.k === "arr") kids.push(s.element);
+    else if (s.k === "tuple") kids.push(...s.elements);
+    else if (s.k === "sum") kids.push(...s.members);
+    else if (s.k === "obj") {
+      for (const sl of Object.values(s.slots)) kids.push(sl.value);
+      if (s.index) kids.push(s.index.key, s.index.value);
+    } else if (s.k === "fn") {
+      kids.push(...(s.paramTypes ?? []));
+      if (s.returnType) kids.push(s.returnType);
+    } else if (s.k === "brand") kids.push(s.shape);
+    else if (s.k === "eff") kids.push(s.inner);
+    let total = 1;
+    for (const k of kids) {
+      total += absPathCost(k, cap - total, stack);
+      if (total > cap) return total;
+    }
+    return total;
+  } finally {
+    stack.delete(a);
+  }
+}
+
 /** multi-member union via binary join (drops never, absorbs lit into prim) */
 function absUnion(members: Abs[]): Abs {
   if (members.length === 0) return absNever();
-  return members.reduce((acc, m) => joinAbs(acc, m));
+  if (members.length === 1) return members[0]!;
+  const live = members.filter((m) => m.shape.k !== "never");
+  if (live.length === 0) return absNever();
+  if (live.length === 1) return live[0]!;
+  // Bug 213：共享 DAG 上的 join 会触发指数级去重键（路径数）⇒ 超限时
+  // 退成**直接构造**的 sum（语义仍是并集，只是不做 flatten 的 lit 吸收）
+  const stack = new Set<Abs>();
+  for (const m of live) {
+    if (absPathCost(m, MAX_JOIN_PATHS, stack) > MAX_JOIN_PATHS) {
+      return absExact({ k: "sum", members: [...live] });
+    }
+  }
+  return live.reduce((acc, m) => joinAbs(acc, m));
 }
 
 function isPlainUnknown(a: Abs): boolean {
@@ -247,6 +332,29 @@ function hasTypeVar(a: Abs, depth = 0): boolean {
       (s.returnType ? hasTypeVar(s.returnType, depth + 1) : false);
   }
   return false;
+}
+
+/** 收集 Abs 里出现的泛型 α 名（结构遍历，深度有界；DAG 按对象身份记忆化） */
+function collectTypeVars(roots: readonly Abs[]): Set<string> {
+  const out = new Set<string>();
+  const seen = new Set<Abs>();
+  const visit = (a: Abs, depth: number): void => {
+    if (depth > 6 || seen.has(a)) return;
+    seen.add(a);
+    if (a.term?.op === "var") out.add(a.term.id);
+    const s = a.shape;
+    if (s.k === "arr") visit(s.element, depth + 1);
+    else if (s.k === "tuple") for (const e of s.elements) visit(e, depth + 1);
+    else if (s.k === "sum") for (const m of s.members) visit(m, depth + 1);
+    else if (s.k === "obj") for (const sl of Object.values(s.slots)) visit(sl.value, depth + 1);
+    else if (s.k === "fn") {
+      for (const p of s.paramTypes ?? []) visit(p, depth + 1);
+      if (s.returnType) visit(s.returnType, depth + 1);
+    } else if (s.k === "brand") visit(s.shape, depth + 1);
+    else if (s.k === "eff") visit(s.inner, depth + 1);
+  };
+  for (const r of roots) visit(r, 0);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +514,47 @@ function toNullDict<T>(src: Record<string, T>): Record<string, T> {
   // Object.keys 只列自有可枚举键 ⇒ 不会把原型链上的成员搬进来
   for (const key of Object.keys(src)) out[key] = src[key];
   return out;
+}
+
+/**
+ * 提升出来的接口成员（**不是**真实声明）在记录对象上的标记（symbol 键 ⇒
+ * `Object.entries` / `JSON.stringify` 都看不见，不会污染收割产物）。
+ *
+ * TS 口径：接口成员**只在接口内部可见** ⇒ 它们既不是模块导出（BUG-123 的
+ * 幽灵导出 ⇒ 假绿），也不是全局（BUG-253 的幽灵全局 ⇒ 白写一个 TS 判
+ * TS2304 的名字也能拿到具体类型）。消费方（`emitEnvModule` / 模块导出桥）
+ * 用 `promotedNamesOf(rec)` 把它们扣掉。
+ */
+const PROMOTED_SYMBOL = Symbol("nudoHarvestPromoted");
+
+const EMPTY_PROMOTED: ReadonlySet<string> = new Set<string>();
+
+/** 该记录里被**提升**（非真实声明）的名字 */
+export function promotedNamesOf(rec: Record<string, Abs>): ReadonlySet<string> {
+  const hit = (rec as unknown as Record<symbol, unknown>)[PROMOTED_SYMBOL];
+  return hit instanceof Set ? (hit as Set<string>) : EMPTY_PROMOTED;
+}
+
+/** 批量重放提升标记（磁盘缓存回读用；Bug 123 / 253 的持久化） */
+export function markPromotedNames(rec: Record<string, Abs>, names: Iterable<string>): void {
+  for (const n of names) markPromoted(rec, n);
+}
+
+/** 记一次提升（幂等） */
+function markPromoted(rec: Record<string, Abs>, name: string): void {
+  const holder = rec as unknown as Record<symbol, Set<string> | undefined>;
+  let set = holder[PROMOTED_SYMBOL];
+  if (!set) {
+    set = new Set<string>();
+    // 非枚举 symbol 键：不进 Object.entries / Object.keys / JSON
+    Object.defineProperty(rec, PROMOTED_SYMBOL, {
+      value: set,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  }
+  set.add(name);
 }
 
 function recordFor(ctx: HarvestContext, scope: Scope): Record<string, Abs> {
@@ -591,7 +740,7 @@ function collectStatement(ctx: HarvestContext, stmt: ts.Statement, scope: Scope)
 
   if (ts.isEnumDeclaration(stmt)) {
     if (stmt.name) {
-      ctx.pending.push({ t: "enum", scope, name: stmt.name.text });
+      ctx.pending.push({ t: "enum", scope, name: stmt.name.text, decl: stmt });
       ctx.symbols++;
     }
     return;
@@ -1036,18 +1185,18 @@ function expandInterfaceAsModuleMembers(
     const first = decls[0]!;
     if (first.questionToken) {
       // Bug 977：可选方法在 brand 面是 `fn | undefined` ⇒ 提升面同口径
-      ctx.pending.push({ t: "var", scope, name, typeNode: optionalMethodTypeNode(first) });
+      ctx.pending.push({ t: "var", scope, name, typeNode: optionalMethodTypeNode(first), promoted: true });
       ctx.symbols++;
       continue;
     }
-    ctx.pending.push({ t: "fn", scope, name, decls });
+    ctx.pending.push({ t: "fn", scope, name, decls, promoted: true });
     ctx.symbols++;
   }
   for (const [name, member] of props) {
     // Bug 831：真实声明优先
     if (real.has(declNameKey(scope, name))) continue;
     // Bug 808：可选属性在 brand 面是 `T | undefined` ⇒ 提升面同口径
-    ctx.pending.push({ t: "var", scope, name, typeNode: optionalPropTypeNode(member) });
+    ctx.pending.push({ t: "var", scope, name, typeNode: optionalPropTypeNode(member), promoted: true });
     ctx.symbols++;
   }
 }
@@ -1263,6 +1412,58 @@ function mergeModuleRecords(base: Record<string, Abs>, over: Record<string, Abs>
   return merged;
 }
 
+/**
+ * enum 声明 → 运行时值 Abs（Bug 144）。
+ *
+ * TS 语义：
+ * - 无初始化器的成员从 0 起**自增**（前一个成员的数值 + 1）；
+ * - 字符串成员不参与自增；
+ * - 非常量初始化器（`B = A + 1` 之外的任意表达式）判不出 ⇒ 该成员退成 `number`
+ *   基类型（宁可不猜，也不造假的字面量）。
+ *
+ * 与契约草稿面（`dts-contract-draft.ts` 的 enum 分支）同款：成员名 → 字面量。
+ */
+function enumValueAbs(decl: ts.EnumDeclaration): Abs {
+  const slots: Record<string, Slot> = {};
+  // 下一个「隐式数值」：数字成员显式赋值后 = 该值 + 1；判不出时 = undefined
+  let next: number | undefined = 0;
+  for (const member of decl.members) {
+    const name = memberName(member);
+    if (name === undefined) continue;
+    const init = member.initializer;
+    if (!init) {
+      slots[name] = { value: next !== undefined ? absLit(next) : absPrim("number") };
+      if (next !== undefined) next += 1;
+      continue;
+    }
+    if (ts.isStringLiteral(init)) {
+      slots[name] = { value: absLit(init.text) };
+      next = undefined; // 字符串成员打断数值自增链
+      continue;
+    }
+    if (ts.isNumericLiteral(init)) {
+      const v = Number(init.text);
+      slots[name] = { value: absLit(v) };
+      next = v + 1;
+      continue;
+    }
+    if (
+      ts.isPrefixUnaryExpression(init) &&
+      init.operator === ts.SyntaxKind.MinusToken &&
+      ts.isNumericLiteral(init.operand)
+    ) {
+      const v = -Number(init.operand.text);
+      slots[name] = { value: absLit(v) };
+      next = v + 1;
+      continue;
+    }
+    // 非常量初始化器（引用其它成员 / 表达式）⇒ 判不出
+    slots[name] = { value: absPrim("number") };
+    next = undefined;
+  }
+  return objOf(slots);
+}
+
 function materialize(ctx: HarvestContext): void {
   // 0) 先展开 iface-expand（此时 interface augmentation 已全部登记）
   const expanded: PendingSymbol[] = [];
@@ -1276,6 +1477,13 @@ function materialize(ctx: HarvestContext): void {
       // 保留 var 本体即可
       continue;
     }
+    // BUG-253：值位置接口的**成员提升只对模块作用域成立**——成员是模块级
+    // fn/var（`@types/node` 24 path / lodash `LoDashStatic` 形态），不是
+    // 全局符号。顶层（`scope.moduleName === undefined`）的
+    // `export declare const o: Opts;` 若把 `Opts` 的成员提升进全局面，就会
+    // 造出 TypeScript 判 TS2304 的**幽灵全局**（`@types/lodash` 实测 60 个
+    // 方法名泄漏）⇒ 顶层不提升，成员只在接口内部 / brand 面可见。
+    if (p.scope.moduleName === undefined) continue;
     const before = ctx.pending.length;
     expandInterfaceAsModuleMembers(ctx, p.scope, ifaces);
     // expandInterfaceAsModuleMembers 只 append；收集新增的 fn/var
@@ -1330,14 +1538,27 @@ function materialize(ctx: HarvestContext): void {
       const existing = rec[p.name];
       if (existing === undefined) {
         rec[p.name] = objOf(slots);
-        nsSlotsByName.set(`${scopeKey(p.scope)} ${p.name}`, slots);
+        nsSlotsByName.set(`${scopeKey(p.scope)}\0${p.name}`, slots);
       } else if (existing.shape.k === "fn") {
         // 函数 + 命名空间同名（TS 的 function-namespace 合并）：
         // 命名空间成员是该值的静态成员，不另造一个同名对象
         (existing.shape as { slots?: Record<string, Slot> }).slots = slots;
-        nsSlotsByName.set(`${scopeKey(p.scope)} ${p.name}`, slots);
+        nsSlotsByName.set(`${scopeKey(p.scope)}\0${p.name}`, slots);
+      } else if (existing.shape.k === "obj") {
+        // 同名 namespace 的第二份声明（TS declaration merging：成员取并集，Bug 141）。
+        // 此前落到 `ctx.skipped++` ⇒ 第二份声明的成员**整块消失**（只留一个计数、无诊断）
+        // ⇒ 调用它们被判「未定义」⇒ L2 假红。
+        const merged = (existing.shape as { slots?: Record<string, Slot> }).slots ?? {};
+        for (const [k, v] of Object.entries(p.rec)) {
+          if (!Object.hasOwn(merged, k)) merged[k] = { value: v };
+        }
+        (existing.shape as { slots?: Record<string, Slot> }).slots = merged;
+        nsSlotsByName.set(`${scopeKey(p.scope)}\0${p.name}`, merged);
+        // 槽位表是**活**的：2c 回填时新增成员同样并进这张表
+        nsSlots.push({ rec: p.rec, slots: merged });
+        continue;
       } else {
-        // 同名的非函数值（const / class …）：命名空间成员无处安放 ⇒ 如实计数
+        // 同名的非函数/非对象值（const / class …）：命名空间成员无处安放 ⇒ 如实计数
         ctx.skipped++;
         continue;
       }
@@ -1367,8 +1588,30 @@ function materialize(ctx: HarvestContext): void {
             const ret = s.shape.returnType;
             if (ret && !isPlainUnknown(ret)) returns.push(ret);
           }
-          const withVars = returns.filter((r) => hasTypeVar(r));
-          const pool = withVars.length > 0 ? withVars : returns;
+          // Bug 142：返回位取**并集**（不是「带 α 的那一池」整池替换 —— 那会
+          // 把其它 overload 的返回类型整条抹掉）。α 只有在**参数表能绑定**时才
+          // 保留：参数位是「逐位并集」，一旦某个 α 不在参数表里，它永远绑不上
+          // ⇒ 悬空 α ⇒ `any`（静默、零诊断）。悬空的那一支剔除；全悬空且无具体
+          // 返回 ⇒ 诚实 `unknown`（触发 nudo:unknown-inference）。
+          const paramVars = collectTypeVars(shape0.paramTypes ?? []);
+          const withVars: Abs[] = [];
+          const concrete: Abs[] = [];
+          for (const r of returns) {
+            if (!hasTypeVar(r)) {
+              concrete.push(r);
+              continue;
+            }
+            const vars = collectTypeVars([r]);
+            let bound = true;
+            for (const v of vars) {
+              if (!paramVars.has(v)) {
+                bound = false;
+                break;
+              }
+            }
+            if (bound) withVars.push(r);
+          }
+          const pool = withVars.length > 0 ? withVars : concrete;
           const mergedRet = pool.length > 0 ? absUnion(pool) : absUnknown();
           shape0.returnType = mergedRet;
           const rel = getFnImpl(value)?.relation;
@@ -1381,7 +1624,10 @@ function materialize(ctx: HarvestContext): void {
         // 族 52：命名空间对象**先**到、函数**后**到（TS 的 function-namespace
         // 合并：@types/node 的 `namespace rename { … }` 与 `function rename(…)`
         // 同名）⇒ 函数顶掉命名空间对象，命名空间成员挂成函数的静态成员。
-        const nsStatic = nsSlotsByName.get(`${scopeKey(p.scope)}${p.name}`);
+        // 键必须与写入侧同形（`scopeKey\0name`）：此前漏掉 `\0` 分隔符 ⇒ 永远读不到
+        // ⇒ namespace 先到、function 后到时函数被整条丢弃（假红，Bug 212）；
+        // 且无分隔符还有前缀歧义（`fs`+`path` 与 `fsp`+`ath` 相撞）。
+        const nsStatic = nsSlotsByName.get(`${scopeKey(p.scope)}\0${p.name}`);
         if (nsStatic && existing.shape.k === "obj") {
           const value = fnValue();
           (value.shape as { slots?: Record<string, Slot> }).slots = nsStatic;
@@ -1397,6 +1643,7 @@ function materialize(ctx: HarvestContext): void {
         ctx.degradedMark = markBefore; // 每个符号最多计 1
       }
       rec[p.name] = value;
+      if (p.promoted) markPromoted(rec, p.name);
       continue;
     }
     if (rec[p.name] !== undefined) continue;
@@ -1422,6 +1669,7 @@ function materialize(ctx: HarvestContext): void {
           ctx.degradedMark = markBefore; // 每个符号最多计 1
         }
         rec[p.name] = mapped;
+        if (p.promoted) markPromoted(rec, p.name);
         break;
       }
       case "value": {
@@ -1451,7 +1699,11 @@ function materialize(ctx: HarvestContext): void {
         break;
       }
       case "enum":
-        rec[p.name] = absUnknown();
+        // Bug 144：此前整体抹成 `unknown`（成员 / 字面值全丢）却计入 `symbols`
+        // 声称「已收割」，而契约草稿面把同一个 enum 完整建模成
+        // `shape({ Red: 1, Green: 2 })` ⇒ 同一 harvester 两面矛盾。
+        // 这里与草稿面同款建模：成员名 → 字面量（数字 enum 自增序号也复现）。
+        rec[p.name] = enumValueAbs(p.decl);
         break;
     }
   }
@@ -1567,6 +1819,57 @@ function memberName(node: { name?: ts.PropertyName }): string | undefined {
  */
 function absBrandOpen(name: string): Abs {
   return absExact({ k: "brand", name, shape: absUnknown() });
+}
+
+/**
+ * **有界**结构键（Bug 213）。
+ *
+ * core 的 `absKey` / `absShapeKey` 在**共享 DAG** 上按键**路径**展开（`seen`
+ * 只断环、不断重复访问）⇒ 键长随分叉层数指数增长：27 层两槽共享 ⇒
+ * `RangeError: Invalid string length`（或 OOM）。而 `relationFn` 的缺省
+ * fingerprint 正是 `absKey(returnType)` ⇒ 收割一个深层接口的**必选**形态也会被
+ * 它拖死（本案 19s 后抛错）。
+ *
+ * 收割侧的签名指纹只用于 mock/调用预算的去重键 ⇒ 用一个**按对象身份记忆化 +
+ * 深度上限**的摘要即可：同签名稳定，不同签名在下限深度内可区分。
+ */
+export function boundedAbsKey(root: Abs, maxDepth = 3, maxNodes = 96): string {
+  const seen = new Set<Abs>();
+  let nodes = 0;
+  const walk = (a: Abs, depth: number): string => {
+    if (nodes++ > maxNodes) return "…";
+    if (seen.has(a)) return "↺"; // 共享 / 递归：只记一次
+    seen.add(a);
+    const s = a.shape;
+    const term =
+      a.term?.op === "var" ? `$${a.term.id}` : a.term?.op === "lit" ? "=lit" : "";
+    const tag = `${s.k}${term}`;
+    if (depth >= maxDepth) return tag;
+    const next = depth + 1;
+    if (s.k === "arr") return `${tag}(${walk(s.element, next)})`;
+    if (s.k === "tuple") return `${tag}[${s.elements.map((e) => walk(e, next)).join(",")}]`;
+    if (s.k === "sum") return `${tag}{${s.members.map((m) => walk(m, next)).join("|")}}`;
+    if (s.k === "obj") {
+      const slots = Object.entries(s.slots)
+        .map(([k, sl]) => `${k}:${walk(sl.value, next)}`)
+        .join(",");
+      return `${tag}{${slots}}`;
+    }
+    if (s.k === "fn") {
+      return `${tag}(${(s.paramTypes ?? []).map((p) => walk(p, next)).join(",")})→${
+        s.returnType ? walk(s.returnType, next) : "?"
+      }`;
+    }
+    if (s.k === "brand") return `${tag}:${s.name}`;
+    if (s.k === "eff") return `${tag}(${walk(s.inner, next)})`;
+    return tag;
+  };
+  return walk(root, 0);
+}
+
+/** 签名指纹（有界；替代 core 的 `relationFingerprint` 指数级 absKey） */
+function sigFingerprint(paramTypes: readonly Abs[], returnType: Abs): string {
+  return `harv(${paramTypes.map((p) => boundedAbsKey(p)).join(",")})=>${boundedAbsKey(returnType)}`;
 }
 
 /** Abs 指纹（结构 + α term 身份）——泛型实例化缓存键用 */
@@ -1895,7 +2198,8 @@ function signatureToFnSig(
   }
   try {
     // Bug 794：`this` 形参跳过（不是实参 ⇒ 不占参数位、不改元数）
-    const paramTypes = sig.parameters.filter((param) => !isThisParameter(param)).map((param) => {
+    const realParams = sig.parameters.filter((param) => !isThisParameter(param));
+    const paramTypes = realParams.map((param) => {
       let type: Abs;
       if (param.dotDotDotToken) {
         const inner = param.type && ts.isArrayTypeNode(param.type) ? param.type.elementType : param.type;
@@ -1906,15 +2210,24 @@ function signatureToFnSig(
       if (param.questionToken && !param.dotDotDotToken) type = absUnion([type, absUndefLit()]);
       return type;
     });
+    // Bug 126：可选 / rest 形参是**可省**位（TS 的 `minArgumentCount` 口径）
+    const optionalParams = realParams.map(
+      (param) => param.questionToken !== undefined || param.dotDotDotToken !== undefined,
+    );
     const returnType = sig.type ? mapType(ctx, sig.type, 0, bindings) : absUnknown();
     const cond = ctx.pendingCond;
     ctx.pendingCond = undefined;
-    return absFnSig(paramTypes, returnType, cond
-      ? {
-          inferFrom: { fromVar: cond.fromVar, via: cond.via, inferVar: cond.inferVar },
-          condFallback: cond.fallback,
-        }
-      : undefined);
+    return absFnSig(
+      paramTypes,
+      returnType,
+      cond
+        ? {
+            inferFrom: { fromVar: cond.fromVar, via: cond.via, inferVar: cond.inferVar },
+            condFallback: cond.fallback,
+          }
+        : undefined,
+      optionalParams.some(Boolean) ? optionalParams : undefined,
+    );
   } finally {
     ctx.typeParams = savedTp;
   }
@@ -3034,7 +3347,11 @@ function emitKey(key: string): string {
 
 function emitEntries(lines: string[], record: Record<string, Abs>, level: number): void {
   // Object.entries 只列自有可枚举键 ⇒ 原型链上的成员不会被当成收割到的导出
+  // 提升出来的接口成员不是全局 / 模块导出 ⇒ 不落进 env 模块（Bug 253）：
+  // 否则 env 的 `globals` 会把这些名字绑成分析期全局 ⇒ nudo 接受 TS 判 TS2304 的代码。
+  const promoted = promotedNamesOf(record);
   for (const [key, value] of Object.entries(record)) {
+    if (promoted.has(key)) continue;
     lines.push(`${indent(level)}${emitKey(key)}: ${emitAbs(value, new Set())},`);
   }
 }
@@ -3091,10 +3408,30 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
     case "eff":
       return `makeAbs({ k: "eff", eff: ${JSON.stringify(s.eff)}, inner: ${emitAbs(s.inner, expanding)} }, undefined, undefined, "exact")`;
     case "obj": {
-      const entries = Object.entries(s.slots).map(
-        ([key, slot]) => `${emitKey(key)}: { value: ${emitAbs(slot.value, expanding)} }`,
-      );
-      return `objOf({ ${entries.join(", ")} })`;
+      // Bug 124：`index` / `open` 与槽位标志必须一起落盘 —— 此前只发 `slots`
+      // ⇒ `Record<string, number>` 落成**封闭空对象** ⇒ 同一份 .d.ts 的内存
+      // 收割面给 `number`、落盘面给 `NaN`（成员读成缺失槽）。
+      const entries = Object.entries(s.slots).map(([key, slot]) => {
+        const flags: string[] = [];
+        if (slot.optional) flags.push("optional: true");
+        if (slot.readonly) flags.push("readonly: true");
+        if (slot.internal) flags.push("internal: true");
+        if (slot.symbolKey) flags.push("symbolKey: true");
+        if (slot.inherited) flags.push("inherited: true");
+        const suffix = flags.length > 0 ? `, ${flags.join(", ")}` : "";
+        return `${emitKey(key)}: { value: ${emitAbs(slot.value, expanding)}${suffix} }`;
+      });
+      const opts: string[] = [];
+      if (s.index) {
+        opts.push(
+          `index: { key: ${emitAbs(s.index.key, expanding)}, value: ${emitAbs(s.index.value, expanding)} }`,
+        );
+      }
+      if (s.open) opts.push("open: true");
+      const slotsSrc = `{ ${entries.join(", ")} }`;
+      return opts.length === 0
+        ? `objOf(${slotsSrc})`
+        : `objOf(${slotsSrc}, { ${opts.join(", ")} })`;
     }
     case "brand": {
       if (expanding.has(s.name)) {
@@ -3116,6 +3453,22 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
       const pts = s.paramTypes ?? [];
       const params = pts.map((p) => emitAbs(p, expanding)).join(", ");
       const ret = s.returnType ? emitAbs(s.returnType, expanding) : "absUnknown";
+      // Bug 252：条件类型的 `inferFrom` / `condFallback` 也必须落盘 ——
+      // 否则「同一份 .d.ts，内存收割面 / 磁盘缓存面 / 落盘源码面」三路径不同型
+      // （落盘面丢掉 infer 绑定 ⇒ 条件类型折成 `any` ⇒ L1 契约门禁假绿）。
+      const rel = getFnImpl(a)?.relation;
+      // Bug 213 的**落盘面**同款护栏：`relationFn` 的缺省 fingerprint 是
+      // `absKey(returnType)`（共享 DAG 上按键路径展开 ⇒ 指数级）⇒ 产物加载时
+      // 就会炸。显式落一个有界指纹（与内存 / 磁盘两面同口径）。
+      const relOpts: string[] = [
+        'conf: "exact"',
+        `fingerprint: ${JSON.stringify(sigFingerprint(pts, s.returnType ?? absUnknown()))}`,
+      ];
+      if (rel?.inferFrom) relOpts.push(`inferFrom: ${JSON.stringify(rel.inferFrom)}`);
+      if (rel?.condFallback) {
+        relOpts.push(`condFallback: ${emitAbs(rel.condFallback, expanding)}`);
+      }
+      const relOptsSrc = `{ ${relOpts.join(", ")} }`;
       // 族 27 Bug 826 / 830 的**落盘面**：ctor facet 与静态槽必须一起落盘，
       // 否则「同一份 .d.ts，内存收割面 / 磁盘缓存面 / 落盘源码面」三路径
       // 给出的不是同一个类型（落盘面丢 facet ⇒ `new X()` 落「可构造性未知」
@@ -3123,6 +3476,11 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
       // 用 IIFE 表达「relationFn 之后再补 facet」——不改 core 冻结面。
       const facets: string[] = [];
       if (s.ctor !== undefined) facets.push(`f.shape.ctor = ${s.ctor ? "true" : "false"};`);
+      // Bug 126：逐位「可省略」标记（可选 / rest 形参）——不落盘则落盘面把
+      // 可选形参数成必填（`fnMinArity` > TS `minArgumentCount`）。
+      if (s.optionalParams) {
+        facets.push(`f.shape.optionalParams = ${JSON.stringify(s.optionalParams)};`);
+      }
       const slotEntries = Object.entries(s.slots ?? {});
       if (slotEntries.length > 0) {
         const entries = slotEntries
@@ -3130,8 +3488,8 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
           .join(", ");
         facets.push(`f.shape.slots = { ${entries} };`);
       }
-      if (facets.length === 0) return `relationFn([${params}], ${ret}, { conf: "exact" })`;
-      return `(() => { const f = relationFn([${params}], ${ret}, { conf: "exact" }); ${facets.join(" ")} return f; })()`;
+      if (facets.length === 0) return `relationFn([${params}], ${ret}, ${relOptsSrc})`;
+      return `(() => { const f = relationFn([${params}], ${ret}, ${relOptsSrc}); ${facets.join(" ")} return f; })()`;
     }
     default:
       return "absUnknown";

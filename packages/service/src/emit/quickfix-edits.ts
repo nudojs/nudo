@@ -719,6 +719,59 @@ function tsSidecarBuilderImport(
 }
 
 /**
+ * TS 侧车（`*.nudo.ts`）的 builder import **补齐**（BUG-068）。
+ *
+ * nullish 臂（{@link wrapReturnNullable}）是**纯文本替换**：把 return 位包成
+ * `nullable(…)`，**不碰 import 行** ⇒ 落盘的 `.nudo.ts` 引用未 import 的
+ * builder（消费端 TS2304），而 `nudo check` 自己复检仍报 OK（引擎运行时注入
+ * DSL ⇒ import 缺失对它不可见）⇒ 缺陷对工具隐形，只在用户的 `tsc` 里炸。
+ *
+ * 判据与 {@link tsSidecarBuilderImport} 的新建路径**同一条纪律**：TS 侧车必须
+ * 自带它**用到**的全部 builder import（关键字构建器需要改名 + DSL 改写，本
+ * 路径不会引入它们 —— `wrapReturnNullable` 只加 `nullable(`）。
+ */
+function ensureTsSidecarBuilderImports(next: string, before: string | undefined): string {
+  const beforeText = before ?? "";
+  /** builder → 既有 import 里的本地名 */
+  const provided = new Map<string, string>();
+  const importRe = /import\s*\{([^}]*)\}\s*from\s*["']@nudojs\/core["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(beforeText)) !== null) {
+    for (const part of m[1]!.split(",")) {
+      const spec = part.trim();
+      if (!spec) continue;
+      const as = /^([\w$]+)\s+as\s+([\w$]+)$/.exec(spec);
+      if (as) provided.set(as[1]!, as[2]!);
+      else if (/^[\w$]+$/.test(spec)) provided.set(spec, spec);
+    }
+  }
+  let out = next;
+  const missing: string[] = [];
+  for (const b of SIDECAR_BUILDERS) {
+    if (!new RegExp(`(?<![\\w$])${b}(?![\\w$])\\s*\\(`).test(next)) continue;
+    const local = provided.get(b);
+    if (local !== undefined) {
+      // 既有侧车把它改名导入了（`nullable as nb`）⇒ 新包装按本地名写
+      if (local !== b) {
+        out = out.replace(new RegExp(`(?<![\\w$])${b}(?![\\w$])\\s*\\(`, "g"), `${local}(`);
+      }
+      continue;
+    }
+    if (TS_KEYWORD_BUILDERS.has(b)) continue;
+    missing.push(b);
+  }
+  if (missing.length === 0) return out;
+  const coreImport = /(import\s*\{)([^}]*)(\}\s*from\s*["']@nudojs\/core["'])/;
+  if (coreImport.test(out)) {
+    return out.replace(coreImport, (_all, head: string, body: string, tail: string) => {
+      const trimmed = body.replace(/\s+$/, "");
+      return `${head}${trimmed}, ${missing.join(", ")} ${tail}`;
+    });
+  }
+  return `import { ${missing.join(", ")} } from "@nudojs/core";\n${out}`;
+}
+
+/**
  * kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。
  */
 export function materializeAction(input: MaterializeInput): QuickfixPlan | undefined {
@@ -842,7 +895,14 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
     (/nullish/i.test(input.suggestion ?? "") || /nullish/i.test(input.expected ?? "") ||
       /use nullable/i.test(input.suggestion ?? ""))
   ) {
-    const next = wrapReturnNullable(sidecarText, fn);
+    const wrapped = wrapReturnNullable(sidecarText, fn);
+    // BUG-068：TS 侧车必须自带 builder import —— `nullable(…)` 是新引入的
+    // 构建器调用，既有 import 行没覆盖到就要补（否则产物 TS2304，而
+    // `nudo check` 复检看不见）。
+    const next =
+      wrapped !== undefined && isTsSidecar(sidecarPath)
+        ? ensureTsSidecarBuilderImports(wrapped, sidecarText)
+        : wrapped;
     if (next && next !== sidecarText) {
       // 验证门：合成侧车重分析——constraint-violated 与 entry-may-throw
       // 都得消失。Bug 556：旧改写把第三个实参（throws 义务）卷进

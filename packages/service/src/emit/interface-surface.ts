@@ -84,6 +84,18 @@ export type InterfaceSurfaceEntry = {
    * 的签名面同口径）。
    */
   extraParams?: Array<{ name: string; display: string }>;
+  /**
+   * 合取**不可满足**的位（BUG-081）：`params` = 矛盾参数名，`returns` = 返回位
+   * 也矛盾。`nudo check` 报 `nudo:interface-conflict` error，`nudo export` 拒绝
+   * 出货 —— 契约面此前把它印成**有效契约**且 exit 0（三个一级动词结论相反）。
+   * 契约面必须透出同一事实（行尾标记 + `--json` 同名字段 + 非零退出）。
+   */
+  conflict?: { params: string[]; returns?: boolean };
+  /**
+   * 合取**不可判定**的位（Bug 1141）：结构型组合算不出交集 —— 不是「不可满足」，
+   * 但**另一侧**的义务没被执法 ⇒ 契约面不得静默（check 面是 warning）。
+   */
+  undecidable?: { params: string[]; returns?: boolean };
 };
 
 export type InterfaceSurfaceOpts = {
@@ -112,7 +124,20 @@ export function formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string {
     line += `  | contract: ${extra}`;
   }
   if (e.kind === "local") line += "  (local)";
+  // BUG-081：无解 / 不可判定的合取必须在**人读面**上有痕迹（此前只在 check
+  // 面报，契约面印成有效契约 ⇒ 同一事实两个结论）。
+  if (e.conflict !== undefined) {
+    line += `  [unsatisfiable: ${markedSlotNames(e.conflict)}]`;
+  }
+  if (e.undecidable !== undefined) {
+    line += `  [conjunction not computable: ${markedSlotNames(e.undecidable)}]`;
+  }
   return line;
+}
+
+/** 冲突 / 不可判定标记涉及的位名（返回位写作 `return`） */
+function markedSlotNames(mark: { params: string[]; returns?: boolean }): string {
+  return mark.returns === true ? [...mark.params, "return"].join(", ") : mark.params.join(", ");
 }
 
 /** Abs → implicit 展示串（外延口径，不带 conf） */
@@ -208,6 +233,10 @@ function effectiveEntry(
     })),
     returns: eff.returns ? formatConstraint(eff.returns.constraint) : undefined,
     ...(extraParams.length > 0 ? { extraParams } : {}),
+    // BUG-081：无解 / 不可判定的合取随条目透出（信息本就在 eff 上，只是此前
+    // 在打印边界被丢掉）。
+    ...(eff.conflict !== undefined ? { conflict: eff.conflict } : {}),
+    ...(eff.undecidable !== undefined ? { undecidable: eff.undecidable } : {}),
   };
 }
 
@@ -604,7 +633,13 @@ export async function interfaceSurface(
   const exported = localNamedExports(source);
   const kindOf = (fnName: string): "export" | "local" => (exported.has(fnName) ? "export" : "local");
 
-  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records, loadModule);
+  // BUG-044：`caseMode` 与**门禁面**（check / health / migrate）同口径 =
+  // `"none"`。`@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），
+  // 不是契约；默认值 `"all"` 会让 instruction case 的域形状实参渗进 implicit
+  // 展示（`@nudo:case "dom" (number())` ⇒ 打印面变成 `(x: number) => number`，
+  // 而门禁面是 `(x: any) => number | string`）⇒ 打印的 interface 与门禁结论
+  // 分裂（BUG-044）。发布面（export dts/schema/guard）同样走 `"none"`。
+  const analysis = await analyzeFileAsync(abs, source, undefined, opts.records, loadModule, "none");
 
   // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
   // buffer 源 / 注入 loadModule / callsites 时禁用磁盘缓存（键不含 buffer）

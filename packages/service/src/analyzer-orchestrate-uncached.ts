@@ -20,9 +20,12 @@ import {
 } from "@nudojs/core";
 import {
   DIAG,
+  FORK_TRUNCATION_LABEL,
+  LOOP_TRUNCATION_LABEL,
   checkInjectedDomainEvidence,
   runWithEvalMissingSlot,
   fnFingerprints,
+  setAbsTruncationCollector,
 } from "@nudojs/core/internal";
 import {
   parse,
@@ -48,6 +51,7 @@ import {
   tryRunEval,
   composeEvalModules,
   collectEnvGlobals,
+  pathEnvContentFingerprint,
   mockSeedFingerprint,
   setEnvHarvestConflictCollector,
   type EnvHarvestConflict,
@@ -201,6 +205,19 @@ export function analyzeFileUncachedInner(
       }
       prev.defaultOverwritten ||= c.defaultOverwritten;
     }
+  });
+
+  // BUG-099：截断观测 → 诊断。引擎在预算/环上放弃求值时的可观测性是硬约束
+  // （check 面由 core 的 checkSource 报告），但分析器这一侧原来只把 label 收进
+  // `evalTruncatedFns` 就丢掉 ⇒ `nudo test` / `--json` 面零诊断，把放宽后的类型
+  // 当正常观测打印（`bump() => 2` 式静默失真）。
+  // 单槽 collector：`eval-run` 的嵌套 collector 已改为**链式转发**上一只手，
+  // 故这里能覆盖整轮（含嵌套的函数体求值）。reasons 用于区分 cycle / 预算。
+  const truncations = new Map<string, Set<string>>();
+  const prevTruncationCollector = setAbsTruncationCollector((label, reason) => {
+    const reasons = truncations.get(label) ?? new Set<string>();
+    if (reason) reasons.add(reason);
+    truncations.set(label, reasons);
   });
 
   // fileDirectives 已在 dirDiags 通道一并抽取（错位标签告警同域去重）
@@ -537,11 +554,14 @@ export function analyzeFileUncachedInner(
   } catch {
     fnFpMap = undefined;
   }
-  // env 维度进 fn 键：env 名 + **预载状态**（Bug 993）——path 型 env 只能
-  // 异步装载，同一份源码在「预载前 / 预载后」得到两份不同结果（env 全局
-  // 可见性不同）。只编码名字时，「先同步（未预载）、后异步（已预载）」会
-  // 命中前者那份「无 env」的陈旧 fn 结果。
-  const envKeyFn = `${envNames.join(",")}#${pathEnvPreloadFingerprint() || "-"}`;
+  // env 维度进 fn 键：env 名 + **内容指纹** + **预载状态**（Bug 993 / Bug 012）。
+  // - 内容指纹与另外两层缓存（文件级 `analysisFileCacheKey`、evaluator memo）
+  //   同口径：path 型 env 的文件内容变了，函数级缓存必须 miss（只编码 mtime
+  //   时 `cp -p` / `tar -x` / 同秒编辑会命中陈旧类型）。
+  // - 预载状态：path 型 env 只能异步装载，同一份源码在「预载前 / 预载后」
+  //   得到两份不同结果（env 全局可见性不同）。
+  const envContentFn = pathEnvContentFingerprint(envNames, dirname(filePath));
+  const envKeyFn = `${envNames.join(",")}#${envContentFn || "-"}#${pathEnvPreloadFingerprint() || "-"}`;
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
   // fnDepSeg（dep 内容指纹）已在模块图前一次算好：此处直接复用
 
@@ -558,7 +578,7 @@ export function analyzeFileUncachedInner(
     // Bug 479：形参表面（与 paramNames 同源 ⇒ 下标对齐）。`.ts` 源的形参
     // 带**声明类型文本**（`FormalParam.tsType`）⇒ 产物面（dts 参数位）
     // 据此保留源码里写下的类型。
-    const formals = extractFormals(fn.node);
+    const formals = extractFormals(fn.node, source);
     const analysis: FunctionAnalysis = {
       name: fn.name,
       loc: fnLoc,
@@ -759,7 +779,7 @@ export function analyzeFileUncachedInner(
     // A statement carrying @nudo directives is already analyzed through the
     // directive path above (possibly under its "<anonymous>" name).
     if (directiveFnStmts.has(stmt)) continue;
-    const synthFormals = extractFormals(node);
+    const synthFormals = extractFormals(node, source);
     const analysis: FunctionAnalysis = {
       name,
       loc: locFromNode(node),
@@ -900,6 +920,15 @@ export function analyzeFileUncachedInner(
         ...(externalCallRecords ?? []).filter(matchingExternal),
       ].filter((r) => !isLeakedCallRecord(r)),
     );
+    // BUG-035（证据范围）：只要**外部记录**（`--from` 使用现场调用）参与了本
+    // 函数的域合成，就在分析结果上打标 —— 侧车把这条事实落进生成段的
+    // `// evidence:` 行 ⇒ 之后本函数「今天没证据」时**不得**按「证据消失」
+    // 删段（跨文件证据本轮可能压根没采集）。判据取**去重前**的匹配集：
+    // 一条外部记录即便与本地记录载荷相同而被去重，也照旧打标（保守方向 =
+    // 多保留，绝不误删）。
+    if ((externalCallRecords ?? []).filter(matchingExternal).length > 0) {
+      candidate.analysis.externalEvidence = true;
+    }
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
     // 带 case 指令的函数已在上面的指令循环里报过 ⇒ 不重复报（Bug 511 接线
     // 后指令函数也会进合成路径，两处都会触发 ⇒ 同一条诊断出两遍）。
@@ -988,6 +1017,12 @@ export function analyzeFileUncachedInner(
     /* 诊断不得打断分析 */
   }
 
+  // BUG-099：截断诊断（与 core check 面同码同级同措辞，见 truncationDiagnostics）。
+  setAbsTruncationCollector(prevTruncationCollector);
+  for (const issue of truncationDiagnostics(truncations, functionResults)) {
+    diagnostics.push(issue);
+  }
+
   return {
     functions: functionResults,
     diagnostics,
@@ -996,4 +1031,87 @@ export function analyzeFileUncachedInner(
     caseHints,
     ...(externalFunctions.length > 0 ? { externalFunctions } : {}),
   };
+}
+
+/**
+ * 截断观测 → `nudo:*-truncated` 诊断（BUG-099）。
+ *
+ * 引擎在预算/环上放弃求值时**必须可观测**：check 面由 core 的 `checkSource`
+ * 报告，而分析器面（`nudo test` / `--json` / LSP）此前一条都没有——「引擎
+ * 放宽了结果」与「源代码本来就这么宽」在观察面上不可区分。
+ *
+ * 口径与 core check 面（`packages/core/src/algebra/check.ts` 的截断诊断段）
+ * **同码 / 同级 / 同措辞**：改文案时两处一起改。
+ *
+ * 锚点：截断 label 就是被求值函数名 ⇒ 能对上本文件函数时锚在声明处；整轮
+ * 标签（fork 预算）锚文件首行（1 基——0 不是合法行号，会顺着 --json /
+ * GitLab / GHA 流出去）。其余 `#` 前缀标签（宿主副作用 / promise 微队列 /
+ * Math 折叠 / 循环迭代）各有专用码与专用通道，不在此冒充「递归截断」。
+ */
+function truncationDiagnostics(
+  truncations: ReadonlyMap<string, ReadonlySet<string>>,
+  functions: readonly FunctionAnalysis[],
+): Diagnostic[] {
+  const issues: Diagnostic[] = [];
+  for (const [label, reasons] of truncations) {
+    const fn = functions.find((f) => f.name === label);
+    const at = fn ? fn.loc.start : { line: 1, column: 0 };
+    const range = {
+      start: { line: at.line, column: at.column },
+      end: { line: at.line, column: at.column },
+    };
+    if (label === FORK_TRUNCATION_LABEL) {
+      issues.push({
+        range,
+        severity: "info",
+        message:
+          "Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)",
+        code: DIAG.forkTruncated,
+        suggestions: [
+          "optional: raise nudo.analysis.maxForks, or @nudo:budget forks=… on the function — non-blocking",
+        ],
+      });
+      continue;
+    }
+    // #158 后续：循环迭代预算**不是**递归、也不是调用预算 —— `@nudo:budget
+    // calls=/depth=` 抬不动（两段 maxIters/MAX_CONCRETE_LOOP_ITERS），必须专用
+    // 文案，否则用户按 suggestion 抬预算而截断照旧（与 core check 面同码同级
+    // 同措辞，见 algebra/check.ts 的 LOOP_TRUNCATION_LABEL 分支）。
+    if (label === LOOP_TRUNCATION_LABEL) {
+      issues.push({
+        range,
+        severity: "info",
+        message:
+          "A loop did not terminate within its iteration budget (abstract unroll cap reached and the exit condition stayed concrete-true); affected loop state was widened (bounded, not exact)",
+        code: DIAG.loopTruncated,
+        suggestions: [
+          "optional: restructure so the exit condition becomes abstract (data-dependent) within a few iterations, or pin the result with @nudo:case / @nudo:contract — non-blocking",
+        ],
+      });
+      continue;
+    }
+    if (label.startsWith("#")) continue;
+    // 调用截断归因（#158）：全 cycle ⇒ 不是预算，抬 @nudo:budget 永远解不开。
+    const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
+    const depth = reasons.has("depth");
+    const calls = reasons.has("calls");
+    issues.push({
+      range,
+      severity: "info",
+      message: allCycle
+        ? `Recursive evaluation of '${label}' hit a call cycle (same abstract arguments already on the stack); result widened to unknown#opaque (cycle — budget cannot lift this)`
+        : `Recursive evaluation of '${label}' was truncated (${depth && calls ? "depth/size budget" : depth ? "call-depth budget" : calls ? "total-calls budget" : "depth/size budget"}); result widened to unknown#opaque (budget — not inference debt)`,
+      code: DIAG.recursionTruncated,
+      suggestions: [
+        allCycle
+          ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
+          : depth && !calls
+            ? "raise the function budget with @nudo:budget depth=… (or narrow the recursion base case / declare @nudo:contract return)"
+            : calls && !depth
+              ? "raise the function budget with @nudo:budget calls=… (or narrow the recursion base case / declare @nudo:contract return)"
+              : "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
+      ],
+    });
+  }
+  return issues;
 }

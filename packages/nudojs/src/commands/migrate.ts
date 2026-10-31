@@ -70,6 +70,22 @@ const TS_ONLY_EXIT_STATEMENTS = new Set([
 ]);
 
 /**
+ * TS-only 的**模块级**构造（Bug 050）：剥完仍然是 TS 语法 ⇒ 产物 Node 解析不了。
+ *
+ * - `TSModuleDeclaration`：非 `declare` 的 `namespace N { … }`——剥除器**刻意
+ *   保留**它（有运行时语义），但 `export namespace N {}` 不是合法 JS；
+ * - `TSImportEqualsDeclaration`：`import x = require("…")`——TS-only 导入语法，
+ *   剥除器同样保留。
+ *
+ * `declare namespace` / `declare module` 已经在剥除阶段删掉（环境声明无运行时
+ * 语义）⇒ 这里只会在**真残留**时命中 ⇒ 零误伤。
+ */
+const TS_ONLY_MODULE_STATEMENTS = new Map<string, string>([
+  ["TSModuleDeclaration", "non-declare namespace (TS-only syntax: `namespace N { … }`)"],
+  ["TSImportEqualsDeclaration", "TS-only `import x = require(…)`"],
+]);
+
+/**
  * 剥除之后仍然残留的 **TS-only** 构造（= 产物里会出现的 TS 语法）。
  *
  * 覆盖（族 12 扩围）：
@@ -77,7 +93,10 @@ const TS_ONLY_EXIT_STATEMENTS = new Set([
  *   构造器参数属性；
  * - Bug 446：`export =` / `export as namespace` 两条 TS-only 出口语句；
  * - Bug 447：类成员的 `x!`（definite）与 `y?` / `m?()`（optional）；
- * - Bug 448：TS 的 `this` 形参。
+ * - Bug 448：TS 的 `this` 形参；
+ * - Bug 050：非 `declare` 的 `namespace N { … }` 与 `import x = require(…)`
+ *   ——剥除器**刻意保留**它们（见 core 的「已知不处理」清单），但产物不是
+ *   合法 JavaScript（`node --check` 直接 SyntaxError）。
  *
  * ⚠ **零误伤论证**（判据写粗 ⇒ 把合法 JS 拦下来 ⇒ 迁移被卡住）：
  * 1. `TSParameterProperty` / `TSExportAssignment` / `TSNamespaceExportDeclaration`
@@ -107,6 +126,8 @@ function tsOnlyConstructs(ast: unknown, out: string[] = [], seen = new Set<objec
   const type = typeof node.type === "string" ? node.type : undefined;
   if (type === "TSParameterProperty") {
     out.push("constructor parameter property");
+  } else if (type && TS_ONLY_MODULE_STATEMENTS.has(type)) {
+    out.push(TS_ONLY_MODULE_STATEMENTS.get(type)!);
   } else if (type && TS_ONLY_EXIT_STATEMENTS.has(type)) {
     out.push(
       type === "TSExportAssignment"
@@ -388,18 +409,21 @@ export function registerMigrateCommand(program: Command): void {
                 // 失败也必须是**合法 JSON**（stdout 永不为空）+ 已攒结果不丢
                 console.log(
                   JSON.stringify(
-                    {
-                      ok: false,
-                      action: "strip",
-                      targets,
-                      results: rows,
-                      pathErrors: failures.map((f) => ({
-                        path: f.path,
-                        code: DIAG.migrateStripFailed,
-                        message: f.message,
-                      })),
-                      error: failures[0]!.message,
-                    },
+                    // BUG-017：`--json` 顶层形状**恒为数组**（信封也是单元素数组）
+                    [
+                      {
+                        ok: false,
+                        action: "strip",
+                        targets,
+                        results: rows,
+                        pathErrors: failures.map((f) => ({
+                          path: f.path,
+                          code: DIAG.migrateStripFailed,
+                          message: f.message,
+                        })),
+                        error: failures[0]!.message,
+                      },
+                    ],
                     null,
                     2,
                   ),
@@ -425,7 +449,7 @@ export function registerMigrateCommand(program: Command): void {
             }
             if (failures.length > 0) {
               console.error(
-                "fix:  fix the reported file(s) and re-run; migrate strip only removes types (class member modifiers / constructor parameter properties / `export =` / `export as namespace` / `this` parameters must be lowered by hand or by tsc)",
+                "fix:  fix the reported file(s) and re-run; migrate strip only removes types (class member modifiers / constructor parameter properties / `export =` / `export as namespace` / `this` parameters / `namespace N { … }` / `import x = require(…)` must be lowered by hand or by tsc)",
               );
               process.exitCode = 1;
             }
@@ -469,25 +493,60 @@ export function registerMigrateCommand(program: Command): void {
           if (action === "retire") {
             const dryRun = opts.dryRun === true;
             const wf = opts.workflows === false ? false : undefined;
-            const results =
-              opts.all === true
-                ? migrateRetireAll(targets[0]!, {
-                    dryRun,
-                    ...(wf === false ? { workflows: false } : {}),
-                  })
-                : // Bug 595：旧实现只退役 `targets[0]` ⇒ `retire <a> <b>` 静默跳过 b。
-                  // 改用多目标入口（**全退役或全报错**，任一失败 ⇒ 整批零写盘）。
-                  migrateRetireMany(targets, {
-                    dryRun,
-                    ...(wf === false ? { workflows: false } : {}),
-                  });
+            const retireOpts = {
+              dryRun,
+              ...(wf === false ? { workflows: false } : {}),
+            };
+            let results: Awaited<ReturnType<typeof migrateRetireAll>>;
+            if (opts.all === true) {
+              results = migrateRetireAll(targets[0]!, retireOpts);
+            } else {
+              // Bug 595：旧实现只退役 `targets[0]` ⇒ `retire <a> <b>` 静默跳过 b。
+              // 改用多目标入口（**全退役或全报错**，任一失败 ⇒ 整批零写盘）。
+              try {
+                results = migrateRetireMany(targets, retireOpts);
+              } catch (err) {
+                // Bug 051：批里**既有「无可退役」又有「有活可干」**时，旧实现把
+                // 整批判为良性（exit 0 + 成功信封）⇒ 有活的目标**从未退役**却
+                // 报成功。这里逐目标重试：把良性跳过的目标摘出来，其余**照常
+                // 退役**（原子性不变：真错误仍整批零写盘）。
+                const failures = (
+                  err as { retireFailures?: Array<{ target: string; message: string }> }
+                ).retireFailures;
+                const allBenign =
+                  failures !== undefined &&
+                  failures.length > 0 &&
+                  failures.every((f) => f.message.startsWith("nothing to retire"));
+                const failedTargets = new Set((failures ?? []).map((f) => f.target));
+                const rest = targets.filter((t) => !failedTargets.has(t));
+                if (!allBenign || rest.length === 0) throw err;
+                const retired = migrateRetireMany(rest, retireOpts);
+                // 「这些目标没动」必须可见（人类面 + 机器面都挂上）
+                const skipped = (failures ?? []).map((f) => ({
+                  target: f.target,
+                  message: f.message,
+                }));
+                for (const r of retired) r.skipped = skipped;
+                results = retired;
+              }
+            }
             if (opts.json) {
               // Bug 675：顶层 JSON 形状**恒定**（数组）——旧实现按结果条数在
               // 「对象 / 数组」之间漂移 ⇒ 机器可读契约不稳定。
+              // Bug 053：dry-run 的每一行都带 `dryRun: true` ⇒ 计划与事实可区分。
               console.log(JSON.stringify(results, null, 2));
             } else {
               for (const result of results) {
-                console.log(`${dryRun ? "dry-run" : "retired"}  ${result.root}`);
+                // Bug 117 / 179：报文只说**本次真实改动**——
+                // - `alreadyRetired`：早已退役且本次零改动 ⇒ 不得重放历史 diff；
+                // - 本次零改动 ⇒ 打 `no changes`（旧实现把 marker 的累计台账
+                //   当成本次 diff 打印 ⇒ `-` 侧与文件当前内容矛盾）。
+                const mode = dryRun
+                  ? "dry-run"
+                  : result.alreadyRetired
+                    ? "already retired"
+                    : "retired";
+                console.log(`${mode}  ${result.root}`);
                 if (result.removedDeps.length > 0) {
                   console.log(`  removed typescript from: ${result.removedDeps.join(", ")}`);
                 }
@@ -503,19 +562,40 @@ export function registerMigrateCommand(program: Command): void {
                   console.log(`    = ${p.command}`);
                 }
                 for (const w of result.rewrittenWorkflows) {
-                  console.log(`  workflow ${w.file}:`);
+                  console.log(`  workflow ${w.file}${w.line !== undefined ? `:${w.line}` : ""}:`);
                   console.log(`    - ${w.from}`);
                   console.log(`    + ${w.to}`);
+                }
+                if (result.alreadyRetired) {
+                  console.log("  nothing to do (already retired)");
+                } else if (
+                  result.removedDeps.length === 0 &&
+                  result.rewrittenScripts.length === 0 &&
+                  result.rewrittenWorkflows.length === 0
+                ) {
+                  console.log("  no changes");
                 }
                 console.log(`  marker: ${result.marker}`);
               }
               if (results.length === 0) {
                 console.log("nothing to retire (no tsc/typescript in scope)");
               }
+              for (const s of results[0]?.skipped ?? []) {
+                console.log(`${s.message} (target: ${s.target})`);
+              }
             }
             return;
           }
-          console.error(`Unknown migrate action: ${action} (expected status | strip | verify | retire)`);
+          // Bug 112：未知 action 在 `--json` 下也必须出**合法信封**——
+          // 旧实现直接 `process.exitCode = 1` 且 stdout **0 字节** ⇒ 机器
+          // 消费方 `JSON.parse("")` 抛「Unexpected end of JSON input」。
+          const unknown = `Unknown migrate action: ${action} (expected status | strip | verify | retire)`;
+          console.error(unknown);
+          if (opts.json) {
+            console.log(
+              JSON.stringify([{ ok: false, action, targets, error: unknown }], null, 2),
+            );
+          }
           process.exitCode = 1;
         } catch (err) {
           const message = (err as Error).message;
@@ -540,12 +620,15 @@ export function registerMigrateCommand(program: Command): void {
             if (opts.json) {
               console.log(
                 JSON.stringify(
-                  {
-                    ok: true,
-                    retired: [],
-                    message,
-                    ...(failures !== undefined ? { failedTargets: failures } : {}),
-                  },
+                  // BUG-017：`--json` 顶层形状**恒为数组**（信封也是单元素数组）
+                  [
+                    {
+                      ok: true,
+                      retired: [],
+                      message,
+                      ...(failures !== undefined ? { failedTargets: failures } : {}),
+                    },
+                  ],
                   null,
                   2,
                 ),
@@ -561,15 +644,18 @@ export function registerMigrateCommand(program: Command): void {
           if (opts.json) {
             console.log(
               JSON.stringify(
-                {
-                  ok: false,
-                  action,
-                  targets,
-                  error: message,
-                  // 批次失败明细（机器面）：`retire` 多目标失败时列出**全部**
-                  // 失败目标（人读消息在 `error` 里）。
-                  ...(failures !== undefined ? { failedTargets: failures } : {}),
-                },
+                // BUG-017：`--json` 顶层形状**恒为数组**（信封也是单元素数组）
+                [
+                  {
+                    ok: false,
+                    action,
+                    targets,
+                    error: message,
+                    // 批次失败明细（机器面）：`retire` 多目标失败时列出**全部**
+                    // 失败目标（人读消息在 `error` 里）。
+                    ...(failures !== undefined ? { failedTargets: failures } : {}),
+                  },
+                ],
                 null,
                 2,
               ),

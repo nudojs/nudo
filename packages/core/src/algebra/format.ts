@@ -95,13 +95,27 @@ export function formatShape(
   return formatShapeB(a, budget);
 }
 
-/** eq(self, lit(v)) pred 的字面量值——lit 判别槽位渲染
- * （`lit('StringLiteral')`——与侧车契约文法同形）；pred 断言
- * Abs 自身 term（槽位为 `get(p, k)` 字段项，顶层为参数
- * 项）等于字面量；非该形态 pred / 无 pred → undefined
- * （纯 shape 渲染不变） */
-function litPredValue(a: Abs): LiteralValue | undefined {
+/** `eq(term, lit(v))` 形态的字面量值；非该形态 → undefined
+ * （`lit(undefined)` 与「不是这个形态」同值 ⇒ 保守不渲染） */
+function eqLitOnTerm(p: Pred, term: Term): LiteralValue | undefined {
+  if (p.op !== "eq") return undefined;
+  const { a: x, b: y } = p;
+  if (x.op === "lit" && termEquals(y, term)) return x.value;
+  if (y.op === "lit" && termEquals(x, term)) return y.value;
+  return undefined;
+}
+
+/** eq(self, lit(v)) pred 的字面量值域——字面量域渲染。
+ *
+ * BUG-031：字面量集既可能是**单个** `eq(term, lit)`，也可能是
+ * `samePrimLiteralUnionAbs` 构造的 `or(eq(term,1), eq(term,2), …)`
+ * （只认单个 eq 时 union 退化成基类型 ⇒ 签名面与本面自己的诊断矛盾）。
+ * BUG-087：返回值是**类型**（`3` / `"a"`），不是契约 DSL 文本 `lit(3)`
+ * ——类型展示面（check 签名 / `--json` paramTypes / hover）与 dts 面同源。
+ * 非该形态 pred / 无 pred → undefined（纯 shape 渲染不变）。 */
+function litPredValues(a: Abs): LiteralValue[] | undefined {
   if (a.term === undefined) return undefined;
+  const term = a.term;
   // eq 事实可藏在合取深层（$narrowMemberEq 的 keep 臂槽精化挂 and(既有, eq)）
   const conjuncts: Pred[] = [];
   const visit = (p: Pred | undefined): void => {
@@ -113,18 +127,29 @@ function litPredValue(a: Abs): LiteralValue | undefined {
     conjuncts.push(p);
   };
   visit(a.pred);
+  const out: LiteralValue[] = [];
+  const push = (v: LiteralValue | undefined): void => {
+    if (v === undefined) return;
+    if (!out.some((x) => Object.is(x, v))) out.push(v);
+  };
   for (const p of conjuncts) {
-    if (p.op !== "eq") continue;
-    const { a: x, b: y } = p;
-    const litT =
-      x.op === "lit" && termEquals(y, a.term)
-        ? x
-        : y.op === "lit" && termEquals(x, a.term)
-          ? y
-          : undefined;
-    if (litT !== undefined) return litT.value;
+    if (p.op === "eq") {
+      push(eqLitOnTerm(p, term));
+      continue;
+    }
+    // 同 prim 字面量 union：每一臂都必须是 `eq(term, lit)`，否则该合取项
+    // 不是纯字面量域（保守忽略，不退化成半截集合）。
+    if (p.op === "or") {
+      const arms = p.args.map((arm) => eqLitOnTerm(arm, term));
+      if (arms.length > 0 && arms.every((v) => v !== undefined)) arms.forEach(push);
+    }
   }
-  return undefined;
+  return out.length > 0 ? out : undefined;
+}
+
+/** 字面量域 → 类型文本（`3` / `"a"` / `1 | 2 | 3`） */
+function formatLitValues(vals: LiteralValue[]): string {
+  return vals.map(formatLitValue).join(" | ");
 }
 
 function formatShapeB(a: Abs, budget: ProjectionBudget, ind: string = ""): string {
@@ -202,8 +227,8 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lvR.ok) return JSON.stringify(lv);
       if (budget.showLits) {
-        const plv = litPredValue(a);
-        if (plv !== undefined) return `lit(${formatLitValue(plv)})`;
+        const plvs = litPredValues(a);
+        if (plvs !== undefined) return formatLitValues(plvs);
       }
       return s.type;
     }
@@ -218,11 +243,20 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
           const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
           // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
           // 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact undefined。
-          const slotAbs = accessorReadDomain(a, k) ?? slot.value;
+          // BUG-167：占位槽 `unknown` = 读域**不可判**（非纯 getter / defineProperty
+          // 装的访问器）⇒ 不得为投影执行用户 getter（分析期副作用 + 末次读被冻结
+          // 成「确定值」⇒ 签名面自信错值）；直接用占位值（presence-only）。
+          // 判据用 **term 缺失**（`unknown` Abs 无 term；纯 getter 的占位是
+          // `$lit(void 0)`，term = {op:"lit"}）——`$lit(void 0)` 的 shape.k 也是
+          // "unknown"（typeof undefined），按 shape 判会把**所有**访问器都判死。
+          const slotAbs =
+            slot.value.term === undefined
+              ? slot.value
+              : (accessorReadDomain(a, k) ?? slot.value);
           let val = formatShapeB(slotAbs, budget, `${ind}  `);
           if (budget.showLits) {
-            const plv = litPredValue(slotAbs);
-            if (plv !== undefined) val = `lit(${formatLitValue(plv)})`;
+            const plvs = litPredValues(slotAbs);
+            if (plvs !== undefined) val = formatLitValues(plvs);
           }
           return `${key}${opt}: ${val}`;
         });

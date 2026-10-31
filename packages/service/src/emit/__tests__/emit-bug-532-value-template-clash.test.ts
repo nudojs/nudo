@@ -31,8 +31,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// BUG-035：`@nudo:case` 的**纯点观测见证**（实参全是字面量、无断言）不是契约
+// 产物 ⇒ 夹具的 case 改为**带断言的域声明**（`=> 期望值`），生成段内容
+// （`export const classify = fn(…)`）与 name-clash 语义不变。
 const SRC = `/**
- * @nudo:case "c" (1)
+ * @nudo:case "c" (1) => true
  */
 export function classify(x) { return x > 0; }
 `;

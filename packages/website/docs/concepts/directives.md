@@ -751,6 +751,8 @@ Module mocks are declared per file with `@nudo:mock-module` — there is no proj
 
 Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the eval path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
+Destructuring declarations are supported: the override applies to the initializer expression, and every destructured name is bound to its own inferred type. Attached to any other statement — a loop head, an `if`/`while` body, an expression statement, a function declaration — there is no value to override, so the directive is reported as warning `nudo:directive-syntax` instead of being silently ignored.
+
 ### Syntax
 
 ```text

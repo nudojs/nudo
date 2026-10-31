@@ -7,7 +7,7 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design/limitations.md` §2 (call-site ceiling).
 
-- Generated at: `2026-10-23T14:55:16.130Z`
+- Generated at: `2026-10-31T10:12:00.807Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
@@ -139,12 +139,14 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 
 ```
 assert
+buffer
 child_process
 crypto
 events
 fs
 fs/promises
 node:assert
+node:buffer
 node:child_process
 node:crypto
 node:events

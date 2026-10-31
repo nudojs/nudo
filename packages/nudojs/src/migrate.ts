@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
+import type { EvalFallback } from "@nudojs/core";
 import { draftInterface, writeInterfaceDraft } from "@nudojs/service/emit";
 
 export type MigrateStatusRow = {
@@ -38,6 +39,14 @@ export type MigrateStatusRow = {
   /** 半完成：`migrate-retiring.json` 在而 `migrate-retired.json` 不在（可重跑 recover） */
   retiring: boolean;
   blockers: string[];
+  /**
+   * 被 `retire` **有意保留**的项（机器面 · Bug 178）。
+   *
+   * `retire` 按设计**不改写**编译器角色（会 emit）的 tsc 脚本，也因此**不摘**
+   * 它带出的 `typescript` 依赖。这些项**不是** blocker（与 `retire` 同口径）
+   * ——此字段让机器消费者能区分「真 blocker」与「有意保留」（只在非空时出现）。
+   */
+  preserved?: { scripts: string[]; deps: string[] };
   /**
    * 本次 workspace 扫描**被排除的包**（机器面）。
    *
@@ -96,8 +105,9 @@ export type StripResult = {
    * 而是降级成**一行错误**（带文件名）⇒ 同目标内其它文件的成功结果
    * 照常返回（原先 `makeStripPlan` 直接 throw ⇒ 整批结果全丢）。
    *
-   * 码表**沿用** `migrateVerify` 的逐文件失败码（`analysis-error`）——
-   * 不另立码表（verify 对任何逐文件失败都发这个码 ⇒ 两个面同码）。
+   * 码表**沿用** `migrateVerify` 的逐文件失败码——
+   * 解析失败 = `syntax-error`（与 `nudo check` 的 `pathErrors[].code` 同名），
+   * 分析/注入装配失败 = `analysis-error`。两个面同码，不另立码表。
    */
   code?: string;
   /** 失败详情（带文件名，便于定位）——与 `migrateVerify` 的 `error` 同款 */
@@ -125,8 +135,19 @@ export type VerifyResult = {
 
 /** package.json 脚本改写记录 */
 export type RetireScriptChange = { name: string; from: string; to: string };
-/** CI workflow 改写记录 */
-export type RetireWorkflowChange = { file: string; from: string; to: string };
+/**
+ * CI workflow 改写记录。
+ *
+ * `line` = 被改写的那条 `run:` 所在的**行号**（1-based）——审计去重键的
+ * 组成部分（Bug 063）：同一 workflow 里**两处相同命令**是**两处**改写
+ * ⇒ 报告 / 审计必须各记一条（旧键 `file+from+to` 会把第二条并集吃掉）。
+ */
+export type RetireWorkflowChange = {
+  file: string;
+  from: string;
+  to: string;
+  line?: number;
+};
 /** 保留 tsc 的编译器角色脚本（构建/发射）——未改写 */
 export type RetirePreservedScript = { name: string; command: string; reason: string };
 
@@ -138,6 +159,28 @@ export type RetireResult = {
   marker: string;
   /** 保留 tsc 的编译器角色脚本（`nudo check` 不产产物 ⇒ 不得改写） */
   preservedScripts: RetirePreservedScript[];
+  /**
+   * `--dry-run`：本行是**计划**，磁盘上**没有**任何改动（Bug 053）。
+   *
+   * 旧实现 `--json` 的 dry-run 与真跑输出**逐字相同** ⇒ 机器消费者无法区分
+   * 「这是计划」与「已经执行了」。
+   */
+  dryRun?: boolean;
+  /**
+   * 该包**早已退役**，且本次运行**没有**任何改动（Bug 117）。
+   *
+   * 旧实现把 marker 里的**累计**审计记录当成本次结果返回 ⇒ 二次运行谎报
+   * 「本次摘了依赖 / 改了脚本」（实际字节未变）。`removedDeps` /
+   * `rewrittenScripts` / `rewrittenWorkflows` 现在只含**本次**真实改动，
+   * 累计台账只留在 `.nudo/migrate-retired.json`。
+   */
+  alreadyRetired?: boolean;
+  /**
+   * 本批里被**跳过**的目标（`nothing to retire`）——它们不是失败，但用户
+   * 必须看见「这些目标没动」（Bug 051：旧实现用「全部良性」掩盖了有活可干
+   * 的目标 ⇒ 退役没做却报成功）。
+   */
+  skipped?: Array<{ target: string; message: string }>;
   /**
    * 本次 workspace 扫描**被排除的包**（机器面）。
    *
@@ -1394,7 +1437,8 @@ function emitYamlScalar(scalar: YamlScalar, value: string): string {
 
 type WorkflowScan = {
   text: string;
-  changes: Array<{ from: string; to: string }>;
+  /** 每处改写一条；`line` = 该 `run:` 的行号（1-based）⇒ 同命令不同位置可区分 */
+  changes: Array<{ from: string; to: string; line: number }>;
   /** 每个 tsc 调用一条（命令原文，trimmed） */
   tscCommands: string[];
 };
@@ -1408,7 +1452,7 @@ type WorkflowScan = {
 function scanWorkflowText(text: string): WorkflowScan {
   const lines = text.split("\n");
   const out: string[] = [];
-  const changes: Array<{ from: string; to: string }> = [];
+  const changes: Array<{ from: string; to: string; line: number }> = [];
   const tscCommands: string[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -1461,7 +1505,7 @@ function scanWorkflowText(text: string): WorkflowScan {
         i = j;
         continue;
       }
-      changes.push({ from: logical.trim(), to: cmd.trim() });
+      changes.push({ from: logical.trim(), to: cmd.trim(), line: i + 1 });
       for (let k = 0; k < calls.length; k++) tscCommands.push(logical.trim());
       out.push(line);
       const newBody = folded ? cmd.replace(/\n+/g, " ") : cmd;
@@ -1484,7 +1528,7 @@ function scanWorkflowText(text: string): WorkflowScan {
       i++;
       continue;
     }
-    changes.push({ from: scalar.value.trim(), to: cmd.trim() });
+    changes.push({ from: scalar.value.trim(), to: cmd.trim(), line: i + 1 });
     for (let k = 0; k < calls.length; k++) tscCommands.push(scalar.value.trim());
     out.push(`${keyPart}${emitYamlScalar(scalar, cmd)}${scalar.tail}`);
     i++;
@@ -1494,7 +1538,7 @@ function scanWorkflowText(text: string): WorkflowScan {
 
 export function rewriteWorkflowText(text: string): {
   text: string;
-  changes: Array<{ from: string; to: string }>;
+  changes: Array<{ from: string; to: string; line: number }>;
 } {
   const scan = scanWorkflowText(text);
   return { text: scan.text, changes: scan.changes };
@@ -1515,7 +1559,17 @@ export function findWorkflowDir(from: string): string | undefined {
 }
 
 export function listWorkflowTscLines(from: string): Array<{ file: string; line: string }> {
-  const wf = findWorkflowDir(from);
+  return listWorkflowTscLinesIn(findWorkflowDir(from));
+}
+
+/**
+ * 指定 workflow 目录里的 tsc 行（**不**向上找）——`migrate status` 的
+ * blocker 归属必须与 `retire` 的 workflow 作用域**同口径**（Bug 102）：
+ * 仓库根的共享 workflow 属于整仓作用域，不得算到每个子包头上。
+ */
+export function listWorkflowTscLinesIn(
+  wf: string | undefined,
+): Array<{ file: string; line: string }> {
   if (!wf) return [];
   const out: Array<{ file: string; line: string }> = [];
   for (const name of readdirSync(wf)) {
@@ -1536,7 +1590,7 @@ export type PlannedWorkflowWrite = {
   path: string;
   file: string;
   text: string;
-  changes: Array<{ from: string; to: string }>;
+  changes: Array<{ from: string; to: string; line: number }>;
 };
 
 export function planWorkflowRewrites(from: string): PlannedWorkflowWrite[] {
@@ -1669,7 +1723,6 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
   const root = resolveMigrateRoot(rootDir);
   const { roots, excluded } = packageRoots(root);
   const excludedList = excludedPackages(excluded);
-  const workflowHits = listWorkflowTscLines(root);
   const rows: MigrateStatusRow[] = [];
   for (const r of roots) {
     const pkgPath = join(r, "package.json");
@@ -1716,15 +1769,48 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       );
     }
     if (tsxFiles > 0) blockers.push(`${tsxFiles} .tsx (JSX migrate is manual/later)`);
-    // tsc 脚本仍在 ⇒ 阻塞；与 .ts 数量无关（0 个 .ts 恰恰是最该退役的场景）
-    if (tscScripts.length > 0) blockers.push("tsc still in scripts");
+    // Bug 178：blocker 判定与 `retire` 的**保留**决策**同源**（`retireScope`
+    // 的 gate / compiler 分类）——编译器角色（会 emit）的 tsc 脚本与它带出的
+    // `typescript` 依赖是 retire **有意保留**的 ⇒ 不得再报成 blocker。
+    // 旧实现只看「脚本里有 tsc」「依赖里有 typescript」⇒ 已退役项目永久挂
+    // 2 个 blocker（`retired: true` 与 blockers 同时成立 ⇒ status 与 retire
+    // 结论相反，用户按提示反复跑已完成的 retire）。
+    const scope = retireSurface(pkg ?? {}, r);
+    const keepTypescript = scope.compilerScripts.length > 0;
+    // tsc 门禁脚本仍在 ⇒ 阻塞；与 .ts 数量无关（0 个 .ts 恰恰是最该退役的场景）
+    if (scope.gateScripts.length > 0) blockers.push("tsc still in scripts");
     if (tsFiles > 0 && !hasNudoGate) {
       blockers.push("no nudo check/test script yet");
     }
-    if (deps.typescript) blockers.push("typescript still in dependencies");
+    // 依赖来源：编译器角色保留 typescript ⇒ 不是 blocker（retire 也不会摘）
+    const preservedDepFields: string[] = [];
+    if (keepTypescript) {
+      for (const field of [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+      ] as const) {
+        const bag = pkg?.[field];
+        if (!bag || typeof bag !== "object" || Array.isArray(bag)) continue;
+        if ((bag as Record<string, unknown>).typescript) preservedDepFields.push(field);
+      }
+    }
+    if (deps.typescript && !keepTypescript) blockers.push("typescript still in dependencies");
+    // Bug 102：workflow blocker 的**作用域**与 `retire` 对齐——只数**包自有**的
+    // `.github/workflows`（`ownWorkflowDir`，不向上找）。旧实现对每个子包都
+    // 向上找 6 层 ⇒ **仓库根**共享 workflow 的 tsc 行被算到**每个子包**头上，
+    // 而 `retire <子包>` 按设计**不改写**它 ⇒ 该 blocker 永远无法消除。
+    const workflowHits = listWorkflowTscLinesIn(ownWorkflowDir(r));
     if (workflowHits.length > 0) {
       blockers.push(`${workflowHits.length} tsc line(s) in .github/workflows`);
     }
+    const preservedScripts = [...scope.compilerScripts];
+    const preserved = {
+      scripts: preservedScripts,
+      deps: preservedDepFields,
+    };
+    const hasPreserved = preserved.scripts.length > 0 || preserved.deps.length > 0;
     // 无阻塞项 ⇒ 空数组（占位符「—」只属于文本面的人读表达，不得进机器面）
     rows.push({
       root: relative(process.cwd(), r) || ".",
@@ -1740,6 +1826,8 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       retired,
       retiring,
       blockers,
+      // 有意保留（不是 blocker）：只在非空时出现 ⇒ 无事可保留时 JSON 逐字不变
+      ...(hasPreserved ? { preserved } : {}),
       // 排除清单（机器面）：同一次扫描的每一行都带同一份（无排除 ⇒ 不出现）
       ...(excludedList ? { excluded: excludedList } : {}),
     });
@@ -1914,6 +2002,11 @@ function resolveProductSpecifier(
   if (segExt && !/^\.(m|c)?(j|t)sx?$/i.test(segExt[0])) return undefined;
   const specPath = resolve(dirname(fromFile), spec);
   const candidates: string[] = [];
+  // Bug 116：**第一候选是说明符原样**——`import "./foo.js"`（`foo.js` 确实
+  // 存在）此前**从不命中**（候选只有 `foo.js.ts` / `foo.js.js` / `index.*`，
+  // 而 `.js→.ts` 映射要求 `foo.ts` 存在）⇒ 对**存在**的文件报
+  // 「could not be resolved」，诊断与事实相反。
+  candidates.push(specPath);
   for (const e of SPECIFIER_EXTS) candidates.push(`${specPath}${e}`);
   // TS 的 ".js 说明符 → .ts 源" 约定（import "./helper.js" 解析到 helper.ts）
   const jsExt = /\.(m|c)?js$/i.exec(spec);
@@ -1992,10 +2085,14 @@ type StripFileFailure = {
 type StripOutcome = StripPlan | StripFileFailure;
 
 /**
- * strip 的逐文件失败码（机器面）——**沿用** `migrateVerify` 的逐文件失败码
- * （`analysis-error`）⇒ 两个面同码，不另立码表。
+ * strip 的**解析失败**码（机器面）——与 `migrateVerify` 的逐文件解析失败码、
+ * 以及 `nudo check` 的 `pathErrors[].code` **同名同义**（`syntax-error`）。
+ *
+ * 三个面必须同码：`cli-bug-56b` 的契约是「verify 对同一个语法错文件发的失败码
+ * 与 strip 一致」；check 面早就用 `syntax-error` 表达解析失败。
+ * 「分析/注入装配失败」仍用 `analysis-error`（见 `VerifyResult.code`）。
  */
-const STRIP_FAILURE_CODE = "analysis-error";
+const STRIP_FAILURE_CODE = "syntax-error";
 
 /**
  * 「这一批因别的文件失败而**没有**写盘」的注记（写盘模式下有失败时挂在
@@ -2402,6 +2499,7 @@ async function buildVerifyInjection(
     collectEnvModules,
     collectEvalReplacements,
     evalAbsModuleGraph,
+    mergeHarvestUnderEnv,
     mockDirectivesToAbsSeeds,
     mockSeedsToAbsMocks,
   } = await import("@nudojs/service");
@@ -2421,10 +2519,14 @@ async function buildVerifyInjection(
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
   const envMods = collectEnvModules(allEnvNames);
-  let mergedMods = {
-    ...graph.modules,
-    ...(Object.keys(envMods).length > 0 ? envMods : {}),
-  };
+  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
+  // （与 `nudo check` / test / service 面同口径）——手工 env 与 harvest
+  // **同名模块**时，env 赢同名槽、harvest 填 env 的**空位**（B8）。
+  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
+  // harvest 的**非冲突导出被整体丢弃** ⇒ verify 面报 `unknown` + 误导性
+  // `nudo:unknown-inference`，而 check 面报**精确值** ⇒ 两个产品面互相矛盾
+  //（Bug 226 / 同族 Bug 1037）。
+  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
   const mm = applyMockModuleDirectivesFromSource(source, mergedMods, { fromFile: filePath });
   mergedMods = mm.modules;
   mockFromErrors = [
@@ -2455,6 +2557,9 @@ export async function migrateVerify(
   opts: { withTsc?: boolean; root?: string; json?: boolean } = {},
 ): Promise<VerifyResult[]> {
   const { checkSource, formatCheckReport, pTrue, extractFileEnvNames } = await import("@nudojs/core");
+  const { setEvalFallbackCollector } = await import("@nudojs/core");
+  const { DIAG } = await import("@nudojs/core/internal");
+  const { ANALYSIS_FAILED_PREFIX } = await import("./commands/check-report.ts");
   const {
     analyzeFileAsync,
     checkConfig,
@@ -2466,11 +2571,13 @@ export async function migrateVerify(
     mergeCheckIssues,
     mockFromErrorIssues,
   } = await import("@nudojs/service");
-  const { preloadPathEnvs } = await import("@nudojs/service/evaluator");
-  const { checkGateFromConfig, mergeIgnoreThrows, resolveEntryThrows } = await import(
+  const { getPathEnvLoadErrors, preloadPathEnvs } = await import("@nudojs/service/evaluator");
+  const { checkGateFromConfig, configIgnoreThrows, resolveEntryThrows } = await import(
     "./check-gate-config.ts"
   );
-  const { domainIssuesFromDiagnostics } = await import("./check-json-map.ts");
+  const { domainIssuesFromDiagnostics, ENV_UNRESOLVED_CODE } = await import(
+    "./check-json-map.ts"
+  );
   const results: VerifyResult[] = [];
   const files: string[] = [];
   /** 空集 / 非目标：与 nudo check 同口径判红（不能给「无东西可验」发绿灯通行证） */
@@ -2518,21 +2625,61 @@ export async function migrateVerify(
     let row: VerifyResult;
     try {
       const source = readFileSync(file, "utf-8");
+      // Bug 114：`.js` 里的 **TS-only 语法**必须与 `nudo check` 同结论（判红）。
+      // check 面按**扩展名**选解析插件（`parseSource(source, { filename })`：
+      // `.js` 不带 TS 插件 ⇒ TS 语法直接 SyntaxError ⇒ pathErrors + exit 1）。
+      // verify 旧实现只走宽松解析 ⇒ 同一文件 check 红 / verify 绿 ⇒ 迁移闸门
+      // 假绿（`migrate strip` 自己的 `namespace` / `import x = require(…)` 产物
+      // 也走这条路）。
+      try {
+        parseSource(source, { filename: file });
+      } catch (syntaxErr) {
+        results.push({
+          file: relative(process.cwd(), file),
+          nudoOk: false,
+          nudoSummary: "0 error · 0 warning · 0 fn",
+          code: "syntax-error",
+          error: `${file}: ${(syntaxErr as Error).message}`,
+          fix: "fix the syntax error; TypeScript-only syntax is not valid in a .js file (nudo check reports the same)",
+        });
+        continue;
+      }
       const proj = findProjectConfig(dirname(file));
       const cCfg = checkConfig(proj?.config);
       // 门禁档与 nudo check 同源（CLI 旗标 > pkg entryThrows > pkg profile > 默认）
       const gate = checkGateFromConfig(proj?.config);
       const entryThrows = resolveEntryThrows({}, gate, cCfg.entryThrows);
-      const ignoreThrows = mergeIgnoreThrows(undefined, cCfg.ignoreThrows);
+      // Bug 015：`ignoreThrows` 必须用**与 `nudo check` 同口径**的宽松解析器
+      // （`configIgnoreThrows`：裸字符串 + 数组元素内按逗号切分）。
+      // 旧实现走 service `checkConfig()` 的严格 `Array.isArray` 变体
+      // （`mergeIgnoreThrows(undefined, cCfg.ignoreThrows)`）⇒ 配置写
+      // `"TypeError"` 或 `["TypeError,RangeError"]` 时 verify 不忽略、check 忽略
+      // ⇒ 同一文件同一配置两个结论（verify 假失败，迁移门禁永远转不绿）。
+      const ignoreThrows = configIgnoreThrows(proj?.config);
       const autoBind = interfaceConfig(proj?.config).autoBind;
-      // env 名：项目配置 + 文件级 @nudo:env（命名 env 与 path env 同口径）
-      const envNames = [
-        ...new Set([...(proj?.config.env ?? []), ...extractFileEnvNames(source)]),
-      ];
+      // env 名：**项目级**（package.json#nudo.env）+ **文件级**（`@nudo:env`）
+      // —— 两层的**解析基准不同**（Bug 647 / Bug 064）：
+      // - 项目级相对说明符按**项目根**（`proj.projectDir`）解析；
+      // - 文件级按**被检文件所在目录**解析。
+      // 旧实现把两层拍平成一个列表、统一按「文件目录」预载 ⇒ 子目录里的
+      // 文件**永远拿不到**项目级 path env ⇒ env 全局丢失 ⇒ 误报红
+      //（`may throw ReferenceError` ⇒ 挡住迁移）。
+      const rawProjectEnv = proj?.config.env;
+      const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
+      const fileEnvNames = extractFileEnvNames(source);
+      const fileEnvBaseDir = dirname(file);
+      const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+      // 项目级**相对说明符**先绝对化（按项目根）——查表基准是「最后一次
+      // preload 的目录」，不绝对化则子目录文件查表必然落空。
+      const projectEnvSpec = projectEnvNames.map((name) =>
+        typeof name === "string" && (name.startsWith("./") || name.startsWith("../"))
+          ? resolve(projectEnvBaseDir, name)
+          : name,
+      );
       // path 型 @nudo:env 预载（check 同口径：先 preload，再 collect globals）
-      if (envNames.length > 0) {
-        await preloadPathEnvs(envNames, dirname(file));
-      }
+      await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+      await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
+      const envNames = [...new Set([...projectEnvSpec, ...fileEnvNames])];
       const { inject, mockFromErrors, dirDiags } = await buildVerifyInjection(
         file,
         source,
@@ -2553,20 +2700,55 @@ export async function migrateVerify(
       } catch {
         /* 分析器通道失败不得拖垮 verify（诊断面降级，不造门禁） */
       }
-      let report = checkSource(file, source, pTrue, {
-        loadModule: defaultLoadModule,
-        fromFile: file,
-        ...(autoBind === false ? { autoBind: false } : {}),
-        ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
-        entryThrows,
-        ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
-        // 分析注入与 nudo check 同源（模块图 / mock / env / replace / as）
-        ...(Object.keys(inject).length > 0
-          ? { modules: inject.modules as never, inject }
-          : {}),
-        // 与 nudo check 同源：@nudo:skip 的函数不评估 body（verify 的 ok 必须等于 check）
-        skips: collectSkipReturns(source),
+      // Bug 061：**模块级求值失败**（引擎 internal 回落）必须 fail-closed。
+      //
+      // collector 是**进程级单槽**（core 的 `setEvalFallbackCollector`）⇒
+      // 必须在 `checkSource` **之前**装、`之后**立刻卸**（分析器通道
+      // `analyzeFileAsync` 自己装过又摘掉 ⇒ verify 自己的求值此前**无
+      // 观察者** ⇒ 回落被静默吞掉 ⇒ verify 判绿而 check 判红）。
+      //
+      // 只收 `internal`（引擎内部缺陷）：`unsupported:*`（能力边界）与
+      // `module-throw`（程序自身抛，可被 catch 吸收）**不是**闸门失败。
+      const evalFailures: EvalFallback[] = [];
+      setEvalFallbackCollector((f: EvalFallback) => {
+        if (f.reason === "internal") evalFailures.push(f);
       });
+      let report: ReturnType<typeof checkSource>;
+      try {
+        report = checkSource(file, source, pTrue, {
+          loadModule: defaultLoadModule,
+          fromFile: file,
+          ...(autoBind === false ? { autoBind: false } : {}),
+          ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
+          entryThrows,
+          ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+          // 分析注入与 nudo check 同源（模块图 / mock / env / replace / as）
+          ...(Object.keys(inject).length > 0
+            ? { modules: inject.modules as never, inject }
+            : {}),
+          // 与 nudo check 同源：@nudo:skip 的函数不评估 body（verify 的 ok 必须等于 check）
+          skips: collectSkipReturns(source),
+        });
+      } finally {
+        // 求值阶段结束 ⇒ 卸掉本文件的回落 collector（下一文件重新装 ⇒
+        // 回落**按文件**归因，不串台）。
+        setEvalFallbackCollector(null);
+      }
+      // 模块级求值失败 ⇒ 该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒
+      // 零诊断 + exit 0（**假绿**）⇒ 现在产出一条 **error 级**诊断
+      // （与 `nudo check` 同码 `nudo:internal`、同 severity ⇒ 两面同结论）。
+      if (evalFailures.length > 0) {
+        const detail = [...new Set(evalFailures.map((f) => f.message))].join("; ");
+        report = mergeCheckIssues(report, [
+          {
+            severity: "error",
+            code: DIAG.internal,
+            message: `${ANALYSIS_FAILED_PREFIX} (engine internal fallback ×${evalFailures.length}): ${file} — ${detail}`,
+            suggestion:
+              "the module could not be evaluated (engine internal failure) — the gate could not decide this file; fix the reported cause, or report it as an engine bug together with the checked source file",
+          },
+        ]);
+      }
       // D1 指令文法诊断 + mock 解析失败 + interface 家族诊断（与 check 同口径并入）
       if (dirDiags.length > 0) {
         report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
@@ -2576,6 +2758,35 @@ export async function migrateVerify(
       }
       if (domainIssues.length > 0) {
         report = mergeCheckIssues(report, domainIssues);
+      }
+      // path env 加载失败必须**可见**（与 nudo check 同口径 · Bug 064）：
+      // 否则「env 没找到」只表现为一条**误导性**的 `may throw ReferenceError`
+      // ⇒ 用户被引向错误的修法。两层各按**自己的** preload 目录取。
+      const expectedEnvPaths = new Set<string>([
+        ...projectEnvSpec.map((n) =>
+          typeof n === "string" ? resolve(projectEnvBaseDir, n) : "",
+        ),
+        ...fileEnvNames.map((n) => (typeof n === "string" ? resolve(fileEnvBaseDir, n) : "")),
+      ]);
+      const envLoadErrors = [
+        ...getPathEnvLoadErrors(fileEnvBaseDir),
+        ...getPathEnvLoadErrors(projectEnvBaseDir),
+      ].filter((e) => !isAbsolute(e.path) || expectedEnvPaths.has(e.path));
+      if (envLoadErrors.length > 0) {
+        const seenEnv = new Set<string>();
+        const envIssues = envLoadErrors
+          .filter((e) => {
+            const k = `${e.path} ${e.error}`;
+            if (seenEnv.has(k)) return false;
+            seenEnv.add(k);
+            return true;
+          })
+          .map((e) => ({
+            severity: "warning" as const,
+            code: ENV_UNRESOLVED_CODE,
+            message: `path env failed to load: ${e.path} — ${e.error}`,
+          }));
+        report = mergeCheckIssues(report, envIssues);
       }
       const summary = `${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.functions} fn`;
       row = {
@@ -2850,7 +3061,9 @@ function planWorkflowRewritesIn(dir: string | undefined): PlannedWorkflowWrite[]
 
 /** workflow 改写记录投影（stdout 报文与落盘 marker 共用 ⇒ 同键同型） */
 function workflowRewriteRecords(planned: PlannedWorkflowWrite[]): RetireWorkflowChange[] {
-  return planned.flatMap((w) => w.changes.map((c) => ({ file: w.file, from: c.from, to: c.to })));
+  return planned.flatMap((w) =>
+    w.changes.map((c) => ({ file: w.file, from: c.from, to: c.to, line: c.line })),
+  );
 }
 
 /** 集合并集（按 key 去重；既有记录在前 ⇒ 首次退役的审计不被覆盖） */
@@ -2894,7 +3107,12 @@ function readMarkerRecords(prev: Record<string, unknown> | undefined): {
     if (!w || typeof w !== "object") continue;
     const r = w as Record<string, unknown>;
     if (typeof r.file !== "string") continue;
-    rewrittenWorkflows.push({ file: r.file, from: String(r.from ?? ""), to: String(r.to ?? "") });
+    rewrittenWorkflows.push({
+      file: r.file,
+      from: String(r.from ?? ""),
+      to: String(r.to ?? ""),
+      ...(typeof r.line === "number" ? { line: r.line } : {}),
+    });
   }
   const preservedScripts: RetirePreservedScript[] = [];
   for (const s of Array.isArray(prev?.preservedScripts) ? prev.preservedScripts : []) {
@@ -2961,10 +3179,81 @@ function retireBatchError(failures: RetireFailure[]): Error {
 }
 
 /**
+ * 审计标记（`.nudo/migrate-retired.json`）读取——**分级**（Bug 065）。
+ *
+ * `readJson` 把「文件不存在」与「JSON 解析失败」压成同一个 `undefined`
+ * ⇒ 损坏的审计标记被静默当成「没有既有记录」⇒ 一程迁移的审计链断掉
+ * （`retiredAt` / `removedDeps` / `rewrittenScripts` 全被覆盖）。
+ * 与 `package.json` 同款策略：`missing` ⇒ 空记录；`invalid` / `unreadable`
+ * ⇒ **fail-closed 报错**（不覆盖原文件）。
+ */
+function readMarkerFile(path: string): PackageJsonRead {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
+    return { kind: "unreadable", error: (err as Error).message ?? String(err) };
+  }
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { kind: "invalid", error: "migrate-retired.json is not a JSON object" };
+    }
+    return { kind: "ok", value: value as Record<string, unknown> };
+  } catch (err) {
+    return { kind: "invalid", error: (err as Error).message ?? String(err) };
+  }
+}
+
+/**
+ * 一个包的退役面 + 「**还有活可干**」判据。
+ *
+ * ⚠ **两个入口同源**（Bug 052 / Bug 117）：单目标 `planRetirePackage` 与
+ * `migrateRetireAll` 都用这一份判据——旧实现 `--all` 只看「可摘的依赖 +
+ * 门禁脚本」，**不看**「仅 workflow 里有 tsc 行」⇒ workspace 根被 `continue`
+ * 跳过 ⇒ `--all` 假绿（退役了子包、根的 CI 仍跑 tsc；同一份夹具用单目标
+ * 路径却能改写它）。
+ */
+function retireScope(
+  root: string,
+  pkg: Record<string, unknown>,
+  opts: { workflows?: boolean },
+): {
+  surface: RetireSurface;
+  plannedWorkflows: PlannedWorkflowWrite[];
+  keepTypescript: boolean;
+  depRemovable: boolean;
+  /** 本次运行**真要改东西**（不含「早已退役、本次无操作」） */
+  hasWorkToDo: boolean;
+} {
+  const surface = retireSurface(pkg, root);
+  // A1：CI workflow 里的 tsc 一并退役（默认开；--no-workflows 关）
+  // 作用域 = **被退役包自有**的 `.github/workflows`（仓库根共享的 workflow 属于整仓作用域，
+  // 退役子包不得越界改写它）
+  const plannedWorkflows =
+    opts.workflows === false ? [] : planWorkflowRewritesIn(ownWorkflowDir(root));
+  // 编译器脚本仍要 tsc ⇒ typescript 依赖不得摘（摘了 build 当场坏掉）
+  const keepTypescript = surface.compilerScripts.length > 0;
+  const depRemovable = surface.hasTypescriptDep && !keepTypescript;
+  return {
+    surface,
+    plannedWorkflows,
+    keepTypescript,
+    depRemovable,
+    hasWorkToDo:
+      depRemovable || surface.gateScripts.length > 0 || plannedWorkflows.length > 0,
+  };
+}
+
+/**
  * 退役计划（只读）：算出 package.json 改写、workflow 改写、审计标记。
  * 「没有可退役的东西」⇒ 抛错（不注入、不写标记、不谎报已退役）。
  */
-function planRetirePackage(root: string, opts: { workflows?: boolean }): RetirePlan {
+function planRetirePackage(
+  root: string,
+  opts: { workflows?: boolean; dryRun?: boolean },
+): RetirePlan {
   const pkgPath = join(root, "package.json");
   // Bug 588（retire 侧）：`readJson` 把「解析失败」与「不存在」压成同一个
   // undefined ⇒ 畸形清单谎报「no package.json under X」（与 check 面的
@@ -2974,23 +3263,24 @@ function planRetirePackage(root: string, opts: { workflows?: boolean }): RetireP
   if (read.kind === "invalid") throw new Error(`package.json parse failed: ${read.error}`);
   if (read.kind === "unreadable") throw new Error(`package.json unreadable: ${read.error}`);
   const pkg = read.value;
-  const surface = retireSurface(pkg, root);
+  const { surface, plannedWorkflows, keepTypescript, depRemovable, hasWorkToDo } = retireScope(
+    root,
+    pkg,
+    opts,
+  );
   const markerDir = join(root, ".nudo");
   const marker = join(markerDir, "migrate-retired.json");
   const alreadyRetired = statSync(marker, { throwIfNoEntry: false })?.isFile() === true;
+  // Bug 103：残留的**半完成**标记（`migrate-retiring.json`：进程被 kill /
+  // 磁盘满 / 手工中断）且**活已干完** ⇒ 必须走**恢复路径**（清 in-progress +
+  // 写已完成标记）。旧实现把「无活可干」一律当 `nothing to retire`（exit 0、
+  // 零写盘）⇒ 半完成标记**永不清理** ⇒ `status` 永久阻塞在「re-run retire」
+  // 这条死路指引上。
+  const retiringPath = join(markerDir, "migrate-retiring.json");
+  const hasRetiringMarker = statSync(retiringPath, { throwIfNoEntry: false })?.isFile() === true;
+  const recovering = hasRetiringMarker && !alreadyRetired && !hasWorkToDo;
 
-  // A1：CI workflow 里的 tsc 一并退役（默认开；--no-workflows 关）
-  // 作用域 = **被退役包自有**的 `.github/workflows`（仓库根共享的 workflow 属于整仓作用域，
-  // 退役子包不得越界改写它）
-  const plannedWorkflows =
-    opts.workflows === false ? [] : planWorkflowRewritesIn(ownWorkflowDir(root));
-
-  // 编译器脚本仍要 tsc ⇒ typescript 依赖不得摘（摘了 build 当场坏掉）
-  const keepTypescript = surface.compilerScripts.length > 0;
-  const depRemovable = surface.hasTypescriptDep && !keepTypescript;
-  const hasWorkToDo =
-    depRemovable || surface.gateScripts.length > 0 || plannedWorkflows.length > 0;
-  if (!hasWorkToDo && !alreadyRetired) {
+  if (!hasWorkToDo && !alreadyRetired && !recovering) {
     if (surface.compilerScripts.length > 0) {
       throw new Error(
         `nothing to retire (tsc is only a compiler here: ${surface.compilerScripts.join(", ")} — \`nudo check\` does not emit artifacts)`,
@@ -3031,9 +3321,16 @@ function planRetirePackage(root: string, opts: { workflows?: boolean }): RetireP
   const hasGate = Object.values(scripts).some(
     (c) => typeof c === "string" && NUDO_GATE_RE.test(maskShellStringsAndComments(c)),
   );
-  if (!scripts["check:nudo"] && !hasGate) {
+  // Bug 062：门禁判据 = **命令文本**（`NUDO_GATE_RE`，与 `migrate status` 同源），
+  // 不是「脚本名存不存在」——旧实现 `!scripts["check:nudo"]` 只要脚本名**存在**
+  // 就跳过注入 ⇒ `check:nudo: "echo placeholder"` 的仓库被摘掉 typescript 却
+  // **零类型门禁**，且 `migrate status` 紧接着报「no nudo check/test script yet」
+  // ⇒ 同一工具的两个子命令结论相反。
+  if (!hasGate) {
+    const existing =
+      typeof scripts["check:nudo"] === "string" ? String(scripts["check:nudo"]) : "(none)";
     scripts["check:nudo"] = "nudo check .";
-    rewrittenScripts.push({ name: "check:nudo", from: "(none)", to: "nudo check ." });
+    rewrittenScripts.push({ name: "check:nudo", from: existing, to: "nudo check ." });
     scriptsChanged = true;
   }
   // 注入/改写必须**落进 pkg**（只改局部副本 ⇒ 落盘没有 scripts 键，报告却谎称已改写）
@@ -3061,7 +3358,16 @@ function planRetirePackage(root: string, opts: { workflows?: boolean }): RetireP
   }
 
   // 审计标记：与既有记录**合并**（二次运行不得清空首次的审计内容）
-  const prev = readMarkerRecords(readJson(marker));
+  // Bug 065：标记**读不出来**时 fail-closed（不得把损坏当成「没有既有记录」）。
+  const markerRead = readMarkerFile(marker);
+  if (markerRead.kind === "invalid") {
+    throw new Error(`migrate-retired.json parse failed: ${markerRead.error} (marker: ${marker})`);
+  }
+  if (markerRead.kind === "unreadable") {
+    throw new Error(`migrate-retired.json unreadable: ${markerRead.error} (marker: ${marker})`);
+  }
+  const prev = readMarkerRecords(markerRead.kind === "ok" ? markerRead.value : undefined);
+  const workflowRecords = workflowRewriteRecords(plannedWorkflows);
   const payload: RetireMarker = {
     retiredAt: prev.retiredAt ?? new Date().toISOString(),
     removedDeps: unionBy(prev.removedDeps, removedDeps, (x) => x),
@@ -3070,10 +3376,13 @@ function planRetirePackage(root: string, opts: { workflows?: boolean }): RetireP
       rewrittenScripts,
       (x) => `${x.name}${x.from}${x.to}`,
     ),
+    // Bug 063：去重键**必须带位置**——同一 workflow 里**两处**相同的 tsc 命令
+    // 是**两处**改写；旧键 `file+from+to` 把第二条并集吃掉 ⇒ 报告/审计只记 1 条，
+    // 而落盘改了 2 处、`migrate status` 数到 2 行 ⇒ 三面不一致。
     rewrittenWorkflows: unionBy(
       prev.rewrittenWorkflows,
-      workflowRewriteRecords(plannedWorkflows),
-      (x) => `${x.file}${x.from}${x.to}`,
+      workflowRecords,
+      (x) => `${x.file}\u0000${x.line ?? ""}\u0000${x.from}\u0000${x.to}`,
     ),
     preservedScripts: unionBy(prev.preservedScripts, preservedScripts, (x) => x.name),
     keptDeps: unionBy(prev.keptDeps, keptDeps, (x) => x),
@@ -3084,16 +3393,23 @@ function planRetirePackage(root: string, opts: { workflows?: boolean }): RetireP
     ...plannedWorkflows.map((w) => ({ path: w.path, text: w.text })),
     { path: marker, text: `${JSON.stringify(payload, null, 2)}\n` },
   ];
+  // Bug 117 / 179：`result` 只装**本次**的真实改动（历史累计只留在 marker 里）。
+  // 旧实现把 marker 的**并集**当成本次结果返回 ⇒ 二次运行谎报「刚摘了依赖 /
+  // 改了脚本」（实际字节未变），且与 `--all` 入口的「nothing to retire」互斥。
+  const noChanges =
+    removedDeps.length === 0 && rewrittenScripts.length === 0 && workflowRecords.length === 0;
   return {
     root,
     ops,
     result: {
       root: relative(process.cwd(), root) || ".",
-      removedDeps: payload.removedDeps,
-      rewrittenScripts: payload.rewrittenScripts,
-      rewrittenWorkflows: payload.rewrittenWorkflows,
+      removedDeps,
+      rewrittenScripts,
+      rewrittenWorkflows: workflowRecords,
       marker: relative(process.cwd(), marker),
-      preservedScripts: payload.preservedScripts,
+      preservedScripts,
+      ...(opts.dryRun === true ? { dryRun: true } : {}),
+      ...(alreadyRetired && noChanges ? { alreadyRetired: true } : {}),
     },
   };
 }
@@ -3127,6 +3443,11 @@ export function migrateRetire(
  * 错误消息**点名全部失败目标**（旧实现只带**第一个**失败目标 ⇒ 其余失败目标
  * **丢失**：用户以为只有一个包有问题）。原子性**不变**：任一失败 ⇒ 整批零写盘
  * （抛错发生在 `commitRetirePlans` **之前**）。
+ *
+ * ⚠ 批里「有活可干」与「无可退役」混在一起时，库面**照样抛错**（原子性契约
+ * 由 Bug 595 / 族 56 的测试钉住）。**不得谎报成功**的那一半在命令层：
+ * `commands/migrate.ts` 的 retire 分支把良性失败摘出来、**逐目标重试**剩下的
+ * 目标（Bug 051）。
  */
 export function migrateRetireMany(
   rootDirs: string[],
@@ -3150,13 +3471,24 @@ export function migrateRetireMany(
   return plans.map((p) => p.result);
 }
 
-/** monorepo 批量：对仍带 tsc/typescript 的 workspace 包逐个 retire（**全批原子**） */
+/**
+ * monorepo 批量：对仍带 tsc/typescript 的 workspace 包逐个 retire（**全批原子**）。
+ *
+ * 判据与单目标路径**同源**（`retireScope` · Bug 052）：旧实现只看「可摘的
+ * 依赖 + 门禁脚本」，**不看**「仅 workflow 里有 tsc 行」⇒ workspace **根**
+ * 被 `continue` 跳过 ⇒ `--all` 退役了子包、根的 CI 仍跑 `tsc`，而命令报成功。
+ *
+ * 失败**收集式**（Bug 118）：旧实现在第一个坏包上 `throw`（fail-fast）⇒
+ * 其余坏包完全消失，且错误不带 `retireFailures` ⇒ `--json` 信封缺
+ * `failedTargets`（与显式多目标入口两种清单 + 两种形状）。
+ */
 export function migrateRetireAll(
   rootDir: string,
   opts: { dryRun?: boolean; workflows?: boolean } = {},
 ): RetireResult[] {
   const root = resolveMigrateRoot(rootDir);
   const plans: RetirePlan[] = [];
+  const failures: RetireFailure[] = [];
   const { roots, excluded } = packageRoots(root);
   const excludedList = excludedPackages(excluded);
   for (const r of roots) {
@@ -3164,20 +3496,27 @@ export function migrateRetireAll(
     // tsc/typescript」⇒ 假绿。解析失败要显式报错（fail-closed）。
     const read = readPackageJsonDetailed(join(r, "package.json"));
     if (read.kind === "invalid") {
-      throw new Error(`package.json parse failed: ${read.error} (package: ${r})`);
+      failures.push({ target: r, message: `package.json parse failed: ${read.error}` });
+      continue;
     }
     if (read.kind === "unreadable") {
-      throw new Error(`package.json unreadable: ${read.error} (package: ${r})`);
+      failures.push({ target: r, message: `package.json unreadable: ${read.error}` });
+      continue;
     }
     if (read.kind === "missing") continue;
-    const pkg = read.value;
-    const surface = retireSurface(pkg, r);
-    const keepTypescript = surface.compilerScripts.length > 0;
-    const depRemovable = surface.hasTypescriptDep && !keepTypescript;
-    // 没有可摘的依赖、没有门禁角色 tsc ⇒ 不注入、不写标记
-    if (!depRemovable && surface.gateScripts.length === 0) continue;
-    plans.push(planRetirePackage(r, opts));
+    const scope = retireScope(r, read.value, opts);
+    // 没有可摘的依赖、没有门禁角色 tsc、也没有 workflow 里的 tsc 行 ⇒ 不注入、不写标记
+    if (!scope.hasWorkToDo) continue;
+    try {
+      plans.push(planRetirePackage(r, opts));
+    } catch (err) {
+      // 逐个目标收集（不 fail-fast）⇒ 一次报全坏包
+      failures.push({ target: r, message: (err as Error).message });
+    }
   }
+  // 「一次报全部坏包 + `retireFailures`」⇒ 两个入口（`--all` / 显式多目标）
+  // 同口径（Bug 118）
+  if (failures.length > 0) throw retireBatchError(failures);
   if (plans.length === 0) return [];
   // 排除清单（机器面）：同一批结果的每一条都带同一份（无排除 ⇒ 不出现）
   if (excludedList) {
@@ -3216,8 +3555,28 @@ export function formatStatusTable(rows: MigrateStatusRow[]): string {
     if (blockers.length > 0) {
       lines.push(`    blockers: ${blockers.join("; ")}`);
     }
+    // 有意保留（Bug 178）：让用户看见「这些没被算成 blocker，因为 retire 有意
+    // 保留它们」——否则 `retired: true` + 目录里还有 tsc 脚本看起来像漏改。
+    const preservedScripts = r.preserved?.scripts ?? [];
+    const preservedDeps = r.preserved?.deps ?? [];
+    if (preservedScripts.length > 0 || preservedDeps.length > 0) {
+      const parts = [
+        ...(preservedScripts.length > 0 ? [`scripts: ${preservedScripts.join(", ")}`] : []),
+        ...(preservedDeps.length > 0 ? [`typescript in: ${preservedDeps.join(", ")}`] : []),
+      ];
+      lines.push(`    preserved (not a blocker): ${parts.join("; ")}`);
+    }
     lines.push("");
   }
-  lines.push("next: nudo migrate strip <path>  →  verify  →  retire <pkg>");
+  // Bug 178：`next:` 提示**按状态分支**——旧实现**无条件**打印整条流水线
+  // ⇒ 已退役且已清干净的项目仍被建议「再退一次」（建议不可执行）。
+  const pending = rows.some(
+    (r) => r.blockers.filter((b) => b.trim() !== "" && b.trim() !== "—").length > 0,
+  );
+  if (rows.length === 0 || (rows.every((r) => r.retired) && !pending)) {
+    lines.push("next: nothing to do — TypeScript is retired here");
+  } else {
+    lines.push("next: nudo migrate strip <path>  →  verify  →  retire <pkg>");
+  }
   return lines.join("\n");
 }

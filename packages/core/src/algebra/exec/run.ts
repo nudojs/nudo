@@ -27,7 +27,7 @@ import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown, abs, strLit } from "../abs.ts";
-import { makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
+import { makeAbsApplyResult, getFnImpl, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf, defaultImportBindingOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
@@ -314,6 +314,50 @@ export function getEnvShadowSkipGlobals(): ReadonlySet<string> {
     ...HOST_INTRINSIC_NAMES,
     ...NAMESPACE_GLOBALS.map(([name]) => name),
   ]));
+}
+
+/**
+ * Bug 254：env 全局注入的**绑定名**必须能当合法 `let <名>` 用。
+ *
+ * 注入形态是模块级 `let <名> = __nudoEnv["<名>"];`（见下方 runTranspiledInner
+ * 的 env 注入点）——**查表键**加了 `JSON.stringify`，**绑定名**没有。于是 env
+ * 文件里一个叫 `default` 的全局（harvester 的 `emitEnvModule` 对**任何**带
+ * default 导出的包必产一个，`@types/lodash` 的 `export = _` 即命中）会拼出
+ * `let default = …` ⇒ 模块体是 strict mode ⇒
+ * `new Function` 抛 `SyntaxError: Unexpected strict mode reserved word`
+ * ⇒ **整个模块 fail-closed**（导出全丢 + `nudo:internal`/exit 1）。
+ * env 文件本身语法完全合法 ⇒ 用户几乎不可能自查到。
+ *
+ * 口径（与 Bug 273 的「模块级绑定优先」同族）：**非法绑定名不注入**——该 env
+ * 全局在本次求值里就当不存在（引用它的读点落宿主/未声明路径），绝不让一个
+ * env 文件里的名字把**用户的整个文件**打挂。
+ *
+ * 覆盖三类不可绑名：
+ * - 关键字 / 字面量（`default` / `this` / `null` / `class` …）；
+ * - strict-mode 保留字（`static` / `implements` / `package` …——模块体恒
+ *   strict，故 sloppy 下合法的 `let yield` 也一并不注入）；
+ * - strict 下的禁绑标识符 `eval` / `arguments` / `await`。
+ */
+const RESERVED_LET_BINDING_NAMES: ReadonlySet<string> = new Set([
+  // 关键字 / 字面量
+  "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false",
+  "finally", "for", "function", "if", "import", "in", "instanceof", "new",
+  "null", "return", "super", "switch", "this", "throw", "true", "try",
+  "typeof", "var", "void", "while", "with",
+  // strict-mode 保留字
+  "implements", "interface", "let", "package", "private", "protected",
+  "public", "static", "yield",
+  // strict 下的禁绑名（modules 里 `await` 亦保留）
+  "await", "eval", "arguments",
+]);
+
+/** 合法 `let` 绑定名的标识符形态（Unicode ID_Start / ID_Continue + `$` `_`）。 */
+const LET_BINDING_IDENT_RE = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u;
+
+/** Bug 254：`name` 能否拼成 `let <name> = …` 而不触发 `new Function` SyntaxError。 */
+export function isValidLetBindingName(name: string): boolean {
+  return LET_BINDING_IDENT_RE.test(name) && !RESERVED_LET_BINDING_NAMES.has(name);
 }
 
 /**
@@ -629,7 +673,12 @@ function runTranspiledInner(
       "__nudoRefreshKeep",
       ...injectNames,
     ]);
-    const injectable = injectCandidates.filter((k) => !occupied.has(k));
+    // Bug 254：**绑定名合法性**是第二道门（与撞名同族、同一个拼接点）。
+    // `let <strict 保留字> = …` ⇒ new Function SyntaxError ⇒ 整文件失败
+    // （fail-closed unknown + nudo:internal）。名字不可绑 ⇒ 不注入。
+    const injectable = injectCandidates.filter(
+      (k) => !occupied.has(k) && isValidLetBindingName(k),
+    );
     if (injectable.length > 0) {
       const envBinds = injectable
         .map((k) => `let ${k} = __nudoEnv[${JSON.stringify(k)}];`)
@@ -825,11 +874,32 @@ function noteDrainedClassCollisions(): void {
   }
 }
 
-/** evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） */
+/**
+ * evaluator 回落事件（观测单一埋点）。
+ *
+ * **两个维度互不替代**（BUG-073 之后）：
+ * - `reason` = **标签**（这次回落是什么）：
+ *   - `unsupported:*` —— **能力边界**（转译未 lowering 的构造）：不是缺陷；
+ *   - `module-throw` —— **程序自身抛**（建模内抛 NudoThrow，或**用户代码
+ *     求值时逃逸的原生异常**：拼错标识符 / 空值访问 / JSON.parse …）⇒
+ *     catch 可吸收，**不是**引擎缺陷（BUG-073：此前一律归 internal ⇒ CLI
+ *     把用户的拼写错误报成「engine bug」）；
+ *   - `internal` —— **引擎/宿主边界自身违约**（宿主函数抛、引擎产出非 Abs
+ *     结果等）：引擎看不见其源码 ⇒ 按 DEC-006 记 canary。
+ * - `gateFatal` = **可见性**（这次回落是否让引擎**无法裁决**该文件）：
+ *   装载期逃逸的失败 ⇒ 该模块装载失败（导出全丢）⇒ 闸门看不到任何入口
+ *   ⇒ 必须 fail-closed（BUG-072）。**能力边界不进**（不得假红）。
+ *
+ * ⇒ 标签是「谁的责任」，可见性是「闸门能不能裁决」——两件事，故分列两个字段。
+ */
 export type EvalFallback = {
   reason: string;
   message: string;
   loc?: { line: number; column: number };
+  /** 回落来源：module（用户代码求值）/ host（宿主函数边界）/ engine（引擎自身违约） */
+  origin?: "module" | "host" | "engine";
+  /** 该回落是否让引擎**无法裁决**该文件（闸门必须 fail-closed） */
+  gateFatal?: boolean;
 };
 
 /** 回落事件 collector（作用域化：runWithCollectorScope 内各分析互不串台；
@@ -902,20 +972,80 @@ export function resetEvalFallbackStats(): void {
   _fbModuleThrow = 0;
 }
 
+/**
+ * 回落来源：
+ * - `module` —— transpiled **用户代码**求值（模块体 / 编译体 / 调用面）；
+ * - `host` —— **宿主函数边界**（无源码可分析的宿主实现：mock / 桥接 / 内建）；
+ * - `engine` —— **引擎自身违约**（引擎产出了非 Abs 结果等）。
+ */
+type EvalFallbackOrigin = "engine" | "host" | "module";
+
 /** 回落事件归类（unsupported:* 能力边界 / module-throw 程序自身抛 / internal 引擎缺陷） */
-function evalFallbackOf(e: unknown): EvalFallback {
-  return e instanceof NudoUnsupportedError
-    ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
-    : isNudoThrow(e)
-      ? // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
-        // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
-        { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
-      : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+function evalFallbackOf(e: unknown, origin: EvalFallbackOrigin = "module"): EvalFallback {
+  if (e instanceof NudoUnsupportedError) {
+    return {
+      reason: `unsupported:${e.reason}`,
+      message: e.message,
+      ...(e.loc ? { loc: e.loc } : {}),
+      origin,
+    };
+  }
+  if (isNudoThrow(e)) {
+    // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
+    // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
+    return { reason: "module-throw", message: e instanceof Error ? e.message : String(e), origin };
+  }
+  if (origin === "module") {
+    // BUG-073：其余原生异常来自**求值用户代码**（ReferenceError 拼错
+    // 标识符 / TypeError 空值访问 / SyntaxError JSON.parse …）⇒ 属于
+    // 程序自身抛（catch 可吸收），不是引擎缺陷。此前一律归 internal
+    // ⇒ CLI 把用户的拼写错误报成「engine bug」。
+    return { reason: "module-throw", message: e instanceof Error ? e.message : String(e), origin };
+  }
+  // 宿主函数 / 引擎自身抛出：引擎看不见其源码 ⇒ 区分不了「用户代码自身抛」
+  // 与「宿主/引擎契约破裂」⇒ 按 DEC-006 记 internal（canary，不静默）。
+  // BUG-073 的 module-throw 归类只适用于 **transpiled 用户代码**，宿主
+  // 边界不在其列。
+  return { reason: "internal", message: e instanceof Error ? e.message : String(e), origin };
 }
 
-/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） */
-export function noteEvalFallback(e: unknown): void {
-  const f: EvalFallback = evalFallbackOf(e);
+/**
+ * 闸门 fail-closed 判据（**可见性**：这次回落是否让引擎无法裁决该文件）。
+ *
+ * - 能力边界（`unsupported:*`）⇒ **不进**（能力边界不得假红：真实包里一大片
+ *   未 lowering 的构造 ⇒ 全红即废）；
+ * - 建模内抛（NudoThrow ⇒ 标签 module-throw）⇒ **不进**：引擎**知道**程序在
+ *   抛（这是模型的结论，不是引擎的失败）⇒ 归 `nudo:module-throw` 通道
+ *   （core check 面按句法证据发诊断）⇒ 不得再当「引擎失败」报给用户。
+ * - 宿主 / 引擎边界（标签 internal）⇒ **进**（引擎缺陷 ⇒ 闸门必须红）。
+ * - 用户代码原生异常（BUG-073 ⇒ 标签 module-throw）⇒ **装载期逃逸时进**：
+ *   模块装载失败 ⇒ 导出全丢 ⇒ 闸门看不到任何入口 ⇒ 假绿（BUG-072）；
+ *   调用期的逃逸不进（该次调用的 throws 面已由 L2 入口证据承载）。
+ */
+function gateFatalOf(
+  e: unknown,
+  origin: EvalFallbackOrigin,
+  loadFailure: boolean,
+): boolean {
+  if (e instanceof NudoUnsupportedError) return false;
+  if (isNudoThrow(e)) return false;
+  if (origin !== "module") return true;
+  return loadFailure;
+}
+
+/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用）。
+ *  opts.loadFailure：**模块装载期**逃逸的失败（模块体求值抛 ⇒ 该模块导出
+ *  全丢 ⇒ 闸门无法裁决该文件 ⇒ fail-closed）。 */
+export function noteEvalFallback(
+  e: unknown,
+  origin: EvalFallbackOrigin = "module",
+  opts?: { loadFailure?: boolean },
+): void {
+  const loadFailure = opts?.loadFailure === true;
+  const f: EvalFallback = {
+    ...evalFallbackOf(e, origin),
+    gateFatal: gateFatalOf(e, origin, loadFailure),
+  };
   if (f.reason === "internal") _fbInternal++;
   else if (f.reason === "module-throw") _fbModuleThrow++;
   else if (f.reason.startsWith("unsupported:")) _fbUnsupported++;
@@ -945,7 +1075,8 @@ export function tryRunTranspiled(
   try {
     return runTranspiled(source, opts);
   } catch (e) {
-    noteEvalFallback(e);
+    // **模块装载期**失败 ⇒ 该模块导出全丢 ⇒ 闸门无法裁决该文件（fail-closed）
+    noteEvalFallback(e, "module", { loadFailure: true });
     return undefined;
   }
 }
@@ -974,8 +1105,14 @@ export function tryRunTranspiledDetailed(
   try {
     return { run: runTranspiled(source, opts) };
   } catch (e) {
-    noteEvalFallback(e);
-    return { fallback: evalFallbackOf(e) };
+    // **模块装载期**失败 ⇒ 导出全丢 ⇒ 闸门无法裁决该文件（fail-closed）
+    noteEvalFallback(e, "module", { loadFailure: true });
+    return {
+      fallback: {
+        ...evalFallbackOf(e, "module"),
+        gateFatal: gateFatalOf(e, "module", true),
+      },
+    };
   }
 }
 
@@ -1092,15 +1229,22 @@ function callTranspiledExportFullInner(
       if (!(a && typeof a === "object" && "shape" in (a as object))) return asAbsVal(a);
       return opts?.shareArgs ? (a as Abs) : $copy(a as Abs, copyMemo);
     });
+    // 宿主函数（无源码可分析）⇒ 回落记 internal（DEC-006 canary）
     return runExportCallGuarded(() => {
       const invoke = () =>
         withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
       return opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
-    });
+    }, { fallbackOrigin: "host" });
   }
   if (isAbsVal(fn)) {
     // export const f = (x) => …：导出值是一等 fn Abs —— 按调用语义 apply
     if (fn.shape.k === "fn") {
+      // 回落来源（BUG-073 的标签分界）：**宿主实现的 apply 钩子**（mock /
+      // 桥接 / 宿主内建）⇒ 引擎看不见其源码 ⇒ 回落记 internal（DEC-006
+      // canary）；**编译体**（用户源码转译出来的 body）⇒ 用户代码 ⇒ 其
+      // 原生异常按 BUG-073 归 module-throw（不是引擎缺陷）。
+      const impl = getFnImpl(fn);
+      const fallbackOrigin: EvalFallbackOrigin = impl?.apply ? "host" : "module";
       return runExportCallGuarded(() => $call(fn, args), {
         // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
         // 不回写分析）——arity-only fn Abs 调用后携带真实返回
@@ -1109,6 +1253,7 @@ function callTranspiledExportFullInner(
         // 保持 noteEvalFallback + fail-closed unknown，不走 JS 导出分支的
         // 「原生必抛」TDZ 路由（throws 面两路一致，结果面为既有差异）。
         referenceErrorIsFallback: true,
+        fallbackOrigin,
       });
     }
     drainPromiseMicros();
@@ -1144,6 +1289,8 @@ function runExportCallGuarded(
     /** Abs fn 分支：$call 冒出的原生 ReferenceError 按引擎回落处理
      *  （noteEvalFallback + unknown），而非 JS 导出分支的「原生必抛」never */
     referenceErrorIsFallback?: boolean;
+    /** 回落来源（默认 module = transpiled 用户代码；host = 宿主函数边界） */
+    fallbackOrigin?: EvalFallbackOrigin;
   },
 ): TranspiledCallResult {
   return runWithLoopExits(() => {
@@ -1180,7 +1327,7 @@ function runExportCallGuarded(
       // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
       // result 保持 fail-closed unknown（不谎称 never）。
       // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落（不静默吞）。
-      noteEvalFallback(e);
+      noteEvalFallback(e, opts?.fallbackOrigin);
       return {
         result: joinLoopExits(unknown),
         throws: joinThrowExits(throwPayloadOf(e)),

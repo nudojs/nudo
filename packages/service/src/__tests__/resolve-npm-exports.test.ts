@@ -153,13 +153,17 @@ describe("exports condition keys (browser)", () => {
 });
 
 describe("exports array fallback", () => {
-  it("skips missing file and hits next in array", () => {
-    const { dir, pkgDir } = makePkg(
+  // BUG-270：Node 的数组回退只看「目标**非法**」，**不看存在性**——
+  // 首个目标合法但文件缺失时解析就停在该目标上（装载期 ERR_MODULE_NOT_FOUND）。
+  // 旧用例（"skips missing file and hits next in array"）固化的是这条缺陷。
+  it("stops at the first valid target even when the file is missing (BUG-270)", () => {
+    const { dir } = makePkg(
       { exports: { "./f": ["./miss.js", "./hit.js"] } },
       { "hit.js": "export const x = 1;" },
     );
-    const hit = resolveNpmJsEntry("pkg/f", dir);
-    expect(hit).toBe(join(pkgDir, "hit.js"));
+    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
   });
 
   it("uses first entry when it exists", () => {
@@ -173,12 +177,14 @@ describe("exports array fallback", () => {
     expect(resolveNpmJsEntry("pkg/f", dir)).toBe(join(pkgDir, "hit1.js"));
   });
 
-  it("array at root entry: { '.': ['./miss.mjs', './hit.js'] }", () => {
-    const { dir, pkgDir } = makePkg(
+  it("root-entry array stops at the first valid (missing) target (BUG-270)", () => {
+    const { dir } = makePkg(
       { exports: { ".": ["./miss.mjs", "./hit.js"] } },
       { "hit.js": "export const x = 1;" },
     );
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "hit.js"));
+    const r = resolveNpmJsEntryDetailed("pkg", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
   });
 
   it("array with conditions inside: [{ browser: ... }, { default: ... }]", () => {

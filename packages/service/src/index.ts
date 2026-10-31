@@ -150,7 +150,11 @@ export {
  * 报告面（`nudo test`）必须复用它，否则「期望 `number().gt(0)`」这类
  * 谓词期望在报告面恒假红（分析面判满足、报告面判不满足）。
  */
-export { caseExpectedSatisfied } from "./analyzer-orchestrate-uncached-cases.ts";
+export {
+  caseExpectedSatisfied,
+  formatExpected,
+  inferenceFailed,
+} from "./analyzer-orchestrate-uncached-cases.ts";
 
 export {
   mockDirectivesToAbsSeeds,

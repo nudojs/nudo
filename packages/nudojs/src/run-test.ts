@@ -19,6 +19,8 @@ import {
 import {
   caseExpectedSatisfied,
   defaultLoadModule,
+  formatExpected,
+  inferenceFailed,
   findProjectConfig,
   interfaceConfig,
   type AnalysisResult,
@@ -61,34 +63,23 @@ function caseLabel(c: CaseResult): string {
   return `debug "${c.name}"`;
 }
 
+/**
+ * 见证行**本体**（不含行首缩进）：`<label>  (args) => <result>[   throws T]`。
+ *
+ * BUG-136：这是 CLI `nudo test` 报告与 LSP codeLens 标题（`agent-tools.ts`
+ * 的 `observationTitle`）的**共享格式**。两面此前各自手写（throws 前 2 vs 3
+ * 空格）⇒ 同一事实两种渲染。现在格式只在这里定义一次，LSP 侧按同一模板
+ * 渲染（lens 标题**不带**容器缩进，CLI 报告在 `caseLines.push` 处加）。
+ * 两包的依赖方向是 lsp → service/core，nudojs 不被 lsp 依赖 ⇒ 无法物理共享
+ * 同一函数；一致性由 `lsp-bug-136-witness-line-parity.test.ts` 逐字符钉住。
+ */
 function formatCaseLine(c: CaseResult): string {
   const argsStr = c.argAbs.map((a) => formatShape(a)).join(", ");
-  let line = `  ${caseLabel(c)}  (${argsStr}) => ${formatShape(c.abs)}`;
+  let line = `${caseLabel(c)}  (${argsStr}) => ${formatShape(c.abs)}`;
   if (c.throwsAbs && c.throwsAbs.shape.k !== "never") {
     line += `   throws ${formatShape(c.throwsAbs)}`;
   }
   return line;
-}
-
-/**
- * Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定）。
- *
- * 判据（**报告面本地**判）：
- * - `shape.k === "unknown"`：core 的 unknown 语义 = 「分析拿不到信息
- *   （求值失败 / 泄漏）」⇒ 实测值**没推出来**；
- * - `conf === "opaque"`：路径没覆盖 / 原生调用 ⇒ 引擎**放弃**推导
- *   （与 check 面 `nudo:opaque-result` 的 INFO 同一事实）。
- *
- * ⚠ **不拿 `never` 当判据**：`never` 是底元素，「实测 never」是**抛错**
- * （Bug 649 的判定层已把它拦成「不满足」）⇒ 与「推导失败」是两回事。
- * ⚠ **不拿 `any` 当判据**：`any` 是「开发者没写约束」，不是推导失败
- * （core 自己的注释：`unknown` = 推导失败，`any` = 未写契约）。
- *
- * 为什么不放在 service 的判定函数里：`caseExpectedSatisfied` 是**二值**判定
- * （片 C 冻结），第三态是**报告面**的事（能不能下断言结论）⇒ 本地判。
- */
-function inferenceFailed(actual: Abs): boolean {
-  return actual.shape.k === "unknown" || actual.conf === "opaque";
 }
 
 /**
@@ -178,7 +169,8 @@ export function buildTestReport(
       return;
     }
     for (const c of cases) {
-      caseLines.push(formatCaseLine(c));
+      // 行首 2 空格 = 报告容器缩进（LSP codeLens 标题不携带，BUG-136）
+      caseLines.push(`  ${formatCaseLine(c)}`);
       // synthetic 判据 = **来源**（源里没有这条 case ⇒ 合成出来的观察）。
       // 不能只看名字前缀：`nudo test --freeze` 写回的见证 case 名叫
       // `call@<file>:<line>`，但它是**写在源码里的** case 指令 ⇒ 已声明
@@ -213,7 +205,7 @@ export function buildTestReport(
         });
         continue;
       }
-      const expected = formatShape(c.expected as Abs);
+      const expected = formatExpected(c.expected as Abs);
       // Bug 950 第三态：引擎**未能推断**实测值（unknown / conf=opaque）⇒
       // **无法判定** ⇒ 记 unchecked（既不是失败，也不是空洞通过）。
       // ⚠ 判在**判定调用之前** ⇒ `any()` / `unknown()` 这类「放宽的期望」

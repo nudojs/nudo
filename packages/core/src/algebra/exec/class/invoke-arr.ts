@@ -1401,7 +1401,12 @@ function arrIndexOf(ctx: ArrCtx): Abs {
       return r.value === sv; // 严格等号（NaN !== NaN 由 === 自然成立）
     };
     if (method === "indexOf") {
-      let start = from === undefined ? 0 : from < 0 ? Math.max(len + from, 0) : Math.min(from, len - 1);
+      // 规范 ES2023 23.1.3.14：fromIndex ≥ len ⇒ `n = min(n, len)` ⇒ 起点
+      // 等于 len ⇒ 空扫描 ⇒ **-1**。此前夹到 `len - 1`（末位）⇒ 多扫了
+      // 规范明说不该扫的那一位（`[1,2,3].indexOf(3, 5)` 宿主 -1、引擎 2，
+      // conf: exact 的错值）。lastIndexOf 的「上界夹到 len-1」才是对的
+      // （它是**降序**扫描，原生语义就是从末位起）⇒ 两臂各自正确。
+      const start = from === undefined ? 0 : from < 0 ? Math.max(len + from, 0) : Math.min(from, len);
       for (let i = start; i < len; i++) {
         if (isHole(i)) continue;
         const t = eq(els[i]!);

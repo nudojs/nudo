@@ -7,7 +7,10 @@
  * - NudoReturn 早退；NudoThrow 载荷；
  * - 原生 ReferenceError（JS 导出：「原生必抛」never；Abs fn：$call 内引擎
  *   回落面 unknown + noteEvalFallback——既有差异，骨架原样保留）；
- * - 原生 TypeError（fail-closed unknown + internal 回落计数）；
+ * - 原生 TypeError（fail-closed unknown + 回落计数）；
+ * - 回落**标签**分两维（BUG-073）：用户代码（编译体）求值时逃逸的原生异常
+ *   ⇒ `module-throw`（程序自身抛，不是引擎缺陷）；宿主实现的 apply 钩子抛
+ *   ⇒ `internal`（引擎看不见其源码，DEC-006 canary）；
  * - 兄弟 exit 通道（pushThrowExit / pushLoopExit）与正常出口 join；
  * - 非 fn 导出目标（primitive / 缺失 / Abs 非 fn）不变。
  */
@@ -159,7 +162,16 @@ type AbsCase = {
   args: Abs[];
   result: ResultFace;
   throws: ThrowsFace;
+  /** noteEvalFallback 的 **internal** 增量（引擎/宿主边界自身违约） */
   fallback: number;
+  /**
+   * noteEvalFallback 的 **module-throw** 增量（程序自身抛）。
+   *
+   * BUG-073：用户代码（编译体）求值时逃逸的原生异常 ⇒ 标签 `module-throw`
+   * （不是引擎缺陷）⇒ 不再计 internal；宿主实现的 apply 钩子抛 ⇒ 引擎看不见
+   * 其源码 ⇒ 仍计 internal（DEC-006 canary）。
+   */
+  moduleThrowFallback?: number;
   /** 正常出口的 returnType 观测回填（refineFnReturnType） */
   returnType: "refined" | "unset";
 };
@@ -217,7 +229,13 @@ const absCases: AbsCase[] = [
     args: [numLit(5)],
     result: { k: "unknown" },
     throws: { k: "brand", name: "ReferenceError" },
-    fallback: 1,
+    // **重钉（BUG-073 §修复方向：「宿主原生异常…归 module-throw（程序自身抛）」
+    // ⇒ 用户代码侧的「原生异常归类」以该节为准）**：编译体（用户代码）里的自由名
+    // ⇒ ReferenceError 是**用户代码自身抛**（拼错的标识符）⇒ 标签
+    // `module-throw`，不再是引擎缺陷 ⇒ internal 增量 0、module-throw 增量 1。
+    // （回落面本身不变：结果面 unknown + throws ReferenceError，仍 fail-closed。）
+    fallback: 0,
+    moduleThrowFallback: 1,
     returnType: "unset",
   },
   {
@@ -231,6 +249,8 @@ const absCases: AbsCase[] = [
     args: [numLit(5)],
     result: { k: "unknown" },
     throws: { k: "brand", name: "TypeError" },
+    // 宿主实现的 apply 钩子 ⇒ 引擎看不见其源码 ⇒ 仍记 internal（DEC-006
+    // canary；BUG-073 的 module-throw 只归用户代码求值时的原生异常）。
     fallback: 1,
     returnType: "unset",
   },
@@ -300,9 +320,13 @@ describe("runExportCallGuarded — Abs fn export", () => {
   for (const c of absCases) {
     it(c.label, () => {
       const fn = c.make();
-      const before = getEvalFallbackStats().internal;
+      const before = getEvalFallbackStats();
       const r = callTranspiledExportFull({ f: fn }, "f", c.args);
-      expect(getEvalFallbackStats().internal - before).toBe(c.fallback);
+      const after = getEvalFallbackStats();
+      // 回落面分两维断言（BUG-073）：internal = 引擎/宿主边界自身违约；
+      // module-throw = 程序自身抛（用户代码求值时逃逸的原生异常）。
+      expect(after.internal - before.internal).toBe(c.fallback);
+      expect(after.moduleThrow - before.moduleThrow).toBe(c.moduleThrowFallback ?? 0);
       expectResultFace(r, c.result);
       expectThrowsFace(r, c.throws);
 

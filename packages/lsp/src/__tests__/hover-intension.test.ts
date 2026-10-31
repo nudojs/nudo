@@ -131,7 +131,7 @@ export const elem = shape({ value: shape({ cooked: nullable(string()), raw: stri
 
 export const astNode = union(
   shape({ type: lit("StringLiteral"), value: string() }),
-  shape({ type: lit("TemplateLiteral"), expressions: array(string()), quasis: array(elem) }),
+  shape({ type: "TemplateLiteral", expressions: array(string()), quasis: array(elem) }),
   shape({ type: string() }),
 );
 
@@ -617,7 +617,7 @@ export const astNode = union(
     expect(thenNode).not.toBeNull();
     // pretty 多行缩进：obj 每槽一行 + 尾逗号 + 2 空格缩进
     expect(thenNode!.typeText).toBe(
-      'node: {\n  type: lit("Literal"),\n  value: string,\n}',
+      'node: {\n  type: "Literal",\n  value: string,\n}',
     );
 
     // L3 C43 = 成员读属性位（node.value 的 value
@@ -768,10 +768,10 @@ export const astNode = union(
     // （起始键 = node 值读记录）→ 整体 union（pretty 按臂断行）
     const optChain = getHoverAtPosition(f, MAIN, 4, 24, undefined, { loadModule });
     expect(optChain).not.toBeNull();
-    expect(optChain!.typeText).toMatch(/^\{\n  type: lit\("Literal"\),\n  value: string,\n\}\n\| \{/);
+    expect(optChain!.typeText).toMatch(/^\{\n  type: "Literal",\n  value: string,\n\}\n\| \{/);
     const index = getHoverAtPosition(f, MAIN, 4, 26, undefined, { loadModule });
     expect(index).not.toBeNull();
-    expect(index!.typeText).toContain('lit("TemplateLiteral")');
+    expect(index!.typeText).toContain('"TemplateLiteral"');
     cleanup();
   });
 
@@ -782,7 +782,7 @@ export const astNode = union(
     expect(node).not.toBeNull();
     expect(node!.typeText).toContain("\n");
     expect(node!.typeText).toMatch(
-      /^node: \{\n  type: lit\("Literal"\),\n  value: string,\n\}$/,
+      /^node: \{\n  type: "Literal",\n  value: string,\n\}$/,
     );
     // 纯 prim 联合（L5 return 记录：string | null）不断行
     const ret5 = getHoverAtPosition(f, MAIN, 5, 2, undefined, { loadModule });

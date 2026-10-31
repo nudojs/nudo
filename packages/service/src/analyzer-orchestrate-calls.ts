@@ -80,14 +80,19 @@ export function collectCallRecords(filePath: string, source: string): CallSiteRe
       });
       if (run?.calls?.length) {
         const importLocals = buildAbsImportLocalMap(source, filePath);
-        // 行数上界：记录只带行号、不带调用点文件 ⇒ 依赖模块里的调用会被
-        // 误标成「现场文件」。行号超出被求值文件的行数 ⇒ 该调用不在本文件
-        // （发生在依赖里）⇒ 不标现场文件（名字不指向别的文件的行）。
-        const lineCount = source.split("\n").length;
-        // 标上「调用现场文件」——见证名据此做来源限定（见 CallSiteRecord）
+        // 标上「调用现场文件」——见证名据此做来源限定（见 CallSiteRecord）。
+        //
+        // **不得用行数上界猜来源**（Bug 089）：记录只带行号，依赖模块里的
+        // 调用（`dep.js` 第 2 行调 `greet`）在「行号 ≤ 现场文件行数」时会被
+        // 误贴成现场文件 ⇒ 见证名指到现场文件里根本不是该调用的行（甚至是
+        // 注释行），并与现场文件自己的调用**撞名**。
+        // 判据改为**核对 AST**：本文件在该位置确实有调用表达式才贴；
+        // 核不上 ⇒ 不贴（宁可不加来源限定，也不贴错文件）。
+        const sites = callSiteKeys(source);
         return expandTestCallbacks(run.calls).map((r): CallSiteRecord => {
           const rec = callRecordFromAbsCall(r, importLocals);
-          if (rec.callLoc !== undefined && rec.callLoc.line > lineCount) return rec;
+          if (rec.callLoc === undefined) return rec;
+          if (!sites.has(`${rec.callLoc.line}:${rec.callLoc.column}`)) return rec;
           return { ...rec, callSiteFile: filePath };
         });
       }
@@ -97,6 +102,42 @@ export function collectCallRecords(filePath: string, source: string): CallSiteRe
   }
   // fail-closed：B 失败（历史语法/eval-incapable 构造）→ 无记录（旧 Abs 兜底已删）
   return [];
+}
+
+/**
+ * 本文件所有调用表达式的位置键 `line:column`（1 基行 / 0 基列，与
+ * `CallRecord.callLoc` 同口径）。同时收调用表达式起点与 callee 起点——
+ * 记录里的 loc 两者都可能是。解析失败 ⇒ 空集（全部不贴，保守）。
+ */
+function callSiteKeys(source: string): Set<string> {
+  const out = new Set<string>();
+  const add = (n: unknown): void => {
+    const loc = (n as { loc?: { start?: { line?: number; column?: number } } } | null)?.loc;
+    const s = loc?.start;
+    if (typeof s?.line === "number" && typeof s.column === "number") {
+      out.add(`${s.line}:${s.column}`);
+    }
+  };
+  const visit = (n: unknown): void => {
+    if (!n || typeof n !== "object") return;
+    const o = n as { type?: string; callee?: unknown; [k: string]: unknown };
+    if (o.type === "CallExpression") {
+      add(o);
+      if (o.callee && typeof o.callee === "object") add(o.callee);
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      const v = o[key];
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (v && typeof v === "object") visit(v);
+    }
+  };
+  try {
+    visit(parse(source));
+  } catch {
+    /* 解析失败 ⇒ 空集 */
+  }
+  return out;
 }
 
 /** 测试回调展开：describe 队列展开（预算 + 对象去重防自注册死循环） */

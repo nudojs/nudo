@@ -374,10 +374,20 @@ export function sortTupleAbs(
     if (n > SORT_CMP_SWEEP_CAP) {
       // 单探针：原生首调用对不可知 → 抛只能 may（不得定抛）
       try {
-        applyCallbackAbs(
+        const probe = applyCallbackAbs(
           cmpAbs, [slots[comparableIdx[0]]!, slots[comparableIdx[1]]!],
           emptyEnv(), pTrue, defaultLeakBudget,
         );
+        // BUG-244：比较器返回值形态是**静态可判**的常量面（symbol / bigint
+        // 字面量 ⇒ 原生 ToNumber 定抛 TypeError），与「是否真执行回调」
+        // 无关——探针已拿到该形态，kind 必须是 TypeError 而不是泛 Error。
+        const pv = probe.term?.op === "lit" ? (probe.term as { value: unknown }).value : undefined;
+        if (typeof pv === "symbol" || typeof pv === "bigint") {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "sort comparator return may not be convertible to a number",
+          });
+        }
       } catch (e) {
         if (e instanceof NudoThrow) {
           recordMayThrow({
@@ -393,9 +403,13 @@ export function sortTupleAbs(
     // 确抛 TypeError，仅当该对真被比较）。全对事件 → 原生首调必抛 → 定抛
     //（载荷 = 全部事件 join：原生首对是哪一个不可知）；部分 → may + 降级。
     const signs: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
-    let invocations = 0;
+    let attempts = 0;
     let throwEvents = 0;
     let throwPayload: Abs | undefined;
+    // BUG-244：抛事件的**来源**——ToNumber 失败（symbol/bigint 比较器返回值）
+    // 在原生里恒为 TypeError；比较器体自己抛的载荷才算泛 Error。此前一律
+    // 记 kind:"Error" ⇒ 建议 `@nudo:throws Error` 对不上宿主的 TypeError。
+    let nonNumericThrow = false;
     const noteThrow = (payload: Abs): void => {
       throwEvents++;
       throwPayload = throwPayload === undefined ? payload : joinAbs(throwPayload, payload);
@@ -405,6 +419,7 @@ export function sortTupleAbs(
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
         let r: Abs;
+        attempts++;
         try {
           r = applyCallbackAbs(
             cmpAbs, [slots[comparableIdx[i]!], slots[comparableIdx[j]!]],
@@ -417,7 +432,6 @@ export function sortTupleAbs(
           }
           throw e;
         }
-        invocations++;
         // ToNumber（字面量真折叠；symbol/bigint → 该对 ToNumber 确抛）
         const t = r.term;
         if (t?.op !== "lit") {
@@ -430,6 +444,7 @@ export function sortTupleAbs(
         }
         const v = (t as { value: unknown }).value;
         if (typeof v === "symbol" || typeof v === "bigint") {
+          nonNumericThrow = true;
           noteThrow(errorTypeAbs("TypeError"));
           continue;
         }
@@ -442,12 +457,20 @@ export function sortTupleAbs(
         signs[i]![j] = num > 0 ? 1 : num < 0 ? -1 : 0;
       }
     }
-    if (invocations === 0 && throwPayload !== undefined) {
-      // 全对抛：原生首调必抛 → 定抛（载荷 join，见上）
-      throw new NudoThrow(throwPayload);
+    if (throwEvents > 0 && throwEvents === attempts) {
+      // 每一次比较器调用都抛 ⇒ 原生首调必为某个有序对 ⇒ 定抛（载荷 join）。
+      // 判定用「尝试数 = 抛数」而非「成功调用数 = 0」：返回值形态的抛
+      // （symbol / bigint 的 ToNumber 失败）不计入成功调用，但同样满足
+      // 「每次调用都抛」；同时不误判「部分对抛」（首调可能是正常对 ⇒ 只能 may）。
+      throw new NudoThrow(throwPayload!);
     }
     if (throwEvents > 0) {
-      recordMayThrow({ kind: "Error", cause: "sort comparator may throw" });
+      recordMayThrow({
+        kind: nonNumericThrow ? "TypeError" : "Error",
+        cause: nonNumericThrow
+          ? "sort comparator return may not be convertible to a number"
+          : "sort comparator may throw",
+      });
       return degrade();
     }
     if (nonNumeric) return degrade();
@@ -626,12 +649,85 @@ function mutateArrayLike(arr: Abs, method: string, args: Abs[]): Abs {
     setLen(next.length);
     return arr;
   }
-  // reverse / sort / copyWithin / fill：原地数组算法在泛型接收者上无对应写面
-  // （规范要求可写 length + 索引属性，但算法语义依赖数组内部序）⇒ 记 may-throw
-  recordMayThrow({
-    kind: "TypeError",
-    cause: `${method} on a non-array receiver has no modelled write surface`,
-  });
+  if (method === "reverse") {
+    // 原生 Array.prototype.reverse 的规范算法只依赖 Get / Set /
+    // DeletePropertyOrThrow + length ⇒ 数组样接收者与真数组同义（此前记
+    // may-throw 并把未改动的接收者当结果交回：既伪报抛、又给旧值）。
+    for (let i = 0, j = len - 1; i < j; i++, j--) {
+      const l = readIdx(i);
+      const r = readIdx(j);
+      if (r !== undefined) writeIdx(i, r);
+      else delIdx(i);
+      if (l !== undefined) writeIdx(j, l);
+      else delIdx(j);
+    }
+    return arr;
+  }
+  if (method === "fill") {
+    validateIndexArg(vals[1], "fill start may not be convertible to a number");
+    validateIndexArg(vals[2], "fill end may not be convertible to a number");
+    const v = vals[0] ?? undef();
+    const s = toIOI(vals[1]);
+    const e = toIOI(vals[2]);
+    if (s === null || e === null) {
+      // 窗口不可判定：任一索引槽可能被写 ⇒ 逐槽 join 新值（不得保留旧精度）
+      for (let i = 0; i < len; i++) {
+        const cur = readIdx(i);
+        writeIdx(i, cur === undefined ? v : joinAbs(cur, v));
+      }
+      return arr;
+    }
+    const start = Math.max(Math.min((s ?? 0) < 0 ? len + (s ?? 0) : (s ?? 0), len), 0);
+    const end = Math.max(Math.min((e ?? len) < 0 ? len + (e ?? len) : (e ?? len), len), 0);
+    for (let i = start; i < end; i++) writeIdx(i, v);
+    return arr;
+  }
+  if (method === "copyWithin" || method === "sort") {
+    // 这两个方法的规范算法同样只用 Get / Set / DeletePropertyOrThrow +
+    // length（copyWithin 的窗口相对化、sort 的稳定排序）⇒ 数组样接收者
+    // 走与真数组**同一套**写面：先物化成 tuple 交既有 builder 计算，再把
+    // 结果逐槽写回（holes ⇒ 删除该索引属性）。
+    const els: Abs[] = [];
+    const holes: number[] = [];
+    for (let i = 0; i < len; i++) {
+      const cur = readIdx(i);
+      if (cur === undefined) {
+        holes.push(i);
+        els.push(undef());
+      } else {
+        els.push(cur);
+      }
+    }
+    const tupleShape: { k: "tuple"; elements: Abs[]; holes?: number[] } = {
+      k: "tuple",
+      elements: els,
+      ...(holes.length > 0 ? { holes } : {}),
+    };
+    const src = abs(tupleShape, undefined, undefined, arr.conf);
+    let out: Abs;
+    if (method === "copyWithin") {
+      out = copyWithinTuple(tupleShape, vals);
+    } else {
+      validateCallableArg(vals[0], "sort comparator may not be callable", {
+        undefinedOk: true,
+      });
+      out = sortTupleAbs(src, vals[0], { preserveHoles: true });
+    }
+    const outShape = out.shape;
+    if (outShape.k === "tuple" && outShape.elements.length === len) {
+      const outHoles = new Set(outShape.holes ?? []);
+      for (let i = 0; i < len; i++) {
+        if (outHoles.has(i)) delIdx(i);
+        else writeIdx(i, outShape.elements[i]!);
+      }
+      return arr;
+    }
+    // 降级（元素域 / 比较器不可判）：旧值**不得**当作结果——逐槽宽化到
+    // 元素 join（原生会重排，任何单槽都可能是任一元素）。
+    const joined = els.length > 0 ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+    for (let i = 0; i < len; i++) writeIdx(i, joined);
+    return arr;
+  }
   return arr;
 }
 

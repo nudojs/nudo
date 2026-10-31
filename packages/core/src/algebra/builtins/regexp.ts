@@ -4,13 +4,14 @@
  * Invariants:
  * - RegExpExecArray 原生是**数组 exotic**（IsArray = true，继承
  *   Array.prototype）⇒ 匹配结果既有**数组方法面**（join / slice / map…，
- *   经 markMatchArrayView 侧表 + 数组方法派发），也有**可迭代面**
+ *   经形状 facet `view: "array"`（abs.ts 的 markArrayView）+ 数组方法派发），
+ *   也有**可迭代面**
  *   （spread / for-of / 数组解构）。后者经「@@iterator 槽（非枚举）+
  *   元素侧表」给出（Bug 290）——形状仍是 obj（容器 arr/tuple 无侧槽，
  *   #136 的槽读面依赖它）。
  */
 import type { Abs, Shape } from "../abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown, markArrayView, isArrayView } from "../abs.ts";
 import { objOf, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
@@ -55,20 +56,40 @@ const REGEX_FLAG_SLOTS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /**
+ * Bug 9：ES 规定 `RegExp.prototype.flags` 恒按 **d g i m s u v y** 的规范序
+ * 返回。正则**字面量**的源码书写顺序不保证是规范序（`/a/gimuyds.flags`
+ * 原生 `"dgimsuy"`），而 `new RegExp(...)` 构造路径取的是真构造结果
+ * （已规范序）⇒ 同一引擎两条路径结论不同。
+ *
+ * 口径统一：写入槽前一律用真 JS `new RegExp("", flags).flags` 规范化
+ * （与构造路径同口径）；非法 flag 组合（真构造抛）⇒ 原样保留（宿主在
+ * 字面量处已先抛 SyntaxError，引擎侧不二次判）。
+ */
+function canonicalRegexFlags(flags: string): string {
+  try {
+    return new RegExp("", flags).flags;
+  } catch {
+    return flags;
+  }
+}
+
+/**
  * RegExp brand 单一声明式槽构造（Bug 58 根治：字面量/抽象两路径共用）。
  * source：字面量 pattern → strLit；抽象 pattern → string 域（ToString 文本
- * 恒为字符串）。flags：字面量 flags → strLit（规范序）；抽象 → string 域。
+ * 恒为字符串）。flags：字面量 flags → strLit（**规范序**，Bug 9）；抽象 →
+ * string 域。
  * lastIndex 恒 0（构造时）。7 标志 getter（Bug 28）：字面量 flags → 精确
  * boolean；抽象 → boolean 域。
  */
 function regexpBrandSlots(source: Abs, litFlags: string | undefined): Record<string, { value: Abs }> {
+  const canonFlags = litFlags !== undefined ? canonicalRegexFlags(litFlags) : undefined;
   const slots: Record<string, { value: Abs }> = {
     source: { value: source },
-    flags: { value: litFlags !== undefined ? strLit(litFlags) : str() },
+    flags: { value: canonFlags !== undefined ? strLit(canonFlags) : str() },
     lastIndex: { value: numLit(0) },
   };
   for (const [name, ch] of REGEX_FLAG_SLOTS) {
-    slots[name] = { value: litFlags !== undefined ? boolLit(litFlags.includes(ch)) : boolPrim() };
+    slots[name] = { value: canonFlags !== undefined ? boolLit(canonFlags.includes(ch)) : boolPrim() };
   }
   return slots;
 }
@@ -215,24 +236,26 @@ export function validateRegexSubjectArg(subject: Abs | undefined): void {
  * （"abc".match(/b/) → ["b"]），index/input/groups 虽可枚举但非数组下标、
  * length 是数组 exotic 非枚举自有属性，均不进 JSON 面。
  * 容器侧 arr（{k:"arr", element}）无长度/侧槽、tuple 无命名侧槽（非下标
- * 键读折 undefined），形状维持 obj（m[0]/m.length/m.index/m.input/m.groups.x
- * 的槽读面 #136 依赖）；数组性经本 WeakSet 侧表标注，json.ts 序列化面
- * 消费（按下标槽 0..n-1 走数组序列化）。length 槽单挂 enumerable:false
+ * 键读折 undefined），形状维持 obj（m[0]/m.length/m.index/m.input/groups.x
+ * 的槽读面 #136 依赖）；数组性经 **形状 facet**（`view: "array"`，
+ * abs.ts 的 markArrayView）标注，json.ts 序列化面 / Array.isArray /
+ * 数组方法派发 / emit 产物共读该 facet（BUG-258：此前是 WeakSet 身份侧表
+ * ⇒ 类型面看不见）。length 槽单挂 enumerable:false
  * （原生数组 length 是唯一非枚举自有属性——Object.keys/展开/assign 面）；
  * index/input/groups 保持可枚举（spec CreateDataProperty），且 groups 槽的
  * undefined 值维持差分 harness concrete() 整值盲区（skip 基线不动）。
  */
-const matchArrayViews = new WeakSet<object>();
 
-/** match 结果 Abs 标注数组视图（json.ts 按下标槽序列化为数组；具体/
- *  抽象两路径与 matchAll 迭代元素共用） */
+/** match 结果 Abs 标注数组视图（形状 facet；json.ts 按下标槽序列化为数组；
+ *  具体/抽象两路径与 matchAll 迭代元素共用） */
 export function markMatchArrayView(a: Abs): void {
-  matchArrayViews.add(a);
+  markArrayView(a);
 }
 
-/** match 结果 Abs 判定（json.ts 的 stringify 三消费点共用） */
+/** match 结果 Abs 判定（形状 facet 读取；json.ts 的 stringify 三消费点 /
+ *  Array.isArray / 数组方法派发共用） */
 export function isMatchArrayView(a: Abs): boolean {
-  return matchArrayViews.has(a);
+  return isArrayView(a);
 }
 
 /**

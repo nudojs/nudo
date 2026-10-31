@@ -17,7 +17,7 @@ import { abs, numLit } from "../abs.ts";
 import type { Term } from "../term.ts";
 import { app as termApp, lit, simplifyTerm } from "../term.ts";
 import type { Pred } from "../pred.ts";
-import { and as pAnd } from "../pred.ts";
+import { and as pAnd, nextDown, nextUp } from "../pred.ts";
 import { numericBounds, isNonNaN, type NumBounds } from "../arithmetic.ts";
 import { makeSum } from "../objects.ts";
 import { currentExecPhi } from "../exec/runtime/state.ts";
@@ -230,12 +230,23 @@ function roundingAbs(
 
   let out: NumBounds = {};
   if (b) {
+    // Bug 225：strict 端点须做**见证步进**（与 arithmetic/shared.ts 的
+    // `synthEndpoint` 同口径）。取整内建的这四条此前一律用 `impl(b.lo.value)`
+    // ——对 `x > 0` 就是 `Math.ceil(0) = 0` ⇒ 下界整整松一级（真界
+    // `ceil(5e-324) = 1`）⇒ 契约 `return > 0` 证不出 ⇒ **假红**。
+    // 取整函数在实数上单调非降 ⇒ x > lo ⇒ x ≥ nextUp(lo)（浮点域的最小
+    // 可表示值，可达）⇒ impl 单调 ⇒ out.lo = impl(nextUp(lo)) 且**非严格**
+    // （该值被 x = nextUp(lo) 取到）。hi 侧对偶（nextDown）。
+    // 不用 `strict: true` 透传：那会宣称 `ceil(x) > 1`，而 ceil(5e-324)=1
+    // 恰是可取到的值 ⇒ 新假红。
     if (b.lo !== undefined) {
-      const v = impl(b.lo.value);
+      const w = b.lo.strict ? nextUp(b.lo.value) : b.lo.value;
+      const v = impl(w);
       out.lo = Number.isNaN(v) ? undefined : { value: v, strict: false };
     }
     if (b.hi !== undefined) {
-      const v = impl(b.hi.value);
+      const w = b.hi.strict ? nextDown(b.hi.value) : b.hi.value;
+      const v = impl(w);
       out.hi = Number.isNaN(v) ? undefined : { value: v, strict: false };
     }
   }

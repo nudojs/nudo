@@ -1916,8 +1916,15 @@ export function extractRefineReturnFromSource(
     for (const part of parts) {
       const m = part.match(/^return\s+(\S+)$/);
       if (!m || !m[1]!.split(".").every((p) => isJsBindingIdent(p))) {
-        // return 段形态非法（如 `return > 0`）→ 诊断
-        if (/^return\b/.test(part) && !/^return\s+\S+$/.test(part)) {
+        // return 段形态非法（如 `return > 0` / `return number()`）→ 诊断。
+        //
+        // BUG-261：判据必须是「第二个 token 是不是**合法约束名**」——旧守卫
+        // `!/^return\s+\S+$/.test(part)` 判的是「有没有第二个 token」
+        // ⇒ `return number()`（builder 调用）恰好有第二个 token ⇒ 守卫成立
+        // ⇒ **不发诊断** ⇒ 整条契约静默蒸发（后置条件从未执法，假绿）；
+        // 而参数位同款写法（上面的 `isContractSegmentNames`）**有**诊断
+        // ⇒ 两处判据不对称。此处与参数位同口径：形态非法就报，绝不静默。
+        if (/^return\b/.test(part)) {
           collectDiag({
             code: DIAG.contractSyntax,
             message: `Malformed @nudo:contract return segment '${part}' (expected return <constraintName>)`,

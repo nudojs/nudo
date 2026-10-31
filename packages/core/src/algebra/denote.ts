@@ -12,6 +12,7 @@ import { accessorReadDomain } from "./accessors.ts";
 import { isHiddenInternalSlot } from "./slot-visibility.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 import { ProjectionBudget } from "./projection-budget.ts";
+import { getEvalClass } from "./exec/class-registry.ts";
 import { SELF } from "./constraint.ts";
 
 /**
@@ -84,8 +85,13 @@ function denoteGuardB(a: Abs, v: string, budget: ProjectionBudget): string {
   }
 }
 
-/** shape 守卫（按 Abs 递归：obj 槽需按对象身份查访问器侧表，Bug 191） */
-function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
+/** shape 守卫（按 Abs 递归：obj 槽需按对象身份查访问器侧表，Bug 191）。
+ *
+ * `arrayLike`（BUG-158）：被检查值所在 brand 是**非数组 exotic**（`arguments`）
+ * 时，内层 arr / tuple 面**不得**以 `Array.isArray` 为前提——`arguments`
+ * 满足长度 / 下标语义却不是数组 exotic ⇒ 该前提使守卫恒假。
+ */
+function denoteShape(a: Abs, v: string, budget: ProjectionBudget, arrayLike = false): string {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -112,15 +118,39 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       // Bug 409 / 410：对象判定必须**排除数组**——`typeof v === "object"` 对
       // 数组同样成立 ⇒ 数组被当普通对象放行（假绿）。standard 面显式排除
       // 数组（"expected object, got array"），zod 的 `z.object()` 同口径。
-      const checks = [`typeof ${v} === "object"`, `${v} !== null`, `!Array.isArray(${v})`];
+      //
+      // BUG-258：**数组视图**（`view: "array"`，RegExpExecArray 等）反过来
+      // 要求 `Array.isArray` 成立——原生 exec 结果的 `0..n-1` / `length` /
+      // `index` / `input` / `groups` 全是自有属性（`length` 非枚举），所以下面
+      // 的槽存在性子句 / 值子句逐条照旧成立；只有头部判据要翻转，否则真实
+      // 值被 `!Array.isArray` 判假（假红）。
+      const checks =
+        s.view === "array"
+          ? [`Array.isArray(${v})`]
+          : [`typeof ${v} === "object"`, `${v} !== null`, `!Array.isArray(${v})`];
       for (const [key, slot] of Object.entries(s.slots)) {
         // Bug 240（S21）：internal 槽不进 guard 面（内部槽不是自有属性）——
         // 规范数组下标槽除外（承载元素域，族 01 口径）。
         if (isHiddenInternalSlot(key, slot)) continue;
-        const access = safeMemberAccess(v, key);
+        // BUG-097：槽名撞 `Object.prototype` 具名成员（`toString` / `valueOf` /
+        // `constructor` / `hasOwnProperty` …）时，`data.toString` 的**静态类型**
+        // 是原型成员的类型（`Record<string, any>` 的索引签名不遮蔽它们）⇒ 与
+        // 字面量比较报 TS2367 ⇒ 产物在 strict 工程里编不过。方括号取值让索引
+        // 签名生效（`any`）⇒ 可编译；其余键保留点号（可读性）。
+        const access = Object.hasOwn(Object.prototype, key)
+          ? `${v}[${JSON.stringify(key)}]`
+          : safeMemberAccess(v, key);
         // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——守卫须按 getter 读域
         // 判定（原生读 `data.ab` 走 getter），否则对函数自己的返回值报假红。
-        const slotAbs = accessorReadDomain(a, key) ?? slot.value;
+        // BUG-167：占位槽 `unknown` = 读域**不可判**（非纯 getter / defineProperty
+        // 装的访问器）⇒ 不得为守卫执行用户 getter，也不得把冻结末值写成必等式
+        //（那样 guard 对自己的返回值恒假）；落到占位值 → 只判 presence。
+        // 判据是 **term 缺失**（`unknown` 无 term；纯 getter 占位 `$lit(void 0)`
+        // 的 term = {op:"lit"}）——按 shape.k 判会误伤所有访问器。
+        const slotAbs =
+          slot.value.term === undefined
+            ? slot.value
+            : (accessorReadDomain(a, key) ?? slot.value);
         const inner = denoteGuardB(slotAbs, access, budget);
         if (slot.optional) {
           // 可选槽本就允许缺键 ⇒ 不产存在性子句（standard 面同口径）。
@@ -136,10 +166,20 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       }
       return checks.join(" && ");
     }
-    case "arr":
-      return `Array.isArray(${v}) && ${v}.every((item) => ${denoteGuardB(s.element, "item", budget)})`;
+    case "arr": {
+      // BUG-095：`Array.prototype.every` **跳过不存在的下标（洞）** ⇒ 稀疏数组
+      // 的洞位从不被检查 ⇒ guard 放行 `[1,,3]`（zod / standard 按位读作
+      // undefined ⇒ 拒绝）。`Array.from` 把洞**填成 undefined** 后再逐位检查
+      // ⇒ 与 standard 面「按位读 `value[i]`」同口径（回调内判 `i in v` 无用：
+      // 洞位根本不会回调）。
+      const elem = denoteGuardB(s.element, "item", budget);
+      const every = `Array.from(${v}).every((item) => ${elem})`;
+      // BUG-158：`arguments` 等非数组 exotic 不满足 `Array.isArray`。
+      return arrayLike ? every : `Array.isArray(${v}) && ${every}`;
+    }
     case "tuple": {
-      const checks = [`Array.isArray(${v})`];
+      // BUG-158：同上——非数组 exotic（`arguments`）只判长度 / 下标语义。
+      const checks = arrayLike ? [] : [`Array.isArray(${v})`];
       const minLen = s.elements.length;
       const holes = new Set(s.holes ?? []);
       checks.push(s.rest ? `${v}.length >= ${minLen}` : `${v}.length === ${minLen}`);
@@ -177,12 +217,34 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       // 裸标识符（用户类标识符在产物里 ⇒ TS2304，strict 工程编不过）；
       // ② 运行时没有这个全局构造器 ⇒ **放行**（与 standard 面「ctor 找不到 ⇒
       // 放行」同口径）。
-      // brand 的内层是 Abs（对象面按内层身份查访问器侧表）
-      const inner = denoteShape(s.shape, v, budget);
+      // BUG-098：brand 的内层槽在 Abs 里是**观测到的字面量**（`source` /
+      // `flags` / `lastIndex` / `message` / `name` …）⇒ 直接投影等于把「这次
+      // 观测到的那个实例」钉成出口域 ⇒ 守卫拒绝同 brand 的其它实例
+      // （`/abc/i` / `new TypeError(…)`），而 `.d.ts` / zod / standard 只判
+      // **brand 身份**（`instanceof`）⇒ 四面接受集相反。内层只保留**类型**
+      // 子句（观测字面量深度放宽）。
+      const widenedInner = widenObservedLiterals(s.shape);
+      // BUG-158：`arguments` 是**非数组 exotic**——内层 tuple / arr 面不得以
+      // `Array.isArray` 为前提（core 自己判 `Array.isArray(arguments) === false`）。
+      const inner = denoteShape(widenedInner, v, budget, s.name === "Arguments");
       // Bug 1130：**没有可用 prototype** 的构造器（`Proxy` 等）⇒ `instanceof`
       // 原生抛错 ⇒ 身份子句**跳过**（守卫必须能跑；身份信息在守卫面不可表达
       // ⇒ 只保留内层 shape 判定）。
-      if (hasUnusablePrototype(s.name)) return inner;
+      // BUG-166：brand 名属于**用户类**（`class URL { … }` 与宿主全局同名，
+      // 原生词法作用域 ⇒ 用户类遮蔽全局）时，`Reflect.get(globalThis, "URL")`
+      // 拿到的是**宿主**构造器 ⇒ 用户实例 `instanceof` 恒 false ⇒ 守卫拒绝
+      // 导出函数**自己的返回值**（恒假）。身份信息在守卫面不可表达 ⇒ 跳过
+      // 身份子句，只保留内层 shape 判定（宁可少判，不得恒假）。
+      //
+      // 但「守卫面不可表达」**只**成立于「同名宿主全局确实存在」——
+      // `brandIdentityClause` 自带 `typeof Reflect.get(globalThis, name) !==
+      // "function" || …` 的放行支：全局不存在时子句恒真（用户类 `class C`
+      // 就属于这种）。若对所有已注册用户类一律跳过，普通用户类的身份子句会
+      // 整段消失（`new C()` 的 guard 少一条）。
+      const shadowsHostGlobal =
+        getEvalClass(s.name) !== undefined &&
+        typeof (globalThis as Record<string, unknown>)[s.name] === "function";
+      if (hasUnusablePrototype(s.name) || shadowsHostGlobal) return inner;
       const identity = brandIdentityClause(s.name, v);
       if (inner === "true") return identity;
       return `(${identity}) && (${inner})`;
@@ -193,6 +255,52 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
       return `(${parts.join(" || ")})`;
     }
   }
+}
+
+/**
+ * BUG-098：brand 内层形状的**观测字面量**不是出口域。
+ *
+ * 投影面（`.d.ts` / zod / standard）对 brand 只判**身份**（`instanceof`），
+ * 内层槽里的字面量只是「求值时观测到的那个实例」的痕迹 ⇒ guard 若把它们写成
+ * 等值比较，同一个 brand 的其它实例（`/abc/i`、`new TypeError("boom")`）会被
+ * 拒绝 ⇒ 四面接受集相反（假红）。此处**深度**丢弃 lit term + 等值 pred，
+ * 只留类型子句（顶层 `widenUncertainLiteral` 只放宽顶层 ⇒ 槽位漏网）。
+ */
+function widenObservedLiterals(a: Abs): Abs {
+  const s = a.shape;
+  switch (s.k) {
+    case "obj": {
+      const slots = Object.fromEntries(
+        Object.entries(s.slots).map(([k, slot]) => [
+          k,
+          { ...slot, value: widenObservedLiterals(slot.value) },
+        ]),
+      ) as typeof s.slots;
+      return a.term?.op === "lit"
+        ? { ...a, shape: { ...s, slots }, term: undefined, pred: undefined }
+        : { ...a, shape: { ...s, slots } };
+    }
+    case "arr":
+      return { ...a, shape: { ...s, element: widenObservedLiterals(s.element) } };
+    case "tuple":
+      return {
+        ...a,
+        shape: {
+          ...s,
+          elements: s.elements.map(widenObservedLiterals),
+          ...(s.rest !== undefined ? { rest: widenObservedLiterals(s.rest) } : {}),
+        },
+      };
+    case "brand":
+      return { ...a, shape: { ...s, shape: widenObservedLiterals(s.shape) } };
+    case "sum":
+      return { ...a, shape: { ...s, members: s.members.map(widenObservedLiterals) } };
+    default:
+      break;
+  }
+  // 叶子形态：lit term + 其等值 pred 一并丢弃 ⇒ 只剩类型子句
+  if (a.term?.op === "lit") return { ...a, term: undefined, pred: undefined };
+  return a;
 }
 
 /**
@@ -232,6 +340,24 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
       // 仅支持 term 侧为值本身（var/lit 与 Abs.term 一致）或字面量比较。
       // lit 判定须看 t.op==="lit"：litValue 哨兵对 lit(undefined) 折成 undefined。
       const op = { gt: ">", ge: ">=", lt: "<", le: "<=", eq: "===", ne: "!==" }[p.op];
+      // BUG-092：整性谓词 `.int()` —— `eq(app("%", [x, lit(1)]), lit(0))`
+      // （`constraint.ts` 的 `intPredOnTerm`）。左端是 **app 项** ⇒ 下面的
+      // 「值 vs 字面量」分支全部落空 ⇒ 谓词被抹成 "true" ⇒ guard 放行
+      // `3.5` / `NaN` / `Infinity`（zod / standard 拒绝 ⇒ 假绿）。
+      if (p.op === "eq" || p.op === "ne") {
+        const modZero =
+          p.a.op === "app" &&
+          p.a.fn === "%" &&
+          p.a.args.length === 2 &&
+          p.a.args[1]!.op === "lit" &&
+          p.a.args[1]!.value === 1 &&
+          termIsValue(p.a.args[0]!, a) &&
+          p.b.op === "lit" &&
+          p.b.value === 0;
+        if (modZero) {
+          return p.op === "eq" ? `Number.isInteger(${v})` : `!Number.isInteger(${v})`;
+        }
+      }
       const leftIsValue = termIsValue(p.a, a);
       const rightLitTerm = p.b.op === "lit" ? p.b : undefined;
       if (leftIsValue && rightLitTerm) {
@@ -265,12 +391,21 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
 /**
  * Bug 409 / 410：键的**存在性**子句（必填槽）。
  *
- * 口径与 standard 面 `__nudoHasProperty` **同**：HasProperty 语义（用户原型上
- * 的真实键算在场）**减去** `Object.prototype` 的污染键（"constructor" /
- * "toString" 等不算在场）。
+ * 口径 = **三面唯一规则**（BUG-096）：HasProperty 语义（原型链上的**用户**键
+ * 算在场）**减去** `Object.prototype` 自身的成员（污染键 `constructor` /
+ * `toString` / `valueOf` … 不算在场）。三面逐条同判据：
+ * - guard 面 = 本函数；
+ * - standard 面 = `standard-schema.ts` 的 `hasProperty` / 产物里的
+ *   `__nudoHasProperty`（逐字等价）；
+ * - zod 面 = `schema-generator.ts` 给**必填污染键槽**补的 `.superRefine`
+ *   （`z.object` 原生按 `in` 判在场、含 Object.prototype 成员 ⇒ 不补就比
+ *   另两面松：`Object.create({ toString: "s" })` 会被放行）。
  *
  * 必须是**独立子句**：值子句不能反推存在性——值域含 `undefined` 时
  * `v.a === undefined` 对「缺键」与「显式 undefined」同形。
+ *
+ * ⚠ 子句文本被 guard 产物钉住（`eval-bug-191-*` / `eval-bug-240-*` 逐字断言），
+ * 改口径要连带改那两处与 zod / standard 面。
  */
 function hasPropertyClause(v: string, key: string): string {
   const k = JSON.stringify(key);
@@ -353,6 +488,13 @@ function termIsValue(t: Term, a: Abs): boolean {
   if (t.op === "lit") {
     // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term + Object.is
     return a.term?.op === "lit" && Object.is(a.term.value, t.value);
+  }
+  // BUG-092：**字段读项** `get(parent, key)` 就是被检查值本身——obj 槽的
+  // 守卫以 `v = <槽访问>` 递归，谓词左端的字段项与槽 Abs 自身 term 是**同一
+  // 项**（`constraint.ts` 的 `getTerm`）⇒ 该形态可与字面量比较。其余 app 项
+  // （`%` / 算术等**计算**项）不是 v 本身 ⇒ 保守不绑。
+  if (t.op === "app" && t.fn === "get" && a.term !== undefined) {
+    return termEquals(t, a.term);
   }
   // app 等复合项：保守不绑到 v
   return false;

@@ -164,7 +164,10 @@ describe("Bug 205（片 S7）— 不误判护栏：RHS 的 prototype 不可判 �
   it("箭头函数 RHS（原生定抛 TypeError）不得折 exact false", () => {
     const src = wrap(`const F = () => {}; return ({} ) instanceof F;`);
     expect(v(src)).not.toEqual({ ok: true, value: false });
-    expect(shapeOf(src)).toBe("boolean");
+    // BUG-175 部分收口：箭头函数无 .prototype ⇒ OrdinaryHasInstance 定抛
+    // TypeError（node 实测），故 shape 为 never。生成器 / bind 产物仍折抽象
+    // boolean（见下方两例）。
+    expect(shapeOf(src)).toBe("never");
   });
 
   it("生成器函数 RHS（原生 false）不得折 exact true", () => {

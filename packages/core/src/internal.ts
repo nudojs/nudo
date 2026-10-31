@@ -11,6 +11,9 @@
 // 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
 export { DIAG, type DiagCode } from "./algebra/diag-codes.ts";
 
+// BUG-021/199：调用点观测拓宽（emit 写盘面与 interface-drift 对账面共用）
+export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
+
 // leak / budgets / memo keys
 export {
   stripCommentsAndStrings, stripStringsKeepComments,
@@ -145,3 +148,5 @@ export {
   // 字面量助手：env 声明（es/node/web 内建折叠）+ harvester .d.ts 物化共享
   absLit, absNumLit, absStrLit, allAbsStr
 } from "./algebra/abs.ts";
+export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
+export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";

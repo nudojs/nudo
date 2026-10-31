@@ -146,6 +146,10 @@ export function renameAbs(a: Abs, map: VarRename): Abs {
   };
   if (a.term) out.term = renameTerm(a.term, map);
   if (a.pred) out.pred = renamePred(a.pred, map);
+  // pathNote（分支 join 可解释标注）：Abs 级 facet。α-重命名是**语义等价
+  // 变换**——重建只搬 shape/term/pred/conf 会把标注静默丢掉（formatAbs
+  // 从此少一行解释），与 shape facet 同一条纪律：全字段保留。
+  if (a.pathNote !== undefined) out.pathNote = a.pathNote;
   return out;
 }
 

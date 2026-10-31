@@ -89,4 +89,12 @@ export type FunctionWithDirectives = {
   node: Node;
   name: string;
   directives: Directive[];
+  /**
+   * 词法嵌套深度（0 = 顶层函数 / 类成员；每进入一层函数体 +1）——
+   * 与 core `listFnDirectiveScopes` 的 `FnDirectiveScope.depth` 同源
+   * （BUG-283）：scope 名**不唯一**（同名嵌套函数），按名消费的指令
+   * （`@nudo:skip` / `@nudo:pure`）必须能按「同名取词法最浅」裁决，
+   * 否则内层同名函数会顶掉 / 越界到外层。
+   */
+  depth?: number;
 };

@@ -138,6 +138,61 @@ function computeLocalNamedExports(source: string): Set<string> {
       if (keyName) out.add(`${idName}.${keyName}`);
     }
   };
+  /**
+   * BUG-191：namespace 的**运行时成员**键（`NS.x` / `NS.f` / 嵌套 `NS.Inner`）——
+   * 与 `Class.method` 同为「成员契约键」口径。
+   *
+   * 只登记**有运行时值**的成员（const/let/var/function/class/enum/namespace）；
+   * interface / type 别名是纯类型声明，运行时不占键（与 TS 语义一致：
+   * `Object.keys(NS)` 看不到它们）。
+   *
+   * 为什么要登记：namespace 在求值器里是**真实对象**（strip-types 保留非
+   * declare 的 namespace ⇒ 引擎能求出 `NS = { x: 1 }`），而导出面此前只认
+   * 函数/类/变量 ⇒ 引擎内两套导出口径互相矛盾。
+   */
+  const addNamespaceMemberKeys = (
+    out: Set<string>,
+    decl: NodeLike,
+    prefix: string,
+  ): void => {
+    const block = decl.body as NodeLike | undefined;
+    // `namespace A.B {}`：Babel 把尾段挂在嵌套 TSModuleDeclaration 上
+    if (block && block.type === "TSModuleDeclaration") {
+      const innerName = identName(block.id as NodeLike | undefined);
+      if (innerName) {
+        out.add(`${prefix}.${innerName}`);
+        addNamespaceMemberKeys(out, block, `${prefix}.${innerName}`);
+      }
+      return;
+    }
+    for (const stmt of ((block?.body as NodeLike[] | undefined) ?? [])) {
+      // 只有 `export` 过的成员对外可见（未导出成员只是 namespace 内部绑定）
+      if (stmt.type !== "ExportNamedDeclaration") continue;
+      const inner = stmt.declaration as NodeLike | null | undefined;
+      if (!inner) continue;
+      if (inner.type === "VariableDeclaration") {
+        for (const dcl of ((inner.declarations as NodeLike[] | undefined) ?? [])) {
+          const n = identName(dcl.id as NodeLike | undefined);
+          if (n) out.add(`${prefix}.${n}`);
+        }
+        continue;
+      }
+      const n = identName(inner.id as NodeLike | undefined);
+      if (!n) continue;
+      if (inner.type === "TSModuleDeclaration") {
+        out.add(`${prefix}.${n}`);
+        addNamespaceMemberKeys(out, inner, `${prefix}.${n}`);
+        continue;
+      }
+      if (
+        inner.type === "FunctionDeclaration" ||
+        inner.type === "ClassDeclaration" ||
+        inner.type === "TSEnumDeclaration"
+      ) {
+        out.add(`${prefix}.${n}`);
+      }
+    }
+  };
   /** `module.exports` 或 `exports` → true */
   const isExportsTarget = (n: NodeLike | undefined): boolean => {
     if (!n) return false;
@@ -221,6 +276,17 @@ function computeLocalNamedExports(source: string): Set<string> {
         for (const decl of decls) {
           const idName = identName(decl.id as NodeLike | undefined);
           if (idName) out.add(idName);
+        }
+      } else if (d.type === "TSModuleDeclaration") {
+        // BUG-191：`export namespace NS { … }`（Babel：ExportNamedDeclaration
+        // 包 TSModuleDeclaration）。旧实现只认函数/类/变量三类声明 ⇒ namespace
+        // 落到 `continue` 被**静默丢弃** ⇒ NS 在 check 入口表 / dts / 侧车
+        // 绑定三面全盲（消费端 `import { NS }` 报 TS2305），而求值器确实物化了
+        // NS（strip-types 保留非 declare 的 namespace）⇒ 引擎内两套导出面矛盾。
+        const idName = identName(d.id as NodeLike | undefined);
+        if (idName) {
+          out.add(idName);
+          addNamespaceMemberKeys(out, d, idName);
         }
       }
       continue;

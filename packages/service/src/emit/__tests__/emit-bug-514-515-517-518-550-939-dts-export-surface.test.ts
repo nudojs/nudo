@@ -129,7 +129,9 @@ export function makeUser(name) {
 }
 `);
     expect(dts).toContain("export declare class C {");
-    expect(dts).toContain("constructor(v: unknown);");
+    // BUG-003：类形参无类型证据 ⇒ 按 `any` 口径（CLAUDE.md：入口**无约束**
+    // 形参显示 any；`unknown` 只表示推断失败），并与 check 签名面一致。
+    expect(dts).toContain("constructor(v: any);");
     expect(dts).toMatch(/m\(x: (any|unknown)\): unknown;/);
     expect(dts).toMatch(/static s\(x: (any|unknown)\): unknown;/);
   });

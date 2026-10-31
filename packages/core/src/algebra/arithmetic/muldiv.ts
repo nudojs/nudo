@@ -15,7 +15,7 @@ import { abs, confJoin, isStrPrim, isBigPrim, litValue, num, numLit } from "../a
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
-import { distributeSumBinOp, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
+import { distributeSumBinOp, synthEndpoint, attainEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
 // Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
@@ -62,25 +62,29 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       // strict 端点经 IEEE 见证校准（Bug A，与 add 同口径）：下溢由见证
       // 自然捕获（fl(MIN_VALUE × ½k) 可能落 0），取代旧的 |k|≥1
       // strictZeroOk 启发式。负 k 时 lo/hi 侧与 base 端点互换。
+      // Bug 224：端点先补「最紧可达值」（t+t / t×2^k 的见证不是 nextUp(bound)）
+      // ——否则 `(x + x) * 0.5` 的见证下溢回 0 ⇒ 界松一个 binade ⇒ 假红。
       const ab = numericBounds(base, phi);
+      const abLo = ab?.lo ? attainEndpoint(base.term, ab.lo, "up") : undefined;
+      const abHi = ab?.hi ? attainEndpoint(base.term, ab.hi, "down") : undefined;
       const facts: Pred[] = [];
-      if (ab?.lo !== undefined) {
+      if (abLo !== undefined) {
         if (k > 0) {
-          const lo = synthEndpoint((x, _k) => x * k, ab.lo, "up", "lo");
-          if (lo !== undefined) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          const lo = synthEndpoint((x, _k) => x * k, abLo, "up", "lo");
+          if (lo !== undefined) facts.push(abLo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         } else {
           // 负数：lo * k 变成上界
-          const hi = synthEndpoint((x, _k) => x * k, ab.lo, "up", "hi");
-          if (hi !== undefined) facts.push(ab.lo.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          const hi = synthEndpoint((x, _k) => x * k, abLo, "up", "hi");
+          if (hi !== undefined) facts.push(abLo.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         }
       }
-      if (ab?.hi !== undefined) {
+      if (abHi !== undefined) {
         if (k > 0) {
-          const hi = synthEndpoint((x, _k) => x * k, ab.hi, "down", "hi");
-          if (hi !== undefined) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          const hi = synthEndpoint((x, _k) => x * k, abHi, "down", "hi");
+          if (hi !== undefined) facts.push(abHi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         } else {
-          const lo = synthEndpoint((x, _k) => x * k, ab.hi, "down", "lo");
-          if (lo !== undefined) facts.push(ab.hi.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          const lo = synthEndpoint((x, _k) => x * k, abHi, "down", "lo");
+          if (lo !== undefined) facts.push(abHi.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         }
       }
       return abs(
@@ -253,19 +257,24 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
       // 旧 |k|≤1 strictZeroOk 启发式保留 gt(x/2, 0) 是假证明，见证校准
       // 后退为 gt(x/2, -MIN_VALUE)。
       const ab = numericBounds(a, phi);
+      // Bug 224：端点补「最紧可达值」（`x + x` 的见证是 1e-323，不是
+      // nextUp(0)=5e-324）——否则 `fl(5e-324/2)=0` 使见证失效 ⇒ 界退成
+      // `> -5e-324`（≡ ≥ 0）⇒ 契约 `> 0` 证不出 ⇒ 假红。
+      const abLo = ab?.lo ? attainEndpoint(a.term, ab.lo, "up") : undefined;
+      const abHi = ab?.hi ? attainEndpoint(a.term, ab.hi, "down") : undefined;
       const facts: Pred[] = [];
-      if (ab?.lo !== undefined) {
-        const lo = synthEndpoint((x, _k) => x / k, ab.lo, "up", k > 0 ? "lo" : "hi");
+      if (abLo !== undefined) {
+        const lo = synthEndpoint((x, _k) => x / k, abLo, "up", k > 0 ? "lo" : "hi");
         if (lo !== undefined) {
-          if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
-          else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+          if (k > 0) facts.push(abLo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          else facts.push(abLo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
         }
       }
-      if (ab?.hi !== undefined) {
-        const hi = synthEndpoint((x, _k) => x / k, ab.hi, "down", k > 0 ? "hi" : "lo");
+      if (abHi !== undefined) {
+        const hi = synthEndpoint((x, _k) => x / k, abHi, "down", k > 0 ? "hi" : "lo");
         if (hi !== undefined) {
-          if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
-          else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+          if (k > 0) facts.push(abHi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          else facts.push(abHi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
         }
       }
       return abs(

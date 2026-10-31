@@ -675,7 +675,16 @@ export function joinObjects(a: Abs, b: Abs): Abs {
     conf = confJoin(conf, jv.conf);
     setSlot(slots, k, { value: jv, optional });
   }
-  const joined: Abs = { shape: { k: "obj", slots }, conf };
+  // BUG-258：数组视图 facet（`view: "array"`）在 join 里**两侧都带**才传递。
+  // 一侧是普通对象 ⇒ join 结果不是「数组视图」⇒ 丢弃 facet（保守方向：
+  // 丢 facet 只是退化成普通对象投影；多带上则会让 guard / standard / dts /
+  // zod 四面按「运行时是数组」的判据校验一个可能是普通对象的值 ⇒ 假红）。
+  const view =
+    a.shape.view === "array" && b.shape.view === "array" ? ("array" as const) : undefined;
+  const joined: Abs = {
+    shape: { k: "obj", slots, ...(view !== undefined ? { view } : {}) },
+    conf,
+  };
   for (const [k, def] of sameDefs) $objAccessor(joined, k, def.get ?? null, def.set ?? null);
   return joined;
 }
@@ -1128,24 +1137,37 @@ export function isNullProtoObj(o: Abs): boolean {
  *
  * 修前本函数只探**存在性**（钩子槽在不在）⇒ 钩子体从不执行 ⇒ 钩子的副作用
  * 与 throw 域一并丢失（Bug 381：`valueOfCounter() => 0`；钩子体确定抛错被
- * 折成确定 `no-throw`）。修后按 hint "default"（`+` 运算符 / Number() 的
- * OrdinaryToPrimitive 口径：valueOf 先、toString 后）**调用一次**钩子：
- * 副作用发生；钩子体抛错 → NudoThrow 传播（用户 try/catch 可吸收 ⇒ 原生同款）。
+ * 折成确定 `no-throw`）。修后按 hint 的 OrdinaryToPrimitive 口径**调用一次**
+ * 钩子：副作用发生；钩子体抛错 → NudoThrow 传播（用户 try/catch 可吸收 ⇒
+ * 原生同款）。
  *
- * 调用点（既有 import 面不变）：
- * - arithmetic/addsub.ts 的 `+` 臂（两个操作数各一次 ⇒ `o + o` 调两次，与原生一致）
- * - builtins/global.ts 的 String() 面
+ * 调用点（hint 随运算面走，BUG-058）：
+ * - arithmetic/addsub.ts 的 `+` 臂（default hint；两个操作数各一次 ⇒
+ *   `o + o` 调两次，与原生一致）
+ * - builtins/global.ts 的 String() 面（**string hint**：toString 先，无自有
+ *   toString ⇒ 不回退 valueOf——原生 `String({valueOf(){n++}})` 不调 valueOf）
+ * - methods.ts 的 String.prototype.concat（ToString 面，应为 **string hint**；
+ *   当前仍传默认值，见 BUG-058 报告）
  * - template.ts 的 concatString 走**纯判定**版（同一次强转只调一次钩子）
  */
-export function isNullProtoWithoutCoercer(a: Abs): boolean {
+export function isNullProtoWithoutCoercer(
+  a: Abs,
+  hint: CoercionHint = "default",
+): boolean {
   if (a.shape.k === "obj" && isNullProtoObj(a) && isNullProtoWithoutCoercerSlot(a)) {
     // null-proto 且**无**自有 coercer → ToPrimitive 无路可走 ⇒ 定抛
     // TypeError（原生同款）
     return true;
   }
   // 非 null-proto（null-proto 但**有** coercer / 普通对象 / brand）：按
-  // ToPrimitive(default) 调一次用户钩子（副作用 + throw 域）
-  invokeToPrimitiveHook(a, "default");
+  // ToPrimitive(hint) 调一次用户钩子（副作用 + throw 域）。
+  //
+  // BUG-058：hint 不得写死——`String(x)` / 模板插值 走 **string hint**
+  // （toString 先；缺自有 toString ⇒ Object.prototype.toString 恒返回原语
+  // ⇒ **不回退 valueOf**），只有 `+` 运算符 / Number() 走 default/number。
+  // string hint 由 {@link invokeToPrimitiveHook} 的 string 分支落实：无自有
+  // toString 钩子时 `return undefined`（绝不回退 valueOf）。
+  invokeToPrimitiveHook(a, hint);
   return false;
 }
 

@@ -234,6 +234,26 @@ const SAFE_CTOR_NAMES = new Set([
   "BigInt", "Symbol",
 ]);
 
+/**
+ * BUG-244：**纯值转换全局调用**白名单（`Symbol("s")` / `Number(x)` /
+ * `String(x)` …）——这些调用不写任何外层状态，与 `SAFE_CTOR_NAMES` 对
+ * `NewExpression` 的放行同口径（按名判定；`bound` 集里的同名局部声明仍脏）。
+ *
+ * 为什么必须放行：`effectFree` 是「允许引擎真执行回调」的唯一闸门
+ * （sort 比较器 / promise 回调 / HOF 回调）。此前**任意** `CallExpression`
+ * 一律标脏 ⇒ `(x, y) => Symbol("s")` 这种「含一个纯调用」的回调被判
+ * 非 effectFree ⇒ 整段回调校验被跳过 ⇒ 比较器返回 symbol 必抛的
+ * TypeError 漏判（`nudo check` 假绿）。
+ *
+ * 判定只按**调用形态**，不按被调方语义：白名单外的调用（用户函数 /
+ * 成员方法 / 动态取值）仍然标脏——副作用回调「多执行不可回滚」的既有
+ * 契约不变（`let n = 0; sort((a,b) => { n++; … })` 依旧不执行）。
+ */
+const SAFE_CALL_NAMES = new Set([
+  "Symbol", "Number", "String", "Boolean", "BigInt",
+  "parseInt", "parseFloat", "isNaN", "isFinite",
+]);
+
 export function fnBodyIsEffectFree(fn: { body?: Node | null; params?: Node[] }): boolean {
   return getFnFacets(fn).effectFree;
 }
@@ -380,6 +400,18 @@ export function getFnFacets(fn: { body?: Node | null; params?: Node[] }): FnFace
             const callee = (n as unknown as { callee: Node }).callee;
             if (callee.type === "Identifier" && SAFE_CTOR_NAMES.has((callee as unknown as { name: string }).name)) {
               break; // 白名单 ctor：无外写
+            }
+          }
+          if (n.type === "CallExpression" || n.type === "OptionalCallExpression") {
+            // BUG-244：纯值转换全局调用（Symbol("s") / Number(x) / …）无外写
+            // ——与上方 ctor 白名单同口径；体/形参里同名局部声明仍按脏算。
+            const callee = (n as unknown as { callee?: Node }).callee;
+            if (
+              callee?.type === "Identifier" &&
+              SAFE_CALL_NAMES.has((callee as unknown as { name: string }).name) &&
+              !bound.has((callee as unknown as { name: string }).name)
+            ) {
+              break;
             }
           }
           effectDirty = true;

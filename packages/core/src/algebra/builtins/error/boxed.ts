@@ -18,7 +18,7 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, strLit, numLit, litValue, boolLit, unknown } from "../../abs.ts";
-import { objOf, getSlot } from "../../objects.ts";
+import { objOf, getSlot, type Slot } from "../../objects.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { setPropFlags } from "../invariants.ts";
@@ -115,18 +115,30 @@ export function makeBoxedAbs(name: "String" | "Number" | "Boolean", arg: Abs | u
   const prim = boxedPrimitiveOf(name, arg);
   // [[PrimitiveValue]] 记不可枚举（enumOwnKeys / assign 视图不可见；
   // 原生装箱箱除 String 下标槽外零可枚举自有属性）
-  const mkInner = (slots: Record<string, { value: Abs }>, opts?: { open?: boolean }) => {
+  //
+  // Bug 132：`[[PrimitiveValue]]` 是 **ES 规范内部槽**，**不是自有属性**
+  // （原生 `new Number(1)` 的 `Object.getOwnPropertyNames()` 是 `[]`）⇒
+  // 槽必须打 `internal` 标记——投影面（format / denote / projection /
+  // service internal-slot）都按 `internal` 剔除内部槽。此前只把
+  // 「不可枚举」记在**侧表**（prop flags）里，投影面一个都不查 ⇒
+  // guard 面把 `"[[PrimitiveValue]]"` 当**必填自有属性**发布 ⇒
+  // guard 对被导出函数自己的返回值**恒假**。
+  const mkInner = (slots: Record<string, Slot>, opts?: { open?: boolean }) => {
     const inner = objOf(slots, opts);
     setPropFlags(inner, BOXED_PRIMITIVE_SLOT, { enumerable: false });
     return inner;
   };
+  const primSlot = (): { value: Abs; internal: true } => ({
+    value: prim,
+    internal: true,
+  });
   if (name === "String") {
     const svR = litValue(prim);
     const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
     if (typeof sv === "string") {
-      const slots: Record<string, { value: Abs }> = {
+      const slots: Record<string, { value: Abs; internal?: boolean }> = {
         length: { value: numLit(sv.length) },
-        [BOXED_PRIMITIVE_SLOT]: { value: prim },
+        [BOXED_PRIMITIVE_SLOT]: primSlot(),
       };
       for (let i = 0; i < sv.length; i++) {
         slots[String(i)] = { value: strLit(sv[i]!) };
@@ -139,14 +151,14 @@ export function makeBoxedAbs(name: "String" | "Number" | "Boolean", arg: Abs | u
       );
     }
     return abs(
-      { k: "brand", name: "String", shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: { value: prim } }, { open: true }) },
+      { k: "brand", name: "String", shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: primSlot() }, { open: true }) },
       undefined,
       undefined,
       "path",
     );
   }
   return abs(
-    { k: "brand", name, shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: { value: prim } }) },
+    { k: "brand", name, shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: primSlot() }) },
     undefined,
     undefined,
     "path",

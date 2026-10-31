@@ -5,7 +5,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { parse } from "@nudojs/parser";
+import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 import {
   absFunction,
   bindingsOf,
@@ -24,9 +24,10 @@ import {
 import { VISITOR_KEYS, type Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
 import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/core/internal";
-import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
+import { resolveNpmJsEntryDetailed, type NpmLoadMode } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates, loadModuleOutcome, type ModuleLoadOutcome } from "./load-module.ts";
 import { resolveEvalInjection } from "./eval-injection.ts";
+import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /**
@@ -133,10 +134,15 @@ function resolveRel(spec: string, fromFile: string): string | null {
   return r.kind === "missing" ? null : r.path;
 }
 
-function importSpecs(source: string): string[] {
+/** 一条 import 依赖：说明符 + **消费形态**（ESM import / CJS require，Bug 238）。
+ * 形态决定裸包 `exports` 的条件键集合——压成 string[] 时这条事实就丢了
+ * ⇒ dual package 的 require 消费方被解析到 ESM 构建。 */
+type ImportSpec = { spec: string; mode: NpmLoadMode };
+
+function importSpecs(source: string): ImportSpec[] {
   try {
     const file = parse(source);
-    const out: string[] = [];
+    const out: ImportSpec[] = [];
     for (const stmt of file.program.body) {
       if (
         stmt.type === "ImportDeclaration" ||
@@ -145,7 +151,7 @@ function importSpecs(source: string): string[] {
       ) {
         const src = (stmt as { source?: { value: string } }).source;
         if (src && typeof src.value === "string") {
-          out.push(src.value);
+          out.push({ spec: src.value, mode: "import" });
         }
       }
       // require("...") / require('...')
@@ -157,7 +163,7 @@ function importSpecs(source: string): string[] {
   }
 }
 
-function collectRequireSpecs(node: unknown, out: string[]): void {
+function collectRequireSpecs(node: unknown, out: ImportSpec[]): void {
   const visit = (n: unknown) => {
     if (!n || typeof n !== "object") return;
     const o = n as {
@@ -188,7 +194,7 @@ function collectRequireSpecs(node: unknown, out: string[]): void {
       ) {
         spec = foldStaticStringExpr(o.arguments?.[0]);
       }
-      if (spec !== undefined) out.push(spec);
+      if (spec !== undefined) out.push({ spec, mode: "require" });
     }
     for (const key of Object.keys(o)) {
       if (key === "loc" || key === "start" || key === "end") continue;
@@ -214,7 +220,7 @@ function buildModulesForFile(
   localDepsOut?: string[],
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
-  for (const spec of importSpecs(source)) {
+  for (const { spec, mode } of importSpecs(source)) {
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
       if (!childPath) {
@@ -226,7 +232,8 @@ function buildModulesForFile(
     } else if (!spec.startsWith("node:")) {
       // A3：优先执行包入口 JS（ms/debug 等纯 JS 包返回面可折叠）；
       // 无入口或求值失败再 harvest stub。
-      const resolved = resolveNpmJsEntryDetailed(spec, dirname(fromFile));
+      // 消费形态透传（Bug 238）：require 消费方必须拿到 `require` 条件构建。
+      const resolved = resolveNpmJsEntryDetailed(spec, dirname(fromFile), mode);
       if (resolved.exportsUnresolved) {
         onIssue(
           "exports-unresolved",
@@ -621,6 +628,68 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
  * apply 优先于 body 派发（callFunctionUnchecked 第三路径），跨边界调用
  * 由 callTranspiledExportFull 回进 evaluator 函数执行。
  */
+
+/** BUG-180：依赖模块自己的 `@nudo:mock` 按声明函数作用域注入。
+ *
+ * 无 mock 指令 ⇒ 零开销直接返回（绝大多数依赖）。有指令时每个作用域各跑
+ * 一次模块求值（只保留该作用域声明的 mock），用其同名导出覆盖基线导出；
+ * 基线（无 mock）保其它函数为真实依赖语义。这与根侧 generalize 的
+ * `scopeSelectedInject` 同口径 ⇒ 同一文件「作为目标」与「作为依赖」一致。
+ */
+function applyDependencyScopedMocks(
+  source: string,
+  absPath: string,
+  inj: ReturnType<typeof resolveEvalInjection>,
+  modules: Record<string, AbsModuleExports>,
+  exports: AbsModuleExports,
+  loadModule?: AbsGraphOptions["loadModule"],
+): void {
+  try {
+    const directives = extractDirectivesQuiet(parse(source));
+    if (directives.length === 0) return;
+    const seeds = mockDirectivesToAbsSeeds(directives, {
+      fromFile: absPath,
+      ...(loadModule ? { loadModule } : {}),
+    });
+    const scoped = seeds.scoped;
+    if (!scoped || scoped.length === 0) return;
+    const file = parse(source);
+    for (const scopeSeeds of scoped) {
+      const scope = scopeSeeds.scope;
+      if (!scope || typeof exports.named[scope] === "undefined") continue;
+      const mocks = mockSeedsToAbsMocks({
+        seedVars: scopeSeeds.seedVars,
+        seedFns: scopeSeeds.seedFns,
+      });
+      if (Object.keys(mocks).length === 0) continue;
+      const scopedRun = tryRunTranspiled(source, {
+        mode: "analyze",
+        modules,
+        ...inj,
+        mocks,
+      });
+      if (!scopedRun) continue;
+      const scopedExports = evalExportsToModuleExports(
+        scopedRun,
+        file,
+        `eval:${absPath}#mock:${scope}`,
+      );
+      const replacement = scopedExports.named[scope];
+      if (replacement !== undefined) {
+        // live 槽是 getter（configurable）⇒ 用 defineProperty 覆盖
+        Object.defineProperty(exports.named, scope, {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: replacement,
+        });
+      }
+    }
+  } catch {
+    /* mock 指令解析/装载失败 ⇒ 保持无 mock 基线（不阻断模块装载） */
+  }
+}
+
 export function evalExportsToModuleExports(
   run: Record<string, unknown>,
   file: Node,
@@ -783,6 +852,73 @@ export function collectMissingExportIssues(
     }
   }
   return issues;
+}
+
+/**
+ * `export *` 同名冲突 ⇒ ESM **歧义导出**（Bug 269）：同名绑定若来自**不同
+ * 模块**，按规范该名**不导出**（宿主的导入方在链接期
+ * `SyntaxError: contains conflicting star exports for name 'x'`）。
+ *
+ * 运行时合并（core `__nudoExportStar`）按源序后者覆盖——那是取值取舍；本函数
+ * 在模块导出表上**剔除歧义名**，使导入方走 `nudo:missing-export`（ERROR）而不是
+ * 拿到一个宿主不可能产出的确定字面量。与 core `collectAbsExports` 的歧义口径
+ * 一致（显式导出遮蔽星号导出 ⇒ 永不歧义）。
+ */
+function dropAmbiguousStarExports(
+  file: Node,
+  modules: Record<string, AbsModuleExports>,
+  exports: AbsModuleExports,
+): void {
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
+    type?: string;
+    source?: { value?: unknown };
+    declaration?: { type?: string; id?: { name?: string } | null; declarations?: Array<{ id?: { type?: string; name?: string } }> };
+    specifiers?: Array<{
+      type?: string;
+      local?: { type?: string; name?: string; value?: string } | null;
+      exported?: { type?: string; name?: string; value?: string } | null;
+    }>;
+  }>;
+
+  // 显式导出名（decl / specifier / 显式 re-export）恒压过星号导出。
+  const explicit = new Set<string>();
+  const starSpecs: string[] = [];
+  for (const stmt of body) {
+    if (stmt.type === "ExportAllDeclaration") {
+      if (typeof stmt.source?.value === "string") starSpecs.push(stmt.source.value);
+      continue;
+    }
+    if (stmt.type !== "ExportNamedDeclaration") continue;
+    for (const sp of stmt.specifiers ?? []) {
+      if (sp.type !== "ExportSpecifier" && sp.type !== "ExportNamespaceSpecifier") continue;
+      const name = sp.exported?.type === "StringLiteral" ? sp.exported.value : sp.exported?.name;
+      if (name !== undefined) explicit.add(name);
+    }
+    const decl = stmt.declaration;
+    if (!decl) continue;
+    if (decl.id?.name) explicit.add(decl.id.name);
+    for (const d of decl.declarations ?? []) {
+      if (d.id?.type === "Identifier" && d.id.name) explicit.add(d.id.name);
+    }
+  }
+  if (starSpecs.length < 2) return;
+
+  const providers = new Map<string, Abs>();
+  const ambiguous = new Set<string>();
+  for (const spec of starSpecs) {
+    const mod = modules[spec];
+    if (!mod?.named) continue;
+    for (const [k, v] of Object.entries(mod.named)) {
+      if (explicit.has(k) || ambiguous.has(k)) continue;
+      const prev = providers.get(k);
+      if (prev !== undefined && prev !== v) {
+        ambiguous.add(k);
+        delete exports.named[k];
+        continue;
+      }
+      providers.set(k, v);
+    }
+  }
 }
 
 /**
@@ -1052,6 +1188,19 @@ export function evalAbsModuleGraph(
         // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
         // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
         exports = { named: {} };
+      }
+      // BUG-180（二）：依赖模块**自己声明**的 `@nudo:mock` 此前完全不注入
+      // （graph 只传根 seeds）⇒ 同一个函数「作为目标」与「作为依赖」给出
+      // 互斥结论。按**声明函数作用域**逐份重求值：mock 只覆盖该函数导出，
+      // 其它函数保留无 mock 基线（`@nudo:mock` 是函数级指令，不泄漏）。
+      applyDependencyScopedMocks(source, absPath, inj, modules, exports, opts.loadModule);
+      // `export *` 同名冲突 ⇒ 歧义名不导出（Bug 269）：宿主链接期 SyntaxError，
+      // 引擎不得给确定值 ⇒ 剔除后导入方走 missing-export。
+      // 只在 **JS 模块**分支做（JSON 源不是 JS，`parse` 会抛）。
+      try {
+        dropAmbiguousStarExports(parse(source), modules, exports);
+      } catch {
+        /* 解析失败（非常规源）⇒ 不做歧义剪枝（fail-open：保留既有导出表） */
       }
     }
     // named import / re-export 缺名（仅 evaluated 表；fail-closed 空表不报）

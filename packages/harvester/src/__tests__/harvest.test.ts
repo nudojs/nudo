@@ -40,6 +40,9 @@ declare const _: _.LoDashStatic;
 declare namespace _ {
   interface LoDashStatic {}
 }
+declare module "idxmod" {
+  export declare const lodash: _.LoDashStatic;
+}
 `,
       ),
       writeTemp(
@@ -54,9 +57,17 @@ declare namespace _ {
       ),
     ];
     const env = harvestDts(files);
-    const g = env.globals;
-    expect(g["uniq"]).toBeDefined();
-    expect(g["chunk"]).toBeDefined();
+    // 接口合并本身仍生效：`declare module "idx"` 里的成员被并进 `_` 命名空间的
+    // `LoDashStatic`，并随**模块级**值位置声明（`declare module "idxmod"`）提升
+    // 成该模块的成员。
+    const mod = env.modules["idxmod"]!;
+    expect(mod["uniq"]).toBeDefined();
+    expect(mod["chunk"]).toBeDefined();
+    // BUG-253：提升只对模块作用域成立 —— 这些成员**不得**泄漏成裸全局
+    // （`@types/lodash` 实测因此产生 60 个幽灵全局：`clone` / `isEqual` / `now`
+    // 会劫持用户自有名字）。
+    expect(env.globals["uniq"]).toBeUndefined();
+    expect(env.globals["chunk"]).toBeUndefined();
     expect(env.stats.symbols).toBeGreaterThan(2);
   });
 });

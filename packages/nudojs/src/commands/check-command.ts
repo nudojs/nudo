@@ -5,7 +5,7 @@
  * 编排（loadCache / buildInjection / runCheck / runCheckFix）仍在 check.ts，
  * 渲染面在 check-report.ts；#11 帮助分组在 check-help-groups.ts。
  */
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Command } from "commander";
 import {
@@ -32,6 +32,8 @@ import {
   type GateProfile,
 } from "../check-gate-config.ts";
 import { attachPathErrors } from "../check-json-map.ts";
+import { DIAG } from "@nudojs/core/internal";
+import { shouldEmitGha } from "../check-ci-flags.ts";
 import {
   attachTargetErrors,
   collectExternalRecords,
@@ -51,6 +53,92 @@ import {
   type GateFlagsChannel,
   type RunCheckOptions,
 } from "./check.ts";
+import {
+  ciAnnotationsForHardErrors,
+  ciRowsForHardErrors,
+  emitHardErrorCiAnnotations,
+} from "./check-report.ts";
+
+/** 诊断码注册表全量（`--only` 的取值校验用；BUG-048） */
+const KNOWN_DIAG_CODES: ReadonlySet<string> = new Set(Object.values(DIAG));
+
+/** CI 注解面的工作区根（与 check-report.ts 同口径） */
+function workspaceRootOf(): string {
+  return process.env.GITHUB_WORKSPACE ?? process.cwd();
+}
+
+/** 该取值在磁盘上是否真的是一个路径（被 variadic 旗标吞掉的位置参数） */
+function isExistingPath(v: string): boolean {
+  try {
+    return existsSync(resolve(v));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * BUG-046：variadic 旗标（`--only` / `--assume` / `--what-if`）把**后面的
+ * 位置参数**吞进自己的取值数组——旧守卫只在「paths 全被吞空」
+ * （`paths.length === 0`）时触发 ⇒ **部分吞**的情况静默丢文件：被吞的文件
+ * 从未进入分析、退出码仍是 0（CI 假绿）。
+ *
+ * 判定不重解析 argv：commander 已把被吞的位置参数塞进该旗标的取值数组，
+ * 这里按「该旗标**不接受**的取值形态 + 该值在磁盘上确实是一个路径」识别。
+ * （`--from` 的取值本来就是路径 ⇒ 单看取值无法区分，故不参与本判定。）
+ */
+function swallowedPositionals(opts: {
+  only?: string[];
+  assume?: string[];
+  whatIf?: string[];
+}): Array<{ flag: string; values: string[] }> {
+  const groups: Array<{
+    flag: string;
+    values: string[];
+    accepts: (v: string) => boolean;
+  }> = [
+    {
+      flag: "--only",
+      values: opts.only ?? [],
+      // 诊断码（`nudo:*` / 注册表里的码）——路径不会是合法码
+      accepts: (v) => KNOWN_DIAG_CODES.has(v),
+    },
+    {
+      flag: "--assume",
+      values: opts.assume ?? [],
+      // 谓词（`x>0` / `x >= 1`）必须带关系运算符
+      accepts: (v) => /[<>=!]/.test(v),
+    },
+    {
+      flag: "--what-if",
+      values: opts.whatIf ?? [],
+      // `name:type` 绑定
+      accepts: (v) => /^[^:\s]+:\S/.test(v),
+    },
+  ];
+  const out: Array<{ flag: string; values: string[] }> = [];
+  for (const g of groups) {
+    const swallowed = g.values.filter((v) => !g.accepts(v) && isExistingPath(v));
+    if (swallowed.length > 0) out.push({ flag: g.flag, values: swallowed });
+  }
+  return out;
+}
+
+/**
+ * BUG-115：`--json` 信封**新增**不含歧义的 `summary.pathErrors`（路径错误 /
+ * 文件级硬错误条数）。
+ *
+ * `summary.errors` 保持 695 口径（= Σ`reports[].summary.errors`，**不含**
+ * 路径错误——路径错误不是分析诊断），而设计文档写的是「并计入
+ * `summary.errors`」⇒ 只读 `summary.errors` 的机器消费方会把「路径失败」
+ * 读成「0 错」。给出条数后两个口径都能读出来。仅在非空时加字段 ⇒ 绿运行
+ * 的 JSON 逐字节不变。
+ */
+function withPathErrorCount<T extends object>(envelope: T, count: number): T {
+  if (count === 0) return envelope;
+  const summary = (envelope as { summary?: Record<string, unknown> }).summary;
+  if (summary === undefined) return envelope;
+  return { ...envelope, summary: { ...summary, pathErrors: count } } as T;
+}
 
 /** `nudo check --watch` 的编排参数（watch 分支专用） */
 export type CheckWatchOptions = {
@@ -155,9 +243,9 @@ async function runCheckJsonFace(
   const syntaxErrors = gateFlags.syntaxPathErrors ?? [];
   const injectionFailed = gateFlags.injectionSetupFailed === true;
   if (collected.length === 0 || syntaxErrors.length > 0) {
-    const envelope = attachPathErrors(
-      serializeCheckJsonMulti(collected),
-      syntaxErrors,
+    const envelope = withPathErrorCount(
+      attachPathErrors(serializeCheckJsonMulti(collected), syntaxErrors),
+      syntaxErrors.length,
     );
     emitJsonDoc(envelope, true);
     process.exitCode = envelope.ok && !injectionFailed ? 0 : 1;
@@ -195,14 +283,17 @@ function usageErrorExit(
     process.exitCode = 1;
     return;
   }
-  const envelope = attachPathErrors(serializeCheckJsonMulti([]), [
-    {
-      path: "",
-      code: USAGE_ERROR_CODE,
-      message,
-      ...(extra?.suggestion ? { suggestion: extra.suggestion } : {}),
-    },
-  ]);
+  const envelope = withPathErrorCount(
+    attachPathErrors(serializeCheckJsonMulti([]), [
+      {
+        path: "",
+        code: USAGE_ERROR_CODE,
+        message,
+        ...(extra?.suggestion ? { suggestion: extra.suggestion } : {}),
+      },
+    ]),
+    1,
+  );
   console.log(JSON.stringify(envelope, null, 2));
   process.exitCode = envelope.ok ? 0 : 1;
 }
@@ -346,6 +437,41 @@ export function registerCheckCommand(program: Command): void {
           );
           return;
         }
+        // BUG-046：variadic 旗标**部分吞掉**后面的路径（paths 已非空时上面
+        // 的守卫不触发）⇒ 被吞的文件从未进入分析 ⇒ exit 0 **假绿**。
+        // 只要某 variadic 旗标的取值里出现了「该旗标不接受 + 磁盘上确实是
+        // 一个路径」的项，就报同款定向 usage error。
+        const partialSwallow = swallowedPositionals(opts);
+        if (partialSwallow.length > 0) {
+          const flags = partialSwallow.map((g) => g.flag);
+          const files = partialSwallow.flatMap((g) => g.values);
+          usageErrorExit(
+            opts.json,
+            `error: \`nudo check\` — variadic flag(s) ${flags.join(", ")} consumed the following path(s): ${files.join(", ")} (they would never be checked)`,
+            {
+              suggestion:
+                "separate variadic flags from paths with `--` (e.g. `nudo check --only nudo:entry-may-throw -- a.js b.js`) or list paths before the flags",
+            },
+          );
+          return;
+        }
+        // BUG-048：`--only` 的取值必须落在诊断码注册表（DIAG）内——旧实现里
+        // 拼错的码与「这些诊断确实没有可自动应用的修复」输出完全一样
+        // （静默 no-op：用户无从判断自己是不是拼错了）。
+        if (opts.only && opts.only.length > 0) {
+          const unknown = opts.only.filter((c) => !KNOWN_DIAG_CODES.has(c));
+          if (unknown.length > 0) {
+            usageErrorExit(
+              opts.json,
+              `error: --only got unknown diagnostic code(s): ${unknown.join(", ")}`,
+              {
+                suggestion:
+                  "run `nudo check` without --fix: its issues list prints the diagnostic codes this file reports (e.g. nudo:entry-may-throw)",
+              },
+            );
+            return;
+          }
+        }
         // BUG-022/S5-004：--fix 是物化工具面（#69），不得与观察/机器面
         // 旗标静默组合——旧实现早退在门禁 exit 逻辑前，--json/--abs/
         // --watch 等被静默忽略（机器面 stdout 不是 CheckJson）。
@@ -445,7 +571,29 @@ export function registerCheckCommand(program: Command): void {
         // 非 --json：路径错误走 usageError+exit（历史行为）
         if (!opts.json) {
           reportPathErrors(targetErrors);
-          if (targets.length === 0) return;
+          // BUG-284：文件级硬错误（路径不存在 / 空目录 / 非目标）不得在 CI
+          // 注解通道上静默。`--gitlab` 的数组由下方**恰好打印一份**（多目标
+          // 聚合 / 0 目标分支）⇒ 这里只发 GHA 注解，且 stdout 被占 ⇒ stderr。
+          if (opts.gitlab) {
+            if (shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS)) {
+              const ann = ciAnnotationsForHardErrors(targetErrors, workspaceRootOf());
+              if (ann.length > 0) console.error(ann);
+            }
+          } else {
+            emitHardErrorCiAnnotations(targetErrors, opts);
+          }
+          if (targets.length === 0) {
+            // BUG-284：`--gitlab` 的 stdout 契约是**恰好一份** Code Quality
+            // JSON 数组（哪怕是 `[]` / 只有硬错误行）——旧实现在这里直接
+            // return ⇒ 0 字节 ⇒ 消费方 `JSON.parse` 抛
+            // `Unexpected end of JSON input`（真实失败原因丢失）。
+            if (opts.gitlab) {
+              console.log(
+                JSON.stringify(ciRowsForHardErrors(targetErrors, workspaceRootOf()), null, 2),
+              );
+            }
+            return;
+          }
         }
         const fromErrors: PathError[] = [];
         // watch 模式不在启动时采 --from（928）：启动快照会被后续每轮沿用 ⇒
@@ -548,9 +696,9 @@ export function registerCheckCommand(program: Command): void {
           if (opts.watch) {
             if (allPathErrors.length > 0) {
               // watch 面没有信封 ⇒ 路径错误先以机器可读信封落红（不装 watch）
-              const envelope = attachPathErrors(
-                serializeCheckJsonMulti([]),
-                allPathErrors,
+              const envelope = withPathErrorCount(
+                attachPathErrors(serializeCheckJsonMulti([]), allPathErrors),
+                allPathErrors.length,
               );
               // 63b：`pathErrors[]` 逐字不变 + **新增**可选 `targetErrors[]`
               // （分析目标闸门错误的精确子集；`--from` 路径错误不进它）。
@@ -587,10 +735,13 @@ export function registerCheckCommand(program: Command): void {
           }
           const syntaxErrors = gateFlags.syntaxPathErrors ?? [];
           if (targets.length > 1 || allPathErrors.length > 0 || syntaxErrors.length > 0) {
-            const envelope = attachPathErrors(serializeCheckJsonMulti(collected), [
-              ...allPathErrors,
-              ...syntaxErrors,
-            ]);
+            const envelope = withPathErrorCount(
+              attachPathErrors(serializeCheckJsonMulti(collected), [
+                ...allPathErrors,
+                ...syntaxErrors,
+              ]),
+              allPathErrors.length + syntaxErrors.length,
+            );
             // 63b：`pathErrors[]` **逐字不变**（字段名 + 内容 + 顺序）——
             // 既有机器消费者零影响；**新增**可选 `targetErrors[]` = 分析目标
             // 闸门错误（路径不存在 / 空目录 / 非分析目标）的**精确**子集
@@ -648,8 +799,11 @@ export function registerCheckCommand(program: Command): void {
         // --json 的 jsonCollect 聚合 rows（runCheck 不打印），循环后
         // 一次打印；exit 语义不变（runCheck 逐文件按门禁置 1，
         // 任一文件红即红）。
-        if (opts.gitlab && targets.length > 1) {
-          const rowsCollect: GitlabCodeQualityIssue[] = [];
+        if (opts.gitlab && (targets.length > 1 || targetErrors.length > 0)) {
+          // BUG-284：文件级硬错误的行先入列（**同一份**数组，不另起一份）
+          const rowsCollect: GitlabCodeQualityIssue[] = [
+            ...ciRowsForHardErrors(targetErrors, workspaceRootOf()),
+          ];
           for (const t of targets) {
             await runCheck(t, { ...shared, gitlabRowsCollect: rowsCollect });
           }

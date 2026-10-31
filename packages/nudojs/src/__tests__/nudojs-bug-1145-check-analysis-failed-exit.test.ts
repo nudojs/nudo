@@ -88,13 +88,12 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     writeFileSync(file, MODULE_EVAL_FAILS, "utf-8");
     const r = runCliTsx(["check", file]);
     expect(r.status).not.toBe(0);
-    // 人类面：明确的失败行（哪个文件 + 什么原因）
-    expect(r.stderr).toContain("analysis failed for");
-    expect(r.stderr).toContain(file);
-    expect(r.stderr).toContain("module evaluation failed");
-    // 报告面：error 级 `nudo:internal` 诊断 + FAILED
+    // 人类面：明确的失败行（哪个文件 + 什么原因）。
+    // BUG-073 之后模块级原生异常归类为 `nudo:module-throw`（用户代码的异常不再是
+    // 引擎内部缺陷），因此不再有 `analysis failed for … internal fallback` 行；
+    // 契约不变：该文件必须红，且失败原因必须可见。
     expect(r.stdout).toContain("FAILED");
-    expect(r.stdout).toContain("nudo:internal");
+    expect(r.stdout).toContain("nudo:module-throw");
   });
 
   it("--json 面：机器可判定（ok:false + nudo:internal error issue）+ exit ≠ 0", () => {
@@ -110,11 +109,11 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     };
     expect(json.ok).toBe(false);
     expect(json.summary.errors).toBeGreaterThan(0);
-    const fatal = json.issues.filter((i) => i.code === "nudo:internal");
+    const fatal = json.issues.filter((i) => i.code === "nudo:module-throw");
     expect(fatal.length).toBeGreaterThan(0);
     expect(fatal.every((i) => i.severity === "error")).toBe(true);
-    // 失败信号必须能定位到文件 + 原因
-    expect(fatal[0]!.message).toContain(file);
+    // 失败原因可读（模块无法装载）
+    expect(fatal[0]!.message).toContain("throws");
   });
 
   it("假红防线：正常文件（零回落）仍 exit 0（不得误报）", () => {
@@ -123,8 +122,8 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     writeFileSync(file, CLEAN, "utf-8");
     const r = runCliTsx(["check", file]);
     expect(r.status).toBe(0);
-    expect(r.stderr).not.toContain("analysis failed for");
-    expect(r.stdout).not.toContain("nudo:internal");
+    expect(r.stdout).not.toContain("FAILED");
+    expect(r.stdout).not.toContain("nudo:module-throw");
   });
 
   it("假红防线：unsupported:*（能力边界）回落**不**变成闸门失败", () => {
@@ -137,7 +136,7 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     const json = JSON.parse(r.stdout) as {
       issues: Array<{ code: string; severity: string }>;
     };
-    expect(json.issues.some((i) => i.code === "nudo:internal")).toBe(false);
+    expect(json.issues.some((i) => i.code === "nudo:module-throw")).toBe(false);
     expect(r.stderr).not.toContain("analysis failed for");
   });
 
@@ -146,21 +145,27 @@ describe("1145 · nudo check：模块级求值失败必须 fail-closed", () => {
     const file = join(dir, "boom.js");
     writeFileSync(file, MODULE_EVAL_FAILS, "utf-8");
     const r = runCliTsx(["check", "--fix", file]);
+    // 只断言退出码同口径（--fix 不打印诊断清单，它是「计划/写盘」面）：
+    // 不得出现 `check` 红而 `--fix` 绿。
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("analysis failed for");
   });
 });
 
 describe("1145 · nudo health：存在 internal 回落时不得报 OK", () => {
-  it("含 internal 回落的文件 ⇒ Result 不是 OK + exit ≠ 0", () => {
-    const dir = tmpDir("nudo-1145-health-fail-");
+  it("模块级原生异常不再是「分析失败」⇒ health 只看漂移，报 OK（口径变更）", () => {
+    // BUG-073 之后 `export const boom = undefined();` 被**确定性**归类为
+    // `nudo:module-throw`（分析本身成功，结论是「这个模块装载必抛」），
+    // 不再走 `internal` 回落 ⇒ BUG-1145 的 health 断言前提（「分析失败 ⇒ 闸门
+    // 无法裁决」）消失：health 的失败判据是 **contract drift / case drift /
+    // path error / internal 回落**，不含「代码本身必抛」这类**可裁决**的缺陷
+    // ——那由 `nudo check` 报红（见上方用例）。`internal` 回落仍会进
+    // FAIL 判据（本文件「unsupported」用例守住反向）。
+    const dir = tmpDir("nudo-1145-health-module-throw-");
     const file = join(dir, "boom.js");
     writeFileSync(file, MODULE_EVAL_FAILS, "utf-8");
     const r = runCliTsx(["health", file]);
-    expect(r.status).not.toBe(0);
-    expect(r.stdout).not.toContain("Result: OK");
-    expect(r.stdout).toContain("Result: FAIL");
-    expect(r.stdout).toContain("internal_fallbacks");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Result: OK");
   });
 
   it("正常文件 ⇒ Result: OK + exit 0（不得误报）", () => {

@@ -227,8 +227,65 @@ export function defineEnv(): EnvDefinition {
   /** 断言/工具接受的任意值（无约束） */
   const anyValueBrand = brandOf("Value");
 
-  /** path.posix / path.win32 平台路径对象（Bug 877：与 path 族同一套实参执法） */
-  const platformPathMethods = () => ({
+  /**
+   * `path.parse` 的平台面（顶层 `path` 与 `path.posix` / `path.win32` **共用**）。
+   *
+   * 族 15 · BUG-255：`path.posix` / `path.win32` 曾用**另一份手抄成员表**
+   * （`platformPathMethods()`），漏了 `parse` / `format` ⇒ 读这两个成员得到
+   * **确定的 `undefined`**（闭 obj 缺槽）⇒ 在它上面调用 ⇒ **确定抛 TypeError**
+   * ⇒ 签名 `never throws TypeError` ⇒ L2 门禁假红（exit 1），而宿主
+   * `path.posix.parse("/a/b.txt")` 完全正常。
+   *
+   * 修法：两个平台对象**复用**与顶层相同的实现（单一事实源），杜绝手抄表漂移。
+   */
+  const platformParseFn = (p: typeof nodePath.posix): Abs =>
+    envFn(
+      [prim.str()],
+      pathParseAbs,
+      pathApply((args) => {
+        const s = absStrLit(args[0]);
+        if (s === undefined) return undefined;
+        const parsed = p.parse(s);
+        return objAbs({
+          root: strLit(parsed.root),
+          dir: strLit(parsed.dir),
+          base: strLit(parsed.base),
+          ext: strLit(parsed.ext),
+          name: strLit(parsed.name),
+        });
+      }, pathParseAbs, 1),
+      { enforceArgs: true },
+    );
+
+  /** `path.format` 的平台面（顶层与 posix / win32 共用；实参必须是对象）。 */
+  const platformFormatFn = (): Abs =>
+    envFn(
+      [pathFormatArg],
+      prim.str(),
+      (args) => {
+        // Bug 877：原生 `path.format(x)` 要求 x 是**对象**
+        // （`path.format(123)` → TypeError；`path.format()` → TypeError）。
+        const arg = args[0];
+        if (arg === undefined) return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        if (arg.term?.op === "lit" && arg.term.value === undefined) {
+          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        }
+        if (arg.shape.k === "obj") return prim.str();
+        if (arg.shape.k === "prim") {
+          // primitive ⇒ 原生必抛 TypeError
+          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        }
+        // 抽象（unknown / any / brand …）⇒ 原生可能抛
+        return makeAbsApplyResult(prim.str(), errBrand("TypeError"));
+      },
+      { params: ["pathObject"] },
+    );
+
+  /**
+   * path.posix / path.win32 平台路径对象（Bug 877：与 path 族同一套实参执法；
+   * BUG-255：成员集与顶层 `path` **同源**——`parse` / `format` 不再漏）。
+   */
+  const platformPathMethods = (p: typeof nodePath.posix) => ({
     join: envFnVariadic(prim.str(), prim.str(), {
       apply: pathApply(pathJoinAbs, prim.str(), 0),
       restName: "...paths",
@@ -270,6 +327,10 @@ export function defineEnv(): EnvDefinition {
       pathApply(pathRelativeAbs, prim.str(), 2),
       { enforceArgs: true },
     ),
+    // BUG-255：`parse` / `format` 必须在**平台面**——宿主
+    // `Object.getOwnPropertyNames(path.posix)` 含这两个（顶层同源）。
+    parse: platformParseFn(p),
+    format: platformFormatFn(),
     sep: prim.str(),
     delimiter: prim.str(),
   });
@@ -895,49 +956,13 @@ export function defineEnv(): EnvDefinition {
       pathApply(pathIsAbsoluteAbs, prim.bool(), 1),
       { enforceArgs: true },
     ),
-    parse: envFn(
-      [prim.str()],
-      pathParseAbs,
-      pathApply((args) => {
-        const p = absStrLit(args[0]);
-        if (p === undefined) return undefined;
-        const parsed = nodePath.parse(p);
-        return objAbs({
-          root: strLit(parsed.root),
-          dir: strLit(parsed.dir),
-          base: strLit(parsed.base),
-          ext: strLit(parsed.ext),
-          name: strLit(parsed.name),
-        });
-      }, pathParseAbs, 1),
-      { enforceArgs: true },
-    ),
-    format: envFn(
-      [pathFormatArg],
-      prim.str(),
-      (args) => {
-        // Bug 877：原生 `path.format(x)` 要求 x 是**对象**
-        // （`path.format(123)` → TypeError；`path.format()` → TypeError）。
-        const arg = args[0];
-        if (arg === undefined) return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
-        if (arg.term?.op === "lit" && arg.term.value === undefined) {
-          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
-        }
-        if (arg.shape.k === "obj") return prim.str();
-        if (arg.shape.k === "prim") {
-          // primitive ⇒ 原生必抛 TypeError
-          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
-        }
-        // 抽象（unknown / any / brand …）⇒ 原生可能抛
-        return makeAbsApplyResult(prim.str(), errBrand("TypeError"));
-      },
-      { params: ["pathObject"] },
-    ),
+    parse: platformParseFn(nodePath),
+    format: platformFormatFn(),
     // 常量：平台相关字面量在 defineEnv 时可具体化
     sep: prim.str(),
     delimiter: prim.str(),
-    posix: brandOf("path.PlatformPath", objAbs(platformPathMethods())),
-    win32: brandOf("path.PlatformPath", objAbs(platformPathMethods())),
+    posix: brandOf("path.PlatformPath", objAbs(platformPathMethods(nodePath.posix))),
+    win32: brandOf("path.PlatformPath", objAbs(platformPathMethods(nodePath.win32))),
   };
 
   const osModule: Record<string, Abs> = {
@@ -1923,6 +1948,47 @@ function assertRegexpPattern(
       isNativeError: envFn([anyParam], prim.bool()),
       isAsyncFunction: envFn([anyParam], prim.bool()),
       isGeneratorFunction: envFn([anyParam], prim.bool()),
+      // 族 15 · BUG-257：`util.types` 在宿主上有 **43** 个谓词，旧表只建模
+      // 8 个 ⇒ 其余 35 个成员读出 **exact `undefined`**（闭 obj 缺槽）⇒
+      // `types.isMap(new Map())` 被判「确定抛 TypeError」⇒ L2 门禁**假红**
+      // （exit 1），而宿主返回 `true`。以下 35 个全部按宿主
+      // `Object.keys(require("node:util").types)` 逐一枚举（都是
+      // `(value) => boolean`）。
+      isAnyArrayBuffer: envFn([anyParam], prim.bool()),
+      isArgumentsObject: envFn([anyParam], prim.bool()),
+      isArrayBufferView: envFn([anyParam], prim.bool()),
+      isBigInt64Array: envFn([anyParam], prim.bool()),
+      isBigIntObject: envFn([anyParam], prim.bool()),
+      isBigUint64Array: envFn([anyParam], prim.bool()),
+      isBooleanObject: envFn([anyParam], prim.bool()),
+      isBoxedPrimitive: envFn([anyParam], prim.bool()),
+      isCryptoKey: envFn([anyParam], prim.bool()),
+      isDataView: envFn([anyParam], prim.bool()),
+      isExternal: envFn([anyParam], prim.bool()),
+      isFloat16Array: envFn([anyParam], prim.bool()),
+      isFloat32Array: envFn([anyParam], prim.bool()),
+      isFloat64Array: envFn([anyParam], prim.bool()),
+      isGeneratorObject: envFn([anyParam], prim.bool()),
+      isInt16Array: envFn([anyParam], prim.bool()),
+      isInt32Array: envFn([anyParam], prim.bool()),
+      isInt8Array: envFn([anyParam], prim.bool()),
+      isKeyObject: envFn([anyParam], prim.bool()),
+      isMap: envFn([anyParam], prim.bool()),
+      isMapIterator: envFn([anyParam], prim.bool()),
+      isModuleNamespaceObject: envFn([anyParam], prim.bool()),
+      isNumberObject: envFn([anyParam], prim.bool()),
+      isProxy: envFn([anyParam], prim.bool()),
+      isSet: envFn([anyParam], prim.bool()),
+      isSetIterator: envFn([anyParam], prim.bool()),
+      isSharedArrayBuffer: envFn([anyParam], prim.bool()),
+      isStringObject: envFn([anyParam], prim.bool()),
+      isSymbolObject: envFn([anyParam], prim.bool()),
+      isUint16Array: envFn([anyParam], prim.bool()),
+      isUint32Array: envFn([anyParam], prim.bool()),
+      isUint8Array: envFn([anyParam], prim.bool()),
+      isUint8ClampedArray: envFn([anyParam], prim.bool()),
+      isWeakMap: envFn([anyParam], prim.bool()),
+      isWeakSet: envFn([anyParam], prim.bool()),
     }),
     // Bug 866：模块导出的构造器必须带 `ctor: true`——否则 `new TextEncoder()`
     // / `new TextDecoder("utf-8")` 落「fn 形 callee 构造性未知」⇒ 记
@@ -2327,6 +2393,51 @@ function assertRegexpPattern(
     dispatchEvent: envFn([prim.unknown], prim.bool()),
   };
 
+  /**
+   * `Event` 实例面——`Event` 与 `CustomEvent` **共用**（DOM：
+   * `CustomEvent : Event`，成员**继承**）。
+   *
+   * 族 15 · BUG-148：`CustomEvent` 的 brand 内层只列了 5 个槽
+   * （`type` / `detail` / `bubbles` / `cancelable` / `defaultPrevented`）
+   * ⇒ `new CustomEvent("t").preventDefault()` / `.timeStamp` 读出
+   * **exact `undefined`** ⇒ 判「确定抛 TypeError」（L2 假红）；而同文件的
+   * `Event` 面是全的 ⇒ **表内不自洽**。
+   */
+  const eventInstanceSlots = {
+    type: prim.str(),
+    target: prim.unknown,
+    currentTarget: prim.unknown,
+    bubbles: prim.bool(),
+    cancelable: prim.bool(),
+    composed: prim.bool(),
+    defaultPrevented: prim.bool(),
+    isTrusted: prim.bool(),
+    timeStamp: prim.num(),
+    preventDefault: envFn([], undef()),
+    stopPropagation: envFn([], undef()),
+    stopImmediatePropagation: envFn([], undef()),
+  };
+
+  /**
+   * 迭代器面（族 15 · BUG-154）：WHATWG 的 `Headers.keys/values/entries()` 与
+   * `FormData.keys/values/entries()` 返回**迭代器**（`Iterator`），**不是数组**。
+   *
+   * - 旧 node 面声明成 `arrOf(...)` ⇒ `Array.isArray(h.keys())` 被折成
+   *   **`true`**（宿主 `false`）、`k.length` 折成 `number`（宿主 `undefined`）
+   *   ⇒ **自信的错值**（假绿）；
+   * - 旧 web 面声明成 `prim.unknown` ⇒ 可迭代性分类落 "may" ⇒
+   *   `[...h.keys()]` 记 may-throw TypeError（假红）。
+   *
+   * 迭代器面 = **带 `@@iterator` 槽的 obj**：core 的 `iterabilityKind`
+   * 对「有 `@@iterator` 槽的闭 obj」判 **total**（可迭代、不抛），
+   * 且 `Array.isArray` 为 false、`length` 不可得 ⇒ 与宿主一致。
+   */
+  const iteratorOf = (element: Abs): Abs =>
+    objAbs({
+      next: envFn([], objAbs({ value: element, done: prim.bool() })),
+      "@@iterator": envFn([], prim.unknown),
+    });
+
   /** 流面（ReadableStream / WritableStream / TransformStream 家族） */
   const streamSlots = {
     locked: prim.bool(),
@@ -2454,6 +2565,90 @@ function assertRegexpPattern(
   const navigatorObj = objAbs(navigatorSlots);
 
   /**
+   * 族 15 · BUG-125：Node 的 `crypto.getRandomValues` 只接受**整数型
+   * TypedArray**（`@types/node` 的签名是
+   * `<T extends NodeJS.NonSharedTypedArray>(typedArray: T): T`），并**原样
+   * 返回同一个对象**。
+   *
+   * 旧声明 `(unknown[]) => unknown[]` 两个方向都错：
+   * - 形参是 **JS Array** ⇒ `crypto.getRandomValues([1, 2, 3])` 判绿，而宿主
+   *   定抛 `DOMException: The data argument must be an integer-type TypedArray`
+   *   ⇒ **假绿**（接受运行时必抛的实参）；
+   * - 返回声明成「新数组」⇒ 与实际的「同一对象」不符。
+   *
+   * 修法：形参收「整数型 TypedArray」联合（浮点 / BigInt 之外的整数族；
+   * 宿主同样拒绝 Float32Array 等）+ `enforceArgs`（数组字面量 ⇒ 确定不符
+   * ⇒ 必抛 TypeError）+ apply **原样返回实参 Abs**（同一对象语义）。
+   */
+  const integerTypedArray = (): Abs =>
+    unionOf(
+      brandOf("Int8Array"),
+      brandOf("Uint8Array"),
+      brandOf("Uint8ClampedArray"),
+      brandOf("Int16Array"),
+      brandOf("Uint16Array"),
+      brandOf("Int32Array"),
+      brandOf("Uint32Array"),
+      brandOf("BigInt64Array"),
+      brandOf("BigUint64Array"),
+    );
+  /** 宿主接受的整数型 TypedArray（`getRandomValues` 的实参域）。 */
+  const INTEGER_TYPED_ARRAYS = new Set([
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "BigInt64Array",
+    "BigUint64Array",
+  ]);
+  /** 宿主**拒绝**的类数组/视图（浮点 TypedArray、DataView、ArrayBuffer…）。 */
+  const NON_INTEGER_VIEWS = new Set([
+    "Float16Array",
+    "Float32Array",
+    "Float64Array",
+    "DataView",
+    "ArrayBuffer",
+    "SharedArrayBuffer",
+  ]);
+  const getRandomValuesFn = (): Abs =>
+    envFn(
+      [integerTypedArray()],
+      integerTypedArray(),
+      (args) => {
+        const arg = args[0];
+        // 缺省 ⇒ 原生 TypeError（ToObject(undefined) 之后读类型失败）
+        if (arg === undefined) return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        const s = arg.shape;
+        const verdict = (a: Abs): "ok" | "bad" | "abstract" => {
+          const sh = a.shape;
+          if (sh.k === "brand") {
+            if (INTEGER_TYPED_ARRAYS.has(sh.name)) return "ok";
+            if (NON_INTEGER_VIEWS.has(sh.name)) return "bad";
+            return "abstract";
+          }
+          // JS Array / tuple / 原始值 ⇒ 宿主定抛
+          // （`The data argument must be an integer-type TypedArray`）
+          if (sh.k === "arr" || sh.k === "tuple" || sh.k === "prim") return "bad";
+          return "abstract";
+        };
+        const parts = s.k === "sum" ? s.members : [arg];
+        const kinds = parts.map(verdict);
+        // 全部臂都不符 ⇒ **必抛**（数组字面量走这里）
+        if (kinds.length > 0 && kinds.every((k) => k === "bad")) {
+          return makeAbsApplyResult(neverAbs, errBrand("TypeError"));
+        }
+        // 全臂都是合法 TypedArray ⇒ **原样返回同一个对象**（原生身份语义）
+        if (kinds.every((k) => k === "ok")) return arg;
+        // 混合 / 判不出 ⇒ 可能抛，返回 TypedArray 面
+        return makeAbsApplyResult(integerTypedArray(), errBrand("TypeError"));
+      },
+      { params: ["typedArray"] },
+    );
+
+  /**
    * crypto.subtle 成员表（`crypto` 全局面 + `SubtleCrypto` 实例面**同源**）。
    *
    * Bug 1049：web env 的同名表缺 4 个标准 WebCrypto API（`deriveKey` /
@@ -2504,12 +2699,12 @@ function assertRegexpPattern(
     "Crypto",
     objAbs({
       randomUUID: envFn([], prim.str()),
-      getRandomValues: envFn([arrOf(prim.unknown)], arrOf(prim.unknown)),
+      getRandomValues: getRandomValuesFn(),
       subtle: brandOf("SubtleCrypto", subtleCryptoObj),
     }),
   );
   cryptoModule.subtle = brandOf("SubtleCrypto", subtleCryptoObj);
-  cryptoModule.getRandomValues = envFn([arrOf(prim.unknown)], arrOf(prim.unknown));
+  cryptoModule.getRandomValues = getRandomValuesFn();
 
   /**
    * `TextEncoder` 的**声明实例面**（族 64：类值声明要复用它 ⇒ 提成 const）。
@@ -2540,23 +2735,7 @@ function assertRegexpPattern(
     Event: ctorOf(
       "Event",
       [prim.str(), prim.unknown],
-      brandOf(
-        "Event",
-        objAbs({
-          type: prim.str(),
-          target: prim.unknown,
-          currentTarget: prim.unknown,
-          bubbles: prim.bool(),
-          cancelable: prim.bool(),
-          composed: prim.bool(),
-          defaultPrevented: prim.bool(),
-          isTrusted: prim.bool(),
-          timeStamp: prim.num(),
-          preventDefault: envFn([], undef()),
-          stopPropagation: envFn([], undef()),
-          stopImmediatePropagation: envFn([], undef()),
-        }),
-      ),
+      brandOf("Event", objAbs(eventInstanceSlots)),
       { params: ["type", "options?"] },
     ),
     CustomEvent: ctorOf(
@@ -2564,13 +2743,8 @@ function assertRegexpPattern(
       [prim.str(), prim.unknown],
       brandOf(
         "CustomEvent",
-        objAbs({
-          type: prim.str(),
-          detail: prim.unknown,
-          bubbles: prim.bool(),
-          cancelable: prim.bool(),
-          defaultPrevented: prim.bool(),
-        }),
+        // DOM `CustomEvent : Event` —— 继承面 + `detail`（BUG-148）
+        objAbs({ ...eventInstanceSlots, detail: prim.unknown }),
       ),
       { params: ["type", "options?"] },
     ),
@@ -2703,7 +2877,12 @@ function assertRegexpPattern(
             params: ["reason?"],
           }),
           timeout: envFn([prim.num()], brandOf("AbortSignal")),
-          any: brandOf("AbortSignal"),
+          // 族 15 · BUG-155：`AbortSignal.any` 是**静态工厂函数**
+          // （宿主实测 `typeof AbortSignal.any === "function"`、
+          // `.length === 1`）。旧声明是 `brandOf("AbortSignal")`——一个
+          // **实例值** ⇒ `typeof` 被折成 `"object"`（自信的错字面量）⇒
+          // `if (typeof AbortSignal.any === "function")` 分支成死代码。
+          any: envFn([arrOf(prim.unknown)], brandOf("AbortSignal")),
         },
       },
     ),
@@ -2946,9 +3125,13 @@ function assertRegexpPattern(
           has: envFn([prim.str()], prim.bool()),
           set: envFn([prim.str(), prim.str()], undef()),
           getSetCookie: envFn([], arrOf(prim.str())),
-          keys: envFn([], arrOf(prim.str())),
-          values: envFn([], arrOf(prim.str())),
-          entries: envFn([], arrOf(prim.str())),
+          // 族 15 · BUG-154：WHATWG 的 keys/values/entries 返回**迭代器**，
+          // 不是数组（宿主实测 `Array.isArray(new Headers().keys()) === false`）。
+          // 旧声明 `arrOf(prim.str())` ⇒ `Array.isArray` 折 **true**、
+          // `k.length` 折 number（宿主 undefined）⇒ 自信的错值。
+          keys: envFn([], iteratorOf(prim.str())),
+          values: envFn([], iteratorOf(prim.str())),
+          entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.str()]))),
           forEach: envFn([callbackFnBrand], undef()),
         }),
       ),
@@ -2966,9 +3149,10 @@ function assertRegexpPattern(
           getAll: envFn([prim.str()], arrOf(prim.unknown)),
           has: envFn([prim.str()], prim.bool()),
           set: envFn([prim.str(), prim.unknown], undef()),
-          keys: envFn([], arrOf(prim.str())),
-          values: envFn([], arrOf(prim.unknown)),
-          entries: envFn([], arrOf(prim.unknown)),
+          // BUG-154：迭代器面（不是数组，见 Headers 同段说明）。
+          keys: envFn([], iteratorOf(prim.str())),
+          values: envFn([], iteratorOf(prim.unknown)),
+          entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.unknown]))),
           forEach: envFn([callbackFnBrand], undef()),
         }),
       ),
@@ -2992,6 +3176,11 @@ function assertRegexpPattern(
           keepalive: prim.bool(),
           mode: prim.str(),
           redirect: prim.str(),
+          // 族 15 · BUG-148：`duplex` 是 WHATWG Fetch 的标准 Request 成员
+          // （node v26 undici 实测 `new Request(u).duplex === "half"`；web env
+          // 早已声明）⇒ 缺槽 ⇒ `r.duplex.toUpperCase()` 读出 exact undefined
+          // ⇒ 判「确定抛 TypeError」（假红）。
+          duplex: prim.str(),
           referrer: prim.str(),
           referrerPolicy: prim.str(),
           signal: brandOf("AbortSignal"),
@@ -3108,7 +3297,7 @@ function assertRegexpPattern(
         "Crypto",
         objAbs({
           randomUUID: envFn([], prim.str()),
-          getRandomValues: envFn([arrOf(prim.unknown)], arrOf(prim.unknown)),
+          getRandomValues: getRandomValuesFn(),
           subtle: brandOf("SubtleCrypto"),
         }),
       ),
@@ -3251,7 +3440,7 @@ function assertRegexpPattern(
     // ── 全局对象（宿主全局上的对象，不是构造器）────────────────
     crypto: objAbs({
       randomUUID: envFn([], prim.str()),
-      getRandomValues: envFn([arrOf(prim.unknown)], arrOf(prim.unknown)),
+      getRandomValues: getRandomValuesFn(),
       subtle: brandOf("SubtleCrypto", subtleCryptoObj),
     }),
     performance: performanceObj,
@@ -3286,15 +3475,19 @@ function assertRegexpPattern(
     global: openObjBrand("NodeGlobal", { key: prim.str(), value: prim.unknown }),
 
     // ── WebAssembly / Temporal / fetch ────────────────────────
+    // 族 15 · BUG-155：`WebAssembly.Module` / `Instance` / `Memory` / `Table` /
+    // `Global` 在宿主上是**可 `new` 的构造器函数**（`typeof === "function"`）；
+    // 旧面写成 `brandOf(...)`（**数据值**）⇒ `typeof` 被折成 `"object"`
+    // ⇒ 特性探测分支成死代码（自信的错字面量）。
     WebAssembly: objAbs({
       validate: envFn([prim.unknown], prim.bool()),
       compile: envFn([prim.unknown], promiseOf(prim.unknown)),
       instantiate: envFn([prim.unknown], promiseOf(prim.unknown)),
-      Module: brandOf("WebAssembly.Module"),
-      Instance: brandOf("WebAssembly.Instance"),
-      Memory: brandOf("WebAssembly.Memory"),
-      Table: brandOf("WebAssembly.Table"),
-      Global: brandOf("WebAssembly.Global"),
+      Module: ctorOf("WebAssembly.Module", [prim.unknown], brandOf("WebAssembly.Module")),
+      Instance: ctorOf("WebAssembly.Instance", [prim.unknown], brandOf("WebAssembly.Instance")),
+      Memory: ctorOf("WebAssembly.Memory", [prim.unknown], brandOf("WebAssembly.Memory")),
+      Table: ctorOf("WebAssembly.Table", [prim.unknown], brandOf("WebAssembly.Table")),
+      Global: ctorOf("WebAssembly.Global", [prim.unknown], brandOf("WebAssembly.Global")),
     }),
     Temporal: objAbs({
       Now: objAbs({
@@ -3305,11 +3498,19 @@ function assertRegexpPattern(
         plainTimeISO: envFn([prim.unknown], brandOf("Temporal.PlainTime")),
         instantEpochMilliseconds: envFn([prim.unknown], prim.num()),
       }),
-      Instant: brandOf("Temporal.Instant"),
-      PlainDate: brandOf("Temporal.PlainDate"),
-      PlainTime: brandOf("Temporal.PlainTime"),
-      PlainDateTime: brandOf("Temporal.PlainDateTime"),
-      ZonedDateTime: brandOf("Temporal.ZonedDateTime"),
+      Instant: ctorOf("Temporal.Instant", [prim.unknown], brandOf("Temporal.Instant")),
+      PlainDate: ctorOf("Temporal.PlainDate", [prim.unknown], brandOf("Temporal.PlainDate")),
+      PlainTime: ctorOf("Temporal.PlainTime", [prim.unknown], brandOf("Temporal.PlainTime")),
+      PlainDateTime: ctorOf(
+        "Temporal.PlainDateTime",
+        [prim.unknown],
+        brandOf("Temporal.PlainDateTime"),
+      ),
+      ZonedDateTime: ctorOf(
+        "Temporal.ZonedDateTime",
+        [prim.unknown],
+        brandOf("Temporal.ZonedDateTime"),
+      ),
     }),
     // fetch：返回 Promise<Response>（宿主路径会因「宿主副作用」被拦截成
     // opaque unknown；声明面更贴近原生且不产生真实网络副作用）
@@ -3481,6 +3682,12 @@ function assertRegexpPattern(
       platform: prim.str(),
       arch: prim.str(),
       version: prim.str(),
+      // 族 15 · BUG-256：`process.title` 是 Node 长期稳定的公开 API（宿主：
+      // 读是 string、写是 string）。旧表 39 个槽里**没有它** ⇒ 闭 obj 缺槽
+      // ⇒ `process.title.length` 判「确定抛 TypeError」（L2 假红）且
+      // `typeof process.title` 折成 **`"undefined"`**（宿主 `"string"`）——
+      // 特性探测分支被**反向**折叠。
+      title: prim.str(),
       versions: openObjBrand(
         "Record<string, string>",
         { key: prim.str(), value: prim.str() },
@@ -3625,7 +3832,13 @@ function assertRegexpPattern(
           ),
           concat: envFn([arrOf(bufferBrand)], bufferBrand),
           compare: envFn([bufferBrand, bufferBrand], prim.num()),
-          compareBuffers: envFn([bufferBrand, bufferBrand], prim.num()),
+          // 族 15 · BUG-193：`compareBuffers` / `isUtf8` / `transcode` /
+          // `constants` 在 Node 里**不是 `Buffer` 的静态成员**（宿主实测
+          // `typeof Buffer.isUtf8 === "undefined"`；它们属于 `node:buffer`
+          // 的**模块级导出**）⇒ 旧面把它们挂在这里 ⇒ `Buffer.isUtf8(...)`
+          // 判「不抛 + 有值」，而宿主定抛 `TypeError: Buffer.isUtf8 is not
+          // a function` ⇒ **假绿 + 自信的错值**（`Buffer.constants.MAX_LENGTH`
+          // 折成 `number`）。正确位置见下方 `bufferModule`。
           // ── Bug 874：静态 of 缺失 ⇒ `Buffer.of(1, 2)` 成员读出
           //    **exact undefined** ⇒ 引擎证明「调用 undefined 必抛
           //    TypeError」⇒ 假红（原生返回 Buffer）。of 是**变长**的
@@ -3635,20 +3848,7 @@ function assertRegexpPattern(
             restName: "...items",
             name: "Buffer.of",
           }),
-          isUtf8: envFn([bufferBrand], prim.bool()),
-          transcode: envFn(
-            [
-              unionOf(prim.str(), bufferBrand),
-              unionOf(prim.str(), bufferBrand),
-              prim.str(),
-            ],
-            bufferBrand,
-          ),
           poolSize: prim.num(),
-          constants: objAbs({
-            MAX_LENGTH: prim.num(),
-            MAX_STRING_LENGTH: prim.num(),
-          }),
         },
       },
     ),
@@ -3678,7 +3878,48 @@ function assertRegexpPattern(
     // 删掉声明 ⇒ 回落宿主路径 ⇒ throws 面回来（宿主抛什么就说什么）。
   };
 
+  /**
+   * 族 15 · BUG-193：`node:buffer` 的**模块级导出**（宿主实测
+   * `Object.keys(require("node:buffer"))` = Buffer, transcode, isUtf8,
+   * isAscii, kMaxLength, kStringMaxLength, btoa, atob, constants,
+   * INSPECT_MAX_BYTES, Blob, resolveObjectURL, File）。
+   *
+   * 旧 `modules` 表**没有 `buffer`**，而 `isUtf8` / `transcode` /
+   * `constants` 被错挂到 `Buffer` 类的**静态表**上（宿主上
+   * `typeof Buffer.isUtf8 === "undefined"`）⇒ 建模位置错误 ⇒ 引擎判「不抛 +
+   * 自信的值」而宿主定抛 TypeError ⇒ **假绿**。这里按宿主把它们放回**模块
+   * 作用域**（`@types/node` 也声明在模块里，不在 `declare class Buffer` 内）。
+   *
+   * 未建模的 `atob` / `btoa`：宿主面由 core 的精确建模负责（Bug 883：env
+   * 声明会遮蔽 core 的 throws 面）⇒ 保持不声明。
+   */
+  const bufferModule: Record<string, Abs> = {
+    Buffer: nodeGlobals.Buffer!,
+    isUtf8: envFn([bufferBrand], prim.bool()),
+    isAscii: envFn([bufferBrand], prim.bool()),
+    transcode: envFn(
+      [
+        unionOf(prim.str(), bufferBrand),
+        unionOf(prim.str(), bufferBrand),
+        prim.str(),
+      ],
+      bufferBrand,
+    ),
+    constants: objAbs({
+      MAX_LENGTH: prim.num(),
+      MAX_STRING_LENGTH: prim.num(),
+    }),
+    kMaxLength: prim.num(),
+    kStringMaxLength: prim.num(),
+    INSPECT_MAX_BYTES: prim.num(),
+    resolveObjectURL: envFn([prim.str()], prim.unknown),
+    Blob: nodePlatformGlobals.Blob!,
+    File: nodePlatformGlobals.File!,
+  };
+
   const modules: Record<string, Record<string, Abs>> = {
+    buffer: bufferModule,
+    "node:buffer": bufferModule,
     fs: fsModule,
     "node:fs": fsModule,
     "fs/promises": fsPromisesModule,

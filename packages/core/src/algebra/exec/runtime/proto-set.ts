@@ -90,7 +90,12 @@ export function protoChainSetVerdict(o: Abs, key: string): ProtoSetVerdict {
         return { kind: "setter", setter: acc.set };
       }
       const slot = getSlot((holder.shape as ObjShape).slots, key);
-      if (slot) {
+      // Bug 275 联动：`inherited` 槽是 Object.create 镜像来的**原型链**解析
+      // 槽——原生它不是该对象的自有属性 ⇒ 不得在此判「本层持键」（否则
+      // `Object.create(Object.create({get x(){…}}))` 的中间层会把写门判成
+      // 「可写数据属性」⇒ 原型链上的 getter-only / writable:false 被静默
+      // 写穿）。跳过它继续上溯到真持有键的原型。
+      if (slot && slot.inherited !== true) {
         // 数据属性：原型持该键 → 原型侧不可写则拒写
         if (extStateOf(p) === "frozen" || extStateOf(holder) === "frozen") return { kind: "deny" };
         if (getPropFlags(p)?.get(key)?.writable === false) return { kind: "deny" };

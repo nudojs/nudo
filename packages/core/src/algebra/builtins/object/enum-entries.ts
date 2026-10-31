@@ -94,7 +94,90 @@ export function builtinBrandNoEnumKeys(a0: Abs | undefined): boolean {
   // Object.keys(class A { m(){} }.prototype) === []）⇒ 可枚举自有键恒空。
   // （gOPN 面是「**全部**自有键」，另走 builtinBrandOwnKeyNames。）
   if (name.endsWith(".prototype")) return true;
-  return BUILTIN_BRAND_NO_ENUM_KEYS.has(name);
+  if (!BUILTIN_BRAND_NO_ENUM_KEYS.has(name)) return false;
+  // Bug 277：用户可在实例上新增自有可枚举属性（`e.code = 42` / `m.foo = 1`
+  // / `d.bar = 2`）⇒「零可枚举自有键」只对**没被用户改过**的实例成立
+  // ⇒ 判定须先查接收者的内层槽表（不得折 exact 空）。
+  const user = builtinBrandUserEnumEntries(a0);
+  return !user || user.length === 0;
+}
+
+/**
+ * Bug 277：内层槽表装的是**内部数据**（而非自有属性）的内建 brand 家族——
+ * RegExp 的 source/flags/global（原生是 `%RegExp.prototype%` 上的**访问器**
+ * ——非自有键）、URL 的 href/origin/…、ArrayBuffer 的 byteLength、DataView
+ * 的 byteOffset/byteLength……⇒ 这些槽**不得**当「用户新增的自有键」投影
+ *（否则把内部数据当自有键发布 = 自信的确切错值）。这些家族的 gOPN 面另走
+ * builtinBrandOwnKeyNames（RegExp 的 `lastIndex` 是唯一自有键）。
+ */
+const BUILTIN_BRAND_INTERNAL_SLOT_FAMILIES = new Set([
+  "RegExp",
+  "URL",
+  "URLSearchParams",
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+]);
+
+/** 内建 brand 的内层 obj（构造期装内部槽 / 用户新增属性的那张槽表） */
+function builtinBrandInnerObj(a0: Abs): Abs | undefined {
+  const inner = (a0.shape as { shape?: Abs }).shape;
+  if (!inner || inner.shape.k !== "obj") return undefined;
+  const os = inner.shape as unknown as { open?: boolean; index?: unknown };
+  if (os.open || os.index) return undefined;
+  return inner;
+}
+
+/**
+ * Bug 277：内建 brand 实例上**用户新增的自有可枚举键**（枚举视图）——
+ * 内层槽表里非 internal 私有槽 / 非 inherited 原型链槽 / 非 symbol 投影槽，
+ * 且**未被标 enumerable:false** 的那些（构造期装的内部槽——Error 家族的
+ * stack/message/name、装箱 brand 的 [[PrimitiveValue]]——皆标不可枚举）。
+ *
+ * 返回 undefined = 该 brand 不适用本投影（用户类实例走
+ * classInstanceEnumEntries；原型 brand / 内部数据家族见各自说明）。
+ */
+export function builtinBrandUserEnumEntries(a0: Abs | undefined): Array<[string, Abs]> | undefined {
+  if (!a0 || a0.shape.k !== "brand") return undefined;
+  const name = (a0.shape as { name?: string }).name ?? "";
+  if (name.endsWith(".prototype")) return undefined;
+  if (!BUILTIN_BRAND_NO_ENUM_KEYS.has(name)) return undefined;
+  if (BUILTIN_BRAND_INTERNAL_SLOT_FAMILIES.has(name)) return undefined;
+  const inner = builtinBrandInnerObj(a0);
+  if (!inner) return undefined;
+  const os = inner.shape as unknown as {
+    slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
+  };
+  const out: Array<[string, Abs]> = [];
+  for (const [k, v] of Object.entries(os.slots)) {
+    if (v.internal === true || v.inherited === true || v.symbolKey === true) continue;
+    // 可枚举性并查两套载体（brand 自身 / brand 的内层 obj——invariants.ts
+    // 的 isEnumerableView 口径）
+    if (!isEnumerableView(a0, k)) continue;
+    out.push([k, v.value]);
+  }
+  return out;
+}
+
+/**
+ * Bug 277：内建 brand 实例上**用户新增的自有键**（gOPN 语义 = **全部**自有
+ * 键，含不可枚举）——同 builtinBrandUserEnumEntries 的槽来源，但**不**按
+ * 可枚举性过滤。
+ */
+export function builtinBrandUserOwnKeys(a0: Abs | undefined): string[] | undefined {
+  const entries = builtinBrandUserEnumEntries(a0);
+  if (!entries) return undefined;
+  const inner = builtinBrandInnerObj(a0!);
+  if (!inner) return undefined;
+  const os = inner.shape as unknown as {
+    slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
+  };
+  return Object.keys(os.slots).filter(
+    (k) =>
+      os.slots[k]!.internal !== true &&
+      os.slots[k]!.inherited !== true &&
+      os.slots[k]!.symbolKey !== true,
+  );
 }
 
 /**

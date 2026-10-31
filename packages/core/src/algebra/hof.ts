@@ -89,6 +89,9 @@ export function snapshotAbs(a: Abs): Abs {
     term: a.term,
     pred: a.pred,
     conf: a.conf,
+    // pathNote 是 Abs 级展示 facet —— 快照是**等价副本**，不得丢
+    //（同 renameAbs 纪律：重建只搬四件套会把 join 标注静默抹掉）。
+    ...(a.pathNote !== undefined ? { pathNote: a.pathNote } : {}),
   };
 }
 
@@ -427,6 +430,9 @@ function substAbsInner(
   visiting.delete(a);
 
   const result = abs(shape, term, pred, conf);
+  // pathNote（分支 join 可解释标注）同 renameAbs 纪律：α 替换是语义等价
+  // 变换，Abs 级展示 facet 不得因重建丢失。
+  if (a.pathNote !== undefined) result.pathNote = a.pathNote;
   cache.set(a, result);
   return result;
 }
@@ -677,6 +683,38 @@ function tupleElementDomain(elements: Abs[], rest?: Abs): Abs | undefined {
 }
 
 /**
+ * relation 面必填 arity（**调用执法**口径）。
+ *
+ * 判据与 `leq.ts` 的 `requiredFnArity` / `diagnostics.ts` 的 `arityFace`
+ * 同一「必填位计数」口径（`...rest` 与 `x?` 不是必填位），补上 Bug 399 的
+ * `optionalParams[i] === true` 标记。
+ *
+ * **只在声明方表态可选性时执法**（`optionalParams` 或任一标签带 `...` / `?`
+ * 标记）。`envFn` 自动生成的标签（`x` / `x0`…）不承载可选性信息 ⇒ 返回
+ * `undefined` = **不执法**：把「未表态」当「全必填」会对合法代码报必抛
+ *（假红，CI 卡死），而对合法代码假红的代价高于「少报一种必抛」。要执法
+ * 哪一位，声明侧用 `params: ["type", "options?"]` 明确表态即可（node env
+ * 的 Event 族已是此形态）。
+ */
+function relationRequiredArity(shape: {
+  params: string[];
+  optionalParams?: boolean[];
+}): number | undefined {
+  const opt = shape.optionalParams;
+  const declared =
+    !!opt || shape.params.some((p) => p.startsWith("...") || p.endsWith("?"));
+  if (!declared) return undefined;
+  let required = 0;
+  for (let i = 0; i < shape.params.length; i++) {
+    const p = shape.params[i] ?? "";
+    if (p.startsWith("...")) continue;
+    if (opt ? opt[i] === true : p.endsWith("?")) continue;
+    required++;
+  }
+  return required;
+}
+
+/**
  * relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。
  * impl.relation 槽优先于 shape.returnType。重复 α 先绑定保留。
  * **深度合一**：`T[]` 形参可从 `number[]` 实参绑出 T=number（lodash 泛型）。
@@ -684,6 +722,24 @@ function tupleElementDomain(elements: Abs[], rest?: Abs): Abs | undefined {
 export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   const shape = fn.shape;
   if (!shape || shape.k !== "fn") return unknown;
+  // Bug 162：relation 面（env 声明的**无体**函数 / 构造器）的必填实参执法。
+  // 宿主侧（WebIDL / node 内建）对「少传必填实参」**定抛 TypeError**
+  //（`new Event()` / `new Request()` / `document.querySelector()`…）；
+  // 旧实现把缺失实参静默补成 `unknown`（下方 `args[i] ?? unknown`）⇒ 不记抛
+  // ⇒ L2 门禁假绿。口径与用户函数面（`diagnostics.ts` 的 `arityFace`，
+  // 「少参 error 按必填位判」）一致，避免两面结论相反。
+  //
+  // 两个门槛（**只主张可证的那一档**，宁可欠精确不可假红）：
+  // 1. 声明方必须表态可选性（见 `relationRequiredArity` 的 `undefined`）；
+  // 2. 只对**声明为构造器**（`ctor: true`）的 relation 面执法——非构造器
+  //    fn 被 `new` 时 `$new` 已走「构造性未知」通道（env-bug-866 的反向
+  //    对照钉），不得被本档抢占成另一种结论。
+  if (shape.ctor === true) {
+    const required = relationRequiredArity(shape);
+    if (required !== undefined && args.length < required) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
   const impl = getFnImpl(fn);
   const src = impl?.relation ?? {
     paramTypes: shape.paramTypes ?? [],

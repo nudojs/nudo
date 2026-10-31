@@ -8,7 +8,7 @@
  */
 import { dirname } from "node:path";
 import { setEvalFallbackCollector, type EvalFallback } from "@nudojs/core";
-import { runWithCollectorScope } from "@nudojs/core/internal";
+import { DIAG, getEvalFallbackStats, runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { absolutizeEnvSpec, preloadPathEnvs } from "./evaluator/env-loader.ts";
@@ -17,6 +17,7 @@ import { analysisFileCacheKey, cloneAnalysisResult } from "./analyzer-cache.ts";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
+  Diagnostic,
   DirectiveCaseMode,
 } from "./analyzer-types.ts";
 import type { CallRecord } from "./evaluator/call-record.ts";
@@ -86,6 +87,45 @@ export async function analyzeFileAsync(
 }
 
 /**
+ * 引擎内部回落（`internal` fallback）→ **error 级 `nudo:internal` 诊断**
+ * （1145 / BUG-140）。
+ *
+ * CLI 的 check 编排在**包装层**（`packages/nudojs/src/commands/check.ts`）用
+ * `setEvalFallbackCollector` 观测本文件的 `internal` 回落，并据此产出一条
+ * error 级 `nudo:internal`（「the gate could not decide this file」）⇒ exit 1。
+ * 但那条通道**只存在于 CLI 包装层**：不经过它的消费方（LSP 的
+ * `validateText`、agent 工具、vite-plugin 的 evaluator 面）拿不到**任何**
+ * 信号 ⇒ 同一个文件 **CI 红 / IDE 零诊断**（编辑器里看起来干干净净）。
+ *
+ * ⇒ 把「分析失败」提升为 **service 层**的诊断：所有消费方都从
+ * `AnalysisResult.diagnostics` 拿 ⇒ CLI / IDE / 构建期**同源**地看到
+ * 「这个文件没分析成功」。
+ *
+ * 观测手段是 core 的 `getEvalFallbackStats()`（**始终累计**的进程级计数器，
+ * 与 `setEvalFallbackCollector` 的单槽 collector 无关）⇒ 本函数**不抢占**
+ * 宿主的 collector（CLI 包装层那条通道照常工作，插件 / IDE 不再假绿）。
+ * `analyzeFile` 是**同步**的 ⇒ 前后两次快照之间不会插进别的分析。
+ */
+function internalEvalFailureDiagnostic(
+  filePath: string,
+  count: number,
+): Diagnostic {
+  return {
+    severity: "error",
+    code: DIAG.internal,
+    message:
+      `analysis failed: module evaluation failed (engine internal fallback ×${count}) — ` +
+      `${filePath} could not be evaluated, so the gate could not decide this file`,
+    suggestions: [
+      "fix the cause reported for this module, or file it as an engine bug together with the analysed file",
+    ],
+    // 无源位置：service 的占位约定（与 `analyzer-diagnose.ts` 同款）——
+    // 引擎内部回落定位不到某一行，编造第 1 行会把读者引向错误的源码位置。
+    range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+  };
+}
+
+/**
  * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
  * 不再每次 clearEvalCache：求值引擎按本文件 source 键控。
  *
@@ -137,7 +177,10 @@ export function analyzeFile(
         return cloneAnalysisResult(hit);
       }
     }
-    const result = analyzeFileUncached(
+    // BUG-140：本文件求值期间的 `internal` 回落观测起点（见
+    // `internalEvalFailureDiagnostic`）。同步窗口 ⇒ 快照不会串台。
+    const internalBefore = getEvalFallbackStats().internal;
+    let result = analyzeFileUncached(
       filePath,
       source,
       activeCases,
@@ -145,6 +188,22 @@ export function analyzeFile(
       loadModule,
       caseMode,
     );
+    // 引擎内部回落 = 该模块求值失败 ⇒ 闸门无法裁决（CLI 面 exit 1）。
+    // 不追加 ⇒ 不经过 CLI 包装层的消费方（LSP / agent / 插件）零诊断
+    // ⇒ IDE 面假绿（BUG-140）。
+    const internalFallbacks = Math.max(
+      0,
+      getEvalFallbackStats().internal - internalBefore,
+    );
+    if (internalFallbacks > 0) {
+      result = {
+        ...result,
+        diagnostics: [
+          ...result.diagnostics,
+          internalEvalFailureDiagnostic(filePath, internalFallbacks),
+        ],
+      };
+    }
     if (!k.noCache) {
       analysisCacheSet(k.filePath, k.source, k.auxKey, result);
     }
@@ -153,33 +212,44 @@ export function analyzeFile(
 }
 
 // ---------------------------------------------------------------------------
-// 1145：模块级求值失败（引擎内部回落）——**按文件**观测
+// 1145：模块级求值失败（闸门无法裁决该文件）——**按文件**观测
 // ---------------------------------------------------------------------------
 
 /**
- * 引擎内部回落（`internal` fallback）的**按文件**观测结果。
+ * 闸门**无法裁决该文件**的引擎回落的**按文件**观测结果。
  *
- * core 的回落三分类（`packages/core/src/algebra/exec/run.ts` 的 `evalFallbackOf`）：
- * - `unsupported:*` —— **能力边界**（transpile 未 lowering 的构造）：既有口径，
- *   **不得**变成闸门失败（否则大面积假红）；
- * - `module-throw` —— **程序自身抛**（NudoThrow；catch 可吸收）：既有口径，
- *   **不得**变成闸门失败；
- * - `internal` —— **引擎内部缺陷**（生成模块编译失败 / 求值抛内部错误）：
- *   该模块**全部导出丢失** ⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0
- *   ⇒ **闸门假绿**（1145）。这是唯一进失败信号的回落。
+ * core 的回落两维（`packages/core/src/algebra/exec/run.ts` 的 `evalFallbackOf`
+ * / `gateFatalOf`）：
+ * - **标签（谁的责任）**：`unsupported:*`（能力边界）/ `module-throw`（程序
+ *   自身抛：建模内抛 NudoThrow，或用户代码求值时逃逸的原生异常——BUG-073）/
+ *   `internal`（引擎 / 宿主边界自身违约）；
+ * - **可见性（闸门能不能裁决）**：`gateFatal` —— 装载期逃逸 ⇒ 该模块装载
+ *   失败（导出全丢）⇒ 闸门看不到任何入口 ⇒ 零诊断 + exit 0 ⇒ **闸门假绿**
+ *   （1145 / BUG-072）。
+ *
+ * ⇒ 进失败信号的是**可见性**（`gateFatal`），不是标签：
+ * `internal`（引擎缺陷）恒进；`module-throw` 仅**装载期**逃逸时进（调用期的
+ * 逃逸由该次调用的 throws 面承载）；`unsupported:*`（能力边界）**不进**
+ * （不得大面积假红）。
  */
 export type FileEvalFailure = {
   /** 被分析文件（绝对路径） */
   file: string;
-  /** 回落原因（当前只有 `internal` = 引擎内部缺陷） */
+  /** 回落原因（`internal` = 引擎缺陷 / `module-throw` = 装载期逃逸） */
   reason: string;
   /** 回落消息（引擎给出的失败详情） */
   message: string;
 };
 
-/** 只有 `internal`（引擎内部缺陷）进失败信号；能力边界 / 程序自身抛不进。 */
+/**
+ * 是否进失败信号（闸门必须 fail-closed）。
+ *
+ * `gateFatal` 是 core 侧算好的**可见性**维度（标签 ≠ 可见性）；`internal`
+ * 兜底（老事件无 `gateFatal` 字段时仍按引擎缺陷处理）。
+ */
 function isGateFatalFallback(f: EvalFallback): boolean {
-  return f.reason === "internal";
+  if (f.reason === "internal") return true;
+  return f.gateFatal === true;
 }
 
 /**

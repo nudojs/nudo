@@ -142,8 +142,61 @@ function leqWithPred(
   const shapeR = leqShape(src, tgt, phi, env, depth);
   if (!shapeR.ok) return shapeR;
 
+  // BUG-245：源形状是**并集**（sum）时，成员级 leqPred 已在 leqShape 的 sum
+  // 分支里逐成员跑过（`leqWithPred(m, tgt, …)` 含每个成员的 leqPred）⇒ 聚合层
+  // 不得再跑一次。sum 聚合体通常**不携带**顶层 pred（`makeSum` /
+  // `constraintToCaseArgAbs` 都不写 pred）⇒ 聚合 leqPred 走「源无 pred」分支 ⇒
+  // `implies(phi, tp)` 恒假 ⇒ 带谓词的目标逐条假红：
+  // `union(number().gt(0), number().gt(5)) ⊭ number().gt(0)`（两侧渲染串相同）。
+  // 这与 TS 的**并集源规则**一致（每个成员可赋给目标即可）。聚合体确实带着
+  // 自己的顶层 pred 时（`narrow.ts` 的 `{...a, shape: sum}` 会保留 a.pred）
+  // 仍走聚合判定——信息不丢。
+  if (src.shape.k === "sum" && (!src.pred || src.pred.op === "true")) return ok();
+
   // shape 兼容后检查 pred：src.pred ∧ phi ⇒ tgt.pred
   return leqPred(src, tgt, phi, depth);
+}
+
+/**
+ * Abs 是否**恰为 `undefined` 字面量**（`lit(undefined)`）。
+ *
+ * `undefined` 在 Abs 里没有 prim 域（`PrimName` 只有
+ * `"number" | "string" | "boolean" | "bigint" | "symbol"`）：它的 shape 是
+ * `unknown` + term `lit(undefined)`（见 `constraint.ts` 的 nullish 投影）。
+ * `litValue` 是带 ok 哨兵的 `{ ok: true, value: undefined }`，**不能**用
+ * `value !== undefined` 判。不带 term 的 `unknown` 是「无信息」，不是 undefined。
+ */
+export function isUndefinedAbs(a: Abs): boolean {
+  return a.term?.op === "lit" && a.term.value === undefined;
+}
+
+/**
+ * 值**可能为 `undefined`**：`lit(undefined)`，或并集（sum）成员里含 undefined。
+ *
+ * TS 默认 `exactOptionalPropertyTypes: false` ⇒ 可选槽的类型是 `T | undefined`
+ * ⇒ 「可能 undefined」的源值可赋给可选槽。`null` **不**算（strictNullChecks：
+ * `{ a?: string }` 不接受 `{ a: null }`）。
+ *
+ * 共享判定：`leqAbs` 的槽判定（本文件）与 L1 契约门禁
+ * （`scan/literal-shapes.ts` 的 `checkShapeAgainstAbs`）同口径读它，避免同一个
+ * 「undefined 是否满足可选槽」事实在引擎里有两套裁决。
+ */
+export function mayBeUndefinedAbs(a: Abs): boolean {
+  if (isUndefinedAbs(a)) return true;
+  return a.shape.k === "sum" && a.shape.members.some(mayBeUndefinedAbs);
+}
+
+/**
+ * 剥掉 undefined 臂后的有效形态（`mayBeUndefinedAbs` 的配套：剥完仍需按原
+ * 约束执法剩余成员，**不整体放宽**）。
+ *
+ * 整体是 undefined ⇒ 空数组（该槽对可选目标是**完全**可赋的）；并集 ⇒ 成员
+ * 递归摊平（union 成员自身可能还是并集）；否则原样单元素。
+ */
+export function nonUndefinedAbsValues(a: Abs): Abs[] {
+  if (isUndefinedAbs(a)) return [];
+  if (a.shape.k === "sum") return a.shape.members.flatMap(nonUndefinedAbsValues);
+  return [a];
 }
 
 function leqPred(src: Abs, tgt: Abs, phi: Phi, depth: number): LeqResult {
@@ -212,6 +265,13 @@ function leqShape(
     if (!srcObj || srcObj.k !== "obj") return fail(`shape ${s.k} ⊭ obj`);
     for (const [key, slot] of Object.entries(t.slots)) {
       const srcSlot = getSlot(srcObj.slots, key);
+      // 可选性 = **一条对称规则**：目标槽 optional ⇔ 源侧「缺失 or undefined」
+      // 可赋（TS 默认 `exactOptionalPropertyTypes: false`）。
+      //   · 源槽缺失（此处）⇒ 仅目标槽 optional 放行；
+      //   · 源槽自身标 optional（下方）⇒ 仅目标槽 optional 放行
+      //     （`{ a?: T }` 不可赋给 `{ a: T }`：源可能没有该属性）；
+      //   · 源值**可能 undefined**（再下方）⇒ 仅目标槽 optional 放行
+      //     （可不带 undefined 的必填槽判 `undefined ⊭ T`）。
       if (!srcSlot) {
         if (slot.optional) continue;
         return fail(`missing slot ${key}`);
@@ -221,18 +281,25 @@ function leqShape(
       }
       // 结构槽位：同 prim 字面量视为可赋（mutable let 拓宽；契约走 pred）。
       // gold assign-compatible/wider 依赖该口径——精确 lit 不等仍放行于对象槽。
-      const ssvR = litValue(srcSlot.value);
-      const stvR = litValue(slot.value);
-      if (
-        ssvR.ok &&
-        stvR.ok &&
-        primOf(srcSlot.value) !== undefined &&
-        primOf(srcSlot.value) === primOf(slot.value)
-      ) {
-        continue;
+      //
+      // 目标槽 optional ⇒ 剥掉源值里的 undefined 臂后，**剩余成员仍须**满足
+      // 目标槽值：`{ a: string | undefined }` 可赋给 `{ a?: string }`，
+      // 但 `{ a: number | undefined }` 不可（number ⊄ string）。
+      const srcValues = slot.optional ? nonUndefinedAbsValues(srcSlot.value) : [srcSlot.value];
+      for (const srcValue of srcValues) {
+        const ssvR = litValue(srcValue);
+        const stvR = litValue(slot.value);
+        if (
+          ssvR.ok &&
+          stvR.ok &&
+          primOf(srcValue) !== undefined &&
+          primOf(srcValue) === primOf(slot.value)
+        ) {
+          continue;
+        }
+        const r = leqWithPred(srcValue, slot.value, phi, env, depth + 1);
+        if (!r.ok) return fail(`slot ${key}: ${r.reason}`);
       }
-      const r = leqWithPred(srcSlot.value, slot.value, phi, env, depth + 1);
-      if (!r.ok) return fail(`slot ${key}: ${r.reason}`);
     }
     return ok();
   }

@@ -8,7 +8,7 @@
  * 修后：`fn` 节点要求 `typeof value === "function"`（不校验签名，只校验
  * 「是函数」）——与 zod 的 `z.function()` 同口径。
  *
- * 负控制：`promise` 节点仍放行（同步投影不 unwrap thenable）。
+ * 语法面同 Bug 535；`promise` 的接受集口径见 BUG-025（幂等 Promise 判定）。
  */
 import { describe, it, expect } from "vitest";
 import { abs, num, type Abs } from "@nudojs/core";
@@ -40,11 +40,12 @@ describe("Bug 535: standard 面 fn 节点必须是函数判据", () => {
     }
   });
 
-  it("负控制：promise 节点仍放行（不 unwrap thenable）", () => {
+  it("promise 节点自 BUG-025 起拒绝裸 thenable（不再放行一切）", () => {
     const { node } = absToSchemaNode(abs({ k: "eff", eff: "promise", inner: num() }, undefined, undefined, "exact"));
     const thenable = { then() {} };
-    const r = validateSchemaNode(node, thenable);
-    expect(r.issues).toBeUndefined();
-    expect(r.value).toBe(thenable);
+    const bad = validateSchemaNode(node, thenable);
+    expect(bad.issues?.[0]?.message).toContain("expected promise");
+    const ok = validateSchemaNode(node, Promise.resolve(1));
+    expect(ok.issues).toBeUndefined();
   });
 });

@@ -1455,7 +1455,14 @@ function memberMethodInfo(
   const r = hit.receiver;
   if (!r) return { known: false };
   const table = collectMethodOwners(ast).get(ownerKeyOf(r.owner));
-  if (!table) return { known: false };
+  // BUG-187：归属表**不在本文件**（`import` 进来的类 / 外部对象）⇒ **不得**
+  // 丢掉已经解析出来的归属。丢掉后 `renameTargetFromAst` 会回落「文件内唯一
+  // 同名方法」的旧口径 ⇒ 改名面把**无关对象**的同名方法键一起改、同时**漏改
+  // 光标处的调用点**（`x.run()` 的接收者归属 = 导入类 A ≠ 兜底 scope）⇒
+  // 落地即 `TypeError: x.run is not a function`。归属已知 ⇒ 以归属为界交给
+  // 方法面（跨文件定义位由 `collectMethodReferencesAcrossFiles` 找）。
+  // `known:false` = 「本文件判不出该方法是否存在」⇒ 不据此断言数据属性。
+  if (!table) return { owner: r.owner, known: false };
   if (!table.methods.has(hit.name)) return { known: true };
   return { owner: r.owner, known: true };
 }
@@ -2579,7 +2586,7 @@ export function findWorkspaceExportDefinition(
  * `not fn() form` 并**不生效**）—— LSP 若把这类绑定当契约定义指给用户，
  * 用户改多少都不会生效（与 hover / codeLens 的 `imp`、CLI 的 `[implicit]` 矛盾）。
  */
-function findSidecarContractDefinition(
+export function findSidecarContractDefinition(
   fromFile: string,
   ident: string,
   options: { extraFiles?: string[]; sourceProvider?: SourceProvider } = {},
@@ -3076,7 +3083,13 @@ export function resolveReferences(
     // （`export { f as g }` 的 `g` 是**另一个**身份 ⇒ 改 `f` 不得连坐 `g` 的
     //   importer；`export default f` 的 "default" 仍是 `f` 自己 ⇒ 算）
     const exportName = localDef.name;
-    const directNames = directExportNamesOfLocal(ast, exportName);
+    // BUG-186：**作用域感知** —— 只有「光标处绑定 = 模块顶层声明」才可能是
+    // 模块导出身份。局部绑定可以与模块级导出**同名**（`const alpha = 5`
+    // 遮蔽 `export function alpha`）⇒ 按名字扫顶层导出会把该导出的 importer
+    // 集合整个接过来 ⇒ 一次「重命名局部变量」把别的模块 `import {…}` 改成
+    // 不存在的名字 ⇒ 模块图语法级崩溃（`does not provide an export named …`）。
+    const atProgramScope = metaOf(localDef.loc).scope?.program === true;
+    const directNames = atProgramScope ? directExportNamesOfLocal(ast, exportName) : [];
     const cross =
       directNames.length > 0
         ? findCrossFileReferences(fromFile, exportName, {
@@ -3085,7 +3098,24 @@ export function resolveReferences(
             exportNames: directNames,
           })
         : [];
-    return dedup(declOf(localDef), localRefs, cross);
+    // BUG-105：**侧车契约绑定**是符号的一部分（`resolveDefinitionLocations`
+    // 的第三档）⇒ references 必须同样包含它（否则 definition 与 references
+    // 对同一符号给出两套答案，rename 会漏改侧车 ⇒ 契约成孤儿）。
+    const sidecar =
+      includeDecl && atProgramScope
+        ? findSidecarContractDefinition(fromFile, exportName, {
+            extraFiles: options.extraFiles,
+            sourceProvider: options.sourceProvider,
+          })
+        : null;
+    return dedup(
+      declOf(localDef),
+      localRefs,
+      cross,
+      sidecar
+        ? [{ name: sidecar.name, loc: sidecar.loc, uri: sidecar.filePath }]
+        : [],
+    );
   }
 
   return localRefs;

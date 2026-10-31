@@ -17,6 +17,10 @@ type LitKey = string | number | boolean | null | undefined;
 const NO_LIT_KEY: unique symbol = Symbol("nudo:no-lit-key");
 type LitKeyResult = LitKey | typeof NO_LIT_KEY;
 
+/** BUG-260：Map 插入序条目——宿主 Map 按**写入序**迭代，字面量键与身份键
+ *  混排，两张分通道的条目表拼不出真实顺序，必须另记。 */
+type MapOrderEntry = { kind: "lit"; key: LitKey } | { kind: "ident"; key: Abs };
+
 type MapTable = {
   byLit: Map<LitKey, Abs>;
   /** 非字面量 key 写入的值（get 未知 key 时 join 用） */
@@ -28,6 +32,14 @@ type MapTable = {
    * shadowValues（size 保守）。
    */
   identEntries: Array<{ key: Abs; value: Abs }>;
+  /** BUG-260：键插入序（宿主 Map 语义：重写既有键不换位、delete 后再写换到末尾） */
+  order: MapOrderEntry[];
+  /**
+   * BUG-230：条目表**非权威**——构造源是抽象/未知可迭代（any / unknown /
+   * 无界数组），byLit/identEntries 只是**代表条目**，真实基数不可知。
+   * ⇒ size 折 `number`(path)、has 折 partial、get 不再折精确 miss。
+   */
+  cardinalityUnknown?: true;
   /** 抽象分支并入后「可能不存在」的字面量键（get/has 需保守） */
   maybeAbsent?: Set<LitKey>;
 };
@@ -40,6 +52,8 @@ type SetTable = {
    * - `Set<LitKey>`：这些字面 key 可能在部分臂缺失（跨臂 delete 不同元素时，长度启发式不够）
    */
   maybeAbsent?: true | Set<LitKey>;
+  /** BUG-230：同 MapTable.cardinalityUnknown（elements 只是代表元素） */
+  cardinalityUnknown?: true;
 };
 
 const mapTables = new WeakMap<object, MapTable>();
@@ -73,6 +87,9 @@ function cloneMapTable(t: MapTable): MapTable {
     byLit: new Map(t.byLit),
     shadowValues: [...t.shadowValues],
     identEntries: t.identEntries.map((e) => ({ ...e })),
+    // 序条目是不可变记录：浅拷贝即可（ident 键 Abs 的身份语义要求共享引用）
+    order: [...t.order],
+    cardinalityUnknown: t.cardinalityUnknown,
     maybeAbsent: t.maybeAbsent ? new Set(t.maybeAbsent) : undefined,
   };
 }
@@ -80,6 +97,7 @@ function cloneMapTable(t: MapTable): MapTable {
 function cloneSetTable(t: SetTable): SetTable {
   return {
     elements: [...t.elements],
+    cardinalityUnknown: t.cardinalityUnknown,
     maybeAbsent:
       t.maybeAbsent instanceof Set ? new Set(t.maybeAbsent) : t.maybeAbsent,
   };
@@ -180,7 +198,9 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
         const e = arm?.get(id);
         return e?.map ?? cloneMapTable(base);
       });
-      const merged: MapTable = { byLit: new Map(), shadowValues: [], identEntries: [], maybeAbsent: new Set() };
+      const merged: MapTable = { byLit: new Map(), shadowValues: [], identEntries: [], order: [], maybeAbsent: new Set() };
+      // BUG-230：任一臂的条目表是代表表 ⇒ 合并结果基数仍不可知
+      if (perArm.some((t) => t.cardinalityUnknown)) merged.cardinalityUnknown = true;
       const keyArms = new Map<LitKey, number>();
       const forcedAbsent = new Set<LitKey>();
       // Bug 88：身份键条目按臂计数——全臂在场的键保 exact（值 join），
@@ -216,6 +236,26 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
         if (e.count >= perArm.length) merged.identEntries.push({ key: e.key, value: e.value });
         else merged.shadowValues.push(e.value);
       }
+      // BUG-260：合并插入序——按臂序首次出现（跨臂顺序本身是抽象并集）
+      const litOrdered = new Set<LitKey>();
+      const identOrdered = new Set<object>();
+      const pushOrder = (o: MapOrderEntry): void => {
+        if (o.kind === "lit") {
+          if (!merged.byLit.has(o.key) || litOrdered.has(o.key)) return;
+          litOrdered.add(o.key);
+        } else {
+          const ik = refIdentKeyOf(o.key);
+          if (ik === undefined || identOrdered.has(ik)) return;
+          // 降级到 shadowValues 的条目无插入序可言（键未知的位置）
+          if (!merged.identEntries.some((e) => refIdentKeyOf(e.key) === ik)) return;
+          identOrdered.add(ik);
+        }
+        merged.order.push(o);
+      };
+      for (const t of perArm) for (const o of t.order) pushOrder(o);
+      // 兜底：表内有条目但序里缺失（投影不得丢条目）
+      for (const k of merged.byLit.keys()) pushOrder({ kind: "lit", key: k });
+      for (const e of merged.identEntries) pushOrder({ kind: "ident", key: e.key });
       if (merged.maybeAbsent!.size === 0) delete merged.maybeAbsent;
       commitMap(id, merged);
     }
@@ -288,6 +328,8 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
       }
       commitSet(id, {
         elements: mergedEls,
+        // BUG-230：任一臂的元素表是代表表 ⇒ 合并结果基数仍不可知
+        cardinalityUnknown: perArm.some((t) => t.cardinalityUnknown) ? true : undefined,
         maybeAbsent: wholeUncertain
           ? true
           : maybeKeys.size > 0
@@ -307,7 +349,7 @@ function setTableForReadBase(arm: ArmOverlay | null | undefined, id: object): Se
 }
 
 function emptyMapTable(): MapTable {
-  return { byLit: new Map(), shadowValues: [], identEntries: [] };
+  return { byLit: new Map(), shadowValues: [], identEntries: [], order: [] };
 }
 
 function emptySetTable(): SetTable {
@@ -395,27 +437,56 @@ export function isSetAbs(a: Abs | undefined): boolean {
   return !!a && a.shape.k === "brand" && a.shape.name === "Set";
 }
 
-/** 从可迭代 Abs 填充元素（tuple/arr/string/Set/Map）；其它形态忽略 */
-function elementsFrom(iterable: Abs | undefined): Abs[] {
-  if (!iterable) return [];
-  if (iterable.shape.k === "tuple") return [...iterable.shape.elements];
+/**
+ * BUG-230：从可迭代 Abs 抽取「元素代表表 + 基数是否确切」。
+ *
+ * `els` 首先是**元素类型**的代表（抽象数组只给 1 个代表元素），只有
+ * `exact === true` 时它才同时是**真实条目表**、`els.length` 才是真实基数。
+ * 抽象/未知可迭代（any / unknown / 无界 arr / 含抽象成员的 sum）必须
+ * `exact === false`——把代表表当真实表会折出宿主不可能产出的 exact 0/1。
+ * nullish 字面量（new Set(null) / new Set(undefined)）是合法空容器 → exact。
+ */
+type ElementsFrom = { els: Abs[]; exact: boolean };
+
+function elementsFrom(iterable: Abs | undefined): ElementsFrom {
+  if (!iterable) return { els: [], exact: true }; // 缺省 ≡ 无实参 → 空容器
+  // nullish 字面量：空容器（native new Set(null).size === 0，确切）
+  if (iterable.term?.op === "lit" && iterable.term.value == null) {
+    return { els: [], exact: true };
+  }
+  if (iterable.shape.k === "tuple") {
+    return { els: [...iterable.shape.elements], exact: true };
+  }
   if (iterable.shape.k === "arr") {
-    // 抽象数组：保留单元素类型；有界展开交给 for-of 路径
-    return [iterable.shape.element];
+    // 抽象数组：保留单元素类型（真实长度不可知）；有界展开交给 for-of 路径
+    return { els: [iterable.shape.element], exact: false };
   }
   if (iterable.shape.k === "sum") {
-    return iterable.shape.members.flatMap(elementsFrom);
+    // 成员并集：任一无界成员（arr / any / unknown）⇒ 整体基数不可知
+    const parts = iterable.shape.members.map((m) => elementsFrom(m));
+    return { els: parts.flatMap((p) => p.els), exact: parts.every((p) => p.exact) };
   }
   // 字符串字面量：按 code point 迭代（new Set('aab') → {a,b}）
   const svR = litValue(iterable);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") {
-    return [...sv].map((c) => strLit(c));
+    return { els: [...sv].map((c) => strLit(c)), exact: true };
   }
-  // Set/Map 拷贝：条目表（Map 条目是 [k,v] 元组）
-  if (isSetAbs(iterable)) return [...setElementsAbs(iterable)];
-  if (isMapAbs(iterable)) return [...mapEntriesAbs(iterable)];
-  return [];
+  // Set/Map 拷贝：条目表（Map 条目是 [k,v] 元组）；基数随源表是否确切
+  if (isSetAbs(iterable)) {
+    return {
+      els: [...setElementsAbs(iterable)],
+      exact: collectionExactLen(iterable) !== undefined,
+    };
+  }
+  if (isMapAbs(iterable)) {
+    return {
+      els: [...mapEntriesAbs(iterable)],
+      exact: collectionExactLen(iterable) !== undefined,
+    };
+  }
+  // any / unknown / 抽象 prim / obj：迭代性与基数皆不可知
+  return { els: [], exact: false };
 }
 
 /** Bug 43：CanBeHeldWeakly 校验分类（FinalizationRegistry.register/unregister 弱键；
@@ -575,7 +646,7 @@ export function ctorArgDefinitelyInvalid(
   if (name === "Set") return false;
   // Map/WeakMap/WeakSet：逐条目/元素校验（elementsFrom 与值侧同源：
   // tuple/arr/sum/字符串字面量/Set/Map 拷贝）
-  for (const el of elementsFrom(iterable)) {
+  for (const el of elementsFrom(iterable).els) {
     if (name === "WeakSet") {
       const wk = classifyCanBeHeldWeakly(el);
       if (wk.k === "def") return true;
@@ -630,7 +701,10 @@ export function makeWeakCollectionAbs(
 export function makeMapAbs(iterable?: Abs): Abs {
   const m = brandOf("Map");
   const table = emptyMapTable();
-  for (const el of elementsFrom(iterable)) {
+  const from = elementsFrom(iterable);
+  // BUG-230：抽象/未知可迭代的条目表只是代表 ⇒ 基数未知（size/has 不折确定值）
+  if (!from.exact) table.cardinalityUnknown = true;
+  for (const el of from.els) {
     // Map 构造接收 entry 元组 [k, v] 时拆开；否则整段作 value、key 未建模。
     // Bug 8：一元/零元组也是合法条目（缺省键/值 ≡ undefined——native
     // new Map([["a"]]).size === new Map([[]]).size === 1），此前 ≥2 元组
@@ -657,14 +731,14 @@ export function makeMapAbs(iterable?: Abs): Abs {
       } else if (s.k === "obj" && (s.open === true || s.index)) {
         table.shadowValues.push(undefAbs());
       } else {
-        table.byLit.set(undefined, undefAbs());
+        mapSetLitRaw(table, undefined, undefAbs());
       }
       continue;
     }
     if (s.k === "arr") {
       // 数组条目：键 = 首元素（抽象数组的元素域）
       const lk = litKeyOf(s.element);
-      if (isLitKey(lk)) table.byLit.set(lk, undefAbs());
+      if (isLitKey(lk)) mapSetLitRaw(table, lk, undefAbs());
       else table.shadowValues.push(undefAbs());
       continue;
     }
@@ -681,7 +755,10 @@ export function makeSetAbs(iterable?: Abs): Abs {
   const seen = new Set<LitKey>();
   // Bug 88：非字面量元素按身份去重（new Set([k,k]) → 单条目）
   const seenIdent = new Set<object>();
-  for (const el of elementsFrom(iterable)) {
+  const from = elementsFrom(iterable);
+  // BUG-230：代表元素只定元素类型；基数未知 ⇒ size/has 不得折确定值
+  if (!from.exact) table.cardinalityUnknown = true;
+  for (const el of from.els) {
     const lk = litKeyOf(el);
     if (isLitKey(lk)) {
       if (seen.has(lk)) continue;
@@ -781,21 +858,48 @@ function setTableForRead(a: Abs): SetTable | undefined {
  * 键 shadowValues（size 保守）。身份键只取**引用语义**形态（refIdentKeyOf）：
  * any/unknown 键原生可能恰为某字面量/其它引用，入身份通道会让字面量
  * miss 折 exact false——必须留在 shadow 通道。
+ *
+ * BUG-260：每次新键写入同时登记插入序（`order`）；重写既有键不动位置
+ * （宿主 Map 语义：`m.set(k, v2)` 不改变 k 的迭代位置）。
  */
+function mapSetLitRaw(t: MapTable, lk: LitKey, value: Abs): void {
+  if (!t.byLit.has(lk)) t.order.push({ kind: "lit", key: lk });
+  t.byLit.set(lk, value);
+}
+
 function mapTableSet(t: MapTable, key: Abs, value: Abs): void {
   const lk = litKeyOf(key);
   if (isLitKey(lk)) {
-    t.byLit.set(lk, value);
+    mapSetLitRaw(t, lk, value);
     return;
   }
   const ik = refIdentKeyOf(key);
   if (ik !== undefined) {
     const hit = t.identEntries.find((e) => refIdentKeyOf(e.key) === ik);
     if (hit) hit.value = value;
-    else t.identEntries.push({ key, value });
+    else {
+      t.identEntries.push({ key, value });
+      t.order.push({ kind: "ident", key });
+    }
     return;
   }
   t.shadowValues.push(value);
+}
+
+/** BUG-260：删除字面量键的插入序记录（SameValueZero 对齐 byLit 键语义） */
+function dropOrderLit(t: MapTable, k: LitKey): void {
+  for (let i = 0; i < t.order.length; i++) {
+    const o = t.order[i]!;
+    if (o.kind === "lit" && sameValueZeroKey(o.key, k)) {
+      t.order.splice(i, 1);
+      return;
+    }
+  }
+}
+
+/** BUG-260：删除身份键的插入序记录 */
+function dropOrderIdent(t: MapTable, ik: object): void {
+  t.order = t.order.filter((o) => o.kind !== "ident" || refIdentKeyOf(o.key) !== ik);
 }
 
 /** Map#set：fork 内写 overlay；否则原地。返回同一 Abs（JS 可变语义） */
@@ -816,6 +920,8 @@ export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   if (isLitKey(k)) {
     t.byLit.delete(k);
     t.maybeAbsent?.delete(k);
+    // BUG-260：删除即退出插入序（原生 delete 后再 set 会排到末尾）
+    dropOrderLit(t, k);
     // 删除后若仍有 shadow 写入，get/has 仍须保守
     return abs(
       { k: "prim", type: "boolean" },
@@ -828,7 +934,10 @@ export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   if (ik !== undefined) {
     const before = t.identEntries.length;
     t.identEntries = t.identEntries.filter((e) => refIdentKeyOf(e.key) !== ik);
-    if (t.identEntries.length < before) return boolLit(true);
+    if (t.identEntries.length < before) {
+      dropOrderIdent(t, ik);
+      return boolLit(true);
+    }
     if (t.shadowValues.length === 0) return boolLit(false);
     // shadow 存在：未知键可能就是查询键 → 删除结果不确定（保守 partial）
     return abs(
@@ -843,6 +952,8 @@ export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   if (t.byLit.size > 0) t.maybeAbsent = new Set(t.byLit.keys());
   for (const e of t.identEntries) t.shadowValues.push(e.value);
   t.identEntries.length = 0;
+  // BUG-260：身份条目已无位置可言（键未知）→ 序里只留字面量键
+  t.order = t.order.filter((o) => o.kind === "lit");
   return abs(
     { k: "prim", type: "boolean" },
     undefined,
@@ -857,7 +968,10 @@ export function mapClearEntries(mapAbs: Abs): Abs {
   t.byLit.clear();
   t.shadowValues.length = 0;
   t.identEntries.length = 0;
+  t.order.length = 0;
   delete t.maybeAbsent;
+  // clear() 之后容器确定为空（原生 m.clear(); m.size === 0）
+  delete t.cardinalityUnknown;
   return undefAbs();
 }
 
@@ -870,6 +984,16 @@ function joinAll(els: Abs[]): Abs | undefined {
 export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
+  // BUG-230：条目表只是代表 ⇒ 键的在场与值都不可知——已知代表值并入
+  // undefined（键可能不在真实表里），无代表值则 unknown
+  if (t.cardinalityUnknown) {
+    const known = joinAll([
+      ...t.byLit.values(),
+      ...t.identEntries.map((e) => e.value),
+      ...t.shadowValues,
+    ]);
+    return known === undefined ? unknown : joinAbs(known, undefAbs());
+  }
   const k = litKeyOf(key);
   if (isLitKey(k)) {
     const v = t.byLit.get(k);
@@ -912,6 +1036,12 @@ export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
 export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
+  // BUG-230：代表表 ⇒ 在场性不可知（既不能折 exact true 也不能折 exact false）
+  if (t.cardinalityUnknown) {
+    return t.byLit.size > 0 || t.shadowValues.length > 0 || t.identEntries.length > 0
+      ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
+      : unknown;
+  }
   const k = litKeyOf(key);
   if (!isLitKey(k)) {
     // Bug 88：引用身份键命中 → 条目在场（覆盖写不改在场性）→ exact true；
@@ -946,7 +1076,13 @@ export function mapSizeAbs(mapAbs: Abs): Abs {
   const t = mapTableForRead(mapAbs);
   // shadow key / maybeAbsent 键 → 真实 size 不确定
   // Bug 88：引用身份条目计数确定（覆盖写不增长）——size 保持 exact
-  if (!t || t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
+  // BUG-230：代表表（cardinalityUnknown）的条目数不是真实基数 → path number
+  if (
+    !t ||
+    t.cardinalityUnknown ||
+    t.shadowValues.length > 0 ||
+    (t.maybeAbsent && t.maybeAbsent.size > 0)
+  ) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(
@@ -957,10 +1093,46 @@ export function mapSizeAbs(mapAbs: Abs): Abs {
   );
 }
 
+/**
+ * BUG-260：身份键条目按 refIdentKeyOf 身份建索引（迭代序投影用）。
+ * 空表返回 null，热路径不分配 Map。
+ */
+function identEntryIndex(t: MapTable): Map<object, { key: Abs; value: Abs }> | null {
+  if (t.identEntries.length === 0) return null;
+  const idx = new Map<object, { key: Abs; value: Abs }>();
+  for (const e of t.identEntries) {
+    const ik = refIdentKeyOf(e.key);
+    if (ik !== undefined) idx.set(ik, e);
+  }
+  return idx;
+}
+
+/** 序条目 → 现存条目（已删除的条目返回 undefined） */
+function entryOfOrder(
+  t: MapTable,
+  o: MapOrderEntry,
+  idx: Map<object, { key: Abs; value: Abs }> | null,
+): { key: Abs; value: Abs } | undefined {
+  if (o.kind === "lit") {
+    const v = t.byLit.get(o.key);
+    return v === undefined ? undefined : { key: keyAbsFromLitKey(o.key), value: v };
+  }
+  const ik = refIdentKeyOf(o.key);
+  return ik !== undefined && idx ? idx.get(ik) : undefined;
+}
+
+/** Map#values：宿主按插入序产出（BUG-260）；shadow 写入键未知 → 末尾 */
 export function mapValuesAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
-  return [...t.byLit.values(), ...t.identEntries.map((e) => e.value), ...t.shadowValues];
+  const values: Abs[] = [];
+  const idx = identEntryIndex(t);
+  for (const o of t.order) {
+    const e = entryOfOrder(t, o, idx);
+    if (e) values.push(e.value);
+  }
+  for (const sv of t.shadowValues) values.push(sv);
+  return values;
 }
 
 /** LitKey → key Abs（Map entry 迭代用）；非字面量 key 走 unknown */
@@ -977,18 +1149,24 @@ function keyAbsFromLitKey(k: LitKey): Abs {
 /**
  * Map 迭代条目：JS `for (const [k,v] of map)` / `Array.from(map)` 产出
  * `[key, value]` 元组 Abs。字面量 key 精确；shadow 写入 key 为 unknown。
+ *
+ * BUG-260：宿主 Map 按**插入序**迭代（字面量键与对象键混排），必须按
+ * `order` 投影；此前「先 byLit、再 identEntries」恒把字面量键排在前面。
  */
 export function mapEntriesAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
   const entries: Abs[] = [];
-  for (const [k, v] of t.byLit) {
+  const idx = identEntryIndex(t);
+  for (const o of t.order) {
+    const e = entryOfOrder(t, o, idx);
+    if (!e) continue;
     entries.push(
       abs(
-        { k: "tuple", elements: [keyAbsFromLitKey(k), v] },
+        { k: "tuple", elements: [e.key, e.value] },
         undefined,
         undefined,
-        confJoin(v.conf, "exact"),
+        confJoin(e.value.conf, "exact"),
       ),
     );
   }
@@ -1000,17 +1178,6 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
         undefined,
         undefined,
         "partial",
-      ),
-    );
-  }
-  // Bug 88：引用身份条目——键为该特定引用（keys()/entries 精确展开）
-  for (const e of t.identEntries) {
-    entries.push(
-      abs(
-        { k: "tuple", elements: [e.key, e.value] },
-        undefined,
-        undefined,
-        confJoin(e.value.conf, "exact"),
       ),
     );
   }
@@ -1028,8 +1195,12 @@ function mapKeysAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
   const keys: Abs[] = [];
-  for (const k of t.byLit.keys()) keys.push(keyAbsFromLitKey(k));
-  for (const e of t.identEntries) keys.push(e.key);
+  // BUG-260：宿主 keys() 按插入序（字面量键/身份键混排）
+  const idx = identEntryIndex(t);
+  for (const o of t.order) {
+    const e = entryOfOrder(t, o, idx);
+    if (e) keys.push(e.key);
+  }
   return keys;
 }
 
@@ -1093,12 +1264,18 @@ export function setClearEntries(setAbs: Abs): Abs {
   const t = setTableForWrite(setAbs);
   t.elements = [];
   delete t.maybeAbsent;
+  // clear() 之后容器确定为空（原生 s.clear(); s.size === 0）
+  delete t.cardinalityUnknown;
   return undefAbs();
 }
 
 export function setHasEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForRead(setAbs);
   if (!t) return unknown;
+  // BUG-230：elements 只是代表元素 ⇒ membership 不可折确定值
+  if (t.cardinalityUnknown) {
+    return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+  }
   const k = litKeyOf(value);
   if (isLitKey(k)) {
     const hit = t.elements.some((el) => sameValueZeroKey(litKeyOf(el), k));
@@ -1140,7 +1317,8 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
 export function setSizeAbs(setAbs: Abs): Abs {
   const t = setTableForRead(setAbs);
   // 任一字面 key 不确定或整表不确定 → size 不能 exact
-  if (!t || setAnyAbsent(t)) {
+  // BUG-230：代表元素表（cardinalityUnknown）的元素数不是真实基数 → path number
+  if (!t || t.cardinalityUnknown || setAnyAbsent(t)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(
@@ -1241,6 +1419,8 @@ export function collectionExactLen(c: Abs): number | undefined {
   if (isSetAbs(c)) {
     const t = setTableForRead(c);
     if (!t) return undefined;
+    // BUG-230：代表元素表 ⇒ 长度不可知（for-of/Array.from 不得假装有界）
+    if (t.cardinalityUnknown) return undefined;
     if (t.maybeAbsent === true || (t.maybeAbsent instanceof Set && t.maybeAbsent.size > 0)) {
       return undefined;
     }
@@ -1249,6 +1429,8 @@ export function collectionExactLen(c: Abs): number | undefined {
   if (isMapAbs(c)) {
     const t = mapTableForRead(c);
     if (!t) return undefined;
+    // BUG-230：代表条目表 ⇒ 长度不可知
+    if (t.cardinalityUnknown) return undefined;
     if (t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
       return undefined;
     }

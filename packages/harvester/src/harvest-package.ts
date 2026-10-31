@@ -230,6 +230,14 @@ export type DtsFileScan = {
   exported: Set<string>;
   /** **ambient** 声明（`declare global { … }` 内容 + script 模式文件的顶层声明） */
   ambient: Set<string>;
+  /**
+   * **模块私有**顶层声明（module 模式里未 `export` 的顶层声明）。
+   *
+   * TS：它们既不是导出、也不是 ambient（`import { helper }` ⇒ TS2459）。
+   * 桥接层的「公开面不可知」回落**必须**扣掉这个集合，否则模块私有声明会被
+   * 提升成包导出（Bug 265：自信的错误类型 ⇒ 假绿）。
+   */
+  private: Set<string>;
   /** `export * from "…"` 的说明符（需继续解析） */
   stars: string[];
   /** 是否 module 模式（有顶层 import/export） */
@@ -277,6 +285,7 @@ function emptyScan(): DtsFileScan {
   return {
     exported: new Set(),
     ambient: new Set(),
+    private: new Set(),
     stars: [],
     isModule: false,
   };
@@ -299,6 +308,7 @@ function scanDtsFile(file: string): DtsFileScan {
   const scan: DtsFileScan = {
     exported: new Set(),
     ambient: new Set(),
+    private: new Set(),
     stars: [],
     isModule: ts.isExternalModule(sf),
   };
@@ -307,10 +317,16 @@ function scanDtsFile(file: string): DtsFileScan {
       // `declare global { … }` → ambient（不是任何模块的导出）
       if (ts.isIdentifier(stmt.name) && stmt.name.text === "global") {
         for (const n of ambientNames(stmt)) scan.ambient.add(n);
+        continue;
       }
-      // `declare module "x" { … }` → 模块记录（ambient module 块里的声明默认全导出），
-      // 不是本文件的顶层导出
-      continue;
+      // `declare module "x" { … }`（**字符串字面量名**）→ 模块记录（ambient module
+      // 块里的声明默认全导出），不是本文件的顶层导出。
+      //
+      // 注意：`NamespaceDeclaration`（标识符名）**也是** `ModuleDeclaration` 节点。
+      // 此前一并 `continue` ⇒ `export declare namespace Space { … }` 不进导出面
+      // ⇒ 整块 API 漏导出（Bug 143，裸包 import 拿不到 ⇒ 静默 unknown）。
+      // ⇒ 标识符名落到下面**通用的顶层声明**路径（按 `export` 修饰符登记）。
+      if (!ts.isIdentifier(stmt.name)) continue;
     }
     if (ts.isExportDeclaration(stmt)) {
       const clause = stmt.exportClause;
@@ -345,8 +361,10 @@ function scanDtsFile(file: string): DtsFileScan {
     for (const n of names) {
       if (isExported) scan.exported.add(n);
       // script 模式（无 import/export）⇒ 顶层声明是全局 ambient；
-      // module 模式里未导出的顶层声明是模块私有（既不是导出，也不是 ambient）⇒ 不进任何袋子
+      // module 模式里未导出的顶层声明是模块私有（既不是导出，也不是 ambient）
+      // ⇒ 记进 `private` 袋：桥接层的回落必须扣掉它（Bug 265）
       else if (!scan.isModule) scan.ambient.add(n);
+      else scan.private.add(n);
     }
   }
   return scan;
@@ -429,6 +447,20 @@ export function packageAmbientNames(h: PackageHarvest): Set<string> {
     for (const n of dtsFileScan(file).ambient) ambient.add(n);
   }
   return ambient;
+}
+
+/**
+ * 包内所有**模块私有**顶层声明名（module 模式里从未 `export` 的顶层声明）。
+ *
+ * 用于「公开面不可知」（存在解析不了的 `export * from "<外部包>"`）时的回落：
+ * 模块私有声明**不是**包导出（TS2459）⇒ 回落必须扣掉它们（Bug 265）。
+ */
+export function packagePrivateNames(h: PackageHarvest): Set<string> {
+  const priv = new Set<string>();
+  for (const file of h.dtsFiles) {
+    for (const n of dtsFileScan(file).private) priv.add(n);
+  }
+  return priv;
 }
 
 /** 子路径说明符（"pkg/sub"）→ 该子路径入口 `.d.ts` */

@@ -497,8 +497,11 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     runner = (args: Abs[]) => bodyFn(...args);
     compiledByImpl.set(implKey, runner);
   } catch (e) {
-    // 编译面回落：unsupported（body 含未 lowering 构造）/ internal 都记录
-    noteEvalFallback(e);
+    // 编译面回落：**引擎自己**编译不动（原生异常 ⇒ 引擎缺陷 ⇒ internal，
+    // DEC-006 canary）/ unsupported（body 含未 lowering 构造 ⇒ 能力边界）
+    // 都记录。BUG-073 的 module-throw 只归**用户代码求值时**的原生异常，
+    // 不归「引擎编译用户代码失败」。
+    noteEvalFallback(e, "engine");
     return undefined;
   }
   return runner;

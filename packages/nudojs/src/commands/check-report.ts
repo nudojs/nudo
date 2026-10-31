@@ -16,6 +16,7 @@ import {
   type CheckIssue,
   type CheckJson,
   type CheckReport,
+  type GitlabCodeQualityIssue,
 } from "@nudojs/core";
 import { entryVariantIssueForFile, mergeCheckIssues } from "@nudojs/service";
 import { runAbsView } from "./shared.ts";
@@ -222,6 +223,96 @@ function jsonIssueShape(issue: CheckIssue): CheckJson["issues"][number] | undefi
 // runCheck 段 3/3 — report+exit：打印面（终端/JSON/GHA/GitLab）+ 缓存回写 + exit
 // ---------------------------------------------------------------------------
 
+/**
+ * 文件级**硬错误**事实面（BUG-284）：语法错 / 输入读失败 / 路径不存在。
+ *
+ * 这类失败**没有** `CheckReport` 条目（分析根本没跑起来）⇒ 旧实现只在
+ * `--json` 信封（`pathErrors[]`）与人类面出现，两个 CI 注解通道**完全静默**：
+ * `--gitlab` 的 stdout 塌成 0 字节（消费方 `JSON.parse` 直接抛
+ * `Unexpected end of JSON input`）、`--gha` 产出 0 条 `::error`（PR 面板上
+ * 该文件没有任何提示）。同一失败文件在三个机器面给出 1 / 0 / 0 的错误计数。
+ */
+export type CiHardError = {
+  path: string;
+  code: string;
+  message: string;
+  line?: number;
+  column?: number;
+  suggestion?: string;
+};
+
+/** 硬错误 ⇒ 单条诊断的 CheckReport 壳（复用 core 的 location/fingerprint/根裁剪口径） */
+function hardErrorReport(e: CiHardError): CheckReport {
+  return {
+    file: e.path,
+    ok: false,
+    issues: [
+      {
+        severity: "error",
+        code: e.code,
+        message: e.message,
+        ...(e.line !== undefined ? { line: e.line } : {}),
+        ...(e.column !== undefined ? { column: e.column } : {}),
+        ...(e.suggestion !== undefined ? { suggestion: e.suggestion } : {}),
+      },
+    ],
+    signatures: [],
+    summary: { errors: 1, warnings: 0, infos: 0, functions: 0 },
+  };
+}
+
+/** 硬错误 ⇒ GitLab Code Quality 行（可写进 `gl-code-quality-report.json`） */
+export function ciRowsForHardErrors(
+  errors: CiHardError[],
+  workspaceRoot: string,
+): GitlabCodeQualityIssue[] {
+  const rows: GitlabCodeQualityIssue[] = [];
+  for (const e of errors) {
+    rows.push(...formatGitlabCodeQuality(hardErrorReport(e), { workspaceRoot }));
+  }
+  return rows;
+}
+
+/** 硬错误 ⇒ GHA 行内注解（`::error file=…` 行） */
+export function ciAnnotationsForHardErrors(
+  errors: CiHardError[],
+  workspaceRoot: string,
+): string {
+  const lines: string[] = [];
+  for (const e of errors) {
+    const ann = formatGithubAnnotations(hardErrorReport(e), { workspaceRoot });
+    if (ann.length > 0) lines.push(ann);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * 硬错误送进 CI 注解通道（BUG-284）——与诊断流的 `emitCiAnnotations` 同形：
+ * - `--gitlab`：stdout **恰好一份** Code Quality JSON 数组（哪怕只有硬错误
+ *   行）；多文件面把 rows 交 `gitlabRowsCollect` 聚合，本函数不打印；
+ * - `--gha`（或 `GITHUB_ACTIONS=true`）：至少一条 `::error`，stdout 被机器
+ *   契约占住时改走 stderr。
+ */
+export function emitHardErrorCiAnnotations(
+  errors: CiHardError[],
+  opts: Pick<RunCheckOptions, "json" | "gha" | "gitlab" | "gitlabRowsCollect">,
+): void {
+  if (errors.length === 0) return;
+  const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  if (opts.gitlab) {
+    const rows = ciRowsForHardErrors(errors, workspaceRoot);
+    if (opts.gitlabRowsCollect) opts.gitlabRowsCollect.push(...rows);
+    else console.log(JSON.stringify(rows, null, 2));
+  }
+  if (shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS)) {
+    const ann = ciAnnotationsForHardErrors(errors, workspaceRoot);
+    if (ann.length > 0) {
+      if (opts.json || opts.gitlab) console.error(ann);
+      else console.log(ann);
+    }
+  }
+}
+
 export async function emitCheckReport(
   filePath: string,
   reportIn: CheckReport,
@@ -291,28 +382,31 @@ export async function emitCheckReport(
     if (!opts.json) console.log(JSON.stringify(rows, null, 2));
     else console.error(JSON.stringify(rows));
   };
-  const emitGhaAnnotations = (): void => {
+  const emitGhaAnnotations = (toStderr: boolean): void => {
     if (!wantGha) return;
     const ann = formatGithubAnnotations(report, { workspaceRoot });
     if (ann.length === 0) return;
-    // --json 时注解走 stderr，stdout 保持机器契约
-    if (opts.json) console.error(ann);
+    // stdout 被机器契约（CheckJson / Code Quality 数组）占住时注解走 stderr
+    if (toStderr) console.error(ann);
     else console.log(ann);
   };
   const emitCiAnnotations = (): void => {
     // --json 面：两个通道并列（都走 stderr，stdout 是 CheckJson 契约）
     if (opts.json) {
       emitGitlabAnnotations();
-      emitGhaAnnotations();
+      emitGhaAnnotations(true);
       return;
     }
     // 非 --json 面：GitLab 独占 stdout（stdout 必须恰好是一份 Code Quality
-    // JSON 数组）⇒ GHA 不与之并列（否则 stdout 混入 ::error 行）
+    // JSON 数组）⇒ GHA **改走 stderr**（BUG-285：旧实现直接 `return` 丢掉
+    // 用户点名的 `--gha` ⇒ 同一语义加个无关的 `--json` 才恢复；同一个
+    // stdout 冲突在同一个函数里有两套解法）。
     if (opts.gitlab) {
       emitGitlabAnnotations();
+      emitGhaAnnotations(true);
       return;
     }
-    emitGhaAnnotations();
+    emitGhaAnnotations(false);
   };
 
   if (opts.json && opts.jsonCollect) {
@@ -333,26 +427,14 @@ export async function emitCheckReport(
       // 仍打印简报，便于日志
       console.error(paint(formatCheckReport(report, { verbose: false })));
     }
-  } else if (opts.abs) {
-    // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
-    await runAbsView(filePath, opts.absView ?? {});
-    if (!report.ok) {
-      // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
-      console.log("");
-      console.log(paint(formatCheckReport(report, { verbose: false })));
-    } else {
-      console.log("");
-      console.log(`nudo check  ${basename(filePath)}`);
-      console.log("OK");
-      console.log(
-        `  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,
-      );
-    }
-    emitCiAnnotations();
   } else if (opts.quiet) {
     // --quiet（人类文本面）：压 signatures 段——issues + summary + 门禁 exit
     // 不变；成功且零 issue 时只打一行摘要（文件 + OK + 计数）。空 signatures
     // 的浅拷贝走同一 formatCheckReport：budget / issues 各段与全量面同构。
+    //
+    // BUG-066：本判定必须在 `--abs` **之前**——旧实现 abs 分支排在前面且
+    // 自己打完整 report + 3 行 OK 块，完全不 consult quiet ⇒ `--abs --quiet`
+    // 静默吞掉 `--quiet`（clean 打 3 行而非 1 行；失败仍打印 signatures 段）。
     if (report.ok && report.issues.length === 0) {
       console.log(
         `nudo check  ${basename(filePath)}  OK  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,
@@ -362,6 +444,23 @@ export async function emitCheckReport(
         paint(
           formatCheckReport({ ...report, signatures: [] }, { verbose: opts.verbose === true }),
         ),
+      );
+    }
+    emitCiAnnotations();
+  } else if (opts.abs) {
+    // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
+    await runAbsView(filePath, opts.absView ?? {});
+    if (!report.ok) {
+      // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
+      console.log("");
+      // BUG-066：`--abs --verbose` 的 verbose 此前被硬编码 false 吞掉
+      console.log(paint(formatCheckReport(report, { verbose: opts.verbose === true })));
+    } else {
+      console.log("");
+      console.log(`nudo check  ${basename(filePath)}`);
+      console.log("OK");
+      console.log(
+        `  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,
       );
     }
     emitCiAnnotations();

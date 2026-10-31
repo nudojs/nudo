@@ -62,18 +62,21 @@ describe("validateSchemaNode", () => {
     expect(validateSchemaNode(u, true).issues).toBeDefined();
   });
 
-  it("promise / unknown pass through; fn / brand get a runtime criterion", () => {
-    // checkNode 对 promise 是放行（同步投影不 unwrap thenable），
-    // unknown 放行。
+  it("promise 需真 Promise；unknown 放行；fn / brand 有运行时判据", () => {
+    // BUG-025：`promise` 节点此前**放行一切**（非 Promise 也被接受 ⇒ 假绿，
+    // Standard Schema 校验器接受 `42`）。现按 `instanceof Promise` 判定。
+    // `unknown` 无约束 ⇒ 仍放行。
     // fn / brand 自 Bug 535 / 531 起**不再恒真**：fn 要 `typeof === "function"`、
     // brand（全局构造器）要 `instanceof` —— 与 zod 面同口径（z.function() /
     // z.instanceof(Date)）。
     const thenable = { then() {} };
-    for (const node of [{ k: "promise" }, { k: "unknown" }] as const) {
-      const r = validateSchemaNode(node as never, thenable);
-      expect(r.issues).toBeUndefined();
-      expect(r.value).toBe(thenable);
-    }
+    const promiseBad = validateSchemaNode({ k: "promise" } as never, thenable);
+    expect(promiseBad.issues?.[0]?.message).toContain("expected promise");
+    const promiseOk = validateSchemaNode({ k: "promise" } as never, Promise.resolve(1));
+    expect(promiseOk.issues).toBeUndefined();
+    const unknownOk = validateSchemaNode({ k: "unknown" } as never, thenable);
+    expect(unknownOk.issues).toBeUndefined();
+    expect(unknownOk.value).toBe(thenable);
     const fn = validateSchemaNode({ k: "fn" } as never, thenable);
     expect(fn.issues?.[0]?.message).toContain("expected function");
     const fnOk = validateSchemaNode({ k: "fn" } as never, () => 1);

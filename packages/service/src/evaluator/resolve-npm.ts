@@ -80,15 +80,23 @@ function warnPkgJsonReadError(pkgJsonPath: string, e: unknown): void {
 export type NpmLoadMode = "import" | "require";
 
 /**
- * JS 入口条件键优先级（**按消费形态分表**）。
- * import 面：node → import → default → browser；require 面：node → require → default → browser。
- * `browser` 排在 `default` 之后：有 default 时取 Node 面，仅 browser-only 包才落到 browser。
+ * 宿主运行时**生效**的条件键集合（按消费形态分表）。
+ * 注意：这里是**集合**不是优先级表——条件对象的键按 package.json 的声明顺序
+ * 取首个命中（Node `PACKAGE_TARGET_RESOLVE` 语义，Bug 239）。把 `default`
+ * 写进表里只是为了「它总是生效」，不是「它最后才生效」：`{ default, import }`
+ * 的声明顺序决定 default 先命中，与宿主一致。
+ *
+ * `browser` **不在**集合里：它不是 Node 运行时条件，只在没有任何宿主条件命中
+ * 时兜底（见 `FALLBACK_CONDITIONS`，browser-only 包的分析面入口）。
  * `types` 不在此表——见 pickExport 兜底（且不作为可执行入口）。
  */
 const JS_CONDITIONS: Record<NpmLoadMode, readonly string[]> = {
-  import: ["node", "import", "default", "browser"],
-  require: ["node", "require", "default", "browser"],
+  import: ["node", "import", "default"],
+  require: ["node", "require", "default"],
 };
+
+/** 非宿主条件：仅当没有任何宿主条件命中时兜底（不是 Node 语义，是分析兜底）。 */
+const FALLBACK_CONDITIONS: readonly string[] = ["browser"];
 
 /**
  * 形态未给出时的尝试顺序：先 import 面再 require 面。
@@ -104,38 +112,78 @@ function modeOrder(mode?: NpmLoadMode): readonly NpmLoadMode[] {
 }
 
 /**
- * 递归展开 exports 目标树：字符串直出；数组按序首个命中（Node fallback 语义，
- * tryTarget 判存在性）；对象按条件键递归。types 仅在所有条件键都未命中时兜底。
+ * Node `PACKAGE_TARGET_RESOLVE` 的两条独立判据：目标**合法性**（`..` 逃逸 /
+ * 非包内相对路径 ⇒ `ERR_INVALID_PACKAGE_TARGET`）与**文件是否存在**。
+ * 数组回退只看前者（Bug 270）；`index.*` 候选只在 legacy `main` 语境参与
+ * （Bug 273：ESM 的 exports / 旧式子路径不做 `LOAD_AS_DIRECTORY`）。
+ */
+type TargetTester = {
+  /** 目标字符串是否合法（与「文件是否存在」无关）。 */
+  isValid: (rel: string) => boolean;
+  /** 合法目标的落地文件（不存在 ⇒ null）。 */
+  tryFile: (rel: string) => string | null;
+};
+
+/** `pickExport` 的「目标非法」哨兵（Node 里对应 `undefined` ⇒ 数组可回退）。 */
+const TARGET_INVALID = Symbol("invalid-package-target");
+type PickedTarget = string | null | typeof TARGET_INVALID;
+
+/**
+ * 递归展开 exports 目标树。
+ *
+ * Node 口径（Bug 239 / 270）：
+ * - 字符串 ⇒ 合法则返回落地文件（**缺失也是终局**，不回退），非法 ⇒ TARGET_INVALID；
+ * - 数组 ⇒ 只有**非法**项才继续下一项；首个合法项（含缺失 ⇒ null）即终局；
+ * - 对象 ⇒ 按 package.json **声明顺序**取首个命中条件；命中即终局（null 也终局），
+ *   未命中项（TARGET_INVALID）才继续；
+ * - `browser` 是分析面兜底条件，宿主条件全未命中后再试；
+ * - `types` 仅在最后兜底，且 `.d.ts` 不作为可执行入口。
  */
 function pickExport(
   entry: unknown,
   conditions: readonly string[],
-  tryTarget: (rel: string) => string | null,
-): string | null {
-  if (typeof entry === "string") return tryTarget(entry);
+  tgt: TargetTester,
+): PickedTarget {
+  if (typeof entry === "string") {
+    if (!tgt.isValid(entry)) return TARGET_INVALID;
+    return tgt.tryFile(entry);
+  }
   if (Array.isArray(entry)) {
+    if (entry.length === 0) return null;
     for (const item of entry) {
-      const r = pickExport(item, conditions, tryTarget);
-      if (r) return r;
+      const r = pickExport(item, conditions, tgt);
+      if (r === TARGET_INVALID) continue; // 仅「目标非法」才回退（Node 不看存在性）
+      return r;
     }
     return null;
   }
+  if (entry === null) return null;
   if (entry && typeof entry === "object") {
     const o = entry as Record<string, unknown>;
-    for (const k of conditions) {
-      if (k in o) {
-        const r = pickExport(o[k], conditions, tryTarget);
-        if (r) return r;
-      }
+    const declared = Object.keys(o);
+    const active = new Set(conditions);
+    // 声明顺序取首个命中的**宿主**条件（不得按优先级表重排）。
+    for (const k of declared) {
+      if (!active.has(k)) continue;
+      const r = pickExport(o[k], conditions, tgt);
+      if (r === TARGET_INVALID) continue;
+      return r;
+    }
+    // 宿主条件全未命中 ⇒ browser-only 兜底（browser 不是宿主条件，目标缺失不算终局）
+    for (const k of declared) {
+      if (!FALLBACK_CONDITIONS.includes(k)) continue;
+      const r = pickExport(o[k], conditions, tgt);
+      if (typeof r === "string") return r;
     }
     // types 仅兜底：主条件键全部 miss 后才尝试。
     // .d.ts 不是可执行入口——不返回给 eval 路径（声明文件求值必失败）。
     if ("types" in o) {
-      const r = pickExport(o["types"], conditions, tryTarget);
-      if (r && !/\.(d\.[cm]?ts)$/.test(r)) return r;
+      const r = pickExport(o["types"], conditions, tgt);
+      if (typeof r === "string" && !/\.(d\.[cm]?ts)$/.test(r)) return r;
     }
+    return TARGET_INVALID;
   }
-  return null;
+  return TARGET_INVALID;
 }
 
 /**
@@ -145,13 +193,13 @@ function pickExport(
  */
 function pickNudoExport(
   entry: unknown,
-  tryTarget: (rel: string) => string | null,
+  tgt: TargetTester,
   mode?: NpmLoadMode,
 ): string | null {
   if (typeof entry === "string") return null;
   if (Array.isArray(entry)) {
     for (const item of entry) {
-      const r = pickNudoExport(item, tryTarget, mode);
+      const r = pickNudoExport(item, tgt, mode);
       if (r) return r;
     }
     return null;
@@ -160,12 +208,12 @@ function pickNudoExport(
     const o = entry as Record<string, unknown>;
     if ("nudo" in o) {
       for (const m of modeOrder(mode)) {
-        const r = pickExport(o["nudo"], JS_CONDITIONS[m], tryTarget);
-        if (r) return r;
+        const r = pickExport(o["nudo"], JS_CONDITIONS[m], tgt);
+        if (typeof r === "string") return r;
       }
     }
     for (const v of Object.values(o)) {
-      const r = pickNudoExport(v, tryTarget, mode);
+      const r = pickNudoExport(v, tgt, mode);
       if (r) return r;
     }
   }
@@ -173,6 +221,40 @@ function pickNudoExport(
 }
 
 type ExportsEntry = { target: unknown; substitution: string | null };
+
+/**
+ * 模式键挑选（Node `PATTERN_KEY_COMPARE`，Bug 267）：先比 `*` 之前的**前缀长度**
+ * （更长者胜），平手时比**整键长度**（更长者胜）。旧实现只比前缀且用严格大于
+ * ⇒ 平手保留先声明者，宿主却取更长的键 ⇒ 解析到另一个文件。
+ */
+function bestPatternMatch(
+  map: Record<string, unknown>,
+  key: string,
+): { target: unknown; substitution: string; prefixLen: number; keyLen: number } | null {
+  let best: { target: unknown; substitution: string; prefixLen: number; keyLen: number } | null =
+    null;
+  for (const [patternKey, target] of Object.entries(map)) {
+    const starIdx = patternKey.indexOf("*");
+    if (starIdx === -1) continue;
+    if (patternKey.indexOf("*", starIdx + 1) !== -1) continue; // 仅支持单 *
+
+    const prefix = patternKey.slice(0, starIdx);
+    const suffix = patternKey.slice(starIdx + 1);
+    if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue;
+    if (key.length < prefix.length + suffix.length) continue;
+
+    const prefixLen = prefix.length;
+    const keyLen = patternKey.length;
+    const better =
+      best === null ||
+      prefixLen > best.prefixLen ||
+      (prefixLen === best.prefixLen && keyLen > best.keyLen);
+    if (better) {
+      best = { target, substitution: key.slice(prefixLen, key.length - suffix.length), prefixLen, keyLen };
+    }
+  }
+  return best;
+}
 
 /**
  * 在 exports map 中定位 subpath 的原始目标（精确键优先，其次模式键 `./x/*`）。
@@ -195,22 +277,7 @@ function findExportsEntry(exportsField: unknown, subpath: string): ExportsEntry 
 
   // 模式键：`./x/*` → 目标 `*` 替换（单 `*`，Node subpath patterns 同向）
   if (subpath !== ".") {
-    let best: { target: unknown; substitution: string; prefixLen: number } | null = null;
-    for (const [patternKey, target] of Object.entries(map)) {
-      const starIdx = patternKey.indexOf("*");
-      if (starIdx === -1) continue;
-      if (patternKey.indexOf("*", starIdx + 1) !== -1) continue; // 仅支持单 *
-
-      const prefix = patternKey.slice(0, starIdx);
-      const suffix = patternKey.slice(starIdx + 1);
-      if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue;
-      if (key.length < prefix.length + suffix.length) continue;
-
-      const substitution = key.slice(prefix.length, key.length - suffix.length);
-      if (!best || prefix.length > best.prefixLen) {
-        best = { target, substitution, prefixLen: prefix.length };
-      }
-    }
+    const best = bestPatternMatch(map, key);
     if (best) return { target: best.target, substitution: best.substitution };
   }
 
@@ -225,15 +292,20 @@ function findExportsEntry(exportsField: unknown, subpath: string): ExportsEntry 
   return null;
 }
 
-/** 基于 substitution 生成 tryTarget：先替换 *，再检查存在性；结果必须在 pkgDir 内。 */
-function makeTryTarget(
-  pkgDir: string,
-  substitution: string | null,
-  tryFile: (p: string) => string | null,
-): (rel: string) => string | null {
-  return (rel: string) => {
-    const substituted = substitution !== null ? rel.replace("*", substitution) : rel;
-    return tryInsidePkg(pkgDir, substituted, tryFile);
+/** 基于 substitution 生成 TargetTester：先替换 *，再分别判合法性与存在性。 */
+function makeTryTarget(pkgDir: string, substitution: string | null): TargetTester {
+  const substitute = (rel: string): string =>
+    substitution !== null ? rel.replace("*", substitution) : rel;
+  return {
+    isValid: (rel: string): boolean => {
+      const sub = substitute(rel);
+      if (escapesPackageRoot(sub)) return false;
+      return isInsideDir(pkgDir, resolve(pkgDir, sub));
+    },
+    tryFile: (rel: string): string | null => {
+      const sub = substitute(rel);
+      return tryInsidePkg(pkgDir, sub, tryPkgFileEsm);
+    },
   };
 }
 
@@ -256,14 +328,31 @@ export type ResolveNpmJsEntryResult = {
   exportsUnresolved: boolean;
 };
 
-/** 包内文件候选（精确路径 + 扩展名 + index 入口）。 */
-function pkgFileCandidates(p: string): string[] {
-  return [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`, join(p, "index.js"), join(p, "index.cjs")];
+/**
+ * 包内文件候选。
+ *
+ * `esm`（exports 目标 / 旧式子路径）：**不补** `index.*`——Node 的 ESM 装载器
+ * 从不做 `LOAD_AS_DIRECTORY`，目录目标直接 `ERR_UNSUPPORTED_DIR_IMPORT`
+ * （Bug 273）。
+ * `legacy`（legacy `main`）：Node 在这里**允许** index 解析 ⇒ 保留候选。
+ */
+function pkgFileCandidates(p: string, ctx: "esm" | "legacy"): string[] {
+  const base = [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`];
+  return ctx === "legacy" ? [...base, join(p, "index.js"), join(p, "index.cjs")] : base;
 }
 
-/** 包内文件候选 → 首个存在者（stat 故障可见后按 miss）。 */
-function tryPkgFile(p: string): string | null {
-  for (const c of pkgFileCandidates(p)) {
+/** 包内文件候选 → 首个存在者（ESM 语境：无 index 解析）。 */
+function tryPkgFileEsm(p: string): string | null {
+  return firstExisting(pkgFileCandidates(p, "esm"));
+}
+
+/** legacy `main` 语境（Node 允许目录 / index 解析）。 */
+function tryPkgFileLegacy(p: string): string | null {
+  return firstExisting(pkgFileCandidates(p, "legacy"));
+}
+
+function firstExisting(candidates: readonly string[]): string | null {
+  for (const c of candidates) {
     if (statEntryVisible(c)) return c;
   }
   return null;
@@ -300,21 +389,32 @@ function findImportsEntry(importsField: unknown, spec: string): ExportsEntry | n
   const map = importsField as Record<string, unknown>;
   if (Object.hasOwn(map, spec)) return { target: map[spec], substitution: null };
 
-  let best: { target: unknown; substitution: string; prefixLen: number } | null = null;
-  for (const [patternKey, target] of Object.entries(map)) {
-    const starIdx = patternKey.indexOf("*");
-    if (starIdx === -1) continue;
-    if (patternKey.indexOf("*", starIdx + 1) !== -1) continue; // 仅支持单 *
-    const prefix = patternKey.slice(0, starIdx);
-    const suffix = patternKey.slice(starIdx + 1);
-    if (!spec.startsWith(prefix) || !spec.endsWith(suffix)) continue;
-    if (spec.length < prefix.length + suffix.length) continue;
-    const substitution = spec.slice(prefix.length, spec.length - suffix.length);
-    if (!best || prefix.length > best.prefixLen) {
-      best = { target, substitution, prefixLen: prefix.length };
+  const hit = bestPatternMatch(map, spec);
+  return hit ? { target: hit.target, substitution: hit.substitution } : null;
+}
+
+/**
+ * `imports` 目标合法性（Node `ERR_INVALID_PACKAGE_TARGET` 口径，不看存在性）：
+ * 包内相对目标不得逃出包目录；`#` 自引用非法；外部裸包目标合法。
+ * 数组回退只用这条判据（Bug 270）。
+ */
+function importTargetIsValid(
+  target: unknown,
+  pkgDir: string,
+  substitution: string | null,
+): boolean {
+  if (target === null) return true; // 显式屏蔽：终局（不是「非法」）
+  if (typeof target === "string") {
+    const substituted = substitution !== null ? target.replace("*", substitution) : target;
+    if (substituted.startsWith("./") || substituted.startsWith("../")) {
+      if (escapesPackageRoot(substituted)) return false;
+      return isInsideDir(pkgDir, resolve(pkgDir, substituted));
     }
+    if (substituted.startsWith("#")) return false; // 禁止自引用
+    return true;
   }
-  return best ? { target: best.target, substitution: best.substitution } : null;
+  if (Array.isArray(target)) return target.some((t) => importTargetIsValid(t, pkgDir, substitution));
+  return true; // 条件对象：至少有一个条件命中 ⇒ 交给 resolveTarget 判
 }
 
 /**
@@ -343,27 +443,37 @@ function resolveHashImport(
     if (typeof target === "string") {
       const substituted = entry.substitution !== null ? target.replace("*", entry.substitution) : target;
       if (substituted.startsWith("./") || substituted.startsWith("../")) {
-        return tryInsidePkg(scope.dir, substituted, tryPkgFile);
+        // imports 字段同样是 ESM 语境 ⇒ 不补 index 候选（Bug 273）
+        return tryInsidePkg(scope.dir, substituted, tryPkgFileEsm);
       }
       // 外部包目标（"dep" / "dep/sub"）⇒ 转裸包解析（从导入方包目录起）
       if (substituted.startsWith("#")) return null; // 禁止自引用（否则无限递归）
       return resolveNpmJsEntryDetailed(substituted, scope.dir, mode).path;
     }
     if (Array.isArray(target)) {
+      if (target.length === 0) return null;
       for (const item of target) {
-        const r = resolveTarget(item);
-        if (r) return r;
+        // 回退判据是「目标非法」，不是「文件不存在」（Bug 270，与 exports 同口径）
+        if (!importTargetIsValid(item, scope.dir, entry.substitution)) continue;
+        return resolveTarget(item);
       }
       return null;
     }
     if (target && typeof target === "object") {
       const o = target as Record<string, unknown>;
+      const declared = Object.keys(o);
       for (const m of modeOrder(mode)) {
-        for (const k of JS_CONDITIONS[m]) {
-          if (!Object.hasOwn(o, k)) continue;
+        // 声明顺序取首个命中条件（Bug 239，与 exports 同口径）
+        for (const k of declared) {
+          if (!JS_CONDITIONS[m].includes(k)) continue;
           const r = resolveTarget(o[k]);
           if (r) return r;
         }
+      }
+      for (const k of declared) {
+        if (!FALLBACK_CONDITIONS.includes(k)) continue;
+        const r = resolveTarget(o[k]);
+        if (r) return r;
       }
       return null;
     }
@@ -401,15 +511,21 @@ export function resolveNpmJsEntryDetailed(
   const pkgName = parts.join("/");
   const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
-  // 逐级向上找包（Node 语义：每层 node_modules 都试；本层没有就继续往上）
+  // 逐级向上找包（Node `PACKAGE_RESOLVE`）：**本层没有该包**才继续往上；
+  // 「本层有包但 exports / 目标不认这个子路径」必须**在此终结**（Bug 268）——否则
+  // 会解析到父级的同名副本，那是运行时永远不会加载的文件。
   let exportsUnresolved = false;
   for (const pkgDir of findPackageDirs(fromDir, pkgName)) {
     const r = resolveInPkgDir(pkgDir, pkgName, subpath, mode);
     if (r.path) return { path: r.path, exportsUnresolved: false };
     if (r.exportsUnresolved) exportsUnresolved = true;
+    if (r.present) break;
   }
   return { path: null, exportsUnresolved };
 }
+
+/** 包目录内解析结果（present = 本层确实存在该包 ⇒ 解析终结）。 */
+type PkgDirResolution = ResolveNpmJsEntryResult & { present: boolean };
 
 /** 包目录内的入口解析（exports → legacy main → 直接子路径）。 */
 function resolveInPkgDir(
@@ -417,18 +533,18 @@ function resolveInPkgDir(
   pkgName: string,
   subpath: string,
   mode?: NpmLoadMode,
-): ResolveNpmJsEntryResult {
-  const none: ResolveNpmJsEntryResult = { path: null, exportsUnresolved: false };
+): PkgDirResolution {
+  const none: PkgDirResolution = { path: null, exportsUnresolved: false, present: false };
   const pkgJsonPath = join(pkgDir, "package.json");
-  const tryFile = tryPkgFile;
 
   let pkg: Record<string, unknown> = {};
   try {
     pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
   } catch (e) {
-    // 读失败分流：ENOENT（未安装）安静 miss；EACCES/EIO 可见后按 miss
+    // 读失败分流：ENOENT（未安装）安静 miss；EACCES/EIO 可见后按 miss。
+    // package.json 在但读不了 ⇒ 包**存在**（本层终结向上遍历）。
     warnPkgJsonReadError(pkgJsonPath, e);
-    return none;
+    return { ...none, present: existsSync(pkgJsonPath) };
   }
 
   const exportsField = pkg.exports;
@@ -437,29 +553,40 @@ function resolveInPkgDir(
   if (exportsField !== undefined && exportsField !== null) {
     const entry = findExportsEntry(exportsField, subpath);
     if (entry) {
-      const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
+      const tryTarget = makeTryTarget(pkgDir, entry.substitution);
       for (const m of modeOrder(mode)) {
         const rel = pickExport(entry.target, JS_CONDITIONS[m], tryTarget);
-        if (rel) return { path: rel, exportsUnresolved: false };
+        if (typeof rel === "string") {
+          return { path: rel, exportsUnresolved: false, present: true };
+        }
+        // 该形态**命中了条件键但目标缺失 / 被屏蔽** ⇒ 解析已终结（Node 不再换形态试）
+        if (rel === null) return { path: null, exportsUnresolved: true, present: true };
+        // TARGET_INVALID ⇒ 该形态没有可用条件键 ⇒ 才换下一个形态
       }
     }
     // exports 声明了但键不匹配 / 目标缺失 / 目标逃出包目录
-    return { path: null, exportsUnresolved: true };
+    return { path: null, exportsUnresolved: true, present: true };
   }
 
   // 无 exports：legacy main / module / 直接子路径（仍限制在包目录内）
   if (subpath === ".") {
     const main = typeof pkg.main === "string" ? pkg.main : undefined;
-    const hit = tryInsidePkg(pkgDir, main ?? ".", tryFile);
-    if (hit) return { path: hit, exportsUnresolved: false };
+    // legacy main 语境：Node 在这里**允许**目录 / index 解析（Bug 273 对照 D）
+    const hit = tryInsidePkg(pkgDir, main ?? ".", tryPkgFileLegacy);
+    if (hit) return { path: hit, exportsUnresolved: false, present: true };
     const mod = typeof pkg.module === "string" ? pkg.module : undefined;
     if (mod) {
-      const hitMod = tryInsidePkg(pkgDir, mod, tryFile);
-      if (hitMod) return { path: hitMod, exportsUnresolved: false };
+      const hitMod = tryInsidePkg(pkgDir, mod, tryPkgFileLegacy);
+      if (hitMod) return { path: hitMod, exportsUnresolved: false, present: true };
     }
-    return none;
+    return { ...none, present: true };
   }
-  return { path: tryInsidePkg(pkgDir, subpath, tryFile), exportsUnresolved: false };
+  // 旧式子路径：ESM 下禁止目录导入 ⇒ 不补 index 候选（Bug 273）
+  return {
+    path: tryInsidePkg(pkgDir, subpath, tryPkgFileEsm),
+    exportsUnresolved: false,
+    present: true,
+  };
 }
 
 /** 兼容包装：只取路径。 */
@@ -517,8 +644,7 @@ function resolveNudoInPkgDir(
     const entry = findExportsEntry(exportsField, subpath);
     if (!entry) return null;
 
-    const tryFile = (p: string): string | null => (statEntryVisible(p) ? p : null);
-    const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
+    const tryTarget = makeTryTarget(pkgDir, entry.substitution);
     return pickNudoExport(entry.target, tryTarget, mode);
   } catch {
     // ignore parse errors

@@ -124,10 +124,19 @@ function describeValue(value: unknown): string {
 }
 
 /**
- * 键存在性（HasProperty 语义）：原型链上的**用户**键算「在场」（与 zod 面 /
- * TS 结构类型同口径——`Object.create({ c: 1 })` 有 `c`），但 `Object.prototype`
- * 的污染键（`toString` / `constructor` / `valueOf` …）**不算**在场
- * （原型污染不该被当成真实槽）。
+ * 键存在性（HasProperty 语义）：原型链上的**用户**键算「在场」，但
+ * `Object.prototype` 自身的成员（污染键 `toString` / `constructor` /
+ * `valueOf` …）**不算**在场（原型污染不是真实槽）。
+ *
+ * BUG-096：这条规则是**三面唯一口径**（此前注释自称与 zod 同口径，实测
+ * `Object.create({ toString: "s" })` 被 zod 放行 ⇒ 注释与实现不符）：
+ * - guard 面 = core `denote.ts` 的 `hasPropertyClause`（逐字等价子句）；
+ * - standard 面 = 本函数 / 产物里的 `__nudoHasProperty`；
+ * - zod 面 = `schema-generator.ts` 给**必填污染键槽**补的 `.superRefine`
+ *   （`z.object` 原生用 `key in data`，含 Object.prototype 成员）。
+ *
+ * `Object.create({ c: 1 })` 有 `c`（用户原型键 ⇒ 在场，与 zod / TS 结构类型
+ * 同裁决）；`{}` 的 `toString` 不算在场（三面都判 required）。
  */
 function hasProperty(obj: Record<string, unknown>, key: string): boolean {
   if (Object.hasOwn(obj, key)) return true;
@@ -185,9 +194,15 @@ function checkNode(
   try {
     switch (node.k) {
       case "unknown":
+        return;
       case "promise":
-        // unknown 放行；promise 同步投影不 unwrap thenable（无从得知是否已
-        // resolved）⇒ 放行
+        // 同步投影不 unwrap thenable（无从得知是否已 resolved）——但**类型判据**
+        // 必须与 zod 面（`z.promise` 自带 instanceof）/ guard 面
+        // （`data instanceof Promise`）同口径，否则 standard 面放行一切非
+        // Promise 值 ⇒ 同一 Abs 在两个方言里给出相反裁决（BUG-025）。
+        if (!(value instanceof Promise)) {
+          pushIssue(issues, path, `expected promise, got ${typeOf(value)}`);
+        }
         return;
       case "fn":
         // 判据：是不是函数（zod 面 `z.function()` 同口径——不校验签名，只校验
@@ -241,7 +256,17 @@ function checkNode(
         return;
       }
       case "obj": {
-        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        // BUG-258：**数组视图**（RegExpExecArray 等）要求值**是数组**；普通对象
+        // 判据反过来排除数组（"expected object, got array"）⇒ 不分支会把真实
+        // 返回值判成违规（假红），而 guard / dts / zod 三面都判定它是数组。
+        // 槽仍按自有属性 / 下标读：原生 exec 结果的 0..n-1 / length / index /
+        // input / groups 全是自有属性 ⇒ 下面的逐槽判据无需改动。
+        if (node.arrayView) {
+          if (!Array.isArray(value)) {
+            pushIssue(issues, path, `expected array, got ${typeOf(value)}`);
+            return;
+          }
+        } else if (typeof value !== "object" || value === null || Array.isArray(value)) {
           pushIssue(issues, path, `expected object, got ${typeOf(value)}`);
           return;
         }
@@ -249,7 +274,8 @@ function checkNode(
         for (const slot of node.slots) {
           const key = slot.key;
           // 键存在性：HasProperty 语义（用户原型上的真实键算「在场」）**减去**
-          // Object.prototype 的污染键（Bug 549）——与 zod 面 / TS 结构类型同口径
+          // Object.prototype 自身的污染键（Bug 549 / BUG-096）——与 guard 面
+          // 的「存在性子句」、zod 面的 `.superRefine` 三面同判据（见 hasProperty）
           if (!hasProperty(rec, key)) {
             if (!slot.optional) pushIssue(issues, [...path, key], "required");
             continue;
@@ -265,6 +291,21 @@ function checkNode(
         if (!Array.isArray(value)) {
           pushIssue(issues, path, `expected array, got ${typeOf(value)}`);
           return;
+        }
+        // BUG-094：数组**自身**的长度界（guard 面一直保留，另两面此前整段丢）
+        if (typeof node.minLen === "number" && value.length < node.minLen) {
+          pushIssue(
+            issues,
+            path,
+            `expected array length >= ${node.minLen}, got ${value.length}`,
+          );
+        }
+        if (typeof node.maxLen === "number" && value.length > node.maxLen) {
+          pushIssue(
+            issues,
+            path,
+            `expected array length <= ${node.maxLen}, got ${value.length}`,
+          );
         }
         // 索引循环（与生成产物内联版同口径）：稀疏洞读作 `undefined` ⇒ 按元素
         // 类型报错（与 zod 面 / 引擎把洞实体化成 undefined 一致）
@@ -334,8 +375,8 @@ const CHECK_FN_SOURCE = `
 type NudoSchemaNode =
   | { k: "lit"; value: unknown }
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: readonly NudoRefinement[] }
-  | { k: "obj"; slots: readonly NudoSlot[] }
-  | { k: "arr"; element: NudoSchemaNode }
+  | { k: "obj"; slots: readonly NudoSlot[]; arrayView?: boolean }
+  | { k: "arr"; element: NudoSchemaNode; minLen?: number; maxLen?: number }
   | { k: "tuple"; elements: readonly NudoSchemaNode[]; rest?: NudoSchemaNode }
   | { k: "union"; members: readonly NudoSchemaNode[] }
   | { k: "promise"; inner: NudoSchemaNode }
@@ -379,7 +420,8 @@ function __nudoDescribe(v: unknown): string {
     return "<unserializable>";
   }
 }
-// 键存在性：原型链上的用户键算「在场」，Object.prototype 的污染键不算。
+// 键存在性：原型链上的用户键算「在场」，Object.prototype 自身的成员不算
+// （BUG-096：与产物里的 __nudoCheck 逐字同口径 + guard 面 / zod 面同规则）
 function __nudoHasProperty(o: Record<string, unknown>, key: string): boolean {
   if (Object.hasOwn(o, key)) return true;
   if (!(key in o)) return false;
@@ -394,7 +436,9 @@ function __nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | numbe
   switch (node.k) {
     case "unknown":
     case "summarized":
+      return;
     case "promise":
+      if (!(value instanceof Promise)) { push("expected promise, got " + __nudoTypeOf(value)); }
       return;
     case "fn":
       if (typeof value !== "function") { push("expected function, got " + __nudoTypeOf(value)); }
@@ -449,7 +493,11 @@ function __nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | numbe
       return;
     }
     case "obj": {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      // BUG-258：数组视图要求值是数组（普通对象判据反过来排除数组）——
+      // 与库函数版同口径。
+      if (node.arrayView) {
+        if (!Array.isArray(value)) { push("expected array, got " + __nudoTypeOf(value)); return; }
+      } else if (typeof value !== "object" || value === null || Array.isArray(value)) {
         push("expected object, got " + __nudoTypeOf(value));
         return;
       }
@@ -471,6 +519,13 @@ function __nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | numbe
     }
     case "arr": {
       if (!Array.isArray(value)) { push("expected array, got " + __nudoTypeOf(value)); return; }
+      // BUG-094：数组自身长度界（与库函数版同口径）
+      if (typeof node.minLen === "number" && value.length < node.minLen) {
+        push("expected array length >= " + node.minLen + ", got " + value.length);
+      }
+      if (typeof node.maxLen === "number" && value.length > node.maxLen) {
+        push("expected array length <= " + node.maxLen + ", got " + value.length);
+      }
       // 索引循环：稀疏洞读作 undefined（与库函数版 / zod 面同口径）
       for (let i = 0; i < value.length; i++) {
         path.push(i);
@@ -579,6 +634,8 @@ function schemaNodeSource(node: SchemaNode): string {
         .map(refinementSource)
         .join(",")}]}`;
     case "obj":
+      // BUG-258：数组视图标记必须随节点序列化——丢了它，产物按普通对象判据
+      // 拒绝真实数组（"expected object, got array"）。
       return `{"k":"obj","slots":[${node.slots
         .map(
           (s) =>
@@ -586,9 +643,12 @@ function schemaNodeSource(node: SchemaNode): string {
               s.optional ? ',"optional":true' : ""
             }}`,
         )
-        .join(",")}]}`;
+        .join(",")}]${node.arrayView ? ',"arrayView":true' : ""}}`;
     case "arr":
-      return `{"k":"arr","element":${schemaNodeSource(node.element)}}`;
+      // BUG-094：长度界随节点序列化（丢它 = zod / standard 面放行违约数组）
+      return `{"k":"arr","element":${schemaNodeSource(node.element)}${
+        typeof node.minLen === "number" ? `,"minLen":${literalValueSource(node.minLen)}` : ""
+      }${typeof node.maxLen === "number" ? `,"maxLen":${literalValueSource(node.maxLen)}` : ""}}`;
     case "tuple":
       // 末尾的 `}` 是**对象字面量的收尾**（不是插值表达式的收尾）——少了它
       // 产出的节点文本缺右括号 ⇒ 整个 tuple 产物是语法错误。
@@ -690,7 +750,16 @@ export type StandardSchemaFunctionSpec = {
  * 声明级这一路在 standard 面此前**整条缺失**（Bug 627）。
  */
 function declarationOptional(formals: ReadonlyArray<FormalParam> | undefined, name: string): boolean {
-  return (formals ?? []).some((f) => f.kind === "default" && f.name === name);
+  // BUG-169：两个来源都要认 ——
+  // ① JS 默认值（`kind === "default"`，`function f(a, b = 2)`）；
+  // ② **TS 可选标记**（`b?: T`，`kind === "id"` + `optional: true`，
+  //    由 core `tsOptionalParams` 从源码文本判定——`?` 在 strip-types 阶段
+  //    就被删，不进 `kind`）。
+  // 只认 ① 时，`f({ a: 1 })` 会被运行时校验器判 `required: b`（假红）。
+  return (formals ?? []).some((f) => {
+    if (f.kind === "default") return f.name === name;
+    return f.kind === "id" && f.optional === true && f.name === name;
+  });
 }
 
 /**

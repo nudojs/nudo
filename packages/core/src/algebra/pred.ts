@@ -591,6 +591,23 @@ type Lin = {
    * 构造中一旦出现此类化简即置 false，证明侧 fail-closed。
    */
   ieeeOk: boolean;
+  /**
+   * 构造线性形时发生 IEEE 舍入的运算次数（0 = 精确：字面量、原子、
+   * 2 的幂缩放、同原子同系数的精确加倍 x+x = 2x）。
+   *
+   * 线性形是**实数值**的抽象，运行时算的却是 fl(...)：两者可差
+   * `rounds × ½ulp(量级)`（见 halfUlp / roundSlack）。比较本身（JS
+   * `===` / `<`）是精确的，故无舍入。
+   */
+  rounds: number;
+  /**
+   * 参与舍入的**加性常量**的最大量级 |k|（`x + 1e6` 的 1e6）。
+   *
+   * 这类常量会被吸收：`fl(MIN_VALUE + 1e6) === 1e6`，因此最小值也能满足
+   * `x + 1e6 === 1e6`；常量在归一（linSub）被抵消后，这个量级必须继续
+   * 作为舍入容差的尺度，否则 `x ≥ 0` 之类的假事实会被证出来。
+   */
+  addConstMag: number;
 };
 
 type Ctx = {
@@ -683,9 +700,68 @@ function tightenHi(iv: Interval, bound: number, strict: boolean): void {
   }
 }
 
+/**
+ * 量级为 x 的 double 的**半个 ULP**（就近舍入的误差上界）。
+ * 0 → 0（舍入到 0 无误差）；非有限 → Infinity（调用方据此放弃证明）。
+ */
+function halfUlp(x: number): number {
+  const a = Math.abs(x);
+  if (a === 0) return 0;
+  if (!Number.isFinite(a)) return Infinity;
+  return (nextUp(a) - a) / 2;
+}
+
+/** |v| 是否 2 的幂且 ≥ 1（该量级的缩放不产生舍入；< 1 的缩放可能下溢，按有损处理） */
+function isExactPow2(v: number): boolean {
+  const a = Math.abs(v);
+  if (a < 1 || !Number.isFinite(a)) return false;
+  return Number.isInteger(Math.log2(a));
+}
+
+/**
+ * 线性形的 IEEE 舍入容差（绝对量级）：`rounds × ½ulp(max(|mag|, addConstMag))`。
+ *
+ * 用于两处消费点（都与「线性形 = 实数值」这条抽象的不保真有关）：
+ * - 事实提取（applyCmp）：`fl(atom ⊕ k) op c` 的解集是**舍入前像区间**而非点
+ *   ——`fl(x+1) === 1` 的解含 `x = -5e-324`（BUG-077）；
+ * - 目标侧证明（proveInCtx）：`a op b → (a-b) op 0` 归一后常数被精确抵消，
+ *   源表达式内部的 `fl` 吸收随之消失（BUG-083 / BUG-200）。
+ *
+ * `rounds === 0`（纯字面量 / 原子 / 2 的幂缩放）⇒ 0，精确反解保持不变。
+ */
+function roundSlack(lin: Lin, mag: number): number {
+  if (lin.rounds <= 0) return 0;
+  const m = Math.max(Math.abs(mag), lin.addConstMag);
+  if (m === 0) return 0;
+  const h = halfUlp(m);
+  return Number.isFinite(h) ? lin.rounds * h : Infinity;
+}
+
+/**
+ * 线性形所有原子是否都有**有限证据**（assumeFinite 或 typeof=number ∧ 双侧
+ * 有限界自动导出）。与 `ieeeOk`（linOf 的环消去闸门）同口径：有证据时按
+ * 仓库既有语义开启实数环运算（见 pred-assume-finite.test.ts
+ * 「assumeFinite 开启环消去 / 分配律」），此时不做舍入外扩。
+ */
+function atomsFinite(ctx: Ctx, lin: Lin): boolean {
+  return lin.c.size > 0 && [...lin.c.keys()].every((k) => ctx.finite.has(k));
+}
+
+/** roundSlack 的 ctx 版：有限证据下按环语义处理（返回 0） */
+function roundSlackIn(ctx: Ctx, lin: Lin, mag: number): number {
+  return atomsFinite(ctx, lin) ? 0 : roundSlack(lin, mag);
+}
+
 /** 项 → 线性形（var / lit / + / - / *const / length 等原子）；非线性返回 undefined */
 function linOf(t: Term, finite?: ReadonlySet<string>): Lin | undefined {
-  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map(), ieeeOk: true });
+  const empty = (): Lin => ({
+    c: new Map(),
+    k: 0,
+    atoms: new Map(),
+    ieeeOk: true,
+    rounds: 0,
+    addConstMag: 0,
+  });
   const fromAtom = (key: string, term: Term): Lin => {
     const l = empty();
     l.c.set(key, 1);
@@ -695,9 +771,36 @@ function linOf(t: Term, finite?: ReadonlySet<string>): Lin | undefined {
   /** 线性形中所有原子 key 是否都在 finite 集合内 */
   const allFinite = (lin: Lin): boolean =>
     finite !== undefined && [...lin.c.keys()].every((k) => finite.has(k));
+  /** 两个线性形是否「同一原子、同一系数」（x+x）——IEEE 下是精确加倍 */
+  const sameSingleTerm = (a: Lin, b: Lin): boolean => {
+    if (a.c.size !== 1 || b.c.size !== 1) return false;
+    const [ae] = [...a.c.entries()];
+    const [be] = [...b.c.entries()];
+    return ae![0] === be![0] && ae![1] === be![1];
+  };
   const add = (a: Lin, b: Lin): Lin => {
     const out = empty();
     out.ieeeOk = a.ieeeOk && b.ieeeOk;
+    // IEEE 保真：a + b 是 fl(和)，线性形记的是实数和。
+    // - 常量 + 原子：|原子| < ½ulp(k) 时被吸收（fl(MIN_VALUE + 1e6) === 1e6）
+    //   ⇒ 记一次舍入并留下常量量级；
+    // - 原子 + 原子：同原子同系数是精确加倍（x+x === 2x），其余都会舍入。
+    out.rounds = a.rounds + b.rounds;
+    out.addConstMag = Math.max(a.addConstMag, b.addConstMag);
+    if (!(a.c.size === 0 && b.c.size === 0)) {
+      const constSide = (x: Lin, y: Lin): boolean =>
+        x.c.size === 0 && y.c.size > 0 && x.k !== 0;
+      if (constSide(a, b) || constSide(b, a)) {
+        out.rounds += 1;
+        out.addConstMag = Math.max(
+          out.addConstMag,
+          Math.abs(a.k),
+          Math.abs(b.k),
+        );
+      } else if (!sameSingleTerm(a, b)) {
+        out.rounds += 1;
+      }
+    }
     for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
     for (const [k, v] of b.c) {
       const prev = out.c.get(k) ?? 0;
@@ -716,11 +819,19 @@ function linOf(t: Term, finite?: ReadonlySet<string>): Lin | undefined {
   const scale = (a: Lin, n: number): Lin => {
     const out = empty();
     out.ieeeOk = a.ieeeOk;
+    out.rounds = a.rounds;
+    out.addConstMag = a.addConstMag;
     for (const [k, v] of a.c) out.c.set(k, v * n);
     out.k = a.k * n;
     for (const [k, v] of a.atoms) out.atoms.set(k, v);
     // 0*x 折 0 不可用：NaN*0 / Inf*0 为 NaN；有 finite 证据时可折
     if (n === 0 && a.atoms.size > 0 && !allFinite(a)) out.ieeeOk = false;
+    return out;
+  };
+  /** 乘常数：2 的幂缩放精确，其余每次乘法各记一次舍入（3*x 可 ≠ x+x+x） */
+  const mulScale = (a: Lin, n: number): Lin => {
+    const out = scale(a, n);
+    if (!isExactPow2(n)) out.rounds += 1;
     return out;
   };
   const walk = (x: Term): Lin | undefined => {
@@ -770,10 +881,10 @@ function linOf(t: Term, finite?: ReadonlySet<string>): Lin | undefined {
             }
             if (!Number.isFinite(k)) return fromAtom(termKey(whole), whole);
             // 单原子纯乘积（无常数项）：表示该乘积本身，非分配律
-            if (lin.c.size === 1 && lin.k === 0) return scale(lin, k);
+            if (lin.c.size === 1 && lin.k === 0) return mulScale(lin, k);
             // 多原子/带常数项：分配律在 IEEE 溢出时可不等，
             // 仅当所有原子已证有限时才按环展开
-            if (allFinite(lin)) return scale(lin, k);
+            if (allFinite(lin)) return mulScale(lin, k);
             return fromAtom(termKey(whole), whole);
           };
           if (la.c.size === 0) return scaleAtom(lb, la.k, x);
@@ -819,6 +930,10 @@ function linSub(a: Lin, b: Lin, finite?: ReadonlySet<string>): Lin {
     k: kDiff,
     atoms: new Map(),
     ieeeOk: a.ieeeOk && b.ieeeOk && !cancel && !Number.isNaN(kDiff),
+    // 比较本身（JS `===` / `<`）精确、不舍入：舍入只来自两侧源表达式的
+    // 构造，由 linOf 记录后在此透传（供事实提取 / 目标侧证明加容差）。
+    rounds: a.rounds + b.rounds,
+    addConstMag: Math.max(a.addConstMag, b.addConstMag),
   };
   for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
   for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) - v);
@@ -831,7 +946,14 @@ function linSub(a: Lin, b: Lin, finite?: ReadonlySet<string>): Lin {
 }
 
 /** 两线性形系数与常数全同（环语义下值相同） */
-function linFormsEqual(a: Lin, b: Lin): boolean {
+function linFormsEqual(a: Lin, b: Lin, ringOk = false): boolean {
+  // IEEE 保真（BUG-106）：只有两形都是**精确**构造（rounds === 0）时，
+  // 系数表相同才意味着值相同。x*6（一次舍入）与 x+x+x+x+x+x（五次舍入）
+  // 系数表都是 {x:6}，但 fl(0.1*6) = 0.6000000000000001 ≠ 0.6；
+  // (a+b)+c 与 a+(b+c) 同理（加法不结合）。
+  // ringOk：所有原子都有有限证据时按仓库既有环语义口径放行
+  //（pred-assume-finite.test.ts「assumeFinite 开启环消去」）。
+  if (!ringOk && (a.rounds > 0 || b.rounds > 0)) return false;
   if (!Object.is(a.k, b.k)) return false;
   if (a.c.size !== b.c.size) return false;
   for (const [k, v] of a.c) {
@@ -958,7 +1080,7 @@ function proveCmpDirect(
 
   // 同线性形（系数与常数全同）：环语义下两侧值相同
   // （x+y-y 与 x 消去后同形；2*x 与 x+x 同形）
-  if (linFormsEqual(la, lb)) {
+  if (linFormsEqual(la, lb, atomsFinite(ctx, la) && atomsFinite(ctx, lb))) {
     return op === "eq" || op === "ge" || op === "le";
   }
 
@@ -1056,6 +1178,14 @@ function buildCtx(phi: Phi): Ctx {
       // coeff * atom + k  op  0  ⟺  atom  op  -k/coeff（注意 coeff 符号）
       if (coeff === 0) return;
       const bound = -lin.k / coeff;
+      // IEEE 保真（BUG-077）：线性形把 `fl(atom ⊕ k)` 折成了实数式，而
+      // `fl(atom ⊕ k) op c` 的解集是**舍入前像区间**，不是点——
+      // `fl(x+1) === 1` 的解含 x = -5e-324（≠ 0），`fl(x+1e6) === 1e6`
+      // 的解含 |x| ≤ ½ulp(1e6)，`fl(3x) === 1` 的解含 0.33333333333333337。
+      // 舍入过的形按 rounds × ½ulp(结果量级) 外扩；rounds === 0（纯 var/lit、
+      // 2 的幂缩放、精确加倍）仍是精确点反解。非有限量级 ⇒ 不提事实。
+      const slack = roundSlackIn(ctx, lin, lin.k);
+      if (!Number.isFinite(slack)) return;
       // 翻转：coeff < 0 时比较方向反转
       let realOp = o;
       if (coeff < 0) {
@@ -1066,13 +1196,13 @@ function buildCtx(phi: Phi): Ctx {
       const isVar = term.op === "var";
       const storeKey = isVar ? findRep(ctx, term.id) : key;
       const iv = ivFor(storeKey, term);
-      if (realOp === "gt") tightenLo(iv, bound, true);
-      else if (realOp === "ge") tightenLo(iv, bound, false);
-      else if (realOp === "lt") tightenHi(iv, bound, true);
-      else if (realOp === "le") tightenHi(iv, bound, false);
+      if (realOp === "gt") tightenLo(iv, bound - slack, true);
+      else if (realOp === "ge") tightenLo(iv, bound - slack, false);
+      else if (realOp === "lt") tightenHi(iv, bound + slack, true);
+      else if (realOp === "le") tightenHi(iv, bound + slack, false);
       else if (realOp === "eq") {
-        tightenLo(iv, bound, false);
-        tightenHi(iv, bound, false);
+        tightenLo(iv, bound - slack, false);
+        tightenHi(iv, bound + slack, false);
       }
       return;
     }
@@ -1196,7 +1326,13 @@ function linInterval(
   let hiStrict = false;
   let hasLo = true;
   let hasHi = true;
-  for (const [key, coeff] of lin.c) {
+  // 加法可交换（IEEE 下 fl(x+y) ≡ fl(y+x)）：同一 Φ、同一加法只换书写顺序
+  // 必须给出同一结论（BUG-200）。端点合成的舍入顺序此前来自 Map 插入序
+  // （`x+y` 与 `y+x` 结论相反），这里按 atom key 稳定排序消除该差异。
+  const entries = [...lin.c.entries()].sort((p, q) =>
+    p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0,
+  );
+  for (const [key, coeff] of entries) {
     const rep = findRep(ctx, key);
     const iv = ctx.iv.get(rep) ?? ctx.iv.get(key);
     if (!iv) return {};
@@ -1302,6 +1438,19 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
 
   const iv = linInterval(ctx, lin);
   if (!iv.lo && !iv.hi) return false;
+
+  // IEEE 保真（BUG-083 / BUG-200）：`a op b` 归一成 `(a-b) op 0` 时，常数被
+  // **精确抵消**（x+1 与 1 的 1 相消只剩 x），源表达式内部的 `fl` 吸收随之
+  // 消失 ⇒ x>0 会把 x+1>1 证成真（原生反例 x = MIN_VALUE：fl(MIN+1) === 1）。
+  // 线性形含「原子 ⊕ 常量」的舍入时，端点按 rounds × ½ulp(该常量量级) 外扩：
+  // 只放宽不出错，精确形（rounds === 0：x*2 / x+y 无常量）不受影响。
+  const slack = roundSlackIn(ctx, lin, 0);
+  if (slack > 0) {
+    const lo = iv.lo;
+    const hi = iv.hi;
+    if (lo) iv.lo = { bound: nextDown(lo.bound - slack), strict: lo.strict };
+    if (hi) iv.hi = { bound: nextUp(hi.bound + slack), strict: hi.strict };
+  }
 
   // 用目标线性式的区间证 lin op 0
   const proveLinOp0 = (): boolean | undefined => {

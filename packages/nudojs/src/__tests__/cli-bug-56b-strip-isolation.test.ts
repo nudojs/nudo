@@ -109,12 +109,14 @@ describe("族 56b — migrateStrip 库面逐文件错误隔离（与 migrateVeri
     const dir = dirWith({ "a-good.ts": GOOD, "z-bad.ts": BAD });
     const r = runCliTsx(["migrate", "strip", "--json", dir]);
     expect(r.status).toBe(1);
-    const parsed = JSON.parse(r.stdout) as {
+    // BUG-017：`--json` 顶层形状恒为数组（信封是单元素数组）
+    const __env = JSON.parse(r.stdout) as Array<{
       ok?: boolean;
       action?: string;
       results?: unknown[];
       pathErrors?: Array<{ path: string; code: string; message: string }>;
-    };
+    }>;
+    const parsed = __env[0]!;
     expect(parsed.ok).toBe(false);
     expect(parsed.action).toBe("strip");
     // 失败详情带**文件名**（机器面）

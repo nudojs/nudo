@@ -247,13 +247,35 @@ export class DiskCache {
  * 缓存键路径维：优先稳定逻辑段；无逻辑根且内容已知时用**内容指纹**
  * （`cnt:<sha>`）替代 `ext:` 路径 sha——路径 sha 绑机器绝对路径，跨机 miss-only。
  * 内容未知仍回落 `ext:`（只保证不明文、不脏命中）。
+ *
+ * **项目身份**（Bug 241）：项目根**内**的**入口**文件只取根相对路径是不够的——
+ * 共享 `NUDO_CACHE_DIR` 下两个 checkout 的 `src/a.js` 会得到同一个键 ⇒ 互相
+ * 污染（命中另一份 checkout 的报告，`file` 字段还指向那边的文件）。因此入口
+ * 文件带根指纹前缀（`p:<sha(root)>`）。
+ *
+ * 依赖路径（`withProjectIdentity` 未开）**保持跨 checkout 复用**：依赖段另有
+ * 内容 sha，键的复用性正是磁盘缓存的收益来源（F-6 的可移植性契约）。
  */
-function cachePathIdentity(p: string, root: string | undefined, content?: string | null): string {
+function cachePathIdentity(
+  p: string,
+  root: string | undefined,
+  content?: string | null,
+  withProjectIdentity = false,
+): string {
   const rel = relativizePath(p, root);
   if (rel.startsWith("ext:") && content != null) {
     return `cnt:${sha256Hex(content).slice(0, 16)}`;
   }
+  if (withProjectIdentity && root && !rel.startsWith("ext:") && isInsideRoot(p, root)) {
+    return `p:${sha256Hex(stablePathKey(root)).slice(0, 16)}/${rel}`;
+  }
   return rel;
+}
+
+/** p 是否落在 root 内（树内相对化的判据，与 relativizePath 的第一段同口径）。 */
+function isInsideRoot(p: string, root: string): boolean {
+  const r = toPosix(relative(stablePathKey(root), stablePathKey(p)));
+  return !r.startsWith("..") && !isAbsolute(r);
 }
 
 /**
@@ -284,7 +306,7 @@ export function checkCacheKey(
     };
   },
 ): string {
-  const rel = cachePathIdentity(filePath, opts.projectDir, source);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source, true);
   const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
   const depSeg = (opts.depContents ?? [])
     .map(
@@ -346,7 +368,7 @@ export function ifaceCacheKey(
     projectEnvNames?: string[];
   },
 ): string {
-  const rel = cachePathIdentity(filePath, opts.projectDir, source);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source, true);
   const sidecarSeg =
     opts.autoBind && opts.sidecarSource !== undefined
       ? `sc:${sha256Hex(opts.sidecarSource)}`
