@@ -104,7 +104,7 @@ describe("Bug 209 · pick/omit/partial 必须保留约束的 optional 标志", (
     for (const fn of ["fB", "fC", "fD"]) {
       const sig = r.signatures.find((s) => s.name === fn);
       expect(sig, fn).toBeDefined();
-      expect(sig!.paramTypes.join(", "), fn).toContain("s?:");
+      expect(sig!.paramTypes?.join(", ") ?? "", fn).toContain("s?:");
     }
   });
 

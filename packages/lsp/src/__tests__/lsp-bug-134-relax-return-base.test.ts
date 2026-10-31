@@ -55,6 +55,10 @@ export const greet = fn({ u: number() }, number().gt(80));
 const isReturnBaseDiag = (msg: string): boolean => /return value ⊭ sidecar/.test(msg);
 const isRelax = (a: CodeActionEntry): boolean => /Relax sidecar contract/i.test(a.title);
 
+/** LSP 3.18 Diagnostic.message 为 string | MarkupContent；本产品始终写纯字符串。 */
+const msgText = (m: string | { value: string }): string =>
+  typeof m === "string" ? m : m.value;
+
 function actionsFor(
   dirPrefix: string,
   js: string,
@@ -67,14 +71,14 @@ function actionsFor(
     writeFileSync(join(dir, "greet.nudo.js"), sc, "utf-8");
     const uri = `file://${jsPath}`;
     const diags = checkToLspDiagnostics(jsPath, js, defaultLoadModule);
-    const target = diags.filter((d) => pick(d.message));
+    const target = diags.filter((d) => pick(msgText(d.message)));
     expect(target.length).toBeGreaterThan(0);
     const handler = mountCodeActions(uri, js);
     const actions: CodeActionEntry[] = [];
     for (const d of target) {
       actions.push(...handler(codeActionParams(uri, d.range.start.line, [d])));
     }
-    return { actions, messages: target.map((d) => d.message), scText: sc, uri };
+    return { actions, messages: target.map((d) => msgText(d.message)), scText: sc, uri };
   });
 }
 
@@ -99,8 +103,8 @@ describe("Bug 134 · 放宽侧车契约不得下发消不掉诊断的假修复",
       const weakened = SC_SHAPE.replace("number().gt(40)", "number()");
       writeFileSync(join(dir, "greet.nudo.js"), weakened, "utf-8");
       const after = checkToLspDiagnostics(jsPath, GREET_JS, defaultLoadModule);
-      expect(after.filter((d) => isReturnBaseDiag(d.message))).toHaveLength(1);
-      expect(after.map((d) => d.message).join("\n")).toMatch(
+      expect(after.filter((d) => isReturnBaseDiag(msgText(d.message)))).toHaveLength(1);
+      expect(after.map((d) => msgText(d.message)).join("\n")).toMatch(
         /typeof return = "string" ⊭ "number"/,
       );
     });
@@ -142,7 +146,7 @@ export const greet = fn({ u: number() }, number());
       writeFileSync(jsPath, GREET_JS_RET, "utf-8");
       writeFileSync(join(dir, "greet.nudo.js"), landed, "utf-8");
       const after = checkToLspDiagnostics(jsPath, GREET_JS_RET, defaultLoadModule);
-      expect(after.filter((d) => isReturnBaseDiag(d.message))).toHaveLength(0);
+      expect(after.filter((d) => isReturnBaseDiag(msgText(d.message)))).toHaveLength(0);
       expect(after).toHaveLength(0);
     });
   });

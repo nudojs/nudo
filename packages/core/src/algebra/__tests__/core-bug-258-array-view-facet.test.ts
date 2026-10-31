@@ -48,12 +48,12 @@ describe("BUG-258: 数组视图 = Shape facet（形状单一事实源）", () =>
     const shapeCopy: Abs = { ...a, shape: { ...a.shape } };
     expect(isArrayView(shapeCopy)).toBe(true);
     // 普通 obj 形状不是数组视图
-    expect(isArrayView(obj({ a: numLit(1) }))).toBe(false);
-    expect(isMatchArrayView(obj({ a: numLit(1) }))).toBe(false);
+    expect(isArrayView(obj({ a: { value: numLit(1) } }))).toBe(false);
+    expect(isMatchArrayView(obj({ a: { value: numLit(1) } }))).toBe(false);
   });
 
   it("形状级：markArrayView 不可变替换 shape（原形状不被就地改写）", () => {
-    const plain = obj({ 0: strLit("x"), length: numLit(1) });
+    const plain = obj({ 0: { value: strLit("x") }, length: { value: numLit(1) } });
     const before = plain.shape;
     expect(isArrayView(plain)).toBe(false);
     markArrayView(plain);

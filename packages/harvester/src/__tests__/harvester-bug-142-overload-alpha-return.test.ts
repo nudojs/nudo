@@ -49,7 +49,9 @@ describe("BUG-142 —— overload 合并不得留下悬空 α", () => {
     const h = harvestDts([writeTemp(CONCRETE_FIRST)]).globals.h!;
     expect(formatShape(h)).toBe("(string) => string");
     // 返回位的 α 必须能在参数表里绑定 ⇒ 这里返回位不应有 var
-    expect([...termVarIds(h.shape.returnType!)]).toEqual([]);
+    const shape = h.shape;
+    if (shape.k !== "fn") throw new Error(`expected fn shape, got ${shape.k}`);
+    expect([...termVarIds(shape.returnType!)]).toEqual([]);
   });
 
   it("泛型 overload 在前：保留 α（可被实参绑定）", () => {

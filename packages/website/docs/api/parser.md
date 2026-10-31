@@ -278,7 +278,7 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="fndirectivescope"></a>`FnDirectiveScope` | type | — | — |
 | <a id="fnorclassidloc"></a>`fnOrClassIdLoc` | fn | `id.loc` of a named function/class (undefined when anonymous or unlocated). | `fnOrClassIdLoc(node: Node \| null \| undefined): Node` |
 | <a id="fnorclassidname"></a>`fnOrClassIdName` | fn | Function/Class declaration or expression `id?.name`. | `fnOrClassIdName(node: Node \| null \| undefined): string \| undefined` |
-| <a id="functionwithdirectives"></a>`FunctionWithDirectives` | type | — | `FunctionWithDirectives = { node: Node; name: string; directives: Directive[]; }` |
+| <a id="functionwithdirectives"></a>`FunctionWithDirectives` | type | — | `FunctionWithDirectives = { node: Node; name: string; directives: Directive[]; depth?: number; }` |
 | <a id="getclassmembers"></a>`getClassMembers` | fn | Class body members; empty when node is not a class. | `getClassMembers(node: Node \| null \| undefined): ClassBody` |
 | <a id="getdeclarations"></a>`getDeclarations` | fn | VariableDeclaration.declarations; empty for other nodes. | `getDeclarations(node: Node \| null \| undefined): VariableDeclarator[]` |
 | <a id="getdeclaratorid"></a>`getDeclaratorId` | fn | VariableDeclarator id narrowed to Identifier. | `getDeclaratorId(node: Node \| null \| undefined): Identifier \| undefined` |

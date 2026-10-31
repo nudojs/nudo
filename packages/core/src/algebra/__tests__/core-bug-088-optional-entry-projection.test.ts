@@ -146,7 +146,7 @@ function f(x) {
     // 改前：形参面是 `number`（必填 number）——与 .d.ts 的 `x?: number` 矛盾
     const sig = r.signatures.find((s) => s.name === "f");
     expect(sig).toBeDefined();
-    expect(sig!.paramTypes.join(", ")).toContain("undefined");
+    expect(sig!.paramTypes?.join(", ") ?? "").toContain("undefined");
   });
 
   it("对照组：对象字段位的 .optional() 仍是「键可缺席」，槽值不带 undefined", () => {

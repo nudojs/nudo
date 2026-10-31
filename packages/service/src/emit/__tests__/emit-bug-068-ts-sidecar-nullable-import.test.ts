@@ -60,7 +60,7 @@ function importedLocals(text: string): Set<string> {
 function nullishFix(over: Partial<MaterializeInput> = {}): ReturnType<typeof materializeAction> {
   return materializeAction({
     code: DIAG.constraintViolated,
-    action: { kind: "relax" },
+    action: { kind: "relax", label: "relax" },
     fn: "f",
     file: "/t/q2.ts",
     source: SRC,

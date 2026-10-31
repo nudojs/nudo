@@ -726,19 +726,22 @@ type SymbolTable = {
 | <a id="domainevidencecases"></a>`domainEvidenceCases` | fn | 产物面（dts / zod / standard / guard）的**域证据 case**。 | `domainEvidenceCases(cases: readonly CaseResult[]): CaseResult[]` |
 | <a id="draftevidence"></a>`DraftEvidence` | type | DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。 | `DraftEvidence = "callsite" \| "directive" \| "symbolic" \| "body" \| "none"` |
 | <a id="draftinterface"></a>`draftInterface` | fn | 为单文件顶层导出生成 interface 草稿（不写盘）。 | `draftInterface( filePath: string, opts: InterfaceDraftOpts = {}, ): Promise<InterfaceDraftResult>` |
+| <a id="dtsclasssurface"></a>`DtsClassSurface` | type | 类声明面（源码形状：成员名 + 构造器形参） | `DtsClassSurface { exportName?: string; exportNames?: string[]; isDefault: boolean; instanceMethods: Array<{ name: string; params: string[...` |
 | <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs; optional?: boolean }>; return?: Abs; }` |
 | <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; exportName?: string; classMember?: { className: s...` |
+| <a id="dtsmoduleextras"></a>`DtsModuleExtras` | type | 模块面合成的**分析面补充证据**（函数入口之外的事实：模块级绑定 Abs）。 | `DtsModuleExtras { values?: ReadonlyMap<string, Abs>; }` |
 | <a id="dtsmoduleprojection"></a>`DtsModuleProjection` | type | 模块面 dts 投影结果 | `DtsModuleProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
 | <a id="dtsmodulesurface"></a>`dtsModuleSurface` | fn | 模块导出面扫描（源文件 → 导出名表 + 类面 + 再导出语句）。 | `dtsModuleSurface(source: string): DtsModuleSurface` |
 | <a id="dtsmodulesurface"></a>`DtsModuleSurface` | type | 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） | `DtsModuleSurface { exportBindings: Map<string, string>; reexports: string[]; classes: Map<string, DtsClassSurface>; imports?: Map<string,...` |
-| <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; }, ): EmitDerivedResult` |
-| <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; changed: boolean; skipped?: "nam...` |
+| <a id="dtsvaluesurface"></a>`DtsValueSurface` | type | 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。 | `DtsValueSurface { kind: "const" \| "let" \| "var" \| "enum"; enumMembers?: Array<{ name: string; init?: string }>; }` |
+| <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; baseContent?: (sidecarPath: string) => string \| undefined; skipWrite?: string[]; directSections?: Set<string>; directCreatedSections?: Set<string>; }, ): EmitDerivedResult` |
+| <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; writtenNames?: string[]; changed...` |
 | <a id="emitinterface"></a>`emitInterface` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitInterface( filePath: string, opts: EmitInterfaceOpts, ): Promise<EmitInterfaceResult>` |
 | <a id="emitinterfaceopts"></a>`EmitInterfaceOpts` | type | — | `EmitInterfaceOpts = { fnNames?: string[]; mode: "add" \| "update"; all?: boolean; dryRun?: boolean; records?: CallRecord[]; source?: strin...` |
 | <a id="emitinterfaceresult"></a>`EmitInterfaceResult` | type | — | `EmitInterfaceResult = { written: string[]; skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }>; changed: boolean; diff?: stri...` |
 | <a id="emitinterfaceskipreason"></a>`EmitInterfaceSkipReason` | type | — | `EmitInterfaceSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator" \| "expo...` |
 | <a id="emitresult"></a>`EmitResult` | type | — | `EmitResult = { source: string; changed: boolean; written: Array<{ fn: string; cases: string[] }>; skipped: Array<{ fn: string; reason: Em...` |
-| <a id="emitskipreason"></a>`EmitSkipReason` | type | — | `EmitSkipReason = \| "hand-written" \| "already-generated" \| "entry-only" \| "no-serializable-cases" \| "no-declaration" \| "skipped"` |
+| <a id="emitskipreason"></a>`EmitSkipReason` | type | — | `EmitSkipReason = \| "hand-written" \| "already-generated" \| "entry-only" \| "no-serializable-cases" \| "no-declaration" \| "contract-violation...` |
 | <a id="entry_contract_note"></a>`ENTRY_CONTRACT_NOTE` | const | entry@ 回退 case × 有效契约的注解行：解释「check 全绿但 test 打 `(any) => any throws`」的表面矛盾——entry@ 用的是无约束入口 face， 契约作用于 check/export 面；要看到受约束的 case 就加 @nudo:case 或提供调用点。throws 显示保留（那是无约束 face 的诚实结果）。 | `const ENTRY_CONTRACT_NOTE` |
 | <a id="entryvariantfacegroup"></a>`EntryVariantFaceGroup` | type | One browser/node face pair, scoped to a subpath or field source. | `EntryVariantFaceGroup = { key: string; browser: string[]; node: string[]; }` |
 | <a id="entryvariantfaces"></a>`EntryVariantFaces` | type | — | `EntryVariantFaces = { kind: "exports-conditions" \| "browser-field"; groups: Map<string, EntryVariantFaceGroup>; }` |
@@ -769,9 +772,10 @@ type SymbolTable = {
 | <a id="findowningpackage"></a>`findOwningPackage` | fn | Nearest package.json walking up from the file's directory. | `findOwningPackage( fromFile: string, )` |
 | <a id="findprojectconfig"></a>`findProjectConfig` | fn | — | `findProjectConfig( startDir: string, )` |
 | <a id="formatderivedsection"></a>`formatDerivedSection` | fn | 组装生成段（组合式 + import + prelude）。 | `formatDerivedSection( row: DerivedExport, opts: { rootSidecarDir: string; targetSidecarDir: string; takenNames?: Iterable<string>; }, )` |
-| <a id="formatdraftmodule"></a>`formatDraftModule` | fn | 草稿模块文本（人读 + 可复制到 *.nudo.js / *.nudo.ts） | `formatDraftModule( filePath: string, entries: InterfaceDraftEntry[], sidecarPath?: string, ): string` |
+| <a id="formatdraftmodule"></a>`formatDraftModule` | fn | 草稿模块文本（人读 + 可复制到 *.nudo.js / *.nudo.ts） | `formatDraftModule( filePath: string, entries: InterfaceDraftEntry[], sidecarPath?: string, throwsHints?: readonly string[], ): string` |
 | <a id="formatdraftsummary"></a>`formatDraftSummary` | fn | — | `formatDraftSummary( sourceRel: string, draftRel: string, result: InterfaceDraftResult, write?: WriteDraftResult, ): string[]` |
 | <a id="formatemitsummary"></a>`formatEmitSummary` | fn | emit 摘要行（CLI runInterfaceEmit 与 LSP agent 面共用；路径由调用方按 展示口径传入——CLI 传 cwd 相对、agent 传绝对路径）。 | `formatEmitSummary( sourcePath: string, sidecarRel: string, result: EmitInterfaceResult, ): string[]` |
+| <a id="formatexpected"></a>`formatExpected` | fn | 期望值的可读文本（带谓词）：`number (> 0)` / `{ n: number (> 0) }`。 | `formatExpected(expected: Abs): string` |
 | <a id="formatinterfacesurfaceline"></a>`formatInterfaceSurfaceLine` | fn | 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） | `formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string` |
 | <a id="formatpatherrortext"></a>`formatPathErrorText` | fn | 路径错误的**非 JSON 面**文案（CLI 的 usage error 面同口径）： 一行原因 + 一行 `fix:` 提示。 | `formatPathErrorText(errors: PathError[]): string` |
 | <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; cases: CaseResult[]; combinedAbs?:...` |
@@ -791,8 +795,10 @@ type SymbolTable = {
 | <a id="getpathenvloaderrors"></a>`getPathEnvLoadErrors` | fn | path env 加载失败诊断（check/test 打印 nudo:env-unresolved warning 用）。 | `getPathEnvLoadErrors(baseDir?: string): Array<{ path: string; error: string; baseDir: string }>` |
 | <a id="getsessioncachelimits"></a>`getSessionCacheLimits` | fn | — | `getSessionCacheLimits( env: NodeJS.ProcessEnv = process.env, ): SessionCacheLimits` |
 | <a id="ifacecachekey"></a>`ifaceCacheKey` | fn | effectiveInterface 表键（L1 Phase B，design-persistent-cache）。 | `ifaceCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarSource?: string \| undefined; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; }, ): string` |
+| <a id="inferencefailed"></a>`inferenceFailed` | fn | Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定，不是「不匹配」）。 | `inferenceFailed(actual: Abs): boolean` |
 | <a id="injectbindings"></a>`injectBindings` | fn | — | `injectBindings( source: string, bindings: TypeBinding[], )` |
-| <a id="insertgeneratedcasedirectives"></a>`insertGeneratedCaseDirectives` | fn | 把 analysis 中的合成 case（source === "callsite"）固化为源码指令： 1. | `insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult` |
+| <a id="insertcaseoptions"></a>`InsertCaseOptions` | type | 固化写回的宿主接线（BUG-055 / BUG-119）——全部可选： 缺省时行为与改前**逐字一致**（只认源码内指令契约、add 模式的整函数跳过）。 | `InsertCaseOptions = { filePath?: string; loadModule?: (spec: string, fromFile: string) => string \| undefined; autoBind?: boolean; project...` |
+| <a id="insertgeneratedcasedirectives"></a>`insertGeneratedCaseDirectives` | fn | 把 analysis 中的合成 case（source === "callsite"）固化为源码指令： 1. | `insertGeneratedCaseDirectives( source: string, analysis: AnalysisResult, opts: InsertCaseOptions = {}, ): EmitResult` |
 | <a id="interfaceconfig"></a>`interfaceConfig` | fn | 归一化 `nudo.contract` 配置段。 | `interfaceConfig(config: NudoConfig \| null \| undefined): InterfaceConfig` |
 | <a id="interfaceconfig"></a>`InterfaceConfig` | type | — | `InterfaceConfig = { autoBind: boolean; emit: string[]; }` |
 | <a id="interfacedraftentry"></a>`InterfaceDraftEntry` | type | — | `InterfaceDraftEntry = { fn: string; identity?: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; projec...` |
@@ -837,7 +843,7 @@ type SymbolTable = {
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
 | <a id="projectconfigmemostats"></a>`projectConfigMemoStats` | fn | 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 | `projectConfigMemoStats()` |
 | <a id="projectfunctiondts"></a>`projectFunctionDts` | fn | 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。 | `projectFunctionDts( fn: FunctionAnalysis, contract?: DtsContractFace, surface?: DtsModuleSurface, ): DtsFunctionProjection` |
-| <a id="projectmoduledts"></a>`projectModuleDts` | fn | 模块面 dts 投影：逐函数投影 + 模块面 → 一份 .d.ts。 | `projectModuleDts( surface: DtsModuleSurface \| undefined, entries: ReadonlyArray<{ fn: FunctionAnalysis; projection: DtsFunctionProjection; contract?: DtsContractFace; }>, ): DtsModuleProjection` |
+| <a id="projectmoduledts"></a>`projectModuleDts` | fn | — | `projectModuleDts( surface: DtsModuleSurface \| undefined, entries: ReadonlyArray<{ fn: FunctionAnalysis; projection: DtsFunctionProjection; contract?: DtsContractFace; }>, extras?: DtsModuleExtras, ): DtsModuleProjection` |
 | <a id="quickfixplan"></a>`QuickfixPlan` | type | — | `QuickfixPlan = { titleKind: QuickfixTitleKind; title: string; edits: TextEdit[]; sidecar?: { path: string; newText: string }; openPath?: ...` |
 | <a id="quickfixtitlekind"></a>`QuickfixTitleKind` | type | — | `QuickfixTitleKind = "fix" \| "silence" \| "review" \| "adjust" \| "scaffold"` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |

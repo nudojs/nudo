@@ -29,6 +29,6 @@ describe("BUG-073 native user-code exception is a program throw", () => {
     expect(codes).not.toContain("nudo:internal");
     const issue = r.issues.find((i) => i.code === "nudo:module-throw")!;
     expect(issue.message).toContain("ReferenceError");
-    expect(issue.expected.length).toBeGreaterThan(0);
+    expect(issue.expected?.length ?? 0).toBeGreaterThan(0);
   });
 });

@@ -32,10 +32,42 @@ const MEMBERS: Array<[label: string, expr: string]> = [
   ["Temporal.ZonedDateTime", "Temporal.ZonedDateTime"],
 ];
 
+/**
+ * 宿主实测的成员 `typeof`；宿主**没有**该成员所属的根全局时为 `null`。
+ *
+ * 宿主面随 Node 版本漂移：`Temporal` 全局是 Node 26 才进 ESM 全局面的
+ * （Node 24 没有）⇒ `typeof Temporal.Instant` 在旧宿主上直接 `ReferenceError`。
+ * env 的 node 面按**最新宿主**声明 ⇒ `Temporal` 是登记过的「超前声明」
+ * （见 env-bug-61 的 `DECLARED_AHEAD_OF_HOST` 漂移闸）⇒ 宿主缺失按 `null` 记，
+ * 不许让旧宿主把整个 oracle 炸掉。
+ */
+function hostMemberTypes(): Array<string | null> {
+  const probes = MEMBERS.map(
+    ([, e]) =>
+      `(() => { const root = globalThis.${e.slice(0, e.indexOf("."))};` +
+      ` return root === undefined ? null : typeof ${e}; })()`,
+  );
+  const out = host(`console.log(JSON.stringify([${probes.join(", ")}]));`);
+  return JSON.parse(out) as Array<string | null>;
+}
+
 describe("Bug 155 — node env declares host functions as functions", () => {
-  it("host oracle: every one of them is typeof function", () => {
-    const out = host(`console.log(JSON.stringify([${MEMBERS.map(([, e]) => `typeof ${e}`).join(", ")}]));`);
-    expect(JSON.parse(out)).toEqual(MEMBERS.map(() => "function"));
+  it("host oracle: every host-provided member is typeof function", () => {
+    const types = hostMemberTypes();
+    expect(types).toHaveLength(MEMBERS.length);
+    MEMBERS.forEach(([label], i) => {
+      const t = types[i]!;
+      if (t === null) {
+        // 宿主没有该根全局 ⇒ 成员不存在（不是「折成了 object」）⇒ 只能超前声明
+        expect(label.startsWith("Temporal."), `宿主缺 ${label} 的根全局`).toBe(true);
+        return;
+      }
+      expect(t, `${label} typeof`).toBe("function");
+    });
+    // 非空的成员必须是**真函数**（不是数据值）：宿主有 ⇒ typeof 就是 "function"
+    const provided = types.filter((t) => t !== null);
+    expect(provided.length).toBeGreaterThan(0);
+    expect(provided.every((t) => t === "function")).toBe(true);
   });
 
   it("typeof folds to \"function\" in the node env (was自信的 \"object\")", () => {

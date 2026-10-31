@@ -9,7 +9,8 @@
  * 本钉：promise 节点必须判「是不是 Promise」（值域不展开，但类型判据在）。
  */
 import { describe, it, expect } from "vitest";
-import { validateSchemaNode, type SchemaNode } from "../emit/standard-schema.ts";
+import { validateSchemaNode } from "../emit/standard-schema.ts";
+import type { SchemaNode } from "../emit/schema-generator.ts";
 
 const promiseNode: SchemaNode = { k: "promise", inner: { k: "unknown" } };
 
@@ -17,7 +18,8 @@ describe("BUG-025 — standard 方言的 promise 节点不再放行一切", () =
   it("非 Promise 值被拒绝（42 / 'str' / {}）", () => {
     for (const bad of [42, "str", {}, null, undefined]) {
       const r = validateSchemaNode(promiseNode, bad);
-      expect("issues" in r && r.issues.length > 0).toBe(true);
+      expect("issues" in r).toBe(true);
+      expect(r.issues?.length ?? 0).toBeGreaterThan(0);
     }
   });
 

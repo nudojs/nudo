@@ -49,10 +49,10 @@ export function need2(a, b) { return a; }
 `;
 
 /** `nudo:arg-count` 的 issue（可按 fn 过滤） */
-function argCount(
-  r: { issues: { code: string; fn?: string }[] },
+function argCount<T extends { code: string; fn?: string }>(
+  r: { issues: T[] },
   fn?: string,
-): { code: string; fn?: string }[] {
+): T[] {
   return r.issues.filter(
     (i) => i.code === "nudo:arg-count" && (fn === undefined || i.fn === fn),
   );

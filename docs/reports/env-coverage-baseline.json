@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T14:55:16.130Z",
+  "generatedAt": "2026-10-31T10:12:00.807Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -10,16 +10,18 @@
   },
   "envModuleKeys": {
     "es": 55,
-    "web": 93,
+    "web": 106,
     "nodeGlobals": 130,
     "nodeModules": [
       "assert",
+      "buffer",
       "child_process",
       "crypto",
       "events",
       "fs",
       "fs/promises",
       "node:assert",
+      "node:buffer",
       "node:child_process",
       "node:crypto",
       "node:events",
@@ -968,8 +970,8 @@
       "mock-required": 0
     },
     "leaf": {
-      "clean": 0,
-      "mentionsUnknown": 3
+      "clean": 3,
+      "mentionsUnknown": 0
     },
     "total": 3,
     "results": [
@@ -979,9 +981,9 @@
           "fetch"
         ],
         "status": "resolved",
-        "format": "(string | { json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, bodyUsed: boolean, method: string, body: unknown | null, mode: string, credentials: string, cache: string, redirect: string, referrer: string, referrerPolicy: string, integrity: string, signal: unknown, keepalive: boolean, duplex: string, destination: string }) => promise<{ json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, bodyUsed: boolean, ok: boolean, status: number, statusText: string, redirected: boolean, type: string }>",
-        "leaf": "mentions-unknown",
-        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+        "format": "(string | Request) => promise<Response>",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
       {
         "id": "URL",
@@ -989,9 +991,9 @@
           "URL"
         ],
         "status": "resolved",
-        "format": "(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, searchParams: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, sort: () => undefined, toString: () => string, entries: () => unknown, keys: () => unknown, values: () => unknown, forEach: (unknown) => undefined, size: number }, hash: string, toString: () => string, toJSON: () => string }",
-        "leaf": "mentions-unknown",
-        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+        "format": "(string, base?: string) => URL",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
       {
         "id": "AbortController",
@@ -999,9 +1001,9 @@
           "AbortController"
         ],
         "status": "resolved",
-        "format": "() => { signal: unknown, abort: () => undefined }",
-        "leaf": "mentions-unknown",
-        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+        "format": "() => AbortController",
+        "leaf": "clean",
+        "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       }
     ]
   },

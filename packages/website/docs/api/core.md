@@ -336,9 +336,9 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
 | <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
-| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean; symbolKey?: boolean; }, receiver?: Abs, ): Abs` |
+| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: Parameters<typeof $getInner>[2], receiver?: Parameters<typeof $getInner>[3], ): ReturnType<typeof $getInner>` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
-| <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
+| <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(o: Abs, i: Abs, v: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
 | <a id="$join"></a>`$join` | fn | operator runtime | `$join(a: Abs, b: Abs): Abs` |
@@ -355,7 +355,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
-| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: { internal?: boolean; symbolKey?: boolean }, ): Abs` |
+| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: Parameters<typeof $setInner>[3], ): ReturnType<typeof $setInner>` |
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
@@ -460,7 +460,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evaldatector"></a>`evalDateCtor` | fn | — | `evalDateCtor(args: Abs[]): Abs` |
 | <a id="evaldatemethod"></a>`evalDateMethod` | fn | — | `evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
 | <a id="evaldatestatic"></a>`evalDateStatic` | fn | — | `evalDateStatic(name: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalfallback"></a>`EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
+| <a id="evalfallback"></a>`EvalFallback` | type | evaluator 回落事件（观测单一埋点）。 | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; origin?: "module" \| "host" \| "engine"; gateFata...` |
 | <a id="evalglobalfn"></a>`evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evaljsonmethod"></a>`evalJsonMethod` | fn | JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） | `evalJsonMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalmathmethod"></a>`evalMathMethod` | fn | — | `evalMathMethod(name: string, args: Abs[]): Abs \| undefined` |
@@ -492,7 +492,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
 | <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; optional?: boolean; } \| { kind: "default"; name: string; inde...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
-| <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes(params: AstParam[] \| undefined \| null): FormalParam[]` |
+| <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes( params: AstParam[] \| undefined \| null, source?: string, ): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
 | <a id="formatabsmultiline"></a>`formatAbsMultiline` | fn | 多行展示，CLI 用 | `formatAbsMultiline(a: Abs, label?: string): string` |
 | <a id="formatdiagnostics"></a>`formatDiagnostics` | fn | — | `formatDiagnostics(diags: Diagnostic[]): string` |
@@ -519,7 +519,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="gtnum"></a>`gtNum` | fn | 便捷：数字下界 | `gtNum(term: Term, n: number): Pred` |
 | <a id="hofsite"></a>`HofSite` | type | — | — |
 | <a id="hostbuiltinctorname"></a>`hostBuiltinCtorName` | fn | 宿主全局构造器身份（Number === (42).constructor 折叠用） | `hostBuiltinCtorName(v: unknown): string \| undefined` |
-| <a id="hostfnctorfacet"></a>`hostFnCtorFacet` | fn | 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、 箭头、内建方法（无 .prototype）不可 new；bind 产物取决于目标（未知）。 | `hostFnCtorFacet(v: Function): boolean \| undefined` |
+| <a id="hostfnctorfacet"></a>`hostFnCtorFacet` | fn | 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、 箭头、内建方法不可 new；bind 产物取决于目标（未知）。 | `hostFnCtorFacet(v: Function): boolean \| undefined` |
 | <a id="implicationoracle"></a>`ImplicationOracle` | type | 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。 | `ImplicationOracle = (phi: Phi, pred: Pred) => boolean \| undefined` |
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
@@ -582,7 +582,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="maphasentry"></a>`mapHasEntry` | fn | Map#has：字面量 miss 折 exact false 时，get 必须是 undefined（不可再并 value） | `mapHasEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
 | <a id="mapsetentry"></a>`mapSetEntry` | fn | Map#set：fork 内写 overlay；否则原地。返回同一 Abs（JS 可变语义） | `mapSetEntry(mapAbs: Abs, key: Abs \| undefined, value: Abs): Abs` |
 | <a id="mapsizeabs"></a>`mapSizeAbs` | fn | — | `mapSizeAbs(mapAbs: Abs): Abs` |
-| <a id="mapvaluesabs"></a>`mapValuesAbs` | fn | — | `mapValuesAbs(mapAbs: Abs): Abs[]` |
+| <a id="mapvaluesabs"></a>`mapValuesAbs` | fn | Map#values：宿主按插入序产出（BUG-260）；shadow 写入键未知 → 末尾 | `mapValuesAbs(mapAbs: Abs): Abs[]` |
 | <a id="markextstate"></a>`markExtState` | fn | — | `markExtState(o: Abs, s: ExtState): Abs` |
 | <a id="marknullprotoobj"></a>`markNullProtoObj` | fn | — | `markNullProtoObj(o: Abs): Abs` |
 | <a id="markpurefn"></a>`markPureFn` | fn | 标记纯函数（@nudo:pure）：调用结果可按实参记忆化 | `markPureFn(target: object, name: string): void` |
@@ -604,7 +604,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="notabs"></a>`notAbs` | fn | 逻辑非 | `notAbs(a: Abs): Abs` |
 | <a id="notecollectionwrite"></a>`noteCollectionWrite` | fn | — | `noteCollectionWrite(id: object): void` |
 | <a id="noteevalcallrecord"></a>`noteEvalCallRecord` | fn | 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 | `noteEvalCallRecord(r: EvalCallRecord): void` |
-| <a id="noteevalfallback"></a>`noteEvalFallback` | fn | 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） | `noteEvalFallback(e: unknown): void` |
+| <a id="noteevalfallback"></a>`noteEvalFallback` | fn | 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用）。 | `noteEvalFallback( e: unknown, origin: EvalFallbackOrigin = "module", opts?: { loadFailure?: boolean }, ): void` |
 | <a id="notepromiseexecutorfork"></a>`notePromiseExecutorFork` | fn | $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） | `notePromiseExecutorFork(): void` |
 | <a id="nudofield"></a>`NudoField` | type | — | `NudoField = { constraint: NudoConstraint; optional?: boolean; }` |
 | <a id="nudofnconstraint"></a>`NudoFnConstraint` | type | fn(params, returns?, &#123; throws? | `NudoFnConstraint = { params: Record<string, NudoConstraint>; returns?: NudoConstraint; throws?: NudoConstraint; }` |
