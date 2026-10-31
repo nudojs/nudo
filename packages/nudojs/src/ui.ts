@@ -23,7 +23,8 @@ const RESET = enabled ? "\x1b[0m" : "";
 /** 段落头（signatures/issues/docs/budget/assertions/diagnostics） */
 const HEADER_RE = /^(signatures|issues|docs|budget|assertions|diagnostics)$/;
 
-function paintLine(line: string): string {
+/** 单行着色（diagnostics 循环等逐行打印点）；`paint` 的行级实现。 */
+export function paintOne(line: string): string {
   if (!enabled) return line;
   if (
     /^\s*\[(error|ERROR)/.test(line) ||
@@ -48,10 +49,5 @@ function paintLine(line: string): string {
 /** 多行文本行级着色（无色模式恒等返回）。 */
 export function paint(text: string): string {
   if (!enabled) return text;
-  return text.split("\n").map(paintLine).join("\n");
-}
-
-/** 单行着色（diagnostics 循环等逐行打印点）。 */
-export function paintOne(line: string): string {
-  return paintLine(line);
+  return text.split("\n").map(paintOne).join("\n");
 }

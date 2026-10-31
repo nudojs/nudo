@@ -12,10 +12,10 @@
  * 本模块是**包内内部模块**（`packages/nudojs/package.json` 的 `exports` 只有 `"."`）
  * ⇒ 不在公开面上，零新增公开导出。
  */
-import { readFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, join, isAbsolute, sep } from "node:path";
 import { unifiedDiff } from "@nudojs/service/emit";
-import type { CallRecord } from "@nudojs/service";
+import { normalizeRealPath, type CallRecord } from "@nudojs/service";
 import type { PathError } from "./shared.ts";
 
 /**
@@ -195,22 +195,11 @@ export async function runContractDraft(
       }
     }
     if (projectRoot) {
-      const projectRootReal = (() => {
-        try {
-          return realpathSync(projectRoot);
-        } catch {
-          /* optional: realpath failed — use unresolved path */
-          return projectRoot;
-        }
-      })();
-      const fileReal = (() => {
-        try {
-          return realpathSync(filePath);
-        } catch {
-          /* optional: realpath failed — use unresolved path */
-          return filePath;
-        }
-      })();
+      // realpath 归一（service `normalizeRealPath` 单源：resolve → realpath，
+      // 目标不在时目录 realpath 拼回 basename）——跨文件身份比较（契约映射
+      // 判据）与 check/health 的 externalAbsCallRecords 同一口径。
+      const projectRootReal = normalizeRealPath(projectRoot);
+      const fileReal = normalizeRealPath(filePath);
       const relToRoot = relative(projectRootReal, fileReal);
       // 族 20 · Bug 665（CLI 半）：逃逸判据按**路径分量**判定 ——
       // 「整段等于 `..`」或「以 `..` + 分隔符开头」或「跨盘（绝对路径）」。

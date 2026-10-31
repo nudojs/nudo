@@ -4,9 +4,8 @@
  * dts 只发射**导出面**（export / export default / CJS exports —— 与 check entry
  * 表同源 `localNamedExports`；导出 class 的实例方法按 Class 前缀放行）。
  */
-import { abs as makeAbs, localNamedExports, type Abs, type EffectiveInterface } from "@nudojs/core";
+import { abs as makeAbs, type Abs, type EffectiveInterface } from "@nudojs/core";
 import {
-  dtsModuleSurface,
   projectFunctionDts,
   projectModuleDts,
   type DtsContractFace,
@@ -34,16 +33,6 @@ export function exportFacePredicate(entryNames: ReadonlySet<string>): (name: str
     const m = /^([A-Za-z_$][\w$]*)\.[A-Za-z_$][\w$]*$/.exec(name);
     return m !== null && entryNames.has(m[1]!);
   };
-}
-
-/** dts 面的模块面（导出名 / 类 / 再导出）。 */
-export function dtsModuleSurfaceOf(source: string): DtsModuleSurface {
-  return dtsModuleSurface(source);
-}
-
-/** dts 面的导出名集合（与 check entry 表同源）。 */
-export function dtsEntryNames(source: string): ReadonlySet<string> {
-  return localNamedExports(source);
 }
 
 /**

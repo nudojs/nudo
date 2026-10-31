@@ -289,8 +289,18 @@ function resolveTarget(
   let existing: string;
   try {
     existing = readFileSync(canonical, "utf-8");
-  } catch {
-    return { path: canonical };
+  } catch (err) {
+    // canonical 存在（existsSync 已过）但读失败，按 errno 分流：
+    // - ENOENT（existsSync 与 read 间的竞态删除）⇒ 视为「目标已消失」照常写入；
+    // - EISDIR（目标路径是目录）⇒ 不可能被 writeFileSync 覆盖（无绕过
+    //   「手写产物拒绝覆盖」守卫的风险）⇒ 照常走写入 ⇒ 由写失败通道
+    //   点名该文件并回放已落盘清单（Bug 616 语义）；
+    // - EACCES/EIO 等真读错误 ⇒ **拒绝**（refuse）——读不出来就无法验证
+    //   「是否本工具产物」，直接写会绕过手写产物守卫（旧口径无条件
+    //   { path } 即此洞）。
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "EISDIR") return { path: canonical };
+    return { refuse: canonical };
   }
   if (existing === content) return { path: canonical }; // 幂等重导：内容一致
   if (!isGeneratedByNudo(existing)) return { refuse: canonical }; // 手写产物：拒绝覆盖

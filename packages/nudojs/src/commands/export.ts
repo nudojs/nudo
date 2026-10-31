@@ -15,10 +15,12 @@ import {
   effectiveInterface,
   abs as makeAbs,
   anyAbs,
+  localNamedExports,
   type Abs,
   type FormalParam,
 } from "@nudojs/core";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
+import { dtsModuleSurface } from "@nudojs/service/emit";
 import {
   SCHEMA_DIALECTS,
   normalizeDialect,
@@ -40,10 +42,8 @@ import { renderZodModule, zodFaceEntries } from "./export/zod-face.ts";
 import { standardFaceChunk } from "./export/standard-face.ts";
 import { guardFaceChunk } from "./export/guard-face.ts";
 import {
-  dtsEntryNames,
   dtsFaceEntry,
   dtsModuleChunk,
-  dtsModuleSurfaceOf,
   dtsUnevidencedParams,
   exportFacePredicate,
   type DtsFaceEntry,
@@ -208,7 +208,7 @@ function moduleIdOf(filePath: string, source: string): string {
     return name === undefined ? rel : `${name}/${rel}`;
   }
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
-  const exports = [...dtsEntryNames(source)].sort().join(",");
+  const exports = [...localNamedExports(source)].sort().join(",");
   return `${stem}|${exports}`;
 }
 
@@ -240,7 +240,7 @@ async function runExport(
   // 导出面裁剪谓词（dts 只发射导出面：export / export default / CJS exports ——
   // 与 check entry 表同源 localNamedExports；导出 class 的实例方法按 Class
   // 前缀放行）。四个产物面**共用**这一道闸门（Bug 621）。
-  const onExportFace = exportFacePredicate(dtsEntryNames(source));
+  const onExportFace = exportFacePredicate(localNamedExports(source));
 
   // 诊断面（Bug 610 / 607 / 625）：契约面装载失败 / 契约形参名与声明形参表
   // 不匹配 / 契约合取不可满足 ⇒ 产物面会发布一份与契约不符的投影 ⇒ 阻断级：
@@ -261,7 +261,7 @@ async function runExport(
   // 模块面（导出名 / 类 / 再导出）：**早于**空函数早退组装 —— 纯 barrel
   // （`export { x } from "./y.js"`，本文件无函数）也要出模块面产物；早退在
   // 模块面组装之前 ⇒ 再导出被整个丢掉（BUG-033）。
-  const dtsSurface = dtsModuleSurfaceOf(source);
+  const dtsSurface = dtsModuleSurface(source);
 
   // 空产物的唯一判据：**既无本地函数，也无模块面可发射内容**（BUG-033 的再导出 /
   // BUG-190 的模块级值导出）。

@@ -4,7 +4,7 @@
  * 在 check-report.ts；commander 装配在 check-command.ts）；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve, dirname, isAbsolute } from "node:path";
 import type { File } from "@babel/types";
 import { paint } from "../ui.ts";
@@ -30,6 +30,7 @@ import {
 import {
   analysisConfig,
   analyzeFileAsync,
+  buildEvalInjection,
   checkCacheKey,
   checkConfig,
   collectEvalReplacements,
@@ -45,6 +46,7 @@ import {
   mockFromErrorIssues,
   resolveModule,
   type CallRecord,
+  type MockFromError,
 } from "@nudojs/service";
 import {
   extractDirectivesQuiet,
@@ -70,9 +72,8 @@ import {
 import {
   collectNudoFiles,
   displayPathOf,
+  externalAbsCallRecords,
   reportPathErrors,
-  buildEvalInjection,
-  type MockFromError,
   type PathError,
 } from "./shared.ts";
 import {
@@ -108,64 +109,6 @@ import {
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
 // ---------------------------------------------------------------------------
-
-/** 模块路径归一（realpath 对齐符号链接；读不到时回落原路径） */
-function normalizeModulePath(p: string): string {
-  try {
-    return realpathSync(resolve(p));
-  } catch {
-    return resolve(p);
-  }
-}
-
-/**
- * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord（Bug 366）。
- *
- * core 的 drift 判定（`nudo:interface-drift`）此前只吃**被检查文件自身**求值
- * 产生的调用记录 ⇒ 调用点在别的文件里时，`--from` 写出的生成段永远判不出
- * 陈旧（落盘契约静默陈旧，0 warning 假绿）。本函数把 `--from` 的跨文件证据
- * 接进同一条通道。
- *
- * 口径：
- * - **只收可归因到本文件的记录**（targetModule = 导出 tag / fnModule = 定义
- *   位点 命中本文件）⇒ 别的模块里的同名函数不会污染本文件的 drift 判定
- *   （zero-FP 红线；与 service 侧 case 合成的 matchingExternal 同口径）。
- * - `fnName` 取**被调方在目标模块里的导出名**（targetExport；缺失或命名空间
- *   通配时回落调用处可见名）⇒ import 别名不影响路由。
- * - **不携带 callLoc**：跨文件调用点在被检查文件内没有位置（不把别的文件的
- *   行号挂到本文件上）。
- */
-function externalAbsCallRecords(
-  filePath: string,
-  records: readonly CallRecord[] | undefined,
-): AbsCallRecord[] {
-  if (!records || records.length === 0) return [];
-  const current = normalizeModulePath(filePath);
-  const out: AbsCallRecord[] = [];
-  for (const r of records) {
-    const attributed =
-      (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === current) ||
-      (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === current);
-    if (!attributed) continue;
-    const targetExport = r.targetExport;
-    const fnName =
-      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
-        ? targetExport
-        : r.fnName;
-    if (!fnName) continue;
-    out.push({ fnName, args: r.argAbs, result: r.resultAbs });
-  }
-  return out;
-}
-
-/**
- * 文件级 `@nudo:env` 命名 env 抽取（D5=F1：文法在 core directive-scan 单源）。
- * `//` 与 `///` 等价；字符串/块注释里的同形文本不是指令；
- * env 名 token 只收 `\w+` 或 path-like。
- */
-export function fileEnvNamesFromText(source: string): string[] {
-  return extractFileEnvNames(source);
-}
 
 // ---------------------------------------------------------------------------
 // #1 零配置 onboarding / #9 缓存 opt-in 提示（人类面批次探针）
@@ -526,7 +469,7 @@ async function assembleEnvs(
   const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
   // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
-  const fileEnvNames = fileEnvNamesFromText(source);
+  const fileEnvNames = extractFileEnvNames(source);
   const fileEnvBaseDir = dirname(filePath);
   const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
   const projectEnvSpec = projectEnvNames.map((name) =>
@@ -697,10 +640,10 @@ async function loadCheckCache(
  * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
  * （checkSource/generalize memo 键按对象身份）。
  *
- * 装配本体是 `shared.ts` 的 buildEvalInjection（#9 去重，与 migrate verify
- * 同一实现）；此处只注入 check 面的解析策略——`parseForCheck`（按扩展名
- * 选插件，Bug 633：`.js` 里的 TS-only 语法在此**抛错** ⇒ 走语法错通道
- * （人类面 tsc 风格块 / --json 面 pathErrors），不静默判绿）。
+ * 装配本体是 `@nudojs/service` 的 buildEvalInjection（单一实现，与 migrate
+ * verify / health 同一实现）；此处只注入 check 面的解析策略——`parseForCheck`
+ * （按扩展名选插件，Bug 633：`.js` 里的 TS-only 语法在此**抛错** ⇒ 走语法错
+ * 通道（人类面 tsc 风格块 / --json 面 pathErrors），不静默判绿）。
  */
 function buildCheckInjection(
   filePath: string,

@@ -3,60 +3,60 @@
  * `//` 与 `///` 等价；字符串里假阳性不得进符号面。
  */
 import { describe, it, expect } from "vitest";
-import { fileEnvNamesFromText } from "../commands/check.ts";
+import { extractFileEnvNames } from "@nudojs/core";
 
-describe("fileEnvNamesFromText prefix contract", () => {
+describe("extractFileEnvNames prefix contract", () => {
   it("// @nudo:env and /// @nudo:env are both recognized (and agree)", () => {
     for (const pre of ["//", "///"]) {
       const src = `${pre} @nudo:env node\nexport function f(){}`;
-      expect(fileEnvNamesFromText(src)).toEqual(["node"]);
+      expect(extractFileEnvNames(src)).toEqual(["node"]);
     }
   });
 
   it("@nudo:env inside a string is ignored", () => {
     const src = `const s = "@nudo:env node";\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 
   it("@nudo:env inside a template string is ignored", () => {
     const src = "const s = `@nudo:env node`;\nexport function f(){}";
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 
   it("@nudo:env inside a block comment is ignored (line comments only)", () => {
     const src = `/* @nudo:env node */\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 
   it("block comment wrapping a line-comment marker does not count", () => {
     const src = `/* // @nudo:env node */\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 
   it("trailing junk after env name is rejected (no node\"; capture)", () => {
     const src = `// @nudo:env node";\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 
   it("string false-positive with semicolon does not leak", () => {
     const src = `const s = "@nudo:env node";\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).not.toContain('node";');
+    expect(extractFileEnvNames(src)).not.toContain('node";');
   });
 
   it("comma-separated named + path envs survive", () => {
     const src = `// @nudo:env es, ./other.env.ts\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual(["es", "./other.env.ts"]);
+    expect(extractFileEnvNames(src)).toEqual(["es", "./other.env.ts"]);
   });
 
   it("http:// URL does not open a fake comment", () => {
     const src = `const u = "http://@nudo:env node";\nexport function f(){}`;
-    expect(fileEnvNamesFromText(src)).toEqual([]);
+    expect(extractFileEnvNames(src)).toEqual([]);
   });
 });
 
 /**
  * D5=F1：parser / core / nudojs 对同一源码指令集合一致（单源抽取）。
- * nudojs fileEnvNamesFromText = core extractFileEnvNames 的消费口；
+ * nudojs extractFileEnvNames = core extractFileEnvNames 的消费口；
  * parser extractFileDirectives 走同一 parseEnvPayload 文法。
  */
 describe("F1 three-way agreement: parser / core / nudojs", () => {
@@ -68,7 +68,7 @@ describe("F1 three-way agreement: parser / core / nudojs", () => {
       `const s = "// @nudo:env web";`,
       `export function f() {}`,
     ].join("\n");
-    const fromNudojs = fileEnvNamesFromText(src);
+    const fromNudojs = extractFileEnvNames(src);
     const fromCore = extractFileEnvNames(src);
     const fromParser = extractFileDirectives(parse(src))
       .filter((d) => d.kind === "env")

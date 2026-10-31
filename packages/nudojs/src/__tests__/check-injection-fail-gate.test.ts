@@ -11,6 +11,8 @@
  * 注入装配的 throw 无法从输入面稳定构造（各装载路径 fail-closed，
  * 走 issue / fromErrors 通道而非异常），故进程内 vi.mock 注入异常并
  * 直接驱动 commander action（不经 dist，与 subprocess 型 check 测试互补）。
+ * 故障注入点 = service 的 `buildEvalInjection`（装配单一实现；check 只注入
+ * 解析策略）——装配体迁入 service 后，seam 从 evalAbsModuleGraph 随迁。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
@@ -22,13 +24,21 @@ vi.mock("@nudojs/service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@nudojs/service")>();
   return {
     ...actual,
-    evalAbsModuleGraph: vi.fn((source: string, file: string) => {
-      // 带 INJECTION_BOOM 标记的文件模拟「模块图装配 throw」
-      if (source.includes("INJECTION_BOOM")) {
-        throw new Error("injected graph boom");
-      }
-      return actual.evalAbsModuleGraph(source, file);
-    }),
+    buildEvalInjection: vi.fn(
+      (
+        filePath: string,
+        source: string,
+        allEnvNames: string[],
+        dirDiags: Parameters<typeof actual.buildEvalInjection>[3],
+        parseAst: Parameters<typeof actual.buildEvalInjection>[4],
+      ) => {
+        // 带 INJECTION_BOOM 标记的文件模拟「注入装配 throw」
+        if (source.includes("INJECTION_BOOM")) {
+          throw new Error("injected assembly boom");
+        }
+        return actual.buildEvalInjection(filePath, source, allEnvNames, dirDiags, parseAst);
+      },
+    ),
   };
 });
 

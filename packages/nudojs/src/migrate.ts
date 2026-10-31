@@ -22,7 +22,7 @@ import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
 import { draftInterface, writeInterfaceDraft } from "@nudojs/service/emit";
-import { buildEvalInjection, type MockFromError } from "./commands/shared.ts";
+import { buildEvalInjection, type MockFromError } from "@nudojs/service";
 
 export type MigrateStatusRow = {
   root: string;
@@ -321,9 +321,13 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
   let entries: string[];
   try {
     entries = readdirSync(dir);
-  } catch {
-    /* optional: directory unreadable — skip */
-    return out;
+  } catch (err) {
+    // ENOENT = 目录消失（竞态删除）⇒ 合法 miss，静默带已有结果返回；
+    // EACCES/EIO 等读失败**上抛**（命令层 catch ⇒ stderr 告警 + exit 1，
+    // 与 parsePnpmWorkspacePackages 同口径）——旧口径无条件跳过 ⇒
+    // 不可读目录里的文件从扫描集合里整体蒸发（verify/strip 假绿）。
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return out;
+    throw err;
   }
   for (const name of entries) {
     // 族 21 Bug 1026：`migrate verify` 的扫描集合必须与 `nudo check .` **同口径** ——
@@ -345,9 +349,10 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
     let st;
     try {
       st = statSync(p);
-    } catch {
-      /* optional: entry unstatable — skip */
-      continue;
+    } catch (err) {
+      // ENOENT = 断链 symlink / 竞态删除 ⇒ 跳过；其余 errno 同 readdir 口径上抛
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw err;
     }
     if (st.isDirectory()) listFiles(p, out, depth + 1);
     else out.push(p);
@@ -523,9 +528,12 @@ function workspaceChildDirs(base: string): string[] {
   let names: string[];
   try {
     names = readdirSync(base);
-  } catch {
-    /* 目录不可读——跳过（不能因此中断整个枚举） */
-    return [];
+  } catch (err) {
+    // ENOENT = 目录消失（合法 miss）⇒ 空表；EACCES/EIO 等上抛（命令层
+    // catch ⇒ stderr 告警 + exit 1，与 parsePnpmWorkspacePackages 同口径）
+    // ——旧口径静默 [] ⇒ 不可读目录下的 workspace 包从枚举里整体蒸发。
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
   }
   const out: string[] = [];
   for (const name of names) {
@@ -533,8 +541,10 @@ function workspaceChildDirs(base: string): string[] {
     const p = join(base, name);
     try {
       if (statSync(p).isDirectory()) out.push(p);
-    } catch {
-      /* 断链 symlink / 不可 stat——跳过 */
+    } catch (err) {
+      // ENOENT = 断链 symlink ⇒ 跳过；其余 errno 同 readdir 口径上抛
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw err;
     }
   }
   return out;
@@ -573,8 +583,11 @@ function expandWorkspacePattern(root: string, pattern: string): string[] {
     const child = join(base, seg);
     try {
       if (!statSync(child).isDirectory()) return;
-    } catch {
-      return;
+    } catch (err) {
+      // glob 段不存在（未展开的 `*` 候选）⇒ 跳过；其余 errno 同 listFiles
+      // 口径上抛（命令层 catch ⇒ stderr 告警 + exit 1，不静默吞目录读失败）
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
     }
     visit(child, idx + 1, depth + 1);
   };
@@ -2482,7 +2495,7 @@ function tscBaselineForFile(run: TscRun, file: string): { ok: boolean; output: s
  * 同口径：模块图（evalAbsModuleGraph）+ env modules + `@nudo:mock-module` 覆盖
  * + `@nudo:mock` seeds + env 全局 + `@nudo:as` / `@nudo:replace` 替换。
  *
- * 装配本体是 `commands/shared.ts` 的 buildEvalInjection（#9 去重，与 check
+ * 装配本体是 `@nudojs/service` 的 buildEvalInjection（单一实现，与 check
  * 同一实现）；此处只注入 verify 面的解析策略——parser 的宽松 `parse`
  * （verify 的 TS-only 拦截在自己的严格解析步骤里，Bug 114，不在装配点）。
  *

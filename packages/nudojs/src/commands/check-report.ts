@@ -27,6 +27,7 @@ import {
   serializeCheckJsonForCache,
   stripConfigShapeIssues,
   stripEnvUnresolvedIssues,
+  stripIssuesByCode,
 } from "../check-json-map.ts";
 import { shouldEmitGha, shouldPrintDocsLinks } from "../check-ci-flags.ts";
 import { DIAG } from "@nudojs/core/internal";
@@ -163,40 +164,14 @@ export function formatSyntaxErrorBlock(filePath: string, source: string, info: S
 // ---------------------------------------------------------------------------
 // nudo:dual-entry 的缓存口径（live 瞬态 issue：写盘剥除 + 读回剥除）
 // ---------------------------------------------------------------------------
-
-/** summary 形状（剥除类工具的最小面：issues + 计数） */
-type StripSummaryLike = {
-  issues: Array<{ severity?: string; code?: string }>;
-  summary: { errors: number; warnings: number; infos: number; functions: number };
-};
-
-/**
- * 剔除 nudo:dual-entry（live 瞬态 info，不持久化进磁盘缓存）。
- *
- * 该 issue 在**缓存之后**注入（保证缓存命中轮也上屏）——若把它一并写进
- * 磁盘缓存，下一轮命中缓存就**再注入一次** ⇒ 同文案重复两条（冷 1 条 /
- * 热 2 条），机器面（--json 的 issues 数组长度 / summary.infos）逐轮漂移。
- *
- * 与 env-unresolved / 配置形状诊断同一口径：**写盘前剥除 + 读回后剥除**，
- * 由本轮 live 注入单一来源上屏（命中轮的缓存条目可能来自旧版本 ⇒ 读回
- * 侧同样要剥，否则旧条目 + live 注入仍是两条）。
- *
- * summary 计数按剩余 issues 的 severity 重算（与 checkSource 口径一致）。
- */
-function stripDualEntryIssues<T extends StripSummaryLike>(x: T): T {
-  if (!x.issues.some((i) => i.code === DIAG.dualEntry)) return x;
-  const issues = x.issues.filter((i) => i.code !== DIAG.dualEntry);
-  return {
-    ...x,
-    issues,
-    summary: {
-      ...x.summary,
-      errors: issues.filter((i) => i.severity === "error").length,
-      warnings: issues.filter((i) => i.severity === "warning").length,
-      infos: issues.filter((i) => i.severity === "info").length,
-    },
-  };
-}
+// 剥除本体 = check-json-map 的 stripIssuesByCode（与 env-unresolved /
+// 配置形状诊断同一通用剥除器）；调用点用 stripIssuesByCode(x, DIAG.dualEntry)。
+//
+// 该 issue 在**缓存之后**注入（保证缓存命中轮也上屏）——若把它一并写进
+// 磁盘缓存，下一轮命中缓存就**再注入一次** ⇒ 同文案重复两条（冷 1 条 /
+// 热 2 条），机器面（--json 的 issues 数组长度 / summary.infos）逐轮漂移。
+// 写盘前剥除 + 读回后剥除，由本轮 live 注入单一来源上屏（命中轮的缓存
+// 条目可能来自旧版本 ⇒ 读回侧同样要剥，否则旧条目 + live 注入仍是两条）。
 
 
 /**
@@ -325,14 +300,14 @@ export async function emitCheckReport(
 ): Promise<void> {
   // 缓存里可能带着上一轮注入的 nudo:dual-entry（写盘已剥除；旧缓存条目
   // 仍可能带一份）⇒ 注入前先剥除，避免与本轮 live 注入重复。
-  let report = stripDualEntryIssues(reportIn);
+  let report = stripIssuesByCode(reportIn, DIAG.dualEntry);
   let cachedJson = cache.cachedJson
-    ? stripDualEntryIssues(cache.cachedJson)
+    ? stripIssuesByCode(cache.cachedJson, DIAG.dualEntry)
     : cache.cachedJson;
 
   // nudo:dual-entry（T4）：browser/node 双入口变体之一被 check → 观察面只覆盖
   // 本入口（info，单入口零误报）。在缓存之后注入，保证缓存命中也上屏。
-  // **不落盘**：写盘口径剥除该码（stripDualEntryIssues）⇒ 命中轮与 miss 轮
+  // **不落盘**：写盘口径剥除该码（stripIssuesByCode）⇒ 命中轮与 miss 轮
   // 的 issues 数组逐条相同（不会冷 1 条 / 热 2 条）。
   {
     const dual = entryVariantIssueForFile(filePath);
@@ -527,7 +502,10 @@ export async function emitCheckReport(
       cache.disk.set(
         cache.cacheKey,
         serializeCheckJsonForCache(
-          stripDualEntryIssues(stripConfigShapeIssues(stripEnvUnresolvedIssues(report))),
+          stripIssuesByCode(
+            stripConfigShapeIssues(stripEnvUnresolvedIssues(report)),
+            DIAG.dualEntry,
+          ),
         ),
       );
     } catch {

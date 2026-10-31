@@ -2,17 +2,18 @@
  * nudo health — 项目体检：未覆盖函数、witness drift、契约 drift、分析错误。
  * 从 index.ts 原样迁出，行为不变。
  */
-import { readFileSync, realpathSync, statSync, type Stats } from "node:fs";
+import { readFileSync, statSync, type Stats } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
-import type { RunTranspiledOptions, Abs } from "@nudojs/core";
+import type { DirectiveDiag } from "@nudojs/parser";
 import { paintOne } from "../ui.ts";
 import { projectConfigShapeIssue } from "../config-shape.ts";
 import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
   emitJsonDoc,
+  externalAbsCallRecords,
   reemitUpdate,
   resolveTargetsCollect,
   startWatch,
@@ -196,123 +197,6 @@ function witnessDrift(
   return { added, removed, changed };
 }
 
-/**
- * 691：health 的**契约漂移判定**必须走 mock 通道——与 `nudo check` 的
- * buildCheckInjection **同口径**（模块图 + mocks + env 全局 + replace/as）。
- * 否则同一份陈旧生成段，`nudo check` 报 `nudo:interface-drift` 而 `nudo health`
- * 报 0 contract drift / OK / exit 0（假绿 + 跨动词自相矛盾）。
- */
-async function buildHealthInjection(
-  filePath: string,
-  source: string,
-): Promise<RunTranspiledOptions> {
-  const {
-    applyMockModuleDirectivesFromSource,
-    collectEnvGlobals,
-    collectEnvModules,
-    collectEnvNames,
-    collectEvalReplacements,
-    evalAbsModuleGraph,
-    findProjectConfig,
-    mockDirectivesToAbsSeeds,
-    mockSeedsToAbsMocks,
-  } = await import("@nudojs/service");
-  const { extractDirectives, extractFileDirectives, parse } = await import("@nudojs/parser");
-  const { preloadPathEnvs } = await import("@nudojs/service/evaluator");
-  // BUG-228：env 名**分层**解析（与 `nudo check` 的 assembleEnvs **同口径**）：
-  // · 项目级（package.json#nudo.env）相对说明符按**项目根**解析并绝对化；
-  // · 文件级（`/// @nudo:env ./myenv.js`）按**文件所在目录**解析。
-  // 旧口径把两者一并按项目根解析 ⇒ 文件级 env 静默丢失（`<root>/myenv.js`
-  // 不存在）⇒ env 全局为空 ⇒ 契约漂移的「今日重算域」无证据 ⇒ 同一份陈旧
-  // `@generated` 段，check 报 `nudo:interface-drift` 而 health 报「0 contract
-  // drift」（假绿 + 跨动词漂移计数相反）。
-  const proj = findProjectConfig(dirname(filePath));
-  const fileEnvBaseDir = dirname(filePath);
-  const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
-  const rawProjectEnv = proj?.config.env;
-  const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
-  const projectEnvSpec = projectEnvNames.map((name) =>
-    typeof name === "string" && (name.startsWith("./") || name.startsWith("../"))
-      ? resolve(projectEnvBaseDir, name)
-      : name,
-  );
-  const fileEnvNames = collectEnvNames(filePath, source, false);
-  await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
-  await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
-  const allEnvNames = [...new Set([...projectEnvSpec, ...fileEnvNames])];
-  const graph = evalAbsModuleGraph(source, filePath);
-  const reps = collectEvalReplacements(source, { diags: [] });
-  const ast = parse(source);
-  const seedPkg = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
-  // 文件级指令（@nudo:env / @nudo:mock-module）提取——与 check 同口径
-  extractFileDirectives(ast);
-  const mocks = mockSeedsToAbsMocks(seedPkg);
-  const envGlobals = collectEnvGlobals(allEnvNames);
-  const envMods = collectEnvModules(allEnvNames);
-  let mergedMods = {
-    ...graph.modules,
-    ...(Object.keys(envMods).length > 0 ? envMods : {}),
-  };
-  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, { fromFile: filePath });
-  mergedMods = mm.modules;
-  return {
-    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
-}
-
-/**
- * 模块路径归一（realpath 对齐符号链接；读不到时回落原路径）——
- * 与 `commands/check.ts` 的同名私有函数同口径。
- */
-function normalizeModulePath(p: string): string {
-  try {
-    return realpathSync(resolve(p));
-  } catch {
-    return resolve(p);
-  }
-}
-
-/**
- * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord
- * （BUG-054）。
- *
- * 与 `commands/check.ts` 的 `externalAbsCallRecords` **同口径**（同源实现：
- * check.ts:138）：只收**可归因到本文件**的记录（targetModule / fnModule 命中
- * 本文件）⇒ 别的模块里的同名函数不污染本文件的判定；`fnName` 取被调方在
- * 目标模块里的导出名（targetExport）；**不携带 callLoc**（跨文件调用点在本
- * 文件内没有位置）。
- */
-function externalAbsCallRecords(
-  filePath: string,
-  records: readonly CallRecord[] | undefined,
-): { fnName: string; args: Abs[]; result: Abs }[] {
-  if (!records || records.length === 0) return [];
-  const current = normalizeModulePath(filePath);
-  const out: { fnName: string; args: Abs[]; result: Abs }[] = [];
-  for (const r of records) {
-    const attributed =
-      (r.fnModule !== undefined && normalizeModulePath(r.fnModule) === current) ||
-      (r.targetModule !== undefined && normalizeModulePath(r.targetModule) === current);
-    if (!attributed) continue;
-    const targetExport = r.targetExport;
-    const fnName =
-      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
-        ? targetExport
-        : r.fnName;
-    if (!fnName) continue;
-    out.push({ fnName, args: r.argAbs, result: r.resultAbs });
-  }
-  return out;
-}
-
 async function healthFile(filePath: string, records?: CallRecord[]): Promise<HealthReport> {
   const report: HealthReport = { file: displayPathOf(filePath), functions: 0, entryOnly: 0, uncovered: [] };
   let source: string;
@@ -419,23 +303,62 @@ async function countInterfaceDrift(
   }
   if (!/@generated/.test(scSrc)) return { count: 0 };
   try {
-    const { collectSkipReturns, findProjectConfig, interfaceConfig } = await import(
-      "@nudojs/service"
-    );
+    const {
+      buildEvalInjection,
+      collectEnvNames,
+      collectSkipReturns,
+      findProjectConfig,
+      interfaceConfig,
+      mergeCheckIssues,
+      mockFromErrorIssues,
+    } = await import("@nudojs/service");
+    const { parse } = await import("@nudojs/parser");
+    const { preloadPathEnvs, absolutizeEnvSpec } = await import("@nudojs/service/evaluator");
     const proj = findProjectConfig(dirname(abs));
     const autoBind = interfaceConfig(proj?.config).autoBind;
     const source = rf(abs, "utf-8");
-    // 691：契约漂移判定必须走 **mock 通道**（与 nudo check 的 buildCheckInjection
-    // 同口径）——否则同一份陈旧生成段，check 报 nudo:interface-drift 而 health
-    // 报 0 contract drift / OK / exit 0（假绿 + 跨动词自相矛盾）。
-    const inject = await buildHealthInjection(abs, source);
+    // 691：契约漂移判定必须走 **mock 通道**——装配本体 = service 的
+    // buildEvalInjection（单一实现，与 `nudo check` 的 buildCheckInjection
+    // 同口径：模块图（evalAbsModuleGraph）+ env modules（mergeHarvestUnderEnv
+    // ——手写对象展开会丢 harvest 的非冲突导出，Bug 1037）+ @nudo:mock-module
+    // 覆盖 + @nudo:mock seeds + env 全局 + as/replace）。否则同一份陈旧
+    // 生成段，check 报 nudo:interface-drift 而 health 报 0 contract drift /
+    // OK / exit 0（假绿 + 跨动词自相矛盾）。mockFromErrors **不丢弃**
+    // （下方按 check 的上报通道 merge）。
+    //
+    // BUG-228：env 名**分层**解析（与 `nudo check` 的 assembleEnvs 同口径）：
+    // · 项目级（package.json#nudo.env）相对说明符按**项目根**解析并绝对化
+    //   （absolutizeEnvSpec 单一事实源，与 env-loader 预载 / LSP 注入同一
+    //   实现，不再手写 startsWith("./") 判定）；
+    // · 文件级（`/// @nudo:env ./myenv.js`）按**文件所在目录**解析。
+    // 旧口径把两者一并按项目根解析 ⇒ 文件级 env 静默丢失 ⇒ env 全局为空 ⇒
+    // 契约漂移的「今日重算域」无证据（check 报漂移而 health 报 0）。
+    const fileEnvBaseDir = dirname(abs);
+    const projectEnvBaseDir = proj?.projectDir ?? fileEnvBaseDir;
+    const rawProjectEnv = proj?.config.env;
+    const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
+    const projectEnvSpec = absolutizeEnvSpec(projectEnvNames, projectEnvBaseDir);
+    const fileEnvNames = collectEnvNames(abs, source, false);
+    await preloadPathEnvs(projectEnvSpec, projectEnvBaseDir);
+    await preloadPathEnvs(fileEnvNames, fileEnvBaseDir);
+    const allEnvNames = [...new Set([...projectEnvSpec, ...fileEnvNames])];
+    // D1 指令文法诊断袋（装配面三个发射源同袋；health 的漂移计数是判据面，
+    // 指令文法告警由 `nudo check` 的诊断面单源上报，不在此重复上屏）
+    const dirDiags: DirectiveDiag[] = [];
+    const { inject, mockFromErrors } = buildEvalInjection(
+      abs,
+      source,
+      allEnvNames,
+      dirDiags,
+      (_filePath, src) => parse(src),
+    );
     // BUG-054：`--from` 的**跨文件调用点证据**必须进契约漂移判定通道
     // （与 `nudo check` 的 `checkSourceOptions.from` 同源）——否则调用点在
     // 别的文件里时，「今日域」为空 ⇒ 漂移**恒判 0** ⇒ 同一份陈旧生成段，
     // check 报 `nudo:interface-drift` 而 health 报「0 contract drift /
     // OK / exit 0」（跨动词结论矛盾 + 假绿）。
     const from = externalAbsCallRecords(abs, records);
-    const r = checkSource(abs, source, pTrue, {
+    let r = checkSource(abs, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: abs,
       ...(autoBind === false ? { autoBind: false } : {}),
@@ -446,6 +369,19 @@ async function countInterfaceDrift(
       // 与 nudo check 同源：@nudo:skip 的函数不评估 body，不产出 drift 候选
       skips: collectSkipReturns(source),
     });
+    // `@nudo:mock name from "path"` 解析失败 → 与 `nudo check` 同一上报通道
+    // （mockFromErrorIssues → mergeCheckIssues）：error 级失败（mock 文件
+    // 缺失 / 加载失败）另走 error 通道进 HealthReport.error ⇒ 判红——旧口径
+    // 把 mockFromErrors 整包丢弃 ⇒ 同一失败 check 红 / health 假绿。
+    let mockLoadError: string | undefined;
+    if (mockFromErrors.length > 0) {
+      const mockIssues = mockFromErrorIssues(mockFromErrors);
+      r = mergeCheckIssues(r, mockIssues);
+      const hard = mockIssues.filter((i) => i.severity === "error");
+      if (hard.length > 0) {
+        mockLoadError = `mock load failed: ${[...new Set(hard.map((i) => i.message))].join("; ")}`;
+      }
+    }
     const slotDrift = r.issues.filter((i) => i.code === DIAG.interfaceDrift).length;
     // BUG-199：**段文本口径**与 `nudo contract --emit` **同源**。
     // health 旧口径只数 `checkSource` 的 `nudo:interface-drift`（判据 =
@@ -455,8 +391,8 @@ async function countInterfaceDrift(
     // （两面结论矛盾）。这里补一条「直写发射器说侧车会变 ⇒ 也是漂移」的
     // 通道：`dryRun` **不写盘**，只回答「今天的重算会不会改写这份侧车」
     // （= emit 的 `changed` 判据，逐字同源）。
-    if (slotDrift > 0) return { count: slotDrift };
-    return { count: slotDrift + (await sectionTextDrift(abs, records)) };
+    const count = slotDrift > 0 ? slotDrift : slotDrift + (await sectionTextDrift(abs, records));
+    return mockLoadError !== undefined ? { count, error: mockLoadError } : { count };
   } catch (e) {
     return { count: 0, error: `checkSource failed: ${(e as Error).message}` };
   }
@@ -485,6 +421,166 @@ async function sectionTextDrift(
     return em.changed ? 1 : 0;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * health `--json` 面的文档装配输入（runHealth 聚合完的事实）。
+ *
+ * 文档构造与 ok↔exit 判红解耦（task：runHealth 拆分）——判红留在 runHealth
+ * 本体（substantiveFailed/failed/exitCode 的推导涉及全部聚合量），此处
+ * 只做「事实 → JSON 形状」的纯映射，逐字段与拆分前一致。
+ */
+type HealthJsonFacts = {
+  ok: boolean;
+  pathErrorSink: PathError[];
+  targetErrors: PathError[];
+  reports: HealthReport[];
+  driftCases: number;
+  ifaceDriftCount: number;
+  totalErrors: number;
+  uncoveredTotal: number;
+  budgetTruncated: boolean;
+  internalTotal: number;
+};
+
+/** `--json` 面的文档本体（纯装配；发射由 runHealth 的 emitJsonDoc 做）。 */
+function healthJsonDoc(f: HealthJsonFacts) {
+  return {
+    ok: f.ok,
+    // 63：`pathErrors[]` **逐字不变**（字段名 + 内容 + 顺序）——既有机器
+    // 消费者零影响。它是**路径级错误全集**（--from 路径错误 + 分析目标
+    // 闸门错误 + 「无法判定漂移」证据错误），名字只说「path」不只说
+    // 「--from」⇒ 精确语义由下面的 `targetErrors[]` 给出。
+    ...(f.pathErrorSink.length > 0
+      ? {
+          pathErrors: f.pathErrorSink.map((e) => ({
+            path: e.path,
+            code: e.code,
+            message: e.message,
+            suggestion: e.suggestion,
+          })),
+        }
+      : {}),
+    // 63：**新增**的可选字段——「分析目标闸门」错误（非分析目标 / 空目录 /
+    // 路径不存在）的**精确**入口。内容是 `pathErrors[]` 的子集（旧字段
+    // 继续兼容 ⇒ 不丢事实；新消费者可按语义分流）。
+    ...(f.targetErrors.length > 0
+      ? {
+          targetErrors: f.targetErrors.map((e) => ({
+            path: e.path,
+            code: e.code,
+            message: e.message,
+            suggestion: e.suggestion,
+          })),
+        }
+      : {}),
+    files: f.reports.map((r) => ({
+      file: r.file,
+      functions: r.functions,
+      entryOnly: r.entryOnly,
+      uncovered: r.uncovered,
+      ...(r.drift ? { drift: r.drift } : {}),
+      ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
+      ...(r.budget ? { budget: { ...r.budget } } : {}),
+      ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
+      ...(r.configShape ? { configShape: r.configShape } : {}),
+      ...(r.error ? { error: r.error } : {}),
+    })),
+    summary: {
+      files: f.reports.length,
+      // 63：单位 = **见证（case）条数**（与文本面 Summary、与
+      // Σ files[].drift.(added+removed) 同量纲）⇒ 三个面同一个数字。
+      drift: f.driftCases,
+      interfaceDrift: f.ifaceDriftCount,
+      errors: f.totalErrors,
+      uncovered: f.uncoveredTotal,
+      ...(f.budgetTruncated ? { budgetTruncated: true } : {}),
+      internal_fallbacks: f.internalTotal,
+    },
+  };
+}
+
+/**
+ * 单个文件的文本面明细行（error 臂早退；输出与拆分前逐字节一致）。
+ *
+ * `fromPaths` = `nudo health --from <paths...>`——drift 刷新提示里的
+ * `nudo test --from …` 命令要原样回显它。
+ */
+function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined): void {
+  console.log(`${r.file}`);
+  if (r.error) {
+    console.log(paintOne(`  ✗ error: ${r.error}`));
+    // 1145：internal 回落已是**门禁失败** ⇒ 本文件走 error 早退分支。
+    // 回落计数仍必须上屏（`--json` 面一直带着 `internal_fallbacks`）——
+    // 否则人类面只剩一行错误、机器面却有计数 ⇒ 两面不对称。
+    if ((r.internalFallbacks ?? 0) > 0) {
+      console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
+    }
+    // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
+    // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
+    if ((r.interfaceDrift ?? 0) > 0) {
+      console.log(
+        paintOne(
+          `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+        ),
+      );
+    }
+    return;
+  }
+  const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
+  console.log(`  · ${r.functions} function(s)${entryInfo}`);
+  if (r.configShape) {
+    // 配置形状问题（468/936）——报告面可见：配置写坏了（`"nudo": true`
+    // / 假值键）本包按「无 nudo 配置」处理（不继承祖先配置），用户必须
+    // 知道，否则会以为祖先配置生效了。
+    console.log(paintOne(`  ⚠ config: ${r.configShape.message}`));
+  }
+  if (r.uncovered.length > 0) {
+    console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
+  }
+  if (r.drift) {
+    const refresh = `nudo test ${r.file} --from ${(fromPaths ?? []).join(" ")} --freeze=update`;
+    console.log(
+      paintOne(
+        `  ✗ drift: ${r.drift.added + r.drift.removed} witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh: ${refresh.trim()}`,
+      ),
+    );
+  }
+  if ((r.interfaceDrift ?? 0) > 0) {
+    console.log(
+      paintOne(
+        `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+      ),
+    );
+  }
+  if (r.budget?.truncated) {
+    const b = r.budget;
+    const onlyLoop =
+      b.loopTruncated &&
+      b.callReasons.length === 0 &&
+      b.evalReasons.length === 0 &&
+      !b.forkTruncated;
+    // 归因段与 nudo check 同一实现（budgetAttributionSegs，
+    // #health-budget）：只打触发截断的那条预算自己的计数段；空段 ⇔ 纯
+    // cycle 触发，由共享构建器兜底（cycleOnly）
+    const { segs, cycleOnly } = budgetAttributionSegs(b);
+    console.log(
+      paintOne(
+        `  ⚠ budget truncated  ${segs.join(" · ")}` +
+          (onlyLoop
+            ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
+            : " — some results widened to unknown") +
+          (b.cycleTruncated && !cycleOnly
+            ? ` (includes call cycles — a budget cannot lift them)`
+            : ""),
+      ),
+    );
+  }
+  if ((r.internalFallbacks ?? 0) > 0) {
+    // 1145：internal 回落现在是**门禁失败**（引擎内部缺陷 ⇒ 该文件事实
+    // 不完整 ⇒ health 不得报 OK）——标记从「观察告警」升为「失败项」。
+    console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
   }
 }
 
@@ -639,59 +735,18 @@ async function runHealth(
 
   if (opts.json) {
     emitJsonDoc(
-      {
+      healthJsonDoc({
         ok,
-        // 63：`pathErrors[]` **逐字不变**（字段名 + 内容 + 顺序）——既有机器
-        // 消费者零影响。它是**路径级错误全集**（--from 路径错误 + 分析目标
-        // 闸门错误 + 「无法判定漂移」证据错误），名字只说「path」不只说
-        // 「--from」⇒ 精确语义由下面的 `targetErrors[]` 给出。
-        ...(pathErrorSink.length > 0
-          ? {
-              pathErrors: pathErrorSink.map((e) => ({
-                path: e.path,
-                code: e.code,
-                message: e.message,
-                suggestion: e.suggestion,
-              })),
-            }
-          : {}),
-        // 63：**新增**的可选字段——「分析目标闸门」错误（非分析目标 / 空目录 /
-        // 路径不存在）的**精确**入口。内容是 `pathErrors[]` 的子集（旧字段
-        // 继续兼容 ⇒ 不丢事实；新消费者可按语义分流）。
-        ...(targetErrors.length > 0
-          ? {
-              targetErrors: targetErrors.map((e) => ({
-                path: e.path,
-                code: e.code,
-                message: e.message,
-                suggestion: e.suggestion,
-              })),
-            }
-          : {}),
-        files: reports.map((r) => ({
-          file: r.file,
-          functions: r.functions,
-          entryOnly: r.entryOnly,
-          uncovered: r.uncovered,
-          ...(r.drift ? { drift: r.drift } : {}),
-          ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
-          ...(r.budget ? { budget: { ...r.budget } } : {}),
-          ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
-          ...(r.configShape ? { configShape: r.configShape } : {}),
-          ...(r.error ? { error: r.error } : {}),
-        })),
-        summary: {
-          files: reports.length,
-          // 63：单位 = **见证（case）条数**（与文本面 Summary、与
-          // Σ files[].drift.(added+removed) 同量纲）⇒ 三个面同一个数字。
-          drift: driftCases,
-          interfaceDrift: ifaceDriftCount,
-          errors: totalErrors,
-          uncovered: uncoveredTotal,
-          ...(budgetTruncated ? { budgetTruncated: true } : {}),
-          internal_fallbacks: reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0),
-        },
-      },
+        pathErrorSink,
+        targetErrors,
+        reports,
+        driftCases,
+        ifaceDriftCount,
+        totalErrors,
+        uncoveredTotal,
+        budgetTruncated,
+        internalTotal,
+      }),
       // 63：watch 面 ⇒ **JSON Lines**（一行一份完整 JSON 文档；第 2 轮起
       // stdout 里会累积第 2 份文档 ⇒ 整份 JSON.parse(stdout) 会炸）。
       // 非 watch 面仍是**一份 pretty 文档**（既有形态，逐字不变）。
@@ -717,80 +772,7 @@ async function runHealth(
       return;
     }
     for (const r of reports) {
-      console.log(`${r.file}`);
-      if (r.error) {
-        console.log(paintOne(`  ✗ error: ${r.error}`));
-        // 1145：internal 回落已是**门禁失败** ⇒ 本文件走 error 早退分支。
-        // 回落计数仍必须上屏（`--json` 面一直带着 `internal_fallbacks`）——
-        // 否则人类面只剩一行错误、机器面却有计数 ⇒ 两面不对称。
-        if ((r.internalFallbacks ?? 0) > 0) {
-          console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
-        }
-        // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
-        // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
-        if ((r.interfaceDrift ?? 0) > 0) {
-          console.log(
-            paintOne(
-              `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
-            ),
-          );
-        }
-        continue;
-      }
-      const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
-      console.log(`  · ${r.functions} function(s)${entryInfo}`);
-      if (r.configShape) {
-        // 配置形状问题（468/936）——报告面可见：配置写坏了（`"nudo": true`
-        // / 假值键）本包按「无 nudo 配置」处理（不继承祖先配置），用户必须
-        // 知道，否则会以为祖先配置生效了。
-        console.log(paintOne(`  ⚠ config: ${r.configShape.message}`));
-      }
-      if (r.uncovered.length > 0) {
-        console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
-      }
-      if (r.drift) {
-        const refresh = `nudo test ${r.file} --from ${(opts.from ?? []).join(" ")} --freeze=update`;
-        console.log(
-          paintOne(
-            `  ✗ drift: ${r.drift.added + r.drift.removed} witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh: ${refresh.trim()}`,
-          ),
-        );
-      }
-      if ((r.interfaceDrift ?? 0) > 0) {
-        console.log(
-          paintOne(
-            `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
-          ),
-        );
-      }
-      if (r.budget?.truncated) {
-        const b = r.budget;
-        const onlyLoop =
-          b.loopTruncated &&
-          b.callReasons.length === 0 &&
-          b.evalReasons.length === 0 &&
-          !b.forkTruncated;
-        // 归因段与 nudo check 同一实现（budgetAttributionSegs，
-        // #health-budget）：只打触发截断的那条预算自己的计数段；空段 ⇔ 纯
-        // cycle 触发，由共享构建器兜底（cycleOnly）
-        const { segs, cycleOnly } = budgetAttributionSegs(b);
-        console.log(
-          paintOne(
-            `  ⚠ budget truncated  ${segs.join(" · ")}` +
-              (onlyLoop
-                ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
-                : " — some results widened to unknown") +
-              (b.cycleTruncated && !cycleOnly
-                ? ` (includes call cycles — a budget cannot lift them)`
-                : ""),
-          ),
-        );
-      }
-      if ((r.internalFallbacks ?? 0) > 0) {
-        // 1145：internal 回落现在是**门禁失败**（引擎内部缺陷 ⇒ 该文件事实
-        // 不完整 ⇒ health 不得报 OK）——标记从「观察告警」升为「失败项」。
-        console.log(paintOne(`  ✗ internal_fallbacks: ${r.internalFallbacks}`));
-      }
+      printHealthReportLine(r, opts.from);
     }
     // 63：Summary 的漂移数 = **见证（case）条数**（= Σ 明细行的
     // 「N witness directive(s) changed」）⇒ 与明细行**同量纲**（旧口径印的是

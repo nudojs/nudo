@@ -12,7 +12,7 @@ import {
   type CheckReport,
   type NudoSig,
 } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { CHECK_FACE_DIAG_CODES, CHECK_ISSUE_OPTIONAL_KEYS, DIAG } from "@nudojs/core/internal";
 import { parse, programBody } from "@nudojs/parser";
 import { CONFIG_SHAPE_CODE } from "./config-shape.ts";
 
@@ -26,18 +26,20 @@ import { CONFIG_SHAPE_CODE } from "./config-shape.ts";
 export type CachedCheckSig = CheckJson["signatures"][number] & { ret?: string };
 
 export function issueFromCachedJson(i: CheckJson["issues"][number]): CheckIssue {
-  return {
+  // 可选字段经 core 的 CHECK_ISSUE_OPTIONAL_KEYS 单源拷贝（键序=元组序，
+  // 与 serializeCheckJson 的写盘侧同一张字段表 ⇒ 两面不会漂移出单侧字段）；
+  // 独立 sink 消解「联合键写入收敛成 undefined」的 tsc 限制。
+  const out: CheckIssue = {
     severity: i.severity as "error" | "warning" | "info",
     code: i.code,
     message: i.message,
-    ...(i.fn !== undefined ? { fn: i.fn } : {}),
-    ...(i.line !== undefined ? { line: i.line } : {}),
-    ...(i.column !== undefined ? { column: i.column } : {}),
-    ...(i.actual !== undefined ? { actual: i.actual } : {}),
-    ...(i.expected !== undefined ? { expected: i.expected } : {}),
-    ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
-    ...(i.reason !== undefined ? { reason: i.reason } : {}),
   };
+  const sink = out as Record<string, unknown>;
+  for (const k of CHECK_ISSUE_OPTIONAL_KEYS) {
+    const v: unknown = (i as Record<string, unknown>)[k];
+    if (v !== undefined) sink[k] = v;
+  }
+  return out;
 }
 
 export function signatureFromCachedJson(s: CachedCheckSig): NudoSig {
@@ -207,20 +209,7 @@ export type DomainDiagnosticLike = {
  *
  * 导出供下游片（4 / 5）复用同一口径，避免各处各写一份白名单。
  */
-export const CHECK_FACE_DIAG_CODES: readonly string[] = [
-  // interface 家族
-  DIAG.interfaceDomainExceeds,
-  DIAG.interfaceEntryOnly,
-  // 模块装载问题族（Bug 632）
-  DIAG.moduleMissing,
-  DIAG.missingExport,
-  DIAG.moduleCycle,
-  DIAG.moduleDepth,
-  DIAG.jsonInvalid,
-  DIAG.exportsUnresolved,
-  // env 家族（Bug 1038）
-  DIAG.envHarvestConflict,
-];
+export { CHECK_FACE_DIAG_CODES } from "@nudojs/core/internal";
 
 const CHECK_FACE_DIAG_CODE_SET: ReadonlySet<string> = new Set(CHECK_FACE_DIAG_CODES);
 
@@ -516,14 +505,15 @@ type StripSummaryLike = {
 };
 
 /**
- * 剔除 nudo:env-unresolved（live 瞬态告警，不持久化进磁盘缓存）：
- * 写缓存前调用（瞬态不落盘），读回旧缓存条目时也调用（兼容已持久化
- * 条目——命中轮 live merge 会重新注入，不剔除则重复；无需 bump ABI）。
+ * 按诊断码剔除 live 瞬态 issue（通用剥除器）：
+ * 写盘前剥除 + 读回后剥除，由本轮 live 注入单一来源上屏（命中轮的缓存
+ * 条目可能来自旧版本 ⇒ 读回侧同样要剥，否则旧条目 + live 注入重复）。
  * summary 计数按剩余 issues 的 severity 重算（与 checkSource 口径一致）。
+ * 无该码 issue 时原样返回同一对象（幂等，零分配）。
  */
-export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
-  if (!x.issues.some((i) => i.code === ENV_UNRESOLVED_CODE)) return x;
-  const issues = x.issues.filter((i) => i.code !== ENV_UNRESOLVED_CODE);
+export function stripIssuesByCode<T extends StripSummaryLike>(x: T, code: string): T {
+  if (!x.issues.some((i) => i.code === code)) return x;
+  const issues = x.issues.filter((i) => i.code !== code);
   return {
     ...x,
     issues,
@@ -537,24 +527,22 @@ export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
 }
 
 /**
+ * 剔除 nudo:env-unresolved（live 瞬态告警，不持久化进磁盘缓存）：
+ * 写缓存前调用（瞬态不落盘），读回旧缓存条目时也调用（兼容已持久化
+ * 条目——命中轮 live merge 会重新注入，不剔除则重复；无需 bump ABI）。
+ */
+export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
+  return stripIssuesByCode(x, ENV_UNRESOLVED_CODE);
+}
+
+/**
  * 剔除 package.json#nudo 键形状诊断（468/936）——同 env-unresolved 的
  * live 事实处理：形状问题由本轮现场探针判定（配置可能刚被改好/写坏），
  * 缓存命中轮若不剔除就会与 live merge **重复**（mergeCheckIssues 只追加、
  * 不去重）⇒ 读回时剔除、由本轮 live merge 单一来源注入。
  */
 export function stripConfigShapeIssues<T extends StripSummaryLike>(x: T): T {
-  if (!x.issues.some((i) => i.code === CONFIG_SHAPE_CODE)) return x;
-  const issues = x.issues.filter((i) => i.code !== CONFIG_SHAPE_CODE);
-  return {
-    ...x,
-    issues,
-    summary: {
-      ...x.summary,
-      errors: issues.filter((i) => i.severity === "error").length,
-      warnings: issues.filter((i) => i.severity === "warning").length,
-      infos: issues.filter((i) => i.severity === "info").length,
-    },
-  };
+  return stripIssuesByCode(x, CONFIG_SHAPE_CODE);
 }
 
 type PathErrorLike = {

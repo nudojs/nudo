@@ -1,6 +1,7 @@
 /**
- * CLI 命令共享工具（路径采集、watch、reemit、abs 观察面、eval 注入包装配）。
- * 从 index.ts 原样迁出，行为不变。
+ * CLI 命令共享工具（路径采集、watch、reemit、abs 观察面、跨文件调用点归因）。
+ * eval 注入包装配本体在 `@nudojs/service` 的 `buildEvalInjection`（单一实现），
+ * check / migrate / health 只注入各自的解析策略。
  */
 import {
   readFileSync,
@@ -8,7 +9,6 @@ import {
   watch,
   readdirSync,
   statSync,
-  realpathSync,
   type Dirent,
 } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
@@ -19,15 +19,11 @@ import {
 } from "@nudojs/service/emit";
 import {
   analyzeFileAsync,
-  applyMockModuleDirectivesFromSource,
   buildModuleGraph,
-  collectEnvGlobals,
-  collectEnvModules,
-  collectEvalReplacements,
   computeDirtySet,
   topoSortDirty,
   collectCallRecords,
-  evalAbsModuleGraph,
+  normalizeRealPath,
   isNudoTargetPath,
   isWatchRelevantPath,
   isSidecarPath,
@@ -36,9 +32,6 @@ import {
   envPathDependents,
   isEnvTemplatePath,
   getAnalysisSession,
-  mergeHarvestUnderEnv,
-  mockDirectivesToAbsSeeds,
-  mockSeedsToAbsMocks,
   mockSeedsForSource,
   stablePathKey,
   tryRunEval,
@@ -48,14 +41,7 @@ import {
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
-import {
-  extractDirectives,
-  extractFileDirectives,
-  runWithDirectiveDiags,
-  type DirectiveDiag,
-} from "@nudojs/parser";
-import type { File } from "@babel/types";
-import type { RunTranspiledOptions } from "@nudojs/core";
+import type { AbsCallRecord } from "@nudojs/core";
 import { DIAG, extractAssumeSegs } from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
@@ -157,101 +143,6 @@ export function variadicSwallowError(
 export function reportPathErrors(errors: PathError[]): void {
   for (const e of errors) usageError(e.message, e.suggestion);
   if (errors.length > 0) process.exitCode = 1;
-}
-
-/** `@nudo:mock name from "path"` 解析失败（缺文件/缺绑定/求值失败） */
-export type MockFromError = { name: string; fromPath: string; message: string; code?: string };
-
-/**
- * eval 注入包装配的**单一实现**（#9 去重）：模块图（evalAbsModuleGraph）
- * + env modules（mergeHarvestUnderEnv）+ `@nudo:mock-module` 覆盖
- * + `@nudo:mock` seeds + env 全局 + `@nudo:as` / `@nudo:replace` 替换。
- * 消费方：`commands/check.ts` 的 buildCheckInjection 与 `migrate.ts` 的
- * buildVerifyInjection——两者的装配体曾各自手写（同构但平行），现在只在
- * **解析策略**上分叉（`parseAst` 参数）：
- * - check 注入 `parseForCheck`（按扩展名严格解析，Bug 633：`.js` 里的
- *   TS-only 语法在此**抛错** ⇒ 走语法错通道，不静默判绿）；
- * - migrate verify 注入 parser 的宽松 `parse`（verify 的 TS-only 拦截在
- *   自己的严格解析步骤里，Bug 114，不在装配点）。
- *
- * 装配失败 throw——由调用方降级处理（BUG-023：分析仍跑，但门禁红且缓存
- * 不回写）。
- *
- * `dirDiags`：D1 指令文法诊断显式落袋（调用方创建/持有）。三个发射源
- * 同袋——
- *  - collectEvalReplacements：行内 @nudo:as/@nudo:replace（语句级独立去重）
- *  - extractDirectives：函数级 case/mock/skip/sample
- *  - mockDirectivesToAbsSeeds 对 @nudo:mock 类型值表达式的 parseCaseArgExpr
- *    复解析（与 extract 共域去重：同文案在 extract 已报则不再双报）
- */
-export function buildEvalInjection(
-  filePath: string,
-  source: string,
-  allEnvNames: string[],
-  dirDiags: DirectiveDiag[],
-  parseAst: (filePath: string, source: string) => File,
-): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
-  const graph = evalAbsModuleGraph(source, filePath);
-  const reps = collectEvalReplacements(source, { diags: dirDiags });
-  const seedPkg = runWithDirectiveDiags(dirDiags, () => {
-    const ast = parseAst(filePath, source);
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), {
-      fromFile: filePath,
-    });
-    // D1 同族：JSDoc 块内错位的文件级指令族标签（@nudo:env / @nudo:mock-module）
-    // 不再静默——纯查询 extract 落本域（提取面不变，仍只认行注释）
-    extractFileDirectives(ast);
-    return seeds;
-  });
-  let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
-  const mocks = mockSeedsToAbsMocks(seedPkg);
-  const envGlobals = collectEnvGlobals(allEnvNames);
-  const envMods = collectEnvModules(allEnvNames);
-  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
-  // （check / verify / test / service 面同口径）——手工 env 与 harvest
-  // **同名模块**时，env 赢同名槽、harvest 填 env 的**空位**（B8）。
-  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
-  // harvest 的**非冲突导出被整体丢弃** ⇒ check/verify 面报 `unknown` +
-  // 误导性 `nudo:unknown-inference`，而 test 面报**精确值** ⇒ 两个产品面
-  // 互相矛盾（Bug 1037；verify 面同族 Bug 226）。
-  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
-  // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
-  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
-    fromFile: filePath,
-  });
-  mergedMods = mm.modules;
-  mockFromErrors = [
-    ...mockFromErrors,
-    ...mm.errors.map((e) => ({
-      name: e.name,
-      fromPath: e.fromPath,
-      message: e.message,
-      ...(e.code !== undefined ? { code: e.code } : {}),
-    })),
-  ];
-  const inject: RunTranspiledOptions = {
-    // Bug 456：**不再**因为「检出环」就丢弃整张依赖图。旧实现在检出 cycle
-    // 时把 modules 降级成「只有 env 模块」⇒ 环内文件的 import 全部落空 ⇒
-    // 环内函数在 check 面恒为 unknown（原生是确定值）。
-    // 引擎侧已能正确处理环（core exec/run.ts 调用入口刷新 live import
-    // 绑定 + live-imports.ts 弱引用注册表），环内求值**有界**：
-    // - 装载层：模块图检出环即返回「环内已部分求值的导出 / 空导出」
-    //   （abs-modules-graph.ts evalDep 的 cycle 分支），不递归装载；
-    // - 求值层：调用/分支预算是硬闸（call-budget.ts），递归必被截断成
-    //   `nudo:recursion-truncated`（info），不会无限求值。
-    // ⇒ 无需「整图丢弃」这种有损降级；环本身仍由诊断面（`nudo:module-cycle`
-    // warning）报告，不靠丢图来「避免」环。
-    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
-    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-    ...(reps.targets.length > 0
-      ? { replacements: reps.values, replacementTargets: reps.targets }
-      : {}),
-    ...(reps.asTargets.length > 0
-      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-      : {}),
-  };
-  return { inject, mockFromErrors };
 }
 
 /**
@@ -591,6 +482,49 @@ export function collectExternalRecords(
 }
 
 /**
+ * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord
+ * （Bug 366 / BUG-054）——check 与 health 共用同一归因实现。
+ *
+ * core 的 drift 判定（`nudo:interface-drift`）此前只吃**被检查文件自身**求值
+ * 产生的调用记录 ⇒ 调用点在别的文件里时，`--from` 写出的生成段永远判不出
+ * 陈旧（落盘契约静默陈旧，0 warning 假绿）。本函数把 `--from` 的跨文件证据
+ * 接进同一条通道。
+ *
+ * 口径：
+ * - **只收可归因到本文件的记录**（targetModule = 导出 tag / fnModule = 定义
+ *   位点 命中本文件）⇒ 别的模块里的同名函数不会污染本文件的 drift 判定
+ *   （zero-FP 红线；与 service 侧 case 合成的 matchingExternal 同口径）。
+ * - `fnName` 取**被调方在目标模块里的导出名**（targetExport；缺失或命名空间
+ *   通配时回落调用处可见名）⇒ import 别名不影响路由。
+ * - **不携带 callLoc**：跨文件调用点在被检查文件内没有位置（不把别的文件的
+ *   行号挂到本文件上）。
+ * - 路径归一 = service `normalizeRealPath`（身份键口径：resolve → realpath，
+ *   目标不在时目录 realpath 拼回 basename）。
+ */
+export function externalAbsCallRecords(
+  filePath: string,
+  records: readonly CallRecord[] | undefined,
+): AbsCallRecord[] {
+  if (!records || records.length === 0) return [];
+  const current = normalizeRealPath(filePath);
+  const out: AbsCallRecord[] = [];
+  for (const r of records) {
+    const attributed =
+      (r.fnModule !== undefined && normalizeRealPath(r.fnModule) === current) ||
+      (r.targetModule !== undefined && normalizeRealPath(r.targetModule) === current);
+    if (!attributed) continue;
+    const targetExport = r.targetExport;
+    const fnName =
+      targetExport !== undefined && targetExport !== "*" && targetExport !== ""
+        ? targetExport
+        : r.fnName;
+    if (!fnName) continue;
+    out.push({ fnName, args: r.argAbs, result: r.resultAbs });
+  }
+  return out;
+}
+
+/**
  * 产品默认安全排除的**目录段**（node_modules / dist / coverage）。
  *
  * 真源 = service 的默认 exclude 表（`analysisConfig(null).exclude`
@@ -655,14 +589,6 @@ function entryKind(entry: Dirent, fullPath: string): "file" | "dir" | undefined 
   return undefined;
 }
 
-/** realpath（失败回落原路径）——符号链接目录防环用。 */
-function realPathOf(p: string): string {
-  try {
-    return realpathSync(p);
-  } catch {
-    return p;
-  }
-}
 
 /**
  * 目录扫描的分析目标。
@@ -708,7 +634,7 @@ export function collectNudoFiles(
   opts?: { scope?: "target" | "watch" },
 ): string[] {
   const inScope = opts?.scope === "watch" ? inWatchScope : inCliTargetScope;
-  const seenDirs = new Set<string>([realPathOf(dir)]);
+  const seenDirs = new Set<string>([normalizeRealPath(dir)]);
   return collectNudoFilesIn(dir, inScope, seenDirs);
 }
 
@@ -746,7 +672,7 @@ function collectNudoFilesIn(
       // 产品默认安全排除（node_modules / dist / coverage）——不再进入
       if (DEFAULT_EXCLUDED_DIR_NAMES.has(entry.name)) continue;
       // 符号链接目录：按 realpath 防环（链接指回祖先 ⇒ 无限递归）
-      const real = realPathOf(fullPath);
+      const real = normalizeRealPath(fullPath);
       if (seenDirs.has(real)) continue;
       seenDirs.add(real);
       results.push(...collectNudoFilesIn(fullPath, inScope, seenDirs));
