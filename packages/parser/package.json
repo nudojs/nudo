@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@nudojs/core": "workspace:*",
-    "@babel/types": "^8.0.6"
+    "@babel/types": "^8.0.8"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
