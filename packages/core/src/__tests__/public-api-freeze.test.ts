@@ -12,10 +12,10 @@
  * Removing a `.` or `./exec` export is **major**; `./internal` may churn in
  * minor.
  */
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, it, expect } from "vitest";
+import {readFileSync} from "node:fs";
+import {dirname, join, resolve} from "node:path";
+import {fileURLToPath} from "node:url";
+import {describe, it, expect} from "vitest";
 import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -173,7 +173,7 @@ describe("public-api freeze — export name snapshot", () => {
     // curated contract rows must stay documented
     for (const row of [
       "checkSource",
-      "transpile",
+      "transpileSource",
       "runTranspiled",
       "serializeCheckJson",
       "createEnvironment",

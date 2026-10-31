@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { draftInterface, collectParamBodyAccesses } from "../interface-draft.ts";
-import { transpile } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {draftInterface, collectParamBodyAccesses} from "../interface-draft.ts";
+import {transpileSource} from "@nudojs/core";
 
 describe("Draft Class.method + continue-path", () => {
   it("drafts Class.method as Class_method export", async () => {
@@ -36,6 +36,6 @@ describe("Draft Class.method + continue-path", () => {
   });
 
   it("transpile still emits rest destructure after restore", () => {
-    expect(transpile(`function f(o){ const {a,...r}=o; return r; }`)).toContain("$objRest");
+    expect(transpileSource(`function f(o){ const {a,...r}=o; return r; }`)).toContain("$objRest");
   });
 });

@@ -13,11 +13,11 @@
  * - M5 Object.assign 装箱 prim target：string 字面量下标键 < length →
  *   String wrapper 下标只读 → 定抛；bigint 恒抛；安全 string 源折原始串。
  */
-import { describe, it, expect } from "vitest";
+import {describe, it, expect} from "vitest";
 // 相对路径引 src（eval-helpers 口径：@nudojs/core 别名在 vitest 下落 dist）
-import { litValue } from "../abs.ts";
-import { $lit } from "../exec/runtime/state.ts";
-import { call, isNever, throwsError } from "./eval-helpers.ts";
+import {litValue} from "../abs.ts";
+import {$lit} from "../exec/runtime/state.ts";
+import {call, isNever, throwsError} from "./eval-helpers.ts";
 
 const numLit = (n: number) => $lit(n as never);
 

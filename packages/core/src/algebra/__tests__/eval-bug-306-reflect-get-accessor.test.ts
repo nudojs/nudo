@@ -9,9 +9,9 @@
  *
  * 修复前：只读槽占位 ⇒ 折 exact undefined（假精确——比真值更窄）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 /** 结果字面量值（litValue） */
 function v(src: string) {

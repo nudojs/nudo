@@ -14,9 +14,9 @@
  * 回归面：静态键 obj.m() / obj["m"]() / obj[1]()、super.m()/super[k]()、
  * add.bind(x)() 表达式 callee 的发射与结果不变。
  */
-import { describe, it, expect } from "vitest";
-import { call, val, isNever, throwsError } from "./eval-helpers.ts";
-import { abs, type Abs } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {call, val, isNever, throwsError} from "./eval-helpers.ts";
+import {abs, type Abs} from "../abs.ts";
 
 const litOf = (src: string): unknown => {
   const r = val(src) as { ok: boolean; value: unknown };

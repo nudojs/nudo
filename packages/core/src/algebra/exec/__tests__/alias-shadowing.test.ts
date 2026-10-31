@@ -11,7 +11,7 @@
  *   绑定 ⇒ 外层 `a`/`b` 身份断开；
  * - D2：别名展开忽略词法遮蔽——块内 `let a` 遮蔽外层 `a` 时，块内 fork
  *   仍把外层 `b` 拉进绑定集 ⇒ 外层 `b` 被复制/重绑 ⇒ 外层别名断开；
- * - D3：命名空间独占 import 发成 `import { * as ns } from "…"`（非法
+ * - D3：命名空间独占 import 发成 `import {* as ns} from "…"`（非法
  *   ESM）——见 transpile-module-host.test.ts。
  *
  * 修法：别名组在**作用域边界**上计算——本层自有组（前导 const 直接别名）
@@ -22,10 +22,10 @@
  * （vm.runInNewContext strict）对账；另钉两条护栏（外层别名伙伴被嵌套
  * 函数写 / 别处无关的遮蔽块）——修法不得把外层组整体丢掉。
  */
-import { describe, it, expect } from "vitest";
-import { callLit, tupleEls } from "../../__tests__/eval-helpers.ts";
-import { litValue } from "../../abs.ts";
-import { diffBody } from "../../__tests__/differential/harness.ts";
+import {describe, it, expect} from "vitest";
+import {callLit, tupleEls} from "../../__tests__/eval-helpers.ts";
+import {litValue} from "../../abs.ts";
+import {diffBody} from "../../__tests__/differential/harness.ts";
 
 /** 调用导出函数并取字面量值（非字面量 ⇒ 抛，测试即红）。 */
 function lit(src: string, ...args: unknown[]): unknown {

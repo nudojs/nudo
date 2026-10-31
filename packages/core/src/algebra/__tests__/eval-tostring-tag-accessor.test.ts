@@ -8,9 +8,9 @@
  * get [Symbol.toStringTag]() 的 computed 键投影 "@@toStringTag"
  * （@@hasInstance 同款），实例直读与标签折叠同臂。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, abs } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, abs} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string): unknown {
   const r = litValue(call(src, "f").result);

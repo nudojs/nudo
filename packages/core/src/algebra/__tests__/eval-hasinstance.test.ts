@@ -7,13 +7,13 @@
  * m[Symbol.iterator] 投影）；instanceof Identifier RHS 把值作第三参传入，
  * \$instanceof 读到 "@@hasInstance" 可调用槽则调用并把结果布尔化。
  */
-import { describe, it, expect } from "vitest";
+import {describe, it, expect} from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { litValue } from "../abs.ts";
-import { formatShape } from "../format.ts";
-import { call } from "./eval-helpers.ts";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {litValue} from "../abs.ts";
+import {formatShape} from "../format.ts";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator instanceof @@hasInstance", () => {
   it("custom Symbol.hasInstance returning true", () => {

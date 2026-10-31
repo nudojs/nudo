@@ -2,19 +2,9 @@
  * 动态 require：可解析子集（字面量/模板/拼接折叠）+ 诚实降级（unknown）。
  * 产品边界见 docs/design/limitations.md §2——动态模块图不是 bug。
  */
-import { describe, it, expect } from "vitest";
-import {
-  transpile,
-  runTranspiled,
-  callTranspiledExportFull,
-  foldStaticStringExpr,
-  litValue,
-  formatShape,
-  $lit,
-  type Abs,
-  type AbsModuleExports,
-} from "@nudojs/core";
-import { parseSource } from "../parse-source.ts";
+import {describe, it, expect} from "vitest";
+import {transpileSource, runTranspiled, callTranspiledExportFull, foldStaticStringExpr, litValue, formatShape, $lit, type Abs, type AbsModuleExports} from "@nudojs/core";
+import {parseSource} from "../parse-source.ts";
 
 function foldArg(src: string): string | undefined {
   const file = parseSource(src);
@@ -60,7 +50,7 @@ describe("foldStaticStringExpr (require spec subset)", () => {
 
 describe("transpile require subset", () => {
   it("literal / template / concat → __nudoRequire", () => {
-    const js = transpile(`
+    const js = transpileSource(`
 const a = require("./x.js");
 const b = require(\`./x.js\`);
 const c = require("./" + "x" + ".js");
@@ -70,14 +60,14 @@ const c = require("./" + "x" + ".js");
   });
 
   it("true dynamic require → $unknown() (not $callNamed require)", () => {
-    const js = transpile(`const m = require(name);`);
+    const js = transpileSource(`const m = require(name);`);
     expect(js).toContain("$unknown()");
     expect(js).not.toContain('$callNamed("require"');
     expect(js).not.toContain("__nudoRequire(");
   });
 
   it("require.resolve(lit) → $lit(spec); dynamic → $unknown()", () => {
-    const js = transpile(`
+    const js = transpileSource(`
 const p = require.resolve("./m.js");
 const q = require.resolve(name);
 `);
@@ -87,7 +77,7 @@ const q = require.resolve(name);
   });
 
   it("optional require both-sides foldable → __nudoRequireOptional", () => {
-    const js = transpile(`
+    const js = transpileSource(`
 function go() {
   let m;
   try { m = require("./a.js"); } catch { m = require("./b.js"); }
@@ -100,7 +90,7 @@ function go() {
   });
 
   it("optional require with non-foldable side stays honest try/catch", () => {
-    const js = transpile(`
+    const js = transpileSource(`
 function go() {
   let m;
   try { m = require("./a.js"); } catch { m = require(name); }

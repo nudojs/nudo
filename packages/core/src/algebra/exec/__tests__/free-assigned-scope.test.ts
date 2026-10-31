@@ -19,12 +19,12 @@
  *
  * 断言两层证据：① helper 的返回集；② 发射文本（快照行存在与否）+ 引擎值。
  */
-import { describe, it, expect } from "vitest";
-import { transpileSource } from "../transpile.ts";
-import { collectFreeAssignedNames } from "../transpile/helpers.ts";
-import { parseSource } from "../../parse-source.ts";
-import { callLit } from "../../__tests__/eval-helpers.ts";
-import { litValue } from "../../abs.ts";
+import {describe, it, expect} from "vitest";
+import {transpileSource} from "../transpile.ts";
+import {collectFreeAssignedNames} from "../transpile/helpers.ts";
+import {parseSource} from "../../parse-source.ts";
+import {callLit} from "../../__tests__/eval-helpers.ts";
+import {litValue} from "../../abs.ts";
 
 /** 转译源并取发射文本。 */
 function emit(src: string): string {

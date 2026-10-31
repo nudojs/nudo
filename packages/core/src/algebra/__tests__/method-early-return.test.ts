@@ -3,9 +3,9 @@
  * 回归：逐语句 map 会把 `if (c) return X; return Y` 的早退值丢进 $fork thunk，
  * 恒折 fall-through（假精确）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, $lit, transpile } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, $lit, transpileSource} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 const n0 = () => $lit(0);
 const n5 = () => $lit(5);
@@ -79,7 +79,7 @@ export function f(n) { return C.d(n); }`;
   const o = { d(n) { if (n <= 0) { return 0; } return 1; } };
   return o.d(0);
 }`;
-    const js = transpile(src, { source: src });
+    const js = transpileSource(src, { source: src });
     expect(js).toMatch(/return \$fork\(/);
   });
 

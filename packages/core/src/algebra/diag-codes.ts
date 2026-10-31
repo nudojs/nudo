@@ -116,3 +116,39 @@ export const DIAG = {
 
 /** 全部诊断码字面量联合（DIAG 值的类型面）。 */
 export type DiagCode = (typeof DIAG)[keyof typeof DIAG];
+
+/**
+ * check 面（`nudo check` 的分析器诊断通道 / LSP agent `check` 工具）承诺
+ * **可见**的分析器诊断码白名单。
+ *
+ * 单一真源：nudojs `check-json-map.ts` 与 lsp `agent-tools.ts` 此前各留
+ * 一份手抄（Bug 632 / Bug 1038 都动过此表——core 新增可发射码后漏抄
+ * 那张表 ⇒ agent 面静默吞诊断），现两包都经 `@nudojs/core/internal`
+ * 消费本表。
+ *
+ * 范围口径（迁自 nudojs 手抄版的既定注释）：
+ * - `nudo:missing-slot` / `nudo:builtin-unknown` / `nudo:no-method` /
+ *   `nudo:unknown-recv`：core `checkSource`（engine-debt 家族）独有能力；
+ * - `nudo:entry-may-throw` / `nudo:assume-*` / `nudo:invariant-*`：L2 家族
+ *   （check 面由 `resolveGateForFile` 解析，不与分析器通道混流）；
+ * - `nudo:mock-invalid`：check 面已有 `mockFromErrorIssues` 通道上报；
+ * - `nudo:case-*` / `nudo:may-throw`：check 面以 caseMode "none" 调分析器，
+ *   永不产出。
+ */
+export const CHECK_FACE_DIAG_CODES: readonly DiagCode[] = [
+  // interface 家族
+  DIAG.interfaceDomainExceeds,
+  DIAG.interfaceEntryOnly,
+  // 引擎内部异常的最低限度可观测面（makeSameFileFaceResolver 的
+  // `#face-resolve-error:` 标签映射，check.ts）：agent 面不得吞掉引擎 bug
+  DIAG.internal,
+  // 模块装载问题族（Bug 632）
+  DIAG.moduleMissing,
+  DIAG.missingExport,
+  DIAG.moduleCycle,
+  DIAG.moduleDepth,
+  DIAG.jsonInvalid,
+  DIAG.exportsUnresolved,
+  // env 家族（Bug 1038）
+  DIAG.envHarvestConflict,
+];

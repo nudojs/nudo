@@ -16,10 +16,10 @@
  * 修法：MemberPath 拆出 `rootTarget`（裸绑定名 / argsBinding / thisParam），
  * 写回一律用它；`rootSrc` 只作读基。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "../abs.ts";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { transpileSource } from "../exec/transpile.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "../abs.ts";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {transpileSource} from "../exec/transpile.ts";
 
 /** recordPositions 打开时求值导出函数（修前整模块 fail-closed → unknown） */
 function callWithPos(src: string, fnName = "f"): unknown {

@@ -19,11 +19,11 @@
  * `class D { static m(){} } D.hasOwnProperty("m")` → true（own-only——
  * 挂祖先时 false）；用户同名方法覆写照常分派。
  */
-import { describe, it, expect } from "vitest";
-import { formatShape } from "../format.ts";
-import { checkSource } from "../check.ts";
-import { call, val, isNever } from "./eval-helpers.ts";
-import { l2Count, sigOf } from "./nudo-constraints.ts";
+import {describe, it, expect} from "vitest";
+import {formatShape} from "../format.ts";
+import {checkSource} from "../check.ts";
+import {call, val, isNever} from "./eval-helpers.ts";
+import {l2Count, sigOf} from "./nudo-constraints.ts";
 
 function shape(src: string): string {
   return formatShape(call(src).result);

@@ -21,13 +21,13 @@
  * 扫描**：表达式内部的声明（形参名 undefined / 局部 let / const / var /
  * catch 参数）此前不可见 ⇒ 体折宿主内建（原生读的是绑定值）。
  */
-import { describe, it, expect } from "vitest";
-import { parseExpression } from "@babel/parser";
-import { call, throwsError, val } from "./eval-helpers.ts";
-import { $lit } from "../exec/runtime/state.ts";
-import { transpileExpression, transpileSource } from "../exec/transpile.ts";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { litValue } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {parseExpression} from "@babel/parser";
+import {call, throwsError, val} from "./eval-helpers.ts";
+import {$lit} from "../exec/runtime/state.ts";
+import {transpileExpression, transpileSource} from "../exec/transpile.ts";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {litValue} from "../abs.ts";
 
 describe("宿主内建标识符可被用户遮蔽", () => {
   it("模块级 const undefined = 5：读点返回 5", () => {

@@ -14,13 +14,13 @@
  *
  * 本文件的断言与 Node 真实执行结果对齐（原生读值见各用例注释）。
  */
-import { describe, it, expect } from "vitest";
-import { formatShape, formatAbs } from "../format.ts";
-import { denoteGuard } from "../denote.ts";
-import { absToConstraint } from "../projection.ts";
-import { checkSource, pTrue } from "../index.ts";
-import { call } from "./eval-helpers.ts";
-import { sidecarOpts } from "./nudo-constraints.ts";
+import {describe, it, expect} from "vitest";
+import {formatShape, formatAbs} from "../format.ts";
+import {denoteGuard} from "../denote.ts";
+import {absToConstraint} from "../projection.ts";
+import {checkSource, pTrue} from "../index.ts";
+import {call} from "./eval-helpers.ts";
+import {sidecarOpts} from "./nudo-constraints.ts";
 import type { Abs } from "../abs.ts";
 
 /** 取对象的投影串（签名面 / dts / zod / guard 的同源渲染） */
@@ -93,11 +93,11 @@ describe("Bug 191: 访问器占位槽不得投影成 exact undefined", () => {
 
   it("契约门禁：getter 返回值满足 shape 契约（改前假红）", () => {
     const accNudo = `
-import { number, shape } from "@nudojs/core";
+import {number, shape} from "@nudojs/core";
 export const numShape = shape({ ab: number() });
 `;
     const src = `
-/// @nudo:import { numShape } from "./acc.nudo.js"
+/// @nudo:import {numShape} from "./acc.nudo.js"
 /// @nudo:contract return numShape
 export function f() { return { get ab() { return 1; } }; }
 `;

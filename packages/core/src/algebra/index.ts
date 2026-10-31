@@ -208,7 +208,7 @@ export {
   runTranspiledOptionsMemoKey, runWithLoopExits, runtimeImportOf,
   setEvalAssignCollector, setEvalBindingSink, setEvalCallCollector,
   setEvalFallbackCollector, setPosCollector, type EvalPosRecord,
-  takeLoopExits, takeThrowExits, transpile,
+  takeLoopExits, takeThrowExits,
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
   tryRunTranspiled, withExecPhi, isCjsMainRun
 } from "./exec/index.ts";

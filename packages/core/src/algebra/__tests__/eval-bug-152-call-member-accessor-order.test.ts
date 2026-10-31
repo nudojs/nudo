@@ -14,9 +14,9 @@
  * 负控制钉住：非访问器成员（数据槽方法）、普通函数调用、super 调用、
  * 私有名调用、数组方法——行为不变。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "../abs.ts";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "../abs.ts";
+import {call} from "./eval-helpers.ts";
 
 /** 求值结果的字面量值 */
 function v(src: string): unknown {

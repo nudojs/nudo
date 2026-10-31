@@ -20,16 +20,16 @@
  * - 严格 `p === undefined` / typeof undefined 守卫假值臂仍可能 null（g2/g3 对照）
  * - 无守卫 / any 入口的运算面照旧记 may-throw（noGuard / anyAdd 对照）
  */
-import { describe, it, expect } from "vitest";
-import { checkSource, pTrue, formatAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";
-import { withStdImport, stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
-import { abs, num, str, anyAbs, unknown, numLit, type Abs } from "../abs.ts";
-import { objOf } from "../objects.ts";
-import { lit } from "../term.ts";
-import { cmp } from "../arithmetic.ts";
-import { $removeNull, $removeUndefined, $narrowTypeOf } from "../exec/runtime/async.ts";
-import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
-import { nullishGuardOf, typeGuardOf } from "../exec/transpile/stmt-predicates.ts";
+import {describe, it, expect} from "vitest";
+import {checkSource, pTrue, formatAbs, runTranspiled, callTranspiledExportFull} from "@nudojs/core";
+import {withStdImport, stdOpts, l2Count, sigOf} from "./nudo-constraints.ts";
+import {abs, num, str, anyAbs, unknown, numLit, type Abs} from "../abs.ts";
+import {objOf} from "../objects.ts";
+import {lit} from "../term.ts";
+import {cmp} from "../arithmetic.ts";
+import {$removeNull, $removeUndefined, $narrowTypeOf} from "../exec/runtime/async.ts";
+import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../may-throw.ts";
+import {nullishGuardOf, typeGuardOf} from "../exec/transpile/stmt-predicates.ts";
 
 function check(src: string) {
   return checkSource("/t/throw-granularity.js", withStdImport(src), pTrue, stdOpts);

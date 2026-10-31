@@ -4,9 +4,9 @@
  * $forOf($forInKeys(obj), …)，键序按原生（整数键升序 → 字符串键插入序），
  * 数组 hole 槽不出键，循环内 break/continue 同信号机制生效。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator for-in", () => {
   it("iterates object keys in insertion order", () => {

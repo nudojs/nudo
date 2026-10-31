@@ -15,10 +15,10 @@
  * - super.k = v / super.m() 静态面：$setSuperStatic / $staticSuperInvoke
  *  （父类静态 setter 派发；数据字段/缺槽 → 接收者类值自有写）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
-import { diffBody } from "./differential/harness.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
+import {diffBody} from "./differential/harness.ts";
 
 describe("R5: static-method this = class value (receiver)", () => {
   it("repro1: return this → B（this === B 折 true）", () => {

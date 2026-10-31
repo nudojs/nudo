@@ -5,9 +5,9 @@
  * variable 抛 TypeError，求值引擎折出新值（假成功）。同类覆盖：块内/函数内
  * const、解构赋值、for-of/for-in 的 const 头、逻辑赋值真正写入时。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call, isNever } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call, isNever} from "./eval-helpers.ts";
 
 function throwsTypeError(t: unknown): boolean {
   const a = t as { shape?: { k?: string; name?: string } };

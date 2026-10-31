@@ -24,12 +24,12 @@
  *   是显式 `yield` 表达式的正常发射，与 await 无关）。
  * - 产出面：async generator 自身的元素仍正确（for-await 累加精确）。
  */
-import { describe, it, expect } from "vitest";
-import { transpileSource, checkSource, pTrue } from "../index.ts";
-import { litValue } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {transpileSource, checkSource, pTrue} from "../index.ts";
+import {litValue} from "../abs.ts";
 import type { Abs } from "../abs.ts";
-import { call } from "./eval-helpers.ts";
-import { l2Count, sigOf } from "./nudo-constraints.ts";
+import {call} from "./eval-helpers.ts";
+import {l2Count, sigOf} from "./nudo-constraints.ts";
 
 /** 剥外层 promise（async 函数面：返回值恒 promise<内层>） */
 function unwrapPromise(a: Abs): Abs {

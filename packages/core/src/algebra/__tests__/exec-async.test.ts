@@ -1,12 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  $await,
-  litValue,
-  absToString,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, $await, litValue, absToString} from "@nudojs/core";
 
 describe("evaluator async / await", () => {
   it("await async call unwraps to concrete", () => {
@@ -38,16 +31,16 @@ export async function f() {
   });
 
   it("transpiles async and await", async () => {
-    const { transpile } = await import("@nudojs/core");
+    const {transpileSource} = await import("@nudojs/core");
     // Bug 201：async 体（**直接含 await**）编译成宿主生成器——`await` 发射
     // `yield`（真挂起点），由 `$asyncGen` 驱动恢复 ⇒ await 之后的语句不在
     // 调用点内联跑完（原生：恢复点是微任务）。
-    const out = transpile(`export async function f(n) { return await g(n); }`);
+    const out = transpileSource(`export async function f(n) { return await g(n); }`);
     expect(out).toContain("$asyncGen(");
     expect(out).toContain("function* ()");
     expect(out).toContain("yield ");
     // 无 await 的 async 体没有挂起点 ⇒ 沿用既有同步路径（$async(thunk)）
-    const noAwait = transpile(`export async function f(n) { return n + 1; }`);
+    const noAwait = transpileSource(`export async function f(n) { return n + 1; }`);
     expect(noAwait).toContain("$async(");
   });
 });

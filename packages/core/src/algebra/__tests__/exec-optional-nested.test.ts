@@ -1,14 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  $obj,
-  $arr,
-  litValue,
-  absToString,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, $obj, $arr, litValue, absToString, transpileSource} from "@nudojs/core";
 
 describe("evaluator optional chaining", () => {
   it("a?.b short-circuits on nullish", () => {
@@ -40,7 +31,7 @@ export function go(o) {
   });
 
   it("transpiles optional member", () => {
-    const out = transpile(`export function f(o) { return o?.x; }`);
+    const out = transpileSource(`export function f(o) { return o?.x; }`);
     // 整链短路：$fork + $nullishTest（?. 命中 nullish 时剩余链不再求值）
     expect(out).toContain("$fork(");
     expect(out).toContain("$nullishTest(");

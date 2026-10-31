@@ -17,10 +17,10 @@
  * 负控制：内建可迭代体（tuple / 字符串 / Set / Map）的解构**不受影响**
  * （仍是精确值）；`any` 接收者仍保持 any 面；非可迭代接收者仍抛 TypeError。
  */
-import { describe, it, expect } from "vitest";
-import { call, val, isNever, throwsError } from "./eval-helpers.ts";
-import { formatAbs } from "../format.ts";
-import { anyAbs } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {call, val, isNever, throwsError} from "./eval-helpers.ts";
+import {formatAbs} from "../format.ts";
+import {anyAbs} from "../abs.ts";
 
 /** 用户 iterable：对象带自有 @@iterator 方法（原生按迭代序产 1,2,3…） */
 const USER_ITER = `const it = { [Symbol.iterator]() { let i = 0; return { next: () => (i < 3 ? { value: ++i, done: false } : { done: true }) }; } };`;

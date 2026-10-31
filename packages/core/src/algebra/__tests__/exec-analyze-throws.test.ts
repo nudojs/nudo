@@ -1,12 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  absToString,
-  never,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, never} from "@nudojs/core";
 
 describe("evaluator analyze mode", () => {
   it("does not run top-level side effects", () => {

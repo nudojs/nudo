@@ -9,17 +9,11 @@
  * 这些 facet 直接进 $fnVal opts（this/arguments/effectFree/closed），边界一旦
  * 漂移会改变发射产物——用本文件把每条边界独立钉住。
  */
-import { describe, it, expect } from "vitest";
-import { parse } from "@babel/parser";
+import {describe, it, expect} from "vitest";
+import {parse} from "@babel/parser";
 import type { FunctionDeclaration } from "@babel/types";
-import {
-  getFnFacets,
-  fnBodyHasThis,
-  fnBodyHasOwnArguments,
-  fnBodyIsEffectFree,
-  fnBodyIsClosed,
-} from "../exec/transpile/helpers.ts";
-import { fnParamsHaveThis } from "../exec/transpile/expr/function.ts";
+import {getFnFacets, fnBodyHasThis, fnBodyHasOwnArguments, fnBodyIsEffectFree, fnBodyIsClosed} from "../exec/transpile/helpers.ts";
+import {fnParamsHaveThis} from "../exec/transpile/expr/function.ts";
 
 function decl(src: string): FunctionDeclaration {
   const ast = parse(src, { sourceType: "script" });

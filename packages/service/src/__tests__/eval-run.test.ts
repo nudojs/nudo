@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, $lit, litValue, numLit } from "@nudojs/core";
-import { tryEvalCall, tryEvalCallFull, analyzeFile } from "@nudojs/service";
-import { formatShape } from "@nudojs/core";
-import { tmpProject } from "./tmp-project.ts";
+import {describe, it, expect} from "vitest";
+import {writeFileSync} from "node:fs";
+import {join} from "node:path";
+import {runTranspiled, callTranspiledExport, callTranspiledExportFull, $lit, litValue, numLit} from "@nudojs/core";
+import {tryEvalCall, tryEvalCallFull, analyzeFile} from "@nudojs/service";
+import {formatShape} from "@nudojs/core";
+import {tmpProject} from "./tmp-project.ts";
 
 function tmpPair(math: string, main: string) {
   const dir = tmpProject("nudo-eval-imp-");
@@ -17,7 +17,7 @@ describe("evaluator imported functions", () => {
   it("runTranspiled + injected JS exports from dep", () => {
     const dep = runTranspiled(`export function double(x) { return x * 2; }`);
     const main = runTranspiled(
-      `import { double } from "./math.js";
+      `import {double} from "./math.js";
 export function run(n) { return double(n); }`,
       { modules: { "./math.js": dep as never } },
     );
@@ -28,7 +28,7 @@ export function run(n) { return double(n); }`,
   it("tryEvalCall via module graph (Abs absFunction dep)", () => {
     const { main, mainPath } = tmpPair(
       `export function double(x) { return x * 2; }`,
-      `import { double } from "./math.js";
+      `import {double} from "./math.js";
 export function run(n) { return double(n); }
 `,
     );
@@ -40,7 +40,7 @@ export function run(n) { return double(n); }
   it("analyzeFile case polish uses eval path for relative import", () => {
     const { dir, main, mainPath } = tmpPair(
       `export function triple(x) { return x * 3; }`,
-      `import { triple } from "./b.js";
+      `import {triple} from "./b.js";
 /**
  * @nudo:case "four" (4)
  */
@@ -126,9 +126,9 @@ export { g } from "./dd.js";
 
 describe("transpile import emission", () => {
   it("preserves relative import", async () => {
-    const { transpile } = await import("@nudojs/core");
-    const out = transpile(
-      `import { double } from "./math.js";
+    const {transpileSource} = await import("@nudojs/core");
+    const out = transpileSource(
+      `import {double} from "./math.js";
 export function run(n) { return double(n); }`,
     );
     expect(out).toContain('from "./math.js"');

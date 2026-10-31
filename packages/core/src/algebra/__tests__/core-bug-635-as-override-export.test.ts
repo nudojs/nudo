@@ -14,10 +14,10 @@
  * 负控制：① 非 export 形态仍按精确区间命中；② **非** export 引导词的同尾
  * 区间不得误命中（fail-closed）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { $lit } from "../exec/runtime/state.ts";
-import { litValue, type Abs } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {$lit} from "../exec/runtime/state.ts";
+import {litValue, type Abs} from "@nudojs/core";
 
 /** 结果字面量值（非字面量 → "not-lit"） */
 function lit(a: Abs): unknown {

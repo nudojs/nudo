@@ -24,8 +24,8 @@
  * （chainProtoSlotOf——实例/原型品牌沿链）；strictEqAbs 类值不同名必不
  * 同值；$new 匿名 fn 构造器实例 brand 用伪父名（new Base().x 沿 proto 折）。
  */
-import { describe, it, expect } from "vitest";
-import { val } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {val} from "./eval-helpers.ts";
 
 const v = (src: string) => val(`function f() { ${src} }`);
 

@@ -15,8 +15,8 @@
  *   let x = 2**53; return x++;  // 原生 2**53，引擎 2**53-1
  * 必须先缓存 oldValue，不得用 `new-1` 还原。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, litValue} from "@nudojs/core";
 
 function run(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "exec", maxLoopIters: 2000 });

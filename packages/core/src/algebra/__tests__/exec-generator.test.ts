@@ -1,28 +1,10 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  absToString,
-  transpile,
-  formatAbs,
-  anyAbs,
-  abs,
-  numLit,
-  strLit,
-} from "@nudojs/core";
-import { $copy } from "../exec/runtime/containers.ts";
-import {
-  registerGenDeferred,
-  replayGenDeferred,
-  registerGenElements,
-  matchIterElements,
-  registerMatchIter,
-} from "../exec/match-iter.ts";
-import { NudoThrow } from "../exec/nudo-throw.ts";
-import { absFunction } from "../abs-fn.ts";
-import { runWithMayThrowSession, setMayThrowCollector } from "../may-throw.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource, formatAbs, anyAbs, abs, numLit, strLit} from "@nudojs/core";
+import {$copy} from "../exec/runtime/containers.ts";
+import {registerGenDeferred, replayGenDeferred, registerGenElements, matchIterElements, registerMatchIter} from "../exec/match-iter.ts";
+import {NudoThrow} from "../exec/nudo-throw.ts";
+import {absFunction} from "../abs-fn.ts";
+import {runWithMayThrowSession, setMayThrowCollector} from "../may-throw.ts";
 
 describe("evaluator generators", () => {
   it("function* collects yields into tuple", () => {
@@ -62,7 +44,7 @@ export function sum() {
   });
 
   it("transpiles generator to $gen/$yield", () => {
-    const out = transpile(`export function* g() { yield 1; }`);
+    const out = transpileSource(`export function* g() { yield 1; }`);
     expect(out).toContain("$gen(");
     expect(out).toContain("$yield(");
   });
@@ -153,14 +135,14 @@ export function f() { const it = o.m(); return it[0] + it[1]; }
   });
 
   it("transpiles object generator method to $gen/$yield", () => {
-    const out = transpile(`export const o = { *g() { yield 1; } };`);
+    const out = transpileSource(`export const o = { *g() { yield 1; } };`);
     expect(out).toContain("$gen(");
     expect(out).toContain("$yield(");
   });
 
   it("transpile reads the delegate flag ($yieldStar vs $yield)", () => {
-    expect(transpile(`export function* g() { yield* [1]; }`)).toContain("$yieldStar(");
-    expect(transpile(`export function* g() { yield 1; }`)).not.toContain("$yieldStar(");
+    expect(transpileSource(`export function* g() { yield* [1]; }`)).toContain("$yieldStar(");
+    expect(transpileSource(`export function* g() { yield 1; }`)).not.toContain("$yieldStar(");
   });
 });
 

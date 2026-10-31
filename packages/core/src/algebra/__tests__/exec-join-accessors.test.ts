@@ -6,12 +6,12 @@
  * 修法：混合臂把 getter 结果域并入数据槽；同一访问器定义（别名/迁移产物）
  * 整组迁移到 join 产物，读继续走侧表。每条断言与 Node 真实执行结果对齐。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { transpile, formatShape, unknown as unknownAbs, type Abs } from "@nudojs/core";
+import {describe, it, expect, afterAll} from "vitest";
+import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join, dirname} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
+import {transpileSource, formatShape, unknown as unknownAbs, type Abs} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -25,7 +25,7 @@ const runtimeUrl = pathToFileURL(
 async function execTranspiled(source: string, exportName: string) {
   const dir = mkdtempSync(join(tmpdir(), "nudo-eval-join-acc-"));
   dirs.push(dir);
-  const js = transpile(source, { runtimeImport: runtimeUrl });
+  const js = transpileSource(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
   writeFileSync(modPath, js, "utf-8");
   const mod = await import(pathToFileURL(modPath).href);

@@ -1,23 +1,14 @@
-import { describe, it, expect } from "vitest";
-import { transpile } from "../exec/transpile.ts";
-import {
-  $obj,
-  $objRest,
-  $get,
-  $orDefault,
-  formatAbs,
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "@nudojs/core";
-import { numLit } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {transpileSource} from "../exec/transpile.ts";
+import {$obj, $objRest, $get, $orDefault, formatAbs, runTranspiled, callTranspiledExportFull, litValue} from "@nudojs/core";
+import {numLit} from "@nudojs/core";
 
 describe("RestElement emit + rest runtime", () => {
   it("transpile emits $objRest / $arrRest", () => {
     const objSrc = `function f(o) { const { a, ...rest } = o; return rest; }`;
     const arrSrc = `function g(xs) { const [h, ...t] = xs; return t; }`;
-    expect(transpile(objSrc)).toContain("$objRest");
-    expect(transpile(arrSrc)).toContain("$arrRest");
+    expect(transpileSource(objSrc)).toContain("$objRest");
+    expect(transpileSource(arrSrc)).toContain("$arrRest");
   });
 
   it("$objRest drops named keys", () => {
@@ -107,7 +98,7 @@ describe("nested rest pattern binding", () => {
 
   it("rest param pattern with own arguments slot binds (useArgsSlot path)", () => {
     // 发射序：`const _rest0` 必须先于引用它的解构行（后置 = TDZ ReferenceError）
-    const out = transpile(
+    const out = transpileSource(
       `const g = function (...[a, b]) { return arguments.length + a + b; }; g(4, 5);`,
     );
     const declAt = out.indexOf("let _rest0 =");

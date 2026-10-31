@@ -27,7 +27,7 @@
  * **全新模块实例**（计数器归零 ⇒ 首个 for 循环 ⇒ `__nudoLv0`），复现与
  * 修复都可钉死（不受同文件其它用例的转译次数影响）。
  */
-import { describe, it, expect, vi } from "vitest";
+import {describe, it, expect, vi} from "vitest";
 
 /** 模块图重新求值（首个用例最慢——冷缓存 + 并行负载）⇒ 超时放宽 */
 const TIMEOUT = 60_000;

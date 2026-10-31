@@ -7,7 +7,7 @@
  * **未导出**的顶层函数也当导出：
  * 1. `function foo(){} export * from "./x.js"` —— 本地私有 foo 压过 star，
  *    依赖模块的 foo 被遮蔽（原生：star 值胜出）；
- * 2. `import { helper } from "./m.js"`（helper 私有）被静默接受（漏
+ * 2. `import {helper} from "./m.js"`（helper 私有）被静默接受（漏
  *    nudo:missing-export；service 侧回归见
  *    service/__tests__/export-private-function-missing.test.ts）；
  * 3. transpileSource 产物作为真实 ESM 时多出 `export function helper`。
@@ -17,12 +17,12 @@
  * 函数名建**非枚举**分析槽（Object.hasOwn / callTranspiledExportFull 可用，
  * Object.keys 不可见），真实导出槽随后按 dyn → cjs → 静态名的旧顺序覆盖。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { transpileSource, transpileFile } from "../exec/transpile.ts";
-import { parseSource } from "../parse-source.ts";
-import { abs, litValue } from "../abs.ts";
-import { pTrue } from "../pred.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {transpileSource, transpileFile} from "../exec/transpile.ts";
+import {parseSource} from "../parse-source.ts";
+import {abs, litValue} from "../abs.ts";
+import {pTrue} from "../pred.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 
 const num = (value: number) =>

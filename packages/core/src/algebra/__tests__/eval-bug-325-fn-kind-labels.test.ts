@@ -42,9 +42,9 @@
  * `exec/runtime/state.ts` 的宿主函数→种类旁表）⇒ `asAbsVal` 建 fn Abs 时
  * 读戳 ⇒ 标签面给出原生标签（与表达式 / 箭头 / 方法四条路径同口径）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 /** 端到端取 `Object.prototype.toString.call(x)` 的标签字面量（body 形态） */
 function tag(body: string): { ok: boolean; value?: unknown } {

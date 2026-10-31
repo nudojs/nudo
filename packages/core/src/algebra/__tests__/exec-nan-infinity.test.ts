@@ -6,9 +6,9 @@
  * 折 partial boolean（原生 true）。
  * 每条断言与 Node 真实执行结果对齐（vm 复核）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function str(src: string) {
   return litValue(call(src, "run").result);

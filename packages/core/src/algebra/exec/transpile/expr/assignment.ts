@@ -269,6 +269,16 @@ export function transpileAssignmentExpr(
           // 表达式值 = 写入的值（JS 语义）
           return memberWriteIfe(path, right);
         }
+        /**
+         * Bug 55/R5：super 写（静态面 / 实例原型链两臂）的同构尾段——
+         * 复合赋值走读-改-写（读沿父类面，readCall 由各臂构造：字符串键
+         * $get / 计算键 $idx / $getSuper/$getSuperObj），表达式值 = 写入
+         * 的值（$set 族返回容器不是 JS 语义）。
+         */
+        const superAssignSrc = (readCall: string, setCall: string): string => {
+          const valSrc = compoundFn ? `${compoundFn}(${readCall}, ${right})` : right;
+          return `((${assignV}) => ((${setCall}), ${assignV}))(${valSrc})`;
+        };
         // R5：静态方法体 super.k = v（staticSuperSrc + thisParam + className
         // 同时在）——SetSuper 静态面：父类静态 setter 派发，数据字段/缺槽
         // → 接收者（this = 调用类值）自有写。此前落通用 $set(父类) 把写
@@ -283,13 +293,13 @@ export function transpileAssignmentExpr(
           const keySrc = m.computed
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-          const setCall = `$setSuperStatic(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`;
           // 复合读沿父类静态面（$get 收字符串键；计算键经 $idx 收 Abs）
-          const readSrc = m.computed
-            ? `$idx(${opts.staticSuperSrc}, ${keySrc})`
-            : `$get(${opts.staticSuperSrc}, ${JSON.stringify((m.property as { name: string }).name)})`;
-          const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
-          return `((${assignV}) => ((${setCall}), ${assignV}))(${valSrc})`;
+          return superAssignSrc(
+            m.computed
+              ? `$idx(${opts.staticSuperSrc}, ${keySrc})`
+              : `$get(${opts.staticSuperSrc}, ${JSON.stringify((m.property as { name: string }).name)})`,
+            `$setSuperStatic(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`,
+          );
         }
         // Bug 55：super.k = v / super[k] = v（实例方法/构造器）——此前裸发
         // `/* super */` 注释哨兵（$set(, "x", v)）→ 宿主硬 SyntaxError。
@@ -303,15 +313,15 @@ export function transpileAssignmentExpr(
           const keySrc = m.computed
             ? transpileExpression(m.property as Expression, opts)
             : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-          const setCall = opts.className
-            ? `$setSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`
-            : `$setSuperObj(${recv}, ${keySrc}, ${assignV})`;
           // 复合赋值（super.x += 5）：读-改-写——读沿 super 链（$getSuper）
-          const readSrc = opts.className
-            ? `$getSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc})`
-            : `$getSuperObj(${recv}, ${keySrc})`;
-          const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
-          return `((${assignV}) => ((${setCall}), ${assignV}))(${valSrc})`;
+          return superAssignSrc(
+            opts.className
+              ? `$getSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc})`
+              : `$getSuperObj(${recv}, ${keySrc})`,
+            opts.className
+              ? `$setSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc}, ${assignV})`
+              : `$setSuperObj(${recv}, ${keySrc}, ${assignV})`,
+          );
         }
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
@@ -355,6 +365,69 @@ export function transpileAssignmentExpr(
         const mpKey = mpNames[1]!;
         const mpVal = mpNames[2]!;
         const mpOld = mpNames[3]!;
+        /**
+         * 计算键分类器（Bug 136：对象 → 键 → RHS 求值顺序；键只求值一次）：
+         * - NumericLiteral → $idx/$idxSet + `$lit(n)` 键源；
+         * - StringLiteral → $get/$set + JSON 键源；
+         * - 句法形 `Symbol.X` → $get/$set + "@@X" 投影键 + symbolKey 标记
+         *   （镜像成员读 / 对象字面量计算键的投影口径——`ai[Symbol.asyncIterator]
+         *   = fn` 必须落成可识别槽，否则 for await 的异步可迭代性不可见，
+         *   Bug 13；Bug 73：Slot.symbolKey——JSON 枚举面不可见）；
+         * - 其余泛计算键 → $idx/$idxSet + 键表达式作 IIFE 第二实参
+         *   （keyLit=null——只求值一次且先于 RHS）。
+         * 非表达式键（无可靠 lowering）返回 null → 下方 fail-closed。
+         */
+        const classifyComputedKey = (
+          k: Node,
+        ): { readSrc: string; writeSrc: string; keyLit: string | null; symbolKey: boolean } | null => {
+          if (k.type === "NumericLiteral") {
+            return {
+              readSrc: "$idx",
+              writeSrc: "$idxSet",
+              keyLit: `$lit(${(k as unknown as { value: number }).value})`,
+              symbolKey: false,
+            };
+          }
+          if (k.type === "StringLiteral") {
+            return {
+              readSrc: "$get",
+              writeSrc: "$set",
+              keyLit: JSON.stringify((k as unknown as { value: string }).value),
+              symbolKey: false,
+            };
+          }
+          if (!isExpression(k)) return null;
+          const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
+          if (symK !== null) {
+            return { readSrc: "$get", writeSrc: "$set", keyLit: symK, symbolKey: true };
+          }
+          return { readSrc: "$idx", writeSrc: "$idxSet", keyLit: null, symbolKey: false };
+        };
+        /**
+         * 计算键读-改-写 IIFE 单一发射器：键分类计划 → 赋值表达式源。
+         * Bug 136 顺序钉死——对象与泛计算键作 IIFE 实参（外层作用域求值，
+         * 各只一次），RHS 落体内（最后求值）；键字面源（keyLit 非空）直接
+         * 内嵌读写调用位（无第二实参）。compound 时插旧值读 + compound
+         * 折叠（族 57 第 8 条：读-改-写，旧值不可判折 unknown——不把
+         * 「判不准」升级成确定值）。
+         */
+        const emitReadModifyWriteIife = (
+          plan: { readSrc: string; writeSrc: string; keyLit: string | null; symbolKey: boolean },
+          obj: string,
+          /** 泛计算键表达式源（plan.keyLit 非空时传空串——不求值） */
+          keyArg: string,
+        ): string => {
+          const keyAcc = plan.keyLit ?? mpKey;
+          const symOpt = plan.symbolKey ? ", { symbolKey: true }" : "";
+          const read = `${plan.readSrc}(${mpObj}, ${keyAcc}${symOpt})`;
+          const write = `${plan.writeSrc}(${mpObj}, ${keyAcc}, ${mpVal}${symOpt})`;
+          const params = plan.keyLit !== null ? mpObj : `${mpObj}, ${mpKey}`;
+          const args = plan.keyLit !== null ? obj : `${obj}, ${keyArg}`;
+          const valBind = compoundFn
+            ? `const ${mpOld} = ${read}; const ${mpVal} = ${compoundFn}(${mpOld}, ${right});`
+            : `const ${mpVal} = ${right};`;
+          return `((${params}) => { ${valBind} (${write}); return ${mpVal}; })(${args})`;
+        };
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
           const key = JSON.stringify(m.property.name);
@@ -371,38 +444,15 @@ export function transpileAssignmentExpr(
         if (m.computed) {
           const obj = transpileExpression(m.object as Expression, opts);
           const k = m.property;
-          if (k.type === "NumericLiteral") {
-            if (!compoundFn) {
-              return `((${mpObj}) => { const ${mpVal} = ${right}; ($idxSet(${mpObj}, $lit(${k.value}), ${mpVal})); return ${mpVal}; })(${obj})`;
-            }
-            // 族 57 第 8 条同款：复合赋值读-改-写（读 $idx / 写 $idxSet）
-            return `((${mpObj}) => { const ${mpOld} = $idx(${mpObj}, $lit(${k.value})); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($idxSet(${mpObj}, $lit(${k.value}), ${mpVal})); return ${mpVal}; })(${obj})`;
-          }
-          if (k.type === "StringLiteral") {
-            const key = JSON.stringify(k.value);
-            if (!compoundFn) {
-              return `((${mpObj}) => { const ${mpVal} = ${right}; ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
-            }
-            return `((${mpObj}) => { const ${mpOld} = $get(${mpObj}, ${key}); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($set(${mpObj}, ${key}, ${mpVal})); return ${mpVal}; })(${obj})`;
-          }
-          if (isExpression(k)) {
-            // [Symbol.X] = v → "@@X" 字符串槽写（镜像成员读 / 对象字面量计算键
-            // 的投影口径——`ai[Symbol.asyncIterator] = fn` 必须落成可识别槽，
-            // 否则 for await 的异步可迭代性不可见，Bug 13）
-            const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
-            if (symK !== null) {
-              // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
-              if (!compoundFn) {
-                return `((${mpObj}) => { const ${mpVal} = ${right}; ($set(${mpObj}, ${symK}, ${mpVal}, { symbolKey: true })); return ${mpVal}; })(${obj})`;
-              }
-              return `((${mpObj}) => { const ${mpOld} = $get(${mpObj}, ${symK}, { symbolKey: true }); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($set(${mpObj}, ${symK}, ${mpVal}, { symbolKey: true })); return ${mpVal}; })(${obj})`;
-            }
-            // 计算键只求值一次（IIFE 实参）且先于 RHS（原生顺序）
-            if (!compoundFn) {
-              return `((${mpObj}, ${mpKey}) => { const ${mpVal} = ${right}; ($idxSet(${mpObj}, ${mpKey}, ${mpVal})); return ${mpVal}; })(${obj}, ${transpileExpression(k, opts)})`;
-            }
-            // 族 57 第 8 条同款：复合赋值读-改-写（键仍只求值一次）
-            return `((${mpObj}, ${mpKey}) => { const ${mpOld} = $idx(${mpObj}, ${mpKey}); const ${mpVal} = ${compoundFn}(${mpOld}, ${right}); ($idxSet(${mpObj}, ${mpKey}, ${mpVal})); return ${mpVal}; })(${obj}, ${transpileExpression(k, opts)})`;
+          const plan = classifyComputedKey(k);
+          if (plan) {
+            return emitReadModifyWriteIife(
+              plan,
+              obj,
+              // 泛计算键表达式作 IIFE 第二实参（外层作用域求值一次）；键
+              // 字面源已内嵌读写位，不再求值键表达式
+              plan.keyLit === null ? transpileExpression(k as Expression, opts) : "",
+            );
           }
         }
         throw new NudoUnsupportedError(

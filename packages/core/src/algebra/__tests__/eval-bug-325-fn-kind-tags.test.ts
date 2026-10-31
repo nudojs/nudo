@@ -17,9 +17,9 @@
  * expr/object.ts、transpile/stmt/statement.ts——不在本分片文件清单内），
  * 尚未打戳 ⇒ 仍折 "[object Function]"（越界诉求见分片报告）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

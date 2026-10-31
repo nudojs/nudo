@@ -1,12 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, formatAbs, transpileSource} from "@nudojs/core";
 
 describe("evaluator switch", () => {
   it("selects matching case by concrete disc", () => {
@@ -70,7 +63,7 @@ export function go(n) {
   });
 
   it("transpiles switch to $switch", () => {
-    const out = transpile(`export function f(n) { switch (n) { case 1: return 1; default: return 0; } }`);
+    const out = transpileSource(`export function f(n) { switch (n) { case 1: return 1; default: return 0; } }`);
     expect(out).toContain("$switch(");
   });
 

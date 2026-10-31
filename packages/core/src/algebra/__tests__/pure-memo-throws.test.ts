@@ -7,22 +7,14 @@
  * - 内层 Map 加界（LRU cap）
  * - 清理路径覆盖（clearPureMemo / clearPureCallMemo）
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import {
-  absFunction,
-  runTranspiled,
-  callTranspiledExportFull,
-  numLit,
-  never as neverAbs,
-  unknown as absUnknown,
-  type Abs,
-} from "../index.ts";
-import { $call, clearPureMemo } from "../exec/call.ts";
-import { $callNamed, clearPureCallMemo, resetEvalCallBudget } from "../exec/calls.ts";
-import { runWithLoopExits, takeThrowExits } from "../exec/runtime/state.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
-import { markPureFn, makeAbsApplyResult } from "../abs-fn.ts";
-import { BoundedLruMap } from "../lru-map.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {absFunction, runTranspiled, callTranspiledExportFull, numLit, never as neverAbs, unknown as absUnknown, type Abs} from "../index.ts";
+import {$call, clearPureMemo} from "../exec/call.ts";
+import {$callNamed, clearPureCallMemo, resetEvalCallBudget} from "../exec/calls.ts";
+import {runWithLoopExits, takeThrowExits} from "../exec/runtime/state.ts";
+import {errorTypeAbs} from "../exec/may-throw.ts";
+import {markPureFn, makeAbsApplyResult} from "../abs-fn.ts";
+import {BoundedLruMap} from "../lru-map.ts";
 
 beforeEach(() => {
   clearPureMemo();
@@ -160,7 +152,7 @@ describe("$callNamed pure hit does not drop throws face (R2B-001)", () => {
       pureName: "l2Maybe",
     });
     const runCaller = runTranspiled(
-      `import { maybe } from "./a.js";
+      `import {maybe} from "./a.js";
 export function caller(a) {
   const p = maybe(a);
   const q = maybe(a);

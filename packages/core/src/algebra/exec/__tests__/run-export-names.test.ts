@@ -12,13 +12,13 @@
  * - 导出键插入序 dyn → cjs → 静态名；
  * - host 产物无 import/export 语句，且 meta 名字面与 run 表一致。
  */
-import { describe, it, expect } from "vitest";
-import { parse as babelParse } from "@babel/parser";
+import {describe, it, expect} from "vitest";
+import {parse as babelParse} from "@babel/parser";
 
-import { runTranspiled, callTranspiledExportFull } from "../run.ts";
-import { transpileModule } from "../transpile.ts";
-import { abs, litValue, type Abs } from "../../abs.ts";
-import { pTrue } from "../../pred.ts";
+import {runTranspiled, callTranspiledExportFull} from "../run.ts";
+import {transpileModule} from "../transpile.ts";
+import {abs, litValue, type Abs} from "../../abs.ts";
+import {pTrue} from "../../pred.ts";
 import type { AbsModuleExports } from "../../abs-modules.ts";
 
 const num = (value: number) =>
@@ -140,7 +140,7 @@ describe("import 绑定：live 刷新与 mock 遮蔽", () => {
   it("依赖导出变更经调用入口刷新到 import 绑定（live binding）", () => {
     const dep: AbsModuleExports = { named: { value: num(1) } };
     const run = runTranspiled(
-      `import { value } from "./dep.js";
+      `import {value} from "./dep.js";
 export function read() { return value; }
 export { value };
 `,
@@ -158,7 +158,7 @@ export { value };
   it("mock 遮蔽 import 绑定：读 mock 值且不被 live refresh 冲掉（Bug 273）", () => {
     const dep: AbsModuleExports = { named: { value: num(1) } };
     const run = runTranspiled(
-      `import { value } from "./dep.js";
+      `import {value} from "./dep.js";
 export function read() { return value; }
 `,
       { modules: { "./dep.js": dep }, mocks: { value: num(9) } },
@@ -256,7 +256,7 @@ describe("TS type-only 模块标记：仍是 ESM（strict / 顶层 this === unde
 describe("host 产物与 meta 一致性", () => {
   it("产物无 import/export 语句；meta 名字面 = run 表枚举面", () => {
     const src = `
-import { v as depV } from "./dep.js";
+import {v as depV} from "./dep.js";
 export const a = 1, b = 2;
 export function f() { return depV; }
 function priv() { return 0; }

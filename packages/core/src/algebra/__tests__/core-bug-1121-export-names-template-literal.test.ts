@@ -18,15 +18,15 @@
  *   发射格式（例如把字符串内容原样吐出），本测试会**立刻变红** ⇒ 缺陷不会
  *   静默回归。
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import { stripStaticExportDecls, sourceStaticExportNames } from "../exec/export-names.ts";
-import { transpile } from "../exec/transpile.ts";
-import { resetCheckSourceMemo } from "../check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {stripStaticExportDecls, sourceStaticExportNames} from "../exec/export-names.ts";
+import {transpileSource} from "../exec/transpile.ts";
+import {resetCheckSourceMemo} from "../check.ts";
+import {resetGeneralizeMemo} from "../generalize.ts";
+import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
+import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface.ts";
+import {resetParseSourceCache} from "../parse-source.ts";
+import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
 
 /** 缓存重置（仓库惯例） */
 beforeEach(() => {
@@ -42,31 +42,31 @@ beforeEach(() => {
 });
 
 /** 文本口径的导出名（transpile 产物 ⇒ 真实发射格式） */
-const namesOf = (src: string): string[] => stripStaticExportDecls(transpile(src)).names;
+const namesOf = (src: string): string[] => stripStaticExportDecls(transpileSource(src)).names;
 
 describe("Bug 1121 — 模板字面量里的伪导出不被当成导出（不变量锁定）", () => {
   it("单行模板字面量里的 `export const z` 不是导出", () => {
     const src = "const s = `export const z = 1;`;\nexport const y = 2;";
     // 产物里伪导出只以「字符串内容」形态存在（JSON 转义 ⇒ 换行不成行）
-    expect(transpile(src)).not.toMatch(/^export const z/m);
+    expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
   });
 
   it("多行模板字面量里的 `export const z` 不是导出", () => {
     const src = "const s = `\nexport const z = 1;\n`;\nexport const y = 2;";
-    expect(transpile(src)).not.toMatch(/^export const z/m);
+    expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
   });
 
   it("带插值的模板字面量里的伪导出不是导出", () => {
     const src = "const s = `a${1}\nexport const z = 1;`;\nexport const y = 2;";
-    expect(transpile(src)).not.toMatch(/^export const z/m);
+    expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
   });
 
   it("注释里的伪导出不是导出（注释不进产物）", () => {
     const src = "// export const z = 1;\nexport const y = 2;";
-    expect(transpile(src)).not.toMatch(/^export const z/m);
+    expect(transpileSource(src)).not.toMatch(/^export const z/m);
     expect(namesOf(src)).toEqual(["y"]);
   });
 

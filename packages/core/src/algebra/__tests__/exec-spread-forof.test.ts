@@ -1,14 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  $obj,
-  $arr,
-  litValue,
-  absToString,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, $obj, $arr, litValue, absToString, transpileSource} from "@nudojs/core";
 
 describe("evaluator spread", () => {
   it("object spread overwrites keys", () => {
@@ -40,7 +31,7 @@ export function go() {
   });
 
   it("transpiles spread", () => {
-    const out = transpile(`export function f(a, b) { return { ...a, z: 1 }; }`);
+    const out = transpileSource(`export function f(a, b) { return { ...a, z: 1 }; }`);
     expect(out).toContain("$spread(");
   });
 });
@@ -79,7 +70,7 @@ export function go() {
   });
 
   it("transpiles for-of", () => {
-    const out = transpile(`export function f(xs) { let t = 0; for (const x of xs) { t = t + x; } return t; }`);
+    const out = transpileSource(`export function f(xs) { let t = 0; for (const x of xs) { t = t + x; } return t; }`);
     expect(out).toContain("$forOf(");
   });
 });

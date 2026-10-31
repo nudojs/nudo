@@ -53,8 +53,8 @@
  * - 本条自身的负控制用例（见下方两条 `it`）：协议面与 yield 序列不变、
  *   解构 lowering 取到元素。
  */
-import { describe, it, expect } from "vitest";
-import { val } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {val} from "./eval-helpers.ts";
 
 describe("Bug 212：生成器体的构造期副作用（待转译侧绑定隔离 / 分段）", () => {
   it.todo("原生：const it = g() 之后外层绑定仍是旧值（n = 0）");

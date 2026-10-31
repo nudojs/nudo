@@ -30,10 +30,10 @@
  *   return __nudoTm_0 + x; }`）
  * - `f()`：原生 `0`（`const __nudoArgs = 1; return arguments.length;`）
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "../abs.ts";
-import { transpileSource, checkSource, pTrue } from "../index.ts";
-import { callLit } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "../abs.ts";
+import {transpileSource, checkSource, pTrue} from "../index.ts";
+import {callLit} from "./eval-helpers.ts";
 
 /** 引擎求值结果字面量值 */
 function v(src: string, ...args: unknown[]) {

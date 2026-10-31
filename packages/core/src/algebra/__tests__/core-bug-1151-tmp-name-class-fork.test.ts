@@ -39,17 +39,17 @@
  *
  * 锚定值均为 **node v26.10.0** 原生实测（见各断言注释）。
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import { val } from "./eval-helpers.ts";
-import { $lit } from "../exec/runtime/state.ts";
-import { sigOf } from "./nudo-constraints.ts";
-import { checkSource, pTrue, transpileSource } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {val} from "./eval-helpers.ts";
+import {$lit} from "../exec/runtime/state.ts";
+import {sigOf} from "./nudo-constraints.ts";
+import {checkSource, pTrue, transpileSource} from "../index.ts";
+import {resetCheckSourceMemo} from "../check.ts";
+import {resetGeneralizeMemo} from "../generalize.ts";
+import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
+import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface.ts";
+import {resetParseSourceCache} from "../parse-source.ts";
+import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {

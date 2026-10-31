@@ -15,9 +15,9 @@
  * （"#" 前缀 brand 校验）——键按类作用域化后，跨类访问命中"非本类槽" ⇒
  * 确定 TypeError。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 /** 结果字面量值（litValue） */
 function v(src: string) {

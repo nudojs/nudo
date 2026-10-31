@@ -28,9 +28,9 @@
  *   soundness 纪律：消除 wrong-definite（native 值恒在值域内），
  *   完整续体恢复（真跑 finally/catch 体）超出 eager 快照模型能力。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, formatAbs } from "@nudojs/core";
-import { call, effects, isNever, objSlots, throwsError } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, formatAbs} from "@nudojs/core";
+import {call, effects, isNever, objSlots, throwsError} from "./eval-helpers.ts";
 
 describe("Bug 53: >8 yield 序列不截断（完整序列驱动 next/done）", () => {
   it("for i<9：第二个 next().value → 1（native 1）", () => {

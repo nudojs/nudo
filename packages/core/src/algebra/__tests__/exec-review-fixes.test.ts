@@ -4,12 +4,12 @@
  * generator instanceof。
  * 每条断言与 Node 真实执行结果对齐（或明确为 sound 的 unknown/boolean）。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { transpile, litValue, formatShape, abs, type Abs } from "@nudojs/core";
+import {describe, it, expect, afterAll} from "vitest";
+import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join, dirname} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
+import {transpileSource, litValue, formatShape, abs, type Abs} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -23,7 +23,7 @@ const runtimeUrl = pathToFileURL(
 async function execTranspiled(source: string, exportName = "run") {
   const dir = mkdtempSync(join(tmpdir(), "nudo-eval-review-"));
   dirs.push(dir);
-  const js = transpile(source, { runtimeImport: runtimeUrl });
+  const js = transpileSource(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
   writeFileSync(modPath, js, "utf-8");
   const mod = await import(pathToFileURL(modPath).href);
@@ -81,7 +81,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
   });
 
   it("generator eff shape instanceof Generator is true", async () => {
-    const { $instanceof } = await import(
+    const {$instanceof} = await import(
       pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../exec/index.ts")).href
     );
     const gen = abs(
@@ -112,7 +112,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
       "run",
     );
     // 传入抽象无法在 evaluator 路径测 brand 子类；直接测 transpile 后 $instanceof 行为
-    const { $instanceof, $arr, $lit } = await import(
+    const {$instanceof, $arr, $lit} = await import(
       pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../exec/index.ts")).href
     );
     const r = $instanceof($arr([$lit(1)]), "MyArr");

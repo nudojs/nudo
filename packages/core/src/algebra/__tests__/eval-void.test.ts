@@ -3,9 +3,9 @@
  * （副作用：赋值写回、函数调用、成员写）。此前 transpile 直接把
  * void 折叠为 $lit(undefined)，操作数整体丢失。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, formatShape } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, formatShape} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator void operator", () => {
   it("void (n = 9) evaluates the assignment", () => {

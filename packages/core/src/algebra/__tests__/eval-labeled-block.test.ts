@@ -3,9 +3,9 @@
  * 此前 transpile 丢弃标签，break 被 skip，块内 break 后语句仍执行（控制流假精确）。
  * 现：break label → $loopBreak(label)；labeled block 用 try/$isBreakTo 吸收同标签信号。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator labeled block break", () => {
   it("break out of labeled block skips the rest", () => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../run.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../run.ts";
 
 /**
  * analyze 模式顶层剥离的语义等价护栏。

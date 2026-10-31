@@ -14,9 +14,9 @@
  *
  * 负控制：非计算键 / 单层路径 / delete 的既有口径不受本条影响。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

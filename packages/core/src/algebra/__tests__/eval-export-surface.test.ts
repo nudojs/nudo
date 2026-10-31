@@ -8,17 +8,17 @@
  * 调用（modules 表注入绑定），导出表 = 动态表 + 静态声明名（显式导出
  * 压过 export *，与 ESM/collectAbsExports 语义一致）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, transpile, numLit } from "@nudojs/core";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { abs, num } from "../abs.ts";
-import { v } from "../term.ts";
-import { parseSource } from "../parse-source.ts";
-import { emptyEnv } from "../ast-env.ts";
-import { collectAbsExports, type AbsModuleExports } from "../abs-modules.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, litValue, transpileSource, numLit} from "@nudojs/core";
+import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join, dirname} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
+import {abs, num} from "../abs.ts";
+import {v} from "../term.ts";
+import {parseSource} from "../parse-source.ts";
+import {emptyEnv} from "../ast-env.ts";
+import {collectAbsExports, type AbsModuleExports} from "../abs-modules.ts";
 
 const dirs: string[] = [];
 function mktmp(): string {
@@ -37,7 +37,7 @@ async function importTranspiled(source: string): Promise<Record<string, unknown>
   const runtimeUrl = pathToFileURL(
     join(dirname(fileURLToPath(import.meta.url)), "../exec/index.ts"),
   ).href;
-  const js = transpile(source, { runtimeImport: runtimeUrl });
+  const js = transpileSource(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
   writeFileSync(modPath, js, "utf-8");
   return (await import(pathToFileURL(modPath).href)) as Record<string, unknown>;

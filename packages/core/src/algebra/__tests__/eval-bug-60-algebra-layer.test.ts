@@ -17,18 +17,18 @@
  * 负控贯穿：非相关形态**逐字不变**（数字字面量渲染、单关系式守卫、非 rest
  * 形参、公共导出面）。
  */
-import { describe, it, expect } from "vitest";
-import { buildArgsFromAssume } from "../generalize.ts";
-import { gtNum, predToString } from "../pred.ts";
-import { v } from "../term.ts";
-import { formatConstraint } from "../interface.ts";
-import { litC, number as numberC } from "../constraint.ts";
-import { formalParamsFromNodes } from "../param-surface.ts";
-import { parseSource } from "../parse-source.ts";
-import { relGuardOf } from "../exec/transpile/stmt-predicates.ts";
-import { absShapeForTsTypeText } from "../ts-type-shape.ts";
-import { checkSource, pTrue } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import {describe, it, expect} from "vitest";
+import {buildArgsFromAssume} from "../generalize.ts";
+import {gtNum, predToString} from "../pred.ts";
+import {v} from "../term.ts";
+import {formatConstraint} from "../interface.ts";
+import {litC, number as numberC} from "../constraint.ts";
+import {formalParamsFromNodes} from "../param-surface.ts";
+import {parseSource} from "../parse-source.ts";
+import {relGuardOf} from "../exec/transpile/stmt-predicates.ts";
+import {absShapeForTsTypeText} from "../ts-type-shape.ts";
+import {checkSource, pTrue} from "../index.ts";
+import {withStdImport, stdOpts} from "./nudo-constraints.ts";
 
 // ---------------------------------------------------------------------------
 // 第 1 条：assume 的界落进形参自己的 pred（不是写死的 x > 0）

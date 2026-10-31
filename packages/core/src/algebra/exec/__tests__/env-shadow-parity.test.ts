@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {describe, expect, it} from "vitest";
 
-import { NAMESPACE_GLOBALS, namespaceNameOf } from "../runtime/containers.ts";
-import { getEnvShadowSkipGlobals } from "../run.ts";
-import { HOST_INTRINSIC_NAMES } from "../transpile/intrinsics.ts";
+import {NAMESPACE_GLOBALS, namespaceNameOf} from "../runtime/containers.ts";
+import {getEnvShadowSkipGlobals} from "../run.ts";
+import {HOST_INTRINSIC_NAMES} from "../transpile/intrinsics.ts";
 
 /**
  * env-skip 派生关系的结构钉子（纯结构断言，不跑引擎）：

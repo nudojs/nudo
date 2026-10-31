@@ -23,8 +23,8 @@
  *
  * oracle：node v26 实测。
  */
-import { describe, it, expect } from "vitest";
-import { val, call, throwsError } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {val, call, throwsError} from "./eval-helpers.ts";
 
 describe("BUG-058 · `String(o)` 走 string hint（不调 valueOf）", () => {
   it("`String({valueOf})`：valueOf 不调用（native：0）", () => {

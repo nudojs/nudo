@@ -9,7 +9,7 @@
  */
 
 // 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
-export { DIAG, type DiagCode } from "./algebra/diag-codes.ts";
+export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diag-codes.ts";
 
 // BUG-021/199：调用点观测拓宽（emit 写盘面与 interface-drift 对账面共用）
 export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
@@ -23,8 +23,8 @@ export {
   sourceHasModuleDependency, sourceHasCjsExports
 } from "./algebra/code-text.ts";
 export {
-  type LeakBudget, defaultLeakBudget, exceedsBudget, leakIfNeeded,
-  maybeLeak, resetLeakCounter, termDepth, termNodes
+  type LeakBudget, defaultLeakBudget, exceedsBudget,
+  termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
   type ProjectionStopReason, PROJECTION_MAX_DEPTH, ProjectionBudget,
@@ -40,7 +40,9 @@ export {
 } from "./algebra/call-budget.ts";
 export {
   // budget 归因段构建器（check / health 两面共用，#health-budget 单一实现）
-  budgetAttributionSegs
+  budgetAttributionSegs,
+  // CheckJson issue 可选字段单一真源（序列化 ↔ nudojs 缓存反序列化共用）
+  CHECK_ISSUE_OPTIONAL_KEYS,
 } from "./algebra/check-report.ts";
 export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength

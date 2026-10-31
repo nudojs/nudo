@@ -8,6 +8,7 @@ import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../exec/class-registry.ts";
 import { pTrue } from "../pred.ts";
 import { str, noBody, typedArrayElementOf } from "./shared.ts";
+import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
 
@@ -326,24 +327,16 @@ export function protoOfRecv(a: Abs): Abs {
   return unknown;
 }
 
-export const OBJECT_PROTO_METHOD_NAMES = new Set([
-  "hasOwnProperty",
-  "isPrototypeOf",
-  "propertyIsEnumerable",
-  "valueOf",
-  "toString",
-  "toLocaleString",
-  // Bug 164：legacy 四访问器（`Object.getOwnPropertyNames(Object.prototype)`
-  // 实测恒有）——此前**只**登记在 `in` 判定用的那张表（member-diag.ts 的
-  // `OBJECT_PROTO_NAMES`，Bug 15 补的），**值读面**这张表漏了 ⇒
-  // `({}).__defineGetter__ === undefined` 折 exact undefined（假绿）而
-  // `"__defineGetter__" in {}` 折 true ⇒ 同一引擎两面结论相反。
-  // 两张表必须同口径（`__proto__` / `constructor` 走专门臂，不在此列）。
-  "__defineGetter__",
-  "__defineSetter__",
-  "__lookupGetter__",
-  "__lookupSetter__",
-]);
+export const OBJECT_PROTO_METHOD_NAMES = new Set(
+  // Bug 164：值读面从 `in` 面单一真值源（`OBJECT_PROTO_NAMES`，零依赖
+  // 叶模块 object-proto-names.ts）派生——此前两张手抄表漂移，值读面漏
+  // legacy 四访问器 ⇒ `({}).__defineGetter__ === undefined` 折 exact
+  // undefined（假绿）而 `"__defineGetter__" in {}` 折 true ⇒ 同一引擎
+  // 两面结论相反。`constructor` / `__proto__` 走专门臂，不进值读面。
+  [...OBJECT_PROTO_NAMES].filter(
+    (n) => n !== "constructor" && n !== "__proto__",
+  ),
+);
 
 let objectProtoSingleton: Abs | undefined;
 

@@ -5,9 +5,9 @@
  * 信号，$for/$whileSeq/$forOf 捕获；带标签信号沿嵌套循环匹配冒泡。
  * switch 臂内的无标签 break 是「臂结束」，转译为 return，不得当循环信号。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator break/continue", () => {
   it("for + continue skips the rest of the body", () => {

@@ -11,9 +11,9 @@
  * 修法：头解构（let/const）的子名不是外层绑定（每轮独立 / const 不可再赋）
  * ⇒ 排除出 pack 名集（var 头的子名是函数级提升槽，仍在集内）。
  */
-import { describe, it, expect } from "vitest";
-import { call, throwsError, isNever } from "./eval-helpers.ts";
-import { anyAbs, litValue } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {call, throwsError, isNever} from "./eval-helpers.ts";
+import {anyAbs, litValue} from "../abs.ts";
 
 /** 原生 oracle（node 直接求值） */
 function native(body: string): unknown {

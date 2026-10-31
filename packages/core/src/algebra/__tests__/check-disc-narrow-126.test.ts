@@ -16,15 +16,15 @@
  * TS 同形窄化保留 {type:string} 臂并对其报属性缺失——nudo 的对应物即这条
  * 诚实 may-throw。属性读（宽容）不受影响。
  */
-import { describe, it, expect } from "vitest";
-import { checkSource, pTrue, string, shape, union, litC as lit, nullable, array, formatAbs } from "@nudojs/core";
-import { constraintToEntryAbs, derefConstraint, transpile } from "@nudojs/core";
-import { $narrowMemberEq } from "../exec/runtime/async.ts";
-import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
+import {describe, it, expect} from "vitest";
+import {checkSource, pTrue, string, shape, union, litC as lit, nullable, array, formatAbs} from "@nudojs/core";
+import {constraintToEntryAbs, derefConstraint, transpileSource} from "@nudojs/core";
+import {$narrowMemberEq} from "../exec/runtime/async.ts";
+import {l2Count, sigOf, sidecarOpts} from "./nudo-constraints.ts";
 
 /** 不相交判别联合（TS 判别联合正典形态：两 lit 臂，无 string() 尾臂） */
 const DISJOINT_SRC = `
-import { string, shape, union, lit, nullable, array } from "@nudojs/core";
+import {string, shape, union, lit, nullable, array} from "@nudojs/core";
 const asUnion = union(
   shape({ type: lit('Identifier'), name: string() }),
   shape({ type: lit('TemplateLiteral'),
@@ -40,7 +40,7 @@ const CATCHALL_SRC = DISJOINT_SRC.replace(
   "  shape({ type: string() }),\n);\nexport const nodeParam",
 );
 
-const IMP = `/// @nudo:import { nodeParam } from "./std126.nudo.js"\n`;
+const IMP = `/// @nudo:import {nodeParam} from "./std126.nudo.js"\n`;
 
 const opts = sidecarOpts("std126", DISJOINT_SRC);
 
@@ -125,7 +125,7 @@ export function optChain(node) {
 
   it("数字判别字面量：kind === 1 臂内读取 0 L2", () => {
     const numSrc = `
-import { string, shape, union, lit, nullable } from "@nudojs/core";
+import {string, shape, union, lit, nullable} from "@nudojs/core";
 export const nodeParam = nullable(union(
   shape({ kind: lit(1), payload: string() }),
   shape({ kind: lit(2) }),
@@ -140,7 +140,7 @@ export function numDisc(node) {
   });
 
   it("宽松 == 不识别（强制转换面，宁缺毋假）——不发射剪影", () => {
-    const out = transpile(
+    const out = transpileSource(
       `export function looseEq(node) { return node.type == 'TemplateLiteral' ? node.quasis[0] : null; }`,
     );
     // import 行恒含运行时名——断言调用形态缺席
@@ -172,7 +172,7 @@ export function catchallProp(node) {
 
 describe("#126 接线与运行时单元", () => {
   it("三元转译发射 $narrowMemberEq 影子重绑（事实臂 keep=true）", () => {
-    const out = transpile(
+    const out = transpileSource(
       `export function g(node) { return node.type === 'TemplateLiteral' ? node.quasis[0] : null; }`,
     );
     expect(out).toContain('$narrowMemberEq(node, "type", "TemplateLiteral", true)');
@@ -214,7 +214,7 @@ describe("#126 接线与运行时单元", () => {
   });
 
   it("守卫名被臂内写（fork 绑定集）时跳过剪影——影子参数不得吞掉臂内写", () => {
-    const out = transpile(
+    const out = transpileSource(
       `export function h(node) { if (node.type === 'TemplateLiteral') { node = node.quasis; return node[0]; } return null; }`,
     );
     expect(out).not.toContain("$narrowMemberEq(");

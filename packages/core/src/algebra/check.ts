@@ -16,6 +16,7 @@ import { identBoundaryRegex, stripStringsKeepComments } from "./code-text.ts";
 import { extractFileEnvNames } from "./directive-scan.ts";
 import {
   setAbsTruncationCollector,
+  noteAbsTruncation,
   resetAbsCallBudget,
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
@@ -417,7 +418,16 @@ function loadReadFailureIssues(failures: LoadReadFailure[]): CheckIssue[] {
  * 被分析文件自身的同名契约 → 位置化契约面（按名 memo）。$callNamed 在
  * 同文件调用点消费（跨模块桥接走 $call 的对象注册面）。仅 handwritten；
  * effectiveInterface 解析失败 → undefined（面留空 = 今日行为）。
+ *
+ * 解析/求值失败折 undefined 是今日授权行为，但**引擎内部异常**不得静默：
+ * effectiveInterface 的用户面失败（侧车读失败 / 指令文法 / 侧车环）全部
+ * 走 diag 通道不抛异常（Bug 334/374/499）——能到 catch 的都是异常路径。
+ * 经截断观测通道上报（label 带 `#` 前缀 ⇒ 不可能与函数名撞车，不会
+ * 误触 budgetExplained 的 `truncated.has(name)`），且异常轮不落 memo
+ * （memo 钉死会把一次引擎 bug 固化成「该函数无契约」）。
  */
+const SAME_FILE_FACE_ERROR_PREFIX = "#face-resolve-error:";
+
 function makeSameFileFaceResolver(
   opts: CheckOptions,
   filePath: string,
@@ -432,6 +442,7 @@ function makeSameFileFaceResolver(
   return (fnName: string): FnContractFaces | undefined => {
     if (memo.has(fnName)) return memo.get(fnName);
     let faces: FnContractFaces | undefined;
+    let resolved = false;
     try {
       const eff = effectiveInterface(source, fnName, {
         ...(loadModule ? { loadModule } : {}),
@@ -443,10 +454,12 @@ function makeSameFileFaceResolver(
         const params = extractFn(source, fnName, file)?.params ?? [];
         faces = contractFacesFromEffectiveInterface(eff, params);
       }
+      resolved = true;
     } catch {
       faces = undefined;
+      noteAbsTruncation(`${SAME_FILE_FACE_ERROR_PREFIX}${fnName}`);
     }
-    memo.set(fnName, faces);
+    if (resolved) memo.set(fnName, faces);
     return faces;
   };
 }
@@ -1646,9 +1659,24 @@ function checkSourceInner(
       });
       continue;
     }
+    // 同文件契约面解析抛异常（引擎内部异常——用户面失败全走 diag 通道
+    // 不抛，见 makeSameFileFaceResolver）：折 undefined 是今日授权（面留
+    // 空 = 调用边界契约不适用），但不得静默 ⇒ nudo:internal 可观测。
+    if (label.startsWith(SAME_FILE_FACE_ERROR_PREFIX)) {
+      const fn = label.slice(SAME_FILE_FACE_ERROR_PREFIX.length);
+      issues.push({
+        severity: "info",
+        code: DIAG.internal,
+        message: `Resolving the same-file contract face for '${fn}' threw inside the analyzer; the face was left empty (call-boundary contract not applied) — engine defect, not a source problem`,
+        suggestion:
+          "please report this as an engine bug with the analyzed file attached",
+        fn,
+      });
+      continue;
+    }
     // 调用截断归因（#158）：全是 cycle → 「调用环」文案（抬预算无效）；
     // 否则按 depth/calls 指明可抬的预算维。到达此处的都是调用截断标签
-    // （fork/promise/math/host-effect/loop 已分流），reasons 非空。
+    // （fork/promise/math/host-effect/loop/face-resolve 已分流），reasons 非空。
     const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
     const depth = reasons.has("depth");
     const calls = reasons.has("calls");

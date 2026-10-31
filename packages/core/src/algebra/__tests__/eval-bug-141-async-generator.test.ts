@@ -14,9 +14,9 @@
  * `async function* g(){}` 走 transpile/stmt/statement.ts 的声明分支——
  * 不在本批修复范围，见交付报告）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 /** 结果字面量值（litValue） */
 function v(src: string) {

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { transpile, formatAbs, litValue } from "@nudojs/core";
-import { tryEvalCall } from "@nudojs/service";
+import {describe, it, expect} from "vitest";
+import {transpileSource, formatAbs, litValue} from "@nudojs/core";
+import {tryEvalCall} from "@nudojs/service";
 
 describe("evaluator $fork continue-path free-write join", () => {
   it("transpile marks continue flags only for non-exit arms", () => {
@@ -11,7 +11,7 @@ function f(flag) {
   return x;
 }
 `;
-    const out = transpile(src);
+    const out = transpileSource(src);
     expect(out).toContain("$isForkExit");
     expect(out).toContain("let __cont = true");
     expect(out).toContain("if ($isForkExit(e)) __cont = false");

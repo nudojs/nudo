@@ -10,9 +10,9 @@
  * 修复：非声明 init 回退路径——init 就地求值（副作用写真实绑定），
  * 以合成计数器为 $for 状态线程，test/update/body 闭包读真实绑定。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator for statement init forms", () => {
   it("for(;;) with break terminates", () => {

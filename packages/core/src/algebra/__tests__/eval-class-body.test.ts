@@ -11,20 +11,9 @@
  * - 58 生成器：调用期全操作——体内 throw/may-throw 不泄漏进调用方 throws 域
  * 每条断言与 node 真实执行对齐（值域 + throws 域双钉）。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  formatAbs,
-  abs,
-  transpileSource,
-  type Abs,
-} from "@nudojs/core";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../may-throw.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, formatAbs, abs, transpileSource, type Abs} from "@nudojs/core";
+import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../may-throw.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 const strLit = (s: string): Abs =>

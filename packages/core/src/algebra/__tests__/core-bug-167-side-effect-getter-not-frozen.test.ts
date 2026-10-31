@@ -15,12 +15,12 @@
  * 负控制（Bug 191 / Bug 152）：对象字面量访问器的占位槽仍是 `$lit(void 0)`，
  * 读域照旧投影、调用点求值序不变。
  */
-import { describe, it, expect } from "vitest";
-import { formatShape, formatAbs } from "../format.ts";
-import { denoteGuard } from "../denote.ts";
-import { getFnImpl } from "../abs-fn.ts";
+import {describe, it, expect} from "vitest";
+import {formatShape, formatAbs} from "../format.ts";
+import {denoteGuard} from "../denote.ts";
+import {getFnImpl} from "../abs-fn.ts";
 import type { Abs } from "../abs.ts";
-import { call } from "./eval-helpers.ts";
+import {call} from "./eval-helpers.ts";
 
 /** 取对象槽上的函数 Abs（对象方法简写 / 方法型函数表达式） */
 function fnSlotAbs(src: string, key: string): Abs {

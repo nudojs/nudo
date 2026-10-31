@@ -422,6 +422,24 @@ export type CheckJsonMulti = {
   reports: CheckJson[];
 };
 
+/**
+ * CheckJson issue 的**可选字段**单一真源（顺序即序列化键序）。
+ *
+ * 序列化（本文件 `serializeCheckJson`）与磁盘缓存反序列化
+ * （nudojs `check-json-map.ts` 的 `issueFromCachedJson`）此前互为手抄
+ * 镜像——core 加字段后反序列化侧静默不回传（缓存 round-trip 丢字段）。
+ * 两侧现都消费本元组。
+ */
+export const CHECK_ISSUE_OPTIONAL_KEYS = [
+  "fn",
+  "line",
+  "column",
+  "actual",
+  "expected",
+  "suggestion",
+  "reason",
+] as const;
+
 export function serializeCheckJson(r: CheckReport): CheckJson {
   return {
     version: 1,
@@ -430,8 +448,8 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
     summary: { ...r.summary },
     signatures: r.signatures.map((s) => ({
       name: s.name,
-      params: [...s.params],
-      ...(s.paramTypes ? { paramTypes: [...s.paramTypes] } : {}),
+      params: s.params,
+      ...(s.paramTypes !== undefined ? { paramTypes: s.paramTypes } : {}),
       display: s.display,
       detail: s.detail,
       conf: s.conf,
@@ -444,19 +462,20 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
     })),
     issues: r.issues.map((i) => {
       const acts = i.actions ?? actionsForIssue(i);
-      return {
+      // 可选字段经 CHECK_ISSUE_OPTIONAL_KEYS 单源拷贝（键序=元组序）；
+      // 独立 sink 消解「联合键写入收敛成 undefined」的 tsc 限制。
+      const out: CheckJson["issues"][number] = {
         severity: i.severity,
         code: i.code,
         message: i.message,
-        ...(i.fn !== undefined ? { fn: i.fn } : {}),
-        ...(i.line !== undefined ? { line: i.line } : {}),
-        ...(i.column !== undefined ? { column: i.column } : {}),
-        ...(i.actual !== undefined ? { actual: i.actual } : {}),
-        ...(i.expected !== undefined ? { expected: i.expected } : {}),
-        ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
-        ...(i.reason !== undefined ? { reason: i.reason } : {}),
-        ...(acts.length > 0 ? { actions: acts } : {}),
       };
+      const sink = out as Record<string, unknown>;
+      for (const k of CHECK_ISSUE_OPTIONAL_KEYS) {
+        const v: unknown = i[k];
+        if (v !== undefined) sink[k] = v;
+      }
+      if (acts.length > 0) out.actions = acts;
+      return out;
     }),
     ...(r.budget ? { budget: { ...r.budget } } : {}),
   };

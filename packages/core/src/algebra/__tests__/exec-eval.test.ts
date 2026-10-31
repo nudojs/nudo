@@ -1,20 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  $add,
-  $lt,
-  $lit,
-  $fork,
-  $for,
-  $obj,
-  $get,
-  $set,
-  $whileSeq,
-  num,
-  numVar,
-  litValue,
-  absToString,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {$add, $lt, $lit, $fork, $for, $obj, $get, $set, $whileSeq, num, numVar, litValue, absToString, transpileSource} from "@nudojs/core";
 
 describe("evaluator runtime ops", () => {
   it("add(lit, lit) stays exact literal", () => {
@@ -119,7 +104,7 @@ describe("evaluator $whileSeq", () => {
 
 describe("evaluator transpile", () => {
   it("rewrites + to $add", () => {
-    const out = transpile(`function add(a, b) { return a + b; }`, {
+    const out = transpileSource(`function add(a, b) { return a + b; }`, {
       runtimeImport: "@nudojs/core/exec",
     });
     expect(out).toContain("$add(a, b)");
@@ -127,7 +112,7 @@ describe("evaluator transpile", () => {
   });
 
   it("rewrites if to $fork", () => {
-    const out = transpile(`function f(x) { if (x > 0) { return 1; } return 2; }`, {
+    const out = transpileSource(`function f(x) { if (x > 0) { return 1; } return 2; }`, {
       runtimeImport: "@nudojs/core/exec",
     });
     expect(out).toContain("$fork(");
@@ -135,7 +120,7 @@ describe("evaluator transpile", () => {
   });
 
   it("emits $for for classic counting loops", () => {
-    const out = transpile(
+    const out = transpileSource(
       `function sum(n) { let i = 0; for (let i = 0; i < n; i = i + 1) {} return i; }`,
       { runtimeImport: "@nudojs/core/exec", maxLoopIters: 4 },
     );
@@ -143,7 +128,7 @@ describe("evaluator transpile", () => {
   });
 
   it("rewrites object literal and member access", () => {
-    const out = transpile(
+    const out = transpileSource(
       `function make() { const o = { id: 1, name: "x" }; return o.id; }`,
       { runtimeImport: "@nudojs/core/exec" },
     );
@@ -152,7 +137,7 @@ describe("evaluator transpile", () => {
   });
 
   it("rewrites while to $whileSeq", () => {
-    const out = transpile(
+    const out = transpileSource(
       `function f(n) { let i = 0; while (i < n) { i = i + 1; } return i; }`,
       { runtimeImport: "@nudojs/core/exec", maxLoopIters: 5 },
     );
@@ -160,7 +145,7 @@ describe("evaluator transpile", () => {
   });
 
   it("rewrites obj.field = v to $set", () => {
-    const out = transpile(`function f() { const o = { a: 1 }; o.a = 2; return o; }`, {
+    const out = transpileSource(`function f() { const o = { a: 1 }; o.a = 2; return o; }`, {
       runtimeImport: "@nudojs/core/exec",
     });
     expect(out).toContain("$set(");

@@ -1,14 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { analyzeFile, clearEvalCache } from "@nudojs/service";
-import { formatShape } from "@nudojs/core";
-import {
-  transpile,
-  runTranspiled,
-  callTranspiledExportFull,
-  generalizeFromAst,
-  numLit,
-  absToString,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {analyzeFile, clearEvalCache} from "@nudojs/service";
+import {formatShape} from "@nudojs/core";
+import {transpileSource, runTranspiled, callTranspiledExportFull, generalizeFromAst, numLit, absToString} from "@nudojs/core";
 
 describe("directive case args in branch bodies", () => {
   const source = `
@@ -23,7 +16,7 @@ export function gradeFor(score) {
 `;
 
   it("transpile folds early-return if into return $fork", () => {
-    const js = transpile(source);
+    const js = transpileSource(source);
     expect(js).toContain("return $fork(");
     // 双 return 臂经 $loopReturn 信号（裸 return 只退出臂 thunk，会被语句位
     // $fork 丢弃）；函数体自包含边界吸收 NudoReturn（fork×try 早退 join）

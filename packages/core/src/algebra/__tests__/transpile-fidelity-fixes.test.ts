@@ -13,16 +13,8 @@
  * - Bug 19 对象字面量方法内 super.m() 沿 home object 原型链派发
  * - Bug 21 var 函数作用域提升（块内 var / 重声明 / 跨块写 / while 内 var）
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  transpileSource,
-  litValue,
-  absToString,
-  $lit,
-  $obj,
-} from "../index.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, transpileSource, litValue, absToString, $lit, $obj} from "../index.ts";
 
 /** 引擎边界执行：transpile + run + 按名调用导出，收字面量结果与 throws 面 */
 const evalFn = (source: string, name: string, args: unknown[] = []) => {

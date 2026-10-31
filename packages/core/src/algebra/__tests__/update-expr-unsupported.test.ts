@@ -16,15 +16,8 @@
  * 断言：transpile/runTranspiled 抛 NudoUnsupportedError（reason 含 `update:` 等）
  * 或 tryRunTranspiled 走 unsupported:* 回落，而不是精确 undefined 且无 throws。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  tryRunTranspiled,
-  transpile,
-  setEvalFallbackCollector,
-  NudoUnsupportedError,
-  type EvalFallback,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, tryRunTranspiled, transpileSource, setEvalFallbackCollector, NudoUnsupportedError, type EvalFallback} from "@nudojs/core";
 
 function withCollector<T>(fn: () => T): { result: T | undefined; fallbacks: EvalFallback[] } {
   const fallbacks: EvalFallback[] = [];
@@ -39,9 +32,9 @@ function withCollector<T>(fn: () => T): { result: T | undefined; fallbacks: Eval
 describe("UpdateExpression non-writable target throws unsupported (not fake undefined)", () => {
   it("o.m().x++ (memberPathOf root not rebindable) → NudoUnsupportedError reason update:++", () => {
     const src = `export function f(o){ return o.m().x++; }`;
-    expect(() => transpile(src)).toThrow(NudoUnsupportedError);
+    expect(() => transpileSource(src)).toThrow(NudoUnsupportedError);
     try {
-      transpile(src);
+      transpileSource(src);
       expect.unreachable("transpile must throw");
     } catch (e) {
       expect(e).toBeInstanceOf(NudoUnsupportedError);

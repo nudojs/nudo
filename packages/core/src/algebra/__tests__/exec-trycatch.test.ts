@@ -1,12 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  absToString,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource} from "@nudojs/core";
 
 describe("evaluator try/catch", () => {
   it("catches $throw and binds Abs value", () => {
@@ -64,7 +57,7 @@ export function go() {
   });
 
   it("transpiles try/catch", () => {
-    const out = transpile(`export function f() { try { return 1; } catch (e) { return 0; } }`);
+    const out = transpileSource(`export function f() { try { return 1; } catch (e) { return 0; } }`);
     expect(out).toContain("try {");
     expect(out).toContain("$catchVal(");
   });

@@ -1,12 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  absToString,
-  transpile,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString, transpileSource} from "@nudojs/core";
 
 describe("evaluator class static members", () => {
   it("reads static fields and calls static methods", () => {
@@ -28,7 +21,7 @@ export function go() {
   });
 
   it("transpiles static to $class statics/staticMethods", () => {
-    const out = transpile(`
+    const out = transpileSource(`
 class C {
   static n = 1;
   static f() { return 2; }
@@ -55,7 +48,7 @@ export function go() {
   });
 
   it("transpiles computed property", () => {
-    const out = transpile(`export function f(k, v) { return { [k]: v }; }`);
+    const out = transpileSource(`export function f(k, v) { return { [k]: v }; }`);
     expect(out).toContain("$setKey(");
   });
 });

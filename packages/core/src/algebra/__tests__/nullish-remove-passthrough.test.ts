@@ -5,12 +5,12 @@
  * - Abs 分支语义保持：nullish 并集剥 nullish、纯 nullish 原样、非 nullish 原样
  * - `??` / `??=` 转译 golden：`M[k] ?? 'z'` 的非 nullish 臂只取左值非 nullish 部分
  */
-import { describe, it, expect } from "vitest";
-import { $removeNullish } from "../exec/runtime/async.ts";
-import { abs, numLit, strLit, type Abs } from "../abs.ts";
-import { lit } from "../term.ts";
-import { pTrue } from "../pred.ts";
-import { runTranspiled, callTranspiledExportFull, formatShape } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {$removeNullish} from "../exec/runtime/async.ts";
+import {abs, numLit, strLit, type Abs} from "../abs.ts";
+import {lit} from "../term.ts";
+import {pTrue} from "../pred.ts";
+import {runTranspiled, callTranspiledExportFull, formatShape} from "@nudojs/core";
 
 const nullLit = abs({ k: "unknown" }, lit(null), pTrue, "exact");
 const undefLit = abs({ k: "unknown" }, lit(undefined), pTrue, "exact");

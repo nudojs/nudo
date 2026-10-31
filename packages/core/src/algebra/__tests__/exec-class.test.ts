@@ -1,11 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  absToString,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, litValue, absToString} from "@nudojs/core";
 
 describe("evaluator class / this", () => {
   it("constructor writes fields; method reads this", () => {
@@ -46,8 +40,8 @@ export function get() {
   });
 
   it("transpiles class to $class", async () => {
-    const { transpile } = await import("@nudojs/core");
-    const out = transpile(`class A { constructor(x) { this.x = x; } m() { return this.x; } }
+    const {transpileSource} = await import("@nudojs/core");
+    const out = transpileSource(`class A { constructor(x) { this.x = x; } m() { return this.x; } }
 export function go() { const a = new A(1); return a.m(); }`);
     expect(out).toContain("$class(");
     expect(out).toContain("$new(");

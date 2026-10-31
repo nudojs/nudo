@@ -22,15 +22,15 @@
  * 引擎算成 Infinity = **自信的错值**）⇒ 数值 0 的标签按**交集细化**
  * `{0, -0}`（`$join($lit(0), $lit(-0))`）而非改写单值。
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
-import { withStdImport, stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {checkSource, pTrue} from "../index.ts";
+import {resetCheckSourceMemo} from "../check.ts";
+import {resetGeneralizeMemo} from "../generalize.ts";
+import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
+import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface.ts";
+import {resetParseSourceCache} from "../parse-source.ts";
+import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {withStdImport, stdOpts, l2Count, sigOf} from "./nudo-constraints.ts";
 
 /** check 一次（整段函数源码；带标准 import） */
 function check(src: string, file = "/t/bug1117.js") {

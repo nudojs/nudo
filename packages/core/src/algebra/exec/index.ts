@@ -35,7 +35,7 @@ export { $asyncGen } from "./runtime/async.ts";
 
 export {
   type TranspileOptions, foldRequireSpecArg, foldStaticStringExpr,
-  runtimeImportOf, transpile, transpileBodyNode, transpileExpression,
+  runtimeImportOf, transpileBodyNode, transpileExpression,
   transpileFile, transpileSource
 } from "./transpile.ts";
 

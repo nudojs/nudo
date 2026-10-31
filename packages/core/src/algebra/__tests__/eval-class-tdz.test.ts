@@ -4,9 +4,9 @@
  * transpile 把 extends 编码为名字字符串进注册表，声明顺序完全不检查，
  * B extends A 在 A 之前定义也能「继承成功」。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 describe("evaluator class declaration TDZ", () => {
   it("extending a class declared later throws (TDZ)", () => {

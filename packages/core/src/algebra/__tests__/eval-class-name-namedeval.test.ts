@@ -13,9 +13,9 @@
  * 空类体快路径（$classExpr）同样取名；对外可见的 name 与内部类名分离
  * （无名类对外名是空串，内部合成名只供发射/类注册用）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

@@ -8,20 +8,9 @@
  * 调用路由：标识符 → $callNamed；obj.method → $invoke；其余 → $call
  * （callee 校验在 Bug 2 修复位）。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  anyAbs,
-  formatAbs,
-  transpile,
-} from "@nudojs/core";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../exec/may-throw.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $lit, anyAbs, formatAbs, transpileSource} from "@nudojs/core";
+import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../exec/may-throw.ts";
 
 function evalSrc(
   src: string,
@@ -56,11 +45,11 @@ function quasis(s) { return s.length; }
 
 describe("Bug 34: tagged template lowering", () => {
   it("transpiles to $tpl + call routing（不再 unsupported）", () => {
-    const out = transpile(`export function f(t) { return t\`a\${1}b\`; }`);
+    const out = transpileSource(`export function f(t) { return t\`a\${1}b\`; }`);
     expect(out).toContain("$tpl(");
     expect(out).toContain("$callNamed(");
-    expect(transpile(`export function g() { return (1)\`x\`; }`)).toContain("$call(");
-    expect(transpile(`export function h(o) { return o.t\`x\`; }`)).toContain("$invoke(");
+    expect(transpileSource(`export function g() { return (1)\`x\`; }`)).toContain("$call(");
+    expect(transpileSource(`export function h(o) { return o.t\`x\`; }`)).toContain("$invoke(");
   });
 
   it("known tag：cooked / raw / substitutions / length 全精确（native 对齐）", () => {

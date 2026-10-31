@@ -83,7 +83,7 @@ changing the signature of any row below is **major**.
 
 | Symbol family | Role | Stability |
 |---------------|------|-----------|
-| `transpile`, `transpileSource`, `transpileFile`, `transpileExpression`, `transpileBodyNode`, `runtimeImportOf`, `TranspileOptions` | JS AST → `$op` program | **public** |
+| `transpileSource`, `transpileFile`, `transpileExpression`, `transpileBodyNode`, `runtimeImportOf`, `TranspileOptions` | JS AST → `$op` program | **public** |
 | `foldStaticStringExpr`, `foldRequireSpecArg` | static folding helpers | **public** |
 | `$add`…`$pow`, `$eq`…`$ge`, `$neg`/`$not`/`$typeof`, `$join` | operator runtime | **public** |
 | `$fork`, `$for`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
@@ -126,7 +126,7 @@ from published packages.
 
 | Tier | Meaning | Examples |
 |------|---------|----------|
-| **public** | Semver-protected. Removal / breaking signature change = **major**. | `checkSource`, `Abs`, `transpile`, `runTranspiled`, `serializeCheckJson`, contract builders |
+| **public** | Semver-protected. Removal / breaking signature change = **major**. | `checkSource`, `Abs`, `transpileSource`, `runTranspiled`, `serializeCheckJson`, contract builders |
 | **public (additive)** | May gain members; existing names stay. | `CheckJson` fields, `TranspileOptions` fields, snapshot additions |
 | **internal** | Engine machinery on `./internal`; may change in **minor**. | `call-budget`, `leak`, `derivation`, collectors, memo keys |
 | **experimental** | No promise at all. | human-readable diagnostic wording, inlay text, template views |

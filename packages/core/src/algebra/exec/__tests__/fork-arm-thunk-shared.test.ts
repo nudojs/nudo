@@ -9,9 +9,9 @@
  * - 内部临时名仍走 `forkTmpNames`（声明点与引用点成对一致 / 用户撞名避让）；
  * - 两条语句路径的产物逐字一致（同协议同源）。
  */
-import { describe, it, expect } from "vitest";
-import { forkArmThunkExpr } from "../transpile/emit.ts";
-import { transpileSource } from "../../index.ts";
+import {describe, it, expect} from "vitest";
+import {forkArmThunkExpr} from "../transpile/emit.ts";
+import {transpileSource} from "../../index.ts";
 
 const THUNK = `() => {\n  return $lit(1);\n}`;
 

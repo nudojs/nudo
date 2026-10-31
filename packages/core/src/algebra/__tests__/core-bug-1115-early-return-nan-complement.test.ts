@@ -25,15 +25,15 @@
  * 契约 = 契约不成立 ⇒ error）；本文件只钉「**不得静默**」与「两种等价写法
  * 结论一致」两条不变式。
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {checkSource, pTrue} from "../index.ts";
+import {resetCheckSourceMemo} from "../check.ts";
+import {resetGeneralizeMemo} from "../generalize.ts";
+import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
+import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface.ts";
+import {resetParseSourceCache} from "../parse-source.ts";
+import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
+import {withStdImport, stdOpts} from "./nudo-constraints.ts";
 
 /** 返回义务诊断（违约 error + 证不出 warning）的 "severity:code" 列表 */
 function retDiags(body: string, cname: string, file = "/t/bug1115.js"): string[] {

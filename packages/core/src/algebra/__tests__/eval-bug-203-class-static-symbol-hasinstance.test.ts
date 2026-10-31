@@ -24,10 +24,10 @@
  * - 符号键形态仍进 spec（$class 侧造钩子适配器），并在类定义后置一步给
  *   类值同名槽打 **symbolKey 标记**。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, type Abs } from "../abs.ts";
-import { runTranspiled } from "../exec/run.ts";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, type Abs} from "../abs.ts";
+import {runTranspiled} from "../exec/run.ts";
+import {call} from "./eval-helpers.ts";
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 

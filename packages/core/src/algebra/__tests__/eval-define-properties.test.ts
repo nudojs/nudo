@@ -11,9 +11,9 @@
  *
  * node 实测 ground truth（见各用例注释）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { litValue, type Abs } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {litValue, type Abs} from "../abs.ts";
 
 function evalAbs(src: string, fnName = "f"): Abs | undefined {
   const run = runTranspiled(src, { mode: "analyze" });

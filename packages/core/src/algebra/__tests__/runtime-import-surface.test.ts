@@ -1,27 +1,20 @@
 /**
  * 运行时 import 面漂移守卫。
  *
- * 转译产物的 `import { $… } from "<runtime>";` 行是「生成物 ↔ 运行时符号面」
+ * 转译产物的 `import {$…} from "<runtime>";` 行是「生成物 ↔ 运行时符号面」
  * 的唯一契约：清单漏一个名字 ⇒ 产物作为真实 ESM 装载时 ReferenceError（或
  * `new Function` 路径被宿主全局解析成 undefined）；清单多一个名字 ⇒ 产物
  * 多出未使用导入（且暗示该符号已不再发射）。名字清单与剥离正则的单一真值
  * 源是 `exec/transpile/runtime-import.ts`（本测试按公开路径 + 叶子双面校验）。
  */
-import { describe, expect, it } from "vitest";
+import {describe, expect, it} from "vitest";
 import * as execSurface from "../exec/index.ts";
-import {
-  runtimeImportOf as facadeRuntimeImportOf,
-  transpileSource,
-} from "../exec/transpile.ts";
-import {
-  RUNTIME_IMPORT_NAMES,
-  RUNTIME_IMPORT_RE,
-  runtimeImportOf,
-} from "../exec/transpile/runtime-import.ts";
-import { RUNTIME_IMPORT_RE as RUN_RUNTIME_IMPORT_RE } from "../exec/run.ts";
-import { compiledBodyOf } from "../exec/body-fn.ts";
-import { parseSource } from "../parse-source.ts";
-import { litValue, numLit } from "../abs.ts";
+import {runtimeImportOf as facadeRuntimeImportOf, transpileSource} from "../exec/transpile.ts";
+import {RUNTIME_IMPORT_NAMES, RUNTIME_IMPORT_RE, runtimeImportOf} from "../exec/transpile/runtime-import.ts";
+import {RUNTIME_IMPORT_RE as RUN_RUNTIME_IMPORT_RE} from "../exec/run.ts";
+import {compiledBodyOf} from "../exec/body-fn.ts";
+import {parseSource} from "../parse-source.ts";
+import {litValue, numLit} from "../abs.ts";
 
 /** 解析生成 import 行的具名表（同时钉住行格式）。 */
 function importNamesOf(line: string): { spec: string; names: string[] } {
@@ -123,7 +116,7 @@ describe("runtime import surface", () => {
     // 生成行必须被整行命中（transpile 产物剥离/校验面的既有口径）
     expect(RUNTIME_IMPORT_RE.test(runtimeImportOf("@nudojs/core/exec"))).toBe(true);
     // 单引号说明符不匹配（runtimeImportOf 产物口径；用户 import 另行改写）
-    expect(RUNTIME_IMPORT_RE.test(`import { $lit } from './x.js';`)).toBe(false);
+    expect(RUNTIME_IMPORT_RE.test(`import {$lit} from './x.js';`)).toBe(false);
     // body-fn 宿主单元由 compileRuntimeUnit 以形参注入运行时符号 ⇒ 单元内
     // 不拼运行时 import 行（也不再有剥离步骤）。行为面验证：body 编译可执行
     // ——new Function 体内若残留 import 语句会抛 SyntaxError ⇒ 编译成功本身
@@ -164,8 +157,8 @@ const CORPUS: readonly string[] = [
   `function f(o, x) { o.x = x; o[k] = 1; x += 1; x ||= 2; x &&= 3; x ??= 4; return o; }`,
   `const { a, ...rest } = o; const [p, ...q] = xs;`,
   // const 面：import 绑定再赋值（$throwConstAssign）/ 逻辑赋值真值判定（$litTruth）
-  `import { k } from "./m.js"; k = 1;`,
-  `import { k } from "./m.js"; function f() { k ||= 1; }`,
+  `import {k} from "./m.js"; k = 1;`,
+  `import {k} from "./m.js"; function f() { k ||= 1; }`,
   // 自由 arguments（$throwFreeArguments）
   `const f = () => arguments.length;`,
   // 循环 / 生成器 / switch / new

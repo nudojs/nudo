@@ -13,16 +13,9 @@
  * 不变量：$get/$set(obj, "#x", …) 直连键访问照常（Bug 78 语义）；$in 的槽
  * 存在性查询不受 internal 影响（#x in this → true）。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  transpileSource,
-  litValue,
-  formatAbs,
-  type Abs,
-} from "@nudojs/core";
-import { getPropFlags } from "../builtins.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, transpileSource, litValue, formatAbs, type Abs} from "@nudojs/core";
+import {getPropFlags} from "../builtins.ts";
 
 /** concrete 抽取（differential/harness.ts 口径）：lit 值 / tuple / obj 逐槽
  *  （getPropFlags 过滤 enumerable:false 非枚举键），非具体 → undefined */

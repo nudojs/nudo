@@ -15,9 +15,9 @@
  * 不变量（负控制）：字面量计算键（`{ [1]: v }` / `{ ["x"]: v }`）与普通键
  * （`{ dyn: v }`）仍走静态键路径（原生同：字面量键无副作用）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

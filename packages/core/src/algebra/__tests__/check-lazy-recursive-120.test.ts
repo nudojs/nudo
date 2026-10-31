@@ -18,13 +18,13 @@
  *       undefined，守卫剪枝干净；最深处再读属性是诚实的预算边界
  *       （depth cutoff boundary），不产生 constraint-violated / 崩溃。
  */
-import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "@nudojs/core";
-import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
+import {describe, it, expect} from "vitest";
+import {checkSource, pTrue} from "@nudojs/core";
+import {l2Count, sigOf, sidecarOpts} from "./nudo-constraints.ts";
 
 /** issue #120 侧车原文（astNode/staticName 逐字）；nodeParam/strOrNull 为指令绑定用的测试专用模板 */
 const NUDO_SRC = `
-import { shape, string, boolean, array, nullable, fn, lazy } from "@nudojs/core";
+import {shape, string, boolean, array, nullable, fn, lazy} from "@nudojs/core";
 export const astNode = shape({
   type: string(),
   name: string().optional(),
@@ -40,7 +40,7 @@ export const nodeParam = nullable(astNode);
 export const strOrNull = nullable(string());
 `;
 
-const IMP = `/// @nudo:import { nodeParam, strOrNull } from "./std120.nudo.js"\n`;
+const IMP = `/// @nudo:import {nodeParam, strOrNull} from "./std120.nudo.js"\n`;
 
 const opts = sidecarOpts("std120", NUDO_SRC);
 

@@ -10,16 +10,16 @@
  * 导入是两个实例——会话槽（state.ts 模块级 let）跨实例不可见，混合
  * 指定符会让 assume 槽设在 A 实例而 $div 读 B 实例（pTrue）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { withAssumePremises } from "../exec/runtime/state.ts";
-import { abs, num } from "../abs.ts";
-import { v, lit } from "../term.ts";
-import { and, le, ge, pTrue } from "../pred.ts";
-import { div, numericBounds } from "../arithmetic.ts";
-import { makeSum } from "../objects.ts";
-import { formatAbs } from "../format.ts";
-import { checkSource } from "../index.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {withAssumePremises} from "../exec/runtime/state.ts";
+import {abs, num} from "../abs.ts";
+import {v, lit} from "../term.ts";
+import {and, le, ge, pTrue} from "../pred.ts";
+import {div, numericBounds} from "../arithmetic.ts";
+import {makeSum} from "../objects.ts";
+import {formatAbs} from "../format.ts";
+import {checkSource} from "../index.ts";
 import type { Abs } from "../abs.ts";
 
 // 入口参数 Abs：契约口径锚 termVar(paramName)，pred 挂自身 term

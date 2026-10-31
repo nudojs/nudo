@@ -19,9 +19,9 @@
  * 7. Bug 140 残余：用户 iterable 同时带索引属性 ⇒ 迭代序优先——✅ 已是原生
  * 8. `mk().x += 2` 复合赋值到「调用结果成员」——✅ 已修（exec/transpile，W9 并发落盘）
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call, tupleEls } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call, tupleEls} from "./eval-helpers.ts";
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 

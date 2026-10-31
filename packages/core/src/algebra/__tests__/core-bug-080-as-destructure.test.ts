@@ -18,11 +18,11 @@
  * - 对照钉：Identifier 形态仍生效（行为不退化）；
  * - 负控制：无指令的同一源码行为不变；覆盖只作用于被标注的那条语句。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { formatShape, litValue, num, objOf, str, strLit, type Abs } from "../index.ts";
-import { throwsError } from "./eval-helpers.ts";
-import { parseSource } from "../parse-source.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {formatShape, litValue, num, objOf, str, strLit, type Abs} from "../index.ts";
+import {throwsError} from "./eval-helpers.ts";
+import {parseSource} from "../parse-source.ts";
 
 /** content 实参（合法 JSON ⇒ JSON.parse 不抛 ⇒ 返回面可观测） */
 const CONTENT: Abs = strLit('{"port":8080,"host":"h"}') as Abs;

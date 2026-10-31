@@ -16,9 +16,9 @@
  *
  * 负控制：单层路径的 Put 仍走原生访问器语义（setter 被调 / 只读访问器定抛）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

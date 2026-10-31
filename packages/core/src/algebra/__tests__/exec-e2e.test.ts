@@ -1,9 +1,9 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { transpile, litValue, absToString, $lit, $arr, $idx, $len, $get, $obj } from "@nudojs/core";
+import {describe, it, expect, afterAll} from "vitest";
+import {mkdtempSync, writeFileSync, rmSync, mkdirSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join, dirname} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
+import {transpileSource, litValue, absToString, $lit, $arr, $idx, $len, $get, $obj} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -19,7 +19,7 @@ async function execTranspiled(source: string, exportName: string) {
   const dir = mkdtempSync(join(tmpdir(), "nudo-eval-e2e-"));
   dirs.push(dir);
   // 指向 monorepo 内 runtime，vitest/node 均可解析 .ts
-  const js = transpile(source, { runtimeImport: runtimeUrl });
+  const js = transpileSource(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
   writeFileSync(modPath, js, "utf-8");
   const mod = await import(pathToFileURL(modPath).href);

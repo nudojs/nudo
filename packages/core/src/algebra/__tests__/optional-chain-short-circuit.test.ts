@@ -10,8 +10,8 @@
  *   - `o?.length` / `o?.[k]` 路由到 $len/$idx，忽略 optional，不短路
  *   - `g?.()` 标识符调用路径忽略 optionalCall
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, litValue, formatAbs} from "@nudojs/core";
 
 function run(src: string) {
   const exports = runTranspiled(src, { mode: "exec", maxLoopIters: 2000 });

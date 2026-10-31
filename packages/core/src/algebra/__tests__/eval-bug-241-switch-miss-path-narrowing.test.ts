@@ -17,10 +17,10 @@
  * （$removeNull / $removeNullish / $removeUndefined），由
  * `narrowCaseLabelArmThunk` 以影子重绑施加到后续臂。
  */
-import { describe, it, expect } from "vitest";
-import { absLit, type Abs } from "../abs.ts";
-import { joinAbs } from "../objects.ts";
-import { call, isNever } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {absLit, type Abs} from "../abs.ts";
+import {joinAbs} from "../objects.ts";
+import {call, isNever} from "./eval-helpers.ts";
 
 /** 抽象实参 string | null（契约面同形：union(string(), lit(null))） */
 const strOrNull: Abs = joinAbs(absLit("ab"), absLit(null));

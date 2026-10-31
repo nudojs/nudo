@@ -6,42 +6,11 @@
  * - 语料内零回落不变量：差分 corpus 全量跑在收集器下，internal 必须为零
  *   （unsupported 也应为零——语料均为可托管形态）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, tryRunTranspiled, callTranspiledExportFull, setEvalFallbackCollector, litValue, type EvalFallback } from "@nudojs/core";
-import { formatAbs } from "../format.ts";
-import { runCorpus } from "./differential/harness.ts";
-import {
-  batch1 as b1,
-  batch2 as b2,
-  batch3 as b3,
-  batch4 as b4,
-  batch5 as b5,
-  batch6 as b6,
-  batch7 as b7,
-  batch8 as b8,
-  batch9 as b9,
-  batch10 as b10,
-  batch11 as b11,
-  batch12 as b12,
-  batch13 as b13,
-  batch14a as b14a,
-  batch14b as b14b,
-  batch14c as b14c,
-  batch14d as b14d,
-  batch14e as b14e,
-  batch14f as b14f,
-  batch15a as b15a,
-  batch15b as b15b,
-  batch15c as b15c,
-  batch15d as b15d,
-  batch16a as b16a,
-  batch16b as b16b,
-  batch16c as b16c,
-  batch16d as b16d,
-  batch17a as b17a,
-  batch17b as b17b,
-  batch18Readprobes as b18,
-} from "./differential/all-batches.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, tryRunTranspiled, callTranspiledExportFull, setEvalFallbackCollector, litValue, type EvalFallback} from "@nudojs/core";
+import {formatAbs} from "../format.ts";
+import {runCorpus} from "./differential/harness.ts";
+import {batch1 as b1, batch2 as b2, batch3 as b3, batch4 as b4, batch5 as b5, batch6 as b6, batch7 as b7, batch8 as b8, batch9 as b9, batch10 as b10, batch11 as b11, batch12 as b12, batch13 as b13, batch14a as b14a, batch14b as b14b, batch14c as b14c, batch14d as b14d, batch14e as b14e, batch14f as b14f, batch15a as b15a, batch15b as b15b, batch15c as b15c, batch15d as b15d, batch16a as b16a, batch16b as b16b, batch16c as b16c, batch16d as b16d, batch17a as b17a, batch17b as b17b, batch18Readprobes as b18} from "./differential/all-batches.ts";
 
 function withCollector<T>(fn: () => T): { result: T; fallbacks: EvalFallback[] } {
   const fallbacks: EvalFallback[] = [];
@@ -114,7 +83,7 @@ describe("B fallback observation (unsupported at transpile time)", () => {
 
 describe("call-boundary internal fallback canary (DEC-006 / D6-A)", () => {
   it("callTranspiledExportFull notes internal fallback on native host throw", async () => {
-    const { getEvalFallbackStats, resetEvalFallbackStats } = await import("@nudojs/core/internal");
+    const {getEvalFallbackStats, resetEvalFallbackStats} = await import("@nudojs/core/internal");
     resetEvalFallbackStats();
     const exports = {
       boom: () => {
@@ -134,7 +103,7 @@ describe("call-boundary internal fallback canary (DEC-006 / D6-A)", () => {
   });
 
   it("NudoThrow at call boundary is not an internal fallback", async () => {
-    const { getEvalFallbackStats, resetEvalFallbackStats } = await import("@nudojs/core/internal");
+    const {getEvalFallbackStats, resetEvalFallbackStats} = await import("@nudojs/core/internal");
     resetEvalFallbackStats();
     const src = `export function f() { throw new TypeError("user throw"); }`;
     const exports = runTranspiled(src, { mode: "analyze" });

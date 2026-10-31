@@ -149,7 +149,7 @@ export {
   sub, substAbs, substPred, substPredAbs, symbolDescriptionAbs, symbolIdOf,
   takeInterfaceDiags, takeInterfaceDiagsSince, takeLoopExits,
   takeRefineDiags, takeRefineDiagsSince, takeThrowExits, termEquals,
-  termToString, throwConstraintToKinds, toNumberAbs, transpile,
+  termToString, throwConstraintToKinds, toNumberAbs,
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
   trueConstraint, tryMakeRegexAbs,
   tryRunTranspiled, typeofAbs, undefAbs, union, unknown, ushrAbs, v,

@@ -9,28 +9,14 @@
  *    new Function 求值路径（transpile 注入的 runtime 跨帧读 collector）
  *    在嵌套 + await 间隔两场景下仍读到最内层正确值。
  */
-import { describe, it, expect } from "vitest";
-import { runWithCollectorScope, createScopedSlot } from "../collector-scope.ts";
-import { createScopedDiagChannel } from "../diag-channel.ts";
-import {
-  setAbsTruncationCollector,
-  noteAbsTruncation,
-  resetAbsCallBudget,
-} from "../call-budget.ts";
-import {
-  setEvalCallCollector,
-  setEvalAssignCollector,
-} from "../exec/calls.ts";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { checkSource } from "../check.ts";
-import {
-  execNudoModule,
-  resetNudoModuleExecCache,
-  setRefineDiagCollector,
-  takeRefineDiags,
-  refineDiagCount,
-  takeRefineDiagsSince,
-} from "../refine.ts";
+import {describe, it, expect} from "vitest";
+import {runWithCollectorScope, createScopedSlot} from "../collector-scope.ts";
+import {createScopedDiagChannel} from "../diag-channel.ts";
+import {setAbsTruncationCollector, noteAbsTruncation, resetAbsCallBudget} from "../call-budget.ts";
+import {setEvalCallCollector, setEvalAssignCollector} from "../exec/calls.ts";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {checkSource} from "../check.ts";
+import {execNudoModule, resetNudoModuleExecCache, setRefineDiagCollector, takeRefineDiags, refineDiagCount, takeRefineDiagsSince} from "../refine.ts";
 
 /** 打点：不走真实求值，隔离验证 collector 路由本身 */
 function emitTruncation(label: string): void {
@@ -132,7 +118,7 @@ describe("collector 作用域：await 窗口交错", () => {
         await new Promise((r) => setTimeout(r, delayMs));
         const since = refineDiagCount();
         execNudoModule(
-          `import { v } from "${spec}";\nexport const p = v;\n`,
+          `import {v} from "${spec}";\nexport const p = v;\n`,
         );
         return takeRefineDiagsSince(since).map((d) => d.message);
       });
@@ -256,7 +242,7 @@ describe("collector 作用域：checkSource 入口", () => {
     runWithCollectorScope(() => {
       checkSource(
         "als-sidecar.ts",
-        `import { v } from "./als-c-plain.nudo.js";\nexport const p = v;\n`,
+        `import {v} from "./als-c-plain.nudo.js";\nexport const p = v;\n`,
       );
     });
     // checkSource 在自己的作用域内排干（takeSince）——fallback 缓冲不应

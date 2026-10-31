@@ -19,10 +19,10 @@
  *   arr join 保 sound）。路径敏感（fork 拼接）序列不可 exact——保持 widened
  *   （拼接序列不是 native 序列，禁 wrong-definite）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call, effects, tupleEls, throwsError } from "./eval-helpers.ts";
-import { anyAbs } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call, effects, tupleEls, throwsError} from "./eval-helpers.ts";
+import {anyAbs} from "../abs.ts";
 
 const lv = (src: string): ReturnType<typeof litValue> => litValue(call(src, "f").result);
 

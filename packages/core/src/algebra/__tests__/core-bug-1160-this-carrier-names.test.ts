@@ -31,14 +31,14 @@
  *
  * 锚定值均为 node v26.10.0 原生实测（`"use strict"` vm，与引擎同源程序）。
  */
-import { describe, it, expect, beforeEach } from "vitest";
-import { call, val, tupleEls } from "./eval-helpers.ts";
-import { resetCheckSourceMemo } from "../check.ts";
-import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { resetParseSourceCache } from "../parse-source.ts";
-import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
+import {describe, it, expect, beforeEach} from "vitest";
+import {call, val, tupleEls} from "./eval-helpers.ts";
+import {resetCheckSourceMemo} from "../check.ts";
+import {resetGeneralizeMemo} from "../generalize.ts";
+import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
+import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface.ts";
+import {resetParseSourceCache} from "../parse-source.ts";
+import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
 
 /** 引擎求值结果的字面量值（失败面原样返回） */
 function v(src: string): unknown {

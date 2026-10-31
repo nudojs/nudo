@@ -9,13 +9,13 @@
  * - var 提升按原始 body 计算（被剥块内的 `var` 仍有模块顶绑定）；
  * - exec 模式逐字节不变；analyze 与 exec 的差异只是「语句被整条删除」。
  */
-import { describe, it, expect } from "vitest";
-import { parse } from "@babel/parser";
+import {describe, it, expect} from "vitest";
+import {parse} from "@babel/parser";
 
-import { transpileModule, transpileSource } from "../transpile.ts";
-import { analyzeTopLevelStatements } from "../transpile/analyze-strip.ts";
-import { parseSource } from "../../parse-source.ts";
-import { runTranspiled, callTranspiledExportFull } from "../run.ts";
+import {transpileModule, transpileSource} from "../transpile.ts";
+import {analyzeTopLevelStatements} from "../transpile/analyze-strip.ts";
+import {parseSource} from "../../parse-source.ts";
+import {runTranspiled, callTranspiledExportFull} from "../run.ts";
 
 /** 源 AST 过滤结果（按源码切片保留原文，便于逐条断言）。 */
 function keptStatements(src: string): string[] {
@@ -185,8 +185,8 @@ describe("analyzeTopLevelStatements：源 AST 判定表", () => {
       `const { a } = o;`,
       `a();`,
     ]);
-    expect(keptStatements(`import { x } from "./m.js";\nx();`)).toEqual([
-      `import { x } from "./m.js";`,
+    expect(keptStatements(`import {x} from "./m.js";\nx();`)).toEqual([
+      `import {x} from "./m.js";`,
       `x();`,
     ]);
     // 块内 var 提升到模块顶（发射期 let <名> = $lit(void 0)）⇒ 同名调用保留；

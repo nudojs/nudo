@@ -9,9 +9,9 @@
  * - 默认参 length 按实参个数；rest 的 arguments.length 同实参个数。
  * - rest 绑定仍走真实 arguments/rest 形参（transpile restBind），与本槽解耦。
  */
-import { describe, it, expect } from "vitest";
-import { litValue, formatShape, formatAbs, $lit, unknown as unknownAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue, formatShape, formatAbs, $lit, unknown as unknownAbs, runTranspiled, callTranspiledExportFull} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function lit(n: number | string | boolean | undefined | null) {
   return $lit(n as never);

@@ -8,18 +8,9 @@
  * 与 evalTry 行为口径一致）→ 正常路径 $tryReleaseSoftCatch()（摘帧上浮
  * 到 collector/外层帧）而非 digest。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  abs,
-  litValue,
-} from "@nudojs/core";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../exec/may-throw.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, abs, litValue} from "@nudojs/core";
+import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../exec/may-throw.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 

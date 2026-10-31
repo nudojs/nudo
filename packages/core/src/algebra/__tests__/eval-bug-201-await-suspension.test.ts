@@ -22,10 +22,10 @@
  *   （宿主 thunk 位置）时，`yield` 会是语法错误 ⇒ 这类体**整体**沿用既有
  *   同步路径（行为不变，挂起缺陷仍在该形态上）。
  */
-import { describe, it, expect } from "vitest";
-import { call } from "./eval-helpers.ts";
-import { $await } from "../exec/runtime/async.ts";
-import { litValue } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {call} from "./eval-helpers.ts";
+import {$await} from "../exec/runtime/async.ts";
+import {litValue} from "../abs.ts";
 
 /** 调用导出的 f，返回同步段观测到的字面量值 */
 function syncVal(src: string): unknown {

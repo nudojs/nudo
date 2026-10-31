@@ -6,10 +6,10 @@
  * 记录，$get 类值分支折 exact；自有静态 length 槽/静态访问器优先
  * （原生静态成员初始化覆盖构造器自有 length）。
  */
-import { describe, it, expect } from "vitest";
-import { call } from "./eval-helpers.ts";
-import { litValue } from "../abs.ts";
-import { diffBody } from "./differential/harness.ts";
+import {describe, it, expect} from "vitest";
+import {call} from "./eval-helpers.ts";
+import {litValue} from "../abs.ts";
+import {diffBody} from "./differential/harness.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

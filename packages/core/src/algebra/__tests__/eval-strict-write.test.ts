@@ -3,22 +3,8 @@
  * 此前 $set/$idxSet 对 prim/空值目标静默造 $obj（假精确 + L2 漏报）。
  * 同时覆盖 top-level this 的 ESM 语义（this → undefined；写 → TypeError）。
  */
-import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $set,
-  $idxSet,
-  $lit,
-  isNudoThrow,
-  abs,
-  num,
-  unknown as unknownAbs,
-  objOf,
-  $arr,
-  formatAbs,
-  litValue,
-} from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull, $set, $idxSet, $lit, isNudoThrow, abs, num, unknown as unknownAbs, objOf, $arr, formatAbs, litValue} from "@nudojs/core";
 
 describe("strict write semantics: non-object targets", () => {
   it("$set / $idxSet on undefined|null|prim literal throw TypeError (NudoThrow)", () => {

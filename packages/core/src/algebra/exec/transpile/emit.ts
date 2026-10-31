@@ -209,16 +209,34 @@ export function emitDestructure(
   // 用户声明重复（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为 unknown），
   // 在函数体内还会**遮蔽**模块级同名绑定（错值）。
   bumpDestrTmpSeq(tmpSeq, userIdentInfoOf(opts));
-  // 赋值解构（kw 为空）写 const 绑定 → TypeError；声明解构走 kw（let/const）
-  const assignName = (name: string): void => {
+  // 绑定微模式单一实现（七处共用）：赋值解构（kw 为空）写 const 绑定 →
+  // TypeError；声明解构走 kw（let/const）。rest 目标只剩名串（非
+  // Identifier rest 已在收集期分流）走 bindIdent。
+  const bindIdent = (name: string, valueSrc: string): void => {
     if (kw === "" && isConstAssignTarget(name, opts)) {
       out.push(`${pad}$throwConstAssign();`);
       return;
     }
-    out.push(`${pad}${kw} ${name} = ${fromSrc};`);
+    out.push(`${pad}${kw} ${name} = ${valueSrc};`);
+  };
+  // 绑定目标三派（Bug 162 口径）：Identifier → bindIdent；成员目标 →
+  // 成员写回（emitMemberTargetAssign——不得静默丢绑定）；子模式 → 临时
+  // 接值再递归解构。Object/Array 两臂各目标位共用。
+  const bindTarget = (left: Node, valueSrc: string): void => {
+    if (left.type === "Identifier") {
+      bindIdent((left as unknown as { name: string }).name, valueSrc);
+      return;
+    }
+    if (left.type === "MemberExpression") {
+      emitMemberTargetAssign(left, valueSrc, pad, opts, out);
+      return;
+    }
+    const t = `_n${tmpSeq.n++}`;
+    out.push(`${pad}const ${t} = ${valueSrc};`);
+    emitDestructure(left, t, kw, pad, opts, out, tmpSeq);
   };
   if (pattern.type === "Identifier") {
-    assignName(pattern.name);
+    bindTarget(pattern, fromSrc);
     return;
   }
   if (pattern.type === "ObjectPattern") {
@@ -273,60 +291,37 @@ export function emitDestructure(
       if (prop.value.type === "AssignmentPattern") {
         const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
+        const withDef = `$orDefault(${readSrc}, () => ${def})`;
         if (left.type === "Identifier") {
-          if (kw === "" && isConstAssignTarget(left.name, opts)) {
-            out.push(`${pad}$throwConstAssign();`);
-          } else {
-            out.push(
-              `${pad}${kw} ${left.name} = $orDefault(${readSrc}, () => ${def});`,
-            );
-          }
-        } else if (left.type === "MemberExpression") {
+          bindTarget(left as Node, withDef);
+        } else {
           // Bug 162：**成员目标**带默认值（`({ a: o.x = 1 } = src)`）——写回
           // 不能丢。此前只认 Identifier / 子模式：成员目标落进「嵌套 + 默认」
           // 分支后被当子模式递归，成员写回**静默丢弃** ⇒ 目标成员保持旧值
           // （错值；原生是「读属性 → undefined 取默认 → 写回目标成员」）。
+          // 嵌套 + 默认（const { a: { b } = {} } = o）同走临时：默认值结果
+          // 只求值一次，成员写回 / 子模式递归共用临时值。
           const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $orDefault(${readSrc}, () => ${def});`);
-          emitMemberTargetAssign(left as Node, t, pad, opts, out);
-        } else {
-          // 嵌套 + 默认：const { a: { b } = {} } = o
-          const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $orDefault(${readSrc}, () => ${def});`);
-          emitDestructure(left, t, kw, pad, opts, out, tmpSeq);
+          out.push(`${pad}const ${t} = ${withDef};`);
+          if (left.type === "MemberExpression") {
+            emitMemberTargetAssign(left as Node, t, pad, opts, out);
+          } else {
+            emitDestructure(left, t, kw, pad, opts, out, tmpSeq);
+          }
         }
         continue;
       }
-      if (prop.value.type === "ObjectPattern" || prop.value.type === "ArrayPattern") {
-        const t = `_n${tmpSeq.n++}`;
-        out.push(`${pad}const ${t} = ${readSrc};`);
-        emitDestructure(prop.value, t, kw, pad, opts, out, tmpSeq);
-        continue;
-      }
-      if (prop.value.type === "Identifier") {
-        if (kw === "" && isConstAssignTarget(prop.value.name, opts)) {
-          out.push(`${pad}$throwConstAssign();`);
-        } else {
-          out.push(`${pad}${kw} ${prop.value.name} = ${readSrc};`);
-        }
-      } else if (prop.value.type === "MemberExpression") {
-        // ({ p: o.x } = src)：成员目标写回（不得静默跳过）
-        emitMemberTargetAssign(prop.value as Node, readSrc, pad, opts, out);
-      }
+      bindTarget(prop.value as Node, readSrc);
     }
     // Bug 160：rest 排除集 = 静态键名 + **动态计算键的求值结果**（原生按
     // 求值后的键排除；此前只排静态名 → 计算键仍留在 rest 里）。
     const dropList = [...namedKeys.map((k) => JSON.stringify(k)), ...computedKeyNames];
     const restSrc = `$objRest(${fromSrc}, [${dropList.join(", ")}])`;
     if (restName) {
-      if (kw === "" && isConstAssignTarget(restName, opts)) {
-        out.push(`${pad}$throwConstAssign();`);
-      } else {
-        out.push(`${pad}${kw} ${restName} = ${restSrc};`);
-      }
+      bindIdent(restName, restSrc);
     } else if (restMember) {
       // rest 成员目标写回（namedKeys 须循环收齐后再算 $objRest）
-      emitMemberTargetAssign(restMember, restSrc, pad, opts, out);
+      bindTarget(restMember, restSrc);
     }
     return;
   }
@@ -366,24 +361,16 @@ export function emitDestructure(
           restAt = i;
           return;
         }
-        // ...[b, c] / ...{0: b}（rest 实参为模式）：rest 值先入临时，再子模式
-        // 绑定。此前只认 Identifier，模式实参静默丢绑定 → 子名自由读
-        // spurious-throw 面（差分 FALSE-THROW）。
-        if (el.argument.type === "ObjectPattern" || el.argument.type === "ArrayPattern") {
-          const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = ${readRest(i)};`);
-          emitDestructure(el.argument, t, kw, pad, opts, out, tmpSeq);
-          return;
-        }
-        if (el.argument.type === "MemberExpression") {
-          // [...o.x] = src（赋值位 rest 成员目标）：成员写回，不得静默跳过
-          emitMemberTargetAssign(
-            el.argument as Node,
-            readRest(i),
-            pad,
-            opts,
-            out,
-          );
+        // ...[b, c] / ...{0: b}（rest 实参为模式）：rest 值先入临时，再子
+        // 模式绑定。此前只认 Identifier，模式实参静默丢绑定 → 子名自由读
+        // spurious-throw 面（差分 FALSE-THROW）。[...o.x] = src（赋值位
+        // rest 成员目标）：成员写回——均不得静默跳过。
+        if (
+          el.argument.type === "ObjectPattern" ||
+          el.argument.type === "ArrayPattern" ||
+          el.argument.type === "MemberExpression"
+        ) {
+          bindTarget(el.argument as Node, readRest(i));
           return;
         }
         // 其余 LVal（TS 断言等）无可靠 lowering：fail-closed 回落
@@ -397,48 +384,29 @@ export function emitDestructure(
       if (el.type === "AssignmentPattern") {
         const def = emitTranspileExpression(el.right as Expression, opts);
         const idx = readAt(i);
+        const withDef = `$orDefault(${idx}, () => ${def})`;
         if (el.left.type === "Identifier") {
-          if (kw === "" && isConstAssignTarget(el.left.name, opts)) {
-            out.push(`${pad}$throwConstAssign();`);
-          } else {
-            out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
-          }
-        } else if (el.left.type === "MemberExpression") {
+          bindTarget(el.left as Node, withDef);
+        } else {
           // Bug 162：成员目标 + 默认值（`[o.x = 1] = src`）——同对象模式分支：
-          // 写回不能丢（读 → undefined 取默认 → 写回目标成员）。
+          // 写回不能丢（读 → undefined 取默认 → 写回目标成员）；嵌套模式
+          // 同走临时（默认值结果只求值一次）。
           const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
-          emitMemberTargetAssign(el.left as Node, t, pad, opts, out);
-        } else {
-          const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
-          emitDestructure(el.left, t, kw, pad, opts, out, tmpSeq);
+          out.push(`${pad}const ${t} = ${withDef};`);
+          if (el.left.type === "MemberExpression") {
+            emitMemberTargetAssign(el.left as Node, t, pad, opts, out);
+          } else {
+            emitDestructure(el.left, t, kw, pad, opts, out, tmpSeq);
+          }
         }
         return;
       }
-      if (el.type === "ObjectPattern" || el.type === "ArrayPattern") {
-        const t = `_n${tmpSeq.n++}`;
-        out.push(`${pad}const ${t} = ${readAt(i)};`);
-        emitDestructure(el, t, kw, pad, opts, out, tmpSeq);
-        return;
-      }
-      if (el.type === "Identifier") {
-        if (kw === "" && isConstAssignTarget(el.name, opts)) {
-          out.push(`${pad}$throwConstAssign();`);
-        } else {
-          out.push(`${pad}${kw} ${el.name} = ${readAt(i)};`);
-        }
-      } else if (el.type === "MemberExpression") {
-        // [o.x] = src：成员目标写回（不得静默跳过）
-        emitMemberTargetAssign(el as Node, readAt(i), pad, opts, out);
-      }
+      // 子模式（临时接值再递归）/ Identifier（const 守卫 + kw 绑定）/
+      // 成员目标（[o.x] = src 写回，不得静默跳过）三派
+      bindTarget(el as Node, readAt(i));
     });
     if (restName) {
-      if (kw === "" && isConstAssignTarget(restName, opts)) {
-        out.push(`${pad}$throwConstAssign();`);
-      } else {
-        out.push(`${pad}${kw} ${restName} = ${readRest(restAt)};`);
-      }
+      bindIdent(restName, readRest(restAt));
     }
   }
 }

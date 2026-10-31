@@ -7,20 +7,15 @@
  * - bindImports 的 `import * as ns` 造闭 exact 对象，缺失成员被
  *   definitelyUncallableMember 判「运行时缺失」假抛 TypeError。
  */
-import { describe, it, expect } from "vitest";
-import { parseSource } from "../parse-source.ts";
-import { emptyEnv } from "../ast-env.ts";
-import {
-  bindImports,
-  collectAbsExports,
-  namespaceAbsOf,
-  type AbsModuleExports,
-} from "../abs-modules.ts";
-import { localNamedExports } from "../interface.ts";
-import { runTranspiled, transpile, callTranspiledExportFull, litValue } from "@nudojs/core";
-import { abs, num, unknown } from "../abs.ts";
-import { v } from "../term.ts";
-import { definitelyUncallableMember } from "../exec/member-diag.ts";
+import {describe, it, expect} from "vitest";
+import {parseSource} from "../parse-source.ts";
+import {emptyEnv} from "../ast-env.ts";
+import {bindImports, collectAbsExports, namespaceAbsOf, type AbsModuleExports} from "../abs-modules.ts";
+import {localNamedExports} from "../interface.ts";
+import {runTranspiled, transpileSource, callTranspiledExportFull, litValue} from "@nudojs/core";
+import {abs, num, unknown} from "../abs.ts";
+import {v} from "../term.ts";
+import {definitelyUncallableMember} from "../exec/member-diag.ts";
 
 function numMod(): AbsModuleExports {
   return {
@@ -34,7 +29,7 @@ function numMod(): AbsModuleExports {
 
 describe("export * as ns — ExportNamespaceSpecifier full chain", () => {
   it("transpile preserves `export * as ns from`", () => {
-    const js = transpile(`export * as ns from "./m.js";`, { runtimeImport: "@nudojs/core/exec" });
+    const js = transpileSource(`export * as ns from "./m.js";`, { runtimeImport: "@nudojs/core/exec" });
     expect(js).toContain(`export * as ns from "./m.js";`);
   });
 

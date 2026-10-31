@@ -5,9 +5,9 @@
  * 抽象 number。修复：声明宿主签名占位补 `= void 0`（宿主 length 对齐）；
  * $fnVal 记录 nativeParamArity（$len 的 impl.length 通道）。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
 
 function v(src: string) {
   return litValue(call(src, "f").result);

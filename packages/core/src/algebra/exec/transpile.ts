@@ -233,8 +233,3 @@ function hostImportRefreshBindsOf(
   }
   return out;
 }
-
-/** 解析 + transpile */
-export function transpile(source: string, opts?: TranspileOptions): string {
-  return transpileSource(source, opts);
-}

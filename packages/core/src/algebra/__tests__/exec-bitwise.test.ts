@@ -4,19 +4,12 @@
  * 合法 JS（5 & 1、2 ** 10、+"42"）被断言为精确 undefined（真值 1/1024/42），
  * 属 unsound 折叠。每条断言均与 Node 真实执行结果对齐。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  transpile,
-  litValue,
-  formatShape,
-  $lit,
-  num,
-  type Abs,
-} from "@nudojs/core";
+import {describe, it, expect, afterAll} from "vitest";
+import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join, dirname} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
+import {transpileSource, litValue, formatShape, $lit, num, type Abs} from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -30,7 +23,7 @@ const runtimeUrl = pathToFileURL(
 async function execTranspiled(source: string, exportName: string) {
   const dir = mkdtempSync(join(tmpdir(), "nudo-eval-bitwise-"));
   dirs.push(dir);
-  const js = transpile(source, { runtimeImport: runtimeUrl });
+  const js = transpileSource(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
   writeFileSync(modPath, js, "utf-8");
   const mod = await import(pathToFileURL(modPath).href);

@@ -21,11 +21,11 @@
  * 负控制钉住：data-length 形态、数组 / 字符串 / Set 迭代物、无 length
  * 槽、只有索引访问器而 length 是数据槽——全部与原生同口径不变。
  */
-import { describe, it, expect } from "vitest";
-import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
-import { checkSource } from "../check.ts";
-import { pTrue } from "../pred.ts";
+import {describe, it, expect} from "vitest";
+import {litValue} from "@nudojs/core";
+import {call} from "./eval-helpers.ts";
+import {checkSource} from "../check.ts";
+import {pTrue} from "../pred.ts";
 
 /** 结果字面量值（litValue） */
 function v(src: string) {

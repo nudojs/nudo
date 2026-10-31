@@ -18,10 +18,10 @@
  * 参数」而旧值是 0 ⇒ `nudo:assign-mismatch` **假红**（JS 语义下
  * `(x = 1) => x` 的 `length` 是 0 ⇒ 可零参调用）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled } from "../exec/run.ts";
-import { leqAbs } from "../leq.ts";
-import { abs, type Abs } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled} from "../exec/run.ts";
+import {leqAbs} from "../leq.ts";
+import {abs, type Abs} from "../abs.ts";
 
 /** 转译产物里取某个导出绑定的 fn shape */
 function fnShapeOf(src: string, name: string): { params: string[]; optionalParams?: boolean[] } | undefined {

@@ -9,11 +9,11 @@
  * 改后：捕获组放宽为 JS 标识符（`$` / `_` / Unicode ID_Start 开头，
  * ID_Continue 后续），与 `export * as` 的名口径同源（IDENT_NAME_SRC）。
  */
-import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { stripStaticExportDecls } from "../exec/export-names.ts";
-import { transpile } from "../exec/transpile.ts";
-import { litValue } from "../abs.ts";
+import {describe, it, expect} from "vitest";
+import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
+import {stripStaticExportDecls} from "../exec/export-names.ts";
+import {transpileSource} from "../exec/transpile.ts";
+import {litValue} from "../abs.ts";
 
 describe("Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
   it("含 $ 的导出函数名被回收", () => {
@@ -46,10 +46,10 @@ describe("Bug 287：导出名回收覆盖 $ / 非 ASCII", () => {
   });
 
   it("stripStaticExportDecls 文本口径也放宽（$ / 非 ASCII）", () => {
-    expect(stripStaticExportDecls(transpile(`export function $d(){}`)).names).toEqual([
+    expect(stripStaticExportDecls(transpileSource(`export function $d(){}`)).names).toEqual([
       "$d",
     ]);
-    expect(stripStaticExportDecls(transpile(`export function 导出(){}`)).names).toEqual([
+    expect(stripStaticExportDecls(transpileSource(`export function 导出(){}`)).names).toEqual([
       "导出",
     ]);
   });

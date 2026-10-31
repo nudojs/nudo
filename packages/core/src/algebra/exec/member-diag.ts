@@ -15,6 +15,7 @@ import { recordMayThrow } from "./may-throw.ts";
 import { getSlot, isNullProtoObj } from "../objects.ts";
 import { getEvalClass } from "./class-registry.ts";
 import { DIAG } from "../diag-codes.ts";
+import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 import {
   createScopedSlot,
   registerCollectorScopeParticipant,
@@ -287,24 +288,11 @@ export function noteMemberDispatchMiss(
 // 结构上确定不可调用的成员调用 → 原生 TypeError
 // ---------------------------------------------------------------------------
 
-/** Object.prototype 上的恒有成员（`in` 判定 / 不可调用判定共用） */
-export const OBJECT_PROTO_NAMES = new Set([
-  "constructor",
-  "toString",
-  "valueOf",
-  "toLocaleString",
-  "hasOwnProperty",
-  "isPrototypeOf",
-  "propertyIsEnumerable",
-  "__proto__",
-  // Bug 15 残余（node Object.getOwnPropertyNames(Object.prototype) 实测）：
-  // legacy 访问器四件——缺名时 "__defineGetter__" in {} / "__lookupGetter__"
-  // in [] 折 wrong-exact false（原生 true）
-  "__defineGetter__",
-  "__defineSetter__",
-  "__lookupGetter__",
-  "__lookupSetter__",
-]);
+/** Object.prototype 上的恒有成员（`in` 判定 / 不可调用判定共用）。
+ *  名单本体下沉到零依赖叶模块（`../object-proto-names.ts`）——值读面
+ *  （builtins/ctor.ts 的 `OBJECT_PROTO_METHOD_NAMES`）从同一份派生，
+ *  两张表不再各留手抄（Bug 164 同口径要求）。 */
+export { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 
 /** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名）。
  *  `in` 判定（$in tuple 臂：Array.prototype → Object.prototype 原型链）与
