@@ -16,9 +16,9 @@
  *
  * 断言与 Node 真实执行结果对齐（原生读值见各用例注释）。
  */
-import { describe, it, expect } from "vitest";
-import { analyzeFile } from "@nudojs/service";
-import { generateDts } from "../emit/dts-generator.ts";
+import {describe, it, expect} from "vitest";
+import {analyzeFile} from "@nudojs/service";
+import {generateDts} from "../emit/dts-generator.ts";
 
 /** 源码 → dts 文本 */
 function dtsOf(source: string): string {

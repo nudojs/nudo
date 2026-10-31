@@ -11,10 +11,10 @@
  * 断言非永真：改前 `blockTarget` 的签名是 `number | string` 且带一条
  * 「matched no expression」警告；改后是 `number` 且零该警告。
  */
-import { describe, it, expect } from "vitest";
-import { checkSource } from "@nudojs/core";
+import {describe, it, expect} from "vitest";
+import {checkSource} from "@nudojs/core";
 import type { DirectiveDiag } from "@nudojs/parser";
-import { collectEvalReplacements, resolveEvalInjection } from "../eval-injection.ts";
+import {collectEvalReplacements, resolveEvalInjection} from "../eval-injection.ts";
 
 /** 指令挂在**裸块语句**上（块内用的就是目标 `a`） */
 const BLOCK_TARGET = `export function blockTarget(a) {

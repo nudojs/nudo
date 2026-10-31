@@ -12,13 +12,13 @@
  * **按身份透传**（`isAbsVal` 分支）——它们不由本桥构造，strict 由 core 运行期
  * 负责；本桥不重建共享 Abs（会丢 WeakMap 侧 impl/预算键身份）。
  */
-import { describe, it, expect } from "vitest";
-import { join } from "node:path";
-import { parse } from "@nudojs/parser";
-import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "@nudojs/service";
-import { getFnImpl } from "@nudojs/core";
-import { evalExportsToModuleExports } from "../abs-modules-graph.ts";
-import { tmpProject as makeTmpProject } from "./tmp-project.ts";
+import {describe, it, expect} from "vitest";
+import {join} from "node:path";
+import {parse} from "@nudojs/parser";
+import {evalAbsModuleGraph, collectAbsBindingsFromGraph} from "@nudojs/service";
+import {getFnImpl} from "@nudojs/core";
+import {evalExportsToModuleExports} from "../abs-modules-graph.ts";
+import {tmpProject as makeTmpProject} from "./tmp-project.ts";
 
 function tmpProject(files: Record<string, string>): string {
   return makeTmpProject("nudo-abs-mod-strict-", files);
@@ -34,7 +34,7 @@ describe("module export bridge: source strictness (ESM or \"use strict\" directi
     const dir = tmpProject({
       "math.js": `export function double(x) { return x * 2; }`,
     });
-    const mainSrc = `import { double } from "./math.js";
+    const mainSrc = `import {double} from "./math.js";
 export function run(n) { return double(n); }
 `;
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));

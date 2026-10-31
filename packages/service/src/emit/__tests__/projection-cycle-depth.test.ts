@@ -1,6 +1,6 @@
 /**
  * DESIGN-001：emit 四出口（absToTSType / absToSchemaNode / denoteGuard via
- * generateGuardFunction / serializeCaseArg）对环与超深 Abs 的截断。
+ * generateGuardFunctionFromAbs / serializeCaseArg）对环与超深 Abs 的截断。
  *
  * e2e 锚点：evaluator 对真实用户代码 `const a = {}; a.self = a;
  * export default a` 产出**真环**（slot.value 与导出是同一 Abs 对象）——

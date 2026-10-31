@@ -12,11 +12,11 @@
  * 函数（`export function entry(){ return helper(); }`）不受影响——那是
  * 闭包调用，不经导出表。
  */
-import { describe, it, expect } from "vitest";
-import { analyzeFile, clearEvalCache, evalAbsModuleGraph } from "@nudojs/service";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpProject } from "./tmp-project.ts";
+import {describe, it, expect} from "vitest";
+import {analyzeFile, clearEvalCache, evalAbsModuleGraph} from "@nudojs/service";
+import {writeFileSync} from "node:fs";
+import {join} from "node:path";
+import {tmpProject} from "./tmp-project.ts";
 
 function setup(files: Record<string, string>): string {
   const dir = tmpProject("nudo-privexport-");
@@ -37,7 +37,7 @@ const DEP = `function helper() { return 1; }
 export const a = 2;
 `;
 
-const CONSUMER = `import { helper } from "./m.js";
+const CONSUMER = `import {helper} from "./m.js";
 /**
  * @nudo:case
  */
@@ -72,7 +72,7 @@ describe("私有顶层函数不可跨模块具名 import", () => {
 
   it("真实导出的具名 import 不受影响（零回归）", () => {
     const dir = setup({ "m.js": DEP });
-    const src = `import { a } from "./m.js";
+    const src = `import {a} from "./m.js";
 /**
  * @nudo:case
  */

@@ -67,13 +67,16 @@ export function harvestPackageCached(pkg: string, fromDir: string): PackageHarve
   const key = `${fromDir}::${pkg}`;
   // null 是合法缓存值（harvest 失败占位）——必须用 has，不能看 undefined
   if (harvestCache.has(key)) return harvestCache.get(key)!;
-  let result: PackageHarvest | null = null;
+  let result: PackageHarvest | null;
   try {
     // L2 磁盘投影 + L0 进程内（内部已回落 harvestPackage）
     result = harvestPackageWithDisk(pkg, fromDir);
   } catch {
-    result = null;
+    // 异常 = 瞬态故障（fs 抖动等）：不写缓存（与 eval-run「宁冷勿陈旧」
+    // 同口径）——否则 null 被钉死整个进程，故障恢复后也拿不到 harvest。
+    return null;
   }
+  // 只有确定终态（成功 / 确定 miss：包不存在或无 dts）才进缓存
   harvestCache.set(key, result);
   return result;
 }

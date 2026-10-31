@@ -104,10 +104,7 @@ export {
 
 export { domainEvidenceCases } from "./domain-cases.ts";
 
-export {
-  generateGuardFunction,
-  generateGuardFunctionFromAbs,
-} from "./guard-generator.ts";
+export { generateGuardFunctionFromAbs } from "./guard-generator.ts";
 
 // ─── Case（debug 见证 / CaseJson / case 注入，非接口产品） ───────────
 export {

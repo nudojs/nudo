@@ -286,3 +286,11 @@ export {
   type PathError,
   type PathErrorCode,
 } from "./path-errors.ts";
+// ─── eval 注入包装配 / 门禁配置解析 / realpath 归一（跨产品面单一实现） ──
+// CLI（check/migrate/health）、LSP（agent 工具）、vite-plugin 共用——
+// 此前各面平行手写装配/解析/归一，漂移事故见各模块头注释。
+export {
+  buildEvalInjection,
+} from "./inject-assembly.ts";
+export { parseIgnoreThrows, configIgnoreThrows } from "./gate-config.ts";
+export { normalizeRealPath } from "./normalize-path.ts";

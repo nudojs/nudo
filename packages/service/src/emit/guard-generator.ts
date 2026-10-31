@@ -208,8 +208,3 @@ function hasIdentityClause(a: Abs, seen: Set<Abs> = new Set()): boolean {
       return false;
   }
 }
-
-/** 兼容别名：Abs 路径唯一（`used` 语义同上）。 */
-export function generateGuardFunction(name: string, abs: Abs, used?: Set<string>): string {
-  return generateGuardFunctionFromAbs(name, abs, used);
-}

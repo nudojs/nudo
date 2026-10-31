@@ -48,18 +48,37 @@ function readPkgVersion(root: string): string | undefined {
   }
 }
 
-/** dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口） */
-export function dtsClosureHash(files: string[]): string {
+/**
+ * dts 闭包内容哈希 + 读故障信号（fail-closed 口径）。
+ *
+ * - ENOENT 折 `"miss"`（合法缺席：闭包里的文件可以真的不存在）；
+ * - 其它读错误（EACCES / EISDIR / …）**不得折 miss**——指纹键会把「读不了」
+ *   伪装成「不存在」，磁盘层之后会按同键读写**陈旧/错配**缓存。
+ *   `readerr:` 哨兵进哈希（与 miss 不同键），且 `readError: true` 供消费方
+ *   （harvestPackageWithDisk）跳过本包本次磁盘层（不读不写，宁冷勿陈旧）。
+ */
+export function dtsClosureHashDetailed(files: string[]): { hash: string; readError: boolean } {
   const h = createHash("sha256");
+  let readError = false;
   for (const f of [...files].sort()) {
     h.update(f.replace(/\\/g, "/"));
     try {
       h.update(readFileSync(f));
-    } catch {
-      h.update("miss");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        h.update("miss");
+      } else {
+        readError = true;
+        h.update(`readerr:${(e as NodeJS.ErrnoException).code ?? "unknown"}`);
+      }
     }
   }
-  return h.digest("hex");
+  return { hash: h.digest("hex"), readError };
+}
+
+/** dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口）；读故障语义见 dtsClosureHashDetailed */
+export function dtsClosureHash(files: string[]): string {
+  return dtsClosureHashDetailed(files).hash;
 }
 
 function diskPath(root: string, key: string): string {
@@ -132,13 +151,17 @@ export function harvestPackageWithDisk(
   const cacheRoot = depsCacheRoot();
   const listed = listPackageDts(pkg, fromDir, maxFiles);
   if (!listed) return null;
+  const { hash: dtsHash, readError } = dtsClosureHashDetailed(listed.dtsFiles);
   const key = harvestCacheKey(pkg, {
-    dtsHash: dtsClosureHash(listed.dtsFiles),
+    dtsHash,
     maxFiles,
     pkgVersion: listed.pkgVersion,
   });
 
-  if (cacheRoot) {
+  // fail-closed：读错误不折 miss ⇒ 本包本次磁盘层**不读不写**
+  // （宁冷勿陈旧——读不了时按 miss 键命中的缓存可能是错配的陈旧产物），
+  // 只走下面的进程内 fresh harvest。
+  if (cacheRoot && !readError) {
     const hit = readHarvestDisk(cacheRoot, key);
     if (hit) {
       const env = materializeHarvestJson(hit);
@@ -148,25 +171,26 @@ export function harvestPackageWithDisk(
     }
   }
 
-  let h: PackageHarvest | null = null;
-  try {
-    const raw = harvestPackage(pkg, fromDir, maxFiles);
-    if (!("error" in raw)) h = raw;
-  } catch {
-    h = null;
-  }
+  // harvestPackage 的**确定终态**（error 结果）折 null——可缓存；
+  // **抛异常**（瞬态故障）向上抛：harvestPackageCached 的异常路径不写
+  // 缓存（宁冷勿陈旧），不再把 null 钉死整个进程。
+  const raw = harvestPackage(pkg, fromDir, maxFiles);
+  const h: PackageHarvest | null = "error" in raw ? null : raw;
   if (!h) return null;
 
-  if (cacheRoot) {
-    writeHarvestDisk(
-      cacheRoot,
-      key,
-      serializeHarvestJson(pkg, h.env, {
-        dtsHash: dtsClosureHash(h.dtsFiles),
-        maxFiles,
-        pkgVersion: listed.pkgVersion,
-      }),
-    );
+  if (cacheRoot && !readError) {
+    const stored = dtsClosureHashDetailed(h.dtsFiles);
+    if (!stored.readError) {
+      writeHarvestDisk(
+        cacheRoot,
+        key,
+        serializeHarvestJson(pkg, h.env, {
+          dtsHash: stored.hash,
+          maxFiles,
+          pkgVersion: listed.pkgVersion,
+        }),
+      );
+    }
   }
   return h;
 }

@@ -105,6 +105,7 @@ import {
   computeFnDepSegment,
   assembleModuleGraph,
   pushEvalStaticDiagnostics,
+  type ModuleGraphIssues,
 } from "./analyzer-orchestrate-uncached-modules.ts";
 import {
   evaluateCaseDirectives,
@@ -125,6 +126,35 @@ import {
 function isPointObservationArgs(args: Abs[]): boolean {
   return args.length > 0 && args.every((a) => a.term?.op === "lit");
 }
+
+/**
+ * B 模块加载问题 kind → 诊断码/定档（单一查表；原为 kind→code 与
+ * kind→severity 两条嵌套三元链）。语义零变化：
+ * error = missing / missing-export / unreadable / json-invalid，
+ * warning = cycle / depth / exports-unresolved。
+ */
+const B_MODULE_ISSUE_META: Record<
+  ModuleGraphIssues[number]["kind"],
+  { code: string; severity: "error" | "warning" }
+> = {
+  cycle: { code: DIAG.moduleCycle, severity: "warning" },
+  depth: { code: DIAG.moduleDepth, severity: "warning" },
+  missing: { code: DIAG.moduleMissing, severity: "error" },
+  "missing-export": { code: DIAG.missingExport, severity: "error" },
+  "exports-unresolved": { code: DIAG.exportsUnresolved, severity: "warning" },
+  unreadable: {
+    // 「文件在但读不了」不得复用 module-missing（那是「不存在」）
+    // ——事实相反的诊断码会让门禁判错（Bug 499）。
+    code: DIAG.moduleUnreadable,
+    severity: "error",
+  },
+  "json-invalid": {
+    // 「JSON 语法错」专用码（不是 module-missing——文件在、语法坏了；
+    // 两种形态的处置不同）（Bug 457）。
+    code: DIAG.jsonInvalid,
+    severity: "error",
+  },
+};
 
 export function analyzeFileUncached(
   filePath: string,
@@ -259,6 +289,14 @@ export function analyzeFileUncachedInner(
   /** 求值引擎已报告的 method/property 名（避免双报） */
   const evalMemberDiagNames = new Set<string>();
   const evalMemberDiagSeen = new Set<string>();
+  /** 三处 member 诊断 range 字面量的单一实现（member 名长度为端） */
+  const rangeOf = (
+    d: { line?: number; column?: number; name: string },
+    fallbackLine: number,
+  ): SourceLocation => ({
+    start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
+    end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
+  });
   const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number }; code?: string }, fallbackLine: number) => {
     evalMemberDiagNames.add(d.name);
     const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}:${d.code ?? ""}`;
@@ -267,10 +305,7 @@ export function analyzeFileUncachedInner(
     // C0.5：求值命中闭 shape 缺槽（默认 off；per-analysis ALS 已就绪）
     if (d.code === DIAG.missingSlot) {
       diagnostics.push({
-        range: {
-          start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
-          end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
-        },
+        range: rangeOf(d, fallbackLine),
         severity: "warning",
         message: `Field '${d.name}' is missing on the evaluated object shape`,
         code: DIAG.missingSlot,
@@ -281,10 +316,7 @@ export function analyzeFileUncachedInner(
     // unknown 接收者 → unknown-recv（与 TypeValue 口径一致，warning）
     if (d.receiver === "unknown") {
       diagnostics.push({
-        range: {
-          start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
-          end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
-        },
+        range: rangeOf(d, fallbackLine),
         severity: "warning",
         message: `Cannot resolve '${d.name}' on unknown value`,
         code: DIAG.unknownRecv,
@@ -293,10 +325,7 @@ export function analyzeFileUncachedInner(
       return;
     }
     diagnostics.push({
-      range: {
-        start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
-        end: { line: d.line ?? fallbackLine, column: (d.column ?? 0) + d.name.length },
-      },
+      range: rangeOf(d, fallbackLine),
       severity:
         d.receiver === "number" || d.receiver === "boolean" || d.receiver === "bigint" || d.receiver === "symbol"
           ? "error"
@@ -320,64 +349,17 @@ export function analyzeFileUncachedInner(
   const canAbsModules = absModulesOk(source, envNames);
 
   /** B 已上报的模块加载问题种类（压 TypeValue 叠报） */
-  const evalModuleIssueKinds = new Set<
-    | "cycle"
-    | "depth"
-    | "missing"
-    | "missing-export"
-    | "exports-unresolved"
-    | "unreadable"
-    | "json-invalid"
-  >();
+  const evalModuleIssueKinds = new Set<ModuleGraphIssues[number]["kind"]>();
 
-  const pushBModuleIssues = (
-    issues:
-      | Array<{
-          kind:
-            | "cycle"
-            | "depth"
-            | "missing"
-            | "missing-export"
-            | "exports-unresolved"
-            | "unreadable"
-            | "json-invalid";
-          label: string;
-          reason: string;
-        }>
-      | undefined,
-  ) => {
+  const pushBModuleIssues = (issues: ModuleGraphIssues | undefined) => {
     if (!issues) return;
     for (const iss of issues) {
       evalModuleIssueKinds.add(iss.kind);
-      const code =
-        iss.kind === "cycle"
-          ? DIAG.moduleCycle
-          : iss.kind === "depth"
-            ? DIAG.moduleDepth
-            : iss.kind === "missing-export"
-              ? DIAG.missingExport
-              : iss.kind === "exports-unresolved"
-                ? DIAG.exportsUnresolved
-                : iss.kind === "unreadable"
-                  ? // 「文件在但读不了」不得复用 module-missing（那是「不存在」）
-                    // ——事实相反的诊断码会让门禁判错（Bug 499）。
-                    DIAG.moduleUnreadable
-                  : iss.kind === "json-invalid"
-                    ? // 「JSON 语法错」专用码（不是 module-missing——文件在、
-                      // 语法坏了；两种形态的处置不同）（Bug 457）。
-                      DIAG.jsonInvalid
-                    : DIAG.moduleMissing;
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-        severity:
-          iss.kind === "missing" ||
-          iss.kind === "missing-export" ||
-          iss.kind === "unreadable" ||
-          iss.kind === "json-invalid"
-            ? "error"
-            : "warning",
+        severity: B_MODULE_ISSUE_META[iss.kind].severity,
         message: iss.reason,
-        code,
+        code: B_MODULE_ISSUE_META[iss.kind].code,
       });
     }
   };

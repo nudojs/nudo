@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { formatShape } from "@nudojs/core";
 import {
-  generateGuardFunction,
+  generateGuardFunctionFromAbs,
   generateDts,
   absToTSType,
   absToSchemaSource,
@@ -46,7 +46,7 @@ function process(x) {
     expect(zodSchema1).toBeTruthy();
 
     // Verify guard generation
-    const guard = generateGuardFunction("isProcessOutput", result.functions[0].cases[0].abs);
+    const guard = generateGuardFunctionFromAbs("isProcessOutput", result.functions[0].cases[0].abs);
     expect(guard).toContain("function isProcessOutput");
     expect(guard).toContain("export function");
 
@@ -80,7 +80,7 @@ function double(x) {
     expect(zod).toBe(WIDE_NUMBER);
 
     // Guard should check typeof
-    const guard = generateGuardFunction("isDoubleOutput", fn.cases[0].abs);
+    const guard = generateGuardFunctionFromAbs("isDoubleOutput", fn.cases[0].abs);
     expect(guard).toContain('typeof data === "number"');
 
     // DTS should have a single declaration line
@@ -144,7 +144,7 @@ function identity(x) {
 `;
     const result = analyzeFile("/test/tuple.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isTuple", fn.cases[0].abs);
+    const guard = generateGuardFunctionFromAbs("isTuple", fn.cases[0].abs);
 
     expect(guard).toContain("export function isTuple");
     expect(guard).toContain("Array.isArray");
@@ -166,7 +166,7 @@ function getRecord(x) {
 `;
     const result = analyzeFile("/test/record.js", source);
     const fn = result.functions[0];
-    const guard = generateGuardFunction("isRecord", fn.cases[0].abs);
+    const guard = generateGuardFunctionFromAbs("isRecord", fn.cases[0].abs);
 
     expect(guard).toContain("export function isRecord");
     expect(guard).toContain('typeof data === "object"');

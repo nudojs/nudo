@@ -82,15 +82,21 @@ function dtsPriority(p: string, root: string): number {
 
 /**
  * 递归收集包内 .d.ts（限制数量 + 跳过超大文件 + 入口优先）。
+ *
+ * `fails`（可选）：readdir/stat 的**非 ENOENT** 读故障计数上浮——此前一律
+ * 静默「跳过」，文件从收割列表消失且零信号（harvestPackage 把它折进
+ * `env.stats.skipped`，与 harvest-dts 读失败同通道）；ENOENT 是合法缺席，
+ * 保持静默。
  */
-export function collectDtsFiles(root: string, maxFiles = 8): string[] {
+export function collectDtsFiles(root: string, maxFiles = 8, fails?: { count: number }): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     if (out.length >= maxFiles * 3) return; // 多收一点再排序截断
     let entries: string[];
     try {
       entries = readdirSync(dir);
-    } catch {
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT" && fails) fails.count++;
       return;
     }
     for (const name of entries) {
@@ -100,7 +106,8 @@ export function collectDtsFiles(root: string, maxFiles = 8): string[] {
       let st;
       try {
         st = statSync(p);
-      } catch {
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT" && fails) fails.count++;
         continue;
       }
       if (st.isDirectory()) walk(p);
@@ -116,7 +123,7 @@ export function collectDtsFiles(root: string, maxFiles = 8): string[] {
 }
 
 /** package.json types/typings 入口（若存在且合理大小） */
-function entryDtsFromPackageJson(root: string): string | undefined {
+function entryDtsFromPackageJson(root: string, fails?: { count: number }): string | undefined {
   const pj = join(root, "package.json");
   if (!existsSync(pj)) return undefined;
   try {
@@ -133,8 +140,10 @@ function entryDtsFromPackageJson(root: string): string | undefined {
         if (st.size <= MAX_DTS_BYTES) return p;
       }
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    // JSON 读/解析/入口 stat 故障：非 ENOENT 计数上浮（同 collectDtsFiles 口径）；
+    // ENOENT 是合法缺席，保持静默
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT" && fails) fails.count++;
   }
   return undefined;
 }
@@ -197,11 +206,13 @@ export function harvestPackage(
 ): PackageHarvest | { error: string } {
   const root = resolvePackageRoot(pkg, fromDir);
   if (!root) return { error: `package not found: ${pkg}` };
-  const entry = entryDtsFromPackageJson(root) ?? join(root, "index.d.ts");
+  // 非 ENOENT 读故障（readdir/stat/JSON）计数 → env.stats.skipped 同通道上浮
+  const fails = { count: 0 };
+  const entry = entryDtsFromPackageJson(root, fails) ?? join(root, "index.d.ts");
   // 入口 BFS 优先（@types 引用图）；退化为整树 walk
   let dtsFiles = existsSync(entry) ? collectDtsFromEntry(entry, maxFiles) : [];
   if (dtsFiles.length === 0) {
-    const collected = collectDtsFiles(root, maxFiles);
+    const collected = collectDtsFiles(root, maxFiles, fails);
     dtsFiles =
       entry && existsSync(entry) && !collected.includes(entry)
         ? [entry, ...collected.filter((f) => f !== entry)].slice(0, maxFiles)
@@ -211,6 +222,7 @@ export function harvestPackage(
     return { error: `no .d.ts under ${root}` };
   }
   const env = harvestDts(dtsFiles);
+  if (fails.count > 0) env.stats.skipped += fails.count;
   return { pkg, root, dtsFiles, env };
 }
 
@@ -242,6 +254,13 @@ export type DtsFileScan = {
   stars: string[];
   /** 是否 module 模式（有顶层 import/export） */
   isModule: boolean;
+  /**
+   * 读取失败（非 ENOENT——EACCES / EISDIR 等）：内容未知 ⇒ 公开面不可知。
+   * `packageExportSurface` 据此置 `unresolved`（fail-closed 上浮，与
+   * harvest-dts 读失败进 `stats.skipped` 同口径：丢了要上浮，不静默折空）。
+   * ENOENT 是合法缺席，保持普通空扫描（无标记）。
+   */
+  unreadable?: boolean;
 };
 
 /** 顶层声明的名字（函数/类/接口/类型/枚举/命名空间/变量） */
@@ -296,8 +315,12 @@ function scanDtsFile(file: string): DtsFileScan {
   let content: string;
   try {
     content = readFileSync(file, "utf8");
-  } catch {
-    return emptyScan();
+  } catch (e) {
+    // ENOENT = 合法缺席 → 空扫描（零信号）；其它读错误（EACCES/EISDIR/…）
+    // 标记 unreadable —— 公开面不可知（packageExportSurface 据此置
+    // unresolved，fail-closed），不静默折成「空公开面」。
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return emptyScan();
+    return { ...emptyScan(), unreadable: true };
   }
   let sf: ts.SourceFile;
   try {
@@ -378,7 +401,9 @@ export function dtsFileScan(file: string): DtsFileScan {
   const hit = fileScanCache.get(file);
   if (hit) return hit;
   const scan = scanDtsFile(file);
-  fileScanCache.set(file, scan);
+  // 瞬态读故障不进缓存（宁冷勿陈旧——恢复可读后要能重扫）；
+  // ENOENT 空扫描是合法缺席，可缓存。
+  if (!scan.unreadable) fileScanCache.set(file, scan);
   return scan;
 }
 
@@ -426,6 +451,9 @@ export function packageExportSurface(h: PackageHarvest): PackageExportSurface {
     if (visited.has(file)) return;
     visited.add(file);
     const scan = dtsFileScan(file);
+    // 读不了（非 ENOENT）⇒ 公开面不可知（fail-closed 上浮：桥接层退回
+    // globals 袋扣 ambient/private，而不是把「读不到」当「空公开面」）
+    if (scan.unreadable) unresolved = true;
     for (const n of scan.exported) names.add(n);
     for (const spec of scan.stars) {
       const target = resolveStarTarget(spec, file);
