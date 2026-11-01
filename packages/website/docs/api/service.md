@@ -720,7 +720,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="domainevidencecases"></a>`domainEvidenceCases` | fn | 产物面（dts / zod / standard / guard）的**域证据 case**。 | `domainEvidenceCases(cases: readonly CaseResult[]): CaseResult[]` |
 | <a id="draftevidence"></a>`DraftEvidence` | type | DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。 | `DraftEvidence = "callsite" \| "directive" \| "symbolic" \| "body" \| "none"` |
 | <a id="draftinterface"></a>`draftInterface` | fn | 为单文件顶层导出生成 interface 草稿（不写盘）。 | `draftInterface( filePath: string, opts: InterfaceDraftOpts = {}, ): Promise<InterfaceDraftResult>` |
-| <a id="dtsclasssurface"></a>`DtsClassSurface` | type | 类声明面（源码形状：成员名 + 构造器形参） | `DtsClassSurface { exportName?: string; exportNames?: string[]; isDefault: boolean; instanceMethods: Array<{ name: string; params: string[...` |
+| <a id="dtsclasssurface"></a>`DtsClassSurface` | type | 类声明面（成员面 + 导出形态） | `DtsClassSurface extends DtsClassMemberSurface { exportName?: string; exportNames?: string[]; isDefault: boolean; }` |
 | <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs; optional?: boolean }>; return?: Abs; }` |
 | <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; exportName?: string; classMember?: { className: s...` |
 | <a id="dtsmoduleextras"></a>`DtsModuleExtras` | type | 模块面合成的**分析面补充证据**（函数入口之外的事实：模块级绑定 Abs）。 | `DtsModuleExtras { values?: ReadonlyMap<string, Abs>; }` |
@@ -824,6 +824,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="modulegraphcache"></a>`ModuleGraphCache` | type | mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 | `ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>` |
 | <a id="modulereaderror"></a>`ModuleReadError` | fn | 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
 | <a id="normalizerealpath"></a>`normalizeRealPath` | fn | — | `normalizeRealPath(p: string): string` |
+| <a id="normposixpath"></a>`normPosixPath` | fn | posix 化（`\` → `/`）——等值比较前先统一分隔符 | `normPosixPath(p: string): string` |
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="paramcontractevidence"></a>`ParamContractEvidence` | type | 参数契约证据（quickfix 侧车发射面）： - array：参数被当数组方法接收者调用（`items.reduce(…)`）；element 为 回调元素位合成的元素契约（无证据 → array(any())） - shape：参数被成员读取（既有 body-read 字段面） - scalar：参数本体直接用法（`1 + tax` → number()）——多参函数只收窄 一个参数仍消不掉 L2（残余 may-throw 来自其余未约束位） 优先级：array &gt; shape &gt; scalar（数组方法读是最强形态证据）。 | `ParamContractEvidence = \| { kind: "array"; element?: ParamContractEvidence } \| { kind: "shape"; fields: BodyReadField[] } \| { kind: "scal...` |
@@ -843,6 +844,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="resetallanalysiscaches"></a>`resetAllAnalysisCaches` | fn | 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） | `resetAllAnalysisCaches(): void` |
 | <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：清空显式 / package.json 层（env 每次调用现读，无需重置） | `resetSessionCacheLimitState(): void` |
 | <a id="resolvemodule"></a>`resolveModule` | fn | — | `resolveModule(source: string, fromDir: string)` |
+| <a id="resolverelativespec"></a>`resolveRelativeSpec` | fn | 相对说明符 → 相对 from 文件的规范化 posix 路径；非相对说明符 → undefined | `resolveRelativeSpec(from: string, spec: string): string \| undefined` |
 | <a id="rootderiveopts"></a>`RootDeriveOpts` | type | — | `RootDeriveOpts = { loadModule?: LoadModule; autoBind?: boolean; fnNames?: string[]; refreshExistingOnly?: boolean; }` |
 | <a id="rootderiveresult"></a>`RootDeriveResult` | type | — | `RootDeriveResult = { roots: string[]; derived: DerivedExport[]; hasRoot: boolean; graphError?: string; }` |
 | <a id="safeloadmodule"></a>`safeLoadModule` | fn | loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 | `safeLoadModule( loadModule: (spec: string, fromFile: string) => string \| undefined, spec: string, fromFile: string, ): string \| undefined` |
