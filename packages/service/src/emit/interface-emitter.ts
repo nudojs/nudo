@@ -62,6 +62,7 @@ import { isDomainDeclarationCase } from "./domain-cases.ts";
 import { sectionEvidenceIsInFile, type EvidenceScope } from "./section-provenance.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { allocNudoBinding, directBindingOk, exportNameRepr } from "./export-binding.ts";
+import { exportNamesBindings, stripSections } from "./export-section-scan.ts";
 import { analyzeFileAsync, type CaseResult, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
 import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "../evaluator/config.ts";
@@ -372,7 +373,7 @@ export async function emitInterface(
       for (const n of t.localNames) takenBindings.add(n);
     };
     if (opts.mode === "update") {
-      claimFrom(removeSections(sidecarSrc, sections));
+      claimFrom(stripSections(sidecarSrc, sections));
       for (const s of sections) {
         if (deadSectionSet.has(s)) continue; // 死段要被删 ⇒ 它的名字不再占位
         if (!s.names.some((n) => targetSet.has(n))) claimFrom(s.text); // 保留段照旧占名
@@ -1005,32 +1006,8 @@ function collectGeneratedSections(sidecarSrc: string): GeneratedSection[] {
       }
     }
     if (blockStart === undefined) continue;
-    const names: string[] = [];
-    const bindings: string[] = [];
-    const d = stmt.declaration;
-    if (d) {
-      if (d.type === "VariableDeclaration") {
-        for (const decl of d.declarations) {
-          if (decl.id.type === "Identifier") {
-            names.push(decl.id.name);
-            bindings.push(decl.id.name);
-          }
-        }
-      } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-        if (d.id) {
-          names.push(d.id.name);
-          bindings.push(d.id.name);
-        }
-      }
-    } else {
-      for (const spec of stmt.specifiers) {
-        if (spec.type !== "ExportSpecifier") continue;
-        names.push(
-          spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value,
-        );
-        if (spec.local.type === "Identifier") bindings.push(spec.local.name);
-      }
-    }
+    // 段身份 / 绑定提取与派生路径（interface-derivation-emit）同源：exportNamesBindings
+    const { names, bindings } = exportNamesBindings(stmt);
     if (names.length === 0) continue;
     out.push({
       names,
@@ -1244,20 +1221,6 @@ function withTrailingEol(src: string, pos: number): number {
   if (src[pos] === "\r" && src[pos + 1] === "\n") return pos + 2;
   if (src[pos] === "\n") return pos + 1;
   return pos;
-}
-
-/** 从内容中切除指定生成段（[注释块起点, 语句终点]），其余字节不动 */
-function removeSections(src: string, sections: GeneratedSection[]): string {
-  if (sections.length === 0) return src;
-  const sorted = [...sections].sort((a, b) => a.start - b.start);
-  let out = "";
-  let pos = 0;
-  for (const s of sorted) {
-    out += src.slice(pos, s.start);
-    pos = Math.max(pos, s.end);
-  }
-  out += src.slice(pos);
-  return out;
 }
 
 /** 段文本归一：尾随空白（含无空白情形）统一压成单个换行（幂等键比较 / 重排拼接用） */

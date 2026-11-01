@@ -10,8 +10,8 @@
  *    口径与 core `packages/core/src/algebra/ts-type-shape.ts` **同表**：只映射
  *    JS 一等类型 `string` / `number` / `boolean` / `bigint` / `symbol`；
  *    别名 / 泛型 / 联合 / 对象类型**不映射** ⇒ 回落「无约束 any」（不猜）。
- *    ⚠️ core 的 `absShapeForTsTypeText` 未进公共面（public-api 冻结），
- *    故此处**复刻**同表；core 侧扩表时**必须**同步本表（已上报主 agent）。
+ *    单源：core 的 `absShapeForTsTypeText` 经 `@nudojs/core/internal` 复用
+ *    （此前是同表复刻、靠 drift-gate 测试互钉；口径注释在 core 侧）。
  * 2. **产物面**（dts 参数位）：声明类型文本 → TS 类型串，
  *    **保留注解原文**（源里写什么，声明位就是什么）。
  *    只放行「可安全落进 .d.ts」的文本：含注释记号（块注释 / 行注释）、换行或
@@ -25,27 +25,15 @@
  */
 import type { Abs, Shape } from "@nudojs/core";
 import { abs as makeAbsVal, anyAbs } from "@nudojs/core";
+import { absShapeForTsTypeText } from "@nudojs/core/internal";
 
 /**
  * 声明类型文本 → Abs 形状（不可映射 ⇒ undefined）。
- * 与 core `ts-type-shape.ts` 的 `absShapeForTsTypeText` 同表（勿单边扩表）。
+ * 单源：core `ts-type-shape.ts` 的 `absShapeForTsTypeText`（经
+ * `@nudojs/core/internal` 复用；保留本导出名，消费方零改动）。
  */
 export function tsAnnotationShape(text: string | undefined): Shape | undefined {
-  if (!text) return undefined;
-  switch (text.trim()) {
-    case "string":
-      return { k: "prim", type: "string" };
-    case "number":
-      return { k: "prim", type: "number" };
-    case "boolean":
-      return { k: "prim", type: "boolean" };
-    case "bigint":
-      return { k: "prim", type: "bigint" };
-    case "symbol":
-      return { k: "prim", type: "symbol" };
-    default:
-      return undefined;
-  }
+  return absShapeForTsTypeText(text);
 }
 
 /**

@@ -28,6 +28,7 @@ import {
 import { DIAG, isGeneratedMarkerLine, sectionChainIndices } from "@nudojs/core/internal";
 
 import { unifiedDiff } from "./case-emitter.ts";
+import { exportNamesBindings, stripSections } from "./export-section-scan.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import {
   deriveFromRoot,
@@ -642,34 +643,8 @@ function collectGeneratedSectionsRaw(src: string): RawSection[] {
       // **不拥有**该 export（否则上一段的头落进本段 ⇒ 手写段被判成生成段 ⇒
       // 「手写优先」保护被绕过 ⇒ emit 整段覆盖手写契约）。
       if (!headerOwnsExport(stmts, i, headerPos)) continue;
-      const d = stmt.declaration;
-      const names: string[] = [];
-      const bindings: string[] = [];
-      if (d) {
-        if (d.type === "VariableDeclaration") {
-          for (const decl of d.declarations) {
-            if (decl.id.type === "Identifier") {
-              names.push(decl.id.name);
-              bindings.push(decl.id.name);
-            }
-          }
-        } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-          if (d.id) {
-            names.push(d.id.name);
-            bindings.push(d.id.name);
-          }
-        }
-      } else {
-        // 别名段尾（DESIGN-003）：export 子句无声明——身份=导出名（含 string
-        // 名），绑定=specifier local（const 在 header 与子句之间，已入切片）
-        for (const spec of stmt.specifiers) {
-          if (spec.type !== "ExportSpecifier") continue;
-          names.push(
-            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value,
-          );
-          if (spec.local.type === "Identifier") bindings.push(spec.local.name);
-        }
-      }
+      // 段身份 / 绑定提取与主路径（interface-emitter）同源：exportNamesBindings
+      const { names, bindings } = exportNamesBindings(stmt);
       if (names.length === 0) continue;
       out.push({
         names,
@@ -738,19 +713,6 @@ function handwrittenNames(src: string): Set<string> {
 
 function findGeneratedSectionText(src: string, fn: string): string | undefined {
   return collectGeneratedSectionsRaw(src).find((s) => s.names.includes(fn))?.text;
-}
-
-function stripSections(src: string, sections: RawSection[]): string {
-  if (sections.length === 0) return src;
-  const sorted = [...sections].sort((a, b) => a.start - b.start);
-  let out = "";
-  let pos = 0;
-  for (const s of sorted) {
-    out += src.slice(pos, s.start);
-    pos = Math.max(pos, s.end);
-  }
-  out += src.slice(pos);
-  return out;
 }
 
 function stripGeneratedFor(src: string, fns: Set<string>): string {
