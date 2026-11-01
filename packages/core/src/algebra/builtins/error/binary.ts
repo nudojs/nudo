@@ -158,30 +158,40 @@ function classifyBufferOptions(options: Abs | undefined): BufferOptionsClass {
 }
 
 /**
- * Bug 41：new ArrayBuffer(length) —— length 过 ToIndex：负数/±∞/超 2^53-1 →
- * RangeError；symbol/bigint → TypeError（ToNumber）；缺省/NaN → 0 合法。
- * Bug 15：构造实参存入 brand 槽（字面量 ToIndex 精确折叠、抽象 → number 域）：
- * byteLength / maxByteLength（options.maxByteLength，缺省 ≡ byteLength）/
- * resizable（present → true；absent → false；undecidable → boolean 域）。
- * Review 补：present 且 maxByteLength < byteLength → RangeError（native 实测）；
- * 任一侧抽象 → 该比较 may-throw。
+ * Bug 41 / Bug 15：new ArrayBuffer(length, options?) 与
+ * new SharedArrayBuffer(length, options?) —— 同款 ToIndex 校验 + 槽构造
+ * （byteLength / maxByteLength / resizable|growable），双生构造经
+ * makeBufferAbs 参数化单实现：
+ * - length 过 ToIndex：负数/±∞/超 2^53-1 → RangeError；symbol/bigint →
+ *   TypeError（ToNumber）；缺省/NaN → 0 合法。
+ * - 构造实参存入 brand 槽（字面量 ToIndex 精确折叠、抽象 → number 域）；
+ *   maxByteLength 缺省 ≡ byteLength。
+ * - present 且 maxByteLength < byteLength → RangeError（native 实测）；
+ *   任一侧抽象 → 该比较 may-throw；undecidable → 布尔域不折 false。
+ * SAB 面差异只有：brand 名、可变槽名（growable——原型无 resizable 访问器）、
+ * 诊断文案里的类名。
  */
-export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
-  enforceToIndex(len, "ArrayBuffer length");
+function makeBufferAbs(
+  brand: "ArrayBuffer" | "SharedArrayBuffer",
+  len: Abs | undefined,
+  options?: Abs | undefined,
+): Abs {
+  const sizeSlot = brand === "ArrayBuffer" ? "resizable" : "growable";
+  enforceToIndex(len, `${brand} length`);
   const oc = classifyBufferOptions(options);
   const bl = toIndexLiteralValue(len);
   let maxV: number | undefined;
   if (oc.k === "present") {
-    enforceToIndex(oc.value, "ArrayBuffer maxByteLength");
+    enforceToIndex(oc.value, `${brand} maxByteLength`);
     maxV = toIndexLiteralValue(oc.value);
     if (maxV !== undefined && bl !== undefined) {
       if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
     } else {
-      recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+      recordMayThrow({ kind: "RangeError", cause: `${brand} maxByteLength may be less than byteLength` });
     }
   } else if (oc.k === "undecidable") {
-    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
-    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+    recordMayThrow({ kind: "RangeError", cause: `${brand} maxByteLength may be negative or invalid (ToIndex)` });
+    recordMayThrow({ kind: "RangeError", cause: `${brand} maxByteLength may be less than byteLength` });
   }
   const slots: Record<string, { value: Abs }> = {
     byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
@@ -191,46 +201,17 @@ export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefin
           ? bl !== undefined ? numLit(bl) : numPrim("path")
           : maxV !== undefined ? numLit(maxV) : numPrim("path"),
     },
-    resizable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
+    [sizeSlot]: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
   };
-  return abs({ k: "brand", name: "ArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
+  return abs({ k: "brand", name: brand, shape: objOf(slots) }, undefined, undefined, "path");
 }
 
-/**
- * Bug 15：new SharedArrayBuffer(length, options?) —— ArrayBuffer 同款 ToIndex
- * 校验 + 槽构造（byteLength/maxByteLength/growable；SAB 是 growable 不是
- * resizable——原型无 resizable 访问器）。Review 补同 makeArrayBufferAbs：
- * maxByteLength 缺省/显式 undefined ≡ 非 growable；present 且
- * maxByteLength < byteLength → RangeError；undecidable → boolean 域不折 false。
- */
+export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
+  return makeBufferAbs("ArrayBuffer", len, options);
+}
+
 export function makeSharedArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
-  enforceToIndex(len, "SharedArrayBuffer length");
-  const oc = classifyBufferOptions(options);
-  const bl = toIndexLiteralValue(len);
-  let maxV: number | undefined;
-  if (oc.k === "present") {
-    enforceToIndex(oc.value, "SharedArrayBuffer maxByteLength");
-    maxV = toIndexLiteralValue(oc.value);
-    if (maxV !== undefined && bl !== undefined) {
-      if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
-    } else {
-      recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
-    }
-  } else if (oc.k === "undecidable") {
-    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
-    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
-  }
-  const slots: Record<string, { value: Abs }> = {
-    byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
-    maxByteLength: {
-      value:
-        oc.k === "absent"
-          ? bl !== undefined ? numLit(bl) : numPrim("path")
-          : maxV !== undefined ? numLit(maxV) : numPrim("path"),
-    },
-    growable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
-  };
-  return abs({ k: "brand", name: "SharedArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
+  return makeBufferAbs("SharedArrayBuffer", len, options);
 }
 
 /**

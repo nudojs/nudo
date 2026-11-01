@@ -159,6 +159,7 @@ export {
 export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
   type NudoFnConstraint, CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES,
+  CONSTRAINT_CHAIN_METHOD_NAMES,
   CONSTRAINT_EXPR_RE, SELF, andC, any, array, boolean,
   constraintAdmitsNullish, constraintToEntryAbs, derefConstraint, fn,
   fnConstraintToEntryReqs, getTerm, instantiateConstraint, isIntFlag,

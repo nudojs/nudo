@@ -192,3 +192,6 @@ export { absShapeForTsTypeText } from "./algebra/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
 export { formatEntryParamShape } from "./algebra/check-signatures.ts";
+// JS Error 家族构造器名（service 补全近似表 builtin-prototype 的错误类
+// 判定复用；此前 8 名复刻 BUILTIN_ERROR_CLASSES 靠"保持同步"注释互钉）
+export { ERROR_CTOR_NAMES } from "./algebra/error-names.ts";

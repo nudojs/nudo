@@ -423,17 +423,35 @@ function ife(lines: string[]): string {
  * - 表达式值 = 写入的值（JS 语义）。
  */
 export function memberWriteIfe(p: MemberPath, valSrc: string): string {
+  return memberWriteIfeImpl(p, valSrc, "written");
+}
+
+/**
+ * 路径写入源（求值为**新根**）——语句位写回用（defineProperty 目标 /
+ * 解构成员目标）。引用先于值求值（Bug 136），[[Set]] 只落末层（Bug 190）。
+ * 与 memberWriteIfe 同一骨架（唯一差异 = 返回位：新根 vs 写入值）。
+ */
+export function memberWriteRootIfe(p: MemberPath, valSrc: string): string {
+  return memberWriteIfeImpl(p, valSrc, "root");
+}
+
+/** 写入骨架：`[[Set]]` 只落末层；返回位二选一——写入值（JS 表达式语义）
+ *  或根（语句位写回语义）。const 根不重绑（族 59 · W9）——单层写就地落
+ *  （fn Abs 的 $set 就地写）⇒ 写不丢。 */
+function memberWriteIfeImpl(
+  p: MemberPath,
+  valSrc: string,
+  ret: "written" | "root",
+): string {
   const plan = planOf(p);
   const t = tmpNamesOf(p, plan.n);
   const lines = [...plan.decls];
   lines.push(`const ${t.val} = ${valSrc};`);
   if (plan.n === 1) {
-    // 单层：原生 [[Set]] 就在根上（写回根 = 新根）
+    // 单层：原生 [[Set]] 就在根上（可重绑根 = 写回根出新根）
     if (p.rootRebindable) {
       lines.push(`${p.rootTarget} = ${plan.write(t.val)};`);
     } else {
-      // const 根：原生成员写**不动绑定**（写是对对象的 [[Set]]）⇒ 不重绑根
-      // （族 59 · W9）。单层写就地落（fn Abs 的 $set 就地写）⇒ 写不丢。
       lines.push(`${plan.write(t.val)};`);
     }
   } else {
@@ -442,7 +460,7 @@ export function memberWriteIfe(p: MemberPath, valSrc: string): string {
     lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
     lines.push(`}`);
   }
-  lines.push(`return ${t.val};`);
+  lines.push(`return ${ret === "root" ? p.rootTarget : t.val};`);
   return ife(lines);
 }
 
@@ -515,31 +533,5 @@ export function memberDeleteIfe(p: MemberPath): string {
     lines.push(`}`);
   }
   lines.push(`return $delRes(${plan.holder}, ${t.delK});`);
-  return ife(lines);
-}
-
-/**
- * 路径写入源（求值为**新根**）——语句位写回用（defineProperty 目标 /
- * 解构成员目标）。引用先于值求值（Bug 136），[[Set]] 只落末层（Bug 190）。
- */
-export function memberWriteRootIfe(p: MemberPath, valSrc: string): string {
-  const plan = planOf(p);
-  const t = tmpNamesOf(p, plan.n);
-  const lines = [...plan.decls];
-  lines.push(`const ${t.val} = ${valSrc};`);
-  if (plan.n === 1) {
-    if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(t.val)};`);
-    } else {
-      // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
-      lines.push(`${plan.write(t.val)};`);
-    }
-  } else {
-    lines.push(`const ${t.res} = ${plan.write(t.val)};`);
-    lines.push(`if (${t.res} !== ${plan.holders[plan.n - 2]}) {`);
-    lines.push(...propagateLines(p, plan, plan.n - 2, t.res, "  "));
-    lines.push(`}`);
-  }
-  lines.push(`return ${p.rootTarget};`);
   return ife(lines);
 }

@@ -866,6 +866,26 @@ export const CONSTRAINT_BUILDER_NAMES: readonly string[] = Object.keys(
 );
 
 /**
+ * 链式方法名表（单一真源）：`builder(...).method(...)` 链上允许的方法。
+ * 与 makeBuilder 挂到 builder 对象上的方法面一一对应——parser 侧的链式
+ * 白名单（case-arg.ts 的 TYPE_EXPR_CHAIN_METHODS，删除）与 core 侧如有
+ * 新增名单都必须从这里取，禁止再手维护一份。parity 由
+ * __tests__/constraint-chain-methods.test.ts 钉住（方法面漂移 ⇒ CI 红）。
+ */
+export const CONSTRAINT_CHAIN_METHOD_NAMES: readonly string[] = [
+  "gt",
+  "ge",
+  "lt",
+  "le",
+  "int",
+  "min",
+  "max",
+  "length",
+  "shift",
+  "optional",
+];
+
+/**
  * 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成——
  * 名单只在 CONSTRAINT_BUILDERS 一处维护。
  *

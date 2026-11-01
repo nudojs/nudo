@@ -136,6 +136,15 @@ import { computeConstScope, copyConstScope } from "../helpers.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
 import { transpileBlockAsThunk, extractForInitName } from "./block.ts";
 import { transpileClass } from "../class-emit.ts";
+import {
+  YIELD_TRY_FINALLY,
+  YIELD_TRY_CATCH,
+  YIELD_FINALLY_YIELDS,
+  YIELD_FINALLY_RETURNS,
+  YIELD_CATCH_RETURNS,
+  YIELD_CATCH_YIELDS,
+  YIELD_CATCH_RETHROWS,
+} from "../../yield-bits.ts";
 /** switch 共享体函数名序号（跨语句/函数去重） */
 let switchBodySeq = 0;
 
@@ -1970,15 +1979,12 @@ function emitTryStatement(
   const markName = internalTmpName(`__nudoTm_${tmpNo}`, opts);
   // Bug 52：yield 点 try 上下文位——try 块与 catch 体在本 try 的
   // finally/catch 覆盖内；finally 体不在自身 finally 覆盖内（外层 ctx
-  // 原样）。位值与 runtime/control.ts 的 YIELD_* 常量钉死同步（transpile
-  // 不 import runtime）：1 = TRY_FINALLY，2 = TRY_CATCH，4 = FINALLY_
-  // YIELDS，8 = FINALLY_RETURNS，16 = CATCH_RETURNS，32 = CATCH_YIELDS，
-  // 64 = CATCH_RETHROWS
+  // 原样）。位值单源：exec/yield-bits.ts（transpile 与 runtime 共引）。
   const fin = stmt.finalizer
     ? finalizerBits(stmt.finalizer as Node)
     : undefined;
   const finBits = stmt.finalizer
-    ? 1 | (fin!.yields ? 4 : 0) | (fin!.returns ? 8 : 0)
+    ? YIELD_TRY_FINALLY | (fin!.yields ? YIELD_FINALLY_YIELDS : 0) | (fin!.returns ? YIELD_FINALLY_RETURNS : 0)
     : 0;
   // R1a：catch 静态事实（finalizerBits 同口径：含 yield / 含 return /
   // 可能 rethrow）——描述**最近** enclosing catch 的吸收结局，故本 try
@@ -1988,12 +1994,12 @@ function emitTryStatement(
   const catchFacts = stmt.handler
     ? (() => {
         const cb = finalizerBits(stmt.handler!.body as Node);
-        const rethrows = catchMayRethrow(stmt.handler!) && ((opts.yieldTryCtx ?? 0) & 2) !== 0;
-        return 2 | (cb.returns ? 16 : 0) | (cb.yields ? 32 : 0) | (rethrows ? 64 : 0);
+        const rethrows = catchMayRethrow(stmt.handler!) && ((opts.yieldTryCtx ?? 0) & YIELD_TRY_CATCH) !== 0;
+        return YIELD_TRY_CATCH | (cb.returns ? YIELD_CATCH_RETURNS : 0) | (cb.yields ? YIELD_CATCH_YIELDS : 0) | (rethrows ? YIELD_CATCH_RETHROWS : 0);
       })()
     : 0;
   const innerYieldCtx =
-    ((opts.yieldTryCtx ?? 0) & ~(16 | 32 | 64)) | finBits | catchFacts;
+    ((opts.yieldTryCtx ?? 0) & ~(YIELD_CATCH_RETURNS | YIELD_CATCH_YIELDS | YIELD_CATCH_RETHROWS)) | finBits | catchFacts;
   const tryOpts: TranspileOptions = {
     ...opts,
     inTry: (opts.inTry ?? 0) + 1,

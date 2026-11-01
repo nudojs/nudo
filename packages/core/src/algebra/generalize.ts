@@ -234,43 +234,26 @@ export function ctorParamCountOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
 ): number {
-  for (const stmt of fileAst.program.body) {
-    if (
-      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
-      "declaration" in (stmt as object)
-    ) {
-      const decl = stmt.type === "ExportNamedDeclaration"
-        ? (stmt as { declaration?: unknown }).declaration
-        : stmt;
-      // Bug 1031：`export { q };` 是**说明符语句**（ExportNamedDeclaration 且
-      // declaration === null），不是声明语句 ⇒ 不可解引用 `decl.type`（空指针
-      // TypeError ⇒ 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒ 契约
-      // 违规从 error 降级成 warning ⇒ check 假绿）。这里显式跳过 null。
-      if (!decl || typeof decl !== "object") continue;
-      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
-      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
-        for (const m of c.body?.body ?? []) {
-          const mem = m as { kind?: string; params?: unknown[] };
-          if (mem.kind === "constructor") return mem.params?.length ?? 0;
-        }
-        return 0;
-      }
-    }
-  }
-  return 0;
+  return ctorParamNodesOf(fileAst, clsName).length;
 }
 
 /**
- * 类声明的**构造器形参表**（类入口签名面用；无显式 ctor → 空表）。
+ * 类声明的构造器**形参节点表**（顶层 ClassDeclaration 扫描的唯一遍历实现：
+ * 类不存在 / 无显式 ctor → 空表）。
  *
- * 遍历口径**刻意与** {@link ctorParamCountOf} 同源（同一批语句形态）⇒ 形参
- * 个数与「构造实参补 any 的个数」永远一致（否则签名面显示 N 个形参、而构造
- * 实参只补 M 个 ⇒ 两面自相矛盾）。
+ * 遍历口径只在此处维护（含 Bug 1031：`export { q };` 是**说明符语句**——
+ * ExportNamedDeclaration 且 declaration === null，不可解引用 `decl.type`，
+ * 否则空指针 TypeError 被调用点的空 catch 吞掉 ⇒ 类方法签名塌 unknown ⇒
+ * 契约违规降级 ⇒ check 假绿）。
+ *
+ * ctorParamCountOf（「构造实参补 any」的个数）与 ctorFormalsOf（类入口
+ * 签名面形参表）共用同一遍历 ⇒ 个数与形参表永远一致（否则签名面显示 N
+ * 个形参、而构造实参只补 M 个 ⇒ 两面自相矛盾）。
  */
-function ctorFormalsOf(
+function ctorParamNodesOf(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
-): FormalParam[] {
+): unknown[] {
   for (const stmt of fileAst.program.body) {
     if (
       (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
@@ -284,9 +267,7 @@ function ctorFormalsOf(
       if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
         for (const m of c.body?.body ?? []) {
           const mem = m as { kind?: string; params?: unknown[] };
-          if (mem.kind === "constructor") {
-            return formalParamsFromNodes(mem.params as never);
-          }
+          if (mem.kind === "constructor") return mem.params ?? [];
         }
         return [];
       }
@@ -296,6 +277,16 @@ function ctorFormalsOf(
 }
 
 /**
+ * 类声明的**构造器形参表**（类入口签名面用；无显式 ctor → 空表）。
+ * 遍历/个数口径与 {@link ctorParamCountOf} 同源（ctorParamNodesOf）。
+ */
+function ctorFormalsOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): FormalParam[] {
+  return formalParamsFromNodes(ctorParamNodesOf(fileAst, clsName) as never);
+}
+
 /**
  * 类方法的静态/实例判定（按**源码类声明**；判不出 → undefined = 静态）。
  *
