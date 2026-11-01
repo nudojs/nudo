@@ -89,7 +89,7 @@ export function builtinBrandToPrimitive(
  * 与 bigint 做算术/位运算时 ToNumeric 后是 number，混型恒 TypeError。
  * string 不在此列——`+` 的 string 臂走拼接，其余算子在调用点单独判。
  */
-function isKnownNonBigintNumeric(a: Abs): boolean {
+export function isKnownNonBigintNumeric(a: Abs): boolean {
   const r = litValue(a);
   if (r.ok && (typeof r.value === "number" || typeof r.value === "boolean" || r.value === null)) return true;
   if (r.ok && r.value === undefined) return true;
@@ -102,7 +102,7 @@ function isKnownNonBigintNumeric(a: Abs): boolean {
  * 与 builtins/shared.ts mayCoerceThrowOperand 的「lit 项恒 total」同原则，
  * 但只排 nullish 字面量（see isMaybeBigintOperand，issue #119）。
  */
-function isNullishLitOperand(a: Abs): boolean {
+export function isNullishLitOperand(a: Abs): boolean {
   const r = litValue(a);
   return r.ok && (r.value === null || r.value === undefined);
 }
@@ -125,8 +125,11 @@ function isNullishLitOperand(a: Abs): boolean {
  * ToNumber 强转的 may-throw 判据见 isMaybeCoercionThrowOperand（数组/元组被
  * 排除：它们的 ToPrimitive 恒 string ⇒ 既不会成 bigint 也不会成 Symbol ⇒
  * `1 + []` / `[] < 1` 原生从不抛，不得记假 may-throw）。
+ *
+ * 单源消费：surface.ts 的位运算/移位/幂折叠（foldNumericBinOp）消费本判据，
+ * 其 arr/tuple 硬抛分支镜像下方 foldBigintBinOp 的同名分支。
  */
-function isMaybeBigintOperand(a: Abs): boolean {
+export function isMaybeBigintOperand(a: Abs): boolean {
   // issue #119：lit(null)/lit(undefined)（shape k:"unknown" 携带字面量项）
   // 在一切隐式强转下 total（ToString→"null"/"undefined"、ToNumber→0/NaN），
   // 绝不可能是 bigint/Symbol。optional()/nullable() 槽读出
@@ -172,6 +175,23 @@ function isMaybeBigintOperand(a: Abs): boolean {
  */
 export function isMaybeCoercionThrowOperand(a: Abs): boolean {
   if (a.shape.k === "arr" || a.shape.k === "tuple") return false;
+  if (a.shape.k === "sum") {
+    // Bug 946 成员级：arr/tuple **成员**不连坐 —— 它们经 ToPrimitive/ToNumeric
+    // 恒 number/string，永不 Symbol/bigint 混型 ⇒ `x & 1` / `1 - x`
+    // （x: number|[]）原生永不抛，不得记假 may-throw（旧实现随
+    // isMaybeBigintOperand 的成员扫描连坐 ⇒ L2 假红）。
+    // **其余成员口径不变**：unknown 成员照记（pinned：check-throw-granularity
+    // Bug 25——unknown 令牌是「真值未知」，保守记；只有**顶层** unknown 按
+    // wave 1 豁免）；嵌套 sum 交 isMaybeBigintOperand 的成员扫描（保守）；
+    // 空 sum 无成员可判（DEC-006 无单位元口径）→ 保守真。
+    const members = (a.shape as { members: Abs[] }).members;
+    return (
+      members.length === 0 ||
+      members.some(
+        (m) => m.shape.k !== "arr" && m.shape.k !== "tuple" && isMaybeBigintOperand(m),
+      )
+    );
+  }
   return isMaybeBigintOperand(a) && a.shape.k !== "unknown";
 }
 

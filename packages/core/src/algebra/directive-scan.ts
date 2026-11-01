@@ -901,8 +901,8 @@ function functionBodyRanges(source: string): [number, number][] {
  *
  * ⇒ 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体
  * （`ObjectExpression`）」⇒ 方法 / 字段上方的注释一并被拦下，
- * 与函数体口径一致（parser 的 AST 路径同款，见
- * `packages/parser/src/directives/file-directives.ts` 的 `nestedBodyRanges`）。
+ * 与函数体口径一致（parser 的 AST 路径消费同一单源，见下方
+ * `collectNestedBodyRanges` 的导出实现）。
  *
  * Bug 1101：同族洞的**剩余两类**——`ArrayExpression`（数组字面量体）与
  * `ObjectPattern`（对象解构模式体）此前同样**不在**闸门区间内 ⇒ 写在数组元素 /

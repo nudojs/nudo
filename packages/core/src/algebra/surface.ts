@@ -23,6 +23,11 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 import { add, sub, builtinBrandToPrimitive } from "./arithmetic.ts";
+import {
+  isKnownNonBigintNumeric,
+  isMaybeBigintOperand,
+  isMaybeCoercionThrowOperand,
+} from "./arithmetic/coerce.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isDomainShared } from "./len-sharing.ts";
@@ -43,48 +48,10 @@ function unknownPartial(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
-/**
- * 已知非 bigint 的数值面（number/bool/null/undefined 字面量或 prim）——与 bigint 混型恒 TypeError。
- */
-function isKnownNonBigintNumeric(a: Abs): boolean {
-  const vaR = litValue(a);
-  const va = vaR.ok ? vaR.value : undefined;
-  if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
-  if (a.term?.op === "lit" && a.term.value === undefined) return true;
-  return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
-}
-
-/** lit(null)/lit(undefined) 操作数：一切隐式强转下 total（ToNumber→0/NaN、ToInt32→0），不可能是 bigint/Symbol（issue #119，与 arithmetic.ts 同口径）。 */
-function isNullishLitOperand(a: Abs): boolean {
-  const r = litValue(a);
-  return r.ok && (r.value === null || r.value === undefined);
-}
-
-/** 可能经 ToPrimitive 变成 bigint（any/unknown/obj/fn/brand/sum）——不得硬抛成 never */
-function isMaybeBigintOperand(a: Abs): boolean {
-  // issue #119：optional()/nullable() 槽读出的 nullish 字面量成员
-  // （shape k:"unknown" 携带 lit 项）不得连坐 may-throw。只排 nullish
-  // 字面量：bigint 字面量保持原判定（混型 TypeError 真实可能）。
-  if (isNullishLitOperand(a)) return false;
-  const k = a.shape.k;
-  if (k === "sum") {
-    // Bug 25（与 arithmetic.ts 同口径）：sum 成员感知——纯 prim 成员
-    // （number|string）不可能 bigint/Symbol；空 sum 保守真。
-    const members = (a.shape as { members: Abs[] }).members;
-    return members.length === 0 || members.some((m) => isMaybeBigintOperand(m));
-  }
-  return k === "any" || k === "unknown" || k === "obj" || k === "fn" || k === "brand";
-}
-
-/**
- * Bug 8：抽象操作数（any/obj/fn/brand/sum；unknown 是引擎 fail-closed 令牌，
- * wave 1 口径不记）经 ToNumeric/ToInt32 可能 bigint 混型 / Symbol 强转 →
- * 位运算/移位/幂原生 may TypeError（`x & 1`、`x ** 2`，x=1n / Symbol()）。
- * 只补 throws 效果，值域不变。
- */
-function isMaybeCoercionThrowOperand(a: Abs): boolean {
-  return isMaybeBigintOperand(a) && a.shape.k !== "unknown";
-}
+/* bigint 谓词单源：isKnownNonBigintNumeric / isNullishLitOperand /
+ * isMaybeBigintOperand / isMaybeCoercionThrowOperand 一律消费
+ * `arithmetic/coerce.ts` 的导出（Bug 8 / 25 / 946 与 issue #119 的口径、
+ * 事故记录见其注释）。 */
 
 /**
  * 双字面量二元折叠：双方 bigint → bigint 算子；其余走 number 算子
@@ -144,6 +111,14 @@ function foldNumericBinOp(
     }
     // 抽象面：可能同为 bigint（成功）或混型（TypeError）——soft may-throw + 回退
     if (isMaybeBigintOperand(other)) {
+      // Bug 946（镜像 coerce.ts foldBigintBinOp 的同名分支）：数组/元组的
+      // ToPrimitive 恒 join(",") ⇒ string ⇒ ToNumber ⇒ number ⇒ 与 bigint
+      // 混型 TypeError **确定**且**可被 catch 吸收** ⇒ **硬抛**。不得走下面的
+      // 软 may-throw 通道——软通道让求值继续 ⇒ catch 分支变死代码（语义反了）。
+      // 位运算/移位/幂无 `+` 的字符串分支，到这里混型恒定。
+      if (other.shape.k === "arr" || other.shape.k === "tuple") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       recordMayThrow({
         kind: "TypeError",
         cause: "mixed bigint ⊗ abstract operand",

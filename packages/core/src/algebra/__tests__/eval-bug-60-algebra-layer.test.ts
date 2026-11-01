@@ -183,10 +183,12 @@ export function f(x) {
 });
 
 // ---------------------------------------------------------------------------
-// 第 5 条：absShapeForTsTypeText 的公共化现状（只报告，不擅自新增导出）
+// 第 5 条：absShapeForTsTypeText 的导出面现状——已单源：经
+// `@nudojs/core/internal` 导出供 service 复用（不再复刻同表）；**公共面**
+// 仍不收（负控钉住：internal ≠ public）
 // ---------------------------------------------------------------------------
 
-describe("族 60 · 第 5 条：absShapeForTsTypeText 仍**未**进公共面（负控）", () => {
+describe("族 60 · 第 5 条：absShapeForTsTypeText 不进**公共**面（负控；internal 面已单源供 service 复用）", () => {
   it("core 内部可用（TS 声明类型文本 → Abs 形状）", () => {
     expect(absShapeForTsTypeText("number")).toEqual({ k: "prim", type: "number" });
     expect(absShapeForTsTypeText("string")).toEqual({ k: "prim", type: "string" });

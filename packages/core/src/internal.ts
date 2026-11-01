@@ -166,3 +166,10 @@ export {
   sectionChainList,
   type ProgramStmts,
 } from "./algebra/scan-named-exports.ts";
+// 字符串感知扫描（check 面与 parser 指令面共用；Bug 1009 拷贝漂移的闭合点）
+export {
+  findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation,
+} from "./algebra/text-scan.ts";
+// TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
+// drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
+export { absShapeForTsTypeText } from "./algebra/ts-type-shape.ts";

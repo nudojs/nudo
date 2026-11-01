@@ -25,7 +25,14 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, formatShape } from "../index.ts";
+import type { Abs } from "../abs.ts";
 import { call, val, isNever, throwsError, effects } from "./eval-helpers.ts";
+import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import {
+  runWithMayThrowSession,
+  setMayThrowCollector,
+  type MayThrowEffect,
+} from "../may-throw.ts";
 
 const BIG_PRIM = abs({ k: "prim", type: "bigint" }, undefined, undefined, "path");
 const ARR_ABS = abs(
@@ -111,5 +118,59 @@ describe("Bug 946 反向：不得改动既有口径", () => {
     expect(
       val(`export function f() { try { 1n + 1; } catch (e) { return "caught"; } return "missed"; }`),
     ).toEqual({ ok: true, value: "caught" });
+  });
+});
+
+describe("Bug 946 成员级：sum 含 arr/tuple 成员不连坐 may-throw", () => {
+  // 单源化批次（coerce/surface 谓词收敛）曾把 arr/tuple 成员带进 may-throw
+  // 通道 ⇒ `x & 1`（x: number|[]）记假 TypeError may-throw ⇒ L2 假红。
+  // 原生 oracle：5 & 1 = 1、[] & 1 = 0、1 - 5 / 1 - [] 均不抛。
+  const NUM = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  const sumOf = (...members: Abs[]): Abs =>
+    abs({ k: "sum", members }, undefined, undefined, "path");
+  /** effects 助手固定以 anyAbs 调用；本段需指定实参域 ⇒ 本地变体 */
+  const effectsWithArgs = (src: string, args: Abs[]): string[] => {
+    const exports = runTranspiled(src, { mode: "analyze" });
+    const eff: MayThrowEffect[] = [];
+    runWithMayThrowSession(() => {
+      setMayThrowCollector((e) => eff.push(e));
+      try {
+        callTranspiledExportFull(exports, "f", args);
+      } catch {
+        /* 入口整抛：效果经 throws 面表达 */
+      }
+      setMayThrowCollector(null);
+    });
+    return [...new Set(eff.map((e) => e.kind))];
+  };
+
+  it("x & 1 / 1 - x（x: number|[]，无 bigint 参与）不记任何 may-throw", () => {
+    const xs = [sumOf(NUM, ARR_ABS)];
+    expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual([]);
+    expect(effectsWithArgs(`export function f(x) { return 1 - x; }`, xs)).toEqual([]);
+  });
+
+  it("对照：1n + x（x: number|[]）记 may-throw 是 sound 的——number 成员混型原生恒抛（1n+1 THROW），arr 成员不抛（1n+[] = \"1\"）⇒ 并集恰为 may", () => {
+    const xs = [sumOf(NUM, ARR_ABS)];
+    expect(effectsWithArgs(`export function f(x) { return 1n + x; }`, xs)).toEqual([
+      "TypeError",
+    ]);
+  });
+
+  it("对照：any/obj 成员（可 @@toPrimitive 成 Symbol/bigint）仍记 may-throw", () => {
+    const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
+    const obj = abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    for (const member of [anyAbs, obj]) {
+      const xs = [sumOf(member, ARR_ABS)];
+      expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual([
+        "TypeError",
+      ]);
+    }
+  });
+
+  it("对照：unknown 成员照记 may-throw（pinned 口径：unknown 令牌=真值未知，保守记；仅顶层 unknown 豁免）", () => {
+    const unk = abs({ k: "unknown" }, undefined, undefined, "partial");
+    const xs = [sumOf(unk, ARR_ABS)];
+    expect(effectsWithArgs(`export function f(x) { return x & 1; }`, xs)).toEqual(["TypeError"]);
   });
 });

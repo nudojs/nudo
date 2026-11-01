@@ -64,6 +64,7 @@ import {
   optionalParamNames,
   parseCallArgs,
   type LiteralScanCtx,
+  type ScanLiteralCallsOptions,
 } from "./scan/literal-args.ts";
 import { checkReqs, checkShapeReqs } from "./scan/literal-shapes.ts";
 
@@ -114,26 +115,7 @@ export function scanLiteralCalls(
   source: string,
   knownFns: string[],
   phi: Phi,
-  opts?: {
-    loadModule?: (spec: string, fromFile: string) => string | undefined;
-    fromFile?: string;
-    file?: ReturnType<typeof parse>;
-    /** 顶层绑定表（与结构赋值共享一次执行态求值结果） */
-    varAbs?: Map<string, Abs>;
-    /**
-     * 求值引擎执行态调用记录（值流回退）：静态实参无信息时按 fnName@line 取
-     * 执行态实参。变量键查找已折 any（hasInfo），不会误触发本回退。
-     */
-    bCalls?: Array<{
-      fnName: string;
-      args: Abs[];
-      callLoc?: { line: number; column: number };
-    }>;
-    /** 侧车 ambient 绑定开关（checkSource 的 package.json 配置下传） */
-    autoBind?: boolean;
-    /** 项目根：树外侧车不 ambient 绑定 */
-    projectDir?: string;
-  },
+  opts?: ScanLiteralCallsOptions,
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   const file = opts?.file ?? parse(source);

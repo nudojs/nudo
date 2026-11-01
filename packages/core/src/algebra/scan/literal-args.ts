@@ -56,8 +56,8 @@ import type { CallResolve } from "../scan-call-graph.ts";
 import { jsDocOptionalParams, tsOptionalParams } from "../param-surface.ts";
 
 /**
- * `scanLiteralCalls` 的选项（**结构上**与薄壳里 `scanLiteralCalls` 的
- * `opts` 形参逐字等价——薄壳保留内联字面量类型，本类型只是它的结构镜像）。
+ * `scanLiteralCalls` 的选项（**单源**：薄壳 `scan-literal-calls.ts` 的
+ * `opts` 形参直接消费本类型，内联字面量镜像已消除）。
  */
 export interface ScanLiteralCallsOptions {
   loadModule?: (spec: string, fromFile: string) => string | undefined;

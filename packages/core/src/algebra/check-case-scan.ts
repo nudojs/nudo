@@ -2,8 +2,9 @@
  * `@nudo:case` 见证不一致（nudo:case-inconsistency）。
  *
  * 从 check.ts 拆出的内聚段：case 是契约的见证——字面量实参 ⊄ refine 即报。
- * 实参解析与切分**与共享单源同口径**（parser 的 `splitTopLevelArgs` +
- * JSDoc 续行前缀剥离）：标量（数字/字符串/布尔/null/undefined）与结构
+ * 实参切分 / JSDoc 续行剥离直接消费**单源** `text-scan.ts`（core 唯一实现，
+ * parser 经 `@nudojs/core/internal` 消费同一份——Bug 1009 正是两包各留
+ * 一份拷贝漂移的事故）：标量（数字/字符串/布尔/null/undefined）与结构
  * （对象 / 数组字面量）都参与对账；**认不出的实参产可见诊断**
  * （nudo:directive-syntax），不再静默跳过。
  * 有效契约走 effectiveInterface：只执法 handwritten（generated 段 = 事实
@@ -13,6 +14,7 @@
 import { parseSource as parse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
 import { listFnDirectiveScopes, scanCaseTags } from "./directive-scan.ts";
+import { findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation } from "./text-scan.ts";
 import type { Abs } from "./abs.ts";
 import { abs, numLit, bigintLit } from "./abs.ts";
 import type { Pred, PrimName } from "./pred.ts";
@@ -201,90 +203,8 @@ function parseScalarArgAbs(s: string): Abs | undefined {
   return undefined;
 }
 
-/**
- * 顶层逗号切分（字符串感知；**`\` 不是转义**）——**共享单源口径**。
- *
- * 共享单源 = parser 的 `splitTopLevelArgs`
- * （`packages/parser/src/directives/expr-scan.ts`）≡ core 的
- * `extractBalancedParens`（`directive-scan.ts`）：引号内 `\` **不是**转义
- * ⇒ `"a\", -1` 在 `"a\"` 处闭合 ⇒ 实参个数 = 2。
- *
- * ⚠ Bug 1009：check 面此前把 `\` 当转义（`inner[i - 1] !== "\\"`）⇒ 只切出
- *   1 个实参 ⇒ 第二个实参上的违例见证**整条被静默跳过**（L2 见证门禁假绿）。
- *   ⇒ 这里必须与共享单源**逐字同口径**，否则两个面看到不同的实参列表。
- */
-function splitCaseArgsText(text: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (inString) {
-      current += ch;
-      // 原样 slice：`\` 不是转义（与 parser 的 splitTopLevelArgs 一致）
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      current += ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    if (ch === ")" || ch === "]" || ch === "}") depth--;
-    if (ch === "," && depth === 0) {
-      result.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += ch;
-  }
-  if (current.trim()) result.push(current.trim());
-  return result;
-}
-
-/**
- * JSDoc 续行前缀（` * `）剥离——与 parser 的 fn-directives **同一正则**。
- *
- * ⚠ Bug 375：`scanCaseTags` 产出的 `argsText` 是**注释块内的原始文本**
- *   ⇒ 多行实参的续行仍带 ` * ` 前缀 ⇒ 不剥 ⇒ 实参认不出 ⇒ **整条见证被
- *   静默跳过**（写成单行则正常报红）。共享单源（parser）在切分前先剥前缀。
- */
-function stripCaseContinuation(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => line.replace(/^\s*\*\s?/, ""))
-    .join("\n");
-}
-
-/** 顶层冒号下标（字符串感知；`\` 不是转义）；无 → -1。 */
-function findTopLevelColon(text: string): number {
-  let found = -1;
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < text.length && found < 0; i++) {
-    const ch = text[i]!;
-    if (inString) {
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      continue;
-    }
-    if (ch === ":" && depth === 0) found = i;
-  }
-  return found;
-}
+/* 顶层逗号切分 / JSDoc 续行剥离 / 顶层冒号下标：单源 `text-scan.ts`
+ * （Bug 375 / Bug 1009 的口径与事故记录见其头注释）。 */
 
 /**
  * 结构字面量（对象 / 数组）→ Abs（obj / tuple）；不认识 → undefined。
@@ -302,7 +222,7 @@ function parseStructureArgAbs(text: string): Abs | undefined {
     const body = t.slice(1, -1).trim();
     const slots: Record<string, { value: Abs }> = {};
     if (body !== "") {
-      for (const entry of splitCaseArgsText(body)) {
+      for (const entry of splitTopLevelArgs(body)) {
         if (entry === "") continue; // 尾逗号
         const colon = findTopLevelColon(entry);
         if (colon < 0) return undefined; // 简写属性 / 方法 → 不认识
@@ -321,7 +241,7 @@ function parseStructureArgAbs(text: string): Abs | undefined {
     const body = t.slice(1, -1).trim();
     const elements: Abs[] = [];
     if (body !== "") {
-      for (const el of splitCaseArgsText(body)) {
+      for (const el of splitTopLevelArgs(body)) {
         if (el === "") continue; // 尾逗号
         const value = parseCaseArgAbs(el);
         if (!value) return undefined;
@@ -837,7 +757,7 @@ export function scanCaseInconsistency(
         //    ⇒ 违例见证被静默跳过 ⇒ L2 见证门禁假绿）。
         // ⚠ 不再把 argsText 重新塞回 `@nudo:case "x" (...)` 用正则反解
         //   （贪婪 `[\s\S]*` 会吃到最后一个 `)`，且字符串里的 `)` 会切错）。
-        const caseArgs = splitCaseArgsText(stripCaseContinuation(tag.argsText));
+        const caseArgs = splitTopLevelArgs(stripJsdocContinuation(tag.argsText));
         checkCaseAgainstReqs(scope.name, tag.name, caseArgs, startLine);
       }
     }
