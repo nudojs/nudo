@@ -4,7 +4,7 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
+import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./symbol-id.ts";
@@ -24,8 +24,8 @@ import {
 import { implies } from "./pred.ts";
 import { add, sub, builtinBrandToPrimitive } from "./arithmetic.ts";
 import {
-  isKnownNonBigintNumeric,
-  isMaybeBigintOperand,
+  bigintOperands,
+  mixedBigintOperandTail,
   isMaybeCoercionThrowOperand,
 } from "./arithmetic/coerce.ts";
 import { NudoThrow } from "./nudo-throw.ts";
@@ -71,18 +71,12 @@ function foldNumericBinOp(
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const ra = litValue(a);
-  const rb = litValue(b);
-  const va = ra.ok ? ra.value : undefined;
-  const vb = rb.ok ? rb.value : undefined;
+  // bigint-ness 双侧判定单源（Bug 106，见 coerce.ts bigintOperands）
+  const { va, vb, aBig, bBig } = bigintOperands(a, b);
   // 无 bigint 重载的算子（>>>）：任一侧是 bigint（字面量或抽象 prim）即恒 TypeError
-  if (!bigOp && (typeof va === "bigint" || typeof vb === "bigint" || isBigPrim(a) || isBigPrim(b))) {
+  if (!bigOp && (aBig || bBig)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  // Bug 106：bigint-ness 双侧判定 = 字面量 ∪ isBigPrim——抽象 bigint prim
-  //（BigInt(Date.now())）也是确定 bigint，此前仅字面量识别，b & 1 漏定抛
-  const aBig = typeof va === "bigint" || isBigPrim(a);
-  const bBig = typeof vb === "bigint" || isBigPrim(b);
   if (aBig || bBig) {
     if (typeof va === "bigint" && typeof vb === "bigint") {
       // 折叠失败（2n**-1n）→ RangeError；上方已排除 !bigOp
@@ -103,34 +97,17 @@ function foldNumericBinOp(
     // powAbs 在进入本折叠前检查；其余交抽象回退（bitwiseResultShape 折
     // 抽象 bigint）
     if (aBig && bBig) return undefined;
-    const other = aBig ? b : a;
-    // 恰一侧 bigint（另一侧确定非 bigint）：
-    // 确定非 bigint 数值面 / string（ToNumber 后混型）→ TypeError
-    if (isKnownNonBigintNumeric(other) || isStrPrim(other)) {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
-    }
-    // 抽象面：可能同为 bigint（成功）或混型（TypeError）——soft may-throw + 回退
-    if (isMaybeBigintOperand(other)) {
-      // Bug 946（镜像 coerce.ts foldBigintBinOp 的同名分支）：数组/元组的
-      // ToPrimitive 恒 join(",") ⇒ string ⇒ ToNumber ⇒ number ⇒ 与 bigint
-      // 混型 TypeError **确定**且**可被 catch 吸收** ⇒ **硬抛**。不得走下面的
-      // 软 may-throw 通道——软通道让求值继续 ⇒ catch 分支变死代码（语义反了）。
-      // 位运算/移位/幂无 `+` 的字符串分支，到这里混型恒定。
-      if (other.shape.k === "arr" || other.shape.k === "tuple") {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
-      recordMayThrow({
-        kind: "TypeError",
-        cause: "mixed bigint ⊗ abstract operand",
-      });
-      return undefined;
-    }
-    throw new NudoThrow(errorTypeAbs("TypeError"));
+    // 恰一侧 bigint（另一侧确定非 bigint）——混型尾臂单源（Bug 946 的
+    // arr/tuple 硬抛与软 may-throw 通道的分工见 coerce.ts
+    // mixedBigintOperandTail；位运算/移位/幂无 `+` 的字符串分支）
+    return mixedBigintOperandTail(aBig ? b : a);
   }
-  if (ra.ok && rb.ok && coercibleNumberLit(ra.value) && coercibleNumberLit(rb.value)) {
+  // va/vb 为 undefined（无 lit 项 / lit(undefined) 哨兵）时 coercibleNumberLit
+  // 恒 false——与旧 `ra.ok && rb.ok && coercibleNumberLit(...)` 逐字等价
+  if (coercibleNumberLit(va) && coercibleNumberLit(vb)) {
     return abs(
       { k: "prim", type: "number" },
-      lit(numOp(Number(ra.value), Number(rb.value))),
+      lit(numOp(Number(va), Number(vb))),
       pTrue,
       "exact",
     );
@@ -282,12 +259,7 @@ export function powAbs(a: Abs, b: Abs): Abs {
   //（"Negative exponent is not allowed"；b ** -1n 不得静默抽象 bigint）。
   // 双字面量由 foldNumericBinOp 折叠臂同口径处理（本检查先触发同结果）。
   {
-    const ra = litValue(a);
-    const rb = litValue(b);
-    const va = ra.ok ? ra.value : undefined;
-    const vb = rb.ok ? rb.value : undefined;
-    const aBig = typeof va === "bigint" || isBigPrim(a);
-    const bBig = typeof vb === "bigint" || isBigPrim(b);
+    const { aBig, bBig, vb } = bigintOperands(a, b);
     if (aBig && bBig && typeof vb === "bigint" && vb < 0n) {
       throw new NudoThrow(errorTypeAbs("RangeError"));
     }

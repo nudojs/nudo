@@ -25,8 +25,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, str, strLit } from "../abs.ts";
-import { setPropFlags } from "../builtins/invariants.ts";
+import { errorTypeAbs } from "../error-type-abs.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 
 const superCalledMarks = new WeakMap<object, Set<string>>();
@@ -71,32 +70,9 @@ export function clearPendingSuper(inst: Abs, className: string): void {
   if (s.size === 0) pendingSuperMarks.delete(inst as object);
 }
 
-/** BUG-173：ReferenceError 载荷（与 may-throw.ts 的 errorTypeAbs 同形；
- *  本模块不可反向 import may-throw——它会 import 本模块所在的 class 面）。 */
-function referenceErrorAbs(): Abs {
-  const inner = abs(
-    {
-      k: "obj",
-      slots: {
-        stack: { value: str() },
-        name: { value: strLit("ReferenceError"), inherited: true },
-        message: { value: str() },
-      },
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
-  setPropFlags(inner, "stack", { enumerable: false });
-  setPropFlags(inner, "message", { enumerable: false });
-  setPropFlags(inner, "name", { enumerable: false });
-  return abs(
-    { k: "brand", name: "ReferenceError", shape: inner },
-    undefined,
-    undefined,
-    "exact",
-  );
-}
+/** BUG-173：ReferenceError 载荷 = errorTypeAbs("ReferenceError")（叶子
+ *  error-type-abs.ts 单源；旧手抄同形副本已删——may-throw 不可 import 的
+ *  环已由叶子化解除）。 */
 
 /**
  * BUG-173：`this` 访问门（派生构造器体，super() 之前访问 ⇒ 原生定抛）。
@@ -112,6 +88,6 @@ export function assertThisAccessible(inst: Abs): void {
   const pending = pendingSuperMarks.get(inst as object);
   if (!pending) return;
   for (const className of pending) {
-    if (!superCalledFor(inst, className)) throw new NudoThrow(referenceErrorAbs());
+    if (!superCalledFor(inst, className)) throw new NudoThrow(errorTypeAbs("ReferenceError"));
   }
 }

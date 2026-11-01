@@ -154,8 +154,11 @@ function usesTopLevelThisOf(program: Program): boolean {
  * 源含 ESM 语法：顶层静态 import/export（语法上只能出现在顶层）或任意位置的
  * `import.meta`。动态 `import()` 不算（CJS 也能用），与 code-text.ts 的
  * `sourceHasEsmSyntax` 同口径（那边是剥离注释/字符串后的文本判定）。
+ *
+ * 经 `@nudojs/core/internal` 供 service（abs-modules-graph 的 strict 判定）
+ * 复用——此前 service 内嵌逐字拷贝靠头注释互钉「与 meta.ts 同口径」。
  */
-function isEsmProgram(program: Program): boolean {
+export function isEsmProgram(program: Program): boolean {
   const walk = (n: Node): boolean => {
     if (
       n.type === "ImportDeclaration" ||

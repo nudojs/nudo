@@ -9,6 +9,7 @@
  */
 
 import { parseSource as babelParse } from "./parse-source.ts";
+import { walkAstNodes } from "./ast-walk.ts";
 import {
   stripStringsKeepComments,
   sourceIsStrict,
@@ -391,27 +392,17 @@ function classEntryPolyFn(
 
 function bodyReferencesName(body: Node, name: string): boolean {
   let found = false;
-  const visit = (n: unknown): void => {
-    if (found || !n || typeof n !== "object") return;
-    const o = n as { type?: string; [k: string]: unknown };
-    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+  // skip 口径：跳 loc/tokens 与非计算 MemberExpression.property（`a.name`
+  // 的 name 不是对变量 name 的引用）；不跳 comments 系键、无 seen 去重
+  //（与 bodyReferenceCount 同口径，见 ast-walk.ts 的差异表）
+  walkAstNodes(body, { skipLoc: true, skipNonComputedProperty: true }, (n) => {
+    const o = n as { type?: string; name?: unknown };
+    if (o.type === "Identifier" && o.name === name) {
       found = true;
-      return;
+      return true; // 早退整棵走查（原 found 短路）
     }
-    for (const key of Object.keys(o)) {
-      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
-      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
-        continue;
-      }
-      const v = o[key];
-      if (Array.isArray(v)) {
-        for (const item of v) if (item && typeof item === "object") visit(item);
-      } else if (v && typeof v === "object") {
-        visit(v);
-      }
-    }
-  };
-  visit(body);
+    return;
+  });
   return found;
 }
 
@@ -419,27 +410,12 @@ function bodyReferencesName(body: Node, name: string): boolean {
  *  {@link bodyReferencesName} 同遍历口径）。用于识别**多自引用**递归。 */
 function bodyReferenceCount(body: Node, name: string): number {
   let count = 0;
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const o = n as { type?: string; [k: string]: unknown };
-    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+  walkAstNodes(body, { skipLoc: true, skipNonComputedProperty: true }, (n) => {
+    const o = n as { type?: string; name?: unknown };
+    if (o.type === "Identifier" && o.name === name) {
       count++;
-      return;
     }
-    for (const key of Object.keys(o)) {
-      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
-      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
-        continue;
-      }
-      const v = o[key];
-      if (Array.isArray(v)) {
-        for (const item of v) if (item && typeof item === "object") visit(item);
-      } else if (v && typeof v === "object") {
-        visit(v);
-      }
-    }
-  };
-  visit(body);
+  });
   return count;
 }
 

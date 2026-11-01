@@ -1,11 +1,14 @@
 /**
  * 算术域共享 helper（叶子模块）：被多个运算族（addsub/muldiv）消费的
  * 折叠辅助——sum 笛卡尔分发、IEEE 端点收紧、ToNumber 结果面、
- * assume 前提链拆解。
+ * assume 前提链拆解、数值算子公共尾臂（numericOpTail）。
  *
  * 依赖方向不变量：本模块是 arithmetic/ 子目录的叶子——不得 import
  * 子目录内任何兄弟模块（shared/coerce/bounds ← addsub/muldiv/cmp ←
  * facade 单向无环）；若发现需要反向依赖，说明切分线选错，重切而不是加边。
+ * 唯一例外（第三轮收敛 #7 定案）：shared → coerce 单向边——numericOpTail
+ * 的兜底打点消费 noteAbstractArithMayThrow（coerce 导出）；coerce 保持
+ * 纯叶子不反向依赖任何兄弟，图层仍无环。
  */
 
 import type { LiteralValue, Term } from "../term.ts";
@@ -13,9 +16,10 @@ import { app, lit, simplifyTerm, termEquals } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
 import { nextUp, nextDown } from "../pred.ts";
 import type { Abs } from "../abs.ts";
-import { abs, confJoin, isNumPrim, isBigPrim } from "../abs.ts";
+import { abs, confJoin, isNumPrim, isBigPrim, isStrPrim } from "../abs.ts";
 import { absShapeKey } from "../objects.ts";
 import { recordMayThrow } from "../may-throw.ts";
+import { noteAbstractArithMayThrow } from "./coerce.ts";
 
 /**
  * 二元算子对 sum 操作数的分发（add/sub/mul/div/mod 同口径）：
@@ -332,5 +336,48 @@ export function assumePremiseList(assume: Phi | undefined): Pred[] {
   };
   walk(assume);
   return out;
+}
+
+/**
+ * 数值算子（sub/mul/div/mod）的**公共尾臂**（第三轮收敛 #7 单源；此前
+ * 四处同构拷贝）：主体折叠（brand 解箱 / 字面量 / bigint / 区间单调性 /
+ * assume 界——各算子前奏段，**不共享**：前奏含递归自引用与算子专属折叠）
+ * 全部未命中后的统一回退序列：
+ *  1. isNumericLike 双侧（无 term 的 number prim）→ number partial；
+ *  2. 抽象 string prim ⊗ 数值面（Bug 25：内建 brand ToPrimitive →
+ *     toString 折 string 域后落此，`new Map() - 1` → ToNumber(string) →
+ *     number）→ number partial——恒 total（string prim 不可能是
+ *     Symbol/bigint）；
+ *  3. any 面（isAnyLike）→ toNumberResult（JS ToNumber → number，可能
+ *     NaN；与 `+` 不同——减乘除模不会拼接）；
+ *  4. sum 分发（与 add 同口径，`100 - (cond ? 20 : 55)` → `45 | 80`）——
+ *     成员求值回调 `distribute` 由调用方注入（sub/div 透传 assume，mul/mod
+ *     直递自身；成员臂内项匹配仍以 termEquals 为准，不匹配的成员不产生
+ *     界，soundness 不变）；
+ *  5. obj/fn/brand 抽象面回退（Bug 8：`x.a - 1`，valueOf 可能产
+ *     bigint/Symbol）→ noteAbstractArithMayThrow + unknown partial 兜底。
+ */
+export function numericOpTail(
+  op: "-" | "*" | "/" | "%",
+  a: Abs,
+  b: Abs,
+  phi: Phi,
+  distribute: (x: Abs, y: Abs, p: Phi) => Abs,
+): Abs {
+  if (isNumericLike(a) && isNumericLike(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
+  // Bug 25：抽象 string prim ⊗ 数值面——恒 total（见上）
+  if (isStrPrim(a) || isStrPrim(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
+  if (isAnyLike(a) || isAnyLike(b)) {
+    return toNumberResult(a, b, op);
+  }
+  const distributed = distributeSumBinOp(op, a, b, phi, distribute);
+  if (distributed) return distributed;
+  // Bug 8：obj/fn/brand 抽象面回退 → may TypeError，值域 unknown partial
+  noteAbstractArithMayThrow(a, b);
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 

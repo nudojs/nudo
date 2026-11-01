@@ -13,7 +13,7 @@ import type { Abs, Confidence } from "./abs.ts";
 import type { Term } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { formatAbs, formatShape } from "./format.ts";
-import { DIAG } from "./diag-codes.ts";
+import { CHECK_FACE_DIAG_CODES, DIAG } from "./diag-codes.ts";
 
 /**
  * 引擎内部**进程级计数器**变量 id（Bug 413）。
@@ -154,6 +154,59 @@ export type CheckAction = {
   /** 可选：目标 Pred / 字段名等，供程序化改写 */
   hint?: string;
 };
+
+/**
+ * 分析器（service）诊断的最小结构面（check 面消费所需的字段子集）。
+ * service `Diagnostic` 与 nudojs `DomainDiagnosticLike` 都结构兼容于此。
+ */
+export type AnalyzerDiagnosticLike = {
+  code?: string;
+  severity: string;
+  message: string;
+  range: { start: { line: number; column: number } };
+  data?: unknown;
+  suggestions?: string[];
+};
+
+/**
+ * 分析器诊断 → CheckIssue（check 面消费分析器诊断的唯一入口；此前
+ * nudojs `check-json-map` 与 lsp `agent-tools` 各手抄一份——Bug 632 / 1038
+ * 都是这张面漏抄/吞码的事故）。
+ *
+ * 白名单 = `CHECK_FACE_DIAG_CODES`（diag-codes.ts，check 面承诺可见的码
+ * 集合单一真源）。severity 口径：entry-only 固定 **info**（观察面提示，
+ * 不挡门禁）；其余按分析器给的 severity 走（error ⇒ 挡门禁 / exit 1，
+ * warning ⇒ 只可见）。`actual`/`expected` 仅 string 才带（data 面可能是
+ * Abs 结构）；`suggestion` 取首条。
+ */
+export function checkIssuesFromDiagnostics(
+  diagnostics: readonly AnalyzerDiagnosticLike[],
+): CheckIssue[] {
+  const allowed = new Set<string>(CHECK_FACE_DIAG_CODES);
+  return diagnostics
+    .filter(
+      (d): d is AnalyzerDiagnosticLike & { code: string } =>
+        d.code !== undefined && allowed.has(d.code),
+    )
+    .map((d) => {
+      const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
+      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
+      return {
+        severity: isEntryOnly
+          ? ("info" as const)
+          : d.severity === "error"
+            ? ("error" as const)
+            : ("warning" as const),
+        code: d.code,
+        message: d.message,
+        line: d.range.start.line,
+        column: d.range.start.column,
+        actual: typeof data.actual === "string" ? data.actual : undefined,
+        expected: typeof data.expected === "string" ? data.expected : undefined,
+        suggestion: d.suggestions?.[0],
+      };
+    });
+}
 
 export type CheckReport = {
   file: string;

@@ -10,6 +10,7 @@
 import type { Abs } from "../abs.ts";
 import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
+import { walkAstNodes } from "../ast-walk.ts";
 import { transpileBodyNode } from "./transpile.ts";
 import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
 import { compileRuntimeUnit, runtimeArgValues } from "./rt.ts";
@@ -313,42 +314,27 @@ export function freeIdentifiers(body: Node, params: string[], strict = false): S
  * 与用户标识符相撞 ⇒ 产物非法 JS（重复词法声明 / 遮蔽）⇒ 求值 fail-closed。
  * 本集合是该路径**唯一可用**的避让来源（AST 词形 = 源文本词形的子集，
  * 保守够用：用户绑定名必以 Identifier 出现）。
+ *
+ * 第三轮收敛 #8：遍历骨架改走 ast-walk.ts（skipLoc/skipComments/dedup
+ * 口径与原实现逐字一致——跳 comments 系键、不跳非计算 property）。唯一
+ * 已知差异：原实现命中 Identifier 后不 下钻 其子键，TS typeAnnotation
+ * 里的类型名不入集；骨架统一会下钻 ⇒ 避让集**只增不减**（更保守），
+ * 该集的设计口径本就是「保守够用」，无精度损失。
  */
 export function bodyIdentNames(body: Node, params: readonly string[]): Set<string> {
   const names = new Set<string>(params);
-  const seen = new WeakSet<object>();
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as object;
-    if (seen.has(obj)) return;
-    seen.add(obj);
-    const o = n as { type?: string; name?: unknown; [k: string]: unknown };
-    if (o.type === "Identifier" && typeof o.name === "string") {
-      names.add(o.name);
-      return;
-    }
-    for (const key of Object.keys(o)) {
-      if (
-        key === "loc" ||
-        key === "start" ||
-        key === "end" ||
-        key === "tokens" ||
-        key === "comments" ||
-        key === "leadingComments" ||
-        key === "trailingComments" ||
-        key === "innerComments"
-      ) {
-        continue;
+  walkAstNodes(
+    body,
+    // skip 口径：跳 loc/tokens 与 comments 系键；**不**跳非计算 property
+    //（属性键里的 Identifier 也是用户绑定词形）；seen 去重防环
+    { skipLoc: true, skipComments: true, dedup: true },
+    (n) => {
+      const o = n as { type?: string; name?: unknown };
+      if (o.type === "Identifier" && typeof o.name === "string") {
+        names.add(o.name);
       }
-      const v = o[key];
-      if (Array.isArray(v)) {
-        for (const item of v) if (item && typeof item === "object") visit(item);
-      } else if (v && typeof v === "object") {
-        visit(v);
-      }
-    }
-  };
-  visit(body);
+    },
+  );
   return names;
 }
 
@@ -363,35 +349,11 @@ export function bodyIdentNames(body: Node, params: readonly string[]): Set<strin
  */
 function nestedBodyNodes(root: object): WeakSet<object> {
   const nested = new WeakSet<object>();
-  const seen = new WeakSet<object>();
-  const walk = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as object;
-    if (seen.has(obj)) return;
-    seen.add(obj);
-    if (obj !== root) nested.add(obj);
-    for (const key of Object.keys(obj as Record<string, unknown>)) {
-      if (
-        key === "loc" ||
-        key === "start" ||
-        key === "end" ||
-        key === "tokens" ||
-        key === "comments" ||
-        key === "leadingComments" ||
-        key === "trailingComments" ||
-        key === "innerComments"
-      ) {
-        continue;
-      }
-      const v = (obj as Record<string, unknown>)[key];
-      if (Array.isArray(v)) {
-        for (const item of v) walk(item);
-      } else if (v && typeof v === "object") {
-        walk(v);
-      }
-    }
-  };
-  walk(root);
+  // skip 口径与 bodyIdentNames 同族：跳 loc/tokens 与 comments 系键、不跳
+  // 非计算 property、seen 去重；root 自身进 visit 但不进 nested（严格后代）
+  walkAstNodes(root, { skipLoc: true, skipComments: true, dedup: true }, (n) => {
+    if (n !== root) nested.add(n);
+  });
   return nested;
 }
 

@@ -5,13 +5,18 @@
  * 内核算子（arithmetic/surface 等）对「可能抛」的运算记 soft 效果——
  * 原语定居 algebra/（内核不得 import exec/）；exec/may-throw.ts re-export
  * 维持引擎侧既有 import 面（runtime/*、check*、internal 均经老路径可达）。
+ * errorTypeAbs 定居 ./error-type-abs.ts（真叶子：abs + invariants），
+ * 此处 re-export 维持既有 import 面；super-access 等 class 面直接消费
+ * 叶子（不经此，避免 exec/class-registry 反向环）。
  * 依赖面：仅 ./abs.ts 与 node:async_hooks（core 既有依赖，不引入新面）。
  */
 import type { Abs } from "./abs.ts";
-import { abs, unknown, strLit, str } from "./abs.ts";
-import { setPropFlags } from "./builtins/invariants.ts";
+import { abs, unknown } from "./abs.ts";
 import { isErrorFamilyKind } from "./exec/class-registry.ts";
+import { errorTypeAbs } from "./error-type-abs.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
+
+export { errorTypeAbs } from "./error-type-abs.ts";
 
 export type MayThrowEffect = {
   /** throws 类型名，如 TypeError */
@@ -143,47 +148,6 @@ export function throwPayloadOf(e: unknown): Abs {
   }
   if (e instanceof Error) return errorTypeAbs(e.name || "Error");
   return unknown;
-}
-
-/** throws 类型名 → Abs（brand Error 形态，formatShape 打出名字）。
- *  内层 obj 带 name/message 槽（Bug 6）：catch 形参 `e.name`/`e.message`
- *  经 $get brand→inner 槽读取折精确值——name 是品牌名（静态可知），
- *  message 内容宿主特定 → 保守 string 域（与 builtins/error.ts
- *  errorBrandAbs 同口径）。 */
-export function errorTypeAbs(name: string): Abs {
-  // Bug 66：与 errorBrandAbs 同口径——name 打 Slot.inherited（原生经
-  // X.prototype.name 原型链解析，非自有：catch 形参 e.hasOwnProperty("name")
-  // 折 false）；message 自有但不可枚举（enumerable:false 侧表）。
-  // R4a 补：stack 槽与 errorBrandAbs 同款（Bug 59——原生 throw 载荷也带
-  // 自有 stack，node 实测 gOPN(caught e) → ["stack","message"]；槽插入序
-  // 同 errorBrandAbs），否则 catch 形参 e.stack 闭槽 miss 假折 undefined、
-  // hasOwn/gOPD 自有面折 false/undefined 均为 wrong-definite。
-  const inner = abs(
-    {
-      k: "obj",
-      slots: {
-        stack: { value: str() },
-        name: { value: strLit(name), inherited: true },
-        message: { value: str() },
-      },
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
-  setPropFlags(inner, "stack", { enumerable: false });
-  setPropFlags(inner, "message", { enumerable: false });
-  setPropFlags(inner, "name", { enumerable: false });
-  return abs(
-    {
-      k: "brand",
-      name,
-      shape: inner,
-    },
-    undefined,
-    undefined,
-    "exact",
-  );
 }
 
 /** 效果集 → throws Abs（never = 无 may-throw） */

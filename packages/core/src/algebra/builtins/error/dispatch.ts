@@ -54,6 +54,7 @@ import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { str, numPrim, boolPrim, typedArrayElementOf } from "../shared.ts";
+import { readBrandObjSlot } from "../brand-slot.ts";
 import { makeArrayCtorAbs } from "../array.ts";
 import { evalDateCtor, evalDateMethod } from "../date.ts";
 import { evalRegExpCtor, evalRegExpMethod } from "../regexp.ts";
@@ -419,11 +420,7 @@ export function evalBuiltinInstanceMethod(
   // toJSON 同语义；toString 巧合路径之外补显式面）
   if (brandName === "URL") {
     if (method === "toJSON") {
-      const inner = recv.shape.k === "brand" ? recv.shape.shape : undefined;
-      const href =
-        inner && inner.shape.k === "obj"
-          ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
-          : undefined;
+      const href = readBrandObjSlot(recv, "href");
       const hv = href ? litValue(href) : undefined;
       if (hv?.ok && typeof hv.value === "string") return strLit(hv.value);
       return str("path");
@@ -437,9 +434,8 @@ export function evalBuiltinInstanceMethod(
     switch (method) {
       case "toString":
       case "toLocaleString": {
-        const inner = recv.shape.k === "brand" ? recv.shape.shape : undefined;
-        const nameA = inner && inner.shape.k === "obj" ? getSlot(inner.shape.slots, "name")?.value : undefined;
-        const msgA = inner && inner.shape.k === "obj" ? getSlot(inner.shape.slots, "message")?.value : undefined;
+        const nameA = readBrandObjSlot(recv, "name");
+        const msgA = readBrandObjSlot(recv, "message");
         const nameR = nameA ? litValue(nameA) : undefined;
         const msgR = msgA ? litValue(msgA) : undefined;
         const nv = nameR?.ok && typeof nameR.value === "string" ? nameR.value : undefined;

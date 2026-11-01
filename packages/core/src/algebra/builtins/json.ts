@@ -25,6 +25,7 @@ import { isSymbolAbs } from "../symbol-id.ts";
 import { classNameOfValue } from "../class-mark.ts";
 import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand, TYPED_ARRAY_ELEMENT } from "./shared.ts";
+import { readBrandObjSlot } from "./brand-slot.ts";
 import { getPropFlags } from "./invariants.ts";
 import { classInstanceInnerOf, classChainHasJsonUserFace } from "../exec/class-registry.ts";
 import { readProperty } from "./object.ts";
@@ -109,10 +110,7 @@ function jsonBrandFold(a: Abs, opts?: { plainObject?: boolean }): JsonBrandFold 
   }
   if (name === "URL") {
     if (opts?.plainObject) return { k: "exact", value: {} }; // toJSON 步已做 → 普通对象
-    const href =
-      inner && inner.shape.k === "obj"
-        ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
-        : undefined;
+    const href = readBrandObjSlot(a, "href");
     const hv = href ? litValue(href) : undefined;
     if (hv?.ok && typeof hv.value === "string") return { k: "exact", value: hv.value };
     return { k: "total" }; // 抽象 href → ISO/href 串域，恒 total
@@ -162,7 +160,6 @@ function jsonBrandFold(a: Abs, opts?: { plainObject?: boolean }): JsonBrandFold 
 function jsonBrandToJsonAbs(a: Abs): Abs | undefined {
   if (a.shape.k !== "brand") return undefined;
   const name = (a.shape as { name: string }).name;
-  const inner = (a.shape as { shape: Abs }).shape;
   if (name === "Date") {
     const tv = (a.shape as { tv?: number }).tv;
     if (tv === undefined) return undefined; // 抽象 epoch → 不可折
@@ -174,10 +171,7 @@ function jsonBrandToJsonAbs(a: Abs): Abs | undefined {
     }
   }
   if (name === "URL") {
-    const href =
-      inner && inner.shape.k === "obj"
-        ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
-        : undefined;
+    const href = readBrandObjSlot(a, "href");
     const hv = href ? litValue(href) : undefined;
     if (hv?.ok && typeof hv.value === "string") return strLit(hv.value);
     return undefined;

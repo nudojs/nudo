@@ -11,12 +11,12 @@ import { app, lit, simplifyTerm, termEquals } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
 import { and, gt, ge, lt, le, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
-import { abs, confJoin, isStrPrim, isBigPrim, litValue, num, numLit } from "../abs.ts";
+import { abs, confJoin, isBigPrim, litValue, num, numLit } from "../abs.ts";
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
-import { distributeSumBinOp, synthEndpoint, attainEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
-import { builtinBrandToPrimitive, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
+import { numericOpTail, synthEndpoint, attainEndpoint, coercibleLit, isNumericLike, assumePremiseList } from "./shared.ts";
+import { builtinBrandToPrimitive, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
 // Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
 import { noteAssumeConsumed } from "../assume-ledger.ts";
@@ -101,25 +101,11 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path"),
     );
   }
-  // number prim（无 term）× number prim → number（与 TypeValue 对齐）
-  if (isNumericLike(a) && isNumericLike(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
-  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
-  // 不可能是 Symbol/bigint）
-  if (isStrPrim(a) || isStrPrim(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  if (isAnyLike(a) || isAnyLike(b)) {
-    return toNumberResult(a, b, "*");
-  }
-  // sum 分发（与 add 同口径）：2 * (cond ? 20 : 55) → 40 | 110
-  const distributed = distributeSumBinOp("*", a, b, phi, mul);
-  if (distributed) return distributed;
-  // Bug 8：obj/fn/brand 抽象面回退（`x.a * 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
-  noteAbstractArithMayThrow(a, b);
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  // 公共尾臂（shared.ts numericOpTail，第三轮收敛 #7）：isNumericLike 双侧
+  // （无 term 的 number prim → number，与 TypeValue 对齐）→ Bug 25 strPrim
+  // → any（toNumberResult）→ sum 分发（`2 * (cond ? 20 : 55)` → `40 | 110`）
+  // → Bug 8 obj·fn·brand 回退 may-throw + unknown 兜底。
+  return numericOpTail("*", a, b, phi, mul);
 }
 
 /**
@@ -294,25 +280,11 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
       confJoin(confJoin(a.conf, b.conf), "path"),
     );
   }
-  if (isNumericLike(a) && isNumericLike(b)) {
-    return abs(num().shape, undefined, undefined, "partial");
-  }
-  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
-  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
-  // 不可能是 Symbol/bigint）
-  if (isStrPrim(a) || isStrPrim(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  if (isAnyLike(a) || isAnyLike(b)) {
-    return toNumberResult(a, b, "/");
-  }
-  // sum 分发（与 add 同口径）；成员级同构透传 assume——成员臂内项匹配仍以
-  // termEquals 为准（不匹配的成员不产生界），soundness 不变
-  const distributed = distributeSumBinOp("/", a, b, phi, (x, y, p) => div(x, y, p, assume));
-  if (distributed) return distributed;
-  // Bug 8：obj/fn/brand 抽象面回退（`x.a / 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
-  noteAbstractArithMayThrow(a, b);
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  // 公共尾臂（shared.ts numericOpTail，第三轮收敛 #7）：isNumericLike 双侧
+  // → Bug 25 strPrim → any（toNumberResult）→ sum 分发（成员级同构透传
+  // assume——成员臂内项匹配仍以 termEquals 为准，不匹配的成员不产生界，
+  // soundness 不变）→ Bug 8 obj·fn·brand 回退 may-throw + unknown 兜底。
+  return numericOpTail("/", a, b, phi, (x, y, p) => div(x, y, p, assume));
 }
 
 /**
@@ -379,23 +351,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
-  if (isNumericLike(a) && isNumericLike(b)) {
-    return abs(num().shape, undefined, undefined, "partial");
-  }
-  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
-  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
-  // 不可能是 Symbol/bigint）
-  if (isStrPrim(a) || isStrPrim(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  if (isAnyLike(a) || isAnyLike(b)) {
-    return toNumberResult(a, b, "%");
-  }
-  // sum 分发（与 add 同口径）
-  const distributed = distributeSumBinOp("%", a, b, phi, mod);
-  if (distributed) return distributed;
-  // Bug 8：obj/fn/brand 抽象面回退（`x.a % 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
-  noteAbstractArithMayThrow(a, b);
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  // 公共尾臂（shared.ts numericOpTail，第三轮收敛 #7）：isNumericLike 双侧
+  // → Bug 25 strPrim → any（toNumberResult）→ sum 分发 → Bug 8 obj·fn·brand
+  // 回退 may-throw（`x.a % 2`）+ unknown 兜底。
+  return numericOpTail("%", a, b, phi, mod);
 }
 

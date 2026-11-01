@@ -8,6 +8,7 @@
 
 import type { Abs } from "../abs.ts";
 import { isStrPrim, isBigPrim, bigintLit, litValue, num, numLit, str, strLit } from "../abs.ts";
+import type { LiteralValue } from "../term.ts";
 import { getSlot } from "../objects.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
@@ -126,8 +127,9 @@ export function isNullishLitOperand(a: Abs): boolean {
  * 排除：它们的 ToPrimitive 恒 string ⇒ 既不会成 bigint 也不会成 Symbol ⇒
  * `1 + []` / `[] < 1` 原生从不抛，不得记假 may-throw）。
  *
- * 单源消费：surface.ts 的位运算/移位/幂折叠（foldNumericBinOp）消费本判据，
- * 其 arr/tuple 硬抛分支镜像下方 foldBigintBinOp 的同名分支。
+ * 单源消费：surface.ts 的位运算/移位/幂折叠（foldNumericBinOp）与本模块
+ * foldBigintBinOp 的混型尾臂统一走 mixedBigintOperandTail（其 arr/tuple
+ * 硬抛分支消费本判据的清单成员资格）。
  */
 export function isMaybeBigintOperand(a: Abs): boolean {
   // issue #119：lit(null)/lit(undefined)（shape k:"unknown" 携带字面量项）
@@ -216,21 +218,88 @@ export function noteAbstractArithMayThrow(a: Abs, b: Abs): void {
   noteCoercionMayThrow(a, b, "ToNumeric/ToNumber coercion of abstract operand");
 }
 
+/**
+ * bigint-ness 双侧判定单源（Bug 106）：litValue 取字面量 → `typeof
+ * === "bigint" ∪ isBigPrim`——抽象 bigint prim（BigInt(Date.now()) 等非
+ * 字面量 bigint）也是**确定** bigint，此前仅凭字面量识别，`b & 1` /
+ * `b + 1` 落通用臂漏定抛 TypeError。
+ * 消费点：foldBigintBinOp（本模块）、surface.ts 的 foldNumericBinOp
+ * （无 bigint 重载算子 >>> 的恒抛检查）与 powAbs（字面量负指数定抛
+ * RangeError 检查）——三处曾是同款拷贝。
+ */
+export function bigintOperands(
+  a: Abs,
+  b: Abs,
+): {
+  /** a 的字面量值（无 lit 项 / lit(undefined) 哨兵吞并时 undefined） */
+  va: LiteralValue | undefined;
+  vb: LiteralValue | undefined;
+  aBig: boolean;
+  bBig: boolean;
+} {
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? ra.value : undefined;
+  const vb = rb.ok ? rb.value : undefined;
+  return {
+    va,
+    vb,
+    aBig: typeof va === "bigint" || isBigPrim(a),
+    bBig: typeof vb === "bigint" || isBigPrim(b),
+  };
+}
+
+/**
+ * 恰一侧 bigint 的**混型尾臂**（算术 `- * / %` 与位运算/移位/幂共用；
+ * `+` 的字符串/数组分支在 add() 上游分流，不进本臂）。
+ * 输入 `other` = 非 bigint 一侧；返回 undefined 交上层抽象回退，或硬抛：
+ * - 已知非 bigint 数值面（number/bool/null/undefined，isKnownNonBigintNumeric）
+ *   或 string prim（非 `+` 算子 ToNumber 后混型恒 TypeError）→ 硬抛
+ *   TypeError（可被 catch 吸收）；
+ * - any/unknown/obj/fn/brand 等（isMaybeBigintOperand）：可能 ToPrimitive
+ *   成 bigint（成功）或 number（TypeError）——记 soft may-throw 后返回
+ *   undefined，不得硬抛成 never（`1n & x` 在 x 实为 2n 时得 0n）；
+ *   - Bug 946：数组/元组 —— ToPrimitive 恒 join(",") ⇒ string ⇒ ToNumber
+ *     ⇒ number ⇒ 与 bigint 混型 TypeError **确定**（node 实测 `1n - []`
+ *     恒抛）且**可被 catch 吸收** ⇒ **硬抛**。**不得**走软 may-throw 通道
+ *     ——软通道让求值继续（catch 分支变死代码）：实测
+ *     `try { 1n - [] } catch (e) { return 'caught'; }` 原生进 catch
+ *     （"caught"），软通道下落到 catch 之后（"missed"）⇒ 语义反了。
+ *     位运算/移位/幂无 `+` 的字符串分支，到这里混型恒定；
+ * - 兜底（两判据都没认领的面，如 fn？——保守硬抛）→ TypeError。
+ */
+export function mixedBigintOperandTail(other: Abs): undefined {
+  // 已知非 bigint 数值面（number/bool/null/undefined）：混型恒 TypeError
+  if (isKnownNonBigintNumeric(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // string prim：非 `+` 的算术/位运算 ToNumber 后混型恒 TypeError；
+  // `+` 的 string 臂已在 add() 上游分流，到这里即算术算子。
+  if (isStrPrim(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // any/unknown/obj/…：可能 ToPrimitive 成 bigint（成功）或 number
+  // （TypeError）——记 soft may-throw，交回上层分流，不得硬抛成 never
+  if (isMaybeBigintOperand(other)) {
+    if (other.shape.k === "arr" || other.shape.k === "tuple") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "mixed bigint ⊗ abstract operand",
+    });
+    return undefined;
+  }
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
 /** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、确定混型原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
 export function foldBigintBinOp(
   a: Abs,
   b: Abs,
   op: (x: bigint, y: bigint) => bigint,
 ): Abs | undefined {
-  const ra = litValue(a);
-  const rb = litValue(b);
-  const va = ra.ok ? ra.value : undefined;
-  const vb = rb.ok ? rb.value : undefined;
-  // Bug 106：bigint-ness 双侧判定 = 字面量 ∪ isBigPrim（抽象 bigint prim
-  // ——BigInt(Date.now()) 等非字面量 bigint 也是**确定** bigint，此前仅凭
-  // 字面量识别，b+1 落通用臂折 number|string 漏定抛 TypeError）
-  const aBig = typeof va === "bigint" || isBigPrim(a);
-  const bBig = typeof vb === "bigint" || isBigPrim(b);
+  const { va, vb, aBig, bBig } = bigintOperands(a, b);
   if (!aBig && !bBig) return undefined;
   if (typeof va === "bigint" && typeof vb === "bigint") {
     try {
@@ -246,38 +315,9 @@ export function foldBigintBinOp(
     // 检查（coerce 是叶子模块，不带算子种类）；此处交回上层分流。
     return undefined;
   }
-  // 恰一侧 bigint（字面量或抽象 prim），另一侧确定非 bigint：
-  const other = aBig ? b : a;
-  // 已知非 bigint 数值面（number/bool/null/undefined）：混型恒 TypeError
-  if (isKnownNonBigintNumeric(other)) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
-  // string prim：非 `+` 的算术/位运算 ToNumber 后混型恒 TypeError；
-  // `+` 的 string 臂已在 add() 上游分流，到这里即算术算子。
-  if (isStrPrim(other)) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
-  // any/unknown/obj/…：可能 ToPrimitive 成 bigint（成功）或 number（TypeError）——
-  // 记 soft may-throw，交回上层分流，不得硬抛成 never
-  if (isMaybeBigintOperand(other)) {
-    // Bug 946：数组/元组 —— ToPrimitive 恒 join(",") ⇒ string ⇒ ToNumber ⇒
-    // number ⇒ 与 bigint 混型 TypeError **确定**（node 实测 `1n - []` 恒抛）
-    // 且**可被 catch 吸收** ⇒ 硬抛。
-    //
-    // **不得**走下面的软 may-throw 通道：软通道让求值继续（catch 分支变死
-    // 代码）—— 实测 `try { 1n - [] } catch (e) { return 'caught'; }` 原生进
-    // catch（"caught"），软通道下落到 catch 之后（"missed"）⇒ 语义反了。
-    // `+` 的字符串分支在 add() 上游分流（数组臂先于 bigint 臂），到这里即
-    // 算术算子 ⇒ 混型 TypeError 恒定。
-    if (other.shape.k === "arr" || other.shape.k === "tuple") {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
-    }
-    recordMayThrow({
-      kind: "TypeError",
-      cause: "mixed bigint ⊗ abstract operand",
-    });
-    return undefined;
-  }
-  throw new NudoThrow(errorTypeAbs("TypeError"));
+  // 恰一侧 bigint（字面量或抽象 prim），另一侧非 bigint——混型尾臂单源
+  //（isKnownNonBigintNumeric / isStrPrim 硬抛 → Bug 946 arr/tuple 硬抛 →
+  // 软 may-throw → 兜底硬抛，口径注释见 mixedBigintOperandTail）
+  return mixedBigintOperandTail(aBig ? b : a);
 }
 

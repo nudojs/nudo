@@ -43,6 +43,10 @@ export {
   budgetAttributionSegs,
   // CheckJson issue 可选字段单一真源（序列化 ↔ nudojs 缓存反序列化共用）
   CHECK_ISSUE_OPTIONAL_KEYS,
+  // 分析器诊断 → CheckIssue 映射（nudojs check-json-map 与 lsp agent-tools
+  // 共用；Bug 632 / 1038 手抄漂移的闭合点）
+  checkIssuesFromDiagnostics,
+  type AnalyzerDiagnosticLike,
 } from "./algebra/check-report.ts";
 export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
@@ -158,6 +162,8 @@ export { BoundedLruMap } from "./algebra/lru-map.ts";
 export { collectNestedBodyRanges } from "./algebra/directive-scan.ts";
 export {
   collectDependencySpecs,
+  collectDependencySpecsWithMode,
+  type DependencySpecEntry, type DependencySpecMode,
 } from "./algebra/scan-deps.ts";
 export {
   collectIdentNames,
@@ -168,8 +174,12 @@ export {
 } from "./algebra/scan-named-exports.ts";
 // 字符串感知扫描（check 面与 parser 指令面共用；Bug 1009 拷贝漂移的闭合点）
 export {
-  findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation,
+  findTopLevelChar, findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation,
+  walkTopLevelChars,
 } from "./algebra/text-scan.ts";
+// 源 AST 的 ESM 语法判定（service abs-modules-graph 的 strict 判定复用；
+// 此前 service 内嵌逐字拷贝）
+export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
 // drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
 export { absShapeForTsTypeText } from "./algebra/ts-type-shape.ts";

@@ -20,7 +20,7 @@ import { noteDerivationAdd } from "../derivation.ts";
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
-import { distributeSumBinOp, strLitResult, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
+import { distributeSumBinOp, numericOpTail, strLitResult, synthEndpoint, isAnyLike, coercibleLit, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteCoercionMayThrow, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds, isNonNaN } from "./bounds.ts";
 // Bug 367：引理消费记账（叶子模块，仅 type import ⇒ 无运行时依赖环）
@@ -400,27 +400,12 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
         : confJoin(confJoin(a.conf, b.conf), facts.length ? "path" : "path");
     return abs({ k: "prim", type: "number" }, term, facts.length ? and(...facts) : undefined, conf);
   }
-  if (isNumericLike(a) && isNumericLike(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
-  // string 域后落此；`new Map() - 1` → ToNumber(string) → number）——恒
-  // total（string prim 不可能是 Symbol/bigint）
-  if (isStrPrim(a) || isStrPrim(b)) {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
-  }
-  // any：JS ToNumber → number（可能 NaN）
-  if (isAnyLike(a) || isAnyLike(b)) {
-    return toNumberResult(a, b, "-");
-  }
-  // sum 分发（与 add 同口径）：100 - (cond ? 20 : 55) → 45 | 80。
-  // 成员级同构透传 assume（div 同型先例）——d 的成员臂上项匹配仍以
-  // termEquals 为准（不匹配的成员不产生界），soundness 不变
-  const distributed = distributeSumBinOp("-", a, b, phi, (x, y, p) => sub(x, y, p, assume));
-  if (distributed) return distributed;
-  // Bug 8：obj/fn/brand 抽象面回退（`x.a - 1`，valueOf 可能产 bigint/Symbol）→ may TypeError
-  noteAbstractArithMayThrow(a, b);
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  // 公共尾臂（shared.ts numericOpTail，第三轮收敛 #7）：isNumericLike 双侧
+  // → Bug 25 strPrim → any（toNumberResult）→ sum 分发 → Bug 8 obj·fn·brand
+  // 回退 may-throw + unknown 兜底。此处成员求值回调透传 assume（div 同型
+  // 先例——d 的成员臂上项匹配仍以 termEquals 为准，不匹配的成员不产生
+  // 界，soundness 不变）。
+  return numericOpTail("-", a, b, phi, (x, y, p) => sub(x, y, p, assume));
 }
 
 /**

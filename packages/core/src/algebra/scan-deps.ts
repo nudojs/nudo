@@ -8,26 +8,36 @@
 import type { File, Node } from "@babel/types";
 import { foldStaticStringExpr } from "./exec/transpile/helpers.ts";
 
-/** 从 AST 收集静态相对依赖（ESM import + CJS require） */
-export function collectDependencySpecs(ast: File): string[] {
-  const specs: string[] = [];
+/** 依赖说明符的装载通道标签（Bug 238：require 消费方必须拿 require 条件构建） */
+export type DependencySpecMode = "import" | "require";
+
+export type DependencySpecEntry = { spec: string; mode: DependencySpecMode };
+
+/** 从 AST 收集静态相对依赖及装载通道（ESM import / CJS require） */
+export function collectDependencySpecsWithMode(ast: File): DependencySpecEntry[] {
+  const out: DependencySpecEntry[] = [];
   for (const stmt of ast.program.body) {
     if (stmt.type === "ImportDeclaration") {
-      specs.push(stmt.source.value);
+      out.push({ spec: stmt.source.value, mode: "import" });
     }
     if (stmt.type === "ExportNamedDeclaration" && stmt.source) {
-      specs.push(stmt.source.value);
+      out.push({ spec: stmt.source.value, mode: "import" });
     }
     if (stmt.type === "ExportAllDeclaration" && stmt.source) {
-      specs.push(stmt.source.value);
+      out.push({ spec: stmt.source.value, mode: "import" });
     }
     // require("...") / require.resolve
-    collectRequires(stmt, specs);
+    collectRequires(stmt, out);
   }
-  return specs;
+  return out;
 }
 
-function collectRequires(node: Node, out: string[]): void {
+/** 从 AST 收集静态相对依赖（ESM import + CJS require） */
+export function collectDependencySpecs(ast: File): string[] {
+  return collectDependencySpecsWithMode(ast).map((e) => e.spec);
+}
+
+function collectRequires(node: Node, out: DependencySpecEntry[]): void {
   const visit = (n: unknown): void => {
     if (!n || typeof n !== "object") return;
     const obj = n as {
@@ -58,7 +68,7 @@ function collectRequires(node: Node, out: string[]): void {
       ) {
         spec = foldStaticStringExpr(obj.arguments?.[0]);
       }
-      if (spec !== undefined) out.push(spec);
+      if (spec !== undefined) out.push({ spec, mode: "require" });
     }
     for (const key of Object.keys(obj)) {
       if (key === "loc" || key === "start" || key === "end") continue;
