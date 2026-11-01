@@ -150,6 +150,38 @@ function knownFunctionNames(
 }
 
 /**
+ * selectCase / selectContract 共享的目标解析 preamble（955 / 756 / 763）：
+ * uri/file 形态校验 → 读目标源 → 指令 case 目标表 → 函数名存在性校验。
+ * 任一步失败 → { error }（调用方包 commandError）；成功 → { uri, targets }。
+ */
+function resolveCaseTarget(
+  params: { uri?: unknown; file?: unknown },
+  deps: CommandDeps,
+  functionName: string,
+): { uri: string; targets: Map<string, { name: string; index: number }[]> } | { error: string } {
+  // 955：uri/file 形态校验（非法 file 不再崩成裸 TypeError，也不再回落 cwd）。
+  const target = resolveTargetUri(params, deps);
+  if ("error" in target) return { error: target.error };
+
+  const read = readTargetSource(target.uri, deps);
+  if ("error" in read) return { error: read.error };
+
+  let targets: Map<string, { name: string; index: number }[]>;
+  try {
+    targets = caseTargets(read.filePath, read.source);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      error: `Error: cannot parse target file (${sanitizeErrorMessage(msg, deps.agentToolDeps.workspaceRoots)})`,
+    };
+  }
+  if (!knownFunctionNames(read.source, targets).has(functionName)) {
+    return { error: `Error: unknown function '${functionName}' in target file` };
+  }
+  return { uri: target.uri, targets };
+}
+
+/**
  * 选择器/契约变更后的透镜刷新：CodeLens **与** inlayHint 成对发。
  * inlay 是「无 CodeLens UI 的客户端」唯一的选择器状态镜像（lsp.md §inlay），
  * 只发 codeLens 会让两个镜像互相矛盾（757）。
@@ -180,25 +212,9 @@ export function makeHandleSelectCase(deps: CommandDeps) {
     if (!Number.isInteger(caseIndex)) {
       return commandError("Error: caseIndex is required and must be an integer");
     }
-    // 955：uri/file 形态校验（非法 file 不再崩成裸 TypeError，也不再回落 cwd）。
-    const target = resolveTargetUri(params, deps);
-    if ("error" in target) return commandError(target.error);
-
-    const read = readTargetSource(target.uri, deps);
-    if ("error" in read) return commandError(read.error);
-
-    let targets: Map<string, { name: string; index: number }[]>;
-    try {
-      targets = caseTargets(read.filePath, read.source);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return commandError(
-        `Error: cannot parse target file (${sanitizeErrorMessage(msg, deps.agentToolDeps.workspaceRoots)})`,
-      );
-    }
-    if (!knownFunctionNames(read.source, targets).has(functionName)) {
-      return commandError(`Error: unknown function '${functionName}' in target file`);
-    }
+    const resolved = resolveCaseTarget(params, deps, functionName);
+    if ("error" in resolved) return commandError(resolved.error);
+    const { uri, targets } = resolved;
     const cases = targets.get(functionName) ?? [];
     if (cases.length === 0) {
       return commandError(
@@ -211,10 +227,10 @@ export function makeHandleSelectCase(deps: CommandDeps) {
       );
     }
 
-    const casesTable = deps.getActiveCases(target.uri);
+    const casesTable = deps.getActiveCases(uri);
     casesTable.set(functionName, caseIndex);
 
-    const document = deps.getDocument(target.uri);
+    const document = deps.getDocument(uri);
     if (document) {
       await deps.validateDocument(document);
     }
@@ -241,32 +257,16 @@ export function makeHandleSelectContract(deps: CommandDeps) {
         "Error: functionName is required and must be a non-empty string",
       );
     }
-    // 955：uri/file 形态校验（两者都缺时不再回落服务器 cwd）。
-    const target = resolveTargetUri(params, deps);
-    if ("error" in target) return commandError(target.error);
-
-    const read = readTargetSource(target.uri, deps);
-    if ("error" in read) return commandError(read.error);
-
-    let targets: Map<string, { name: string; index: number }[]>;
-    try {
-      targets = caseTargets(read.filePath, read.source);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return commandError(
-        `Error: cannot parse target file (${sanitizeErrorMessage(msg, deps.agentToolDeps.workspaceRoots)})`,
-      );
-    }
-    if (!knownFunctionNames(read.source, targets).has(functionName)) {
-      return commandError(`Error: unknown function '${functionName}' in target file`);
-    }
+    const resolved = resolveCaseTarget(params, deps, functionName);
+    if ("error" in resolved) return commandError(resolved.error);
+    const { uri } = resolved;
 
     // 契约是观察选择器的一个选项（与各 case 互斥）：选中 = 取消该函数的激活
     // case（无条目即默认契约观察态，幂等），重检 + 刷新透镜。
-    const cases = deps.getActiveCases(target.uri);
+    const cases = deps.getActiveCases(uri);
     cases.delete(functionName);
 
-    const document = deps.getDocument(target.uri);
+    const document = deps.getDocument(uri);
     if (document) {
       await deps.validateDocument(document);
     }
