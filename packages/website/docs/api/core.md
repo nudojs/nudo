@@ -382,7 +382,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (332)</summary>
+<summary>Additional exports from src/index.ts (333)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -431,6 +431,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="collectionexactlen"></a>`collectionExactLen` | fn | 确切条目数：Set 无 maybeAbsent / Map 无 shadow+maybeAbsent 时返回长度； 否则 undefined（for-of 不得假装有界）。 | `collectionExactLen(c: Abs): number \| undefined` |
 | <a id="constraint_builder_names"></a>`CONSTRAINT_BUILDER_NAMES` | const | 构建器表面名（供文法正则 / 测试枚举；顺序即表定义顺序） | `const CONSTRAINT_BUILDER_NAMES` |
 | <a id="constraint_builders"></a>`CONSTRAINT_BUILDERS` | const | 约束构建器表面名表（单一真源）：case 实参文法、mock 类型表达式识别与 侧车注入共用的名字 → 实现映射。键名是 *.nudo.js / 指令里的用户写法 （`lit`/`and` 而非内部的 litC/andC）。 | `const CONSTRAINT_BUILDERS` |
+| <a id="constraint_chain_method_names"></a>`CONSTRAINT_CHAIN_METHOD_NAMES` | const | 链式方法名表（单一真源）：`builder(...).method(...)` 链上允许的方法。 | `const CONSTRAINT_CHAIN_METHOD_NAMES` |
 | <a id="constraint_expr_re"></a>`CONSTRAINT_EXPR_RE` | const | 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成—— 名单只在 CONSTRAINT_BUILDERS 一处维护。 | `const CONSTRAINT_EXPR_RE` |
 | <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
