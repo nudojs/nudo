@@ -10,19 +10,16 @@ import {
   formatAbs,
   relationFn,
 } from "@nudojs/core";
+import { ERROR_CTOR_NAMES } from "@nudojs/core/internal";
 
 function hasOwnProp(props: Record<string, unknown>, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, name);
 }
 
-// LSP 补全近似表：须与 packages/core/src/algebra/error-names.ts 的 ERROR_CTOR_NAMES 保持同步。
-const BUILTIN_ERROR_CLASSES = new Set([
-  "Error", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError",
-  "AggregateError",
-]);
-
+// LSP 补全近似表的错误类判定：单源在 core 的 ERROR_CTOR_NAMES
+// （@nudojs/core/internal；error-names.ts 是唯一事实源）。
 const BUILTIN_PROTOTYPE_CLASSES = new Set([
-  ...BUILTIN_ERROR_CLASSES,
+  ...ERROR_CTOR_NAMES,
   "Date", "Object", "Map", "Set", "Promise", "RegExp", "Array", "Function",
   "String", "Number", "Boolean", "Symbol", "WeakMap", "WeakSet", "Buffer",
 ]);
@@ -230,7 +227,7 @@ export function builtinProtoMemberNames(className: string): string[] {
 export function builtinProtoMember(className: string, member: string): Abs | null {
   const table = hasOwnProp(BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS, className)
     ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS[className]
-    : BUILTIN_ERROR_CLASSES.has(className)
+    : ERROR_CTOR_NAMES.has(className)
       ? BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS.Error
       : undefined;
   if (!table) return null;
@@ -238,7 +235,6 @@ export function builtinProtoMember(className: string, member: string): Abs | nul
 }
 
 export {
-  BUILTIN_ERROR_CLASSES,
   BUILTIN_PROTOTYPE_CLASSES,
   OBJECT_PROTOTYPE_METHODS,
   BUILTIN_PROTOTYPE_METHOD_APPROXIMATIONS,

@@ -601,11 +601,7 @@ export function sidecarClearsEntryThrow(input: {
   fn: string;
   loadModule?: (spec: string, from: string) => string | undefined;
 }): boolean {
-  const r = checkWithSynthesizedSidecar(input);
-  if (r === undefined) return false;
-  return !r.issues.some(
-    (i) => i.code === DIAG.entryMayThrow && i.fn === input.fn,
-  );
+  return sidecarClearsDiags(input, [DIAG.entryMayThrow]);
 }
 
 /**
@@ -625,13 +621,25 @@ export function sidecarClearsConstraintViolation(input: {
   fn: string;
   loadModule?: (spec: string, from: string) => string | undefined;
 }): boolean {
+  return sidecarClearsDiags(input, [DIAG.constraintViolated, DIAG.entryMayThrow]);
+}
+
+/** 共享骨架：合成侧车重跑 checkSource，目标函数的任一指定诊断残留 → false
+ *  （[fix] 门：门禁换红不算修复）。求值抛 / interface-load 失败按未通过处理。 */
+function sidecarClearsDiags(
+  input: {
+    file: string;
+    source: string;
+    sidecarPath: string;
+    sidecarText: string;
+    fn: string;
+    loadModule?: (spec: string, from: string) => string | undefined;
+  },
+  codes: readonly string[],
+): boolean {
   const r = checkWithSynthesizedSidecar(input);
   if (r === undefined) return false;
-  return !r.issues.some(
-    (i) =>
-      (i.code === DIAG.constraintViolated || i.code === DIAG.entryMayThrow) &&
-      i.fn === input.fn,
-  );
+  return !r.issues.some((i) => codes.includes(i.code) && i.fn === input.fn);
 }
 
 /**
