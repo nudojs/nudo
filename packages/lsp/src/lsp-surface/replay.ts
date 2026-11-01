@@ -260,6 +260,14 @@ function isNullishLitMember(m: Abs): boolean {
   return t?.op === "lit" && (t.value === null || t.value === undefined);
 }
 
+/** path-env 预加载（两 async 入口共用口径，见 analyzeFileAsync）。 */
+async function preloadEnvsThen(filePath: string, source: string): Promise<void> {
+  const envNames = collectEnvNames(filePath, source, false);
+  if (envNames.length > 0) {
+    await preloadPathEnvs(envNames, dirname(filePath));
+  }
+}
+
 /** Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). */
 export async function getTypeAtPositionAsync(
   filePath: string,
@@ -268,10 +276,7 @@ export async function getTypeAtPositionAsync(
   column: number,
   activeCases?: Map<string, number>,
 ): Promise<Abs | null> {
-  const envNames = collectEnvNames(filePath, source, false);
-  if (envNames.length > 0) {
-    await preloadPathEnvs(envNames, dirname(filePath));
-  }
+  await preloadEnvsThen(filePath, source);
   return getAbsAtPosition(filePath, source, line, column, activeCases);
 }
 
@@ -283,10 +288,7 @@ export async function getAbsAtPositionAsync(
   column: number,
   activeCases?: Map<string, number>,
 ): Promise<Abs | null> {
-  const envNames = collectEnvNames(filePath, source, false);
-  if (envNames.length > 0) {
-    await preloadPathEnvs(envNames, dirname(filePath));
-  }
+  await preloadEnvsThen(filePath, source);
   return getAbsAtPosition(filePath, source, line, column, activeCases);
 }
 
@@ -507,26 +509,24 @@ const NESTED_SCOPE_TYPES = new Set([
   "ClassPrivateMethod",
 ]);
 
-function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; column: number }> {
-  const out: Array<{ name: string; line: number; column: number }> = [];
+/** walkFnScope 走访到的节点（两消费面字段的并集：声明名 / init 调用位） */
+type FnScopeNode = {
+  type?: string;
+  id?: { type?: string; name?: string; loc?: { start: { line: number; column: number } } };
+  init?: { type?: string; loc?: { start: { line: number; column: number } } };
+};
+
+/**
+ * enclosing 函数体深走访骨架（declaredCallInits / scopeDeclaration 共用）：
+ * 逐节点回调 visit，再判 NESTED_SCOPE_TYPES（嵌套函数作用域不下钻——闭包
+ * 有自己的作用域），跳过 loc/start/end/*Comments 键。
+ */
+function walkFnScope(fnNode: Node, visit: (n: FnScopeNode) => void): void {
   const walk = (node: unknown): void => {
     if (!node || typeof node !== "object") return;
-    const n = node as {
-      type?: string;
-      id?: { type?: string; name?: string };
-      init?: { type?: string; loc?: { start: { line: number; column: number } } };
-    };
-    if (n.type === "VariableDeclarator") {
-      const start = n.init?.loc?.start;
-      if (
-        n.id?.type === "Identifier" &&
-        n.init?.type === "CallExpression" &&
-        start
-      ) {
-        out.push({ name: n.id.name!, line: start.line, column: start.column });
-      }
-    }
-    if (n !== fnNode && typeof n.type === "string" && NESTED_SCOPE_TYPES.has(n.type)) return;
+    visit(node as FnScopeNode);
+    const t = (node as { type?: string }).type;
+    if (node !== fnNode && typeof t === "string" && NESTED_SCOPE_TYPES.has(t)) return;
     for (const k of Object.keys(node)) {
       if (k === "loc" || k === "start" || k === "end" || k.endsWith("Comments")) continue;
       const v = (node as Record<string, unknown>)[k];
@@ -538,6 +538,22 @@ function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; co
     }
   };
   walk(fnNode);
+}
+
+function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; column: number }> {
+  const out: Array<{ name: string; line: number; column: number }> = [];
+  walkFnScope(fnNode, (n) => {
+    if (n.type === "VariableDeclarator") {
+      const start = n.init?.loc?.start;
+      if (
+        n.id?.type === "Identifier" &&
+        n.init?.type === "CallExpression" &&
+        start
+      ) {
+        out.push({ name: n.id.name!, line: start.line, column: start.column });
+      }
+    }
+  });
   return out;
 }
 
@@ -619,28 +635,12 @@ function scopeDeclaration(fnNode: Node, name: string): ScopeDecl | undefined {
     if (p.type === "Identifier" && p.name === name) return { kind: "param" };
   }
   let hit: ScopeDecl | undefined;
-  const walk = (node: unknown): void => {
-    if (!node || typeof node !== "object") return;
-    const n = node as {
-      type?: string;
-      id?: { type?: string; name?: string; loc?: { start: { line: number; column: number } } };
-    };
+  walkFnScope(fnNode, (n) => {
     if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.id.name === name) {
       const start = n.id.loc?.start;
       if (start) hit = { kind: "local", line: start.line, column: start.column };
     }
-    if (n !== fnNode && typeof n.type === "string" && NESTED_SCOPE_TYPES.has(n.type)) return;
-    for (const k of Object.keys(node)) {
-      if (k === "loc" || k === "start" || k === "end" || k.endsWith("Comments")) continue;
-      const v = (node as Record<string, unknown>)[k];
-      if (Array.isArray(v)) {
-        for (const c of v) walk(c);
-      } else if (v && typeof v === "object" && typeof (v as { type?: string }).type === "string") {
-        walk(v);
-      }
-    }
-  };
-  walk(fnNode);
+  });
   return hit;
 }
 

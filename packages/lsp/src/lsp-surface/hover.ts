@@ -33,7 +33,7 @@ import {
   type AnalysisResult,
   type LoadModule,
 } from "@nudojs/service";
-import { formatThrowsAbs } from "@nudojs/core/internal";
+import { formatEntryParamShape, formatThrowsAbs } from "@nudojs/core/internal";
 import type { RunTranspiledOptions } from "@nudojs/core/exec";
 import { flowFactsAt } from "./facts.ts";
 import { narrowByDiscriminant } from "./narrowing.ts";
@@ -218,6 +218,30 @@ export function getHoverAtPosition(
       file = undefined;
     }
   }
+  // enclosing 函数 generalize（参数面 / 无 ident 重放面共用）：opts 构造
+  // 与函数名面（下方 fnName 分支）同构——file/refine/loadModule/autoBind/
+  // modules/inject。fail-closed：generalize 失败 ⇒ undefined（无参数面 /
+  // 无重放，不拖垮 hover）。
+  const tryGeneralizeEnclosing = (
+    fnName: string,
+    file: ReturnType<typeof parse>,
+  ): PolyFn | undefined => {
+    try {
+      return generalizeFromAst(fnName, source, {
+        file,
+        refine: {
+          fromFile: filePath,
+          ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+          ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        },
+        ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        // 注入包透传（Bug 786）——同函数名面
+        ...(opts?.inject ? { inject: opts.inject } : {}),
+      });
+    } catch {
+      return undefined;
+    }
+  };
   const fnHit = findFunctionNameAtPosition(source, line, column, file);
   const fnName = fnHit?.name;
   /** 声明名位置（非调用 callee）才有 check 同口径签名面 */
@@ -278,8 +302,10 @@ export function getHoverAtPosition(
             // （Bug 775）；无契约参数：design §2 无约束 any / 真 unknown
             const text =
               contractParamTextOf(g, p, t) ??
-              // design §2：无约束 any；真 unknown 不得伪装
-              (!t ? "any" : formatEntryParamShapeLike(t));
+              // design §2：无约束 any；真 unknown 不得伪装（core
+              // formatEntryParamShape 同口径：nullish 字面量印自身名，
+              // Bug 348）
+              (!t ? "any" : formatEntryParamShape(t));
             return `${p}: ${text}`;
           })
           .join(", ");
@@ -411,21 +437,7 @@ export function getHoverAtPosition(
     if (file) {
       encFn = findEnclosingFunction(file, line, column);
       if (encFn) {
-        try {
-          gEnc = generalizeFromAst(encFn.name, source, {
-            file,
-            refine: {
-              fromFile: filePath,
-              ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
-              ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
-            },
-            ...(reuse?.modules ? { modules: reuse.modules } : {}),
-            // 注入包透传（Bug 786）——同函数名面
-            ...(opts?.inject ? { inject: opts.inject } : {}),
-          });
-        } catch {
-          // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
-        }
+        gEnc = tryGeneralizeEnclosing(encFn.name, file);
         // 侧车契约档（参数面 + 成员投影共用）：
         // 侧车源码 / AST 预解析（判别窄化的臂
         // 过滤与变量链接的引用解析共用）
@@ -583,22 +595,7 @@ export function getHoverAtPosition(
   if (!ident && !fnName && !insideCaseFn && file) {
     const encFn = findEnclosingFunction(file, line, column);
     if (encFn) {
-      let gEnc: PolyFn | undefined;
-      try {
-        gEnc = generalizeFromAst(encFn.name, source, {
-          file,
-          refine: {
-            fromFile: filePath,
-            ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
-            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
-          },
-          ...(reuse?.modules ? { modules: reuse.modules } : {}),
-          // 注入包透传（Bug 786）——同函数名面
-          ...(opts?.inject ? { inject: opts.inject } : {}),
-        });
-      } catch {
-        // fail-closed：generalize 失败 → 无重放（不拖垮 hover）
-      }
+      const gEnc = tryGeneralizeEnclosing(encFn.name, file);
       if (gEnc) {
         const abs = absNodeAtPosition(
           filePath,
@@ -640,29 +637,6 @@ export function getHoverAtPosition(
 }
 
 /**
- * check 同口径的形参类型文本（core `check-signatures.formatEntryParamShape`
- * 同公式——core 不新增导出，LSP 侧同口径实现）：
- * - `shape.k === "unknown"`：term 是 nullish 字面量 ⇒ 印它自己的名字
- *   （`null` / `undefined`），**不得**与「真 unknown = 推断失败」混淆
- *   （design §2 / Bug 348 同纪律）；否则 `unknown`；
- * - 其余走 `formatShape(t, { showLits: true })`——契约面的字面量保形
- *   （`lit(1)` ⇒ `1`，与 dts 面 / check 签名面一致）。
- */
-function formatEntryParamShapeLike(t: Abs): string {
-  if (t.shape.k === "unknown") {
-    const term = t.term;
-    if (
-      term?.op === "lit" &&
-      (term.value === null || term.value === undefined)
-    ) {
-      return formatShape(t);
-    }
-    return "unknown";
-  }
-  return formatShape(t, { showLits: true });
-}
-
-/**
  * 契约形参的展示文本（Bug 775：hover 与 `nudo check` 对同一函数给同一套
  * 参数类型文本）。
  *
@@ -684,7 +658,7 @@ function contractParamTextOf(
   const display = g.entryReqs?.find((r) => r.param === param)?.display;
   if (display === undefined) return undefined;
   if (inferred !== undefined && inferred.shape.k !== "sum") {
-    return formatEntryParamShapeLike(inferred);
+    return formatEntryParamShape(inferred);
   }
   return display;
 }
@@ -733,7 +707,7 @@ function paramDisplayOf(
     g.entryShapes?.get(ident)?.abs ??
     g.typeParams[(g.params ?? []).indexOf(ident)]?.value;
   if (inferred !== undefined && inferred.shape.k !== "sum") {
-    return formatEntryParamShapeLike(inferred);
+    return formatEntryParamShape(inferred);
   }
   const facts = flowFactsAt(fnNode, file, ident, line, column);
   let display = req.display;

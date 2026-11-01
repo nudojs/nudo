@@ -226,6 +226,39 @@ export function attachNavigation(deps: NavigationDeps): void {
   function navigationSources(): SourceProvider {
     return navigationSourceProvider(deps);
   }
+  /**
+   * references / rename 的共同前导：文档存在 → isNudoFile 门禁（Bug 751：
+   * 导航请求同一谓词，真源 server.ts）→ 文本/路径 → parse → 光标标识符。
+   * 任何一步失败（含 parse 抛错——fail-closed）⇒ null，调用方按各自协议
+   * 回 `[]` / `null`。不含 rename 的新名校验（Bug 750——rename 面自己的
+   * 门禁，先于本前导）。
+   */
+  function navigationIdentAt(
+    params: { textDocument: { uri: string }; position: { line: number; character: number } },
+  ): {
+    source: string;
+    filePath: string;
+    line: number;
+    column: number;
+    ast: ReturnType<typeof parse>;
+    identAtPos: string;
+  } | null {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+    if (!isNudoFile(params.textDocument.uri)) return null;
+    const source = document.getText();
+    const filePath = uriToFilePath(params.textDocument.uri);
+    const line = params.position.line + 1;
+    const column = params.position.character;
+    try {
+      const ast = parse(source);
+      const identAtPos = findIdentifierAtPosition(ast, line, column);
+      if (!identAtPos) return null;
+      return { source, filePath, line, column, ast, identAtPos };
+    } catch {
+      return null;
+    }
+  }
 
 connection.onDocumentSymbol((params) => {
   const document = documents.get(params.textDocument.uri);
@@ -420,20 +453,11 @@ connection.onDefinition((params) => {
 });
 
 connection.onReferences((params) => {
-  const document = documents.get(params.textDocument.uri);
-  if (!document) return [];
-  if (!isNudoFile(params.textDocument.uri)) return [];
-
-  const source = document.getText();
-  const filePath = uriToFilePath(params.textDocument.uri);
-  const line = params.position.line + 1;
-  const column = params.position.character;
+  const ctx = navigationIdentAt(params);
+  if (!ctx) return [];
+  const { source, filePath, ast, identAtPos, line, column } = ctx;
 
   try {
-    const ast = parse(source);
-    const identAtPos = findIdentifierAtPosition(ast, line, column);
-    if (!identAtPos) return [];
-
     // 类 / 对象方法（方法键不是绑定）由符号层自己判（`resolveReferences` 内的
     // 方法面）：**含跨文件**同源成员访问 ⇒ 与改名面口径一致（此前 references
     // 只扫当前文件、rename 却跨文件 ⇒ 两面分裂）。
@@ -456,26 +480,17 @@ connection.onReferences((params) => {
 });
 
 connection.onRenameRequest((params) => {
-  const document = documents.get(params.textDocument.uri);
-  if (!document) return null;
-  if (!isNudoFile(params.textDocument.uri)) return null;
   // 新名校验（Bug 750）：**语法层** —— 合法 JS 标识符 + 非保留字 + 非空。
   // ⚠ 此前 `params.newName` 被**直接**当替换文本用 ⇒ 一次改名就能把源码改成
   //   **非法 JavaScript**（`node --check` 直接 `SyntaxError`）。
   // ⚠ 「与同作用域已有绑定冲突」（重复声明）需要作用域模型
   //   （`buildSymbolTable`，片 A 的地盘）⇒ **本族不做**（独立后续项）。
   if (!isValidRenameName(params.newName)) return null;
-
-  const source = document.getText();
-  const filePath = uriToFilePath(params.textDocument.uri);
-  const line = params.position.line + 1;
-  const column = params.position.character;
+  const ctx = navigationIdentAt(params);
+  if (!ctx) return null;
+  const { source, filePath, ast, identAtPos, line, column } = ctx;
 
   try {
-    const ast = parse(source);
-    const identAtPos = findIdentifierAtPosition(ast, line, column);
-    if (!identAtPos) return null;
-
     const target = renameTargetAt(source, line, column);
     if (target && "error" in target) return null;
 

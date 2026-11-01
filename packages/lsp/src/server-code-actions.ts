@@ -16,6 +16,8 @@ import {
 } from "@nudojs/core";
 import {
   materializeAction,
+  normPosixPath,
+  resolveRelativeSpec,
   type QuickfixPlan,
 } from "@nudojs/service/emit";
 import { defaultLoadModule } from "@nudojs/service";
@@ -789,21 +791,13 @@ function sidecarRelaxClearsTarget(input: {
 }): boolean {
   const codes: readonly string[] =
     input.codes ?? [DIAG.constraintViolated, DIAG.entryMayThrow];
-  const norm = (p: string): string => p.replace(/\\/g, "/");
-  const resolveRel = (from: string, spec: string): string | undefined => {
-    if (!spec.startsWith(".")) return undefined;
-    const parts = norm(from).split("/").slice(0, -1);
-    for (const seg of norm(spec).split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  const target = norm(input.sidecarPath);
+  // 说明符解析走 service/emit 共享基底（normPosixPath / resolveRelativeSpec）；
+  // LSP 侧两点合法扩展保留：合成侧车文本按**规范化后等值**直接命中，其余
+  // 回落宿主 loadModule（input.loadModule ?? defaultLoadModule）
+  const target = normPosixPath(input.sidecarPath);
   const loadModule = (spec: string, from: string): string | undefined => {
-    if (norm(spec) === target) return input.sidecarText;
-    const p = resolveRel(from, spec);
+    if (normPosixPath(spec) === target) return input.sidecarText;
+    const p = resolveRelativeSpec(from, spec);
     if (p !== undefined && p === target) return input.sidecarText;
     return (input.loadModule ?? defaultLoadModule)(spec, from);
   };
