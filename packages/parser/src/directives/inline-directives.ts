@@ -1,6 +1,6 @@
 import type { Comment, Node } from "@babel/types";
 import { CONSTRAINT_EXPR_RE } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, findTopLevelChar, walkTopLevelChars } from "@nudojs/core/internal";
 import { absUnknown, parseAbsExprDiag } from "./case-arg.ts";
 import {
   emitDirectiveDiag,
@@ -73,30 +73,31 @@ function unwrapOuterParens(s: string): string {
   return cur;
 }
 
-/** 首个 `(` 是否与末个 `)` 配对（字符串感知——`lit("(")` 不算） */
+/**
+ * 首个 `(` 是否与末个 `)` 配对（字符串感知——`lit("(")` 不算）。
+ * 走串骨架单源：core `walkTopLevelChars`（字符串感知 + `\` 不转义）；此处
+ * 只在回调里维护**圆括号专属**深度（`[ ]` / `{ }` 不参与首末圆括号配平，
+ * 与骨架化之前的原实现逐字一致）。
+ */
 function outerParensWrapAll(s: string): boolean {
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]!;
-    if (inString) {
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
+  let parenDepth = 0;
+  let result = false;
+  walkTopLevelChars(s, (ch, i) => {
     if (ch === "(") {
-      depth++;
-      continue;
+      parenDepth++;
+      return false;
     }
     if (ch === ")") {
-      depth--;
-      if (depth === 0) return i === s.length - 1;
+      parenDepth--;
+      // 首个闭到 0 层的 `)` 就是首 `(` 的配对位：配对位即末位 ⇒ 整体包裹
+      if (parenDepth === 0) {
+        result = i === s.length - 1;
+        return true;
+      }
     }
-  }
-  return false;
+    return false;
+  });
+  return result;
 }
 
 /**
@@ -108,28 +109,27 @@ function outerParensWrapAll(s: string): boolean {
  * 表达式结束处的 `//` / `/*` 即尾注释（标识符 / `)` 结尾也算），只排除
  * 「整除」形态（左操作数是数值字面量且 `//` 后紧跟数字）。
  * 返回尾注释起点下标；无 → -1。
+ *
+ * 走串骨架单源：core `walkTopLevelChars`（字符串感知；本函数无深度诉求，
+ * 不读 depth 参数）。命中即回调返回 true 提前终止，下标经闭包带出。
  */
 function findTrailingCommentStart(expr: string): number {
-  let inString: string | null = null;
-  for (let i = 0; i < expr.length; i++) {
-    const ch = expr[i]!;
-    if (inString) {
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
+  let hit = -1;
+  walkTopLevelChars(expr, (ch, i) => {
     if (ch === "/" && (expr[i + 1] === "/" || expr[i + 1] === "*")) {
-      if (!looksLikeDivision(expr, i)) return i;
-      continue;
+      if (!looksLikeDivision(expr, i)) {
+        hit = i;
+        return true;
+      }
+      return false;
     }
     if ((ch === " " || ch === "\t") && /^[ \t]+(?:\/\/|\/\*)/.test(expr.slice(i))) {
-      return i;
+      hit = i;
+      return true;
     }
-  }
-  return -1;
+    return false;
+  });
+  return hit;
 }
 
 /**
@@ -277,24 +277,20 @@ function commentSite(
   };
 }
 
+/**
+ * `@nudo:replace <js-expr> <type-expr>` 的载荷分隔下标（首个**顶层**空白）。
+ * 走串骨架单源：core `findTopLevelChar`（字符串感知 + 括号配平；`\` 不是
+ * 转义——与 case 实参原样 slice 同口径）。类型侧的预筛正则
+ * （CONSTRAINT_EXPR_RE 等）留在 pred 回调里：骨架只管「在哪切」，
+ * 「切完之后是不是类型侧」是本文件的域知识。
+ */
 function findReplaceSeparator(raw: string): number {
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (inString) {
-      // 原样 slice：`\` 不是转义
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") { inString = ch; continue; }
-    if (ch === "(" || ch === "[" || ch === "{") { depth++; continue; }
-    if (ch === ")" || ch === "]" || ch === "}") { depth--; continue; }
-    if (ch === " " && depth === 0) {
-      const rest = raw.slice(i + 1).trimStart();
-      // type side: constraint builders / concrete literals / structure / never
-      if (
-        CONSTRAINT_EXPR_RE.test(rest) ||
+  return findTopLevelChar(raw, (ch, i, depth) => {
+    if (ch !== " " || depth !== 0) return false;
+    const rest = raw.slice(i + 1).trimStart();
+    // type side: constraint builders / concrete literals / structure / never
+    return Boolean(
+      CONSTRAINT_EXPR_RE.test(rest) ||
         rest.startsWith("{") ||
         rest.startsWith("[") ||
         rest.startsWith('"') ||
@@ -308,11 +304,7 @@ function findReplaceSeparator(raw: string): number {
         rest === "never" ||
         /^-?\d+(\.\d+)?$/.test(rest) ||
         rest.includes("=>") ||
-        /^function\s*[\w$]*\s*\(/.test(rest)
-      ) {
-        return i;
-      }
-    }
-  }
-  return -1;
+        /^function\s*[\w$]*\s*\(/.test(rest),
+    );
+  });
 }

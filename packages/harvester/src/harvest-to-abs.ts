@@ -78,15 +78,6 @@ export function harvestedValueToAbs(a: Abs): Abs {
  *   `declare global { … }` 与 script 模式 `.d.ts` 的顶层声明是 **ambient**，
  *   TypeScript 侧不可 import（TS2305 / TS2306）⇒ **不得**进包名键。
  */
-export function harvestToAbsModules(
-  pkg: string,
-  fromDir: string,
-): Record<string, AbsModuleExports> {
-  const h = harvestPackageCached(pkg, fromDir);
-  if (!h) return {};
-  return packageHarvestToAbsModules(pkg, h);
-}
-
 export function packageHarvestToAbsModules(
   pkg: string,
   h: PackageHarvest,

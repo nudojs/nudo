@@ -19,7 +19,7 @@ import {
   SELF,
 } from "@nudojs/core";
 // 字面量助手单源：core/internal 的 absLit（env/harvester/service 测试同源）
-import { absLit, DIAG } from "@nudojs/core/internal";
+import { absLit, DIAG, walkTopLevelChars } from "@nudojs/core/internal";
 import { parse as babelParse } from "../parse.ts";
 import { emitDirectiveDiag } from "./diag.ts";
 import {
@@ -373,28 +373,16 @@ function parseLiteralOrStructure(expr: string, depth: number): Abs {
  *
  * 只用于**深度闸门**的前置判断：超深文本不进入整段 AST 解析（病态输入
  * 不得借解析器打穿宿主栈），直接走 depthCapDiag 的诊断 + unknown 折叠。
+ *
+ * 走串骨架单源：core `walkTopLevelChars`（字符串感知、`\` 不转义——与
+ * expr-scan 的扫描口径一致）；回调里只记全程最大深度。
  */
 function literalNestingDepth(s: string): number {
-  let depth = 0;
   let max = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]!;
-    if (inString) {
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      if (depth > max) max = depth;
-    } else if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-    }
-  }
+  walkTopLevelChars(s, (_ch, _i, depth) => {
+    if (depth > max) max = depth;
+    return false;
+  });
   return max;
 }
 

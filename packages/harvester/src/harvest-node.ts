@@ -314,16 +314,3 @@ export function harvestNodeTypes(
     return result;
   }
 }
-
-/** 把 harvest 结果压成「模块名 → 导出名列表」摘要，便于日志/测试 */
-export function summarizeNodeEnv(env: HarvestedEnv): {
-  modules: string[];
-  globals: string[];
-  symbolCount: number;
-} {
-  return {
-    modules: Object.keys(env.modules).sort(),
-    globals: Object.keys(env.globals).sort().slice(0, 50),
-    symbolCount: env.stats.symbols,
-  };
-}

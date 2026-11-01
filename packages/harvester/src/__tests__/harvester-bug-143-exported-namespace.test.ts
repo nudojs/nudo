@@ -11,7 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Abs } from "@nudojs/core";
 import { dtsFileScan } from "../harvest-package.ts";
-import { harvestToAbsModules } from "../harvest-to-abs.ts";
+import { packageHarvestToAbsModules } from "../harvest-to-abs.ts";
+import { harvestPackageCached } from "../harvest-auto.ts";
+
+/** harvestToAbsModules（已删的便捷薄壳）的等价内联：harvest + 转 Abs 模块表 */
+const modsOf = (pkg: string, dir: string) => {
+  const h = harvestPackageCached(pkg, dir);
+  return h ? packageHarvestToAbsModules(pkg, h) : {};
+};
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -46,7 +53,7 @@ describe("BUG-143 —— export declare namespace 进导出面", () => {
 
   it("包导出表含 Space，且成员 inner 有具体类型", () => {
     const { pkg, dir } = writePkg();
-    const named = harvestToAbsModules(pkg, dir)[pkg]!.named;
+    const named = modsOf(pkg, dir)[pkg]!.named;
     expect(Object.keys(named).sort()).toEqual(["Space", "plain"]);
     const slots = (named.Space as Abs).shape;
     expect(slots.k).toBe("obj");

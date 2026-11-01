@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   harvestNodeTypes,
-  summarizeNodeEnv,
   clearNodeHarvestCache,
   getNodeHarvestCacheSize,
   isHarvestNodeDisabled,
@@ -79,11 +78,11 @@ describe("harvest @types/node productization (B2)", () => {
     // B2：首调可命中磁盘缓存（跨进程）；只要不是 degraded 手写回落即可
     expect(r.degraded).toBeFalsy();
 
-    const s = summarizeNodeEnv(r.env);
-    expect(s.symbolCount).toBeGreaterThan(0);
+    expect(r.env.stats.symbols).toBeGreaterThan(0);
+    const globalNames = Object.keys(r.env.globals);
     const hasUseful =
-      s.globals.some((g) => /process|Buffer|console/i.test(g)) ||
-      s.modules.length > 0;
+      globalNames.some((g) => /process|Buffer|console/i.test(g)) ||
+      Object.keys(r.env.modules).length > 0;
     expect(hasUseful).toBe(true);
 
     // Second call hits in-process cache

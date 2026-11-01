@@ -38,4 +38,3 @@ export const harvestPackageCached = () => unreachable("harvestPackageCached");
 export const clearHarvestCache = () => unreachable("clearHarvestCache");
 export const getHarvestCacheSize = () => unreachable("getHarvestCacheSize");
 export const harvestedValueToAbs = () => unreachable("harvestedValueToAbs");
-export const harvestToAbsModules = () => unreachable("harvestToAbsModules");

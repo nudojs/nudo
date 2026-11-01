@@ -32,7 +32,6 @@ import {
   classInstanceMethods,
   methodFunctionNode,
   paramDisplayName,
-  paramName,
   unwrapDefaultExport,
 } from "../ast-guards.ts";
 
@@ -268,7 +267,7 @@ describe("class members", () => {
   });
 });
 
-describe("paramDisplayName / paramName", () => {
+describe("paramDisplayName", () => {
   it("labels identifiers, rest params, and fallbacks", () => {
     const [s] = stmts("function f(a, ...rest) {}");
     if (s.type !== "FunctionDeclaration") throw new Error("expected fn");
@@ -276,16 +275,12 @@ describe("paramDisplayName / paramName", () => {
     expect(paramDisplayName(a)).toBe("a");
     expect(paramDisplayName(rest)).toBe("...rest");
     expect(paramDisplayName(null)).toBe("_");
-    expect(paramName(a)).toBe("a");
-    expect(paramName(rest)).toBe("rest");
-    expect(paramName(null)).toBeUndefined();
   });
 
   it("keeps historical ...undefined for non-identifier rest arguments", () => {
     const [s] = stmts("function f(...[a]) {}");
     if (s.type !== "FunctionDeclaration") throw new Error("expected fn");
     expect(paramDisplayName(s.params[0])).toBe("...undefined");
-    expect(paramName(s.params[0])).toBeUndefined();
   });
 
   it("labels assignment patterns and other params as _", () => {

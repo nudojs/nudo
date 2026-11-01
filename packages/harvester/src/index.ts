@@ -42,7 +42,6 @@ export {
   depsCacheRoot,
   dtsClosureHash,
   harvestPackageWithDisk,
-  loadHarvestEnvFromDisk,
   readHarvestDisk,
   writeHarvestDisk,
 } from "./harvest-disk.ts";
@@ -58,7 +57,6 @@ export {
 } from "./harvest-json.ts";
 
 export {
-  harvestToAbsModules,
   packageHarvestToAbsModules,
   bareSpecToAbsModules,
   harvestedValueToAbs,
@@ -67,7 +65,6 @@ export {
 export {
   harvestNodeTypes,
   handwrittenNodeEnv,
-  summarizeNodeEnv,
   clearNodeHarvestCache,
   getNodeHarvestCacheSize,
   isHarvestNodeDisabled,

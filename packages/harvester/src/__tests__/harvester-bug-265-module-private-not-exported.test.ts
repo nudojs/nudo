@@ -9,7 +9,14 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { harvestToAbsModules } from "../harvest-to-abs.ts";
+import { packageHarvestToAbsModules } from "../harvest-to-abs.ts";
+import { harvestPackageCached } from "../harvest-auto.ts";
+
+/** harvestToAbsModules（已删的便捷薄壳）的等价内联：harvest + 转 Abs 模块表 */
+const modsOf = (pkg: string, dir: string) => {
+  const h = harvestPackageCached(pkg, dir);
+  return h ? packageHarvestToAbsModules(pkg, h) : {};
+};
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -47,7 +54,7 @@ export * from "some-external-pkg";
 
 function namedOf(dts: string): string[] {
   const { pkg, dir } = writePkg(dts);
-  return Object.keys(harvestToAbsModules(pkg, dir)[pkg]!.named).sort();
+  return Object.keys(modsOf(pkg, dir)[pkg]!.named).sort();
 }
 
 describe("BUG-265 —— 「公开面不可知」回落不得把模块私有声明当导出", () => {

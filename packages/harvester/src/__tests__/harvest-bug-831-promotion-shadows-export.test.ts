@@ -26,7 +26,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatShape, type Abs } from "@nudojs/core";
 import { harvestDts } from "../harvest-dts.ts";
-import { harvestToAbsModules } from "../harvest-to-abs.ts";
+import { packageHarvestToAbsModules } from "../harvest-to-abs.ts";
+import { harvestPackageCached } from "../harvest-auto.ts";
+
+/** harvestToAbsModules（已删的便捷薄壳）的等价内联：harvest + 转 Abs 模块表 */
+const modsOf = (pkg: string, dir: string) => {
+  const h = harvestPackageCached(pkg, dir);
+  return h ? packageHarvestToAbsModules(pkg, h) : {};
+};
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -97,7 +104,7 @@ describe("Bug 831 —— 接口成员提升不得抢真实导出的名字", () =
 export declare const origin: Point;
 `,
     );
-    const mods = harvestToAbsModules(pkg, dir);
+    const mods = modsOf(pkg, dir);
     const named = mods[pkg]?.named ?? {};
     expect(Object.hasOwn(named, "origin")).toBe(true);
     // `size` 只是接口成员 ⇒ TS 侧 import { size } 是 TS2305 ⇒ 不得出现在导出表
@@ -106,7 +113,7 @@ export declare const origin: Point;
 
   it("包的导出表里真实导出不被挤掉（同名接口成员 + 同名函数导出）", () => {
     const { pkg, dir } = writePkg(REAL_LAST);
-    const mods = harvestToAbsModules(pkg, dir);
+    const mods = modsOf(pkg, dir);
     const named = mods[pkg]?.named ?? {};
     expect(Object.hasOwn(named, "x")).toBe(true);
     const x = named.x as Abs | undefined;
@@ -120,7 +127,7 @@ export declare const origin: Point;
 export declare function other(): string;
 `,
     );
-    const mods = harvestToAbsModules(pkg, dir);
+    const mods = modsOf(pkg, dir);
     const named = mods[pkg]?.named ?? {};
     expect(Object.hasOwn(named, "other")).toBe(true);
     expect(Object.hasOwn(named, "origin")).toBe(true);

@@ -935,8 +935,11 @@ function heritageBaseName(expr: ts.ExpressionWithTypeArguments): string | undefi
  * 引擎把 symbol 键投影成 `@@name`（core 口径：`@@iterator` / `@@asyncIterator`）
  * ⇒ 这里对齐。**只认常量形式**：`Symbol.iterator` / `Symbol.asyncIterator` /
  * 字符串字面量；其余（`[key]`、`[foo()]`）不可静态判定 ⇒ undefined（调用方跳过）。
+ *
+ * 单源：草稿面（dts-contract-draft.ts `memberKey` 的计算名分支）消费本函数
+ * ——两侧口径必须一致（Bug 832 在两个面各自修过一次，靠本导出收口）。
  */
-function computedMemberName(name: ts.PropertyName | undefined): string | undefined {
+export function computedMemberName(name: ts.PropertyName | undefined): string | undefined {
   if (!name || !ts.isComputedPropertyName(name)) return undefined;
   const expr = name.expression;
   if (

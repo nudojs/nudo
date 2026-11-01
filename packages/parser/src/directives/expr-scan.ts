@@ -12,6 +12,14 @@ import { parse as babelParse } from "../parse.ts";
 // 转义感知 `scanStringLiteral` 刻意相反，见其头注释）。
 export { splitTopLevelArgs, findTopLevelColon } from "@nudojs/core/internal";
 
+/**
+ * 顶层 `=>` 下标（mock 载荷 / sinon callsFake / case 实参的函数表达式切分）。
+ *
+ * **不走** core `walkTopLevelChars` 骨架：本函数是**转义感知**口径（引号内
+ * `\` 跳过下一字符——mock 载荷是真实 JS 源码片段，可含 `"\\"` / `"a\"b"`），
+ * 与 text-scan 骨架的「`\` 不是转义」刻意相反（同 `string-literal.ts` 的
+ * `scanStringLiteral`，见文件头注释）。
+ */
 export function findTopLevelArrow(s: string): number {
   let depth = 0;
   let inString: string | null = null;

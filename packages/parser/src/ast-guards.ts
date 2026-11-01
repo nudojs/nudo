@@ -280,13 +280,6 @@ export function paramDisplayName(param: Node | null | undefined): string {
   return "_";
 }
 
-/** RestElement argument name, else plain Identifier name. */
-export function paramName(param: Node | null | undefined): string | undefined {
-  if (!param) return undefined;
-  if (param.type === "Identifier") return param.name;
-  if (param.type === "RestElement") return identifierName(param.argument as Node);
-  return undefined;
-}
 
 /** CJS/ESM default interop: callable module or `{ default }` wrapper. */
 export function unwrapDefaultExport<T>(mod: T | { default: T }): T {

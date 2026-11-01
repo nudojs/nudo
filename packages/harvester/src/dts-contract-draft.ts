@@ -26,6 +26,7 @@ import {
   isJsBindingIdent,
   toJsBindingIdent,
 } from "@nudojs/core/internal";
+import { computedMemberName } from "./harvest-dts.ts";
 
 export type DtsExportDraft = {
   name: string;
@@ -191,7 +192,8 @@ function typeRefName(node: ts.TypeReferenceNode): string {
  *
  * Bug 832 同款（草稿面）：计算成员名此前**整条丢弃**（返回 `undefined`）⇒
  * `[Symbol.iterator]()` 这类成员在草稿里消失 ⇒ 契约被悄悄放宽（假绿）。
- * 现在按**收割面同口径**（harvest-dts.ts `computedMemberName`）：
+ * 现在按**收割面同口径**（harvest-dts.ts `computedMemberName`，直接消费单源
+ * ——不是复刻）：
  * - `Symbol.iterator` → `@@iterator`（引擎的 symbol 槽名，与收割面同一个名字）
  * - `Symbol.asyncIterator` → `@@asyncIterator`
  * - 计算键的字符串字面量 → 该字面量文本
@@ -203,21 +205,8 @@ function memberKey(name: ts.PropertyName | undefined): string | undefined {
   if (!name) return undefined;
   if (ts.isIdentifier(name)) return name.text;
   if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
-  if (ts.isComputedPropertyName(name)) {
-    const expr = name.expression;
-    if (
-      ts.isPropertyAccessExpression(expr) &&
-      ts.isIdentifier(expr.expression) &&
-      expr.expression.text === "Symbol"
-    ) {
-      if (expr.name.text === "iterator") return "@@iterator";
-      if (expr.name.text === "asyncIterator") return "@@asyncIterator";
-      return undefined;
-    }
-    if (ts.isStringLiteral(expr)) return expr.text;
-    return undefined;
-  }
-  return undefined;
+  // 计算名分支：收割面单源（Bug 832 两面各修一次的收口点）
+  return computedMemberName(name);
 }
 
 /**

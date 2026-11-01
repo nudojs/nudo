@@ -34,7 +34,6 @@ export {
   classInstanceMethods,
   methodFunctionNode,
   paramDisplayName,
-  paramName,
   unwrapDefaultExport,
   type InstanceMethod,
 } from "./ast-guards.ts";

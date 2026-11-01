@@ -194,15 +194,3 @@ export function harvestPackageWithDisk(
   }
   return h;
 }
-
-/** 从磁盘 materialize（不跑 harvestDts）；键需调用方自算 */
-export function loadHarvestEnvFromDisk(
-  pkg: string,
-  meta: { dtsHash: string; maxFiles: number; pkgVersion?: string },
-): HarvestedEnv | null {
-  const root = depsCacheRoot();
-  if (!root) return null;
-  const key = harvestCacheKey(pkg, meta);
-  const hit = readHarvestDisk(root, key);
-  return hit ? materializeHarvestJson(hit) : null;
-}

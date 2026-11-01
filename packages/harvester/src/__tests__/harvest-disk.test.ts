@@ -19,7 +19,6 @@ import {
   dtsClosureHash,
   dtsClosureHashDetailed,
   harvestPackageWithDisk,
-  loadHarvestEnvFromDisk,
 } from "../harvest-disk.ts";
 
 // 异常上抛回归的可控注入 seam：默认透传原实现
@@ -179,7 +178,7 @@ describe("L2 harvest disk layer", () => {
     expect(hit).toBeDefined();
     expect(hit!.modules.path!.join!.k).toBe("fn");
 
-    const env = loadHarvestEnvFromDisk("path", { dtsHash: "x", maxFiles: 8 });
+    const env = materializeHarvestJson(readHarvestDisk(root, key));
     expect(env).not.toBeNull();
     expect(env!.modules.path!.join!.shape.k).toBe("fn");
   });

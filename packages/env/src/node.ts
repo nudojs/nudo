@@ -20,7 +20,6 @@ import {
   envFn,
   envFnVariadic,
   errBrand,
-  eventInstanceSlots,
   nullLit,
   objAbs,
   openObjBrand,
@@ -33,6 +32,23 @@ import {
   type Slot,
 } from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
+import {
+  whatwgAsyncDisposableStackCtorGlobal,
+  whatwgBlobCtorGlobal,
+  whatwgBroadcastChannelCtorGlobal,
+  whatwgCustomEventCtorGlobal,
+  whatwgDisposableStackCtorGlobal,
+  whatwgEventCtorGlobal,
+  whatwgEventTargetCtorGlobal,
+  whatwgEventTargetSlots,
+  whatwgFormDataCtorGlobal,
+  whatwgIteratorOf,
+  whatwgPerformanceEntrySlots,
+  whatwgReadableStreamByobReaderCtorGlobal,
+  whatwgReadableStreamDefaultReaderCtorGlobal,
+  whatwgUrlPatternCtorGlobal,
+  whatwgWritableStreamDefaultWriterCtorGlobal,
+} from "./whatwg.ts";
 import nodePath from "node:path";
 import { getCiphers as nodeGetCiphers, getHashes as nodeGetHashes } from "node:crypto";
 import { fileURLToPath as nodeFileURLToPath, pathToFileURL as nodePathToFileURL } from "node:url";
@@ -153,13 +169,6 @@ export function defineEnv(): EnvDefinition {
     envFnVariadic(anyParam, undef(), { restName: "...args" }),
   );
 
-  const streamOptions = objAbs({
-    highWaterMark: { value: prim.num(), optional: true },
-    objectMode: { value: prim.bool(), optional: true },
-    encoding: { value: prim.str(), optional: true },
-    autoDestroy: { value: prim.bool(), optional: true },
-    emitClose: { value: prim.bool(), optional: true },
-  });
   /** 流实例 I/O 方法（Readable/Writable/Duplex/Transform/ChildProcess.stdio 共用） */
   const streamIoMethods = {
     on: envFn([prim.str(), callbackFnBrand], brandOf("Stream")),
@@ -2383,53 +2392,39 @@ function assertRegexpPattern(
       ...(opts?.slots ? { slots: opts.slots } : {}),
     });
 
-  /** EventTarget 面（EventTarget / AbortSignal / MessagePort 共用） */
-  const eventTargetSlots = {
-    addEventListener: envFn([prim.str(), callbackFnBrand], undef(), undefined, {
-      params: ["type", "listener"],
-    }),
-    removeEventListener: envFn([prim.str(), callbackFnBrand], undef(), undefined, {
-      params: ["type", "listener"],
-    }),
-    dispatchEvent: envFn([prim.unknown], prim.bool()),
-  };
+  /**
+   * EventTarget 面（EventTarget / AbortSignal / MessagePort 共用）——单源
+   * whatwg.ts `whatwgEventTargetSlots`（node 侧注入 `callbackFnBrand` 监听器
+   * 形参与 `["type", "listener"]` 标签；web 侧传 `prim.unknown` 无标签）。
+   */
+  const eventTargetSlots = whatwgEventTargetSlots(callbackFnBrand, ["type", "listener"]);
 
   /**
-   * `Event` 实例面——`Event` 与 `CustomEvent` **共用**（DOM：
-   * `CustomEvent : Event`，成员**继承**）。槽表与 web env 共享
-   * （abs-helpers `eventInstanceSlots`，web 版 canonical：`target` /
-   * `currentTarget` = `EventTarget | null` 的 may-null 面保留——旧 node
-   * 表裸 `prim.unknown` 是漂移）。
-   *
-   * 族 15 · BUG-148：`CustomEvent` 的 brand 内层只列了 5 个槽
-   * （`type` / `detail` / `bubbles` / `cancelable` / `defaultPrevented`）
-   * ⇒ `new CustomEvent("t").preventDefault()` / `.timeStamp` 读出
-   * **exact `undefined`** ⇒ 判「确定抛 TypeError」（L2 假红）；而同文件的
-   * `Event` 面是全的 ⇒ **表内不自洽**。
+   * `Event` / `CustomEvent` 实例面与构造器全局**单源在 whatwg.ts**（Event 槽表
+   * canonical 在 abs-helpers `eventInstanceSlots`：`target` / `currentTarget`
+   * = `EventTarget | null` 的 may-null 面保留；族 15 · BUG-148 的反面钉——
+   * CustomEvent 品牌不得只列部分槽，否则成员读出 exact undefined ⇒ 假红）。
    */
-  const eventSlots = eventInstanceSlots();
 
   /**
-   * 迭代器面（族 15 · BUG-154）：WHATWG 的 `Headers.keys/values/entries()` 与
-   * `FormData.keys/values/entries()` 返回**迭代器**（`Iterator`），**不是数组**。
-   *
-   * - 旧 node 面声明成 `arrOf(...)` ⇒ `Array.isArray(h.keys())` 被折成
-   *   **`true`**（宿主 `false`）、`k.length` 折成 `number`（宿主 `undefined`）
-   *   ⇒ **自信的错值**（假绿）；
-   * - 旧 web 面声明成 `prim.unknown` ⇒ 可迭代性分类落 "may" ⇒
-   *   `[...h.keys()]` 记 may-throw TypeError（假红）。
-   *
-   * 迭代器面 = **带 `@@iterator` 槽的 obj**：core 的 `iterabilityKind`
-   * 对「有 `@@iterator` 槽的闭 obj」判 **total**（可迭代、不抛），
-   * 且 `Array.isArray` 为 false、`length` 不可得 ⇒ 与宿主一致。
+   * 迭代器面（族 15 · BUG-154）：**单源在 whatwg.ts**（`whatwgIteratorOf`）。
+   * WHATWG 的 `Headers.keys/values/entries()` 与 `FormData.keys/values/
+   * entries()` 返回**迭代器**（`Iterator`），**不是数组**——旧 node 面声明成
+   * `arrOf(...)` ⇒ `Array.isArray(h.keys())` 被折成 **`true`**（宿主
+   * `false`）⇒ **自信的错值**（假绿）；旧 web 面声明成 `prim.unknown` ⇒
+   * 可迭代性分类落 "may" ⇒ `[...h.keys()]` 记 may-throw TypeError（假红）。
+   * 迭代器面 = 带 `@@iterator` 槽的闭 obj：core 的 `iterabilityKind` 判
+   * **total**（可迭代、不抛），`Array.isArray` 为 false ⇒ 与宿主一致。
    */
-  const iteratorOf = (element: Abs): Abs =>
-    objAbs({
-      next: envFn([], objAbs({ value: element, done: prim.bool() })),
-      "@@iterator": envFn([], prim.unknown),
-    });
+  const iteratorOf = whatwgIteratorOf;
 
-  /** 流面（ReadableStream / WritableStream / TransformStream 家族） */
+  /**
+   * 流面（ReadableStream / WritableStream / TransformStream 家族）。
+   * ⚠️ 与 web env 的 `streamInstanceSlots` **刻意分叉**（不并入 whatwg.ts）：
+   * 本表是品牌精确面（pipeThrough/pipeTo/tee 带 brand、有 `values`），web
+   * 面是宽面（unknown 形参/返回、带 `write`）——同一标准 API 的两种精度
+   * 取舍。reader / writer 三件套已单源（whatwg.ts）。
+   */
   const streamSlots = {
     locked: prim.bool(),
     cancel: envFn([prim.unknown], undef()),
@@ -2717,28 +2712,12 @@ function assertRegexpPattern(
 
   const nodePlatformGlobals: Record<string, Abs> = {
     // ── Event 族 ───────────────────────────────────────────────
-    EventTarget: ctorOf(
-      "EventTarget",
-      [],
-      brandOf("EventTarget", objAbs(eventTargetSlots)),
-      { params: [] },
-    ),
-    Event: ctorOf(
-      "Event",
-      [prim.str(), prim.unknown],
-      brandOf("Event", objAbs(eventSlots)),
-      { params: ["type", "options?"] },
-    ),
-    CustomEvent: ctorOf(
-      "CustomEvent",
-      [prim.str(), prim.unknown],
-      brandOf(
-        "CustomEvent",
-        // DOM `CustomEvent : Event` —— 继承面 + `detail`（BUG-148）
-        objAbs({ ...eventSlots, detail: prim.unknown }),
-      ),
-      { params: ["type", "options?"] },
-    ),
+    // EventTarget / Event / CustomEvent 构造器全局**单源在 whatwg.ts**
+    // （node 侧注入 callbackFnBrand 监听器形参与 type/options? 标签；
+    // Event 槽表 canonical 在 abs-helpers `eventInstanceSlots`）。
+    EventTarget: whatwgEventTargetCtorGlobal(callbackFnBrand, ["type", "listener"]),
+    Event: whatwgEventCtorGlobal(["type", "options?"]),
+    CustomEvent: whatwgCustomEventCtorGlobal(["type", "options?"]),
     MessageEvent: ctorOf(
       "MessageEvent",
       [prim.str(), prim.unknown],
@@ -2829,6 +2808,9 @@ function assertRegexpPattern(
     ),
 
     // ── Abort 族 ───────────────────────────────────────────────
+    // 刻意不并入 whatwg.ts：node 侧 signal 是 AbortSignal 品牌实例面
+    //（aborted/reason/throwIfAborted + EventTarget 继承）、静态工厂返回
+    // 品牌；web 侧 signal 槽是 unknown、静态面宽 unknown——精度刻意分叉。
     AbortController: ctorOf(
       "AbortController",
       [],
@@ -2879,23 +2861,9 @@ function assertRegexpPattern(
     ),
 
     // ── Blob / File ────────────────────────────────────────────
-    Blob: ctorOf(
-      "Blob",
-      [arrOf(prim.unknown), prim.unknown],
-      brandOf(
-        "Blob",
-        objAbs({
-          type: prim.str(),
-          size: prim.num(),
-          slice: envFn([prim.num(), prim.num(), prim.str()], brandOf("Blob")),
-          arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
-          text: envFn([], promiseOf(prim.str())),
-          bytes: envFn([], promiseOf(arrOf(prim.num()))),
-          stream: envFn([], brandOf("ReadableStream")),
-        }),
-      ),
-      { params: ["parts", "options?"] },
-    ),
+    // Blob 构造器全局单源在 whatwg.ts（两侧逐字节同构）；File 是 node 专有
+    // 全局（web env 未声明），留本表。
+    Blob: whatwgBlobCtorGlobal(),
     File: ctorOf(
       "File",
       [arrOf(prim.unknown), prim.str(), prim.unknown],
@@ -3030,23 +2998,12 @@ function assertRegexpPattern(
     ),
 
     // ── 通道 族 ───────────────────────────────────────────────
-    BroadcastChannel: ctorOf(
-      "BroadcastChannel",
-      [prim.str()],
-      brandOf(
-        "BroadcastChannel",
-        objAbs({
-          name: prim.str(),
-          onmessage: prim.unknown,
-          onmessageerror: prim.unknown,
-          postMessage: envFn([prim.unknown], undef()),
-          close: envFn([], undef()),
-          ref: envFn([], undef()),
-          unref: envFn([], undef()),
-        }),
-      ),
-      { params: ["name"] },
-    ),
+    // 基底单源 whatwg.ts；node 通过尾部追加注入 ref/unref（node 生命周期
+    // API，浏览器无——宿主实测 `bc.ref()` / `bc.unref()` 存在）。
+    BroadcastChannel: whatwgBroadcastChannelCtorGlobal({
+      ref: envFn([], undef()),
+      unref: envFn([], undef()),
+    }),
     MessageChannel: ctorOf(
       "MessageChannel",
       [],
@@ -3104,6 +3061,10 @@ function assertRegexpPattern(
     ),
 
     // ── Fetch 族 ──────────────────────────────────────────────
+    // ⚠️ Headers 刻意**不并入** whatwg.ts：与 web env 的 Headers 三处分叉
+    //（forEach 形参 `callbackFnBrand` vs `prim.unknown`；槽序 keys/values/
+    // entries/forEach vs forEach/entries/keys/values——formatShape 按插入序
+    // 渲染；ctor 形参标签 `init?` vs 缺省）。共享面见 whatwg.ts 头注释。
     Headers: ctorOf(
       "Headers",
       [prim.unknown],
@@ -3128,27 +3089,12 @@ function assertRegexpPattern(
       ),
       { params: ["init?"] },
     ),
-    FormData: ctorOf(
-      "FormData",
-      [prim.unknown],
-      brandOf(
-        "FormData",
-        objAbs({
-          append: envFn([prim.str(), prim.unknown], undef()),
-          delete: envFn([prim.str()], undef()),
-          get: envFn([prim.str()], prim.unknown),
-          getAll: envFn([prim.str()], arrOf(prim.unknown)),
-          has: envFn([prim.str()], prim.bool()),
-          set: envFn([prim.str(), prim.unknown], undef()),
-          // BUG-154：迭代器面（不是数组，见 Headers 同段说明）。
-          keys: envFn([], iteratorOf(prim.str())),
-          values: envFn([], iteratorOf(prim.unknown)),
-          entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.unknown]))),
-          forEach: envFn([callbackFnBrand], undef()),
-        }),
-      ),
-      { params: ["form?"] },
-    ),
+    // FormData 基底单源 whatwg.ts（注入 callbackFnBrand 的 forEach 形参）。
+    FormData: whatwgFormDataCtorGlobal(callbackFnBrand),
+    // Request / Response 刻意不并入 whatwg.ts：node 侧是品牌静态工厂面
+    //（Response.json 同步返回实例面，Bug 1044；body 读取族无 reason 面），
+    // web 侧 body 读取族带 TypeError 拒绝 reason + Headers 全槽面——值域
+    // 刻意分叉（web 的 Response 由 bodyReadSlots 组装）。
     Request: ctorOf(
       "Request",
       [prim.unknown, prim.unknown],
@@ -3216,27 +3162,8 @@ function assertRegexpPattern(
     ),
 
     // ── URL / WebSocket / Storage ─────────────────────────────
-    URLPattern: ctorOf(
-      "URLPattern",
-      [prim.unknown, prim.str()],
-      brandOf(
-        "URLPattern",
-        objAbs({
-          protocol: prim.str(),
-          username: prim.str(),
-          password: prim.str(),
-          hostname: prim.str(),
-          port: prim.str(),
-          pathname: prim.str(),
-          search: prim.str(),
-          hash: prim.str(),
-          hasRegExpGroups: prim.bool(),
-          exec: envFn([prim.unknown], prim.unknown),
-          test: envFn([prim.unknown], prim.bool()),
-        }),
-      ),
-      { params: ["input?", "baseURL?"] },
-    ),
+    // URLPattern 构造器全局单源 whatwg.ts（两侧逐字节同构）。
+    URLPattern: whatwgUrlPatternCtorGlobal(),
     WebSocket: ctorOf(
       "WebSocket",
       [prim.str(), prim.unknown],
@@ -3313,19 +3240,16 @@ function assertRegexpPattern(
       "Performance",
       brandOf("Performance", performanceObj),
     ),
+    // 5 槽基表（name/entryType/startTime/duration/toJSON）单源
+    // whatwg.ts `whatwgPerformanceEntrySlots`（web 的 performance.mark/
+    // measure 与 PerformanceMark ctor 消费同一张表）。
     PerformanceEntry: nonCtorOf(
       "PerformanceEntry",
-      brandOf(
-        "PerformanceEntry",
-        objAbs({
-          name: prim.str(),
-          entryType: prim.str(),
-          startTime: prim.num(),
-          duration: prim.num(),
-          toJSON: envFn([], prim.unknown),
-        }),
-      ),
+      brandOf("PerformanceEntry", objAbs(whatwgPerformanceEntrySlots())),
     ),
+    // PerformanceMark / PerformanceMeasure 刻意**不并入** whatwg.ts：`detail`
+    // 槽在本表里位于 toJSON **之前**（web 侧展开序 detail 在尾）——
+    // formatShape 按插入序渲染，spread 后覆写不改变原键位，故保留内联表。
     PerformanceMark: ctorOf(
       "PerformanceMark",
       [prim.str(), prim.unknown],
@@ -3382,53 +3306,22 @@ function assertRegexpPattern(
     ),
     PerformanceResourceTiming: nonCtorOf(
       "PerformanceResourceTiming",
-      brandOf(
-        "PerformanceResourceTiming",
-        objAbs({
-          name: prim.str(),
-          entryType: prim.str(),
-          startTime: prim.num(),
-          duration: prim.num(),
-          toJSON: envFn([], prim.unknown),
-        }),
-      ),
+      brandOf("PerformanceResourceTiming", objAbs(whatwgPerformanceEntrySlots())),
     ),
 
     // ── 显式资源管理 ──────────────────────────────────────────
-    DisposableStack: ctorOf(
-      "DisposableStack",
-      [prim.unknown],
-      brandOf(
-        "DisposableStack",
-        objAbs({
-          use: envFn([prim.unknown], prim.unknown),
-          adopt: envFn([prim.unknown, prim.unknown], prim.unknown),
-          defer: envFn([prim.unknown], undef()),
-          move: envFn([], brandOf("DisposableStack")),
-          dispose: envFn([], undef()),
-          disposed: prim.bool(),
-        }),
-      ),
-      { params: ["options?"] },
-    ),
-    AsyncDisposableStack: ctorOf(
-      "AsyncDisposableStack",
-      [prim.unknown],
-      brandOf(
-        "AsyncDisposableStack",
-        objAbs({
-          use: envFn([prim.unknown], prim.unknown),
-          adopt: envFn([prim.unknown, prim.unknown], prim.unknown),
-          defer: envFn([prim.unknown], undef()),
-          move: envFn([], brandOf("AsyncDisposableStack")),
-          disposeAsync: envFn([], promiseOf(prim.unknown)),
-          disposed: prim.bool(),
-        }),
-      ),
-      { params: ["options?"] },
-    ),
+    // DisposableStack / AsyncDisposableStack 构造器全局单源 whatwg.ts
+    // （两侧逐字节同构）。
+    DisposableStack: whatwgDisposableStackCtorGlobal(),
+
+    AsyncDisposableStack: whatwgAsyncDisposableStackCtorGlobal(),
 
     // ── 全局对象（宿主全局上的对象，不是构造器）────────────────
+    // crypto / performance / navigator / localStorage 刻意不并入 whatwg.ts：
+    // node 侧是 SubtleCrypto 品牌面（族 61 webcrypto 同源）、perf_hooks 超集
+    //（eventLoopUtilization / nodeTiming / timerify）、--localstorage-file
+    // 才可用（union undefined 面）——与 web 侧的规范面值域刻意分叉，见各
+    // 声明处注释与 web.ts 的对侧注释。
     crypto: objAbs({
       randomUUID: envFn([], prim.str()),
       getRandomValues: getRandomValuesFn(),
@@ -3504,7 +3397,9 @@ function assertRegexpPattern(
       ),
     }),
     // fetch：返回 Promise<Response>（宿主路径会因「宿主副作用」被拦截成
-    // opaque unknown；声明面更贴近原生且不产生真实网络副作用）
+    // opaque unknown；声明面更贴近原生且不产生真实网络副作用）。
+    // 刻意不并入 whatwg.ts：web 侧 fetch 的参数是 string|Request、拒绝
+    // reason 是 TypeError ∪ AbortError（族 62 Bug 890）——值域刻意分叉。
     fetch: envFn(
       [unionOf(prim.str(), prim.unknown), prim.unknown],
       promiseOf(brandOf("Response")),
@@ -3547,51 +3442,13 @@ function assertRegexpPattern(
     ),
 
     // ── 流 的 reader / writer / controller（宿主全局上的类）────
-    ReadableStreamDefaultReader: ctorOf(
-      "ReadableStreamDefaultReader",
-      [brandOf("ReadableStream")],
-      brandOf(
-        "ReadableStreamDefaultReader",
-        objAbs({
-          closed: promiseOf(prim.unknown),
-          read: envFn([], promiseOf(prim.unknown)),
-          cancel: envFn([prim.unknown], promiseOf(prim.unknown)),
-          releaseLock: envFn([], undef()),
-        }),
-      ),
-      { params: ["stream"] },
-    ),
-    ReadableStreamBYOBReader: ctorOf(
-      "ReadableStreamBYOBReader",
-      [brandOf("ReadableStream")],
-      brandOf(
-        "ReadableStreamBYOBReader",
-        objAbs({
-          closed: promiseOf(prim.unknown),
-          read: envFn([arrOf(prim.num())], promiseOf(prim.unknown)),
-          cancel: envFn([prim.unknown], promiseOf(prim.unknown)),
-          releaseLock: envFn([], undef()),
-        }),
-      ),
-      { params: ["stream"] },
-    ),
-    WritableStreamDefaultWriter: ctorOf(
-      "WritableStreamDefaultWriter",
-      [brandOf("WritableStream")],
-      brandOf(
-        "WritableStreamDefaultWriter",
-        objAbs({
-          closed: promiseOf(prim.unknown),
-          desiredSize: prim.num(),
-          ready: promiseOf(prim.unknown),
-          write: envFn([prim.unknown], promiseOf(prim.unknown)),
-          close: envFn([], promiseOf(prim.unknown)),
-          abort: envFn([prim.unknown], promiseOf(prim.unknown)),
-          releaseLock: envFn([], undef()),
-        }),
-      ),
-      { params: ["stream"] },
-    ),
+    // reader / writer 三件套单源 whatwg.ts（两侧逐字节同构）；controller
+    // 四件套是 Illegal constructor（node 专有声明，web env 未列）。
+    ReadableStreamDefaultReader: whatwgReadableStreamDefaultReaderCtorGlobal(),
+
+    ReadableStreamBYOBReader: whatwgReadableStreamByobReaderCtorGlobal(),
+
+    WritableStreamDefaultWriter: whatwgWritableStreamDefaultWriterCtorGlobal(),
     // 四个 controller / request 原生**不可**构造（Illegal constructor）
     ReadableStreamDefaultController: nonCtorOf(
       "ReadableStreamDefaultController",
@@ -3847,6 +3704,9 @@ function assertRegexpPattern(
     __dirname: prim.str(),
     __filename: prim.str(),
 
+    // setTimeout 族刻意不并入 whatwg.ts：node 返回 `Timeout` 品牌（句柄是
+    // 对象，ref/unref 可用）、首参 callbackFnBrand；web 返回 number——宿主
+    // 真值不同。
     setTimeout: envFn([callbackFnBrand, prim.num(), anyParam], brandOf("Timeout"), undefined, {
       params: ["callback", "ms", "...args"],
     }),
