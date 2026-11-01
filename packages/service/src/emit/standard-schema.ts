@@ -33,6 +33,8 @@ import type { Abs, FormalParam } from "@nudojs/core";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import {
   absToSchemaNode,
+  isRuntimeGlobalCtorName,
+  RUNTIME_GLOBAL_CTOR_NAME_LIST,
   safeExportIdent,
   type SchemaNode,
   type SchemaRefinement,
@@ -62,26 +64,18 @@ function typeOf(v: unknown): string {
 }
 
 /**
- * 全局构造器 brand 名单 —— 与 zod 面（`schema-generator.ts` 的
- * `RUNTIME_GLOBAL_CTOR_NAMES`）**同名单**：只有这些 brand 有可靠的运行时判据
- * （`value instanceof Ctor`）；其余 brand（用户类 / GeneratorFunction / …）
- * 没有运行时判据 ⇒ 放行（`schema-generator` 已把它们降级为 `unknown` 并记
- * `dropped`，standard 面看不到它们）。
+ * 全局构造器 brand 名单 —— **单一源**是 zod 面（`schema-generator.ts` 的
+ * `RUNTIME_GLOBAL_CTOR_NAME_LIST` / 谓词 `isRuntimeGlobalCtorName`，族 15 S11 的
+ * zod 白名单同源）：只有这些 brand 有可靠的运行时判据（`value instanceof
+ * Ctor`）；其余 brand（用户类 / GeneratorFunction / …）没有运行时判据 ⇒ 放行
+ * （`schema-generator` 已把它们降级为 `unknown` 并记 `dropped`，standard 面
+ * 看不到它们）。**成员判定一律走谓词**，不得重建本地 Set。
+ *
+ * 内联校验器源码（`CHECK_FN_SOURCE`）把同一份名单整表序列化进产物——产物是
+ * 零依赖独立模块，判据名单必须嵌进产物本身（谓词带不进去），故直接复用
+ * `RUNTIME_GLOBAL_CTOR_NAME_LIST`（zod / standard 两面同源，Bug 531 不会两面
+ * 相反裁决）。
  */
-const GLOBAL_BRAND_CTOR_NAMES: ReadonlyArray<string> = [
-  "Array", "Object", "Function", "Boolean", "Number", "String", "Symbol", "BigInt",
-  "Date", "RegExp",
-  "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
-  "TypeError", "URIError", "AggregateError",
-  "Map", "Set", "WeakMap", "WeakSet", "WeakRef", "FinalizationRegistry",
-  "Promise",
-  "ArrayBuffer", "SharedArrayBuffer", "DataView",
-  "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
-  "Int32Array", "Uint32Array", "Float32Array", "Float64Array",
-  "BigInt64Array", "BigUint64Array",
-  "URL", "URLSearchParams", "TextEncoder", "TextDecoder",
-];
-const GLOBAL_BRAND_CTOR_NAME_SET: ReadonlySet<string> = new Set(GLOBAL_BRAND_CTOR_NAMES);
 
 /**
  * brand 判据：可判定（全局构造器）⇒ `value instanceof Ctor`；
@@ -89,7 +83,7 @@ const GLOBAL_BRAND_CTOR_NAME_SET: ReadonlySet<string> = new Set(GLOBAL_BRAND_CTO
  * **不抛**：非构造器（`instanceof` 的右值不可调用）也放行。
  */
 function isBrandInstance(name: string, value: unknown): boolean {
-  if (!GLOBAL_BRAND_CTOR_NAME_SET.has(name)) return true;
+  if (!isRuntimeGlobalCtorName(name)) return true;
   const ctor = (globalThis as unknown as Record<string, unknown>)[name];
   if (typeof ctor !== "function") return true;
   try {
@@ -399,7 +393,7 @@ function __nudoTypeOf(v: unknown): string {
 }
 // 全局构造器 brand 名单（与库函数版 GLOBAL_BRAND_CTOR_NAMES 同名单）——
 // 只有这些 brand 有可靠的运行时判据（instanceof），其余放行。
-const __nudoBrandCtors = ${JSON.stringify(GLOBAL_BRAND_CTOR_NAMES)};
+const __nudoBrandCtors = ${JSON.stringify(RUNTIME_GLOBAL_CTOR_NAME_LIST)};
 // 全局作用域（按名查构造器；该运行时没有此全局 ⇒ 放行）。
 const __nudoGlobalScope = (typeof globalThis !== "undefined" ? globalThis : {}) as unknown as Record<string, unknown>;
 // 值的安全描述：不抛、且不丢非有限数值（JSON.stringify 会把 Infinity 写成 null）。

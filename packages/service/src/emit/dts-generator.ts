@@ -2048,20 +2048,12 @@ export function generateDts(result: AnalysisResult): string {
 // 导出面必须与源模块一致，否则消费方 import 直接 TS2305。
 // ---------------------------------------------------------------------------
 
-/** 类声明面（源码形状：成员名 + 构造器形参） */
-export interface DtsClassSurface {
-  /** 导出名（未导出 ⇒ undefined；`export default class C` ⇒ "default"） */
-  exportName?: string;
-  /**
-   * BUG-189：**全部**导出名（具名导出优先，其后的别名 / default 逐条补发）。
-   *
-   * 同一个本地绑定可以同时是具名导出与 default 导出
-   * （`export class C {}` + `export { C as default }`）——旧实现只留一个名字
-   * ⇒ 发布的 `.d.ts` 缺 default 导出 ⇒ 消费端 default import 报 TS2349/TS2351。
-   */
-  exportNames?: string[];
-  /** 导出形态是 default（`export default class C`） */
-  isDefault: boolean;
+/**
+ * 类**成员面**（源码形状：成员名 + 构造器形参）——`scanClassSurface` 的返回面，
+ * 只描述类体本身、不含导出形态；`DtsClassSurface` 在其上叠加导出三件套
+ * （exportName / exportNames / isDefault）。
+ */
+export interface DtsClassMemberSurface {
   /** 实例方法（名 + 形参名，源码序） */
   instanceMethods: Array<{ name: string; params: string[] }>;
   /** 静态方法（名 + 形参名，源码序） */
@@ -2091,6 +2083,22 @@ export interface DtsClassSurface {
    * string / boolean，其余 `unknown`——声明面有字段但类型不猜）。
    */
   instanceFields?: Array<{ name: string; type: string }>;
+}
+
+/** 类声明面（成员面 + 导出形态） */
+export interface DtsClassSurface extends DtsClassMemberSurface {
+  /** 导出名（未导出 ⇒ undefined；`export default class C` ⇒ "default"） */
+  exportName?: string;
+  /**
+   * BUG-189：**全部**导出名（具名导出优先，其后的别名 / default 逐条补发）。
+   *
+   * 同一个本地绑定可以同时是具名导出与 default 导出
+   * （`export class C {}` + `export { C as default }`）——旧实现只留一个名字
+   * ⇒ 发布的 `.d.ts` 缺 default 导出 ⇒ 消费端 default import 报 TS2349/TS2351。
+   */
+  exportNames?: string[];
+  /** 导出形态是 default（`export default class C`） */
+  isDefault: boolean;
 }
 
 /**
@@ -2222,14 +2230,7 @@ function surfaceMemberFn(member: SurfaceNode): SurfaceNode {
 function scanClassSurface(
   decl: SurfaceNode,
   isResolvable: (name: string) => boolean = () => false,
-): {
-  instanceMethods: Array<{ name: string; params: string[] }>;
-  staticMethods: Array<{ name: string; params: string[] }>;
-  ctorParams?: string[];
-  typeParams?: string[];
-  superClass?: string;
-  instanceFields?: Array<{ name: string; type: string }>;
-} {
+): DtsClassMemberSurface {
   const body = (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
   // BUG-168：源码声明的类型形参名（`class Box<T, U>`）——产物必须有类型形参槽，
   // 否则消费端 `new Box<string>(…)` 报 TS2558。

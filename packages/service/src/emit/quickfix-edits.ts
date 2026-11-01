@@ -530,6 +530,32 @@ export type MaterializeInput = {
 };
 
 /**
+ * 相对说明符解析的共享基底（service quickfix 面 ↔ lsp 侧车面共用；
+ * 此前 lsp 侧留逐字拷贝且已漂移——Bug 源）。
+ *
+ * 注意与 lsp `resolveRelativeModule`（symbols.ts）不同：这里**不做扩展名
+ * 探测**，只把 `./x` / `../y` 相对 from 文件解析成规范化 posix 路径
+ * （供「说明符 === 侧车路径」的等值比较用）。
+ */
+
+/** posix 化（`\` → `/`）——等值比较前先统一分隔符 */
+export function normPosixPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/** 相对说明符 → 相对 from 文件的规范化 posix 路径；非相对说明符 → undefined */
+export function resolveRelativeSpec(from: string, spec: string): string | undefined {
+  if (!spec.startsWith(".")) return undefined;
+  const parts = normPosixPath(from).split("/").slice(0, -1);
+  for (const seg of normPosixPath(spec).split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+/**
  * 侧车契约验证底座：把合成侧车作为**唯一**侧车来源重跑 checkSource。
  *
  * 侧车路径的相对说明符被拦下换成合成内容（源文件相对依赖仍走宿主加载器）。
@@ -542,20 +568,9 @@ function checkWithSynthesizedSidecar(input: {
   sidecarText: string;
   loadModule?: (spec: string, from: string) => string | undefined;
 }): ReturnType<typeof checkSource> | undefined {
-  const norm = (p: string): string => p.replace(/\\/g, "/");
-  const resolveRel = (from: string, spec: string): string | undefined => {
-    if (!spec.startsWith(".")) return undefined;
-    const parts = norm(from).split("/").slice(0, -1);
-    for (const seg of norm(spec).split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  const target = norm(input.sidecarPath);
+  const target = normPosixPath(input.sidecarPath);
   const loadModule = (spec: string, from: string): string | undefined => {
-    const p = resolveRel(from, spec);
+    const p = resolveRelativeSpec(from, spec);
     if (p !== undefined && p === target) return input.sidecarText;
     return input.loadModule?.(spec, from);
   };

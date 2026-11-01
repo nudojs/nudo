@@ -638,7 +638,7 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
  * Atomics 是全局但**不是构造器**（`x instanceof Proxy` 抛 TypeError），
  * 不收——`z.instanceof` 的实参在模块求值期求值，非构造器同样炸。
  */
-const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
+const RUNTIME_GLOBAL_CTOR_NAME_LIST: ReadonlyArray<string> = [
   "Array", "Object", "Function", "Boolean", "Number", "String", "Symbol", "BigInt",
   "Date", "RegExp",
   "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
@@ -650,7 +650,9 @@ const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
   "Int32Array", "Uint32Array", "Float32Array", "Float64Array",
   "BigInt64Array", "BigUint64Array",
   "URL", "URLSearchParams", "TextEncoder", "TextDecoder",
-]);
+];
+export { RUNTIME_GLOBAL_CTOR_NAME_LIST };
+const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set(RUNTIME_GLOBAL_CTOR_NAME_LIST);
 
 /**
  * brand 名能否用 `z.instanceof(<name>)` 表达（须是运行时全局构造器名）。

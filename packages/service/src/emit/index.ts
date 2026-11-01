@@ -121,6 +121,8 @@ export {
   materializeAction,
   applyTextEdits,
   matchSidecarFnDecl,
+  normPosixPath,
+  resolveRelativeSpec,
   type MaterializeInput,
   type QuickfixPlan,
   type QuickfixTitleKind,
