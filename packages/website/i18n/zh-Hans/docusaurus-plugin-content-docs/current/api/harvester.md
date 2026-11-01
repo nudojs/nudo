@@ -127,13 +127,13 @@ const key = buildKey("docs", "readme");
 | **类型包**——已装 `@types/*` 或包自带 `.d.ts` | **harvest** 声明（`harvestPackage` / `harvestNodeTypes` / `bareSpecToAbsModules` → env modules） | 分析时模块图自动注入；内建 API 仍以手写 `@nudojs/env` 为主 |
 | **两者皆无** | 自动路径返回**空 modules** | 使用 `@nudo:mock`、路径 `/// @nudo:env` 或侧车提示——见下方 mock 边界 |
 
-**库 helper vs 生产注入。** `@nudojs/service` 导出的 `autoHarvestModules` 是工具/测试用的程序化 harvest helper。**生产分析注入**走 `evalAbsModuleGraph` → `bareSpecToAbsModules`（`harvest-to-abs.ts`），再经 `mergeHarvestUnderEnv` 让手写 `@nudojs/env` 在重叠处 wins。不存在第二条分析注入路径。
+**库 helper vs 生产注入。** `@nudojs/harvester` 导出的 `autoHarvestModules` 是工具/测试用的程序化 harvest helper。**生产分析注入**走 `evalAbsModuleGraph` → `bareSpecToAbsModules`（`harvest-to-abs.ts`），再经 `mergeHarvestUnderEnv` 让手写 `@nudojs/env` 在重叠处 wins。不存在第二条分析注入路径。
 
 `barePackageName("lodash/fp")` → `lodash`；相对 / 绝对 / `node:` 说明符永远不会成为 harvest 目标（内建走手写 env）。
 
 ## 性能预算（`@types/node`）
 
-`@nudojs/service` 的 `harvestNodeTypes` 有预算保护，避免巨大 `.d.ts` 图拖垮 IDE 启动：
+`@nudojs/harvester` 的 `harvestNodeTypes` 有预算保护，避免巨大 `.d.ts` 图拖垮 IDE 启动：
 
 | 预算 | 默认 | 说明 |
 |---|---|---|
@@ -198,17 +198,14 @@ const key = buildKey("docs", "readme");
 | <a id="harvestpackagewithdisk"></a>`harvestPackageWithDisk` | fn | L2 + L0：**磁盘优先**（跳过 harvestDts 解析），miss 再 harvest 并写盘。 | `harvestPackageWithDisk( pkg: string, fromDir: string, maxFiles = 24, ): PackageHarvest \| null` |
 | <a id="harvestsig"></a>`HarvestSig` | type | 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面）。 | `HarvestSig = \| { k: "prim"; type: string } \| { k: "unknown" } \| { k: "any" } \| { k: "never" } \| { k: "lit"; value: number \| string \| bool...` |
 | <a id="harvestsigtoabs"></a>`harvestSigToAbs` | fn | 签名投影 → mock Abs（conf 合 mock） | `harvestSigToAbs(sig: HarvestSig): Abs` |
-| <a id="harvesttoabsmodules"></a>`harvestToAbsModules` | fn | 把 harvest 的 modules/globals 合成 AbsModuleExports。 | `harvestToAbsModules( pkg: string, fromDir: string, ): Record<string, AbsModuleExports>` |
 | <a id="isharvestnodedisabled"></a>`isHarvestNodeDisabled` | fn | — | `isHarvestNodeDisabled(env: NodeJS.ProcessEnv = process.env): boolean` |
-| <a id="loadharvestenvfromdisk"></a>`loadHarvestEnvFromDisk` | fn | 从磁盘 materialize（不跑 harvestDts）；键需调用方自算 | `loadHarvestEnvFromDisk( pkg: string, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestedEnv \| null` |
 | <a id="lookupharvested"></a>`lookupHarvested` | fn | 取某个导出的展示串（formatShape） | `lookupHarvested( h: PackageHarvest, moduleName: string, exportName: string, ): string \| undefined` |
 | <a id="materializeharvestjson"></a>`materializeHarvestJson` | fn | HarvestJson → mock Abs 导出表（materialize）；损坏/版本不符 → null | `materializeHarvestJson(j: unknown): HarvestedEnv \| null` |
 | <a id="nodeenvresult"></a>`NodeEnvResult` | type | — | `NodeEnvResult = \| { ok: true; env: HarvestedEnv; root: string; files: number; stats: HarvestNodeStats; cached: boolean; degraded?: boolea...` |
 | <a id="packageharvest"></a>`PackageHarvest` | type | — | `PackageHarvest = { pkg: string; root: string; dtsFiles: string[]; env: HarvestedEnv; }` |
-| <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | — | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
+| <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | 把 harvest 的 modules/globals 合成 AbsModuleExports。 | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
 | <a id="readharvestdisk"></a>`readHarvestDisk` | fn | — | `readHarvestDisk(root: string, key: string): HarvestJson \| undefined` |
 | <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*）。 | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
 | <a id="serializeharvestjson"></a>`serializeHarvestJson` | fn | — | `serializeHarvestJson( pkg: string, env: HarvestedEnv, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestJson` |
-| <a id="summarizenodeenv"></a>`summarizeNodeEnv` | fn | 把 harvest 结果压成「模块名 → 导出名列表」摘要，便于日志/测试 | `summarizeNodeEnv(env: HarvestedEnv)` |
 | <a id="writeharvestdisk"></a>`writeHarvestDisk` | fn | — | `writeHarvestDisk(root: string, key: string, value: HarvestJson): void` |
 <!-- NUDO-API-SKELETON:END -->

@@ -624,13 +624,9 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="absmoduleloadissue"></a>`AbsModuleLoadIssue` | type | 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 | `AbsModuleLoadIssue = { kind: \| "cycle" \| "depth" \| "missing" \| "missing-export" \| "exports-unresolved" \| "unreadable" \| "json-invalid"; l...` |
 | <a id="abstoschemanode"></a>`absToSchemaNode` | fn | Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） | `absToSchemaNode(a: Abs)` |
 | <a id="abstoschemasource"></a>`absToSchemaSource` | fn | — | `absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string` |
-| <a id="abstostandardschema"></a>`absToStandardSchema` | fn | 便捷：单个 Abs → 单导出模块（默认导出名 `schema`）。 | `absToStandardSchema( a: Abs, opts?: { name?: string }, ): StandardSchemaModuleProjection` |
 | <a id="abstostandardschemafunction"></a>`absToStandardSchemaFunction` | fn | Abs → Standard Schema v1 **函数级**模块源码（入参面 + 返回面）。 | `absToStandardSchemaFunction( spec: StandardSchemaFunctionSpec, opts?: { banner?: string }, ): StandardSchemaModuleProjection` |
-| <a id="abstostandardschemamodule"></a>`absToStandardSchemaModule` | fn | Abs → Standard Schema v1 模块源码。 | `absToStandardSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): StandardSchemaModuleProjection` |
 | <a id="abstotstype"></a>`absToTSType` | fn | Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。 | `absToTSType(a: Abs, typeVars?: Map<string, string>): string` |
 | <a id="abstozodschemamodule"></a>`absToZodSchemaModule` | fn | Abs 导出表 → 可 import 的 zod JS 模块源码。 | `absToZodSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): ZodModuleProjection` |
-| <a id="addbudgetannotation"></a>`addBudgetAnnotation` | fn | `@nudo:budget forks=N` 注解 | `addBudgetAnnotation( source: string, fnName: string, forks = 64, )` |
-| <a id="addthrowsannotation"></a>`addThrowsAnnotation` | fn | `（其间只允许空行与 `*` 续行） for (let k = bottom - 1; k >= 0; k--) { const tk = lines[k]!.trim(); if (tk.startsWith("/**")) return { open: k, close: bottom }; if (tk === "" \|\| tk.startsWith("*")) continue; return undefined; } return undefined; } /** 在函数 JSDoc 里插入一行 `@nudo:throws &lt;Kind&gt;`（已存在则不重复）。 | `addThrowsAnnotation( source: string, fnName: string, kind: string, )` |
 | <a id="ambientsourcesofsidecar"></a>`ambientSourcesOfSidecar` | fn | `lib.nudo.{js,mjs,ts}` → candidate ambient sources next to it | `ambientSourcesOfSidecar(sidecarPath: string): string[]` |
 | <a id="analysis_abi"></a>`ANALYSIS_ABI` | const | 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。 | `const ANALYSIS_ABI` |
 | <a id="analysisconfig"></a>`analysisConfig` | fn | 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件 进 IDE 分析；`all` / `directives` 需显式配置）。 | `analysisConfig(config: NudoConfig \| null \| undefined): AnalysisConfig` |
@@ -651,7 +647,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="applytextedits"></a>`applyTextEdits` | fn | 把 edits 应用到源码（按 start 从后往前） | `applyTextEdits(source: string, edits: TextEdit[]): string` |
 | <a id="bindinginfo"></a>`BindingInfo` | type | — | `BindingInfo = { abs: Abs; loc?: SourceLocation; }` |
 | <a id="bodyreadfield"></a>`BodyReadField` | type | — | `BodyReadField = { field: string; type: string; via: string; fields?: BodyReadField[]; }` |
-| <a id="bodyreadfieldsfor"></a>`bodyReadFieldsFor` | fn | 某函数某形参的 body-read 字段类型（供 draft / quickfix） | `bodyReadFieldsFor( map: BodyReadTypes, fnName: string, paramName: string, ): BodyReadField[] \| undefined` |
 | <a id="bodyreadtypes"></a>`BodyReadTypes` | type | — | `BodyReadTypes = Map<string, Map<string, BodyReadField[]>>` |
 | <a id="buildcasedirective"></a>`buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |
 | <a id="buildevalinjection"></a>`buildEvalInjection` | fn | — | `buildEvalInjection( filePath: string, source: string, allEnvNames: string[], dirDiags: DirectiveDiag[], parseAst: (filePath: string, source: string) => ReturnType<typeof parse>, )` |
@@ -689,7 +684,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="collectevalreplacements"></a>`collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表。 | `collectEvalReplacements( source: string, opts?: { diags?: DirectiveDiag[] }, ): EvalReplacements` |
 | <a id="collectloaddepcontents"></a>`collectLoadDepContents` | fn | — | `collectLoadDepContents( filePath: string, source: string, loadModule: (spec: string, fromFile: string) => string \| undefined, )` |
 | <a id="collectmissingexportissues"></a>`collectMissingExportIssues` | fn | named import / re-export 缺名 → missing-export issue。 | `collectMissingExportIssues( source: string, modules: Record<string, AbsModuleExports>, fromFile: string, ): AbsModuleLoadIssue[]` |
-| <a id="collectparambodyaccesses"></a>`collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |
 | <a id="collectparambodyreadtypes"></a>`collectParamBodyReadTypes` | fn | 收集每个函数形参成员读取 + 用法推断类型。 | `collectParamBodyReadTypes(source: string): BodyReadTypes` |
 | <a id="collectparamcontracts"></a>`collectParamContracts` | fn | 收集每个函数形参的契约证据（quickfix 侧车发射面）： 数组方法接收者读 → `array(元素契约)`（元素 shape 由回调元素位 成员读合成）；纯成员读 → `shape(…)`；参数本体标量用法 → 叶子 DSL （`number()` 等）。无证据参数不进表（契约留 any 位）。 | `collectParamContracts(source: string): ParamContracts` |
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
@@ -702,7 +696,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="computedirtyset"></a>`computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
 | <a id="configignorethrows"></a>`configIgnoreThrows` | fn | package.json#nudo.check.ignoreThrows 的**原始**值 → 与 CLI 同口径的列表 （679：配置面复用本解析器，不再走各面自己的严格 `string[]` 过滤—— 裸字符串 `"TypeError"` 曾被静默丢成空表 ⇒ 门禁假红）。 | `configIgnoreThrows( config: { check?: unknown } \| null \| undefined, ): string[]` |
 | <a id="constraintsourceexpr"></a>`ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
-| <a id="constrainttoschemanode"></a>`constraintToSchemaNode` | fn | NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） | `constraintToSchemaNode(c: NudoConstraint): SchemaNode` |
 | <a id="contractdslof"></a>`contractDslOf` | fn | 契约证据 → constraint-builder DSL 文本（`array(shape({ … }))` 等） | `contractDslOf(ev: ParamContractEvidence): string` |
 | <a id="currentbforkbudgetlimit"></a>`currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
 | <a id="default_analysis_mode"></a>`DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
@@ -765,11 +758,9 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="evictevalcacheforfiles"></a>`evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey；两种 mode 槽一并清） | `evictEvalCacheForFiles(files: string[]): number` |
 | <a id="evictfnanalysiscacheforfiles"></a>`evictFnAnalysisCacheForFiles` | fn | Dependency content changed: drop every per-fn entry for these entry files. | `evictFnAnalysisCacheForFiles(files: string[]): number` |
 | <a id="evictprojectconfigmemo"></a>`evictProjectConfigMemo` | fn | 清空 findProjectConfig 目录链 memo（项目配置 watch 通道 / 测试隔离）。 | `evictProjectConfigMemo(): void` |
-| <a id="extractfnconstraintsources"></a>`extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | <a id="extractnudoimportspecs"></a>`extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
 | <a id="fileevalfailure"></a>`FileEvalFailure` | type | — | — |
 | <a id="filterdiagnosticsbylevel"></a>`filterDiagnosticsByLevel` | fn | 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。 | `filterDiagnosticsByLevel<T extends { severity: string; code?: string }>( diags: T[], level: DiagnosticsLevel, ): T[]` |
-| <a id="findfndeclstart"></a>`findFnDeclStart` | fn | 在源码中找 `function <fn>` / `export function <fn>` / `const <fn> =` 的 JSDoc/声明行。 | `findFnDeclStart(lines: string[], fnName: string): number` |
 | <a id="findowningpackage"></a>`findOwningPackage` | fn | Nearest package.json walking up from the file's directory. | `findOwningPackage( fromFile: string, )` |
 | <a id="findprojectconfig"></a>`findProjectConfig` | fn | — | `findProjectConfig( startDir: string, )` |
 | <a id="formatderivedsection"></a>`formatDerivedSection` | fn | 组装生成段（组合式 + import + prelude）。 | `formatDerivedSection( row: DerivedExport, opts: { rootSidecarDir: string; targetSidecarDir: string; takenNames?: Iterable<string>; }, )` |
@@ -808,7 +799,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="interfacesurface"></a>`interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。诊断 side-channel 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
 | <a id="interfacesurfaceentry"></a>`InterfaceSurfaceEntry` | type | — | `InterfaceSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: s...` |
 | <a id="interfacesurfaceopts"></a>`InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; }` |
-| <a id="isdraftableentry"></a>`isDraftableEntry` | fn | Parse-layer draftable: at least one entry has generated DSL and was not skipped | `isDraftableEntry(entries: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>): boolean` |
 | <a id="isenvtemplatepath"></a>`isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
 | <a id="isnudotargetpath"></a>`isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
 | <a id="isprojectconfigpath"></a>`isProjectConfigPath` | fn | — | `isProjectConfigPath(path: string): boolean` |
@@ -843,7 +833,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="patherror"></a>`PathError` | type | 路径错误（--json 信封的 pathErrors 面；非 JSON 面走 usage error）。 | `PathError = { path: string; code: PathErrorCode; message: string; suggestion: string; }` |
 | <a id="patherrorcode"></a>`PathErrorCode` | type | 路径错误码（与 CLI 的 `PathError` 码集一致）。 | `PathErrorCode = \| typeof DIAG.pathNotFound \| typeof DIAG.pathEmptyDir \| typeof DIAG.pathNotTarget \| typeof DIAG.pathMissingCallsite \| typ...` |
 | <a id="pathnotfounderror"></a>`pathNotFoundError` | fn | 路径不存在（CLI 同口径文案）。 | `pathNotFoundError(path: string): PathError` |
-| <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
 | <a id="projectconfigmemostats"></a>`projectConfigMemoStats` | fn | 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 | `projectConfigMemoStats()` |
 | <a id="projectfunctiondts"></a>`projectFunctionDts` | fn | 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。 | `projectFunctionDts( fn: FunctionAnalysis, contract?: DtsContractFace, surface?: DtsModuleSurface, ): DtsFunctionProjection` |
 | <a id="projectmoduledts"></a>`projectModuleDts` | fn | — | `projectModuleDts( surface: DtsModuleSurface \| undefined, entries: ReadonlyArray<{ fn: FunctionAnalysis; projection: DtsFunctionProjection; contract?: DtsContractFace; }>, extras?: DtsModuleExtras, ): DtsModuleProjection` |
@@ -859,7 +848,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="safeloadmodule"></a>`safeLoadModule` | fn | loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 | `safeLoadModule( loadModule: (spec: string, fromFile: string) => string \| undefined, spec: string, fromFile: string, ): string \| undefined` |
 | <a id="schemadialect"></a>`SchemaDialect` | type | — | `SchemaDialect = "zod"` |
 | <a id="schemanode"></a>`SchemaNode` | type | — | `SchemaNode = \| { k: "lit"; value: import("@nudojs/core").LiteralValue } \| { k: "prim"; type: "number" \| "string" \| "boolean" \| "bigint" \|...` |
-| <a id="schemanodetozod"></a>`schemaNodeToZod` | fn | SchemaNode → zod 源码（**只给源码**；渲染层的降级台账见 `schemaNodeToZodProjection` / `projectAbsToSchema`）。 | `schemaNodeToZod(node: SchemaNode): string` |
 | <a id="schemaprojection"></a>`SchemaProjection` | type | — | `SchemaProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 | <a id="schemarefinement"></a>`SchemaRefinement` | type | — | `SchemaRefinement = \| { kind: "numBound"; op: "gt" \| "ge" \| "lt" \| "le"; n: number } \| { kind: "int" } \| { kind: "strMin"; n: number } \| {...` |
 | <a id="serializecasearg"></a>`serializeCaseArg` | fn | 单个 Abs → parseCaseArgExpr 可解析回去的表达式文本；不可表达返回 null | `serializeCaseArg(a: Abs): string \| null` |
@@ -872,8 +860,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="sha256hex"></a>`sha256Hex` | fn | — | `sha256Hex(data: string \| Buffer): string` |
 | <a id="shapedslfromfields"></a>`shapeDslFromFields` | fn | `shape({ type: string(), loc: shape({ start: … }) })` 文本。 | `shapeDslFromFields(fields: BodyReadField[]): string` |
 | <a id="shouldanalyzefile"></a>`shouldAnalyzeFile` | fn | 是否应对该文件跑分析（自动路径，如 LSP validate）。 | `shouldAnalyzeFile( filePath: string, source: string \| undefined, config?: AnalysisConfig, ): boolean` |
-| <a id="sidecarbindingfor"></a>`sidecarBindingFor` | fn | 侧车里导出名 → 模块绑定名（DESIGN-003 别名段：`export { _nudo_1 as class }`）。 | `sidecarBindingFor(sidecarSource: string, exportName: string): string \| undefined` |
-| <a id="sidecarclearsentrythrow"></a>`sidecarClearsEntryThrow` | fn | 侧车契约验证（entry-may-throw 的 [fix] 门）：把合成侧车作为唯一侧车 来源重跑 checkSource，确认目标函数的 L2 entry-may-throw 消失。 | `sidecarClearsEntryThrow(input: { file: string; source: string; sidecarPath: string; sidecarText: string; fn: string; loadModule?: (spec: string, from: string) => string \| undefined; }): boolean` |
 | <a id="sidecardraftpath"></a>`sidecarDraftPath` | fn | `lib.js\|ts` → `lib.nudo.draft.js\|ts`（不进 ambient sidecar 表） | `sidecarDraftPath(filePath: string): string` |
 | <a id="sourcehasnudodirectives"></a>`sourceHasNudoDirectives` | fn | — | `hasNudoDirectives(source: string): boolean` |
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |
@@ -892,7 +878,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="testreport"></a>`TestReport` | type | — | `TestReport = { file: string; passed: number; failed: number; unchecked: number; outcomes: CaseTestOutcome[]; caseLines: string[]; }` |
 | <a id="testreportoptions"></a>`TestReportOptions` | type | — | `TestReportOptions = { entryContractNotes?: ReadonlySet<string>; }` |
 | <a id="textedit"></a>`TextEdit` | type | — | `TextEdit = { startLine: number; startCol: number; endLine: number; endCol: number; newText: string; }` |
-| <a id="titlekindfor"></a>`titleKindFor` | fn | kind → 标注（Fix all 不得把 silence 当修复） | `titleKindFor(code: string, action: CheckAction): QuickfixTitleKind` |
 | <a id="toposortdirty"></a>`topoSortDirty` | fn | Topological order with dependencies before dependents (only imports edges internal to dirty; cycles tolerated — remaining files appended in arbitrary order). | `topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]): string[]` |
 | <a id="trimanalysisfilecache"></a>`trimAnalysisFileCache` | fn | 立刻压到当前 maxFiles（调低上限时收内存） | `trimAnalysisFileCache(): void` |
 | <a id="trimevalcache"></a>`trimEvalCache` | fn | 立刻压到当前 maxEvalRuns（调低上限时收内存） | `trimEvalCache(): void` |
@@ -903,9 +888,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） | `typeExprToDirective(expr: string): string` |
 | <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 ""。 | `unifiedDiff(a: string, b: string, path: string): string` |
-| <a id="validateschemanode"></a>`validateSchemaNode` | fn | SchemaNode 同步校验（生成模块与测试共用语义）。 | `validateSchemaNode(node: SchemaNode, value: unknown): StandardSchemaResult` |
-| <a id="wrapreturnnullable"></a>`wrapReturnNullable` | fn | 侧车 return 契约包一层 `nullable(...)`（nullish 臂违例的机械修法）。 | `wrapReturnNullable( sidecarSource: string, fnName: string, ): string \| undefined` |
 | <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; skipped?: "hand-edit...` |
+| <a id="writefileatomic"></a>`writeFileAtomic` | fn | tmp + rename 原子写（同目录 temp ⇒ 崩溃/磁盘满时目标要么旧要么新，不会 半截）。随机后缀用 `randomBytes`（不是 `Math.random`/`Date.now`）：防可 预测 tmp 路径被预置符号链接劫持。 | `writeFileAtomic(path: string, data: string): void` |
 | <a id="writeinterfacedraft"></a>`writeInterfaceDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeInterfaceDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="zodmoduleprojection"></a>`ZodModuleProjection` | type | — | `ZodModuleProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 <!-- NUDO-API-SKELETON:END -->

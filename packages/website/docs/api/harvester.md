@@ -127,13 +127,13 @@ When analysis meets a bare import (`import x from "commander"`), Nudo does **not
 | **Types package** — `@types/*` installed or the package ships `.d.ts` | Declarations are **harvested** (`harvestPackage` / `harvestNodeTypes` / `bareSpecToAbsModules` → env modules) | Analysis auto-fill via module-graph harvest; handwritten `@nudojs/env` stays primary for builtins |
 | **Neither** JS analysis path nor types | Auto path yields **empty modules** | Use `@nudo:mock`, a path-based `/// @nudo:env`, or a sidecar hint — see the mock boundary below |
 
-**Library helper vs production injection.** `autoHarvestModules` (exported from `@nudojs/service`) is the programmatic harvest helper used by tools/tests. **Production analysis injection** goes through `evalAbsModuleGraph` → `bareSpecToAbsModules` (`harvest-to-abs.ts`), then `mergeHarvestUnderEnv` so handwritten `@nudojs/env` wins on overlap. There is not a second analysis path.
+**Library helper vs production injection.** `autoHarvestModules` (exported from `@nudojs/harvester`) is the programmatic harvest helper used by tools/tests. **Production analysis injection** goes through `evalAbsModuleGraph` → `bareSpecToAbsModules` (`harvest-to-abs.ts`), then `mergeHarvestUnderEnv` so handwritten `@nudojs/env` wins on overlap. There is not a second analysis path.
 
 `barePackageName("lodash/fp")` → `lodash`; relative / absolute / `node:` specifiers are never harvest targets (builtins use handwritten env).
 
 ## Performance budgets (`@types/node`)
 
-`harvestNodeTypes` in `@nudojs/service` is budgeted so IDE startup is not dragged down by huge `.d.ts` graphs:
+`harvestNodeTypes` in `@nudojs/harvester` is budgeted so IDE startup is not dragged down by huge `.d.ts` graphs:
 
 | Budget | Default | Notes |
 |---|---|---|
@@ -198,17 +198,14 @@ See also [Language Semantics — mock boundary](../concepts/semantics.md#mock-bo
 | <a id="harvestpackagewithdisk"></a>`harvestPackageWithDisk` | fn | L2 + L0：**磁盘优先**（跳过 harvestDts 解析），miss 再 harvest 并写盘。 | `harvestPackageWithDisk( pkg: string, fromDir: string, maxFiles = 24, ): PackageHarvest \| null` |
 | <a id="harvestsig"></a>`HarvestSig` | type | 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面）。 | `HarvestSig = \| { k: "prim"; type: string } \| { k: "unknown" } \| { k: "any" } \| { k: "never" } \| { k: "lit"; value: number \| string \| bool...` |
 | <a id="harvestsigtoabs"></a>`harvestSigToAbs` | fn | 签名投影 → mock Abs（conf 合 mock） | `harvestSigToAbs(sig: HarvestSig): Abs` |
-| <a id="harvesttoabsmodules"></a>`harvestToAbsModules` | fn | 把 harvest 的 modules/globals 合成 AbsModuleExports。 | `harvestToAbsModules( pkg: string, fromDir: string, ): Record<string, AbsModuleExports>` |
 | <a id="isharvestnodedisabled"></a>`isHarvestNodeDisabled` | fn | — | `isHarvestNodeDisabled(env: NodeJS.ProcessEnv = process.env): boolean` |
-| <a id="loadharvestenvfromdisk"></a>`loadHarvestEnvFromDisk` | fn | 从磁盘 materialize（不跑 harvestDts）；键需调用方自算 | `loadHarvestEnvFromDisk( pkg: string, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestedEnv \| null` |
 | <a id="lookupharvested"></a>`lookupHarvested` | fn | 取某个导出的展示串（formatShape） | `lookupHarvested( h: PackageHarvest, moduleName: string, exportName: string, ): string \| undefined` |
 | <a id="materializeharvestjson"></a>`materializeHarvestJson` | fn | HarvestJson → mock Abs 导出表（materialize）；损坏/版本不符 → null | `materializeHarvestJson(j: unknown): HarvestedEnv \| null` |
 | <a id="nodeenvresult"></a>`NodeEnvResult` | type | — | `NodeEnvResult = \| { ok: true; env: HarvestedEnv; root: string; files: number; stats: HarvestNodeStats; cached: boolean; degraded?: boolea...` |
 | <a id="packageharvest"></a>`PackageHarvest` | type | — | `PackageHarvest = { pkg: string; root: string; dtsFiles: string[]; env: HarvestedEnv; }` |
-| <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | — | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
+| <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | 把 harvest 的 modules/globals 合成 AbsModuleExports。 | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
 | <a id="readharvestdisk"></a>`readHarvestDisk` | fn | — | `readHarvestDisk(root: string, key: string): HarvestJson \| undefined` |
 | <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*）。 | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
 | <a id="serializeharvestjson"></a>`serializeHarvestJson` | fn | — | `serializeHarvestJson( pkg: string, env: HarvestedEnv, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestJson` |
-| <a id="summarizenodeenv"></a>`summarizeNodeEnv` | fn | 把 harvest 结果压成「模块名 → 导出名列表」摘要，便于日志/测试 | `summarizeNodeEnv(env: HarvestedEnv)` |
 | <a id="writeharvestdisk"></a>`writeHarvestDisk` | fn | — | `writeHarvestDisk(root: string, key: string, value: HarvestJson): void` |
 <!-- NUDO-API-SKELETON:END -->
