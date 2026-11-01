@@ -15,6 +15,7 @@ import {
   isNudoConstraint,
   constraintToEntryAbs,
   CONSTRAINT_BUILDER_NAMES,
+  CONSTRAINT_CHAIN_METHOD_NAMES,
   CONSTRAINT_EXPR_RE,
   SELF,
 } from "@nudojs/core";
@@ -54,12 +55,11 @@ function absUnion(members: Abs[]): Abs {
  */
 
 /**
- * BUG-013：链式方法白名单（须与 core makeBuilder / ConstraintBuilder 同步）。
- * 约束表达式只允许这些方法出现在 `builder(...).method(...)` 链上。
+ * BUG-013：链式方法白名单——单源在 core 的 CONSTRAINT_CHAIN_METHOD_NAMES
+ * （makeBuilder 方法面），此处不再手维护一份。约束表达式只允许这些方法
+ * 出现在 `builder(...).method(...)` 链上。
  */
-const TYPE_EXPR_CHAIN_METHODS = new Set([
-  "gt", "ge", "lt", "le", "int", "min", "max", "length", "shift", "optional",
-]);
+const TYPE_EXPR_CHAIN_METHODS = new Set<string>(CONSTRAINT_CHAIN_METHOD_NAMES);
 
 /**
  * BUG-013：类型表达式 AST 白名单——进入 execNudoModule / new Function 前的门禁。
