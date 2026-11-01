@@ -21,6 +21,11 @@ import { isNullProtoObj, isNullProtoWithoutCoercerSlot, joinValues } from "./obj
 import { lookupObjAccessor } from "./accessors.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs } from "./may-throw.ts";
+// 元组 join 折叠循环（arrayToPrimitiveString 与 builtins/array.ts 两面共用）。
+// 此边经 array.ts → symbol.ts → template.ts 构成函数级循环：跨模块调用全部
+// 发生在运行期（无加载期执行），原生 ESM / vite SSR 均安全；直连定义模块，
+// 勿经 barrel 转发。
+import { tupleJoinParts } from "./builtins/array.ts";
 
 export type TemplateMeta = {
   templateParts: Abs[];
@@ -530,25 +535,10 @@ function coerceToStringParts(a: Abs): StringPartGroups | undefined {
 
 /** 数组 ToPrimitive：join(",")——全字面量元素精确折叠，否则抽象 string */
 function arrayToPrimitiveString(a: Abs): Abs {
-  const s = a.shape;
   const strPrimPart = (): Abs =>
     abs({ k: "prim", type: "string" }, undefined, undefined, "path");
-  if (s.k === "arr") return strPrimPart();
-  if (s.k !== "tuple") return strPrimPart();
-  const holes = s.holes ?? [];
-  const parts: string[] = [];
-  for (let i = 0; i < s.elements.length; i++) {
-    if (holes.includes(i)) {
-      parts.push("");
-      continue;
-    }
-    const el = s.elements[i]!;
-    if (el.term?.op !== "lit") return strPrimPart();
-    const v = el.term.value;
-    if (typeof v === "symbol") return strPrimPart(); // + 上层对 symbol 元素可能抛
-    if (v === null || v === undefined) parts.push("");
-    else if (typeof v === "object") return strPrimPart();
-    else parts.push(String(v));
-  }
+  // symbol 元素走 onSymbol="abstract"（不折叠 → 抽象 string；上层另记 may-throw）
+  const parts = tupleJoinParts(a, "abstract");
+  if (parts === undefined) return strPrimPart();
   return abs({ k: "prim", type: "string" }, lit(parts.join(",")), undefined, "exact");
 }

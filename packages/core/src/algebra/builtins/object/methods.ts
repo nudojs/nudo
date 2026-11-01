@@ -517,6 +517,76 @@ function accessorPropDescAbs(target: Abs, key: string): Abs | undefined {
   );
 }
 
+/**
+ * Bug 125：TA brand 的枚举键元组（Object.keys 面 / gOPN 面同键集）——下标键
+ * "0".."n-1"（整数索引异质属性，自有可枚举；length 是 %TypedArray%.prototype
+ * 访问器非自有键——gOPN 原生也不含，node 实测 gOPN(new Uint8Array(3)) →
+ * ["0","1","2"]）。长度槽可知（数字/字面量源构造形态）→ 精确键元组；长度
+ * 开放 → 诚实 partial string[]（此前整族折 []——wrong-exact）。非 TA →
+ * undefined（调用方走后续 brand 分类）。
+ */
+function taOwnKeysTuple(a0: Abs | undefined): Abs | undefined {
+  const view = typedArrayEnumKeyView(a0);
+  if (!view) return undefined;
+  return view.k === "exact"
+    ? abs(
+        { k: "tuple", elements: Array.from({ length: view.count }, (_, i) => strLit(String(i))) },
+        undefined,
+        undefined,
+        "exact",
+      )
+    : abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+}
+
+/**
+ * gOPD 三个内层闭 obj 臂（.prototype 原型槽 / 用户类实例 / Error 家族 brand）
+ * 共用的「自有槽 → 描述符」段：slots 查找 → internal（Bug 84：私有槽非自有
+ * 属性）与（按需）inherited（Bug 66：Error 的 name 原生经 X.prototype 原型链
+ * 解析，非实例自有）跳过 → 访问器描述符（accessorPropDescAbs，Bug 57/84——
+ * 动态 defineProperty 安装的访问器经内层侧表派发，安装机器把侧表注册在新
+ * 内层 obj Abs）→ flags 并查（getPropFlags(a0) ?? getPropFlags(inner)：flags
+ * 表记在接收者 brand 上（applyPropertyDescriptor 的 setPropFlags(out, …)——
+ * out 为 brand）；原型槽的原地安装口径（putProtoSlotsInPlace）与构造期装的
+ * flags（extends Error 内层复用 errorBrandAbs 内层 obj）记在内层——两者并查）
+ * → mkDesc。
+ *
+ * 返回 undefined = 键非内层**自有**键：.prototype 臂落到后续臂（缺席键沿既有
+ * 保守并——内层 obj 闭但键集面另有归属）；类实例 / Error 臂折 undefAbs（闭
+ * 内层键集构造期静态可知）。skipInherited：Error / .prototype 臂跳 inherited
+ * 槽；类实例臂不跳（类字段语义无 inherited 面）。
+ */
+function ownSlotDescriptor(
+  a0: Abs,
+  inner: Abs,
+  key: string,
+  skipInherited: boolean,
+): Abs | undefined {
+  const slots = (inner.shape as ObjShape)
+    .slots as Record<string, { value: Abs; internal?: boolean; inherited?: boolean }>;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return undefined;
+  const slot = slots[key]!;
+  if (slot.internal === true || (skipInherited && slot.inherited === true)) {
+    return undefAbs();
+  }
+  const accDesc = accessorPropDescAbs(inner, key);
+  if (accDesc) return accDesc;
+  const flags = getPropFlags(a0)?.get(key) ?? getPropFlags(inner)?.get(key);
+  return mkPropDescAbs(
+    slot.value,
+    flags?.writable !== false,
+    flags?.enumerable !== false,
+    flags?.configurable !== false,
+  );
+}
+
+/** nullish 接收者守卫（Object 静态面共用）：缺省 ≡ undefined（Bug 61）或
+ *  nullish 字面量（Bug 35）→ ToObject/RequireObjectCoercible 定抛 TypeError。 */
+function throwIfNullishRecv(a0: Abs | undefined): void {
+  if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+}
+
 /** Object.keys/values/entries/assign + 不变性方法 */
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
@@ -783,9 +853,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
     }
     case "keys": {
       // Bug 61：缺省 ≡ undefined → ToObject 定抛；nullish 字面量同（原仅字面量臂）
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       /**
        * Bug 210：Proxy ownKeys 陷阱优先（[[OwnPropertyKeys]]）——原生
        * Object.keys(proxy) 走 handler 的 "ownKeys" 陷阱，再按**可枚举**性
@@ -868,23 +936,9 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       // 枚举）；其余内建 brand 零可枚举自有键；用户/未知 brand 保持 generic
       {
         // Bug 125：TA brand——下标键 "0".."n-1"（整数索引异质属性，自有
-        // 可枚举；length 是原型访问器非自有键）；长度槽可知（数字/字面量
-        // 源构造形态）→ 精确键元组；长度开放 → 诚实 partial string[]（此前
-        // 整族折 []——wrong-exact）
-        const ta = taEnumInfo(a0);
-        if (ta) {
-          return ta.view.k === "exact"
-            ? abs(
-                {
-                  k: "tuple",
-                  elements: Array.from({ length: ta.view.count }, (_, i) => strLit(String(i))),
-                },
-                undefined,
-                undefined,
-                "exact",
-              )
-            : abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
-        }
+        // 可枚举；length 是原型访问器非自有键）；见 taOwnKeysTuple
+        const taKeys = taOwnKeysTuple(a0);
+        if (taKeys) return taKeys;
         const brandKeys = boxedStringEnumEntries(a0);
         if (brandKeys) {
           return abs({ k: "tuple", elements: brandKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
@@ -921,9 +975,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
     }
     case "values": {
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       if (a0?.shape.k === "obj") {
         // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
         // 自信的确切错值，native values = [[1,2]]）
@@ -1022,9 +1074,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
     }
     case "entries": {
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       if (a0?.shape.k === "obj") {
         // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
         // 自信的确切错值，native entries = [["[object Object]",[1,2]]]）
@@ -1554,9 +1604,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       // 其余 prim 装箱 → {}；open/抽象 → 开放 obj（槽值 descriptor|undefined）
       // Bug 1075：自有键面走 [[OwnPropertyKeys]]——**含 symbol 键**（原生
       // gOPDs 的结果对象带真 symbol 键；symbol 投影槽保留 + symbolKey 标记）
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       noteRecvMayNullish(a0, "Object.getOwnPropertyDescriptors receiver ToObject");
       const descSlotsOf = (
         entries: Array<[string, Abs]>,
@@ -1794,9 +1842,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       // Bug 35：ToObject 接收者校验 + 自有**字符串**键投影（含不可枚举键
       // 与数组 length；symbol 键不在返回域——node 实测 gOPN([,1]) →
       // ["1","length"]、gOPN('ab') → ["0","1","length"]、gOPN(1) → []）
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       if (a0.term?.op === "lit" && typeof a0.term.value === "string") {
         // 字符串装箱：code unit 下标 + length
         const s = a0.term.value;
@@ -1852,25 +1898,10 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       }
       if (a0.shape.k === "brand") {
         // Bug 125：TA brand——与 keys 同键集（整数索引自有键；gOPN 原生
-        // 不含 length——它是 %TypedArray%.prototype 访问器非自有键，node
-        // 实测 gOPN(new Uint8Array(3)) → ["0","1","2"]）；长度开放 →
-        // partial string[]
-        {
-          const ta = taEnumInfo(a0);
-          if (ta) {
-            return ta.view.k === "exact"
-              ? abs(
-                  {
-                    k: "tuple",
-                    elements: Array.from({ length: ta.view.count }, (_, i) => strLit(String(i))),
-                  },
-                  undefined,
-                  undefined,
-                  "exact",
-                )
-              : abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
-          }
-        }
+        // 不含 length——它是 %TypedArray%.prototype 访问器非自有键）；见
+        // taOwnKeysTuple
+        const taKeys = taOwnKeysTuple(a0);
+        if (taKeys) return taKeys;
         const brandName = (a0.shape as { name?: string }).name ?? "";
         const inner = (a0.shape as { shape?: Abs }).shape;
         if (brandName === "String" && inner && inner.shape.k === "obj") {
@@ -2025,9 +2056,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
     }
     case "getOwnPropertySymbols": {
       // Bug 35：nullish 接收者定抛
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       noteRecvMayNullish(a0, "Object.getOwnPropertySymbols receiver ToObject");
       // 族 65 · Bug 240：原生返回**自有 symbol 键数组**——键集可判时折精确
       // 元组（此前恒折保守 symbol[] ⇒ 生成器对象等「确定无自有 symbol 键」
@@ -2044,9 +2073,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
     }
     case "getOwnPropertyDescriptor": {
       // Bug 35：nullish 接收者定抛；描述符 obj 或 undefined 投影
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       noteRecvMayNullish(a0, "Object.getOwnPropertyDescriptor receiver ToObject");
       const kvR = args[1] ? litValue(args[1]) : undefined;
       const kv = kvR?.ok ? kvR.value : undefined;
@@ -2234,25 +2261,10 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
         if (pname.endsWith(".prototype")) {
           const pInner = a0.shape.shape;
           if (pInner.shape.k === "obj" && !pInner.shape.open) {
-            const pSlots = (pInner.shape as ObjShape)
-              .slots as Record<string, { value: Abs; internal?: boolean; inherited?: boolean }>;
-            if (Object.prototype.hasOwnProperty.call(pSlots, key)) {
-              if (pSlots[key]!.internal === true || pSlots[key]!.inherited === true) {
-                return undefAbs();
-              }
-              const accDesc = accessorDescOf(pInner, key);
-              if (accDesc) return accDesc;
-              // flags 表记在接收者 brand 上（applyPropertyDescriptor 的
-              // setPropFlags(out, …)——out 为 brand）；原型槽的原地安装口径
-              // （putProtoSlotsInPlace）把 flags 记在内层 obj 上——两者并查。
-              const pFlags = getPropFlags(a0)?.get(key) ?? getPropFlags(pInner)?.get(key);
-              return mkDesc(
-                pSlots[key]!.value,
-                pFlags?.writable !== false,
-                pFlags?.enumerable !== false,
-                pFlags?.configurable !== false,
-              );
-            }
+            // 自有槽描述符段（见 ownSlotDescriptor；缺席键沿既有保守并——
+            // 不折 undefined，落到后续类实例臂）
+            const pDesc = ownSlotDescriptor(a0, pInner, key, true);
+            if (pDesc !== undefined) return pDesc;
           }
         }
       }
@@ -2266,26 +2278,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       {
         const inner = classInstanceInnerOf(a0);
         if (inner && key !== undefined) {
-          const slots = (inner.shape as ObjShape)
-            .slots as Record<string, { value: Abs; internal?: boolean }>;
-          if ((slots[key] as { internal?: boolean } | undefined)?.internal === true) {
-            return undefAbs();
-          }
-          if (Object.prototype.hasOwnProperty.call(slots, key)) {
-            const accDesc = accessorDescOf(inner, key);
-            if (accDesc) return accDesc;
-            // flags 表记在接收者 brand 上（applyPropertyDescriptor
-            // setPropFlags(out, …)——out 为 brand）；构造期装的 flags
-            // （extends Error 内层复用 errorBrandAbs 内层 obj）记在内层
-            const flags = getPropFlags(a0)?.get(key) ?? getPropFlags(inner)?.get(key);
-            return mkDesc(
-              slots[key]!.value,
-              flags?.writable !== false,
-              flags?.enumerable !== false,
-              flags?.configurable !== false,
-            );
-          }
-          return undefAbs();
+          return ownSlotDescriptor(a0, inner, key, false) ?? undefAbs();
         }
       }
       // R4a：Error 家族 brand——内层闭 obj 自有槽带 flags 侧表
@@ -2314,23 +2307,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       if (key !== undefined && a0.shape.k === "brand" && isErrorCtorName((a0.shape as { name?: string }).name)) {
         const inner = a0.shape.shape;
         if (inner.shape.k === "obj" && !inner.shape.open) {
-          const slots = (inner.shape as ObjShape)
-            .slots as Record<string, { value: Abs; internal?: boolean; inherited?: boolean }>;
-          if (Object.prototype.hasOwnProperty.call(slots, key)) {
-            if (slots[key]!.internal === true || slots[key]!.inherited === true) {
-              return undefAbs();
-            }
-            const accDesc = accessorDescOf(inner, key);
-            if (accDesc) return accDesc;
-            const flags = getPropFlags(a0)?.get(key) ?? getPropFlags(inner)?.get(key);
-            return mkDesc(
-              slots[key]!.value,
-              flags?.writable !== false,
-              flags?.enumerable !== false,
-              flags?.configurable !== false,
-            );
-          }
-          return undefAbs();
+          return ownSlotDescriptor(a0, inner, key, true) ?? undefAbs();
         }
       }
       if (a0.shape.k === "tuple" && key !== undefined) {
@@ -2384,9 +2361,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       // - 条目非对象（nullish/prim/hole）→ 定抛；symbol 键**不** ToString
       //   ——直接作键保留（ES2024+ CreateDataProperty；引擎槽域字符串键
       //   → 开放对象）
-      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
+      throwIfNullishRecv(a0);
       const slots: Record<string, { value: Abs }> = {};
       let open = false;
       let conf: Abs["conf"] = "exact";

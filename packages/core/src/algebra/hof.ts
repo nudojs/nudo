@@ -159,9 +159,10 @@ function foldCompare(
   }
 }
 
-function predUsesMappedVars(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
+/** 参数化 Pred walker：只看 var 原子，var 臂的判定由 f 决定（两个查询共用骨架） */
+function predAnyVar(p: Pred, f: (id: string) => boolean): boolean {
   const walkTerm = (t: Term): boolean => {
-    if (t.op === "var") return map.has(t.id);
+    if (t.op === "var") return f(t.id);
     if (t.op === "app") return t.args.some(walkTerm);
     return false;
   };
@@ -191,40 +192,16 @@ function predUsesMappedVars(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
   return walk(p);
 }
 
+function predUsesMappedVars(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
+  return predAnyVar(p, (id) => map.has(id));
+}
+
 /** map 内有无 term 的实参（shape-only）→ 无法维持蕴含，整 pred 降 true */
 function mapHasShapeOnlyVar(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
-  const walkTerm = (t: Term): boolean => {
-    if (t.op === "var") {
-      const arg = map.get(t.id);
-      return !!arg && arg.term === undefined;
-    }
-    if (t.op === "app") return t.args.some(walkTerm);
-    return false;
-  };
-  const walk = (q: Pred): boolean => {
-    switch (q.op) {
-      case "true":
-      case "false":
-        return false;
-      case "eq":
-      case "ne":
-      case "lt":
-      case "le":
-      case "gt":
-      case "ge":
-        return walkTerm(q.a) || walkTerm(q.b);
-      case "and":
-      case "or":
-        return q.args.some(walk);
-      case "not":
-        return walk(q.arg);
-      case "typeof":
-        return walkTerm(q.t);
-      case "assumeFinite":
-        return walkTerm(q.t);
-    }
-  };
-  return walk(p);
+  return predAnyVar(p, (id) => {
+    const arg = map.get(id);
+    return !!arg && arg.term === undefined;
+  });
 }
 
 /**

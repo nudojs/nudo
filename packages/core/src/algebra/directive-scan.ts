@@ -1426,12 +1426,27 @@ export function scanCaseArgSpans(text: string): [number, number][] {
   return spans;
 }
 
-/** 非法 case 名形态的标签剩余文本（消费方发 nudo:directive-syntax） */
-export function scanMalformedCaseTagRests(
+/**
+ * `@nudo:case` 标签扫描原语（core 诊断面 scanMalformedCaseTagRests 与
+ * parser fn-directives 的 scanMalformedCaseNames 共用骨架）：逐个交出
+ * **不在** case 实参区间内的标签匹配（inCaseArgs 跳过 + CASE_TAG_REGEX
+ * exec 循环 + separator/rest 提取）。Bug 978 粘连分支与「合法形态」判定
+ * 留在消费侧——core 只收 rest 文本（合法形态 `\s*` 口径）；parser 发
+ * nudo:directive-syntax 并做 S4-003 括号平衡校验（合法形态 `[ \t]*` 口径）。
+ */
+export function* iterCaseTags(
   text: string,
-  caseArgSpans: [number, number][] = scanCaseArgSpans(text),
-): string[] {
-  const out: string[] = [];
+  caseArgSpans: [number, number][],
+): Generator<{
+  /** 标签匹配起点（text 绝对偏移） */
+  index: number;
+  /** 标签与载荷之间的分隔空白（"" = 粘连写法，Bug 978） */
+  separator: string;
+  /** 载荷剩余文本（已 trim，至行尾） */
+  rest: string;
+  /** 原始（未 trim）载荷在 text 中的起点（S4-003 括号平衡校验定位用） */
+  restStart: number;
+}> {
   const inCaseArgs = (idx: number): boolean =>
     caseArgSpans.some(([s, e]) => idx >= s && idx < e);
   CASE_TAG_REGEX.lastIndex = 0;
@@ -1439,7 +1454,23 @@ export function scanMalformedCaseTagRests(
   while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
     if (inCaseArgs(m.index)) continue;
     const separator = m[1]!;
-    const rest = m[2]!.trim();
+    const rest = m[2]!;
+    yield {
+      index: m.index,
+      separator,
+      rest: rest.trim(),
+      restStart: m.index + m[0].length - rest.length,
+    };
+  }
+}
+
+/** 非法 case 名形态的标签剩余文本（消费方发 nudo:directive-syntax） */
+export function scanMalformedCaseTagRests(
+  text: string,
+  caseArgSpans: [number, number][] = scanCaseArgSpans(text),
+): string[] {
+  const out: string[] = [];
+  for (const { separator, rest } of iterCaseTags(text, caseArgSpans)) {
     // ⚠ Bug 978：标签与名字之间**无空白**（粘连写法 `@nudo:case"c1"`）——
     // 抽取侧（`CASE_NAME_REGEX` 要求 `[ \t]+`）**不匹配** ⇒ 整条 case 会被
     // **静默蒸发** ⇒ 诊断面必须**看得见**它（口径与族 28 的 Bug 980 一致）。

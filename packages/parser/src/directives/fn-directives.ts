@@ -6,7 +6,13 @@ import {
   scanCaseArgSpans,
   scanCaseTags,
 } from "@nudojs/core";
-import { DIAG, stripJsdocContinuation } from "@nudojs/core/internal";
+import {
+  // `@nudo:case` 标签扫描骨架（CASE_TAG_REGEX + inCaseArgs 跳过 + separator/
+  // rest 提取）——scanMalformedCaseNames 消费；Bug 978 / 合法形态分支留本侧
+  iterCaseTags,
+  DIAG,
+  stripJsdocContinuation,
+} from "@nudojs/core/internal";
 import { parseAbsExprDiag } from "./case-arg.ts";
 import {
   emitDirectiveDiag,
@@ -20,11 +26,6 @@ import type { Directive, FunctionWithDirectives } from "./types.ts";
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
 // 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
 // `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
-/** 宽松捕获 @nudo:case 标签后的整行文本，用于检测非法名形态（含空标签）。
- * S4-004：`\s+` 跨行会把下一行粘进本标签（诊断错误归因/吞下一个标签），
- * 改同行分隔 `[ \t]`；`[^\n]*` 让空标签也可见。前缀镜像 core
- * directive-scan 的 CASE_NAME_REGEX（块 `*` 续行 / `///` 残留单 `/`）。 */
-const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b([ \t]*)([^\n]*)/g;
 /** JS 标识符（Unicode 感知）：mock 名文法 */
 const JS_IDENT_RE = /^[\p{L}$_][\p{L}\p{N}$_]*$/u;
 /**
@@ -337,14 +338,9 @@ function scanMalformedCaseNames(
   caseArgSpans: [number, number][],
   startLine: number,
 ): void {
-  const inCaseArgs = (idx: number): boolean =>
-    caseArgSpans.some(([s, e]) => idx >= s && idx < e);
-  CASE_TAG_REGEX.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
-    if (inCaseArgs(m.index)) continue;
-    const separator = m[1]!;
-    const rest = m[2]!.trim();
+  // 扫描骨架（CASE_TAG_REGEX 循环 + inCaseArgs 跳过 + separator/rest 提取）
+  // 收敛到 core 的 iterCaseTags；本函数只保留下游诊断分支。
+  for (const { index, separator, rest, restStart } of iterCaseTags(text, caseArgSpans)) {
     // ⚠ Bug 978：标签与名字之间**无空白**（粘连写法 `@nudo:case"c1"`）——
     // 抽取侧（core CASE_NAME_REGEX 要求 `[ \t]+`）**不匹配** ⇒ 整条 case 会
     // **静默蒸发**（一个 case 都不跑、零诊断）⇒ 这里必须**看得见**并诊断
@@ -353,7 +349,7 @@ function scanMalformedCaseNames(
       emitDirectiveDiag({
         code: DIAG.directiveSyntax,
         message: `Malformed @nudo:case: expected a space between '@nudo:case' and the name (expected @nudo:case "name" (…)) — got: @nudo:case${rest.slice(0, 60)}`,
-        at: siteInCommentText(text, startLine, m.index),
+        at: siteInCommentText(text, startLine, index),
       });
       continue;
     }
@@ -362,12 +358,12 @@ function scanMalformedCaseNames(
     if (legal) {
       // S4-003：合法形态判定必须真的平衡——此前 `"a" (1`（未闭合）既有形似
       // 前缀又不进 caseArgSpans，被静默丢弃且零诊断。跨行未闭合同样在此暴露。
-      const parenIdx = m.index + m[0].length - m[2]!.length + legal[0].length - 1;
+      const parenIdx = restStart + legal[0].length - 1;
       if (extractBalancedParens(text, parenIdx) === null) {
         emitDirectiveDiag({
           code: DIAG.directiveSyntax,
           message: `Malformed @nudo:case: unclosed argument list (missing closing ")") — got: @nudo:case ${rest.slice(0, 60)}`,
-          at: siteInCommentText(text, startLine, m.index),
+          at: siteInCommentText(text, startLine, index),
         });
       }
       continue;
@@ -387,7 +383,7 @@ function scanMalformedCaseNames(
     emitDirectiveDiag({
       code: DIAG.directiveSyntax,
       message: `Malformed @nudo:case: ${reason} — got: @nudo:case ${rest.slice(0, 60)}`,
-      at: siteInCommentText(text, startLine, m.index),
+      at: siteInCommentText(text, startLine, index),
     });
   }
 }

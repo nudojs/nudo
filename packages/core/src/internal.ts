@@ -159,7 +159,13 @@ export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";
 
 // ── 跨包共享原语（service / harvester / parser 复用；此前各包留拷贝靠手工同步） ──
 export { BoundedLruMap } from "./algebra/lru-map.ts";
-export { collectNestedBodyRanges } from "./algebra/directive-scan.ts";
+export {
+  collectNestedBodyRanges,
+  // `@nudo:case` 标签扫描骨架（CASE_TAG_REGEX 循环 + inCaseArgs 跳过 +
+  // separator/rest 提取）——core 诊断面与 parser fn-directives 的
+  // scanMalformedCaseNames 共用；Bug 978 / 合法形态分支留消费侧
+  iterCaseTags,
+} from "./algebra/directive-scan.ts";
 export {
   collectDependencySpecs,
   collectDependencySpecsWithMode,
@@ -183,3 +189,6 @@ export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
 // drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
 export { absShapeForTsTypeText } from "./algebra/ts-type-shape.ts";
+// check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
+// 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
+export { formatEntryParamShape } from "./algebra/check-signatures.ts";

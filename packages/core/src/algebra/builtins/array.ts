@@ -595,32 +595,54 @@ export function validateJoinElements(recv: Abs): void {
 }
 
 /**
+ * 元组元素 → join 字符串段折叠循环（arrayJoinToString / arrayJoinWithSep /
+ * template.ts 的 arrayToPrimitiveString 三面共用）。逐元素口径：
+ * hole → ""；nullish lit → ""；symbol 元素按 onSymbol 分叉——
+ *   - "throw"：确定 TypeError（Bug 36，join/toString 路径）
+ *   - "abstract"：返回 undefined 不折叠（模板路径折抽象 string，上层另记 may-throw）
+ * 非 lit / 对象字面量元素 → undefined（不可折叠）。
+ * 不含 validateJoinElements 调用——各 caller 守卫时序不同（toString 先
+ * validate 再折叠；joinWithSep 先折分隔符再 validate；模板侧上层另记）。
+ */
+export function tupleJoinParts(
+  recv: Abs,
+  onSymbol: "throw" | "abstract",
+): string[] | undefined {
+  const s = recv.shape;
+  if (s.k !== "tuple") return undefined;
+  const holes = s.holes ?? [];
+  const parts: string[] = [];
+  for (let i = 0; i < s.elements.length; i++) {
+    if (holes.includes(i)) {
+      parts.push("");
+      continue;
+    }
+    const el = s.elements[i]!;
+    if (isSymbolAbs(el)) {
+      if (onSymbol === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
+      return undefined;
+    }
+    const t = el.term;
+    if (t?.op !== "lit") return undefined;
+    const v = t.value;
+    if (v === null || v === undefined) parts.push("");
+    else if (typeof v === "object") return undefined;
+    else parts.push(String(v));
+  }
+  return parts;
+}
+
+/**
  * Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError。
  * 与 exec/class.ts $invoke 的 toString 分支同口径（.call 路径共用）。
  */
 export function arrayJoinToString(recv: Abs): Abs {
   const s = recv.shape;
-  if (s.k === "tuple") {
-    validateJoinElements(recv);
-    const holes = s.holes ?? [];
-    const parts: string[] = [];
-    for (let i = 0; i < s.elements.length; i++) {
-      if (holes.includes(i)) {
-        parts.push("");
-        continue;
-      }
-      const el = s.elements[i]!;
-      if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
-      const t = el.term;
-      if (t?.op !== "lit") return str();
-      const v = t.value;
-      if (v === null || v === undefined) parts.push("");
-      else if (typeof v === "object") return str();
-      else parts.push(String(v));
-    }
-    return strLit(parts.join(","));
-  }
-  return str();
+  if (s.k !== "tuple") return str();
+  validateJoinElements(recv);
+  const parts = tupleJoinParts(recv, "throw");
+  if (parts === undefined) return str();
+  return strLit(parts.join(","));
 }
 
 /**
@@ -659,22 +681,8 @@ export function arrayJoinWithSep(
     else sep = String(v);
   }
   validateJoinElements(recv);
-  const holes = s.holes ?? [];
-  const parts: string[] = [];
-  for (let i = 0; i < s.elements.length; i++) {
-    if (holes.includes(i)) {
-      parts.push("");
-      continue;
-    }
-    const el = s.elements[i]!;
-    if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
-    const t = el.term;
-    if (t?.op !== "lit") return undefined;
-    const v = t.value;
-    if (v === null || v === undefined) parts.push("");
-    else if (typeof v === "object") return undefined;
-    else parts.push(String(v));
-  }
+  const parts = tupleJoinParts(recv, "throw");
+  if (parts === undefined) return undefined;
   return strLit(parts.join(sep));
 }
 

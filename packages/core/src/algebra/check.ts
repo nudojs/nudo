@@ -1057,6 +1057,30 @@ function checkSourceInner(
     return eff;
   };
   /**
+   * handwritten 返回契约记账（skip 分支 / 正常分支两处消费点共用）：
+   * 显示名优先取源码声明名（既有输出契约零改动）；侧车合取无名单 → 组合式
+   * 显示；#378 来源判定（源码指令 vs 侧车 fn() 返回槽）→ 写 returnContracts。
+   * 返回 display / contractSource 供 checkReturnConstraint 的文案与归因复用。
+   */
+  const recordReturnContract = (
+    fnName: string,
+    returns: NudoConstraint,
+  ): { display: string; contractSource: ReturnContractSource } => {
+    const named = extractRefineReturnFromSource(source, fnName, {
+      loadModule: refineLoad,
+      fromFile: refineFrom,
+    });
+    const display = named?.name ?? formatConstraint(returns);
+    // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
+    const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
+    returnContracts.set(fnName, {
+      display,
+      constraint: returns,
+      source: contractSource,
+    });
+    return { display, contractSource };
+  };
+  /**
    * L2 **申报集合** = 源码 `@nudo:throws` ∪ 有效接口的 throws（并集口径）。
    *
    * BUG-210：旧口径 `declaredThrowsForEntry(...) ?? effectiveInterfaceCached(...).throws.kinds`
@@ -1180,18 +1204,10 @@ function checkSourceInner(
         eff.returns &&
         !eff.conflict?.returns
       ) {
-        const named = extractRefineReturnFromSource(source, name, {
-          loadModule: refineLoad,
-          fromFile: refineFrom,
-        });
-        const display = named?.name ?? formatConstraint(eff.returns.constraint);
-        // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
-        const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
-        returnContracts.set(name, {
-          display,
-          constraint: eff.returns.constraint,
-          source: contractSource,
-        });
+        const { display, contractSource } = recordReturnContract(
+          name,
+          eff.returns.constraint,
+        );
         const retIssues = checkReturnConstraint(
           name,
           display,
@@ -1491,19 +1507,10 @@ function checkSourceInner(
         eff.returns &&
         !eff.conflict?.returns
       ) {
-        // 显示名优先取源码声明名（既有输出契约零改动）；侧车合取无名单 → 组合式显示
-        const named = extractRefineReturnFromSource(source, name, {
-          loadModule: refineLoad,
-          fromFile: refineFrom,
-        });
-        const display = named?.name ?? formatConstraint(eff.returns.constraint);
-        // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
-        const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
-        returnContracts.set(name, {
-          display,
-          constraint: eff.returns.constraint,
-          source: contractSource,
-        });
+        const { display, contractSource } = recordReturnContract(
+          name,
+          eff.returns.constraint,
+        );
         // #367：本次证明**实际消费过**的引理（记账集 ∩ 本函数声明的合法前提）
         const consumedAssume = assumePhi
           ? new Set(

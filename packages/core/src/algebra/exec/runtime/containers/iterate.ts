@@ -80,8 +80,9 @@ import { getEvalClass, lookupClassValue, fnProtoOf } from "../../class-registry.
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "../loop-budget.ts";
 import { makeLoopWidener } from "../loop-widen.ts";
 // Bug 215（S10 转来）：for-of 的出口 join 须实施 @nudo:invariant 公理——
-// 无公理时不取绑定包（零行为变化，见 invariant-apply.ts 的 hasInvariantSpecs 注释）。
-import { applyExitJoinInvariants, hasInvariantSpecs } from "../invariant-apply.ts";
+// 实施收口在 loop-exit-join.ts（无公理时不取绑定包，零行为变化，见
+// invariant-apply.ts 的 hasInvariantSpecs 注释）。
+import { applyLoopExitJoin } from "../loop-exit-join.ts";
 import { noteLoopTruncation } from "../../../call-budget.ts";
 import { callAtFunctionBoundary } from "../state.ts";
 import { $call } from "../../call.ts";
@@ -1226,19 +1227,9 @@ export function $forOf(
     exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
   };
   const applyExitJoin = (): void => {
-    if (!pack || !unpack) return;
-    // Bug 215：具体迭代（无快照 join）也须实施 @nudo:invariant——否则
-    // for-of 的公理被静默丢弃（$for 走 applyExtJoin 有实施）。
-    // 无公理时不取绑定包（零行为变化：取包会暴露转译侧 pack 闭包的既有缺陷）。
-    if (!exitJoin) {
-      if (!hasInvariantSpecs()) return;
-      const cur = pack();
-      const strengthened = applyExitJoinInvariants(cur);
-      if (strengthened !== cur) unpack(strengthened);
-      return;
-    }
-    const joined = joinAbs(exitJoin, pack());
-    unpack(applyExitJoinInvariants(widen ? widen.widenFinal(joined) : joined));
+    // Bug 215 + 出口宽化统一收口（loop-exit-join.ts）；$forOf 出口恒宽化
+    // （exhausted 固定 true，与旧 `widen ? widenFinal(joined) : joined` 等价）。
+    applyLoopExitJoin({ pack, unpack, exitJoin, widen, exhausted: true });
   };
 
   const shape = iterable.shape;

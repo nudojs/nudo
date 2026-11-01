@@ -1045,6 +1045,72 @@ export function evalPromiseMethod(
   // 假确定值 / 缺 reason 臂的来源）。同步分支不受影响：relation/syncFacet
   // 要求 settledFulfilled，pre-join 出生带 unsettled 进不了同步分支。
   const liveRecvShape = () => recv.shape as { inner: Abs; rejected?: Abs };
+  /**
+   * Bug 36 家族 A（then/catch 共用）：确定拒绝 + 非 Identity 回调 → 结果只取
+   * 回调采纳值（微任务；回调实参 = 拒绝 reason）。Bug 1052 邻面：回调返回值是
+   * thenable ⇒ 采纳（兑现值 / 拒绝通道 / 永挂——原生 then/catch 回调返回
+   * thenable 的采纳同款）；回调定抛 → 结果确定拒绝（原生 then/catch 回调抛错
+   * 折 rejection）。
+   */
+  const definiteRecoveryPromise = (handler: Abs, reason: Abs): Abs => {
+    const resultPromise = promiseAbs(unknown, "path");
+    queuePromiseMicro(() => {
+      const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+      try {
+        const recovered = applyCallbackValue(handler, [reason], emptyEnv(), pTrue, defaultLeakBudget);
+        const hr = adoptCallbackReturn(recovered);
+        sh.inner = hr.value;
+        if (hr.rejected !== undefined) {
+          sh.inner = never;
+          sh.rejected = hr.rejected;
+          return;
+        }
+        if (hr.hang) sh.unsettled = true;
+      } catch (e) {
+        if (e instanceof NudoThrow) {
+          sh.inner = never;
+          sh.rejected = e.absValue;
+          return;
+        }
+        throw e;
+      }
+    });
+    return resultPromise;
+  };
+  /**
+   * N1 家族 B（then/catch 共用）：出生 unsettled——fulfilled 透传 inner 在微任务
+   * join 回收臂前不得呈现为确定 fulfilled（链式 .then 会同步映射 pre-join 态 →
+   * 假确定 promise<inner>）；join 后清除（recovered 未知单例 = 采纳面不可判，
+   * 保持 unsettled）。Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 /
+   * 拒绝通道 / 永挂——永挂则保持 unsettled：结果 promise 可能永不 settle）。
+   * rejected 臂 g(live reason ?? fallbackReason) 值 join。
+   */
+  const unsettledRecoveryPromise = (handler: Abs, reason: Abs): Abs => {
+    const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
+    queuePromiseMicro(() => {
+      const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+      const live = liveRecvShape();
+      try {
+        const recovered = applyCallbackValue(handler, [live.rejected ?? reason], emptyEnv(), pTrue, defaultLeakBudget);
+        const hr = adoptCallbackReturn(recovered);
+        sh.inner = joinAbs(unwrapThenable(live.inner), hr.hang ? never : hr.value);
+        if (hr.rejected !== undefined) {
+          sh.rejected = hr.rejected;
+          delete sh.unsettled;
+          return;
+        }
+        if (!hr.hang && !isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
+      } catch (e) {
+        if (e instanceof NudoThrow) {
+          sh.rejected = e.absValue;
+          delete sh.unsettled;
+          return;
+        }
+        throw e;
+      }
+    });
+    return resultPromise;
+  };
   switch (name) {
     case "then": {
       const onFulfilled = args[0];
@@ -1061,32 +1127,7 @@ export function evalPromiseMethod(
           // 拒绝透传：nullish onRejected ≡ Identity
           return promiseRejected(reason, confOf());
         }
-        const resultPromise = promiseAbs(unknown, "path");
-        queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
-          try {
-            const recovered = applyCallbackValue(onRejected, [reason], emptyEnv(), pTrue, defaultLeakBudget);
-            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
-            // 永挂——原生 `then` 回调返回 thenable 的采纳同款）
-            const hr = adoptCallbackReturn(recovered);
-            sh.inner = hr.value;
-            if (hr.rejected !== undefined) {
-              sh.inner = never;
-              sh.rejected = hr.rejected;
-              return;
-            }
-            if (hr.hang) sh.unsettled = true;
-          } catch (e) {
-            if (e instanceof NudoThrow) {
-              // 回调定抛 → 结果确定拒绝（原生 onRejected 抛错折 rejection）
-              sh.inner = never;
-              sh.rejected = e.absValue;
-              return;
-            }
-            throw e;
-          }
-        });
-        return resultPromise;
+        return definiteRecoveryPromise(onRejected, reason);
       }
 
       // Bug 37：nullish onFulfilled ≡ Identity 透传 settle 值
@@ -1133,36 +1174,7 @@ export function evalPromiseMethod(
             ),
           );
         }
-        // N1：出生 unsettled——fulfilled 透传 inner 在微任务 join 回收臂前
-        // 不得呈现为确定 fulfilled（链式 .then 会同步映射 pre-join 态 →
-        // 假确定 promise<inner>）；join 后清除（recovered 未知单例 = 采纳面
-        // 不可判，保持 unsettled）
-        const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
-        queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
-          const live = liveRecvShape();
-          try {
-            const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
-            // 永挂——永挂则保持 unsettled：结果 promise 可能永不 settle）
-            const hr = adoptCallbackReturn(recovered);
-            sh.inner = joinAbs(unwrapThenable(live.inner), hr.hang ? never : hr.value);
-            if (hr.rejected !== undefined) {
-              sh.rejected = hr.rejected;
-              delete sh.unsettled;
-              return;
-            }
-            if (!hr.hang && !isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
-          } catch (e) {
-            if (e instanceof NudoThrow) {
-              sh.rejected = e.absValue;
-              delete sh.unsettled;
-              return;
-            }
-            throw e;
-          }
-        });
-        return resultPromise;
+        return unsettledRecoveryPromise(onRejected, rejected);
       }
 
       // 纯 relation 回调：同步收窄 inner（analyze 路径立刻可读；R3 门收紧为
@@ -1210,6 +1222,19 @@ export function evalPromiseMethod(
         let fulfilled: Abs = unknown;
         let fThrew = false;
         let hang = false;
+        // rejected 臂 g(reason) 的值域 join（定抛只进拒绝通道）
+        const joinRejectedArm = (reason: Abs): void => {
+          try {
+            const hr = runArm(onRejected, reason);
+            // 永挂臂不产出值（never）——值域仍由 fulfilled 臂给出
+            fulfilled = joinAbs(fulfilled, hr.hang ? never : hr.value);
+            if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
+            hang = hang || hr.hang;
+          } catch (e) {
+            if (e instanceof NudoThrow) rejectArms.push(e.absValue);
+            else throw e;
+          }
+        };
         try {
           const hr = runArm(onFulfilled, live.inner);
           fulfilled = hr.value;
@@ -1227,28 +1252,11 @@ export function evalPromiseMethod(
           if (rejNullish) {
             rejectArms.push(liveRejected); // 拒绝透传臂
           } else {
-            try {
-              const hr = runArm(onRejected, liveRejected);
-              // 永挂臂不产出值（never）——值域仍由 fulfilled 臂给出
-              fulfilled = joinAbs(fulfilled, hr.hang ? never : hr.value);
-              if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
-              hang = hang || hr.hang;
-            } catch (e) {
-              if (e instanceof NudoThrow) rejectArms.push(e.absValue);
-              else throw e;
-            }
+            joinRejectedArm(liveRejected);
           }
         } else if (unsettled && !rejNullish) {
           // state 未知的 rejected 臂：g(unknown reason) 值臂 join
-          try {
-            const hr = runArm(onRejected, unknown);
-            fulfilled = joinAbs(fulfilled, hr.hang ? never : hr.value);
-            if (hr.rejected !== undefined) rejectArms.push(hr.rejected);
-            hang = hang || hr.hang;
-          } catch (e) {
-            if (e instanceof NudoThrow) rejectArms.push(e.absValue);
-            else throw e;
-          }
+          joinRejectedArm(unknown);
         }
         // f 臂定抛且接收者确定 fulfilled（唯一臂）→ 确定拒绝（inner never）
         sh.inner = fThrew && settledFulfilled ? never : fulfilled;
@@ -1271,32 +1279,7 @@ export function evalPromiseMethod(
           // nullish catch handler ≡ 拒绝透传（Identity）
           return promiseRejected(rejected, confOf());
         }
-        const resultPromise = promiseAbs(unknown, "path");
-        queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
-          try {
-            const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
-            // 永挂——原生 catch 回调返回 thenable 的采纳同款）
-            const hr = adoptCallbackReturn(recovered);
-            sh.inner = hr.value;
-            if (hr.rejected !== undefined) {
-              sh.inner = never;
-              sh.rejected = hr.rejected;
-              return;
-            }
-            if (hr.hang) sh.unsettled = true;
-          } catch (e) {
-            if (e instanceof NudoThrow) {
-              // 回调定抛 → 结果确定拒绝（原生 catch 回调抛错折 rejection）
-              sh.inner = never;
-              sh.rejected = e.absValue;
-              return;
-            }
-            throw e;
-          }
-        });
-        return resultPromise;
+        return definiteRecoveryPromise(onRejected, rejected);
       }
       // R3a：确定 fulfilled——catch 回调原生死代码（fulfilled 接收者的
       // onRejected 永不进队）：不执行、不 join 回调值，值原样透传。此前把
@@ -1325,36 +1308,7 @@ export function evalPromiseMethod(
       // 拒绝通道在场但 settle 未定：两臂 join（resolved: inner；rejected:
       // g(R)；g 定抛 → 结果可能拒绝——只置拒绝通道，fulfilled 臂保留）
       if (rejected !== undefined) {
-        // N1：出生 unsettled——fulfilled 透传 inner 在微任务 join 回收臂前
-        // 不得呈现为确定 fulfilled（链式 .then 会同步映射 pre-join 态 →
-        // 假确定 promise<inner>）；join 后清除（recovered 未知单例 = 采纳面
-        // 不可判，保持 unsettled）
-        const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
-        queuePromiseMicro(() => {
-          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
-          const live = liveRecvShape();
-          try {
-            const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
-            // Bug 1052 邻面：回调返回值是 thenable ⇒ 采纳（兑现值 / 拒绝通道 /
-            // 永挂——永挂则保持 unsettled：结果 promise 可能永不 settle）
-            const hr = adoptCallbackReturn(recovered);
-            sh.inner = joinAbs(unwrapThenable(live.inner), hr.hang ? never : hr.value);
-            if (hr.rejected !== undefined) {
-              sh.rejected = hr.rejected;
-              delete sh.unsettled;
-              return;
-            }
-            if (!hr.hang && !isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
-          } catch (e) {
-            if (e instanceof NudoThrow) {
-              sh.rejected = e.absValue;
-              delete sh.unsettled;
-              return;
-            }
-            throw e;
-          }
-        });
-        return resultPromise;
+        return unsettledRecoveryPromise(onRejected, rejected);
       }
       // state 未知（unsettled）：onRejected 对未知 reason 可能执行——值臂
       // join（结果保持 unsettled）；定抛 → may-reject 通道。回调进微任务，
@@ -1552,6 +1506,27 @@ function elementSettle(el: Abs): ElementSettle {
 }
 
 /**
+ * all 组合子两路（live 聚合的 settle 重算 / 调用期静态路径）共用的拒绝面：
+ * 逐元素取 settle 通道（Bug 293：拒绝域来自任一元素的 rejected 通道）→
+ * reason join 聚合 → 判「确定拒绝」（某元素 inner=never 且带 reason ⇒ all
+ * 必拒绝——fulfilled 域不可能 → 内层 never + reason 通道，$await 抛 →
+ * catch 臂可达）。
+ */
+function allRejectFace(els: Abs[]): {
+  settles: ElementSettle[];
+  reason: Abs | undefined;
+  definiteReject: boolean;
+} {
+  const settles = els.map(elementSettle);
+  const reasons = settles.map((s) => s.reason).filter((r): r is Abs => r !== undefined);
+  const reason = joinReasons(reasons);
+  const definiteReject = settles.some(
+    (s) => s.value.shape.k === "never" && s.reason !== undefined,
+  );
+  return { settles, reason, definiteReject };
+}
+
+/**
  * Bug 1148：`Promise.all` 的**活通道聚合**（原生：all 等**所有**元素 settle
  * 才兑现）。
  *
@@ -1583,19 +1558,7 @@ function liveAllAggregate(a0: Abs | undefined, els: Abs[]): Abs {
   const settle = (): void => {
     if (done) return;
     // 重算：读**活**通道的 inner（元素已 settle ⇒ 值已就位）
-    const settles = els.map(elementSettle);
-    const reasons = settles.map((s) => s.reason).filter((r): r is Abs => r !== undefined);
-    const reason =
-      reasons.length === 0
-        ? undefined
-        : reasons.length === 1
-          ? reasons[0]!
-          : reasons.reduce((a, b) => joinAbs(a, b));
-    // 确定拒绝（某元素 inner=never 且带 reason）⇒ all 必拒绝（fulfilled 域
-    // 不可能）→ 内层 never + reason 通道（$await 抛 → catch 臂可达）
-    const definiteReject = settles.some(
-      (s) => s.value.shape.k === "never" && s.reason !== undefined,
-    );
+    const { settles, reason, definiteReject } = allRejectFace(els);
     // 还有元素未 settle ⇒ 等它 settle 后再兑现（原生：all 等所有元素 settle）
     const anyPending = els.some((el) => isPromiseEff(el) && isPendingPromiseShape(el.shape));
     if (!definiteReject && anyPending) return;
@@ -2031,20 +1994,8 @@ export function evalPromiseStatic(
       if (els.some((el) => isPromiseEff(el) && isPendingPromiseShape(el.shape))) {
         return liveAllAggregate(a0, els);
       }
-      const settles = els.map(elementSettle);
+      const { settles, reason, definiteReject } = allRejectFace(els);
       const values = settles.map((s) => s.value);
-      const reasons = settles.map((s) => s.reason).filter((r): r is Abs => r !== undefined);
-      const reason =
-        reasons.length === 0
-          ? undefined
-          : reasons.length === 1
-            ? reasons[0]!
-            : reasons.reduce((a, b) => joinAbs(a, b));
-      // 确定拒绝：某元素 inner=never 且带 reason → all 必拒绝（fulfilled 域
-      // 不可能）→ 内层 never + reason 通道（$await 抛 → catch 臂可达）
-      const definiteReject = settles.some(
-        (s) => s.value.shape.k === "never" && s.reason !== undefined,
-      );
       if (definiteReject) return promiseRejected(reason!, "path");
       const base =
         a0?.shape.k === "tuple"

@@ -34,6 +34,7 @@ import { isNullishLitAbs } from "./surface.ts";
 import { isOobUndef } from "./exec/runtime/state.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { getSlot } from "./objects.ts";
+import { primOf } from "./leq.ts";
 import { accessorReadDomain } from "./accessors.ts";
 import { termEquals, termToString } from "./term.ts";
 import { formatAbs } from "./format.ts";
@@ -937,7 +938,7 @@ function assertScalar(
 ): PostProof {
   // prim 门
   if (constraint.prim) {
-    const retPrim = primOfAbs(ret);
+    const retPrim = primOf(ret);
     if (retPrim && retPrim !== constraint.prim) {
       return disproved(`typeof return = "${retPrim}" ⊭ "${constraint.prim}"`);
     }
@@ -1067,19 +1068,6 @@ function assertScalar(
 
   // 契约无 pred（裸 prim）：shape 合格即 proved
   return proved();
-}
-
-function primOfAbs(
-  a: Abs,
-): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
-  if (a.shape.k === "prim") return a.shape.type;
-  const lvR = litValue(a);
-  const lv = lvR.ok ? lvR.value : undefined;
-  if (typeof lv === "number") return "number";
-  if (typeof lv === "string") return "string";
-  if (typeof lv === "boolean") return "boolean";
-  if (typeof lv === "bigint") return "bigint";
-  return undefined;
 }
 
 /** 字面量界违约的人类可读描述（`return > 0` / `return 0 ⊭ ≥ 1` 等） */

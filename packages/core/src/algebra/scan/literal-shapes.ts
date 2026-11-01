@@ -379,6 +379,34 @@ function judgeOrUnion(
 }
 
 /**
+ * 统一违例记账（本模块全部 `nudo:constraint-violated` 站点共用骨架）：
+ * severity / code / message / fn / line / column 固定，actual / expected /
+ * suggestion 由各站点传入。
+ * ⚠ message 模板逐字钉住——多测试面（gold / bug-pin）pin 此文案，不得改动。
+ */
+function pushPrecondIssue(
+  out: CheckIssue[],
+  displayName: string,
+  paramName: string,
+  loc: { start: { line: number; column: number } } | undefined,
+  actual: string,
+  expected: string,
+  suggestion: string,
+): void {
+  out.push({
+    severity: "error",
+    code: DIAG.constraintViolated,
+    message: `${displayName}[${paramName}]: argument ⊭ precondition`,
+    actual,
+    expected,
+    suggestion,
+    fn: displayName,
+    line: loc?.start.line,
+    column: loc?.start.column,
+  });
+}
+
+/**
  * 形参位的谓词执法：逐条 Pred 裁决实参是否满足。
  *
  * 通道顺序（**顺序敏感**，勿调换）：
@@ -430,17 +458,15 @@ export function checkReqs(
         // unknown/any 无法证明缺字段；其余已知形态（含 obj 缺槽）→ 违例
         if (k !== "unknown" && k !== "any") {
           const field = fieldPath.join(".");
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: `missing field ${field}`,
-            suggestion: `add the missing field ${field}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            `missing field ${field}`,
+            `add the missing field ${field}`,
+          );
         }
         continue;
       }
@@ -479,17 +505,15 @@ export function checkReqs(
         // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
         if (actualPrim !== undefined && actualPrim !== expected) {
           typeofReported = true;
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: `typeof ${paramName} = "${expected}"`,
-            suggestion: `use a value of type ${expected}, or relax the refine on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            `typeof ${paramName} = "${expected}"`,
+            `use a value of type ${expected}, or relax the refine on ${paramName}`,
+          );
         }
         continue;
       }
@@ -513,17 +537,15 @@ export function checkReqs(
         if (nv !== undefined) {
           const want = nv.value === null ? "null" : "undefined";
           if (nullishKindOf(arg) !== want) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: predToString(p),
-              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
+            pushPrecondIssue(
+              out,
+              displayName,
+              paramName,
+              loc,
+              formatAbs(arg),
+              predToString(p),
+              `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+            );
           }
           continue;
         }
@@ -551,17 +573,15 @@ export function checkReqs(
             (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le")
           )
             continue;
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: predToString(p),
-            suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            predToString(p),
+            `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+          );
         }
         continue;
       }
@@ -584,17 +604,15 @@ export function checkReqs(
         if (p.op === "lt") ok = argLen < n;
         if (p.op === "le") ok = argLen <= n;
         if (!ok) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: `length(${paramName}) ${opSym} ${n}`,
-            suggestion: `use a value whose length is ${opSym} ${n}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            `length(${paramName}) ${opSym} ${n}`,
+            `use a value whose length is ${opSym} ${n}, or relax the precondition on ${paramName}`,
+          );
         }
         continue;
       }
@@ -614,17 +632,15 @@ export function checkReqs(
       if (p.op === "or") {
         const verdict = judgeOrUnion(p, arg, argLen);
         if (verdict === false) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: predToString(p),
-            suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            predToString(p),
+            `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+          );
         }
         continue;
       }
@@ -652,17 +668,15 @@ export function checkReqs(
             violated = actual !== undefined && actual !== typeof v;
           }
           if (violated) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: predToString(p),
-              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
+            pushPrecondIssue(
+              out,
+              displayName,
+              paramName,
+              loc,
+              formatAbs(arg),
+              predToString(p),
+              `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+            );
           }
         }
         continue;
@@ -688,17 +702,15 @@ export function checkReqs(
           // Bug 1114：typeof 通道已报（类型都不对）⇒ 数值界判据对实参**没有
           // 意义**（布尔 / null 不可能 > 0）⇒ 同一条违例只报一次。
           if (typeofReported) continue;
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: predToString(p),
-            suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            predToString(p),
+            `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+          );
           continue;
         }
         // 普通数值界
@@ -709,17 +721,15 @@ export function checkReqs(
         if (p.op === "lt") ok = (lv as number) < n;
         if (p.op === "le") ok = (lv as number) <= n;
         if (!ok) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: predToString(p),
-            suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            predToString(p),
+            `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
+          );
         }
       }
     }
@@ -778,17 +788,15 @@ export function checkShapeAgainstAbs(
     const k = value.shape.k;
     const noInfo = k === "never" || ((k === "unknown" || k === "any") && !value.term);
     if (!noInfo) {
-      out.push({
-        severity: "error",
-        code: DIAG.constraintViolated,
-        message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-        actual: formatAbs(absArg),
-        expected: `object shape at ${path}`,
-        suggestion: `use an object satisfying the ${path} shape constraint`,
-        fn: displayName,
-        line: loc?.start.line,
-        column: loc?.start.column,
-      });
+      pushPrecondIssue(
+        out,
+        displayName,
+        paramName,
+        loc,
+        formatAbs(absArg),
+        `object shape at ${path}`,
+        `use an object satisfying the ${path} shape constraint`,
+      );
       return true;
     }
     return false;
@@ -801,17 +809,15 @@ export function checkShapeAgainstAbs(
     const fieldPath = path === paramName ? `${paramName}.${key}` : `${path}.${key}`;
     if (!slot) {
       if (!field.optional && !field.constraint.isOptional) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(absArg),
-          expected: `missing field ${fieldPath}`,
-          suggestion: `add the missing field ${fieldPath}`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
+        pushPrecondIssue(
+          out,
+          displayName,
+          paramName,
+          loc,
+          formatAbs(absArg),
+          `missing field ${fieldPath}`,
+          `add the missing field ${fieldPath}`,
+        );
       }
       continue;
     }
@@ -885,31 +891,27 @@ export function checkFieldConstraint(
       // 无 prim 信息：nullish（有 term）**确定**违反裸 prim 契约；
       // 其它（无 term 的 unknown / any）不可证 ⇒ 不猜。
       if (nullishKindOf(fieldAbs) !== undefined && !hasEqDomain) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(actualOf ?? fieldAbs),
-          expected: `typeof ${fieldPath} = "${c.prim}"`,
-          suggestion: `change ${fieldPath} to ${c.prim}`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
+        pushPrecondIssue(
+          out,
+          displayName,
+          paramName,
+          loc,
+          formatAbs(actualOf ?? fieldAbs),
+          `typeof ${fieldPath} = "${c.prim}"`,
+          `change ${fieldPath} to ${c.prim}`,
+        );
         return;
       }
     } else if (actualPrim !== c.prim) {
-      out.push({
-        severity: "error",
-        code: DIAG.constraintViolated,
-        message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-        actual: formatAbs(actualOf ?? fieldAbs),
-        expected: `typeof ${fieldPath} = "${c.prim}"`,
-        suggestion: `change ${fieldPath} to ${c.prim}`,
-        fn: displayName,
-        line: loc?.start.line,
-        column: loc?.start.column,
-      });
+      pushPrecondIssue(
+        out,
+        displayName,
+        paramName,
+        loc,
+        formatAbs(actualOf ?? fieldAbs),
+        `typeof ${fieldPath} = "${c.prim}"`,
+        `change ${fieldPath} to ${c.prim}`,
+      );
       return;
     }
   }
@@ -919,17 +921,15 @@ export function checkFieldConstraint(
     const ivR = litValue(fieldAbs);
     const iv = ivR.ok ? ivR.value : undefined;
     if (typeof iv === "number" && !Number.isInteger(iv)) {
-      out.push({
-        severity: "error",
-        code: DIAG.constraintViolated,
-        message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-        actual: formatAbs(actualOf ?? fieldAbs),
-        expected: `${fieldPath} is int`,
-        suggestion: `change ${fieldPath} to an integer`,
-        fn: displayName,
-        line: loc?.start.line,
-        column: loc?.start.column,
-      });
+      pushPrecondIssue(
+        out,
+        displayName,
+        paramName,
+        loc,
+        formatAbs(actualOf ?? fieldAbs),
+        `${fieldPath} is int`,
+        `change ${fieldPath} to an integer`,
+      );
     }
   }
 
@@ -992,17 +992,15 @@ export function checkFieldConstraint(
           if (atom.op === "lt") ok = sv < n;
           if (atom.op === "le") ok = sv <= n;
           if (!ok) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(actualOf ?? fieldAbs),
-              expected: `length(${fieldPath}) ${opSym} ${n}`,
-              suggestion: `use a ${fieldPath} whose length is ${opSym} ${n}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
+            pushPrecondIssue(
+              out,
+              displayName,
+              paramName,
+              loc,
+              formatAbs(actualOf ?? fieldAbs),
+              `length(${fieldPath}) ${opSym} ${n}`,
+              `use a ${fieldPath} whose length is ${opSym} ${n}`,
+            );
           }
           continue;
         }
@@ -1013,17 +1011,15 @@ export function checkFieldConstraint(
         // ⇒ 报违例）。此前字段/元素位的界通道对 nullish 直接 `continue`
         // ⇒ `{ v: null }` / `[null]` 零诊断（假绿）。
         if (nullishKindOf(fieldAbs) !== undefined || typeof lv === "boolean") {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(actualOf ?? fieldAbs),
-            expected: `${fieldPath} ${opSym} ${n}`,
-            suggestion: `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(actualOf ?? fieldAbs),
+            `${fieldPath} ${opSym} ${n}`,
+            `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
+          );
           continue;
         }
         if (lv === undefined || typeof lv !== "number" || isStr) continue;
@@ -1033,17 +1029,15 @@ export function checkFieldConstraint(
         if (atom.op === "lt") ok = lv < n;
         if (atom.op === "le") ok = lv <= n;
         if (!ok) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(actualOf ?? fieldAbs),
-            expected: `${fieldPath} ${opSym} ${n}`,
-            suggestion: `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(actualOf ?? fieldAbs),
+            `${fieldPath} ${opSym} ${n}`,
+            `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
+          );
         }
       }
     }
@@ -1068,17 +1062,15 @@ export function checkFieldConstraint(
     ((c.members?.length ?? 0) > 0 || c.preds.some((p) => p.op === "eq")) &&
     !literalMeetsConstraint(fieldLit, c)
   ) {
-    out.push({
-      severity: "error",
-      code: DIAG.constraintViolated,
-      message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-      actual: formatAbs(actualOf ?? fieldAbs),
-      expected: `${fieldPath} ∈ ${formatConstraint(c)}`,
-      suggestion: `use a ${fieldPath} satisfying ${formatConstraint(c)}`,
-      fn: displayName,
-      line: loc?.start.line,
-      column: loc?.start.column,
-    });
+    pushPrecondIssue(
+      out,
+      displayName,
+      paramName,
+      loc,
+      formatAbs(actualOf ?? fieldAbs),
+      `${fieldPath} ∈ ${formatConstraint(c)}`,
+      `use a ${fieldPath} satisfying ${formatConstraint(c)}`,
+    );
   }
 }
 
@@ -1174,17 +1166,15 @@ export function checkShapeReqs(
         isNullishLitAbs(arg) ||
         (arg.shape.k !== "unknown" && arg.shape.k !== "any")
       ) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(arg),
-          expected: `array at ${paramName}`,
-          suggestion: `use a value satisfying the array constraint`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
+        pushPrecondIssue(
+          out,
+          displayName,
+          paramName,
+          loc,
+          formatAbs(arg),
+          `array at ${paramName}`,
+          `use a value satisfying the array constraint`,
+        );
       }
     }
     // 顶层 int（builder 上 .int 是方法，标志须经 isIntFlag 读）
@@ -1192,17 +1182,15 @@ export function checkShapeReqs(
       const ivR = litValue(arg);
       const iv = ivR.ok ? ivR.value : undefined;
       if (typeof iv === "number" && !Number.isInteger(iv)) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(arg),
-          expected: `${paramName} is int`,
-          suggestion: `use an integer`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
+        pushPrecondIssue(
+          out,
+          displayName,
+          paramName,
+          loc,
+          formatAbs(arg),
+          `${paramName} is int`,
+          `use an integer`,
+        );
       }
     }
   }
@@ -1269,17 +1257,15 @@ function checkUnionMembers(
   }
   // 兜底：成员没有逐条诊断可展示 ⇒ 报 union 级违例
   const shown = formatConstraint(c);
-  ctx.out.push({
-    severity: "error",
-    code: DIAG.constraintViolated,
-    message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-    actual: formatAbs(arg),
-    expected: shown,
-    suggestion: `use a value satisfying ${shown}`,
-    fn: displayName,
-    line: loc?.start.line,
-    column: loc?.start.column,
-  });
+  pushPrecondIssue(
+    ctx.out,
+    displayName,
+    paramName,
+    loc,
+    formatAbs(arg),
+    shown,
+    `use a value satisfying ${shown}`,
+  );
 }
 
 /**

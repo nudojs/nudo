@@ -301,7 +301,9 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
 export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
-import { applyExitJoinInvariants, applyInvariantsToPack, hasInvariantSpecs } from "./invariant-apply.ts";
+import { applyInvariantsToPack } from "./invariant-apply.ts";
+// Bug 215：出口 join 的不变式实施收口（$whileSeq 的 applyExitJoin 闭包消费）
+import { applyLoopExitJoin } from "./loop-exit-join.ts";
 
 /**
  * 有界 for：unroll ≤ maxIters，每步「可能退出」的态 join；
@@ -601,20 +603,9 @@ export function $whileSeq(
     exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
   };
   const applyExitJoin = (exhausted: boolean): void => {
-    if (!pack || !unpack) return;
-    // Bug 215：具体出口（无快照 join）也须实施 @nudo:invariant——否则
-    // while / do-while 的公理被静默丢弃（$for 走 applyExtJoin 有实施）。
-    // 无公理时不取绑定包（零行为变化：取包会暴露转译侧 pack 闭包的既有缺陷）。
-    if (!exitJoin) {
-      if (!hasInvariantSpecs()) return;
-      const cur = pack();
-      const strengthened = applyExitJoinInvariants(cur);
-      if (strengthened !== cur) unpack(strengthened);
-      return;
-    }
-    const joined = joinAbs(exitJoin, pack());
-    const out = exhausted && widen ? widen.widenFinal(joined) : joined;
-    unpack(applyExitJoinInvariants(out));
+    // Bug 215 + 出口宽化统一收口（loop-exit-join.ts）；$whileSeq 仅预算
+    // 耗尽出口宽化（定假出口 / definite break 忠实语义不宽化）。
+    applyLoopExitJoin({ pack, unpack, exitJoin, widen, exhausted });
   };
   // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
   // 硬上限；硬上限仍具体真 → 截断观测 + 绑定 conf 降级。

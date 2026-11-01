@@ -420,7 +420,8 @@ function leqShape(
   return fail(`shape ${s.k} ⊭ ${t.k}`);
 }
 
-function primOf(a: Abs): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
+/** Abs 的标量 prim 名（shape prim 优先，否则看字面量 term）；供 leq / postcondition 共用 */
+export function primOf(a: Abs): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
   if (a.shape.k === "prim") return a.shape.type;
   const lvR = litValue(a);
   const lv = lvR.ok ? lvR.value : undefined;
