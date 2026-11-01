@@ -29,13 +29,14 @@ import {
   resolveReferences,
 } from "../symbols.ts";
 import { positionalCommandParams } from "../agent-tools.ts";
+// ignoreThrows 解析已单源：service gate-config.ts（BUG-110），lsp `gate-config.ts`
+// 与 nudojs `check-gate-config.ts` 都只 re-export 同一实现——不再需要 CLI 侧
+// 测试 oracle，镜像相等断言随之移除（同义反复），改为直接值断言。
 import { configIgnoreThrows, parseIgnoreThrows } from "../gate-config.ts";
 import { cacheKey, checkToLspDiagnostics, handleNudoDepFileChanged } from "../validation.ts";
 import { createNudoServer } from "../server.ts";
 import { createMockConnection, withLspServer } from "./helpers.ts";
 import { openLspDocument, requestCompletion } from "./lsp-bug-d4-harness.ts";
-// CLI 侧解析器（**测试 oracle**：同语义镜像必须逐值一致）
-import { configIgnoreThrows as cliConfigIgnoreThrows } from "../../../nudojs/src/check-gate-config.ts";
 
 /* ───────────────────────── 夹具 ───────────────────────── */
 
@@ -382,24 +383,23 @@ function l2CodesWithConfig(ignoreThrows: unknown): string[] {
 }
 
 describe("族 53 · 第 6 条：ignoreThrows 配置面（IDE ≡ CLI）", () => {
-  it("6-1 纯函数面：与 CLI 解析器逐值一致（含非法值）", () => {
-    const raws: unknown[] = [
-      "Error",
-      "Error,TypeError",
-      ["Error"],
-      ["Error,TypeError"],
-      [" Error ", "", "TypeError"],
-      ["Error", 42, null],
-      [],
-      [""],
-      "  ",
-      undefined,
-      null,
-      123,
+  it("6-1 纯函数面：re-export 实现的逐值断言（含非法值）", () => {
+    const cases: Array<[unknown, string[]]> = [
+      ["Error", ["Error"]],
+      ["Error,TypeError", ["Error", "TypeError"]],
+      [["Error"], ["Error"]],
+      [["Error,TypeError"], ["Error", "TypeError"]],
+      [[" Error ", "", "TypeError"], ["Error", "TypeError"]],
+      [["Error", 42, null], ["Error"]],
+      [[], []],
+      [[""], []],
+      ["  ", []],
+      [undefined, []],
+      [null, []],
+      [123, []],
     ];
-    for (const raw of raws) {
-      const config = { check: { ignoreThrows: raw } };
-      expect(configIgnoreThrows(config)).toEqual(cliConfigIgnoreThrows(config));
+    for (const [raw, expected] of cases) {
+      expect(configIgnoreThrows({ check: { ignoreThrows: raw } })).toEqual(expected);
     }
     expect(configIgnoreThrows({ check: { ignoreThrows: "Error" } })).toEqual(["Error"]);
     expect(configIgnoreThrows({ check: { ignoreThrows: ["Error,TypeError"] } })).toEqual([
