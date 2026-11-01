@@ -17,10 +17,10 @@
  * - **662**：`--emit --dry-run` 的预览标签改用**侧车路径**（与另两分支同口径）。
  * - **667**：`--json` 面（`opts.json`）⇒ 吐**单文件机器文档**（机器面不再拿到人类文本）。
  */
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { formatEmitSummary } from "@nudojs/service/emit";
-import type { CallRecord } from "@nudojs/service";
+import { writeFileAtomic, type CallRecord } from "@nudojs/service";
 
 /**
  * 机器面**用法错误**码（族 20 · Bug 657）。
@@ -41,26 +41,6 @@ function splitDerivedFns(fn: string): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s !== "");
-}
-
-/**
- * 侧车写盘（原子：临时文件 + rename）—— 与发射器同口径。
- *
- * BUG-196：本函数是根侧车的**唯一写者** ⇒ 落盘内容 = 判定内容 = 预览内容。
- */
-function writeSidecarAtomic(sidecarPath: string, content: string): void {
-  const tmp = `${sidecarPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-  try {
-    writeFileSync(tmp, content, "utf-8");
-    renameSync(tmp, sidecarPath);
-  } catch (e) {
-    try {
-      if (existsSync(tmp)) unlinkSync(tmp);
-    } catch {
-      /* best-effort */
-    }
-    throw e;
-  }
 }
 
 export async function runContractEmit(
@@ -344,9 +324,12 @@ export async function runContractEmit(
   // 判定之后才打印派生分支的输出（用法错误时输出面只有错误面）
   for (const line of derivedLines) console.log(line);
 
-  // 根侧车的**唯一写者**：落盘内容 = 判定内容 = 预览内容（M）。
+  // 根侧车的**唯一写者**：落盘内容 = 判定内容 = 预览内容（M）。原子写
+  // （tmp + rename）走 service `writeFileAtomic` 单源——与发射器同口径。
+  // BUG-196：唯一写者 ⇒ 改前双写者后写把 `// derived-from:` 溯源行整段
+  // 抹掉，而报告 / 预览仍按「有溯源行」算 ⇒ 落盘、判定、预览三者不同源。
   if (!opts.dryRun && netRootChanged && finalContent !== undefined) {
-    writeSidecarAtomic(rootSidecarPath, finalContent);
+    writeFileAtomic(rootSidecarPath, finalContent);
   }
 
   // 主摘要的口径 = **净效果**（M vs 写前）：直写分支的中间态（它自己的 diff）

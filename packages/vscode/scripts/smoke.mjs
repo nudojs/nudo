@@ -27,6 +27,8 @@ import { builtinModules, createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// LSP stdio 切帧单源（与 packages/lsp/scripts/smoke-stdio.mjs 共用）
+import { createFrameReader } from "../../../scripts/lib/lsp-framing.mjs";
 
 const vscodePkg = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = join(vscodePkg, "..", "..");
@@ -64,7 +66,6 @@ function lspInitialize(serverPath) {
     const child = spawn(process.execPath, [serverPath], {
       stdio: ["pipe", "pipe", "pipe"],
     });
-    let buf = Buffer.alloc(0);
     let settled = false;
     const done = (fn, arg) => {
       if (settled) return;
@@ -75,34 +76,13 @@ function lspInitialize(serverPath) {
     };
     const timer = setTimeout(() => done(reject, new Error("LSP initialize timeout")), 8000);
 
-    child.stdout.on("data", (chunk) => {
-      buf = Buffer.concat([buf, chunk]);
-      for (;;) {
-        const headerEnd = buf.indexOf("\r\n\r\n");
-        if (headerEnd < 0) break;
-        const header = buf.subarray(0, headerEnd).toString("utf8");
-        const m = /Content-Length:\s*(\d+)/i.exec(header);
-        if (!m) {
-          buf = buf.subarray(headerEnd + 4);
-          continue;
-        }
-        const len = Number(m[1]);
-        const bodyStart = headerEnd + 4;
-        if (buf.length < bodyStart + len) break;
-        const body = buf.subarray(bodyStart, bodyStart + len).toString("utf8");
-        buf = buf.subarray(bodyStart + len);
-        try {
-          const msg = JSON.parse(body);
-          if (msg.id === 1) {
-            if (msg.error) done(reject, new Error(JSON.stringify(msg.error)));
-            else done(resolve, msg.result);
-            return;
-          }
-        } catch {
-          /* ignore non-JSON */
-        }
+    const onFrame = createFrameReader((msg) => {
+      if (msg.id === 1) {
+        if (msg.error) done(reject, new Error(JSON.stringify(msg.error)));
+        else done(resolve, msg.result);
       }
     });
+    child.stdout.on("data", onFrame);
     child.stderr.on("data", () => {});
     child.on("error", (e) => done(reject, e));
     child.on("exit", (code) => {

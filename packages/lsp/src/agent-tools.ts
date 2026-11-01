@@ -12,14 +12,7 @@
  * CLI runCheck / LSP validate / CodeLens 同口径。测试钉住语义一致。
  */
 import type { ClassDeclaration } from "@babel/types";
-import {
-  existsSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import {
   buildCaseDirective,
@@ -61,8 +54,8 @@ import {
   pathNotFoundError,
   targetPathError,
   formatPathErrorText,
+  writeFileAtomic,
   type CallRecord,
-  type Diagnostic,
   type PathError,
 } from "@nudojs/service";
 import {
@@ -91,13 +84,12 @@ import {
   takeInterfaceDiagsSince,
   extractFileEnvNames,
   type Abs,
-  type CheckIssue,
   type InterfaceSource,
   type RunTranspiledOptions,
 } from "@nudojs/core";
 import type { CheckJson, CheckJsonMulti } from "@nudojs/core";
 import {
-  CHECK_FACE_DIAG_CODES,
+  checkIssuesFromDiagnostics,
   collectAbsInlays,
   DIAG,
 } from "@nudojs/core/internal";
@@ -471,50 +463,18 @@ export function buildLspInjection(
 }
 
 /**
- * 分析器通道白名单（`check` 报告面承诺可见的诊断码集合）——单一真源
- * `@nudojs/core/internal` 的 `CHECK_FACE_DIAG_CODES`（与 CLI
- * `check-json-map.ts` 同表：此前两包各手抄一份，core 新增可发射码后漏抄
- * ⇒ agent 面静默吞诊断，Bug 632 / 1038 都栽在这张表上）。
+ * 分析器通道白名单（`check` 报告面承诺可见的诊断码集合）与「分析器诊断 →
+ * `CheckIssue`」映射都收敛到**单一真源** `@nudojs/core/internal` 的
+ * `CHECK_FACE_DIAG_CODES` / `checkIssuesFromDiagnostics`（与 CLI
+ * `check-json-map.ts` 同一入口：此前两包各手抄一份，core 新增可发射码后
+ * 漏抄 ⇒ agent 面静默吞诊断，Bug 632 / 1038 都栽在这张表上）。
  *
  * 为什么需要这条通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断
  * 由**分析器**（`analyzeFile*`）产出，`checkSource` 永远看不到 ⇒ agent 面
  * 只并补充通道时会**假绿**（「nudo check OK」），而 CLI 与 LSP 编辑器面
- * 都判红。
+ * 都判红。severity 口径在单源头注：`interface-entry-only` 固定 info
+ * （观察面提示，不挡门禁）；其余按分析器给的 severity 走（error ⇒ 挡门禁）。
  */
-
-/**
- * 分析器诊断 → `CheckIssue`（check 面消费分析器诊断的唯一入口）。
- *
- * severity 口径与 CLI 同源：`interface-entry-only` 固定 info（观察面提示，
- * 不挡门禁）；其余按分析器给的 severity 走（error ⇒ 挡门禁）。
- */
-function analysisChannelIssues(
-  diagnostics: readonly Diagnostic[],
-): CheckIssue[] {
-  const allowed: ReadonlySet<string> = new Set(CHECK_FACE_DIAG_CODES);
-  return diagnostics
-    .filter((d): d is Diagnostic & { code: string } =>
-      d.code !== undefined && allowed.has(d.code),
-    )
-    .map((d) => {
-      const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
-      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
-      return {
-        severity: isEntryOnly
-          ? ("info" as const)
-          : d.severity === "error"
-            ? ("error" as const)
-            : ("warning" as const),
-        code: d.code,
-        message: d.message,
-        line: d.range.start.line,
-        column: d.range.start.column,
-        ...(typeof data.actual === "string" ? { actual: data.actual } : {}),
-        ...(typeof data.expected === "string" ? { expected: data.expected } : {}),
-        ...(d.suggestions?.[0] !== undefined ? { suggestion: d.suggestions[0] } : {}),
-      };
-    });
-}
 
 /**
  * Agent 门禁工具：返回 CheckJson v1 契约（与 CLI `nudo check --json` 同构）。
@@ -589,7 +549,7 @@ export function checkTool(
     // 分析器通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断由
     // `analyzeFile` 产出 —— `checkSource` **看不到**它们 ⇒ 缺模块（原生必炸）
     // 的文件在 agent 面假绿（「nudo check OK」），而 CLI 与 LSP 编辑器面都判红。
-    // 白名单与 CLI 同源（{@link CHECK_FACE_DIAG_CODES}），不放大诊断面。
+    // 白名单与 CLI 同源（core `CHECK_FACE_DIAG_CODES`），不放大诊断面。
     let reportWithAnalysis = report;
     try {
       const analysis = analyzeFile(
@@ -603,7 +563,7 @@ export function checkTool(
       // 同一事实可能两通道同文（mock 文件缺失 ⇒ module-missing）⇒ 按
       // (code, message) 去重（与 CLI `dedupeAgainstIssues` 同键）
       const seen = new Set(report.issues.map((i) => `${i.code}\u0000${i.message}`));
-      const analysisIssues = analysisChannelIssues(analysis.diagnostics).filter(
+      const analysisIssues = checkIssuesFromDiagnostics(analysis.diagnostics).filter(
         (i) => !seen.has(`${i.code}\u0000${i.message}`),
       );
       reportWithAnalysis = mergeCheckIssues(report, analysisIssues);
@@ -1751,28 +1711,6 @@ function derivedEmit(
  *  后写整文件覆盖 → 前一个 @generated 段丢失且首次结果文本虚报 written。
  *  同路径排队后两次 emit 串行，第二次读到第一次的写盘结果。 */
 const emitChains = new Map<string, Promise<unknown>>();
-/**
- * 根侧车写盘（原子：临时文件 + rename）——与发射器 / CLI 同口径。
- *
- * BUG-196（LSP 面）：本函数是根侧车的**唯一写者** ⇒ 落盘内容 = 判定内容 =
- * 预览内容（`finalContent`）。改前是双写者（派生分支先写、直写分支后写），
- * 后写者把 `// derived-from:` 溯源行整段抹掉，而报告 / 预览仍按「有溯源行」
- * 算 ⇒ 落盘、判定、预览三者不同源。
- */
-function writeSidecarAtomic(sidecarPath: string, content: string): void {
-  const tmp = `${sidecarPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-  try {
-    writeFileSync(tmp, content, "utf-8");
-    renameSync(tmp, sidecarPath);
-  } catch (e) {
-    try {
-      if (existsSync(tmp)) unlinkSync(tmp);
-    } catch {
-      /* best-effort */
-    }
-    throw e;
-  }
-}
 
 /**
  * 侧车读取失败的结构化信封（`pathErrors` 面；Bug 956/630 同族——原始
@@ -1905,9 +1843,13 @@ function serializedEmit(
           )
         : undefined;
 
-    // 根侧车的**唯一写者**：落盘内容 = 判定内容 = 预览内容（M）
+    // 根侧车的**唯一写者**：落盘内容 = 判定内容 = 预览内容（M）。原子写
+    // （tmp + rename）走 service `writeFileAtomic` 单源——与发射器 / CLI
+    // 同口径。BUG-196（LSP 面）：唯一写者 ⇒ 改前双写者把 `// derived-from:`
+    // 溯源行整段抹掉，而报告 / 预览仍按「有溯源行」算 ⇒ 落盘、判定、
+    // 预览三者不同源。
     if (netChanged && !extra.dryRun && finalContent !== undefined) {
-      writeSidecarAtomic(rootSidecarPath, finalContent);
+      writeFileAtomic(rootSidecarPath, finalContent);
     }
 
     return {

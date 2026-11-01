@@ -12,7 +12,7 @@ import {
   type CheckReport,
   type NudoSig,
 } from "@nudojs/core";
-import { CHECK_FACE_DIAG_CODES, CHECK_ISSUE_OPTIONAL_KEYS, DIAG } from "@nudojs/core/internal";
+import { CHECK_ISSUE_OPTIONAL_KEYS, DIAG } from "@nudojs/core/internal";
 import { parse, programBody } from "@nudojs/parser";
 import { CONFIG_SHAPE_CODE } from "./config-shape.ts";
 
@@ -153,103 +153,41 @@ export function docsDiagnosticCodes(issues: Array<{ code?: string }>): string[] 
   ];
 }
 
-export type DomainDiagnosticLike = {
-  code?: string;
-  severity: string;
-  message: string;
-  range: { start: { line: number; column: number } };
-  data?: unknown;
-  suggestions?: string[];
-};
+/**
+ * 分析器诊断的最小结构面（service `Diagnostic` 结构兼容）——与 core 的
+ * `AnalyzerDiagnosticLike` 同一结构，alias 只保名（既有调用方按名引用）。
+ */
+export type { AnalyzerDiagnosticLike as DomainDiagnosticLike } from "@nudojs/core/internal";
 
 /**
- * check 面「哪些码上屏」的**定稿清单**（族 18 · 片 3 owner）。
+ * check 面「哪些码上屏」的**定稿清单**（族 18 · 片 3 owner）——单一真源
+ * `@nudojs/core/internal` 的 `CHECK_FACE_DIAG_CODES`（core/algebra/diag-codes.ts，
+ * 含刻意排除的范围口径头注）。此前 CLI 与 LSP agent 面各手抄一份白名单，
+ * core 新增可发射码后漏抄 ⇒ 诊断被静默吞掉（Bug 632 / 1038 都栽在这张表上）。
  *
- * 判据（三条同时满足才上屏）：
+ * 上屏判据（三条同时满足才进清单；清单本体在 core）：
  * 1. **文档承诺 check 面可见**：guides/check.md 的诊断表 或
  *    reference/diagnostics.md 明确写了该码的 check 面语义；
  * 2. **分析器（service）真实产出**：码出现在 `analyzeFileAsync` 的
  *    `diagnostics` 里（不是 core `checkSource` 独有能力）；
  * 3. **不与 core `checkSource` 的既有诊断重复**：重复 ⇒ 双报。
  *
- * 逐条依据：
- * - `nudo:interface-domain-exceeds`（L1 error/warning）：契约域被调用实参超出。
- *   分析器产出 + 文档承诺 ⇒ 上屏。
- * - `nudo:interface-entry-only`（L1 **info**）：导出无契约根且无调用点域
- *   （entry-only）。文档（guides/check.md、reference/diagnostics.md）承诺它
- *   是 check 的 L1 info；此前白名单**只**留 domain-exceeds 一条 ⇒ 分析器
- *   产出的 entry-only 被 CLI 静默丢弃（infos: 0），而 `nudo health` 走另一条
- *   统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂（Bug 461）。
- *   severity 固定 **info**：观察面提示，不挡门禁（ok / exit code 不变）。
- * - 模块装载问题族（Bug 632）：`nudo:module-missing` / `nudo:missing-export`
- *   （error）、`nudo:module-cycle` / `nudo:module-depth` /
- *   `nudo:exports-unresolved`（warning）、`nudo:json-invalid`（error）。
- *   分析器 `composeEvalModules` 的模块图装载问题（service
- *   `pushBModuleIssues`）**只**走分析器诊断通道；core `checkSource`
- *   不装载依赖模块图 ⇒ 这些事实此前在 check 面**完全不可见** ⇒
- *   依赖解析失败的源文件门禁绿灯、exit 0（文档承诺 module-missing /
- *   missing-export / cycle / depth 是 check 面 error/warning）。
- * - `nudo:env-harvest-conflict`（warning，Bug 1038）：handwritten `@nudo:env`
- *   胜出 / harvest 冲突。reference/diagnostics.md 明确列它是 check 面告警，
- *   分析器已产出（service `pushBModuleIssues`）⇒ 此前被白名单整条丢掉。
- *
- * **刻意排除**（避免与 core `checkSource` 双报，或非 check 面语义）：
- * - `nudo:module-unreadable`：core `checkSource` 已通过
- *   `loadReadFailureIssues` 上报同一事实（依赖存在但读不了）。
- * - `nudo:interface-load`：core `checkSource` 自己上报一份（侧车加载失败）。
- * - `nudo:unknown-inference` / `nudo:opaque-result` / `nudo:no-signature` /
- *   `nudo:missing-slot` / `nudo:builtin-unknown` / `nudo:no-method` /
- *   `nudo:unknown-recv`：core `checkSource`（engine-debt 家族）独有能力。
- * - `nudo:entry-may-throw` / `nudo:assume-*` / `nudo:invariant-*`：L2 家族，
- *   core `checkSource` 独有能力（check 面的 L2 门禁由 `resolveGateForFile`
- *   解析，不能与分析器通道混流）。
- * - `nudo:mock-invalid`：check 面已有 `mockFromErrorIssues` 通道上报。
- * - `nudo:case-*` / `nudo:may-throw`：check 面以 caseMode "none" 调分析器，
- *   永不产出。
+ * `nudo:interface-entry-only` 固定 **info**（观察面提示，不挡门禁；Bug 461
+ * ——此前白名单漏它 ⇒ CLI 与 `nudo health` 两 verb 口径分裂）。
  *
  * 导出供下游片（4 / 5）复用同一口径，避免各处各写一份白名单。
  */
 export { CHECK_FACE_DIAG_CODES } from "@nudojs/core/internal";
 
-const CHECK_FACE_DIAG_CODE_SET: ReadonlySet<string> = new Set(CHECK_FACE_DIAG_CODES);
-
 /**
  * 分析器诊断 → CheckIssue（check 面消费分析器诊断的唯一入口）。
  *
- * 白名单 = {@link CHECK_FACE_DIAG_CODES}（check 面承诺可见的码集合）。
- * severity 口径：entry-only 固定 **info**（观察面提示，不挡门禁）；
- * 其余按分析器给的 severity 走（error ⇒ 挡门禁 / exit 1，warning ⇒ 只可见）。
- *
- * 函数名保持 `domainIssuesFromDiagnostics`：`commands/check.ts` 按名 import
- * （共享热点文件，不在本分片改动范围），改名会断其 import。
+ * 实现与口径（白名单 / severity / actual·expected·suggestion 的取舍）单一
+ * 真源在 core `checkIssuesFromDiagnostics`（core/algebra/check-report.ts 头注
+ * ——此前本函数与 lsp `agent-tools` 各手抄一份）。本导出只保名：
+ * `commands/check.ts` 与 `migrate.ts` 按名 import，改名会断其 import。
  */
-export function domainIssuesFromDiagnostics(
-  diagnostics: readonly DomainDiagnosticLike[],
-): CheckIssue[] {
-  return diagnostics
-    .filter(
-      (d): d is DomainDiagnosticLike & { code: string } =>
-        d.code !== undefined && CHECK_FACE_DIAG_CODE_SET.has(d.code),
-    )
-    .map((d) => {
-      const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
-      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
-      return {
-        severity: isEntryOnly
-          ? ("info" as const)
-          : d.severity === "error"
-            ? ("error" as const)
-            : ("warning" as const),
-        code: d.code,
-        message: d.message,
-        line: d.range.start.line,
-        column: d.range.start.column,
-        actual: typeof data.actual === "string" ? data.actual : undefined,
-        expected: typeof data.expected === "string" ? data.expected : undefined,
-        suggestion: d.suggestions?.[0],
-      };
-    });
-}
+export { checkIssuesFromDiagnostics as domainIssuesFromDiagnostics } from "@nudojs/core/internal";
 
 // ---------------------------------------------------------------------------
 // Bug 643 —— `--from` 的调用点义务必须与**同文件通道同判据**

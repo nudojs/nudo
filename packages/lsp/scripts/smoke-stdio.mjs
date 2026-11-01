@@ -8,6 +8,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// LSP stdio 切帧单源（与 packages/vscode/scripts/smoke.mjs 共用）
+import { createFrameReader } from "../../../scripts/lib/lsp-framing.mjs";
 
 const lspPkg = dirname(dirname(fileURLToPath(import.meta.url)));
 const serverJs = existsSync(join(lspPkg, "dist", "server.js"))
@@ -34,7 +36,6 @@ function send(child, msg) {
 function runSmoke() {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverJs], { stdio: ["pipe", "pipe", "pipe"] });
-    let buf = Buffer.alloc(0);
     let gotDiags = false;
     let gotHover = false;
     let initCaps = null;
@@ -48,49 +49,31 @@ function runSmoke() {
         send(child, { jsonrpc: "2.0", id, method, params });
       });
 
+    // 切帧单源（scripts/lib/lsp-framing.mjs）；分发多路：pending Map 按 id
+    // settle 请求，publishDiagnostics 是服务器主动推送。
+    const onFrame = createFrameReader((msg) => {
+      if (msg.id !== undefined && pending.has(msg.id)) {
+        const res = pending.get(msg.id);
+        pending.delete(msg.id);
+        res(msg.result ?? msg.error);
+        return;
+      }
+      if (msg.method === "textDocument/publishDiagnostics") {
+        const diags = msg.params?.diagnostics ?? [];
+        if (diags.length > 0) {
+          gotDiags = true;
+          ok(`publishDiagnostics (${diags.length} item(s), e.g. ${diags[0].code ?? "?"})`);
+        }
+      }
+    });
+
     const timer = setTimeout(() => {
       child.kill();
       if (gotDiags && gotHover) resolve({ initCaps, gotDiags, gotHover });
       else reject(new Error(`timeout (diags=${gotDiags} hover=${gotHover})`));
     }, 12000);
 
-    child.stdout.on("data", (chunk) => {
-      buf = Buffer.concat([buf, chunk]);
-      for (;;) {
-        const headerEnd = buf.indexOf("\r\n\r\n");
-        if (headerEnd < 0) break;
-        const header = buf.subarray(0, headerEnd).toString("utf8");
-        const m = /Content-Length:\s*(\d+)/i.exec(header);
-        if (!m) {
-          buf = buf.subarray(headerEnd + 4);
-          continue;
-        }
-        const len = Number(m[1]);
-        const bodyStart = headerEnd + 4;
-        if (buf.length < bodyStart + len) break;
-        const body = buf.subarray(bodyStart, bodyStart + len).toString("utf8");
-        buf = buf.subarray(bodyStart + len);
-        let msg;
-        try {
-          msg = JSON.parse(body);
-        } catch {
-          continue;
-        }
-        if (msg.id !== undefined && pending.has(msg.id)) {
-          const res = pending.get(msg.id);
-          pending.delete(msg.id);
-          res(msg.result ?? msg.error);
-          continue;
-        }
-        if (msg.method === "textDocument/publishDiagnostics") {
-          const diags = msg.params?.diagnostics ?? [];
-          if (diags.length > 0) {
-            gotDiags = true;
-            ok(`publishDiagnostics (${diags.length} item(s), e.g. ${diags[0].code ?? "?"})`);
-          }
-        }
-      }
-    });
+    child.stdout.on("data", onFrame);
     child.stderr.on("data", () => {});
     child.on("error", (e) => {
       clearTimeout(timer);

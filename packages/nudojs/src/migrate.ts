@@ -14,7 +14,6 @@ import {
   renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -22,7 +21,7 @@ import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
 import { draftInterface, writeInterfaceDraft } from "@nudojs/service/emit";
-import { buildEvalInjection, type MockFromError } from "@nudojs/service";
+import { buildEvalInjection, writeFileAtomic, type MockFromError } from "@nudojs/service";
 
 export type MigrateStatusRow = {
   root: string;
@@ -227,26 +226,17 @@ function readJson(path: string): Record<string, unknown> | undefined {
 }
 
 /**
- * tmp + rename 原子写：避免半截文件。rename 同目录，崩溃时目标要么旧要么新。
+ * tmp + rename 原子写走 service `writeFileAtomic` 单源。目录必须先建：
+ * marker 写盘（`writeJson` → `.nudo/`）可能发生在任何 mkdir 之前
+ * （`commitWriteSet` 回滚失败的兜底路径），这里补齐旧本地版内联的 mkdir。
  */
-function writeFileAtomic(path: string, data: string): void {
+function ensureDirFor(path: string): void {
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    writeFileSync(tmp, data, "utf-8");
-    renameSync(tmp, path);
-  } catch (e) {
-    try {
-      rmSync(tmp, { force: true });
-    } catch {
-      /* best-effort tmp cleanup */
-    }
-    throw e;
-  }
 }
 
 function writeJson(path: string, value: unknown): void {
+  ensureDirFor(path);
   writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
