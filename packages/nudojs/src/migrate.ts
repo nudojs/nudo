@@ -1598,18 +1598,9 @@ export type PlannedWorkflowWrite = {
 };
 
 export function planWorkflowRewrites(from: string): PlannedWorkflowWrite[] {
-  const wf = findWorkflowDir(from);
-  if (!wf) return [];
-  const out: PlannedWorkflowWrite[] = [];
-  for (const name of readdirSync(wf)) {
-    if (!/\.ya?ml$/i.test(name)) continue;
-    const p = join(wf, name);
-    const text = readFileSync(p, "utf-8");
-    const { text: next, changes } = rewriteWorkflowText(text);
-    if (changes.length === 0) continue;
-    out.push({ path: p, file: relative(process.cwd(), p), text: next, changes });
-  }
-  return out;
+  // 同骨架单源：findWorkflowDir 的目录发现只在此处；目录内扫描在
+  // planWorkflowRewritesIn（retire 面的只读计划也走它）。
+  return planWorkflowRewritesIn(findWorkflowDir(from));
 }
 
 export function rewriteWorkflowsNear(
@@ -1647,6 +1638,15 @@ export type PackageJsonRead =
   | { kind: "unreadable"; error: string };
 
 export function readPackageJsonDetailed(path: string): PackageJsonRead {
+  return readJsonObjectDetailed(path, "package.json");
+}
+
+/** package.json / 迁移审计标记（migrate-retired.json）共用的 JSON 对象读取
+ * 骨架：**区分「不存在」/「解析失败」/「读失败」/「可读」**（label 只进
+ * not-object 错误文案）。`readJson`（公共基建）把解析失败与「文件不存在」
+ * 压成同一个 undefined——迁移面不能把「不知道」当成「没有」（status 假绿
+ * / retire 谎报 / 审计链断掉）。 */
+function readJsonObjectDetailed(path: string, label: string): PackageJsonRead {
   let text: string;
   try {
     text = readFileSync(path, "utf-8");
@@ -1657,7 +1657,7 @@ export function readPackageJsonDetailed(path: string): PackageJsonRead {
   try {
     const value = JSON.parse(text) as unknown;
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { kind: "invalid", error: "package.json is not a JSON object" };
+      return { kind: "invalid", error: `${label} is not a JSON object` };
     }
     return { kind: "ok", value: value as Record<string, unknown> };
   } catch (err) {
@@ -3149,22 +3149,9 @@ function retireBatchError(failures: RetireFailure[]): Error {
  * ⇒ **fail-closed 报错**（不覆盖原文件）。
  */
 function readMarkerFile(path: string): PackageJsonRead {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf-8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
-    return { kind: "unreadable", error: (err as Error).message ?? String(err) };
-  }
-  try {
-    const value = JSON.parse(text) as unknown;
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { kind: "invalid", error: "migrate-retired.json is not a JSON object" };
-    }
-    return { kind: "ok", value: value as Record<string, unknown> };
-  } catch (err) {
-    return { kind: "invalid", error: (err as Error).message ?? String(err) };
-  }
+  // 骨架与 package.json 同源（readJsonObjectDetailed）；分级语义见上：
+  // missing ⇒ 空记录；invalid / unreadable ⇒ fail-closed 报错。
+  return readJsonObjectDetailed(path, "migrate-retired.json");
 }
 
 /**
