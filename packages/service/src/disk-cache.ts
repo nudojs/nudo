@@ -11,19 +11,17 @@
  * BoundedLruMap（analysis/fn/eval/harvest/abs-module/path-env）。
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   mkdirSync,
   readFileSync,
-  writeFileSync,
   existsSync,
   rmSync,
-  renameSync,
-  unlinkSync,
 } from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { stablePathKey } from "@nudojs/core/internal";
+import { writeFileAtomic } from "./write-atomic.ts";
 import { diskCacheRoot, effectiveMaxForks } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
@@ -211,25 +209,14 @@ export class DiskCache {
 
   set(key: string, value: unknown): void {
     if (!this.enabled || !this.root) return;
-    let tmp: string | undefined;
     try {
       const p = this.pathFor(key);
       mkdirSync(dirname(p), { recursive: true });
-      // 同目录 temp + rename：崩溃/磁盘满时缓存条目不会变成半截 JSON。
-      // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
-      tmp = `${p}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-      writeFileSync(tmp, JSON.stringify({ abi: ANALYSIS_ABI, value }), "utf8");
-      renameSync(tmp, p);
-      tmp = undefined;
+      // 同目录 temp + rename 原子写（writeFileAtomic）：崩溃/磁盘满时缓存
+      // 条目不会变成半截 JSON；孤儿 tmp 由其内部清理后 rethrow。
+      writeFileAtomic(p, JSON.stringify({ abi: ANALYSIS_ABI, value }));
     } catch {
-      // fail-open：写失败不影响分析；清理孤儿 tmp
-      if (tmp) {
-        try {
-          if (existsSync(tmp)) unlinkSync(tmp);
-        } catch {
-          /* best-effort */
-        }
-      }
+      // fail-open：写失败不影响分析
     }
   }
 

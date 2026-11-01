@@ -11,7 +11,6 @@ import {
   bindingsOf,
   tryRunTranspiled,
   callTranspiledExportApply,
-  foldStaticStringExpr,
   hostFnCtorFacet,
   isCjsMainRun,
   namespaceAbsOf,
@@ -21,10 +20,13 @@ import {
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
-import { VISITOR_KEYS, type Node } from "@babel/types";
+import { type Node, type Program } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { hashSource, stablePathKey, clearLiveImportRefreshers, BoundedLruMap } from "@nudojs/core/internal";
-import { resolveNpmJsEntryDetailed, type NpmLoadMode } from "./evaluator/resolve-npm.ts";
+import {
+  hashSource, stablePathKey, clearLiveImportRefreshers, BoundedLruMap,
+  isEsmProgram, collectDependencySpecsWithMode, type DependencySpecEntry,
+} from "@nudojs/core/internal";
+import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates, loadModuleOutcome, statFingerprint, type ModuleLoadOutcome } from "./load-module.ts";
 import { resolveEvalInjection } from "./eval-injection.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
@@ -36,42 +38,20 @@ import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
  *   整个源 strict——块级函数声明失去 Annex B 提升）；
  * - 其余 CJS/sloppy → false。
  *
- * 与 core 的 `code-text.ts#sourceIsStrict`（B run 模块体 strict 前缀）/
- * `exec/transpile/meta.ts#isEsmProgram` 同口径。core 未把该判据导出到冻结的
- * 公开面（`.`/`./exec`/`./internal` 不得新增符号）⇒ host 侧按**已解析的 AST**
- * 判定（不重扫文本、不按函数猜，指令是字符串字面量、文本扫描看不见）。AST
- * 由 core 的 parseSource LRU 复用 ⇒ 按对象身份缓存，同一模块 AST 只走一次。
+ * 与 core 的 `code-text.ts#sourceIsStrict`（B run 模块体 strict 前缀）同口径；
+ * ESM 语法判定直接复用 `@nudojs/core/internal` 的 `isEsmProgram`（此前内嵌
+ * 逐字拷贝靠头注释互称同口径）。host 侧按**已解析的 AST**判定（不重扫文本、
+ * 不按函数猜，指令是字符串字面量、文本扫描看不见）。AST 由 core 的
+ * parseSource LRU 复用 ⇒ 按对象身份缓存，同一模块 AST 只走一次。
  */
 const strictByModuleAst = new WeakMap<object, boolean>();
 
 function moduleSourceIsStrict(file: Node): boolean {
   const cached = strictByModuleAst.get(file);
   if (cached !== undefined) return cached;
-  const isEsmNode = (n: Node): boolean => {
-    if (
-      n.type === "ImportDeclaration" ||
-      n.type === "ExportNamedDeclaration" ||
-      n.type === "ExportDefaultDeclaration" ||
-      n.type === "ExportAllDeclaration"
-    ) {
-      return true;
-    }
-    if (n.type === "MetaProperty" && n.meta.name === "import") return true;
-    for (const key of VISITOR_KEYS[n.type] ?? []) {
-      const child = (n as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(child)) {
-        for (const c of child) {
-          if (c && typeof c === "object" && isEsmNode(c as Node)) return true;
-        }
-      } else if (child && typeof child === "object" && isEsmNode(child as Node)) {
-        return true;
-      }
-    }
-    return false;
-  };
-  const root = (file as unknown as { program?: Node }).program ?? file;
+  const root = ((file as unknown as { program?: Program }).program ?? file) as Program;
   // 指令序言：Program.directives 是 AST 面（文本扫描剥字符串后不可见）。
-  const isStrict = hasUseStrictDirective(root) || isEsmNode(root);
+  const isStrict = hasUseStrictDirective(root) || isEsmProgram(root);
   strictByModuleAst.set(file, isStrict);
   return isStrict;
 }
@@ -135,74 +115,17 @@ function resolveRel(spec: string, fromFile: string): string | null {
 
 /** 一条 import 依赖：说明符 + **消费形态**（ESM import / CJS require，Bug 238）。
  * 形态决定裸包 `exports` 的条件键集合——压成 string[] 时这条事实就丢了
- * ⇒ dual package 的 require 消费方被解析到 ESM 构建。 */
-type ImportSpec = { spec: string; mode: NpmLoadMode };
+ * ⇒ dual package 的 require 消费方被解析到 ESM 构建。
+ * （`NpmLoadMode` 与 core 的 `DependencySpecMode` 同为 "import" | "require"。） */
+type ImportSpec = DependencySpecEntry;
 
 function importSpecs(source: string): ImportSpec[] {
   try {
-    const file = parse(source);
-    const out: ImportSpec[] = [];
-    for (const stmt of file.program.body) {
-      if (
-        stmt.type === "ImportDeclaration" ||
-        stmt.type === "ExportNamedDeclaration" ||
-        stmt.type === "ExportAllDeclaration"
-      ) {
-        const src = (stmt as { source?: { value: string } }).source;
-        if (src && typeof src.value === "string") {
-          out.push({ spec: src.value, mode: "import" });
-        }
-      }
-      // require("...") / require('...')
-      collectRequireSpecs(stmt as never, out);
-    }
-    return out;
+    // 逐 stmt 交织顺序（import/re-export 与 require 混排）由 core 单源保证
+    return collectDependencySpecsWithMode(parse(source));
   } catch {
     return [];
   }
-}
-
-function collectRequireSpecs(node: unknown, out: ImportSpec[]): void {
-  const visit = (n: unknown) => {
-    if (!n || typeof n !== "object") return;
-    const o = n as {
-      type?: string;
-      callee?: {
-        type?: string;
-        name?: string;
-        computed?: boolean;
-        object?: { type?: string; name?: string };
-        property?: { type?: string; name?: string };
-      };
-      arguments?: Array<unknown>;
-      [k: string]: unknown;
-    };
-    if (o.type === "CallExpression" && o.callee) {
-      // require(spec) / require.resolve(spec)：可折叠说明符才进依赖图
-      const c = o.callee;
-      let spec: string | undefined;
-      if (c.type === "Identifier" && c.name === "require") {
-        spec = foldStaticStringExpr(o.arguments?.[0]);
-      } else if (
-        c.type === "MemberExpression" &&
-        !c.computed &&
-        c.object?.type === "Identifier" &&
-        c.object.name === "require" &&
-        c.property?.type === "Identifier" &&
-        c.property.name === "resolve"
-      ) {
-        spec = foldStaticStringExpr(o.arguments?.[0]);
-      }
-      if (spec !== undefined) out.push({ spec, mode: "require" });
-    }
-    for (const key of Object.keys(o)) {
-      if (key === "loc" || key === "start" || key === "end") continue;
-      const v = o[key];
-      if (Array.isArray(v)) v.forEach(visit);
-      else if (v && typeof v === "object") visit(v);
-    }
-  };
-  visit(node);
 }
 
 /** 把当前文件的全部 import（相对 + 裸包）编成 modules 表。

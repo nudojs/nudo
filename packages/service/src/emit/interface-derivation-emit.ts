@@ -10,7 +10,7 @@
  * - 源里已不存在的导出，其 `@generated` 段必须被删掉（否则侧车里留下运行
  *   时不存在的导出，并永久占住那个名字）。
  */
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
@@ -38,6 +38,7 @@ import {
 import type { DerivedExport } from "./interface-derivation-project.ts";
 import { formatDerivedSection } from "./interface-derivation-rewrite.ts";
 import { coreExportNameOf } from "./interface-emitter.ts";
+import { writeFileAtomic } from "../write-atomic.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
 import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "../evaluator/config.ts";
 
@@ -559,18 +560,8 @@ export function emitDerivedFromRoot(
 
     // BUG-196：调用方写盘的侧车 ⇒ 本分支**只算不写**（唯一写者）
     if (changed && !opts.dryRun && !skipWritePaths.has(resolve(sidecarPath))) {
-      const tmp = `${sidecarPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-      try {
-        writeFileSync(tmp, finalContent, "utf-8");
-        renameSync(tmp, sidecarPath);
-      } catch (e) {
-        try {
-          if (existsSync(tmp)) unlinkSync(tmp);
-        } catch {
-          /* best-effort */
-        }
-        throw e;
-      }
+      // 同目录 temp + rename 原子写（writeFileAtomic）；写失败 rethrow（产物面）
+      writeFileAtomic(sidecarPath, finalContent);
     }
 
     result.sidecars.push({

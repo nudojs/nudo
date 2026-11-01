@@ -730,15 +730,6 @@ function mergeHints(hints: UseHint[]): { type: string; via: string } {
   };
 }
 
-/** 某函数某形参的 body-read 字段类型（供 draft / quickfix） */
-export function bodyReadFieldsFor(
-  map: BodyReadTypes,
-  fnName: string,
-  paramName: string,
-): BodyReadField[] | undefined {
-  return map.get(fnName)?.get(paramName);
-}
-
 /**
  * `shape({ type: string(), loc: shape({ start: … }) })` 文本。
  * 中间环（有子字段）递归生成嵌套 shape——中间环是 any() 会让

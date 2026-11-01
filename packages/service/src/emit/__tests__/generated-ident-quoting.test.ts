@@ -9,9 +9,9 @@ import { describe, it, expect } from "vitest";
 import { abs, num, str, formatShape, obj as objOf } from "@nudojs/core";
 import {
   absToSchemaSource,
-  absToStandardSchemaModule,
   generateGuardFunctionFromAbs,
 } from "@nudojs/service/emit";
+import { absToStandardSchemaModule } from "../standard-schema.ts";
 
 function objAbs(slots: Record<string, unknown>) {
   const built: Record<string, { value: unknown }> = {};

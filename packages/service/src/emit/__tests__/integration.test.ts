@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { formatShape } from "@nudojs/core";
 import {
   generateGuardFunctionFromAbs,
-  generateDts,
   absToTSType,
   absToSchemaSource,
 } from "@nudojs/service/emit";
+import { generateDts } from "../dts-generator.ts";
 import { analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 
 /** Bug 1001：Abs 的 number prim 域 = 全部 JS number（含 NaN / ±Infinity）⇒ zod 侧放宽 */

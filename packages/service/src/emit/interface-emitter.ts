@@ -26,7 +26,7 @@
  * - autoBind=false 不影响 emit（显式动作，非 ambient 加载）。
  */
 
-import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
   CONSTRAINT_BUILDER_NAMES,
@@ -55,8 +55,8 @@ import {
   sectionChainList,
   widenObservationAbs,
 } from "@nudojs/core/internal";
-import { randomBytes } from "node:crypto";
 
+import { writeFileAtomic } from "../write-atomic.ts";
 import { unifiedDiff } from "./case-emitter.ts";
 import { isDomainDeclarationCase } from "./domain-cases.ts";
 import { sectionEvidenceIsInFile, type EvidenceScope } from "./section-provenance.ts";
@@ -720,21 +720,9 @@ export async function emitInterface(
       ? unifiedDiff(sidecarRaw, bom + finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
       : undefined;
     if (changed && !opts.dryRun) {
-      // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件。
-      // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
-      const tmp = `${sidecarPath}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-      try {
-        writeFileSync(tmp, bom + finalContent, "utf-8");
-        renameSync(tmp, sidecarPath);
-      } catch (e) {
-        // rename 失败清理 tmp，避免长驻会话留下孤儿文件
-        try {
-          if (existsSync(tmp)) unlinkSync(tmp);
-        } catch {
-          /* best-effort */
-        }
-        throw e;
-      }
+      // 同目录 temp + rename 原子写（writeFileAtomic）：崩溃/磁盘满时侧车不会
+      // 变成半截文件；写失败 rethrow（侧车是产物面，失败必须冒泡）。
+      writeFileAtomic(sidecarPath, bom + finalContent);
     }
     takeRefineDiagsSince(refineSince); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
     takeInterfaceDiagsSince(ifaceSince);
