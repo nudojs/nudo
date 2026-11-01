@@ -6,7 +6,7 @@ import {
   scanCaseArgSpans,
   scanCaseTags,
 } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, stripJsdocContinuation } from "@nudojs/core/internal";
 import { parseAbsExprDiag } from "./case-arg.ts";
 import {
   emitDirectiveDiag,
@@ -261,10 +261,8 @@ function parseDirectivesFromCommentTexts(
     for (const tag of caseTags) {
       const name = tag.name;
       // 块注释续行的 ` * ` 前缀不属于实参文本（键名会被污染成 "* supplyChain"）
-      const cleaned = tag.argsText
-        .split("\n")
-        .map((line) => line.replace(/^\s*\*\s?/, ""))
-        .join("\n");
+      // ——剥离逻辑单源 core text-scan 的 stripJsdocContinuation（正则完全相同）
+      const cleaned = stripJsdocContinuation(tag.argsText);
       const rawArgs = splitTopLevelArgs(cleaned);
       const argsAbs = rawArgs.map((a) => parseAbsExprDiag(a, `@nudo:case "${name}" argument`));
 

@@ -101,7 +101,7 @@ function outerParensWrapAll(s: string): boolean {
 
 /**
  * S4-006 同族：尾注释探测改字符串感知——`lit("a /* b")` 里的 `//` / `/*`
- * 不再误判为尾注释（与 scanWithStrings 同口径：`\` 不是转义）。
+ * 不再误判为尾注释（与 core text-scan 的字符串感知扫描同口径：`\` 不是转义）。
  *
  * Bug 843：此前**要求注释前有空白**——`string()// why` 的注释被并进表达式
  * ⇒ 合法类型被判「unsafe」并降级为 unknown。现在按**词法边界**判定：

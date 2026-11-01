@@ -4,7 +4,7 @@ import {
   parseEnvPayload,
   parseMockModulePayload,
 } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { collectNestedBodyRanges, DIAG } from "@nudojs/core/internal";
 import {
   emitDirectiveDiag,
   runWithDirectiveDiags,
@@ -94,79 +94,9 @@ function functionBodyRanges(ast: Node): [number, number][] {
   ]);
 }
 
-/**
- * 类体 / 对象字面量体 / 数组字面量体 / 解构模式体区间
- * （**Bug 1088 + Bug 1101 的位置闸门扩展**）。
- *
- * `functionBodyRanges` 的区间是「函数站点」区间；对 `ClassMethod` /
- * `ObjectMethod`，Babel 给的 `node.start` 是**方法键**的位置 ⇒ 方法**上方**
- * 的行注释落在区间**之外** ⇒ 不算 misplaced ⇒ `/// @nudo:env web` 被
- * **静默提升**成**整文件** env（零诊断）——正是 Bug 847 要消除的那类洞，
- * 只是闸门没覆盖 class / object 体。
- *
- * ⇒ 闸门区间另纳入「类体（`ClassBody`）」与「对象字面量体
- * （`ObjectExpression`）」⇒ 方法 / 字段上方的注释一并被拦下
- * （忽略 + `nudo:directive-syntax` 告警），与函数体口径一致。
- *
- * Bug 1101：同族洞的**剩余两类**——`ArrayExpression`（数组字面量体）与
- * `ObjectPattern`（对象解构模式体）此前同样**不在**闸门区间内 ⇒ 写在数组元素 /
- * 解构键上方的文件级指令被**静默提升**成**整文件**作用域（零诊断）。
- * ⇒ 一并纳入，闸门口径对**所有嵌套体**闭合。
- *
- * Bug 1101 补遗：`ArrayPattern`（数组解构模式体）是 `ObjectPattern` 的
- * **同族孪生**——同一条洞（解构键上方的指令被静默提升）⇒ 一并纳入，
- * 两类解构模式口径完全一致。
- *
- * ⚠ **不**把 `ClassDeclaration` / `ObjectExpression` / `ArrayExpression` /
- * `ObjectPattern` / `ArrayPattern` **整体**纳入：声明**上方**的注释
- * （`/// @nudo:env node` 写在 `class A {` / `const a = [` / `const {` /
- * `const [` 之前）仍是合法的顶层位置 ⇒ 放行。
- */
-function nestedBodyRanges(ast: Node): [number, number][] {
-  const out: [number, number][] = [];
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== "object") return;
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
-    }
-    const n = node as {
-      type?: string;
-      start?: number | null;
-      end?: number | null;
-      [key: string]: unknown;
-    };
-    if (
-      (n.type === "ClassBody" ||
-        n.type === "ObjectExpression" ||
-        n.type === "ArrayExpression" ||
-        n.type === "ObjectPattern" ||
-        n.type === "ArrayPattern") &&
-      typeof n.start === "number" &&
-      typeof n.end === "number"
-    ) {
-      out.push([n.start, n.end]);
-    }
-    for (const key of Object.keys(n)) {
-      // 注释 / 位置 / 原始 token 等非 AST 子节点：跳过（不递归 ⇒ 不误收集）
-      if (
-        key === "loc" ||
-        key === "leadingComments" ||
-        key === "trailingComments" ||
-        key === "innerComments" ||
-        key === "comments" ||
-        key === "tokens" ||
-        key === "extra"
-      ) {
-        continue;
-      }
-      visit(n[key]);
-    }
-  };
-  visit(ast);
-  return out;
-}
-
+// 类体 / 对象字面量体 / 数组字面量体 / 解构模式体的闸门区间走查器单源在 core
+// （`directive-scan.ts` 的 `collectNestedBodyRanges`，经 `@nudojs/core/internal`
+// 消费）——整段 Bug 847/1088/1101 位置闸门口径说明见该实现，不再留本地拷贝。
 /** 偏移是否落在某个区间内 */
 function inRanges(ranges: [number, number][], offset: number): boolean {
   return ranges.some(([s, e]) => offset >= s && offset < e);
@@ -203,7 +133,7 @@ function collectFileDirectives(ast: Node): FileDirective[] {
   // Bug 1101：闸门区间再纳入**数组字面量体 / 解构模式体**——数组元素 / 解构键
   // **上方**的行注释此前同样被静默提升成整文件 env。
   const fnRanges = functionBodyRanges(ast);
-  const bodyRanges = nestedBodyRanges(ast);
+  const bodyRanges = collectNestedBodyRanges(ast);
   for (const comment of comments) {
     if (comment.type === "CommentBlock") {
       warnMisplacedFileTags(comment.value);

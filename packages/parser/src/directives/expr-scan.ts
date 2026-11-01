@@ -2,91 +2,15 @@ import type { Node } from "@babel/types";
 import { formalParamsFromNodes, type FormalParam } from "@nudojs/core";
 import { parse as babelParse } from "../parse.ts";
 
-/**
- * 字符串感知的括号深度扫描：引号内字符不当结构（与 findReplaceSeparator 同口径）。
- * 与 parseCaseArgExpr 的**原样 slice**（不反转义）一致：引号内 `\` 不是转义
- * ——`"foo\"` 的值是 `foo\`，引号正常闭合。此前把 `\` 当转义会吃掉闭合引号，
- * 整条 case 被静默丢弃。
- * onChar 对每个可见字符（含字符串内容）回调；onStructural 仅对非字符串字符回调。
- */
-function scanWithStrings(
-  s: string,
-  onChar: (ch: string, i: number) => void,
-  onStructural: (ch: string, i: number, depth: number) => void,
-): void {
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]!;
-    if (inString) {
-      onChar(ch, i);
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      onChar(ch, i);
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      onChar(ch, i);
-      onStructural(ch, i, depth);
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      onChar(ch, i);
-      onStructural(ch, i, depth);
-      continue;
-    }
-    onChar(ch, i);
-    onStructural(ch, i, depth);
-  }
-}
-
-export function splitTopLevelArgs(s: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]!;
-    if (inString) {
-      current += ch;
-      // 原样 slice：`\` 不是转义（与 parseCaseArgExpr 一致）
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      current += ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    if (ch === ")" || ch === "]" || ch === "}") depth--;
-    if (ch === "," && depth === 0) {
-      result.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += ch;
-  }
-  if (current.trim()) result.push(current.trim());
-  return result;
-}
-
-export function findTopLevelColon(s: string): number {
-  let found = -1;
-  scanWithStrings(
-    s,
-    () => {},
-    (ch, i, depth) => {
-      if (found === -1 && ch === ":" && depth === 0) found = i;
-    },
-  );
-  return found;
-}
+// 字符串感知的顶层扫描（splitTopLevelArgs / findTopLevelColon）**单源**在 core
+// （`algebra/text-scan.ts`，经 `@nudojs/core/internal` 消费）——此前本文件留
+// 逐字拷贝靠注释互钉。包内消费方（case-arg / fn-directives / mock-expr）的
+// `from "./expr-scan.ts"` import 不变。
+// 口径：引号内 `\` **不是**转义（原样 slice，与 parseCaseArgExpr 一致）——
+// `"foo\"` 的值是 `foo\`，引号正常闭合；此前把 `\` 当转义会吃掉闭合引号，
+// 整条 case 被静默丢弃（Bug 840 口径；与 parser `string-literal.ts` 的
+// 转义感知 `scanStringLiteral` 刻意相反，见其头注释）。
+export { splitTopLevelArgs, findTopLevelColon } from "@nudojs/core/internal";
 
 export function findTopLevelArrow(s: string): number {
   let depth = 0;
