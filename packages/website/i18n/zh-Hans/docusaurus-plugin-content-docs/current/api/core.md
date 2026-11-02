@@ -328,7 +328,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(name?: string): Abs` |
 | <a id="$concat"></a>`$concat` | fn | object / member runtime | `$concat(a: Abs, b: Abs): Abs` |
 | <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs, memo?: WeakMap<object, Abs>): Abs` |
-| <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
+| <a id="$del"></a>`$del` | fn | object / member runtime | `$del: (o: Abs, key: Abs) => Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
 | <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[] }, ): Abs` |
@@ -339,7 +339,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get: ( o: Abs, key: string, opts?: Parameters<typeof $getInner>[2], receiver?: Parameters<typeof $getInner>[3], ) => ReturnType<typeof $getInner>` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx: (a: Abs, i: Abs, opts?: { silent?: boolean }) => Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet: ( o: Abs, i: Abs, v: Abs, ) => ReturnType<typeof $idxSetInner>` |
-| <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
+| <a id="$in"></a>`$in` | fn | value / class runtime | `$in: (key: Abs, o: Abs) => Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
 | <a id="$join"></a>`$join` | fn | operator runtime | `$join(a: Abs, b: Abs): Abs` |
 | <a id="$len"></a>`$len` | fn | array runtime | `$len(a: Abs, opts?: { silent?: boolean }): Abs` |
