@@ -312,7 +312,7 @@ export function analyzeFileUncachedInner(
       });
       return;
     }
-    // unknown 接收者 → unknown-recv（与 TypeValue 口径一致，warning）
+    // unknown 接收者 → unknown-recv（warning：接收者类型未知，非缺方法）
     if (d.receiver === "unknown") {
       diagnostics.push({
         range: rangeOf(d, fallbackLine),
@@ -346,13 +346,9 @@ export function analyzeFileUncachedInner(
   // @nudo:mock 已编译为 Abs seed 注入（mockDirectivesToAbsSeeds）；无 TypeValue applyMocks。
   const selfContained = isSelfContainedSource(source, envNames);
 
-  /** B 已上报的模块加载问题种类（压 TypeValue 叠报） */
-  const evalModuleIssueKinds = new Set<ModuleGraphIssues[number]["kind"]>();
-
   const pushBModuleIssues = (issues: ModuleGraphIssues | undefined) => {
     if (!issues) return;
     for (const iss of issues) {
-      evalModuleIssueKinds.add(iss.kind);
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
         severity: B_MODULE_ISSUE_META[iss.kind].severity,
@@ -485,7 +481,7 @@ export function analyzeFileUncachedInner(
       if (!absBindsShared) absBindsShared = collected.binds;
       absNodesShared = collected.nodes;
     } catch {
-      /* Abs 补齐失败仍以 TypeValue 为准 */
+      /* fail-closed：补齐失败保持空表（显式无信息，单引擎无第二来源） */
     }
   }
 
@@ -511,7 +507,7 @@ export function analyzeFileUncachedInner(
       });
     }
   } catch {
-    /* keep TypeValue bindings */
+    /* fail-closed：补全失败保留 bindings 原样（不覆盖既有条目） */
   }
 
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis; assignedName?: string }[] = [];

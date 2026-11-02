@@ -435,9 +435,9 @@ function loadFromMockBinding(
 
 /**
  * 求值引擎注入用：seedVars + seedFns 统一为 Abs 函数绑定。
- * arrowFn mock 落在 seedFns（AST body，供 ast-eval），求值引擎的
- * envGlobals 注入只吃 Abs——不合并会把 mock 丢掉，函数体内的调用
- * 会落到真实原生函数（如 fetch 拿 Abs 当 URL，直接崩）。
+ * arrowFn mock 落在 seedFns（AST body），由模块图侧折成 Abs fn
+ * （absFunction）注入——envGlobals 注入只吃 Abs，不合并会把 mock 丢掉，
+ * 函数体内的调用会落到真实原生函数（如 fetch 拿 Abs 当 URL，直接崩）。
  *
  * Bug 455：同名 mock 被多个函数各自声明时，作用域覆盖表随表一起流转
  * （MOCK_SCOPE_OVERRIDES 载体键）⇒ 按函数求值的边界取本函数那一份，

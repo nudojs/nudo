@@ -10,6 +10,10 @@ import {
   clearAbsModuleCache,
 } from "@nudojs/service";
 import { callTranspiledExport } from "../eval-run.ts";
+import {
+  evalCacheEntryMatches,
+  type EvalCacheEntry,
+} from "../eval-cache.ts";
 import { litValue } from "@nudojs/core";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -177,5 +181,31 @@ describe("tryRunEval/tryEvalCall loadModule passthrough", () => {
       ok: true,
       value: 101,
     });
+  });
+});
+
+describe("evalCacheEntryMatches: 六维键单一谓词（读命中 / 写回 sameSlot 共用）", () => {
+  const dims = {
+    stableSource: "src#1",
+    envKey: "env#1",
+    mockKey: "mock#1",
+    depKey: "dep#1",
+    lenientKey: "0",
+    itersKey: "",
+  };
+  const entry: EvalCacheEntry = { ...dims };
+
+  it("六维全同 ⇒ 命中（composed/value 是载荷不参与判定）", () => {
+    expect(evalCacheEntryMatches(entry, dims)).toBe(true);
+    expect(evalCacheEntryMatches({ ...entry, value: {} as EvalCacheEntry["value"] }, dims)).toBe(true);
+  });
+
+  it("任一维不同 ⇒ miss（新增键维度只改谓词一处——本测试钉全六维）", () => {
+    expect(evalCacheEntryMatches(entry, { ...dims, stableSource: "src#2" })).toBe(false);
+    expect(evalCacheEntryMatches(entry, { ...dims, envKey: "env#2" })).toBe(false);
+    expect(evalCacheEntryMatches(entry, { ...dims, mockKey: "mock#2" })).toBe(false);
+    expect(evalCacheEntryMatches(entry, { ...dims, depKey: "dep#2" })).toBe(false);
+    expect(evalCacheEntryMatches(entry, { ...dims, lenientKey: "1" })).toBe(false);
+    expect(evalCacheEntryMatches(entry, { ...dims, itersKey: "64" })).toBe(false);
   });
 });

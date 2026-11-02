@@ -180,7 +180,7 @@ function buildModulesForFile(
   return modules;
 }
 
-/** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
+/** 模块装载问题分类（求值引擎是唯一上报源；analyzer 映射诊断用） */
 export type AbsModuleLoadIssue = {
   kind:
     | "cycle"
@@ -200,7 +200,7 @@ export type AbsModuleGraphResult = {
   modules: Record<string, AbsModuleExports>;
   /** 绝对路径 → 导出表（含依赖；循环占位求值后就地回填） */
   byPath: Map<string, AbsModuleExports>;
-  /** cycle / depth / missing（求值引擎权威，避免 TypeValue 叠报） */
+  /** cycle / depth / missing（求值引擎权威上报——单一诊断源） */
   issues: AbsModuleLoadIssue[];
 };
 
@@ -845,7 +845,7 @@ function dropAmbiguousStarExports(
 
 /**
  * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
- * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致），
+ * 循环依赖：先放空表再回填（partial 导出表——环内尚未求值的导出不可见），
  * 并记录 cycle/depth/missing/missing-export 供诊断。
  */
 export function evalAbsModuleGraph(
@@ -1287,7 +1287,7 @@ function importLocalBindings(
 
 /**
  * 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。
- * 供 bindings / hover 从 Abs 投影，不必走 TypeValue evaluator。
+ * 供 bindings / hover 从 Abs 投影（求值引擎绑定表是唯一来源）。
  *
  * evaluator fail-closed：绑定 = B run 绑定表（$recordBinding：顶层 const/let，
  * arrow/function 表达式经 $fnVal 已是 Abs fn）+ 导出表桥接（export

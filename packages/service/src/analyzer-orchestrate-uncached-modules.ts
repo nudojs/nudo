@@ -42,9 +42,9 @@ export type ModuleGraphIssues = Array<{
 }>;
 
 export type ModuleGraphResult = {
-  /** B 成功跑通本文件 → TypeValue method/property 诊断整类让位（主流程分档用） */
+  /** 求值引擎成功宿主本文件（tryRunEval 非 undefined）——主流程分档用（调用记录来源 / nodeTypeMap 是否静态兜底） */
   evalHosted: boolean;
-  /** eval 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
+  /** eval 顶层 $callNamed 记录（call@ 合成的唯一来源——单引擎无第二采集路径） */
   evalTopCallRecords: CallRecord[];
 };
 
@@ -115,7 +115,7 @@ export function assembleModuleGraph(args: {
   /** 求值引擎已成功跑通时的 dep 指纹段（tryRunEval depKey） */
   fnDepSeg: string | null;
   diagnostics: Diagnostic[];
-  /** 模块加载问题 → 主流程诊断（含 evalModuleIssueKinds 登记） */
+  /** 模块加载问题 → 主流程诊断（去重定档后 push diagnostics） */
   pushModuleIssues: (issues: ModuleGraphIssues | undefined) => void;
   /** memberDiag → 主流程诊断（去重 + 定档） */
   pushMemberDiag: (d: EvalMemberDiag, fallbackLine: number) => void;
@@ -132,11 +132,9 @@ export function assembleModuleGraph(args: {
     pushModuleIssues: pushBModuleIssues,
     pushMemberDiag: pushBMemberDiag,
   } = args;
-  /** eval 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
+  /** eval 顶层 $callNamed 记录（call@ 合成的唯一来源——单引擎无第二采集路径） */
   const evalTopCallRecords: CallRecord[] = [];
-  /** B 已上报的递归截断函数名（压 TypeValue 叠报） */
-  const evalTruncatedFns = new Set<string>();
-  /** B 成功跑通本文件 → TypeValue method/property 诊断整类让位 */
+  /** 求值引擎成功宿主本文件（主流程分档用：调用记录来源 / nodeTypeMap 兜底） */
   let evalHosted = false;
   // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
   // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
@@ -170,7 +168,8 @@ export function assembleModuleGraph(args: {
       }
       pushBModuleIssues(composed.issues);
     } catch {
-      /* 模块图失败交还 TypeValue（tryRunEval 内部自行组装兜底） */
+      /* 组装失败不在此诊断：tryRunEval 内部自行重试组装；再失败由其
+         catch fail-closed（noteEvalFallback module loadFailure → undefined） */
     }
     const evalRun = tryRunEval(source, filePath, {
       envNames,
@@ -185,9 +184,6 @@ export function assembleModuleGraph(args: {
         for (const d of evalRun.memberDiags) {
           pushBMemberDiag(d, 1);
         }
-      }
-      if (evalRun.truncatedFns) {
-        for (const fn of evalRun.truncatedFns) evalTruncatedFns.add(fn);
       }
       if (evalRun.calls?.length) {
         const impMap = buildAbsImportLocalMap(source, filePath);
@@ -207,8 +203,6 @@ export function pushEvalStaticDiagnostics(args: {
   diagnostics: Diagnostic[];
 }): void {
   const { source, envNames, seeds, diagnostics } = args;
-  /** eval 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
-  const evalBuiltinUnknownNames = new Set<string>();
   // 求值引擎静态诊断接管 unreachable + builtin-unknown
   // env/mock 已覆盖的全局不在 builtin-unknown 之列（eval 注入后不再是裸原生调用）
   const evalKnownGlobals = new Set<string>([
@@ -227,7 +221,6 @@ export function pushEvalStaticDiagnostics(args: {
     });
   }
   for (const b of evalDiag.builtinUnknown) {
-    evalBuiltinUnknownNames.add(b.name);
     diagnostics.push({
       range: b.range,
       severity: "warning",

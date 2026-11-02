@@ -132,6 +132,28 @@ export type EvalCacheEntry = {
   value?: EvalRunResult;
 };
 
+/** 缓存键六维（EvalCacheEntry 的键部分——composed/value 是载荷不是键） */
+export type EvalCacheKeyDims = Omit<EvalCacheEntry, "composed" | "value">;
+
+/**
+ * 命中判定单一谓词：六维键（stableSource / envKey / mockKey / depKey /
+ * lenientKey / itersKey）逐一相等才命中，任一维不同 ⇒ miss。
+ *
+ * 读命中（tryRunEval 的 evalCacheGet 后判定）与写回前的同槽判定
+ * （evalCachePeek 后的 sameSlot）共用本谓词——两处各留一份 === 链必漂移
+ * （新增维度只改一边 ⇒ 命中面与写回面口径分叉，fresh 路径丢旧 value）。
+ */
+export function evalCacheEntryMatches(entry: EvalCacheEntry, dims: EvalCacheKeyDims): boolean {
+  return (
+    entry.stableSource === dims.stableSource &&
+    entry.envKey === dims.envKey &&
+    entry.mockKey === dims.mockKey &&
+    entry.depKey === dims.depKey &&
+    entry.lenientKey === dims.lenientKey &&
+    entry.itersKey === dims.itersKey
+  );
+}
+
 /** 按「入口文件 × mode」键控多槽：analyze / exec 互不逐出（exec 采集不再踢掉分析结果） */
 function evalCacheSlotKey(filePath: string, mode: string): string {
   return `${stablePathKey(filePath)}\0${mode}`;

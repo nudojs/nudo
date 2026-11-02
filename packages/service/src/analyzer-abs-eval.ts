@@ -536,8 +536,9 @@ export function tryEvalAbsFull(
 ): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } | undefined {
   // 真实 require 源码不走 Abs（字符串/注释里的 require( 文本不是依赖）
   if (sourceHasRequireCall(source)) return undefined;
-  // fail-closed：B-only（ast-eval analyzeFnFull 兜底已删——无 throwLoc 补充、
-  // 无 Abs 重求值；B 失败 → undefined）
+  // fail-closed：单引擎——仅走 evaluator（tryEvalCallFull，fnName 落空时按
+  // assignedName 二次派发）；ast-eval analyzeFnFull 兜底已删（2026-09-23），
+  // throwLoc 不再产出（返回类型保留该可选位以兼容消费方），求值失败 → undefined
   try {
     if (filePath) {
       // mock 表按**被求值的函数作用域**选（Bug 455）：同名 `@nudo:mock`
@@ -612,7 +613,7 @@ function displayParamHead(display: string, fnName: string): string {
 
 /**
  * entry@ 附加内涵摘要（代数 generalize + 无损 Abs）。
- * 失败静默——不改变外延 TypeValue。
+ * 失败静默——不改变外延产物（case 的 abs / throws 面不受影响）。
  *
  * display 与 abs **同源**：符号面（generalize）解析不出被调方时（被调方
  * 是跨模块 import 进来的绑定）符号结果退成 bare unknown，display 会写成

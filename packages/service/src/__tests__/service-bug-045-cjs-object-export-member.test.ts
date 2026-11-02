@@ -20,7 +20,7 @@
  * 3. 成员方法体内的 `this` 绑定正确（按 `$invoke` 派发，不是裸值 apply）；
  * 4. 成员体必抛 ⇒ `never` + throws（不回落成 unknown）。
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import {
@@ -29,14 +29,39 @@ import {
   resetGeneralizeMemo,
   resetNudoModuleExecCache,
   resetParseSourceCache,
+  setEvalFallbackCollector,
+  type EvalFallback,
 } from "@nudojs/core";
 import { resetAbsCallBudget } from "@nudojs/core/internal";
 import { analyzeFileAsync } from "@nudojs/service";
-import { clearEvalCache } from "../eval-run.ts";
+import { clearEvalCache, tryEvalCallFull } from "../eval-run.ts";
 import { clearAbsModuleCache } from "../abs-modules-graph.ts";
 import { tmpProject } from "./tmp-project.ts";
 
+// ---------------------------------------------------------------------------
+// 漂移门：invokeCjsMember（eval-run）是导出调用之外的第三份调用/退出/异常
+// 骨架——core 的 runExportCallGuarded 演进时，本组测试钉住它的**异常分类
+// 口径**不单边漂移：NudoThrow = 用户 throw（never + 载荷，不进 fallback
+// 计数）；其它原生异常 = 引擎缺陷（必须 noteEvalFallback 可观测 + undefined）。
+// ---------------------------------------------------------------------------
+const cjsInvokeState = vi.hoisted(() => ({ failNative: false }));
+
+vi.mock("@nudojs/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@nudojs/core")>();
+  return {
+    ...actual,
+    // $invoke 在 service 层仅 eval-run 的 invokeCjsMember（CJS 成员派发点）
+    // 消费；core 内部转译执行走包内相对 import，不经本 mock——模块装载
+    // 照常成功，故障只注入到成员调用边界。
+    $invoke: (...a: Parameters<typeof actual.$invoke>) => {
+      if (cjsInvokeState.failNative) throw new TypeError("engine defect (drift gate)");
+      return actual.$invoke(...a);
+    },
+  };
+});
+
 beforeEach(() => {
+  cjsInvokeState.failNative = false;
   resetCheckSourceMemo();
   resetGeneralizeMemo();
   resetNudoModuleExecCache();
@@ -125,5 +150,53 @@ describe("BUG-045 · CJS `module.exports = { … }` 成员函数求值", () => {
     expect(formatShape(boom.combinedAbs!)).toBe("never");
     const witness = boom.cases.find((c) => c.name.startsWith("entry@"))!;
     expect(formatShape(witness.throwsAbs)).toBe("Error");
+  });
+});
+
+describe("invokeCjsMember 异常分类漂移门（与 core runExportCallGuarded 骨架钉同）", () => {
+  it("NudoThrow ⇒ never + 载荷，且不进 fallback 计数（用户 throw 不是引擎回落）", () => {
+    const fallbacks: EvalFallback[] = [];
+    setEvalFallbackCollector((f) => fallbacks.push(f));
+    try {
+      const full = tryEvalCallFull(
+        `module.exports = {\n  boom() {\n    throw new Error("x");\n  },\n};\n`,
+        "/t/b045-guard.js",
+        "boom",
+        [],
+      );
+      expect(full).toBeDefined();
+      expect(full!.result.shape.k).toBe("never");
+      expect(formatShape(full!.throws)).toBe("Error");
+      // 分类口径：NudoThrow 若被误喂 noteEvalFallback 会落成
+      // reason=module-throw / message=nudo:throw 的计数事件
+      expect(
+        fallbacks.filter((f) => f.reason === "module-throw" && f.message === "nudo:throw"),
+        "NudoThrow 不得吃进 fallback 计数",
+      ).toEqual([]);
+    } finally {
+      setEvalFallbackCollector(null);
+    }
+  });
+
+  it("其它原生异常 ⇒ noteEvalFallback 可观测 + fail-closed undefined（不静默吞）", () => {
+    const fallbacks: EvalFallback[] = [];
+    setEvalFallbackCollector((f) => fallbacks.push(f));
+    cjsInvokeState.failNative = true;
+    try {
+      const full = tryEvalCallFull(
+        `module.exports = {\n  h() {\n    return 1;\n  },\n};\n`,
+        "/t/b045-guard.js",
+        "h",
+        [],
+      );
+      expect(full).toBeUndefined();
+      expect(
+        fallbacks.some((f) => /engine defect \(drift gate\)/.test(f.message)),
+        "原生异常必须经 noteEvalFallback 可观测",
+      ).toBe(true);
+    } finally {
+      cjsInvokeState.failNative = false;
+      setEvalFallbackCollector(null);
+    }
   });
 });

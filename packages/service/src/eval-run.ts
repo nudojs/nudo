@@ -26,6 +26,7 @@ import {
   evalCacheGet,
   evalCachePeek,
   evalCacheSet,
+  evalCacheEntryMatches,
   evalDepKey,
   mockSeedFingerprint,
   pathEnvContentFingerprint,
@@ -68,7 +69,7 @@ export type EvalRunResult = {
   moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
   /** Abs 求值递归截断的函数标签 */
   truncatedFns?: string[];
-  /** 顶层 $callNamed 调用点（call@ 合成；不经 TypeValue collector） */
+  /** 顶层 $callNamed 调用点（call@ 合成；setEvalCallCollector 采集面） */
   calls?: EvalCallRecord[];
 };
 
@@ -195,19 +196,15 @@ export function tryRunEval(
     // miss（evalCacheGet 内判）
     const depKey = opts.depKey !== undefined ? opts.depKey : evalDepKey(source, filePath, opts.loadModule);
     const canCache = depKey !== null;
+    // 六维键打包：读命中与写回 sameSlot 共用 evalCacheEntryMatches（单一
+    // 谓词，eval-cache）——两处各留 === 链会漂移（新增维度只改一边）。
+    // canCache=false（depKey=null）时读/写均不发生，此处打包无害。
+    const dims = { stableSource: stable, envKey, mockKey, depKey: depKey!, lenientKey, itersKey };
     /** fresh 路径复用 memo 里的组图（依赖状态共享，根模块状态独立） */
     let cachedComposed: ComposedEvalModules | undefined;
     // evalCacheGet：命中刷新 MRU（BoundedLruMap.get）
     const cached = canCache ? evalCacheGet(filePath, mode) : undefined;
-    if (
-      cached &&
-      cached.stableSource === stable &&
-      cached.envKey === envKey &&
-      cached.mockKey === mockKey &&
-      cached.depKey === depKey &&
-      cached.lenientKey === lenientKey &&
-      cached.itersKey === itersKey
-    ) {
+    if (cached && evalCacheEntryMatches(cached, dims)) {
       if (!fresh) {
         // memo 里的实例可能被调用污染过（模块级状态）→ 调用面不得复用
         if (cached.value) return cached.value;
@@ -308,35 +305,19 @@ export function tryRunEval(
     if (out !== null && canCache) {
       // 纯读探测（不刷新 MRU）：写回 evalCacheSet 自会刷新
       const prev = evalCachePeek(filePath, mode);
-      const sameSlot =
-        prev !== undefined &&
-        prev.stableSource === stable &&
-        prev.envKey === envKey &&
-        prev.mockKey === mockKey &&
-        prev.depKey === depKey &&
-        prev.lenientKey === lenientKey &&
-        prev.itersKey === itersKey;
+      // 同槽判定与读命中共用同一谓词（任一维不同 ⇒ 旧 value 不续期）
+      const sameSlot = prev !== undefined && evalCacheEntryMatches(prev, dims);
       if (fresh) {
         // fresh 实例会被调用污染 → **不入 memo 的 value**；只补齐组图
         // （memo 里的干净实例保持不变，供分析面复用）
         evalCacheSet(filePath, mode, {
-          stableSource: stable,
-          envKey,
-          mockKey,
-          depKey: depKey!,
-          lenientKey,
-          itersKey,
+          ...dims,
           composed: usedComposed,
           value: sameSlot ? prev?.value : undefined,
         });
       } else {
         evalCacheSet(filePath, mode, {
-          stableSource: stable,
-          envKey,
-          mockKey,
-          depKey: depKey!,
-          lenientKey,
-          itersKey,
+          ...dims,
           composed: usedComposed,
           value: out,
         });
@@ -373,9 +354,16 @@ function cjsMemberReceiverOf(
  * CJS 成员调用：接收者 = `module.exports` 对象 ⇒ 方法体内的 `this` 绑定正确
  * （对象字面量方法可能读写 `this`，按裸值 apply 会丢绑定）。
  *
- * 异常口径与 `callTranspiledExportFull` 的调用骨架一致：`NudoThrow` ⇒
- * `result = never` + `throws = 载荷`；其它原生异常属引擎缺陷 ⇒ 记回落
- * （`noteEvalFallback`，不静默吞）并 fail-closed（`undefined`）。
+ * 选型（不做骨架统一）：core 的 `callTranspiledExportApply` /
+ * `callTranspiledExportFull` 是**导出槽**骨架（按 `exports[name]` 取函数后
+ * 裸调用，runExportCallGuarded 框住）——无接收者 `this` 注入、无入口 Φ
+ * 种子；本派发的目标是 `default` 槽对象上的**成员**（不在导出表里）⇒ 无法
+ * 复用，保留独立实现。
+ *
+ * 异常分类口径与 core 骨架钉同（漂移门：service-bug-045 测试文件
+ * 「invokeCjsMember 异常分类」）：`NudoThrow` ⇒ `result = never` +
+ * `throws = 载荷`（用户 throw，**不进** noteEvalFallback 计数）；其它原生
+ * 异常 ⇒ `noteEvalFallback`（不静默吞）+ fail-closed（`undefined`）。
  */
 function invokeCjsMember(
   recv: Abs,
