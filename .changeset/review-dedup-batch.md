@@ -4,7 +4,7 @@
 "@nudojs/harvester": minor
 "nudojs": minor
 "@nudojs/lsp": minor
-"@nudojs/vite-plugin": minor
+"vite-plugin-nudo": minor
 ---
 
 Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
