@@ -104,8 +104,10 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   return withNewTargetReset(() => {
     const spec = specOf(cls);
     const className = spec?.name ?? (cls.shape.k === "brand" ? cls.shape.name : undefined);
-    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）
-    const m = className ? findStaticMethod(className, method) : undefined;
+    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）。
+    // BUG-172 继承链图化：specOf 随身优先 ⇒ 传入的规格即接收者身份，
+    // 其余环沿 superSpec 引用链，无引用按名牌兑底。
+    const m = className ? findStaticMethod(className, method, spec) : undefined;
     if (!m) {
       // N2：内建父构造器静态（B extends Object → B.keys）：宿主静态通道
       //（$get namespace 投影 → $call）。无通道 → unknown（不折 undefined）。

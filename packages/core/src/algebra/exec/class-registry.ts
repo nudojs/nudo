@@ -246,13 +246,20 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
 export function isErrorFamilyKind(kind: string): boolean {
   // 内建错误名（Error / TypeError / RangeError / …）
   if (Object.hasOwn(BUILTIN_ERROR_SUPER, kind)) return true;
-  // 用户类：沿 superName 链上溯，看是否落到内建 Error 家族
+  // 用户类：沿链上溯，看是否落到内建 Error 家族。BUG-172 继承链图化：
+  // 双查点优先序——每环先用上一环 superSpec **引用**（定义期解析的父规格
+  // 身份，多模块同名父类不串味；名字吻合才用），无引用（内建父 / fn 伪父
+  // / 手写注册面）才按 superName 名牌回表兑底。
   let cur: string | undefined = kind;
+  let pending: EvalClassSpec | undefined;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     if (Object.hasOwn(BUILTIN_ERROR_SUPER, cur)) return true;
-    const spec = classRegistry.get(cur);
+    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
+    const spec: EvalClassSpec | undefined =
+      pending && pending.name === cur ? pending : classRegistry.get(cur);
+    pending = spec?.superSpec;
     if (!spec) return false;
     cur = spec.superName;
   }
@@ -359,10 +366,16 @@ export function classInstanceInnerOf(a: Abs): Abs | undefined {
  */
 export function classChainHasJsonUserFace(name: string): boolean {
   let cur: string | undefined = name;
+  // BUG-172 继承链图化：双查点优先序——每环先用上一环 superSpec 引用
+  //（定义期父规格身份；名字吻合才用），无引用才按名牌回表（内建父兑底）。
+  let pending: EvalClassSpec | undefined;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = classRegistry.get(cur);
+    // 显式注解断开推断环（TS7022，同 isErrorFamilyKind）
+    const spec: EvalClassSpec | undefined =
+      pending && pending.name === cur ? pending : classRegistry.get(cur);
+    pending = spec?.superSpec;
     if (spec?.methods?.["toJSON"]) return true;
     cur = spec?.superName;
   }

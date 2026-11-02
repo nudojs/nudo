@@ -47,6 +47,20 @@ export function superCalledFor(inst: Abs, childName: string): boolean {
   return superCalledMarks.get(inst as object)?.has(childName) ?? false;
 }
 
+/** BUG-172 / Bug 245：superCalled 标记集**整体过户**（brand 重铸点统一走
+ *  exec/class/rebrand.ts 的 rebrandClassAbs 原语——不再每处手工双打）。
+ *  整集复制 ⊇ 旧「只补本层」打点面：本层标记在重铸前已落在 prev 上，
+ *  必然随集到达 next；外层标记是构造期瞬时事实的伴随冗余（构造完成后
+ *  无查询点——superCalledFor 仅在 $super 二次守卫 / constructClass 出口
+ *  / assertThisAccessible 三处被查，全在构造期，且查询键是**构造入口的
+ *  this 绑定**而非重铸产物），语义零变化。prev 无标记集时 no-op。 */
+export function carrySuperCalledMarks(from: Abs, to: Abs): void {
+  if (!from || typeof from !== "object" || !to || typeof to !== "object") return;
+  const s = superCalledMarks.get(from as object);
+  if (!s) return;
+  superCalledMarks.set(to as object, new Set(s));
+}
+
 /** 实例 → 正在执行构造器体、尚未调用 super() 的类名集合 */
 const pendingSuperMarks = new WeakMap<object, Set<string>>();
 

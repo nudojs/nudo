@@ -4,7 +4,9 @@
  * Invariants:
  * - 类值/实例的 spec 挂载在 class-registry.ts 的**随值携带**侧表（WeakMap：
  *   Abs 对象身份 → 定义 spec，BUG-172）：类值在 $class 建值处 attachClassSpec，
- *   brand 形状重造/快照处 carryClassSpec 过户。同名类跨 run last-wins
+ *   brand 形状重造/快照处过户——类域重铸点统一走 rebrand.ts 的
+ *   rebrandClassAbs（随值规格 + superCalled 标记集；obj.ts 快照分支在
+ *   RT 域、仍直接调 carryClassSpec）。同名类跨 run last-wins
  *   重注册换新 spec（驻留侧表随旧 spec 回收）。
  * - 实例字段就地突变（applyInstanceFields 落 inner obj 槽）：原生引用共享
  *   语义——方法内 this.x = v 对调用点持有的同一实例 Abs 可见。
@@ -44,10 +46,10 @@ import {
   getEvalClass,
   attachClassSpec,
   classSpecOfAbs,
-  carryClassSpec,
   ensureFnParentName,
   type EvalClassSpec,
 } from "../class-registry.ts";
+import { rebrandClassAbs } from "./rebrand.ts";
 import {
   markSuperCalled,
   superCalledFor,
@@ -540,14 +542,17 @@ export function findMethod(
 ): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   let cur: string | undefined = startName;
   const seen = new Set<string>();
-  // BUG-172：首环用接收者**随身携带的规格**（跨模块同名类不串味），
-  // 其余环沿 superName 走既有名牌回表。
-  let first: EvalClassSpec | undefined = startSpec;
+  // BUG-172 继承链图化：首环用接收者**随身携带的规格**（跨模块同名类不串
+  // 味；名字吻合才用）；其余环优先沿 superSpec **引用链**（定义期解析的
+  // 父规格身份），无引用的环（内建父 / fn 伪父 / 手写注册面）才按
+  // superName 名牌回表（display 与兑底同源）。环名序列不变。
+  let pending: EvalClassSpec | undefined = startSpec;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    // 显式标注：cur 的流类型反过来依赖 spec（上一轮 cur = spec?.superName）
-    const spec: EvalClassSpec | undefined = first ?? getEvalClass(cur);
-    first = undefined;
+    // 双查点优先序：superSpec 引用 → superName 名牌回表
+    const spec: EvalClassSpec | undefined =
+      pending && pending.name === cur ? pending : getEvalClass(cur);
+    pending = spec?.superSpec;
     // Bug 90：own-property 取值——宿主 Object.prototype 继承名不得命中
     const m = ownMember(spec?.methods, method);
     if (m) return m;
@@ -626,12 +631,20 @@ function staticSlotDefinitelyNotCallable(v: Abs): boolean {
 export function findStaticMethod(
   startName: string,
   method: string,
+  startSpec?: EvalClassSpec,
 ): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   let cur: string | undefined = startName;
   const seen = new Set<string>();
+  // BUG-172 继承链图化：双查点优先序——每环先用上一环 superSpec 引用
+  //（定义期父规格身份；名字吻合才用，类值接收者的随身规格作首环），
+  // 无引用的环才按 superName 名牌回表（display 与兑底同源）。
+  let pending: EvalClassSpec | undefined = startSpec;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getEvalClass(cur);
+    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
+    const spec: EvalClassSpec | undefined =
+      pending && pending.name === cur ? pending : getEvalClass(cur);
+    pending = spec?.superSpec;
     // Bug 260：own 静态槽遮蔽继承的静态方法
     const own = ownStaticSlotOf(cur, method);
     if (own !== undefined) {
@@ -667,9 +680,14 @@ export function findStaticMethod(
  * presence，祖先槽面）互补：此处面向「实例接收者调静态独占成员」的
  * static-only 证明，自有层 statics/槽都必须在场。
  */
-export function chainHasStaticMember(startName: string, key: string): boolean {
+export function chainHasStaticMember(startName: string, key: string, startSpec?: EvalClassSpec): boolean {
+  // BUG-172 继承链图化：环序仍由 evalClassChain 生成（".prototype" owner
+  // 入环 / 内建错误层级兑底口径不变），每环规格优先用上一环 superSpec
+  // 引用（定义期身份；名字吻合才用），无引用才按名牌回表。
+  let pending: EvalClassSpec | undefined = startSpec;
   for (const n of evalClassChain(startName)) {
-    const spec = getEvalClass(n);
+    const spec = pending && pending.name === n ? pending : getEvalClass(n);
+    pending = spec?.superSpec;
     // Bug 90：own-property 取值（含 `key in statics` → hasOwn——`in` 走
     // 原型链，宿主 Object.prototype 名恒真）
     if (ownMember(spec?.staticMethods, key) || ownMember(spec?.staticAccessors, key)) return true;
@@ -691,9 +709,15 @@ export function instanceOwnFaceHasMember(recv: Abs, brandName: string, key: stri
   const s = recv.shape;
   const inner = s.k === "brand" ? s.shape : undefined;
   if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
-  return evalClassChain(brandName).some((n) =>
-    getEvalClass(n)?.instanceFields?.some((f) => f.name === key),
-  );
+  // BUG-172 继承链图化：接收者随身规格作首环身份（名字吻合才用），其余环
+  // 沿 superSpec 引用链，无引用按名牌回表（与 findMethod 同口径）。
+  let pending: EvalClassSpec | undefined = classSpecOfAbs(recv);
+  for (const n of evalClassChain(brandName)) {
+    const spec = pending && pending.name === n ? pending : getEvalClass(n);
+    pending = spec?.superSpec;
+    if (spec?.instanceFields?.some((f) => f.name === key)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1443,10 +1467,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // 的类值；嵌套普通调用（$call/$invoke 面已清空）读 undefined（原生语义）。
   pushCtorFrame(cls);
   try {
-    const inst = constructClass(className, thisVal, args, spec);
-    // BUG-172：构造器返回替代对象（brand 重铸 / Error·内建父嫁接）时规格
-    // 过户——值身份换了，规格不能丢。
-    if (spec) carryClassSpec(thisVal, inst);
+    // BUG-172/173：构造器返回替代对象（brand 重铸 / Error·内建父嫁接）时
+    // 类面侧表过户统一走 rebrandClassAbs 原语（随值规格 + superCalled 标记
+    // 集；原手工面 carryClassSpec(thisVal, inst) 收敛于此——逐点比对见
+    // rebrand.ts 头注释）。值身份换了，规格不能丢。
+    const inst = rebrandClassAbs(thisVal, constructClass(className, thisVal, args, spec));
     // Bug 205：构造期捕获类实例的真实 [[Prototype]]（= 类原型对象）——
     // 原型被替换 / setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
     if (inst.shape.k === "brand") setInstanceProto(inst, protoBrandAbs(className));

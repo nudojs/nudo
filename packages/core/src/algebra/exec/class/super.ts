@@ -26,10 +26,11 @@ import {
   getEvalClass,
   lookupClassValue,
   classSpecOfAbs,
-  carryClassSpec,
+  type EvalClassSpec,
 } from "../class-registry.ts";
 
 import { findMethod, findStaticMethod, constructClass, applyInstanceFields, markSuperCalled, superCalledFor } from "./declare.ts";
+import { rebrandClassAbs } from "./rebrand.ts";
 import { $setKey } from "./this-member.ts";
 
 /**
@@ -73,7 +74,13 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
       markSuperCalled(after, childName);
       return after;
     }
-    const next = carryClassSpec(
+    // BUG-172/173：重铸点统一走 rebrandClassAbs 原语（随值规格 + superCalled
+    // 标记集整集过户）——原手工面 carryClassSpec + markSuperCalled(next,
+    // childName) 双打点收敛于此；整集 ⊇ 只补本层（本层标记重铸前已落
+    // thisVal），语义零变化（逐点比对见 rebrand.ts 头注释）。Bug 245：
+    // $super 返回**新** brand Abs（内层 obj 共享）——「已调 super」标记随
+    // 实例传递到出参，第二次 super() 才拦得住。
+    return rebrandClassAbs(
       thisVal,
       abs(
         { k: "brand", name: childName, shape: after.shape.shape },
@@ -82,10 +89,6 @@ export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
         after.conf,
       ),
     );
-    // Bug 245：$super 返回**新** brand Abs（内层 obj 共享）——「已调 super」
-    // 标记随实例传递到出参，第二次 super() 才拦得住。
-    markSuperCalled(next, childName);
-    return next;
   }
   if (after && typeof after === "object") markSuperCalled(after, childName);
   return after ?? thisVal;
@@ -100,15 +103,19 @@ export function $invokeSuper(
 ): Abs {
   // Bug 79：super.m() 是方法调用（普通调用面）——new.target 归 undefined
   return withNewTargetReset(() => {
-    const child = getEvalClass(childName);
+    // BUG-172 继承链图化：子类规格优先取**实例随身携带的那一份**（与
+    // $super 同口径——仅当随身规格就是本层子类时采用），父环优先 superSpec
+    // 引用（定义期身份），无引用按 superName 名牌兑底。
+    const carried = classSpecOfAbs(thisVal);
+    const child = carried && carried.name === childName ? carried : getEvalClass(childName);
     const parentName = child?.superName;
     if (!parentName) return unknown;
-    const m = findMethod(parentName, method);
+    const m = findMethod(parentName, method, child?.superSpec);
     if (!m) {
       // Bug 194 遗留（族 59 · W9）：父链闭合且该名**确不存在** ⇒ 原生抛
       // TypeError（`super.m is not a function`）——此前一律折 unknown
       // （假阴性：删方法后 super 调用面看不出原生会抛）。
-      if (superMethodAbsent(parentName, method)) {
+      if (superMethodAbsent(parentName, method, child?.superSpec)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       return unknown;
@@ -134,12 +141,18 @@ export function $invokeSuper(
  *    `super.toString()` / `super.hasOwnProperty(…)` 原生存在 ⇒ 不是 TypeError
  *    （引擎不建 Object.prototype 方法的调用面 ⇒ 仍折 unknown）。
  */
-function superMethodAbsent(parentName: string, method: string): boolean {
+function superMethodAbsent(parentName: string, method: string, parentSpec?: EvalClassSpec): boolean {
   let cur: string | undefined = parentName;
+  // BUG-172 继承链图化：双查点优先序——每环先用上一环 superSpec 引用
+  //（定义期父规格身份；名字吻合才用），无引用才按名牌回表（内建父兑底）。
+  let pending: EvalClassSpec | undefined = parentSpec;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getEvalClass(cur);
+    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
+    const spec: EvalClassSpec | undefined =
+      pending && pending.name === cur ? pending : getEvalClass(cur);
+    pending = spec?.superSpec;
     if (!spec) return false; // 链洞（宿主 / 未注册父名）⇒ 不可判
     // fn 伪父：父是普通函数值（原型面不受注册表管）⇒ 不可判
     const cv = lookupClassValue(cur);
@@ -150,7 +163,7 @@ function superMethodAbsent(parentName: string, method: string): boolean {
     // （constructor 槽是原型对象自带的，不算动态写）
     if (method !== "constructor" && protoSlotHasKey(cur, method)) return false;
     if (spec.superNull) return true; // extends null：链止于此（无 Object.prototype 尾）
-    const next = spec.superName;
+    const next: string | undefined = spec.superName;
     if (!next) {
       // 链尾 = Object.prototype
       if (method === "constructor") return true; // 父类构造器本身（原生调用抛 TypeError）
@@ -183,15 +196,20 @@ function protoSlotHasKey(className: string, key: string): boolean {
 export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
   const k = propertyKeyOf(key);
   if (k === undefined) return unknown;
-  const childSpec = getEvalClass(childName);
+  // BUG-172 继承链图化：子类规格优先取实例随身携带的那一份（名字吻合才
+  // 用），父环起优先沿 superSpec 引用链，无引用按名牌回表兑底。
+  const carried = classSpecOfAbs(thisVal);
+  const childSpec = carried && carried.name === childName ? carried : getEvalClass(childName);
   if (!childSpec) return unknown;
   // extends null：B.prototype 之上无链（无 Object.prototype 尾巴）
   if (childSpec.superNull) return undef();
   let cur: string | undefined = childSpec.superName;
+  let pending: EvalClassSpec | undefined = childSpec.superSpec;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getEvalClass(cur);
+    const spec = pending && pending.name === cur ? pending : getEvalClass(cur);
+    pending = spec?.superSpec;
     if (!spec) return unknown; // 宿主/未注册基类：原型面不可枚举 → 链开
     // Bug 266：`super.constructor` = **父类构造器本身**（原生父类原型上的
     // "constructor" 自有属性 ⇒ 父类值；ClassDefinitionEvaluation 装它时
@@ -237,7 +255,12 @@ export function $setSuper(thisVal: Abs, childName: string, key: Abs, value: Abs)
     // 抽象键：链上 setter 不可判定 → 计算键写（sound 过近似，不假精确）
     return $setKey(thisVal, key, value);
   }
-  const parentName = getEvalClass(childName)?.superName;
+  // BUG-172 继承链图化：子类规格优先取实例随身携带的那一份（名字吻合才
+  // 用）——父名解析随之精确；访问器查找面（findClassAccessor）本身按名牌
+  // 工作（members.ts 域），superName 在此即兑底面。
+  const carriedSpec = classSpecOfAbs(thisVal);
+  const childSpec = carriedSpec && carriedSpec.name === childName ? carriedSpec : getEvalClass(childName);
+  const parentName = childSpec?.superName;
   if (parentName) {
     const acc = findClassAccessor(parentName, k);
     if (acc) {
@@ -275,12 +298,16 @@ export function $invokeSuperKey(
 ): Abs {
   const k = propertyKeyOf(key);
   if (k === undefined) return unknown;
-  const parentName = getEvalClass(childName)?.superName;
+  // BUG-172 继承链图化：与 $invokeSuper 同口径——子类规格随身优先，父环
+  // superSpec 引用优先（findMethod 首环），无引用按名牌兑底。
+  const carried = classSpecOfAbs(thisVal);
+  const child = carried && carried.name === childName ? carried : getEvalClass(childName);
+  const parentName = child?.superName;
   if (!parentName) return unknown;
-  const m = findMethod(parentName, k);
+  const m = findMethod(parentName, k, child?.superSpec);
   if (!m) {
     // Bug 194 遗留（族 59 · W9）：同 $invokeSuper——缺席且父链闭合 ⇒ TypeError
-    if (superMethodAbsent(parentName, k)) {
+    if (superMethodAbsent(parentName, k, child?.superSpec)) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     return unknown;
@@ -390,9 +417,13 @@ export function $staticSuperInvoke(
 ): Abs {
   const k = propertyKeyOf(key);
   if (k === undefined) return unknown;
-  const parentName = getEvalClass(childName)?.superName;
+  // 静态 super 面：thisVal 是**调用类值**（非词法子类值）⇒ 子类规格只能按
+  // 名牌解析（无随值身份可查）；父环的规格身份仍优先 superSpec 引用
+  //（作 findStaticMethod 首环），无引用按 superName 兑底。
+  const child = getEvalClass(childName);
+  const parentName = child?.superName;
   if (!parentName) return unknown;
-  const m = findStaticMethod(parentName, k);
+  const m = findStaticMethod(parentName, k, child?.superSpec);
   if (!m) return unknown;
   return withNewTargetReset(() => m(thisVal, ...args));
 }

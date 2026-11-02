@@ -38,7 +38,11 @@ import { privateNameGuard } from "../runtime/containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
 // setter 是本模块提升函数声明）。barrel 间接层会在此处拿到 undefined。
-import { setProtoMethodDispatch, type ClassMethodOrigin } from "../runtime/containers/member.ts";
+// 环参与方直接 import hooks 叶子（不经 member.ts 再导出）：本模块加载期
+// 顶层注册时，member.ts 若在环上尚未执行到其 re-export 行，经它会拿到
+// undefined（runtime-sentinel-regress 的加载序事故形态）。hooks 是零依赖
+// 叶子，链接期即已可用。
+import { setProtoMethodDispatch, type ClassMethodOrigin } from "../hooks.ts";
 import {
   noteEvalCallRecord,
 } from "../calls.ts";
@@ -882,7 +886,9 @@ function dispatchClassValueStatic(
     return $call(ownSlot, args, thisVal);
   }
   // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）。
-  const sm = findStaticMethod(brandName, method);
+  // BUG-172 继承链图化：类值接收者的随身规格作首环身份（跨模块同名类
+  // 不串味），其余环沿 superSpec 引用链，无引用按名牌兑底。
+  const sm = findStaticMethod(brandName, method, classSpecOfAbs(thisVal));
   if (sm) {
     let result: Abs = unknown;
     let threw = false;
@@ -1003,7 +1009,7 @@ function dispatchInstanceMethod(
     !brandHasProtoMember(brandName, method) &&
     !OBJECT_PROTO_NAMES.has(method) &&
     !instanceOwnFaceHasMember(thisVal, brandName, method) &&
-    chainHasStaticMember(brandName, method)
+    chainHasStaticMember(brandName, method, classSpecOfAbs(thisVal))
   ) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
@@ -1893,8 +1899,11 @@ function userClassMethodBody(
   origin?: ClassMethodOrigin,
 ): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   if (!getEvalClass(home)) return undefined;
-  const instBody = findMethod(home, name);
-  const statBody = findStaticMethod(home, name);
+  // BUG-172 继承链图化：接收者随身规格作首环身份（名字吻合才用——外来
+  // 接收者 / 摘下调用不误绑），其余环沿 superSpec 引用链。
+  const rs = classSpecOfAbs(recv);
+  const instBody = findMethod(home, name, rs);
+  const statBody = findStaticMethod(home, name, rs);
   if (!instBody && !statBody) return undefined;
   if (instBody && statBody) {
     // Bug 1041：同名 static + 实例方法并存时，**方法值的来源侧**是决定
