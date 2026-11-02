@@ -1,9 +1,51 @@
 /**
  * TranspileOptions — 求值引擎 transpile 的调用方选项面。
+ *
+ * 【分层】原 ~40 字段平面堆叠，现按**发射语义**拆四个分组接口组合（纯类型
+ * 重组、零行为变化：字段集与可选性不变，所有既有访问路径 `opts.<字段>` 与
+ * 解构/展开面照旧）：
+ *
+ * - `BaseEmitOpts`：**基础发射态**——转译单元级配置/开关 + 单元级共享的
+ *   计数器袋（transpileFile / transpileBodyNode 创建，跨语句线程化）；
+ * - `FlowCtx`：**控制流 / 词法作用域态**——「发射器当前在哪」的位置态，
+ *   随语句 / 函数体 / 词法作用域边界**重算**后线程化（不跨边界继承的按
+ *   各自字段注释为准）；
+ * - `NamingCtx`：**命名 / 类发射态**——this 载体与类名协议 + 内部临时名
+ *   避让的补给面；
+ * - `InjectCtx`：**指令注入态**——@nudo:replace / @nudo:as / @nudo:mock /
+ *   @nudo:assume 派生的注入面。
+ *
+ * 【分组间的隐式组合约束】（字段分属各组但语义成对 / 成套，拆组不许拆语义）：
+ *
+ * - `inTry` 与 `inCtrlBlock`（FlowCtx）**分工**：inTry = return 前 drain
+ *   throwExits（使 catch 能吸收抽象 throw）；inCtrlBlock = 「块完成 ≠ 函数
+ *   尾」时早退提升走**控制流协议**而非「返回值协议」。try/catch/finally
+ *   **块体**两深度都会置位（inTry 单独计入的旧口径见 inCtrlBlock 字段注释
+ *   的族 65 · BC #28）。
+ * - `inAsyncBody` 与 `disableAsyncGen`（FlowCtx）：后者是**前者所在单元**
+ *   的安全网（Bug 1139）——只在 async 体内有意义：生成器模式编译失败时
+ *   关闭生成器路径重试一次（`await` 退化为 `$await` 同步近似）。
+ *   `asyncForAwaitGates` 只登记**生成器级**位置的 for await（ thunk 级由
+ *   async-plan 判定排除——yield 落进宿主 thunk 是语法错误）。
+ * - `thisSlot` 与 `thisParam`（NamingCtx）：跨发射器 this 载体协议的
+ *   **声明方 / 读方**——一方声明（真函数体 prologue / thunk 首参）、多方读
+ *   （读方即 thisParam），必须同名（Bug 1160）。
+ * - `userIdents`（NamingCtx）与 `source`（InjectCtx）：internalTmpName 的
+ *   避让集 = `userIdentInfo(source).names` ∪ `userIdents`——**两组各出
+ *   一半**，无 source 的转译单元（body 编译路径）完全依赖补给面。
+ * - `destrTmpSeq` / `tryTmpSeq` / `stmtEmit`（BaseEmitOpts）：单元级共享
+ *   计数器袋，根转译单元每次新建、跨单元不残留（同源 ⇒ 同产物）。
  */
 import type { Node } from "@babel/types";
 
-export type TranspileOptions = {
+/**
+ * 基础发射态：转译单元级的配置 / 开关 / 共享计数器袋。
+ *
+ * 这些字段描述「本次转译**作为一个单元**怎么发射」，不随语句 / 作用域边界
+ * 重算（hostImportRefresh 的 `done` 位除外——它是发射过程中的游标，但仍属
+ * 单元级状态，由 transpileFile 创建）。
+ */
+export interface BaseEmitOpts {
   /**
    * 运行时 import 说明符。
    *
@@ -34,12 +76,6 @@ export type TranspileOptions = {
    */
   mode?: "exec" | "analyze";
   /**
-   * host target 的 mock 名集：命中的 import 本地名绑定 `__nudoEnv[<名>]`
-   * 而非 `__nudoBindImport` / `__nudoBindNamespace`，且不登记 live refresh
-   * （刷新会把 mock 冲掉）。esm target 忽略（run.ts 的文本改写负责 mock）。
-   */
-  mockNames?: ReadonlySet<string>;
-  /**
    * @internal host target 的 live import refresh 发射状态（transpileFile
    * 创建并跨语句线程化）：`binds` 是全量刷新赋值文本（按源序，已排除
    * mock），`done` 标记注册行是否已随首个「产生绑定」的 import 语句发射。
@@ -47,60 +83,101 @@ export type TranspileOptions = {
    */
   hostImportRefresh?: { readonly binds: readonly string[]; done: boolean };
   maxLoopIters?: number;
-  /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
-  thisParam?: string;
+  /** 宽松全局：标识符调用 callee 未声明 → undefined（$callNamed 保守
+   *  unknown），模块不因 ReferenceError 中断——调用点发现的 exec 采集用
+   *  （测试框架 it/describe/test 等未注入全局） */
+  lenientGlobals?: boolean;
   /**
-   * Bug 1160：本转译单元**共享**的 this 载体名（`__this` 基名经
-   * `internalTmpName` 分配）。载体是跨发射器协议——真函数体 prologue
-   * （`let <名> = $rawThis(this)`）与类/对象方法、访问器 thunk、字段 /
-   * 静态块 thunk 的首参**一方声明、多方读**（读方即 `thisParam`）——必须
-   * 同名。根转译单元（`transpileFile` / `transpileBodyNode`）分配一次并
-   * 线程化；无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+   * 解构临时名单调计数器（`_d`/`_n`；transpileFile 创建，全模块共享）。
+   * 此前 `_d${seq}_${line}` 依赖源行号唯一化——同一行两条解构（压缩/单行
+   * 风格）重名 → 重复 `const` 声明 → 整模块 SyntaxError fail-closed；
+   * emitDestructure 的 `_n` 嵌套临时每语句重置，同样撞车。计数器与行号
+   * 解耦，跨语句/prologue 单调。
    */
-  thisSlot?: string;
-  /** 当前类名（super 派发用） */
-  className?: string;
+  destrTmpSeq?: { n: number };
   /**
-   * Bug 133：类表达式的 **NamedEvaluation 名**（`const K = class {}` → "K"）。
-   * 只对**本表达式自身**生效——类体内的嵌套类表达式拿不到该名（原生内层
-   * 仍是无名类）；类自身的名字（`class Named {}`）优先于绑定名。
+   * try 临时名单调计数器（`__nudoTm_`/`__nudoE_`；transpileFile /
+   * transpileBodyNode 创建，单次转译输出内共享）。此前按源行号命名——
+   * 同一作用域同一行两个 try（压缩/生成代码）重名 → 重复 `const` 声明 →
+   * `new Function` SyntaxError 整模块 fail-closed；计数器与行号解耦
+   * （含 loc 缺失 `?? 0` 的碰撞），跨语句单调。
    */
-  classNameHint?: string;
+  tryTmpSeq?: { n: number };
   /**
-   * 静态方法体内 super 的接收者源（父类构造器——extends 表达式经
-   * classSpecOf 前移计算注入）。super.x / super.m() / super[k] 落通用
-   * $get/$invoke 路径（Super 节点直接发此源），消除 super 哨兵注释
-   * 逸出（Bug 14）。
+   * 语句发射序号袋（`__nudoSw`/`__swBody`/`__fir`/`__nudoLv` 计数器 +
+   * 当前 switch 臂 break 标签栈顶；transpileFileDetailed /
+   * transpileBodyNode 创建，单次转译输出内共享——与 destrTmpSeq/tryTmpSeq
+   * 同口径）。此前是 statement.ts 的模块级 let：计数器跨转译单元残留 ⇒
+   * 同进程内同一源码二次转译产物漂移（序号接续上一单元递增）⇒ 确定性
+   * 破坏（差分语料 / 输出钉住 / 缓存键都依赖「同源 ⇒ 同产物」）。
    */
-  staticSuperSrc?: string;
-  /** 原始源码（@nudo:replace 按节点文本匹配） */
-  source?: string;
-  /** 替换表：归一化目标文本 → 注入变量名；可选语句范围 */
-  replacements?: Array<{
-    target: string;
-    varName: string;
-    /**
-     * 仅该**节点**范围内生效——字符区间 `[stmtStart, stmtEnd)`
-     * （Babel 节点的 start/end 偏移），**不是行号**：Bug 166 修法把
-     * 「行号窗口」改成「AST 节点身份」，行号窗口会泄漏进嵌套/同行的
-     * 其它子表达式。
-     */
-    stmtStart?: number;
-    stmtEnd?: number;
-  }>;
-  /** @nudo:as：覆盖紧随语句的 init / return（stmtStart/stmtEnd = 字符区间，
-   *  语义同上——按节点身份定位，不按行号） */
-  asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
+  stmtEmit?: StmtEmitState;
+  /**
+   * 本转译单元内被用户绑定**遮蔽**的宿主内建名（undefined / NaN / Infinity
+   * 的子集，保守单位级）。
+   *
+   * 名字是**宿主全局**但用户可合法遮蔽（`const undefined = 5`、形参名
+   * `undefined`、`let NaN`、import 绑定）。命中者按**位置**分态：
+   * - Identifier 读点（含标签模板位）→ `$absVal(<名>)`，由 JS 词法绑定
+   *   决定读值；
+   * - 调用位 callee → `$callNamed(<名>, <名>, …)`（绑定是 Abs 值，宿主裸
+   *   调用会把它当非函数调 ⇒ 假抛 TypeError）。
+   *
+   * 未命中者：读点恢复字面量精确折叠（`$lit(void 0)` / `$lit(0/0)` /
+   * `$lit(1/0)`，与旧产物逐字节一致），调用位保留宿主裸调用（原生
+   * `undefined(1)` / `NaN(1)` 定抛 TypeError，抛点与原生一致）。
+   *
+   * 计算：`transpileFile` 从源 AST 声明扫描（任意作用域，保守单位级）；
+   * `transpileBodyNode` 从 body AST 计算并并入调用方补给；body-fn 补给
+   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名 **∪ 表达式 AST
+   * 声明扫描**；表达式入口（exec/transpile/expr.ts 的 `transpileExpression`）
+   * 同补声明扫描（表达式内部的形参 / 局部声明此前不可见）；run.ts 补给
+   * @nudo:mock 注入的内建名（env 注入本就跳过这三个名字）。
+   *
+   * 静态窄化面：`x === undefined` / `case undefined:` 只在**未遮蔽**时作
+   * 字面量事实——遮蔽后该标识符是普通绑定，比较值是绑定值（如 5）。
+   */
+  shadowedIntrinsics?: ReadonlySet<string>;
+  /**
+   * 本文件**真实**的静态声明导出名（源 AST：`export function|class|const|let`
+   * / `var`，多声明符全收；解构声明不收内部名）。
+   *
+   * 只有顶层 FunctionDeclaration 的名字命中本集合时才发射 `export ` 前缀
+   * ——此前所有顶层函数一律带 export（发射 quirk）⇒ run.ts 的文本回收把
+   * 私有顶层函数当导出 ⇒ `export *` 被本地私有同名函数遮蔽、私有名泄漏进
+   * 模块导出面、转译产物作为真实 ESM 时多出导出。
+   *
+   * `export { f }` specifier 名**不**在此集合（同名声明未必是声明式导出；
+   * run.ts 在运行时把 specifier 改写成 __nudoExportLazy）。
+   * transpileFile 从已解析 AST 计算并线程化；缺省（直接调用
+   * transpileStatement 的低层单元）⇒ 不发 export。
+   */
+  exportedDeclNames?: ReadonlySet<string>;
+  /**
+   * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
+   * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
+   * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收
+   * 集器时 no-op 直通）。默认关——热路径（check/模块图）不
+   * 承担插桩开销；仅 replayFnAbsNodes 重放开。
+   */
+  recordPositions?: boolean;
+}
+
+/**
+ * 控制流 / 词法作用域态：「发射器当前在哪」的位置态。
+ *
+ * 这些字段随语句 / 函数体 / 词法作用域边界**重算替换**后随 opts 链线程化
+ * （各字段是否跨边界继承以字段注释为准——如 inAsyncBody 在函数边界硬重置、
+ * constNames 在作用域边界裁剪复制）。与 BaseEmitOpts 的分界：本组字段换个
+ * 位置值就变，BaseEmitOpts 描述整个单元不变的配置。
+ */
+export interface FlowCtx {
   /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
   inLoop?: number;
   /** 循环体/switch 臂内：无标签 break 语义分别为跳出循环信号 / 臂结束 return */
   inSwitchArm?: boolean;
   /** 标签循环名（`outer: for …`）：传给 $for/$whileSeq/$forOf 供信号匹配 */
   loopLabel?: string;
-  /** 宽松全局：标识符调用 callee 未声明 → undefined（$callNamed 保守
-   *  unknown），模块不因 ReferenceError 中断——调用点发现的 exec 采集用
-   * （测试框架 it/describe/test 等未注入全局） */
-  lenientGlobals?: boolean;
   /** try 嵌套深度（>0 时 return 前 drain throwExits，使 catch 能吸收抽象 throw） */
   inTry?: number;
   /**
@@ -187,31 +264,6 @@ export type TranspileOptions = {
    */
   argsBinding?: string;
   /**
-   * 解构临时名单调计数器（`_d`/`_n`；transpileFile 创建，全模块共享）。
-   * 此前 `_d${seq}_${line}` 依赖源行号唯一化——同一行两条解构（压缩/单行
-   * 风格）重名 → 重复 `const` 声明 → 整模块 SyntaxError fail-closed；
-   * emitDestructure 的 `_n` 嵌套临时每语句重置，同样撞车。计数器与行号
-   * 解耦，跨语句/跨 prologue 单调。
-   */
-  destrTmpSeq?: { n: number };
-  /**
-   * try 临时名单调计数器（`__nudoTm_`/`__nudoE_`；transpileFile /
-   * transpileBodyNode 创建，单次转译输出内共享）。此前按源行号命名——
-   * 同一作用域同一行两个 try（压缩/生成代码）重名 → 重复 `const` 声明 →
-   * `new Function` SyntaxError 整模块 fail-closed；计数器与行号解耦
-   * （含 loc 缺失 `?? 0` 的碰撞），跨语句单调。
-   */
-  tryTmpSeq?: { n: number };
-  /**
-   * 语句发射序号袋（`__nudoSw`/`__swBody`/`__fir`/`__nudoLv` 计数器 +
-   * 当前 switch 臂 break 标签栈顶；transpileFileDetailed /
-   * transpileBodyNode 创建，单次转译输出内共享——与 destrTmpSeq/tryTmpSeq
-   * 同口径）。此前是 statement.ts 的模块级 let：计数器跨转译单元残留 ⇒
-   * 同进程内同一源码二次转译产物漂移（序号接续上一单元递增）⇒ 确定性
-   * 破坏（差分语料 / 输出钉住 / 缓存键都依赖「同源 ⇒ 同产物」）。
-   */
-  stmtEmit?: StmtEmitState;
-  /**
    * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */
@@ -230,31 +282,48 @@ export type TranspileOptions = {
    */
   aliasGroups?: ReadonlyArray<readonly string[]>;
   /**
-   * 本转译单元内被用户绑定**遮蔽**的宿主内建名（undefined / NaN / Infinity
-   * 的子集，保守单位级）。
-   *
-   * 名字是**宿主全局**但用户可合法遮蔽（`const undefined = 5`、形参名
-   * `undefined`、`let NaN`、import 绑定）。命中者按**位置**分态：
-   * - Identifier 读点（含标签模板位）→ `$absVal(<名>)`，由 JS 词法绑定
-   *   决定读值；
-   * - 调用位 callee → `$callNamed(<名>, <名>, …)`（绑定是 Abs 值，宿主裸
-   *   调用会把它当非函数调 ⇒ 假抛 TypeError）。
-   *
-   * 未命中者：读点恢复字面量精确折叠（`$lit(void 0)` / `$lit(0/0)` /
-   * `$lit(1/0)`，与旧产物逐字节一致），调用位保留宿主裸调用（原生
-   * `undefined(1)` / `NaN(1)` 定抛 TypeError，抛点与原生一致）。
-   *
-   * 计算：`transpileFile` 从源 AST 声明扫描（任意作用域，保守单位级）；
-   * `transpileBodyNode` 从 body AST 计算并并入调用方补给；body-fn 补给
-   * 形参 / 闭包绑定名；evalExprAbs 补给注入的 bindings 名 **∪ 表达式 AST
-   * 声明扫描**；表达式入口（exec/transpile/expr.ts 的 `transpileExpression`）
-   * 同补声明扫描（表达式内部的形参 / 局部声明此前不可见）；run.ts 补给
-   * @nudo:mock 注入的内建名（env 注入本就跳过这三个名字）。
-   *
-   * 静态窄化面：`x === undefined` / `case undefined:` 只在**未遮蔽**时作
-   * 字面量事实——遮蔽后该标识符是普通绑定，比较值是绑定值（如 5）。
+   * 本作用域已提升到函数体顶部的 var 名（Bug 21）：块内 `var x = init`
+   * 改发赋值 `x = init`（绑定由顶部 `let x = $lit(void 0)` 提供）。
+   * 函数/方法体边界由 transpileFnBodyStmts 重算替换。
    */
-  shadowedIntrinsics?: ReadonlySet<string>;
+  hoistedVarNames?: ReadonlySet<string>;
+  /**
+   * `export var x`（模块顶层）：保持声明面（host ESM export 收集依赖
+   * 声明语句），此类名字从提升集扣除、不发改赋值。
+   */
+  keepVarDecl?: boolean;
+}
+
+/**
+ * 命名 / 类发射态：this 载体协议、类名发射协议、内部临时名避让的补给面。
+ */
+export interface NamingCtx {
+  /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
+  thisParam?: string;
+  /**
+   * Bug 1160：本转译单元**共享**的 this 载体名（`__this` 基名经
+   * `internalTmpName` 分配）。载体是跨发射器协议——真函数体 prologue
+   * （`let <名> = $rawThis(this)`）与类/对象方法、访问器 thunk、字段 /
+   * 静态块 thunk 的首参**一方声明、多方读**（读方即 `thisParam`）——必须
+   * 同名。根转译单元（`transpileFile` / `transpileBodyNode`）分配一次并
+   * 线程化；无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
+   */
+  thisSlot?: string;
+  /** 当前类名（super 派发用） */
+  className?: string;
+  /**
+   * Bug 133：类表达式的 **NamedEvaluation 名**（`const K = class {}` → "K"）。
+   * 只对**本表达式自身**生效——类体内的嵌套类表达式拿不到该名（原生内层
+   * 仍是无名类）；类自身的名字（`class Named {}`）优先于绑定名。
+   */
+  classNameHint?: string;
+  /**
+   * 静态方法体内 super 的接收者源（父类构造器——extends 表达式经
+   * classSpecOf 前移计算注入）。super.x / super.m() / super[k] 落通用
+   * $get/$invoke 路径（Super 节点直接发此源），消除 super 哨兵注释
+   * 逸出（Bug 14）。
+   */
+  staticSuperSrc?: string;
   /**
    * **调用方补给的**用户标识符词形集（Bug 1058 避让的补充来源）。
    *
@@ -266,32 +335,37 @@ export type TranspileOptions = {
    * （body 内全部 Identifier + 形参名）补进来。
    */
   userIdents?: ReadonlySet<string>;
+}
+
+/**
+ * 指令注入态：@nudo:replace / @nudo:as / @nudo:mock / @nudo:assume 派生的
+ * 注入面（按**源文本 / AST 节点身份**定位，发射期消费）。
+ */
+export interface InjectCtx {
   /**
-   * 本作用域已提升到函数体顶部的 var 名（Bug 21）：块内 `var x = init`
-   * 改发赋值 `x = init`（绑定由顶部 `let x = $lit(void 0)` 提供）。
-   * 函数/方法体边界由 transpileFnBodyStmts 重算替换。
+   * host target 的 mock 名集：命中的 import 本地名绑定 `__nudoEnv[<名>]`
+   * 而非 `__nudoBindImport` / `__nudoBindNamespace`，且不登记 live refresh
+   * （刷新会把 mock 冲掉）。esm target 忽略（run.ts 的文本改写负责 mock）。
    */
-  hoistedVarNames?: ReadonlySet<string>;
-  /**
-   * `export var x`（模块顶层）：保持声明面（host ESM export 收集依赖
-   * 声明语句），此类名字从提升集扣除、不发改赋值。
-   */
-  keepVarDecl?: boolean;
-  /**
-   * 本文件**真实**的静态声明导出名（源 AST：`export function|class|const|let`
-   * / `var`，多声明符全收；解构声明不收内部名）。
-   *
-   * 只有顶层 FunctionDeclaration 的名字命中本集合时才发射 `export ` 前缀
-   * ——此前所有顶层函数一律带 export（发射 quirk）⇒ run.ts 的文本回收把
-   * 私有顶层函数当导出 ⇒ `export *` 被本地私有同名函数遮蔽、私有名泄漏进
-   * 模块导出面、转译产物作为真实 ESM 时多出导出。
-   *
-   * `export { f }` specifier 名**不**在此集合（同名声明未必是声明式导出；
-   * run.ts 在运行时把 specifier 改写成 __nudoExportLazy）。
-   * transpileFile 从已解析 AST 计算并线程化；缺省（直接调用
-   * transpileStatement 的低层单元）⇒ 不发 export。
-   */
-  exportedDeclNames?: ReadonlySet<string>;
+  mockNames?: ReadonlySet<string>;
+  /** 原始源码（@nudo:replace 按节点文本匹配） */
+  source?: string;
+  /** 替换表：归一化目标文本 → 注入变量名；可选语句范围 */
+  replacements?: Array<{
+    target: string;
+    varName: string;
+    /**
+     * 仅该**节点**范围内生效——字符区间 `[stmtStart, stmtEnd)`
+     * （Babel 节点的 start/end 偏移），**不是行号**：Bug 166 修法把
+     * 「行号窗口」改成「AST 节点身份」，行号窗口会泄漏进嵌套/同行的
+     * 其它子表达式。
+     */
+    stmtStart?: number;
+    stmtEnd?: number;
+  }>;
+  /** @nudo:as：覆盖紧随语句的 init / return（stmtStart/stmtEnd = 字符区间，
+   *  语义同上——按节点身份定位，不按行号） */
+  asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /**
    * issue #165：文件含 `@nudo:assume` 引理——transpileFile 顶层对源文本
    * 做一次 includes 判定后置位。文件级快速门：无引理的文件不进锚定收集，
@@ -308,15 +382,10 @@ export type TranspileOptions = {
    * exec/runtime/ops.ts。
    */
   anchorDeclNodes?: ReadonlySet<object>;
-  /**
-   * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
-   * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
-   * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收
-   * 集器时 no-op 直通）。默认关——热路径（check/模块图）不
-   * 承担插桩开销；仅 replayFnAbsNodes 重放开。
-   */
-  recordPositions?: boolean;
-};
+}
+
+/** 调用方选项面 = 四组分组的组合（分组语义见顶部【分层】说明）。 */
+export interface TranspileOptions extends BaseEmitOpts, FlowCtx, NamingCtx, InjectCtx {}
 
 /**
  * 语句发射的**转译单元级**可变状态（`TranspileOptions.stmtEmit` 的载体）。
