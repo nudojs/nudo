@@ -203,6 +203,15 @@ export type TranspileOptions = {
    */
   tryTmpSeq?: { n: number };
   /**
+   * 语句发射序号袋（`__nudoSw`/`__swBody`/`__fir`/`__nudoLv` 计数器 +
+   * 当前 switch 臂 break 标签栈顶；transpileFileDetailed /
+   * transpileBodyNode 创建，单次转译输出内共享——与 destrTmpSeq/tryTmpSeq
+   * 同口径）。此前是 statement.ts 的模块级 let：计数器跨转译单元残留 ⇒
+   * 同进程内同一源码二次转译产物漂移（序号接续上一单元递增）⇒ 确定性
+   * 破坏（差分语料 / 输出钉住 / 缓存键都依赖「同源 ⇒ 同产物」）。
+   */
+  stmtEmit?: StmtEmitState;
+  /**
    * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */
@@ -307,6 +316,27 @@ export type TranspileOptions = {
    * 承担插桩开销；仅 replayFnAbsNodes 重放开。
    */
   recordPositions?: boolean;
+};
+
+/**
+ * 语句发射的**转译单元级**可变状态（`TranspileOptions.stmtEmit` 的载体）。
+ *
+ * 各字段的发射语义不变量见 stmt/statement.ts 头注释；此处只钉生命周期：
+ * 由根转译单元（transpile.ts 的 transpileFileDetailed / stmt 的
+ * transpileBodyNode）**每次新建**，随 opts 链线程化到全部嵌套发射器——
+ * 模块内跨语句/跨函数去重，跨单元**不**残留（确定性：同源 ⇒ 同产物）。
+ */
+export type StmtEmitState = {
+  /** switch 共享体函数名序号（`__swBody{n}`） */
+  switchBodySeq: number;
+  /** switch break 标签序号（`__nudoSw{n}`） */
+  switchBreakSeq: number;
+  /** 当前正在发射的 switch 臂 break 标签（栈式保存/恢复；null = 不在臂内） */
+  curSwitchBreakLabel: string | null;
+  /** 非纯 for-in 接收者临时名序号（`__fir{n}`） */
+  forInRecvSeq: number;
+  /** for 主路径循环变量捕获槽序号（`__nudoLv{n}`） */
+  forLoopVarSeq: number;
 };
 
 /**

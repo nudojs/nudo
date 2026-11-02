@@ -29,7 +29,7 @@ import {lit} from "../term.ts";
 import {cmp} from "../arithmetic.ts";
 import {$removeNull, $removeUndefined, $narrowTypeOf} from "../exec/runtime/async.ts";
 import {runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect} from "../may-throw.ts";
-import {nullishGuardOf, typeGuardOf} from "../exec/transpile/stmt-predicates.ts";
+import {nullishGuardOf, typeGuardOf} from "../exec/transpile/stmt/predicates.ts";
 
 function check(src: string) {
   return checkSource("/t/throw-granularity.js", withStdImport(src), pTrue, stdOpts);

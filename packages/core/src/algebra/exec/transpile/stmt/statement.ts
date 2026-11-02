@@ -1,16 +1,18 @@
 /**
  * 语句 switch 主分派（stmt 按域拆分之一；方法/函数体入口在 ./fn-body.ts，
  * 块 thunk 化在 ./block.ts）。主分派是**路由表**：各 case 体在同文件下方的
- * emit*Statement helper 里（只共享模块级计数器与 opts，不传上下文对象）。
+ * emit*Statement helper 里（共享**转译单元级**发射状态袋（opts.stmtEmit，
+ * 根单元每次新建）与 opts，不传额外上下文对象）。
  *
  * 不变量：
- * - switchBodySeq 是模块内私有计数器（跨语句/函数去重），只随
- *   transpileStatement 的 switch 共享体发射递增；
+ * - switchBodySeq 是**转译单元内**私有计数器（跨语句/函数去重，跨单元
+ *   不残留——同源 ⇒ 同产物），只随 transpileStatement 的 switch 共享体
+ *   发射递增；
  * - switch 臂内的 break 走**带标签**的 break 信号（$loopBreak(标签)）：信号
  *   穿过嵌套 thunk（if 臂），由 switch 臂入口的 catch 吸收 ⇒ break 真的
  *   退出 switch（原生语义）；带标签 ⇒ 外层循环不吸收（$isBreakTo 只匹配
  *   同标签）；curSwitchBreakLabel 是当前正在发射的 switch 臂的标签（栈式
- *   保存 / 恢复，嵌套 switch 各自一份）；
+ *   保存 / 恢复，嵌套 switch 各自一份；挂状态袋，非模块级）；
  * - switch 的 case 测试**惰性**求值（test 为 getter，$switch 按序匹配时才
  *   读）⇒ 命中即停（原生 CaseBlock 语义）；臂入口在抽象判别式路径补求值
  *   全部 case 测试（$switch 抽象路径不读 getter）；
@@ -29,7 +31,7 @@
  * - case 标签窄化（Bug 184）：命中 / 排除事实经 switchCaseFacts 计算，
  *   经 narrowCaseLabelArmThunk 影子重绑进臂体；
  * - 语句级 emit 协议（fork 臂隔离/mutator rebinds/守卫剪影）与表达式侧
- *   short-circuit.ts 同源；控制流谓词在 ../stmt-predicates.ts（leaf）；
+ *   short-circuit.ts 同源；控制流谓词在 ./predicates.ts（leaf）；
  * - 关系守卫只接**事实臂**（narrowRelArmThunk）：「测试为真」的方向
  *   （那侧 NaN 不可达）；**后续路径**（早退后的 else 臂）**不断言否定界**
  *   （Bug 1115：¬(x <= k) 含 NaN ⇒ 否定界不可健全表示 ⇒ 断言它会排除
@@ -94,7 +96,7 @@ import {
   narrowRelArmThunk,
   type NullishGuard,
   type RelGuard,
-} from "../stmt-predicates.ts";
+} from "./predicates.ts";
 import {
   matchAsOverride,
   getFnFacets,
@@ -108,6 +110,7 @@ import {
   withClassNameHint,
   userIdentInfoOf,
   bumpDestrTmpSeq,
+  stmtEmitStateOf,
   internalTmpName,
   internalTmpNameSet,
   expandAliasNames,
@@ -145,31 +148,12 @@ import {
   YIELD_CATCH_YIELDS,
   YIELD_CATCH_RETHROWS,
 } from "../../yield-bits.ts";
-/** switch 共享体函数名序号（跨语句/函数去重） */
-let switchBodySeq = 0;
-
-/** Bug 147：switch break 标签序号（跨语句/函数去重，标签即 break 信号靶） */
-let switchBreakSeq = 0;
-
-/**
- * Bug 147：当前正在发射的 switch 臂的 break 标签（栈式保存 / 恢复）。
- * switch 臂内的无标签 break 走 `$loopBreak(<标签>)`——带标签的 break 信号
- * 不被外层循环吸收（$isBreakTo 只匹配同标签），由 switch 臂入口的 catch
- * 吸收 ⇒ break 真的退出 switch（此前发 `return;` 只结束最近的 thunk：
- * if 臂内的 break 只结束 if 臂 thunk ⇒ 臂内后续语句照跑）。
- */
-let curSwitchBreakLabel: string | null = null;
-
-/** Bug 98：非纯 for-in 接收者临时名计数器（同块多 for-in 防重复声明） */
-let forInRecvSeq = 0;
-
-/**
- * Bug 228：for 主路径（`for (let i = …)`）的**循环变量捕获槽**序号
- * （跨语句/函数去重——同块多个 for 各自一个槽，不得重名）。
- * 槽内是体退出瞬间的循环变量最新写（continue 之前的写也在内），
- * $for 的 continue 臂经 `loopVar` 回调取用。
- */
-let forLoopVarSeq = 0;
+// 语句发射序号袋（switch 共享体 / break 标签 / for-in 接收者 / for 循环
+// 变量槽 + 臂标签栈）是**转译单元级**状态（opts.stmtEmit，根单元每次
+// 新建——同源 ⇒ 同产物；此前是本文件模块级 let，跨单元残留 ⇒ 二次
+// 转译漂移）。发射器一律经 stmtEmitStateOf(opts) 取同一袋，嵌套语句
+// （switch 臂内的 break 读标签）共享同一实例。各计数器与标签栈的语义
+// 不变量见下方发射点注释。
 
 /** Bug 98：for-in 接收者重读是否无副作用——标识符 / 非计算成员链
  *  （o、o.sub、o.a.b）。其余形态（调用、计算键、三元/短路等）经
@@ -399,8 +383,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 也照串），由 switch 臂入口的 catch 吸收；带标签 ⇒ 外层循环不吸收
       // （$isBreakTo 只匹配同标签）⇒ 不会误跳出外层循环。
       if (opts.inSwitchArm && !stmt.label) {
-        if (curSwitchBreakLabel) {
-          return `${pad}$loopBreak(${JSON.stringify(curSwitchBreakLabel)});`;
+        // 臂标签取本转译单元的发射状态袋（同单元内嵌套 switch 各自一份，
+        // 栈式保存/恢复见 emitSwitchStatement）
+        const armLabel = stmtEmitStateOf(opts).curSwitchBreakLabel;
+        if (armLabel) {
+          return `${pad}$loopBreak(${JSON.stringify(armLabel)});`;
         }
         return `${pad}return;`;
       }
@@ -1577,7 +1564,7 @@ function emitForStatement(
   // fail-closed（导出全退化 unknown ⇒ L2 门禁假绿）。与 Bug 1058/1059
   // 同款修法（internalTmpName：撞名则加 `_k` 后缀；无碰撞时原名返回
   // ⇒ 产物逐字不变）。
-  const loopVarSlot = internalTmpName(`__nudoLv${forLoopVarSeq++}`, opts);
+  const loopVarSlot = internalTmpName(`__nudoLv${stmtEmitStateOf(opts).forLoopVarSeq++}`, opts);
   const optsSrc = (() => {
     const parts: string[] = [];
     if (packSrc && unpackSrc) parts.push(`pack: () => ${packSrc}`, `unpack: ${unpackSrc}`);
@@ -1702,7 +1689,10 @@ function emitSwitchStatement(
   const caseLines: string[] = [];
   const sharedBodyDecls: string[] = [];
   let defaultSrc: string | null = null;
-  const bodyIdxBase = switchBodySeq;
+  // 本 switch 的序号/标签栈都挂在单元发射状态袋上（跨语句/函数去重，
+  // 根单元每次新建——同源 ⇒ 同产物）
+  const emit = stmtEmitStateOf(opts);
+  const bodyIdxBase = emit.switchBodySeq;
   let bodyIdx = 0;
   const armOpts: TranspileOptions = {
     ...opts,
@@ -1723,7 +1713,7 @@ function emitSwitchStatement(
   // 臂内无标签 break 的信号被用户的**标签块** catch 吸收 ⇒ 不退出 switch
   // （少执行/多执行后续语句 ⇒ 自信错值）。实际名经分配器避让用户词形；
   // 无碰撞时基名原样返回 ⇒ 产物逐字不变。
-  const breakLabel = internalTmpName(`__nudoSw${switchBreakSeq++}`, opts);
+  const breakLabel = internalTmpName(`__nudoSw${emit.switchBreakSeq++}`, opts);
   // Bug 168：case 测试**惰性**求值——$switch 的 cases 实参数组在调用前
   // 全部求值（JS 实参语义）⇒ 命中第一个 case 后后续 case 测试仍会执行。
   // 修法：test 改为 getter（$switch 按序匹配时才读 c.test）⇒ 命中即停
@@ -1803,9 +1793,10 @@ function emitSwitchStatement(
     return lines.join("\n");
   };
   let armSeq = 0;
-  // Bug 147：臂体发射期间本 switch 的 break 标签生效（嵌套 switch 各自一份）
-  const prevBreakLabel = curSwitchBreakLabel;
-  curSwitchBreakLabel = breakLabel;
+  // Bug 147：臂体发射期间本 switch 的 break 标签生效（嵌套 switch 各自一份；
+  // 栈式保存/恢复挂单元发射状态袋）
+  const prevBreakLabel = emit.curSwitchBreakLabel;
+  emit.curSwitchBreakLabel = breakLabel;
   try {
     for (let armIdx = 0; armIdx < merged.length; armIdx++) {
       const arm = merged[armIdx]!;
@@ -1853,13 +1844,13 @@ function emitSwitchStatement(
       }
     }
   } finally {
-    curSwitchBreakLabel = prevBreakLabel;
+    emit.curSwitchBreakLabel = prevBreakLabel;
   }
   // 无 default：合成 no-match 臂，把快照写入 join 槽（抽象 disc 时参与 join）
   if (!defaultArm && names.length > 0) {
     defaultSrc = wrapArmThunk(`() => {\n${indent(depth + 2)}return $lit(void 0);\n${indent(depth + 1)}}`, armSeq);
   }
-  switchBodySeq += Math.max(bodyIdx, 1);
+  emit.switchBodySeq += Math.max(bodyIdx, 1);
   const dflt = defaultSrc ? `, ${defaultSrc}` : "";
   const discRebinds = emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad);
   const switchCall = (discRef: string): string =>
@@ -2258,13 +2249,13 @@ function emitForInStatement(
   let recvPre: string[] = [];
   let recvSrc = "";
   if (isIn && !isPureForInRecv(stmt.right as Expression)) {
-    // 同块多个 for-in 不得重复声明：模块级计数器唯一化
+    // 同块多个 for-in 不得重复声明：单元发射状态袋的计数器唯一化
     // Bug 1159：接收者临时名同样避开用户标识符——`const __fir1 = (用户
     // 表达式)` 的初始化器与循环体都在该块里求值用户代码 ⇒ 写死名会撞
     // TDZ / 遮蔽；首轮编译失败后的 Bug 1139 重试虽会推高计数器「撞巧」
     // 成功，但两次尝试的序号都被用户占用时（`__fir1` … `__fir{n}`）重试
     // 仍 SyntaxError ⇒ 宿主异常冒出。实际名经分配器；无碰撞时逐字不变。
-    const recvTmp = internalTmpName(`__fir${++forInRecvSeq}`, opts);
+    const recvTmp = internalTmpName(`__fir${++stmtEmitStateOf(opts).forInRecvSeq}`, opts);
     recvPre = [`${pad}const ${recvTmp} = (${emitTranspileExpression(stmt.right as Expression, opts)});`];
     recvSrc = recvTmp;
   } else {

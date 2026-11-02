@@ -33,7 +33,7 @@ import type {
   OptionalCallExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, foldRequireSpecArg, internalTmpName, internalTmpNameSet } from "../helpers.ts";
+import { isExpression, foldRequireSpecArg, internalTmpName, internalTmpNameSet, privateNameKeyOf } from "../helpers.ts";
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { memberPathOf, setPathSrc } from "../member-path.ts";
@@ -223,10 +223,10 @@ export function transpileCallExpr(
         const args = emitArgList(expr.arguments, opts);
         const propName =
           callee.property.type === "PrivateName"
-            ? // Bug 78：this.#m() → "#m" 混淆键
-              `#${(callee.property as { id?: { name?: string }; name?: string }).id?.name
-                ?? (callee.property as { name?: string }).name
-                ?? ""}`
+            ? // Bug 78：this.#m() → "#m" 混淆键（统一提取点 helpers.privateNameKeyOf）。
+              // 无名（解析异常）保留历史回退 "#"：本分支下游 $invoke 的方法名
+              // 无 fail-closed 臂（null 会把方法名发射成 "null"），行为不变。
+              privateNameKeyOf(callee.property) ?? "#"
             : (callee.property as { name: string }).name;
         const name = JSON.stringify(propName);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;

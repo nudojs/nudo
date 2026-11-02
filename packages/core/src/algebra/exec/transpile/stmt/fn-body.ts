@@ -35,7 +35,7 @@ import {
   narrowDiscriminantArmThunks,
   relGuardOf,
   narrowRelArmThunk,
-} from "../stmt-predicates.ts";
+} from "./predicates.ts";
 import {
   isExpression,
   indent,
@@ -48,6 +48,7 @@ import {
   internalTmpName,
   leadingConstAliasGroups,
   mergeAliasGroups,
+  newStmtEmitState,
   shadowedIntrinsicsOf,
   expandAliasNames,
 } from "../helpers.ts";
@@ -441,6 +442,11 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
   // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
   let unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  // 语句发射序号袋同口径：外层（同一转译单元的嵌套 body）未传时新建，
+  // 保证单元内 `__nudoSw`/`__fir`/`__nudoLv` 等序号不撞名且跨单元不残留
+  if (!unitOpts.stmtEmit) {
+    unitOpts = { ...unitOpts, stmtEmit: newStmtEmitState() };
+  }
   // Bug 1160：body 单元同样在**入口**分配 this 载体名（与 transpileFile 同
   // 口径）——本单元内的函数 prologue 与嵌套生成的首参共用；无碰撞时基名
   // `__this` 原样返回 ⇒ 产物逐字不变。

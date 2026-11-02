@@ -18,7 +18,7 @@ export {
   extractForInitName,
 } from "./stmt/block.ts";
 
-// 控制流谓词 → stmt-predicates.ts（leaf）
+// 控制流谓词 → stmt/predicates.ts（leaf）
 export {
   stmtCompletesControl,
   stmtReturns,
@@ -26,4 +26,4 @@ export {
   completeElseChain,
   completeElseChains,
   withImplicitReturn,
-} from "./stmt-predicates.ts";
+} from "./stmt/predicates.ts";

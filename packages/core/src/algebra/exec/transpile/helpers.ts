@@ -12,7 +12,8 @@
  */
 import type { Node, Expression, Statement, VariableDeclaration } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
-import type { TranspileOptions } from "./types.ts";
+import { BoundedLruMap } from "../../lru-map.ts";
+import type { TranspileOptions, StmtEmitState } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
 import { HOST_INTRINSIC_SET } from "./intrinsics.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
@@ -970,8 +971,10 @@ export interface UserIdentInfo {
 
 const EMPTY_USER_IDENT: UserIdentInfo = { names: new Set<string>(), tmpSeqMax: -1 };
 
-/** 源文本 → 用户标识符信息（按源文本缓存：同一模块只扫一次） */
-const userIdentCache = new Map<string, UserIdentInfo>();
+/** 源文本 → 用户标识符信息（按源文本缓存：同一模块只扫一次）。
+ *  有界 LRU（容量 64，与旧「满 64 整表 clear」同上限）：大仓分析后驻留
+ *  可预测，且近期模块的缓存不再被整表清空重扫。 */
+const userIdentCache = new BoundedLruMap<UserIdentInfo>(64);
 
 export function userIdentInfo(source: string | undefined): UserIdentInfo {
   if (!source) return EMPTY_USER_IDENT;
@@ -989,8 +992,7 @@ export function userIdentInfo(source: string | undefined): UserIdentInfo {
     if (idx > tmpSeqMax) tmpSeqMax = idx;
   }
   const info: UserIdentInfo = { names, tmpSeqMax };
-  // 缓存按源文本持有——模块多时封顶清空（重扫成本可接受）
-  if (userIdentCache.size >= 64) userIdentCache.clear();
+  // 超限时 LRU 淘汰最旧键（BoundedLruMap 内建），不再整表 clear
   userIdentCache.set(source, info);
   return info;
 }
@@ -1116,6 +1118,31 @@ export function internalTmpNameSet(bases: readonly string[], opts: TranspileOpti
     out.push(name);
   }
   return out;
+}
+
+/** 语句发射序号袋的单元初值（各计数器从 0 起；标签栈空） */
+export function newStmtEmitState(): StmtEmitState {
+  return {
+    switchBodySeq: 0,
+    switchBreakSeq: 0,
+    curSwitchBreakLabel: null,
+    forInRecvSeq: 0,
+    forLoopVarSeq: 0,
+  };
+}
+
+/**
+ * 非根入口（不经 transpileFileDetailed / transpileBodyNode 的直调，如
+ * 表达式入口 `transpileExpression` 内的箭头块体）兜底的共享默认袋——
+ * 保留旧模块级 let 的跨调用行为（发射器只读 opts 透传，不各自新建：
+ * 新建会让嵌套语句（switch 臂内的 break 读标签）各自拿到独立袋 ⇒ 标签
+ * 丢失）。根转译单元一律自建新袋（确定性：同源 ⇒ 同产物），不触本表。
+ */
+const DEFAULT_STMT_EMIT: StmtEmitState = newStmtEmitState();
+
+/** 语句发射单元状态的取用口（根单元经 opts 线程化；非根直调落共享默认袋） */
+export function stmtEmitStateOf(opts: TranspileOptions): StmtEmitState {
+  return opts.stmtEmit ?? DEFAULT_STMT_EMIT;
 }
 
 /**
@@ -1954,12 +1981,20 @@ export function isExpression(n: { type: string }): n is Expression {
   return n.type !== "PrivateName" && !n.type.endsWith("Statement") && !n.type.endsWith("Declaration");
 }
 
-/** PrivateName 节点 → "#x" 混淆键源串（JSON 字符串字面量；公有名不含
- *  "#"，无碰撞）。成员读/写（Bug 78）与 in 运算符（Bug 80）共用——统一
- *  提取点防内联复制复发。无名（解析异常）→ null，交调用方 fail-closed。 */
-export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string }): string | null {
+/** PrivateName 节点 → "#x" 混淆键（裸串；公有名不含 "#"，无碰撞）。
+ * 统一提取点（call.ts / optional-chain.ts / class-emit.ts 的键推导都走
+ * 这里——防内联复制复发）。无名（解析异常）→ null，交调用方 fail-closed。 */
+export function privateNameKeyOf(prop: { id?: { name?: string }; name?: string }): string | null {
   const priv = prop.id?.name ?? prop.name;
-  return priv ? JSON.stringify(`#${priv}`) : null;
+  return priv ? `#${priv}` : null;
+}
+
+/** PrivateName 节点 → "#x" 混淆键源串（JSON 字符串字面量；公有名不含
+ *  "#"，无碰撞）。成员读/写（Bug 78）与 in 运算符（Bug 80）共用——
+ *  无名（解析异常）→ null，交调用方 fail-closed。 */
+export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string }): string | null {
+  const key = privateNameKeyOf(prop);
+  return key === null ? null : JSON.stringify(key);
 }
 
 /**

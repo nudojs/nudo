@@ -27,7 +27,7 @@ import type {
   SequenceExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "../stmt-predicates.ts";
+import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "../stmt/predicates.ts";
 import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";

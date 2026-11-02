@@ -4,7 +4,7 @@
  * 不变量：
  * - 臂内有数组 mutator / 守卫名写时必须走绑定-join 协议（forkArmThunk +
  *   forkBindingDecls + forkJoinBindings）——嵌套直接求值会撕裂 mutator 写回；
- * - 守卫臂剪影（nullish/typeof/判别等值/关系）统一经 stmt-predicates，与
+ * - 守卫臂剪影（nullish/typeof/判别等值/关系）统一经 stmt/predicates.ts，与
  *   stmt.ts IfStatement 同源；守卫名在 fork 绑定集时跳过（影子参数会吞掉
  *   臂内写）；
  * - 无 mutator 绑定时保持简单 $fork 形态（__test 槽位回填，既有输出面）。
@@ -17,14 +17,14 @@
  */
 import type { Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import type { DiscriminantGuard, NullishGuard, TypeGuard, RelGuard } from "../stmt-predicates.ts";
+import type { DiscriminantGuard, NullishGuard, TypeGuard, RelGuard } from "../stmt/predicates.ts";
 import {
   narrowNullishArmThunks,
   narrowTypeArmThunk,
   nullishRemoveCallOf,
   narrowDiscriminantArmThunks,
   narrowRelArmThunk,
-} from "../stmt-predicates.ts";
+} from "../stmt/predicates.ts";
 import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
 import { emitArrMutatorRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
 

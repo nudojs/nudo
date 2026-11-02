@@ -87,7 +87,7 @@ export function transpileAtomExpr(
       //
       // 遮蔽判定见 helpers.ts 的 shadowedIntrinsicsOf（opts.shadowedIntrinsics
       // 由 transpileFile / transpileBodyNode / body-fn / evalExprAbs 线程化）。
-      // 静态窄化（stmt-predicates）同用该标记：`x === undefined` / `case
+      // 静态窄化（stmt/predicates.ts）同用该标记：`x === undefined` / `case
       // undefined:` 在遮蔽后比较的是绑定值，不得当 nullish 字面量事实。
       if (HOST_INTRINSIC_SET.has(expr.name)) {
         if (opts.shadowedIntrinsics?.has(expr.name)) return `$absVal(${expr.name})`;

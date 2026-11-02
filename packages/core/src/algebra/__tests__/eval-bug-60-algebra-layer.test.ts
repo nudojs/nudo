@@ -25,7 +25,7 @@ import {formatConstraint} from "../interface.ts";
 import {litC, number as numberC} from "../constraint.ts";
 import {formalParamsFromNodes} from "../param-surface.ts";
 import {parseSource} from "../parse-source.ts";
-import {relGuardOf} from "../exec/transpile/stmt-predicates.ts";
+import {relGuardOf} from "../exec/transpile/stmt/predicates.ts";
 import {absShapeForTsTypeText} from "../ts-type-shape.ts";
 import {checkSource, pTrue} from "../index.ts";
 import {withStdImport, stdOpts} from "./nudo-constraints.ts";

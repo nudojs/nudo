@@ -18,7 +18,7 @@
  */
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, internalTmpNameSet } from "../helpers.ts";
+import { isExpression, internalTmpNameSet, privateNameKeyOf } from "../helpers.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { emitArgList } from "../call-args.ts";
@@ -239,8 +239,12 @@ export function flattenChain(
           ? !callee.computed && calleeProp?.type === "Identifier"
             ? calleeProp.name
             : !callee.computed && calleeProp?.type === "PrivateName"
-              // Bug 78：this.#m() → "#m" 混淆键（方法表同键注册）
-              ? `#${calleeProp.id?.name ?? calleeProp.name ?? ""}` || undefined
+              // Bug 78：this.#m() → "#m" 混淆键（方法表同键注册；统一提取点
+              // helpers.privateNameKeyOf）。无名（解析异常）保留历史回退 "#"
+              // （旧内联 `` `#${… ?? ""}` `` 恒产出 "#"，`|| undefined` 是死
+              // 分支）：methodName 落 undefined 会整跳丢失 invoke hop（下游
+              // 无 fail-closed 臂），行为不变。
+              ? privateNameKeyOf(calleeProp) ?? "#"
               : callee.computed && calleeProp?.type === "StringLiteral"
                 ? String(calleeProp.value)
                 : callee.computed && calleeProp?.type === "NumericLiteral"

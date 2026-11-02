@@ -34,6 +34,7 @@ import {
   collectExportVarNames,
   userIdentInfo,
   bumpDestrTmpSeq,
+  newStmtEmitState,
   registerConstFnScope,
   internalTmpName,
   leadingConstAliasGroups,
@@ -106,6 +107,10 @@ function transpileFileDetailed(
   bumpDestrTmpSeq(destrTmpSeq, userIdentInfo(opts.source));
   // Bug 42：try 临时名单调计数器（`__nudoTm_`/`__nudoE_` 同口径）
   const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
+  // 语句发射序号袋（`__nudoSw`/`__swBody`/`__fir`/`__nudoLv` + switch 臂
+  // break 标签栈）：**每单元新建**——此前 statement.ts 的模块级 let 跨单元
+  // 残留 ⇒ 同进程同一源码二次转译产物漂移（同源 ⇒ 同产物被破坏）。
+  const stmtEmit = opts.stmtEmit ?? newStmtEmitState();
   // Bug 1160：this 载体名在根单元**分配一次**——真函数 prologue、类/对象
   // 方法首参、访问器 / 字段 / 静态块 thunk 首参共用（声明与 `thisParam`
   // 读方同名）。无碰撞时基名 `__this` 原样返回 ⇒ 产物逐字不变。
@@ -180,6 +185,7 @@ function transpileFileDetailed(
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
+    stmtEmit,
     thisSlot,
     constNames: moduleConstNames,
     // **总是覆写**（含空数组）：模块是最外层作用域边界——外层组不得漏进

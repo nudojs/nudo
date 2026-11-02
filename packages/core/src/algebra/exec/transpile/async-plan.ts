@@ -48,7 +48,7 @@
  *   （按节点身份判定——只有 gen 级的 for await 才能发门）。
  */
 import type { Node } from "@babel/types";
-import { stmtReturns } from "./stmt-predicates.ts";
+import { stmtReturns } from "./stmt/predicates.ts";
 
 /** 嵌套函数/方法/类体 = 独立边界（不下沉） */
 const FUNC_LIKE = new Set<string>([

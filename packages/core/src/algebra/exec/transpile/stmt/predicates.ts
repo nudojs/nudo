@@ -2,8 +2,8 @@
  * 语句控制流谓词（leaf）：与 transpile 主递归解耦，便于单测与拆文件。
  */
 import type { Statement, Node } from "@babel/types";
-import { indent } from "./helpers.ts";
-import { matchRelIdentLit, matchRelIdentLitComposite } from "../../arithmetic.ts";
+import { indent } from "../helpers.ts";
+import { matchRelIdentLit, matchRelIdentLitComposite } from "../../../arithmetic.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;

@@ -25,6 +25,7 @@ import {
   internalTmpName,
   internalTmpNameSet,
   thisCarrierOf,
+  privateNameKeyOf,
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
@@ -162,9 +163,9 @@ export function emitSetterAccessorThunk(
  * 修法：类体内所有 PrivateName 节点的 id.name 改写为 "<类名>::<私有名>"
  * （声明点与使用点共用同一键）。transpile 侧全部私有名路径（成员读/写、
  * 复合赋值、update、调用、in 运算符）都从 PrivateName.id.name 取键
- * （helpers.privateNameKeySrc / call.ts 内联同口径），改写一处即全路径
- * 对齐；运行时沿用既有 privateNameGuard（"#" 前缀 brand 校验）——键按类
- * 作用域化后，跨类读命中"非本类槽"→ 确定 TypeError。
+ * （统一提取点 helpers.privateNameKeyOf / privateNameKeySrc），改写一处
+ * 即全路径对齐；运行时沿用既有 privateNameGuard（"#" 前缀 brand 校验）
+ * ——键按类作用域化后，跨类读命中"非本类槽"→ 确定 TypeError。
  *
  * 嵌套类体自有私有名作用域独立——不进改写（否则外层类名串进内层私有名；
  * 嵌套类体由其自身 classSpecOf 以自己的类名改写）。
@@ -305,8 +306,10 @@ export function classSpecOf(
       | undefined;
     if (!k?.type) return null;
     if (!computed && k.type === "PrivateName") {
-      const n = k.id?.name ?? k.name;
-      return n ? { name: `#${n}`, private: true } : null;
+      // 统一提取点 helpers.privateNameKeyOf（无名解析异常 → null fail-closed，
+      // 与既有语义一致）
+      const key = privateNameKeyOf(k);
+      return key === null ? null : { name: key, private: true };
     }
     if (!computed && k.type === "Identifier" && k.name) return { name: k.name };
     if (k.type === "StringLiteral" || k.type === "NumericLiteral") {

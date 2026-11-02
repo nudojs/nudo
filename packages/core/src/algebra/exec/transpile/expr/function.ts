@@ -32,7 +32,7 @@ import type {
   FunctionExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { withImplicitReturn } from "../stmt-predicates.ts";
+import { withImplicitReturn } from "../stmt/predicates.ts";
 import {
   getFnFacets,
   indent,
