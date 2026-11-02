@@ -1,5 +1,172 @@
 # @nudojs/harvester
 
+## 0.5.0
+
+### Minor Changes
+
+- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
+  cross-face copies and stop folding read errors into silent misses.
+  
+  - **Cross-face single sources** (previously hand-synced copies that had already
+    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
+    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
+    the `health` copy still used the object-spread env merge that Bug 1037 fixed
+    everywhere else, hand-rolled env absolutization, and dropped
+    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
+    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
+    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
+    realpath-fallback micro-copies with two divergent identity-key 口径);
+    `Object.prototype` name list now derived instead of hand-synced;
+    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
+    within the CLI package.
+  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
+    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
+    layer when a dts closure read fails; transient harvest failures are no
+    longer pinned as `null` in the process cache; unreadable dts entries count
+    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
+    failures instead of silently skipping (a chmod-000 package could silently
+    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
+    existing target it cannot read (EISDIR still routes to the write-failure
+    channel, which cannot clobber); LSP sidecar read failures surface as
+    structured `nudo:path-io` path errors instead of "no sidecar"; core's
+    same-file contract-face resolver notes engine exceptions
+    (`nudo:internal`) instead of silently memoizing "no contract face".
+  - **Removed zero-consumer aliases** (no production consumers in-repo or in
+    the published docs matrix): `transpile` (use `transpileSource`) from
+    `@nudojs/core`, `generateGuardFunction` (use
+    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
+    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
+  - **Behavior notes**: `nudo health` now merges env modules via
+    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
+    non-conflicting exports) and can fail red on error-level mock-load
+    problems; the check face may surface `nudo:internal` info issues for
+    engine exceptions that were previously swallowed.
+  - **Internal refactors, byte-identical output**: class-emit / computed-key
+    assignment / destructure emitters deduplicated via shared helpers (verified
+    by a 56-corpus byte-diff plus the pinned emission suites);
+    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
+    split into print/json helpers.
+
+### Patch Changes
+
+- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
+  remaining cross-package and in-package copies, remove dead exports, and fix
+  doc drift.
+  
+  Single-sourcing (comment-pinned manual-sync pairs now share one
+  implementation):
+  
+  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
+    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
+    readers/writers/DisposableStack family). Byte-identical parity verified via
+    before/after brand-slot dumps; intentionally divergent declarations
+    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
+    comments.
+  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
+    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
+    migrate) / service (emit ×2, disk-cache).
+  - analyzer-diagnostics → CheckIssue mapping: core
+    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
+    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
+    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
+  - ESM AST detection: core `isEsmProgram` exported via internal; service
+    `abs-modules-graph` deletes its verbatim copy.
+  - dependency collection: core `collectDependencySpecsWithMode` (import/require
+    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
+    copy; `collectDependencySpecs` stays a thin shell.
+  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
+    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
+    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
+    consume them (Bug 1009 copy-drift class).
+  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
+    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
+    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
+    `algebra/ast-walk.ts` (skip-key differences parameterized);
+    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
+    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
+    via `builtins/brand-slot.ts`.
+  - harvester: `dts-contract-draft` memberKey delegates to exported
+    `computedMemberName`.
+  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
+    both smoke scripts.
+  
+  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
+  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
+  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
+  dead block in env node.ts; service-emit
+  barrel narrowed to externally-consumed symbols (16 removals, api docs
+  regenerated en+zh). `generateDts` stays exported (cross-package test use).
+  
+  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
+  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
+  `@nudojs/harvester`).
+- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
+  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
+  defineEnv deep structural dump (sorted + insertion-order preserving)
+  byte-identical vs HEAD, verify:examples 251 checks green, lint +
+  lint:tests clean.
+  
+  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
+    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
+    exec-family options obj (execSync / execFileSync / spawnSync) → shared
+    `execSyncOptions`; Request / Response body-mixin slots
+    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
+    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
+    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
+    and the `process` global object.
+  - env `node.ts` path family — the drifted manual-sync pair: the top-level
+    `pathModule` inlined the whole member table next to the
+    `platformPathMethods(posix/win32)` factory and had already drifted
+    (`join.required` only on the top-level copy). `pathModule` now consumes
+    the factory; member order canonicalized to the top-level key order;
+    `join`'s required-arity enforcement is now identical across
+    path/posix/win32 (Bug 877 case 6's claimed parity now real).
+  - env `web.ts`: URL `.searchParams` slot table and the global
+    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
+    iterator face / size stay per-site; insertion order preserved).
+  - core `builtins/error/binary.ts`: DataView ctor and
+    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
+    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
+    number-domain item enforcement now calls `enforceTaItem` (the `.of`
+    cause variant is unified into the shared text — no pins).
+  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
+    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
+    undefined, closed → counted tuple).
+  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
+    walk (assignment / update / stateful-call faces, ×3) →
+    `markFreeMemberRoot`.
+  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
+    destructure binding loops → `bindPatternImports`; top-level class scans
+    (`findClassDecl` + module-frame class bindings) share
+    `unwrapExportDecl`.
+  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
+    namespace resolution loop (qualified arm + short-name arm) →
+    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
+    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
+    untouched).
+  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
+    enforcers (literal face / predicate face) share `actualSlotTable`
+    (obj direct / brand inner-obj unwrap).
+  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
+    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
+    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
+    comment kept.
+  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
+    `analyzeToolFile` preamble (resolveToolFile → readSource →
+    analyzeFileAsync "all", Bug 993 async preload).
+- Updated dependencies [5cd4106]
+- Updated dependencies [01463d8]
+- Updated dependencies [7d7abe4]
+- Updated dependencies [5769211]
+- Updated dependencies [01a550b]
+- Updated dependencies [fd0fb09]
+- Updated dependencies [6eaf219]
+- Updated dependencies [c48fd48]
+- Updated dependencies [00ba198]
+  - @nudojs/core@1.18.0
+  - @nudojs/parser@1.5.7
+  - @nudojs/env@0.5.7
+
 ## 0.4.6
 
 ### Patch Changes

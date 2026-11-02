@@ -1,5 +1,119 @@
 # @nudojs/env
 
+## 0.5.7
+
+### Patch Changes
+
+- 01a550b: Dedup batch 6 (same-file fragment twins from the jscpd `--min-tokens 70`
+  audit; batch 5 closed the cross-file sync obligations and whole-function
+  twins). Pure refactor — outputs byte-identical (vitest --changed green,
+  verify:examples 251 checks, lint + lint:tests clean, defineEnv deep
+  structural dump parity vs HEAD for the env change).
+  
+  - transpile `expr/optional-chain.ts`: `invoke` / `invokeKey` hop arms share
+    the emission tail (contOf IIFE wrap, fnOptional double fork with
+    Bug 187 whole-chain short-circuit + BUG-216 single-Get preRead,
+    recvOptional short-circuit, bare tail) — extracted `emitInvokeTail`;
+    the two arms now only define `callOf` (`$invoke` vs `$invokeKey`) and the
+    method-value read (`$get` vs `$idx`). Emitted code text unchanged.
+  - `algebra/term.ts`: `surviveMulOne` / `surviveSubZero` verbatim-twin
+    closures → shared `toNumberDomainTerm` (Bug 010 number-domain guard for
+    x*1 / x-0 identities, bigint mixed-type preservation).
+  - `algebra/check.ts`: assume / invariant segment processing shares
+    `anchorSurfaceOf` (#165 anchorable surface: contract formals ∪ AST params
+    ∪ top-level locals); the two L2 entry-may-throw issue constructions
+    (no-signature fallback vs generalized success) share
+    `pushEntryMayThrowIssue` — only the `actual` line differs.
+  - transpile `stmt/statement.ts`: for-loop fallback path and init-declaration
+    path share the body-prep block (`forBodyPrep`: body local decls → body
+    opts with alias filtering → body statements → loop-carried assignment
+    names); paths inject constScope shadowing and the initName exclusion.
+    Emitted code text unchanged.
+  - `builtins/json.ts`: tuple and arrayView branches of the stringify walker
+    share `mapElements` (index-keyed element mapping, abstract child folds to
+    null with partial/unseen accounting, tuple holes).
+  - `builtins/object/methods.ts`: `Object.keys` / `Object.entries` string-
+    literal receiver arms share `stringIndexTupleAbs` (code-unit indexing,
+    exact conf; element construction injected).
+  - `algebra/promote-scan.ts`: ForOf's binding-window child walk and the
+    generic tail walk share `walkChildren`.
+  - `arithmetic/muldiv.ts`: `div` / `mod` share the numeric leading
+    (`divModLead`: builtin-brand ToPrimitive re-entry, Symbol TypeError,
+    bigint fold + abstract-bigint domain with 0n RangeError per Bug 106);
+    0-divisor semantics after the leading remain per-op.
+  - `env/src/node.ts`: the three verbatim MessagePort slot tables
+    (MessageChannel.port1 / port2 / standalone MessagePort brand) single-
+    sourced as `messagePortSlots` (same cross-brand sharing pattern as the
+    existing `streamSlots`); defineEnv deep structural dump verified
+    byte-identical vs HEAD.
+  - `lsp/src/symbols.ts`: `FunctionDeclaration` / `FunctionExpression`
+    visitor bodies merged into a single `"FunctionDeclaration|FunctionExpression"`
+    visitor key (babel traverse alias syntax), bodies were verbatim twins.
+- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
+  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
+  defineEnv deep structural dump (sorted + insertion-order preserving)
+  byte-identical vs HEAD, verify:examples 251 checks green, lint +
+  lint:tests clean.
+  
+  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
+    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
+    exec-family options obj (execSync / execFileSync / spawnSync) → shared
+    `execSyncOptions`; Request / Response body-mixin slots
+    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
+    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
+    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
+    and the `process` global object.
+  - env `node.ts` path family — the drifted manual-sync pair: the top-level
+    `pathModule` inlined the whole member table next to the
+    `platformPathMethods(posix/win32)` factory and had already drifted
+    (`join.required` only on the top-level copy). `pathModule` now consumes
+    the factory; member order canonicalized to the top-level key order;
+    `join`'s required-arity enforcement is now identical across
+    path/posix/win32 (Bug 877 case 6's claimed parity now real).
+  - env `web.ts`: URL `.searchParams` slot table and the global
+    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
+    iterator face / size stay per-site; insertion order preserved).
+  - core `builtins/error/binary.ts`: DataView ctor and
+    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
+    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
+    number-domain item enforcement now calls `enforceTaItem` (the `.of`
+    cause variant is unified into the shared text — no pins).
+  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
+    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
+    undefined, closed → counted tuple).
+  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
+    walk (assignment / update / stateful-call faces, ×3) →
+    `markFreeMemberRoot`.
+  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
+    destructure binding loops → `bindPatternImports`; top-level class scans
+    (`findClassDecl` + module-frame class bindings) share
+    `unwrapExportDecl`.
+  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
+    namespace resolution loop (qualified arm + short-name arm) →
+    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
+    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
+    untouched).
+  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
+    enforcers (literal face / predicate face) share `actualSlotTable`
+    (obj direct / brand inner-obj unwrap).
+  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
+    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
+    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
+    comment kept.
+  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
+    `analyzeToolFile` preamble (resolveToolFile → readSource →
+    analyzeFileAsync "all", Bug 993 async preload).
+- Updated dependencies [5cd4106]
+- Updated dependencies [01463d8]
+- Updated dependencies [7d7abe4]
+- Updated dependencies [5769211]
+- Updated dependencies [01a550b]
+- Updated dependencies [fd0fb09]
+- Updated dependencies [6eaf219]
+- Updated dependencies [c48fd48]
+- Updated dependencies [00ba198]
+  - @nudojs/core@1.18.0
+
 ## 0.5.6
 
 ### Patch Changes

@@ -1,6 +1,227 @@
 # @nudojs/parser
 
 
+## 1.5.7
+
+### Patch Changes
+
+- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
+  cross-file / cross-package copies that were pinned together by comments or
+  mirror tests instead of code.
+  
+  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
+    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
+    `@nudojs/core/internal`): the check face (case-arg split) and the parser
+    directive face each kept verbatim copies — Bug 1009 was exactly this pair
+    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
+    silently skipped). `scanWithStrings` was dead after the move and is gone.
+  - **bigint operand predicates** (`isNullishLitOperand` /
+    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
+    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
+    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
+    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
+    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
+    deterministically.
+  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
+    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
+    `1 - x` with `x: number | []` no longer records a false TypeError
+    may-throw (native never throws; the old member scan dragged arr members
+    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
+    the Bug 946 suite, including the sound positive control (`1n + x` on the
+    same union still records may-throw: the number member genuinely throws).
+  - **`collectNestedBodyRanges` wiring completed**: core exported it via
+    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
+    still ran a full local copy. `file-directives.ts` now consumes the single
+    source.
+  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
+    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
+    verbatim copy and the LSP test suite used that copy as a mirror oracle.
+    nudojs now re-exports from `@nudojs/service`; the tautological mirror
+    assertion is replaced by direct-value assertions.
+  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
+    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
+    drift-gate test holding the two copies together; both the replica body and
+    the drift-gate file are gone.
+  - **emit section extraction**: `interface-derivation-emit.ts` and
+    `interface-emitter.ts` duplicated the export-statement →
+    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
+    both now share `service/emit/export-section-scan.ts`.
+  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
+    was a documented structural mirror of the named interface; the shell now
+    consumes the interface directly.
+- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
+  remaining cross-package and in-package copies, remove dead exports, and fix
+  doc drift.
+  
+  Single-sourcing (comment-pinned manual-sync pairs now share one
+  implementation):
+  
+  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
+    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
+    readers/writers/DisposableStack family). Byte-identical parity verified via
+    before/after brand-slot dumps; intentionally divergent declarations
+    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
+    comments.
+  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
+    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
+    migrate) / service (emit ×2, disk-cache).
+  - analyzer-diagnostics → CheckIssue mapping: core
+    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
+    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
+    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
+  - ESM AST detection: core `isEsmProgram` exported via internal; service
+    `abs-modules-graph` deletes its verbatim copy.
+  - dependency collection: core `collectDependencySpecsWithMode` (import/require
+    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
+    copy; `collectDependencySpecs` stays a thin shell.
+  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
+    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
+    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
+    consume them (Bug 1009 copy-drift class).
+  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
+    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
+    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
+    `algebra/ast-walk.ts` (skip-key differences parameterized);
+    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
+    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
+    via `builtins/brand-slot.ts`.
+  - harvester: `dts-contract-draft` memberKey delegates to exported
+    `computedMemberName`.
+  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
+    both smoke scripts.
+  
+  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
+  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
+  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
+  dead block in env node.ts; service-emit
+  barrel narrowed to externally-consumed symbols (16 removals, api docs
+  regenerated en+zh). `generateDts` stays exported (cross-package test use).
+  
+  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
+  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
+  `@nudojs/harvester`).
+- 7d7abe4: Dedup batch 4 (jscpd `--min-tokens 70` audit of code-level clones; website
+  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the three
+  remaining comment-pinned manual-sync pairs and the largest in-file twins.
+  Pure refactor — outputs byte-identical (vitest --changed 15548 passed,
+  verify:examples 251 checks, public-api freeze 9/9).
+  
+  Comment-confessed sync pairs now single-sourced:
+  
+  - lsp hover `formatEntryParamShapeLike` → core `formatEntryParamShape` via
+    `@nudojs/core/internal` (the old comment claimed "core adds no export";
+    the internal face is the sanctioned route).
+  - lsp `server-code-actions` `norm`/`resolveRel` copy of the synthesized-sidecar
+    base (already drifted: lsp had an extra direct-equality check + loader
+    fallback) → `@nudojs/service/emit` exports `normPosixPath` /
+    `resolveRelativeSpec`; the lsp-only extensions stay at the call site.
+  - standard-schema brand ctor list: `GLOBAL_BRAND_CTOR_NAMES` local array +
+    Set → schema-generator `RUNTIME_GLOBAL_CTOR_NAME_LIST` (single array
+    source; Set + `isRuntimeGlobalCtorName` predicate derive from it; the
+    embedded validator serializes the same array, byte-identical).
+  
+  In-file twins single-sourced:
+  
+  - core `hof.ts`: `predUsesMappedVars` / `mapHasShapeOnlyVar` → parameterized
+    `predAnyVar` walker.
+  - core `scan/literal-shapes.ts`: 21 structurally identical
+    `constraintViolated` issue pushes → `pushPrecondIssue` (message/suggestion
+    templates byte-identical).
+  - core `builtins/promise.ts`: then/catch rejected-arm microtask twins →
+    `definiteRecoveryPromise` / `unsettledRecoveryPromise`; then-microtask dual
+    reject arms → `joinRejectedArm`; `Promise.all` dual reject faces →
+    `allRejectFace`.
+  - core `check.ts`: handwritten return-contract recording block (skip branch +
+    main branch) → `recordReturnContract`.
+  - core `leq.ts`/`postcondition.ts`: duplicate `primOf` single-sourced in leq.
+  - core `builtins/object/methods.ts`: TA own-keys tuple (keys/gOPN faces) →
+    `taOwnKeysTuple`; gOPD class/Error/`.prototype` slot→descriptor arms →
+    `ownSlotDescriptor`; 8 identical nullish-receiver guards →
+    `throwIfNullishRecv`.
+  - core `builtins/array.ts` + `template.ts`: tuple join folding loops →
+    `tupleJoinParts(recv, onSymbol)` (symbol element: throw vs abstract —
+    the real semantic fork, parameterized).
+  - core exec runtime: `$whileSeq`/`$forOf` `applyExitJoin` closures → new pure
+    `loop-exit-join.ts` `applyLoopExitJoin` (the discovered `exhausted && widen`
+    gate difference is an explicit parameter; `$forOf` passes `exhausted: true`,
+    provably equivalent).
+  - core `directive-scan.ts` ↔ parser `fn-directives.ts`: `CASE_TAG_REGEX` scan
+    loop → core `iterCaseTags(text, caseArgSpans)` via `@nudojs/core/internal`
+    (Bug 978 diagnostic actions and downstream regexes stay consumer-side).
+  - service `dts-generator.ts`: `DtsClassMemberSurface` base interface —
+    `scanClassSurface` return type no longer re-declares the member fields
+    (BUG-168/151 docs live once).
+  - lsp: `replay.ts` async env-preload twins share `preloadEnvsThen`, function
+    scope walkers share `walkFnScope`; `server-navigation.ts` references/rename
+    share the gate+parse prologue; `hover.ts` generalize blocks share
+    `tryGeneralizeEnclosing`.
+  
+  Skipped as intentional parallel data or non-identical semantics: env
+  node/web table clones (MessagePort ports, dual Storage, exec options),
+  dts obj-slot widen pair (Bug 240 selective flags vs whole-slot spread),
+  object methods string char-tuple pair (values vs entries elements).
+- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
+  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
+  remaining comment-pinned manual-sync obligations and the seven whole-function
+  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
+  verify:examples 251 checks, lint + lint:tests clean).
+  
+  Comment-confessed sync pairs now single-sourced:
+  
+  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
+    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
+    `control.ts` YIELD_* constants) → new zero-dependency leaf
+    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
+    and transpile (`statement.ts`) both import the named constants.
+  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
+    whitelist ("须与 core makeBuilder 同步") → core exports
+    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
+    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
+    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
+  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
+    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
+    module-level re-export is removed; no public face change).
+  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
+    error-family.ts imports promise.ts, so no direct import) stays local but is
+    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
+    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
+  
+  Whole-function twins single-sourced:
+  
+  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
+    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
+    resizable/growable slot key, diagnostic labels; slot insertion order
+    preserved).
+  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
+    shared `memberWriteIfeImpl` (only real difference: return written value vs
+    new root).
+  - nudojs `version.ts` three walk-up-to-package.json loops →
+    `findPkgDirUpwards` + `readVersionAt`.
+  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
+    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
+    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
+    invalid / unreadable / ok grading unchanged).
+  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
+    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
+    codes)` (Bug 556 dual-code gate preserved).
+  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
+    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
+    lives once; count still raw param length, formals still
+    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
+  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
+    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
+    `resolveCaseTarget` (error strings byte-identical).
+- Updated dependencies [5cd4106]
+- Updated dependencies [01463d8]
+- Updated dependencies [7d7abe4]
+- Updated dependencies [5769211]
+- Updated dependencies [01a550b]
+- Updated dependencies [fd0fb09]
+- Updated dependencies [6eaf219]
+- Updated dependencies [c48fd48]
+- Updated dependencies [00ba198]
+  - @nudojs/core@1.18.0
+
 ## 1.5.6
 
 ### Patch Changes
