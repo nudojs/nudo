@@ -37,6 +37,19 @@ import {
 
 export type { EnvDefinition };
 
+// URLSearchParams 核心方法槽单源（URL 实例的 searchParams 槽表与全局
+// URLSearchParams 构造器同款；toString / 迭代器面 / size 各自定——
+// spread 保插入序）。
+const searchParamsCoreSlots = {
+  append: envFn([prim.str(), prim.str()], undef()),
+  delete: envFn([prim.str()], undef()),
+  get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+  getAll: envFn([prim.str()], arrOf(prim.str())),
+  has: envFn([prim.str()], prim.bool()),
+  set: envFn([prim.str(), prim.str()], undef()),
+  sort: envFn([], undef()),
+};
+
 function makeURLObj(url: URL): Abs {
   return brandOf("URL", objAbs({
     href: strLit(url.href),
@@ -50,13 +63,7 @@ function makeURLObj(url: URL): Abs {
     pathname: strLit(url.pathname),
     search: strLit(url.search),
     searchParams: objAbs({
-      append: envFn([prim.str(), prim.str()], undef()),
-      delete: envFn([prim.str()], undef()),
-      get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
-      getAll: envFn([prim.str()], arrOf(prim.str())),
-      has: envFn([prim.str()], prim.bool()),
-      set: envFn([prim.str(), prim.str()], undef()),
-      sort: envFn([], undef()),
+      ...searchParamsCoreSlots,
       toString: envFn([], prim.str(), () => strLit(url.searchParams.toString())),
       entries: envFn([], prim.unknown),
       keys: envFn([], prim.unknown),
@@ -189,13 +196,7 @@ export function defineEnv(): EnvDefinition {
    * 的品牌派发面缺陷，env 侧无法修）；其余 12 个浏览器构造器已全部带 brand。
    */
   const URLSearchParams = objAbs({
-    append: envFn([prim.str(), prim.str()], undef()),
-    delete: envFn([prim.str()], undef()),
-    get: envFn([prim.str()], unionOf(prim.str(), nullLit())),
-    getAll: envFn([prim.str()], arrOf(prim.str())),
-    has: envFn([prim.str()], prim.bool()),
-    set: envFn([prim.str(), prim.str()], undef()),
-    sort: envFn([], undef()),
+    ...searchParamsCoreSlots,
     toString: envFn([], prim.str()),
     // 族 15 · BUG-154：迭代器面（不是数组，见 iteratorOf）
     entries: envFn([], iteratorOf(tupleOf([prim.str(), prim.str()]))),

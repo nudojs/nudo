@@ -292,12 +292,16 @@ export function defineEnv(): EnvDefinition {
     );
 
   /**
-   * path.posix / path.win32 平台路径对象（Bug 877：与 path 族同一套实参执法；
-   * BUG-255：成员集与顶层 `path` **同源**——`parse` / `format` 不再漏）。
+   * path 成员表单源（pathModule 顶层与 posix/win32 平台对象共用；成员
+   * 插入序 = 顶层 path 的键序）。
+   * Bug 877：与 path 族同一套实参执法；BUG-255：`parse` / `format`
+   * 不再漏。变长族的 `enforceArgs` 只覆盖 required 段 ⇒ **整段**实参
+   * （含 rest）由 apply 内的执法闸把关：确定不符 ⇒ 必抛 TypeError。
    */
   const platformPathMethods = (p: typeof nodePath.posix) => ({
     join: envFnVariadic(prim.str(), prim.str(), {
       apply: pathApply(pathJoinAbs, prim.str(), 0),
+      required: [prim.str()],
       restName: "...paths",
     }),
     resolve: envFnVariadic(prim.str(), prim.str(), {
@@ -310,13 +314,26 @@ export function defineEnv(): EnvDefinition {
       pathApply(strImpl1Abs(nodePath.dirname), prim.str(), 1),
       { enforceArgs: true },
     ),
-    basename: envFn([prim.str(), prim.str()], prim.str(), pathApply(pathBasenameAbs, prim.str(), 1, 1), {
-      params: ["path", "ext?"],
-    }),
+    // ext is optional in Node — required arity 1; label+type render `ext?: string`.
+    // Bug 877：ext 是**可选位** ⇒ 传 undefined 视作未传（原生不抛）⇒ 不用
+    //   `enforceArgs`（它把 undefined 当抽象 ⇒ may-throw），由 apply 内的
+    //   执法闸按「必填 1 + 可选 1」判定。
+    basename: envFn(
+      [prim.str(), prim.str()],
+      prim.str(),
+      pathApply(pathBasenameAbs, prim.str(), 1, 1),
+      { params: ["path", "ext?"] },
+    ),
     extname: envFn(
       [prim.str()],
       prim.str(),
       pathApply(strImpl1Abs(nodePath.extname), prim.str(), 1),
+      { enforceArgs: true },
+    ),
+    relative: envFn(
+      [prim.str(), prim.str()],
+      prim.str(),
+      pathApply(pathRelativeAbs, prim.str(), 2),
       { enforceArgs: true },
     ),
     normalize: envFn(
@@ -331,16 +348,11 @@ export function defineEnv(): EnvDefinition {
       pathApply(pathIsAbsoluteAbs, prim.bool(), 1),
       { enforceArgs: true },
     ),
-    relative: envFn(
-      [prim.str(), prim.str()],
-      prim.str(),
-      pathApply(pathRelativeAbs, prim.str(), 2),
-      { enforceArgs: true },
-    ),
     // BUG-255：`parse` / `format` 必须在**平台面**——宿主
     // `Object.getOwnPropertyNames(path.posix)` 含这两个（顶层同源）。
     parse: platformParseFn(p),
     format: platformFormatFn(),
+    // 常量：平台相关字面量在 defineEnv 时可具体化
     sep: prim.str(),
     delimiter: prim.str(),
   });
@@ -913,64 +925,10 @@ export function defineEnv(): EnvDefinition {
     ext: { value: prim.str(), optional: true },
   });
 
+  // 顶层 path = 单源成员表（platformPathMethods）+ 平台对象两个槽；
+  // join 的 required 执法与 posix/win32 同口径（Bug 877 case 6）。
   const pathModule: Record<string, Abs> = {
-    // Node variadic: declare min required arity + rest label (not n fixed slots).
-    // Bug 877：变长族的 `enforceArgs` 只覆盖 required 段 ⇒ **整段**实参
-    //   （含 rest）由 apply 内的执法闸把关：确定不符 ⇒ 必抛 TypeError。
-    join: envFnVariadic(prim.str(), prim.str(), {
-      apply: pathApply(pathJoinAbs, prim.str(), 0),
-      required: [prim.str()],
-      restName: "...paths",
-    }),
-    resolve: envFnVariadic(prim.str(), prim.str(), {
-      apply: pathApply(pathResolveAbs, prim.str(), 0),
-      restName: "...paths",
-    }),
-    dirname: envFn(
-      [prim.str()],
-      prim.str(),
-      pathApply(strImpl1Abs(nodePath.dirname), prim.str(), 1),
-      { enforceArgs: true },
-    ),
-    // ext is optional in Node — required arity 1; label+type render `ext?: string`.
-    // Bug 877：ext 是**可选位** ⇒ 传 undefined 视作未传（原生不抛）⇒ 不用
-    //   `enforceArgs`（它把 undefined 当抽象 ⇒ may-throw），由 apply 内的
-    //   执法闸按「必填 1 + 可选 1」判定。
-    basename: envFn(
-      [prim.str(), prim.str()],
-      prim.str(),
-      pathApply(pathBasenameAbs, prim.str(), 1, 1),
-      { params: ["path", "ext?"] },
-    ),
-    extname: envFn(
-      [prim.str()],
-      prim.str(),
-      pathApply(strImpl1Abs(nodePath.extname), prim.str(), 1),
-      { enforceArgs: true },
-    ),
-    relative: envFn(
-      [prim.str(), prim.str()],
-      prim.str(),
-      pathApply(pathRelativeAbs, prim.str(), 2),
-      { enforceArgs: true },
-    ),
-    normalize: envFn(
-      [prim.str()],
-      prim.str(),
-      pathApply(strImpl1Abs(nodePath.normalize), prim.str(), 1),
-      { enforceArgs: true },
-    ),
-    isAbsolute: envFn(
-      [prim.str()],
-      prim.bool(),
-      pathApply(pathIsAbsoluteAbs, prim.bool(), 1),
-      { enforceArgs: true },
-    ),
-    parse: platformParseFn(nodePath),
-    format: platformFormatFn(),
-    // 常量：平台相关字面量在 defineEnv 时可具体化
-    sep: prim.str(),
-    delimiter: prim.str(),
+    ...platformPathMethods(nodePath),
     posix: brandOf("path.PlatformPath", objAbs(platformPathMethods(nodePath.posix))),
     win32: brandOf("path.PlatformPath", objAbs(platformPathMethods(nodePath.win32))),
   };
@@ -1840,25 +1798,24 @@ function assertRegexpPattern(
     }),
   );
 
+  // exec 族共用 options 槽单源（execSync / execFileSync / spawnSync 同一
+  // 形状；与 encodingOptions 同款共享）。
+  const execSyncOptions = objAbs({
+    encoding: { value: prim.str(), optional: true },
+    timeout: { value: prim.num(), optional: true },
+    maxBuffer: { value: prim.num(), optional: true },
+    cwd: { value: prim.str(), optional: true },
+  });
+
   const childProcessModule: Record<string, Abs> = {
     execSync: envFn(
-      [prim.str(), objAbs({
-        encoding: { value: prim.str(), optional: true },
-        timeout: { value: prim.num(), optional: true },
-        maxBuffer: { value: prim.num(), optional: true },
-        cwd: { value: prim.str(), optional: true },
-      })],
+      [prim.str(), execSyncOptions],
       unionOf(prim.str(), bufferBrand),
       undefined,
       { params: ["command", "options?"] },
     ),
     execFileSync: envFn(
-      [prim.str(), arrOf(prim.str()), objAbs({
-        encoding: { value: prim.str(), optional: true },
-        timeout: { value: prim.num(), optional: true },
-        maxBuffer: { value: prim.num(), optional: true },
-        cwd: { value: prim.str(), optional: true },
-      })],
+      [prim.str(), arrOf(prim.str()), execSyncOptions],
       unionOf(prim.str(), bufferBrand),
       undefined,
       { params: ["file", "args", "options?"] },
@@ -1871,12 +1828,7 @@ function assertRegexpPattern(
     //   ['status', 'signal', 'output', 'pid', 'stdout', 'stderr']
     // （`error` 只在 spawn 失败时出现——失败时原生**确实**带 error 键，故保留）。
     spawnSync: envFn(
-      [prim.str(), arrOf(prim.str()), objAbs({
-        encoding: { value: prim.str(), optional: true },
-        timeout: { value: prim.num(), optional: true },
-        maxBuffer: { value: prim.num(), optional: true },
-        cwd: { value: prim.str(), optional: true },
-      })],
+      [prim.str(), arrOf(prim.str()), execSyncOptions],
       objAbs({
         pid: prim.num(),
         // output = [null, stdout, stderr]（stdio 未接管 stdout 时首项为 null）
@@ -2038,14 +1990,19 @@ function assertRegexpPattern(
     ),
   };
 
-  /** EventEmitter instance brand: on/once/emit/off at signature level. */
-  const eventEmitterShape = objAbs({
+  // EventEmitter 四件核心槽单源（EventEmitter brand 与 process 全局对象
+  // 同源；与 messagePortSlots 同款跨 brand 共享，spread 保插入序）。
+  const emitterCoreSlots = {
     on: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
     once: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
     off: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
     emit: envFn([prim.str(), anyParam], prim.bool(), undefined, {
       params: ["event", "...args"],
     }),
+  };
+  /** EventEmitter instance brand: on/once/emit/off at signature level. */
+  const eventEmitterShape = objAbs({
+    ...emitterCoreSlots,
     addListener: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
     removeListener: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
     removeAllListeners: envFn([prim.str()], brandOf("EventEmitter")),
@@ -2453,6 +2410,17 @@ function assertRegexpPattern(
     values: envFn([], brandOf("ReadableStreamIterator")),
   };
 
+  // fetch body 消费面单源（Request / Response 同一套槽；clone 返回各自
+  // brand ⇒ 工厂参数化。spread 保插入序）。
+  const bodyMixinSlots = (self: string) => ({
+    clone: envFn([], brandOf(self)),
+    arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
+    blob: envFn([], promiseOf(brandOf("Blob"))),
+    formData: envFn([], promiseOf(brandOf("FormData"))),
+    json: envFn([], promiseOf(prim.unknown)),
+    text: envFn([], promiseOf(prim.str())),
+  });
+
   /**
    * Response 实例面（Bug 1044：构造器实例面 + 静态工厂返回面**同源**）。
    *
@@ -2472,12 +2440,7 @@ function assertRegexpPattern(
       headers: brandOf("Headers"),
       body: prim.unknown,
       bodyUsed: prim.bool(),
-      clone: envFn([], brandOf("Response")),
-      arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
-      blob: envFn([], promiseOf(brandOf("Blob"))),
-      formData: envFn([], promiseOf(brandOf("FormData"))),
-      json: envFn([], promiseOf(prim.unknown)),
-      text: envFn([], promiseOf(prim.str())),
+      ...bodyMixinSlots("Response"),
     }),
   );
 
@@ -2724,6 +2687,17 @@ function assertRegexpPattern(
       ),
     }),
   );
+
+  // Storage 槽表单源（Storage 构造器 brand 与 localStorage / sessionStorage
+  // 全局对象三处同款；与 messagePortSlots 同款共享，spread 保插入序）。
+  const storageObj = objAbs({
+    length: prim.num(),
+    clear: envFn([], undef()),
+    getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
+    key: envFn([prim.num()], unionOf(prim.str(), nullLit())),
+    removeItem: envFn([prim.str()], undef()),
+    setItem: envFn([prim.str(), prim.str()], undef()),
+  });
 
   const nodePlatformGlobals: Record<string, Abs> = {
     // ── Event 族 ───────────────────────────────────────────────
@@ -3097,12 +3071,7 @@ function assertRegexpPattern(
           referrer: prim.str(),
           referrerPolicy: prim.str(),
           signal: brandOf("AbortSignal"),
-          clone: envFn([], brandOf("Request")),
-          arrayBuffer: envFn([], promiseOf(brandOf("ArrayBuffer"))),
-          blob: envFn([], promiseOf(brandOf("Blob"))),
-          formData: envFn([], promiseOf(brandOf("FormData"))),
-          json: envFn([], promiseOf(prim.unknown)),
-          text: envFn([], promiseOf(prim.str())),
+          ...bodyMixinSlots("Request"),
         }),
       ),
       { params: ["input", "init?"] },
@@ -3167,17 +3136,7 @@ function assertRegexpPattern(
     ),
     Storage: nonCtorOf(
       "Storage",
-      brandOf(
-        "Storage",
-        objAbs({
-          length: prim.num(),
-          clear: envFn([], undef()),
-          getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
-          key: envFn([prim.num()], unionOf(prim.str(), nullLit())),
-          removeItem: envFn([prim.str()], undef()),
-          setItem: envFn([prim.str(), prim.str()], undef()),
-        }),
-      ),
+      brandOf("Storage", storageObj),
     ),
     Navigator: nonCtorOf(
       "Navigator",
@@ -3306,31 +3265,8 @@ function assertRegexpPattern(
     performance: performanceObj,
     navigator: navigatorObj,
     // localStorage：Node 需 --localstorage-file 才可用（无则 undefined）
-    localStorage: unionOf(
-      brandOf(
-        "Storage",
-        objAbs({
-          length: prim.num(),
-          clear: envFn([], undef()),
-          getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
-          key: envFn([prim.num()], unionOf(prim.str(), nullLit())),
-          removeItem: envFn([prim.str()], undef()),
-          setItem: envFn([prim.str(), prim.str()], undef()),
-        }),
-      ),
-      undef(),
-    ),
-    sessionStorage: brandOf(
-      "Storage",
-      objAbs({
-        length: prim.num(),
-        clear: envFn([], undef()),
-        getItem: envFn([prim.str()], unionOf(prim.str(), nullLit())),
-        key: envFn([prim.num()], unionOf(prim.str(), nullLit())),
-        removeItem: envFn([prim.str()], undef()),
-        setItem: envFn([prim.str(), prim.str()], undef()),
-      }),
-    ),
+    localStorage: unionOf(brandOf("Storage", storageObj), undef()),
+    sessionStorage: brandOf("Storage", storageObj),
     // global：Node 的全局对象（=== globalThis）
     global: openObjBrand("NodeGlobal", { key: prim.str(), value: prim.unknown }),
 
@@ -3548,12 +3484,9 @@ function assertRegexpPattern(
       nextTick: envFn([callbackFnBrand], undef(), undefined, {
         params: ["callback"],
       }),
-      on: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
-      once: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
-      off: envFn([prim.str(), callbackFnBrand], brandOf("EventEmitter")),
-      emit: envFn([prim.str(), anyParam], prim.bool(), undefined, {
-        params: ["event", "...args"],
-      }),
+      // Bug 876 补的真实成员之外，事件四件与 EventEmitter brand 同源
+      //（emitterCoreSlots 单源）。
+      ...emitterCoreSlots,
 
       // ── Bug 876：补 5 个真实成员 ──
       // emitWarning(warning, options?, type?) —— 原生签名，可选参用 `?` 标注
