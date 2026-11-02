@@ -668,6 +668,21 @@ function sidecarDiagIssues(
 // #152：@nudo:assume 用户引理前提（文法/形参校验 + 入口 Phi 构造）
 // ---------------------------------------------------------------------------
 
+/** @nudo:assume / @nudo:invariant 共用的**可锚定面**（#165 单源）：形参
+ *  （契约形参名 ∪ AST 形参名）∪ 函数体顶层局部绑定（const/let/var
+ *  Identifier 名）。局部绑定走 SSA 语义：引理作用于绑定值，从定义点到
+ *  作用域尾。surface = 锚定名的逗号串（诊断的 expected/suggestion 用）。 */
+function anchorSurfaceOf(
+  meta: ReturnType<typeof extractFn>,
+): { bindable: Set<string>; surface: string } {
+  const bindable = new Set<string>([
+    ...contractParamNameSet(meta?.formals ?? []),
+    ...(meta?.params ?? []),
+    ...fnTopLevelLocalNames(meta?.body),
+  ]);
+  return { bindable, surface: [...bindable].join(", ") };
+}
+
 /**
  * `@nudo:assume <param> <= <param>`（`>=` 已在 refine 翻转为 le）：
  * - 文法外形态（`<` / `>` / `==`、字面量界）→ error nudo:assume-invalid（不折）
@@ -691,15 +706,7 @@ function assumePremisesPhiOf(
   const segs = extractAssumeSegs(source, name);
   if (segs.length === 0) return undefined;
   const meta = extractFn(source, name, file);
-  // #165：可锚定面 = 形参 ∪ 函数体顶层局部绑定（const/let/var Identifier 名）。
-  // 局部绑定走 SSA 语义：引理作用于绑定值，从定义点到作用域尾。
-  const locals = fnTopLevelLocalNames(meta?.body);
-  const bindable = new Set<string>([
-    ...contractParamNameSet(meta?.formals ?? []),
-    ...(meta?.params ?? []),
-    ...locals,
-  ]);
-  const surface = [...bindable].join(", ");
+  const { bindable, surface } = anchorSurfaceOf(meta);
   const preds: Pred[] = [];
   const display: string[] = [];
   for (const seg of segs) {
@@ -873,13 +880,7 @@ function invariantSpecsOf(
   const segs = extractInvariantSegs(source, name);
   if (segs.length === 0) return undefined;
   const meta = extractFn(source, name, file);
-  // 可锚定面与 @nudo:assume 同口径：形参 ∪ 函数体顶层局部绑定（#165）
-  const bindable = new Set<string>([
-    ...contractParamNameSet(meta?.formals ?? []),
-    ...(meta?.params ?? []),
-    ...fnTopLevelLocalNames(meta?.body),
-  ]);
-  const surface = [...bindable].join(", ");
+  const { bindable, surface } = anchorSurfaceOf(meta);
   const specs: InvariantSpec[] = [];
   const display: string[] = [];
   for (const seg of segs) {
@@ -1114,6 +1115,32 @@ function checkSourceInner(
       : `@nudo:throws ${decl}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`;
     return cause ? `${cause} → ${tail}` : tail;
   };
+  /**
+   * L2 entry-may-throw 诊断 push（无签名兜底 / 签名成功两路共点，唯一
+   * 差异 = actual 行：兜底是固定 `name(…) throws …`，成功路是
+   * formatEntrySigLine 的真实签名行）。
+   */
+  const pushEntryMayThrowIssue = (
+    name: string,
+    gateDisplay: string,
+    remaining: readonly MayThrowEffect[],
+    actual: string,
+  ): void => {
+    const loc = findFnLoc(file, name);
+    issues.push({
+      severity: entryThrowsMode === "warning" ? "warning" : "error",
+      code: DIAG.entryMayThrow,
+      message: `${name} (export): may throw ${gateDisplay}`,
+      actual,
+      expected: "entry total, or @nudo:throws / try-catch",
+      // BUG-128 / BUG-138：建议与门禁同源（全部剩余 kind），
+      // ReferenceError 走真实归因
+      suggestion: entryThrowsSuggestion(remaining, remaining[0]?.cause),
+      fn: name,
+      ...(loc.line !== undefined ? { line: loc.line } : {}),
+      ...(loc.column !== undefined ? { column: loc.column } : {}),
+    });
+  };
   // Bug 363：赋值记录收集器的**作用域窗口**必须包住**函数体求值**。
   // 旧窗口只包模块顶层求值，而函数体在 generalize（下面的函数循环里）就求过
   // 一遍 ⇒ 函数体内的 $assignRecord 全部落空 ⇒ nudo:assign-mismatch 只覆盖
@@ -1270,20 +1297,8 @@ function checkSourceInner(
         const remaining = filterGateThrows(effects, declared, ignoreThrows);
         const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
         if (gateDisplay && remaining.length > 0) {
-          const loc = findFnLoc(file, name);
-          issues.push({
-            severity: entryThrowsMode === "warning" ? "warning" : "error",
-            code: DIAG.entryMayThrow,
-            message: `${name} (export): may throw ${gateDisplay}`,
-            actual: `${name}(…)    throws ${gateDisplay}`,
-            expected: "entry total, or @nudo:throws / try-catch",
-            // BUG-128 / BUG-138：建议与门禁同源（全部剩余 kind），
-            // ReferenceError 走真实归因
-            suggestion: entryThrowsSuggestion(remaining, remaining[0]?.cause),
-            fn: name,
-            ...(loc.line !== undefined ? { line: loc.line } : {}),
-            ...(loc.column !== undefined ? { column: loc.column } : {}),
-          });
+          pushEntryMayThrowIssue(name, gateDisplay, remaining,
+            `${name}(…)    throws ${gateDisplay}`);
         }
         signatures.push({
           name,
@@ -1324,20 +1339,8 @@ function checkSourceInner(
       const remaining = filterGateThrows(effects, declared, ignoreThrows);
       const gateDisplay = formatThrowsAbs(mayThrowEffectsToAbs(remaining));
       if (gateDisplay && remaining.length > 0) {
-        const loc = findFnLoc(file, name);
-        issues.push({
-          severity: entryThrowsMode === "warning" ? "warning" : "error",
-          code: DIAG.entryMayThrow,
-          message: `${name} (export): may throw ${gateDisplay}`,
-          actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
-          expected: "entry total, or @nudo:throws / try-catch",
-          // BUG-128 / BUG-138：建议与门禁同源（全部剩余 kind），
-          // ReferenceError 走真实归因
-          suggestion: entryThrowsSuggestion(remaining, remaining[0]?.cause),
-          fn: name,
-          ...(loc.line !== undefined ? { line: loc.line } : {}),
-          ...(loc.column !== undefined ? { column: loc.column } : {}),
-        });
+        pushEntryMayThrowIssue(name, gateDisplay, remaining,
+          formatEntrySigLine(name, g, gateDisplay));
       }
     } else if (isEntry) {
       // 展示层仍上屏 throws（off 只关执法，不藏事实）

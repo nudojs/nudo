@@ -160,6 +160,10 @@ export type ChainHop =
       fnOptional: boolean;
     };
 
+/** invoke / invokeKey 两跳（emitInvokeTail 的窄化参数——两跳共享
+ *  fnOptional/recvOptional 短路骨架）。 */
+type InvokeHop = Extract<ChainHop, { kind: "invoke" | "invokeKey" }>;
+
 function isChainLink(n: { type?: string }): boolean {
   return (
     n.type === "MemberExpression" ||
@@ -397,29 +401,8 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         }
         return call;
       };
-      // 剩余链的接收者 = 调用结果——调用体包一层 IIFE，惰性求值于 else 臂内
-      // （无剩余链时不包：保持既有发射形态不变）。
-      const contOf = (recv: string, preRead?: string): string =>
-        i + 1 < hops.length ? rest(`(() => ${callOf(recv, preRead)})()`) : callOf(recv, preRead);
-      if (hop.fnOptional) {
-        // o.m?.()：方法值 nullish 短路；this 仍绑 recv。BUG-216：读出的
-        // 方法值经 preRead 交给派发 ⇒ **一次 Get**（宿主语义；有状态 getter
-        // 不再被读两遍）。
-        // Bug 187：ES 的可选链短路是**整链**语义——方法值 nullish 时整条链
-        // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
-        // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
-        const fnFork = (recv: string): string =>
-          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))($get(${recv}, ${hop.method}))`;
-        if (hop.recvOptional) {
-          // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
-          return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
-        }
-        return fnFork(valSrc);
-      }
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i, tmp.oc);
-      }
-      return rest(callOf(valSrc));
+      // 方法值读取：静态名走 $get。
+      return emitInvokeTail(hops, i, valSrc, tmp, hop, callOf, (r) => `$get(${r}, ${hop.method})`);
     }
     case "invokeKey": {
       // 计算键调用：$invokeKey 保 this；fnOptional（o[k]?.()）的方法值
@@ -428,24 +411,49 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // 副作用键表达式会跑两遍）。
       const callOf = (recv: string, preRead?: string): string =>
         `$invokeKey(${recv}, ${hop.keySrc}, () => ${hop.argsSrc}${preRead === undefined ? hop.locArg : `${hop.locArg || ", undefined"}, ${preRead}`})`;
-      const contOf = (recv: string, preRead?: string): string =>
-        i + 1 < hops.length ? rest(`(() => ${callOf(recv, preRead)})()`) : callOf(recv, preRead);
-      if (hop.fnOptional) {
-        // 同 invoke hop（Bug 187）：方法值 nullish → 整链短路，剩余链进 else 臂。
-        // BUG-216：已读出的方法值经 preRead 复用（一次 Get）。
-        const fnFork = (recv: string): string =>
-          `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))($idx(${recv}, ${hop.keySrc}))`;
-        if (hop.recvOptional) {
-          return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
-        }
-        return fnFork(valSrc);
-      }
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i, tmp.oc);
-      }
-      return rest(callOf(valSrc));
+      return emitInvokeTail(hops, i, valSrc, tmp, hop, callOf, (r) => `$idx(${r}, ${hop.keySrc})`);
     }
   }
+}
+
+/** invoke / invokeKey 跳的共享发射尾。两跳唯一实质差异 = 调用体
+ *  （$invoke 静态名 / $invokeKey 计算键）与方法值读取（$get / $idx），
+ *  由 callOf / readFn 注入；其余骨架（contOf 包装、fnOptional 双层
+ *  fork、recvOptional 短路、无剩余链直发）完全一致，单源在此。
+ *  发射形态逐字节与合并前相同（纯移动，无文本改写）。 */
+function emitInvokeTail(
+  hops: ChainHop[],
+  i: number,
+  valSrc: string,
+  tmp: ChainTmpNames,
+  hop: InvokeHop,
+  callOf: (recv: string, preRead?: string) => string,
+  readFn: (recv: string) => string,
+): string {
+  const rest = (recv: string): string => emitChainFrom(hops, i + 1, recv);
+  // 剩余链的接收者 = 调用结果——调用体包一层 IIFE，惰性求值于 else 臂内
+  // （无剩余链时不包：保持既有发射形态不变）。
+  const contOf = (recv: string, preRead?: string): string =>
+    i + 1 < hops.length ? rest(`(() => ${callOf(recv, preRead)})()`) : callOf(recv, preRead);
+  if (hop.fnOptional) {
+    // o.m?.()：方法值 nullish 短路；this 仍绑 recv。BUG-216：读出的
+    // 方法值经 preRead 交给派发 ⇒ **一次 Get**（宿主语义；有状态 getter
+    // 不再被读两遍）。
+    // Bug 187：ES 的可选链短路是**整链**语义——方法值 nullish 时整条链
+    // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
+    // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
+    const fnFork = (recv: string): string =>
+      `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))(${readFn(recv)})`;
+    if (hop.recvOptional) {
+      // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
+      return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;
+    }
+    return fnFork(valSrc);
+  }
+  if (hop.recvOptional) {
+    return shortCircuitHop(valSrc, (r) => callOf(r), hops, i, tmp.oc);
+  }
+  return rest(callOf(valSrc));
 }
 
 /** 可选跳：valSrc nullish → 剩余链短路 undefined；否则从 pruned 接收者继续。

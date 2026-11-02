@@ -498,6 +498,29 @@ function stringifyFnReplacer(
   // → 环 → 定抛
   const path = new Set<object>();
   const walk = (key: string, val: Abs): { kind: "val" | "omit" | "nonlit"; v?: unknown } => {
+    // tuple / 数组视图共用的逐元素映射（键 = 下标串，原生数组键序）：
+    // 抽象子值折 null 是占位——结果不可折精确（partial）；nonlit 记
+    // unseen。holes 位（tuple 专有）直接 null。
+    const mapElements = (elements: readonly Abs[], holes?: readonly number[]): unknown[] => {
+      const out: unknown[] = [];
+      for (let i = 0; i < elements.length; i++) {
+        if (holes?.includes(i)) {
+          out.push(null);
+          continue;
+        }
+        const c = walk(String(i), elements[i]!);
+        if (c.kind !== "val" || c.v === undefined) {
+          if (c.kind === "nonlit") {
+            partial = true;
+            unseen = true;
+          }
+          out.push(null);
+        } else {
+          out.push(c.v);
+        }
+      }
+      return out;
+    };
     // Bug 327：内建 brand 的 **toJSON 步**（原生 SerializeJSONProperty 步骤 2
     // ——toJSON **先于** replacer）：Date → ISO 串、URL → href 串；其余 brand
     // 无原生 toJSON（replacer 收到 brand 本体）。
@@ -537,25 +560,7 @@ function stringifyFnReplacer(
       path.add(r as object);
       try {
         const holes = (s as { holes?: number[] }).holes ?? [];
-        const out: unknown[] = [];
-        for (let i = 0; i < s.elements.length; i++) {
-          if (holes.includes(i)) {
-            out.push(null);
-            continue;
-          }
-          const c = walk(String(i), s.elements[i]!);
-          // 抽象子值折 null 是占位——结果不可折精确（partial）
-          if (c.kind !== "val" || c.v === undefined) {
-            if (c.kind === "nonlit") {
-              partial = true;
-              unseen = true;
-            }
-            out.push(null);
-          } else {
-            out.push(c.v);
-          }
-        }
-        return { kind: "val", v: out };
+        return { kind: "val", v: mapElements(s.elements, holes) };
       } finally {
         path.delete(r as object);
       }
@@ -571,20 +576,7 @@ function stringifyFnReplacer(
       }
       path.add(r as object);
       try {
-        const out: unknown[] = [];
-        for (let i = 0; i < els.length; i++) {
-          const c = walk(String(i), els[i]!);
-          if (c.kind !== "val" || c.v === undefined) {
-            if (c.kind === "nonlit") {
-              partial = true;
-              unseen = true;
-            }
-            out.push(null);
-          } else {
-            out.push(c.v);
-          }
-        }
-        return { kind: "val", v: out };
+        return { kind: "val", v: mapElements(els) };
       } finally {
         path.delete(r as object);
       }

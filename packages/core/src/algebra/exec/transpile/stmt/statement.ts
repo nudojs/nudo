@@ -1375,6 +1375,45 @@ function emitIfStatement(
     .join("\n");
 }
 
+/** for 两路径（fallback 合成计数器 / init 声明主路径）共享的**体预备块**：
+ *  体顶层局部声明收集 → 体 opts（别名组按体顶层声明过滤——体内 fork 不得
+ *  把外层别名伙伴拉进绑定集：伙伴名在体内指向体局部绑定）→ 体语句发射 →
+ *  循环携带赋值名展开（host 内在名与体局部声明扣除）。
+ *  路径差异由 constScope / extraFilter 注入：init 声明主路径先剥离被循环
+ *  变量遮蔽的外层 const（loopParentConsts）并在赋值名里扣 initName；
+ *  fallback 路径 const 作用域原样、无扣除。发射面与合并前逐字节一致。 */
+function forBodyPrep(
+  stmt: ForStatement,
+  depth: number,
+  opts: TranspileOptions,
+  constScope: ReadonlySet<string> | undefined,
+  extraFilter: (n: string) => boolean,
+): {
+  bodyLocalDecls: Set<string>;
+  forBodyOpts: TranspileOptions;
+  bodyStmts: string;
+  max: number;
+  names: string[];
+} {
+  const bodyLocalDecls = new Set<string>();
+  const forBodyOpts = loopBodyOptsOf(stmt.body, opts, constScope, bodyLocalDecls);
+  const bodyStmts =
+    stmt.body.type === "BlockStatement"
+      ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
+      : transpileStatement(stmt.body, depth + 2, forBodyOpts);
+  const max = opts.maxLoopIters ?? 8;
+  const assigned = new Set<string>();
+  collectAssignedIds(stmt.body, assigned);
+  collectAssignedIds(stmt.test, assigned);
+  collectAssignedIds(stmt.update, assigned);
+  collectArrMutatorReceivers(stmt.body, assigned);
+  const names = expandAliasNames(
+    [...assigned].filter((n) => extraFilter(n) && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)),
+    opts,
+  );
+  return { bodyLocalDecls, forBodyOpts, bodyStmts, max, names };
+}
+
 function emitForStatement(
   stmt: ForStatement,
   depth: number,
@@ -1421,19 +1460,10 @@ function emitForStatement(
     // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
     // 集：伙伴名在体内指向的是体局部绑定 ⇒ 复制/重绑它会断开外层别名身份）。
     // pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过滤的组。
-    const bodyLocalDecls = new Set<string>();
-    const forBodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
-    const bodyStmts =
-      stmt.body.type === "BlockStatement"
-        ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
-        : transpileStatement(stmt.body, depth + 2, forBodyOpts);
-    const max = opts.maxLoopIters ?? 8;
-    const assigned = new Set<string>();
-    collectAssignedIds(stmt.body, assigned);
-    collectAssignedIds(stmt.test, assigned);
-    collectAssignedIds(stmt.update, assigned);
-    collectArrMutatorReceivers(stmt.body, assigned);
-    const names = expandAliasNames([...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
+    // 体预备块与 init 声明主路径共享（forBodyPrep 单源；本路径无循环变量
+    // 遮蔽——const 作用域原样、赋值名无扣除）。
+    const { bodyLocalDecls, forBodyOpts, bodyStmts, max, names } =
+      forBodyPrep(stmt, depth, opts, opts.constNames, () => true);
     // Bug 183：for 循环体接守卫事实（nullish + 关系）——测试在每轮迭代
     // 前求值、为真则进体，语义与 `if`/`while` 的事实臂等价（此前 for
     // 分支一条都没接 ⇒ `for (; v !== null; )` 与 `while (v !== null)`
@@ -1513,20 +1543,10 @@ function emitForStatement(
   // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过
-  // 滤的组。
-  const bodyLocalDecls = new Set<string>();
-  const forBodyOpts = loopBodyOptsOf(stmt.body, opts, loopParentConsts, bodyLocalDecls);
-  const bodyStmts =
-    stmt.body.type === "BlockStatement"
-      ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
-      : transpileStatement(stmt.body, depth + 2, forBodyOpts);
-  const max = opts.maxLoopIters ?? 8;
-  const assigned = new Set<string>();
-  collectAssignedIds(stmt.body, assigned);
-  collectAssignedIds(stmt.test, assigned);
-  collectAssignedIds(stmt.update, assigned);
-  collectArrMutatorReceivers(stmt.body, assigned);
-  const names = expandAliasNames([...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n)), opts);
+  // 滤的组。体预备块与 fallback 路径共享（forBodyPrep 单源；本路径注入
+  // loopParentConsts——循环变量遮蔽外层 const——并在赋值名里扣 initName）。
+  const { bodyLocalDecls, forBodyOpts, bodyStmts, max, names } =
+    forBodyPrep(stmt, depth, opts, loopParentConsts, (n) => n !== initName);
   // Bug 183：for 循环体接守卫事实（nullish + 关系）——同 fallback 路径。
   // 循环变量本身（状态线程形参 initName）排除：影子参数会顶掉状态
   // 线程（`for (let i = 0; i < 3; i++)` 的 i 是状态线程，不得被影子

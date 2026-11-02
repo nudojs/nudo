@@ -146,20 +146,8 @@ export function simplifyTerm(t: Term): Term {
   if (fn === "*" && args.length === 2) {
     const [a, b] = args as [Term, Term];
     const one = (t: Term): boolean => t.op === "lit" && t.value === 1;
-    const surviveMulOne = (t: Term): Term => {
-      if (t.op !== "lit") return t; // var / app 走 number 路径
-      const v = t.value;
-      if (typeof v === "number") return t;
-      // ToNumber：true→1、null→0、"5"→5、undefined→NaN
-      if (typeof v === "boolean") return lit(v ? 1 : 0);
-      if (v === null) return lit(0);
-      if (typeof v === "string") return lit(Number(v));
-      // bigint：ToNumeric 保型，混型即 TypeError——返回原 app 不化简
-      if (typeof v === "bigint") return app(fn, args);
-      return lit(NaN);
-    };
-    if (one(b)) return surviveMulOne(a);
-    if (one(a)) return surviveMulOne(b);
+    if (one(b)) return toNumberDomainTerm(a, fn, args);
+    if (one(a)) return toNumberDomainTerm(b, fn, args);
   }
   // x - 0 = x 只对 **+0** 成立：(-0)-(-0)=+0，-0 被减数被抹掉
   // （b.value === 0 会连 lit(-0) 一起匹配——JS 里 -0 === 0）
@@ -172,22 +160,28 @@ export function simplifyTerm(t: Term): Term {
   // simplifyTerm：x*1=x / x-0=x 只对 number 成立」）。
   if (fn === "-" && args.length === 2) {
     const [a, b] = args as [Term, Term];
-    const surviveSubZero = (t: Term): Term => {
-      if (t.op !== "lit") return t; // var / app 走 number 路径
-      const v = t.value;
-      if (typeof v === "number") return t;
-      // ToNumber：true→1、null→0、"5"→5、"abc"→NaN、undefined→NaN
-      if (typeof v === "boolean") return lit(v ? 1 : 0);
-      if (v === null) return lit(0);
-      if (typeof v === "string") return lit(Number(v));
-      // bigint：ToNumeric 保型，混型即 TypeError——返回原 app 不化简
-      if (typeof v === "bigint") return app(fn, args);
-      return lit(NaN);
-    };
-    if (b.op === "lit" && Object.is(b.value, 0)) return surviveSubZero(a);
+    if (b.op === "lit" && Object.is(b.value, 0)) return toNumberDomainTerm(a, fn, args);
   }
 
   return app(fn, args);
+}
+
+/** x*1 / x-0 恒等式的幸存侧**域守卫**（Bug 010，两条恒等式同口径单源）：
+ *  恒等式只在 number 域成立——var/app 项走 number 路径原样幸存；非
+ *  number 字面量按 ToNumber 折值；bigint 混型（`5n*1` / `5n-0` 原生
+ *  TypeError 而非 NaN）保留原 app 不化简，交算术核 foldBigintBinOp 的
+ *  混型 TypeError 路径接管。 */
+function toNumberDomainTerm(t: Term, fn: string, args: Term[]): Term {
+  if (t.op !== "lit") return t; // var / app 走 number 路径
+  const v = t.value;
+  if (typeof v === "number") return t;
+  // ToNumber：true→1、null→0、"5"→5、"abc"→NaN、undefined→NaN
+  if (typeof v === "boolean") return lit(v ? 1 : 0);
+  if (v === null) return lit(0);
+  if (typeof v === "string") return lit(Number(v));
+  // bigint：ToNumeric 保型，混型即 TypeError——返回原 app 不化简
+  if (typeof v === "bigint") return app(fn, args);
+  return lit(NaN);
 }
 
 function foldLiterals(fn: string, xs: LiteralValue[]): LiteralValue | undefined {

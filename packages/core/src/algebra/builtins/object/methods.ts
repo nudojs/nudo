@@ -588,6 +588,18 @@ function throwIfNullishRecv(a0: Abs | undefined): void {
 }
 
 /** Object.keys/values/entries/assign + 不变性方法 */
+/** 字符串字面量接收者的下标枚举（keys / entries 共用骨架）：code unit
+ *  下标（不是 Array.from 的 code point 序号），长度/键序/精确度单源——
+ *  keys 逐字符、entries 逐 [下标, 字符] 对，元素构造由 make 注入。 */
+function stringIndexTupleAbs(s: string, make: (i: number) => Abs): Abs {
+  return abs(
+    { k: "tuple", elements: Array.from({ length: s.length }, (_, i) => make(i)) },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
 
@@ -1007,15 +1019,7 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
         // code unit（与 Object.keys 同口径），不是 Array.from 的 code point
         const s = a0.term.value;
-        return abs(
-          {
-            k: "tuple",
-            elements: Array.from({ length: s.length }, (_, i) => strLit(s[i]!)),
-          },
-          undefined,
-          undefined,
-          "exact",
-        );
+        return stringIndexTupleAbs(s, (i) => strLit(s[i]!));
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
@@ -1116,17 +1120,8 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
         // code unit 下标（与 Object.keys 同口径），不是 code point 序号
         const s = a0.term.value;
-        return abs(
-          {
-            k: "tuple",
-            elements: Array.from({ length: s.length }, (_, i) =>
-              abs({ k: "tuple", elements: [strLit(String(i)), strLit(s[i]!)] }, undefined, undefined, "exact"),
-            ),
-          },
-          undefined,
-          undefined,
-          "exact",
-        );
+        return stringIndexTupleAbs(s, (i) =>
+          abs({ k: "tuple", elements: [strLit(String(i)), strLit(s[i]!)] }, undefined, undefined, "exact"));
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");

@@ -7,7 +7,7 @@
  */
 
 import type { Term } from "../term.ts";
-import { app, lit, simplifyTerm, termEquals } from "../term.ts";
+import { app, lit, simplifyTerm, termEquals, type LiteralValue } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
 import { and, gt, ge, lt, le, pTrue } from "../pred.ts";
 import type { Abs } from "../abs.ts";
@@ -168,17 +168,35 @@ function divAssumeBounds(
 }
 
 /**
- * 除法：字面量折叠；除以正/负常数时按单调性推界。
- * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
+ * div / mod 共享的**数值前导**（顺序敏感，单源）：
+ * 1. Bug 25：内建 brand ToPrimitive（hint number）——有 brand 侧以拆箱值
+ *    重入 self（递归不带 assume，与合并前一致）；
+ * 2. Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）；
+ * 3. bigint：双侧字面量交 foldBigintBinOp；双侧 bigint 且至少一侧抽象 →
+ *    bigint 域（字面量 0n 除数原生定抛 RangeError，Bug 106——不得静默
+ *    抽象 bigint）。
+ * 前导短路 → { k: "done" }；否则返回字面量探针（ra/rb/va/vb）续走。
  */
-export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
-  // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
+function divModLead(
+  a: Abs,
+  b: Abs,
+  phi: Phi,
+  self: (a: Abs, b: Abs, phi: Phi) => Abs,
+  bigintOp: (x: bigint, y: bigint) => bigint,
+):
+  | { k: "done"; result: Abs }
+  | {
+      k: "go";
+      ra: ReturnType<typeof litValue>;
+      rb: ReturnType<typeof litValue>;
+      va: LiteralValue | undefined;
+      vb: LiteralValue | undefined;
+    } {
   {
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
-    if (fa || fb) return div(fa ?? a, fb ?? b, phi);
+    if (fa || fb) return { k: "done", result: self(fa ?? a, fb ?? b, phi) };
   }
-  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
@@ -186,14 +204,26 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
   const rb = litValue(b);
   const va = ra.ok ? ra.value : undefined;
   const vb = rb.ok ? rb.value : undefined;
-  const big = foldBigintBinOp(a, b, (x, y) => x / y);
-  if (big) return big;
+  const big = foldBigintBinOp(a, b, bigintOp);
+  if (big) return { k: "done", result: big };
   if (isBigPrim(a) && isBigPrim(b)) {
-    // Bug 106：两侧 bigint、至少一侧抽象——字面量 0n 除数原生定抛
-    // RangeError（"0 is an invalid divisor value"），不得静默抽象 bigint
     if (rb.ok && vb === 0n) throw new NudoThrow(errorTypeAbs("RangeError"));
-    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+    return {
+      k: "done",
+      result: abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf)),
+    };
   }
+  return { k: "go", ra, rb, va, vb };
+}
+
+/**
+ * 除法：字面量折叠；除以正/负常数时按单调性推界。
+ * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
+ */
+export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
+  const lead = divModLead(a, b, phi, (x, y, p) => div(x, y, p), (x, y) => x / y);
+  if (lead.k === "done") return lead.result;
+  const { ra, rb, va, vb } = lead;
   if (typeof va === "number" && typeof vb === "number") {
     if (vb === 0) {
       // JS：0/0=NaN，n/0=±Infinity —— 保留字面量语义
@@ -293,28 +323,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
  * `n % 0` / `x % 0` / `x % NaN` 恒为 NaN（JS）。
  */
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
-  // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
-  {
-    const fa = builtinBrandToPrimitive(a, "number");
-    const fb = builtinBrandToPrimitive(b, "number");
-    if (fa || fb) return mod(fa ?? a, fb ?? b, phi);
-  }
-  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
-  if (isSym(a) || isSym(b)) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
-  const ra = litValue(a);
-  const rb = litValue(b);
-  const va = ra.ok ? ra.value : undefined;
-  const vb = rb.ok ? rb.value : undefined;
-  const big = foldBigintBinOp(a, b, (x, y) => x % y);
-  if (big) return big;
-  if (isBigPrim(a) && isBigPrim(b)) {
-    // Bug 106：两侧 bigint、至少一侧抽象——字面量 0n 除数原生定抛
-    // RangeError（与 div 同口径）
-    if (rb.ok && vb === 0n) throw new NudoThrow(errorTypeAbs("RangeError"));
-    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
-  }
+  const lead = divModLead(a, b, phi, (x, y, p) => mod(x, y, p), (x, y) => x % y);
+  if (lead.k === "done") return lead.result;
+  const { ra, rb, va, vb } = lead;
   if (typeof va === "number" && typeof vb === "number") {
     // JS：n % 0 === NaN（含 0%0 / NaN%0 / ±Infinity%0）——直接折字面量
     return numLit(va % vb);

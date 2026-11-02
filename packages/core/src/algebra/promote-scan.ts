@@ -261,17 +261,7 @@ function visit(node: Node | null | undefined, ctx: Ctx): void {
         }
       }
       // 手动遍历子节点（body 内 direct-call 可见循环变量绑定），不落 generic walk
-      for (const key of Object.keys(n)) {
-        if (key === "loc" || key === "start" || key === "end") continue;
-        const v = n[key];
-        if (Array.isArray(v)) {
-          for (const item of v) {
-            if (item && typeof item === "object" && "type" in (item as object)) visit(item as Node, ctx);
-          }
-        } else if (v && typeof v === "object" && "type" in (v as object)) {
-          visit(v as Node, ctx);
-        }
-      }
+      walkChildren(n, ctx);
       if (bindName !== undefined) {
         if (saved !== undefined) ctx.localTerms.set(bindName, saved);
         else ctx.localTerms.delete(bindName);
@@ -282,6 +272,13 @@ function visit(node: Node | null | undefined, ctx: Ctx): void {
       break;
   }
   // 遍历子节点（含分支双臂、内联箭头/函数表达式体）
+  walkChildren(n, ctx);
+}
+
+/** 子节点遍历（ForOf 的循环变量绑定窗口与函数尾共用同一实现）：跳过
+ *  位置字段（loc/start/end），数组位与单对象位的 AST 子节点递归 visit。
+ *  参数用 visit 的结构类型（Babel Node 联合无字符串索引签名）。 */
+function walkChildren(n: { type: string; [k: string]: unknown }, ctx: Ctx): void {
   for (const key of Object.keys(n)) {
     if (key === "loc" || key === "start" || key === "end") continue;
     const v = n[key];
