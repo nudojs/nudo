@@ -10,11 +10,17 @@
 import {describe, expect, it} from "vitest";
 import * as execSurface from "../exec/index.ts";
 import {runtimeImportOf as facadeRuntimeImportOf, transpileSource} from "../exec/transpile.ts";
-import {RUNTIME_IMPORT_NAMES, RUNTIME_IMPORT_RE, runtimeImportOf} from "../exec/transpile/runtime-import.ts";
+import {RUNTIME_IMPORT_NAMES, RUNTIME_IMPORT_RE, runtimeImportOf, MODULE_FACE_ONLY_OPS} from "../exec/transpile/runtime-import.ts";
+import {rtAllBindings} from "../exec/rt.ts";
 import {RUNTIME_IMPORT_RE as RUN_RUNTIME_IMPORT_RE} from "../exec/run.ts";
 import {compiledBodyOf} from "../exec/body-fn.ts";
 import {parseSource} from "../parse-source.ts";
 import {litValue, numLit} from "../abs.ts";
+
+/** 绑定表键（`$` 前缀集与真值表恒等断言用；每次现取，不吃缓存初值） */
+function rtAllBindingsKeys(): string[] {
+  return Object.keys(rtAllBindings());
+}
 
 /** 解析生成 import 行的具名表（同时钉住行格式）。 */
 function importNamesOf(line: string): { spec: string; names: string[] } {
@@ -75,6 +81,23 @@ describe("runtime import surface", () => {
     for (const n of ["$while", "$forIter", "$staticInit", "$staticInvoke", "$asyncReturn"]) {
       expect(names.has(n), `死符号仍在清单：${n}`).toBe(false);
     }
+  });
+
+  it("模块体形参面真值表与绑定表 `$` 键集恒等（差集显式钉住）", () => {
+    // rt.ts 模块形参面 / analyze-strip 剥离保留判据都消费 isRuntimeOpName；
+    // 绑定表里新增/删除 `$` 前缀导出时，本断言逼作者显式归类（进
+    // RUNTIME_IMPORT_NAMES = 生成码可引用，或进 MODULE_FACE_ONLY_OPS = 内部帮手）。
+    const dollarBindings = new Set(
+      rtAllBindingsKeys().filter((k) => k.startsWith("$")),
+    );
+    const opFace = new Set([...RUNTIME_IMPORT_NAMES, ...MODULE_FACE_ONLY_OPS]);
+    const extraInTable = [...dollarBindings].filter((k) => !opFace.has(k)).sort();
+    const extraInFace = [...opFace].filter((k) => !dollarBindings.has(k)).sort();
+    expect(extraInTable, `绑定表 $ 键未归类（漏真值表）：${extraInTable.join(", ")}`).toEqual([]);
+    expect(extraInFace, `真值表项在绑定表不存在：${extraInFace.join(", ")}`).toEqual([]);
+    // 差集不空转：4 个内部帮手必须真的在表（防止有人顺手清空 MODULE_FACE_ONLY_OPS）
+    expect(MODULE_FACE_ONLY_OPS.length).toBeGreaterThan(0);
+    for (const n of MODULE_FACE_ONLY_OPS) expect(opFace.has(n)).toBe(true);
   });
 
   it("transpileSource 产物里的每个 `$` 符号都在 import 清单（语料漂移守卫）", () => {

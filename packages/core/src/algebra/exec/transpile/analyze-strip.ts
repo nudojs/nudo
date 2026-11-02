@@ -45,6 +45,7 @@ import {
   collectPatternNames,
   collectVarHoistNames,
 } from "./helpers.ts";
+import { isRuntimeOpName } from "./runtime-import.ts";
 
 /** 簿记调用（host 发射产物；非副作用，保留——live import 注册剥离会让
  *  analyze 模式丢失绑定刷新）。 */
@@ -200,9 +201,10 @@ function shouldStripAnalyzeExpression(
   if (name === "$for" || name === "$fork" || name.startsWith("$while")) {
     return true;
   }
-  // 簿记调用（__nudo*）与 `$` 前缀运算符保留（旧谓词 `!name.startsWith("$")`
-  // 口径：生成形态的 $invoke / $new / $assign 等不是效应剥离对象）
-  if (BOOKKEEPING_CALLS.has(name) || name.startsWith("$")) return false;
+  // 簿记调用（__nudo*）与运行时运算符保留（单一真值表 isRuntimeOpName，
+  // 旧谓词 `!name.startsWith("$")` 口径：生成形态的 $invoke / $new /
+  //  $assign 等不是效应剥离对象）
+  if (BOOKKEEPING_CALLS.has(name) || isRuntimeOpName(name)) return false;
   // 其它未声明标识符 = 未知全局裸调用（生成形态会落到
   // `$callNamed("未知名", …)` 的同一分支，源形态直接按名判定）
   return !declared.has(name);

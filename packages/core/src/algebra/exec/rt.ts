@@ -23,6 +23,8 @@ import * as callsRt from "./calls.ts";
 // 不进 runtime.ts facade（facade 只再导出公开符号面），只进绑定表。
 import { $asyncGen } from "./runtime/async.ts";
 import { $call } from "./call.ts";
+// 模块体形参面判据的单一真值源（`$` 前缀语义 → 显式表；零依赖叶子，无环）。
+import { isRuntimeOpName } from "./transpile/runtime-import.ts";
 
 let cached: Record<string, unknown> | undefined;
 
@@ -49,11 +51,12 @@ export function runtimeArgValues(): unknown[] {
 }
 
 /** 模块体单元的运行时形参名（与 runtimeModuleArgValues 一一对应；
- *  compileRuntimeModuleUnit 的形参面）：只取 `$` 前缀的运算符名——`__nudo*`
- *  宿主注入名由 run.ts 追加；非 `$` 的绑定（isNudoReturn / takeThrowExits 等）
- *  不进模块体形参面（模块体不按这些名字引用）。 */
+ *  compileRuntimeModuleUnit 的形参面）：只取模块体可引用的运行时符号
+ *  （单一真值表 `isRuntimeOpName`——`$` 前缀不再是判据）——`__nudo*`
+ *  宿主注入名由 run.ts 追加；非运算符绑定（isNudoReturn / takeThrowExits
+ *  等）不进模块体形参面（模块体不按这些名字引用）。 */
 export function runtimeModuleArgNames(): string[] {
-  return runtimeArgNames().filter((k) => k.startsWith("$"));
+  return runtimeArgNames().filter(isRuntimeOpName);
 }
 
 /** runtimeModuleArgNames 同序的绑定值——只能喂给 compileRuntimeModuleUnit

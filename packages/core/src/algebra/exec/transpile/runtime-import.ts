@@ -189,6 +189,36 @@ export function runtimeImportOf(runtime: string): string {
   return `import { ${RUNTIME_IMPORT_NAMES.join(", ")} } from ${JSON.stringify(runtime)};`;
 }
 
+/** 模块体形参面含、ESM import 行**不含**的 `$` 前缀内部符号。
+ *
+ * 这些符号经 `runtime.ts` / `class.ts` / `calls.ts` facade 导出进入 rt.ts
+ * 绑定表，是运行时**内部**帮手（数组 mutator 容器 / 集合遍历 / class 静态
+ * 派发 / 生成器 yield 收集），生成代码不按名引用——历史上它们随 `$` 前缀
+ * 过滤**意外**进入模块单元形参面。此处显式记录差集：未来新增 `$` 前缀
+ * facade 导出若非生成码引用面，必须归入本表（或去前缀），否则
+ * runtime-import-surface 守卫的差集断言失败。
+ */
+export const MODULE_FACE_ONLY_OPS: readonly string[] = [
+  "$arrMutContainer",
+  "$collectionForEach",
+  "$staticInvoke",
+  "$yieldStarElems",
+];
+
+/** 模块体可引用的运行时符号全集——`$` 前缀**语义**（rt.ts 模块形参面成员
+ *  资格 + analyze-strip 剥离保留判定）的单一真值表。前缀自此退化为命名
+ *  风格而非判据：新增运算符走 RUNTIME_IMPORT_NAMES（生成码可引用），
+ *  内部帮手走 MODULE_FACE_ONLY_OPS（仅绑定表面）。 */
+const RUNTIME_OP_SET: ReadonlySet<string> = new Set([
+  ...RUNTIME_IMPORT_NAMES,
+  ...MODULE_FACE_ONLY_OPS,
+]);
+
+/** `name` 是否模块体可引用的运行时符号（rt.ts 形参面 / analyze 剥离保留）。 */
+export function isRuntimeOpName(name: string): boolean {
+  return RUNTIME_OP_SET.has(name);
+}
+
 /**
  * 宿主编译前**剥离**上面那行 import 的正则（默认 ESM 产物 / 旧调用方）。
  *
