@@ -697,11 +697,11 @@ function builtinSymbolMemberAbs(
  * $call 不会把 noBody 折成 undefined。
  */
 /* 注入 cell 已迁 exec/hooks.ts（加载期 setter 断环收容所——#9 收敛：
- * var 提升当 TDZ 防线的历史形态随 cell 迁出消灭；消费经 getter，注册
- * 面 re-export 维持既有 import 面——exec/class/invoke.ts / containers
- * barrel 零改动）。 */
-export { setProtoMethodDispatch } from "../../hooks.ts";
-export type { ClassMethodOrigin } from "../../hooks.ts";
+ * var 提升当 TDZ 防线的历史形态随 cell 迁出消灭）；消费经 getter。注册
+ * 面（exec/class/invoke.ts）与类型面均直连 hooks.ts——本文件的中转
+ * re-export 已删（评审定案：环参与方的加载期注册必须直接 import hooks
+ * 叶子，不得经再导出行中转，见 runtime-sentinel-regress 事故形态），
+ * 直连是结构上唯一路径。 */
 import { getProtoMethodDispatch } from "../../hooks.ts";
 
 /** P2a：类方法一等值驻留侧表——按（定义类 spec, kind, 成员键）驻留。

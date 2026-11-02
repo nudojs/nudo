@@ -19,7 +19,7 @@ import {
   pushCollectionArm,
 } from "../../collections.ts";
 import { joinAbs, objOf } from "../../objects.ts";
-import { NudoThrow, isNudoThrow, undef, oobUndef, asAbsVal, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked, NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, pushThrowExit } from "./state.ts";
+import { NudoThrow, isNudoThrow, undef, asAbsVal, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked, NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, pushThrowExit } from "./state.ts";
 import { $arr } from "./containers.ts";
 import {
   notePromiseExecutorFork,
@@ -303,7 +303,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
 
 export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
-import { makeLoopWidener } from "./loop-widen.ts";
+import { makeLoopWidener, arrayFamilyElementDomain } from "./loop-widen.ts";
 import { applyInvariantsToPack } from "./invariant-apply.ts";
 // Bug 215：出口 join 的不变式实施收口（$whileSeq 的 applyExitJoin 闭包消费）
 import { applyLoopExitJoin } from "./loop-exit-join.ts";
@@ -350,9 +350,19 @@ export function $for(
     extJoin = extJoin ? joinAbs(extJoin, p) : p;
   };
   const applyExtJoin = (widened: boolean): void => {
-    if (!extJoin || !pack || !unpack) return;
-    const joined = widenLoopJoin(joinAbs(extJoin, pack()));
-    unpack(widened && extWiden ? extWiden.widenFinal(joined) : joined);
+    // Bug 215 + 出口宽化统一收口（loop-exit-join.ts）：$for 经 joinWiden
+    // 注入容器宽化（widenLoopJoin：不同长度 tuple 的 sum → arr）+ #176
+    // 预强化，与 $whileSeq / $forOf 同一入口（剩余分歧见该文件头注释）。
+    // 原守卫 `!extJoin` 分支不可达：本闭包的全部调用点均先 snapExt()
+    //（pack 在 ⇒ extJoin 已置）。
+    applyLoopExitJoin({
+      pack,
+      unpack,
+      exitJoin: extJoin,
+      widen: extWiden,
+      exhausted: widened,
+      joinWiden: widenLoopJoin,
+    });
   };
 
   // 具体延展（两段预算）：maxIters 是**抽象**展开预算；预算边界上条件仍
@@ -446,9 +456,9 @@ export function $for(
           return exitJoin !== undefined ? counterWiden.widenFinal(exitJoin) : state;
         }
         throw e;
-      } else if (isNudoThrow(e)) {
-        throw e;
       } else {
+        // NudoThrow（真异常）与其余宿主异常统一照抛（原 isNudoThrow 臂与
+        // 兜底臂逐字相同，收敛为单一 rethrow）
         throw e;
       }
     } finally {
@@ -507,7 +517,14 @@ export function $for(
   // 循环/后续读以具体下标越过已知长度，得到假 undefined 并误报 may-throw
   //（DP 表双循环 `d[i][1] = d[i-1][1] + 1` 的 never 折叠，issue #98）；
   // 增长计数器/累加器宽化到无上界域（Bug 48，sound 超集）
-  if (extJoin && pack && unpack) unpack(extWiden!.widenFinal(widenLoopJoin(joinAbs(extJoin, pack()))));
+  applyLoopExitJoin({
+    pack,
+    unpack,
+    exitJoin: extJoin,
+    widen: extWiden,
+    exhausted: true,
+    joinWiden: widenLoopJoin,
+  });
   return exitJoin !== undefined ? counterWiden.widenFinal(exitJoin) : state;
 }
 
@@ -516,8 +533,10 @@ export function $for(
  *（元素域 = 全部已知元素 join；OOB undefined 不烘焙——读位事实由 $idx
  * 抽象下标读并入，#156）。只动顶层与 obj 槽位；非增长形态（等长
  * tuple / 非容器）原样。#176：末尾实施 @nudo:invariant（绑定包槽位按
- * 名下钻强化）——$for 的 applyExtJoin 循环头 join、耗尽/截断出口三处
- * 调用点统一在本体内覆盖，喂下一轮迭代体读点与出口读点强化后的域。
+ * 名下钻强化）——$for 的三类消费点统一在本体内覆盖（循环头 join 的
+ * applyExtJoin 与预算耗尽出口经 applyLoopExitJoin 的 joinWiden 注入，
+ * 具体截断出口因 confPartialPacked 包裹直调），喂下一轮迭代体读点与
+ * 出口读点强化后的域。
  */
 function widenLoopJoin(a: Abs): Abs {
   return applyInvariantsToPack(widenLoopJoinInner(a));
@@ -526,35 +545,15 @@ function widenLoopJoin(a: Abs): Abs {
 function widenLoopJoinInner(a: Abs): Abs {
   const widenValue = (v: Abs): Abs => {
     if (v.shape.k !== "sum") return v;
+    // #156 元素域单源原语（loop-widen.ts arrayFamilyElementDomain，
+    // holesAtEnd = 本处历史字节序：hole 的 oobUndef 在全体元素域之后
+    // 并入、零元素 → unknown 诚实顶）；非容器成员 / 等长 tuple join
+    // 不动（保持 join 精度）。
     const members = (v.shape as { k: "sum"; members: Abs[] }).members;
-    const els: Abs[] = [];
-    const undefArms: Abs[] = [];
-    const lengths = new Set<number>();
-    let hasArr = false;
-    for (const m of members) {
-      if (m.shape.k === "tuple") {
-        const t = m.shape as { k: "tuple"; elements: Abs[]; holes?: number[] };
-        lengths.add(t.elements.length);
-        els.push(...t.elements);
-        if (t.holes?.length) undefArms.push(oobUndef());
-      } else if (m.shape.k === "arr") {
-        hasArr = true;
-        els.push((m.shape as { k: "arr"; element: Abs }).element);
-      } else {
-        return v; // 非容器成员：不动（保持 join 精度）
-      }
-    }
-    if (!hasArr && lengths.size <= 1) return v; // 等长 tuple join：无增长，不 widen
-    // 长度增长（或已有 arr 臂）→ 长度未知。#156：元素域 = 全部已知元素
-    // join（hole 下标读值 undefined 是真实元素值域，保留）；OOB undefined
-    // 不烘焙——越界是读位事实（$idx 抽象下标读已并入元素 ∪ undefined），
-    // 烘焙会把「循环 + push」对任何元素契约变成不可证（凭空 undefined 臂）
-    const known = els.length ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
-    const element = undefArms.length
-      ? undefArms.reduce((x, y) => joinAbs(x, y), known)
-      : known;
+    const p = arrayFamilyElementDomain(members, { holesAtEnd: true });
+    if (!p.ok || !p.collapse) return v;
     return abs(
-      { k: "arr", element },
+      { k: "arr", element: p.element ?? unknown },
       undefined,
       undefined,
       confJoin(v.conf, "widened"),

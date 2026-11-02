@@ -12,12 +12,15 @@
  *
  * 现收容两处（cell + setter + getter）：
  * - `protoMethodDispatch`（Bug 89/1041）：containers/member.ts 的原型方法
- *   调用派发，exec/class/invoke.ts 加载期注册；member.ts re-export
- *   `setProtoMethodDispatch` / `ClassMethodOrigin` 维持既有 import 面
- *   （class 树零改动）。
+ *   调用派发，exec/class/invoke.ts 加载期注册；注册面（invoke.ts，含
+ *   `ClassMethodOrigin` 类型）与消费面（member.ts 经 getter）均直连本
+ *   文件——member.ts 的中转 re-export 已删，直连是结构上唯一路径。
  * - `hostGlobalFnCall`（Bug 26）：宿主全局函数 apply 桥，exec/calls.ts
- *   加载期注册；state.ts（→host-bridge.ts）消费，state.ts re-export
- *   setter 维持既有 import 面。
+ *   加载期注册；state.ts（→host-bridge.ts）消费，注册/消费均直连本
+ *   文件——state.ts 的中转 re-export 已删（环参与方的加载期注册 /
+ *   类型引用不得经再导出行中转，runtime-sentinel-regress /
+ *   env-shadow-parity 事故形态：环上宿主文件未执行到 re-export 行 ⇒
+ *   注册点拿到 undefined）。
  *
  * **未收容**（分层限制，勿顺手搬进来）：
  * - builtins/object-proto.ts 的 `receiverToStringResolver`（Bug 315，

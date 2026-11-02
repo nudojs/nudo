@@ -63,6 +63,5 @@ export {
   NAMESPACE_GLOBALS,
   namespaceNameOf,
   $regex,
-  setProtoMethodDispatch,
   protoMethodValueAbs,
 } from "./containers/member.ts";

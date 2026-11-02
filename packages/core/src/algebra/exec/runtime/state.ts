@@ -8,7 +8,9 @@
  * - phi.ts：当前路径前提 Φ + assume 引理前提（#152）+ invariant 规格（#176）
  * - exit-stacks.ts：loop/throw 退出栈 + try 标记栈 + NudoReturn 早退
  * - host-bridge.ts：宿主函数桥（asAbsVal/$fnVal/$absVal/种类戳/调用边界）
- * - ../hooks.ts：加载期 setter 注入 cell（hostGlobalFnCall）
+ * - ../hooks.ts：加载期 setter 注入 cell（hostGlobalFnCall）——注册面
+ *   （exec/calls.ts）与消费面（host-bridge.ts）直连 hooks.ts，本文件
+ *   不再中转 re-export
  *
  * Invariants:
  * - Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性投影按
@@ -85,7 +87,8 @@ export {
   throwExitsMark,
   tryMarksAls,
 } from "./exit-stacks.ts";
-export { setHostGlobalFnCall } from "../hooks.ts";
+// hooks.ts 的 setHostGlobalFnCall 中转 re-export 已删（注册面 exec/calls.ts
+// 直连 hooks.ts，消费面 host-bridge.ts 走 getter——零消费方经本文件 import）
 // 门面 re-export 不进本地作用域——保留簇体内直用的名字需真 import
 import { isNudoReturn } from "./exit-stacks.ts";
 

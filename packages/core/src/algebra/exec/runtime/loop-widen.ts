@@ -98,11 +98,18 @@ function leafGrew(acc: Abs, next: Abs): boolean {
   return !leqAbs(next, acc).ok;
 }
 
-/** tuple 元素域 join；无元素 → undefined（调用方决定空时语义：宽化顶
- *  unknown（诚实：未观测的 push 仍可能发生）/ 增长检测底 never。hole
- *  下标读值 undefined 是真实元素值域（spread/迭代产出 undefined），并入。 */
-function joinElems(t: { elements: Abs[]; holes?: number[] }): Abs | undefined {
-  const parts = t.holes?.length ? [...t.elements, oobUndef()] : t.elements;
+/** tuple 元素域 join（arrayFamilyElementDomain 的单 tuple 核）；无元素 →
+ *  undefined（调用方决定空时语义：宽化顶 unknown（诚实：未观测的 push
+ *  仍可能发生）/ 增长检测底 never。hole 下标读值 undefined 是真实元素
+ *  值域（spread/迭代产出 undefined），并入。mapEl：逐元素映射
+ *  （domainTop 取顶路径传 domainTop；缺省恒等）。 */
+function joinElems(
+  t: { elements: Abs[]; holes?: number[] },
+  mapEl: (e: Abs) => Abs = (e) => e,
+): Abs | undefined {
+  const parts = t.holes?.length
+    ? [...t.elements.map(mapEl), oobUndef()]
+    : t.elements.map(mapEl);
   return parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : undefined;
 }
 
@@ -162,28 +169,71 @@ function primTop(type: string): Abs {
   }
 }
 
-/** 数组族 sum 的元素域聚合：每个成员贡献其元素域（tuple = 元素 join，
- *  空 tuple 贡献空；arr = element），聚合 join。任一非数组成员 →
- *  ok=false（不可收敛，调用方走原路径）。collapse=true 表示值得收敛
- *  （含 arr 臂或 tuple 长度失配——与 widenLoopJoin 的守卫同口径：等长
- *  tuple-only join 不收敛，保长度精度）。 */
-function sumArrParts(s: { members: Abs[] }): {
+/** 数组族元素域聚合的统一原语（#156 约定的唯一实现）。四处消费：
+ *  - 本文件 joinElems（单 tuple 核，diffGrowth 底 never 语义沿用）；
+ *  - arrify / collapseArrSums（缺省形态）；
+ *  - domainTop 的 tuple 臂（mapEl = domainTop 取顶）；
+ *  - control.ts widenLoopJoinInner（holesAtEnd=true 的历史字节序）。
+ *
+ * 约定：元素域 = 全部已知元素 join；hole 下标读值 oobUndef 是真实元素
+ * 值域（并入）；OOB undefined 不烘焙（越界是**读位**事实，$idx 抽象下标
+ * 读已并入元素 ∪ undefined）；空 tuple 不注入 unknown 顶（零观测 →
+ * element undefined，调用方决定诚实顶语义）。
+ *  - 任一非数组成员 → ok=false（不可收敛，调用方走原路径）；
+ *  - collapse=true 表示值得收敛（含 arr 臂或 tuple 长度失配——等长
+ *    tuple-only join 不收敛，保长度精度）；
+ *  - mapEl：逐元素映射（含 arr 的 element；缺省恒等）；
+ *  - holesAtEnd：hole 的 oobUndef 不逐 tuple 内联，而是在全体元素域之后
+ *    并入，且零元素 → unknown 诚实顶（element 恒有值）——control 的
+ *    widenLoopJoinInner 历史字节序（多处 holes / 空 tuple 边界的 sum
+ *    成员序与 unknown 顶语义逐字节保持）。
+ */
+export interface ArrayFamilyElementDomain {
   ok: boolean;
   collapse: boolean;
+  /** 元素域；零贡献（缺省形态）→ undefined（调用方决定空时语义）；
+   *  holesAtEnd 形态恒有值（零元素 → unknown 诚实顶） */
   element?: Abs;
-} {
+}
+
+export function arrayFamilyElementDomain(
+  members: readonly Abs[],
+  opts?: { mapEl?: (e: Abs) => Abs; holesAtEnd?: boolean },
+): ArrayFamilyElementDomain {
+  const mapEl = opts?.mapEl ?? ((e: Abs) => e);
   const elems: Abs[] = [];
   const lengths = new Set<number>();
+  const undefArms: Abs[] = [];
   let hasArr = false;
-  for (const m of s.members) {
+  if (opts?.holesAtEnd) {
+    for (const m of members) {
+      const ms = m.shape;
+      if (ms.k === "tuple") {
+        lengths.add(ms.elements.length);
+        elems.push(...ms.elements.map(mapEl));
+        if (ms.holes?.length) undefArms.push(oobUndef());
+      } else if (ms.k === "arr") {
+        hasArr = true;
+        elems.push(mapEl(ms.element));
+      } else {
+        return { ok: false, collapse: false };
+      }
+    }
+    const known = elems.length > 0 ? elems.reduce((x, y) => joinAbs(x, y)) : unknown;
+    const element = undefArms.length
+      ? undefArms.reduce((x, y) => joinAbs(x, y), known)
+      : known;
+    return { ok: true, collapse: hasArr || lengths.size > 1, element };
+  }
+  for (const m of members) {
     const ms = m.shape;
     if (ms.k === "tuple") {
       lengths.add(ms.elements.length);
-      const e = joinElems(ms);
+      const e = joinElems(ms, mapEl);
       if (e) elems.push(e);
     } else if (ms.k === "arr") {
       hasArr = true;
-      elems.push(ms.element);
+      elems.push(mapEl(ms.element));
     } else {
       return { ok: false, collapse: false };
     }
@@ -212,7 +262,7 @@ function arrify(v: Abs): Abs | undefined {
     );
   }
   if (s.k === "sum") {
-    const p = sumArrParts(s);
+    const p = arrayFamilyElementDomain(s.members);
     if (!p.ok) return undefined;
     return abs(
       { k: "arr", element: p.element ?? unknown },
@@ -268,12 +318,15 @@ function domainTop(v: Abs): Abs {
   } else if (s.k === "tuple") {
     // #156：元素域 = 已知元素域顶 join（空 → unknown 诚实顶：整值宽化下
     // 未观测的 push 仍可能发生）；OOB undefined 不烘焙（读位事实，$idx
-    // 抽象下标读已并入）
-    const parts = s.holes?.length ? [...s.elements, oobUndef()] : s.elements;
-    const known = parts.length > 0
-      ? parts.map((e) => domainTop(e)).reduce((x, y) => joinAbs(x, y))
-      : unknown;
-    return abs({ k: "arr", element: known }, undefined, undefined, "widened");
+    // 抽象下标读已并入）——经 arrayFamilyElementDomain（mapEl=domainTop
+    // 逐元素取顶）
+    const d = arrayFamilyElementDomain([v], { mapEl: domainTop });
+    return abs(
+      { k: "arr", element: d.element ?? unknown },
+      undefined,
+      undefined,
+      "widened",
+    );
   } else if (s.k === "arr") {
     top = abs({ k: "arr", element: domainTop(s.element) }, undefined, undefined, v.conf);
   } else if (s.k === "obj") {
@@ -358,7 +411,7 @@ function widenWithPath(v: Abs, g: GrowthTree): Abs {
 function collapseArrSums(v: Abs): Abs {
   const s = v.shape;
   if (s.k === "sum") {
-    const p = sumArrParts(s);
+    const p = arrayFamilyElementDomain(s.members);
     if (p.ok && p.collapse && p.element) {
       return abs({ k: "arr", element: p.element }, undefined, undefined, v.conf);
     }
