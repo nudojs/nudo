@@ -82,7 +82,6 @@ export {
   attachAbsToIntension,
   absIsBetter,
   isSelfContainedSource,
-  absModulesOk,
 } from "./analyzer-abs-eval.ts";
 
 export {

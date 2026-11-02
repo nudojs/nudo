@@ -13,9 +13,9 @@
  * - Bug 228：env 名分层解析（项目级按项目根 / 文件级按文件目录）；
  * - `mockFromErrors` 丢弃（health 面曾不收集上报）。
  *
- * 装配内容：模块图（`evalAbsModuleGraph`）+ env modules
- * （`mergeHarvestUnderEnv`）+ `@nudo:mock-module` 覆盖 + `@nudo:mock`
- * seeds + env 全局 + `@nudo:as` / `@nudo:replace` 替换。
+ * 装配内容：模块图组装（`composeEvalModules` 单一入口：图 + env 并入 +
+ * `@nudo:mock-module` 覆盖）+ `@nudo:mock` seeds + env 全局 +
+ * `@nudo:as` / `@nudo:replace` 替换。
  *
  * 消费方只在**解析策略**上分叉（`parseAst` 参数）：
  * - CLI check 注入 `parseForCheck`（按扩展名严格解析，Bug 633：`.js` 里的
@@ -42,15 +42,10 @@ import {
   type DirectiveDiag,
 } from "@nudojs/parser";
 import type { RunTranspiledOptions } from "@nudojs/core";
-import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
+import { composeEvalModules } from "./eval-run.ts";
+import { collectEnvGlobals } from "./env-modules.ts";
 import { collectEvalReplacements } from "./eval-injection.ts";
-import {
-  collectEnvGlobals,
-  collectEnvModules,
-  mergeHarvestUnderEnv,
-} from "./eval-run.ts";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
-import { applyMockModuleDirectivesFromSource } from "./mock-module.ts";
 import type { MockFromError } from "./check-issues.ts";
 
 export type { MockFromError };
@@ -62,7 +57,6 @@ export function buildEvalInjection(
   dirDiags: DirectiveDiag[],
   parseAst: (filePath: string, source: string) => ReturnType<typeof parse>,
 ): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
-  const graph = evalAbsModuleGraph(source, filePath);
   const reps = collectEvalReplacements(source, { diags: dirDiags });
   const seedPkg = runWithDirectiveDiags(dirDiags, () => {
     const ast = parseAst(filePath, source);
@@ -77,29 +71,29 @@ export function buildEvalInjection(
   let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
-  const envMods = collectEnvModules(allEnvNames);
-  // env modules（fs/path/node:*…）并入模块图：**必须走 mergeHarvestUnderEnv**
-  // （check / verify / test / service 面同口径）——手工 env 与 harvest
-  // **同名模块**时，env 赢同名槽、harvest 填 env 的**空位**（B8）。
-  // 旧实现用对象展开（`{...graph.modules, ...envMods}`）⇒ 同名模块下
-  // harvest 的**非冲突导出被整体丢弃** ⇒ check/verify 面报 `unknown` +
-  // 误导性 `nudo:unknown-inference`，而 test 面报**精确值** ⇒ 两个产品面
-  // 互相矛盾（Bug 1037；verify 面同族 Bug 226）。
-  let mergedMods = mergeHarvestUnderEnv(graph.modules, envMods);
-  // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
-  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
-    fromFile: filePath,
-  });
-  mergedMods = mm.modules;
+  // 模块图组装走 composeEvalModules **单一入口**（ServiceReviewer S1：与
+  // analyzer / tryRunEval 同序列——evalAbsModuleGraph →
+  // mergeHarvestUnderEnv(collectEnvModules) → applyMockModule*）。本面差异
+  // 全部以**不传参**显式表达：mock 种子不入图（走 inject.mocks 的运行时
+  // 注入通道）、无 loadModule、mock-module 从 source 解析。
+  // env modules 并入必须走 mergeHarvestUnderEnv（check / verify / test /
+  // service 面同口径）——手工 env 与 harvest **同名模块**时，env 赢同名槽、
+  // harvest 填 env 的**空位**（B8）。旧实现用对象展开
+  // （`{...graph.modules, ...envMods}`）⇒ 同名模块下 harvest 的**非冲突导出
+  // 被整体丢弃** ⇒ check/verify 面报 `unknown` + 误导性
+  // `nudo:unknown-inference`，而 test 面报**精确值** ⇒ 两个产品面互相矛盾
+  // （Bug 1037；verify 面同族 Bug 226）。
+  const composed = composeEvalModules(source, filePath, { envNames: allEnvNames });
   mockFromErrors = [
     ...mockFromErrors,
-    ...mm.errors.map((e) => ({
+    ...composed.mockModuleErrors.map((e) => ({
       name: e.name,
       fromPath: e.fromPath,
       message: e.message,
       ...(e.code !== undefined ? { code: e.code } : {}),
     })),
   ];
+  const mergedMods = composed.modules;
   const inject: RunTranspiledOptions = {
     // Bug 456：**不再**因为「检出环」就丢弃整张依赖图。旧实现在检出 cycle
     // 时把 modules 降级成「只有 env 模块」⇒ 环内文件的 import 全部落空 ⇒

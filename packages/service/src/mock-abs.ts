@@ -92,6 +92,19 @@ function stampFingerprint(a: Abs, fp: string): Abs {
 }
 
 /**
+ * mock 指纹格式串的**唯一写侧**（ServiceReviewer S5）：所有 `impl.fingerprint`
+ * 盖章点（`ret=` / `dispatch=` / `fake=` / `from-mock=`）统一经此构造，
+ * 读侧（eval-cache 的 absSeedPart）只消费 `impl.fingerprint`——无指纹的
+ * fn mock 用单一标记 `"nofp"`，不在读侧逐格式重建。
+ */
+export function mockFingerprint(
+  kind: "ret" | "dispatch" | "fake" | "from-mock",
+  payload: string,
+): string {
+  return `${kind}=${payload}`;
+}
+
+/**
  * 内联 mock 载荷的**可构造性** facet（Bug 482）。
  * 与 `from` 形态的 hostFnCtorFacet 同口径：
  * - 箭头函数（含 async 箭头）/ 方法简写 / generator / async function → 不可构造
@@ -147,7 +160,7 @@ function constantMockFn(result: Abs): Abs {
     // 合成 body（return 环境常量），非源文件函数声明 ⇒ 无源种类通道：
     // 不写 strict（sloppy，保守）。
     markMockConf(absFunction(["...args"], { body, env: mockEnv })),
-    `ret=${retKey}`,
+    mockFingerprint("ret", retKey),
   );
 }
 
@@ -221,7 +234,7 @@ function dispatchMockFn(defaultReturn: Abs, cases?: { args: Abs[]; returnValue: 
         },
       }),
     ),
-    `dispatch=default=${defaultKey};cases=${caseKey}`,
+    mockFingerprint("dispatch", `default=${defaultKey};cases=${caseKey}`),
   );
 }
 
@@ -232,7 +245,7 @@ function absFromMockHelper(h: MockHelper): Abs {
       // callsFake 载荷是 **mock 表达式**（独立解析的箭头/函数字面量）——源种类
       // （ESM/CJS）未随指令表达式流转 ⇒ 不写 strict（sloppy，保守）。
       absFunction(params, { body: body as never, async: async ?? false }),
-      `fake=${params.join(",")}:${astContentKey(body)}`,
+      mockFingerprint("fake", `${params.join(",")}:${astContentKey(body)}`),
     );
   }
 
@@ -412,7 +425,7 @@ function loadFromMockBinding(
       kind: "eval-export",
       // mock 模块源码种类未随 evalMockFileWithDeps 的 run 结果暴露 ⇒ 不写
       // strict（sloppy，保守）；真实模块导出桥在 abs-modules-graph 按 AST 判定。
-      fingerprint: `from-mock=${fromPath}#${name}`,
+      fingerprint: mockFingerprint("from-mock", `${fromPath}#${name}`),
     }, ctorFacet !== undefined ? { ctor: ctorFacet } : undefined);
   } else {
     absVal = absUnknown;
@@ -446,9 +459,15 @@ export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
 function absOfSeedFn(fn: AbsMockSeeds["seedFns"][string]): Abs {
   // seedFns body 是 **@nudo:mock 指令表达式**的 AST（独立解析，非模块源函数
   // 声明）⇒ 条目无源种类字段，不写 strict（sloppy，保守）。
+  // 条目指纹（fake= 工厂串）随绑定落到 impl.fingerprint：读侧
+  // （absSeedPart）只认 impl.fingerprint——不盖章会退化成 "nofp"。
   return absFunction(
     fn.params,
-    { body: fn.body, async: fn.async ?? false },
+    {
+      body: fn.body,
+      async: fn.async ?? false,
+      ...(fn.fingerprint ? { fingerprint: fn.fingerprint } : {}),
+    },
     fn.ctor !== undefined ? { ctor: fn.ctor } : undefined,
   );
 }
@@ -572,7 +591,7 @@ export function mockDirectivesToAbsSeeds(
           // `f(1).then(…)` 报「then missing on number receiver」（error 级假红）。
           // ⇒ 透传 parser 侧已扫出的 `async` 标志（`MockDirective.arrowFn.async?`）。
           async: d.arrowFn.async === true,
-          fingerprint: `fake=${d.arrowFn.params.join(",")}:${astContentKey(body)}`,
+          fingerprint: mockFingerprint("fake", `${d.arrowFn.params.join(",")}:${astContentKey(body)}`),
           // Bug 482：内联 mock 也要带可构造性 facet（与 `from` 形态同口径）
           ctor: inlineCtorFacet(d.expression),
         });

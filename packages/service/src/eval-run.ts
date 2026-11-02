@@ -3,25 +3,33 @@
  *
  * 分析默认 mode="analyze"：不执行顶层副作用，只保留函数定义。
  * throws 经 callTranspiledExportFull 捕获 $throw。
+ *
+ * 拆叶（ServiceReviewer S2）：env 全局/模块表与 harvest 合并在 `env-modules.ts`，
+ * evaluator run 缓存与缓存键指纹在 `eval-cache.ts`——两叶均不环入本模块；
+ * 符号在此转出以保持既有导入面（`eval-run.ts` 是公开入口）。
  */
 
-import { $invoke, runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, isNudoThrow, never, withExecPhi, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl, namespaceAbsOf } from "@nudojs/core";
-import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
+import { $invoke, runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, noteEvalFallback, isAbsVal, isNudoThrow, never, withExecPhi, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi } from "@nudojs/core";
+import { setMemberDiagCollector, setAbsTruncationCollector, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource } from "@nudojs/core/internal";
 import { parse, type FileDirective } from "@nudojs/parser";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve as resolvePath } from "node:path";
-import { loadEnvs } from "./evaluator/evaluator-api.ts";
+import { dirname } from "node:path";
 import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import { evalAbsModuleGraph, type AbsGraphOptions, type AbsModuleLoadIssue } from "./abs-modules-graph.ts";
 import { applyMockModuleDirectives, applyMockModuleDirectivesFromSource } from "./mock-module.ts";
-import { mockScopeSelected } from "./mock-abs.ts";
-import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
-import { getSessionCacheLimits } from "./session-cache-limits.ts";
-import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
-import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { mockScopeSelected, type FromMockError } from "./mock-abs.ts";
+import { type LoadModule } from "./load-module.ts";
 import { collectEvalReplacementsFromProgram } from "./eval-injection.ts";
 import { cjsObjectExportMemberNames } from "./analyzer-ast.ts";
 import { applyPureMarkers, pureFnNamesOfAst } from "./eval-pure.ts";
+import { collectEnvGlobals, collectEnvModules, mergeHarvestUnderEnv } from "./env-modules.ts";
+import {
+  evalCacheGet,
+  evalCachePeek,
+  evalCacheSet,
+  evalDepKey,
+  mockSeedFingerprint,
+  pathEnvContentFingerprint,
+} from "./eval-cache.ts";
 
 /**
  * 行内指令注入表（@nudo:replace / @nudo:as）——收集器在叶子模块
@@ -30,320 +38,26 @@ import { applyPureMarkers, pureFnNamesOfAst } from "./eval-pure.ts";
  */
 export { collectEvalReplacements, resolveEvalInjection, type EvalInjection } from "./eval-injection.ts";
 
-/**
- * 项目级 path env 文件的**内容**指纹（Bug 501）。
- *
- * env 名只是维度之一：同一个 env 名（`./env.ts`）指向的文件内容变了，
- * 类型面必须跟着变——否则整文件分析缓存（analysisFileCacheKey）与
- * evaluator memo（tryRunEval）会命中陈旧结果（env 改了、类型没改）。
- * 文件级 `/// @nudo:env` 的同款维度已由 dep 指纹覆盖（load-deps-fp 采
- * 路径 env 内容）——此处只补**项目级**（package.json#nudo.env）的路径 env。
- *
- * 口径与 env-loader 的 `isPathEnvName` 同源：内建名（es/web/node）不是
- * 路径；带 "/" 或 "./" / "../" 前缀的是路径；裸拼写按「解析到 .ts 且存在」
- * 判定。baseDir = 被分析文件所在目录（相对说明符的解析基准）。
- */
-export function pathEnvContentFingerprint(envNames: string[], baseDir: string): string {
-  const parts: string[] = [];
-  for (const name of envNames) {
-    if (typeof name !== "string" || name.length === 0) continue;
-    // 内建 env 名（es / web / node）——不是路径 env
-    if (name === "es" || name === "web" || name === "node") continue;
-    const pathLike = name.includes("/") || name.startsWith("./") || name.startsWith("../");
-    const resolved = resolvePath(baseDir, name);
-    if (!pathLike && !(resolved.endsWith(".ts") && existsSync(resolved))) continue;
-    let content: string;
-    try {
-      content = readFileSync(resolved, "utf-8");
-    } catch {
-      content = "<unreadable>";
-    }
-    parts.push(`${resolved}=${hashSource(content)}`);
-  }
-  return parts.length === 0 ? "" : hashSource(parts.join("\u0001"));
-}
+/** env 全局/模块表 + harvest 合并（拆叶转出，见文件头） */
+export {
+  collectEnvGlobals,
+  collectEnvModules,
+  mergeHarvestUnderEnv,
+  setEnvHarvestConflictCollector,
+  getEnvHarvestConflictCollector,
+  type EnvHarvestConflict,
+  type MergeHarvestOptions,
+} from "./env-modules.ts";
 
-/** Content part for one Abs mock seed. */
-function absSeedPart(a: Abs): string {
-  const impl = getFnImpl(a);
-  if (impl?.fingerprint) return impl.fingerprint;
-  if (a.shape.k === "fn") {
-    const ret = impl?.env?.vars?.get("__nudo_mock_ret");
-    if (ret) {
-      try {
-        return `ret=${formatAbs(ret)}`;
-      } catch {
-        return "ret=?";
-      }
-    }
-    if (impl?.apply) return "apply";
-  }
-  try {
-    return formatAbs(a);
-  } catch {
-    return "?";
-  }
-}
-
-function seedFnPart(name: string, fn: { params: string[]; body: unknown; fingerprint?: string }): string {
-  if (fn.fingerprint) return `${name}:${fn.fingerprint}`;
-  const body = fn.body as { start?: number; end?: number; type?: string } | undefined;
-  const bodyKey =
-    body && typeof body.start === "number" && typeof body.end === "number"
-      ? `${body.start}:${body.end}:${body.type ?? ""}`
-      : String(body?.type ?? "?");
-  return `${name}(${fn.params.join(",")})@${bodyKey}`;
-}
-
-/**
- * Cache key for @nudo:mock seeds: name list alone is not enough — same names
- * with different Abs values must miss. Uses AbsFnImpl.fingerprint when the
- * mock pipeline stamped one (formatAbs cannot see WeakMap-side returns/withArgs).
- */
-export function mockSeedFingerprint(
-  mocks?: Record<string, Abs>,
-  seedFns?: Record<string, { params: string[]; body: unknown; fingerprint?: string }>,
-): string {
-  const parts: string[] = [];
-  if (mocks) {
-    const names = Object.keys(mocks).sort();
-    for (const n of names) parts.push(`${n}=${absSeedPart(mocks[n]!)}`);
-  }
-  if (seedFns) {
-    const names = Object.keys(seedFns).sort();
-    for (const n of names) parts.push(`fn:${seedFnPart(n, seedFns[n]!)}`);
-  }
-  if (parts.length === 0) return "-";
-  return hashSource(parts.join(";"));
-}
-
-/** @nudo:env → Abs 全局表（env 模块 Abs 原生） */
-export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
-  if (envNames.length === 0) return {};
-  const env = createEnvironment();
-  try {
-    return { ...loadEnvs(envNames, env).globals };
-  } catch (e) {
-    noteEvalFallback(e);
-    return {};
-  }
-}
-
-/**
- * @nudo:env modules（path / node:path / fs…）→ AbsModuleExports
- *
- * Bug 282：env 模块是 **CJS 互操作**模块——Node 的 `node:fs` 的默认导出就是
- * 模块对象本身（具名导出挂在它上面）⇒ ESM **默认导入**
- * （`import fs from "node:fs"`）必须绑到**命名空间**。
- *
- * 此前 env 表**只有 named、没有 default 槽** ⇒ core 的 `bindImport` 在
- * `name === "default"` 分支取不到值 ⇒ 折 `unknown` ⇒ 该文件的导出函数
- * 全量降级 `unknown` + 追加一条**误导性**的 `nudo:unknown-inference`
- * （真实原因是绑定没接上，不是推断失败）+ 门禁**假绿**（exit 0）；
- * 而**同一模块**的命名空间导入（`import * as fs`）却正常执法
- * （`nudo:entry-may-throw` 判红）⇒ 同一种导入语义两种门禁结论。
- *
- * 口径：default 槽 = 该模块的**命名空间 Abs**（全部具名导出），
- * 与 `mock-module.ts` 的「仅有 named 时合成 default 命名空间」同惯例；
- * 同时打 `interopDefault` 标记（CJS 互操作模块 ⇒ default = 模块对象本身）
- * ——core 的默认导入绑定（`defaultImportBindingOf`）据此回退，两条口径同源。
- * 只装在 **env 表**上——用户模块表不动 ⇒ 用户模块缺 default 仍是
- * `unknown`（Bug 990 口径：模块表有该 mod 但没有 default ⇒ 就是没有
- * default，不得回退到命名空间）。
- */
-export function collectEnvModules(envNames: string[]): Record<string, AbsModuleExports> {
-  if (envNames.length === 0) return {};
-  const env = createEnvironment();
-  let mods: Record<string, Record<string, Abs>> = {};
-  try {
-    mods = loadEnvs(envNames, env).modules;
-  } catch (e) {
-    noteEvalFallback(e);
-    return {};
-  }
-  const out: Record<string, AbsModuleExports> = {};
-  for (const [spec, named] of Object.entries(mods)) {
-    const namedTable = { ...named };
-    out[spec] = {
-      named: namedTable,
-      // CJS 互操作：default = 模块对象本身（= 命名空间）
-      default: namespaceAbsOf({ named: namedTable }),
-      interopDefault: true,
-    };
-  }
-  return out;
-}
-
-/** Conflict when handwritten env overwrote a harvest module/export (B8). */
-export type EnvHarvestConflict = {
-  module: string;
-  /** export names where env replaced a harvest binding (empty + defaulted = default only) */
-  exports: string[];
-  defaultOverwritten: boolean;
-};
-
-/** 冲突 collector（作用域化：runWithCollectorScope 内各分析互不串台；
- *  无作用域 = fallback 模块级单变量，行为同今日） */
-const envHarvestConflictCollectorSlot = createScopedSlot<
-  ((c: EnvHarvestConflict) => void) | null
->(() => null);
-registerCollectorScopeParticipant((body) => envHarvestConflictCollectorSlot.runScoped(body));
-
-/**
- * Install conflict collector; returns the previous one so nested/concurrent
- * analyzeFile callers can save/restore (scoped fallback: inside
- * runWithCollectorScope each analysis gets its own slot, no cross-talk).
- */
-export function setEnvHarvestConflictCollector(
-  collector: ((c: EnvHarvestConflict) => void) | null,
-): ((c: EnvHarvestConflict) => void) | null {
-  const prev = envHarvestConflictCollectorSlot.get();
-  envHarvestConflictCollectorSlot.set(collector);
-  return prev;
-}
-
-/** Read-only peek for tests / nested restore. */
-export function getEnvHarvestConflictCollector():
-  | ((c: EnvHarvestConflict) => void)
-  | null {
-  return envHarvestConflictCollectorSlot.get();
-}
-
-export type MergeHarvestOptions = {
-  /**
-   * Per-call conflict sink. Takes precedence over the module-global collector
-   * installed via `setEnvHarvestConflictCollector`.
-   */
-  onConflict?: (c: EnvHarvestConflict) => void;
-};
-
-/**
- * 保活导出表合并（Bug 476）：ESM 的 import 绑定是指向依赖模块作用域的
- * **间接引用**——依赖模块的内部变异必须对导入方可见。
- * 旧口径用对象展开搬运导出表（`{ ...exports.named }`）→ **求值**活 getter
- * → 冻结成快照 ⇒ 依赖内部变异对导入方不可见（原生 "hello"，引擎 0）。
- * 这里改为 defineProperty 委派：named 槽与 default 槽都保持 getter。
- *
- * 优先级：靠前的表先占位（同名槽取先到者）。
- */
-function liveNamedTable(tables: Array<Record<string, Abs>>): Record<string, Abs> {
-  const out: Record<string, Abs> = {};
-  for (const table of tables) {
-    for (const k of Object.keys(table)) {
-      // 自有属性判定：`in` 走原型链（toString/constructor 等继承名会被当导出）
-      if (Object.hasOwn(out, k)) continue;
-      const d = Object.getOwnPropertyDescriptor(table, k);
-      if (d?.get) {
-        Object.defineProperty(out, k, {
-          enumerable: true,
-          configurable: true,
-          get: () => (table as Record<string, Abs>)[k],
-        });
-      } else {
-        out[k] = table[k];
-      }
-    }
-  }
-  return out;
-}
-
-/**
- * 复制模块导出表（保活 default 槽）。
- * `named` 由调用方给定；`defaultSrc` 决定 default 槽取自谁（env 优先）。
- * `keepFlags` = 是否保留 evaluated / cjsMain 等标记位（合并覆盖场景与
- * 旧口径一致：env 覆盖后只留 named + default）。
- */
-function copyModuleExports(
-  src: AbsModuleExports,
-  named: Record<string, Abs>,
-  defaultSrc: AbsModuleExports = src,
-  keepFlags = true,
-): AbsModuleExports {
-  const out = { named } as AbsModuleExports;
-  if (keepFlags) {
-    for (const k of Object.keys(src)) {
-      if (k === "named" || k === "default") continue;
-      const d = Object.getOwnPropertyDescriptor(src, k);
-      if (!d) continue;
-      if (d.get) {
-        Object.defineProperty(out, k, {
-          enumerable: true,
-          configurable: true,
-          get: () => (src as unknown as Record<string, unknown>)[k],
-        });
-      } else {
-        (out as unknown as Record<string, unknown>)[k] = d.value;
-      }
-    }
-  }
-  const dd = Object.getOwnPropertyDescriptor(defaultSrc, "default");
-  if (dd?.get) {
-    Object.defineProperty(out, "default", {
-      enumerable: true,
-      configurable: true,
-      get: () => defaultSrc.default,
-    });
-  } else if (dd) {
-    out.default = dd.value as Abs;
-  }
-  return out;
-}
-
-/**
- * Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping
- * module keys and overlapping export names (docs/versioning.md B8 + website
- * harvester API). Harvest-only modules/exports are kept as fill-in.
- * Overwrites notify `opts.onConflict` or the global collector.
- *
- * **导出表保活**（Bug 476）：named / default 槽都是活绑定（getter 委派），
- * 合并不得按值快照——否则依赖模块的内部变异对导入方不可见。
- */
-export function mergeHarvestUnderEnv(
-  harvestModules: Record<string, AbsModuleExports>,
-  envModules: Record<string, AbsModuleExports>,
-  opts?: MergeHarvestOptions,
-): Record<string, AbsModuleExports> {
-  const out: Record<string, AbsModuleExports> = {};
-  for (const [mod, exports] of Object.entries(harvestModules)) {
-    // 保留 cjsMain / evaluated 等标记位（Bug 10 回归：require 对 CJS 单函数
-    // 导出需返回 default 本身，丢标记会回落 namespace obj → obj-callee 定抛）
-    out[mod] = copyModuleExports(exports, liveNamedTable([exports.named]));
-  }
-  const notify = opts?.onConflict ?? envHarvestConflictCollectorSlot.get();
-  for (const [mod, envExports] of Object.entries(envModules)) {
-    const existing = out[mod];
-    if (!existing) {
-      out[mod] = copyModuleExports(envExports, liveNamedTable([envExports.named]));
-      continue;
-    }
-    const overwritten: string[] = [];
-    for (const key of Object.keys(envExports.named)) {
-      if (existing.named[key] !== undefined) overwritten.push(key);
-    }
-    const defaultOverwritten =
-      envExports.default !== undefined && existing.default !== undefined;
-    if (notify && (overwritten.length > 0 || defaultOverwritten)) {
-      try {
-        notify({
-          module: mod,
-          exports: overwritten,
-          defaultOverwritten,
-        });
-      } catch {
-        /* collector must not break analysis */
-      }
-    }
-    // env wins：同名槽取 env（保活），其余填 harvest
-    const named = liveNamedTable([envExports.named, existing.named]);
-    const defaultSrc = envExports.default !== undefined ? envExports : existing;
-    out[mod] = copyModuleExports(existing, named, defaultSrc, false);
-    // Bug 282：互操作标记随 env 侧走（keepFlags=false 会丢标记位 ⇒ env 模块的
-    // 「default = 模块对象本身」语义在合并后丢失）。default 槽本身已由
-    // defaultSrc 带上（env 侧 default 优先），此处只补标记。
-    if (envExports.interopDefault) out[mod].interopDefault = true;
-  }
-  return out;
-}
+/** evaluator run 缓存 + 缓存键指纹（拆叶转出，见文件头） */
+export {
+  pathEnvContentFingerprint,
+  mockSeedFingerprint,
+  clearEvalCache,
+  evictEvalCacheForFiles,
+  trimEvalCache,
+  getEvalCacheSize,
+} from "./eval-cache.ts";
 
 export type EvalRunResult = {
   exports: Record<string, unknown>;
@@ -369,12 +83,24 @@ export type ComposedEvalModules = {
   issues: AbsModuleLoadIssue[];
   /** @nudo:mock-module 应用失败（analyzer 映射 nudo:module-missing 诊断） */
   mockErrors: string[];
+  /**
+   * 同上的**结构化**形态（name/fromPath/message/code）——inject 装配面
+   * （buildEvalInjection）消费；analyzer 面仍读 mockErrors（按 message 映射）。
+   */
+  mockModuleErrors: FromMockError[];
 };
 
 /**
  * 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入
  * （手写 env wins，B8）→ @nudo:mock-module 覆盖。
  * `fileDirectives`：调用方已抽取的文件指令（省一次 parse）；缺省从 source 解析。
+ *
+ * 消费方差异全部显式参数化（ServiceReviewer S1，装配序列归一）：
+ * - `seedVars` / `seedFns`：analyzer 面把 @nudo:mock 种子注入**模块图**（B 路径
+ *   成员求值用）；inject 装配面不传——其 mock 走 runTranspiled 的
+ *   `inject.mocks`（运行时注入，不入图），两口径不得混。
+ * - `loadModule`：宿主加载器（虚拟 FS / 侧车），透传图组装与 mock-module。
+ * - `fileDirectives`：预抽取 vs 从 source 解析（省一次 parse）。
  */
 export function composeEvalModules(
   source: string,
@@ -404,103 +130,12 @@ export function composeEvalModules(
     ? applyMockModuleDirectives(modules, opts.fileDirectives, mockOpts)
     : applyMockModuleDirectivesFromSource(source, modules, mockOpts);
   modules = mm.modules;
-  return { modules, issues: g.issues, mockErrors: mm.errors.map((e) => e.message) };
-}
-
-/** 缓存键维度：lenientGlobals / maxLoopIters 透传 runTranspiled，必须参与命中判定 */
-type EvalCacheEntry = {
-  stableSource: string;
-  envKey: string;
-  mockKey: string;
-  depKey: string;
-  /** lenientGlobals（"1"/"0"）——exec 调用点发现与 analyze 口径不同 */
-  lenientKey: string;
-  /** maxLoopIters（""=引擎默认）——循环预算改变求值结果 */
-  itersKey: string;
-  /**
-   * 已组装的模块图（依赖状态跨实例共享——与原生「同一模块实例」一致）。
-   * fresh 实例复用同一张图：避免重复组图（依赖指纹复核要读盘）与
-   * refresh 注册表被反复清空。
-   */
-  composed?: ComposedEvalModules;
-  /**
-   * 求值结果（**仅非 fresh 路径写入**）：memo 里的实例是「干净」的——
-   * 调用会污染它的模块级状态（Bug 472），故调用面一律走 fresh 实例。
-   */
-  value?: EvalRunResult;
-};
-
-/** 按「入口文件 × mode」键控多槽：analyze / exec 互不逐出（exec 采集不再踢掉分析结果） */
-function evalCacheSlotKey(filePath: string, mode: string): string {
-  return `${stablePathKey(filePath)}\0${mode}`;
-}
-
-const evalRunByFile = new Map<string, EvalCacheEntry>();
-
-/** disk dep fingerprint — null = fail-closed（截断/异常时禁止 evaluator memo） */
-function evalDepKey(source: string, filePath: string, loadModule?: LoadModule): string | null {
-  try {
-    // 指纹经同一 loadModule 采集：自定义 loader（虚拟 FS）的内容变更同样翻转键
-    const fp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
-    // fingerprint is path=hash,… — hash whole blob so long abs paths still flip
-    // truncated/readerr（#135）：读错误轮的键不可信（flaky 与持久错误轮同
-    // readerr 键但底层现实不同）→ fail-closed 禁 evaluator memo
-    if (fp.truncated || fp.readError) return null;
-    return hashSource(fp.fp);
-  } catch {
-    return null;
-  }
-}
-
-export function clearEvalCache(): void {
-  evalRunByFile.clear();
-  // 测试/宿主习惯：清 evaluator 时一并丢掉整文件/函数级分析缓存
-  clearAnalysisFileCache();
-  clearFnAnalysisCache();
-}
-
-/** 测试/诊断：当前 evaluator run 缓存条目数（≤ getSessionCacheLimits().maxEvalRuns） */
-export function getEvalCacheSize(): number {
-  return evalRunByFile.size;
-}
-
-/** 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey；两种 mode 槽一并清） */
-export function evictEvalCacheForFiles(files: string[]): number {
-  let n = 0;
-  for (const f of files) {
-    for (const mode of ["analyze", "exec"] as const) {
-      if (evalRunByFile.delete(evalCacheSlotKey(f, mode))) n++;
-    }
-  }
-  return n;
-}
-
-function evalCacheSet(
-  filePath: string,
-  mode: string,
-  entry: EvalCacheEntry,
-): void {
-  const max = getSessionCacheLimits().maxEvalRuns;
-  if (max <= 0) return;
-  const key = evalCacheSlotKey(filePath, mode);
-  while (evalRunByFile.size >= max && !evalRunByFile.has(key)) {
-    const oldest = evalRunByFile.keys().next().value;
-    if (oldest === undefined) break;
-    evalRunByFile.delete(oldest);
-  }
-  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
-  evalRunByFile.delete(key);
-  evalRunByFile.set(key, entry);
-}
-
-/** 立刻压到当前 maxEvalRuns（调低上限时收内存） */
-export function trimEvalCache(): void {
-  const max = getSessionCacheLimits().maxEvalRuns;
-  while (evalRunByFile.size > max) {
-    const oldest = evalRunByFile.keys().next().value;
-    if (oldest === undefined) break;
-    evalRunByFile.delete(oldest);
-  }
+  return {
+    modules,
+    issues: g.issues,
+    mockErrors: mm.errors.map((e) => e.message),
+    mockModuleErrors: mm.errors,
+  };
 }
 
 /** 模块图 + runTranspiled（默认 analyze 模式） */
@@ -556,33 +191,28 @@ export function tryRunEval(
     // 尾部无 @nudo 注释不参与：comment-only 编辑命中 evaluator。
     // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
     const stable = stableAnalyzeKeySource(source);
-    // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也 miss
-    //（与 BoundedLruMap max<=0 口径一致）
+    // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也
+    // miss（evalCacheGet 内判）
     const depKey = opts.depKey !== undefined ? opts.depKey : evalDepKey(source, filePath, opts.loadModule);
     const canCache = depKey !== null;
     /** fresh 路径复用 memo 里的组图（依赖状态共享，根模块状态独立） */
     let cachedComposed: ComposedEvalModules | undefined;
-    if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
-      const cacheKey = evalCacheSlotKey(filePath, mode);
-      const cached = evalRunByFile.get(cacheKey);
-      if (
-        cached &&
-        cached.stableSource === stable &&
-        cached.envKey === envKey &&
-        cached.mockKey === mockKey &&
-        cached.depKey === depKey &&
-        cached.lenientKey === lenientKey &&
-        cached.itersKey === itersKey
-      ) {
-        // LRU：命中移到队尾
-        evalRunByFile.delete(cacheKey);
-        evalRunByFile.set(cacheKey, cached);
-        if (!fresh) {
-          // memo 里的实例可能被调用污染过（模块级状态）→ 调用面不得复用
-          if (cached.value) return cached.value;
-        } else {
-          cachedComposed = cached.composed;
-        }
+    // evalCacheGet：命中刷新 MRU（BoundedLruMap.get）
+    const cached = canCache ? evalCacheGet(filePath, mode) : undefined;
+    if (
+      cached &&
+      cached.stableSource === stable &&
+      cached.envKey === envKey &&
+      cached.mockKey === mockKey &&
+      cached.depKey === depKey &&
+      cached.lenientKey === lenientKey &&
+      cached.itersKey === itersKey
+    ) {
+      if (!fresh) {
+        // memo 里的实例可能被调用污染过（模块级状态）→ 调用面不得复用
+        if (cached.value) return cached.value;
+      } else {
+        cachedComposed = cached.composed;
       }
     }
     let out: EvalRunResult | null = null;
@@ -676,8 +306,8 @@ export function tryRunEval(
       out = null;
     }
     if (out !== null && canCache) {
-      const cacheKey = evalCacheSlotKey(filePath, mode);
-      const prev = evalRunByFile.get(cacheKey);
+      // 纯读探测（不刷新 MRU）：写回 evalCacheSet 自会刷新
+      const prev = evalCachePeek(filePath, mode);
       const sameSlot =
         prev !== undefined &&
         prev.stableSource === stable &&

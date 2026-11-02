@@ -115,7 +115,6 @@ export type UncachedCaseEnv = {
   /** B 成功跑通本文件（weak-unknown 放宽判定） */
   evalHosted: boolean;
   selfContained: boolean;
-  canAbsModules: boolean;
   pushMemberDiag: (d: EvalMemberDiag, fallbackLine: number) => void;
   diagnostics: Diagnostic[];
   caseHints: CaseHint[];
@@ -881,7 +880,6 @@ export function evaluateCaseDirectives(
     fnDepSeg,
     evalHosted,
     selfContained,
-    canAbsModules,
     pushMemberDiag: pushBMemberDiag,
     diagnostics,
     caseHints,
@@ -952,15 +950,15 @@ export function evaluateCaseDirectives(
           caseThrowsAbs = neverAbs;
         } else {
           const caseArgsAbs = directive.argsAbs;
-          const absFull = (selfContained || canAbsModules)
-            ? tryEvalAbsFull(
-                source,
-                fn.name,
-                caseArgsAbs,
-                filePath,
-                mockSeedsToAbsMocks(seeds),
-              )
-            : undefined;
+          // 评审发现 8：absModulesOk 恒真已删——此兜底不再被
+          // selfContained 门控（B 模块图对所有源可用）。
+          const absFull = tryEvalAbsFull(
+            source,
+            fn.name,
+            caseArgsAbs,
+            filePath,
+            mockSeedsToAbsMocks(seeds),
+          );
           const weak =
             !!absFull &&
             absFull.result.shape.k === "unknown" &&

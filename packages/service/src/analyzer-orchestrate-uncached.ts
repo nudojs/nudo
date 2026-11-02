@@ -99,7 +99,6 @@ import {
 import {
   attachHofSnapshot,
   isSelfContainedSource,
-  absModulesOk,
 } from "./analyzer-abs-eval.ts";
 import {
   computeFnDepSegment,
@@ -346,7 +345,6 @@ export function analyzeFileUncachedInner(
 
   // @nudo:mock 已编译为 Abs seed 注入（mockDirectivesToAbsSeeds）；无 TypeValue applyMocks。
   const selfContained = isSelfContainedSource(source, envNames);
-  const canAbsModules = absModulesOk(source, envNames);
 
   /** B 已上报的模块加载问题种类（压 TypeValue 叠报） */
   const evalModuleIssueKinds = new Set<ModuleGraphIssues[number]["kind"]>();
@@ -445,7 +443,9 @@ export function analyzeFileUncachedInner(
   if (evalHosted && evalTopCallRecords.length > 0) {
     callRecords.length = 0;
     callRecords.push(...evalTopCallRecords);
-  } else if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
+  } else if (absCallRecords.length > 0) {
+    // 评审发现 8：absModulesOk 恒真（历史 gate 已死）——此分支不再被
+    // selfContained 门控；B 模块图对所有源可用（env 由 loadEnvs 处理）。
     callRecords.length = 0;
     callRecords.push(...absCallRecords);
   } else if (evalTopCallRecords.length > 0) {
@@ -467,7 +467,6 @@ export function analyzeFileUncachedInner(
     fnDepSeg,
     evalHosted,
     selfContained,
-    canAbsModules,
     pushMemberDiag: pushBMemberDiag,
     diagnostics,
     caseHints,
@@ -480,7 +479,7 @@ export function analyzeFileUncachedInner(
 
   // Abs 宿主补齐（T15）：B 未成功宿主时仍收集 Abs 绑定/节点表——
   // BindingInfo.abs / nodeAbsMap / hover / completions 不必等 B 成功。
-  if (!absNodesShared && !evalHosted && (selfContained || canAbsModules)) {
+  if (!absNodesShared && !evalHosted) {
     try {
       const collected = { binds: new Map<string, Abs>(), nodes: new Map<Node, Abs>() }; // fail-closed
       if (!absBindsShared) absBindsShared = collected.binds;

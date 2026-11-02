@@ -74,13 +74,6 @@ export function isSelfContainedSource(source: string, envNames: string[]): boole
   return !sourceHasModuleDependency(source);
 }
 
-/** Abs 模块图可处理：env 由 loadEnvs 处理（内置 + 预加载路径型） */
-export function absModulesOk(source: string, envNames: string[]): boolean {
-  void source;
-  void envNames;
-  return true;
-}
-
 
 
 

@@ -7,7 +7,7 @@
  * `c:/x` (FIX-RESIDUAL-4 — same identity as analysis-file-cache / L0 memo).
  */
 import type { Abs } from "@nudojs/core";
-import { stablePathKey } from "@nudojs/core/internal";
+import { BoundedLruMap, stablePathKey } from "@nudojs/core/internal";
 // 单一真值源：analysis 面直接取 analyzer-types 的 FunctionAnalysis（此前
 // 手工镜像全字段，已两次漂移：externalEvidence / CaseResult.source）。
 // 两处均为 types-only 导入——emit 后消失，本模块运行时仍是叶子（不环入
@@ -28,7 +28,7 @@ export type CachedFnAnalysis = {
   callRecords: CallRecord[];
 };
 
-const fnAnalysisCache = new Map<string, CachedFnAnalysis>();
+const fnAnalysisCache = new BoundedLruMap<CachedFnAnalysis>(getSessionCacheLimits().maxFns);
 
 /** 键首段（filePath）过 stablePathKey：跨盘符形态命中/逐出一致 */
 function normalizeFnCacheKey(key: string): string {
@@ -49,39 +49,22 @@ export function clearFnAnalysisCache(): void {
 
 /** 立刻压到当前 maxFns（调低上限时收内存） */
 export function trimFnAnalysisCache(): void {
-  const max = getSessionCacheLimits().maxFns;
-  while (fnAnalysisCache.size > max) {
-    const oldest = fnAnalysisCache.keys().next().value;
-    if (oldest === undefined) break;
-    fnAnalysisCache.delete(oldest);
-  }
+  fnAnalysisCache.setMax(getSessionCacheLimits().maxFns);
 }
 
 export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
-  // 0 = 关闭：读路径也 miss（与 BoundedLruMap max<=0 口径一致）
+  // 0 = 关闭：读路径也 miss（上限可动态调低而未触发 trim，条目仍在表里）
   if (getSessionCacheLimits().maxFns <= 0) return undefined;
-  const k = normalizeFnCacheKey(key);
-  const hit = fnAnalysisCache.get(k);
-  if (hit !== undefined) {
-    fnAnalysisCache.delete(k);
-    fnAnalysisCache.set(k, hit);
-  }
-  return hit;
+  // BoundedLruMap.get：命中刷新 MRU
+  return fnAnalysisCache.get(normalizeFnCacheKey(key));
 }
 
 export function fnAnalysisCacheSet(key: string, value: CachedFnAnalysis): void {
   const max = getSessionCacheLimits().maxFns;
   if (max <= 0) return;
-  const k = normalizeFnCacheKey(key);
-  // Only evict when inserting a new key; overwrite of an existing key keeps LRU size
-  while (fnAnalysisCache.size >= max && !fnAnalysisCache.has(k)) {
-    const oldest = fnAnalysisCache.keys().next().value;
-    if (oldest === undefined) break;
-    fnAnalysisCache.delete(oldest);
-  }
-  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
-  fnAnalysisCache.delete(k);
-  fnAnalysisCache.set(k, value);
+  // 上限动态（env / 显式层随时可变）：写前对齐（setMax 幂等，顺带压超限）
+  fnAnalysisCache.setMax(max);
+  fnAnalysisCache.set(normalizeFnCacheKey(key), value);
 }
 
 /**
