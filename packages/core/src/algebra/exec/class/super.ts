@@ -24,6 +24,7 @@ import { errorTypeAbs } from "../may-throw.ts";
 import { NudoThrow } from "../runtime.ts";
 import {
   getEvalClass,
+  resolveChainSpec,
   lookupClassValue,
   classSpecOfAbs,
   type EvalClassSpec,
@@ -150,8 +151,7 @@ function superMethodAbsent(parentName: string, method: string, parentSpec?: Eval
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
-    const spec: EvalClassSpec | undefined =
-      pending && pending.name === cur ? pending : getEvalClass(cur);
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     if (!spec) return false; // 链洞（宿主 / 未注册父名）⇒ 不可判
     // fn 伪父：父是普通函数值（原型面不受注册表管）⇒ 不可判
@@ -208,7 +208,9 @@ export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = pending && pending.name === cur ? pending : getEvalClass(cur);
+    // 显式注解断开推断环（TS7022，同 superMethodAbsent；游标原语见
+    // class-registry.ts resolveChainSpec）
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     if (!spec) return unknown; // 宿主/未注册基类：原型面不可枚举 → 链开
     // Bug 266：`super.constructor` = **父类构造器本身**（原生父类原型上的

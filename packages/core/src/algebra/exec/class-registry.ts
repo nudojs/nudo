@@ -231,6 +231,23 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
 }
 
 /**
+ * BUG-172 继承链图化·游标原语：链上每一环的规格解析——先用**上一环的
+ * superSpec 引用**（定义期解析的父规格身份；名字吻合才用，多模块同名
+ * 父类不串味），无引用（内建父 / fn 伪父 / 手写注册面）才按名牌回表
+ * 兑底。原为 super.ts / declare.ts / 本文件游标循环里的同形四连抄。
+ *
+ * 返回类型**显式注解**断开 TS7022 推断环（superSpec 引用链上
+ * pending↔spec 循环推断——本仓历史事故）；调用点的中间 const 同样须
+ * 显式标注 `EvalClassSpec | undefined`，不依赖推断。
+ */
+export function resolveChainSpec(
+  cur: string,
+  pending: EvalClassSpec | undefined,
+): EvalClassSpec | undefined {
+  return pending !== undefined && pending.name === cur ? pending : getEvalClass(cur);
+}
+
+/**
  * Bug 365：kind 名是否属于 **Error 家族**（内建错误名 + **用户自定义
  * Error 子类**）。
  *
@@ -256,9 +273,7 @@ export function isErrorFamilyKind(kind: string): boolean {
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     if (Object.hasOwn(BUILTIN_ERROR_SUPER, cur)) return true;
-    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
-    const spec: EvalClassSpec | undefined =
-      pending && pending.name === cur ? pending : classRegistry.get(cur);
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     if (!spec) return false;
     cur = spec.superName;
@@ -372,9 +387,7 @@ export function classChainHasJsonUserFace(name: string): boolean {
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    // 显式注解断开推断环（TS7022，同 isErrorFamilyKind）
-    const spec: EvalClassSpec | undefined =
-      pending && pending.name === cur ? pending : classRegistry.get(cur);
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     if (spec?.methods?.["toJSON"]) return true;
     cur = spec?.superName;

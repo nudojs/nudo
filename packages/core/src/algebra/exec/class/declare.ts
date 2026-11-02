@@ -44,6 +44,7 @@ import {
   lookupClassValue,
   markClassValue,
   getEvalClass,
+  resolveChainSpec,
   attachClassSpec,
   classSpecOfAbs,
   ensureFnParentName,
@@ -326,16 +327,10 @@ export function $class(
     } else {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
-  } else if (extVal !== undefined) {
-    // 无 hasExtends 的旧调用面：原归一化（brand / 宿主函数 / 字符串）
-    if (typeof extVal === "string") superName = extVal;
-    else if (isAbsLike(extVal)) {
-      const s = (extVal as Abs).shape;
-      superName = s.k === "brand" ? s.name : undefined;
-    } else if (typeof extVal === "function") {
-      superName = (extVal as { name?: string }).name;
-    }
   }
+  // 无 hasExtends 的旧调用面（brand/宿主函数/字符串归一化）已删：唯一
+  // extends 发射面 transpile/class-emit.ts 始终与 hasExtends: true 成对
+  // 发射；手写 spec（测试 / mock 桥）不传 extends。
   const full: EvalClassSpec = {
     name,
     superName,
@@ -549,9 +544,9 @@ export function findMethod(
   let pending: EvalClassSpec | undefined = startSpec;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    // 双查点优先序：superSpec 引用 → superName 名牌回表
-    const spec: EvalClassSpec | undefined =
-      pending && pending.name === cur ? pending : getEvalClass(cur);
+    // 双查点优先序：superSpec 引用 → superName 名牌回表（游标原语见
+    // class-registry.ts resolveChainSpec；显式注解断 TS7022 推断环）
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     // Bug 90：own-property 取值——宿主 Object.prototype 继承名不得命中
     const m = ownMember(spec?.methods, method);
@@ -641,9 +636,9 @@ export function findStaticMethod(
   let pending: EvalClassSpec | undefined = startSpec;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环推断）
-    const spec: EvalClassSpec | undefined =
-      pending && pending.name === cur ? pending : getEvalClass(cur);
+    // 显式注解断开推断环（TS7022：superSpec 引用链上 pending↔spec 循环
+    // 推断）；游标原语见 class-registry.ts resolveChainSpec
+    const spec: EvalClassSpec | undefined = resolveChainSpec(cur, pending);
     pending = spec?.superSpec;
     // Bug 260：own 静态槽遮蔽继承的静态方法
     const own = ownStaticSlotOf(cur, method);
@@ -686,7 +681,8 @@ export function chainHasStaticMember(startName: string, key: string, startSpec?:
   // 引用（定义期身份；名字吻合才用），无引用才按名牌回表。
   let pending: EvalClassSpec | undefined = startSpec;
   for (const n of evalClassChain(startName)) {
-    const spec = pending && pending.name === n ? pending : getEvalClass(n);
+    // 显式注解断开推断环（TS7022，同 findMethod）
+    const spec: EvalClassSpec | undefined = resolveChainSpec(n, pending);
     pending = spec?.superSpec;
     // Bug 90：own-property 取值（含 `key in statics` → hasOwn——`in` 走
     // 原型链，宿主 Object.prototype 名恒真）
@@ -713,7 +709,8 @@ export function instanceOwnFaceHasMember(recv: Abs, brandName: string, key: stri
   // 沿 superSpec 引用链，无引用按名牌回表（与 findMethod 同口径）。
   let pending: EvalClassSpec | undefined = classSpecOfAbs(recv);
   for (const n of evalClassChain(brandName)) {
-    const spec = pending && pending.name === n ? pending : getEvalClass(n);
+    // 显式注解断开推断环（TS7022，同 findMethod）
+    const spec: EvalClassSpec | undefined = resolveChainSpec(n, pending);
     pending = spec?.superSpec;
     if (spec?.instanceFields?.some((f) => f.name === key)) return true;
   }
