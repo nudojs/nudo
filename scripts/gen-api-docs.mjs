@@ -167,10 +167,12 @@ function lookupDef(src, name) {
   const kw = m[1].replace(/\s+/g, " ");
   const start = m.index;
   const jsdoc = jsdocBefore(src, start);
-  const kind = kw === "type" || kw === "interface" ? "type" : kw === "const" || kw === "let" || kw === "var" ? "const" : "fn";
+  let kind = kw === "type" || kw === "interface" ? "type" : kw === "const" || kw === "let" || kw === "var" ? "const" : "fn";
 
   // Signature: only when easily extractable (see task notes).
   const sig = extractSignature(src, start, name, kind);
+  // const + 显式函数类型注解（工厂产物）按 fn 呈现，与 function 导出同格。
+  if (kind === "const" && sig && sig.includes("=>")) kind = "fn";
   return { kind, summary: jsdoc ? jsdocFirstSentence(jsdoc) : null, signature: sig, name };
 }
 
@@ -224,6 +226,29 @@ function extractSignature(src, start, name, kind) {
     return sig;
   }
 
+  if (kw === "const" || kw === "let" || kw === "var") {
+    // 显式类型注解的 const（工厂产物）：`export const NAME: <type> = init`。
+    // 函数类型注解给完整签名；其余维持旧口径 `const NAME`（末尾兜底分支已并入）。
+    let j = i + name.length;
+    if (src[j] !== ":") return `${kw} ${name}`;
+    let depth = 0;
+    let k = j;
+    for (; k < src.length; k++) {
+      const c = src[k];
+      if (c === "=" && src[k + 1] === ">") {
+        k++; // `=>` 是箭头 token：既不是赋值断点也不是闭合器
+        continue;
+      }
+      if (c === "(" || c === "<" || c === "{" || c === "[") depth++;
+      else if (c === ")" || c === ">" || c === "}" || c === "]") depth--;
+      else if (c === "=" && depth === 0) break;
+    }
+    if (k >= src.length) return `${kw} ${name}`;
+    const flat = flatten(src.slice(j + 1, k));
+    if (!/^[(<]/.test(flat) && !flat.includes("=>")) return `${kw} ${name}`;
+    return `${name}: ${flat}`;
+  }
+
   if (kw === "type" || kw === "interface" || kw === "class" || kw === "abstract class") {
     // name + optional heritage/body — keep balanced, cut at top-level `;`
     let j = i + name.length;
@@ -261,9 +286,6 @@ function extractSignature(src, start, name, kind) {
     return sig;
   }
 
-  if (kw === "const" || kw === "let" || kw === "var") {
-    return `${kw} ${name}`;
-  }
   return null;
 }
 

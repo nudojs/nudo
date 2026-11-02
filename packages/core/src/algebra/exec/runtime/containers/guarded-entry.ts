@@ -46,7 +46,7 @@ function guardedEntry<A, Args extends unknown[], R>(
  * 折成继承来的原型函数（BUG-001 的自信错值），并吃掉 TypedArray 的
  * 「长度未建模 ⇒ 元素 ∪ undefined」诚实臂。
  */
-export const $idx = guardedEntry(
+export const $idx: (a: Abs, i: Abs, opts?: { silent?: boolean }) => Abs = guardedEntry(
   assertThisAccessible,
   function idxAccessorSplit(a: Abs, i: Abs, opts?: { silent?: boolean }): Abs {
     const sh = (a as Abs)?.shape;
@@ -118,10 +118,25 @@ export const $iterCheck = guardedEntry(guardIteratorSlot, $iterCheckInner);
  * BUG-173：`this` 访问门（派生构造器 super() 之前访问 ⇒ 原生 ReferenceError）。
  * `$get` / `$set` 是成员读写的主通道；构造器体的 this 未被 super() 标记时
  * 在此硬抛（`constructClass` 在派生类构造器体执行期间登记）。
+ * （显式函数类型注解：api 文档签名面——工厂产物无注解时生成器只能给裸 const。）
  */
-export const $get = guardedEntry(assertThisAccessible, $getInner);
+export const $get: (
+  o: Abs,
+  key: string,
+  opts?: Parameters<typeof $getInner>[2],
+  receiver?: Parameters<typeof $getInner>[3],
+) => ReturnType<typeof $getInner> = guardedEntry(assertThisAccessible, $getInner);
 
-export const $set = guardedEntry(assertThisAccessible, $setInner);
+export const $set: (
+  o: Abs,
+  key: string,
+  value: Abs,
+  opts?: Parameters<typeof $setInner>[3],
+) => ReturnType<typeof $setInner> = guardedEntry(assertThisAccessible, $setInner);
 
 /** BUG-173：计算键写入口的 `this` 访问门（`this[k] = v` 不走 `$set`）。 */
-export const $idxSet = guardedEntry(assertThisAccessible, $idxSetInner);
+export const $idxSet: (
+  o: Abs,
+  i: Abs,
+  v: Abs,
+) => ReturnType<typeof $idxSetInner> = guardedEntry(assertThisAccessible, $idxSetInner);

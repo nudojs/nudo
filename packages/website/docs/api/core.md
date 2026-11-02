@@ -336,9 +336,9 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
 | <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
-| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: Parameters<typeof $getInner>[2], receiver?: Parameters<typeof $getInner>[3], ): ReturnType<typeof $getInner>` |
-| <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
-| <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(o: Abs, i: Abs, v: Abs): Abs` |
+| <a id="$get"></a>`$get` | fn | object / member runtime | `$get: ( o: Abs, key: string, opts?: Parameters<typeof $getInner>[2], receiver?: Parameters<typeof $getInner>[3], ) => ReturnType<typeof $getInner>` |
+| <a id="$idx"></a>`$idx` | fn | array runtime | `$idx: (a: Abs, i: Abs, opts?: { silent?: boolean }) => Abs` |
+| <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet: ( o: Abs, i: Abs, v: Abs, ) => ReturnType<typeof $idxSetInner>` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
 | <a id="$join"></a>`$join` | fn | operator runtime | `$join(a: Abs, b: Abs): Abs` |
@@ -355,7 +355,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
-| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: Parameters<typeof $setInner>[3], ): ReturnType<typeof $setInner>` |
+| <a id="$set"></a>`$set` | fn | object / member runtime | `$set: ( o: Abs, key: string, value: Abs, opts?: Parameters<typeof $setInner>[3], ) => ReturnType<typeof $setInner>` |
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
@@ -466,7 +466,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalmathmethod"></a>`evalMathMethod` | fn | — | `evalMathMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalnamespacecall"></a>`evalNamespaceCall` | fn | 命名空间静态分派。Bug 311：thisVal = 静态方法值的 this 绑定（成员读出的 静态方法被单独调用时的接收者，如 `Promise.resolve.call(null, 1)`）； 缺席 = 直接命名空间调用（this ≡ 命名空间构造器，合法）。 | `evalNamespaceCall( ns: string, method: string, args: Abs[], thisVal?: Abs, ): Abs \| undefined` |
 | <a id="evalnumberstatic"></a>`evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
+| <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | — | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectprotomethod"></a>`evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalposrecord"></a>`EvalPosRecord` | type | 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）： (1-based 行, 0-based 列) → 该位置表达式求值态 Abs | `EvalPosRecord = { line: number; column: number; abs: Abs; }` |
 | <a id="evalpromisector"></a>`evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
