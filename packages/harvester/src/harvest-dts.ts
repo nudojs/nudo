@@ -983,18 +983,22 @@ function resolveIfaceDecls(
     seen.add(d);
     out.push(d);
   };
-  if (qualified) {
-    // 相对解析（引用点在命名空间里）：内层优先，命中即止（TS 的名字遮蔽）
-    if (refNs && refNs.length > 0) {
-      for (let i = refNs.length - 1; i >= 0; i--) {
-        const rel = [...refNs.slice(0, i + 1), name].join(".");
-        const decls = ctx.qualifiedInterfaces.get(rel);
-        if (decls && decls.length > 0) {
-          for (const d of decls) add(d);
-          return out;
-        }
+  // 相对解析（引用点在命名空间链里**内层优先**、命中即止——TS 的名字遮蔽）：
+  // qualified 臂与短名臂同款，单源。
+  const addRelativeNsHit = (): boolean => {
+    if (!refNs || refNs.length === 0) return false;
+    for (let i = refNs.length - 1; i >= 0; i--) {
+      const rel = [...refNs.slice(0, i + 1), name].join(".");
+      const decls = ctx.qualifiedInterfaces.get(rel);
+      if (decls && decls.length > 0) {
+        for (const d of decls) add(d);
+        return true;
       }
     }
+    return false;
+  };
+  if (qualified) {
+    if (addRelativeNsHit()) return out;
     // 绝对限定名
     for (const d of ctx.qualifiedInterfaces.get(name) ?? []) add(d);
     // 短名回退：**只**认 ambient 模块块里的模块增强声明（lodash 形态）。
@@ -1005,16 +1009,7 @@ function resolveIfaceDecls(
     return out;
   }
   // 短名：引用点所在命名空间优先（内层优先；命中即止）
-  if (refNs && refNs.length > 0) {
-    for (let i = refNs.length - 1; i >= 0; i--) {
-      const rel = [...refNs.slice(0, i + 1), name].join(".");
-      const decls = ctx.qualifiedInterfaces.get(rel);
-      if (decls && decls.length > 0) {
-        for (const d of decls) add(d);
-        return out;
-      }
-    }
-  }
+  if (addRelativeNsHit()) return out;
   // 全局短名：只认**不在命名空间里**的声明（命名空间里的同名接口不再互相并入）
   for (const d of ctx.interfaces.get(name) ?? []) {
     if (namespaceChainOf(d).length === 0) add(d);
@@ -2788,6 +2783,16 @@ function collectInferNames(node: ts.TypeNode, out = new Set<string>()): Set<stri
 type ExtendsResult = "true" | "false" | "unknown";
 
 /**
+ * sum 成员折叠（`es.k === "sum"` 两处同款，单源）：任一 `"true"` →
+ * `"true"`；全 `"false"` → `"false"`；否则 `"unknown"`。
+ */
+function foldSumFlags(flags: ExtendsResult[]): ExtendsResult {
+  if (flags.some((f) => f === "true")) return "true";
+  if (flags.every((f) => f === "false")) return "false";
+  return "unknown";
+}
+
+/**
  * Abs 层 `extends` 判定（TS 语义：**可赋值性**，三分支）。
  *
  * - `"true"`：确定成立
@@ -2827,10 +2832,7 @@ function absExtends(check: Abs, ext: Abs, depth = 0): ExtendsResult {
       return typeof cLit === es.type ? "true" : "false";
     }
     if (es.k === "sum") {
-      const flags = es.members.map((m) => absExtends(check, m, depth + 1));
-      if (flags.some((f) => f === "true")) return "true";
-      if (flags.every((f) => f === "false")) return "false";
-      return "unknown";
+      return foldSumFlags(es.members.map((m) => absExtends(check, m, depth + 1)));
     }
     if (es.k === "unknown") return "true"; // extends unknown
     if (es.k === "never") return "false";
@@ -2864,10 +2866,7 @@ function absExtends(check: Abs, ext: Abs, depth = 0): ExtendsResult {
     return "false";
   }
   if (es.k === "sum") {
-    const flags = es.members.map((m) => absExtends(check, m, depth + 1));
-    if (flags.some((f) => f === "true")) return "true";
-    if (flags.every((f) => f === "false")) return "false";
-    return "unknown";
+    return foldSumFlags(es.members.map((m) => absExtends(check, m, depth + 1)));
   }
   if (cs.k === "sum") {
     const flags = cs.members.map((m) => absExtends(m, ext, depth + 1));
