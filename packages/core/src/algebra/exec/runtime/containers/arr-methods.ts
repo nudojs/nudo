@@ -56,9 +56,12 @@ export function isArrMutator(name: string): boolean {
  * C1.4 语句重绑：返回**变更后容器** Abs（不是 JS 返回值）。
  * `a.pop()` 语句应把 `a` 绑成去掉末元的 tuple，而不是被移除的元素。
  */
-/** ToIntegerOrInfinity（±Infinity 保持）；返回：数字=可折叠 / null=实参不可判定 / undefined=缺省或显式 undefined（取默认值） */
-export function toIOI(v: Abs | undefined): number | null | undefined {
-  if (v === undefined) return undefined; // 实参缺省（数组越界）
+/** ToIntegerOrInfinity 数值判定**核**（单一事实源，私有）：只判「在位实参」——
+ *  显式 undefined 字面量 → undefined；可折叠 → number；不可判定 → null。
+ *  「实参缺省」不在此层（缺省是 toIOIArg 的第四态，见下）——公开面两个
+ *  帮手都从本核派生，toIOIArg 不再经 toIOI 的缺省折叠（原拓扑里它依赖
+ *  「toIOI 对显式 undefined 折 undefined」这一隐性口径）。 */
+function ioiNumberOf(v: Abs): number | null | undefined {
   const lvR = litValue(v);
   const lv = lvR.ok ? lvR.value : undefined;
   if (lv === undefined) {
@@ -79,6 +82,14 @@ export function toIOI(v: Abs | undefined): number | null | undefined {
   return null; // bigint/symbol/抽象 → 不可判定
 }
 
+/** 三态折叠面（缺省与显式 undefined 同折——copyWithin/fill 族取默认值语义）：
+ *  数字=可折叠 / null=实参不可判定 / undefined=缺省或显式 undefined（取默认值）。
+ *  需要**区分**缺省与显式 undefined 的面（splice/lastIndexOf/toSpliced）用 toIOIArg。 */
+export function toIOI(v: Abs | undefined): number | null | undefined {
+  if (v === undefined) return undefined; // 实参缺省（数组越界）
+  return ioiNumberOf(v);
+}
+
 /**
  * Bug 270 / 1051：ToIntegerOrInfinity 实参的**四态**（缺省 / 显式 undefined /
  * 数值 / 不可判定）。
@@ -91,8 +102,8 @@ export function toIOI(v: Abs | undefined): number | null | undefined {
  *   skipCount 在场（undefined ⇒ 0）⇒ **不删**；`toSpliced(0)` ⇒ skipCount 缺省
  *   ⇒ 删到尾。
  *
- * 本函数在 `toIOI` 的数值判定之上只补「实参在不在 + 显式 undefined ⇒ 0」这一维
- * （`toIOI` 仍是数值判定的单一事实源，不重造 ToIntegerOrInfinity）。
+ * 本函数在数值判定核（`ioiNumberOf`）之上补「实参在不在 + 显式 undefined ⇒ 0」
+ * 这一维（数值判定不重造 ToIntegerOrInfinity）。
  */
 export type ToIOIArg =
   | { kind: "absent" }
@@ -101,9 +112,9 @@ export type ToIOIArg =
 
 export function toIOIArg(v: Abs | undefined): ToIOIArg {
   if (v === undefined) return { kind: "absent" };
-  const ioi = toIOI(v);
+  const ioi = ioiNumberOf(v);
   if (ioi === null) return { kind: "unknown" };
-  // toIOI 对「显式 undefined 字面量」返回 undefined ⇒ ToIntegerOrInfinity(undefined) = 0
+  // 显式 undefined 字面量 ⇒ ToIntegerOrInfinity(undefined) = 0
   if (ioi === undefined) return { kind: "num", n: 0 };
   return { kind: "num", n: ioi };
 }

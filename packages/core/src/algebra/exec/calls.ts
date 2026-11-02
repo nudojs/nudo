@@ -11,7 +11,10 @@ import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
 import { $call, routeApplyThrows, clearPureMemo, joinThrowsSince } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
-import { setHostGlobalFnCall } from "./runtime/state.ts";
+// 环参与方直接 import hooks 叶子（不经 state.ts 再导出）：本模块加载期
+// 顶层注册时，state.ts 在环上可能尚未执行到其 re-export 行（与 invoke.ts
+// 的 setProtoMethodDispatch 同一加载序事故形态）。hooks 零依赖，恒可用。
+import { setHostGlobalFnCall } from "./hooks.ts";
 import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";

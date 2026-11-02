@@ -13,7 +13,7 @@
  * deleteProtoMethod 钩子）；delete 返回值恒 true（原生同）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
+import { abs, bool, boolLit, litValue, strLit, unknown } from "../../abs.ts";
 import { lit } from "../../term.ts";
 
 import { pTrue } from "../../pred.ts";
@@ -29,6 +29,11 @@ import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 // 族 57 · 第 6 条 ②：符号键的**槽寻址键**（well-known → "@@X"；用户符号 →
 // "@@sym#<身份 id>"）——普通对象面的符号槽寻址单一事实源（片 W7 建）。
 import { symbolSlotKeyOf } from "./containers/symbol-slot.ts";
+// guardedPrologueEntry（Bug 219 序言短路工厂）：加载序安全——本文件经
+// guarded-entry → containers/member.ts 成环，但环上对 members.ts 的引用
+// 全在函数体内延迟解引用（member.ts 头注释「延迟解析」口径），工厂与
+// $in/$del/$delRes 全是运行期调用。
+import { guardedPrologueEntry } from "./containers/guarded-entry.ts";
 import { arrayLengthIsNonConfigurable } from "./array-length.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
@@ -222,20 +227,22 @@ function enforceProxyHasInvariant(proxy: Abs, key: string): void {
 // --- in / instanceof / delete（transpile 运算符路由） ---
 
 /**
- * Bug 219（DEC-006 B/C）：接收者位是否漏进了**宿主真值**。
- *
- * 转译层把 `globalThis` / `process` / `Math` / `JSON` … 这类自由标识符**原样**
- * 当接收者发射（它们不是 Abs——没有 `.shape`）。`$get`（containers/member.ts
- * 的 `getHostMember`）、`$set`/`$len`/`$idx`/`$idxSet` 都已有非-Abs 守卫，
- * 唯独 `$in` / `$del` / `$delRes` 三个入口直接读 `o.shape.k` ⇒
- * `TypeError: Cannot read properties of undefined (reading 'k')` ⇒ 引擎裸崩
- * ⇒ 回落 `internal` ⇒ **整个模块 fail-closed** ⇒ 对完全合法的
- * `"x" in globalThis` / `delete globalThis.x` 判红（同语义的读/写却不崩）。
- *
- * 口径与 `$set` 同款：非 Abs 接收者 **fail-closed**，禁止读 `.shape` 炸宿主。
+ * Bug 219 / DEC-006：in/delete 族 sum 接收者的逐成员分派——nullish 成员
+ * （null|obj 等 union）只 may 抛（守卫分支走非空侧）⇒ 该成员折 boolean +
+ * may-throw；空 sum 成员 join 无单位元，不得裸 reduce（→ unknown）。
+ * `$in` / `$delRes` 的序言共用（`$del` 写回通道的 sum 分支不记 may-throw、
+ * conf 降 partial，不经此）。非-Abs fail-closed / isAbsLike 判定面在
+ * guardedPrologueEntry 工厂（containers/guarded-entry.ts，Bug 219）。
  */
-function isNonAbsReceiver(o: unknown): boolean {
-  return !isAbsLike(o);
+function mapSumReceiver(members: Abs[], cause: string, f: (m: Abs) => Abs): Abs {
+  const parts = members.map((m) => {
+    if (isNullishLitAbs(m)) {
+      recordMayThrow({ kind: "TypeError", cause });
+      return bool();
+    }
+    return f(m);
+  });
+  return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
 }
 
 /**
@@ -243,33 +250,39 @@ function isNonAbsReceiver(o: unknown): boolean {
  * 数组下标/length、class 方法/访问器与内建 brand 方法/访问器）；
  * prim/nullish 接收者原生抛 TypeError →
  * unknown；抽象键/开形状 → boolean。
+ *
+ * 接收者序言（Bug 219 非-Abs fail-closed + prim/never/nullish 硬抛 +
+ * sum 逐成员分派）统一经 guardedPrologueEntry 工厂
+ * （containers/guarded-entry.ts；接收者是**第二**实参）。
  */
-export function $in(key: Abs, o: Abs): Abs {
+export const $in: (key: Abs, o: Abs) => Abs = guardedPrologueEntry(
+  1,
   // Bug 219：宿主真对象接收者（globalThis 等）键集不可判 ⇒ unknown
   // （原生 `"x" in globalThis` 合法；引擎不得因此崩）。
-  if (isNonAbsReceiver(o)) return unknown;
-  if (o.shape.k === "sum") {
-    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
-    // nullish 成员（null|obj 等 union）：整体只 may 抛（守卫分支只读非空侧）
-    // → 该成员折 boolean + may-throw，不得 definite 硬抛。
-    const parts = o.shape.members.map((m) => {
-      if (isNullishLitAbs(m)) {
-        recordMayThrow({
-          kind: "TypeError",
-          cause: "'in' on nullish (union arm): receiver may be a non-object",
-        });
-        return bool();
-      }
-      return $in(key, m);
-    });
-    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
-  }
-  // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）。
-  // 确定非对象 → hard NudoThrow（tier 1，调用边界收成 throws），
-  // 不得折 unknown 假「不抛」。
-  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
+  () => unknown,
+  (o, [key]) => {
+    if (o.shape.k === "sum") {
+      // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
+      // nullish 成员（null|obj 等 union）：整体只 may 抛（守卫分支只读非空侧）
+      // → 该成员折 boolean + may-throw，不得 definite 硬抛。
+      return mapSumReceiver(
+        o.shape.members,
+        "'in' on nullish (union arm): receiver may be a non-object",
+        (m) => $in(key!, m),
+      );
+    }
+    // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）。
+    // 确定非对象 → hard NudoThrow（tier 1，调用边界收成 throws），
+    // 不得折 unknown 假「不抛」。
+    if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return undefined;
+  },
+  inInner,
+);
+
+function inInner(key: Abs, o: Abs): Abs {
   // any（无约束值）可能是 prim/nullish → may TypeError。接收者效应与键形态
   // 无关（Bug 6：抽象/symbol 键此前在下方键分类早退，漏记本臂）；unknown 是
   // 引擎 fail-closed 令牌（不进 throws 域，与 member-diag 的 unknown-recv
@@ -1599,31 +1612,37 @@ export function $classExpr(name?: string): Abs {
  * nullish 接收者原生 definite TypeError（ToObject(null) 抛）→ hard NudoThrow；
  * 非 nullish prim 接收者原生不抛（装箱临时对象上 delete 恒 true，strict 亦然）
  * → 保持 unknown 折叠；any/unknown 接收者可能 nullish → may TypeError。
+ *
+ * 接收者序言（Bug 219 非-Abs fail-closed + nullish/never 硬抛 + prim 折
+ * unknown + sum 逐成员分派）统一经 guardedPrologueEntry 工厂
+ * （containers/guarded-entry.ts；与 $in/$del 同款）。
  */
-export function $delRes(o: Abs, _key: Abs): Abs {
+export const $delRes: (o: Abs, _key: Abs) => Abs = guardedPrologueEntry(
+  0,
   // Bug 219：非 Abs 宿主接收者 ⇒ 删除结果不可判（unknown），不得读 .shape 炸宿主
-  if (isNonAbsReceiver(o)) return unknown;
-  if (isNullishLitAbs(o) || o.shape.k === "never") {
-    throw new NudoThrow(errorTypeAbs("TypeError"));
-  }
-  if (o.shape.k === "prim") {
-    return unknown;
-  }
-  if (o.shape.k === "sum") {
-    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
-    // nullish 成员（null|obj union）：整体只 may 抛 → boolean + may-throw。
-    const parts = o.shape.members.map((m) => {
-      if (isNullishLitAbs(m)) {
-        recordMayThrow({
-          kind: "TypeError",
-          cause: "delete on nullish (union arm): receiver may be nullish",
-        });
-        return bool();
-      }
-      return $delRes(m, _key);
-    });
-    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
-  }
+  () => unknown,
+  (o, [, _key]) => {
+    if (isNullishLitAbs(o) || o.shape.k === "never") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    if (o.shape.k === "prim") {
+      return unknown;
+    }
+    if (o.shape.k === "sum") {
+      // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
+      // nullish 成员（null|obj union）：整体只 may 抛 → boolean + may-throw。
+      return mapSumReceiver(
+        o.shape.members,
+        "delete on nullish (union arm): receiver may be nullish",
+        (m) => $delRes(m, _key!),
+      );
+    }
+    return undefined;
+  },
+  delResInner,
+);
+
+function delResInner(o: Abs, _key: Abs): Abs {
   const st = extStateOf(o);
   const kvR = litValue(_key);
   const kv = kvR.ok ? kvR.value : undefined;
@@ -1693,11 +1712,31 @@ export function $delRes(o: Abs, _key: Abs): Abs {
  * 闭对象删自有槽；tuple 规范下标置 undefined（对齐原生空洞读值）；
  * 抽象 arr 元素并入 undefined；数组 length 不可配置 → strict 定抛
  * TypeError（Bug 230）；无法表达的形态原样返回。
+ *
+ * 接收者序言（Bug 219 非-Abs fail-closed（原样透传——写回通道
+ * `o = $del(o, k)` 重绑回原值）+ sum 逐成员递归）统一经
+ * guardedPrologueEntry 工厂（containers/guarded-entry.ts）。
  */
-export function $del(o: Abs, key: Abs): Abs {
+export const $del: (o: Abs, key: Abs) => Abs = guardedPrologueEntry(
+  0,
   // Bug 219：非 Abs 宿主接收者 ⇒ 删除是自赋值 no-op（写回通道
   // `o = $del(o, k)` 重绑回原值），不得读 .shape 炸宿主
-  if (isNonAbsReceiver(o)) return o;
+  (o) => o as Abs,
+  (o, [, key]) => {
+    if (o.shape.k === "sum") {
+      return abs(
+        { k: "sum", members: o.shape.members.map((m) => $del(m, key!)) },
+        undefined,
+        undefined,
+        "partial",
+      );
+    }
+    return undefined;
+  },
+  delInner,
+);
+
+function delInner(o: Abs, key: Abs): Abs {
   // ToPropertyKey：null/undefined/boolean → "null"/"undefined"/"true"
   //
   // 族 57 · 第 6 条 ②（外-02 符号键槽寻址 · 第二半）：符号键的槽寻址键用
@@ -1705,14 +1744,6 @@ export function $del(o: Abs, key: Abs): Abs {
   // ——此前 propertyKeyOf(symbol) 恒 undefined ⇒ obj 臂整段跳过 ⇒ 符号槽
   // **删不掉**（原生 `delete o[Symbol.iterator]` 把槽删掉）。
   const keyStr = propertyKeyOf(key) ?? symbolSlotKeyOf(key);
-  if (o.shape.k === "sum") {
-    return abs(
-      { k: "sum", members: o.shape.members.map((m) => $del(m, key)) },
-      undefined,
-      undefined,
-      "partial",
-    );
-  }
   // Bug 124：deleteProperty 陷阱优先于一切靶判定——陷阱在场时删除责任
   // 在陷阱（引擎不动靶）；falsy 字面量结果 strict 定抛（与 $delRes 同口径）；
   // absent → 靶语义（下方 brand 递归删靶槽）

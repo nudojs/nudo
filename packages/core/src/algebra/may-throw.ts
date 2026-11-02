@@ -8,13 +8,14 @@
  * errorTypeAbs 定居 ./error-type-abs.ts（真叶子：abs + invariants），
  * 此处 re-export 维持既有 import 面；super-access 等 class 面直接消费
  * 叶子（不经此，避免 exec/class-registry 反向环）。
- * 依赖面：仅 ./abs.ts 与 node:async_hooks（core 既有依赖，不引入新面）。
+ * 依赖面：./abs.ts、./collector-scope.ts（作用域原语，async_hooks 叶子）
+ * 与 ./exec/class-registry.ts（既有反向依赖）。
  */
 import type { Abs } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import { isErrorFamilyKind } from "./exec/class-registry.ts";
 import { errorTypeAbs } from "./error-type-abs.ts";
-import { AsyncLocalStorage } from "node:async_hooks";
+import { createScopedSlot } from "./collector-scope.ts";
 
 export { errorTypeAbs } from "./error-type-abs.ts";
 
@@ -36,26 +37,33 @@ type MayThrowCtx = {
   tryFrames: MayThrowEffect[][];
 };
 
-const mayThrowAls = new AsyncLocalStorage<MayThrowCtx>();
-/** 同步 fallback：未 enter ALS 时的进程级上下文 */
-let syncCtx: MayThrowCtx = { collector: null, tryFrames: [] };
+/**
+ * collector/tryFrames 的动态作用域槽（#8 作用域统一）：无作用域 = 模块级
+ * fallback（行为 = 旧 syncCtx 的进程级上下文）；会话入口 runFresh——嵌套
+ * 会话**全新隔离**（bridge-instance 的证据域口径：内层 collector=null ⇒
+ * 构造器软效果不进外层收集域）。
+ *
+ * **不**注册 registerCollectorScopeParticipant：collector-scope 的参与者
+ * 语义是继承（runScoped 以进入时值开 store），may-throw 会话的隔离单位
+ * 是会话本身（嵌套也全新）——注册会把「嵌套隔离」翻成「嵌套继承」，
+ * 改变既有语义。
+ *
+ * 旧实现的 syncCtx 模块级换写（body 同步段把 fallback 顶成会话对象）已
+ * 删：ALS.run 覆盖 body 整个同步延伸，同步段 getStore() 恒命中会话 store，
+ * 换写不可观测；body 返回 promise 时它被 finally 复原，异步续体沿 ALS 链
+ * 继承 store，也不走 fallback。
+ */
+const mayThrowSlot = createScopedSlot<MayThrowCtx>(
+  () => ({ collector: null, tryFrames: [] }),
+);
 
 function ctx(): MayThrowCtx {
-  return mayThrowAls.getStore() ?? syncCtx;
+  return mayThrowSlot.get();
 }
 
 /** 隔离一次分析的 may-throw 收集（check / analyzer 入口包一层） */
 export function runWithMayThrowSession<T>(body: () => T): T {
-  const session: MayThrowCtx = { collector: null, tryFrames: [] };
-  return mayThrowAls.run(session, () => {
-    const prev = syncCtx;
-    syncCtx = session;
-    try {
-      return body();
-    } finally {
-      syncCtx = prev;
-    }
-  });
+  return mayThrowSlot.runFresh(body);
 }
 
 export function setMayThrowCollector(

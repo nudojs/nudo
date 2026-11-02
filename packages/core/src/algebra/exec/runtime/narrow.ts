@@ -30,6 +30,31 @@ import { leqAbs } from "../../leq.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 
 /**
+ * sum 成员过滤共享尾（#12 收敛）：`step` 逐成员分类——返回 null 剔除该
+ * 成员（prune），返回原引用保留（keep），返回新 Abs 即成员精化（refine）。
+ * 无变化 / 全剪空 → 原样返回 a（臂不可达的保守近似）；单成员剪余塌缩
+ * （不包单元素 sum）。`$removeNullish` / `$removeNull` / `$removeUndefined`
+ * / `$narrowTypeOf` / `$removeMemberNullish` 五处剪影共用——此前五份
+ * filter + 三行尾逐字孪生（改一处漏四处的温床）。
+ */
+function filterSumMembers(a: Abs, step: (m: Abs) => Abs | null): Abs {
+  const members = (a.shape as { members: Abs[] }).members;
+  const kept: Abs[] = [];
+  let changed = false;
+  for (const m of members) {
+    const r = step(m);
+    if (r === null) {
+      changed = true;
+      continue;
+    }
+    if (r !== m) changed = true;
+    kept.push(r);
+  }
+  if (!changed || kept.length === 0) return a;
+  return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+}
+
+/**
  * `??` 非 nullish 臂：从左值 Abs 剥离 nullish 部分（$nullishTest 判 true
  * 的成员）。索引访问 `M[k]` 对抽象键产出 joinAbs(element, undef())，
  * 左值 sum 保留 undefined 臂；`l ?? fallback` 的 alt（非 nullish 路径）
@@ -43,11 +68,7 @@ export function $removeNullish(a: Abs): Abs {
   if (definitelyNotNullishShape(a.shape)) return a;
   if (isNullishLitAbs(a)) return a;
   if (a.shape.k === "sum") {
-    const members = (a.shape as { members: Abs[] }).members;
-    const kept = members.filter((m) => !isNullishLitAbs(m));
-    if (kept.length === members.length) return a;
-    if (kept.length === 0) return a;
-    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+    return filterSumMembers(a, (m) => (isNullishLitAbs(m) ? null : m));
   }
   return a;
 }
@@ -69,11 +90,7 @@ export function $removeNull(a: Abs): Abs {
   if (!isAbsLike(a)) return a;
   if (isNullLitAbs(a)) return a;
   if (a.shape.k === "sum") {
-    const members = (a.shape as { members: Abs[] }).members;
-    const kept = members.filter((m) => !isNullLitAbs(m));
-    if (kept.length === members.length) return a;
-    if (kept.length === 0) return a;
-    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+    return filterSumMembers(a, (m) => (isNullLitAbs(m) ? null : m));
   }
   return a;
 }
@@ -87,11 +104,7 @@ export function $removeUndefined(a: Abs): Abs {
   if (!isAbsLike(a)) return a;
   if (isUndefLitAbs(a)) return a;
   if (a.shape.k === "sum") {
-    const members = (a.shape as { members: Abs[] }).members;
-    const kept = members.filter((m) => !isUndefLitAbs(m));
-    if (kept.length === members.length) return a;
-    if (kept.length === 0) return a;
-    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+    return filterSumMembers(a, (m) => (isUndefLitAbs(m) ? null : m));
   }
   return a;
 }
@@ -118,20 +131,10 @@ export function $removeUndefined(a: Abs): Abs {
 export function $removeMemberNullish(a: Abs, key: string): Abs {
   if (!isAbsLike(a)) return a;
   if (a.shape.k === "sum") {
-    const members = (a.shape as { members: Abs[] }).members;
-    const kept: Abs[] = [];
-    let changed = false;
-    for (const m of members) {
+    return filterSumMembers(a, (m) => {
       const r = memberSlotTruthyRefine(m, key);
-      if (r.kind === "prune") {
-        changed = true;
-        continue;
-      }
-      if (r.kind === "keep") {
-        kept.push(m);
-        continue;
-      }
-      changed = true;
+      if (r.kind === "prune") return null;
+      if (r.kind === "keep") return m;
       const sh = m.shape as ObjShape;
       const next: Abs = { ...m, shape: { ...sh, slots: { ...sh.slots, [key]: r.slot } } };
       // 重建产生新 Abs 身份 → 迁移侧表（getter / propFlags / nullProto），
@@ -139,10 +142,8 @@ export function $removeMemberNullish(a: Abs, key: string): Abs {
       migrateAccessors(m, next);
       migrateInvariants(m, next);
       migrateNullProto(m, next);
-      kept.push(next);
-    }
-    if (!changed || kept.length === 0) return a;
-    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+      return next;
+    });
   }
   if (a.shape.k !== "obj") return a;
   const slots = (a.shape as ObjShape).slots;
@@ -254,15 +255,11 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
     }
     return a;
   }
-  const members = (a.shape as { members: Abs[] }).members;
-  const kept = members.filter((m) => {
+  return filterSumMembers(a, (m) => {
     const t = typeofOfMember(m);
-    if (t === undefined) return true;
-    return keep ? t === typeOf : t !== typeOf;
+    if (t === undefined) return m;
+    return keep ? (t === typeOf ? m : null) : (t === typeOf ? null : m);
   });
-  if (kept.length === members.length) return a;
-  if (kept.length === 0) return a;
-  return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
 }
 
 /**

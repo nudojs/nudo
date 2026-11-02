@@ -26,12 +26,15 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * 可 ALS 隔离的模块级可变槽。
  * 语义：`get`/`set` 作用于当前最内层 store（无作用域 = fallback）；
  * `runScoped` 以**进入时当前值**为初始值开新 store（继承语义：嵌套
- * save/restore 与今日模块全局逐位一致）。
+ * save/restore 与今日模块全局逐位一致）；`runFresh` 以 `init()` 全新值
+ * 开新 store（隔离语义：嵌套会话不得见外层值——may-throw 会话等
+ * 「内层 collector/帧独立」的域用此形态）。
  */
 export type ScopedSlot<T> = {
   get(): T;
   set(v: T): void;
   runScoped<R>(body: () => R): R;
+  runFresh<R>(body: () => R): R;
 };
 
 export function createScopedSlot<T>(init: () => T): ScopedSlot<T> {
@@ -44,6 +47,7 @@ export function createScopedSlot<T>(init: () => T): ScopedSlot<T> {
       current().v = v;
     },
     runScoped: <R>(body: () => R) => als.run({ v: current().v }, body),
+    runFresh: <R>(body: () => R) => als.run({ v: init() }, body),
   };
 }
 

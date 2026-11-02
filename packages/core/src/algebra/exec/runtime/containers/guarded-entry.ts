@@ -36,6 +36,37 @@ function guardedEntry<A, Args extends unknown[], R>(
 }
 
 /**
+ * 同构守卫入口工厂（**序言短路形**，Bug 219 / #12）：in/delete 族入口
+ * （members.ts 的 `$in` / `$del` / `$delRes`）的接收者守卫序言——
+ *
+ * - 非 Abs 宿主接收者按 `failClosed` 折（Bug 219/DEC-006 B/C：转译层把
+ *   `globalThis` / `Math` 等自由标识符原样当接收者发射；序言直读
+ *   `.shape.k` 会炸宿主 ⇒ 整模块 fail-closed）。各入口折值不同
+ *   （$in/$delRes → unknown；$del 写回通道 → 原样透传），故 failClosed
+ *   是参数。
+ * - Abs 上的序言（nullish/never 硬抛、prim/sum/any 的域折 + may-throw
+ *   记录）可**短路返回**；返回 undefined（PASS）才委派 Inner——与
+ *   {@link guardedEntry} 的 void 守卫互补（那边守卫只断言不折值）。
+ * - `receiverIdx` 指接收者实参位（`$in(key, o)` 的接收者在第二位）。
+ *
+ * isAbsLike 判定面单源在本工厂（与 guardedEntry 同格）。
+ */
+export function guardedPrologueEntry<Args extends unknown[], R>(
+  receiverIdx: number,
+  failClosed: (o: unknown) => R,
+  prologue: (o: Abs, args: Args) => R | undefined,
+  inner: (...args: Args) => R,
+): (...args: Args) => R {
+  return (...args: Args) => {
+    const o = args[receiverIdx];
+    if (!isAbsLike(o)) return failClosed(o);
+    const r = prologue(o as Abs, args);
+    if (r !== undefined) return r;
+    return inner(...args);
+  };
+}
+
+/**
  * BUG-217：计算键成员读（`o[k]`）此前走 `$idx`，而 `$idx` **只读数据槽**、
  * 不查访问器侧表 / 类访问器 ⇒ `{ get n(){return 42} }` 的 `o[k]` 折占位
  * `undefined`（自信的错值；`o[k] === undefined` 恒真）。修复面**收窄到

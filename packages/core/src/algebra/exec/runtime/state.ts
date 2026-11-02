@@ -1,6 +1,14 @@
 /**
- * 求值引擎运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
- * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
+ * 求值引擎运行时共享状态（#9 拆分后的门面 + 保留簇）：就地写、字面量
+ * Abs、真值、OOB 合成 undefined、strict 写抛、new.target 槽、Proxy get
+ * 不变量、循环信号。叶子性：不依赖 runtime 其它文件（tuple/obj 字面量
+ * 就地构造，避免 state↔containers 环）。
+ *
+ * 已拆出（本文件 re-export 维持既有 import 面，消费方零改动）：
+ * - phi.ts：当前路径前提 Φ + assume 引理前提（#152）+ invariant 规格（#176）
+ * - exit-stacks.ts：loop/throw 退出栈 + try 标记栈 + NudoReturn 早退
+ * - host-bridge.ts：宿主函数桥（asAbsVal/$fnVal/$absVal/种类戳/调用边界）
+ * - ../hooks.ts：加载期 setter 注入 cell（hostGlobalFnCall）
  *
  * Invariants:
  * - Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性投影按
@@ -18,20 +26,68 @@
 import type { Abs } from "../../abs.ts";
 import { abs, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
 import "../../term.ts";
-import type { Phi } from "../../pred.ts";
 import { pTrue } from "../../pred.ts";
-import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
-import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { registerSymbolMeta } from "../../symbol-id.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
+import { errorTypeAbs } from "../may-throw.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";
 import { joinAbs, objOf } from "../../objects.ts";
 import { extStateOf, getPropFlags, setPropFlags } from "../../builtins/invariants.ts";
-import type { InvariantSpec } from "./invariant-apply.ts";
+import { createScopedSlot, registerCollectorScopeParticipant } from "../../collector-scope.ts";
 
 export { NudoThrow, isNudoThrow };
+
+// --- 拆分文件的门面 re-export（导出名与拆分前逐一对应） ---
+export {
+  currentAssumePremises,
+  currentExecPhi,
+  currentInvariantSpecs,
+  phi,
+  withAssumePremises,
+  withExecPhi,
+  withInvariantSpecs,
+} from "./phi.ts";
+export {
+  $absVal,
+  $fnKindStamp,
+  $fnVal,
+  asAbsVal,
+  callAtFunctionBoundary,
+  hostFnKindOf,
+  noBody,
+} from "./host-bridge.ts";
+export type { FnKind } from "./host-bridge.ts";
+export {
+  $catchReturn,
+  $loopReturn,
+  $pushLoopExit,
+  $tryCurrentMark,
+  $tryDetachSoftCatch,
+  $tryDigestSoftCatch,
+  $tryDiscardSoft,
+  $tryMark,
+  $tryOrphanSoft,
+  $tryPopMark,
+  $tryReleaseSoftCatch,
+  $tryReleaseSoftOut,
+  $tryTakeSince,
+  NudoReturn,
+  isNudoReturn,
+  loopExitsAls,
+  peekThrowExitsSince,
+  pushLoopExit,
+  pushThrowExit,
+  runWithLoopExits,
+  softFrameActiveAls,
+  takeLoopExits,
+  takeThrowExits,
+  throwExitsAls,
+  throwExitsMark,
+  tryMarksAls,
+} from "./exit-stacks.ts";
+export { setHostGlobalFnCall } from "../hooks.ts";
+// 门面 re-export 不进本地作用域——保留簇体内直用的名字需真 import
+import { isNudoReturn } from "./exit-stacks.ts";
 
 export function writeInPlace(target: Abs, next: Abs): Abs {
   target.shape = next.shape;
@@ -46,9 +102,6 @@ export function clearStaleTermPred(v: Abs): void {
   v.term = undefined;
   v.pred = undefined;
 }
-
-/** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
-export let phi: Phi = pTrue;
 
 /**
  * 具体循环硬上限截断时的 conf 降级：exact/path → partial。
@@ -71,343 +124,6 @@ export function confPartialPacked(a: Abs): Abs {
     slots[k] = { value: confPartial(slot.value) };
   }
   return objOf(slots);
-}
-
-export function currentExecPhi(): Phi {
-  return phi;
-}
-
-export function withExecPhi<T>(p: Phi, body: () => T): T {
-  const prev = phi;
-  phi = p;
-  try {
-    return body();
-  } finally {
-    phi = prev;
-  }
-}
-
-/**
- * 用户引理前提（issue #152 `@nudo:assume d <= max`）：checkSource 在目标
- * 函数入口求值时种子，**不随调用链继承**——callee 帧一律见空（callee 同名
- * 参数误匹配外层引理 = unsound 假精度；phi 是全局单槽且调用边界不重置，
- * 故独立成槽）。清空机制：callAtFunctionBoundary 在前提非平凡时以
- * withAssumePremises(pTrue, …) 包裹 callee 体（边界退出还原 caller 值）。
- * 消费方：arithmetic.ts 的 div 关系折叠（同名相关性
- * le(a,b) ∧ b>0 ⇒ a/b ≤ 1，独立区间传播证不出）。
- */
-let assumePremises: Phi = pTrue;
-
-export function currentAssumePremises(): Phi {
-  return assumePremises;
-}
-
-export function withAssumePremises<T>(p: Phi, body: () => T): T {
-  const prev = assumePremises;
-  assumePremises = p;
-  try {
-    return body();
-  } finally {
-    assumePremises = prev;
-  }
-}
-
-/**
- * #176 `@nudo:invariant dp[*][*] >= 0` 循环携带界规格（assume 的循环类比物，
- * 同为用户公理——引擎不验证其真实性）：name = 循环携带绑定名（pack 槽键 /
- * 形参 ∪ 函数体顶层局部），path = 下钻路径（`[*]` = 元素域逐层 / `.ident` =
- * obj 槽），rel/value = 数值叶子界。消费方：exec/runtime/invariant-apply.ts
- * 在循环 join/宽化位（widenLoopJoin / widenFinal）按绑定名实施强化——
- * 循环携带界的自动推断是 research-grade（循环变量区间宽化丢失，issue #176
- * 实测连 `last = j` 都证不出 ge(0)），用户声明是唯一通道。
- * 与 assumePremises 同款动态域契约：**不随调用链继承**——callee 帧一律见
- * 空（callee 同名局部误染外层不变式 = unsound 假精度），callAtFunctionBoundary
- * 清空 + 边界退出还原。类型住 invariant-apply.ts（type-only import 无运行
- * 时环——本文件是叶子模块）。
- */
-let invariantSpecs: readonly InvariantSpec[] = [];
-
-export function currentInvariantSpecs(): readonly InvariantSpec[] {
-  return invariantSpecs;
-}
-
-export function withInvariantSpecs<T>(
-  specs: readonly InvariantSpec[],
-  body: () => T,
-): T {
-  const prev = invariantSpecs;
-  invariantSpecs = specs;
-  try {
-    return body();
-  } finally {
-    invariantSpecs = prev;
-  }
-}
-
-/**
- * apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body）。
- *
- * **唯一单例**（Bug 140 收尾）：此前本文件与 `builtins/shared.ts` 各有一份
- * 同形但**不同对象**的占位 body——按对象身份判「是否占位 body」的检查跨模块
- * 必然失配（`impl.body !== noBody` 对 builtins 侧建的占位恒真）⇒ 引擎原生
- * 迭代器的 `@@iterator` 占位 fn 被误判为「真实现」⇒ 对它跑用户迭代器协议
- * ⇒ 调占位 fn ⇒ 确定 TypeError（`[...Array.from('ab').keys()]` 假抛）。
- * 现在两侧共用同一对象，占位判据按身份比较恒成立。
- */
-type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
-export const noBody: EmptyBlock = sharedNoBody as unknown as EmptyBlock;
-
-/**
- * Bug 26：宿主全局函数 apply 桥（exec/calls.ts 的 callHostGlobalFn——模块
- * 加载时注册）。asAbsVal 给宿主函数建的 fn Abs 的 apply 钩子此前直接把
- * Abs 实参喂宿主函数（容器槽持有的 parseInt 被调用 → ToPrimitive 假值被
- * 弃成 unknown）；命中宿主全局身份时改走被调用位桥。state.ts 是叶子
- * 模块（calls.ts 单向依赖本文件），注册式注入避免反向 import 环。
- */
-let hostGlobalFnCall: ((fn: unknown, args: Abs[]) => Abs | undefined) | undefined;
-
-export function setHostGlobalFnCall(bridge: (fn: unknown, args: Abs[]) => Abs | undefined): void {
-  hostGlobalFnCall = bridge;
-}
-
-/**
- * transpile 泄漏的 JS 函数值 → 一等 fn Abs。
- * 求值引擎把函数声明/表达式编译成真实 JS 函数；它们流进对象槽、
- * 元组、join 等 Abs 结构时不能裸存——下游（bridge/leq/join）读 `.shape`。
- * 参数名无法从运行时函数恢复（用 fn.length → argN，与 analyzer 的
- * extractParamNames 回退口径一致）；带真实参数名走 $fnVal（transpile 侧）。
- */
-
-export function asAbsVal(v: unknown): Abs {
-  if (isAbsLike(v)) return v as Abs;
-  if (typeof v === "function") {
-    // Bug 291：宿主函数 → Abs 的**稳定门面**——同一宿主函数恒同一 Abs。
-    //
-    // 此前每次 asAbsVal(hostFn) 都新建 Abs ⇒ 以 Abs 为键的旁表
-    // （propFlags / extState / userFnSlots）**跨调用丢失**：
-    // `function g(){} Object.freeze(g); Object.isFrozen(g)` 原生 true，
-    // 引擎 false（freeze 的标志落在第一次新建的 Abs 上；再读 g 是全新
-    // Abs ⇒ 标志查不到）。原生语义：同一函数**恒同一身份**（`g === g`
-    // 真、`Object.isFrozen(g)` 恒定）⇒ 门面必须稳定。
-    const cached = hostFnAbsCache.get(v as object);
-    if (cached) return cached;
-    const n = Math.max(0, v.length);
-    const params = Array.from({ length: n }, (_, i) => `arg${i}`);
-    // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
-    const ctor = hostFnCtorFacet(v);
-    // Bug 325：宿主函数的**种类**戳（async / generator / async-generator）——
-    // 函数**声明**转译后是宿主普通函数（async 体包 $async、generator 体包
-    // $gen）⇒ 种类无法从宿主侧反推 ⇒ 转译侧在声明处显式戳一次（$fnKindStamp）
-    // ⇒ 标签面（Object.prototype.toString）读得到 ⇒ "[object AsyncFunction]" 等
-    const hostKind = hostFnKindOf(v);
-    // Bug 9：声明名 / 原生 fn.length 透传（v.name / v.length 是宿主真值）——
-    // f.name / f.length 折 exact；匿名（name ""）不记 name
-    const fnName = typeof v.name === "string" && v.name ? v.name : undefined;
-    const a = absFunction(
-      params,
-      {
-        body: noBody,
-        // Bug 325：种类戳进 impl（标签面读 impl.fnKind）
-        ...(hostKind !== undefined ? { fnKind: hostKind } : {}),
-        // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
-        // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
-        // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
-        apply: (args, thisVal) => {
-          const bridged = hostGlobalFnCall?.(v, args);
-          if (bridged !== undefined) return bridged;
-          // Bug 46：receiver 经 thisVal 转发宿主 this（成员调用 o.m = 函数声明
-          // 后 o.m() 的接收者；$invoke/$call 第三参通道）——此前丢弃致
-          // $rawThis(this) 恒 undefined
-          return callAtFunctionBoundary(() =>
-            (v as (...a: Abs[]) => Abs).apply(thisVal as never, args),
-          );
-        },
-      },
-      {
-        ...(ctor !== undefined ? { ctor } : {}),
-        ...(fnName !== undefined ? { name: fnName } : {}),
-        length: v.length,
-      },
-    );
-    hostFnAbsCache.set(v as object, a);
-    return a;
-  }
-  return $lit(v);
-}
-
-/** 宿主函数 → 稳定 Abs 门面的旁表（Bug 291；WeakMap ⇒ 不泄漏宿主引用） */
-const hostFnAbsCache = new WeakMap<object, Abs>();
-
-/** 函数种类戳（Bug 325） */
-export type FnKind = "async" | "generator" | "async-generator";
-
-/**
- * Bug 325：宿主函数 → **函数种类**戳（"async" | "generator" |
- * "async-generator"）的旁表。
- *
- * 函数**声明**形态转译后是宿主**普通函数**（async 体包 `$async`、generator
- * 体包 `$gen`）⇒ async/generator 种类**无法从宿主侧反推** ⇒ 由转译侧在
- * 声明处显式戳一次（`$fnKindStamp`），`asAbsVal` 建 fn Abs 时读旁表 ⇒
- * `Object.prototype.toString.call(f)` 给出原生标签（"[object
- * AsyncFunction]" / "[object GeneratorFunction]" /
- * "[object AsyncGeneratorFunction]"，与函数表达式 / 箭头 / 方法四条既有
- * 产生路径同口径）。
- *
- * 旁表按**宿主函数对象**键控（WeakMap ⇒ 不泄漏宿主引用）；读侧在
- * `asAbsVal` 建 Abs 时取 ⇒ 该 Abs 按宿主函数缓存（Bug 291 的稳定门面）
- * ⇒ 戳只需落一次。
- */
-const hostFnKindRegistry = new WeakMap<object, FnKind>();
-
-/** transpile 生成代码用：给宿主函数打种类戳（Bug 325） */
-export function $fnKindStamp(fn: unknown, kind: string): void {
-  if (typeof fn !== "function") return;
-  if (kind !== "async" && kind !== "generator" && kind !== "async-generator") return;
-  hostFnKindRegistry.set(fn as object, kind);
-  // 戳**晚于**首次建 Abs（宿主函数声明提升 ⇒ 声明前就可能被调用）⇒
-  // 已缓存的 Abs 就地补戳（impl 可变 ⇒ 标签面立即生效）
-  const existing = hostFnAbsCache.get(fn as object);
-  if (existing) {
-    const impl = getFnImpl(existing);
-    if (impl) impl.fnKind = kind;
-  }
-}
-
-/** 宿主函数的种类戳（无戳 ⇒ undefined ⇒ 标签保守折 "[object Function]"） */
-export function hostFnKindOf(fn: unknown): FnKind | undefined {
-  if (typeof fn !== "function") return undefined;
-  return hostFnKindRegistry.get(fn as object);
-}
-
-/** transpile 侧收形入口（instanceof RHS 值等）：host 裸值 / Abs → Abs。
- *  `$` 前缀是运行时绑定表（runtimeArgNames）的注入约定。 */
-export function $absVal(v: unknown): Abs {
-  return asAbsVal(v);
-}
-
-/**
- * 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。
- * 每个 求值引擎调用帧独立 ALS；NudoReturn 收成该调用的返回值。
- *
- * throws 面（H1）：嵌套帧的 may-throw（pushThrowExit）必须上浮到调用方帧，
- * 不得在边界丢弃——否则跨 callAtFunctionBoundary 的 apply 桥 may-throw
- * 静默消失（与 BUG-006 同类丢失，但发生在帧边界而非桥内）。
- * always-throw 走 NudoThrow 异常原样 rethrow（不经此转发）。
- */
-export function callAtFunctionBoundary<T>(body: () => T): T {
-  // #152/#176：callee 帧不继承 caller 的用户公理（assume 引理 + invariant
-  // 循环不变式，槽清空+边界退出还原）。termVar 同名误匹配（#123
-  // contract-face 重锚实参名）/ 绑定名同名误染在嵌套帧是 unsound 假精度；
-  // 未种子（pTrue / 空 specs）时零开销直通。闭包回调（数组方法内联回调经
-  // 此边界）同按嵌套帧清空——保守诚实。
-  if (assumePremises !== pTrue || invariantSpecs.length > 0) {
-    return withAssumePremises(
-      pTrue,
-      () => withInvariantSpecs([], () => boundaryBody(body)),
-    );
-  }
-  return boundaryBody(body);
-}
-
-function boundaryBody<T>(body: () => T): T {
-  let forwarded: Abs[] = [];
-  try {
-    return runWithLoopExits(() => {
-      // callee 帧内 fork/loop 早退 ret 值（settleForkArms 入 exits 通道）在
-      // 本边界与正常返回值 join —— 此前直接丢弃会错定（fall-through 值独占）。
-      const joinFrameExits = (normal: Abs): Abs => {
-        const frameExits = takeLoopExits();
-        return frameExits.length ? frameExits.reduce((acc, x) => joinAbs(acc, x), normal) : normal;
-      };
-      try {
-        const r = body();
-        forwarded = takeThrowExits();
-        return joinFrameExits(r as unknown as Abs) as unknown as T;
-      } catch (e) {
-        forwarded = takeThrowExits();
-        if (isNudoReturn(e)) return joinFrameExits(e.absValue) as unknown as T;
-        throw e;
-      }
-    });
-  } finally {
-    // finally：NudoThrow 冒泡时也先转发兄弟 may-throw（全臂 throw 时
-    // 兄弟 throws 与硬抛载荷一并由外层 joinThrowExits 考虑）。
-    for (const x of forwarded) pushThrowExit(x);
-  }
-}
-/**
- * 函数边界缺参归一（Bug 7）：宿主绑定元数内省略的尾实参按「显式传
- * undefined」语义补 undefAbs——原样透传的宿主 undefined 流进 $add 等
- * 算子读 .shape 崩溃（被调用边界收成假 may-throw），或经 return 通道
- * 泄漏裸值（违反 result: Abs 不变量）。impl.length = 宿主绑定元数
- * （默认参占位 `_p{i}` 计入——$orDefault 对 lit(undefined) 正常取默认；
- * rest/…收集形参不计——原生省略时收 []）。bindThis 的 receiver 占
- * impl 首参位，随 args 一并计数。读宿主 arguments 的真实 function 包装
- * 不得补齐（arguments.length 会膨胀），走 padArgs:false + 体内归一。
- */
-function padOmittedArgs(
-  impl: (...args: Abs[]) => unknown,
-  args: Abs[],
-): Abs[] {
-  const arity = impl.length;
-  if (args.length >= arity) return args;
-  const padded = args.slice();
-  for (let i = args.length; i < arity; i++) padded.push(undef());
-  return padded;
-}
-
-/**
- * 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
- *  opts.bindThis：对象方法——$invoke 会把 receiver 作为 impl 的首参注入。
- *  opts.ctor：Bug 9 可构造性 facet（箭头/方法/async/generator → false；
- *  函数表达式/类表达式值 → true）。
- *  opts.padArgs：默认 true（Bug 7 缺参归一）；读宿主 arguments 的
- *  function 包装传 false（arguments.length 不得被补齐膨胀）。
- *  opts.length：Bug 69 原生 fn.length（首个默认值/rest 形参前的形参数）——
- *  宿主 impl 是解糖产物（默认参占位 `_p{i}` 全成真参），长度不可信；
- *  transpile 侧记录真值，$len 的 fn 分支折 exact。 */
-export function $fnVal(
-  params: string[],
-  impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[] },
-): Abs {
-  const argsOf =
-    opts?.padArgs === false
-      ? (a: Abs[]) => a
-      : (a: Abs[]) => padOmittedArgs(impl, a);
-  return absFunction(
-    params,
-    {
-      body: noBody,
-      // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
-      // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
-      apply: opts?.bindThis
-        ? (args) => callAtFunctionBoundary(() => impl(...argsOf(args)))
-        : (args, thisVal) =>
-            callAtFunctionBoundary(() =>
-              impl.apply(
-                thisVal as unknown as Parameters<typeof impl>[0],
-                argsOf(args),
-              ),
-            ),
-      ...(opts?.bindThis ? { bindThis: true } : {}),
-      ...(opts?.effectFree ? { effectFree: true } : {}),
-      ...(opts?.closed ? { closed: true } : {}),
-      // Bug 93：generator 表达式标记（transpile 透传）——member.ts fn 分支
-      // 区分「不可构造但有 prototype」；宿主声明路径走 isHostGeneratorFn
-      ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
-      // Bug 325：函数**种类**戳（async × generator 四象限）——与 kind 分开
-      // （kind 是派发角色维度）
-      ...(opts?.fnKind !== undefined ? { fnKind: opts.fnKind } : {}),
-      // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）⇒ 必选元数
-      // 不再靠名字后缀猜（默认形参渲染成光秃秃的名字 ⇒ 被计成必选 ⇒ 假红）
-      ...(opts?.optionalParams ? { optionalParams: opts.optionalParams } : {}),
-    },
-    {
-      ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
-      ...(opts?.length !== undefined ? { length: opts.length } : {}),
-    },
-  );
 }
 
 /**
@@ -452,20 +168,29 @@ export function $throwFreeArguments(): never {
 // $new 压入被构造的类值，$call/$invoke（普通调用面）在调用期间清空并
 // 恢复——构造器体/实例字段初始化器直接读栈（不经调用面）得类值，
 // 嵌套普通函数读得 undefined，与原生一致。
-const newTargetStack: Abs[] = [];
+//
+// #8 作用域统一：此前是模块级裸可变数组（LSP 服务的 await 窗口内交错
+// 分析会共享同一栈——构造帧跨分析串台）。改为 collector-scope 槽
+// （同步 save/restore + 注册 participant：runWithCollectorScope 进入时
+// 继承当前栈快照，嵌套作用域互不可见对方的清空）。与 control.ts 的
+// yieldStackSlot / genPathSensitiveSlot 同款模式（推
+// registerCollectorScopeParticipant + 槽数组 push/pop）。
+const newTargetSlot = createScopedSlot<Abs[]>(() => []);
+registerCollectorScopeParticipant((body) => newTargetSlot.runScoped(body));
 
 /** $new 专用：进入构造（构造器体 + 实例字段初始化器期间 new.target = 类值） */
 export function pushCtorFrame(cls: Abs): void {
-  newTargetStack.push(cls);
+  newTargetSlot.get().push(cls);
 }
 
 export function popCtorFrame(): void {
-  newTargetStack.pop();
+  newTargetSlot.get().pop();
 }
 
 /** `new.target` 读：栈顶类值；普通调用面已清空 → undefined 字面量 */
 export function $newTarget(): Abs {
-  return newTargetStack[newTargetStack.length - 1] ?? $lit(undefined);
+  const stack = newTargetSlot.get();
+  return stack[stack.length - 1] ?? $lit(undefined);
 }
 
 /**
@@ -473,12 +198,13 @@ export function $newTarget(): Abs {
  * new.target 栈（嵌套函数原生读 undefined），返回后恢复外层构造帧。
  */
 export function withNewTargetReset<T>(body: () => T): T {
-  if (newTargetStack.length === 0) return body();
-  const saved = newTargetStack.splice(0, newTargetStack.length);
+  const stack = newTargetSlot.get();
+  if (stack.length === 0) return body();
+  const saved = stack.splice(0, stack.length);
   try {
     return body();
   } finally {
-    newTargetStack.push(...saved);
+    stack.push(...saved);
   }
 }
 
@@ -779,181 +505,6 @@ export function isOobUndef(a: Abs | undefined): boolean {
   );
 }
 
-// 退出栈（ALS）+ $try*
-export const loopExitsAls = new AsyncLocalStorage<Abs[]>();
-export const throwExitsAls = new AsyncLocalStorage<Abs[]>();
-export const tryMarksAls = new AsyncLocalStorage<number[]>();
-/** 每个 try 是否仍有未消化的 soft may-throw 帧（digest/release 幂等） */
-export const softFrameActiveAls = new AsyncLocalStorage<boolean[]>();
-
-/** 函数求值作用域：收集抽象分支上的 early-return / throw 值；try 标记栈同边界 */
-export function runWithLoopExits<T>(body: () => T): T {
-  return loopExitsAls.run([], () =>
-    throwExitsAls.run([], () =>
-      tryMarksAls.run([], () => softFrameActiveAls.run([], body)),
-    ),
-  );
-}
-
-export function takeLoopExits(): Abs[] {
-  return loopExitsAls.getStore() ?? [];
-}
-
-export function takeThrowExits(): Abs[] {
-  return throwExitsAls.getStore() ?? [];
-}
-
-export function pushLoopExit(v: Abs): void {
-  loopExitsAls.getStore()?.push(v);
-}
-
-export function pushThrowExit(v: Abs): void {
-  throwExitsAls.getStore()?.push(v);
-}
-
-/** transpile 生成代码用：`$pushLoopExit` */
-export function $pushLoopExit(v: Abs): void {
-  pushLoopExit(v);
-}
-
-/** try 块开始：压栈 hard/soft 标记 */
-export function $tryMark(): number {
-  $tryMarkSoft();
-  softFrameActiveAls.getStore()?.push(true);
-  const store = throwExitsAls.getStore();
-  const m = store?.length ?? 0;
-  tryMarksAls.getStore()?.push(m);
-  return m;
-}
-
-/** 当前最内层 try 的 mark（return 时 drain 用；嵌套调用不串栈） */
-export function $tryCurrentMark(): number {
-  const stack = tryMarksAls.getStore();
-  return stack && stack.length > 0 ? stack[stack.length - 1]! : 0;
-}
-
-export function $tryPopMark(): void {
-  tryMarksAls.getStore()?.pop();
-  const soft = softFrameActiveAls.getStore();
-  if (soft && soft.length > 0) {
-    if (soft[soft.length - 1]) $tryReleaseSoftOut();
-    soft.pop();
-  }
-}
-
-/** 取出 mark 之后新记录的 throw（try 吸收 / catch 合并） */
-export function $tryTakeSince(mark: number): Abs[] {
-  const store = throwExitsAls.getStore();
-  if (!store) return [];
-  return store.splice(Math.min(mark, store.length));
-}
-
-/** 窥视 mark 之后新记录的 throw（不摘除——pure memo 捕获用） */
-export function peekThrowExitsSince(mark: number): Abs[] {
-  const store = throwExitsAls.getStore();
-  if (!store) return [];
-  return store.slice(Math.min(mark, store.length));
-}
-
-/** 当前 throwExits 帧长度（pure memo 捕获的 mark 基线） */
-export function throwExitsMark(): number {
-  return throwExitsAls.getStore()?.length ?? 0;
-}
-
-/** catch 入口消化 try 内 soft may-throw（幂等；design §3.3） */
-export function $tryDigestSoftCatch(): void {
-  const soft = softFrameActiveAls.getStore();
-  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
-  $tryDigestSoft();
-  soft[soft.length - 1] = false;
-}
-
-/**
- * 正常完成路径 + catch 可能 rethrow：soft 效果不得消化——假想 soft throw
- * 经 catch rethrow 逃逸（try { u.name } catch (e) { throw e; } 的 L2）。
- * 摘帧上浮（collector / 外层 try 帧可再消化），并清 soft 标记防二次释放。
- */
-export function $tryReleaseSoftCatch(): void {
-  const soft = softFrameActiveAls.getStore();
-  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
-  $tryReleaseSoft();
-  soft[soft.length - 1] = false;
-}
-
-/**
- * catch 入口摘下 soft 效果（不消化）。catch 正常落出口再 discard；
- * catch rethrow 时 orphan 上浮（外层 try 可再消化）。
- */
-export function $tryDetachSoftCatch(): MayThrowEffect[] {
-  const soft = softFrameActiveAls.getStore();
-  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return [];
-  const effects = popMayThrowFrame(false);
-  soft[soft.length - 1] = false;
-  return effects;
-}
-
-/** catch 无 rethrow 落出口：丢弃已摘下的 soft（design：catch 消化） */
-export function $tryDiscardSoft(_effects: MayThrowEffect[]): void {
-  /* digest */
-}
-
-/** catch rethrow：摘下的 soft 上浮（嵌套 try 归外层帧） */
-export function $tryOrphanSoft(effects: MayThrowEffect[]): void {
-  orphanMayThrowEffects(effects);
-}
-
-/** 无 handler / 出口：上浮未消化 soft may-throw（幂等） */
-export function $tryReleaseSoftOut(): void {
-  const soft = softFrameActiveAls.getStore();
-  if (!soft || soft.length === 0 || !soft[soft.length - 1]) return;
-  $tryReleaseSoft();
-  soft[soft.length - 1] = false;
-}
-
-// 循环信号（NudoReturn / NudoLoopSignal）
-// --- early return from loop bodies (C2.1) ---
-
-/** 求值引擎「函数提前 return」信号（区别于 throw） */
-export class NudoReturn extends Error {
-  readonly absValue: Abs;
-  constructor(absValue: Abs) {
-    super("nudo:return");
-    this.name = "NudoReturn";
-    this.absValue = absValue;
-  }
-}
-
-export function isNudoReturn(e: unknown): e is NudoReturn {
-  return e instanceof NudoReturn;
-}
-
-/** transpile `return x` inside for/while → `$loopReturn(x)` */
-export function $loopReturn(v: Abs): never {
-  throw new NudoReturn(v);
-}
-
-/**
- * transpile 函数体边界吸收器：`try { body } catch (e) { return $catchReturn(e); }`
- * —— 函数体内 $loopReturn 早退（循环 / if 臂）在函数自身边界收成返回值，
- * 转译模块对裸宿主调用（e2e 真实 .mjs 导入 / 模块顶层互调）自包含；
- * 其余异常（NudoThrow / 原生错误）原样 rethrow。仅在发射体含 $loopReturn
- * 时由 transpile 侧包裹。
- */
-export function $catchReturn(e: unknown): Abs {
-  if (isNudoReturn(e)) return e.absValue;
-  throw e;
-}
-
-/**
- * break/continue 信号：transpile 在循环体内生成 $loopBreak/$loopContinue，
- * $for/$whileSeq/$forOf 在 body 调用点捕获。带标签信号只被同标签循环吸收，
- * 不匹配继续冒泡到外层循环（`break outer` / `continue outer` 语义）。
- *
- * abstract 溯源（Bug 47/48）：信号从**抽象条件 fork 臂**内抛出时，兄弟臂
- * 未执行、break/continue 之后的语句丢失——循环携带绑定的「完整迭代效应」
- * 不可观测（捕获点据此宽化）。definite 分支的信号是忠实原生语义
- * （`if (i === 2) break` 全具体循环不得宽化），abstract = false。
- */
 let loopSignalFromAbstractArm = false;
 
 /** 抽象 fork 臂执行期间置位（$fork 双臂路径 / $switch 抽象 disc 臂） */

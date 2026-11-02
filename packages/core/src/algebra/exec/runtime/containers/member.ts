@@ -2,9 +2,10 @@
  * 成员读写与派发：$get/$set + 命名空间身份路由 + 原型方法值读。
  *
  * Invariants:
- * - protoMethodDispatch 是 `var`（非 let）：exec/class 模块加载期经循环
- *   import 回调 setProtoMethodDispatch 时提升为 undefined 也安全（let
- *   会 TDZ 崩加载序）。
+ * - protoMethodDispatch 的注入 cell 住 exec/hooks.ts（加载期 setter 断环
+ *   收容所——叶子模块，模块体恒先于任何消费方执行）：exec/class 模块
+ *   加载期经循环 import 回调 setProtoMethodDispatch 也安全（旧 var 提升
+ *   TDZ 防线已随 cell 迁出消灭）。
  * - 类方法一等值按（定义类 spec, kind, 键）驻留：同条目重复读返回同一
  *   Abs 引用（=== 折 true）；跨 run last-wins 重注册换新 spec 对象，
  *   驻留随旧 spec 回收失效。
@@ -291,11 +292,24 @@ const BUILTIN_SPECIES_CTORS: ReadonlySet<string> = new Set([
   ...Object.keys(TYPED_ARRAY_ELEMENT),
 ]);
 
-/** Bug 93：宿主 generator 函数判定——真 generator（env 泄漏/内建宿主值，
- *  原型链 constructor 名可判）或 transpile 去种类化的 generator 声明（宿主
- *  体首语句 `return $gen(…)`；async 声明是 `return $async(…)`——两者共享
- *  __nudoNonCtor 标记，按源形区分，漏判安全降级为「无 prototype」旧口径）。 */
+/** Bug 93 / 325：宿主 generator 函数判定——三条证据链按优先级：
+ *  1. hostFnKindOf 种类戳（Bug 325：transpile 在声明语句位对
+ *     async/generator/async-generator **函数声明**发射 $fnKindStamp，
+ *     三种形态全覆盖；函数表达式/箭头/方法不经宿主声明——$fnVal 直带
+ *     fnKind，不进本判定）。
+ *  2. 原型链 constructor 名（env 泄漏 / 内建宿主值：
+ *     GeneratorFunction / AsyncGeneratorFunction 可判）。
+ *  3. 源形正则兜底（**不可删**）：__nudoNonCtor 标记提升到语句列表顶
+ *     （fn-body.ts 的 hoistNonCtorMarkers）而 $fnKindStamp 留在声明
+ *     语句位 ⇒ 声明语句执行前的 `.prototype` 读（`const p = g.prototype;
+ *     function* g(){}` 的提升窗口）标记已设、戳未落——删正则会把该窗口
+ *     折成 protoBrandAbs（wrong-exact：generator prototype 是可辨
+ *     brand，不走 obj 面）。async 声明（`return $async(`）与 generator
+ *     共享 __nudoNonCtor，正则只认 $gen；漏判安全降级为「无 prototype」
+ *     旧口径（async 原生无 prototype，undef 臂本就正确）。 */
 function isHostGeneratorFn(v: Function): boolean {
+  const kind = hostFnKindOf(v);
+  if (kind === "generator" || kind === "async-generator") return true;
   const protoCtor = Object.getPrototypeOf(v)?.constructor?.name;
   if (protoCtor === "GeneratorFunction" || protoCtor === "AsyncGeneratorFunction") return true;
   if ((v as { __nudoNonCtor?: unknown }).__nudoNonCtor !== 1) return false;
@@ -575,7 +589,7 @@ function arrayViewMethodAbs(key: string): Abs {
       const recv = thisVal;
       const tup = recv ? arrayViewTuple(recv) : undefined;
       if (!tup) return unknown;
-      return protoMethodDispatch?.("Array", key, tup, args) ?? unknown;
+      return getProtoMethodDispatch()?.("Array", key, tup, args) ?? unknown;
     },
   }, { ctor: false });
 }
@@ -682,37 +696,13 @@ function builtinSymbolMemberAbs(
  * 与数组臂「不得挂空 body impl」的告诫不冲突：挂的是真 apply（转发派发），
  * $call 不会把 noBody 折成 undefined。
  */
-/* var（非 let）：exec/class.ts 模块加载期经循环 import 回调本 setter 时，
- * let 声明仍在 TDZ（eval-empty-sum-reduce / env-shadow-parity 加载序崩溃）；
- * var 提升初始化为 undefined，注册先于本模块体完成也安全。 */
-/** Bug 1041：用户类方法值的**来源侧**（"static" = 构造器上的静态方法 /
- *  "inst" = 原型上的实例方法）——同名 static + 实例方法并存时，摘下调用
- *  （接收者恒 undefined）靠它定夺跑哪个方法体（原生：`A.m` 与 `a.m` 是
- *  两个不同函数对象）。未标（内建原型方法值）⇒ undefined（不可判）。 */
-export type ClassMethodOrigin = "static" | "inst";
-var protoMethodDispatch:
-  | ((
-      home: string,
-      name: string,
-      thisVal: Abs | undefined,
-      args: Abs[],
-      origin?: ClassMethodOrigin,
-    ) => Abs)
-  | undefined;
-
-/** exec/class.ts 模块加载时注册（调用派发实现；与 state.ts 的
- *  setHostGlobalFnCall 桥同款注册式注入，避免 containers↔class import 环） */
-export function setProtoMethodDispatch(
-  d: (
-    home: string,
-    name: string,
-    thisVal: Abs | undefined,
-    args: Abs[],
-    origin?: ClassMethodOrigin,
-  ) => Abs,
-): void {
-  protoMethodDispatch = d;
-}
+/* 注入 cell 已迁 exec/hooks.ts（加载期 setter 断环收容所——#9 收敛：
+ * var 提升当 TDZ 防线的历史形态随 cell 迁出消灭；消费经 getter，注册
+ * 面 re-export 维持既有 import 面——exec/class/invoke.ts / containers
+ * barrel 零改动）。 */
+export { setProtoMethodDispatch } from "../../hooks.ts";
+export type { ClassMethodOrigin } from "../../hooks.ts";
+import { getProtoMethodDispatch } from "../../hooks.ts";
 
 /** P2a：类方法一等值驻留侧表——按（定义类 spec, kind, 成员键）驻留。
  *  原生：静态方法挂**定义类**构造器、实例方法挂定义类 .prototype——
@@ -771,7 +761,7 @@ function classMethodValueAbs(
     absFunction(params ?? [], {
       body: noBody,
       apply: (args, thisVal) =>
-        protoMethodDispatch?.(spec.name, key, thisVal, args, kind) ?? unknown,
+        getProtoMethodDispatch()?.(spec.name, key, thisVal, args, kind) ?? unknown,
       kind: "protoMethod",
       // Bug 325：类方法的**函数种类**戳（async × generator 四象限）——
       // 原生类方法标签面随种类变（"[object AsyncFunction]" 等）。种类从
@@ -791,7 +781,7 @@ export function protoMethodValueAbs(home: string, name: string): Abs {
     body: noBody,
     // 内建原型方法是内建函数，原生不可 new（Bug 9 口径）
     apply: (args, thisVal) =>
-      protoMethodDispatch?.(home, name, thisVal, args) ?? unknown,
+      getProtoMethodDispatch()?.(home, name, thisVal, args) ?? unknown,
     // kind 标记：$invokeInner 的「属性上的可调用值」回退不得经此再入
     //（$invoke(recv, m) 未命中派发表时 $get 命中本值，$call 无 receiver
     // 回环成 $invoke(undefined, m)——copyWithin/splice 等未接管方法假定抛）
