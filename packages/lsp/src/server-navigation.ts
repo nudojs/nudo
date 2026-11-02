@@ -406,27 +406,21 @@ connection.onWorkspaceSymbol((params) => {
 });
 
 connection.onDefinition((params) => {
-  const document = documents.get(params.textDocument.uri);
-  if (!document) return null;
+  // 前导（document → isNudoFile → parse → 标识符定位）走共享
+  // `navigationIdentAt`（onReferences / onPrepareRename 同款）。
   // 门禁（Bug 751）：与其它导航请求**同一个谓词**（`isNudoFile` 真源 =
-  // `server.ts`）⇒ 侧车契约文件（`*.nudo.js` 等）在本请求上一律为 null。
-  // ⚠ 此前本行额外挂了 `|| isSidecarPath(...)` **逃生口** ⇒ 侧车只有
+  // `server.ts`，在 helper 内）⇒ 侧车契约文件（`*.nudo.js` 等）在本请求上
+  // 一律为 null。
+  // ⚠ 此前本请求额外挂了 `|| isSidecarPath(...)` **逃生口** ⇒ 侧车只有
   //   `definition` 放行、其余五个请求挡住 ⇒ **同一坐标六种请求三种结论**
   //   （definition 说「这个符号存在」、documentSymbol 说「这个文件里没有
   //   任何符号」）⇒ LSP 内部自相矛盾。
   // ⚠ **代价（已裁决：接受）**：丢掉「源码 → 侧车」的 definition 可导航能力。
-  if (!isNudoFile(params.textDocument.uri)) return null;
-
-  const source = document.getText();
-  const filePath = uriToFilePath(params.textDocument.uri);
-  const line = params.position.line + 1;
-  const column = params.position.character;
+  const ctx = navigationIdentAt(params);
+  if (!ctx) return null;
+  const { source, filePath, ast, identAtPos, line, column } = ctx;
 
   try {
-    const ast = parse(source);
-    const identAtPos = findIdentifierAtPosition(ast, line, column);
-    if (!identAtPos) return null;
-
     // A5：本地声明 + 侧车契约一起返回（Peek 可见契约边）
     // ⚠ **类 / 对象方法（方法键不是绑定）由符号层自己判**（`resolveDefinitionLocations`
     //   内的方法面）：协议面与纯函数面**同一口径**（此前协议面内联一份判据、

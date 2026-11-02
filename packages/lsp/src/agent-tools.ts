@@ -1154,6 +1154,26 @@ function observedExpectedText(abs: Abs): string | null {
 }
 
 /**
+ * 函数目标工具的公共前导（suggestCase / trace 同款单源）：解析文件 →
+ * 读源 → 全量分析。分析走**异步**入口（Bug 993：path 型 env 必须先预载）。
+ */
+async function analyzeToolFile(
+  params: FunctionToolParams,
+  deps: AgentToolDeps,
+): Promise<Awaited<ReturnType<typeof analyzeFileAsync>>> {
+  const filePath = resolveToolFile(params);
+  const source = params.source ?? readSource(filePath, deps);
+  return analyzeFileAsync(
+    filePath,
+    source,
+    undefined,
+    undefined,
+    params.loadModule ?? deps.loadModule ?? defaultLoadModule,
+    "all",
+  );
+}
+
+/**
  * Suggest @nudo:case directives for a function (ported from MCP).
  *
  * 「函数不存在」是**明确的失败**（用户传了不存在的 functionName）⇒ 走
@@ -1165,16 +1185,7 @@ export async function suggestCase(
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
-    const filePath = resolveToolFile(params);
-    const source = params.source ?? readSource(filePath, deps);
-    const result = await analyzeFileAsync(
-      filePath,
-      source,
-      undefined,
-      undefined,
-      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
-      "all",
-    );
+    const result = await analyzeToolFile(params, deps);
     const fn = result.functions.find((f) => f.name === params.functionName);
 
     if (!fn) {
@@ -1257,16 +1268,7 @@ export async function trace(
   deps: AgentToolDeps = {},
 ): Promise<AgentToolResult> {
   try {
-    const filePath = resolveToolFile(params);
-    const source = params.source ?? readSource(filePath, deps);
-    const result = await analyzeFileAsync(
-      filePath,
-      source,
-      undefined,
-      undefined,
-      params.loadModule ?? deps.loadModule ?? defaultLoadModule,
-      "all",
-    );
+    const result = await analyzeToolFile(params, deps);
     // BUG-146：跨模块观察镜（`call@…` 挂在**调用方**文件的调用点行）携带的
     // fn 名是**被导入函数**的名字 —— `result.functions` 只含本文件的本地函数
     // ⇒ 必然落空 ⇒ 镜面标题说这个事实存在、点了却报「函数不存在」。
