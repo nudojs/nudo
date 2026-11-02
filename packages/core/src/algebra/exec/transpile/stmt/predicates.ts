@@ -710,6 +710,43 @@ export function nullishRemoveCallOf(guard: NullishGuard): string {
   return `$removeNullish(${guard.name})`;
 }
 
+/** 臂窄化影子重绑的一个形参槽：name = 影子参数名（兼跳过检查的守卫名），
+ *  arg = 重绑实参表达式（$removeNullish / $narrowTypeOf / $narrowMemberEq /
+ *  $lit / $join / $refineRel 调用串，由各通道构造）。 */
+type ArmShadowBinding = { name: string; arg: string };
+
+/** 臂窄化影子重绑骨架（五联臂单源：nullish / typeof / 判别等值 / case
+ *  标签 / 关系守卫共用）：任一影子名在 fork 绑定集（臂内写 / 快照重绑
+ *  ——影子参数会吞掉臂内写，破坏 forkJoin 的绑定 join）或为 strict 非法
+ *  绑定名（arguments / eval，Bug 116——strict 代码不能作形参名，影子
+ *  包装会令整模块 new Function 编译期 SyntaxError）→ 整体跳过（宁缺毋
+ *  假，不做部分应用）；否则按 mode 发射影子重绑：
+ *  - multi：多名一包 `((a, b) => THUNK)($rmA, $rmB)`（nullish / typeof /
+ *    判别等值通道——全部事实同层生效）；
+ *  - seq：逐名嵌套 `((a) => ((b) => THUNK)(y))(x)`（首元素最内层，保持
+ *    case 标签「排除在内、命中在外」与关系「主界在内、extra 界在外」的
+ *    既有内外层序）。
+ *  bindings 为空（无事实）时原样返回 thunk。 */
+function narrowArmShadowWrap(
+  thunk: string,
+  bindings: readonly ArmShadowBinding[],
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+  mode: "multi" | "seq",
+): string {
+  if (bindings.length === 0) return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (bindings.some((b) => names.has(b.name) || isStrictIllegalBinding(b.name))) return thunk;
+  if (mode === "seq") {
+    let out = thunk;
+    for (const b of bindings) out = `((${b.name}) => ${out})(${b.arg})`;
+    return out;
+  }
+  const params = bindings.map((b) => b.name).join(", ");
+  const args = bindings.map((b) => b.arg).join(", ");
+  return `((${params}) => ${thunk})(${args})`;
+}
+
 /** 守卫臂 thunk 的 nullish 剪影包装：`((p) => THUNK)($removeNullish(p))`。
  *  仅当守卫名不在 fork 绑定集（臂内无写/快照重绑）时应用——否则影子参数
  *  会吞掉臂内写，破坏 forkJoin 的绑定 join。单守卫入口（多守卫见
@@ -732,13 +769,12 @@ export function narrowNullishArmThunks(
 ): string {
   if (!guards || guards.length === 0) return thunk;
   const matching = guards.filter((g) => g.arm === arm);
-  if (matching.length === 0) return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (matching.some((g) => names.has(g.name) || isStrictIllegalBinding(g.name))) return thunk;
-  const params = matching.map((g) => g.name).join(", ");
-  const args = matching.map((g) => nullishRemoveCallOf(g)).join(", ");
-  return `((${params}) => ${thunk})(${args})`;
+  return narrowArmShadowWrap(
+    thunk,
+    matching.map((g) => ({ name: g.name, arg: nullishRemoveCallOf(g) })),
+    forkBindingNames,
+    "multi",
+  );
 }
 
 /** typeof 类型守卫臂 thunk 的剪影包装：`((v) => THUNK)($narrowTypeOf(v, T, keep))`。
@@ -746,11 +782,16 @@ export function narrowNullishArmThunks(
  *  （与 nullish 剪影同规则）。 */
 export function narrowTypeArmThunk(thunk: string, guard: TypeGuard | undefined, arm: "cons" | "alt", forkBindingNames: ReadonlySet<string> | readonly string[]): string {
   if (!guard) return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
   const keep = arm === guard.arm;
-  return `((${guard.name}) => ${thunk})($narrowTypeOf(${guard.name}, ${JSON.stringify(guard.typeOf)}, ${keep}))`;
+  return narrowArmShadowWrap(
+    thunk,
+    [{
+      name: guard.name,
+      arg: `$narrowTypeOf(${guard.name}, ${JSON.stringify(guard.typeOf)}, ${keep})`,
+    }],
+    forkBindingNames,
+    "multi",
+  );
 }
 
 // --- 判别等值守卫（issue #126） ---------------------------------------------
@@ -838,26 +879,24 @@ export function narrowDiscriminantArmThunks(
 ): string {
   if (!guards || guards.length === 0) return thunk;
   const matching = guards.filter((g) => g.arm === arm);
-  if (matching.length === 0) return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (matching.some((g) => names.has(g.name) || isStrictIllegalBinding(g.name))) return thunk;
   const byName = new Map<string, DiscriminantGuard[]>();
   for (const g of matching) {
     const list = byName.get(g.name) ?? [];
     if (!list.some((x) => x.key === g.key && x.value === g.value)) list.push(g);
     byName.set(g.name, list);
   }
-  const params = [...byName.keys()].join(", ");
-  const args = [...byName.entries()]
-    .map(([name, gs]) =>
-      gs.reduce(
+  return narrowArmShadowWrap(
+    thunk,
+    [...byName.keys()].map((name) => ({
+      name,
+      arg: (byName.get(name) ?? []).reduce(
         (acc, g) => `$narrowMemberEq(${acc}, ${JSON.stringify(g.key)}, ${JSON.stringify(g.value)}, true)`,
         name,
       ),
-    )
-    .join(", ");
-  return `((${params}) => ${thunk})(${args})`;
+    })),
+    forkBindingNames,
+    "multi",
+  );
 }
 
 // --- switch case 标签窄化（Bug 184） ---------------------------------------
@@ -1170,57 +1209,62 @@ export function narrowCaseLabelArmThunk(
   forkBindingNames: ReadonlySet<string> | readonly string[],
 ): string {
   if (!facts) return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
   let out = thunk;
   // 判别名窄化（既有口径）：判别名在 fork 绑定集（臂内写 / 快照重绑）时跳过
-  if (!(names.has(facts.name) || isStrictIllegalBinding(facts.name))) {
-    if (facts.key !== undefined) {
-      // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
-      for (const v of facts.exclude ?? []) {
-        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false))`;
-      }
-      for (const v of facts.hit ?? []) {
-        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true))`;
-      }
-    } else {
-      if (facts.excludeNullish) {
-        const call =
-          facts.excludeNullish === "null" ? "$removeNull" :
-          facts.excludeNullish === "undefined" ? "$removeUndefined" :
-          "$removeNullish";
-        out = `((${facts.name}) => ${out})(${call}(${facts.name}))`;
-      }
-      const hit = facts.hit ?? [];
-      if (hit.length > 0) {
-        // Bug 1117（P2）：`case 0:` 命中的是 `x === 0` ⇒ 值域含 **-0**
-        // （`-0 === 0` 为真，但 `-0 !== 0`）⇒ 直接重绑 `$lit(0)` 会把 -0
-        // 改成 +0（`const x = -0; switch (x) { case 0: return 1 / x; }`
-        // 原生是 -Infinity，引擎算成 Infinity = **自信的错值**）⇒ 数值 0 的
-        // 标签按**交集细化** `{0, -0}`（`$join($lit(0), $lit(-0))`），
-        // 不改写成单值。
-        const lits: string[] = [];
-        for (const v of hit) {
-          if (typeof v === "number" && v === 0) {
-            lits.push("$lit(0)", "$lit(-0)");
-            continue;
-          }
-          lits.push(`$lit(${JSON.stringify(v)})`);
-        }
-        const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
-        out = `((${facts.name}) => ${out})(${arg})`;
-      }
+  if (facts.key !== undefined) {
+    // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
+    const memberBindings: ArmShadowBinding[] = [];
+    for (const v of facts.exclude ?? []) {
+      memberBindings.push({
+        name: facts.name,
+        arg: `$narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false)`,
+      });
     }
+    for (const v of facts.hit ?? []) {
+      memberBindings.push({
+        name: facts.name,
+        arg: `$narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true)`,
+      });
+    }
+    out = narrowArmShadowWrap(out, memberBindings, forkBindingNames, "seq");
+  } else {
+    const identBindings: ArmShadowBinding[] = [];
+    if (facts.excludeNullish) {
+      const call =
+        facts.excludeNullish === "null" ? "$removeNull" :
+        facts.excludeNullish === "undefined" ? "$removeUndefined" :
+        "$removeNullish";
+      identBindings.push({ name: facts.name, arg: `${call}(${facts.name})` });
+    }
+    const hit = facts.hit ?? [];
+    if (hit.length > 0) {
+      // Bug 1117（P2）：`case 0:` 命中的是 `x === 0` ⇒ 值域含 **-0**
+      // （`-0 === 0` 为真，但 `-0 !== 0`）⇒ 直接重绑 `$lit(0)` 会把 -0
+      // 改成 +0（`const x = -0; switch (x) { case 0: return 1 / x; }`
+      // 原生是 -Infinity，引擎算成 Infinity = **自信的错值**）⇒ 数值 0 的
+      // 标签按**交集细化** `{0, -0}`（`$join($lit(0), $lit(-0))`），
+      // 不改写成单值。
+      const lits: string[] = [];
+      for (const v of hit) {
+        if (typeof v === "number" && v === 0) {
+          lits.push("$lit(0)", "$lit(-0)");
+          continue;
+        }
+        lits.push(`$lit(${JSON.stringify(v)})`);
+      }
+      const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
+      identBindings.push({ name: facts.name, arg });
+    }
+    out = narrowArmShadowWrap(out, identBindings, forkBindingNames, "seq");
   }
   // Bug 241（第二形态）：case 测试的 nullish 比较事实（miss 路径收窄）——
   // 变量名与判别式无关 ⇒ 各自独立判跳过（影子参数会吞掉臂内写）
   for (const c of facts.compareExclude ?? []) {
-    if (names.has(c.name) || isStrictIllegalBinding(c.name)) continue;
     const call =
       c.grain === "null" ? "$removeNull" :
       c.grain === "undefined" ? "$removeUndefined" :
       "$removeNullish";
-    out = `((${c.name}) => ${out})(${call}(${c.name}))`;
+    out = narrowArmShadowWrap(out, [{ name: c.name, arg: `${call}(${c.name})` }], forkBindingNames, "seq");
   }
   return out;
 }
@@ -1274,15 +1318,16 @@ export function narrowRelArmThunk(
   forkBindingNames: ReadonlySet<string> | readonly string[],
 ): string {
   if (!guard || arm !== "cons") return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
   // 复合守卫（合取）的**其余**合取项界一并接上（同名变量）——
   // 合取为真 ⇒ 每一合取项为真 ⇒ 事实臂同时持有全部界
   // （只接一个界会在契约朝**另一**方向时把「证不出」变成「证反了」⇒ 假红）。
-  let out = thunk;
-  for (const b of [{ op: guard.op, k: guard.k }, ...(guard.extra ?? [])]) {
-    out = `((${guard.name}) => ${out})($refineRel(${guard.name}, ${JSON.stringify(b.op)}, ${b.k}))`;
-  }
-  return out;
+  return narrowArmShadowWrap(
+    thunk,
+    [{ op: guard.op, k: guard.k }, ...(guard.extra ?? [])].map((b) => ({
+      name: guard.name,
+      arg: `$refineRel(${guard.name}, ${JSON.stringify(b.op)}, ${b.k})`,
+    })),
+    forkBindingNames,
+    "seq",
+  );
 }
