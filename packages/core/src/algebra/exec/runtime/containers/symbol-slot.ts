@@ -22,6 +22,7 @@
  *   （Bug 149），不走本通道。
  */
 import type { Abs } from "../../../abs.ts";
+import { isAbsLike } from "../../../abs.ts";
 import { isSymbolAbs, symbolIdOf } from "../../../symbol-id.ts";
 import { slotKeyOfSymbolAbs } from "../symbol-key.ts";
 
@@ -40,7 +41,7 @@ export function symbolSlotKeyOf(a: Abs | undefined): string | undefined {
   // 非 Abs 实参（部分调用点传**裸 JS 值**——如 $del 的键：可选链 delete 发射
   // `$del(obj, "a")` 的裸字符串）→ 键不可判 ⇒ undefined（**不得**取 .shape：
   // 宿主 TypeError ⇒ 整模块 fail-closed）。
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return undefined;
+  if (!isAbsLike(a)) return undefined;
   if (!isSymbolAbs(a)) return undefined;
   const sym = a as Abs;
   const wellKnown = slotKeyOfSymbolAbs(sym);

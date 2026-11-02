@@ -16,7 +16,7 @@
  *   builtins/object/descriptor.ts（enforceProxyOwnKeysInvariant）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, litValue, strLit, unknown } from "../../abs.ts";
+import { abs, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
 import "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue } from "../../pred.ts";
@@ -179,7 +179,7 @@ export function setHostGlobalFnCall(bridge: (fn: unknown, args: Abs[]) => Abs | 
  */
 
 export function asAbsVal(v: unknown): Abs {
-  if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+  if (isAbsLike(v)) return v as Abs;
   if (typeof v === "function") {
     // Bug 291：宿主函数 → Abs 的**稳定门面**——同一宿主函数恒同一 Abs。
     //
@@ -418,7 +418,7 @@ export function $fnVal(
  */
 export function $rawThis(v: unknown): Abs {
   if (v === undefined || v === globalThis) return $lit(undefined);
-  if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
+  if (isAbsLike(v)) return v as Abs;
   return $lit(v);
 }
 
@@ -489,7 +489,7 @@ export function $litTruth(a: Abs): boolean | undefined {
 
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
 export function $lit(v: unknown): Abs {
-  if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {
+  if (isAbsLike(v)) {
     return v as Abs;
   }
   return litAbsFromJs(v);

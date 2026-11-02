@@ -1454,6 +1454,7 @@
       "getPromiseMicrosLength",
       "hasDerivationSession",
       "hashSource",
+      "isAbsLike",
       "isEsmProgram",
       "isEvalMissingSlotEnabled",
       "isGeneratedMarkerLine",

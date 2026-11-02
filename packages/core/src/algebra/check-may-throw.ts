@@ -36,7 +36,7 @@
 
 import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Abs } from "./abs.ts";
-import { abs, never } from "./abs.ts";
+import { abs, never, isAbsLike } from "./abs.ts";
 import type { Phi } from "./pred.ts";
 import { pTrue } from "./pred.ts";
 import { formatShape } from "./format.ts";
@@ -289,8 +289,9 @@ export function evalThrowsOutcome(
     exports = attempt.run;
     memo.set(runKey, exports);
   }
-  const isAbsVal = (v: unknown): v is Abs =>
-    !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
+  // 判定面单源（isAbsLike）：同判定面后行为差异仅限「带 shape 无 conf 的
+  // 宿主对象」——正是要修的误判（宿主臂而非 Abs 臂）
+  const isAbsVal = isAbsLike;
   const call = (name: string, callArgs: Abs[]): TranspiledCallResult | undefined => {
     try {
       return callTranspiledExportFull(exports, name, callArgs, phi.op === "true" ? undefined : { phi });

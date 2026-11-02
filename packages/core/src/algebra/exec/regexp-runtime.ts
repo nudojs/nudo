@@ -2,7 +2,7 @@
  * RegExp brand 执行面（leaf-ish）：从 class.ts 拆出，避免巨型文件。
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, boolLit, strLit, numLit, num, str, unknown } from "../abs.ts";
+import { abs, litValue, boolLit, strLit, numLit, num, str, unknown, isAbsLike } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
 import { isObj, objOf, joinAbs, type Slot } from "../objects.ts";
 import { undefAbs, applyCallbackAbs, validateCallableArg } from "../hof.ts";
@@ -21,7 +21,7 @@ import { validateRegexSubjectArg, matchResultAbs, tryMakeRegexAbs, markMatchArra
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
   // 防御：自由标识符实参（`eval` / `Math` / `arguments`…）在生成代码里是宿主
   // 全局值而非 Abs —— 不得读 .shape（TypeError）⇒ 视作「不是 RegExp」。
-  if (!re || typeof re !== "object" || !("shape" in re)) return undefined;
+  if (!isAbsLike(re)) return undefined;
   if (re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
   const inner = re.shape.shape;
   if (!isObj(inner)) return undefined;

@@ -152,7 +152,10 @@ export {
 } from "./algebra/exec/member-diag.ts";
 export {
   // 字面量助手：env 声明（es/node/web 内建折叠）+ harvester .d.ts 物化共享
-  absLit, absNumLit, absStrLit, allAbsStr
+  absLit, absNumLit, absStrLit, allAbsStr,
+  // 统一非-Abs 守卫（exec 域 ~30 处内联 "shape" in 判定的单源化；
+  // DEC-006 退路表见 algebra/abs.ts）
+  isAbsLike
 } from "./algebra/abs.ts";
 export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
 export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";

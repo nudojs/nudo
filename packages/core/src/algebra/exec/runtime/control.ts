@@ -2,6 +2,10 @@
  * 控制流：loop/try 退出栈、$fork/$for/$whileSeq、$throw。
  */
 import "node:async_hooks";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "../../collector-scope.ts";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
 import { abs, confJoin, litValue, never, unknown } from "../../abs.ts";
@@ -51,14 +55,35 @@ export interface GenYieldCollector {
   ctxs: number[];
 }
 
-/** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货 */
-export let yieldStack: GenYieldCollector[] = [];
-export let genPathSensitive = 0;
-export let genJoinOverride: Abs | null = null;
-export function setGenJoinOverride(v: Abs | null): void { genJoinOverride = v; }
-export function bumpGenPathSensitive(): void { genPathSensitive++; }
+/** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货。
+ *  作用域化（runWithCollectorScope 内各分析互不串台；无作用域 = 模块级
+ *  fallback 单变量，行为同今日）：yieldStack 的 push/pop、marker 计数与
+ *  override 的 save/restore 均在单次生成器求值（同步）内配对完成，跨分析
+ *  串台只可能经 await 窗口交错——各开各的 store 后自然隔离。 */
+const yieldStackSlot = createScopedSlot<GenYieldCollector[]>(() => []);
+const genPathSensitiveSlot = createScopedSlot<number>(() => 0);
+const genJoinOverrideSlot = createScopedSlot<Abs | null>(() => null);
+registerCollectorScopeParticipant((body) => yieldStackSlot.runScoped(body));
+registerCollectorScopeParticipant((body) => genPathSensitiveSlot.runScoped(body));
+registerCollectorScopeParticipant((body) => genJoinOverrideSlot.runScoped(body));
+
+/** 当前 yield 收集栈（async.ts 生成器帧 push/pop/读顶） */
+export function currentYieldStack(): GenYieldCollector[] {
+  return yieldStackSlot.get();
+}
+export function getGenJoinOverride(): Abs | null {
+  return genJoinOverrideSlot.get();
+}
+export function setGenJoinOverride(v: Abs | null): void { genJoinOverrideSlot.set(v); }
+export function getGenPathSensitive(): number {
+  return genPathSensitiveSlot.get();
+}
+export function bumpGenPathSensitive(): void {
+  genPathSensitiveSlot.set(genPathSensitiveSlot.get() + 1);
+}
 
 export function withIsolatedYields<T>(fn: () => T): { v: T; ys: GenYieldCollector | null } {
+  const yieldStack = yieldStackSlot.get();
   const top = yieldStack[yieldStack.length - 1];
   // 无收集器：不换槽、不建 armYs（fork 热路径常态）
   if (!top) return { v: fn(), ys: null };
@@ -72,6 +97,7 @@ export function withIsolatedYields<T>(fn: () => T): { v: T; ys: GenYieldCollecto
 }
 
 export function mergeArmYields(armYsList: Array<GenYieldCollector | null>): void {
+  const yieldStack = yieldStackSlot.get();
   const top = yieldStack[yieldStack.length - 1];
   if (!top || armYsList.length === 0) return;
   const concrete = armYsList.filter((x): x is GenYieldCollector => x !== null);
@@ -86,8 +112,8 @@ export function mergeArmYields(armYsList: Array<GenYieldCollector | null>): void
   for (const ys of concrete) {
     joined = joined ? joinAbs(joined, $arr(ys.els)) : $arr(ys.els);
   }
-  genPathSensitive++;
-  if (joined) genJoinOverride = joined;
+  genPathSensitiveSlot.set(genPathSensitiveSlot.get() + 1);
+  if (joined) genJoinOverrideSlot.set(joined);
   // 父收集器仍并入全部臂元素（过近似），conf 由 genJoinOverride/path 敏感性压低
   for (const ys of concrete) {
     top.els.push(...ys.els);
@@ -269,7 +295,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
     }
   } finally {
     endCollectionFork(arms);
-    if (yieldStack.length > 0) mergeArmYields(armYsList);
+    if (yieldStackSlot.get().length > 0) mergeArmYields(armYsList);
   }
 
   return settleForkArms(a, b, exits);
@@ -724,7 +750,7 @@ function beginSwitchArms(): {
     },
     finish() {
       endCollectionFork(overlays);
-      if (yieldStack.length > 0) mergeArmYields(ysList);
+      if (yieldStackSlot.get().length > 0) mergeArmYields(ysList);
     },
   };
 }

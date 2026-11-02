@@ -13,7 +13,7 @@
  * deleteProtoMethod 钩子）；delete 返回值恒 true（原生同）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, litValue, strLit, unknown } from "../../abs.ts";
+import { abs, bool, boolLit, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
 import { lit } from "../../term.ts";
 
 import { pTrue } from "../../pred.ts";
@@ -235,7 +235,7 @@ function enforceProxyHasInvariant(proxy: Abs, key: string): void {
  * 口径与 `$set` 同款：非 Abs 接收者 **fail-closed**，禁止读 `.shape` 炸宿主。
  */
 function isNonAbsReceiver(o: unknown): boolean {
-  return !o || typeof o !== "object" || !("shape" in (o as object));
+  return !isAbsLike(o);
 }
 
 /**

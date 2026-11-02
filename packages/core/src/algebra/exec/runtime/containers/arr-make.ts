@@ -14,7 +14,7 @@
  *   会吸收污染，空成员贡献空不贡献 unknown 顶）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, unknown, type Confidence } from "../../../abs.ts";
+import { abs, unknown, type Confidence, isAbsLike } from "../../../abs.ts";
 import { pTrue } from "../../../pred.ts";
 import {
   joinAbs,
@@ -107,7 +107,7 @@ export function makeSymbolicRestAbs(): Abs {
 }
 
 export function isSymbolicRestAbs(a: unknown): boolean {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return false;
+  if (!isAbsLike(a)) return false;
   const t = (a as Abs).term;
   return (
     (a as Abs).shape.k === "arr" &&

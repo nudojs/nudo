@@ -15,7 +15,7 @@
  *   接收者跳过（派发按成员各读一次，预读会重复触发 getter）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, litValue, strLit, isBigPrim } from "../../abs.ts";
+import { abs, unknown, litValue, strLit, isBigPrim, isAbsLike } from "../../abs.ts";
 import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
 import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain, BUILTIN_BRAND_METHODS, ITERABLE_BRANDS, chainProtoSlotOf, findStaticClassAccessor } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
@@ -134,7 +134,7 @@ export function normalizeCallArgs(args: Abs[]): Abs[] {
   let norm = args;
   for (let i = 0; i < args.length; i++) {
     const a = args[i] as unknown;
-    if (!(a && typeof a === "object" && "shape" in a)) {
+    if (!isAbsLike(a)) {
       if (norm === args) norm = args.slice();
       norm[i] = asAbsVal(a);
     }
@@ -168,7 +168,7 @@ export function $invoke(
   // 预读对 sum（union）接收者跳过：派发按成员各读一次（$invokeInner 的
   // sum 臂），预读会与成员读重复（getter 跑两次）。
   // BUG-173：派生构造器体在 super() 之前调用 this.m() ⇒ 原生 ReferenceError。
-  if (thisVal && typeof thisVal === "object" && "shape" in (thisVal as object)) {
+  if (isAbsLike(thisVal)) {
     assertThisAccessible(thisVal);
   }
   let preRead: Abs | undefined;
@@ -330,7 +330,7 @@ function $invokeInner(
     if (callBindR !== undefined) return callBindR;
   }
   // 宿主 JS 命名空间对象（Math/Number/JSON…）→ Abs builtin 表
-  if (!thisVal || typeof thisVal !== "object" || !("shape" in thisVal)) {
+  if (!isAbsLike(thisVal)) {
     return invokeNamespaceStatic(thisVal, method, args);
   }
   // Bug 208：内建原型对象上的**自有写**优先于内建方法表（原生 own → prototype
@@ -421,12 +421,12 @@ function invokeCallApplyBind(
     if (list === null || list === undefined) return [];
     if (Array.isArray(list)) {
       return list.map((x) =>
-        x && typeof x === "object" && "shape" in (x as object)
+        isAbsLike(x)
           ? (x as Abs)
           : unknown,
       );
     }
-    if (typeof list === "object" && "shape" in (list as object)) {
+    if (isAbsLike(list)) {
       const a = list as Abs;
       const s = a.shape;
       if (s.k === "tuple") return [...s.elements];
@@ -482,7 +482,7 @@ function invokeCallApplyBind(
   };
   /** bind 后剩余形参：尽量保留原 params 面（dts/inlay） */
   const boundFnParams = (fnVal: unknown, boundCount: number): string[] => {
-    if (fnVal && typeof fnVal === "object" && "shape" in (fnVal as object)) {
+    if (isAbsLike(fnVal)) {
       const s = (fnVal as Abs).shape;
       if (s.k === "fn" && Array.isArray(s.params)) {
         return s.params.slice(boundCount);
@@ -549,7 +549,7 @@ function invokeCallApplyBind(
     });
     return hostBoundFn;
   }
-  if (thisVal && typeof thisVal === "object" && "shape" in thisVal) {
+  if (isAbsLike(thisVal)) {
     const fnImpl = getFnImpl(thisVal);
     const isCallable = thisVal.shape.k === "fn" || fnImpl !== undefined;
     // Bug 253：类值（class A）也可 bind —— 原生 `A.bind(null, 3)` 走
@@ -1330,7 +1330,7 @@ function invokePropertyValue(
   prop: Abs,
   loc?: [number, number],
 ): Abs | undefined {
-  const impl = prop && typeof prop === "object" && "shape" in (prop as object)
+  const impl = isAbsLike(prop)
     ? getFnImpl(prop as Abs)
     : undefined;
   if (!impl || impl.kind === "protoMethod") return undefined;
@@ -1503,7 +1503,7 @@ function knownSurfaceMemberAbsent(
 
 /** 首次/后续方法调用后，把观测结果 join 进 fn.returnType 槽（展示用，不回写分析） */
 export function refineFnReturnType(fn: Abs, result: Abs): void {
-  if (!fn || typeof fn !== "object" || !("shape" in fn)) return;
+  if (!isAbsLike(fn)) return;
   const s = fn.shape as { k?: string; returnType?: Abs };
   if (s.k !== "fn") return;
   if (s.returnType === undefined) {
@@ -1918,7 +1918,7 @@ function userClassMethodBody(
 // ---------------------------------------------------------------------------
 /** Abs 值是否可调用（fn 形状或挂了 impl 的宿主成员值） */
 function isCallableValue(a: Abs): boolean {
-  if (!a || typeof a !== "object" || !("shape" in a)) return false;
+  if (!isAbsLike(a)) return false;
   if (a.shape.k === "fn") return true;
   return getFnImpl(a) !== undefined;
 }

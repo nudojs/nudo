@@ -58,7 +58,7 @@
  *   原生 prototype）——prototype 面读该戳。
  */
 import type { Abs, Shape } from "../../../abs.ts";
-import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown, isArrayView } from "../../../abs.ts";
+import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown, isArrayView, isAbsLike } from "../../../abs.ts";
 import "../../../term.ts";
 import { absFunction, hostFnCtorFacet, getFnImpl } from "../../../abs-fn.ts";
 import {
@@ -917,7 +917,7 @@ export function $get(
 /** 非 Abs 宿主值面：命名空间身份 / 宿主函数真值 / 宿主对象属性投影。 */
 function getHostMember({ o, key, opts }: GetCtx): Abs | undefined {
   // 宿主 JS 对象（Math/JSON…）：属性按命名空间/真值投影
-  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+  if (!isAbsLike(o)) {
     // Object.prototype / Object.prototype.X（含 host 身份）
     if (o === Object.prototype) {
       if (OBJECT_PROTO_METHOD_NAMES.has(key)) return objectProtoMethodAbs(key);
@@ -1776,7 +1776,7 @@ function getGenericTail({ o, key, silent }: GetCtx): Abs {
  * TypedArray 元素读丢掉「长度未建模 ⇒ `| undefined`」的诚实臂。
  */
 export function hasOwnAccessorOf(o: Abs, key: string): boolean {
-  if (!o || typeof o !== "object" || !("shape" in (o as object))) return false;
+  if (!isAbsLike(o)) return false;
   const target = o.shape.k === "brand" ? o.shape.shape : o;
   if (lookupObjAccessor(target, key) !== undefined) return true;
   if (o.shape.k === "brand" && o.shape.name) {
@@ -1960,7 +1960,7 @@ function setHostMember({ o, key, value }: SetCtx): HostSetResult {
   // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
   // 非 Abs 目标 fail-closed 返回原接收者（调用点 `root = $set(root, …)` 重绑
   // 为自赋值 no-op），禁止读 .shape 炸宿主 TypeError（$get 同口径）
-  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+  if (!isAbsLike(o)) {
     // Bug 205：宿主函数（转译的函数声明 / 函数表达式）不是 Abs——写此前
     // 直接丢弃（`F.prototype = {}` 引擎完全无感：原型替换不可观测，
     // instanceof 只能按构造器名匹配 → unsound 的肯定判断）。此处建

@@ -10,7 +10,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, never as neverAbs, unknown } from "../abs.ts";
+import { abs, never as neverAbs, unknown, isAbsLike } from "../abs.ts";
 import {
   getFnImpl,
   absFunction,
@@ -123,7 +123,7 @@ function isClassValueCallee(v: Abs): boolean {
   // 直接读 `v.shape.k` ⇒ 自身抛原生 TypeError（"Cannot read properties of
   // undefined (reading 'k')"），被求值回落层误记成用户代码的 `module-throw`
   // （引擎缺陷伪装成用户缺陷，差分语料的零回落闸门因此变红）。
-  if (!v || typeof v !== "object" || !("shape" in (v as object))) return false;
+  if (!isAbsLike(v)) return false;
   const s = (v as Abs).shape;
   if (!s || typeof s !== "object") return false;
   if (s.k === "brand") {
@@ -152,7 +152,7 @@ function isClassValueCallee(v: Abs): boolean {
  * - any / unknown / sum / never：不可判。
  */
 function callableFacetOf(v: Abs | undefined): boolean | undefined {
-  if (!v || typeof v !== "object" || !("shape" in v)) return false;
+  if (!isAbsLike(v)) return false;
   const s = (v as Abs).shape;
   if (s.k === "fn") return true;
   if (s.k === "brand") {
@@ -364,7 +364,7 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
 // thisVal（HOF thisArg，Bug 21）透传 $call 第三参——$fnVal 的 apply 钩子
 // 把它注入宿主 this，回调体 $rawThis(this) 原样接到（与 call/apply/bind 同通道）。
 setApplyCallbackHost((cb, args, env, _phi, _budget, thisVal) => {
-  if (cb && typeof cb === "object" && "shape" in (cb as object)) {
+  if (isAbsLike(cb)) {
     return $call(cb as Abs, args, thisVal);
   }
   const node = cb as { type?: string; name?: string } | null | undefined;

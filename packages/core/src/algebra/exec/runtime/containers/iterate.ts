@@ -39,7 +39,7 @@
  *   （无公理时不取绑定包——零行为变化）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, numLit, str, unknown } from "../../../abs.ts";
+import { abs, confJoin, litValue, numLit, str, unknown, isAbsLike } from "../../../abs.ts";
 import "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { absFunction } from "../../../abs-fn.ts";
@@ -1455,7 +1455,7 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
       });
       return;
     }
-    if (cb && typeof cb === "object" && "shape" in (cb as object)) {
+    if (isAbsLike(cb)) {
       $call(cb as Abs, args);
     }
   };

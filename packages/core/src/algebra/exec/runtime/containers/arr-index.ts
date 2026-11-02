@@ -16,7 +16,7 @@
  *   （此前下标臂只查 frozen / sealed，flags 面没查 → 写穿无声）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
+import { abs, confJoin, litValue, numLit, str, strLit, unknown, isAbsLike } from "../../../abs.ts";
 import { lit, type Term } from "../../../term.ts";
 import { pTrue, ge } from "../../../pred.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
@@ -70,7 +70,7 @@ export function $idx(
   opts?: { /** 调用方已排除 nullish 臂（可选链守卫跳）——不记 may-throw */ silent?: boolean },
 ): Abs {
   // DEC-006 B/C：非 Abs 目标 fail-closed unknown（禁止读 .shape 炸宿主 TypeError）
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+  if (!isAbsLike(a)) {
     return unknown;
   }
   // 计算成员读与 $get 同源的 throws 域守卫（Bug 12）：
@@ -308,7 +308,7 @@ export function $idx(
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // DEC-006 B/C：非 Abs 目标 fail-closed（与 $set 同口径）
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+  if (!isAbsLike(a)) {
     return a;
   }
   // ToPropertyKey + 数值下标分流：
@@ -507,7 +507,7 @@ function abstractLen(a: Abs): Abs {
 export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   // DEC-006 B/C：形参/回调可能漏出 JS undefined（rest 未包 $arr、map 缺第 3 参）——
   // 非 Abs 入参 fail-closed unknown，禁止读 .shape 炸宿主 TypeError
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+  if (!isAbsLike(a)) {
     // Bug 9：transpile 泄漏的宿主函数（函数声明绑定等）——v.length 是宿主
     // 真值（首个默认值/rest 形参前的形参数），exact 折叠
     if (typeof a === "function") {

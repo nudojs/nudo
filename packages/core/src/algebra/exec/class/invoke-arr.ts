@@ -13,7 +13,7 @@
  *   由 live 消费视图（registerGenDrain）承担。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, confJoin, litValue, bool, boolLit, numLit } from "../../abs.ts";
+import { abs, unknown, confJoin, litValue, bool, boolLit, numLit, isAbsLike } from "../../abs.ts";
 import { joinAbs, canonicalArrayIndex, getSlot } from "../../objects.ts";
 import { fromIdxAbs } from "../../builtins.ts";
 import { markDomainShared } from "../../len-sharing.ts";
@@ -249,7 +249,7 @@ function makeArrCtx(arr: Abs, method: string, args: Abs[]): ArrCtx {
       const r = callAtFunctionBoundary(() =>
         Reflect.apply(fn as (...a: Abs[]) => unknown, thisVal as never, fnArgs),
       );
-      if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
+      if (isAbsLike(r)) return r as Abs;
       return unknown;
     }
     const absFn = asAbs(fn);

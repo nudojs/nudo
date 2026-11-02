@@ -112,6 +112,28 @@ export type Abs = {
   pathNote?: string;
 };
 
+/**
+ * 统一非-Abs 守卫（exec 域判定面单源；与 exec/run.ts isAbsVal 同判定面）。
+ * 求值引擎的宿主边界（transpile 泄漏的宿主函数 / 绑定层漏出的 JS 值 /
+ * 缺参 undefined）会把非 Abs 送进按 Abs 写的运行时入口——裸读 `.shape`
+ * 会炸宿主 TypeError（引擎缺陷伪装成用户缺陷）。
+ *
+ * DEC-006 非 Abs 入参的 fail-closed 退路表（三选一，按入口语义）：
+ * - **退原值透传**：宿主值无信息可加工 ⇒ 原样返回。窄化/拷贝族入口——
+ *   exec/runtime/narrow.ts `$removeNull`、runtime/containers/obj.ts
+ *   `$copy`（`if (!isAbsLike(a)) return a`）。
+ * - **退 unknown**：结果必须是 Abs 且无信息 ⇒ unknown（分析失败令牌，
+ *   不是 any）。读侧入口——runtime/containers/arr-index.ts `$idx`
+ *   （DEC-006 B/C：禁止读 `.shape` 炸宿主 TypeError）、surface.ts
+ *   `$toStr`（退 partial string）。
+ * - **硬抛 TypeError**：原生语义该抛（fail-closed 硬抛 NudoThrow）——
+ *   runtime/containers/obj.ts `privateNameGuard`（宿主值作私有名接收者）、
+ *   exec/class/declare.ts `new <宿主值>`。
+ */
+export function isAbsLike(v: unknown): v is Abs {
+  return typeof v === "object" && v !== null && "shape" in v && "conf" in v;
+}
+
 // --- 工厂 ---
 
 export const never: Abs = { shape: { k: "never" }, conf: "exact" };

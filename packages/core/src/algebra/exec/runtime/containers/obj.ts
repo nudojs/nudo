@@ -15,7 +15,7 @@
  *   被调用（副作用发生），rest 槽落 getter 的**返回值**（非占位 undefined）。
  */
 import type { Abs, Shape } from "../../../abs.ts";
-import { abs, confJoin, litValue, unknown } from "../../../abs.ts";
+import { abs, confJoin, litValue, unknown, isAbsLike } from "../../../abs.ts";
 import {
   joinAbs,
   objOf,
@@ -68,7 +68,7 @@ import "../../call.ts";
  */
 export function privateNameGuard(o: unknown, key: string): void {
   if (key.charCodeAt(0) !== 35 /* # */) return;
-  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+  if (!isAbsLike(o)) {
     // 宿主值作私有名接收者：原生 TypeError（私有名语法只可达
     // 类实例；泄漏宿主值时 fail-closed 硬抛）
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -165,7 +165,7 @@ export function $copy(a: Abs, memo?: WeakMap<object, Abs>): Abs {
   // fail-closed **返回原值**（调用点 `x = $copy(x)` 重绑为自赋值 no-op），
   // 禁止裸读 `.shape` 抛宿主 TypeError（那会被 run.ts 的 evalFallbackOf
   // 归为 nudo:internal ⇒ 合法代码门禁假红 + 引擎内部异常原文泄漏）。
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   return copyWithMemo(a, memo ?? new WeakMap());
 }
 

@@ -5,7 +5,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, litValue, unknown } from "../abs.ts";
+import { abs, litValue, unknown, isAbsLike } from "../abs.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
@@ -551,7 +551,7 @@ function callHostGlobalLiteralOnly(
   let cloneVerdict: Cloneability = "cloneable";
   let abstractArg = false;
   for (const a of args) {
-    if (a && typeof a === "object" && "shape" in (a as object)) {
+    if (isAbsLike(a)) {
       if (structured) {
         // 字面量原始值（string/number/boolean/null/undefined/bigint）⇒ 可克隆
         // ⇒ 照常真执行（宿主返回精确值）
@@ -887,7 +887,7 @@ export function $callNamed(
   // 同一次调用共享身份图 memo：`f(obj, obj)` 的两个实参保持别名。
   const snapshotMemo = new WeakMap<object, Abs>();
   const argsSnapshot = args.map((a) =>
-    a && typeof a === "object" && "shape" in (a as object)
+    isAbsLike(a)
       ? $copy(a, snapshotMemo)
       : (a as Abs),
   );
@@ -932,7 +932,7 @@ export function $callNamed(
           }
         }
       }
-    } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
+    } else if (isAbsLike(fn)) {
       // Abs fn 分支同口径预算（编译递归经 $call 会绕到此处——cycle/深度守卫）
       const entered = evalEnterCall(name, fn, execArgs);
       if (!entered.ok) {

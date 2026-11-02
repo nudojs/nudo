@@ -10,7 +10,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs } from "../abs.ts";
+import { abs, isAbsLike } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
 import { getSlot, isNullProtoObj } from "../objects.ts";
 import { getEvalClass } from "./class-registry.ts";
@@ -41,18 +41,29 @@ const memberDiagCollectorSlot = createScopedSlot<
 >(() => null);
 registerCollectorScopeParticipant((body) => memberDiagCollectorSlot.runScoped(body));
 
-const callLocStack: Array<{ line: number; column: number }> = [];
+/** 调用点 loc 栈 + 实参 provenance（作用域化：runWithCollectorScope 内各
+ *  分析互不串台；无作用域 = fallback 模块级单变量/单表，行为同今日）。
+ *  裸数组/裸 WeakMap 此前是模块级可变状态——await 窗口交错的另一轮分析
+ *  会把上一轮的 loc 栈残值 / origin 标记错投到本轮诊断上。 */
+const callLocStackSlot = createScopedSlot<Array<{ line: number; column: number }>>(
+  () => [],
+);
+registerCollectorScopeParticipant((body) => callLocStackSlot.runScoped(body));
+
 /** 实参 Abs → 字面量源位置（$callNamed 按 argLocs 打标） */
-const absOrigins = new WeakMap<object, { line: number; column: number }>();
+const absOriginsSlot = createScopedSlot<
+  WeakMap<object, { line: number; column: number }>
+>(() => new WeakMap());
+registerCollectorScopeParticipant((body) => absOriginsSlot.runScoped(body));
 
 /** 给实参 Abs 打 provenance（调用点参数字面量） */
 export function tagAbsOrigin(a: Abs, loc: { line: number; column: number }): void {
-  if (a && typeof a === "object") absOrigins.set(a, loc);
+  if (a && typeof a === "object") absOriginsSlot.get().set(a, loc);
 }
 
 export function getAbsOrigin(a: Abs | undefined): { line: number; column: number } | undefined {
   if (!a || typeof a !== "object") return undefined;
-  return absOrigins.get(a);
+  return absOriginsSlot.get().get(a);
 }
 
 /** 返回先前 collector，便于嵌套调用 save/restore */
@@ -65,16 +76,17 @@ export function setMemberDiagCollector(
 }
 
 export function pushCallLoc(loc: { line: number; column: number }): void {
-  callLocStack.push(loc);
+  callLocStackSlot.get().push(loc);
 }
 
 export function popCallLoc(): void {
-  callLocStack.pop();
+  callLocStackSlot.get().pop();
 }
 
 export function recordMemberDiag(d: EvalMemberDiag): void {
   const memberDiagCollector = memberDiagCollectorSlot.get();
   if (!memberDiagCollector) return;
+  const callLocStack = callLocStackSlot.get();
   const origin = d.origin ?? callLocStack[callLocStack.length - 1];
   try {
     memberDiagCollector(origin ? { ...d, origin } : d);
@@ -382,7 +394,7 @@ function brandProtoSurfaceModelled(brandName: string): boolean {
 function brandDefinitelyUncallable(recv: Abs, name: string): boolean {
   const s = recv.shape as { k: "brand"; name: string; shape: Abs };
   const inner = s.shape;
-  if (!inner || typeof inner !== "object" || !("shape" in inner)) return false;
+  if (!isAbsLike(inner)) return false;
   const is = inner.shape as {
     k?: string;
     slots?: Record<string, { value: Abs; optional?: boolean }>;

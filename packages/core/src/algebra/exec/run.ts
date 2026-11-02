@@ -26,7 +26,7 @@ import {
 import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
-import { never, unknown, abs, strLit } from "../abs.ts";
+import { never, unknown, abs, strLit, isAbsLike } from "../abs.ts";
 import { makeAbsApplyResult, getFnImpl, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf, defaultImportBindingOf } from "../abs-modules.ts";
@@ -107,7 +107,7 @@ export function runTranspiledOptionsMemoKey(
     const obj = v as object;
     if (seen.has(obj)) return "@";
     seen.add(obj);
-    if ("shape" in obj && "conf" in obj) {
+    if (isAbsLike(obj)) {
       try {
         return formatAbs(obj as Abs);
       } catch {
@@ -1123,7 +1123,9 @@ export type TranspiledCallResult = {
 };
 
 export function isAbsVal(v: unknown): v is Abs {
-  return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
+  // 判定面单源：与 exec 域全部内联判定同走 isAbsLike（含 conf 检查——
+  // 宿主对象恰好带 shape 属性时不误判 Abs）
+  return isAbsLike(v);
 }
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
@@ -1226,7 +1228,7 @@ function callTranspiledExportFullInner(
     // 副本（原生别名语义）；自引用实参也不能让快照栈溢出。
     const copyMemo = new WeakMap<object, Abs>();
     const callArgs = args.map((a) => {
-      if (!(a && typeof a === "object" && "shape" in (a as object))) return asAbsVal(a);
+      if (!isAbsLike(a)) return asAbsVal(a);
       return opts?.shareArgs ? (a as Abs) : $copy(a as Abs, copyMemo);
     });
     // 宿主函数（无源码可分析）⇒ 回落记 internal（DEC-006 canary）

@@ -19,7 +19,7 @@
  *   副作用不得整体丢失）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, boolLit, confJoin, litValue, strLit, unknown, never, type Confidence } from "../../abs.ts";
+import { abs, boolLit, confJoin, litValue, strLit, unknown, never, type Confidence, isAbsLike } from "../../abs.ts";
 import { joinAbs, objOf, getSlot, type ObjShape } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
@@ -27,7 +27,7 @@ import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNu
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
-import { yieldStack, genPathSensitive, genJoinOverride, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
+import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
 import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
 import { $arr, $yieldStarElems, $get } from "./containers.ts";
 import { $call } from "../call.ts";
@@ -586,7 +586,8 @@ export function $await(v: Abs): Abs {
 }
 
 // --- 生成器 ---
-// yieldStack / genPathSensitive / genJoinOverride 在文件前部（fork 隔离用）
+// 生成器收集态（currentYieldStack / get|setGenJoinOverride / genPathSensitive
+// 计数 accessor）经文件前部 import 自 control.ts（fork 隔离用；作用域化槽）
 
 /** GeneratorFunction 构造器 brand（g().constructor）——原生 name 是 "" */
 let generatorCtorCache: Abs | undefined;
@@ -801,9 +802,7 @@ function makeGenObject(
     }
     const impl = getFnImpl(retFn);
     const callable =
-      typeof retFn === "object" &&
-      retFn !== null &&
-      "shape" in retFn &&
+      isAbsLike(retFn) &&
       (impl?.apply !== undefined || (impl?.body !== undefined && impl.body !== noBody));
     if (!callable) {
       // 原生：return 存在但不可调用 → TypeError
@@ -1033,10 +1032,10 @@ export function generatorProtoProtocolMember(name: "next" | "return" | "throw"):
  * @@toStringTag "AsyncGenerator"（原生 async function* / async * 方法）。 */
 export function $gen(body: () => Abs, asyncMode = false): Abs {
   const ys: GenYieldCollector = { els: [], ctxs: [] };
-  const marker = genPathSensitive;
-  const prevOverride = genJoinOverride;
+  const marker = getGenPathSensitive();
+  const prevOverride = getGenJoinOverride();
   setGenJoinOverride(null);
-  yieldStack.push(ys);
+  currentYieldStack().push(ys);
   // Bug 229：本帧的 yield* 委托表（.return(v) 转发用）——与 yieldStack 平行
   // 压栈，$yieldStar 记入（起始下标 + 元素数 + 委托对象 + 并出元素）。
   const delegations: GenDelegation[] = [];
@@ -1070,7 +1069,7 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
     // token 再抛路径保持丢弃式（旧行为）；正常/延迟异常路径保留帧内
     // soft 效果挂生成器对象（gate 面：消费点重记，见 registerGenDeferred）
     soft = popMayThrowFrame(controlToken !== undefined);
-    yieldStack.pop();
+    currentYieldStack().pop();
     genDelegationStack.pop();
     if (controlToken !== undefined) throw controlToken;
   }
@@ -1084,8 +1083,8 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
   // （>cap widen 成 arr 是类型面合法过近似，不再吞掉元素序列）。
   // Bug 52：fork join / 路径敏感后索引与臂对位不可信——全序列过近似：
   // 任一臂出现过的 try 位并入每个 yield 点（保守，不做定值）。
-  const joined = genJoinOverride;
-  const pathSensitive = joined !== null || genPathSensitive > marker;
+  const joined = getGenJoinOverride();
+  const pathSensitive = joined !== null || getGenPathSensitive() > marker;
   let ctxs = ys.ctxs;
   if (pathSensitive && ys.ctxs.length > 0) {
     const mask = ys.ctxs.reduce((a, b) => a | b, 0);
@@ -1112,7 +1111,7 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
   const arr = $arr(ys.els);
   const as = arr.shape;
   const els = as.k === "tuple" ? [...as.elements] : as.k === "arr" ? [as.element] : [unknown];
-  if (genPathSensitive > marker) {
+  if (getGenPathSensitive() > marker) {
     return makeGenObject(
       els,
       arr.conf === "exact" ? ("path" as Confidence) : arr.conf,
@@ -1135,6 +1134,7 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
  *  （YIELD_TRY_FINALLY / YIELD_TRY_CATCH），.return()/.throw() 挂起点
  *  语义用（见 makeGenObject）。 */
 export function $yield(v: Abs, tryCtx = 0): Abs {
+  const yieldStack = currentYieldStack();
   const top = yieldStack[yieldStack.length - 1];
   if (top) {
     top.els.push(v);
@@ -1153,6 +1153,7 @@ export function $yield(v: Abs, tryCtx = 0): Abs {
 export function $yieldStar(v: unknown, tryCtx = 0): Abs {
   const a = asAbsVal(v);
   const { els, lengthKnown } = $yieldStarElems(a);
+  const yieldStack = currentYieldStack();
   const top = yieldStack[yieldStack.length - 1];
   if (top) {
     // Bug 229：记入本帧委托表（.return(v) 转发用）——起始下标 = 委托元素在

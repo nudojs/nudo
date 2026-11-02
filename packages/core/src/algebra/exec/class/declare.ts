@@ -12,7 +12,7 @@
  *   withNewTargetReset 包裹（嵌套 new 不串帧）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, unknown, never, litValue, strLit } from "../../abs.ts";
+import { abs, unknown, never, litValue, strLit, isAbsLike } from "../../abs.ts";
 import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
@@ -135,7 +135,7 @@ export function bindCtorFacetOf(fn: Abs): BindCtorFacet | undefined {
  * fn / brand（类实例）/ eff（Promise）——`prim` / nullish 不是对象。
  */
 function isObjectLikeAbs(v: Abs | undefined | null): boolean {
-  if (!v || typeof v !== "object" || !("shape" in (v as object))) return false;
+  if (!isAbsLike(v)) return false;
   const k = (v as Abs).shape.k;
   return (
     k === "brand" || k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "eff"
@@ -162,7 +162,7 @@ function ctorFacetOfTarget(t: Abs | undefined): boolean | undefined {
     if (facet === true) return true;
     return undefined;
   }
-  if (!t || typeof t !== "object" || !("shape" in (t as object))) return false;
+  if (!isAbsLike(t)) return false;
   const sh = (t as Abs).shape;
   if (sh.k === "fn") {
     if (sh.ctor === true) return true;
@@ -287,7 +287,7 @@ export function $class(
       superName = (extVal as { name?: string }).name || undefined;
     } else if (typeof extVal === "string") {
       superName = extVal; // 向后兼容：名字字符串
-    } else if (extVal && typeof extVal === "object" && "shape" in (extVal as object)) {
+    } else if (isAbsLike(extVal)) {
       const s = (extVal as Abs).shape;
       if (s.k === "brand") {
         superName = s.name;
@@ -327,7 +327,7 @@ export function $class(
   } else if (extVal !== undefined) {
     // 无 hasExtends 的旧调用面：原归一化（brand / 宿主函数 / 字符串）
     if (typeof extVal === "string") superName = extVal;
-    else if (extVal && typeof extVal === "object" && "shape" in (extVal as object)) {
+    else if (isAbsLike(extVal)) {
       const s = (extVal as Abs).shape;
       superName = s.k === "brand" ? s.name : undefined;
     } else if (typeof extVal === "function") {
@@ -439,7 +439,7 @@ export function $class(
   }
   // BUG-172：父类**规格身份**随 extends 活引用取得（只认随值携带的身份，
   // 不按名牌回表——回表正是串味的来源）。内建父无身份 ⇒ 不挂。
-  if (!superNull && extVal && typeof extVal === "object" && "shape" in (extVal as object)) {
+  if (!superNull && isAbsLike(extVal)) {
     const sup = classSpecOfAbs(extVal as Abs);
     if (sup) full.superSpec = sup;
   }
@@ -1030,7 +1030,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发。
   // dual-facet 全局（Array/Date/Promise/Number…）经 env 遮蔽后 cls 是 Abs，
   // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
-  if (cls && typeof cls === "object" && "shape" in (cls as object)) {
+  if (isAbsLike(cls)) {
     const cs = (cls as Abs).shape;
     // Bug 122：new <proxy 实例> 是靶的 [[Construct]]（或 construct 陷阱）——
     // 不是重入 Proxy 构造器。brand 名 "Proxy" 与构造器同名，此前
@@ -1291,7 +1291,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // shape）作为 $new 接收者：原生 IsConstructor 恒 false → 确定 TypeError
   // （与 Symbol/BigInt 非构造器同口径；此前直达 specOf 裸解引用 cls.shape.k
   // 引擎内部崩溃，被 run.ts catch-all 兜底成 unknown + 假 may-throw）
-  if (cls && typeof cls === "object" && !("shape" in (cls as object))) {
+  if (cls && typeof cls === "object" && !isAbsLike(cls)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   const spec = specOf(cls);
@@ -1302,7 +1302,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // fn 形走下方 ctor 旗标分支、attachFnImpl 只产 fn 形状）→ 确定 TypeError，
     // 不再静默落 $call（Bug 10 同缺口）。brand（Proxy construct trap 可
     // 构造）/unknown（fail-closed 令牌）维持原口径不记。
-    const fs = cls && typeof cls === "object" && "shape" in (cls as object)
+    const fs = isAbsLike(cls)
       ? (cls as Abs).shape
       : undefined;
     if (fs?.k === "obj" || fs?.k === "arr" || fs?.k === "tuple") {

@@ -15,7 +15,7 @@
  *   抛 TypeError；空数组 / 空洞位 / preventExtensions（nonext）不抛。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, numLit, unknown, type Confidence } from "../../../abs.ts";
+import { abs, confJoin, litValue, numLit, unknown, type Confidence, isAbsLike } from "../../../abs.ts";
 import "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
@@ -315,7 +315,7 @@ export function sortTupleAbs(
   const undefEls = slots.filter((el, i) => isUndefLit(el) && !isHoleAt(i));
   const asAbsOrNull = (v: unknown): Abs | null => {
     const a = asAbsVal(v);
-    return a && typeof a === "object" && "shape" in a ? a : null;
+    return isAbsLike(a) ? a : null;
   };
   const cmpAbs = cmp === undefined ? undefined : asAbsOrNull(cmp);
   const isDefaultCmp =

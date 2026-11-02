@@ -1,7 +1,7 @@
 /**
  * 空值 / 类型 / 相等 / 关系守卫的臂剪影（narrowing）运行时。
  *
- * 域：转译器在守卫臂内对绑定名做的影子重绑（`exec/transpile/stmt-predicates.ts`
+ * 域：转译器在守卫臂内对绑定名做的影子重绑（`exec/transpile/stmt/predicates.ts`
  * 发射、`runtime.ts` facade 转出）：
  * - nullish：`$removeNullish` / `$removeNull` / `$removeUndefined` /
  *   `$removeMemberNullish`——按 term 字面量逐成员剥离 null / undefined
@@ -19,7 +19,7 @@
  * runtime.ts 只做转出）；新增 narrow 算子放这里，不要回填 async.ts。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, isNumPrim, numLit, strLit } from "../../abs.ts";
+import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import { pTrue, and, implies, type Pred, type PrimName } from "../../pred.ts";
 import { migrateNullProto, type ObjShape } from "../../objects.ts";
@@ -39,7 +39,7 @@ import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../su
 export function $removeNullish(a: Abs): Abs {
   // 裸宿主值（非 Abs）：原样透传——调用边界（$fork 臂）经 asAbsVal 收拢，
   // 提前折 unknown 是无谓退化（与 $fork 对缺参/宿主裸值的口径一致）
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (definitelyNotNullishShape(a.shape)) return a;
   if (isNullishLitAbs(a)) return a;
   if (a.shape.k === "sum") {
@@ -66,7 +66,7 @@ function isUndefLitAbs(a: Abs): boolean {
  * 不得连 undefined 一起剪，否则 `p.major` 漏报真实 TypeError）。
  */
 export function $removeNull(a: Abs): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (isNullLitAbs(a)) return a;
   if (a.shape.k === "sum") {
     const members = (a.shape as { members: Abs[] }).members;
@@ -84,7 +84,7 @@ export function $removeNull(a: Abs): Abs {
  * null，`u.v` 对 null 仍原生抛 TypeError，不得剪）。
  */
 export function $removeUndefined(a: Abs): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (isUndefLitAbs(a)) return a;
   if (a.shape.k === "sum") {
     const members = (a.shape as { members: Abs[] }).members;
@@ -116,7 +116,7 @@ export function $removeUndefined(a: Abs): Abs {
  * $narrowMemberEq 同口径）。
  */
 export function $removeMemberNullish(a: Abs, key: string): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (a.shape.k === "sum") {
     const members = (a.shape as { members: Abs[] }).members;
     const kept: Abs[] = [];
@@ -238,7 +238,7 @@ function typeofOfMember(m: Abs): string | undefined {
  * 原样返回（臂不可达的保守近似，与 $removeNullish 空集口径一致）。
  */
 export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (a.shape.k !== "sum") {
     // 单形态：判定的 typeof 与守卫一致（或补集臂判不一致但值本就单一）
     // 无可剪；不一致属臂不可达，原样返回（保守）。
@@ -277,7 +277,7 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
  * 凭空排除 bigint → 假证明；any/unknown 保持原样（宁缺毋假）。
  */
 export function $refineRel(a: Abs, op: "gt" | "ge" | "lt" | "le", k: number): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
   return refineAbsForRelTrue(a, op, k);
 }
@@ -358,7 +358,7 @@ export function $narrowMemberEq(
   value: string | number | boolean,
   keep: boolean,
 ): Abs {
-  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (!isAbsLike(a)) return a;
   if (a.shape.k !== "sum") return a;
   const litAbs =
     typeof value === "string" ? strLit(value) :
