@@ -1558,31 +1558,27 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
       }
     }
 
+    // 成员链根标识符（`a.b.c = …` 的 a；ThisExpression / 非标识符根不标）——
+    // 赋值 / 更新 / 有状态调用三面同款，单源。
+    const markFreeMemberRoot = (node: unknown): void => {
+      let cur = node as { type?: string; object?: unknown; name?: string } | undefined;
+      while (cur?.type === "MemberExpression") {
+        cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
+      }
+      if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
+    };
+
     if (n.type === "AssignmentExpression") {
       const left = n.left as
         | { type?: string; name?: string; object?: unknown }
         | undefined;
       if (left?.type === "Identifier") markFree(left.name, nextShadowed);
-      else if (left?.type === "MemberExpression") {
-        let cur: { type?: string; object?: unknown; name?: string } | undefined =
-          left as { type?: string; object?: unknown; name?: string };
-        while (cur?.type === "MemberExpression") {
-          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
-        }
-        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
-      }
+      else markFreeMemberRoot(left);
     }
     if (n.type === "UpdateExpression") {
       const arg = n.argument as { type?: string; name?: string; object?: unknown } | undefined;
       if (arg?.type === "Identifier") markFree(arg.name, nextShadowed);
-      else if (arg?.type === "MemberExpression") {
-        let cur: { type?: string; object?: unknown; name?: string } | undefined =
-          arg as { type?: string; object?: unknown; name?: string };
-        while (cur?.type === "MemberExpression") {
-          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
-        }
-        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
-      }
+      else markFreeMemberRoot(arg);
     }
     if (
       n.type === "CallExpression" &&
@@ -1595,13 +1591,7 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
         | { type?: string; name?: string; object?: unknown }
         | undefined;
       if (obj?.type === "Identifier") markFree(obj.name, nextShadowed);
-      else if (obj?.type === "MemberExpression" || obj?.type === "ThisExpression") {
-        let cur: { type?: string; object?: unknown; name?: string } | undefined = obj as unknown as { type?: string; object?: unknown; name?: string };
-        while (cur?.type === "MemberExpression") {
-          cur = cur.object as { type?: string; object?: unknown; name?: string } | undefined;
-        }
-        if (cur?.type === "Identifier") markFree(cur.name, nextShadowed);
-      }
+      else markFreeMemberRoot(obj);
     }
 
     for (const key of Object.keys(n)) {

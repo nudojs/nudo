@@ -552,16 +552,21 @@ function collectThisAssignments(node: unknown, out: Set<string>): void {
   }
 }
 
+/** 顶层语句解掉 export 包装后的声明（无包装则原语句）——顶层声明扫描共用。 */
+function unwrapExportDecl(stmt: unknown): unknown {
+  const s = stmt as { type?: string; declaration?: unknown };
+  return s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration"
+    ? s.declaration
+    : stmt;
+}
+
 /** 模块顶层 `class <name>` 声明（含 export 包装） */
 function findClassDecl(
   file: ReturnType<typeof parse>,
   name: string,
 ): object | undefined {
   for (const stmt of file.program.body) {
-    const decl =
-      (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
-        ? (stmt as { declaration?: unknown }).declaration
-        : stmt) as { type?: string; id?: { name?: string } } | undefined;
+    const decl = unwrapExportDecl(stmt) as { type?: string; id?: { name?: string } } | undefined;
     if (decl?.type !== "ClassDeclaration") continue;
     if (decl.id?.name === name) return decl;
     // Bug 1156：匿名 `export default class {}` 没有本地名 ⇒ 导出槽名 "default"
@@ -1018,6 +1023,22 @@ export function collectCallResolvers(
     return classBindingCache.get(key);
   };
   resolveOut.namespaceClassBinding = namespaceClassBinding;
+  // ObjectPattern 解构导入（动态 import 与 require 两路同款单源）：属性名
+  // → exported；绑定名 → local（省略别名时与 exported 同名）。
+  const bindPatternImports = (
+    pattern: { properties?: Array<Record<string, unknown>> },
+    modSrc: string,
+    spec: string,
+  ): void => {
+    for (const p of pattern.properties ?? []) {
+      const key = p.key as { type?: string; name?: string; value?: unknown } | undefined;
+      const val = p.value as { type?: string; name?: string } | undefined;
+      const exported =
+        key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+      const local = val?.type === "Identifier" ? val.name : exported;
+      if (exported && local) bindExternal(local, modSrc, exported, spec);
+    }
+  };
   const bindExternal = (local: string, modSrc: string, fnName: string, spec: string): void => {
     const r = resolveExportSource(modSrc, fnName, loadSpecFrom, 0, fromFile, extFromFile(spec) ?? "");
     const ref: ExternalFnRef = {
@@ -1132,14 +1153,7 @@ export function collectCallResolvers(
         if (dynSpec) {
           const modSrc = loadSpec(dynSpec);
           if (modSrc && id.type === "ObjectPattern") {
-            for (const p of id.properties ?? []) {
-              const key = p.key as { type?: string; name?: string; value?: unknown } | undefined;
-              const val = p.value as { type?: string; name?: string } | undefined;
-              const exported =
-                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
-              const local = val?.type === "Identifier" ? val.name : exported;
-              if (exported && local) bindExternal(local, modSrc, exported, dynSpec);
-            }
+            bindPatternImports(id, modSrc, dynSpec);
           }
           if (modSrc && id.type === "Identifier" && id.name) {
             const from = extFromFile(dynSpec);
@@ -1160,16 +1174,7 @@ export function collectCallResolvers(
           const modSrc = loadSpec(spec);
           // const { fn } = require(...)
           if (id.type === "ObjectPattern" && modSrc) {
-            for (const p of id.properties ?? []) {
-              const key = p.key as { type?: string; name?: string; value?: unknown } | undefined;
-              const val = p.value as { type?: string; name?: string } | undefined;
-              const exported =
-                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
-              const local = val?.type === "Identifier" ? val.name : exported;
-              if (exported && local) {
-                bindExternal(local, modSrc, exported, spec);
-              }
-            }
+            bindPatternImports(id, modSrc, spec);
           }
           // const m = require(...) → m.fn
           if (id.type === "Identifier" && id.name && modSrc) {
@@ -1286,11 +1291,7 @@ export function collectCallResolvers(
    * 用到静态成员。
    */
   for (const stmt of file.program.body) {
-    const decl = (
-      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
-        ? (stmt as { declaration?: unknown }).declaration
-        : stmt
-    ) as { type?: string; id?: { name?: string } } | undefined;
+    const decl = unwrapExportDecl(stmt) as { type?: string; id?: { name?: string } } | undefined;
     if (decl?.type !== "ClassDeclaration" || !decl.id?.name) continue;
     moduleFrame.classes.set(decl.id.name, {
       source,

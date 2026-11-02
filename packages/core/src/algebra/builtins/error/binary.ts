@@ -251,10 +251,7 @@ export function makeDataViewAbs(
   // number 域）。byteLength 缺省 = buffer 的 byteLength 槽 − byteOffset
   // （buffer 为 ArrayBuffer/SharedArrayBuffer brand 时可读其槽）。
   const offV = off !== undefined ? toIndexLiteralValue(off) : 0;
-  const bufBrand = isBufferBrand && buf.shape.k === "brand" ? buf.shape : undefined;
-  const bufInner = bufBrand ? bufBrand.shape : undefined;
-  const bufLenAbs = bufInner && bufInner.shape.k === "obj" ? getSlot(bufInner.shape.slots, "byteLength")?.value : undefined;
-  const bufLenV = bufLenAbs !== undefined ? toIndexLiteralValue(bufLenAbs) : undefined;
+  const bufLenV = isBufferBrand ? bufferByteLengthLiteral(buf) : undefined;
   const lenV =
     !lenDefaulted && len !== undefined
       ? toIndexLiteralValue(len)
@@ -407,13 +404,7 @@ function makeTypedArrayFromBuffer(
   // 再 ToIndex——new Uint8Array(buf, 4, undefined) 长度填满尾段）
   const lenDefaulted = len === undefined || isDefinitelyUndefinedArg(len);
   const offV = off !== undefined ? toIndexLiteralValue(off) : 0;
-  const bufBrand = buf.shape.k === "brand" ? buf.shape : undefined;
-  const bufInner = bufBrand ? bufBrand.shape : undefined;
-  const bufLenAbs =
-    bufInner && bufInner.shape.k === "obj"
-      ? getSlot(bufInner.shape.slots, "byteLength")?.value
-      : undefined;
-  const bufLenV = bufLenAbs !== undefined ? toIndexLiteralValue(bufLenAbs) : undefined;
+  const bufLenV = bufferByteLengthLiteral(buf);
   const lenV = !lenDefaulted && len !== undefined ? toIndexLiteralValue(len) : undefined;
   if (offV !== undefined && bufLenV !== undefined) {
     // 越界先于对齐（node 报错序：Int32(buf8,12) 报越界、Int32(buf8,6) 报对齐）
@@ -460,6 +451,19 @@ function makeTypedArrayFromBuffer(
 }
 
 /**
+ * buffer brand 内层 obj 的 `byteLength` 槽字面量（DataView / TypedArray
+ * buffer 视图共用单源——原两处内联同款四行展开）。非 buffer brand /
+ * 内层非 obj / 槽不可折 → undefined。
+ */
+function bufferByteLengthLiteral(buf: Abs): number | undefined {
+  if (buf.shape.k !== "brand") return undefined;
+  const inner = buf.shape.shape;
+  if (inner.shape.k !== "obj") return undefined;
+  const slot = getSlot(inner.shape.slots, "byteLength")?.value;
+  return slot !== undefined ? toIndexLiteralValue(slot) : undefined;
+}
+
+/**
  * Bug 131：TypedArray 单项元素转换检查（elem 为家族元素域）：
  * number 家族 ToNumber（symbol prim / bigint prim / bigint 字面量 → 定抛
  * TypeError；抽象项（any/obj/fn/brand/sum 载体）→ may TypeError）；
@@ -472,12 +476,19 @@ function enforceTaItem(it: Abs, elem: "number" | "bigint"): void {
     enforceTaBigIntItem(it);
     return;
   }
+  enforceTaNumberItem(it, "TypedArray item ToNumber may throw (Symbol/BigInt)");
+}
+
+/** number 域单项执法（enforceTaItem 与 `TypedArray.of` 臂共用；cause 进诊断文案）。 */
+function enforceTaNumberItem(it: Abs, cause: string): void {
+  // ToNumber——symbol（shape 恒无 lit）/bigint 字面量/抽象 bigint prim →
+  // 定抛 TypeError；any/obj/fn/brand/sum 抽象项 → may
   if (isSymbolAbs(it) || isBigintPrimAbs(it)) throw new NudoThrow(errorTypeAbs("TypeError"));
   if (it.term?.op === "lit" && typeof it.term.value === "bigint") {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (it.term?.op !== "lit" && mayCoerceThrowOperand(it)) {
-    recordMayThrow({ kind: "TypeError", cause: "TypedArray item ToNumber may throw (Symbol/BigInt)" });
+    recordMayThrow({ kind: "TypeError", cause });
   }
 }
 
@@ -854,21 +865,9 @@ export function evalTypedArrayStatic(
     return brand();
   }
   if (method === "of") {
-    for (const it of args) {
-      if (elem === "bigint") {
-        enforceTaBigIntItem(it);
-        continue;
-      }
-      // number 域：ToNumber——symbol（shape 恒无 lit）/bigint 字面量/抽象
-      // bigint prim → 定抛 TypeError；any/obj/fn/brand/sum 抽象项 → may
-      if (isSymbolAbs(it) || isBigintPrimAbs(it)) throw new NudoThrow(errorTypeAbs("TypeError"));
-      if (it.term?.op === "lit" && typeof it.term.value === "bigint") {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
-      if (it.term?.op !== "lit" && mayCoerceThrowOperand(it)) {
-        recordMayThrow({ kind: "TypeError", cause: "TypedArray.of item ToNumber may throw (Symbol/BigInt)" });
-      }
-    }
+    // 单项执法与 from/enforceTaItemConversion 同源（Bug 131 注释）；
+    // of 臂原先内联同款逻辑（cause 多一个 ".of"），现统一走共享文案。
+    for (const it of args) enforceTaItem(it, elem);
     return brand();
   }
   return undefined;

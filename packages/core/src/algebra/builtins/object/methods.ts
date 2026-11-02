@@ -433,15 +433,17 @@ function ownSymbolKeysAbs(a0: Abs): Abs | undefined {
       const s = slots[n]!;
       return s.symbolKey === true && s.internal !== true && s.inherited !== true;
     }).length;
+  // 闭合槽表 → 自有 symbol 键计数元组；open / index 槽表不可判 → undefined
+  //（obj 臂与 brand 内层臂同款收尾，单源）。
+  const ownSymbolsTuple = (os: {
+    slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
+    open?: boolean;
+    index?: unknown;
+  }): Abs | undefined =>
+    os.open === true || os.index !== undefined ? undefined : tupleOf(countOwn(os.slots));
   const s = a0.shape;
   if (s.k === "obj") {
-    const os = s as unknown as {
-      slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
-      open?: boolean;
-      index?: unknown;
-    };
-    if (os.open === true || os.index !== undefined) return undefined;
-    return tupleOf(countOwn(os.slots));
+    return ownSymbolsTuple(s as unknown as Parameters<typeof ownSymbolsTuple>[0]);
   }
   if (s.k === "brand") {
     // Proxy：ownKeys 陷阱可给任意 symbol 键 ⇒ 不可判。
@@ -451,13 +453,7 @@ function ownSymbolKeysAbs(a0: Abs): Abs | undefined {
     if (s.name.endsWith(".prototype")) return undefined;
     const inner = s.shape;
     if (inner.shape.k !== "obj") return undefined;
-    const os = inner.shape as unknown as {
-      slots: Record<string, { value: Abs; internal?: boolean; inherited?: boolean; symbolKey?: boolean }>;
-      open?: boolean;
-      index?: unknown;
-    };
-    if (os.open === true || os.index !== undefined) return undefined;
-    return tupleOf(countOwn(os.slots));
+    return ownSymbolsTuple(inner.shape as unknown as Parameters<typeof ownSymbolsTuple>[0]);
   }
   if (s.k === "tuple") {
     // 元组 = 闭合数组值：引擎槽域无 symbol 键 ⇒ 原生无自有 symbol 键。
