@@ -370,6 +370,31 @@ export function isValidLetBindingName(name: string): boolean {
 const CJS_THIS_BIND = "__nudoCjsThis";
 
 /**
+ * 模块体宿主**注入形参名**（12 个 `__nudo*`）——单一真值。
+ *
+ * `compileRuntimeModuleUnit` 以本名单作为 new Function 的**形参面**，实参值
+ * 由下方 hostArgs 按同序供给；发射器（transpile/…）在生成码里**按名引用**
+ * 这些绑定（`__nudoBindImport(...)` / `__nudoExportLazy(...)` / require 改写
+ * `__nudoRequire(...)` …）。静默改名任一侧 = 生成码 ReferenceError ⇒ 整模块
+ * fail-closed（无诊断）。drift-gate：`algebra/__tests__/nudo-injection-names.test.ts`
+ * 互钉（名单 ↔ 发射面 ↔ 产物扫描）。
+ */
+export const NUDO_HOST_ARG_NAMES: readonly string[] = [
+  "__nudoModules",
+  "__nudoBindImport",
+  "__nudoBindNamespace",
+  "__nudoRegisterImportRefresh",
+  "__nudoReplaces",
+  "__nudoRequire",
+  "__nudoRequireOptional",
+  "__nudoEnv",
+  "__nudoExport",
+  "__nudoExportLazy",
+  "__nudoExportStar",
+  "__nudoExports",
+];
+
+/**
  * 分析面槽位表（Symbol 键，非枚举）——run 表返回对象的**第二个面**：
  * 键 = 顶层函数**本地名**，值 = 读取本地绑定的 thunk。
  *
@@ -564,20 +589,7 @@ function runTranspiledInner(
   // requireFromModules 注释）：装载期缺失 = 装载失败（引擎保持降级），
   // 调用期缺失 = 抛（原生 MODULE_NOT_FOUND ⇒ catch 臂是活代码）。
   let moduleLoading = true;
-  const hostArgNames = [
-    "__nudoModules",
-    "__nudoBindImport",
-    "__nudoBindNamespace",
-    "__nudoRegisterImportRefresh",
-    "__nudoReplaces",
-    "__nudoRequire",
-    "__nudoRequireOptional",
-    "__nudoEnv",
-    "__nudoExport",
-    "__nudoExportLazy",
-    "__nudoExportStar",
-    "__nudoExports",
-  ];
+  const hostArgNames = NUDO_HOST_ARG_NAMES;
   const hostArgs = hostArgNames.map((n) => {
     if (n === "__nudoModules") return modules;
     if (n === "__nudoBindImport") {

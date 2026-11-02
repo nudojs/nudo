@@ -16,7 +16,7 @@
  */
 import type { Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import { constFnNamesOf, internalTmpNameSet } from "./helpers.ts";
+import { constFnNamesOf, internalTmpNameSet, isExpression } from "./helpers.ts";
 import { emitMemberKey } from "./member-key.ts";
 
 /**
@@ -206,6 +206,38 @@ export function readPathSrc(p: MemberPath): string {
  */
 export function setPathSrc(p: MemberPath, valSrc: string): string {
   return memberWriteRootIfe(p, valSrc);
+}
+
+/**
+ * 回退臂（根不可重绑——`[foo().x] = src` 的解构成员目标）的**副作用写语句**
+ * 计划：`$set` / `$idxSet` 直接落在（转译后的）对象表达式上，语句位无人
+ * 消费写入值。
+ *
+ * 键分类复用 emitMemberKey（读 / 写 / 调用 / 可选链共用的单一实现）——
+ * emit.ts 回退臂此前手工重抄 `$set`/`$idxSet` 的键分类（含 Bug 73 symbol
+ * 标记的第三次出现），与 member-key.ts 平行，已收敛到此处。
+ *
+ * 返回 null = 不支持形态（调用方抛 unsupported / fail-closed）：非计算键
+ * 非 Identifier/PrivateName、PrivateName 无名（解析异常）、计算键非表达式
+ * （AST 异常形态）。
+ */
+export function memberSideEffectWriteStmt(
+  m: { object: Node; property: Node; computed: boolean },
+  objSrc: string,
+  valueSrc: string,
+  opts: TranspileOptions,
+): string | null {
+  if (m.computed && !isExpression(m.property as { type: string })) return null;
+  const mk = emitMemberKey(m.property, m.computed === true, opts);
+  if (mk === null) return null;
+  if (mk.kind === "get") {
+    if (mk.symbol !== undefined) {
+      // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+      return `$set(${objSrc}, ${JSON.stringify(mk.key)}, ${valueSrc}, { symbolKey: true })`;
+    }
+    return `$set(${objSrc}, ${JSON.stringify(mk.key)}, ${valueSrc})`;
+  }
+  return `$idxSet(${objSrc}, ${mk.keySrc}, ${valueSrc})`;
 }
 
 /* ------------------------------------------------------------------ *

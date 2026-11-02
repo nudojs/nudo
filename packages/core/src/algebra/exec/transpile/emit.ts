@@ -14,15 +14,16 @@
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
-import { memberPathOf, setPathSrc } from "./member-path.ts";
+import { foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
+import { memberPathOf, setPathSrc, memberSideEffectWriteStmt } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
 
 /**
  * 解构目标是成员表达式（`[o.x] = src` / `({ p: o.x } = src)`）：逐项写回成员。
  * 可重绑根（标识符 / this 参数）走不可变更新链（与直接成员赋值同口径）；
- * 根不可重绑（`foo().x`）落 $set/$idxSet 副作用语句——解构表达式的值是 RHS，
+ * 根不可重绑（`foo().x`）落 $set/$idxSet 副作用语句（键分类单一实现：
+ * member-path.ts 的 memberSideEffectWriteStmt）——解构表达式的值是 RHS，
  * 语句位无人消费写入值。此前成员目标被静默跳过（emitDestructure 只认
  * Identifier），写丢失后 `o.x` 读折 exact undefined（Bug 10 修复把该
  * imprecision 从 number|string 并集引爆成 exact NaN 后由差分抓到）。
@@ -43,42 +44,11 @@ function emitMemberTargetAssign(
     return;
   }
   const obj = emitTranspileExpression(m.object as Expression, opts);
-  if (!m.computed && m.property.type === "PrivateName") {
-    const priv =
-      (m.property as { id?: { name?: string }; name?: string }).id?.name
-      ?? (m.property as { name?: string }).name;
-    if (!priv) {
-      throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
-    }
-    out.push(`${pad}$set(${obj}, ${JSON.stringify(`#${priv}`)}, ${valueSrc});`);
-    return;
+  const stmt = memberSideEffectWriteStmt(m, obj, valueSrc, opts);
+  if (stmt === null) {
+    throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
   }
-  if (!m.computed && m.property.type === "Identifier") {
-    out.push(`${pad}$set(${obj}, ${JSON.stringify((m.property as { name: string }).name)}, ${valueSrc});`);
-    return;
-  }
-  if (m.computed) {
-    const k = m.property;
-    if (k.type === "NumericLiteral") {
-      out.push(`${pad}$idxSet(${obj}, $lit(${(k as { value: number }).value}), ${valueSrc});`);
-      return;
-    }
-    if (k.type === "StringLiteral") {
-      out.push(`${pad}$set(${obj}, ${JSON.stringify((k as { value: string }).value)}, ${valueSrc});`);
-      return;
-    }
-    if (isExpression(k)) {
-      const symK = symbolKeyOf(k as Parameters<typeof symbolKeyOf>[0]);
-      if (symK !== null) {
-        // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
-        out.push(`${pad}$set(${obj}, ${symK}, ${valueSrc}, { symbolKey: true });`);
-        return;
-      }
-      out.push(`${pad}$idxSet(${obj}, ${emitTranspileExpression(k, opts)}, ${valueSrc});`);
-      return;
-    }
-  }
-  throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
+  out.push(`${pad}${stmt};`);
 }
 
 /**
