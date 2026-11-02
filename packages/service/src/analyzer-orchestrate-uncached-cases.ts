@@ -272,6 +272,17 @@ function expectedPrim(expected: Abs): TypeofName | undefined {
   return s.k === "prim" ? s.type : undefined;
 }
 
+/** 实际值的对象槽表（obj 直取 / brand 内层 obj 解包；非对象 → undefined）
+ *——期望槽执法的两个递归器（字面量面 / 谓词面）同款前导，单源。 */
+function actualSlotTable(actual: Abs) {
+  const a = actual.shape;
+  return a.k === "obj"
+    ? a.slots
+    : a.k === "brand" && a.shape.shape.k === "obj"
+      ? a.shape.shape.slots
+      : undefined;
+}
+
 /**
  * Bug 396：期望判定用**严格变体**——`leqAbs` 的「同 prim 字面量视为可赋」捷径
  * （core `packages/core/src/algebra/leq.ts` 的 `leqWithPred` **对象分支**：同 prim
@@ -291,13 +302,7 @@ function expectedSlotLiteralsHold(actual: Abs, expected: Abs, depth: number): bo
   if (depth > 16) return true;
   const e = expected.shape;
   if (e.k !== "obj") return true;
-  const a = actual.shape;
-  const aSlots =
-    a.k === "obj"
-      ? a.slots
-      : a.k === "brand" && a.shape.shape.k === "obj"
-        ? a.shape.shape.slots
-        : undefined;
+  const aSlots = actualSlotTable(actual);
   // 实际值不是对象 ⇒ 形态不合（由 `leqAbs` 判定），此处不重复加严
   if (!aSlots) return true;
   for (const [key, slot] of Object.entries(e.slots)) {
@@ -403,13 +408,7 @@ function expectedSlotPredicatesHold(actual: Abs, expected: Abs, depth: number): 
   if (depth > 16) return true;
   const e = expected.shape;
   if (e.k !== "obj") return true;
-  const a = actual.shape;
-  const aSlots =
-    a.k === "obj"
-      ? a.slots
-      : a.k === "brand" && a.shape.shape.k === "obj"
-        ? a.shape.shape.slots
-        : undefined;
+  const aSlots = actualSlotTable(actual);
   // 实际值不是对象 ⇒ 形态不合（由 `leqAbs` 判定），此处不重复加严
   if (!aSlots) return true;
   for (const [key, slot] of Object.entries(e.slots)) {
