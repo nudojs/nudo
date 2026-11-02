@@ -405,20 +405,9 @@ export function buildSymbolTable(ast: Node, uri: string): SymbolTable {
 
   try {
     traverseFn()(ast, {
-      FunctionDeclaration(path) {
+      "FunctionDeclaration|FunctionExpression"(path) {
         if (path.node.id) {
           // 函数名的绑定在**外层**作用域（函数自己的作用域是它的体）
-          register(path.node.id.name, "function", path.node.id, scopeRangeOf(path.scope.parent));
-        }
-        for (const param of path.node.params ?? []) {
-          registerParam(
-            (n, k, node) => register(n, k, node, scopeRangeOf(path.scope)),
-            param,
-          );
-        }
-      },
-      FunctionExpression(path) {
-        if (path.node.id) {
           register(path.node.id.name, "function", path.node.id, scopeRangeOf(path.scope.parent));
         }
         for (const param of path.node.params ?? []) {
