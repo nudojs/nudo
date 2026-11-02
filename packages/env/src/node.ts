@@ -2398,6 +2398,21 @@ function assertRegexpPattern(
    * 形参与 `["type", "listener"]` 标签；web 侧传 `prim.unknown` 无标签）。
    */
   const eventTargetSlots = whatwgEventTargetSlots(callbackFnBrand, ["type", "listener"]);
+  // MessagePort 槽表单源（MessageChannel 的 port1/port2 与独立 MessagePort
+  // brand 三处同款；node 生命周期 ref/unref/hasRef 一并在此——浏览器
+  // whatwg 面无这三槽）。与 streamSlots 同款跨 brand 共享；spread 保插入
+  // 序（defineEnv 结构转储 / formatShape 渲染口径不变）。
+  const messagePortSlots = {
+    postMessage: envFn([prim.unknown], undef()),
+    start: envFn([], undef()),
+    close: envFn([], undef()),
+    ref: envFn([], undef()),
+    unref: envFn([], undef()),
+    hasRef: envFn([], prim.bool()),
+    onmessage: prim.unknown,
+    onmessageerror: prim.unknown,
+    ...eventTargetSlots,
+  };
 
   /**
    * `Event` / `CustomEvent` 实例面与构造器全局**单源在 whatwg.ts**（Event 槽表
@@ -3010,54 +3025,15 @@ function assertRegexpPattern(
       brandOf(
         "MessageChannel",
         objAbs({
-          port1: brandOf(
-            "MessagePort",
-            objAbs({
-              postMessage: envFn([prim.unknown], undef()),
-              start: envFn([], undef()),
-              close: envFn([], undef()),
-              ref: envFn([], undef()),
-              unref: envFn([], undef()),
-              hasRef: envFn([], prim.bool()),
-              onmessage: prim.unknown,
-              onmessageerror: prim.unknown,
-              ...eventTargetSlots,
-            }),
-          ),
-          port2: brandOf(
-            "MessagePort",
-            objAbs({
-              postMessage: envFn([prim.unknown], undef()),
-              start: envFn([], undef()),
-              close: envFn([], undef()),
-              ref: envFn([], undef()),
-              unref: envFn([], undef()),
-              hasRef: envFn([], prim.bool()),
-              onmessage: prim.unknown,
-              onmessageerror: prim.unknown,
-              ...eventTargetSlots,
-            }),
-          ),
+          port1: brandOf("MessagePort", objAbs(messagePortSlots)),
+          port2: brandOf("MessagePort", objAbs(messagePortSlots)),
         }),
       ),
       { params: [] },
     ),
     MessagePort: nonCtorOf(
       "MessagePort",
-      brandOf(
-        "MessagePort",
-        objAbs({
-          postMessage: envFn([prim.unknown], undef()),
-          start: envFn([], undef()),
-          close: envFn([], undef()),
-          ref: envFn([], undef()),
-          unref: envFn([], undef()),
-          hasRef: envFn([], prim.bool()),
-          onmessage: prim.unknown,
-          onmessageerror: prim.unknown,
-          ...eventTargetSlots,
-        }),
-      ),
+      brandOf("MessagePort", objAbs(messagePortSlots)),
     ),
 
     // ── Fetch 族 ──────────────────────────────────────────────
