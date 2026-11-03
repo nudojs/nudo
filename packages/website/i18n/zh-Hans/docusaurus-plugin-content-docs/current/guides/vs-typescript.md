@@ -81,6 +81,21 @@ Microsoft 的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/
 | Agent 修复（node-semver 历史 bug，约 2.4k LOC） | tokenTotal **569k** · 轮次 **45** · 修复环 **16** · 门禁峰值 RSS **226 MB** | **993k**（**+75%**）· **63** · **21** · **289 MB** | 两侧均 6/6 完成；差距在成本而非检出上限——[OSS-SEMVER 报告](https://github.com/nudojs/nudo/blob/main/benchmark/lsp-rounds/out/OSS-SEMVER.md) |
 | 约束类门禁载荷 | 能检出；token 花在**报告**上 | 常**假绿**（不花 token，缺陷放行） | `pnpm run agent-dx`——TS 的「便宜 token」往往是沉默 |
 
+### 修复环速度（fix-rate / time-to-green）
+
+下块的数字由 `pnpm run dx-metrics` 再生——勿手改（定义与场景见 [dx-metrics 报告](https://github.com/nudojs/nudo/blob/main/docs/reports/dx-metrics.md)）。
+
+<!-- dx-metrics:begin -->
+<!-- 由 `pnpm run dx-metrics -- --md --lang zh` 生成于 2026-11-03 —— 请再生，勿手改。内部运营基线，非 CI 门禁。 -->
+| fix-rate | time-to-green 平均 | time-to-green 最大 |
+| --- | --- | --- |
+| 100%（2/2 条文档修复路径） | 2796 ms | 2940 ms |
+
+目标（rev 5 运营）：fix-rate 文档路径 100% · time-to-green 本地 < 2 s。
+<!-- dx-metrics:end -->
+
+`fix-rate`——每条文档修复路径都真能修绿——与机器无关，由 `packages/website/tests/dx-metrics-publication.test.ts` 复检；time-to-green 是本地两次 `nudo check`（先红后绿）的墙钟，随机器而变。
+
 ### 宣称边界
 
 - 微基准与 S1 语料为**合成**；OSS-SEMVER 仅是单一真实包族。绝对 SLO 需要更广套件。
@@ -89,11 +104,11 @@ Microsoft 的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/
 
 Nudo 一侧的性能实务——预算、截断诊断与分析缓存——见[性能](./performance.md)。
 
-## 能力边界（引擎非目标）
+## 能力边界（引擎非目标） {#capability-bounds-engine-non-goals}
 
 以下能力是 **Nudo 引擎的非目标**，与「某个业务包是否应长期以 `tsc` 作门禁」不是同一个问题：
 
-1. **完整 TS 类型语言编程**：条件类型、模板字面量类型编程、映射类型等作为编程手段。
+1. **完整 TS 类型语言编程**：条件类型、模板字面量类型编程、映射类型等作为编程手段——表面就是这类工作的包保留手写声明即可：[保留手写 `.d.ts`](./migrating-from-typescript.md#keeping-handwritten-dts)。
 2. **与 `tsc` 可赋值性逐位一致**：Nudo 的门禁是 Abs 上的 Pred 蕴含与部分 `leqAbs`。
 3. **declaration merging / project references 作为产品 IR**：不复刻 TypeScript 工程模型。
 4. **健全性证明**：不承诺 soundness，也不以「更严的类型系统」与 TS 正面比较。

@@ -124,6 +124,24 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 3. 从测试挖调用点（`--from test/`）；接受草稿前 **widen**。
 4. `export` dts **给消费方**，不是你维护的模型。
 
+## 保留手写 .d.ts（逃逸舱） {#keeping-handwritten-dts}
+
+当包的公开表面就是**类型层工作**——React `props` 体操、以条件/映射类型为 API——Nudo 不要求你翻译它（见[能力边界](./vs-typescript.md#capability-bounds-engine-non-goals)）。受支持的共存面很窄，且逐条实测过：
+
+**手写 `.d.ts` 服务 TS 生态消费方；`nudo check` 只门禁 JS。**
+
+| 问题 | 实测答案 | 验证命令 |
+|------|----------|----------|
+| `check` 会碰我的声明文件吗？ | 不会——目录遍历只分析 `.js/.mjs/.ts`；`types/*.d.ts` 不产生任何诊断（fixture 实跑只列出 `src/fixture.js`，`OK`） | `npx nudojs check ./pkg` |
+| 直接传一个进去呢？ | 拒绝，exit 1：`Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX)` | `npx nudojs check types/foo.d.ts` |
+| `export --out` 会覆盖吗？ | 不会——无 `// nudo-export-module:` 标记的同名文件会被拒绝（exit 1 + `fix:` 提示）；nudo 自己生成的文件可原地再生 | `npx nudojs export src/index.js --format dts --out types/` |
+| 声明能起草契约吗？ | 能，且只是草稿：产物为 `@nudo:draft`，**永不参与 check 加载**；把接受的导出复制进 `*.nudo.js` 义务才生效 | `npx nudojs contract --from-dts types/foo.d.ts`（`--write` 在旁边存 `foo.nudo.draft.ts`） |
+| `migrate` 把它们算 TS 债吗？ | 不会——`migrate status` 只统计 `.ts`/`.tsx` 源码，不数 `.d.ts`；`retire` 摘掉的是 tsc，不是你的声明 | `npx nudojs migrate status ./pkg` |
+
+放置规则：手写声明放独立目录（`types/`），`package.json` 的 `"types"` / `exports.types` 指向它；`nudo export --out` 指向**另一个**只放生成物的目录（`dist/types`）——覆盖守卫就永远不必触发。
+
+Nudo 校验的模型仍是 **Abs + 契约**；手写 `.d.ts` 与生成的 `.d.ts` 同级，是生态出口——永远不是真相源。
+
 ## 契约审阅清单
 
 1. **参数** — 调用点形状是证据；公开义务更宽时要 widen。

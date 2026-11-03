@@ -125,6 +125,24 @@ Temporary dual gates are fine **during** the package migration. They are not the
 3. Mine call sites from tests (`--from test/`); **widen** drafts before accepting.
 4. Export dts **for consumers**, not as the model you maintain.
 
+## Keeping handwritten .d.ts (the escape hatch) {#keeping-handwritten-dts}
+
+When a package's public surface is **type-level work** — React `props` gymnastics, conditional or mapped types as the API — Nudo does not ask you to translate it (see [capability bounds](./vs-typescript.md#capability-bounds-engine-non-goals)). The supported coexistence is narrow and verified:
+
+**Handwritten `.d.ts` serves TS-ecosystem consumers; `nudo check` gates only the JS.**
+
+| Question | Verified answer | Command |
+|----------|-----------------|---------|
+| Does `check` touch my declarations? | No — directory walks analyze `.js/.mjs/.ts` only; `types/*.d.ts` yields no diagnostics (fixture run listed `src/fixture.js` only, `OK`) | `npx nudojs check ./pkg` |
+| What if I pass one directly? | Rejected, exit 1: `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX)` | `npx nudojs check types/foo.d.ts` |
+| Will `export --out` clobber them? | No — a same-name file without the `// nudo-export-module:` marker is refused (exit 1 + `fix:` hint); nudo-generated files do regenerate in place | `npx nudojs export src/index.js --format dts --out types/` |
+| Can declarations draft contracts? | Yes, drafts only: output is `@nudo:draft`, **never loaded for check**; obligations go live when you copy accepted exports into `*.nudo.js` | `npx nudojs contract --from-dts types/foo.d.ts` (`--write` saves `foo.nudo.draft.ts` beside it) |
+| Does `migrate` count them as TS debt? | No — `migrate status` counts `.ts`/`.tsx` sources, not `.d.ts`; `retire` removes tsc, not your declarations | `npx nudojs migrate status ./pkg` |
+
+Placement rule: keep handwritten declarations in their own directory (`types/`) with `package.json` `"types"` / `exports.types` pointing at it, and aim `nudo export --out` at a **different**, generated-only directory (`dist/types`) — the overwrite guard then never has to fire.
+
+The model Nudo checks against is still **Abs + contracts**; a handwritten `.d.ts` is ecosystem output, same tier as a generated one — never the source of truth.
+
 ## Review checklist (contracts)
 
 1. **Params** — call-site shapes are evidence; widen when the public obligation is broader.
