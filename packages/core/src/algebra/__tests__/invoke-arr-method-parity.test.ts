@@ -125,14 +125,22 @@ describe("Array.prototype 借用臂 ↔ invokeArrMethod 直达臂互钉", () => 
         .toEqual(call(`export function f() { return "b"; }`).result);
     });
 
-    it("frozen/sealed 的 array-like：generic 借用臂当前**不设门**（钉现状）", () => {
-      // 现状口径：invokeArrMethod 的 obj 接收者走 mutateArrayLike 写面，
-      // 不查 extState（对比 tuple/arr 接收者 $arrMutContainer 的门）。
-      // 原生语义（node）：frozen array-like 上 push 定抛 TypeError。
-      // 若未来补门，本钉翻红——届时两处（门 + 本钉）同步更新。
-      expect(hardTypeError(`export function f() { const o = { length: 1, 0: "a" }; Object.freeze(o); Array.prototype.push.call(o, "b"); return o.length; }`)).toBe(false);
-      expect(hardTypeError(`export function f() { const o = { length: 1, 0: "a" }; Object.seal(o); Array.prototype.push.call(o, "b"); return o.length; }`)).toBe(false);
-      expect(hardTypeError(`export function f() { const o = { length: 2, 0: "a", 1: "b" }; Object.freeze(o); Array.prototype.reverse.call(o); return o[0]; }`)).toBe(false);
+    it("frozen/sealed 的 array-like：generic 借用臂与直达臂同门（TypeError）", () => {
+      // 完整性门已上提到 $arrMutContainer 的 shape 分派前（原口径：obj 接收者
+      // 走 mutateArrayLike 写面不查 extState ⇒ frozen array-like 的 push 静默
+      // 成功，原生定抛 TypeError——假绿）。原生语义（node）：frozen/sealed
+      // array-like 上的结构性扩展 mutator 定抛。
+      expect(hardTypeError(`export function f() { const o = { length: 1, 0: "a" }; Object.freeze(o); Array.prototype.push.call(o, "b"); return o.length; }`)).toBe(true);
+      expect(hardTypeError(`export function f() { const o = { length: 1, 0: "a" }; Object.seal(o); Array.prototype.push.call(o, "b"); return o.length; }`)).toBe(true);
+      expect(hardTypeError(`export function f() { const o = { length: 2, 0: "a", 1: "b" }; Object.freeze(o); Array.prototype.reverse.call(o); return o[0]; }`)).toBe(true);
+    });
+
+    it("sealed array-like 的 pop/shift：Bug 223 own-槽分析与 tuple 臂同口径", () => {
+      // pop 删末元素：末槽存在（自有属性）⇒ 抛；空 array-like ⇒ 不抛。
+      expect(hardTypeError(`export function f() { const o = { length: 2, 0: "a", 1: "b" }; Object.seal(o); return Array.prototype.pop.call(o); }`)).toBe(true);
+      expect(hardTypeError(`export function f() { const o = { length: 0 }; Object.seal(o); return Array.prototype.pop.call(o); }`)).toBe(false);
+      // shift：任一自有索引 ⇒ 抛。
+      expect(hardTypeError(`export function f() { const o = { length: 2, 1: "b" }; Object.seal(o); return Array.prototype.shift.call(o); }`)).toBe(true);
     });
 
     it("with：array-like 接收者同走 copy 族（合法下标成功）", () => {

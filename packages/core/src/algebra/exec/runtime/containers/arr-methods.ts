@@ -806,11 +806,10 @@ export function spliceWindow(
  *  顺序正确，Bug 49/51），别名 / 成员槽 / Map 条目经共享 Abs 同步可见。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
-  if (shape.k !== "tuple" && shape.k !== "arr") {
-    // Bug 254：泛型接收者（数组样对象）——原生 mutator 家族只要求接收者有
-    // 可写的 length 与索引属性 ⇒ 走同一写面（此前早退 ⇒ 写入被静默丢弃）。
-    return mutateArrayLike(arr, method, args);
-  }
+  // 完整性门（Bug 223）对**任何接收者形态**原生同源：frozen / 结构性扩展
+  // 在写面建模之前定抛——array-like obj（Bug 254 臂）此前绕过此门 ⇒ frozen
+  // array-like 上的 push 静默成功（原生 TypeError ⇒ 假绿），与 tuple/arr
+  // 臂口径分叉（issue #153「两条路径必须同口径」）。
   const st = extStateOf(arr);
   // frozen：任何 mutator 原生 TypeError（strict 硬抛）；
   // sealed/nonext：结构性扩展（push/unshift/splice 加元素）TypeError
@@ -843,13 +842,55 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
           throwStrictWrite();
         }
       }
-    } else {
+    } else if (shape.k === "arr") {
       // 抽象数组长度不可知 → may（空数组不抛、非空抛）
       recordMayThrow({
         kind: "TypeError",
         cause: "pop/shift on a sealed array may delete a non-configurable element",
       });
+    } else {
+      // array-like obj 臂（与 tuple 臂同公式）：自有属性 ⟺ 槽存在。open obj /
+      // 抽象 index 槽 / 带访问器侧表 / 长度不可判 ⇒ 写面不可建模 ⇒ 保守 may。
+      const oshape = arr.shape as {
+        k: string;
+        slots?: Record<string, { value: Abs }>;
+        open?: boolean;
+        index?: unknown;
+      };
+      const slots = oshape.slots;
+      const mayDeleteNonConfigurable = (): void =>
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "pop/shift on a sealed array-like may delete a non-configurable element",
+        });
+      if (
+        oshape.k === "obj" &&
+        slots &&
+        !oshape.open &&
+        !oshape.index &&
+        accessorKeysOf(arr).length === 0
+      ) {
+        const len = arrayLikeLengthOf(slots);
+        if (len === undefined) {
+          mayDeleteNonConfigurable();
+        } else if (len > 0) {
+          if (method === "pop") {
+            if (getSlot(slots, String(len - 1)) !== undefined) throwStrictWrite();
+          } else {
+            for (let i = 0; i < len; i++) {
+              if (getSlot(slots, String(i)) !== undefined) throwStrictWrite();
+            }
+          }
+        }
+      } else {
+        mayDeleteNonConfigurable();
+      }
     }
+  }
+  if (shape.k !== "tuple" && shape.k !== "arr") {
+    // Bug 254：泛型接收者（数组样对象）——原生 mutator 家族只要求接收者有
+    // 可写的 length 与索引属性 ⇒ 走同一写面（此前早退 ⇒ 写入被静默丢弃）。
+    return mutateArrayLike(arr, method, args);
   }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
