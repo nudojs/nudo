@@ -388,11 +388,27 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
   }
 }
 
+/**
+ * Bug 55/73/74：回调族（map/filter/flatMap/forEach/some/every/find/
+ * findIndex/findLast/findLastIndex/reduce/reduceRight）的 GetCallback
+ * 前置校验**共享前置**（原十处同形 `validateCallableArg(args[0], …)`
+ * 内联上提）。回调实参在**迭代前**校验——原生 GetCallback 先于任何元素
+ * 访问：空接收者零迭代也要抛（[].some(Symbol()) 不折假 false/true、
+ * [].findIndex(Symbol()) 不折 -1 #exact）、undefined 同抛（HOF 不设
+ * undefinedOk，见 hof.ts validateCallableArg）、[1].reduce(Symbol())
+ * 单元素无初值路径不调回调也原生抛 ⇒ 校验必须先于取首元素（调用点保持
+ * 函数体首语句位）。cause 串约定 `${name} callback may not be callable`
+ * ——与上提前逐处内联逐字节一致。非回调方法（join/slice/…）不经此加
+ * 校验；toSorted 比较器的 undefinedOk 口径不同，保持内联。
+ */
+function requireCallback(ctx: ArrCtx, name: string): void {
+  validateCallableArg(ctx.args[0], `${name} callback may not be callable`);
+}
+
 /** map：tuple 保留 holes / 子序列精度；arr 走元素域（mapElementFallback）。 */
 function hofMap(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn } = ctx;
-  // Bug 55：GetCallback 前置校验——空接收者零迭代也要抛（undefined 同抛）
-  validateCallableArg(args[0], "map callback may not be callable");
+  requireCallback(ctx, "map");
   if (shape.k === "tuple") {
     // Bug 248：len 进体前取一次（原生 ToLength(O.length) 只读一次）；逐位
     // 现读当前容器（Get/HasProperty）——缺席位在结果里留**空洞**（原生
@@ -427,8 +443,7 @@ function hofMap(ctx: ArrCtx): Abs {
 /** filter：具体谓词保留精确子序列；不确定谓词枚举子集或降 arr。 */
 function hofFilter(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn, callbackTruth } = ctx;
-  // Bug 55：GetCallback 前置校验（空元组零谓词也要抛）
-  validateCallableArg(args[0], "filter callback may not be callable");
+  requireCallback(ctx, "filter");
   // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
   // hole 跳过谓词且不出现在结果里（原生 filter 收紧数组）。
   if (shape.k === "tuple") {
@@ -479,8 +494,7 @@ function hofFilter(ctx: ArrCtx): Abs {
 /** flatMap：回调结果投影摊平（projectFlatMapResult）。 */
 function hofFlatMap(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn } = ctx;
-  // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
-  validateCallableArg(args[0], "flatMap callback may not be callable");
+  requireCallback(ctx, "flatMap");
   if (shape.k === "tuple") {
     // Bug 248：逐位现读当前容器（Get/HasProperty）——hole 位不回调（原生
     // flatMap 的 `k in O` 判定），缺席位在结果里是空元组（摊平后不留）。
@@ -498,8 +512,7 @@ function hofFlatMap(ctx: ArrCtx): Abs {
 /** forEach：仅副作用；恒返回 undefined。 */
 function hofForEach(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn } = ctx;
-  // Bug 55：GetCallback 前置校验（空接收者零迭代也要抛）
-  validateCallableArg(args[0], "forEach callback may not be callable");
+  requireCallback(ctx, "forEach");
   if (shape.k === "tuple") {
     // Bug 248：逐位现读当前容器（Get/HasProperty）——len 进体前取一次。
     const len = shape.elements.length;
@@ -517,8 +530,7 @@ function hofForEach(ctx: ArrCtx): Abs {
 /** some / every：逐位短路；hole 跳过（HasProperty 语义）。 */
 function hofSomeEvery(ctx: ArrCtx): Abs {
   const { arr, method, args, shape, liveAt, callFn, callbackTruth } = ctx;
-  // Bug 55：GetCallback 前置校验（[].some(Symbol()) 零迭代不再折假 false/true）
-  validateCallableArg(args[0], `${method} callback may not be callable`);
+  requireCallback(ctx, method);
   // 逐位短路：具体命中即停（some: truthy / every: falsy），副作用计数与原生一致。
   // 规范 some/every 检查 HasProperty：hole 位置跳过回调（与 find/findIndex 相反）。
   let undecided = false;
@@ -551,8 +563,7 @@ function hofSomeEvery(ctx: ArrCtx): Abs {
 /** find：Get 语义（hole 位照样回调）；命中返回元素。 */
 function hofFind(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveGet, callFn, callbackTruth } = ctx;
-  // Bug 55：GetCallback 前置校验
-  validateCallableArg(args[0], "find callback may not be callable");
+  requireCallback(ctx, "find");
   if (shape.k === "tuple") {
     let undecided = false;
     // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
@@ -579,8 +590,7 @@ function hofFind(ctx: ArrCtx): Abs {
 /** findIndex：Get 语义；命中返回下标。 */
 function hofFindIndex(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveGet, callFn, callbackTruth, unknownIdx } = ctx;
-  // Bug 73：GetCallback 前置校验——[].findIndex(Symbol()) 零迭代不得折 -1 #exact
-  validateCallableArg(args[0], "findIndex callback may not be callable");
+  requireCallback(ctx, "findIndex");
   if (shape.k === "tuple") {
     let undecided = false;
     // Bug 248：逐位现读当前容器（Get 语义——hole 位照样回调，值 undefined）。
@@ -602,8 +612,9 @@ function hofFindIndex(ctx: ArrCtx): Abs {
 /** findLast / findLastIndex：自尾向前首个命中（Bug 74）。 */
 function hofFindLast(ctx: ArrCtx): Abs {
   const { arr, method, args, shape, liveGet, callFn, callbackTruth, unknownIdx } = ctx;
-  // Bug 74：find/findIndex 的逆序孪生——自尾向前首个命中
-  validateCallableArg(args[0], `${method} callback may not be callable`);
+  // Bug 74：find/findIndex 的逆序孪生——自尾向前首个命中（不与 hofFind/
+  // hofFindIndex 合并：迭代方向与空数组 undecided 兜底口径刻意分叉）
+  requireCallback(ctx, method);
   const wantIndex = method === "findLastIndex";
   if (shape.k === "tuple") {
     let undecided = false;
@@ -636,9 +647,9 @@ function hofFindLast(ctx: ArrCtx): Abs {
 /** reduce：len 进体前取一次；tuple 按首个在场元素起算（Bug 6/18）。 */
 function hofReduce(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn, isRelationOnly } = ctx;
-  // Bug 55：GetCallback 前置校验（[1].reduce(Symbol()) 单元素无初值路径
-  // 不调回调也原生抛——校验必须在取首元素之前）
-  validateCallableArg(args[0], "reduce callback may not be callable");
+  // Bug 55：校验必须先于取首元素（[1].reduce(Symbol()) 单元素无初值路径
+  // 不调回调也原生抛）——requireCallback 保持函数体首语句位
+  requireCallback(ctx, "reduce");
   const fn = args[0]!;
   const noInitial = args.length < 2;
   // Bug 6：无初值累加器 = 首元素（原生语义）——抽象数组首元素域 =
@@ -699,8 +710,9 @@ function hofReduce(ctx: ArrCtx): Abs {
 /** reduceRight：reduce 的逆序孪生（保持原口径：无 relation-only 快路径）。 */
 function hofReduceRight(ctx: ArrCtx): Abs {
   const { arr, args, shape, liveAt, callFn } = ctx;
-  // Bug 55：GetCallback 前置校验（同 reduce——单元素无初值不调回调也抛）
-  validateCallableArg(args[0], "reduceRight callback may not be callable");
+  // Bug 55：同 reduce（单元素无初值不调回调也抛）；reduce 的逆序孪生——
+  // 不与 hofReduce 合并（自尾向前取元素，无 relation-only 快路径，刻意分叉）
+  requireCallback(ctx, "reduceRight");
   const fn = args[0]!;
   const noInitial = args.length < 2;
   // Bug 6：同 reduce——无初值累加器 = 尾元素，域 = 元素域（tuple 路径

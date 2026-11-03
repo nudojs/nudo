@@ -1,6 +1,6 @@
 /**
  * B class 规格表（无 call 依赖，避免循环）。
- * Abs-eval registerClassDecl 与 transpile $class 共用。
+ * Abs-eval registerEvalClass 与 transpile $class 共用。
  */
 
 import type { Abs } from "../abs.ts";
@@ -201,6 +201,15 @@ function specShape(spec: EvalClassSpec): string {
   return `${ctorName}[${methods}](${statics}){${accessors}}{${fields}}{${instFields}}`;
 }
 
+/**
+ * 注册类规格（裸名主键 + epoch 碰撞记录——BUG-026/172 注释群）。
+ *
+ * @deprecated 公共面（algebra/index.ts → core/src/index.ts 的 re-export，
+ * public-api.snapshot.json 钉住）保留**仅为历史兼容**；core 内部消费方
+ * （exec/class/declare.ts、exec/class/construct.ts、exec/class/invoke.ts）
+ * 一律走本文件（exec/class-registry.ts）直连 import，不经公共 barrel；
+ * 后续版本可能将公共导出移入 /internal 面（src/internal.ts）。
+ */
 export function registerEvalClass(spec: EvalClassSpec): void {
   const prev = classRegistry.get(spec.name);
   const prevEpoch = classEpochs.get(spec.name);
