@@ -306,7 +306,7 @@ Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 Recursive evaluation was cut short; the result widened to `unknown#opaque`. The message — and the `reason` field in `check --json` — tells you **which kind**:
 
 - **`cycle`** — a call with the *same abstract arguments* was already on the evaluation stack (data-dependent self/mutual recursion, e.g. `walk(dir, out)` recursing on `(dir, out)`). This is **not a budget**: raising `@nudo:budget` cannot lift it. Make the recursion arguments vary per level, narrow the base case, or declare `@nudo:contract`.
-- **`depth` / `calls`** — the call budget (depth 64 / 20,000 total entries) ran out. Raising `@nudo:budget depth=… / calls=…` on the function can help; otherwise restructure the recursion.
+- **`depth` / `calls`** — the call budget (depth 64 / 20,000 total entries) ran out. The suggestion and the `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) carry a **concrete value** derived from the observed depth/call count (default-limits ×2 floor, i.e. `@nudo:budget depth=128` / `calls=40000` — e.g. `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`); otherwise restructure the recursion.
 
 Budget knobs and what to do: [Performance](../guides/performance.md).
 
@@ -314,7 +314,7 @@ Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-Branch-expansion budget (`$fork` total count) hit; affected results widened. **Info.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Info.** The suggestion carries a **computed ceiling** from the observed fork count — `max(20000, observed × 1.5, rounded up to the next thousand)` — e.g. `fix: package.json#nudo.analysis.maxForks=20000 (observed 6 forks this run), or @nudo:budget forks=20000 on the function — non-blocking`. Raise via `NUDO_MAX_FORKS`, `package.json#nudo.analysis.maxForks`, or the per-function `@nudo:budget forks=N` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
@@ -344,7 +344,13 @@ Context: [Mocking external dependencies](../concepts/mocking.md)
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
-Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) was not executed during analysis — running it for real would perform network I/O or schedule real timers with Abs arguments. Result widened to `unknown#opaque`. **Info.** Mock it with `@nudo:mock` / `@nudo:env`, or feed the value in from a call site.
+Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) was not executed during analysis — running it for real would perform network I/O or schedule real timers with Abs arguments. Result widened to `unknown#opaque`. **Info.** The suggestion carries a **pasteable single-line `@nudo:mock` skeleton** for the blocked host name (paste it into the JSDoc of the calling function), or feed the value in from a call site:
+
+- `fetch` → `mock it: @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) }) (single line, in the calling function's JSDoc), or pass the value in from a call site — non-blocking`
+- timers (`setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) → `@nudo:mock setTimeout = stub().returns(0)`
+- constructors (`new WebSocket(url)` / `XMLHttpRequest` / `EventSource`) → `@nudo:mock WebSocket = stub().returns({ send: () => 1, close: () => 1 })` — the `stub()` form is required: an arrow-function mock is not constructible, and `new` on it would trade this Info for a `throws TypeError` may-throw.
+
+All skeletons are verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision (`promise<{ id: 1 }>` / timer id / exact object shape). Syntax rules: [Mocking external dependencies](../concepts/mocking.md).
 
 Context: [Mocking external dependencies](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudo--runtime-environment)
 

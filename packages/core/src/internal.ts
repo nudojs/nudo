@@ -47,6 +47,9 @@ export {
   // 共用；Bug 632 / 1038 手抄漂移的闭合点）
   checkIssuesFromDiagnostics,
   type AnalyzerDiagnosticLike,
+  // 截断 suggestion 具体修值单源（core check 面 + service analyzer 截断臂
+  // 共用——analyz器面不得手写第二份公式）
+  suggestedForkCeiling, suggestedDepthCeiling, suggestedCallsCeiling,
 } from "./algebra/check-report.ts";
 export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength

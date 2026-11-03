@@ -257,6 +257,76 @@ export type CheckReport = {
   };
 };
 
+// ---------------------------------------------------------------------------
+// 截断/宿主拦截 suggestion 的具体修值与可粘贴骨架（DX：suggestion 不止指
+// 「抬预算」，还给可直接落盘的数值/片段）。单源在此，check.ts 的 issue 文案
+// 与本文件 actionsForIssue 共用——两面不得各自手写漂移。
+// ---------------------------------------------------------------------------
+
+/** 向上取整到 step 的倍数（建议值取整用） */
+function ceilTo(n: number, step: number): number {
+  return Math.ceil(n / step) * step;
+}
+
+/**
+ * fork 截断建议上限：`max(20000, 观测 fork 次数 × 1.5 向上取整到千)`。
+ * 观测不可得（0 / 非数——理论路径）→ 默认 20000（与 calls 建议 40000 同一
+ * 「默认 ×2 起」口径，fork 因单次极廉价再留 2 倍冗余）。
+ */
+export function suggestedForkCeiling(observedForks: number): number {
+  if (!(observedForks > 0)) return 20_000;
+  return Math.max(20_000, ceilTo(observedForks * 1.5, 1_000));
+}
+
+/** depth 截断建议上限：默认 64×2=128 起，或观测深度 ×2 向上取整到 16 */
+export function suggestedDepthCeiling(observedDepth: number): number {
+  if (!(observedDepth > 0)) return 128;
+  return Math.max(128, ceilTo(observedDepth * 2, 16));
+}
+
+/** calls 截断建议上限：默认 20000×2=40000 起，或观测调用数 ×2 向上取整到千 */
+export function suggestedCallsCeiling(observedCalls: number): number {
+  if (!(observedCalls > 0)) return 40_000;
+  return Math.max(40_000, ceilTo(observedCalls * 2, 1_000));
+}
+
+/**
+ * `nudo:host-effect-blocked` 的可粘贴 `@nudo:mock` 骨架：按宿主全局分族给
+ * 最小可用示例。**单行纪律**——`@nudo:mock` 载荷只读到行尾，多行会被截断成
+ * `nudo:mock-invalid`，骨架必须一行放得下。
+ *
+ * 家族选型均实跑验证过：骨架原样粘贴进被分析函数的 JSDoc 后，host-effect-
+ * blocked 消失、结果恢复精确——
+ * - `fetch`（箭头返回 Response 形状，await res.json() 面）：`=> promise<{ id: 1 }>`
+ * - 定时器/调度族（`stub().returns(0)` 即 timer id）：`=> 0`
+ * - 构造器族（`new` 只认 stub——箭头 mock 不可构造，`new` 会翻成
+ *   `throws TypeError` 假红）：`=> { … }` 精确形状
+ *
+ * 未知名（拦截面之外的将来成员）返回 undefined，调用方回退通用文案。
+ */
+export function hostEffectMockSkeleton(hostName: string): string | undefined {
+  if (hostName === "fetch") {
+    return "@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })";
+  }
+  if (
+    hostName === "setTimeout" ||
+    hostName === "setInterval" ||
+    hostName === "setImmediate" ||
+    hostName === "queueMicrotask" ||
+    hostName === "requestAnimationFrame" ||
+    hostName === "requestIdleCallback"
+  ) {
+    return `@nudo:mock ${hostName} = stub().returns(0)`;
+  }
+  if (hostName === "WebSocket" || hostName === "EventSource") {
+    return `@nudo:mock ${hostName} = stub().returns({ send: () => 1, close: () => 1 })`;
+  }
+  if (hostName === "XMLHttpRequest") {
+    return "@nudo:mock XMLHttpRequest = stub().returns({ open: () => 1, send: () => 1 })";
+  }
+  return undefined;
+}
+
 /**
  * `nudo check --json` 稳定契约（供 CI / Agent）。
  * 字段只增不改语义；Abs 以 formatAbs 字符串给出，不序列化内部 shape 图。
@@ -427,11 +497,20 @@ export function actionsForIssue(i: {
                 : "results widened to unknown — raise budget (@nudo:budget calls/depth on the function) or narrow control flow",
         },
       ];
-    case DIAG.hostEffectBlocked:
+    case DIAG.hostEffectBlocked: {
+      // DX：mock 动作带可直接粘贴的单行骨架（与 check.ts 的 issue suggestion
+      // 同源自 hostEffectMockSkeleton）；未知名回退通用指针
+      const skeleton = i.fn ? hostEffectMockSkeleton(i.fn) : undefined;
       return [
-        { kind: "mock", label: "pin the host API with @nudo:mock / @nudo:env" },
+        {
+          kind: "mock",
+          label: skeleton
+            ? `pin the host API — paste above the calling fn's JSDoc (single line): ${skeleton}`
+            : "pin the host API with @nudo:mock / @nudo:env",
+        },
         { kind: "info", label: "results widened to unknown — or feed the value in from a call site" },
       ];
+    }
     case DIAG.interfaceDrift:
       return [
         {

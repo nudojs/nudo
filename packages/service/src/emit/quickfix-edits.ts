@@ -466,11 +466,14 @@ export function wrapReturnNullable(
   return next;
 }
 
-/** `@nudo:budget forks=N` 注解 */
+/**
+ * `@nudo:budget <dims>` 注解（dims 形如 `forks=64` / `depth=128` /
+ * `calls=40000 depth=128`，与 scanBudgetDecl 的 `forks|calls|depth=N` 文法对齐）
+ */
 export function addBudgetAnnotation(
   source: string,
   fnName: string,
-  forks = 64,
+  budget = "forks=64",
 ): { edits: TextEdit[] } | undefined {
   const lines = source.split("\n");
   const start = findFnDeclStart(lines, fnName);
@@ -483,10 +486,30 @@ export function addBudgetAnnotation(
         startCol: 0,
         endLine: start,
         endCol: 0,
-        newText: `/**\n * @nudo:budget forks=${forks}\n */\n`,
+        newText: `/**\n * @nudo:budget ${budget}\n */\n`,
       },
     ],
   };
+}
+
+/**
+ * recursion-truncated 归因 → quickfix 建议的 @nudo:budget 维与值。
+ * depth/calls 带**具体建议值**（与 core check.ts 的 suggestion 同口径：默认
+ * 上限 ×2 起——depth 64→128、calls 20000→40000）；旧缓存/缺 reason 的条目
+ * 维持旧形态 `forks=64`（additive，不回写历史载荷）。cycle 不进此函数
+ * （调用方已排除——抬预算解不开）。
+ */
+function budgetDimsForReason(reason: string | undefined): string {
+  switch (reason) {
+    case "depth":
+      return "depth=128";
+    case "calls":
+      return "calls=40000";
+    case "budget":
+      return "calls=40000 depth=128";
+    default:
+      return "forks=64";
+  }
 }
 
 /** 把 edits 应用到源码（按 start 从后往前） */
@@ -962,13 +985,16 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   }
 
   // —— recursion-truncated：@nudo:budget ——
-  // cycle 归因（#158）抬预算解不开（同抽象实参调用环），不提供该 quickfix
+  // cycle 归因（#158）抬预算解不开（同抽象实参调用环），不提供该 quickfix；
+  // depth/calls 归因带具体建议值（默认上限 ×2：depth 64→128、calls 20000→40000，
+  // 与 core check.ts 的 suggestion 同口径）
   if (code === DIAG.recursionTruncated && fn && input.reason !== "cycle") {
-    const r = addBudgetAnnotation(source, fn);
+    const dims = budgetDimsForReason(input.reason);
+    const r = addBudgetAnnotation(source, fn, dims);
     if (!r) return undefined;
     return {
       titleKind: "adjust",
-      title: `${titlePrefix("adjust")} Add @nudo:budget forks=64 on ${fn}`,
+      title: `${titlePrefix("adjust")} Add @nudo:budget ${dims} on ${fn}`,
       edits: r.edits,
     };
   }

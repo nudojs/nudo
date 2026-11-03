@@ -301,7 +301,7 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 递归求值被截断；结果拓宽为 `unknown#opaque`。文案——以及 `check --json` 的 `reason` 字段——指明**归因**：
 
 - **`cycle`** ——同**抽象实参**的调用已在求值栈上（数据依赖的自/互递归，如 `walk(dir, out)` 以 `(dir, out)` 递归自身）。这**不是预算**：抬 `@nudo:budget` 解不开。让递归实参逐层变化、收窄基例，或声明 `@nudo:contract`。
-- **`depth` / `calls`** ——调用预算（深度 64 / 总进入 20,000）用尽。抬函数上的 `@nudo:budget depth=… / calls=…` 有效；否则重构递归。
+- **`depth` / `calls`** ——调用预算（深度 64 / 总进入 20,000）用尽。suggestion 与 `@nudo:budget` quickfix（`nudo check --fix` / LSP code action）带**具体建议值**——从观测深度/调用数推导（默认上限 ×2 兜底，即 `@nudo:budget depth=128` / `calls=40000`——如 `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`）；否则重构递归。
 
 预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
@@ -309,7 +309,7 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**info**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**info**。suggestion 带**计算出的具体修值**——从观测 fork 次数推导 `max(20000, 观测 × 1.5 向上取整到千)`——如 `fix: package.json#nudo.analysis.maxForks=20000 (observed 6 forks this run), or @nudo:budget forks=20000 on the function — non-blocking`。可用 `NUDO_MAX_FORKS`、`package.json#nudo.analysis.maxForks` 或函数级 `@nudo:budget forks=N` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
@@ -339,7 +339,13 @@ Context: [模拟外部依赖](../concepts/mocking.md)
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
-宿主副作用函数（`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）在分析期不真实执行——真实执行会以 Abs 实参发起网络 I/O 或排真实定时器。结果拓宽为 `unknown#opaque`。**info**。用 `@nudo:mock` / `@nudo:env` 打桩，或从调用点喂入值。
+宿主副作用函数（`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）在分析期不真实执行——真实执行会以 Abs 实参发起网络 I/O 或排真实定时器。结果拓宽为 `unknown#opaque`。**info**。suggestion 带按宿主名分族的**可粘贴单行 `@nudo:mock` 骨架**（原样粘进调用方函数的 JSDoc 即可），或从调用点喂入值：
+
+- `fetch` → `mock it: @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) }) (single line, in the calling function's JSDoc), or pass the value in from a call site — non-blocking`
+- 定时器族（`setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）→ `@nudo:mock setTimeout = stub().returns(0)`
+- 构造器族（`new WebSocket(url)` / `XMLHttpRequest` / `EventSource`）→ `@nudo:mock WebSocket = stub().returns({ send: () => 1, close: () => 1 })` ——必须用 `stub()` 形态：箭头函数 mock 不可构造，`new` 它会把本条 info 换成 `throws TypeError` 假红。
+
+全部骨架均经端到端验证：原样粘贴进被分析函数的 JSDoc 后诊断消失、结果恢复精度（`promise<{ id: 1 }>` / timer id / 精确对象形状）。语法规则：[模拟外部依赖](../concepts/mocking.md)。
 
 Context: [模拟外部依赖](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudo--运行时环境)
 

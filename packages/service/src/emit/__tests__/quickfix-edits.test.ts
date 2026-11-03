@@ -79,6 +79,34 @@ export function f(n) {
     expect(materializeAction({ ...base, reason: "cycle" })).toBeUndefined();
   });
 
+  it("recursion-truncated quickfix 带 reason 对应的具体维与值（默认上限 ×2）", () => {
+    const src = `export function down(n) { if (n <= 0) { return 0; } return down(n - 1) + 1; }\n`;
+    const base = {
+      code: "nudo:recursion-truncated",
+      fn: "down",
+      file: "/t/d.js",
+      source: src,
+      sidecarPath: "/t/d.nudo.js",
+      action: { kind: "info", label: "raise budget" } as const,
+    };
+    // depth → depth=128；edits 落的注解与 title 同维（scanBudgetDecl 文法）
+    const dep = materializeAction({ ...base, reason: "depth" })!;
+    expect(dep.title).toContain("@nudo:budget depth=128 on down");
+    expect(applyTextEdits(src, dep.edits)).toContain("@nudo:budget depth=128");
+    // calls → calls=40000
+    const cal = materializeAction({ ...base, reason: "calls" })!;
+    expect(cal.title).toContain("@nudo:budget calls=40000 on down");
+    expect(applyTextEdits(src, cal.edits)).toContain("@nudo:budget calls=40000");
+    // budget（calls+depth 组合）→ 两维都带
+    const both = materializeAction({ ...base, reason: "budget" })!;
+    expect(both.title).toContain("@nudo:budget calls=40000 depth=128 on down");
+    expect(applyTextEdits(src, both.edits)).toContain("@nudo:budget calls=40000 depth=128");
+    // 旧载荷（无 reason）→ 维持旧形态 forks=64（additive，不回写历史）
+    const legacy = materializeAction({ ...base })!;
+    expect(legacy.title).toContain("@nudo:budget forks=64 on down");
+    expect(applyTextEdits(src, legacy.edits)).toContain("@nudo:budget forks=64");
+  });
+
   it("materialize entry-may-throw draft: source body-read is enough (no empty shape)", () => {
     // 诊断未带 body-read 时仍可从源码用法推断并生成 shape（非 command-only）
     const src = `export function staticName(node) {

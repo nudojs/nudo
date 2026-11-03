@@ -98,6 +98,14 @@ import { and as pAndPred, le as lePred, pTrue } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { formatAbs, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
+// 截断/宿主拦截 suggestion 的具体修值与可粘贴骨架（单源在 check-report，
+// actionsForIssue 与本文件共用——不得各自手写漂移）
+import {
+  hostEffectMockSkeleton,
+  suggestedCallsCeiling,
+  suggestedDepthCeiling,
+  suggestedForkCeiling,
+} from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
 import { listTopFunctions, scanLiteralCalls } from "./scan.ts";
 // Bug 1096：**类导出入口**（`new C()`）是真实的 L2 入口——构造器必抛必须能
@@ -1604,12 +1612,15 @@ function checkSourceInner(
   for (const [label, reasons] of truncated) {
     // fork/递归截断 = **预算观测**（A2），不是质量失败——降为 info，避免 agent 绿后空转
     if (label === FORK_TRUNCATION_LABEL) {
+      // DX：suggestion 给具体修值——观测 fork 次数 ×1.5 向上取整到千（≥20000），
+      // 观测不可得回 20000 默认推荐（suggestedForkCeiling 单源）
+      const observedForks = getAbsCallBudgetStats().forks;
+      const forksFix = suggestedForkCeiling(observedForks);
       issues.push({
         severity: "info",
         code: DIAG.forkTruncated,
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
-        suggestion:
-          "optional: raise nudo.analysis.maxForks, or @nudo:budget forks=… on the function — non-blocking",
+        suggestion: `fix: package.json#nudo.analysis.maxForks=${forksFix} (observed ${observedForks} forks this run), or @nudo:budget forks=${forksFix} on the function — non-blocking`,
       });
       continue;
     }
@@ -1647,12 +1658,17 @@ function checkSourceInner(
     // 避免「Recursive evaluation of 'fetch'」误导
     if (label.startsWith(HOST_EFFECT_LABEL_PREFIX)) {
       const hostName = label.slice(HOST_EFFECT_LABEL_PREFIX.length);
+      // DX：suggestion 带可直接粘贴的单行 @nudo:mock 骨架（按 fetch/定时器/
+      // 构造器分族，单源 hostEffectMockSkeleton）；骨架实跑验证过——粘贴进
+      // 被分析函数的 JSDoc 后本诊断消失、结果恢复精确
+      const skeleton = hostEffectMockSkeleton(hostName);
       issues.push({
         severity: "info",
         code: DIAG.hostEffectBlocked,
         message: `Host function '${hostName}' is not executed during analysis (network/timer side effect); result widened to unknown#opaque`,
-        suggestion:
-          "optional: mock it with @nudo:mock / @nudo:env, or pass the value in from a call site",
+        suggestion: skeleton
+          ? `mock it: ${skeleton} (single line, in the calling function's JSDoc), or pass the value in from a call site — non-blocking`
+          : "optional: mock it with @nudo:mock / @nudo:env, or pass the value in from a call site — non-blocking",
         fn: hostName,
       });
       continue;
@@ -1690,6 +1706,17 @@ function checkSourceInner(
     const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
     const depth = reasons.has("depth");
     const calls = reasons.has("calls");
+    // DX：depth/calls 臂的 @nudo:budget quickfix 带具体建议值——从预算统计读
+    // 观测深度/调用数（A/B 两路径取大，×2 向上取整），统计不可得回默认 ×2
+    // （depth 64→128、calls 20000→40000；单源 suggested{Depth,Calls}Ceiling）。
+    // cycle 臂不抬预算（文案已明说），不消费这两个值。
+    const recursionStats = getAbsCallBudgetStats();
+    const depthFix = suggestedDepthCeiling(
+      Math.max(recursionStats.depth, recursionStats.evalDepth),
+    );
+    const callsFix = suggestedCallsCeiling(
+      Math.max(recursionStats.calls, recursionStats.evalCalls),
+    );
     issues.push({
       severity: "info",
       code: DIAG.recursionTruncated,
@@ -1699,10 +1726,10 @@ function checkSourceInner(
       suggestion: allCycle
         ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
         : depth && !calls
-          ? "raise the function budget with @nudo:budget depth=… (or narrow the recursion base case / declare @nudo:contract return)"
+          ? `raise the function budget with @nudo:budget depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`
           : calls && !depth
-            ? "raise the function budget with @nudo:budget calls=… (or narrow the recursion base case / declare @nudo:contract return)"
-            : "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
+            ? `raise the function budget with @nudo:budget calls=${callsFix} (or narrow the recursion base case / declare @nudo:contract return)`
+            : `raise the function budget with @nudo:budget calls=${callsFix} depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`,
       reason: allCycle ? "cycle" : depth && calls ? "budget" : depth ? "depth" : calls ? "calls" : "budget",
       fn: label,
     });
