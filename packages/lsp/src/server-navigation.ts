@@ -23,6 +23,8 @@ import {
   resolveDefinitionLocations,
   resolveReferences,
   renameTargetAt,
+  renameTargetFromAst,
+  renameNameConflicts,
   collectMethodReferences,
   hasAmbiguousMethodReceiver,
   buildRenameEdits,
@@ -477,8 +479,6 @@ connection.onRenameRequest((params) => {
   // 新名校验（Bug 750）：**语法层** —— 合法 JS 标识符 + 非保留字 + 非空。
   // ⚠ 此前 `params.newName` 被**直接**当替换文本用 ⇒ 一次改名就能把源码改成
   //   **非法 JavaScript**（`node --check` 直接 `SyntaxError`）。
-  // ⚠ 「与同作用域已有绑定冲突」（重复声明）需要作用域模型
-  //   （`buildSymbolTable`，片 A 的地盘）⇒ **本族不做**（独立后续项）。
   if (!isValidRenameName(params.newName)) return null;
   const ctx = navigationIdentAt(params);
   if (!ctx) return null;
@@ -487,6 +487,15 @@ connection.onRenameRequest((params) => {
   try {
     const target = renameTargetAt(source, line, column);
     if (target && "error" in target) return null;
+
+    // 作用域冲突（Bug 750 自认的「独立后续项」，此处落地）：合法新名仍可与
+    // 既有绑定撞车（重复声明 = SyntaxError；捕获 = 引用静默指向别的绑定）⇒
+    // **拒绝改名**（return null），与「歧义接收者拒绝改名」（Bug 712）同一
+    // 哲学：拒绝优于改坏。各身份口径见 `renameNameConflicts`（方法臂只查
+    // 同归属内成员名冲突——方法键不是绑定，同名 key 语义不同）。
+    if (target && "kind" in target && renameNameConflicts(ast, target, params.newName)) {
+      return null;
+    }
 
     // B1：方法 / getter / setter —— 文件内同名 key + 成员访问
     // **以归属为界**：同名但不同类 / 不同对象的方法不合并（Bug 712）
@@ -516,6 +525,9 @@ connection.onRenameRequest((params) => {
           if (hasAmbiguousMethodReceiver(extraAst, target.name, { owner: target.owner })) {
             return null;
           }
+          // 跨文件的同归属也不得撞名（编辑会落到这个文件 ⇒ 同归属里已有
+          // newName 成员 = 改完重复成员键）
+          if (renameNameConflicts(extraAst, target, params.newName)) return null;
           for (const h of collectMethodReferences(extraAst, target.name, {
             owner: target.owner,
           })) {
@@ -537,6 +549,25 @@ connection.onRenameRequest((params) => {
       sourceProvider,
       at: { line, column },
     });
+    // 跨文件作用域冲突：编辑会落到 def 所在文件（import / re-export 场景）⇒
+    // 冲突判定必须在 **def 文件的作用域**里再做一遍（当前文件干净、def 文件
+    // 撞名 ⇒ 改完照样是重复声明）。
+    if (def && def.filePath !== filePath) {
+      try {
+        const defSrc = sourceProvider(def.filePath) ?? readFileSync(def.filePath, "utf-8");
+        const defAst = parse(defSrc);
+        const defTarget = renameTargetFromAst(
+          defAst,
+          def.loc.start.line,
+          def.loc.start.column,
+        );
+        if (defTarget && "kind" in defTarget && renameNameConflicts(defAst, defTarget, params.newName)) {
+          return null;
+        }
+      } catch {
+        /* def 文件读不出 ⇒ 不拦（编辑集本就只含可读文件） */
+      }
+    }
     const refs = resolveReferences(filePath, source, identAtPos, {
       extraFiles: navigationExtraFiles(filePath),
       at: { line, column },

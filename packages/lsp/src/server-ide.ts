@@ -477,6 +477,72 @@ export function attachCodeLens(deps: IdeDeps): void {
   });
 }
 
+// ---------------------------------------------------------------------------
+// any / unknown 责任区分（inlay 面）
+// ---------------------------------------------------------------------------
+
+/**
+ * 返回位渲染「恰为 unknown」判定（含 conf 标注形如 `unknown#opaque`）。
+ *
+ * 产品契约（docs/design/cli-semantics.md §2）：`any` = 无约束（**开发者**责任）、
+ * `unknown` = 推导失败（**引擎**债），两者永不得混用 ⇒ inlay 面在视觉上分开：
+ * 纯 unknown 返回位挂 `⚠` 前缀 + 责任说明 tooltip；union 里的 unknown 成员
+ * （`unknown | "light"`）不是「推导整体失败」⇒ 不挂。
+ */
+const UNKNOWN_DISPLAY_RE = /^unknown(?:#[A-Za-z]+)?$/;
+
+/** 参数约束「显式无约束」形（`where any()` / `where any`）——不加警示前缀 */
+const ANY_DISPLAY_RE = /^any(?:\(\))?$/;
+
+const UNKNOWN_INLAY_NOTE =
+  "⚠ unknown = inference failure (engine debt) — not an annotation. " +
+  "Fix the source of failure: @nudo:mock for host/module effects, " +
+  "@nudo:env for globals, or an explicit @nudo:contract.";
+
+const ANY_INLAY_NOTE =
+  "any = no contract on this param — narrow with guards or @nudo:contract.";
+
+/** 返回位 inlay label（`: <display>  · derived  `）里的类型文本 */
+function returnDisplayOf(label: string): string | undefined {
+  const m = /^:\s*(\S.*?)(?:\s*·\s*derived)?\s*$/u.exec(label);
+  return m?.[1];
+}
+
+/** tooltip 合并：既有 pred 展开等信息**不得丢失**（责任说明追加在后） */
+function mergeInlayTooltip(existing: string | undefined, note: string): string {
+  return existing && existing.length > 0 ? `${existing}\n\n${note}` : note;
+}
+
+/**
+ * 责任区分装饰：**只叠加前缀 / tooltip**，不改 `formatShape` 口径的 label
+ * 生成路径（显示契约——无约束参数显示 `any` 不显示 `unknown`——由上游渲染
+ * 保证，本函数不触碰渲染文本本身）。
+ */
+function decorateResponsibilityInlay(abs: {
+  kind: string;
+  label: string;
+  tooltip?: string;
+}): { label: string; tooltip?: string } {
+  if (abs.kind === "parameter") {
+    // 参数位 where-inlay：`any()` = 显式无约束（开发者责任）⇒ 不加警示前缀，
+    // 仅在 tooltip 追加责任说明（既有 pred 展开保留在前）。
+    const text = abs.label.trim().replace(/^where\s+/, "");
+    if (ANY_DISPLAY_RE.test(text)) {
+      return { label: abs.label, tooltip: mergeInlayTooltip(abs.tooltip, ANY_INLAY_NOTE) };
+    }
+    return { label: abs.label, tooltip: abs.tooltip };
+  }
+  // 返回位 inlay：渲染恰为 unknown（= 推导失败）⇒ `⚠` 前缀 + 引擎债说明
+  const display = returnDisplayOf(abs.label);
+  if (display !== undefined && UNKNOWN_DISPLAY_RE.test(display)) {
+    return {
+      label: abs.label.replace(/^:\s*/, ": ⚠ "),
+      tooltip: mergeInlayTooltip(abs.tooltip, UNKNOWN_INLAY_NOTE),
+    };
+  }
+  return { label: abs.label, tooltip: abs.tooltip };
+}
+
 export function attachInlayHint(deps: IdeDeps): void {
   const connection = deps.connection;
   const documents = { get: deps.getDocument };
@@ -543,16 +609,19 @@ export function attachInlayHint(deps: IdeDeps): void {
           if (abs.kind === "parameter" && !showParamInlays) continue;
           const lineIdx = abs.line - 1;
           if (lineIdx < 0 || lineIdx >= lines.length) continue;
+          // any/unknown 责任区分：unknown（推导失败）挂 ⚠；any（无约束）不加
+          // 警示——两者是不同的责任主体，不得混用同一视觉。
+          const decorated = decorateResponsibilityInlay(abs);
           hints.push({
             position: { line: lineIdx, character: abs.character },
-            label: abs.label,
+            label: decorated.label,
             kind:
               abs.kind === "parameter"
                 ? InlayHintKind.Parameter
                 : InlayHintKind.Type,
             paddingLeft: true,
             // 折叠展示（表达式原文）的完整 pred：hover 展开
-            ...(abs.tooltip !== undefined ? { tooltip: abs.tooltip } : {}),
+            ...(decorated.tooltip !== undefined ? { tooltip: decorated.tooltip } : {}),
           });
         }
       } catch (err) {

@@ -1330,6 +1330,247 @@ export function methodTargetAt(
   return { name: target.name, owner: target.owner };
 }
 
+// ---------------------------------------------------------------------------
+// rename 新名作用域冲突（Bug 750 自认的独立后续项，此处落地）
+// ---------------------------------------------------------------------------
+
+/**
+ * babel `Binding` 的最小面（本族只用这些成员；真类型见 @babel/traverse）。
+ */
+type ConflictBinding = {
+  identifier: Node;
+  scope: ConflictScope;
+  referencePaths: Array<{ node: Node; scope?: ConflictScope }>;
+  constantViolations: Array<{ node: Node; scope?: ConflictScope }>;
+};
+
+/**
+ * babel `Scope` 的最小面：`hasOwnBinding`（本层独有）/ `getBinding`（链上可见）/
+ * `parent`（外层）/ `block`（作用域块的源码范围来源）。
+ */
+type ConflictScope = {
+  getBinding(name: string): ConflictBinding | undefined;
+  hasOwnBinding(name: string): boolean;
+  readonly parent: ConflictScope | undefined;
+  readonly block: Node;
+};
+
+/**
+ * rename 新名的**作用域冲突**判定。
+ *
+ * Bug 750 只做了**语法层**（合法标识符 / 非保留字 / 非空）；合法的新名仍可与
+ * 既有绑定撞车 ⇒ 一次改名就把源码改坏（重复声明 = `SyntaxError`；捕获 =
+ * 引用静默指向别的绑定）。哲学与「歧义接收者拒绝改名」（Bug 712）同源：
+ * **拒绝优于改坏**。
+ *
+ * 各身份的冲突口径：
+ * - `binding`（绑定）：三类冲突——
+ *   ① **同作用域重复声明**：目标绑定所在层已有 `newName`（`const a` + 改
+ *      `f`→`a` ⇒ `SyntaxError`）；
+ *   ② **内层遮蔽捕获**：目标绑定的某条出现（声明 / 引用 / 赋值）落在
+ *      「自己声明了 `newName` 的更深作用域」里 ⇒ 改名后那条出现解析到内层
+ *      绑定（含义静默改变）；
+ *   ③ **外层捕获**：外层已有 `newName` 绑定且**在目标作用域范围内被引用**
+ *      ⇒ 改名后那些引用解析到目标绑定（含义静默改变）。
+ *      纯遮蔽（外层 `newName` 存在、但目标作用域内零引用）**允许**——那是
+ *      合法且无语义变化的 JS（嵌套作用域遮蔽语义）。
+ * - `method`（类 / 对象方法键）：方法键不是绑定 ⇒ 只查**同归属内成员名冲突**
+ *   （归属里已有 `newName` 成员 ⇒ 重复成员键）。
+ * - `private`（`#name`）：同类体内已有 `#newName` ⇒ 重复私有名（`SyntaxError`）。
+ * - `export`（本地 export list 的导出名）：模块导出名空间里已有 `newName`
+ *   ⇒ 重复导出（`SyntaxError`）。
+ *
+ * 判定失败（部分 AST / traverse 异常）⇒ `false`（不拦改名；语法层校验仍在前置）。
+ */
+export function renameNameConflicts(
+  ast: Node,
+  target: RenameTarget,
+  newName: string,
+): boolean {
+  // 同名改名 = no-op 编辑，谈不上冲突（且①会被目标自己的绑定误报）
+  if (newName === target.name) return false;
+  try {
+    if (target.kind === "method") return methodMemberNameConflict(ast, target, newName);
+    if (target.kind === "private") return privateMemberNameConflict(ast, target, newName);
+    if (target.kind === "export") return exportNameConflict(ast, newName);
+    return bindingNameConflict(ast, target, newName);
+  } catch {
+    return false;
+  }
+}
+
+/** 方法臂：同归属内已有 `newName` 成员 ⇒ 重复成员键。 */
+function methodMemberNameConflict(ast: Node, target: RenameTarget, newName: string): boolean {
+  const owners = collectMethodOwners(ast);
+  if (target.owner) {
+    const table = owners.get(ownerKeyOf(target.owner));
+    // 归属表没建出来（匿名 / 归属名缺席）⇒ 查不到成员面 ⇒ 不拦
+    return table ? table.members.has(newName) : false;
+  }
+  // 归属未定（「文件内同名方法」兜底臂）：同名方法所在的**每个**归属都不得撞名
+  for (const table of owners.values()) {
+    if (table.methods.has(target.name) && table.members.has(newName)) return true;
+  }
+  return false;
+}
+
+/** 私有成员臂：目标 `#name` 的类体内已有 `#newName` ⇒ 重复私有名。 */
+function privateMemberNameConflict(ast: Node, target: RenameTarget, newName: string): boolean {
+  const bare = target.name.startsWith("#") ? target.name.slice(1) : target.name;
+  const at = target.loc.start;
+  let owner: Node | null = null;
+  try {
+    traverseFn()(ast, {
+      PrivateName(path) {
+        const id = path.node.id;
+        const loc = id?.loc;
+        if (!id?.name || !loc) return;
+        // 目标位 = 私有名里的标识符段（renameTargetFromAst 同口径）
+        if (id.name !== bare) return;
+        if (
+          loc.start.line === at.line &&
+          loc.start.column <= at.column &&
+          loc.end.column >= at.column
+        ) {
+          owner = enclosingClassNode(path);
+          path.stop();
+        }
+      },
+    });
+  } catch {
+    return false;
+  }
+  if (!owner) return false;
+  for (const member of getClassMembers(owner)) {
+    const key = classMemberKey(member) as { type?: string; id?: { name?: string } } | undefined;
+    if (key?.type === "PrivateName" && key.id?.name === newName) return true;
+  }
+  return false;
+}
+
+/** 导出名臂：模块的导出名空间里已有 `newName` ⇒ 重复导出。 */
+function exportNameConflict(ast: Node, newName: string): boolean {
+  for (const stmt of programBody(ast)) {
+    if (stmt.type !== "ExportNamedDeclaration") continue;
+    if (stmt.declaration) {
+      for (const decl of getDeclarations(stmt.declaration as Node)) {
+        const id = getDeclaratorId(decl);
+        if (id?.name === newName) return true;
+      }
+      if (fnOrClassIdName(stmt.declaration as Node) === newName) return true;
+    }
+    for (const spec of stmt.specifiers ?? []) {
+      if (exportSpecifierExportedName(spec) === newName) return true;
+    }
+  }
+  return false;
+}
+
+/** 绑定臂：babel 作用域链上的三类冲突（见 {@link renameNameConflicts}）。 */
+function bindingNameConflict(ast: Node, target: RenameTarget, newName: string): boolean {
+  const at = target.loc.start;
+  let binding: ConflictBinding | undefined;
+  try {
+    traverseFn()(ast, {
+      Program(path) {
+        // 定位触点 → babel binding（与 collectBindingReferences 同款定位）
+        path.traverse({
+          Identifier(p) {
+            const loc = p.node.loc;
+            if (!loc) return;
+            if (
+              loc.start.line === at.line &&
+              loc.start.column <= at.column &&
+              loc.end.column >= at.column &&
+              p.node.name === target.name
+            ) {
+              if (isBindingIdentifier(p)) {
+                binding = p.scope.getBinding(target.name) as unknown as
+                  | ConflictBinding
+                  | undefined;
+              }
+              p.stop();
+            }
+          },
+        });
+        path.stop();
+      },
+    });
+  } catch {
+    return false;
+  }
+  if (!binding) {
+    // babel binding 缺席（部分语法 / 解析降级）⇒ 符号表兜底（只判同作用域重复）
+    return symbolTableScopeConflict(ast, target, newName);
+  }
+  const home = binding.scope;
+  // ① 同作用域重复声明
+  if (home.hasOwnBinding(newName)) return true;
+  // ② 内层遮蔽捕获：出现位 → 上溯到 home 之间隔着「自己声明了 newName 的层」
+  const occurrences: Array<{ scope?: ConflictScope }> = [
+    { scope: home }, // 声明位永远绑定在 home（不会被内层捕获）
+    ...binding.referencePaths,
+    ...binding.constantViolations,
+  ];
+  for (const occ of occurrences) {
+    const scope = occ.scope;
+    if (!scope) continue;
+    for (let s: ConflictScope | undefined = scope; s && s !== home; s = s.parent) {
+      if (s.hasOwnBinding(newName)) return true;
+    }
+  }
+  // ③ 外层捕获：外层 newName 绑定在目标作用域范围内**被引用**
+  //    （纯遮蔽 = 外层存在但目标域内零引用 ⇒ 允许）
+  const homeRange = scopeRangeOf({ block: home.block });
+  if (homeRange) {
+    for (let a: ConflictScope | undefined = home.parent; a; a = a.parent) {
+      if (!a.hasOwnBinding(newName)) continue;
+      const outer = a.getBinding(newName);
+      if (!outer) continue;
+      const outerUses = [...outer.referencePaths, ...outer.constantViolations];
+      for (const use of outerUses) {
+        const loc = use.node?.loc;
+        if (!loc) continue;
+        if (
+          inRange(homeRange, { line: loc.start.line, column: loc.start.column })
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * 符号表兜底（babel binding 缺席时）：目标定义所在作用域内已有 `newName`
+ * 定义 ⇒ 重复声明。作用域等值 = block 源码范围一致（buildSymbolTable 的
+ * `name@行:列` 键同口径）。
+ */
+function symbolTableScopeConflict(ast: Node, target: RenameTarget, newName: string): boolean {
+  const table = buildSymbolTable(ast, "");
+  const def = findDefinition(table, target.name, {
+    line: target.loc.start.line,
+    column: target.loc.start.column,
+  });
+  const targetScope = def ? metaOf(def.loc).scope : undefined;
+  if (!targetScope) return false;
+  for (const info of table.definitions.values()) {
+    if (info.name !== newName) continue;
+    const s = metaOf(info.loc).scope;
+    if (!s) continue;
+    if (
+      s.start.line === targetScope.start.line &&
+      s.start.column === targetScope.start.column &&
+      s.end.line === targetScope.end.line &&
+      s.end.column === targetScope.end.column
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** 方法引用命中（带**文件**身份）——跨文件口径下的方法面结果 */
 export type MethodReferenceInfo = {
   name: string;
