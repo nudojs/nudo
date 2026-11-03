@@ -37,6 +37,7 @@ import {
   tryRunEval,
   shouldAnalyzeFile,
   analysisConfig,
+  diskCacheSignState,
   findProjectConfig,
   type CallRecord,
   type AnalysisResult,
@@ -116,6 +117,33 @@ export function attachTargetErrors<T extends object>(
 export function displayPathOf(p: string): string {
   const rel = relative(process.cwd(), p);
   return rel === "" || rel.startsWith("..") ? p : rel;
+}
+
+/**
+ * `nudo.cache.sign` 配置预检（B3 信任面）：targets 涉及的项目配置里，
+ * 最近的签名配置错误消息（`sign: true` 但 `NUDO_CACHE_KEY` 缺席/空，或
+ * sign 取值形状非法）；无错误返回 null。
+ *
+ * 签名是安全旋钮 ⇒ **拒绝运行**（不静默降级到未签名缓存：用户以为受保护
+ * 实则没有）。各命令在 action 层用自己的 usage-error 通道输出本消息
+ * （check 的 CheckJsonMulti 信封 / test 的 CaseJson 信封 / contract 的
+ * 聚合信封 / health 的人类面）；service 侧 `openDiskCache` 的 throw 是
+ * 漏检路径的 fail-closed 兜底。
+ *
+ * 项目配置按 `projectDir` 去重（批跑多文件共享同一 package.json 时只查一次；
+ * `findProjectConfig` 自带目录链 memo）。
+ */
+export function diskCacheSignConfigError(files: readonly string[]): string | null {
+  const seen = new Set<string>();
+  for (const f of files) {
+    const proj = findProjectConfig(dirname(f));
+    if (!proj?.projectDir) continue;
+    if (seen.has(proj.projectDir)) continue;
+    seen.add(proj.projectDir);
+    const st = diskCacheSignState(proj.config);
+    if (st.kind === "error") return st.message;
+  }
+  return null;
 }
 
 /**

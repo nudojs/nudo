@@ -3,6 +3,19 @@ import { resolve, dirname, relative, sep } from "node:path";
 import { setSessionCacheFromProject } from "../session-cache-limits.ts";
 import { setEvalForkBudgetLimit, getEvalForkBudgetLimit, MAX_EVAL_TOTAL_FORKS } from "@nudojs/core/internal";
 
+/**
+ * `nudo.cache` 的对象形态（CI 级信任面）：
+ * - `dir`：根目录（`true`/省略 → `.nudo/cache`；字符串 → 自定义根；`false` → 关闭）
+ * - `sign`：条目 HMAC 签名（默认 false）。开启时**必须**提供 env
+ *   `NUDO_CACHE_KEY`（非空），否则拒绝运行（显式配置错误，不静默降级）——
+ *   伪造的结构合法 CheckJson 会造成假绿（persistent-cache.md 的 L1 关闭理由），
+ *   签名把「结构合法」升级为「本密钥签发」。
+ */
+export type NudoCacheConfig = {
+  dir?: boolean | string;
+  sign?: boolean;
+};
+
 export type NudoConfig = {
   env?: string[];
   mocks?: Record<string, string>;
@@ -33,8 +46,12 @@ export type NudoConfig = {
      */
     maxForks?: number;
   };
-  /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
-  cache?: boolean | string;
+  /**
+   * 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关；
+   * 对象形态 `{ dir?, sign? }` → CI 级信任面（`sign: true` 开条目 HMAC 签名，
+   * 密钥来自 env `NUDO_CACHE_KEY`，见 disk-cache.ts / config.md）。
+   */
+  cache?: boolean | string | NudoCacheConfig;
   /** IDE 展示面（inlay hints） */
   inlayHints?: {
     /**
@@ -307,13 +324,71 @@ export function diskCacheRoot(
     if (typeof raw === "string") {
       return raw.length > 0 ? (projectDir ? resolve(projectDir, raw) : raw) : undefined;
     }
-    // 未知形状（null / 数字 / 对象）→ 关闭（宽松归一：回落默认，不读 env）
+    if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+      // 对象形态 `{ dir?, sign? }`：dir 缺席/true → 默认 `.nudo/cache`；
+      // false → 关；字符串按根解析。非法 dir 形状 → 回落默认根
+      // （宽松归一；报告面由 nudojs config-shape 探针提示，见 projectCacheShapeIssue）
+      const dir = (raw as NudoCacheConfig).dir;
+      if (dir === false) return undefined;
+      if (typeof dir === "string" && dir.length > 0) {
+        return projectDir ? resolve(projectDir, dir) : dir;
+      }
+      return projectDir ? resolve(projectDir, ".nudo/cache") : undefined;
+    }
+    // 未知形状（null / 数字 / 数组）→ 关闭（宽松归一：回落默认，不读 env）
     return undefined;
   }
   const env = process.env.NUDO_CACHE_DIR;
   if (env === "off" || env === "0") return undefined;
   if (env && env.length > 0) return env;
   return undefined;
+}
+
+/**
+ * 磁盘缓存条目签名状态（B3 信任面）：
+ * - `{ kind: "off" }`：未开签名（默认）——旧未签名行为原样
+ * - `{ kind: "on", key }`：签名开 + `NUDO_CACHE_KEY` 就绪（key = 原始密钥串，
+ *   HMAC 密钥材料派生见 disk-cache.ts）
+ * - `{ kind: "error", message }`：**配置错误**——`sign: true` 但密钥缺席/空。
+ *   签名是安全旋钮：不得静默降级（用户以为受保护实则没有）⇒ 消费面
+ *   （CLI 的 check/contract/health）必须显式报错退出。
+ *
+ * `sign` 非布尔形状同样按 error 处理（`"true"` 字符串不是 true——开签名的是
+ * 布尔开关，字符串 typo 让人误以为受保护）。密钥只来自 env
+ * `NUDO_CACHE_KEY`（非空；首尾空白剥掉）——密钥进仓库或缓存目录会摧毁
+ * 威胁模型（签发者=验证者），文档面必须钉住这一点。
+ */
+export type DiskCacheSignState =
+  | { kind: "off" }
+  | { kind: "on"; key: string }
+  | { kind: "error"; message: string };
+
+const SIGN_KEY_MISSING_MESSAGE =
+  "nudo.cache.sign is enabled but NUDO_CACHE_KEY is not set — refusing to run with a forgeable cache. " +
+  "Set NUDO_CACHE_KEY to a non-empty secret from env or a masked CI secret " +
+  "(never commit it or store it inside the cache directory).";
+
+export function diskCacheSignState(
+  config: NudoConfig | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): DiskCacheSignState {
+  const raw = config?.cache;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { kind: "off" };
+  const sign = (raw as NudoCacheConfig).sign;
+  if (sign === undefined || sign === false) return { kind: "off" };
+  if (sign !== true) {
+    return {
+      kind: "error",
+      message:
+        `nudo.cache.sign: invalid value ${describeValue(sign)} (expected boolean true) — ` +
+        "refusing to run: a mistyped sign key must fail loudly, not silently disable signing. " +
+        "Fix the value in package.json#nudo.cache, then set NUDO_CACHE_KEY to a non-empty secret " +
+        "(env or masked CI secret; never commit it or store it inside the cache directory).",
+    };
+  }
+  const key = env.NUDO_CACHE_KEY?.trim();
+  if (key === undefined || key.length === 0) return { kind: "error", message: SIGN_KEY_MISSING_MESSAGE };
+  return { kind: "on", key };
 }
 
 /**

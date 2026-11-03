@@ -3,7 +3,7 @@
 > Status: **landed** — product CLI verbs, L2 entry-may-throw, any≠unknown display, test case reports, check JSON.
 > Primary verbs: `check` / `test` / `contract` / `export` / `health`.
 > Harvest is **not** a product verb — analysis auto-fills `@types` modules; env-package generation uses `@nudojs/harvester`.
-> Product flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` + `--dialect zod` + `export --out`.
+> Product flags: `--from`, `test --freeze`, `test --both-paths [--only]`, `export --format dts|guard|schema|standard|all` + `--dialect zod` + `export --out`.
 > Abs 架构真源：[`kernel-merge.md`](./kernel-merge.md)。
 > 限制与路线图：[`limitations.md`](./limitations.md)。
 
@@ -33,7 +33,7 @@ nudo — JavaScript types, computed
 
   nudo init [path]                 # setup：写 adoption 基线配置进 package.json（幂等）
   nudo check <path> [--watch|-w]   # 门禁 + 签名表（Day 0/CI 唯一终端入口）
-  nudo test <path> [--watch|-w]    # 逐 case 调用点真值 + 可选断言（debug）
+  nudo test <path> [--watch|-w]    # 逐 case 调用点真值 + 可选断言（debug；--both-paths 同轮对照指令/调用点见证）
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
   nudo export <path>               # 投影：dts | guard | schema | standard | all
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
@@ -50,6 +50,7 @@ nudo — JavaScript types, computed
 |------------|--------|
 | 入口签名 / any / unknown / throws | `nudo check <path>`（默认打印 signatures） |
 | 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@`/`entry@`） |
+| 指令见证 × 调用点见证对照（同轮同报） | `nudo test <path> --both-paths`（可选 `--only <fn-names>`；`--json` 面按 `source: directive/callsite` 分辨，默认互斥口径见 limitations §3.2.1） |
 | 使用处实参形态 | `nudo test/check/contract --from <paths…>`（variadic——与路径混写用 `--` 终止符或路径在前，见 §1.4） |
 | 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
 | 机器可读 | `nudo check --json` / `nudo test --json` |
@@ -152,6 +153,16 @@ L2 `entryThrows` 解析顺序：
 // 迁移档：L2 降 warning，L1 仍 error
 "nudo": { "check": { "profile": "adoption" } }
 ```
+
+### 1.5 test 旗标
+
+| 旗标 | 作用 |
+|------|------|
+| `--freeze[=update]` | 固化 case 为指令见证 + 漂移检测（`--dry-run` / `--exit-on-diff` 配套，见 §1.3） |
+| `--both-paths` | 教学对照面：带 `@nudo:case` 的函数在本轮**同时**合成 `call@`/`entry@` 见证（默认互斥，limitations §3.2.1）。退出语义不变（合成见证不判失败）；与 `--freeze` 互斥（freeze 固化的是指令见证，对象冲突） |
+| `--only <names>` | 收敛 `--both-paths` 的合成名单（逗号分隔函数名）；不带 `--both-paths` 为 usage error |
+
+`--json` 面每条 case 的 `source` 字段分辨来源：`"directive"`（`@nudo:case` 指令）/ `"callsite"`（调用点合成）/ `null`（`entry@` 兜底）。
 
 ---
 

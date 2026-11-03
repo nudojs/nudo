@@ -17,6 +17,7 @@ import {
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
 import {
   collectExternalRecords,
+  diskCacheSignConfigError,
   pathErrorEntry,
   reportPathErrors,
   resolveTargetsCollect,
@@ -412,6 +413,13 @@ export function registerContractCommand(program: Command): void {
         }
         const allPathErrors = [...targetErrors, ...fromErrors];
         if (!jsonMode) reportPathErrors(allPathErrors);
+        // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
+        // 拒绝运行（打印面同样会开 iface 磁盘缓存；安全旋钮不静默降级）
+        const signErr = diskCacheSignConfigError(targets);
+        if (signErr) {
+          usageError(signErr);
+          return;
+        }
         const roots = targets.filter((t) => isNudoTargetPath(t));
         if (roots.length === 0) {
           if (jsonMode) {

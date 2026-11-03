@@ -1,6 +1,6 @@
 ---
 slug: /guides/test
-description: nudo test —— Abs 上逐调用点真值报告；合成 call@/entry@ case 默认全部打印；声明的 @nudo:case 断言决定退出码；--from、--freeze、--json、--abs。
+description: nudo test —— Abs 上逐调用点真值报告；合成 call@/entry@ case 默认全部打印；声明的 @nudo:case 断言决定退出码；--from、--freeze、--both-paths、--json、--abs。
 ---
 
 # nudo test
@@ -18,7 +18,7 @@ description: nudo test —— Abs 上逐调用点真值报告；合成 call@/ent
 门禁在 [`nudo check`](./check.md)（L1 契约 + L2 入口 throws）。观察不需要独立动词：它就是 `check` 签名、`test` case 报告和 IDE hover。
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--both-paths [--only names]] [--json] [--abs]
 ```
 
 ## 默认输出
@@ -175,6 +175,26 @@ freeze: would write cases → math.js (dry run)
 
 合并策略（各模式触碰什么、可序列化形状的限制）规定在 [Call-Site Discovery](./callsite-discovery.md)。想持续守望这种漂移而不是手动刷新：[`nudo health`](./health.md) 重跑同一条再固化链，一旦生成指令会变就 exit `1`。
 
+## 同轮对照两条路径（`--both-paths`）
+
+默认口径下，两种见证**按函数按轮互斥**：带 `@nudo:case` 指令的函数只打印指令见证，调用点见证（`call@` / `entry@`）只对没有指令的函数合成。`--both-paths` 打开教学对照面 —— 同一函数的指令见证**与**合成调用点见证在同一轮里并排出现：
+
+```bash
+nudo test src/math.js --both-paths
+nudo test src/ --both-paths --only add,clamp   # 只对指定函数开启合成
+```
+
+```text
+=== add ===
+  debug "add-lit"  (2, 3) => 5
+  call@L11  (10, 20) => 30
+```
+
+- 退出语义**不变**：合成 case 依旧不挡 exit，只有声明断言能让运行失败。
+- `--only <names>`（逗号分隔）把合成收敛到指定函数 —— 名单外的指令函数保持默认互斥口径。`--only` 不带 `--both-paths` 是用法错误。
+- `--freeze` 与 `--both-paths` 互斥（用法错误）：freeze 固化的是**指令**见证，是另一种产品面。
+- `--json` 面每条 case 的 `source` 字段分辨路径：`"directive"` / `"callsite"` / `null`（`entry@` 兜底）。
+
 ## 使用处（`--from`）
 
 `--from <paths…>` 指向使用处文件 —— 测试、示例、上游应用。Nudo 采集它们的真实调用记录，并把每条匹配的调用注入为 `call@L` case，于是实参形状来自代码**实际**被怎么用，而不是手写指令。两阶段采集、归因门与试跑数据见 [Call-Site Discovery](./callsite-discovery.md)。
@@ -237,6 +257,8 @@ freeze: would write cases → math.js (dry run)
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--from <paths…>` | 使用处文件，其调用成为 `call@L` case |
 | `--freeze[=mode]` | 把合成 case 写回为 `@nudo:case` 指令（默认 `add` / `update`） |
+| `--both-paths` | 同一轮并排打印同一函数的指令见证与合成 `call@`/`entry@` 见证（退出语义不变；不与 `--freeze` 组合） |
+| `--only <names>` | 搭配 `--both-paths`：把合成收敛到指定函数（逗号分隔） |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--freeze --dry-run`：diff 非空时 exit `1` |
 | `--json` | `CaseJson`（单文件；不能与 `--abs` / `--freeze` 组合） |

@@ -187,3 +187,16 @@ export type AnalyzeLoadModule = (spec: string, fromFile: string) => string | und
  */
 export type DirectiveCaseMode = "none" | "all" | "selected";
 
+/**
+ * `--both-paths`（`nudo test`）：对**带 @nudo:case 的函数**同轮也走合成路径
+ * （call@/entry@），directive case 与合成 case 同轮同报（教学对比面）。
+ * - `true`：全部带 case 的函数
+ * - 名单（CLI `--only a,b`）：仅列出的函数
+ *
+ * 与 `DirectiveCaseMode` 正交：mode 决定「跑哪些 @nudo:case」，本开关决定
+ * 「跑了 case 的函数是否**仍**进 synthCandidates」（默认互斥——见
+ * docs/design/limitations.md §3.2.1）。pointWitnessOnly 的 domainOnly 语义
+ * 不受影响（点观测函数照旧只作推断域）。
+ */
+export type AlsoSynthesizeCases = boolean | readonly string[];
+

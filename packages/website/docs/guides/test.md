@@ -1,6 +1,6 @@
 ---
 slug: /guides/test
-description: nudo test — per-case call-site ground truth on Abs; synthetic call@/entry@ cases print by default; declared @nudo:case assertions drive the exit code; --from, --freeze, --json, --abs.
+description: nudo test — per-case call-site ground truth on Abs; synthetic call@/entry@ cases print by default; declared @nudo:case assertions drive the exit code; --from, --freeze, --both-paths, --json, --abs.
 ---
 
 # nudo test
@@ -18,7 +18,7 @@ description: nudo test — per-case call-site ground truth on Abs; synthetic cal
 The gate lives in [`nudo check`](./check.md) (L1 contracts + L2 entry throws). Observation needs no verb of its own: it is `check` signatures, `test` case reports, and IDE hover.
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--both-paths [--only names]] [--json] [--abs]
 ```
 
 ## Default output
@@ -175,6 +175,26 @@ freeze: would write cases → math.js (dry run)
 
 The merge policy (what each mode touches, serializable-shape limits) is specified in [Call-Site Discovery](./callsite-discovery.md). To watch that drift continuously instead of refreshing by hand, [`nudo health`](./health.md) re-runs the same re-solidify chain and exits `1` as soon as generated directives would change.
 
+## Both paths in one round (`--both-paths`)
+
+By default the two witness kinds are **mutually exclusive per function per round**: a function with `@nudo:case` directives prints only its directive witnesses, while call sites are synthesized (`call@` / `entry@`) only for functions that have none. `--both-paths` opens the teaching comparison face — the directive witness **and** the synthesized call-site witness for the same function, in the same round:
+
+```bash
+nudo test src/math.js --both-paths
+nudo test src/ --both-paths --only add,clamp   # limit synthesis to named functions
+```
+
+```text
+=== add ===
+  debug "add-lit"  (2, 3) => 5
+  call@L11  (10, 20) => 30
+```
+
+- Exit semantics are **unchanged**: synthetic cases still never block exit; only declared assertions fail the run.
+- `--only <names>` (comma-separated) limits synthesis to the named functions — a directive function outside the list keeps the default exclusive behavior. `--only` without `--both-paths` is a usage error.
+- `--freeze` + `--both-paths` is a usage error: freeze solidifies *directive* witnesses, a different product face.
+- In `--json`, each case's `source` field separates the paths: `"directive"` / `"callsite"` / `null` (`entry@` fallback).
+
 ## Usage sites (`--from`)
 
 `--from <paths…>` points at usage-site files — tests, examples, upstream apps. Nudo harvests their real call records and injects each matched call as a `call@L` case, so argument shapes come from how the code is *actually* used rather than from hand-written directives. The two-phase harvest, the attribution gate, and trial numbers live in [Call-Site Discovery](./callsite-discovery.md).
@@ -237,6 +257,8 @@ Observation is not a separate verb — it lives in `check` signatures, `test` ca
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
 | `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives (`add` default / `update`) |
+| `--both-paths` | Directive + synthesized `call@`/`entry@` witnesses for the same function in one round (exit semantics unchanged; not with `--freeze`) |
+| `--only <names>` | With `--both-paths`: limit synthesis to the named functions (comma-separated) |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
 | `--exit-on-diff` | With `--freeze --dry-run`: exit `1` when the diff is non-empty |
 | `--json` | `CaseJson` (single file; not with `--abs` / `--freeze`) |

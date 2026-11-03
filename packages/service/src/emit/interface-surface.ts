@@ -57,8 +57,8 @@ import {
 import { analyzeFileAsync } from "../analyzer.ts";
 import { type CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
-import { findProjectConfig, interfaceConfig, diskCacheRoot } from "../evaluator/config.ts";
-import { DiskCache, ifaceCacheKey } from "../disk-cache.ts";
+import { findProjectConfig, interfaceConfig } from "../evaluator/config.ts";
+import { DiskCache, ifaceCacheKey, openDiskCache } from "../disk-cache.ts";
 import { collectLoadDepContents } from "../dep-contents.ts";
 
 /** loadModule 闭包依赖内容：iface 缓存键维度（含 ambient 侧车 / ESM import）。
@@ -643,12 +643,14 @@ export async function interfaceSurface(
 
   // B3：整文件 effectiveInterface 表磁盘缓存（打印路径；不加速 analyze）
   // buffer 源 / 注入 loadModule / callsites 时禁用磁盘缓存（键不含 buffer）
+  // openDiskCache：根目录 + 签名状态单源（nudo.cache.sign 误配置 ⇒ throw
+  // DiskCacheSignError——CLI 面 contract/health 的 action 层预检先给分面
+  // 错误形态，这里是库面兜底，不静默降级）
   let disk: DiskCache | undefined;
   let ifaceKey: string | undefined;
   let cachedTable: IfaceTableJson | undefined;
   if (!opts.loadModule && !opts.records && !fromBuffer) {
-    const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
-    disk = new DiskCache({ root: cacheRoot, namespace: "iface" });
+    disk = openDiskCache({ config: proj?.config, projectDir: proj?.projectDir, namespace: "iface" });
     if (disk.enabled) {
       let sidecarSource: string | undefined;
       try {

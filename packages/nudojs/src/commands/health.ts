@@ -17,6 +17,7 @@ import {
   reemitUpdate,
   resolveTargetsCollect,
   startWatch,
+  diskCacheSignConfigError,
   displayPathOf,
   variadicSwallowError,
   type PathError,
@@ -666,6 +667,28 @@ async function runHealth(
     pathErrorSink.push(...errors);
     targetErrors.push(...errors);
     files.push(...targets);
+  }
+  // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
+  // 拒绝运行（health 的 drift 面会开 iface 磁盘缓存；安全旋钮不静默降级）。
+  // 必须在 healthFile 之前——否则 emitInterface 开缓存时才炸（半份报告）。
+  // 机器面沿用 BUG-113 先例（{ok:false, error, suggestion} 信封 ⇒ stdout
+  // 永不为空）；文本面 stderr + exit 1。
+  const signErr = diskCacheSignConfigError(files);
+  if (signErr) {
+    if (opts.json) {
+      emitJsonDoc(
+        {
+          ok: false,
+          error: signErr,
+          suggestion: "set NUDO_CACHE_KEY (env or masked CI secret) or set nudo.cache.sign to false",
+        },
+        opts.jsonLines === true,
+      );
+    } else {
+      console.error(signErr);
+    }
+    process.exitCode = 1;
+    return;
   }
   for (const filePath of files) {
     reports.push(await healthFile(filePath, externalRecords));

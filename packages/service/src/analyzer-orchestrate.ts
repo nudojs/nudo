@@ -15,6 +15,7 @@ import { absolutizeEnvSpec, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { analysisCacheGet, analysisCacheSet } from "./analysis-file-cache.ts";
 import { analysisFileCacheKey, cloneAnalysisResult } from "./analyzer-cache.ts";
 import type {
+  AlsoSynthesizeCases,
   AnalysisResult,
   AnalyzeLoadModule,
   Diagnostic,
@@ -77,12 +78,22 @@ export async function analyzeFileAsync(
   loadModule?: AnalyzeLoadModule,
   /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
   caseMode: DirectiveCaseMode = "all",
+  /** --both-paths：带 @nudo:case 的函数同轮也走合成路径（nudo test 教学对比面） */
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): Promise<AnalysisResult> {
   // collector 作用域须在 await preloadPathEnvs 之前打开：预载触发的诊断/collector
   // 落进本次分析的 store，不与 await 窗口交错的其它分析串台（幂等：嵌套复用）。
   return runWithCollectorScope(async () => {
     await preloadAnalysisEnvs(filePath, source);
-    return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
+    return analyzeFile(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      loadModule,
+      caseMode,
+      alsoSynthesizeCases,
+    );
   });
 }
 
@@ -144,6 +155,8 @@ export function analyzeFile(
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
+  /** --both-paths：带 @nudo:case 的函数同轮也走合成路径（nudo test 教学对比面） */
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): AnalysisResult {
   // collector 作用域（幂等）：分析的 collector 安装点在此内层——同步入口同样
   // 先开作用域；嵌套（checkSource / analyzeFileAsync 外层）零开销复用。
@@ -170,6 +183,8 @@ export function analyzeFile(
       projectEnvNames,
       autoBind !== false,
       caseMode,
+      // --both-paths 是独立观察面：合成 case 进台账 ⇒ 与默认互斥面分开缓存
+      alsoSynthesizeCases,
     );
     if (!k.noCache) {
       const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
@@ -187,6 +202,7 @@ export function analyzeFile(
       externalCallRecords,
       loadModule,
       caseMode,
+      alsoSynthesizeCases,
     );
     // 引擎内部回落 = 该模块求值失败 ⇒ 闸门无法裁决（CLI 面 exit 1）。
     // 不追加 ⇒ 不经过 CLI 包装层的消费方（LSP / agent / 插件）零诊断
@@ -273,6 +289,8 @@ export function analyzeFileWithEvalFailures(
   loadModule?: AnalyzeLoadModule,
   /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
   caseMode: DirectiveCaseMode = "all",
+  /** --both-paths：带 @nudo:case 的函数同轮也走合成路径（nudo test 教学对比面） */
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): { analysis: AnalysisResult; evalFailures: FileEvalFailure[] } {
   const evalFailures: FileEvalFailure[] = [];
   setEvalFallbackCollector((f: EvalFallback) => {
@@ -287,6 +305,7 @@ export function analyzeFileWithEvalFailures(
       externalCallRecords,
       loadModule,
       caseMode,
+      alsoSynthesizeCases,
     );
     return { analysis, evalFailures };
   } finally {
@@ -306,6 +325,8 @@ export async function analyzeFileAsyncWithEvalFailures(
   loadModule?: AnalyzeLoadModule,
   /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
   caseMode: DirectiveCaseMode = "all",
+  /** --both-paths：带 @nudo:case 的函数同轮也走合成路径（nudo test 教学对比面） */
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): Promise<{ analysis: AnalysisResult; evalFailures: FileEvalFailure[] }> {
   // collector 作用域须在 await preloadPathEnvs 之前打开（与 analyzeFileAsync 同口径）。
   return runWithCollectorScope(async () => {
@@ -317,6 +338,7 @@ export async function analyzeFileAsyncWithEvalFailures(
       externalCallRecords,
       loadModule,
       caseMode,
+      alsoSynthesizeCases,
     );
   });
 }

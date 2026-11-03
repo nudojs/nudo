@@ -18,7 +18,8 @@
 | `DiskCache` | sha256 内容键 + 分析 ABI 前缀；读失败 / 版本不符 / 校验失败 → **fail-open 当 miss** |
 | CheckJson 缓存 | `nudo check` 在**无 `--from`** 时可读写整文件报告；**默认关闭**（投毒面） |
 | effectiveInterface 整文件表 | `iface` 命名空间：导出名 → 契约 JSON 或 implicit 负缓存 `null` |
-| 启用 | `package.json#nudo.cache: true`（→ `.nudo/cache`）/ 自定义目录字符串 / `NUDO_CACHE_DIR`；`false`/`off` 关闭 |
+| 启用 | `package.json#nudo.cache: true`（→ `.nudo/cache`）/ 自定义目录字符串 / `NUDO_CACHE_DIR`；`false`/`off` 关闭；对象形态 `{ dir?, sign? }`（dir 自定义根 + sign 签名开关） |
+| **条目签名（opt-in）** | `package.json#nudo.cache.sign: true` + 密钥 env `NUDO_CACHE_KEY`：逐条 HMAC-SHA256（域分离派生密钥材料）。验签失败 / 缺 sig → **fail-open 当 miss**（回算覆盖，不 throw）；signed/unsigned **键空间分离**（storage key 再哈希）⇒ 轮换 = 同路径全 miss，无孤儿清理。**sign 开而 key 缺席、或 sign 形状非法 ⇒ 配置错误拒绝运行**（`DiskCacheSignError`；CLI 面 check/contract/health 进各自 usage-error 通道，`--json` 信封非空）——安全旋钮不静默降级 |
 | callSiteBudget | `package.json#nudo.analysis.callSiteBudget`（默认 3）；超限 symbolic `#widened` |
 
 加速边界（诚实声明）：
@@ -130,7 +131,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 
 **不做**主动逐出图：磁盘层靠键完备性；内存层的 dep-parent 逐出与磁盘职责不重叠。
 
-**投毒红线（check 门禁）**：结构合法的假 `CheckJson` 可制造假阴性。因此 L1 check **默认关**；开启后仅用于可信本地/CI；`.nudo/cache` 必须 `gitignore`；不可信 runner 上用 `NUDO_CACHE=0` 或保持 `check: false`。
+**投毒红线（check 门禁）**：结构合法的假 `CheckJson` 可制造假阴性。因此 L1 check **默认关**；开启后仅用于可信本地/CI；`.nudo/cache` 必须 `gitignore`；不可信 runner 上用 `NUDO_CACHE=0` 或保持 `check: false`。**签名面（2026-11 起）**：不可信 runner 但仍想复用缓存时开 `nudo.cache.sign: true` + CI secret 的 `NUDO_CACHE_KEY`——篡改条目验签失败当 miss 回算，伪造的「绿」永远进不了门禁；密钥永不进仓库/缓存目录，轮换 = 全量 miss（无脏命中）。
 
 ---
 

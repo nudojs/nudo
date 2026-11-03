@@ -166,6 +166,8 @@ nudo test <paths...> [options]
 | `--watch` / `-w` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
 | `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；不给值 = add 模式，保留既有指令 |
+| `--both-paths` | 同一轮并排打印同一函数的指令见证**与**合成 `call@`/`entry@` 见证（教学对照面；退出语义不变；不能与 `--freeze` 组合） |
+| `--only <names>` | 搭配 `--both-paths`：把合成收敛到指定函数（逗号分隔）；不带 `--both-paths` 时为用法错误 |
 | `--json` | 结构化用例报告（单文件；不能与 `--abs` 或 `--freeze` 组合） |
 | `--abs` | 打印用例的 Abs 代数 |
 | `--dry-run` | 搭配 `--freeze`：打印 unified diff 而不写盘 |

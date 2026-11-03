@@ -136,10 +136,13 @@ function portOf(cfg) { return cfg?.server?.port ?? 8080; }
 
 ### 3.2 现存边界（仍有效）
 
-1. **test 同轮互斥**：`test` 命令本轮求值了某函数的 `@nudo:case`，该函数就不再
-   合成 `call@`/`entry@` case（`analyzer-orchestrate-uncached.ts`：
-   `caseIdxsToRun.length === 0` 才进 `synthCandidates`）。同一函数的两路结果
-   **不能同轮同报**；对比必须双文件 / 双函数副本。
+1. **test 同轮互斥（默认；`--both-paths` 可开对照面）**：`test` 命令本轮求值了
+   某函数的 `@nudo:case`，该函数默认就不再合成 `call@`/`entry@` case
+   （`analyzer-orchestrate-uncached.ts`：`caseIdxsToRun.length === 0` 才进
+   `synthCandidates`）。自 `1.11.0` 起可用 `nudo test <path> --both-paths`
+   （可选 `--only <fn-names>` 收敛名单）让指令见证与合成调用点见证**同轮同报**，
+   `--json` 面 `source: "directive" | "callsite"` 可分辨；退出语义不变
+   （合成见证不判失败），且与 `--freeze` 互斥。默认互斥是教学口径不变。
 2. **递归 × callSiteBudget**：递归深度超过 `callSiteBudget`（默认 `3`）时，call@ 只报
    内部递归记录 + 宽化 `call@symbolic`（`sumTo(3)` → 三条内层 `(0)(1)(2)` +
    `(number) => 0 | number | string`），顶层精确见证 `6` 被预算挤出、不出现；

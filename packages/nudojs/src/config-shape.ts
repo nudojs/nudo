@@ -107,3 +107,67 @@ export function projectConfigShapeIssue(startDir: string): ConfigShapeIssue | nu
   }
   return null;
 }
+
+/**
+ * `nudo.cache` 子键的形状问题（对象形态 `{ dir?, sign? }` 的 typo 防护）。
+ *
+ * 与 468/936 / `nudo.env` 探针同一口径：service 侧对非法形状宽松归一
+ * （`dir` 非法 → 默认根；`sign` 非法 → **配置错误**，由 `diskCacheSignState`
+ * 拒绝运行）——本探针让**报告面**可见，用户不用从「sign 报错 / dir 没生效」
+ * 的现象倒推 typo。停步规则不需要重走：`projectDir` 已由 findProjectConfig
+ * 定位，直接读那一份。
+ */
+export function projectCacheShapeIssue(projectDir: string | undefined): ConfigShapeIssue | null {
+  if (!projectDir) return null;
+  const pkgPath = resolve(projectDir, "package.json");
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  } catch {
+    return null; // 读/解析失败：service 侧另有诊断，本探针不重复
+  }
+  if (pkg === null || typeof pkg !== "object") return null;
+  const nudo = (pkg as { nudo?: unknown }).nudo;
+  if (nudo === null || typeof nudo !== "object" || Array.isArray(nudo)) return null;
+  const raw = (nudo as { cache?: unknown }).cache;
+  if (raw === undefined || typeof raw === "boolean" || typeof raw === "string") return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      pkgPath,
+      value: describeValue(raw),
+      falsy: !raw,
+      message:
+        `package.json at ${pkgPath} has an invalid "nudo.cache" value ` +
+        `(${describeValue(raw)}; expected true | false | a directory string | an object { dir?, sign? }) ` +
+        `— the disk cache stays off`,
+    };
+  }
+  // 对象形态：未知键 = typo 防护（与 --profile typo 警告同动机）；
+  // sign/dir 的形状错误由本探针点名（service 侧 sign 非法 = 拒绝运行）
+  const obj = raw as Record<string, unknown>;
+  const unknownKeys = Object.keys(obj).filter((k) => k !== "dir" && k !== "sign");
+  const badSign = obj.sign !== undefined && typeof obj.sign !== "boolean";
+  const badDir =
+    obj.dir !== undefined && typeof obj.dir !== "string" && typeof obj.dir !== "boolean";
+  if (unknownKeys.length === 0 && !badSign && !badDir) return null;
+  const problems: string[] = [];
+  if (unknownKeys.length > 0) {
+    problems.push(
+      `unknown key(s) ${unknownKeys.map((k) => `"cache.${k}"`).join(", ")} (allowed: dir, sign)`,
+    );
+  }
+  if (badSign) problems.push(`"cache.sign" must be boolean (got ${describeValue(obj.sign)})`);
+  if (badDir) {
+    problems.push(
+      `"cache.dir" must be a directory string or boolean (got ${describeValue(obj.dir)})`,
+    );
+  }
+  return {
+    pkgPath,
+    value: describeValue(raw),
+    falsy: !raw,
+    message:
+      `package.json at ${pkgPath} has an invalid "nudo.cache" object ` +
+      `(${problems.join("; ")})`,
+  };
+}

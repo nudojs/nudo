@@ -10,6 +10,7 @@ import { pathEnvPreloadFingerprint } from "./evaluator/env-loader.ts";
 import { findProjectConfig } from "./evaluator/config.ts";
 import { dirname } from "node:path";
 import type {
+  AlsoSynthesizeCases,
   AnalysisResult,
   AnalyzeLoadModule,
   Diagnostic,
@@ -60,6 +61,8 @@ export function analysisFileCacheKey(
   /** ambient 侧车绑定：变更必须 miss（dep 指纹故意不编码 autoBind） */
   autoBind?: boolean,
   caseMode: DirectiveCaseMode = "all",
+  /** --both-paths：独立观察面（合成 case 进台账）⇒ 与默认互斥面分开缓存 */
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): { filePath: string; source: string; auxKey: string; noCache?: boolean } {
   let cases = "-";
   if (activeCases && activeCases.size > 0) {
@@ -129,7 +132,16 @@ export function analysisFileCacheKey(
     filePath: stablePathKey(filePath),
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
-    auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,
+    // as 段：--both-paths 是独立观察面（带 case 的函数也合成 call@/entry@），
+    // 与默认互斥面（limitations §3.2.1）分开缓存；名单收敛成排序去重串，
+    // 同一名单不同顺序/重复不产生不同键
+    auxKey:
+      `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}` +
+      (alsoSynthesizeCases === undefined
+        ? ""
+        : alsoSynthesizeCases === true || !Array.isArray(alsoSynthesizeCases)
+          ? `\0as=all`
+          : `\0as=${[...new Set(alsoSynthesizeCases)].sort().join(",")}`),
     noCache,
   };
 }

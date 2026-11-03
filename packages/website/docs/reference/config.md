@@ -99,7 +99,12 @@ The VS Code setting `nudo.inlayHints.parameters` (and the Zed `language-servers.
 |---|---|
 | `true` | Cache at `<projectRoot>/.nudo/cache`. |
 | `"some/dir"` | Custom cache root, resolved against the project root. |
+| `{ "dir": …, "sign": … }` | Object form: `dir` = `true` / directory string / `false` (root knob as above); `sign` = boolean entry-signing switch (below). |
 | `false` / omitted | Disabled (default). |
+
+**Entry signing (opt-in, `nudo.cache.sign: true` + `NUDO_CACHE_KEY`):** every cache entry is HMAC-SHA256-signed with a key derived from the `NUDO_CACHE_KEY` secret. A tampered or forged entry fails verification and is treated as a **miss** (recomputed, never trusted) — a structurally valid fake green can no longer pass the gate. Signed and unsigned entries live in separate key spaces, so rotating the key means a clean full miss, not a stale hit.
+
+A security knob fails loudly, never silently: enabling `sign` without `NUDO_CACHE_KEY`, or a non-boolean `sign` value, is a **configuration error** — `nudo check` / `contract` / `health` refuse to run (exit 1, machine-readable on `--json`) instead of quietly running unsigned. Keep the key in env or a masked CI secret — never in the repo or inside the cache directory.
 
 Off by default — a forged cache report could hide violations, so enable it only on trusted machines and gitignore `.nudo/cache`. What lands on disk, fail-open semantics, and CI guidance: [Performance — the `.nudo/cache` disk cache](../guides/performance.md).
 
@@ -121,6 +126,7 @@ Off by default — a forged cache report could hide violations, so enable it onl
 |---|---|---|---|
 | `NUDO_MAX_FORKS` | Branch-expansion budget (same knob as `nudo.analysis.maxForks`) | `5000` | Integer ≥ 1; invalid falls back to the default — the **default**, not the config key (a set-but-invalid env value does not fall through to `nudo.analysis.maxForks`). Wins over the config key. |
 | `NUDO_CACHE_DIR` | Project disk cache root (same knob as `nudo.cache`) | unset (off) | Absolute path, or `off` / `0` to disable. Only read when `nudo.cache` is unset. |
+| `NUDO_CACHE_KEY` | HMAC secret for `nudo.cache.sign: true` | unset | Non-empty secret from env or a masked CI secret. Required when `sign` is enabled — missing key is a configuration error (the command refuses to run). Never commit it or store it inside the cache directory. |
 | `NUDO_CACHE_MAX_FILES` | Session LRU `maxFiles` | `64` | Integer; `0` / `off` disables the layer; clamped to 65,536. |
 | `NUDO_CACHE_MAX_FNS` | Session LRU `maxFns` | `1024` | Same rules as above. |
 | `NUDO_CACHE_MAX_EVALRUNS` | Session LRU `maxEvalRuns` | `32` | Same rules as above. |

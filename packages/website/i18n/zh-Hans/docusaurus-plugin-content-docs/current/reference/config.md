@@ -99,7 +99,12 @@ VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.
 |---|---|
 | `true` | 缓存于 `<项目根>/.nudo/cache`。 |
 | `"some/dir"` | 自定义缓存根，相对项目根解析。 |
+| `{ "dir": …, "sign": … }` | 对象形态：`dir` = `true` / 目录字符串 / `false`（同上根旋钮）；`sign` = 布尔的条目签名开关（见下）。 |
 | `false` / 省略 | 关闭（默认）。 |
+
+**条目签名（opt-in，`nudo.cache.sign: true` + `NUDO_CACHE_KEY`）：** 每条缓存条目都用从 `NUDO_CACHE_KEY` 秘密派生的密钥做 HMAC-SHA256 签名。被篡改或伪造的条目验签失败即按 **miss** 处理（重新计算，绝不采信）—— 结构合法的假绿再也过不了门禁。签名与未签名条目键空间分离，轮换密钥 = 干净的全量 miss，不会脏命中。
+
+安全旋钮只大声失败、绝不静默：开了 `sign` 却没有 `NUDO_CACHE_KEY`，或 `sign` 值不是布尔，都是**配置错误** —— `nudo check` / `contract` / `health` 拒绝运行（exit 1，`--json` 面机器可读），而不是悄悄退回无签名。密钥放在 env 或打码的 CI secret 里 —— 永不进仓库、绝不放进缓存目录。
 
 默认关闭 —— 伪造的缓存报告可能掩盖违例，只在可信机器上开启，并将 `.nudo/cache` 加入 gitignore。落盘内容、fail-open 语义与 CI 指引见[性能 —— `.nudo/cache` 磁盘缓存](../guides/performance.md)。
 
@@ -121,6 +126,7 @@ VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.
 |---|---|---|---|
 | `NUDO_MAX_FORKS` | 分支展开预算（与 `nudo.analysis.maxForks` 同一旋钮） | `5000` | 整数 ≥ 1；非法值回落**默认值** —— 是默认值，不是配置键（设了但非法的环境变量值不会再落到 `nudo.analysis.maxForks`）。压过配置键。 |
 | `NUDO_CACHE_DIR` | 项目磁盘缓存根（与 `nudo.cache` 同一旋钮） | 未设置（关） | 绝对路径，或 `off` / `0` 关闭。仅在 `nudo.cache` 未设置时读取。 |
+| `NUDO_CACHE_KEY` | `nudo.cache.sign: true` 的 HMAC 密钥 | 未设置 | 来自 env 或打码 CI secret 的非空秘密。`sign` 开启时必填 —— 缺失即配置错误（命令拒绝运行）。永不提交进仓库、绝不放进缓存目录。 |
 | `NUDO_CACHE_MAX_FILES` | 会话 LRU `maxFiles` | `64` | 整数；`0` / `off` 关闭该层；钳制到 65,536。 |
 | `NUDO_CACHE_MAX_FNS` | 会话 LRU `maxFns` | `1024` | 规则同上。 |
 | `NUDO_CACHE_MAX_EVALRUNS` | 会话 LRU `maxEvalRuns` | `32` | 规则同上。 |

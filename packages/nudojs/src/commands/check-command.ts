@@ -37,6 +37,7 @@ import { shouldEmitGha } from "../check-ci-flags.ts";
 import {
   attachTargetErrors,
   collectExternalRecords,
+  diskCacheSignConfigError,
   emitJsonDoc,
   reportPathErrors,
   resolveTargets,
@@ -608,6 +609,14 @@ export function registerCheckCommand(program: Command): void {
         const gateErr = validateGateFlags(opts);
         if (gateErr) {
           usageErrorExit(opts.json, gateErr);
+          return;
+        }
+        // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
+        // 拒绝运行（安全旋钮不静默降级；文案来自 diskCacheSignState 单源）。
+        // 放在目标/旗标校验之后、任何分析之前——一次报错，json 面有信封。
+        const signErr = diskCacheSignConfigError(targets);
+        if (signErr) {
+          usageErrorExit(opts.json, signErr);
           return;
         }
         const entryThrows = isEntryThrowsMode(opts.entryThrows)

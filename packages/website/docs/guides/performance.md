@@ -53,6 +53,7 @@ Off by default. Opt in via `package.json`:
 |---|---|
 | `true` | cache at `<projectRoot>/.nudo/cache` |
 | `"some/dir"` | custom directory, resolved against the project root |
+| `{ "dir": …, "sign": true }` | object form — combine a custom root with entry signing (below) |
 | `false` / omitted | disabled (default) |
 
 Env override (when config is unset): `NUDO_CACHE_DIR` — an absolute path, or `off` / `0` to disable.
@@ -71,6 +72,27 @@ What lands on disk (namespaced subdirectories under the root):
 ### Why it is off by default
 
 A structurally valid **forged** `CheckJson` can manufacture false negatives — a poisoned cache could hide real violations. Therefore: enable only on trusted machines/CI; `.nudo/cache` **must be gitignored**; on untrusted runners keep `nudo.cache` unset/`false` or set `NUDO_CACHE_DIR=off`.
+
+### Entry signing (`nudo.cache.sign: true` + `NUDO_CACHE_KEY`)
+
+For **untrusted runners where you still want the cache**: opt in to per-entry HMAC-SHA256 signing.
+
+```jsonc
+// package.json — enable; supply the secret via env (CI secret, never committed)
+{ "nudo": { "cache": { "sign": true } } }
+```
+
+```yaml
+# CI: masked secret → env; check / contract / health all read it
+- run: pnpm exec nudo check src/
+  env:
+    NUDO_CACHE_KEY: ${{ secrets.NUDO_CACHE_KEY }}
+```
+
+- Each entry carries a signature over its content; verification failure (tampered value, stripped signature, wrong key) is a **miss** — recomputed, never trusted. A forged "green" fails the signature and cannot pass the gate.
+- Signed and unsigned entries live in **separate key spaces**: rotating the key (or toggling signing) is a clean full miss on the same paths — no stale hits, no orphan cleanup.
+- Fail-closed configuration: `sign: true` without `NUDO_CACHE_KEY`, or a non-boolean `sign` value, makes `check` / `contract` / `health` **refuse to run** (exit 1; on `--json` the error rides the usual envelope). A security knob never degrades silently to unsigned.
+- Key hygiene: env or masked CI secret only — never in the repo, never inside the cache directory itself.
 
 ### The dependency layer (default ON)
 
@@ -91,7 +113,7 @@ The cache makes repeated checks of unchanged files cheaper on the algebra surfac
 
 - **Default setup: nothing to restore.** The project cache is off; `nudo check` recomputes honestly every run.
 - **If you enable the check cache** (trusted runners only): restoring `.nudo/cache` between runs is safe — keys are content-addressed and misses just recompute. Always gitignore it; never commit it. Contract files (`*.nudo.js`) go in git; the cache does not.
-- **Untrusted runners:** keep it off — `nudo.cache: false` (or unset) and `NUDO_CACHE_DIR=off`.
+- **Untrusted runners:** either keep it off — `nudo.cache: false` (or unset) and `NUDO_CACHE_DIR=off` — or enable entry signing (see *Entry signing* above: `cache.sign: true` + `NUDO_CACHE_KEY` from a masked CI secret), which makes a tampered cache miss honestly instead of poisoning the gate.
 - **The deps layer** (`~/.cache/nudo/deps`) is the CI-worthy one: default-on, cross-project, pure signature projections. Point `NUDO_DEPS_CACHE_DIR` at a restored directory to reuse harvest work across jobs; a stale or corrupt copy simply misses.
 
 ## Session cache limits (in-process LRU)

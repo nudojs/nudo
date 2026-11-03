@@ -23,9 +23,13 @@ import {
   FORK_TRUNCATION_LABEL,
   LOOP_TRUNCATION_LABEL,
   checkInjectedDomainEvidence,
+  getAbsCallBudgetStats,
   runWithEvalMissingSlot,
   fnFingerprints,
   setAbsTruncationCollector,
+  suggestedCallsCeiling,
+  suggestedDepthCeiling,
+  suggestedForkCeiling,
 } from "@nudojs/core/internal";
 import {
   parse,
@@ -63,6 +67,7 @@ import {
   caseDirectiveKey,
 } from "./fn-analysis-cache.ts";
 import type {
+  AlsoSynthesizeCases,
   AnalysisResult,
   AnalyzeLoadModule,
   BindingInfo,
@@ -162,6 +167,7 @@ export function analyzeFileUncached(
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): AnalysisResult {
   // C0.5：per-analysis 作用域（ALS），禁止分析间 flag 粘滞 / 并发串档
   const projectConfig = findProjectConfig(dirname(filePath));
@@ -174,6 +180,7 @@ export function analyzeFileUncached(
       externalCallRecords,
       loadModule,
       caseMode,
+      alsoSynthesizeCases,
     ),
   );
 }
@@ -185,6 +192,7 @@ export function analyzeFileUncachedInner(
   externalCallRecords?: CallRecord[],
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): AnalysisResult {
   const ast = parse(source);
   // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics。
@@ -604,8 +612,20 @@ export function analyzeFileUncachedInner(
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断；maxForks 截断同理）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|f=${analysisCfg.maxForks}`;
+    // --both-paths（`nudo test` 教学对比面）：对**带 @nudo:case 的函数**也走
+    // 合成路径——directive case 与 call@/entry@ 同轮同报（默认互斥见
+    // limitations §3.2.1）。须在 fnCacheKey **之前**算：both-paths 命中的函数
+    // 整体停用函数级缓存——合成结果来自**全文件**调用记录（own/deps 指纹看不
+    // 见 ⇒ 本就不可缓存，见下方 fnCacheKey 注释），且缓存快照点在合成**之前**
+    // ⇒ 命中会丢合成见证。pointWitnessOnly 的 domainOnly 语义不动（点观测 ⇒
+    // 入口兜底仍只作推断域）。
+    const bothPathsFn =
+      caseDirectives.length > 0 &&
+      caseIdxsToRun.length > 0 &&
+      (alsoSynthesizeCases === true ||
+        (Array.isArray(alsoSynthesizeCases) && alsoSynthesizeCases.includes(fn.name)));
     const fnCacheKey =
-      !fnDepFailClosed && fp && caseDirectives.length > 0
+      !fnDepFailClosed && fp && caseDirectives.length > 0 && !bothPathsFn
         ? [
             filePath,
             fp.own,
@@ -679,7 +699,8 @@ export function analyzeFileUncachedInner(
       !hasAssertedCase &&
       !hasDomainShapedCase &&
       extractDeclaredThrows(source, fn.name) === undefined;
-    if (!skipped && (caseIdxsToRun.length === 0 || pointWitnessOnly)) {
+    // --both-paths：见上方 fnCacheKey 前的 bothPathsFn（教学对比面接线）。
+    if (!skipped && (caseIdxsToRun.length === 0 || pointWitnessOnly || bothPathsFn)) {
       // pointWitnessOnly：入口兜底**只为产出推断域**（见证不得独占返回面）——
       // 其 entry@ 见证不进 case 台账，入口求值带出的调用点证据也不并入共享
       // 台账（见 SynthCandidate.domainOnly）。
@@ -688,6 +709,9 @@ export function analyzeFileUncachedInner(
         node: fn.node,
         analysis,
         ...(pointWitnessOnly ? { domainOnly: true } : {}),
+        // both-paths：带 case 见证的函数，entry@ 兜底只是回退观测
+        // （不发 entry-only info，见 evaluateEntryCase）
+        ...(bothPathsFn ? { hasDirectiveCases: true } : {}),
       });
     }
 
@@ -1018,7 +1042,10 @@ export function analyzeFileUncachedInner(
  * 放宽了结果」与「源代码本来就这么宽」在观察面上不可区分。
  *
  * 口径与 core check 面（`packages/core/src/algebra/check.ts` 的截断诊断段）
- * **同码 / 同级 / 同措辞**：改文案时两处一起改。
+ * **同码 / 同级 / 同措辞**：fork/depth/calls 臂的具体修值经
+ * `@nudojs/core/internal` 的 suggested{Fork,Depth,Calls}Ceiling 单源消费
+ * （公式改动只在 core/src/algebra/check-report.ts 一处生效）；纯文案改动
+ * 仍需两处同步。
  *
  * 锚点：截断 label 就是被求值函数名 ⇒ 能对上本文件函数时锚在声明处；整轮
  * 标签（fork 预算）锚文件首行（1 基——0 不是合法行号，会顺着 --json /
@@ -1038,6 +1065,11 @@ function truncationDiagnostics(
       end: { line: at.line, column: at.column },
     };
     if (label === FORK_TRUNCATION_LABEL) {
+      // DX：suggestion 给具体修值（与 core check 面同公式同文案——单源
+      // suggestedForkCeiling，观测值来自 getAbsCallBudgetStats；改公式/文案
+      // 去 core/src/algebra/check-report.ts，两臂自动跟随）
+      const observedForks = getAbsCallBudgetStats().forks;
+      const forksFix = suggestedForkCeiling(observedForks);
       issues.push({
         range,
         severity: "info",
@@ -1045,7 +1077,7 @@ function truncationDiagnostics(
           "Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)",
         code: DIAG.forkTruncated,
         suggestions: [
-          "optional: raise nudo.analysis.maxForks, or @nudo:budget forks=… on the function — non-blocking",
+          `fix: package.json#nudo.analysis.maxForks=${forksFix} (observed ${observedForks} forks this run), or @nudo:budget forks=${forksFix} on the function — non-blocking`,
         ],
       });
       continue;
@@ -1072,6 +1104,12 @@ function truncationDiagnostics(
     const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
     const depth = reasons.has("depth");
     const calls = reasons.has("calls");
+    // DX：depth/calls 臂的 @nudo:budget suggestion 带具体建议值（与 core
+    // check 面同公式同文案——单源 suggested{Depth,Calls}Ceiling，观测值
+    // A/B 两路径取大；cycle 臂不抬预算，不消费这两个值）
+    const recursionStats = getAbsCallBudgetStats();
+    const depthFix = suggestedDepthCeiling(Math.max(recursionStats.depth, recursionStats.evalDepth));
+    const callsFix = suggestedCallsCeiling(Math.max(recursionStats.calls, recursionStats.evalCalls));
     issues.push({
       range,
       severity: "info",
@@ -1083,10 +1121,10 @@ function truncationDiagnostics(
         allCycle
           ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
           : depth && !calls
-            ? "raise the function budget with @nudo:budget depth=… (or narrow the recursion base case / declare @nudo:contract return)"
+            ? `raise the function budget with @nudo:budget depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`
             : calls && !depth
-              ? "raise the function budget with @nudo:budget calls=… (or narrow the recursion base case / declare @nudo:contract return)"
-              : "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
+              ? `raise the function budget with @nudo:budget calls=${callsFix} (or narrow the recursion base case / declare @nudo:contract return)`
+              : `raise the function budget with @nudo:budget calls=${callsFix} depth=${depthFix} (or narrow the recursion base case / declare @nudo:contract return)`,
       ],
     });
   }

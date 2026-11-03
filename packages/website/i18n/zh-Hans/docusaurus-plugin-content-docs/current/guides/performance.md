@@ -53,6 +53,7 @@ description: Nudo 分析性能 —— 预算（fork / 调用 / 调用点）、�
 |---|---|
 | `true` | 缓存在 `<projectRoot>/.nudo/cache` |
 | `"some/dir"` | 自定义目录，相对项目根解析 |
+| `{ "dir": …, "sign": true }` | 对象形态 —— 自定义根与条目签名（见下）组合 |
 | `false` / 省略 | 关闭（默认） |
 
 env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `off` / `0` 关闭。
@@ -71,6 +72,27 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 ### 为什么默认关闭
 
 一份结构合法的**伪造** `CheckJson` 能制造假阴性 —— 被投毒的缓存可能藏掉真实违例。因此：只在可信机器 / CI 上开启；`.nudo/cache` **必须 gitignore**；不可信 runner 上保持 `nudo.cache` 未设/`false`，或设 `NUDO_CACHE_DIR=off`。
+
+### 条目签名（`nudo.cache.sign: true` + `NUDO_CACHE_KEY`）
+
+给**仍想用缓存的不可信 runner**：打开逐条 HMAC-SHA256 签名。
+
+```jsonc
+// package.json —— 打开；秘密经 env 提供（CI secret，绝不入库）
+{ "nudo": { "cache": { "sign": true } } }
+```
+
+```yaml
+# CI：打码 secret → env；check / contract / health 都读它
+- run: pnpm exec nudo check src/
+  env:
+    NUDO_CACHE_KEY: ${{ secrets.NUDO_CACHE_KEY }}
+```
+
+- 每条条目带内容签名；验签失败（值被篡改、签名被剥、密钥不对）= **miss** —— 重算，绝不采信。伪造的「绿」过不了签名，进不了门禁。
+- 签名与未签名条目**键空间分离**：轮换密钥（或开关签名）= 同路径干净的全量 miss —— 不脏命中、无孤儿要清理。
+- 配置 fail-closed：`sign: true` 却没有 `NUDO_CACHE_KEY`、或 `sign` 值不是布尔，`check` / `contract` / `health` **拒绝运行**（exit 1；`--json` 面走既有信封）。安全旋钮绝不静默退回无签名。
+- 密钥卫生：只放 env 或打码 CI secret —— 永不进仓库、绝不放进缓存目录本身。
 
 ### 依赖层（默认开启）
 
@@ -91,7 +113,7 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 
 - **默认配置：什么都不用 restore。** 项目缓存关闭；`nudo check` 每次诚实重算。
 - **若开启了 check 缓存**（仅可信 runner）：在多次运行之间 restore `.nudo/cache` 是安全的 —— 键内容寻址，miss 就重算。始终 gitignore；绝不入库。契约文件（`*.nudo.js`）进 git；缓存不进。
-- **不可信 runner：** 保持关闭 —— `nudo.cache: false`（或不设）且 `NUDO_CACHE_DIR=off`。
+- **不可信 runner：** 要么保持关闭 —— `nudo.cache: false`（或不设）且 `NUDO_CACHE_DIR=off` —— 要么打开条目签名（见上「条目签名」一节：`cache.sign: true` + 打码 CI secret 的 `NUDO_CACHE_KEY`），被篡改的缓存会诚实地 miss，而不是毒害门禁。
 - **依赖层**（`~/.cache/nudo/deps`）才是 CI 值得弄的那层：默认开启、跨项目、纯签名投影。把 `NUDO_DEPS_CACHE_DIR` 指到 restore 出来的目录即可跨 job 复用 harvest 成果；陈旧或损坏的副本只会 miss。
 
 ## 会话缓存上限（进程内 LRU）

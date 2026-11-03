@@ -166,6 +166,8 @@ nudo test <paths...> [options]
 | `--watch` / `-w` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
 | `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; no value = add mode, keeps existing directives |
+| `--both-paths` | Print directive witnesses **and** synthesized `call@`/`entry@` witnesses for the same function in one round (teaching comparison face; exit semantics unchanged; cannot combine with `--freeze`) |
+| `--only <names>` | With `--both-paths`: limit synthesis to the named functions (comma-separated); without `--both-paths` it is a usage error |
 | `--json` | Structured case report (single file; cannot combine with `--abs` or `--freeze`) |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |

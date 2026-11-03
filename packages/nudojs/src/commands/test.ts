@@ -13,6 +13,7 @@ import {
 import {
   analyzeFileAsync,
   getPathEnvLoadErrors,
+  type AlsoSynthesizeCases,
   type AnalysisResult,
   type CallRecord,
 } from "@nudojs/service";
@@ -199,13 +200,24 @@ async function analyzeForTest(
   filePath: string,
   source: string,
   from: CallRecord[] | undefined,
+  alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): Promise<AnalysisOutcome> {
   const evalFailures: EvalFallback[] = [];
   setEvalFallbackCollector((f: EvalFallback) => {
     if (f.reason === "internal") evalFailures.push(f);
   });
   try {
-    const result = await analyzeFileAsync(filePath, source, undefined, from, undefined, "all");
+    // --both-paths：第 7 参 —— 带 @nudo:case 的函数同轮也进合成路径
+    // （directive case 与 call@/entry@ 同报；默认互斥，limitations §3.2.1）
+    const result = await analyzeFileAsync(
+      filePath,
+      source,
+      undefined,
+      from,
+      undefined,
+      "all",
+      alsoSynthesizeCases,
+    );
     return { ok: true, result, evalFailures };
   } catch (err) {
     // 语法错 ⇒ 结构化出口（人类面块 / --json 面 pathErrors）；
@@ -240,11 +252,13 @@ async function runTest(
      * `JSON.parse(stdout)` 会炸）。非 watch 面 = 一份 pretty 文档（逐字不变）。
      */
     jsonLines?: boolean;
+    /** --both-paths：带 @nudo:case 的函数同轮也进合成路径（教学对比面） */
+    alsoSynthesizeCases?: AlsoSynthesizeCases;
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const analysis = await analyzeForTest(filePath, source, opts.from);
+  const analysis = await analyzeForTest(filePath, source, opts.from, opts.alsoSynthesizeCases);
   if (!analysis.ok) {
     // Bug 650：解析失败此前直接上浮到顶层 catch ⇒ 裸 message、无文件名、
     // `--json` 面 stdout 0 字节。现在复用 check 面的语法错分支。
@@ -451,6 +465,14 @@ export function registerTestCommand(program: Command): void {
     .option("--exit-on-diff", "With --freeze --dry-run: exit 1 when the diff is non-empty")
     .option("--json", "Output case facts as JSON (single file)")
     .option("--abs", "Algebra face via check --abs")
+    .option(
+      "--both-paths",
+      "With @nudo:case functions: also synthesize call@/entry@ cases in the same round (teaching comparison face)",
+    )
+    .option(
+      "--only <names>",
+      "With --both-paths: comma-separated function names to also synthesize (default: every @nudo:case function)",
+    )
     .action(
       async (
         paths: string[],
@@ -462,6 +484,8 @@ export function registerTestCommand(program: Command): void {
           exitOnDiff?: boolean;
           json?: boolean;
           abs?: boolean;
+          bothPaths?: boolean;
+          only?: string;
         },
       ) => {
         // BUG-018：`--freeze` 是 CLI 上**唯一**的「可选取值」选项
@@ -556,6 +580,43 @@ export function registerTestCommand(program: Command): void {
           return;
         }
 
+        // --both-paths / --only：教学对比面（带 @nudo:case 的函数同轮也合成
+        // call@/entry@，limitations §3.2.1 的默认互斥在**本旗标**下放开）。
+        // 组合约束前置：--only 是 --both-paths 的子旗标（单独出现 = 用法错）；
+        // --freeze 是写回面（把合成见证固化进源码），与「同轮同报」的观察面
+        // 语义冲突 ⇒ 显式用法错（不静默忽略其中一个）。
+        if (opts.only !== undefined && !opts.bothPaths) {
+          usageError(opts.json, "--only requires --both-paths", {
+            suggestion: "run `nudo test <file> --both-paths --only <names>` (or drop --only)",
+          });
+          return;
+        }
+        if (opts.bothPaths && opts.freeze !== undefined) {
+          usageError(opts.json, "--both-paths cannot be combined with --freeze", {
+            suggestion:
+              "drop --freeze (freeze solidifies synthesized witnesses into source; --both-paths is an observation-only face)",
+          });
+          return;
+        }
+        let alsoSynthesizeCases: AlsoSynthesizeCases | undefined;
+        if (opts.bothPaths) {
+          if (opts.only !== undefined) {
+            const names = opts.only
+              .split(",")
+              .map((n) => n.trim())
+              .filter((n) => n.length > 0);
+            if (names.length === 0) {
+              usageError(opts.json, `Invalid --only value: ${JSON.stringify(opts.only)}`, {
+                suggestion: "pass comma-separated function names (e.g. --only add,mul)",
+              });
+              return;
+            }
+            alsoSynthesizeCases = names;
+          } else {
+            alsoSynthesizeCases = true;
+          }
+        }
+
         let freeze: EmitCasesOptions | undefined;
         if (opts.freeze !== undefined) {
           let mode: "add" | "update";
@@ -599,6 +660,7 @@ export function registerTestCommand(program: Command): void {
             json: opts.json,
             abs: opts.abs,
             envErrorSeen,
+            ...(alsoSynthesizeCases !== undefined ? { alsoSynthesizeCases } : {}),
             ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
             // 63b：闸门错误的精确子集（`--from` 路径错误不在其中）
             ...(opts.json && targetErrors.length > 0 ? { targetErrors } : {}),
@@ -621,6 +683,7 @@ export function registerTestCommand(program: Command): void {
                 json: opts.json,
                 abs: opts.abs,
                 envErrorSeen,
+                ...(alsoSynthesizeCases !== undefined ? { alsoSynthesizeCases } : {}),
                 // 63：watch 面 ⇒ `--json` 落 **JSON Lines**（一行一份完整
                 // JSON 文档；第 2 轮起 stdout 累积第 2 份文档 ⇒ 整份
                 // `JSON.parse(stdout)` 会炸）。

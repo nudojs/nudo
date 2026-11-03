@@ -201,6 +201,13 @@ export type SynthCandidate = {
    * 求值会给别的函数凭空多出一条 call@ 见证（被调方的证据面被污染）。
    */
   domainOnly?: boolean;
+  /**
+   * **--both-paths 合成**（`nudo test` 教学对比面）：本候选带 @nudo:case
+   * 见证（域已由声明面给出），entry@ 兜底只是合成路径的回退观测——
+   * 不发 `nudo:interface-entry-only` info（该 info 说「无契约根且无调用点
+   * 域」，对带 case 见证的函数是误导）。
+   */
+  hasDirectiveCases?: boolean;
 };
 
 /** @nudo:case 指令求值目标（主流程逐函数组装） */
@@ -1469,7 +1476,9 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         // domainOnly（Bug 511）：函数已带 case 见证 ⇒ 它**有**证据（只是不是域
         // 声明）⇒ 不发「没有调用点域」的 entry-only info（该 info 说的是
         // 「没有契约根且没有调用点域」，与带见证的事实不符）。
-        if (!eff && !env.sidecarLoadFailed && !domainOnly) {
+        // --both-paths（hasDirectiveCases）同口径：带 @nudo:case 的函数走合成
+        // 路径时，entry@ 只是回退观测，不是「entry-only」。
+        if (!eff && !env.sidecarLoadFailed && !domainOnly && !candidate.hasDirectiveCases) {
           diagnostics.push({
             range: {
               start: candidate.analysis.loc.start,

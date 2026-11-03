@@ -11,7 +11,7 @@
  * BoundedLruMap（analysis/fn/eval/harvest/abs-module/path-env）。
  */
 
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   mkdirSync,
@@ -22,7 +22,12 @@ import {
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { stablePathKey } from "@nudojs/core/internal";
 import { writeFileAtomic } from "./write-atomic.ts";
-import { diskCacheRoot, effectiveMaxForks } from "./evaluator/config.ts";
+import {
+  diskCacheRoot,
+  diskCacheSignState,
+  effectiveMaxForks,
+  type NudoConfig,
+} from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
 function readServiceVersion(): string {
@@ -55,10 +60,48 @@ export type DiskCacheOptions = {
   root?: string | undefined;
   /** 命名空间子目录（check / interface …） */
   namespace: string;
+  /**
+   * 条目签名密钥材料（`nudo.cache.sign: true` + env `NUDO_CACHE_KEY`）。
+   * 设置 ⇒ 每条落盘附 HMAC-SHA256（`sig` 字段），读回验签失败 = miss
+   * （fail-open 重算，不 throw）。键空间同时分离（签名/未签名条目互不
+   * 互撞）——伪造「结构合法」的 CheckJson 不再可信，persistent-cache.md
+   * 的 L1 关闭理由由签名解除。
+   */
+  signKey?: string;
 };
 
 export function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
+}
+
+// ─── 条目签名（B3 信任面） ─────────────────────────────────────────────
+// 威胁模型：`.nudo/cache` 是**跨构建共享**的磁盘状态（CI cache restore、共享
+// 卷）。攻击者能写缓存目录 ⇒ 能放进「结构合法」的 CheckJson ⇒ 假绿/假红。
+// 签名把「结构合法」升级为「本密钥签发」；密钥只来自 env `NUDO_CACHE_KEY`
+// （CI masked secret），**绝不**进仓库或缓存目录（否则签发者=验证者）。
+
+/** 签名域分离常量（HMAC key 派生与签名串共用，防跨用途密钥重放） */
+const SIGN_DOMAIN = "nudo-disk-cache-sign-v1";
+/** 签名键空间前缀（见 DiskCache.storageKey——签名/未签名条目不互撞） */
+const SIGN_KEY_PREFIX = "nudo-cache-sign";
+
+/**
+ * HMAC 密钥派生：`NUDO_CACHE_KEY` 原值不直接作 HMAC key（域分离的
+ * sha256 派生材料）——密钥形状不受用户输入影响，跨长度恒定。
+ */
+function deriveSignKeyMat(secret: string): Buffer {
+  return createHash("sha256").update(`${SIGN_DOMAIN}\0${secret}`).digest();
+}
+
+/** 条目签名：覆盖 `abi` 与 value 的规范化 JSON（不含 sig 自身） */
+function entrySig(keyMat: Buffer, abi: string, valueJson: string): string {
+  return createHmac("sha256", keyMat).update(`${SIGN_DOMAIN}\0${abi}\0${valueJson}`).digest("hex");
+}
+
+/** 常时比较（长度不等直接 false——hex 定长，正常路径恒等长） */
+function sigEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
 }
 
 /** 路径段归一为 `/`（仅键构造；不触盘） */
@@ -177,12 +220,23 @@ export function sanitizeCacheNamespace(ns: string): string {
 export class DiskCache {
   private readonly root: string | undefined;
   private readonly ns: string;
+  /** 派生 HMAC 密钥材料；undefined = 未签名模式（旧未签名行为原样） */
+  private readonly keyMat: Buffer | undefined;
   enabled = false;
 
   constructor(opts: DiskCacheOptions) {
     this.root = opts.root;
     this.ns = sanitizeCacheNamespace(opts.namespace);
     this.enabled = !!opts.root;
+    this.keyMat = opts.signKey !== undefined ? deriveSignKeyMat(opts.signKey) : undefined;
+  }
+
+  /**
+   * 存储键：签名模式在键上再套一层域分离 sha——签名/未签名条目**互不互撞**
+   * （切换模式 = 整层 miss，不出现「旧未签名条目被签名模式读到」或反之）。
+   */
+  private storageKey(key: string): string {
+    return this.keyMat !== undefined ? sha256Hex(`${SIGN_KEY_PREFIX}\0${key}`) : key;
   }
 
   private pathFor(key: string): string {
@@ -196,11 +250,20 @@ export class DiskCache {
   get<T>(key: string): T | undefined {
     if (!this.enabled || !this.root) return undefined;
     try {
-      const p = this.pathFor(key);
+      const p = this.pathFor(this.storageKey(key));
       if (!existsSync(p)) return undefined;
       const raw = readFileSync(p, "utf8");
-      const parsed = JSON.parse(raw) as { abi?: string; value?: T };
+      const parsed = JSON.parse(raw) as { abi?: string; value?: T; sig?: unknown };
       if (parsed?.abi !== ANALYSIS_ABI) return undefined;
+      if (this.keyMat !== undefined) {
+        // 验签失败 / sig 缺席 = miss（fail-open 重算，不 throw）：
+        // 被篡改的条目与密钥轮换后的旧条目走同一条「不可信 ⇒ 重算」路径。
+        // value 重序列化与本工具写盘口径一致（自写自读，插入序/转义稳定）。
+        if (typeof parsed.sig !== "string") return undefined;
+        if (!sigEquals(entrySig(this.keyMat, parsed.abi, JSON.stringify(parsed.value)), parsed.sig)) {
+          return undefined;
+        }
+      }
       return parsed.value as T;
     } catch {
       return undefined;
@@ -210,11 +273,24 @@ export class DiskCache {
   set(key: string, value: unknown): void {
     if (!this.enabled || !this.root) return;
     try {
-      const p = this.pathFor(key);
+      const p = this.pathFor(this.storageKey(key));
       mkdirSync(dirname(p), { recursive: true });
       // 同目录 temp + rename 原子写（writeFileAtomic）：崩溃/磁盘满时缓存
       // 条目不会变成半截 JSON；孤儿 tmp 由其内部清理后 rethrow。
-      writeFileAtomic(p, JSON.stringify({ abi: ANALYSIS_ABI, value }));
+      // 签名覆盖 `abi\0JSON(value)`——对象内嵌序列化与独立序列化同串。
+      if (this.keyMat !== undefined) {
+        const valueJson = JSON.stringify(value);
+        writeFileAtomic(
+          p,
+          JSON.stringify({
+            abi: ANALYSIS_ABI,
+            value,
+            sig: entrySig(this.keyMat, ANALYSIS_ABI, valueJson),
+          }),
+        );
+      } else {
+        writeFileAtomic(p, JSON.stringify({ abi: ANALYSIS_ABI, value }));
+      }
     } catch {
       // fail-open：写失败不影响分析
     }
@@ -228,6 +304,40 @@ export class DiskCache {
       /* ignore */
     }
   }
+}
+
+/**
+ * `nudo.cache.sign` 配置错误（`sign: true` 但 `NUDO_CACHE_KEY` 缺席/空，
+ * 或 sign 取值形状非法）。签名是安全旋钮 ⇒ **拒绝运行**（CLI 面显式报错
+ * 退出），不静默降级到未签名缓存。
+ */
+export class DiskCacheSignError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DiskCacheSignError";
+  }
+}
+
+/**
+ * 单源 DiskCache 构造：根目录（`diskCacheRoot`）+ 签名状态
+ * （`diskCacheSignState`）一并解析。配置错误时 throw `DiskCacheSignError`
+ * （消费面：CLI check/contract/health 在 action 层预检给分面错误形态；
+ * 本函数是库面/漏检路径的 fail-closed 兜底）。
+ */
+export function openDiskCache(opts: {
+  config: NudoConfig | null | undefined;
+  projectDir: string | undefined;
+  namespace: string;
+  /** 密钥 env（默认 process.env；测试可注入） */
+  env?: NodeJS.ProcessEnv;
+}): DiskCache {
+  const sign = diskCacheSignState(opts.config, opts.env);
+  if (sign.kind === "error") throw new DiskCacheSignError(sign.message);
+  return new DiskCache({
+    root: diskCacheRoot(opts.config, opts.projectDir),
+    namespace: opts.namespace,
+    ...(sign.kind === "on" ? { signKey: sign.key } : {}),
+  });
 }
 
 /**

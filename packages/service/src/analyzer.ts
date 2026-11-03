@@ -29,6 +29,7 @@ export {
   type SymbolTable,
   type AnalyzeLoadModule,
   type DirectiveCaseMode,
+  type AlsoSynthesizeCases,
 } from "./analyzer-types.ts";
 
 export {

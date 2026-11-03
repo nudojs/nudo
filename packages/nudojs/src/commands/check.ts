@@ -39,11 +39,11 @@ import {
   defaultLoadModule,
   directiveDiagIssues,
   DiskCache,
-  diskCacheRoot,
   findProjectConfig,
   interfaceConfig,
   mergeCheckIssues,
   mockFromErrorIssues,
+  openDiskCache,
   resolveModule,
   type CallRecord,
   type MockFromError,
@@ -102,6 +102,7 @@ import {
 import { shouldComputeCacheKey, shouldUseDiskCache } from "../check-ci-flags.ts";
 import {
   CONFIG_SHAPE_CODE,
+  projectCacheShapeIssue,
   projectConfigShapeIssue,
   type ConfigShapeIssue,
 } from "../config-shape.ts";
@@ -538,8 +539,9 @@ async function loadCheckCache(
   const aCfg = analysisConfig(proj?.config);
   // env 名装配（项目级 / 文件级分层）+ path env 预载见 assembleEnvs
   // （Array.isArray 守卫与 934 的形状问题同在那边）。
-  const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
-  const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
+  // openDiskCache：根目录 + 签名状态单源解析（nudo.cache.sign 误配置在
+  // action 层预检给分面错误形态；此处 throw 是漏检路径的 fail-closed 兜底）
+  const disk = openDiskCache({ config: proj?.config, projectDir: proj?.projectDir, namespace: "check" });
   const dep = collectLoadDepContents(filePath, source, defaultLoadModule);
   const hasBareMiss = (dep.depContents ?? []).some((d) => d.content == null);
   const useDisk = shouldUseDiskCache({
@@ -624,9 +626,13 @@ async function loadCheckCache(
     // nudo.env 非数组（934）是同一族的形状问题：`nudo` 键本身合法 ⇒ 上面的
     // 探针看不见它，但 env 已被配置层丢弃（回落默认）⇒ 报告面必须说得出
     // 「你写的 env 被忽略了」，否则用户只看到「env 没生效」的现象。
+    // nudo.cache 对象形态的 typo（未知键 / sign·dir 形状，B3 信任面）同理：
+    // dir 非法被宽松归一到默认根、sign 非法由 diskCacheSignState 拒绝运行
+    // ——报告面仍要点名 typo 本身。
     configShape:
       projectConfigShapeIssue(dirname(filePath)) ??
-      projectEnvShapeIssue(proj?.projectDir),
+      projectEnvShapeIssue(proj?.projectDir) ??
+      projectCacheShapeIssue(proj?.projectDir),
   };
 }
 
