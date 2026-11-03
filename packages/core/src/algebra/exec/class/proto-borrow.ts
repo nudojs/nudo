@@ -14,8 +14,9 @@
  *   PRIM_HOME_BRAND（函数声明提升 + invoke.ts 先于本文件求值；本文件顶层
  *   不触碰它们 ⇒ 环加载序安全）。
  * - 数组方法（map/filter/reduce/…）委派 invokeArrMethod（invoke-arr.ts）；
- *   mutator 语句快路径在 transpile 层（emitArrMutatorRebinds），两条路径的
- *   元素域语义必须同口径（issue #153：SpreadElement 折 $unknown 的教训）。
+ *   mutator（push/pop/…）自 Bug 49/51 起统一经 $invoke 的 $arrMutContainer
+ *   就地变更（transpile 语句/表达式位不再有独立快路径），元素域语义单一
+ *   入口（issue #153：SpreadElement 折 $unknown 的教训）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit, isBigPrim } from "../../abs.ts";

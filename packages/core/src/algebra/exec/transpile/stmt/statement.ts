@@ -102,7 +102,7 @@ import {
 import { UNDEF_LIT } from "../intrinsics.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import {
-  emitArrMutatorRebinds,
+  emitStmtWritebackRebinds,
   emitDestructure,
   emitParamBinding,
   forkBindingDecls,
@@ -545,7 +545,7 @@ function emitReturnStatement(
       : "";
   const emitRet = (src: string, mutNodes?: Node | null): string => {
     const rec = retPos === "" ? src : `$nodoPos(${src}${retPos})`;
-    const retRebinds = mutNodes ? emitArrMutatorRebinds(mutNodes, opts, pad) : [];
+    const retRebinds = mutNodes ? emitStmtWritebackRebinds(mutNodes, opts, pad) : [];
     if ((opts.inTry ?? 0) > 0) {
       // Bug 145：临时量名固定为 `__nudoRet`——同一词法块内出现两个
       // return 时就是**重复 const 声明**（new Function 编译期 SyntaxError
@@ -615,9 +615,9 @@ function emitExpressionStatement(
   // Map 条目同步可见），语句与表达式位置统一走普通调用发射，不再
   // 语句位重绑（旧的「先求值再重绑」P0 顺序让同表达式内第二个
   // mutator 看到变更前容器，且 CallExpression 接收者丢变更）。
-  // 此处的写回只剩 defineProperty/delete。
+  // 此处的语句位写回只剩 Bug 96 正则状态（见 emitStmtWritebackRebinds）。
   const expr = stmt.expression as Expression;
-  const exprRebinds = emitArrMutatorRebinds(expr, opts, pad);
+  const exprRebinds = emitStmtWritebackRebinds(expr, opts, pad);
   if (exprRebinds.length > 0) {
     return [
       `${pad}${emitTranspileExpression(expr, opts)};`,
@@ -695,7 +695,7 @@ function emitVariableDeclaration(
         }
         // 原 init 仍求值（Bug 164）⇒ 语句位写回（mutator / 正则状态 /
         // 可选链 delete）照发
-        lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
+        lines.push(...emitStmtWritebackRebinds(d.init as Node, opts, pad));
         continue;
       }
       // @nudo:as：覆盖整个声明语句的 init
@@ -720,7 +720,7 @@ function emitVariableDeclaration(
       // P1：表达式位置 mutator（`const x = a.pop()`）同样重绑容器
       // （Bug 164：原 init 仍求值 ⇒ 写回照发）
       if (d.init) {
-        lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
+        lines.push(...emitStmtWritebackRebinds(d.init as Node, opts, pad));
       }
       continue;
     }
@@ -748,7 +748,7 @@ function emitVariableDeclaration(
     // 槽缺 / 非对象覆盖 ⇒ 走既有成员读口径（原生同形）。
     const destrInit = asVar ? `((${initSrc}), ${asVar})` : initSrc;
     lines.push(`${pad}const ${tmp} = ${destrInit};`);
-    lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
+    lines.push(...emitStmtWritebackRebinds(d.init as Node, opts, pad));
     // var 解构：名字已提升 → kw ""（赋值模式）；未提升（参数遮蔽 /
     // export var）→ host `var` 声明
     let destrKw = kw;
@@ -792,7 +792,7 @@ function emitIfStatement(
     ...collectForkBindingNames(stmt.consequent),
     ...collectForkBindingNames(stmt.alternate),
   ]);
-  const testRebinds = emitArrMutatorRebinds(stmt.test as Node, opts, pad);
+  const testRebinds = emitStmtWritebackRebinds(stmt.test as Node, opts, pad);
   const names = expandAliasNames(recvSet, opts);
   const padIn = indent(depth + 1);
   // 块级作用域：同一函数内多个 if 都改 errors 时，__fk0_* 不得重复声明

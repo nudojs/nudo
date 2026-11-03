@@ -25,7 +25,7 @@ import {
   collectScopeShadowNames,
 } from "../helpers.ts";
 import {
-  emitArrMutatorRebinds,
+  emitStmtWritebackRebinds,
   switchTmpNames,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
@@ -286,7 +286,7 @@ export function emitSwitchStatement(
   }
   emit.switchBodySeq += Math.max(bodyIdx, 1);
   const dflt = defaultSrc ? `, ${defaultSrc}` : "";
-  const discRebinds = emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad);
+  const discRebinds = emitStmtWritebackRebinds(stmt.discriminant as Node, opts, pad);
   const switchCall = (discRef: string): string =>
     `$switch(${discRef}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
   // Bug 168/169：case 测试的惰性求值机制（test thunk + 缓存 + 抽象路径

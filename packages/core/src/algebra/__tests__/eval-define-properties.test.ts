@@ -2,7 +2,7 @@
  * Bug 19 回归：语句位 `Object.defineProperties(o, props)` 不回写 o。
  * 根因：描述符安装是「不可变更新 + 返回 target」的单一机器
  * （applyPropertyDescriptor，object.ts），语句位置必须由 transpile 的
- * rebind 通道把返回容器写回第一实参绑定——emitArrMutatorRebinds 原本只
+ * rebind 通道把返回容器写回第一实参绑定——emitStmtWritebackRebinds 原本只
  * 特判 defineProperty（单数），defineProperties 掉进两条变更通道的缝隙：
  * 表达式位走返回值、Reflect.defineProperty 走内建就地写回，唯独
  * Object.defineProperties 语句位两者都不沾 → 安装落在被丢弃的副本上，

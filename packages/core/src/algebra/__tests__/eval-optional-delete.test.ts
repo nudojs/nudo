@@ -1,5 +1,5 @@
 /**
- * Bug 111 回归：`delete o?.a` 的成员真删。emitArrMutatorRebinds 的 delete
+ * Bug 111 回归：`delete o?.a` 的成员真删。emitStmtWritebackRebinds 的 delete
  * 臂原本只匹配 MemberExpression——OptionalMemberExpression 的表达式值
  * （$delRes）对但从未写回容器，`"a" in o` 之后仍真。修复：optional 链按
  * 普通 member 层取路径，写回经 nullish 守卫 fork——守卫真（链短路）保根

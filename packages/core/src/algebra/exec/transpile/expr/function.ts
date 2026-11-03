@@ -46,7 +46,7 @@ import {
   thisCarrierOf,
   copyConstScope,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
+import { emitStmtWritebackRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileFnBodyStmts } from "../stmt/fn-body.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
@@ -379,7 +379,7 @@ export function transpileFunctionExpr(
       // （stmt/statement.ts）同口径：先捕获表达式值 → 再发写回 → 最后返回
       // 捕获值。捕获临时名避让用户标识符（用户自己有 `__mutRet` 时改名，
       // 否则 `let __mutRet = __mutRet` ⇒ TDZ ReferenceError）。
-      const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
+      const rebinds = emitStmtWritebackRebinds(fn.body as Expression, fnBodyOpts, "  ");
       const mutTmp = safeTmpName("__mutRet", userIdentInfo(opts.source));
       /** 表达式体的返回序列（无写回时直返表达式） */
       const retSeq = (pad: string): string[] => {

@@ -1,6 +1,6 @@
 /**
  * Bug 87 回归：语句位 `Object.defineProperty/defineProperties(o.p, …)` 的
- * member 目标写回。emitArrMutatorRebinds 的 defineProperty 臂原本只认
+ * member 目标写回。emitStmtWritebackRebinds 的 defineProperty 臂原本只认
  * Identifier 第一实参——member 目标（o.p / a[0] / C.prototype / o.p.q）的
  * 描述符安装在 `$invoke` 返回的新容器上但没有写回根绑定，后续 `o.p.m`
  * 读的是旧容器 → 折 exact undefined。修复：member 目标经 memberPathOf

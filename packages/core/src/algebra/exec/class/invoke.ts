@@ -7,8 +7,9 @@
  *   re-export 不是实例化期可用绑定；原单文件拓扑中 setter 是提升函数
  *   声明）。本文件 side-effect import proto-borrow.ts 保住既有加载序。
  * - 数组方法（map/filter/reduce/…）委派 invokeArrMethod（invoke-arr.ts）；
- *   mutator 语句快路径在 transpile 层（emitArrMutatorRebinds），两条路径
- *   的元素域语义必须同口径（issue #153：SpreadElement 折 $unknown 的教训）。
+ *   mutator（push/pop/…）自 Bug 49/51 起统一经 $invoke 的 $arrMutContainer
+ *   就地变更（transpile 语句/表达式位不再有独立快路径），元素域语义单一
+ *   入口（issue #153：SpreadElement 折 $unknown 的教训）。
  * - Bug 152：实参可以是 **thunk**（`() => [args]`）——调用点成员**先于实参**
  *   求值（原生 CallExpression 顺序：引用取值（getter 在此触发）→ 实参 →
  *   调用）。thunk 形态：$invoke 先读成员（预读），再求实参，最后派发；

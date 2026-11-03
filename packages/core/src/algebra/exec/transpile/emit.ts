@@ -1,5 +1,5 @@
 /**
- * 模式解构 / 形参绑定 / 语句位写回（defineProperty/delete）/ fork 臂 thunk。
+ * 模式解构 / 形参绑定 / 语句位写回（Bug 96 正则状态）/ fork 臂 thunk。
  * 数组 mutator 已改为 $invoke 调用点就地变更（Bug 49/51），不再语句位重绑。
  * 发射时经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
  *
@@ -70,11 +70,16 @@ function emitMemberTargetAssign(
  */
 
 /**
- * 语句位写回收集（历史名保留）：defineProperty/defineProperties 第一实参
- * 与 delete 成员路径的绑定写回。数组 mutator 的写回已随 Bug 49/51 的
- * $invoke 就地变更移除（此处不再发射 $arrMutContainer 行）。
+ * 语句位写回收集：本 pass 现存**唯一**的语句位补写——Bug 96 的语句位
+ * String.prototype.match/replace/replaceAll **参数位** RegExp 状态写回
+ * （$reStateCall 就地改实参正则的 lastIndex 槽）。其余写回通道均已下沉
+ * 到各自的求值点：数组 mutator → $invoke 调用点 $arrMutContainer 就地
+ * 变更（Bug 49/51）；defineProperty/defineProperties → 表达式位自包含
+ * IIFE（实参只求值一次 + 写回同点完成）；delete → 表达式级 IIFE
+ * （memberDeleteIfe：$del + $delRes 同点产出）；自增/自减 → 表达式内
+ * 自包含。函数边界 / 短路臂 / 逻辑赋值 RHS 由各自机制隔离，不进入本 pass。
  */
-export function emitArrMutatorRebinds(
+export function emitStmtWritebackRebinds(
   expr: Node | null | undefined,
   opts: TranspileOptions,
   pad: string,

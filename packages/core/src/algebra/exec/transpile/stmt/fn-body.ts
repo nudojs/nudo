@@ -52,7 +52,7 @@ import {
   shadowedIntrinsicsOf,
   expandAliasNames,
 } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
+import { emitStmtWritebackRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinBindings, forkTmpNames } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
@@ -301,7 +301,7 @@ export function transpileFnBodyStmts(
     // 同名绑定（自信错值 ⇒ 闸门假绿）。分配器与声明点（`forkBindingDecls`）
     // 同源 ⇒ 「成对一致」。
     const fk = forkTmpNames(names, scopedOpts);
-    const testRebinds = emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad);
+    const testRebinds = emitStmtWritebackRebinds(stmt.test as Node, scopedOpts, pad);
     // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
     // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
     // 非终结尾句不再撞未剪 null/undefined 臂记假 may-throw（与 IfStatement

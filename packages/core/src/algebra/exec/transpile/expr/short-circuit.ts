@@ -26,7 +26,7 @@ import {
   narrowRelArmThunk,
 } from "../stmt/predicates.ts";
 import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
-import { emitArrMutatorRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
+import { emitStmtWritebackRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
 
 /**
  * 短路协议的引擎内部临时名（**基名**）——实际名见 `internalTmpNameSet`。
@@ -127,17 +127,17 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   const names = expandAliasNames(branchNames, opts);
   const alwaysRebinds: string[] = [];
   for (const n of parts.alwaysNodes) {
-    alwaysRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+    alwaysRebinds.push(...emitStmtWritebackRebinds(n, opts, ""));
   }
   const consRebinds: string[] = [];
   for (const n of parts.consNodes) {
     if (parts.alwaysNodes.includes(n)) continue;
-    consRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+    consRebinds.push(...emitStmtWritebackRebinds(n, opts, ""));
   }
   const altRebinds: string[] = [];
   for (const n of parts.altNodes) {
     if (parts.alwaysNodes.includes(n)) continue;
-    altRebinds.push(...emitArrMutatorRebinds(n, opts, ""));
+    altRebinds.push(...emitStmtWritebackRebinds(n, opts, ""));
   }
 
   if (alwaysNames.size === 0 && branchNames.size === 0) {
