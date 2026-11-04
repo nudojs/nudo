@@ -555,14 +555,24 @@ export function evalProtoChain(name: string): string[] {
  *  AB.isView → "function" / 缺席键折 undefined）与白名单调用走宿主
  *  通道；构造面（new AB(8)）经 constructClass 的 evalBuiltinNew 路由。
  *  Set 成员按值恒等 + 名字配对（与 TYPED_ARRAY_ELEMENT 家族同校验）。 */
-const NAMESPACE_ONLY_HOST_CTORS = new Set<unknown>([
-  URL,
-  ArrayBuffer,
-  SharedArrayBuffer,
-  DataView,
-  WeakRef,
-  FinalizationRegistry,
-]);
+/** 浏览器面（playground）**没有 SharedArrayBuffer**：非 crossOriginIsolated
+ *  上下文里该全局标识符不存在/为 undefined ⇒ 模块加载期裸引用会 ReferenceError
+ *  （整包引擎加载失败 ⇒ Playground 错误边界显示「SharedArrayBuffer is not
+ *  defined」）。宿主内建表必须**惰性 + typeof 守卫**构造：缺失的条目直接不入表
+ *  （hostBuiltinCtorOf 对该名字恒 undefined ⇒ 走既有 unknown/fail-closed 面）。 */
+function namespaceOnlyHostCtors(): ReadonlySet<unknown> {
+  const ctors: unknown[] = [
+    URL,
+    ArrayBuffer,
+    DataView,
+    WeakRef,
+    FinalizationRegistry,
+  ];
+  // typeof 对未声明标识符安全（返回 "undefined"，不抛）
+  if (typeof SharedArrayBuffer !== "undefined") ctors.push(SharedArrayBuffer);
+  return new Set(ctors);
+}
+const NAMESPACE_ONLY_HOST_CTORS = namespaceOnlyHostCtors();
 
 /** N2：名 → 宿主内建构造器（globalThis 面 + 身份校验；hostBuiltinCtorName
  *  名单 + TYPED_ARRAY_ELEMENT 家族 + P3a 表内可扩展类）。$class 的

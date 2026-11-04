@@ -261,7 +261,13 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   // $get(ns,"prototype") → protoBrandAbs，经 BUILTIN_BRAND_METHODS 派发。
   // new X(…) 走 clsName（宿主 fn.name）派发不受影响。
   ["ArrayBuffer", ArrayBuffer],
-  ["SharedArrayBuffer", SharedArrayBuffer],
+  // 浏览器面（playground）非 crossOriginIsolated 时**没有 SharedArrayBuffer**
+  // 全局 ⇒ 模块级裸读 = ReferenceError（整包引擎加载失败）。与 Float16Array
+  // 同款运行时守卫：不存在就不入表（namespaceNameOf 无对应值可撞；该名字的
+  // 静态/构造面走既有 unknown/fail-closed 通道）。
+  ...(typeof SharedArrayBuffer !== "undefined"
+    ? ([["SharedArrayBuffer", SharedArrayBuffer]] as const)
+    : []),
   ["DataView", DataView],
   ["WeakRef", WeakRef],
   ["FinalizationRegistry", FinalizationRegistry],
