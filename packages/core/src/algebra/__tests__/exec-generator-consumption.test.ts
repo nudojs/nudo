@@ -283,11 +283,18 @@ describe("Bug 52: .return()/.throw() 挂起点语义（try 上下文分级，无
     expect(litValue(fnExpr.result).ok).toBe(false);
   });
 
-  it("嵌套生成器不泄漏外层 try 上下文：inner 裸 .return(77) → 77 精确（native 77）", () => {
+  it("嵌套生成器不泄漏外层 try 上下文：inner 裸 .return(77) → 77 在 join 内（native 77）", () => {
     const r = call(
       `export function f() { let leak; function* outer() { try { yield 1; const i2 = (function* () { yield 10; })(); i2.next(); leak = i2.return(77).value; } finally { return "f"; } } const o = outer(); o.next(); o.next(); return leak; }`,
     );
-    expect(litValue(r.result)).toEqual({ ok: true, value: 77 });
+    // Bug 212（A1 步骤 1）：outer 体写外层 leak（native 构造点 leak=
+    // undefined、drain 后 leak=77）⇒ eager 体照跑但写折成 join
+    // （undefined | 77）——不再是字面量 77。语义点保持：77 必须在 join
+    // 内（inner 裸 .return 不被 outer 的 try 上下文污染），且不含 outer
+    // finally 的 return "f"。
+    expect(formatAbs(r.result)).toContain("77");
+    expect(formatAbs(r.result)).toContain("undefined");
+    expect(formatAbs(r.result)).not.toContain('"f"');
   });
 
   it("终末 return 值 / spread 后 return 值丢弃不回归（Bug 2 口径保持）", () => {

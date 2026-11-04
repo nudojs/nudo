@@ -1,6 +1,8 @@
 # 生成器体的**惰性**语义（Bug 212）· 架构说明
 
-> **状态**：**仍为架构债**（未修；本文给出精确数据流 + 可落地的最小改造路径）。
+> **状态**：**步骤 1（join 隔离）已落地（2026-11-04，架构债批次 A1）**——§5.1 的
+> 「自由写快照 + `$join` 折回」已实施（wrong-exact 消灭，回归钉见 §5.1 落地注记）；
+> 步骤 2–4（可延后元素面 / 首消费点触发 / 真挂起）**仍为架构债**。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
 > [`packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)。
@@ -21,7 +23,8 @@
 （好消息：**最小路径是纯转译侧的，且复用仓里已有的分析，不动公开面**），以及
 **局部收窄方案的可行性判定**（结论：局部收窄**可行**，但落在 **S11 的转译侧** ⇒ 本片不能单独落地）。
 
-**本片状态判定：仍为架构债**（未做局部收窄 ⇒ 未交付新钉；见 §6 的可行性判定）。
+**本片状态判定：局部收窄已落地**（2026-11-04，S11 转译侧实施步骤 1 ⇒ 交付新钉
+`eval-bug-212-generator-body-eager.test.ts`；步骤 2–4 待续，债面收窄为「时间轴缺失」）。
 
 ---
 
@@ -263,6 +266,19 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 
 ### 5.1 步骤 1（**推荐先做**）：**生成器体的「自由写」隔离**（转译侧，**不动公开面**）
 
+> **✅ 已落地（2026-11-04，架构债批次 A1）**。实现：`exec/transpile/emit.ts` 新增
+> `genOuterFreeWriteNames`（`collectFreeAssignedNames(...body.body)` 扣**形参模式名**与
+> **体内 var 提升名**（`collectVarHoistNames`——var 提升在 thunk 顶发射 `let <名> = $lit(void 0)`，
+> 不扣则快照读它们会 TDZ），再经 `expandAliasNames` 扩 **const 别名伙伴**（别名展开用**外层
+> 作用域**的 opts——体内作用域的分组会掺进体内局部名））+ `genFreeWriteWrap`（快照行
+> `const __g0_<n> = $copy(<n>, <共享memo>)` + `try { 原体 } finally { <n> = $join(__g0_<n>, <n>) }`；
+> `$copy` 第二实参 = 共享 `WeakMap` 身份 memo ⇒ 同一对象只拷一次，别名组内不分裂身份；
+> 临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName`/`internalTmpNameSet` 避让用户同名
+> 标识符）。四个 `$gen` 发射点全部接入；快照集为空时**零发射**（不写外层绑定的生成器产物
+> 逐字不变）。回归钉：`eval-bug-212-generator-body-eager.test.ts`（12 用例：四行症状 +
+> 四发射点 + 元素面承重 + 容器/别名组 + 负控制）。**残余**（→ §5.5 订正注）：首个 yield
+> 挂起点中间值不在 join 内；步骤 2–4 待续。
+
 **要什么**：生成器体对**外层绑定**的写，在 **eager 收集期**不应**确定地**落地。
 
 **已有零件（关键发现）**：转译侧**已经有**「自由写名字」的分析 ——
@@ -360,12 +376,18 @@ R3-b：体在**消费点**才跑 ⇒ 若消费点在**另一个函数**里（生
 | 方案 | c1（native 0） | c2（native ""） | c3（native 1） | c4（native "a"） |
 |---|---|---|---|---|
 | 现状（eager 写穿） | `1` ✗ | `"ab"` ✗ | `5` ✗ | `"ab"` ✗ |
-| **步骤 1（join 隔离）** | `0 \| 1` ✓sound | `"" \| "ab"` ✓sound | `0 \| 1` ✓sound | `"" \| "ab"` ✓sound |
+| **步骤 1（join 隔离）** | `0 \| 1` ✓sound | `"" \| "ab"` ✓sound | `0 \| 5` ✓sound* | `"" \| "ab"` ✓sound* |
 | 步骤 3（延迟到消费点） | `0` ✓ | `""` ✓ | `5` ✗ | `"ab"` ✗ |
 | 步骤 4（真挂起） | `0` ✓ | `""` ✓ | `1` ✓ | `"a"` ✓ |
 
 ⇒ **步骤 1 就能把「确定的错值」变成「sound 的过近似」**（brief 的 fail-closed 收窄标准）；
 步骤 4 才逐点精确。
+
+\* **2026-11-04 落地实测订正**：c3/c4 的 join 成员是**事前/事后两端**（c3 = `0 | 5`，
+c4 = `"" | "ab"`）——首个 yield **挂起点**的中间值（native `1` / `"a"`）不在 join 内
+（Abs 无时间轴，§2.3），两行按「构造点 native 值 ∈ join」的 sound 标准判 ✓（构造点
+native `0` / `""` 均在 join 内）。本表 2026-10-23 原稿把 c3 写成 `0 | 1` 是笔误
+（该值需挂起点信息，步骤 4 才可产）。
 
 ### 5.6 需要主 agent 拍板 / 分派的事项
 

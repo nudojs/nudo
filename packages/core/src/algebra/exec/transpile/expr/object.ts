@@ -40,7 +40,7 @@ import {
   internalTmpName,
   thisCarrierOf,
 } from "../helpers.ts";
-import { emitParamBindingFromArgs } from "../emit.ts";
+import { emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { emitFnBlockBody } from "../stmt/fn-body.ts";
 import { emitSetterAccessorThunk } from "../class-emit.ts";
@@ -297,10 +297,17 @@ export function transpileObjectExpr(
           }
           // Bug 58：generator 对象方法体不在调用期执行——包 $gen（吞调用期
           // throws；yield 收集保持既有 eager 口径，与声明/类方法路径同编）
+          // Bug 212（A1 步骤 1）：eager 体写穿外层绑定 ⇒ 快照自由写 + finally
+          // $join 折回（methodOpts 继承外层作用域 aliasGroups）。
           if (prop.generator) {
             mBodyInner = [
               `return $gen(() => {`,
-              mBodyInner,
+              genFreeWriteWrap(
+                mBodyInner,
+                genOuterFreeWriteNames(prop.body, paramNamesOfFn(prop.params as Node[]), methodOpts),
+                "  ",
+                methodOpts,
+              ),
               `});`,
             ].join("\n");
           }

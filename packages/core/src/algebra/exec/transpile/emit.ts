@@ -14,7 +14,7 @@
 import type { Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet } from "./helpers.ts";
+import { foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfoOf, bumpDestrTmpSeq, safeTmpName, internalTmpName, internalTmpNameSet, collectFreeAssignedNames, collectVarHoistNames, expandAliasNames } from "./helpers.ts";
 import { memberPathOf, setPathSrc, memberSideEffectWriteStmt } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
@@ -783,6 +783,73 @@ export function forkJoinBindings(names: string[], pad = "", opts: TranspileOptio
     (n, i) =>
       `${pad}${n} = (${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}));`,
   );
+}
+
+/**
+ * Bug 212（架构债 A1 · generator-laziness.md §5.1 步骤 1）：生成器体写到的
+ * **外层**绑定名（快照/join 集）。
+ *
+ * 口径：`collectFreeAssignedNames`（fork 协议同一分析——赋值 / 自增 /
+ * mutator 接收者 / 成员写根，按作用域扣遮蔽）给出体语句的自由写名；再扣：
+ * - **参数模式名**（形参是本生成器作用域的绑定——写到它不逃逸）；
+ * - **体内 `var` 名**（`collectVarHoistNames`——var 提升层在 `$gen` thunk
+ *   **内部**顶部发 `let <name> = $lit(void 0)`，这些名字在 thunk 内声明，
+ *   快照行若在其前读它 ⇒ TDZ ReferenceError ⇒ 整模块 fail-closed。var
+ *   是函数作用域 ⇒ 体内 var 恒为生成器局部，扣除语义精确）。
+ * 最后经 `expandAliasNames`（fork 同口径，`opts.aliasGroups` 必须传**外层**
+ * 作用域的 opts——快照/join 码在 thunk 里，名字按词法链解析到外层绑定）
+ * 扩直接 const 别名伙伴（`const a = …; const b = a;` 只写 a 时 b 也快照，
+ * 否则 join 后 a/b 别名身份断开）。
+ */
+export function genOuterFreeWriteNames(
+  body: { type?: string; body?: unknown } | undefined | null,
+  paramNames: ReadonlySet<string>,
+  opts: TranspileOptions,
+): string[] {
+  if (!body || body.type !== "BlockStatement" || !Array.isArray(body.body)) return [];
+  const skip = new Set<string>(paramNames);
+  for (const n of collectVarHoistNames(body.body as unknown[])) skip.add(n);
+  const free = collectFreeAssignedNames(...(body.body as unknown[])).filter((n) => !skip.has(n));
+  return expandAliasNames(free, opts);
+}
+
+/**
+ * Bug 212（架构债 A1 · 步骤 1）：生成器体「自由写」隔离包装——快照外层
+ * 绑定 + `finally` 里 `$join` 折回。
+ *
+ * eager 收集（`$gen` 构造期跑完整个体）保持不动（元素域 / conf 的承重
+ * 结构）；但体外层绑定不再被**确定地**写成「跑完之后」的值——折成
+ * `join(事前, 事后)`（原生构造点值 = 事前、消费后可能 = 事后 ⇒ join 是
+ * 唯一 sound 的单值表示；见 generator-laziness.md §5.1 口径裁决）。
+ * 「首个 yield 挂起点」的中间值（native `1` / `"a"`）不在 join 内——那
+ * 需要真挂起（步骤 4），本步只消灭 wrong-exact。
+ *
+ * - `$copy`（容器深拷贝）+ `$join` 均为既有 runtime 导出 ⇒ 不触公开面；
+ * - `finally`：体抛（延迟异常，Bug 34）时也要折，否则写穿；
+ * - 名集空 ⇒ **原样返回**（不写外层绑定的生成器产物逐字不变 ⇒ 既有
+ *   生成器钉零回归）；
+ * - 临时名（`__g0_<n>` / `__gCopyMemo`）走 `internalTmpName(Set)` 避让
+ *   用户标识符（Bug 1058 口径）；同一组快照共享 memo ⇒ 别名绑定落到
+ *   同一副本（`forkBindingDecls` 同款）。
+ */
+export function genFreeWriteWrap(
+  bodySrc: string,
+  names: readonly string[],
+  padIn: string,
+  opts: TranspileOptions,
+): string {
+  if (names.length === 0) return bodySrc;
+  const snap = internalTmpNameSet(names.map((n) => `__g0_${n}`), opts);
+  const memo = internalTmpName("__gCopyMemo", opts);
+  return [
+    `${padIn}const ${memo} = new WeakMap();`,
+    ...names.map((n, i) => `${padIn}const ${snap[i]} = $copy(${n}, ${memo});`),
+    `${padIn}try {`,
+    bodySrc,
+    `${padIn}} finally {`,
+    ...names.map((n, i) => `${padIn}  ${n} = $join(${snap[i]}, ${n});`),
+    `${padIn}}`,
+  ].join("\n");
 }
 
 /**

@@ -29,6 +29,8 @@ import {
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
+  genOuterFreeWriteNames,
+  genFreeWriteWrap,
 } from "./emit.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
@@ -698,10 +700,17 @@ export function classSpecOf(
     // Bug 141：async generator 方法——$gen 第二实参 = async 位（next/return/
     // throw 返回 promise、装 @@asyncIterator/@@toStringTag）；不进 $async
     // （原生 async generator 方法返回 AsyncGenerator 本身，非 promise）。
+    // Bug 212（A1 步骤 1）：eager 体写穿外层绑定 ⇒ 快照自由写 + finally
+    // $join 折回（opts = 类外层作用域的 aliasGroups）。
     if (m.generator) {
       bodyStmts = [
         `${indent(depth + 4)}return $gen(() => {`,
-        bodyStmts,
+        genFreeWriteWrap(
+          bodyStmts,
+          genOuterFreeWriteNames(m.body, paramNamesOf(mParamsNodes), opts),
+          indent(depth + 4),
+          opts,
+        ),
         `${indent(depth + 4)}}` + (m.async === true ? ", true" : "") + `);`,
       ].join("\n");
     }

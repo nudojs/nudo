@@ -109,6 +109,8 @@ import {
   forkJoinBindings,
   forkTmpNames,
   forkArmThunkExpr,
+  genOuterFreeWriteNames,
+  genFreeWriteWrap,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
@@ -460,12 +462,22 @@ function emitFunctionDeclaration(
     ? `${pad}$fnKindStamp(${stmt.id.name}, ${JSON.stringify(declKind)});`
     : "";
   if (stmt.generator) {
+    // Bug 212（A1 步骤 1）：生成器体 eager 跑完会把**外层**绑定确定地写成
+    // 「跑完之后」的值（原生构造点未执行体）⇒ 快照自由写 + finally $join
+    // 折回（不写外层绑定的生成器产物逐字不变）。opts = 外层作用域
+    //（快照/join 码在 thunk 里，名字解析到外层绑定 ⇒ aliasGroups 取外层集）。
+    const genBody = genFreeWriteWrap(
+      bodySrc,
+      genOuterFreeWriteNames(stmt.body, paramNamesOf(stmt.params as Node[]), opts),
+      indent(depth + 2),
+      opts,
+    );
     return [
       kindStamp,
       `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
       restBind,
       `${indent(depth + 1)}return $gen(() => {`,
-      bodySrc,
+      genBody,
       `${indent(depth + 1)}}${stmt.async === true ? ", true" : ""});`,
       `${pad}}`,
     ]

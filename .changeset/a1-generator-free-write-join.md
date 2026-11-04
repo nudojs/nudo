@@ -1,0 +1,11 @@
+---
+"@nudojs/core": patch
+---
+
+Fix: architecture debt A1 (Bug 212, step 1) — generator bodies no longer write outer bindings to values that hold at no native observation point.
+
+- Transpile-side free-write isolation around the `$gen` body (all four emission sites: declaration, function expression, object method, class method): snapshot the outer free-written bindings (`$copy` with a shared identity memo) before the eagerly-collected body, fold back `n = $join(before, after)` in a `finally` (body throws fold too). Reuses `collectFreeAssignedNames` (same analysis as the fork protocol, minus param pattern names and body `var` hoist names — those are generator-local) plus `expandAliasNames` (const alias partners snapshot together). `$copy`/`$join` are existing runtime exports — no public-surface change.
+- Symptom rows go from wrong-exact to sound over-approximation: construction-point `n` `1` → `0 | 1`, `log` `"ab"` → `"" | "ab"` (native construction values `0`/`""` are in the join); same for the `it.next()` observations (`5` → `0 | 5`, `"ab"` → `"" | "ab"`). Residual (needs true suspension, doc §5.4): the first-yield suspension-point intermediates (native `1`/`"a"`) are still not in the join — the Abs domain has no timeline axis.
+- Load-bearing eager collection untouched: element face and `conf` still baked at construction (generator object pins `{ "0": 1, "1": 5 } #exact` unchanged) — `Generator<any | number>` signature face does not degrade. Generators that write no outer bindings transpile byte-identical; body-local `var`/`let`/params never enter the snapshot set (no TDZ).
+- One pinned expectation updated: `exec-generator-consumption.test.ts` nested-generator Bug 52 case — the `leak` carrier is now the sound join `undefined | 77` (native: `undefined` at construction, `77` after drain) instead of exact `77`; the semantic point (inner bare `.return(77)` not polluted by the outer try context, no `"f"` leak) is preserved and re-pinned.
+- New regression nails in `eval-bug-212-generator-body-eager.test.ts`: the four symptom rows as exact `formatAbs` pins, all four emission sites, element-face preservation, and negative controls (protocol/yield sequence, destructuring lowering, no-outer-write, body-local var/param).
