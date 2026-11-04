@@ -86,15 +86,18 @@ Microsoft 的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/
 下块的数字由 `pnpm run dx-metrics` 再生——勿手改（定义与场景见 [dx-metrics 报告](https://github.com/nudojs/nudo/blob/main/docs/reports/dx-metrics.md)）。
 
 <!-- dx-metrics:begin -->
-<!-- 由 `pnpm run dx-metrics -- --md --lang zh` 生成于 2026-11-03 —— 请再生，勿手改。内部运营基线，非 CI 门禁。 -->
-| fix-rate | time-to-green 平均 | time-to-green 最大 |
-| --- | --- | --- |
-| 100%（2/2 条文档修复路径） | 2796 ms | 2940 ms |
+<!-- 由 `pnpm run dx-metrics -- --md --lang zh` 生成于 2026-11-04 —— 请再生，勿手改。内部运营基线，非 CI 门禁。 -->
+| 模式 | fix-rate | time-to-green 平均 | time-to-green 最大 |
+| --- | --- | --- | --- |
+| tsx（源码） | 100%（2/2 条文档修复路径） | 2637 ms | 2644 ms |
+| dist（构建产物） | 100%（2/2 条文档修复路径） | 543 ms | 544 ms |
+
+tsx = 开发回路（tsx 直跑源码 CLI）；dist = 构建产物 CLI，无 tsx 冷启动。
 
 目标（rev 5 运营）：fix-rate 文档路径 100% · time-to-green 本地 < 2 s。
 <!-- dx-metrics:end -->
 
-`fix-rate`——每条文档修复路径都真能修绿——与机器无关，由 `packages/website/tests/dx-metrics-publication.test.ts` 复检；time-to-green 是本地两次 `nudo check`（先红后绿）的墙钟，随机器而变。
+`fix-rate`——每条文档修复路径都真能修绿——与机器无关，由 `packages/website/tests/dx-metrics-publication.test.ts` 复检；time-to-green 是本地两次 `nudo check`（先红后绿）的墙钟，随机器而变。`tsx（源码）`经 tsx 直跑源码 CLI（开发回路，tsx 冷启动主导）；`dist（构建产物）`直跑构建后的 CLI（`pnpm run build`），即用户调用 `nudo` 的口径——同一引擎、同一场景，无 tsx 冷启动。
 
 ### 宣称边界
 
