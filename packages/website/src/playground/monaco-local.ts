@@ -15,16 +15,15 @@ import { loader } from "@monaco-editor/react";
 
 self.MonacoEnvironment = {
   getWorker(_workerId: string, label: string) {
-    // monaco-editor exports 映射 './*.js' → './esm/vs/*.js'(通配已含 esm/vs),
-    // 直接写 ./esm/vs/... 会被映射成 esm/vs/esm/vs/... → 404。
+    // ⚠ webpack 的 worker 检测只认 **相对路径字面量**（`new URL("./x", import.meta.url)`）；
+    // 裸包名（`new URL("monaco-editor/…")`）不会被 emit 成 worker chunk——运行时
+    // URL 解析到站点路径 ⇒ 404 ⇒ monaco 回退 blob+importScripts ⇒ `URL is invalid`
+    // ⇒ tsc 面板永远停在 “computing…”。故经相对 wrapper（./workers/*.worker.ts）
+    // 把 monaco 的 ESM worker 入口接进构建图。
     if (label === "javascript" || label === "typescript") {
-      return new Worker(
-        new URL("monaco-editor/language/typescript/ts.worker.js", import.meta.url),
-      );
+      return new Worker(new URL("./workers/ts.worker.ts", import.meta.url), { type: "module" });
     }
-    return new Worker(
-      new URL("monaco-editor/editor/editor.worker.js", import.meta.url),
-    );
+    return new Worker(new URL("./workers/editor.worker.ts", import.meta.url), { type: "module" });
   },
 };
 
