@@ -16,8 +16,38 @@ export type OssPackage = {
   bytes: number;
 };
 
-/** Medium real JS packages: CLI + utility + parser-ish (commander family). */
-export const OSS_PACKAGES = ["commander", "yargs", "semver"] as const;
+/**
+ * Medium real JS packages: CLI + utility + parser-ish, all resolvable from the
+ * monorepo's dependency tree (resolution fails the bench if a package goes missing).
+ * Small utilities (eventemitter3/ms/kleur/…) are also pinned zero-FP by
+ * `check-real-packages.test.ts`; this bench adds the latency + hub-edit face.
+ *
+ * Excluded on purpose (honest boundary — do not re-add casually):
+ * - `debug` — `analyzeFile` on `src/node.js` (top-level `Object.keys(process.env)`)
+ *   leaves the host `process.env` undefined → next `getSessionCacheLimits()`
+ *   crashes (`NUDO_CACHE_MAX_FILES` of undefined). Engine debt, analyze path.
+ * - `@changesets/cli` — transitively evaluates `import-meta-resolve`, whose
+ *   `new codes.ERR_*` (namespace-member construction of lazy error-code classes)
+ *   replaces `globalThis.Error` with a non-callable object; every later file then
+ *   crashes in `err instanceof Error`. Engine debt, analyze path.
+ * - `lodash` — 1000+ module files; blows the bench wall-clock budget.
+ * - `@babel/types` — `checkSource` crashes on its bundled lib (`Cannot read
+ *   properties of undefined (reading 'k')`, engine debt).
+ * - `@babel/parser` / `@babel/traverse` — single-file bundles; cold analyze
+ *   (parser: ~45 s for 2 files) dominates a bench round past the budget.
+ */
+export const OSS_PACKAGES = [
+  "commander", // medium CLI library (already zero-FP in unit gold)
+  "yargs", // larger CLI surface, more import edges (hub-edit interesting)
+  "semver", // mid-size utility with internal graph
+  "eventemitter3", // class-heavy event emitter
+  "kleur", // terminal-color utility (chain-call style)
+  "ms", // single-file time-formatting util
+  "is-plain-obj", // single-file type predicate
+  "escape-string-regexp", // single-file string util
+  "p-limit", // single-file async concurrency limiter (uses yocto-queue)
+  "yocto-queue", // single-file class queue (p-limit dependency)
+] as const;
 
 export function resolvePackageRoot(pkg: string): string {
   try {

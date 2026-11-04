@@ -1,7 +1,7 @@
 /**
  * S1-upgrade — real OSS package perf + precision baseline.
  *
- * Packages: commander / yargs / semver (real node_modules, not synthetic corpus).
+ * Packages: OSS_PACKAGES in packages.mts — 10 real node_modules JS packages (CLI + utilities).
  * Metrics: cold analyze · warm analyze · warm check · hub-edit dirty set · L1 FP count.
  * Report: docs/reports/oss-perf-baseline.{md,json}
  * Gate:   node benchmark/oss/gate.mjs  (regression only — never fails on "faster")

@@ -69,7 +69,7 @@ jobs:
       # （benchmark/src/gate.js，3.0x 阈值的取舍见 ci.yml benchmark job 注释）
       # 由 CI 的 benchmark job 在同一 push（及夜间复测）执行，此处不重复。
       #
-      # OSS 真包语料门禁（commander/yargs/semver，离线、无 secret，~20s）。
+      # OSS 真包语料门禁（10 包语料，见 benchmark/oss/packages.mts；离线、无 secret）。
       # 只挂在 main：envelope（benchmark/oss/baseline.json）是绝对毫秒上限、
       # 机器敏感（约 2.5–2.8x runner 余量）；PR 上每个 commit 跑容易把噪声
       # 当回归。regenerate + gate 成对执行——gate 对比的是本次生成的

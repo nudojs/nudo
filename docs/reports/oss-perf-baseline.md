@@ -3,24 +3,31 @@
 > **Generated** by `benchmark/oss/bench-oss.mts` (`pnpm run benchmark:oss`).
 > Do not hand-edit numbers — regenerate.
 >
-> **Corpus:** real `node_modules` **JavaScript** packages (**commander / yargs / semver**).
+> **Corpus:** real `node_modules` **JavaScript** packages (**commander / yargs / semver / eventemitter3 / kleur / ms / is-plain-obj / escape-string-regexp / p-limit / yocto-queue**).
 > This baseline is **Nudo’s product face** (JS-first analysis + L1 zero-FP). Regression gate: `pnpm run benchmark:oss:gate`.
 
-- Generated at: 2026-10-27T07:21:49.873Z
+- Generated at: 2026-11-04T11:50:54.558Z
 - Node: v26.10.0
-- Scale: 3 packages · **79 JS files** · 354 KB source
+- Scale: 10 packages · **94 JS files** · 407 KB source
 
 ## Summary (Nudo product metrics — gated)
 
 | Package | Files | Scanned | **L1 FP** | Cold analyze (ms) | Check all (ms) | Hub dirty | Hub edit (ms) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `commander` | 7 | 7 | **0** | 4282.59 | 884.36 | 6 (4 deps) | 3797.05 |
-| `yargs` | 23 | 23 | **0** | 7046.72 | 5419.02 | 8 (5 deps) | 5142.17 |
-| `semver` | 49 | 49 | **0** | 1951.12 | 2624.77 | 43 (17 deps) | 1809.39 |
+| `commander` | 7 | 7 | **0** | 4246.39 | 920.6 | 6 (4 deps) | 3678.63 |
+| `yargs` | 23 | 23 | **0** | 6845.93 | 4385.36 | 8 (5 deps) | 5522.26 |
+| `semver` | 49 | 49 | **0** | 1956.88 | 2564.69 | 43 (17 deps) | 1681.82 |
+| `eventemitter3` | 6 | 6 | **0** | 153.02 | 103.9 | 2 (1 deps) | 76.59 |
+| `kleur` | 4 | 4 | **0** | 83.09 | 59.27 | 1 (0 deps) | 15.3 |
+| `ms` | 1 | 1 | **0** | 28.01 | 20.09 | 1 (0 deps) | 25.73 |
+| `is-plain-obj` | 1 | 1 | **0** | 2.61 | 2.81 | 1 (0 deps) | 2.24 |
+| `escape-string-regexp` | 1 | 1 | **0** | 2.05 | 2.14 | 1 (0 deps) | 1.75 |
+| `p-limit` | 1 | 1 | **0** | 31.28 | 18.4 | 1 (0 deps) | 20.43 |
+| `yocto-queue` | 1 | 1 | **0** | 13.73 | 6.37 | 1 (0 deps) | 10.31 |
 
 | Total | Files | Scanned | **L1 FP** | Cold analyze | Check all |
 |---|---:|---:|---:|---:|---:|
-| | 79 | 79 | **0** | 13280.43 | 8928.15 |
+| | 94 | 94 | **0** | 13362.99 | 8083.63 |
 
 ## Why this is **not** a “Nudo vs TypeScript” table
 
@@ -41,11 +48,18 @@ Same bytes through tsc `createProgram` + diagnostics (`allowJs+checkJs`, no Lang
 
 | Package | tsc total (ms) | tsc diagnostic count |
 |---|---:|---:|
-| `commander` | 519.45 | 223 |
-| `yargs` | 496.23 | 1222 |
-| `semver` | 314.77 | 420 |
+| `commander` | 512.94 | 223 |
+| `yargs` | 488.46 | 1222 |
+| `semver` | 310.6 | 420 |
+| `eventemitter3` | 256.92 | 217 |
+| `kleur` | 187.93 | 102 |
+| `ms` | 157.59 | 13 |
+| `is-plain-obj` | 153.08 | 1 |
+| `escape-string-regexp` | 150.84 | 1 |
+| `p-limit` | 167.71 | 21 |
+| `yocto-queue` | 155.6 | 6 |
 
-Total tsc load: **1330.45 ms** (ts 6.0.3) — host/tooling sensitive.
+Total tsc load: **2541.67 ms** (ts 6.0.3) — host/tooling sensitive.
 
 ## What is pinned (gate)
 
