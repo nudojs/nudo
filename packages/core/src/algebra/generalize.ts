@@ -22,7 +22,7 @@ import { v as termVar } from "./term.ts";
 import type { Phi, Pred } from "./pred.ts";
 import { pTrue, predToString, and } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
-import { abs, never, unknown, bigintLit, boolLit, numLit, strLit } from "./abs.ts";
+import { abs, never, unknown, bigintLit, boolLit, isAbsLike, numLit, strLit } from "./abs.ts";
 import { joinAbs } from "./objects.ts";
 import { leqAbs } from "./leq.ts";
 import type { AstEnv } from "./ast-env.ts";
@@ -57,7 +57,7 @@ import { scanPromotions } from "./promote-scan.ts";
 import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, noteEvalFallback, type RunTranspiledOptions } from "./exec/run.ts";
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
-import { currentAssumePremises, currentInvariantSpecs, litAbsFromJs } from "./exec/runtime/state.ts";
+import { asAbsVal, currentAssumePremises, currentInvariantSpecs, litAbsFromJs } from "./exec/runtime/state.ts";
 import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
@@ -1647,6 +1647,14 @@ function generalizeFromAstUncached(
       // fail-closed：B 失败（eval-incapable 构造）/ 非导出类方法等 →
       // 显式无信息（unknown）
       result = abs({ k: "unknown" }, undefined, undefined, "opaque");
+    } else if (!isAbsLike(result)) {
+      // B3：符号执行结果**必须是 Abs**（引擎值域契约）。函数体返回**宿主值**
+      //（未注入的宿主全局：`return process` / `return JSON` …）时，转译产物
+      // 原样返回宿主对象 ⇒ `symbolic` 不是 Abs ⇒ 下游 `formatPoly` →
+      // `formatShapeSlot` 读 `.shape` 空指针（@babel/types 的 `checkSource`
+      // 崩溃现场）。在**符号执行边界**归一（asAbsVal：宿主函数 → 稳定门面、
+      // 其余宿主值 → 包装 Abs），与 $call / 成员读的宿主桥同口径。
+      result = asAbsVal(result);
     }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
