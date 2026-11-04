@@ -25,6 +25,11 @@ import {
 import { tGroup, tPresetName } from './preset-labels';
 import { discoverCallsites } from './callsites';
 import {
+  buildShareLink,
+  parseShareParams,
+  decodeShareValue,
+} from './share';
+import {
   PLAYGROUND_FILE,
   playgroundLoadModule,
   PLAYGROUND_LOAD_OPTS,
@@ -42,36 +47,42 @@ import { registerNudoJsLanguage } from './monaco-lang';
 // 自托管 monaco（jsdelivr CDN → 本地 chunk）；必须先于首个 <Editor> 挂载。
 // 本文件本身只在 /playground 路由 chunk 内被加载。
 import './monaco-local';
+import { monaco } from './monaco-local';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
-// 分享链接编解码：btoa(encodeURIComponent(x)) ↔ decodeURIComponent(atob(x))
-function readSharedParam(key: 'code' | 'sidecar'): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = new URLSearchParams(window.location.search).get(key);
-    if (!raw) return null;
-    return decodeURIComponent(atob(raw));
-  } catch {
-    return null;
+// 分享链接从 location.hash 读取（#code=&sidecar=&preset=）；已发布站点的旧
+// ?code= 链接仍可打开：hash 命中优先，search 只做外链兜底（读取后防抖同步
+// 会把 URL 规范成 hash 形态）。
+function readSharedState(): { code: string | null; sidecar: string | null; presetId: string | null } {
+  if (typeof window === 'undefined') return { code: null, sidecar: null, presetId: null };
+  const fromHash = parseShareParams(window.location.hash);
+  if (fromHash.code !== null || fromHash.sidecar !== null || fromHash.preset !== null) {
+    return { code: fromHash.code, sidecar: fromHash.sidecar, presetId: fromHash.preset };
   }
-}
-
-function readSharedCode(): string | null {
-  return readSharedParam('code');
-}
-
-function readSharedSidecar(): string | null {
-  return readSharedParam('sidecar');
+  const search = new URLSearchParams(window.location.search);
+  return {
+    code: decodeShareValue(search.get('code')),
+    sidecar: decodeShareValue(search.get('sidecar')),
+    presetId: search.get('preset'),
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
+/** tsc 对照面板的一条 monaco marker（TypeScript 诊断） */
+interface TscDiag {
+  line: number;
+  col: number;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+}
+
 export default function PlaygroundApp() {
   const [code, setCode] = useState(() => {
-    const shared = readSharedCode();
+    const shared = readSharedState().code;
     if (shared !== null && shared !== '') return shared;
     return presets[0].mode === 'single' ? presets[0].code : '';
   });
@@ -89,6 +100,13 @@ export default function PlaygroundApp() {
   const [sidecarCode, setSidecarCode] = useState('');
   const [checkResult, setCheckResult] = useState<CheckReport | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
+  // 分享链接：截断提示（保留的源码字符数）/ 复制失败提示
+  const [linkNoticeChars, setLinkNoticeChars] = useState<number | null>(null);
+  const [linkCopyFailed, setLinkCopyFailed] = useState(false);
+  // tsc 对照面板（默认关：开启才拉取 TS 语言服务 worker chunk）
+  const [tscOn, setTscOn] = useState(false);
+  const [tscStatus, setTscStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [tscDiags, setTscDiags] = useState<TscDiag[] | null>(null);
 
   const preset = presets.find((p) => p.id === selectedPreset) ?? presets[0];
   const isCallsiteMode = preset.mode === 'callsite';
@@ -103,21 +121,38 @@ export default function PlaygroundApp() {
     activeCaseIndexRef.current = activeCaseIndex;
   }, [activeCaseIndex]);
   useEffect(() => {
-    const sharedSidecar = readSharedSidecar();
-    if (sharedSidecar !== null) {
-      // ?sidecar= 决定布局：以首个 sidecar 预设打开；主代码取 ?code=（缺省回退该预设主码）
-      const sidecarPreset = presets.find((p) => p.mode === 'sidecar');
+    const shared = readSharedState();
+    const linked = shared.presetId ? presets.find((p) => p.id === shared.presetId) : undefined;
+    if (shared.sidecar !== null) {
+      // 显式 sidecar 参数：sidecar 布局（优先链接里的 preset，否则首个 sidecar 预设）
+      const sidecarPreset = linked?.mode === 'sidecar' ? linked : presets.find((p) => p.mode === 'sidecar');
       if (sidecarPreset) {
         setSelectedPreset(sidecarPreset.id);
-        const shared = readSharedCode();
-        setCode(shared && shared !== '' ? shared : sidecarPreset.mainCode);
-        setSidecarCode(sharedSidecar);
-        setPlaygroundSidecar(sidecarPreset.sidecarFile, sharedSidecar);
+        setCode(shared.code && shared.code !== '' ? shared.code : sidecarPreset.mainCode);
+        setSidecarCode(shared.sidecar);
+        setPlaygroundSidecar(sidecarPreset.sidecarFile, shared.sidecar);
         return;
       }
     }
-    const shared = readSharedCode();
-    if (shared) setCode(shared);
+    if (linked) {
+      // preset 参数决定布局；code 填进该布局的可编辑源码位
+      setSelectedPreset(linked.id);
+      if (linked.mode === 'callsite') {
+        setPlaygroundSidecar(null, '');
+        const test = shared.code ?? linked.testCode;
+        setTestCode(test);
+        runCallsiteDiscovery(test, linked);
+      } else if (linked.mode === 'sidecar') {
+        setCode(shared.code ?? linked.mainCode);
+        setSidecarCode(linked.sidecarCode);
+        setPlaygroundSidecar(linked.sidecarFile, linked.sidecarCode);
+      } else {
+        setPlaygroundSidecar(null, '');
+        setCode(shared.code ?? linked.code);
+      }
+      return;
+    }
+    if (shared.code) setCode(shared.code);
     else if (presets[0].mode === 'sidecar') {
       // 首个预设即 sidecar 时：主/侧车内容 + 虚拟模块注册一次到位
       setCode(presets[0].mainCode);
@@ -217,21 +252,140 @@ export default function PlaygroundApp() {
     }
   };
 
-  const shareUrl = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('code', btoa(encodeURIComponent(code)));
-    if (isSidecarMode && sidecarCode) {
-      url.searchParams.set('sidecar', btoa(encodeURIComponent(sidecarCode)));
-    } else {
-      // 空 sidecar / 非 sidecar 模式：清掉残留参数，避免旧侧车内容混进新链接
-      url.searchParams.delete('sidecar');
-    }
-    navigator.clipboard.writeText(url.toString()).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  // 分享链接：源码 + 预设 id 编码进 location.hash。超长按预算截断（share.ts），
+  // 截断/复制失败都在工具栏给提示；同时把地址栏规范成 hash 形态（清掉旧 ?code=）。
+  const copyLink = () => {
+    const base = window.location.origin + window.location.pathname;
+    const link = buildShareLink(base, {
+      preset: selectedPreset,
+      code: isCallsiteMode ? testCode : code,
+      sidecar: isSidecarMode ? sidecarCode : undefined,
     });
-    window.history.replaceState({}, '', url.toString());
+    window.history.replaceState(null, '', link.url);
+    navigator.clipboard.writeText(link.url).then(
+      () => {
+        setCopied(true);
+        setLinkCopyFailed(false);
+        setTimeout(() => setCopied(false), 2000);
+        if (link.truncatedCode || link.truncatedSidecar) {
+          setLinkNoticeChars(link.codeChars);
+          setTimeout(() => setLinkNoticeChars(null), 6000);
+        } else {
+          setLinkNoticeChars(null);
+        }
+      },
+      () => setLinkCopyFailed(true),
+    );
   };
+
+  // hash 防抖回写：编辑/切预设 600ms 后把当前状态写回地址栏（replaceState 不产生
+  // 历史条目）。恢复路径与此收敛：载入分享链接后重算的 hash 与现状一致则不动。
+  const shareCode = isCallsiteMode ? testCode : code;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const base = window.location.origin + window.location.pathname;
+        const link = buildShareLink(base, {
+          preset: selectedPreset,
+          code: shareCode,
+          sidecar: isSidecarMode ? sidecarCode : undefined,
+        });
+        if (window.location.href !== link.url) {
+          window.history.replaceState(null, '', link.url);
+        }
+      } catch {
+        // 链接同步失败绝不打断编辑
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [shareCode, sidecarCode, selectedPreset, isSidecarMode]);
+
+  // tsc 对照面板：离屏 monaco model（javascript）跑 TypeScript 语言服务，
+  // markers 即 tsc 诊断，与 Nudo 输出并列渲染。开关关闭时不占用 worker。
+  const tscSource = isCallsiteMode ? testCode : code;
+  const tscSourceRef = useRef(tscSource);
+  const tscModelRef = useRef<any>(null);
+  const tscActiveRef = useRef(false);
+  useEffect(() => {
+    tscSourceRef.current = tscSource;
+  }, [tscSource]);
+  useEffect(() => {
+    if (!tscOn) {
+      tscActiveRef.current = false;
+      tscModelRef.current = null;
+      setTscDiags(null);
+      return;
+    }
+    tscActiveRef.current = true;
+    // monaco 0.57 布局：TS defaults 在顶层 monaco.typescript 命名空间
+    // （languages.typescript 已随 ESM 重构移除）；旧布局路径留兜底
+    const ts = (monaco as any).typescript ?? (monaco.languages as any).typescript;
+    if (!ts?.javascriptDefaults) {
+      setTscStatus('unavailable');
+      return;
+    }
+    setTscStatus('loading');
+    ts.javascriptDefaults.setEagerModelSync?.(true);
+    ts.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: false,
+      noSyntaxValidation: false,
+      noSuggestionDiagnostics: false,
+    });
+    ts.javascriptDefaults.setCompilerOptions({
+      allowJs: true,
+      checkJs: true,
+      noEmit: true,
+      strict: true,
+      target: ts.ScriptTarget.ESNext,
+    });
+    const model = monaco.editor.createModel(
+      tscSourceRef.current,
+      'javascript',
+      monaco.Uri.parse('file:///playground-tsc.js'),
+    );
+    tscModelRef.current = model;
+    const sub = monaco.editor.onDidChangeMarkers(() => {
+      const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+      setTscStatus('ready');
+      setTscDiags(
+        markers.map((mk: any): TscDiag => ({
+          line: mk.startLineNumber,
+          col: mk.startColumn,
+          severity:
+            mk.severity === monaco.MarkerSeverity.Error
+              ? 'error'
+              : mk.severity === monaco.MarkerSeverity.Warning
+                ? 'warning'
+                : 'info',
+          message: mk.message,
+        })),
+      );
+    });
+    return () => {
+      sub.dispose();
+      model.dispose();
+      tscModelRef.current = null;
+      tscActiveRef.current = false;
+      try {
+        ts.javascriptDefaults.setEagerModelSync?.(false);
+        ts.javascriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: true,
+          noSyntaxValidation: true,
+          noSuggestionDiagnostics: true,
+        });
+      } catch {
+        // ignore
+      }
+    };
+  }, [tscOn]);
+  // 面板开着时把编辑中的源码同步进离屏 model，markers 异步回推
+  useEffect(() => {
+    if (!tscOn || !tscModelRef.current) return;
+    if (tscModelRef.current.getValue() !== tscSource) {
+      setTscStatus('loading');
+      tscModelRef.current.setValue(tscSource);
+    }
+  }, [tscSource, tscOn]);
 
   const handleEditorBeforeMount = (monaco: any) => {
     try {
@@ -252,17 +406,21 @@ export default function PlaygroundApp() {
         // keep whatever language Monaco already assigned
       }
 
-      // Mute TS/JS language service — Monarch on nudo-js still colors tokens
-      const ts = monaco.languages?.typescript;
+      // Mute TS/JS language service — Monarch on nudo-js still colors tokens.
+      // monaco 0.57：defaults 在顶层 monaco.typescript（languages.typescript 已移除）。
+      // tsc 面板开着时不静音（编辑器重挂载，如切换预设，不得把面板的 worker 静掉）
+      const ts = (monaco as any).typescript ?? (monaco.languages as any).typescript;
       const mute = {
         noSemanticValidation: true,
         noSyntaxValidation: true,
         noSuggestionDiagnostics: true,
       };
-      try {
-        ts?.javascriptDefaults?.setDiagnosticsOptions?.(mute);
-        ts?.typescriptDefaults?.setDiagnosticsOptions?.(mute);
-      } catch { /* ignore */ }
+      if (!tscActiveRef.current) {
+        try {
+          ts?.javascriptDefaults?.setDiagnosticsOptions?.(mute);
+          ts?.typescriptDefaults?.setDiagnosticsOptions?.(mute);
+        } catch { /* ignore */ }
+      }
       try {
         editor?.updateOptions?.({
           parameterHints: { enabled: false },
@@ -453,6 +611,46 @@ export default function PlaygroundApp() {
     </div>
   );
 
+  // tsc 对照面板：TypeScript 语言服务对同一源码的诊断，与 Nudo 输出并列
+  const renderTscSection = () =>
+    tscOn ? (
+      <div className="cs-section">
+        <div className="cs-section-title">
+          <Translate id="playground.tsc.title">TypeScript (tsc)</Translate>{' '}
+          <span className="cs-count">{tscDiags?.length ?? 0}</span>
+        </div>
+        {tscStatus === 'unavailable' && (
+          <div className="cs-hint">
+            <Translate id="playground.tsc.unavailable">
+              tsc unavailable — monaco TypeScript language service not loaded
+            </Translate>
+          </div>
+        )}
+        {tscStatus === 'loading' && (
+          <div className="cs-hint">
+            <Translate id="playground.tsc.loading">
+              TypeScript worker computing… (first toggle downloads the worker)
+            </Translate>
+          </div>
+        )}
+        {tscStatus === 'ready' && tscDiags && tscDiags.length > 0 && (
+          tscDiags.map((d, i) => (
+            <div key={`tsc-${i}`} className={`cs-case-card cs-issue-${d.severity}`}>
+              <span className="cs-case-label">
+                [TS L{d.line}:{d.col}]
+              </span>
+              <span className="cs-case-sig">{d.message}</span>
+            </div>
+          ))
+        )}
+        {tscStatus === 'ready' && tscDiags && tscDiags.length === 0 && (
+          <div className="cs-hint">
+            <Translate id="playground.tsc.none">no TypeScript diagnostics</Translate>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   return (
     <div className="cs-playground">
         <h1>Nudo Playground</h1>
@@ -499,12 +697,36 @@ export default function PlaygroundApp() {
             </select>
           )}
 
-          {!isCallsiteMode && (
-            <button onClick={shareUrl} className="share-button">
-              {copied
-                ? <Translate id="playground.copied">Copied!</Translate>
-                : <Translate id="playground.share">Share</Translate>}
-            </button>
+          <button onClick={copyLink} className="share-button">
+            {copied
+              ? <Translate id="playground.copied">Copied!</Translate>
+              : <Translate id="playground.copyLink">Copy link</Translate>}
+          </button>
+
+          <button
+            onClick={() => setTscOn((v) => !v)}
+            className={`share-button cs-toggle${tscOn ? ' cs-toggle-on' : ''}`}
+            title="Toggle TypeScript (tsc) diagnostics side-by-side with Nudo output"
+          >
+            tsc
+          </button>
+
+          {linkNoticeChars !== null && (
+            <span className="cs-share-note">
+              <Translate
+                id="playground.shareTruncated"
+                values={{ count: linkNoticeChars }}
+              >
+                {'link truncated — source kept to {count} chars'}
+              </Translate>
+            </span>
+          )}
+          {linkCopyFailed && (
+            <span className="cs-share-note">
+              <Translate id="playground.shareClipboardFail">
+                copy failed — copy the URL from the address bar
+              </Translate>
+            </span>
           )}
 
           <button onClick={runObserve} disabled={isRunning} className="run-button">
@@ -643,6 +865,8 @@ export default function PlaygroundApp() {
                   </Translate>
                 </div>
               )}
+
+              {renderTscSection()}
             </div>
           </>
         )}
@@ -759,6 +983,8 @@ export default function PlaygroundApp() {
               {!checkError && !checkResult && (
                 <div className="cs-hint"><Translate id="playground.hint.observe">Click "Observe" to see inference results.</Translate></div>
               )}
+
+              {renderTscSection()}
             </div>
           </>
         )}
@@ -818,6 +1044,7 @@ export default function PlaygroundApp() {
                       )}
                     </div>
                   )}
+                  {renderTscSection()}
                 </div>
               </div>
             </div>

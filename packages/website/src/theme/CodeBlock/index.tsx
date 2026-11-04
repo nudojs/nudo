@@ -24,11 +24,11 @@ function maybeStringifyChildren(children: ReactNode): ReactNode {
 const RUNNABLE_LANGUAGES = new Set(['js', 'javascript']);
 
 /**
- * Playground preload query for runnable code blocks.
+ * Playground preload hash for runnable code blocks.
  * The playground decodes each param as `decodeURIComponent(atob(raw))`;
  * `noplayground` meta opts out. Plain `verify`
  * blocks link with `code=<enc(block)>`. `verify-sidecar` blocks (sidecar
- * contract files) link with the dual-pane query
+ * contract files) link with the dual-pane hash
  * `code=<main>&sidecar=<enc(block)>` — the playground opens both panes;
  * `playgroundMain` arrives pre-encoded (`btoa(encodeURIComponent(main))`,
  * same scheme the playground decodes) from the remark-pair-sidecar plugin
@@ -95,7 +95,9 @@ export default function CodeBlock({
       playgroundMain,
       children,
     );
-    return query ? `${playgroundBaseUrl}?${query}` : undefined;
+    // hash 而非 query：分享参数不进服务端日志，也与 playground 自身的
+    // Copy link（#code=&sidecar=&preset=）同形态
+    return query ? `${playgroundBaseUrl}#${query}` : undefined;
   }, [
     children,
     props.className,

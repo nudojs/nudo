@@ -728,8 +728,26 @@
   "playground.copied": {
     "message": "已复制！"
   },
-  "playground.share": {
-    "message": "分享"
+  "playground.copyLink": {
+    "message": "复制链接"
+  },
+  "playground.shareTruncated": {
+    "message": "链接已截断——源码保留 {count} 字符"
+  },
+  "playground.shareClipboardFail": {
+    "message": "复制失败——请从地址栏手动复制"
+  },
+  "playground.tsc.title": {
+    "message": "TypeScript（tsc）"
+  },
+  "playground.tsc.loading": {
+    "message": "TypeScript worker 计算中…（首次开启需下载 worker）"
+  },
+  "playground.tsc.none": {
+    "message": "无 TypeScript 诊断"
+  },
+  "playground.tsc.unavailable": {
+    "message": "tsc 面板不可用——monaco TypeScript 语言服务未加载"
   },
   "playground.observing": {
     "message": "观察中…"

@@ -1,6 +1,6 @@
 /**
  * remark 插件：为 ```js verify-sidecar``` 围栏配对最近的前置 ```js verify``` 主代码，
- * 供 CodeBlock 生成双栏 Playground 链接（playground 支持 ?code=&sidecar= 双参数；
+ * 供 CodeBlock 生成双栏 Playground 链接（playground 支持 #code=&sidecar= 双参数；
  * sidecar 围栏自身只有契约半边，主码取配对源）。
  *
  * 机制：fenced code 的 mdast `node.data.hProperties` 会成为 CodeBlock 组件 props

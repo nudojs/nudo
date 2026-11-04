@@ -2225,6 +2225,20 @@
   background: var(--ifm-color-emphasis-200);
 }
 
+/* tsc 对照面板开关的激活态（复用 share-button 基样式） */
+.cs-toggle-on {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+/* 工具栏里的分享链接截断/复制失败提示 */
+.cs-share-note {
+  font-size: 0.8rem;
+  color: var(--ifm-color-warning);
+  align-self: center;
+}
+
 .output-tabs {
   display: flex;
   gap: 0.5rem;

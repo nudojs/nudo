@@ -3,16 +3,25 @@
  * monaco —— 离线/Docs 镜像网络/CSP 下 Playground 直接不可用。改为把
  * monaco-editor 打进 playground 异步 chunk（路由级懒加载，不进文档首屏）。
  *
- * 只需 editor 基础 worker：TS/JS/JSON 语言服务在 PlaygroundApp 中被显式
- * 静音（noSemanticValidation 等），自定义 nudo-js 语言走 Monarch（无 worker）。
+ * worker 分派：MonacoEnvironment.getWorker 一旦定义就**接管全部** monaco worker
+ * （internal/common/workers.js 的 getWorker 里它优先于 monaco 自带的
+ * createWorker 兜底，tsc 面板的 TS worker 也走这里）——必须按 label 分派：
+ * editor 基础 worker 服务主线程编辑器；javascript/typescript label 给完整
+ * TS 语言服务 worker（monaco-editor 自带，webpack 编译成独立懒 chunk，仅
+ * tsc 面板开启且首个 JS 模型请求校验时才下载）。
  */
 import * as monaco from "monaco-editor";
 import { loader } from "@monaco-editor/react";
 
 self.MonacoEnvironment = {
-  getWorker() {
+  getWorker(_workerId: string, label: string) {
     // monaco-editor exports 映射 './*.js' → './esm/vs/*.js'(通配已含 esm/vs),
     // 直接写 ./esm/vs/... 会被映射成 esm/vs/esm/vs/... → 404。
+    if (label === "javascript" || label === "typescript") {
+      return new Worker(
+        new URL("monaco-editor/language/typescript/ts.worker.js", import.meta.url),
+      );
+    }
     return new Worker(
       new URL("monaco-editor/editor/editor.worker.js", import.meta.url),
     );
@@ -20,3 +29,7 @@ self.MonacoEnvironment = {
 };
 
 loader.config({ monaco });
+
+// tsc 对照面板直接用 monaco API（createModel / getModelMarkers）挂离屏模型，
+// 不必等 @monaco-editor/react 懒挂载后经 beforeMount 回调拿实例。
+export { monaco };
