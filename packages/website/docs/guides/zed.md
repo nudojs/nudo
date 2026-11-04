@@ -28,6 +28,8 @@ In Zed: **Extensions → Install Dev Extension…** → select the cloned `nudo-
 
 ### Settings
 
+Copy-paste defaults for `~/.config/zed/settings.json` (or project `.zed/settings.json`):
+
 ```json
 {
   "languages": {
@@ -39,17 +41,12 @@ In Zed: **Extensions → Install Dev Extension…** → select the cloned `nudo-
     }
   },
   "code_lens": "on",
-  "inlay_hints": { "enabled": true }
-}
-```
-
-`"..."` keeps the remaining registered language servers. Enable semantic tokens if you want type-aware highlighting:
-
-```json
-{
+  "inlay_hints": { "enabled": true },
   "semantic_tokens": "combined"
 }
 ```
+
+`"..."` keeps the remaining registered language servers. `semantic_tokens: "combined"` layers the server's `contract` / `generated` / `derived` modifiers onto the syntax highlighting (type-aware highlighting).
 
 ### Binary override
 

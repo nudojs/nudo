@@ -163,3 +163,59 @@ describe("nudo init — malformed package.json", () => {
     expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe("42\n");
   });
 });
+
+describe("nudo init — coexistence hint (LSP-G4)", () => {
+  it("tsconfig.json in the target package ⇒ hint appended after next steps, print-only", async () => {
+    const dir = tmpPkg('{"name":"ts-pkg"}');
+    const tsconfig = '{\n  "compilerOptions": { "checkJs": true }\n}\n';
+    writeFileSync(join(dir, "tsconfig.json"), tsconfig);
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    const out = logs.join("\n");
+    expect(out).toContain("coexistence: tsconfig.json found");
+    expect(out).toContain("Nudo runs as a secondary server next to tsserver");
+    expect(out).toContain('"Nudo: Apply coexistence settings" (nudo.coexistence.apply)');
+    expect(out).toContain("https://nudojs.github.io/nudo/docs/guides/coexistence");
+    // 提示只追加在 next steps 之后（既有输出面不动）
+    expect(out.indexOf("next steps:")).toBeLessThan(out.indexOf("coexistence:"));
+    // 只打印不写盘：tsconfig 逐字保留，package.json 只新增 nudo 键
+    expect(readFileSync(join(dir, "tsconfig.json"), "utf-8")).toBe(tsconfig);
+    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"))).toEqual({
+      name: "ts-pkg",
+      nudo: { check: { profile: "adoption" } },
+    });
+  });
+
+  it("jsconfig.json alone also triggers the hint (both files ⇒ joined listing)", async () => {
+    const dir = tmpPkg('{"name":"js-pkg"}');
+    writeFileSync(join(dir, "jsconfig.json"), "{}\n");
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    expect(logs.join("\n")).toContain("coexistence: jsconfig.json found");
+
+    const both = tmpPkg('{"name":"both"}');
+    writeFileSync(join(both, "tsconfig.json"), "{}\n");
+    writeFileSync(join(both, "jsconfig.json"), "{}\n");
+    logs = [];
+    await runInitCli(["init", both]);
+    expect(process.exitCode).toBe(0);
+    expect(logs.join("\n")).toContain("coexistence: tsconfig.json / jsconfig.json found");
+  });
+
+  it("no tsconfig / jsconfig ⇒ no coexistence block (default output face unchanged)", async () => {
+    const dir = tmpPkg('{"name":"plain"}');
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    expect(logs.join("\n")).not.toContain("coexistence:");
+    expect(logs.some((l) => l.includes("nudo check ."))).toBe(true);
+  });
+
+  it("idempotent path (already has a config) prints no hint even with tsconfig.json", async () => {
+    const dir = tmpPkg('{"name":"done","nudo":{"check":{"profile":"strict"}}}');
+    writeFileSync(join(dir, "tsconfig.json"), "{}\n");
+    await runInitCli(["init", dir]);
+    expect(process.exitCode).toBe(0);
+    expect(logs.some((l) => l.endsWith("already has a nudo config — nothing written."))).toBe(true);
+    expect(logs.join("\n")).not.toContain("coexistence:");
+  });
+});

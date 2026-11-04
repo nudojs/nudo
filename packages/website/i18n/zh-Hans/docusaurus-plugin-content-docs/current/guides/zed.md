@@ -28,6 +28,8 @@ git clone https://github.com/nudojs/nudo-zed
 
 ### 设置
 
+`~/.config/zed/settings.json`（或项目 `.zed/settings.json`）的复制即用默认配置：
+
 ```json
 {
   "languages": {
@@ -39,17 +41,12 @@ git clone https://github.com/nudojs/nudo-zed
     }
   },
   "code_lens": "on",
-  "inlay_hints": { "enabled": true }
-}
-```
-
-`"..."` 会保留其余已注册 language server。若需要类型感知高亮：
-
-```json
-{
+  "inlay_hints": { "enabled": true },
   "semantic_tokens": "combined"
 }
 ```
+
+`"..."` 会保留其余已注册 language server。`semantic_tokens: "combined"` 把服务器的 `contract` / `generated` / `derived` modifier 叠加到语法高亮上（类型感知高亮）。
 
 ### 覆盖二进制路径
 

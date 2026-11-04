@@ -441,6 +441,24 @@ function writeNudoKeyMinimally(
 }
 
 /**
+ * 共存提示（LSP-G4，DX 改进波）：目标包带 tsconfig.json / jsconfig.json ⇒
+ * 追加打印一条指引——VS Code 命令 `nudo.coexistence.apply` 与共存指南配方
+ * （include/exclude / mode=directives）。**只打印、不写盘**：init 的最小
+ * 写盘纪律（Bug 681）不因此扩大，也不自动改写任何 tsconfig / editor
+ * settings。仅在**写入基线之后**调用；幂等路径（未写盘）不打此提示。
+ */
+function printCoexistenceHint(pkgDir: string, io: InitIo): void {
+  const found = ["tsconfig.json", "jsconfig.json"].filter((name) => existsSync(join(pkgDir, name)));
+  if (found.length === 0) return;
+  io.out("");
+  io.out(
+    `coexistence: ${found.join(" / ")} found — Nudo runs as a secondary server next to tsserver; nothing was rewritten`,
+  );
+  io.out('  VS Code  command "Nudo: Apply coexistence settings" (nudo.coexistence.apply)');
+  io.out("  recipe   https://nudojs.github.io/nudo/docs/guides/coexistence");
+}
+
+/**
  * init 主体：返回进程退出码（0 = 成功/幂等，1 = usage / IO 错误）。
  * 只在「无**有效** nudo 配置且作用域安全」这一条路径写盘。
  */
@@ -560,6 +578,8 @@ export function runInit(startPath: string, io: InitIo = defaultIo): number {
   io.out("  nudo check .                   run the gate (adoption profile)");
   io.out("  nudo contract --draft <file>   draft a contract from inferred types");
   io.out("  docs                           https://nudojs.github.io/nudo/");
+  // LSP-G4：写入后按需追加共存指引（打印不写盘）
+  printCoexistenceHint(pkgDir, io);
   return 0;
 }
 

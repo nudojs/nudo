@@ -80,15 +80,15 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 未保存侧车 buffer（A4） | Y | Y | Y | Y | Y |
 | buffer 感知的 interface agent 工具（E5） | Y | Y | Y | Y | Y |
 
-## 配置要点（可复制最小配置）
+## 配置要点（复制即用默认配置）
 
-安装 `@nudojs/lsp`，让 `nudo-lsp` 在 `PATH` 上（项目内 `npm i -D @nudojs/lsp` 或全局安装）。冻结清单见 [`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API](../api/lsp.md)。
+安装 `@nudojs/lsp`，让 `nudo-lsp` 在 `PATH` 上（项目内 `npm i -D @nudojs/lsp` 或全局安装）。冻结清单见 [`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API](../api/lsp.md)。下面每个配置块都是推荐的默认配置——可整块复制；每个键都在对应客户端页有文档。
 
 ### VS Code
 
 安装 `wmzy.nudo-vscode`。扩展捆绑服务器并注册 `nudo.selectCase`。见 [VS Code 扩展](./vscode.md)（含发布检查清单）。
 
-### Zed — 最小配置
+### Zed — 复制即用默认配置
 
 1. 从扩展市场安装 [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed)（或以 dev extension 安装）。扩展会通过 Zed 托管 npm 自动安装 `@nudojs/lsp`，无需在 `package.json` 里固定版本。
 2. `~/.config/zed/settings.json`（或项目 `.zed/settings.json`）：
@@ -104,15 +104,16 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
     }
   },
   "code_lens": "on",
-  "inlay_hints": { "enabled": true }
+  "inlay_hints": { "enabled": true },
+  "semantic_tokens": "combined"
 }
 ```
 
-可选 binary 覆盖（跳过托管安装）：`"lsp": { "nudo": { "binary": { "path": "nudo-lsp", "arguments": [] } } }`。Semantic tokens：`"semantic_tokens": "combined"`。详见 [Zed 扩展](./zed.md)。
+`"..."` 会保留其余已注册 language server；`code_lens` / `inlay_hints` 打开 CodeLens 选择器与 case 提示；`semantic_tokens: "combined"` 把服务器的 `contract` / `generated` / `derived` modifier 叠加到语法高亮上。可选 binary 覆盖（跳过托管安装）：`"lsp": { "nudo": { "binary": { "path": "nudo-lsp", "arguments": [] } } }`。详见 [Zed 扩展](./zed.md)。
 
-### Neovim — 最小配置
+### Neovim — 复制即用默认配置
 
-`lazy.nvim` + `nvim-lspconfig`（下列为 Neovim 0.11+ `vim.lsp.config`；旧版用 `require("lspconfig").nudo.setup{…}`）：
+`lazy.nvim` + `nvim-lspconfig`（下列为 Neovim 0.11+ `vim.lsp.config`；旧版用下方 `require("lspconfig").nudo.setup{…}`）。整块即为完整默认配置：
 
 ```lua
 -- 已安装 @nudojs/lsp，nudo-lsp 在 PATH 上
@@ -156,9 +157,9 @@ Custom request（slash 形式是协议契约）：
 vim.lsp.buf_request(0, "nudo/check", { file = vim.api.nvim_buf_get_name(0) }, function(err, result) end)
 ```
 
-### Helix — 最小配置
+### Helix — 复制即用默认配置
 
-`~/.config/helix/languages.toml`：
+`~/.config/helix/languages.toml`（含 `javascript` / `typescript` 两个块——整块复制）：
 
 ```toml
 [language-server.nudo]
@@ -189,7 +190,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | Active-case 装饰（高亮当前 case **函数体**） | Zed、Neovim、Helix（**VS Code 已闭**） | VS Code 扩展高亮整个函数体 + case 行。其它客户端：渲染 CodeLens 时用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | **LSP-G1** — VS Code 已闭；其余为客户端限制（Zed 无 decoration API；Neovim 需自写插件） |
 | 不渲染 CodeLens | Helix、部分精简 Neovim | **Inlay `● contract / …`** 与 CodeLens 同源投影观察面。另有 CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft` | **LSP-G2** — 观察面已由 inlay 覆盖；CodeLens UI 仍为客户端限制 |
 | Semantic tokens 默认关闭 | Zed、Neovim、Helix（**VS Code 可染色**） | VS Code 自带 `semanticTokenScopes`。其它客户端按 Setup notes 打开（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | **LSP-G3** — VS Code 已可；其余仍配置债 |
-| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | VS Code：命令 `Nudo: Apply coexistence settings`。或收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — 配置面；VS Code 可自助 + [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
+| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | VS Code：命令 `Nudo: Apply coexistence settings`。或收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm)。目标包带 `tsconfig.json` / `jsconfig.json` 时 `nudo init` 会打印此指引（只打印不写盘） | **LSP-G4** — 配置面；VS Code 可自助 + [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm)；init 打印指引 |
 | 文件探测 / `analysis.mode` 文档 | 文档 | 真值：[`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — 已关闭（文档已对齐 `exports` 默认） |
 | 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径必 publish（`validateText` / didOpen）；客户端可能忽略 `diagnosticProvider`——pull 是可选增强 | **LSP-G6** — push 面已有测试钉住 |
 | 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 服务端：真实参数/返回 + `@nudo:` 指令补全（触发符 `@`）。UI 仍薄时用 hover + `nudo.check`（agent 命令；CLI 侧为 `nudo check`）/ `nudo test` | **LSP-G7** — 服务端已强化；Helix UI 仍为客户端限制 |
