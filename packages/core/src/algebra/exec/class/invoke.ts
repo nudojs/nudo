@@ -25,7 +25,7 @@ import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
 import { $get, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
-import { $call } from "../call.ts";
+import { $call, routeApplyThrows } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../../abs-fn.ts";
 import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, collectionIteratorAbs, abstractSeqIteratorAbs, protoBrandAbs } from "../../builtins.ts";
@@ -584,7 +584,11 @@ function invokeCallApplyBind(
                 : [...bound, ...callArgs],
               instance,
             );
-            return isAbsApplyResult(r) ? r.abs : r;
+            // A4：bind 产物 [[Construct]] 的 apply 解包不丢 throws 槽——与
+            // `$new` / `$call` 同口径经 routeApplyThrows 单点路由。
+            return isAbsApplyResult(r)
+              ? routeApplyThrows(r.abs, r.throws)
+              : r;
           }
           // 类值目标：走类构造链（原生 new bound() 造的是目标类的实例）
           const cn = classNameOfValue(thisVal);

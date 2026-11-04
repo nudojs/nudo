@@ -14,10 +14,14 @@ import {
   getFnImpl,
   isAbsApplyResult,
   makeAbsApplyResult,
+  relationFn,
   runTranspiled,
   callTranspiledExportFull,
   callTranspiledExportApply,
+  num,
   numLit,
+  objOf,
+  str,
   litValue,
   never as neverAbs,
   unknown as absUnknown,
@@ -27,6 +31,8 @@ import {
   type AbsApplyResult,
 } from "../index.ts";
 import { $call } from "../exec/call.ts";
+import { $new } from "../exec/class/construct.ts";
+import { $invoke } from "../exec/class/invoke.ts";
 import { isNudoThrow, NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { runWithLoopExits, takeThrowExits } from "../exec/runtime/state.ts";
@@ -302,5 +308,175 @@ describe("source gate — $call routing never peels throws via absOnly (FIX-RESI
     expect(callSrc).toMatch(/function normalizeApplyReturn\b/);
     expect(callSrc).toMatch(/export function routeApplyThrows\b/);
     expect(callSrc).toMatch(/routeApplyThrows\s*\(\s*full\.abs\s*,\s*full\.throws\s*\)/);
+  });
+});
+
+/**
+ * 架构债 A3：relation 面（无 apply）的 throws 通道。
+ * 「宿主会抛、但声明侧没写 apply」的 env 声明此前恒记「不抛」（假绿）——
+ * relationFn 现承载 throws（impl.relation.throws），$call 关系臂消费时经
+ * routeApplyThrows 单点路由（与 apply 通道同一表示，不发明第二套）。
+ */
+describe("relationFn throws face (A3)", () => {
+  it("declared throws → pushThrowExit into caller frame（旧实现恒「不抛」假绿）", () => {
+    const throws = errorTypeAbs("TypeError");
+    const f = relationFn([num()], str(), { throws });
+    const r = runWithLoopExits(() => {
+      const v = $call(f, [numLit(1)]);
+      return { v, exits: takeThrowExits() };
+    });
+    // 返回面照常（关系 α 替换不被吞）
+    expect(r.v.shape).toEqual({ k: "prim", type: "string" });
+    expect(r.exits).toHaveLength(1);
+    expect(r.exits[0]).toBe(throws);
+  });
+
+  it("no throws declared → bare relation apply（既有行为不变）", () => {
+    const f = relationFn([num()], str());
+    const r = runWithLoopExits(() => {
+      const v = $call(f, [numLit(1)]);
+      return { v, exits: takeThrowExits() };
+    });
+    expect(r.v.shape).toEqual({ k: "prim", type: "string" });
+    expect(r.exits).toHaveLength(0);
+  });
+
+  it("always-throw relation（returnType=never + throws）→ NudoThrow from $call", () => {
+    const throws = errorTypeAbs("RangeError");
+    const f = relationFn([num()], neverAbs, { throws });
+    let caught: unknown;
+    try {
+      $call(f, [numLit(1)]);
+    } catch (e) {
+      caught = e;
+    }
+    expect(isNudoThrow(caught)).toBe(true);
+    expect((caught as NudoThrow).absValue).toBe(throws);
+  });
+
+  it("throws 只落 impl.relation.throws（承载位双检；缺省不写字段）", () => {
+    const throws = errorTypeAbs("TypeError");
+    const withThrows = relationFn([num()], str(), { throws });
+    expect(getFnImpl(withThrows)!.relation!.throws).toBe(throws);
+    const without = relationFn([num()], str());
+    expect(getFnImpl(without)!.relation!.throws).toBeUndefined();
+    // 不进 shape（format / leq 无 throws 消费面，避免 absKey 面漂移）
+    expect("throws" in withThrows.shape).toBe(false);
+  });
+
+  it("gold：跨模块 import 的 relation 声明 ⇒ 调用方入口 throws 面非 never（改前恒不抛）", () => {
+    // 模拟 env 声明桥（具名导入 → relationFn）：宿主会抛但声明侧无 apply
+    const declared = relationFn([num()], num(), {
+      params: ["x"],
+      throws: errorTypeAbs("TypeError"),
+    });
+    const run = runTranspiled(
+      `import { risky } from "./decl.js";\nexport function f(x) { return risky(x); }`,
+      {
+        mode: "analyze",
+        modules: { "./decl.js": { named: { risky: declared }, evaluated: true } } as never,
+      },
+    );
+    const res = callTranspiledExportFull(run, "f", [numLit(1)]);
+    // 调用效果：入口 may-throw（joinThrowExits 收 pushThrowExit 的 TypeError 面）
+    expect(res.throws.shape.k).not.toBe("never");
+    expect(res.result.shape.k).not.toBe("never");
+  });
+});
+
+/**
+ * 架构债 A4：构造路径（$new / bind 产物 [[Construct]]）不丢 apply 的 throws 槽。
+ * 旧实现 `isAbsApplyResult(x) ? x.abs : x` 手拆 ⇒ 构造器声明的 throws 只在
+ * 调用面生效，`new X()` 面恒「不抛」（env-bug-64 的 2.4 曾钉住该假绿）。
+ */
+describe("$new routes apply throws channel (A4)", () => {
+  const throws = errorTypeAbs("TypeError");
+  const inst = objOf({ port: { value: numLit(8080) } });
+
+  it("may-throw ctor apply → pushThrowExit + 实例面保留", () => {
+    const ctor = absFunction(["x"], {
+      apply: () => makeAbsApplyResult(inst, throws),
+    }, { ctor: true });
+    const r = runWithLoopExits(() => {
+      const v = $new(ctor, [numLit(1)]);
+      return { v, exits: takeThrowExits() };
+    });
+    // Bug 250：apply 返回 object-like ⇒ 用它
+    expect(r.v).toBe(inst);
+    expect(r.exits).toHaveLength(1);
+    expect(r.exits[0]).toBe(throws);
+  });
+
+  it("always-throw ctor apply（abs=never）→ NudoThrow from $new（不再静默造实例）", () => {
+    const ctor = absFunction(["x"], {
+      apply: () => makeAbsApplyResult(neverAbs, throws),
+    }, { ctor: true });
+    let caught: unknown;
+    runWithLoopExits(() => {
+      try {
+        $new(ctor, [numLit(1)]);
+      } catch (e) {
+        caught = e;
+        return;
+      }
+      return;
+    });
+    expect(isNudoThrow(caught)).toBe(true);
+    expect((caught as NudoThrow).absValue).toBe(throws);
+  });
+
+  it("裸 Abs apply ⇒ 不抛（既有构造行为不变）", () => {
+    const ctor = absFunction(["x"], {
+      apply: () => inst,
+    }, { ctor: true });
+    const r = runWithLoopExits(() => {
+      const v = $new(ctor, [numLit(1)]);
+      return { v, exits: takeThrowExits() };
+    });
+    expect(r.v).toBe(inst);
+    expect(r.exits).toHaveLength(0);
+  });
+
+  it("bind 产物构造面同样路由目标 apply 的 throws（invoke.ts 解包点）", () => {
+    const ctor = absFunction(["x"], {
+      apply: () => makeAbsApplyResult(inst, throws),
+    }, { ctor: true, name: "EnvCtor" });
+    const bound = $invoke(ctor, "bind", []);
+    const r = runWithLoopExits(() => {
+      const v = $new(bound, [numLit(1)]);
+      return { v, exits: takeThrowExits() };
+    });
+    expect(r.v).toBe(inst);
+    expect(r.exits).toHaveLength(1);
+    expect(r.exits[0]).toBe(throws);
+  });
+});
+
+/**
+ * A4 源码门禁：`isAbsApplyResult(x) ? x.abs : x` 式手拆是丢 throws 面的
+ * 根因形态（架构债 A4 的两处解包点即此类）。构造/调用派发生产面禁止再现
+ * 裸拆——必须经 routeApplyThrows 单点路由。
+ */
+describe("source gate — construct/invoke dispatch never bare-unpacks AbsApplyResult (A4)", () => {
+  it("exec/class production sources route apply results via routeApplyThrows, not `.abs` peeling", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const classDir = join(here, "..", "exec", "class");
+    const offenders: string[] = [];
+    for (const f of ["construct.ts", "invoke.ts", "declare.ts", "invoke-arr.ts"]) {
+      const p = join(classDir, f);
+      const text = readFileSync(p, "utf-8");
+      // 排除注释/JSDoc 里的提及；只盯真实三元解包 `? x.abs : x`
+      const withoutComments = text
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1");
+      if (/\?\s*[A-Za-z_$][\w$]*\.abs\s*:/.test(withoutComments)) offenders.push(f);
+    }
+    expect(
+      offenders,
+      `bare-unpacked AbsApplyResult (.abs peeled, throws channel dropped): ${offenders.join(", ")}`,
+    ).toEqual([]);
   });
 });

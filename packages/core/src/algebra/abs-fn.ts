@@ -130,6 +130,13 @@ export type AbsFnImpl = {
     paramTypes: Abs[];
     returnType: Abs;
     /**
+     * 声明的 throws 面（A3 / 架构债 A3+A4）：宿主会抛但声明侧不写 apply
+     * 的 env 声明在此承载（错误品牌 Abs；缺省 / `never` = 不抛）。
+     * 与 `AbsApplyResult.throws` 同一表示（不发明第二套）；D 路径 apply
+     * （`$call` 关系臂）消费时经 `routeApplyThrows` 并入调用效果。
+     */
+    throws?: Abs;
+    /**
      * 条件类型 infer：绑定 fromVar 后从 via 投出 inferVar
      * （`T extends (infer E)[]` → via: "arr"；`T extends Promise<infer U>` → "promise"）。
      */
@@ -337,6 +344,14 @@ export function relationFn(
     fingerprint?: string;
     inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
     condFallback?: Abs;
+    /**
+     * 声明的 throws 面（A3）：错误品牌 Abs（如 `errBrand("TypeError")`）；
+     * 缺省 / `never` = 不抛。只在 `impl.relation` 承载（**不写 shape**）——
+     * format / leq 无 throws 消费面，进 shape 会波及 `absKey` / fingerprint
+     * 的结构序列化面；D 路径 apply（`$call` 关系臂）从 `impl.relation.throws`
+     * 读并经 `routeApplyThrows` 路由（may-throw → pushThrowExit）。
+     */
+    throws?: Abs;
   },
 ): Abs {
   const params = opts?.params ?? paramTypes.map((_, i) => `x${i}`);
@@ -359,6 +374,7 @@ export function relationFn(
       returnType,
       ...(opts?.inferFrom ? { inferFrom: opts.inferFrom } : {}),
       ...(opts?.condFallback ? { condFallback: opts.condFallback } : {}),
+      ...(opts?.throws ? { throws: opts.throws } : {}),
     },
     fingerprint,
   });

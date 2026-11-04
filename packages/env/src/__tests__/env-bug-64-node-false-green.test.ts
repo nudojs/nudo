@@ -40,8 +40,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { createRequire } from "node:module";
-import { $new, formatShape, strLit, type Abs } from "@nudojs/core";
-import { runWithMayThrowSession, setMayThrowCollector } from "@nudojs/core/internal";
+import { $new, formatShape, runWithLoopExits, strLit, takeThrowExits, type Abs } from "@nudojs/core";
 import { prim } from "../abs-helpers.ts";
 import { defineEnv } from "../node.ts";
 import { defineEnv as defineWebEnv } from "../web.ts";
@@ -161,17 +160,23 @@ describe("族 64-2 · node:url 的 URL：非法 URL 不再被静默吞掉（记 
     expect(term.value).toBe("https://x.dev/a");
   });
 
-  it("2.4 已知偏差（core 侧 A 类债）：$new 丢弃 apply 的 throws 面 ⇒ new URL(非法) 仍恒不抛", () => {
-    // core 的 `$new` 只取 AbsApplyResult 的 `abs`（throws 面被丢）⇒ env 层
-    // 无法表达「构造期必抛」⇒ 记为 core 侧架构债。此钉记录**现状**，待 core
-    // 修复后改写。
-    const mayThrows: { kind: string; cause?: string }[] = [];
-    const value = runWithMayThrowSession(() => {
-      setMayThrowCollector((e) => mayThrows.push({ kind: e.kind, cause: e.cause }));
-      return $new(urlMod.URL!, [strLit("not a url")]);
+  it("2.4 core 债已修（A4）：$new 不再丢 apply 的 throws 面 ⇒ new URL(非法) 记 may-throw", () => {
+    // 旧实现：core 的 `$new` 只取 AbsApplyResult 的 `abs`（throws 面被丢）
+    // ⇒ 构造面恒「不抛」（假绿）——曾钉为 core 侧架构债（A3+A4）。
+    // 修后：构造路径与 $call 同口径经 routeApplyThrows 路由。
+    const r = runWithLoopExits(() => {
+      try {
+        const value = $new(urlMod.URL!, [strLit("not a url")]);
+        return { value, exits: takeThrowExits() };
+      } catch (e) {
+        return { exits: takeThrowExits(), threw: e };
+      }
     });
-    expect(value, "new URL(非法) 当前不抛（core 侧债）").toBeTruthy();
-    expect(mayThrows, "$new 路径当前丢弃 throws 面").toEqual([]);
+    // may-throw（不是硬抛）：实例面照常返回
+    expect(r.threw, "may-throw 不是硬抛").toBeUndefined();
+    expect(r.value, "实例面保留").toBeTruthy();
+    expect(r.exits, "new 面同样记 TypeError throws 面").toHaveLength(1);
+    expect(brandName(r.exits[0]!)).toBe("TypeError");
   });
 });
 

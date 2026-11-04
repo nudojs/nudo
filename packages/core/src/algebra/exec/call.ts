@@ -253,7 +253,17 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   }
   // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
   if (!impl?.body && !impl?.apply) {
-    if (impl?.relation || isRelFn(fn)) return instantiateReturn(fn, args);
+    if (impl?.relation || isRelFn(fn)) {
+      // A3：relation 声明的 throws 面（宿主会抛但声明侧无 apply）与
+      // apply 通道同口径——单点经 routeApplyThrows 路由（may-throw →
+      // pushThrowExit 入调用方帧；returnType=never ⇒ always-throw → NudoThrow）。
+      // 缺省 / never = 不抛（既有 relationFn 行为不变）。isRelFn 面
+      // （shape-only，无 impl）没有 throws 槽 ⇒ undefined ⇒ 不路由。
+      return routeApplyThrows(
+        instantiateReturn(fn, args),
+        impl?.relation?.throws,
+      );
+    }
     // 非函数 callee 的原生 TypeError 不得折成 unknown, throws=never（假「保证不抛」）。
     // prim（含 nullish 字面量）确定不可调用 → hard NudoThrow（tier 1，
     // 调用边界收成 throws）；any（无约束值）→ may-throw（tier 2）。

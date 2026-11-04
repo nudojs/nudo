@@ -224,15 +224,15 @@ export function envFn(
     ctor?: boolean;
     /**
      * throws 面（错误品牌 Abs，如 `errBrand("TypeError")`）。
-     * apply 内原生抛异常时按此记 may-throw；缺省时按异常名推
+     * apply 分支：apply 内原生抛异常时按此记 may-throw；缺省时按异常名推
      * `errBrand(e.name)`（非 Error ⇒ `errBrand("Error")`）。
      *
      * `DOMException` 的 `name` 是 `"InvalidCharacterError"`——**不是**标准
      * Error 名，故 `atob` / `btoa` 这类必须由声明侧显式传 `opts.throws`。
      *
-     * 只在 **apply 分支**生效：无 apply 的 relation 面（core `relationFn`
-     * 不带 throws 字段）没有 throws 通道——「宿主会抛但声明无 apply」的
-     * 情形仍需 core 侧支持。
+     * 无 apply 分支（relation 面）：A3 修后同样生效——声明侧的 throws 面
+     * 直接落 `relationFn` 的 relation 槽，`$call` 关系臂记 may-throw（旧
+     * 实现恒「不抛」＝假绿）。
      */
     throws?: Abs;
     /**
@@ -263,6 +263,10 @@ export function envFn(
       fingerprint: opts?.name
         ? `${opts.name}|${relationFingerprint(paramTypes, returnType)}`
         : undefined,
+      // A3（架构债 A3+A4 修后）：无 apply 的 relation 面也承载 throws——
+      // 「宿主会抛但声明侧不写 apply」不再恒「不抛」（旧假绿）。$call 关系
+      // 臂经 routeApplyThrows 记 may-throw。
+      ...(opts?.throws ? { throws: opts.throws } : {}),
     });
     if (staticSlots) {
       a.shape = { ...(a.shape as { k: "fn"; params: string[] }), slots: staticSlots };

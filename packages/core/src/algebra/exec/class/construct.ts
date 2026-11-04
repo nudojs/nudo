@@ -48,7 +48,7 @@ import { makeMapAbs, makeSetAbs, ctorArgDefinitelyInvalid, makeWeakCollectionAbs
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { $set, asAbsVal, callAtFunctionBoundary, clearStaleTermPred, NudoThrow } from "../runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "../runtime/state.ts";
-import { $call } from "../call.ts";
+import { $call, routeApplyThrows } from "../call.ts";
 // 直连 calls.ts（不经 barrel）：原单文件（declare.ts）拓扑中本导入伴随
 // 「模块体加载期即回调 setter」的 vite SSR barrel 再导出陷阱注释——构造期
 // 代码移入本文件后沿用直连口径（与 invoke-arr.ts 的同类注释同源）。
@@ -1082,7 +1082,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
               impl.bindThis ? [thisVal, ...args] : args,
               thisVal,
             );
-            const after = isAbsApplyResult(afterR) ? afterR.abs : afterR;
+            // A4（架构债 A3+A4）：构造路径不丢 apply 的 throws 槽——与
+            // `$call` 同口径经 routeApplyThrows 单点路由（may-throw →
+            // pushThrowExit 入调用方帧；always-throw → NudoThrow 由调用
+            // 边界收成 throws）。旧实现手拆 `.abs` ⇒ 构造器声明的 throws
+            // 只在调用面生效（env-bug-64 的 2.4 曾钉住该假绿）。
+            const after = isAbsApplyResult(afterR)
+              ? routeApplyThrows(afterR.abs, afterR.throws)
+              : afterR;
             // Bug 250：返回值是 Object（brand/obj/arr/tuple/fn/eff）就用它
             if (isObjectLikeAbs(after)) {
               return after;

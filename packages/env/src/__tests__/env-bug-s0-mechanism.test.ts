@@ -14,6 +14,7 @@
 import { describe, it, expect } from "vitest";
 import {
   $call,
+  $new,
   getFnImpl,
   isAbsApplyResult,
   isNudoThrow,
@@ -248,5 +249,68 @@ describe("S0 机制层 · envFnVariadic 透传 + errBrand", () => {
     expect(e.shape.k).toBe("brand");
     expect(brandName(e)).toBe("TypeError");
     expect(e.conf).toBe("exact");
+  });
+});
+
+/**
+ * 架构债 A3（env 面验收）：无 apply 的 relation 声明也承载 throws。
+ * 旧实现 `envFn` 的 throws 只在 apply 分支生效——「宿主会抛、但声明侧
+ * 没写 apply」的 env 声明恒记「不抛」（假绿）。修后 opts.throws 落
+ * core `relationFn` 的 relation 槽，`$call` 关系臂记 may-throw。
+ */
+describe("A3 机制层 · envFn relation 面（无 apply）的 throws 通道", () => {
+  it("R1. 声明 throws 的 relation 声明 ⇒ 调用点记 may-throw（旧实现恒「不抛」）", () => {
+    const fn = envFn([prim.str()], prim.str(), undefined, {
+      throws: errBrand("URIError"),
+    });
+    expect(getFnImpl(fn)?.apply, "无 apply ⇒ relation 面").toBeUndefined();
+    const site = callSite(fn, [strLit("x")]);
+    expect(site.threw).toBeUndefined();
+    expect(site.exits).toHaveLength(1);
+    expect(brandName(site.exits[0]!)).toBe("URIError");
+    // 返回面照常（声明 returnType 不被吞）
+    expect(site.value!.shape).toEqual({ k: "prim", type: "string" });
+  });
+
+  it("R2. 未声明 throws 的 relation 声明 ⇒ 零抛（既有行为不变）", () => {
+    const fn = envFn([prim.str()], prim.str());
+    const site = callSite(fn, [strLit("x")]);
+    expect(site.threw).toBeUndefined();
+    expect(site.exits).toHaveLength(0);
+    expect(site.value!.shape).toEqual({ k: "prim", type: "string" });
+  });
+
+  it("R3. envFnVariadic 同口径透传（无 apply + throws）", () => {
+    const fn = envFnVariadic(prim.str(), prim.str(), {
+      required: [prim.str()],
+      restName: "...rest",
+      throws: errBrand("TypeError"),
+    });
+    const site = callSite(fn, [strLit("a"), strLit("b")]);
+    expect(site.exits).toHaveLength(1);
+    expect(brandName(site.exits[0]!)).toBe("TypeError");
+  });
+
+  it("R4. 构造器形态（ctor:true relation + throws）⇒ new 面同样记 may-throw", () => {
+    // 声明实例面（brand returnType）⇒ $new 走 $call 关系臂（issue #106 路径）
+    const inst = errBrand("URLLike"); // 任意 brand 面（构造器 returnType）
+    const ctor = envFn([prim.str()], inst, undefined, {
+      params: ["input"],
+      ctor: true,
+      throws: errBrand("TypeError"),
+    });
+    expect((ctor.shape as { ctor?: boolean }).ctor).toBe(true);
+    const r = runWithLoopExits(() => {
+      try {
+        const value = $new(ctor, [strLit("x")]);
+        return { value, exits: takeThrowExits() };
+      } catch (e) {
+        return { exits: takeThrowExits(), threw: e };
+      }
+    });
+    expect(r.threw).toBeUndefined();
+    expect(r.exits).toHaveLength(1);
+    expect(brandName(r.exits[0]!)).toBe("TypeError");
+    expect(r.value!.shape.k).toBe("brand");
   });
 });
