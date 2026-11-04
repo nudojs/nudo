@@ -66,6 +66,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$le",
   "$gt",
   "$ge",
+  "$rebindable",
   "$join",
   // 字面量 / 控制流
   "$lit",

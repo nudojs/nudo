@@ -125,6 +125,8 @@ describe("runtime import surface", () => {
       "$throwFreeArguments",
       "$tryReleaseSoftCatch",
       "$catchReturn",
+      // B1：fork/switch/生成器归并回写的 Abs 判据（宿主绑定不回写）
+      "$rebindable",
     ]) {
       expect(emitted.has(n), `语料未触发 ${n}（扩展语料或查发射点）`).toBe(true);
     }
@@ -158,6 +160,8 @@ describe("runtime import surface", () => {
 const CORPUS: readonly string[] = [
   // 计算键调用（$invokeKey）与可选链
   `function f(o, k, x) { return o[k](x); }`,
+  // B1：分支内绑定写 ⇒ fork 归并回写（$rebindable 守卫）
+  `function f(c) { let x = 1; if (c) { x = 2; } return x; }`,
   `function f(o, k) { return o[k]?.(1); }`,
   `const v = o?.[k]?.();`,
   // try/catch：软抛出 rethrow、catch 返回（$catchReturn）、无 binding catch

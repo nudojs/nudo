@@ -781,7 +781,11 @@ export function forkJoinBindings(names: string[], pad = "", opts: TranspileOptio
   const t = forkTmpNames(names, opts);
   return names.map(
     (n, i) =>
-      `${pad}${n} = (${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}));`,
+      // B1：归并回写只对 **Abs 绑定**成立——自由标识符（宿主全局：process / Math /
+      // 宿主函数…）持宿主值，`$join($copy(host), …)` 会 asAbsVal 出包装 Abs 并写进
+      // globalThis（宿主 process.exit 等丢失）。运行时判据 `$rebindable` 精确区分两者
+      // （Abs 绑定 / 局部宿主函数可重绑，见 $rebindable 注释）；宿主全局自赋值 no-op。
+      `${pad}${n} = $rebindable(${JSON.stringify(n)}, ${n}) ? ((${t.arm1Set[i]} && ${t.arm2Set[i]}) ? $join(${t.arm1[i]}, ${t.arm2[i]}) : (${t.arm1Set[i]} ? ${t.arm1[i]} : (${t.arm2Set[i]} ? ${t.arm2[i]} : ${n}))) : ${n};`,
   );
 }
 
@@ -847,7 +851,9 @@ export function genFreeWriteWrap(
     `${padIn}try {`,
     bodySrc,
     `${padIn}} finally {`,
-    ...names.map((n, i) => `${padIn}  ${n} = $join(${snap[i]}, ${n});`),
+    // B1 同款：外层绑定是**宿主全局**时（快照不是 Abs）不回写——否则包装 Abs 会
+    // 写进 globalThis。局部/模块绑定恒持 Abs ⇒ 快照是 Abs ⇒ 行为不变。
+    ...names.map((n, i) => `${padIn}  ${n} = $rebindable(${JSON.stringify(n)}, ${snap[i]}) ? $join(${snap[i]}, ${n}) : ${n};`),
     `${padIn}}`,
   ].join("\n");
 }

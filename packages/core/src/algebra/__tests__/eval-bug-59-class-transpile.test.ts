@@ -60,22 +60,30 @@ describe("族 59 · 第 1 条 · const 绑定的函数上的成员写（Bug 205 
     expect(out).not.toContain("F = $set(");
   });
 
-  it("负控：let 绑定维持既有根重绑通道（逐字不变）", () => {
+  it("负控：let 绑定维持既有根重绑通道（B1：现经 $rebindable 守卫）", () => {
     const src = `let F = function(){}; F.prototype = { x: 1 };`;
     const out = transpileSource(src, { source: src });
-    expect(out).toContain('F = $set(__nudoMpRoot, "prototype", __nudoMpVal)');
+    // B1：宿主全局不重绑（自赋值 no-op），Abs 绑定与局部宿主函数照旧重绑
+    expect(out).toContain(
+      'F = $rebindable("F", F) ? $set(__nudoMpRoot, "prototype", __nudoMpVal) : F',
+    );
   });
 
   it("负控：非函数表达式的 const 绑定维持既有根重绑通道（收窄口径）", () => {
     const src = `const o = {}; o.x = 1;`;
     const out = transpileSource(src, { source: src });
-    expect(out).toContain('o = $set(__nudoMpRoot, "x", __nudoMpVal)');
+    expect(out).toContain(
+      'o = $rebindable("o", o) ? $set(__nudoMpRoot, "x", __nudoMpVal) : o',
+    );
   });
 
   it("负控：函数声明（宿主函数）维持既有根重绑通道", () => {
     const src = `function F(){} F.prototype = { x: 1 };`;
     const out = transpileSource(src, { source: src });
-    expect(out).toContain('F = $set(__nudoMpRoot, "prototype", __nudoMpVal)');
+    // 局部宿主函数（globalThis.F 不存在）⇒ $rebindable 为真 ⇒ 门面写回绑定
+    expect(out).toContain(
+      'F = $rebindable("F", F) ? $set(__nudoMpRoot, "prototype", __nudoMpVal) : F',
+    );
   });
 });
 

@@ -429,7 +429,10 @@ function propagateLines(p: MemberPath, plan: WritePlan, holderIdx: number, newVa
   const parentKey = plan.keys[holderIdx]!;
   const setter = p.layers[holderIdx]!.set;
   if (holderIdx === 0) {
-    lines.push(`${pad}${p.rootTarget} = ${setter(parentBase, parentKey, newVal)};`);
+    // B1 同款：宿主根不写回（宿主值 / 宿主函数 facade）。
+    lines.push(
+      `${pad}${p.rootTarget} = $rebindable(${JSON.stringify(p.rootTarget)}, ${p.rootTarget}) ? ${setter(parentBase, parentKey, newVal)} : ${p.rootTarget};`,
+    );
     return lines;
   }
   const nextVar = t.props[holderIdx]!;
@@ -482,7 +485,10 @@ function memberWriteIfeImpl(
   if (plan.n === 1) {
     // 单层：原生 [[Set]] 就在根上（可重绑根 = 写回根出新根）
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(t.val)};`);
+      // B1：根是**自由标识符**（宿主全局）时持宿主值——`$set(host)` fail-closed
+      // 返回原值（自赋值 no-op），但**宿主函数**会返回 facade Abs ⇒ 写进
+      // globalThis。`$rebindable` 判据精确：Abs / 局部宿主函数可重绑，全局恒等值不可。
+      lines.push(`${p.rootTarget} = $rebindable(${JSON.stringify(p.rootTarget)}, ${p.rootTarget}) ? ${plan.write(t.val)} : ${p.rootTarget};`);
     } else {
       lines.push(`${plan.write(t.val)};`);
     }
@@ -522,7 +528,10 @@ export function memberReadModifyWriteIfe(
   lines.push(`const ${t.next} = ${spec.newValueOf(t.old)};`);
   if (plan.n === 1) {
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${plan.write(t.next)};`);
+      // B1 同款：宿主根不写回（宿主值 / 宿主函数 facade）
+      lines.push(
+        `${p.rootTarget} = $rebindable(${JSON.stringify(p.rootTarget)}, ${p.rootTarget}) ? ${plan.write(t.next)} : ${p.rootTarget};`,
+      );
     } else {
       // const 根：不重绑根（族 59 · W9）——单层写就地落 ⇒ 写不丢
       lines.push(`${plan.write(t.next)};`);
@@ -554,7 +563,10 @@ export function memberDeleteIfe(p: MemberPath): string {
   lines.push(`const ${t.res} = $del(${plan.holder}, ${t.delK});`);
   if (plan.n === 1) {
     if (p.rootRebindable) {
-      lines.push(`${p.rootTarget} = ${t.res};`);
+      // B1 同款：宿主根不写回（$del 对宿主值 fail-closed，但宿主函数 facade 会写全局）
+      lines.push(
+        `${p.rootTarget} = $rebindable(${JSON.stringify(p.rootTarget)}, ${p.rootTarget}) ? ${t.res} : ${p.rootTarget};`,
+      );
     } else {
       // const 根：不重绑根（族 59 · W9）
       lines.push(`void ${t.res};`);

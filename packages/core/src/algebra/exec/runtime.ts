@@ -72,6 +72,7 @@ export {
   $ge,
   $gt,
   $importMeta,
+  $rebindable,
   $join,
   $le,
   $lt,

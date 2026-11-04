@@ -2,7 +2,7 @@
  * 运算符重载面（transpile 目标）：$add/$sub/…、比较/位运算。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, strLit } from "../../abs.ts";
+import { abs, bool, boolLit, strLit, isAbsLike } from "../../abs.ts";
 import { add, sub, mul, div, mod, cmp } from "../../arithmetic.ts";
 import {
   typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, bitandAbs, bitorAbs,
@@ -206,4 +206,27 @@ export function $ge(a: Abs, b: Abs): Abs {
 }
 export function $join(a: Abs, b: Abs): Abs {
   return joinAbs(asAbsVal(a), asAbsVal(b));
+}
+
+/**
+ * B1/B2（宿主污染族）：**绑定可重绑**判据——fork/switch/生成器归并回写与
+ * 成员写根重绑的唯一运行时判据。
+ *
+ * 两种绑定形态必须可重绑（原生就是写绑定/写对象，引擎用重绑做建模补偿）：
+ * 1. **Abs 绑定**：局部变量（含 `let x = $lit(void 0)`）与注入的 env 全局；
+ * 2. **局部宿主函数**：函数声明/表达式在转译产物里是真实 JS 函数（`asAbsVal`
+ *    门面延迟桥接）——`F.prototype = {}` 必须能把门面写回绑定（Bug 205）。
+ *
+ * 但**宿主全局**不可重绑：自由标识符（未注入的 `process` / `Math` / `Error` /
+ * 宿主函数…）与 `globalThis[name]` 恒等 ⇒ `$join($copy(host), …)` 的
+ * `asAbsVal` 包装 Abs 若写回就是写进 `globalThis`（`process = {shape, conf}`
+ * ⇒ 宿主 `process.exit` 丢失；`Error` 被换成 facade Abs ⇒ `instanceof` 崩）。
+ * 判据 = 值不是 Abs、且不等于同名全局 ⇒ 才可重绑；全局恒等值自赋值 no-op。
+ */
+export function $rebindable(name: string, v: unknown): boolean {
+  if (isAbsLike(v)) return true;
+  if (typeof v === "function") {
+    return (globalThis as Record<string, unknown>)[name] !== v;
+  }
+  return false;
 }

@@ -351,7 +351,8 @@ export function emitSwitchStatement(
       { length: slotCount },
       (_, i) => `(${sw.armSet[i]![ni]} ? ${sw.arm[i]![ni]} : null)`,
     );
-    return `${pad}${n} = (() => { const ${sw.joinArr} = [${slots.join(",")}].filter((x) => x !== null); return ${sw.joinArr}.length === 0 ? ${n} : ${sw.joinArr}.reduce((a, b) => $join(a, b)); })();`;
+    // B1 同款：只对 Abs 绑定回写（自由标识符持宿主值，$join 会写进 globalThis）。
+    return `${pad}${n} = $rebindable(${JSON.stringify(n)}, ${n}) ? (() => { const ${sw.joinArr} = [${slots.join(",")}].filter((x) => x !== null); return ${sw.joinArr}.length === 0 ? ${n} : ${sw.joinArr}.reduce((a, b) => $join(a, b)); })() : ${n};`;
   });
   // shared body 必须在声明 __sw0_* 的同一块内，否则闭包解析不到槽位绑定
   //

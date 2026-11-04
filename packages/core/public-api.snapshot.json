@@ -1228,6 +1228,7 @@
       "$pushLoopExit",
       "$rawThis",
       "$reStateCall",
+      "$rebindable",
       "$recordBinding",
       "$refineRel",
       "$regex",

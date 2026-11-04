@@ -9,7 +9,7 @@ export {
   $div, $dynamicImport, $elems, $eq, $eqLoose, $fnKindStamp, $fnVal, $for, $forInKeys,
   $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
-  $isForkExit, $join, $le, $len, $lit, $litTruth, $loopBreak, $loopContinue,
+  $isForkExit, $rebindable, $join, $le, $len, $lit, $litTruth, $loopBreak, $loopContinue,
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $narrowMemberEq, $narrowTypeOf, $not, $nullishTest, $newTarget,
   $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex, $refineRel,
   $removeMemberNullish, $removeNull, $removeNullish, $removeUndefined, $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
