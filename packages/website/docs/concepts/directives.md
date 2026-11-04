@@ -95,7 +95,7 @@ function len(s) {
 
 ---
 
-## @nudo:mock — Mock External Dependencies
+## @nudo:mock — Mock External Dependencies {#nudomock--mock-external-dependencies}
 
 Replace external dependencies with mocks during evaluation — `fetch`, file system APIs, or other code Nudo cannot execute directly. Full syntax (five forms), the single-line rule, evaluator caveats, and worked examples: [Mocking External Dependencies](./mocking.md).
 

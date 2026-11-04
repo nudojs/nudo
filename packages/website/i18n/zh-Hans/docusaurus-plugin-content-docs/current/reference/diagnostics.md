@@ -84,7 +84,7 @@ function nope not found
 
 调用引用了分析器在作用域内无法解析的函数。**Error** —— 检查函数名 / 导出，或用 env / `@nudo:mock-module` 补上缺失模块。
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [依赖类型](../guides/env-harvest.md)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [依赖类型](../guides/env-harvest.md)
 
 ### `nudo:partial-result` {#nudo-partial-result}
 
@@ -130,7 +130,7 @@ Context: [固化生成段](../guides/contract.md#固化生成段) · [接口诊�
 
 侧车 `@nudo:import` 链成环。**Error。** 修复：打破侧车 import 环。
 
-Context: [@nudo:import](../concepts/directives.md#nudo--约束模板引入) · [接口诊断](../guides/check.md#接口诊断)
+Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [接口诊断](../guides/check.md#接口诊断)
 
 ### `nudo:interface-domain-exceeds` {#nudo-interface-domain-exceeds}
 
@@ -288,7 +288,7 @@ Context: [`any` 与 `unknown`](../concepts/limits.md#any-与-unknown) · [L2 —
 
 API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock。
 
-Context: [@nudo:env](../concepts/directives.md#nudo--运行时环境) · [依赖类型](../guides/env-harvest.md)
+Context: [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment) · [依赖类型](../guides/env-harvest.md)
 
 ### `nudo:opaque-result` {#nudo-opaque-result}
 
@@ -347,7 +347,7 @@ Context: [模拟外部依赖](../concepts/mocking.md)
 
 全部骨架均经端到端验证：原样粘贴进被分析函数的 JSDoc 后诊断消失、结果恢复精度（`promise<{ id: 1 }>` / timer id / 精确对象形状）。语法规则：[模拟外部依赖](../concepts/mocking.md)。
 
-Context: [模拟外部依赖](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudo--运行时环境)
+Context: [模拟外部依赖](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment)
 
 ### `nudo:no-signature` {#nudo-no-signature}
 
@@ -365,19 +365,19 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
 `@nudo:mock` 表达式无法解析为已知形态（stub/spy/mock 形式、箭头函数或类型表达式）。**Warning** —— 检查受支持形态。
 
-Context: [Mock 语法](../concepts/mocking.md#语法) · [@nudo:mock](../concepts/directives.md#nudo--mock-外部依赖)
+Context: [Mock 语法](../concepts/mocking.md#语法) · [@nudo:mock](../concepts/directives.md#nudomock--mock-external-dependencies)
 
 ### `nudo:directive-syntax` {#nudo-directive-syntax}
 
 `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` 指令文法非法（名称非法、尾注释残留、类型表达式不可识别）。**Warning** —— 该指令被忽略；修正写法。
 
-Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudo--跳过求值)
+Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudoskip--skip-evaluation)
 
 ### `nudo:contract-syntax` {#nudo-contract-syntax}
 
 `@nudo:contract` 段或 `@nudo:import` 形态非法（如 `x > 0` 而非 `x positive`、default import）。**Warning** —— 该段被忽略；使用 `<param> <约束名>` 或 `return <约束名>`。
 
-Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+Context: [约束模板](../concepts/directives.md#nudoimport--constraint-templates) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 
 ### `nudo:assume-invalid` {#nudo-assume-invalid}
 
@@ -496,7 +496,7 @@ cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open 
 
 **Error。** 依赖**存在但读不了**（EACCES / EIO / EMFILE / ESTALE…）。与 `nudo:module-missing`（没有这个文件）不同：文件就在那儿，只是读不了 ⇒ 它的类型保持 unknown，门禁 fail-closed。**修复：** 修文件权限（或模块路径）——依赖在，只是读不到，类型因此是 unknown。
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:json-invalid` {#nudo-json-invalid}
 
@@ -516,7 +516,7 @@ Module file not found for 'spec' (from file); tried: path
 
 **Error。** 被分析文件 import 了装载器无法解析的模块。**修复：** 修正 spec，或 mock 该模块（`@nudo:mock-module` / `@nudo:mock`）。
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:exports-unresolved` {#nudo-exports-unresolved}
 
@@ -532,7 +532,7 @@ Module './m.js' has no export 'b' (from index.js)
 
 **Error。** 具名 `import`（或 `export { x } from`）引用了源模块并未导出的名字——通常是拼写错误。仅当源模块导出表来自成功求值时才报（fail-closed 空表与未解析模块保持静默，不与 `nudo:module-missing` 叠报）。**修复：** 修正导入名、在源模块补上导出，或 mock 该模块（`@nudo:mock-module`）。
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:missing-slot` {#nudo-missing-slot}
 

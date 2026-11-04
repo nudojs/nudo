@@ -4,7 +4,7 @@ description: Mock external dependencies during evaluation — five @nudo:mock fo
 
 # Mocking External Dependencies
 
-`@nudo:mock` replaces external dependencies with mocks during evaluation. Use it for `fetch`, file system APIs, or other code Nudo cannot execute directly. (Module-level replacement lives in [@nudo:mock-module](./directives.md#nudo--module-level-mock).)
+`@nudo:mock` replaces external dependencies with mocks during evaluation. Use it for `fetch`, file system APIs, or other code Nudo cannot execute directly. (Module-level replacement lives in [@nudo:mock-module](./directives.md#nudomock-module--module-level-mock).)
 
 ## Syntax
 

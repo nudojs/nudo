@@ -95,7 +95,7 @@ function len(s) {
 
 ---
 
-## @nudo:mock — Mock 外部依赖
+## @nudo:mock — Mock 外部依赖 {#nudomock--mock-external-dependencies}
 
 在求值期间将外部依赖替换为 mock 实现——`fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。完整语法（五种形式）、单行规则、evaluator 注意事项与可运行示例：[模拟外部依赖](./mocking.md)。
 

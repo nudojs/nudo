@@ -248,7 +248,7 @@ transform(null);
 // @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })
 ```
 
-优先使用单行箭头函数 mock。完整语法：[指令 —— mock](../concepts/directives.md#nudo--mock-外部依赖)。
+优先使用单行箭头函数 mock。完整语法：[指令 —— mock](../concepts/directives.md#nudomock--mock-external-dependencies)。
 
 ---
 

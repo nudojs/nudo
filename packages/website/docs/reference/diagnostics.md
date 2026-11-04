@@ -84,7 +84,7 @@ function nope not found
 
 A call references a function the analyzer cannot resolve in scope. **Error** — check the name / export, or provide the missing module via env / `@nudo:mock-module`.
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [Dependency types](../guides/env-harvest.md)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [Dependency types](../guides/env-harvest.md)
 
 ### `nudo:partial-result` {#nudo-partial-result}
 
@@ -130,7 +130,7 @@ Context: [Emit generated segments](../guides/contract.md#emit-generated-segments
 
 Sidecar `@nudo:import` chain forms a cycle. **Error.** Fix: break the sidecar import cycle.
 
-Context: [@nudo:import](../concepts/directives.md#nudo--constraint-templates) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
 
 ### `nudo:interface-domain-exceeds` {#nudo-interface-domain-exceeds}
 
@@ -293,7 +293,7 @@ Context: [`any` vs `unknown`](../concepts/limits.md#any-vs-unknown) · [L2 — e
 
 API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / mock.
 
-Context: [@nudo:env](../concepts/directives.md#nudo--runtime-environment) · [Dependency types](../guides/env-harvest.md)
+Context: [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment) · [Dependency types](../guides/env-harvest.md)
 
 ### `nudo:opaque-result` {#nudo-opaque-result}
 
@@ -352,7 +352,7 @@ Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSour
 
 All skeletons are verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision (`promise<{ id: 1 }>` / timer id / exact object shape). Syntax rules: [Mocking external dependencies](../concepts/mocking.md).
 
-Context: [Mocking external dependencies](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudo--runtime-environment)
+Context: [Mocking external dependencies](../concepts/mocking.md) · [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment)
 
 ### `nudo:no-signature` {#nudo-no-signature}
 
@@ -370,19 +370,19 @@ Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 
 A `@nudo:mock` expression could not be parsed as a known pattern (stub/spy/mock forms, arrow functions, or type expressions). **Warning** — check the supported forms.
 
-Context: [Mocking syntax](../concepts/mocking.md#syntax) · [@nudo:mock](../concepts/directives.md#nudo--mock-external-dependencies)
+Context: [Mocking syntax](../concepts/mocking.md#syntax) · [@nudo:mock](../concepts/directives.md#nudomock--mock-external-dependencies)
 
 ### `nudo:directive-syntax` {#nudo-directive-syntax}
 
 Malformed `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` directive syntax (bad name, trailing comment, unrecognized type expression). **Warning** — the directive is ignored; fix the form.
 
-Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudo--skip-evaluation)
+Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudoskip--skip-evaluation)
 
 ### `nudo:contract-syntax` {#nudo-contract-syntax}
 
 Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead of `x positive`, default import). **Warning** — the segment is ignored; use `<param> <constraintName>` or `return <constraintName>`.
 
-Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+Context: [Contracts](../concepts/directives.md#nudoimport--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
 ### `nudo:assume-invalid` {#nudo-assume-invalid}
 
@@ -501,7 +501,7 @@ cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open 
 
 **Error.** The dependency **exists** but cannot be read (EACCES / EIO / EMFILE / ESTALE …). Distinct from `nudo:module-missing` (no such file): the file is there, only unreadable — its types stay unknown and the gate fails closed. **Fix:** fix the file permissions (or the module path); the dependency is present but unreadable, so its types are unknown.
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:json-invalid` {#nudo-json-invalid}
 
@@ -521,7 +521,7 @@ Module file not found for 'spec' (from file); tried: path
 
 **Error.** The analyzed file imports a module the loader cannot resolve. **Fix:** correct the spec, or mock the module (`@nudo:mock-module` / `@nudo:mock`).
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:exports-unresolved` {#nudo-exports-unresolved}
 
@@ -537,7 +537,7 @@ Module './m.js' has no export 'b' (from index.js)
 
 **Error.** A named `import` (or `export { x } from`) references a name the source module does not export — typically a typo. Only reported when the source module's export table came from a successful evaluation (fail-closed empty tables and unresolved modules stay silent so this never stacks on `nudo:module-missing`). **Fix:** correct the imported name, add the export to the source module, or mock the module (`@nudo:mock-module`).
 
-Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+Context: [@nudo:mock-module](../concepts/directives.md#nudomock-module--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
 ### `nudo:missing-slot` {#nudo-missing-slot}
 

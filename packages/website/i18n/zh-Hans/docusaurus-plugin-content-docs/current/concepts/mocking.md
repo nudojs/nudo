@@ -4,7 +4,7 @@ description: 求值期间模拟外部依赖——@nudo:mock 五种形式（箭�
 
 # 模拟外部依赖
 
-`@nudo:mock` 在求值期间用 mock 替换外部依赖。用于 `fetch`、文件系统 API 或 Nudo 无法直接执行的其他代码。（模块级替换见 [@nudo:mock-module](./directives.md#nudo--模块级-mock)。）
+`@nudo:mock` 在求值期间用 mock 替换外部依赖。用于 `fetch`、文件系统 API 或 Nudo 无法直接执行的其他代码。（模块级替换见 [@nudo:mock-module](./directives.md#nudomock-module--module-level-mock)。）
 
 ## 语法
 
