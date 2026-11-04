@@ -101,7 +101,7 @@ number | string       // 异构联合
 
 ---
 
-## 指令中的类型表达式
+## 指令中的类型表达式 {#type-expressions-in-directives}
 
 `@nudo:case` / `@nudo:mock` / `@nudo:contract` 的实参用**约束表达式文法**书写 —— 与 `*.nudo.js` 模板相同的构建器：
 

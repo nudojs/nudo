@@ -219,6 +219,7 @@ Prefer concrete values or constraint builders in cases.
 - [Error faces](../guides/error-faces.md) — what violations look like
 - [nudo check](../guides/check.md)
 - [nudo contract](../guides/contract.md)
+- [Directive cheatsheet](../guides/directive-cheatsheet.md) — one-line syntax for every `@nudo:` directive
 - [Migrate from TypeScript](../guides/migrating-from-typescript.md) — retire `tsc`
 - [Concept Layers](../concepts/layers.md)
 - [Recipes](../guides/recipes.md)

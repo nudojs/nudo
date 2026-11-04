@@ -101,7 +101,7 @@ function len(s) {
 
 ---
 
-## @nudo:pure — 标记纯函数
+## @nudo:pure — 标记纯函数 {#nudopure--mark-pure-functions}
 
 将函数标记为纯函数。Abs `fn` 值携带纯标记，求值器**按实参 Abs 记忆化调用结果**（同实参命中缓存）。仅用于无副作用函数；加不加指令分析结果都正确。
 
@@ -125,7 +125,7 @@ function add(a, b) {
 
 ---
 
-## @nudo:skip — 跳过求值
+## @nudo:skip — 跳过求值 {#nudoskip--skip-evaluation}
 
 跳过函数体的抽象解释：引擎不求值它，所以被跳过的函数不会产生引擎债（`nudo:unknown-inference`）噪声。没有返回类型表达式时，函数报告为 `skipped (no return type declared)`，且 `nudo check` 把它的返回值打印为 `any`（无约束——不是保留给推导失败的 `unknown`）；在指令后添加约束构造器表达式即可声明返回类型。
 
@@ -183,7 +183,7 @@ function unannotatedHeavy(x) {
 
 ---
 
-## @nudo:sample — 循环采样（保留，无效果）
+## @nudo:sample — 循环采样（保留，无效果） {#nudosample--loop-sampling-reserved-no-op}
 
 `@nudo:sample` 已被解析但没有消费者——analyzer 会丢弃它（`service/src/analyzer-orchestrate-uncached.ts` 中的 `void sampleDirective`）。它不会改变循环求值：循环本就通过有界展开（`DEFAULT_MAX_LOOP_ITERS = 8`）终止，不存在可切换的不动点阶段。该指令为源码兼容而被接受，但对输出无任何影响；不要依赖它在精度与性能之间权衡。
 
@@ -602,7 +602,7 @@ docs
 
 ---
 
-## @nudo:import — 约束模板引入
+## @nudo:import — 约束模板引入 {#nudoimport--constraint-templates}
 
 为 `@nudo:contract` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
 
@@ -631,7 +631,7 @@ function inc(x) {
 
 ---
 
-## @nudo:env — 运行时环境
+## @nudo:env — 运行时环境 {#nudoenv--runtime-environment}
 
 声明文件中可用的运行时环境 API。这是一个**文件级**指令，使用三斜线注释放在文件顶部。Nudo 内置了常见环境的类型定义，无需手动为标准 API 编写 mock。
 
@@ -698,7 +698,7 @@ function loadConfig(dir) {
 
 ---
 
-## @nudo:mock-module — 模块级 Mock
+## @nudo:mock-module — 模块级 Mock {#nudomock-module--module-level-mock}
 
 替换或部分替换导入的模块为自定义 mock 文件。这是一个**文件级**指令，使用三斜线注释。
 
@@ -747,7 +747,7 @@ import { debounce, throttle } from "lodash";
 
 ---
 
-## @nudo:as — 类型断言
+## @nudo:as — 类型断言 {#nudoas--type-assertion}
 
 覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 求值引擎上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
@@ -774,7 +774,7 @@ return JSON.parse(response);
 
 ---
 
-## @nudo:replace — 子表达式类型替换
+## @nudo:replace — 子表达式类型替换 {#nudoreplace--sub-expression-type-replacement}
 
 替换下一条语句中特定子表达式的类型。目标表达式通过源码文本与 AST 节点匹配，不会匹配部分标识符或字符串内容。
 

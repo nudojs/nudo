@@ -19,6 +19,7 @@ Base: https://nudojs.github.io/nudo
 
 ### How-to (guides)
 
+- [Directive cheatsheet](https://nudojs.github.io/nudo/docs/guides/directive-cheatsheet): One-line syntax + semantics for every @nudo: directive — case, contract, mock, env, import, assume, invariant, budget, pure, skip, sample, as, replace, mock-module — plus the constraint-builder quick reference; links to the full reference for each.
 - [nudo check](https://nudojs.github.io/nudo/docs/guides/check): nudo check — L1 refinement gate + L2 entry throws on Abs; prints signatures; CI command.
 - [nudo test](https://nudojs.github.io/nudo/docs/guides/test): nudo test — per-case call-site ground truth on Abs; synthetic call@/entry@ cases print by default; declared @nudo:case assertions drive the exit code; --from, --freeze, --json, --abs.
 - [Performance: budgets & the analysis cache](https://nudojs.github.io/nudo/docs/guides/performance): Nudo analysis performance — budgets (forks, calls, call sites), truncation diagnostics and fixes, the .nudo/cache disk cache, and what CI should (not) restore.

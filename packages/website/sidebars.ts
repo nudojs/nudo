@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
           "Task-oriented guides: how to install, gate, and read Nudo in CI. The CI gate is `nudo check`; `nudo test` is an optional debug case reporter, not the gate.",
       },
       items: [
+        "guides/directive-cheatsheet",
         {
           type: "category",
           label: "Gate",

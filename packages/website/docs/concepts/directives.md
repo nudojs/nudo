@@ -101,7 +101,7 @@ Replace external dependencies with mocks during evaluation — `fetch`, file sys
 
 ---
 
-## @nudo:pure — Mark Pure Functions
+## @nudo:pure — Mark Pure Functions {#nudopure--mark-pure-functions}
 
 Mark a function as pure. The Abs `fn` value carries a pure marker and the evaluator **memoizes call results by argument Abs** (same args → cached result). Declare it only for side-effect-free functions; analysis results stay correct with or without the directive.
 
@@ -125,7 +125,7 @@ function add(a, b) {
 
 ---
 
-## @nudo:skip — Skip Evaluation
+## @nudo:skip — Skip Evaluation {#nudoskip--skip-evaluation}
 
 Skip abstract interpretation of the function body: the engine does not evaluate it, so a skipped function never produces engine-debt (`nudo:unknown-inference`) noise. Without a return type expression the function is reported as `skipped (no return type declared)` and `nudo check` prints its return as `any` (unconstrained — not `unknown`, which is reserved for inference failure); add a constraint-builder expression after the directive to declare one.
 
@@ -183,7 +183,7 @@ function unannotatedHeavy(x) {
 
 ---
 
-## @nudo:sample — Loop Sampling (Reserved, No-Op)
+## @nudo:sample — Loop Sampling (Reserved, No-Op) {#nudosample--loop-sampling-reserved-no-op}
 
 `@nudo:sample` is **parsed but has no consumer** — the analyzer discards it (`void sampleDirective` in `service/src/analyzer-orchestrate-uncached.ts`). It does not change loop evaluation: loops already terminate via bounded unrolling (`DEFAULT_MAX_LOOP_ITERS = 8`), so there is no fixed-point phase to switch into. The directive is accepted for source compatibility but has no effect on output; do not rely on it to trade precision for performance.
 
@@ -602,7 +602,7 @@ docs
 
 ---
 
-## @nudo:import — Constraint Templates
+## @nudo:import — Constraint Templates {#nudoimport--constraint-templates}
 
 Import constraint templates from a `*.nudo.js` module for use with `@nudo:contract`. This is a **file-level** directive using triple-slash comments.
 
@@ -631,7 +631,7 @@ function inc(x) {
 
 ---
 
-## @nudo:env — Runtime Environment
+## @nudo:env — Runtime Environment {#nudoenv--runtime-environment}
 
 Declare which runtime environment APIs are available in the file. This is a **file-level** directive using triple-slash comments at the top of the file. Nudo provides built-in type definitions for common environments so you don't need to write manual mocks for standard APIs.
 
@@ -698,7 +698,7 @@ File-level `@nudo:env` directives are merged with project-level settings (union 
 
 ---
 
-## @nudo:mock-module — Module-Level Mock
+## @nudo:mock-module — Module-Level Mock {#nudomock-module--module-level-mock}
 
 Replace or partially replace an imported module with a custom mock file. This is a **file-level** directive using triple-slash comments.
 
@@ -747,7 +747,7 @@ Module mocks are declared per file with `@nudo:mock-module` — there is no proj
 
 ---
 
-## @nudo:as — Type Assertion
+## @nudo:as — Type Assertion {#nudoas--type-assertion}
 
 Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the eval path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
@@ -774,7 +774,7 @@ return JSON.parse(response);
 
 ---
 
-## @nudo:replace — Sub-Expression Type Replacement
+## @nudo:replace — Sub-Expression Type Replacement {#nudoreplace--sub-expression-type-replacement}
 
 Replace a specific sub-expression's type within the next statement. The target expression is matched by source text against AST nodes, so it won't match partial identifiers or string contents.
 

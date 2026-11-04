@@ -101,7 +101,7 @@ These are **not** the same product concept and must never be collapsed in docs o
 
 ---
 
-## Type Expressions in Directives
+## Type Expressions in Directives {#type-expressions-in-directives}
 
 `@nudo:case` / `@nudo:mock` / `@nudo:contract` arguments are written in the **constraint-expression grammar** — the same builders as `*.nudo.js` templates:
 
