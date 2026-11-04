@@ -12,6 +12,7 @@ import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import type { AbsFnImpl } from "./abs-fn.ts";
 import { getSlot, joinAbs, makeSum } from "./objects.ts";
+import { leqAbs } from "./leq.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
@@ -52,6 +53,13 @@ export function snapshotAbs(a: Abs): Abs {
           }
           out.slots = slots;
         }
+        // A6：重载集是 Abs 数据 ⇒ 等价副本深拷贝（不共享 arm 数组）。
+        if (s.overloads) {
+          out.overloads = s.overloads.map((o) => ({
+            paramTypes: o.paramTypes.map(snapshotAbs),
+            returnType: snapshotAbs(o.returnType),
+          }));
+        }
         return out;
       }
       case "sum":
@@ -85,7 +93,7 @@ export function snapshotAbs(a: Abs): Abs {
         return s;
     }
   };
-  return {
+  const out: Abs = {
     shape: copyShape(shape),
     term: a.term,
     pred: a.pred,
@@ -94,6 +102,14 @@ export function snapshotAbs(a: Abs): Abs {
     //（同 renameAbs 纪律：重建只搬四件套会把 join 标注静默抹掉）。
     ...(a.pathNote !== undefined ? { pathNote: a.pathNote } : {}),
   };
+  // A7 镜像：fn 的 impl 侧表按 Abs 身份挂在 WeakMap 上（abs-fn.ts），重建
+  // 只搬 shape 会退化成 shape-only fn（relation 的 inferFrom / condFallback /
+  // throws / fingerprint 与 apply/body 全丢）。快照是**等价副本** ⇒ impl
+  // 原样共享搬运（与 substFnImpl 的「行为面与标量 facet α 无关」口径一致；
+  // 不得在此做 α 替换——快照不换名）。
+  const impl = getFnImpl(a);
+  if (impl) attachFnImpl(out, impl);
+  return out;
 }
 
 
@@ -353,6 +369,15 @@ function substShape(
           });
         }
         next.slots = slots;
+      }
+      // A6：重载集是 Abs 数据（arm 内可含 α）⇒ 按 map 替换（与 relation 槽同口径）。
+      if (s.overloads) {
+        next.overloads = s.overloads.map((o) => ({
+          paramTypes: o.paramTypes.map((p) =>
+            substAbsInner(p, map, cache, visiting),
+          ),
+          returnType: substAbsInner(o.returnType, map, cache, visiting),
+        }));
       }
       return next;
     }
@@ -802,6 +827,29 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
     }
   }
   const impl = getFnImpl(fn);
+  // A6：重载集派发——实参能命中某 arm 时用该 arm 的返回位。TS 口径：按声明序
+  // 取**首个**命中 arm（同元数 + 逐参 leq，arg 与 arm.paramTypes[i] 经该 arm
+  // 自己的 α 绑定后再比）。零命中 ⇒ 回落 union 返回面（不新造 may-throw；
+  // 命中判据只用可证的 leq，宁可欠精确不可假红）。
+  const overloads = shape.overloads;
+  if (overloads && overloads.length > 1) {
+    for (const arm of overloads) {
+      if (arm.paramTypes.length !== args.length) continue;
+      const armMap = new Map<string, Abs>();
+      arm.paramTypes.forEach((p, i) => {
+        bindTypeVars(p, normalizeCallArg(args[i] ?? unknown), armMap);
+      });
+      let hit = true;
+      for (let i = 0; i < arm.paramTypes.length; i++) {
+        const want = substAbs(arm.paramTypes[i]!, armMap);
+        if (!leqAbs(normalizeCallArg(args[i] ?? unknown), want).ok) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) return substAbs(arm.returnType, armMap);
+    }
+  }
   const src = impl?.relation ?? {
     paramTypes: shape.paramTypes ?? [],
     returnType: shape.returnType ?? unknown,

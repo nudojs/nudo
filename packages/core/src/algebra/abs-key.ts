@@ -170,7 +170,16 @@ export function shapeKey(
         ? `;opt:${s.optionalParams.map((b) => (b ? "1" : "0")).join("")}`
         : "";
       const ctor = s.ctor === undefined ? "" : `;ctor:${s.ctor}`;
-      return `fn${name}(${params}|${pts})=>${ret}${slots}${opt}${ctor}`;
+      // A6：重载集是可观察的派发面——不同重载集不得共享 memo/fingerprint。
+      const ovl = s.overloads
+        ? `;ovl:[${s.overloads
+            .map(
+              (o) =>
+                `${o.paramTypes.map((t) => absKey(t, seen, rename)).join(",")}=>${absKey(o.returnType, seen, rename)}`,
+            )
+            .join(";")}]`
+        : "";
+      return `fn${name}(${params}|${pts})=>${ret}${slots}${opt}${ctor}${ovl}`;
     }
     case "sum":
       return `sum(${s.members

@@ -18,6 +18,14 @@ import { ProjectionBudget } from "./projection-budget.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 
+/**
+ * A6：单条重载 arm（声明序 = TS overload 解析序）。见 fn shape 的 `overloads` 槽。
+ */
+export type FnOverload = {
+  paramTypes: Abs[];
+  returnType: Abs;
+};
+
 export type Shape =
   | { k: "never" }
   /**
@@ -82,6 +90,20 @@ export type Shape =
        * 与 pathNote 同纪律：展示/非值信息，不进 leq / 指纹 / check 等价。
        */
       ctor?: boolean;
+      /**
+       * A6：重载集承载位（声明侧 TS overload 列表的逐 arm 面）。
+       *
+       * **只是派发精化，不是赋值语义**：`paramTypes` / `returnType`（逐位 union
+       * + 返回并集）仍是该 fn 的**权威外延面** —— leq / 展示 / dts / schema /
+       * guard 全部只读它，本槽缺省不出现时旧形状逐字节不变。
+       *
+       * 消费点：`instantiateReturn` 在**实参能唯一命中某 arm**（逐参 leq +
+       * 同元数）时用该 arm 的返回位（TS 口径：按声明序取**首个**命中 arm），
+       * 否则回落到 union 返回面（不新造 may-throw）。arm 内可含 α（各自
+       * bind/subst 独立）。进 `absKey`（不同重载集不得共享 memo/fingerprint），
+       * 但**不进** relation fingerprint（relationFn 无重载面）。
+       */
+      overloads?: FnOverload[];
     }
   | { k: "brand"; name: string; shape: Abs; ctor?: true; tv?: number }
   // rejected（Bug 36）：promise 的拒绝通道——携带已知拒绝 reason。inner 为

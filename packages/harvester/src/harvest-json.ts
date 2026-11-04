@@ -72,6 +72,9 @@ export type HarvestSig =
       inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
       /** 条件类型判不出时的假支（`condFallback`） */
       condFallback?: HarvestSig;
+      /** A6：重载集（逐 arm 声明序）。不投影 ⇒ 磁盘缓存命中后 overload 派发面
+       *  丢失（同一份 .d.ts 冷/热缓存给出不同派发结果）。 */
+      overloads?: { paramTypes: HarvestSig[]; returns: HarvestSig }[];
     }
   | { k: "sum"; members: HarvestSig[] }
   | { k: "promise"; value: HarvestSig }
@@ -112,7 +115,7 @@ export type HarvestSig =
  * 出来的名字既不是导出、也不是全局（Bug 123 / 253）⇒ 记录级标记必须一起往返，
  * 否则热缓存又把幽灵导出 / 幽灵全局放回来。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v13";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v14";
 
 export type HarvestJson = {
   v: 1;
@@ -213,6 +216,15 @@ export function absToHarvestSig(a: Abs): HarvestSig {
         ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
         ...(rel?.inferFrom ? { inferFrom: rel.inferFrom } : {}),
         ...(rel?.condFallback ? { condFallback: absToHarvestSig(rel.condFallback) } : {}),
+        // A6：重载集必须随 JSON 往返（否则磁盘缓存命中后派发面静默丢失）
+        ...(s.overloads
+          ? {
+              overloads: s.overloads.map((o) => ({
+                paramTypes: o.paramTypes.map(absToHarvestSig),
+                returns: absToHarvestSig(o.returnType),
+              })),
+            }
+          : {}),
       };
     }
     case "sum":
@@ -353,6 +365,15 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
           ...(sig.opt ? { optionalParams: [...sig.opt] } : {}),
           ...(sig.ctor !== undefined ? { ctor: sig.ctor } : {}),
           ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
+          // A6：重载集随 JSON 往返还原（逐 arm 声明序）
+          ...(sig.overloads
+            ? {
+                overloads: sig.overloads.map((o) => ({
+                  paramTypes: o.paramTypes.map(harvestSigToAbs),
+                  returnType: harvestSigToAbs(o.returns),
+                })),
+              }
+            : {}),
         };
         // impl 与 shape 不得分叉（core 的必选元数两处都读）
         const impl = getFnImpl(fn);

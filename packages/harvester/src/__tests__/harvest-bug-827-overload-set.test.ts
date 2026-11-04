@@ -20,7 +20,8 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatShape, getFnImpl } from "@nudojs/core";
+import { formatShape, getFnImpl, instantiateReturn, numLit } from "@nudojs/core";
+import { absToHarvestSig, harvestSigToAbs } from "../harvest-json.ts";
 import { harvestDts } from "../harvest-dts.ts";
 
 const dirs: string[] = [];
@@ -114,5 +115,49 @@ export declare function g(x: string): number;
     );
     const env = harvestDts([p]);
     expect(formatShape(env.globals["g"]!)).toContain("T");
+  });
+
+  it("A6：overloads 随磁盘签名投影往返（缓存命中不丢派发面）", () => {
+    const p = writeTemp(
+      "fx.d.ts",
+      `export declare function convert(x: string): string;
+export declare function convert(x: number): number;
+`,
+    );
+    const env = harvestDts([p]);
+    const fn = env.globals["convert"]!;
+    const sig = absToHarvestSig(fn);
+    const back = harvestSigToAbs(sig);
+    const shape = (back as { shape?: { overloads?: unknown[] } }).shape;
+    expect(shape?.overloads).toHaveLength(2);
+    // 回放后派发仍精确：number 实参 ⇒ number arm
+    expect(formatShape(instantiateReturn(back, [numLit(1)]))).toBe("number");
+    expect(formatShape(instantiateReturn(back, [numLit(0)]))).toBe("number");
+  });
+
+  it("A6：重载集进入 fn shape 的 overloads 承载位（声明序逐 arm）", () => {
+    const p = writeTemp(
+      "fx.d.ts",
+      `export declare function convert(x: string): string;
+export declare function convert(x: number): number;
+`,
+    );
+    const env = harvestDts([p]);
+    const shape = (env.globals["convert"] as { shape?: { overloads?: unknown[] } })
+      .shape;
+    const arms = shape?.overloads;
+    expect(Array.isArray(arms)).toBe(true);
+    expect(arms).toHaveLength(2);
+    const armPrims = (arms as { paramTypes: unknown[]; returnType: unknown }[]).map(
+      (a) => ({ p: primLabels(a.paramTypes[0]), r: primLabels(a.returnType) }),
+    );
+    expect(armPrims).toEqual([
+      { p: ["string"], r: ["string"] },
+      { p: ["number"], r: ["number"] },
+    ]);
+    // union 面（权威外延面）不变
+    expect(formatShape(env.globals["convert"]!)).toBe(
+      "(string | number) => string | number",
+    );
   });
 });

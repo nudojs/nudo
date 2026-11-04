@@ -77,10 +77,11 @@
 
 | | |
 |---|---|
-| **现象** | Bug 805 / 827 的「**按实参选 arm**」在收割面无法实现（目前只能给 union 返回面） |
+| **现象** | Bug 805 / 827 的「**按实参选 arm**」在收割面无法实现（此前只能给 union 返回面） |
 | **根因** | `Abs` 的 fn 形状只带**单个**返回面，没有 overload 集合的承载位 |
-| **阻塞** | 需要 `Abs` 形状**新增槽位** ⇒ 触及公共类型层 ⇒ 影响 `leqAbs` / `absShapeKey` / 全部产物面（dts / schema / guard） |
-| **状态** | **架构债（core 冻结）** |
+| **修法（2026-11-04 落地）** | fn shape 增**可选** `overloads?: FnOverload[]`（缺省不出现 ⇒ 旧形状逐字节不变）。消费点：`instantiateReturn` 按**声明序首个命中** arm（同元数 + 逐参 leq，arm 内 α 各自 bind/subst）派发返回位；零命中回落 union 返回面（不新造 may-throw）。harvest 顶层函数面与方法面共用 `collectOverloadArms`（Bug 807 两路同形）；`HarvestSig` 增 `overloads` 随磁盘缓存往返（`HARVEST_DISK_ABI` v13→v14，旧缓存干净 miss）；subst / snapshot 搬运；`absKey` 纳入（memo/fingerprint 不串）。**口径**：union 面（`paramTypes`/`returnType`）仍是权威外延面——`leqAbs` / `formatShape` / dts / schema / guard 只读它；overloads 是**派发精化**，不是赋值语义。 |
+| **测试锚** | `abs-overload-dispatch.test.ts`（10）、`harvest-bug-827-overload-set.test.ts`（6，含 JSON 往返）、`harvest-bug-807-method-two-paths.test.ts`；e2e：types-only 包双 overload，`nudo check` 由 2 条 L2 假红 → OK（与 `tsc --strict` exit 0 对齐）；金标 223 全绿 |
+| **状态** | **已修（2026-11-04）**。残余：dts 导出面仍投影 union 签名（重载声明不逐条发射——TS 消费方可接受 union 面；逐条 overload 发射属独立投影增强） |
 
 ---
 
@@ -91,7 +92,7 @@
 | **现象** | `packages/core/src/algebra/hof.ts` 的 `substShape` case `"fn"` 丢掉 impl ⇒ 引擎面的泛型方法调用退化为 `unknown`（Bug 810 的引擎面半边） |
 | **根因** | `substShape` 的 fn 分支只替换形状、不搬运 impl 侧表 |
 | **阻塞** | 相对最轻的一条 —— 属**实现缺陷**而非表示缺口，但会触及 `hof.ts` 的泛型替换路径 ⇒ 影响面需要独立回归基线 |
-| **状态** | **架构债（core 冻结）**。**建议**：这条可**优先于其它 A 类**单独试做 —— 若改动面可控，它可能不需要动 Abs 表示 |
+| **状态** | **已修（2026-11-04）**：`substFnImpl` 搬运 impl 侧表（行为面/标量 facet 原样、relation 槽按 map 替换且与 shape 同引用）；`snapshotAbs` 镜像同修（快照不再退化成 shape-only）。测试锚：`hof-subst-impl.test.ts`（10）、`abs-overload-dispatch.test.ts`（snapshot 段） |
 
 ---
 
@@ -140,7 +141,7 @@
   └─ A5     接收者形状感知的 union 方法分派 —— 派发层已闭合（Bug 263 / 2026-11-04 复测订正）；残余假红归 A6
 第 2 层（要动 Abs 形状 ⇒ 影响 leqAbs ⇒ 需要全仓回归基线）
   ├─ A2 + A8  core 的 callable 面（类 ≠ 可调用值）
-  ├─ A6     fn 形状的 overload 集合承载位
+  ├─ A6     fn 形状的 overload 集合承载位 ← 已修（2026-11-04；union 面仍为权威外延面）
   └─ A10    原型对象自有键集的承载位（族 58 的局部收口 ⇒ 全体内建原型）
 第 3 层（求值模型层，独立于 Abs 表示）
   └─ A1 + A2  生成器体惰性（转译侧快照 + $join 折回；与族 45 同侧）

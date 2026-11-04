@@ -1571,6 +1571,8 @@ function materialize(ctx: HarvestContext): void {
         const value = sigs[0]!;
         const shape0 = value.shape.k === "fn" ? value.shape : undefined;
         if (shape0 && sigs.length > 1) {
+          // A6：重载集承载位——arm 快照先于 union 面合并（collectOverloadArms）。
+          const arms = collectOverloadArms(sigs);
           // 参数位：保留每个 overload 的参数类型（逐位 union），不再只取第一个 overload 的参数
           // ——TS 的 overload 是签名列表，只取 sigs[0] 会把其余 overload 的参数语义整条抹掉
           //（Bug 827）。
@@ -1614,6 +1616,7 @@ function materialize(ctx: HarvestContext): void {
           shape0.returnType = mergedRet;
           const rel = getFnImpl(value)?.relation;
           if (rel) rel.returnType = mergedRet;
+          if (arms.length > 1) shape0.overloads = arms;
         }
         return value;
       };
@@ -1920,6 +1923,24 @@ function effectiveTypeArgs(
 }
 
 /**
+ * A6：逐 arm 快照（**必须在 union 面合并之前调用**——合并会原地改写
+ * sigs[0] 的 shape.paramTypes 引用，晚取会把首个 arm 读成逐位 union）。
+ * 顶层函数面与接口/类方法面共用同一口径（Bug 807 两条收割路径同形）。
+ */
+function collectOverloadArms(
+  sigs: Abs[],
+): { paramTypes: Abs[]; returnType: Abs }[] {
+  const arms: { paramTypes: Abs[]; returnType: Abs }[] = [];
+  for (const s of sigs) {
+    if (s.shape.k !== "fn") continue;
+    const pts = s.shape.paramTypes;
+    const ret = s.shape.returnType;
+    if (pts && ret) arms.push({ paramTypes: [...pts], returnType: ret });
+  }
+  return arms;
+}
+
+/**
  * 重载合并：保留**每个** overload 的参数位（逐位 union）+ 返回位并集。
  *
  * 与 materialize 的顶层函数分支同口径（同一实体两条收割路径必须同形）：
@@ -1932,6 +1953,8 @@ function mergeOverloadSigs(sigs: Abs[]): Abs {
   if (!first) return absUnknown();
   if (sigs.length === 1) return first;
   if (first.shape.k !== "fn") return first;
+  // A6：arm 快照先于 union 面合并（见 collectOverloadArms 注释）
+  const arms = collectOverloadArms(sigs);
   const params = mergeOverloadParams(sigs) ?? first.shape.paramTypes ?? [];
   const returns: Abs[] = [];
   for (const s of sigs) {
@@ -1949,7 +1972,10 @@ function mergeOverloadSigs(sigs: Abs[]): Abs {
         ...(rel0.condFallback !== undefined ? { condFallback: rel0.condFallback } : {}),
       }
     : undefined;
-  return absFnSig(params, mergedRet, extra);
+  const merged = absFnSig(params, mergedRet, extra);
+  // A6：重载集承载位（接口/类方法面与顶层函数面同形——Bug 807 钉住两路一致）
+  if (arms.length > 1 && merged.shape.k === "fn") merged.shape.overloads = arms;
+  return merged;
 }
 
 /**
