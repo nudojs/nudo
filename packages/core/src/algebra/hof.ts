@@ -9,7 +9,8 @@ import type { Term } from "./term.ts";
 import { simplifyTerm, termToString } from "./term.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
-import { getFnImpl } from "./abs-fn.ts";
+import { attachFnImpl, getFnImpl } from "./abs-fn.ts";
+import type { AbsFnImpl } from "./abs-fn.ts";
 import { getSlot, joinAbs, makeSum } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
@@ -333,6 +334,26 @@ function substShape(
         next.returnType = substAbsInner(s.returnType, map, cache, visiting);
       }
       if (s.ctor !== undefined) next.ctor = s.ctor; // Bug 9 facet：替换不改可构造性
+      // A7：optionalParams（Bug 399 逐位可省略标记）与 slots（族 27 双面
+      // global：可调用且带静态成员）是 α 无关 / Abs 值 facet，重建只搬
+      // paramTypes/returnType 会静默丢面（同 snapshotAbs 的 fn 分支纪律）。
+      if (s.optionalParams) next.optionalParams = s.optionalParams;
+      if (s.slots) {
+        const slots: Record<
+          string,
+          { value: Abs; optional?: boolean; readonly?: boolean }
+        > = {};
+        for (const [k, slot] of Object.entries(s.slots)) {
+          const nextSlot: { value: Abs; optional?: boolean; readonly?: boolean } =
+            { value: substAbsInner(slot.value, map, cache, visiting) };
+          if (slot.optional) nextSlot.optional = true;
+          if (slot.readonly) nextSlot.readonly = true;
+          Object.defineProperty(slots, k, {
+            value: nextSlot, enumerable: true, writable: true, configurable: true,
+          });
+        }
+        next.slots = slots;
+      }
       return next;
     }
     case "sum":
@@ -368,6 +389,54 @@ function substShape(
 }
 
 /**
+ * A7（Bug 810 引擎面）：fn 的 impl 侧表按 **Abs 身份**挂 WeakMap
+ * （abs-fn.ts），`substShape` 只重建形状 ⇒ 替换产物退化为 shape-only fn：
+ * D 路径丢失 impl 独有数据（relation 的 inferFrom / condFallback / throws /
+ * fingerprint）⇒ 泛型方法调用折 any/unknown（E 路径只兜住双写进 shape 的
+ * paramTypes/returnType）。α 替换是语义等价变换，impl 搬运口径：
+ * - 行为面（apply / body / 闭包 env）与标量 facet（params / kind / fnKind /
+ *   length / optionalParams / bindThis / strict / effectFree / closed /
+ *   pureName / fingerprint）与 α 无关 ⇒ 原样搬运（fingerprint 共享 =
+ *   relationFn §3.3「同签名共享预算键」的既有口径；重算会踩 Bug 213 的
+ *   absKey 指数坑，且收割面给的是有界指纹）；
+ * - relation 槽是 Abs 数据 ⇒ 按 map 替换，并与替换后的 shape 槽保持
+ *   **同引用**（relationFn 双写纪律：两槽共享引用防内容分叉）。relation
+ *   与 shape 槽引用分叉的手工 impl 则独立替换自家槽；
+ * - inferFrom 的 var 名原样保留：fromVar 被 map 代入后 paramTypes 里不再
+ *   出现该 α ⇒ 调用时绑定不中 ⇒ 走已代入的 condFallback 支，正是该
+ *   α 单态化后的 sound 答案。
+ */
+function substFnImpl(
+  impl: AbsFnImpl,
+  origShape: Shape,
+  nextShape: Shape,
+  map: ReadonlyMap<string, Abs>,
+  cache: Map<object, Abs>,
+  visiting: Set<object>,
+): AbsFnImpl {
+  const rel = impl.relation;
+  if (!rel) return impl;
+  const origFn = origShape as Extract<Shape, { k: "fn" }>;
+  const nextFn = nextShape as Extract<Shape, { k: "fn" }>;
+  const nextRel: NonNullable<AbsFnImpl["relation"]> = { ...rel };
+  nextRel.paramTypes =
+    nextFn.paramTypes !== undefined && rel.paramTypes === origFn.paramTypes
+      ? nextFn.paramTypes
+      : rel.paramTypes.map((p) => substAbsInner(p, map, cache, visiting));
+  nextRel.returnType =
+    nextFn.returnType !== undefined && rel.returnType === origFn.returnType
+      ? nextFn.returnType
+      : substAbsInner(rel.returnType, map, cache, visiting);
+  if (rel.throws !== undefined) {
+    nextRel.throws = substAbsInner(rel.throws, map, cache, visiting);
+  }
+  if (rel.condFallback !== undefined) {
+    nextRel.condFallback = substAbsInner(rel.condFallback, map, cache, visiting);
+  }
+  return { ...impl, relation: nextRel };
+}
+
+/**
  * cache：DAG 共享同一 Abs 对象时复用已替换结果（不是「访问过就返回原对象」）。
  * visiting：真环防御；Abs 正常是树，环路径返回原对象以避免死循环。
  */
@@ -380,12 +449,20 @@ function substAbsInner(
   // term 是映射内 var：整 Abs 替换（不进 cache——替换结果与对象身份无关）
   if (a.term?.op === "var" && map.has(a.term.id)) {
     const repl = map.get(a.term.id)!;
-    return {
+    const out: Abs = {
       shape: repl.shape,
       term: repl.term,
       pred: repl.pred,
       conf: confJoin(a.conf, repl.conf),
     };
+    // A7：替换值本身是带 impl 的 fn ⇒ 一并搬运（conf 合并已产出新 Abs，
+    // 不搬则退化 shape-only）。shape 同引用 ⇒ relation 槽引用一致；行为面
+    // 与 α 无关 ⇒ 共享同一 impl 对象（同源函数值，§3.3 同签名共享口径）。
+    if (repl.shape.k === "fn") {
+      const replImpl = getFnImpl(repl);
+      if (replImpl) attachFnImpl(out, replImpl);
+    }
+    return out;
   }
 
   const hit = cache.get(a);
@@ -404,12 +481,19 @@ function substAbsInner(
     pred = r.pred;
     if (r.dropped) conf = confJoin(conf, "partial");
   }
+  // A7：impl 侧表搬运（须在 visiting 内——relation 槽可能回指本 fn，
+  // 环路径返回原对象，同 shape 替换的环防御口径）。
+  const impl = a.shape.k === "fn" ? getFnImpl(a) : undefined;
+  const nextImpl = impl
+    ? substFnImpl(impl, a.shape, shape, map, cache, visiting)
+    : undefined;
   visiting.delete(a);
 
   const result = abs(shape, term, pred, conf);
   // pathNote（分支 join 可解释标注）同 renameAbs 纪律：α 替换是语义等价
   // 变换，Abs 级展示 facet 不得因重建丢失。
   if (a.pathNote !== undefined) result.pathNote = a.pathNote;
+  if (nextImpl) attachFnImpl(result, nextImpl);
   cache.set(a, result);
   return result;
 }
