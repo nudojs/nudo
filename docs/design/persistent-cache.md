@@ -144,6 +144,38 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 
 ---
 
+## 常驻会话（daemon / LSP 复用）评估
+
+> **状态：评估（非实施）**。问题：重复 `check` 的墙钟里，进程冷启动占比多大、值不值得为摊薄它引入新的常驻形态。
+
+### 输入数据（`docs/reports/dx-metrics.md`，2026-11-03 本机）
+
+| 量 | 值 |
+|---|---|
+| 单次 `check`（本地 tsx CLI） | ≈1.3s，**tsx 冷启动主导** |
+| time-to-green（红 → 修 → 绿 ≈ 两次 check） | avg ≈2.8s，目标 **<2s** |
+| 对照机（2026-09-23 基线） | 单次 ≈0.9s → avg ≈1.8s（机器因子，非引擎回归） |
+| fix-rate | 100%（唯一跨机器硬钉；秒数不硬钉） |
+
+关键观察：avg 几乎逐字贴着「2 × 单次 check」走（2.8 ≈ 2×1.3；对照机 1.8 ≈ 2×0.9）—— time-to-green 的缺口是**冷启动**问题，不是分析内核问题。
+
+### 三选项对比
+
+| 选项 | 冷启动成本 | 复用什么 | 适合谁 | 代价 / 边界 |
+|---|---|---|---|---|
+| ① 每次 CLI 进程（现状默认） | 每次全额（≈1.3s/次） | 只有跨进程的磁盘层：L2 deps（默认开）+ L1 check（opt-in） | CI、脚本、agent 一次性调用 | 无状态、hermetic、好并行；但 time-to-green 被 2×冷启动钉死 |
+| ② `check --watch`（已存在） | 一次；此后增量轮 | 同进程 AnalysisSession（`getAnalysisSession`：CLI watch 与 LSP / agent tools 共用）+ watch 失效面（源码 / 侧车 / 配置 / env 模板，`isWatchRelevantPath`） | 终端常驻的人类编辑循环 | 常驻进程占资源；`--from` 证据**每轮重采**（同口径于非 watch 运行）；CI 形态不适用 |
+| ③ LSP 会话内复用（已存在） | IDE 启动一次 | 同 ② 的 AnalysisSession，外加 `moduleGraphCache` 的 stat-only 命中（mtime+size 未变 ⇒ 不读盘不解析）与依赖变更 targeted eviction（path-env / abs-module 缓存） | IDE 中的开发者 | 仅 IDE 面；诊断按 `analysis.diagnostics` 分层，不替代 `check` 门禁 |
+
+### 结论与建议
+
+1. **不做 daemon**：② ③ 已把「常驻」给到两类真实用户（终端 / IDE），且 L0 会话缓存与 L1/L2 磁盘层职责正交（内存热路径 / 磁盘冷路径，互不替代）——没有第三类用户需要一个新常驻面。
+2. **time-to-green 的正确杠杆是常驻面，不是 CLI 调快**：缺口来自冷启动；watch / LSP 天然摊薄它，磁盘层（L2 默认开、可信 runner 上 opt-in L1）接住跨进程重复。
+3. **CI 保持每进程冷启动**：hermetic、可并行；重复运行延迟交给 L2 + 可信 runner 的 L1（CI 配方见 `docs/ci-nudo-check.md` 与 website 性能指南）。
+4. 复评触发器：若参考机型上 time-to-green avg 持续 >2s 且单次 check 仍冷启动主导，先量化冷启动构成（tsx loader vs 分析本体），再谈 daemon 化；dx-metrics 秒数不硬钉（机器因子先例），fix-rate=1 才是钉面。
+
+---
+
 ## 源码锚点
 
 - packages/service/src/disk-cache.ts

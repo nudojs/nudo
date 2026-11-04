@@ -112,9 +112,56 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 ## CI：缓存目录要不要 restore？
 
 - **默认配置：什么都不用 restore。** 项目缓存关闭；`nudo check` 每次诚实重算。
-- **若开启了 check 缓存**（仅可信 runner）：在多次运行之间 restore `.nudo/cache` 是安全的 —— 键内容寻址，miss 就重算。始终 gitignore；绝不入库。契约文件（`*.nudo.js`）进 git；缓存不进。
+- **可信 CI runner 上的推荐配置：打开项目缓存并在多次运行之间 restore `.nudo/cache`。** 键内容寻址（源码 + 侧车 + 依赖内容 + 配置维度的 sha256，带 ABI 前缀），restore 出来的层**不可能**给出陈旧或错误的结果 —— 最坏情况是干净 miss、诚实重算。始终 gitignore 该目录；绝不入库。契约文件（`*.nudo.js`）进 git；缓存不进。完整配方见下。
 - **不可信 runner：** 要么保持关闭 —— `nudo.cache: false`（或不设）且 `NUDO_CACHE_DIR=off` —— 要么打开条目签名（见上「条目签名」一节：`cache.sign: true` + 打码 CI secret 的 `NUDO_CACHE_KEY`），被篡改的缓存会诚实地 miss，而不是毒害门禁。
 - **依赖层**（`~/.cache/nudo/deps`）才是 CI 值得弄的那层：默认开启、跨项目、纯签名投影。把 `NUDO_DEPS_CACHE_DIR` 指到 restore 出来的目录即可跨 job 复用 harvest 成果；陈旧或损坏的副本只会 miss。
+
+### 可信 runner 配方（GitHub Actions）
+
+在 `package.json` 里打开项目缓存（配置入库 —— 缓存目录绝不入库），并把目录加进 gitignore：
+
+```jsonc
+// package.json
+{ "nudo": { "cache": true } }   // → <projectRoot>/.nudo/cache
+```
+
+```bash
+# .gitignore
+.nudo/cache/
+```
+
+然后在门禁前 restore、门禁后 save：
+
+```yaml
+# .github/workflows/nudo.yml —— 可信 runner
+jobs:
+  nudo-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install
+      # 先 restore。miss（首次运行、冷层）只是诚实重算。
+      - uses: actions/cache/restore@v4
+        with:
+          path: .nudo/cache
+          # 桶键 = lockfile + 受跟踪源码。它不必精确：nudo 的逐文件键
+          # （源码 + 侧车 + 依赖 + 配置的 sha256，带 ABI 前缀）负责真正
+          # 的失效判定；经 restore-keys 恢复的旧桶只会逐文件 miss。
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nudo-check-${{ runner.os }}-
+      - run: pnpm exec nudo check src/
+      # 保存本次运行产出的层。check exit 1 时自动跳过；想让红的运行也
+      # 回填就加 `if: always()` —— 条目是内容键寻址的整文件报告，不是裁决。
+      - uses: actions/cache/save@v4
+        with:
+          path: .nudo/cache
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+```
+
+把 `src/**`（与 lockfile 文件名）换成你实际 check 的布局。用单个 `actions/cache@v4` 步骤也可以 —— `restore`/`save` 拆开只是把保存变成显式、可加条件的步骤。不可信 runner 上**不要**照抄这份配方：结构合法的伪造 `CheckJson` 能制造假阴性 —— 在那里保持缓存关闭（`nudo.cache: false` / `NUDO_CACHE_DIR=off`），或加条目签名（见上「条目签名」）。
 
 ## 会话缓存上限（进程内 LRU）
 

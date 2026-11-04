@@ -112,9 +112,58 @@ The cache makes repeated checks of unchanged files cheaper on the algebra surfac
 ## CI: restore the cache or not?
 
 - **Default setup: nothing to restore.** The project cache is off; `nudo check` recomputes honestly every run.
-- **If you enable the check cache** (trusted runners only): restoring `.nudo/cache` between runs is safe — keys are content-addressed and misses just recompute. Always gitignore it; never commit it. Contract files (`*.nudo.js`) go in git; the cache does not.
+- **Recommended on trusted CI runners: enable the project cache and restore `.nudo/cache` between runs.** Keys are content-addressed (sha256 over source + sidecar + dependency contents + config dimensions, ABI-prefixed), so a restored layer can never serve a stale or wrong result — the worst case is a clean miss and an honest recompute. Always gitignore the directory; never commit it. Contract files (`*.nudo.js`) go in git; the cache does not. Full recipe below.
 - **Untrusted runners:** either keep it off — `nudo.cache: false` (or unset) and `NUDO_CACHE_DIR=off` — or enable entry signing (see *Entry signing* above: `cache.sign: true` + `NUDO_CACHE_KEY` from a masked CI secret), which makes a tampered cache miss honestly instead of poisoning the gate.
 - **The deps layer** (`~/.cache/nudo/deps`) is the CI-worthy one: default-on, cross-project, pure signature projections. Point `NUDO_DEPS_CACHE_DIR` at a restored directory to reuse harvest work across jobs; a stale or corrupt copy simply misses.
+
+### Trusted-runner recipe (GitHub Actions)
+
+Enable the project cache in `package.json` (the config is committed — the cache directory never is), and gitignore the directory:
+
+```jsonc
+// package.json
+{ "nudo": { "cache": true } }   // → <projectRoot>/.nudo/cache
+```
+
+```bash
+# .gitignore
+.nudo/cache/
+```
+
+Then restore the directory before the gate and save it after:
+
+```yaml
+# .github/workflows/nudo.yml — trusted runner
+jobs:
+  nudo-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install
+      # Restore first. A miss (first run, cold layer) just recomputes honestly.
+      - uses: actions/cache/restore@v4
+        with:
+          path: .nudo/cache
+          # Bucket key = lockfile + tracked sources. It does not have to be
+          # exact: nudo's per-file keys (sha256 over source + sidecar + deps
+          # + config, ABI-prefixed) do the real invalidation, so an older
+          # bucket restored via restore-keys simply misses per file.
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nudo-check-${{ runner.os }}-
+      - run: pnpm exec nudo check src/
+      # Save the layer this run produced. Skipped automatically when check
+      # exits 1; add `if: always()` if red runs should repopulate too —
+      # entries are content-keyed whole-file reports, not verdicts.
+      - uses: actions/cache/save@v4
+        with:
+          path: .nudo/cache
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+```
+
+Adapt `src/**` (and the lockfile name) to the layout you check. A single `actions/cache@v4` step works too — the `restore`/`save` split just makes saving an explicit, conditionable step. On untrusted runners this recipe is **not** appropriate as-is: a forged, structurally valid `CheckJson` can manufacture a false negative — keep the cache off there (`nudo.cache: false` / `NUDO_CACHE_DIR=off`) or add entry signing (*Entry signing* above).
 
 ## Session cache limits (in-process LRU)
 

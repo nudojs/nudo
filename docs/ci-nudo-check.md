@@ -109,6 +109,52 @@ pnpm run verify:examples                                  # 示例 × 退出码�
 npx tsx scripts/scan-real-packages.ts commander           # 真实包扫描报告
 ```
 
+## 可信 runner 的磁盘缓存配方（可选提速）
+
+零配置时无需 restore：项目缓存默认关，`nudo check` 每次诚实重算。**可信 CI runner 上的推荐配置**是打开项目缓存并在运行间 restore `.nudo/cache` —— 键内容寻址（源码 + 侧车 + 依赖 + 配置的 sha256，带分析 ABI 前缀），restore 出来的层不可能给出陈旧/错误命中，最坏是干净 miss 重算。事实面见 [`design/persistent-cache.md`](./design/persistent-cache.md)；用户向叙述见 website 性能指南（performance.md）。
+
+```jsonc
+// package.json —— 配置入库；缓存目录绝不入库（gitignore `.nudo/cache/`）
+{ "nudo": { "cache": true } }
+```
+
+```yaml
+# .github/workflows/nudo.yml —— 在 check 步骤前后各加一步（可信 runner）
+jobs:
+  nudo-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install
+      # 先 restore：miss（首次运行、冷层）只是诚实重算
+      - uses: actions/cache/restore@v4
+        with:
+          path: .nudo/cache
+          # 桶键 = lockfile + 受跟踪源码 hash。不必精确：nudo 逐文件键
+          # （源码+侧车+依赖+配置 sha256，ABI 前缀）负责真正失效；
+          # restore-keys 恢复的旧桶只会逐文件 miss。
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('packages/*/src/**') }}
+          restore-keys: |
+            nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nudo-check-${{ runner.os }}-
+      - run: pnpm exec nudo check packages/*/src
+      # check exit 1 时自动跳过；要红的运行也回填加 `if: always()`
+      # （条目是内容键寻址的整文件报告，不是裁决）
+      - uses: actions/cache/save@v4
+        with:
+          path: .nudo/cache
+          key: nudo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('packages/*/src/**') }}
+```
+
+key 建议：lockfile hash 钉依赖面、源码 `hashFiles` glob 钉源面 —— 两者只负责**选桶**，真正的失效由 nudo 自己的逐文件内容键完成，所以桶键不必精确。用单个 `actions/cache@v4` 步骤亦可；`restore`/`save` 拆分只是把保存显式化、可加条件。
+
+边界：
+
+- **不可信 runner 上照抄本配方不安全**：结构合法的伪造 `CheckJson` 可制造假阴性。保持 `nudo.cache` 关闭（或 `NUDO_CACHE_DIR=off`）；仍想要缓存就开条目签名（`nudo.cache.sign: true` + CI secret 的 `NUDO_CACHE_KEY`，篡改条目验签失败当 miss）。
+- 契约文件（`*.nudo.js`）进 git；`.nudo/cache` 绝不进。
+- 依赖层（`~/.cache/nudo/deps`，`NUDO_DEPS_CACHE_DIR` 指向 restore 出的目录）默认开、跨项目，同样值得在 CI 里 restore。
+
 ## L2（入口 may-throw）
 
 默认 **error**。CI 里可选放宽：
