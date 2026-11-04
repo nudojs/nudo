@@ -281,6 +281,7 @@ export {
   buildTestReport,
   formatTestReport,
   ENTRY_CONTRACT_NOTE,
+  SYMBOLIC_BUDGET_NOTE,
   type CaseTestOutcome,
   type TestReport,
   type TestReportOptions,

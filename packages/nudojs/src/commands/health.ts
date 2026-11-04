@@ -5,7 +5,7 @@
 import { readFileSync, statSync, type Stats } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
-import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
+import { analyzeFileAsync, inferenceFailed, type CallRecord } from "@nudojs/service";
 import type { DirectiveDiag } from "@nudojs/parser";
 import { paintOne } from "../ui.ts";
 import { projectConfigShapeIssue } from "../config-shape.ts";
@@ -59,6 +59,16 @@ type HealthReport = {
    * 没有冻结见证时无可判定项（0 drift 属实）。
    */
   frozenWitnesses?: number;
+  /**
+   * 精度计数（DX，**观察指标**——不挡门禁，与 uncovered 同档）：
+   *  - `unknownSignatures` = 返回位推断失败的函数数（combinedAbs 过
+   *    `inferenceFailed` ⇒ 签名渲染 `unknown`；产品口径「true unknown =
+   *    inference failure」）。skip 函数是声明面（开发者主动退出推断），
+   *    不计。
+   *  - `widenedWitnesses` = `#widened` 出现数（cases[].abs.conf ===
+   *    "widened" 的见证条数——callSiteBudget 聚合 / 循环宽化的可解释降级）。
+   */
+  precision?: { unknownSignatures: number; widenedWitnesses: number };
   /**
    * 本条 error 已作为**路径级错误**进 `pathErrors[]`（BUG-038：路径不存在
    * 既是文件条目、也是路径级错误）⇒ 文件级错误计数**不再重复计**它
@@ -231,6 +241,19 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     );
     report.functions = result.functions.length;
     report.entryOnly = result.functions.filter((fn) => fn.entryOnly).length;
+    // 精度计数（观察指标）：unknown 签名 = 返回位推断失败（产品口径
+    // 「true unknown = inference failure」，unconstrained 参数显示 any 不算）；
+    // #widened 出现数 = conf==="widened" 的见证条数（预算聚合 / 循环宽化）。
+    // skip 函数是声明面，不计（开发者主动退出推断，不是引擎债）。
+    report.precision = {
+      unknownSignatures: result.functions.filter(
+        (fn) => !fn.skipped && fn.combinedAbs !== undefined && inferenceFailed(fn.combinedAbs),
+      ).length,
+      widenedWitnesses: result.functions.reduce(
+        (n, fn) => n + fn.cases.filter((c) => c.abs.conf === "widened").length,
+        0,
+      ),
+    };
     // 949：uncovered = 「**无调用点证据**（回落 entry@）」的函数——文档
     // guides/health.md:22 的定义（Uncovered functions ⇒ Entry fallback）。
     // 旧过滤式 `cases.length === 0 && !skipped && !entryOnly` 的三个条件在
@@ -441,6 +464,9 @@ type HealthJsonFacts = {
   ifaceDriftCount: number;
   totalErrors: number;
   uncoveredTotal: number;
+  /** 精度计数（观察指标）：Σ unknown 签名（返回位推断失败）与 Σ #widened 见证 */
+  unknownSignatures: number;
+  widenedWitnesses: number;
   budgetTruncated: boolean;
   internalTotal: number;
 };
@@ -496,6 +522,10 @@ function healthJsonDoc(f: HealthJsonFacts) {
       interfaceDrift: f.ifaceDriftCount,
       errors: f.totalErrors,
       uncovered: f.uncoveredTotal,
+      // 精度计数（观察指标，不挡门禁）：unknown 签名 = 返回位推断失败的
+      // 函数数；#widened = 宽化见证条数——与文本面 Summary 同源同数字。
+      unknownSignatures: f.unknownSignatures,
+      widenedWitnesses: f.widenedWitnesses,
       ...(f.budgetTruncated ? { budgetTruncated: true } : {}),
       internal_fallbacks: f.internalTotal,
     },
@@ -730,6 +760,16 @@ async function runHealth(
   // 不重复计它（否则同一个缺失路径被算成 2 个错）。
   const errorCount = reports.filter((r) => r.error && !r.pathLevelError).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
+  // 精度计数合计（观察指标）：unknown 签名 / #widened 见证——文本面 Summary
+  // 与 --json 面 summary 同源同数字（文件无分析结果时不计，如缺失路径条目）。
+  const unknownSignatures = reports.reduce(
+    (n, r) => n + (r.precision?.unknownSignatures ?? 0),
+    0,
+  );
+  const widenedWitnesses = reports.reduce(
+    (n, r) => n + (r.precision?.widenedWitnesses ?? 0),
+    0,
+  );
   // 1145：**引擎内部回落**（internal fallback）= 模块级求值失败 ⇒ 该文件的
   // 事实不完整（导出丢失 / 求值中断）⇒ health **不得**报 OK。
   // 旧口径只把 `internal_fallbacks` 当观察指标打印、Result 仍 OK / exit 0
@@ -767,6 +807,8 @@ async function runHealth(
         ifaceDriftCount,
         totalErrors,
         uncoveredTotal,
+        unknownSignatures,
+        widenedWitnesses,
         budgetTruncated,
         internalTotal,
       }),
@@ -789,7 +831,10 @@ async function runHealth(
         // 空目标集（Bug 948）⇒ `ok:false` + 非零 exit ⇒ 文本面**必须**有
         // 裁决行，否则出现「exit 1 但无 Result / 无 Summary」⇒ 与 JSON 面
         // 的 `ok:false` 不对称（机器面红、人类面沉默）。
-        console.log(`\nSummary: 0 file(s) · 0 case drift · 0 contract drift · ${totalErrors} error(s) · 0 uncovered function(s)`);
+        // Summary 形状与主路径逐段同构（精度计数同样恒出现，0/0）。
+        console.log(
+          `\nSummary: 0 file(s) · 0 case drift · 0 contract drift · ${totalErrors} error(s) · 0 uncovered function(s) · 0 unknown signature(s) · 0 #widened witness(es)`,
+        );
         console.log("Result: FAIL (no files to check)");
       }
       return;
@@ -800,8 +845,10 @@ async function runHealth(
     // 63：Summary 的漂移数 = **见证（case）条数**（= Σ 明细行的
     // 「N witness directive(s) changed」）⇒ 与明细行**同量纲**（旧口径印的是
     // 「有漂移的文件数」⇒ 同一份报告里两个「N」互相矛盾）。
+    // 精度计数（unknown 签名 / #widened 见证）= 观察指标：信息性呈现、
+    // 不挡门禁（与 uncovered 同档），数字与 --json 面 summary 同源。
     console.log(
-      `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s)` +
+      `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s) · ${unknownSignatures} unknown signature(s) · ${widenedWitnesses} #widened witness(es)` +
         (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
     // ok↔exit 单一来源：pathErrors / drift / errors / 引擎内部回落 任一存在

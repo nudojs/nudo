@@ -56,13 +56,19 @@ lib/slugify.js
   · 1 function(s)
   ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test lib/slugify.js --from tests/ --freeze=update
 
-Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s) · 0 unknown signature(s) · 0 #widened witness(es)
 Result: FAIL (drift or errors found)
 ```
 
 > `case drift` 计的是**发生变化的见证指令条数**（`added + removed`），对所有文件求和 ——
 > 与上面每文件那行 `drift: N witness directive(s) changed` **同量纲**。
 > （此前它计的是「**有漂移的文件数**」⇒ Summary 的数与明细行的数在同一屏上是两个量纲。）
+>
+> 两个精度计数与 `uncovered` 同为**信息性**指标：`unknown signature(s)` 计返回位
+> 推断失败（签名渲染为 `unknown` —— 是推断失败，不是 `any`）的函数数；
+> `#widened witness(es)` 计被降级成 `#widened` 的见证数（如超出
+> `callSiteBudget` 被折叠的调用点）。两者都不影响退出码；`--json` 下落在
+> `summary.unknownSignatures` / `summary.widenedWitnesses`。
 >
 > **引擎内部回落 ⇒ FAIL。** 若某模块**完全没能求值**（引擎内部回落 —— 例如模块编译或
 > 求值失败），该文件的导出**无法被验证** ⇒ `health` 把该文件标成

@@ -90,6 +90,21 @@ function formatCaseLine(c: CaseResult): string {
 export const ENTRY_CONTRACT_NOTE =
   "  (entry@ runs the unconstrained entry face — this contract gates check/export; add @nudo:case or call sites for a constrained case)";
 
+/**
+ * `call@symbolic`（预算聚合见证）× actionable 提示（精度悬崖 UX）：报告里出现
+ * `call@symbolic` = 该函数的调用点数超过了 `callSiteBudget`（默认 3，
+ * `package.json#nudo.analysis.callSiteBudget`，1–64），超预算的调用点被折进
+ * 一条宽化聚合见证（`#widened`，可解释降级）。两条恢复路径，与 check 面
+ * `nudo:recursion-truncated` 的建议句式同构（「事实 — 动作 A or 动作 B」）：
+ *  - 抬预算：`package.json#nudo.analysis.callSiteBudget`（1–64）；
+ *  - 固化精确见证：`@nudo:case`（limitations §3.2.2 同款口径——递归函数的
+ *    精确见证用指令固化，不要依赖 call@：预算只保住前 N 个调用点）。
+ *
+ * 与 ENTRY_CONTRACT_NOTE 同为**展示面**注解：不进断言计数、不影响退出码。
+ */
+export const SYMBOLIC_BUDGET_NOTE =
+  "  ⚠ call@symbolic: call sites beyond callSiteBudget were folded into one widened witness — raise package.json#nudo.analysis.callSiteBudget (1–64) or pin exact witnesses with @nudo:case (for recursion pin @nudo:case — call@ keeps only the budgeted sites)";
+
 export type TestReportOptions = {
   /** entry@ case 尾部加契约注解的函数名集（entryContractNoteFns 产物）；缺省不注解 */
   entryContractNotes?: ReadonlySet<string>;
@@ -303,6 +318,13 @@ export function formatTestReport(r: TestReport): string {
       lines.push(`         expected: ${o.expected}`);
       lines.push(`         actual:   ${o.actual}`);
     }
+  }
+  // 精度悬崖提示（DX）：报告含 call@symbolic（超预算调用点折出的符号化聚合
+  // 见证）⇒ 报告尾一条 actionable 提示（SYMBOLIC_BUDGET_NOTE）——只进展示
+  // 面，不进断言计数、不影响退出码（合成见证本就不判失败）。
+  if (r.outcomes.some((o) => o.caseName === "call@symbolic")) {
+    lines.push("");
+    lines.push(SYMBOLIC_BUDGET_NOTE);
   }
   return lines.join("\n");
 }

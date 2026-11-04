@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliTsx as runCli } from "./helpers/run-cli.ts";
+import { runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 
 /** fixture 目录绝对路径（含 /private 解析）→ <DIR>，保证跨机器快照稳定 */
 function normalize(text: string, dir: string): string {
@@ -113,6 +113,9 @@ describe("export — default face golden", () => {
 describe("health — default face golden", () => {
   it("healthy file: summary + Result OK + exit 0", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-e2e-health-"));
+    // Summary 行含精度计数（unknown 签名 / #widened）——src 语义 ⇒ 夹具钉
+    // src tsconfig（cwd 在夹具目录时 tsx 会解析到各包 dist，见 run-cli.ts）。
+    writeSrcTsconfig(dir);
     writeFixture(dir, "id.js", ID_SRC);
     const r = runCli(["health", "id.js"], { cwd: dir });
     expect(r.status).toBe(0);

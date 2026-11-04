@@ -372,12 +372,14 @@ src/lib.js
   · 1 function(s)
   ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
 
-Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Summary: 1 file(s) · 3 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s) · 0 unknown signature(s) · 0 #widened witness(es)
 Result: FAIL (drift or errors found)
 ```
 
 > `case drift` counts **changed witness directives** (`added + removed`) summed over all files —
 > the same unit as the per-file `drift: N witness directive(s) changed` line.
+> The precision counts (`unknown signature(s)` / `#widened witness(es)`) are informational
+> only — they never gate the exit code.
 
 **Exit codes:**
 

@@ -27,7 +27,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliTsx } from "./helpers/run-cli.ts";
+import { runCliTsx, writeSrcTsconfig } from "./helpers/run-cli.ts";
 import { runWatchCli } from "./helpers/run-watch-cli.ts";
 
 // ---------------------------------------------------------------------------
@@ -67,7 +67,9 @@ const CLEAN_LIB = `export function libFn(x) {
 `;
 
 /**
- * 改前（`git archive HEAD` 抽出改前 CLI 实跑）的**逐字**输出基线。
+ * 非.watch 单轮输出基线（clean fixture 实跑后**逐字**钉住；族 63 负控的
+ * 「逐字不变」指 watch 改造不改变单轮形态——后续 additive 字段
+ * （summary.unknownSignatures / widenedWitnesses 精度计数）随特性一并更新）。
  * 负控：非 watch 的单轮 stdout 必须与它**逐字一致**。
  */
 const CLEAN_JSON_BEFORE = `{
@@ -110,6 +112,8 @@ const CLEAN_JSON_BEFORE = `{
     "interfaceDrift": 0,
     "errors": 0,
     "uncovered": 1,
+    "unknownSignatures": 0,
+    "widenedWitnesses": 0,
     "internal_fallbacks": 0
   }
 }
@@ -119,7 +123,7 @@ const CLEAN_TEXT_BEFORE = `clean.js
   · 1 function(s), 1 entry-only
   ⚠ uncovered (no call-site evidence): libFn
 
-Summary: 1 file(s) · 0 case drift · 0 contract drift · 0 error(s) · 1 uncovered function(s)
+Summary: 1 file(s) · 0 case drift · 0 contract drift · 0 error(s) · 1 uncovered function(s) · 0 unknown signature(s) · 0 #widened witness(es)
 Result: OK (uncovered function(s) are informational only)
 `;
 
@@ -128,6 +132,11 @@ const p = (f: string) => join(dir, f);
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "nudo-bug-63-"));
+  // 本文件 spawn CLI 的 cwd 是夹具目录（负控 + watch）⇒ 必须钉 src tsconfig，
+  // 否则 tsx 按 cwd 找 tsconfig 会解析到各包 dist（陈旧构建）⇒ 测到的不是
+  // 仓内实现（run-cli.ts 的 writeSrcTsconfig 惯例；health/test 报告语义
+  // 变更后尤为致命——dist 无新导出直接 SyntaxError）。
+  writeSrcTsconfig(dir);
   writeFileSync(p("lib.js"), DRIFT_LIB);
   writeFileSync(p("usage.js"), DRIFT_USAGE);
   writeFileSync(p("clean.js"), CLEAN_LIB);
@@ -236,6 +245,7 @@ describe("族 63-2: pathErrors[] 逐字保留 + targetErrors[] 让语义可见",
 describe("族 63-3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.parse）", () => {
   it("health --watch --json：两轮 ⇒ stdout 两行，每行各自 JSON.parse 得通", { timeout: 60_000 }, async () => {
     const watchDir = mkdtempSync(join(tmpdir(), "nudo-bug-63-watch-"));
+    writeSrcTsconfig(watchDir);
     const file = join(watchDir, "w.js");
     writeFileSync(file, "export function w(x) {\n  return x;\n}\n");
     try {
@@ -278,6 +288,7 @@ describe("族 63-3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.par
 
   it("test --watch --json：同一套 JSON Lines 契约（两轮 ⇒ 两行）", { timeout: 60_000 }, async () => {
     const watchDir = mkdtempSync(join(tmpdir(), "nudo-bug-63-watch-test-"));
+    writeSrcTsconfig(watchDir);
     const file = join(watchDir, "w.js");
     writeFileSync(file, "export function w(x) {\n  return x;\n}\n");
     try {
@@ -311,6 +322,7 @@ describe("族 63-3: watch --json ⇒ JSON Lines（多轮累积不再炸 JSON.par
   });
   it("check --watch --json：同一套 JSON Lines 契约（两轮 ⇒ 两行）", { timeout: 60_000 }, async () => {
     const watchDir = mkdtempSync(join(tmpdir(), "nudo-bug-63-watch-check-"));
+    writeSrcTsconfig(watchDir);
     const file = join(watchDir, "w.js");
     writeFileSync(file, "export function w(x) {\n  return x;\n}\n");
     try {

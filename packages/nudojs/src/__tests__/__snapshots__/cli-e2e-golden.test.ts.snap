@@ -62,7 +62,7 @@ exports[`health — default face golden > healthy file: summary + Result OK + ex
 "id.js
   · 1 function(s)
 
-Summary: 1 file(s) · 0 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Summary: 1 file(s) · 0 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s) · 0 unknown signature(s) · 0 #widened witness(es)
 Result: OK (uncovered function(s) are informational only)
 "
 `;
