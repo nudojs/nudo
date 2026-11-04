@@ -22,17 +22,16 @@ export type OssPackage = {
  * Small utilities (eventemitter3/ms/kleur/…) are also pinned zero-FP by
  * `check-real-packages.test.ts`; this bench adds the latency + hub-edit face.
  *
+ * `debug` and `@changesets/cli` were re-admitted after the host-global-purity
+ * fix (B1/B2): fork/member-write rebinds are gated on `$rebindable`, so
+ * analyzing them no longer clobbers the host `process` / `globalThis.Error`.
+ *
  * Excluded on purpose (honest boundary — do not re-add casually):
- * - `debug` — `analyzeFile` on `src/node.js` (top-level `Object.keys(process.env)`)
- *   leaves the host `process.env` undefined → next `getSessionCacheLimits()`
- *   crashes (`NUDO_CACHE_MAX_FILES` of undefined). Engine debt, analyze path.
- * - `@changesets/cli` — transitively evaluates `import-meta-resolve`, whose
- *   `new codes.ERR_*` (namespace-member construction of lazy error-code classes)
- *   replaces `globalThis.Error` with a non-callable object; every later file then
- *   crashes in `err instanceof Error`. Engine debt, analyze path.
  * - `lodash` — 1000+ module files; blows the bench wall-clock budget.
- * - `@babel/types` — `checkSource` crashes on its bundled lib (`Cannot read
- *   properties of undefined (reading 'k')`, engine debt).
+ * - `@babel/types` — wall-clock, not correctness: the B3 fix (symbolic
+ *   host-result normalization) removed the `checkSource` crash, but the corpus
+ *   is one ~3 MB bundled lib where a single `checkSource` pass takes ~4 min —
+ *   past the per-round budget.
  * - `@babel/parser` / `@babel/traverse` — single-file bundles; cold analyze
  *   (parser: ~45 s for 2 files) dominates a bench round past the budget.
  */
@@ -40,6 +39,8 @@ export const OSS_PACKAGES = [
   "commander", // medium CLI library (already zero-FP in unit gold)
   "yargs", // larger CLI surface, more import edges (hub-edit interesting)
   "semver", // mid-size utility with internal graph
+  "debug", // env-poking logger (top-level process.env member writes; host-purity canary for B1/B2)
+  "@changesets/cli", // bundled CLI with lazy error-code classes (globalThis.Error member writes; canary for B2)
   "eventemitter3", // class-heavy event emitter
   "kleur", // terminal-color utility (chain-call style)
   "ms", // single-file time-formatting util

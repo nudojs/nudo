@@ -14,6 +14,8 @@ pnpm run benchmark:oss:gate     # regression gate (fails only when worse)
 | `commander` | Medium CLI library (already zero-FP in unit gold) |
 | `yargs` | Larger CLI surface, more import edges (hub-edit interesting) |
 | `semver` | Mid-size utility with internal graph |
+| `debug` | Env-poking logger — top-level `process.env` member writes (host-purity canary) |
+| `@changesets/cli` | Bundled CLI with lazy error-code classes — `globalThis.Error` member writes (host-purity canary) |
 | `eventemitter3` | Class-heavy event emitter |
 | `kleur` | Terminal-color utility (chain-call style) |
 | `ms` | Single-file time-formatting util |
@@ -22,7 +24,7 @@ pnpm run benchmark:oss:gate     # regression gate (fails only when worse)
 | `p-limit` | Single-file async concurrency limiter (uses yocto-queue) |
 | `yocto-queue` | Single-file class queue (p-limit dependency) |
 
-10 packages / 94 files. Deliberately excluded (see `packages.mts` for the full reasons): `debug` and `@changesets/cli` (analyze-path engine debt — evaluating them clobbers host `process.env` / `globalThis.Error`), `lodash` (1000+ files, blows the wall-clock budget), `@babel/types` (`checkSource` crash — engine debt), `@babel/parser` / `@babel/traverse` (single-file bundles whose cold-analyze cost dominates a bench round).
+12 packages / 120 files. Deliberately excluded (see `packages.mts` for the full reasons): `lodash` (1000+ files, blows the wall-clock budget), `@babel/types` (single ~3 MB bundled lib — one `checkSource` pass takes ~4 min, past the per-round budget; its earlier `checkSource` crash is fixed), `@babel/parser` / `@babel/traverse` (single-file bundles whose cold-analyze cost dominates a bench round). `debug` and `@changesets/cli` are back in the corpus after the host-global-purity fix (analysis no longer clobbers the host `process` / `globalThis.Error`).
 
 ## Metrics (gated)
 

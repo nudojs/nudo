@@ -1,92 +1,108 @@
 {
-  "note": "Regression envelope — gate fails only when worse than these. Regenerate with a trusted run. 2026-11-04 corpus expansion (3 → 10 packages): envelope = observed max of 4 quiet runs ×1.10 on the dev box (same convention as the 2026-10-27 refresh). Excluded candidates and reasons live in benchmark/oss/packages.mts (debug/@changesets/cli analyze-path engine debt, lodash/@babel bundle budgets, @babel/types checkSource crash).",
-  "generatedAt": "2026-11-04T11:50:59.864Z",
+  "note": "Regression envelope — gate fails only when worse than these. Regenerate with a trusted run. 2026-11-05 corpus re-expansion (10 → 12 packages: debug + @changesets/cli re-admitted after the B1/B2 host-global-purity fix — analysis no longer clobbers host process / globalThis.Error): envelope = observed max of 4 quiet runs ×1.10 on the dev box (same convention as the 2026-11-04 expansion). Excluded candidates and reasons live in benchmark/oss/packages.mts (lodash/@babel bundle wall-clock budgets; @babel/types crash is fixed but a single checkSource pass ≈ 4 min).",
+  "generatedAt": "2026-11-04T16:51:51.242Z",
   "node": "v26.10.0",
   "totals": {
     "maxFpCount": 0,
-    "maxColdAnalyzeMs": 15035.9,
-    "maxCheckAllMs": 8967.1
+    "maxColdAnalyzeMs": 26269,
+    "maxCheckAllMs": 10436
   },
   "packages": [
     {
       "name": "commander",
       "minFiles": 5,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 4680.8,
-      "maxCheckAllMs": 1012.7,
-      "maxHubDirtyMedianMs": 4107.5
+      "maxColdAnalyzeMs": 4763.9,
+      "maxCheckAllMs": 1008.8,
+      "maxHubDirtyMedianMs": 4108
     },
     {
       "name": "yargs",
       "minFiles": 18,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 7742.2,
-      "maxCheckAllMs": 4877,
-      "maxHubDirtyMedianMs": 6250.1
+      "maxColdAnalyzeMs": 7740.7,
+      "maxCheckAllMs": 4887,
+      "maxHubDirtyMedianMs": 6417.4
     },
     {
       "name": "semver",
       "minFiles": 39,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 2292.1,
-      "maxCheckAllMs": 2937,
-      "maxHubDirtyMedianMs": 1864.9
+      "maxColdAnalyzeMs": 2236.3,
+      "maxCheckAllMs": 2872.8,
+      "maxHubDirtyMedianMs": 1890.5
+    },
+    {
+      "name": "debug",
+      "minFiles": 3,
+      "maxFpCount": 0,
+      "maxColdAnalyzeMs": 162.3,
+      "maxCheckAllMs": 134.8,
+      "maxHubDirtyMedianMs": 91.5
+    },
+    {
+      "name": "@changesets/cli",
+      "minFiles": 17,
+      "maxFpCount": 0,
+      "maxColdAnalyzeMs": 11159.4,
+      "maxCheckAllMs": 1237,
+      "maxHubDirtyMedianMs": 5021.4
     },
     {
       "name": "eventemitter3",
       "minFiles": 4,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 177.8,
-      "maxCheckAllMs": 122,
-      "maxHubDirtyMedianMs": 85.3
+      "maxColdAnalyzeMs": 192,
+      "maxCheckAllMs": 283.5,
+      "maxHubDirtyMedianMs": 85.5
     },
     {
       "name": "kleur",
       "minFiles": 3,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 97.4,
-      "maxCheckAllMs": 69,
-      "maxHubDirtyMedianMs": 17.4
+      "maxColdAnalyzeMs": 94.7,
+      "maxCheckAllMs": 64.8,
+      "maxHubDirtyMedianMs": 17.5
     },
     {
       "name": "ms",
       "minFiles": 1,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 32,
-      "maxCheckAllMs": 22.1,
-      "maxHubDirtyMedianMs": 31.4
+      "maxColdAnalyzeMs": 31,
+      "maxCheckAllMs": 17.2,
+      "maxHubDirtyMedianMs": 28.5
     },
     {
       "name": "is-plain-obj",
       "minFiles": 1,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 3.1,
-      "maxCheckAllMs": 3.3,
-      "maxHubDirtyMedianMs": 2.5
+      "maxColdAnalyzeMs": 9.6,
+      "maxCheckAllMs": 3,
+      "maxHubDirtyMedianMs": 3.8
     },
     {
       "name": "escape-string-regexp",
       "minFiles": 1,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 2.3,
-      "maxCheckAllMs": 2.5,
+      "maxColdAnalyzeMs": 2.5,
+      "maxCheckAllMs": 13.5,
       "maxHubDirtyMedianMs": 2.1
     },
     {
       "name": "p-limit",
       "minFiles": 1,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 37.1,
-      "maxCheckAllMs": 23.2,
-      "maxHubDirtyMedianMs": 23.3
+      "maxColdAnalyzeMs": 27.6,
+      "maxCheckAllMs": 19.9,
+      "maxHubDirtyMedianMs": 22
     },
     {
       "name": "yocto-queue",
       "minFiles": 1,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 20.1,
-      "maxCheckAllMs": 12.5,
-      "maxHubDirtyMedianMs": 15.1
+      "maxColdAnalyzeMs": 16.7,
+      "maxCheckAllMs": 6,
+      "maxHubDirtyMedianMs": 11.1
     }
   ]
 }
