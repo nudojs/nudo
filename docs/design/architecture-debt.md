@@ -24,8 +24,8 @@
 | **两条硬约束**（各自足以否掉 runtime 侧修法） | ① **eager 收集是值域/签名面的承重结构**：元素域与 `conf`（exact/path/widened）在构造期就烘进 `Abs` 的 shape ⇒ 惰性化会把 `Generator<any \| number>` 退成 `Generator<unknown>` 并降 `conf` ⇒ 冲击 L1/L2 门禁精度<br>② **写穿在 runtime 侧无句柄可拦**：`$assignRecord` 只能观测、其返回值被丢弃 ⇒ 任何能中和「写穿」的方案都必须先有转译侧钩子 |
 | **最小可行修法**（纯转译侧、不动公开面） | 在 `$gen` 的体外套「**自由写快照 + `$join` 折回**」—— 复用仓里已有的 `collectFreeAssignedNames`（`exec/transpile/helpers.ts`）算「该体写到的外层绑定」；`$copy` / `$join` 均为既有导出 ⇒ 不触公共 API 冻结。**把「确定的错值」变成 sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族） |
 | **落点冲突** | 唯一落点在 `exec/transpile/**`（与族 45 的临时名避让机制同侧）⇒ 两族同源，宜合并承接 |
-| **待拍板** | 折回用 `$join`（sound，推荐）还是「还原成事前值」（构造点精确、消费点欠近似 ⇒ 可能 L1 假绿） |
-| **状态** | **架构债，未修**。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md) |
+| **待拍板** | ~~折回用 `$join`（sound，推荐）还是「还原成事前值」~~ 已拍板 `$join`（2026-11-04 落地） |
+| **状态** | **步骤 1（最小收窄）已落地（2026-11-04）**：wrong-exact 已消灭。四个 `$gen` 发射点（声明 / 函数表达式 / 对象方法 / 类方法）统一走 `exec/transpile/emit.ts` 的 `genOuterFreeWriteNames`（= `collectFreeAssignedNames` 扣形参模式名与体内 var 提升名，再经 `expandAliasNames` 扩 const 别名伙伴）+ `genFreeWriteWrap`（快照 `$copy`（共享 memo）+ `finally` 里 `n = $join(事前, 事后)`）；临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName` 避让。四行症状 `1`/`"ab"`/`5`/`"ab"` → `0\|1`/`""\|"ab"`/`0\|5`/`""\|"ab"`（native 构造点值均 ∈ join）；eager 值域 / `conf` 承重与元素面**不变**（不写外层绑定的生成器产物逐字不变）。回归：`eval-bug-212-generator-body-eager.test.ts`（四行症状 + 四发射点 + 元素面 + 负控制）。**残余 = 步骤 2–4**（可延后元素面 / 首消费点触发 / 真挂起）：首个 yield 挂起点的中间值（native `1` / `"a"`）仍不在 join 内 ⇒ 仍为架构债（债面收窄为「时间轴缺失」）。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md) |
 
 ---
 
@@ -47,7 +47,7 @@
 | **现象** | core 的 `relationFn` **不带 throws 字段** ⇒ 「宿主会抛、但声明侧没写 apply」的 env 声明仍记「不抛」⇒ **假绿** |
 | **根因** | Abs 的 relation 形状没有承载 throws 的槽位 |
 | **阻塞** | 需要 core 侧给 relation 面加 throws ⇒ **触及 core 公共 API 冻结**（`packages/core/src/index.ts` / `algebra/index.ts` / `internal.ts`） |
-| **状态** | **架构债（core 侧）** |
+| **状态** | **已修（2026-11-04）**。承载位 = `impl.relation.throws`（`relationFn` opts 透传；与 `AbsApplyResult.throws` 同一表示）；`$call` 关系臂消费时经 `routeApplyThrows` 单点路由（may-throw → `pushThrowExit`）。env 声明侧 `envFn` 无 apply 分支透传 `opts.throws`（`packages/env/src/abs-helpers.ts`）。回归：`abs-apply-throws-channel.test.ts`（A3 段）+ `env-bug-s0-mechanism.test.ts`（A3 段）。公共 API 快照只钉导出名，未新增导出 ⇒ 无快照变更 |
 
 ---
 
@@ -58,7 +58,7 @@
 | **现象** | `packages/core/src/algebra/exec/class/declare.ts` 取 `isAbsApplyResult(afterR) ? afterR.abs : afterR` ⇒ **构造路径**（`new X()`）丢 throws 面 ⇒ 构造器声明的 throws **只在调用面生效** |
 | **根因** | 同 A3：Abs 的 apply 结果没有统一的 throws 承载位；构造路径多一层解包把 side-channel 丢了 |
 | **阻塞** | 与 A3 同源 —— 建议**合并立项**（先定 throws 在 Abs 里的承载位，再修两处消费点） |
-| **状态** | **架构债（core 侧）** |
+| **状态** | **已修（2026-11-04，与 A3 合并立项）**。两处解包点（`exec/class/construct.ts` 的 `$new` impl.apply 分支 + `exec/class/invoke.ts` 的 bind 产物 [[Construct]] facet）改为经 `routeApplyThrows` 单点路由（may-throw → `pushThrowExit`；always-throw → `NudoThrow`）。env 面 `new URL(非法)` 假绿钉（`env-bug-64` 2.4）已改写为正向断言。回归：`abs-apply-throws-channel.test.ts`（A4 段 + 源码门禁） |
 
 ---
 
@@ -66,10 +66,10 @@
 
 | | |
 |---|---|
-| **现象** | Bug 771 / 263：`convert(1).toFixed()` 的 **L5 假红仍在** —— core 的方法分派按**成员名**匹配 `string` 一族，不看接收者的实际形状 |
-| **根因** | 分派判据在 `Abs` 的形状分派层按 prim 家族硬编码 |
-| **阻塞** | 需要**接收者形状感知的分派**（与族 49 的 `memberLikelyHasMethod` 补 fn 分支是同一类问题的不同层）⇒ 影响 `leqAbs` ⇒ 门禁精度 |
-| **状态** | **架构债（core 冻结）**。注：族 49 已在**判据层**补了 fn 分支并收窄了「确定没有」的误报，但本条的**派发层**分派（选哪个 arm）仍未按形状分 |
+| **现象** | Bug 771 / 263 / 827：`convert(1).toFixed()` 的 **L2/L5 假红仍在**（2026-11-04 复现：types-only overload 包上 `nudo check` 对 `convert(1).toFixed()` / `convert("a").toUpperCase()` 各报一条 ERROR `nudo:entry-may-throw`，分别点名 string / number receiver；`tsc --strict` 同场景 exit 0）。原归因「分派按**成员名**匹配 `string` 一族，不看接收者实际形状」**对今日代码不成立**（见状态） |
+| **根因** | 假红的真根源 = **A6**：fn 形状无 overload 集合承载位 ⇒ harvest 把 `convert` 塌成 `(string \| number) => string \| number`（`harvest-bug-827-overload-set.test.ts` 钉住）⇒ 调用面无法按实参选 arm ⇒ `.toFixed()` 的接收者是**真 union**（`string \| number`），派发层只能按 union 语义处理 |
+| **阻塞** | 并入 **A6**（overload 承载位 / 按实参选 arm）。派发层已无可做：union 接收者上「缺方法成员记 may-throw」对真 union 是 **sound** 的（`pick(y)` 抽象实参 ⇒ `1 \| "a"`，string 臂 `("a").toFixed()` 原生定抛；`core-bug-263-union-member-method-criterion.test.ts` #2/#3 钉住）——派发层无从分辨 union 来自真分叉还是 overload 塌缩，压掉它 = 真 union 假绿 |
+| **状态** | **派发层已闭合（2026-11-04 复测订正）**。`invokeUnionReceiver`（`exec/class/invoke.ts`）逐成员 `$invoke(m, …)`，成员判据 `memberLikelyHasMethod` 按成员**自身**的原型方法表（`PRIM_PROTO_METHODS`：string / number / boolean / symbol / bigint 各自的真实表）+ fn 静态槽面（Bug 1045 后续）+ 判据不足保守放行——自 Bug 263（族 03，ec0a9e4c，2026-10-22）起即按形状选 arm；回归锚 `core-bug-263-union-member-method-criterion.test.ts`（6/6 绿）。本条 2026-10-24 建档时「派发层仍未按形状分」的判断与代码不符，已订正；残余假红（overload 塌缩半边）**并入 A6 立项**，修 A6 后自消 |
 
 ---
 
@@ -136,14 +136,15 @@
 第 0 层（不动 Abs 表示，可先试）
   └─ A7  substAbs 丢 fn impl          ← 最可能是纯实现缺陷
 第 1 层（要定承载位，但影响面局部）
-  ├─ A3 + A4  throws 在 Abs 里的承载位（relation 面 + apply 结果）⇒ 合并立项
-  └─ A5     接收者形状感知的 union 方法分派
+  ├─ A3 + A4  throws 在 Abs 里的承载位（relation 面 + apply 结果）⇒ 合并立项 ← 已修（2026-11-04）
+  └─ A5     接收者形状感知的 union 方法分派 —— 派发层已闭合（Bug 263 / 2026-11-04 复测订正）；残余假红归 A6
 第 2 层（要动 Abs 形状 ⇒ 影响 leqAbs ⇒ 需要全仓回归基线）
   ├─ A2 + A8  core 的 callable 面（类 ≠ 可调用值）
   ├─ A6     fn 形状的 overload 集合承载位
   └─ A10    原型对象自有键集的承载位（族 58 的局部收口 ⇒ 全体内建原型）
 第 3 层（求值模型层，独立于 Abs 表示）
   └─ A1 + A2  生成器体惰性（转译侧快照 + $join 折回；与族 45 同侧）
+              ← A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；A1 步骤 2–4 与 A2（裸调用不抛）待续
 ```
 
 **每层的门槛**：动 Abs 形状的层，必须先跑**全仓门禁**（含 `check-recall-gold` / `check-gold` /
