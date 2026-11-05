@@ -154,8 +154,11 @@ export type AbsFacets = {
    */
   genReturn?: Abs;
   /**
-   * A11 残余：**TNext**（`.next(v)` 的入参域）。引擎目前不建模 `.next(v)`
-   * 的入参 ⇒ 恒缺省；保留槽位供后续真挂起 / 委托批次使用。
+   * A11 残余：**TNext**（`.next(v)` 的入参域）。引擎目前**不建模** `.next(v)`
+   * 的入参（`$yield` 恒返 `unknown`、`next` 槽零形参）⇒ `makeGenObject`
+   * 填最保守的 `unknown`（与 TS 默认值类型等价，不是精度承诺）。
+   * 槽位 / 搬运 / `facetKey` / dts 第三实参投影已接通；填**真实** v 域
+   * 依赖 A1 步骤 4 的真挂起求值模型。手工构造的 Abs 缺省 ≡ 不投影。
    */
   genNext?: Abs;
 };

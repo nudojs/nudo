@@ -309,13 +309,24 @@ function iteratorTSType(
     }
     elemType = absToTSTypeB(widenTopLevelAbs(joined), typeVars, budget);
   }
-  // A11 残余：随值携带 TReturn 时补第 2 类型实参。引擎尚未建模 `.next(v)`
-  // 的入参 ⇒ TNext 省略（TS 默认）。输出恒带 `<…>`，不退化成裸名（TS2314）。
-  // 手工构造 / 无 genReturn 的旧 Abs 仍输出 `Generator<T>` 逐字不变。
+  // A11 残余：随值携带 TReturn 时补第 2 类型实参；TNext 只有**显式携带**
+  // 时才补第 3 实参（引擎不建模 `.next(v)` 入参 ⇒ 生产侧填最保守的
+  // `unknown`，与 TS 默认值类型等价）。输出恒带 `<…>`，不退化成裸名
+  // （TS2314）。手工构造 / 无 facets 的旧 Abs 仍输出 `Generator<T>` 或
+  // `Generator<T, TReturn>` 逐字不变。
   const tReturn = a.facets?.genReturn
     ? absToTSTypeB(widenTopLevelAbs(a.facets.genReturn), typeVars, budget)
     : undefined;
-  const tail = tReturn ? `, ${tReturn}` : "";
+  const tNext = a.facets?.genNext
+    ? absToTSTypeB(widenTopLevelAbs(a.facets.genNext), typeVars, budget)
+    : undefined;
+  // 第 3 实参只有在第 2 实参存在时才有位置（TS 位置类型参数不可跳位）；
+  // 缺省 TReturn 时按 TS 默认值省略整段尾部。
+  const tail = tReturn
+    ? tNext
+      ? `, ${tReturn}, ${tNext}`
+      : `, ${tReturn}`
+    : "";
   if (genBrand === "AsyncGenerator" || slots["@@asyncIterator"]) {
     return `AsyncGenerator<${elemType}${tail}>`;
   }

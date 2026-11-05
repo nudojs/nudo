@@ -70,8 +70,16 @@ describe("A11 残余 · TReturn（genReturn）随值携带", () => {
     );
   });
 
-  it("TNext 引擎尚未建模 ⇒ 恒缺省", () => {
-    expect(genObjectOf("BrandGenReturnJ", false).facets?.genNext).toBeUndefined();
+  it("TNext 引擎尚未建模 ⇒ 生产侧填保守域 unknown（不是假精确）", () => {
+    const g = genObjectOf("BrandGenReturnJ", false);
+    expect(g.facets?.genNext?.shape.k).toBe("unknown");
+    // 搬运链与键面已接通（快照 / subst 不丢，且不同 v 域不共享 memo）
+    expect(snapshotAbs(g).facets?.genNext?.shape.k).toBe("unknown");
+    const refined: Abs = {
+      ...g,
+      facets: { ...g.facets, genNext: numLit(3) },
+    };
+    expect(absKey(refined)).not.toBe(absKey(g));
   });
 });
 

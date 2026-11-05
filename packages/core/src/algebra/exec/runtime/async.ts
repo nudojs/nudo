@@ -926,9 +926,14 @@ function makeGenObject(
     ...(g.facets ?? {}),
     brand: asyncMode ? "AsyncGenerator" : "Generator",
     // A11 残余：`Generator<T, TReturn, TNext>` 的第 2 实参。retVal 是
-    // 构造期收集的 return 域（已有，见本文件 ret 计算）；TNext 引擎尚未
-    // 建模，保持缺省。
+    // 构造期收集的 return 域（已有，见本文件 ret 计算）。
     genReturn: retVal,
+    // A11 残余 · TNext：引擎**不建模** `.next(v)` 的入参（`$yield` 恒返
+    // unknown，`next` 槽是零形参 `$fnVal` ⇒ v 被静默丢弃）⇒ 填最保守的
+    // `unknown`（= TS 该类型形参的默认值，不假精确）。这样槽位、搬运链、
+    // `facetKey`、dts 第三实参投影全部**真实接通**，为 A1 步骤 4 真挂起后
+    // 填真实 v 域预置接线；在此之前三实参是**保守域**，不是精度承诺。
+    genNext: unknown,
   };
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）

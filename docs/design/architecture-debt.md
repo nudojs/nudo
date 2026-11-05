@@ -129,7 +129,7 @@
 | **根因** | core 的生成器对象建模成**闭 obj**（`exec/runtime/async.ts` 的 `makeGenObject`：`abs({k:"obj", slots})`）⇒ Abs 里没有「生成器」这一族形状 ⇒ 投影面只能落回通用对象 |
 | **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**展示投影面仍与空对象同形** |
 | **阻塞**（订正） | 无需再动 `Shape` 判别联合——`Abs.facets.brand` 容器已落地（步骤 1）。dts 的泛型实参已由 `iteratorTSType` / `BUILTIN_GENERIC_BRANDS` 解决：**dts 面**恒输出 `Generator<T>`，**不得**输出裸 `Generator`（TS2314，见 Bug 521）；core `formatShape` **明确不读** `facets.brand`（展示面逐字不变是硬契约） |
-| **状态** | **`brand` 槽位已启用（2026-11-05，零回归闭环）**：`makeGenObject` 生产 `Generator` / `AsyncGenerator`，四链 + `joinAbs` 搬运；service `iteratorTSType` 把 brand 作为 `next` 槽判据的替代 ⇒ 重建 / 快照产物丢内部协议槽后仍能投影 `Generator<T>`（泛型实参照旧推导）。core `formatShape` **不发布身份**。回归 `abs-generator-brand-facet.test.ts`（8，含「展示面逐字不变」钉）+ `emit-abs-brand-projection.test.ts`（6，含 `tscNoEmit`）。**A11 残余批次（2026-11-05）**：`AbsFacets.genReturn` 由 `makeGenObject` 的 `retVal` 填入并随值搬运（`cloneAbsFacets` 按引用共享只读投影面；`facetKey` 用 `absKey` 进键 ⇒ 不同 TReturn 不共享 memo），service `iteratorTSType` 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`，**恒带类型实参**（无 TS2314）；无 `genReturn` 的手工 / 旧 Abs 仍输出 `Generator<T>` 逐字不变。回归 `abs-generator-brand-facet.test.ts`（+3）、`emit-abs-brand-projection.test.ts`（+3，含端到端 dts 带 TReturn 与 `tscNoEmit`）。**TNext**：`genNext` 槽位已留但引擎不建模 `.next(v)` 入参 ⇒ 恒缺省（TS 默认）。**schema / guard 投影明确不做**（需产品设计决策，见下方边界） |
+| **状态** | **`brand` 槽位已启用（2026-11-05，零回归闭环）**：`makeGenObject` 生产 `Generator` / `AsyncGenerator`，四链 + `joinAbs` 搬运；service `iteratorTSType` 把 brand 作为 `next` 槽判据的替代 ⇒ 重建 / 快照产物丢内部协议槽后仍能投影 `Generator<T>`（泛型实参照旧推导）。core `formatShape` **不发布身份**。回归 `abs-generator-brand-facet.test.ts`（8，含「展示面逐字不变」钉）+ `emit-abs-brand-projection.test.ts`（6，含 `tscNoEmit`）。**A11 残余批次（2026-11-05）**：`AbsFacets.genReturn` 由 `makeGenObject` 的 `retVal` 填入并随值搬运（`cloneAbsFacets` 按引用共享只读投影面；`facetKey` 用 `absKey` 进键 ⇒ 不同 TReturn 不共享 memo），service `iteratorTSType` 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`，**恒带类型实参**（无 TS2314）；无 `genReturn` 的手工 / 旧 Abs 仍输出 `Generator<T>` 逐字不变。回归 `abs-generator-brand-facet.test.ts`（+3）、`emit-abs-brand-projection.test.ts`（+3，含端到端 dts 带 TReturn 与 `tscNoEmit`）。**TNext 保守域已接通（2026-11-05）**：`genNext` 由 `makeGenObject` 填 `unknown`、四链 + `facetKey` 搬运、dts **条件**输出第 3 实参 `Generator<T, TReturn, unknown>`；真实 v 域仍依赖 A1 步骤 4 真挂起。**schema / guard 投影明确不做**（产品语义决策，见下方决策记录） |
 
 ---
 
@@ -274,10 +274,15 @@ expectation 集合**实际未变**（语料中没有「类构造器作 replacer�
 只保留生产 + 搬运 + dts 判据 ⇒ 零回归。教训：A11 的「展示投影面」是仓库
 已否决的诉求，不是待修欠账；`format.ts` 现与改动前逐字一致。
 
-已知边界：① `genReturn` 已建模、`genNext` 恒缺省（引擎不建模 `.next(v)`
-入参）⇒ dts 目前是 **两实参** `Generator<T, TReturn>`；三实参需先有
-TNext 的求值模型（依赖 A1 的真挂起批次）。② brand **只由 service dts
-消费**，core 展示面恒不发布（防止再次尝试）。③ **schema / guard 的生成器身份投影明确不做**：`emit-bug-130` 钉住
+已知边界：① **`genNext` 本轮已接通保守域（2026-11-05）**：`makeGenObject`
+填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 默认值类型等价，**不是
+精度承诺**），`iteratorTSType` **条件投影**第 3 实参 ⇒ 真实生成器 dts 为
+`Generator<T, TReturn, unknown>`；无 `genNext` 的手工 / 旧 Abs 仍两实参 /
+一实参逐字不变（回归 `emit-gen-next-projection.test.ts` 6 例，含
+`tscNoEmit` 端到端；`abs-generator-brand-facet.test.ts` 的 TNext 钉改判
+保守域 + 键隔离）。**填真实 v 域仍需 A1 步骤 4 真挂起**（明确停点）：
+`$yield` 恒返 `unknown`、`next` 槽是零形参 `$fnVal` ⇒ v 被静默丢弃。
+② brand **只由 service dts 消费**，core 展示面恒不发布（防止再次尝试）。③ **schema / guard 的生成器身份投影明确不做**：`emit-bug-130` 钉住
 `z.object({  })` 且要求产物**真的接受生成器**，契约意图是「不得把 internal
 槽当自有字段」而非「必须验出身份」。三方案实证与待拍板问题见下方
 「**schema / guard 生成器身份投影 · 决策记录**」——结论是保持现状，
