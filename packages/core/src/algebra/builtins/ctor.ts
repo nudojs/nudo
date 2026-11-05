@@ -164,6 +164,35 @@ const ERROR_FAMILY_PROTO_NAMES = new Set([
   "AggregateError",
 ]);
 
+/**
+ * A10 残余：未建模**内建**原型的自有键集，随单例创建**一次性**从宿主读取
+ * 并固化到 `Abs.facets.protoOwnKeys`。
+ *
+ * - 与宿主原生 `Object.getOwnPropertyNames(X.prototype)` /
+ *   `getOwnPropertySymbols` 永远对拍一致；不同 Node 版本各自给出各自的真实
+ *   键集（测试用宿主动态对拍，不写死清单）⇒ 不会跨版本给出「确定的错值」。
+ * - 只读宿主原型，不写任何宿主全局（host-global-purity 纪律）；采集结果固化
+ *   在 Abs 上，由 subst / snapshot / join 搬运，不会每次调用重新读宿主。
+ * - Error 家族 / 用户类 / 生成器原型仍走 `protoBrandOwnStringKeys` 的既有
+ *   精确面（那些是引擎建模面，不能用宿主键集顶掉）。
+ */
+const HOST_PROTO_CTOR_BY_NAME: Record<string, Function | undefined> = {
+  Number, String, Boolean, BigInt, Symbol, Array, Object, Function,
+  Promise, Date, RegExp, Map, Set, WeakMap, WeakSet,
+  Error, TypeError, RangeError, ReferenceError, SyntaxError, URIError,
+  EvalError, AggregateError,
+};
+
+function hostProtoOwnKeys(ctorName: string): { strings: string[]; symbols: string[] } | undefined {
+  const ctor = HOST_PROTO_CTOR_BY_NAME[ctorName];
+  const proto = typeof ctor === "function" ? ctor.prototype : undefined;
+  if (!proto || typeof proto !== "object") return undefined;
+  return {
+    strings: Object.getOwnPropertyNames(proto),
+    symbols: Object.getOwnPropertySymbols(proto).map(String),
+  };
+}
+
 export function protoBrandAbs(ctorName: string): Abs {
   // Object.prototype 与 objectProtoBrand() 单例同身份（constructor 槽 +
   // 不可枚举标记），分身会让 === 恒等丢精度
@@ -199,15 +228,18 @@ export function protoBrandAbs(ctorName: string): Abs {
     // 当可枚举键发布（`for (const k in A.prototype)` 得 ["constructor"]，
     // 原生是 []）。
     setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
-    // A10 · 槽位启用：把引擎**已精确建模**的自有键集从「按 brand 名查固定表」
-    // 升级为「随 Abs 值携带」——subst / snapshot / join 会整包搬运，键集不再
-    // 依赖名字能查回来。按名表返回 undefined 的原型（Array / Object / Map …）
-    // **不挂**槽位 ⇒ 既有保守域 string[] / boolean 逐字不变。
-    // 注意时序：类原型可能在 registerEvalClass 之前被创建，此时按名表查不到
-    // spec ⇒ 不挂；消费侧 protoOwnKeysOf 仍会回落按名表，行为不变。
+    // A10：把自有键集从「按 brand 名查固定表」升级为「随 Abs 值携带」——
+    // subst / snapshot / join 会整包搬运，键集不再依赖名字能查回来。
+    // 引擎已建模面（Error 家族 / 用户类）优先用按名表；其余**内建**原型
+    // （Array / Map / Promise …）由 hostProtoOwnKeys 一次性采集宿主真实键集
+    // ⇒ gOPN / hasOwn / gOPS 从保守域升为与原生对拍的精确面。
+    // 用户类原型若在 registerEvalClass 之前创建：按名表查不到 spec、也不在
+    // 宿主构造器表内 ⇒ 不挂槽位，消费侧 protoOwnKeysOf 回落按名表（保守）。
     const ownStrings = protoBrandOwnStringKeys(`${ctorName}.prototype`);
-    if (ownStrings !== undefined) {
-      a.facets = { ...(a.facets ?? {}), protoOwnKeys: { strings: ownStrings } };
+    const carried =
+      ownStrings !== undefined ? { strings: ownStrings } : hostProtoOwnKeys(ctorName);
+    if (carried !== undefined) {
+      a.facets = { ...(a.facets ?? {}), protoOwnKeys: carried };
     }
     if (isErrFamily) {
       // Bug 321：name / message 同为**不可枚举**数据属性（原生描述符
@@ -366,6 +398,9 @@ export function objectProtoBrand(): Abs {
       "exact",
     );
     setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
+    // A10：Object.prototype 走本单例（不经 protoBrandAbs 主体），同样挂键集。
+    const carried = hostProtoOwnKeys("Object");
+    if (carried) a.facets = { ...(a.facets ?? {}), protoOwnKeys: carried };
     objectProtoSingleton = a;
   }
   return objectProtoSingleton;

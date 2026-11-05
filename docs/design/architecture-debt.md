@@ -117,7 +117,7 @@
 | **根因** | Abs 的 obj 形状有**实例**槽表，但**没有**「原型对象的自有键集」承载位 ⇒ 原型面只能退回保守域 |
 | **本轮的局部收口** | 族 58（片 W8）**只覆盖「引擎已建模过成员」的原型**：Error 家族（固定表）+ 用户类原型（`constructor` + 自有方法/访问器，按定义序）+ 生成器原型（自有键恒空）⇒ 这三类原型面**精确**；其余原型（Array / Object / Map / Promise …）**仍保守** `string[]` / boolean 域 |
 | **阻塞** | 要覆盖**全体**内建原型 ⇒ 需要在 Abs 上**新增**「原型自有键集」承载位 ⇒ 触及 Abs 形状 ⇒ 影响 `leqAbs` ⇒ 需要全仓回归基线 |
-| **状态** | **部分闭环（2026-11-05，`protoOwnKeys` 槽位已启用）**：`Abs.facets.protoOwnKeys` 经 `protoOwnKeysOf` 成为**单一事实源**（优先随值槽位、缺省回落按名表）；生产点 `protoBrandAbs` / `generatorProtoBrandOf`，消费点 `builtinBrandOwnKeyNames`（gOPN）/ `Object.hasOwn` / `getOwnPropertySymbols`，搬运链含 `joinAbs`。已建模原型精确面**不变**，未建模原型仍保守 `string[]` ⇒ 空槽位零回归。**未扩到全体内建原型**（那需要为每个原型录原生键集并改 expectation，属独立精度批次）。回归：`abs-proto-own-keys-facet.test.ts`（8 例，含与宿主 `Object.getOwnPropertyNames(Array.prototype)` 对拍） |
+| **状态** | **已闭环（2026-11-05）**。① 槽位启用：`Abs.facets.protoOwnKeys` 经 `protoOwnKeysOf` 成为**单一事实源**（优先随值槽位、缺省回落按名表），生产点 `protoBrandAbs` / `generatorProtoBrandOf` / `objectProtoBrand`，消费点 gOPN / `Object.hasOwn` / gOPS，搬运链含 `joinAbs`。② 残余精度批次：未建模**内建**原型由 `builtins/ctor.ts::hostProtoOwnKeys` 在单例创建时**一次性**从宿主构造器原型采集 `getOwnPropertyNames` + `getOwnPropertySymbols` 并固化 ⇒ gOPN / hasOwn / gOPS 由保守域升为**与原生对拍的精确面**（`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等）。只读宿主、不写宿主全局（host-global-purity 纪律）；键集随 Node 版本给出各自真实值，测试用宿主**动态对拍**而非写死清单 ⇒ 不产生跨版本的确定错值。既有保守域负控已逐条升级：`abs-proto-own-keys-facet.test.ts`、`eval-bug-58`、`eval-bug-65`。**残余**：用户类原型「方法与访问器交错定义序」不可复原仍保守；宿主构造器表外的 brand 仍保守 |
 
 ---
 
@@ -216,16 +216,20 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 | 面 | 落点 |
 |---|---|
 | 单一事实源 | `exec/runtime/brand-tables.ts::protoOwnKeysOf`（`members.ts` re-export）：优先 `a0.facets.protoOwnKeys`，缺省回落 `protoBrandOwnStringKeys` 按名表 |
-| 生产 | `builtins/ctor.ts::protoBrandAbs`（仅按名表有精确清单才挂）、`exec/runtime/containers/member.ts::generatorProtoBrandOf`（恒空键集） |
+| 生产 | `builtins/ctor.ts::protoBrandAbs`（按名表优先，否则 `hostProtoOwnKeys` 采集宿主）、`objectProtoBrand`（Object 单例）、`exec/runtime/containers/member.ts::generatorProtoBrandOf`（恒空键集） |
 | 消费 | `builtins/object/enum-entries.ts::builtinBrandOwnKeyNames`（gOPN）、`builtins/object/methods.ts` 的 `Object.hasOwn` 臂与 `ownSymbolKeysAbs` |
 | 搬运 | 步骤 1 的 subst / snapshot / rename / absKey + `objects.ts::joinAbs` 的 `inheritJoinFacets`（两侧一致才继承） |
 
-已知边界（**不算回归，勿当精确承诺**）：① 类原型若在 `registerEvalClass`
-**之前**被创建，按名表查不到 spec ⇒ 不挂槽位，消费侧回落按名表（行为不变）；
-② `symbols` 只做**能力启用**（显式携带才精确），内建原型未挂 ⇒ 既有
-`arr<symbol>` 保守域逐字不变；③ `facets` 是 core 运行期字段，不进
-`HarvestSig`、不落盘 ⇒ **无需 bump** `HARVEST_DISK_ABI` v14；④ 未建模原型
-仍保守 `string[]`，覆盖全体内建原型是独立精度批次。
+已知边界（**不算回归，勿当精确承诺**）：① 用户类原型若在
+`registerEvalClass` **之前**被创建，按名表查不到 spec 且不在宿主构造器表内
+⇒ 不挂槽位，消费侧回落按名表（行为不变）；② 用户类原型「方法与访问器
+交错定义序」不可复原 ⇒ 仍保守 `string[]`（`eval-bug-58` 负控保留）；
+③ `facets` 不进 `HarvestSig`、不落盘（A2 残余批次另论）；
+④ **残余精度批次已收口（2026-11-05）**：内建原型由 `hostProtoOwnKeys`
+采集宿主真实键集（含 `symbols`），既有 `string[]` / `boolean` /
+`arr<symbol>` 保守域负控已升级为与宿主**动态对拍**的精确断言；键集随
+Node 版本给出各自真实值，**不得写死清单**（否则 CI Node 24 / 本地 Node 22
+会给出确定的错值）。
 
 **`callable` 接线明细（步骤 2 第 2 槽，2026-11-05）**
 

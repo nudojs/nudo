@@ -175,16 +175,14 @@ describe("族 58 · 第 2 条 · Bug 321 · 原型 brand 描述符面（Error �
     expect(tupleEls(r)).toEqual([]);
   });
 
-  it("负控：未建模成员的原型（Array.prototype）仍走既有保守域 string[]（逐字不变）", () => {
+  it("A10 残余已收口：内建原型的 gOPN 与宿主对拍（不再保守 string[]）", () => {
     const r = call(wrap(`return Object.getOwnPropertyNames(Array.prototype);`), "f").result;
-    expect(formatShape(r)).toBe("string[]");
-    expect(litValue(r).ok).toBe(false);
+    expect(tupleEls(r)).toEqual(Object.getOwnPropertyNames(Array.prototype));
   });
 
-  it("负控：Object.prototype 的 hasOwn 判定仍走既有保守域（逐字不变）", () => {
+  it("A10 残余已收口：Object.prototype 的 hasOwn 折确定值（不再保守 boolean）", () => {
     const r = call(wrap(`return Object.hasOwn(Object.prototype, "toString");`), "f").result;
-    expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r).ok).toBe(false);
+    expect(litValue(r)).toEqual({ ok: true, value: true });
   });
 });
 

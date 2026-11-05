@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import { abs, litValue, type Abs, type AbsFacets } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { snapshotAbs } from "../hof.ts";
-import { protoBrandAbs } from "../builtins/ctor.ts";
+import { objectProtoBrand, protoBrandAbs } from "../builtins/ctor.ts";
 import { protoOwnKeysOf } from "../exec/runtime/brand-tables.ts";
 import { builtinBrandOwnKeyNames } from "../builtins/object/enum-entries.ts";
 import { call, tupleEls } from "./eval-helpers.ts";
@@ -45,14 +45,48 @@ describe("A10 · protoOwnKeys 生产点", () => {
     expect(protoOwnKeysOf(p)?.strings).toEqual(keys);
   });
 
-  it("负控：未建模原型不挂槽位 ⇒ 既有保守域逐字不变", () => {
-    expect(protoBrandAbs("Array").facets?.protoOwnKeys).toBeUndefined();
-    expect(protoBrandAbs("Object").facets?.protoOwnKeys).toBeUndefined();
+  it("A10 残余：内建原型挂宿主键集 ⇒ gOPN / hasOwn 升为与原生对拍的精确面", () => {
+    const nativeArray = Object.getOwnPropertyNames(Array.prototype);
+    const nativeObject = Object.getOwnPropertyNames(Object.prototype);
+    expect(protoBrandAbs("Array").facets?.protoOwnKeys?.strings).toEqual(nativeArray);
+    expect(objectProtoBrand().facets?.protoOwnKeys?.strings).toEqual(nativeObject);
     const names = call(wrap("return Object.getOwnPropertyNames(Array.prototype);")).result;
-    expect(formatShape(names)).toBe("string[]");
-    const hasOwn = call(wrap('return Object.hasOwn(Object.prototype, "toString");')).result;
-    expect(formatShape(hasOwn)).toBe("boolean");
-    expect(litValue(hasOwn).ok).toBe(false);
+    expect(tupleEls(names)).toEqual(nativeArray);
+    expect(
+      litValue(call(wrap('return Object.hasOwn(Object.prototype, "toString");')).result),
+    ).toEqual({ ok: true, value: true });
+    expect(
+      litValue(call(wrap('return Object.hasOwn(Object.prototype, "__nope__");')).result),
+    ).toEqual({ ok: true, value: false });
+  });
+
+  it("A10 残余：多个内建原型的自有键集与宿主逐一对拍", () => {
+    const names = [
+      "Array", "Map", "Set", "WeakMap", "WeakSet", "Promise",
+      "String", "Number", "Boolean", "BigInt", "Symbol",
+      "Date", "RegExp",
+    ];
+    const globals = globalThis as unknown as Record<string, { prototype: object }>;
+    for (const name of names) {
+      const ctor = globals[name]!;
+      const carried = protoBrandAbs(name).facets?.protoOwnKeys;
+      expect(carried?.strings, name).toEqual(Object.getOwnPropertyNames(ctor.prototype));
+      expect(carried?.symbols, name).toEqual(
+        Object.getOwnPropertySymbols(ctor.prototype).map(String),
+      );
+    }
+    // Object.prototype 走 objectProtoBrand 单例，单独对拍
+    expect(objectProtoBrand().facets?.protoOwnKeys?.strings).toEqual(
+      Object.getOwnPropertyNames(Object.prototype),
+    );
+    // 端到端：未建模原型上的成员判定也从保守 boolean 升为确定值
+    expect(litValue(call(wrap('return Object.hasOwn(Map.prototype, "get");')).result)).toEqual({
+      ok: true,
+      value: true,
+    });
+    expect(
+      litValue(call(wrap('return Object.hasOwn(Map.prototype, "__nope__");')).result),
+    ).toEqual({ ok: true, value: false });
   });
 
   it("重建点：snapshotAbs 保留且深拷贝键集", () => {
@@ -101,24 +135,28 @@ describe("A10 · protoOwnKeys 消费点（槽位优先于按名表）", () => {
     });
   });
 
-  it("符号键：显式携带 symbols 时精确投影；未携带仍保守 arr<symbol>", () => {
-    withProtoKeys("Array", { strings: [], symbols: [] }, () => {
-      const r = call(wrap("return Object.getOwnPropertySymbols(Array.prototype);")).result;
-      expect((r as Abs).shape.k).toBe("tuple");
-      expect(((r as Abs).shape as { elements: unknown[] }).elements).toHaveLength(0);
-    });
-    const conservative = call(wrap("return Object.getOwnPropertySymbols(Array.prototype);")).result;
-    expect(formatShape(conservative)).toBe("symbol[]");
+  it("A10 残余：内建原型的 gOPS 与宿主符号键数对拍", () => {
+    const n = Object.getOwnPropertySymbols(Array.prototype).length;
+    const r = call(wrap("return Object.getOwnPropertySymbols(Array.prototype);")).result;
+    expect((r as Abs).shape.k).toBe("tuple");
+    expect(((r as Abs).shape as { elements: unknown[] }).elements).toHaveLength(n);
   });
 
-  it("负控：清理槽位后既有保守域回来（单例无污染）", () => {
-    const nativeKeys = Object.getOwnPropertyNames(Array.prototype);
-    withProtoKeys("Array", { strings: nativeKeys }, () => {
-      expect(protoBrandAbs("Array").facets?.protoOwnKeys?.strings).toEqual(nativeKeys);
+  it("显式携带 symbols 仍可覆盖宿主键集（槽位优先）", () => {
+    withProtoKeys("Array", { strings: [], symbols: [] }, () => {
+      const r = call(wrap("return Object.getOwnPropertySymbols(Array.prototype);")).result;
+      expect(((r as Abs).shape as { elements: unknown[] }).elements).toHaveLength(0);
     });
-    expect("facets" in protoBrandAbs("Array")).toBe(false);
-    expect(formatShape(call(wrap("return Object.getOwnPropertyNames(Array.prototype);")).result)).toBe(
-      "string[]",
-    );
+  });
+
+  it("负控：withProtoKeys 的 finally 精确恢复单例原有键集（无污染）", () => {
+    const saved = protoBrandAbs("Array").facets?.protoOwnKeys?.strings;
+    withProtoKeys("Array", { strings: ["custom"] }, () => {
+      expect(protoBrandAbs("Array").facets?.protoOwnKeys?.strings).toEqual(["custom"]);
+    });
+    expect(protoBrandAbs("Array").facets?.protoOwnKeys?.strings).toEqual(saved);
+    expect(
+      tupleEls(call(wrap("return Object.getOwnPropertyNames(Array.prototype);")).result),
+    ).toEqual(Object.getOwnPropertyNames(Array.prototype));
   });
 });
