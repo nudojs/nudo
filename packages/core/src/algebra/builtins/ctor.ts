@@ -11,6 +11,7 @@ import { str, noBody, typedArrayElementOf } from "./shared.ts";
 import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
+import { protoBrandOwnStringKeys } from "../exec/runtime/brand-tables.ts";
 
 const builtinCtorByName = new Map<string, Abs>();
 const builtinCtorByAbs = new WeakMap<object, string>();
@@ -198,6 +199,16 @@ export function protoBrandAbs(ctorName: string): Abs {
     // 当可枚举键发布（`for (const k in A.prototype)` 得 ["constructor"]，
     // 原生是 []）。
     setPropFlags(a, "constructor", { enumerable: false, writable: true, configurable: true });
+    // A10 · 槽位启用：把引擎**已精确建模**的自有键集从「按 brand 名查固定表」
+    // 升级为「随 Abs 值携带」——subst / snapshot / join 会整包搬运，键集不再
+    // 依赖名字能查回来。按名表返回 undefined 的原型（Array / Object / Map …）
+    // **不挂**槽位 ⇒ 既有保守域 string[] / boolean 逐字不变。
+    // 注意时序：类原型可能在 registerEvalClass 之前被创建，此时按名表查不到
+    // spec ⇒ 不挂；消费侧 protoOwnKeysOf 仍会回落按名表，行为不变。
+    const ownStrings = protoBrandOwnStringKeys(`${ctorName}.prototype`);
+    if (ownStrings !== undefined) {
+      a.facets = { ...(a.facets ?? {}), protoOwnKeys: { strings: ownStrings } };
+    }
     if (isErrFamily) {
       // Bug 321：name / message 同为**不可枚举**数据属性（原生描述符
       // enumerable:false）——标记与 `constructor` 同挂**brand 自身**

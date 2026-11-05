@@ -12,7 +12,7 @@
  * base64/hex 扩面在本模块求值期完成；members.ts 头部 import 本文件 ⇒
  * 任何运行期消费（值读 / $in / 链查找）都在两模块求值之后，序不变。
  */
-import type { Abs } from "../../abs.ts";
+import type { Abs, AbsFacets } from "../../abs.ts";
 import { getSlot, type ObjShape } from "../../objects.ts";
 import { getEvalClass } from "../class-registry.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
@@ -222,6 +222,27 @@ export function protoBrandOwnStringKeys(brandName: string): string[] | undefined
     keys.push(k);
   }
   return keys;
+}
+
+/**
+ * A10 · 槽位启用的**单一事实源**：原型对象自有键集随 Abs 值携带。
+ *
+ * - 优先读 `a0.facets.protoOwnKeys`（生产点 / 显式装配 / subst / snapshot
+ *   搬运后的值都走这条）；键集由**值**决定，不再只能按 brand 名查固定表。
+ * - 缺省（未挂槽位）⇒ 逐字回落 `protoBrandOwnStringKeys` 的按名表判定，
+ *   既有保守域 `string[]` / `boolean` 不受影响（空槽位零回归）。
+ * - `symbols` 只有显式提供时才有值；按名表不建模原型自有 symbol 键。
+ */
+export function protoOwnKeysOf(
+  a0: Abs | undefined,
+): NonNullable<AbsFacets["protoOwnKeys"]> | undefined {
+  if (!a0) return undefined;
+  const carried = a0.facets?.protoOwnKeys;
+  if (carried) return carried;
+  if (a0.shape.k !== "brand") return undefined;
+  const name = (a0.shape as { name?: string }).name ?? "";
+  const strings = protoBrandOwnStringKeys(name);
+  return strings === undefined ? undefined : { strings };
 }
 
 /**

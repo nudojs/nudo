@@ -60,6 +60,7 @@ export {
   ITERABLE_BRANDS,
   protoBrandOwnMember,
   protoBrandOwnStringKeys,
+  protoOwnKeysOf,
   brandLengthSlotValue,
   openIndexValueOf,
 } from "./brand-tables.ts";

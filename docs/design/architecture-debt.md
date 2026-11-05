@@ -117,7 +117,7 @@
 | **根因** | Abs 的 obj 形状有**实例**槽表，但**没有**「原型对象的自有键集」承载位 ⇒ 原型面只能退回保守域 |
 | **本轮的局部收口** | 族 58（片 W8）**只覆盖「引擎已建模过成员」的原型**：Error 家族（固定表）+ 用户类原型（`constructor` + 自有方法/访问器，按定义序）+ 生成器原型（自有键恒空）⇒ 这三类原型面**精确**；其余原型（Array / Object / Map / Promise …）**仍保守** `string[]` / boolean 域 |
 | **阻塞** | 要覆盖**全体**内建原型 ⇒ 需要在 Abs 上**新增**「原型自有键集」承载位 ⇒ 触及 Abs 形状 ⇒ 影响 `leqAbs` ⇒ 需要全仓回归基线 |
-| **状态** | **架构债（本波新发现 · 2026-10-23）**。建议与 **A5 / A6** 合并到「动 Abs 形状」那一层立项 |
+| **状态** | **部分闭环（2026-11-05，`protoOwnKeys` 槽位已启用）**：`Abs.facets.protoOwnKeys` 经 `protoOwnKeysOf` 成为**单一事实源**（优先随值槽位、缺省回落按名表）；生产点 `protoBrandAbs` / `generatorProtoBrandOf`，消费点 `builtinBrandOwnKeyNames`（gOPN）/ `Object.hasOwn` / `getOwnPropertySymbols`，搬运链含 `joinAbs`。已建模原型精确面**不变**，未建模原型仍保守 `string[]` ⇒ 空槽位零回归。**未扩到全体内建原型**（那需要为每个原型录原生键集并改 expectation，属独立精度批次）。回归：`abs-proto-own-keys-facet.test.ts`（8 例，含与宿主 `Object.getOwnPropertyNames(Array.prototype)` 对拍） |
 
 ---
 
@@ -160,9 +160,15 @@ L1 / L2 门禁的接受集。
 ## 剩余槽位的受控 major 执行方案（A2+A8 / A10 / A11）
 
 > **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
-> 键 + 回归钉）**已落地**；步骤 2（逐槽启用、更新 expectation）仍待排期。
-> 三条共同缺的承载位已由容器解决，剩下的是消费点接线与精度基线逐条对齐。
+> 键 + 回归钉）**已落地**；步骤 2 按**改动面从小到大**逐槽推进：
+> `protoOwnKeys`（✅ 已启用）→ `callable` → `brand`。每槽独立提交 + 独立门禁
+> + 独立全仓回归基线。顺序相对下表调整：`protoOwnKeys` 可做到「空槽位零回归」
+> （只增正向钉、不改任何既有 expectation），先用它验证范式；后两条风险递增。
 > A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
+>
+> 接入前复测发现两条台账口径已过期并已订正：**A2+A8 的运行时裸调用抛错
+> 由 Bug 272 闭合**（残余是形状化判据与声明面）；**A11 的 dts 面由 Bug 554
+> 闭合**（残余是 `formatShape` 展示面与身份随值携带）。照旧口径排期会重复功。
 
 **范式（照抄 A6）**：新增**可选**槽位（缺省不出现 ⇒ 旧形状逐字节不变），
 `subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
@@ -186,8 +192,9 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
    ⇒ 旧键逐字节不变）。`leqAbs` / `formatShape` / dts / schema / guard 不读容器。
    回归钉 `algebra/__tests__/abs-facets-carrier.test.ts`（8 例）；公共 API 冻结
    未变更、金标 + 真包 204 例全绿。
-2. **逐条启用**：`callable` → `protoOwnKeys` → `brand`，每条独立 PR + 独立
-   回归基线；`leqAbs` 只在新槽位非空时参与判定，保持既有接受集不变。
+2. **逐条启用**：`protoOwnKeys`（✅ 2026-11-05）→ `callable` → `brand`，每条
+   独立提交 + 独立回归基线。槽位只做**运行期精化与投影增强**：不新增
+   `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
    真包 FP > 0、差分语料回退 ⇒ 回滚该槽位，其余槽位不受影响。
 4. **一次性发 major**：核心包 + 下游联动，changeset 标注 BREAKING 与迁移说明；
@@ -195,6 +202,22 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 
 **验收门槛**：金标 1.0/1.0 · 真包 0 FP · 差分语料 0 回退 · 公共 API diff 只含新增 ·
 空槽位下所有投影输出逐字节不变。**回滚**：槽位默认空 ⇒ 单条 revert 不牵动其余槽位。
+
+**`protoOwnKeys` 接线明细（步骤 2 第 1 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 单一事实源 | `exec/runtime/brand-tables.ts::protoOwnKeysOf`（`members.ts` re-export）：优先 `a0.facets.protoOwnKeys`，缺省回落 `protoBrandOwnStringKeys` 按名表 |
+| 生产 | `builtins/ctor.ts::protoBrandAbs`（仅按名表有精确清单才挂）、`exec/runtime/containers/member.ts::generatorProtoBrandOf`（恒空键集） |
+| 消费 | `builtins/object/enum-entries.ts::builtinBrandOwnKeyNames`（gOPN）、`builtins/object/methods.ts` 的 `Object.hasOwn` 臂与 `ownSymbolKeysAbs` |
+| 搬运 | 步骤 1 的 subst / snapshot / rename / absKey + `objects.ts::joinAbs` 的 `inheritJoinFacets`（两侧一致才继承） |
+
+已知边界（**不算回归，勿当精确承诺**）：① 类原型若在 `registerEvalClass`
+**之前**被创建，按名表查不到 spec ⇒ 不挂槽位，消费侧回落按名表（行为不变）；
+② `symbols` 只做**能力启用**（显式携带才精确），内建原型未挂 ⇒ 既有
+`arr<symbol>` 保守域逐字不变；③ `facets` 是 core 运行期字段，不进
+`HarvestSig`、不落盘 ⇒ **无需 bump** `HARVEST_DISK_ABI` v14；④ 未建模原型
+仍保守 `string[]`，覆盖全体内建原型是独立精度批次。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对

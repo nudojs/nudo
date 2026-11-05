@@ -361,6 +361,10 @@ function generatorProtoBrandOf(v: Function | Abs): Abs {
       undefined,
       "exact",
     );
+    // A10 · 槽位启用：原生 `Object.getOwnPropertyNames(g.prototype)` 恒 []
+    // （next/return/throw 在 %GeneratorPrototype% 原型链上，internal 槽在
+    // 自有面不可见）⇒ 固化成随值携带的空键集，不再只靠名后缀查表。
+    p.facets = { protoOwnKeys: { strings: [] } };
     genProtoByFn.set(v as object, p);
   }
   return p;

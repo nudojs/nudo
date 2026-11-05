@@ -106,7 +106,7 @@ import {
 } from "./descriptor.ts";
 import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
 // 族 58 · Bug 321：原型 brand 的自有键集判定（单一事实源，见 members.ts）。
-import { protoBrandOwnStringKeys } from "../../exec/runtime/members.ts";
+import { protoOwnKeysOf } from "../../exec/runtime/members.ts";
 // Bug 284：Proxy 的 isExtensible 陷阱派发需要 $call（陷阱实参 (target)，
 // this = handler）——exec/call.ts 已在本模块的依赖图内（exec/runtime/members.ts
 // 引入），此处只是显式直连。
@@ -450,7 +450,12 @@ function ownSymbolKeysAbs(a0: Abs): Abs | undefined {
     if (s.name === "Proxy") return undefined;
     // 原型 brand（`X.prototype`）：引擎只建模了原型的**字符串**自有键，
     // 原型的自有 symbol 键未建模 ⇒ 不可判（不折空）。
-    if (s.name.endsWith(".prototype")) return undefined;
+    // A10 例外：值显式携带 `facets.protoOwnKeys.symbols` 时按携带的键数
+    // 精确投影；未携带 ⇒ 旧行为逐字不变（不凭空折空）。
+    if (s.name.endsWith(".prototype")) {
+      const symbols = a0.facets?.protoOwnKeys?.symbols;
+      return symbols === undefined ? undefined : tupleOf(symbols.length);
+    }
     const inner = s.shape;
     if (inner.shape.k !== "obj") return undefined;
     return ownSymbolsTuple(inner.shape as unknown as Parameters<typeof ownSymbolsTuple>[0]);
@@ -1258,7 +1263,9 @@ function inheritedProtoSlots(proto: Abs): Record<string, { value: Abs; inherited
       // boolean。判定单一事实源：exec/runtime/members.ts 的
       // protoBrandOwnStringKeys。
       if (a0.shape.k === "brand") {
-        const ownKeys = protoBrandOwnStringKeys((a0.shape as { name?: string }).name ?? "");
+        // A10：优先读随值携带的 facets.protoOwnKeys；缺省回落按名表
+        // （protoOwnKeysOf 内），既有保守域逐字不变。
+        const ownKeys = protoOwnKeysOf(a0)?.strings;
         if (ownKeys) return boolLit(ownKeys.includes(key));
       }
       // R4a：Error 家族 brand——自有槽 presence 精确折（message/stack（/
