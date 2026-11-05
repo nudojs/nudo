@@ -58,6 +58,21 @@ describe("A11 · brand 驱动 dts 迭代器投影", () => {
     expect(absToTSType(a)).not.toContain("Generator");
   });
 
+  it("A11 残余：genReturn ⇒ Generator<T, TReturn>（恒带实参，不裸名）", () => {
+    const a = generatorLike({ withNext: true });
+    a.facets = { brand: "Generator", genReturn: numLit(7) };
+    expect(absToTSType(a)).toBe("Generator<number, number>");
+    const asyncA = generatorLike({ withNext: true, async: true });
+    asyncA.facets = { brand: "AsyncGenerator", genReturn: numLit(7) };
+    expect(absToTSType(asyncA)).toBe("AsyncGenerator<number, number>");
+  });
+
+  it("不退化 Bug 554：无 genReturn 的 Abs 仍只输出 Generator<T>", () => {
+    const a = generatorLike({ withNext: true });
+    a.facets = { brand: "Generator" };
+    expect(absToTSType(a)).toBe("Generator<number>");
+  });
+
   it("不退化 Bug 554：有 next 槽但无 brand ⇒ 既有 Generator<number> 逐字不变", () => {
     expect(absToTSType(generatorLike({ withNext: true }))).toBe("Generator<number>");
     expect(absToTSType(generatorLike({ withNext: true, async: true }))).toBe(
@@ -67,6 +82,14 @@ describe("A11 · brand 驱动 dts 迭代器投影", () => {
 });
 
 describe("A11 · 生成器 brand 启用后 .d.ts 仍过 tsc（TS2314 防线）", () => {
+  it("端到端：真实生成器函数的 dts 带 TReturn 实参（不是裸名 / 单实参）", () => {
+    const dts = generateDts(
+      analyzeFile("/test/brand-return.js", `export function* gen(x) {\n  yield x;\n}\n`),
+    );
+    expect(dts).toContain("Generator<");
+    expect(dts).toMatch(/Generator<[^>]*,\s*[^>]*>/);
+  });
+
   it("端到端：生成器函数返回 Generator<…> 且消费方 for…of 编译通过", () => {
     const dts = generateDts(
       analyzeFile("/test/brand-facet.js", `export function* gen(x) {\n  yield x;\n}\n`),

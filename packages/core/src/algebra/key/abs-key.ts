@@ -238,6 +238,10 @@ export function facetKey(f: AbsFacets): string {
     );
   }
   if (f.brand !== undefined) parts.push(`b:${JSON.stringify(f.brand)}`);
+  // A11 残余：TReturn / TNext 是 Abs ⇒ 必须走结构键（JSON.stringify 会撞环
+  // 且丢 term/pred），否则不同返回域的生成器共享 memo / 指纹。
+  if (f.genReturn) parts.push(`gr:${absKey(f.genReturn)}`);
+  if (f.genNext) parts.push(`gn:${absKey(f.genNext)}`);
   return parts.join(",");
 }
 

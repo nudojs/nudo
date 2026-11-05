@@ -126,7 +126,7 @@ export type Shape =
  * A2+A8 / A10 / A11：Abs 的**可扩展槽位容器**。
  *
  * 设计纪律（照抄 A6 的 `overloads?` 范式，见 [`docs/design/architecture-debt.md`]
- * 「剩余槽位的受控 major 执行方案」）：
+ * 「剩余槽位的受控 minor 执行方案」）：
  * - **缺省不出现** ⇒ 旧 Abs 逐字节不变，所有外延投影 / `leqAbs` 的接受集不变。
  * - 新槽位只加字段，不再改 Shape 判别联合；未来无需为每种能力动 `leqAbs`。
  * - `substAbs` / `snapshotAbs` / `renameAbs` / `absKey` 必须**整包搬运**（A7
@@ -147,9 +147,24 @@ export type AbsFacets = {
   protoOwnKeys?: { strings: string[]; symbols?: string[] };
   /** A11：生成器对象身份。缺省 = 与空对象同形（旧行为）。 */
   brand?: string;
+  /**
+   * A11 残余：`Generator<T, TReturn, TNext>` 的 **TReturn**。
+   * 由 `makeGenObject` 的 `retVal` 填入；缺省 = 不建模（dts 仍只投影 `T`）。
+   * 只读投影面，搬运时按引用共享（与 shape 槽值同口径）。
+   */
+  genReturn?: Abs;
+  /**
+   * A11 残余：**TNext**（`.next(v)` 的入参域）。引擎目前不建模 `.next(v)`
+   * 的入参 ⇒ 恒缺省；保留槽位供后续真挂起 / 委托批次使用。
+   */
+  genNext?: Abs;
 };
 
-/** 等价副本用的深拷贝（不共享数组；缺省不出现时返回 undefined）。 */
+/**
+ * 等价副本用的深拷贝（不共享数组；缺省不出现时返回 undefined）。
+ * `genReturn` / `genNext` 是**只读投影面**：按引用共享（与 shape 槽值同
+ * 口径），不在本叶子模块做 Abs 深拷贝 —— 那会反向依赖 `hof.ts` 成环。
+ */
 export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined {
   if (f === undefined) return undefined;
   const out: AbsFacets = { ...f };

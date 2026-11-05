@@ -925,6 +925,10 @@ function makeGenObject(
   g.facets = {
     ...(g.facets ?? {}),
     brand: asyncMode ? "AsyncGenerator" : "Generator",
+    // A11 残余：`Generator<T, TReturn, TNext>` 的第 2 实参。retVal 是
+    // 构造期收集的 return 域（已有，见本文件 ret 计算）；TNext 引擎尚未
+    // 建模，保持缺省。
+    genReturn: retVal,
   };
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）

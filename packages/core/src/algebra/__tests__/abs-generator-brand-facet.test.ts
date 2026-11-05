@@ -17,6 +17,7 @@ import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "../abs.ts";
 import { snapshotAbs, substAbs } from "../hof.ts";
 import { formatShape } from "../format/format.ts";
+import { absKey } from "../key/abs-key.ts";
 import { call } from "./eval-helpers.ts";
 
 /** 求值得到生成器对象 Abs 本身。 */
@@ -46,6 +47,31 @@ describe("A11 · brand 生产点与搬运", () => {
     const copy = snapshotAbs(g);
     copy.facets!.brand = "mutated";
     expect(g.facets?.brand).toBe("Generator");
+  });
+});
+
+describe("A11 残余 · TReturn（genReturn）随值携带", () => {
+  it("真实生成器对象携带 genReturn；snapshot / subst 不丢", () => {
+    const g = genObjectOf("BrandGenReturnH", false);
+    expect(g.facets?.genReturn).toBeDefined();
+    expect(snapshotAbs(g).facets?.genReturn).toBe(g.facets?.genReturn);
+    expect(substAbs(g, new Map()).facets?.genReturn).toBeDefined();
+  });
+
+  it("不同 TReturn 得到不同 absKey（memo / 指纹不串味）", () => {
+    const g = genObjectOf("BrandGenReturnI", false);
+    const other: Abs = {
+      ...g,
+      facets: { ...g.facets, genReturn: numLit(99) },
+    };
+    expect(absKey(other)).not.toBe(absKey(g));
+    expect(absKey(other)).toBe(
+      absKey({ ...g, facets: { ...g.facets, genReturn: numLit(99) } }),
+    );
+  });
+
+  it("TNext 引擎尚未建模 ⇒ 恒缺省", () => {
+    expect(genObjectOf("BrandGenReturnJ", false).facets?.genNext).toBeUndefined();
   });
 });
 

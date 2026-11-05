@@ -309,12 +309,19 @@ function iteratorTSType(
     }
     elemType = absToTSTypeB(widenTopLevelAbs(joined), typeVars, budget);
   }
+  // A11 残余：随值携带 TReturn 时补第 2 类型实参。引擎尚未建模 `.next(v)`
+  // 的入参 ⇒ TNext 省略（TS 默认）。输出恒带 `<…>`，不退化成裸名（TS2314）。
+  // 手工构造 / 无 genReturn 的旧 Abs 仍输出 `Generator<T>` 逐字不变。
+  const tReturn = a.facets?.genReturn
+    ? absToTSTypeB(widenTopLevelAbs(a.facets.genReturn), typeVars, budget)
+    : undefined;
+  const tail = tReturn ? `, ${tReturn}` : "";
   if (genBrand === "AsyncGenerator" || slots["@@asyncIterator"]) {
-    return `AsyncGenerator<${elemType}>`;
+    return `AsyncGenerator<${elemType}${tail}>`;
   }
   // 完整生成器协议（return / throw）或随值 brand ⇒ Generator；只有 next ⇒ 普通迭代器
   if (genBrand === "Generator" || slots["return"] || slots["throw"]) {
-    return `Generator<${elemType}>`;
+    return `Generator<${elemType}${tail}>`;
   }
   return `IterableIterator<${elemType}>`;
 }
