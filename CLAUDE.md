@@ -96,7 +96,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 ## TypeScript Config
 
 - `tsconfig.base.json`: ES2022 target, ESNext module, bundler resolution, strict, noEmit
-- `tsconfig.json`: Project references for core, parser, cli with path aliases
+- `tsconfig.json`: extends `tsconfig.base.json` + generated `tsconfig.paths.json`; project references for core, parser, nudojs, service. Path aliases are NOT restated here — single source is `scripts/workspace-aliases.mjs` (drift gate: `pnpm run check:aliases`)
 - `tsconfig.lint.json`: Includes all packages (excludes tests) for CI type-checking
 - Each package has its own `tsconfig.json` extending base with project references
 

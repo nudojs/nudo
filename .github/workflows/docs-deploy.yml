@@ -60,38 +60,13 @@ jobs:
         id: cigate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          deadline=$(( $(date +%s) + 1200 ))
-          while :; do
-            resp=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push" \
-              --jq 'if (.workflow_runs | length) > 0 then .workflow_runs[0] | "\(.id) \(.status) \(.conclusion // "")" else "" end' || true)
-            if [ -n "$resp" ]; then
-              set -- $resp
-              run_id=$1; status=$2; conclusion=${3:-}
-              url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-              if [ "$status" = "completed" ]; then
-                if [ "$conclusion" = "success" ]; then
-                  echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-                  echo "CI green at ${GITHUB_SHA::7} — $url"
-                  exit 0
-                fi
-                echo "::error::CI run for ${GITHUB_SHA} concluded '${conclusion}' — docs NOT deployed. $url (若被更新的 push cancel，需重跑本 workflow)"
-                exit 1
-              fi
-              echo "CI ${status} — ${url}"
-            fi
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::Timed out waiting for CI at ${GITHUB_SHA} — fail closed, docs NOT deployed."
-              exit 1
-            fi
-            sleep 15
-          done
+        # 轮询逻辑统一在 scripts/wait-ci-green.sh（release.yml 两条发布路由
+        # 与本 workflow 共用同一份，避免三处内联副本各自漂移）。
+        run: bash scripts/wait-ci-green.sh "docs deploy"
 
       # 复用 CI 刚构建的 nudo-dist（verify:docs 经 tsx 跑 CLI；@nudo:env 动态
       # import 按 package exports 解析 @nudojs/* → dist）。artifact 过期
-      # （retention 1 天，如手工 dispatch 旧 SHA）则回退本地构建。
+      # （retention 7 天；更旧的 SHA 手工 dispatch）才回退本地构建。
       - name: Download built dist
         env:
           GH_TOKEN: ${{ github.token }}

@@ -5,7 +5,9 @@
 > ⇒ 影响 `leqAbs` ⇒ 影响**全部门禁精度** ⇒ 必须**独立排期 + 独立回归基线**。
 >
 > **状态**：2026-10-23 起，本文档单独记录 A 类；B / C 两类（**可修**）在
-> 各自的「遗留」表里逐条推进。
+> 各自的「遗留」表里逐条推进。**排期以每条的「状态」字段为准**：已闭环条目
+> 保留编号（避免引用漂移）但不再计入待排期；状态与代码不一致时以
+> `git log` / changeset / 回归测试为准，并在发现的当次 PR 内订正。
 >
 > **分类依据**：精度债的可修性分类（B / C 两类见对应台账的
 > 「📊 精度债的可修性分类」段）。
@@ -134,20 +136,58 @@
 ## 立项建议（按依赖顺序）
 
 ```
-第 0 层（不动 Abs 表示，可先试）
-  └─ A7  substAbs 丢 fn impl          ← 最可能是纯实现缺陷
-第 1 层（要定承载位，但影响面局部）
-  ├─ A3 + A4  throws 在 Abs 里的承载位（relation 面 + apply 结果）⇒ 合并立项 ← 已修（2026-11-04）
-  └─ A5     接收者形状感知的 union 方法分派 —— 派发层已闭合（Bug 263 / 2026-11-04 复测订正）；残余假红归 A6
-第 2 层（要动 Abs 形状 ⇒ 影响 leqAbs ⇒ 需要全仓回归基线）
-  ├─ A2 + A8  core 的 callable 面（类 ≠ 可调用值）
-  ├─ A6     fn 形状的 overload 集合承载位 ← 已修（2026-11-04；union 面仍为权威外延面）
-  └─ A10    原型对象自有键集的承载位（族 58 的局部收口 ⇒ 全体内建原型）
+第 0 层（不动 Abs 表示）                              ✅ 已闭环
+  └─ A7  substAbs 丢 fn impl          ← 已修（2026-11-04，纯实现缺陷，未动 Abs）
+第 1 层（定承载位、影响面局部）                        ✅ 已闭环
+  ├─ A3 + A4  throws 承载位（relation 面 + apply 结果）← 已修（2026-11-04）
+  └─ A5     union 方法分派 ← 派发层已闭合（Bug 263）；残余假红由 A6 修后自消
+第 2 层（动 Abs 形状 ⇒ 需全仓回归基线；执行方案见下节）
+  ├─ A6     fn 形状 overload 承载位    ✅ 已修（2026-11-04，可选槽位范式）
+  ├─ A2 + A8  callable 面（类 ≠ 可调用值）           ⏳ 待排期
+  ├─ A10    原型对象自有键集承载位                    ⏳ 待排期
+  └─ A11    生成器 brand("Generator")                ⏳ 待排期
 第 3 层（求值模型层，独立于 Abs 表示）
-  └─ A1 + A2  生成器体惰性（转译侧快照 + $join 折回；与族 45 同侧）
-              ← A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；A1 步骤 2–4 与 A2（裸调用不抛）待续
+  └─ A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；
+     A1 步骤 2–4（真挂起 / 首消费点）与 A2（裸调用不抛）待续
 ```
 
 **每层的门槛**：动 Abs 形状的层，必须先跑**全仓门禁**（含 `check-recall-gold` / `check-gold` /
 `check-real-packages` / 差分语料）并留**改前基线**，因为 `leqAbs` 的语义变化会**全局**影响
 L1 / L2 门禁的接受集。
+
+---
+
+## 剩余槽位的受控 major 执行方案（A2+A8 / A10 / A11）
+
+> 本节是**可执行的立项依据**，不是已完成的实现。三条仍卡在同一处：Abs 形状缺承载位。
+> A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
+
+**范式（照抄 A6）**：新增**可选**槽位（缺省不出现 ⇒ 旧形状逐字节不变），
+`subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
+dts / schema / guard **只读既有外延面**，新槽位只参与运行期精化与投影增强。
+A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红消失）。
+
+| 槽位 | 服务条目 | 承载内容 | 主要消费点 |
+|---|---|---|---|
+| `callable` | A2 + A8 | 值是否可裸调用 / [[Construct]] 形态 | `$call` 裸调用臂、`exec/class/*` |
+| `protoOwnKeys` | A10 | 原型对象自有键集（含符号键） | `getOwnPropertyNames` / `hasOwn` / `keys` 族 |
+| `brand` | A11 | 生成器对象身份（带泛型实参） | `formatShape` / dts / schema 投影 |
+
+**步骤（每步一个 PR，禁止合并提交）**
+
+0. **改前基线**：`pnpm run build && pnpm run test:ci`；单跑
+   `check-recall-gold.test.ts`、`check-real-packages.test.ts`、
+   `core/src/algebra/__tests__/differential/` 全批、`pnpm run benchmark:oss`；
+   把输出与 `docs/reports/*-baseline.*` 一起留档（PR 描述或独立基线分支）。
+1. **只加槽位容器 + 读写 API**：默认空，不参与 `leqAbs`；更新
+   `public-api.snapshot.json` 与冻结测试；确认 dts/schema/guard 对空槽位输出
+   **逐字节不变**。
+2. **逐条启用**：`callable` → `protoOwnKeys` → `brand`，每条独立 PR + 独立
+   回归基线；`leqAbs` 只在新槽位非空时参与判定，保持既有接受集不变。
+3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
+   真包 FP > 0、差分语料回退 ⇒ 回滚该槽位，其余槽位不受影响。
+4. **一次性发 major**：核心包 + 下游联动，changeset 标注 BREAKING 与迁移说明；
+   dts 面补 `Generator<T, TReturn, TNext>` 类型实参（A11 的 TS2314 风险）。
+
+**验收门槛**：金标 1.0/1.0 · 真包 0 FP · 差分语料 0 回退 · 公共 API diff 只含新增 ·
+空槽位下所有投影输出逐字节不变。**回滚**：槽位默认空 ⇒ 单条 revert 不牵动其余槽位。

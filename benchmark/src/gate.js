@@ -5,9 +5,10 @@
  * 规则：
  * - case 集规模变化（增删 case）→ 失败，提示更新基线
  * - exact 数下降 / unknown 数上升 / error 数上升 → 失败，逐 case 列出回退
- * - 平均耗时 > 基线的 3.0x → 失败
+ * - 平均耗时 > 基线 × NUDO_BENCH_PERF_RATIO（默认 3.0）→ 失败
  *   （每 case 冷启动 `pnpm run infer`/tsx；GitHub ubuntu runner 相对本地
- *    Apple Silicon 常年 ~2.5–3x，1.5x 会把环境噪声当成回归）
+ *    Apple Silicon 常年 ~2.5–3x，1.5x 会把环境噪声当成回归。倍率用
+ *    环境变量覆盖，便于在 GH runner 重采基线后按 runner 口径调，不改代码）
  * - --allow-uniform-shift：全部计时指标均匀同向漂移（疑似机器/环境因子，
  *   见 noise.js）且失败项全为计时阈值时放行；精度门永不因此放行
  */
@@ -16,6 +17,12 @@ import { readFileSync } from "fs";
 import { detectUniformShift, formatUniformShiftHint } from "./noise.js";
 
 const args = process.argv.slice(2);
+
+const PERF_RATIO = Number(process.env.NUDO_BENCH_PERF_RATIO ?? "3.0");
+if (!Number.isFinite(PERF_RATIO) || PERF_RATIO <= 0) {
+  console.error(`Gate: invalid NUDO_BENCH_PERF_RATIO=${process.env.NUDO_BENCH_PERF_RATIO}`);
+  process.exit(1);
+}
 
 const LATEST = "./benchmark/results/latest.json";
 const BASELINE = "./benchmark/baseline.json";
@@ -87,16 +94,18 @@ if (current.totalCases !== baseline.totalCases) {
   }
 }
 
-// 3x 覆盖 CI runner 相对本地的冷启动差；真正引擎回归通常远超此倍数
+// 默认 3x 覆盖 CI runner 相对本地的冷启动差；真正引擎回归通常远超此倍数。
+// 倍率由 NUDO_BENCH_PERF_RATIO 配置（见 ci.yml 注释：收紧前须在 GH runner
+// 重采 baseline，不要只改数字）。
 // 机器因子探测输入：与基线可比的计时指标。当前基线刻意最小视图
 // （baseline.js 只存 avgMs），单指标 < noise.js 的 MIN_METRICS → 探测
-// 恒不命中；且 3.0x 阈值本身远大于 10~13% 机器因子。基线若将来记录
+// 恒不命中；且默认阈值本身远大于 10~13% 机器因子。基线若将来记录
 // 逐 case 耗时，此处追加 metrics 即自动生效。
 const timeMetrics = [{ name: "avgMs", baseline: baseline.averageTimeMs, current: current.avgMs }];
 let timingFailures = 0;
-if (current.avgMs > baseline.averageTimeMs * 3.0) {
+if (current.avgMs > baseline.averageTimeMs * PERF_RATIO) {
   problems.push(
-    `性能回退：avg ${baseline.averageTimeMs}ms → ${current.avgMs}ms (>3.0x)`,
+    `性能回退：avg ${baseline.averageTimeMs}ms → ${current.avgMs}ms (>${PERF_RATIO}x)`,
   );
   timingFailures++;
 }

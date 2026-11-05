@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 import { vitestAlias } from "./scripts/workspace-aliases.mjs";
 
+// PR / --changed 覆盖率只出报告、不判全局阈值（子集天然低于全量基线）；
+// 硬阈值仍由夜间全量 test-coverage 守。见 .github/workflows/ci.yml。
+const coverageGate = process.env.NUDO_COVERAGE_THRESHOLDS !== "off";
+
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
@@ -41,7 +45,7 @@ export default defineConfig({
     testTimeout: 30_000,
     coverage: {
       provider: "v8",
-      reporter: ["json", "text-summary"],
+      reporter: ["json", "json-summary", "text-summary"],
       include: ["packages/*/src/**/*.ts"],
       exclude: ["**/__tests__/**", "**/*.test.ts"],
       // 防止重构 silently 丢覆盖；数字按当前基线取整，只升不降。
@@ -54,37 +58,67 @@ export default defineConfig({
       //   harvester  82/78/70/88   floors 75/70/62/80
       //   vite-plugin 86/85/72/81 floors 78/78/65/72
       //   parser     89/85/74/90   floors 80/78/68/82
-      // nudojs 无 per-package floor（走全局阈值）。
-      thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 65,
-        statements: 70,
-        "packages/env/**": {
-          lines: 65,
-          functions: 60,
-          branches: 40,
-          statements: 58,
-        },
-        "packages/harvester/**": {
-          lines: 75,
-          functions: 80,
-          branches: 62,
-          statements: 70,
-        },
-        "packages/vite-plugin/**": {
-          lines: 78,
-          functions: 72,
-          branches: 65,
-          statements: 78,
-        },
-        "packages/parser/**": {
-          lines: 80,
-          functions: 82,
-          branches: 68,
-          statements: 78,
-        },
-      },
+      // 2026-11-05：core/service/lsp/nudojs 补齐起步 floor（见下）；floors 只升不降。
+      thresholds: coverageGate
+        ? {
+            lines: 70,
+            functions: 70,
+            branches: 65,
+            statements: 70,
+            // 四大包起步地板（2026-11-05）：core/service/lsp/nudojs 占代码大头，
+            // 原先只有四个薄包有独立下限，大包会躲在全局阈值下被静默拖垮。
+            // 这里只兜「覆盖率腰斩」级倒退，不是质量证明；全量夜间基线刷新后
+            // 按 pnpm run coverage:floors 的建议值上调，只升不降。
+            "packages/core/**": {
+              lines: 60,
+              functions: 60,
+              branches: 50,
+              statements: 60,
+            },
+            "packages/service/**": {
+              lines: 60,
+              functions: 60,
+              branches: 50,
+              statements: 60,
+            },
+            "packages/lsp/**": {
+              lines: 55,
+              functions: 55,
+              branches: 45,
+              statements: 55,
+            },
+            "packages/nudojs/**": {
+              lines: 55,
+              functions: 55,
+              branches: 45,
+              statements: 55,
+            },
+            "packages/env/**": {
+              lines: 65,
+              functions: 60,
+              branches: 40,
+              statements: 58,
+            },
+            "packages/harvester/**": {
+              lines: 75,
+              functions: 80,
+              branches: 62,
+              statements: 70,
+            },
+            "packages/vite-plugin/**": {
+              lines: 78,
+              functions: 72,
+              branches: 65,
+              statements: 78,
+            },
+            "packages/parser/**": {
+              lines: 80,
+              functions: 82,
+              branches: 68,
+              statements: 78,
+            },
+          }
+        : {},
     },
   },
   resolve: {

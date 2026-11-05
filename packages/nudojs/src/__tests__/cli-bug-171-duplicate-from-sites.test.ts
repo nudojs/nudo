@@ -4,30 +4,11 @@
  * 改前 `collectExternalRecords` 逐项处理、不去重 ⇒ 同一路径登记两次错误、
  * 跑两次求值探针，human 面还把同一文件说成「2 usage-site files」。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { describe, it, expect } from "vitest";
+import { join } from "node:path";
 import { collectExternalRecords } from "../commands/shared.ts";
 import type { PathError } from "@nudojs/service";
-
-
-
-/** 独立临时目录（模块级 afterAll 清理）。 */
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-function tmpProject(prefix: string, files: Record<string, string> = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  dirs.push(dir);
-  for (const [rel, content] of Object.entries(files)) {
-    const target = join(dir, rel);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content, "utf-8");
-  }
-  return dir;
-}
+import { tmpProject } from "./helpers/tmp-project.ts";
 
 describe("BUG-171 — --from 路径去重", () => {
   it("同一缺失路径给两次 ⇒ 只登记一条错误", () => {

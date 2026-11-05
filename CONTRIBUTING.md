@@ -11,6 +11,7 @@ pnpm install            # workspace deps
 pnpm run build          # tsup → dist/ (required before test — see below)
 pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
+pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
 pnpm run test           # vitest run
 pnpm run verify:examples  # docs/examples command matrix (exit codes)
 pnpm run verify:docs      # doc code samples still run
@@ -42,6 +43,23 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **Unused code** — dead helpers, leftover experimental paths, unreferenced exports.
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
+
+### 回归钉：按特性族聚合，不再一 bug 一文件
+
+`packages/*/src/__tests__/` 现有 2150+ 个测试文件，其中约 1350 个是 `*-bug-NNN-*.test.ts`
+单案回归钉。文件数本身已成为 CI 调度成本（`vitest.config.ts` 的 4 worker / 30s 超时 /
+2 shard）。新增回归时：
+
+- **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
+  文件；确需新文件时在 PR 里说明为什么不能合并。
+- **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
+  它们是产品精度门禁，不是回归钉。
+- **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用
+  `__tests__/helpers/tmp-project.ts`；固定 prefix 的薄适配可以保留一层，但不得
+  重新实现 `mkdtempSync` / 清理逻辑。
+- `pnpm run lint:hygiene` 兜住 `tsc` 看不到、此前靠 reviewer 人工盯的几类问题：
+  无说明的空 `catch`、内联 harness 复制、非 CLI 生产源码里的 `console.log`，
+  以及 `algebra/` 顶层继续平铺。新增检查规则同样要有明确理由，不做风格 linter。
 
 ### Root `devDependencies` that look dead but are not
 

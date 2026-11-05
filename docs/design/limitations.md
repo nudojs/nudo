@@ -60,7 +60,7 @@
 | 混合 `+` 粗化 | **已收窄** | number⊗obj/unknown 等 → `number\|string`（不再纯 unknown）；粗化本身仍是纪律 |
 | LSP 客户端 UI 缺口 | 跟踪表已建 | [`lsp-client-gaps.md`](./lsp-client-gaps.md)（LSP-G1…；文档同步 LSP-G5 已关） |
 | 模块顶层必抛（`module-throw`） | **已收口**（句法证据） | 顶层语句序列**无条件**执行的 `throw` ⇒ 模块永远不可导入 ⇒ error 级 `nudo:module-throw`（每模块一条；`--entry-throws off` / `--ignore-throws <Kind>` 放行）。**召回边界**：条件抛（宿主守卫）、try 内抛、以及**没有顶层 `throw` 语句**的引擎判定抛（真实包 `typescript` / `react-dom` / `vitest` 中 6 个文件如此回落，其中 react-dom 的 cjs bundle 原生可装载）**不报** —— 引擎的「必抛」混着宿主 API 近似的产物，不是关于程序的证据（判据见 `check-may-throw.ts` 的 `definiteModuleThrowOf`） |
-| 生成器体惰性（Bug 212） | **已收窄（2026-11-04，步骤 1）** | 生成器体在**构造期**就跑完 ⇒ 外层绑定被提前改写，且改成一个**在任何原生观测点都不成立**的值（引擎 `1` / 原生 `0`）。两条硬约束：① **eager 收集是值域/签名面的承重结构**（元素域与 `conf` 构造期烘进 shape ⇒ 惰性化会把 `Generator<any \| number>` 退成 `Generator<unknown>`，并降 `conf` ⇒ 冲击 L1/L2 门禁精度）；② **外层绑定的写穿在 runtime 侧无句柄可拦**（转译产物是闭包变量的裸 JS 赋值，`$assignRecord` 只观测、返回值被丢弃）⇒ 任何修法都要先有转译侧钩子。**最小修法（纯转译侧、不动公开面）**：在 `$gen` 的体外套「自由写快照 + `$join` 折回」，复用仓里已有的 `collectFreeAssignedNames` ⇒ 把「确定的错值」变成 **sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族）。完整数据流 / 消费面清单 / 分步路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 1 已落地（2026-11-04）**：四个 `$gen` 发射点统一「自由写快照 + `$join` 折回」（`exec/transpile/emit.ts` 的 `genOuterFreeWriteNames` / `genFreeWriteWrap`）⇒ wrong-exact 消灭（`1`→`0\|1`、`"ab"`→`""\|"ab"`、`5`→`0\|5`；元素面/`conf` 承重与「不写外层绑定」的产物**不变**）；残余 = 首个 yield 挂起点的中间值（native `1` / `"a"`）不在 join 内——需步骤 2–4（真挂起）。回归钉：`eval-bug-212-generator-body-eager.test.ts`。**同类的 10 条「卡在求值模型 / Abs 表示层」的欠账**（relation/apply 缺 throws 通道、union 按成员名分派、fn 形状无 overload 承载位、`substAbs` 丢 fn impl、类 ≠ 可调用值）统一登记在 [`architecture-debt.md`](./architecture-debt.md) ⇒ 需**独立排期 + 独立回归基线**（动 `Abs` 形状会全局影响 `leqAbs` ⇒ 影响全部门禁接受集） |
+| 生成器体惰性（Bug 212） | **已收窄（2026-11-04，步骤 1）** | 生成器体在**构造期**就跑完 ⇒ 外层绑定被提前改写，且改成一个**在任何原生观测点都不成立**的值（引擎 `1` / 原生 `0`）。两条硬约束：① **eager 收集是值域/签名面的承重结构**（元素域与 `conf` 构造期烘进 shape ⇒ 惰性化会把 `Generator<any \| number>` 退成 `Generator<unknown>`，并降 `conf` ⇒ 冲击 L1/L2 门禁精度）；② **外层绑定的写穿在 runtime 侧无句柄可拦**（转译产物是闭包变量的裸 JS 赋值，`$assignRecord` 只观测、返回值被丢弃）⇒ 任何修法都要先有转译侧钩子。**最小修法（纯转译侧、不动公开面）**：在 `$gen` 的体外套「自由写快照 + `$join` 折回」，复用仓里已有的 `collectFreeAssignedNames` ⇒ 把「确定的错值」变成 **sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族）。完整数据流 / 消费面清单 / 分步路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 1 已落地（2026-11-04）**：四个 `$gen` 发射点统一「自由写快照 + `$join` 折回」（`exec/transpile/emit.ts` 的 `genOuterFreeWriteNames` / `genFreeWriteWrap`）⇒ wrong-exact 消灭（`1`→`0\|1`、`"ab"`→`""\|"ab"`、`5`→`0\|5`；元素面/`conf` 承重与「不写外层绑定」的产物**不变**）；残余 = 首个 yield 挂起点的中间值（native `1` / `"a"`）不在 join 内——需步骤 2–4（真挂起）。回归钉：`eval-bug-212-generator-body-eager.test.ts`。**同类的 A 类欠账共 10 个编号**（其中 A3 / A4 / A5 / A6 / A7 已修，A1 步骤 1 已落地；仍约束决策的面是 callable 面、原型自有键集、Generator brand 与生成器惰性）统一登记在 [`architecture-debt.md`](./architecture-debt.md) ⇒ 需**独立排期 + 独立回归基线**（动 `Abs` 形状会全局影响 `leqAbs` ⇒ 影响全部门禁接受集；剩余槽位的分步骤方案见台账「受控 major 执行方案」节） |
 
 ---
 
@@ -166,3 +166,22 @@ function portOf(cfg) { return cfg?.server?.port ?? 8080; }
 已闭环条目（一行锚）归档在 [`../reports/limits-resolved.md`](../reports/limits-resolved.md)；行为以测试 / `docs/examples/` 为准。
 
 金标与 CI 门禁见 [`../ci-nudo-check.md`](../ci-nudo-check.md) 与 cli-semantics §5.6。
+
+---
+
+## 5. 对外宣称边界（写 README / 官网 / 发布说明前先读）
+
+`nudo check` 是**可信代码库上的执行式契约门禁**，不是 `tsc --noEmit` 的无条件
+替代品。以下边界与 §1 / §2 同源，对外文案不得越过：
+
+| 可以宣称 | 不可以宣称 |
+|---|---|
+| 纯 JS / TS（注解剥离后按 JS 语义）上，基于真实调用点给出签名与 L1/L2 门禁 | 「不需要任何注解就能推出完整类型」——义务只来自显式契约或调用点事实（§1.1） |
+| 在**可信**仓库里作为 CI 门禁（与跑项目测试同信任级） | 「可用于不可信 PR / 用户提交」——分析会执行目标代码、sidecar 与 mock（信任边界见 `kernel-merge.md`） |
+| 已覆盖的内建 API 面可给出精确结果 | 「等价于完整 `@types` / Node 运行时」——env/harvest 覆盖有限，mock 不可替代（§2） |
+| 对可枚举调用点的函数给出 `call@` 见证 | 「全程序精确」——native 回调、动态 `require`、递归预算、闭包首次调用前返回面等均有天花板（§2、§3） |
+| 与 TypeScript 并存、逐步用 `migrate` 退休 `tsc` | 「`tsc` 已可删除」——`migrate` 是单向闸门，`verify` 阶段仍需双跑 |
+
+**适用范围（对外一句话）**：可信的纯 JS / 轻 TS 代码库、调用点可枚举、依赖面可用
+env 或 mock 覆盖。超出范围时把 Nudo 定位为 `tsc` 的**补充门禁**而非替代。
+精度数字只引用 [`../../benchmark/README.md`](../../benchmark/README.md) 列出的三个口径。

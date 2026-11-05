@@ -649,9 +649,9 @@ createEnvironment(parent?, bindings?)
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
 | <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
-| <a id="registerevalclass"></a>`registerEvalClass` | fn | — | `registerEvalClass(spec: EvalClassSpec): void` |
+| <a id="registerevalclass"></a>`registerEvalClass` | fn | 注册类规格（裸名主键 + epoch 碰撞记录——BUG-026/172 注释群）。 | `registerEvalClass(spec: EvalClassSpec): void` |
 | <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制）。 | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
-| <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |
+| <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; throws?: Abs; }, ): Abs` |
 | <a id="relsource"></a>`RelSource` | type | — | — |
 | <a id="requiredfnarity"></a>`requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
 | <a id="resetchecksourcememo"></a>`resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |

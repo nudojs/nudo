@@ -16,6 +16,7 @@ dist-ssr
 tmp
 
 # Editor directories and files
+.workbuddy/
 .vscode/*
 packages/*/.vscode/*
 packages/*/out/*
