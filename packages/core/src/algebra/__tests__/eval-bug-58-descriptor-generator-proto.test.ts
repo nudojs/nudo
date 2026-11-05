@@ -17,11 +17,13 @@
  *              `"length"` 槽 ⇒ env brand 的 `.length` 拿不到，如 Buffer 实例）。
  *
  * 口径边界（**诚实写明**，勿当精确承诺）：
- * - 第 2/3 条只对**引擎已建模成员**的原型给精确清单（Error 家族 + 用户类
- *   原型）；其余原型（Array/Object/Map…）仍走既有保守域 `string[]`——
- *   **不扩 Abs 形状**（扩形状是 A 类架构债）。
- * - 用户类原型的**方法与访问器交错定义序**在引擎的类注册表里不可复原
- *   （methods / accessors 分两张表）⇒ 两者同时存在时不给精确清单（保守域）。
+ * - 第 2/3 条的用户类原型 / Error 家族给精确清单；**内建原型**（Array /
+ *   Object / Map…）已由 A10 残余批次（`builtins/ctor.ts::hostProtoOwnKeys`
+ *   宿主采集对拍）升为精确面，见 `abs-proto-own-keys-facet.test.ts`。
+ * - 用户类原型的**方法与访问器交错定义序**曾因 `methods` / `accessors`
+ *   分两张表而不可复原 ⇒ 保守 `string[]`；A10 残余批次已由
+ *   `EvalClassSpec.protoMemberOrder`（转译期按类体源码序登记）收口，
+ *   本文件下方 4 条钉与宿主逐一对拍（含定义序反转 / 静态 / 私有 / 计算键）。
  * - 第 4 条：协议方法在**原型链**上（原生 `g.prototype` 自有键为空）⇒ 引擎
  *   把协议槽标 internal——自有面（hasOwnProperty / gOPN / 枚举）不可见，
  *   与原生一致；`g.prototype` 的 gOPN 仍走既有保守域 `string[]`（不折空）。
@@ -266,15 +268,86 @@ describe("族 58 · 第 3 条 · 类原型 brand 的 gOPN / keys 面", () => {
     ).toEqual({ ok: true, value: false });
   });
 
-  it("负控：方法与访问器交错定义序不可复原 ⇒ 仍走保守域 string[]（逐字不变）", () => {
+  it("A10 残余：方法与访问器交错定义序已复原（宿主对拍，不再是保守域）", () => {
+    class HostClassG {
+      m() {}
+      get g() {
+        return 1;
+      }
+    }
+    expect(Object.getOwnPropertyNames(HostClassG.prototype)).toEqual(["constructor", "m", "g"]);
     const r = call(
       wrap(
         `class Bug58ClassG { m() {} get g() { return 1; } } return Object.getOwnPropertyNames(Bug58ClassG.prototype);`,
       ),
       "f",
     ).result;
-    expect(formatShape(r)).toBe("string[]");
-    expect(litValue(r).ok).toBe(false);
+    expect(tupleEls(r)).toEqual(["constructor", "m", "g"]);
+  });
+
+  it("A10 残余：定义序反转（访问器在前）仍按源码序，不是「先方法后访问器」", () => {
+    class HostClassGRev {
+      get g() {
+        return 1;
+      }
+      m() {}
+    }
+    expect(Object.getOwnPropertyNames(HostClassGRev.prototype)).toEqual(["constructor", "g", "m"]);
+    const r = call(
+      wrap(
+        `class Bug58ClassGRev { get g() { return 1; } m() {} } return Object.getOwnPropertyNames(Bug58ClassGRev.prototype);`,
+      ),
+      "f",
+    ).result;
+    expect(tupleEls(r)).toEqual(["constructor", "g", "m"]);
+  });
+
+  it("A10 残余：多成员交错；静态 / 私有方法不进原型自有键", () => {
+    class HostClassMix {
+      m() {}
+      get g() {
+        return 1;
+      }
+      n() {}
+      static s() {}
+      #p() {}
+    }
+    expect(Object.getOwnPropertyNames(HostClassMix.prototype)).toEqual([
+      "constructor",
+      "m",
+      "g",
+      "n",
+    ]);
+    const r = call(
+      wrap(
+        `class Bug58ClassMix { m() {} get g() { return 1; } n() {} static s() {} #p() {} } return Object.getOwnPropertyNames(Bug58ClassMix.prototype);`,
+      ),
+      "f",
+    ).result;
+    expect(tupleEls(r)).toEqual(["constructor", "m", "g", "n"]);
+  });
+
+  it("A10 残余：字符串计算键经 rekey 换真名且保持源码序", () => {
+    class HostClassCk {
+      ["a"]() {}
+      get g() {
+        return 1;
+      }
+      ["b"]() {}
+    }
+    expect(Object.getOwnPropertyNames(HostClassCk.prototype)).toEqual([
+      "constructor",
+      "a",
+      "g",
+      "b",
+    ]);
+    const r = call(
+      wrap(
+        `class Bug58ClassCk { ["a"]() {} get g() { return 1; } ["b"]() {} } return Object.getOwnPropertyNames(Bug58ClassCk.prototype);`,
+      ),
+      "f",
+    ).result;
+    expect(tupleEls(r)).toEqual(["constructor", "a", "g", "b"]);
   });
 });
 

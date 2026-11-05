@@ -276,6 +276,10 @@ export function classSpecOf(
   let ctorLength = 0;
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
+  /** A10 残余：实例原型自有键按**类体源码序**登记（不含 constructor）。
+   *  见 exec/class-registry.ts::EvalClassSpec.protoMemberOrder 的说明。 */
+  const protoMemberOrder: string[] = [];
+  const protoMemberSeen = new Set<string>();
   let ckSeq = 0;
   // Bug 14：父类构造器源前移计算——静态方法体内 super 的接收者
   // （staticSuperSrc 注入方法体 opts，Super 节点发此源落通用 $get/$invoke）
@@ -549,6 +553,22 @@ export function classSpecOf(
           ? `__ck${ckSeq++}`
           : undefined;
     if (mname === undefined) continue;
+    // A10 残余：在按 kind / static 分流**之前**登记一次源码定义序。
+    // 排除：静态成员（不在原型上）、构造器（gOPN 里恒为首位，由消费侧
+    // 补）、私有方法（原生是私有槽，不是原型自有键）。同名 get/set 合并
+    // 为一个属性 ⇒ 只记首次出现位置（与 accessorDefs 的归并口径一致）。
+    // 计算键保留 synth 名，declare.ts 的 rekey 会同步换成真名 / 摘除抽象键。
+    if (
+      !m.static &&
+      m.kind !== "constructor" &&
+      mname !== "constructor" &&
+      m.type !== "ClassPrivateMethod" &&
+      !mname.startsWith("#") &&
+      !protoMemberSeen.has(mname)
+    ) {
+      protoMemberSeen.add(mname);
+      protoMemberOrder.push(mname);
+    }
     const computedKeySrc = keyR && "computed" in keyR ? keyR.computed : undefined;
     const params = paramsOf(m);
     const paramList = params.filter((p) => p !== "_").join(", ");
@@ -888,6 +908,14 @@ export function classSpecOf(
   }
   emitAccessorsTable("accessors", accessorDefs);
   emitAccessorsTable("staticAccessors", staticAccessorDefs);
+  // A10 残余：源码序随 spec 下传（缺省不发射 ⇒ 手写 spec / 旧产物零回归）
+  if (protoMemberOrder.length) {
+    specLines.push(
+      `${indent(depth + 2)}protoMemberOrder: [${protoMemberOrder
+        .map((n) => JSON.stringify(n))
+        .join(", ")}],`,
+    );
+  }
   // Bug 142：静态块已并入 statics 表（与静态字段同序执行）——不再需要
   // 独立静态块尾段（否则静态块恒在全部静态字段之后 = 源码顺序丢失）。
   const staticInitLines: string[] = [];
