@@ -44,8 +44,8 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@babel/generator": "^8.0.6",
-    "@babel/types": "^8.0.6",
+    "@babel/generator": "^8.0.10",
+    "@babel/types": "^8.0.10",
     "@nudojs/core": "workspace:*",
     "@nudojs/env": "workspace:*",
     "@nudojs/harvester": "workspace:*",
@@ -58,6 +58,6 @@
     "prepublishOnly": "tsup"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5"
+    "@types/node": "^26.6.6"
   }
 }
