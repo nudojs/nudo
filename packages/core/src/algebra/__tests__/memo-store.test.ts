@@ -5,8 +5,8 @@
  * 值命中不等于 miss、定向逐出只删依赖目标路径的条目（路径归一 stablePathKey）。
  */
 import { describe, it, expect } from "vitest";
-import { DependencyMemo } from "../memo-store.ts";
-import { loadModuleId, moduleMapId } from "../memo-identity.ts";
+import { DependencyMemo } from "../key/memo-store.ts";
+import { loadModuleId, moduleMapId } from "../key/memo-identity.ts";
 
 describe("DependencyMemo：有界 LRU", () => {
   it("超过上限逐出最旧条目", () => {

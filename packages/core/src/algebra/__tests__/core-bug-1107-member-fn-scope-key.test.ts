@@ -23,12 +23,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { makeFiles } from "./nudo-constraints.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 
 beforeEach(() => {
   resetCheckSourceMemo();

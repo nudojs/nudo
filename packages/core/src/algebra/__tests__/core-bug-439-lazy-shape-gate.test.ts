@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import type { CheckIssue } from "../check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 const NUDO_SRC = `

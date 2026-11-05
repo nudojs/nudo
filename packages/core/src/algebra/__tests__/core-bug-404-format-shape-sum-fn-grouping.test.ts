@@ -15,7 +15,7 @@
  * **未包裹**的文本（避免把 `fn` 成员与别的成员误去重）。
  */
 import { describe, it, expect } from "vitest";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { abs, anyAbs, numLit, strLit, type Abs } from "../abs.ts";
 import { call } from "./eval-helpers.ts";
 

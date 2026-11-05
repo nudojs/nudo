@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { extractDeclaredThrows } from "../refine.ts";
 import { throwConstraintToKinds, fn, number } from "../constraint.ts";
@@ -12,7 +12,7 @@ import {
   mayThrowEffectsToAbs,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-import { formatCheckReport } from "../check-report.ts";
+import { formatCheckReport } from "../check/check-report.ts";
 
 const fx = (kind: string): MayThrowEffect => ({ kind, cause: `throw ${kind}` });
 

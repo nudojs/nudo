@@ -7,8 +7,8 @@
  * 独立叶子模块避免 runtime ↔ class 循环依赖。
  */
 import type { Abs } from "../abs.ts";
-import type { MayThrowEffect } from "../may-throw.ts";
-import { recordMayThrow } from "../may-throw.ts";
+import type { MayThrowEffect } from "../diagnostics/may-throw.ts";
+import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { getSlot } from "../objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 

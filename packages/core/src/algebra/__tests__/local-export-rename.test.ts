@@ -6,8 +6,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { generalizeFromAst, extractFn } from "../generalize.ts";
-import { resolveExportSource } from "../scan-call-graph.ts";
-import { scanLiteralCalls } from "../scan.ts";
+import { resolveExportSource } from "../scan/scan-call-graph.ts";
+import { scanLiteralCalls } from "../scan/scan.ts";
 import { pTrue } from "../pred.ts";
 
 describe("local export rename name mapping", () => {

@@ -9,7 +9,7 @@ import {
   formalParamsFromNodes,
   contractParamNameSet,
   locateContractParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 
 describe("object pattern rename + default keeps propKey", () => {

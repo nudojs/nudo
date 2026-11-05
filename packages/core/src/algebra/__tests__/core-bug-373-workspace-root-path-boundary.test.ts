@@ -13,7 +13,7 @@ import {
   formatGithubAnnotations,
   formatGitlabCodeQuality,
   type CheckReport,
-} from "../check-report.ts";
+} from "../check/check-report.ts";
 
 const report = (file: string): CheckReport => ({
   file,

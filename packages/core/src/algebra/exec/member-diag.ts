@@ -14,7 +14,7 @@ import { abs, isAbsLike } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
 import { getSlot, isNullProtoObj } from "../objects.ts";
 import { getEvalClass } from "./class-registry.ts";
-import { DIAG } from "../diag-codes.ts";
+import { DIAG } from "../diagnostics/diag-codes.ts";
 import { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 import {
   createScopedSlot,

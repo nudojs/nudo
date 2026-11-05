@@ -15,7 +15,7 @@
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, never, litValue, strLit, isAbsLike } from "../../abs.ts";
 import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
 import {
   protoBrandAbs,

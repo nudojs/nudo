@@ -25,7 +25,7 @@ import {
   v,
   type Abs,
 } from "../index.ts";
-import { evalThrowsOf } from "../check-may-throw.ts";
+import { evalThrowsOf } from "../check/check-may-throw.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { collectAbsExports } from "../abs-modules.ts";
 import { parseSource } from "../parse-source.ts";

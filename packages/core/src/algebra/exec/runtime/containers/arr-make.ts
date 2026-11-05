@@ -20,7 +20,7 @@ import {
   joinAbs,
 } from "../../../objects.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
-import { markFreshInstance } from "../../../instance-id.ts";
+import { markFreshInstance } from "../../../key/instance-id.ts";
 import {
   undef,
   asAbsVal,

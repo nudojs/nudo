@@ -16,8 +16,8 @@
  */
 
 import type { Comment, File, Node } from "@babel/types";
-import { maskStringsKeepComments } from "./code-text.ts";
-import { BoundedLruMap } from "./lru-map.ts";
+import { maskStringsKeepComments } from "./format/code-text.ts";
+import { BoundedLruMap } from "./key/lru-map.ts";
 import { parseSource } from "./parse-source.ts";
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import { typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs } from "../surface.t
 import { numLit, num, abs, strLit, boolLit } from "../abs.ts";
 import { lit, v } from "../term.ts";
 import { gt, pTrue } from "../pred.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 
 describe("algebra surface ops", () => {
   it("typeof of primitives and null", () => {

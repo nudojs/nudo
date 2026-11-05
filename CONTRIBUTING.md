@@ -52,6 +52,13 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 
 - **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
   文件；确需新文件时在 PR 里说明为什么不能合并。
+- **按族收敛入口的工具已就绪，但不要全量套用**：`scripts/aggregate-tests.mjs`
+  把同族 `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts`
+  import，可把 vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）
+  暴露**模块共享污染**：同一入口内的 part 共享模块实例，依赖全局注册表 /
+  oracle / 缓存的用例互相影响（新增 15 条失败，集中在 core/env/lsp/cli/service），
+  故**已整体回滚**。后续只能逐族 `--apply --only <group-key>` + 跑该族全部用例
+  确认零回归后保留，并同步给 `tsconfig.test-lint.json` 加 `*.part.ts`。
 - **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
   它们是产品精度门禁，不是回归钉。
 - **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用

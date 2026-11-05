@@ -69,7 +69,7 @@ import { writeInPlace, undef, callAtFunctionBoundary, enforceProxyGetInvariant, 
 import { $call } from "../exec/call.ts";
 import { proxyPartsOf, proxyTrapOf } from "../exec/match-iter.ts";
 import { slotKeyOfSymbolAbs, symbolAbsForSlotKey } from "../exec/runtime/symbol-key.ts";
-import { isSymbolAbs } from "../symbol-id.ts";
+import { isSymbolAbs } from "../key/symbol-id.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { getEvalClass } from "../exec/class-registry.ts";
 

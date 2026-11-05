@@ -12,7 +12,7 @@ import { parseSource } from "../parse-source.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { extractFn } from "../generalize.ts";
 import { applyCallbackAbs } from "../hof.ts";
-import { sourceIsStrict, hasUseStrictDirective } from "../code-text.ts";
+import { sourceIsStrict, hasUseStrictDirective } from "../format/code-text.ts";
 
 function bodyOf(src: string, params = "", name = "f") {
   const file = parseSource(`function ${name}(${params}) { ${src} }`);

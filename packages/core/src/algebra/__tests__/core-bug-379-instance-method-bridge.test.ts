@@ -10,9 +10,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { pTrue } from "../index.ts";
-import { evalThrowsOutcome } from "../check-may-throw.ts";
+import { evalThrowsOutcome } from "../check/check-may-throw.ts";
 import { parseSource } from "../parse-source.ts";
-import { throwAbsToKinds } from "../may-throw.ts";
+import { throwAbsToKinds } from "../diagnostics/may-throw.ts";
 
 const clsSrc = `export class Counter {
   boom() { throw new TypeError("explicit"); }

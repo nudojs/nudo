@@ -14,10 +14,10 @@
  * - 满足契约的实参（`c.m(1)`）不报（不放宽过头）
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { collectCallResolvers } from "../scan-call-graph.ts";
-import { listTopFunctions } from "../scan.ts";
+import { collectCallResolvers } from "../scan/scan-call-graph.ts";
+import { listTopFunctions } from "../scan/scan.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 const SRC = `

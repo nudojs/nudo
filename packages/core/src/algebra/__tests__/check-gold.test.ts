@@ -393,7 +393,7 @@ function formatIssues(r: { issues: Array<{ severity: string; code: string; messa
 // 记录给出。既有 golds 与 pin 零改动。
 // ---------------------------------------------------------------------------
 import { numLit, strLit, abs as makeAbs, type Abs } from "../abs.ts";
-import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan.ts";
+import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan/scan.ts";
 
 type DomainGold = {
   name: string;

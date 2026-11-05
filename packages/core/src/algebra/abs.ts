@@ -14,7 +14,7 @@ import {
   implies,
   type Phi,
 } from "./pred.ts";
-import { ProjectionBudget } from "./projection-budget.ts";
+import { ProjectionBudget } from "./interface/projection-budget.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 
@@ -122,6 +122,40 @@ export type Shape =
     }
   | { k: "sum"; members: Abs[] };
 
+/**
+ * A2+A8 / A10 / A11：Abs 的**可扩展槽位容器**。
+ *
+ * 设计纪律（照抄 A6 的 `overloads?` 范式，见 [`docs/design/architecture-debt.md`]
+ * 「剩余槽位的受控 major 执行方案」）：
+ * - **缺省不出现** ⇒ 旧 Abs 逐字节不变，所有外延投影 / `leqAbs` 的接受集不变。
+ * - 新槽位只加字段，不再改 Shape 判别联合；未来无需为每种能力动 `leqAbs`。
+ * - `substAbs` / `snapshotAbs` / `renameAbs` / `absKey` 必须**整包搬运**（A7
+ *   的教训：重建只搬四件套会把侧表面静默抹掉）。
+ * - 槽位只参与运行期精化与投影增强；`leqAbs` / `formatShape` / dts / schema /
+ *   guard 在槽位启用前**不读**它。
+ */
+export type AbsFacets = {
+  /** A2+A8：值能否被裸调用（无 `new`）。false = 原生抛 TypeError（类构造器）。 */
+  callable?: boolean;
+  /** A10：原型对象的自有键集（含符号键）。缺省 = 保守域（旧行为）。 */
+  protoOwnKeys?: { strings: string[]; symbols?: string[] };
+  /** A11：生成器对象身份。缺省 = 与空对象同形（旧行为）。 */
+  brand?: string;
+};
+
+/** 等价副本用的深拷贝（不共享数组；缺省不出现时返回 undefined）。 */
+export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined {
+  if (f === undefined) return undefined;
+  const out: AbsFacets = { ...f };
+  if (f.protoOwnKeys) {
+    out.protoOwnKeys = {
+      strings: [...f.protoOwnKeys.strings],
+      ...(f.protoOwnKeys.symbols ? { symbols: [...f.protoOwnKeys.symbols] } : {}),
+    };
+  }
+  return out;
+}
+
 export type Abs = {
   shape: Shape;
   term?: Term;
@@ -132,6 +166,8 @@ export type Abs = {
    * 仅展示用：不进 leq / 指纹 / check 等价；formatAbs 读取。
    */
   pathNote?: string;
+  /** 可扩展槽位容器（缺省不出现）。搬运纪律见 `AbsFacets`。 */
+  facets?: AbsFacets;
 };
 
 /**

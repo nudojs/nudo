@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import * as path from "node:path";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 

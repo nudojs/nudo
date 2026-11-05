@@ -15,12 +15,12 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { anyAbs, litValue, type Abs } from "../abs.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 /** 源级求值三面：值 / throws 面 / soft may-throw 效果 kind 集 */
 function evalSrc(

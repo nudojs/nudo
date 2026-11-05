@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { eq, ge, gt, le, lt } from "../pred.ts";
 import { lit, v } from "../term.ts";
 import { numericBoundsImply } from "../pred-bounds.ts";
-import { isHiddenInternalSlot } from "../slot-visibility.ts";
+import { isHiddenInternalSlot } from "../interface/slot-visibility.ts";
 
 const x = v("x");
 const y = v("y");

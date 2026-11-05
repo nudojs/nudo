@@ -22,8 +22,8 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkSource } from "../check.ts";
-import { collectAbsInlays } from "../inlay.ts";
+import { checkSource } from "../check/check.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 import { pTrue } from "../pred.ts";
 
 /** 有公理：`tmp/repro/bug-247/inv/m1.js` 逐字内容 */

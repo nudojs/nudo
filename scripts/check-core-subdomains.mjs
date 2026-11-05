@@ -1,11 +1,15 @@
 /**
  * Boundary gate for packages/core/src/algebra.
  *
- * core holds ~54% of the repo's TypeScript; algebra/ top level currently
- * carries 93 flat .ts files while five subdomain directories already exist.
- * Relocating those files would break ~2300 `.ts`-extension relative imports,
- * so this gate does NOT move anything — it freezes the flat area and forces
- * new modules into an existing subdomain.
+ * core holds ~54% of the repo's TypeScript. 2026-11-05: 50 of the 93 flat
+ * algebra/*.ts files were relocated into six new subdomains by
+ * `scripts/relocate-core-subdomains.mjs --apply` (795 relative specifiers
+ * rewritten mechanically). The remaining flat files are the unclassified
+ * core kernels (abs.ts / objects.ts / leq.ts / hof.ts / …).
+ *
+ * This gate freezes the remaining flat area and forces NEW modules into an
+ * existing subdomain. Re-run the codemod (or move files by hand) to lower
+ * MAX_TOP_LEVEL_TS further; never raise it without a review.
  *
  *   node scripts/check-core-subdomains.mjs
  *
@@ -19,11 +23,14 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const algebra = join(repoRoot, "packages/core/src/algebra");
 
-const SUBDOMAINS = new Set(["__tests__", "arithmetic", "builtins", "exec", "scan"]);
+const SUBDOMAINS = new Set([
+  "__tests__", "arithmetic", "builtins", "exec", "scan",
+  "check", "format", "interface", "diagnostics", "key",
+]);
 
-// Frozen 2026-11-05 baseline (93 top-level .ts). Intent: no NEW flat files,
-// not "cap at 93 forever" — a deliberate consolidation may lower it.
-const MAX_TOP_LEVEL_TS = 93;
+// Frozen after the 2026-11-05 relocation: 93 - 50 moved = 43 remaining.
+// Intent: no NEW flat files — a further consolidation should LOWER this.
+const MAX_TOP_LEVEL_TS = 43;
 
 const entries = readdirSync(algebra, { withFileTypes: true });
 const topLevelTs = entries.filter((e) => e.isFile() && e.name.endsWith(".ts"));

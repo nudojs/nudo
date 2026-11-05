@@ -3,7 +3,7 @@
  * tuple.holes）⇒ α-重命名后稀疏元组被误判可赋给稠密元组（假绿）。
  */
 import { describe, it, expect } from "vitest";
-import { renameAbs } from "../generalize-key.ts";
+import { renameAbs } from "../key/generalize-key.ts";
 import { leqAbs } from "../leq.ts";
 import { abs, num, numLit, type Abs } from "../abs.ts";
 

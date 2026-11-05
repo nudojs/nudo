@@ -32,8 +32,8 @@
 import { describe, it, expect } from "vitest";
 import { call } from "./eval-helpers.ts";
 import { denoteGuard } from "../denote.ts";
-import { absToConstraint } from "../projection.ts";
-import { formatAbs } from "../format.ts";
+import { absToConstraint } from "../interface/projection.ts";
+import { formatAbs } from "../format/format.ts";
 import type { Abs } from "../abs.ts";
 
 /** 生成器导出（协议槽为 internal 槽 + 数字下标槽承载元素域） */

@@ -13,7 +13,7 @@
  * 反向钉：HEAD（未修）上 `sum(1, 2)` 报违例 ⇒ 本文件在 HEAD 上**必失败**。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { makeFiles } from "./nudo-constraints.ts";

@@ -19,7 +19,7 @@ import { lit as termLit, v as termVar } from "../term.ts";
 import { gt } from "../pred.ts";
 import { number } from "../constraint.ts";
 import { assertImplies } from "../postcondition.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { numericBounds } from "../arithmetic.ts";
 import { evalMathMethod } from "../builtins/math.ts";
 import { issuesOf } from "./nudo-constraints.ts";

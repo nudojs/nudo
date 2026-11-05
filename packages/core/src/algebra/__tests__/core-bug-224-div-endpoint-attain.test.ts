@@ -21,7 +21,7 @@ import { add } from "../arithmetic/addsub.ts";
 import { div, mul } from "../arithmetic/muldiv.ts";
 import { number } from "../constraint.ts";
 import { assertImplies } from "../postcondition.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { issuesOf } from "./nudo-constraints.ts";
 
 /** x: number, x > 0（与夹具 `std.nudo.js` 的 `positive` 同形） */

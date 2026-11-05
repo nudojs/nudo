@@ -51,9 +51,9 @@ import { evalExprAbs } from "../exec/run.ts";
 import { parseSource as parse } from "../parse-source.ts";
 import { absLit, anyAbs, bigintLit, confJoin, numLit } from "../abs.ts";
 import type { Abs, Confidence } from "../abs.ts";
-import type { CheckIssue } from "../check-report.ts";
-import type { CallResolve } from "../scan-call-graph.ts";
-import { jsDocOptionalParams, tsOptionalParams } from "../param-surface.ts";
+import type { CheckIssue } from "../check/check-report.ts";
+import type { CallResolve } from "./scan-call-graph.ts";
+import { jsDocOptionalParams, tsOptionalParams } from "../format/param-surface.ts";
 
 /**
  * `scanLiteralCalls` 的选项（**单源**：薄壳 `scan-literal-calls.ts` 的

@@ -7,7 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { setPropFlags } from "../builtins/invariants.ts";
-import { ERROR_CTOR_NAMES } from "../error-names.ts";
+import { ERROR_CTOR_NAMES } from "../diagnostics/error-names.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
 export { markClassValue, classNameOfValue };

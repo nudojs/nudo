@@ -20,7 +20,7 @@ import { eq, ge, gt, le, lt, implies } from "../pred.ts";
 import { v } from "../term.ts";
 import { abs } from "../abs.ts";
 import { cmp } from "../arithmetic/cmp.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { sigOf, issuesOf } from "./nudo-constraints.ts";
 
 const x = v("x");

@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { call, val, effects } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 
 /** 原生：定抛（try/catch 吸收后返回 "caught"） */
 function expectCaught(src: string) {

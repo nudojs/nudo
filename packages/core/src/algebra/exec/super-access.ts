@@ -25,7 +25,7 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { errorTypeAbs } from "../error-type-abs.ts";
+import { errorTypeAbs } from "../diagnostics/error-type-abs.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 
 const superCalledMarks = new WeakMap<object, Set<string>>();

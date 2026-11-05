@@ -2,9 +2,9 @@
 import { describe, it, expect } from "vitest";
 import { abs } from "../abs.ts";
 import { formatThrowsAbs, errorTypeAbs, mayThrowEffectsToAbs } from "../exec/may-throw.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 
 describe("formatThrowsAbs shape coverage", () => {

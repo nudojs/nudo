@@ -8,7 +8,7 @@
  * 每类不可表达形态反例 → undefined。
  */
 import { describe, it, expect } from "vitest";
-import { absToConstraint, joinThenProject } from "../projection.ts";
+import { absToConstraint, joinThenProject } from "../interface/projection.ts";
 import {
   abs,
   bool,
@@ -48,7 +48,7 @@ import {
   union,
   type NudoConstraint,
 } from "../constraint.ts";
-import { formatConstraint } from "../interface.ts";
+import { formatConstraint } from "../interface/interface.ts";
 import { joinAbs } from "../objects.ts";
 
 /** 契约实例化成 Pred 的显示串（golden 比较用） */

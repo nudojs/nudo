@@ -21,7 +21,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import { litC } from "../constraint.ts";
 import { makeFiles, sigOf } from "./nudo-constraints.ts";

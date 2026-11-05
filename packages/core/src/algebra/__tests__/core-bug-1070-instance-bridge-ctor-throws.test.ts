@@ -18,9 +18,9 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
-import { evalThrowsOutcome } from "../check-may-throw.ts";
+import { evalThrowsOutcome } from "../check/check-may-throw.ts";
 import { parseSource } from "../parse-source.ts";
-import { throwAbsToKinds } from "../may-throw.ts";
+import { throwAbsToKinds } from "../diagnostics/may-throw.ts";
 
 const acctSrc = `export class Account {
   constructor(balance) { this.balance = balance + 1; }

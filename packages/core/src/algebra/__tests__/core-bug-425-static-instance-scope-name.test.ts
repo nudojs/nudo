@@ -18,7 +18,7 @@ import {
   listFnDirectiveScopes,
   parseSource,
 } from "../index.ts";
-import { listTopFunctions } from "../scan.ts";
+import { listTopFunctions } from "../scan/scan.ts";
 import { stdOpts, withStdImport } from "./nudo-constraints.ts";
 
 const STATIC_AND_INST = `export class C {

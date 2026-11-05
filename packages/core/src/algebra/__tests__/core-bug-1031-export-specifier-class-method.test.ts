@@ -21,7 +21,7 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { generalizeFromAst } from "../generalize.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 /** `export { q };` 在类**前**（说明符语句） */

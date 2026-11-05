@@ -14,7 +14,7 @@
  * 误伤**（本文件后半段钉住）。
  */
 import { describe, it, expect } from "vitest";
-import { generatedExportNames } from "../scan-named-exports.ts";
+import { generatedExportNames } from "../scan/scan-named-exports.ts";
 
 describe("Bug 432 — 生成段归属：用户自己的 const 不并入段内链", () => {
   it("真 @generated 标记 + 中间夹无关 const ⇒ 手写 export 不是生成段", () => {

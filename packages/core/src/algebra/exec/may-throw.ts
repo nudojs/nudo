@@ -29,4 +29,4 @@ export {
   throwAbsToKinds,
   throwPayloadOf,
   throwsKindCovered,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";

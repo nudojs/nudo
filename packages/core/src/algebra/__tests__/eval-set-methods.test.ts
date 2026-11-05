@@ -17,7 +17,7 @@
  * ground truth：node 26 原生实测（native 是 ground truth）。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { anyAbs, type Abs } from "../abs.ts";
 import { call, val, effects } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";

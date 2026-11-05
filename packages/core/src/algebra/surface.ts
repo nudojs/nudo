@@ -7,8 +7,8 @@ import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
-import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./symbol-id.ts";
-import { freshInstanceIdOf } from "./instance-id.ts";
+import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./key/symbol-id.ts";
+import { freshInstanceIdOf } from "./key/instance-id.ts";
 import type { LiteralValue, Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -28,8 +28,8 @@ import {
   mixedBigintOperandTail,
   isMaybeCoercionThrowOperand,
 } from "./arithmetic/coerce.ts";
-import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { isDomainShared } from "./len-sharing.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---

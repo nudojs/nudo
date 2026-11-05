@@ -103,7 +103,7 @@ export {
 export {
   type FormatOptions, formatAbs, formatAbsMultiline, formatShape,
   formatShapeSlot
-} from "./format.ts";
+} from "./format/format.ts";
 
 export {
   type PolyFn, type TypeParam, buildArgsFromAssume, collectAbsFreeVars,
@@ -115,11 +115,11 @@ export {
   type FormalParam, contractParamNameSet, formalParamDisplayNames,
   formalParamSignatureNames,
   formalParamsFromNodes, locateContractParam
-} from "./param-surface.ts";
+} from "./format/param-surface.ts";
 
 export {
   type Diagnostic, checkArg, checkCall, formatDiagnostics
-} from "./diagnostics.ts";
+} from "./diagnostics/diagnostics.ts";
 
 export {
   getParseSourceCacheSize, parseSource, resetParseSourceCache
@@ -128,14 +128,14 @@ export {
 export {
   type CheckOptions, checkSource, evictCheckSourceMemoForPaths,
   resetCheckSourceMemo
-} from "./check.ts";
+} from "./check/check.ts";
 
 export {
   type CheckAction, type CheckIssue, type CheckJson, type CheckJsonMulti,
   type CheckReport, type GitlabCodeQualityIssue, type NudoSig,
   actionsForIssue, formatCheckReport, formatGithubAnnotations,
   formatGitlabCodeQuality, serializeCheckJson, serializeCheckJsonMulti
-} from "./check-report.ts";
+} from "./check/check-report.ts";
 
 export {
   type NamedImport, NudoSidecarError, type RefineDiag, type RefineEntry,
@@ -223,11 +223,11 @@ export {
   interfaceSourceOf, interfaceTierOf, isNodeModulesPath, localNamedExports,
   resetSidecarLoadFailureCache, setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
   takeInterfaceDiags, takeInterfaceDiagsSince
-} from "./interface.ts";
+} from "./interface/interface.ts";
 
 export {
   absToConstraint, joinThenProject
-} from "./projection.ts";
+} from "./interface/projection.ts";
 
 // modules/fs/path belong to the host (service/cli), not the algebra.
 // Engine machinery (leak / call-budget / hash / derivation / inlay / template /

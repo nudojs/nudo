@@ -9,7 +9,7 @@
  */
 
 // 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
-export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diag-codes.ts";
+export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diagnostics/diag-codes.ts";
 
 // BUG-021/199：调用点观测拓宽（emit 写盘面与 interface-drift 对账面共用）
 export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
@@ -21,14 +21,14 @@ export {
   type StringLiteralSpan,
   sourceHasRequireCall,
   sourceHasModuleDependency, sourceHasCjsExports
-} from "./algebra/code-text.ts";
+} from "./algebra/format/code-text.ts";
 export {
   type LeakBudget, defaultLeakBudget, exceedsBudget,
   termDepth, termNodes
-} from "./algebra/leak.ts";
+} from "./algebra/diagnostics/leak.ts";
 export {
   type ProjectionStopReason, PROJECTION_MAX_DEPTH, ProjectionBudget,
-} from "./algebra/projection-budget.ts";
+} from "./algebra/interface/projection-budget.ts";
 export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
   MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
@@ -50,7 +50,7 @@ export {
   // 截断 suggestion 具体修值单源（core check 面 + service analyzer 截断臂
   // 共用——analyz器面不得手写第二份公式）
   suggestedForkCeiling, suggestedDepthCeiling, suggestedCallsCeiling,
-} from "./algebra/check-report.ts";
+} from "./algebra/check/check-report.ts";
 export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
 } from "./algebra/builtins/promise.ts";
@@ -73,26 +73,26 @@ export {
 export {
   type DiagChannel, type ScopedDiagChannel,
   createDiagChannel, createScopedDiagChannel,
-} from "./algebra/diag-channel.ts";
+} from "./algebra/diagnostics/diag-channel.ts";
 export {
   hashSource, resetHashSourceCache
-} from "./algebra/hash-source.ts";
+} from "./algebra/key/hash-source.ts";
 export {
   stableAnalyzeKeySource
-} from "./algebra/stable-source-key.ts";
+} from "./algebra/key/stable-source-key.ts";
 export {
   type FnFp, canSkipLiteralCallScan, fnFingerprints,
   generalizeSourceKeyPart, getFnNameAndBodies, resetFnFpCache
-} from "./algebra/fn-fp.ts";
+} from "./algebra/key/fn-fp.ts";
 export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
   normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph
-} from "./algebra/load-deps-fp.ts";
+} from "./algebra/key/load-deps-fp.ts";
 export {
   // DESIGN-003：sidecar 契约身份=导出名；emit 层据此把 `export { _c as class }`
   // 的本地名归一到导出名（engine machinery——产品面走 localNamedExports）
   exportedNameOfLocal
-} from "./algebra/interface.ts";
+} from "./algebra/interface/interface.ts";
 
 // derivation sessions + rendering experiments
 export {
@@ -104,7 +104,7 @@ export {
 } from "./algebra/derivation.ts";
 export {
   type AbsInlay, type CollectAbsInlaysOpts, collectAbsInlays
-} from "./algebra/inlay.ts";
+} from "./algebra/format/inlay.ts";
 export {
   type TemplateMeta, type TemplatePartDesc, type TemplatePartView,
   type TemplatePredicateDecision, absTemplateViews, allFixedTextOfViews,
@@ -120,7 +120,7 @@ export {
 export {
   escapeTemplateTypeFixed, formatObjectKey, isJsBindingIdent, isJsIdent,
   safeMemberAccess, sanitizeCommentText, toJsBindingIdent
-} from "./algebra/codegen-escape.ts";
+} from "./algebra/format/codegen-escape.ts";
 export {
   type ClassDef, type MethodDef, getClassChain, wrapPromise
 } from "./algebra/language.ts";
@@ -129,7 +129,7 @@ export {
 export {
   type InjectedDomainEvidenceOpts, type InjectedDomainRecord,
   checkInjectedDomainEvidence, listTopFunctions
-} from "./algebra/scan.ts";
+} from "./algebra/scan/scan.ts";
 
 // evaluator collectors (not the $op runtime)
 export {
@@ -164,7 +164,7 @@ export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
 export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";
 
 // ── 跨包共享原语（service / harvester / parser 复用；此前各包留拷贝靠手工同步） ──
-export { BoundedLruMap } from "./algebra/lru-map.ts";
+export { BoundedLruMap } from "./algebra/key/lru-map.ts";
 export {
   collectNestedBodyRanges,
   // `@nudo:case` 标签扫描骨架（CASE_TAG_REGEX 循环 + inCaseArgs 跳过 +
@@ -176,28 +176,28 @@ export {
   collectDependencySpecs,
   collectDependencySpecsWithMode,
   type DependencySpecEntry, type DependencySpecMode,
-} from "./algebra/scan-deps.ts";
+} from "./algebra/scan/scan-deps.ts";
 export {
   collectIdentNames,
   isGeneratedMarkerLine,
   sectionChainIndices,
   sectionChainList,
   type ProgramStmts,
-} from "./algebra/scan-named-exports.ts";
+} from "./algebra/scan/scan-named-exports.ts";
 // 字符串感知扫描（check 面与 parser 指令面共用；Bug 1009 拷贝漂移的闭合点）
 export {
   findTopLevelChar, findTopLevelColon, splitTopLevelArgs, stripJsdocContinuation,
   walkTopLevelChars,
-} from "./algebra/text-scan.ts";
+} from "./algebra/format/text-scan.ts";
 // 源 AST 的 ESM 语法判定（service abs-modules-graph 的 strict 判定复用；
 // 此前 service 内嵌逐字拷贝）
 export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
 // drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
-export { absShapeForTsTypeText } from "./algebra/ts-type-shape.ts";
+export { absShapeForTsTypeText } from "./algebra/interface/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
-export { formatEntryParamShape } from "./algebra/check-signatures.ts";
+export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";
 // JS Error 家族构造器名（service 补全近似表 builtin-prototype 的错误类
 // 判定复用；此前 8 名复刻 BUILTIN_ERROR_CLASSES 靠"保持同步"注释互钉）
-export { ERROR_CTOR_NAMES } from "./algebra/error-names.ts";
+export { ERROR_CTOR_NAMES } from "./algebra/diagnostics/error-names.ts";

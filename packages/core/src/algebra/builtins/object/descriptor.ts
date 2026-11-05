@@ -110,7 +110,7 @@ import { classInstanceInnerOf, getEvalClass } from "../../exec/class-registry.ts
 import { typedArrayEnumKeyView } from "./enum-entries.ts";
 import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
 import { proxyTargetInnerObj, asAbsVal, clearStaleTermPred } from "../../exec/runtime/state.ts";
-import { isSymbolAbs } from "../../symbol-id.ts";
+import { isSymbolAbs } from "../../key/symbol-id.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 
 export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {

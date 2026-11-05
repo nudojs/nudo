@@ -18,7 +18,7 @@ import { describe, it, expect, vi } from "vitest";
 import { abs, gt, v } from "../index.ts";
 import { number } from "../constraint.ts";
 import { assertImplies, phiSuppliesConstraint } from "../postcondition.ts";
-import { checkReturnConstraint } from "../check-return.ts";
+import { checkReturnConstraint } from "../check/check-return.ts";
 import {
   assumeConsumed,
   resetAssumeConsumed,

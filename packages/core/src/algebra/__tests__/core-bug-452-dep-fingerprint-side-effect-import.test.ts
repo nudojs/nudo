@@ -10,7 +10,7 @@
  * AST 侧**（与模块图同口径）⇒ **正则集 ∪ AST 集** ⇒ 只多 miss，绝不陈旧命中。
  */
 import { describe, it, expect } from "vitest";
-import { extractAllLoadSpecs, loadModuleDepsFingerprint } from "../load-deps-fp.ts";
+import { extractAllLoadSpecs, loadModuleDepsFingerprint } from "../key/load-deps-fp.ts";
 
 /** 假 loader：把 spec 映射到固定内容（相对 spec 按 fromFile 的目录解析） */
 function makeLoad(deps: Record<string, string>) {

@@ -5,8 +5,8 @@
  * - implicit 导出返回标 derived
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
-import { interfaceTierOf, formatInterfaceTierLine } from "../interface.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
+import { interfaceTierOf, formatInterfaceTierLine } from "../interface/interface.ts";
 
 const HANDWRITTEN_SIDECAR = `
 import { fn, number } from "@nudojs/core";

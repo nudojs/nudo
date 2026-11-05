@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import { litC } from "../constraint.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("Bug 915 字面量同一性（域隶属面：字段位 / 数组元素位）", () => {

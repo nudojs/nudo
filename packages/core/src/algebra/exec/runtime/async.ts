@@ -21,7 +21,7 @@
 import type { Abs } from "../../abs.ts";
 import { abs, boolLit, confJoin, litValue, strLit, unknown, never, type Confidence, isAbsLike } from "../../abs.ts";
 import { joinAbs, objOf, getSlot, type ObjShape } from "../../objects.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";

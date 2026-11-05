@@ -11,7 +11,7 @@
  * 都探索 ⇒ break 臂可达，`return()` 对出口绑定的写不再丢失。
  */
 import { describe, it, expect } from "vitest";
-import { formatAbs } from "../../format.ts";
+import { formatAbs } from "../../format/format.ts";
 import { litValue } from "../../abs.ts";
 import { call } from "../../__tests__/eval-helpers.ts";
 

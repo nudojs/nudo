@@ -70,6 +70,13 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 
 ## Architecture
 
+> 2026-11-05：`algebra/` 顶层 93 个平铺 `.ts` 中的 50 个已归入
+> `check/ scan/ format/ interface/ diagnostics/ key/` 六个二级子域（codemod
+> `scripts/relocate-core-subdomains.mjs`，795 处相对导入机械重写）。剩余 43 个
+> 顶层文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。
+> `scripts/aggregate-tests.mjs` 可按族收敛测试入口，但全量试点发现同一聚合
+> 入口内 part 共享模块实例会污染全局状态 ⇒ 已回滚；只允许逐族验证后启用。
+
 **Type system core** (`core/src/algebra`): Abs = shape × term × pred × conf. Term is abstract value identity (lit/var/app); Pred is constraint relative to term; conf is exact/path/widened/partial/opaque. Primary entrypoints: `checkSource` (refinement gate), `analyzeFn` / `runTranspiled` (Abs evaluation), `leqAbs` (structural assignability), `generalizeFromAst` (symbolic α). See `docs/design/kernel-merge.md`.
 
 **Extensional rendering** (`core/src/algebra/format.ts`): `formatShape` (display strings), `formatAbs` (lossless). One-way projections: `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators consume Abs directly. Nothing reads a projection back.

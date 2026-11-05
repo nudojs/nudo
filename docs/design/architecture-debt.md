@@ -159,7 +159,9 @@ L1 / L2 门禁的接受集。
 
 ## 剩余槽位的受控 major 执行方案（A2+A8 / A10 / A11）
 
-> 本节是**可执行的立项依据**，不是已完成的实现。三条仍卡在同一处：Abs 形状缺承载位。
+> **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
+> 键 + 回归钉）**已落地**；步骤 2（逐槽启用、更新 expectation）仍待排期。
+> 三条共同缺的承载位已由容器解决，剩下的是消费点接线与精度基线逐条对齐。
 > A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
 
 **范式（照抄 A6）**：新增**可选**槽位（缺省不出现 ⇒ 旧形状逐字节不变），
@@ -175,13 +177,15 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 
 **步骤（每步一个 PR，禁止合并提交）**
 
-0. **改前基线**：`pnpm run build && pnpm run test:ci`；单跑
-   `check-recall-gold.test.ts`、`check-real-packages.test.ts`、
-   `core/src/algebra/__tests__/differential/` 全批、`pnpm run benchmark:oss`；
-   把输出与 `docs/reports/*-baseline.*` 一起留档（PR 描述或独立基线分支）。
-1. **只加槽位容器 + 读写 API**：默认空，不参与 `leqAbs`；更新
-   `public-api.snapshot.json` 与冻结测试；确认 dts/schema/guard 对空槽位输出
-   **逐字节不变**。
+0. **改前基线** ✅ 已跑全量 `pnpm run test` 并留档失败集合（16 文件 / 21 用例，
+   均为本地 Node 22 与 CI Node 24 的宿主面差异，非代码回归）；单跑金标 / 真包 /
+   差分语料 / `benchmark:oss` 同批留档。
+1. **只加槽位容器 + 读写 API** ✅ 已落地：`Abs.facets?: AbsFacets` 与
+   `cloneAbsFacets`（`algebra/abs.ts`）、`snapshotAbs` / `substAbs`（含 var 替换
+   分支）/ `renameAbs` 整包搬运、`absKey` 只对**非空**容器进键（空容器 ≡ 缺省
+   ⇒ 旧键逐字节不变）。`leqAbs` / `formatShape` / dts / schema / guard 不读容器。
+   回归钉 `algebra/__tests__/abs-facets-carrier.test.ts`（8 例）；公共 API 冻结
+   未变更、金标 + 真包 204 例全绿。
 2. **逐条启用**：`callable` → `protoOwnKeys` → `brand`，每条独立 PR + 独立
    回归基线；`leqAbs` 只在新槽位非空时参与判定，保持既有接受集不变。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
@@ -191,3 +195,9 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 
 **验收门槛**：金标 1.0/1.0 · 真包 0 FP · 差分语料 0 回退 · 公共 API diff 只含新增 ·
 空槽位下所有投影输出逐字节不变。**回滚**：槽位默认空 ⇒ 单条 revert 不牵动其余槽位。
+
+**同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
+已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
+导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
+冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
+失败）已回滚，改为逐族验证后启用。这些重构与槽位启用互不依赖。

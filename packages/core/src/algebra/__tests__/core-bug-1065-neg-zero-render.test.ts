@@ -22,7 +22,7 @@
  * `term.ts` / `format.ts` 是**只读**参考（口径来源），未改动。
  */
 import { describe, it, expect } from "vitest";
-import { formatConstraint } from "../interface.ts";
+import { formatConstraint } from "../interface/interface.ts";
 import { fn, litC, shape, string as str } from "../constraint.ts";
 
 describe("Bug 1065：`-0` 保真（侧车约束的组合式渲染不得抹掉负号）", () => {

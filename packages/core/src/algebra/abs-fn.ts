@@ -6,7 +6,7 @@
 import type { Node } from "@babel/types";
 import type { Abs, Confidence } from "./abs.ts";
 import { abs } from "./abs.ts";
-import { absKey } from "./abs-key.ts";
+import { absKey } from "./key/abs-key.ts";
 import type { AstEnv } from "./hof-types.ts";
 
 /** Abs 原生 env/builtin 实现（evaluator 优先） */

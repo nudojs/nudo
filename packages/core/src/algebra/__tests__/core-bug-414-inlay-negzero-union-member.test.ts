@@ -16,7 +16,7 @@
  * 文本**同源**（`lit:<typeof>:<litKeyString>`）⇒ `-0` 臂与 `0` 臂不再同键。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 const NEG_ZERO_SRC = `export function negZero() {\n  return -0;\n}\n\nexport function zeroOrNeg(x) {\n  return x ? 0 : -0;\n}\n`;
 

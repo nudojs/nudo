@@ -4,7 +4,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
-import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs, markSymbolAbstractKey, isAbstractKeySymbol } from "../symbol-id.ts";
+import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs, markSymbolAbstractKey, isAbstractKeySymbol } from "../key/symbol-id.ts";
 import { concreteToStringOf } from "../template.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";

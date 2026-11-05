@@ -24,7 +24,7 @@ import { abs, strLit, numLit, absLit } from "../abs.ts";
 import { numPrim, str, mayCoerceThrowOperand } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
-import { isSymbolAbs } from "../symbol-id.ts";
+import { isSymbolAbs } from "../key/symbol-id.ts";
 import { isBigintPrimAbs } from "./shared.ts";
 
 /** symbol/bigint 值（prim 无 lit 项，或 bigint 字面量）→ ToNumber 确定 TypeError */

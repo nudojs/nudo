@@ -10,12 +10,12 @@ import {
   toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
 import { joinAbs, isNullProtoWithoutCoercer } from "../../objects.ts";
-import { isSymbolAbs } from "../../symbol-id.ts";
+import { isSymbolAbs } from "../../key/symbol-id.ts";
 import { concatString } from "../../template.ts";
 import { noteCoercionMayThrow } from "../../arithmetic/coerce.ts";
-import { NudoThrow } from "../../nudo-throw.ts";
-import { errorTypeAbs } from "../../may-throw.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { NudoThrow } from "../../diagnostics/nudo-throw.ts";
+import { errorTypeAbs } from "../../diagnostics/may-throw.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { asAbsVal, currentExecPhi, currentAssumePremises } from "./state.ts";
 
 

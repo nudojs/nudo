@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { FunctionDeclaration } from "@babel/types";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { anyAbs, numLit, litValue } from "../abs.ts";
 import { $call } from "../exec/call.ts";
 import { absFunction } from "../abs-fn.ts";

@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { abs, numLit, strLit, absLit, litValue, type Abs, type Shape } from "../abs.ts";
 import { generalizeFromAst, resetGeneralizeMemo } from "../generalize.ts";
-import { renameShape } from "../generalize-key.ts";
+import { renameShape } from "../key/generalize-key.ts";
 import { snapshotAbs } from "../hof.ts";
 
 const numVar = (id: string): Abs =>

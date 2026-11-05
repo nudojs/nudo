@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { listTopFunctions } from "../scan.ts";
-import { localNamedExports, effectiveInterface, formatConstraint } from "../interface.ts";
+import { listTopFunctions } from "../scan/scan.ts";
+import { localNamedExports, effectiveInterface, formatConstraint } from "../interface/interface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { number, fn } from "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";

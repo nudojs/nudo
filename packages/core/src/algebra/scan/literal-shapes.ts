@@ -87,14 +87,14 @@ import {
   type NudoConstraint,
   type NudoField,
 } from "../constraint.ts";
-import { formatConstraint } from "../interface.ts";
+import { formatConstraint } from "../interface/interface.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
-import type { CheckIssue } from "../check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import type { RefineEntry } from "../refine.ts";
 import type { Pred } from "../pred.ts";
 import { predToString } from "../pred.ts";
-import { formatAbs } from "../format.ts";
-import { DIAG } from "../diag-codes.ts";
+import { formatAbs } from "../format/format.ts";
+import { DIAG } from "../diagnostics/diag-codes.ts";
 import { arrayLengthOf, restArgAbs, type LiteralScanCtx } from "./literal-args.ts";
 import {
   isNullishLitAbs,

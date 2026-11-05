@@ -4,14 +4,14 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { absKey } from "./abs-key.ts";
+import { absKey } from "./key/abs-key.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
 import { enumOwnKeys, setPropFlags, getPropFlags } from "./builtins/invariants.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 import { getFnImpl, isAbsApplyResult } from "./abs-fn.ts";
-import { recordMayThrow, formatThrowsAbs } from "./may-throw.ts";
-import { NudoThrow } from "./nudo-throw.ts";
+import { recordMayThrow, formatThrowsAbs } from "./diagnostics/may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { enterCall, exitCall, callBudgetKey, stableCallId, truncatedAbs } from "./call-budget.ts";
 import { classInstanceInnerOf, getEvalClass } from "./exec/class-registry.ts";
 

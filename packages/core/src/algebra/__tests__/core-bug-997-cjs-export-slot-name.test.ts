@@ -12,8 +12,8 @@
  * 取它会让侧车契约（键 = 导出槽名）整个查不到。
  */
 import { describe, it, expect } from "vitest";
-import { listTopFunctions } from "../scan.ts";
-import { checkSource } from "../check.ts";
+import { listTopFunctions } from "../scan/scan.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { issuesOf, makeFiles } from "./nudo-constraints.ts";
 

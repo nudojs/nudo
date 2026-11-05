@@ -19,7 +19,7 @@
  * 反向钉：HEAD（未修）上 `optional` 字段不存在（undefined）⇒ 断言**必失败**。
  */
 import { describe, it, expect } from "vitest";
-import { formalParamsFromNodes } from "../param-surface.ts";
+import { formalParamsFromNodes } from "../format/param-surface.ts";
 
 describe("Bug 399 formal param optional marker", () => {
   it("default param is marked optional", () => {

@@ -30,7 +30,7 @@ import {
   adoptCallArgsToFaces,
   contractFacesOf,
   presentCallResultFace,
-} from "../contract-face.ts";
+} from "../interface/contract-face.ts";
 import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset, undef, callAtFunctionBoundary } from "./runtime/state.ts";
 import {
   callBudgetKey,

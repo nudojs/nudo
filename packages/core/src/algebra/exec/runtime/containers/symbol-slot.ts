@@ -23,7 +23,7 @@
  */
 import type { Abs } from "../../../abs.ts";
 import { isAbsLike } from "../../../abs.ts";
-import { isSymbolAbs, symbolIdOf } from "../../../symbol-id.ts";
+import { isSymbolAbs, symbolIdOf } from "../../../key/symbol-id.ts";
 import { slotKeyOfSymbolAbs } from "../symbol-key.ts";
 
 /**

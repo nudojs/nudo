@@ -24,7 +24,7 @@ import {
   suggestedCallsCeiling,
   suggestedDepthCeiling,
   suggestedForkCeiling,
-} from "../check-report.ts";
+} from "../check/check-report.ts";
 
 // —— 骨架语义等价的 Abs 构造（与 core-bug-274 的 mockFn 同族手法） ——
 

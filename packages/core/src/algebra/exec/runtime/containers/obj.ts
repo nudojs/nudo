@@ -43,7 +43,7 @@ import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts"
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, classInstanceInnerOf, carryClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
-import { markFreshInstance, migrateFreshInstance } from "../../../instance-id.ts";
+import { markFreshInstance, migrateFreshInstance } from "../../../key/instance-id.ts";
 import {
   NudoThrow,
   clearStaleTermPred,

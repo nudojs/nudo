@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { structuralAssignIssues } from "../check-assign.ts";
+import { structuralAssignIssues } from "../check/check-assign.ts";
 import { abs, type Abs } from "../abs.ts";
 import type { AbsAssignRecord } from "../ast-records.ts";
 import { val } from "./eval-helpers.ts";

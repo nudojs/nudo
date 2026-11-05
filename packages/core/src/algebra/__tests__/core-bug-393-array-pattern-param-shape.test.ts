@@ -15,7 +15,7 @@
  * ⇒ 本文件的断言**必失败**。
  */
 import { describe, it, expect } from "vitest";
-import { formalParamsFromNodes } from "../param-surface.ts";
+import { formalParamsFromNodes } from "../format/param-surface.ts";
 import { callLit } from "./eval-helpers.ts";
 import { litValue } from "../abs.ts";
 

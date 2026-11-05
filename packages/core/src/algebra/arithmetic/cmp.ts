@@ -14,9 +14,9 @@ import { and, gt, ge, lt, le, implies, negatePred, totalOrderDual, pTrue } from 
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isStrPrim, litValue, boolLit } from "../abs.ts";
 import { makeSum } from "../objects.ts";
-import { isSymbolAbs as isSym } from "../symbol-id.ts";
-import { NudoThrow } from "../nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
+import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
+import { NudoThrow } from "../diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../diagnostics/may-throw.ts";
 import { builtinBrandToPrimitive, isMaybeCoercionThrowOperand } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
 

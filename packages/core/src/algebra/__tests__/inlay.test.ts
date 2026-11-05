@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 describe("collectAbsInlays", () => {
   it("does not invent param where from if (control flow ≠ contract)", () => {

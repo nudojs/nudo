@@ -18,8 +18,8 @@ import {
   $tryReleaseSoft,
   orphanMayThrowEffects,
   popMayThrowFrame,
-} from "../../may-throw.ts";
-import type { MayThrowEffect } from "../../may-throw.ts";
+} from "../../diagnostics/may-throw.ts";
+import type { MayThrowEffect } from "../../diagnostics/may-throw.ts";
 
 // 退出栈（ALS）+ $try*
 export const loopExitsAls = new AsyncLocalStorage<Abs[]>();

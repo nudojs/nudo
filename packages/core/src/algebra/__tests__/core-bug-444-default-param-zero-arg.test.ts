@@ -20,7 +20,7 @@
  * - 取不到默认值 ⇒ 保持修复前行为（整条跳过）。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { makeFiles } from "./nudo-constraints.ts";

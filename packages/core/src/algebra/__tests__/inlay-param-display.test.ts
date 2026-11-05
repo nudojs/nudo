@@ -8,7 +8,7 @@
  * - 派生形参（spread / computed）→ 回落 pred 全展（无 tooltip）
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 const loader = (files: Record<string, string>) => (spec: string) =>
   files[spec] ?? undefined;

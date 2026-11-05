@@ -34,12 +34,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { parseSource } from "../parse-source.ts";
 import { generalizeFromAst, resetGeneralizeMemo } from "../generalize.ts";
-import { listClassEntryNames } from "../scan-top-functions.ts";
-import { collectEntryMayThrows, declaredThrowsForEntry } from "../check-may-throw.ts";
-import { filterGateThrows } from "../may-throw.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { listClassEntryNames } from "../scan/scan-top-functions.ts";
+import { collectEntryMayThrows, declaredThrowsForEntry } from "../check/check-may-throw.ts";
+import { filterGateThrows } from "../diagnostics/may-throw.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 import { l2Count, sigOf, stdOpts } from "./nudo-constraints.ts";
 
 /**

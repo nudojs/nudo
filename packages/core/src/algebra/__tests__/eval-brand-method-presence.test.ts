@@ -30,7 +30,7 @@ import { describe, it, expect } from "vitest";
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue, anyAbs, type Abs } from "../abs.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 
 /** 无参入口：返回结果渲染（字面量 → JSON 值；域 → formatShape） */
 function val(src: string): string {

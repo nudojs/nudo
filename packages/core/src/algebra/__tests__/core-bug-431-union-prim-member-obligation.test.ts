@@ -22,7 +22,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, resetCheckSourceMemo, resetGeneralizeMemo } from "@nudojs/core";
-import type { CheckIssue } from "../check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 const SIDE = `import { number, string, boolean, lit, union } from "@nudojs/core";

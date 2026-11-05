@@ -40,12 +40,12 @@ import { describe, it, expect } from "vitest";
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue, anyAbs, type Abs } from "../abs.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 /** catch 面：体内 try/catch 吸收后返回字面量（"TypeError" / "no-throw"） */
 function catchFace(src: string): string {

@@ -16,7 +16,7 @@ import {
 } from "@nudojs/core";
 import { v, lit } from "../term.ts";
 import { gt } from "../pred.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 
 function call(src: string, fn: string, args: unknown[]) {
   const run = runTranspiled(src, { mode: "analyze" });

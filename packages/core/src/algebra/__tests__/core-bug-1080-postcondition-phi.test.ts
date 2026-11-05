@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 import { abs, gt, v } from "../index.ts";
 import { number } from "../constraint.ts";
 import { assertImplies } from "../postcondition.ts";
-import { checkReturnConstraint } from "../check-return.ts";
+import { checkReturnConstraint } from "../check/check-return.ts";
 
 /** 返回项：number，term = y（无 pred ⇒ 无值域证据） */
 const retY = abs({ k: "prim", type: "number" }, v("y"), undefined, "exact");

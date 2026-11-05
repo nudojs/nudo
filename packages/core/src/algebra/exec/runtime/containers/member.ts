@@ -132,7 +132,7 @@ import {
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
-import { markFreshInstance, freshInstanceIdOf } from "../../../instance-id.ts";
+import { markFreshInstance, freshInstanceIdOf } from "../../../key/instance-id.ts";
 import { NudoThrow, undef, isOobUndef, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
 import "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";

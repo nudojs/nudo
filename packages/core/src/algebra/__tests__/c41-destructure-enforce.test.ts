@@ -2,7 +2,7 @@
  * C4.1：解构侧车契约在调用点的执法（locateContractParam → 字段投影）。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { makeFiles } from "./nudo-constraints.ts";

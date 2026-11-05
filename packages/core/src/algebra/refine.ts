@@ -21,13 +21,13 @@
 import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
-import { hashSource } from "./hash-source.ts";
-import { stripStringsKeepComments } from "./code-text.ts";
+import { hashSource } from "./key/hash-source.ts";
+import { stripStringsKeepComments } from "./format/code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
-import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
+import { isNodeModulesPath, resolveDepPath } from "./interface/sidecar-path.ts";
 // 诊断 side-channel 共享原语（与 interface 通道同一实现，leaf 无环）
-import { createScopedDiagChannel } from "./diag-channel.ts";
+import { createScopedDiagChannel } from "./diagnostics/diag-channel.ts";
 import { createScopedSlot, registerCollectorScopeParticipant } from "./collector-scope.ts";
 // D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
 import {
@@ -56,8 +56,8 @@ import {
 // JS 绑定名文法（Unicode 合法，如 `小数` / `$x`）——Bug 350：三条源码指令
 // 的标识符文法只收 ASCII ⇒ 中文标识符被判 malformed（L1 假红），而侧车面
 // 把同一个中文名当一等公民 ⇒ 跨面自相矛盾。codegen-escape 是 leaf，无环。
-import { isJsBindingIdent } from "./codegen-escape.ts";
-import { DIAG } from "./diag-codes.ts";
+import { isJsBindingIdent } from "./format/codegen-escape.ts";
+import { DIAG } from "./diagnostics/diag-codes.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
 export type NamedImport = { names: string[]; spec: string };

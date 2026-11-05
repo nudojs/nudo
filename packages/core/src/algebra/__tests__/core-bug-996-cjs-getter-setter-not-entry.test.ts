@@ -12,7 +12,7 @@
  * 的 `module.exports = { … }` 分支同口径 —— 那边本来就判 `prop.kind !== "method"`）。
  */
 import { describe, it, expect } from "vitest";
-import { listTopFunctions } from "../scan.ts";
+import { listTopFunctions } from "../scan/scan.ts";
 import { issuesOf } from "./nudo-constraints.ts";
 
 const GETTER = `module.exports = {

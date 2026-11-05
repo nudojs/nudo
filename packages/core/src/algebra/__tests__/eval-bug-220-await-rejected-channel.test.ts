@@ -19,7 +19,7 @@ import { describe, it, expect } from "vitest";
 import { call } from "./eval-helpers.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { litValue, anyAbs } from "../abs.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 
 describe("Bug 220：await 双臂 promise —— 拒绝臂不再被丢弃", () => {
   it("双臂 promise：try 臂与 catch 臂都可达（并集）", () => {

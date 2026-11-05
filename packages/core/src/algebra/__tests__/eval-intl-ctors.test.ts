@@ -14,7 +14,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { call, throwsError } from "./eval-helpers.ts";
 
 /** 无约束实参（may 档探针——缺省会把 x 绑成 undefined 字面量而走默认面） */

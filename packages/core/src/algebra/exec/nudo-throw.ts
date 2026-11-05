@@ -4,4 +4,4 @@
  * import exec/——exec 是引擎消费者。）保留本文件：runtime/state.ts 等
  * 引擎模块与既有 import 路径继续经此可达。
  */
-export { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
+export { NudoThrow, isNudoThrow } from "../diagnostics/nudo-throw.ts";

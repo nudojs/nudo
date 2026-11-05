@@ -19,7 +19,7 @@ import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
 import { boolPrim, str, mayCoerceThrowOperand, noBody } from "./shared.ts";
 import { setPropFlags } from "./invariants.ts";
-import { isSymbolAbs } from "../symbol-id.ts";
+import { isSymbolAbs } from "../key/symbol-id.ts";
 import { absFunction } from "../abs-fn.ts";
 import { registerTplElements } from "../exec/match-iter.ts";
 

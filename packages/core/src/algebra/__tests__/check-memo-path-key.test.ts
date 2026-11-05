@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { checkMemoKey } from "../check-memo.ts";
-import type { CheckOptions } from "../check-types.ts";
-import type { LoadDepsFingerprint } from "../load-deps-fp.ts";
+import { checkMemoKey } from "../check/check-memo.ts";
+import type { CheckOptions } from "../check/check-types.ts";
+import type { LoadDepsFingerprint } from "../key/load-deps-fp.ts";
 
 /**
  * checkMemoKey 的 filePath 必须过 stablePathKey 归一（与依赖索引/定向逐出

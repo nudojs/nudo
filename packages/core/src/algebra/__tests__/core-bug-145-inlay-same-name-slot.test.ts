@@ -10,7 +10,7 @@
  * 不同名的对照仍正常。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays, type AbsInlay } from "../inlay.ts";
+import { collectAbsInlays, type AbsInlay } from "../format/inlay.ts";
 
 const CJS_SAME_NAME = `function f(a) {
   return a + 1;

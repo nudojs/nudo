@@ -30,7 +30,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "../abs.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { call, throwsError } from "./eval-helpers.ts";
 
 const wrap = (body: string) => `export function f() { ${body} }`;

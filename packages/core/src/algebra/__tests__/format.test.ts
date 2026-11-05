@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatShape, formatAbs } from "../format.ts";
+import { formatShape, formatAbs } from "../format/format.ts";
 import { abs, num, str } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { ge } from "../pred.ts";

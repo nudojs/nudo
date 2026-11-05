@@ -14,10 +14,10 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface.ts";
+import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("Bug 334 侧车环只报一条 nudo:interface-cycle", () => {

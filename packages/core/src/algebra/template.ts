@@ -19,8 +19,8 @@ import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
 import { isNullProtoObj, isNullProtoWithoutCoercerSlot, joinValues } from "./objects.ts";
 import { lookupObjAccessor } from "./accessors.ts";
-import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
+import { errorTypeAbs } from "./diagnostics/may-throw.ts";
 // 元组 join 折叠循环（arrayToPrimitiveString 与 builtins/array.ts 两面共用）。
 // 此边经 array.ts → symbol.ts → template.ts 构成函数级循环：跨模块调用全部
 // 发生在运行期（无加载期执行），原生 ESM / vite SSR 均安全；直连定义模块，

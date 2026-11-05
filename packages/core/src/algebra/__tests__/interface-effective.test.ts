@@ -16,7 +16,7 @@ import {
   takeInterfaceDiags,
   takeInterfaceDiagsSince,
   type EffectiveInterfaceOpts,
-} from "../interface.ts";
+} from "../interface/interface.ts";
 import { execNudoModule, takeRefineDiags } from "../refine.ts";
 import { isNudoConstraint, number, string, litC as lit, union, fn, shape, array } from "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";

@@ -32,7 +32,7 @@ import { mapEntriesAbs, setElementsAbs } from "../../collections.ts";
 import { undefAbs, applyCallbackValue, validateCallableArg } from "../../hof.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { pTrue } from "../../pred.ts";
-import { defaultLeakBudget } from "../../leak.ts";
+import { defaultLeakBudget } from "../../diagnostics/leak.ts";
 import { emptyEnv } from "../../ast-env.ts";
 import { TYPED_ARRAY_ELEMENT } from "../shared.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";

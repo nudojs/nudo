@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
-import { formatCheckReport } from "../check-report.ts";
+import { formatCheckReport } from "../check/check-report.ts";
 
 /**
  * any ≠ unknown：无约束入口上的 spread / 下标 / length 不得报引擎债。

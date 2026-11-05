@@ -34,7 +34,7 @@ import {
   instantiateConstraint,
   instantiateOnTerm,
 } from "../constraint.ts";
-import { formatConstraint } from "../interface.ts";
+import { formatConstraint } from "../interface/interface.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import { assertImplies } from "../postcondition.ts";
 import { absLit } from "../abs.ts";

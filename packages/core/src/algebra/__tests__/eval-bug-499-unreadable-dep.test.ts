@@ -14,7 +14,7 @@
  * - 读失败轮不得与「真不存在」轮共享 memo（陈旧命中）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { pTrue } from "../pred.ts";
 

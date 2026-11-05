@@ -37,8 +37,8 @@ import { getSlot } from "./objects.ts";
 import { primOf } from "./leq.ts";
 import { accessorReadDomain } from "./accessors.ts";
 import { termEquals, termToString } from "./term.ts";
-import { formatAbs } from "./format.ts";
-import { formatConstraint } from "./interface.ts";
+import { formatAbs } from "./format/format.ts";
+import { formatConstraint } from "./interface/interface.ts";
 
 export type PostProof =
   | { status: "proved" }

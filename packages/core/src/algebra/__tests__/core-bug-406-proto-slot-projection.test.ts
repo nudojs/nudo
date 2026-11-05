@@ -22,7 +22,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs as makeAbs, num, absToConstraint } from "../index.ts";
-import { formatObjectKey } from "../codegen-escape.ts";
+import { formatObjectKey } from "../format/codegen-escape.ts";
 import type { Abs } from "../abs.ts";
 
 /**

@@ -5,7 +5,7 @@
  * 同类：本地 `export { foo as bar }`（无 from）同样要解析到 foo。
  */
 import { describe, it, expect } from "vitest";
-import { resolveExportSource } from "../scan-call-graph.ts";
+import { resolveExportSource } from "../scan/scan-call-graph.ts";
 
 describe("re-export rename resolution", () => {
   it("export { foo as bar } from './other' hops with local name", () => {

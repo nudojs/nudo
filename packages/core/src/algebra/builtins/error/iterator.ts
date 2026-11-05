@@ -33,7 +33,7 @@ import { joinAbs, setSlot } from "../../objects.ts";
 import { undefAbs } from "../../hof.ts";
 import { registerGenElements, registerGenDrain } from "../../exec/match-iter.ts";
 import { absFunction } from "../../abs-fn.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { setPropFlags } from "../invariants.ts";
 import { noBody } from "../shared.ts";
 import { isMapAbs, isSetAbs, mapEntriesAbs, setElementsAbs, collectionExactLen } from "../../collections.ts";

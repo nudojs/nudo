@@ -20,8 +20,8 @@ import {
   type Shape,
   type Slot,
 } from "../index.ts";
-import { absKey, predKey, shapeKey, termKey } from "../abs-key.ts";
-import { instantiateMemoKey, renameAbs, renameShape } from "../generalize-key.ts";
+import { absKey, predKey, shapeKey, termKey } from "../key/abs-key.ts";
+import { instantiateMemoKey, renameAbs, renameShape } from "../key/generalize-key.ts";
 import { relationFingerprint } from "../abs-fn.ts";
 import { app, lit as tlit } from "../term.ts";
 import { eq, gt, pTrue } from "../pred.ts";

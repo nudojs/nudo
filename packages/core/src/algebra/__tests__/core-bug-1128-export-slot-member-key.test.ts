@@ -20,11 +20,11 @@
  * 修法：导出槽表**只用成员键**（普查名口径 = 成员键）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { makeFiles, sigOf } from "./nudo-constraints.ts";
