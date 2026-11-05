@@ -75,6 +75,10 @@ export type HarvestSig =
       /** A6：重载集（逐 arm 声明序）。不投影 ⇒ 磁盘缓存命中后 overload 派发面
        *  丢失（同一份 .d.ts 冷/热缓存给出不同派发结果）。 */
       overloads?: { paramTypes: HarvestSig[]; returns: HarvestSig }[];
+      /** A2 残余：无 `new` 的 [[Call]] 定抛（类值不可裸调用）。不投影 ⇒
+       *  磁盘缓存命中后 `JSON.stringify(obj, DeclaredClass)` 等产品面又变
+       *  回「声称不抛」的假绿（冷/热缓存结论不一致）。 */
+      callable?: boolean;
     }
   | { k: "sum"; members: HarvestSig[] }
   | { k: "promise"; value: HarvestSig }
@@ -114,8 +118,13 @@ export type HarvestSig =
  * **v12 → v13**：磁盘投影新增**提升 provenance**（`promoted`）—— 接口成员提升
  * 出来的名字既不是导出、也不是全局（Bug 123 / 253）⇒ 记录级标记必须一起往返，
  * 否则热缓存又把幽灵导出 / 幽灵全局放回来。
+ *
+ * **v14 → v15**：A2 残余 —— `HarvestSig` 的 fn 变体新增 `callable`
+ * （`declare class` 类值不可裸调用）。旧缓存不含该字段 ⇒ 必须 miss，
+ * 否则热缓存命中的类值丢掉 `facets.callable` ⇒
+ * `JSON.stringify(obj, DeclaredClass)` 等产品面又变「声称不抛」的假绿。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v14";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v15";
 
 export type HarvestJson = {
   v: 1;
@@ -225,6 +234,8 @@ export function absToHarvestSig(a: Abs): HarvestSig {
               })),
             }
           : {}),
+        // A2 残余：类值的不可裸调用槽位必须随 JSON 往返（同 A6 overloads 纪律）
+        ...(a.facets?.callable !== undefined ? { callable: a.facets.callable } : {}),
       };
     }
     case "sum":
@@ -378,6 +389,11 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
         // impl 与 shape 不得分叉（core 的必选元数两处都读）
         const impl = getFnImpl(fn);
         if (impl && sig.opt) impl.optionalParams = [...sig.opt];
+      }
+      // A2 残余：类值的「不可裸调用」槽位随磁盘往返还原 —— 不还原则热缓存
+      // 命中的 declare class 值又退回「声称不抛」的假绿（冷/热不一致）。
+      if (sig.callable !== undefined) {
+        fn.facets = { ...(fn.facets ?? {}), callable: sig.callable };
       }
       return mark(fn);
     }

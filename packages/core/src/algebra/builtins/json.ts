@@ -831,6 +831,14 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     if (replacerArg) {
       const rv = absToJsonNative(replacerArg, new Set(), false);
       if (rv === NOT_LITERAL || rv === OMIT) {
+        // A2 残余：随值携带的「无 new 的 [[Call]] 定抛」承载位 ⇒ 原生
+        // `JSON.stringify(obj, ClassCtor)` 确定抛 TypeError（class 构造器
+        // 作 replacer 会被逐键调用，第一步就抛）。此前只记 `recordMayThrow`
+        // ⇒ sound 但**非确定抛**（L2 假红）。用 facets 而非 class-mark
+        // WeakMap ⇒ 快照 / subst / harvest 回放后的类值同样判定。
+        if (replacerArg.facets?.callable === false) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
         // Bug 59：NOT_LITERAL 的 replacer 可能 callable（any/unknown/sum/
         // host fn 字面量载荷）——原生逐键调用，may 抛；确定非 callable
         // （prim/tuple/never/闭 obj）不抛

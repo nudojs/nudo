@@ -101,8 +101,17 @@ describe("Bug 826 —— 收割的 declare class 类值带 ctor facet（new 不�
     const p = writeTemp("fx.d.ts", CLS);
     const env = harvestDts([p]);
     const mock = harvestedValueToAbs(env.globals["Gadget"]!);
-    const noCtor: Abs = { ...mock, shape: { ...mock.shape } };
+    const noCtor: Abs = {
+      ...mock,
+      shape: { ...mock.shape },
+      // A2 残余：mock 现在还带 `facets.callable = false`。反向对照要回到
+      // 「既无 ctor facet、也无可调用性承载位」的旧状态；否则 `$new` 回落
+      // `$call` 时命中 `isClassValueCallee` 直接定抛 NudoThrow，而不是
+      // 记 may-throw —— 对照条件就不再成立。
+      facets: mock.facets ? { ...mock.facets } : undefined,
+    };
     delete (noCtor.shape as { ctor?: boolean }).ctor;
+    delete noCtor.facets?.callable;
     const r = newEffects(noCtor);
     expect(r.kinds).toContain("TypeError");
   });

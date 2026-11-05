@@ -38,7 +38,7 @@
 | **现象**（2026-11-05 复测订正） | 运行时求值面**已由 Bug 272 收口**：`exec/call.ts::$callDispatch` 的 `isClassValueCallee` 命中即硬抛 `NudoThrow(TypeError)`（`core-bug-272-class-no-new.test.ts` 钉住）。**残余在声明 / 产品面**：`builtins/json.ts` 的 `brandCallable` 仍靠 WeakMap 判据 ⇒ 类构造器作 `JSON.stringify` replacer 只记 `recordMayThrow`（sound 但**非确定抛**）；harvest / 快照 / subst 后的类值无形状化承载位 |
 | **根因**（订正） | 不是求值模型缺 `new.target`，而是**可调用性没有随 Abs 值携带**：现有判据 = `class-mark.ts` WeakMap 标记 + `ctor` facet + `_rest` 单形参启发式（`exec/call.ts:121-141`），三者都不随 `snapshotAbs` / `substAbs` 搬运（同 `rebrand.ts` 已记的重铸丢失） |
 | **阻塞** | 需要 `Abs.facets.callable`（见 A8）—— 容器已落地（步骤 1），消费点接线见下节 |
-| **状态** | **形状化承载位已启用（2026-11-05）**：`Abs.facets.callable = false` 由 `$class`（brand 形）/ `$classExpr`（fn 快路径）生产，`exec/call.ts::isClassValueCallee` 优先消费，subst / snapshot / join 整包搬运 ⇒ 重建产物不再因 WeakMap 丢失而漏判（旧判据全部保留作兜底）。回归 `abs-callable-facet.test.ts`（11 例，含「抹掉槽位的快照不再被判类值」对照、Proxy 不退化）。**残余**：`builtins/json.ts::brandCallable` 仍靠 WeakMap + `recordMayThrow`（replacer 面 sound 但**非确定抛**）、harvest / 声明面未挂槽位 ⇒ 独立精度批次 |
+| **状态** | **形状化承载位已启用（2026-11-05）**：`Abs.facets.callable = false` 由 `$class`（brand 形）/ `$classExpr`（fn 快路径）生产，`exec/call.ts::isClassValueCallee` 优先消费，subst / snapshot / join 整包搬运 ⇒ 重建产物不再因 WeakMap 丢失而漏判（旧判据全部保留作兜底）。回归 `abs-callable-facet.test.ts`（11 例，含「抹掉槽位的快照不再被判类值」对照、Proxy 不退化）。**残余精度批次已收口（2026-11-05）**：① `builtins/json.ts` 的 replacer 臂改读 `facets.callable === false` ⇒ 用户类值作 replacer 由 `recordMayThrow` 升为**确定抛 TypeError**（回归 `abs-callable-json-replacer.test.ts` 3 例，含「不再记 may-throw」）；② `harvest-dts.ts::classValueAbs` 给 `declare class` 类值挂槽位，三处重建点（生产 / `harvestedValueToAbs` 的 `absFunction` mock / `HarvestSig` 磁盘往返）全部整包搬运，`HARVEST_DISK_ABI` v14→v15（回归 `harvest-a2-callable-facet.test.ts` 5 例）。金标 / 真包 expectation **未变**（语料里无该形态），446 例针对性门禁全绿 |
 
 ---
 
@@ -105,7 +105,7 @@
 | **现象**（订正） | 826 的 `ctor` facet 已能标记类值（`harvest-bug-826-class-ctor-facet.test.ts` 钉住）；缺的是**形状化的可调用性面**——`class-mark.ts` 是 WeakMap 侧表，重铸 / 快照 / subst 产物不带标记 |
 | **根因** | 同 A2：可调用性不在 Abs 的值语义里 ⇒ 跨重建点静默丢失 |
 | **阻塞** | `Abs.facets.callable`（与 A2 同一个缺口）；容器已落地，Abs 形状无需再动 |
-| **状态** | **形状化承载位已启用（2026-11-05）**，与 A2 同批。`exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）明确**不读**此槽位——class constructor 的 IsCallable 为 **true**（有 [[Call]] 槽，调用时才抛），与「裸调用必抛」不是同一语义；混用会让 `new Proxy(C, {})()` 假绿。残余同 A2 |
+| **状态** | **形状化承载位已启用（2026-11-05）**，与 A2 同批。`exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）明确**不读**此槽位——class constructor 的 IsCallable 为 **true**（有 [[Call]] 槽，调用时才抛），与「裸调用必抛」不是同一语义；混用会让 `new Proxy(C, {})()` 假绿。**残余同 A2 已收口**（json.ts / harvest 声明面，2026-11-05） |
 
 ---
 
@@ -236,15 +236,19 @@ Node 版本给出各自真实值，**不得写死清单**（否则 CI Node 24 / 
 | 面 | 落点 |
 |---|---|
 | 语义 | `AbsFacets.callable = false` = **无 `new` 的 [[Call]] 定抛**；与规范 `IsCallable` 不同（class constructor 的 IsCallable 为 true） |
-| 生产 | `exec/class/declare.ts::$class`（brand 形类值）、`exec/runtime/members.ts::$classExpr`（fn 快路径） |
-| 消费 | `exec/call.ts::isClassValueCallee` 以槽位为**优先**判据；旧 class-mark WeakMap / `ctor + _rest` 启发式全部保留作兜底 |
-| 明确不消费 | `exec/call.ts::callableFacetOf`（Proxy [[Call]] 判定）、`builtins/json.ts::brandCallable`（保持 `may-throw` 不变） |
+| 生产 | `exec/class/declare.ts::$class`（brand 形类值）、`exec/runtime/members.ts::$classExpr`（fn 快路径）、`harvester/harvest-dts.ts::classValueAbs`（`declare class` 类值，A2 残余） |
+| 消费 | `exec/call.ts::isClassValueCallee` 以槽位为**优先**判据；旧 class-mark WeakMap / `ctor + _rest` 启发式全部保留作兜底。`builtins/json.ts` replacer 臂另以 `facets.callable === false` 判**确定抛** |
+| 搬运（A2 残余） | `harvest-to-abs.ts::harvestedValueToAbs` 的 `absFunction` mock 重建、`harvest-json.ts` 的 `HarvestSig.callable` 磁盘往返（`HARVEST_DISK_ABI` v14→v15） |
+| 明确不消费 | `exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）。`json.ts::brandCallable` 的 WeakMap 判据保留作**无槽位值**（内建构造器 Map 等）的 `may-throw` 兜底 |
 
-已知边界：harvest / 声明面（`declare class`）**尚未生产槽位**，产品面
-`JSON.stringify(..., 类构造器)` 仍报 `may-throw` 而非确定抛 ⇒ 这是 A2 残余，
-属**独立精度批次**（会改 `check-recall-gold` / `check-real-packages` 的
-expectation 集合，不可与承载位启用合并）；跨 harvester 还需给 `HarvestSig`
-加字段并 bump `HARVEST_DISK_ABI` v14→v15。
+**A2 残余批次结论（2026-11-05）**：harvest / 声明面已生产槽位，产品面
+`JSON.stringify(..., 类构造器)` 由 `may-throw` 升为确定抛 TypeError。
+**与接入前预测不同**：`check-recall-gold` / `check-real-packages` 的
+expectation 集合**实际未变**（语料中没有「类构造器作 replacer」形态），
+446 例针对性门禁全绿 ⇒ 不需要动金标。反向对照
+`harvest-bug-826` 的「去掉 ctor facet」用例需**同时移除 `facets.callable`**
+才能回到旧的 may-throw 状态（否则 `$new` 回落 `$call` 会命中
+`isClassValueCallee` 直接定抛）。
 
 **`brand` 接线明细（步骤 2 第 3 槽，2026-11-05）**
 

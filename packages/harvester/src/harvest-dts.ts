@@ -1350,7 +1350,13 @@ function classValueAbs(ctx: HarvestContext, cls: ts.ClassDeclaration, key: strin
     }
   }
   // ctor facet（可构造）—— 走 absCtorSig（与「构造签名 ⇒ 可构造面」同一口径）
-  return absCtorSig(params, instanceFor(ctx, key));
+  const a = absCtorSig(params, instanceFor(ctx, key));
+  // A2 残余：`declare class` 的类值**不可裸调用**（无 new 的 [[Call]] 定抛
+  // TypeError）。核心的 `exec/call.ts::isClassValueCallee` 以该槽位为优先
+  // 判据；不挂则声明面（fn 形状、无 class-mark WeakMap 标记）会漏判 ⇒
+  // `JSON.stringify(obj, DeclaredClass)` 等产品面出现「声称不抛」的假绿。
+  a.facets = { ...(a.facets ?? {}), callable: false };
+  return a;
 }
 
 /**
@@ -2477,8 +2483,9 @@ function mergeIntersection(members: Abs[]): Abs | undefined {
  *
  * `ctor: true` 让 `new C(1)` 走核心的构造分支（不再记 may-throw ⇒ L2
  * 假红消除）；`paramTypes` / `returnType` 保留构造形参与实例面。
- * TS 的「不可裸调用」需要核心的 `callable` 面（本次不改 core），
- * 详见交付报告的越界说明。
+ * TS 的「不可裸调用」由 `Abs.facets.callable = false` 承载（A2 残余，
+ * 2026-11-05 已接通）：**类值**生产点 `classValueAbs` 负责挂槽位；
+ * 本函数同时被「构造签名」共用（构造签名 ≠ 类值），故不自行挂。
  */
 function absCtorSig(
   params: Abs[],
