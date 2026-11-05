@@ -38,7 +38,7 @@
 | **现象**（2026-11-05 复测订正） | 运行时求值面**已由 Bug 272 收口**：`exec/call.ts::$callDispatch` 的 `isClassValueCallee` 命中即硬抛 `NudoThrow(TypeError)`（`core-bug-272-class-no-new.test.ts` 钉住）。**残余在声明 / 产品面**：`builtins/json.ts` 的 `brandCallable` 仍靠 WeakMap 判据 ⇒ 类构造器作 `JSON.stringify` replacer 只记 `recordMayThrow`（sound 但**非确定抛**）；harvest / 快照 / subst 后的类值无形状化承载位 |
 | **根因**（订正） | 不是求值模型缺 `new.target`，而是**可调用性没有随 Abs 值携带**：现有判据 = `class-mark.ts` WeakMap 标记 + `ctor` facet + `_rest` 单形参启发式（`exec/call.ts:121-141`），三者都不随 `snapshotAbs` / `substAbs` 搬运（同 `rebrand.ts` 已记的重铸丢失） |
 | **阻塞** | 需要 `Abs.facets.callable`（见 A8）—— 容器已落地（步骤 1），消费点接线见下节 |
-| **状态** | **部分闭环**：运行时已定抛；形状化判据 + 声明面精度待 `callable` 槽位启用 |
+| **状态** | **形状化承载位已启用（2026-11-05）**：`Abs.facets.callable = false` 由 `$class`（brand 形）/ `$classExpr`（fn 快路径）生产，`exec/call.ts::isClassValueCallee` 优先消费，subst / snapshot / join 整包搬运 ⇒ 重建产物不再因 WeakMap 丢失而漏判（旧判据全部保留作兜底）。回归 `abs-callable-facet.test.ts`（11 例，含「抹掉槽位的快照不再被判类值」对照、Proxy 不退化）。**残余**：`builtins/json.ts::brandCallable` 仍靠 WeakMap + `recordMayThrow`（replacer 面 sound 但**非确定抛**）、harvest / 声明面未挂槽位 ⇒ 独立精度批次 |
 
 ---
 
@@ -105,7 +105,7 @@
 | **现象**（订正） | 826 的 `ctor` facet 已能标记类值（`harvest-bug-826-class-ctor-facet.test.ts` 钉住）；缺的是**形状化的可调用性面**——`class-mark.ts` 是 WeakMap 侧表，重铸 / 快照 / subst 产物不带标记 |
 | **根因** | 同 A2：可调用性不在 Abs 的值语义里 ⇒ 跨重建点静默丢失 |
 | **阻塞** | `Abs.facets.callable`（与 A2 同一个缺口）；容器已落地，Abs 形状无需再动 |
-| **状态** | **架构债（形状化待启用）**。与 A2 合并立项 |
+| **状态** | **形状化承载位已启用（2026-11-05）**，与 A2 同批。`exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）明确**不读**此槽位——class constructor 的 IsCallable 为 **true**（有 [[Call]] 槽，调用时才抛），与「裸调用必抛」不是同一语义；混用会让 `new Proxy(C, {})()` 假绿。残余同 A2 |
 
 ---
 
@@ -161,7 +161,7 @@ L1 / L2 门禁的接受集。
 
 > **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
 > 键 + 回归钉）**已落地**；步骤 2 按**改动面从小到大**逐槽推进：
-> `protoOwnKeys`（✅ 已启用）→ `callable` → `brand`。每槽独立提交 + 独立门禁
+> `protoOwnKeys`（✅ 已启用）→ `callable`（✅ 已启用）→ `brand`。每槽独立提交 + 独立门禁
 > + 独立全仓回归基线。顺序相对下表调整：`protoOwnKeys` 可做到「空槽位零回归」
 > （只增正向钉、不改任何既有 expectation），先用它验证范式；后两条风险递增。
 > A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
@@ -192,7 +192,8 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
    ⇒ 旧键逐字节不变）。`leqAbs` / `formatShape` / dts / schema / guard 不读容器。
    回归钉 `algebra/__tests__/abs-facets-carrier.test.ts`（8 例）；公共 API 冻结
    未变更、金标 + 真包 204 例全绿。
-2. **逐条启用**：`protoOwnKeys`（✅ 2026-11-05）→ `callable` → `brand`，每条
+2. **逐条启用**：`protoOwnKeys`（✅ 2026-11-05）→ `callable`（✅ 2026-11-05）
+   → `brand`，每条
    独立提交 + 独立回归基线。槽位只做**运行期精化与投影增强**：不新增
    `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
@@ -218,6 +219,21 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 `arr<symbol>` 保守域逐字不变；③ `facets` 是 core 运行期字段，不进
 `HarvestSig`、不落盘 ⇒ **无需 bump** `HARVEST_DISK_ABI` v14；④ 未建模原型
 仍保守 `string[]`，覆盖全体内建原型是独立精度批次。
+
+**`callable` 接线明细（步骤 2 第 2 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 语义 | `AbsFacets.callable = false` = **无 `new` 的 [[Call]] 定抛**；与规范 `IsCallable` 不同（class constructor 的 IsCallable 为 true） |
+| 生产 | `exec/class/declare.ts::$class`（brand 形类值）、`exec/runtime/members.ts::$classExpr`（fn 快路径） |
+| 消费 | `exec/call.ts::isClassValueCallee` 以槽位为**优先**判据；旧 class-mark WeakMap / `ctor + _rest` 启发式全部保留作兜底 |
+| 明确不消费 | `exec/call.ts::callableFacetOf`（Proxy [[Call]] 判定）、`builtins/json.ts::brandCallable`（保持 `may-throw` 不变） |
+
+已知边界：harvest / 声明面（`declare class`）**尚未生产槽位**，产品面
+`JSON.stringify(..., 类构造器)` 仍报 `may-throw` 而非确定抛 ⇒ 这是 A2 残余，
+属**独立精度批次**（会改 `check-recall-gold` / `check-real-packages` 的
+expectation 集合，不可与承载位启用合并）；跨 harvester 还需给 `HarvestSig`
+加字段并 bump `HARVEST_DISK_ABI` v14→v15。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对

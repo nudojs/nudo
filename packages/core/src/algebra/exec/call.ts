@@ -124,7 +124,14 @@ function isClassValueCallee(v: Abs): boolean {
   // undefined (reading 'k')"），被求值回落层误记成用户代码的 `module-throw`
   // （引擎缺陷伪装成用户缺陷，差分语料的零回落闸门因此变红）。
   if (!isAbsLike(v)) return false;
-  const s = (v as Abs).shape;
+  const a = v as Abs;
+  // A2+A8 · 槽位启用：`facets.callable === false` 是「无 new 的 [[Call]]
+  // 定抛」的**权威承载位**，随 subst / snapshot / join 整包搬运 ⇒ 不依赖
+  // class-mark WeakMap 的对象身份，重铸 / 快照后的类值不再漏判。
+  // 旧判据（brand ctor + class-mark / fn "_rest" 单形参启发式）全部保留
+  // 作兜底，覆盖历史 / 外部构造的未挂槽位值。
+  if (a.facets?.callable === false) return true;
+  const s = a.shape;
   if (!s || typeof s !== "object") return false;
   if (s.k === "brand") {
     return s.ctor === true && classNameOfValue(v as object) !== undefined;
@@ -150,6 +157,11 @@ function isClassValueCallee(v: Abs): boolean {
  *   其余 brand（实例 / 原型对象）不可调用。
  * - prim / obj / arr / tuple / eff：确定不可调用。
  * - any / unknown / sum / never：不可判。
+ *
+ * ⚠️ **不读 `facets.callable`**：本函数判的是规范 `IsCallable`（有没有
+ * [[Call]] 槽），而 class constructor 的 IsCallable 为 **true**（Proxy 会装
+ * [[Call]]，调用时才抛 TypeError）。`facets.callable === false` 表达的是
+ * 「裸调用必抛」，属 `isClassValueCallee` 的语义，两者不可混用。
  */
 function callableFacetOf(v: Abs | undefined): boolean | undefined {
   if (!isAbsLike(v)) return false;

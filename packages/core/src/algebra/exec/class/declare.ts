@@ -311,6 +311,11 @@ export function $class(
     undefined,
     "exact",
   );
+  // A2+A8 · 槽位启用：把「类值不可裸调用」从 class-mark.ts 的 WeakMap
+  // 侧表升级为**随 Abs 值携带**的形状面。subst / snapshot / join 会整包
+  // 搬运 ⇒ 重铸 / 快照后的类值仍能被 isClassValueCallee 判定（旧实现靠
+  // WeakMap 对象身份，跨重建点静默漏判）。
+  val.facets = { ...(val.facets ?? {}), callable: false };
   // BUG-172：规格随类值携带（成员查表按值自己的规格解析，不再裸名回表）
   attachClassSpec(val, full);
   markClassValue(val as object, name);

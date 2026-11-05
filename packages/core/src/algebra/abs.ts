@@ -135,7 +135,13 @@ export type Shape =
  *   guard 在槽位启用前**不读**它。
  */
 export type AbsFacets = {
-  /** A2+A8：值能否被裸调用（无 `new`）。false = 原生抛 TypeError（类构造器）。 */
+  /**
+   * A2+A8：**无 `new` 的 [[Call]] 是否会成功**。false = 定抛 TypeError
+   * （用户类构造器）。⚠️ 与规范 `IsCallable` **不是同一概念**：class
+   * constructor 的 IsCallable 为 true（它有 [[Call]] 槽，只是调用时抛），
+   * 因此 `exec/call.ts::callableFacetOf`（Proxy [[Call]] 判定）**不读**
+   * 本槽位；消费点是 `isClassValueCallee`（裸调用定抛判据）。
+   */
   callable?: boolean;
   /** A10：原型对象的自有键集（含符号键）。缺省 = 保守域（旧行为）。 */
   protoOwnKeys?: { strings: string[]; symbols?: string[] };

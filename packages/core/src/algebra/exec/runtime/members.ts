@@ -1320,7 +1320,7 @@ export function $instanceofNonIdent(_left: Abs, right?: Abs): Abs {
  * 读 shape.name）——无名类不传（原生名为空串）。
  */
 export function $classExpr(name?: string): Abs {
-  return absFunction(
+  const v = absFunction(
     ["_rest"],
     {
       body: noBody,
@@ -1329,6 +1329,11 @@ export function $classExpr(name?: string): Abs {
     // Bug 9：类表达式值是构造器，可 new
     name === undefined ? { ctor: true } : { ctor: true, name },
   );
+  // A2+A8 · 槽位启用：空类体快路径是 fn 形（无 brand / 无 class-mark
+  // 标记），旧判据只能靠 `ctor + "_rest" 单形参`启发式。挂槽位后
+  // isClassValueCallee 有确定判据，且快照 / subst 后不再漏判。
+  v.facets = { ...(v.facets ?? {}), callable: false };
+  return v;
 }
 
 /**
