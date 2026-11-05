@@ -229,7 +229,7 @@ export function shapeKey(
  * 保留（键集语义本身有序）；缺省不出现 ⇒ 旧键逐字节不变。
  * 与 A6 的 `overloads` 同纪律：槽位是**可观察面**，不同槽位不得共享 memo。
  */
-function facetKey(f: AbsFacets): string {
+export function facetKey(f: AbsFacets): string {
   const parts: string[] = [];
   if (f.callable !== undefined) parts.push(`c:${f.callable ? 1 : 0}`);
   if (f.protoOwnKeys) {

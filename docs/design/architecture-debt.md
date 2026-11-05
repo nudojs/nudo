@@ -35,10 +35,10 @@
 
 | | |
 |---|---|
-| **现象** | 用户类构造器**裸调用**（无 `new`）引擎不抛（原生硬抛 `TypeError`）⇒ 产品面对「用户类构造器作 `replacer`」报 may-throw —— sound，但**非确定抛** |
-| **根因** | 同 A1：eager 快照模型下「类不是可调用值」这一判定需要知道调用形态与 `new.target` 的关系 |
-| **阻塞** | 需要 core 的 `callable` 面（见 A8）—— 同一个内核表示缺口 |
-| **状态** | **架构债**。与 A1 同族 01/02 的求值模型面 |
+| **现象**（2026-11-05 复测订正） | 运行时求值面**已由 Bug 272 收口**：`exec/call.ts::$callDispatch` 的 `isClassValueCallee` 命中即硬抛 `NudoThrow(TypeError)`（`core-bug-272-class-no-new.test.ts` 钉住）。**残余在声明 / 产品面**：`builtins/json.ts` 的 `brandCallable` 仍靠 WeakMap 判据 ⇒ 类构造器作 `JSON.stringify` replacer 只记 `recordMayThrow`（sound 但**非确定抛**）；harvest / 快照 / subst 后的类值无形状化承载位 |
+| **根因**（订正） | 不是求值模型缺 `new.target`，而是**可调用性没有随 Abs 值携带**：现有判据 = `class-mark.ts` WeakMap 标记 + `ctor` facet + `_rest` 单形参启发式（`exec/call.ts:121-141`），三者都不随 `snapshotAbs` / `substAbs` 搬运（同 `rebrand.ts` 已记的重铸丢失） |
+| **阻塞** | 需要 `Abs.facets.callable`（见 A8）—— 容器已落地（步骤 1），消费点接线见下节 |
+| **状态** | **部分闭环**：运行时已定抛；形状化判据 + 声明面精度待 `callable` 槽位启用 |
 
 ---
 
@@ -102,10 +102,10 @@
 
 | | |
 |---|---|
-| **现象** | TS 的「类不是可调用值」在引擎侧无对应面 |
-| **根因** | core 的 fn 形状**不区分「类」与「可调用对象」** |
-| **阻塞** | 需要 core 的 `callable` 面（与 A2 同一个缺口）⇒ 触及 Abs 形状 |
-| **状态** | **架构债（core 冻结）**。与 A2 合并立项 |
+| **现象**（订正） | 826 的 `ctor` facet 已能标记类值（`harvest-bug-826-class-ctor-facet.test.ts` 钉住）；缺的是**形状化的可调用性面**——`class-mark.ts` 是 WeakMap 侧表，重铸 / 快照 / subst 产物不带标记 |
+| **根因** | 同 A2：可调用性不在 Abs 的值语义里 ⇒ 跨重建点静默丢失 |
+| **阻塞** | `Abs.facets.callable`（与 A2 同一个缺口）；容器已落地，Abs 形状无需再动 |
+| **状态** | **架构债（形状化待启用）**。与 A2 合并立项 |
 
 ---
 
@@ -125,11 +125,11 @@
 
 | | |
 |---|---|
-| **现象** | 生成器对象（`function* g(){}` 的 `g()`）在**类型投影面**与**空对象**同形（`{ }`）⇒ 「这是个生成器对象」在签名 / dts / schema 面上不可见（`formatShape` 折不出 `Generator`） |
+| **现象**（2026-11-05 复测订正） | 生成器对象（`function* g(){}` 的 `g()`）在**展示投影面**与空对象同形（`formatShape` → `{ }`）。dts 面**已由 Bug 554 收口**：`service/src/emit/dts-generator.ts::iteratorTSType` 按 `slots["next"]` + 数字下标槽推导 `Generator<T>` / `AsyncGenerator<T>`，`emit-bug-554-generator-iterator-projection.test.ts` 含 `tscNoEmit` 端到端；`BUILTIN_GENERIC_BRANDS` 已含 `Generator<unknown>` 防 TS2314。**残余** = 身份不随值携带（靠槽启发式）、`formatShape` 展示面、schema / guard 无特化 |
 | **根因** | core 的生成器对象建模成**闭 obj**（`exec/runtime/async.ts` 的 `makeGenObject`：`abs({k:"obj", slots})`）⇒ Abs 里没有「生成器」这一族形状 ⇒ 投影面只能落回通用对象 |
-| **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**类型投影面仍与空对象同形** |
-| **阻塞** | 根治需 `makeGenObject` 改 `brand("Generator")` ⇒ **触及 Abs 形状** ⇒ 影响 `leqAbs` / dts / schema / 约束面 ⇒ 需全仓回归基线；且 `Generator` 是 TS **泛型**内建名（`Generator<T, TReturn, TNext>`）⇒ dts 面需补类型实参（否则 TS2314，见 Bug 521 的泛型 brand 口径） |
-| **状态** | **架构债（本波新发现 · 2026-10-23）**。建议与 **A5 / A6 / A10** 合并到「动 Abs 形状」那一层立项 |
+| **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**展示投影面仍与空对象同形** |
+| **阻塞**（订正） | 无需再动 `Shape` 判别联合——`Abs.facets.brand` 容器已落地（步骤 1）。剩余是 `makeGenObject` 生产 + `formatShapeB` 消费接线；dts 的泛型实参已由 `iteratorTSType` / `BUILTIN_GENERIC_BRANDS` 解决，新投影不得输出裸 `Generator`（TS2314，见 Bug 521） |
+| **状态** | **架构债（部分闭环）**。dts 面已由 Bug 554 收口、不计入欠账；展示面 / schema / guard 待 `brand` 槽位启用。与 A2+A8 / A10 一起走下节的「容器已落地、逐槽接线」路径，不再是「动 `Shape` 判别联合」 |
 
 ---
 

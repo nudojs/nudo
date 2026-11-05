@@ -8,7 +8,7 @@
  * 本测试不启用任何槽位的语义，只钉住容器本身。逐槽启用另立回归基线。
  */
 import { describe, it, expect } from "vitest";
-import { numLit, type Abs, type AbsFacets } from "../abs.ts";
+import { numLit, strLit, type Abs, type AbsFacets } from "../abs.ts";
 import { snapshotAbs, substAbs } from "../hof.ts";
 import { renameAbs } from "../key/generalize-key.ts";
 import { absKey } from "../key/abs-key.ts";
@@ -78,5 +78,23 @@ describe("Abs facets carrier — 重建点不得静默抹掉槽位", () => {
 
   it("joinAbs 同值保留", () => {
     expect(joinAbs(withFacets(numLit(2)), withFacets(numLit(2))).facets).toEqual(facets);
+  });
+
+  it("joinAbs 同族不同值：新造 sum 继承两侧一致的槽位", () => {
+    const j = joinAbs(withFacets(numLit(1)), withFacets(numLit(2)));
+    expect(j.shape.k).toBe("sum");
+    expect(j.facets).toEqual(facets);
+    expect(j.facets).not.toBe(facets);
+  });
+
+  it("joinAbs 触发 pathNote 重建时也不抹掉槽位", () => {
+    const j = joinAbs(withFacets(numLit(1)), withFacets(strLit("a")));
+    expect(j.pathNote).toContain("join(");
+    expect(j.facets).toEqual(facets);
+  });
+
+  it("joinAbs 两侧槽位不一致 ⇒ 不臆造继承", () => {
+    const j = joinAbs(withFacets(numLit(1)), withFacets(numLit(2), { brand: "AsyncGenerator" }));
+    expect(j.facets).toBeUndefined();
   });
 });
