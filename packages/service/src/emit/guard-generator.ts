@@ -26,6 +26,7 @@ import type { Abs, Slot } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { isInvisibleObjSlot } from "./internal-slot.ts";
 import { safeExportIdent, widenUncertainLiteral } from "./schema-generator.ts";
+import { generatorTagCheckSource, generatorTagOf } from "./generator-identity.ts";
 
 /**
  * BUG-130 / BUG-131：把**产物面不可见**的槽从 Abs 树上摘掉，再交给 core 的
@@ -168,10 +169,16 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   const widened = widenUncertainLiteral(abs);
   const src = stripInvisibleSlots(widened ?? abs);
   const body = denoteGuard(src, "data");
+  // Bug fix（2026-11-05）：随值携带的生成器身份必须进守卫 —— 结构面
+  // （`typeof data === "object" && …`）单独成立时，`{}` 也被放行，与 dts
+  // 面的 `Generator<T>` 相反。判据与 zod / standard 同源（generator-identity.ts）；
+  // 只在导出校验器的顶层值上生效 ⇒ 三面口径一致。
+  const tag = generatorTagOf(src);
+  const finalBody = tag ? `(${generatorTagCheckSource("data", tag)}) && (${body})` : body;
   const valueType = guardValueType(src);
   // BUG-250：身份子句会收窄 `data` ⇒ 索引读报 TS7053（见 hasIdentityClause）
   const dataDecl = hasIdentityClause(src) ? `const data: any = ` : `const data = `;
-  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${body};\n}`;
+  return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${finalBody};\n}`;
 }
 
 /**

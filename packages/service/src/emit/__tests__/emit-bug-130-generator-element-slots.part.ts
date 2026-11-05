@@ -11,6 +11,12 @@
  * 修法（emit 侧）：例外收窄为「仅数组形态（`k:"arr"`）不需要该例外」——
  * 迭代器/生成器形态（协议槽 `next` 在场）的数字下标槽**不可见**；zod / standard
  * 在节点层摘槽，guard 在交给 `denoteGuard` 前摘槽（判据同源 `internal-slot.ts`）。
+ *
+ * 2026-11-05 补充：生成器身份投影已实施（产品裁决「收紧是 bug，非 breaking」），
+ * 判据是随值携带的 `Abs.facets.brand`（见 `emit/generator-identity.ts`）。本夹具
+ * **手工构造、无 brand** ⇒ 不触发新分支，下面的 `z.object({  })` 断言仍绿，
+ * 现作为「旧 Abs 逐字不变」的负控制；带 brand 的生产回归见
+ * `emit-generator-identity-poc.test.ts`。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, objOf, type Abs } from "@nudojs/core";

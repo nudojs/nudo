@@ -16,6 +16,11 @@ import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { isHiddenInternalSlot, isInvisibleObjSlot } from "./internal-slot.ts";
+import {
+  generatorTagCheckSource,
+  generatorTagOf,
+  type GeneratorTag,
+} from "./generator-identity.ts";
 
 /**
  * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
@@ -69,6 +74,10 @@ export type SchemaNode =
   | { k: "fn" }
   | { k: "promise"; inner: SchemaNode }
   | { k: "brand"; name: string }
+  // Bug fix（2026-11-05）：随值携带的生成器身份 ⇒ 运行时校验器必须真的
+  // 验出身份（此前 `z.object({  })` 接受任意普通对象，与 dts 面相反）。
+  // 判据与产物源码见 generator-identity.ts。
+  | { k: "generator"; tag: GeneratorTag }
   | { k: "never" }
   | { k: "unknown" };
 
@@ -395,10 +404,19 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
 
 /** Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） */
 export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] } {
-  return absToSchemaNodeB(a, new ProjectionBudget());
+  return absToSchemaNodeB(a, new ProjectionBudget(), true);
 }
 
-function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
+/**
+ * `topLevel`：仅导出校验器的**顶层值**为 true。生成器身份投影三面
+ * （zod / standard / guard）都只在顶层生效 ⇒ 嵌套槽值仍走结构投影，
+ * 不会出现「zod 收紧、guard 放行」的跨方言相反裁决。
+ */
+function absToSchemaNodeB(
+  a: Abs,
+  budget: ProjectionBudget,
+  topLevel = false,
+): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
@@ -407,6 +425,14 @@ function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode;
   if (widened) {
     dropped.push(`literal observation widened to the base type (uncertain confidence: ${a.conf})`);
     a = widened;
+  }
+
+  // Bug fix（2026-11-05）：随值携带的生成器身份优先于结构投影。
+  // 判据是 facets.brand（不是 next 槽启发式）；缺省 ⇒ 旧 Abs / 手工夹具
+  // 逐字不变。产物侧的同一处置见 guard-generator.ts / standard-schema.ts。
+  if (topLevel) {
+    const tag = generatorTagOf(a);
+    if (tag) return { node: { k: "generator", tag }, dropped };
   }
 
   // lit term 优先（与 projection 一致；NaN 不产 lit）
@@ -957,6 +983,10 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
     }
     case "fn":
       return { source: "z.function()", dropped: [] };
+    case "generator":
+      // 判别谓词内联进产物（不新增 import、不引用无全局名字的构造器）。
+      // z.custom 的 check 参数由 zod 签名为 unknown ⇒ strict 产物不会 TS7006。
+      return { source: `z.custom((v) => ${generatorTagCheckSource("v", node.tag)})`, dropped: [] };
     case "promise": {
       const inner = renderZod(node.inner);
       return { source: `z.promise(${inner.source})`, dropped: inner.dropped };

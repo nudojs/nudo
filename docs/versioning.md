@@ -60,6 +60,14 @@ Following common 0.x practice and npm’s caret rules:
 - **major**: removals, renames, signature changes, schema breaks (JSON / dts / CheckJson), default-behavior flips that silence or invent diagnostics.
 
 > Soundness fixes that change *results* without changing *API* ship as **patch** with an explicit changeset note. Consumers who pin exact diagnostic snapshots must re-run goldens on patch upgrades.
+>
+> **判例（2026-11-05）**：导出的运行时校验器（zod / standard / guard）此前放行
+> 与 `.d.ts` 声明类型不符的值（生成器被声明为 `Generator<T>`，校验器却接受
+> 任意普通对象）。把接受集**收紧到既有声明域**经产品裁决定性为 **bug 修复**：
+> 声明面没变、公共 API 形状没变，变的是校验器有没有真正执行既有契约 ⇒
+> **patch**，changeset 不写 BREAKING / Migration 标注；该修复自身不抬级
+> （与同批 minor changeset 合并发布时，包版本取最高的 minor）。
+> 细节见 `design/architecture-debt.md` 的「生成器身份投影 · 实施记录」。
 
 ## What counts as breaking (Nudo-specific)
 
@@ -84,6 +92,7 @@ Treat as **non-breaking** (patch/minor):
 - New CLI flags with safe defaults
 - Adding `nudo export --format schema` / `--dialect` / `--format standard` (additive)
 - Inference precision improvements (more precise types)
+- Runtime validator acceptance-set tightening to the already-declared type domain (soundness fix; see the 2026-11-05 judgement above)
 - Removing **undocumented** internal modules not listed in package `exports`
 - Docs / website / private packages
 
@@ -98,13 +107,18 @@ pnpm exec changeset
 ```
 
 1. Select affected packages (multi-select for cross-package breaks).
-> **当前例外（2026-11-05）**：项目**暂无外部用户**。本批 1.x 包的破坏性变更
-> 统一以 **minor** 发布，并**保留** `**BREAKING**:` 与 `Migration:` 标注
-> （谁会坏 / 怎么迁移照旧写全）⇒ 不占用 major 跳版，也不触发
+> **当前例外（2026-11-05；标注口径同日订正）**：项目**暂无外部用户**。本批
+> 1.x 包的变更统一以 **minor** 发布 ⇒ 不占用 major 跳版，也不触发
 > `scripts/gate-major.mjs` 的人工确认闸门（`workflow_dispatch` 无需勾
-> `confirm_major`）。依据：`packages/nudojs/CHANGELOG.md` 的「bump 级别说明」、
-> 历史提交 `d8e46b54` / `568a3ad6`、以及 `.changeset/abs-facets-slots.md`。
+> `confirm_major`）。minor 级别的依据：`packages/nudojs/CHANGELOG.md` 的
+> 「bump 级别说明」与历史提交 `d8e46b54` / `568a3ad6`。
+> **标注口径（产品裁决，覆盖历史政策）**：本批**整批不判定为 breaking 变更**
+> ⇒ 不写 BREAKING / Migration 标注；兼容性注意点照旧写全，但只作升级提示、
+> 不作迁移要求。依据：`.changeset/abs-facets-slots.md` 与
+> `.changeset/generator-identity-validator-fix.md`。
 > **一旦有外部用户依赖这些包面，即刻删除本例外，回到下表的 1.x 政策。**
+> 本批含 `Abs.facets` / `HARVEST_DISK_ABI` v15 等结构变更与生成器身份校验器
+> 收紧；后者自身是 patch changeset，整批合并发布时包版本取最高 minor。
 
 2. Bump type:
    - pre-1.0 package + breaking → **minor**

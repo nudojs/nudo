@@ -1,16 +1,28 @@
 /**
- * schema / guard 生成器身份投影 · **决策 PoC**（不接生产）。
+ * 生成器身份校验器 · **生产接线回归**（2026-11-05，原「决策 PoC」）。
  *
- * 台账「schema / guard 生成器身份投影 · 决策记录」把该诉求判定为
- * **产品语义决策**（会收紧导出校验器接受集），而非机械欠账。本文件只提供
- * 可执行的实证数据，供产品方拍板；**不调用** `absToSchemaSource` /
- * `generateGuardFunctionFromAbs`，不改任何既有 expectation。
+ * 产品裁决：导出的运行时校验器接受「不是生成器的普通对象」是 **bug**
+ * （dts 面已声明 `Generator<T>`，zod / standard / guard 却只判「是个对象」），
+ * **不判定为 breaking 变更**。故三面统一按 `Abs.facets.brand` 收紧接受集：
+ * 真生成器放行，`{}` / `{next(){}}` 等普通对象拒绝。
  *
- * 现状契约：`emit-bug-130-generator-element-slots.part.ts` 钉住
- * `z.object({  })` 且要求产物真的接受生成器 —— 意图是「不得把 internal 槽
- * 当自有字段」，不是「必须验出身份」。
+ * 本文件钉住：① 判据只认随值携带的 brand；② 三个产物面的文本与真跑裁决
+ * 逐值一致；③ 无 brand 的旧 Abs / 嵌套槽值逐字不变（三面仍然同口径）；
+ * ④ 产物可过 `tsc --noEmit --strict`；⑤ `z.instanceof` 路线仍不可行。
  */
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
+import { abs, type Abs } from "@nudojs/core";
+import { absToSchemaNode, absToSchemaSource } from "../schema-generator.ts";
+import {
+  absToStandardSchema,
+  absToStandardSchemaModule,
+  validateSchemaNode,
+} from "../standard-schema.ts";
+import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
+import { generatorTagFromValue, generatorTagOf } from "../generator-identity.ts";
+import { loadGeneratedModule } from "./fixtures.ts";
+import { tscNoEmit } from "./dts-tsc.ts";
 
 function* syncGen(): Generator<number> {
   yield 1;
@@ -19,34 +31,154 @@ async function* asyncGen(): AsyncGenerator<number> {
   yield 1;
 }
 
-/** 方案 (a) 的判别谓词候选（toStringTag 口径）。 */
-const isGenerator = (v: unknown): boolean =>
-  Object.prototype.toString.call(v) === "[object Generator]";
-const isAsyncGenerator = (v: unknown): boolean =>
-  Object.prototype.toString.call(v) === "[object AsyncGenerator]";
+/** 生成器 Abs 的最小形态：闭 obj + 随值 brand（生产由 makeGenObject 挂）。 */
+const generatorAbs = (tag: "Generator" | "AsyncGenerator"): Abs => {
+  const a = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
+  a.facets = { ...(a.facets ?? {}), brand: tag };
+  return a;
+};
+const plainAbs = (): Abs => abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
 
-describe("schema/guard 身份投影决策 PoC · 方案 (a) 判别谓词", () => {
-  it("真同步生成器被接受、真异步生成器需单独分支", () => {
-    expect(isGenerator(syncGen())).toBe(true);
-    expect(isGenerator(asyncGen())).toBe(false);
-    expect(isAsyncGenerator(asyncGen())).toBe(true);
+const cases = (): ReadonlyArray<readonly [string, unknown]> =>
+  [
+    ["gen()", syncGen()],
+    ["asyncGen()", asyncGen()],
+    ["{}", {}],
+    ["{next(){}}", { next() {} }],
+    ["[]", []],
+    ["null", null],
+    ["42", 42],
+  ] as const;
+
+/** zod 产物是真模块源码 ⇒ 注入 z 后真跑。 */
+function zodAccepts(source: string): (v: unknown) => boolean {
+  const schema = new Function("z", `return ${source};`)(z) as {
+    safeParse: (v: unknown) => { success: boolean };
+  };
+  return (v: unknown) => schema.safeParse(v).success;
+}
+
+/** guard 产物是 .ts ⇒ 剥掉类型标注后真跑（与 BUG-130 夹具同法）。 */
+function guardOf(source: string, name: string): (v: unknown) => boolean {
+  const js = source
+    .replace("(value: unknown): boolean", "(value)")
+    .replace(/const data(?:: any)? = value as [^;]+;/, "const data = value;")
+    .replace("export function ", "function ");
+  return new Function(`${js}; return ${name};`)() as (v: unknown) => boolean;
+}
+
+describe("生成器身份判据（单一真源）", () => {
+  it("只认 facets.brand 的两个 tag", () => {
+    expect(generatorTagOf(generatorAbs("Generator"))).toBe("Generator");
+    expect(generatorTagOf(generatorAbs("AsyncGenerator"))).toBe("AsyncGenerator");
+    expect(generatorTagOf(plainAbs())).toBeUndefined();
+    const other = plainAbs();
+    other.facets = { brand: "SomeUserBrand" };
+    expect(generatorTagOf(other)).toBeUndefined();
   });
 
-  it("语义收紧实证：普通对象从「接受」变「拒绝」", () => {
-    // 现状 z.object({}) 接受任意对象；身份投影会拒绝它们。
-    expect(isGenerator({})).toBe(false);
-    expect(isGenerator({ next() {} })).toBe(false);
-    expect(isGenerator([])).toBe(false);
-  });
-
-  it("已知边界：Symbol.toStringTag 可伪造 ⇒ 不是 sound 的 instanceof", () => {
-    const fake: Record<symbol, string> = {};
-    Object.defineProperty(fake, Symbol.toStringTag, { value: "Generator" });
-    expect(isGenerator(fake)).toBe(true);
+  it("运行时判据区分同步 / 异步 / 普通对象", () => {
+    expect(generatorTagFromValue(syncGen())).toBe("Generator");
+    expect(generatorTagFromValue(asyncGen())).toBe("AsyncGenerator");
+    expect(generatorTagFromValue({})).toBeUndefined();
+    expect(generatorTagFromValue({ next() {} })).toBeUndefined();
+    expect(generatorTagFromValue([])).toBeUndefined();
   });
 });
 
-describe("schema/guard 身份投影决策 PoC · 方案 (b) 不可行实证", () => {
+describe("生成器身份产物面（bug fix · 三面收紧）", () => {
+  it("zod / standard 节点 / guard 产物的文本", () => {
+    const a = generatorAbs("Generator");
+    expect(absToSchemaSource(a)).toBe(
+      'z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")',
+    );
+    expect(absToSchemaNode(a).node).toEqual({ k: "generator", tag: "Generator" });
+    const guard = generateGuardFunctionFromAbs("isgenOutput", a);
+    expect(guard).toContain('Object.prototype.toString.call(data) === "[object Generator]"');
+    expect(guard).toContain('typeof data === "object"');
+    // 不得引入无全局名字的构造器（Bug 233：模块求值期 ReferenceError）
+    expect(guard).not.toContain("GeneratorFunction");
+    expect(absToSchemaSource(a)).not.toContain("GeneratorFunction");
+  });
+
+  it("standard 产物把身份节点序列化进内联校验器", () => {
+    const { source } = absToStandardSchemaModule({ xs: generatorAbs("AsyncGenerator") });
+    expect(source).toContain('{"k":"generator","tag":"AsyncGenerator"}');
+    expect(source).toContain('"[object " + node.tag + "]"');
+  });
+
+  for (const tag of ["Generator", "AsyncGenerator"] as const) {
+    it(`${tag}：zod / standard 库 / standard 产物 / guard 四面逐值同裁决`, async () => {
+      const a = generatorAbs(tag);
+      const { node } = absToSchemaNode(a);
+      const zod = zodAccepts(absToSchemaSource(a));
+      const { source } = absToStandardSchema(a, { name: "xs" });
+      const mod = await loadGeneratedModule(source);
+      const lib = (v: unknown) => validateSchemaNode(node, v).issues === undefined;
+      const product = (v: unknown) => mod.xs!["~standard"].validate(v).issues === undefined;
+      const guard = guardOf(generateGuardFunctionFromAbs("isG", a), "isG");
+      for (const [name, v] of cases()) {
+        const verdicts = [zod(v), lib(v), product(v), guard(v)];
+        expect(new Set(verdicts).size, `${tag} / ${name}: 四面裁决分叉`).toBe(1);
+      }
+      // 收紧的核心：普通对象从「接受」变「拒绝」，真生成器仍放行
+      expect(guard({})).toBe(false);
+      expect(guard({ next() {} })).toBe(false);
+      expect(guard(tag === "Generator" ? syncGen() : asyncGen())).toBe(true);
+      expect(guard(tag === "Generator" ? asyncGen() : syncGen())).toBe(false);
+      expect(guard([])).toBe(false);
+    });
+  }
+
+  it("已知边界：Symbol.toStringTag 可伪造（三面一致放行，不是 sound 的 instanceof）", () => {
+    const fake: Record<symbol, string> = {};
+    Object.defineProperty(fake, Symbol.toStringTag, { value: "Generator" });
+    const a = generatorAbs("Generator");
+    expect(generatorTagFromValue(fake)).toBe("Generator");
+    expect(zodAccepts(absToSchemaSource(a))(fake)).toBe(true);
+    expect(validateSchemaNode(absToSchemaNode(a).node, fake).issues).toBeUndefined();
+    expect(guardOf(generateGuardFunctionFromAbs("isG", a), "isG")(fake)).toBe(true);
+  });
+
+  it("产物可过 tsc --noEmit --strict（guard / standard 两面）", () => {
+    const a = generatorAbs("Generator");
+    const guard = generateGuardFunctionFromAbs("isgenOutput", a);
+    const standard = absToStandardSchema(a, { name: "xs" }).source;
+    const result = tscNoEmit({
+      "guard.nudo.guard.ts": guard,
+      "standard.nudo.standard.ts": standard,
+    });
+    expect(result.ok, result.stderr).toBe(true);
+  });
+});
+
+describe("负控制：不触发身份投影的 Abs 逐字不变", () => {
+  it("无 facets.brand 的旧 Abs 仍走结构面（BUG-130 夹具口径）", () => {
+    const a = plainAbs();
+    expect(absToSchemaSource(a)).toBe("z.object({  })");
+    expect(absToSchemaNode(a).node).toEqual({ k: "obj", slots: [] });
+    expect(generateGuardFunctionFromAbs("isOld", a)).not.toContain("Object.prototype.toString");
+    expect(guardOf(generateGuardFunctionFromAbs("isOld", a), "isOld")({})).toBe(true);
+  });
+
+  it("嵌套槽值不投影身份 ⇒ zod / standard / guard 三面仍一致（顶层-only 边界）", () => {
+    const nested = abs(
+      { k: "obj", slots: { g: { value: generatorAbs("Generator") } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const zodSource = absToSchemaSource(nested);
+    expect(zodSource).not.toContain("z.custom");
+    expect(zodSource).toContain("z.object({");
+    expect(absToSchemaNode(nested).node.k).toBe("obj");
+    const guard = generateGuardFunctionFromAbs("isNested", nested);
+    expect(guard).not.toContain("Object.prototype.toString");
+    expect(guardOf(guard, "isNested")({ g: {} })).toBe(true);
+  });
+});
+
+describe("方案 (b) 不可行实证（z.instanceof 路线）", () => {
   it("没有全局 GeneratorFunction 构造器", () => {
     expect("GeneratorFunction" in globalThis).toBe(false);
   });
@@ -56,7 +188,6 @@ describe("schema/guard 身份投影决策 PoC · 方案 (b) 不可行实证", ()
     expect(Object.getPrototypeOf(g).constructor.name).toBe("");
     const GF = Object.getPrototypeOf(syncGen).constructor as Function;
     expect(GF.name).toBe("GeneratorFunction");
-    // z.instanceof(GF) 判的是生成器**函数**，不是生成器对象
     expect(g instanceof (GF as never)).toBe(false);
   });
 });

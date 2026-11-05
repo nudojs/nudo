@@ -183,12 +183,15 @@
 `subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
 dts / schema / guard **只读既有外延面**，新槽位只参与运行期精化与投影增强。
 A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红消失）。
+> 该句是**步骤 1 当时**的口径；步骤 4 之后 service 的 dts / zod / standard /
+> guard 已按 `facets.brand` 消费生成器身份（见下方实施记录），core 展示面
+> 仍恒不发布。`leqAbs` 的既有接受集始终未动。
 
 | 槽位 | 服务条目 | 承载内容 | 主要消费点 |
 |---|---|---|---|
 | `callable` | A2 + A8 | 值是否可裸调用 / [[Construct]] 形态 | `$call` 裸调用臂、`exec/class/*` |
 | `protoOwnKeys` | A10 | 原型对象自有键集（含符号键） | `getOwnPropertyNames` / `hasOwn` / `keys` 族 |
-| `brand` | A11 | 生成器对象身份（带泛型实参） | **仅 service dts**（`iteratorTSType`）；core `formatShape` 明确不发布（既有契约，曾致 4 条回归）、schema / guard 不消费（产品语义决策，见下方边界） |
+| `brand` | A11 | 生成器对象身份（带泛型实参） | **service dts**（`iteratorTSType`）+ **zod / standard / guard 三面运行时校验器**（2026-11-05 bug fix，见下方实施记录）；core `formatShape` 明确不发布（既有契约，曾致 4 条回归） |
 
 **步骤（每步一个 PR，禁止合并提交）**
 
@@ -206,11 +209,14 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
    `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
    真包 FP > 0、差分语料回退 ⇒ 回滚该槽位，其余槽位不受影响。
-4. **发 minor（2026-11-05 决策）**：**暂无外部用户** ⇒ 沿用仓库既有政策，
-   破坏性变更以 **minor** 发布并**保留** `**BREAKING**:` / `Migration:` 标注
-   （见 `packages/nudojs/CHANGELOG.md`「bump 级别说明」与历史提交 `d8e46b54`）。
-   changeset `.changeset/abs-facets-slots.md` 覆盖 core / service / harvester，
-   下游由 `updateInternalDependencies` 联动；`gate-major.mjs` 与 `release.yml`
+4. **发 minor（2026-11-05 决策；标注口径同日订正）**：**暂无外部用户** ⇒
+   本批统一以 **minor** 发布（依据 `packages/nudojs/CHANGELOG.md`「bump 级别说明」
+   与历史提交 `d8e46b54`），不占 major、不触发 `confirm_major`。产品裁决：
+   **整批不判定为 breaking 变更** ⇒ changeset 不写 BREAKING / Migration 标注，
+   兼容性注意点只作升级提示、不作迁移要求。changeset `.changeset/abs-facets-slots.md`
+   覆盖 core / service / harvester（生成器身份收紧另立 patch
+   `.changeset/generator-identity-validator-fix.md`），下游由
+   `updateInternalDependencies` 联动；`gate-major.mjs` 与 `release.yml`
    **无需改动**（gate 拦的是 major，minor 自动放行，不需 `confirm_major`）。
    dts 面补 `Generator<T, TReturn, TNext>` 类型实参（A11 的 TS2314 风险）随
    残余批次推进。**一旦有外部用户依赖这些包面，回到 1.x breaking = major。**
@@ -283,31 +289,62 @@ expectation 集合**实际未变**（语料中没有「类构造器作 replacer�
 `tscNoEmit` 端到端；`abs-generator-brand-facet.test.ts` 的 TNext 钉改判
 保守域 + 键隔离）。**填真实 v 域仍需 A1 步骤 4 真挂起**（明确停点）：
 `$yield` 恒返 `unknown`、`next` 槽是零形参 `$fnVal` ⇒ v 被静默丢弃。
-② brand **只由 service dts 消费**，core 展示面恒不发布（防止再次尝试）。③ **schema / guard 的生成器身份投影明确不做**：`emit-bug-130` 钉住
-`z.object({  })` 且要求产物**真的接受生成器**，契约意图是「不得把 internal
-槽当自有字段」而非「必须验出身份」。三方案实证与待拍板问题见下方
-「**schema / guard 生成器身份投影 · 决策记录**」——结论是保持现状，
-属产品语义决策（会收紧校验器接受集），不是机械欠账。
+② brand **由 service dts + 三个运行时校验器面消费**，core 展示面恒不发布
+（防止再次尝试）。③ **schema / guard / standard 的生成器身份投影已实施**
+（2026-11-05）：按产品裁决，导出校验器接受「不是生成器的普通对象」是
+**bug 修复、不判定为 breaking 变更**。`emit-bug-130` 的夹具**无** `facets.brand`
+⇒ 仍钉 `z.object({  })` 并作为「旧 Abs 不触发身份投影」的负控制，与收紧不冲突。
+判据、三面口径、边界与版本定性见下方「**实施记录**」。
 
-## schema / guard 生成器身份投影 · **决策记录**（2026-11-05）
+## schema / guard / standard 生成器身份投影 · **实施记录**（2026-11-05）
 
-> 结论：**保持现状（不投影身份）**。这不是「技术不可行」，也不是「漏做的机械
-> 欠账」，而是会**改变导出校验器接受集**的产品语义决策。实施前须产品方拍板。
-> 本决策以可执行 PoC 为依据：`service/src/emit/__tests__/emit-generator-identity-poc.test.ts`
-> （只验证判别谓词，不接生产、不改任何既有 expectation）。
+> 结论：**已实施 —— 定性为 bug 修复，不判定为 breaking 变更**。产品方裁决：
+> dts 面已声明 `Generator<T>`，导出校验器却放行 `{}` ⇒ 是校验器**没有执行
+> 已声明类型**的缺陷；收紧接受集按 `docs/versioning.md` 的 soundness **patch**
+> 发布，**不写 BREAKING / Migration 标注**（该修复自身是 patch changeset；
+> 与同批 minor 合并发布时包版本取最高 minor）。2026-11-05 产品方进一步裁决
+> **整批不判定为 breaking 变更** ⇒ `.changeset/abs-facets-slots.md` 的
+> BREAKING / Migration 标注亦一并撤掉，发布级别仍为 minor。原「待拍板」
+> 问题关闭；方案 (b) 的不可行实证保留在回归测试里。
 
-| 方案 | 技术判定 | 代价 / 阻塞 |
+| 方案 | 技术判定 | 结论 |
 |---|---|---|
-| **(a) `z.custom` 判别谓词**（`Object.prototype.toString.call(v) === "[object Generator]"` 或 duck typing） | ✅ **可行**：`facets.brand` 已随值携带（`async.ts:925-932`）、`dts-generator.ts:292-294` 已在消费；判别函数可内联进产物，不新增 import、不改 zod 版本 | ❌ **收紧接受集**：现状 `z.object({  })` 接受任意对象；身份投影会让普通 `{}` 从「接受」变「拒绝」。与 BUG-130 的契约意图（不把 internal 槽当自有字段）**不同型**。需新增 `SchemaNode` 判别联合成员并改 ≥5 处（`schema-generator.ts` / `standard-schema.ts` / `guard-generator.ts` / 两处 `checkNode`）；判别基于 `Symbol.toStringTag`，**可伪造**，须记为已知边界 |
-| **(b) `z.instanceof` + 白名单扩展** | ❌ **技术上不可行**（实测 Node v22.22.2：`typeof globalThis.GeneratorFunction === "undefined"`；`Object.getPrototypeOf(gen()).constructor.name === ""`；`gen() instanceof GF === false`——`GF` 是生成器**函数**的构造器） | 把名字塞进 `RUNTIME_GLOBAL_CTOR_NAME_LIST` 会让产物**模块求值期抛 ReferenceError**（`eval-bug-233-zod-brand-runtime-value.test.ts:92-97` 负控钉住）；要判生成器对象只能用无全局名的 `%GeneratorPrototype%` ⇒ 需注入辅助代码，破坏「产物只 import zod、标识符模块内可解析」不变量 |
-| **(c) 保持现状 + 写明依据**（**本决策**） | ✅ 代价 0 | 生成器在 schema 面走 `case "obj"` ⇒ internal 槽被 `isInvisibleObjSlot` 摘空 ⇒ `z.object({  })`；guard 面经 `stripInvisibleSlots` 生成纯 JS 谓词。两者都**真的接受生成器**（`guard(gen()) === true`、`validateSchemaNode` 零 issues） |
+| **(a) `z.custom` + `Object.prototype.toString` 判别谓词** | ✅ 可行：`facets.brand` 随值携带、dts 已在消费；谓词可内联进产物，不新增 import、不改 zod 版本 | ✅ **已采用**（2026-11-05） |
+| **(b) `z.instanceof` + 白名单扩展** | ❌ 技术上不可行（无全局 `GeneratorFunction`；生成器对象原型构造器名为 `""`；`GF` 是生成器**函数**的构造器） | ❌ 保留实证（`emit-generator-identity-poc.test.ts` 的「方案 (b)」组） |
+| **(c) 保持现状 + 写明依据** | 旧结论基于「收紧是产品语义决策」 | ❌ **已推翻**：产品方明确「收紧是 bug」 |
 
-**待拍板的唯一问题**：导出的校验器**是否应该拒绝「不是生成器的普通对象」**？
-若产品方明确要求，再走 (a) 并接受 5+ 面改动 + 接受集变更；判据必须选
-`facets.brand`（夹具 `emit-bug-130...part.ts:27-56` 无 facets.brand ⇒ 不触发新
-分支，既有 `z.object({  })` 断言仍绿），**不要**选 `next` 槽（夹具带 `next`
-⇒ `isIteratorObjectShape` 命中 ⇒ `toBe("z.object({  }))` 直接变红）。
-**不要**照抄 A11 展示面路径（曾造成 4 条全仓回归，见上方「踩过的坑」）。
+**实施面（判据单一真源 `service/src/emit/generator-identity.ts`）**：
+
+- 判据只取 `Abs.facets.brand === "Generator" | "AsyncGenerator"`；**不**取
+  `next` 槽启发式（普通迭代器也有 `next`），也**不**动 core 展示面
+  （`format.ts` / `denote.ts` 逐字不变 ⇒ A11 曾致 4 条回归的展示面路径未被
+  照抄，族 01 数字下标口径零回归）。
+- `SchemaNode` 新增 `{ k: "generator"; tag }`；`absToSchemaNodeB(..., topLevel)`
+  只在**导出校验器的顶层值**投影身份 ⇒ zod / standard / guard 三面口径一致。
+  嵌套槽值仍走结构投影（**已知边界**，不是遗漏：guard 面由 core `denoteGuard`
+  生成整串表达式，无法在不改 core 的前提下递归注入身份子句）。
+- zod：`z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")`
+  （异步为 `"[object AsyncGenerator]"`）；standard：库版 `checkNode` 与产物内联
+  `__nudoCheck` **两份实现同口径**，节点序列化补 `{"k":"generator","tag":…}`；
+  guard：`denoteGuard` 结构面前置身份子句。
+- 无 `facets.brand` 的旧 Abs / 手工夹具**逐字不变** ⇒ `emit-bug-130` 的
+  `z.object({  })` 断言仍绿，现作为负控制；`emit-generator-identity-poc.test.ts`
+  由 PoC 升级为生产接线回归（12 例：四面逐值同裁决、真跑、strict 编译、
+  伪造边界、嵌套负控制）。
+
+**已知边界**：① `Symbol.toStringTag` 可伪造（与 `z.instanceof(Date)` 可改原型
+伪造同类；换取跨 realm 可判）；② 顶层-only（嵌套字段仍结构投影，三面一致）；
+③ 元素域 `T` / `TReturn` / `TNext` 本就不进运行时校验器，身份投影不改变这点。
+
+**CLI 端到端实证**（`nudo export <file> --format all`，源文件
+`export function* gen(): Generator<number> { yield 1; }`）：zod →
+`z.custom((v) => … "[object Generator]")`；standard →
+`{"k":"generator","tag":"Generator"}`；guard → 身份子句 ∧ 结构子句；dts →
+`Generator<number, undefined, unknown>` ⇒ 四面现在指向同一个声明域。
+
+**回归与发布**：本族 12 例 + emit 族 502 例全绿，全仓回归结果见当日工作日志。
+changeset `.changeset/generator-identity-validator-fix.md` 为
+`@nudojs/service: patch`，正文明确「bug 修复，非 breaking」。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
