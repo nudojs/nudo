@@ -313,6 +313,11 @@ expectation 集合**实际未变**（语料中没有「类构造器作 replacer�
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
 导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
 冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
-失败）已回滚；2026-11-05 残余批次改为**逐族**启用 3 个无 mock / 无全局态族
-（parser 32 + env 51 + emit 80 = 163 文件 → 3 入口），其余族仍须逐族验证
-（`CONTRIBUTING.md` 有完整纪律）。这些重构与槽位启用互不依赖。
+失败）已回滚；2026-11-05 改为**按 S / M / R 三级逐族验证**：已启用 14 个
+S+M 族（410 文件 → 14 入口，全仓 vitest 入口 2005 → 1769），剩余 6 个 R 级族
+/ 919 文件（`packages/core/src/algebra/__tests__/core` 325、`.../eval` 166、
+`nudojs/src/__tests__/cli` 157、`lsp/src/__tests__/lsp` 150、
+`service/src/__tests__/service` 115、`vscode/src/__tests__/lsp` 6）与历史 15 条
+新增失败的入口完全吻合 ⇒ 需先补统一 `beforeEach` 复位 / 剔除模块级
+`vi.mock` 才能继续（`CONTRIBUTING.md` 有完整纪律与单族回退步骤）。
+这些重构与槽位启用互不依赖。

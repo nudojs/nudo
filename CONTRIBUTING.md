@@ -52,19 +52,27 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 
 - **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
   文件；确需新文件时在 PR 里说明为什么不能合并。
-- **按族收敛入口已对 3 个安全族启用**：`scripts/aggregate-tests.mjs` 把同族
+- **按族收敛入口已对 14 个安全族启用**：`scripts/aggregate-tests.mjs` 把同族
   `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
   vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
   **模块共享污染**（同一入口内的 part 共享模块实例 ⇒ 全局注册表 / oracle /
-  缓存互相影响，新增 15 条失败）并整体回滚；随后按「无 `vi.mock`、无模块级
-  可变状态、无进程级注册表写入」筛出并逐族验证启用了
-  `packages/parser/src/__tests__/parser`(32) / `packages/env/src/__tests__/env`(51) /
-  `packages/service/src/emit/__tests__/emit`(80)，共 **163 文件 → 3 入口**；
+  缓存互相影响，新增 15 条失败）并整体回滚；随后按静态特征分级：
+  **S**（无 `vi.mock` / 无模块级可变态 / 无 registry 写入）、
+  **M**（fs / `process` 写入均成对复位）、
+  **R**（模块级 `vi.mock`、共享 memo 复位覆盖率低、`vi.hoisted` 单例）。
+  逐族 `--apply --only <group-key>` 验证后启用 S 2 + M 9 + 首批 3 = **14 族，
+  410 文件 → 14 入口**（全仓 vitest 入口 2005 → 1769）；
   `tsconfig.test-lint.json` 已纳入 `*.part.ts`。
-  **其余族仍不得全量套用**：新增族只能 `--apply --only <group-key>` + 跑该族
-  全部用例 + 全仓回归对比后保留。注意 `--revert` 是**全局**的（会还原所有已
-  应用的族），逐族试跑时先 `--revert` 再 apply 目标族。单跑某条用例用
-  `pnpm vitest run <聚合入口> -t "<case name>"`。
+  **剩余 6 个 R 级族 / 919 文件不得套用**（与历史 15 条新增失败的入口完全
+  吻合）：需先补统一 `beforeEach` 复位、把模块级 `vi.mock` 文件剔除或改成
+  局部 spy，再逐族验证。
+  **纪律**：① 每次 `--apply` 必须带 `--only <完整 key>`（不带会一次性套用
+  全部剩余族，`--only` 是**精确 key 相等**，不是目录前缀）；② `--revert`
+  是**全局**的且忽略 `--only`（会还原全部 14 个已启用族）——单族回退须手工
+  `git mv "$p" "${p%.part.ts}.test.ts"` 该族 part + 删除该族 `zz-agg-*` 入口，
+  再核对 `*.part.ts` 计数；③ 大族（≥50 文件）单入口验证带
+  `NODE_OPTIONS=--max-old-space-size=8192`（与 `pnpm test` 同口径）；
+  ④ 单跑某条用例用 `pnpm vitest run <聚合入口> -t "<case name>"`。
 - **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
   它们是产品精度门禁，不是回归钉。
 - **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用
