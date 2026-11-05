@@ -52,13 +52,19 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 
 - **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
   文件；确需新文件时在 PR 里说明为什么不能合并。
-- **按族收敛入口的工具已就绪，但不要全量套用**：`scripts/aggregate-tests.mjs`
-  把同族 `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts`
-  import，可把 vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）
-  暴露**模块共享污染**：同一入口内的 part 共享模块实例，依赖全局注册表 /
-  oracle / 缓存的用例互相影响（新增 15 条失败，集中在 core/env/lsp/cli/service），
-  故**已整体回滚**。后续只能逐族 `--apply --only <group-key>` + 跑该族全部用例
-  确认零回归后保留，并同步给 `tsconfig.test-lint.json` 加 `*.part.ts`。
+- **按族收敛入口已对 3 个安全族启用**：`scripts/aggregate-tests.mjs` 把同族
+  `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
+  vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
+  **模块共享污染**（同一入口内的 part 共享模块实例 ⇒ 全局注册表 / oracle /
+  缓存互相影响，新增 15 条失败）并整体回滚；随后按「无 `vi.mock`、无模块级
+  可变状态、无进程级注册表写入」筛出并逐族验证启用了
+  `packages/parser/src/__tests__/parser`(32) / `packages/env/src/__tests__/env`(51) /
+  `packages/service/src/emit/__tests__/emit`(80)，共 **163 文件 → 3 入口**；
+  `tsconfig.test-lint.json` 已纳入 `*.part.ts`。
+  **其余族仍不得全量套用**：新增族只能 `--apply --only <group-key>` + 跑该族
+  全部用例 + 全仓回归对比后保留。注意 `--revert` 是**全局**的（会还原所有已
+  应用的族），逐族试跑时先 `--revert` 再 apply 目标族。单跑某条用例用
+  `pnpm vitest run <聚合入口> -t "<case name>"`。
 - **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
   它们是产品精度门禁，不是回归钉。
 - **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用

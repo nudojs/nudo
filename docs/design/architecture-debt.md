@@ -284,4 +284,6 @@ ReferenceError），要表达身份只能引入 `z.custom` 等**新的运行期�
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
 导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
 冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
-失败）已回滚，改为逐族验证后启用。这些重构与槽位启用互不依赖。
+失败）已回滚；2026-11-05 残余批次改为**逐族**启用 3 个无 mock / 无全局态族
+（parser 32 + env 51 + emit 80 = 163 文件 → 3 入口），其余族仍须逐族验证
+（`CONTRIBUTING.md` 有完整纪律）。这些重构与槽位启用互不依赖。
