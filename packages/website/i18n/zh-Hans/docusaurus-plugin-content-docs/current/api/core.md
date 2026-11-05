@@ -201,7 +201,7 @@ createEnvironment(parent?, bindings?)
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
 | <a id="abs"></a>`abs` | fn | Abs constructors / faces | `abs( shape: Shape, term: Term \| undefined, pred: Pred \| undefined, conf: Confidence, ): Abs` |
-| <a id="abs"></a>`Abs` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Abs = { shape: Shape; term?: Term; pred?: Pred; conf: Confidence; pathNote?: string; }` |
+| <a id="abs"></a>`Abs` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Abs = { shape: Shape; term?: Term; pred?: Pred; conf: Confidence; pathNote?: string; facets?: AbsFacets; }` |
 | <a id="absapplynothrow"></a>`AbsApplyNoThrow` | type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `AbsApplyNoThrow = Abs` |
 | <a id="absapplynothrowfn"></a>`AbsApplyNoThrowFn` | type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `AbsApplyNoThrowFn = (args: Abs[], thisVal?: Abs) => AbsApplyNoThrow` |
 | <a id="absapplyresult"></a>`AbsApplyResult` | type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `AbsApplyResult = { abs: Abs; throws: Abs; readonly applyResult: true; }` |

@@ -918,6 +918,14 @@ function makeGenObject(
     slots[String(i)] = { value: els[i]!, internal: true };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  // A11 · 槽位启用：生成器对象身份从「按 next / @@iterator 槽启发式」升级为
+  // 随 Abs 值携带的 brand。形状仍是闭 obj（**不动** Shape 判别联合），
+  // subst / snapshot / join / absKey 整包搬运；dts 的 `Generator<T>` 泛型
+  // 实参仍由 service 侧 iteratorTSType 推导 ⇒ 不输出裸名（TS2314）。
+  g.facets = {
+    ...(g.facets ?? {}),
+    brand: asyncMode ? "AsyncGenerator" : "Generator",
+  };
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）
   // Bug 141：async generator 装 @@asyncIterator（自返）+ @@toStringTag

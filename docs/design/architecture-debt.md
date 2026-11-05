@@ -125,11 +125,11 @@
 
 | | |
 |---|---|
-| **现象**（2026-11-05 复测订正） | 生成器对象（`function* g(){}` 的 `g()`）在**展示投影面**与空对象同形（`formatShape` → `{ }`）。dts 面**已由 Bug 554 收口**：`service/src/emit/dts-generator.ts::iteratorTSType` 按 `slots["next"]` + 数字下标槽推导 `Generator<T>` / `AsyncGenerator<T>`，`emit-bug-554-generator-iterator-projection.test.ts` 含 `tscNoEmit` 端到端；`BUILTIN_GENERIC_BRANDS` 已含 `Generator<unknown>` 防 TS2314。**残余** = 身份不随值携带（靠槽启发式）、`formatShape` 展示面、schema / guard 无特化 |
+| **现象**（2026-11-05 复测订正） | 生成器对象（`function* g(){}` 的 `g()`）在**展示投影面**与空对象同形（`formatShape` → `{ }`）。dts 面**已由 Bug 554 收口**：`service/src/emit/dts-generator.ts::iteratorTSType` 按 `slots["next"]` + 数字下标槽推导 `Generator<T>` / `AsyncGenerator<T>`，`emit-bug-554-generator-iterator-projection.test.ts` 含 `tscNoEmit` 端到端；`BUILTIN_GENERIC_BRANDS` 已含 `Generator<unknown>` 防 TS2314。**残余（第三次复测订正）** = 身份不随值携带（dts 靠槽启发式反推）、schema / guard 无特化。「展示面与空对象同形」**不是欠账**：族 65 / Bug 240 / Bug 99 已明确决定身份由**运行面协议槽**钉住，展示面恒为 `{…}`（`eval-loop-return-join.test.ts` 的 `/^\{/`、`eval-bug-212` 的精确结构串都钉住这条契约） |
 | **根因** | core 的生成器对象建模成**闭 obj**（`exec/runtime/async.ts` 的 `makeGenObject`：`abs({k:"obj", slots})`）⇒ Abs 里没有「生成器」这一族形状 ⇒ 投影面只能落回通用对象 |
 | **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**展示投影面仍与空对象同形** |
-| **阻塞**（订正） | 无需再动 `Shape` 判别联合——`Abs.facets.brand` 容器已落地（步骤 1）。剩余是 `makeGenObject` 生产 + `formatShapeB` 消费接线；dts 的泛型实参已由 `iteratorTSType` / `BUILTIN_GENERIC_BRANDS` 解决，新投影不得输出裸 `Generator`（TS2314，见 Bug 521） |
-| **状态** | **架构债（部分闭环）**。dts 面已由 Bug 554 收口、不计入欠账；展示面 / schema / guard 待 `brand` 槽位启用。与 A2+A8 / A10 一起走下节的「容器已落地、逐槽接线」路径，不再是「动 `Shape` 判别联合」 |
+| **阻塞**（订正） | 无需再动 `Shape` 判别联合——`Abs.facets.brand` 容器已落地（步骤 1）。dts 的泛型实参已由 `iteratorTSType` / `BUILTIN_GENERIC_BRANDS` 解决：**dts 面**恒输出 `Generator<T>`，**不得**输出裸 `Generator`（TS2314，见 Bug 521）；core `formatShape` **明确不读** `facets.brand`（展示面逐字不变是硬契约） |
+| **状态** | **`brand` 槽位已启用（2026-11-05，零回归闭环）**：`makeGenObject` 生产 `Generator` / `AsyncGenerator`，四链 + `joinAbs` 搬运；service `iteratorTSType` 把 brand 作为 `next` 槽判据的替代 ⇒ 重建 / 快照产物丢内部协议槽后仍能投影 `Generator<T>`（泛型实参照旧推导）。core `formatShape` **不发布身份**。回归 `abs-generator-brand-facet.test.ts`（8，含「展示面逐字不变」钉）+ `emit-abs-brand-projection.test.ts`（6，含 `tscNoEmit`）。**残余**：schema / guard 投影未特化、`Generator<T, TReturn, TNext>` 的 TReturn / TNext 未建模 |
 
 ---
 
@@ -161,14 +161,16 @@ L1 / L2 门禁的接受集。
 
 > **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
 > 键 + 回归钉）**已落地**；步骤 2 按**改动面从小到大**逐槽推进：
-> `protoOwnKeys`（✅ 已启用）→ `callable`（✅ 已启用）→ `brand`。每槽独立提交 + 独立门禁
+> `protoOwnKeys` → `callable` → `brand`（**三槽均已启用**，2026-11-05）。每槽独立提交 + 独立门禁
 > + 独立全仓回归基线。顺序相对下表调整：`protoOwnKeys` 可做到「空槽位零回归」
 > （只增正向钉、不改任何既有 expectation），先用它验证范式；后两条风险递增。
 > A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
 >
-> 接入前复测发现两条台账口径已过期并已订正：**A2+A8 的运行时裸调用抛错
-> 由 Bug 272 闭合**（残余是形状化判据与声明面）；**A11 的 dts 面由 Bug 554
-> 闭合**（残余是 `formatShape` 展示面与身份随值携带）。照旧口径排期会重复功。
+> 接入前复测发现台账口径已过期并已订正：**A2+A8 的运行时裸调用抛错由
+> Bug 272 闭合**（残余是形状化判据与声明面）；**A11 的 dts 面由 Bug 554 闭合**
+> （残余是身份随值携带，不是展示面）。第三轮又发现 **A11 的「展示投影面」
+> 是仓库已否决的诉求**（族 65 / Bug 240 / Bug 99 明确改由运行面协议槽钉身份）
+> ⇒ 曾尝试发布到 `formatShape` 导致 4 条回归，已整体撤回。照旧口径排期会重复功。
 
 **范式（照抄 A6）**：新增**可选**槽位（缺省不出现 ⇒ 旧形状逐字节不变），
 `subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
@@ -192,8 +194,7 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
    ⇒ 旧键逐字节不变）。`leqAbs` / `formatShape` / dts / schema / guard 不读容器。
    回归钉 `algebra/__tests__/abs-facets-carrier.test.ts`（8 例）；公共 API 冻结
    未变更、金标 + 真包 204 例全绿。
-2. **逐条启用**：`protoOwnKeys`（✅ 2026-11-05）→ `callable`（✅ 2026-11-05）
-   → `brand`，每条
+2. **逐条启用**：`protoOwnKeys` → `callable` → `brand`（**三槽全部 ✅ 2026-11-05**），每条
    独立提交 + 独立回归基线。槽位只做**运行期精化与投影增强**：不新增
    `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
@@ -234,6 +235,28 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 属**独立精度批次**（会改 `check-recall-gold` / `check-real-packages` 的
 expectation 集合，不可与承载位启用合并）；跨 harvester 还需给 `HarvestSig`
 加字段并 bump `HARVEST_DISK_ABI` v14→v15。
+
+**`brand` 接线明细（步骤 2 第 3 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 生产 | `exec/runtime/async.ts::makeGenObject`（同步 → `Generator`，async → `AsyncGenerator`），**形状仍是闭 obj** |
+| core 展示 | **明确不改** `format/format.ts`：展示面恒为 `{…}`，身份由运行面协议槽钉（既有契约） |
+| service dts | `emit/dts-generator.ts::iteratorTSType`：brand 替代 `next` 槽判据；元素类型仍由数字下标槽 join ⇒ 恒 `Generator<T>`（无 TS2314） |
+| 搬运 | 步骤 1 四链 + `joinAbs::inheritJoinFacets`（两侧一致才继承） |
+
+**踩过的坑（勿重犯）**：最初尝试在 core `formatShape` 发布身份（先整体
+替换成裸 `Generator`，再改成 `Generator & {…}` 交集标注）⇒ 全仓回归新增
+**4 条失败**，全部是精确断言展示面恒为 `{…}`：`eval-bug-212`（精确结构串）、
+`eval-class-body`、`eval-loop-return-join`×2（`/^\{/`，注释明写「身份改由
+运行面协议槽钉」）。按「任何回归即回滚该槽位」纪律**撤回 core 展示面消费**，
+只保留生产 + 搬运 + dts 判据 ⇒ 零回归。教训：A11 的「展示投影面」是仓库
+已否决的诉求，不是待修欠账；`format.ts` 现与改动前逐字一致。
+
+已知边界：① `AbsFacets.brand` 只存名字，无 TReturn / TNext 承载位 ⇒ dts
+仍只投影 `Generator<T>`（与 Bug 554 既有口径一致）；② schema / guard 的
+生成器未特化（schema 把 `GeneratorFunction` 列为不可投影名）；③ brand
+**只由 service dts 消费**，core 展示面恒不发布（防止再次尝试）。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对

@@ -285,8 +285,15 @@ function iteratorTSType(
 ): string | undefined {
   if (a.shape.k !== "obj") return undefined;
   const slots = a.shape.slots;
-  // 无 `next` ⇒ 不是迭代器（普通对象 / 仅可迭代对象仍走结构面）
-  if (!slots["next"]) return undefined;
+  // A11 · 槽位启用：随值携带的生成器身份优先于 `next` 槽启发式——重建 /
+  // 快照产物可能丢内部协议槽，但 `facets.brand` 随 Abs 搬运。泛型实参仍由
+  // 下方数字下标槽推导 ⇒ 输出恒为 `Generator<T>` / `AsyncGenerator<T>`，
+  // 不会退化成裸名（TS2314，见 BUILTIN_GENERIC_BRANDS）。
+  const carried = a.facets?.brand;
+  const genBrand =
+    carried === "Generator" || carried === "AsyncGenerator" ? carried : undefined;
+  // 无 `next` 且无 brand ⇒ 不是迭代器（普通对象 / 仅可迭代对象仍走结构面）
+  if (!slots["next"] && !genBrand) return undefined;
   const elems: Abs[] = [];
   for (const [k, slot] of Object.entries(slots)) {
     if (!CANONICAL_INDEX.test(k)) continue;
@@ -302,9 +309,13 @@ function iteratorTSType(
     }
     elemType = absToTSTypeB(widenTopLevelAbs(joined), typeVars, budget);
   }
-  if (slots["@@asyncIterator"]) return `AsyncGenerator<${elemType}>`;
-  // 完整生成器协议（return / throw）⇒ Generator；只有 next ⇒ 普通迭代器
-  if (slots["return"] || slots["throw"]) return `Generator<${elemType}>`;
+  if (genBrand === "AsyncGenerator" || slots["@@asyncIterator"]) {
+    return `AsyncGenerator<${elemType}>`;
+  }
+  // 完整生成器协议（return / throw）或随值 brand ⇒ Generator；只有 next ⇒ 普通迭代器
+  if (genBrand === "Generator" || slots["return"] || slots["throw"]) {
+    return `Generator<${elemType}>`;
+  }
   return `IterableIterator<${elemType}>`;
 }
 
