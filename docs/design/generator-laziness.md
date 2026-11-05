@@ -1,12 +1,34 @@
 # 生成器体的**惰性**语义（Bug 212）· 架构说明
 
 > **状态**：**步骤 1（join 隔离）已落地（2026-11-04，架构债批次 A1）**——§5.1 的
-> 「自由写快照 + `$join` 折回」已实施（wrong-exact 消灭，回归钉见 §5.1 落地注记）；
-> 步骤 2–4（可延后元素面 / 首消费点触发 / 真挂起）**仍为架构债**。
+> 「自由写快照 + `$join` 折回」已实施（wrong-exact 消灭，回归钉见 §5.1 落地注记）。
+> **步骤 2 的触发点骨架已落地（2026-11-05，零回归）**：`exec/match-iter.ts` 把
+> 7 个元素面读出函数收口到模块私有的幂等触发器表（生产侧不登记 ⇒ 构造期
+> eager 时序与全部值面逐字不变），回归钉
+> [`gen-trigger-skeleton.test.ts`](../packages/core/src/algebra/exec/__tests__/gen-trigger-skeleton.test.ts)。
+> **步骤 3 / 4 仍为架构债，且本批次明确停点**（见 §5.3 前的「步骤 3 停点」段）。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
-> [`packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)。
+> [`eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)、
+> [`eval-generator-cross-function-consume.test.ts`](../packages/core/src/algebra/__tests__/eval-generator-cross-function-consume.test.ts)。
 > 分片：S10 · 族 44 · **研究级** · 出路 **B（精确登记）** · 2026-10-23
+>
+> **2026-11-05 复核订正（6 处与实现不符，勿照旧口径排期）**：
+> ① `leq.ts` 全文**不读 `conf`**（`leqAbs` / `leqShape` 均不读）⇒ §2.1 /
+> §5.2 的「conf 参与 leqAbs ⇒ 全局影响 L1/L2 门禁」不成立；conf 实际只进
+> `objects.ts::sameOptionalAbs` 与 projection / drift 证据门槛，且**不进
+> `absKey`**。② `Confidence` 有 **6 个**取值（`exact/path/widened/mock/
+> partial/opaque`，`abs.ts:19`），不是 3 个；「未收集」标记可考虑复用
+> `partial`（语义是「推导失败」，需另定口径）。③ 生成器对象的**数字下标
+> 槽仍在**（`async.ts:917-919`，族 01 契约），§1.3 附近「Bug 240 不再有
+> 数字下标槽」的注释已过期 ⇒ 步骤 2 的「原地补写」对**原对象**可行。
+> ④ 三张侧表不是元素面唯一来源：`dts-generator.ts::iteratorTSType` 直读
+> shape 数字槽、`async.ts` 的 `next/return/throw` 读闭包 `full` ⇒ 步骤 3
+> 的触发点必须额外覆盖这两条旁路。⑤ `slots` 按引用共享**只对原对象**
+> 成立：`hof.ts::snapshotAbs` 对 obj **深拷贝 slots** 且 `conf` 值拷贝 ⇒
+> fork / `$copy` / 步骤 1 的别名快照副本拿不到原地补写。⑥ dts 面已由
+> A11 残余批次输出**两实参** `Generator<T, TReturn>`（`dts-generator.ts:312-326`）
+> ⇒ TNext 是**第 3** 实参，不是第 2。
 
 ## 0. 结论摘要（一句话）
 
@@ -348,6 +370,44 @@ return $gen(() => {
 - R2-b：触发器注册表若需从 `exec/index.ts` 导出 ⇒ **公开面新增** ⇒ 需主 agent 拍板；
   （若只在 `exec/match-iter.ts` 内部持有、不导出，则**不触公开面** ⇒ 推荐这条。）
 - R2-c：触发点覆盖不全 ⇒ 某些消费路径拿到空元素面 ⇒ 元素域退 `unknown` ⇒ 既有生成器钉变红。
+
+**步骤 2 触发点骨架（2026-11-05 已落地，零回归）**：不改 Abs 表示、不动
+公开面，只把「该跑了」的触发点收口到 `exec/match-iter.ts`：
+`genTriggerTables`（模块私有 WeakMap）+ `fireGenTrigger`（按 Abs 身份幂等）
+在 7 个读出函数首行调用（`drainGenElements` / `genDrainViewOf` /
+`peekGenElement` / `hasGenView` / `peekAllGenElements` /
+`replayGenDeferred` / `matchIterElements`），`copyMatchIterTables` 同步迁移。
+**生产侧不登记触发器** ⇒ `$gen` 的 `body()` 时序不变、全部读出值逐字不变
+（回归钉 `exec/__tests__/gen-trigger-skeleton.test.ts`，7 例）。
+`registerGenTrigger` 不进任何 barrel（`src/index.ts` / `algebra/index.ts` /
+`exec/index.ts` / `internal.ts` 均不 re-export 本模块）⇒ 公共 API 冻结不受影响。
+> 这一步是**接线骨架**，不构成 §5.2 的语义增量：「可延后填充元素面」的
+> `conf` 可提升机制、`dts` 直读 shape 与 `next()` 读闭包 `full` 两条旁路、
+> `snapshotAbs` 深拷贝副本的原地补写都**尚未处理** ⇒ 台账 A1 仍记步骤 2
+> 未闭环，不得因骨架落地改标为「已修」。
+
+### 5.3 前的**步骤 3 停点**（2026-11-05 复核结论）
+
+一次提交同时撼动 5 个面（构造点值域 / 元素面 / conf 与门禁 / 委托表时序 /
+延迟异常重放），且要改的既有 expectation 是可枚举的一大批：
+
+| 面 | 必改 expectation（精确文件） |
+|---|---|
+| 构造点值域 | `eval-bug-212-generator-body-eager.test.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
+| 元素面 / dts | `exec-generator.test.ts:24,43,72,74,76,124,134`、`exec-generator-protocol.test.ts`（16 条）、`exec-generator-consumption.test.ts` / `-precision.test.ts` / `eval-generator-semantics.test.ts` 全族；`service/src/emit/__tests__/emit-abs-brand-projection.test.ts:85-91`（元素槽空 ⇒ `Generator<unknown>`） |
+| 差分语料 | `differential/corpus/batch5.ts:310-317`、`batch11.ts:541-544`、`batch20-transpile-adversarial.ts:102-106` 共 14 条（「先消费再取值」形态在触发点覆盖 `next()` / spread / for-of 三条后应仍绿） |
+| 委托表 | `async.ts:790-823` 的 `genDelegationStack` 在**体执行序**里建 ⇒ 随体延后则下标对位失效即「不转发」 |
+| 延迟异常 | `deferred` 只在体跑后才有 ⇒ `replayGenDeferred` / `next()` 重放时点整体后移 |
+
+**且 R3-b（跨函数消费）此前无回归钉**：仓内没有「生成器对象被 `return` 出
+外层函数、体捕获外层 `let`、消费时刻读到不同值」的用例。`eval-generator-cross-function-consume.test.ts`
+补了现状钉（引擎 `0` / 原生 `9`）与 3 条 `it.todo` 验收清单，作为步骤 3 的**前置条件**。
+
+⇒ **本批次明确停点**：步骤 3 / 4、`conf` 可提升机制、`genNext` 真求值填充
+**不做**。理由不是「没找到修法」，而是它们属引擎内核表示变更（§2.3「Abs
+无时间轴」、控制流 token 跨挂起点不可恢复、`withIsolatedYields` 的 arm
+换顶机制在真 generator 内失效），且必须独立成族 + 独立全仓基线。照
+`architecture-debt.md` 的纪律「任何精度回退即回滚」，不在一次增量里合并。
 
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 

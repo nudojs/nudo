@@ -27,7 +27,7 @@
 | **最小可行修法**（纯转译侧、不动公开面） | 在 `$gen` 的体外套「**自由写快照 + `$join` 折回**」—— 复用仓里已有的 `collectFreeAssignedNames`（`exec/transpile/helpers.ts`）算「该体写到的外层绑定」；`$copy` / `$join` 均为既有导出 ⇒ 不触公共 API 冻结。**把「确定的错值」变成 sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族） |
 | **落点冲突** | 唯一落点在 `exec/transpile/**`（与族 45 的临时名避让机制同侧）⇒ 两族同源，宜合并承接 |
 | **待拍板** | ~~折回用 `$join`（sound，推荐）还是「还原成事前值」~~ 已拍板 `$join`（2026-11-04 落地） |
-| **状态** | **步骤 1（最小收窄）已落地（2026-11-04）**：wrong-exact 已消灭。四个 `$gen` 发射点（声明 / 函数表达式 / 对象方法 / 类方法）统一走 `exec/transpile/emit.ts` 的 `genOuterFreeWriteNames`（= `collectFreeAssignedNames` 扣形参模式名与体内 var 提升名，再经 `expandAliasNames` 扩 const 别名伙伴）+ `genFreeWriteWrap`（快照 `$copy`（共享 memo）+ `finally` 里 `n = $join(事前, 事后)`）；临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName` 避让。四行症状 `1`/`"ab"`/`5`/`"ab"` → `0\|1`/`""\|"ab"`/`0\|5`/`""\|"ab"`（native 构造点值均 ∈ join）；eager 值域 / `conf` 承重与元素面**不变**（不写外层绑定的生成器产物逐字不变）。回归：`eval-bug-212-generator-body-eager.test.ts`（四行症状 + 四发射点 + 元素面 + 负控制）。**残余 = 步骤 2–4**（可延后元素面 / 首消费点触发 / 真挂起）：首个 yield 挂起点的中间值（native `1` / `"a"`）仍不在 join 内 ⇒ 仍为架构债（债面收窄为「时间轴缺失」）。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md) |
+| **状态** | **步骤 1（最小收窄）已落地（2026-11-04）**：wrong-exact 已消灭。四个 `$gen` 发射点（声明 / 函数表达式 / 对象方法 / 类方法）统一走 `exec/transpile/emit.ts` 的 `genOuterFreeWriteNames`（= `collectFreeAssignedNames` 扣形参模式名与体内 var 提升名，再经 `expandAliasNames` 扩 const 别名伙伴）+ `genFreeWriteWrap`（快照 `$copy`（共享 memo）+ `finally` 里 `n = $join(事前, 事后)`）；临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName` 避让。四行症状 `1`/`"ab"`/`5`/`"ab"` → `0\|1`/`""\|"ab"`/`0\|5`/`""\|"ab"`（native 构造点值均 ∈ join）；eager 值域 / `conf` 承重与元素面**不变**（不写外层绑定的生成器产物逐字不变）。回归：`eval-bug-212-generator-body-eager.test.ts`（四行症状 + 四发射点 + 元素面 + 负控制）。**残余 = 步骤 2–4**（可延后元素面 / 首消费点触发 / 真挂起）：首个 yield 挂起点的中间值（native `1` / `"a"`）仍不在 join 内 ⇒ 仍为架构债（债面收窄为「时间轴缺失」）。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 2 接线骨架已落地（2026-11-05，零回归）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表（生产侧不登记 ⇒ eager 时序与全部值面逐字不变），`copyMatchIterTables` 同步迁移；不进任何 barrel ⇒ 公共 API 冻结不变。回归 `exec/__tests__/gen-trigger-skeleton.test.ts`（7 例）。**这不构成 §5.2 的语义增量**（`conf` 可提升、dts 直读 shape / `next()` 读闭包 `full` 两条旁路、快照深拷贝副本的原地补写均未处理）⇒ 本条仍是待排期。**步骤 3 / 4 明确停点**：一次改动会同时撼动构造点值域 / 元素面 / conf / 委托表时序 / 延迟异常重放，需改 `eval-bug-212` 12 条断言 + 4 个 `exec-generator` 族 + 14 条差分语料 + `emit-abs-brand-projection`；且 R3-b 跨函数消费此前无钉，已补 `eval-generator-cross-function-consume.test.ts`（现状钉 + 3 条 `it.todo` 验收清单）作前置条件。属引擎内核改造，独立成族 + 独立全仓基线，不与本批次合并 |
 
 ---
 
@@ -141,19 +141,26 @@
 第 1 层（定承载位、影响面局部）                        ✅ 已闭环
   ├─ A3 + A4  throws 承载位（relation 面 + apply 结果）← 已修（2026-11-04）
   └─ A5     union 方法分派 ← 派发层已闭合（Bug 263）；残余假红由 A6 修后自消
-第 2 层（动 Abs 形状 ⇒ 需全仓回归基线；执行方案见下节）
+第 2 层（动 Abs 形状 ⇒ 需全仓回归基线；执行方案见下节）  ✅ 全层已闭环
   ├─ A6     fn 形状 overload 承载位    ✅ 已修（2026-11-04，可选槽位范式）
-  ├─ A2 + A8  callable 面（类 ≠ 可调用值）           ⏳ 待排期
-  ├─ A10    原型对象自有键集承载位                    ⏳ 待排期
-  └─ A11    生成器 brand("Generator")                ⏳ 待排期
-第 3 层（求值模型层，独立于 Abs 表示）
+  ├─ A2 + A8  callable 面（类 ≠ 可调用值）           ✅ 已启用（2026-11-05，含残余精度批次）
+  ├─ A10    原型对象自有键集承载位                    ✅ 已启用（2026-11-05，含内建原型对拍）
+  └─ A11    生成器 brand("Generator")                ✅ 已启用（2026-11-05，含 TReturn）
+第 3 层（求值模型层，独立于 Abs 表示）                  ⏳ 唯一仍待排期
   └─ A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；
-     A1 步骤 2–4（真挂起 / 首消费点）与 A2（裸调用不抛）待续
+     步骤 2 触发点骨架已落地（2026-11-05，零回归，不构成语义增量）；
+     步骤 2 的 conf 可提升 / 步骤 3 首消费点 / 步骤 4 真挂起 ⇒ 明确停点
+     （见 generator-laziness.md「§5.3 前的步骤 3 停点」）
 ```
 
 **每层的门槛**：动 Abs 形状的层，必须先跑**全仓门禁**（含 `check-recall-gold` / `check-gold` /
-`check-real-packages` / 差分语料）并留**改前基线**，因为 `leqAbs` 的语义变化会**全局**影响
-L1 / L2 门禁的接受集。
+`check-real-packages` / 差分语料）并留**改前基线**。
+> **2026-11-05 证据订正**：本段原写「`leqAbs` 的语义变化会全局影响 L1/L2
+> 门禁」，但 `leq.ts` 全文**不读 `conf`**（也不读 `facets`）——`conf` 实际
+> 只进 `sameOptionalAbs` / projection / drift 证据门槛，且**不进 `absKey`**。
+> 可选槽位范式（`leqAbs` / `formatShape` / dts / schema / guard 只读既有
+> 外延面）之所以零回归，靠的正是这一点；金标 / 真包门禁仍必须逐次复跑，
+> 但不要再把 `leqAbs` 当作阻塞理由。
 
 ---
 
@@ -181,7 +188,7 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
 |---|---|---|---|
 | `callable` | A2 + A8 | 值是否可裸调用 / [[Construct]] 形态 | `$call` 裸调用臂、`exec/class/*` |
 | `protoOwnKeys` | A10 | 原型对象自有键集（含符号键） | `getOwnPropertyNames` / `hasOwn` / `keys` 族 |
-| `brand` | A11 | 生成器对象身份（带泛型实参） | `formatShape` / dts / schema 投影 |
+| `brand` | A11 | 生成器对象身份（带泛型实参） | **仅 service dts**（`iteratorTSType`）；core `formatShape` 明确不发布（既有契约，曾致 4 条回归）、schema / guard 不消费（产品语义决策，见下方边界） |
 
 **步骤（每步一个 PR，禁止合并提交）**
 
@@ -270,15 +277,31 @@ expectation 集合**实际未变**（语料中没有「类构造器作 replacer�
 已知边界：① `genReturn` 已建模、`genNext` 恒缺省（引擎不建模 `.next(v)`
 入参）⇒ dts 目前是 **两实参** `Generator<T, TReturn>`；三实参需先有
 TNext 的求值模型（依赖 A1 的真挂起批次）。② brand **只由 service dts
-消费**，core 展示面恒不发布（防止再次尝试）。③ **schema / guard 的生成器
-身份投影本批次不做，且不是机械欠账**：`emit-bug-130-generator-element-slots.test.ts`
-钉住 `z.object({  })` 且要求产物**真的接受生成器**（`guard(gen()) === true`、
-`validateSchemaNode` 零 issues）——该契约的意图是「不得把 internal 槽当自有
-字段」；zod 没有运行时全局 `Generator` 构造器（`isRuntimeGlobalCtorName`
-白名单明确排除 `GeneratorFunction`，`z.instanceof` 会在模块求值期
-ReferenceError），要表达身份只能引入 `z.custom` 等**新的运行期判别语义**，
-属产品设计决策，不能靠"把 brand 塞进投影面"完成。与 A11 展示面（仓库
-已否决的诉求，曾造成 4 条回归）同型，勿照抄该路径。
+消费**，core 展示面恒不发布（防止再次尝试）。③ **schema / guard 的生成器身份投影明确不做**：`emit-bug-130` 钉住
+`z.object({  })` 且要求产物**真的接受生成器**，契约意图是「不得把 internal
+槽当自有字段」而非「必须验出身份」。三方案实证与待拍板问题见下方
+「**schema / guard 生成器身份投影 · 决策记录**」——结论是保持现状，
+属产品语义决策（会收紧校验器接受集），不是机械欠账。
+
+## schema / guard 生成器身份投影 · **决策记录**（2026-11-05）
+
+> 结论：**保持现状（不投影身份）**。这不是「技术不可行」，也不是「漏做的机械
+> 欠账」，而是会**改变导出校验器接受集**的产品语义决策。实施前须产品方拍板。
+> 本决策以可执行 PoC 为依据：`service/src/emit/__tests__/emit-generator-identity-poc.test.ts`
+> （只验证判别谓词，不接生产、不改任何既有 expectation）。
+
+| 方案 | 技术判定 | 代价 / 阻塞 |
+|---|---|---|
+| **(a) `z.custom` 判别谓词**（`Object.prototype.toString.call(v) === "[object Generator]"` 或 duck typing） | ✅ **可行**：`facets.brand` 已随值携带（`async.ts:925-932`）、`dts-generator.ts:292-294` 已在消费；判别函数可内联进产物，不新增 import、不改 zod 版本 | ❌ **收紧接受集**：现状 `z.object({  })` 接受任意对象；身份投影会让普通 `{}` 从「接受」变「拒绝」。与 BUG-130 的契约意图（不把 internal 槽当自有字段）**不同型**。需新增 `SchemaNode` 判别联合成员并改 ≥5 处（`schema-generator.ts` / `standard-schema.ts` / `guard-generator.ts` / 两处 `checkNode`）；判别基于 `Symbol.toStringTag`，**可伪造**，须记为已知边界 |
+| **(b) `z.instanceof` + 白名单扩展** | ❌ **技术上不可行**（实测 Node v22.22.2：`typeof globalThis.GeneratorFunction === "undefined"`；`Object.getPrototypeOf(gen()).constructor.name === ""`；`gen() instanceof GF === false`——`GF` 是生成器**函数**的构造器） | 把名字塞进 `RUNTIME_GLOBAL_CTOR_NAME_LIST` 会让产物**模块求值期抛 ReferenceError**（`eval-bug-233-zod-brand-runtime-value.test.ts:92-97` 负控钉住）；要判生成器对象只能用无全局名的 `%GeneratorPrototype%` ⇒ 需注入辅助代码，破坏「产物只 import zod、标识符模块内可解析」不变量 |
+| **(c) 保持现状 + 写明依据**（**本决策**） | ✅ 代价 0 | 生成器在 schema 面走 `case "obj"` ⇒ internal 槽被 `isInvisibleObjSlot` 摘空 ⇒ `z.object({  })`；guard 面经 `stripInvisibleSlots` 生成纯 JS 谓词。两者都**真的接受生成器**（`guard(gen()) === true`、`validateSchemaNode` 零 issues） |
+
+**待拍板的唯一问题**：导出的校验器**是否应该拒绝「不是生成器的普通对象」**？
+若产品方明确要求，再走 (a) 并接受 5+ 面改动 + 接受集变更；判据必须选
+`facets.brand`（夹具 `emit-bug-130...part.ts:27-56` 无 facets.brand ⇒ 不触发新
+分支，既有 `z.object({  })` 断言仍绿），**不要**选 `next` 槽（夹具带 `next`
+⇒ `isIteratorObjectShape` 命中 ⇒ `toBe("z.object({  }))` 直接变红）。
+**不要**照抄 A11 展示面路径（曾造成 4 条全仓回归，见上方「踩过的坑」）。
 
 **同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
 已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
