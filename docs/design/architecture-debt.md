@@ -157,7 +157,7 @@ L1 / L2 门禁的接受集。
 
 ---
 
-## 剩余槽位的受控 major 执行方案（A2+A8 / A10 / A11）
+## 剩余槽位的受控 minor 执行方案（A2+A8 / A10 / A11）
 
 > **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
 > 键 + 回归钉）**已落地**；步骤 2 按**改动面从小到大**逐槽推进：
@@ -199,8 +199,14 @@ A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红�
    `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
 3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
    真包 FP > 0、差分语料回退 ⇒ 回滚该槽位，其余槽位不受影响。
-4. **一次性发 major**：核心包 + 下游联动，changeset 标注 BREAKING 与迁移说明；
-   dts 面补 `Generator<T, TReturn, TNext>` 类型实参（A11 的 TS2314 风险）。
+4. **发 minor（2026-11-05 决策）**：**暂无外部用户** ⇒ 沿用仓库既有政策，
+   破坏性变更以 **minor** 发布并**保留** `**BREAKING**:` / `Migration:` 标注
+   （见 `packages/nudojs/CHANGELOG.md`「bump 级别说明」与历史提交 `d8e46b54`）。
+   changeset `.changeset/abs-facets-slots.md` 覆盖 core / service / harvester，
+   下游由 `updateInternalDependencies` 联动；`gate-major.mjs` 与 `release.yml`
+   **无需改动**（gate 拦的是 major，minor 自动放行，不需 `confirm_major`）。
+   dts 面补 `Generator<T, TReturn, TNext>` 类型实参（A11 的 TS2314 风险）随
+   残余批次推进。**一旦有外部用户依赖这些包面，回到 1.x breaking = major。**
 
 **验收门槛**：金标 1.0/1.0 · 真包 0 FP · 差分语料 0 回退 · 公共 API diff 只含新增 ·
 空槽位下所有投影输出逐字节不变。**回滚**：槽位默认空 ⇒ 单条 revert 不牵动其余槽位。

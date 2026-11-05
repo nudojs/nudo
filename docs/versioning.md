@@ -98,6 +98,14 @@ pnpm exec changeset
 ```
 
 1. Select affected packages (multi-select for cross-package breaks).
+> **当前例外（2026-11-05）**：项目**暂无外部用户**。本批 1.x 包的破坏性变更
+> 统一以 **minor** 发布，并**保留** `**BREAKING**:` 与 `Migration:` 标注
+> （谁会坏 / 怎么迁移照旧写全）⇒ 不占用 major 跳版，也不触发
+> `scripts/gate-major.mjs` 的人工确认闸门（`workflow_dispatch` 无需勾
+> `confirm_major`）。依据：`packages/nudojs/CHANGELOG.md` 的「bump 级别说明」、
+> 历史提交 `d8e46b54` / `568a3ad6`、以及 `.changeset/abs-facets-slots.md`。
+> **一旦有外部用户依赖这些包面，即刻删除本例外，回到下表的 1.x 政策。**
+
 2. Bump type:
    - pre-1.0 package + breaking → **minor**
    - pre-1.0 package + fix/additive → **patch**
