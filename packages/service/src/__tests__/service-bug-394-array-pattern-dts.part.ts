@@ -12,7 +12,7 @@
  * （契约按**元素下标**寻址）也被摊成对象。
  *
  * 修法：`DeclaredParam` 带上**模式种类**与**绑定名 → 下标**表；数组解构的
- * 字段级契约聚合成**元组**（元素位按下标寻址，未契约的位置留 `any`——
+ * 字段级契约聚合成**元组**（元素位按下标寻址，未契约的位置留 `unknown`——
  * 无约束，不是 unknown），声明名渲染成**数组形态** `[ a, b ]`。
  *
  * 钉：
@@ -55,7 +55,7 @@ f7({ a: 1, b: 2 });
 describe("Bug 394（service 侧）— dts 面：数组解构的输入面是元组，不是对象", () => {
   it("部分覆盖（契约只写 a）⇒ 形参类型是元组（改前是 { a: number }）", () => {
     const decl = declOf(ARRAY_PATTERN, [{ name: "a", abs: num }]);
-    expect(decl).toContain("[number, any]");
+    expect(decl).toContain("[number, unknown]");
     expect(decl).not.toContain("{ a: number }");
   });
 

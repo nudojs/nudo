@@ -68,6 +68,13 @@ Following common 0.x practice and npm’s caret rules:
 > **patch**，changeset 不写 BREAKING / Migration 标注；该修复自身不抬级
 > （与同批 minor changeset 合并发布时，包版本取最高的 minor）。
 > 细节见 `design/architecture-debt.md` 的「生成器身份投影 · 实施记录」。
+>
+> **判例（2026-11-06）**：TS 投影面把 nudo `any`（无约束并集）映成 TS 的
+> `any`（逃生舱）属**翻译口径错误** —— nudo any 语义对应 TS `unknown`（top）。
+> 归一后 `.d.ts` 与 zod / standard / guard 三面同口径；未收窄的返回值触发
+> TS2571 判为正确提示，而非「假红」。`abs.md` 的 display 规则订正为**只管
+> Nudo 展示 / CLI 面**。声明面含义更严但公共 API 形状未变 ⇒ 同走 **patch**、
+> 不写 BREAKING / Migration；与同批 minor 合并发布时取最高的 minor。
 
 ## What counts as breaking (Nudo-specific)
 

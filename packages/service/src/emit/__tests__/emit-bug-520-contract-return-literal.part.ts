@@ -72,6 +72,6 @@ describe("Bug 520 —— 契约返回位保形（lit(n) → n）", () => {
   it("观测返回位（无契约）仍按调用面 widen：42 → number（负控制）", () => {
     const fn = fnOf("obs", ["a"], entryCase([anyAbs], numLit(42)));
     const p = projectFunctionDts(fn);
-    expect(p.lines.join("\n")).toContain("export declare function obs(a: any): number;");
+    expect(p.lines.join("\n")).toContain("export declare function obs(a: unknown): number;");
   });
 });

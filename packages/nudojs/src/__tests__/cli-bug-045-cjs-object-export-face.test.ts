@@ -2,7 +2,7 @@
  * BUG-045 CLI 回归：CJS `module.exports = { … }` 形态的导出面三方言。
  *
  * 症状（修前）：同一份 `x + 1`，`module.exports = { h(x) { … } }` 的
- *   - dts   → `export declare function h(x: any): unknown;`（check 面说 `number | string`）
+ *   - dts   → `export declare function h(x: unknown): unknown;`（check 面说 `number | string`）
  *   - zod   → `hOutput = z.unknown()`（接受一切）
  *   - guard → `return true;`（校验器空操作 = 假绿）
  * 而对照写法 `module.exports.h = fn` 三方言都正常。
@@ -49,7 +49,7 @@ describe("BUG-045 · CJS `module.exports = { … }` 导出面与 dot 形态同�
     const o = runCliTsx(["export", "--format", "dts", obj]);
     const d = runCliTsx(["export", "--format", "dts", dot]);
     expect(o.status).toBe(0);
-    expect(o.stdout).toContain("export declare function h(x: any): number | string;");
+    expect(o.stdout).toContain("export declare function h(x: unknown): number | string;");
     expect(o.stdout).not.toContain("): unknown;");
     expect(o.stdout).toBe(d.stdout);
   }, 60000);

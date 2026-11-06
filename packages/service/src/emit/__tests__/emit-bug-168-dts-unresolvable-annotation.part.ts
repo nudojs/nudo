@@ -41,22 +41,22 @@ function moduleDts(source: string, path = "/test/bug168-annotation.ts"): string 
 }
 
 describe("BUG-168 — 注解原文的类型名必须在产物里可解析", () => {
-  it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: any)` + 台账", () => {
+  it("泛型函数的类型形参不放行：`id<T>(x: T)` ⇒ `id(x: unknown)` + 台账", () => {
     const dts = moduleDts(`export function id<T>(x: T): T {
   return x;
 }
 `);
-    expect(dts).toContain("export declare function id(x: any): any;");
+    expect(dts).toContain("export declare function id(x: unknown): unknown;");
     expect(dts).not.toContain("id(x: T)");
     expect(dts).toContain("nudo:dropped-type-annotation id.x: T");
   });
 
-  it("多类型形参：`pair<A, B>` ⇒ 两个形参都回落观测口径（与 check 面同为 any）", () => {
+  it("多类型形参：`pair<A, B>` ⇒ 两个形参都回落观测口径（TS 投影面为 unknown）", () => {
     const dts = moduleDts(`export function pair<A, B>(a: A, b: B): [A, B] {
   return [a, b];
 }
 `);
-    expect(dts).toContain("export declare function pair(a: any, b: any): [any, any];");
+    expect(dts).toContain("export declare function pair(a: unknown, b: unknown): [unknown, unknown];");
     expect(dts).not.toContain("pair(a: A");
     expect(dts).not.toContain("b: B)");
   });
@@ -67,7 +67,7 @@ export function dist(p: Point): number {
   return p.x + p.y;
 }
 `);
-    expect(dts).toContain("export declare function dist(p: any)");
+    expect(dts).toContain("export declare function dist(p: unknown)");
     expect(dts).not.toContain("declare interface Point");
     expect(dts).toContain("nudo:dropped-type-annotation dist.p: Point");
   });

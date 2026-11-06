@@ -443,13 +443,45 @@ WeakMap miss，值面逐字不变。回归钉
 - 旁路基线 `core/src/algebra/exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例）
 
 **下一轮若要真推进，最小前置清单**（按依赖序）：① `conf` 可提升机制 +
-`leqAbs` 影响面复核（§5.2 R2-a）；② service 侧 dts 元素面在导出前取得
-元素域的通道（**第三种已部分解决**：`AbsFacets.genElements` 随值搬运 +
-返回注解降级为一致性诊断；但构造期仍跑体 ⇒ **不解锁步骤 3**，仍需静态
-yield 域推断通道或产品接受 `Generator<unknown>` sound 降级，见下节）；
+`leqAbs` 影响面复核（§5.2 R2-a）；② dts 元素域通道（**2026-11-06 已收口**：第三种预置
+`AbsFacets.genElements` 承载位 + 返回注解降级为一致性诊断；符号 PoC 实证
+「独立编译实例的无约束入口求值可零精度损失回填」；同日产品裁定
+「nudo any ≈ TS unknown」把 TS 投影面归一 ⇒ 退化档 `Generator<any>` →
+`Generator<unknown>`，接产前的 soundness 前置关闭。**但实测 `analyzeFile` 的
+`combinedAbs.facets.genElements` 本已非空**（`number | string | 7`）⇒ 导出期
+再求值回填属重复劳动、零收益，且会引入双重真值来源 + 冷/热缓存分裂；
+唯一有意义的接产形态仍是步骤 3「体延后」引擎内核改造，见下节）；
 ③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
 的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
 的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
+
+#### 2026-11-06 第五轮 · TS 投影面归一与步骤 3 停点（独立成族）
+
+**产品裁定**：「nudo 的 `any` 含义更接近 TS 的 `unknown`」。代码侧依据：
+`abs.ts:29-37` 的 `any` 是「JS 里任意值 / 无约束并集」，三面运行时校验器
+早把 any / unknown 同映为 `unknown`（`schema-generator.ts:578` /
+`guard-generator.ts:141` / `standard-schema.ts`），`.d.ts` 曾唯一把 nudo any
+直译成 TS `any`。`abs.md:100` 的 display 规则被 `dts-generator.ts` 误引到 TS
+产物面 ⇒ 实为**作用域误用**，不是产品契约冲突。
+
+**落地**：`absToTSTypeB` 的 `case "any"` → `unknown`；另补齐 `classParamDecl`、
+无签名导出 fallback、泛型基类实参三处硬编码。`formatAbs` / `nudo check` /
+`nudo contract` / `case-json` / interface draft 等 **nudo 展示面逐字不变**。
+
+| 实验 / 证据 | 结论 |
+|---|---|
+| 全仓归一实验 | 26 条新增失败**全是 TS 精确串断言**，0 功能失败 ⇒ 可订正 |
+| 端到端 `nudo export --format dts` | `Generator<any>` → `Generator<unknown>`；`a(x: unknown)`；stderr 点名提示覆盖主路径 |
+| BUG-076 提示通道 | 按「渲染为 unknown」触发 ⇒ 归一后长期「文档承诺 vs 实现」矛盾**彻底关闭** |
+| Bug 544 tsc 实证 | 未收窄返回值触发 TS2571 从「假红」改判为**正确提示**，收窄后过 strict |
+| `analyzeFile` 的 `combinedAbs.facets.genElements` | 实测非空（`number \| string` / `7`）⇒ 导出期重复求值**零收益** |
+
+**步骤 3 明确停点（本轮不实施）**：符号 PoC 建议的「导出期独立求值回填」在
+现状下是负收益（双重真值来源 + `analyzer-cache.ts:149` 克隆后冷/热可能拿到
+不同序列）。真正解绑仍需让 `$gen` 构造期不跑体 = 引擎内核表示变更
+（实验 A：100 条生成器族回归；`conf` 可提升、`snapshotAbs` 补写迁移、
+dts 跨包通道、控制流 token 对齐）⇒ 按纪律独立成族 + 独立全仓基线。
+本轮只关闭 soundness 前置，**不碰 `$gen` 运行时时序**。
 
 #### 2026-11-06 前置复核（同日第二轮，逐项收敛）
 
@@ -457,7 +489,7 @@ yield 域推断通道或产品接受 `Generator<unknown>` sound 降级，见下�
 |---|---|---|
 | ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/a1-conf-promotion-evidence.test.ts`（4 例） |
 | ③ `snapshotAbs` 侧表迁移 | **已修（A7 镜像一致性缺口）**：`$copy` 早有 `copyMatchIterTables`，`snapshotAbs` 此前只搬 fn impl ⇒ 生成器 / 模板 / matchAll / 用户迭代器 / Proxy 的迭代元素、延迟异常、drain 视图在副本上整体丢失（L2 假阴）。`hof.ts` 末尾补 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖 algebra 顶层叶子、不依赖 `hof.ts` ⇒ 无环。**与 `$copy` 同口径共享视图引用**（副本消费推进原对象状态，负控钉住） | `core/.../__tests__/snapshot-match-iter-tables.test.ts`（6 例），全仓 0 新增失败 |
-| ② dts 元素域通道 | **第三种已落地（见下节）**：显式承载位 + 注解一致性诊断；实测 fork 分支 `unknown` → `number \| string`。**⚠️ 不解锁步骤 3**——`genElements` 仍依赖构造期跑体 | `core/.../gen-elements-facet.test.ts`（7 例）、`service/.../emit-gen-elements-facet.test.ts`（9 例）、实验 F（2 例） |
+| ② dts 元素域通道 | **第三种已落地**（显式承载位 + 注解一致性诊断；fork 分支 `unknown` → `number \| string`）；**符号 PoC 轮**进一步实证「独立编译实例 + `any` 入口」可回填承载位、体延后零精度损失 ⇒ 接产绑定步骤 3，不单独接 | `core/.../gen-elements-facet.test.ts`（7 例）、`service/.../emit-gen-elements-facet.test.ts`（9 例）、实验 F（2 例）、`exec/__tests__/symbolic-yield-domain-poc.test.ts`（21 例） |
 
 > ⚠️ ③ 修的是 **WeakMap 侧表迁移**，**不等于** 实验 C 的「首消费点补写
 > `shape.slots` 对副本失效」——后者仍是未解前置：`snapshotAbs` 对 obj 槽
@@ -507,11 +539,48 @@ import `@nudojs/core` 的纯函数 / 类型、**不引 exec 运行时**，且 `a
 描述为「能解锁步骤 3」的判断据此订正：它只**预置了承载位与未填充语义**
 （`undefined` = 未收集），真正填值仍需静态 yield 域推断或接受降级。
 
-⇒ 前置 ② 现在是「**部分解决**」；步骤 3 若推进，仍须先在
-「静态元素域推断通道」与「接受 `Generator<unknown>` sound 降级」之间拍板。
+⇒ 前置 ② 现在是「**部分解决 + 解法已实证**」；步骤 3 若推进，按下节
+PoC 结论把「符号求值从构造期解绑到导出期」作为同轮子任务即可，**不再需要
+在「静态推断」与「接受降级」之间拍板**（该问题已由 PoC 关闭）。
 注解降级为诊断后，**不再**是补产物的候选（实现是事实、声明是断言）。
 另：静态声明收割（harvest）不构造生成器运行时值 ⇒ `genElements` 不进
 `HARVEST_DISK_ABI`，缺省时消费面严格 fallback 到数字槽。
+
+###### 2026-11-06 符号 yield 域 PoC 轮（独立成族，只读实证）
+
+在干净 HEAD `951b2566` 建独立全仓基线（`1658 入口 / 20 失败 = 基线 20`），
+用**真实引擎 API** 做 5 组实验，**不接生产、不改任何既有断言**，固化为
+`core/src/algebra/exec/__tests__/symbolic-yield-domain-poc.test.ts`（21 例）。
+
+| 实验 | 结论 |
+|---|---|
+| A · 无约束入口 vs 具体入口 | `callTranspiledExportFull(ex, "g", [anyAbs])` 的 `genElements` 是 concrete 的 **sound 上界**：常量精确、参数运算 / 分支 / 循环过近似、宿主调用 / `yield*` 退 `any` |
+| B · 投影面 | 符号版交给 `absToTSType` 得 `Generator<number \| string>` 等；**当时**退化档是 `Generator<any>`（同日第五轮已归一为 `Generator<unknown>`） |
+| C · 副作用隔离 | **独立编译实例 3 次结果逐字相同**（`1  #exact`）；同一实例内重跑第 2 次变 `number  #partial`（坐实实验 E）⇒ 独立编译天然规避「重复副作用」，这是「消费点重跑」被否决后绕开它的关键 |
+| D · 生产路径 | `nudo export --format dts` 对 `a(x)` / `b()` / `c(xs)` / `d(flag)` 的产物与符号 PoC **逐字一致** ⇒ **引擎本来就在做符号求值**：入口形参是 `any`，`genElements` 已经是「无约束入口跑体」的结果，通道不是新机制 |
+| E · 回填闭环 | 真·体延后（清掉数字槽 + `genElements: undefined`）⇒ `Generator<unknown>`；用**独立编译实例**再做一次符号求值回填同一承载位 ⇒ **`Generator<number \| string>`，零精度损失** |
+
+**覆盖矩阵量化**（14 形态 × 多个具体见证，判据 `leqAbs(concrete, symbolic)`）：
+**精确 7 / sound 过近似 4 / 退化 3 / unsound 0**。退化 3 例全是
+「参数直接 yield / 宿主调用 / `yield*` 委托」⇒ `any`。注：`any` 作目标时
+`leqAbs` 平凡通过 ⇒ 真正信号是**非退化 11 例全部 sound、其中 7 例精确**。
+
+**决策：可行，但本轮不单独接产。**
+1. 现状生产路径**已经有**正确的 `genElements`（实验 D）⇒ 现在再接一次独立
+   求值属重复劳动、零收益且多一次求值开销。接产动作应**绑定在步骤 3 那一轮**，
+   作为「把符号求值从构造期解绑到导出期」的子任务，与体延后同批验证。
+2. ~~**接产最小切片**：analyzer 导出期独立求值回填 `combinedAbs`~~
+   —— **第五轮已撤回**：实测 `analyzeFile` 的 `combinedAbs.facets.genElements`
+   本已非空（`number \| string` / `7`）⇒ 重复求值零收益，且会带来双重真值
+   来源与 `analyzer-cache` 冷/热序列分裂。真解绑仍需 `$gen` 构造期不跑体。
+3. **接产前必须先修（✅ 第五轮已落地）**：当时退化档 `Generator<any>` 在
+   TS 里比 `Generator<unknown>` 更宽松（`any` 是逃生舱）⇒ 上一轮「严格占优」
+   不成立。按产品裁定「nudo any ≈ TS unknown」把 **TS 投影面全局归一**
+   （不止 `iteratorTSType` 元素位）：`absToTSTypeB` 的 `case "any"` → `unknown`
+   + 三处硬编码 fallback；26 条精确断言重订、0 功能失败；按 11-05 判例走
+   **patch**。详见上方「第五轮 · TS 投影面归一与步骤 3 停点」。
+4. 上一轮「静态推断 vs 接受降级」的待拍板问题**关闭**：数据支持推断通道；
+   降级的正确位置仍是推断失败时的**回退值**，不是产品默认契约。
 
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 

@@ -145,10 +145,10 @@ describe("Bug 479（service 侧）— 负控制：既有行为不得被波及", 
     expect(formatShape(entryCase(fn).throwsAbs)).toContain("TypeError");
   });
 
-  it("同形 `.js` 源（无注解）：dts 形参仍是 any（既有投影面不变）", () => {
-    // Abs any（未约束）→ TS any（Bug 544：any ≠ unknown；abs.md:100）
+  it("同形 `.js` 源（无注解）：dts 形参是 unknown（TS 投影面归一）", () => {
+    // Abs any（未约束）→ TS unknown（nudo any ≈ TS unknown；abs.md 只管展示面）
     expect(declOf(JS_UPPER, "/test/bug479-ctrl.js")).toContain(
-      "export declare function upper(a: any)",
+      "export declare function upper(a: unknown)",
     );
   });
 

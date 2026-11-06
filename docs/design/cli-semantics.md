@@ -185,7 +185,7 @@ L2 `entryThrows` 解析顺序：
 - 把 `unknown` 与 `any` 在表格里并成同一格（如 `unknown`/`any` = 全集）。
 - 在 check 中对 `unknown`（失败）静默通过而不报引擎债相关诊断。
 
-**已记录例外（export 投影面）：** `nudo export` 的 `.d.ts` 投影对**未被调用（未观测）**的 export 参数按「不猜测」原则渲染为 `any`——与 check 签名面**同一口径**（入口无约束参数一律 `any`），导出面**不因缺证据而改用 `unknown`**。导出面与 check 面共用同一份签名数据源（契约 / 调用点证据 / `entry@` 入口兜底）——**`@nudo:case` 调试见证不进导出面**（`caseMode: "none"`，与 check / LSP validate / vite 同档；见 BUG-044）；只有真正**推导失败**时导出面才出现 `unknown`，并由 `nudo:unknown-inference` 之类引擎债诊断标注。见 `packages/website/docs/guides/export-ecosystem.md`（en / zh-Hans 镜像同步维护）。
+**已记录例外（TS 投影面，2026-11-06 裁定）：** 上表的「无约束 ⇒ `any` / 推导失败 ⇒ `unknown`」分面**只约束 Nudo 展示 / CLI 输出**。Nudo `any` 的语义是「任意 JS 值、无约束」，在 TypeScript 里对应 **`unknown`**（top），不是 TS `any`（逃生舱）⇒ `nudo export` 的 `.d.ts` 把两者**都投影成 TS `unknown`**，与 zod / standard / guard 三面运行时校验器同口径。因此**未被调用（未观测）**的 export 参数在 `.d.ts` 里是 `unknown`，`nudo check` 的签名面仍打印 `any`；这不是两面相反裁决，而是同一 Abs 在两种语言里的忠实翻译。导出面与 check 面依旧**共用同一份签名数据源**（契约 / 调用点证据 / `entry@` 入口兜底）——**`@nudo:case` 调试见证不进导出面**（`caseMode: "none"`，与 check / LSP validate / vite 同档；见 BUG-044）。归一还让按「渲染为 unknown」触发的 stderr 点名提示覆盖主路径 ⇒ BUG-076 记录的「文档承诺 vs 实现」矛盾关闭。未收窄的 `unknown` 返回值触发 TS2571 属正确提示（Bug 544）。见 `packages/website/docs/guides/export-ecosystem.md`（en / zh-Hans 镜像同步维护）。
 
 **允许（代数层已如此）：**
 

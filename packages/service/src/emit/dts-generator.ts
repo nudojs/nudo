@@ -439,11 +439,15 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
       // Abs unknown = **推断失败**（引擎没有信息）→ TS unknown（消费方必须先收窄）
       return "unknown";
     case "any":
-      // Abs any = **未受约束**（未标注入口形参 / 显式 any()）→ TS any。
-      // abs.md:100 明文规则：「unconstrained entry parameters display as `any`,
-      // never as `unknown`」——旧口径把两者合并成 unknown ⇒ 消费方吃 TS2571
-      // 假红（引擎自己的签名说 `any`，产物却说 unknown）。
-      return "any";
+      // 2026-11-06 产品裁定：nudo 的 `any` 是「无约束并集 / 任意值」，语义
+      // 更接近 **TS 的 unknown（top，需先收窄）**，而不是 TS 的 `any`（关闭
+      // 类型检查的逃生舱）。三面运行时校验器早已把 any / unknown 同映为
+      // unknown（schema-generator.ts / guard-generator.ts / standard-schema.ts），
+      // dts 曾是唯一把 nudo any 直译成 TS any 的面。
+      // `abs.md` 的「any ≠ unknown」规则约束的是 **nudo 自己的展示 / CLI 面**
+      // （两个产品概念不得合并），不是 TS 投影面；BUG-544 把 TS2571 当假红，
+      // 按本裁判定性为**正确的类型安全提示**（无约束返回值理应先收窄）。
+      return "unknown";
     case "prim":
       return a.shape.type;
     case "obj": {
@@ -880,9 +884,9 @@ function predLiteralSet(p: Pred | undefined, self: Term): LiteralValue[] | undef
 }
 
 /**
- * 「无信息」类型串：Abs `any`（未约束）与 Abs `unknown`（推断失败）的 TS
- * 渲染（`any` / `unknown`）都**不携带外延**——不能算作「比泛型 / 兜底更
- * 精确的证据」（Bug 544 的 any/unknown 分面：两者语义相反，但都无外延）。
+ * 「无信息」类型串：Abs `any`（未约束）与 Abs `unknown`（推断失败）在
+ * nudo 域里是两个概念，但 TS 投影面归一后都渲染成 `unknown`；源码注解
+ * 原文仍可能是 `any` ⇒ 两者都算「不携带外延」，不能当作更精确的证据。
  */
 function isNoInfoType(ts: string): boolean {
   return ts === "unknown" || ts === "any";
@@ -1387,9 +1391,9 @@ function lookupContractSlot(
   // 下标 0 的元素，不是属性键）⇒ 聚合成**元组**，不是对象。摊成对象会产出
   // 与真实形参形态**相反**的输入面（合法数组调用被判红、非法对象调用放行）。
   if (decl.patternKind === "array") {
-    // 元组长度 = 模式的**位置数**（最高下标 + 1）——未契约的位置留 `any`
-    // （**无约束**，不是 unknown——unknown 表示引擎推导失败；契约没写的元素位
-    // 是「没约束」⇒ any，与入口无约束参数同口径）；契约只覆盖部分位置时，
+    // 元组长度 = 模式的**位置数**（最高下标 + 1）——未契约的位置填 `anyAbs`
+    // （Abs 域的「无约束」；TS 投影面按 2026-11-06 归一渲染成 `unknown`）；
+    // 契约只覆盖部分位置时，
     // 元组长度不得塌成单元素（单元素元组会被 widen 成 `T[]` ⇒ 把
     // 「下标 0 是 number」误写成「每个元素都是 number」⇒ 合法调用被判红）。
     const lastIndex = decl.bound.reduce(
@@ -2104,9 +2108,9 @@ function dtsFunctionDeclaration(
     // 旧实现 `return { lines: [] }` ⇒ 该导出被**整条从产物里删掉**（不是降级
     // 成 any），而 `nudo check`（core checkSource）为同一函数合成 `any`
     // ⇒ 两面结论相反、消费端 `import { boom }` 直接 TS2305。
-    // ⇒ 与 check 同源：产物面投影成 `any`。
+    // ⇒ 与 check 同源；TS 投影面按 2026-11-06 归一：无约束 any → TS unknown。
     return {
-      lines: dtsExportDeclaration(form, `(...args: unknown[]): any`),
+      lines: dtsExportDeclaration(form, `(...args: unknown[]): unknown`),
       params: [],
     };
   }
@@ -3341,8 +3345,9 @@ function dtsClassDeclaration(
 }
 
 /**
- * 类声明的超类子句（BUG-151）：` extends A`；基类是泛型 ⇒ 补 `any` 实参
- * （TS2314：泛型基类缺类型实参会让整份产物编译不过）。
+ * 类声明的超类子句（BUG-151）：` extends A`；基类是泛型 ⇒ 补 `unknown`
+ * 实参（TS2314：泛型基类缺类型实参会让整份产物编译不过；`unknown` 是 TS
+ * 的 top，2026-11-06 归一后产物里不再出现语义为「无约束」的 `any`）。
  */
 function superClauseText(
   className: string,
@@ -3353,7 +3358,7 @@ function superClauseText(
   const builtin = BUILTIN_GENERIC_BRANDS.get(superName);
   if (builtin !== undefined) return ` extends ${builtin}`;
   const baseParams = surface?.classes.get(superName)?.typeParams ?? [];
-  const args = baseParams.length > 0 ? `<${baseParams.map(() => "any").join(", ")}>` : "";
+  const args = baseParams.length > 0 ? `<${baseParams.map(() => "unknown").join(", ")}>` : "";
   return ` extends ${superName}${args}`;
 }
 
@@ -3417,11 +3422,12 @@ function dtsValueDeclarations(
 /**
  * 类形参声明（构造器 / 静态方法）。
  *
- * BUG-003：这里曾是**硬编码 `unknown`** —— 与 `CLAUDE.md` 的分面约定相悖
- * （入口**无约束**形参应显示 `any`；真正的 `unknown` 表示**推断失败**），
- * 也与同一文件上 `nudo check` 的签名面（`Widget(w: any, h: any)`）矛盾。
- * 构造器 / 静态方法的形参**没有任何类型证据**（分析面不产出其 Abs）⇒ 按
- * 「无约束 ⇒ any」投影（与 dts 参数位的无证据口径一致）。
+ * BUG-003 曾把这里从硬编码 `unknown` 改成 `any`，理由是「nudo 展示面的
+ * 无约束形参显示 any」。2026-11-06 产品裁定明确：该 display 规则只管
+ * **nudo 展示 / CLI 面**；**TS 投影面**把 nudo 的无约束 any 映为 TS
+ * `unknown`（top），所以这里回到 `unknown`，且理由不是「推断失败」而是
+ * 「TS 侧的 top」。构造器 / 静态方法形参没有类型证据 ⇒ 与 dts 普通参数位
+ * 归一后的口径一致（与三面运行时校验器也同口径）。
  *
  * 遗留（已上报）：实例方法 / 静态方法的**返回类型**仍落在 `unknown` ——
  * 类成员通道只吃 case / combinedAbs 证据，而分析面对类成员给出的
@@ -3429,7 +3435,7 @@ function dtsValueDeclarations(
  */
 function classParamDecl(name: string, index: number): string {
   const safe = sanitizeParamName(name, index);
-  return safe.startsWith("...") ? `${safe}: any[]` : `${safe}: any`;
+  return safe.startsWith("...") ? `${safe}: unknown[]` : `${safe}: unknown`;
 }
 
 /** brand 实例形状 → 字段声明（排除方法名——方法进类体，不进字段） */

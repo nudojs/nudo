@@ -129,9 +129,9 @@ export function makeUser(name) {
 }
 `);
     expect(dts).toContain("export declare class C {");
-    // BUG-003：类形参无类型证据 ⇒ 按 `any` 口径（CLAUDE.md：入口**无约束**
-    // 形参显示 any；`unknown` 只表示推断失败），并与 check 签名面一致。
-    expect(dts).toContain("constructor(v: any);");
+    // BUG-003：类形参无类型证据 ⇒ TS 投影面为 `unknown`（nudo any ≈ TS unknown）；
+    // nudo 展示面仍显示 any（CLAUDE.md：入口无约束形参），两者作用域不同。
+    expect(dts).toContain("constructor(v: unknown);");
     expect(dts).toMatch(/m\(x: (any|unknown)\): unknown;/);
     expect(dts).toMatch(/static s\(x: (any|unknown)\): unknown;/);
   });

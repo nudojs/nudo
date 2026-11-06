@@ -44,7 +44,7 @@ function dtsParamType(stdout: string): string {
 }
 
 describe("BUG-044 — `@nudo:case` 调试见证不进发布面", () => {
-  it("dts 面：有调试见证与无证据的投影相同（形参是 any，不是 number）", () => {
+  it("dts 面：有调试见证与无证据的投影相同（形参是 unknown，不是 number）", () => {
     const dir = fixture();
     const plain = runCliTsx(["export", join(dir, "plain.js"), "--format", "dts"]);
     const withCase = runCliTsx(["export", join(dir, "lib.js"), "--format", "dts"]);
@@ -52,7 +52,7 @@ describe("BUG-044 — `@nudo:case` 调试见证不进发布面", () => {
     expect(withCase.status).toBe(0);
 
     expect(dtsParamType(withCase.stdout)).toBe(dtsParamType(plain.stdout));
-    expect(dtsParamType(withCase.stdout)).toContain("any");
+    expect(dtsParamType(withCase.stdout)).toContain("unknown");
     expect(dtsParamType(withCase.stdout)).not.toContain("number");
   }, 60000);
 
@@ -76,7 +76,7 @@ describe("BUG-044 — `@nudo:case` 调试见证不进发布面", () => {
     expect(dts.status).toBe(0);
     // check 签名行：f(x: any) => number | string
     expect(check.stdout).toContain("f(x: any)");
-    expect(dtsParamType(dts.stdout)).toContain("any");
+    expect(dtsParamType(dts.stdout)).toContain("unknown");
     expect(dts.stdout).toContain("number | string");
   }, 60000);
 });

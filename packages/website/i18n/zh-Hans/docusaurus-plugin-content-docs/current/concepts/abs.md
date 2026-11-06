@@ -97,7 +97,9 @@ number | string       // 异构联合
 | 展示 | `any`（可带 type-var 如 `A1`） | `unknown` + conf 标注 |
 | 产品话术 | 「未写契约 ⇒ 默认约束为 any + JS 运行时效果」 | 「Nudo 遇到无法处理的场景」 |
 
-**规则：** 无约束入口参数显示为 **`any`**，绝不显示为 `unknown`。CLI / `check` 签名遵循此契约。
+**规则（Nudo 展示面）：** 无约束入口参数显示为 **`any`**，绝不显示为 `unknown`。CLI / `check` 签名遵循此契约。**此规则只约束 Nudo 自己的展示 / CLI 输出**，不管辖 TypeScript 声明产物。
+
+**TS 投影面（2026-11-06 裁定）：** Nudo 的 `any` 表示「任意 JS 值、无约束」，对应 TypeScript 的 **`unknown`**（top，消费方须先收窄），**不是** TS 的 `any`（关闭类型检查的逃生舱）。因此 `.d.ts` 与 zod / standard / guard 三面校验器一样，把 Nudo `any` 与 Nudo `unknown` 都投影成 TS `unknown`。`.d.ts` 里未收窄的无约束返回值触发 TS2571 是**正确的类型安全提示**，不是假红（见 Bug 544）。
 
 ---
 
