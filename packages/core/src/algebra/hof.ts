@@ -16,6 +16,7 @@ import { leqAbs } from "./leq.ts";
 import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { isSymbolAbs } from "./key/symbol-id.ts";
+import { copyMatchIterTables } from "./exec/match-iter.ts";
 import type { HofSite, RelSource } from "./hof-types.ts";
 
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
@@ -111,6 +112,13 @@ export function snapshotAbs(a: Abs): Abs {
   // 不得在此做 α 替换——快照不换名）。
   const impl = getFnImpl(a);
   if (impl) attachFnImpl(out, impl);
+  // A7 镜像（同口径）：生成器 / 模板标签 / matchAll / 用户迭代器 / Proxy
+  // 的身份侧表也按 Abs 身份挂 WeakMap —— 快照是等价副本，重建只搬四件套
+  // 会把「迭代元素 / 延迟异常 / 委托视图」静默抹掉（副本消费点查不到 ⇒
+  // L2 假阴）。$copy 早有 copyMatchIterTables，此处补上 snapshot 路径。
+  // match-iter.ts 只依赖 algebra 顶层叶子（abs/objects/may-throw），不依赖
+  // hof.ts ⇒ 无环。
+  copyMatchIterTables(a, out);
   return out;
 }
 

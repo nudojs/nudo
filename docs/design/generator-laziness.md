@@ -449,6 +449,37 @@ WeakMap miss，值面逐字不变。回归钉
 的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
 的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
 
+#### 2026-11-06 前置复核（同日第二轮，逐项收敛）
+
+| 前置 | 复核结论 | 落地 |
+|---|---|---|
+| ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/a1-conf-promotion-evidence.test.ts`（4 例） |
+| ③ `snapshotAbs` 侧表迁移 | **已修（A7 镜像一致性缺口）**：`$copy` 早有 `copyMatchIterTables`，`snapshotAbs` 此前只搬 fn impl ⇒ 生成器 / 模板 / matchAll / 用户迭代器 / Proxy 的迭代元素、延迟异常、drain 视图在副本上整体丢失（L2 假阴）。`hof.ts` 末尾补 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖 algebra 顶层叶子、不依赖 `hof.ts` ⇒ 无环。**与 `$copy` 同口径共享视图引用**（副本消费推进原对象状态，负控钉住） | `core/.../__tests__/snapshot-match-iter-tables.test.ts`（6 例），全仓 0 新增失败 |
+| ② dts 元素域通道 | 见下节，**需产品拍板**，代码未动 | `service/.../__tests__/a1-laziness-evidence-poc.test.ts` 实验 F（2 例） |
+
+> ⚠️ ③ 修的是 **WeakMap 侧表迁移**，**不等于** 实验 C 的「首消费点补写
+> `shape.slots` 对副本失效」——后者仍是未解前置：`snapshotAbs` 对 obj 槽
+> 是**深拷贝**（`hof.ts:67-76`），补写只落原对象。要让补写同步到副本，
+> 需另建「原对象 → 副本集合」的反向映射或让副本共享 slots 引用（后者会
+> 破坏快照的独立语义）⇒ 留待步骤 3 独立成族时一并设计。
+
+##### dts 元素域通道 · **待产品拍板**
+
+实证 F：`generateDts(result)` 只吃 `AnalysisResult`，`dts-generator.ts` 只
+import `@nudojs/core` 的纯函数 / 类型、**不引 exec 运行时**，且 `absToTSType`
+对同一 Abs 幂等、不写回 shape ⇒ **导出期没有、也不该有消费点**（dts 必须
+是纯投影）。所以「体延后」时元素域不可能靠「调用方先消费再导出」补回。
+
+| 方案 | 代价 | 判定 |
+|---|---|---|
+| **(a) 接受 `Generator<unknown>` sound 降级** | 精度回退；且与 schema / standard / guard 三面按 brand 收紧的口径**不一致**（四面指向不同声明域） | 需产品明确接受；按现行「任何精度回退即回滚」纪律，**默认否决** |
+| **(b) 导出前跨包触发体** | 破坏 dts 纯投影（导出变成有副作用求值）；且 `fireGenTrigger` 按 Abs 身份登记，Abs 经 harvest / 快照往返后身份已变 ⇒ 触发不到 | ❌ 技术不可行 |
+| **(c) 把元素域烘进 `AbsFacets` 随值搬运** | 构造期仍需求值体（回到 eager）⇒ 与步骤 3 目标矛盾；或新增「静态 yield 域推断」通道（独立大族） | ⚠️ 需单独立项 |
+
+**唯一待拍板问题**：步骤 3 是否允许 dts 元素类型在「体延后」期间退成
+`Generator<unknown>`？若不许，则步骤 3 必须先有 (c) 的静态元素域通道，
+不能单独推进。本轮**不改任何 dts 产物**。
+
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 
 步骤 1 + 步骤 2 就位后，把 `$gen` 的 `body()` 调用从**构造期**挪到**首个消费点**：
