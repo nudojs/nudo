@@ -39,7 +39,7 @@ function genLike(): Abs {
   );
 }
 
-describe("A1 步骤 2 · 延迟体触发点骨架（构造期仍 eager ⇒ 零语义变化）", () => {
+describe("A1 步骤 2/3 · 延迟体触发点骨架（步骤 3 生产已接线）", () => {
   it("7 个读出面各触发一次，且按 Abs 身份幂等", () => {
     const faces: Array<[string, (a: Abs) => unknown]> = [
       ["drainGenElements", drainGenElements],
@@ -64,7 +64,7 @@ describe("A1 步骤 2 · 延迟体触发点骨架（构造期仍 eager ⇒ 零�
     }
   });
 
-  it("copyMatchIterTables 迁移待触发体，副本与原对象各自独立触发", () => {
+  it("copyMatchIterTables 迁移待触发体，一次触发广播到全部别名", () => {
     const src = genLike();
     const dst = genLike();
     let fired = 0;
@@ -75,12 +75,12 @@ describe("A1 步骤 2 · 延迟体触发点骨架（构造期仍 eager ⇒ 零�
     copyMatchIterTables(src, dst);
 
     expect(matchIterElements(dst)).toHaveLength(2);
-    expect(fired).toBe(1);
+    // 步骤 3：触发 dst 时广播到同族 src ⇒ 手工计数器收到 2 次调用。
+    // 生产延迟体的 body 由 ensureFresh 缓存 ⇒ 体仍只跑一次。
+    expect(fired).toBe(2);
     matchIterElements(dst);
-    expect(fired, "副本二次读幂等").toBe(1);
-
     matchIterElements(src);
-    expect(fired, "原对象仍可独立触发").toBe(2);
+    expect(fired, "全部别名只触发一次，二次读幂等").toBe(2);
   });
 
   it("未登记触发器时读出面零开销、结果逐字不变", () => {
@@ -112,13 +112,13 @@ describe("A1 步骤 2 · 延迟体触发点骨架（构造期仍 eager ⇒ 零�
     expect(formatAbs(r.result)).toEqual('{ "0": 1, "1": 5 }  #exact');
   });
 
-  it("步骤 1 的 join 折回不回归（Bug 212 c1 构造点）", () => {
+  it("步骤 3 后构造点精确值（Bug 212 c1：native 0）", () => {
     const r = call(`export function f() {
       let n = 0;
       function* g() { n++; yield 1; }
       const it = g();
       return n;
     }`);
-    expect(formatAbs(r.result)).toEqual("0 | 1  #exact");
+    expect(formatAbs(r.result)).toEqual("0  #exact");
   });
 });

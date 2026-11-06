@@ -450,7 +450,7 @@ WeakMap miss，值面逐字不变。回归钉
 `Generator<unknown>`，接产前的 soundness 前置关闭。**但实测 `analyzeFile` 的
 `combinedAbs.facets.genElements` 本已非空**（`number | string | 7`）⇒ 导出期
 再求值回填属重复劳动、零收益，且会引入双重真值来源 + 冷/热缓存分裂；
-唯一有意义的接产形态仍是步骤 3「体延后」引擎内核改造，见下节）；
+唯一有意义的接产形态仍是步骤 3「体延后」引擎内核改造，见下节；**注意归一只关闭 soundness 前置，不解锁值面**，末轮复核实测体延后仍 100 条回归）；
 ③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
 的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
 的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
@@ -477,11 +477,39 @@ WeakMap miss，值面逐字不变。回归钉
 | `analyzeFile` 的 `combinedAbs.facets.genElements` | 实测非空（`number \| string` / `7`）⇒ 导出期重复求值**零收益** |
 
 **步骤 3 明确停点（本轮不实施）**：符号 PoC 建议的「导出期独立求值回填」在
-现状下是负收益（双重真值来源 + `analyzer-cache.ts:149` 克隆后冷/热可能拿到
-不同序列）。真正解绑仍需让 `$gen` 构造期不跑体 = 引擎内核表示变更
-（实验 A：100 条生成器族回归；`conf` 可提升、`snapshotAbs` 补写迁移、
-dts 跨包通道、控制流 token 对齐）⇒ 按纪律独立成族 + 独立全仓基线。
-本轮只关闭 soundness 前置，**不碰 `$gen` 运行时时序**。
+**体仍 eager** 的现状下是负收益（双重真值来源 + `analyzer-cache.ts:149`
+克隆后冷/热可能拿到不同序列）。真正解绑仍需让 `$gen` 构造期不跑体 =
+引擎内核表示变更（实验 A：100 条生成器族回归；`conf` 可提升、
+`snapshotAbs` 补写迁移、控制流 token 对齐）⇒ 按纪律独立成族 +
+独立全仓基线。本轮只关闭 soundness 前置，**不碰 `$gen` 运行时时序**。
+
+##### 2026-11-06 末轮复核 · 归一之后步骤 3 能不能做
+
+在 `b0609869`（归一已落地）上加**临时探针**令 `$gen` 构造期不跑体，
+实验后逐字撤除、零残留、工作区干净：
+
+| 实测 | 结果 |
+|---|---|
+| 生成器 8 族 | **100 失败 / 38 通过 / 3 todo（141）**，与归一前的实验 A **逐字一致** |
+| 端到端 `nudo export --format dts` | 4 个生成器全退 `Generator<unknown, undefined, unknown>`（不再 `any`，但仍是精度回退） |
+
+⇒ **归一关闭的是 soundness 前置（TS 用词），不是步骤 3 的解锁条件**。
+上一轮把 `any → unknown` 称作「接产前唯一硬前置」措辞过宽，易被读成
+「关了就能做」，在此订正：步骤 3 的承重阻塞一直是**运行时值面**
+（eager 收集烘进 `full` 闭包 / 元素槽 / `conf` / 委托表 / 延迟异常）。
+
+**同时订正上一轮的「撤回接产建议」边界**：「导出期独立求值回填零收益」
+只在**体仍 eager** 时成立；一旦体延后，`genElements` 为空 ⇒ 回填从
+「零收益」变成**必需子任务**（符号 PoC 实验 E 已证零精度损失）。
+所以步骤 3 的完整切片 = 体延后 + 导出期符号回填 + 值面懒填充，三者同批。
+
+**判定：路径已闭合，无未知技术不可行项 ⇒ 可立项独立成族**，但不是零成本
+小步。剩余工作量：① `makeGenObject` 的「体已跑完」假设改为首消费点触发
+并懒填充；② 重订 100 条断言 + 4 个生成器族 + 14 条差分语料；
+③ `conf` 可提升机制（缓存键失效 + `confJoin` 单调不升）尚未实施；
+④ `snapshotAbs` 的 shape 槽补写对副本失效（实验 C）仍未解 —— WeakMap
+侧表迁移已修但不是同一件事。步骤 4 的控制流 token 对齐**不属于**步骤 3
+前置（步骤 3 后 c3/c4 仍不精确是已知剩余缺陷，§5.5）。
 
 #### 2026-11-06 前置复核（同日第二轮，逐项收敛）
 
@@ -584,6 +612,9 @@ PoC 结论把「符号求值从构造期解绑到导出期」作为同轮子任�
 
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 
+> **状态：2026-11-07 已落地**（独立成族，见文末「步骤 3 实施记录」）。
+> 下文保留的是**设计原文**，其中「未做 / 待前置」的表述按实施记录理解。
+
 步骤 1 + 步骤 2 就位后，把 `$gen` 的 `body()` 调用从**构造期**挪到**首个消费点**：
 
 - 构造期只登记「待跑体 + 触发器」。
@@ -653,3 +684,54 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
   **但已产出可直接实施的最小规格**（§5.1）+ 精确的受阻原因（§2.2）。
 
 ---
+
+---
+
+## 2026-11-07 · 步骤 3 实施记录（独立成族）
+
+**改前基线**：`b0609869` 全仓 `1659 入口 / 20 失败 = 基线 20`。末轮复核在
+归一后的 HEAD 用临时探针（构造期停跑体、无触发器）实测 **100 失败 /
+38 通过**；本轮把**触发式填充**接上后，同族从 100 失败收敛到 0。
+
+**实现**（core 包内，公共导出形状不变）：
+1. `runtime/async.ts`：把 `$gen` 的跑体收集抽成 `collectGenBody`；`$gen`
+   构造期只产空壳（`makeGenObject` 空序列 + `conf: path`）并 `registerGenTrigger`
+   登记 `(target) => mergeDeferredBody(target, ensureFresh())`；`ensureFresh`
+   缓存一次体求值。**协议三方法**在 `fireOnce()` 后把本次调用转发到升级后的
+   槽值（否则首调读到空壳序列，实测 `undefined:1`）。
+2. `exec/match-iter.ts`：触发器值类型改为 `(target: Abs) => void`，
+   `fireGenTrigger(a)` 传 `a`；新增 `genTriggerAliases` 按族广播到
+   `snapshotAbs` / `$copy` 的所有别名（每别名只合并一次）；新增
+   `pendingGenShells` / `notePendingGen` / `drainPendingGens`。
+3. `exec/run.ts`：`callTranspiledExportFull` 在求值收口排空未消费的壳
+   ⇒ 既有 eager 值面契约（Bug 212 / 族 01 数字下标）与 service 侧 `.d.ts`
+   纯投影的元素域**都不退化**（端到端 `Generator<number \| string>` 等与
+   改前逐字一致），无需跨包回填、无需独立符号求值。
+
+| 实测 | 结果 |
+|---|---|
+| 首版（无协议转发） | 生成器 9 族 66 失败（`undefined:1`） |
+| 加协议转发 | 13 失败，全部为期望过时 / 骨架负控制前提变更，**零真精度回退** |
+| 加求值收口排空 | 9 失败；四类消费面（next / spread / 下标 / for-of）全精确 |
+| 断言重订 + 别名广播 | 生成器 9 族 **全绿** |
+| 端到端 dts | `Generator<number \| string>` / `Generator<number>` / `Generator<unknown>` / `Generator<number \| string>`，与基线一致 |
+
+**值面收益（与原生一致）**：跨函数消费 `yield n` 读到消费期绑定 `9`
+（此前 `0`）；构造点 c1/c2 从 `0 \| 1` / `"" \| "ab"` 收敛为精确 `0` / `""`；
+容器 mutator 长度域过近似收敛为精确 `0`。`n++` 只执行一次（幂等 + 缓存）。
+
+**回归**：新增 `exec/__tests__/gen-deferred-body.test.ts`（5 例）；
+`eval-generator-cross-function-consume.test.ts` 由「现状钉 + 3 todo」升级为
+4 例 R3-b 验收 + 1 条步骤 4 todo；Bug 212 的 5 条精确断言、步骤 2 骨架
+2 条负控制、`snapshot-match-iter-tables` 的 `gen()` 夹具按新语义重订。
+
+**剩余**：步骤 4 真挂起（c3/c4 的首个 yield 挂起点中间值仍不逐点精确）；
+`conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
+别名广播已让可观察面不退化，本轮未单独实施。
+
+**已知边界**：`drainPendingGens` 目前只挂在
+`callTranspiledExportFull`（analyzer / evaluator 的主求值入口）。若某条路径
+直接经 `$call` / `runTranspiled` 顶层创建生成器且**从不消费、也不经过该入口**
+（如个别 LSP replay 分支），空壳会保留到下一次求值收口才排空 ⇒ 该路径的
+未消费展示面在此期间是 `{  } #path`。全仓基线未踩到该形态；若后续出现，
+把排空挂到 `runWithCollectorScope` 出口即可（同一函数、更大作用域）。

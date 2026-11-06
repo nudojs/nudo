@@ -25,7 +25,7 @@ import { markFreshInstance } from "../../key/instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
-import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, type GenDeferred } from "../match-iter.ts";
+import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, registerGenTrigger, copyMatchIterTables, notePendingGen, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
 import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
@@ -748,6 +748,12 @@ function makeGenObject(
   const deliver = (v: Abs): Abs => (asyncMode ? wrapPromiseAbs(v) : v);
   const next = $fnVal([], (): Abs => {
     fireOnce();
+    // A1 步骤 3：触发发生在「方法值已被取出」之后 ⇒ 本次调用必须转发到
+    // 升级后的闭包，否则首调读到空壳序列（undefined）。
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["next"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== next) return $call(upgraded, []);
     // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
     // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
     if (deferred && !state.done) {
@@ -851,6 +857,10 @@ function makeGenObject(
   };
   const ret = $fnVal([], (...args: Abs[]): Abs => {
     fireOnce();
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["return"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== ret) return $call(upgraded, args);
     const v = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     // Bug 229：挂起点在 yield* 委托内 → .return(v) 先转发给委托迭代器
@@ -881,6 +891,10 @@ function makeGenObject(
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
     fireOnce();
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["throw"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== thr) return $call(upgraded, args);
     const e = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     state.done = true;
@@ -1066,7 +1080,7 @@ export function generatorProtoProtocolMember(name: "next" | "return" | "throw"):
  * Bug 141：asyncMode（第二实参）= async generator 面——迭代结果经 promise
  * 交付（next/return/throw 返 promise）、装 @@asyncIterator 自返槽与
  * @@toStringTag "AsyncGenerator"（原生 async function* / async * 方法）。 */
-export function $gen(body: () => Abs, asyncMode = false): Abs {
+function collectGenBody(body: () => Abs, asyncMode: boolean): Abs {
   const ys: GenYieldCollector = { els: [], ctxs: [] };
   const marker = getGenPathSensitive();
   const prevOverride = getGenJoinOverride();
@@ -1163,6 +1177,49 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
   // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
   // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
   return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode, delegations);
+}
+
+/**
+ * A1 步骤 3（2026-11-07）：把 `body()` 从**构造期**挪到**首个消费点**。
+ *
+ * 构造期只产一个「空壳」生成器对象（协议槽齐全、序列为空、conf 保守），
+ * 并登记一次触发器；7 个元素面读出（`match-iter.ts`）+ 协议三方法
+ * （`makeGenObject` 的 `fireOnce`）任一先触达，才通过 `collectGenBody`
+ * 跑一次体并把完整结果 in-place 合并回壳 ⇒ 副作用只发生一次（绕开
+ * 实验 E 的「重跑重复副作用」），且 body thunk 捕获活绑定（实验 D）
+ * ⇒ 跨函数消费读到的是消费时刻的外层值（§5.3 R3-b 与原生一致）。
+ */
+export function $gen(body: () => Abs, asyncMode = false): Abs {
+  const shell = makeGenObject([], "path", undef(), undefined, [], [], false, asyncMode, []);
+  // 体只跑一次：同一延迟体族经 $copy / snapshotAbs 得到的所有别名共享
+  // 这一份结果（协议闭包、live 视图、delayed 异常同源），避免「重跑重复
+  // 副作用」（实验 E），也让副本触发时填的是副本自己而不是原对象。
+  let cached: Abs | undefined;
+  const ensureFresh = (): Abs => (cached ??= collectGenBody(body, asyncMode));
+  registerGenTrigger(shell, (target) => mergeDeferredBody(target, ensureFresh()));
+  notePendingGen(shell);
+  return shell;
+}
+
+/** 把触发后收集到的完整生成器对象合并回构造期空壳（身份不变）。 */
+function mergeDeferredBody(shell: Abs, fresh: Abs): void {
+  const slots = (shell.shape as ObjShape).slots;
+  const freshSlots = (fresh.shape as ObjShape).slots;
+  // 协议三方法与数字下标元素槽改指向 fresh 的闭包 / 值；自返槽
+  // （@@iterator / @@asyncIterator / @@toStringTag）与 constructor 保留
+  // shell 自己的身份 ⇒ 迭代仍走「已迁移到 shell 上」的侧表视图。
+  for (const [k, v] of Object.entries(freshSlots)) {
+    if (
+      k === "@@iterator" ||
+      k === "@@asyncIterator" ||
+      k === "@@toStringTag" ||
+      k === "constructor"
+    ) continue;
+    slots[k] = v;
+  }
+  shell.conf = fresh.conf;
+  shell.facets = fresh.facets;
+  copyMatchIterTables(fresh, shell);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown。

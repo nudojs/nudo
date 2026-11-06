@@ -39,14 +39,14 @@ import {formatAbs} from "@nudojs/core";
 import {call, val} from "./eval-helpers.ts";
 
 describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（wrong-exact 消灭）", () => {
-  it("c1 构造点：n = 0 | 1（native 0 ∈ join；改前 wrong-exact 1）", () => {
+  it("c1 构造点：n = 0（步骤 3：体在消费点跑，构造点 native 0 精确）", () => {
     const r = call(`export function f() {
       let n = 0;
       function* g() { n++; yield 1; }
       const it = g();
       return n;
     }`);
-    expect(formatAbs(r.result)).toEqual('0 | 1  #exact');
+    expect(formatAbs(r.result)).toEqual('0  #exact');
   });
 
   it("c2 构造点：log = \"\" | \"ab\"（native \"\" ∈ join；改前 wrong-exact \"ab\"）", () => {
@@ -56,7 +56,7 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       const it = g();
       return log;
     }`);
-    expect(formatAbs(r.result)).toEqual('"" | "ab"  #exact');
+    expect(formatAbs(r.result)).toEqual('""  #exact');
   });
 
   it("c3 it.next() 后：n = 0 | 5（改前 wrong-exact 5；残余：native 1 = 首个 yield 挂起点中间值，不在 join——需步骤 4 真挂起）", () => {
@@ -81,14 +81,14 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
     expect(formatAbs(r.result)).toEqual('"" | "ab"  #exact');
   });
 
-  it("四种 $gen 发射点同编：函数表达式 / 对象方法 / 类方法 / async 生成器（各 n = 0 | 1）", () => {
+  it("四种 $gen 发射点同编：函数表达式 / 对象方法 / 类方法 / async 生成器（各 n = 0）", () => {
     const expr = call(`export function f() {
       let n = 0;
       const g = function* () { n++; yield 1; };
       const it = g();
       return n;
     }`);
-    expect(formatAbs(expr.result)).toEqual('0 | 1  #exact');
+    expect(formatAbs(expr.result)).toEqual('0  #exact');
 
     const obj = call(`export function f() {
       let n = 0;
@@ -96,7 +96,7 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       const it = o.g();
       return n;
     }`);
-    expect(formatAbs(obj.result)).toEqual('0 | 1  #exact');
+    expect(formatAbs(obj.result)).toEqual('0  #exact');
 
     const cls = call(`export function f() {
       let n = 0;
@@ -104,7 +104,7 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       const it = new C().g();
       return n;
     }`);
-    expect(formatAbs(cls.result)).toEqual('0 | 1  #exact');
+    expect(formatAbs(cls.result)).toEqual('0  #exact');
 
     const asyncGen = call(`export function f() {
       let n = 0;
@@ -112,7 +112,7 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       const it = g();
       return n;
     }`);
-    expect(formatAbs(asyncGen.result)).toEqual('0 | 1  #exact');
+    expect(formatAbs(asyncGen.result)).toEqual('0  #exact');
   });
 
   it("eager 值域承重不回归：体写外层绑定的生成器，元素面仍 exact（元素域来自 yield 收集，与外层 join 无关）", () => {
@@ -134,11 +134,11 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       return arr.length;
     }`);
     // R1-c 口径：容器是深拷贝快照 + join ⇒ 长度面从 exact 1 退成 sound 的
-    // 长度域（len#0 ≥ 0 覆盖构造点 0 与 drain 后 1）。
-    expect(formatAbs(r.result)).toBe("number  = len#0  where len#0 ≥ 0  #path");
+    // 步骤 3：构造期不跑体 ⇒ mutator 未落地 ⇒ 构造点 native 0 精确（不再是长度域过近似）。
+    expect(formatAbs(r.result)).toBe("0  #exact");
   });
 
-  it("const 别名组一起快照：const a = {...}; const b = a; 经 a 写后 b.v = 0 | 1（改前 wrong-exact 1）", () => {
+  it("const 别名组一起快照：const a = {...}; const b = a; 经 a 写后 b.v = 0（步骤 3 构造点精确）", () => {
     const r = call(`export function f() {
       const a = { v: 0 };
       const b = a;
@@ -146,7 +146,7 @@ describe("Bug 212：生成器体构造期副作用——步骤 1 join 隔离（w
       const it = g();
       return b.v;
     }`);
-    expect(formatAbs(r.result)).toEqual("0 | 1  #exact");
+    expect(formatAbs(r.result)).toEqual("0  #exact");
   });
 
   it("负控制：协议面与 yield 序列（族 01 eager 收集口径）不变", () => {

@@ -51,7 +51,7 @@ function invoke(g: Abs, name: "next" | "return" | "throw", args: Abs[] = []): vo
   }
 }
 
-describe("A1 步骤 2 · 协议三方法触发点（生产不登记 ⇒ 零语义变化）", () => {
+describe("A1 步骤 2/3 · 协议三方法触发点（步骤 3 生产已接线）", () => {
   for (const name of ["next", "return", "throw"] as const) {
     it(`${name}() 触发延迟体一次，重复调用不重复触发`, () => {
       const g = realGen();
@@ -92,14 +92,14 @@ describe("A1 步骤 2 · 协议三方法触发点（生产不登记 ⇒ 零语�
     ).toEqual({ ok: true, value: "1:2" });
   });
 
-  it("未登记触发器时步骤 1 join 折回不回归（Bug 212 c1 构造点）", () => {
+  it("步骤 3 后构造点精确值（Bug 212 c1：native 0）", () => {
     const r = call(`export function f() {
       let n = 0;
       function* g() { n++; yield 1; }
       const it = g();
       return n;
     }`);
-    expect(formatAbs(r.result)).toEqual("0 | 1  #exact");
+    expect(formatAbs(r.result)).toEqual("0  #exact");
   });
 
   it("未登记触发器时 eager 元素面承重不回归（族 01 / eval-bug-212）", () => {

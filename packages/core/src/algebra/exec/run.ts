@@ -11,6 +11,8 @@
  * analyze 的剥离在**发射期**完成：本文件不再解析生成产物做二次剥除。
  */
 
+import { drainPendingGens } from "./match-iter.ts";
+
 import {
   rtAllBindings,
   compileRuntimeModuleUnit,
@@ -1178,7 +1180,11 @@ export function callTranspiledExportFull(
       // 入口刷新 = 被调方读绑定前先对齐到依赖当前导出值（ESM live binding
       // 语义）。refresh 闭包纯读不发起新调用（无重入）；注册表空时零开销。
       refreshLiveImports();
-      return callTranspiledExportFullInner(exports, name, args, opts);
+      const result = callTranspiledExportFullInner(exports, name, args, opts);
+      // A1 步骤 3：求值收口排空未消费的延迟体 ⇒ 既有 eager 值面契约与
+      // service 侧 dts 纯投影面的元素域都不退化（消费点已触发者幂等）。
+      drainPendingGens();
+      return result;
     } finally {
       exitEvalCallBudgetSession();
       noteDrainedClassCollisions();

@@ -24,6 +24,7 @@ import { undef } from "../exec/runtime/state.ts";
 import {
   registerGenElements,
   registerGenDrain,
+  fireGenTrigger,
   registerGenDeferred,
   matchIterElements,
   genDrainViewOf,
@@ -34,11 +35,15 @@ import {
 
 /** 真实 `$gen` 产出的生成器对象（两个 yield）。 */
 function gen(): Abs {
-  return $gen(() => {
+  const g = $gen(() => {
     $yield(numLit(1), 0);
     $yield(numLit(2), 0);
     return undef();
   });
+  // A1 步骤 3：本文件钉的是「快照侧表迁移」，不是延迟体 ⇒ 先让体落地，
+  // 否则手工登记的元素会被后续触发的 copyMatchIterTables 覆盖。
+  fireGenTrigger(g);
+  return g;
 }
 
 const fmtAll = (g: Abs): string =>

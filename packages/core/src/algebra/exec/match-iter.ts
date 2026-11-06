@@ -93,11 +93,17 @@ export function registerGenElements(val: Abs, elements: Abs[]): void {
  * 的 2026-11-06 实证记录）。core 侧的 `next` / `return` / `throw` 三条
  * 协议方法旁路已于 2026-11-06 补齐（生产侧仍不登记 ⇒ 零语义变化）。
  */
-const genTriggerTables = new WeakMap<object, () => void>();
+const genTriggerTables = new WeakMap<object, (target: Abs) => void>();
+
+/** 同一延迟体族的所有别名（$copy / snapshotAbs 派生）——触发任一时全部填充。 */
+const genTriggerAliases = new WeakMap<object, Abs[]>();
 
 /** 登记「该跑了」触发器（模块间可用，不进 barrel）。幂等由 fireGenTrigger 保证。 */
-export function registerGenTrigger(val: Abs, trigger: () => void): void {
+export function registerGenTrigger(val: Abs, trigger: (target: Abs) => void): void {
   genTriggerTables.set(val as object, trigger);
+  const list = genTriggerAliases.get(trigger as object) ?? [];
+  list.push(val);
+  genTriggerAliases.set(trigger as object, list);
 }
 
 /**
@@ -109,7 +115,33 @@ export function fireGenTrigger(a: Abs): void {
   const fn = genTriggerTables.get(a as object);
   if (!fn) return;
   genTriggerTables.delete(a as object);
-  fn();
+  fn(a);
+  // 副本先触发时也要把数据填回原对象（以及同族其它副本）⇒ 消费面
+  // 与 dts 元素域在任何别名上都完整；每个别名只合并一次。
+  const aliases = genTriggerAliases.get(fn as object) ?? [];
+  for (const other of aliases) {
+    if (other === a || !genTriggerTables.has(other as object)) continue;
+    genTriggerTables.delete(other as object);
+    fn(other);
+  }
+}
+
+/**
+ * A1 步骤 3（2026-11-07）：构造期只登记待跑体 ⇒ 「构造后从不消费」的函数
+ * 在求值收口时必须排空一次，否则既有 eager 值面契约（Bug 212 / 族 01
+ * 数字下标）与 dts 元素域（service 纯投影、导出期无消费点）都会退化。
+ * 已在首个消费点触发过的壳此时是 WeakMap miss，幂等无副作用。
+ */
+const pendingGenShells: Abs[] = [];
+export function notePendingGen(val: Abs): void {
+  pendingGenShells.push(val);
+}
+/** 求值入口收口：把所有尚未触发的延迟体跑完（含触发过程中新建的壳）。 */
+export function drainPendingGens(): void {
+  while (pendingGenShells.length > 0) {
+    const batch = pendingGenShells.splice(0, pendingGenShells.length);
+    for (const g of batch) fireGenTrigger(g);
+  }
 }
 
 /** 生成器消费视图（Bug 54）：迭代消费（spread / for-of / Array.from /
@@ -280,7 +312,12 @@ export function copyMatchIterTables(src: Abs, dst: Abs): void {
   if (genDrainTables.has(s)) genDrainTables.set(d, genDrainTables.get(s)!);
   if (genDeferredTables.has(s)) genDeferredTables.set(d, genDeferredTables.get(s)!);
   // A1 步骤 2 骨架：待触发的延迟体随副本迁移（触发按身份独立、幂等）。
-  if (genTriggerTables.has(s)) genTriggerTables.set(d, genTriggerTables.get(s)!);
+  if (genTriggerTables.has(s)) {
+    const fn = genTriggerTables.get(s)!;
+    genTriggerTables.set(d, fn);
+    const list = genTriggerAliases.get(fn as object);
+    if (list) list.push(dst);
+  }
   if (proxyTables.has(s)) proxyTables.set(d, proxyTables.get(s)!);
 }
 
