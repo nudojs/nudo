@@ -294,10 +294,18 @@ function iteratorTSType(
     carried === "Generator" || carried === "AsyncGenerator" ? carried : undefined;
   // 无 `next` 且无 brand ⇒ 不是迭代器（普通对象 / 仅可迭代对象仍走结构面）
   if (!slots["next"] && !genBrand) return undefined;
-  const elems: Abs[] = [];
-  for (const [k, slot] of Object.entries(slots)) {
-    if (!CANONICAL_INDEX.test(k)) continue;
-    elems.push(slot.value);
+  // 「第三种」：元素域的**单一真值来源**是随值携带的 `facets.genElements`
+  // （完整 yield 序列，未经过 $arr widen）。此前靠 `CANONICAL_INDEX` 扫
+  // shape 数字下标槽反推语义，快照 / harvest 重建 / 跨包搬运后槽会折损。
+  // **严格 fallback**：字段为 undefined（手工构造 / 静态收割 / 旧 Abs）时
+  // 仍走数字槽 ⇒ 旧产物逐字不变（`emit-bug-130` 等负控制保持绿）。
+  const carriedElems = a.facets?.genElements;
+  const elems: Abs[] = carriedElems ? [...carriedElems] : [];
+  if (!carriedElems) {
+    for (const [k, slot] of Object.entries(slots)) {
+      if (!CANONICAL_INDEX.test(k)) continue;
+      elems.push(slot.value);
+    }
   }
   let elemType = "unknown";
   if (elems.length > 0) {
@@ -1029,6 +1037,8 @@ type DtsProjectionCtx = {
   typeRefs?: Set<string>;
   /** 被丢弃的注解（引用了产物里不可解析的类型名）——台账用 */
   dropped?: string[];
+  /** 「第三种」：返回注解与观测元素域冲突（只落台账，产物恒用观测口径） */
+  mismatches?: Array<{ name: string; declared: string; observed: string }>;
 };
 
 /**
@@ -1845,6 +1855,55 @@ function contractOnlySignature(
   return { params, paramNames, paramTypes, returnType };
 }
 
+// ---------------------------------------------------------------------------
+// 「第三种」：返回注解一致性校验
+//
+// 实现是**事实**，声明是**断言**。两者不符时只出台账，产物恒用观测口径
+// （不覆盖、不 fallback 到声明）—— 否则会重演 BUG-168 在形参位修掉的
+// 「check 面与 dts 面相反裁决」。
+// ---------------------------------------------------------------------------
+
+const PRIM_TYPE_NAMES: ReadonlySet<string> = new Set([
+  "number", "string", "boolean", "bigint", "symbol", "object",
+  "undefined", "null", "void", "never", "unknown", "any",
+]);
+
+const GENERIC_ITERATOR_NAMES: ReadonlySet<string> = new Set([
+  "Generator", "AsyncGenerator", "IterableIterator", "Iterator",
+  "AsyncIterableIterator", "AsyncIterator",
+]);
+
+/**
+ * 只认「`迭代器名<单一标识符, 或 >`」这一种形态。联合类型（`1 | 2` /
+ * `number | string`）、嵌套泛型、对象类型、字面量一律**不匹配** ⇒ 不参与
+ * 校验。这是刻意的窄判据：widen 口径差异（`Generator<1|2>` 观测为
+ * `Generator<number>`）不是冲突，假阳性比漏报更伤。
+ */
+function firstIteratorElem(text: string): string | undefined {
+  const m = /^([A-Za-z_$][\w$]*)\s*<\s*([A-Za-z_$][\w$]*)\s*(?:[,>])/.exec(text.trim());
+  if (!m || !GENERIC_ITERATOR_NAMES.has(m[1]!)) return undefined;
+  return m[2];
+}
+
+function returnAnnotationMismatch(
+  declared: string | undefined,
+  observed: string,
+): { declared: string; observed: string } | undefined {
+  if (!declared) return undefined;
+  // 注解文本可能含换行 / 注释记号；只取可安全落进台账的形态（BUG-192 口径）。
+  const cleaned = tsAnnotationTypeText(declared);
+  if (!cleaned) return undefined;
+  const want = firstIteratorElem(cleaned);
+  const got = firstIteratorElem(observed);
+  if (!want || !got || want === got) return undefined;
+  if (!PRIM_TYPE_NAMES.has(want) || !PRIM_TYPE_NAMES.has(got)) return undefined;
+  // unknown / any 是保守域而非互斥断言 ⇒ 观测推不出来时不能判「声明错了」。
+  if (want === "unknown" || want === "any" || got === "unknown" || got === "any") {
+    return undefined;
+  }
+  return { declared: want, observed: got };
+}
+
 /**
  * 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。
  * 证据优先级：手写契约（contract，export CLI 从 effectiveInterface 取）
@@ -1866,15 +1925,36 @@ export function projectFunctionDts(
   // TS 全局类型名）——作用域覆盖整条投影链（JSDoc / 签名 / 返回位）。
   // BUG-168：注解原文的可解析性需要同一份模块面；引用到的名字回传到投影上
   // （模块面据此补 `declare class` / `import type`），被丢弃的注解落台账。
-  const ctx: DtsProjectionCtx = { ...(surface ? { surface } : {}), typeRefs: new Set(), dropped: [] };
+  const ctx: DtsProjectionCtx = {
+    ...(surface ? { surface } : {}),
+    typeRefs: new Set(),
+    dropped: [],
+    mismatches: [],
+  };
   const proj = withBrandScope(brandScopeOf(surface), () =>
     projectFunctionDtsInner(fn, contract, ctx),
   );
+  // 「第三种」：声明 vs 观测，**只落台账、绝不覆盖产物**。手写契约覆盖返回位
+  // 时跳过（那是第三来源，不参与「实现 vs 声明」的比较）；无 combinedAbs
+  // 时没有观测可判。
+  if (!contract?.return && fn.declaredReturnType && fn.combinedAbs) {
+    const mismatch = returnAnnotationMismatch(
+      fn.declaredReturnType,
+      absToTSType(fn.combinedAbs),
+    );
+    if (mismatch) ctx.mismatches?.push({ name: fn.name, ...mismatch });
+  }
   const typeRefs = [...(ctx.typeRefs ?? [])];
-  const ledger = (ctx.dropped ?? []).map(
-    (n) =>
-      `// nudo:dropped-type-annotation ${n} — type not declared in this module (falls back to the observed type)`,
-  );
+  const ledger = [
+    ...(ctx.dropped ?? []).map(
+      (n) =>
+        `// nudo:dropped-type-annotation ${n} — type not declared in this module (falls back to the observed type)`,
+    ),
+    ...(ctx.mismatches ?? []).map(
+      (m) =>
+        `// nudo:return-annotation-mismatch ${m.name} — declared element "${m.declared}", observed "${m.observed}"; kept the observed type`,
+    ),
+  ];
   if (typeRefs.length === 0 && ledger.length === 0) return proj;
   const withMeta: DtsFunctionProjection = {
     ...proj,

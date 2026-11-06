@@ -109,6 +109,19 @@ export function extractParamNames(node: Node): string[] {
   return formalParamDisplayNames(extractFormals(node));
 }
 
+/**
+ * 「第三种」：读回 `strip-types.ts` 写在函数节点上的**返回类型注解原文**
+ * （不可枚举旁路 `nudoReturnTypeText`，与形参的 `nudoTypeText` 同源）。
+ *
+ * 只做透传：声明是断言、实现是事实，一致性校验在 dts 投影面进行，
+ * **绝不用声明覆盖观测产物**。`.js` 源 / 未标注 ⇒ undefined ⇒ 零影响。
+ */
+export function extractReturnAnnotation(node: Node): string | undefined {
+  const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+  const t = (fn as unknown as { nudoReturnTypeText?: string }).nudoReturnTypeText;
+  return typeof t === "string" && t.length > 0 ? t : undefined;
+}
+
 export function resolveFunctionNode(node: Node): Node {
   if (node.type === "ExportNamedDeclaration" && node.declaration) return resolveFunctionNode(node.declaration);
   if (node.type === "ExportDefaultDeclaration") return resolveFunctionNode(node.declaration);

@@ -948,6 +948,11 @@ function makeGenObject(
     // `facetKey`、dts 第三实参投影全部**真实接通**，为 A1 步骤 4 真挂起后
     // 填真实 v 域预置接线；在此之前三实参是**保守域**，不是精度承诺。
     genNext: unknown,
+    // 「第三种」：完整收集序列随值搬运，作为 dts 元素域的单一真值来源。
+    // 取 `full`（= $gen 的 ys.els）而非 `els` —— 后者是 $arr 之后可能被
+    // widen 的结构近似（Bug 53 注释：完整序列才是 next()/侧表的权威数据）。
+    // 数组做一次快照，Abs 元素按引用共享（与 genReturn 同口径）。
+    genElements: [...full],
   };
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）

@@ -242,6 +242,12 @@ export function facetKey(f: AbsFacets): string {
   // 且丢 term/pred），否则不同返回域的生成器共享 memo / 指纹。
   if (f.genReturn) parts.push(`gr:${absKey(f.genReturn)}`);
   if (f.genNext) parts.push(`gn:${absKey(f.genNext)}`);
+  // 静态元素域：Abs[] 必须逐项走结构键（同 gr/gn 的纪律）；只编长度会让
+  // 「同形但元素域不同」的生成器共享 memo / 指纹 ⇒ 产物随缓存冷暖翻转。
+  // 缺省不出现 ⇒ 无槽位旧键逐字节不变。
+  if (f.genElements) {
+    parts.push(`ge:${f.genElements.map((e) => absKey(e)).join("|")}`);
+  }
   return parts.join(",");
 }
 

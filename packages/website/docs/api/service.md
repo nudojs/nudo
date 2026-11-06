@@ -775,7 +775,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="formatinterfacesurfaceline"></a>`formatInterfaceSurfaceLine` | fn | 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） | `formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string` |
 | <a id="formatpatherrortext"></a>`formatPathErrorText` | fn | 路径错误的**非 JSON 面**文案（CLI 的 usage error 面同口径）： 一行原因 + 一行 `fix:` 提示。 | `formatPathErrorText(errors: PathError[]): string` |
 | <a id="formattestreport"></a>`formatTestReport` | fn | — | `formatTestReport(r: TestReport): string` |
-| <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; cases: CaseResult[]; combinedAbs?:...` |
+| <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; declaredReturnType?: string; cases...` |
 | <a id="generatedts"></a>`generateDts` | fn | — | `generateDts(result: AnalysisResult): string` |
 | <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | — | `generateFunctionDtsLines( fn: FunctionAnalysis, contract?: DtsContractFace, ): string[]` |
 | <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | 守卫源码：`export function <name>(value: unknown): boolean { … }`。 | `generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<string>): string` |

@@ -161,6 +161,20 @@ export type AbsFacets = {
    * 依赖 A1 步骤 4 的真挂起求值模型。手工构造的 Abs 缺省 ≡ 不投影。
    */
   genNext?: Abs;
+  /**
+   * 静态元素域（2026-11-06「第三种」）：**完整 yield 序列**（`$gen` 的
+   * `ys.els` / `makeGenObject` 的 `full`），是 `Generator<T>` 中 `T` 的
+   * **单一真值来源**。与 `shape` 的数字下标槽**并存**：槽是 `$arr(ys.els)`
+   * 之后的结构近似（超 `TUPLE_LITERAL_CAP` 会 widen 成 `arr<…>`），本字段
+   * 保留未折损的原始序列 ⇒ 快照 / 跨包搬运后 dts 不必再靠
+   * `CANONICAL_INDEX` 正则从表示反推语义。
+   *
+   * 只读投影面：数组做浅拷贝、Abs 元素按引用共享（与 `genReturn` 同口径）。
+   * **缺省 = 手工构造 / 静态收割 / 旧 Abs** ⇒ 消费面严格 fallback 到数字槽，
+   * 旧产物逐字不变。静态声明收割不构造生成器运行时值 ⇒ 本字段不进
+   * `HARVEST_DISK_ABI`。填真实惰性序列属 A1 步骤 3/4，本槽位只预置承载。
+   */
+  genElements?: Abs[];
 };
 
 /**
@@ -177,6 +191,10 @@ export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined 
       ...(f.protoOwnKeys.symbols ? { symbols: [...f.protoOwnKeys.symbols] } : {}),
     };
   }
+  // 静态元素域：数组必须拷贝（否则 snapshotAbs / renameAbs / substAbs /
+  // join 的所有副本共享同一数组，任一侧 push/splice 会串台）；Abs 元素本身
+  // 是只读投影面 ⇒ 按引用共享，与 genReturn / genNext 同口径。
+  if (f.genElements) out.genElements = [...f.genElements];
   return out;
 }
 

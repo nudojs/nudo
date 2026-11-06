@@ -444,8 +444,10 @@ WeakMap miss，值面逐字不变。回归钉
 
 **下一轮若要真推进，最小前置清单**（按依赖序）：① `conf` 可提升机制 +
 `leqAbs` 影响面复核（§5.2 R2-a）；② service 侧 dts 元素面在导出前取得
-元素域的通道（跨包 + 无消费点，需产品拍板是否接受 `Generator<unknown>`
-作为 sound 降级）；③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
+元素域的通道（**第三种已部分解决**：`AbsFacets.genElements` 随值搬运 +
+返回注解降级为一致性诊断；但构造期仍跑体 ⇒ **不解锁步骤 3**，仍需静态
+yield 域推断通道或产品接受 `Generator<unknown>` sound 降级，见下节）；
+③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
 的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
 的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
 
@@ -455,7 +457,7 @@ WeakMap miss，值面逐字不变。回归钉
 |---|---|---|
 | ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/a1-conf-promotion-evidence.test.ts`（4 例） |
 | ③ `snapshotAbs` 侧表迁移 | **已修（A7 镜像一致性缺口）**：`$copy` 早有 `copyMatchIterTables`，`snapshotAbs` 此前只搬 fn impl ⇒ 生成器 / 模板 / matchAll / 用户迭代器 / Proxy 的迭代元素、延迟异常、drain 视图在副本上整体丢失（L2 假阴）。`hof.ts` 末尾补 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖 algebra 顶层叶子、不依赖 `hof.ts` ⇒ 无环。**与 `$copy` 同口径共享视图引用**（副本消费推进原对象状态，负控钉住） | `core/.../__tests__/snapshot-match-iter-tables.test.ts`（6 例），全仓 0 新增失败 |
-| ② dts 元素域通道 | 见下节，**需产品拍板**，代码未动 | `service/.../__tests__/a1-laziness-evidence-poc.test.ts` 实验 F（2 例） |
+| ② dts 元素域通道 | **第三种已落地（见下节）**：显式承载位 + 注解一致性诊断；实测 fork 分支 `unknown` → `number \| string`。**⚠️ 不解锁步骤 3**——`genElements` 仍依赖构造期跑体 | `core/.../gen-elements-facet.test.ts`（7 例）、`service/.../emit-gen-elements-facet.test.ts`（9 例）、实验 F（2 例） |
 
 > ⚠️ ③ 修的是 **WeakMap 侧表迁移**，**不等于** 实验 C 的「首消费点补写
 > `shape.slots` 对副本失效」——后者仍是未解前置：`snapshotAbs` 对 obj 槽
@@ -463,7 +465,7 @@ WeakMap miss，值面逐字不变。回归钉
 > 需另建「原对象 → 副本集合」的反向映射或让副本共享 slots 引用（后者会
 > 破坏快照的独立语义）⇒ 留待步骤 3 独立成族时一并设计。
 
-##### dts 元素域通道 · **待产品拍板**
+##### dts 元素域通道 · **第三种已落地（2026-11-06）**
 
 实证 F：`generateDts(result)` 只吃 `AnalysisResult`，`dts-generator.ts` 只
 import `@nudojs/core` 的纯函数 / 类型、**不引 exec 运行时**，且 `absToTSType`
@@ -474,11 +476,42 @@ import `@nudojs/core` 的纯函数 / 类型、**不引 exec 运行时**，且 `a
 |---|---|---|
 | **(a) 接受 `Generator<unknown>` sound 降级** | 精度回退；且与 schema / standard / guard 三面按 brand 收紧的口径**不一致**（四面指向不同声明域） | 需产品明确接受；按现行「任何精度回退即回滚」纪律，**默认否决** |
 | **(b) 导出前跨包触发体** | 破坏 dts 纯投影（导出变成有副作用求值）；且 `fireGenTrigger` 按 Abs 身份登记，Abs 经 harvest / 快照往返后身份已变 ⇒ 触发不到 | ❌ 技术不可行 |
-| **(c) 把元素域烘进 `AbsFacets` 随值搬运** | 构造期仍需求值体（回到 eager）⇒ 与步骤 3 目标矛盾；或新增「静态 yield 域推断」通道（独立大族） | ⚠️ 需单独立项 |
+| **(c) 把元素域烘进 `AbsFacets` 随值搬运** | 构造期仍需求值体（回到 eager）⇒ 与步骤 3 目标矛盾；或新增「静态 yield 域推断」通道（独立大族） | ✅ **已实施「第三种」**（承载位 + 注解降级为诊断）；但**不解锁步骤 3**，见下方边界 |
 
-**唯一待拍板问题**：步骤 3 是否允许 dts 元素类型在「体延后」期间退成
-`Generator<unknown>`？若不许，则步骤 3 必须先有 (c) 的静态元素域通道，
-不能单独推进。本轮**不改任何 dts 产物**。
+**2026-11-06 裁决与实施**：用户裁定走「第三种」——(c) 的显式承载位
+（`AbsFacets.genElements`）+ 源码返回注解**降级为一致性校验**（只落
+`nudo:return-annotation-mismatch` 台账，绝不覆盖观测产物）。设计理由：
+单一真值来源；把「从 shape 数字槽用 `CANONICAL_INDEX` 正则反推语义」
+升级为随值携带的显式字段；延续 A11 facets 的既有设计；避免 BUG-168
+在形参位修掉的「check 面与 dts 面相反裁决」在返回位复现。
+
+###### 实测收益（端到端 `nudo export --format dts`）
+
+| 场景 | 第三种之前 | 第三种之后 |
+|---|---|---|
+| fork 分支 `if (f) yield 1; else yield "s"` | `Generator<unknown>` | **`Generator<number \| string>`** |
+| 快照 / 重建产物的元素域 | 靠数字槽（可能折损） | 随 facets 同源、副本不丢 |
+| 手工 Abs 只有 `genElements`、无数字槽 | `Generator<unknown>` | `Generator<number>` |
+| 注解 `Generator<number>` 但实现 `yield "s"` | 无提示 | 台账 + 产物仍 `Generator<string>` |
+
+分支精度回升的原因：`$gen` 的 `ys.els`（完整序列）本来就是 Bug 53
+注释点名的**权威数据**，而 shape 数字槽是 `$arr` / fork join 之后的结构
+近似；此前 dts 读的是后者 ⇒ 被折成 `unknown`。
+
+###### ⚠️ 边界：**第三种没有解锁步骤 3**
+
+`genElements` 仍是**构造期跑体**得到的（`$gen` 内 `ys.els`）。步骤 3 把
+`body()` 挪到首消费点 ⇒ 构造期没有序列 ⇒ 该字段也填不上；而实证 F 的
+结论不变（dts 是纯投影，**导出期没有也不该有消费点**）。所以它解决的是
+「同源携带 / 精度 / 概念诚实」，**不是**「惰性化的签名面」。上一轮把 (c)
+描述为「能解锁步骤 3」的判断据此订正：它只**预置了承载位与未填充语义**
+（`undefined` = 未收集），真正填值仍需静态 yield 域推断或接受降级。
+
+⇒ 前置 ② 现在是「**部分解决**」；步骤 3 若推进，仍须先在
+「静态元素域推断通道」与「接受 `Generator<unknown>` sound 降级」之间拍板。
+注解降级为诊断后，**不再**是补产物的候选（实现是事实、声明是断言）。
+另：静态声明收割（harvest）不构造生成器运行时值 ⇒ `genElements` 不进
+`HARVEST_DISK_ABI`，缺省时消费面严格 fallback 到数字槽。
 
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 
