@@ -152,8 +152,11 @@ describe("Bug 240（S21）：guard 面不发布 internal 槽", () => {
     // 口径更新（族 09 / Bug 409 + 410）：guard 面现在还带 ① 数组排除
     // （`!Array.isArray(data)`）② 必填槽的**独立存在性子句** ——
     // internal 槽的剔除口径不变。
+    // 2026-11-06：`facets.brand` 的生成器身份在 `denoteGuardB` 递归投影
+    // ⇒ 串首多一条身份子句（不包 body 的括号，故本文件按顶层 ` && `
+    // 拆条款的原生 oracle 仍逐条可见）。
     expect(guardOf(GEN_SRC, "g")).toBe(
-      'typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "0") || ("0" in data && !Object.hasOwn(Object.prototype, "0"))) && data["0"] === 1 && (Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1"))) && data["1"] === "s"',
+      'Object.prototype.toString.call(data) === "[object Generator]" && typeof data === "object" && data !== null && !Array.isArray(data) && (Object.hasOwn(data, "0") || ("0" in data && !Object.hasOwn(Object.prototype, "0"))) && data["0"] === 1 && (Object.hasOwn(data, "1") || ("1" in data && !Object.hasOwn(Object.prototype, "1"))) && data["1"] === "s"',
     );
   });
 

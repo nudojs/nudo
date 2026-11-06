@@ -159,6 +159,10 @@ Do **not** hand-edit published `CHANGELOG.md` history on `main`; fix forward wit
 2. If `.changeset/*.md` are pending **and** `.changeset/pre.json` is in pre mode → `changeset version` + push `[skip ci]` version commit
 3. `changeset publish` — dist-tag comes from `.changeset/pre.json` (`beta` today); already-published versions are skipped
 
+> 当前仓库**没有** `.changeset/pre.json` ⇒ `release-beta` job 处于 idle，这是
+> **设计如此、不是故障**。要启用 beta 火车须显式 `npx changeset pre enter beta`
+> 并提交 `pre.json`（见下表）；在那之前 `dev` 上的 push 不会发 beta 包。
+
 | Step | Command |
 |------|---------|
 | Enter beta | `npx changeset pre enter beta` (commit `pre.json`) |

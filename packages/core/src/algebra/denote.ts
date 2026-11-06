@@ -59,6 +59,29 @@ function hasUnusablePrototype(name: string): boolean {
   return PROTOTYPE_LESS_GLOBALS.has(name);
 }
 
+/**
+ * 生成器对象身份子句（2026-11-06：从「仅顶层」补齐到**递归**）。
+ *
+ * `Abs.facets.brand` 随值携带 `"Generator"` / `"AsyncGenerator"`（见
+ * `exec/runtime/async.ts::makeGenObject`）。此前只有 service 的导出校验器
+ * 顶层消费它 ⇒ 生成器作为对象字段时，dts 面写 `Generator<T>`、zod/standard
+ * 面收紧，guard 面却只判「是个对象」⇒ 三面相反裁决。这里在 `denoteGuardB`
+ * （递归入口）统一投影，`obj` 槽的 `denoteGuardB(slotAbs, access, …)` 自动
+ * 继承 ⇒ 嵌套字段也验身份，无需改 `Shape` 判别联合、`format.ts` 展示面或
+ * `projection.ts` 约束面。
+ *
+ * 判据与 service `emit/generator-identity.ts` **同口径**（core 不能反向依赖
+ * service，故保留这一份副本；改动须两面同步）：`Object.prototype.toString`
+ * 读内置 toStringTag ⇒ 跨 realm 可判，代价是 `Symbol.toStringTag` 可伪造。
+ * 不包 `body` 的括号是为了让「按顶层 ` && ` 拆条款」的既有回归钉
+ * （`eval-bug-240-guard-internal-slots.test.ts`）仍逐条可见。
+ */
+function generatorIdentityClause(a: Abs, v: string): string | undefined {
+  const brand = a.facets?.brand;
+  if (brand !== "Generator" && brand !== "AsyncGenerator") return undefined;
+  return `Object.prototype.toString.call(${v}) === "[object ${brand}]"`;
+}
+
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
   return denoteGuardB(a, v, new ProjectionBudget());
@@ -72,14 +95,18 @@ function denoteGuardB(a: Abs, v: string, budget: ProjectionBudget): string {
   try {
     // 字面量：等值已蕴含 typeof，短路。litValue 哨兵对 lit(undefined) 也是
     // undefined，必须直接看 term（同 format.ts / leq.ts）。
+    let body: string;
     if (a.term?.op === "lit" && (!a.pred || a.pred.op === "true")) {
-      return eqGuard(v, a.term.value);
+      body = eqGuard(v, a.term.value);
+    } else {
+      const shape = denoteShape(a, v, budget);
+      const pred = denotePred(a, v);
+      if (shape === "true") body = pred;
+      else if (pred === "true") body = shape;
+      else body = `(${shape}) && (${pred})`;
     }
-    const shape = denoteShape(a, v, budget);
-    const pred = denotePred(a, v);
-    if (shape === "true") return pred;
-    if (pred === "true") return shape;
-    return `(${shape}) && (${pred})`;
+    const identity = generatorIdentityClause(a, v);
+    return identity ? `${identity} && ${body}` : body;
   } finally {
     budget.exit();
   }

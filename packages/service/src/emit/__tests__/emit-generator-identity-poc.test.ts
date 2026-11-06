@@ -7,10 +7,13 @@
  * 真生成器放行，`{}` / `{next(){}}` 等普通对象拒绝。
  *
  * 本文件钉住：① 判据只认随值携带的 brand；② 三个产物面的文本与真跑裁决
- * 逐值一致；③ 无 brand 的旧 Abs / 嵌套槽值逐字不变（三面仍然同口径）；
+ * 逐值一致；③ 无 brand 的旧 Abs 逐字不变（三面仍然同口径）；
+ * ④ 2026-11-06 起嵌套字段也递归收紧（core `denoteGuardB` +
+ * `syncGeneratorTags`），并对 toStringTag / 原型链判据做了跨 realm 实测；
  * ④ 产物可过 `tsc --noEmit --strict`；⑤ `z.instanceof` 路线仍不可行。
  */
 import { describe, it, expect } from "vitest";
+import { runInNewContext } from "node:vm";
 import { z } from "zod";
 import { abs, type Abs } from "@nudojs/core";
 import { absToSchemaNode, absToSchemaSource } from "../schema-generator.ts";
@@ -161,20 +164,88 @@ describe("负控制：不触发身份投影的 Abs 逐字不变", () => {
     expect(guardOf(generateGuardFunctionFromAbs("isOld", a), "isOld")({})).toBe(true);
   });
 
-  it("嵌套槽值不投影身份 ⇒ zod / standard / guard 三面仍一致（顶层-only 边界）", () => {
-    const nested = abs(
+});
+
+describe("嵌套字段身份投影（2026-11-06 补齐递归）", () => {
+  const nested = () =>
+    abs(
       { k: "obj", slots: { g: { value: generatorAbs("Generator") } } },
       undefined,
       undefined,
       "exact",
     );
-    const zodSource = absToSchemaSource(nested);
-    expect(zodSource).not.toContain("z.custom");
-    expect(zodSource).toContain("z.object({");
-    expect(absToSchemaNode(nested).node.k).toBe("obj");
-    const guard = generateGuardFunctionFromAbs("isNested", nested);
-    expect(guard).not.toContain("Object.prototype.toString");
-    expect(guardOf(guard, "isNested")({ g: {} })).toBe(true);
+
+  it("zod / standard 节点 / guard 三面都在槽位上验身份", () => {
+    const a = nested();
+    expect(absToSchemaSource(a)).toContain("z.custom(");
+    expect(absToSchemaSource(a)).toContain("z.object({");
+    expect(absToSchemaNode(a).node).toEqual({
+      k: "obj",
+      slots: [{ key: "g", node: { k: "generator", tag: "Generator" } }],
+    });
+    const guard = generateGuardFunctionFromAbs("isNested", a);
+    expect(guard).toContain('Object.prototype.toString.call(data.g) === "[object Generator]"');
+    // 不重复注入：core denoteGuardB 是唯一来源
+    expect(guard.match(/Object\.prototype\.toString/g)?.length).toBe(1);
+  });
+
+  it("四面逐值同裁决：{ g: gen() } 放行、{ g: {} } 拒绝", async () => {
+    const a = nested();
+    const zod = zodAccepts(absToSchemaSource(a));
+    const { node } = absToSchemaNode(a);
+    const { source } = absToStandardSchema(a, { name: "xs" });
+    const mod = await loadGeneratedModule(source);
+    const lib = (v: unknown) => validateSchemaNode(node, v).issues === undefined;
+    const product = (v: unknown) => mod.xs!["~standard"].validate(v).issues === undefined;
+    const guard = guardOf(generateGuardFunctionFromAbs("isNested", a), "isNested");
+    for (const [name, v] of [
+      ["{g: gen()}", { g: syncGen() }],
+      ["{g: {}}", { g: {} }],
+      ["{g: null}", { g: null }],
+      ["{}", {}],
+    ] as const) {
+      const verdicts = [zod(v), lib(v), product(v), guard(v)];
+      expect(new Set(verdicts).size, `${name}: 四面裁决分叉`).toBe(1);
+    }
+    expect(guard({ g: syncGen() })).toBe(true);
+    expect(guard({ g: {} })).toBe(false);
+  });
+
+  it("异步生成器作为字段时 tag 不串味", () => {
+    const a = abs(
+      { k: "obj", slots: { g: { value: generatorAbs("AsyncGenerator") } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(absToSchemaSource(a)).toContain('"[object AsyncGenerator]"');
+    const guard = guardOf(generateGuardFunctionFromAbs("isAsyncNested", a), "isAsyncNested");
+    expect(guard({ g: asyncGen() })).toBe(true);
+    expect(guard({ g: syncGen() })).toBe(false);
+  });
+});
+
+describe("判别谓词取舍实测（2026-11-06，结论：保留 toStringTag 口径）", () => {
+  /** %GeneratorPrototype%（本地 realm）：gen → fn.prototype → 这一层。 */
+  const generatorPrototype = () => Object.getPrototypeOf(Object.getPrototypeOf(syncGen()));
+
+  it("原型链判据不可伪造，但对跨 realm 生成器误拒", () => {
+    const GP = generatorPrototype();
+    const fake: Record<symbol, string> = {};
+    Object.defineProperty(fake, Symbol.toStringTag, { value: "Generator" });
+    expect(GP.isPrototypeOf(syncGen())).toBe(true);
+    expect(GP.isPrototypeOf(fake)).toBe(false); // 原型链判据赢在不可伪造
+    const crossRealm = runInNewContext("(function*(){ yield 1; })()") as unknown;
+    expect(Object.prototype.toString.call(crossRealm)).toBe("[object Generator]");
+    expect(GP.isPrototypeOf(crossRealm)).toBe(false); // 但赢不了跨 realm
+  });
+
+  it("toStringTag 判据对本地 / 跨 realm 真生成器都放行", () => {
+    const crossRealm = runInNewContext("(function*(){ yield 1; })()") as unknown;
+    expect(generatorTagFromValue(syncGen())).toBe("Generator");
+    expect(generatorTagFromValue(asyncGen())).toBe("AsyncGenerator");
+    expect(generatorTagFromValue(crossRealm)).toBe("Generator");
+    // 代价：伪造 toStringTag 的普通对象仍被接受（已在上方「已知边界」钉住）
   });
 });
 

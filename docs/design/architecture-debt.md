@@ -316,25 +316,30 @@ expectation 集合**实际未变**（语料中没有「类构造器作 replacer�
 **实施面（判据单一真源 `service/src/emit/generator-identity.ts`）**：
 
 - 判据只取 `Abs.facets.brand === "Generator" | "AsyncGenerator"`；**不**取
-  `next` 槽启发式（普通迭代器也有 `next`），也**不**动 core 展示面
-  （`format.ts` / `denote.ts` 逐字不变 ⇒ A11 曾致 4 条回归的展示面路径未被
-  照抄，族 01 数字下标口径零回归）。
-- `SchemaNode` 新增 `{ k: "generator"; tag }`；`absToSchemaNodeB(..., topLevel)`
-  只在**导出校验器的顶层值**投影身份 ⇒ zod / standard / guard 三面口径一致。
-  嵌套槽值仍走结构投影（**已知边界**，不是遗漏：guard 面由 core `denoteGuard`
-  生成整串表达式，无法在不改 core 的前提下递归注入身份子句）。
+  `next` 槽启发式（普通迭代器也有 `next`），也**不**动 core 展示面 `format.ts`
+  （A11 曾致 4 条回归的展示面路径未被照抄）。
+- `SchemaNode` 新增 `{ k: "generator"; tag }`。**2026-11-06 补齐递归**：此前只在
+  导出校验器顶层生效，嵌套字段仍结构投影（zod 收紧 / guard 放行 ⇒ 四面相反）；
+  现由 ① core `denoteGuardB` 在递归入口读 `facets.brand` 生成身份子句（obj 槽
+  自动继承）② `absToSchemaNodeB` 任意层级早退 ③ 约束投影通道新增
+  `syncGeneratorTags`（`absToConstraint` 折成 Constraint 时丢 facets ⇒ 按原始
+  Abs 树把 obj/arr/tuple/union/promise 的对应位置同步回 generator 节点）
+  三处共同保证。**不改 `Shape` 判别联合**，族 01 数字下标口径零回归。
 - zod：`z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")`
   （异步为 `"[object AsyncGenerator]"`）；standard：库版 `checkNode` 与产物内联
   `__nudoCheck` **两份实现同口径**，节点序列化补 `{"k":"generator","tag":…}`；
-  guard：`denoteGuard` 结构面前置身份子句。
+  guard：身份子句由 core 递归生成，service 不再重复注入。
 - 无 `facets.brand` 的旧 Abs / 手工夹具**逐字不变** ⇒ `emit-bug-130` 的
   `z.object({  })` 断言仍绿，现作为负控制；`emit-generator-identity-poc.test.ts`
-  由 PoC 升级为生产接线回归（12 例：四面逐值同裁决、真跑、strict 编译、
-  伪造边界、嵌套负控制）。
+  由 PoC 升级为生产接线回归（16 例：四面逐值同裁决、真跑、strict 编译、
+  伪造边界、嵌套递归、跨 realm 判据实测）。`eval-bug-240` 的精确串只多一条
+  身份前缀，按顶层 ` && ` 拆条款的原生 oracle 仍逐条可见。
 
 **已知边界**：① `Symbol.toStringTag` 可伪造（与 `z.instanceof(Date)` 可改原型
-伪造同类；换取跨 realm 可判）；② 顶层-only（嵌套字段仍结构投影，三面一致）；
-③ 元素域 `T` / `TReturn` / `TNext` 本就不进运行时校验器，身份投影不改变这点。
+伪造同类）。2026-11-06 实测对比原型链判据（`%GeneratorPrototype%.isPrototypeOf`）：
+后者确实**不可伪造**，但会把 `node:vm` 跨 realm 的真生成器误拒 ⇒ 结论是**保留
+toStringTag 口径**（跨 realm 可判），把伪造记为边界（`判别谓词取舍实测` 钉住）；
+② 元素域 `T` / `TReturn` / `TNext` 本就不进运行时校验器，身份投影不改变这点。
 
 **CLI 端到端实证**（`nudo export <file> --format all`，源文件
 `export function* gen(): Generator<number> { yield 1; }`）：zod →
@@ -351,10 +356,15 @@ changeset `.changeset/generator-identity-validator-fix.md` 为
 导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
 冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
 失败）已回滚；2026-11-05 改为**按 S / M / R 三级逐族验证**：已启用 14 个
-S+M 族（410 文件 → 14 入口，全仓 vitest 入口 2005 → 1769），剩余 6 个 R 级族
-/ 919 文件（`packages/core/src/algebra/__tests__/core` 325、`.../eval` 166、
-`nudojs/src/__tests__/cli` 157、`lsp/src/__tests__/lsp` 150、
-`service/src/__tests__/service` 115、`vscode/src/__tests__/lsp` 6）与历史 15 条
-新增失败的入口完全吻合 ⇒ 需先补统一 `beforeEach` 复位 / 剔除模块级
-`vi.mock` 才能继续（`CONTRIBUTING.md` 有完整纪律与单族回退步骤）。
-这些重构与槽位启用互不依赖。
+S+M 族（410 文件 → 14 入口，全仓 vitest 入口 2005 → 1769）。
+
+**2026-11-06 再推进 2 个 R 级族**：给脚本加第 5 条 guard（模块级
+`vi.mock` / `vi.hoisted` 自动排除）与 `--revert-only <key>` 单族回退（此前
+`--revert` 全局会抹掉全部已启用族）；`vscode-host-stub.ts::makeExtensionContext`
+补 activate 前的注册表面复位（解掉 2 条 duplicate-command 失败）。逐族验证后
+启用 `vscode/.../lsp` 6 + `service/.../service` 114 = **120 文件 → 2 入口**
+（全仓 1769 → 1651），`service-bug-045` 因模块级 `vi.mock` 保留独立入口。
+其余 4 族（core 324 / eval 166 / lsp 148 / cli 157 = **795 文件**）全量试聚合
+仍新增 7 条失败（共享 memo / registry / stub、watch 事件假设），已用
+`--revert-only` **精确回退**、不动已启用的 16 族 ⇒ 仍需逐族补统一复位
+（`CONTRIBUTING.md` 有完整纪律）。这些重构与槽位启用互不依赖。

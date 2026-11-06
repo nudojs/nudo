@@ -292,11 +292,24 @@ function createHost(): Host {
 /** The singleton host stub shared by the extension-side pins of one file. */
 export const host: Host = createHost();
 
-/** Minimal `ExtensionContext` for `activate()`. */
+/**
+ * Minimal `ExtensionContext` for `activate()`.
+ *
+ * 聚合入口（`zz-agg-lsp.test.ts`）里多个 part 共享本模块的单例 `host`，
+ * 每个 part 的 `beforeAll` 都会 `activate()` 一次；`registerCommand` 刻意
+ * 检测重复注册 ⇒ 不清注册表面时第二个 part 直接抛
+ * `command '…' already exists`（历史 15 条新增失败的同型根因）。
+ * 这里在每次构造 activate 上下文时重置**由 activate 装的表面**；
+ * `host.state.reset()` 仍只清消息 / 请求等观测面（beforeEach 用，不能清
+ * 注册，否则 invokeCommand 会找不到命令）。单文件运行时 registered 本来
+ * 就是空的 ⇒ clear 是 no-op，逐字语义不变。
+ */
 export function makeExtensionContext(): {
   subscriptions: unknown[];
   asAbsolutePath: (relative: string) => string;
 } {
+  host.state.registered.clear();
+  host.state.docListeners.length = 0;
   return {
     subscriptions: [],
     asAbsolutePath: (relative: string) => `/nudo-vscode/${relative}`,

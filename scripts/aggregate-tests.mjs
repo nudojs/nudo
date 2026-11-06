@@ -5,6 +5,7 @@
  *   node scripts/aggregate-tests.mjs --apply        # all eligible groups
  *   node scripts/aggregate-tests.mjs --apply --only <group-key>
  *   node scripts/aggregate-tests.mjs --revert       # undo every aggregation
+ *   node scripts/aggregate-tests.mjs --revert-only <group-key>  # undo ONE group
  *
  * Why this shape (zero semantic change):
  *   Each original `foo.test.ts` is renamed IN PLACE to `foo.part.ts` and the
@@ -19,6 +20,10 @@
  *   - it is a precision gate (gold / real-package / public-api)
  *   - a matching __snapshots__/*.snap exists (snapshot names follow the test
  *     filename, so renaming would orphan them)
+ *   - it registers a module-level `vi.mock` / `vi.hoisted` (worker-scoped
+ *     registration: in a shared aggregate entry the mock from one part leaks
+ *     into every other part's imports — root cause of most of the 15 historical
+ *     new failures; keep those files as standalone entries)
  *   - its family has fewer than MIN_GROUP files.
  *
  * After --apply update tsconfig.test-lint.json (it must include *.part.ts) and
@@ -38,6 +43,8 @@ const apply = process.argv.includes("--apply");
 const revert = process.argv.includes("--revert");
 const onlyIdx = process.argv.indexOf("--only");
 const only = onlyIdx >= 0 ? process.argv[onlyIdx + 1] : undefined;
+const revertOnlyIdx = process.argv.indexOf("--revert-only");
+const revertOnly = revertOnlyIdx >= 0 ? process.argv[revertOnlyIdx + 1] : undefined;
 
 function git(args) {
   return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" });
@@ -48,6 +55,39 @@ function trackedFiles() {
     ...git(["ls-files"]).split("\n"),
     ...git(["ls-files", "--others", "--exclude-standard"]).split("\n"),
   ]);
+}
+
+if (revertOnly) {
+  // 单族回退（`--revert` 是全局的，会抹掉全部已启用族 —— CONTRIBUTING 的
+  // 已知坑）。key = "<dir>/<family>"；只动该 dir 下 `<family>-bug-*.part.ts`
+  // 与该族的 zz-agg 入口，其余族逐字不动。
+  const slash = revertOnly.lastIndexOf("/");
+  if (slash < 0) {
+    console.error("--revert-only needs a full key like packages/vscode/src/__tests__/lsp");
+    process.exit(2);
+  }
+  const dir = revertOnly.slice(0, slash);
+  const family = revertOnly.slice(slash + 1);
+  const parts = [...trackedFiles()].filter(
+    (f) =>
+      dirname(f) === dir &&
+      basename(f).startsWith(`${family}-bug-`) &&
+      f.endsWith(PART_SUFFIX),
+  );
+  let restored = 0;
+  for (const rel of parts) {
+    const back = rel.slice(0, -PART_SUFFIX.length) + ".test.ts";
+    if (existsSync(join(repoRoot, back))) {
+      console.error(`revert conflict: ${back} already exists — skipping ${rel}`);
+      continue;
+    }
+    git(["mv", rel, back]);
+    restored++;
+  }
+  const aggAbs = join(repoRoot, `${dir}/${AGG_PREFIX}${family}.test.ts`);
+  const removed = existsSync(aggAbs) ? (unlinkSync(aggAbs), 1) : 0;
+  console.log(`reverted group ${revertOnly}: ${restored} parts restored, ${removed} entry removed`);
+  process.exit(0);
 }
 
 if (revert) {
@@ -89,7 +129,10 @@ for (const rel of bugFiles) {
   const pathSensitive = /import\.meta\.url|fileURLToPath|__dirname/.test(src);
   const isGate = /gold|real-package|public-api/i.test(name);
   const hasSnapshot = snapshots.some((s) => s.includes(`${name}.snap`));
-  if (pathSensitive || isGate || hasSnapshot) {
+  // 模块级 mock 是 worker 级注册 ⇒ 同入口内会串到别的 part。只认顶格调用，
+  // 不误伤 describe 内部的局部 spy（缩进形式）。
+  const moduleMock = /^vi\.(mock|hoisted)\(/m.test(src);
+  if (pathSensitive || isGate || hasSnapshot || moduleMock) {
     guarded++;
     continue;
   }

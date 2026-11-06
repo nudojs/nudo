@@ -18,8 +18,14 @@
  *
  * 已知边界：`Object.prototype.toString` 读的是 `Symbol.toStringTag` ⇒ 可以
  * 伪造（与 `z.instanceof(Date)` 可通过改原型伪造同类）；换取的是**跨 realm
- * 可判**（原型链判据在 iframe / vm 的生成器上会误拒）。产物只依赖
- * `Object.prototype.toString`，无外部标识符、无新增 import。
+ * 可判**。2026-11-06 用 `node:vm` 实测过原型链判据
+ * （`%GeneratorPrototype%.isPrototypeOf`）：它确实不可伪造，但会把另一个
+ * realm 的真生成器**误拒** ⇒ 结论是保留本判据，把可伪造记为边界
+ * （回归见 `emit-generator-identity-poc.test.ts`「判别谓词取舍实测」）。
+ * 产物只依赖 `Object.prototype.toString`，无外部标识符、无新增 import。
+ *
+ * 递归口径：`denoteGuardB`（core）与 `syncGeneratorTags`（service 约束投影
+ * 通道）在**任意层级**消费 `facets.brand`；本模块只负责 service 侧判据。
  */
 import type { Abs } from "@nudojs/core";
 

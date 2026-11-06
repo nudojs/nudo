@@ -19,8 +19,8 @@ updates:
       # @types/vscode must stay aligned with packages/vscode engines.vscode
       # (^1.91.0): vsce rejects packaging when the types version exceeds
       # the engine floor (validateVSCodeTypesCompatibility compares
-      # major/minor). Current @types/vscode 1.85.0 is a valid lower bound;
-      # bump both together deliberately, never one alone.
+      # major/minor). Both now sit at 1.91.0 (2026-11-06) — bump them
+      # together deliberately, never one alone.
       - dependency-name: "@types/vscode"
 
   - package-ecosystem: "github-actions"

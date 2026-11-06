@@ -253,7 +253,7 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 | 6 | **spread / `Array.from`**（`packages/core/src/algebra/builtins/array.ts`） | 同上 | 同上 |
 | 7 | **数组下标 `it[0]`**（`exec/runtime/containers/arr-index.ts`） | 同上（族 01 的历史口径：`g[0]` 读 yield 值） | 同上 |
 | 8 | **`yield*` 委托的 `.return(v)` 转发**（`exec/runtime/async.ts`） | 委托表在**体执行序**里建（`GenDelegation`） | 委托表必须**随体一起延后建** ⇒ 委托校验（`async.ts` 的下标对位）的下标对位失效即「不转发」 |
-| 9 | **schema / standard / guard / interface 导出**（`packages/service/src/emit/*`） | 生成器身份由 `facets.brand` 投影到 zod / standard / guard 三个运行时校验器面（2026-11-05 bug fix，见 `architecture-debt.md` 的实施记录）；无 brand 的旧 Abs 仍走结构面；**元素域不进 schema** | 身份投影只在导出校验器的**顶层值**生效，嵌套字段仍结构面（三面口径一致）；惰性化不改变该面 |
+| 9 | **schema / standard / guard / interface 导出**（`packages/service/src/emit/*`） | 生成器身份由 `facets.brand` 投影到 zod / standard / guard 三个运行时校验器面（2026-11-05 bug fix，见 `architecture-debt.md` 的实施记录）；无 brand 的旧 Abs 仍走结构面；**元素域不进 schema** | 身份投影已递归到嵌套字段（2026-11-06：`core/denote.ts::denoteGuardB` + `syncGeneratorTags`），四面同口径；惰性化不改变该面 |
 | 10 | **差分语料**（`core/src/algebra/__tests__/differential/corpus/`） | `batch5.ts` / `batch11.ts` / `batch20-transpile-adversarial.ts` 里的 13 条生成器用例 | 全部是「**先消费再取值**」形态 ⇒ 惰性模型下**仍需绿**（触发点必须覆盖 `next()` / spread / for-of 三条消费路径） |
 | 11 | **既有生成器钉**（core 10+ 个文件） | 见 §3.1 | 见 §3.1 |
 

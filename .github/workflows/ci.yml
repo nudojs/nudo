@@ -397,6 +397,20 @@ jobs:
             npm run test:coverage
           fi
 
+      - name: Per-package coverage floors (full run only)
+        # vitest.config.ts 的 per-package floors 是「起步值、只升不降」。夜间/
+        # 手动全量跑完把建议值写进 job summary ⇒ 抬阈值时有可复核的依据；
+        # PR 的 --changed 子集覆盖率天然偏低，不能用来抬地板（脚本也会拒绝）。
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        run: |
+          pnpm run coverage:floors | tee /tmp/nudo-coverage-floors.txt
+          {
+            echo '### Per-package coverage floors (full run)'
+            echo '```'
+            cat /tmp/nudo-coverage-floors.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload coverage
         if: always()
         # v7
