@@ -85,10 +85,13 @@ export function registerGenElements(val: Abs, elements: Abs[]): void {
  * （`src/index.ts` / `algebra/index.ts` / `exec/index.ts` / `internal.ts`
  * 均不 re-export 本模块）⇒ 不触公共 API 冻结。
  *
- * 已知未覆盖旁路（步骤 3 前必须补齐，当前构造期有元素故不影响行为）：
+ * 已知未覆盖旁路（步骤 3 前必须补齐）：
  * `service/src/emit/dts-generator.ts::iteratorTSType`（直读 shape 数字下标
- * 槽）、`async.ts` 的 `next` / `return` / `throw`（读闭包 `full`）、
- * `service/src/emit/internal-slot.ts::isIteratorObjectShape`。
+ * 槽）与 `service/src/emit/internal-slot.ts::isIteratorObjectShape` —— 两者
+ * 都在 **service 包**，且 dts 在**导出时**生成、根本没有消费点 ⇒ 不是
+ * 「漏接触发点」，而是结构性不可达（见 `docs/design/generator-laziness.md`
+ * 的 2026-11-06 实证记录）。core 侧的 `next` / `return` / `throw` 三条
+ * 协议方法旁路已于 2026-11-06 补齐（生产侧仍不登记 ⇒ 零语义变化）。
  */
 const genTriggerTables = new WeakMap<object, () => void>();
 
@@ -97,8 +100,12 @@ export function registerGenTrigger(val: Abs, trigger: () => void): void {
   genTriggerTables.set(val as object, trigger);
 }
 
-/** 每个 Abs 身份只触发一次；无登记时零开销（WeakMap miss）。 */
-function fireGenTrigger(a: Abs): void {
+/**
+ * 每个 Abs 身份只触发一次；无登记时零开销（WeakMap miss）。
+ * 导出供 `runtime/async.ts` 的协议三方法调用（模块内可用，**不进任何
+ * barrel** ⇒ 公共 API 冻结不受影响，与 `registerGenTrigger` 同口径）。
+ */
+export function fireGenTrigger(a: Abs): void {
   const fn = genTriggerTables.get(a as object);
   if (!fn) return;
   genTriggerTables.delete(a as object);

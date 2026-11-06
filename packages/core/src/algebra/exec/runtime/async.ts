@@ -25,7 +25,7 @@ import { markFreshInstance } from "../../key/instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
-import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
+import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
 import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
@@ -730,6 +730,15 @@ function makeGenObject(
   /** Bug 229：体内 yield* 委托记录（.return(v) 转发用） */
   delegations: GenDelegation[] = [],
 ): Abs {
+  // A1 步骤 2 旁路补齐（2026-11-06）：协议三方法读的是闭包 `full`，
+  // 不经过 `match-iter.ts` 的 7 个读出面。给它们也接上「该跑了」触发点
+  // ⇒ 步骤 3 若接线，首消费点无论走 `next()` / `.return()` / `.throw()`
+  // 都能触发体。生产侧**不登记任何触发器** ⇒ 这里恒为 WeakMap miss，
+  // 值面逐字不变（回归钉 `gen-trigger-protocol-faces.test.ts`）。
+  let genSelf: Abs | undefined;
+  const fireOnce = (): void => {
+    if (genSelf) fireGenTrigger(genSelf);
+  };
   const state = { i: 0, done: false, poisoned: false };
   const live: Abs[] = [...full];
   const iterResultUnknown = (): Abs =>
@@ -738,6 +747,7 @@ function makeGenObject(
   // promise<iterResult>）
   const deliver = (v: Abs): Abs => (asyncMode ? wrapPromiseAbs(v) : v);
   const next = $fnVal([], (): Abs => {
+    fireOnce();
     // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
     // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
     if (deferred && !state.done) {
@@ -840,6 +850,7 @@ function makeGenObject(
     return genIterResult(v, true);
   };
   const ret = $fnVal([], (...args: Abs[]): Abs => {
+    fireOnce();
     const v = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     // Bug 229：挂起点在 yield* 委托内 → .return(v) 先转发给委托迭代器
@@ -869,6 +880,7 @@ function makeGenObject(
     return deliver(finishReturn(v, ctx));
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
+    fireOnce();
     const e = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     state.done = true;
@@ -918,6 +930,8 @@ function makeGenObject(
     slots[String(i)] = { value: els[i]!, internal: true };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  // 协议三方法闭包在 g 落地后才能被外部调用 ⇒ 此刻回填触发身份是安全的。
+  genSelf = g;
   // A11 · 槽位启用：生成器对象身份从「按 next / @@iterator 槽启发式」升级为
   // 随 Abs 值携带的 brand。形状仍是闭 obj（**不动** Shape 判别联合），
   // subst / snapshot / join / absKey 整包搬运；dts 的 `Generator<T>` 泛型

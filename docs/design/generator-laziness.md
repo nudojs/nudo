@@ -381,10 +381,20 @@ return $gen(() => {
 （回归钉 `exec/__tests__/gen-trigger-skeleton.test.ts`，7 例）。
 `registerGenTrigger` 不进任何 barrel（`src/index.ts` / `algebra/index.ts` /
 `exec/index.ts` / `internal.ts` 均不 re-export 本模块）⇒ 公共 API 冻结不受影响。
-> 这一步是**接线骨架**，不构成 §5.2 的语义增量：「可延后填充元素面」的
-> `conf` 可提升机制、`dts` 直读 shape 与 `next()` 读闭包 `full` 两条旁路、
-> `snapshotAbs` 深拷贝副本的原地补写都**尚未处理** ⇒ 台账 A1 仍记步骤 2
-> 未闭环，不得因骨架落地改标为「已修」。
+
+**2026-11-06 旁路补齐（零回归，仍不构成语义增量）**：`fireGenTrigger` 改为
+模块内导出（同样不进 barrel），`runtime/async.ts::makeGenObject` 的 `next` /
+`return` / `throw` 三个协议方法首行接 `fireOnce()` —— 它们读的是闭包 `full`，
+原骨架的 7 个读出面覆盖不到。生产侧**仍不登记任何触发器** ⇒ 三条调用恒为
+WeakMap miss，值面逐字不变。回归钉
+`exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例：三方法各触发一次且
+幂等、与 7 面共享同一触发器、未登记时 Bug 212 / 族 01 精确串不回归）。
+
+> 骨架与旁路补齐都**不构成 §5.2 的语义增量**：「可延后填充元素面」的
+> `conf` 可提升机制、`dts` 直读 shape 旁路、`snapshotAbs` 深拷贝副本的原地
+> 补写都**尚未处理** ⇒ 台账 A1 仍记步骤 2 未闭环，不得因接线落地改标为
+> 「已修」。其中 `dts` 侧不是「漏接触发点」：它在 **service 包**且于**导出
+> 时**读 shape，根本没有消费点（见下方 2026-11-06 实证 B）。
 
 ### 5.3 前的**步骤 3 停点**（2026-11-05 复核结论）
 
@@ -408,6 +418,36 @@ return $gen(() => {
 无时间轴」、控制流 token 跨挂起点不可恢复、`withIsolatedYields` 的 arm
 换顶机制在真 generator 内失效），且必须独立成族 + 独立全仓基线。照
 `architecture-debt.md` 的纪律「任何精度回退即回滚」，不在一次增量里合并。
+
+#### 2026-11-06 独立成族轮：**实测复核**（把上面的推断升级为可复核证据）
+
+在干净 HEAD `02371228` 上先建独立全仓基线（1651 入口 / 0 新增失败），再做
+5 组受控实验（探针只在实验期临时插入、实验后**逐字撤除**，生产零残留）：
+
+| 实验 | 做法 | 实测结果 | 判定 |
+|---|---|---|---|
+| **A** | 临时让 `$gen` 构造期跑空体 | 生成器 8 族 **100 失败 / 38 通过** | §2.1 实证：eager 收集是值域 / `conf` / 元素面的承重结构，不是可选优化 |
+| **B** | 真实 `absToTSType` 对「有无数字下标元素槽」的生成器 Abs | 有槽 `Generator<number>`，无槽 **`Generator<unknown>`** | dts 在**导出时**直读 shape、无消费点 ⇒ 体延后必然让签名面精度回退；且该面在 service 包，core 侧触发器结构性不可达 |
+| **C** | 真实 `snapshotAbs` 副本 + 首消费点原地补写 slots | 原对象恢复 `Generator<number>`，副本仍 `Generator<unknown>`；两者 `slots` **不共享引用** | §5.2 未处理的旁路被坐实：`$copy` / fork / 快照副本拿不到补写 |
+| **D**（新发现） | 真实 `$gen` + 手工 body，构造后改写外层绑定再跑 | 构造期 `0  #exact`，重跑 `9  #exact` | **`body` thunk 捕获活绑定，不是构造期快照** ⇒ R3-b 的「消费期绑定可见」在表示层并非不可达（文档此前未评估） |
+| **E**（对 D 的否决） | 体里带 `n++` 类副作用后重跑 | 第二次跑读到 `99`（副作用被重复执行并累加） | 否决「消费点重跑 + join」这条捷径：体重跑会把副作用再执行一次 ⇒ 不是 sound 的修法，仍需 §2.3 的续体表示 |
+
+**结论**：步骤 3 / 4 本轮仍**不实施**。D 曾打开一条看似可绕开内核改造的窄
+路，E 用实测把它关上；B / C 则说明即便解决 D/E，签名面与快照副本仍会精度
+回退 ⇒ 按纪律「任何精度回退即回滚」，全量方案必须停在**引擎内核表示变更**
+（Abs 需有「按 yield 点分段的状态序列 / 可恢复挂起帧」这一维）。
+
+证据已固化为可执行 PoC（不接生产、不改既有断言）：
+- core 侧 `core/src/algebra/exec/__tests__/a1-laziness-evidence-core.test.ts`（A / D / E，4 例）
+- service 侧 `service/src/emit/__tests__/a1-laziness-evidence-poc.test.ts`（B / C，2 例）
+- 旁路基线 `core/src/algebra/exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例）
+
+**下一轮若要真推进，最小前置清单**（按依赖序）：① `conf` 可提升机制 +
+`leqAbs` 影响面复核（§5.2 R2-a）；② service 侧 dts 元素面在导出前取得
+元素域的通道（跨包 + 无消费点，需产品拍板是否接受 `Generator<unknown>`
+作为 sound 降级）；③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
+的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
+的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
 
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
 
