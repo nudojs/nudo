@@ -6,15 +6,14 @@
  * **不判定为 breaking 变更**。故三面统一按 `Abs.facets.brand` 收紧接受集：
  * 真生成器放行，`{}` / `{next(){}}` 等普通对象拒绝。
  *
- * 本文件钉住：① 判据只认随值携带的 brand；② 三个产物面的文本与真跑裁决
- * 逐值一致；③ 无 brand 的旧 Abs 逐字不变（三面仍然同口径）；
+ * 本文件钉住：① 判据只认随值携带的 brand；② zod 面钉产物文本，standard /
+ * guard 两面真跑裁决逐值一致；③ 无 brand 的旧 Abs 逐字不变（三面仍然同口径）；
  * ④ 2026-11-06 起嵌套字段也递归收紧（core `denoteGuardB` +
  * `syncGeneratorTags`），并对 toStringTag / 原型链判据做了跨 realm 实测；
  * ④ 产物可过 `tsc --noEmit --strict`；⑤ `z.instanceof` 路线仍不可行。
  */
 import { describe, it, expect } from "vitest";
 import { runInNewContext } from "node:vm";
-import { z } from "zod";
 import { abs, type Abs } from "@nudojs/core";
 import { absToSchemaNode, absToSchemaSource } from "../schema-generator.ts";
 import {
@@ -53,13 +52,13 @@ const cases = (): ReadonlyArray<readonly [string, unknown]> =>
     ["42", 42],
   ] as const;
 
-/** zod 产物是真模块源码 ⇒ 注入 z 后真跑。 */
-function zodAccepts(source: string): (v: unknown) => boolean {
-  const schema = new Function("z", `return ${source};`)(z) as {
-    safeParse: (v: unknown) => { success: boolean };
-  };
-  return (v: unknown) => schema.safeParse(v).success;
-}
+/**
+ * zod 面是源码产物 ⇒ 只钉文本，不引入 zod 依赖。
+ * 谓词口径与 `generatorTagFromValue` 同源（toStringTag），运行裁决由
+ * standard 库 / standard 产物 / guard 三面承担。
+ */
+const zodTagPredicate = (tag: "Generator" | "AsyncGenerator"): string =>
+  `Object.prototype.toString.call(v) === "[object ${tag}]"`;
 
 /** guard 产物是 .ts ⇒ 剥掉类型标注后真跑（与 BUG-130 夹具同法）。 */
 function guardOf(source: string, name: string): (v: unknown) => boolean {
@@ -101,6 +100,7 @@ describe("生成器身份产物面（bug fix · 三面收紧）", () => {
     expect(guard).toContain('typeof data === "object"');
     // 不得引入无全局名字的构造器（Bug 233：模块求值期 ReferenceError）
     expect(guard).not.toContain("GeneratorFunction");
+    expect(absToSchemaSource(a)).not.toContain("z.instanceof");
     expect(absToSchemaSource(a)).not.toContain("GeneratorFunction");
   });
 
@@ -111,18 +111,18 @@ describe("生成器身份产物面（bug fix · 三面收紧）", () => {
   });
 
   for (const tag of ["Generator", "AsyncGenerator"] as const) {
-    it(`${tag}：zod / standard 库 / standard 产物 / guard 四面逐值同裁决`, async () => {
+    it(`${tag}：zod 文本 + standard 库 / standard 产物 / guard 三面逐值同裁决`, async () => {
       const a = generatorAbs(tag);
       const { node } = absToSchemaNode(a);
-      const zod = zodAccepts(absToSchemaSource(a));
+      expect(absToSchemaSource(a)).toBe(`z.custom((v) => ${zodTagPredicate(tag)})`);
       const { source } = absToStandardSchema(a, { name: "xs" });
       const mod = await loadGeneratedModule(source);
       const lib = (v: unknown) => validateSchemaNode(node, v).issues === undefined;
       const product = (v: unknown) => mod.xs!["~standard"].validate(v).issues === undefined;
       const guard = guardOf(generateGuardFunctionFromAbs("isG", a), "isG");
       for (const [name, v] of cases()) {
-        const verdicts = [zod(v), lib(v), product(v), guard(v)];
-        expect(new Set(verdicts).size, `${tag} / ${name}: 四面裁决分叉`).toBe(1);
+        const verdicts = [lib(v), product(v), guard(v)];
+        expect(new Set(verdicts).size, `${tag} / ${name}: 三面裁决分叉`).toBe(1);
       }
       // 收紧的核心：普通对象从「接受」变「拒绝」，真生成器仍放行
       expect(guard({})).toBe(false);
@@ -133,12 +133,14 @@ describe("生成器身份产物面（bug fix · 三面收紧）", () => {
     });
   }
 
-  it("已知边界：Symbol.toStringTag 可伪造（三面一致放行，不是 sound 的 instanceof）", () => {
+  it("已知边界：Symbol.toStringTag 可伪造（谓词一致放行，不是 sound 的 instanceof）", () => {
     const fake: Record<symbol, string> = {};
     Object.defineProperty(fake, Symbol.toStringTag, { value: "Generator" });
     const a = generatorAbs("Generator");
     expect(generatorTagFromValue(fake)).toBe("Generator");
-    expect(zodAccepts(absToSchemaSource(a))(fake)).toBe(true);
+    // zod 面只钉文本：谓词与 generatorTagFromValue 同源（toStringTag）
+    expect(absToSchemaSource(a)).toBe(`z.custom((v) => ${zodTagPredicate("Generator")})`);
+    expect(Object.prototype.toString.call(fake)).toBe("[object Generator]");
     expect(validateSchemaNode(absToSchemaNode(a).node, fake).issues).toBeUndefined();
     expect(guardOf(generateGuardFunctionFromAbs("isG", a), "isG")(fake)).toBe(true);
   });
@@ -189,9 +191,9 @@ describe("嵌套字段身份投影（2026-11-06 补齐递归）", () => {
     expect(guard.match(/Object\.prototype\.toString/g)?.length).toBe(1);
   });
 
-  it("四面逐值同裁决：{ g: gen() } 放行、{ g: {} } 拒绝", async () => {
+  it("zod 文本 + 三面逐值同裁决：{ g: gen() } 放行、{ g: {} } 拒绝", async () => {
     const a = nested();
-    const zod = zodAccepts(absToSchemaSource(a));
+    expect(absToSchemaSource(a)).toContain(`z.custom((v) => ${zodTagPredicate("Generator")})`);
     const { node } = absToSchemaNode(a);
     const { source } = absToStandardSchema(a, { name: "xs" });
     const mod = await loadGeneratedModule(source);
@@ -204,8 +206,8 @@ describe("嵌套字段身份投影（2026-11-06 补齐递归）", () => {
       ["{g: null}", { g: null }],
       ["{}", {}],
     ] as const) {
-      const verdicts = [zod(v), lib(v), product(v), guard(v)];
-      expect(new Set(verdicts).size, `${name}: 四面裁决分叉`).toBe(1);
+      const verdicts = [lib(v), product(v), guard(v)];
+      expect(new Set(verdicts).size, `${name}: 三面裁决分叉`).toBe(1);
     }
     expect(guard({ g: syncGen() })).toBe(true);
     expect(guard({ g: {} })).toBe(false);
