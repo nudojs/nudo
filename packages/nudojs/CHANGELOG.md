@@ -1,5 +1,55 @@
 # nudojs
 
+## 1.9.0
+
+### Minor Changes
+
+- 4361e2e: DX: `nudo test --both-paths` (directive + synthesized witnesses in one round) and opt-in HMAC-signed disk cache entries.
+  
+  - `nudo test <path> --both-paths [--only <names>]`: functions with `@nudo:case` directives now *can* also synthesize `call@`/`entry@` witnesses in the same round (teaching comparison face; default exclusivity unchanged). `--json` separates the paths via `source: "directive" | "callsite"`; exit semantics unchanged (synthetic cases never fail the run). `--only` without `--both-paths`, and `--both-paths --freeze`, are usage errors.
+  - Signed disk cache: `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` signs every entry (HMAC-SHA256, domain-separated key derivation). Verification failure = miss (recompute, never trust) — a forged CheckJson can no longer pass the gate; signed/unsigned key spaces are separate, so key rotation is a clean full miss. Fail-closed config: sign without a key, or a non-boolean sign, refuses to run (`check` / `contract` / `health`, machine-readable on `--json`) instead of silently running unsigned. `nudo.cache` also accepts an object form `{ dir?, sign? }`; typo'd keys surface as `config-shape` report entries.
+  - truncation suggestions: fork/recursion-budget fix values in the analyzer now consume the single-sourced `suggested{Fork,Depth,Calls}Ceiling` helpers from `@nudojs/core/internal` (same wording as the check face, concrete numbers instead of `@nudo:budget depth=…` placeholders).
+  - benchmark: `bench-monorepo.mts --corpus <path>` runs the S1 benchmark against a real monorepo directory (dynamic hub/mid/leaf targets from the module graph, in-memory edits only — user files are never written; report lands in `s1-perf-baseline-real.{md,json}` with an honest corpus header).
+- 09d88d6: Feat: `nudo init` coexistence pointer + copy-paste default client configs (LSP-G4 DX).
+  
+  - init: after writing the adoption baseline, when the target package has `tsconfig.json` / `jsconfig.json`, init appends a coexistence hint block — the VS Code command `nudo.coexistence.apply` ("Nudo: Apply coexistence settings") and the coexistence-guide recipe URL (`include`/`exclude` / `mode: "directives"`). Print-only: no tsconfig / editor settings are rewritten; the minimal-write discipline (Bug 681) and the existing init boundaries (B676/677/678/680, Bug 1144, Bug 229) are unchanged, and the idempotent no-write path prints no hint.
+  - website (EN + zh-Hans mirrors): lsp-clients Setup notes upgraded to copy-paste default config blocks — the Zed `settings.json` block now ships `semantic_tokens: "combined"` inline (previously prose-only); Neovim lspconfig and Helix `languages.toml` blocks are labeled as complete copy-whole defaults. zed.md Settings gets the same semantic_tokens fold. Known-gaps G4 rows (both locales) note the init pointer; `docs/design/lsp-client-gaps.md` G4 status records it.
+- a9638c2: Feat: precision-cliff UX — `nudo test` call@symbolic hint + `nudo health` precision counts.
+  
+  - `nudo test`: when a report contains `call@symbolic` (the symbolic aggregate witness folded from call sites beyond `callSiteBudget`), the report tail now appends one actionable note (`SYMBOLIC_BUDGET_NOTE`, same "fact — action A or action B" shape as the `nudo:recursion-truncated` advice): raise `package.json#nudo.analysis.callSiteBudget` (1–64, default 3) or pin exact witnesses with `@nudo:case` (limitations §3.2.2 wording — for recursion pin `@nudo:case`, don't rely on call@). Display-face only: no assertion counting, no exit-code change. Reports without `call@symbolic` stay byte-identical.
+  - `nudo health`: the Summary line and the `--json` summary (same source) now carry precision counts — `unknownSignatures` (functions whose return the engine could not infer; renders `unknown`, counted via the shared `inferenceFailed` predicate; `@nudo:skip` functions are declared faces and not counted) and `widenedWitnesses` (occurrences of `#widened`, i.e. witnesses with `conf === "widened"` — budget-folded symbolic aggregates / loop widening). Informational only, like `uncovered`: never gates the exit code. Text Summary reads `… · N unknown signature(s) · M #widened witness(es)`; `--json` summary gains additive keys `unknownSignatures` / `widenedWitnesses`.
+  - `@nudojs/service` exports `SYMBOLIC_BUDGET_NOTE` (single source for the note text; CLI and tests consume the same constant). Regressions pinned in `packages/nudojs/src/__tests__/precision-hints.test.ts`; family-63 health baselines and the e2e health golden updated for the Summary extension (their fixtures now pin src tsconfig per the `writeSrcTsconfig` convention, so they no longer silently test a stale `dist/`).
+
+### Patch Changes
+
+- 83c1ed2: **Chore:** expand the OSS real-package benchmark corpus from 3 to 10 packages (`commander` / `yargs` / `semver` + `eventemitter3` / `kleur` / `ms` / `is-plain-obj` / `escape-string-regexp` / `p-limit` / `yocto-queue`) and regenerate `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}`. Every package is L1 zero-FP on the new corpus. Candidate packages that could not join honestly are documented in `benchmark/oss/packages.mts`: `debug` and `@changesets/cli` crash on the analyze path (evaluating them clobbers host `process.env` / `globalThis.Error` — engine debt, not gate-threshold material), `lodash` blows the wall-clock budget, `@babel/types` crashes `checkSource`, and `@babel/parser` / `@babel/traverse` single-file bundles dominate a bench round. Benchmark-only change — no engine code touched.
+- 05b7b82: **Chore:** re-admit `debug` and `@changesets/cli` to the OSS real-package benchmark corpus (10 → 12 packages, 120 files) after the host-global-purity fix (B1/B2: fork/member-write rebinds gated on `$rebindable` — analysis no longer clobbers host `process` / `globalThis.Error`). Both are L1 zero-FP across 4 trusted runs; `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}` regenerated (envelope = observed max of 4 quiet runs ×1.10, same convention as the previous expansion). `@babel/types` stays excluded for wall-clock only (single ~3 MB bundle, one `checkSource` pass ≈ 4 min past the per-round budget) — its earlier crash is fixed (B3).
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [897b19f]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+  - @nudojs/core@1.19.0
+  - @nudojs/harvester@0.6.0
+  - @nudojs/service@1.12.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
+
 ## 1.8.0
 
 ### Minor Changes

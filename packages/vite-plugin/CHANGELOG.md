@@ -1,5 +1,32 @@
 # vite-plugin-nudo
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [897b19f]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+  - @nudojs/core@1.19.0
+  - @nudojs/service@1.12.0
+
 ## 0.7.0
 
 ### Minor Changes
