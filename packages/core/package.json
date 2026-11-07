@@ -50,11 +50,11 @@
     "prepublishOnly": "tsup"
   },
   "dependencies": {
-    "@babel/parser": "^8.0.7",
-    "@babel/types": "^8.0.6"
+    "@babel/parser": "^8.1.0",
+    "@babel/types": "^8.1.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "commander": "^15.0.0",
     "debug": "^4.4.3",
     "escape-string-regexp": "^5.0.0",
