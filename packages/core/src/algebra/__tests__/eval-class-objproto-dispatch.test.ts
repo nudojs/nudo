@@ -20,8 +20,8 @@
  * 挂祖先时 false）；用户同名方法覆写照常分派。
  */
 import {describe, it, expect} from "vitest";
-import {formatShape} from "../format.ts";
-import {checkSource} from "../check.ts";
+import {formatShape} from "../format/format.ts";
+import {checkSource} from "../check/check.ts";
 import {call, val, isNever} from "./eval-helpers.ts";
 import {l2Count, sigOf} from "./nudo-constraints.ts";
 

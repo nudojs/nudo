@@ -6,13 +6,13 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue, formatShape } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { generalizeFromAst } from "../generalize.ts";
-import { formalParamSignatureNames, formalParamsFromNodes } from "../param-surface.ts";
+import { formalParamSignatureNames, formalParamsFromNodes } from "../format/param-surface.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("#64 P3 destructured param contracts render in signatures", () => {

@@ -28,7 +28,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import type { Abs } from "../packages/core/src/algebra/abs.ts";
-import { formatShape } from "../packages/core/src/algebra/format.ts";
+import { formatShape } from "../packages/core/src/algebra/format/format.ts";
 import { defineEnv as defineEsEnv } from "../packages/env/src/es.ts";
 import { defineEnv as defineWebEnv } from "../packages/env/src/web.ts";
 import { defineEnv as defineNodeEnv } from "../packages/env/src/node.ts";

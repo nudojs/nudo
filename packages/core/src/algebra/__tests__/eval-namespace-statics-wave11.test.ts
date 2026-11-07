@@ -29,7 +29,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { call, isNever } from "./eval-helpers.ts";
 
 type CallResult = { result: Abs; throws: Abs };

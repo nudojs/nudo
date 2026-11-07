@@ -4,7 +4,7 @@
  * `//` 与 `///` 必须都命中 path 型 env。
  */
 import { describe, it, expect } from "vitest";
-import { extractAllLoadSpecs } from "../load-deps-fp.ts";
+import { extractAllLoadSpecs } from "../key/load-deps-fp.ts";
 
 describe("extractAllLoadSpecs env/mock-module prefix contract", () => {
   it("// @nudo:env and /// @nudo:env both contribute path specs", () => {

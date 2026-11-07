@@ -5,10 +5,10 @@
  * - 无侧车 → 不加任何条目，指纹与扩展前算法逐字节一致（旧调用方零回归）。
  */
 import { describe, it, expect } from "vitest";
-import { loadModuleDepsFingerprint, sidecarSpecsOf } from "../load-deps-fp.ts";
+import { loadModuleDepsFingerprint, sidecarSpecsOf } from "../key/load-deps-fp.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { pTrue, predToString } from "../pred.ts";
-import { hashSource } from "../hash-source.ts";
+import { hashSource } from "../key/hash-source.ts";
 
 function makeLoad(deps: Record<string, string>) {
   return (spec: string, fromFile: string) => {

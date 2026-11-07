@@ -11,7 +11,7 @@
  * implicit 档；有契约的函数位仍是 handwritten。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { interfaceTierOf, takeInterfaceDiags, resetSidecarLoadFailureCache } from "../interface.ts";
+import { interfaceTierOf, takeInterfaceDiags, resetSidecarLoadFailureCache } from "../interface/interface.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 

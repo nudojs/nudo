@@ -17,10 +17,10 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { checkInjectedDomainEvidence, type InjectedDomainRecord } from "../scan/scan.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface.ts";
+import { takeInterfaceDiags } from "../interface/interface.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { STD_NUDO_SRC } from "./nudo-constraints.ts";
 import { abs as makeAbs, numLit, strLit, num, type Abs } from "../abs.ts";

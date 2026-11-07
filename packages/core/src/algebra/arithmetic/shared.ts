@@ -18,7 +18,7 @@ import { nextUp, nextDown } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isBigPrim, isStrPrim } from "../abs.ts";
 import { absShapeKey } from "../objects.ts";
-import { recordMayThrow } from "../may-throw.ts";
+import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { noteAbstractArithMayThrow } from "./coerce.ts";
 
 /**

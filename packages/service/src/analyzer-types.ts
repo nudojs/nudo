@@ -61,6 +61,16 @@ export type FunctionAnalysis = {
   paramNames: string[];
   /** C4.1 形参表面：draft/契约对齐（解构 placeholder + bound 名） */
   formals?: FormalParam[];
+  /**
+   * 「第三种」（2026-11-06）：源码**返回类型注解原文**（`strip-types.ts`
+   * 写在函数节点上的 `nudoReturnTypeText` 旁路）。此前全仓只有写入、无读取点。
+   *
+   * 只透传文本，**不参与推断、不覆盖产物**：实现是事实，声明是断言。
+   * dts 投影面拿它做一致性校验，冲突落 `nudo:return-annotation-mismatch`
+   * 台账，产物恒用观测口径（避免 BUG-168 在形参位修掉的「两面相反」在
+   * 返回位复现）。缺省 = .js 源 / 未标注 ⇒ 零影响。
+   */
+  declaredReturnType?: string;
   cases: CaseResult[];
   /** cases 结果 Abs 的 join；dts 返回位源。skip 函数恒为声明面（@nudo:skip =>），case 结果不参与（#176） */
   combinedAbs?: Abs;

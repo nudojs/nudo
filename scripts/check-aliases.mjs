@@ -135,6 +135,32 @@ if (Object.keys(expected).length !== Object.keys(packageRoots).length * 2 + Obje
   failed = true;
 }
 
+// 4. Root tsconfig.json must consume the generated paths file, not restate paths.
+// (A second hand-written alias table silently diverged once; this gate keeps
+//  both the root config and tsconfig.lint.json on the single source of truth.)
+const rootJsonPath = join(repoRoot, "tsconfig.json");
+if (!existsSync(rootJsonPath)) {
+  console.error(`missing ${rootJsonPath}`);
+  failed = true;
+} else {
+  const rootCfg = JSON.parse(readFileSync(rootJsonPath, "utf8"));
+  const rootExtends = Array.isArray(rootCfg.extends) ? rootCfg.extends : [rootCfg.extends];
+  if (!rootExtends.includes("./tsconfig.paths.json")) {
+    console.error(
+      'tsconfig.json must extend "./tsconfig.paths.json" (got extends:',
+      JSON.stringify(rootCfg.extends),
+      ")",
+    );
+    failed = true;
+  }
+  if (rootCfg.compilerOptions?.paths) {
+    console.error(
+      "tsconfig.json must not restate compilerOptions.paths — use tsconfig.paths.json",
+    );
+    failed = true;
+  }
+}
+
 if (failed) process.exit(1);
 console.log(
   `ok: workspace aliases in sync (${Object.keys(expected).length} ts paths from ${Object.keys(packageRoots).length} packages + ${Object.keys(subpathAliases).length} subpaths)`,

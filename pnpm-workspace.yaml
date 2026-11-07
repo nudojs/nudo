@@ -5,10 +5,10 @@ allowBuilds:
   core-js: true
   "@swc/core": true
 minimumReleaseAgeExclude:
-  - '@vitest/coverage-v8@5.0.2'
-  - '@vitest/mocker@5.0.2'
-  - '@vitest/spy@5.0.2'
-  - vitest@5.0.2
+  - '@vitest/coverage-v8@5.0.5'
+  - '@vitest/mocker@5.0.5'
+  - '@vitest/spy@5.0.5'
+  - vitest@5.0.5
   - vscode-jsonrpc@9.0.3
   - vscode-languageclient@10.1.2
   - vscode-languageserver-protocol@3.18.4

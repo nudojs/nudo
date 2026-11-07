@@ -13,7 +13,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 const unknownInner = abs({ k: "unknown" }, undefined, undefined, "partial");
 

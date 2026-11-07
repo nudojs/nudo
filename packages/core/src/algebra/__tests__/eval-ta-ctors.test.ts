@@ -20,7 +20,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { call, isNever, val } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");

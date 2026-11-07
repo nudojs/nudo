@@ -20,14 +20,14 @@
  * `=> 1 !! throws`（后缀落在期望表达式一侧）仍然**不产申报**。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { scanThrowsDecl } from "../directive-scan.ts";
 import { extractDeclaredThrows } from "../refine.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 

@@ -16,6 +16,11 @@ import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 import { formatObjectKey, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { isHiddenInternalSlot, isInvisibleObjSlot } from "./internal-slot.ts";
+import {
+  generatorTagCheckSource,
+  generatorTagOf,
+  type GeneratorTag,
+} from "./generator-identity.ts";
 
 /**
  * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
@@ -69,6 +74,10 @@ export type SchemaNode =
   | { k: "fn" }
   | { k: "promise"; inner: SchemaNode }
   | { k: "brand"; name: string }
+  // Bug fix（2026-11-05）：随值携带的生成器身份 ⇒ 运行时校验器必须真的
+  // 验出身份（此前 `z.object({  })` 接受任意普通对象，与 dts 面相反）。
+  // 判据与产物源码见 generator-identity.ts。
+  | { k: "generator"; tag: GeneratorTag }
   | { k: "never" }
   | { k: "unknown" };
 
@@ -398,7 +407,67 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
   return absToSchemaNodeB(a, new ProjectionBudget());
 }
 
-function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
+/**
+ * 约束投影通道（`absToConstraint` → `constraintToSchemaNode`）**绕过**
+ * `absToSchemaNodeB` 的递归：core 把子 Abs 折成 Constraint 时不含 `facets`，
+ * 于是生成器作为对象字段 / 数组元素 / union 臂时，节点里退化成 `obj({})`。
+ * 2026-11-06：按**原始 Abs 树**把这些位置同步回 `{k:"generator"}` ⇒
+ * 与 core `denoteGuardB` 的递归身份子句、standard 面的递归 checkNode 同口径。
+ * 只在原始 Abs 对得上、且确实带 `facets.brand` 的位置替换，其余节点逐字不变。
+ */
+function syncGeneratorTags(node: SchemaNode, a: Abs): SchemaNode {
+  const tag = generatorTagOf(a);
+  if (tag) return { k: "generator", tag };
+  const s = a.shape;
+  // 非 promise 的 eff 在约束通道上直接投影内层 ⇒ 继续往下同步。
+  if (s.k === "eff" && s.eff !== "promise") return syncGeneratorTags(node, s.inner);
+  switch (node.k) {
+    case "obj":
+      if (s.k !== "obj") return node;
+      return {
+        ...node,
+        slots: node.slots.map((slot) => {
+          const child = s.slots[slot.key]?.value;
+          return child ? { ...slot, node: syncGeneratorTags(slot.node, child) } : slot;
+        }),
+      };
+    case "arr":
+      return s.k === "arr" ? { ...node, element: syncGeneratorTags(node.element, s.element) } : node;
+    case "tuple":
+      if (s.k !== "tuple") return node;
+      return {
+        ...node,
+        elements: node.elements.map((e, i) =>
+          s.elements[i] ? syncGeneratorTags(e, s.elements[i]!) : e,
+        ),
+        ...(node.rest && s.rest ? { rest: syncGeneratorTags(node.rest, s.rest) } : {}),
+      };
+    case "union":
+      return s.k === "sum"
+        ? {
+            ...node,
+            members: node.members.map((m, i) =>
+              s.members[i] ? syncGeneratorTags(m, s.members[i]!) : m,
+            ),
+          }
+        : node;
+    case "promise":
+      return s.k === "eff" ? { ...node, inner: syncGeneratorTags(node.inner, s.inner) } : node;
+    default:
+      return node;
+  }
+}
+
+/**
+ * 生成器身份在**任意层级**投影（2026-11-06 从「顶层-only」补齐）：
+ * 递归槽值同样返回 `{k:"generator"}`，与 core `denoteGuardB` 的递归身份
+ * 子句、standard 面 `checkNode` 的递归校验同口径 ⇒ 生成器作为对象字段时
+ * 四面不再相反裁决。判据仍是 `facets.brand`（见 generator-identity.ts）。
+ */
+function absToSchemaNodeB(
+  a: Abs,
+  budget: ProjectionBudget,
+): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
   // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
@@ -408,6 +477,13 @@ function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode;
     dropped.push(`literal observation widened to the base type (uncertain confidence: ${a.conf})`);
     a = widened;
   }
+
+  // Bug fix（2026-11-05；2026-11-06 补齐递归）：随值携带的生成器身份
+  // 优先于结构投影。判据是 facets.brand（不是 next 槽启发式）；缺省 ⇒
+  // 旧 Abs / 手工夹具逐字不变。产物侧的同一处置见 core denoteGuardB
+  // （guard 面）与 standard-schema.ts 的 checkNode。
+  const tag = generatorTagOf(a);
+  if (tag) return { node: { k: "generator", tag }, dropped };
 
   // lit term 优先（与 projection 一致；NaN 不产 lit）
   if (a.term?.op === "lit") {
@@ -474,7 +550,7 @@ function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode;
       };
     }
     dropped.push(...constraintDropped(projected));
-    return { node, dropped };
+    return { node: syncGeneratorTags(node, a), dropped };
   }
 
   if (lowConf) {
@@ -957,6 +1033,10 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
     }
     case "fn":
       return { source: "z.function()", dropped: [] };
+    case "generator":
+      // 判别谓词内联进产物（不新增 import、不引用无全局名字的构造器）。
+      // z.custom 的 check 参数由 zod 签名为 unknown ⇒ strict 产物不会 TS7006。
+      return { source: `z.custom((v) => ${generatorTagCheckSource("v", node.tag)})`, dropped: [] };
     case "promise": {
       const inner = renderZod(node.inner);
       return { source: `z.promise(${inner.source})`, dropped: inner.dropped };

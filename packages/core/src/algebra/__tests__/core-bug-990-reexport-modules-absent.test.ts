@@ -21,7 +21,7 @@ import { collectAbsExports, bindImports } from "../abs-modules.ts";
 import { parseSource } from "../parse-source.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { abs } from "../abs.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 
 const num = abs({ k: "prim", type: "number" }, undefined, undefined, "exact");

@@ -28,9 +28,10 @@ concurrency:
 # 快速通道细节：test job 按 git diff <since>...HEAD 选测试
 # （vitest --changed，模块图 + forceRerunTriggers 安全网，见
 # vitest.config.ts）；lint job 在无 .ts/.tsx/tsconfig/lockfile 变更时跳过三个 tsc。
-# coverage（v8 插桩 + 阈值聚合，慢 30–60%）只跑夜间/手动：PR/dev 路径
-# 本就不跑 coverage，阈值门禁挪到夜间只把发现延迟 ≤24h；main push 的
-# 发布门禁 = 全量测试（2 shard，无 --changed）+ lint + benchmark。
+# coverage（v8 插桩 + 阈值聚合，慢 30–60%）：夜间/手动跑全量 + 硬阈值；
+# PR 跑 --changed 子集并关阈值，只把报告交给 codecov，让覆盖率回退在
+# PR 内可见而不是等 ≤24h（子集覆盖率天然低于全量基线，不能用全局阈值判）。
+# main push 的发布门禁 = 全量测试（2 shard，无 --changed）+ lint + benchmark。
 # verify:examples / verify:docs 跑真实 CLI（tsx 直连包源码）——输入面含
 # 包源码，ts 或 docs 变更都要跑；两者都没动的 push（version-bump 合并、
 # workflow/benchmark 改动）才跳过。docs:gen drift gate / env baseline /
@@ -138,6 +139,11 @@ jobs:
 
       - name: Verify docs site links
         run: pnpm run verify:links
+
+      # tsc 看不到的几类问题（无说明的空 catch / 内联 harness / 生产 console.log）
+      # + core/algebra 顶层平铺边界。纯 fs、始终跑（不依赖 ts_changed）。
+      - name: Static hygiene & core subdomain gate
+        run: pnpm run lint:hygiene
 
       # 生成文件（releases*.md / api skeleton / versioning 版本表）不得与源漂移
       - name: Docs generation drift gate
@@ -254,7 +260,10 @@ jobs:
             packages/*/dist
             package.json
           if-no-files-found: error
-          retention-days: 1
+          # 发布/文档部署靠「同 SHA CI 结论 + 复用本 artifact」；1 天会让
+          # 手工 dispatch 旧 SHA 时过期并回退本地 build（源码与 CI 结论不再
+          # 同源）。7 天覆盖正常的版本 PR / 发布窗口，仍不长期占用存储。
+          retention-days: 7
 
   test:
     name: Test (shard ${{ matrix.shard }}/2)
@@ -335,17 +344,21 @@ jobs:
 
   test-coverage:
     name: Test & Coverage
-    # 仅夜间复测与手动触发：v8 插桩 + 阈值聚合比裸跑慢 30–60%。
-    # main push 不再跑 coverage（PR/dev 路径本就不跑，阈值门禁挪到
-    # 夜间只把 coverage 回归的发现延迟 ≤24h；codecov 趋势同样随夜间
-    # 上传）。不分片（阈值按全量聚合）、不用 --changed；仅共享转换缓存。
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    # 夜间/手动：全量 + 硬阈值（v8 插桩比裸跑慢 30–60%；阈值按全量聚合，
+    # 故不分片、不用 --changed）。
+    # PR：--changed 子集 + NUDO_COVERAGE_THRESHOLDS=off，只出报告交 codecov，
+    # 让覆盖率回退在 PR 内可见；子集覆盖率天然低于全量基线，开全局阈值会假红。
+    # main push 不跑（发布门禁 = 全量测试 + lint + benchmark 已足够）。
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # PR 路径的 --changed 要 diff base.sha（须在本地存在）
+          fetch-depth: 0
 
       - name: Setup pnpm
         # v4
@@ -377,7 +390,26 @@ jobs:
           name: nudo-dist
 
       - name: Test
-        run: npm run test:coverage
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pnpm run test:coverage:diff -- --changed "${{ github.event.pull_request.base.sha }}"
+          else
+            npm run test:coverage
+          fi
+
+      - name: Per-package coverage floors (full run only)
+        # vitest.config.ts 的 per-package floors 是「起步值、只升不降」。夜间/
+        # 手动全量跑完把建议值写进 job summary ⇒ 抬阈值时有可复核的依据；
+        # PR 的 --changed 子集覆盖率天然偏低，不能用来抬地板（脚本也会拒绝）。
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        run: |
+          pnpm run coverage:floors | tee /tmp/nudo-coverage-floors.txt
+          {
+            echo '### Per-package coverage floors (full run)'
+            echo '```'
+            cat /tmp/nudo-coverage-floors.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage
         if: always()
@@ -386,14 +418,14 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/coverage-final.json
-          flags: unittests
+          flags: ${{ github.event_name == 'pull_request' && 'pr-diff' || 'unittests' }}
           fail_ci_if_error: false
 
   # B1: accuracy/perf gate vs benchmark/baseline.json
-  # 3.0x 阈值（gate.js 硬编码）有意保留：baseline 采自本地 Apple Silicon，
-  # GitHub ubuntu-runner 常年慢 ~2.5–3x；收 2.0–2.5x 会把噪声当回归（CI 变红）。
-  # 收紧前提：在 GH runner 上重跑 `pnpm run benchmark:baseline`（或改相对倍率
-  # /固定 perf runner）后再改 gate.js——不要只改数字。
+  # 倍率默认 3.0x（baseline 采自本地 Apple Silicon，GH ubuntu-runner 常年慢
+  # ~2.5–3x）；可用 NUDO_BENCH_PERF_RATIO 覆盖，无需改 gate.js。
+  # 收紧前提：在 GH runner 上重跑 `pnpm run benchmark:baseline`（或固定 perf
+  # runner）后，把 runner 侧倍率作为 workflow env 传入——不要只改数字。
   # 仅 main push + 夜间：计时门禁在共享 runner 上噪声大，PR/dev/ci 跑它
   # 既慢又易误红；OSS 真包门禁（benchmark:oss + benchmark:oss:gate）挂在
   # benchmark.yml（main-only）。

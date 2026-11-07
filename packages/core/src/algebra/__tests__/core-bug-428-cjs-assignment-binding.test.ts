@@ -20,7 +20,7 @@ import {
   parseSource,
 } from "../index.ts";
 import { issuesOf, l2Count, stdOpts, withStdImport } from "./nudo-constraints.ts";
-import { listTopFunctions } from "../scan.ts";
+import { listTopFunctions } from "../scan/scan.ts";
 
 const CJS_CONTRACT = `/**
  * @nudo:contract x positive

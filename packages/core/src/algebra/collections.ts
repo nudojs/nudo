@@ -9,8 +9,8 @@ import { abs, anyAbs, litValue, unknown, confJoin, strLit, boolLit } from "./abs
 import { objOf, joinAbs } from "./objects.ts";
 import { undefAbs } from "./hof.ts";
 import { isDomainShared } from "./len-sharing.ts";
-import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 
 type LitKey = string | number | boolean | null | undefined;
 /** litKeyOf 无字面量哨兵：lit(undefined) 是合法键，不得与「无字面量」共用 undefined */

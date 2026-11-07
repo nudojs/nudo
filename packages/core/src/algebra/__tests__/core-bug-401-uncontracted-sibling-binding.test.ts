@@ -15,7 +15,7 @@
  * `[number, undefined]` ⇒ 本文件在 HEAD 上**必失败**。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo, generalizeFromAst } from "../generalize.ts";
 

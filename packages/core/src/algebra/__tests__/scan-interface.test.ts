@@ -9,8 +9,8 @@
  * - 无侧车时不做 body 必填 slot 门禁（C0.1 契约模型）
  */
 import { describe, it, expect } from "vitest";
-import { scanLiteralCalls, listTopFunctions } from "../scan.ts";
-import { checkSource } from "../check.ts";
+import { scanLiteralCalls, listTopFunctions } from "../scan/scan.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 

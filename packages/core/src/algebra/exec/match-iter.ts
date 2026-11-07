@@ -7,8 +7,8 @@
  * 独立叶子模块避免 runtime ↔ class 循环依赖。
  */
 import type { Abs } from "../abs.ts";
-import type { MayThrowEffect } from "../may-throw.ts";
-import { recordMayThrow } from "../may-throw.ts";
+import type { MayThrowEffect } from "../diagnostics/may-throw.ts";
+import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { getSlot } from "../objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 
@@ -70,6 +70,80 @@ export function registerGenElements(val: Abs, elements: Abs[]): void {
   genIterTables.set(val as object, elements);
 }
 
+/**
+ * A1 步骤 2 骨架（`docs/design/generator-laziness.md` §5.2）：生成器
+ * 「延迟体」的**触发点收口**。
+ *
+ * 当前 `$gen` 仍在**构造期**跑完整个体（eager，步骤 1 的 join 隔离口径），
+ * 本表**不注册任何触发器** ⇒ 下列 7 个读出面的 `fireGenTrigger(a)` 全是
+ * WeakMap miss 即返回，值域 / 元素面 / conf / 副作用时序**逐字不变**。
+ *
+ * 它的作用是把步骤 3「首次消费点才跑」所需的触发点**预先收口到本文件**：
+ * 所有元素面读出都经这 7 个导出函数，未来只需在 `async.ts` 的
+ * `makeGenObject` 登记一次触发器，无需改动 `iterate.ts` / `arr-index.ts` /
+ * `builtins/array.ts` / `async.ts` 的消费点。表**不导出到任何 barrel**
+ * （`src/index.ts` / `algebra/index.ts` / `exec/index.ts` / `internal.ts`
+ * 均不 re-export 本模块）⇒ 不触公共 API 冻结。
+ *
+ * 已知未覆盖旁路（步骤 3 前必须补齐）：
+ * `service/src/emit/dts-generator.ts::iteratorTSType`（直读 shape 数字下标
+ * 槽）与 `service/src/emit/internal-slot.ts::isIteratorObjectShape` —— 两者
+ * 都在 **service 包**，且 dts 在**导出时**生成、根本没有消费点 ⇒ 不是
+ * 「漏接触发点」，而是结构性不可达（见 `docs/design/generator-laziness.md`
+ * 的 2026-11-06 实证记录）。core 侧的 `next` / `return` / `throw` 三条
+ * 协议方法旁路已于 2026-11-06 补齐（生产侧仍不登记 ⇒ 零语义变化）。
+ */
+const genTriggerTables = new WeakMap<object, (target: Abs) => void>();
+
+/** 同一延迟体族的所有别名（$copy / snapshotAbs 派生）——触发任一时全部填充。 */
+const genTriggerAliases = new WeakMap<object, Abs[]>();
+
+/** 登记「该跑了」触发器（模块间可用，不进 barrel）。幂等由 fireGenTrigger 保证。 */
+export function registerGenTrigger(val: Abs, trigger: (target: Abs) => void): void {
+  genTriggerTables.set(val as object, trigger);
+  const list = genTriggerAliases.get(trigger as object) ?? [];
+  list.push(val);
+  genTriggerAliases.set(trigger as object, list);
+}
+
+/**
+ * 每个 Abs 身份只触发一次；无登记时零开销（WeakMap miss）。
+ * 导出供 `runtime/async.ts` 的协议三方法调用（模块内可用，**不进任何
+ * barrel** ⇒ 公共 API 冻结不受影响，与 `registerGenTrigger` 同口径）。
+ */
+export function fireGenTrigger(a: Abs): void {
+  const fn = genTriggerTables.get(a as object);
+  if (!fn) return;
+  genTriggerTables.delete(a as object);
+  fn(a);
+  // 副本先触发时也要把数据填回原对象（以及同族其它副本）⇒ 消费面
+  // 与 dts 元素域在任何别名上都完整；每个别名只合并一次。
+  const aliases = genTriggerAliases.get(fn as object) ?? [];
+  for (const other of aliases) {
+    if (other === a || !genTriggerTables.has(other as object)) continue;
+    genTriggerTables.delete(other as object);
+    fn(other);
+  }
+}
+
+/**
+ * A1 步骤 3（2026-11-07）：构造期只登记待跑体 ⇒ 「构造后从不消费」的函数
+ * 在求值收口时必须排空一次，否则既有 eager 值面契约（Bug 212 / 族 01
+ * 数字下标）与 dts 元素域（service 纯投影、导出期无消费点）都会退化。
+ * 已在首个消费点触发过的壳此时是 WeakMap miss，幂等无副作用。
+ */
+const pendingGenShells: Abs[] = [];
+export function notePendingGen(val: Abs): void {
+  pendingGenShells.push(val);
+}
+/** 求值入口收口：把所有尚未触发的延迟体跑完（含触发过程中新建的壳）。 */
+export function drainPendingGens(): void {
+  while (pendingGenShells.length > 0) {
+    const batch = pendingGenShells.splice(0, pendingGenShells.length);
+    for (const g of batch) fireGenTrigger(g);
+  }
+}
+
 /** 生成器消费视图（Bug 54）：迭代消费（spread / for-of / Array.from /
  *  解构 / yield*）从当前位取剩余元素并推进生成器状态——与 next() 同步，
  *  侧表不再从 0 重放已消费元素。drain 返回剩余快照并排空（迭代耗尽
@@ -90,29 +164,34 @@ export function registerGenDrain(val: Abs, view: GenIterView): void {
 }
 
 export function drainGenElements(a: Abs): Abs[] | undefined {
+  fireGenTrigger(a);
   const d = genDrainTables.get(a as object);
   return d ? d.drain() : undefined;
 }
 
 /** 消费视图整体读取（R1b）：drain 前后皆可读——exact 是构造期静态事实。 */
 export function genDrainViewOf(a: Abs): GenIterView | undefined {
+  fireGenTrigger(a);
   return genDrainTables.get(a as object);
 }
 
 /** 生成器对象的消费位视图（无条目 → undefined）：$idx 数字下标按
  *  live 视图读（解构 `const [a] = it` 在部分消费后取当前位元素）。 */
 export function peekGenElement(a: Abs, i: number): Abs | undefined {
+  fireGenTrigger(a);
   const d = genDrainTables.get(a as object);
   return d ? d.peek(i) : undefined;
 }
 
 /** 生成器对象消费位判定（$idx 分派） */
 export function hasGenView(a: Abs): boolean {
+  fireGenTrigger(a);
   return genDrainTables.has(a as object);
 }
 
 /** 消费位剩余快照（不推进）——$idx 抽象下标 join 用 */
 export function peekAllGenElements(a: Abs): Abs[] {
+  fireGenTrigger(a);
   const d = genDrainTables.get(a as object);
   return d ? d.peekAll() : [];
 }
@@ -232,6 +311,13 @@ export function copyMatchIterTables(src: Abs, dst: Abs): void {
   if (genIterTables.has(s)) genIterTables.set(d, genIterTables.get(s)!);
   if (genDrainTables.has(s)) genDrainTables.set(d, genDrainTables.get(s)!);
   if (genDeferredTables.has(s)) genDeferredTables.set(d, genDeferredTables.get(s)!);
+  // A1 步骤 2 骨架：待触发的延迟体随副本迁移（触发按身份独立、幂等）。
+  if (genTriggerTables.has(s)) {
+    const fn = genTriggerTables.get(s)!;
+    genTriggerTables.set(d, fn);
+    const list = genTriggerAliases.get(fn as object);
+    if (list) list.push(dst);
+  }
   if (proxyTables.has(s)) proxyTables.set(d, proxyTables.get(s)!);
 }
 
@@ -240,6 +326,7 @@ export function copyMatchIterTables(src: Abs, dst: Abs): void {
  *  （x:any）体内 may-throw 不再被丢弃式帧吞掉），definite 载荷抛
  *  NudoThrow（迭代截断点）。仅构造不消费不重放（Bug 58 口径保持）。 */
 export function replayGenDeferred(a: Abs): void {
+  fireGenTrigger(a);
   const d = genDeferredTables.get(a as object);
   if (!d) return;
   for (const e of d.soft) recordMayThrow(e);
@@ -247,6 +334,7 @@ export function replayGenDeferred(a: Abs): void {
 }
 
 export function matchIterElements(a: Abs): Abs[] | undefined {
+  fireGenTrigger(a);
   if (a.shape.k === "obj" && a.shape.slots["@@iterator"]) {
     const ge = genIterTables.get(a as object);
     if (ge) return ge;

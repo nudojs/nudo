@@ -19,7 +19,7 @@
  */
 import {describe, it, expect} from "vitest";
 import {call, val, isNever, throwsError} from "./eval-helpers.ts";
-import {formatAbs} from "../format.ts";
+import {formatAbs} from "../format/format.ts";
 import {anyAbs} from "../abs.ts";
 
 /** 用户 iterable：对象带自有 @@iterator 方法（原生按迭代序产 1,2,3…） */

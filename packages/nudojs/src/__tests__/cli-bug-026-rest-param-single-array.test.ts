@@ -7,7 +7,7 @@
  * 「单个 rest 实参」再包一层。
  *
  * 钉：zod / standard 的 rest 槽是**一层**数组（`z.array(z.unknown())` /
- * `{"k":"arr","element":{"k":"unknown"}}`），与 dts 的 `...rest: any[]` 同形。
+ * `{"k":"arr","element":{"k":"unknown"}}`），与 dts 的 `...rest: unknown[]` 同形。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -33,7 +33,7 @@ describe("BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () 
     expect(r.stdout).not.toContain("z.array(z.array(");
   }, 60000);
 
-  it("standard 面 rest 槽节点只有一层 arr（与 dts 的 ...rest: any[] 同形）", () => {
+  it("standard 面 rest 槽节点只有一层 arr（与 dts 的 ...rest: unknown[] 同形）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-b026-std-"));
     dirs.push(dir);
     writeFileSync(join(dir, "rest.js"), SRC, "utf-8");
@@ -42,6 +42,6 @@ describe("BUG-026 — rest 参数在 zod / standard 面是**一层**数组", () 
     // BUG-109：rest 槽恒可选 ⇒ standard 槽带 "optional":true（一层数组不变）
     expect(all.stdout).toContain('{"key":"rest","node":{"k":"arr","element":{"k":"unknown"}},"optional":true}');
     expect(all.stdout).not.toContain('{"key":"rest","node":{"k":"arr","element":{"k":"arr"');
-    expect(all.stdout).toContain("...rest: any[]");
+    expect(all.stdout).toContain("...rest: unknown[]");
   }, 60000);
 });

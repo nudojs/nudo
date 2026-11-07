@@ -16,11 +16,11 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
-import { loadModuleDepsFingerprint } from "../load-deps-fp.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { loadModuleDepsFingerprint } from "../key/load-deps-fp.ts";
 
 /** 带违例 case 的源：侧车绑定成功时必产生 nudo:case-inconsistency（-5 ⊭ x>0） */
 const SRC = `

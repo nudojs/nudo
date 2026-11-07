@@ -14,7 +14,7 @@
  * 与 `case "sum"` 共用；既有的 `sum` 分组判定**保留**。
  */
 import { describe, it, expect } from "vitest";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { abs, numLit, strLit, type Abs } from "../abs.ts";
 import { call } from "./eval-helpers.ts";
 

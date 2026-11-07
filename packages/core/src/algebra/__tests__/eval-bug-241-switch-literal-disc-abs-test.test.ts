@@ -21,8 +21,8 @@ import { describe, it, expect } from "vitest";
 import { call } from "./eval-helpers.ts";
 import { abs, litValue } from "../abs.ts";
 import { pTrue } from "../pred.ts";
-import { formatAbs } from "../format.ts";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { formatAbs } from "../format/format.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 
 /** 抽象 number 判别值（非字面量） */

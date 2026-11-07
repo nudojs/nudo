@@ -25,7 +25,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { abs, litValue, type Abs } from "../abs.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../exec/may-throw.ts";

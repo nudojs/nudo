@@ -39,8 +39,8 @@ describe("BUG-028 — stdout 不劫持用户导出名", () => {
     writeFileSync(join(dir, "collide.js"), SRC, "utf-8");
     const r = runCliTsx(["export", join(dir, "collide.js"), "--format", "all"]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("export declare function fooInput(y: any): any;");
-    expect(r.stdout).toContain("export declare function fooOutput(z: any): any;");
+    expect(r.stdout).toContain("export declare function fooInput(y: unknown): unknown;");
+    expect(r.stdout).toContain("export declare function fooOutput(z: unknown): unknown;");
     expect(r.stdout).not.toContain("fooInputDts");
     expect(r.stdout).not.toContain("fooOutputDts");
     // 生成的校验器名让位（不是抢占用户导出名）

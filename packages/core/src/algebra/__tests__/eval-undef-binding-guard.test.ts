@@ -18,7 +18,7 @@ import {
   litValue,
   type EvalFallback,
 } from "@nudojs/core";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { typeofAbs } from "../surface.ts";
 import { $len, $set, $idx } from "../exec/runtime/containers.ts";
 import { numLit, strLit, unknown, abs } from "../abs.ts";

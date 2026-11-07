@@ -7,7 +7,7 @@
 [![Docs](https://img.shields.io/badge/docs-nudojs.github.io%2Fnudo-5b4bd4)](https://nudojs.github.io/nudo/)
 [![Playground](https://img.shields.io/badge/playground-try%20online-a29bfe)](https://nudojs.github.io/nudo/playground)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
 Nudo does not restrict how you write JavaScript. It executes your code on Abs (`shape × term × pred × conf`) so you can **faithfully observe** intermediate values and results — and **validate** them with explicit contracts sharper than ordinary TypeScript types.
 
@@ -288,6 +288,8 @@ Nudo's analysis **executes** the code it is given: the evaluator evaluator trans
 - Sidecar contracts (`*.nudo.js`) and `@nudo:mock` / `@nudo:mock-module` files are ordinary JS and are executed during analysis — they sit inside the same trust boundary.
 
 This is not a sandbox: Nudo does not isolate the evaluation process. Analysis budgets only stop runaway inference; they are not a security boundary.
+
+**Scope.** `nudo check` targets **trusted** pure-JS / light-TS codebases with enumerable call sites and an API surface covered by built-in envs or mocks. Outside that scope it is a complement to `tsc`, not a drop-in replacement: native callbacks, dynamic `require` and uncovered builtins keep honest `unknown` bounds, and `migrate` still dual-runs `tsc` during `verify`. See [`docs/design/limitations.md`](./docs/design/limitations.md) §5 for the claim boundary and [`benchmark/README.md`](./benchmark/README.md) for the only three externally quotable metrics.
 
 Execution model & trust boundary (source of truth): [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md)「执行模型与信任边界」.
 

@@ -60,7 +60,7 @@
 | 混合 `+` 粗化 | **已收窄** | number⊗obj/unknown 等 → `number\|string`（不再纯 unknown）；粗化本身仍是纪律 |
 | LSP 客户端 UI 缺口 | 跟踪表已建 | [`lsp-client-gaps.md`](./lsp-client-gaps.md)（LSP-G1…；文档同步 LSP-G5 已关） |
 | 模块顶层必抛（`module-throw`） | **已收口**（句法证据） | 顶层语句序列**无条件**执行的 `throw` ⇒ 模块永远不可导入 ⇒ error 级 `nudo:module-throw`（每模块一条；`--entry-throws off` / `--ignore-throws <Kind>` 放行）。**召回边界**：条件抛（宿主守卫）、try 内抛、以及**没有顶层 `throw` 语句**的引擎判定抛（真实包 `typescript` / `react-dom` / `vitest` 中 6 个文件如此回落，其中 react-dom 的 cjs bundle 原生可装载）**不报** —— 引擎的「必抛」混着宿主 API 近似的产物，不是关于程序的证据（判据见 `check-may-throw.ts` 的 `definiteModuleThrowOf`） |
-| 生成器体惰性（Bug 212） | **已收窄（2026-11-04，步骤 1）** | 生成器体在**构造期**就跑完 ⇒ 外层绑定被提前改写，且改成一个**在任何原生观测点都不成立**的值（引擎 `1` / 原生 `0`）。两条硬约束：① **eager 收集是值域/签名面的承重结构**（元素域与 `conf` 构造期烘进 shape ⇒ 惰性化会把 `Generator<any \| number>` 退成 `Generator<unknown>`，并降 `conf` ⇒ 冲击 L1/L2 门禁精度）；② **外层绑定的写穿在 runtime 侧无句柄可拦**（转译产物是闭包变量的裸 JS 赋值，`$assignRecord` 只观测、返回值被丢弃）⇒ 任何修法都要先有转译侧钩子。**最小修法（纯转译侧、不动公开面）**：在 `$gen` 的体外套「自由写快照 + `$join` 折回」，复用仓里已有的 `collectFreeAssignedNames` ⇒ 把「确定的错值」变成 **sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族）。完整数据流 / 消费面清单 / 分步路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 1 已落地（2026-11-04）**：四个 `$gen` 发射点统一「自由写快照 + `$join` 折回」（`exec/transpile/emit.ts` 的 `genOuterFreeWriteNames` / `genFreeWriteWrap`）⇒ wrong-exact 消灭（`1`→`0\|1`、`"ab"`→`""\|"ab"`、`5`→`0\|5`；元素面/`conf` 承重与「不写外层绑定」的产物**不变**）；残余 = 首个 yield 挂起点的中间值（native `1` / `"a"`）不在 join 内——需步骤 2–4（真挂起）。回归钉：`eval-bug-212-generator-body-eager.test.ts`。**同类的 10 条「卡在求值模型 / Abs 表示层」的欠账**（relation/apply 缺 throws 通道、union 按成员名分派、fn 形状无 overload 承载位、`substAbs` 丢 fn impl、类 ≠ 可调用值）统一登记在 [`architecture-debt.md`](./architecture-debt.md) ⇒ 需**独立排期 + 独立回归基线**（动 `Abs` 形状会全局影响 `leqAbs` ⇒ 影响全部门禁接受集） |
+| 生成器体惰性（Bug 212） | **值面已闭合（2026-11-07，步骤 4）** | **2026-11-07 更新（覆盖下方历史口径）**：步骤 3（延迟体到首消费点）与步骤 4（挂起点绑定回放）均已落地 ⇒ §1.6 四行 native 值 `0` / `""` / `1` / `"a"` **全部逐点精确**；连续 `next()`、跨函数消费叠加、迭代 drain 亦精确；路径敏感 / `yield*` 委托 / 未启动生成器的 `.return()` 由 sound 守卫回退到 join。**残余**只剩「非绑定类副作用（宿主调用、may-throw 收集）时序」的全量真挂起 —— 体仍一次跑完，字面方案在本内核需 CPS 级改造（见 [`generator-laziness.md`](./generator-laziness.md) §5.4 订正与文末「步骤 4 实施记录」）。以下为 2026-11-04 步骤 1 时点的历史存档：生成器体在**构造期**就跑完 ⇒ 外层绑定被提前改写，且改成一个**在任何原生观测点都不成立**的值（引擎 `1` / 原生 `0`）。两条硬约束：① **eager 收集是值域/签名面的承重结构**（元素域与 `conf` 构造期烘进 shape ⇒ 惰性化会把 `Generator<any \| number>` 退成 `Generator<unknown>`，并降 `conf` ⇒ 冲击 L1/L2 门禁精度）；② **外层绑定的写穿在 runtime 侧无句柄可拦**（转译产物是闭包变量的裸 JS 赋值，`$assignRecord` 只观测、返回值被丢弃）⇒ 任何修法都要先有转译侧钩子。**最小修法（纯转译侧、不动公开面）**：在 `$gen` 的体外套「自由写快照 + `$join` 折回」，复用仓里已有的 `collectFreeAssignedNames` ⇒ 把「确定的错值」变成 **sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族）。完整数据流 / 消费面清单 / 分步路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 1 已落地（2026-11-04）**：四个 `$gen` 发射点统一「自由写快照 + `$join` 折回」（`exec/transpile/emit.ts` 的 `genOuterFreeWriteNames` / `genFreeWriteWrap`）⇒ wrong-exact 消灭（`1`→`0\|1`、`"ab"`→`""\|"ab"`、`5`→`0\|5`；元素面/`conf` 承重与「不写外层绑定」的产物**不变**）；残余 = 首个 yield 挂起点的中间值（native `1` / `"a"`）不在 join 内——需 A1 步骤 3/4（本批次明确停点；步骤 2 的触发点骨架已零回归落地，见 `generator-laziness.md`）。回归钉：`eval-bug-212-generator-body-eager.test.ts`、`gen-trigger-skeleton.test.ts`、`eval-generator-cross-function-consume.test.ts`。**同类的 A 类欠账共 10 个编号**（A3 / A4 / A5 / A6 / A7 已修，A1 步骤 1 已落地）统一登记在 [`architecture-debt.md`](./architecture-debt.md)。**2026-11-05：`Abs.facets` 的 `callable` / `protoOwnKeys` / `brand` 三槽承载位已逐条启用**，无需再动 `Shape` 判别联合，`leqAbs` 既有接受集未变；三槽各自独立基线 + 全仓回归零新增失败 ⇒ 分步方案、接线明细与残余边界见台账「受控 minor 执行方案」节。**仍约束决策**的只剩一类：① **A1 步骤 3/4 真挂起**（引擎内核改造；步骤 2 的触发点骨架与协议面旁路已零回归落地，但 `conf` 可提升 / 首消费点 / 真挂起属独立成族 + 独立全仓基线；**2026-11-06 独立成族轮把停点从文档推断升级为 5 组实测**：构造期空体 ⇒ 100 失败、无元素槽 ⇒ dts 退 `Generator<unknown>`、`snapshotAbs` 副本丢补写、body thunk 是活绑定但重跑重复副作用 ⇒ 详见 `generator-laziness.md`「2026-11-06 独立成族轮」）。**已收口**：nudo any / TS unknown 的翻译口径（2026-11-06 产品裁定 ⇒ TS 投影面全局归一，dts 与 zod / standard / guard 四面同口径；nudo 展示面仍区分 any 与 unknown；BUG-076 文档矛盾关闭，Bug 544 的 TS2571 改判为正确提示）、「静态 yield 域推断 vs 接受 `Generator<unknown>` 降级」的产品拍板（2026-11-06 符号 yield 域 PoC 用 14 形态 / 0 unsound / 回填零精度损失实证关闭 ⇒ 走推断通道，降级只作失败回退；接产绑定步骤 3；退化档 `any` → `unknown` 已于 2026-11-06 第五轮归一落地，见 `generator-laziness.md`「TS 投影面归一」节；**末轮复核实测：归一后体延后仍 100 条生成器族回归 ⇒ 归一不解锁步骤 3 的值面**，步骤 3 可立项但需独立成族）、第三种静态元素域通道（`AbsFacets.genElements` 显式承载 + dts 同源投影 + 返回注解降级为一致性诊断；**⚠️ 不解锁步骤 3**，理由见 `generator-laziness.md` 「第三种已落地」节）、schema / standard / guard 生成器身份投影（2026-11-05 产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧，按 soundness patch 发布；2026-11-06 补齐嵌套字段递归投影并实测跨 realm 判据后保留 `toStringTag` 口径；`z.instanceof` 路径仍不可行，见台账实施记录与 `emit-generator-identity-poc.test.ts`）、A2 声明/收割面确定抛（含 `HARVEST_DISK_ABI` v15）、A10 内建原型自有键集（宿主采集对拍）与用户类原型交错定义序（`EvalClassSpec.protoMemberOrder`）、A11 TReturn（`Generator<T, TReturn>`）与 TNext **保守域**（第三实参 `unknown`，与 TS 默认值等价；真实 `.next(v)` 入参域仍依赖 A1 步骤 4）  **2026-11-07 步骤 3 已落地**（触发式填充 + 求值收口排空 + 别名广播；构造点收敛为精确值、跨函数消费读到消费期绑定；**剩余仅步骤 4 真挂起**，见 `generator-laziness.md`「步骤 3 实施记录」） |
 
 ---
 
@@ -83,9 +83,11 @@
 
 ### 1.5 覆盖率地板 ≠ 质量证明
 
-`vitest.config.ts` 的 per-package coverage floors（env/harvester/vite-plugin/parser）
-是**防静默倒退**的地板，不是完备性承诺。env 分支基线仍薄；薄包不得躲在 core
-体量下被全局阈值掩盖。测试面加厚时**只升不降** floors；降 floor 必须在 PR 里写清原因。
+`vitest.config.ts` 的 per-package coverage floors（core / service / lsp / nudojs
++ env / harvester / vite-plugin / parser，共 8 个）是**防静默倒退**的地板，不是
+完备性承诺。四大包的 floor 是**保守起步值**（首次全量 baseline 后按
+`pnpm run coverage:floors` 的实测建议上调，只升不降）；薄包不得躲在 core
+体量下被全局阈值掩盖。env 分支基线仍薄；降 floor 必须在 PR 里写清原因。
 
 ---
 
@@ -166,3 +168,22 @@ function portOf(cfg) { return cfg?.server?.port ?? 8080; }
 已闭环条目（一行锚）归档在 [`../reports/limits-resolved.md`](../reports/limits-resolved.md)；行为以测试 / `docs/examples/` 为准。
 
 金标与 CI 门禁见 [`../ci-nudo-check.md`](../ci-nudo-check.md) 与 cli-semantics §5.6。
+
+---
+
+## 5. 对外宣称边界（写 README / 官网 / 发布说明前先读）
+
+`nudo check` 是**可信代码库上的执行式契约门禁**，不是 `tsc --noEmit` 的无条件
+替代品。以下边界与 §1 / §2 同源，对外文案不得越过：
+
+| 可以宣称 | 不可以宣称 |
+|---|---|
+| 纯 JS / TS（注解剥离后按 JS 语义）上，基于真实调用点给出签名与 L1/L2 门禁 | 「不需要任何注解就能推出完整类型」——义务只来自显式契约或调用点事实（§1.1） |
+| 在**可信**仓库里作为 CI 门禁（与跑项目测试同信任级） | 「可用于不可信 PR / 用户提交」——分析会执行目标代码、sidecar 与 mock（信任边界见 `kernel-merge.md`） |
+| 已覆盖的内建 API 面可给出精确结果 | 「等价于完整 `@types` / Node 运行时」——env/harvest 覆盖有限，mock 不可替代（§2） |
+| 对可枚举调用点的函数给出 `call@` 见证 | 「全程序精确」——native 回调、动态 `require`、递归预算、闭包首次调用前返回面等均有天花板（§2、§3） |
+| 与 TypeScript 并存、逐步用 `migrate` 退休 `tsc` | 「`tsc` 已可删除」——`migrate` 是单向闸门，`verify` 阶段仍需双跑 |
+
+**适用范围（对外一句话）**：可信的纯 JS / 轻 TS 代码库、调用点可枚举、依赖面可用
+env 或 mock 覆盖。超出范围时把 Nudo 定位为 `tsc` 的**补充门禁**而非替代。
+精度数字只引用 [`../../benchmark/README.md`](../../benchmark/README.md) 列出的三个口径。

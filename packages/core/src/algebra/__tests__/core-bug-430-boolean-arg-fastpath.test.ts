@@ -17,7 +17,7 @@
  * 注：`NullLiteral` 分支由族 06（Bug 965）补上；本条只剩 `BooleanLiteral`。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";

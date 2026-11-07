@@ -140,7 +140,7 @@
     "@nudojs/parser": "workspace:*"
   },
   "devDependencies": {
-    "@types/vscode": "1.85.0"
+    "@types/vscode": "1.91.0"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts && node ./scripts/bundle-server.mjs",

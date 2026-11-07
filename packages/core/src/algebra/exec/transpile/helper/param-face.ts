@@ -7,7 +7,7 @@
  * WeakMap）。形参表面单一实现来自 param-surface.ts。
  */
 import type { Node } from "@babel/types";
-import { formalParamsFromNodes, formalParamDisplayNames } from "../../../param-surface.ts";
+import { formalParamsFromNodes, formalParamDisplayNames } from "../../../format/param-surface.ts";
 
 export function paramDisplayNames(params: unknown[] | undefined): string[] {
   return formalParamDisplayNames(formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]));

@@ -26,7 +26,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, abs, v, ptypeof } from "../index.ts";
-import { structuralAssignIssues } from "../check-assign.ts";
+import { structuralAssignIssues } from "../check/check-assign.ts";
 import type { AbsAssignRecord } from "../ast-records.ts";
 
 /** 旧值：shape `prim string` + 调用点派生的 pred（关于调用方变量 `text`） */

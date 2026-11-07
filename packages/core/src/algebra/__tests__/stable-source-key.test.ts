@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stableAnalyzeKeySource } from "../stable-source-key.ts";
+import { stableAnalyzeKeySource } from "../key/stable-source-key.ts";
 
 describe("stableAnalyzeKeySource", () => {
   it("strips trailing non-nudo line comments", () => {

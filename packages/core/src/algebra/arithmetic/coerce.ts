@@ -10,8 +10,8 @@ import type { Abs } from "../abs.ts";
 import { isStrPrim, isBigPrim, bigintLit, litValue, num, numLit, str, strLit } from "../abs.ts";
 import type { LiteralValue } from "../term.ts";
 import { getSlot } from "../objects.ts";
-import { NudoThrow } from "../nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
+import { NudoThrow } from "../diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../diagnostics/may-throw.ts";
 import { boxedPrimitiveValue, isErrorCtorName } from "../builtins/error.ts";
 
 /**

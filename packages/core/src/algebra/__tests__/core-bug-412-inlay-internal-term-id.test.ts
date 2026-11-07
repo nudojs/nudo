@@ -20,7 +20,7 @@
  * **不**断言「同源码必漂移」。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 const retLabel = (src: string): string => {
   const inlays = collectAbsInlays(src, { fromFile: "/t/a.js" });

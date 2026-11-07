@@ -11,6 +11,8 @@
  * analyze 的剥离在**发射期**完成：本文件不再解析生成产物做二次剥除。
  */
 
+import { drainPendingGens } from "./match-iter.ts";
+
 import {
   rtAllBindings,
   compileRuntimeModuleUnit,
@@ -30,7 +32,7 @@ import { never, unknown, abs, strLit, isAbsLike } from "../abs.ts";
 import { makeAbsApplyResult, getFnImpl, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf, defaultImportBindingOf } from "../abs-modules.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { transpileModule, transpileExpression } from "./transpile.ts";
 import { shadowedIntrinsicsOf } from "./transpile/helpers.ts";
 import { RUNTIME_IMPORT_RE } from "./transpile/runtime-import.ts";
@@ -41,7 +43,7 @@ import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros, errorBrandAbs } from "../builtins.ts";
-import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../code-text.ts";
+import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../format/code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset, NudoThrow } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { refineFnReturnType } from "./class.ts";
@@ -1178,7 +1180,11 @@ export function callTranspiledExportFull(
       // 入口刷新 = 被调方读绑定前先对齐到依赖当前导出值（ESM live binding
       // 语义）。refresh 闭包纯读不发起新调用（无重入）；注册表空时零开销。
       refreshLiveImports();
-      return callTranspiledExportFullInner(exports, name, args, opts);
+      const result = callTranspiledExportFullInner(exports, name, args, opts);
+      // A1 步骤 3：求值收口排空未消费的延迟体 ⇒ 既有 eager 值面契约与
+      // service 侧 dts 纯投影面的元素域都不退化（消费点已触发者幂等）。
+      drainPendingGens();
+      return result;
     } finally {
       exitEvalCallBudgetSession();
       noteDrainedClassCollisions();

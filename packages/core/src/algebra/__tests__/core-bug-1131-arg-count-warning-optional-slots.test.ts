@@ -13,13 +13,13 @@
  * 总数）时才发；少参 error 仍按 `required`（必填位）判。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkCallSite } from "../diagnostics.ts";
+import { checkCallSite } from "../diagnostics/diagnostics.ts";
 import { numLit } from "../abs.ts";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
+import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 

@@ -47,23 +47,40 @@ export function harvestedValueToAbs(a: Abs): Abs {
     // `ctor: true`（core 的 `new` 路径据此认它是构造函数）。mock 化时丢掉它
     // ⇒ `new X()` 落「可构造性未知」⇒ 记 may TypeError（L2 假红）。
     const ctor = (a.shape as { ctor?: boolean }).ctor;
-    return markMockConf(
-      absFunction(
-        params,
-        {
-          body: dummyBody,
-          apply: (args) => {
-            // 泛型：uniq(number[]) → number[]；无 relation 时退回声明返回
-            if (relation) {
-              return markMockConf(instantiateReturn(a, args));
-            }
-            return markMockConf({ ...ret });
-          },
-          ...(relation ? { relation } : {}),
+    const built = absFunction(
+      params,
+      {
+        body: dummyBody,
+        apply: (args) => {
+          // 泛型：uniq(number[]) → number[]；无 relation 时退回声明返回
+          if (relation) {
+            return markMockConf(instantiateReturn(a, args));
+          }
+          return markMockConf({ ...ret });
         },
-        ctor !== undefined ? { ctor } : undefined,
-      ),
+        ...(relation ? { relation } : {}),
+      },
+      ctor !== undefined ? { ctor } : undefined,
     );
+    // A2 残余：mock 化是**重建**（absFunction 造新 Abs）⇒ 必须整包搬运
+    // `facets`，否则 `classValueAbs` 挂的 `callable:false` 在这里被静默
+    // 抹掉（A7 同型教训），产品面 `JSON.stringify(obj, DeclaredClass)`
+    // 又变「声称不抛」的假绿。深拷贝键集数组，不与原 Abs 共享可变状态。
+    if (a.facets !== undefined) {
+      const f = a.facets;
+      built.facets = {
+        ...f,
+        ...(f.protoOwnKeys
+          ? {
+              protoOwnKeys: {
+                strings: [...f.protoOwnKeys.strings],
+                ...(f.protoOwnKeys.symbols ? { symbols: [...f.protoOwnKeys.symbols] } : {}),
+              },
+            }
+          : {}),
+      };
+    }
+    return markMockConf(built);
   }
   return markMockConf({ ...a });
 }

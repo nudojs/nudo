@@ -26,10 +26,10 @@ import {
   formalParamsFromNodes,
   formalParamSignatureNames,
   locateContractParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 
 const thisParamSource =

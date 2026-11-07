@@ -23,7 +23,7 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue, abs } from "../abs.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,

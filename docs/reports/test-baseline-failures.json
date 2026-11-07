@@ -1,0 +1,27 @@
+{
+  "note": "本地 Node 22 全量基线；CI 用 Node 24。仅含宿主面/环境相关的已知失败，不含任何代码回归。用 scripts/test-baseline.mjs --update 重新固化。",
+  "host": "darwin / Node 22.22.2 (CI: ubuntu-latest / Node 24)",
+  "updated": "2026-11-05",
+  "expectedFailedTests": [
+    "packages/core/src/algebra/__tests__/builtin-coverage-floor.test.ts > builtin coverage floor（宿主面 vs 两级台账） > 台账无僵尸条目（已登记但运行时不存在 → 删除条目或挪 VERSION_SKEW）",
+    "packages/core/src/algebra/__tests__/builtin-coverage-floor.test.ts > builtin coverage floor（宿主面 vs 两级台账） > 运行时宿主面全部登记（未登记名字 → 建模或登记 ALLOWED 并写理由）",
+    "packages/core/src/algebra/__tests__/eval-brand-method-presence.test.ts > Bug 40: TA 家族抽样（12 家族共用 %TypedArray%.prototype 面） > typeof new Float16Array(2).sort / fill / entries → function；\"join\" in → true",
+    "packages/core/src/algebra/__tests__/eval-bug-303-ta-buffer-length-multiple.test.ts > Bug 303 负控制：合法 buffer 形态不回退 > Float16Array / 6 字节 → 3",
+    "packages/core/src/algebra/__tests__/eval-ta-ctors.test.ts > Bug 21: TypedArray constructor ToIndex validation > 负数/超界/±∞ 字面量（含数字字符串折算）→ definite RangeError（全家族）",
+    "packages/core/src/algebra/__tests__/eval-ta-ctors.test.ts > Bug 27: TypedArray static from/of validation > from(nullish) → definite TypeError（含 Int16/Float64/BigInt64/Float16 家族）",
+    "packages/core/src/algebra/__tests__/eval-ta-ctors.test.ts > Bug 27: TypedArray static from/of validation > of 逐项 ToNumber（number 域）：symbol/bigint 项 → definite TypeError",
+    "packages/env/src/__tests__/env-bug-61-node-surface.test.ts > 族 61-5 · ESM 上下文全局面：宿主平台全局 vs 130（env 声明） > 5.1 宿主平台全局与 env 声明逐名对账（宿主面随 Node 版本漂移 ⇒ 不钉绝对值）",
+    "packages/env/src/__tests__/zz-agg-env.test.ts > Bug 863 — node env 全局清单补齐（未建模构造器不再铸空 brand） > 原生 oracle：报告点名的 17 个构造器在真实 Node 上确实存在",
+    "packages/env/src/__tests__/zz-agg-env.test.ts > Bug 865 · ES 规范全局的「已被覆盖」判定 > 2. core 已建模的全局不再被报「未被覆盖」（白名单按建模能力推导）",
+    "packages/env/src/__tests__/zz-agg-env.test.ts > Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined 分支） > 5. promise 族同口径：兑现值含 undefined",
+    "packages/lsp/src/__tests__/lsp-bug-762-derived-emit.test.ts > Bug 762：contract.emit 走 root 驱动下行推导 > 协议面：nudo.contract.emit 同样产出下游侧车",
+    "packages/lsp/src/__tests__/lsp-bug-762-derived-emit.test.ts > Bug 762：contract.emit 走 root 驱动下行推导 > 工具面：下游侧车 add.nudo.js 被写出来，且文本点名 derived-from",
+    "packages/lsp/src/__tests__/lsp-bug-765-unsaved-buffer-emit.test.ts > Bug 765：emit 不得拿未保存的 buffer 覆盖磁盘 > 源文件根本没有落盘（新建未保存）⇒ 同样拒写盘",
+    "packages/nudojs/src/__tests__/cli-bug-63b-path-errors-face.test.ts > 族 63b 负控: 无闸门错误时输出逐字不变（既有场景零影响） > contract --json（干净文件）：stdout 与改前基线逐字一致 + 无 targetErrors",
+    "packages/nudojs/src/__tests__/cli-bug-661-json-path-errors.test.ts > Bug 661 —— contract --json 的路径错误必须进 JSON body > print 形态 + 缺失路径：stdout 是合法 JSON 且带 pathErrors[] + exit 1",
+    "packages/nudojs/src/__tests__/cli-bug-664-draft-json-parse-error.test.ts > Bug 664 —— contract --json 遇语法错文件：失败 root 必须进载荷 > print 形态（--json）+ 语法错：同样有 errors 条目（机器面统一）",
+    "packages/nudojs/src/__tests__/cli-bug-664-draft-json-parse-error.test.ts > Bug 664 —— contract --json 遇语法错文件：失败 root 必须进载荷 > 单文件（语法错）+ --draft --json：stdout 非空 + 合法 JSON + errors[] + exit 1",
+    "packages/nudojs/src/__tests__/cli-bug-684-watch-mixed-paths.test.ts > Bug 684 — watch 多路径且首个是文件 ⇒ 增量轮不再永不触发 > 首个路径是文件 + 另有目录路径：改首个文件自身也会触发增量轮",
+    "packages/nudojs/src/__tests__/cli-bug-685-watch-event-attribution.test.ts > Bug 685 — watch 事件路径归属真实变更文件 > 同目录多文件：改第一个文件 ⇒ 增量轮重跑的是它（回归护栏）"
+  ]
+}

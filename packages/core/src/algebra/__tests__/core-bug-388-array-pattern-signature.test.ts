@@ -15,10 +15,10 @@ import { describe, it, expect } from "vitest";
 import {
   formalParamsFromNodes,
   formalParamSignatureNames,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 
 /** 数组解构 AST：`[x, y]` */

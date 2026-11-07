@@ -10,7 +10,7 @@
  * 本钉：匿名 default 形态也要有返回 inlay。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 const returnInlays = (src: string) =>
   collectAbsInlays(src, { fromFile: "/test/file.js" }).filter((i) => i.kind === "type");

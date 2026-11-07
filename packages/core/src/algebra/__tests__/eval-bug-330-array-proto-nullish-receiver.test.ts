@@ -18,7 +18,7 @@
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 
 /** 结果字面量值（litValue） */

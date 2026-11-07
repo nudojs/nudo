@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 const SIDECAR_NAMED = `import { fn, number } from "@nudojs/core";

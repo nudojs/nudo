@@ -167,6 +167,9 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   // （否则守卫写成 `data === 1`，把「一次兜底观测」钉成出口域）。
   const widened = widenUncertainLiteral(abs);
   const src = stripInvisibleSlots(widened ?? abs);
+  // 2026-11-06：生成器身份子句由 core `denoteGuardB` 递归生成（顶层 + 嵌套
+  // 槽值一视同仁），此处不再单独注入 ⇒ 与 zod / standard 面同口径，也不会
+  // 在产物里重复两次身份判定。
   const body = denoteGuard(src, "data");
   const valueType = guardValueType(src);
   // BUG-250：身份子句会收窄 `data` ⇒ 索引读报 TS7053（见 hasIdentityClause）

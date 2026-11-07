@@ -11,9 +11,9 @@ import { describe, it, expect } from "vitest";
 import {
   estimateEntryParamCount,
   isDefaultExportName,
-} from "../check-signatures.ts";
+} from "../check/check-signatures.ts";
 import { parseSource } from "../parse-source.ts";
-import { effectiveInterface } from "../interface.ts";
+import { effectiveInterface } from "../interface/interface.ts";
 import { extractRefinesFromSource } from "../refine.ts";
 
 describe("regex-metachar function names", () => {

@@ -39,6 +39,7 @@ import {
   type SchemaNode,
   type SchemaRefinement,
 } from "./schema-generator.ts";
+import { generatorTagFromValue } from "./generator-identity.ts";
 
 export type StandardSchemaIssue = {
   message: string;
@@ -213,6 +214,15 @@ function checkNode(
         }
         return;
       }
+      case "generator": {
+        // Bug fix（2026-11-05）：dts 面声明 Generator / AsyncGenerator ⇒
+        // 运行时校验器必须真的验出身份，不能只判「是个对象」。
+        // 判据与 zod / guard / 产物内联版同口径（generator-identity.ts）。
+        if (generatorTagFromValue(value) !== node.tag) {
+          pushIssue(issues, path, `expected ${node.tag}, got ${typeOf(value)}`);
+        }
+        return;
+      }
       case "never":
         pushIssue(issues, path, "expected never");
         return;
@@ -375,6 +385,7 @@ type NudoSchemaNode =
   | { k: "union"; members: readonly NudoSchemaNode[] }
   | { k: "promise"; inner: NudoSchemaNode }
   | { k: "brand"; name: string }
+  | { k: "generator"; tag: "Generator" | "AsyncGenerator" }
   | { k: "fn" }
   | { k: "summarized" }
   | { k: "never" }
@@ -447,6 +458,13 @@ function __nudoCheck(node: NudoSchemaNode, value: unknown, path: (string | numbe
       }
       return;
     }
+    case "generator":
+      // 与库函数版 checkNode / zod 面 z.custom / guard 面身份子句同判据：
+      // Object.prototype.toString 读内置 toStringTag（跨 realm 可判）。
+      if (Object.prototype.toString.call(value) !== "[object " + node.tag + "]") {
+        push("expected " + node.tag + ", got " + __nudoTypeOf(value));
+      }
+      return;
     case "never":
       push("expected never");
       return;
@@ -655,6 +673,8 @@ function schemaNodeSource(node: SchemaNode): string {
       return `{"k":"promise","inner":${schemaNodeSource(node.inner)}}`;
     case "brand":
       return `{"k":"brand","name":${JSON.stringify(node.name)}}`;
+    case "generator":
+      return `{"k":"generator","tag":${JSON.stringify(node.tag)}}`;
     case "fn":
       return `{"k":"fn"}`;
     case "never":

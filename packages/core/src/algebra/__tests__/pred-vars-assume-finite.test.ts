@@ -8,7 +8,7 @@
  * 对照：pred.ts predVars / 本文件 renamePred / hof.ts 均有该分支。
  */
 import { describe, it, expect } from "vitest";
-import { collectPredVars, instantiateMemoKey, alphaRenameResult } from "../generalize-key.ts";
+import { collectPredVars, instantiateMemoKey, alphaRenameResult } from "../key/generalize-key.ts";
 import { assumeFinite, predVars } from "../pred.ts";
 import { v } from "../term.ts";
 import { abs } from "../index.ts";

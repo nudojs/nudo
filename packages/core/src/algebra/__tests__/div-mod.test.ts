@@ -3,7 +3,7 @@ import { div, mod } from "../arithmetic.ts";
 import { numLit, num, abs } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { ge, pTrue } from "../pred.ts";
-import { formatAbs, formatShape } from "../format.ts";
+import { formatAbs, formatShape } from "../format/format.ts";
 
 describe("algebra div/mod", () => {
   it("lit div", () => {

@@ -72,9 +72,10 @@ describe("族 65 · 第 1 条 —— Object.getOwnPropertySymbols 自有 symbol 
   it("1.4 负控：键集不可判的接收者仍是保守 symbol[] （不折空）", () => {
     const r = call(`export function f(x) { return Object.getOwnPropertySymbols(x); }`, "f", [anyAbs]).result;
     expect(shapeOf(r)).toBe("arr<symbol>");
-    // 原型 brand 的自有 symbol 键未建模 ⇒ 同样保守
+    // A10 残余已收口：内建原型的自有 symbol 键由随值携带的键集精确给出
+    // （数量随宿主 Node 版本变化，故动态对拍，不写死常量）。
     const p = call(`export function f() { return Object.getOwnPropertySymbols(Array.prototype); }`).result;
-    expect(shapeOf(p)).toBe("arr<symbol>");
+    expect(shapeOf(p)).toBe(`tuple[${Object.getOwnPropertySymbols(Array.prototype).length}]`);
   });
 
   it("1.5 负控：nullish 接收者定抛 TypeError （原生同）", () => {

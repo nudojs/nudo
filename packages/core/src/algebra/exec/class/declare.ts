@@ -215,6 +215,8 @@ export function $class(
     instanceFields: spec.instanceFields,
     accessors: ownRec(spec.accessors),
     staticAccessors: ownRec(spec.staticAccessors),
+    // A10 残余：原型自有键源码序（缺省不出现 ⇒ 手写 spec / mock 桥零回归）
+    ...(spec.protoMemberOrder ? { protoMemberOrder: [...spec.protoMemberOrder] } : {}),
   };
   // Bug 60：计算键折叠——键表达式已在 spec 对象字面量构造时求值（定义期，
   // throws 效果已记录）。字面量 string/number 键 → 挂真名；抽象键
@@ -272,6 +274,22 @@ export function $class(
     rekey(full.statics);
     rekey(full.accessors);
     rekey(full.staticAccessors);
+    // A10 残余：有序表随计算键折叠同步换名 / 摘除抽象键，且**保持源序**。
+    // 与 rekey(rec) 的「真名已占用则保留 synth 名」口径略有差异：这里直接
+    // 取 renames 的真名（有序表只是键名清单，不存在键冲突的挂值问题）；
+    // 换名后若出现重名则保留首次位置（同 get/set 归并口径）。
+    if (full.protoMemberOrder) {
+      const kept: string[] = [];
+      const seen = new Set<string>();
+      for (const k of full.protoMemberOrder) {
+        if (drops.has(k)) continue;
+        const real = renames.get(k) ?? k;
+        if (seen.has(real)) continue;
+        seen.add(real);
+        kept.push(real);
+      }
+      full.protoMemberOrder = kept;
+    }
     // Bug 139：实例字段的计算键（synth 名）同 statics 折叠真名——键表达式
     // 已在定义期求值（computedKeys 表），此处只把 synth 名换成真名；抽象键
     // （any/symbol/…）不可静态列举 → 丢弃该字段（不假精确挂名，与旧
@@ -311,6 +329,11 @@ export function $class(
     undefined,
     "exact",
   );
+  // A2+A8 · 槽位启用：把「类值不可裸调用」从 class-mark.ts 的 WeakMap
+  // 侧表升级为**随 Abs 值携带**的形状面。subst / snapshot / join 会整包
+  // 搬运 ⇒ 重铸 / 快照后的类值仍能被 isClassValueCallee 判定（旧实现靠
+  // WeakMap 对象身份，跨重建点静默漏判）。
+  val.facets = { ...(val.facets ?? {}), callable: false };
   // BUG-172：规格随类值携带（成员查表按值自己的规格解析，不再裸名回表）
   attachClassSpec(val, full);
   markClassValue(val as object, name);

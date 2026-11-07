@@ -8,10 +8,10 @@ import { isMapAbs, isSetAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, instantiateReturn } from "../hof.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { pTrue } from "../pred.ts";
-import { defaultLeakBudget } from "../leak.ts";
+import { defaultLeakBudget } from "../diagnostics/leak.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { isNullishLitAbs } from "../surface.ts";
-import { markFreshInstance } from "../instance-id.ts";
+import { markFreshInstance } from "../key/instance-id.ts";
 import {
   noteAbsTruncation,
   PROMISE_MICRO_OVERFLOW_LABEL,

@@ -9,8 +9,6 @@
  * - 注解不进 assertions 计数
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { analyzeFileAsync } from "@nudojs/service";
@@ -22,6 +20,7 @@ import {
 } from "../run-test.ts";
 import { registerTestCommand } from "../commands/test.ts";
 import { runCliTsx } from "./helpers/run-cli.ts";
+import { tmpProject } from "./helpers/tmp-project.ts";
 
 const MINI_JS = `export function greet(u) { return u.name; }\n`;
 const MINI_SIDECAR = `export const greet = fn({ u: shape({ name: string() }) });\n`;
@@ -37,12 +36,6 @@ export function greet(u) { return u.name; }
 const SHAPES_SIDECAR = `import { shape, string } from "@nudojs/core";
 export const userShape = shape({ name: string() });
 `;
-
-function tmpProject(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-entry-note-"));
-  for (const [name, src] of Object.entries(files)) writeFileSync(join(dir, name), src);
-  return dir;
-}
 
 /** 进程内跑真 CLI 装配（commander wiring → runTest → buildTestReport） */
 async function runTestCommand(
@@ -74,7 +67,7 @@ async function runTestCommand(
 
 describe("entryContractNoteFns + buildTestReport — entry@ × contract annotation", () => {
   it("sidecar contract + entry@ fallback → note line printed (assertions untouched)", async () => {
-    const dir = tmpProject({ "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
     const filePath = join(dir, "mini.js");
     const result = await analyzeFileAsync(filePath, MINI_JS, undefined, undefined, undefined, "all");
 
@@ -99,7 +92,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
   });
 
   it("inline @nudo:contract + entry@ fallback → note line printed", async () => {
-    const dir = tmpProject({ "inline.js": INLINE_JS, "shapes.nudo.js": SHAPES_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "inline.js": INLINE_JS, "shapes.nudo.js": SHAPES_SIDECAR });
     const filePath = join(dir, "inline.js");
     const result = await analyzeFileAsync(
       filePath,
@@ -119,7 +112,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
   });
 
   it("no contract (true entry-only fallback) → no note", async () => {
-    const dir = tmpProject({ "plain.js": PLAIN_JS });
+    const dir = tmpProject("nudo-entry-note-", { "plain.js": PLAIN_JS });
     const filePath = join(dir, "plain.js");
     const result = await analyzeFileAsync(filePath, PLAIN_JS, undefined, undefined, undefined, "all");
 
@@ -135,7 +128,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
 
   it("contracted fn WITH a call site (call@, no entry@) → no note", async () => {
     const src = `${MINI_JS}greet({ name: "a" });\n`;
-    const dir = tmpProject({ "called.js": src, "called.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "called.js": src, "called.nudo.js": MINI_SIDECAR });
     const filePath = join(dir, "called.js");
     const result = await analyzeFileAsync(filePath, src, undefined, undefined, undefined, "all");
 
@@ -147,7 +140,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
 
   it("mixed file: note only under the contracted function's block", async () => {
     const src = `${MINI_JS}\n${PLAIN_JS}`;
-    const dir = tmpProject({ "mix.js": src, "mix.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mix.js": src, "mix.nudo.js": MINI_SIDECAR });
     const filePath = join(dir, "mix.js");
     const result = await analyzeFileAsync(filePath, src, undefined, undefined, undefined, "all");
 
@@ -163,7 +156,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
   });
 
   it("buildTestReport without opts keeps the legacy noteless face", async () => {
-    const dir = tmpProject({ "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
     const filePath = join(dir, "mini.js");
     const result = await analyzeFileAsync(filePath, MINI_JS, undefined, undefined, undefined, "all");
     expect(formatTestReport(buildTestReport(filePath, result))).not.toContain(
@@ -174,7 +167,7 @@ describe("entryContractNoteFns + buildTestReport — entry@ × contract annotati
 
 describe("nudo test command wiring — annotation lives on the human face only", () => {
   it("default face prints the note for a sidecar-contracted entry@ function", async () => {
-    const dir = tmpProject({ "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
     const r = await runTestCommand(["test", join(dir, "mini.js")]);
     expect(r.out).toContain("entry@L1  (any) => any   throws TypeError");
     expect(r.out).toContain(ENTRY_CONTRACT_NOTE);
@@ -182,14 +175,14 @@ describe("nudo test command wiring — annotation lives on the human face only",
   });
 
   it("default face: no contract → no note", async () => {
-    const dir = tmpProject({ "plain.js": PLAIN_JS });
+    const dir = tmpProject("nudo-entry-note-", { "plain.js": PLAIN_JS });
     const r = await runTestCommand(["test", join(dir, "plain.js")]);
     expect(r.out).toContain("entry@");
     expect(r.out).not.toContain("unconstrained entry face");
   });
 
   it("--json machine face stays note-free", async () => {
-    const dir = tmpProject({ "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
     const r = await runTestCommand(["test", join(dir, "mini.js"), "--json"]);
     expect(r.out).toContain('"entry@');
     expect(r.out).not.toContain("unconstrained entry face");
@@ -198,7 +191,7 @@ describe("nudo test command wiring — annotation lives on the human face only",
 
 describe("nudo test CLI (runCliTsx) — entry@ contract annotation", () => {
   it("sidecar contract form prints the annotation and exits 0", () => {
-    const dir = tmpProject({ "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "mini.js": MINI_JS, "mini.nudo.js": MINI_SIDECAR });
     const r = runCliTsx(["test", join(dir, "mini.js")]);
     expect(r.stdout, `status=${r.status}\n${r.stdout}\n${r.stderr}`).toContain("entry@L1");
     expect(r.stdout, `status=${r.status}\n${r.stdout}\n${r.stderr}`).toContain(ENTRY_CONTRACT_NOTE);
@@ -206,14 +199,14 @@ describe("nudo test CLI (runCliTsx) — entry@ contract annotation", () => {
   });
 
   it("inline @nudo:contract form prints the annotation", () => {
-    const dir = tmpProject({ "inline.js": INLINE_JS, "shapes.nudo.js": SHAPES_SIDECAR });
+    const dir = tmpProject("nudo-entry-note-", { "inline.js": INLINE_JS, "shapes.nudo.js": SHAPES_SIDECAR });
     const r = runCliTsx(["test", join(dir, "inline.js")]);
     expect(r.stdout, `status=${r.status}\n${r.stdout}\n${r.stderr}`).toContain(ENTRY_CONTRACT_NOTE);
     expect(r.status).toBe(0);
   });
 
   it("no contract control: annotation absent", () => {
-    const dir = tmpProject({ "plain.js": PLAIN_JS });
+    const dir = tmpProject("nudo-entry-note-", { "plain.js": PLAIN_JS });
     const r = runCliTsx(["test", join(dir, "plain.js")]);
     expect(r.stdout).toContain("entry@");
     expect(r.stdout).not.toContain("unconstrained entry face");

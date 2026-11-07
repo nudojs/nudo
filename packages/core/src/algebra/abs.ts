@@ -14,7 +14,7 @@ import {
   implies,
   type Phi,
 } from "./pred.ts";
-import { ProjectionBudget } from "./projection-budget.ts";
+import { ProjectionBudget } from "./interface/projection-budget.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 
@@ -122,6 +122,82 @@ export type Shape =
     }
   | { k: "sum"; members: Abs[] };
 
+/**
+ * A2+A8 / A10 / A11：Abs 的**可扩展槽位容器**。
+ *
+ * 设计纪律（照抄 A6 的 `overloads?` 范式，见 [`docs/design/architecture-debt.md`]
+ * 「剩余槽位的受控 minor 执行方案」）：
+ * - **缺省不出现** ⇒ 旧 Abs 逐字节不变，所有外延投影 / `leqAbs` 的接受集不变。
+ * - 新槽位只加字段，不再改 Shape 判别联合；未来无需为每种能力动 `leqAbs`。
+ * - `substAbs` / `snapshotAbs` / `renameAbs` / `absKey` 必须**整包搬运**（A7
+ *   的教训：重建只搬四件套会把侧表面静默抹掉）。
+ * - 槽位只参与运行期精化与投影增强；`leqAbs` / `formatShape` / dts / schema /
+ *   guard 在槽位启用前**不读**它。
+ */
+export type AbsFacets = {
+  /**
+   * A2+A8：**无 `new` 的 [[Call]] 是否会成功**。false = 定抛 TypeError
+   * （用户类构造器）。⚠️ 与规范 `IsCallable` **不是同一概念**：class
+   * constructor 的 IsCallable 为 true（它有 [[Call]] 槽，只是调用时抛），
+   * 因此 `exec/call.ts::callableFacetOf`（Proxy [[Call]] 判定）**不读**
+   * 本槽位；消费点是 `isClassValueCallee`（裸调用定抛判据）。
+   */
+  callable?: boolean;
+  /** A10：原型对象的自有键集（含符号键）。缺省 = 保守域（旧行为）。 */
+  protoOwnKeys?: { strings: string[]; symbols?: string[] };
+  /** A11：生成器对象身份。缺省 = 与空对象同形（旧行为）。 */
+  brand?: string;
+  /**
+   * A11 残余：`Generator<T, TReturn, TNext>` 的 **TReturn**。
+   * 由 `makeGenObject` 的 `retVal` 填入；缺省 = 不建模（dts 仍只投影 `T`）。
+   * 只读投影面，搬运时按引用共享（与 shape 槽值同口径）。
+   */
+  genReturn?: Abs;
+  /**
+   * A11 残余：**TNext**（`.next(v)` 的入参域）。引擎目前**不建模** `.next(v)`
+   * 的入参（`$yield` 恒返 `unknown`、`next` 槽零形参）⇒ `makeGenObject`
+   * 填最保守的 `unknown`（与 TS 默认值类型等价，不是精度承诺）。
+   * 槽位 / 搬运 / `facetKey` / dts 第三实参投影已接通；填**真实** v 域
+   * 依赖 A1 步骤 4 的真挂起求值模型。手工构造的 Abs 缺省 ≡ 不投影。
+   */
+  genNext?: Abs;
+  /**
+   * 静态元素域（2026-11-06「第三种」）：**完整 yield 序列**（`$gen` 的
+   * `ys.els` / `makeGenObject` 的 `full`），是 `Generator<T>` 中 `T` 的
+   * **单一真值来源**。与 `shape` 的数字下标槽**并存**：槽是 `$arr(ys.els)`
+   * 之后的结构近似（超 `TUPLE_LITERAL_CAP` 会 widen 成 `arr<…>`），本字段
+   * 保留未折损的原始序列 ⇒ 快照 / 跨包搬运后 dts 不必再靠
+   * `CANONICAL_INDEX` 正则从表示反推语义。
+   *
+   * 只读投影面：数组做浅拷贝、Abs 元素按引用共享（与 `genReturn` 同口径）。
+   * **缺省 = 手工构造 / 静态收割 / 旧 Abs** ⇒ 消费面严格 fallback 到数字槽，
+   * 旧产物逐字不变。静态声明收割不构造生成器运行时值 ⇒ 本字段不进
+   * `HARVEST_DISK_ABI`。填真实惰性序列属 A1 步骤 3/4，本槽位只预置承载。
+   */
+  genElements?: Abs[];
+};
+
+/**
+ * 等价副本用的深拷贝（不共享数组；缺省不出现时返回 undefined）。
+ * `genReturn` / `genNext` 是**只读投影面**：按引用共享（与 shape 槽值同
+ * 口径），不在本叶子模块做 Abs 深拷贝 —— 那会反向依赖 `hof.ts` 成环。
+ */
+export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined {
+  if (f === undefined) return undefined;
+  const out: AbsFacets = { ...f };
+  if (f.protoOwnKeys) {
+    out.protoOwnKeys = {
+      strings: [...f.protoOwnKeys.strings],
+      ...(f.protoOwnKeys.symbols ? { symbols: [...f.protoOwnKeys.symbols] } : {}),
+    };
+  }
+  // 静态元素域：数组必须拷贝（否则 snapshotAbs / renameAbs / substAbs /
+  // join 的所有副本共享同一数组，任一侧 push/splice 会串台）；Abs 元素本身
+  // 是只读投影面 ⇒ 按引用共享，与 genReturn / genNext 同口径。
+  if (f.genElements) out.genElements = [...f.genElements];
+  return out;
+}
+
 export type Abs = {
   shape: Shape;
   term?: Term;
@@ -132,6 +208,8 @@ export type Abs = {
    * 仅展示用：不进 leq / 指纹 / check 等价；formatAbs 读取。
    */
   pathNote?: string;
+  /** 可扩展槽位容器（缺省不出现）。搬运纪律见 `AbsFacets`。 */
+  facets?: AbsFacets;
 };
 
 /**

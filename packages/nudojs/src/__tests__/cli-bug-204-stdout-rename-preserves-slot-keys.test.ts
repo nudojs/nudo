@@ -41,7 +41,7 @@ describe("BUG-204 — stdout 跨段改名不碰 schema 里的槽键数据", () =
     // zod 段仍用原形参名
     expect(r.stdout).toContain("export const f1Input = z.object({ f1Input:");
     // dts 段的形参名不变
-    expect(r.stdout).toContain("export declare function f1(f1Input: any): any;");
+    expect(r.stdout).toContain("export declare function f1(f1Input: unknown): unknown;");
   }, 60000);
 
   it("负控制：--out 落盘的 standard 产物槽键同样是原形参名（两条投递路径同结论）", () => {

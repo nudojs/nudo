@@ -10,7 +10,7 @@
  * Bug 181 / 1058 / 1059——撞名 ⇒ 重复声明 SyntaxError 或遮蔽用户绑定）。
  */
 import type { TranspileOptions, StmtEmitState } from "../types.ts";
-import { BoundedLruMap } from "../../../lru-map.ts";
+import { BoundedLruMap } from "../../../key/lru-map.ts";
 
 /**
  * Bug 181：源文本里的**用户标识符**信息（临时名避让用）。

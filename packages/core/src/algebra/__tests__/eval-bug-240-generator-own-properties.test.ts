@@ -28,7 +28,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { val, call } from "./eval-helpers.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { abs } from "../abs.ts";
 
 const GEN = `

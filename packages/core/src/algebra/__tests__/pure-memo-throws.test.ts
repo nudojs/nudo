@@ -14,7 +14,7 @@ import {$callNamed, clearPureCallMemo, resetEvalCallBudget} from "../exec/calls.
 import {runWithLoopExits, takeThrowExits} from "../exec/runtime/state.ts";
 import {errorTypeAbs} from "../exec/may-throw.ts";
 import {markPureFn, makeAbsApplyResult} from "../abs-fn.ts";
-import {BoundedLruMap} from "../lru-map.ts";
+import {BoundedLruMap} from "../key/lru-map.ts";
 
 beforeEach(() => {
   clearPureMemo();

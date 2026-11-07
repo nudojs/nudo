@@ -12,10 +12,10 @@ import {
   contractParamNameSet,
   locateContractParam,
   type FormalParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 import { parseSource } from "../parse-source.ts";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 

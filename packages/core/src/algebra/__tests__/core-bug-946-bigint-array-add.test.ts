@@ -32,7 +32,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 const BIG_PRIM = abs({ k: "prim", type: "bigint" }, undefined, undefined, "path");
 const ARR_ABS = abs(

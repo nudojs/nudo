@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { pTrue } from "../index.ts";
-import { evalThrowsOutcome } from "../check-may-throw.ts";
+import { evalThrowsOutcome } from "../check/check-may-throw.ts";
 
 const updSrc = `export function f(g) { return g().x++; }`;
 

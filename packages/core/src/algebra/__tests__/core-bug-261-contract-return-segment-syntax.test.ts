@@ -19,7 +19,7 @@ import {
   takeRefineDiags,
   setRefineDiagCollector,
 } from "../refine.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 

@@ -17,7 +17,7 @@ import { abs, str, type Abs } from "@nudojs/core";
 import { undef } from "../exec/runtime/state.ts";
 import { objOf } from "../objects.ts";
 import { $get } from "../exec/runtime/containers/member.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 
 /** 开放对象：声明索引值域（key = string 键，value = 值域） */
 function openObj(value: Abs): Abs {

@@ -70,13 +70,20 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 
 ## Architecture
 
+> 2026-11-05：`algebra/` 顶层 93 个平铺 `.ts` 中的 50 个已归入
+> `check/ scan/ format/ interface/ diagnostics/ key/` 六个二级子域（codemod
+> `scripts/relocate-core-subdomains.mjs`，795 处相对导入机械重写）。剩余 43 个
+> 顶层文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。
+> `scripts/aggregate-tests.mjs` 可按族收敛测试入口，但全量试点发现同一聚合
+> 入口内 part 共享模块实例会污染全局状态 ⇒ 已回滚；只允许逐族验证后启用。
+
 **Type system core** (`core/src/algebra`): Abs = shape × term × pred × conf. Term is abstract value identity (lit/var/app); Pred is constraint relative to term; conf is exact/path/widened/partial/opaque. Primary entrypoints: `checkSource` (refinement gate), `analyzeFn` / `runTranspiled` (Abs evaluation), `leqAbs` (structural assignability), `generalizeFromAst` (symbolic α). See `docs/design/kernel-merge.md`.
 
 **Extensional rendering** (`core/src/algebra/format.ts`): `formatShape` (display strings), `formatAbs` (lossless). One-way projections: `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators consume Abs directly. Nothing reads a projection back.
 
 **Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case` (debug witnesses), `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. Type expressions parse via `parseCaseArgExpr` only (constraint builders + concrete literals; no `T.*`). File-level `@nudo:import`, function-level `@nudo:contract`, function-level `@nudo:assume <name> <= <name>` (user lemma premises over params or top-level locals, #152 — cross-variable bounds for relational div/sub folding, `nudo:assume-invalid`/`nudo:assume-relied` diagnostics), and function-level `@nudo:invariant <name><path> <rel> <number>` (loop-carried bound lemmas over params or top-level locals, #176 — enforced at loop join/widen on the binding pack, `nudo:invariant-invalid`/`nudo:invariant-relied` diagnostics) are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
-**Evaluator** (`service/src/evaluator`): Abs-native production evaluation. **Single engine** (`eval-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values). Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `arithmetic.ts`, `objects.ts`). Non-eval sources / eval failure are **fail-closed** (unknown/empty exports). Top-level `this` follows ESM (read → undefined; write → TypeError). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
+**Evaluator** (`service/src/evaluator`): Abs-native production evaluation. **Single engine** (`service/src/eval-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values). Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `arithmetic.ts`, `objects.ts`). Non-eval sources / eval failure are **fail-closed** (unknown/empty exports). Top-level `this` follows ESM (read → undefined; write → TypeError). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
 
 **Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native, single engine**. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: `$class` / `registerEvalClass` → `exec/class-registry` → `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
 
@@ -96,7 +103,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 ## TypeScript Config
 
 - `tsconfig.base.json`: ES2022 target, ESNext module, bundler resolution, strict, noEmit
-- `tsconfig.json`: Project references for core, parser, cli with path aliases
+- `tsconfig.json`: extends `tsconfig.base.json` + generated `tsconfig.paths.json`; project references for core, parser, nudojs, service. Path aliases are NOT restated here — single source is `scripts/workspace-aliases.mjs` (drift gate: `pnpm run check:aliases`)
 - `tsconfig.lint.json`: Includes all packages (excludes tests) for CI type-checking
 - Each package has its own `tsconfig.json` extending base with project references
 

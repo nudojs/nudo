@@ -7,7 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { setPropFlags } from "../builtins/invariants.ts";
-import { ERROR_CTOR_NAMES } from "../error-names.ts";
+import { ERROR_CTOR_NAMES } from "../diagnostics/error-names.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
 export { markClassValue, classNameOfValue };
@@ -96,6 +96,18 @@ export type EvalClassSpec = {
   accessors?: Record<string, EvalClassAccessor>;
   /** 静态 get/set：挂在类构造器上，不在实例原型链 */
   staticAccessors?: Record<string, EvalClassAccessor>;
+  /**
+   * A10 残余：实例原型**自有键的源码定义序**（不含 `constructor`）。
+   *
+   * `methods` / `accessors` 是两张独立 Record ⇒ 两者的**交错**相对次序在
+   * 转译期分流时已丢失，运行期无从反推（原生 `gOPN` 按定义序返回）。
+   * 本字段由 `transpile/class-emit.ts` 在按 kind 分流**之前**按类体源码序
+   * 登记，`declare.ts` 的 `rekey` 同步换名；`brand-tables.ts` 优先读它。
+   *
+   * 缺省（手写 spec / mock 桥 / 旧产物）= 回落旧「先 methods 后
+   * accessors」拼接 + 交错保守域 ⇒ 零回归。
+   */
+  protoMemberOrder?: string[];
 };
 
 /** 内建错误层级（Error 为根，registry 无 superName 时回退）。

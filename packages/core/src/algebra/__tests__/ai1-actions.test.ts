@@ -3,7 +3,7 @@ import {
   actionsForIssue,
   serializeCheckJson,
   type CheckReport,
-} from "../check-report.ts";
+} from "../check/check-report.ts";
 
 function reportWith(issues: CheckReport["issues"]): CheckReport {
   return {

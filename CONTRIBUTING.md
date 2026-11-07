@@ -11,6 +11,7 @@ pnpm install            # workspace deps
 pnpm run build          # tsup → dist/ (required before test — see below)
 pnpm run lint           # tsc --noEmit -p tsconfig.lint.json
 pnpm run lint:tests     # tsc --noEmit -p tsconfig.test-lint.json
+pnpm run lint:hygiene   # 静态卫生 + core 子域边界（两条 node 脚本）
 pnpm run test           # vitest run
 pnpm run verify:examples  # docs/examples command matrix (exit codes)
 pnpm run verify:docs      # doc code samples still run
@@ -42,6 +43,58 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **Unused code** — dead helpers, leftover experimental paths, unreferenced exports.
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
+
+### 回归钉：按特性族聚合，不再一 bug 一文件
+
+`packages/*/src/__tests__/` 现有 2150+ 个测试文件，其中约 1350 个是 `*-bug-NNN-*.test.ts`
+单案回归钉。文件数本身已成为 CI 调度成本（`vitest.config.ts` 的 4 worker / 30s 超时 /
+2 shard）。新增回归时：
+
+- **优先**追加到同族的表驱动文件（`it.each` / case 表），或并入已有的同族 `-bug-`
+  文件；确需新文件时在 PR 里说明为什么不能合并。
+- **按族收敛入口已对 16 个族启用**：`scripts/aggregate-tests.mjs` 把同族
+  `*-bug-NNN-*.test.ts` 原地改名为 `*.part.ts`，由 `zz-agg-<族>.test.ts` import，
+  vitest 入口从 N 降到 1。2026-11-05 全量试点（20 族 / 1329 文件）曾暴露
+  **模块共享污染**（同一入口内的 part 共享模块实例 ⇒ 全局注册表 / oracle /
+  缓存互相影响，新增 15 条失败）并整体回滚；随后按静态特征分级：
+  **S**（无 `vi.mock` / 无模块级可变态 / 无 registry 写入）、
+  **M**（fs / `process` 写入均成对复位）、
+  **R**（模块级 `vi.mock`、共享 memo 复位覆盖率低、`vi.hoisted` 单例）。
+  逐族 `--apply --only <group-key>` 验证后启用 S 2 + M 9 + 首批 3 = **14 族，
+  410 文件 → 14 入口**（全仓 vitest 入口 2005 → 1769）；
+  `tsconfig.test-lint.json` 已纳入 `*.part.ts`。
+  **2026-11-06 再启用 2 个 R 级族**：脚本新增第 5 条 guard（模块级
+  `vi.mock` / `vi.hoisted` 自动排除，如 `service-bug-045` 保留独立入口）与
+  `--revert-only <key>` 单族回退；`vscode-host-stub.ts::makeExtensionContext`
+  补 activate 前的注册表面复位。`vscode/.../lsp` 6 + `service/.../service` 114
+  = **120 文件 → 2 入口**（全仓 1769 → 1651），逐族验证 0 新增失败。
+  **剩余 4 个 R 级族 / 795 文件仍不得套用**：全量试聚合新增 7 条失败
+  （core/eval/lsp/cli 共享 memo / registry / stub 与 watch 事件假设），已用
+  `--revert-only` 精确回退 ⇒ 需逐族补统一复位后再验证。
+  **纪律**：① 每次 `--apply` 必须带 `--only <完整 key>`（不带会一次性套用
+  全部剩余族，`--only` 是**精确 key 相等**，不是目录前缀）；② `--revert`
+  是**全局**的且忽略 `--only`（会还原全部已启用族）——单族回退用
+  `node scripts/aggregate-tests.mjs --revert-only <完整 key>`（2026-11-06 新增：
+  只还原该族 part + 删除该族入口，其余族不动，不必手工 `git mv`）；
+  ③ 大族（≥50 文件）单入口验证带
+  `NODE_OPTIONS=--max-old-space-size=8192`（与 `pnpm test` 同口径）；
+  ④ 单跑某条用例用 `pnpm vitest run <聚合入口> -t "<case name>"`；
+  ⑤ 脚本会**自动排除**模块级 `vi.mock` / `vi.hoisted` 文件（worker 级注册会
+  串到同入口其它 part），这类文件保留独立入口，不要手工塞回。
+- **全仓基线对比**（本地 Node 22 / CI Node 24）：20 条已知失败来自宿主面
+  （`Float16Array` / ES 全局清单）、`fs.watch` 事件数与临时路径归一化，
+  固化在 `docs/reports/test-baseline-failures.json`。全量跑完用
+  `pnpm run test:baseline -- /tmp/nudo-test.log` 对比：**新增失败一律判红**，
+  基线项偶尔不出现只告警（flaky 不制造假红）。修好某条或聚合改了文件名后
+  跑 `pnpm run test:baseline -- --update /tmp/nudo-test.log` 收紧基线。
+- **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
+  它们是产品精度门禁，不是回归钉。
+- **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用
+  `__tests__/helpers/tmp-project.ts`；固定 prefix 的薄适配可以保留一层，但不得
+  重新实现 `mkdtempSync` / 清理逻辑。
+- `pnpm run lint:hygiene` 兜住 `tsc` 看不到、此前靠 reviewer 人工盯的几类问题：
+  无说明的空 `catch`、内联 harness 复制、非 CLI 生产源码里的 `console.log`，
+  以及 `algebra/` 顶层继续平铺。新增检查规则同样要有明确理由，不做风格 linter。
 
 ### Root `devDependencies` that look dead but are not
 

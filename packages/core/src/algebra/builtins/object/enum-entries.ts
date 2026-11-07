@@ -32,7 +32,7 @@ import { mapEntriesAbs, setElementsAbs } from "../../collections.ts";
 import { undefAbs, applyCallbackValue, validateCallableArg } from "../../hof.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { pTrue } from "../../pred.ts";
-import { defaultLeakBudget } from "../../leak.ts";
+import { defaultLeakBudget } from "../../diagnostics/leak.ts";
 import { emptyEnv } from "../../ast-env.ts";
 import { TYPED_ARRAY_ELEMENT } from "../shared.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
@@ -40,7 +40,7 @@ import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { str } from "../shared.ts";
 import { isEnumerableView } from "../invariants.ts";
 // 族 58 · Bug 321/3：原型 brand 的自有键集判定（单一事实源）。
-import { protoBrandOwnStringKeys } from "../../exec/runtime/members.ts";
+import { protoOwnKeysOf } from "../../exec/runtime/members.ts";
 
 /**
  * Bug 43：boxed String brand（new String("ab") / Object('ab') 字面量箱）的
@@ -197,8 +197,9 @@ export function builtinBrandOwnKeyNames(a0: Abs | undefined): string[] | undefin
   // 族 58 · Bug 321/3：原型 brand（`X.prototype`）的**自有键**（gOPN 语义）
   // ——引擎已建模成员的原型（Error 家族 / 用户类）可给精确清单；其余原型
   // 仍开放（undefined ⇒ 调用方沿既有保守域 string[]）。
-  // 判定单一事实源：exec/runtime/members.ts 的 protoBrandOwnStringKeys。
-  return protoBrandOwnStringKeys(name);
+  // A10 判定单一事实源：protoOwnKeysOf 优先读随值携带的
+  // `facets.protoOwnKeys`，缺省才回落按名表（既有保守域逐字不变）。
+  return protoOwnKeysOf(a0)?.strings;
 }
 
 /**

@@ -201,7 +201,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
 | <a id="abs"></a>`abs` | fn | Abs constructors / faces | `abs( shape: Shape, term: Term \| undefined, pred: Pred \| undefined, conf: Confidence, ): Abs` |
-| <a id="abs"></a>`Abs` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Abs = { shape: Shape; term?: Term; pred?: Pred; conf: Confidence; pathNote?: string; }` |
+| <a id="abs"></a>`Abs` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Abs = { shape: Shape; term?: Term; pred?: Pred; conf: Confidence; pathNote?: string; facets?: AbsFacets; }` |
 | <a id="absapplynothrow"></a>`AbsApplyNoThrow` | type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `AbsApplyNoThrow = Abs` |
 | <a id="absapplynothrowfn"></a>`AbsApplyNoThrowFn` | type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `AbsApplyNoThrowFn = (args: Abs[], thisVal?: Abs) => AbsApplyNoThrow` |
 | <a id="absapplyresult"></a>`AbsApplyResult` | type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `AbsApplyResult = { abs: Abs; throws: Abs; readonly applyResult: true; }` |
@@ -335,7 +335,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
-| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
+| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false, hooks?: GenSuspendHooks): Abs` |
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get: ( o: Abs, key: string, opts?: Parameters<typeof $getInner>[2], receiver?: Parameters<typeof $getInner>[3], ) => ReturnType<typeof $getInner>` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx: (a: Abs, i: Abs, opts?: { silent?: boolean }) => Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet: ( o: Abs, i: Abs, v: Abs, ) => ReturnType<typeof $idxSetInner>` |
@@ -649,9 +649,9 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
 | <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
-| <a id="registerevalclass"></a>`registerEvalClass` | fn | — | `registerEvalClass(spec: EvalClassSpec): void` |
+| <a id="registerevalclass"></a>`registerEvalClass` | fn | 注册类规格（裸名主键 + epoch 碰撞记录——BUG-026/172 注释群）。 | `registerEvalClass(spec: EvalClassSpec): void` |
 | <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制）。 | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
-| <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |
+| <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; throws?: Abs; }, ): Abs` |
 | <a id="relsource"></a>`RelSource` | type | — | — |
 | <a id="requiredfnarity"></a>`requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
 | <a id="resetchecksourcememo"></a>`resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |

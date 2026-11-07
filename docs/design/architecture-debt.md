@@ -5,7 +5,9 @@
 > ⇒ 影响 `leqAbs` ⇒ 影响**全部门禁精度** ⇒ 必须**独立排期 + 独立回归基线**。
 >
 > **状态**：2026-10-23 起，本文档单独记录 A 类；B / C 两类（**可修**）在
-> 各自的「遗留」表里逐条推进。
+> 各自的「遗留」表里逐条推进。**排期以每条的「状态」字段为准**：已闭环条目
+> 保留编号（避免引用漂移）但不再计入待排期；状态与代码不一致时以
+> `git log` / changeset / 回归测试为准，并在发现的当次 PR 内订正。
 >
 > **分类依据**：精度债的可修性分类（B / C 两类见对应台账的
 > 「📊 精度债的可修性分类」段）。
@@ -25,7 +27,7 @@
 | **最小可行修法**（纯转译侧、不动公开面） | 在 `$gen` 的体外套「**自由写快照 + `$join` 折回**」—— 复用仓里已有的 `collectFreeAssignedNames`（`exec/transpile/helpers.ts`）算「该体写到的外层绑定」；`$copy` / `$join` 均为既有导出 ⇒ 不触公共 API 冻结。**把「确定的错值」变成 sound 的过近似**（`0\|1` 而非 `1`）；逐点精确需「真挂起」（另立族） |
 | **落点冲突** | 唯一落点在 `exec/transpile/**`（与族 45 的临时名避让机制同侧）⇒ 两族同源，宜合并承接 |
 | **待拍板** | ~~折回用 `$join`（sound，推荐）还是「还原成事前值」~~ 已拍板 `$join`（2026-11-04 落地） |
-| **状态** | **步骤 1（最小收窄）已落地（2026-11-04）**：wrong-exact 已消灭。四个 `$gen` 发射点（声明 / 函数表达式 / 对象方法 / 类方法）统一走 `exec/transpile/emit.ts` 的 `genOuterFreeWriteNames`（= `collectFreeAssignedNames` 扣形参模式名与体内 var 提升名，再经 `expandAliasNames` 扩 const 别名伙伴）+ `genFreeWriteWrap`（快照 `$copy`（共享 memo）+ `finally` 里 `n = $join(事前, 事后)`）；临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName` 避让。四行症状 `1`/`"ab"`/`5`/`"ab"` → `0\|1`/`""\|"ab"`/`0\|5`/`""\|"ab"`（native 构造点值均 ∈ join）；eager 值域 / `conf` 承重与元素面**不变**（不写外层绑定的生成器产物逐字不变）。回归：`eval-bug-212-generator-body-eager.test.ts`（四行症状 + 四发射点 + 元素面 + 负控制）。**残余 = 步骤 2–4**（可延后元素面 / 首消费点触发 / 真挂起）：首个 yield 挂起点的中间值（native `1` / `"a"`）仍不在 join 内 ⇒ 仍为架构债（债面收窄为「时间轴缺失」）。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md) |
+| **状态** | **步骤 1（最小收窄）已落地（2026-11-04）**：wrong-exact 已消灭。四个 `$gen` 发射点（声明 / 函数表达式 / 对象方法 / 类方法）统一走 `exec/transpile/emit.ts` 的 `genOuterFreeWriteNames`（= `collectFreeAssignedNames` 扣形参模式名与体内 var 提升名，再经 `expandAliasNames` 扩 const 别名伙伴）+ `genFreeWriteWrap`（快照 `$copy`（共享 memo）+ `finally` 里 `n = $join(事前, 事后)`）；临时名 `__g0_<n>` / `__gCopyMemo` 经 `internalTmpName` 避让。四行症状 `1`/`"ab"`/`5`/`"ab"` → `0\|1`/`""\|"ab"`/`0\|5`/`""\|"ab"`（native 构造点值均 ∈ join）；eager 值域 / `conf` 承重与元素面**不变**（不写外层绑定的生成器产物逐字不变）。回归：`eval-bug-212-generator-body-eager.test.ts`（四行症状 + 四发射点 + 元素面 + 负控制）。**残余 = 步骤 2–4**（可延后元素面 / 首消费点触发 / 真挂起）：首个 yield 挂起点的中间值（native `1` / `"a"`）仍不在 join 内 ⇒ 仍为架构债（债面收窄为「时间轴缺失」）。详细数据流 / 11 项消费面清单 / 4 步改造路径 → [`generator-laziness.md`](./generator-laziness.md)。**步骤 2 接线骨架已落地（2026-11-05，零回归）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表（生产侧不登记 ⇒ eager 时序与全部值面逐字不变），`copyMatchIterTables` 同步迁移；不进任何 barrel ⇒ 公共 API 冻结不变。回归 `exec/__tests__/gen-trigger-skeleton.test.ts`（7 例）。**这不构成 §5.2 的语义增量**（`conf` 可提升、dts 直读 shape / `next()` 读闭包 `full` 两条旁路、快照深拷贝副本的原地补写均未处理）⇒ 本条仍是待排期。**步骤 3 / 4 明确停点**：一次改动会同时撼动构造点值域 / 元素面 / conf / 委托表时序 / 延迟异常重放，需改 `eval-bug-212` 12 条断言 + 4 个 `exec-generator` 族 + 14 条差分语料 + `emit-abs-brand-projection`；且 R3-b 跨函数消费此前无钉，已补 `eval-generator-cross-function-consume.test.ts`（现状钉 + 3 条 `it.todo` 验收清单）作前置条件。属引擎内核改造，独立成族 + 独立全仓基线，不与本批次合并。**2026-11-06 独立成族轮（实测复核，未改步骤 3/4 时序）**：在干净 HEAD `02371228` 建独立全仓基线后做 5 组受控实验（探针实验后逐字撤除、生产零残留）——A 构造期跑空体 ⇒ 生成器 8 族 **100 失败 / 38 通过**（坐实 §2.1 承重）；B 真实 `absToTSType` 对无元素槽生成器输出 **`Generator<unknown>`**（dts 在 service 包且导出时无消费点 ⇒ 结构性不可达，不是漏接触发点）；C `snapshotAbs` 副本 `slots` 不共享引用 ⇒ 原地补写只对原对象生效；D（**新发现**）`$gen` 的 `body` thunk 捕获**活绑定**（构造后改写外层绑定，重跑读到 9 而非 0）；E（**否决 D 的捷径**）体重跑会**重复副作用**（`n++` 二次累加）⇒ 「消费点重跑 + join」非 sound。结论：步骤 3/4 仍停，但依据从文档推断升级为可复核实测；证据固化为 PoC（core `a1-laziness-evidence-core.test.ts` 4 例 / service `a1-laziness-evidence-poc.test.ts` 2 例，均不接生产）。**同期补齐 §5.2 协议面旁路（零回归）**：`fireGenTrigger` 模块内导出（不进 barrel），`makeGenObject` 的 `next` / `return` / `throw` 首行接 `fireOnce()`；生产侧仍不登记任何触发器 ⇒ 恒 WeakMap miss、值面逐字不变（回归 `gen-trigger-protocol-faces.test.ts` 7 例）。最小前置清单见 `generator-laziness.md` 「2026-11-06 独立成族轮」。**2026-11-06 同日前置复核（第二轮）**：① `conf` 可提升的「影响 leqAbs ⇒ L1/L2 精度」判定被实测推翻（`leq.ts` 全文 0 次 conf、双向 leq 均 ok、absKey 不进 conf），真正待设计的是缓存键失效与 `confJoin` 单调不升；③ `snapshotAbs` 的 match-iter **侧表迁移已修**（A7 镜像一致性：此前只搬 fn impl，副本丢迭代元素/延迟异常/drain ⇒ L2 假阴），全仓 0 新增失败；② dts 元素域通道经实证确认为纯投影、导出期无消费点，「是否接受 `Generator<unknown>` 降级」**待产品拍板**，本轮不动 dts 产物。证据分别见 `a1-conf-promotion-evidence.test.ts`(4) / `snapshot-match-iter-tables.test.ts`(6) / `a1-laziness-evidence-poc.test.ts` 实验 F(2)。⚠️ 侧表迁移**不等于**实验 C 的 shape 槽补写失效（后者仍未解）。**2026-11-06 第三轮 ·「第三种」已落地**：`AbsFacets.genElements` 显式承载完整 yield 序列（`makeGenObject` 取 `full` 而非 widened `els`），`cloneAbsFacets` 数组拷贝 / `facetKey` 加 `ge:` 段 / `snapshotAbs` 等四处经统一 clone 自动搬运；`iteratorTSType` 优先读承载位、**严格 fallback** 数字槽（无 facets 旧产物逐字不变）。实测 fork 分支 `Generator<unknown>` → **`Generator<number \| string>`**。返回注解原文经 `FunctionAnalysis.declaredReturnType` 透传（此前 `nudoReturnTypeText` 全仓只有写入、无读取），降级为**一致性校验**：两侧同为单一基类型且互斥时落 `nudo:return-annotation-mismatch` 台账，产物恒用观测口径（不覆盖、不用声明兜底）。harvest 静态声明收割不构造生成器运行时值 ⇒ 不进 `HARVEST_DISK_ABI`。**⚠️ 不解锁步骤 3**：`genElements` 仍由构造期跑体填充，体延后 ⇒ 字段空 + 导出期无消费点 ⇒ 前置 ② 只是「部分解决」。回归 `gen-elements-facet.test.ts`(7) / `emit-gen-elements-facet.test.ts`(9)。版本按「新增诊断码 + additive API」计 minor，无 BREAKING / Migration。**2026-11-06 第四轮 · 符号 yield 域 PoC（独立成族，只读）**：在干净 HEAD `951b2566` 用真实引擎 API 做 5 组实验（21 例回归钉，不接生产）——A 无约束入口 是 concrete 的 sound 上界；B 退化档投影为 **`Generator<any>`**（非 `unknown`）；C **独立编译实例 3 次逐字相同**，同实例重跑仍串台 ⇒ 绕开实验 E 的重复副作用；D `nudo export` 产物与符号 PoC 逐字一致 ⇒ **引擎本来就在做符号求值**；E 真·体延后 `Generator<unknown>` → 独立符号求值回填 → `Generator<number \| string>` 零精度损失。14 形态量化：**精确 7 / sound 过近似 4 / 退化 3 / unsound 0**。决策：**可行但本轮不单独接产**（现状已有正确 `genElements`，重复求值零收益）⇒ 接产绑定步骤 3 同轮；接产前须先把 `any` 归一为 `unknown`（**该前置已于同日第五轮全局归一落地**，见下）。证据见 `exec/__tests__/symbolic-yield-domain-poc.test.ts`，详见 `generator-laziness.md` 「2026-11-06 符号 yield 域 PoC 轮」。**2026-11-06 第五轮 · TS 投影面归一（已落地）**：产品裁定「nudo any ≈ TS unknown」⇒ `absToTSTypeB` 的 `case "any"` 改 `unknown`，另补齐 `classParamDecl` / 无签名导出 fallback / 泛型基类实参三处硬编码；nudo 展示面（`formatAbs` / check / contract / case-json）逐字不变，`abs.md` 的 display 规则**澄清作用域**（只管展示面，不辖 TS 产物）。全仓归一实验 26 条新增失败全为精确串断言、0 功能失败 ⇒ 逐条重订；端到端 `Generator<any>` → `Generator<unknown>`，BUG-076 的「文档承诺 vs 实现」矛盾因 stderr 点名提示自动覆盖主路径而彻底关闭；Bug 544 的 TS2571 改判为正确提示。按 11-05/11-06 soundness 判例走 **patch**（`.changeset/ts-projection-any-to-unknown.md`），不写 BREAKING / Migration。**步骤 3 仍停**：实测 `combinedAbs.facets.genElements` 本已非空 ⇒ 导出期重复求值零收益且会造成双重真值来源 + 冷/热缓存分裂；真解绑仍需 `$gen` 构造期不跑体（内核改造，实验 A 100 条回归）⇒ 独立成族。**2026-11-06 末轮复核（提问「步骤 3 现在可以实施了吗」）**：在 `b0609869` （归一已落地）上用临时探针对 `$gen` 构造期停跑体 ⇒ 生成器 8 族仍 **100 失败 / 38 通过 / 3 todo**，与归一前逐字一致；端到端 dts 4 个生成器全退 `Generator<unknown, undefined, unknown>`。探针逐字撤除、零残留、工作区干净。结论：**归一关闭的是 soundness 前置（TS 用词），不是步骤 3 的解锁条件**；上一轮「接产前唯一硬前置」措辞过宽已订正。另订正「撤回回填建议」的边界：只在体仍 eager 时零收益，体延后后回填是必需子任务 ⇒ 步骤 3 完整切片 = 体延后 + 导出期符号回填 + 值面懒填充。路径已闭合、无未知技术不可行项 ⇒ **可立项独立成族**，代价见 `generator-laziness.md`「末轮复核」。**2026-11-07 步骤 3 已落地（独立成族）**：触发式填充生产接线（构造空壳 + `registerGenTrigger` + 协议三方法首调转发）+ 求值收口 `drainPendingGens` + 别名广播 ⇒ 生成器 9 族全绿、端到端 dts 元素域与基线逐字一致；R3-b 跨函数消费 读到消费期绑定 9、构造点 c1/c2 收敛为精确值、副作用只跑一次。末轮复核的 100 条回归经触发机制收敛为 0（其余为期望过时，按 §5.5 表格重订）。回归 `gen-deferred-body.test.ts`(5) / `eval-generator-cross-function-consume.test.ts`(4)；changeset `.changeset/gen-deferred-body-step3.md`（`@nudojs/core: minor`）。**剩余仅步骤 4 真挂起** |
 
 ---
 
@@ -33,10 +35,10 @@
 
 | | |
 |---|---|
-| **现象** | 用户类构造器**裸调用**（无 `new`）引擎不抛（原生硬抛 `TypeError`）⇒ 产品面对「用户类构造器作 `replacer`」报 may-throw —— sound，但**非确定抛** |
-| **根因** | 同 A1：eager 快照模型下「类不是可调用值」这一判定需要知道调用形态与 `new.target` 的关系 |
-| **阻塞** | 需要 core 的 `callable` 面（见 A8）—— 同一个内核表示缺口 |
-| **状态** | **架构债**。与 A1 同族 01/02 的求值模型面 |
+| **现象**（2026-11-05 复测订正） | 运行时求值面**已由 Bug 272 收口**：`exec/call.ts::$callDispatch` 的 `isClassValueCallee` 命中即硬抛 `NudoThrow(TypeError)`（`core-bug-272-class-no-new.test.ts` 钉住）。**残余在声明 / 产品面**：`builtins/json.ts` 的 `brandCallable` 仍靠 WeakMap 判据 ⇒ 类构造器作 `JSON.stringify` replacer 只记 `recordMayThrow`（sound 但**非确定抛**）；harvest / 快照 / subst 后的类值无形状化承载位 |
+| **根因**（订正） | 不是求值模型缺 `new.target`，而是**可调用性没有随 Abs 值携带**：现有判据 = `class-mark.ts` WeakMap 标记 + `ctor` facet + `_rest` 单形参启发式（`exec/call.ts:121-141`），三者都不随 `snapshotAbs` / `substAbs` 搬运（同 `rebrand.ts` 已记的重铸丢失） |
+| **阻塞** | 需要 `Abs.facets.callable`（见 A8）—— 容器已落地（步骤 1），消费点接线见下节 |
+| **状态** | **形状化承载位已启用（2026-11-05）**：`Abs.facets.callable = false` 由 `$class`（brand 形）/ `$classExpr`（fn 快路径）生产，`exec/call.ts::isClassValueCallee` 优先消费，subst / snapshot / join 整包搬运 ⇒ 重建产物不再因 WeakMap 丢失而漏判（旧判据全部保留作兜底）。回归 `abs-callable-facet.test.ts`（11 例，含「抹掉槽位的快照不再被判类值」对照、Proxy 不退化）。**残余精度批次已收口（2026-11-05）**：① `builtins/json.ts` 的 replacer 臂改读 `facets.callable === false` ⇒ 用户类值作 replacer 由 `recordMayThrow` 升为**确定抛 TypeError**（回归 `abs-callable-json-replacer.test.ts` 3 例，含「不再记 may-throw」）；② `harvest-dts.ts::classValueAbs` 给 `declare class` 类值挂槽位，三处重建点（生产 / `harvestedValueToAbs` 的 `absFunction` mock / `HarvestSig` 磁盘往返）全部整包搬运，`HARVEST_DISK_ABI` v14→v15（回归 `harvest-a2-callable-facet.test.ts` 5 例）。金标 / 真包 expectation **未变**（语料里无该形态），446 例针对性门禁全绿 |
 
 ---
 
@@ -100,10 +102,10 @@
 
 | | |
 |---|---|
-| **现象** | TS 的「类不是可调用值」在引擎侧无对应面 |
-| **根因** | core 的 fn 形状**不区分「类」与「可调用对象」** |
-| **阻塞** | 需要 core 的 `callable` 面（与 A2 同一个缺口）⇒ 触及 Abs 形状 |
-| **状态** | **架构债（core 冻结）**。与 A2 合并立项 |
+| **现象**（订正） | 826 的 `ctor` facet 已能标记类值（`harvest-bug-826-class-ctor-facet.test.ts` 钉住）；缺的是**形状化的可调用性面**——`class-mark.ts` 是 WeakMap 侧表，重铸 / 快照 / subst 产物不带标记 |
+| **根因** | 同 A2：可调用性不在 Abs 的值语义里 ⇒ 跨重建点静默丢失 |
+| **阻塞** | `Abs.facets.callable`（与 A2 同一个缺口）；容器已落地，Abs 形状无需再动 |
+| **状态** | **形状化承载位已启用（2026-11-05）**，与 A2 同批。`exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）明确**不读**此槽位——class constructor 的 IsCallable 为 **true**（有 [[Call]] 槽，调用时才抛），与「裸调用必抛」不是同一语义；混用会让 `new Proxy(C, {})()` 假绿。**残余同 A2 已收口**（json.ts / harvest 声明面，2026-11-05） |
 
 ---
 
@@ -115,7 +117,7 @@
 | **根因** | Abs 的 obj 形状有**实例**槽表，但**没有**「原型对象的自有键集」承载位 ⇒ 原型面只能退回保守域 |
 | **本轮的局部收口** | 族 58（片 W8）**只覆盖「引擎已建模过成员」的原型**：Error 家族（固定表）+ 用户类原型（`constructor` + 自有方法/访问器，按定义序）+ 生成器原型（自有键恒空）⇒ 这三类原型面**精确**；其余原型（Array / Object / Map / Promise …）**仍保守** `string[]` / boolean 域 |
 | **阻塞** | 要覆盖**全体**内建原型 ⇒ 需要在 Abs 上**新增**「原型自有键集」承载位 ⇒ 触及 Abs 形状 ⇒ 影响 `leqAbs` ⇒ 需要全仓回归基线 |
-| **状态** | **架构债（本波新发现 · 2026-10-23）**。建议与 **A5 / A6** 合并到「动 Abs 形状」那一层立项 |
+| **状态** | **已闭环（2026-11-05）**。① 槽位启用：`Abs.facets.protoOwnKeys` 经 `protoOwnKeysOf` 成为**单一事实源**（优先随值槽位、缺省回落按名表），生产点 `protoBrandAbs` / `generatorProtoBrandOf` / `objectProtoBrand`，消费点 gOPN / `Object.hasOwn` / gOPS，搬运链含 `joinAbs`。② 残余精度批次：未建模**内建**原型由 `builtins/ctor.ts::hostProtoOwnKeys` 在单例创建时**一次性**从宿主构造器原型采集 `getOwnPropertyNames` + `getOwnPropertySymbols` 并固化 ⇒ gOPN / hasOwn / gOPS 由保守域升为**与原生对拍的精确面**（`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等）。只读宿主、不写宿主全局（host-global-purity 纪律）；键集随 Node 版本给出各自真实值，测试用宿主**动态对拍**而非写死清单 ⇒ 不产生跨版本的确定错值。既有保守域负控已逐条升级：`abs-proto-own-keys-facet.test.ts`、`eval-bug-58`、`eval-bug-65`。**用户类原型「方法与访问器交错定义序」已收口（2026-11-05 残余批次）**：`EvalClassSpec.protoMemberOrder` 由 `transpile/class-emit.ts` 在按 kind 分流前按类体源码序登记（排除静态 / 构造器 / 私有方法、`declare.ts::rekey` 同步换名），`brand-tables.ts::protoBrandOwnStringKeys` 优先读它 ⇒ 交错序与宿主 `gOPN` 对拍精确；`eval-bug-58` 的交错负控已升级为 4 条正向钉（含定义序反转 / 静态+私有排除 / 字符串计算键）。**残余**：宿主构造器表外的 brand 仍保守；手写 spec / mock 桥 / 旧产物无 `protoMemberOrder` ⇒ 回落旧两表拼接与交错保守域（零回归兜底，不是产品面精度承诺） |
 
 ---
 
@@ -123,31 +125,249 @@
 
 | | |
 |---|---|
-| **现象** | 生成器对象（`function* g(){}` 的 `g()`）在**类型投影面**与**空对象**同形（`{ }`）⇒ 「这是个生成器对象」在签名 / dts / schema 面上不可见（`formatShape` 折不出 `Generator`） |
+| **现象**（2026-11-05 复测订正） | 生成器对象（`function* g(){}` 的 `g()`）在**展示投影面**与空对象同形（`formatShape` → `{ }`）。dts 面**已由 Bug 554 收口**：`service/src/emit/dts-generator.ts::iteratorTSType` 按 `slots["next"]` + 数字下标槽推导 `Generator<T>` / `AsyncGenerator<T>`，`emit-bug-554-generator-iterator-projection.test.ts` 含 `tscNoEmit` 端到端；`BUILTIN_GENERIC_BRANDS` 已含 `Generator<unknown>` 防 TS2314。**残余（第三次复测订正）** = 身份不随值携带（dts 靠槽启发式反推）、schema / guard 无特化。「展示面与空对象同形」**不是欠账**：族 65 / Bug 240 / Bug 99 已明确决定身份由**运行面协议槽**钉住，展示面恒为 `{…}`（`eval-loop-return-join.test.ts` 的 `/^\{/`、`eval-bug-212` 的精确结构串都钉住这条契约） |
 | **根因** | core 的生成器对象建模成**闭 obj**（`exec/runtime/async.ts` 的 `makeGenObject`：`abs({k:"obj", slots})`）⇒ Abs 里没有「生成器」这一族形状 ⇒ 投影面只能落回通用对象 |
-| **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**类型投影面仍与空对象同形** |
-| **阻塞** | 根治需 `makeGenObject` 改 `brand("Generator")` ⇒ **触及 Abs 形状** ⇒ 影响 `leqAbs` / dts / schema / 约束面 ⇒ 需全仓回归基线；且 `Generator` 是 TS **泛型**内建名（`Generator<T, TReturn, TNext>`）⇒ dts 面需补类型实参（否则 TS2314，见 Bug 521 的泛型 brand 口径） |
-| **状态** | **架构债（本波新发现 · 2026-10-23）**。建议与 **A5 / A6 / A10** 合并到「动 Abs 形状」那一层立项 |
+| **本轮的局部收口** | 族 65（片 W17，BC #45）**不改形状**：补 `@@toStringTag = "Generator"`（internal + symbolKey 槽）⇒ `Object.prototype.toString.call(g())` 原生同款 `"[object Generator]"`（此前折 `"[object Object]"`——自信的错值）；`Object.getOwnPropertyNames(g())` / `Object.getOwnPropertySymbols(g())` 恒 `[]`（原生同）。**展示投影面仍与空对象同形** |
+| **阻塞**（订正） | 无需再动 `Shape` 判别联合——`Abs.facets.brand` 容器已落地（步骤 1）。dts 的泛型实参已由 `iteratorTSType` / `BUILTIN_GENERIC_BRANDS` 解决：**dts 面**恒输出 `Generator<T>`，**不得**输出裸 `Generator`（TS2314，见 Bug 521）；core `formatShape` **明确不读** `facets.brand`（展示面逐字不变是硬契约） |
+| **状态** | **`brand` 槽位已启用（2026-11-05，零回归闭环）**：`makeGenObject` 生产 `Generator` / `AsyncGenerator`，四链 + `joinAbs` 搬运；service `iteratorTSType` 把 brand 作为 `next` 槽判据的替代 ⇒ 重建 / 快照产物丢内部协议槽后仍能投影 `Generator<T>`（泛型实参照旧推导）。core `formatShape` **不发布身份**。回归 `abs-generator-brand-facet.test.ts`（8，含「展示面逐字不变」钉）+ `emit-abs-brand-projection.test.ts`（6，含 `tscNoEmit`）。**A11 残余批次（2026-11-05）**：`AbsFacets.genReturn` 由 `makeGenObject` 的 `retVal` 填入并随值搬运（`cloneAbsFacets` 按引用共享只读投影面；`facetKey` 用 `absKey` 进键 ⇒ 不同 TReturn 不共享 memo），service `iteratorTSType` 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`，**恒带类型实参**（无 TS2314）；无 `genReturn` 的手工 / 旧 Abs 仍输出 `Generator<T>` 逐字不变。回归 `abs-generator-brand-facet.test.ts`（+3）、`emit-abs-brand-projection.test.ts`（+3，含端到端 dts 带 TReturn 与 `tscNoEmit`）。**TNext 保守域已接通（2026-11-05）**：`genNext` 由 `makeGenObject` 填 `unknown`、四链 + `facetKey` 搬运、dts **条件**输出第 3 实参 `Generator<T, TReturn, unknown>`；真实 v 域仍依赖 A1 步骤 4 真挂起。**schema / guard 投影明确不做**（产品语义决策，见下方决策记录） |
 
 ---
 
 ## 立项建议（按依赖顺序）
 
 ```
-第 0 层（不动 Abs 表示，可先试）
-  └─ A7  substAbs 丢 fn impl          ← 最可能是纯实现缺陷
-第 1 层（要定承载位，但影响面局部）
-  ├─ A3 + A4  throws 在 Abs 里的承载位（relation 面 + apply 结果）⇒ 合并立项 ← 已修（2026-11-04）
-  └─ A5     接收者形状感知的 union 方法分派 —— 派发层已闭合（Bug 263 / 2026-11-04 复测订正）；残余假红归 A6
-第 2 层（要动 Abs 形状 ⇒ 影响 leqAbs ⇒ 需要全仓回归基线）
-  ├─ A2 + A8  core 的 callable 面（类 ≠ 可调用值）
-  ├─ A6     fn 形状的 overload 集合承载位 ← 已修（2026-11-04；union 面仍为权威外延面）
-  └─ A10    原型对象自有键集的承载位（族 58 的局部收口 ⇒ 全体内建原型）
-第 3 层（求值模型层，独立于 Abs 表示）
-  └─ A1 + A2  生成器体惰性（转译侧快照 + $join 折回；与族 45 同侧）
-              ← A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；A1 步骤 2–4 与 A2（裸调用不抛）待续
+第 0 层（不动 Abs 表示）                              ✅ 已闭环
+  └─ A7  substAbs 丢 fn impl          ← 已修（2026-11-04，纯实现缺陷，未动 Abs）
+第 1 层（定承载位、影响面局部）                        ✅ 已闭环
+  ├─ A3 + A4  throws 承载位（relation 面 + apply 结果）← 已修（2026-11-04）
+  └─ A5     union 方法分派 ← 派发层已闭合（Bug 263）；残余假红由 A6 修后自消
+第 2 层（动 Abs 形状 ⇒ 需全仓回归基线；执行方案见下节）  ✅ 全层已闭环
+  ├─ A6     fn 形状 overload 承载位    ✅ 已修（2026-11-04，可选槽位范式）
+  ├─ A2 + A8  callable 面（类 ≠ 可调用值）           ✅ 已启用（2026-11-05，含残余精度批次）
+  ├─ A10    原型对象自有键集承载位                    ✅ 已启用（2026-11-05，含内建原型对拍）
+  └─ A11    生成器 brand("Generator")                ✅ 已启用（2026-11-05，含 TReturn）
+第 3 层（求值模型层，独立于 Abs 表示）                  ⏳ 残余 = 全量真挂起
+  └─ A1 步骤 1（快照 + $join 折回）已落地（2026-11-04，wrong-exact 消灭）；
+     步骤 2 触发点骨架已落地（2026-11-05，零回归）；
+     步骤 3 延迟体已落地（2026-11-07，首消费点跑体 + 求值收口排空）；
+     步骤 4 挂起点绑定回放已落地（2026-11-07，c3/c4 native 1 / "a" 精确）；
+     残余：全量真挂起（非绑定类副作用时序，需 CPS 级改造）、
+     步骤 2 的 conf 可提升机制、求值隔离（按用户约定搁置）
+     （见 generator-laziness.md 文末两份实施记录）
 ```
 
 **每层的门槛**：动 Abs 形状的层，必须先跑**全仓门禁**（含 `check-recall-gold` / `check-gold` /
-`check-real-packages` / 差分语料）并留**改前基线**，因为 `leqAbs` 的语义变化会**全局**影响
-L1 / L2 门禁的接受集。
+`check-real-packages` / 差分语料）并留**改前基线**。
+> **2026-11-05 证据订正**：本段原写「`leqAbs` 的语义变化会全局影响 L1/L2
+> 门禁」，但 `leq.ts` 全文**不读 `conf`**（也不读 `facets`）——`conf` 实际
+> 只进 `sameOptionalAbs` / projection / drift 证据门槛，且**不进 `absKey`**。
+> 可选槽位范式（`leqAbs` / `formatShape` / dts / schema / guard 只读既有
+> 外延面）之所以零回归，靠的正是这一点；金标 / 真包门禁仍必须逐次复跑，
+> 但不要再把 `leqAbs` 当作阻塞理由。
+
+---
+
+## 剩余槽位的受控 minor 执行方案（A2+A8 / A10 / A11）
+
+> **进度（2026-11-05）**：步骤 0（改前基线）与步骤 1（槽位容器 + 搬运链 +
+> 键 + 回归钉）**已落地**；步骤 2 按**改动面从小到大**逐槽推进：
+> `protoOwnKeys` → `callable` → `brand`（**三槽均已启用**，2026-11-05）。每槽独立提交 + 独立门禁
+> + 独立全仓回归基线。顺序相对下表调整：`protoOwnKeys` 可做到「空槽位零回归」
+> （只增正向钉、不改任何既有 expectation），先用它验证范式；后两条风险递增。
+> A6（2026-11-04）已经验证了安全的扩展范式，直接复用，不要另起炉灶。
+>
+> 接入前复测发现台账口径已过期并已订正：**A2+A8 的运行时裸调用抛错由
+> Bug 272 闭合**（残余是形状化判据与声明面）；**A11 的 dts 面由 Bug 554 闭合**
+> （残余是身份随值携带，不是展示面）。第三轮又发现 **A11 的「展示投影面」
+> 是仓库已否决的诉求**（族 65 / Bug 240 / Bug 99 明确改由运行面协议槽钉身份）
+> ⇒ 曾尝试发布到 `formatShape` 导致 4 条回归，已整体撤回。照旧口径排期会重复功。
+
+**范式（照抄 A6）**：新增**可选**槽位（缺省不出现 ⇒ 旧形状逐字节不变），
+`subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
+dts / schema / guard **只读既有外延面**，新槽位只参与运行期精化与投影增强。
+A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红消失）。
+> 该句是**步骤 1 当时**的口径；步骤 4 之后 service 的 dts / zod / standard /
+> guard 已按 `facets.brand` 消费生成器身份（见下方实施记录），core 展示面
+> 仍恒不发布。`leqAbs` 的既有接受集始终未动。
+
+| 槽位 | 服务条目 | 承载内容 | 主要消费点 |
+|---|---|---|---|
+| `callable` | A2 + A8 | 值是否可裸调用 / [[Construct]] 形态 | `$call` 裸调用臂、`exec/class/*` |
+| `protoOwnKeys` | A10 | 原型对象自有键集（含符号键） | `getOwnPropertyNames` / `hasOwn` / `keys` 族 |
+| `brand` | A11 | 生成器对象身份（带泛型实参） | **service dts**（`iteratorTSType`）+ **zod / standard / guard 三面运行时校验器**（2026-11-05 bug fix，见下方实施记录）；core `formatShape` 明确不发布（既有契约，曾致 4 条回归） |
+
+**步骤（每步一个 PR，禁止合并提交）**
+
+0. **改前基线** ✅ 已跑全量 `pnpm run test` 并留档失败集合（16 文件 / 21 用例，
+   均为本地 Node 22 与 CI Node 24 的宿主面差异，非代码回归）；单跑金标 / 真包 /
+   差分语料 / `benchmark:oss` 同批留档。
+1. **只加槽位容器 + 读写 API** ✅ 已落地：`Abs.facets?: AbsFacets` 与
+   `cloneAbsFacets`（`algebra/abs.ts`）、`snapshotAbs` / `substAbs`（含 var 替换
+   分支）/ `renameAbs` 整包搬运、`absKey` 只对**非空**容器进键（空容器 ≡ 缺省
+   ⇒ 旧键逐字节不变）。`leqAbs` / `formatShape` / dts / schema / guard 不读容器。
+   回归钉 `algebra/__tests__/abs-facets-carrier.test.ts`（8 例）；公共 API 冻结
+   未变更、金标 + 真包 204 例全绿。
+2. **逐条启用**：`protoOwnKeys` → `callable` → `brand`（**三槽全部 ✅ 2026-11-05**），每条
+   独立提交 + 独立回归基线。槽位只做**运行期精化与投影增强**：不新增
+   `Shape` 判别联合成员，`leqAbs` 既有接受集不动，空槽位 ≡ 缺省。
+3. **全仓门禁复跑**并对比步骤 0；任何 `check-recall-gold` recall/precision < 1.0、
+   真包 FP > 0、差分语料回退 ⇒ 回滚该槽位，其余槽位不受影响。
+4. **发 minor（2026-11-05 决策；标注口径同日订正）**：**暂无外部用户** ⇒
+   本批统一以 **minor** 发布（依据 `packages/nudojs/CHANGELOG.md`「bump 级别说明」
+   与历史提交 `d8e46b54`），不占 major、不触发 `confirm_major`。产品裁决：
+   **整批不判定为 breaking 变更** ⇒ changeset 不写 BREAKING / Migration 标注，
+   兼容性注意点只作升级提示、不作迁移要求。changeset `.changeset/abs-facets-slots.md`
+   覆盖 core / service / harvester（生成器身份收紧另立 patch
+   `.changeset/generator-identity-validator-fix.md`），下游由
+   `updateInternalDependencies` 联动；`gate-major.mjs` 与 `release.yml`
+   **无需改动**（gate 拦的是 major，minor 自动放行，不需 `confirm_major`）。
+   dts 面补 `Generator<T, TReturn, TNext>` 类型实参（A11 的 TS2314 风险）随
+   残余批次推进。**一旦有外部用户依赖这些包面，回到 1.x breaking = major。**
+
+**验收门槛**：金标 1.0/1.0 · 真包 0 FP · 差分语料 0 回退 · 公共 API diff 只含新增 ·
+空槽位下所有投影输出逐字节不变。**回滚**：槽位默认空 ⇒ 单条 revert 不牵动其余槽位。
+
+**`protoOwnKeys` 接线明细（步骤 2 第 1 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 单一事实源 | `exec/runtime/brand-tables.ts::protoOwnKeysOf`（`members.ts` re-export）：优先 `a0.facets.protoOwnKeys`，缺省回落 `protoBrandOwnStringKeys` 按名表 |
+| 生产 | `builtins/ctor.ts::protoBrandAbs`（按名表优先，否则 `hostProtoOwnKeys` 采集宿主）、`objectProtoBrand`（Object 单例）、`exec/runtime/containers/member.ts::generatorProtoBrandOf`（恒空键集） |
+| 消费 | `builtins/object/enum-entries.ts::builtinBrandOwnKeyNames`（gOPN）、`builtins/object/methods.ts` 的 `Object.hasOwn` 臂与 `ownSymbolKeysAbs` |
+| 搬运 | 步骤 1 的 subst / snapshot / rename / absKey + `objects.ts::joinAbs` 的 `inheritJoinFacets`（两侧一致才继承） |
+
+已知边界（**不算回归，勿当精确承诺**）：① 用户类原型若在
+`registerEvalClass` **之前**被创建，按名表查不到 spec 且不在宿主构造器表内
+⇒ 不挂槽位，消费侧回落按名表（行为不变）；② 用户类原型交错定义序
+**已由** `protoMemberOrder` 复原（`eval-bug-58` 负控已升级为 4 条对拍钉），
+仅**手写 spec / 旧产物**无有序表时回落保守域；
+③ `facets` 不进 `HarvestSig`、不落盘（A2 残余批次另论）；
+④ **残余精度批次已收口（2026-11-05）**：内建原型由 `hostProtoOwnKeys`
+采集宿主真实键集（含 `symbols`），既有 `string[]` / `boolean` /
+`arr<symbol>` 保守域负控已升级为与宿主**动态对拍**的精确断言；键集随
+Node 版本给出各自真实值，**不得写死清单**（否则 CI Node 24 / 本地 Node 22
+会给出确定的错值）。
+
+**`callable` 接线明细（步骤 2 第 2 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 语义 | `AbsFacets.callable = false` = **无 `new` 的 [[Call]] 定抛**；与规范 `IsCallable` 不同（class constructor 的 IsCallable 为 true） |
+| 生产 | `exec/class/declare.ts::$class`（brand 形类值）、`exec/runtime/members.ts::$classExpr`（fn 快路径）、`harvester/harvest-dts.ts::classValueAbs`（`declare class` 类值，A2 残余） |
+| 消费 | `exec/call.ts::isClassValueCallee` 以槽位为**优先**判据；旧 class-mark WeakMap / `ctor + _rest` 启发式全部保留作兜底。`builtins/json.ts` replacer 臂另以 `facets.callable === false` 判**确定抛** |
+| 搬运（A2 残余） | `harvest-to-abs.ts::harvestedValueToAbs` 的 `absFunction` mock 重建、`harvest-json.ts` 的 `HarvestSig.callable` 磁盘往返（`HARVEST_DISK_ABI` v14→v15） |
+| 明确不消费 | `exec/call.ts::callableFacetOf`（Proxy 的 `IsCallable` 判定）。`json.ts::brandCallable` 的 WeakMap 判据保留作**无槽位值**（内建构造器 Map 等）的 `may-throw` 兜底 |
+
+**A2 残余批次结论（2026-11-05）**：harvest / 声明面已生产槽位，产品面
+`JSON.stringify(..., 类构造器)` 由 `may-throw` 升为确定抛 TypeError。
+**与接入前预测不同**：`check-recall-gold` / `check-real-packages` 的
+expectation 集合**实际未变**（语料中没有「类构造器作 replacer」形态），
+446 例针对性门禁全绿 ⇒ 不需要动金标。反向对照
+`harvest-bug-826` 的「去掉 ctor facet」用例需**同时移除 `facets.callable`**
+才能回到旧的 may-throw 状态（否则 `$new` 回落 `$call` 会命中
+`isClassValueCallee` 直接定抛）。
+
+**`brand` 接线明细（步骤 2 第 3 槽，2026-11-05）**
+
+| 面 | 落点 |
+|---|---|
+| 生产 | `exec/runtime/async.ts::makeGenObject`（同步 → `Generator`，async → `AsyncGenerator`），**形状仍是闭 obj** |
+| core 展示 | **明确不改** `format/format.ts`：展示面恒为 `{…}`，身份由运行面协议槽钉（既有契约） |
+| service dts | `emit/dts-generator.ts::iteratorTSType`：brand 替代 `next` 槽判据；元素类型仍由数字下标槽 join ⇒ 恒 `Generator<T>`（无 TS2314） |
+| 搬运 | 步骤 1 四链 + `joinAbs::inheritJoinFacets`（两侧一致才继承） |
+
+**踩过的坑（勿重犯）**：最初尝试在 core `formatShape` 发布身份（先整体
+替换成裸 `Generator`，再改成 `Generator & {…}` 交集标注）⇒ 全仓回归新增
+**4 条失败**，全部是精确断言展示面恒为 `{…}`：`eval-bug-212`（精确结构串）、
+`eval-class-body`、`eval-loop-return-join`×2（`/^\{/`，注释明写「身份改由
+运行面协议槽钉」）。按「任何回归即回滚该槽位」纪律**撤回 core 展示面消费**，
+只保留生产 + 搬运 + dts 判据 ⇒ 零回归。教训：A11 的「展示投影面」是仓库
+已否决的诉求，不是待修欠账；`format.ts` 现与改动前逐字一致。
+
+已知边界：① **`genNext` 本轮已接通保守域（2026-11-05）**：`makeGenObject`
+填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 默认值类型等价，**不是
+精度承诺**），`iteratorTSType` **条件投影**第 3 实参 ⇒ 真实生成器 dts 为
+`Generator<T, TReturn, unknown>`；无 `genNext` 的手工 / 旧 Abs 仍两实参 /
+一实参逐字不变（回归 `emit-gen-next-projection.test.ts` 6 例，含
+`tscNoEmit` 端到端；`abs-generator-brand-facet.test.ts` 的 TNext 钉改判
+保守域 + 键隔离）。**填真实 v 域仍需 A1 步骤 4 真挂起**（明确停点）：
+`$yield` 恒返 `unknown`、`next` 槽是零形参 `$fnVal` ⇒ v 被静默丢弃。
+② brand **由 service dts + 三个运行时校验器面消费**，core 展示面恒不发布
+（防止再次尝试）。③ **schema / guard / standard 的生成器身份投影已实施**
+（2026-11-05）：按产品裁决，导出校验器接受「不是生成器的普通对象」是
+**bug 修复、不判定为 breaking 变更**。`emit-bug-130` 的夹具**无** `facets.brand`
+⇒ 仍钉 `z.object({  })` 并作为「旧 Abs 不触发身份投影」的负控制，与收紧不冲突。
+判据、三面口径、边界与版本定性见下方「**实施记录**」。
+
+## schema / guard / standard 生成器身份投影 · **实施记录**（2026-11-05）
+
+> 结论：**已实施 —— 定性为 bug 修复，不判定为 breaking 变更**。产品方裁决：
+> dts 面已声明 `Generator<T>`，导出校验器却放行 `{}` ⇒ 是校验器**没有执行
+> 已声明类型**的缺陷；收紧接受集按 `docs/versioning.md` 的 soundness **patch**
+> 发布，**不写 BREAKING / Migration 标注**（该修复自身是 patch changeset；
+> 与同批 minor 合并发布时包版本取最高 minor）。2026-11-05 产品方进一步裁决
+> **整批不判定为 breaking 变更** ⇒ `.changeset/abs-facets-slots.md` 的
+> BREAKING / Migration 标注亦一并撤掉，发布级别仍为 minor。原「待拍板」
+> 问题关闭；方案 (b) 的不可行实证保留在回归测试里。
+
+| 方案 | 技术判定 | 结论 |
+|---|---|---|
+| **(a) `z.custom` + `Object.prototype.toString` 判别谓词** | ✅ 可行：`facets.brand` 随值携带、dts 已在消费；谓词可内联进产物，不新增 import、不改 zod 版本 | ✅ **已采用**（2026-11-05） |
+| **(b) `z.instanceof` + 白名单扩展** | ❌ 技术上不可行（无全局 `GeneratorFunction`；生成器对象原型构造器名为 `""`；`GF` 是生成器**函数**的构造器） | ❌ 保留实证（`emit-generator-identity-poc.test.ts` 的「方案 (b)」组） |
+| **(c) 保持现状 + 写明依据** | 旧结论基于「收紧是产品语义决策」 | ❌ **已推翻**：产品方明确「收紧是 bug」 |
+
+**实施面（判据单一真源 `service/src/emit/generator-identity.ts`）**：
+
+- 判据只取 `Abs.facets.brand === "Generator" | "AsyncGenerator"`；**不**取
+  `next` 槽启发式（普通迭代器也有 `next`），也**不**动 core 展示面 `format.ts`
+  （A11 曾致 4 条回归的展示面路径未被照抄）。
+- `SchemaNode` 新增 `{ k: "generator"; tag }`。**2026-11-06 补齐递归**：此前只在
+  导出校验器顶层生效，嵌套字段仍结构投影（zod 收紧 / guard 放行 ⇒ 四面相反）；
+  现由 ① core `denoteGuardB` 在递归入口读 `facets.brand` 生成身份子句（obj 槽
+  自动继承）② `absToSchemaNodeB` 任意层级早退 ③ 约束投影通道新增
+  `syncGeneratorTags`（`absToConstraint` 折成 Constraint 时丢 facets ⇒ 按原始
+  Abs 树把 obj/arr/tuple/union/promise 的对应位置同步回 generator 节点）
+  三处共同保证。**不改 `Shape` 判别联合**，族 01 数字下标口径零回归。
+- zod：`z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")`
+  （异步为 `"[object AsyncGenerator]"`）；standard：库版 `checkNode` 与产物内联
+  `__nudoCheck` **两份实现同口径**，节点序列化补 `{"k":"generator","tag":…}`；
+  guard：身份子句由 core 递归生成，service 不再重复注入。
+- 无 `facets.brand` 的旧 Abs / 手工夹具**逐字不变** ⇒ `emit-bug-130` 的
+  `z.object({  })` 断言仍绿，现作为负控制；`emit-generator-identity-poc.test.ts`
+  由 PoC 升级为生产接线回归（16 例：四面逐值同裁决、真跑、strict 编译、
+  伪造边界、嵌套递归、跨 realm 判据实测）。`eval-bug-240` 的精确串只多一条
+  身份前缀，按顶层 ` && ` 拆条款的原生 oracle 仍逐条可见。
+
+**已知边界**：① `Symbol.toStringTag` 可伪造（与 `z.instanceof(Date)` 可改原型
+伪造同类）。2026-11-06 实测对比原型链判据（`%GeneratorPrototype%.isPrototypeOf`）：
+后者确实**不可伪造**，但会把 `node:vm` 跨 realm 的真生成器误拒 ⇒ 结论是**保留
+toStringTag 口径**（跨 realm 可判），把伪造记为边界（`判别谓词取舍实测` 钉住）；
+② 元素域 `T` / `TReturn` / `TNext` 本就不进运行时校验器，身份投影不改变这点。
+
+**CLI 端到端实证**（`nudo export <file> --format all`，源文件
+`export function* gen(): Generator<number> { yield 1; }`）：zod →
+`z.custom((v) => … "[object Generator]")`；standard →
+`{"k":"generator","tag":"Generator"}`；guard → 身份子句 ∧ 结构子句；dts →
+`Generator<number, undefined, unknown>` ⇒ 四面现在指向同一个声明域。
+
+**回归与发布**：本族 12 例 + emit 族 502 例全绿，全仓回归结果见当日工作日志。
+changeset `.changeset/generator-identity-validator-fix.md` 为
+`@nudojs/service: patch`，正文明确「bug 修复，非 breaking」。
+
+**同期配套（2026-11-05，零语义重构）**：`algebra/` 顶层 93 个平铺 `.ts` 中 50 个
+已由 `scripts/relocate-core-subdomains.mjs --apply` 归入 6 个子域（795 处相对
+导入机械重写，codemod 幂等），剩余 43 个由 `scripts/check-core-subdomains.mjs`
+冻结。`scripts/aggregate-tests.mjs` 的入口收敛全量试点因模块共享污染（新增 15 条
+失败）已回滚；2026-11-05 改为**按 S / M / R 三级逐族验证**：已启用 14 个
+S+M 族（410 文件 → 14 入口，全仓 vitest 入口 2005 → 1769）。
+
+**2026-11-06 再推进 2 个 R 级族**：给脚本加第 5 条 guard（模块级
+`vi.mock` / `vi.hoisted` 自动排除）与 `--revert-only <key>` 单族回退（此前
+`--revert` 全局会抹掉全部已启用族）；`vscode-host-stub.ts::makeExtensionContext`
+补 activate 前的注册表面复位（解掉 2 条 duplicate-command 失败）。逐族验证后
+启用 `vscode/.../lsp` 6 + `service/.../service` 114 = **120 文件 → 2 入口**
+（全仓 1769 → 1651），`service-bug-045` 因模块级 `vi.mock` 保留独立入口。
+其余 4 族（core 324 / eval 166 / lsp 148 / cli 157 = **795 文件**）全量试聚合
+仍新增 7 条失败（共享 memo / registry / stub、watch 事件假设），已用
+`--revert-only` **精确回退**、不动已启用的 16 族 ⇒ 仍需逐族补统一复位
+（`CONTRIBUTING.md` 有完整纪律）。这些重构与槽位启用互不依赖。

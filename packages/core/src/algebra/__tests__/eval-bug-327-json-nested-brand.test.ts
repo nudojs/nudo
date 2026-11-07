@@ -19,7 +19,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, abs } from "@nudojs/core";
-import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
+import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../diagnostics/may-throw.ts";
 import { call } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");

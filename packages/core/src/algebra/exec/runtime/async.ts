@@ -21,11 +21,11 @@
 import type { Abs } from "../../abs.ts";
 import { abs, boolLit, confJoin, litValue, strLit, unknown, never, type Confidence, isAbsLike } from "../../abs.ts";
 import { joinAbs, objOf, getSlot, type ObjShape } from "../../objects.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow, undef, litTruth, asAbsVal, $fnVal, noBody, isNudoReturn, isNudoBreak, isNudoContinue, pushThrowExit, takeThrowExits } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
-import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, type GenDeferred } from "../match-iter.ts";
+import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, registerGenTrigger, copyMatchIterTables, notePendingGen, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
 import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
@@ -704,6 +704,68 @@ interface GenDelegation {
 const genDelegationStack: GenDelegation[][] = [];
 
 /**
+ * A1 步骤 4（2026-11-07）：**挂起点绑定回放**。
+ *
+ * 结构约束：引擎的生成器体是普通 thunk，分支/循环臂是宿主箭头（`$fork` /
+ * `$whileSeq` / `$for`…）——真 `yield` 落进箭头是 SyntaxError，且抽象 fork
+ * 一次跑完双臂、无法只停在其中一臂 ⇒ §5.4 设想的「把体降成真 JS
+ * generator」在本内核里不是局部改造（见 generator-laziness.md 步骤 4
+ * 记录）。本步不改体执行时序（仍一次跑完，步骤 3 不变量保留），而是把
+ * **外层自由写绑定**在每个 `$yield` 处的取值记成时间轴，消费推进到第 k
+ * 个 yield 时把绑定回放到 `timeline[k-1]` ⇒ native 的「首个 yield 之后
+ * 的写尚未发生」在**值面**精确复现（Bug 212 c3/c4 的 `1` / `"a"`）。
+ *
+ * 转译侧（`genSuspendTail`）传入 capture/restore 两个闭包；捕获用 `$copy`
+ * 共享 memo ⇒ 容器深拷贝、const 别名组身份不分裂。`timeline[k-1]` 是第 k
+ * 个挂起点，**最后一格是终态**（体跑完、步骤 1 的 finally join 已折回）
+ * ⇒ `next()` 耗尽 / 迭代 drain 推进到 `full.length + 1`，不会把「最后一个
+ * yield 之后的写」wrong-exact 抹掉。回放是**单调推进**（`lastApplied`）；
+ * `.return()` / `.throw()` 落在未启动生成器上时不推进（原生体根本不跑）。
+ *
+ * sound 守卫：路径敏感（fork 臂序列是 join 而非线性时间轴）、体内延迟异常、
+ * `yield*` 委托三类形态下整帧 `enabled = false` ⇒ 严格回退到步骤 1 的
+ * `join(事前, 事后)` 过近似，不产「自信的错值」。
+ */
+export interface GenSuspendHooks {
+  /** 读取此刻全部外层自由写绑定的 Abs 快照（同一次捕获共享 memo） */
+  capture: () => Abs[];
+  /** 把某个挂起点的快照写回外层绑定 */
+  restore: (values: Abs[]) => void;
+}
+interface GenSuspendFrame {
+  hooks: GenSuspendHooks;
+  timeline: Abs[][];
+  enabled: boolean;
+  lastApplied: number;
+}
+/**
+ * 体执行期间的帧栈（同步配对）。**每次 `collectGenBody` 都必须压一格**，
+ * 无钩子时压 `undefined` 作隔离哨兵——否则嵌在外层生成器体里创建并消费的
+ * 内层生成器，其 `$yield` 会读到栈顶的外层帧并把快照错记进外层时间轴
+ * （`exec-generator-consumption` 的 inner `.return(77)` 钉住过该污染）。
+ */
+const genSuspendStack: Array<GenSuspendFrame | undefined> = [];
+/** 生成器对象 → 帧（fresh 与全部别名共享同一帧） */
+const genSuspendTables = new WeakMap<object, GenSuspendFrame>();
+
+/** `$yield` / `$yieldStar` 的挂起点标记：记录此刻外层绑定状态。 */
+function noteGenSuspendPoint(count = 1): void {
+  const f = genSuspendStack[genSuspendStack.length - 1];
+  if (!f) return;
+  const snap = f.hooks.capture();
+  for (let i = 0; i < count; i++) f.timeline.push(snap);
+}
+
+/** 消费推进到第 k 个 yield：把外层绑定单调回放到该挂起点。 */
+function applyGenSuspend(g: Abs | undefined, k: number): void {
+  if (!g || k <= 0) return;
+  const f = genSuspendTables.get(g as object);
+  if (!f || !f.enabled || k <= f.lastApplied || k > f.timeline.length) return;
+  f.lastApplied = k;
+  f.hooks.restore(f.timeline[k - 1]!);
+}
+
+/**
  * 生成器对象（Bug 22）：带迭代器协议面的对象 Abs——
  * - `next`/`return`/`throw` 方法槽（typeof → "function"），next 按调用序
  *   折 {value, done}（字面量 yield 序列首调用 → {value: y0, done: false}、
@@ -730,6 +792,15 @@ function makeGenObject(
   /** Bug 229：体内 yield* 委托记录（.return(v) 转发用） */
   delegations: GenDelegation[] = [],
 ): Abs {
+  // A1 步骤 2 旁路补齐（2026-11-06）：协议三方法读的是闭包 `full`，
+  // 不经过 `match-iter.ts` 的 7 个读出面。给它们也接上「该跑了」触发点
+  // ⇒ 步骤 3 若接线，首消费点无论走 `next()` / `.return()` / `.throw()`
+  // 都能触发体。生产侧**不登记任何触发器** ⇒ 这里恒为 WeakMap miss，
+  // 值面逐字不变（回归钉 `gen-trigger-protocol-faces.test.ts`）。
+  let genSelf: Abs | undefined;
+  const fireOnce = (): void => {
+    if (genSelf) fireGenTrigger(genSelf);
+  };
   const state = { i: 0, done: false, poisoned: false };
   const live: Abs[] = [...full];
   const iterResultUnknown = (): Abs =>
@@ -738,6 +809,13 @@ function makeGenObject(
   // promise<iterResult>）
   const deliver = (v: Abs): Abs => (asyncMode ? wrapPromiseAbs(v) : v);
   const next = $fnVal([], (): Abs => {
+    fireOnce();
+    // A1 步骤 3：触发发生在「方法值已被取出」之后 ⇒ 本次调用必须转发到
+    // 升级后的闭包，否则首调读到空壳序列（undefined）。
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["next"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== next) return $call(upgraded, []);
     // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
     // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
     if (deferred && !state.done) {
@@ -748,6 +826,11 @@ function makeGenObject(
     if (state.done || state.i >= full.length) {
       if (!state.done) {
         state.done = true;
+        // A1 步骤 4：耗尽 = 体跑到末尾 ⇒ 时间轴推进到终态格。少了这一步会
+        // 把外层绑定留在最后一个 yield 的快照上，「最后一个 yield 之后的写」
+        // 被 wrong-exact 抹掉（exec-generator-consumption 的 inner .return(77)
+        // 回归钉正是该形态）。终态格是步骤 1 的 join(事前, 事后) ⇒ sound。
+        applyGenSuspend(genSelf, full.length + 1);
         if (deferred?.throw !== undefined) {
           if (!asyncMode) throw new NudoThrow(deferred.throw);
           return deliver(rejectedPromiseAbs(deferred.throw));
@@ -759,6 +842,9 @@ function makeGenObject(
     }
     const v = full[state.i]!;
     state.i++;
+    // A1 步骤 4：交付第 state.i 个 yield ⇒ 外层绑定回放到该挂起点
+    //（native：体只跑到这个 yield，其后的写尚未发生）。
+    applyGenSuspend(genSelf, state.i);
     if (live.length > 0) live.shift();
     return deliver(genIterResult(v, false));
   });
@@ -840,6 +926,14 @@ function makeGenObject(
     return genIterResult(v, true);
   };
   const ret = $fnVal([], (...args: Abs[]): Abs => {
+    fireOnce();
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["return"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== ret) return $call(upgraded, args);
+    // A1 步骤 4：**不**推进时间轴。原生 `.return()` 落在未启动的生成器上
+    // 时体根本不跑（外层绑定恒为事前值）；引擎已在 fireOnce 跑完体，只能
+    // 保留步骤 1 的 join(事前, 事后) 过近似——推进到末尾会产 wrong-exact。
     const v = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     // Bug 229：挂起点在 yield* 委托内 → .return(v) 先转发给委托迭代器
@@ -869,6 +963,12 @@ function makeGenObject(
     return deliver(finishReturn(v, ctx));
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
+    fireOnce();
+    const upgraded = genSelf && genSelf.shape.k === "obj"
+      ? (genSelf.shape as ObjShape).slots["throw"]?.value
+      : undefined;
+    if (upgraded !== undefined && upgraded !== thr) return $call(upgraded, args);
+    // A1 步骤 4：同 .return()——不推进时间轴，保留 join 过近似（见上方注释）
     const e = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
     state.done = true;
@@ -918,6 +1018,30 @@ function makeGenObject(
     slots[String(i)] = { value: els[i]!, internal: true };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  // 协议三方法闭包在 g 落地后才能被外部调用 ⇒ 此刻回填触发身份是安全的。
+  genSelf = g;
+  // A11 · 槽位启用：生成器对象身份从「按 next / @@iterator 槽启发式」升级为
+  // 随 Abs 值携带的 brand。形状仍是闭 obj（**不动** Shape 判别联合），
+  // subst / snapshot / join / absKey 整包搬运；dts 的 `Generator<T>` 泛型
+  // 实参仍由 service 侧 iteratorTSType 推导 ⇒ 不输出裸名（TS2314）。
+  g.facets = {
+    ...(g.facets ?? {}),
+    brand: asyncMode ? "AsyncGenerator" : "Generator",
+    // A11 残余：`Generator<T, TReturn, TNext>` 的第 2 实参。retVal 是
+    // 构造期收集的 return 域（已有，见本文件 ret 计算）。
+    genReturn: retVal,
+    // A11 残余 · TNext：引擎**不建模** `.next(v)` 的入参（`$yield` 恒返
+    // unknown，`next` 槽是零形参 `$fnVal` ⇒ v 被静默丢弃）⇒ 填最保守的
+    // `unknown`（= TS 该类型形参的默认值，不假精确）。这样槽位、搬运链、
+    // `facetKey`、dts 第三实参投影全部**真实接通**，为 A1 步骤 4 真挂起后
+    // 填真实 v 域预置接线；在此之前三实参是**保守域**，不是精度承诺。
+    genNext: unknown,
+    // 「第三种」：完整收集序列随值搬运，作为 dts 元素域的单一真值来源。
+    // 取 `full`（= $gen 的 ys.els）而非 `els` —— 后者是 $arr 之后可能被
+    // widen 的结构近似（Bug 53 注释：完整序列才是 next()/侧表的权威数据）。
+    // 数组做一次快照，Abs 元素按引用共享（与 genReturn 同口径）。
+    genElements: [...full],
+  };
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）
   // Bug 141：async generator 装 @@asyncIterator（自返）+ @@toStringTag
@@ -950,6 +1074,8 @@ function makeGenObject(
       live.length = 0;
       state.i = full.length;
       state.done = true;
+      // A1 步骤 4：迭代整体消费 = 体跑到末尾 ⇒ 推进到终态格（同 next 耗尽）
+      applyGenSuspend(g, full.length + 1);
       return remaining;
     },
     // peek 供数组解构 lowering 的逐项投影（按消费位读，不推进）——族 01
@@ -1030,12 +1156,21 @@ export function generatorProtoProtocolMember(name: "next" | "return" | "throw"):
  * Bug 141：asyncMode（第二实参）= async generator 面——迭代结果经 promise
  * 交付（next/return/throw 返 promise）、装 @@asyncIterator 自返槽与
  * @@toStringTag "AsyncGenerator"（原生 async function* / async * 方法）。 */
-export function $gen(body: () => Abs, asyncMode = false): Abs {
+function collectGenBody(
+  body: () => Abs,
+  asyncMode: boolean,
+  hooks?: GenSuspendHooks,
+): { gen: Abs; frame: GenSuspendFrame | undefined } {
   const ys: GenYieldCollector = { els: [], ctxs: [] };
   const marker = getGenPathSensitive();
   const prevOverride = getGenJoinOverride();
   setGenJoinOverride(null);
   currentYieldStack().push(ys);
+  // A1 步骤 4：挂起点时间轴帧（仅当转译侧提供了 capture/restore 钩子）
+  const frame: GenSuspendFrame | undefined = hooks
+    ? { hooks, timeline: [], enabled: true, lastApplied: 0 }
+    : undefined;
+  genSuspendStack.push(frame);
   // Bug 229：本帧的 yield* 委托表（.return(v) 转发用）——与 yieldStack 平行
   // 压栈，$yieldStar 记入（起始下标 + 元素数 + 委托对象 + 并出元素）。
   const delegations: GenDelegation[] = [];
@@ -1071,8 +1206,14 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
     soft = popMayThrowFrame(controlToken !== undefined);
     currentYieldStack().pop();
     genDelegationStack.pop();
+    genSuspendStack.pop();
     if (controlToken !== undefined) throw controlToken;
   }
+  // A1 步骤 4：时间轴的**终态格** = 体跑完之后、步骤 1 的 finally join
+  // 已折回的外层绑定状态。生成器被 next() 耗尽 / 整体迭代时回放到这一格
+  // ⇒ 既不会停在首个挂起点（wrong-exact），也不越过 sound 的 join。
+  // 无钩子（frame === undefined）时零开销。
+  if (frame) frame.timeline.push(frame.hooks.capture());
   // Bug 99：早退臂并入终末值域（throw/token 路径上已推臂同样算数——
   // 返回路径可能已先于 throw 完成）
   const ret: Abs =
@@ -1085,6 +1226,16 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
   // 任一臂出现过的 try 位并入每个 yield 点（保守，不做定值）。
   const joined = getGenJoinOverride();
   const pathSensitive = joined !== null || getGenPathSensitive() > marker;
+  // A1 步骤 4 sound 守卫：fork 臂序列是 join（不是线性时间轴）、体内延迟
+  // 异常、yield* 委托三类形态下挂起点时间轴不可信 ⇒ 整帧禁用，严格回退
+  // 到步骤 1 的 join(事前, 事后) 过近似，不产「自信的错值」。
+  if (frame && (pathSensitive || thrown !== undefined || delegations.length > 0)) {
+    frame.enabled = false;
+  }
+  const emit = (gen: Abs): { gen: Abs; frame: GenSuspendFrame | undefined } => {
+    if (frame) genSuspendTables.set(gen as object, frame);
+    return { gen, frame };
+  };
   let ctxs = ys.ctxs;
   if (pathSensitive && ys.ctxs.length > 0) {
     const mask = ys.ctxs.reduce((a, b) => a | b, 0);
@@ -1095,7 +1246,7 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
     const js = joined.shape;
     const els =
       js.k === "tuple" ? [...js.elements] : js.k === "arr" ? [js.element] : [unknown];
-    return makeGenObject(
+    return emit(makeGenObject(
       els,
       joined.conf === "exact" ? ("path" as Confidence) : joined.conf,
       ret,
@@ -1105,14 +1256,14 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
       false,
       asyncMode,
       delegations,
-    );
+    ));
   }
   setGenJoinOverride(prevOverride);
   const arr = $arr(ys.els);
   const as = arr.shape;
   const els = as.k === "tuple" ? [...as.elements] : as.k === "arr" ? [as.element] : [unknown];
   if (getGenPathSensitive() > marker) {
-    return makeGenObject(
+    return emit(makeGenObject(
       els,
       arr.conf === "exact" ? ("path" as Confidence) : arr.conf,
       ret,
@@ -1122,11 +1273,57 @@ export function $gen(body: () => Abs, asyncMode = false): Abs {
       false,
       asyncMode,
       delegations,
-    );
+    ));
   }
   // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
   // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
-  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode, delegations);
+  return emit(makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode, delegations));
+}
+
+/**
+ * A1 步骤 3（2026-11-07）：把 `body()` 从**构造期**挪到**首个消费点**。
+ *
+ * 构造期只产一个「空壳」生成器对象（协议槽齐全、序列为空、conf 保守），
+ * 并登记一次触发器；7 个元素面读出（`match-iter.ts`）+ 协议三方法
+ * （`makeGenObject` 的 `fireOnce`）任一先触达，才通过 `collectGenBody`
+ * 跑一次体并把完整结果 in-place 合并回壳 ⇒ 副作用只发生一次（绕开
+ * 实验 E 的「重跑重复副作用」），且 body thunk 捕获活绑定（实验 D）
+ * ⇒ 跨函数消费读到的是消费时刻的外层值（§5.3 R3-b 与原生一致）。
+ */
+export function $gen(body: () => Abs, asyncMode = false, hooks?: GenSuspendHooks): Abs {
+  const shell = makeGenObject([], "path", undef(), undefined, [], [], false, asyncMode, []);
+  // 体只跑一次：同一延迟体族经 $copy / snapshotAbs 得到的所有别名共享
+  // 这一份结果（协议闭包、live 视图、delayed 异常同源），避免「重跑重复
+  // 副作用」（实验 E），也让副本触发时填的是副本自己而不是原对象。
+  let cached: Abs | undefined;
+  const ensureFresh = (): Abs => (cached ??= collectGenBody(body, asyncMode, hooks).gen);
+  registerGenTrigger(shell, (target) => mergeDeferredBody(target, ensureFresh()));
+  notePendingGen(shell);
+  return shell;
+}
+
+/** 把触发后收集到的完整生成器对象合并回构造期空壳（身份不变）。 */
+function mergeDeferredBody(shell: Abs, fresh: Abs): void {
+  const slots = (shell.shape as ObjShape).slots;
+  const freshSlots = (fresh.shape as ObjShape).slots;
+  // 协议三方法与数字下标元素槽改指向 fresh 的闭包 / 值；自返槽
+  // （@@iterator / @@asyncIterator / @@toStringTag）与 constructor 保留
+  // shell 自己的身份 ⇒ 迭代仍走「已迁移到 shell 上」的侧表视图。
+  for (const [k, v] of Object.entries(freshSlots)) {
+    if (
+      k === "@@iterator" ||
+      k === "@@asyncIterator" ||
+      k === "@@toStringTag" ||
+      k === "constructor"
+    ) continue;
+    slots[k] = v;
+  }
+  shell.conf = fresh.conf;
+  shell.facets = fresh.facets;
+  // A1 步骤 4：挂起点帧随 fresh 一起挂到每个别名（共享同一时间轴）。
+  const frame = genSuspendTables.get(fresh as object);
+  if (frame) genSuspendTables.set(shell as object, frame);
+  copyMatchIterTables(fresh, shell);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown。
@@ -1139,6 +1336,8 @@ export function $yield(v: Abs, tryCtx = 0): Abs {
   if (top) {
     top.els.push(v);
     top.ctxs.push(tryCtx);
+    // A1 步骤 4：记录该挂起点处的外层自由写绑定状态（时间轴）
+    noteGenSuspendPoint();
   }
   return unknown;
 }
@@ -1168,6 +1367,9 @@ export function $yieldStar(v: unknown, tryCtx = 0): Abs {
     // 外层帧，可折，不标）
     const ctx = tryCtx | (genDrainViewOf(a) !== undefined ? YIELD_DELEGATED_GEN : 0);
     for (let i = 0; i < els.length; i++) top.ctxs.push(ctx);
+    // A1 步骤 4：委托并出的每个元素占一个挂起点（同态快照；委托帧最终
+    // 由 collectGenBody 的 delegations 守卫整帧禁用，此处只保时间轴对齐）
+    noteGenSuspendPoint(els.length);
     if (!lengthKnown) bumpGenPathSensitive();
   }
   return unknown;

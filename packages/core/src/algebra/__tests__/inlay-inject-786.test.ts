@@ -15,7 +15,7 @@
  * 钉：注入生效 ⇒ inlay label 是 `: 42`（env 全局注入）；不注入 ⇒ `: unknown`。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 import { num } from "../abs.ts";
 
 /** `MAGIC` 是自由标识符：缺 env 注入时未绑定 ⇒ 求值被拦 ⇒ unknown */

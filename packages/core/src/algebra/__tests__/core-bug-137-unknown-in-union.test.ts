@@ -16,9 +16,9 @@ import { checkSource, pTrue } from "../index.ts";
 import { abs, num, unknown } from "../abs.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import { lit } from "../term.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface.ts";
+import { takeInterfaceDiags } from "../interface/interface.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 /**

@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { abs, num, str, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import type { Abs } from "../abs.ts";
-import { absKey } from "../abs-key.ts";
+import { absKey } from "../key/abs-key.ts";
 import { instantiateReturn, snapshotAbs, substAbs } from "../hof.ts";
 import { getFnImpl, relationFn } from "../abs-fn.ts";
 import { v as varTerm } from "../term.ts";

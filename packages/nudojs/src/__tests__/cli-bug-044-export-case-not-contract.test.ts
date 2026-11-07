@@ -47,12 +47,12 @@ function dtsSig(stdout: string): string {
 }
 
 describe("BUG-044 — 调试见证不得进入发布/打印面", () => {
-  it("dts：有 case 与无 case 逐字相同（均门禁口径 x: any）", () => {
+  it("dts：有 case 与无 case 逐字相同（均门禁口径 x: unknown）", () => {
     const { dir, withCase, plain } = project();
     try {
       const a = dtsSig(runCliTsx(["export", withCase, "--format", "dts"]).stdout);
       const b = dtsSig(runCliTsx(["export", plain, "--format", "dts"]).stdout);
-      expect(a).toBe("export declare function f(x: any): number | string;");
+      expect(a).toBe("export declare function f(x: unknown): number | string;");
       expect(a).toBe(b);
     } finally {
       rmSync(dir, { recursive: true, force: true });

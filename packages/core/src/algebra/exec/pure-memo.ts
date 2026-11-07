@@ -13,7 +13,7 @@
 import type { Abs } from "../abs.ts";
 import type { AbsApplyResult } from "../abs-fn.ts";
 import { pureValueKey } from "../call-budget.ts";
-import { BoundedLruMap } from "../lru-map.ts";
+import { BoundedLruMap } from "../key/lru-map.ts";
 
 /** 内层 Map 上界（防 LSP 长会话无界膨胀；与 session-cache-limits 口径对齐） */
 const PURE_MEMO_MAX = 256;

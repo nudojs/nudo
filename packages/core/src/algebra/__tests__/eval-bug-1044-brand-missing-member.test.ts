@@ -36,7 +36,7 @@ import {
   BUILTIN_BRAND_METHODS,
   BUILTIN_BRAND_ACCESSORS,
 } from "../exec/runtime/members.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { isNever, throwsError } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";

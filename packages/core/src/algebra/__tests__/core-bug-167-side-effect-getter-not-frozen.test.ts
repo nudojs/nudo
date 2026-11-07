@@ -16,7 +16,7 @@
  * 读域照旧投影、调用点求值序不变。
  */
 import {describe, it, expect} from "vitest";
-import {formatShape, formatAbs} from "../format.ts";
+import {formatShape, formatAbs} from "../format/format.ts";
 import {denoteGuard} from "../denote.ts";
 import {getFnImpl} from "../abs-fn.ts";
 import type { Abs } from "../abs.ts";

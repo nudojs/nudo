@@ -4,7 +4,7 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, anyAbs, confJoin, unknown } from "./abs.ts";
+import { abs, anyAbs, cloneAbsFacets, confJoin, unknown } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { simplifyTerm, termToString } from "./term.ts";
 import type { Pred, PrimName } from "./pred.ts";
@@ -13,9 +13,10 @@ import { attachFnImpl, getFnImpl } from "./abs-fn.ts";
 import type { AbsFnImpl } from "./abs-fn.ts";
 import { getSlot, joinAbs, makeSum } from "./objects.ts";
 import { leqAbs } from "./leq.ts";
-import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
-import { isSymbolAbs } from "./symbol-id.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
+import { isSymbolAbs } from "./key/symbol-id.ts";
+import { copyMatchIterTables } from "./exec/match-iter.ts";
 import type { HofSite, RelSource } from "./hof-types.ts";
 
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
@@ -101,6 +102,8 @@ export function snapshotAbs(a: Abs): Abs {
     // pathNote 是 Abs 级展示 facet —— 快照是**等价副本**，不得丢
     //（同 renameAbs 纪律：重建只搬四件套会把 join 标注静默抹掉）。
     ...(a.pathNote !== undefined ? { pathNote: a.pathNote } : {}),
+    // 槽位容器是等价副本的一部分（A7 纪律：重建不得静默抹掉侧表面）。
+    ...(a.facets !== undefined ? { facets: cloneAbsFacets(a.facets) } : {}),
   };
   // A7 镜像：fn 的 impl 侧表按 Abs 身份挂在 WeakMap 上（abs-fn.ts），重建
   // 只搬 shape 会退化成 shape-only fn（relation 的 inferFrom / condFallback /
@@ -109,6 +112,13 @@ export function snapshotAbs(a: Abs): Abs {
   // 不得在此做 α 替换——快照不换名）。
   const impl = getFnImpl(a);
   if (impl) attachFnImpl(out, impl);
+  // A7 镜像（同口径）：生成器 / 模板标签 / matchAll / 用户迭代器 / Proxy
+  // 的身份侧表也按 Abs 身份挂 WeakMap —— 快照是等价副本，重建只搬四件套
+  // 会把「迭代元素 / 延迟异常 / 委托视图」静默抹掉（副本消费点查不到 ⇒
+  // L2 假阴）。$copy 早有 copyMatchIterTables，此处补上 snapshot 路径。
+  // match-iter.ts 只依赖 algebra 顶层叶子（abs/objects/may-throw），不依赖
+  // hof.ts ⇒ 无环。
+  copyMatchIterTables(a, out);
   return out;
 }
 
@@ -479,6 +489,8 @@ function substAbsInner(
       term: repl.term,
       pred: repl.pred,
       conf: confJoin(a.conf, repl.conf),
+      // 整 Abs 替换 ⇒ 槽位取替换值的（conf 合并已产出新对象，不搬会丢）。
+      ...(repl.facets !== undefined ? { facets: cloneAbsFacets(repl.facets) } : {}),
     };
     // A7：替换值本身是带 impl 的 fn ⇒ 一并搬运（conf 合并已产出新 Abs，
     // 不搬则退化 shape-only）。shape 同引用 ⇒ relation 槽引用一致；行为面
@@ -518,6 +530,8 @@ function substAbsInner(
   // pathNote（分支 join 可解释标注）同 renameAbs 纪律：α 替换是语义等价
   // 变换，Abs 级展示 facet 不得因重建丢失。
   if (a.pathNote !== undefined) result.pathNote = a.pathNote;
+  // α 替换是语义等价变换 ⇒ 槽位容器整包搬运（同 renameAbs / snapshotAbs）。
+  if (a.facets !== undefined) result.facets = cloneAbsFacets(a.facets);
   if (nextImpl) attachFnImpl(result, nextImpl);
   cache.set(a, result);
   return result;

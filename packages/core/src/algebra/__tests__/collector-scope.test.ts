@@ -11,11 +11,11 @@
  */
 import {describe, it, expect} from "vitest";
 import {runWithCollectorScope, createScopedSlot} from "../collector-scope.ts";
-import {createScopedDiagChannel} from "../diag-channel.ts";
+import {createScopedDiagChannel} from "../diagnostics/diag-channel.ts";
 import {setAbsTruncationCollector, noteAbsTruncation, resetAbsCallBudget} from "../call-budget.ts";
 import {setEvalCallCollector, setEvalAssignCollector} from "../exec/calls.ts";
 import {runTranspiled, callTranspiledExportFull} from "../exec/run.ts";
-import {checkSource} from "../check.ts";
+import {checkSource} from "../check/check.ts";
 import {execNudoModule, resetNudoModuleExecCache, setRefineDiagCollector, takeRefineDiags, refineDiagCount, takeRefineDiagsSince} from "../refine.ts";
 
 /** 打点：不走真实求值，隔离验证 collector 路由本身 */

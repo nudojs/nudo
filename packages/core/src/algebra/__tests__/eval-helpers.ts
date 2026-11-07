@@ -14,7 +14,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 /** 转译源并调用导出函数（analyze 模式），返回 CallRecord */
 export function call(src: string, fnName = "f", args: Abs[] = []) {

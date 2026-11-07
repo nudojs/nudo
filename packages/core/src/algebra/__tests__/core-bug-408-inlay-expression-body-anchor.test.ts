@@ -16,7 +16,7 @@
  * **无任何落点位置断言** ⇒ 本钉补落点断言。
  */
 import { describe, it, expect } from "vitest";
-import { collectAbsInlays } from "../inlay.ts";
+import { collectAbsInlays } from "../format/inlay.ts";
 
 const retInlay = (src: string) => {
   const inlays = collectAbsInlays(src, { fromFile: "/t/a.js" });

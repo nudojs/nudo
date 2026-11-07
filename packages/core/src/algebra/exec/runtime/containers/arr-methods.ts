@@ -31,7 +31,7 @@ import {
 } from "../../../builtins.ts";
 import { validateCallableArg, validateIndexArg, applyCallbackAbs } from "../../../hof.ts";
 import { emptyEnv } from "../../../ast-env.ts";
-import { defaultLeakBudget } from "../../../leak.ts";
+import { defaultLeakBudget } from "../../../diagnostics/leak.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import {
   NudoThrow,

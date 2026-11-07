@@ -81,6 +81,7 @@ import {
   locFromNode,
   extractFormals,
   extractParamNames,
+  extractReturnAnnotation,
   resolveFunctionNode,
   fnNameLoc,
   collectTopLevelFunctions,
@@ -564,11 +565,13 @@ export function analyzeFileUncachedInner(
     // 带**声明类型文本**（`FormalParam.tsType`）⇒ 产物面（dts 参数位）
     // 据此保留源码里写下的类型。
     const formals = extractFormals(fn.node, source);
+    const declaredReturnType = extractReturnAnnotation(fn.node);
     const analysis: FunctionAnalysis = {
       name: fn.name,
       loc: fnLoc,
       paramNames,
       ...(formals.length > 0 ? { formals } : {}),
+      ...(declaredReturnType ? { declaredReturnType } : {}),
       cases: [],
     };
     // noDeclaration 分类继承顶层函数普查（类方法 / CJS 绑定等无稳定导出名
@@ -781,6 +784,7 @@ export function analyzeFileUncachedInner(
     // directive path above (possibly under its "<anonymous>" name).
     if (directiveFnStmts.has(stmt)) continue;
     const synthFormals = extractFormals(node, source);
+    const synthReturnAnnotation = extractReturnAnnotation(node);
     const analysis: FunctionAnalysis = {
       name,
       loc: locFromNode(node),
@@ -788,6 +792,7 @@ export function analyzeFileUncachedInner(
       // Bug 479：合成路径的函数此前**不挂**形参表面 ⇒ 产物面（dts 参数位）
       // 看不到 `.ts` 源的声明类型。形参表面与 paramNames 同源（下标对齐）。
       ...(synthFormals.length > 0 ? { formals: synthFormals } : {}),
+      ...(synthReturnAnnotation ? { declaredReturnType: synthReturnAnnotation } : {}),
       cases: [],
     };
     if (noDeclaration) analysis.noDeclaration = true;

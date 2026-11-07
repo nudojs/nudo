@@ -18,7 +18,7 @@ import {v, lit} from "../term.ts";
 import {and, le, ge, pTrue} from "../pred.ts";
 import {div, numericBounds} from "../arithmetic.ts";
 import {makeSum} from "../objects.ts";
-import {formatAbs} from "../format.ts";
+import {formatAbs} from "../format/format.ts";
 import {checkSource} from "../index.ts";
 import type { Abs } from "../abs.ts";
 

@@ -49,7 +49,7 @@ describe("BUG-279 — rest 入参槽不得多包一层数组", () => {
     expect(std.stdout).not.toContain('{"key":"args","node":{"k":"arr","element":{"k":"arr"');
 
     const dts = runCliTsx(["export", join(dir, "lib.js"), "--format", "dts"]);
-    expect(dts.stdout).toContain("...args: any[]");
+    expect(dts.stdout).toContain("...args: unknown[]");
   }, 90000);
 
   it("A 组 standard 校验器**接受**该函数自己的合法调用 `{args:[1,2]}`", () => {

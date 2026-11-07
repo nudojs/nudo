@@ -36,9 +36,9 @@
 import { describe, expect, it } from "vitest";
 import { absFunction } from "../abs-fn.ts";
 import { litValue, numLit, strLit, type Abs } from "../abs.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { resetCheckSourceMemo } from "../check-memo.ts";
+import { resetCheckSourceMemo } from "../check/check-memo.ts";
 import { joinAbs } from "../objects.ts";
 import { pTrue } from "../pred.ts";
 import {
@@ -46,7 +46,7 @@ import {
   setMayThrowCollector,
   throwPayloadOf,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { $invoke } from "../exec/class/invoke.ts";
 
 /** 造一个「构造器」fn Abs：静态成员挂在 shape.slots 上（dual-facet 事实源） */

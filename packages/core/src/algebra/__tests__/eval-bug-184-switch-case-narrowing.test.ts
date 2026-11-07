@@ -23,7 +23,7 @@ import { abs } from "../abs.ts";
 import { pTrue } from "../pred.ts";
 import { joinAbs } from "../objects.ts";
 import { $lit } from "../exec/runtime/state.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { checkSource } from "../index.ts";
 import { l2Count, sidecarOpts } from "./nudo-constraints.ts";
 

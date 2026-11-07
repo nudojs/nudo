@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { call, val, isNever } from "./eval-helpers.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { $await } from "../exec/runtime/async.ts";
 import { litValue } from "../abs.ts";
 

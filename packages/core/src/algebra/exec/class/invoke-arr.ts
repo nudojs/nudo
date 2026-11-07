@@ -45,7 +45,7 @@ import { spliceWindow, toIOIArg } from "../runtime/containers/arr-methods.ts";
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
 // setter 是本模块提升函数声明）。barrel 间接层会在此处拿到 undefined。
 import { emptyEnv } from "../../ast-env.ts";
-import { defaultLeakBudget } from "../../leak.ts";
+import { defaultLeakBudget } from "../../diagnostics/leak.ts";
 import { pTrue } from "../../pred.ts";
 import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { isNullishLitAbs } from "../../surface.ts";

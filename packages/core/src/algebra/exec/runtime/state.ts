@@ -29,7 +29,7 @@ import type { Abs } from "../../abs.ts";
 import { abs, litValue, strLit, unknown, isAbsLike } from "../../abs.ts";
 import "../../term.ts";
 import { pTrue } from "../../pred.ts";
-import { registerSymbolMeta } from "../../symbol-id.ts";
+import { registerSymbolMeta } from "../../key/symbol-id.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";

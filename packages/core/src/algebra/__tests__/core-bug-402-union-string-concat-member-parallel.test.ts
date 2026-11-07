@@ -21,7 +21,7 @@
 import { describe, it, expect } from "vitest";
 import { abs, type Abs } from "../abs.ts";
 import { lit } from "../term.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { concatString } from "../template.ts";
 import { call } from "./eval-helpers.ts";
 

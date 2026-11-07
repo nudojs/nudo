@@ -29,7 +29,7 @@ import { classifyCanBeHeldWeakly } from "../../collections.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { registerProxyParts } from "../../exec/match-iter.ts";
-import { markFreshInstance } from "../../instance-id.ts";
+import { markFreshInstance } from "../../key/instance-id.ts";
 import { setPropFlags } from "../invariants.ts";
 import { isSymbolAbs } from "../symbol.ts";
 import { str } from "../shared.ts";
@@ -37,7 +37,7 @@ import { enforceIterableStaticArg } from "../promise.ts";
 
 /** JS Error 家族构造器名集合在 algebra/error-names.ts（无依赖叶子；
  *  exec/class-registry.ts 的 BUILTIN_ERROR_SUPER 键集同源）。 */
-export { isErrorCtorName } from "../../error-names.ts";
+export { isErrorCtorName } from "../../diagnostics/error-names.ts";
 
 /** Error 构造器 message 槽：原生恒为字符串（缺省/undefined → ""；非字符串
  *  字面量 → ToString）。非字面量保守（字符串保持、其余 strPrim）。

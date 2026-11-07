@@ -111,7 +111,7 @@ nudo export src/api/inline.js --format standard --out dist
 
 调用点观测到的字面量会钉死确切值（`z.literal` / lit 节点 / `=== "Ada"` 检查）。想要契约界（`gt/ge/lt/le`、`int`、字符串长度）而不是观测字面量时，加上侧车。
 
-诚实边界：显式契约优先投影——侧车或 `@nudo:contract` 钉住的参数/返回与调用点无关、直接进投影。只有**完全无证据**（无契约、无调用点）的导出才回退 `entry@L…`——这些参数投影为 `any`——与 `nudo check` 对无约束参数打印的是同一个「无证据」取值：不做猜测，也**不是** `unknown`（导出面与 check 面共用同一份签名数据源——契约 / 调用点证据 / `entry@` 入口兜底；`@nudo:case` 调试见证**不进**发布面）。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。`any`/`unknown` 的分工是产品契约（[`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2）。
+诚实边界：显式契约优先投影——侧车或 `@nudo:contract` 钉住的参数/返回与调用点无关、直接进投影。只有**完全无证据**（无契约、无调用点）的导出才回退 `entry@L…`——这些参数在 Nudo 域是 `any`（无约束），但 TS 投影面输出 **`unknown`**（TS 的 top，不是关闭检查的 `any`；2026-11-06 裁定，见 [Abs / any 与 unknown](../concepts/abs.md#any-vs-unknown)）；`nudo check` 的展示面仍打印 `any`，两个概念在那里继续区分：不做猜测（导出面与 check 面共用同一份签名数据源——契约 / 调用点证据 / `entry@` 入口兜底；`@nudo:case` 调试见证**不进**发布面）。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。`any`/`unknown` 的分工是产品契约（[`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2）。
 
 ## Zod 方言 schema（`--format schema`）
 
@@ -182,7 +182,7 @@ export declare function createUser(input: { name: string; age: number }): { id: 
 
 多个 case 时签名仍保持单个——参数跨 case 取并集并放宽；每个 case 的精确结果保留在 `Case:` JSDoc 行里（调试用外延笔记，不是接口产品）。写 `.d.ts` 文件到目录：`nudo export <file> --format dts --out <dir>`。
 
-`dts` 投影的是**模块导出面**——只有 `export` / `export default` / CJS `exports` 绑定会出现，非导出的顶层函数保持内部。契约与调用点喂同一份签名（与 `nudo check` 同数据源）；`@nudo:case` 调试见证**不进**发布面——`nudo export` 与门禁一样以 `caseMode: "none"` 分析：**没有**契约/调用点证据的参数保持 `any`——与 `nudo check` 对无约束入口参数打印的取值相同。
+`dts` 投影的是**模块导出面**——只有 `export` / `export default` / CJS `exports` 绑定会出现，非导出的顶层函数保持内部。契约与调用点喂同一份签名（与 `nudo check` 同数据源）；`@nudo:case` 调试见证**不进**发布面——`nudo export` 与门禁一样以 `caseMode: "none"` 分析：**没有**契约/调用点证据的参数在 `nudo check` 展示面是 `any`，在 `.d.ts` 投影面输出 TS `unknown`（nudo any ≈ TS unknown，2026-11-06 归一）——两面同源，只是作用域不同。
 
 ## 校验 vs 投影
 

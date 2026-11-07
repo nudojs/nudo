@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { call, effects, isNever, throwsError } from "./eval-helpers.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 
 const wrap = (body: string) => `export function f() { ${body} }`;
 

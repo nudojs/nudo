@@ -12,7 +12,7 @@ import { describe, it, expect } from "vitest";
 import { abs, litValue, numLit, unknown, type Abs } from "../abs.ts";
 import { absFunction } from "../abs-fn.ts";
 import { objOf, isNullProtoObj, markNullProtoObj, makeSum } from "../objects.ts";
-import { markFreshInstance, freshInstanceIdOf } from "../instance-id.ts";
+import { markFreshInstance, freshInstanceIdOf } from "../key/instance-id.ts";
 import { $copy } from "../exec/runtime/containers/obj.ts";
 import { call } from "./eval-helpers.ts";
 

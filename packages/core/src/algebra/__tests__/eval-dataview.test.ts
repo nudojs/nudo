@@ -22,14 +22,14 @@ import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { anyAbs, type Abs } from "../abs.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { call, val, isNever } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 

@@ -1,12 +1,38 @@
 # 生成器体的**惰性**语义（Bug 212）· 架构说明
 
 > **状态**：**步骤 1（join 隔离）已落地（2026-11-04，架构债批次 A1）**——§5.1 的
-> 「自由写快照 + `$join` 折回」已实施（wrong-exact 消灭，回归钉见 §5.1 落地注记）；
-> 步骤 2–4（可延后元素面 / 首消费点触发 / 真挂起）**仍为架构债**。
+> 「自由写快照 + `$join` 折回」已实施（wrong-exact 消灭，回归钉见 §5.1 落地注记）。
+> **步骤 2 的触发点骨架已落地（2026-11-05，零回归）**：`exec/match-iter.ts` 把
+> 7 个元素面读出函数收口到模块私有的幂等触发器表（生产侧不登记 ⇒ 构造期
+> eager 时序与全部值面逐字不变），回归钉
+> [`gen-trigger-skeleton.test.ts`](../packages/core/src/algebra/exec/__tests__/gen-trigger-skeleton.test.ts)。
+> **步骤 3（延迟体）已落地 2026-11-07**（见文末「步骤 3 实施记录」）；
+> **步骤 4 的「挂起点绑定回放」值面切片已落地 2026-11-07**
+> ——c3/c4 的 native `1` / `"a"` 逐点精确复现（见文末「步骤 4 实施记录」）。
+> **仍未闭合**：把体降成真 JS generator 的**全量真挂起**（含非绑定类副作用
+> 的时序），经复核在本内核里不是局部改造（见 §5.4 订正）。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
-> [`packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)。
+> [`eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)、
+> [`eval-generator-cross-function-consume.test.ts`](../packages/core/src/algebra/__tests__/eval-generator-cross-function-consume.test.ts)。
 > 分片：S10 · 族 44 · **研究级** · 出路 **B（精确登记）** · 2026-10-23
+>
+> **2026-11-05 复核订正（6 处与实现不符，勿照旧口径排期）**：
+> ① `leq.ts` 全文**不读 `conf`**（`leqAbs` / `leqShape` 均不读）⇒ §2.1 /
+> §5.2 的「conf 参与 leqAbs ⇒ 全局影响 L1/L2 门禁」不成立；conf 实际只进
+> `objects.ts::sameOptionalAbs` 与 projection / drift 证据门槛，且**不进
+> `absKey`**。② `Confidence` 有 **6 个**取值（`exact/path/widened/mock/
+> partial/opaque`，`abs.ts:19`），不是 3 个；「未收集」标记可考虑复用
+> `partial`（语义是「推导失败」，需另定口径）。③ 生成器对象的**数字下标
+> 槽仍在**（`async.ts:917-919`，族 01 契约），§1.3 附近「Bug 240 不再有
+> 数字下标槽」的注释已过期 ⇒ 步骤 2 的「原地补写」对**原对象**可行。
+> ④ 三张侧表不是元素面唯一来源：`dts-generator.ts::iteratorTSType` 直读
+> shape 数字槽、`async.ts` 的 `next/return/throw` 读闭包 `full` ⇒ 步骤 3
+> 的触发点必须额外覆盖这两条旁路。⑤ `slots` 按引用共享**只对原对象**
+> 成立：`hof.ts::snapshotAbs` 对 obj **深拷贝 slots** 且 `conf` 值拷贝 ⇒
+> fork / `$copy` / 步骤 1 的别名快照副本拿不到原地补写。⑥ dts 面已由
+> A11 残余批次输出**两实参** `Generator<T, TReturn>`（`dts-generator.ts:312-326`）
+> ⇒ TNext 是**第 3** 实参，不是第 2。
 
 ## 0. 结论摘要（一句话）
 
@@ -231,7 +257,7 @@ Abs = `shape × term × pred × conf`（`packages/core/src/algebra/abs.ts`）—
 | 6 | **spread / `Array.from`**（`packages/core/src/algebra/builtins/array.ts`） | 同上 | 同上 |
 | 7 | **数组下标 `it[0]`**（`exec/runtime/containers/arr-index.ts`） | 同上（族 01 的历史口径：`g[0]` 读 yield 值） | 同上 |
 | 8 | **`yield*` 委托的 `.return(v)` 转发**（`exec/runtime/async.ts`） | 委托表在**体执行序**里建（`GenDelegation`） | 委托表必须**随体一起延后建** ⇒ 委托校验（`async.ts` 的下标对位）的下标对位失效即「不转发」 |
-| 9 | **schema / guard / interface 导出**（`packages/service/src/emit/*`） | 生成器在 schema 侧走 `z.instanceof(GeneratorFunction)`（Bug 233 已修）；**元素域不进 schema** | 影响小（元素域本就不进 schema） |
+| 9 | **schema / standard / guard / interface 导出**（`packages/service/src/emit/*`） | 生成器身份由 `facets.brand` 投影到 zod / standard / guard 三个运行时校验器面（2026-11-05 bug fix，见 `architecture-debt.md` 的实施记录）；无 brand 的旧 Abs 仍走结构面；**元素域不进 schema** | 身份投影已递归到嵌套字段（2026-11-06：`core/denote.ts::denoteGuardB` + `syncGeneratorTags`），四面同口径；惰性化不改变该面 |
 | 10 | **差分语料**（`core/src/algebra/__tests__/differential/corpus/`） | `batch5.ts` / `batch11.ts` / `batch20-transpile-adversarial.ts` 里的 13 条生成器用例 | 全部是「**先消费再取值**」形态 ⇒ 惰性模型下**仍需绿**（触发点必须覆盖 `next()` / spread / for-of 三条消费路径） |
 | 11 | **既有生成器钉**（core 10+ 个文件） | 见 §3.1 | 见 §3.1 |
 
@@ -349,7 +375,249 @@ return $gen(() => {
   （若只在 `exec/match-iter.ts` 内部持有、不导出，则**不触公开面** ⇒ 推荐这条。）
 - R2-c：触发点覆盖不全 ⇒ 某些消费路径拿到空元素面 ⇒ 元素域退 `unknown` ⇒ 既有生成器钉变红。
 
+**步骤 2 触发点骨架（2026-11-05 已落地，零回归）**：不改 Abs 表示、不动
+公开面，只把「该跑了」的触发点收口到 `exec/match-iter.ts`：
+`genTriggerTables`（模块私有 WeakMap）+ `fireGenTrigger`（按 Abs 身份幂等）
+在 7 个读出函数首行调用（`drainGenElements` / `genDrainViewOf` /
+`peekGenElement` / `hasGenView` / `peekAllGenElements` /
+`replayGenDeferred` / `matchIterElements`），`copyMatchIterTables` 同步迁移。
+**生产侧不登记触发器** ⇒ `$gen` 的 `body()` 时序不变、全部读出值逐字不变
+（回归钉 `exec/__tests__/gen-trigger-skeleton.test.ts`，7 例）。
+`registerGenTrigger` 不进任何 barrel（`src/index.ts` / `algebra/index.ts` /
+`exec/index.ts` / `internal.ts` 均不 re-export 本模块）⇒ 公共 API 冻结不受影响。
+
+**2026-11-06 旁路补齐（零回归，仍不构成语义增量）**：`fireGenTrigger` 改为
+模块内导出（同样不进 barrel），`runtime/async.ts::makeGenObject` 的 `next` /
+`return` / `throw` 三个协议方法首行接 `fireOnce()` —— 它们读的是闭包 `full`，
+原骨架的 7 个读出面覆盖不到。生产侧**仍不登记任何触发器** ⇒ 三条调用恒为
+WeakMap miss，值面逐字不变。回归钉
+`exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例：三方法各触发一次且
+幂等、与 7 面共享同一触发器、未登记时 Bug 212 / 族 01 精确串不回归）。
+
+> 骨架与旁路补齐都**不构成 §5.2 的语义增量**：「可延后填充元素面」的
+> `conf` 可提升机制、`dts` 直读 shape 旁路、`snapshotAbs` 深拷贝副本的原地
+> 补写都**尚未处理** ⇒ 台账 A1 仍记步骤 2 未闭环，不得因接线落地改标为
+> 「已修」。其中 `dts` 侧不是「漏接触发点」：它在 **service 包**且于**导出
+> 时**读 shape，根本没有消费点（见下方 2026-11-06 实证 B）。
+
+### 5.3 前的**步骤 3 停点**（2026-11-05 复核结论）
+
+一次提交同时撼动 5 个面（构造点值域 / 元素面 / conf 与门禁 / 委托表时序 /
+延迟异常重放），且要改的既有 expectation 是可枚举的一大批：
+
+| 面 | 必改 expectation（精确文件） |
+|---|---|
+| 构造点值域 | `eval-bug-212-generator-body-eager.test.ts:49,59,70,81`（`'0 \| 1  #exact'` 等四行）、`:91,:99,:107,:115`（四发射点）、`:126`（元素面 exact）、`:138`（长度域）、`:149`（别名组） |
+| 元素面 / dts | `exec-generator.test.ts:24,43,72,74,76,124,134`、`exec-generator-protocol.test.ts`（16 条）、`exec-generator-consumption.test.ts` / `-precision.test.ts` / `eval-generator-semantics.test.ts` 全族；`service/src/emit/__tests__/emit-abs-brand-projection.test.ts:85-91`（元素槽空 ⇒ `Generator<unknown>`） |
+| 差分语料 | `differential/corpus/batch5.ts:310-317`、`batch11.ts:541-544`、`batch20-transpile-adversarial.ts:102-106` 共 14 条（「先消费再取值」形态在触发点覆盖 `next()` / spread / for-of 三条后应仍绿） |
+| 委托表 | `async.ts:790-823` 的 `genDelegationStack` 在**体执行序**里建 ⇒ 随体延后则下标对位失效即「不转发」 |
+| 延迟异常 | `deferred` 只在体跑后才有 ⇒ `replayGenDeferred` / `next()` 重放时点整体后移 |
+
+**且 R3-b（跨函数消费）此前无回归钉**：仓内没有「生成器对象被 `return` 出
+外层函数、体捕获外层 `let`、消费时刻读到不同值」的用例。`eval-generator-cross-function-consume.test.ts`
+补了现状钉（引擎 `0` / 原生 `9`）与 3 条 `it.todo` 验收清单，作为步骤 3 的**前置条件**。
+
+⇒ **本批次明确停点**：步骤 3 / 4、`conf` 可提升机制、`genNext` 真求值填充
+**不做**。理由不是「没找到修法」，而是它们属引擎内核表示变更（§2.3「Abs
+无时间轴」、控制流 token 跨挂起点不可恢复、`withIsolatedYields` 的 arm
+换顶机制在真 generator 内失效），且必须独立成族 + 独立全仓基线。照
+`architecture-debt.md` 的纪律「任何精度回退即回滚」，不在一次增量里合并。
+
+#### 2026-11-06 独立成族轮：**实测复核**（把上面的推断升级为可复核证据）
+
+在干净 HEAD `02371228` 上先建独立全仓基线（1651 入口 / 0 新增失败），再做
+5 组受控实验（探针只在实验期临时插入、实验后**逐字撤除**，生产零残留）：
+
+| 实验 | 做法 | 实测结果 | 判定 |
+|---|---|---|---|
+| **A** | 临时让 `$gen` 构造期跑空体 | 生成器 8 族 **100 失败 / 38 通过** | §2.1 实证：eager 收集是值域 / `conf` / 元素面的承重结构，不是可选优化 |
+| **B** | 真实 `absToTSType` 对「有无数字下标元素槽」的生成器 Abs | 有槽 `Generator<number>`，无槽 **`Generator<unknown>`** | dts 在**导出时**直读 shape、无消费点 ⇒ 体延后必然让签名面精度回退；且该面在 service 包，core 侧触发器结构性不可达 |
+| **C** | 真实 `snapshotAbs` 副本 + 首消费点原地补写 slots | 原对象恢复 `Generator<number>`，副本仍 `Generator<unknown>`；两者 `slots` **不共享引用** | §5.2 未处理的旁路被坐实：`$copy` / fork / 快照副本拿不到补写 |
+| **D**（新发现） | 真实 `$gen` + 手工 body，构造后改写外层绑定再跑 | 构造期 `0  #exact`，重跑 `9  #exact` | **`body` thunk 捕获活绑定，不是构造期快照** ⇒ R3-b 的「消费期绑定可见」在表示层并非不可达（文档此前未评估） |
+| **E**（对 D 的否决） | 体里带 `n++` 类副作用后重跑 | 第二次跑读到 `99`（副作用被重复执行并累加） | 否决「消费点重跑 + join」这条捷径：体重跑会把副作用再执行一次 ⇒ 不是 sound 的修法，仍需 §2.3 的续体表示 |
+
+**结论**：步骤 3 / 4 本轮仍**不实施**。D 曾打开一条看似可绕开内核改造的窄
+路，E 用实测把它关上；B / C 则说明即便解决 D/E，签名面与快照副本仍会精度
+回退 ⇒ 按纪律「任何精度回退即回滚」，全量方案必须停在**引擎内核表示变更**
+（Abs 需有「按 yield 点分段的状态序列 / 可恢复挂起帧」这一维）。
+
+证据已固化为可执行 PoC（不接生产、不改既有断言）：
+- core 侧 `core/src/algebra/exec/__tests__/a1-laziness-evidence-core.test.ts`（A / D / E，4 例）
+- service 侧 `service/src/emit/__tests__/a1-laziness-evidence-poc.test.ts`（B / C，2 例）
+- 旁路基线 `core/src/algebra/exec/__tests__/gen-trigger-protocol-faces.test.ts`（7 例）
+
+**下一轮若要真推进，最小前置清单**（按依赖序）：① `conf` 可提升机制 +
+`leqAbs` 影响面复核（§5.2 R2-a）；② dts 元素域通道（**2026-11-06 已收口**：第三种预置
+`AbsFacets.genElements` 承载位 + 返回注解降级为一致性诊断；符号 PoC 实证
+「独立编译实例的无约束入口求值可零精度损失回填」；同日产品裁定
+「nudo any ≈ TS unknown」把 TS 投影面归一 ⇒ 退化档 `Generator<any>` →
+`Generator<unknown>`，接产前的 soundness 前置关闭。**但实测 `analyzeFile` 的
+`combinedAbs.facets.genElements` 本已非空**（`number | string | 7`）⇒ 导出期
+再求值回填属重复劳动、零收益，且会引入双重真值来源 + 冷/热缓存分裂；
+唯一有意义的接产形态仍是步骤 3「体延后」引擎内核改造，见下节；**注意归一只关闭 soundness 前置，不解锁值面**，末轮复核实测体延后仍 100 条回归）；
+③ `snapshotAbs` / `$copy` / fork 的补写迁移；④ 步骤 4
+的控制流 token 与真 `function*` 挂起点对齐（`control.ts::withIsolatedYields`
+的 arm 换顶、`NudoReturn` / `NudoLoopSignal` 跨挂起点语义）。
+
+#### 2026-11-06 第五轮 · TS 投影面归一与步骤 3 停点（独立成族）
+
+**产品裁定**：「nudo 的 `any` 含义更接近 TS 的 `unknown`」。代码侧依据：
+`abs.ts:29-37` 的 `any` 是「JS 里任意值 / 无约束并集」，三面运行时校验器
+早把 any / unknown 同映为 `unknown`（`schema-generator.ts:578` /
+`guard-generator.ts:141` / `standard-schema.ts`），`.d.ts` 曾唯一把 nudo any
+直译成 TS `any`。`abs.md:100` 的 display 规则被 `dts-generator.ts` 误引到 TS
+产物面 ⇒ 实为**作用域误用**，不是产品契约冲突。
+
+**落地**：`absToTSTypeB` 的 `case "any"` → `unknown`；另补齐 `classParamDecl`、
+无签名导出 fallback、泛型基类实参三处硬编码。`formatAbs` / `nudo check` /
+`nudo contract` / `case-json` / interface draft 等 **nudo 展示面逐字不变**。
+
+| 实验 / 证据 | 结论 |
+|---|---|
+| 全仓归一实验 | 26 条新增失败**全是 TS 精确串断言**，0 功能失败 ⇒ 可订正 |
+| 端到端 `nudo export --format dts` | `Generator<any>` → `Generator<unknown>`；`a(x: unknown)`；stderr 点名提示覆盖主路径 |
+| BUG-076 提示通道 | 按「渲染为 unknown」触发 ⇒ 归一后长期「文档承诺 vs 实现」矛盾**彻底关闭** |
+| Bug 544 tsc 实证 | 未收窄返回值触发 TS2571 从「假红」改判为**正确提示**，收窄后过 strict |
+| `analyzeFile` 的 `combinedAbs.facets.genElements` | 实测非空（`number \| string` / `7`）⇒ 导出期重复求值**零收益** |
+
+**步骤 3 明确停点（本轮不实施）**：符号 PoC 建议的「导出期独立求值回填」在
+**体仍 eager** 的现状下是负收益（双重真值来源 + `analyzer-cache.ts:149`
+克隆后冷/热可能拿到不同序列）。真正解绑仍需让 `$gen` 构造期不跑体 =
+引擎内核表示变更（实验 A：100 条生成器族回归；`conf` 可提升、
+`snapshotAbs` 补写迁移、控制流 token 对齐）⇒ 按纪律独立成族 +
+独立全仓基线。本轮只关闭 soundness 前置，**不碰 `$gen` 运行时时序**。
+
+##### 2026-11-06 末轮复核 · 归一之后步骤 3 能不能做
+
+在 `b0609869`（归一已落地）上加**临时探针**令 `$gen` 构造期不跑体，
+实验后逐字撤除、零残留、工作区干净：
+
+| 实测 | 结果 |
+|---|---|
+| 生成器 8 族 | **100 失败 / 38 通过 / 3 todo（141）**，与归一前的实验 A **逐字一致** |
+| 端到端 `nudo export --format dts` | 4 个生成器全退 `Generator<unknown, undefined, unknown>`（不再 `any`，但仍是精度回退） |
+
+⇒ **归一关闭的是 soundness 前置（TS 用词），不是步骤 3 的解锁条件**。
+上一轮把 `any → unknown` 称作「接产前唯一硬前置」措辞过宽，易被读成
+「关了就能做」，在此订正：步骤 3 的承重阻塞一直是**运行时值面**
+（eager 收集烘进 `full` 闭包 / 元素槽 / `conf` / 委托表 / 延迟异常）。
+
+**同时订正上一轮的「撤回接产建议」边界**：「导出期独立求值回填零收益」
+只在**体仍 eager** 时成立；一旦体延后，`genElements` 为空 ⇒ 回填从
+「零收益」变成**必需子任务**（符号 PoC 实验 E 已证零精度损失）。
+所以步骤 3 的完整切片 = 体延后 + 导出期符号回填 + 值面懒填充，三者同批。
+
+**判定：路径已闭合，无未知技术不可行项 ⇒ 可立项独立成族**，但不是零成本
+小步。剩余工作量：① `makeGenObject` 的「体已跑完」假设改为首消费点触发
+并懒填充；② 重订 100 条断言 + 4 个生成器族 + 14 条差分语料；
+③ `conf` 可提升机制（缓存键失效 + `confJoin` 单调不升）尚未实施；
+④ `snapshotAbs` 的 shape 槽补写对副本失效（实验 C）仍未解 —— WeakMap
+侧表迁移已修但不是同一件事。步骤 4 的控制流 token 对齐**不属于**步骤 3
+前置（步骤 3 后 c3/c4 仍不精确是已知剩余缺陷，§5.5）。
+
+#### 2026-11-06 前置复核（同日第二轮，逐项收敛）
+
+| 前置 | 复核结论 | 落地 |
+|---|---|---|
+| ① `conf` 可提升 + `leqAbs` | **原判定「影响 L1/L2 门禁精度」被实测推翻**：`leq.ts` 全文 0 次 `conf`；`leqAbs(path, exact)` 与反向均 `{ok:true}`；`absKey` / `absShapeKey` 不进 conf。真正要设计的是 ⓐ **缓存键失效**（同键复用 path 时期结论，升 exact 后不自动重算）与 ⓑ **`confJoin` 单调不升**（一旦有中间 join 参与，提升必须显式重算）；`formatAbs` 的 `#exact` / `#path` 后缀会变 ⇒ 精确串断言需逐条复核 | `core/.../__tests__/a1-conf-promotion-evidence.test.ts`（4 例） |
+| ③ `snapshotAbs` 侧表迁移 | **已修（A7 镜像一致性缺口）**：`$copy` 早有 `copyMatchIterTables`，`snapshotAbs` 此前只搬 fn impl ⇒ 生成器 / 模板 / matchAll / 用户迭代器 / Proxy 的迭代元素、延迟异常、drain 视图在副本上整体丢失（L2 假阴）。`hof.ts` 末尾补 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖 algebra 顶层叶子、不依赖 `hof.ts` ⇒ 无环。**与 `$copy` 同口径共享视图引用**（副本消费推进原对象状态，负控钉住） | `core/.../__tests__/snapshot-match-iter-tables.test.ts`（6 例），全仓 0 新增失败 |
+| ② dts 元素域通道 | **第三种已落地**（显式承载位 + 注解一致性诊断；fork 分支 `unknown` → `number \| string`）；**符号 PoC 轮**进一步实证「独立编译实例 + `any` 入口」可回填承载位、体延后零精度损失 ⇒ 接产绑定步骤 3，不单独接 | `core/.../gen-elements-facet.test.ts`（7 例）、`service/.../emit-gen-elements-facet.test.ts`（9 例）、实验 F（2 例）、`exec/__tests__/symbolic-yield-domain-poc.test.ts`（21 例） |
+
+> ⚠️ ③ 修的是 **WeakMap 侧表迁移**，**不等于** 实验 C 的「首消费点补写
+> `shape.slots` 对副本失效」——后者仍是未解前置：`snapshotAbs` 对 obj 槽
+> 是**深拷贝**（`hof.ts:67-76`），补写只落原对象。要让补写同步到副本，
+> 需另建「原对象 → 副本集合」的反向映射或让副本共享 slots 引用（后者会
+> 破坏快照的独立语义）⇒ 留待步骤 3 独立成族时一并设计。
+
+##### dts 元素域通道 · **第三种已落地（2026-11-06）**
+
+实证 F：`generateDts(result)` 只吃 `AnalysisResult`，`dts-generator.ts` 只
+import `@nudojs/core` 的纯函数 / 类型、**不引 exec 运行时**，且 `absToTSType`
+对同一 Abs 幂等、不写回 shape ⇒ **导出期没有、也不该有消费点**（dts 必须
+是纯投影）。所以「体延后」时元素域不可能靠「调用方先消费再导出」补回。
+
+| 方案 | 代价 | 判定 |
+|---|---|---|
+| **(a) 接受 `Generator<unknown>` sound 降级** | 精度回退；且与 schema / standard / guard 三面按 brand 收紧的口径**不一致**（四面指向不同声明域） | 需产品明确接受；按现行「任何精度回退即回滚」纪律，**默认否决** |
+| **(b) 导出前跨包触发体** | 破坏 dts 纯投影（导出变成有副作用求值）；且 `fireGenTrigger` 按 Abs 身份登记，Abs 经 harvest / 快照往返后身份已变 ⇒ 触发不到 | ❌ 技术不可行 |
+| **(c) 把元素域烘进 `AbsFacets` 随值搬运** | 构造期仍需求值体（回到 eager）⇒ 与步骤 3 目标矛盾；或新增「静态 yield 域推断」通道（独立大族） | ✅ **已实施「第三种」**（承载位 + 注解降级为诊断）；但**不解锁步骤 3**，见下方边界 |
+
+**2026-11-06 裁决与实施**：用户裁定走「第三种」——(c) 的显式承载位
+（`AbsFacets.genElements`）+ 源码返回注解**降级为一致性校验**（只落
+`nudo:return-annotation-mismatch` 台账，绝不覆盖观测产物）。设计理由：
+单一真值来源；把「从 shape 数字槽用 `CANONICAL_INDEX` 正则反推语义」
+升级为随值携带的显式字段；延续 A11 facets 的既有设计；避免 BUG-168
+在形参位修掉的「check 面与 dts 面相反裁决」在返回位复现。
+
+###### 实测收益（端到端 `nudo export --format dts`）
+
+| 场景 | 第三种之前 | 第三种之后 |
+|---|---|---|
+| fork 分支 `if (f) yield 1; else yield "s"` | `Generator<unknown>` | **`Generator<number \| string>`** |
+| 快照 / 重建产物的元素域 | 靠数字槽（可能折损） | 随 facets 同源、副本不丢 |
+| 手工 Abs 只有 `genElements`、无数字槽 | `Generator<unknown>` | `Generator<number>` |
+| 注解 `Generator<number>` 但实现 `yield "s"` | 无提示 | 台账 + 产物仍 `Generator<string>` |
+
+分支精度回升的原因：`$gen` 的 `ys.els`（完整序列）本来就是 Bug 53
+注释点名的**权威数据**，而 shape 数字槽是 `$arr` / fork join 之后的结构
+近似；此前 dts 读的是后者 ⇒ 被折成 `unknown`。
+
+###### ⚠️ 边界：**第三种没有解锁步骤 3**
+
+`genElements` 仍是**构造期跑体**得到的（`$gen` 内 `ys.els`）。步骤 3 把
+`body()` 挪到首消费点 ⇒ 构造期没有序列 ⇒ 该字段也填不上；而实证 F 的
+结论不变（dts 是纯投影，**导出期没有也不该有消费点**）。所以它解决的是
+「同源携带 / 精度 / 概念诚实」，**不是**「惰性化的签名面」。上一轮把 (c)
+描述为「能解锁步骤 3」的判断据此订正：它只**预置了承载位与未填充语义**
+（`undefined` = 未收集），真正填值仍需静态 yield 域推断或接受降级。
+
+⇒ 前置 ② 现在是「**部分解决 + 解法已实证**」；步骤 3 若推进，按下节
+PoC 结论把「符号求值从构造期解绑到导出期」作为同轮子任务即可，**不再需要
+在「静态推断」与「接受降级」之间拍板**（该问题已由 PoC 关闭）。
+注解降级为诊断后，**不再**是补产物的候选（实现是事实、声明是断言）。
+另：静态声明收割（harvest）不构造生成器运行时值 ⇒ `genElements` 不进
+`HARVEST_DISK_ABI`，缺省时消费面严格 fallback 到数字槽。
+
+###### 2026-11-06 符号 yield 域 PoC 轮（独立成族，只读实证）
+
+在干净 HEAD `951b2566` 建独立全仓基线（`1658 入口 / 20 失败 = 基线 20`），
+用**真实引擎 API** 做 5 组实验，**不接生产、不改任何既有断言**，固化为
+`core/src/algebra/exec/__tests__/symbolic-yield-domain-poc.test.ts`（21 例）。
+
+| 实验 | 结论 |
+|---|---|
+| A · 无约束入口 vs 具体入口 | `callTranspiledExportFull(ex, "g", [anyAbs])` 的 `genElements` 是 concrete 的 **sound 上界**：常量精确、参数运算 / 分支 / 循环过近似、宿主调用 / `yield*` 退 `any` |
+| B · 投影面 | 符号版交给 `absToTSType` 得 `Generator<number \| string>` 等；**当时**退化档是 `Generator<any>`（同日第五轮已归一为 `Generator<unknown>`） |
+| C · 副作用隔离 | **独立编译实例 3 次结果逐字相同**（`1  #exact`）；同一实例内重跑第 2 次变 `number  #partial`（坐实实验 E）⇒ 独立编译天然规避「重复副作用」，这是「消费点重跑」被否决后绕开它的关键 |
+| D · 生产路径 | `nudo export --format dts` 对 `a(x)` / `b()` / `c(xs)` / `d(flag)` 的产物与符号 PoC **逐字一致** ⇒ **引擎本来就在做符号求值**：入口形参是 `any`，`genElements` 已经是「无约束入口跑体」的结果，通道不是新机制 |
+| E · 回填闭环 | 真·体延后（清掉数字槽 + `genElements: undefined`）⇒ `Generator<unknown>`；用**独立编译实例**再做一次符号求值回填同一承载位 ⇒ **`Generator<number \| string>`，零精度损失** |
+
+**覆盖矩阵量化**（14 形态 × 多个具体见证，判据 `leqAbs(concrete, symbolic)`）：
+**精确 7 / sound 过近似 4 / 退化 3 / unsound 0**。退化 3 例全是
+「参数直接 yield / 宿主调用 / `yield*` 委托」⇒ `any`。注：`any` 作目标时
+`leqAbs` 平凡通过 ⇒ 真正信号是**非退化 11 例全部 sound、其中 7 例精确**。
+
+**决策：可行，但本轮不单独接产。**
+1. 现状生产路径**已经有**正确的 `genElements`（实验 D）⇒ 现在再接一次独立
+   求值属重复劳动、零收益且多一次求值开销。接产动作应**绑定在步骤 3 那一轮**，
+   作为「把符号求值从构造期解绑到导出期」的子任务，与体延后同批验证。
+2. ~~**接产最小切片**：analyzer 导出期独立求值回填 `combinedAbs`~~
+   —— **第五轮已撤回**：实测 `analyzeFile` 的 `combinedAbs.facets.genElements`
+   本已非空（`number \| string` / `7`）⇒ 重复求值零收益，且会带来双重真值
+   来源与 `analyzer-cache` 冷/热序列分裂。真解绑仍需 `$gen` 构造期不跑体。
+3. **接产前必须先修（✅ 第五轮已落地）**：当时退化档 `Generator<any>` 在
+   TS 里比 `Generator<unknown>` 更宽松（`any` 是逃生舱）⇒ 上一轮「严格占优」
+   不成立。按产品裁定「nudo any ≈ TS unknown」把 **TS 投影面全局归一**
+   （不止 `iteratorTSType` 元素位）：`absToTSTypeB` 的 `case "any"` → `unknown`
+   + 三处硬编码 fallback；26 条精确断言重订、0 功能失败；按 11-05 判例走
+   **patch**。详见上方「第五轮 · TS 投影面归一与步骤 3 停点」。
+4. 上一轮「静态推断 vs 接受降级」的待拍板问题**关闭**：数据支持推断通道；
+   降级的正确位置仍是推断失败时的**回退值**，不是产品默认契约。
+
 ### 5.3 步骤 3：**把「首次 `next()` 才跑」做成默认**（构造期不再跑体）
+
+> **状态：2026-11-07 已落地**（独立成族，见文末「步骤 3 实施记录」）。
+> 下文保留的是**设计原文**，其中「未做 / 待前置」的表述按实施记录理解。
 
 步骤 1 + 步骤 2 就位后，把 `$gen` 的 `body()` 调用从**构造期**挪到**首个消费点**：
 
@@ -365,11 +633,38 @@ R3-b：体在**消费点**才跑 ⇒ 若消费点在**另一个函数**里（生
 
 ### 5.4 步骤 4（完整解）：**真挂起**（体在第 k 个 `yield` 真正暂停）
 
-- 把生成器体降成**真 JS generator**（转译侧发 `function*(){ … yield $yieldValue(v) … }`），
-  `yield` 变真挂起点 ⇒ 步骤 3 的「一次跑到底」缺陷消失（native 的 `1` / `"a"` 精确复现）。
+> **状态：2026-11-07 值面切片已落地**（见文末「步骤 4 实施记录」）。
+> 下文「把体降成真 JS generator」的**字面方案经复核在本内核不可局部落地**，
+> 理由见下方订正；已实施的是「挂起点绑定回放」——不改体执行时序，把
+> native 的挂起点语义在**外层绑定值面**精确复现。
+
+- 原设想：把生成器体降成**真 JS generator**（转译侧发
+  `function*(){ … yield $yieldValue(v) … }`），`yield` 变真挂起点 ⇒ 步骤 3
+  的「一次跑到底」缺陷消失（native 的 `1` / `"a"` 精确复现）。
 - 代价：`try/finally` / `break` / `continue` / `return` 在真 generator 内的语义要与 Abs 引擎的
   控制流 token（`NudoReturn` / `NudoLoopSignal`）**对齐**（`control.ts` 的一整套逃逸门）——
   这是**引擎内核级**改造，风险最高，建议独立成族。
+
+**2026-11-07 结构订正（为何字面方案不是局部改造）**：
+
+1. **语法层**：引擎的分支/循环/switch/try 体是**宿主箭头回调**
+   （`$fork(test, () => …)`、`$whileSeq(() => …, () => …)`、`$for(…, () => …)`）。
+   `yield` 落在非生成器箭头里是 **SyntaxError**，一次编译失败会让整模块
+   导出全丢 ⇒ L2 闸门假绿（仓内 `Bug 1139` 安全网正是为此存在）。仓里
+   `transpile/async-plan.ts` 只对 **async 体**做「await 是否全在 gen 级」的
+   判定，且必须配 `disableAsyncGen` 重试；生成器体没有等价的门。
+2. **语义层**：抽象 fork **一次跑完双臂**（`withIsolatedYields` 逐臂隔离收集器，
+   `mergeArmYields` 再 join）。真 generator 一个 `next()` 只能挂在一个程序点
+   ⇒ 两臂各有一个 `yield` 时无法同时挂起；继续体也无从选择。要让双臂各自
+   可挂起，需要把 `$fork` / `$whileSeq` / `$for` / `$switch` / `$try*` 全部
+   改成 generator 变体并由外层 `yield*` 委派（CPS 重写），且 `loopExits` /
+   may-throw 帧 / `yieldStack` 的 ALS 作用域要跨 `next()` 续接。
+3. **结论**：这是 Abs 求值模型的表示层改造，不是「步骤 4 单独成族」能
+   收口的一刀。本轮采取**值面切片**：体仍一次跑完（步骤 3 不变量），
+   用转译侧 `capture`/`restore` 钩子把**外层自由写绑定**在每个 `$yield`
+   处记成时间轴，消费推进到第 k 个 yield 时回放到 `timeline[k-1]`。
+   §5.5 的四行 native 值全部精确，且零精度回退；非绑定类副作用
+   （宿主调用、may-throw 收集）的时序仍整体落在首次消费点，是**已知边界**。
 
 ### 5.5 各步的「值面」效果对照（以 §1.6 四行为例）
 
@@ -378,10 +673,15 @@ R3-b：体在**消费点**才跑 ⇒ 若消费点在**另一个函数**里（生
 | 现状（eager 写穿） | `1` ✗ | `"ab"` ✗ | `5` ✗ | `"ab"` ✗ |
 | **步骤 1（join 隔离）** | `0 \| 1` ✓sound | `"" \| "ab"` ✓sound | `0 \| 5` ✓sound* | `"" \| "ab"` ✓sound* |
 | 步骤 3（延迟到消费点） | `0` ✓ | `""` ✓ | `5` ✗ | `"ab"` ✗ |
-| 步骤 4（真挂起） | `0` ✓ | `""` ✓ | `1` ✓ | `"a"` ✓ |
+| **步骤 4（2026-11-07 挂起点回放）** | `0` ✓ | `""` ✓ | `1` ✓ | `"a"` ✓ |
 
 ⇒ **步骤 1 就能把「确定的错值」变成「sound 的过近似」**（brief 的 fail-closed 收窄标准）；
-步骤 4 才逐点精确。
+步骤 4 的值面切片让四行逐点精确（§5.4 订正：体执行时序本身未真挂起）。
+
+**2026-11-07 实测补记**：步骤 4 之后 c3/c4 分别为 `1  #exact` / `"a"  #exact`；
+连续两次 `next()` 后推进到 `5` / `"ab"`；抽象分叉体、`yield*` 委托、
+未启动生成器上的 `.return()` / `.throw()` 三类形态由 sound 守卫整帧禁用
+回放 ⇒ 严格回退到 `0 | 5` 的 join 过近似，未产「自信的错值」。
 
 \* **2026-11-04 落地实测订正**：c3/c4 的 join 成员是**事前/事后两端**（c3 = `0 | 5`，
 c4 = `"" | "ab"`）——首个 yield **挂起点**的中间值（native `1` / `"a"`）不在 join 内
@@ -420,3 +720,122 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
   **但已产出可直接实施的最小规格**（§5.1）+ 精确的受阻原因（§2.2）。
 
 ---
+
+---
+
+## 2026-11-07 · 步骤 3 实施记录（独立成族）
+
+**改前基线**：`b0609869` 全仓 `1659 入口 / 20 失败 = 基线 20`。末轮复核在
+归一后的 HEAD 用临时探针（构造期停跑体、无触发器）实测 **100 失败 /
+38 通过**；本轮把**触发式填充**接上后，同族从 100 失败收敛到 0。
+
+**实现**（core 包内，公共导出形状不变）：
+1. `runtime/async.ts`：把 `$gen` 的跑体收集抽成 `collectGenBody`；`$gen`
+   构造期只产空壳（`makeGenObject` 空序列 + `conf: path`）并 `registerGenTrigger`
+   登记 `(target) => mergeDeferredBody(target, ensureFresh())`；`ensureFresh`
+   缓存一次体求值。**协议三方法**在 `fireOnce()` 后把本次调用转发到升级后的
+   槽值（否则首调读到空壳序列，实测 `undefined:1`）。
+2. `exec/match-iter.ts`：触发器值类型改为 `(target: Abs) => void`，
+   `fireGenTrigger(a)` 传 `a`；新增 `genTriggerAliases` 按族广播到
+   `snapshotAbs` / `$copy` 的所有别名（每别名只合并一次）；新增
+   `pendingGenShells` / `notePendingGen` / `drainPendingGens`。
+3. `exec/run.ts`：`callTranspiledExportFull` 在求值收口排空未消费的壳
+   ⇒ 既有 eager 值面契约（Bug 212 / 族 01 数字下标）与 service 侧 `.d.ts`
+   纯投影的元素域**都不退化**（端到端 `Generator<number \| string>` 等与
+   改前逐字一致），无需跨包回填、无需独立符号求值。
+
+| 实测 | 结果 |
+|---|---|
+| 首版（无协议转发） | 生成器 9 族 66 失败（`undefined:1`） |
+| 加协议转发 | 13 失败，全部为期望过时 / 骨架负控制前提变更，**零真精度回退** |
+| 加求值收口排空 | 9 失败；四类消费面（next / spread / 下标 / for-of）全精确 |
+| 断言重订 + 别名广播 | 生成器 9 族 **全绿** |
+| 端到端 dts | `Generator<number \| string>` / `Generator<number>` / `Generator<unknown>` / `Generator<number \| string>`，与基线一致 |
+
+**值面收益（与原生一致）**：跨函数消费 `yield n` 读到消费期绑定 `9`
+（此前 `0`）；构造点 c1/c2 从 `0 \| 1` / `"" \| "ab"` 收敛为精确 `0` / `""`；
+容器 mutator 长度域过近似收敛为精确 `0`。`n++` 只执行一次（幂等 + 缓存）。
+
+**回归**：新增 `exec/__tests__/gen-deferred-body.test.ts`（5 例）；
+`eval-generator-cross-function-consume.test.ts` 由「现状钉 + 3 todo」升级为
+4 例 R3-b 验收 + 1 条步骤 4 todo；Bug 212 的 5 条精确断言、步骤 2 骨架
+2 条负控制、`snapshot-match-iter-tables` 的 `gen()` 夹具按新语义重订。
+
+**剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
+`conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
+别名广播已让可观察面不退化，本轮未单独实施。**c3/c4 的中间值已由
+2026-11-07 步骤 4 值面切片闭合**（见下节）。
+
+**已知边界**：`drainPendingGens` 目前只挂在
+`callTranspiledExportFull`（analyzer / evaluator 的主求值入口）。若某条路径
+直接经 `$call` / `runTranspiled` 顶层创建生成器且**从不消费、也不经过该入口**
+（如个别 LSP replay 分支），空壳会保留到下一次求值收口才排空 ⇒ 该路径的
+未消费展示面在此期间是 `{  } #path`。全仓基线未踩到该形态；若后续出现，
+把排空挂到 `runWithCollectorScope` 出口即可（同一函数、更大作用域）。
+
+---
+
+## 2026-11-07 · 步骤 4 实施记录（挂起点绑定回放 · 值面切片）
+
+**改前基线**：`533c8c66`（步骤 3 已落地）全仓
+`1660 入口 / 20 失败 = 基线 20，0 新增 / 0 消失`。
+
+**为什么不是「把体降成真 JS generator」**：见 §5.4 的 2026-11-07 结构订正
+——转译产物的分支/循环臂是宿主箭头（真 `yield` 进去即 SyntaxError），
+抽象 fork 又一次跑完双臂、无法只挂在其中一臂。字面方案要求把 `$fork` /
+`$whileSeq` / `$for` / `$switch` / `$try*` 全部改成 generator 变体并跨
+`next()` 续接 ALS 帧，属求值模型表示层改造，不是局部一刀。
+
+**实现（core + transpile，公共导出形状不变）**：
+
+1. `transpile/emit.ts::genSuspendTail(names, opts, asyncMode)`：四个 `$gen`
+   发射点（声明 / 函数表达式 / 对象方法 / 类方法）在自由写名集非空时，
+   给 `$gen` 追加**可选第三实参** `{ capture, restore }`。`capture` 用
+   `$copy` + 共享 memo 读出全部自由写绑定的 Abs 快照（容器深拷贝、
+   const 别名组身份不分裂）；`restore` 用 `$rebindable` 守卫写回
+   （宿主全局不被包装 Abs 污染，同 B1 口径）。**名集为空时零发射**
+   ⇒ 绝大多数生成器的转译产物逐字不变。
+2. `runtime/async.ts`：`$yield` / `$yieldStar` 在挂起点调
+   `noteGenSuspendPoint()` 把 `capture()` 推进当前帧的 `timeline`
+   （委托按并出元素数占多个挂起点，保持与元素序列对齐）。
+   `collectGenBody` 在体执行期间压帧，结束后把帧挂到 fresh 生成器对象，
+   `mergeDeferredBody` 再随别名广播共享同一帧。
+3. `makeGenObject`：`next()` 交付第 `state.i` 个 yield 后调
+   `applyGenSuspend(genSelf, state.i)` 回放 `timeline[state.i-1]`；
+   **`next()` 耗尽**与迭代 `drain()` 都推进到**终态格**
+   `full.length + 1`（体跑完、步骤 1 的 finally join 已折回的快照）
+   ⇒ 最后一个 yield 之后的写不被 wrong-exact 抹掉。回放**单调**
+   （`lastApplied`）⇒ 耗尽后的 `next()` 不回卷。`.return()` /
+   `.throw()` **不推进**——原生落在未启动生成器上时体根本不跑，
+   推进到末尾会产 wrong-exact `5`，故保留步骤 1 的 join 过近似。
+4. **帧栈隔离**：`collectGenBody` 每次调用都压一格（无钩子时压
+   `undefined` 哨兵）。嵌在外层体里创建并消费的内层生成器，其
+   `$yield` 若读到栈顶的外层帧会把快照错记进外层时间轴 ⇒
+   `exec-generator-consumption` 的 inner `.return(77)` 钉住过该污染
+   （首轮全仓唯一新增失败），加哨兵后归零。
+
+**sound 守卫**（`collectGenBody` 整帧 `enabled = false`，严格回退 join）：
+① 路径敏感（`genJoinOverride !== null || bumpGenPathSensitive`）——fork 臂
+序列是 join 不是线性时间轴；② 体内延迟异常（Bug 34）；③ `yield*` 委托
+（`genDelegationStack` 非空）。三类实测均为 `0 | 5  #exact`，无「自信错值」。
+
+| 实测 | 步骤 3 | 步骤 4 |
+|---|---|---|
+| c3 `it.next()` 后 n（native 1） | `0 \| 5` | `1  #exact` |
+| c4 `it.next()` 后 log（native "a"） | `"" \| "ab"` | `"a"  #exact` |
+| 连续两次 next()（native 5 / "ab"） | `0 \| 5` | `5` / `"ab"` |
+| 分段读取 `1:1:2:5`（native） | 不精确 | `"1:1:2:5"  #exact` |
+| 消费期绑定 × 回放叠加（native 9:9:5） | 不精确 | `"9:9:5"  #exact` |
+| 迭代整体 drain（native 5:2） | 过近似 | `"5:2"  #exact` |
+
+**回归**：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉：
+构造期零捕获 / 首次回放 / 单调推进 / drain / 别名广播 / async 同编 /
+嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval-bug-212-generator-body-eager.test.ts` 的 c3/c4
+断言重订为精确 native 值并补 2 例推进用例（14 例全绿）；
+`eval-generator-cross-function-consume.test.ts` 的步骤 4 todo 升级为
+5 例验收（含两类 sound 守卫与 `.return()` 回退，9 例全绿）。
+
+**已知边界（诚实台账）**：这是**外层绑定值面**的挂起点精确化，体仍一次
+跑完。宿主调用、may-throw 收集、容器外部引用等非「自由写绑定」类副作用
+的时序仍整体落在首次消费点；若后续要全量真挂起，需按 §5.4 订正做
+CPS 级改造。求值隔离仍按用户约定搁置。

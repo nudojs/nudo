@@ -33,7 +33,7 @@ import { objOf, getSlot } from "../../objects.ts";
 import { isSetAbs, isMapAbs } from "../../collections.ts";
 import { validateCallableArg, applyCallbackValue } from "../../hof.ts";
 import { pTrue } from "../../pred.ts";
-import { defaultLeakBudget } from "../../leak.ts";
+import { defaultLeakBudget } from "../../diagnostics/leak.ts";
 import { emptyEnv } from "../../ast-env.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";

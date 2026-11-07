@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { abs, num, str, numLit, type Abs } from "../abs.ts";
 import { litValue } from "../index.ts";
-import { widenForAssign } from "../check-assign.ts";
+import { widenForAssign } from "../check/check-assign.ts";
 import { call } from "./eval-helpers.ts";
 
 const tup = (elements: Abs[], rest?: Abs): Abs =>

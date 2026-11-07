@@ -12,7 +12,7 @@
  * ground truth：node 原生实测。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { litValue } from "../abs.ts";
 import { call, isNever } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";

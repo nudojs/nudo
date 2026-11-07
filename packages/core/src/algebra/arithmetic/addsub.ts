@@ -17,9 +17,9 @@ import { abs, confJoin, isNumPrim, isStrPrim, isBigPrim, litValue, num, numLit, 
 import { concatString, isTemplateLike } from "../template.ts";
 import { makeSum, isNullProtoWithoutCoercer, joinValues } from "../objects.ts";
 import { noteDerivationAdd } from "../derivation.ts";
-import { isSymbolAbs as isSym } from "../symbol-id.ts";
-import { NudoThrow } from "../nudo-throw.ts";
-import { errorTypeAbs } from "../may-throw.ts";
+import { isSymbolAbs as isSym } from "../key/symbol-id.ts";
+import { NudoThrow } from "../diagnostics/nudo-throw.ts";
+import { errorTypeAbs } from "../diagnostics/may-throw.ts";
 import { distributeSumBinOp, numericOpTail, strLitResult, synthEndpoint, isAnyLike, coercibleLit, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteCoercionMayThrow, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds, isNonNaN } from "./bounds.ts";

@@ -22,7 +22,7 @@ import {
   formalParamDisplayNames,
   formalParamsFromNodes,
   type FormalParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 
 /** fn shape（可选带 `optionalParams` 标记——写侧口径） */
 function fnAbs(params: string[], optionalParams?: boolean[]): Abs {

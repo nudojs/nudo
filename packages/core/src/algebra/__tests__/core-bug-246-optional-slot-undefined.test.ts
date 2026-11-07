@@ -16,7 +16,7 @@ import { constraintToEntryAbs, derefConstraint, shape, string } from "../constra
 import { abs, absLit, num, type Abs } from "../abs.ts";
 import { getSlot, makeSum } from "../objects.ts";
 import { checkSource, pTrue } from "../index.ts";
-import type { CheckIssue } from "../check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 /** 结构化对象 Abs（测试侧最小构造）。 */

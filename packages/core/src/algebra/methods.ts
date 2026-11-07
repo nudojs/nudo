@@ -9,11 +9,11 @@ import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, str } from "./abs.ts";
 import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
 import { joinAbs, objOf, setSlot, isNullProtoWithoutCoercer } from "./objects.ts";
-import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./diagnostics/may-throw.ts";
 import { pTrue } from "./pred.ts";
-import { defaultLeakBudget } from "./leak.ts";
-import { isSymbolAbs } from "./symbol-id.ts";
+import { defaultLeakBudget } from "./diagnostics/leak.ts";
+import { isSymbolAbs } from "./key/symbol-id.ts";
 import { regexParts, matchIteratorAbs } from "./exec/regexp-runtime.ts";
 import { isRegExpBrandAbs } from "./builtins/regexp.ts";
 import {

@@ -495,7 +495,10 @@ export default function PlaygroundApp() {
               }
             }
           }
-        } catch {}
+        } catch {
+          // Hover 是尽力而为的编辑器增强：输入中的代码常处于语法未完状态，
+          // 解析/分析失败时返回 null（不显示 hover）是预期降级，不应打断编辑。
+        }
         return null;
       };
 
@@ -544,7 +547,10 @@ export default function PlaygroundApp() {
               });
             }
           }
-        } catch {}
+        } catch {
+          // Inlay hints 同上：分析失败时返回已收集到的 hints（可能为空），
+          // 不打断输入；provider 注册本身失败才走下面的 console.error。
+        }
         return { hints, dispose() {} };
       };
 

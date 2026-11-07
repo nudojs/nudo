@@ -19,15 +19,15 @@
  *   new Map("x"+s) 同记；Map/Set 拷贝构造（迭代协议全定）不记。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { anyAbs, litValue, type Abs } from "../abs.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 import { call, isNever } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 

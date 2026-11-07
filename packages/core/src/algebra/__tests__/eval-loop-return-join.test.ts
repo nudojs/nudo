@@ -20,7 +20,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { call, callLit, isNever, throwsError } from "./eval-helpers.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { anyAbs } from "../abs.ts";
 import { sigOf, issuesOf } from "./nudo-constraints.ts";
 

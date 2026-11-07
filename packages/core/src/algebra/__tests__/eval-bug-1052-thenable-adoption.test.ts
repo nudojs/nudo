@@ -29,7 +29,7 @@
 import { describe, it, expect } from "vitest";
 import { call, objSlots } from "./eval-helpers.ts";
 import { $await } from "../exec/runtime/async.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { litValue, type Abs } from "../abs.ts";
 
 /** promise Abs 的兑现值域（eff(promise).inner）/ 拒绝通道 / 悬挂标记 */

@@ -24,7 +24,11 @@ export function extractCases(code: string): CaseInfo[] {
         cases.push({ name: directive.name, args: directive.argsAbs });
       }
     }
-  } catch {}
+  } catch {
+    // Playground 编辑器里的代码常处于语法未完状态：解析失败返回空 case 列表
+    // 是预期行为，不是分析错误——抛错会打断输入。此处有意不处理异常，
+    // 保留说明以免被误读为「静默吞错」（scripts/check-hygiene.mjs 会校验）。
+  }
   return cases;
 }
 

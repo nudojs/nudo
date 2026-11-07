@@ -7,12 +7,12 @@
  * describe 注释）。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource } from "../check.ts";
+import { checkSource } from "../check/check.ts";
 import { anyAbs, litValue } from "../abs.ts";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-import { formatAbs } from "../format.ts";
+import { formatAbs } from "../format/format.ts";
 import { $lit } from "../exec/runtime/state.ts";
-import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
+import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../diagnostics/may-throw.ts";
 import { l2Count } from "./nudo-constraints.ts";
 
 function check(src: string) {

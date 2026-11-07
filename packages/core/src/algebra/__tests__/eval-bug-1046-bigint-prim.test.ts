@@ -21,13 +21,13 @@ import {
   instantiateConstraint,
   constraintToEntryAbs,
 } from "../constraint.ts";
-import { formatAbs } from "../format.ts";
-import { absToConstraint } from "../projection.ts";
+import { formatAbs } from "../format/format.ts";
+import { absToConstraint } from "../interface/projection.ts";
 import { predToString, pTrue } from "../pred.ts";
 import { denoteGuard } from "../../internal.ts";
-import { checkSource, resetCheckSourceMemo } from "../check.ts";
+import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import type { CheckIssue } from "../check-report.ts";
+import type { CheckIssue } from "../check/check-report.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
 
 /** 契约 Abs → 守卫体（service 的 guard-generator 用的就是同一个 denoteGuard） */

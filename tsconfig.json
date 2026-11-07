@@ -1,48 +1,5 @@
 {
-  "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "paths": {
-      "@nudojs/core": [
-        "./packages/core/src"
-      ],
-      "@nudojs/core/exec": [
-        "./packages/core/src/algebra/exec/index.ts"
-      ],
-      "@nudojs/core/internal": [
-        "./packages/core/src/internal.ts"
-      ],
-      "@nudojs/parser": [
-        "./packages/parser/src"
-      ],
-      "nudojs": [
-        "./packages/nudojs/src"
-      ],
-      "@nudojs/service": [
-        "./packages/service/src"
-      ],
-      "@nudojs/service/emit": [
-        "./packages/service/src/emit/index.ts"
-      ],
-      "@nudojs/service/evaluator": [
-        "./packages/service/src/evaluator/evaluator-api.ts"
-      ],
-      "@nudojs/harvester": [
-        "./packages/harvester/src"
-      ],
-      "@nudojs/lsp": [
-        "./packages/lsp/src"
-      ],
-      "@nudojs/env/es": [
-        "./packages/env/src/es.ts"
-      ],
-      "@nudojs/env/web": [
-        "./packages/env/src/web.ts"
-      ],
-      "@nudojs/env/node": [
-        "./packages/env/src/node.ts"
-      ]
-    }
-  },
+  "extends": ["./tsconfig.base.json", "./tsconfig.paths.json"],
   "references": [
     {
       "path": "packages/core"

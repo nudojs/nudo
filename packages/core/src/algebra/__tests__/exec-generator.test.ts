@@ -4,7 +4,7 @@ import {$copy} from "../exec/runtime/containers.ts";
 import {registerGenDeferred, replayGenDeferred, registerGenElements, matchIterElements, registerMatchIter} from "../exec/match-iter.ts";
 import {NudoThrow} from "../exec/nudo-throw.ts";
 import {absFunction} from "../abs-fn.ts";
-import {runWithMayThrowSession, setMayThrowCollector} from "../may-throw.ts";
+import {runWithMayThrowSession, setMayThrowCollector} from "../diagnostics/may-throw.ts";
 
 describe("evaluator generators", () => {
   it("function* collects yields into tuple", () => {

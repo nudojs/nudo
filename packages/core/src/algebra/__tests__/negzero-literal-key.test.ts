@@ -9,10 +9,10 @@
 import { describe, it, expect } from "vitest";
 import { absShapeKey, makeSum, joinAbs } from "../objects.ts";
 import { relationFingerprint } from "../abs-fn.ts";
-import { absKeyInner, instantiateMemoKey } from "../generalize-key.ts";
+import { absKeyInner, instantiateMemoKey } from "../key/generalize-key.ts";
 import { abs, numLit } from "../abs.ts";
 import { emptyPhi } from "../pred.ts";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { runTranspiled, callTranspiledExportFull } from "@nudojs/core";
 
 const posZero = numLit(0);

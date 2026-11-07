@@ -58,9 +58,14 @@ describe("Bug 686 — watch 监视根覆盖全部路径目录", () => {
       seen.length = 0;
 
       // 改**第二个目录**里的文件 ⇒ 必须触发增量轮
+      // 断言用 toContain 而非 toEqual([fileB])：fs.watch 在 macOS 上会合并
+      // / 重复投递**初始扫描**事件，高并发全量运行时残留事件可能落在
+      // `seen.length = 0` 之后（实测 Received = [b/o.js, a/x.js]）。Bug 686
+      // 的核心语义是「该目录的变更被监视到」，不是「恰好只投递一个事件」；
+      // 严格相等把宿主事件投递行为当成产品契约，会造成与产品无关的假红。
       writeFileSync(fileB, SRC(22), "utf-8");
-      await waitUntil(() => seen.length >= 1);
-      expect(seen).toEqual([fileB]);
+      await waitUntil(() => seen.includes(fileB));
+      expect(seen).toContain(fileB);
     } finally {
       close();
     }
@@ -88,9 +93,11 @@ describe("Bug 686 — watch 监视根覆盖全部路径目录", () => {
       await waitUntil(() => seen.length >= 2);
       seen.length = 0;
 
+      // 同上的回归护栏：只要求「改第一个目录的文件仍被监视到」，不假定
+      // fs.watch 恰好投递一个事件（初始扫描的延迟事件会跨清空点落地）。
       writeFileSync(fileA, SRC(11), "utf-8");
-      await waitUntil(() => seen.length >= 1);
-      expect(seen).toEqual([fileA]);
+      await waitUntil(() => seen.includes(fileA));
+      expect(seen).toContain(fileA);
     } finally {
       close();
     }

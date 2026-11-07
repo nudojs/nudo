@@ -14,7 +14,7 @@ import {
   stripStringsKeepComments,
   sourceIsStrict,
   hasUseStrictDirective,
-} from "./code-text.ts";
+} from "./format/code-text.ts";
 import { listFnDirectiveScopes } from "./directive-scan.ts";
 import { VISITOR_KEYS, type Node } from "@babel/types";
 import type { Term } from "./term.ts";
@@ -28,8 +28,8 @@ import { leqAbs } from "./leq.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
-import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
-import { formatShapeSlot } from "./format.ts";
+import { defaultLeakBudget, type LeakBudget } from "./diagnostics/leak.ts";
+import { formatShapeSlot } from "./format/format.ts";
 import { type RefineResolveOpts, extractFnBudget } from "./refine.ts";
 import { withFnBudgetOverride } from "./call-budget.ts";
 import { withEvalBudgetOverride, runEvalCallBudgetTrial } from "./exec/calls.ts";
@@ -40,16 +40,16 @@ import {
   sidecarClosureFingerprint,
   sidecarPathOf,
   type EffectiveInterfaceOpts,
-} from "./interface.ts";
-import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
-import { formalParamsFromNodes, formalParamDisplayNames, formalParamSignatureNames, locateContractParam, type FormalParam } from "./param-surface.ts";
-import { resetHashSourceCache } from "./hash-source.ts";
+} from "./interface/interface.ts";
+import { generalizeSourceKeyPart, resetFnFpCache } from "./key/fn-fp.ts";
+import { formalParamsFromNodes, formalParamDisplayNames, formalParamSignatureNames, locateContractParam, type FormalParam } from "./format/param-surface.ts";
+import { resetHashSourceCache } from "./key/hash-source.ts";
 import {
   loadModuleDepsFingerprint,
   type LoadDepsFingerprint,
-} from "./load-deps-fp.ts";
-import { DependencyMemo } from "./memo-store.ts";
-import { loadModuleId, moduleMapId } from "./memo-identity.ts";
+} from "./key/load-deps-fp.ts";
+import { DependencyMemo } from "./key/memo-store.ts";
+import { loadModuleId, moduleMapId } from "./key/memo-identity.ts";
 import { instanceForMethodBridge } from "./bridge-instance.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
 import { currentEvalRoundEpoch } from "./collector-scope.ts";
@@ -61,8 +61,8 @@ import { asAbsVal, currentAssumePremises, currentInvariantSpecs, litAbsFromJs } 
 import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
-import { resolveExportSlotCall } from "./export-slot.ts";
-import { absShapeForTsTypeText } from "./ts-type-shape.ts";
+import { resolveExportSlotCall } from "./interface/export-slot.ts";
+import { absShapeForTsTypeText } from "./interface/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -585,7 +585,7 @@ export {
   renameShape,
   instantiateMemoKey,
   alphaRenameResult,
-} from "./generalize-key.ts";
+} from "./key/generalize-key.ts";
 import {
   type InstHit,
   type VarRename,
@@ -602,7 +602,7 @@ import {
   renameShape,
   instantiateMemoKey,
   alphaRenameResult,
-} from "./generalize-key.ts";
+} from "./key/generalize-key.ts";
 
 export type TypeParam = {
   id: string;

@@ -12,7 +12,7 @@
  * may-throw 假红。service 侧 `analyzer-ast.ts` 的 `collectClassMethods` 同口径。
  */
 import { describe, it, expect } from "vitest";
-import { listTopFunctions } from "../scan.ts";
+import { listTopFunctions } from "../scan/scan.ts";
 import { issuesOf } from "./nudo-constraints.ts";
 
 const SAME_NAME = `export class C {

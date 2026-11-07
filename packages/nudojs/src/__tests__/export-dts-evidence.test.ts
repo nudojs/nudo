@@ -7,8 +7,8 @@
  *    调分析器 ⇒ 见证既不 widen 形参/返回，也不产出 `Case:` 行；
  * 3. 非导出顶层函数不泄漏进 .d.ts（导出面 = export / export default /
  *    CJS exports，与 check entry 表同源 localNamedExports）；
- * 4. 无证据参数位的既定口径（BUG-076）：主路径（普通导出函数）投影 **`any`**
- *    （Abs any ≠ unknown：Bug 544 / concepts/abs.md:100）且 stderr **不**打提示；
+ * 4. 无证据参数位的既定口径（BUG-076）：主路径（普通导出函数）投影 **`unknown`**
+ *    （2026-11-06 裁定：nudo any ≈ TS unknown，TS 投影面归一）且 stderr **不**打提示；
  *    `unknown` + `note: <fn>.<param> rendered as unknown …` 只出现在窄路径
  *    （`@nudo:skip` / 无 case + 手写契约参数位，见
  *    `cli-bug-076-unevidenced-any.test.ts`）；
@@ -107,15 +107,15 @@ describe("export dts — 契约证据进投影（case 见证不进投影）", ()
     expect(r.status).toBe(0);
     // BUG-044：`@nudo:case` 是**调试见证**，不是契约产品（契约义务在
     // `*.nudo.js` 侧车 / `@nudo:contract`）⇒ `nudo export` 以
-    // `caseMode: "none"` 调分析器，见证不进投影：形参/返回都无证据 ⇒ any。
-    expect(r.stdout).toContain("export declare function greet3(u: any): any;");
+    // `caseMode: "none"` 调分析器，见证不进投影：形参/返回都无证据 ⇒ unknown。
+    expect(r.stdout).toContain("export declare function greet3(u: unknown): unknown;");
     // 见证也不产出 `Case:` 行（Case 行只出现在 debug / `nudo test` / LSP 面）
     expect(r.stdout).not.toContain("Case:");
   }, 30000);
 });
 
 describe("export dts — 导出面过滤与 unknown 例外", () => {
-  it("非导出顶层函数不进 .d.ts；无证据参数渲染 any（Abs any ≠ unknown，Bug 544）", () => {
+  it("非导出顶层函数不进 .d.ts；无证据参数渲染 unknown（nudo any ≈ TS unknown）", () => {
     const dir = fixtureDir({
       "leak.js": [
         `function helper(u) { return u.name; }`,
@@ -125,9 +125,9 @@ describe("export dts — 导出面过滤与 unknown 例外", () => {
     });
     const r = runCliTsx(["export", "leak.js", "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
-    // 未受约束的入口形参 = Abs any（未约束）⇒ TS any（abs.md:100：
-    // 「unconstrained entry parameters display as `any`, never as `unknown`」）
-    expect(r.stdout).toContain("export declare function public1(x: any): any;");
+    // 未受约束的入口形参 = Abs any（未约束）⇒ TS unknown（nudo any ≈ TS unknown；
+    // abs.md 的 display 规则只管 nudo 展示面，不约束 TS 投影面）
+    expect(r.stdout).toContain("export declare function public1(x: unknown): unknown;");
     expect(r.stdout).not.toContain("helper");
   }, 30000);
 

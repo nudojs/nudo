@@ -14,7 +14,7 @@ import {
   sourceHasRequireCall,
   stripCommentsAndStrings,
   stripStringsKeepComments,
-} from "../code-text.ts";
+} from "../format/code-text.ts";
 
 describe("stripStringsKeepComments", () => {
   it("blanks string literals but keeps comment text", () => {

@@ -12,7 +12,7 @@
  * base64/hex 扩面在本模块求值期完成；members.ts 头部 import 本文件 ⇒
  * 任何运行期消费（值读 / $in / 链查找）都在两模块求值之后，序不变。
  */
-import type { Abs } from "../../abs.ts";
+import type { Abs, AbsFacets } from "../../abs.ts";
 import { getSlot, type ObjShape } from "../../objects.ts";
 import { getEvalClass } from "../class-registry.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
@@ -180,8 +180,11 @@ export function protoBrandOwnMember(brandName: string, key: string): boolean {
  *   成员在原型链上，原生 gOPN 不列）。
  *
  * 顺序：原生 gOPN 按**定义序**（constructor 在先）。引擎的类注册表把方法与
- * 访问器分两张表（spec.methods / spec.accessors）⇒ 交错定义序不可复原 ⇒
- * 方法与访问器**同时**存在时不给精确清单（返回 undefined，保持保守域）。
+ * 访问器分两张表（spec.methods / spec.accessors），跨表的交错相对次序**在
+ * 转译期就丢了**——A10 残余批次已由 `EvalClassSpec.protoMemberOrder`
+ * （`transpile/class-emit.ts` 按类体源码序登记）补回，本函数优先读它。
+ * 手写 spec / mock 桥没有该字段 ⇒ 仍走下方旧的两表拼接 + 交错保守域
+ * （返回 undefined），零回归。
  */
 const PROTO_BRAND_OWN_KEYS: Record<string, readonly string[]> = {
   "Error.prototype": ["constructor", "name", "message", "toString"],
@@ -212,9 +215,13 @@ export function protoBrandOwnStringKeys(brandName: string): string[] | undefined
   const owner = brandName.slice(0, -".prototype".length);
   const spec = getEvalClass(owner);
   if (!spec) return undefined;
+  // A10 残余：转译期记录的**源码定义序**（含方法与访问器交错）。
+  // `protoMemberOrder` 不含 constructor，由本函数补在首位（原生 gOPN 同）。
+  if (spec.protoMemberOrder) return ["constructor", ...spec.protoMemberOrder];
+  // 手写 spec / mock 桥 / 旧产物：仍按旧两表拼接；交错序依旧不可复原 ⇒
+  // 保守域（返回 undefined），保证零回归。
   const methods = Object.keys(spec.methods ?? {});
   const accessors = Object.keys(spec.accessors ?? {});
-  // 方法/访问器交错定义序不可复原 ⇒ 不给精确清单（保持保守域）。
   if (methods.length > 0 && accessors.length > 0) return undefined;
   const keys = ["constructor"];
   for (const k of [...methods, ...accessors]) {
@@ -222,6 +229,27 @@ export function protoBrandOwnStringKeys(brandName: string): string[] | undefined
     keys.push(k);
   }
   return keys;
+}
+
+/**
+ * A10 · 槽位启用的**单一事实源**：原型对象自有键集随 Abs 值携带。
+ *
+ * - 优先读 `a0.facets.protoOwnKeys`（生产点 / 显式装配 / subst / snapshot
+ *   搬运后的值都走这条）；键集由**值**决定，不再只能按 brand 名查固定表。
+ * - 缺省（未挂槽位）⇒ 逐字回落 `protoBrandOwnStringKeys` 的按名表判定，
+ *   既有保守域 `string[]` / `boolean` 不受影响（空槽位零回归）。
+ * - `symbols` 只有显式提供时才有值；按名表不建模原型自有 symbol 键。
+ */
+export function protoOwnKeysOf(
+  a0: Abs | undefined,
+): NonNullable<AbsFacets["protoOwnKeys"]> | undefined {
+  if (!a0) return undefined;
+  const carried = a0.facets?.protoOwnKeys;
+  if (carried) return carried;
+  if (a0.shape.k !== "brand") return undefined;
+  const name = (a0.shape as { name?: string }).name ?? "";
+  const strings = protoBrandOwnStringKeys(name);
+  return strings === undefined ? undefined : { strings };
 }
 
 /**

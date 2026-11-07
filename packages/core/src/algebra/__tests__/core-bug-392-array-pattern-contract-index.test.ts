@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 import {
   formalParamsFromNodes,
   locateContractParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 
 const arrayPatternNode = {
   type: "ArrayPattern",

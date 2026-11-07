@@ -13,9 +13,9 @@
  * - 端到端：调用点报 nudo:constraint-violated
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { resolveExportSource } from "../scan-call-graph.ts";
+import { resolveExportSource } from "../scan/scan-call-graph.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 const DD = `/// @nudo:import { positive } from "./c.nudo.js"

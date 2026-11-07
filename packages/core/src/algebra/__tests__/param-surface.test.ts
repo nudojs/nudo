@@ -4,12 +4,12 @@ import {
   formalParamDisplayNames,
   contractParamNameSet,
   locateContractParam,
-} from "../param-surface.ts";
+} from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { parseSource } from "../parse-source.ts";
-import { effectiveInterface, formatConstraint } from "../interface.ts";
+import { effectiveInterface, formatConstraint } from "../interface/interface.ts";
 import { checkSource, pTrue } from "../index.ts";
-import { resetCheckSourceMemo } from "../check.ts";
+import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { number, fn } from "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";

@@ -859,6 +859,42 @@ export function genFreeWriteWrap(
 }
 
 /**
+ * A1 步骤 4（2026-11-07）：生成器体自由写绑定的「挂起点回放」钩子
+ * ——`$gen` 的第三实参（**可选**，名字集为空时零发射）。
+ *
+ * 引擎的体仍一次跑完（步骤 3 不变量），但 `$yield` 在每个挂起点调用
+ * `capture()` 记下外层绑定的 Abs 快照；消费推进到第 k 个 yield 时
+ * `restore(timeline[k-1])` 把绑定写回 ⇒ native「首个 yield 之后的写尚未
+ * 发生」在值面精确复现（Bug 212 c3/c4 的 `1` / `"a"`）。
+ *
+ * - `$copy` 共享 **memo** ⇒ 容器深拷贝、const 别名组身份不分裂
+ *   （与 `genFreeWriteWrap` 的快照同口径）；
+ * - `$rebindable` 守卫宿主全局（同 B1：`process` / `Math` 不得被包装 Abs
+ *   写进 globalThis）；
+ * - 第二实参显式给 async 位：第三实参存在时 `$gen(body, bool, hooks)`。
+ * - sound 守卫在 core 侧（`collectGenBody`）：路径敏感 / 延迟异常 /
+ *   `yield*` 委托整帧禁用 ⇒ 严格回退到步骤 1 的 join 过近似。
+ */
+export function genSuspendTail(
+  names: readonly string[],
+  opts: TranspileOptions,
+  asyncMode = false,
+): string {
+  if (names.length === 0) return asyncMode ? ", true" : "";
+  const memo = internalTmpName("__gSnapMemo", opts);
+  const vals = internalTmpName("__gSnapVals", opts);
+  const captures = names.map((n) => `$copy(${n}, ${memo})`).join(", ");
+  const restores = names
+    .map((n, i) => `${n} = $rebindable(${JSON.stringify(n)}, ${n}) ? ${vals}[${i}] : ${n};`)
+    .join(" ");
+  return (
+    `, ${asyncMode ? "true" : "false"}, ` +
+    `{ capture: () => { const ${memo} = new WeakMap(); return [${captures}]; }, ` +
+    `restore: (${vals}) => { ${restores} } }`
+  );
+}
+
+/**
  * 可选 require 模式：`try { m = require(A); } catch { m = require(B); }`
  * 两侧说明符都可常量折叠时返回 [A, B]（优先成功侧）；否则 null（走诚实 try/catch）。
  */

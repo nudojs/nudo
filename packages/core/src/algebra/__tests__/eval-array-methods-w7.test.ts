@@ -26,7 +26,7 @@ import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
-} from "../may-throw.ts";
+} from "../diagnostics/may-throw.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashSource, resetHashSourceCache } from "../hash-source.ts";
+import { hashSource, resetHashSourceCache } from "../key/hash-source.ts";
 
 describe("hashSource", () => {
   it("is stable for identical input and differs on length/content", () => {

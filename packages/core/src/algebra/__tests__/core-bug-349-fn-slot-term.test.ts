@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
-import { formatShape } from "../format.ts";
+import { formatShape } from "../format/format.ts";
 import { abs } from "../abs.ts";
 import { v as termVar } from "../term.ts";
 

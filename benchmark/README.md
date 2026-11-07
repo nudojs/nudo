@@ -23,11 +23,17 @@
 - A historical `exact: 62.5%` in `latest.json` is **not** a statement about `nudo check` quality.
 - `benchmark/failure-analysis.md` and `benchmark/test-coverage-reflection.md` document **that** suite’s bugs/oracle issues.
 
-**When publishing numbers**, prefer:
+**对外口径（唯一允许引用的三个数字）**：
 
 1. `check-recall-gold` + real-package zero-FP (precision)
 2. `docs/reports/s1-perf-baseline.md` (latency, honest synthetic scale)
 3. `benchmark/agent-dx` (agent DX vs tsc)
+
+**禁止引用**：`benchmark/results/*.json`（含历史 `exact: 62.5%`）、micro 单项耗时、
+`benchmark:oss:gate` 的倍率——它们各自回答不同问题、oracle 不同，不是产品精度或
+性能口径。其余套件（micro / s1 / oss / lsp-rounds / agent-dx）对外只作为「我们如何测」
+的方法说明，不作为「Nudo 有多准 / 多快」的宣传数字。精度宣称一律以
+`docs/design/limitations.md` §5 的适用边界为前提。
 
 Regenerate legacy infer data only with `pnpm run benchmark`; the gate (`pnpm run benchmark:gate`) still compares that suite to `benchmark/baseline.json` for **regression tracking of the legacy harness**, not product release criteria.
 

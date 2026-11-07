@@ -97,7 +97,9 @@ These are **not** the same product concept and must never be collapsed in docs o
 | Display | `any` (optionally with a type-var like `A1`) | `unknown` + conf annotation |
 | Product story | “No written contract ⇒ default constraint is `any` + JS runtime effects” | “Nudo hit a case it cannot handle” |
 
-**Rule:** unconstrained entry parameters display as **`any`**, never as `unknown`. CLI/`check` signatures follow this contract.
+**Rule (Nudo display faces):** unconstrained entry parameters display as **`any`**, never as `unknown`. CLI/`check` signatures follow this contract. **This rule scopes Nudo's own display / CLI output only** — it does not govern TypeScript declaration output.
+
+**TS projection (2026-11-06 ruling):** Nudo's `any` means "any JS value, unconstrained", which corresponds to TypeScript's **`unknown`** (the top type; consumers must narrow), **not** TypeScript's `any` (which disables type checking). `.d.ts` output — like the zod / standard / guard validators — therefore projects both Nudo `any` and Nudo `unknown` as TS `unknown`. An unconstrained return in a `.d.ts` legitimately raises TS2571 until narrowed: that is a correct safety signal, not a false positive (see Bug 544).
 
 ---
 

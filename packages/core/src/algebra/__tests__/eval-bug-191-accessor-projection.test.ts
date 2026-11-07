@@ -15,9 +15,9 @@
  * 本文件的断言与 Node 真实执行结果对齐（原生读值见各用例注释）。
  */
 import {describe, it, expect} from "vitest";
-import {formatShape, formatAbs} from "../format.ts";
+import {formatShape, formatAbs} from "../format/format.ts";
 import {denoteGuard} from "../denote.ts";
-import {absToConstraint} from "../projection.ts";
+import {absToConstraint} from "../interface/projection.ts";
 import {checkSource, pTrue} from "../index.ts";
 import {call} from "./eval-helpers.ts";
 import {sidecarOpts} from "./nudo-constraints.ts";

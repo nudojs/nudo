@@ -4,14 +4,14 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { absKey } from "./abs-key.ts";
-import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
+import { absKey, facetKey } from "./key/abs-key.ts";
+import { abs, cloneAbsFacets, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
 import { enumOwnKeys, setPropFlags, getPropFlags } from "./builtins/invariants.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 import { getFnImpl, isAbsApplyResult } from "./abs-fn.ts";
-import { recordMayThrow, formatThrowsAbs } from "./may-throw.ts";
-import { NudoThrow } from "./nudo-throw.ts";
+import { recordMayThrow, formatThrowsAbs } from "./diagnostics/may-throw.ts";
+import { NudoThrow } from "./diagnostics/nudo-throw.ts";
 import { enterCall, exitCall, callBudgetKey, stableCallId, truncatedAbs } from "./call-budget.ts";
 import { classInstanceInnerOf, getEvalClass } from "./exec/class-registry.ts";
 
@@ -1047,11 +1047,37 @@ function annotateJoinPath(a: Abs, b: Abs, result: Abs): Abs {
     if (!extra) return result;
     const note = `join(${sa}: ${extra})`;
     if (result.pathNote === note) return result;
-    return { ...result, pathNote: note };
+    return withJoinPathNote(result, note);
   }
   const note = `join(${sa} | ${sb})`;
   if (result.pathNote === note) return result;
-  return { ...result, pathNote: note };
+  return withJoinPathNote(result, note);
+}
+
+/**
+ * A2+A8 / A10 / A11：`{ ...result }` 是**重建**——不带回槽位容器会把
+ * `Abs.facets` 静默抹掉（A7 同型教训）。这条包装只搬字段，不改语义：
+ * 缺省不出现时输出与旧实现逐字节相同。
+ */
+function withJoinPathNote(result: Abs, note: string): Abs {
+  return {
+    ...result,
+    ...(result.facets !== undefined ? { facets: cloneAbsFacets(result.facets) } : {}),
+    pathNote: note,
+  };
+}
+
+/**
+ * join 是**同族值**的合并：两侧槽位容器一致 ⇒ 结果继承；不一致或任一侧
+ * 缺省 ⇒ 不臆造（保持旧行为）。直接给 result 挂字段而非再包一层对象，
+ * 避免二次重建丢访问器等侧表；`result.facets === undefined` 且两侧都有
+ * 容器时，result 必为新建对象（不可能是 a / b 本身）⇒ mutate 安全。
+ */
+function inheritJoinFacets(a: Abs, b: Abs, result: Abs): Abs {
+  if (result.facets !== undefined || !a.facets || !b.facets) return result;
+  if (facetKey(a.facets) !== facetKey(b.facets)) return result;
+  result.facets = cloneAbsFacets(a.facets);
+  return result;
 }
 
 function sameShapeJoinNote(a: Abs, b: Abs): string | undefined {
@@ -1098,23 +1124,27 @@ function sameShapeJoinNote(a: Abs, b: Abs): string | undefined {
 
 /** 通用 join：分派到对象/函数/值 */
 export function joinAbs(a: Abs, b: Abs): Abs {
+  // 单一出口：所有分支的结果统一过 inheritJoinFacets（槽位容器只在两侧
+  // 一致时继承）。never 吸收直接返回非空一侧本身，其槽位随之保留。
+  let out: Abs;
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
   if (isObj(a) && isObj(b)) {
     const joined = joinObjects(a, b);
-    const out = annotateJoinPath(a, b, joined);
+    const annotated = annotateJoinPath(a, b, joined);
     // annotateJoinPath 可能 {...result} 再包一层新身份；侧表按对象身份键控，
     // joinObjects 注册的访问器须随迁（同 $set/$del 的迁移先例）
-    if (out !== joined) migrateAccessors(joined, out);
-    return out;
+    if (annotated !== joined) migrateAccessors(joined, annotated);
+    out = annotated;
+  } else if (a.shape.k === "fn" && b.shape.k === "fn") {
+    out = annotateJoinPath(a, b, joinFunctions(a, b));
+  } else {
+    const result = joinValues(a, b);
+    // 推导图打点：任一侧有标签时结果挂 join 边（工件聚合；check 分轨不依赖）
+    noteDerivationJoin([a, b], result);
+    out = annotateJoinPath(a, b, result);
   }
-  if (a.shape.k === "fn" && b.shape.k === "fn") {
-    return annotateJoinPath(a, b, joinFunctions(a, b));
-  }
-  const result = joinValues(a, b);
-  // 推导图打点：任一侧有标签时结果挂 join 边（工件聚合；check 分轨不依赖）
-  noteDerivationJoin([a, b], result);
-  return annotateJoinPath(a, b, result);
+  return inheritJoinFacets(a, b, out);
 }
 
 // --- Object.create(null) 无原型标记 ---
