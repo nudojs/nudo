@@ -1,6 +1,28 @@
 # @nudojs/parser
 
 
+## 1.5.8
+
+### Patch Changes
+
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [897b19f]
+- Updated dependencies [792eb79]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [1316e42]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [5267658]
+  - @nudojs/core@1.19.0
+
 ## 1.5.7
 
 ### Patch Changes
