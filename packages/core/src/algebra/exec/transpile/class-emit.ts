@@ -31,6 +31,7 @@ import {
   emitParamBindingFromArgs,
   genOuterFreeWriteNames,
   genFreeWriteWrap,
+  genSuspendTail,
 } from "./emit.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
@@ -723,15 +724,11 @@ export function classSpecOf(
     // Bug 212（A1 步骤 1）：eager 体写穿外层绑定 ⇒ 快照自由写 + finally
     // $join 折回（opts = 类外层作用域的 aliasGroups）。
     if (m.generator) {
+      const genNames = genOuterFreeWriteNames(m.body, paramNamesOf(mParamsNodes), opts);
       bodyStmts = [
         `${indent(depth + 4)}return $gen(() => {`,
-        genFreeWriteWrap(
-          bodyStmts,
-          genOuterFreeWriteNames(m.body, paramNamesOf(mParamsNodes), opts),
-          indent(depth + 4),
-          opts,
-        ),
-        `${indent(depth + 4)}}` + (m.async === true ? ", true" : "") + `);`,
+        genFreeWriteWrap(bodyStmts, genNames, indent(depth + 4), opts),
+        `${indent(depth + 4)}}${genSuspendTail(genNames, opts, m.async === true)});`,
       ].join("\n");
     }
     if (m.static) {

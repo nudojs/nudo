@@ -46,7 +46,7 @@ import {
   thisCarrierOf,
   copyConstScope,
 } from "../helpers.ts";
-import { emitStmtWritebackRebinds, emitParamBinding, emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap } from "../emit.ts";
+import { emitStmtWritebackRebinds, emitParamBinding, emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap, genSuspendTail } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileFnBodyStmts } from "../stmt/fn-body.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
@@ -349,13 +349,16 @@ export function transpileFunctionExpr(
         // generator 返回 AsyncGenerator 本身，非 promise）。
         // Bug 212（A1 步骤 1）：eager 体写穿外层绑定 ⇒ 快照自由写 + finally
         // $join 折回（与声明路径同口径；opts = 外层作用域的 aliasGroups）。
+        const genNames = fn.generator
+          ? genOuterFreeWriteNames(fn.body, paramNamesOfFn(fn.params), opts)
+          : [];
         const inner = fn.generator
           ? `return $gen(() => {\n${genFreeWriteWrap(
               raw,
-              genOuterFreeWriteNames(fn.body, paramNamesOfFn(fn.params), opts),
+              genNames,
               "  ",
               opts,
-            )}\n}${fn.async === true ? ", true" : ""});`
+            )}\n}${genSuspendTail(genNames, opts, fn.async === true)});`
           : raw;
         // Bug 93：generator 标记透传 $fnVal opts.kind → impl——member.ts 的
         // fn 分支据此区分「不可构造但有 prototype」（generator 实例原型）

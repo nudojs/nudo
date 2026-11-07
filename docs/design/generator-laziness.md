@@ -6,7 +6,11 @@
 > 7 个元素面读出函数收口到模块私有的幂等触发器表（生产侧不登记 ⇒ 构造期
 > eager 时序与全部值面逐字不变），回归钉
 > [`gen-trigger-skeleton.test.ts`](../packages/core/src/algebra/exec/__tests__/gen-trigger-skeleton.test.ts)。
-> **步骤 3 / 4 仍为架构债，且本批次明确停点**（见 §5.3 前的「步骤 3 停点」段）。
+> **步骤 3（延迟体）已落地 2026-11-07**（见文末「步骤 3 实施记录」）；
+> **步骤 4 的「挂起点绑定回放」值面切片已落地 2026-11-07**
+> ——c3/c4 的 native `1` / `"a"` 逐点精确复现（见文末「步骤 4 实施记录」）。
+> **仍未闭合**：把体降成真 JS generator 的**全量真挂起**（含非绑定类副作用
+> 的时序），经复核在本内核里不是局部改造（见 §5.4 订正）。
 > 关联：诚实台账 → [`limitations.md`](./limitations.md) §1.4；架构债台账 →
 > [`architecture-debt.md`](./architecture-debt.md) A1；仓内回归钉 →
 > [`eval-bug-212-generator-body-eager.test.ts`](../packages/core/src/algebra/__tests__/eval-bug-212-generator-body-eager.test.ts)、
@@ -629,11 +633,38 @@ R3-b：体在**消费点**才跑 ⇒ 若消费点在**另一个函数**里（生
 
 ### 5.4 步骤 4（完整解）：**真挂起**（体在第 k 个 `yield` 真正暂停）
 
-- 把生成器体降成**真 JS generator**（转译侧发 `function*(){ … yield $yieldValue(v) … }`），
-  `yield` 变真挂起点 ⇒ 步骤 3 的「一次跑到底」缺陷消失（native 的 `1` / `"a"` 精确复现）。
+> **状态：2026-11-07 值面切片已落地**（见文末「步骤 4 实施记录」）。
+> 下文「把体降成真 JS generator」的**字面方案经复核在本内核不可局部落地**，
+> 理由见下方订正；已实施的是「挂起点绑定回放」——不改体执行时序，把
+> native 的挂起点语义在**外层绑定值面**精确复现。
+
+- 原设想：把生成器体降成**真 JS generator**（转译侧发
+  `function*(){ … yield $yieldValue(v) … }`），`yield` 变真挂起点 ⇒ 步骤 3
+  的「一次跑到底」缺陷消失（native 的 `1` / `"a"` 精确复现）。
 - 代价：`try/finally` / `break` / `continue` / `return` 在真 generator 内的语义要与 Abs 引擎的
   控制流 token（`NudoReturn` / `NudoLoopSignal`）**对齐**（`control.ts` 的一整套逃逸门）——
   这是**引擎内核级**改造，风险最高，建议独立成族。
+
+**2026-11-07 结构订正（为何字面方案不是局部改造）**：
+
+1. **语法层**：引擎的分支/循环/switch/try 体是**宿主箭头回调**
+   （`$fork(test, () => …)`、`$whileSeq(() => …, () => …)`、`$for(…, () => …)`）。
+   `yield` 落在非生成器箭头里是 **SyntaxError**，一次编译失败会让整模块
+   导出全丢 ⇒ L2 闸门假绿（仓内 `Bug 1139` 安全网正是为此存在）。仓里
+   `transpile/async-plan.ts` 只对 **async 体**做「await 是否全在 gen 级」的
+   判定，且必须配 `disableAsyncGen` 重试；生成器体没有等价的门。
+2. **语义层**：抽象 fork **一次跑完双臂**（`withIsolatedYields` 逐臂隔离收集器，
+   `mergeArmYields` 再 join）。真 generator 一个 `next()` 只能挂在一个程序点
+   ⇒ 两臂各有一个 `yield` 时无法同时挂起；继续体也无从选择。要让双臂各自
+   可挂起，需要把 `$fork` / `$whileSeq` / `$for` / `$switch` / `$try*` 全部
+   改成 generator 变体并由外层 `yield*` 委派（CPS 重写），且 `loopExits` /
+   may-throw 帧 / `yieldStack` 的 ALS 作用域要跨 `next()` 续接。
+3. **结论**：这是 Abs 求值模型的表示层改造，不是「步骤 4 单独成族」能
+   收口的一刀。本轮采取**值面切片**：体仍一次跑完（步骤 3 不变量），
+   用转译侧 `capture`/`restore` 钩子把**外层自由写绑定**在每个 `$yield`
+   处记成时间轴，消费推进到第 k 个 yield 时回放到 `timeline[k-1]`。
+   §5.5 的四行 native 值全部精确，且零精度回退；非绑定类副作用
+   （宿主调用、may-throw 收集）的时序仍整体落在首次消费点，是**已知边界**。
 
 ### 5.5 各步的「值面」效果对照（以 §1.6 四行为例）
 
@@ -642,10 +673,15 @@ R3-b：体在**消费点**才跑 ⇒ 若消费点在**另一个函数**里（生
 | 现状（eager 写穿） | `1` ✗ | `"ab"` ✗ | `5` ✗ | `"ab"` ✗ |
 | **步骤 1（join 隔离）** | `0 \| 1` ✓sound | `"" \| "ab"` ✓sound | `0 \| 5` ✓sound* | `"" \| "ab"` ✓sound* |
 | 步骤 3（延迟到消费点） | `0` ✓ | `""` ✓ | `5` ✗ | `"ab"` ✗ |
-| 步骤 4（真挂起） | `0` ✓ | `""` ✓ | `1` ✓ | `"a"` ✓ |
+| **步骤 4（2026-11-07 挂起点回放）** | `0` ✓ | `""` ✓ | `1` ✓ | `"a"` ✓ |
 
 ⇒ **步骤 1 就能把「确定的错值」变成「sound 的过近似」**（brief 的 fail-closed 收窄标准）；
-步骤 4 才逐点精确。
+步骤 4 的值面切片让四行逐点精确（§5.4 订正：体执行时序本身未真挂起）。
+
+**2026-11-07 实测补记**：步骤 4 之后 c3/c4 分别为 `1  #exact` / `"a"  #exact`；
+连续两次 `next()` 后推进到 `5` / `"ab"`；抽象分叉体、`yield*` 委托、
+未启动生成器上的 `.return()` / `.throw()` 三类形态由 sound 守卫整帧禁用
+回放 ⇒ 严格回退到 `0 | 5` 的 join 过近似，未产「自信的错值」。
 
 \* **2026-11-04 落地实测订正**：c3/c4 的 join 成员是**事前/事后两端**（c3 = `0 | 5`，
 c4 = `"" | "ab"`）——首个 yield **挂起点**的中间值（native `1` / `"a"`）不在 join 内
@@ -725,9 +761,10 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
 4 例 R3-b 验收 + 1 条步骤 4 todo；Bug 212 的 5 条精确断言、步骤 2 骨架
 2 条负控制、`snapshot-match-iter-tables` 的 `gen()` 夹具按新语义重订。
 
-**剩余**：步骤 4 真挂起（c3/c4 的首个 yield 挂起点中间值仍不逐点精确）；
+**剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
 `conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
-别名广播已让可观察面不退化，本轮未单独实施。
+别名广播已让可观察面不退化，本轮未单独实施。**c3/c4 的中间值已由
+2026-11-07 步骤 4 值面切片闭合**（见下节）。
 
 **已知边界**：`drainPendingGens` 目前只挂在
 `callTranspiledExportFull`（analyzer / evaluator 的主求值入口）。若某条路径
@@ -735,3 +772,70 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
 （如个别 LSP replay 分支），空壳会保留到下一次求值收口才排空 ⇒ 该路径的
 未消费展示面在此期间是 `{  } #path`。全仓基线未踩到该形态；若后续出现，
 把排空挂到 `runWithCollectorScope` 出口即可（同一函数、更大作用域）。
+
+---
+
+## 2026-11-07 · 步骤 4 实施记录（挂起点绑定回放 · 值面切片）
+
+**改前基线**：`533c8c66`（步骤 3 已落地）全仓
+`1660 入口 / 20 失败 = 基线 20，0 新增 / 0 消失`。
+
+**为什么不是「把体降成真 JS generator」**：见 §5.4 的 2026-11-07 结构订正
+——转译产物的分支/循环臂是宿主箭头（真 `yield` 进去即 SyntaxError），
+抽象 fork 又一次跑完双臂、无法只挂在其中一臂。字面方案要求把 `$fork` /
+`$whileSeq` / `$for` / `$switch` / `$try*` 全部改成 generator 变体并跨
+`next()` 续接 ALS 帧，属求值模型表示层改造，不是局部一刀。
+
+**实现（core + transpile，公共导出形状不变）**：
+
+1. `transpile/emit.ts::genSuspendTail(names, opts, asyncMode)`：四个 `$gen`
+   发射点（声明 / 函数表达式 / 对象方法 / 类方法）在自由写名集非空时，
+   给 `$gen` 追加**可选第三实参** `{ capture, restore }`。`capture` 用
+   `$copy` + 共享 memo 读出全部自由写绑定的 Abs 快照（容器深拷贝、
+   const 别名组身份不分裂）；`restore` 用 `$rebindable` 守卫写回
+   （宿主全局不被包装 Abs 污染，同 B1 口径）。**名集为空时零发射**
+   ⇒ 绝大多数生成器的转译产物逐字不变。
+2. `runtime/async.ts`：`$yield` / `$yieldStar` 在挂起点调
+   `noteGenSuspendPoint()` 把 `capture()` 推进当前帧的 `timeline`
+   （委托按并出元素数占多个挂起点，保持与元素序列对齐）。
+   `collectGenBody` 在体执行期间压帧，结束后把帧挂到 fresh 生成器对象，
+   `mergeDeferredBody` 再随别名广播共享同一帧。
+3. `makeGenObject`：`next()` 交付第 `state.i` 个 yield 后调
+   `applyGenSuspend(genSelf, state.i)` 回放 `timeline[state.i-1]`；
+   **`next()` 耗尽**与迭代 `drain()` 都推进到**终态格**
+   `full.length + 1`（体跑完、步骤 1 的 finally join 已折回的快照）
+   ⇒ 最后一个 yield 之后的写不被 wrong-exact 抹掉。回放**单调**
+   （`lastApplied`）⇒ 耗尽后的 `next()` 不回卷。`.return()` /
+   `.throw()` **不推进**——原生落在未启动生成器上时体根本不跑，
+   推进到末尾会产 wrong-exact `5`，故保留步骤 1 的 join 过近似。
+4. **帧栈隔离**：`collectGenBody` 每次调用都压一格（无钩子时压
+   `undefined` 哨兵）。嵌在外层体里创建并消费的内层生成器，其
+   `$yield` 若读到栈顶的外层帧会把快照错记进外层时间轴 ⇒
+   `exec-generator-consumption` 的 inner `.return(77)` 钉住过该污染
+   （首轮全仓唯一新增失败），加哨兵后归零。
+
+**sound 守卫**（`collectGenBody` 整帧 `enabled = false`，严格回退 join）：
+① 路径敏感（`genJoinOverride !== null || bumpGenPathSensitive`）——fork 臂
+序列是 join 不是线性时间轴；② 体内延迟异常（Bug 34）；③ `yield*` 委托
+（`genDelegationStack` 非空）。三类实测均为 `0 | 5  #exact`，无「自信错值」。
+
+| 实测 | 步骤 3 | 步骤 4 |
+|---|---|---|
+| c3 `it.next()` 后 n（native 1） | `0 \| 5` | `1  #exact` |
+| c4 `it.next()` 后 log（native "a"） | `"" \| "ab"` | `"a"  #exact` |
+| 连续两次 next()（native 5 / "ab"） | `0 \| 5` | `5` / `"ab"` |
+| 分段读取 `1:1:2:5`（native） | 不精确 | `"1:1:2:5"  #exact` |
+| 消费期绑定 × 回放叠加（native 9:9:5） | 不精确 | `"9:9:5"  #exact` |
+| 迭代整体 drain（native 5:2） | 过近似 | `"5:2"  #exact` |
+
+**回归**：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉：
+构造期零捕获 / 首次回放 / 单调推进 / drain / 别名广播 / async 同编 /
+嵌套帧隔离 + 终态格 / 无钩子零开销）；`eval-bug-212-generator-body-eager.test.ts` 的 c3/c4
+断言重订为精确 native 值并补 2 例推进用例（14 例全绿）；
+`eval-generator-cross-function-consume.test.ts` 的步骤 4 todo 升级为
+5 例验收（含两类 sound 守卫与 `.return()` 回退，9 例全绿）。
+
+**已知边界（诚实台账）**：这是**外层绑定值面**的挂起点精确化，体仍一次
+跑完。宿主调用、may-throw 收集、容器外部引用等非「自由写绑定」类副作用
+的时序仍整体落在首次消费点；若后续要全量真挂起，需按 §5.4 订正做
+CPS 级改造。求值隔离仍按用户约定搁置。

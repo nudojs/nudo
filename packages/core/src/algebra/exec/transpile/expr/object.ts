@@ -40,7 +40,7 @@ import {
   internalTmpName,
   thisCarrierOf,
 } from "../helpers.ts";
-import { emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap } from "../emit.ts";
+import { emitParamBindingFromArgs, genOuterFreeWriteNames, genFreeWriteWrap, genSuspendTail } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { emitFnBlockBody } from "../stmt/fn-body.ts";
 import { emitSetterAccessorThunk } from "../class-emit.ts";
@@ -300,15 +300,11 @@ export function transpileObjectExpr(
           // Bug 212（A1 步骤 1）：eager 体写穿外层绑定 ⇒ 快照自由写 + finally
           // $join 折回（methodOpts 继承外层作用域 aliasGroups）。
           if (prop.generator) {
+            const genNames = genOuterFreeWriteNames(prop.body, paramNamesOfFn(prop.params as Node[]), methodOpts);
             mBodyInner = [
               `return $gen(() => {`,
-              genFreeWriteWrap(
-                mBodyInner,
-                genOuterFreeWriteNames(prop.body, paramNamesOfFn(prop.params as Node[]), methodOpts),
-                "  ",
-                methodOpts,
-              ),
-              `});`,
+              genFreeWriteWrap(mBodyInner, genNames, "  ", methodOpts),
+              `}${genSuspendTail(genNames, methodOpts)});`,
             ].join("\n");
           }
           // Bug 70：async 对象方法体包 $async（此前丢 async 修饰——返回裸体

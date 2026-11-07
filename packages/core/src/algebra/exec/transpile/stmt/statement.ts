@@ -111,6 +111,7 @@ import {
   forkArmThunkExpr,
   genOuterFreeWriteNames,
   genFreeWriteWrap,
+  genSuspendTail,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
@@ -466,19 +467,15 @@ function emitFunctionDeclaration(
     // 「跑完之后」的值（原生构造点未执行体）⇒ 快照自由写 + finally $join
     // 折回（不写外层绑定的生成器产物逐字不变）。opts = 外层作用域
     //（快照/join 码在 thunk 里，名字解析到外层绑定 ⇒ aliasGroups 取外层集）。
-    const genBody = genFreeWriteWrap(
-      bodySrc,
-      genOuterFreeWriteNames(stmt.body, paramNamesOf(stmt.params as Node[]), opts),
-      indent(depth + 2),
-      opts,
-    );
+    const freeNames = genOuterFreeWriteNames(stmt.body, paramNamesOf(stmt.params as Node[]), opts);
+    const genBody = genFreeWriteWrap(bodySrc, freeNames, indent(depth + 2), opts);
     return [
       kindStamp,
       `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
       restBind,
       `${indent(depth + 1)}return $gen(() => {`,
       genBody,
-      `${indent(depth + 1)}}${stmt.async === true ? ", true" : ""});`,
+      `${indent(depth + 1)}}${genSuspendTail(freeNames, opts, stmt.async === true)});`,
       `${pad}}`,
     ]
       .filter((l) => l !== "")
