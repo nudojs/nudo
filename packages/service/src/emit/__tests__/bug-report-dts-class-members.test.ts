@@ -61,7 +61,10 @@ describe("Bug 13 —— static-only 方法不再多发幻影实例声明", () =>
 `);
     expect(dts).toMatch(/^  m\(/m);
     expect(dts).toContain("static m(");
-    expect((dts.match(/^  m\(.*\): unknown;/gm) ?? []).length).toBe(1);
+    // 类实例方法返回类型由 Bug 39 的入口兜底派发补全：unknown → number。
+    // 本断言的目标是「同名 static / instance 两条声明都在」，类型精度
+    // 跟随分析面（与 dts 单元面对齐），不再钉死 unknown。
+    expect((dts.match(/^  m\(.*\): (number|unknown);/gm) ?? []).length).toBe(1);
   });
 });
 
@@ -198,8 +201,9 @@ describe("Bug 86 —— private / protected 成员不再翻成 public", () => {
     const dts = moduleDts(SRC);
     expect(dts).toContain("private secret: number;");
     expect(dts).toContain("protected guarded: number;");
-    expect(dts).toContain("private hidden(): unknown;");
-    expect(dts).toContain("protected shield(): unknown;");
+    // 同上：Bug 39 修好后私有/保护方法也拿到精确返回类型（number）。
+    expect(dts).toMatch(/private hidden\(\): (number|unknown);/);
+    expect(dts).toMatch(/protected shield\(\): (number|unknown);/);
   });
 
   it("消费端读私有面被 tsc 拦下（改前假绿）", () => {

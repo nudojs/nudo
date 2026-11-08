@@ -1186,8 +1186,19 @@ function lowerConstructorParameterProperties(
       delete param.readonly;
       delete param.override;
       const inner = param.parameter as (Node & Record<string, unknown>) | undefined;
-      if (inner && inner.type === "Identifier" && typeof inner.name === "string") {
-        names.push(inner.name);
+      // 带默认值的参数属性（`readonly active: boolean = true`）：`parameter`
+      // 是 AssignmentPattern（left = Identifier），不是 Identifier。此前只认
+      // Identifier ⇒ 整条 TSParameterProperty 原样保留 ⇒ `this.active = active`
+      // 不生成、`check` 签名把第三个参数显示成 `_p2`（Bug 48）。
+      const nameNode =
+        inner?.type === "Identifier"
+          ? inner
+          : inner?.type === "AssignmentPattern" &&
+              (inner.left as { type?: string } | undefined)?.type === "Identifier"
+            ? (inner.left as Node & Record<string, unknown>)
+            : undefined;
+      if (nameNode && typeof nameNode.name === "string") {
+        names.push(nameNode.name);
         kept.push(inner);
         continue;
       }
