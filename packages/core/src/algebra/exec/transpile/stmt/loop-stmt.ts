@@ -240,7 +240,20 @@ export function emitForStatement(
         : stmt.init.type === "VariableDeclaration"
           ? transpileStatement(stmt.init as Statement, depth, opts)
           : `${pad}${emitTranspileExpression(stmt.init as Expression, opts)};`;
-    const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
+    // Bug 3 fallback：多声明符 / var 头 init 就地声明的 let/const 绑定同样
+    // 遮蔽外层同名 const（如 `const s=100; for (let s=0,t2=0; s<2; s+=1)`）
+    // ⇒ test / update / body 都须用**扣除这些名字后**的 const 面，否则步进
+    // 里的 `s+=1` 命中 isConstAssignTarget ⇒ 误报确定 TypeError。
+    const fallbackShadow = new Set<string>();
+    if (stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.kind !== "var") {
+      for (const d of stmt.init.declarations) collectPatternNames(d.id, fallbackShadow);
+    }
+    const fallbackConsts = opts.constNames
+      ? copyConstScope(opts.constNames, fallbackShadow)
+      : opts.constNames;
+    const fallbackOpts: TranspileOptions =
+      fallbackConsts === opts.constNames ? opts : { ...opts, constNames: fallbackConsts };
+    const testSrc = stmt.test ? emitTranspileExpression(stmt.test, fallbackOpts) : "$lit(true)";
     // 步进表达式只取副作用（写真实绑定）；状态线程是合成计数器。
     // i++/i-- 的后置值语义会丢自增写回（步进闭包内无语句级 rebind pass），
     // 与主路径同口径：标识符 Update 强制 `name = $updateAdd/$updateSub(name)`。
@@ -249,7 +262,7 @@ export function emitForStatement(
     // `for (let c = this; c; c = c.parent)` 这类循环变量改写被误判成
     // 「结构可赋值」违例（real-package 零 FP 红线）。
     const updateOpts: TranspileOptions = {
-      ...opts,
+      ...fallbackOpts,
       conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
     };
     const stepPart = (u: Node): string => {
@@ -270,7 +283,7 @@ export function emitForStatement(
     // 体预备块与 init 声明主路径共享（forBodyPrep 单源；本路径无循环变量
     // 遮蔽——const 作用域原样、赋值名无扣除）。
     const { bodyLocalDecls, forBodyOpts, bodyStmts, max, names } =
-      forBodyPrep(stmt, depth, opts, opts.constNames, () => true);
+      forBodyPrep(stmt, depth, opts, fallbackConsts, () => true);
     // Bug 183：for 循环体接守卫事实（nullish + 关系）——测试在每轮迭代
     // 前求值、为真则进体，语义与 `if`/`while` 的事实臂等价（此前 for
     // 分支一条都没接 ⇒ `for (; v !== null; )` 与 `while (v !== null)`
@@ -320,7 +333,19 @@ export function emitForStatement(
     stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.declarations[0]?.init
       ? emitTranspileExpression(stmt.init.declarations[0].init, opts)
       : "$lit(void 0)";
-  const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
+  // Bug 3：循环变量 initName 是状态线程形参（`(initName) => {…}`），遮蔽
+  // 外层同名 const。test / update 都在该 thunk 内发射 ⇒ 必须用**去影**后的
+  // const 面，否则 `for (let s=0; s<3; s+=1)` 的 `s+=1` 命中
+  // isConstAssignTarget ⇒ `$throwConstAssign()`（误报确定 TypeError、签名
+  // 塌成 never）。原实现把 loopParentConsts 算在 testSrc/updateSrc **之后**
+  //（只喂给循环体），头两段仍用未去影的 opts。
+  const loopParentConsts =
+    opts.constNames && opts.constNames.has(initName)
+      ? copyConstScope(opts.constNames, new Set([initName]))
+      : opts.constNames;
+  const loopHeadOpts: TranspileOptions =
+    loopParentConsts === opts.constNames ? opts : { ...opts, constNames: loopParentConsts };
+  const testSrc = stmt.test ? emitTranspileExpression(stmt.test, loopHeadOpts) : "$lit(true)";
   // for 步进：**只取副作用**，状态线程恒为循环变量自身（与 fallback 路径
   // 同口径——fallback 用合成计数器 `__n`，主路径用 `initName`）。
   // - Bug 132：标识符 Update 必须走 $updateAdd/$updateSub（ToNumeric ± 1）。
@@ -337,16 +362,10 @@ export function emitForStatement(
       ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$updateAdd" : "$updateSub"}(${stmt.update.argument.name})`
       : stmt.update
         ? emitTranspileExpression(stmt.update, {
-            ...opts,
+            ...loopHeadOpts,
             conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
           })
         : null;
-  // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
-  // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
-  const loopParentConsts =
-    opts.constNames && opts.constNames.has(initName)
-      ? copyConstScope(opts.constNames, new Set([initName]))
-      : opts.constNames;
   // 循环体是**块作用域**（体 thunk 内）——体顶层词法声明在体内遮蔽外层
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域（$for 的 opts 实参）⇒ 用未过

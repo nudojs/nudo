@@ -480,7 +480,12 @@ export function transpileAssignmentExpr(
         const bindSrc = !opts.inFunction
           ? ` $recordBinding(${JSON.stringify(name)}, ${assignV});`
           : "";
-        return `((${assignV}) => { $assignRecord(${JSON.stringify(name)}, ${name}, ${assignV}, ${locLine}, ${locCol}, ${cond}${paramFlag});${bindSrc} return ${name} = ${assignV}; })(${valSrc})`;
+        // Bug 82：未声明的隐式全局赋值在 sloppy 下原生**不读该名**（直接建
+        // 全局）。`$assignRecord` 的 prev 裸读未声明名会在宿主层抛
+        // ReferenceError ⇒ 签名塌成 never。用 typeof 安全读：strict 下赋值
+        // 语句 `name = …` 自身仍抛 ReferenceError，语义不变。
+        const prevSrc = `typeof ${name} === "undefined" ? $lit(void 0) : ${name}`;
+        return `((${assignV}) => { $assignRecord(${JSON.stringify(name)}, ${prevSrc}, ${assignV}, ${locLine}, ${locCol}, ${cond}${paramFlag});${bindSrc} return ${name} = ${assignV}; })(${valSrc})`;
       }
       throw new NudoUnsupportedError(
         `assign-target`,

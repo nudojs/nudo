@@ -345,3 +345,15 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
   // 值读由 global.ts 的装箱槽给出 exact 描述串（非本表职责）。
   Symbol: new Set(["description"]),
 };
+
+/**
+ * Bug 37：WHATWG `URL` 组件访问器里**带 setter（可写）**的 10 个名字。
+ * `BUILTIN_BRAND_ACCESSORS.URL` 是 `$in` presence 表（12 个全收，含
+ * getter-only 的 origin / searchParams），**不是**只读声明——写门不得把
+ * 整张表当 getter-only 判定（否则 `u.href = …` 这类合法写被误判确定
+ * TypeError，入口签名塌成 never）。仅 origin / searchParams 是只读的。
+ */
+export const URL_WRITABLE_COMPONENTS: ReadonlySet<string> = new Set([
+  "href", "protocol", "username", "password", "host",
+  "hostname", "port", "pathname", "search", "hash",
+]);

@@ -41,6 +41,7 @@ import {
   asAbsVal,
   $lit,
 } from "../state.ts";
+import { NudoSilentWrite } from "../state.ts";
 
 import { ARR_MUTATORS } from "../../method-names.ts";
 
@@ -805,6 +806,16 @@ export function spliceWindow(
  *  可见）。$invoke 的 mutator 分支在**调用点**即刻执行本函数（表达式求值
  *  顺序正确，Bug 49/51），别名 / 成员槽 / Map 条目经共享 Abs 同步可见。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
+  // Bug 82：sloppy 源对 frozen 数组的 mutator 原生静默失败（返回原数组）。
+  try {
+    return $arrMutContainerInner(arr, method, args);
+  } catch (e) {
+    if (e instanceof NudoSilentWrite) return arr;
+    throw e;
+  }
+}
+
+function $arrMutContainerInner(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   // 完整性门（Bug 223）对**任何接收者形态**原生同源：frozen / 结构性扩展
   // 在写面建模之前定抛——array-like obj（Bug 254 臂）此前绕过此门 ⇒ frozen

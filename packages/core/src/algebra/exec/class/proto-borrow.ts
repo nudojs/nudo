@@ -352,6 +352,10 @@ setProtoMethodDispatch((home, name, thisVal, args, origin) => {
     // → {a:1}）；此前走物化通道 ⇒ 折成**空数组**（内容 + 身份全丢）。
     // 原始值接收者：原生返回 ToObject(prim) 包装对象（引擎无该形态）⇒ unknown。
     if (ARRAY_INPLACE_METHODS.has(name)) {
+      // Bug 60：RequireObjectCoercible(this) 前置校验——nullish 接收者
+      //（shape.k = "unknown"，不是 "prim"）此前绕过 prim 守卫被**原样返回**，
+      // 原生定抛 TypeError。与 join 一族同口径（eval-bug-330）。
+      if (isNullishLitAbs(recv)) throw new NudoThrow(errorTypeAbs("TypeError"));
       if (recv.shape.k === "prim") return unknown;
       return recv;
     }
@@ -360,6 +364,8 @@ setProtoMethodDispatch((home, name, thisVal, args, origin) => {
     //（原生 `Array.prototype.concat.call("ab")` → ["ab"]（长度 1）；此前按
     // 数组展开 → 长度 2、首元素 "a" ⇒ 元素数 / 首元素全错）。
     if (name === "concat" && !isArrayExoticRecv(recv)) {
+      // Bug 60：同上——nullish 接收者定抛，不得包成 [null] 元组。
+      if (isNullishLitAbs(recv)) throw new NudoThrow(errorTypeAbs("TypeError"));
       const seed = abs({ k: "tuple", elements: [recv] }, undefined, undefined, "exact");
       return $invoke(seed, name, args);
     }

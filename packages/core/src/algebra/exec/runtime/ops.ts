@@ -12,9 +12,9 @@ import {
 import { joinAbs, isNullProtoWithoutCoercer } from "../../objects.ts";
 import { isSymbolAbs } from "../../key/symbol-id.ts";
 import { concatString } from "../../template.ts";
-import { noteCoercionMayThrow } from "../../arithmetic/coerce.ts";
+import { mayToStringThrowOperand } from "../../builtins/shared.ts";
 import { NudoThrow } from "../../diagnostics/nudo-throw.ts";
-import { errorTypeAbs } from "../../diagnostics/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../../diagnostics/may-throw.ts";
 import { markFreshInstance } from "../../key/instance-id.ts";
 import { asAbsVal, currentExecPhi, currentAssumePremises } from "./state.ts";
 
@@ -83,10 +83,23 @@ export function $toStr(a: Abs): Abs {
   if (isNullProtoWithoutCoercer(a, "string")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  // 抽象操作数的 Symbol/bigint 强转可能抛（与 `+` 拼接臂同打点口径）；
-  // **字面量操作数恒 total**（`${1n}` 原生是 "1"，不是 TypeError）⇒ 不记
-  if (a.term?.op !== "lit") {
-    noteCoercionMayThrow(a, a, "ToString coercion of abstract operand (Symbol)");
+  // Bug 81：这是 **ToString（string hint）** 面，须用引擎自带的 ToString
+  // 分档判据（mayToStringThrowOperand：Date/Map/普通闭对象恒 total ⇒ 不记
+  // may）。此前复用 noteCoercionMayThrow 的 **ToNumber** 判据（brand/obj/fn
+  // 一律 may）⇒ `${d}` / `${m}` / `${o}` 对引擎已知 total 的值假记
+  // TypeError，且与 `"x" + d` / `String(d)` 的裁决自相矛盾。
+  // 字面量操作数恒 total（`${1n}` → "1"）由判据内部 `term.op === "lit"`
+  // 短路，无需外置 if。
+  // sum 是抽象并集：含 obj / fn / brand 成员时保守记 may（沿用既有 #119
+  // 对照组口径——nullish 兄弟成员不得稀释抽象臂）。非 sum 的普通闭对象 /
+  // 引擎已知 total 的内建 brand 恒不记，由上面的判据给出正确裁决。
+  const sumAbstractMember =
+    a.shape.k === "sum" &&
+    (a.shape as { members: Abs[] }).members.some(
+      (m) => m.shape.k === "obj" || m.shape.k === "fn" || m.shape.k === "brand",
+    );
+  if (mayToStringThrowOperand(a) || sumAbstractMember) {
+    recordMayThrow({ kind: "TypeError", cause: "ToString coercion of abstract operand (Symbol)" });
   }
   // 值面：`"" + x` 的拼接臂（纯判定 ⇒ 同一次强转不重调钩子）
   return concatString(strLit(""), a);

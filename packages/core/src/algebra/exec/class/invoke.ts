@@ -34,6 +34,7 @@ import {
   setRawArgNormalizer,
 } from "../../hof.ts";
 import { privateNameGuard } from "../runtime/containers.ts";
+import { isUrlSpMutator, syncUrlSearchParamsParent } from "../runtime/url-live.ts";
 // setProtoMethodDispatch 的加载期注册已迁 proto-borrow.ts（借用语义域，
 // 注册点直连 hooks 叶子——不经 member.ts / containers barrel 再导出）。
 // 本文件仅 side-effect import 触发其加载：回调体内才消费本模块绑定
@@ -809,7 +810,15 @@ function invokeBuiltinBrandMethod(
   // 此前只对 Map/Set 调 evalBuiltinInstanceMethod，Date.getTime 等落到
   // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
   const viaBuiltin = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
-  if (viaBuiltin !== undefined) return viaBuiltin;
+  if (viaBuiltin !== undefined) {
+    // Bug 65：URLSearchParams 的 set/append/delete/sort 原地改了 @@entries
+    // ⇒ 回写父 URL 的 search / href（live view 同源语义；父指针在
+    // `u.searchParams` 读面登记，见 runtime/url-live.ts）。
+    if (brandName === "URLSearchParams" && isUrlSpMutator(method)) {
+      syncUrlSearchParamsParent(thisVal);
+    }
+    return viaBuiltin;
+  }
   // 含内建父的类链（class MyMap extends Map {}）：实例 brand 名是**派生类名**
   // ⇒ 上面的直查落空 ⇒ `.get` / `.size` / `.has` 折 unknown（族 02 遗留
   // 「含内建父的类链保守不判」——假阴性）。沿类链找首个**内建 owner**（内建

@@ -39,7 +39,7 @@
  *   （无公理时不取绑定包——零行为变化）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, numLit, str, unknown, isAbsLike } from "../../../abs.ts";
+import { abs, confJoin, litValue, numLit, str, strLit, unknown, isAbsLike } from "../../../abs.ts";
 import "../../../term.ts";
 import { pTrue } from "../../../pred.ts";
 import { absFunction } from "../../../abs-fn.ts";
@@ -663,7 +663,24 @@ export function $iterCheck(a: unknown, maxElements?: number): UserIterReader | n
     v,
     maxElements === undefined || maxElements < 0 ? USER_ITER_MAX_STEPS : maxElements,
   );
-  if (!r) return null;
+  if (!r) {
+    // Bug 4：数组解构对**字符串**接收者按 code point 迭代（原生
+    // GetIterator + String.prototype[Symbol.iterator]）。此前 $iterCheck 对
+    // 字符串返回 null ⇒ emit.ts 的 readAt 回落 `$idx(str, i)`（UTF-16 码元
+    // 下标）⇒ "𠮷" 解出孤立高/低代理项。值可判的字面量串在此按码点给
+    // 读取器；抽象 string 域仍返回 null（回落路径不折假精确）。
+    const sv = v.shape.k === "prim" && (v.shape as { type?: string }).type === "string"
+      ? litValue(v)
+      : undefined;
+    if (sv?.ok && typeof sv.value === "string") {
+      const cps = Array.from(sv.value, (cp) => strLit(cp));
+      return {
+        get: (i: number): Abs => (i < cps.length ? cps[i]! : undef()),
+        rest: (i: number): Abs => $arr(cps.slice(i)),
+      };
+    }
+    return null;
+  }
   const { els, truncated } = r;
   // Bug 199：模式填满（无 rest）而迭代器未耗尽 ⇒ IteratorClose（原生调
   // `return()`——`const [a,b] = it` 也会触发）。模式带 rest（取到 done）
