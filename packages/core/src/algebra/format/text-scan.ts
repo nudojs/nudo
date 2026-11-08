@@ -27,7 +27,10 @@ export function splitTopLevelArgs(s: string): string[] {
       if (ch === inString) inString = null;
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    // Bug 94：反引号同样是串定界符（模板字面量）——与 parser
+    // `fn-directives.ts` 的 `stripTrailingComment` 同口径。此前只认 `"` / `'`，
+    // `` `a,b` `` 里的逗号在 depth 0 被当顶层分隔符 ⇒ 一个实参被劈成两个。
+    if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
       current += ch;
       continue;
@@ -68,7 +71,9 @@ export function walkTopLevelChars(
       if (ch === inString) inString = null;
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    // Bug 94：反引号同样是串定界符（与 splitTopLevelArgs 同口径）——
+    // 模板字面量里的括号 / 冒号 / 逗号不得进括号配平与 pred。
+    if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
       continue;
     }

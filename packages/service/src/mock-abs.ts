@@ -352,6 +352,17 @@ export type AbsMockScopeSeeds = {
  */
 export const MOCK_SCOPE_OVERRIDES: unique symbol = Symbol.for("nudo.mock.scopeOverrides");
 
+/**
+ * 全量「函数作用域 → 该作用域声明的 mock 名 → Abs」表的载体键（Bug 58）。
+ * 与 `MOCK_SCOPE_OVERRIDES` 的区别：后者只收**重名冲突**的 mock（Bug 455，
+ * 按作用域取各自的**值**）；本表收 `seeds.scoped` 里**所有**函数级声明，
+ * 供产品面（test / export）按词法作用域**过滤**——单条未冲突的 mock 此前
+ * 只落在平表里 ⇒ 文件内所有函数都看得见（泄漏 ⇒ 伪造见证 + 错误 d.ts）。
+ * `seeds.scoped` 为空（手工 inject / 无名函数块 / 故意声明为文件级）⇒
+ * 不挂本键 ⇒ `mockScopeSelected` 保持既有「文件级可见」语义，不被破坏。
+ */
+export const MOCK_SCOPE_DECLS: unique symbol = Symbol.for("nudo.mock.scopeDecls");
+
 export type FromMockError = {
   name: string;
   fromPath: string;
@@ -452,6 +463,13 @@ export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
   if (overrides) {
     (out as unknown as Record<symbol, unknown>)[MOCK_SCOPE_OVERRIDES] = overrides;
   }
+  // Bug 58：把「哪些 mock 被哪个函数声明过」随表流转 ⇒ 产品面按词法作用域
+  // 过滤（与 check 面的 `scopeSelectedInject` 同口径）。无函数级声明时不挂
+  // 键 ⇒ 手工 inject / 文件级 mock 仍全文件可见（既有行为不破坏）。
+  const decls = fullScopeDecls(seeds);
+  if (decls) {
+    (out as unknown as Record<symbol, unknown>)[MOCK_SCOPE_DECLS] = decls;
+  }
   return out;
 }
 
@@ -512,6 +530,34 @@ function mockScopeOverrides(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * 全量作用域声明表（Bug 58）：`seeds.scoped` 里每个函数作用域声明的
+ * 全部 mock。与 `mockScopeOverrides`（只收重名冲突）不同，本表用于把
+ * 「被某函数声明过」的 mock 名从**其它函数**的可见面里过滤掉。
+ */
+function fullScopeDecls(seeds: AbsMockSeeds): Record<string, Record<string, Abs>> | undefined {
+  const scopes = seeds.scoped;
+  if (!scopes || scopes.length === 0) return undefined;
+  const out: Record<string, Record<string, Abs>> = {};
+  for (const s of scopes) {
+    const own: Record<string, Abs> = { ...(out[s.scope] ?? {}) };
+    for (const [name, v] of Object.entries(s.seedVars)) own[name] = v;
+    for (const [name, seed] of Object.entries(s.seedFns)) own[name] = absOfSeedFn(seed);
+    if (Object.keys(own).length > 0) out[s.scope] = own;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** 取 inject.mocks 上挂的全量作用域声明表（Bug 58 过滤用） */
+export function mockScopeDeclsOf(
+  mocks: Record<string, Abs> | undefined,
+): Record<string, Record<string, Abs>> | undefined {
+  if (!mocks) return undefined;
+  return (
+    mocks as unknown as Record<symbol, Record<string, Record<string, Abs>> | undefined>
+  )[MOCK_SCOPE_DECLS];
+}
+
 /** 取 inject.mocks 上挂的作用域覆盖表（core 的按函数求值边界用） */
 export function mockScopeOverridesOf(
   mocks: Record<string, Abs> | undefined,
@@ -523,15 +569,41 @@ export function mockScopeOverridesOf(
 }
 
 /**
- * 按函数作用域选 mock（同名 mock 各归各函数，Bug 455）。
- * scope 无覆盖 ⇒ 原表（未冲突的 mock 仍是文件级可见）。
+ * 按函数作用域选 mock（同名 mock 各归各函数，Bug 455；单条 mock 不跨函数
+ * 泄漏，Bug 58）。
+ *
+ * - 表上**无**全量作用域声明（无 `@nudo:mock` 函数级声明：手工 inject /
+ *   老路径 / 故意声明为文件级）⇒ 保持既有「文件级可见」语义，仅按 Bug 455
+ *   的重名覆盖表取本作用域那一份；
+ * - 有声明 ⇒ 按词法作用域过滤（与 check 面 `generalize.ts` 的
+ *   `scopeSelectedInject` 同口径）：被**任何**函数声明过的 mock 名只在**该
+ *   函数自己**的作用域里保留，其它函数（及模块顶层）看不到它；不属于任何
+ *   声明作用域的注入名（手工 inject / 文件级）原样保留。
+ *
+ * 返回表用 `{ ...mocks }` 浅拷贝 ⇒ `MOCK_SCOPE_OVERRIDES` / `MOCK_SCOPE_DECLS`
+ * 两个 symbol 载体键随表继续流转（下游 core 的按函数求值边界仍要按 scope
+ * 取值；重复调用本函数是幂等的）。
  */
 export function mockScopeSelected(
   mocks: Record<string, Abs>,
   scope: string,
 ): Record<string, Abs> {
-  const own = mockScopeOverridesOf(mocks)?.[scope];
-  return own ? { ...mocks, ...own } : mocks;
+  const decls = mockScopeDeclsOf(mocks);
+  if (!decls) {
+    const own = mockScopeOverridesOf(mocks)?.[scope];
+    return own ? { ...mocks, ...own } : mocks;
+  }
+  const scopedNames = new Set<string>();
+  for (const own of Object.values(decls)) {
+    for (const name of Object.keys(own)) scopedNames.add(name);
+  }
+  const filtered = { ...mocks } as Record<string, Abs>;
+  for (const name of scopedNames) {
+    if (Object.hasOwn(filtered, name)) delete filtered[name];
+  }
+  const ownDecls = decls[scope];
+  if (ownDecls) Object.assign(filtered, ownDecls);
+  return filtered;
 }
 
 /** 从函数上的 @nudo:mock 指令收集 Abs seed */
