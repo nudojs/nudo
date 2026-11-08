@@ -78,6 +78,12 @@ export type ScopeFrame = {
    * ⇒ 跨文件调用点解析不出 ⇒ 假绿。
    */
   externals: Map<string, ExternalFnRef>;
+  /**
+   * Bug 18：本帧是某个**类实例方法**的作用域 ⇒ `this.m(…)` 的解析源（所属
+   * 类的 AST 事实）。`resolveCalleeFn` 沿作用域链查它，把 `this.m` 与
+   * `c.m` 接到同一条 obligation 路径。
+   */
+  thisClass?: ClassBinding;
 };
 
 /** 作用域表：作用域 id → 帧（模块作用域 id = `""`） */
@@ -1196,11 +1202,27 @@ export function collectCallResolvers(
         }
 
         if (id.type !== "Identifier" || !id.name) continue;
+        // Bug 28：外部绑定（import / require）的本地名。别名 / 对象成员
+        // 再绑定必须落到**外部描述**；落进 `frame.names` 会被
+        // `resolveScopedName` 判成 shadowed ⇒ 整条调用点零义务（假绿）。
+        const extOf = (name: string): ExternalFnRef | undefined =>
+          frame.externals.get(name) ?? externalFn.get(name);
         // const f = needsPositive
         if (init.type === "Identifier" && typeof init.name === "string" && knownSet.has(init.name)) {
           // 别名绑定进**当前作用域**（Bug 1106：内层的 `const f = g` 不该影响
           // 外层同名调用点的解析）
           frame.aliases.set(id.name, init.name);
+        } else if (
+          init.type === "Identifier" &&
+          typeof init.name === "string" &&
+          extOf(init.name)
+        ) {
+          // const alias = f（f 是导入绑定）⇒ alias → 同一个外部描述
+          // （`resolveScopedName` 的 `external` 分支直接命中，无需新增
+          // `alias → external` 联合类型）。
+          const ref = extOf(init.name)!;
+          frame.externals.set(id.name, ref);
+          externalFn.set(id.name, ref);
         } else if (
           // 顶层函数声明（`const f = () => {}` / `const f = function(){}`）：
           // 它**就是** knownFns 里的那个顶层函数 ⇒ 不能进 `names`（否则顶层
@@ -1213,16 +1235,25 @@ export function collectCallResolvers(
           // 其它声明 ⇒ 本作用域**声明**了这个名字（遮蔽判定用）
           frame.names.add(id.name);
         }
-        // const api = { needsPositive }
+        // const api = { needsPositive } / const api = { f }（f 是导入绑定）
         if (init.type === "ObjectExpression") {
           for (const p of (init.properties as Array<Record<string, unknown>> | undefined) ?? []) {
             if (p.type !== "ObjectProperty") continue;
             const key = p.key as { type?: string; name?: string; value?: unknown };
             const value = p.value as { type?: string; name?: string } | undefined;
-            if (value?.type === "Identifier" && value.name && knownSet.has(value.name)) {
-              const propKey =
-                key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
-              if (propKey) frame.members.set(`${id.name}.${propKey}`, value.name);
+            if (value?.type !== "Identifier" || !value.name) continue;
+            const propKey =
+              key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? String(key.value) : undefined;
+            if (!propKey) continue;
+            const memberKey = `${id.name}.${propKey}`;
+            if (knownSet.has(value.name)) {
+              frame.members.set(memberKey, value.name);
+            } else {
+              const ref = extOf(value.name);
+              if (ref) {
+                frame.externalMembers.set(memberKey, ref);
+                externalMember.set(memberKey, ref);
+              }
             }
           }
         }
@@ -1269,6 +1300,10 @@ export function collectCallResolvers(
           const f = scopes.frames.get(sid);
           if (!f) continue;
           f.aliases.delete(left.name);
+          // Bug 28：外部别名绑定同样随重新赋值失效
+          // （`let alias = f; alias = g` ⇒ alias 不再是那个导入函数）。
+          f.externals.delete(left.name);
+          externalFn.delete(left.name);
           const prefix = `${left.name}.`;
           for (const key of [...f.members.keys()]) {
             if (key.startsWith(prefix)) f.members.delete(key);
@@ -1304,7 +1339,69 @@ export function collectCallResolvers(
 
   // 语句容器 walk：不进表达式树，O(语句) 而非 O(全部节点)
   walkStatements(file, visit);
+
+  // Bug 18：模块级类**实例方法**的作用域帧登记 `thisClass`（`this.m(…)`
+  // 的解析源）。放在 walk 之后 ⇒ 只在 `visit` 建好的帧上**加字段**，不覆盖
+  // 帧里的 names / aliases / members。只收 own 实例方法（静态 / getter /
+  // setter / constructor / 继承成员不解析 ⇒ 守卫假红）。
+  for (const stmt of file.program.body) {
+    const decl = unwrapExportDecl(stmt) as
+      | { type?: string; id?: { name?: string }; body?: { body?: unknown[] } }
+      | undefined;
+    if (decl?.type !== "ClassDeclaration" || !decl.id?.name) continue;
+    const cls = moduleFrame.classes.get(decl.id.name);
+    if (!cls) continue;
+    for (const m of (decl.body?.body ?? []) as Array<Record<string, unknown>>) {
+      if (m.type !== "ClassMethod" && m.type !== "MethodDefinition") continue;
+      if (m.static === true || (m.kind ?? "method") !== "method") continue;
+      const sid = scopeIdOf([""], m);
+      const frame = scopes.frames.get(sid);
+      if (frame) frame.thisClass = cls;
+    }
+  }
   return resolveOut;
+}
+
+/**
+ * Bug 28：把「句法上确定指向同一个函数」的 callee 包装剥掉，让别名 / 对象
+ * 成员解析链也能覆盖数组元素 `[f][0]`、逗号 `(0, f)`、条件 `(c ? f : f)`。
+ *
+ * 只在**确定**时归一化：动态键 / 条件两侧不同 / 越界下标 ⇒ `undefined`
+ * （fail-closed：不猜 ⇒ 不产假红）。归一化后的节点仍走原有 Identifier /
+ * MemberExpression 分支。
+ */
+function normalizeCallee(
+  n: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!n || typeof n !== "object") return undefined;
+  if (n.type === "SequenceExpression") {
+    const xs = n.expressions as Array<Record<string, unknown>> | undefined;
+    const last = xs?.[xs.length - 1];
+    return last ? normalizeCallee(last) : undefined;
+  }
+  if (n.type === "ConditionalExpression") {
+    const c = normalizeCallee(n.consequent as Record<string, unknown> | undefined);
+    const a = normalizeCallee(n.alternate as Record<string, unknown> | undefined);
+    if (c?.type === "Identifier" && a?.type === "Identifier" && c.name === a.name)
+      return c;
+    return undefined;
+  }
+  if (n.type === "MemberExpression" && n.computed === true) {
+    const prop = n.property as Record<string, unknown> | undefined;
+    const obj = n.object as Record<string, unknown> | undefined;
+    if (
+      prop?.type === "NumericLiteral" &&
+      typeof prop.value === "number" &&
+      Number.isInteger(prop.value) &&
+      (prop.value as number) >= 0 &&
+      obj?.type === "ArrayExpression"
+    ) {
+      const els = obj.elements as Array<Record<string, unknown> | null> | undefined;
+      const el = els?.[prop.value as number];
+      return el ? normalizeCallee(el) : undefined;
+    }
+  }
+  return n;
 }
 
 /**
@@ -1321,6 +1418,10 @@ export function resolveCalleeFn(
   knownFns: Set<string>,
   chain?: ScopeChain,
 ): string | { external: ExternalFnRef } | undefined {
+  // Bug 28：剥离确定指向同一函数的 callee 包装（逗号 / 条件 / 数组元素）
+  const norm = normalizeCallee(callee);
+  if (!norm) return undefined;
+  callee = norm;
   if (callee.type === "Identifier" && typeof callee.name === "string") {
     const name = callee.name;
     // Bug 1106：作用域遮蔽优先于一切模块级回落
@@ -1341,8 +1442,21 @@ export function resolveCalleeFn(
     const obj = callee.object as
       | { type?: string; name?: string; callee?: { type?: string; name?: string } }
       | undefined;
-    const prop = callee.property as { type?: string; name?: string } | undefined;
-    const propOk = !callee.computed && prop?.type === "Identifier" && typeof prop.name === "string";
+    const prop = callee.property as
+      | { type?: string; name?: string; value?: unknown }
+      | undefined;
+    // Bug 18：静态字符串键的计算成员 `c["m"]` / `K["s"]` 与 `c.m` / `K.s`
+    // 语义等价 ⇒ 不能被当成动态键守卫掉。只认字符串字面量（其它计算键 /
+    // getter 仍不解析，守卫假红）。
+    const propName =
+      !callee.computed && prop?.type === "Identifier" && typeof prop.name === "string"
+        ? prop.name
+        : callee.computed === true &&
+            prop?.type === "StringLiteral" &&
+            typeof prop.value === "string"
+          ? String(prop.value)
+          : undefined;
+    const propOk = propName !== undefined;
     // Bug 1154：`new K().m(…)`（构造 + 实例方法调用同表达式）⇒ 与
     // `const c = new K(); c.m(…)` 同一条 obligation 路径（本地类走 knownFns，
     // 导入类走外部描述）。own 实例方法之外（静态 / ctor 赋值 / 继承 / getter）
@@ -1356,7 +1470,7 @@ export function resolveCalleeFn(
         obj.callee as Record<string, unknown> | undefined,
       );
       if (cls) {
-        const ref = classMemberRef(cls, prop!.name!, "instance", knownFns);
+        const ref = classMemberRef(cls, propName!, "instance", knownFns);
         if (ref) return ref;
       }
     }
@@ -1368,9 +1482,22 @@ export function resolveCalleeFn(
         const mod = resolveScopedNamespace(resolve, chain, nsMember[0]);
         const cls = mod?.source ? resolve.namespaceClassBinding?.(mod, nsMember[1]) : undefined;
         if (cls) {
-          const ref = classMemberRef(cls, prop!.name!, "static", knownFns);
+          const ref = classMemberRef(cls, propName!, "static", knownFns);
           if (ref) return ref;
         }
+      }
+    }
+    // Bug 18：类实例方法里的 `this.m(…)`（own 方法、无继承覆盖）⇒ 与
+    // `c.m(…)` 同一条 obligation 路径。收集侧在 ClassMethod 的作用域帧上
+    // 登记了 `thisClass`（所属类的 AST 事实）；沿作用域链找到即解析。
+    // 解析不到（继承 / getter / 静态方法 / 局部类）⇒ 静默不解析（守卫假红）。
+    if (propOk && chain && obj?.type === "ThisExpression") {
+      for (const sid of chain) {
+        const cls = resolve.scopes.frames.get(sid)?.thisClass;
+        if (!cls) continue;
+        const ref = classMemberRef(cls, propName!, "instance", knownFns);
+        if (ref) return ref;
+        break;
       }
     }
     if (
@@ -1378,7 +1505,7 @@ export function resolveCalleeFn(
       obj?.type === "Identifier" &&
       obj.name
     ) {
-      const key = `${obj.name}.${prop!.name!}`;
+      const key = `${obj.name}.${propName!}`;
       const extM = resolve.externalMember.get(key);
       if (extM) return { external: extM };
       // m = require(...)；调用 m.fn
@@ -1387,7 +1514,7 @@ export function resolveCalleeFn(
         return {
           external: {
             source: mod.source,
-            fnName: prop!.name!,
+            fnName: propName!,
             ...(mod.fromFile ? { fromFile: mod.fromFile } : {}),
           },
         };
@@ -1398,7 +1525,7 @@ export function resolveCalleeFn(
       if (chain) {
         const cls = resolveScopedClass(resolve, chain, obj.name);
         if (cls) {
-          const ref = classMemberRef(cls, prop!.name!, "static", knownFns);
+          const ref = classMemberRef(cls, propName!, "static", knownFns);
           if (ref) return ref;
         }
       }
@@ -1410,7 +1537,7 @@ export function resolveCalleeFn(
       // 串味；被遮蔽的接收者不回落外层）。Bug 1154：导入类实例的成员是
       // 外部描述（定义模块 + 定义文件路径）。
       const local = chain
-        ? resolveScopedMember(resolve, chain, obj.name, prop!.name!)
+        ? resolveScopedMember(resolve, chain, obj.name, propName!)
         : undefined;
       if (local) return local.kind === "fn" ? local.fn : { external: local.ref };
       if (!chain) {

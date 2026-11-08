@@ -1001,8 +1001,13 @@ export function instantiateConstraint(
       parts.push(instantiateOnTerm(field.constraint, fieldTerm, depth));
     }
     if (c.prim) parts.push(ptypeof(termVar(paramName), primToTypeof(c.prim)));
-    if (parts.length === 0) return { op: "true" };
-    return parts.length === 1 ? parts[0]! : pAnd(...parts);
+    const base: Pred =
+      parts.length === 0 ? { op: "true" } : parts.length === 1 ? parts[0]! : pAnd(...parts);
+    // Bug 17：shape 分支此前在到达标量 / union 的 `optionalizePred` 之前就
+    // return ⇒ `shape(...).optional()` 的**契约级可选位**在调用点谓词里没有
+    // undefined 臂 ⇒ 显式 `f(undefined)` 被判 L1 假红（而同一契约的 dts /
+    // guard / check 签名三面都承认 undefined）。与其余分支同口径补上。
+    return c.isOptional ? optionalizePred(base, paramName) : base;
   }
 
   // union：各成员实例化后 or 并（节点自身 preds 一并合取；
