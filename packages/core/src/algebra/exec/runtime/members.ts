@@ -23,7 +23,7 @@ import { isNullishLitAbs } from "../../surface.ts";
 import { extStateOf, getPropFlags, isObjectProtoBrand, objectProtoBrand, protoOfRecv, hostBuiltinCtorName, protoBrandAbs } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
-import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
+import { OBJECT_PROTO_NAMES, arrayProtoMemberForKey } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 // 族 57 · 第 6 条 ②：符号键的**槽寻址键**（well-known → "@@X"；用户符号 →
@@ -346,7 +346,12 @@ function inInner(key: Abs, o: Abs): Abs {
     // Bug 15：tuple 原型链 Array.prototype → Object.prototype——非下标键
     // 按两表精确判定（"map"/"toString"/"constructor" in [] 原生 true）；
     // 表外键闭 tuple 精确缺席（"x" in [1] → false）。
-    return boolLit(ARRAY_PROTO_METHOD_NAMES.has(keyStr) || OBJECT_PROTO_NAMES.has(keyStr));
+    // Bug 99：字符串 "@@iterator" 不是符号键（Symbol.iterator 是另一键）——
+    // tuple 原型链上确定缺席；只有真符号键（symSlotKey 非 undefined）命中。
+    return boolLit(
+      arrayProtoMemberForKey(keyStr, symSlotKey !== undefined) ||
+      OBJECT_PROTO_NAMES.has(keyStr),
+    );
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
   // Bug 71：Proxy——has 陷阱优先（实参 (target, key)、this = handler）；

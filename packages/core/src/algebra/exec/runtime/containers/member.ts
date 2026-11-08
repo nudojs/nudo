@@ -129,6 +129,7 @@ import {
   SYMBOL_PROTO_METHODS,
   BIGINT_PROTO_METHODS,
   ARRAY_PROTO_METHOD_NAMES,
+  arrayProtoMemberForKey,
   OBJECT_PROTO_NAMES,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
@@ -1217,7 +1218,7 @@ function getBrandProtoMember(ctx: GetCtx): Abs | undefined {
 
 /** brand 注册面：内建表（方法/访问器/符号/原型值）、类注册表与内层解包。 */
 function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
-  const { o, key } = ctx;
+  const { o, key, opts } = ctx;
   if (o.shape.k === "brand") {
     // Bug 65：读 `u.searchParams` 时登记父 URL 反向指针——后续对该 brand
     // 的 set/append/delete/sort 会原地改 @@entries，需回写父 URL 的
@@ -1264,7 +1265,10 @@ function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
     // Bug 40：@@iterator 只对原生可迭代 brand（Map/Set/TA，ITERABLE_BRANDS）
     // 折函数——此前任意有表 brand（Date/WeakMap/Error…）都折 "function"，
     // 非可迭代 brand 原生 undefined（wrong-exact）。
-    if (builtinM && !isClassVal && !userOwnsKey && !hasOwnDataSlot && (builtinM.has(key) || (key === "@@iterator" && ITERABLE_BRANDS.has(builtinHome)))) {
+    // Bug 99：@@iterator 只在**真符号键**（opts.symbolKey）下命中——字符串
+    // "@@iterator" 是另一个 PropertyKey，不得折函数（原生 m["@@iterator"]
+    // === undefined）。
+    if (builtinM && !isClassVal && !userOwnsKey && !hasOwnDataSlot && (builtinM.has(key) || (key === "@@iterator" && opts?.symbolKey === true && ITERABLE_BRANDS.has(builtinHome)))) {
       if (key !== "@@iterator") return protoMethodValueAbs(builtinHome, key);
       // Bug 198（S20）：实例上的 @@iterator 与**原型上是同一个函数对象**
       // （原生 m[Symbol.iterator] === Map.prototype[Symbol.iterator]）⇒ 读值
@@ -1690,7 +1694,12 @@ function getPrimMember(ctx: GetCtx): Abs | undefined {
 }
 
 /** tuple/arr/prim 共用的 Object/Array/prim 原型方法值读取。 */
-function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
+function getProtoMethodMember({ o, key, opts }: GetCtx): Abs | undefined {
+  // Bug 99：字符串键 "@@iterator" 不是符号键（Symbol.iterator 是另一键）——
+  // tuple/arr/prim 面上原生 undefined。真符号键（opts.symbolKey）才走下方
+  // Array.prototype 迭代器函数投影；字符串键在此直接定缺，避免穿到
+  // getGenericTail 折 unknown 或被 objectProtoMethodAbs 折成函数。
+  if (key === "@@iterator" && opts?.symbolKey !== true) return undef();
   // 元组/数组/prim 上的 Object.prototype / Array.prototype / prim 原型方法读取
   const primProtoMethods =
     o.shape.k === "prim"
@@ -1699,7 +1708,7 @@ function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
   if (
     (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
     (OBJECT_PROTO_METHOD_NAMES.has(key) ||
-      (o.shape.k !== "prim" && ARRAY_PROTO_METHOD_NAMES.has(key)) ||
+      (o.shape.k !== "prim" && arrayProtoMemberForKey(key, opts?.symbolKey === true)) ||
       primProtoMethods?.has(key) === true)
   ) {
     if ((o.shape.k === "tuple" || o.shape.k === "arr") && (key === "toString" || key === "toLocaleString" || key === "join")) {
@@ -1708,7 +1717,7 @@ function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
     // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）。
     // Bug 56：具名方法升级为方法值读通道（apply 钩子转发借用调用
     // [].push.call(a, v)；@@iterator 维持无 impl 形状——迭代协议派发另走）。
-    if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
+    if (o.shape.k !== "prim" && arrayProtoMemberForKey(key, opts?.symbolKey === true)) {
       if (key !== "@@iterator") return protoMethodValueAbs("Array", key);
       return { shape: { k: "fn", params: [], ctor: false }, conf: "path" };
     }

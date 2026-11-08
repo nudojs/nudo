@@ -126,6 +126,12 @@ function stripInvisibleSlots(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
     case "eff":
       copy.shape = { ...s, inner: stripInvisibleSlots(s.inner, memo) };
       break;
+    case "brand":
+      // Bug 106：class brand 的内层 obj 也须经 service 判据裁剪——否则符号键
+      // 槽原样传给 denoteGuard，写成 Object.hasOwn(data, "@@sym#1") 恒假子句
+      // ⇒ 守卫拒绝函数自己的返回值（dts / zod / standard 面却放行）。
+      copy.shape = { ...s, shape: stripInvisibleSlots(s.shape, memo) };
+      break;
     default:
       break;
   }

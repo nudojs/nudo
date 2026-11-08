@@ -20,10 +20,18 @@
 
 import { canonicalArrayIndex } from "../objects.ts";
 
-/** internal 槽且键不是规范数组下标 ⇒ 该槽不进投影/guard 产物 */
+/** internal 槽（且键不是规范数组下标）或 **symbol 键槽** ⇒ 不进投影/guard
+ *  产物。
+ *
+ *  Bug 106：symbol 键不是字符串键（`Symbol.iterator` 与 "@@iterator" 是两个
+ *  不同的 PropertyKey）——把符号槽发布成 "@@iterator" / "@@sym#1" 字符串字段
+ *  等于发布运行时不存在的属性名（guard 面还会写出恒假的 Object.hasOwn
+ *  子句，拒绝函数自己的返回值）。与 service 侧 internal-slot.ts（BUG-131）
+ *  同款判据，保证 check / test / export dts|guard|zod 五面一致。 */
 export function isHiddenInternalSlot(
   k: string,
-  slot: { internal?: boolean },
+  slot: { internal?: boolean; symbolKey?: boolean },
 ): boolean {
+  if (slot.symbolKey === true) return true;
   return slot.internal === true && canonicalArrayIndex(k) === undefined;
 }

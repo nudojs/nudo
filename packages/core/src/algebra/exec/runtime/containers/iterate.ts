@@ -764,7 +764,7 @@ export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
  *   需 member.ts 的 $get 数组方法臂认模板对象（按元素侧表投影）。
  */
 export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
-  const slots: Record<string, { value: Abs }> = Object.create(null);
+  const slots: Record<string, { value: Abs; symbolKey?: boolean }> = Object.create(null);
   const els: Abs[] = [];
   for (let i = 0; i < cooked.length; i++) {
     const c = cooked[i]!;
@@ -777,6 +777,10 @@ export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
   setSlot(slots, "raw", { value: rawArr });
   setSlot(slots, "@@iterator", {
     value: absFunction([], { body: noBody }, { ctor: false }),
+    // Bug 99/106：迭代器是 Symbol.iterator 的**符号键槽**，不是字符串
+    // "@@iterator" 属性（原生 Object.keys(s) 看不到它）——按字符串键发布
+    // 会产出运行时不存在的字段 / 恒假守卫子句。
+    symbolKey: true,
   });
   const t = abs({ k: "obj", slots }, undefined, undefined, "exact");
   // Bug 195：元槽非枚举 + 不可写（原生冻结数组的自有属性全 non-writable/
