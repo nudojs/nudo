@@ -186,38 +186,57 @@ export function findEnclosingFunction(
   line: number,
   column: number,
 ): EnclosingFn | undefined {
-  let best: { name: string; startLine: number; node: Node } | undefined;
+  let best: { name: string; startLine: number; startColumn: number; node: Node } | undefined;
   const traverseFn = traverseEsm();
+  // 最内层优先：(起点行, 起点列) 字典序最大且行区间含光标者。
+  const consider = (
+    loc: { start: { line: number; column?: number }; end: { line: number } } | null | undefined,
+    name: string,
+    node: Node,
+  ): void => {
+    if (!loc || loc.start.line > line || loc.end.line < line) return;
+    const sl = loc.start.line;
+    const sc = loc.start.column ?? 0;
+    if (
+      !best ||
+      sl > best.startLine ||
+      (sl === best.startLine && sc > best.startColumn)
+    ) {
+      best = { name, startLine: sl, startColumn: sc, node };
+    }
+  };
   try {
     traverseFn(ast, {
       FunctionDeclaration(p) {
-        const loc = p.node.loc;
         const name = p.node.id?.name;
-        if (!loc || !name) return;
-        if (loc.start.line <= line && loc.end.line >= line) {
-          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line, node: p.node };
-        }
+        if (!name) return;
+        consider(p.node.loc, name, p.node);
       },
       VariableDeclarator(p) {
         const init = p.node.init;
         if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
-        const loc = init.loc;
         const name = (p.node.id as { name?: string } | null)?.name;
-        if (!loc || !name) return;
-        if (loc.start.line <= line && loc.end.line >= line) {
-          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line, node: init };
-        }
+        if (!name) return;
+        // 具名箭头 / 函数表达式：VariableDeclarator 先于 init 被访问，
+        // 同一起点列 ⇒ 下面的 Arrow/Function visitor 不会覆盖这个具名。
+        consider(init.loc, name, init);
+      },
+      // 裸箭头 / 函数表达式（作为实参的回调、匿名函数）——Bug 33：
+      // 之前不登记 ⇒ 回调形参永远「查不到作用域」⇒ 借用模块级同名绑定。
+      ArrowFunctionExpression(p) {
+        consider(p.node.loc, "<anonymous>", p.node);
+      },
+      FunctionExpression(p) {
+        consider(p.node.loc, "<anonymous>", p.node);
       },
       "ObjectMethod|ClassMethod"(p) {
         const node = p.node as unknown as {
-          loc?: { start: { line: number }; end: { line: number } };
+          loc?: { start: { line: number; column?: number }; end: { line: number } };
           key?: { name?: string };
         };
         const name = node.key?.name;
-        if (!node.loc || !name) return;
-        if (node.loc.start.line <= line && node.loc.end.line >= line) {
-          if (!best || node.loc.start.line > best.startLine) best = { name, startLine: node.loc.start.line, node: p.node };
-        }
+        if (!name) return;
+        consider(node.loc, name, p.node);
       },
     });
   } catch {

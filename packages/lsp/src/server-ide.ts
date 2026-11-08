@@ -24,7 +24,8 @@ import {
   completionBranchAt,
   type CompletionContext,
 } from "./lsp-surface/completions.ts";
-import { lookupScopedBinding, reuseBinding } from "./lsp-surface/replay.ts";
+import { lookupScopedBinding, reuseBinding, scopeHasDeclaration } from "./lsp-surface/replay.ts";
+import { checkSignatureLine } from "./lsp-surface/hover.ts";
 import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
   shouldAnalyzeFile,
@@ -240,6 +241,11 @@ export function attachCompletion(deps: IdeDeps): void {
     },
     { label: "@nudo:import", detail: "Import constraint templates from *.nudo.js", insert: "@nudo:import " },
     { label: "@nudo:env", detail: "Declare runtime env (es / web / node)", insert: "@nudo:env " },
+    // live 指令（Bug 68）：分析器会消费并发诊断，补全表必须给出全集。
+    { label: "@nudo:assume", detail: "Cross-variable bound lemma over params / top-level locals", insert: "@nudo:assume " },
+    { label: "@nudo:invariant", detail: "Loop-carried bound lemma over params / top-level locals", insert: "@nudo:invariant " },
+    { label: "@nudo:throws", detail: "Declare allowed thrown types (L2 entry-may-throw)", insert: "@nudo:throws " },
+    { label: "@nudo:budget", detail: "Analysis budget control", insert: "@nudo:budget " },
   ];
 
   connection.onCompletion((params) => {
@@ -325,26 +331,70 @@ export function attachCompletion(deps: IdeDeps): void {
           "none",
         );
       }
-      const context: CompletionContext = { lexical };
+      // 同源复用载荷：hover 用的 ast / 模块图 / inject / autoBind 一并装配，
+      // 供补全 detail 的 signature 面走与 hover 完全相同的 check 签名公式
+      // （Bug 83：此前补全只拿绑定面 fnOf() 的 arity-only Abs ⇒ 全塌 any）。
+      const analysisModules = evalAnalysisModules(filePath, source);
+      const ast = cachedAstFor(filePath, source);
+      const fullReuse = {
+        result,
+        ...(ast !== undefined ? { ast } : {}),
+        ...(analysisModules ? { modules: analysisModules } : {}),
+      };
+      const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+      // 语法非法 buffer（编辑中间态 `obj.`）上 buildLspInjection 会 parse
+      // 原文 ⇒ 抛 ⇒ 整个补全面清零（Bug 698）。注入包只是 signature 面的
+      // 增强，装配失败 ⇒ 空注入（signature 面自行 fail-closed），不拖垮补全。
+      let inject: ReturnType<typeof buildLspInjection> | undefined;
+      try {
+        inject = buildLspInjection(filePath, source);
+      } catch {
+        inject = undefined;
+      }
+      const signatureOpts = {
+        loadModule: activeLoadModule,
+        ...(autoBind === false ? { autoBind: false } : {}),
+        ...(inject && Object.keys(inject).length > 0 ? { inject } : {}),
+      };
+      const context: CompletionContext = {
+        lexical,
+        signature: (name) =>
+          checkSignatureLine(filePath, source, name, signatureOpts, fullReuse),
+      };
       if (branch === "member") {
         // 绑定下沉（Bug 789）：接收者 Abs 先查**光标所在作用域**（函数体内
         // 的局部量 / 形参）⇒ 作用域里查不到才回落模块级绑定面。作用域面用
         // **消毒后**的源码（与引擎重放的插桩记录同坐标系——消毒不改标识符
         // 位置）。
         const parseText = sanitizeSourceForParsing(source);
-        const analysisModules = evalAnalysisModules(filePath, source);
-        const scopedReuse = {
-          result,
-          ...(analysisModules ? { modules: analysisModules } : {}),
+        let scopeAst: ReturnType<typeof parse> | undefined;
+        try {
+          scopeAst = parse(parseText);
+        } catch {
+          scopeAst = undefined;
+        }
+        context.lookupBinding = (name) => {
+          const scoped = lookupScopedBinding(
+            filePath,
+            parseText,
+            line,
+            column,
+            name,
+            fullReuse,
+            {
+              loadModule: activeLoadModule,
+              ...(autoBind === false ? { autoBind: false } : {}),
+            },
+          );
+          if (scoped !== undefined) return scoped;
+          // Bug 33：作用域内确实声明了这个名字（被遮蔽的形参 / 局部量）
+          // ⇒ 不借用模块级同名绑定（无约束形参 any 无成员 ⇒ 成员面为空）。
+          // 只有「作用域内根本没这个声明」才回落模块级绑定面。
+          if (scopeHasDeclaration(scopeAst, line, column, name)) return undefined;
+          return reuseBinding(fullReuse, name);
         };
-        const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
-        context.lookupBinding = (name) =>
-          lookupScopedBinding(filePath, parseText, line, column, name, scopedReuse, {
-            loadModule: activeLoadModule,
-            ...(autoBind === false ? { autoBind: false } : {}),
-          }) ?? reuseBinding(scopedReuse, name);
       }
-      const items = getCompletionsAtPosition(filePath, source, line, column, { result }, context);
+      const items = getCompletionsAtPosition(filePath, source, line, column, fullReuse, context);
       return items.map((item): LspCompletionItem => ({
         label: item.label,
         kind:

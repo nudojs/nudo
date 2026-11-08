@@ -4,6 +4,7 @@ import {
   type Abs,
   type PolyFn,
 } from "@nudojs/core";
+import { formatEntryParamShape } from "@nudojs/core/internal";
 import type { Node } from "@babel/types";
 import { MarkupKind, type SignatureHelp, type SignatureInformation } from "vscode-languageserver/node";
 
@@ -158,9 +159,11 @@ function memberKeyOf(node: Node): string | undefined {
   return undefined;
 }
 
-/** 形参位渲染：`name: type`（rest / optional 标记保留；无类型 → any） */
+/** 形参位渲染：`name: type`（rest / optional 标记保留；无类型 → any）。
+ *  形参类型走 check / hover 同源的 formatEntryParamShape（showLits）——
+ *  侧车 lit(1) 印 `1` 而非 `number`（Bug 92）。 */
 function renderParamLabel(name: string, t: Abs | undefined): string {
-  const typeText = t ? formatShape(t) : "any";
+  const typeText = t ? formatEntryParamShape(t) : "any";
   if (name.startsWith("...")) return `...${name.slice(3)}: ${typeText}`;
   if (name.endsWith("?")) return `${name.slice(0, -1)}?: ${typeText}`;
   return `${name}: ${typeText}`;

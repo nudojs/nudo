@@ -249,6 +249,55 @@ export function buildSemanticTokens(
     });
   };
 
+  /**
+   * 解构模式里的全部绑定标识符节点（形参 / 变量声明 / 赋值目标共用）。
+   * ObjectPattern 的绑定在 value 侧、RestElement / AssignmentPattern 逐层下钻、
+   * 嵌套模式递归——与 symbols.ts 的 patternBindingIdentifiers 同形。
+   */
+  const patternBindingNodes = (pattern: Node): Node[] => {
+    const out: Node[] = [];
+    const walk = (p: Node | null | undefined): void => {
+      if (!p) return;
+      switch (p.type) {
+        case "Identifier":
+          out.push(p);
+          return;
+        case "AssignmentPattern":
+          walk((p as unknown as { left?: Node }).left);
+          return;
+        case "RestElement":
+          walk((p as unknown as { argument?: Node }).argument);
+          return;
+        case "ObjectPattern":
+          for (const prop of (p as unknown as { properties?: Node[] }).properties ?? []) {
+            if (prop.type === "RestElement") {
+              walk((prop as unknown as { argument?: Node }).argument);
+            } else if (prop.type === "ObjectProperty") {
+              walk((prop as unknown as { value?: Node }).value);
+            }
+          }
+          return;
+        case "ArrayPattern":
+          for (const el of (p as unknown as { elements?: Array<Node | null> }).elements ?? []) {
+            walk(el);
+          }
+          return;
+        default:
+          return;
+      }
+    };
+    walk(pattern);
+    return out;
+  };
+
+  /**
+   * 形参解构里的绑定节点（collectParams 已按 parameter 档上色）——
+   * 通用 ObjectProperty / ArrayPattern 分支据此跳过，避免重复 / 降档。
+   */
+  const paramBindingNodes = new Set<Node>();
+  /** 解构赋值目标的绑定节点（`({a}=o)` / `[b]=arr`）：不带 declaration 修饰。 */
+  const assignmentTargetBindings = new Set<Node>();
+
   const collectParams = (params: Node[]): void => {
     for (const p of params) {
       if (!p) continue;
@@ -257,6 +306,14 @@ export function buildSemanticTokens(
         pushIdentifier((p as { left: Node }).left, TYPE_PARAMETER);
       } else if (p.type === "RestElement" && (p as { argument?: Node }).argument?.type === "Identifier") {
         pushIdentifier((p as { argument: Node }).argument, TYPE_PARAMETER);
+      } else {
+        // 解构形参（ObjectPattern / ArrayPattern / 带默认值的解构 / rest 解构）：
+        // 模式里的每个绑定都是「函数参数绑定」⇒ parameter 档，与同签名的
+        // 普通形参同档（Bug 36）；登记进 paramBindingNodes 供通用分支跳过。
+        for (const id of patternBindingNodes(p)) {
+          pushIdentifier(id, TYPE_PARAMETER);
+          paramBindingNodes.add(id);
+        }
       }
     }
   };
@@ -301,6 +358,13 @@ export function buildSemanticTokens(
       // CJS 成员导出：`exports.f = fn` / `module.exports.f = fn` —— 键名即导出名，
       // 带 interface 档 modifier（与 ESM `export function f` 同口径；Bug 998）
       case "AssignmentExpression": {
+        // 解构**赋值目标**（`({ a } = o)` / `[b] = arr`）：绑定是写目标、
+        // 不是声明 ⇒ 不带 declaration 修饰（Bug 36）。父 case 先于子递归
+        // 执行 ⇒ 这里登记，等下面的 ObjectProperty / ArrayPattern 分支读取。
+        const assignLeft = n.left as Node | undefined;
+        if (assignLeft?.type === "ObjectPattern" || assignLeft?.type === "ArrayPattern") {
+          for (const id of patternBindingNodes(assignLeft)) assignmentTargetBindings.add(id);
+        }
         const operator = n.operator as string | undefined;
         const left = n.left as Node | undefined;
         const right = n.right as Node | undefined;
@@ -366,7 +430,12 @@ export function buildSemanticTokens(
         if (parent?.type === "ObjectPattern") {
           const bound =
             value?.type === "AssignmentPattern" ? (value as { left?: Node }).left : value;
-          if (bound?.type === "Identifier") pushIdentifier(bound, TYPE_VARIABLE);
+          if (bound?.type === "Identifier") {
+            // 形参解构绑定已由 collectParams 按 parameter 档上色 ⇒ 不重复。
+            if (paramBindingNodes.has(bound)) break;
+            // 变量声明解构 = 声明（declaration）；解构赋值目标 = 写目标（无修饰）。
+            pushIdentifier(bound, TYPE_VARIABLE, 0, !assignmentTargetBindings.has(bound));
+          }
           break;
         }
         if (key?.type === "Identifier" && !n.computed) {
@@ -386,19 +455,24 @@ export function buildSemanticTokens(
       case "ArrayPattern": {
         for (const el of (n.elements as Node[] | undefined) ?? []) {
           if (!el) continue;
-          if (el.type === "Identifier") {
-            pushIdentifier(el, TYPE_VARIABLE);
-          } else if (
+          let bound: Node | undefined;
+          if (el.type === "Identifier") bound = el;
+          else if (
             el.type === "AssignmentPattern" &&
             (el as { left?: Node }).left?.type === "Identifier"
           ) {
-            pushIdentifier((el as { left: Node }).left, TYPE_VARIABLE);
+            bound = (el as { left: Node }).left;
           } else if (
             el.type === "RestElement" &&
             (el as { argument?: Node }).argument?.type === "Identifier"
           ) {
-            pushIdentifier((el as { argument: Node }).argument, TYPE_VARIABLE);
+            bound = (el as { argument: Node }).argument;
           }
+          // 嵌套模式没有直接绑定（由通用递归下钻处理）
+          if (!bound) continue;
+          // 形参解构绑定已由 collectParams 按 parameter 档上色 ⇒ 不重复。
+          if (paramBindingNodes.has(bound)) continue;
+          pushIdentifier(bound, TYPE_VARIABLE, 0, !assignmentTargetBindings.has(bound));
         }
         break;
       }
