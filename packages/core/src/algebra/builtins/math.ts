@@ -22,7 +22,7 @@ import { numericBounds, isNonNaN, type NumBounds } from "../arithmetic.ts";
 import { makeSum } from "../objects.ts";
 import { currentExecPhi } from "../exec/runtime/state.ts";
 import { numPrim } from "./shared.ts";
-import { isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
+import { isBigintPrimAbs, mayToStringThrowOperand } from "./shared.ts";
 import { isSymbolAbs as isSymbolPrim } from "./symbol.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -286,9 +286,11 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
       const n = coerceMathArg(a);
       if (n === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
     }
-    // Bug 25：抽象实参（any/obj/…）ToPrimitive 后可能成 Symbol/BigInt 值 →
-    // ToNumber may TypeError（node 实测 Math.max({valueOf(){return 1n}}) 抛）
-    if (args.some((a) => mayCoerceThrowOperand(a))) {
+    // Bug 81：抽象实参的强转打点统一走 **ToString 分档判据**（与 `String(x)` /
+    // `${x}` 同款）——Date/Map/普通闭对象恒 total ⇒ 不记 may（此前
+    // mayCoerceThrowOperand 的 ToNumber 口径对 brand/obj 一律 may ⇒ 假红）；
+    // 未知 brand / 带 coercer 槽的 obj / any/unknown/fn/sum 仍记 may。
+    if (args.some((a) => mayToStringThrowOperand(a))) {
       recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
     }
     return minMaxAbs(name, args);
@@ -317,8 +319,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     if (args[0]) {
       const c2 = coerceMathArg(args[0]);
       if (c2 === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
-      // Bug 25：抽象操作数 ToNumber may TypeError（同 min/max 口径）
-      if (mayCoerceThrowOperand(args[0])) {
+      // Bug 81：抽象操作数强转打点同 min/max —— ToString 分档判据
+      if (mayToStringThrowOperand(args[0])) {
         recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
       }
       return roundingAbs(name, args[0]);
@@ -333,8 +335,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
   for (const a of args) {
     const n = coerceMathArg(a);
     if (n === undefined) {
-      // Bug 25：抽象操作数 ToNumber may TypeError（symbol/bigint 载体）
-      if (mayCoerceThrowOperand(a)) {
+      // Bug 81：抽象操作数强转打点同 min/max —— ToString 分档判据
+      if (mayToStringThrowOperand(a)) {
         recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
       }
       return numPrim();
