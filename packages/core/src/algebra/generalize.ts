@@ -1629,10 +1629,32 @@ function generalizeFromAstUncached(
             sigNames[pIdx] ?? params[pIdx] ?? `_p${pIdx}`,
             [],
           );
+          // Bug 8（签名面残留）：数组解构形参的入口域必须是**数组**。
+          // `locateContractParam` 对 ArrayPattern 给的是 `fieldIndex`（元素
+          // 下标，**不给** fieldPath）——执法侧已按下标投影实参（L1 已修），
+          // 但签名/入口求值这里仍把契约叶子合成**对象槽**
+          // ⇒ `f([ x ]: { x: number })`，且引擎对「对象」做数组解构判必抛
+          // ⇒ 签名塌成 `never throws TypeError` + error 级 may-throw（假红）。
+          // 元素域 = 契约命中槽的 Abs 并集（补齐的 unknown 槽不参与，否则
+          // 整个元素域被拉成 unknown）；一个都没命中 ⇒ any（不猜）。
+          const fp = formals[pIdx];
+          let sigAbs = objAbs;
+          if (fp?.kind === "pattern" && fp.patternKind === "array") {
+            const leaves = Object.values(bag).flatMap((node) =>
+              "abs" in node && node.abs.shape.k !== "unknown" ? [node.abs] : [],
+            );
+            const element =
+              leaves.reduce<Abs | undefined>(
+                (acc, e) => (acc === undefined ? e : joinAbs(acc, e)),
+                undefined,
+              ) ?? abs({ k: "any" }, undefined, pTrue, "path");
+            sigAbs = { ...objAbs, shape: { k: "arr", element } };
+          }
           typeParams[pIdx] = {
             id: typeParams[pIdx]!.id,
-            value: objAbs,
+            value: sigAbs,
           };
+          // refine 入口形状仍用对象槽投影（L1 契约执法侧读这张表，保持原口径）
           refineEntryShapes.set(params[pIdx] ?? `_p${pIdx}`, {
             abs: snapshotAbs(objAbs),
             source: "refine",
