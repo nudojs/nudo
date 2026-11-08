@@ -59,6 +59,7 @@ import {
   formatThrowsAbs,
   throwAbsToKinds,
   throwsKindCovered,
+  makeSymbolicRestAbs,
   type MayThrowEffect,
   type EvalMemberDiag,
 } from "@nudojs/core/internal";
@@ -1275,15 +1276,17 @@ export function synthesizeCallSiteCases(
 }
 
 /**
- * rest 形参的入口实参：**变长**（元素未知的数组 Abs）。
+ * rest 形参的入口实参：**符号 rest 哨兵**（`makeSymbolicRestAbs`）。
  *
- * Bug 1008：入口兜底只造**一个**占位实参 ⇒ `...xs` 的长度被观测成字面量 1
- * ⇒ 投影面把这次兜底观测当出口域（`literal(1)`），导出校验器拒绝被导出
- * 函数自己的返回值（dts 面写 number ⇒ 四方言矛盾）。变长实参让
- * `xs.length` 落到 `number`（长度不确信 ⇒ 不是字面量）。
+ * Bug 103：此前造的是「一个值为 arr(any) 的**位置实参**」，`$restBind` 把它
+ * 收进 `[arr(any)]` 一元组 ⇒ `identity(...xs)` 返回 `[any[]]`、`first(...xs)`
+ * 返回 `any[]`、`count(...xs)` 折字面量 1（guard/zod/standard 拒绝函数自己的
+ * 返回值、dts 让消费端 TS2322）。符号 rest 哨兵被 `$restBind` 识别后**直通
+ * 开放数组**（arr-make.ts:124-127，Bug 44 既有机制）⇒ `xs` 恢复 `any[]`、
+ * `xs[0]` 恢复 `any`、`xs.length` 恢复 `number`，与 `check` 面同源。
  */
 function restEntryArgAbs(): Abs {
-  return makeAbsVal({ k: "arr", element: anyAbs }, undefined, undefined, "partial");
+  return makeSymbolicRestAbs();
 }
 
 export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidate): void {
@@ -1372,6 +1375,24 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
           if (evalEntryFull?.throws) entryThrowsAbs = evalEntryFull.throws;
         }
       }
+      // Bug 39：无调用点的类实例方法普查名是**点号名**（`C.total`），
+      // `tryEvalCallFull` 按**模块导出名**取可调用值必然落空 ⇒ entryAbs 原样
+      // 回落 `absUnknown` ⇒ dts / guard / zod / standard 四面全线 unknown。
+      // 与 `@nudo:case` 路径（:936）同口径：改走类链派发
+      // （`evalClassMethodWitness`：类 Abs → $new → 原型方法槽 $invoke），
+      // 点号名只作展示名、不作被调表达式；派发失败则继续回落既有 unknown 路径。
+      if (!entryAbs && filePath && isDottedName(candidate.analysis.name)) {
+        const methodAbs = evalClassMethodWitness(source, filePath, candidate.analysis.name, argAbsEntry, {
+          envNames,
+          mocks: mockSeedsToAbsMocks(seeds),
+          ...(loadModule ? { loadModule } : {}),
+          depKey: fnDepSeg,
+        });
+        if (methodAbs) {
+          entryAbs = methodAbs;
+          entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
+        }
+      }
       if (!entryAbs) {
         if (evalHosted) {
           entryAbs = absUnknown;
@@ -1415,11 +1436,10 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         );
       }
     }
-    // Bug 1008：rest 形参的 entry@ 兜底观测**长度是合成调用元数的产物**
-    // （`...xs` 把那一个占位实参收进数组 ⇒ `xs.length` = 1），不是函数的行为
-    // ⇒ 该观测不确信（conf `partial`）⇒ 投影面可放宽成基类型，不把这次兜底
-    // 观测当出口域（zod/standard/guard 投影成 literal(1) ⇒ 导出校验器拒绝被
-    // 导出函数自己的返回值；dts 面写 number ⇒ 四方言矛盾）。
+    // Bug 103 / Bug 1008：rest 形参的 entry@ 兜底观测不确信（conf `partial`）
+    // ⇒ 投影面可放宽成基类型，不把这次合成调用的观测当出口域。入口实参改走
+    // 符号 rest 哨兵后 `xs` 已是开放数组（`xs.length` 不再折字面量 1），此处
+    // 保留保守放宽作为防御（观测仍来自一次合成入口调用，非真实调用点）。
     const hasRestFormal = (fnNode ? extractFormals(fnNode, env.source) : []).some((f) => f.kind === "rest");
     const entryWitnessAbs =
       hasRestFormal && entryAbs && entryAbs.conf === "exact"
