@@ -72,6 +72,7 @@ import {
 } from "./check-report.ts";
 import {
   collectNudoFiles,
+  diffPathOf,
   displayPathOf,
   externalAbsCallRecords,
   reportPathErrors,
@@ -1444,9 +1445,15 @@ export async function runCheckFix(opts: {
           // `test --freeze --dry-run` 同口径）⇒ 头是 `--- a/<rel>` /
           // `+++ b/<rel>`，`git apply -p1` 可直接消费（绝对路径会拼出
           // `a//abs` 的双斜杠，剥掉 `a/` 后仍是绝对路径 ⇒ git 拒绝）。
-          const relPath = displayPathOf(file);
-          console.log(`\nfix: ${relPath}  (${plan.title})`);
-          console.log(unifiedDiff(source, next, relPath) || "(no line diff)");
+          // Bug 27：diff 头与展示面解耦——越出 cwd 的目标用裸文件名（该补丁
+          // 在目标目录里可 `-p1` 消费），并在 `fix:` 行点明；不再产出
+          // `--- a//<绝对路径>` 这种 git 一律拒收的头。
+          const { path: diffRel, outside } = diffPathOf(file);
+          const outsideNote = outside
+            ? ` — target outside cwd: apply from ${dirname(file)} (bare-filename header)`
+            : "";
+          console.log(`\nfix: ${displayPathOf(file)}  (${plan.title})${outsideNote}`);
+          console.log(unifiedDiff(source, next, diffRel) || "(no line diff)");
           // BUG-047：推进到**计划文本**必须在 `--write` 分支**之外**——
           // 放在写盘分支内 ⇒ dry-run 的后续 issue 仍按修改前的文本算
           // （同一文件两份互相冲突的「新建文件」diff ⇒ `git apply` 打不上，
@@ -1484,9 +1491,12 @@ export async function runCheckFix(opts: {
           }
           planned++;
           // 648：同源码编辑分支——单份头 + 相对路径 + 说明文字在 diff 之外
-          const relPath = displayPathOf(plan.sidecar.path);
-          console.log(`\nfix: ${relPath}  (${plan.title})`);
-          console.log(unifiedDiff(cur, next, relPath) || "(new file)");
+          const { path: diffRel, outside } = diffPathOf(plan.sidecar.path);
+          const outsideNote = outside
+            ? ` — target outside cwd: apply from ${dirname(plan.sidecar.path)} (bare-filename header)`
+            : "";
+          console.log(`\nfix: ${displayPathOf(plan.sidecar.path)}  (${plan.title})${outsideNote}`);
+          console.log(unifiedDiff(cur, next, diffRel) || "(new file)");
           // BUG-047：同源码编辑——计划文本推进在写盘分支之外
           sidecarText = next;
           if (opts.write) {

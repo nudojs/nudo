@@ -1005,6 +1005,15 @@ function formatRange(start: number, count: number): string {
  *   能被 `git apply` 接受（缺标记时 git apply 按「该行有换行」解释 ⇒ 上下文
  *   不匹配 ⇒ 补丁被拒，#564）。
  */
+/** diff 头路径清洗（Bug 27）：绝对路径 / `..` 段一律不得进 `a/` `b/`。 */
+function safeDiffPath(path: string): string {
+  const parts = path
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((s) => s !== "" && s !== "." && s !== "..");
+  return parts.join("/") || "file";
+}
+
 export function unifiedDiff(a: string, b: string, path: string): string {
   if (a === b) return "";
   const oldLines = splitDiffLines(a);
@@ -1051,8 +1060,12 @@ export function unifiedDiff(a: string, b: string, path: string): string {
     idx = end;
   }
 
+  // Bug 27：头路径必须是**相对**、不带 `..` 段的路径。调用方若仍传绝对
+  // 路径（其它命令也可能调 unifiedDiff），`a/ + /abs` 会拼出双斜杠且
+  // `git apply -p1` 拒绝 ⇒ 这里做最后一道清洗：去掉根前缀与 `.` / `..` 段。
+  const headerPath = safeDiffPath(path);
   // hunk 头行号：hunk 前累计的 delete+equal 决定旧侧、insert+equal 决定新侧
-  const out: string[] = [`--- a/${path}`, `+++ b/${path}`];
+  const out: string[] = [`--- a/${headerPath}`, `+++ b/${headerPath}`];
   // 末行无终止符的行号（两侧各自算）：末行在 diff 里要带
   // `\ No newline at end of file` 标记。
   const oldLast = oldLines.length - 1;

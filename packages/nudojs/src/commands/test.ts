@@ -41,6 +41,7 @@ import {
   reemitUpdate,
   emitWiringOf,
   runAbsView,
+  diffPathOf,
   displayPathOf,
   variadicSwallowError,
   type EmitCasesOptions,
@@ -425,6 +426,12 @@ async function runTest(
 
   if (opts.freeze && emitOut) {
     const relPath = displayPathOf(filePath);
+    // Bug 27：`--freeze --dry-run` 与 `check --fix` 共用 unifiedDiff ⇒ 越出 cwd
+    // 的目标同样会拼出 `a//abs` 头。头用裸文件名，说明放在 diff 之外的一行。
+    const { path: diffRel, outside } = diffPathOf(filePath);
+    const outsideNote = outside
+      ? ` — target outside cwd: apply from ${dirname(filePath)} (bare-filename header)`
+      : "";
     const skippedLines = emitOut.skipped.map((s) => `  ${s.fn}: ${s.reason}${s.detail ? ` (${s.detail})` : ""}`);
     /** 删除面的单行摘要（净删除 0 条时不出现——不制造噪音） */
     const removedNote =
@@ -435,10 +442,10 @@ async function runTest(
       return;
     }
     if (opts.freeze.dryRun) {
-      console.log(`\nfreeze: would write cases → ${relPath} (dry run${removedNote})`);
+      console.log(`\nfreeze: would write cases → ${relPath} (dry run${removedNote})${outsideNote}`);
       for (const w of emitOut.written) console.log(`  ${w.fn}: ${w.cases.join(", ")}`);
       for (const line of skippedLines) console.log(line);
-      process.stdout.write(unifiedDiff(source, emitOut.source, relPath));
+      process.stdout.write(unifiedDiff(source, emitOut.source, diffRel));
       if (opts.freeze.exitOnDiff) process.exitCode = 1;
       return;
     }

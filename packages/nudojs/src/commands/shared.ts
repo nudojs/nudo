@@ -11,7 +11,7 @@ import {
   statSync,
   type Dirent,
 } from "node:fs";
-import { resolve, dirname, relative, join, basename } from "node:path";
+import { resolve, dirname, relative, join, basename, sep, isAbsolute } from "node:path";
 import {
   stripGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
@@ -117,6 +117,28 @@ export function attachTargetErrors<T extends object>(
 export function displayPathOf(p: string): string {
   const rel = relative(process.cwd(), p);
   return rel === "" || rel.startsWith("..") ? p : rel;
+}
+
+/**
+ * `git apply -p1` 可消费的 **diff 头路径**（Bug 27）。
+ *
+ * `displayPathOf` 是给**人**看的：目标越出 cwd 时回落成绝对路径，而
+ * `unifiedDiff` 会把它拼成 `--- a//tmp/proj/lib.js` ⇒ 剥掉 `a/` 后仍是绝对
+ * 路径，`git apply` 一律 `error: invalid path`（exit 128）。`..` 开头的相对
+ * 路径同样被 git 拒绝（树外路径）。
+ *
+ * 因此 diff 头与展示面必须解耦：cwd 内 ⇒ 相对 cwd（与控制组逐字相同）；
+ * 越出 cwd ⇒ **只留文件名**并返回 `outside: true`，由调用方在 `fix:` /
+ * `freeze:` 行说明「须在目标目录里 apply」。这样补丁本身在目标目录下是
+ * 合法可消费的，且 stdout 不再产出损坏的 `a//abs` 头。
+ */
+export function diffPathOf(p: string): { path: string; outside: boolean } {
+  const rel = relative(process.cwd(), p);
+  const posix = rel.split(sep).join("/");
+  if (posix === "" || posix === ".." || posix.startsWith("../") || isAbsolute(posix)) {
+    return { path: basename(p), outside: true };
+  }
+  return { path: posix, outside: false };
 }
 
 /**
