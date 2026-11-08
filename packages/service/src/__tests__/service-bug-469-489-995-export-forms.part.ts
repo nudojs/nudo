@@ -166,10 +166,10 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
     expect(censusNames("module.exports = { get g() { return 1; } };")).toEqual([]);
   });
 
-  it("匿名 module.exports = fn：service 侧按 default 登记（core 侧不登记无名函数）", () => {
-    // 两者都是既有口径（service 把裸 module.exports = fn 当 ESM default 类比），
-    // 不在本轮改动范围——差异保持有界、不扩散。
+  it("匿名 module.exports = fn：两面都按 default 登记（Bug 6 后 core 侧不再漏）", () => {
+    // Bug 6：CJS 默认导出形态（`module.exports = fn`）此前不在 L2 入口表 ⇒
+    // 假绿。修复后 core 普查面与 service 面同口径登记 `default`。
     expect(censusNames("module.exports = function () { return 1; };")).toEqual(["default"]);
-    expect(listTopFunctions("module.exports = function () { return 1; };")).toEqual([]);
+    expect(listTopFunctions("module.exports = function () { return 1; };")).toEqual(["default"]);
   });
 });
