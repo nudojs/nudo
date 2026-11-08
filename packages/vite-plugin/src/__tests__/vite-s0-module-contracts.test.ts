@@ -67,8 +67,15 @@ describe("族 30 S0 —— scope.ts 的契约（只抽不改）", () => {
     expect(getProjectRoot()).toBeUndefined();
   });
 
-  it("默认 include / exclude 表与重构前一致", () => {
-    expect(DEFAULT_INCLUDE).toEqual(["**/*.js", "**/*.mjs", "**/*.ts"]);
+  it("默认 include 表与 isNudoTargetPath 六后缀一致（Bug 56）", () => {
+    expect(DEFAULT_INCLUDE).toEqual([
+      "**/*.js",
+      "**/*.mjs",
+      "**/*.cjs",
+      "**/*.ts",
+      "**/*.mts",
+      "**/*.cts",
+    ]);
     expect(DEFAULT_EXCLUDE).toEqual(["**/node_modules/**", "**/*.d.ts"]);
   });
 

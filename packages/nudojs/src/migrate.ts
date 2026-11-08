@@ -1287,6 +1287,15 @@ function consumeTscArgv(cmd: string, start: number): number {
       i += 2; // 转义 / 续行：整对消费
       continue;
     }
+    // Bug 14：fd 前缀（`2>&1` / `1> out.log` / `3>> err.log`）紧贴重定向符，
+    // 数字本身不是 shell 元字符 ⇒ 否则会被当成 tsc 的位置参数整段吞掉，
+    // 短语替换后只剩 `>&1`（重定向语义静默改变）。判据：独立 token 的数字串
+    // 且紧跟 `>` / `<` ⇒ 在此断开 tsc 短语，让整段重定向原样保留。
+    if (c >= "0" && c <= "9" && (i === start || /\s/.test(cmd[i - 1]!))) {
+      let j = i;
+      while (j < n && cmd[j]! >= "0" && cmd[j]! <= "9") j++;
+      if (cmd[j] === ">" || cmd[j] === "<") break;
+    }
     if (isPhraseBoundary(c)) break;
     if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) break;
     i++;

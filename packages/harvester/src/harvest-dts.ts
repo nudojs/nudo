@@ -1356,7 +1356,48 @@ function classValueAbs(ctx: HarvestContext, cls: ts.ClassDeclaration, key: strin
   // 判据；不挂则声明面（fn 形状、无 class-mark WeakMap 标记）会漏判 ⇒
   // `JSON.stringify(obj, DeclaredClass)` 等产品面出现「声称不抛」的假绿。
   a.facets = { ...(a.facets ?? {}), callable: false };
-  return a;
+  // Bug 95：`declare class` 的 static 成员此前无任何承载位（实例收集器
+  // instanceFor 显式跳过 static）⇒ Api.create(...) / Api.version 读成 unknown。
+  // 挂到类值 fn 形状的 slots（core dual-facet 读臂），与类型字面量调用签名
+  // 的具名静态成员（attachFnSlots）同口径。
+  return attachFnSlots(a, staticSlotsFor(ctx, cls));
+}
+
+/**
+ * Bug 95：`declare class` 的 static 成员承载位。实例面收集器（instanceFor）
+ * 显式跳过 StaticKeyword，类值此前只有 ctor facet ⇒ 静态成员整类消失。
+ * 按实例面同款口径把 static 属性 / 方法（含重载集）/ 访问器收进类值
+ * fn 形状的 slots，供 `$get` 的 dual-facet 读臂解析。
+ */
+function staticSlotsFor(ctx: HarvestContext, cls: ts.ClassDeclaration): Record<string, Abs> {
+  const properties: Record<string, Abs> = {};
+  const methodSigs = new Map<string, Abs[]>();
+  for (const member of cls.members) {
+    const m = member as {
+      name?: ts.PropertyName;
+      modifiers?: readonly { kind: ts.SyntaxKind }[];
+    };
+    if (!m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword)) continue;
+    const name = memberName(m) ?? computedMemberName(m.name);
+    if (name === undefined) continue;
+    if (ts.isPropertyDeclaration(member)) {
+      let type = member.type ? mapType(ctx, member.type, 0) : absUnknown();
+      if (member.questionToken) type = absUnion([type, absUndefLit()]);
+      properties[name] = type;
+      methodSigs.delete(name); // 属性位优先于同名方法位（与 instanceFor 同口径）
+    } else if (ts.isMethodDeclaration(member)) {
+      if (properties[name] !== undefined) continue;
+      const sig = signatureToFnSig(ctx, member);
+      const list = methodSigs.get(name);
+      if (list) list.push(sig);
+      else methodSigs.set(name, [sig]);
+    } else if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
+      if (properties[name] !== undefined || !member.type) continue;
+      properties[name] = mapType(ctx, member.type, 0);
+    }
+  }
+  for (const [name, sigs] of methodSigs) properties[name] = mergeOverloadSigs(sigs);
+  return properties;
 }
 
 /**
@@ -3439,7 +3480,10 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
     case "arr":
       return `makeAbs({ k: "arr", element: ${emitAbs(s.element, expanding)} }, undefined, undefined, "exact")`;
     case "tuple":
-      return `makeAbs({ k: "tuple", elements: [${s.elements.map((e) => emitAbs(e, expanding)).join(", ")}] }, undefined, undefined, "exact")`;
+      // Bug 59：tuple 的 rest（[number, ...string[]]）必须一起落盘 ——
+      // 否则「同一份 .d.ts，内存收割面 / 磁盘缓存面 / 落盘源码面」三路径不同型
+      // （落盘面退成定长 [number]，tup[1] 变缺失槽）。
+      return `makeAbs({ k: "tuple", elements: [${s.elements.map((e) => emitAbs(e, expanding)).join(", ")}]${s.rest ? `, rest: ${emitAbs(s.rest, expanding)}` : ""} }, undefined, undefined, "exact")`;
     case "eff":
       return `makeAbs({ k: "eff", eff: ${JSON.stringify(s.eff)}, inner: ${emitAbs(s.inner, expanding)} }, undefined, undefined, "exact")`;
     case "obj": {
@@ -3522,6 +3566,17 @@ function emitAbs(a: Abs, expanding: Set<string>): string {
           .map(([key, slot]) => `${emitKey(key)}: { value: ${emitAbs(slot.value, expanding)} }`)
           .join(", ");
         facets.push(`f.shape.slots = { ${entries} };`);
+      }
+      // Bug 59：重载集（fn shape.overloads）必须落盘 —— 否则重载派发失效，
+      // convert(1) 从精确 number 退成并集 string | number（内存 / 磁盘两面都带）。
+      if (s.overloads && s.overloads.length > 0) {
+        const arms = s.overloads
+          .map(
+            (o) =>
+              `{ paramTypes: [${o.paramTypes.map((p) => emitAbs(p, expanding)).join(", ")}], returnType: ${emitAbs(o.returnType, expanding)} }`,
+          )
+          .join(", ");
+        facets.push(`f.shape.overloads = [${arms}];`);
       }
       if (facets.length === 0) return `relationFn([${params}], ${ret}, ${relOptsSrc})`;
       return `(() => { const f = relationFn([${params}], ${ret}, ${relOptsSrc}); ${facets.join(" ")} return f; })()`;
