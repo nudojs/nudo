@@ -67,8 +67,9 @@ describe("Bug 437 — dts 面：静态与实例同名 ⇒ 类体里不重复声�
     const dts = moduleDts(SAME_NAME);
     expect(dts).toContain("export declare class C {");
     expect(dts).toMatch(/static m\(y: (any|unknown)\): unknown;/);
-    // 实例成员 `m(...)` 只出现一次（重复的那条是静态方法被当成实例成员再投影）
-    const instanceMembers = dts.match(/^\s*m\(x: (any|unknown)\): unknown;$/gm) ?? [];
+    // 实例成员 `m(...)` 只出现一次（重复的那条是静态方法被当成实例成员再投影）。
+    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值，故不钉返回类型。
+    const instanceMembers = dts.match(/^\s*m\(x: (?:any|unknown)\): [^;]+;$/gm) ?? [];
     expect(instanceMembers.length).toBe(1);
   });
 

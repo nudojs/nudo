@@ -112,7 +112,8 @@ export function makeUser(name) {
 `);
     expect(dts).not.toContain("C_m");
     expect(dts).not.toContain("export declare function C_m");
-    expect(dts).toMatch(/m\(x: (any|unknown)\): unknown;/);
+    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值，只钉形参与方法存在。
+    expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
   });
 
   it("Bug 550：类本身 + 构造器 + 静态方法进 dts", () => {
@@ -132,7 +133,8 @@ export function makeUser(name) {
     // BUG-003：类形参无类型证据 ⇒ TS 投影面为 `unknown`（nudo any ≈ TS unknown）；
     // nudo 展示面仍显示 any（CLAUDE.md：入口无约束形参），两者作用域不同。
     expect(dts).toContain("constructor(v: unknown);");
-    expect(dts).toMatch(/m\(x: (any|unknown)\): unknown;/);
+    // 同上：实例方法返回类型精度随分析面提升，不钉死 unknown。
+    expect(dts).toMatch(/m\(x: (any|unknown)\): [^;]+;/);
     expect(dts).toMatch(/static s\(x: (any|unknown)\): unknown;/);
   });
 
