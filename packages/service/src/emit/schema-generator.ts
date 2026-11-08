@@ -594,6 +594,22 @@ function absToSchemaNodeB(
     // 这里按 Abs 槽表把不可见槽从节点上摘掉（与形状兜底路径同判据）。
     if (node.k === "obj" && a.shape.k === "obj") {
       const objSlots = a.shape.slots;
+      // Bug 106：core 的 `isHiddenInternalSlot` 现在也认 `symbolKey` ⇒ 用户
+      // symbol 槽可能在**契约投影阶段就已剔除**、根本不进 `node.slots`。若只在
+      // 下面的 filter 里留痕，这类「上游剔除」就是有损却零台账（BUG-131 的
+      // dropped 断言失效）。⇒ 按原始 Abs 槽表补记这些槽（每个键一次）。
+      // 只对**用户自定义 symbol 键**留痕：`internal` 槽是引擎建模的协议/私有
+      // 面，本就不该出现在产物里，把它们写进 dropped 反而会让键名以注释形式
+      // 泄进 zod / standard 模块（Bug 240 明确禁止「内部槽进产物」）。
+      for (const [key, slot] of Object.entries(objSlots)) {
+        if (
+          slot.symbolKey === true &&
+          slot.internal !== true &&
+          isInvisibleObjSlot(key, slot, objSlots)
+        ) {
+          dropped.push(`${key}: hidden symbol-key slot not projected`);
+        }
+      }
       node = {
         ...node,
         // Bug 41：命名捕获组让 `projectObj` 成功 ⇒ 走契约投影早退分支，
@@ -604,9 +620,7 @@ function absToSchemaNodeB(
         slots: node.slots.filter((s) => {
           const slot = objSlots[s.key];
           if (!slot) return true;
-          const hidden = isInvisibleObjSlot(s.key, slot, objSlots);
-          if (hidden) dropped.push(`${s.key}: hidden slot not projected (symbol/internal key)`);
-          return !hidden;
+          return !isInvisibleObjSlot(s.key, slot, objSlots);
         }),
       };
     }
