@@ -814,6 +814,37 @@ export function resolveTargets(path: string): string[] {
   return targets;
 }
 
+/**
+ * 跨位置参数的目标收敛（Bug 79）：位置参数只声明「要分析哪些模块」，
+ * 同一模块只分析一遍。
+ *
+ * `resolveTargetsCollect` 的返回值天然是「**该 path** 的目标列表」，四个一级
+ * 动词过去跨 path 直接 `push` ⇒ 同一文件被完整分析 N 次、`reports[]` N 条、
+ * `summary` 逐次累加；`test` 还用 `targets.length > 1` 判「`--json` 只接受
+ * 单文件」⇒ 只点名了一个文件的命令行被误判成多文件（假 usage error）。
+ * `migrate status` 的 `seenRoots`（Bug 668）早已确立「同一包只列一次」的
+ * 口径，这里把同样的收敛装到所有一级动词的入口。
+ */
+export function collectTargets(
+  paths: readonly string[],
+): { targets: string[]; errors: PathError[] } {
+  const targets: string[] = [];
+  const errors: PathError[] = [];
+  const seen = new Set<string>();
+  for (const p of paths) {
+    const r = resolveTargetsCollect(p);
+    for (const t of r.targets) {
+      // realpath 归一：`src` 与 `./src/lib.js` 与符号链接写法都指向同一模块
+      const key = normalizeRealPath(t);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push(t);
+    }
+    errors.push(...r.errors);
+  }
+  return { targets, errors };
+}
+
 // ---------------------------------------------------------------------------
 // watch mode (flag, not verb)
 // ---------------------------------------------------------------------------
@@ -1267,11 +1298,17 @@ export async function runAbsView(
     );
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
+    // Bug 91：`--abs` 是观察面——引擎证明「必抛」时 result 是精确的 never
+    // （throws ≠ never），`tryEvalCall` 默认按 fail-closed 返回 undefined，
+    // 旧代码把 undefined 一律折成 `algebra.unknown`（`conf: partial`，
+    // 文档定义 = 推断失败）⇒ 同一次运行的签名表与 --json 却是
+    // `never #exact`。打开 keepNeverThrows 让观察面与机器面同源同值。
+    const evalOpts = { phi, keepNeverThrows: true };
     const evalResult =
       premises.length === 0
-        ? tryEvalCall(source, filePath, name, args, { phi })
+        ? tryEvalCall(source, filePath, name, args, evalOpts)
         : withAssumePremises(algebra.and(...premises), () =>
-            tryEvalCall(source, filePath, name, args, { phi }),
+            tryEvalCall(source, filePath, name, args, evalOpts),
           );
     const result = evalResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;

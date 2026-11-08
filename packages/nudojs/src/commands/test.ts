@@ -12,6 +12,7 @@ import {
 } from "@nudojs/service/emit";
 import {
   analyzeFileAsync,
+  collectEvalReplacements,
   getPathEnvLoadErrors,
   type AlsoSynthesizeCases,
   type AnalysisResult,
@@ -33,10 +34,10 @@ import {
 import {
   attachTargetErrors,
   collectExternalRecords,
+  collectTargets,
   emitJsonDoc,
   pathErrorEntry,
   reportPathErrors,
-  resolveTargetsCollect,
   startWatch,
   reemitUpdate,
   emitWiringOf,
@@ -93,10 +94,22 @@ function failureEnvelope(
   failures: TestFailure[],
   targetErrors?: TestFailure[],
 ): Record<string, unknown> {
+  // Bug 108：失败信封是另一份手写形状，此前**没有** `ok`，`summary` 也没有
+  // `errors` ⇒ 机器面 `.ok` 恰好只在失败时消失（undefined），按
+  // `ok === false` 或 schema 校验的 CI 消费方判据失效。与 `check` / `health`
+  // 同口径：任何 --json 失败信封都带 `ok:false`，且 error 计数键在成功 /
+  // 失败两面同形（BUG-014 的成功分支显式补 `json.ok` + `summary.errors`）。
   return {
     version: 1,
+    ok: false,
     file,
-    summary: { functions: 0, externalFunctions: 0, cases: 0, diagnostics: 0 },
+    summary: {
+      functions: 0,
+      externalFunctions: 0,
+      cases: 0,
+      diagnostics: 0,
+      errors: failures.length + (targetErrors?.length ?? 0),
+    },
     functions: [],
     diagnostics: [],
     assertions: { passed: 0, failed: 0, unchecked: 0 },
@@ -267,6 +280,40 @@ async function runTest(
     return;
   }
   let result = analysis.result;
+  // Bug 85：行内指令（`@nudo:as` / `@nudo:replace`）**不在**
+  // `extractDirectives(ast, { diags })` 的覆盖范围内——它们由
+  // `collectEvalReplacements` 抽取，诊断写进调用方自备的 diags 数组。
+  // 分析面 `result.diagnostics` 里天然只有函数级指令族 ⇒ 写错的注入指令
+  // 在 test 面整类静默（check / LSP 走 check-issues.ts 的补充通道会报
+  // warning）。这里按同一通道补齐，并把 parser 已给出的 at 位置带上。
+  const inlineDiags: Array<{
+    code: string;
+    message: string;
+    at?: { line: number; column: number };
+  }> = [];
+  try {
+    collectEvalReplacements(source, { diags: inlineDiags });
+  } catch {
+    /* 解析失败由分析面自行报错，不在此造诊断 */
+  }
+  if (inlineDiags.length > 0) {
+    result = {
+      ...result,
+      diagnostics: [
+        ...result.diagnostics,
+        ...inlineDiags.map((d) => {
+          const at = { line: d.at?.line ?? 0, column: d.at?.column ?? 0 };
+          return {
+            range: { start: at, end: at },
+            severity: "warning" as const,
+            code: d.code,
+            message: d.message,
+            suggestions: ["Fix the directive syntax (see docs/reference/diagnostics.md)"],
+          };
+        }),
+      ],
+    };
+  }
   // BUG-014：模块级求值失败（引擎 `internal` 回落）⇒ 与 check 面同源的
   // **error 级诊断**（同码 `nudo:internal`、同文案前缀）⇒ 观察面可见、退出码
   // 判红（不再「0 passed · 0 failed · 0 unchecked」+ exit 0 的假绿）。
@@ -536,17 +583,13 @@ export function registerTestCommand(program: Command): void {
           });
           return;
         }
-        const targets: string[] = [];
         // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
         // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
         // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
         // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
-        const targetErrors: PathError[] = [];
-        for (const p of paths) {
-          const r = resolveTargetsCollect(p);
-          targets.push(...r.targets);
-          targetErrors.push(...r.errors);
-        }
+        // Bug 79：跨位置参数收敛 ⇒ `test --json <f> <f>` 等价于只点名一次
+        // （不再因 targets.length > 1 误报「--json requires a single file」）。
+        const { targets, errors: targetErrors } = collectTargets(paths);
         if (!opts.json) {
           reportPathErrors(targetErrors);
           if (targets.length === 0) return;

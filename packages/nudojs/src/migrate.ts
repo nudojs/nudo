@@ -1878,7 +1878,14 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       tsFiles,
       tsxFiles,
       nudoScripts,
-      nudoConfig: pkg?.nudo !== undefined,
+      // Bug 100：`nudo` 键**在场但形状无效**（null / 标量 / 数组）在 loader /
+      // config-shape / init 三面一律是「没有配置」（本包不受门禁管辖），
+      // 旧判据只看 `!== undefined` ⇒ 唯一说「有」。与 `init.ts` 的
+      // `readNudoKeyState()` 同口径：有效 = 非 null 的普通对象（非数组）。
+      nudoConfig: (() => {
+        const v = pkg?.nudo;
+        return v !== undefined && v !== null && typeof v === "object" && !Array.isArray(v);
+      })(),
       retired,
       retiring,
       blockers,
@@ -2672,9 +2679,19 @@ export async function migrateVerify(
       files.push(abs);
     }
   }
+  // Bug 79：位置参数展开后的**文件集合**也要收敛——`migrate verify src
+  // src/lib.js` 过去把 lib.js 分析两遍（目录展开 + 显式文件），报告里出现
+  // 重复行。与 check / test / contract 的 collectTargets 同口径。
+  const seenVerifyFiles = new Set<string>();
+  const uniqueFiles = files.filter((f) => {
+    const key = resolve(f);
+    if (seenVerifyFiles.has(key)) return false;
+    seenVerifyFiles.add(key);
+    return true;
+  });
   const tscCache = new Map<string, TscRun>();
   const fallbackCwd = opts.root ?? process.cwd();
-  for (const file of files) {
+  for (const file of uniqueFiles) {
     let row: VerifyResult;
     try {
       const source = readFileSync(file, "utf-8");

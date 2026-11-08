@@ -274,7 +274,16 @@ export function registerMigrateCommand(program: Command): void {
           migrateRetireAll,
           formatStatusTable,
         } = await import("../migrate.ts");
-        const targets = paths.length > 0 ? paths : ["."];
+        // Bug 79：位置参数只声明「要处理哪些模块」⇒ 同一路径只处理一遍
+        //（`migrate verify src src/lib.js --json` 过去把 lib.js 分析两遍）。
+        // 按 resolve 归一，保留首次出现顺序。
+        const seenTargets = new Set<string>();
+        const targets = (paths.length > 0 ? paths : ["."]).filter((p) => {
+          const key = resolve(p);
+          if (seenTargets.has(key)) return false;
+          seenTargets.add(key);
+          return true;
+        });
         try {
           if (action === "status") {
             // Bug 668：命令声明接受 `[paths...]`，旧实现只把 `targets[0]` 交给

@@ -17,10 +17,10 @@ import {
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
 import {
   collectExternalRecords,
+  collectTargets,
   diskCacheSignConfigError,
   pathErrorEntry,
   reportPathErrors,
-  resolveTargetsCollect,
   variadicSwallowError,
   type PathError,
 } from "./shared.ts";
@@ -400,7 +400,18 @@ export function registerContractCommand(program: Command): void {
           // BUG-024：--from variadic 吞噬其后的位置参数——
           // 定向 usage error（直指旗标 + `--` 终止符解法）
           if (opts.from?.length) {
-            variadicSwallowError("contract", ["--from"]);
+            // Bug 45：variadic 吞噬这一支过去无条件调 variadicSwallowError
+            // （只有 stderr）⇒ `contract --json --from <file>` 的 stdout 是
+            // 0 字节，机器面 JSON.parse 直接炸；同命令的其它三条用法错误
+            // 分支都正常出 `{ pathErrors: [...] }` 信封 ⇒ 单点漏接。
+            if (jsonMode) {
+              usageError(
+                "Usage error: `nudo contract` received no paths — variadic flag(s) --from consumed the following arguments",
+                "separate variadic flags from paths with `--` (e.g. `nudo contract --from a.js -- b.js`) or list paths before the flags",
+              );
+            } else {
+              variadicSwallowError("contract", ["--from"]);
+            }
             return;
           }
           usageError(
@@ -476,17 +487,12 @@ export function registerContractCommand(program: Command): void {
         const externalRecords = opts.from?.length
           ? collectExternalRecords(opts.from, jsonMode ? fromErrors : undefined)
           : undefined;
-        const targets: string[] = [];
         // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
         // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
         // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
         // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
-        const targetErrors: PathError[] = [];
-        for (const p of paths) {
-          const r = resolveTargetsCollect(p);
-          targets.push(...r.targets);
-          targetErrors.push(...r.errors);
-        }
+        // Bug 79：跨位置参数收敛 ⇒ 同一模块只打印/分析一遍。
+        const { targets, errors: targetErrors } = collectTargets(paths);
         const allPathErrors = [...targetErrors, ...fromErrors];
         if (!jsonMode) reportPathErrors(allPathErrors);
         // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
