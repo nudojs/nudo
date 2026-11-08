@@ -899,7 +899,12 @@ export function absToStandardSchemaFunction(
   }
 
   // 入参对象：`<fn>Input`（与 zod 面同口径：入参条目的对象投影）
-  if (entries.length > 0) {
+  // Bug 69：zod 面 `zodFaceEntries` **无条件** push `<fn>Input`，零参函数也
+  // 发射 `z.object({  })`；改前这里用 `entries.length > 0` 闸门 ⇒ 零参函数的
+  // standard 面缺 `<fn>Input` ⇒ 同一次 `--format all` 两面导出名不齐，按两面
+  // 同名单写的消费端 `import { fInput }` 链接/类型层失败。调用方明确给了入参
+  // 面（含空数组）就恒发射；零槽 obj 节点接受任意对象（与 zod 空 object 同口径）。
+  if (spec.inputs !== undefined) {
     const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
     for (const e of entries) {
       const { node, dropped: d } = absToSchemaNode(e.abs);

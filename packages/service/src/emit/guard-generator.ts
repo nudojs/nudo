@@ -22,7 +22,8 @@
  * ⇒ 不会 TS2304）；产物**必可编译**（strict）。
  */
 
-import type { Abs, Slot } from "@nudojs/core";
+import type { Abs, Pred, Slot, Term } from "@nudojs/core";
+import { lookupObjAccessor, termEquals, unknown as absUnknown } from "@nudojs/core";
 import { denoteGuard } from "@nudojs/core/internal";
 import { isInvisibleObjSlot } from "./internal-slot.ts";
 import { safeExportIdent, widenUncertainLiteral } from "./schema-generator.ts";
@@ -39,18 +40,72 @@ import { safeExportIdent, widenUncertainLiteral } from "./schema-generator.ts";
  * 拷贝是浅层重建 + memo（Abs 是允许成环的 DAG，见 `hasIdentityClause`）：
  * 环上的节点返回同一个副本，不会无限递归。
  */
+/**
+ * Bug 53：算术**推导**出的数值界在 guard 面整段蒸发（同一次导出的 zod /
+ * standard 面保留 `gt 0.9999…`），而 three 面同源两面有界一面无界。
+ *
+ * 根因在 core `denote.ts` 的 `termIsValue`：它只认 `var` / `lit` /
+ * `app(get)`，对算术 app 项（`x + 1`）保守不绑 ⇒ 比较谓词左端不等于
+ * "值本身" ⇒ `predAsJs` 落到 `return "true"`。但守卫要检查的值**就是**
+ * `x + 1` 的值：左端与 Abs 自身 `term` 同项即可判定（与 `app(get)` 特例
+ * 同一口径，见 `denote.ts` 的详细注释）。
+ *
+ * core 不在本次可修范围 ⇒ 在投影前把这类比较谓词的**左端**规范成
+ * `__nudo_self__` var（`termIsValue` 对 var 恒 true）⇒ `predAsJs` 产出
+ * `data > 0.9999…`。只改左端，不动 Abs 的 term / shape / 其它 pred
+ * ⇒ 不撒谎、不收紧，且与 zod / standard 面同源同界。
+ */
+function anchorSelfTermPred(p: Pred, term: Term | undefined): Pred {
+  if (!term || term.op !== "app" || term.fn === "get") return p;
+  switch (p.op) {
+    case "and":
+    case "or":
+      return { ...p, args: p.args.map((x) => anchorSelfTermPred(x, term)) };
+    case "not":
+      return { ...p, arg: anchorSelfTermPred(p.arg, term) };
+    case "gt":
+    case "ge":
+    case "lt":
+    case "le":
+      if (p.a.op === "app" && termEquals(p.a, term)) {
+        return { ...p, a: { op: "var", id: "__nudo_self__" } };
+      }
+      return p;
+    default:
+      return p;
+  }
+}
+
 function stripInvisibleSlots(a: Abs, memo: Map<Abs, Abs> = new Map()): Abs {
   const hit = memo.get(a);
   if (hit) return hit;
   const copy: Abs = { ...a };
   memo.set(a, copy);
+  // Bug 53：见 anchorSelfTermPred——投影前锚定与自身 term 同项的算术比较左端。
+  if (copy.pred) copy.pred = anchorSelfTermPred(copy.pred, a.term);
   const s = a.shape;
   switch (s.k) {
     case "obj": {
       const slots: Record<string, Slot> = {};
       for (const [k, slot] of Object.entries(s.slots)) {
         if (isInvisibleObjSlot(k, slot, s.slots)) continue;
-        slots[k] = { ...slot, value: stripInvisibleSlots(slot.value, memo) };
+        // Bug 104：访问器侧表按 Abs **对象身份**键控（core/accessors.ts 的
+        // WeakMap）。这里 `{ ...a }` 克隆后 `accessorReadDomain(copy, k)` 查不到
+        // ⇒ `denote.ts` 的 obj 分支回落占位槽 `$lit(void 0)` ⇒ 守卫写成
+        // `data.g === undefined`，对函数自己的返回值报假红（standard / zod /
+        // dts 都写 3）。克隆前按**原对象**取 getter 读域，把读域烘焙进槽值；
+        // getter 抛 ⇒ 读域不可判 ⇒ 落到 `unknown`（只判 presence，与
+        // `denote.ts` / dts 面 Bug 191 同口径）。
+        let value = slot.value;
+        const acc = lookupObjAccessor(a, k);
+        if (acc?.get) {
+          try {
+            value = acc.get(a) ?? value;
+          } catch {
+            value = absUnknown;
+          }
+        }
+        slots[k] = { ...slot, value: stripInvisibleSlots(value, memo) };
       }
       copy.shape = { ...s, slots };
       break;
@@ -170,10 +225,20 @@ export function generateGuardFunctionFromAbs(name: string, abs: Abs, used?: Set<
   // 2026-11-06：生成器身份子句由 core `denoteGuardB` 递归生成（顶层 + 嵌套
   // 槽值一视同仁），此处不再单独注入 ⇒ 与 zod / standard 面同口径，也不会
   // 在产物里重复两次身份判定。
-  const body = denoteGuard(src, "data");
+  const hasIdentity = hasIdentityClause(src);
+  const body0 = denoteGuard(src, "data");
   const valueType = guardValueType(src);
   // BUG-250：身份子句会收窄 `data` ⇒ 索引读报 TS7053（见 hasIdentityClause）
-  const dataDecl = hasIdentityClause(src) ? `const data: any = ` : `const data = `;
+  const dataDecl = hasIdentity ? `const data: any = ` : `const data = `;
+  // Bug 97：`Array.isArray(data)` 也是一条类型收窄（把 data 收窄成 `any[]`），
+  // 即便 data 显式声明为 `: any` 也照样收窄 ⇒ 数组视图（RegExpExecArray）的
+  // `index` / `input` / `groups` 读报 TS2551 / TS2339，而 `nudo export` 静默
+  // exit 0。把被检查值写成 `data as unknown`（运行时完全等价，但 TS 不再
+  // 收窄 data）⇒ 产物在 `tsc --noEmit --strict` 下可编译。只在身份子句在场
+  // （data 已降级成 any）时替换 ⇒ 普通数组 / 普通对象产物文本逐字不变。
+  const body = hasIdentity
+    ? body0.replaceAll("Array.isArray(data)", "Array.isArray(data as unknown)")
+    : body0;
   return `export function ${safeExportIdent(name, used)}(value: unknown): boolean {\n  ${dataDecl}value as ${valueType};\n  return ${body};\n}`;
 }
 
@@ -197,6 +262,11 @@ function hasIdentityClause(a: Abs, seen: Set<Abs> = new Set()): boolean {
     case "eff":
       return true;
     case "obj":
+      // Bug 97：数组视图（`view: "array"`，RegExpExecArray 等）头部会发
+      // `Array.isArray(data)` —— 与 brand / eff 的 `instanceof` 一样是一条
+      // 类型收窄来源 ⇒ 必须把 data 降级成 `: any`（随后见
+      // generateGuardFunctionFromAbs 里对 Array.isArray 的等价改写）。
+      if (s.view === "array") return true;
       return Object.values(s.slots).some((slot) => hasIdentityClause(slot.value, seen));
     case "arr":
       return hasIdentityClause(s.element, seen);
