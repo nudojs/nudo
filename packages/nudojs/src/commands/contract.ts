@@ -32,15 +32,82 @@ import { runContractFromDts } from "./contract-from-dts.ts";
 // contract — 契约：打印 / draft / emit
 // ---------------------------------------------------------------------------
 
+/**
+ * Bug 80：契约面透出的「契约装载 / 绑定失败」诊断（与 service 侧
+ * `ContractFaceDiagnostic` 同形 —— 结构类型直接兼容，无需新增公开导出）。
+ */
+type ContractFaceDiagnostic = {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+};
+
+/** Bug 80：按同树 check / export 的裁决渲染（stderr + error 级非零退出）。 */
+function reportContractFaceDiagnostics(diags: readonly ContractFaceDiagnostic[]): void {
+  for (const d of diags) {
+    const label = d.severity === "error" ? "error" : "warning";
+    console.error(`${label}: [${d.code}] ${d.message}`);
+  }
+  if (diags.some((d) => d.severity === "error")) process.exitCode = 1;
+}
+
 async function runContractPrint(
   file: string,
   records?: CallRecord[],
-  opts?: { json?: boolean },
+  opts?: { json?: boolean; fnNames?: string[]; all?: boolean },
 ): Promise<void> {
   const { interfaceSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
-  const entries = await interfaceSurface(filePath, { records });
   const rel = relative(process.cwd(), filePath) || filePath;
+  // Bug 80：本次分析产生的装载诊断透出（不再被 interfaceSurface 取走丢弃）。
+  const diagnostics: ContractFaceDiagnostic[] = [];
+  const entries = await interfaceSurface(filePath, { records, diagnostics });
+  reportContractFaceDiagnostics(diagnostics);
+
+  // Bug 101：`--fn` / `--all` 是 contract 的通用过滤项
+  // （cli-reference.md:267-268，条目未限定作用域）。print 面默认即全量；
+  // `--all` = 显式全量，`--fn` = 按名单过滤。两者同给时按 :357/:374 的纪律
+  // 「不许给了不生效且不报错」⇒ 显式 usage error（不是静默二选一）。
+  const fnNames = opts?.fnNames ?? [];
+  if (fnNames.length > 0 && opts?.all === true) {
+    const message = "Usage error: --fn and --all are mutually exclusive on the print face";
+    if (opts?.json === true) {
+      console.log(
+        JSON.stringify(
+          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(message);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  const shown = fnNames.length > 0 ? entries.filter((e) => fnNames.includes(e.fn)) : entries;
+  // `--fn` 一处都没命中 ⇒ 与 --draft / --emit 同纪律：usage error + exit 1
+  // （绝不静默输出空条目表）。
+  if (fnNames.length > 0 && shown.length === 0) {
+    const candidates = [...new Set(entries.map((e) => e.fn))].sort();
+    const message =
+      `Usage error: --fn ${fnNames.map((n) => `\`${n}\``).join(", ")} matched no contract entry in ${rel}` +
+      (candidates.length > 0 ? `\navailable exports: ${candidates.join(", ")}` : "");
+    if (opts?.json === true) {
+      console.log(
+        JSON.stringify(
+          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(message);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
   // 族 21 Bug 670：`--json` 是**机器面** ⇒ stdout 必须是合法 JSON。
   // 改前本函数完全不看 `opts.json` ⇒ `nudo contract --json` 把人类文本
   // （`<file>` + 每行签名）写进 stdout ⇒ `JSON.parse(stdout)` 抛错。
@@ -49,32 +116,34 @@ async function runContractPrint(
       JSON.stringify(
         {
           file: rel,
-          entries: entries.map((e) => ({
+          entries: shown.map((e) => ({
             fn: e.fn,
             signature: formatInterfaceSurfaceLine(e),
             // BUG-081：机器面必须带同名字段（此前冲突 / 不可判定在契约面上完全无痕）
             ...(e.conflict !== undefined ? { conflict: e.conflict } : {}),
             ...(e.undecidable !== undefined ? { undecidable: e.undecidable } : {}),
           })),
+          // Bug 80：坏侧车也必须在机器面有承载诊断的字段
+          ...(diagnostics.length > 0 ? { diagnostics } : {}),
         },
         null,
         2,
       ),
     );
-    reportContractMarks(entries);
+    reportContractMarks(shown);
     return;
   }
   console.log(`${rel}`);
-  if (entries.length === 0) {
+  if (shown.length === 0) {
     console.log("  (no top-level functions found)");
     console.log();
     return;
   }
-  for (const e of entries) {
+  for (const e of shown) {
     console.log(formatInterfaceSurfaceLine(e));
   }
   console.log();
-  reportContractMarks(entries);
+  reportContractMarks(shown);
 }
 
 /**
@@ -83,10 +152,17 @@ async function runContractPrint(
  * 同一个契约印成**有效契约**并 exit 0 ⇒ 三个一级动词对同一事实给出相反结论。
  *
  * 契约面是「我的契约是什么」的权威读取口 ⇒ 必须同结论：
- * - `conflict`（合取不可满足）⇒ stderr 报同码 error + `process.exitCode = 1`；
+ * - `conflict`（合取不可满足）⇒ stderr 报同码 error，**不改退出码**
+ *   （Bug 34 / §1.3：只读 contract / export 只在用法 / IO 错误时 exit 1；
+ *    契约冲突是被分析代码的状态，属于 stdout/stderr 上的诊断内容，不是
+ *    「命令没跑成」；CI 门禁只认 check。冲突的行尾标记 + `--json` 字段照旧透出）；
  * - `undecidable`（结构型组合算不出交集，另一侧义务未执法）⇒ error 级**不**成立
  *   （check 面是 warning，能力边界不是用户代码矛盾）⇒ 只报 warning，不改退出码，
  *   但绝不静默（行尾标记 + `--json` 字段已经透出）。
+ *
+ * ⚠ 侧车**装载失败**（`nudo:interface-load` 等）是另一条通道：它与
+ * check / test / health / export 同裁决 ⇒ 由 `reportContractFaceDiagnostics`
+ * 报 error 并改退出码（Bug 80），不能与这里的「数据内容」混为一谈。
  */
 function reportContractMarks(entries: readonly InterfaceSurfaceEntry[]): void {
   for (const e of entries) {
@@ -101,7 +177,7 @@ function reportContractMarks(entries: readonly InterfaceSurfaceEntry[]): void {
           `error: [nudo:interface-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable on the return slot`,
         );
       }
-      process.exitCode = 1;
+      // Bug 34：只读面不因契约**数据内容**改退出码（仅用法 / IO 错误才 exit 1）。
     }
     if (e.undecidable !== undefined) {
       if (e.undecidable.params.length > 0) {
@@ -477,7 +553,13 @@ export function registerContractCommand(program: Command): void {
                 ...(jsonMode ? { json: true } : {}),
               });
             } else {
-              await runContractPrint(t, externalRecords, { json: jsonMode });
+              // Bug 101：打印面也转发通用过滤项（此前只传 json ⇒ --fn / --all
+              // 被解析、被接受、然后被丢弃）。
+              await runContractPrint(t, externalRecords, {
+                json: jsonMode,
+                fnNames: opts.fn ?? [],
+                all: opts.all === true,
+              });
             }
           };
           if (!jsonMode) {
