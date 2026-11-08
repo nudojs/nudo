@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { parseJsonText } from "./read-json.ts";
 import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
@@ -218,7 +219,7 @@ const TSX_EXT = new Set([".tsx"]);
 
 function readJson(path: string): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    return parseJsonText(readFileSync(path, "utf-8")) as Record<string, unknown>;
   } catch {
     /* optional: package.json unreadable — omit */
     return undefined;
@@ -1664,7 +1665,7 @@ function readJsonObjectDetailed(path: string, label: string): PackageJsonRead {
     return { kind: "unreadable", error: (err as Error).message ?? String(err) };
   }
   try {
-    const value = JSON.parse(text) as unknown;
+    const value = parseJsonText(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return { kind: "invalid", error: `${label} is not a JSON object` };
     }

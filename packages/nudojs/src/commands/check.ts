@@ -5,6 +5,7 @@
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { parseJsonText } from "../read-json.ts";
 import { resolve, dirname, isAbsolute } from "node:path";
 import type { File } from "@babel/types";
 import { paint } from "../ui.ts";
@@ -394,7 +395,7 @@ function projectEnvShapeIssue(projectDir: string | undefined): ConfigShapeIssue 
   const pkgPath = resolve(projectDir, "package.json");
   let pkg: unknown;
   try {
-    pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    pkg = parseJsonText(readFileSync(pkgPath, "utf-8"));
   } catch {
     return null; // 读/解析失败：service 侧另有诊断，本探针不重复
   }

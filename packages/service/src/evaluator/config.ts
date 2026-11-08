@@ -697,7 +697,10 @@ export function findProjectConfig(
       let pkg: unknown;
       try {
         projectConfigDiskReads++;
-        pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        // package.json 与源文件/侧车同口径：先剥 UTF-8 BOM 再 parse，否则
+        // Windows 编辑器写入的 BOM 会让整份项目配置静默失效（Bug 15）。
+        const rawPkg = readFileSync(pkgPath, "utf-8");
+        pkg = JSON.parse(rawPkg.charCodeAt(0) === 0xfeff ? rawPkg.slice(1) : rawPkg);
       } catch (err) {
         process.stderr?.write?.(
           `nudo: package.json parse failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,

@@ -33,6 +33,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { displayPathOf } from "./shared.ts";
+import { parseJsonText } from "../read-json.ts";
 
 /** init 写入的 adoption 基线（profile: L2 entry may-throw → warning，L1 不变） */
 const ADOPTION_BASELINE = { check: { profile: "adoption" } } as const;
@@ -92,7 +93,7 @@ function readPackageJson(pkgPath: string): PkgRead {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonText(raw);
   } catch (err) {
     return { ok: false, kind: "invalid-json", message: errorText(err) };
   }
@@ -180,7 +181,7 @@ function containerSignals(dir: string): string[] {
 /** 读 + 解析一个 package.json；失败（读不到 / 非法 JSON / 非对象）⇒ null */
 function readJsonObject(path: string): Record<string, unknown> | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    const parsed: unknown = parseJsonText(readFileSync(path, "utf-8"));
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     return parsed as Record<string, unknown>;
   } catch {
@@ -381,7 +382,7 @@ function writeNudoKeyMinimally(
   const scan = scanTopObject(raw);
   if (!scan) {
     // 兜底：理论上到不了（调用方已 JSON.parse 成功）⇒ 退回整文件重排
-    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    const pkg = parseJsonText(raw) as Record<string, unknown>;
     pkg.nudo = baseline;
     return { content: `${JSON.stringify(pkg, null, 2)}\n`, collapsedDuplicates: 0 };
   }

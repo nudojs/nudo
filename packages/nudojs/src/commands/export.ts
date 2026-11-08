@@ -8,6 +8,7 @@
  * dts-face / diagnostics / io / stdout）。
  */
 import { existsSync, readFileSync } from "node:fs";
+import { parseJsonText } from "../read-json.ts";
 import { resolve, basename, dirname, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
@@ -174,7 +175,7 @@ function packageRootOf(startDir: string): string | undefined {
 /** 包名（`package.json#name`，读不到 / 非字符串 ⇒ undefined）。 */
 function packageNameOf(root: string): string | undefined {
   try {
-    const pkg: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+    const pkg: unknown = parseJsonText(readFileSync(join(root, "package.json"), "utf-8"));
     if (pkg !== null && typeof pkg === "object") {
       const name = (pkg as { name?: unknown }).name;
       if (typeof name === "string" && name !== "") return name;
