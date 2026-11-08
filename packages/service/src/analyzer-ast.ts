@@ -149,6 +149,32 @@ export function isFnExprValue(node: Node | null | undefined): node is Node {
   return !!node && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression");
 }
 
+/**
+ * 类方法键名（Bug 105）：Identifier（非计算）/ 字符串字面量 / 数字字面量 /
+ * 静态计算字面键都返回稳定名；动态计算键（`[k]()`）⇒ undefined。
+ *
+ * service 普查此前用 parser 的 `classInstanceMethods`（只认 Identifier 键）
+ * ⇒ 字符串 / 计算 / 数字键方法在 `nudo test` / `export` / `contract` 三个面
+ * 全盲；core 的 `listTopFunctions` 已放宽到同一口径，此处对齐。
+ */
+function classMethodKeyNameOf(member: Node | null | undefined): string | undefined {
+  const m = member as
+    | {
+        key?: { type?: string; name?: string; value?: unknown } | null;
+        computed?: boolean;
+      }
+    | null
+    | undefined;
+  const k = m?.key;
+  if (!k) return undefined;
+  if (k.type === "Identifier") {
+    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
+  }
+  if (typeof k.value === "string") return k.value;
+  if (typeof k.value === "number") return String(k.value);
+  return undefined;
+}
+
 export function namedFnExprId(node: Node): string | null {
   return node.type === "FunctionExpression" && node.id ? node.id.name : null;
 }
@@ -244,53 +270,67 @@ export function collectTopLevelFunctions(
   // export class / class+export list / export default Class/Identifier
   const classDecls = new Map<string, { node: ClassDeclaration; stmt: Node }>();
   const exportedClassNames = new Set<string>();
-  const collectClassMethods = (cname: string, decl: ClassDeclaration, stmt: Node): void => {
-    // Bug 437：静态方法与实例方法**同名**时普查名不得相同（core
-    // `scan-top-functions.ts` 的 `collectClassMethods` 同口径）—— 否则按名字
-    // 索引的表里两条记录互相顶替（形参取自一个、返回值取自另一个 ⇒ 自信的
-    // 错误值），且 dts 类体里出现重复成员声明。类方法名是 `Class.method`
-    // （方法体也按这个键登记）⇒ 不能给静态方法另起一个名字 ⇒ 同名时
-    // **只登记实例方法**。
-    const instanceKeys = new Set<string>();
-    for (const { name: keyName, node: methodNode } of classInstanceMethods(decl)) {
-      instanceKeys.add(keyName);
-      results.push({
-        name: `${cname}.${keyName}`,
-        node: methodNode,
-        stmt,
-        noDeclaration: true,
-      });
-    }
-    // ★ 族 28 接线（Bug 856）：**静态方法**与实例方法同为入口可见
-    // （core `scan-top-functions.ts` 的 `collectClassMethods` 就是同口径：
-    //  静态 + 实例都收）。此前 service 侧只收实例方法（parser 的
-    //  `classInstanceMethods` 刻意跳过 static —— 那是 parser 的**契约**，
-    //  不是缺陷）⇒ `nudo test` / `nudo health` / `nudo contract` 的函数
-    // 普查**看不见**静态方法（`nudo check` 的签名面却看得见 ⇒ 两面矛盾）。
-    // ⇒ 复用 parser **已导出**的 `getClassMembers` / `classMemberKeyName` /
-    //   `methodFunctionNode`（**parser 导出面零新增** ✓）。
+  const methodsOf = (decl: ClassDeclaration): Array<{ name: string; node: Node; isStatic: boolean }> => {
+    const out: Array<{ name: string; node: Node; isStatic: boolean }> = [];
     for (const member of getClassMembers(decl)) {
-      const m = member as { static?: boolean; kind?: string; type?: string };
-      if (m.static !== true) continue;
-      // 白名单式：只收**方法**节点。Babel 的类字段是 `ClassProperty`，它
-      // **没有** `kind` 字段（只有 ClassMethod / MethodDefinition 才有
-      // `kind: "method"|"get"|"set"`）⇒ 旧的 `m.kind !== undefined && …`
-      // 过滤会**放行静态字段** ⇒ 字段被当成方法收进函数表（Bug 139：dts 面
-      // 把 `K.s` 投影成实例方法 `s(): unknown`、check 面看不见、运行时不符）。
+      const m = member as { type?: string; kind?: string; static?: boolean };
+      // 只收**方法**节点（白名单）：类字段是 `ClassProperty`（无 kind），构造器
+      // / getter / setter 的 kind 不是 "method" ⇒ 都不是可调用入口（Bug 139）。
       if (
         m.type !== "ClassMethod" &&
         m.type !== "MethodDefinition" &&
         m.type !== "TSDeclareMethod"
       ) {
-        continue; // 类字段 / 构造器 / 访问器都跳过（访问器另行处理）
+        continue;
       }
-      const keyName = classMemberKeyName(member);
+      if (m.kind && m.kind !== "method") continue;
+      // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
+      const keyName = classMethodKeyNameOf(member);
       const methodNode = methodFunctionNode(member);
-      if (typeof keyName !== "string" || !methodNode) continue;
-      if (instanceKeys.has(keyName)) continue; // 同名 ⇒ 实例方法占位（见上）
+      if (keyName === undefined || !methodNode) continue;
+      out.push({ name: keyName, node: methodNode, isStatic: m.static === true });
+    }
+    return out;
+  };
+  /** 本地类名形态的超类名（`extends Base`） */
+  const superNameOf = (d: Node): string | undefined => {
+    const sc = (d as { superClass?: { type?: string; name?: string } }).superClass;
+    return sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
+  };
+  const collectClassMethods = (cname: string, decl: ClassDeclaration, stmt: Node): void => {
+    // Bug 437：静态方法与实例方法**同名**时普查名不得相同（core
+    // `scan-top-functions.ts` 的 `collectClassMethods` 同口径）—— 否则按名字
+    // 索引的表里两条记录互相顶替（形参取自一个、返回值取自另一个 ⇒ 自信的
+    // 错误值），且 dts 类体里出现重复成员声明。⇒ 同名时**只登记实例方法**。
+    const methods: Array<{ name: string; node: Node; isStatic: boolean }> = [];
+    const ownKeys = new Set<string>();
+    for (const m of methodsOf(decl)) {
+      ownKeys.add(m.name);
+      methods.push(m);
+    }
+    // Bug 64：未导出的内部基类——`export class Derived extends Base` 的公共面
+    // 包含继承来的原型方法，Base 是否 export 不应改变 Derived 的成员集合。
+    // 沿 superClass 链把基类 own 方法映射到导出子类名下（子类 own 方法优先）。
+    const seen = new Set<string>([cname]);
+    let sup = superNameOf(decl);
+    while (sup && !seen.has(sup)) {
+      seen.add(sup);
+      const base = classDecls.get(sup)?.node;
+      if (!base) break;
+      for (const m of methodsOf(base)) {
+        if (ownKeys.has(m.name)) continue;
+        ownKeys.add(m.name);
+        methods.push(m);
+      }
+      sup = superNameOf(base);
+    }
+    const instanceKeys = new Set<string>();
+    for (const m of methods) if (!m.isStatic) instanceKeys.add(m.name);
+    for (const m of methods) {
+      if (m.isStatic && instanceKeys.has(m.name)) continue; // 同名 ⇒ 实例方法占位
       results.push({
-        name: `${cname}.${keyName}`,
-        node: methodNode,
+        name: `${cname}.${m.name}`,
+        node: m.node,
         stmt,
         noDeclaration: true,
       });
@@ -377,6 +417,55 @@ export function collectTopLevelFunctions(
           const id = asIdentifier(declarator.id as Node);
           if (id && isFnExprValue(declarator.init)) {
             results.push({ name: id.name, node: declarator.init, stmt, noDeclaration: true });
+            continue;
+          }
+          // Bug 61：`export const C = class { … }` 的类表达式——求值是完整类
+          // 值，导出扫描按 ClassDeclaration 建表 ⇒ 类表达式此前既不是入口
+          // 也不是 dts 类（`nudo test` 报 No functions found）。
+          if (id && declarator.init?.type === "ClassExpression") {
+            // ClassExpression 与 ClassDeclaration 同为类体节点（getClassMembers
+            // 两者都收）；这里只需建表类型一致，故经 unknown 显式放宽。
+            classDecls.set(id.name, {
+              node: declarator.init as unknown as ClassDeclaration,
+              stmt,
+            });
+            exportedClassNames.add(id.name);
+            continue;
+          }
+          // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——
+          // 与 CJS `module.exports = {…}` 分支逐字同口径（成员键 = 导出槽名）。
+          // 此前 ESM 半边整体缺席 ⇒ check OK / 0 fn、`test` 无函数可分析。
+          const objLit = declarator.init as Node | null | undefined;
+          if (objLit?.type === "ObjectExpression") {
+            for (const prop of objLit.properties) {
+              if (prop.type === "ObjectMethod") {
+                if (prop.kind !== "method") continue; // getter / setter 非入口
+                const keyName = objectMemberKeyName(prop);
+                if (!keyName) continue;
+                results.push({
+                  name: keyName,
+                  node: prop,
+                  stmt,
+                  noDeclaration: true,
+                  assignedName: keyName,
+                });
+                continue;
+              }
+              if (prop.type !== "ObjectProperty") continue;
+              const value = prop.value as Node;
+              if (!isFnExprValue(value)) continue;
+              const keyName = objectMemberKeyName(prop);
+              const fnId = namedFnExprId(value);
+              const name = keyName ?? fnId;
+              if (!name) continue;
+              results.push({
+                name,
+                node: value,
+                stmt,
+                noDeclaration: true,
+                ...(fnId && fnId !== name ? { assignedName: fnId } : {}),
+              });
+            }
           }
         }
         continue;

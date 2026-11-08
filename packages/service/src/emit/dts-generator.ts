@@ -2451,6 +2451,70 @@ function surfaceName(n: SurfaceNode | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * 变量声明模式里的**全部绑定名**（Bug 63）。`export const { a, b } = src` /
+ * `export const [c, ...rest] = arr` 的 `id` 是 ObjectPattern / ArrayPattern，
+ * 旧扫描只读 `surfaceName(d.id)`（恒 undefined）⇒ 这些运行时真实存在的导出
+ * 在 dts 面整体缺席（消费端 TS2305）。覆盖 Identifier / RestElement /
+ * AssignmentPattern / 嵌套模式。
+ */
+function patternBindingNames(id: SurfaceNode | undefined): string[] {
+  if (!id) return [];
+  if (id.type === "Identifier") {
+    const n = surfaceName(id);
+    return n ? [n] : [];
+  }
+  const out: string[] = [];
+  if (id.type === "ObjectPattern") {
+    for (const p of (id.properties as SurfaceNode[] | undefined) ?? []) {
+      if (p.type === "RestElement") {
+        out.push(...patternBindingNames(p.argument as SurfaceNode | undefined));
+        continue;
+      }
+      out.push(...patternBindingNames((p.value ?? p.argument) as SurfaceNode | undefined));
+    }
+  } else if (id.type === "ArrayPattern") {
+    for (const e of (id.elements as SurfaceNode[] | undefined) ?? []) {
+      if (e) out.push(...patternBindingNames(e));
+    }
+  } else if (id.type === "AssignmentPattern") {
+    out.push(...patternBindingNames(id.left as SurfaceNode | undefined));
+  } else if (id.type === "RestElement") {
+    out.push(...patternBindingNames(id.argument as SurfaceNode | undefined));
+  }
+  return out;
+}
+
+/**
+ * 初始化器形状 → TS 类型串（Bug 62 的 CJS 值导出 / default 表达式兜底）。
+ * 比 `classFieldTypeOfInit` 完整：对象逐成员投影、数组按元素 join ⇒ 消费端
+ * `import { obj, arr }` 拿到的不是 `object` / `unknown[]` 这种会 TS2322 的
+ * 宽类型。只映射字面量形状，表达式一律 unknown（声明面不猜求值结果）。
+ */
+function valueTypeTextOfInit(init: SurfaceNode | undefined): string {
+  if (!init) return "unknown";
+  if (init.type === "ObjectExpression") {
+    const parts: string[] = [];
+    for (const p of (init.properties as SurfaceNode[] | undefined) ?? []) {
+      if (p.type !== "ObjectProperty" && p.type !== "Property" && p.type !== "ObjectMethod") continue;
+      const k = surfaceName(p.key as SurfaceNode | undefined);
+      if (!k) continue;
+      const v = (p.value ?? undefined) as SurfaceNode | undefined;
+      parts.push(`${k}: ${v ? valueTypeTextOfInit(v) : "unknown"}`);
+    }
+    return parts.length > 0 ? `{ ${parts.join("; ")} }` : "object";
+  }
+  if (init.type === "ArrayExpression") {
+    const elems = ((init.elements as SurfaceNode[] | undefined) ?? []).filter(
+      (e): e is SurfaceNode => !!e,
+    );
+    const types = [...new Set(elems.map(valueTypeTextOfInit))];
+    if (types.length === 0) return "unknown[]";
+    return types.length === 1 ? `${types[0]}[]` : `(${types.join(" | ")})[]`;
+  }
+  return classFieldTypeOfInit(init);
+}
+
 /** 形参名列表（Identifier / RestElement / AssignmentPattern / 模式 → argN） */
 function surfaceParamNames(params: SurfaceNode[] | undefined): string[] {
   return (params ?? []).map((p, i) => {
@@ -3070,6 +3134,22 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     if (!exportName) return;
     if (!surface.exportBindings.has(exportName)) surface.exportBindings.set(exportName, local);
   };
+  /** 值导出右值是否是函数 / 类（这类走函数声明面，不发值声明） */
+  const isFnOrClassInit = (n: SurfaceNode | undefined): boolean =>
+    n?.type === "FunctionExpression" ||
+    n?.type === "ArrowFunctionExpression" ||
+    n?.type === "ClassExpression" ||
+    n?.type === "ClassDeclaration" ||
+    n?.type === "FunctionDeclaration";
+  /**
+   * Bug 62：CJS 值导出登记 `surface.values`（此前只 `bind` ⇒ 导出名表有、
+   * 值声明表没有 ⇒ dts 面整体缺席；值-only 模块还触发 export 命令空产物早退）。
+   * 类型取初始化器形状（分析面对 CJS 赋值没有绑定 Abs 可用）。
+   */
+  const noteCjsValue = (name: string, init: SurfaceNode | undefined): void => {
+    if (!name || surface.values.has(name)) return;
+    surface.values.set(name, { kind: "const", typeText: valueTypeTextOfInit(init) });
+  };
   /** `module.exports` / `exports` → true */
   const isExportsTarget = (n: SurfaceNode | undefined): boolean => {
     if (!n) return false;
@@ -3091,18 +3171,38 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
 
   // ── 类声明（本地名 → AST 节点） ──
   const classDecls = new Map<string, SurfaceNode>();
-  const addClass = (decl: SurfaceNode | null | undefined): void => {
-    if (decl?.type !== "ClassDeclaration") return;
-    const id = surfaceName(decl.id as SurfaceNode | undefined);
+  const addClass = (decl: SurfaceNode | null | undefined, preferName?: string): void => {
+    // Bug 61：`export const C = class { … }` 的 ClassExpression 也是完整类值，
+    // 只认 ClassDeclaration ⇒ dts 落成 `const C: unknown`（消费端 TS18046）。
+    if (decl?.type !== "ClassDeclaration" && decl?.type !== "ClassExpression") return;
+    // 类表达式自身的 id 是内部名（`class D {}`）⇒ 导出身份是变量名（preferName）。
+    const id = preferName ?? surfaceName(decl.id as SurfaceNode | undefined);
     if (id && !classDecls.has(id)) classDecls.set(id, decl);
+  };
+  /** `export const C = class {}` / `const C = class {}` 的类表达式注册 */
+  const scanVarDeclsForClassExpr = (vd: SurfaceNode | null | undefined): void => {
+    if (vd?.type !== "VariableDeclaration") return;
+    for (const d of (vd.declarations as SurfaceNode[] | undefined) ?? []) {
+      const id = surfaceName(d.id as SurfaceNode | undefined);
+      const init = d.init as SurfaceNode | undefined;
+      if (id && (init?.type === "ClassExpression" || init?.type === "ClassDeclaration")) {
+        addClass(init, id);
+      }
+    }
   };
   for (const stmt of body) {
     if (stmt.type === "ClassDeclaration") {
       addClass(stmt);
       continue;
     }
+    if (stmt.type === "VariableDeclaration") {
+      scanVarDeclsForClassExpr(stmt);
+      continue;
+    }
     if (stmt.type === "ExportNamedDeclaration") {
-      addClass(stmt.declaration as SurfaceNode | null | undefined);
+      const d = stmt.declaration as SurfaceNode | null | undefined;
+      if (d?.type === "VariableDeclaration") scanVarDeclsForClassExpr(d);
+      else addClass(d);
       continue;
     }
     if (stmt.type === "ExportDefaultDeclaration") {
@@ -3220,8 +3320,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           if (id) bind(id, id);
         } else if (decl.type === "VariableDeclaration") {
           for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
-            const id = surfaceName(d.id as SurfaceNode | undefined);
-            if (id) bind(id, id);
+            // Bug 63：解构导出绑定（ObjectPattern / ArrayPattern / RestElement）
+            // 的导出名此前恒为 undefined ⇒ bind 从未发生 ⇒ dts 面整体缺席。
+            for (const id of patternBindingNames(d.id as SurfaceNode | undefined)) {
+              bind(id, id);
+            }
           }
         } else if (decl.type === "TSModuleDeclaration") {
           // BUG-191：`export namespace NS { … }` 的 dts 模块面——旧实现只认
@@ -3295,13 +3398,21 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const prop = cjsPropName(left);
       if (prop && prop !== "default") {
         bind(prop, prop);
+        // Bug 62：`exports.num = 1` 等值导出登记值声明（函数 / 类右值走函数面）
+        if (!isFnOrClassInit(right)) noteCjsValue(prop, right);
         continue;
       }
       if (!isExportsTarget(left)) continue;
       if (right.type === "ObjectExpression") {
         for (const p of (right.properties as SurfaceNode[] | undefined) ?? []) {
           const key = surfaceName(p.key as SurfaceNode | undefined);
-          if (key && key !== "default") bind(key, key);
+          if (!key || key === "default") continue;
+          bind(key, key);
+          // 只有值成员登记值声明（方法 / 函数值属性走函数声明面）
+          const v = (p.value ?? undefined) as SurfaceNode | undefined;
+          if (p.type !== "ObjectMethod" && p.type !== "ClassMethod" && !isFnOrClassInit(v)) {
+            noteCjsValue(key, v);
+          }
         }
         continue;
       }
@@ -3336,13 +3447,16 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const raw = String(decl.kind ?? "");
       const kind = raw === "const" || raw === "var" ? raw : "let";
       for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
-        const id = surfaceName(d.id as SurfaceNode | undefined);
-        if (!id || surface.values.has(id)) continue;
         const init = d.init as SurfaceNode | undefined;
-        surface.values.set(id, {
-          kind,
-          ...(isAsConst(init) ? { asConst: true } : {}),
-        });
+        // Bug 63：解构声明模式展开**全部绑定名**（`{ a, b }` / `[c, ...rest]`）
+        // ⇒ 每个绑定都进 surface.values（dtsValueDeclarations 逐条读它）。
+        for (const id of patternBindingNames(d.id as SurfaceNode | undefined)) {
+          if (surface.values.has(id)) continue;
+          surface.values.set(id, {
+            kind,
+            ...(isAsConst(init) ? { asConst: true } : {}),
+          });
+        }
       }
       return;
     }

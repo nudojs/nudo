@@ -82,18 +82,76 @@ const isExportsTarget = (left: NodeLike | undefined): boolean => {
  */
 function defaultLocalNameOf(file: AstFileLike): string | undefined {
   for (const stmt of file.program.body as NodeLike[]) {
-    if (stmt.type !== "ExportDefaultDeclaration") continue;
-    const d = stmt.declaration as NodeLike | undefined;
-    if (!d) continue;
-    if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-      const id = identName(d.id);
-      if (id) return id;
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = stmt.declaration as NodeLike | undefined;
+      if (!d) continue;
+      if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+        const id = identName(d.id);
+        if (id) return id;
+        continue;
+      }
+      if (d.type === "Identifier") {
+        const n = identName(d);
+        if (n) return n;
+      }
       continue;
     }
-    if (d.type === "Identifier") {
-      const n = identName(d);
-      if (n) return n;
+    // Bug 89：`export { local as default }` 是合法的 default 导出说明符，
+    // 旧实现只扫 `export default …` ⇒ 本地名 → default 槽的映射整条缺失。
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      for (const spec of (stmt.specifiers as NodeLike[] | undefined) ?? []) {
+        if (spec.type !== "ExportSpecifier") continue;
+        if (identName(spec.exported) !== "default") continue;
+        const local = identName(spec.local);
+        if (local) return local;
+      }
     }
+  }
+  return undefined;
+}
+
+/**
+ * Bug 89：`export { local as public }` 的**别名说明符** → 导出名。
+ *
+ * `runTranspiled` 的导出表只含**导出名**（`class C{}; export {C as Other}`
+ * ⇒ keys = ["Other"]），而 `listTopFunctions` / `listClassEntryNames` 的普查
+ * 名是**本地名** `C` ⇒ `resolveExportSlotCall("C")` 三条分支全落空 ⇒ 类值 /
+ * 函数体取不到 ⇒ 构造器必抛零 L2、签名塌 unknown。别名说明符是这两侧的
+ * 唯一一跳，必须补上（含 `as default` ⇒ 导出名 "default"）。
+ *
+ * 排除 re-export（`export {x} from "…"`）：本地绑定不在本模块。
+ */
+function aliasExportNameOf(file: AstFileLike, localName: string): string | undefined {
+  for (const stmt of file.program.body as NodeLike[]) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
+    for (const spec of (stmt.specifiers as NodeLike[] | undefined) ?? []) {
+      if (spec.type !== "ExportSpecifier") continue;
+      if (identName(spec.local) !== localName) continue;
+      const exported = identName(spec.exported);
+      if (exported !== undefined) return exported;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Bug 6：`module.exports = function inner() { … }` 的普查名 / 指令绑定名是
+ * **内层 id** `inner`（与 directive-scan / Bug 428 同口径），而求值导出表只按
+ * `"default"` 槽登记 ⇒ 本地名 → default 槽的一跳。匿名函数表达式没有内层 id
+ * （普查名直接是 "default"，第一步精确命中），故这里只认具名形态。
+ */
+function cjsDefaultInnerNameOf(file: AstFileLike): string | undefined {
+  for (const stmt of file.program.body as NodeLike[]) {
+    if (stmt.type !== "ExpressionStatement") continue;
+    const expr = stmt.expression as NodeLike | undefined;
+    if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+    if (!isExportsTarget(expr.left as NodeLike | undefined)) continue;
+    const right = expr.right as NodeLike | undefined;
+    if (right?.type !== "FunctionExpression" && right?.type !== "ArrowFunctionExpression") {
+      continue;
+    }
+    const id = identName(right.id as NodeLike | undefined);
+    if (id) return id;
   }
   return undefined;
 }
@@ -151,6 +209,14 @@ export function resolveExportSlotCall(
   evalRun: Record<string, unknown>,
 ): ExportSlotCall | undefined {
   if (Object.hasOwn(evalRun, fnName)) return { kind: "named", key: fnName };
+  // Bug 89：别名说明符 `export { local as public }` / `as default` —— 导出表
+  // 的键是**导出名**，普查名是**本地名** ⇒ 按别名把本地名映射到导出槽。
+  // 放在精确命中之后、default 兜底之前（兜底不得吃掉精确命中）。
+  const alias = aliasExportNameOf(file, fnName);
+  if (alias !== undefined && Object.hasOwn(evalRun, alias)) {
+    if (alias === "default") return { kind: "default", key: "default" };
+    return { kind: "named", key: alias };
+  }
   // 具名 default 导出：本地名 ≠ 导出槽名 ⇒ 回退 default 槽
   if (defaultLocalNameOf(file) === fnName && Object.hasOwn(evalRun, "default")) {
     return { kind: "default", key: "default" };
@@ -159,6 +225,12 @@ export function resolveExportSlotCall(
   const member = cjsMemberSlotsOf(file).get(fnName);
   if (member !== undefined && Object.hasOwn(evalRun, "default")) {
     return { kind: "cjs-member", key: "default", member };
+  }
+  // Bug 6：CJS 具名函数表达式 `module.exports = function getName(){}` 的
+  // 本地名是内层 id，导出槽是 default ⇒ 映射到 default 槽（签名 / L2 不再塌
+  // unknown + nudo:opaque-result）。放在成员槽之后（精确命中优先）。
+  if (cjsDefaultInnerNameOf(file) === fnName && Object.hasOwn(evalRun, "default")) {
+    return { kind: "default", key: "default" };
   }
   return undefined;
 }
