@@ -1470,6 +1470,7 @@
       "knownSuffixOfViews",
       "listTopFunctions",
       "loadModuleDepsFingerprint",
+      "makeSymbolicRestAbs",
       "maskCommentsAndStrings",
       "mayThrowEffectsToAbs",
       "mergeAdjacentFixedViews",

@@ -5,9 +5,10 @@
  * 是相对**源目录**的；写到 `--out` 后解析基准变成输出目录 ⇒ 消费端
  * `tsc` 报 **TS2307**（同一份字节放源目录 0 error）。
  *
- * 修法：写盘时按「源目录 → 输出目录」的位移重写相对说明符
- * （`ExportArtifacts.sourcePath` 是**独立**的可选字段 —— `moduleKey` 仍与
- * 路径无关，BUG-016 不回归）。
+ * 修法（Bug 43 起）：写盘时把相对说明符压成产物**旁边的兄弟声明**
+ * （`./point.js` / `./helper.js`，按源 stem 平铺的声明树；不再指向源目录）。
+ * `ExportArtifacts.sourcePath` 是**独立**的可选字段 —— `moduleKey` 仍与
+ * 路径无关，BUG-016 不回归。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -35,8 +36,11 @@ function makeFixture(): { src: string; outDir: string; root: string } {
 describe("BUG-232 —— --out 产物的相对说明符必须重基", () => {
   it("写出的 .d.ts 里的相对说明符从输出目录可解析（不再指向源目录）", () => {
     const { src, outDir } = makeFixture();
-    const r = runCli(["export", join(src, "user.js"), "--format", "dts", "--out", outDir]);
-    expect(r.status).toBe(0);
+    // 平铺声明树：依赖模块也导出到同一 out ⇒ 兄弟声明就在产物旁边。
+    for (const name of ["point.js", "helper.js", "user.js"]) {
+      const r = runCli(["export", join(src, name), "--format", "dts", "--out", outDir]);
+      expect(r.status, name).toBe(0);
+    }
 
     const produced = join(outDir, "user.d.ts");
     expect(existsSync(produced)).toBe(true);
@@ -50,8 +54,8 @@ describe("BUG-232 —— --out 产物的相对说明符必须重基", () => {
       const candidates = [abs, abs.replace(/\.js$/, ".d.ts"), abs.replace(/\.js$/, ".ts")];
       expect(candidates.some((p) => existsSync(p)), `unresolved specifier ${spec}`).toBe(true);
     }
-    // 源目录相对写法必须已被重基
-    expect(dts).not.toContain('from "./helper.js"');
-    expect(dts).toContain('from "../../src/helper.js"');
+    // 说明符已被压成产物旁边的兄弟声明（不指向源目录）
+    expect(dts).toContain('from "./helper.js"');
+    expect(dts).not.toContain('from "../src/helper.js"');
   }, 60000); // 1 个 CLI 子进程（tsx 冷启动）
 });

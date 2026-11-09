@@ -714,7 +714,7 @@ type SymbolTable = {
 | <a id="diagnosticslevelforfile"></a>`diagnosticsLevelForFile` | fn | — | `diagnosticsLevelForFile(filePath: string): DiagnosticsLevel` |
 | <a id="diagnostictag"></a>`DiagnosticTag` | type | — | `DiagnosticTag = "unnecessary"` |
 | <a id="directivecasemode"></a>`DirectiveCaseMode` | type | `@nudo:case` 求值档： - `none`（默认）：不跑 case；有 case 的函数也走 entry@ 出签名（check / IDE） - `all`：逐 case 真跑（`nudo test` / CaseJson / freeze） - `selected`：只跑 `activeCases` 选中的那条（LSP selectCase） | `DirectiveCaseMode = "none" \| "all" \| "selected"` |
-| <a id="directivediagissues"></a>`directiveDiagIssues` | fn | D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit）。 | `directiveDiagIssues( diags: Array<{ code: string; message: string }>, ): CheckIssue[]` |
+| <a id="directivediagissues"></a>`directiveDiagIssues` | fn | D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit）。 | `directiveDiagIssues( diags: Array<{ code: string; message: string; at?: { line: number; column: number }; }>, ): CheckIssue[]` |
 | <a id="diskcache"></a>`DiskCache` | fn | — | `DiskCache { private readonly root: string \| undefined; private readonly ns: string; private readonly keyMat: Buffer \| undefined; enabled ...` |
 | <a id="diskcacheoptions"></a>`DiskCacheOptions` | type | — | `DiskCacheOptions = { root?: string \| undefined; namespace: string; signKey?: string; }` |
 | <a id="diskcacheroot"></a>`diskCacheRoot` | fn | 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关。 | `diskCacheRoot( config: NudoConfig \| null \| undefined, projectDir: string \| undefined, ): string \| undefined` |
@@ -731,7 +731,7 @@ type SymbolTable = {
 | <a id="dtsmoduleprojection"></a>`DtsModuleProjection` | type | 模块面 dts 投影结果 | `DtsModuleProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
 | <a id="dtsmodulesurface"></a>`dtsModuleSurface` | fn | 模块导出面扫描（源文件 → 导出名表 + 类面 + 再导出语句）。 | `dtsModuleSurface(source: string): DtsModuleSurface` |
 | <a id="dtsmodulesurface"></a>`DtsModuleSurface` | type | 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） | `DtsModuleSurface { exportBindings: Map<string, string>; reexports: string[]; classes: Map<string, DtsClassSurface>; imports?: Map<string,...` |
-| <a id="dtsvaluesurface"></a>`DtsValueSurface` | type | 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。 | `DtsValueSurface { kind: "const" \| "let" \| "var" \| "enum"; enumMembers?: Array<{ name: string; init?: string }>; }` |
+| <a id="dtsvaluesurface"></a>`DtsValueSurface` | type | 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。 | `DtsValueSurface { kind: "const" \| "let" \| "var" \| "enum"; enumMembers?: Array<{ name: string; init?: string }>; constEnum?: boolean; type...` |
 | <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; baseContent?: (sidecarPath: string) => string \| undefined; skipWrite?: string[]; directSections?: Set<string>; directCreatedSections?: Set<string>; }, ): EmitDerivedResult` |
 | <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; writtenNames?: string[]; changed...` |
 | <a id="emitinterface"></a>`emitInterface` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitInterface( filePath: string, opts: EmitInterfaceOpts, ): Promise<EmitInterfaceResult>` |
@@ -800,9 +800,9 @@ type SymbolTable = {
 | <a id="interfacedraftentry"></a>`InterfaceDraftEntry` | type | — | `InterfaceDraftEntry = { fn: string; identity?: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; projec...` |
 | <a id="interfacedraftopts"></a>`InterfaceDraftOpts` | type | — | `InterfaceDraftOpts = { fnNames?: string[]; records?: CallRecord[]; loadModule?: LoadModule; autoBind?: boolean; bodyAccesses?: boolean; s...` |
 | <a id="interfacedraftresult"></a>`InterfaceDraftResult` | type | — | `InterfaceDraftResult = { file: string; entries: InterfaceDraftEntry[]; draftSource: string; sidecarPath: string; }` |
-| <a id="interfacesurface"></a>`interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。诊断 side-channel 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
+| <a id="interfacesurface"></a>`interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
 | <a id="interfacesurfaceentry"></a>`InterfaceSurfaceEntry` | type | — | `InterfaceSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: s...` |
-| <a id="interfacesurfaceopts"></a>`InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; }` |
+| <a id="interfacesurfaceopts"></a>`InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; diagnostics?: ContractFace...` |
 | <a id="isenvtemplatepath"></a>`isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
 | <a id="isnudotargetpath"></a>`isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
 | <a id="isprojectconfigpath"></a>`isProjectConfigPath` | fn | — | `isProjectConfigPath(path: string): boolean` |
@@ -891,12 +891,12 @@ type SymbolTable = {
 | <a id="trimanalysisfilecache"></a>`trimAnalysisFileCache` | fn | 立刻压到当前 maxFiles（调低上限时收内存） | `trimAnalysisFileCache(): void` |
 | <a id="trimevalcache"></a>`trimEvalCache` | fn | 立刻压到当前 maxEvalRuns（调低上限时收内存） | `trimEvalCache(): void` |
 | <a id="trimfnanalysiscache"></a>`trimFnAnalysisCache` | fn | 立刻压到当前 maxFns（调低上限时收内存） | `trimFnAnalysisCache(): void` |
-| <a id="tryevalcall"></a>`tryEvalCall` | fn | 求值引擎求值具名导出（仅成功结果） | `tryEvalCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; loadModule?: LoadModule; depKey?: string \| null; } = {}, ): Abs \| undefined` |
+| <a id="tryevalcall"></a>`tryEvalCall` | fn | 求值引擎求值具名导出（仅成功结果） | `tryEvalCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; loadModule?: LoadModule; depKey?: string \| null; keepNeverThrows?: boolean; } = {}, ): Abs \| undefined` |
 | <a id="tryevalcallfull"></a>`tryEvalCallFull` | fn | 求值引擎求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。 | `tryEvalCallFull( source: string, filePath: string, fnName: string, args: Abs[], opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; loadModule?: LoadModule; depKey?: string \| null; } = {}, )` |
 | <a id="tryruneval"></a>`tryRunEval` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunEval( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; loadModule?: LoadModule; depKey?: string \| null; composed?: ComposedEvalModules; fresh?: boolean; } = {}, ): EvalRunResult \| undefined` |
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） | `typeExprToDirective(expr: string): string` |
-| <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 ""。 | `unifiedDiff(a: string, b: string, path: string): string` |
+| <a id="unifieddiff"></a>`unifiedDiff` | fn | — | `unifiedDiff(a: string, b: string, path: string): string` |
 | <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; skipped?: "hand-edit...` |
 | <a id="writefileatomic"></a>`writeFileAtomic` | fn | tmp + rename 原子写（同目录 temp ⇒ 崩溃/磁盘满时目标要么旧要么新，不会 半截）。随机后缀用 `randomBytes`（不是 `Math.random`/`Date.now`）：防可 预测 tmp 路径被预置符号链接劫持。 | `writeFileAtomic(path: string, data: string): void` |
 | <a id="writeinterfacedraft"></a>`writeInterfaceDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeInterfaceDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
