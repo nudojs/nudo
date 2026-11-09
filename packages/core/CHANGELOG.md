@@ -1,5 +1,179 @@
 # @nudojs/core
 
+## 1.19.0
+
+### Minor Changes
+
+- 09d49af: Feat: architecture debt A6 — fn shapes carry an optional overload set, and calls dispatch by argument shape (closes the Bug 827 / A5 false red).
+  
+  - `Shape` fn branch gains optional `overloads?: FnOverload[]` (`{ paramTypes, returnType }[]`, declaration order = TS resolution order). Absent ⇒ every existing shape, key, and projection is byte-identical.
+  - `instantiateReturn` dispatches on overloads: first arm in declaration order whose arity matches and whose params accept the arguments (per-param `leqAbs`, α bound/substituted per arm) supplies the return face; zero hits fall back to the union return face (no invented may-throw). Union face (`paramTypes`/`returnType`) stays the authoritative extensional face — `leqAbs`, `formatShape`, dts/schema/guard read only it; overloads are a dispatch refinement, not assignability.
+  - Harvester: top-level function overloads and interface/class method overloads both snapshot arms **before** the union-face merge (shared `collectOverloadArms`; Bug 807 two-path parity preserved). `HarvestSig` gains `overloads` so disk-cache round-trips keep the dispatch face; `HARVEST_DISK_ABI` v13 → v14 (old entries miss cleanly instead of silently losing overloads).
+  - `absKey` includes overloads (distinct overload sets no longer share memo/fingerprint); `substShape` substitutes arm Abs data; `snapshotAbs` deep-copies overloads and now carries the fn impl side table (A7 mirror — snapshots no longer degrade to shape-only).
+  - Evidence: types-only package with `convert(x: string): string; convert(x: number): number;` — `nudo check` goes from 2 L2 `entry-may-throw` false reds (`method 'toFixed' missing on string receiver` / symmetric) to OK, matching `tsc --strict` exit 0; `useNum() => string` / `useStr() => string` exact. Gold/recall/real-package gates 223 green; harvest + emit + differential 1434 green.
+- 897b19f: > **版本定性（2026-11-05 产品裁决）**：本批**不判定为 breaking 变更** ⇒
+  > changeset 不写 BREAKING / Migration 标注；下方「兼容性」段落只是升级时的
+  > 注意点，不是迁移要求。发布级别仍按此前决定走 **minor**（additive 能力 +
+  > 暂无外部用户），不占 major、不触发 `scripts/gate-major.mjs`。
+  
+  `Abs` 现在携带可选 `facets` 槽位容器（`callable` / `protoOwnKeys` / `brand`），三个槽位均已在引擎内启用。缺省不出现 ⇒ 旧 `Abs` 的键、投影与 `leqAbs` 接受集逐字节不变；但**带上槽位的值**在以下面给出比以前更精确的判定：
+  
+  - `callable`：类值裸调用判据不再只靠 `class-mark.ts` 的 WeakMap 与 `_rest` 形参启发式 ⇒ 快照 / `substAbs` / 重铸后的类值仍定抛 `TypeError`。该槽位表达「无 `new` 的 [[Call]] 定抛」，**不是**规范 `IsCallable`。
+  - `protoOwnKeys`：原型对象的自有键集随值携带（`Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols`），不再只能按 brand 名查固定表。
+  - `brand`：生成器对象身份随值携带，dts 的 `iteratorTSType` 不再只靠 `next` / `@@iterator` 槽启发式 ⇒ 丢了内部协议槽的重建产物仍投影 `Generator<T>`（泛型实参照旧推导，不输出裸名以免 TS2314）。
+  
+  兼容性：直接构造 `Abs` 字面量 / 只读取既有字段的代码无需改动 —— `facets` 缺省即旧行为。用 `Object.keys(abs)`、结构化克隆或自有实现的序列化器枚举 `Abs` 全部字段的内部代码，需容忍新增的可选 `facets`（不读它即与旧行为一致）。`absKey` 只对**非空**容器进键 ⇒ 带槽位的值会自然得到不同的 memo / 指纹，无需手工清缓存。core `formatShape` 的展示面**不发布**生成器身份（既有契约，逐字不变）。
+  
+  **残余批次（同批发布）**：
+  - **A2 声明/收割面**：`declare class` 类值挂 `callable:false`；`JSON.stringify(obj, 类构造器)` 由 `may-throw` 升为确定抛 TypeError。`HarvestSig.fn` 新增 `callable` 字段、**`HARVEST_DISK_ABI` v14 → v15**（`~/.cache/nudo/deps/` 旧收割缓存会干净 miss，无需手工清理）；`harvestedValueToAbs` 的 `absFunction` mock 重建也整包搬运槽位。
+  - **A10 内建原型**：`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等的 `Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols` 由保守 `string[]` / `boolean` / `symbol[]` 升为与宿主**动态对拍**的精确面（键集随 Node 版本给出各自真实值，不写死清单）。
+  - **A10 用户类原型交错定义序**：`EvalClassSpec` 新增可选 `protoMemberOrder`（`transpile/class-emit.ts` 按类体源码序登记、`declare.ts::rekey` 同步换名）。`Object.getOwnPropertyNames(用户类.prototype)` 对「方法与访问器交错定义」的类由保守 `string[]` 升为与宿主对拍的**精确有序表**；静态 / 私有成员不列入。手写 spec / mock 桥 / 旧产物无该字段 ⇒ 回落旧保守域（零回归兜底）。
+  - **A11 TReturn / TNext**：`AbsFacets` 新增可选 `genReturn` / `genNext`，dts 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`（恒带类型实参，无 TS2314）。本轮进一步接通 **TNext 保守域**：`makeGenObject` 填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 该类型形参默认值等价，**不是精度承诺**），`iteratorTSType` **仅当** `facets.genNext` 存在才输出第 3 实参 ⇒ `Generator<T, TReturn, unknown>`；三实参仍恒带 `<…>`，无 TS2314。手工构造 / 无 `genReturn` 的旧 Abs 输出逐字不变；填真实 v 域依赖 A1 步骤 4 真挂起（明确停点）。
+  - **A1 步骤 2 骨架（零语义）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表，生产侧不登记 ⇒ eager 时序与全部值面逐字不变；不进任何 barrel，公共 API 冻结不变。为后续「首消费点触发」预置接线，不改变任何对外行为。
+  - **schema / standard / guard 生成器身份投影：已实施，另立 patch changeset**（`.changeset/generator-identity-validator-fix.md`）。产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧；`emit-bug-130` 的无 brand 夹具仍逐字不变（负控制）。`z.instanceof` 路径经运行时实证仍不可行。实施记录见 `docs/design/architecture-debt.md`，生产接线回归见 `emit-generator-identity-poc.test.ts`。
+  
+  兼容性（补充）：① 自行解析磁盘收割 JSON 或依赖 `HARVEST_DISK_ABI` 的下游需接受 `HarvestSig.fn.callable` 新字段（旧缓存按 v15 自动失效）；② 枚举 `Abs.facets` 全部字段的代码需容忍新增的 `genReturn` / `genNext`（不读即旧行为）；③ 曾断言内建原型 `gOPN` 为 `string[]` / `hasOwn` 为 `boolean` 的内部测试需改为与宿主对拍的精确断言；④ 解析生成器 dts 类型实参的下游需容忍**三实参** `Generator<T, TReturn, unknown>`（无 `genNext` 的旧手工 Abs 仍两实参 / 一实参，逐字不变）；⑤ 自行构造 `EvalClassSpec` 的下游可忽略新增的可选 `protoMemberOrder`（缺省即旧两表拼接口径），但曾断言交错类 `gOPN` 为 `string[]` 的内部测试需改为精确有序断言。
+  
+  Evidence: 三槽各独立全仓回归 0 新增失败；最终 2159 文件 / 17191 用例 0 新增失败；金标 1.0/1.0、真包 0 FP、差分语料 0 回退、公共 API 冻结未变。发布级别按 2026-11-05 产品裁决：整批不判定为 breaking 变更 ⇒ 不写 BREAKING / Migration 标注，仍以 **minor** 发布（`scripts/gate-major.mjs` 不触发）；一旦有外部用户依赖这些包面，即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」。
+- 533c8c6: **A1 步骤 3 落地：生成器体从构造期挪到首个消费点**（`docs/design/generator-laziness.md` §5.3）。此前 `$gen` 在构造期一次性跑完整个体收集 yield 序列；现在构造期只产一个空壳并登记一次「待跑体」触发器，`next()` / `.return()` / `.throw()` 与 7 个元素面读出任一先触达才跑体，把完整结果 in-place 合并回壳。
+  
+  - **值面收益**：body thunk 捕获活绑定（实验 D）⇒ 跨函数消费读到**消费时刻**的外层绑定，与原生一致（`yield n` 在 `n = 9` 后消费得 `9`，此前给 `0`）。构造点 c1/c2 从步骤 1 的 `0 | 1` / `"" | "ab"` 过近似收敛为精确的 `0` / `""`；容器 mutator 的长度域过近似也收敛为精确 `0`。
+  - **副作用只跑一次**：触发按 Abs 身份幂等 + 同一延迟体族的 `ensureFresh` 缓存 ⇒ 绕开实验 E 的「重跑重复副作用」；`n++` 在构造 + 多次消费后仍只加一次。
+  - **两条不变量保障**：① core 求值入口 `callTranspiledExportFull` 在收口时排空未触发的壳 ⇒ 「构造后从不消费」的既有 eager 值面契约（Bug 212 / 族 01 数字下标）与 service 侧 `.d.ts` 纯投影的元素域**都不退化**（端到端 `Generator<number | string>` 等与改前逐字一致）；② 触发器按族广播到 `snapshotAbs` / `$copy` 的所有别名，副本先消费时原对象与副本的元素面 / `genElements` 都完整。
+  - **改动面**：`runtime/async.ts`（`collectGenBody` 抽出 + 空壳 `$gen` + `mergeDeferredBody` + 协议三方法首调转发）、`exec/match-iter.ts`（触发器带目标身份、别名广播、pending 排空）、`exec/run.ts`（求值收口排空）。公共导出形状未变，`registerGenTrigger` / `fireGenTrigger` / `drainPendingGens` 均不进任何 barrel。
+  - **已知边界**：步骤 4「真挂起」未做 ⇒ 首 yield 之后的写仍在首次消费时一次跑到底（§5.5 的 c3/c4 不逐点精确）；`eval-generator-cross-function-consume.test.ts` 保留 1 条 `it.todo` 作验收清单。
+  
+  回归：新增 `exec/__tests__/gen-deferred-body.test.ts`（5 例，直接钉构造期零体求值 / 只跑一次 / 幂等 / 别名广播 / async 同编）；`eval-generator-cross-function-consume.test.ts` 由「现状钉 + 3 todo」升级为 4 例 R3-b 验收；Bug 212 的 5 条精确断言与步骤 2 骨架的 2 条负控制按新语义重订（全部为精度提升或契约前提变更，**无精度回退**）。全仓结果见当日工作日志。按整批裁决发 **minor**，不写 BREAKING / Migration 标注。
+- 951b256: **静态元素域通道（「第三种」）**：把生成器的元素域从「隐式编码在 `shape`
+  数字下标槽、dts 靠 `CANONICAL_INDEX` 正则反推」升级为随 `Abs` 值携带的
+  显式承载位，并把源码返回类型注解从「可覆盖观测」降级为**一致性校验**。
+  
+  **core**
+  - `AbsFacets.genElements?: Abs[]`：`makeGenObject` 填 `$gen` 的**完整 yield
+    序列**（`full`，不是 `$arr` 之后可能 widen 的 `els`；Bug 53 点名前者才是
+    权威数据）。`shape` 数字槽**并存不替换**，消费点 / 族 01 口径不变。
+  - `cloneAbsFacets` 拷贝数组（Abs 元素按引用共享）⇒ `snapshotAbs` /
+    `substAbs` / `renameAbs` / `join` 四处经统一 clone 自动搬运，副本不串台。
+  - `facetKey` 新增 `ge:` 段（逐项 `absKey`）⇒ 元素域不同的生成器不共享
+    memo / 指纹；无 `genElements` 的旧键逐字节不变。
+  
+  **service**
+  - `iteratorTSType` 优先读 `genElements`，**严格 fallback**：字段为
+    `undefined`（手工构造 / 静态收割 / 旧 Abs）时仍扫数字槽 ⇒ 旧产物逐字不变。
+    端到端实测 fork 分支 `if (f) yield 1; else yield "s"` 从
+    `Generator<unknown>` 恢复为 **`Generator<number | string>`**；只有
+    `genElements`、无数字槽的手工 Abs 也能投影出精确元素类型。
+  - `FunctionAnalysis.declaredReturnType` 透传 `nudoReturnTypeText`（此前全仓
+    只有写入、无读取点）；新增 `nudo:return-annotation-mismatch` 台账：
+    声明与观测同为单一基类型且互斥时留痕，**产物恒用观测口径**（不覆盖、
+    不用声明兜底）⇒ 不重演 BUG-168 在形参位修掉的「两面相反裁决」。
+    联合 / 泛型 / 字面量 / `unknown` 一律不判，避免 widen 口径差异被误报。
+  
+  兼容性：`genElements` 是可缺省槽位；静态声明收割（harvest）不构造生成器
+  运行时值 ⇒ 不进 `HARVEST_DISK_ABI`，冷 / 热产物一致。公共导出符号名不变
+  ⇒ 公共 API 冻结不受影响。
+  
+  **已知边界**：**不解锁 A1 步骤 3** —— `genElements` 仍由构造期跑体填充，
+  体延后到首消费点 ⇒ 字段也空，而 dts 是纯投影、导出期无消费点。本变更
+  只预置了承载位与「未填充」语义；步骤 3 仍需静态 yield 域推断通道或产品
+  接受 `Generator<unknown>` 降级。详见 `docs/design/generator-laziness.md`
+  「dts 元素域通道 · 第三种已落地」。
+  
+  版本定性：新增诊断码 + additive API ⇒ **minor**；按整批裁决不判定
+  breaking，无 BREAKING / Migration 标注。
+  
+  回归：`gen-elements-facet.test.ts`（7 例）/ `emit-gen-elements-facet.test.ts`
+  （9 例）；全仓 `1658 入口`，`20 失败 = 基线 20`，**0 新增 / 0 消失**。
+- 0331e00: **A1 步骤 4 落地：生成器挂起点绑定回放（Bug 212 c3/c4 逐点精确）**（`docs/design/generator-laziness.md` 文末「步骤 4 实施记录」）。步骤 3 把体延到首个消费点后，体仍一次跑到底 ⇒ 首个 `yield` 之后的写会在首次 `next()` 时提前落地（native `1` / `"a"`，引擎 `0 | 5` / `"" | "ab"`）。本步把 native 的挂起点语义在**外层自由写绑定的值面**精确复现。
+  
+  - **机制**：四个 `$gen` 发射点在自由写名集非空时追加**可选第三实参** `{ capture, restore }`；`capture` 用 `$copy` + 共享 memo 读快照（容器深拷贝、const 别名组身份不分裂），`restore` 用 `$rebindable` 守卫写回。`$yield` / `$yieldStar` 在每个挂起点把快照推进帧的 `timeline`；`next()` 交付第 k 个 yield 后回放到 `timeline[k-1]`；`next()` 耗尽与迭代 drain 推进到**终态格**（体跑完、步骤 1 的 join 已折回）⇒ 最后一个 yield 之后的写不被抹成 wrong-exact。回放**单调**（`lastApplied`）⇒ 耗尽后的 `next()` 不回卷。`collectGenBody` 每次调用都压帧（无钩子时压 `undefined` 哨兵）⇒ 嵌在外层体里的内层生成器不会污染外层时间轴。名集为空时零发射 ⇒ 绝大多数生成器的转译产物逐字不变。
+  - **值面收益**：c3 `1  #exact`、c4 `"a"  #exact`；连续两次 `next()` 得 `5` / `"ab"`；分段读取 `"1:1:2:5"`；与步骤 3 的消费期活绑定叠加得 `"9:9:5"`；迭代整体 drain 得 `"5:2"`。§1.6 四行 native 值全部精确。
+  - **sound 守卫**：路径敏感（fork 臂序列是 join 而非线性时间轴）、体内延迟异常、`yield*` 委托三类形态整帧禁用回退，严格保留步骤 1 的 `join(事前, 事后)` 过近似；未启动生成器上的 `.return()` / `.throw()` **不推进**时间轴（原生体根本不跑，推进会产 wrong-exact）。三类实测均 `0 | 5  #exact`，无「自信的错值」。
+  - **不变量**：体仍只跑一次、只捕获一次序列（步骤 3 的幂等 + 缓存不动）；元素面 / `genElements` / `.d.ts` 投影与改前一致；`$gen` 只新增可选形参，公共导出形状未变，无新增导出符号。
+  
+  **已知边界（诚实台账）**：这是**绑定值面**的挂起点精确化，不是把体降成真 JS generator。转译产物的分支/循环臂是宿主箭头（真 `yield` 进去即 SyntaxError），抽象 fork 一次跑完双臂又无法只挂一臂 ⇒ 字面方案要求 `$fork` / `$whileSeq` / `$for` / `$switch` / `$try*` 全改 generator 变体并跨 `next()` 续接 ALS 帧，属求值模型 CPS 级改造。故宿主调用、may-throw 收集、容器外部引用等**非自由写绑定类副作用**的时序仍整体落在首次消费点。求值隔离按约定搁置。
+  
+  回归：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉，含嵌套帧隔离与终态格）；`eval-bug-212-generator-body-eager.test.ts` c3/c4 断言重订 + 2 例推进用例（14 例全绿）；`eval-generator-cross-function-consume.test.ts` 的步骤 4 `it.todo` 升级为 5 例验收（9 例全绿）。按整批裁决发 **minor**，不写 BREAKING / Migration 标注。
+
+### Patch Changes
+
+- 9a087f9: Fix: architecture debt A1 (Bug 212, step 1) — generator bodies no longer write outer bindings to values that hold at no native observation point.
+  
+  - Transpile-side free-write isolation around the `$gen` body (all four emission sites: declaration, function expression, object method, class method): snapshot the outer free-written bindings (`$copy` with a shared identity memo) before the eagerly-collected body, fold back `n = $join(before, after)` in a `finally` (body throws fold too). Reuses `collectFreeAssignedNames` (same analysis as the fork protocol, minus param pattern names and body `var` hoist names — those are generator-local) plus `expandAliasNames` (const alias partners snapshot together). `$copy`/`$join` are existing runtime exports — no public-surface change.
+  - Symptom rows go from wrong-exact to sound over-approximation: construction-point `n` `1` → `0 | 1`, `log` `"ab"` → `"" | "ab"` (native construction values `0`/`""` are in the join); same for the `it.next()` observations (`5` → `0 | 5`, `"ab"` → `"" | "ab"`). Residual (needs true suspension, doc §5.4): the first-yield suspension-point intermediates (native `1`/`"a"`) are still not in the join — the Abs domain has no timeline axis.
+  - Load-bearing eager collection untouched: element face and `conf` still baked at construction (generator object pins `{ "0": 1, "1": 5 } #exact` unchanged) — `Generator<any | number>` signature face does not degrade. Generators that write no outer bindings transpile byte-identical; body-local `var`/`let`/params never enter the snapshot set (no TDZ).
+  - One pinned expectation updated: `exec-generator-consumption.test.ts` nested-generator Bug 52 case — the `leak` carrier is now the sound join `undefined | 77` (native: `undefined` at construction, `77` after drain) instead of exact `77`; the semantic point (inner bare `.return(77)` not polluted by the outer try context, no `"f"` leak) is preserved and re-pinned.
+  - New regression nails in `eval-bug-212-generator-body-eager.test.ts`: the four symptom rows as exact `formatAbs` pins, all four emission sites, element-face preservation, and negative controls (protocol/yield sequence, destructuring lowering, no-outer-write, body-local var/param).
+- c6cf8fa: Fix: `substAbs` no longer drops the fn impl side-table when rebuilding a fn shape (architecture debt A7, engine half of Bug 810).
+  
+  - α instantiation (interface type-argument substitution in the harvester, and `instantiateReturn`'s return-type instantiation in the engine) rebuilt fn shapes without carrying the `attachFnImpl` side-table, silently degrading every substituted fn to a shape-only relation: the D path lost impl-exclusive data (`relation.inferFrom` / `condFallback` / `throws` / `fingerprint`), so generic method calls folded to `any`/`unknown` where the un-substituted signature was precise.
+  - Carrying discipline (`substFnImpl` in `hof.ts`): behavior facets (`apply` / `body` / closure env) and scalar facets (`params` / `kind` / `fnKind` / `length` / `optionalParams` / `bindThis` / `strict` / `effectFree` / `closed` / `pureName` / `fingerprint`) are α-independent and carried verbatim (`fingerprint` sharing matches the documented same-signature budget-key semantics); the `relation` slot is Abs data and is substituted by the map, sharing references with the substituted shape slots (the `relationFn` double-write discipline).
+  - The whole-α replacement path (map value is itself an impl-carrying fn) also keeps the impl instead of degrading to shape-only.
+  - The fn shape rebuild no longer drops `optionalParams` (Bug 399 per-position optionality) and `slots` (dual-facet callable-with-members), matching the `snapshotAbs` fn-branch discipline; slot values are substituted by the map.
+- 792eb79: Fix: engine module loads in browsers without `SharedArrayBuffer` (Playground crash).
+  
+  - Two module-level tables referenced the bare global identifier `SharedArrayBuffer` at evaluation: `NAMESPACE_ONLY_HOST_CTORS` (`exec/runtime/members.ts`) and `NAMESPACE_GLOBALS` (`exec/runtime/containers/member.ts`). In non-crossOriginIsolated contexts Chrome does not expose it ⇒ `ReferenceError: SharedArrayBuffer is not defined` at import time ⇒ the whole engine bundle failed to load and the Playground error boundary rendered “This page crashed”.
+  - Fix: both tables now use the existing `Float16Array` guard pattern (`typeof SharedArrayBuffer !== "undefined"` ⇒ entry included, otherwise omitted; lookups stay fail-closed for that name). Verified in headless Chromium against a production build served **without** COOP/COEP headers: `/playground/` loads, presets run with precise cases, share links and the tsc panel work (worker chunks emitted via relative-path entries); with isolation headers behavior is unchanged.
+- 47463ae: DX: truncation / host-effect diagnostics now carry concrete fix values and pasteable mock skeletons (suggestion/action text only — severity and exit semantics unchanged).
+  
+  - `nudo:fork-truncated`: suggestion now carries a computed ceiling from the observed fork count — `fix: package.json#nudo.analysis.maxForks=<N> (observed <K> forks this run), or @nudo:budget forks=<N> on the function — non-blocking`, with `N = max(20000, observed × 1.5 rounded up to the next thousand)` (20000 default when stats are unavailable). Still Info / non-blocking. The ceiling helpers (`suggestedForkCeiling` / `suggestedDepthCeiling` / `suggestedCallsCeiling`) are exported on `@nudojs/core/internal` so the analyzer-side truncation diagnostics consume the same formula instead of a hand-copied one.
+  - `nudo:host-effect-blocked`: suggestion now embeds a pasteable single-line `@nudo:mock` skeleton per host family — `fetch` gets `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })`, the timer/scheduling family gets `@nudo:mock <name> = stub().returns(0)`, and the constructor family (`WebSocket` / `EventSource` / `XMLHttpRequest`) gets `stub().returns({ … })` (an arrow mock is not constructible — `new` on it would trade the Info for a `throws TypeError` may-throw). All skeletons verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision. The structured `mock` action in `check --json` carries the same skeleton.
+  - `nudo:recursion-truncated`: the depth/calls arms of the suggestion (and the `@nudo:budget` quickfix in `nudo check --fix` / LSP code actions) now carry concrete values derived from the observed depth/call counts — `@nudo:budget depth=128` / `calls=40000` floors (defaults ×2), e.g. `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`. The cycle arm keeps the code-level guidance (arguments must vary per level / narrow the base case / `@nudo:contract`; raising the budget cannot lift it) and never points at `@nudo:budget`. Legacy cache entries without a `reason` keep the old `forks=64` quickfix shape.
+- 018bc20: Refactor: engine review clean-up batch — consolidate duplicated logic and add drift guards, zero behavior change.
+  
+  - runtime: route `$for` exit-join through the shared `applyLoopExitJoin` entry (container-widen hook parameterized); extract `arrayFamilyElementDomain` as the single source for the #156 element-domain convention (4 call sites); drop a dead rethrow arm in `$for`'s catch chain; delete the hooks setter re-export relays (`containers/member.ts`, `runtime/state.ts`, `runtime/containers.ts`) so the "registrants must import hooks.ts directly" invariant is structural.
+  - transpile: unify the five guard arm-shadow-binding emitters in `stmt/predicates.ts` onto one parameterized skeleton; split `stmt/statement.ts` (2619 lines) into module-stmt / loop-stmt / switch-stmt / try-stmt domain files; converge the `emitMemberTargetAssign` fallback arm onto a `member-path.ts` planning function.
+  - class: extract `resolveChainSpec` cursor primitive (replaces 6 hand-copied BUG-172 chain walks); table-drive the Number/BigInt prototype radix/precision domains; split `class/invoke.ts` (2283 lines) into `prim-methods.ts` + `proto-borrow.ts`; drop the dead no-`hasExtends` legacy arm of `$class`.
+  - guards: new `nudo-injection-names` drift gate pinning the 12 `__nudo*` host injection names against emitted code; new `invoke-arr-method-parity` test pinning the Array.prototype generic-borrow path against `invokeArrMethod`.
+  - docs: kernel-merge.md collector-scope table — move yieldStack / genPathSensitive / genJoinOverride to the scoped row (matches `createScopedSlot` reality).
+- b4435ae: Refactor: engine review follow-up — file reorganization and naming hygiene, zero behavior change.
+  
+  - transpile: rename `emitArrMutatorRebinds` (historical name; array-mutator / defineProperty / delete rebinds have all moved off the statement pass — `$invoke` in-place mutation under Bug 49/51, expression-position self-contained IIFEs) to `emitStmtWritebackRebinds`; its sole remaining duty is the Bug 96 statement-position RegExp state write-back (`$reStateCall`). Split `transpile/helpers.ts` (2016 lines) into domain leaf files under `transpile/helper/` behind the unchanged `helpers.ts` facade barrel (all existing import paths keep working).
+  - class: split `class/declare.ts` into definition-time (`$class` spec + registration) and construction/lookup-time (`$new` / `constructClass` / `findMethod` family) modules; lift the ten duplicated `validateCallableArg(args[0], …)` preflight checks in `invoke-arr.ts` callback-family methods into one shared wrapper with byte-identical diagnostics; fix the stale `registerClassDecl` reference in the class-registry header comment (current names: `$class` / `registerEvalClass`).
+  - runtime: extract the brand static tables (`BUILTIN_BRAND_METHODS`, typed-array / iterable / accessor tables, proto brand key faces) from `runtime/members.ts` into `runtime/brand-tables.ts` with re-exports preserving the import face.
+  - deprecations: `registerEvalClass` on the public face is marked `@deprecated` — the registry is internal machinery (core consumers import `exec/class-registry.ts` directly); the public export is retained for compatibility only.
+  - docs: kernel-merge.md collector-scope table — classify the synchronous save/restore-paired flags `awaitUnsettledHit` and `loopSignalFromAbstractArm` under the retained row (finally-restored before any await window, no cross-analysis leak).
+- c9c39e8: Fix: analysis never mutates host globals (B1/B2) — fork/switch/generator fold-back and member-write root rebinds are gated on the runtime `$rebindable` predicate.
+  
+  - Free identifiers (host globals that were not env-injected: `process`, `Math`, `Error`, host functions…) hold **host values** in transpiled units, while local bindings always hold Abs (including `let x = $lit(void 0)`). The fork/switch/generator **binding join** (`$join($copy(host), …)`) and the member-write **root rebind** used to write an `asAbsVal` wrapper back into `globalThis`: `debug/src/node.js` (top-level `Object.keys(process.env)` + `save()`'s `process.env.DEBUG = …` inside if/else) replaced the host `process` object (`process.exit` / `prependListener` gone → tsx preflight crash), and `@changesets/cli`'s lazy error-code classes (`Error.stackTraceLimit`-style host-function member writes) replaced `globalThis.Error` with a facade Abs (every later `err instanceof Error` crashed).
+  - Fix: emit `name = $rebindable("name", name) ? <join / rebind> : name` at every binding join (fork, switch pack, generator free-write fold-back) and at member-write root rebinds (single-layer, propagation, read-modify-write, delete). `$rebindable` is exact at runtime: Abs bindings (locals, env-injected globals) and **local host functions** (function declarations/expressions hold real JS functions until bridged — `F.prototype = {}` must still rebind, Bug 205) are rebindable; values identical to `globalThis[name]` (host globals) are not — self-assignment no-op. No static scope analysis needed.
+  - New runtime op `$rebindable` (`exec/runtime/ops.ts`, facade + `RUNTIME_IMPORT_NAMES` + `exec/index.ts` + public-api snapshot); runtime-import-surface corpus/must-cover extended; Bug 59 transpile pins updated to the guarded emission (rebind channel preserved). Regression pins: `host-global-purity.test.ts` (4 — host `process`/`Error` identity & shape unchanged across top-level if/else member writes, host-function member writes, generator bodies; local fork join still applies).
+  - Evidence: `analyzeFile` over all of `debug` (4 files) and `@changesets/cli` (22 files) leaves `process`/`Error` intact (previously corrupted after the first file).
+- 1316e42: Fix: frozen/sealed array-like receivers now enforce the mutator integrity gate; add async-plan drift gate.
+  
+  - `$arrMutContainer` (arr-methods.ts): hoist the extState integrity gate (frozen → TypeError on any mutator; sealed/non-extensible → TypeError on structural extension) ahead of the tuple/arr vs array-like dispatch — the generic-borrow path (`Array.prototype.push.call(frozenArrayLike, …)`) previously bypassed it and silently succeeded where native semantics throw. Extend the Bug 223 sealed pop/shift analysis with an array-like obj arm (own-slot analysis mirroring the tuple formula; unmodelable shapes record a conservative may-throw). Parity test pins updated from "documents the gap" to "asserts the gate".
+  - New `async-plan-drift` test (92 cases): pins every row of the async-plan gen/thunk classification table and uses the V8 compiler itself as the emitter-alignment oracle — bodies classified all-safe must produce host-form output that compiles under `new Function` (a mis-classified await yields inside a nested arrow ⇒ SyntaxError, the Bug 1139 failure mode); thunk bodies pin the sync fallback path stays compilable. All four `asyncBodyPlan` consumers covered (function / object method / class method / top-level await).
+- ead77d6: **Bug 修复（非 breaking）**：`snapshotAbs` 重建 Abs 时只搬了 fn impl 侧表，漏掉
+  `exec/match-iter.ts` 的身份侧表 ⇒ 生成器 / 模板标签 / matchAll 迭代器 / 用户
+  迭代器 / Proxy 的**迭代元素、drain 视图、延迟异常**在快照副本上整体丢失：
+  副本消费点查不到条目，元素面折空、definite 体异常被静默丢弃（L2 假阴）。
+  `$copy`（fork / switch 臂重绑）早有 `copyMatchIterTables`，本次把同一迁移补到
+  `snapshotAbs`（A7「重建不得静默抹掉侧表面」纪律的同口径延伸）。
+  
+  - `algebra/hof.ts` 末尾调 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖
+    algebra 顶层叶子（abs / objects / may-throw）、不依赖 `hof.ts` ⇒ 无环。
+  - 与 `$copy` 同口径**共享视图引用**，不是深拷贝 ⇒ 副本消费会推进原对象状态
+    （生成器是「一次消费」的有状态值，副本代表同一次创建事件；负控钉已固定该行为）。
+  - 公共 API 形状不变、不新增导出；无 BREAKING / Migration 标注。
+  
+  回归：`snapshot-match-iter-tables.test.ts`（6 例：元素面 / drain / 延迟异常 /
+  手工登记 / 共享视图负控 / 非生成器零开销）；全仓 `1656 入口`，`20 失败 =
+  基线 20`，**0 新增 / 0 消失**。
+  
+  > 备注：本次修的是 **WeakMap 侧表迁移**，不等于 A1 步骤 3 的「首消费点补写
+  > `shape.slots` 对快照副本失效」——`snapshotAbs` 对 obj 槽仍是深拷贝，后者
+  > 仍是架构债（见 `docs/design/generator-laziness.md` 的 2026-11-06 前置复核）。
+- cd7c6e2: Fix: symbolic execution normalizes non-Abs results at the boundary (B3) — `checkSource` no longer crashes on bundles that return host globals.
+  
+  - `generalize`'s symbolic `run` declared `Abs` but could return a leaked host value (a function body `return process` / `return JSON` / a host object flowing out of the transpiled unit) ⇒ `formatPoly` → `formatShapeSlot` read `.shape` of a non-Abs and crashed (`Cannot read properties of undefined (reading 'k')`, reproduced by `checkSource` on `@babel/types/lib/index.js`).
+  - Fix: after `runCore`, non-Abs results go through `asAbsVal` (host functions → stable facade Abs, other host values → wrapper Abs) — the same host-bridge normalization already used by `$call` / member reads. `undefined` keeps the existing fail-closed `unknown`+opaque path.
+  - Regression: `checkSource` over the full `@babel/types` bundle completes; covered by the OSS-corpus candidate re-check.
+- 5267658: Fix: architecture debt A3+A4 — the declared throws face now survives the relation face (no apply) and the construct paths (`new X()` / bind products).
+  
+  - A3 (relation throws channel): `relationFn` gains an optional `throws` carrier (`impl.relation.throws` — same representation as `AbsApplyResult.throws`, `never`/absent = no throw; not written into the fn shape, which has no throws consumer). The `$call` relation arm routes it through the single `routeApplyThrows` entry (may-throw → `pushThrowExit` into the caller frame; `returnType = never` + throws → `NudoThrow`). env declarations whose host throws but which declare no apply no longer read as "never throws" (false green) — `envFn`'s no-apply branch passes `opts.throws` through (opt-in; no existing declaration changes behavior).
+  - A4 (construct paths dropped the apply throws slot): the two bare-unpack sites — `$new`'s `impl.apply` branch (`exec/class/construct.ts`) and the bind-product `[[Construct]]` facet (`exec/class/invoke.ts`) — now route through `routeApplyThrows` instead of peeling `.abs`, so constructor-declared throws take effect on `new X()` too (previously call-face only). Under `@nudo:env node`, `new URL(<invalid or abstract>)` now records may-throw `TypeError` instead of silently succeeding; definite always-throw constructor applies surface as `NudoThrow` at the construct point. A source gate forbids reintroducing `isAbsApplyResult(x) ? x.abs : x` peeling in the class dispatch layer.
+  - Regression pins: `abs-apply-throws-channel.test.ts` (A3/A4 sections + cross-module gold + source gate), `env-bug-s0-mechanism.test.ts` (A3 env-face section incl. ctor-shape relation), and the former false-green pin `env-bug-64` 2.4 rewritten as a positive assertion.
+
 ## 1.18.0
 
 ### Minor Changes
