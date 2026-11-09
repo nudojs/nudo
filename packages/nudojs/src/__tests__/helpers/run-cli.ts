@@ -5,6 +5,11 @@
  * - `runCliTsx`：tsx 直跑 —— `spawnSync(node_modules/.bin/tsx, [cliEntry, ...args])`
  * - `runCliNode`：`spawnSync(process.execPath, [node_modules/tsx/dist/cli.mjs, cliEntry, ...args])`
  *
+ * CI 构建后设 `NUDO_TEST_CLI=dist`：两种 runner 都改跑
+ * `node packages/nudojs/dist/index.js`，省掉每次 spawn 的 tsx 启动开销
+ * （本地默认仍走 src，避免要求先 build）。CI 的 build job 与测试同 SHA，
+ * 且 bin 冒烟已覆盖 dist 可执行性。
+ *
  * 固定面：env = `{ ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" }`
  * （CI 的 GITHUB_ACTIONS=true 会追加 `::error` 注记、NO_COLOR 稳定输出面），
  * opts.env 在此基线之后合入（如 NUDO_CACHE_DIR）。cwd 默认 repoRoot。
@@ -58,6 +63,12 @@ export function writeSrcTsconfig(dir: string): void {
 
 const tsxBin = join(repoRoot, "node_modules/.bin/tsx");
 const tsxCliMjs = join(repoRoot, "node_modules/tsx/dist/cli.mjs");
+const cliDist = join(repoRoot, "packages/nudojs/dist/index.js");
+
+/** CI sets NUDO_TEST_CLI=dist after the build job; local runs keep testing src. */
+function useDistCli(): boolean {
+  return process.env.NUDO_TEST_CLI === "dist";
+}
 
 export interface CliRunResult {
   status: number;
@@ -86,12 +97,14 @@ function run(
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-/** runner (a)：tsx 直跑 src CLI（spawnSync(.bin/tsx, [cliEntry, ...])） */
+/** runner (a)：tsx 直跑 src CLI（CI 的 dist 模式改跑构建产物） */
 export function runCliTsx(args: string[], opts: CliRunOpts = {}): CliRunResult {
+  if (useDistCli()) return run(process.execPath, [cliDist], args, opts);
   return run(tsxBin, [cliEntry], args, opts);
 }
 
-/** runner (b)：process.execPath + tsx/dist/cli.mjs + cliEntry */
+/** runner (b)：process.execPath + tsx/dist/cli.mjs + cliEntry（同上） */
 export function runCliNode(args: string[], opts: CliRunOpts = {}): CliRunResult {
+  if (useDistCli()) return run(process.execPath, [cliDist], args, opts);
   return run(process.execPath, [tsxCliMjs, cliEntry], args, opts);
 }
