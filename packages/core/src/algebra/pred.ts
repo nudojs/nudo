@@ -430,6 +430,12 @@ export function implies(phi: Phi, pred: Pred): boolean {
   // Bug 1004：同项比较的**格点（lattice）步进**
   if (sameTermLatticeImplies(phi, pred)) return true;
 
+  // ABS-01：舍入单调偏移规则（`ge(b + c, b)` / `le(b - c, b)`，c >= 0）。
+  // IEEE round 单调且 round(b) = b ⇒ round(b + c) >= b（c >= 0）。
+  // 严格比较（gt/lt）不在此规则内：c 可能小于 b 的 ULP（b = 2^53 时
+  // round(b + 1) = b ⇒ `b + 1 > b` 为假），必须另找界证据。
+  if (roundingOffsetImplies(pred)) return true;
+
   // 合取目标：Φ ⊢ A∧B  iff 逐支
   if (pred.op === "and") {
     return pred.args.every((a) => implies(phi, a));
@@ -500,6 +506,38 @@ function impliesNotTypeof(
     }
   }
   return false;
+}
+
+/**
+ * 舍入单调偏移：`a = b + c`（c 为字面量）时
+ * - c >= 0 ⇒ a >= b（`ge(a,b)` / `le(b,a)` 恒真）
+ * - c <= 0 ⇒ a <= b（`le(a,b)` / `ge(b,a)` 恒真）
+ * 依据：IEEE round 单调且 round(b) = b ⇒ round(b + c) >= b（c >= 0）。
+ * 严格比较不覆盖（c < ULP(b) 时 round 折叠，见 2^53 + 1 反例）。
+ */
+function roundingOffsetImplies(pred: Pred): boolean {
+  if (pred.op !== "ge" && pred.op !== "le") return false;
+  // 形态：ge(a,b) 里 a = b + c；le(a,b) 里 b = a + c'（c' >= 0）
+  const offsetOf = (x: Term, base: Term): number | undefined => {
+    if (x.op !== "app" || x.args.length !== 2) return undefined;
+    const [l, r] = x.args as [Term, Term];
+    if (x.fn === "+") {
+      if (termEquals(l, base) && r.op === "lit" && typeof r.value === "number") return r.value;
+      if (termEquals(r, base) && l.op === "lit" && typeof l.value === "number") return l.value;
+      return undefined;
+    }
+    if (x.fn === "-") {
+      if (termEquals(l, base) && r.op === "lit" && typeof r.value === "number") return -r.value;
+      return undefined;
+    }
+    return undefined;
+  };
+  // 有符号偏移：a = b + c ⇒ c；否则 b = a + c' ⇒ -c'（b 与 a 的差）
+  const signed = offsetOf(pred.a, pred.b) ?? (
+    offsetOf(pred.b, pred.a) !== undefined ? -(offsetOf(pred.b, pred.a)!) : undefined
+  );
+  if (signed === undefined) return false;
+  return pred.op === "ge" ? signed >= 0 : signed <= 0;
 }
 
 /**

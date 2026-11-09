@@ -178,7 +178,8 @@ export function lastLoop(n) {
 // ---------------------------------------------------------------------------
 
 describe("@nudo:invariant 校验诊断（nudo:invariant-invalid）", () => {
-  it.each([["dp[*][*] == 0"], ["dp >= string"], ["dp[0] >= 0"], ["dp >="]])(
+  // ABS-01：文法扩到 `<expr>`（name / number / name ± number）⇒ 诊断文案同步
+  it.each([["dp[*][*] == 0"], ["dp[0] >= 0"], ["dp >="], ["dp >= i * 2"]])(
     "非法文法 %s → warning（非 error，report.ok 不受影响）",
     (seg) => {
       const r = checkOf(`
@@ -192,11 +193,26 @@ export function levenshtein(a, b) {${levenshteinBody}}
       expect(bad!.severity).toBe("warning");
       expect(bad!.fn).toBe("levenshtein");
       expect(bad!.actual).toBe(seg);
-      expect(bad!.expected).toBe("<name><path> <rel> <number>");
+      expect(bad!.expected).toBe("<name><path> <rel> <expr>");
       // warning 级（非 error）：invalid 不影响 report.ok 的 error 语义
       expect(r.issues.some((i) => i.code === "nudo:invariant-invalid" && i.severity === "error")).toBe(false);
     },
   );
+
+  it("ABS-01：`dp >= string` 不再是 malformed——未绑定名走 name-not-bound 归因", () => {
+    const r = checkOf(`
+/**
+ * @nudo:invariant dp >= string
+ */
+export function levenshtein(a, b) {${levenshteinBody}}
+`);
+    const bad = r.issues.find((i) => i.code === "nudo:invariant-invalid");
+    expect(bad).toBeDefined();
+    expect(bad!.severity).toBe("warning");
+    expect(bad!.actual).toBe("string");
+    expect(bad!.message).toContain("not bound");
+    expect(r.issues.some((i) => i.code === "nudo:invariant-invalid" && i.severity === "error")).toBe(false);
+  });
 
   it("行尾残留 `*/` 被剥（JSDoc 块内同形）", () => {
     const r = checkOf(`

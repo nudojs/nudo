@@ -676,6 +676,17 @@ function sidecarDiagIssues(
 // #152：@nudo:assume 用户引理前提（文法/形参校验 + 入口 Phi 构造）
 // ---------------------------------------------------------------------------
 
+/** 项里引用的绑定名（ABS-01 依赖式返回契约的名字校验） */
+function termVarNamesOf(t: import("../term.ts").Term): string[] {
+  const acc = new Set<string>();
+  const walk = (x: import("../term.ts").Term): void => {
+    if (x.op === "var") acc.add(x.id);
+    else if (x.op === "app") x.args.forEach(walk);
+  };
+  walk(t);
+  return [...acc];
+}
+
 /** @nudo:assume / @nudo:invariant 共用的**可锚定面**（#165 单源）：形参
  *  （契约形参名 ∪ AST 形参名）∪ 函数体顶层局部绑定（const/let/var
  *  Identifier 名）。局部绑定走 SSA 语义：引理作用于绑定值，从定义点到
@@ -727,17 +738,17 @@ function assumePremisesPhiOf(
       issues.push({
         severity: "error",
         code: DIAG.assumeInvalid,
-        message: `${name}: malformed @nudo:assume '${seg.raw}' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)`,
+        message: `${name}: malformed @nudo:assume '${seg.raw}' (expected <expr> <= <expr> or <expr> >= <expr>; expr = name / number / name ± number)`,
         actual: seg.raw,
-        expected: "<param> <= <param>",
+        expected: "<expr> <= <expr>",
         suggestion:
-          "cross-variable lemmas: @nudo:assume d <= max — constant bounds: sidecar number().le(10)",
+          "cross-variable lemmas: @nudo:assume d <= max — arithmetic: @nudo:assume i + 1 <= n — constant bounds: sidecar number().le(10)",
         fn: name,
         ...pos,
       });
       continue;
     }
-    const bad = [seg.lhs, seg.rhs].filter((n) => !bindable.has(n));
+    const bad = [...seg.lhsNames, ...seg.rhsNames].filter((n) => !bindable.has(n));
     if (bad.length > 0) {
       issues.push({
         severity: "error",
@@ -751,7 +762,8 @@ function assumePremisesPhiOf(
       });
       continue;
     }
-    preds.push(lePred(termVar(seg.lhs), termVar(seg.rhs)));
+    // ABS-01：表达式项直接进 Pred（`i + 1 <= n` ⇒ le(i+1, n)）
+    preds.push(lePred(seg.lhsTerm, seg.rhsTerm));
     // ok 段已 le 规范化（`>=` 解析期翻转）——display 用规范形重建
     display.push(`${seg.lhs} <= ${seg.rhs}`);
   }
@@ -901,22 +913,23 @@ function invariantSpecsOf(
       issues.push({
         severity: "warning",
         code: DIAG.invariantInvalid,
-        message: `${name}: malformed @nudo:invariant '${seg.raw}' (expected <name><path> <rel> <number>; path = [*] or .member steps)`,
+        message: `${name}: malformed @nudo:invariant '${seg.raw}' (expected <name><path> <rel> <expr>; path = [*] or .member steps, expr = number / name / name ± number)`,
         actual: seg.raw,
-        expected: "<name><path> <rel> <number>",
+        expected: "<name><path> <rel> <expr>",
         suggestion:
-          "loop-carried bounds: @nudo:invariant dp[*][*] >= 0 — scalar: @nudo:invariant last >= 1",
+          "loop-carried bounds: @nudo:invariant dp[*][*] >= 0 — relational: @nudo:invariant i < n — scalar: @nudo:invariant last >= 1",
         fn: name,
         ...pos,
       });
       continue;
     }
-    if (!bindable.has(seg.name)) {
+    const badNames = [seg.name, ...seg.rhsNames].filter((n) => !bindable.has(n));
+    if (badNames.length > 0) {
       issues.push({
         severity: "warning",
         code: DIAG.invariantInvalid,
-        message: `${name}: @nudo:invariant name not bound as a parameter or top-level local (${seg.name})`,
-        actual: seg.name,
+        message: `${name}: @nudo:invariant name not bound as a parameter or top-level local (${badNames.join(", ")})`,
+        actual: badNames.join(", "),
         expected: surface || "(no params/locals)",
         suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
         fn: name,
@@ -924,7 +937,14 @@ function invariantSpecsOf(
       });
       continue;
     }
-    specs.push({ name: seg.name, path: seg.path, rel: seg.rel, value: seg.value });
+    // ABS-01：右端可以是变量 / 简单算术（`i < n`）——rhs 项优先于常数读数
+    specs.push({
+      name: seg.name,
+      path: seg.path,
+      rel: seg.rel,
+      value: seg.value ?? 0,
+      rhs: seg.rhsTerm,
+    });
     display.push(seg.display);
   }
   if (specs.length === 0) return undefined;
@@ -1037,7 +1057,13 @@ function checkSourceInner(
   // （循环累加等 body 面常被 widen 成 number，调用点 $arr 具体元组却能精确）
   const returnContracts = new Map<
     string,
-    { display: string; constraint: NudoConstraint; source: ReturnContractSource }
+    {
+      display: string;
+      constraint: NudoConstraint;
+      source: ReturnContractSource;
+      /** ABS-01：契约内 binder 表（跨槽 ref 解析） */
+      binders?: Map<string, NudoConstraint>;
+    }
   >();
   /** 已对 return 后置报过违例的函数——调用点对账跳过，避免同文双计 */
   const returnViolated = new Set<string>();
@@ -1079,13 +1105,34 @@ function checkSourceInner(
       loadModule: refineLoad,
       fromFile: refineFrom,
     });
+    // ABS-01：依赖式返回契约（return > x）引用的名字必须是形参 / 顶层局部
+    // ——跨面 fail-closed（与 @nudo:assume 同口径），不得静默退化成「证不出」
+    const relNames = returns.relational ? termVarNamesOf(returns.relational.term) : [];
+    if (relNames.length > 0) {
+      const meta = extractFn(source, fnName, file);
+      const { bindable, surface } = anchorSurfaceOf(meta);
+      const missing = relNames.filter((n) => !bindable.has(n));
+      if (missing.length > 0) {
+        issues.push({
+          severity: "error",
+          code: DIAG.contractParamMismatch,
+          message: `${fnName}: @nudo:contract return references name(s) not bound as parameters or top-level locals (${missing.join(", ")})`,
+          actual: missing.join(", "),
+          expected: surface || "(no params/locals)",
+          suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
+          fn: fnName,
+        });
+      }
+    }
     const display = named?.name ?? formatConstraint(returns);
     // #378：约束来源（源码指令 vs 侧车 fn() 返回槽）——文案要反映真实来源
     const contractSource: ReturnContractSource = named ? "directive" : "sidecar";
+    const binderTable = effectiveContractCached(fnName)?.binders;
     returnContracts.set(fnName, {
       display,
       constraint: returns,
       source: contractSource,
+      ...(binderTable ? { binders: new Map(Object.entries(binderTable)) } : {}),
     });
     return { display, contractSource };
   };
@@ -1208,8 +1255,15 @@ function checkSourceInner(
       const eff = effectiveContractCached(name);
       const contractParam = new Map<string, Abs>();
       if (eff) {
+        // ABS-01：跨槽 binder 表（ref 可引用别的形参树 / 返回树里的 bind）
+        const binders = eff.binders
+          ? new Map<string, NudoConstraint>(Object.entries(eff.binders))
+          : undefined;
         for (const p of eff.params) {
-          contractParam.set(p.param, constraintToEntryAbs(p.constraint, p.param));
+          contractParam.set(
+            p.param,
+            constraintToEntryAbs(p.constraint, p.param, undefined, binders),
+          );
         }
       }
       // 机器面口径（Bug 1140）：与其它路径同款 `formatSigCached` ——
@@ -1259,6 +1313,7 @@ function checkSourceInner(
             phi: assumePhi?.phi,
             phiPremises: assumePhi?.premises,
             assumeDisplay: assumePhi?.display,
+            ...(eff.binders ? { binders: new Map(Object.entries(eff.binders)) } : {}),
           },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
@@ -1562,6 +1617,7 @@ function checkSourceInner(
             // Φ 侧不生效（保守少证，不假红）。
             phi: assumePhi?.phi,
             phiPremises: assumePhi?.premises,
+            ...(eff.binders ? { binders: new Map(Object.entries(eff.binders)) } : {}),
           },
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
@@ -1857,6 +1913,7 @@ function checkSourceInner(
           loc: findFnLoc(file, rec.fnName),
           // #378：约束来源随 returnContracts 走（源码指令 vs 侧车 fn() 返回槽）
           source: rc.source,
+          ...(rc.binders ? { binders: rc.binders } : {}),
         },
       );
       if (retIssues.some((i) => i.severity === "error")) returnViolated.add(rec.fnName);

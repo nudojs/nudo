@@ -50,6 +50,8 @@ import {
   derefConstraint,
   andC,
   isIntFlag,
+  collectBinders,
+  collectUnboundRefs,
 } from "../constraint.ts";
 import {
   execNudoModule,
@@ -196,6 +198,12 @@ export type EffectiveContract = {
    * 漂移监督里）。
    */
   generated?: GeneratedSegment;
+  /**
+   * ABS-01：契约内 binder 表（名字 → 绑定约束）。`fn()` 契约的形参树与
+   * 返回树分开实例化时，`ref("…")` 需要跨槽找到 binder（作用域 = 单个
+   * fn() 导出，跨导出不复用）。缺省 = 无跨槽 binder。
+   */
+  binders?: Record<string, NudoConstraint>;
 };
 
 /** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
@@ -1013,7 +1021,22 @@ export function effectiveContract(
       ...(d.column !== undefined ? { column: d.column } : {}),
     });
   }
-  const sidecarFn = sidecar.ok ? sidecar.constraint : undefined;
+  const sidecarFnRaw = sidecar.ok ? sidecar.constraint : undefined;
+  // ABS-01 fail-closed：ref 找不到同树 bind ⇒ 加载期诊断，该侧车不参与执法
+  // （不得退化成 any() = 假绿）
+  const unboundRefs = sidecarFnRaw ? collectUnboundRefs(sidecarFnRaw) : [];
+  if (unboundRefs.length > 0) {
+    collectDiag({
+      code: DIAG.contractLoad,
+      message: `sidecar '${opts.fromFile ?? ""}' constraint for '${fnName}' has ref(${unboundRefs
+        .map((n) => JSON.stringify(n))
+        .join(", ")}) without a matching bind(...) in the same constraint tree`,
+    });
+  }
+  const sidecarFn = unboundRefs.length > 0 ? undefined : sidecarFnRaw;
+  const sidecarBinders = sidecarFn ? collectBinders(sidecarFn) : new Map<string, NudoConstraint>();
+  const bindersField =
+    sidecarBinders.size > 0 ? { binders: Object.fromEntries(sidecarBinders) } : {};
   const sidecarParamTexts = sidecar.ok ? sidecar.paramTexts : undefined;
   const sidecarGenerated = sidecar.ok && sidecar.generated;
   const sidecarParams = sidecarFn ? fnConstraintToEntryReqs(sidecarFn) : [];
@@ -1086,6 +1109,7 @@ export function effectiveContract(
             }
           : {}),
         source: "generated",
+        ...bindersField,
         ...(generatedSegment !== undefined ? { generated: generatedSegment } : {}),
       };
     }
@@ -1233,6 +1257,7 @@ export function effectiveContract(
         }
       : {}),
     source: "handwritten",
+    ...bindersField,
     ...(conflictParams.length > 0 || conflictReturns
       ? {
           conflict: {
@@ -1419,6 +1444,29 @@ function predToChain(p: Pred): string {
 const LAZY_DISPLAY_DEPTH = 2;
 
 function fmtConstraint(c: NudoConstraint, depth: number = LAZY_DISPLAY_DEPTH): string {
+  // ABS-01：ref（含路径投影）/ 关系式 / binder 别名——按构建器数据形态回写
+  if (c.ref) {
+    const base = `ref(${JSON.stringify(c.ref.name)})`;
+    return c.ref.path && c.ref.path.length > 0
+      ? `${base}.at(${c.ref.path.map((p) => JSON.stringify(p)).join(", ")})`
+      : base;
+  }
+  if (c.relational) {
+    const op =
+      c.relational.rel === "gt" ? ">"
+      : c.relational.rel === "ge" ? ">="
+      : c.relational.rel === "lt" ? "<"
+      : "<=";
+    const other =
+      c.relational.term.op === "var"
+        ? JSON.stringify(c.relational.term.id)
+        : termToString(c.relational.term);
+    return `rel(${JSON.stringify(op)}, ${other})`;
+  }
+  if (c.binder !== undefined) {
+    const { binder: name, ...rest } = c;
+    return `bind(${JSON.stringify(name)}, ${fmtConstraint(rest as NudoConstraint, depth)})`;
+  }
   // lazy(…)：预算内解一层；预算耗尽 → `…`（字面省略号）
   if (c.lazy) {
     if (depth <= 0) return "…";

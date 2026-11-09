@@ -245,20 +245,24 @@ export function contractFacesFromEffectiveContract(
 ): FnContractFaces | undefined {
   if (eff.source !== "handwritten") return undefined;
   const conflictParams = eff.conflict?.params ?? [];
+  // ABS-01：契约内 binder 表跨形参树 / 返回树共享（ref 可跨槽引用 bind）
+  const binders = eff.binders
+    ? new Map<string, NudoConstraint>(Object.entries(eff.binders))
+    : undefined;
   const paramFaces: Array<Abs | undefined> = [];
   const paramAnchors: string[] = [];
   let hasFace = false;
   for (const e of eff.params) {
     const idx = paramNames.indexOf(e.param);
     if (idx < 0 || conflictParams.includes(e.param)) continue;
-    paramFaces[idx] = constraintToEntryAbs(e.constraint, e.param);
+    paramFaces[idx] = constraintToEntryAbs(e.constraint, e.param, undefined, binders);
     paramAnchors[idx] = e.param;
     hasFace = true;
   }
   let returns: Abs | undefined;
   let returnsConstraint: NudoConstraint | undefined;
   if (eff.returns && !eff.conflict?.returns) {
-    returns = constraintToEntryAbs(eff.returns.constraint, "return");
+    returns = constraintToEntryAbs(eff.returns.constraint, "return", undefined, binders);
     returnsConstraint = eff.returns.constraint;
     hasFace = true;
   }

@@ -82,9 +82,11 @@ export type FaceContext = {
  */
 export function contractParamFace(eff: EffectiveContract | undefined): ParamFace[] {
   if (!eff) return [];
+  // ABS-01：跨槽 binder 表（ref 可跨形参 / 返回槽引用 bind）
+  const binders = eff.binders ? new Map(Object.entries(eff.binders)) : undefined;
   return eff.params.map((p) => ({
     name: p.param,
-    abs: constraintToEntryAbs(p.constraint, p.param),
+    abs: constraintToEntryAbs(p.constraint, p.param, undefined, binders),
     optional: p.constraint.isOptional === true,
   }));
 }
@@ -97,7 +99,9 @@ export function contractParamFace(eff: EffectiveContract | undefined): ParamFace
  * {@link effectiveContractReturnFace}。
  */
 export function contractReturnFace(eff: EffectiveContract | undefined): Abs | undefined {
-  return eff?.returns ? constraintToEntryAbs(eff.returns.constraint, "return") : undefined;
+  if (!eff?.returns) return undefined;
+  const binders = eff.binders ? new Map(Object.entries(eff.binders)) : undefined;
+  return constraintToEntryAbs(eff.returns.constraint, "return", undefined, binders);
 }
 
 /** 无约束 entry Abs（any）—— 无契约、无观测证据的槽位占位。 */
@@ -447,7 +451,9 @@ function seedDomainReturn(
 ): Abs | undefined {
   if (!eff || eff.params.length === 0 || !ctx) return undefined;
   const byName = new Map<string, Abs>();
-  for (const p of eff.params) byName.set(p.param, constraintToEntryAbs(p.constraint, p.param));
+  const binders = eff.binders ? new Map(Object.entries(eff.binders)) : undefined;
+  for (const p of eff.params)
+    byName.set(p.param, constraintToEntryAbs(p.constraint, p.param, undefined, binders));
   const seedArgs = fn.paramNames.map((n) => {
     const bare = n.startsWith("...") ? n.slice(3) : n;
     return byName.get(bare) ?? byName.get(n) ?? anyEntryAbs();

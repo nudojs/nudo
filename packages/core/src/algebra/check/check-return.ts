@@ -18,7 +18,7 @@
  * （`algebra/index.ts` / `core/src/index.ts` / `internal.ts` 均无新增）。
  */
 import type { Abs } from "../abs.ts";
-import type { NudoConstraint } from "../constraint.ts";
+import type { BinderTable, NudoConstraint } from "../constraint.ts";
 import type { CheckIssue } from "./check-report.ts";
 import type { Phi, Pred } from "../pred.ts";
 import { assertImplies, phiSuppliesConstraint } from "../postcondition.ts";
@@ -85,6 +85,11 @@ export type ReturnContractAudit = {
    * `nudo:assume-relied` 归因可见——用户公理不得被静默消费。
    */
   phiPremises?: readonly Pred[];
+  /**
+   * ABS-01：契约内 binder 表（fn() 契约的形参树里 bind、返回树里 ref 的
+   * 跨槽引用）。缺省 = 返回树自contained。
+   */
+  binders?: BinderTable;
 };
 
 /**
@@ -110,12 +115,17 @@ export function checkReturnConstraint(
     consumedInvariant,
     phi,
     phiPremises,
+    binders,
   } = audit;
   // Bug 1080：Φ 侧（返回点路径前提）进证明通道——证据面 = ret.pred ∧ Φ 的
   // 「同项」界事实（与被约束项无关的前提事实不得制造确定违约）。
   // Bug 1094：Φ 侧只按「同项 ∧ 蕴含」计入 ⇒ Φ 只能把「证不出」升级成
   // 「已证明」，绝不制造「确定违约」（假红）。
-  const proof = assertImplies(ret, constraint, phi ? { phi } : undefined);
+  const proof = assertImplies(
+    ret,
+    constraint,
+    phi || binders ? { ...(phi ? { phi } : {}), ...(binders ? { binders } : {}) } : undefined,
+  );
   // Bug 1094：**Φ 依赖判定 + 记账**——去掉 Φ 就证不出 ⇒ 本次证明依赖路径
   // 前提 ⇒ 把命中的前提记进账本（对象身份）⇒ 归因面（nudo:assume-relied）
   // 可见：用户公理不得被静默消费。
@@ -125,12 +135,16 @@ export function checkReturnConstraint(
   // 快照 ⇒ 这里的写入读不到（死写）⇒ 账本与归因两套口径。
   const phiUsedIdx = new Set<number>();
   if (phi && proof.status === "proved" && phiPremises && phiPremises.length > 0) {
-    const withoutPhi = assertImplies(ret, constraint);
+    const withoutPhi = assertImplies(
+      ret,
+      constraint,
+      binders ? { binders } : undefined,
+    );
     if (withoutPhi.status !== "proved") {
       // 逐条定位「哪条前提真的产出了界」：单独蕴含该约束的那条；单条都不够
       // （靠合取才成立）⇒ 全部记上（宁可多记，也不得静默消费公理）。
       const solo = phiPremises.filter((p) =>
-        phiSuppliesConstraint(p, constraint, ret),
+        phiSuppliesConstraint(p, constraint, ret, binders),
       );
       const used = solo.length > 0 ? solo : [...phiPremises];
       for (const p of used) noteAssumeConsumed(p);
