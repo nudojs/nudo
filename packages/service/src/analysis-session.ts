@@ -8,7 +8,7 @@
  * 宿主契约：
  * - 依赖内容变更 → `session.evictForDependents(files)`
  * - 全量重置（watch 批前 / vite buildStart）→ `session.clear()`
- * - LSP validate 与 agent check/hover/interface 在同一进程共用默认 session
+ * - LSP validate 与 agent check/hover/contract 在同一进程共用默认 session
  */
 
 import {

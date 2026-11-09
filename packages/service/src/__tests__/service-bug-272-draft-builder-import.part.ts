@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftInterface } from "../emit/interface-draft.ts";
+import { draftContract } from "../emit/contract-draft.ts";
 
 let dir: string;
 
@@ -34,7 +34,7 @@ describe("BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder", 
       file,
       `export function f(o) {\n  return o.lit;\n}\nf({ lit: 1 });\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const line = importLine(r.draftSource);
     expect(line).toContain("fn");
     expect(line).toContain("shape");
@@ -54,7 +54,7 @@ describe("BUG-272 —— 草稿 builder import ⊆ 真正被调用的 builder", 
       file,
       `export function f(o) {\n  return o.lam;\n}\nf({ lam: 1 });\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     expect(importLine(r.draftSource)).not.toMatch(/(?<![\w$])lit(?![A-Za-z0-9_$])/);
   });
 });

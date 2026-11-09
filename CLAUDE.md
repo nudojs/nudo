@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nudo is a type inference engine for JavaScript powered by abstract interpretation. The **type system is Abs** (`shape × term × pred × conf`) — types are computable values with constraints that participate in algebra (`x>0` ⇒ `x+1>1`). There is no second IR: production analysis is **Abs-native**, and dts/LSP/serialization consume Abs directly through one-way, lossy extensional rendering (`formatShape`, `absToTSType`, `absToSchemaSource` / `projectAbsToSchema`).
 
-Users annotate JS with `@nudo:` directives. Source-level contracts use `@nudo:contract` + `*.nudo.js` templates (constraint-builder grammar: `number()`, `lit()`, `shape()`, `union()`, …). `@nudo:case` is debug / `nudo test` / LSP scenario only — not the interface product. Case args use concrete values or constraint builders.
+Users annotate JS with `@nudo:` directives. Source-level contracts use `@nudo:contract` + `*.nudo.js` templates (constraint-builder grammar: `number()`, `lit()`, `shape()`, `union()`, …). `@nudo:case` is debug / `nudo test` / LSP scenario only — not the contract product. Case args use concrete values or constraint builders.
 
 Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `test` / `contract` / `export` / `health` — Day0 = `check` + `test`; Day1 = `contract` + `check`; ecosystem = `export`. `migrate` is a one-way TypeScript retirement gate (`status|strip|verify|retire`), not a primary verb. Observation is check signatures + test case reports + IDE. Entry unconstrained params display as **`any`**; true **`unknown`** means inference failure.
 
@@ -56,10 +56,10 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 
 | Package | Purpose |
 |---|---|
-| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
+| `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, contract (sidecar/effectiveContract/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
 | `packages/service` | Analysis core: analyzer orchestration, Abs-native evaluator, session caches |
-| `packages/service` (…/emit) | Emit products are `@nudojs/service/emit` (interface/dts/schema/guard/case) |
+| `packages/service` (…/emit) | Emit products are `@nudojs/service/emit` (contract/dts/schema/guard/case) |
 | `packages/nudojs` | The `nudo` CLI (check/test/contract/export/health/migrate), published as `nudojs` |
 | `packages/lsp` | IDE surface (hover/completions/semantic tokens) + LSP server |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
@@ -71,7 +71,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 ## Architecture
 
 > 2026-11-05：`algebra/` 顶层 93 个平铺 `.ts` 中的 50 个已归入
-> `check/ scan/ format/ interface/ diagnostics/ key/` 六个二级子域（codemod
+> `check/ scan/ format/ contract/ diagnostics/ key/` 六个二级子域（codemod
 > `scripts/relocate-core-subdomains.mjs`，795 处相对导入机械重写）。剩余 43 个
 > 顶层文件由 `pnpm run check:subdomains` 冻结，新模块一律进已有子域。
 > `scripts/aggregate-tests.mjs` 可按族收敛测试入口，但全量试点发现同一聚合
@@ -85,7 +85,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 
 **Evaluator** (`service/src/evaluator`): Abs-native production evaluation. **Single engine** (`service/src/eval-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values). Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `arithmetic.ts`, `objects.ts`). Non-eval sources / eval failure are **fail-closed** (unknown/empty exports). Top-level `this` follows ESM (read → undefined; write → TypeError). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
 
-**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native, single engine**. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: `$class` / `registerEvalClass` → `exec/class-registry` → `$new`. `dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the interface product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
+**Service** (`service`): `analyzer.ts` orchestrates parse → directives → evaluate → diagnostics. Evaluation is **Abs-native, single engine**. Modules via `evalAbsModuleGraph`（named/default/namespace、re-export/`export *`、require、harvest、@nudo:env）。Class bridge: `$class` / `registerEvalClass` → `exec/class-registry` → `$new`。`dts-generator.ts` projects Abs → TypeScript (`Case:` JSDoc rows are debug extensional notes, not the contract product). CLI `test` prints call@/entry@ cases and `debug "name"` witnesses; `check` prints signatures (always, even on success).
 
 **Check product**: `nudo check` is the CI gate — Pred implication on Abs, Nudo-native reports (`actual ⊭ expected`); L1 = explicit contracts (`*.nudo.js` / `@nudo:contract`); L2 = entry may-throw (`nudo:entry-may-throw`, default error; `--ignore-throws` / `package.json#nudo.check.ignoreThrows`). Signatures always printed; unconstrained entry params display as **`any`**, not `unknown`. Gold gates: recall=precision=1.0 and real-package zero-FP tests in `core/src/algebra/__tests__/` (L2 suites need split expectations when ignore is off).
 

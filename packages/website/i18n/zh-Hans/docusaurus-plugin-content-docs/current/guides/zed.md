@@ -95,13 +95,13 @@ git clone https://github.com/nudojs/nudo-zed
 || Hover 类型 | 标准 LSP；导出函数名显示 `● contract / hw\|gen\|imp`（与 CodeLens 同源）。契约参数在声明位与签名中折叠为声明形态（`node: nullable(astNode)`）。体内引用位经**求值器重放**直读引擎求值态（非 LSP 层近似）：transpile `recordPositions` 插桩 + `runTranspiled` 符号执行导出函数产出位置→Abs 表，流敏感窄化为引擎求值语义（早退守卫 nullish 剥离 / 判别等值窄化 / `!==` 对偶 / typeof 守卫 / `&&` / `\|\|` 链）。求值态与入口 Abs 等价或仅剥 nullish 的位置——声明位、检查点（`!node` 自身）、成员访问对象（`node.x`）、落回位——保持**折叠声明形态**（守卫之后剥离 `nullable(…)` → `node: astNode`）；窄化位（守卫 then 分支、成员读槽位、局部量）展示**求值态**（`if (node.type === 'StringLiteral') …` → `node: { type: lit("StringLiteral"), value: string } \| { type: string }`——lit 判别值按侧车文法渲染；开放尾臂按 may 态保守保留）。hover 成员属性（`node.value`）直读引擎记录的槽位 Abs（`value: string`）。重放 fail-closed（求值失败 / 预算超限 / 无契约 / 非导出 / 解构形参）回落折叠面：`\|\|` 组 then 分支经 LSP 层窄化为匹配臂联合（sound）；else 分支不窄化（否定形态有界跳过）。折叠面中的类型值变量包为链接（`[astNode](file://…#L<n>)`——跳转引用类型的定义行，经侧车 import 表 / 本地声明 / 一级 re-export 解析）；无引用变量的契约回落契约原文链接（侧车绑定声明行） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP（含侧车绑定名） |
 | Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived`。参数契约 hint（`where …`）**默认关**——经 `language-servers.nudo.initialization_options: { "inlayHints": { "parameters": true } }`（或 `package.json#nudo.inlayHints.parameters`）开启；开启后展示契约声明形态（侧车模板表达式 / 指令约束名，如 `where nullable(astNode)`），完整谓词经 hint tooltip 展示 |
-| CodeLens | 需打开 `code_lens: "on"`——**观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update + `⚡ draft interface`；`●/○ case "…"` 选项跟随 |
+| CodeLens | 需打开 `code_lens: "on"`——**观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update + `⚡ draft contract`；`●/○ case "…"` 选项跟随 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help（真实 `paramTypes` / 返回类型）。含 action-map quickfix（`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`） |
 | Agent 命令（`nudo.check` / `nudo.contract.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
 | JSX / TSX buffer | 已挂接（`JavaScript React` / `TypeScript React`），与 VS Code 同文档面 |
 
-CodeLens `⚡ draft interface` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
+CodeLens `⚡ draft contract` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 
 VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 CodeLens 的 case 选择。
 
@@ -109,7 +109,7 @@ VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 C
 
 ## 文件检测
 
-分析目标为 `.js` / `.mjs` / `.ts`。`package.json#nudo.analysis.mode` 出厂默认 `"exports"`；模式语义与保守的 `"directives"` 门禁：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径。
+分析目标为 `.js` / `.mjs` / `.ts`。`package.json#nudo.analysis.mode` 出厂默认 `"exports"`；模式语义与保守的 `"directives"` 门禁：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens contract 档使用更宽的目标路径。
 
 ## 构建 WASM 扩展
 

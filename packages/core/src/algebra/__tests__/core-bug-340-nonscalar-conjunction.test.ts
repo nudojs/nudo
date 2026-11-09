@@ -8,23 +8,23 @@
  * - 语义真矛盾（number() ∧ string()）。
  *
  * 误报的后果是双面的：
- * - 门禁假红：一条说「不可满足」的 nudo:interface-conflict（实际只是合不了）；
+ * - 门禁假红：一条说「不可满足」的 nudo:contract-conflict（实际只是合不了）；
  * - 门禁假绿：conflict 位让该形参的**义务被整条跳过** ⇒ 调用点不再校验。
  *
- * 修法：只有第二类才标 conflict（interface.ts `conjoinOrConflict`）。
+ * 修法：只有第二类才标 conflict（contract.ts `conjoinOrConflict`）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 const SHAPES = `import { shape, number, string } from "@nudojs/core";\nexport const userShape = shape({ id: number(), name: string() });`;
 const SIDECAR = `import { fn, shape, number, string } from "@nudojs/core";\nexport const t = fn({ o: shape({ id: number(), name: string() }) }, number());`;
 
-describe("Bug 340 非标量合取不再误报 nudo:interface-conflict", () => {
+describe("Bug 340 非标量合取不再误报 nudo:contract-conflict", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -42,7 +42,7 @@ describe("Bug 340 非标量合取不再误报 nudo:interface-conflict", () => {
       loadModule,
       fromFile: "/t/t.js",
     });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
   });
 
   it("conflict 位不再吃掉该形参的义务 ⇒ 调用点仍报违例（假绿修复）", () => {
@@ -69,6 +69,6 @@ describe("Bug 340 非标量合取不再误报 nudo:interface-conflict", () => {
       loadModule,
       fromFile: "/t/prim.js",
     });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict").length).toBeGreaterThan(0);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict").length).toBeGreaterThan(0);
   });
 });

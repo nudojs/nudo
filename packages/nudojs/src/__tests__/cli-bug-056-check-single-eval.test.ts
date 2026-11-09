@@ -7,14 +7,14 @@
  *   （原生唯一可能值是 1；`nudo test` / `nudo export` 都给 1）
  * - `once()`（第一次调用必抛）→ `1 throws Error`（应为 `never throws Error`，
  *   发布的 d.ts 也是 `never`）⇒ 门禁面与发布面互相矛盾
- * - 该签名是 `nudo:interface-drift` 的输入 ⇒ 生成段（干净值）与今日域
+ * - 该签名是 `nudo:contract-drift` 的输入 ⇒ 生成段（干净值）与今日域
  *   （脏值）永不收敛：emit 说「无变化」、check 说「漂移」、health 判 FAIL
  *   且提示的重跑无效（CI 卡死，无自愈路径）。
  *
  * 当前树已修好（分析器轮与闸门轮不再共享实例）；本测试钉住**值级结论**防回归：
  * 1. 计数器工厂：check 与 test 两面都给 1（跨动词一致）；
  * 2. 一次性抛：check 给 `never` + `throws Error`（与 d.ts 一致）；
- * 3. 漂移收敛：手写 `lit(1)` 生成段 ⇒ check **不报** `nudo:interface-drift`
+ * 3. 漂移收敛：手写 `lit(1)` 生成段 ⇒ check **不报** `nudo:contract-drift`
  *    且签名 = 1（脏值会让它与生成段打架）。
  *
  * 注：每个用例用**独立**的 `NUDO_CACHE_DIR`——check 有磁盘缓存，复用会让
@@ -85,7 +85,7 @@ describe("BUG-056: check 签名 = 一次正常求值", () => {
     expect(r.stdout).not.toContain("once() => 1");
   });
 
-  it("手写 lit(1) 生成段 ⇒ 不报 interface-drift（脏值会与生成段打架）", { timeout: 60_000 }, () => {
+  it("手写 lit(1) 生成段 ⇒ 不报 contract-drift（脏值会与生成段打架）", { timeout: 60_000 }, () => {
     const { cwd, cache } = project({
       "once.js": ONCE_VALUE,
       "once.nudo.js": `import { fn, lit } from "@nudojs/core";
@@ -94,7 +94,7 @@ export const once = fn({  }, lit(1));
     });
     const r = runCliTsx(["check", "once.js"], { cwd, env: { NUDO_CACHE_DIR: cache } });
     expect(r.stdout).toContain("once() => 1");
-    expect(r.stdout).not.toContain("nudo:interface-drift");
+    expect(r.stdout).not.toContain("nudo:contract-drift");
     expect(r.status).toBe(0);
   });
 });

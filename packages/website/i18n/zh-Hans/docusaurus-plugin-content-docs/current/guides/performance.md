@@ -62,7 +62,7 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 
 | 命名空间 | 内容 | 服务的面 |
 |---|---|---|
-| `iface` | 整文件 effectiveInterface 表（导出 → 契约 JSON，或 implicit 负缓存） | `nudo contract` 打印 / 契约读取冷启动 |
+| `contract` | 整文件 effectiveContract 表（导出 → 契约 JSON，或 implicit 负缓存） | `nudo contract` 打印 / 契约读取冷启动 |
 | `check` | 整文件 `CheckJson` 报告 | 未变更文件在 `nudo check` 冷路径 —— 带 `--from` 时绝不读写（现场注入的证据不可作为整报告复用） |
 
 **键是内容寻址的**：对源码 + 侧车 + 依赖内容 + 配置维度（如 `contract.autoBind`）取 sha256，并带分析 ABI 前缀（`nudo-check-cache-v…+<version>`，其中含 TypeScript 版本 —— 不是 `package.json#version`）。升级 `@nudojs/*` → 前缀变 → 整层干净 miss。改源码、侧车或任一依赖 → 键变 → 自然 miss。

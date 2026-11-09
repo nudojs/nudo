@@ -190,7 +190,7 @@ export function buildAbsImportLocalMap(
  *
  * eval 侧只记**成员名**（`helper`），不带接收者 ⇒ 归因侧（点号拆分）拿不到
  * 基名 ⇒ targetModule / targetExport 空 ⇒ 匹配侧整条丢弃 ⇒ error 级
- * `nudo:interface-domain-exceeds` 永不触发（假绿）。这里在**源码面**把
+ * `nudo:contract-domain-exceeds` 永不触发（假绿）。这里在**源码面**把
  * 「调用点位置 → 接收者绑定名 + 成员名」钉住，供调用记录补接收者限定。
  *
  * 只认**标识符接收者**（`ns.helper(...)`）：接收者是表达式（`ns.a.b(...)`）
@@ -758,7 +758,7 @@ export function callRecordFromAbsCall(
   const thrownOrResult = safeAbsOrUnknown(r.result);
   // Bug 286：命名空间成员调用（`ns.helper(...)`）的 eval 记录只带**成员名**
   // （`helper`）⇒ 归因侧点号拆分永远走不到 ⇒ targetModule/targetExport 空 ⇒
-  // 匹配侧整条丢弃 ⇒ error 级 nudo:interface-domain-exceeds 永不触发（假绿）。
+  // 匹配侧整条丢弃 ⇒ error 级 nudo:contract-domain-exceeds 永不触发（假绿）。
   // 这里补**接收者限定**（`ns.helper`，与类成员调用 `Brand.method` 同形）。
   const fnName = qualifyNamespaceMemberName(r.fnName, r.callLoc, impMap);
   const rec: CallRecord = {

@@ -358,7 +358,7 @@ async function handleContractDraft(
 
 /**
  * Persist targets of a file = the `nudo.contract.emit` CodeLens the server
- * produces for it (one per exported function whose interface can be
+ * produces for it (one per exported function whose contract can be
  * persisted, with the `add` / `update` mode).
  */
 async function collectPersistTargets(
@@ -443,7 +443,7 @@ async function handleContractEmit(
     const picked = await pickPersistTarget(file);
     if (!picked) {
       void window.showWarningMessage(
-        "Nudo: no persistable function found in this file (use the ⚡ persist interface CodeLens)",
+        "Nudo: no persistable function found in this file (use the ⚡ persist contract CodeLens)",
       );
       return;
     }

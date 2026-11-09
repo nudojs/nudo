@@ -23,7 +23,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftInterface } from "../interface-draft.ts";
+import { draftContract } from "../contract-draft.ts";
 
 let dir: string;
 
@@ -42,7 +42,7 @@ describe("Bug 509 —— 草稿返回义务的来源", () => {
       file,
       `export function opt(flag) {\n  if (flag) return 1;\n  return null;\n}\nopt(true);\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "opt");
     expect(entry).toBeDefined();
     // 返回位：null 分支从未被观测到 ⇒ 观测集是真子集 ⇒ 不写这条义务
@@ -55,7 +55,7 @@ describe("Bug 509 —— 草稿返回义务的来源", () => {
   it("负控制：观测域覆盖推断域 ⇒ 返回义务照旧投影（不误伤）", async () => {
     const file = join(dir, "double.js");
     writeFileSync(file, `export function double(x) {\n  return x * 2;\n}\n\ndouble(21);\n`);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "double");
     expect(entry!.returns?.projected).toBe(true);
     expect(entry!.dsl).toBe("fn({ x: number() }, number())");
@@ -64,7 +64,7 @@ describe("Bug 509 —— 草稿返回义务的来源", () => {
   it("负控制：无观测 ⇒ 不发明返回义务（symbolic 只作注释）", async () => {
     const file = join(dir, "lonely.js");
     writeFileSync(file, `export function lonely(y) {\n  return y;\n}\n`);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "lonely");
     expect(entry!.returns?.projected).toBe(false);
     expect(entry!.dsl).toBe("fn({})");

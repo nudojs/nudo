@@ -1,7 +1,7 @@
 /**
  * BUG-228：`nudo health` 的契约漂移判定把**文件级** `@nudo:env` 的**相对**说明符
  * 按**项目根**解析（应为**文件所在目录**）⇒ env 全局丢失 ⇒ 同一份陈旧
- * `@generated` 段：`nudo check` 报 `nudo:interface-drift`，`nudo health` 报
+ * `@generated` 段：`nudo check` 报 `nudo:contract-drift`，`nudo health` 报
  * 「0 contract drift」（漂移计数相反 / 假绿）。
  *
  * 修复：env 名**分层**解析（与 `nudo check` 的 assembleEnvs 同口径）——
@@ -53,7 +53,7 @@ afterAll(() => {
 describe("BUG-228: 文件级 @nudo:env 按文件目录解析（与 check 同口径）", () => {
   it("health 与 check 同计数：陈旧的 @generated 段 ⇒ 报 contract drift（旧行为：0）", () => {
     const check = runCliTsx(["check", p("src/m.js")], { cwd: dir });
-    expect(check.stdout, check.stdout).toContain("nudo:interface-drift");
+    expect(check.stdout, check.stdout).toContain("nudo:contract-drift");
     const health = runCliTsx(["health", p("src/m.js")], { cwd: dir });
     // 旧行为：Summary 写「0 contract drift」（env 全局丢失 ⇒ 今日域无证据）
     expect(health.stdout, health.stdout).toMatch(/contract drift: [1-9]\d* @generated slot\(s\)/);

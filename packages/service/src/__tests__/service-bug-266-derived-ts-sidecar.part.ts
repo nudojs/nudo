@@ -1,7 +1,7 @@
 /**
  * BUG-266 —— `nudo contract --emit` 的**派生分支**写 `.nudo.ts` 侧车时
  * **不补 builder 类型声明** ⇒ 产物里 `fn` 是未声明标识符 ⇒ `tsc` **TS2304**；
- * 而主分支（`interface-emitter.ts`）的 `.nudo.ts` 有 `declare const fn: …`
+ * 而主分支（`contract-emitter.ts`）的 `.nudo.ts` 有 `declare const fn: …`
  * ⇒ 同一命令、同一个侧车扩展名，两个分支两个结论。
  *
  * 修法：派生分支写盘前按主分支**同款算法**（`CONSTRAINT_BUILDER_NAMES` +
@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitDerivedFromRoot } from "../emit/interface-derivation-emit.ts";
+import { emitDerivedFromRoot } from "../emit/contract-derivation-emit.ts";
 
 let dir: string;
 

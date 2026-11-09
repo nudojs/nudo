@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 
 let dir: string;
 
@@ -52,7 +52,7 @@ describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行�
     const sidecar = join(dir, "h.nudo.js");
     writeFileSync(sidecar, HANDWRITTEN_CRLF);
 
-    const r = await emitInterface(file, { fnNames: ["h"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["h"], mode: "update" });
     expect(r.written).toEqual(["h"]);
     const after = readFileSync(sidecar, "utf-8");
     const eols = countEols(after);
@@ -70,11 +70,11 @@ describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行�
     writeFileSync(sidecar, bom + HANDWRITTEN_LF);
 
     // 零契约变化的 emit 不得判「有改动」（BOM 被吃掉 ⇒ 假 diff）
-    const noop = await emitInterface(file, { fnNames: ["other"], mode: "update" });
+    const noop = await emitContract(file, { fnNames: ["other"], mode: "update" });
     expect(noop.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8").startsWith(bom)).toBe(true);
 
-    const r = await emitInterface(file, { fnNames: ["h"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["h"], mode: "update" });
     expect(r.changed).toBe(true);
     const after = readFileSync(sidecar, "utf-8");
     expect(after.startsWith(bom)).toBe(true);
@@ -87,12 +87,12 @@ describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行�
     const sidecar = join(dir, "h.nudo.js");
     writeFileSync(sidecar, HANDWRITTEN_LF.replace(/\n$/, ""));
 
-    const first = await emitInterface(file, { fnNames: ["h"], mode: "update" });
+    const first = await emitContract(file, { fnNames: ["h"], mode: "update" });
     expect(first.changed).toBe(true);
     const after = readFileSync(sidecar, "utf-8");
     expect(after).toContain("export const h = fn({ x: lit(1) }, lit(2));");
     // 写两次 ⇒ 第二次必须报「无改动」且不写盘
-    const second = await emitInterface(file, { fnNames: ["h"], mode: "update" });
+    const second = await emitContract(file, { fnNames: ["h"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
   });
@@ -102,7 +102,7 @@ describe("Bug 540 — 侧车写盘的字节保真（行尾 / BOM / 末尾换行�
     writeFileSync(file, SRC);
     const sidecar = join(dir, "h.nudo.js");
     writeFileSync(sidecar, HANDWRITTEN_LF);
-    await emitInterface(file, { fnNames: ["h"], mode: "update" });
+    await emitContract(file, { fnNames: ["h"], mode: "update" });
     const after = readFileSync(sidecar, "utf-8");
     const eols = countEols(after);
     expect(eols.crlf).toBe(0);

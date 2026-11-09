@@ -1,7 +1,7 @@
 /**
  * 诊断 side-channel 共享原语（leaf 模块：零依赖）。
  *
- * refine（RefineDiag）/ interface（InterfaceDiag）各持一份同构实现
+ * refine（RefineDiag）/ contract（ContractDiag）各持一份同构实现
  * （collector + seq + 定容环形缓冲 + takeSince 增量排干）——历史上多份
  * 拷贝各自漂移过，收敛到本文件单一定义。
  *

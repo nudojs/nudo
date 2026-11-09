@@ -226,15 +226,17 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
-| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | — |
+| <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | — |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
 | <a id="confidence"></a>`Confidence` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Confidence = "exact" \| "path" \| "widened" \| "mock" \| "partial" \| "opaque"` |
 | <a id="confjoin"></a>`confJoin` | fn | assignability / join | `confJoin(a: Confidence, b: Confidence): Confidence` |
 | <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
+| <a id="contracttierinfo"></a>`ContractTierInfo` | type | contract tiers | `ContractTierInfo = { source: ContractSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
+| <a id="contracttierof"></a>`contractTierOf` | fn | contract tiers | `contractTierOf( source: string, fnName: string, fromFile: string, opts: ContractTierOpts = {}, ): ContractTierInfo \| undefined` |
 | <a id="createenvironment"></a>`createEnvironment` | fn | env host surface | `createEnvironment( parent?: Environment, bindings: Map<string, Abs> = new Map(), ): Environment` |
-| <a id="effectiveinterface"></a>`effectiveInterface` | fn | interface tiers | `effectiveInterface( source: string, fnName: string, opts: EffectiveInterfaceOpts = {}, ): EffectiveInterface \| undefined` |
-| <a id="effectiveinterface"></a>`EffectiveInterface` | type | interface tiers | `EffectiveInterface = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint; display?: string }>; returns?: { constr...` |
+| <a id="effectivecontract"></a>`effectiveContract` | fn | contract tiers | `effectiveContract( source: string, fnName: string, opts: EffectiveContractOpts = {}, ): EffectiveContract \| undefined` |
+| <a id="effectivecontract"></a>`EffectiveContract` | type | contract tiers | `EffectiveContract = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint; display?: string }>; returns?: { constra...` |
 | <a id="environment"></a>`Environment` | type | env host surface | `Environment = { lookup(name: string): Abs; bind(name: string, value: Abs): Environment; update(name: string, value: Abs): boolean; extend...` |
 | <a id="evalexprabs"></a>`evalExprAbs` | fn | Abs-native expression eval | `evalExprAbs( expr: import("@babel/types").Expression, bindings: Record<string, Abs> = {}, ): Abs` |
 | <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | — |
@@ -250,11 +252,9 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
-| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveInterfaceOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
+| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
-| <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
-| <a id="interfacetierof"></a>`interfaceTierOf` | fn | interface tiers | `interfaceTierOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceTierInfo \| undefined` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
 | <a id="joinabs"></a>`joinAbs` | fn | assignability / join | `joinAbs(a: Abs, b: Abs): Abs` |
@@ -435,7 +435,13 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="constraint_expr_re"></a>`CONSTRAINT_EXPR_RE` | const | 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成—— 名单只在 CONSTRAINT_BUILDERS 一处维护。 | `const CONSTRAINT_EXPR_RE` |
 | <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
+| <a id="contract_source_abbr"></a>`CONTRACT_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const CONTRACT_SOURCE_ABBR` |
+| <a id="contractdiag"></a>`ContractDiag` | type | contract 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `ContractDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
+| <a id="contractdiagcount"></a>`contractDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `contractDiagCount(): number` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
+| <a id="contractsource"></a>`ContractSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `ContractSource = "handwritten" \| "generated" \| "implicit"` |
+| <a id="contractsourceof"></a>`contractSourceOf` | fn | contractTierOf 的来源投影；非导出 → undefined | `contractSourceOf( source: string, fnName: string, fromFile: string, opts: ContractTierOpts = {}, ): ContractSource \| undefined` |
+| <a id="contracttieropts"></a>`ContractTierOpts` | type | — | `ContractTierOpts = EffectiveContractOpts` |
 | <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量、symbol 字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象（IsObject）：prim 条目（含字符串实参的 每个字符、tuple/Set 元素）与 nullish 字面量条目 → TypeError （Bug 8：null/undefined/symbol 字面量挂 shape unknown + lit term， 旧 primEntry 只查 prim 形态 → 漏抛） - WeakMap 键 = Get(entry, "0") 须可弱持有（classifyCanBeHeldWeakly 同 口径）：零/一元组、闭对象/fn/无 0 槽 brand 条目键 undefined、prim/ nullish 键 → TypeError（Bug 8：旧口径只查 ≥2 元组首元素 prim） - WeakSet 元素须可弱持有：prim/nullish 字面量元素（含字符串字符）→ TypeError；symbol 元素合法（node 实测 new WeakSet([Symbol()]) 不抛） - Bug 8 gate 面：抽象外层 iterable（any/unknown/开放 obj/fn/其它 brand） 可能非可迭代、抽象元素（含抽象字符串实参的字符臂）可能非 entry/ 非弱键 → recordMayThrow（三个分派点共用本判定，集中记录） | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
 | <a id="ctornameofrecv"></a>`ctorNameOfRecv` | fn | 接收者 → 原型链 constructor 名（`.constructor` 折叠）。 | `ctorNameOfRecv(recv: Abs): string \| undefined` |
 | <a id="currentexecphi"></a>`currentExecPhi` | fn | — | `currentExecPhi(): Phi` |
@@ -445,7 +451,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="diagnostic"></a>`Diagnostic` | type | — | `Diagnostic = { severity: "error" \| "warning" \| "info"; code: string; message: string; suggestion?: string; fn?: string; argIndex?: number; }` |
 | <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs` |
 | <a id="drainpromisemicros"></a>`drainPromiseMicros` | fn | — | `drainPromiseMicros(): void` |
-| <a id="effectiveinterfaceopts"></a>`EffectiveInterfaceOpts` | type | — | `EffectiveInterfaceOpts = RefineResolveOpts & { autoBind?: boolean \| ((sidecarPath: string) => boolean); projectDir?: string; }` |
+| <a id="effectivecontractopts"></a>`EffectiveContractOpts` | type | — | `EffectiveContractOpts = RefineResolveOpts & { autoBind?: boolean \| ((sidecarPath: string) => boolean); projectDir?: string; }` |
 | <a id="emptyenv"></a>`emptyEnv` | fn | 空求值环境（分析宿主用：不带任何绑定） | `emptyEnv(): AstEnv` |
 | <a id="emptyphi"></a>`emptyPhi` | const | — | `const emptyPhi` |
 | <a id="endcollectionfork"></a>`endCollectionFork` | fn | — | `endCollectionFork(arms: Array<ArmOverlay \| undefined \| null>): void` |
@@ -489,17 +495,17 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="extstateof"></a>`extStateOf` | fn | — | `extStateOf(o: Abs): ExtState \| undefined` |
 | <a id="falseconstraint"></a>`falseConstraint` | fn | — | `falseConstraint(c: Abs): Pred \| undefined` |
 | <a id="fnabs"></a>`FnAbs` | type | — | `FnAbs = Abs & { shape: { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs; }; }` |
-| <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
+| <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（contract 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
 | <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; optional?: boolean; } \| { kind: "default"; name: string; inde...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes( params: AstParam[] \| undefined \| null, source?: string, ): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
 | <a id="formatabsmultiline"></a>`formatAbsMultiline` | fn | 多行展示，CLI 用 | `formatAbsMultiline(a: Abs, label?: string): string` |
+| <a id="formatcontracttierline"></a>`formatContractTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw\|gen\|imp`。 | `formatContractTierLine(source: ContractSource, active = true): string` |
 | <a id="formatdiagnostics"></a>`formatDiagnostics` | fn | — | `formatDiagnostics(diags: Diagnostic[]): string` |
-| <a id="formateffectiveinterfacedisplay"></a>`formatEffectiveInterfaceDisplay` | fn | EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） | `formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string` |
+| <a id="formateffectivecontractdisplay"></a>`formatEffectiveContractDisplay` | fn | EffectiveContract → 契约展示串（与 CLI contract 打印同口径，不含函数名） | `formatEffectiveContractDisplay(eff: EffectiveContract): string` |
 | <a id="formatgithubannotations"></a>`formatGithubAnnotations` | fn | GitHub Actions 行内注解（PR Files changed 红/黄标）。 | `formatGithubAnnotations( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): string` |
 | <a id="formatgitlabcodequality"></a>`formatGitlabCodeQuality` | fn | GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） | `formatGitlabCodeQuality( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): GitlabCodeQualityIssue[]` |
-| <a id="formatinterfacetierline"></a>`formatInterfaceTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw\|gen\|imp`。 | `formatInterfaceTierLine(source: InterfaceSource, active = true): string` |
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
@@ -523,12 +529,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="implicationoracle"></a>`ImplicationOracle` | type | 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。 | `ImplicationOracle = (phi: Phi, pred: Pred) => boolean \| undefined` |
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
-| <a id="interface_source_abbr"></a>`INTERFACE_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const INTERFACE_SOURCE_ABBR` |
-| <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
-| <a id="interfacediagcount"></a>`interfaceDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `interfaceDiagCount(): number` |
-| <a id="interfacesource"></a>`InterfaceSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `InterfaceSource = "handwritten" \| "generated" \| "implicit"` |
-| <a id="interfacesourceof"></a>`interfaceSourceOf` | fn | interfaceTierOf 的来源投影；非导出 → undefined | `interfaceSourceOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceSource \| undefined` |
-| <a id="interfacetieropts"></a>`InterfaceTierOpts` | type | — | `InterfaceTierOpts = EffectiveInterfaceOpts` |
 | <a id="isabsval"></a>`isAbsVal` | fn | — | `isAbsVal(v: unknown): v` |
 | <a id="isbigprim"></a>`isBigPrim` | fn | — | `isBigPrim(a: Abs): boolean` |
 | <a id="iscjsmainrun"></a>`isCjsMainRun` | fn | run 表是否来自 CJS `module.exports = X` 重赋值形态（供桥接层标 cjsMain）。 | `isCjsMainRun(run: Record<string, unknown>): boolean` |
@@ -608,7 +608,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="notepromiseexecutorfork"></a>`notePromiseExecutorFork` | fn | $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） | `notePromiseExecutorFork(): void` |
 | <a id="nudofield"></a>`NudoField` | type | — | `NudoField = { constraint: NudoConstraint; optional?: boolean; }` |
 | <a id="nudofnconstraint"></a>`NudoFnConstraint` | type | fn(params, returns?, &#123; throws? | `NudoFnConstraint = { params: Record<string, NudoConstraint>; returns?: NudoConstraint; throws?: NudoConstraint; }` |
-| <a id="nudosidecarerror"></a>`NudoSidecarError` | fn | 侧车模块错误：code ∈ nudo:interface-cycle \| nudo:interface-load | `NudoSidecarError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = "NudoSid...` |
+| <a id="nudosidecarerror"></a>`NudoSidecarError` | fn | 侧车模块错误：code ∈ nudo:contract-cycle \| nudo:contract-load | `NudoSidecarError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = "NudoSid...` |
 | <a id="nudosig"></a>`NudoSig` | type | 无损函数签名（类型即计算） | `NudoSig = { name: string; params: string[]; paramTypes?: string[]; abs: Abs; display: string; detail: string; conf: Confidence; throws?: ...` |
 | <a id="nudounsupportederror"></a>`NudoUnsupportedError` | fn | 转译器无法正确 lowering 的构造：抛此错误（替代静默降级注释）。 | `NudoUnsupportedError extends Error { readonly reason: string; readonly loc?: { line: number; column: number }; constructor( reason: strin...` |
 | <a id="nullable"></a>`nullable` | fn | nullable(c)：允许 null / undefined 的约束（nullish 显式化）。 | `nullable( c: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean, ): ConstraintBuilder` |
@@ -668,6 +668,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="setaddentry"></a>`setAddEntry` | fn | Set#add：fork 内写 overlay；返回同一 Abs | `setAddEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setapplycallbackhost"></a>`setApplyCallbackHost` | fn | evaluator 宿主 `exec/call.ts` 加载时注册（副作用）。 | `setApplyCallbackHost(fn: ApplyCallbackHost): void` |
 | <a id="setclearentries"></a>`setClearEntries` | fn | Set#clear | `setClearEntries(setAbs: Abs): Abs` |
+| <a id="setcontractdiagcollector"></a>`setContractDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeContractDiags 取走 | `setContractDiagCollector( fn: ((d: ContractDiag) => void) \| null, ): void` |
 | <a id="setdeleteentry"></a>`setDeleteEntry` | fn | Set#delete：按字面量/身份元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setelementsabs"></a>`setElementsAbs` | fn | — | `setElementsAbs(setAbs: Abs): Abs[]` |
 | <a id="setevalassigncollector"></a>`setEvalAssignCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setEvalAssignCollector( collector: ((r: EvalAbsAssignRecord) => void) \| null, )` |
@@ -675,7 +676,6 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="setevalfallbackcollector"></a>`setEvalFallbackCollector` | fn | — | `setEvalFallbackCollector( collector: ((f: EvalFallback) => void) \| null, ): void` |
 | <a id="sethasentry"></a>`setHasEntry` | fn | — | `setHasEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setimplicationoracle"></a>`setImplicationOracle` | fn | — | `setImplicationOracle(fn: ImplicationOracle \| undefined): void` |
-| <a id="setinterfacediagcollector"></a>`setInterfaceDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeInterfaceDiags 取走 | `setInterfaceDiagCollector( fn: ((d: InterfaceDiag) => void) \| null, ): void` |
 | <a id="setposcollector"></a>`setPosCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setPosCollector( collector: ((r: EvalPosRecord) => void) \| null, )` |
 | <a id="setpropflags"></a>`setPropFlags` | fn | — | `setPropFlags(o: Abs, key: string, f: PropFlags): void` |
 | <a id="setrefinediagcollector"></a>`setRefineDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeRefineDiags 取走 | `setRefineDiagCollector(fn: ((d: RefineDiag) => void) \| null): void` |
@@ -685,7 +685,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="shapetostring"></a>`shapeToString` | fn | — | `shapeToString(s: Shape): string` |
 | <a id="shlabs"></a>`shlAbs` | fn | &lt;&lt; —— 左移（rhs ToUint32 &amp; 31；bigint 不限位宽） | `shlAbs(a: Abs, b: Abs): Abs` |
 | <a id="shrabs"></a>`shrAbs` | fn | &gt;&gt; —— 算术右移（rhs ToUint32 &amp; 31；bigint 不限位宽） | `shrAbs(a: Abs, b: Abs): Abs` |
-| <a id="sidecarclosurefingerprint"></a>`sidecarClosureFingerprint` | fn | 侧车及递归 .nudo 依赖闭包的内容指纹：`${hashSource(侧车)}\|路径=hash,…`。 | `sidecarClosureFingerprint( fromFile: string, opts: EffectiveInterfaceOpts, ): string \| undefined` |
+| <a id="sidecarclosurefingerprint"></a>`sidecarClosureFingerprint` | fn | 侧车及递归 .nudo 依赖闭包的内容指纹：`${hashSource(侧车)}\|路径=hash,…`。 | `sidecarClosureFingerprint( fromFile: string, opts: EffectiveContractOpts, ): string \| undefined` |
 | <a id="sidecarpathof"></a>`sidecarPathOf` | const | — | — |
 | <a id="simplifyterm"></a>`simplifyTerm` | fn | 常量折叠 + 简单代数化简 | `simplifyTerm(t: Term): Term` |
 | <a id="snapshotabs"></a>`snapshotAbs` | fn | deep-ish copy for snapshot（新对象，不是 env.vars 同一引用） | `snapshotAbs(a: Abs): Abs` |
@@ -698,8 +698,8 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="substpredabs"></a>`substPredAbs` | fn | pred 三条规则： 1. | `substPredAbs( p: Pred, map: ReadonlyMap<string, Abs>, )` |
 | <a id="symboldescriptionabs"></a>`symbolDescriptionAbs` | const | — | — |
 | <a id="symbolidof"></a>`symbolIdOf` | const | — | — |
-| <a id="takeinterfacediags"></a>`takeInterfaceDiags` | fn | 取走已收集的诊断（收集即清空） | `takeInterfaceDiags(): InterfaceDiag[]` |
-| <a id="takeinterfacediagssince"></a>`takeInterfaceDiagsSince` | fn | 只取走 seq &gt; since 的诊断（清空仅限增量）——LSP 长驻进程里 lens/打印/ emit 工具用它排干**自身探测**产生的诊断，不窃取在途 validateText 待消费 的接口诊断（全量 take 曾在 await 窗口偷走 checkSource 的待收诊断）。 | `takeInterfaceDiagsSince(since: number): InterfaceDiag[]` |
+| <a id="takecontractdiags"></a>`takeContractDiags` | fn | 取走已收集的诊断（收集即清空） | `takeContractDiags(): ContractDiag[]` |
+| <a id="takecontractdiagssince"></a>`takeContractDiagsSince` | fn | 只取走 seq &gt; since 的诊断（清空仅限增量）——LSP 长驻进程里 lens/打印/ emit 工具用它排干**自身探测**产生的诊断，不窃取在途 validateText 待消费 的契约诊断（全量 take 曾在 await 窗口偷走 checkSource 的待收诊断）。 | `takeContractDiagsSince(since: number): ContractDiag[]` |
 | <a id="takeloopexits"></a>`takeLoopExits` | fn | — | `takeLoopExits(): Abs[]` |
 | <a id="takerefinediags"></a>`takeRefineDiags` | fn | 取走已收集的诊断（收集即清空） | `takeRefineDiags(): RefineDiag[]` |
 | <a id="takerefinediagssince"></a>`takeRefineDiagsSince` | fn | 只取走 seq &gt; since 的增量（工具面防窃取在途诊断；全量 take 的 since 版） | `takeRefineDiagsSince(since: number): RefineDiag[]` |

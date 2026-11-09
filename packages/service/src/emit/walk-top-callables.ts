@@ -1,5 +1,5 @@
 /**
- * 顶层可调用遍历（body-read-types / interface-draft 共享 walker）。
+ * 顶层可调用遍历（body-read-types / contract-draft 共享 walker）。
  *
  * 遍历源文件全部顶层函数（含类方法）：导出声明（`export const` 箭头/函数
  * 表达式、export default）、顶层 class 的实例方法，逐函数回调
@@ -8,7 +8,7 @@
  * 两个消费方的口径差异经 opts 显式表达（保持各自原有行为）：
  * - body-read-types（草稿/quickfix 证据）：含顶层私有 FunctionDeclaration；
  *   不扫 export specifier 引用的 class。
- * - interface-draft（草稿成员读取）：私有函数不进 interface 档（跳过）；扫
+ * - contract-draft（草稿成员读取）：私有函数不进 contract 档（跳过）；扫
  *   `export { Foo }` specifier 引用的本地 class 方法。
  */
 import { parse } from "@nudojs/parser";
@@ -23,7 +23,7 @@ export type TopCallableVisitor = (
 export type WalkTopCallablesOpts = {
   /** 顶层私有 FunctionDeclaration 也访问（body-read 证据面） */
   includeLocalFunctions?: boolean;
-  /** `export { Foo }` specifier 引用的本地 class 方法也访问（interface-draft） */
+  /** `export { Foo }` specifier 引用的本地 class 方法也访问（contract-draft） */
   visitExportSpecifierClasses?: boolean;
 };
 
@@ -142,7 +142,7 @@ export function walkTopCallables(
       const id = (stmt as { id?: { name?: string } }).id;
       if (id?.name) visitClassMethods(id.name, stmt);
     } else if (stmt.type === "FunctionDeclaration") {
-      // 私有函数：body-read 证据面访问；interface 档跳过（草稿同口径）
+      // 私有函数：body-read 证据面访问；contract 档跳过（草稿同口径）
       if (opts.includeLocalFunctions) considerDecl(stmt, false);
     }
   }

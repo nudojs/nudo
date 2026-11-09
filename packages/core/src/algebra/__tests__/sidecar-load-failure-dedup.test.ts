@@ -10,7 +10,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -21,7 +21,7 @@ describe("#64 sidecar load failure dedup", () => {
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("sidecar binds only alpha → load failure reported once, not per source export", () => {
@@ -36,7 +36,7 @@ describe("#64 sidecar load failure dedup", () => {
       fromFile: "/t/dup.js",
     });
     const loadErrs = r.issues.filter(
-      (i) => i.code === "nudo:interface-load" && i.message.includes("failed to load"),
+      (i) => i.code === "nudo:contract-load" && i.message.includes("failed to load"),
     );
     // 只报 1 条模块级失败（不按 alpha/beta/gamma 各报一条）
     expect(loadErrs).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("#64 sidecar load failure dedup", () => {
       fromFile: "/t/multi.js",
     });
     const loadErrs = r.issues.filter(
-      (i) => i.code === "nudo:interface-load" && i.message.includes("failed to load"),
+      (i) => i.code === "nudo:contract-load" && i.message.includes("failed to load"),
     );
     expect(loadErrs).toHaveLength(1);
     expect(loadErrs[0]!.message).toMatch(/affects 2 bindings/);
@@ -67,13 +67,13 @@ describe("#64 sidecar load failure dedup", () => {
       "/t/only.nudo.js":
         `import { fn, number } from '@nudojs/core';\nexport const alpha = fn({ x: number().gt(0) }, number());`,
     });
-    // 侧车正常，只绑 alpha：beta/gamma 不该出现任何 interface-load
+    // 侧车正常，只绑 alpha：beta/gamma 不该出现任何 contract-load
     const src = `export function alpha(x) { return x; }\nexport function beta(x) { return x; }\nexport function gamma(x) { return x; }\n`;
     const r = checkSource("/t/only.js", src, pTrue, {
       loadModule,
       fromFile: "/t/only.js",
     });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs).toEqual([]);
   });
 });

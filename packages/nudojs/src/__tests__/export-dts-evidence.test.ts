@@ -1,7 +1,7 @@
 /**
  * export --format dts 的证据面（DX 批次）：
  * 1. sidecar（*.nudo.js）与 inline @nudo:contract 契约进参数/返回投影
- *    （与 check 签名面同数据源 effectiveInterface）；
+ *    （与 check 签名面同数据源 effectiveContract）；
  * 2. @nudo:case 见证**不进**投影（BUG-044）：见证是调试见证，契约义务在
  *    `*.nudo.js` 侧车 / `@nudo:contract`；`nudo export` 以 `caseMode: "none"`
  *    调分析器 ⇒ 见证既不 widen 形参/返回，也不产出 `Case:` 行；

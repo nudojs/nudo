@@ -38,7 +38,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | `textDocumentSync` | `Full` |
 | `hoverProvider` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one block with the check-identical signature (`decide({ grade, findings }: { … }) => { … }`; builder template / symbolic multiline / display signature are deduped — full faces stay in the `nudo.hover` payload; the signature's return shape is depth-bounded). **Contract params fold to their declared form** (`node: nullable(astNode)` — the sidecar expression text / directive constraint name) in the signature and on the param declaration hover; body references are **flow-narrowed** (bounded rule set: a non-optional member-access object `node.x`, or a position after an early-return nullish guard `if (!node) return …;`, strips the `nullable(…)` wrapper → `node: astNode`; the check point `!node` itself and the declaration keep the declared form; param reassignment resets). The folded line carries **type-value variable links** (`[astNode](file://<dep sidecar>#L<def line>)` — resolved through the sidecar import table / local top-level declarations / one-level re-export; rendered as plain markdown since links don't render inside code fences), replacing the former standalone contract-source row; variable-less contracts (`number()`) fall back to the contract-source row (sidecar binding declaration line). Derived params without a display fall back to the projection face with a depth-bounded `formatShape` (hover `maxDepth` 4 — lazy self-references explode exponentially at deep budgets; truncated with `…`) |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
-| `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
+| `codeLensProvider` | `resolveProvider: false`; contract tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
 | `inlayHintProvider` | case + Abs param/return. **Param contract hints (`where …`) default off** — `nudo.inlayHints.parameters` (project `package.json` wins; host setting via `initializationOptions` / `workspace/didChangeConfiguration` as default; live `inlayHint/refresh` on change). On: label = declared form (sidecar expression text / directive constraint name), tooltip = full pred. Return hints (`: …`) always on |
 | `definitionProvider` | local + cross-file + sidecar |
 | `referencesProvider` | |
@@ -66,7 +66,7 @@ types/modifiers may gain entries (**non-breaking**); removals are breaking.
 | `nudo.whatIf` | inject `@nudo:as` assumptions |
 | `nudo.suggestCase` | case coverage / paste-ready directives |
 | `nudo.trace` | per-case arg→result listing |
-| `nudo.contract` | interface tiers print |
+| `nudo.contract` | contract tiers print |
 | `nudo.contract.draft` | code-first `*.nudo.draft.*` |
 | `nudo.contract.emit` | persist `@generated` sidecar |
 | `nudo.selectCase` | switch active case (positional or object args) |
@@ -112,12 +112,12 @@ documented agent tool names; values are the shared computation (E5 same-source).
 | `suggestCase` | `analyzeFileAsync + buildCaseDirective` | `nudo.suggestCase` / `nudo/suggestCase` |
 | `trace` | `analyzeFileAsync cases` | `nudo.trace` / `nudo/trace` |
 | `check` | `checkSource + mergeCheckIssues + serializeCheckJson` | `nudo.check` / `nudo/check` |
-| `hover` | `getHoverAtPosition + interfaceTierOf` | `nudo.hover` / `nudo/hover` |
+| `hover` | `getHoverAtPosition + contractTierOf` | `nudo.hover` / `nudo/hover` |
 | `test` | `analyzeFileAsync + buildTestReport + serializeCaseJson` | `nudo.test` / `nudo/test` |
-| `contract` | `interfaceSurface + formatInterfaceSurfaceLine` | `nudo.contract` / `nudo/contract` |
-| `contract.draft` | `draftInterface + formatDraftSummary` | `nudo.contract.draft` / `nudo/contract.draft` |
-| `contract.emit` | `emitInterface` | `nudo.contract.emit` / `nudo/contract.emit` |
-| `codeLens` | `computeInterfaceLenses + interfaceTierOf` | **server-only** (no command) |
+| `contract` | `contractSurface + formatContractSurfaceLine` | `nudo.contract` / `nudo/contract` |
+| `contract.draft` | `draftContract + formatDraftSummary` | `nudo.contract.draft` / `nudo/contract.draft` |
+| `contract.emit` | `emitContract` | `nudo.contract.emit` / `nudo/contract.emit` |
+| `codeLens` | `computeContractLenses + contractTierOf` | **server-only** (no command) |
 
 `selectCase` / `getActiveCases` are editor commands, not agent tools — they are
 still on the protocol inventory (§3–§4) but **not** registered as dot-form

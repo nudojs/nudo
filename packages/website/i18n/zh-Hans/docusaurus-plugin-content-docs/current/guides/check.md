@@ -64,8 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
-  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
-  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -97,18 +97,18 @@ onboarding
 | `nudo:arg-count` | L1 | error | 调用元数与泛化参数面不匹配 |
 | `nudo:fn-not-found` | L1 | error | 调用引用了分析器在作用域内无法解析的函数 |
 | `nudo:partial-result` | L1 | info | 结果 Abs 携带 `#partial` 置信 —— 仅观察 |
-| `nudo:interface-param-mismatch` | L1 | error | 手写契约参数名不在形式参数面上 |
-| `nudo:interface-conflict` | L1 | error | 手写契约合取不可满足 |
-| `nudo:interface-load` | L1 | error | 侧车文件加载失败（解析 / import / 路径解析错误） |
-| `nudo:interface-name-clash` | L1 | error | 侧车导出名与源码导出冲突，或 emit 会覆盖手写绑定（手写优先，跳过写入） |
-| `nudo:interface-cycle` | L1 | error | 侧车 `@nudo:import` 链成环 |
-| `nudo:interface-domain-exceeds` | L1 | error | 经 `--from` 注入的调用记录 ⊄ 手写契约域 |
-| `nudo:interface-drift` | L1 | warning | 固化 `@generated` 段 ≠ 今日重算接口（`nudo health` 亦上浮；不挡 exit） |
-| `nudo:interface-entry-only` | L1 | info | 导出无契约根且无调用点域（仅合成 `entry@`）—— 覆盖缺口，不是门禁失败 |
+| `nudo:contract-param-mismatch` | L1 | error | 手写契约参数名不在形式参数面上 |
+| `nudo:contract-conflict` | L1 | error | 手写契约合取不可满足 |
+| `nudo:contract-load` | L1 | error | 侧车文件加载失败（解析 / import / 路径解析错误） |
+| `nudo:contract-name-clash` | L1 | error | 侧车导出名与源码导出冲突，或 emit 会覆盖手写绑定（手写优先，跳过写入） |
+| `nudo:contract-cycle` | L1 | error | 侧车 `@nudo:import` 链成环 |
+| `nudo:contract-domain-exceeds` | L1 | error | 经 `--from` 注入的调用记录 ⊄ 手写契约域 |
+| `nudo:contract-drift` | L1 | warning | 固化 `@generated` 段 ≠ 今日重算契约（`nudo health` 亦上浮；不挡 exit） |
+| `nudo:contract-entry-only` | L1 | info | 导出无契约根且无调用点域（仅合成 `entry@`）—— 覆盖缺口，不是门禁失败 |
 | `nudo:dual-entry` | L1 | info | browser/node 双入口：调用点记录不跨文件 —— 分析只观察一个入口变体 |
-| `nudo:interface-emit-denied` | L1 | warning | `contract --emit` 目标在 `package.json#nudo.contract.emit` 允许列表之外 —— 跳过写入 |
-| `nudo:interface-multi-declarator` | L1 | warning | `@generated` 段被手工合并成多声明导出 —— 原样保留 |
-| `nudo:interface-not-projectable` | L1 | error | 组装侧车 round-trip 重解析失败 —— 不写任何文件（引擎债） |
+| `nudo:contract-emit-denied` | L1 | warning | `contract --emit` 目标在 `package.json#nudo.contract.emit` 允许列表之外 —— 跳过写入 |
+| `nudo:contract-multi-declarator` | L1 | warning | `@generated` 段被手工合并成多声明导出 —— 原样保留 |
+| `nudo:contract-not-projectable` | L1 | error | 组装侧车 round-trip 重解析失败 —— 不写任何文件（引擎债） |
 | **`nudo:entry-may-throw`** | **L2** | **error**（默认） | 入口/导出函数有未消化 may-throw |
 | **`nudo:module-throw`** | **L2** | **error**（默认） | 模块顶层代码**必然抛**（句法上无条件的 `throw`）⇒ 模块永远无法被导入、未被分析 —— 所有导出都不可用。fail-closed；每模块一条；与 `nudo:internal`（引擎回落）、`nudo:unsupported:*`（能力边界）都不是一回事 |
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
@@ -125,7 +125,7 @@ onboarding
 | `nudo:no-method` | 引擎 | error（原始类型接收者）/ warning | 成员访问无法解析 —— ``Method 'x' does not exist on type 'T'``。与 `nudo:unknown-recv` 不同 |
 | `nudo:mock-invalid` | 引擎 | warning | `@nudo:mock` 表达式不是已知形态（stub/spy/mock、箭头函数、类型表达式） |
 | `nudo:env-harvest-conflict` | 引擎 | warning | 手写 `@nudo:env` 与 `@types` harvest 提供同一模块键 —— 手写优先，harvest 只补缺失槽 |
-| `nudo:interface-underivable` | 引擎 | info | 派生契约行无源码证据（opaque / 截断 / 无证据）—— 该行跳过；手写行从不触发 |
+| `nudo:contract-underivable` | 引擎 | info | 派生契约行无源码证据（opaque / 截断 / 无证据）—— 该行跳过；手写行从不触发 |
 | `nudo-unreachable` | info | info | return/throw 之后的代码 |
 | `nudo:module-cycle` | 模块图 | warning | 循环模块装载 —— 环内绑定解析为部分求值类型 |
 | `nudo:module-depth` | 模块图 | warning | 模块装载链过深 —— 装载截断，更深模块为 `unknown` |
@@ -279,12 +279,12 @@ L2 entry-throws 严重级按首个命中解析：
 | `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动开 |
 | `--gitlab` | stdout 输出 GitLab Code Quality JSON 数组 —— 重定向到 `gl-code-quality-report.json` |
 
-## 接口诊断
+## 契约诊断
 
-侧车 / 契约管线相关码（`nudo:interface-*`、`nudo:dual-entry`）已全部列在[检查什么](./check.md#what-it-checks)。两条归属规则：
+侧车 / 契约管线相关码（`nudo:contract-*`、`nudo:dual-entry`）已全部列在[检查什么](./check.md#what-it-checks)。两条归属规则：
 
 - 写在**被分析文件内**的违例报告 `nudo:constraint-violated`。
-- `nudo:interface-domain-exceeds` 覆盖从使用处文件注入的调用记录（`nudo check --from <paths...>`）。
+- `nudo:contract-domain-exceeds` 覆盖从使用处文件注入的调用记录（`nudo check --from <paths...>`）。
 
 ## CI 集成
 

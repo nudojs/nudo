@@ -21,12 +21,12 @@ import {describe, it, expect} from "vitest";
 import {buildArgsFromAssume} from "../generalize.ts";
 import {gtNum, predToString} from "../pred.ts";
 import {v} from "../term.ts";
-import {formatConstraint} from "../interface/interface.ts";
+import {formatConstraint} from "../contract/contract.ts";
 import {litC, number as numberC} from "../constraint.ts";
 import {formalParamsFromNodes} from "../format/param-surface.ts";
 import {parseSource} from "../parse-source.ts";
 import {relGuardOf} from "../exec/transpile/stmt/predicates.ts";
-import {absShapeForTsTypeText} from "../interface/ts-type-shape.ts";
+import {absShapeForTsTypeText} from "../contract/ts-type-shape.ts";
 import {checkSource, pTrue} from "../index.ts";
 import {withStdImport, stdOpts} from "./nudo-constraints.ts";
 

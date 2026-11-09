@@ -20,7 +20,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { shape, number, partial, omit, pick, formatConstraint, checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -31,7 +31,7 @@ describe("Bug 1027 · shape/partial/omit/pick 写侧不得吞掉 __proto__ 字�
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("shape({ ['__proto__']: number() }) 的字段表含 __proto__ 自有键", () => {

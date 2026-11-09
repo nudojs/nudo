@@ -11,8 +11,8 @@ import { randomBytes } from "node:crypto";
  * 冒泡）。
  *
  * 单一真源：此前 6 处手抄同一骨架（lsp `agent-tools` / nudojs
- * `contract-emit`、`migrate` / service `emit/interface-emitter`、
- * `emit/interface-derivation-emit`、`disk-cache`），tmp 后缀三种口径
+ * `contract-emit`、`migrate` / service `emit/contract-emitter`、
+ * `emit/contract-derivation-emit`、`disk-cache`），tmp 后缀三种口径
  * （`Math.random` / `randomBytes` / `Date.now`）靠注释互称「同口径」。
  */
 export function writeFileAtomic(path: string, data: string): void {

@@ -9,8 +9,8 @@ Single entry point. Grouped by scenario, independent of implementation layout.
 | [`vs-ts/`](./vs-ts/) | Same logic, side by side with TypeScript |
 | [`mini-repo/`](./mini-repo/) | Multi-file integration (ESM + class + async) |
 | [`algebra/`](./algebra/) | Types as computation (spread / HOF / reduce / mixin) |
-| [`interface-derivation/`](./interface-derivation/) | Contract tier derivation (handwritten root → generated rows) |
-| [`interface-draft/`](./interface-draft/) | Code first: reviewable contract drafts from logic |
+| [`contract-derivation/`](./contract-derivation/) | Contract tier derivation (handwritten root → generated rows) |
+| [`contract-draft/`](./contract-draft/) | Code first: reviewable contract drafts from logic |
 | [`migrate/`](./migrate/) | **Retire the tsc boilerplate package** (one-way before/after gate) |
 | [`errors/`](./errors/) | **Top-10 error faces** (Nudo real output; side-by-side: [errors-vs-typescript](../errors-vs-typescript.md)) |
 | [`retire-real/`](./retire-real/) | **Real-package `ms` retire-tsc case** (not a synthetic fixture) |
@@ -109,9 +109,9 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run check docs/examples/mini-repo/validators.js` | **1** | L2: unconstrained relational ops on `any` params (`isPositive`/`clamp`) report `entry-may-throw` |
 | `pnpm run test:cli docs/examples/mini-repo/validators.js` | **0** | Support file on its own: `entry@` signatures (any) |
 | `pnpm run test:cli docs/examples/mini-repo/store.js` | **0** | Class methods enumerated by the analyzer: no call sites → `entry@` |
-| `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | Root contract (handwritten `lib.nudo.js` add4) loads |
-| `pnpm run check docs/examples/interface-derivation/add.js` | **0** | Downstream derived contract (`add.nudo.js` generated) enforces |
-| `pnpm run contract --draft docs/examples/interface-draft/greet.js` | **0** | Code-first draft: callsite projection + body-read suggestions (no invented check obligations) |
+| `pnpm run check docs/examples/contract-derivation/lib.js` | **0** | Root contract (handwritten `lib.nudo.js` add4) loads |
+| `pnpm run check docs/examples/contract-derivation/add.js` | **0** | Downstream derived contract (`add.nudo.js` generated) enforces |
+| `pnpm run contract --draft docs/examples/contract-draft/greet.js` | **0** | Code-first draft: callsite projection + body-read suggestions (no invented check obligations) |
 | `pnpm run check docs/examples/l2-export-any.js` | **1** | L2: export `any` member access → `nudo:entry-may-throw` |
 | `pnpm run check docs/examples/l2-export-any.js --ignore-throws TypeError` | **0** | L2 migration switch: ignoring TypeError stops gating exit |
 | `pnpm run nudo -- migrate status docs/examples/migrate/before/package.json` | **0** | migrate status: audit typescript deps / tsc scripts / `.ts` count |

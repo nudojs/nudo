@@ -5,7 +5,7 @@
  *   projections → `nudo export` · health → `nudo health`
  * Like validation.ts, this module holds pure logic with injected readers so
  * tests exercise it without a live connection; server.ts supplies the
- * document/disk readers. Also hosts computeInterfaceLenses.
+ * document/disk readers. Also hosts computeContractLenses.
  *
  * **E5 同源契约**：agent 工具与 LSP 命令 / CLI 共享同一底层入口
  * （`AGENT_TOOL_SOURCES`）；`resolveProjectAutoBind` 保证 autoBind 与
@@ -18,22 +18,22 @@ import {
   buildCaseDirective,
   serializeCaseArg,
   serializeCaseJson,
-  interfaceSurface,
-  draftInterface,
-  emitInterface,
+  contractSurface,
+  draftContract,
+  emitContract,
   emitDerivedFromRoot,
   deriveFromRoot,
   formatEmitSummary,
   formatDraftSummary,
-  formatInterfaceSurfaceLine,
+  formatContractSurfaceLine,
   sidecarDraftPath,
-  writeInterfaceDraft,
+  writeContractDraft,
   unifiedDiff,
-  type EmitInterfaceResult,
+  type EmitContractResult,
   type EmitDerivedResult,
   type CaseJson,
 } from "@nudojs/service/emit";
-import { getHoverAtPosition, getCasesForFile, type HoverInterfaceOpts } from "./lsp-surface.ts";
+import { getHoverAtPosition, getCasesForFile, type HoverContractOpts } from "./lsp-surface.ts";
 import { sanitizeErrorMessage } from "./sanitize.ts";
 import { configIgnoreThrows } from "./gate-config.ts";
 import {
@@ -42,7 +42,7 @@ import {
   buildEvalInjection,
   defaultLoadModule,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   checkConfig,
   collectSkipReturns,
   collectCallsiteRecords,
@@ -74,17 +74,17 @@ import {
   checkSource,
   serializeCheckJson,
   pTrue,
-  formatInterfaceTierLine,
+  formatContractTierLine,
   generatedExportNames,
-  interfaceDiagCount,
-  interfaceTierOf,
+  contractDiagCount,
+  contractTierOf,
   localNamedExports,
   isNodeModulesPath,
   sidecarPathOf,
-  takeInterfaceDiagsSince,
+  takeContractDiagsSince,
   extractFileEnvNames,
   type Abs,
-  type InterfaceSource,
+  type ContractSource,
   type RunTranspiledOptions,
 } from "@nudojs/core";
 import type { CheckJson, CheckJsonMulti } from "@nudojs/core";
@@ -317,13 +317,13 @@ export function resolveProjectAutoBind(
   filePath: string,
   clientAutoBind?: boolean,
 ): boolean {
-  const projectAutoBind = interfaceConfig(
+  const projectAutoBind = contractConfig(
     findProjectConfig(dirname(filePath))?.config,
   ).autoBind;
   return projectAutoBind && (clientAutoBind ?? true);
 }
 
-/** draft 写盘 projectDir：与 CLI runInterfaceDraft 同口径
+/** draft 写盘 projectDir：与 CLI runContractDraft 同口径
  * （nudo 配置 → package.json 祖先，上溯到 fs root，无层级上限） */
 function resolveDraftProjectDir(filePath: string): string | undefined {
   const proj = findProjectConfig(dirname(filePath));
@@ -361,12 +361,12 @@ export const AGENT_TOOL_SOURCES = {
   suggestCase: "analyzeFileAsync + buildCaseDirective",
   trace: "analyzeFileAsync cases",
   check: "checkSource + mergeCheckIssues + serializeCheckJson",
-  hover: "getHoverAtPosition + interfaceTierOf",
+  hover: "getHoverAtPosition + contractTierOf",
   test: "analyzeFileAsync + buildTestReport + serializeCaseJson",
-  contract: "interfaceSurface + formatInterfaceSurfaceLine",
-  "contract.draft": "draftInterface + formatDraftSummary",
-  "contract.emit": "emitInterface",
-  codeLens: "computeInterfaceLenses + interfaceTierOf",
+  contract: "contractSurface + formatContractSurfaceLine",
+  "contract.draft": "draftContract + formatDraftSummary",
+  "contract.emit": "emitContract",
+  codeLens: "computeContractLenses + contractTierOf",
 } as const;
 
 export type CheckToolParams = {
@@ -469,10 +469,10 @@ export function buildLspInjection(
  * `check-json-map.ts` 同一入口：此前两包各手抄一份，core 新增可发射码后
  * 漏抄 ⇒ agent 面静默吞诊断，Bug 632 / 1038 都栽在这张表上）。
  *
- * 为什么需要这条通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断
+ * 为什么需要这条通道（BUG-235）：模块缺失 / 装配失败 / contract 家族诊断
  * 由**分析器**（`analyzeFile*`）产出，`checkSource` 永远看不到 ⇒ agent 面
  * 只并补充通道时会**假绿**（「nudo check OK」），而 CLI 与 LSP 编辑器面
- * 都判红。severity 口径在单源头注：`interface-entry-only` 固定 info
+ * 都判红。severity 口径在单源头注：`contract-entry-only` 固定 info
  * （观察面提示，不挡门禁）；其余按分析器给的 severity 走（error ⇒ 挡门禁）。
  */
 
@@ -546,7 +546,7 @@ export function checkTool(
       ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
       skips: collectSkipReturns(source),
     });
-    // 分析器通道（BUG-235）：模块缺失 / 装配失败 / interface 家族诊断由
+    // 分析器通道（BUG-235）：模块缺失 / 装配失败 / contract 家族诊断由
     // `analyzeFile` 产出 —— `checkSource` **看不到**它们 ⇒ 缺模块（原生必炸）
     // 的文件在 agent 面假绿（「nudo check OK」），而 CLI 与 LSP 编辑器面都判红。
     // 白名单与 CLI 同源（core `CHECK_FACE_DIAG_CODES`），不放大诊断面。
@@ -645,9 +645,9 @@ export type HoverToolParams = {
   source?: string;
   /** true 时同时返回该文件全部 Abs inlay */
   includeInlays?: boolean;
-  /** 可选：*.nudo.js 加载（契约进 inlay / interface 档） */
+  /** 可选：*.nudo.js 加载（契约进 inlay / contract 档） */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
-  /** autoBind=false 时 interface 档回落 implicit（与 CodeLens 同口径） */
+  /** autoBind=false 时 contract 档回落 implicit（与 CodeLens 同口径） */
   autoBind?: boolean;
 };
 
@@ -693,8 +693,8 @@ function validateHoverPosition(
 
 /**
  * Agent hover：无损 Abs（不经 TypeValue bridge）。
- * 与 LSP hover 同一信息源（getHoverAtPosition）；interfaceSource 与
- * CodeLens `● interface` 同源（A7 / E5）。autoBind 与 CLI/LSP 同口径。
+ * 与 LSP hover 同一信息源（getHoverAtPosition）；contractSource 与
+ * CodeLens `● contract` 同源（A7 / E5）。autoBind 与 CLI/LSP 同口径。
  */
 export function hoverTool(
   params: HoverToolParams,
@@ -715,9 +715,9 @@ export function hoverTool(
     // 注入装配（Bug 786）：行内指令 / @nudo:mock / env 全局缺席 ⇒ 推导链
     // 塌缩 unknown（Nudo 词汇里 = 「推断失败」）而 CLI 面显示 number。
     // 传递协议：inject 随 opts 进 hover 的 generalizeFromAst（hover.ts 由
-    // 片 C 接线：`HoverInterfaceOpts.inject`），随 opts 进 collectAbsInlays。
+    // 片 C 接线：`HoverContractOpts.inject`），随 opts 进 collectAbsInlays。
     const inject = buildLspInjection(filePath, source);
-    const hoverOpts: HoverInterfaceOpts & { inject?: RunTranspiledOptions } = {
+    const hoverOpts: HoverContractOpts & { inject?: RunTranspiledOptions } = {
       loadModule,
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(resolveDraftProjectDir(filePath)
@@ -743,13 +743,13 @@ export function hoverTool(
       intension: hover?.intension ?? null,
       /** 有损外延，仅对照 */
       ext: hover?.typeText ?? null,
-      /** CodeLens `● interface` 同源档（A7）；非导出 / 无档 → null */
-      interfaceSource: hover?.interfaceSource ?? null,
-      interfaceDisplay: hover?.interfaceDisplay ?? null,
+      /** CodeLens `● contract` 同源档（A7）；非导出 / 无档 → null */
+      contractSource: hover?.contractSource ?? null,
+      contractDisplay: hover?.contractDisplay ?? null,
       // 724：激活态与 CodeLens 同源（选中 case ⇒ 契约档 ○）——不传 active
       // 会走默认 true（恒 ●），与同一文件的 CodeLens 打架。
-      interfaceLine: hover?.interfaceSource
-        ? formatInterfaceTierLine(hover.interfaceSource, hover.interfaceActive ?? true)
+      contractLine: hover?.contractSource
+        ? formatContractTierLine(hover.contractSource, hover.contractActive ?? true)
         : null,
     };
     if (params.includeInlays) {
@@ -1475,7 +1475,7 @@ function collectFromRecords(from?: string[]): {
 }
 
 /**
- * Agent contract 打印：与 CLI `nudo contract` 同一数据源（interfaceSurface），
+ * Agent contract 打印：与 CLI `nudo contract` 同一数据源（contractSurface），
  * 逐函数展示有效契约分层 handwritten / generated / implicit。
  * E5：优先 open buffer（getOpenText），磁盘回落；loadModule 走 buffer-aware。
  */
@@ -1491,7 +1491,7 @@ export async function contractTool(
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
     const open = _deps.getOpenText?.(filePath);
     const source = params.source ?? open?.text;
-    const entries = await interfaceSurface(filePath, {
+    const entries = await contractSurface(filePath, {
       loadModule: params.loadModule ?? _deps.loadModule ?? defaultLoadModule,
       autoBind,
       ...(source !== undefined ? { source } : {}),
@@ -1505,11 +1505,11 @@ export async function contractTool(
     if (selected.length === 0) {
       lines.push(
         params.functionName
-          ? `  no interface found for '${params.functionName}'`
+          ? `  no contract found for '${params.functionName}'`
           : "  (no top-level functions found)",
       );
     }
-    for (const line of selected.map(formatInterfaceSurfaceLine)) lines.push(line);
+    for (const line of selected.map(formatContractSurfaceLine)) lines.push(line);
     lines.push(...from.notes);
     lines.push("");
     lines.push(JSON.stringify(selected, null, 2));
@@ -1536,7 +1536,7 @@ export type ContractDraftToolParams = {
 };
 
 /**
- * Agent contract 草稿：与 CLI `nudo contract --draft` 同源（draftInterface）。
+ * Agent contract 草稿：与 CLI `nudo contract --draft` 同源（draftContract）。
  * 代码优先 / 迁移：返回可审阅 `*.nudo.draft.js` 文本；write 落盘 draft 文件。
  */
 export async function contractDraftTool(
@@ -1554,7 +1554,7 @@ export async function contractDraftTool(
     const source = params.source ?? open?.text;
     const from = collectFromRecords(params.from);
     if (from.error) return toolError(from.error);
-    const result = await draftInterface(filePath, {
+    const result = await draftContract(filePath, {
       ...(params.functionName ? { fnNames: [params.functionName] } : {}),
       // E5：与 validate/hover 同源 loadModule（buffer-aware）；客户端 autoBind
       // 不再用来打开项目关闭项——draft 内部按侧车是否存在探测 handwritten
@@ -1579,7 +1579,7 @@ export async function contractDraftTool(
             filePath,
             draftRel,
             result,
-            writeInterfaceDraft(filePath, result.draftSource, {
+            writeContractDraft(filePath, result.draftSource, {
               dryRun: params.dryRun === true,
               entries: result.entries,
               ...(projectDir ? { projectDir } : {}),
@@ -1603,7 +1603,7 @@ export type ContractEmitToolParams = {
   from?: string[];
   /**
    * Preview without writing: same result shape as a real emit (paths,
-   * would-change, optional unifiedDiff) but `emitInterface` is called with
+   * would-change, optional unifiedDiff) but `emitContract` is called with
    * `dryRun: true` — no sidecar write, no invalidation-as-if-written.
    * VS Code persist command sends this first, then a real write on confirm.
    */
@@ -1617,7 +1617,7 @@ export type ContractEmitToolParams = {
  * 纯下游文件靠生成段 `derived-from` 标注反查根」⇒ 下游侧车的 `derived-from`
  * 锚点**只能**由 `emitDerivedFromRoot` 写出。agent 面此前**从不**调这一步 ⇒
  * CLI 写得出的下游侧车在 IDE 面永远不产生，且工具把「引擎没做的那一步」
- * 说成「no interface changes」＋「not-an-export」（误导性诊断）。
+ * 说成「no contract changes」＋「not-an-export」（误导性诊断）。
  *
  * `fnNames` 的**命名空间差异**（关键）：CLI 的 `--fn` 传给派生步骤时是
  * **下游导出名**（`--fn add2` 命中派生行）；agent 工具的 `functionName` 是
@@ -1667,7 +1667,7 @@ function derivedEmit(
         roots: [],
         issues: [
           {
-            code: DIAG.interfaceEmitDenied,
+            code: DIAG.contractEmitDenied,
             severity: "info",
             message:
               "downstream sidecars are outside the allowed workspace roots — derivation skipped",
@@ -1699,7 +1699,7 @@ function derivedEmit(
       roots: [],
       issues: [
         {
-          code: DIAG.interfaceEmitDenied,
+          code: DIAG.contractEmitDenied,
           severity: "warning",
           message: `root-driven derivation failed: ${(err as Error).message}`,
         },
@@ -1708,7 +1708,7 @@ function derivedEmit(
   }
 }
 
-/** 每侧车路径写盘串行化：emitInterface 的读-分析-写之间有 await 边界，
+/** 每侧车路径写盘串行化：emitContract 的读-分析-写之间有 await 边界，
  *  连续两次 emit（如连续点击两个 persist lens）都基于同一份旧侧车内容计算，
  *  后写整文件覆盖 → 前一个 @generated 段丢失且首次结果文本虚报 written。
  *  同路径排队后两次 emit 串行，第二次读到第一次的写盘结果。 */
@@ -1763,13 +1763,13 @@ function serializedEmit(
   } = {},
 ): Promise<{
   derived: EmitDerivedResult;
-  local: EmitInterfaceResult;
+  local: EmitContractResult;
   rootSidecarPath: string;
 }> {
   const prev = emitChains.get(filePath) ?? Promise.resolve();
   const run = async (): Promise<{
     derived: EmitDerivedResult;
-    local: EmitInterfaceResult;
+    local: EmitContractResult;
     rootSidecarPath: string;
   }> => {
     /** 根侧车（绝对路径）——本函数是它**唯一**的写者 */
@@ -1781,7 +1781,7 @@ function serializedEmit(
     // 它的产物 D（`finalContent`，含 BOM）是段级合并的基底：派生分支在 D 上
     // 只并 `// derived-from:` 标签行，直写正文优先（手写/直写段不被生成段
     // 整段覆盖）。
-    const direct = await emitInterface(filePath, {
+    const direct = await emitContract(filePath, {
       fnNames,
       mode,
       ...(extra.source !== undefined ? { source: extra.source } : {}),
@@ -1883,7 +1883,7 @@ function serializedEmit(
 
 /**
  * Agent contract 固化：与 CLI `nudo contract --emit` 同一写盘器
- * （emitInterface），把调用点域固化为侧车 `@generated` 段。结果文本含
+ * （emitContract），把调用点域固化为侧车 `@generated` 段。结果文本含
  * written / skipped(reason) / issues；name-clash（手写优先）明确呈现。
  */
 export async function contractEmitTool(
@@ -1978,7 +1978,7 @@ export async function contractEmitTool(
  * `<sidecar>: no derived contract changes (<reason>)` / `[severity] code: message`。
  *
  * `rootSidecarPath`（BUG-196）：根侧车的净变化由主摘要（`Updated …` /
- * `no interface changes`）报——派生分支对它回报的 `changed` 是相对「直写分支
+ * `no contract changes`）报——派生分支对它回报的 `changed` 是相对「直写分支
  * 产物」的**中间态**，不是净效果 ⇒ 这里不重复报一次「Updated」。
  */
 function formatDerivedResult(
@@ -2021,21 +2021,21 @@ function formatDerivedResult(
 }
 
 /**
- * emit 结果文本（与 CLI runInterfaceEmit 共用 formatEmitSummary 骨架；
+ * emit 结果文本（与 CLI runContractEmit 共用 formatEmitSummary 骨架；
  * 本包装传绝对路径口径）。
  * dryRun：与 CLI `--emit --dry-run` 同口径的 `[dry-run] would update` 预览
  * （含 unifiedDiff / would-write），绝不声称已写盘。
  *
  * `derived`（root 驱动下行推导）：给出
  * 「Updated <root> → <downstream sidecar> (derived-from …)」这类行——
- * IDE 面此前**整步缺失**（Bug 762），工具只报「no interface changes」。
+ * IDE 面此前**整步缺失**（Bug 762），工具只报「no contract changes」。
  *
  * BUG-196：`result` 是**净效果**口径（写后 M vs 写前，逐字）——预览 diff、
  * `written` 台账、`Updated` 与否都取自它，与根侧车唯一写者的落盘内容同源。
  */
 export function formatEmitResult(
   filePath: string,
-  result: EmitInterfaceResult,
+  result: EmitContractResult,
   dryRun = false,
   derived?: EmitDerivedResult,
   rootSidecarPath?: string,
@@ -2050,7 +2050,7 @@ export function formatEmitResult(
       lines.push(`  would write: ${result.written.join(", ") || "(none)"}`);
       if (result.diff) lines.push(result.diff);
     } else {
-      lines.push(`${filePath}: no interface changes`);
+      lines.push(`${filePath}: no contract changes`);
       if (result.emptyDefaultTargets) {
         lines.push(
           `  tip: default emit only refreshes existing @generated segments; pass functionName to create new ones`,
@@ -2077,11 +2077,11 @@ export function formatEmitResult(
 // ---------------------------------------------------------------------------
 
 /** 默认层 lens：`●/○ contract / hw|gen|imp`（观察选择器的契约选项，与各 case 互斥） */
-export type InterfaceLens =
-  | { kind: "interface"; fn: string; line: number; source: InterfaceSource; active: boolean }
-  /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
+export type ContractLens =
+  | { kind: "contract"; fn: string; line: number; source: ContractSource; active: boolean }
+  /** 固化动作 lens：add=`⚡ persist contract`，update=`↻ update contract` */
   | { kind: "emit"; fn: string; line: number; mode: "add" | "update" }
-  /** 代码优先草稿：`⚡ draft interface`（F6；handwritten 不加） */
+  /** 代码优先草稿：`⚡ draft contract`（F6；handwritten 不加） */
   | { kind: "draft"; fn: string; line: number };
 
 /** case 副层 lens（debug 层，标题/命令与既有行为一致） */
@@ -2108,10 +2108,10 @@ export type ObservationLens = {
   title: string;
 };
 
-export type NudoLens = InterfaceLens | CaseLens | ObservationLens;
+export type NudoLens = ContractLens | CaseLens | ObservationLens;
 
-export type InterfaceLensDeps = {
-  /** .nudo.js 侧车装载（effectiveInterface 同一通道）；缺省不加载侧车 */
+export type ContractLensDeps = {
+  /** .nudo.js 侧车装载（effectiveContract 同一通道）；缺省不加载侧车 */
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   /** fn → 激活 case 下标（●/○ 标题）；缺省全部按 index 0 */
   activeCases?: Map<string, number>;
@@ -2120,10 +2120,10 @@ export type InterfaceLensDeps = {
 };
 
 /**
- * 顶层函数位（含 export 包裹与箭头/函数表达式 const 声明）——interface 档目标集。
+ * 顶层函数位（含 export 包裹与箭头/函数表达式 const 声明）——contract 档目标集。
  *
  * 枚举面必须与**导出面**（`localNamedExports`）同口径，否则 CodeLens 的
- * interface 档与 hover / inlay / semantic token 面分裂：
+ * contract 档与 hover / inlay / semantic token 面分裂：
  * - `export default function compute(…)` —— 默认导出此前整段漏掉（753）；
  * - 导出类的实例方法 `Counter.inc` —— 此前只存在于 hover 面（769）；
  * - CJS 成员导出 `exports.f = fn` / `module.exports.f = fn` —— 此前整段漏掉（998）。
@@ -2208,26 +2208,26 @@ function topLevelFunctionSlots(source: string): Array<{ name: string; line: numb
 
 /**
  * CodeLens 全量计算（server.ts onCodeLens 的可测纯函数形态）：
- * - interface 默认层：每个**导出**函数一条 `● contract / hw|gen|imp`——
- *   effectiveInterface 命中 handwritten/generated，否则 implicit
- *   （隐式 interface 始终可算，§7.1）；私有函数不绑定不落盘（§2.1），不加。
+ * - contract 默认层：每个**导出**函数一条 `● contract / hw|gen|imp`——
+ *   effectiveContract 命中 handwritten/generated，否则 implicit
+ *   （隐式 contract 始终可算，§7.1）；私有函数不绑定不落盘（§2.1），不加。
  * - 固化动作：handwritten 只读展示；侧车已含同名 @generated 段 → update，
  *   否则 add。
- * - case 副层：跟在本函数 interface 档之后（标题/命令零改动；来源仍是
+ * - case 副层：跟在本函数 contract 档之后（标题/命令零改动；来源仍是
  *   getCasesForFile 的指令 case）。
  */
-export function computeInterfaceLenses(
+export function computeContractLenses(
   source: string,
   filePath: string,
-  deps: InterfaceLensDeps = {},
+  deps: ContractLensDeps = {},
 ): NudoLens[] {
   // since 锚：lens 探测只排干自身产生的诊断增量——全量 take 会在 validateText
-  // 的 await 窗口窃取在途待消费的 interface-load 等诊断（check 通道被饿死）
-  const ifaceSince = interfaceDiagCount();
+  // 的 await 窗口窃取在途待消费的 contract-load 等诊断（check 通道被饿死）
+  const contractSince = contractDiagCount();
   const lenses: NudoLens[] = [];
   const exported = localNamedExports(source);
 
-  // 固化状态：侧车是否已含同名 @generated 段（与 effectiveInterface 的
+  // 固化状态：侧车是否已含同名 @generated 段（与 effectiveContract 的
   // generatedExportNames 判定同口径；经 loadModule 读侧车，不直接碰盘）
   const sidecarPath = sidecarPathOf(filePath);
   const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
@@ -2282,17 +2282,17 @@ export function computeInterfaceLenses(
     seen.add(fn.name);
 
     if (exported.has(fn.name)) {
-      // A7：与 hover / semantic tokens / inlay 共用 interfaceTierOf（同源）
-      const tier = interfaceTierOf(source, fn.name, filePath, {
+      // A7：与 hover / semantic tokens / inlay 共用 contractTierOf（同源）
+      const tier = contractTierOf(source, fn.name, filePath, {
         ...(deps.loadModule ? { loadModule: deps.loadModule } : {}),
         // §2.2「整体关闭」：autoBind=false 时侧车 ambient 停用，lens 回落
         // implicit（与 check/validate/print 同口径，避免 UI 仍暗示契约生效）
         ...(deps.autoBind === false ? { autoBind: false } : {}),
       });
-      const src: InterfaceSource = tier?.source ?? "implicit";
+      const src: ContractSource = tier?.source ?? "implicit";
       // 契约选项激活 ⇔ 该函数无激活 case（观察选择器互斥）
       const contractActive = !(deps.activeCases?.has(fn.name) ?? false);
-      lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src, active: contractActive });
+      lenses.push({ kind: "contract", fn: fn.name, line: fn.line, source: src, active: contractActive });
       if (src !== "handwritten") {
         lenses.push({
           kind: "emit",
@@ -2306,7 +2306,7 @@ export function computeInterfaceLenses(
       }
     }
 
-    // case 副层跟随 interface 档之后（同函数同 line，数组序即渲染序）
+    // case 副层跟随 contract 档之后（同函数同 line，数组序即渲染序）
     pushCaseLenses(fn.name, fn.line);
   }
 
@@ -2317,8 +2317,8 @@ export function computeInterfaceLenses(
     pushCaseLenses(fc.functionName, fc.loc.start.line);
   }
 
-  // lens 探测可能积累 interface-load 诊断——只排本次增量，防泄漏进 check 通道
-  takeInterfaceDiagsSince(ifaceSince);
+  // lens 探测可能积累 contract-load 诊断——只排本次增量，防泄漏进 check 通道
+  takeContractDiagsSince(contractSince);
   return lenses;
 }
 

@@ -1,7 +1,7 @@
 /**
  * Bug 487 回归（LSP 面）：项目配置指纹用了**未归一**的 `autoBind`
  * （`cfg.contract?.autoBind ?? true`），而分析面读的是 **service 侧归一后**
- * 的值（`interfaceConfig`）⇒ 两者口径分裂。
+ * 的值（`contractConfig`）⇒ 两者口径分裂。
  *
  * 后果：把 `autoBind` 写成非布尔（非法形状，如 `"false"`）时，归一回落
  * `true` ⇒ 有效行为与「不写」**完全相同**，但原始指纹不同 ⇒ 用户只改了这

@@ -63,7 +63,7 @@ changing the signature of any row below is **major**.
 | `formatAbs`, `formatShape`, `formatConstraint`, `formatCheckReport` | value | extensional rendering (one-way) | **public** |
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
-| `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:interface-drift` judgment (optional field — no new export) | **public** |
+| `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | **public** |
 | `generalizeFromAst` | value | symbolic α generalization | **public** |
 | `parseSource`, `resetParseSourceCache`, `getParseSourceCacheSize` | value | Babel parse + memo | **public** |
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
@@ -71,7 +71,7 @@ changing the signature of any row below is **major**.
 | `stripTypes` | value | AST TS-stripping helper | **public** |
 | `ConstraintBuilder`, `number`, `string`, `boolean`, `litC()` (sidecar key `lit()`), `andC()` (sidecar key `and()`), `shape()`, `union()`, … | value/type | `@nudo:contract` builder grammar | **public** |
 | `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
-| `interfaceTierOf`, `effectiveInterface`, `EffectiveInterface`, `InterfaceTierInfo` | value/type | interface tiers | **public** |
+| `contractTierOf`, `effectiveContract`, `EffectiveContract`, `ContractTierInfo` | value/type | contract tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |
 | `listFnDirectiveScopes`, `findFnDirectiveScope`, `fnDirectiveCommentLines`, `FnDirectiveScope` | value/type | G2 directive scope binding (nearest AST Function, incl. nested / class method) | **public** |
 | `extractFileEnvNames`, `extractMockModuleRecords`, `extractNudoImportRecords`, `scanCaseTags`, `scanContractSegments`, `scanThrowsDecl`, `scanBudgetDecl`, `parseEnvPayload`, `parseMockModulePayload`, `parseNudoImportPayload`, `CaseTag`, `MockModuleRecord`, `NudoImportRecord` | value/type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | **public** |

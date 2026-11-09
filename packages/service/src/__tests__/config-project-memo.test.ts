@@ -16,7 +16,7 @@ import {
   findProjectConfig,
   evictProjectConfigMemo,
   projectConfigMemoStats,
-  interfaceConfig,
+  contractConfig,
 } from "../evaluator/config.ts";
 import { tmpProject } from "./tmp-project.ts";
 
@@ -36,7 +36,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
 
     const first = findProjectConfig(deep);
     expect(first?.projectDir).toBe(root);
-    expect(interfaceConfig(first?.config).autoBind).toBe(false);
+    expect(contractConfig(first?.config).autoBind).toBe(false);
     const readsAfterFirst = projectConfigMemoStats().diskReads;
 
     // 命中：只做链上 stat 比对，不再 readFileSync+JSON.parse
@@ -56,14 +56,14 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
     const src = join(root, "src");
     mkdirSync(src);
 
-    expect(interfaceConfig(findProjectConfig(src)?.config).autoBind).toBe(false);
+    expect(contractConfig(findProjectConfig(src)?.config).autoBind).toBe(false);
 
     writeFileSync(pkg, JSON.stringify({ name: "m", nudo: { contract: { autoBind: true } } }));
     const t1 = new Date(Date.now() - 30_000);
     utimesSync(pkg, t1, t1);
 
     const readsBefore = projectConfigMemoStats().diskReads;
-    expect(interfaceConfig(findProjectConfig(src)?.config).autoBind).toBe(true);
+    expect(contractConfig(findProjectConfig(src)?.config).autoBind).toBe(true);
     expect(projectConfigMemoStats().diskReads).toBe(readsBefore + 1);
   });
 
@@ -128,7 +128,7 @@ describe("findProjectConfig stat-error taxonomy (#135)", () => {
     // mid 无 package.json（ENOENT = 真缺席）→ 不得中断，继续向上命中 root
     const found = findProjectConfig(mid);
     expect(found?.projectDir).toBe(root);
-    expect(interfaceConfig(found?.config).autoBind).toBe(false);
+    expect(contractConfig(found?.config).autoBind).toBe(false);
   });
 });
 

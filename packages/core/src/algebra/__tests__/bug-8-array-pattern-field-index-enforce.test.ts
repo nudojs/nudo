@@ -3,7 +3,7 @@
  * `missing field x`（假红），元素值从未与界比对（真违例也被误伤）。
  *
  * 根因：`locateContractParam` 对数组 pattern 只给 `fieldIndex`、不给
- * `fieldPath`；`scan-literal-calls.ts` 的 `interfaceToIndexed` 此前把「没有
+ * `fieldPath`；`scan-literal-calls.ts` 的 `contractToIndexed` 此前把「没有
  * `fieldPath`」退回 `[hit.field]`（对象槽路径）⇒ `projectAbsPath(数组,
  * ["x"])` 必然取不到。模型层产出的 `fieldIndex` 从没被读。
  *

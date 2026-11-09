@@ -1,5 +1,5 @@
 /**
- * Bug 537 — `nudo:interface-emit-denied` 的消息里报的是**源文件**路径，而
+ * Bug 537 — `nudo:contract-emit-denied` 的消息里报的是**源文件**路径，而
  * 文档（diagnostics.md）的示例消息写的是**侧车**路径 → 照文档配的 allowlist
  * （侧车形态 glob）**永远**被拒，且用户被指向一个不存在的判定对象。
  *
@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 
 let dir: string;
 
@@ -47,8 +47,8 @@ describe("Bug 537 — emit-denied 消息点名源文件路径", () => {
     const file = join(dir, "src", "lib.js");
     writeFileSync(file, SRC);
 
-    const r = await emitInterface(file, { mode: "update", all: true });
-    const denied = r.issues.find((i) => i.code === "nudo:interface-emit-denied");
+    const r = await emitContract(file, { mode: "update", all: true });
+    const denied = r.issues.find((i) => i.code === "nudo:contract-emit-denied");
     expect(denied).toBeDefined();
     // 消息点名**源文件**（被判定的那条路径）
     expect(denied!.message).toContain("src/lib.js");
@@ -71,8 +71,8 @@ describe("Bug 537 — emit-denied 消息点名源文件路径", () => {
     );
     const file = join(dir, "src", "lib.js");
     writeFileSync(file, SRC);
-    const r = await emitInterface(file, { mode: "update", all: true });
-    expect(r.issues.find((i) => i.code === "nudo:interface-emit-denied")).toBeUndefined();
+    const r = await emitContract(file, { mode: "update", all: true });
+    expect(r.issues.find((i) => i.code === "nudo:contract-emit-denied")).toBeUndefined();
     expect(r.skipped.some((s) => s.reason === "emit-denied")).toBe(false);
   });
 });

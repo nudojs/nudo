@@ -28,13 +28,13 @@ export {
 
 export {
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   analysisConfig,
   checkConfig,
   diskCacheRoot,
   matchesEmitAllowlist,
   type NudoConfig,
-  type InterfaceConfig,
+  type ContractConfig,
   type AnalysisConfig,
   type CheckConfig,
   type AnalysisMode,

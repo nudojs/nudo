@@ -14,7 +14,7 @@ The server is designed to run **next to** `tsserver` / `vtsls`, not instead of t
 
 | Client | Role | Expectation |
 |--------|------|-------------|
-| **VS Code** (`wmzy.nudo-vscode`) | **Flagship** IDE client | Full feature face: hover, CodeLens interface tier + case switch, inlay hints, decorations, agent bridge |
+| **VS Code** (`wmzy.nudo-vscode`) | **Flagship** IDE client | Full feature face: hover, CodeLens contract tier + case switch, inlay hints, decorations, agent bridge |
 | **Zed** | Best-effort | Core face works (diagnostics / hover / rename). CodeLens needs `code_lens: "on"`; no active-case decoration API |
 | **Helix** | Best-effort | Diagnostics / hover / definition / rename. **No CodeLens UI** — use CLI `nudo contract` / `nudo check` for the same data |
 | **Neovim** | Best-effort | Core face works; CodeLens / semantic tokens / decorations depend on plugins |
@@ -25,7 +25,7 @@ Gap themes (full table + workarounds below; tracking IDs live in the design sour
 | Theme | IDs | Who feels it |
 |-------|-----|--------------|
 | Active-case decoration | **LSP-G1** | Closed on **VS Code** (function-body + case-line decorations). Zed / Neovim / Helix still open (client has no decoration API, or needs a plugin) |
-| CodeLens not rendered | **LSP-G2** | Helix / minimal Neovim — **observation face covered by inlay** `● contract / hw\|gen\|imp` (same `computeInterfaceLenses` as CodeLens). CodeLens UI itself remains a client limit |
+| CodeLens not rendered | **LSP-G2** | Helix / minimal Neovim — **observation face covered by inlay** `● contract / hw\|gen\|imp` (same `computeContractLenses` as CodeLens). CodeLens UI itself remains a client limit |
 | Semantic tokens off by default | **LSP-G3** | **VS Code** can paint (`semanticTokenScopes`). Zed / Neovim / Helix: enable per Setup notes |
 | Secondary-server noise next to tsserver | **LSP-G4** | All clients (config: `nudo.analysis.include` / `exclude`, or `mode: "directives"`). VS Code: command `Nudo: Apply coexistence settings` |
 | Pull diagnostics unused | **LSP-G6** | Older clients — **push path is pinned** (validateText always publishes); pull is an enhancement |
@@ -48,12 +48,12 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Document / workspace symbols | standard LSP | |
 | Signature help | `onSignatureHelp` | Triggers `(`, `,`; projects real `paramTypes` / return via `formatShape` (G7) |
 | Code actions (`quickfix`) | `onCodeAction` | Unreachable cleanup; contract/param fixes (A6); action-map quickfixes (`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`) |
-| Semantic tokens (full) | `languages.semanticTokens` | Legend includes `contract` / `generated` / `derived` interface modifiers (A7) |
+| Semantic tokens (full) | `languages.semanticTokens` | Legend includes `contract` / `generated` / `derived` contract modifiers (A7) |
 | Execute command | `nudo.*` | `selectCase`, `contract`, `contract.draft`, `contract.emit`, agent tools |
 | Custom requests | `nudo/…` | Same handlers as commands (E5); slash-form is the protocol contract |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "exports"` — full gate semantics: [Coexistence](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CodeLens interface tier uses the broader target path even when diagnostics stay quiet for directive-less files.
+**File detection (A1/A2):** targets are `.js` / `.mjs` / `.ts`. Shipped default is `nudo.analysis.mode = "exports"` — full gate semantics: [Coexistence](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CodeLens contract tier uses the broader target path even when diagnostics stay quiet for directive-less files.
 
 **Zed / Nvim protocol smoke (B4):** `pnpm --filter @nudojs/lsp run smoke` exercises stdio `initialize` → `textDocument/hover` → `textDocument/publishDiagnostics` — the basic face those editors need. The VS Code package has its own `smoke` (bundled server + initialize).
 
@@ -65,9 +65,9 @@ Legend: **Y** = works with stock client + this server · **C** = needs a setting
 |------------|:-----------------------:|:----------------:|:-----------------------:|:-----:|:-----------------:|
 | Launch | Bundled `server.js` over IPC | Zed managed npm (`@nudojs/lsp` → `node …/server.js --stdio`) | `cmd = nudo-lsp` | `command = nudo-lsp` | Spawn `nudo-lsp` or `node dist/server.js` |
 | Diagnostics | Y | Y | Y | Y | Y |
-| Hover (Abs + interface tier) | Y | Y | Y | Y | Y |
+| Hover (Abs + contract tier) | Y | Y | Y | Y | Y |
 | Completion | Y | Y | Y | C (`.` via auto-pairs) | Y |
-| CodeLens interface + case | Y | C (`code_lens: "on"`) | C (plugins: glance/nvim-code-action-menu vary) | N | C (client-dependent) |
+| CodeLens contract + case | Y | C (`code_lens: "on"`) | C (plugins: glance/nvim-code-action-menu vary) | N | C (client-dependent) |
 | Inlay hints | Y | C (`inlay_hints.enabled`) | C (`inlay_hints` support) | C | C |
 | Definition / References / Rename | Y | Y | Y | Y | Y |
 | Document symbols | Y | Y | Y | Y | Y |
@@ -78,7 +78,7 @@ Legend: **Y** = works with stock client + this server · **C** = needs a setting
 | Active-case decoration | Y (extension) | N | N | N | N |
 | Agent commands (`nudo.check`, `nudo.hover`, …) | Y (executeCommand / MCP bridge) | Y (agent tooling / custom request) | Y (custom LSP request) | C | Y |
 | Open-buffer sidecar (A4) | Y | Y | Y | Y | Y |
-| Buffer-aware interface agent tool (E5) | Y | Y | Y | Y | Y |
+| Buffer-aware contract agent tool (E5) | Y | Y | Y | Y | Y |
 
 ## Setup notes (copy-paste defaults)
 
@@ -201,10 +201,10 @@ These surfaces always share one computation (pinned by tests):
 
 | Surface | Shared source |
 |---------|----------------|
-| CodeLens `● contract` | `interfaceTierOf` |
-| Hover first line + contract display | `interfaceTierOf` + `getHoverAtPosition` |
-| Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
-| Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
+| CodeLens `● contract` | `contractTierOf` |
+| Hover first line + contract display | `contractTierOf` + `getHoverAtPosition` |
+| Inlay `contractSource` / `derived` | `collectAbsInlays` + `contractTierOf` |
+| Semantic token modifiers | `buildSemanticTokens` + `contractTierOf` |
 | Agent `nudo.check` / `nudo.hover` / `nudo.contract` / test/whatIf/trace | Same service/core entrypoints + buffer-aware `loadModule` (E5 `AGENT_TOOL_SOURCES`); tool errors carry `isError: true` |
 | CLI `nudo check` / `nudo contract` | Same service/core entrypoints |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | Same dispatch table; inventory pinned in `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |

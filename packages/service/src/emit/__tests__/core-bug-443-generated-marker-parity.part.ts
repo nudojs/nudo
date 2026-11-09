@@ -9,9 +9,9 @@
  *
  * 本文件钉住两件事：
  * ① **产品面**：侧车里只有散文提及 `@generated` 时，`--emit` **不得**覆盖手写
- *    契约（`nudo:interface-name-clash` + 跳过）。
+ *    契约（`nudo:contract-name-clash` + 跳过）。
  * ② **跨包一致性**：core 的 `generatedExportNames` 与 service 侧（派生路径
- *    `interface-derivation-emit.ts` + 主路径 `interface-emitter.ts`）对同一份
+ *    `contract-derivation-emit.ts` + 主路径 `contract-emitter.ts`）对同一份
  *    侧车源码的「谁是生成段」判定必须一致（core / service 两份实现同批落地）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -19,7 +19,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatedExportNames } from "@nudojs/core";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 
 let dir: string;
 
@@ -52,9 +52,9 @@ describe("Bug 443 — 散文提及 @generated ⇒ 手写契约不得被 emit 覆
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
     writeFileSync(join(dir, "lib.nudo.js"), PROSE_SIDECAR);
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.skipped.map((s) => s.fn)).toContain("scale");
-    expect(r.issues.some((i) => i.code === "nudo:interface-name-clash")).toBe(true);
+    expect(r.issues.some((i) => i.code === "nudo:contract-name-clash")).toBe(true);
     const after = readFileSync(join(dir, "lib.nudo.js"), "utf-8");
     expect(after).toContain("export const scale = fn({ x: number().gt(0) });");
     expect(after).not.toContain("lit(");
@@ -83,9 +83,9 @@ export const scale = fn({ x: number().gt(0) });
 export const scale = fn({ x: number().gt(0) });
 `,
     );
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.skipped.map((s) => s.fn)).not.toContain("scale");
-    expect(r.issues.some((i) => i.code === "nudo:interface-name-clash")).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:contract-name-clash")).toBe(false);
   });
 
   it("段内夹无关 const ⇒ 手写段不是生成段（Bug 432 的段边界，同批落地）", async () => {
@@ -109,7 +109,7 @@ export const scale = fn({ x: number().gt(0) });
 `,
       ),
     ]).toEqual([]);
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.skipped.map((s) => s.fn)).toContain("scale");
     const after = readFileSync(join(dir, "lib3.nudo.js"), "utf-8");
     expect(after).toContain("export const scale = fn({ x: number().gt(0) });");

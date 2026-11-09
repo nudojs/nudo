@@ -1,5 +1,5 @@
 /**
- * export — 诊断汇总面：check 面诊断、`nudo:interface-load`、冲突。
+ * export — 诊断汇总面：check 面诊断、`nudo:contract-load`、冲突。
  *
  * 诊断**只上屏不改产物**：产物面（dts / zod / standard / guard）的字节内容不受
  * 诊断影响；诊断面走 stderr，stdout 投影面保持可钉住。
@@ -10,7 +10,7 @@
  * 命中即：真实诊断上屏（stderr）+ exit 1 + **不发布产物**（发布错的比不发布
  * 更坏）。
  */
-import { checkSource, pTrue, type EffectiveInterfaceOpts } from "@nudojs/core";
+import { checkSource, pTrue, type EffectiveContractOpts } from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
 import { collectSkipReturns, type AnalysisResult } from "@nudojs/service";
 
@@ -27,9 +27,9 @@ export type ExportDiagnostic = {
 export type ExportDiagnostics = {
   /** 全部诊断条目（分析面 + check 面，去重后按来源顺序）。 */
   entries: ExportDiagnostic[];
-  /** 侧车 / 契约装载诊断（`nudo:interface-load`）。 */
-  interfaceLoad: ExportDiagnostic[];
-  /** 契约冲突诊断（`nudo:interface-conflict`）。 */
+  /** 侧车 / 契约装载诊断（`nudo:contract-load`）。 */
+  contractLoad: ExportDiagnostic[];
+  /** 契约冲突诊断（`nudo:contract-conflict`）。 */
   conflicts: ExportDiagnostic[];
   /** 阻断级（error）诊断存在 ⇒ **不得发布产物**。 */
   blocking: boolean;
@@ -44,7 +44,7 @@ export type ExportDiagnosticOptions = {
   /** 分析面结果（诊断来源之一：分析面诊断）。 */
   result: AnalysisResult;
   /** 契约面装载口径（与 check / iface 面同口径）。 */
-  effOpts: EffectiveInterfaceOpts;
+  effOpts: EffectiveContractOpts;
   /**
    * 导出面判据（模块公开面）：**只报导出面函数的诊断**——内部实现的契约问题
    * 不影响产物面（产物面不发布内部函数）。缺省 = 不过滤。
@@ -54,16 +54,16 @@ export type ExportDiagnosticOptions = {
 
 /**
  * 阻断级诊断码（契约面三族）：
- * - `nudo:interface-load`：侧车 / 模板装载失败 ⇒ 整条契约丢失（产物面把「未
+ * - `nudo:contract-load`：侧车 / 模板装载失败 ⇒ 整条契约丢失（产物面把「未
  *   申报」当「无约束」发布）；
- * - `nudo:interface-param-mismatch`：契约形参名不在声明形参表 ⇒ 槽位名错位
+ * - `nudo:contract-param-mismatch`：契约形参名不在声明形参表 ⇒ 槽位名错位
  *   （产物面的参数名与函数签名对不上，调用方拿到错的校验器）；
- * - `nudo:interface-conflict`：契约合取不可满足 ⇒ 产物面只编码了一半契约。
+ * - `nudo:contract-conflict`：契约合取不可满足 ⇒ 产物面只编码了一半契约。
  */
 export const EXPORT_BLOCKING_CODES: readonly string[] = [
-  DIAG.interfaceLoad,
-  DIAG.interfaceParamMismatch,
-  DIAG.interfaceConflict,
+  DIAG.contractLoad,
+  DIAG.contractParamMismatch,
+  DIAG.contractConflict,
 ];
 
 /** 诊断条目化：非阻断族诊断一律丢弃（导出面只关心契约面三族）。 */
@@ -87,8 +87,8 @@ function toExportDiagnostic(d: {
 /**
  * check 面诊断（core `checkSource`）：与 `nudo check` **同源同码**。
  *
- * 契约形参名不匹配（`nudo:interface-param-mismatch`）与契约合取冲突
- * （`nudo:interface-conflict`）**只在这里出现**——分析面（analyzer）不产这两
+ * 契约形参名不匹配（`nudo:contract-param-mismatch`）与契约合取冲突
+ * （`nudo:contract-conflict`）**只在这里出现**——分析面（analyzer）不产这两
  * 条，export 面此前又完全不看 check 面 ⇒ 契约与产物面对不上时**无人上屏**。
  *
  * L2 入口 may-throw 与导出面的契约诊断无关 ⇒ `entryThrows: "off"`（不评估函数
@@ -121,9 +121,9 @@ function checkFaceIssues(opts: ExportDiagnosticOptions): ExportDiagnostic[] {
  * 诊断收集（Bug 610 / 607 / 625）：两个来源合并去重。
  *
  * ① **check 面**（core `checkSource`）——契约形参名不匹配 / 契约合取冲突；
- * ② **分析面**（service analyzer）——侧车 / 模板装载失败（`nudo:interface-load`）。
+ * ② **分析面**（service analyzer）——侧车 / 模板装载失败（`nudo:contract-load`）。
  *
- * 两个来源都会报 `nudo:interface-load`（分析面先报、check 面再报一次）⇒ 按
+ * 两个来源都会报 `nudo:contract-load`（分析面先报、check 面再报一次）⇒ 按
  * (码, 函数, 消息) 去重后只剩一条。
  */
 export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportDiagnostics {
@@ -153,11 +153,11 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
 
   return {
     entries,
-    interfaceLoad: entries.filter((d) => d.code === DIAG.interfaceLoad),
-    conflicts: entries.filter((d) => d.code === DIAG.interfaceConflict),
+    contractLoad: entries.filter((d) => d.code === DIAG.contractLoad),
+    conflicts: entries.filter((d) => d.code === DIAG.contractConflict),
     // BUG-233：阻断判据必须与 `EXPORT_BLOCKING_CODES` **按码**对齐（`toExportDiagnostic`
     // 已把非阻断族丢弃）——只看 `severity === "error"` 会放过 warning 级的
-    // `nudo:interface-conflict` ⇒ 已收集的诊断既不上屏也不阻断（产物只编码了一半契约）。
+    // `nudo:contract-conflict` ⇒ 已收集的诊断既不上屏也不阻断（产物只编码了一半契约）。
     blocking: entries.some(
       (d) => d.severity === "error" || EXPORT_BLOCKING_CODES.includes(d.code),
     ),

@@ -9,9 +9,9 @@ import type { Abs } from "./abs.ts";
 import type { Pred } from "./pred.ts";
 import { termEquals, type LiteralValue, type Term } from "./term.ts";
 import { accessorReadDomain } from "./accessors.ts";
-import { isHiddenInternalSlot } from "./interface/slot-visibility.ts";
+import { isHiddenInternalSlot } from "./contract/slot-visibility.ts";
 import { safeMemberAccess } from "./format/codegen-escape.ts";
-import { ProjectionBudget } from "./interface/projection-budget.ts";
+import { ProjectionBudget } from "./contract/projection-budget.ts";
 import { getEvalClass } from "./exec/class-registry.ts";
 import { SELF } from "./constraint.ts";
 

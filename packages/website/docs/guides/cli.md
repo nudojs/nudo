@@ -13,7 +13,7 @@ nudo — JavaScript types, computed
 
   nudo check <path> [--watch|-w]   # gate contracts + entry throws; print signatures
   nudo test <path> [--watch|-w]    # report every inferred case; assert declared expectations
-  nudo contract <path>             # draft / emit interfaces
+  nudo contract <path>             # draft / emit contracts
   nudo export <path>               # project dts / guard / schema / standard
   nudo health [paths]              # project health & drift
 ```
@@ -157,7 +157,7 @@ assertions
 
 ## `nudo contract`
 
-Draft, print, or emit effective interfaces (handwritten / generated / implicit layers).
+Draft, print, or emit effective contracts (handwritten / generated / implicit layers).
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
@@ -165,7 +165,7 @@ nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
 ```
 
 ```bash
-nudo contract src/lib.js                     # print effective interfaces
+nudo contract src/lib.js                     # print effective contracts
 nudo contract --draft src/lib.js             # reviewable *.nudo.draft.js
 nudo contract --draft --write src/lib.js     # write the draft
 nudo contract --from-dts ./my-pkg/src/index.ts  # reverse .d.ts / TS annotations into a reviewable draft

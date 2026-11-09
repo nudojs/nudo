@@ -8,7 +8,7 @@
  * checkSource 后跑（缓存命中，诊断消失）」⇒ check 门禁面看不到侧车写坏。
  *
  * 修复（core）：装载诊断随 exec 结果缓存，缓存命中时重发 ⇒ checkSource
- * 自己上报一份 `nudo:interface-load`（nudojs 面的分析器白名单**刻意**不含
+ * 自己上报一份 `nudo:contract-load`（nudojs 面的分析器白名单**刻意**不含
  * 该码 —— 避免双报，见 check-json-map.ts 的 CHECK_FACE_DIAG_CODES）。
  *
  * **进程内**驱动（不经 dist）：vitest 别名把 `@nudojs/core` 指到 src ⇒
@@ -24,7 +24,7 @@ import { Command } from "commander";
 import { registerCheckCommand } from "../commands/check-command.ts";
 
 const SRC = "export function f(x) {\n  return x;\n}\n";
-/** 侧车 import 了非构建器名 totallyBogus ⇒ 装载期 nudo:interface-load */
+/** 侧车 import 了非构建器名 totallyBogus ⇒ 装载期 nudo:contract-load */
 const BAD_SIDECAR = `import { fn, number, totallyBogus } from "@nudojs/core";
 export const f = fn({ x: number() });
 `;
@@ -68,13 +68,13 @@ function makeProject(): { dir: string; file: string } {
   return { dir, file };
 }
 
-describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:interface-load）", () => {
-  it("人类面：check 报 interface-load error + exit 1（旧行为：exit 0 假绿）", async () => {
+describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:contract-load）", () => {
+  it("人类面：check 报 contract-load error + exit 1（旧行为：exit 0 假绿）", async () => {
     const { dir, file } = makeProject();
     try {
       await runCheckCli(["check", file]);
       const out = logs.join("\n");
-      expect(out).toContain("nudo:interface-load");
+      expect(out).toContain("nudo:contract-load");
       expect(out).toContain("is not an injected builder");
       expect(process.exitCode, "侧车写坏 ⇒ 门禁必须红").toBe(1);
     } finally {
@@ -82,7 +82,7 @@ describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:interface-load
     }
   });
 
-  it("--json 面：信封 ok:false + issues 含 nudo:interface-load（且只一条）", async () => {
+  it("--json 面：信封 ok:false + issues 含 nudo:contract-load（且只一条）", async () => {
     const { dir, file } = makeProject();
     try {
       await runCheckCli(["check", file, "--json"]);
@@ -94,7 +94,7 @@ describe("bug 1064: 侧车写坏 ⇒ check 门禁必须红（nudo:interface-load
       };
       expect(env.ok).toBe(false);
       const issues = env.issues ?? env.reports?.[0]?.issues ?? [];
-      expect(issues.filter((i) => i.code === "nudo:interface-load")).toHaveLength(1);
+      expect(issues.filter((i) => i.code === "nudo:contract-load")).toHaveLength(1);
       expect(process.exitCode).toBe(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

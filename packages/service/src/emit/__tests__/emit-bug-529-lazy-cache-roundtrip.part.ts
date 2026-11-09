@@ -15,7 +15,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { formatInterfaceSurfaceLine, interfaceSurface } from "../interface-surface.ts";
+import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -23,7 +23,7 @@ afterAll(() => {
 });
 
 function makeFixture(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "nudo-iface-529-"));
+  const root = mkdtempSync(join(tmpdir(), "nudo-contract-529-"));
   dirs.push(root);
   for (const [rel, content] of Object.entries(files)) {
     const p = join(root, rel);
@@ -83,9 +83,9 @@ async function runWithCache(
   const prev = process.env.NUDO_CACHE_DIR;
   process.env.NUDO_CACHE_DIR = cacheDir;
   try {
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     return {
-      lines: entries.map(formatInterfaceSurfaceLine),
+      lines: entries.map(formatContractSurfaceLine),
       cacheFiles: collectFiles(cacheDir),
     };
   } finally {

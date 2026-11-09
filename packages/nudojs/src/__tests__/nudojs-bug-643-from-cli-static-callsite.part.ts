@@ -16,7 +16,7 @@
  *   `nudo check <调用方>` **exit 1 红** —— 谁被检查谁决定颜色。
  *
  * 本钉走**产品面**（共享脚手架 `helpers/run-cli.ts` 的 CLI runner）：
- * ① `--from` ⇒ 被调方红（exit 1）+ 恰一条 `nudo:interface-domain-exceeds`；
+ * ① `--from` ⇒ 被调方红（exit 1）+ 恰一条 `nudo:contract-domain-exceeds`；
  * ② `--json` 面同判（ok:false / summary.errors=1 / issues 恰一条）；
  * ③ 归因到**被调方导出名**（`fn: "f"` / actual `-1`）；
  * ④ `--from <目录>` 同判（现场文件集合按目录展开）；
@@ -108,8 +108,8 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "infn.js"], { cwd: dir });
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain("nudo:interface-domain-exceeds");
-    expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:interface-domain-exceeds")).toBe(1);
+    expect(r.stdout).toContain("nudo:contract-domain-exceeds");
+    expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
     // 跨文件面用跨文件面的码（同文件通道的码不得出现在被调方报告里）
     expect(r.stdout).not.toContain("nudo:constraint-violated");
   }, 60000);
@@ -122,7 +122,7 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     expect(json.ok).toBe(false);
     expect(json.summary.errors).toBe(1);
     expect(json.issues.length).toBe(1);
-    expect(json.issues[0].code).toBe("nudo:interface-domain-exceeds");
+    expect(json.issues[0].code).toBe("nudo:contract-domain-exceeds");
     expect(json.issues[0].severity).toBe("error");
   }, 60000);
 
@@ -140,8 +140,8 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     const dir = fixture();
     const r = runCliTsx(["check", "lib.js", "--from", "."], { cwd: dir });
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain("nudo:interface-domain-exceeds");
-    expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:interface-domain-exceeds")).toBe(1);
+    expect(r.stdout).toContain("nudo:contract-domain-exceeds");
+    expect(countOf(issueCodes(r.stdout).join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
   }, 60000);
 
   it("⑤ 控制组：直接 check 调用方 ⇒ 仍 1 条 nudo:constraint-violated（跨文件面不污染同文件面）", () => {
@@ -151,7 +151,7 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     const json = JSON.parse(r.stdout) as CheckJsonLike;
     const codes = json.issues.map((i) => i.code);
     expect(countOf(codes.join("\n"), "nudo:constraint-violated")).toBe(1);
-    expect(countOf(codes.join("\n"), "nudo:interface-domain-exceeds")).toBe(0);
+    expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(0);
   }, 60000);
 
   it("⑥ 控制组：不带 --from ⇒ 被调方绿（不凭空造证据）", () => {
@@ -161,7 +161,7 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     const json = JSON.parse(r.stdout) as CheckJsonLike;
     expect(json.ok).toBe(true);
     const codes = json.issues.map((i) => i.code);
-    expect(countOf(codes.join("\n"), "nudo:interface-domain-exceeds")).toBe(0);
+    expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(0);
   }, 60000);
 
   it("⑦ 不重复报告：顶层调用点（执行态 + 静态两通道同时命中）⇒ 恰一条", () => {
@@ -175,6 +175,6 @@ describe("Bug 643 —— --from 的现场文件路径必须到达 runCheck（CLI
     expect(r.status).toBe(1);
     const json = JSON.parse(r.stdout) as CheckJsonLike;
     const codes = json.issues.map((i) => i.code);
-    expect(countOf(codes.join("\n"), "nudo:interface-domain-exceeds")).toBe(1);
+    expect(countOf(codes.join("\n"), "nudo:contract-domain-exceeds")).toBe(1);
   }, 60000);
 });

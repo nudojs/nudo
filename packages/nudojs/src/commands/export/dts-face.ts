@@ -4,7 +4,7 @@
  * dts 只发射**导出面**（export / export default / CJS exports —— 与 check entry
  * 表同源 `localNamedExports`；导出 class 的实例方法按 Class 前缀放行）。
  */
-import { abs as makeAbs, type Abs, type EffectiveInterface } from "@nudojs/core";
+import { abs as makeAbs, type Abs, type EffectiveContract } from "@nudojs/core";
 import {
   projectFunctionDts,
   projectModuleDts,
@@ -45,7 +45,7 @@ export function exportFacePredicate(entryNames: ReadonlySet<string>): (name: str
 export function dtsFaceEntry(
   fn: FunctionAnalysis,
   baseName: string,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   source: string,
   filePath: string,
   evalMocks: Record<string, Abs> | undefined,

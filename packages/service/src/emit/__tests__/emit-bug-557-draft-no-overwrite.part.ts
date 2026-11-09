@@ -18,11 +18,11 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  draftInterface,
+  draftContract,
   formatDraftSummary,
   sidecarDraftPath,
-  writeInterfaceDraft,
-} from "../interface-draft.ts";
+  writeContractDraft,
+} from "../contract-draft.ts";
 
 let dir: string;
 
@@ -40,12 +40,12 @@ describe("Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
   it("既有草稿被手改过 ⇒ 拒绝覆盖且原样保留（改前：静默覆盖）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const draftPath = sidecarDraftPath(file);
     const handEdited = `// HAND EDITED BY USER\n${r.draftSource}`;
     writeFileSync(draftPath, handEdited, "utf-8");
 
-    const w = writeInterfaceDraft(file, r.draftSource, { entries: r.entries });
+    const w = writeContractDraft(file, r.draftSource, { entries: r.entries });
     expect(w.written).toBe(false);
     expect(w.skipped).toBe("hand-edited");
     expect(readFileSync(draftPath, "utf-8")).toBe(handEdited);
@@ -58,15 +58,15 @@ describe("Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
   it("负控制：机器原稿（指纹一致）仍可被覆盖（源变化后重生成）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
-    const r1 = await draftInterface(file);
+    const r1 = await draftContract(file);
     const draftPath = sidecarDraftPath(file);
-    const w1 = writeInterfaceDraft(file, r1.draftSource, { entries: r1.entries });
+    const w1 = writeContractDraft(file, r1.draftSource, { entries: r1.entries });
     expect(w1.written).toBe(true);
 
     // 源变了 ⇒ 新草稿文本不同 ⇒ 机器原稿（指纹自洽）应被覆盖
     writeFileSync(file, `${LIB_JS}export function sub(a, b) {\n  return a - b;\n}\n`);
-    const r2 = await draftInterface(file);
-    const w2 = writeInterfaceDraft(file, r2.draftSource, { entries: r2.entries });
+    const r2 = await draftContract(file);
+    const w2 = writeContractDraft(file, r2.draftSource, { entries: r2.entries });
     expect(w2.written).toBe(true);
     expect(readFileSync(draftPath, "utf-8")).toBe(r2.draftSource);
   });
@@ -74,10 +74,10 @@ describe("Bug 557 —— 草稿落盘不覆盖人工改过的文件", () => {
   it("负控制：同内容重跑 ⇒ 幂等（unchanged，不写盘）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, LIB_JS);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const draftPath = sidecarDraftPath(file);
-    writeInterfaceDraft(file, r.draftSource, { entries: r.entries });
-    const w2 = writeInterfaceDraft(file, r.draftSource, { entries: r.entries });
+    writeContractDraft(file, r.draftSource, { entries: r.entries });
+    const w2 = writeContractDraft(file, r.draftSource, { entries: r.entries });
     expect(w2.changed).toBe(false);
     expect(w2.written).toBe(false);
     expect(w2.skipped).toBeUndefined();

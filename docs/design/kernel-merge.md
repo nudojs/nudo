@@ -88,7 +88,7 @@ parser ──▶ core
 
 - **动机**：collector / 诊断通道曾是模块级单变量 + set→finally→restore 配对；
   同步路径单线程下正确，但宿主 async 入口存在 await 窗口——LSP
-  `validateText`、`analyzeFileAsync` 的 path-env preload、`emitInterface` 的
+  `validateText`、`analyzeFileAsync` 的 path-env preload、`emitContract` 的
   `await analyzeFileAsync`。两轮「await 窗口偷诊断」事故根因相同：交错分析
   共享同一缓冲 / collector（since 锚只缓解全量 take 变体）。
 - **机制**（单一定义：`algebra/collector-scope.ts` + `algebra/diag-channel.ts`，
@@ -106,13 +106,13 @@ parser ──▶ core
 - **入口包裹**（粒度 = 一次完整分析的 collector 生命周期）：core
   `checkSource` / `runTranspiled` / `callTranspiledExportFull`；service
   `tryRunEval` / `tryEvalCallFull` / `tryEvalCall` / `analyzeFile` /
-  `analyzeFileAsync`（先于 preload await）/ `emitInterface`；lsp
+  `analyzeFileAsync`（先于 preload await）/ `emitContract`；lsp
   `validateText`。new Function 求值路径（transpile 注入的 runtime 在同步
   调用链上）继承 ALS 上下文，跨帧读 collector 正确。
 
 | 状态 | 状态点 | 理由 |
 |---|---|---|
-| 已收敛 | refine / interface 诊断通道；interface 侧车加载失败去重表；evalCall / evalAssign collector；bindingSink；absTruncation collector；memberDiag collector；evalFallback collector；implicationOracle；derivation 会话（collector / 节点表 / id 序号）；envHarvestConflict collector（service）；yieldStack / genPathSensitive / genJoinOverride 生成器收集槽（runtime/control.ts） | 跨 await 存活的分析态，必须随作用域隔离；生成器三槽虽在单次生成器求值（同步）内 push/pop 与 save/restore 配对完成，但跨 await 窗口的交错分析仍需各开各的 store——已 `createScopedSlot` + `registerCollectorScopeParticipant` |
+| 已收敛 | refine / contract 诊断通道（`nudo:contract-*`）；侧车加载失败去重表；evalCall / evalAssign collector；bindingSink；absTruncation collector；memberDiag collector；evalFallback collector；implicationOracle；derivation 会话（collector / 节点表 / id 序号）；envHarvestConflict collector（service）；yieldStack / genPathSensitive / genJoinOverride 生成器收集槽（runtime/control.ts） | 跨 await 存活的分析态，必须随作用域隔离；生成器三槽虽在单次生成器求值（同步）内 push/pop 与 save/restore 配对完成，但跨 await 窗口的交错分析仍需各开各的 store——已 `createScopedSlot` + `registerCollectorScopeParticipant` |
 | 保留 | 调用 / fork 预算计数器与 `@nudo:budget` 上限；phi 栈 / armOverlays / forkTouchedStack；`_fb*` 回落计数器；ID 序号（symbolIdSeq / fnCallIdSeq / moduleMapIdSeq / nextLoadModuleId / leakCounter / classEpoch / truncDepsSeq）；缓存 / memo（check-memo、hash-source、pureMemo / pureCallMemo、objectProtoSingleton）；may-throw.ts；member-diag 的 evalMissingSlot；service analysis-session `defaultSession` / session-cache-limits；同步 save/restore 配对旗标 `awaitUnsettledHit`（runtime/async.ts，`$async` 入口 save/reset、finally 恢复）与 `loopSignalFromAbstractArm`（runtime/state.ts，`withAbstractForkArm` finally 恢复） | 预算与各栈是严格同步调用栈生命周期，await 窗口必为空 / 已恢复；`_fb*` 是进程级 health 指标、刻意累计；ID 序号跨分析唯一性是语义；缓存 / memo 按内容键、无害共享；may-throw.ts 与 evalMissingSlot 已有各自 ALS 会话（`runWithMayThrowSession` / `runWithEvalMissingSlot`）；`defaultSession` 是进程级配置、非分析态（setter 仅测试使用），session-cache-limits 是 env 纯函数读取 |
 
 > 历史残留行已清空：parser `directiveDiags` side-channel 缓冲已删除退役

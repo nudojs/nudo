@@ -19,7 +19,7 @@
  * - **类方法见证走类链**：点号名（`C.m`）只作展示名；见证调用按
  *   「类 Abs → $new → 原型方法槽 $invoke」派发（源码里没有 `C.m` 这个
  *   可调用表达式）。
- * - **侧车加载失败 ≠ 没有契约根**：加载失败（nudo:interface-load）走 error
+ * - **侧车加载失败 ≠ 没有契约根**：加载失败（nudo:contract-load）走 error
  *   诊断，并抑制「no contract root」的误导 info。
  * - **函数体内的调用点也是调用点域**：入口求值采集函数体内的调用并入共享
  *   callRecords；被调方若已先回落 entry@，在证据出现后改合成 call@ 见证。
@@ -33,20 +33,20 @@ import {
   formatShape,
   leqAbs,
   localNamedExports,
-  effectiveInterface,
+  effectiveContract,
   extractDeclaredThrows,
   unknown as absUnknown,
   $invoke,
   $new,
   getEvalClass,
-  interfaceDiagCount,
+  contractDiagCount,
   literalMeetsConstraint,
   litValue,
   SELF,
   substPred,
-  takeInterfaceDiagsSince,
-  type EffectiveInterface,
-  type InterfaceDiag,
+  takeContractDiagsSince,
+  type EffectiveContract,
+  type ContractDiag,
   type NudoConstraint,
   type Pred,
   type Term,
@@ -74,7 +74,7 @@ import {
 } from "./evaluator/call-record.ts";
 import { mockSeedsToAbsMocks, mockScopeSelected, type AbsMockSeeds } from "./mock-abs.ts";
 import type { CallSiteRecord } from "./analyzer-orchestrate-calls.ts";
-import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
+import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { defaultLoadModule } from "./load-module.ts";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
@@ -121,7 +121,7 @@ export type UncachedCaseEnv = {
   caseHints: CaseHint[];
   callRecords: CallRecord[];
   /**
-   * 本文件的侧车（`*.nudo.js`）**加载失败**（nudo:interface-load 已报）。
+   * 本文件的侧车（`*.nudo.js`）**加载失败**（nudo:contract-load 已报）。
    * 粘滞标记：加载失败与「根本没有侧车」必须可区分——否则会把
    * 「用户写了契约但写坏了」误报成「没有契约根」（误导性 info）。
    */
@@ -137,28 +137,28 @@ export type UncachedCaseEnv = {
    */
   externalCallRecords?: CallRecord[];
   /**
-   * 本文件的**有效契约**（`effectiveInterface`）按函数名 memo（Bug 921）。
+   * 本文件的**有效契约**（`effectiveContract`）按函数名 memo（Bug 921）。
    *
    * case 级 `nudo:may-throw` 的免除口径要与 check 面同口径 ⇒ 需要本函数的
    * **已申报抛**（源码申报 ∪ 侧车 `fn.throws`）⇒ 要读侧车 ⇒ 要调
-   * `effectiveInterface`。而 entry 面也调同一个函数 ⇒ 若各调一次：
+   * `effectiveContract`。而 entry 面也调同一个函数 ⇒ 若各调一次：
    * ① 侧车模块被执行两遍；② core 的「同 (路径, 原因) 只报一次」去重表会让
    * **后一次**拿不到加载失败诊断（加载失败被吞 ⇒ 假绿）。
    * ⇒ 两侧共用同一份 memo：谁先算谁算，后手复用（诊断也只报一次）。
    */
-  effectiveInterfaceMemo?: Map<string, EffectiveInterfaceMemo>;
+  effectiveContractMemo?: Map<string, EffectiveContractMemo>;
 };
 
 /**
- * 有效契约 memo 项（Bug 921）：`effectiveInterface` 的结果 + 它带出的
- * `nudo:interface-load` 诊断（侧车加载失败 / 孤儿导出）。
+ * 有效契约 memo 项（Bug 921）：`effectiveContract` 的结果 + 它带出的
+ * `nudo:contract-load` 诊断（侧车加载失败 / 孤儿导出）。
  *
  * ⚠ 诊断**不**在 memo 计算处上报：仍旧由 entry 面按既有形态转 error 诊断
  * （同一 range / 同一文案）⇒ 行为不变。
  */
-export type EffectiveInterfaceMemo = {
-  eff: EffectiveInterface | undefined;
-  loadDiags: InterfaceDiag[];
+export type EffectiveContractMemo = {
+  eff: EffectiveContract | undefined;
+  loadDiags: ContractDiag[];
 };
 
 /** 已回落 entry@ 的候选（待 settle：entry@ 见证 + 候选本身）。 */
@@ -205,7 +205,7 @@ export type SynthCandidate = {
   /**
    * **--both-paths 合成**（`nudo test` 教学对比面）：本候选带 @nudo:case
    * 见证（域已由声明面给出），entry@ 兜底只是合成路径的回退观测——
-   * 不发 `nudo:interface-entry-only` info（该 info 说「无契约根且无调用点
+   * 不发 `nudo:contract-entry-only` info（该 info 说「无契约根且无调用点
    * 域」，对带 case 见证的函数是误导）。
    */
   hasDirectiveCases?: boolean;
@@ -618,7 +618,7 @@ function settleEntryOnlyCandidates(env: UncachedCaseEnv): void {
     // 「没有契约根且无调用点域」在有调用点域后不再成立 ⇒ 撤掉该 info
     const di = env.diagnostics.findIndex(
       (d) =>
-        d.code === DIAG.interfaceEntryOnly &&
+        d.code === DIAG.contractEntryOnly &&
         d.message.includes(`export '${name}'`),
     );
     if (di >= 0) env.diagnostics.splice(di, 1);
@@ -809,32 +809,32 @@ function evalClassMethodWitness(
 }
 
 /**
- * 有效契约（`effectiveInterface`）按函数名 memo（Bug 921）。
+ * 有效契约（`effectiveContract`）按函数名 memo（Bug 921）。
  *
  * case 面与 entry 面共用一份 ⇒ 侧车模块只被执行一次、core 的
  * 「同 (路径, 原因) 只报一次」去重表也只被消费一次（否则后手拿不到
  * 加载失败诊断 ⇒ 加载失败被吞 ⇒ 假绿）。
  *
- * ⚠ `nudo:interface-load` 诊断**不**在这里上报：仍旧由 entry 面按既有形态
+ * ⚠ `nudo:contract-load` 诊断**不**在这里上报：仍旧由 entry 面按既有形态
  * 转 error 诊断（同一 range / 同一文案）⇒ 既有行为不变。
  */
-function effectiveInterfaceMemoOf(env: UncachedCaseEnv, fnName: string): EffectiveInterfaceMemo {
-  const memo = (env.effectiveInterfaceMemo ??= new Map<string, EffectiveInterfaceMemo>());
+function effectiveContractMemoOf(env: UncachedCaseEnv, fnName: string): EffectiveContractMemo {
+  const memo = (env.effectiveContractMemo ??= new Map<string, EffectiveContractMemo>());
   const hit = memo.get(fnName);
   if (hit) return hit;
-  const ifaceSince = interfaceDiagCount();
-  const autoBind = interfaceConfig(
+  const contractSince = contractDiagCount();
+  const autoBind = contractConfig(
     findProjectConfig(dirname(env.filePath))?.config,
   ).autoBind;
-  const eff = effectiveInterface(env.source, fnName, {
+  const eff = effectiveContract(env.source, fnName, {
     loadModule: env.loadModule ?? defaultLoadModule,
     fromFile: env.filePath,
     ...(autoBind === false ? { autoBind: false } : {}),
   });
-  const loadDiags = takeInterfaceDiagsSince(ifaceSince).filter(
-    (d) => d.code === DIAG.interfaceLoad,
+  const loadDiags = takeContractDiagsSince(contractSince).filter(
+    (d) => d.code === DIAG.contractLoad,
   );
-  const entry: EffectiveInterfaceMemo = { eff, loadDiags };
+  const entry: EffectiveContractMemo = { eff, loadDiags };
   memo.set(fnName, entry);
   return entry;
 }
@@ -842,7 +842,7 @@ function effectiveInterfaceMemoOf(env: UncachedCaseEnv, fnName: string): Effecti
 /**
  * 本函数**已申报的有意抛**（Bug 921）：与 check 面**同口径**
  * ——`packages/core/src/algebra/check.ts` 的 entry 面 / L2 面：
- * `extractDeclaredThrows(source, name) ?? effectiveInterface(name)?.throws?.kinds`
+ * `extractDeclaredThrows(source, name) ?? effectiveContract(name)?.throws?.kinds`
  * → `filterGateThrows(effects, declared, ignore)`。
  *
  * 源码申报（`@nudo:throws` / case `!! throws`）优先；源码没申报才回落侧车
@@ -851,7 +851,7 @@ function effectiveInterfaceMemoOf(env: UncachedCaseEnv, fnName: string): Effecti
 function declaredThrowsKinds(env: UncachedCaseEnv, fnName: string): string[] | "*" | undefined {
   const src = extractDeclaredThrows(env.source, fnName);
   if (src !== undefined) return src;
-  return effectiveInterfaceMemoOf(env, fnName).eff?.throws?.kinds;
+  return effectiveContractMemoOf(env, fnName).eff?.throws?.kinds;
 }
 
 /**
@@ -1462,7 +1462,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // 别的函数体内 ⇒ 被调方先于调用方被处理）——见 settleEntryOnlyCandidates。
     env.entryOnlyCandidates ??= new Map();
     env.entryOnlyCandidates.set(candidate.analysis.name, { candidate, entryCase: caseResult });
-    // nudo:interface-entry-only：导出无根且无域（无手写/生成契约 + 无调用点证据）
+    // nudo:contract-entry-only：导出无根且无域（无手写/生成契约 + 无调用点证据）
     try {
       const exportNames = localNamedExports(source);
       const isEntry =
@@ -1470,7 +1470,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         (candidate.assignedName !== undefined && exportNames.has(candidate.assignedName));
       if (isEntry) {
         // 侧车**加载失败**与「根本没有侧车」必须可区分：加载失败已由 core
-        // 侧 nudo:interface-load 通道上报，这里取走新诊断并转成 error 诊断
+        // 侧 nudo:contract-load 通道上报，这里取走新诊断并转成 error 诊断
         // （test 面此前**不收集**该通道 ⇒ 坏侧车在 test 面彻底隐形），
         // 且**不再**发「没有契约根」——那条 info 的事实陈述在侧车存在时
         // 是错的（用户明明写了契约，只是写坏了），修复建议也会误导。
@@ -1478,7 +1478,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         // Bug 921：走**共享 memo**（case 面可能已经算过同一个函数的有效契约
         // ⇒ 侧车模块只被执行一次、core 的加载失败去重表只被消费一次；
         // 否则 case 面先算会把加载失败诊断吞掉 ⇒ 假绿）。
-        const { eff, loadDiags } = effectiveInterfaceMemoOf(env, candidate.analysis.name);
+        const { eff, loadDiags } = effectiveContractMemoOf(env, candidate.analysis.name);
         if (loadDiags.length > 0) {
           env.sidecarLoadFailed = true;
           for (const d of loadDiags) {
@@ -1506,7 +1506,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
             },
             severity: "info",
             message: `export '${candidate.analysis.name}' has no contract root and no call-site domain (entry-only)`,
-            code: DIAG.interfaceEntryOnly,
+            code: DIAG.contractEntryOnly,
           });
         }
       }

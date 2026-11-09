@@ -64,19 +64,19 @@ export const DIAG = {
   // --- 成员 / 槽位 ---
   missingSlot: "nudo:missing-slot",
   noMethod: "nudo:no-method",
-  // --- 接口（sidecar / 契约面） ---
-  interfaceConflict: "nudo:interface-conflict",
-  interfaceCycle: "nudo:interface-cycle",
-  interfaceDomainExceeds: "nudo:interface-domain-exceeds",
-  interfaceDrift: "nudo:interface-drift",
-  interfaceEmitDenied: "nudo:interface-emit-denied",
-  interfaceEntryOnly: "nudo:interface-entry-only",
-  interfaceLoad: "nudo:interface-load",
-  interfaceMultiDeclarator: "nudo:interface-multi-declarator",
-  interfaceNameClash: "nudo:interface-name-clash",
-  interfaceNotProjectable: "nudo:interface-not-projectable",
-  interfaceParamMismatch: "nudo:interface-param-mismatch",
-  interfaceUnderivable: "nudo:interface-underivable",
+  // --- 契约（sidecar / 契约面） ---
+  contractConflict: "nudo:contract-conflict",
+  contractCycle: "nudo:contract-cycle",
+  contractDomainExceeds: "nudo:contract-domain-exceeds",
+  contractDrift: "nudo:contract-drift",
+  contractEmitDenied: "nudo:contract-emit-denied",
+  contractEntryOnly: "nudo:contract-entry-only",
+  contractLoad: "nudo:contract-load",
+  contractMultiDeclarator: "nudo:contract-multi-declarator",
+  contractNameClash: "nudo:contract-name-clash",
+  contractNotProjectable: "nudo:contract-not-projectable",
+  contractParamMismatch: "nudo:contract-param-mismatch",
+  contractUnderivable: "nudo:contract-underivable",
   // --- 模块 / env 加载 ---
   envHarvestConflict: "nudo:env-harvest-conflict",
   envUnresolved: "nudo:env-unresolved",
@@ -136,9 +136,9 @@ export type DiagCode = (typeof DIAG)[keyof typeof DIAG];
  *   永不产出。
  */
 export const CHECK_FACE_DIAG_CODES: readonly DiagCode[] = [
-  // interface 家族
-  DIAG.interfaceDomainExceeds,
-  DIAG.interfaceEntryOnly,
+  // contract 家族
+  DIAG.contractDomainExceeds,
+  DIAG.contractEntryOnly,
   // 引擎内部异常的最低限度可观测面（makeSameFileFaceResolver 的
   // `#face-resolve-error:` 标签映射，check.ts）：agent 面不得吞掉引擎 bug
   DIAG.internal,

@@ -34,7 +34,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 
@@ -59,7 +59,7 @@ describe("Bug 1126：async 体的多 await（≥2 个挂起点）", () => {
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();
@@ -181,7 +181,7 @@ describe("Bug 1126：check 面（签名）不受多 await 影响", () => {
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { string, checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -18,7 +18,7 @@ describe("Bug 336 · length 有限数值界护栏", () => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("length(NaN) / length(±Infinity) 在构造期抛错（不再造恒假契约）", () => {
@@ -53,7 +53,7 @@ export function g() {
 }
 `;
     const r = checkSource("/t/f.js", src, pTrue, { loadModule, fromFile: "/t/f.js" });
-    const load = r.issues.find((i) => i.code === "nudo:interface-load");
+    const load = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(load).toBeDefined();
     expect(load!.message).toContain("finite numeric bound expected");
     // 改前：2 条 nudo:constraint-violated（合法实参 "abc" 判违规 = 假红）

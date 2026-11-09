@@ -5,7 +5,7 @@
  * 症状（旧口径）：草稿正文出现 `export const sum = fn({ first: number(),
  * ...rest: number() }, number());` —— `{ ...rest: number() }` 既不是合法对象
  * 字面量也不是合法契约 DSL ⇒ `node --check` 直接 SyntaxError；照抄进
- * `lib.nudo.js` 后 `nudo check` 报 `nudo:interface-load`
+ * `lib.nudo.js` 后 `nudo check` 报 `nudo:contract-load`
  * （sidecar '…/lib.nudo.js' failed to load）⇒ **整个文件**的契约失联。
  *
  * 根因：草稿的形参表渲染把 rest 形参的 `...` 标记原样写进 DSL；emitter 面
@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftInterface, sidecarDraftPath } from "../interface-draft.ts";
+import { draftContract, sidecarDraftPath } from "../contract-draft.ts";
 import { nodeCheck } from "./draft-artifact.ts";
 
 let dir: string;
@@ -41,7 +41,7 @@ describe("Bug 527 —— 草稿的 rest 形参", () => {
   it("rest 函数 not-projectable 跳过（改前：写出 ...rest: number()）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const sum = r.entries.find((e) => e.fn === "sum");
     expect(sum).toBeDefined();
     expect(sum!.skipped).toBe("not-projectable");
@@ -53,7 +53,7 @@ describe("Bug 527 —— 草稿的 rest 形参", () => {
   it("草稿产物真能过 node --check（改前：SyntaxError: Unexpected token ':'）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const draftPath = sidecarDraftPath(file);
     writeFileSync(draftPath, r.draftSource, "utf-8");
     const check = nodeCheck(draftPath);
@@ -63,7 +63,7 @@ describe("Bug 527 —— 草稿的 rest 形参", () => {
   it("负控制：非 rest 导出照旧出绑定行（不误跳过）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, REST_JS);
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const greet = r.entries.find((e) => e.fn === "greet");
     expect(greet!.skipped).toBeUndefined();
     expect(r.draftSource).toContain("export const greet = fn({});");

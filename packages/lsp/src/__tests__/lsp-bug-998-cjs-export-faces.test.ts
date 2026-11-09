@@ -1,13 +1,13 @@
 /**
  * Bug 998：CJS 成员导出（`exports.f = fn` / `module.exports.f = fn`）在 LSP 的
- * 4 个符号 / 观察面 + codeLens 的 interface 档上**整段消失**。
+ * 4 个符号 / 观察面 + codeLens 的 contract 档上**整段消失**。
  *
  * 症状（真 server 协议面，改前）：
  * - `textDocument/documentSymbol` → `[]`（ESM 对照文件有 2 项）；
  * - `workspace/symbol` 查 `alpha` → 查不到；
  * - `textDocument/inlayHint` → `[]`；
  * - `textDocument/semanticTokens/full` → 只有形参 token，函数名没有 function 档；
- * - `textDocument/codeLens` → 只有 entry@ 观察层，没有 interface 档；
+ * - `textDocument/codeLens` → 只有 entry@ 观察层，没有 contract 档；
  * - 而诊断面明明点名 `alpha (export)` —— 符号面查不到、诊断面却报得出。
  *
  * 根因：四处枚举各自为政，都不认 CJS 成员导出形态
@@ -64,7 +64,7 @@ describe("Bug 998 — CJS 成员导出的符号 / 观察面", () => {
     });
   });
 
-  it("semanticTokens 给 CJS 导出键 function 档 + interface 档 modifier", async () => {
+  it("semanticTokens 给 CJS 导出键 function 档 + contract 档 modifier", async () => {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const res = req("textDocument/semanticTokens/full")({
         textDocument: { uri: uri("a.js") },
@@ -89,7 +89,7 @@ describe("Bug 998 — CJS 成员导出的符号 / 观察面", () => {
     });
   });
 
-  it("inlayHint 出 CJS 导出的返回 inlay + interface 档投影", async () => {
+  it("inlayHint 出 CJS 导出的返回 inlay + contract 档投影", async () => {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const hints = req("textDocument/inlayHint")({
         textDocument: { uri: uri("a.js") },
@@ -105,7 +105,7 @@ describe("Bug 998 — CJS 成员导出的符号 / 观察面", () => {
     });
   });
 
-  it("codeLens 出 CJS 导出的 interface 档（契约身份 = 导出名）", async () => {
+  it("codeLens 出 CJS 导出的 contract 档（契约身份 = 导出名）", async () => {
     await withLspServer({ "a.js": CJS_SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
         textDocument: { uri: uri("a.js") },

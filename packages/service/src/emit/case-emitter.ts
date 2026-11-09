@@ -3,7 +3,7 @@ import {
   type NudoConstraint,
   type Pred,
   derefConstraint,
-  effectiveInterface,
+  effectiveContract,
   instantiateConstraint,
   isIntFlag,
   literalMeetsConstraint,
@@ -453,7 +453,7 @@ export type EmitSkipReason =
   | "no-declaration"
   /**
    * 候选见证**违反被调方自己的手写契约**（BUG-055）⇒ 不写入。
-   * 归因仍留在调用现场（`nudo:interface-domain-exceeds`），不被固化搬进
+   * 归因仍留在调用现场（`nudo:contract-domain-exceeds`），不被固化搬进
    * 被调方换成一条针对被调方的 `nudo:case-inconsistency`。
    */
   | "contract-violation"
@@ -641,7 +641,7 @@ function contractGuardOf(
 ): ((args: Abs[]) => string | undefined) | undefined {
   let eff;
   try {
-    eff = effectiveInterface(source, fn.name, {
+    eff = effectiveContract(source, fn.name, {
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       fromFile: opts.filePath ?? "",
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
@@ -661,7 +661,7 @@ function contractGuardOf(
       const hit = locateContractParam(formals, p.param);
       if (hit) idx = hit.index;
     }
-    if (idx < 0) continue; // 契约位对不上形参（arity 谎言另由 interface-param-mismatch 报）
+    if (idx < 0) continue; // 契约位对不上形参（arity 谎言另由 contract-param-mismatch 报）
     entries.push({ idx, param: p.param, constraint: p.constraint });
   }
   if (entries.length === 0) return undefined;

@@ -1,8 +1,8 @@
 /**
  * 生成段扫描的共享原语（emit 单一实现）。
  *
- * `interface-emitter.ts`（`collectGeneratedSections`）与
- * `interface-derivation-emit.ts`（`collectGeneratedSectionsRaw`）两套段收集器
+ * `contract-emitter.ts`（`collectGeneratedSections`）与
+ * `contract-derivation-emit.ts`（`collectGeneratedSectionsRaw`）两套段收集器
  * 的逐字重合部分在此单源化。两边的段**探测**口径是真实差异、留在各自文件：
  * 派生路径按 `@generated` 注释行偏移回扫（headerPos），主路径沿段内链回扫
  * 注释块起点（generatedCommentBlockStart）。

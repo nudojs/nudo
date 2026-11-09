@@ -4,7 +4,7 @@
  *
  * 症状（改前）：工具**从不**调 `emitDerivedFromRoot` ⇒
  * - CLI 写得出的下游侧车（`add.nudo.js`）在 IDE 面**永远不产生**；
- * - 结果文本只报「no interface changes / skipped add4 (name-clash)」，
+ * - 结果文本只报「no contract changes / skipped add4 (name-clash)」，
  *   把「引擎没做的那一步」说成「本地侧车被手写占用」——误导性诊断。
  *
  * 协议面回归钉：真 server（mock connection）+ 真协议请求。

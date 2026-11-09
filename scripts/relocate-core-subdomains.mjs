@@ -33,7 +33,7 @@ const algebraAbs = join(repoRoot, "packages/core/src/algebra");
 /** Target subdomain → flat file basenames (without .ts). */
 const GROUPS = {
   check: [
-    "check", "check-assign", "check-case-scan", "check-interface-drift",
+    "check", "check-assign", "check-case-scan", "check-contract-drift",
     "check-may-throw", "check-memo", "check-report", "check-return",
     "check-signatures", "check-types",
   ],
@@ -45,8 +45,8 @@ const GROUPS = {
     "format", "inlay", "code-text", "codegen-escape", "text-scan",
     "param-surface",
   ],
-  interface: [
-    "interface", "contract-face", "export-slot", "projection",
+  contract: [
+    "contract", "contract-face", "export-slot", "projection",
     "projection-budget", "slot-visibility", "ts-type-shape", "sidecar-path",
   ],
   diagnostics: [

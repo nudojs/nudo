@@ -13,7 +13,7 @@ import {
   isDefaultExportName,
 } from "../check/check-signatures.ts";
 import { parseSource } from "../parse-source.ts";
-import { effectiveInterface } from "../interface/interface.ts";
+import { effectiveContract } from "../contract/contract.ts";
 import { extractRefinesFromSource } from "../refine.ts";
 
 describe("regex-metachar function names", () => {
@@ -41,7 +41,7 @@ describe("regex-metachar function names", () => {
       if (spec.includes("nudo")) return `export default fn({ x: number().int() });`;
       return undefined;
     };
-    const r = effectiveInterface(src, "$fn", { loadModule, fromFile: "/t/add.js" });
+    const r = effectiveContract(src, "$fn", { loadModule, fromFile: "/t/add.js" });
     expect(r).toBeDefined();
   });
 });

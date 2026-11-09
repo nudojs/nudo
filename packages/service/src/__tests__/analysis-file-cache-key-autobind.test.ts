@@ -1,5 +1,5 @@
 /**
- * analysisFileCacheKey：interface.autoBind 变更必须 miss（P1-9）。
+ * analysisFileCacheKey：contract.autoBind 变更必须 miss（P1-9）。
  */
 import { describe, it, expect } from "vitest";
 import { analysisFileCacheKey } from "../analyzer.ts";

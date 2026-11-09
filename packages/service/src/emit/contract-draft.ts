@@ -1,0 +1,1298 @@
+/**
+ * `nudo contract --draft`：从已有 JS **逻辑** 生成 contract 草稿。
+ *
+ * 产品位（代码优先 / 迁移）：先写实现，再反推可审阅的 `fn({…}, …)` 草稿；
+ * 人审后迁入 `*.nudo.js` 才成为契约。
+ *
+ * 证据分层（与 C0 一致：草稿 ≠ ambient 义务）：
+ * - callsite / directive case → joinThenProject 值域（迁移最可信）
+ * - body 触达（**仅草稿展示**）→ 参数上被读到的字段名建议；不进 check
+ * - generalize symbolic → 返回位兜底
+ * - 无证据 → 参数槽省略 + 注释 TODO（不发明义务）
+ * - 已有 handwritten 契约 → **跳过**（手写优先，不覆盖）
+ *
+ * 写盘：默认只打印；`--write` 写入 `<file>.nudo.draft.js`——**不会**被
+ * sidecar 自动绑定（loadModule 只认 `*.nudo.js`）。审阅后复制进正式侧车。
+ *
+ * 不变量（草稿面）：
+ * - **身份 = 导出名**（DESIGN-003）：侧车键取模块的导出身份（`default` /
+ *   `export { x as y }` 的 y），**不是**合成的本地名；绑定名不安全（保留字 /
+ *   与 builder import 撞名）时走别名形态 `const _nudo_N = …; export { _nudo_N
+ *   as <identity> };`——与 `contract-emitter.ts` 的 `--emit` 面同源。
+ * - **装得上才写**：DSL 落盘前过 `roundTrips` 自检（execNudoModule 求值 +
+ *   fn 槽存在）；rest 形参 / 非法展示兜底形态一律 not-projectable 跳过，
+ *   不把非法 JS 交给用户。
+ * - **不覆盖人工改过的草稿**：落盘文本带内容指纹；指纹对不上 ⇒ 拒绝覆盖。
+ */
+
+import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import {
+  CONSTRAINT_BUILDER_NAMES,
+  checkSource,
+  constraintToEntryAbs,
+  effectiveContract,
+  execNudoModule,
+  formatConstraint,
+  formatShape,
+  generalizeFromAst,
+  contractDiagCount,
+  isIntFlag,
+  isNudoConstraint,
+  joinThenProject,
+  leqAbs,
+  localNamedExports,
+  pTrue,
+  refineDiagCount,
+  scanThrowsDecl,
+  sidecarPathOf,
+  takeContractDiagsSince,
+  takeRefineDiagsSince,
+  type Abs,
+  type NudoConstraint,
+} from "@nudojs/core";
+import {
+  DIAG,
+  exportedNameOfLocal,
+  formatThrowsAbs,
+  isJsBindingIdent,
+  toJsBindingIdent,
+} from "@nudojs/core/internal";
+import type { Node } from "@babel/types";
+import { analyzeFileAsync, type FunctionAnalysis } from "../analyzer.ts";
+import type { CallRecord } from "../evaluator/call-record.ts";
+import { defaultLoadModule, type LoadModule } from "../load-module.ts";
+import { allocNudoBinding, exportNameRepr } from "./export-binding.ts";
+import {
+  collectContractFaceDiagnostics,
+  type ContractFaceDiagnostic,
+} from "./contract-surface.ts";
+import { sanitizeLineCommentText } from "./line-comment.ts";
+import { walkTopCallables } from "./walk-top-callables.ts";
+import {
+  collectParamBodyReadTypes,
+  shapeDslFromFields,
+  type BodyReadField,
+} from "./body-read-types.ts";
+
+/**
+ * DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。
+ * check / effectiveContract **永不**消费该档。
+ */
+export type DraftEvidence = "callsite" | "directive" | "symbolic" | "body" | "none";
+
+export type ContractDraftEntry = {
+  fn: string;
+  /**
+   * 侧车键 = **导出身份**（DESIGN-003：身份=导出名，绑定可别名）。
+   * 匿名 `export default` → `default`；`export { x as y }` → `y`；
+   * `Class.method` → `Class_method`（C4.2 侧车键）。
+   */
+  identity?: string;
+  /** 全部形参（含无证据槽，便于人读） */
+  params: Array<{
+    name: string;
+    constraint?: NudoConstraint;
+    display: string;
+    /** false = 无证据，DSL 对象里省略该槽 */
+    projected: boolean;
+    /** 函数体读到的字段名（草稿建议；与 projected 无关） */
+    bodyAccesses?: string[];
+    /** body-read 字段 + 用法推断类型（自动填类型；无证据为 any()） */
+    bodyReadFields?: BodyReadField[];
+  }>;
+  returns?: { constraint?: NudoConstraint; display: string; projected: boolean };
+  paramEvidence: DraftEvidence;
+  returnEvidence: DraftEvidence;
+  /**
+   * 抛错证据（BUG-198）：`declared` = 源码 `@nudo:throws` / 侧车 `fn(…, …, { throws })`
+   * 已申报；否则是引擎算出的入口抛错域（`nudo:entry-may-throw` 的同一来源）。
+   *
+   * 旧实现**只**投影参数与返回证据 ⇒ draft 不含 throws 槽 ⇒ 拿它当补救
+   * （`nudo:entry-may-throw` 的 `fix:` 建议）时诊断原样还在；源码里显式声明的
+   * `@nudo:throws` 也会在 draft 里彻底消失（draft 与源码矛盾）。
+   */
+  throws?: { kinds: string[]; declared: boolean };
+  skipped?: "handwritten" | "not-an-export" | "not-projectable";
+  /** 草稿 DSL：`fn({ … }, …)`；handwritten / 非导出 / 不可投影时 undefined */
+  dsl?: string;
+};
+
+export type ContractDraftOpts = {
+  fnNames?: string[];
+  records?: CallRecord[];
+  loadModule?: LoadModule;
+  /**
+   * Accepted for API compatibility; **ignored**. The handwritten-contract probe
+   * always uses `effectiveContract(..., { autoBind: true })` so draft skips
+   * disk sidecars even when ambient autoBind is off (product: draft asks
+   * "does a contract already exist?", not "is ambient binding on?").
+   */
+  autoBind?: boolean;
+  /** 默认 true：收集 body 成员读取作草稿建议（永不进 check） */
+  bodyAccesses?: boolean;
+  /** 打开 buffer 源（E5：与 hover/contract 同口径） */
+  source?: string;
+  /**
+   * Bug 80：透出本次分析产生的契约装载诊断（`--draft` 面据此与 check/export
+   * 同裁决）。不传 ⇒ 旧的「不排干 contract 增量」行为不变。
+   */
+  diagnostics?: ContractFaceDiagnostic[];
+};
+
+export type ContractDraftResult = {
+  file: string;
+  entries: ContractDraftEntry[];
+  draftSource: string;
+  sidecarPath: string;
+};
+
+/**
+ * Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。
+ * **不是** C0 禁止的 body→义务通道——只进草稿注释/建议，check 不读此表。
+ */
+export function collectParamBodyAccesses(
+  source: string,
+): Map<string, Map<string, Set<string>>> {
+  const out = new Map<string, Map<string, Set<string>>>();
+
+  const keyOf = (node: Node): string | undefined => {
+    if (node.type === "Identifier") return node.name;
+    if (node.type === "StringLiteral") return node.value;
+    return undefined;
+  };
+
+  const visitFn = (fnName: string, fnNode: Node, paramNames: Set<string>): void => {
+    if (paramNames.size === 0) return;
+    const byParam = new Map<string, Set<string>>();
+    const walk = (node: unknown, shadowed: Set<string>): void => {
+      if (!node || typeof node !== "object") return;
+      const n = node as Record<string, unknown>;
+      // 简单遮蔽：函数内同名声明不记（const user / function user）
+      if (
+        (n.type === "VariableDeclarator" || n.type === "FunctionDeclaration") &&
+        (n.id as Node | undefined)?.type === "Identifier"
+      ) {
+        const id = (n.id as { name: string }).name;
+        if (paramNames.has(id)) {
+          shadowed = new Set(shadowed).add(id);
+        }
+      }
+      if (n.type === "MemberExpression" || n.type === "OptionalMemberExpression") {
+        const obj = n.object as Node | undefined;
+        const prop = n.property as Node | undefined;
+        const computed = n.computed === true;
+        if (
+          obj?.type === "Identifier" &&
+          paramNames.has((obj as { name: string }).name) &&
+          !shadowed.has((obj as { name: string }).name) &&
+          prop &&
+          !computed
+        ) {
+          const key = keyOf(prop);
+          const pname = (obj as { name: string }).name;
+          if (key !== undefined) {
+            if (!byParam.has(pname)) byParam.set(pname, new Set());
+            byParam.get(pname)!.add(key);
+          }
+        }
+      }
+      for (const k of Object.keys(n)) {
+        if (k === "loc" || k === "start" || k === "end") continue;
+        const child = n[k];
+        if (Array.isArray(child)) {
+          for (const item of child) walk(item, shadowed);
+        } else if (child && typeof child === "object") {
+          walk(child, shadowed);
+        }
+      }
+    };
+    walk(fnNode, new Set());
+    if (byParam.size > 0) out.set(fnName, byParam);
+  };
+
+  walkTopCallables(source, visitFn, { visitExportSpecifierClasses: true });
+  return out;
+}
+
+function caseEvidence(fn: FunctionAnalysis): {
+  paramCases: FunctionAnalysis["cases"];
+  returnCases: FunctionAnalysis["cases"];
+  paramEvidence: DraftEvidence;
+  rawReturnEvidence: DraftEvidence;
+} {
+  // #176：skip 函数的 @nudo:case 是运行时断言见证，不作草稿证据——
+  // 与旧口径一致（此前 skip 无 case → 无参数/返回证据，只有 body 建议）
+  const cases = fn.skipped ? [] : fn.cases;
+  const callsite = cases.filter((c) => c.source === "callsite");
+  const directive = cases.filter((c) => c.source === "directive");
+  return {
+    paramCases: callsite.length > 0 ? callsite : directive,
+    returnCases:
+      callsite.length > 0 ? callsite : directive.length > 0 ? directive : cases,
+    paramEvidence: callsite.length > 0 ? "callsite" : directive.length > 0 ? "directive" : "none",
+    rawReturnEvidence:
+      callsite.length > 0 ? "callsite" : directive.length > 0 ? "directive" : "none",
+  };
+}
+
+/**
+ * Draft DSL 可复制约束的安全化：callsite 观测是使用下界，不是义务上界。
+ * 去掉纯 eq-lit 字面量约束（lit(21) / union of lits）→ 只保留类型/形状；
+ * bounds/shape 保留（有指导意义）。返回 widened 约束；无实质类型信息则 undefined。
+ */
+function widenDraftConstraint(c: NudoConstraint): NudoConstraint | undefined {
+  const stripEqLits = <T extends { op: string; b?: { op?: string } }>(preds: readonly T[]): T[] =>
+    preds.filter((p) => !(p.op === "eq" && p.b?.op === "lit"));
+  if (c.members && c.members.length > 0) {
+    // union：成员全是 lit → 无法表达联合义务，退化为成员 prim 并集或跳过
+    const widenedMembers = c.members
+      .map(widenDraftConstraint)
+      .filter((m): m is NudoConstraint => m !== undefined);
+    if (widenedMembers.length === 0) {
+      // 全是纯 lit：用 prim 推断（number/string/boolean），不写 eq
+      const prim = litPrimOf(c.members[0]);
+      if (!prim) return undefined;
+      return { __nudoConstraint: true, prim, preds: [] } as NudoConstraint;
+    }
+    const prims = new Set(widenedMembers.map((m) => m.prim).filter(Boolean));
+    if (prims.size === 1 && widenedMembers.every((m) => !m.fields && !m.element && !m.members)) {
+      return { __nudoConstraint: true, prim: [...prims][0], preds: [] } as NudoConstraint;
+    }
+    return {
+      __nudoConstraint: true,
+      ...(c.prim ? { prim: c.prim } : {}),
+      preds: stripEqLits(c.preds ?? []),
+      members: widenedMembers,
+    } as NudoConstraint;
+  }
+  if (c.fields) {
+    const fields: Record<string, { constraint: NudoConstraint; optional?: boolean }> = {};
+    for (const [k, f] of Object.entries(c.fields)) {
+      const w = widenDraftConstraint(f.constraint);
+      if (!w) continue;
+      fields[k] = { constraint: w, ...(f.optional ? { optional: true } : {}) };
+    }
+    return {
+      __nudoConstraint: true,
+      fields,
+      preds: stripEqLits(c.preds ?? []),
+    } as NudoConstraint;
+  }
+  if (c.element) {
+    const el = widenDraftConstraint(c.element);
+    return {
+      __nudoConstraint: true,
+      preds: stripEqLits(c.preds ?? []),
+      ...(el ? { element: el } : {}),
+    } as NudoConstraint;
+  }
+  if (c.fn) return undefined; // 草稿 DSL 不写一等函数义务
+  const preds = stripEqLits(c.preds ?? []);
+  const hasBounds = preds.length > 0;
+  if (!c.prim && !hasBounds && !isIntFlag(c)) return undefined;
+  return {
+    __nudoConstraint: true,
+    ...(c.prim ? { prim: c.prim } : {}),
+    preds,
+    // builder 上 .int 是链式方法，truthy 恒真；必须经 isIntFlag
+    ...(isIntFlag(c) ? { int: true } : {}),
+  } as NudoConstraint;
+}
+
+function litPrimOf(c: NudoConstraint | undefined): "number" | "string" | "boolean" | undefined {
+  if (!c) return undefined;
+  if (c.prim === "number" || c.prim === "string" || c.prim === "boolean") return c.prim;
+  type PredWithB = { op: string; b?: { op?: string; value?: unknown } };
+  const eq = (c.preds as readonly PredWithB[] | undefined)?.find(
+    (p) => p.op === "eq" && p.b?.op === "lit",
+  );
+  const v = eq && eq.b?.op === "lit" ? eq.b.value : undefined;
+  if (typeof v === "number") return "number";
+  if (typeof v === "string") return "string";
+  if (typeof v === "boolean") return "boolean";
+  return c.members?.[0] ? litPrimOf(c.members[0]) : undefined;
+}
+
+function projectDraftParams(
+  fn: FunctionAnalysis,
+  paramCases: FunctionAnalysis["cases"],
+  bodyByParam?: Map<string, Set<string>>,
+  formals?: FunctionAnalysis["formals"],
+  bodyReadByParam?: Map<string, BodyReadField[]>,
+): ContractDraftEntry["params"] {
+  const bodyFor = (name: string, index: number): Set<string> | undefined => {
+    if (!bodyByParam) return undefined;
+    const hit = bodyByParam.get(name);
+    if (hit) return hit;
+    // destructure 形参 display 名是 `_p{i}`，body map 键是顶层绑定名
+    const formal = formals?.[index];
+    if (formal && formal.kind === "pattern") {
+      for (const b of formal.bound) {
+        const boundHit = bodyByParam.get(b);
+        if (boundHit) return boundHit;
+      }
+    }
+    return bodyByParam.get(`_p${index}`);
+  };
+  const fieldsFor = (name: string, index: number): BodyReadField[] | undefined => {
+    if (!bodyReadByParam) return undefined;
+    const hit = bodyReadByParam.get(name);
+    if (hit && hit.length > 0) return hit;
+    const formal = formals?.[index];
+    if (formal && formal.kind === "pattern") {
+      for (const b of formal.bound) {
+        const boundHit = bodyReadByParam.get(b);
+        if (boundHit && boundHit.length > 0) return boundHit;
+      }
+    }
+    return bodyReadByParam.get(`_p${index}`);
+  };
+  return fn.paramNames.map((name, i) => {
+    const bodyAccesses = bodyFor(name, i)
+      ? [...bodyFor(name, i)!].sort()
+      : undefined;
+    const bodyReadFields = fieldsFor(name, i);
+    const bodyExtra = bodyReadFields
+      ? { bodyAccesses: bodyReadFields.map((f) => f.field), bodyReadFields }
+      : bodyAccesses
+        ? { bodyAccesses }
+        : {};
+    const argAbs: Abs[] = [];
+    for (const c of paramCases) {
+      const a = c.argAbs[i];
+      if (a !== undefined) argAbs.push(a);
+    }
+    if (argAbs.length === 0) {
+      if (bodyAccesses && bodyAccesses.length > 0) {
+        const shapeText = bodyReadFields
+          ? shapeDslFromFields(bodyReadFields)
+          : `shape({ ${bodyAccesses.map((k) => `${k}: any()`).join(", ")} })`;
+        return {
+          name,
+          display: `/* body-read ${shapeText} */`,
+          projected: false,
+          ...bodyExtra,
+        };
+      }
+      return { name, display: "/* no evidence — tighten */", projected: false };
+    }
+    const raw = joinThenProject(argAbs);
+    if (raw === undefined) {
+      return {
+        name,
+        display: `/* not projectable: ${argAbs.map((a) => formatShape(a)).join(" | ")} */`,
+        projected: false,
+        ...bodyExtra,
+      };
+    }
+    // DSL 义务位：widen 字面量观测，避免单点 callsite 成为硬契约
+    const constraint = widenDraftConstraint(raw);
+    if (constraint === undefined) {
+      const observed = formatConstraint(raw);
+      return {
+        name,
+        display: `/* observed: ${observed} — widen/confirm before accepting */`,
+        projected: false,
+        ...bodyExtra,
+      };
+    }
+    let display = formatConstraint(constraint);
+    const observed = formatConstraint(raw);
+    if (observed !== display) {
+      display += `  /* observed: ${observed} */`;
+    }
+    if (bodyReadFields && bodyReadFields.length > 0) {
+      display += `  /* body also reads: ${shapeDslFromFields(bodyReadFields)} */`;
+    } else if (bodyAccesses && bodyAccesses.length > 0) {
+      display += `  /* body also reads: ${bodyAccesses.join(", ")} */`;
+    }
+    return {
+      name,
+      constraint,
+      display,
+      projected: true,
+      ...bodyExtra,
+    };
+  });
+}
+
+/**
+ * 推断出的返回域（generalizeFromAst 的 symbolic = 函数体的返回位 Abs）。
+ * **不可用时返回 undefined**：分析失败 / unknown / any ⇒ 没有信息，
+ * 不能用来否证任何义务（否证方向是「更保守」，但没信息就别乱动）。
+ */
+function inferredReturnDomain(
+  fn: FunctionAnalysis,
+  source: string,
+  loadModule?: LoadModule,
+  fromFile?: string,
+): Abs | undefined {
+  try {
+    const g = generalizeFromAst(fn.name, source, {
+      refine: {
+        ...(loadModule ? { loadModule } : {}),
+        ...(fromFile ? { fromFile } : {}),
+      },
+    });
+    const sym = g?.symbolic;
+    if (!sym) return undefined;
+    if (sym.shape.k === "unknown" || sym.shape.k === "any") return undefined;
+    return sym;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 去掉 pred 层（界是草稿自己的建议，比对只看**类型**覆盖） */
+function stripPreds(a: Abs): Abs {
+  if (a.shape.k === "obj") {
+    const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+    for (const [k, s] of Object.entries(a.shape.slots)) {
+      slots[k] = { value: stripPreds(s.value), ...(s.optional ? { optional: true } : {}) };
+    }
+    return { ...a, shape: { ...a.shape, slots }, pred: undefined };
+  }
+  return { ...a, pred: undefined };
+}
+
+/**
+ * 义务的**类型**是否覆盖给定 Abs 域（`domain ⊑ obligation`）。
+ * 只比类型：界的部分是草稿建议，不是被否证的事实。
+ */
+function typeCovers(c: NudoConstraint, domain: Abs): boolean {
+  try {
+    return leqAbs(domain, stripPreds(constraintToEntryAbs(c, "ret"))).ok;
+  } catch {
+    return true; // 判不了 ⇒ 不否证
+  }
+}
+
+function projectDraftReturn(
+  fn: FunctionAnalysis,
+  returnCases: FunctionAnalysis["cases"],
+  source: string,
+  rawEvidence: DraftEvidence,
+  loadModule?: LoadModule,
+  fromFile?: string,
+): NonNullable<ContractDraftEntry["returns"]> & { evidence: DraftEvidence } {
+  const retAbs: Abs[] = [];
+  for (const c of returnCases) {
+    if (c.throwsAbs.shape.k !== "never") continue;
+    retAbs.push(c.abs);
+  }
+  if (retAbs.length > 0) {
+    const raw = joinThenProject(retAbs);
+    if (raw !== undefined) {
+      // body/none 证据：返回义务不得进 DSL（求值投影是使用事实，不是契约）
+      if (rawEvidence === "none" || rawEvidence === "body") {
+        return {
+          display: `/* observed: ${formatConstraint(raw)} — confirm before accepting */`,
+          projected: false,
+          evidence: rawEvidence === "none" ? "body" : rawEvidence,
+        };
+      }
+      const constraint = widenDraftConstraint(raw);
+      if (constraint === undefined) {
+        return {
+          display: `/* observed: ${formatConstraint(raw)} — widen/confirm */`,
+          projected: false,
+          evidence: rawEvidence,
+        };
+      }
+      // 观测集只是真实返回域的**子集**：义务若盖不住推断出的返回域，
+      // 写进侧车就是假红（接受草稿后函数被自己的草稿判违规）⇒ 不投影。
+      const inferred = inferredReturnDomain(fn, source, loadModule, fromFile);
+      if (inferred !== undefined && !typeCovers(constraint, inferred)) {
+        return {
+          display: `/* observed: ${formatConstraint(raw)} — inferred return domain ${formatShape(inferred)} is not covered; return obligation not projected */`,
+          projected: false,
+          evidence: rawEvidence,
+        };
+      }
+      return {
+        constraint,
+        display: formatConstraint(constraint),
+        projected: true,
+        evidence: rawEvidence,
+      };
+    }
+    const shapeText = fn.combinedAbs
+      ? formatShape(fn.combinedAbs)
+      : formatShape(retAbs[0]!);
+    return {
+      display: `/* not projectable: ${shapeText} */`,
+      projected: false,
+      evidence: rawEvidence,
+    };
+  }
+
+  try {
+    const g = generalizeFromAst(fn.name, source, {
+      refine: {
+        ...(loadModule ? { loadModule } : {}),
+        ...(fromFile ? { fromFile } : {}),
+      },
+    });
+    if (g?.symbolic) {
+      // symbolic 返回：默认只注释，不写 DSL 义务（无观测 ⇒ 不发明义务）
+      return {
+        display: `/* symbolic: ${formatShape(g.symbolic)}${g.display ? ` — ${g.display}` : ""} */`,
+        projected: false,
+        evidence: "symbolic",
+      };
+    }
+  } catch {
+    /* fall through */
+  }
+  return { display: "/* no evidence */", projected: false, evidence: "none" };
+}
+
+/**
+ * 字段**值**的边界：从 `start` 起按 `()[]{}` 配平扫描，深度为 0 时遇到
+ * `,` / `\n` / `}`（本层对象闭合）即结束。
+ *
+ * Bug 50：旧正则把值捕获成 `[^,}\n]+` ⇒ 嵌套 `shape({ … })` 在**第一个 `}`**
+ * 处截断 ⇒ `outer?: shape({ x: number() })` 被改成
+ * `outer: shape({ x: number().optional()})`（可选位内移一层：外层变必填、
+ * 内层变可选，草稿与证据相反）。配平扫描才能取到完整的值表达式。
+ */
+function fieldValueEnd(s: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i]!;
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      if (depth === 0) return i; // 本层对象闭合，不属于值
+      depth--;
+    } else if (depth === 0 && (c === "," || c === "\n")) {
+      return i;
+    }
+  }
+  return s.length;
+}
+
+/** 把 `k?: T` 改写成 `k: T.optional()`；T 内层的 `?:` 递归改写（边界按括号配平）。 */
+function rewriteOptionalFields(s: string): string {
+  // sticky：从当前索引处起匹配（等价于 ^，但无需反复 slice）；局部实例避免递归共享 lastIndex。
+  const optField = /([A-Za-z_$][\w$]*)\?\s*:\s*/y;
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    optField.lastIndex = i;
+    const m = optField.exec(s);
+    if (m) {
+      const name = m[1]!;
+      const valStart = i + m[0].length;
+      const end = fieldValueEnd(s, valStart);
+      const raw = s.slice(valStart, end);
+      // 值末尾的排版空白（本层 `,`/`}` 之前）不属于约束本身 ⇒ 保留在改写
+      // 结果之后，避免把 `number() }` 压成 `number()}`（嵌套层尤其明显）。
+      const trailing = /\s*$/.exec(raw)![0];
+      const value = rewriteOptionalFields(raw.slice(0, raw.length - trailing.length));
+      // 只有**值本身**（顶层链）已 .optional() 才不重复追加；内层 shape 含
+      // .optional() 不代表这个槽可选（否则又会把可选位吞掉一层）。
+      out += `${name}: ${value.endsWith(".optional()") ? value : `${value}.optional()`}${trailing}`;
+      i = end;
+      continue;
+    }
+    out += s[i]!;
+    i++;
+  }
+  return out;
+}
+
+/** draft 用 builder JS：shape 字段可选写成 `k: T.optional()`，不用非法的 `k?: T`。
+ * 导出供单测：formatConstraint 显示层可吐 `email?:`，落盘 DSL 不得非法。 */
+export function toDraftBuilderDsl(display: string): string {
+  const s = display.replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim();
+  return rewriteOptionalFields(s);
+}
+
+/**
+ * 草稿侧车键 = **导出身份**（DESIGN-003：身份恒为导出名，绑定可别名）。
+ * - 匿名 `export default` → `default`（分析名就是 `default`；`exportedNameOfLocal`
+ *   不收 default 形态 ⇒ 走 `?? fnName` 回落，与 `--emit` 面同源）。
+ * - `export { x as y }` → `y`（别名导出身份；侧车按别名绑定）。
+ * - `Class.method` → `Class_method`（C4.2 侧车键：加载器认 `Class_method`）。
+ */
+function draftIdentity(fnName: string, source: string): string {
+  if (fnName.includes(".")) return toJsBindingIdent(fnName.replace(/\./g, "_"));
+  return exportedNameOfLocal(source, fnName) ?? fnName;
+}
+
+/**
+ * 草稿模块内的**绑定名**：身份本身可作绑定时直接用；否则（保留字 / 非 ident /
+ * 与 builder import 或其它导出绑定撞名）走别名 `_nudo_<n>`——身份仍是导出名。
+ */
+function draftBindingName(
+  identity: string,
+  taken: (name: string) => boolean,
+): string {
+  if (isJsBindingIdent(identity) && !taken(identity)) return identity;
+  return allocNudoBinding(taken);
+}
+
+/**
+ * 落盘前自检：DSL 必须**装得上**——经 execNudoModule 求值、导出为
+ * isNudoConstraint 且 fn 槽存在（与 `contract-emitter.ts` 的 roundTrips 同闸）。
+ * 装不上（rest 形参 `...rest: number()`、展示兜底形态等）⇒ not-projectable，
+ * 不把非法 JS 交给用户。
+ */
+function draftDslRoundTrips(dsl: string): boolean {
+  const since = refineDiagCount();
+  try {
+    const exports = execNudoModule(`export const __nudo_draft_probe = ${dsl};`);
+    const v = exports["__nudo_draft_probe"];
+    return isNudoConstraint(v) && v.fn !== undefined;
+  } catch {
+    return false;
+  } finally {
+    takeRefineDiagsSince(since); // 自检触发的诊断只清本次增量
+  }
+}
+
+/** rest 形参（`...rest`）在契约 DSL 里无对应形态 ⇒ 整个函数不可投影 */
+function hasRestParam(fn: FunctionAnalysis): boolean {
+  return fn.paramNames.some((n) => n.startsWith("..."));
+}
+
+/**
+ * 入口**可能抛错**的种类表（BUG-198）：`fn → [kind…]`。
+ *
+ * 草稿分析面（`analyzeFileAsync`）不产出 `entryThrowsAbs`（那是 check 面入口
+ * 求值的产物，见 `analyzer-orchestrate-uncached-cases.ts`）⇒ 草稿此前无从知道
+ * 「这个入口会抛 TypeError」。这里直接跑**同一门禁**（`checkSource`）并读
+ * `nudo:entry-may-throw` 诊断 ⇒ 草稿与 check 面用同一个事实，不另算一份。
+ *
+ * fail-closed：check 抛错 ⇒ 返回空表（草稿退化成原来的行为，不臆造 throws 槽）。
+ */
+function entryMayThrowKinds(
+  filePath: string,
+  source: string,
+  loadModule: LoadModule,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  try {
+    const r = checkSource(filePath, source, pTrue, { loadModule, fromFile: filePath });
+    for (const i of r.issues) {
+      if (i.code !== DIAG.entryMayThrow) continue;
+      const fnName = i.fn;
+      if (fnName === undefined || out.has(fnName)) continue;
+      const m = /may throw ([A-Za-z_$][\w$]*(?:\s*\|\s*[A-Za-z_$][\w$]*)*)/.exec(i.message);
+      if (!m) continue;
+      out.set(
+        fnName,
+        m[1]!.split("|").map((k) => k.trim()).filter(Boolean),
+      );
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+
+/**
+ * 声明行**前置 JSDoc 块**里的 `@nudo:throws` 申报（BUG-198）。
+ *
+ * 无契约时 `effectiveContract` 拿不到抛错申报（`eff` 本身就是 undefined）⇒
+ * 直接扫紧邻声明上方的注释块（与 check 面 `scanThrowsDecl` 同一解析器，
+ * 不另立文法）。`"*"`（任意错误都可接受）写不进 throws 槽 ⇒ 不发明名字。
+ */
+function declaredThrowsOf(source: string, declLine: number): string[] | undefined {
+  const lines = source.split("\n");
+  const block: string[] = [];
+  for (let i = declLine - 2; i >= 0; i--) {
+    const raw = lines[i] ?? "";
+    if (/^\s*$/.test(raw)) continue;
+    if (!/^\s*(\/\*\*|\*|\/\/)/.test(raw)) break;
+    block.push(raw.trim().replace(/^(\/\*\*|\*\/|\*|\/\/)\s?/, ""));
+  }
+  if (block.length === 0) return undefined;
+  const spec = scanThrowsDecl(block.reverse());
+  if (spec === undefined || spec === "*") return undefined;
+  const kinds = spec.split(",").filter(Boolean);
+  return kinds.length > 0 ? kinds : undefined;
+}
+
+/**
+ * 草稿的抛错证据（BUG-198）。
+ *
+ * 旧实现只投影参数 / 返回证据 ⇒ 草稿 DSL 永远是 `fn({…})`——**不含 throws 槽**
+ * ⇒ 拿它当 `nudo:entry-may-throw` 的补救（`fix:` 建议指向 `nudo contract --draft`）
+ * 时诊断原样还在；源码里显式 `@nudo:throws` 也会在草稿里彻底消失（草稿与源码
+ * 矛盾）。
+ *
+ * 口径：
+ * 1. **已申报**（源码 `@nudo:throws` / 侧车 `fn(…, …, { throws })`）⇒ 原样带上；
+ * 2. 否则取**引擎算出的入口抛错域**（`entryThrowsAbs`，与 `nudo:entry-may-throw`
+ *    同一来源）⇒ `{ throws: "TypeError" }`；
+ * 3. `"*"`（任何错误都可接受）与 `any`/`unknown` 写不进 throws 槽（该槽要求
+ *    具名错误）⇒ 不发明名字，留空。
+ */
+function draftThrowsKinds(
+  eff: ReturnType<typeof effectiveContract>,
+  fn: FunctionAnalysis,
+  source: string,
+  mayThrow: ReadonlyMap<string, string[]>,
+): ContractDraftEntry["throws"] {
+  const declared = eff?.throws?.kinds;
+  if (declared !== undefined) {
+    if (declared === "*") return undefined;
+    if (declared.length > 0) return { kinds: [...declared], declared: true };
+  }
+  // 源码里显式 `@nudo:throws` 的：**原样**带上（此前连手写声明都会在草稿里消失）。
+  // 无契约时 `effectiveContract` 是 undefined ⇒ 直接扫声明行的前置 JSDoc 块。
+  const fromSource = declaredThrowsOf(source, fn.loc.start.line);
+  if (fromSource !== undefined) return { kinds: fromSource, declared: true };
+  const gateKinds = mayThrow.get(fn.name);
+  if (gateKinds !== undefined && gateKinds.length > 0) {
+    return { kinds: [...gateKinds], declared: false };
+  }
+  const computed = formatThrowsAbs(fn.entryThrowsAbs);
+  if (computed === undefined) return undefined;
+  const names = computed.split(" | ").filter((n) => n !== "any" && n !== "unknown");
+  return names.length > 0 ? { kinds: names, declared: false } : undefined;
+}
+
+/**
+ * throws 槽文本（`fn(params, returns, { throws: … })` 的第三实参；无抛错证据 ⇒ ""）。
+ *
+ * 多错误名走 `union(lit(…), lit(…))`（`fn` 的 throws 槽要求能抽出错误名）。
+ */
+function draftThrowsSlot(throws: ContractDraftEntry["throws"]): string {
+  if (!throws || throws.kinds.length === 0) return "";
+  const value =
+    throws.kinds.length === 1
+      ? JSON.stringify(throws.kinds[0])
+      : `union(${throws.kinds.map((n) => `lit(${JSON.stringify(n)})`).join(", ")})`;
+  return `, { throws: ${value} }`;
+}
+
+/**
+ * `fn(params[, returns][, { throws }])` 的实参拼装（BUG-198）。
+ *
+ * throws 是**第三实参** ⇒ 缺返回位时必须补 `any()` 占位
+ * （`fn({}, any(), { throws: "TypeError" })` —— 对照组实测能把
+ * `nudo:entry-may-throw` 消掉）。
+ */
+function draftCall(
+  obj: string,
+  ret: string | undefined,
+  throws: ContractDraftEntry["throws"],
+): string {
+  const throwsPart = draftThrowsSlot(throws);
+  const retText = ret === undefined || ret === "" ? undefined : ret;
+  const retSlot = retText ?? (throwsPart ? "any()" : undefined);
+  return retSlot === undefined ? `fn(${obj})` : `fn(${obj}, ${retSlot}${throwsPart})`;
+}
+
+/** 仅把可投影槽写进 DSL；body 建议 / 无证据槽不发明约束 */
+function draftDsl(entry: Pick<ContractDraftEntry, "params" | "returns" | "throws">): string {
+  const parts = entry.params
+    .filter((p) => p.projected && p.constraint !== undefined)
+    .map((p) => {
+      const pure = toDraftBuilderDsl(formatConstraint(p.constraint!));
+      return `${p.name}: ${pure}`;
+    });
+  const obj = parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
+  const ret =
+    entry.returns?.projected && entry.returns.constraint !== undefined
+      ? toDraftBuilderDsl(formatConstraint(entry.returns.constraint))
+      : undefined;
+  return draftCall(obj, ret, entry.throws);
+}
+
+/**
+ * 草稿建议 DSL 语句体（`fn({ … }, …)`，uncomment 即完整侧车绑定）：
+ * body-read 参数自动填形状；已投影参数/返回沿用 draftDsl 的约束——
+ * 建议行是绑定的完整替代，接受它不丢 callsite/symbolic 证据。
+ * 无 body 建议（或全部参数无证据）时返回 undefined。
+ */
+function suggestedBodyDsl(
+  params: ContractDraftEntry["params"],
+  returns?: ContractDraftEntry["returns"],
+  throws?: ContractDraftEntry["throws"],
+): string | undefined {
+  const hasBody = (p: ContractDraftEntry["params"][number]) =>
+    p.bodyAccesses !== undefined && p.bodyAccesses.length > 0 && !p.projected;
+  if (!params.some(hasBody)) return undefined;
+  const parts = params
+    .filter((p) => (p.projected && p.constraint !== undefined) || hasBody(p))
+    .map((p) => {
+      if (p.projected && p.constraint !== undefined) {
+        return `${p.name}: ${toDraftBuilderDsl(formatConstraint(p.constraint))}`;
+      }
+      const shapeText = p.bodyReadFields
+        ? shapeDslFromFields(p.bodyReadFields)
+        : `shape({ ${p.bodyAccesses!.map((k) => `${k}: any()`).join(", ")} })`;
+      return `${p.name}: ${shapeText}`;
+    });
+  const obj = parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
+  const ret =
+    returns?.projected && returns.constraint !== undefined
+      ? toDraftBuilderDsl(formatConstraint(returns.constraint))
+      : undefined;
+  return draftCall(obj, ret, throws);
+}
+
+/**
+ * 为单文件顶层导出生成 contract 草稿（不写盘）。
+ * handwritten 跳过；已有 @generated 仍出草稿（便于对照）。
+ */
+export async function draftContract(
+  filePath: string,
+  opts: ContractDraftOpts = {},
+): Promise<ContractDraftResult> {
+  // Bug 80：锚定本次草稿分析的 contract 诊断增量（收尾透出给命令层）。
+  const contractSince = contractDiagCount();
+  const source = opts.source ?? readFileSync(filePath, "utf-8");
+  // 手写契约探测始终 autoBind:true（见下方 effectiveContract 调用注释）；
+  // 项目 autoBind 只影响 ambient 执法，不影响 draft 是否 skip 已有侧车。
+  const loadModule = opts.loadModule ?? defaultLoadModule;
+  const sidecarPath = sidecarPathOf(filePath);
+  const wantBody = opts.bodyAccesses !== false;
+
+  // E5：draft 分析与 hover/contract 同口径（buffer-aware loadModule）
+  const analysis = await analyzeFileAsync(filePath, source, undefined, opts.records, loadModule);
+  const exported = localNamedExports(source);
+  const bodyMap = wantBody ? collectParamBodyAccesses(source) : new Map();
+  const bodyReadTypes = wantBody ? collectParamBodyReadTypes(source) : new Map();
+  // BUG-198：入口抛错种类（与 `nudo check` 同一次门禁计算）——草稿的 throws 槽来源
+  const mayThrow = entryMayThrowKinds(filePath, source, loadModule);
+
+  const entries: ContractDraftEntry[] = [];
+  /** 未申报但门禁判「可能抛」的补救提示（写进草稿头；不改 DSL） */
+  const throwsHints: string[] = [];
+  for (const fn of analysis.functions) {
+    // BUG-040：契约身份恒为**导出名**（DESIGN-003）——`--fn renamed` 传的是
+    // 导出名，而 `fn.name` 是**本地名**。不做 `exportedNameOfLocal` 映射 ⇒
+    // 别名导出永远匹配不上 ⇒ 静默产出空草稿且 exit 0。
+    const exportedIdentity = draftIdentity(fn.name, source);
+    const requested =
+      opts.fnNames?.includes(fn.name) || opts.fnNames?.includes(exportedIdentity);
+    if (opts.fnNames && opts.fnNames.length > 0) {
+      if (!requested) continue;
+    } else if (!exported.has(fn.name) && !exported.has(exportedIdentity)) {
+      continue;
+    }
+
+    if (!exported.has(fn.name) && !exported.has(exportedIdentity)) {
+      if (requested) {
+        entries.push({
+          fn: fn.name,
+          params: fn.paramNames.map((n) => ({
+            name: n,
+            display: "/* not an export */",
+            projected: false,
+          })),
+          paramEvidence: "none",
+          returnEvidence: "none",
+          skipped: "not-an-export",
+        });
+      }
+      continue;
+    }
+
+    // draft 探测「契约是否已存在」：不依赖 ambient autoBind 执法开关。
+    // autoBind=false 项目下磁盘侧车仍应 skip，避免草稿覆盖手写契约。
+    const eff = effectiveContract(source, fn.name, {
+      loadModule,
+      fromFile: filePath,
+      autoBind: true,
+    });
+    if (eff?.source === "handwritten") {
+      entries.push({
+        fn: fn.name,
+        params: eff.params.map((p) => ({
+          name: p.param,
+          constraint: p.constraint,
+          display: formatConstraint(p.constraint),
+          projected: true,
+        })),
+        ...(eff.returns
+          ? {
+              returns: {
+                constraint: eff.returns.constraint,
+                display: formatConstraint(eff.returns.constraint),
+                projected: true,
+              },
+            }
+          : {}),
+        paramEvidence: "none",
+        returnEvidence: "none",
+        skipped: "handwritten",
+      });
+      continue;
+    }
+
+    const { paramCases, returnCases, paramEvidence, rawReturnEvidence } = caseEvidence(fn);
+    const bodyByParam = bodyMap.get(fn.name);
+    const bodyReadByParam = bodyReadTypes.get(fn.name);
+    const params = projectDraftParams(fn, paramCases, bodyByParam, fn.formals, bodyReadByParam);
+    const ret = projectDraftReturn(fn, returnCases, source, rawReturnEvidence, loadModule, filePath);
+    const { evidence: returnEvidence, ...returns } = ret;
+
+    let evidence: DraftEvidence = paramEvidence;
+    if (evidence === "none") {
+      const anyBody = params.some((p) => p.bodyAccesses && p.bodyAccesses.length > 0);
+      if (anyBody) evidence = "body";
+    }
+
+    const identity = draftIdentity(fn.name, source);
+    // BUG-198：抛错证据（已申报优先，其次引擎算出的入口抛错域）也进草稿 DSL
+    const throwsEvidence = draftThrowsKinds(eff, fn, source, mayThrow);
+    // 已申报（源码/@sidecar）⇒ 进 DSL（草稿不再与源码矛盾）；
+    // 仅**门禁算出**的（未申报）⇒ 不擅自写进 DSL（那会把「可能抛」变成草稿义务），
+    // 只在草稿头给一条可照抄的补救提示（BUG-198 的 `fix:` 建议因此可执行）。
+    const throwsInfo =
+      throwsEvidence !== undefined && throwsEvidence.declared ? { throws: throwsEvidence } : {};
+    if (throwsEvidence !== undefined && !throwsEvidence.declared) {
+      throwsHints.push(
+        `// nudo:entry-may-throw ${fn.name} → add { throws: ${throwsEvidence.kinds
+          .map((k) => JSON.stringify(k))
+          .join(", ")} } as the third \`fn()\` argument to clear it`,
+      );
+    }
+    const dsl = draftDsl({ params, returns, ...throwsInfo });
+    // 装不上就不写：rest 形参 / 非法展示兜底形态 ⇒ not-projectable（与 `--emit` 面同闸）
+    if (hasRestParam(fn) || !draftDslRoundTrips(dsl)) {
+      entries.push({
+        fn: fn.name,
+        identity,
+        params,
+        returns,
+        ...(throwsEvidence !== undefined ? { throws: throwsEvidence } : {}),
+        paramEvidence: evidence,
+        returnEvidence,
+        skipped: "not-projectable",
+      });
+      continue;
+    }
+
+    entries.push({
+      fn: fn.name,
+      identity,
+      params,
+      returns,
+      ...(throwsEvidence !== undefined ? { throws: throwsEvidence } : {}),
+      paramEvidence: evidence,
+      returnEvidence,
+      dsl,
+    });
+  }
+
+  const draftSource = formatDraftModule(filePath, entries, sidecarPath, throwsHints);
+  // Bug 80：坏侧车不得按「无契约」起草且静默 exit 0 —— 本次装载诊断透出给
+  // 命令层（与 contractSurface 同口径）。只在调用方要时排干增量（默认行为不变）。
+  if (opts.diagnostics) {
+    const contractDiags = takeContractDiagsSince(contractSince);
+    collectContractFaceDiagnostics(opts.diagnostics, analysis.diagnostics, contractDiags);
+  }
+  return { file: filePath, entries, draftSource, sidecarPath };
+}
+
+/** 草稿正文里的导出语句：绑定名可别名，身份恒为导出名 */
+function draftExportStmt(binding: string, identity: string, dsl: string): string[] {
+  if (binding === identity) return [`export const ${binding} = ${dsl};`];
+  return [`const ${binding} = ${dsl};`, `export { ${binding} as ${exportNameRepr(identity)} };`];
+}
+
+/** 草稿模块文本（人读 + 可复制到 *.nudo.js / *.nudo.ts） */
+export function formatDraftModule(
+  filePath: string,
+  entries: ContractDraftEntry[],
+  sidecarPath?: string,
+  throwsHints?: readonly string[],
+): string {
+  const target = sidecarPath ?? sidecarPathOf(filePath);
+  const draftName = sidecarDraftPath(filePath).split(/[/\\]/).pop() ?? "*.nudo.draft.js";
+  const draftable = entries.filter((e) => e.dsl !== undefined && e.skipped === undefined);
+  // 只 import 草稿里实际用到的 builder（避免恒注入未使用符号）
+  // BUG-272：判据必须是**调用位**（`name(`），不是词边界（`\bname\b`）——
+  // 词边界会把**字段名** / 注释里的 builder 名拖进 import（观测对象里有个
+  // 字段叫 `lit` ⇒ 草稿 import core 的 `lit` = Term 构造器，绑定的类型面
+  // 就是坏的）。名单取 core 的 CONSTRAINT_BUILDER_NAMES（单一真源）；
+  // **顺序**沿用历史展示序（`fn, number, …`）以保证 import 行稳定，
+  // 其余构建器追加在后。
+  const LEGACY_ORDER = [
+    "fn",
+    "number",
+    "string",
+    "boolean",
+    "any",
+    "shape",
+    "array",
+    "lit",
+    "union",
+  ];
+  const BUILDERS = [
+    ...LEGACY_ORDER,
+    ...CONSTRAINT_BUILDER_NAMES.filter((b) => !LEGACY_ORDER.includes(b)),
+  ];
+  const used = new Set<string>(["fn"]);
+  for (const e of draftable) {
+    const blob = `${e.dsl ?? ""}\n${suggestedBodyDsl(e.params, e.returns, e.throws) ?? ""}`;
+    for (const b of BUILDERS) {
+      if (new RegExp(`(?<![\\w$])${b}\\s*\\(`).test(blob)) used.add(b);
+    }
+  }
+  const importList = BUILDERS.filter((b) => used.has(b)).join(", ");
+  const importNames = new Set<string>(used);
+  const exportUsed = new Set<string>();
+  const hintLines = (throwsHints ?? []).map((h) => sanitizeLineCommentText(h));
+  const lines: string[] = [
+    "// @nudo:draft",
+    `// Generated by \`nudo contract --draft\` from ${sanitizeLineCommentText(filePath)}`,
+    `// This ${sanitizeLineCommentText(draftName)} file is NOT loaded as a sidecar contract.`,
+    `// Review each export, then copy it into ${sanitizeLineCommentText(target)} to accept.`,
+    "//",
+    ...(throwsHints ?? []).map((h) => sanitizeLineCommentText(h)),
+    "// Evidence: callsite/directive = observed args; body = fields the",
+    "// implementation reads (suggestion only — never a check obligation);",
+    "// symbolic = generalize; omitted params = no evidence.",
+    "// Handwritten contracts are never overwritten.",
+    "",
+    `import { ${importList} } from "@nudojs/core";`,
+    "",
+  ];
+
+  if (draftable.length === 0) {
+    lines.push("// (no draftable exports — handwritten / non-export / empty)");
+    lines.push("");
+  }
+
+  for (const e of draftable) {
+    const identity = e.identity ?? e.fn;
+    // 绑定名：身份可作绑定就用身份；否则（保留字 / 与 builder import 撞名）走别名
+    const binding = draftBindingName(identity, (n) => importNames.has(n) || exportUsed.has(n));
+    exportUsed.add(binding);
+    const keyNote = identity === e.fn ? "" : `  (sidecar key: ${sanitizeLineCommentText(identity)})`;
+    lines.push(
+      `// ${sanitizeLineCommentText(`${e.fn} — param: ${e.paramEvidence}, return: ${e.returnEvidence}`)}${keyNote}`,
+    );
+    for (const p of e.params) {
+      // 未投影槽位、body-read 提示、以及已投影参数上的 `/* observed …` 对照
+      // 都以注释形式进草稿（DSL 行只保留可接受的约束）。
+      if (!p.projected) {
+        lines.push(`//   ${sanitizeLineCommentText(`${p.name}: ${p.display}`)}`);
+      } else if (p.display.includes("/* observed") || p.display.includes("/* body also reads")) {
+        lines.push(`//   ${sanitizeLineCommentText(`${p.name}: ${p.display}`)}`);
+      }
+    }
+    if (e.returns && !e.returns.projected) {
+      lines.push(`//   returns: ${sanitizeLineCommentText(e.returns.display)}`);
+    } else if (e.returns?.display.includes("/* observed")) {
+      lines.push(`//   returns: ${sanitizeLineCommentText(e.returns.display)}`);
+    } else if (e.returnEvidence === "symbolic") {
+      lines.push(`//   returns: ${sanitizeLineCommentText(e.returns?.display ?? "")} (symbolic)`);
+    }
+    const suggested = suggestedBodyDsl(e.params, e.returns);
+    if (suggested !== undefined) {
+      // 内联建议行：去 `// ` 即合法侧车绑定语句（绑定名/别名与下方 export 行一致）
+      lines.push("// suggested (uncomment to accept — body-read, not a contract):");
+      for (const stmt of draftExportStmt(binding, identity, sanitizeLineCommentText(suggested))) {
+        lines.push(`// ${stmt}`);
+      }
+    }
+    for (const stmt of draftExportStmt(binding, identity, e.dsl!)) {
+      lines.push(stmt);
+    }
+    if (e.fn.includes(".")) {
+      lines.push(
+        `//   sidecar key may also be written as \`${sanitizeLineCommentText(e.fn)}\` / nested { ${sanitizeLineCommentText(e.fn.split(".")[1] ?? "")}: … }`,
+      );
+    }
+    lines.push("");
+  }
+
+  const skipped = entries.filter((e) => e.skipped !== undefined);
+  if (skipped.length > 0) {
+    lines.push("// Skipped:");
+    for (const s of skipped) {
+      lines.push(`//   ${sanitizeLineCommentText(`${s.fn} (${s.skipped})`)}`);
+    }
+    lines.push("");
+  }
+
+  // 内容指纹：落盘后据此判定「是否仍是机器原稿」（人工改过 ⇒ 拒绝覆盖）
+  const body = lines.join("\n");
+  return body.replace(
+    "// @nudo:draft\n",
+    `// @nudo:draft\n// @nudo:draft-fingerprint: ${draftFingerprint(body)}\n`,
+  );
+}
+
+/** `lib.js|ts` → `lib.nudo.draft.js|ts`（不进 ambient sidecar 表） */
+export function sidecarDraftPath(filePath: string): string {
+  return sidecarPathOf(filePath).replace(/\.nudo\.([cm]?[jt]s)$/, ".nudo.draft.$1");
+}
+
+export type WriteDraftResult = {
+  draftPath: string;
+  written: boolean;
+  changed: boolean;
+  draftable: boolean;
+  draftSource: string;
+  /** 既有草稿被人工改过 ⇒ 拒绝覆盖（文件原样保留） */
+  skipped?: "hand-edited";
+};
+
+/** realpath both sides so /tmp vs /private/var (macOS) cannot fail projectDir containment */
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    try {
+      return join(realpathSync(dirname(p)), basename(p));
+    } catch {
+      return p;
+    }
+  }
+}
+
+/** Parse-layer draftable: at least one entry has generated DSL and was not skipped */
+export function isDraftableEntry(entries: ReadonlyArray<Pick<ContractDraftEntry, "dsl" | "skipped">>): boolean {
+  return entries.some((e) => e.dsl !== undefined && e.skipped === undefined);
+}
+
+/**
+ * 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。
+ * 基础路径防护：拒绝 node_modules；拒绝 draft 路径与正式侧车重合；
+ * 拒绝 draft 路径落在源文件目录之外的穿越。
+ *
+ * **不覆盖人工改过的草稿**：草稿正文带内容指纹（生成时的正文 hash）。
+ * 既有文件的指纹与它的正文对不上 ⇒ 用户改过 ⇒ 拒绝覆盖并回报
+ * （`skipped: "hand-edited"`）；指纹缺失（来源不明）同样按「改过」处理。
+ *
+ * `opts.entries` / `opts.draftable`：解析层判定（优先）。缺省时用 Unicode
+ * 感知 export 正则兜底——`\w` 会静默丢掉 `计算` 这类标识符。
+ */
+export function writeContractDraft(
+  filePath: string,
+  draftSource: string,
+  opts: {
+    dryRun?: boolean;
+    projectDir?: string;
+    entries?: ReadonlyArray<Pick<ContractDraftEntry, "dsl" | "skipped">>;
+    draftable?: boolean;
+  } = {},
+): WriteDraftResult {
+  const draftPath = sidecarDraftPath(filePath);
+  const formalPath = sidecarPathOf(filePath);
+  if (draftPath === formalPath) {
+    throw new Error(
+      `draft write refused: draft path equals formal sidecar (${formalPath}); never overwrite handwritten contracts`,
+    );
+  }
+  if (/[/\\]node_modules[/\\]/.test(draftPath) || /[/\\]node_modules[/\\]/.test(filePath)) {
+    throw new Error(`draft write refused: path is inside node_modules (${draftPath})`);
+  }
+  if (opts.projectDir) {
+    const rootReal = safeRealpath(opts.projectDir);
+    const draftReal = safeRealpath(draftPath);
+    const relToRoot = relative(rootReal, draftReal);
+    // 族 20 · Bug 665（service 半）：逃逸判据按**路径分量**判定 ——
+    // 「整段等于 `..`」或「以 `..` + 分隔符开头」或「跨盘（绝对路径）」。
+    // 改前用**字符串前缀** `rel.startsWith("..")` ⇒ 把项目根下的
+    // **合法目录名**（`..data/` / `...cfg/`）误判成「越出项目根」⇒ 草稿拒写。
+    // ⚠ 与 CLI 半（`packages/nudojs/src/commands/contract-draft.ts` 的
+    // `runContractDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修；
+    // 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
+    if (relToRoot === ".." || relToRoot.startsWith(`..${sep}`) || isAbsolute(relToRoot)) {
+      throw new Error(`draft write refused: outside project root ${opts.projectDir}`);
+    }
+  }
+  // 无可写 export 的空草稿不落盘（避免覆盖已有 draft 壳 / 误写正式侧车）
+  const draftable =
+    opts.draftable !== undefined
+      ? opts.draftable
+      : opts.entries !== undefined
+        ? isDraftableEntry(opts.entries)
+        : /export\s+const\s+[\p{ID_Start}$_][\p{ID_Continue}$]*\s*=/u.test(draftSource);
+  const prev = existsSync(draftPath) ? readFileSync(draftPath, "utf-8") : undefined;
+  const handEdited = prev !== undefined && !isDraftUnmodified(prev);
+  const changed = prev !== draftSource;
+  const written = !opts.dryRun && changed && draftable && !handEdited;
+  if (written) {
+    writeFileSync(draftPath, draftSource, "utf-8");
+  }
+  return {
+    draftPath,
+    written,
+    changed,
+    draftable,
+    draftSource,
+    ...(handEdited ? { skipped: "hand-edited" as const } : {}),
+  };
+}
+
+/** 草稿正文指纹（生成时的正文 hash；写进文件头，供「是否仍是机器原稿」判定） */
+function draftFingerprint(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex");
+}
+
+const DRAFT_FINGERPRINT_RE = /^\/\/ @nudo:draft-fingerprint: ([0-9a-f]{64})\n/m;
+
+/**
+ * 既有草稿是否仍是**机器原稿**（未被人工改过）：
+ * 文件头的指纹必须与它自己的正文（去掉指纹行）一致。
+ * 无指纹行 ⇒ 来源不明 ⇒ 按「改过」处理（不覆盖）。
+ */
+function isDraftUnmodified(text: string): boolean {
+  const m = DRAFT_FINGERPRINT_RE.exec(text);
+  if (!m) return false;
+  const body = text.replace(DRAFT_FINGERPRINT_RE, "");
+  return draftFingerprint(body) === m[1];
+}
+
+export function formatDraftSummary(
+  sourceRel: string,
+  draftRel: string,
+  result: ContractDraftResult,
+  write?: WriteDraftResult,
+): string[] {
+  const lines: string[] = [sourceRel];
+  for (const e of result.entries) {
+    if (e.skipped === "handwritten") {
+      lines.push(`  ${e.fn}  [handwritten]  skipped (draft never overwrites)`);
+    } else if (e.skipped === "not-an-export") {
+      lines.push(`  ${e.fn}  [not-an-export]  skipped`);
+    } else if (e.skipped === "not-projectable") {
+      lines.push(`  ${e.fn}  [not-projectable]  skipped (not expressible in the contract DSL)`);
+    } else if (e.dsl) {
+      lines.push(`  ${e.fn}  [draft ${e.paramEvidence}/${e.returnEvidence}]  ${e.dsl}`);
+    }
+  }
+  if (write) {
+    if (write.skipped === "hand-edited") {
+      lines.push(
+        `Draft exists and was hand-edited — not overwritten → ${draftRel} (merge manually, or delete it to regenerate)`,
+      );
+    } else if (write.changed && write.draftable) {
+      lines.push(
+        write.written ? `Draft written → ${draftRel}` : `[dry-run] would write → ${draftRel}`,
+      );
+    } else if (write.changed && !write.draftable) {
+      // attempted entries (skipped/handwritten) must not be reported as "empty"
+      if (result.entries.length > 0) {
+        const skipped = result.entries.filter((e) => e.skipped !== undefined).length;
+        lines.push(
+          skipped > 0
+            ? `Draft not written (${skipped} skipped, no writeable exports); nothing written → ${draftRel}`
+            : `Draft not written (no writeable exports); nothing written → ${draftRel}`,
+        );
+      } else {
+        lines.push(`Draft empty (no draftable exports); nothing written → ${draftRel}`);
+      }
+    } else {
+      lines.push(`${draftRel}: draft unchanged`);
+    }
+    lines.push(`  review, then copy accepted exports into ${sidecarPathOf(result.file)}`);
+  } else {
+    lines.push("");
+    lines.push(result.draftSource.trimEnd());
+  }
+  return lines;
+}

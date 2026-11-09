@@ -7,7 +7,7 @@
  * ```
  * export const withHeaders = fn({ x: shape({ content-type: string(), … }) }, any());
  * ```
- * ⇒ `node --check` SyntaxError；抄进侧车 ⇒ `nudo:interface-load` ⇒ exit 1。
+ * ⇒ `node --check` SyntaxError；抄进侧车 ⇒ `nudo:contract-load` ⇒ exit 1。
  *
  * 修法（草稿面）：属性键走**合法转义**（`formatObjectKey`：JS 标识符 /
  * 字符串字面量两种合法形态）；`__proto__` 走**计算属性名**（对象字面量里的
@@ -102,7 +102,7 @@ describe("Bug 834 —— --from-dts 的属性键转义", () => {
     );
     const res = runNudoCheck(target);
     expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
-    expect(res.stdout).not.toContain("nudo:interface-load");
+    expect(res.stdout).not.toContain("nudo:contract-load");
     // 契约真的落到侧车上了（签名里带引号的键）
     expect(res.stdout).toContain('"content-type"');
   }, 120_000);
@@ -117,7 +117,7 @@ describe("Bug 834 —— --from-dts 的属性键转义", () => {
     );
     const res = runNudoCheck(target);
     expect(res.status).not.toBe(0);
-    expect(res.stdout).toContain("nudo:interface-load");
+    expect(res.stdout).toContain("nudo:contract-load");
   }, 120_000);
 
   it("导出名撞 builder import ⇒ 走别名形态（草稿仍是合法 JS）", () => {

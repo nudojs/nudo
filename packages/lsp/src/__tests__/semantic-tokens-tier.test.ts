@@ -1,15 +1,15 @@
 /**
- * A7：semantic tokens 对齐 interface 档
+ * A7：semantic tokens 对齐 contract 档
  * - export 函数绑定带 contract / generated / derived modifier
  * - 非导出只带 declaration（不假装进档）
- * - 与 CodeLens / hover 共用 interfaceTierOf（同源）
+ * - 与 CodeLens / hover 共用 contractTierOf（同源）
  */
 import { describe, it, expect } from "vitest";
 import {
   buildSemanticTokens,
   SEMANTIC_TOKEN_TYPES,
   SEMANTIC_TOKEN_MODIFIERS,
-  interfaceTierModifierBit,
+  contractTierModifierBit,
 } from "../semantic-tokens.ts";
 
 const MOD_DECLARATION = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("declaration");
@@ -49,7 +49,7 @@ export const add = fn({ x: number() });
 const loader = (sidecar: string) => (spec: string) =>
   spec.endsWith("lib.nudo.js") ? sidecar : undefined;
 
-describe("buildSemanticTokens × interface 档 (A7)", () => {
+describe("buildSemanticTokens × contract 档 (A7)", () => {
   it("handwritten export function declaration gets contract modifier", () => {
     const src = `export function add(x) {\n  return x + 2;\n}\n`;
     const data = buildSemanticTokens("/t/lib.js", src, { loadModule: loader(HANDWRITTEN) });
@@ -81,7 +81,7 @@ describe("buildSemanticTokens × interface 档 (A7)", () => {
     expect(fnTok!.modifiers).toBe(MOD_DECLARATION);
   });
 
-  it("nested same-name FunctionDeclaration does not inherit export interface tier", () => {
+  it("nested same-name FunctionDeclaration does not inherit export contract tier", () => {
     const src = `export function add(x) {
   function add(n) {
     return n + 1;
@@ -108,10 +108,10 @@ describe("buildSemanticTokens × interface 档 (A7)", () => {
     expect(fnTok!.modifiers).toBe(MOD_DECLARATION | MOD_DERIVED);
   });
 
-  it("interfaceTierModifierBit maps three tiers", () => {
-    expect(interfaceTierModifierBit("handwritten")).toBe(MOD_CONTRACT);
-    expect(interfaceTierModifierBit("generated")).toBe(MOD_GENERATED);
-    expect(interfaceTierModifierBit("implicit")).toBe(MOD_DERIVED);
+  it("contractTierModifierBit maps three tiers", () => {
+    expect(contractTierModifierBit("handwritten")).toBe(MOD_CONTRACT);
+    expect(contractTierModifierBit("generated")).toBe(MOD_GENERATED);
+    expect(contractTierModifierBit("implicit")).toBe(MOD_DERIVED);
   });
 
   it("legend appends contract/generated/derived without reordering prior modifiers", () => {

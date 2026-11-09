@@ -29,7 +29,7 @@ import {
   tryRunEval,
 } from "../eval-run.ts";
 import { analysisFileCacheKey } from "../analyzer-cache.ts";
-import { checkCacheKey, ifaceCacheKey, relativizePath } from "../disk-cache.ts";
+import { checkCacheKey, contractCacheKey, relativizePath } from "../disk-cache.ts";
 import { stablePathKey } from "@nudojs/core/internal";
 
 const SEP = "\0";
@@ -167,10 +167,10 @@ describe("disk-cache path identity goes through stablePathKey", () => {
     for (const k of keys) expect(k).toBe(keys[0]);
   });
 
-  it("ifaceCacheKey is identical across drive forms", () => {
+  it("contractCacheKey is identical across drive forms", () => {
     const source = "export const a = 1;\n";
     const opts = { autoBind: false } as const;
-    const keys = FORMS.map((f) => ifaceCacheKey(f, source, opts));
+    const keys = FORMS.map((f) => contractCacheKey(f, source, opts));
     for (const k of keys) expect(k).toBe(keys[0]);
   });
 

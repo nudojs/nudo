@@ -91,7 +91,7 @@ describe("test — default face golden", () => {
 });
 
 describe("contract — default face golden", () => {
-  it("print surface: implicit interface line + exit 0", () => {
+  it("print surface: implicit contract line + exit 0", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-e2e-contract-"));
     writeFixture(dir, "id.js", ID_SRC);
     const r = runCli(["contract", "id.js"], { cwd: dir });

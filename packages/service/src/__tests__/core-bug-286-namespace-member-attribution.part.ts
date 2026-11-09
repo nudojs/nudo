@@ -1,6 +1,6 @@
 /**
  * Bug 286：`--from` 注入的调用点记录在**命名空间成员调用**上无法归因 ⇒
- * `nudo:interface-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。
+ * `nudo:contract-domain-exceeds`（**error 级** L1 门禁）静默不报 ⇒ 假绿。
  *
  * 根因（analyzer-abs-eval.ts 的调用记录归因）：
  * - eval 侧对命名空间成员调用（`ns.helper(...)`）只记**成员名**（`helper`），
@@ -22,7 +22,7 @@
  * - ESM `import * as` 与 CJS `require` 两种形态都要归因到**被调模块**。
  * - 记录名带接收者限定（`dep.g`），targetExport 是**成员名**（`g`）。
  * - 负控制：具名导入的记录名**不加前缀**（`g`）——既有快照面最小改动。
- * - 产品面：注入后 `nudo:interface-domain-exceeds` 必须是 **error**。
+ * - 产品面：注入后 `nudo:contract-domain-exceeds` 必须是 **error**。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -30,7 +30,7 @@ import { analyzeFile, collectCallRecords } from "../analyzer.ts";
 import { litValue } from "@nudojs/core";
 import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
 
-const DOMAIN = "nudo:interface-domain-exceeds";
+const DOMAIN = "nudo:contract-domain-exceeds";
 
 /** 被调模块：g 的契约是 x > 0（越界调用 -1 ⇒ 门禁必须报） */
 const DEP = `export const g = (x) => x;
@@ -99,7 +99,7 @@ describe("Bug 286：命名空间成员调用的调用点可归因（domain-excee
       expect(records.some((r) => r.fnName.includes("."))).toBe(false);
     }));
 
-  it("产品面：注入后 nudo:interface-domain-exceeds 必须是 error（不再是假绿）", () =>
+  it("产品面：注入后 nudo:contract-domain-exceeds 必须是 error（不再是假绿）", () =>
     withTmpProject("nudo-b286e-", (dir) => {
       const depPath = writeTmpFile(dir, "dep.js", DEP);
       writeTmpFile(dir, "dep.nudo.js", DEP_SIDE);

@@ -65,7 +65,7 @@ function fixture(): { dir: string; lib: string; infn: string } {
 
 /** 被调方报告里的「调用点违例」条目（`--from` 面的跨文件域超限码） */
 function violationIssues(json: CheckJson | undefined): CheckJson["issues"] {
-  return (json?.issues ?? []).filter((i) => i.code === "nudo:interface-domain-exceeds");
+  return (json?.issues ?? []).filter((i) => i.code === "nudo:contract-domain-exceeds");
 }
 
 /** 最小模块说明符解析：只处理相对说明符（夹具内都是相对路径）⇒ 回**路径** */
@@ -122,7 +122,7 @@ describe("Bug 643 —— --from 的调用点义务按静态判据复核", () => 
       [
         {
           severity: "error",
-          code: "nudo:interface-domain-exceeds",
+          code: "nudo:contract-domain-exceeds",
           message: "f[x]: cross-file call-site domain evidence -1 exceeds handwritten contract",
           fn: "f",
         },
@@ -130,7 +130,7 @@ describe("Bug 643 —— --from 的调用点义务按静态判据复核", () => 
       [
         {
           severity: "error",
-          code: "nudo:interface-domain-exceeds",
+          code: "nudo:contract-domain-exceeds",
           message: "f[x]: cross-file call-site domain evidence -1 exceeds handwritten contract",
         },
       ],

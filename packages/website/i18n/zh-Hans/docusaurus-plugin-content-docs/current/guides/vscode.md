@@ -75,7 +75,7 @@ function upper(s) {
 透镜行是一个**观察选择器**——contract 是与各 case 并排的一项，恰好一项激活（`●`）：
 
 - **● contract / hw|gen|imp** —— 契约选项（handwritten / generated / implicit 档），默认激活。点击切回契约观察（`nudo.selectContract`）；已激活时点击幂等
-- **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
+- **⚡ persist contract** / **↻ update contract** —— 把调用点域固化进 `*.nudo.js` 侧车
 - **● / ○ case "name"** —— 点击选择类型重放的激活 case（`nudo.selectCase`）；契约选项随之转 `○`
 
 悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● contract / hw\|gen\|imp`（A7）。VS Code 中当前激活 case 以不同样式高亮。这样可以在不修改文件的情况下查看不同输入下的类型。
@@ -152,9 +152,9 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
 | Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程；从面板走时用 QuickPick 交互选函数，三步门禁不变 |
 
-非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.contract.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
+非手写导出上的 CodeLens 含 `⚡ draft contract`——与 CLI `--draft`、agent `nudo.contract.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
 
-从命令面板触发时，这些命令作用于**当前活动编辑器**（不需要传文件参数）：**Show Contract** 与 **Draft Contract** 是文件粒度的，而 **Persist Contract (@generated)** 会用 **QuickPick** 让你从该文件可固化的导出里选一个函数——与服务端 `⚡ persist interface` / `↻ update interface` CodeLens 给的是同一批函数。文件里没有可固化函数时，命令会如实报告没有（没有自由文本兜底）。两条路径的门禁完全一致：dry-run 绝不写盘，dry-run 失败时根本不提供写盘动作，侧车只在你确认之后才写。
+从命令面板触发时，这些命令作用于**当前活动编辑器**（不需要传文件参数）：**Show Contract** 与 **Draft Contract** 是文件粒度的，而 **Persist Contract (@generated)** 会用 **QuickPick** 让你从该文件可固化的导出里选一个函数——与服务端 `⚡ persist contract` / `↻ update contract` CodeLens 给的是同一批函数。文件里没有可固化函数时，命令会如实报告没有（没有自由文本兜底）。两条路径的门禁完全一致：dry-run 绝不写盘，dry-run 失败时根本不提供写盘动作，侧车只在你确认之后才写。
 
 ---
 
@@ -174,14 +174,14 @@ Nudo 语言服务器的设计目标是在你的其他工具旁保持轻量：
 |-------------------|----------------------------------------------------------|
 | 悬停              | Abs / intension；导出函数名显示 `● contract / hw\|gen\|imp` |
 | 补全              | 在 `.` 后触发；属性和方法建议                            |
-| CodeLens          | interface 档 + persist/update；case 副层                 |
+| CodeLens          | contract 档 + persist/update；case 副层                 |
 | 内联提示          | Abs 参数/返回；implicit 导出标 `derived`                 |
 | 跳转到定义        | 跳转到符号定义（`F12`）                                  |
 | 查找引用          | 查找符号的所有使用（`Shift+F12`）                        |
 | 重命名符号        | 重命名符号及其所有引用（`F2`）                           |
 | 签名帮助          | 函数调用内的参数提示                                     |
 | 代码操作          | 诊断的快速修复                                           |
-| 语义标记          | 类型感知高亮 + interface 档 modifier                     |
+| 语义标记          | 类型感知高亮 + contract 档 modifier                     |
 | 状态栏            | 激活时显示 "Nudo" 指示器                                 |
 | 命令              | `nudo.selectCase` / `nudo.contract` / `nudo.contract.emit` |
 

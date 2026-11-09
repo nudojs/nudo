@@ -4,7 +4,7 @@
  *
  * `@nudo:case` 是**调试见证**（docs/concepts/directives.md:44），不是契约；
  * 门禁面（check / health / mutate）用 `caseMode "none"`，发布面与打印面必须
- * **同口径**。此前 export 与 interface-surface 用 `"all"`
+ * **同口径**。此前 export 与 contract-surface 用 `"all"`
  * ⇒ 同一个函数，仅仅多一条 `@nudo:case "dom" (number())` 就把
  * `f(x: any) => number | string` 变成 `f(x: number) => number`。
  */

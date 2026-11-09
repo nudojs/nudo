@@ -1,6 +1,6 @@
 /**
  * DESIGN-003 — sidecar 生成段的「身份 / 绑定」分离：
- * 契约身份恒为**导出名**（generatedExportNames 键 / interface 行 / 诊断），
+ * 契约身份恒为**导出名**（generatedExportNames 键 / contract 行 / 诊断），
  * 绑定名不安全（保留字 / 非 ident / 与既有绑定撞名）时发射别名形态
  * `const _nudo_<n> = <expr>; export { _nudo_<n> as <name> };`。
  *

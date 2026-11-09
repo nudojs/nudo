@@ -31,7 +31,7 @@ import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 
 beforeEach(() => {
   resetCheckSourceMemo();
@@ -42,7 +42,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   resetSidecarLoadFailureCache();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** pred 树里有没有 `eq(x % 1, 0)` 这条整性编码 */

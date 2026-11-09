@@ -1,7 +1,7 @@
 /**
  * Bug 743 —— 侧车 quickfix 的 edit **退化成头插**（`0:0 → 0:0`）⇒ 落盘后侧车
  * 出现重复 `export const <fn>` ⇒ 侧车整体 SyntaxError ⇒ 侧车里**所有**契约
- * 一起失效（`nudo:interface-load`）⇒ 门禁从「有诊断」变成「装载失败」。
+ * 一起失效（`nudo:contract-load`）⇒ 门禁从「有诊断」变成「装载失败」。
  *
  * 根因与 Bug 735 同源：`agentToolDeps` 被提前捕获（挂载期还是 `undefined`）
  * ⇒ 侧车文本读不到 ⇒ `scSource` 退化成 `""` ⇒ edit 范围只剩头插一行。
@@ -83,12 +83,12 @@ describe("Bug 743 · 侧车 quickfix 不得把侧车写成重复 export", () => 
       expect(landed).toContain("export const alpha");
       // 没有重复 export ⇒ 语法合法（可加载）
       expect(() => parse(landed)).not.toThrow();
-      // 语义面：侧车装载失败会报 nudo:interface-load ⇒ 这里不得出现
+      // 语义面：侧车装载失败会报 nudo:contract-load ⇒ 这里不得出现
       writeFileSync(join(dir, "lib.nudo.js"), landed, "utf-8");
       const report = checkSource(libPath, LIB_JS, undefined, {
         loadModule: defaultLoadModule,
       });
-      expect(report.issues.map((i) => i.code)).not.toContain("nudo:interface-load");
+      expect(report.issues.map((i) => i.code)).not.toContain("nudo:contract-load");
     });
   });
 });

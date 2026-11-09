@@ -604,8 +604,8 @@ const r = mul(2, 3);
     expect(titles).toContain("● contract / imp");
     expect(titles).toContain('○ case "five"');
     expect(titles.some((t) => t.startsWith("● case"))).toBe(false);
-    expect(titles).toContain("⚡ persist interface");
-    expect(titles).toContain("⚡ draft interface");
+    expect(titles).toContain("⚡ persist contract");
+    expect(titles).toContain("⚡ draft contract");
     expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
   });
 

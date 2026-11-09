@@ -20,10 +20,10 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { effectiveInterface, obj } from "@nudojs/core";
+import { effectiveContract, obj } from "@nudojs/core";
 import { analyzeFileAsync, type FunctionAnalysis } from "@nudojs/service";
 import { projectModuleDts } from "@nudojs/service/emit";
-import { buildEffectiveInterfaceOptions } from "../selection.ts";
+import { buildEffectiveContractOptions } from "../selection.ts";
 import { unifiedParamFace, type ParamFace } from "../contract-face.ts";
 import { renderZodModule, zodInputSlots } from "../zod-face.ts";
 import { dtsFaceEntry } from "../dts-face.ts";
@@ -61,7 +61,7 @@ async function faceOf(
   );
   const fn = result.functions.find((f) => f.name === fnName);
   if (!fn) throw new Error(`function ${fnName} not analysed`);
-  const eff = effectiveInterface(source, fnName, buildEffectiveInterfaceOptions(filePath));
+  const eff = effectiveContract(source, fnName, buildEffectiveContractOptions(filePath));
   const params = unifiedParamFace(fn, eff, fn.cases);
   const dtsEntry = dtsFaceEntry(fn, fnName, eff, source, filePath, undefined, undefined);
   const dts = projectModuleDts(undefined, [

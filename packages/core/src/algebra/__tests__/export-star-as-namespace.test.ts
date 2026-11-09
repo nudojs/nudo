@@ -11,7 +11,7 @@ import {describe, it, expect} from "vitest";
 import {parseSource} from "../parse-source.ts";
 import {emptyEnv} from "../ast-env.ts";
 import {bindImports, collectAbsExports, namespaceAbsOf, type AbsModuleExports} from "../abs-modules.ts";
-import {localNamedExports} from "../interface/interface.ts";
+import {localNamedExports} from "../contract/contract.ts";
 import {runTranspiled, transpileSource, callTranspiledExportFull, litValue} from "@nudojs/core";
 import {abs, num, unknown} from "../abs.ts";
 import {v} from "../term.ts";

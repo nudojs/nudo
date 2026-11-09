@@ -18,7 +18,7 @@
  * 断言面（顺序无关性 = 语义等价代码应得等价结论）：
  * 1. 两种声明顺序下被调方的调用点见证数、实参域、结果域**完全一致**；
  * 2. `combinedAbs`（导出面 / dts / 契约用到的推断域）一致；
- * 3. `nudo:interface-entry-only` 不再误报被调方（它已有了调用点域）。
+ * 3. `nudo:contract-entry-only` 不再误报被调方（它已有了调用点域）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { join } from "node:path";
@@ -120,15 +120,15 @@ describe("BUG-022 · 调用点域与声明顺序无关", () => {
     expect(combined(first)).toBe("2 | 3 | 4");
   });
 
-  it("有调用点域的被调方不再误报 nudo:interface-entry-only", async () => {
+  it("有调用点域的被调方不再误报 nudo:contract-entry-only", async () => {
     const r = await analyze(CALLEE_FIRST);
     const calleeEntryOnly = r.diagnostics.filter(
-      (d) => d.code === "nudo:interface-entry-only" && d.message.includes("'callee'"),
+      (d) => d.code === "nudo:contract-entry-only" && d.message.includes("'callee'"),
     );
     expect(calleeEntryOnly).toEqual([]);
     // 负控制：真的没有调用点的导出函数仍如实报 entry-only（不静默）
     const caller1EntryOnly = r.diagnostics.filter(
-      (d) => d.code === "nudo:interface-entry-only" && d.message.includes("'caller1'"),
+      (d) => d.code === "nudo:contract-entry-only" && d.message.includes("'caller1'"),
     );
     expect(caller1EntryOnly).toHaveLength(1);
   });

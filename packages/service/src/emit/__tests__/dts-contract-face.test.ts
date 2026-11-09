@@ -1,5 +1,5 @@
 /**
- * dts 投影消费契约面（export CLI 从 effectiveInterface 取，与 check 签名面
+ * dts 投影消费契约面（export CLI 从 effectiveContract 取，与 check 签名面
  * 同数据源）：手写契约（sidecar / @nudo:contract）参数/返回位投影、
  * case 见证补位、无证据位 unknown 上报、契约 vs HOF 泛型优先级。
  */

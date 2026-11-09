@@ -50,12 +50,12 @@ describe("A6 IDE daily smoke — file gate + analysis", () => {
 
 describe("A6 IDE daily smoke — hover + inlay (service pure path)", () => {
   it("hover returns type info on an export function name", () => {
-    // line 1, column 16 sits on `add2` (same pin as agent-hover-interface-tier)
+    // line 1, column 16 sits on `add2` (same pin as agent-hover-contract-tier)
     const hover = getHoverAtPosition("/smoke/add2.js", EXPORT_SRC, 1, 16, undefined, {});
     expect(hover).not.toBeNull();
     const text = hover!.intension ?? hover!.typeText ?? "";
     expect(text).toBeTruthy();
-    expect(hover!.interfaceSource).toBe("implicit");
+    expect(hover!.contractSource).toBe("implicit");
   });
 
   it("collectAbsInlays yields inlays for analyzed export source", () => {
@@ -72,7 +72,7 @@ describe("A6 IDE daily smoke — hover + inlay (service pure path)", () => {
     expect(r.isError).not.toBe(true);
     const payload = JSON.parse(r.content[0].text);
     expect(payload.abs).toBeDefined();
-    expect(payload.interfaceSource).toBe("implicit");
+    expect(payload.contractSource).toBe("implicit");
   });
 });
 

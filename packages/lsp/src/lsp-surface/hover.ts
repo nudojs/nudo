@@ -2,7 +2,7 @@
  * LSP 表面 — hover 渲染域。
  *
  * owns：getHoverAtPosition（函数名内涵签名 + 标识符外延 + 引擎重放
- * 求值态三面合成，A7 interface 档同源）、HoverInfo / HoverInterfaceOpts、
+ * 求值态三面合成，A7 contract 档同源）、HoverInfo / HoverContractOpts、
  * 参数声明形态折叠（paramDisplayOf——叠加 facts 流窄化与 narrowing
  * 判别窄化）、nullable 包装剥离（stripNullableWrappers）。
  * 不 owns：重放/绑定面/局部投影（replay.ts）、守卫事实（facts.ts）、
@@ -17,11 +17,11 @@ import {
   formatShape,
   formalParamSignatureNames,
   generalizeFromAst,
-  interfaceTierOf,
+  contractTierOf,
   pTrue,
   type Abs,
-  type InterfaceSource,
-  type InterfaceTierOpts,
+  type ContractSource,
+  type ContractTierOpts,
   type NudoSig,
   type PolyFn,
 } from "@nudojs/core";
@@ -68,16 +68,16 @@ export type HoverInfo = {
   absMultiline?: string;
   /** check 同口径签名（`fn(params) => ret`）；IDE hover 渲染面 */
   signature?: string;
-  /** CodeLens `● interface` 同源档位（A7）；仅本地 named export */
-  interfaceSource?: InterfaceSource;
+  /** CodeLens `● contract` 同源档位（A7）；仅本地 named export */
+  contractSource?: ContractSource;
   /**
-   * interface 档当前是否**激活**（观察选择器状态；724）。
+   * contract 档当前是否**激活**（观察选择器状态；724）。
    * 与 CodeLens 的 `lens.active` 同源：该函数正观察某个 case ⇒
    * 契约档转 `○`（`false`）；否则契约档 `●`（`true`）。
    */
-  interfaceActive?: boolean;
+  contractActive?: boolean;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
-  interfaceDisplay?: string;
+  contractDisplay?: string;
   /**
    * 类型值变量链接面（参数折叠展示的 markdown 渲染：引用标识符
    * 如 `astNode` 包为 `[astNode](file://<定义路径>#L<行>)`）。
@@ -87,8 +87,8 @@ export type HoverInfo = {
   linkedText?: string;
 };
 
-/** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
-export type HoverInterfaceOpts = InterfaceTierOpts & {
+/** A7：hover/inlay 与 CodeLens contract 档同源（design-refine-derivation §8） */
+export type HoverContractOpts = ContractTierOpts & {
   /**
    * B run 注入包（`@nudo:mock` / `@nudo:as` / `@nudo:replace` / env 全局）
    * —— 透传给 hover 的三处 `generalizeFromAst`（Bug 786）。
@@ -165,7 +165,7 @@ function checkSigOf(
   filePath: string,
   source: string,
   fnName: string,
-  opts: HoverInterfaceOpts | undefined,
+  opts: HoverContractOpts | undefined,
   modules: SurfaceReuse["modules"] | undefined,
 ): NudoSig | undefined {
   try {
@@ -201,7 +201,7 @@ export function checkSignatureLine(
   filePath: string,
   source: string,
   fnName: string,
-  opts: HoverInterfaceOpts | undefined,
+  opts: HoverContractOpts | undefined,
   reuse: SurfaceReuse | undefined,
   g?: PolyFn,
 ): string | undefined {
@@ -234,7 +234,7 @@ export function checkSignatureLine(
       .join(", ");
     const checkSig = checkSigOf(filePath, source, fnName, opts, reuse?.modules);
     const retText = checkSig ? formatShape(checkSig.abs) : formatShape(poly.symbolic);
-    const tier = interfaceTierOf(source, fnName, filePath, opts ?? {});
+    const tier = contractTierOf(source, fnName, filePath, opts ?? {});
     const throwsDisplay = tier !== undefined ? throwsDisplayOf(reuse?.result, fnName) : undefined;
     const throwsName = checkSig ? checkSig.throws : throwsDisplay;
     const throwsSuffix = throwsName ? `  throws ${throwsName}` : "";
@@ -254,9 +254,9 @@ export function checkSignatureLine(
  * typeText 仍落 evaluator Abs（调用点显示结果类型，不是函数签名）。
  * 禁止用 evaluator 的 arity-only fn Abs 冒充权威关系源。
  *
- * A7 default 档：函数名 hover 附带 interfaceTierOf 来源 + 契约展示，
- * 与 CodeLens `● interface / <source>` 同源；选 case 时 body 仍走
- * activeCases 重放，interface 档标注不变。
+ * A7 default 档：函数名 hover 附带 contractTierOf 来源 + 契约展示，
+ * 与 CodeLens `● contract / <source>` 同源；选 case 时 body 仍走
+ * activeCases 重放，contract 档标注不变。
  */
 export function getHoverAtPosition(
   filePath: string,
@@ -264,7 +264,7 @@ export function getHoverAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>,
-  opts?: HoverInterfaceOpts,
+  opts?: HoverContractOpts,
   reuse?: SurfaceReuse,
 ): HoverInfo | null {
   // parse 一次（reuse.ast 优先）；失败 → AST 相关路径全部短路，
@@ -308,16 +308,16 @@ export function getHoverAtPosition(
   /** 声明名位置（非调用 callee）才有 check 同口径签名面 */
   const fnDeclPos = fnHit?.isDecl ?? false;
 
-  // interface 档（A7）：与 CodeLens 同源；仅导出函数标注
+  // contract 档（A7）：与 CodeLens 同源；仅导出函数标注
   const tier =
     fnName !== undefined
-      ? interfaceTierOf(source, fnName, filePath, opts ?? {})
+      ? contractTierOf(source, fnName, filePath, opts ?? {})
       : undefined;
 
   // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数当前
-  // 正观察某个 case ⇒ 契约档 ○（否则 ●）。与 computeInterfaceLenses 的
+  // 正观察某个 case ⇒ 契约档 ○（否则 ●）。与 computeContractLenses 的
   // `contractActive = !(activeCases?.has(fn.name) ?? false)` 同一公式。
-  const interfaceActive = fnName !== undefined ? !(activeCases?.has(fnName) ?? false) : true;
+  const contractActive = fnName !== undefined ? !(activeCases?.has(fnName) ?? false) : true;
 
   // intension 候选：先算、不早退，最后合并进 evaluator/TypeValue 结果
   let gDisplay: string | undefined;
@@ -357,11 +357,11 @@ export function getHoverAtPosition(
     if (!info || !tier) return info;
     return {
       ...info,
-      interfaceSource: tier.source,
+      contractSource: tier.source,
       // 观察选择器状态（724）：与 CodeLens `lens.active` 同源——该函数
       // 正观察某个 case ⇒ 契约档 ○；否则契约档 ●。
-      interfaceActive,
-      ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
+      contractActive,
+      ...(tier.display !== undefined ? { contractDisplay: tier.display } : {}),
     };
   };
   const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
@@ -467,7 +467,7 @@ export function getHoverAtPosition(
         // 侧车契约档（参数面 + 成员投影共用）：
         // 侧车源码 / AST 预解析（判别窄化的臂
         // 过滤与变量链接的引用解析共用）
-        const encTier = interfaceTierOf(source, encFn.name, filePath, opts ?? {});
+        const encTier = contractTierOf(source, encFn.name, filePath, opts ?? {});
         const sidecarPath = encTier?.sidecarPath;
         let sidecarProgram: File["program"] | undefined;
         let sidecarSrc: string | undefined;
@@ -672,7 +672,7 @@ export function getHoverAtPosition(
   }
 
   // fail-closed：其余任意表达式光标 Abs 由标识符绑定面（absFromEval）
-  // 与 interface 档覆盖（return / 子表达式位已在上方重放面处理）
+  // 与 contract 档覆盖（return / 子表达式位已在上方重放面处理）
 
   // 无类型结果时仍返回 intension（函数名 hover 的同源保证）；
   // tier 可缺（nested / 非导出），gDisplay 有就给出

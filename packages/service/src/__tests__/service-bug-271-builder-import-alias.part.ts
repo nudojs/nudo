@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../emit/interface-emitter.ts";
+import { emitContract } from "../emit/contract-emitter.ts";
 
 let dir: string;
 
@@ -39,7 +39,7 @@ describe("BUG-271 —— core import 不得豁免 builder 声明头", () => {
     writeFileSync(file, SRC);
     writeFileSync(join(dir, "lit.nudo.ts"), `import { fn, lit } from "@nudojs/core";\n`);
 
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("f");
 
     const after = readFileSync(join(dir, "lit.nudo.ts"), "utf-8");
@@ -59,7 +59,7 @@ describe("BUG-271 —— core import 不得豁免 builder 声明头", () => {
     writeFileSync(file, SRC);
     writeFileSync(join(dir, "lit2.nudo.ts"), `// empty sidecar\n`);
 
-    await emitInterface(file, { mode: "update", all: true });
+    await emitContract(file, { mode: "update", all: true });
     const after = readFileSync(join(dir, "lit2.nudo.ts"), "utf-8");
     expect(after).toContain(`declare const lit: typeof import("@nudojs/core").litC;`);
     expect(after).toContain("lit(1)");

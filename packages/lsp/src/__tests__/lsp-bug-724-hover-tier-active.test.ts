@@ -1,9 +1,9 @@
 /**
- * Bug 724 —— LSP **hover** 的 interface tier 行**硬编码 `active=true`**。
+ * Bug 724 —— LSP **hover** 的 contract tier 行**硬编码 `active=true`**。
  *
  * 改前：hover 首行恒 `● contract / <src>`，而同一文件的 CodeLens 在
  * 选中 case 后已翻成 `○ contract / <src>` ⇒ 同一个 IDE 里两个面打架
- * （并与 `core/algebra/interface.ts` 写明的语义「○ = 当前观察的是 case」
+ * （并与 `core/algebra/contract.ts` 写明的语义「○ = 当前观察的是 case」
  * 直接矛盾）。
  *
  * 原生 oracle：hover 首行的 `●/○` 必须与 CodeLens 的契约选项标题**同源**

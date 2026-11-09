@@ -5,7 +5,7 @@
  * 侧车导出 ⇒ 侧车里没人认领的条目在系统里根本不存在：签名退化成 any、
  * dts 类型错、门禁冒一条与真实原因无关的假红（"may throw TypeError"）。
  *
- * 修法：interface.ts 扫侧车孤儿导出——侧车里有、源码里没人认领的 **fn()
+ * 修法：contract.ts 扫侧车孤儿导出——侧车里有、源码里没人认领的 **fn()
  * 契约** ⇒ 报一条点名的诊断（sidecar 导出名 + 源码导出名列表）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
@@ -13,7 +13,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("Bug 339 侧车孤儿导出诊断", () => {
@@ -34,7 +34,7 @@ describe("Bug 339 侧车孤儿导出诊断", () => {
       fromFile: "/t/typo.js",
     });
     const orphan = r.issues.filter(
-      (i) => i.code === "nudo:interface-load" && i.message.includes("has no matching source function"),
+      (i) => i.code === "nudo:contract-load" && i.message.includes("has no matching source function"),
     );
     expect(orphan).toHaveLength(1);
     // 点名侧车里真实存在的导出名（ff）+ 源码导出名（f）
@@ -51,7 +51,7 @@ describe("Bug 339 侧车孤儿导出诊断", () => {
       loadModule,
       fromFile: "/t/ok.js",
     });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
   });
 
   it("非 fn() 形态的孤儿导出（模板）不报（模板是 @nudo:import 的料）", () => {
@@ -63,7 +63,7 @@ describe("Bug 339 侧车孤儿导出诊断", () => {
       loadModule,
       fromFile: "/t/tpl.js",
     });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
   });
 
   it("已被 @nudo:import 认领的名字不算孤儿", () => {
@@ -76,7 +76,7 @@ describe("Bug 339 侧车孤儿导出诊断", () => {
       fromFile: "/t/claimed.js",
     });
     expect(
-      r.issues.filter((i) => i.code === "nudo:interface-load" && i.message.includes("has no matching source function")),
+      r.issues.filter((i) => i.code === "nudo:contract-load" && i.message.includes("has no matching source function")),
     ).toEqual([]);
   });
 });

@@ -26,7 +26,7 @@
 | L2 harvest 磁盘层（`~/.cache/nudo/deps`） | HarvestJson 签名投影（`harvest-json.ts` / `harvest-disk.ts`）；[`persistent-cache.md`](../design/persistent-cache.md) |
 | `@types/node` harvest 产品化（B2） | 磁盘缓存 + miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts`） |
 | 项目根内自动绑定边界 | `projectDir` 树外侧车不 ambient 绑定（`sidecar-project-root.test.ts`）；node_modules 仍拦 |
-| `nudo:interface-entry-only` | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
+| `nudo:contract-entry-only` | 导出无根且无域 → info（`analyzeFile` entry@ 合成路径） |
 | `ns.foo` 命名空间模板 | `@nudo:import * as ns` → `ns.exportName` refine 引用 |
 | `@nudo:pure` 记忆化 | `$call` / `$callNamed` 按实参 Abs 缓存 |
 | JSX / import.meta / 动态 import | JSX→`$unknown`（文件保持 eval-hosted）；`import.meta`→`{url:string}`；`import()`→`Promise<open obj>` |

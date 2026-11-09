@@ -32,7 +32,7 @@
 import { describe, it, expect } from "vitest";
 import { call } from "./eval-helpers.ts";
 import { denoteGuard } from "../denote.ts";
-import { absToConstraint } from "../interface/projection.ts";
+import { absToConstraint } from "../contract/projection.ts";
 import { formatAbs } from "../format/format.ts";
 import type { Abs } from "../abs.ts";
 

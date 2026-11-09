@@ -218,7 +218,7 @@ case 实参请用具体值或约束构建器。
 - [错误对照](../guides/error-faces.md)
 - [概念分层](../concepts/layers.md)
 - [nudo check](../guides/check.md)
-- [指令 — refine / interface / 侧车](../concepts/directives.md)
+- [指令 — contract / 侧车](../concepts/directives.md)
 - [指令速查单](../guides/directive-cheatsheet.md) —— 每条 `@nudo:` 指令的一行语法与语义
 - [从 TypeScript 迁移](../guides/migrating-from-typescript.md) —— 退役 `tsc`
 - [Playground](/playground)

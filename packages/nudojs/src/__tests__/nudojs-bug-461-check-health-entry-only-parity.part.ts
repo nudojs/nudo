@@ -1,10 +1,10 @@
 /**
- * Bug 461 回归（CLI 面）：`nudo:interface-entry-only` 在 **check** 面不可达
+ * Bug 461 回归（CLI 面）：`nudo:contract-entry-only` 在 **check** 面不可达
  * （分析器产出 info，但普通 check 路径不跑分析器 ⇒ 诊断被丢弃），而
  * `nudo health` 走另一条统计路径仍报「N entry-only」⇒ 同一事实两 verb
  * 口径分裂。
  *
- * 修法：普通 check 路径也跑分析器（白名单仍只有 interface 家族）⇒ 两个
+ * 修法：普通 check 路径也跑分析器（白名单仍只有 contract 家族）⇒ 两个
  * verb 同一口径。**顺序要求**：分析器必须**先于** checkSource 跑（core 的
  * 侧车加载失败去重表按作用域共享；反序会让分析器误报「无契约根」）。
  *
@@ -16,9 +16,9 @@
  *     entry-only 计数仍为 1（**两个口径本就不同的两个事实**，见下）。
  *
  * 关于 ③：health 的「entry-only」计数是**覆盖率**事实（该函数回落到了
- * entry@ 见证 = 没有调用点证据）；check 的 `nudo:interface-entry-only` 诊断是
+ * entry@ 见证 = 没有调用点证据）；check 的 `nudo:contract-entry-only` 诊断是
  * **契约缺口**事实（没有契约根 **且** 没有调用点域，docs:
- * reference/diagnostics.md#nudo-interface-entry-only）。有契约根但无调用点
+ * reference/diagnostics.md#nudo-contract-entry-only）。有契约根但无调用点
  * 时两者本就该不同（函数有契约，只是没被调用过）⇒ 不是 bug。真要对齐成
  * 同一个统计口径，需要改 service 的 `fn.entryOnly` 语义（越界，见报告）。
  */
@@ -66,7 +66,7 @@ function checkEntryOnlyNames(dir: string): string[] {
     issues: { code: string; message: string }[];
   };
   return json.issues
-    .filter((i) => i.code === "nudo:interface-entry-only")
+    .filter((i) => i.code === "nudo:contract-entry-only")
     .map((i) => {
       const m = /export '([^']+)'/.exec(i.message);
       return m?.[1] ?? "?";
@@ -121,7 +121,7 @@ describe("Bug 461 CLI：check 与 health 的 entry-only 口径一致", () => {
     try {
       const r = runCli(["check", "probe.js"], { cwd: dir });
       expect(r.status).toBe(0);
-      expect(r.stdout).toContain("nudo:interface-entry-only");
+      expect(r.stdout).toContain("nudo:contract-entry-only");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

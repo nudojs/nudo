@@ -2,7 +2,7 @@
  * Bug 374 回归：指令文法 / 引理前提 / 接口冲突类诊断必须带**位置**。
  *
  * 机制（Bug 374）：`nudo:assume-invalid`（2 个 push 点）、`nudo:invariant-invalid`
- * （2 个 push 点）、`nudo:interface-conflict`（2 个 push 点）与
+ * （2 个 push 点）、`nudo:contract-conflict`（2 个 push 点）与
  * `nudo:contract-syntax` 构造 issue 时只带 `fn` 不带位置 ⇒ LSP 把红线画在
  * **文件第 1 行第 1 列**、CLI `--json` 的 `issues[].line` 是 `null`
  * （出错指令在第 7~9 行也照样画首行）。
@@ -56,7 +56,7 @@ const CONFLICT_RET = [
 ].join("\n");
 
 const SHAPES_SIDECAR = "export const positive = number().gt(0);";
-/** 同名侧车绑定（x < 0）与手写契约（x > 0）矛盾 ⇒ interface-conflict */
+/** 同名侧车绑定（x < 0）与手写契约（x > 0）矛盾 ⇒ contract-conflict */
 const OWN_SIDECAR = "export const f = fn({ x: number().lt(0) }, number());";
 /** 同名侧车绑定（返回槽 < 0）与手写契约（返回槽 > 0）矛盾 */
 const OWN_SIDECAR_RET = "export const f = fn({ x: number() }, number().lt(0));";
@@ -102,18 +102,18 @@ describe("Bug 374：四类诊断必须带出错指令的位置", () => {
     expect(issues[0]!.column).toBe(3);
   });
 
-  it("nudo:interface-conflict ⇒ 行 3 / 列 3（出错指令所在行）", () => {
-    const issues = issuesOf(CONFLICT, "nudo:interface-conflict", "/t/conflict.js");
+  it("nudo:contract-conflict ⇒ 行 3 / 列 3（出错指令所在行）", () => {
+    const issues = issuesOf(CONFLICT, "nudo:contract-conflict", "/t/conflict.js");
     expect(issues.length).toBe(1);
     expect(issues[0]!.line).toBe(3);
     expect(issues[0]!.column).toBe(3);
     expect(issues[0]!.fn).toBe("f");
   });
 
-  it("nudo:interface-conflict（返回位，同码第二个 push 点）⇒ 行 3 / 列 3", () => {
+  it("nudo:contract-conflict（返回位，同码第二个 push 点）⇒ 行 3 / 列 3", () => {
     const issues = issuesOf(
       CONFLICT_RET,
-      "nudo:interface-conflict",
+      "nudo:contract-conflict",
       "/t/conflict-ret.js",
       OWN_SIDECAR_RET,
     );
@@ -128,7 +128,7 @@ describe("Bug 374：四类诊断必须带出错指令的位置", () => {
       [ASSUME_INVALID, "nudo:assume-invalid"],
       [INVARIANT_INVALID, "nudo:invariant-invalid"],
       [CONTRACT_SYNTAX, "nudo:contract-syntax"],
-      [CONFLICT, "nudo:interface-conflict"],
+      [CONFLICT, "nudo:contract-conflict"],
     ] as const) {
       for (const i of issuesOf(src, code)) {
         expect(i.line, `${code} 缺位置`).toBeTypeOf("number");

@@ -3,7 +3,7 @@
  *
  * `String(10n) === "10"` ⇒ `lit(10n)` 渲染成 `lit(10)`（读起来是 number
  * 字面量 10 —— 另一条契约）。修法：展示面（`termToString` /
- * `interface.ts` 的 `litToString`）保 n 后缀，与 `format.ts` 的 prim bigint
+ * `contract.ts` 的 `litToString`）保 n 后缀，与 `format.ts` 的 prim bigint
  * 渲染同口径；**键通道**（`litKeyString`）不动——那里 bigint 靠 typeof
  * 前缀分开。
  */
@@ -12,7 +12,7 @@ import { checkSource, pTrue, termToString, lit } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("Bug 361 bigint 字面量保 n 后缀", () => {

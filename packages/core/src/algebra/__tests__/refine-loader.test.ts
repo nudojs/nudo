@@ -2,7 +2,7 @@
  * 侧车 loader 升级（design-refine-derivation §2.2 Phase 1）：
  * Babel 语句级改写（多行 import / 注释与字符串不误伤）、相对 .nudo 递归、
  * 环检测（NudoSidecarError）、依赖闭包内容指纹缓存、静默吞错翻转
- * （nudo:interface-load / nudo:interface-cycle）。
+ * （nudo:contract-load / nudo:contract-cycle）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {
@@ -106,7 +106,7 @@ export const positive = number().gt(0);
 });
 
 describe("侧车 loader：default import 显式诊断（不再静默 undefined）", () => {
-  it("裸包名 default import → nudo:interface-load 诊断", () => {
+  it("裸包名 default import → nudo:contract-load 诊断", () => {
     const src = `
 import whatever from "@nudojs/core";
 export const x = whatever;
@@ -114,7 +114,7 @@ export const x = whatever;
     execNudoModule(src, { fromFile: "/t/std.nudo.js" });
     const diags = takeRefineDiags();
     expect(diags.length).toBe(1);
-    expect(diags[0]!.code).toBe("nudo:interface-load");
+    expect(diags[0]!.code).toBe("nudo:contract-load");
     expect(diags[0]!.message).toContain("default import");
     expect(diags[0]!.message).toContain("whatever");
   });
@@ -144,7 +144,7 @@ export const top = midPos;
     expect(takeRefineDiags()).toEqual([]);
   });
 
-  it("spec 链成环 → NudoSidecarError（code=nudo:interface-cycle，消息含链）", () => {
+  it("spec 链成环 → NudoSidecarError（code=nudo:contract-cycle，消息含链）", () => {
     const a = `import { evalName } from "./b.nudo.js";\nexport const aName = evalName;\n`;
     const b = `import { aName } from "./a.nudo.js";\nexport const evalName = aName;\n`;
     const loadModule = (spec: string) => (spec === "./a.nudo.js" ? a : b);
@@ -156,12 +156,12 @@ export const top = midPos;
     }
     expect(err).toBeInstanceOf(NudoSidecarError);
     const e = err as NudoSidecarError;
-    expect(e.code).toBe("nudo:interface-cycle");
+    expect(e.code).toBe("nudo:contract-cycle");
     expect(e.message).toContain("/t/a.nudo.js");
     expect(e.message).toContain("/t/b.nudo.js");
   });
 
-  it("环经 collectConstraints 转为 nudo:interface-cycle 诊断（不裸抛）", () => {
+  it("环经 collectConstraints 转为 nudo:contract-cycle 诊断（不裸抛）", () => {
     const a = `import { evalName } from "./b.nudo.js";\nexport const aName = evalName;\n`;
     const b = `import { aName } from "./a.nudo.js";\nexport const evalName = aName;\n`;
     const loadModule = (spec: string) => (spec === "./a.nudo.js" ? a : b);
@@ -178,14 +178,14 @@ function f(x) { return x; }
     expect(
       diags.some(
         (d) =>
-          d.code === "nudo:interface-cycle" &&
+          d.code === "nudo:contract-cycle" &&
           d.message.includes("/t/a.nudo.js") &&
           d.message.includes("/t/b.nudo.js"),
       ),
     ).toBe(true);
   });
 
-  it("无 loadModule 的相对 import → nudo:interface-load（unresolvable）", () => {
+  it("无 loadModule 的相对 import → nudo:contract-load（unresolvable）", () => {
     const src = `
 import { positive } from "./std.nudo.js";
 export const p = positive;
@@ -195,12 +195,12 @@ export const p = positive;
     const diags = takeRefineDiags();
     expect(
       diags.some(
-        (d) => d.code === "nudo:interface-load" && d.message.includes("unresolvable"),
+        (d) => d.code === "nudo:contract-load" && d.message.includes("unresolvable"),
       ),
     ).toBe(true);
   });
 
-  it("loadModule 返回 undefined → nudo:interface-load（unresolvable）", () => {
+  it("loadModule 返回 undefined → nudo:contract-load（unresolvable）", () => {
     const src = `
 import { positive } from "./std.nudo.js";
 export const p = positive;
@@ -208,14 +208,14 @@ export const p = positive;
     execNudoModule(src, { loadModule: () => undefined, fromFile: "/t/x.nudo.js" });
     expect(
       takeRefineDiags().some(
-        (d) => d.code === "nudo:interface-load" && d.message.includes("unresolvable"),
+        (d) => d.code === "nudo:contract-load" && d.message.includes("unresolvable"),
       ),
     ).toBe(true);
   });
 });
 
 describe("侧车 loader：吞错翻转（不再静默）", () => {
-  it("export function 侧车导出 → nudo:interface-load", () => {
+  it("export function 侧车导出 → nudo:contract-load", () => {
     const src = `
 import { number } from "@nudojs/core";
 export function helper(x) { return x; }
@@ -227,12 +227,12 @@ export const positive = number().gt(0);
     expect(
       takeRefineDiags().some(
         (d) =>
-          d.code === "nudo:interface-load" && d.message.includes("export function helper"),
+          d.code === "nudo:contract-load" && d.message.includes("export function helper"),
       ),
     ).toBe(true);
   });
 
-  it("侧车执行失败 → nudo:interface-load（原 catch { continue } 静默）", () => {
+  it("侧车执行失败 → nudo:contract-load（原 catch { continue } 静默）", () => {
     const bad = `export const boom = undefinedVariable;`;
     const src = `
 /// @nudo:import { boom } from "./bad.nudo.js"
@@ -248,12 +248,12 @@ function f(x) { return x; }
     expect(reqs).toEqual([]);
     expect(
       takeRefineDiags().some(
-        (d) => d.code === "nudo:interface-load" && d.message.includes("failed to execute"),
+        (d) => d.code === "nudo:contract-load" && d.message.includes("failed to execute"),
       ),
     ).toBe(true);
   });
 
-  it("导入名不在侧车导出表 → nudo:interface-load", () => {
+  it("导入名不在侧车导出表 → nudo:contract-load", () => {
     const std = `export const positive = number().gt(0);`;
     const src = `
 /// @nudo:import { nope } from "./std.nudo.js"
@@ -269,7 +269,7 @@ function f(x) { return x; }
     expect(reqs).toEqual([]);
     expect(
       takeRefineDiags().some(
-        (d) => d.code === "nudo:interface-load" && d.message.includes("'nope'"),
+        (d) => d.code === "nudo:contract-load" && d.message.includes("'nope'"),
       ),
     ).toBe(true);
   });

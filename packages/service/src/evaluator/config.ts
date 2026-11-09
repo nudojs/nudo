@@ -83,7 +83,7 @@ export type NudoConfig = {
   };
 };
 
-export type InterfaceConfig = {
+export type ContractConfig = {
   autoBind: boolean;
   /** emit 路径白名单（已归一化；空数组 = 不限制） */
   emit: string[];
@@ -115,7 +115,7 @@ export type CheckConfig = {
 /**
  * 配置层 stderr 提示的**去重**集合。
  *
- * 归一函数（interfaceConfig / applyBForkBudgetFromConfig）在多产品面被
+ * 归一函数（contractConfig / applyBForkBudgetFromConfig）在多产品面被
  * 反复调用（每文件数次）——不去重会把一条配置 typo 打成上百行噪声。
  * 同一进程同一非法值只提示一次；`evictProjectConfigMemo()` 会清空
  * （配置变更后允许重新提示）。
@@ -419,7 +419,7 @@ function normalizeAutoBind(raw: unknown): boolean {
  * - autoBind 默认 true（非布尔值 → 回落默认，见 normalizeAutoBind）
  * - emit：string | string[] → string[]（空 = 不限制路径）
  */
-export function interfaceConfig(config: NudoConfig | null | undefined): InterfaceConfig {
+export function contractConfig(config: NudoConfig | null | undefined): ContractConfig {
   const raw = config?.contract?.emit;
   const emit =
     raw === undefined

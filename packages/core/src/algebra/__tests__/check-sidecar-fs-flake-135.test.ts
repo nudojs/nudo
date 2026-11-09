@@ -5,9 +5,9 @@
  * 钉死整场。核心侧的行为钉（loadModule 对侧车 spec **抛错**的真实 fs 错误）：
  *
  * - 瞬态自愈：raw() 抛错不进 per-call 缓存（undefined 才缓存）→ 下一消费者
- *   重试拿到侧车 → 契约族诊断完整在场，且**无** nudo:interface-load；
- * - 持久响亮：loadModule 恒抛 → error 级 nudo:interface-load + ok=false
- *   （interface.ts 已区分「读失败」与「无侧车」，此处验证而非重复实现）；
+ *   重试拿到侧车 → 契约族诊断完整在场，且**无** nudo:contract-load；
+ * - 持久响亮：loadModule 恒抛 → error 级 nudo:contract-load + ok=false
+ *   （contract.ts 已区分「读失败」与「无侧车」，此处验证而非重复实现）；
  * - 真 miss 反钉：loadModule 返回 undefined（真无侧车）→ 静默零诊断，
  *   防修过头的反向回归；
  * - readerr 指纹：读错误轮的 deps 指纹不可信（readerr: 前缀 + readError），
@@ -19,7 +19,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { loadModuleDepsFingerprint } from "../key/load-deps-fp.ts";
 
 /** 带违例 case 的源：侧车绑定成功时必产生 nudo:case-inconsistency（-5 ⊭ x>0） */
@@ -91,10 +91,10 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
-  it("瞬态读错误自愈：首次抛 EACCES → 重试拿侧车 → 契约诊断完整且无 interface-load", () => {
+  it("瞬态读错误自愈：首次抛 EACCES → 重试拿侧车 → 契约诊断完整且无 contract-load", () => {
     const { loadModule, setMode, probeCount } = makeMutableLoader(true);
     const r = check(loadModule);
     // 自愈：raw 抛错不进 per-call 缓存，下一消费者（侧车闭包指纹 / 绑定）重试
@@ -105,26 +105,26 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     expect(violation!.fn).toBe("f");
     expect(r.ok).toBe(false);
     // 瞬态故障不该被上报为加载失败
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     // 且不污染后续轮：同 loader 转「真无侧车」后必须回到干净报告
     // （修复前：瞬态轮以 miss 键 memo 了带诊断报告 → 真 miss 轮陈旧命中）
     setMode("miss");
     const r2 = check(loadModule);
-    expect(r2.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r2.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(
       r2.issues.filter((i) => i.code === "nudo:case-inconsistency"),
     ).toEqual([]);
     expect(r2.ok).toBe(true);
   });
 
-  it("持久读错误响亮：恒抛 → error 级 nudo:interface-load + ok=false", () => {
+  it("持久读错误响亮：恒抛 → error 级 nudo:contract-load + ok=false", () => {
     const { loadModule, setMode } = makeMutableLoader();
     setMode("throw");
     const r = check(loadModule);
     expect(r.ok).toBe(false);
     const errs = r.issues.filter(
       (i) =>
-        i.code === "nudo:interface-load" &&
+        i.code === "nudo:contract-load" &&
         i.severity === "error" &&
         i.message.includes("failed to load") &&
         i.message.includes("EACCES"),
@@ -142,7 +142,7 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     // 以 miss 键进了 memo，此轮会陈旧命中错误报告（假红）；修复后必须重算
     setMode("miss");
     const rMiss = check(loadModule);
-    expect(rMiss.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(rMiss.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(rMiss.ok).toBe(true);
   });
 
@@ -158,7 +158,7 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     expect(rErr.ok).toBe(false);
     expect(
       rErr.issues.some(
-        (i) => i.code === "nudo:interface-load" && i.severity === "error",
+        (i) => i.code === "nudo:contract-load" && i.severity === "error",
       ),
     ).toBe(true);
   });
@@ -167,7 +167,7 @@ describe("#135 侧车 fs 读错误（check 核心侧）", () => {
     const { loadModule, setMode } = makeMutableLoader();
     setMode("miss");
     const r = check(loadModule);
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(
       r.issues.filter((i) => i.code === "nudo:case-inconsistency"),
     ).toEqual([]);

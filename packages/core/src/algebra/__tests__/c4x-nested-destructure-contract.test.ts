@@ -131,7 +131,7 @@ nested({ card: { grade: 'A' } });
     });
     // 契约名 'card.grade' 在契约面内 → 零 param-mismatch（修前：grade 误报）
     expect(
-      r.issues.filter((i) => i.code === "nudo:interface-param-mismatch"),
+      r.issues.filter((i) => i.code === "nudo:contract-param-mismatch"),
     ).toEqual([]);
     // 签名参数面：解构渲染 `{ card }`，typeParams 是 obj（grade: string）
     const sig = r.signatures.find((s) => s.name === "nested");
@@ -189,7 +189,7 @@ flat({ card: { grade: 7 } });
       autoBind: true,
     });
     expect(
-      r.issues.filter((i) => i.code === "nudo:interface-param-mismatch"),
+      r.issues.filter((i) => i.code === "nudo:contract-param-mismatch"),
     ).toEqual([]);
     const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
     expect(violated.length).toBeGreaterThan(0);
@@ -215,7 +215,7 @@ inner({ card: { grade: 'A' } });
       autoBind: true,
     });
     const mismatch = r.issues.filter(
-      (i) => i.code === "nudo:interface-param-mismatch" && i.fn === "inner",
+      (i) => i.code === "nudo:contract-param-mismatch" && i.fn === "inner",
     );
     expect(mismatch.length).toBeGreaterThan(0);
   });

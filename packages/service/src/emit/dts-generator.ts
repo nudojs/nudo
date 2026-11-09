@@ -1206,7 +1206,7 @@ function isArrayTypeText(t: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源：
+ * 契约面证据（export CLI 从 effectiveContract 取——与 check 签名面同数据源：
  * sidecar（*.nudo.js）∪ inline `@nudo:contract`）。
  * - params：手写契约参数位的 entry Abs（constraintToEntryAbs 产物）；
  * - return：契约 returns 的 entry Abs；CLI 无 returns 契约时可喂契约种子
@@ -1907,7 +1907,7 @@ function contractOnlySignature(
   }
   const params = renderParamSlots(slots);
   // 契约里多出、形参表对不上的参数名不投影（arity 谎言；check 面报
-  // nudo:interface-param-mismatch，export 不执法）
+  // nudo:contract-param-mismatch，export 不执法）
   const returnType = contract.return
     ? contractReturnTSType(contract.return)
     : fn.combinedAbs
@@ -1967,7 +1967,7 @@ function returnAnnotationMismatch(
 
 /**
  * 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。
- * 证据优先级：手写契约（contract，export CLI 从 effectiveInterface 取）
+ * 证据优先级：手写契约（contract，export CLI 从 effectiveContract 取）
  * > hof 泛型投影（C3.3）> case-widen。
  * service 的 generateDts 与 CLI export --format dts 共用本函数。
  *

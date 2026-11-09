@@ -215,19 +215,19 @@ export {
 } from "./exec/index.ts";
 
 export {
-  type EffectiveInterface, type EffectiveInterfaceOpts, type InterfaceDiag,
-  type InterfaceSource, type InterfaceTierInfo, type InterfaceTierOpts,
-  effectiveInterface, formatConstraint, formatEffectiveInterfaceDisplay,
-  formatInterfaceTierLine, generatedExportNames, interfaceDiagCount,
-  INTERFACE_SOURCE_ABBR,
-  interfaceSourceOf, interfaceTierOf, isNodeModulesPath, localNamedExports,
-  resetSidecarLoadFailureCache, setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
-  takeInterfaceDiags, takeInterfaceDiagsSince
-} from "./interface/interface.ts";
+  type EffectiveContract, type EffectiveContractOpts, type ContractDiag,
+  type ContractSource, type ContractTierInfo, type ContractTierOpts,
+  effectiveContract, formatConstraint, formatEffectiveContractDisplay,
+  formatContractTierLine, generatedExportNames, contractDiagCount,
+  CONTRACT_SOURCE_ABBR,
+  contractSourceOf, contractTierOf, isNodeModulesPath, localNamedExports,
+  resetSidecarLoadFailureCache, setContractDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
+  takeContractDiags, takeContractDiagsSince
+} from "./contract/contract.ts";
 
 export {
   absToConstraint, joinThenProject
-} from "./interface/projection.ts";
+} from "./contract/projection.ts";
 
 // modules/fs/path belong to the host (service/cli), not the algebra.
 // Engine machinery (leak / call-budget / hash / derivation / inlay / template /

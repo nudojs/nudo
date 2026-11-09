@@ -15,7 +15,7 @@
  *
  * 侧车加载：Babel 语句级改写（多行 import / 注释与字符串里的同形文本不误伤）、
  * 相对 .nudo.js/.nudo.ts 经 loadModule 递归求值、环检测、执行失败改诊断
- * （nudo:interface-load / nudo:interface-cycle，不再静默吞错）。
+ * （nudo:contract-load / nudo:contract-cycle，不再静默吞错）。
  */
 
 import type { Pred } from "./pred.ts";
@@ -25,8 +25,8 @@ import { hashSource } from "./key/hash-source.ts";
 import { stripStringsKeepComments } from "./format/code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
-import { isNodeModulesPath, resolveDepPath } from "./interface/sidecar-path.ts";
-// 诊断 side-channel 共享原语（与 interface 通道同一实现，leaf 无环）
+import { isNodeModulesPath, resolveDepPath } from "./contract/sidecar-path.ts";
+// 诊断 side-channel 共享原语（与 contract 通道同一实现，leaf 无环）
 import { createScopedDiagChannel } from "./diagnostics/diag-channel.ts";
 import { createScopedSlot, registerCollectorScopeParticipant } from "./collector-scope.ts";
 // D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
@@ -95,7 +95,7 @@ export function extractNudoImports(source: string): NamedImport[] {
 /**
  * 侧车撞名诊断的**作用域内去重**集（同一侧车的同一撞名只报一次）。
  * 撞名诊断随 exec 结果缓存、每次调用重发 ⇒ 不去重会在一个作用域里
- * 重复 N 次（每个函数一次 effectiveInterface）。
+ * 重复 N 次（每个函数一次 effectiveContract）。
  *
  * 每个分析作用域一份**新**集合：ScopedSlot 的继承语义是「同一个对象」，
  * 直接用会把上一轮分析已报的撞名带进下一轮 ⇒ 门禁面看不到（分析器先跑、
@@ -113,7 +113,7 @@ registerCollectorScopeParticipant((body) => {
 });
 
 /**
- * 侧车**装载诊断**（nudo:interface-load）——exec 期间产生、随 exec 结果缓存。
+ * 侧车**装载诊断**（nudo:contract-load）——exec 期间产生、随 exec 结果缓存。
  *
  * 口径同撞名诊断：诊断在 exec 内部产生 ⇒ exec 结果进缓存后，缓存命中不再跑
  * exec ⇒ 此处产生的诊断会在后续分析里消失（门禁面看不到：分析器先跑、
@@ -128,7 +128,7 @@ type SidecarLoadDiag = { code: string; message: string; file?: string };
 
 /**
  * 侧车装载诊断的**作用域内去重**集（同撞名口径）：诊断随结果缓存、每次调用
- * 重发 ⇒ 不去重会在一个作用域里重复 N 次（每个函数一次 effectiveInterface）。
+ * 重发 ⇒ 不去重会在一个作用域里重复 N 次（每个函数一次 effectiveContract）。
  * 每个分析作用域一份**新**集合（分析器一轮 / checkSource 一轮各一份）⇒
  * 两个消费面各拿得到一份。
  *
@@ -178,9 +178,9 @@ function emitSidecarLoadDiags(
  * SyntaxError（重复声明，模块不装载）；引擎里是「遮蔽」⇒ 导入值静默丢失、
  * 契约悄悄变弱 ⇒ 必须显式报出（建议改名）。
  *
- * 诊断码取 nudo:interface-load：这是**侧车装载**问题（侧车按写法装载不出
+ * 诊断码取 nudo:contract-load：这是**侧车装载**问题（侧车按写法装载不出
  * 期望的契约），且只有这一族码会被消费方（service 分析器）取走并进门禁
- * 报告——nudo:interface-name-clash 会被白名单过滤掉、诊断不可见。
+ * 报告——nudo:contract-name-clash 会被白名单过滤掉、诊断不可见。
  */
 function emitSidecarClashDiags(
   clashes: readonly SidecarClash[],
@@ -193,7 +193,7 @@ function emitSidecarClashDiags(
     if (reported.has(sig)) continue;
     reported.add(sig);
     collectDiag({
-      code: DIAG.interfaceLoad,
+      code: DIAG.contractLoad,
       message: `sidecar declares '${c.local}' at top level and also imports it from '${c.spec}' — native ESM rejects a duplicate declaration (SyntaxError); rename one of them`,
       file: fromFile,
     });
@@ -249,7 +249,7 @@ function collectDiag(d: RefineDiag): void {
   refineDiagChannel.emit(d);
 }
 
-/** 侧车模块错误：code ∈ nudo:interface-cycle | nudo:interface-load */
+/** 侧车模块错误：code ∈ nudo:contract-cycle | nudo:contract-load */
 export class NudoSidecarError extends Error {
   readonly code: string;
   constructor(code: string, message: string) {
@@ -310,7 +310,7 @@ function sidecarImportNames(stmt: ImportDeclaration): SidecarImportName[] {
  * Babel 语句级改写：
  * - import 全部剥离（构建器注入 / 相对 .nudo 递归的绑定由 prologue 生成）；
  * - `export const` 剥 export、收集导出名；其余 export 形式剥除 + 收集
- *   nudo:interface-load 诊断（loader 只认 export const）；
+ *   nudo:contract-load 诊断（loader 只认 export const）；
  * - `.nudo.ts` 入口额外剥除 TS 语法（类型注解/类型声明/as/satisfies/
  *   非空断言/泛型参数）——Babel 的 TS 节点区间含冒号（`": number"`），
  *   纯区间切除即得合法 JS；不带注解的 JS 风格 .nudo.ts 天然零切除；
@@ -367,7 +367,7 @@ function rewriteSidecarSource(
 
   const badExport = (what: string): void => {
     collectDiag({
-      code: DIAG.interfaceLoad,
+      code: DIAG.contractLoad,
       message: `sidecar ${what}; recognized export forms are 'export const <name> = …' and 'export default <constraint|fn>'`,
       file: fromFile,
     });
@@ -813,13 +813,13 @@ function registerSidecarParamTexts(
  * - `@nudojs/core` / 裸包名 → 注入 sidecarInjects（alias/namespace 走
  *   `__nudoInjects` prologue；var 声明与注入参数同名可共存）；
  * - 相对 `.nudo.js`/`.nudo.ts` → loadModule 递归求值，结果经 `__nudoDeps`
- *   传入（共享注入）；无 loadModule / load miss → 收集 nudo:interface-load
+ *   传入（共享注入）；无 loadModule / load miss → 收集 nudo:contract-load
  *   （unresolvable），绑定 undefined 部分求值；
- * - spec 链成环 → throw NudoSidecarError(nudo:interface-cycle，消息带链)。
+ * - spec 链成环 → throw NudoSidecarError(nudo:contract-cycle，消息带链)。
  *
  * opts.fromFile 语义 = 该侧车自身的路径（相对 spec 解析基准 + 环检测链起点）。
  *
- * `diags` = **出参**：本次 exec 期间产生的侧车装载诊断（nudo:interface-load）。
+ * `diags` = **出参**：本次 exec 期间产生的侧车装载诊断（nudo:contract-load）。
  * 诊断**不在此处发出**（exec 结果进缓存后，缓存命中不再跑 exec ⇒ 此处发出的
  * 诊断会在后续分析里消失 ⇒ 门禁面看不到）⇒ 收集到出参、由
  * execNudoModuleCached 在每次调用（含缓存命中）时统一发出（同撞名口径）。
@@ -872,7 +872,7 @@ function execSidecar(
           // namespace import 绑成整个 inject 表会静默把 fs/path 等本地名
           // 变成构建器袋——显式诊断，不再静默错绑
           diags.push({
-            code: DIAG.interfaceLoad,
+            code: DIAG.contractLoad,
             message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
             file: fromFile,
           });
@@ -885,7 +885,7 @@ function execSidecar(
           const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
           if (!hasOwnInject) {
             diags.push({
-              code: DIAG.interfaceLoad,
+              code: DIAG.contractLoad,
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
               file: fromFile,
             });
@@ -900,7 +900,7 @@ function execSidecar(
         } else {
           // default import：侧车无默认导出概念——显式诊断（不再静默 undefined）
           diags.push({
-            code: DIAG.interfaceLoad,
+            code: DIAG.contractLoad,
             message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
             file: fromFile,
           });
@@ -914,7 +914,7 @@ function execSidecar(
     const load = opts?.loadModule;
     if (!load || !fromFile) {
       diags.push({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (no loadModule for relative specifier)`,
         file: fromFile,
       });
@@ -923,7 +923,7 @@ function execSidecar(
     }
     if (!isSidecarSpec(imp.spec)) {
       diags.push({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar import '${imp.spec}' unsupported: relative imports must target .nudo.js/.nudo.ts`,
         file: fromFile,
       });
@@ -933,7 +933,7 @@ function execSidecar(
     const canonical = resolveDepPath(fromFile, imp.spec);
     if (isNodeModulesPath(canonical)) {
       diags.push({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
         file: fromFile,
       });
@@ -942,14 +942,14 @@ function execSidecar(
     }
     if (chain.includes(canonical)) {
       throw new NudoSidecarError(
-        DIAG.interfaceCycle,
+        DIAG.contractCycle,
         `sidecar import cycle: ${[...chain, canonical].join(" → ")}`,
       );
     }
     const depSrc = preloaded.has(canonical) ? preloaded.get(canonical) : load(imp.spec, fromFile);
     if (depSrc === undefined) {
       diags.push({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (loadModule returned no source)`,
         file: fromFile,
       });
@@ -978,7 +978,7 @@ function execSidecar(
       if (e instanceof NudoSidecarError) throw e;
       const reason = e instanceof Error ? e.message : String(e);
       throw new NudoSidecarError(
-        DIAG.interfaceLoad,
+        DIAG.contractLoad,
         `sidecar '${imp.spec}' (imported by '${fromFile ?? "(unknown)"}') failed to load: ${reason}`,
       );
     }
@@ -993,7 +993,7 @@ function execSidecar(
           deps[n.local] = depExports[n.imported];
         } else {
           diags.push({
-            code: DIAG.interfaceLoad,
+            code: DIAG.contractLoad,
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
             file: fromFile,
           });
@@ -1002,7 +1002,7 @@ function execSidecar(
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
         diags.push({
-          code: DIAG.interfaceLoad,
+          code: DIAG.contractLoad,
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
           file: fromFile,
         });
@@ -1016,9 +1016,9 @@ function execSidecar(
   // SyntaxError（重复声明）；引擎里则是「遮蔽」⇒ 导入值静默丢失（契约悄悄
   // 变弱）。**显式报出**可操作的诊断（建议改名），不静默。
   //
-  // 诊断码取 nudo:interface-load：这是**侧车装载**问题（侧车按写法装载不出
+  // 诊断码取 nudo:contract-load：这是**侧车装载**问题（侧车按写法装载不出
   // 期望的契约），且只有这一族码会被消费方（service 分析器）取走并进门禁
-  // 报告——nudo:interface-name-clash 会被白名单过滤掉、诊断不可见。
+  // 报告——nudo:contract-name-clash 会被白名单过滤掉、诊断不可见。
   //
   // 诊断**不在此处**发出：exec 结果进缓存后，缓存命中不再跑 exec ⇒ 此处
   // 发出的诊断会在后续分析里消失（门禁面看不到）。改为把冲突**随 exec 结果
@@ -1102,7 +1102,7 @@ export type RefineResolveOpts = {
  * clashes = 侧车顶层声明 ∩ import 绑定的撞名（Bug 356 扩展面 ②）——
  * 缓存命中不再跑 exec ⇒ 撞名诊断必须**随结果一起缓存**并在命中时重发，
  * 否则门禁面看不到（分析器先跑、checkSource 后跑 ⇒ 只有后跑那次能报）；
- * diags = 本次 exec 期间产生的侧车装载诊断（nudo:interface-load，1064）——
+ * diags = 本次 exec 期间产生的侧车装载诊断（nudo:contract-load，1064）——
  * 同理：exec 内部产生的诊断在缓存命中后不再出现 ⇒ 侧车写坏（import 了
  * 非构建器名等）在 check 面上彻底隐形（门禁假绿）。 */
 const nudoModuleExecCache = new Map<
@@ -1124,7 +1124,7 @@ const MAX_SIDECAR_CLOSURE = 64;
 
 /**
  * 递归收集相对 .nudo 依赖闭包（loadModule 单遍，供指纹 + exec 预载复用）。
- * 环在遍历中截断（out.has 去重）——真正执行时由 chain 抛 nudo:interface-cycle。
+ * 环在遍历中截断（out.has 去重）——真正执行时由 chain 抛 nudo:contract-cycle。
  */
 function sidecarDepClosure(
   src: string,
@@ -1289,7 +1289,7 @@ export function lookupSidecarParamTexts(
  * 模块根本不装载）。
  *
  * 口径：**拒绝绑定**该本地名（不猜哪条赢——猜错就是静默的假绿/假红）+ 报
- * error 级诊断（nudo:interface-name-clash）。返回冲突的本地名集合。
+ * error 级诊断（nudo:contract-name-clash）。返回冲突的本地名集合。
  */
 function duplicateImportBindings(
   imports: NudoImportRecord[],
@@ -1308,7 +1308,7 @@ function duplicateImportBindings(
       }
       dup.add(local);
       collectDiag({
-        code: DIAG.interfaceNameClash,
+        code: DIAG.contractNameClash,
         message: `duplicate @nudo:import binding '${local}' (from '${prev}' and '${imp.spec}') — native ESM rejects a duplicate declaration (SyntaxError); rename one of them`,
         file,
       });
@@ -1319,8 +1319,8 @@ function duplicateImportBindings(
 
 /**
  * 从导入收集 name → NudoConstraint。
- * 加载失败 / 执行失败 / 导出形式不识别不再静默：收集 nudo:interface-load
- * （环 → nudo:interface-cycle）诊断后跳过该导入。
+ * 加载失败 / 执行失败 / 导出形式不识别不再静默：收集 nudo:contract-load
+ * （环 → nudo:contract-cycle）诊断后跳过该导入。
  */
 function collectConstraints(
   source: string,
@@ -1334,7 +1334,7 @@ function collectConstraints(
     if (!opts.loadModule || !opts.fromFile) {
       // host 忘传 loader：约束会静默失效——必须报，否则 refine 无声消失
       collectDiag({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar '${imp.spec}' not loaded: loadModule/fromFile missing from host options`,
         file: opts.fromFile,
       });
@@ -1345,7 +1345,7 @@ function collectConstraints(
       src = opts.loadModule(imp.spec, opts.fromFile);
     } catch (e) {
       collectDiag({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar '${imp.spec}' failed to load from '${opts.fromFile}': ${e instanceof Error ? e.message : String(e)}`,
         file: opts.fromFile,
       });
@@ -1353,7 +1353,7 @@ function collectConstraints(
     }
     if (src === undefined) {
       collectDiag({
-        code: DIAG.interfaceLoad,
+        code: DIAG.contractLoad,
         message: `sidecar '${imp.spec}' failed to load from '${opts.fromFile}'`,
         file: opts.fromFile,
       });
@@ -1369,7 +1369,7 @@ function collectConstraints(
         collectDiag({ code: e.code, message: e.message, file: opts.fromFile });
       } else {
         collectDiag({
-          code: DIAG.interfaceLoad,
+          code: DIAG.contractLoad,
           message: `sidecar '${imp.spec}' failed to execute: ${e instanceof Error ? e.message : String(e)}`,
           file: opts.fromFile,
         });
@@ -1400,13 +1400,13 @@ function collectConstraints(
         map.set(name, v);
       } else if (v === undefined) {
         collectDiag({
-          code: DIAG.interfaceLoad,
+          code: DIAG.contractLoad,
           message: `sidecar '${imp.spec}' has no export '${imported}'`,
           file: opts.fromFile,
         });
       } else {
         collectDiag({
-          code: DIAG.interfaceLoad,
+          code: DIAG.contractLoad,
           message: `sidecar '${imp.spec}' export '${imported}' is not a Nudo constraint`,
           file: opts.fromFile,
         });
@@ -1842,7 +1842,7 @@ export function refineToIndexedFull(
  *
  * Bug 351：源码 `@nudo:contract return <fn 形态模板>` 的返回义务整条不被执法
  * ——返回槽装的是整个 fn 约束，而 postcondition 的 fn 分支把 fn 形态直接判
- * 「已证明」。侧车口径（`interface.ts` 的 `sidecarFn?.fn.returns`）取的是
+ * 「已证明」。侧车口径（`contract.ts` 的 `sidecarFn?.fn.returns`）取的是
  * **fn.returns** ⇒ 两侧口径必须一致：这里在提取期就拆出 `fn.returns`，
  * 返回槽仍是**单条**（不改公开返回型）。
  *
@@ -1860,7 +1860,7 @@ function returnObligationOf(c: NudoConstraint): NudoConstraint | undefined {
  * 旧口径「首个命中即 return」⇒ 多条 `@nudo:contract return` 只执法第一条：
  * 违反第 2 条时 0 error / exit 0（**加一条契约反而让门禁变绿**）。
  * 语义取**合取**——与形参位「同形参多段取合取」的既有语义一致
- * （`interface.ts` 的 `conjoinOrConflict` → `andC`）。
+ * （`contract.ts` 的 `conjoinOrConflict` → `andC`）。
  *
  * 合取能力边界（Phase 1 只支持标量合取）与形参位同口径：
  * - 非标量形态（shape/array/union）⇒ 保既有（第一条），**不**当矛盾

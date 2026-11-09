@@ -313,7 +313,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       // - **具名**函数表达式（`function getName(){}`）保留内层 id：指令面
       //   （directive-scan，Bug 428）的 scope 名是内层 id，普查面必须对齐，
       //   否则 `@nudo:contract` / `@nudo:throws` / `@nudo:case` 全部蒸发。
-      //   本地名 → default 槽的一跳交给 interface/export-slot.ts（同口径
+      //   本地名 → default 槽的一跳交给 contract/export-slot.ts（同口径
       //   于 `export { f as default }` 的别名映射），让签名 / L2 照样取到
       //   真实函数值，不再塌 unknown + nudo:opaque-result。
       const init = right as { type?: string; id?: { name?: string } } | undefined;

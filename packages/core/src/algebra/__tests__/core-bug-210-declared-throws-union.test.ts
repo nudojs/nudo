@@ -3,7 +3,7 @@
  * ⇒ 门禁只认源码声明、整份侧车声明被丢弃 ⇒ 已申报的 `RangeError` 仍报
  * 「未申报」（假红）；**删掉源码那一行**同样的文件立刻变绿 ⇒ 非单调。
  *
- * 接口模型（`interface.ts` 的 `mergedThrows`）算的是**并集** ⇒ 两个模型对
+ * 接口模型（`contract.ts` 的 `mergedThrows`）算的是**并集** ⇒ 两个模型对
  * 同一份声明给出相反答案。修法 = 门禁侧改读**同一口径**（并集，`*` 优先）。
  *
  * 钉：源码 + 侧车同时声明 ⇒ 绿；删掉源码那行结论不变（幂等 / 单调）。
@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 function check(src: string) {
@@ -36,7 +36,7 @@ describe("BUG-210 申报集合 = 源码 ∪ 侧车（并集口径）", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

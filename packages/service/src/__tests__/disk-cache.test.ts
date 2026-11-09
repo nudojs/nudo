@@ -12,7 +12,7 @@ import {
   DiskCache,
   checkCacheKey,
   extractNudoImportSpecs,
-  ifaceCacheKey,
+  contractCacheKey,
   sha256Hex,
   relativizePath,
   ANALYSIS_ABI,
@@ -203,34 +203,34 @@ describe("B3 disk cache atomic write", () => {
     }));
 });
 
-describe("B3 Phase B iface table cache", () => {
+describe("B3 Phase B contract table cache", () => {
   const src = "export function add(a, b) { return a + b; }\n";
   const sidecarA = "export const add = fn({ a: number() }, number());\n";
   const sidecarB = "export const add = fn({ a: number().gt(0) }, number());\n";
 
-  it("ifaceCacheKey: source / sidecar / autoBind each flip the key", () => {
-    const base = ifaceCacheKey("/p/a.js", src, {
+  it("contractCacheKey: source / sidecar / autoBind each flip the key", () => {
+    const base = contractCacheKey("/p/a.js", src, {
       autoBind: true,
       projectDir: "/p",
       sidecarSource: sidecarA,
     });
     expect(base).toHaveLength(64);
     expect(
-      ifaceCacheKey("/p/a.js", src + "\n", {
+      contractCacheKey("/p/a.js", src + "\n", {
         autoBind: true,
         projectDir: "/p",
         sidecarSource: sidecarA,
       }),
     ).not.toBe(base);
     expect(
-      ifaceCacheKey("/p/a.js", src, {
+      contractCacheKey("/p/a.js", src, {
         autoBind: true,
         projectDir: "/p",
         sidecarSource: sidecarB,
       }),
     ).not.toBe(base);
     expect(
-      ifaceCacheKey("/p/a.js", src, {
+      contractCacheKey("/p/a.js", src, {
         autoBind: false,
         projectDir: "/p",
         sidecarSource: sidecarA,
@@ -238,9 +238,9 @@ describe("B3 Phase B iface table cache", () => {
     ).not.toBe(base);
   });
 
-  it("ifaceCacheKey: no sidecar / autoBind=false share the sc0 segment", () => {
-    const noSc = ifaceCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p" });
-    const abFalse = ifaceCacheKey("/p/a.js", src, {
+  it("contractCacheKey: no sidecar / autoBind=false share the sc0 segment", () => {
+    const noSc = contractCacheKey("/p/a.js", src, { autoBind: false, projectDir: "/p" });
+    const abFalse = contractCacheKey("/p/a.js", src, {
       autoBind: false,
       projectDir: "/p",
       sidecarSource: sidecarA,
@@ -249,10 +249,10 @@ describe("B3 Phase B iface table cache", () => {
     expect(noSc).toBe(abFalse);
   });
 
-  it("iface table round-trips through DiskCache namespace", () =>
-    withTmpProject("nudo-iface-", (root) => {
-      const disk = new DiskCache({ root, namespace: "iface" });
-      const key = ifaceCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p" });
+  it("contract table round-trips through DiskCache namespace", () =>
+    withTmpProject("nudo-contract-", (root) => {
+      const disk = new DiskCache({ root, namespace: "contract" });
+      const key = contractCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p" });
       expect(disk.get(key)).toBeUndefined();
       const table = {
         fns: {

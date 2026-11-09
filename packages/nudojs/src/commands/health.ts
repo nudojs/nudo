@@ -12,11 +12,11 @@ import {
   type CallRecord,
 } from "@nudojs/service";
 import {
-  effectiveInterface,
-  interfaceDiagCount,
+  effectiveContract,
+  contractDiagCount,
   localNamedExports,
   resetSidecarLoadFailureCache,
-  takeInterfaceDiagsSince,
+  takeContractDiagsSince,
 } from "@nudojs/core";
 import type { DirectiveDiag } from "@nudojs/parser";
 import { paintOne } from "../ui.ts";
@@ -53,7 +53,7 @@ type HealthReport = {
    * 计成 2：+1 new / -1 removed ⇒ 只改 1 条见证却报「2 条变更」）。
    */
   drift?: { added: number; removed: number; changed: number };
-  interfaceDrift?: number;
+  contractDrift?: number;
   /** A2：本轮分析预算/截断（truncated=true 时签名可能已 widen）。
    *  快照类型 = core AbsBudgetStats（与 nudo check --json 的 budget 同源同义） */
   budget?: AbsBudgetStats;
@@ -243,24 +243,24 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     // 不重置则上一文件（或同进程早先分析）的截断旗标/计数会 latch 进本文件
     // 报告——未截断文件被误标 truncated、counters 与触发预算对不上。
     resetAbsCallBudget();
-    // Bug 55：侧车加载失败是**文件级**事实，但 `nudo:interface-load` 只写在
+    // Bug 55：侧车加载失败是**文件级**事实，但 `nudo:contract-load` 只写在
     // core 的纯诊断缓冲里，且被「同 (路径, 原因) 只报一次」去重表抑制。
     // `--from` 的现场采集会先分析 usage 文件、顺带加载目标侧车 ⇒ 这条诊断
     // 在 healthFile 之前就被消耗/抑制 ⇒ analysis 面 `result.diagnostics`
     // 里一条都没有 ⇒ 坏侧车被判 OK（--from 只该注入调用点证据，不该改变
     // 错误判定面）。
     // 修法：按文件独立探测一次（先清去重表 ⇒ 不受上游采集顺序影响），把
-    // 本次探测产生的 interface-load 诊断接住，与 analysisErrors 合并上屏。
+    // 本次探测产生的 contract-load 诊断接住，与 analysisErrors 合并上屏。
     // 只在 `--from` 注入路径做独立探测：无 --from 的基线路径 analysis 面
-    // 自己会报 interface-load，不必多加载一次侧车（保持既有性能与输出）。
-    let sidecarLoadDiags: ReturnType<typeof takeInterfaceDiagsSince> = [];
+    // 自己会报 contract-load，不必多加载一次侧车（保持既有性能与输出）。
+    let sidecarLoadDiags: ReturnType<typeof takeContractDiagsSince> = [];
     if (records !== undefined) {
       resetSidecarLoadFailureCache();
-      const ifaceSince = interfaceDiagCount();
+      const contractSince = contractDiagCount();
       const probeName = [...localNamedExports(source)][0];
       if (probeName !== undefined) {
         try {
-          effectiveInterface(source, probeName, {
+          effectiveContract(source, probeName, {
             loadModule: defaultLoadModule,
             fromFile: filePath,
           });
@@ -268,8 +268,8 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
           /* 探测失败不打断体检；analysis 面会给出它自己的诊断 */
         }
       }
-      sidecarLoadDiags = takeInterfaceDiagsSince(ifaceSince).filter(
-        (d) => d.code === DIAG.interfaceLoad,
+      sidecarLoadDiags = takeContractDiagsSince(contractSince).filter(
+        (d) => d.code === DIAG.contractLoad,
       );
     }
     const result = await analyzeFileAsync(
@@ -313,7 +313,7 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     }
     // 674：**分析错误**（analyzer 的 error 级诊断：侧车加载失败 / mock-module
     // 失败 / …）必须进 health 的判定面。旧口径一条都不计 ⇒ 坏掉的侧车在
-    // health 面绿灯（假绿）；而 `nudo check` 对同一路径报 nudo:interface-load。
+    // health 面绿灯（假绿）；而 `nudo check` 对同一路径报 nudo:contract-load。
     // 口径 = guides/health.md:18 的 health 门（Analysis errors）。
     const analysisErrors = result.diagnostics.filter((d) => d.severity === "error");
     // 与独立探测到的侧车加载失败合并（按文案去重：两条通道可能报同一件事）。
@@ -341,8 +341,8 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
         if (d.added > 0 || d.removed > 0 || d.changed > 0) report.drift = d;
       }
     }
-    const drift = await countInterfaceDrift(filePath, records);
-    report.interfaceDrift = drift.count;
+    const drift = await countContractDrift(filePath, records);
+    report.contractDrift = drift.count;
     if (drift.error) {
       report.error = report.error ? `${report.error}; ${drift.error}` : drift.error;
     }
@@ -357,7 +357,7 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
   return report;
 }
 
-async function countInterfaceDrift(
+async function countContractDrift(
   filePath: string,
   records?: CallRecord[],
 ): Promise<{ count: number; error?: string }> {
@@ -371,7 +371,7 @@ async function countInterfaceDrift(
   try {
     scSrc = rf(sc, "utf-8");
   } catch (e) {
-    return { count: 0, error: `interface drift: cannot read sidecar: ${(e as Error).message}` };
+    return { count: 0, error: `contract drift: cannot read sidecar: ${(e as Error).message}` };
   }
   if (!/@generated/.test(scSrc)) return { count: 0 };
   try {
@@ -380,21 +380,21 @@ async function countInterfaceDrift(
       collectEnvNames,
       collectSkipReturns,
       findProjectConfig,
-      interfaceConfig,
+      contractConfig,
       mergeCheckIssues,
       mockFromErrorIssues,
     } = await import("@nudojs/service");
     const { parse } = await import("@nudojs/parser");
     const { preloadPathEnvs, absolutizeEnvSpec } = await import("@nudojs/service/evaluator");
     const proj = findProjectConfig(dirname(abs));
-    const autoBind = interfaceConfig(proj?.config).autoBind;
+    const autoBind = contractConfig(proj?.config).autoBind;
     const source = rf(abs, "utf-8");
     // 691：契约漂移判定必须走 **mock 通道**——装配本体 = service 的
     // buildEvalInjection（单一实现，与 `nudo check` 的 buildCheckInjection
     // 同口径：模块图（evalAbsModuleGraph）+ env modules（mergeHarvestUnderEnv
     // ——手写对象展开会丢 harvest 的非冲突导出，Bug 1037）+ @nudo:mock-module
     // 覆盖 + @nudo:mock seeds + env 全局 + as/replace）。否则同一份陈旧
-    // 生成段，check 报 nudo:interface-drift 而 health 报 0 contract drift /
+    // 生成段，check 报 nudo:contract-drift 而 health 报 0 contract drift /
     // OK / exit 0（假绿 + 跨动词自相矛盾）。mockFromErrors **不丢弃**
     // （下方按 check 的上报通道 merge）。
     //
@@ -427,7 +427,7 @@ async function countInterfaceDrift(
     // BUG-054：`--from` 的**跨文件调用点证据**必须进契约漂移判定通道
     // （与 `nudo check` 的 `checkSourceOptions.from` 同源）——否则调用点在
     // 别的文件里时，「今日域」为空 ⇒ 漂移**恒判 0** ⇒ 同一份陈旧生成段，
-    // check 报 `nudo:interface-drift` 而 health 报「0 contract drift /
+    // check 报 `nudo:contract-drift` 而 health 报「0 contract drift /
     // OK / exit 0」（跨动词结论矛盾 + 假绿）。
     const from = externalAbsCallRecords(abs, records);
     let r = checkSource(abs, source, pTrue, {
@@ -454,9 +454,9 @@ async function countInterfaceDrift(
         mockLoadError = `mock load failed: ${[...new Set(hard.map((i) => i.message))].join("; ")}`;
       }
     }
-    const slotDrift = r.issues.filter((i) => i.code === DIAG.interfaceDrift).length;
+    const slotDrift = r.issues.filter((i) => i.code === DIAG.contractDrift).length;
     // BUG-199：**段文本口径**与 `nudo contract --emit` **同源**。
-    // health 旧口径只数 `checkSource` 的 `nudo:interface-drift`（判据 =
+    // health 旧口径只数 `checkSource` 的 `nudo:contract-drift`（判据 =
     // **@generated 槽的内容**），而 emit 的判据 = **整段文本**（含段头标签
     // `// derived-from:`）⇒ 段头漂移**只对 emit 可见** ⇒ 同一份侧车
     // health「0 contract drift / OK / exit 0」、emit「会变 / exit 1」
@@ -471,7 +471,7 @@ async function countInterfaceDrift(
 }
 
 /**
- * 段文本漂移（BUG-199）：直写发射器（`emitInterface`，`nudo contract --emit`
+ * 段文本漂移（BUG-199）：直写发射器（`emitContract`，`nudo contract --emit`
  * 的后写者/唯一权威）说侧车**会变** ⇒ 1 段漂移，否则 0。
  *
  * 与 `checkSource` 的槽级判据互补：槽级判据看不见**段头标签**（
@@ -484,8 +484,8 @@ async function sectionTextDrift(
   records?: CallRecord[],
 ): Promise<number> {
   try {
-    const { emitInterface } = await import("@nudojs/service/emit");
-    const em = await emitInterface(filePath, {
+    const { emitContract } = await import("@nudojs/service/emit");
+    const em = await emitContract(filePath, {
       mode: "update",
       dryRun: true,
       ...(records && records.length > 0 ? { records } : {}),
@@ -509,7 +509,7 @@ type HealthJsonFacts = {
   targetErrors: PathError[];
   reports: HealthReport[];
   driftCases: number;
-  ifaceDriftCount: number;
+  contractDriftCount: number;
   totalErrors: number;
   uncoveredTotal: number;
   /** 精度计数（观察指标）：Σ unknown 签名（返回位推断失败）与 Σ #widened 见证 */
@@ -556,7 +556,7 @@ function healthJsonDoc(f: HealthJsonFacts) {
       entryOnly: r.entryOnly,
       uncovered: r.uncovered,
       ...(r.drift ? { drift: r.drift } : {}),
-      ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
+      ...(r.contractDrift ? { contractDrift: r.contractDrift } : {}),
       ...(r.budget ? { budget: { ...r.budget } } : {}),
       ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
       ...(r.configShape ? { configShape: r.configShape } : {}),
@@ -567,7 +567,7 @@ function healthJsonDoc(f: HealthJsonFacts) {
       // 63：单位 = **见证（case）条数**（与文本面 Summary、与
       // Σ files[].drift.(added+removed) 同量纲）⇒ 三个面同一个数字。
       drift: f.driftCases,
-      interfaceDrift: f.ifaceDriftCount,
+      contractDrift: f.contractDriftCount,
       errors: f.totalErrors,
       uncovered: f.uncoveredTotal,
       // 精度计数（观察指标，不挡门禁）：unknown 签名 = 返回位推断失败的
@@ -598,10 +598,10 @@ function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined)
     }
     // 契约漂移同理：Summary 已计入 `contract drift`，人类面若不打印
     // 对应的 per-file 行，用户只看到一行错误、无从知道该刷新哪些槽位。
-    if ((r.interfaceDrift ?? 0) > 0) {
+    if ((r.contractDrift ?? 0) > 0) {
       console.log(
         paintOne(
-          `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+          `  ✗ contract drift: ${r.contractDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
         ),
       );
     }
@@ -626,10 +626,10 @@ function printHealthReportLine(r: HealthReport, fromPaths: string[] | undefined)
       ),
     );
   }
-  if ((r.interfaceDrift ?? 0) > 0) {
+  if ((r.contractDrift ?? 0) > 0) {
     console.log(
       paintOne(
-        `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+        `  ✗ contract drift: ${r.contractDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
       ),
     );
   }
@@ -756,7 +756,7 @@ async function runHealth(
   }
   // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
   // 拒绝运行（health 的 drift 面会开 iface 磁盘缓存；安全旋钮不静默降级）。
-  // 必须在 healthFile 之前——否则 emitInterface 开缓存时才炸（半份报告）。
+  // 必须在 healthFile 之前——否则 emitContract 开缓存时才炸（半份报告）。
   // 机器面沿用 BUG-113 先例（{ok:false, error, suggestion} 信封 ⇒ stdout
   // 永不为空）；文本面 stderr + exit 1。
   const signErr = diskCacheSignConfigError(files);
@@ -811,7 +811,7 @@ async function runHealth(
   // ——旧口径计的是「有漂移的**文件数**」⇒ 同一份报告里明细行说「4 个槽」而
   // Summary 说「1」（两个 N 不同量纲 ⇒ 用户低估问题规模）。
   // 与 case drift 的口径一致（Σ 各文件明细行的条数）。
-  const ifaceDriftCount = reports.reduce((n, r) => n + (r.interfaceDrift ?? 0), 0);
+  const contractDriftCount = reports.reduce((n, r) => n + (r.contractDrift ?? 0), 0);
   // BUG-038：路径级错误（缺失路径）已进 pathErrorSink ⇒ 文件级错误计数
   // 不重复计它（否则同一个缺失路径被算成 2 个错）。
   const errorCount = reports.filter((r) => r.error && !r.pathLevelError).length;
@@ -836,7 +836,7 @@ async function runHealth(
   const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);
   // 实质失败（漂移 / 契约漂移 / 分析错误）与「引擎内部回落」分开算：Result
   // 文案要能说清**到底**哪一类失败（两类同时存在时优先实质失败）。
-  const substantiveFailed = driftCases > 0 || ifaceDriftCount > 0 || errorCount > 0;
+  const substantiveFailed = driftCases > 0 || contractDriftCount > 0 || errorCount > 0;
   const failed = substantiveFailed || internalTotal > 0;
   // ok↔exit 单一来源：pathErrors 非空 ⇒ ok:false（绝不 ok:true + 非零 exit）
   const ok = !failed && pathErrorSink.length === 0;
@@ -860,7 +860,7 @@ async function runHealth(
         targetErrors,
         reports,
         driftCases,
-        ifaceDriftCount,
+        contractDriftCount,
         totalErrors,
         uncoveredTotal,
         unknownSignatures,
@@ -904,7 +904,7 @@ async function runHealth(
     // 精度计数（unknown 签名 / #widened 见证）= 观察指标：信息性呈现、
     // 不挡门禁（与 uncovered 同档），数字与 --json 面 summary 同源。
     console.log(
-      `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${ifaceDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s) · ${unknownSignatures} unknown signature(s) · ${widenedWitnesses} #widened witness(es)` +
+      `\nSummary: ${reports.length} file(s) · ${driftCases} case drift · ${contractDriftCount} contract drift · ${totalErrors} error(s) · ${uncoveredTotal} uncovered function(s) · ${unknownSignatures} unknown signature(s) · ${widenedWitnesses} #widened witness(es)` +
         (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
     // ok↔exit 单一来源：pathErrors / drift / errors / 引擎内部回落 任一存在

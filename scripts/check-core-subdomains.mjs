@@ -25,7 +25,7 @@ const algebra = join(repoRoot, "packages/core/src/algebra");
 
 const SUBDOMAINS = new Set([
   "__tests__", "arithmetic", "builtins", "exec", "scan",
-  "check", "format", "interface", "diagnostics", "key",
+  "check", "format", "contract", "diagnostics", "key",
 ]);
 
 // Frozen after the 2026-11-05 relocation: 93 - 50 moved = 43 remaining.

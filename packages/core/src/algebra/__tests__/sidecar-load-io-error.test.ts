@@ -1,6 +1,6 @@
 /**
  * R2-6 #2：侧车 load 读失败（EACCES/EMFILE…）≠「无侧车」。
- * 读失败必须报 nudo:interface-load；无侧车文件（undefined）是 auto-bind
+ * 读失败必须报 nudo:contract-load；无侧车文件（undefined）是 auto-bind
  * 常态，保持静默。此前 defaultLoadModule 全吞 catch → 两者同形，约束静默
  * 回落 any。
  */
@@ -9,7 +9,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 /** 侧车 spec 命中时抛错，模拟 readFileSync EACCES */
@@ -32,29 +32,29 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
-  it("sidecar read throws (EACCES) → nudo:interface-load，不静默", () => {
+  it("sidecar read throws (EACCES) → nudo:contract-load，不静默", () => {
     const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     const src = `export function alpha(x) { return x; }\n`;
     const r = checkSource("/t/alpha.js", src, pTrue, {
       loadModule: throwingLoadModule(err),
       fromFile: "/t/alpha.js",
     });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs.length).toBeGreaterThan(0);
     expect(loadErrs[0]!.message).toContain("failed to load");
     expect(loadErrs[0]!.message).toContain("EACCES");
   });
 
-  it("no sidecar file (undefined) → 保持静默，无 interface-load", () => {
+  it("no sidecar file (undefined) → 保持静默，无 contract-load", () => {
     const src = `export function alpha(x) { return x; }\nexport function beta(x) { return x; }\n`;
     const r = checkSource("/t/quiet.js", src, pTrue, {
       loadModule: missingSidecarLoadModule(),
       fromFile: "/t/quiet.js",
     });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs).toEqual([]);
   });
 
@@ -66,7 +66,7 @@ describe("sidecar load I/O error vs no-sidecar (R2-6 #2)", () => {
       fromFile: "/t/multi-io.js",
     });
     const loadErrs = r.issues.filter(
-      (i) => i.code === "nudo:interface-load" && i.message.includes("EMFILE"),
+      (i) => i.code === "nudo:contract-load" && i.message.includes("EMFILE"),
     );
     expect(loadErrs).toHaveLength(1);
     expect(loadErrs[0]!.message).toContain("multi-io.nudo.js");
@@ -86,7 +86,7 @@ export function f(x) {
       loadModule: throwingLoadModule(err),
       fromFile: "/t/imp.js",
     });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs.length).toBeGreaterThan(0);
     // 显式 import 的诊断点名 std.nudo.js（auto-bind 侧车的 imp.nudo.js 另报）
     expect(loadErrs.some((i) => i.message.includes("std.nudo.js") && i.message.includes("EACCES"))).toBe(true);

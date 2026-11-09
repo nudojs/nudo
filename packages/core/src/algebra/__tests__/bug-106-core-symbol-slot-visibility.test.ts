@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "../abs.ts";
-import { isHiddenInternalSlot } from "../interface/slot-visibility.ts";
+import { isHiddenInternalSlot } from "../contract/slot-visibility.ts";
 import { formatShape } from "../format/format.ts";
 import { denoteGuard } from "../denote.ts";
 

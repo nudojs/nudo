@@ -43,7 +43,7 @@ import {
   isLeakedCallRecord,
   type CallRecord,
 } from "./evaluator/call-record.ts";
-import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
+import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { pathEnvPreloadFingerprint, absolutizeEnvSpec } from "./evaluator/env-loader.ts";
 import {
   mockDirectivesToAbsSeeds,
@@ -819,7 +819,7 @@ export function analyzeFileUncachedInner(
   const currentModulePath = normalizeModulePath(resolve(filePath));
   const singleExportFn = findSingleModuleExportsFunction(ast);
 
-  // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
+  // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:contract-domain-exceeds
   // （error）。带 @nudo:case 的函数同样检查——case 路径只覆盖本文件内 case
   // 实参 vs 契约；跨文件注入证据此前是执法盲区。
   const reportInjectedDomainExceeds = (
@@ -847,7 +847,7 @@ export function analyzeFileUncachedInner(
     const fnNode = resolveFunctionNode(node);
     // §2.2 kill-switch：与 CLI check / LSP validate 同口径，从项目配置解析
     // autoBind；漏接会让 analyze 旁路在 autoBind=false 时仍 ambient 执行侧车
-    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     const domainIssues = checkInjectedDomainEvidence(name, source, injected, {
       paramNames: extractParamNames(fnNode),
       loadModule: loadModule ?? defaultLoadModule,
@@ -935,7 +935,7 @@ export function analyzeFileUncachedInner(
     if ((externalCallRecords ?? []).filter(matchingExternal).length > 0) {
       candidate.analysis.externalEvidence = true;
     }
-    // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
+    // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:contract-domain-exceeds
     // 带 case 指令的函数已在上面的指令循环里报过 ⇒ 不重复报（Bug 511 接线
     // 后指令函数也会进合成路径，两处都会触发 ⇒ 同一条诊断出两遍）。
     const hasCaseDirective = functions.some(

@@ -14,7 +14,7 @@ import {
   implies,
   type Phi,
 } from "./pred.ts";
-import { ProjectionBudget } from "./interface/projection-budget.ts";
+import { ProjectionBudget } from "./contract/projection-budget.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 

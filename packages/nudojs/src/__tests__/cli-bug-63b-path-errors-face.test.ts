@@ -123,7 +123,7 @@ const CHECK_CLEAN_JSON_BEFORE = `{
   "issues": [
     {
       "severity": "info",
-      "code": "nudo:interface-entry-only",
+      "code": "nudo:contract-entry-only",
       "message": "export 'id' has no contract root and no call-site domain (entry-only)",
       "line": 1,
       "column": 7
@@ -217,7 +217,7 @@ const TEST_CLEAN_JSON_BEFORE = `{
       },
       "severity": "info",
       "message": "export 'id' has no contract root and no call-site domain (entry-only)",
-      "code": "nudo:interface-entry-only"
+      "code": "nudo:contract-entry-only"
     }
   ],
   "assertions": {

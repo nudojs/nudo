@@ -18,6 +18,6 @@ export {
   getTypeAtPositionAsync,
   type SurfaceReuse,
 } from "./lsp-surface/replay.ts";
-export { getHoverAtPosition, type HoverInfo, type HoverInterfaceOpts } from "./lsp-surface/hover.ts";
+export { getHoverAtPosition, type HoverInfo, type HoverContractOpts } from "./lsp-surface/hover.ts";
 export { getCompletionsAtPosition } from "./lsp-surface/completions.ts";
 export { getCasesForFile, type CaseInfo } from "./lsp-surface/resolve.ts";

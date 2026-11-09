@@ -59,7 +59,7 @@ npx nudojs contract --draft ./src/math.js   # 可选的代码优先草稿
 npx nudojs check ./src/math.js
 ```
 
-侧车**函数**绑定必须是一等 `fn({ … }, …)` 契约。裸的 `number().gt(0)` 是**值级模板**（如共享 `*.nudo.js` 中的 `export const positive = number().gt(0)`）——经 `@nudo:contract` 或作为 `fn` 的参数槽使用，不可作为函数导出契约。非 `fn` 的函数侧车绑定会被拒绝（`nudo:interface-load`）。
+侧车**函数**绑定必须是一等 `fn({ … }, …)` 契约。裸的 `number().gt(0)` 是**值级模板**（如共享 `*.nudo.js` 中的 `export const positive = number().gt(0)`）——经 `@nudo:contract` 或作为 `fn` 的参数槽使用，不可作为函数导出契约。非 `fn` 的函数侧车绑定会被拒绝（`nudo:contract-load`）。
 
 显式契约来自：
 - 侧车（`*.nudo.js`）/ `@nudo:contract`
@@ -67,7 +67,7 @@ npx nudojs check ./src/math.js
 
 无显式契约时，契约退化为 JS 运行时边界：入口参数为 `any`，导出函数不得携带未消化的 may-throw（L2）。Nudo **不会**从 body AST 扫描发明必填槽。
 
-**契约层要点：** 侧车即契约产品。`nudo check` 强制 L1（显式契约）与 L2（入口 may-throw）。`@nudo:case` 仅调试 / `nudo test` 用——不是接口。
+**契约层要点：** 侧车即契约产品。`nudo check` 强制 L1（显式契约）与 L2（入口 may-throw）。`@nudo:case` 仅调试 / `nudo test` 用——不是契约。
 
 ## 进阶 — Abs {#advanced-abs}
 

@@ -23,7 +23,7 @@ export { getAbsAtPosition as getTypeAtPosition } from "./lsp-surface.ts";
 export {
   buildSemanticTokens,
   encodeSemanticTokens,
-  interfaceTierModifierBit,
+  contractTierModifierBit,
   SEMANTIC_TOKEN_TYPES,
   SEMANTIC_TOKEN_MODIFIERS,
   type SemanticToken,

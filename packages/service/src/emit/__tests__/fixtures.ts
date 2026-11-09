@@ -2,8 +2,8 @@
  * emit 投影测试共享夹具：
  * - BUG-020 tuple 洞构造器（sparse/dense/lead/trail/multi——hole 槽 vs 显式
  *   undefined 槽的区分面，dts / schema 投影测试共用）
- * - 'scale' CallRecord 构造器（跨文件域根记录，interface-emitter /
- *   interface-surface 的注入证据形态）
+ * - 'scale' CallRecord 构造器（跨文件域根记录，contract-emitter /
+ *   contract-surface 的注入证据形态）
  * - 小助手：absExact/absUnknown/absUnion（case-emitter 投影面）与
  *   neverAbs/undefLit/litAbs（字面量面）
  * - 产物装载器：loadGeneratedModule（真执行**生成产物**里的内联校验器）
@@ -66,7 +66,7 @@ export const tupleMulti = (): Abs =>
 // ---- 'scale' CallRecord（跨文件域根注入证据） ----
 
 /**
- * 域根导出的跨文件调用记录（interface-emitter §11 验收形态）：
+ * 域根导出的跨文件调用记录（contract-emitter §11 验收形态）：
  * number/string/boolean/null|undefined 四臂实参 → numLit(84) 结果。
  */
 export function scaleRec(file: string, arg: string | number | boolean | null | undefined) {

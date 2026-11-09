@@ -1,5 +1,5 @@
 /**
- * Bug 366 回归：`nudo:interface-drift` 必须吃**跨文件**的调用点证据。
+ * Bug 366 回归：`nudo:contract-drift` 必须吃**跨文件**的调用点证据。
  *
  * 机制（Bug 366）：drift 判定的「今日域」证据**只**来自 `checkSource` 评估
  * **被检查文件自身**时产生的 `AbsCallRecord` ⇒ 调用点在别的文件里时，
@@ -44,12 +44,12 @@ function opts(extra: Record<string, unknown> = {}) {
 
 function driftIssues(extra: Record<string, unknown> = {}) {
   return checkSource("/t/lib.js", LIB, pTrue, opts(extra)).issues.filter(
-    (i) => i.code === "nudo:interface-drift",
+    (i) => i.code === "nudo:contract-drift",
   );
 }
 
 describe("Bug 366：drift 判定必须吃 --from 的跨文件调用点证据", () => {
-  it("跨文件证据 ⇒ 报 nudo:interface-drift（修前 0 条）", () => {
+  it("跨文件证据 ⇒ 报 nudo:contract-drift（修前 0 条）", () => {
     const issues = driftIssues({ from: [FROM_RECORD] });
     expect(issues.length).toBe(1);
     expect(issues[0]!.severity).toBe("warning");

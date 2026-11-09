@@ -1,8 +1,8 @@
 /**
- * Bug 1122 —— `lit(NaN)` 契约被判**自相矛盾**（nudo:interface-conflict）⇒
+ * Bug 1122 —— `lit(NaN)` 契约被判**自相矛盾**（nudo:contract-conflict）⇒
  * 门禁**假红**（对 main 的回归：fix-13 引入单份契约自检后暴露）。
  *
- * 根因（packages/core/src/algebra/interface.ts）：
+ * 根因（packages/core/src/algebra/contract.ts）：
  *   `selfBoundConflict(c)` → `crossBoundConflict(c, c)` → eq 字面量冲突判定用
  *   `x.value !== y.value` 比较字面量值。`NaN !== NaN` 恒真 ⇒ **同一个**
  *   `lit(NaN)` 约束自比被判成「两个不同字面量」⇒ 单份契约自相矛盾。
@@ -12,7 +12,7 @@
  * 同款：NaN 与自身同项，-0 与 0 仍同项（与 `===` 一致）。
  *
  * 本文件钉住：
- * - `lit(NaN)` 参数位 / 返回位 ⇒ **不得**报 nudo:interface-conflict；
+ * - `lit(NaN)` 参数位 / 返回位 ⇒ **不得**报 nudo:contract-conflict；
  * - 真矛盾（`and(lit(1), lit(2))`）⇒ 仍必须报（不得把闸门修成假绿）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
@@ -20,7 +20,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { makeFiles } from "./nudo-constraints.ts";
@@ -34,7 +34,7 @@ beforeEach(() => {
   resetAbsCallBudget();
   resetEvalForkBudget();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** ambient 侧车绑定路径：侧车在 /t/<base>.nudo.js，源码在 /t/<base>.js */
@@ -45,17 +45,17 @@ function checkWithSidecar(sidecar: string, src: string, base = "nan") {
 }
 
 describe("Bug 1122: lit(NaN) 契约不得判自相矛盾（假红）", () => {
-  it("侧车参数位 + 返回位 lit(NaN) ⇒ 不报 nudo:interface-conflict", () => {
+  it("侧车参数位 + 返回位 lit(NaN) ⇒ 不报 nudo:contract-conflict", () => {
     const r = checkWithSidecar(
       `import { fn, lit } from "@nudojs/core";\nexport const f = fn({ x: lit(NaN) }, lit(NaN));`,
       `export function f(x) { return x; }`,
     );
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.ok).toBe(true);
   });
 
-  it("源码指令位 lit(NaN) ⇒ 不报 nudo:interface-conflict", () => {
+  it("源码指令位 lit(NaN) ⇒ 不报 nudo:contract-conflict", () => {
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": `import { lit } from "@nudojs/core";\nexport const nanLit = lit(NaN);`,
     });
@@ -65,15 +65,15 @@ describe("Bug 1122: lit(NaN) 契约不得判自相矛盾（假红）", () => {
  */
 export function f(x) { return x; }`;
     const r = checkSource("/t/src.js", src, pTrue, { loadModule, fromFile: "/t/src.js" });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
   });
 
-  it("真矛盾（and(lit(1), lit(2))）⇒ 仍报 nudo:interface-conflict（闸门不得变假绿）", () => {
+  it("真矛盾（and(lit(1), lit(2))）⇒ 仍报 nudo:contract-conflict（闸门不得变假绿）", () => {
     const r = checkWithSidecar(
       `import { fn, lit, and } from "@nudojs/core";\nexport const f = fn({ x: and(lit(1), lit(2)) }, lit(0));`,
       `export function f(x) { return x; }`,
     );
-    const conflicts = r.issues.filter((i) => i.code === "nudo:interface-conflict");
+    const conflicts = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     expect(conflicts.length).toBeGreaterThan(0);
     expect(r.ok).toBe(false);
   });
@@ -89,6 +89,6 @@ export function f(x) { return x; }`;
  */
 export function f(x) { return x; }`;
     const r = checkSource("/t/src2.js", src, pTrue, { loadModule, fromFile: "/t/src2.js" });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict").length).toBeGreaterThan(0);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict").length).toBeGreaterThan(0);
   });
 });

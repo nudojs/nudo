@@ -3,11 +3,11 @@
  * contract / export **三面分裂**（一边说「绑侧车」、一边说「不绑」），
  * 且磁盘缓存会把结论**投毒**到另一种取值上。
  *
- * 根因（config.ts interfaceConfig）：`autoBind: config?.contract?.autoBind ?? true`
+ * 根因（config.ts contractConfig）：`autoBind: config?.contract?.autoBind ?? true`
  * **不校验类型**、原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export
  * 面（core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反。
  *
- * 修法：在**唯一归一点**（interfaceConfig）把 autoBind 归一成布尔：
+ * 修法：在**唯一归一点**（contractConfig）把 autoBind 归一成布尔：
  * 非法值按 config.md「invalid values fall back to the default」回落默认
  * `true` + 一条 stderr 提示 ⇒ 三面读同一个归一值，缓存键也分得清取值。
  */
@@ -15,11 +15,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  interfaceConfig,
+  contractConfig,
   findProjectConfig,
   evictProjectConfigMemo,
 } from "../evaluator/config.ts";
-import { interfaceSurface } from "../emit/interface-surface.ts";
+import { contractSurface } from "../emit/contract-surface.ts";
 import { tmpProject } from "./tmp-project.ts";
 
 function captureStderr(fn: () => void): string {
@@ -62,7 +62,7 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
       let out = "";
       let value: boolean | undefined;
       out += captureStderr(() => {
-        value = interfaceConfig({ contract: { autoBind: raw } as never }).autoBind;
+        value = contractConfig({ contract: { autoBind: raw } as never }).autoBind;
       });
       // 旧实现：原样透传（"false" ⇒ 非 false ⇒ check 读「开」，
       // core 读「关」⇒ 三面分裂）
@@ -73,7 +73,7 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
   });
 
   it("归一后是**严格布尔**：check 面（=== false）与 core 面（!== true）同口径", () => {
-    const cfg = interfaceConfig({ contract: { autoBind: "false" } as never });
+    const cfg = contractConfig({ contract: { autoBind: "false" } as never });
     expect(typeof cfg.autoBind).toBe("boolean");
     // check / health / test 面的判据：=== false ⇒ 「关」
     expect(cfg.autoBind === false).toBe(false);
@@ -81,9 +81,9 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
     expect(cfg.autoBind !== true).toBe(false);
   });
 
-  it("contract 面（interfaceSurface）：非法 autoBind 仍绑侧车（= 默认 true）", async () => {
+  it("contract 面（contractSurface）：非法 autoBind 仍绑侧车（= 默认 true）", async () => {
     const root = projectWithAutoBind("false");
-    const entries = await interfaceSurface(join(root, "lib.js"));
+    const entries = await contractSurface(join(root, "lib.js"));
     const fn = entries.find((e) => e.fn === "needsPositive");
     expect(fn).toBeDefined();
     // 归一后 = true ⇒ 侧车绑定 ⇒ handwritten（改前是 implicit）
@@ -92,7 +92,7 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
 
   it("contract 面：合法 autoBind:false 仍不绑侧车（负控制）", async () => {
     const root = projectWithAutoBind(false);
-    const entries = await interfaceSurface(join(root, "lib.js"));
+    const entries = await contractSurface(join(root, "lib.js"));
     const fn = entries.find((e) => e.fn === "needsPositive");
     expect(fn).toBeDefined();
     expect(fn!.source).toBe("implicit");
@@ -102,24 +102,24 @@ describe("Bug 487 — autoBind 归一成布尔（三面同口径）", () => {
   it("合法 true / false / 缺席：语义不变且不告警", () => {
     let out = "";
     out += captureStderr(() => {
-      expect(interfaceConfig({ contract: { autoBind: true } }).autoBind).toBe(true);
+      expect(contractConfig({ contract: { autoBind: true } }).autoBind).toBe(true);
     });
     out += captureStderr(() => {
-      expect(interfaceConfig({ contract: { autoBind: false } }).autoBind).toBe(false);
+      expect(contractConfig({ contract: { autoBind: false } }).autoBind).toBe(false);
     });
     out += captureStderr(() => {
-      expect(interfaceConfig({ contract: {} }).autoBind).toBe(true);
+      expect(contractConfig({ contract: {} }).autoBind).toBe(true);
     });
     out += captureStderr(() => {
-      expect(interfaceConfig(undefined).autoBind).toBe(true);
+      expect(contractConfig(undefined).autoBind).toBe(true);
     });
     expect(out).toBe("");
   });
 
-  it("项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → interfaceConfig）", () => {
+  it("项目配置读到的 autoBind 也是归一后的布尔（findProjectConfig → contractConfig）", () => {
     const root = projectWithAutoBind("false");
     const proj = findProjectConfig(root);
-    const cfg = interfaceConfig(proj?.config);
+    const cfg = contractConfig(proj?.config);
     expect(cfg.autoBind).toBe(true);
     expect(typeof cfg.autoBind).toBe("boolean");
   });

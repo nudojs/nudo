@@ -6,7 +6,7 @@
  * 根本不装载）。
  *
  * 修法：**拒绝绑定**该本地名（不猜哪条赢——猜错就是静默的假绿/假红）+
- * 报 error 级诊断（nudo:interface-name-clash）。
+ * 报 error 级诊断（nudo:contract-name-clash）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {
@@ -33,7 +33,7 @@ export function inc(x) {
 `;
 
 describe("Bug 344: 同名 @nudo:import 绑定", () => {
-  it("报 nudo:interface-name-clash 并点名冲突的本地名与两个来源", () => {
+  it("报 nudo:contract-name-clash 并点名冲突的本地名与两个来源", () => {
     const diags: Array<{ code: string; message: string }> = [];
     setRefineDiagCollector((d) => diags.push(d));
     const { loadModule } = makeFiles({
@@ -41,7 +41,7 @@ describe("Bug 344: 同名 @nudo:import 绑定", () => {
       "/t/b.nudo.js": `import { number } from "@nudojs/core";\nexport const positive = number().gt(100);\n`,
     });
     extractRefinesFromSource(SRC, "inc", { loadModule, fromFile: "/t/dup.js" });
-    const clash = diags.find((d) => d.code === "nudo:interface-name-clash");
+    const clash = diags.find((d) => d.code === "nudo:contract-name-clash");
     expect(clash).toBeDefined();
     expect(clash?.message).toContain("'positive'");
     expect(clash?.message).toContain("./a.nudo.js");
@@ -82,7 +82,7 @@ export function inc(x) {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.param).toBe("x");
     expect(
-      diags.some((d) => d.code === "nudo:interface-name-clash"),
+      diags.some((d) => d.code === "nudo:contract-name-clash"),
     ).toBe(false);
   });
 });

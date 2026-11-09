@@ -1,10 +1,10 @@
 /**
  * Bug 532 — LSP codeLens 的契约档位与**它自己那条命令**的结果互相矛盾：
- * `● contract / imp` + `⚡ persist interface`，点下去却是
+ * `● contract / imp` + `⚡ persist contract`，点下去却是
  * 「handwritten wins — skipping」（**值级 template** 被当成手写**函数**绑定）。
  *
  * 根因：两条通道对「侧车里这个名字算不算手写**函数**绑定」用了两套口径——
- * 档位面（core 的 effectiveInterface）只认 **fn(...) 形态**的导出为契约；
+ * 档位面（core 的 effectiveContract）只认 **fn(...) 形态**的导出为契约；
  * 发射器面把侧车顶层**一切**声明名都收进冲突集 ⇒ 值级 template（number() 等）
  * 被报成「已有手写绑定」。
  *
@@ -18,8 +18,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
-import { execNudoModule, effectiveInterface } from "@nudojs/core";
+import { emitContract } from "../contract-emitter.ts";
+import { execNudoModule, effectiveContract } from "@nudojs/core";
 
 let dir: string;
 
@@ -62,10 +62,10 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
     const sidecar = join(dir, "lib.nudo.js");
     writeFileSync(sidecar, `import { number } from "@nudojs/core";\n\nexport const classify = number();\n`);
 
-    const r = await emitInterface(file, { fnNames: ["classify"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["classify"], mode: "update" });
     // 值级 template 不是契约 → 不报 name-clash
     expect(r.skipped).toEqual([]);
-    expect(r.issues.filter((i) => i.code === "nudo:interface-name-clash")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-name-clash")).toEqual([]);
     expect(r.written).toEqual(["classify"]);
 
     const after = readFileSync(sidecar, "utf-8");
@@ -78,13 +78,13 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
     expect(Object.keys(exports)).toContain("classify");
   });
 
-  it("the persisted contract is effective (effectiveInterface reads it back)", async () => {
+  it("the persisted contract is effective (effectiveContract reads it back)", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC);
     const sidecar = join(dir, "lib.nudo.js");
     writeFileSync(sidecar, `import { number } from "@nudojs/core";\n\nexport const classify = number();\n`);
-    await emitInterface(file, { fnNames: ["classify"], mode: "update" });
-    const eff = effectiveInterface(SRC, "classify", { loadModule, fromFile: file });
+    await emitContract(file, { fnNames: ["classify"], mode: "update" });
+    const eff = effectiveContract(SRC, "classify", { loadModule, fromFile: file });
     expect(eff).toBeDefined();
     // 档位与命令结果一致：不再是「implicit + 手写优先」的矛盾组合
     expect(eff!.source).toBe("generated");
@@ -96,9 +96,9 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
     writeFileSync(file, SRC);
     const sidecar = join(dir, "lib.nudo.js");
     writeFileSync(sidecar, `import { number } from "@nudojs/core";\n\nexport const classify = number();\n`);
-    await emitInterface(file, { fnNames: ["classify"], mode: "update" });
+    await emitContract(file, { fnNames: ["classify"], mode: "update" });
     const after = readFileSync(sidecar, "utf-8");
-    const second = await emitInterface(file, { fnNames: ["classify"], mode: "update" });
+    const second = await emitContract(file, { fnNames: ["classify"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
   });
@@ -108,9 +108,9 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
     writeFileSync(file, SRC);
     const sidecar = join(dir, "lib.nudo.js");
     writeFileSync(sidecar, `import { fn, number } from "@nudojs/core";\n\nexport const classify = fn({ x: number() });\n`);
-    const r = await emitInterface(file, { fnNames: ["classify"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["classify"], mode: "update" });
     expect(r.skipped).toEqual([{ fn: "classify", reason: "name-clash" }]);
-    expect(r.issues.some((i) => i.code === "nudo:interface-name-clash" && i.severity === "error")).toBe(
+    expect(r.issues.some((i) => i.code === "nudo:contract-name-clash" && i.severity === "error")).toBe(
       true,
     );
     expect(r.changed).toBe(false);
@@ -123,7 +123,7 @@ describe("Bug 532 — 值级 template 不是手写函数契约", () => {
     writeFileSync(file, SRC);
     const sidecar = join(dir, "lib.nudo.js");
     writeFileSync(sidecar, `import { number } from "@nudojs/core";\n\nexport const classify = number();\n`);
-    const r = await emitInterface(file, { fnNames: ["classify"], mode: "add" });
+    const r = await emitContract(file, { fnNames: ["classify"], mode: "add" });
     expect(r.written).toEqual(["classify"]);
     const after = readFileSync(sidecar, "utf-8");
     expect(after).toContain("export const classify = fn(");

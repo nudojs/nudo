@@ -45,7 +45,7 @@ export async function runContractDraft(
     pathErrors?: PathError[];
   },
 ): Promise<void> {
-  const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
+  const { draftContract, formatDraftSummary, writeContractDraft, sidecarDraftPath } =
     await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const rel = relative(process.cwd(), filePath) || filePath;
@@ -88,7 +88,7 @@ export async function runContractDraft(
   // 按「无契约」起草、stderr 0 字节、exit 0。透出后与 print / check / export
   // 同裁决（stderr + error 级非零退出），不吞诊断、不放宽门禁。
   const diagnostics: ContractFaceDiagnostic[] = [];
-  const result = await draftInterface(filePath, {
+  const result = await draftContract(filePath, {
     ...(opts.fnNames.length > 0 ? { fnNames: opts.fnNames } : {}),
     ...(opts.records ? { records: opts.records } : {}),
     diagnostics,
@@ -101,7 +101,7 @@ export async function runContractDraft(
   // -------------------------------------------------------------------------
   // BUG-042 —— `--draft --fn <写错的名字>` 改前是**静默 no-op**（空草稿 + exit 0）
   //
-  // 改前：`fnNames` 原样传进 `draftInterface`，**没有「一个都没命中」的门禁**
+  // 改前：`fnNames` 原样传进 `draftContract`，**没有「一个都没命中」的门禁**
   // ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的空草稿、exit 0
   // ⇒ 名字拼错在 CI / agent 流程里**不可见**（同一个 `--fn` 名单，`--emit` 面
   //   报用法错误并列出可用导出名 ⇒ 同命令族两套语义）。
@@ -224,8 +224,8 @@ export async function runContractDraft(
       // 「整段等于 `..`」或「以 `..` + 分隔符开头」或「跨盘（绝对路径）」。
       // 改前用**字符串前缀** `relToRoot.startsWith("..")` ⇒ 把项目根下的
       // **合法目录名**（`..data/` / `...cfg/`）误判成「越出项目根」⇒ 草稿拒写。
-      // ⚠ 与 service 半（`packages/service/src/emit/interface-draft.ts` 的
-      // `writeInterfaceDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修；
+      // ⚠ 与 service 半（`packages/service/src/emit/contract-draft.ts` 的
+      // `writeContractDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修；
       // 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
       if (relToRoot === ".." || relToRoot.startsWith(`..${sep}`) || isAbsolute(relToRoot)) {
         console.error(`Error: '${filePath}' is outside project root '${projectRoot}'; draft write refused`);
@@ -259,7 +259,7 @@ export async function runContractDraft(
       }
     }
     const diff = opts.dryRun ? unifiedDiff(prevDraft, result.draftSource, draftRel) : "";
-    const write = writeInterfaceDraft(filePath, result.draftSource, {
+    const write = writeContractDraft(filePath, result.draftSource, {
       dryRun: opts.dryRun,
       entries: result.entries,
       ...(projectRoot ? { projectDir: projectRoot } : {}),

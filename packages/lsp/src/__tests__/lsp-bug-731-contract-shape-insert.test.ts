@@ -11,7 +11,7 @@
  * 2. 目标形参的契约类型不是**内联** shape（共享标识符 / 标量）⇒ 不给插入点；
  * 3. 字段**已在**契约里 ⇒ 不给插入点（不写重复键）；
  * 4. LSP 面：契约已声明该字段时**不下发**「往契约 shape 补字段」的动作
- *    （落盘即写坏契约 ⇒ 多一条 `nudo:interface-param-mismatch`）。
+ *    （落盘即写坏契约 ⇒ 多一条 `nudo:contract-param-mismatch`）。
  */
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";

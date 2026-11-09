@@ -20,7 +20,7 @@ import {
   locateContractParam,
   obj,
   type Abs,
-  type EffectiveInterface,
+  type EffectiveContract,
   type FormalParam,
   type NudoConstraint,
 } from "@nudojs/core";
@@ -80,7 +80,7 @@ export type FaceContext = {
  * 与 {@link unifiedParamFace} 的差别：这里**只**取契约面（不回落域证据）——
  * dts 面要的是「契约声明了什么」，不是「证据能推出什么」。
  */
-export function contractParamFace(eff: EffectiveInterface | undefined): ParamFace[] {
+export function contractParamFace(eff: EffectiveContract | undefined): ParamFace[] {
   if (!eff) return [];
   return eff.params.map((p) => ({
     name: p.param,
@@ -96,7 +96,7 @@ export function contractParamFace(eff: EffectiveInterface | undefined): ParamFac
  * 且**不做**违约复核与 promise 保形——复核后的口径见
  * {@link effectiveContractReturnFace}。
  */
-export function contractReturnFace(eff: EffectiveInterface | undefined): Abs | undefined {
+export function contractReturnFace(eff: EffectiveContract | undefined): Abs | undefined {
   return eff?.returns ? constraintToEntryAbs(eff.returns.constraint, "return") : undefined;
 }
 
@@ -210,7 +210,7 @@ function insertPath(tree: SlotTree, path: readonly string[], leaf: Abs): void {
  */
 export function unifiedParamFace(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   caseResults: readonly CaseResult[],
 ): ParamFace[] {
   const contractParams = contractParamFace(eff);
@@ -359,7 +359,7 @@ export function unifiedParamFace(
  */
 export function unifiedReturnFace(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   caseResults: readonly CaseResult[],
   ctx?: FaceContext,
 ): Abs | undefined {
@@ -390,7 +390,7 @@ export function unifiedReturnFace(
  */
 export function effectiveContractReturnFace(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   ctx?: FaceContext,
 ): Abs | undefined {
   const contractReturn = contractReturnFace(eff);
@@ -442,7 +442,7 @@ function awaitedAbs(a: Abs): Abs {
  */
 function seedDomainReturn(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   ctx: FaceContext | undefined,
 ): Abs | undefined {
   if (!eff || eff.params.length === 0 || !ctx) return undefined;
@@ -470,7 +470,7 @@ function seedDomainReturn(
  */
 function contractViolated(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   observed: Abs | undefined,
   ctx: FaceContext | undefined,
 ): boolean {
@@ -484,7 +484,7 @@ function contractViolated(
 /** 违约复核用的「实现实际返回」：契约域种子重算优先，否则观测返回。 */
 function seededActual(
   fn: FunctionAnalysis,
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   observed: Abs | undefined,
   ctx: FaceContext | undefined,
 ): Abs | undefined {

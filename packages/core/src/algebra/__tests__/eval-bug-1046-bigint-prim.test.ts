@@ -22,7 +22,7 @@ import {
   constraintToEntryAbs,
 } from "../constraint.ts";
 import { formatAbs } from "../format/format.ts";
-import { absToConstraint } from "../interface/projection.ts";
+import { absToConstraint } from "../contract/projection.ts";
 import { predToString, pTrue } from "../pred.ts";
 import { denoteGuard } from "../../internal.ts";
 import { checkSource, resetCheckSourceMemo } from "../check/check.ts";

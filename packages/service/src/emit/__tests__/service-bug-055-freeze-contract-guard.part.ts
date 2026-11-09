@@ -7,7 +7,7 @@
  * **被调方**判红。
  *
  * 契约：违反**被写方自己的手写契约**的候选见证**不写入**；归因留在调用现场
- * （`nudo:interface-domain-exceeds`）。不可判（非字面量实参 / 结构契约）⇒ 放行
+ * （`nudo:contract-domain-exceeds`）。不可判（非字面量实参 / 结构契约）⇒ 放行
  * ——「不写」= 丢证据，比「写错」更危险。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

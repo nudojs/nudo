@@ -6,7 +6,7 @@
  * `file` 字段指向那边的文件；`--gitlab` 的 location.path / fingerprint 同样错位）。
  */
 import { describe, it, expect } from "vitest";
-import { checkCacheKey, ifaceCacheKey } from "../disk-cache.ts";
+import { checkCacheKey, contractCacheKey } from "../disk-cache.ts";
 
 const SOURCE = "export function f(a) { return a + 1; }\n";
 
@@ -23,12 +23,12 @@ describe("BUG-241 — 缓存键路径维含项目身份", () => {
     expect(a).not.toBe(b);
   });
 
-  it("同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（iface）", () => {
-    const a = ifaceCacheKey("/checkout1/src/a.js", SOURCE, {
+  it("同相对路径 + 同内容 + 不同项目根 ⇒ 不同键（contract）", () => {
+    const a = contractCacheKey("/checkout1/src/a.js", SOURCE, {
       autoBind: false,
       projectDir: "/checkout1",
     });
-    const b = ifaceCacheKey("/checkout2/src/a.js", SOURCE, {
+    const b = contractCacheKey("/checkout2/src/a.js", SOURCE, {
       autoBind: false,
       projectDir: "/checkout2",
     });

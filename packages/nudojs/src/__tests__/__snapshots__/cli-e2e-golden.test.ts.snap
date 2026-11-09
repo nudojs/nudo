@@ -14,7 +14,7 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → throw TypeError → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
-  [INFO L1] export 'boom' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L1] export 'boom' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -25,7 +25,7 @@ onboarding
 
 docs
   nudo:entry-may-throw → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-entry-may-throw
-  nudo:interface-entry-only → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-interface-entry-only
+  nudo:contract-entry-only → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-contract-entry-only
 "
 `;
 
@@ -41,7 +41,7 @@ signatures
 "
 `;
 
-exports[`contract — default face golden > print surface: implicit interface line + exit 0 1`] = `
+exports[`contract — default face golden > print surface: implicit contract line + exit 0 1`] = `
 "id.js
   id  [implicit]  (x: 1) → 1
 

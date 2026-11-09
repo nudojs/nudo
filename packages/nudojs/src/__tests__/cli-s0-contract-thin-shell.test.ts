@@ -94,12 +94,12 @@ describe("族 20 S0 —— 可观测行为逐字不变", () => {
     expect(r.stdout).toContain("export const calc = fn({});");
   });
 
-  it("--emit --dry-run 形态：「no interface changes」提示行不变", () => {
+  it("--emit --dry-run 形态：「no contract changes」提示行不变", () => {
     const file = join(dir, "getName.js");
     writeFileSync(file, `export function getName(user) { return user.name; }\n`);
     const r = runCliTsx(["contract", "--emit", "--dry-run", file]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain(": no interface changes");
+    expect(r.stdout).toContain(": no contract changes");
     expect(r.stdout).toContain("--fn <name>");
   });
 

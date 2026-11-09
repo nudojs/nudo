@@ -24,7 +24,7 @@ import type { Phi, Pred } from "../pred.ts";
 import { assertImplies, phiSuppliesConstraint } from "../postcondition.ts";
 import { assumeConsumed, noteAssumeConsumed } from "../assume-ledger.ts";
 import { formatAbs } from "../format/format.ts";
-import { formatConstraint } from "../interface/interface.ts";
+import { formatConstraint } from "../contract/contract.ts";
 import { DIAG } from "../diagnostics/diag-codes.ts";
 
 /**

@@ -24,7 +24,7 @@ import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { makeFiles, sigOf } from "./nudo-constraints.ts";
@@ -52,7 +52,7 @@ describe("Bug 1128 — CJS 对象字面量导出的普查键必须是**成员键
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();

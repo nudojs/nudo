@@ -27,7 +27,7 @@ import {checkSource, pTrue} from "../index.ts";
 import {resetCheckSourceMemo} from "../check/check.ts";
 import {resetGeneralizeMemo} from "../generalize.ts";
 import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface/interface.ts";
+import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
 import {resetParseSourceCache} from "../parse-source.ts";
 import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
 import {withStdImport, stdOpts, l2Count, sigOf} from "./nudo-constraints.ts";
@@ -44,7 +44,7 @@ describe("Bug 1117：switch 分组 case 标签的 hit 收窄必须安全", () =>
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();

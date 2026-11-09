@@ -582,7 +582,7 @@ export function resolveRelativeSpec(from: string, spec: string): string | undefi
  * 侧车契约验证底座：把合成侧车作为**唯一**侧车来源重跑 checkSource。
  *
  * 侧车路径的相对说明符被拦下换成合成内容（源文件相对依赖仍走宿主加载器）。
- * 任何失败（求值抛 / interface-load）按「证不出」处理 → undefined。
+ * 任何失败（求值抛 / contract-load）按「证不出」处理 → undefined。
  */
 function checkWithSynthesizedSidecar(input: {
   file: string;
@@ -602,7 +602,7 @@ function checkWithSynthesizedSidecar(input: {
       loadModule,
       fromFile: input.file,
     });
-    if (r.issues.some((i) => i.code === DIAG.interfaceLoad)) return undefined;
+    if (r.issues.some((i) => i.code === DIAG.contractLoad)) return undefined;
     return r;
   } catch {
     return undefined;
@@ -614,7 +614,7 @@ function checkWithSynthesizedSidecar(input: {
  * 来源重跑 checkSource，确认目标函数的 L2 entry-may-throw 消失。
  * 引擎证不出 total（回调体算术面不 total / 元素字段 any 被继续调用等）
  * → false：编辑降级 [review]，不得挂 fix 名自动落盘（半修复不可接受）。
- * 任何失败（求值抛 / interface-load）按未通过处理。
+ * 任何失败（求值抛 / contract-load）按未通过处理。
  */
 export function sidecarClearsEntryThrow(input: {
   file: string;
@@ -648,7 +648,7 @@ export function sidecarClearsConstraintViolation(input: {
 }
 
 /** 共享骨架：合成侧车重跑 checkSource，目标函数的任一指定诊断残留 → false
- *  （[fix] 门：门禁换红不算修复）。求值抛 / interface-load 失败按未通过处理。 */
+ *  （[fix] 门：门禁换红不算修复）。求值抛 / contract-load 失败按未通过处理。 */
 function sidecarClearsDiags(
   input: {
     file: string;
@@ -666,7 +666,7 @@ function sidecarClearsDiags(
 }
 
 /**
- * quickfix 侧车 DSL 可能用到的构建器（与 interface-draft 的 BUILDERS 同族知识）。
+ * quickfix 侧车 DSL 可能用到的构建器（与 contract-draft 的 BUILDERS 同族知识）。
  */
 const SIDECAR_BUILDERS = [
   "fn",

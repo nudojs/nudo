@@ -6,7 +6,7 @@
  * 不从函数体 `if` 反推前置条件（那是控制流，不是对外契约）。
  *
  * A7（design-refine-derivation §8）：default 走 symbolic + entryReqs；
- * 与 CodeLens `● interface` 同源——interfaceTierOf 标注来源；
+ * 与 CodeLens `● contract` 同源——contractTierOf 标注来源；
  * implicit 导出的返回 inlay 标明 `derived`（展示档，非义务契约）。
  */
 
@@ -20,7 +20,7 @@ import { entrySeedsOfFn } from "../check/check.ts";
 import { withAssumePremises, withInvariantSpecs } from "../exec/runtime/state.ts";
 import { termToString, litKeyString, type Term } from "../term.ts";
 import { litValue, type Abs } from "../abs.ts";
-import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "../interface/interface.ts";
+import { contractTierOf, type ContractSource, type ContractTierOpts } from "../contract/contract.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import type { RunTranspiledOptions } from "../exec/run.ts";
 
@@ -31,15 +31,15 @@ export type AbsInlay = {
   character: number;
   label: string;
   kind: "type" | "parameter";
-  /** interface 档来源（与 CodeLens `● interface` 同源）；非导出缺省 */
-  interfaceSource?: InterfaceSource;
+  /** contract 档来源（与 CodeLens `● contract` 同源）；非导出缺省 */
+  contractSource?: ContractSource;
   /** true = 隐式推导展示（非义务契约），label 已带 `· derived` */
   derived?: boolean;
   /** 折叠展示时的完整 pred 文本（hover tooltip；display 缺席时无） */
   tooltip?: string;
 };
 
-export type CollectAbsInlaysOpts = InterfaceTierOpts & {
+export type CollectAbsInlaysOpts = ContractTierOpts & {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   fromFile?: string;
   /**
@@ -326,7 +326,7 @@ function formatReturnDisplay(g: PolyFn): string {
  * 收集源码中函数签名的 Abs inlay：
  * - 参数后：仅 `@nudo:contract` / 侧车显式契约（entryReqs）
  * - `{` 前：返回计算形（`x | x * 2`），无 term 时退回 shape
- * - interface 档：导出函数带 `interfaceSource`；implicit 返回标 `derived`
+ * - contract 档：导出函数带 `contractSource`；implicit 返回标 `derived`
  */
 export function collectAbsInlays(
   source: string,
@@ -370,10 +370,10 @@ export function collectAbsInlays(
     }
     if (!g) continue;
 
-    // A7：与 CodeLens `● interface` 同源；仅本地 named export 进档
+    // A7：与 CodeLens `● contract` 同源；仅本地 named export 进档
     const tier =
       opts?.fromFile !== undefined
-        ? interfaceTierOf(source, name, opts.fromFile, {
+        ? contractTierOf(source, name, opts.fromFile, {
             ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
             ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
           })
@@ -424,7 +424,7 @@ export function collectAbsInlays(
           label: display !== undefined ? `  where ${display}` : `  where ${text}`,
           kind: "parameter",
           ...(display !== undefined ? { tooltip: text } : {}),
-          ...(tierSrc ? { interfaceSource: tierSrc } : {}),
+          ...(tierSrc ? { contractSource: tierSrc } : {}),
         });
       }
     }
@@ -458,7 +458,7 @@ export function collectAbsInlays(
         character: Math.max(0, anchor.column),
         label: `${label}  `,
         kind: "type",
-        ...(tierSrc ? { interfaceSource: tierSrc } : {}),
+        ...(tierSrc ? { contractSource: tierSrc } : {}),
         ...(isImplicitExport ? { derived: true } : {}),
       });
     }

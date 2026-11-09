@@ -57,7 +57,7 @@ describe("Bug 722 inlayHint：CRLF 源文件的 hint 位置不得越出行可见
     }
   });
 
-  it("CRLF 下 end-of-line 的 interface 档 hint 落在可见行长上（不是 +1）", async () => {
+  it("CRLF 下 end-of-line 的 contract 档 hint 落在可见行长上（不是 +1）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-bug722b-"));
     const file = join(dir, "crlf.js");
     const crlf = BODY.replace(/\n/g, "\r\n");

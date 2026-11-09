@@ -9,7 +9,7 @@ import { join } from "node:path";
 import {
   checkSource,
   pTrue,
-  effectiveInterface,
+  effectiveContract,
   sidecarClosureFingerprint,
 } from "../index.ts";
 
@@ -33,7 +33,7 @@ describe("projectDir ambient bind boundary", () => {
       const src = `export function add(x, y) { return x + y; }\n`;
       writeFileSync(srcPath, src);
       writeFileSync(join(dir, "lib.nudo.js"), SIDE);
-      const eff = effectiveInterface(src, "add", {
+      const eff = effectiveContract(src, "add", {
         loadModule: loadSibling("lib.nudo.js"),
         fromFile: srcPath,
         autoBind: true,
@@ -54,7 +54,7 @@ describe("projectDir ambient bind boundary", () => {
       const src = `export function add(x, y) { return x + y; }\n`;
       writeFileSync(srcPath, src);
       writeFileSync(join(outside, "lib.nudo.js"), SIDE);
-      const eff = effectiveInterface(src, "add", {
+      const eff = effectiveContract(src, "add", {
         loadModule: loadSibling("lib.nudo.js"),
         fromFile: srcPath,
         autoBind: true,
@@ -81,7 +81,7 @@ describe("projectDir ambient bind boundary", () => {
       const srcPath = join(dir, "node_modules", "pkg", "lib.js");
       const src = `export function add(x, y) { return x + y; }\n`;
       writeFileSync(srcPath, src);
-      const eff = effectiveInterface(src, "add", {
+      const eff = effectiveContract(src, "add", {
         loadModule: loadSibling("lib.nudo.js"),
         fromFile: srcPath,
         autoBind: true,

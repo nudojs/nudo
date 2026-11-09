@@ -69,7 +69,7 @@ describe("Bug 928 — watch 每轮重采 --from 调用点证据", () => {
 
     try {
       // 首轮：启动快照里的 -1 ⇒ L1 domain-exceeds
-      await waitUntil(() => logs.join("\n").includes("nudo:interface-domain-exceeds"));
+      await waitUntil(() => logs.join("\n").includes("nudo:contract-domain-exceeds"));
       expect(logs.join("\n")).toContain("-1 exceeds");
 
       // 调用点改成合法实参（证据变了）
@@ -88,7 +88,7 @@ describe("Bug 928 — watch 每轮重采 --from 调用点证据", () => {
 
       const tail = logs.slice(before).join("\n");
       // 新证据（1 ≤ a）⇒ 不再有 domain-exceeds（启动快照会一直报 -1）
-      expect(tail).not.toContain("nudo:interface-domain-exceeds");
+      expect(tail).not.toContain("nudo:contract-domain-exceeds");
       expect(tail).not.toContain("-1 exceeds");
     } finally {
       close();

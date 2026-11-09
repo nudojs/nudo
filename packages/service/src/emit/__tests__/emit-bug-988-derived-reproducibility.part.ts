@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execNudoModule, formatConstraint, type NudoConstraint } from "@nudojs/core";
 import { defaultLoadModule } from "../../load-module.ts";
-import { deriveFromRoot, emitDerivedFromRoot } from "../interface-derivation.ts";
+import { deriveFromRoot, emitDerivedFromRoot } from "../contract-derivation.ts";
 
 let dir: string;
 

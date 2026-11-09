@@ -21,7 +21,7 @@ import { parseJsonText } from "./read-json.ts";
 import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
-import { draftInterface, writeInterfaceDraft } from "@nudojs/service/emit";
+import { draftContract, writeContractDraft } from "@nudojs/service/emit";
 import { buildEvalInjection, writeFileAtomic, type MockFromError } from "@nudojs/service";
 
 export type MigrateStatusRow = {
@@ -2456,9 +2456,9 @@ export async function migrateStrip(
     let sidecarDraft: string | undefined;
     if (opts.draft !== false && !p.sidecar) {
       try {
-        const draft = await draftInterface(p.outFile, { source: p.code, bodyAccesses: true });
+        const draft = await draftContract(p.outFile, { source: p.code, bodyAccesses: true });
         if (draft.draftSource && draft.draftSource.trim().length > 0) {
-          const written = writeInterfaceDraft(p.outFile, draft.draftSource, {
+          const written = writeContractDraft(p.outFile, draft.draftSource, {
             entries: draft.entries,
           });
           if (written.written) {
@@ -2625,7 +2625,7 @@ export async function migrateVerify(
     defaultLoadModule,
     directiveDiagIssues,
     findProjectConfig,
-    interfaceConfig,
+    contractConfig,
     mergeCheckIssues,
     mockFromErrorIssues,
   } = await import("@nudojs/service");
@@ -2728,7 +2728,7 @@ export async function migrateVerify(
       // `"TypeError"` 或 `["TypeError,RangeError"]` 时 verify 不忽略、check 忽略
       // ⇒ 同一文件同一配置两个结论（verify 假失败，迁移门禁永远转不绿）。
       const ignoreThrows = configIgnoreThrows(proj?.config);
-      const autoBind = interfaceConfig(proj?.config).autoBind;
+      const autoBind = contractConfig(proj?.config).autoBind;
       // env 名：**项目级**（package.json#nudo.env）+ **文件级**（`@nudo:env`）
       // —— 两层的**解析基准不同**（Bug 647 / Bug 064）：
       // - 项目级相对说明符按**项目根**（`proj.projectDir`）解析；
@@ -2757,7 +2757,7 @@ export async function migrateVerify(
         source,
         envNames,
       );
-      // interface 家族诊断（分析器通道）——check 的门禁面也含它们
+      // contract 家族诊断（分析器通道）——check 的门禁面也含它们
       let domainIssues: ReturnType<typeof domainIssuesFromDiagnostics> = [];
       try {
         const analysis = await analyzeFileAsync(
@@ -2821,7 +2821,7 @@ export async function migrateVerify(
           },
         ]);
       }
-      // D1 指令文法诊断 + mock 解析失败 + interface 家族诊断（与 check 同口径并入）
+      // D1 指令文法诊断 + mock 解析失败 + contract 家族诊断（与 check 同口径并入）
       if (dirDiags.length > 0) {
         report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
       }

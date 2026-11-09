@@ -14,14 +14,14 @@
  * `runContractDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修；
  * 不许抽成 core 的共享助手 —— core 冻结面不得新增导出）。
  *
- * ⚠ 本钉**只**钉 service 半（`writeInterfaceDraft` 的项目根判据）；
+ * ⚠ 本钉**只**钉 service 半（`writeContractDraft` 的项目根判据）；
  *   CLI 半的钉在 `packages/nudojs/src/__tests__/cli-bug-665-dotdir-escape.test.ts`。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sidecarDraftPath, writeInterfaceDraft } from "../interface-draft.ts";
+import { sidecarDraftPath, writeContractDraft } from "../contract-draft.ts";
 
 let root: string;
 
@@ -44,7 +44,7 @@ describe("Bug 665（service 半）—— 项目根判据按**路径分量**，�
     writeFileSync(file, "export function f(x) { return x + 1; }\n", "utf-8");
 
     // 改前：这里抛 `draft write refused: outside project root …`
-    const w = writeInterfaceDraft(file, DRAFT_SOURCE, { projectDir: root });
+    const w = writeContractDraft(file, DRAFT_SOURCE, { projectDir: root });
 
     expect(w.written).toBe(true);
     expect(existsSync(sidecarDraftPath(file))).toBe(true);
@@ -56,7 +56,7 @@ describe("Bug 665（service 半）—— 项目根判据按**路径分量**，�
       const file = join(outside, "f.js");
       writeFileSync(file, "export function f(x) { return x + 1; }\n", "utf-8");
 
-      expect(() => writeInterfaceDraft(file, DRAFT_SOURCE, { projectDir: root })).toThrow(
+      expect(() => writeContractDraft(file, DRAFT_SOURCE, { projectDir: root })).toThrow(
         /outside project root/,
       );
       expect(existsSync(sidecarDraftPath(file))).toBe(false);
@@ -70,7 +70,7 @@ describe("Bug 665（service 半）—— 项目根判据按**路径分量**，�
     writeFileSync(file, "export function f(x) { return x + 1; }\n", "utf-8");
 
     // 改前：`rel === "..data.js"` ⇒ `startsWith("..")` ⇒ 抛「outside project root」
-    const w = writeInterfaceDraft(file, DRAFT_SOURCE, { projectDir: root });
+    const w = writeContractDraft(file, DRAFT_SOURCE, { projectDir: root });
 
     expect(w.written).toBe(true);
     expect(existsSync(sidecarDraftPath(file))).toBe(true);

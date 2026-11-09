@@ -131,7 +131,7 @@ export const add = fn({ a: number().gt(0) }, number().gt(0));
       });
       // 近失配提示或至少不误绑到 Adder.add
       const loadDiag = r.issues.find(
-        (i) => i.code === "nudo:interface-load" && i.message.includes("does not bind"),
+        (i) => i.code === "nudo:contract-load" && i.message.includes("does not bind"),
       );
       // 若 autoBind 因路径等原因未触发，至少不得把裸 add 当成 Adder.add 执法
       const mismatch = r.issues.find((i) => i.code === "nudo:constraint-violated");

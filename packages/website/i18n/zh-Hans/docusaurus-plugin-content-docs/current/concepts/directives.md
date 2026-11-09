@@ -201,7 +201,7 @@ function unannotatedHeavy(x) {
 
 把契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
-产品名：**contract**（侧车 `*.nudo.js` / `@nudo:contract`）；部分诊断码仍保留历史 `interface` 词元（`nudo:interface-param-mismatch` 等）。
+产品名：**contract**（侧车 `*.nudo.js` / `@nudo:contract`）。
 
 ### 主路径：侧车自动绑定
 
@@ -241,7 +241,7 @@ calc.js
   greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
 ```
 
-侧车是真实 JS 模块：可从 `@nudojs/core` 引入构建器、经相对 import 从**其它侧车**引入约束。加载失败、import 成环、不识别导出形态都是 **error**（`nudo:interface-load`、`nudo:interface-cycle`），不再静默回落。
+侧车是真实 JS 模块：可从 `@nudojs/core` 引入构建器、经相对 import 从**其它侧车**引入约束。加载失败、import 成环、不识别导出形态都是 **error**（`nudo:contract-load`、`nudo:contract-cycle`），不再静默回落。
 
 **构建器**（`@nudojs/core`，裸包名同样注入）：
 
@@ -252,7 +252,7 @@ calc.js
 | `array(c)` | 数组元素约束 | `array(string())` |
 | `lit(v)` | 字面量域 | `lit(42)` / `lit("ada")` / `lit(true)` |
 | `union(...cs)` | 域之并 | `union(lit(42), lit("a"))` |
-| `fn(params, returns?, { throws? })` | 一等函数接口 | `fn({ x: number() }, number())` |
+| `fn(params, returns?, { throws? })` | 一等函数契约 | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
 | `.min(n)` `.max(n)` | 长度界——`length(s)` pred（字符串/数组） | `string().min(1)` |
 | `.length(n)` | 长度等值界（`length(s) = n`） | `string().length(3)` |
@@ -283,7 +283,7 @@ export const nested = fn({ "card.grade": string() }, string());
 ```
 
 - `node_modules/` 下的侧车永不自动加载。
-- 源码注解与侧车对同参的约束**合取**；矛盾合取（如 `x > 0` ∧ `x < 0`）报 `nudo:interface-conflict`。
+- 源码注解与侧车对同参的约束**合取**；矛盾合取（如 `x > 0` ∧ `x < 0`）报 `nudo:contract-conflict`。
 - 合并序：手写（源码注解 ∪ 侧车绑定）> 生成段 > 隐式推导。`nudo contract` 按层标注（`[handwritten]` / `[generated]` / `[implicit]`）。
 
 ### 源码内形态
@@ -443,7 +443,7 @@ export const maxLen = fn({ a: string(), b: string() }, number().ge(1));
 | 跨变量引理——`d <= max` | `@nudo:assume`（引擎推导不出） |
 | 循环携带界——`dp[*][*] >= 0` | `@nudo:invariant`（循环 join/宽化丢区间证据） |
 
-`.le("max")` 此前被静默接受，产出一个**字符串字面量** pred（`le(self, lit("max"))`），从不参与任何证明。数值界构建器（`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`）现在在加载期拒绝非数值、非有限实参——侧车以 `nudo:interface-load` 失败：
+`.le("max")` 此前被静默接受，产出一个**字符串字面量** pred（`le(self, lit("max"))`），从不参与任何证明。数值界构建器（`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`）现在在加载期拒绝非数值、非有限实参——侧车以 `nudo:contract-load` 失败：
 
 ```text
 sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected, got "max" — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)

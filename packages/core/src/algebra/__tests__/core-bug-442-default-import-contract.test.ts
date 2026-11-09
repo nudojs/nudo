@@ -4,7 +4,7 @@
  * 命名空间导入 / CJS require / 重命名导入四种形态都执法。
  *
  * 根因：`ImportDefaultSpecifier` 把被调名写死成**导出名** `"default"`，
- * 而契约绑定面（interface.ts）以**本地声明名**为键（`exports[fnName]`）⇒
+ * 而契约绑定面（contract.ts）以**本地声明名**为键（`exports[fnName]`）⇒
  * 具名侧车永远绑不上。
  *
  * 钉住：跨文件 default 导入的调用点按被调方的**本地声明名**解析 ⇒

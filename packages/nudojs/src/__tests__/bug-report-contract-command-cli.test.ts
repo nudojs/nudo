@@ -52,48 +52,48 @@ beforeAll(() => {
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-describe("Bug 34 · 只读 contract 不因 interface-conflict 改退出码", () => {
+describe("Bug 34 · 只读 contract 不因 contract-conflict 改退出码", () => {
   it("print：stderr 报同码 error，但 exit 0（§1.3 只在用法 / IO 错误时 exit 1）", () => {
     const print = runCliTsx(["contract", p("b34.js")]);
     expect(print.status).toBe(0);
-    expect(print.stderr).toContain("nudo:interface-conflict");
+    expect(print.stderr).toContain("nudo:contract-conflict");
     expect(print.stdout).toContain("[unsatisfiable: x]");
   }, 120000);
 
   it("--json：同样 exit 0，conflict 字段照旧透出", () => {
     const json = runCliTsx(["contract", p("b34.js"), "--json"]);
     expect(json.status).toBe(0);
-    expect(json.stderr).toContain("nudo:interface-conflict");
+    expect(json.stderr).toContain("nudo:contract-conflict");
     expect(json.stdout).toContain('"conflict"');
   }, 120000);
 });
 
-describe("Bug 80 · 坏侧车三面透出 nudo:interface-load（与 check/export 同裁决）", () => {
-  it("好侧车对照：exit 0 + [handwritten]，stderr 无 interface-load", () => {
+describe("Bug 80 · 坏侧车三面透出 nudo:contract-load（与 check/export 同裁决）", () => {
+  it("好侧车对照：exit 0 + [handwritten]，stderr 无 contract-load", () => {
     const r = runCliTsx(["contract", p("good.js")]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("[handwritten]");
-    expect(r.stderr).not.toContain("nudo:interface-load");
+    expect(r.stderr).not.toContain("nudo:contract-load");
   }, 120000);
 
   it("print：stderr 报同码 + exit 1", () => {
     const pr = runCliTsx(["contract", p("bad.js")]);
     expect(pr.status).toBe(1);
-    expect(pr.stderr).toContain("nudo:interface-load");
+    expect(pr.stderr).toContain("nudo:contract-load");
   }, 120000);
 
   it("--json：stderr + exit 1，载荷带 diagnostics 字段", () => {
     const js = runCliTsx(["contract", p("bad.js"), "--json"]);
     expect(js.status).toBe(1);
-    expect(js.stderr).toContain("nudo:interface-load");
+    expect(js.stderr).toContain("nudo:contract-load");
     expect(js.stdout).toContain('"diagnostics"');
-    expect(js.stdout).toContain("nudo:interface-load");
+    expect(js.stdout).toContain("nudo:contract-load");
   }, 120000);
 
   it("--draft：stderr 报同码 + exit 1（不再按「无契约」静默起草）", () => {
     const dr = runCliTsx(["contract", "--draft", p("bad.js")]);
     expect(dr.status).toBe(1);
-    expect(dr.stderr).toContain("nudo:interface-load");
+    expect(dr.stderr).toContain("nudo:contract-load");
   }, 120000);
 });
 

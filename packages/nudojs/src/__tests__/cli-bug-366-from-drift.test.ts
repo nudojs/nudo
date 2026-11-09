@@ -1,6 +1,6 @@
 /**
  * Bug 366 — `nudo check --from <使用现场文件>` 必须能判出**跨文件**调用点
- * 带来的生成段陈旧（`nudo:interface-drift`）。
+ * 带来的生成段陈旧（`nudo:contract-drift`）。
  *
  * 症状（改前）：drift 的「今日域」证据**只**来自 checkSource 评估**被检查
  * 文件自身**时产生的 AbsCallRecord ⇒ 调用点在别的文件里时，`--from` 写出的
@@ -86,14 +86,14 @@ function fixtureDir(files: Record<string, string>): string {
 }
 
 describe("Bug 366 — --from 的跨文件调用点证据必须进入 drift 判定", () => {
-  it("check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:interface-drift（改前 0 条）", () => {
+  it("check --from <使用现场> -- <被检查文件> ⇒ 报 nudo:contract-drift（改前 0 条）", () => {
     const dir = fixtureDir(FILES);
     const r = runCliTsx(
       ["check", "--json", "--from", "usage.js", "--", "lib.js"],
       { cwd: dir },
     );
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("nudo:interface-drift");
+    expect(r.stdout).toContain("nudo:contract-drift");
     expect(r.stdout).toContain("addOne[return]");
   }, 60000);
 
@@ -101,7 +101,7 @@ describe("Bug 366 — --from 的跨文件调用点证据必须进入 drift 判�
     const dir = fixtureDir(FILES);
     const r = runCliTsx(["check", "--json", "lib.js"], { cwd: dir });
     expect(r.status).toBe(0);
-    expect(r.stdout).not.toContain("nudo:interface-drift");
+    expect(r.stdout).not.toContain("nudo:contract-drift");
   }, 60000);
 
   it("归因闸：别的模块的同名调用点证据不得污染本文件的判定", () => {
@@ -124,6 +124,6 @@ describe("Bug 366 — --from 的跨文件调用点证据必须进入 drift 判�
       ["check", "--json", "--from", "usage.js", "--", "other.js"],
       { cwd: dir },
     );
-    expect(r.stdout).not.toContain("nudo:interface-drift");
+    expect(r.stdout).not.toContain("nudo:contract-drift");
   }, 60000);
 });

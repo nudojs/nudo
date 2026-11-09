@@ -41,7 +41,7 @@ import {
   directiveDiagIssues,
   DiskCache,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   mergeCheckIssues,
   mockFromErrorIssues,
   openDiskCache,
@@ -359,7 +359,7 @@ export type RunCheckOptions = {
 /** 段1产物：缓存命中态 + 缓存键输入（段3 决定是否回写）；段3 渲染面（check-report.ts）消费 */
 export type CheckCacheState = {
   proj: ReturnType<typeof findProjectConfig>;
-  autoBind: ReturnType<typeof interfaceConfig>["autoBind"];
+  autoBind: ReturnType<typeof contractConfig>["autoBind"];
   aCfg: ReturnType<typeof analysisConfig>;
   allEnvNames: string[];
   /** env 装配（项目级 / 文件级分层——Bug 647）：基准目录供诊断过滤与 --fix 面复用 */
@@ -537,7 +537,7 @@ async function loadCheckCache(
 ): Promise<CheckCacheState> {
   const proj = findProjectConfig(dirname(filePath));
   const { entryThrows, ignoreThrows } = resolveGateForConfig(proj?.config, opts);
-  const autoBind = interfaceConfig(proj?.config).autoBind;
+  const autoBind = contractConfig(proj?.config).autoBind;
   const aCfg = analysisConfig(proj?.config);
   // env 名装配（项目级 / 文件级分层）+ path env 预载见 assembleEnvs
   // （Array.isArray 守卫与 934 的形状问题同在那边）。
@@ -797,7 +797,7 @@ type CheckSourceInputs = {
   /** 文件源码（`skips` 从中抽） */
   source: string;
   /** 侧车环境绑定（`nudo.contract.autoBind`；false ⇒ 不绑定） */
-  autoBind: ReturnType<typeof interfaceConfig>["autoBind"];
+  autoBind: ReturnType<typeof contractConfig>["autoBind"];
   /** 项目根（ambient 侧车 / 模块解析的项目基准） */
   projectDir: string | undefined;
   /** L2 门禁档（error / warning / ignore） */
@@ -897,7 +897,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   let mockFromErrors: MockFromError[] = [];
   // 注入装配失败（BUG-023）：降级分析仍跑，但门禁必须红且缓存不回写
   let injectionSetupFailed = false;
-  // interface 家族诊断（entry-only / domain-exceeds）——分析器通道产物
+  // contract 家族诊断（entry-only / domain-exceeds）——分析器通道产物
   let domainIssues: CheckIssue[] = [];
   // 1145：**模块级求值失败**观测（本文件求值期间的引擎内部回落）。
   //
@@ -1002,19 +1002,19 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
       if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
     }
     // Bug 461：普通 check 路径（无 --from）也必须跑分析器 —— 否则
-    // `nudo:interface-entry-only`（L1 info：「导出无契约根且无调用点域」）
+    // `nudo:contract-entry-only`（L1 info：「导出无契约根且无调用点域」）
     // 在 check 面不可达，而 `nudo health` 走分析器统计仍报「N entry-only」
     // ⇒ 同一事实两 verb 口径分裂。文档承诺：guides/check.md 诊断表
-    // （`nudo:interface-entry-only | L1 | info`）与 reference/diagnostics.md。
+    // （`nudo:contract-entry-only | L1 | info`）与 reference/diagnostics.md。
     //
     // **必须先于 checkSource 跑**：core 的侧车加载失败去重表按作用域共享。
-    // 分析器先探侧车 → 它取走自己那一份 interface-load 诊断并据此抑制
+    // 分析器先探侧车 → 它取走自己那一份 contract-load 诊断并据此抑制
     // 「无契约根」误报（侧车存在但加载失败 ≠ 没有契约）；checkSource 入口
-    // 会 reset 该去重表 ⇒ 它自己重新上报一份 interface-load error
+    // 会 reset 该去重表 ⇒ 它自己重新上报一份 contract-load error
     // ⇒ 两条路径都拿得到诊断。顺序反了，分析器会因去重表已被 checkSource
     // 占用而误报「无契约根」。
     //
-    // 白名单仍是 domainIssuesFromDiagnostics（interface 家族的唯一入口）——
+    // 白名单仍是 domainIssuesFromDiagnostics（contract 家族的唯一入口）——
     // 分析器的其它诊断不进 check 面，不放大诊断面。
     try {
       const analysis = await analyzeFileAsync(
@@ -1172,7 +1172,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     if (opts.batchProbe) opts.batchProbe.configShape = true;
   }
 
-  // interface 家族诊断（entry-only / domain-exceeds）——分析器通道产物。
+  // contract 家族诊断（entry-only / domain-exceeds）——分析器通道产物。
   // 缓存命中轮不重跑分析器：entry-only 事实只取决于「本文件源码 + 侧车 +
   // 项目配置」（三者都在磁盘缓存键里）⇒ 命中轮从缓存读回同一结论，
   // 既不重复求值也不会陈旧。
@@ -1230,7 +1230,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
  * 侧车约定把同 stem 的 `.js` 与 `.mjs`（`.ts` 与 `.mts`）映射到**同一个**
  * `<stem>.nudo.js`（`<stem>.nudo.ts`）⇒ 目录里两者并存时，`--fix --write`
  * 写出的侧车会同时成为**两个模块**的契约面：给未被修复的兄弟模块**新增**
- * `nudo:interface-load` error，且自己的修复随后被复检降级 ⇒ 静默丢弃。
+ * `nudo:contract-load` error，且自己的修复随后被复检降级 ⇒ 静默丢弃。
  */
 function sharedSidecarSiblingOf(file: string): string | undefined {
   const families: Array<[RegExp, string]> = [
@@ -1305,7 +1305,7 @@ export async function runCheckFix(opts: {
     // 旧实现只传 loadModule / fromFile / ignoreThrows / entryThrows / skips，
     // 少传 autoBind / projectDir / inject·modules ⇒ 同一文件两条命令结论相反。
     const proj = findProjectConfig(dirname(file));
-    const autoBind = interfaceConfig(proj?.config).autoBind;
+    const autoBind = contractConfig(proj?.config).autoBind;
     const envs = await assembleEnvs(file, source, proj);
     const dirDiags: DirectiveDiag[] = [];
     let inject: RunTranspiledOptions | undefined;
@@ -1384,7 +1384,7 @@ export async function runCheckFix(opts: {
     }
     // BUG-067：侧车路径冲突——`.js` 与 `.mjs`（`.ts` 与 `.mts`）映射到
     // **同一个** `<stem>.nudo.js`（`<stem>.nudo.ts`）⇒ 落盘会同时改写兄弟
-    // 模块的契约面：给未被修复的兄弟**新增** error（interface-load），且
+    // 模块的契约面：给未被修复的兄弟**新增** error（contract-load），且
     // 自己的修复随后被复检降级 ⇒ 静默丢弃。有冲突 ⇒ 拒绝写侧车并点名共享者。
     const sharedSidecarSibling = sharedSidecarSiblingOf(file);
 

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
 import { defaultLoadModule } from "../../load-module.ts";
-import { formatInterfaceSurfaceLine, interfaceSurface } from "../interface-surface.ts";
+import { formatContractSurfaceLine, contractSurface } from "../contract-surface.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -24,7 +24,7 @@ afterAll(() => {
 });
 
 function makeFixture(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "nudo-iface-559-"));
+  const root = mkdtempSync(join(tmpdir(), "nudo-contract-559-"));
   dirs.push(root);
   for (const [rel, content] of Object.entries(files)) {
     const p = join(root, rel);
@@ -58,7 +58,7 @@ describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
   it("契约参数绑不上形参时：形参表照旧、契约参数另列并显式标注", async () => {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MISMATCH_NUDO_JS });
     const file = join(root, "lib.js");
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     expect(scale).toBeDefined();
     expect(scale!.source).toBe("handwritten");
@@ -68,7 +68,7 @@ describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
     // 契约里绑不上的参数另列一栏
     expect(scale!.extraParams).toEqual([{ name: "zzz", display: "number().gt(0)" }]);
 
-    const line = formatInterfaceSurfaceLine(scale!);
+    const line = formatContractSurfaceLine(scale!);
     expect(line).toContain("(x: any)");
     expect(line).toContain("zzz: number().gt(0)");
     expect(line).toContain("(not a formal parameter)");
@@ -81,7 +81,7 @@ describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
     const file = join(root, "lib.js");
     const source = LIB_JS;
 
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     const report = checkSource(file, source, pTrue, {
       loadModule: defaultLoadModule,
@@ -91,26 +91,26 @@ describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
 
     expect(sig).toBeDefined();
     expect(scale!.params.map((p) => p.name)).toEqual(sig!.params);
-    // check 面把绑不上的契约参数报成 nudo:interface-param-mismatch
+    // check 面把绑不上的契约参数报成 nudo:contract-param-mismatch
     expect(
-      report.issues.some((i) => i.code === "nudo:interface-param-mismatch"),
+      report.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(true);
   });
 
   it("负控制：契约参数与形参同名时行为不变（落在形参槽位、无另列）", async () => {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": MATCH_NUDO_JS });
     const file = join(root, "lib.js");
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     expect(scale!.params).toEqual([{ name: "x", display: "number().gt(0)" }]);
     expect(scale!.extraParams).toBeUndefined();
-    expect(formatInterfaceSurfaceLine(scale!)).not.toContain("not a formal parameter");
+    expect(formatContractSurfaceLine(scale!)).not.toContain("not a formal parameter");
   });
 
   it("负控制：契约多出的参数同样另列，不顶替形参", async () => {
     const root = makeFixture({ "lib.js": LIB_JS, "lib.nudo.js": EXTRA_NUDO_JS });
     const file = join(root, "lib.js");
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     expect(scale!.params).toEqual([{ name: "x", display: "number().gt(0)" }]);
     expect(scale!.extraParams).toEqual([{ name: "y", display: "string()" }]);
@@ -119,7 +119,7 @@ describe("Bug 559 — 契约面打印以声明形参表为骨架", () => {
   it("负控制：无契约（implicit 档）行为不变", async () => {
     const root = makeFixture({ "lib.js": LIB_JS });
     const file = join(root, "lib.js");
-    const entries = await interfaceSurface(file);
+    const entries = await contractSurface(file);
     const scale = entries.find((e) => e.fn === "scale");
     expect(scale!.source).toBe("implicit");
     expect(scale!.params[0]!.name).toBe("x");

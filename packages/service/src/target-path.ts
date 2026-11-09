@@ -6,7 +6,7 @@
  *  - .d.ts —— 类型声明文件（harvester 的输入），不是可求值的实现源码；
  *  - .tsx / .jsx —— JSX 构造的求值超出 nudo 推断器范围（真·能力边界，
  *    与 `migrate verify` 的目标集合的差异见下）；
- *  - *.nudo.js / *.nudo.mjs / *.nudo.ts —— 侧车契约模块（interface 绑定源），
+ *  - *.nudo.js / *.nudo.mjs / *.nudo.ts —— 侧车契约模块（contract 绑定源），
  *    不是源码推断目标；目录级 check/infer/doctor 展开不得把它们当实现分析；
  *  - *.nudo.draft.js / *.nudo.draft.mjs / *.nudo.draft.ts —— draft 产物，
  *    明确不被 ambient 绑定，也不得当实现源码分析。

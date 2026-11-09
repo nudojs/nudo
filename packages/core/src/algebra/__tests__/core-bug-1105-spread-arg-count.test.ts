@@ -29,7 +29,7 @@ import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 
 beforeEach(() => {
   resetCheckSourceMemo();
@@ -40,7 +40,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   resetSidecarLoadFailureCache();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 const SIDE = `import { number, array } from "@nudojs/core";

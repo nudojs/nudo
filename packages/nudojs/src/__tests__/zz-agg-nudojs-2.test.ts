@@ -7,7 +7,7 @@ import "./nudojs-bug-1147-contract-cli-text.part.ts";
 import "./nudojs-bug-456-esm-cycle-check.part.ts";
 import "./nudojs-bug-460-mock-invalid-severity.part.ts";
 import "./nudojs-bug-461-check-health-entry-only-parity.part.ts";
-import "./nudojs-bug-461-interface-entry-only.part.ts";
+import "./nudojs-bug-461-contract-entry-only.part.ts";
 import "./nudojs-bug-466-callsite-load-failure.part.ts";
 import "./nudojs-bug-468-936-config-shape-report.part.ts";
 import "./nudojs-bug-499-unreadable-dep.part.ts";

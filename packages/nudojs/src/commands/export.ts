@@ -13,7 +13,7 @@ import { resolve, basename, dirname, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
 import {
-  effectiveInterface,
+  effectiveContract,
   abs as makeAbs,
   anyAbs,
   localNamedExports,
@@ -33,7 +33,7 @@ import {
 } from "../export-format.ts";
 import type { SchemaDialect } from "@nudojs/service/emit";
 import {
-  buildEffectiveInterfaceOptions,
+  buildEffectiveContractOptions,
   resolveEvalMocks,
   selectExportFunctions,
   selectPublicFunctions,
@@ -233,10 +233,10 @@ async function runExport(
   const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "none");
   const functions: FunctionAnalysis[] = selectExportFunctions(result);
 
-  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
+  // 契约面与 check 签名面同数据源：effectiveContract（sidecar ∪ inline
   // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
   // 项目关 autoBind 时侧车不做 ambient 加载
-  const effOpts = buildEffectiveInterfaceOptions(filePath);
+  const effOpts = buildEffectiveContractOptions(filePath);
 
   // 导出面裁剪谓词（dts 只发射导出面：export / export default / CJS exports ——
   // 与 check entry 表同源 localNamedExports；导出 class 的实例方法按 Class
@@ -334,7 +334,7 @@ async function runExport(
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
-    const eff = effectiveInterface(source, baseName, effOpts);
+    const eff = effectiveContract(source, baseName, effOpts);
     // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
     const faceCtx = {
       source,

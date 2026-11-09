@@ -5,7 +5,7 @@
  * 另出 `<fn>_<param>`；**解构形参的字段不提升为顶层整参校验器**（字段级校验器
  * 与整参校验器同名同形、语义却不同，消费方必然误用）。
  */
-import { type Abs, type EffectiveInterface } from "@nudojs/core";
+import { type Abs, type EffectiveContract } from "@nudojs/core";
 import { absToStandardSchemaFunction } from "@nudojs/service/emit";
 import type { FunctionAnalysis } from "@nudojs/service";
 import { effectiveContractReturnFace, type FaceContext, type ParamFace } from "./contract-face.ts";
@@ -32,7 +32,7 @@ export function standardFaceChunk(
   fn: FunctionAnalysis,
   baseName: string,
   paramExps: readonly ParamFace[],
-  eff: EffectiveInterface | undefined,
+  eff: EffectiveContract | undefined,
   outputAbs: Abs | undefined,
   ctx?: FaceContext,
 ): StandardFaceChunk | undefined {

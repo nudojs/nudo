@@ -478,7 +478,7 @@ describe("getHoverAtPosition intension destructure param names (#138)", () => {
   const ADD_PAIR = `export function addPair({ a, b }) {\n  return a + b;\n}\n`;
 
   it("纯解构形参：intension 参数名槽是 { a, b }，无 _p0", () => {
-    // 函数名 addPair（L1 C16 = 名字起始前一格，同 agent-hover-interface-tier 口径）
+    // 函数名 addPair（L1 C16 = 名字起始前一格，同 agent-hover-contract-tier 口径）
     const hover = getHoverAtPosition("/t/addpair-pure.js", ADD_PAIR, 1, 16);
     expect(hover).not.toBeNull();
     expect(hover!.intension).toBeDefined();
@@ -600,7 +600,7 @@ export const astNode = union(
     // 的指数展开被深度预算截断）
     expect(fn!.signature).toContain("literal(node: nullable(astNode))");
     expect(fn!.signature!.length).toBeLessThan(300);
-    expect(fn!.interfaceDisplay).toBe(
+    expect(fn!.contractDisplay).toBe(
       "(node: nullable(astNode)) → union(string(), lit(null), lit(undefined))",
     );
     cleanup();

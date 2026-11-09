@@ -7,7 +7,7 @@ import {
 } from "../format/param-surface.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { parseSource } from "../parse-source.ts";
-import { effectiveInterface, formatConstraint } from "../interface/interface.ts";
+import { effectiveContract, formatConstraint } from "../contract/contract.ts";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
@@ -93,7 +93,7 @@ describe("C4.1 sidecar binds default / rest / destructure names", () => {
       "/t/f.nudo.js": `export const f = fn({ x: number().gt(0) }, number());`,
     });
     const src = `export function f(x = 1) {\n  return x;\n}\n`;
-    const r = effectiveInterface(src, "f", { loadModule, fromFile: "/t/f.js" });
+    const r = effectiveContract(src, "f", { loadModule, fromFile: "/t/f.js" });
     expect(r).toBeDefined();
     expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().gt(0)");
   });
@@ -103,7 +103,7 @@ describe("C4.1 sidecar binds default / rest / destructure names", () => {
       "/t/sum.nudo.js": `export const sum = fn({ nums: array(number()) }, number());`,
     });
     const src = `export function sum(...nums) {\n  return nums.length;\n}\n`;
-    const r = effectiveInterface(src, "sum", { loadModule, fromFile: "/t/sum.js" });
+    const r = effectiveContract(src, "sum", { loadModule, fromFile: "/t/sum.js" });
     expect(r).toBeDefined();
     expect(r!.params[0]!.param).toBe("nums");
   });
@@ -113,7 +113,7 @@ describe("C4.1 sidecar binds default / rest / destructure names", () => {
       "/t/g.nudo.js": `export const g = fn({ x: number().int() }, number());`,
     });
     const src = `export function g({ x, y }) {\n  return x + y;\n}\n`;
-    const r = effectiveInterface(src, "g", { loadModule, fromFile: "/t/g.js" });
+    const r = effectiveContract(src, "g", { loadModule, fromFile: "/t/g.js" });
     expect(r).toBeDefined();
     expect(r!.params[0]!.param).toBe("x");
     expect(formatConstraint(r!.params[0]!.constraint)).toBe("number().int()");
@@ -138,7 +138,7 @@ export function f(x = 1) {
       loadModule,
       fromFile: "/t/f.js",
     });
-    const issue = r.issues.find((i) => i.code === "nudo:interface-param-mismatch");
+    const issue = r.issues.find((i) => i.code === "nudo:contract-param-mismatch");
     expect(issue).toBeDefined();
     expect(issue!.message).toContain("y");
 
@@ -158,7 +158,7 @@ f(5);
       loadModule,
       fromFile: "/t/f2.js",
     });
-    expect(r2.issues.filter((i) => i.code === "nudo:interface-param-mismatch")).toEqual([]);
+    expect(r2.issues.filter((i) => i.code === "nudo:contract-param-mismatch")).toEqual([]);
   });
 });
 

@@ -8,7 +8,7 @@
  * 边界」后的四组语义（含扁平对照，防止修嵌套时把既有语义改坏）。
  */
 import { describe, it, expect } from "vitest";
-import { toDraftBuilderDsl } from "../interface-draft.ts";
+import { toDraftBuilderDsl } from "../contract-draft.ts";
 
 describe("Bug 50 · toDraftBuilderDsl 嵌套 shape 可选位", () => {
   it("扁平可选槽：k?: T → k: T.optional()（既有语义不回退）", () => {

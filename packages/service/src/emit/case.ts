@@ -1,7 +1,7 @@
 /**
  * `@nudojs/service/emit` debug case face (`nudo test` / CaseJson).
  *
- * `@nudo:case` is debug / test / LSP scenario only — not the interface
+ * `@nudo:case` is debug / test / LSP scenario only — not the contract
  * product. This subpath serializes case reports and emits generated case
  * directives.
  */

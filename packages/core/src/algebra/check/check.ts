@@ -41,23 +41,23 @@ import {
 } from "../refine.ts";
 import { runWithCollectorScope } from "../collector-scope.ts";
 import {
-  effectiveInterface,
+  effectiveContract,
   formatConstraint,
-  interfaceDiagCount,
+  contractDiagCount,
   localNamedExports,
   resetSidecarLoadFailureCache,
-  setInterfaceDiagCollector,
+  setContractDiagCollector,
   sidecarAutoBindAllowed,
   sidecarClosureFingerprint,
   sidecarPathOf,
-  takeInterfaceDiagsSince,
-  type EffectiveInterface,
-} from "../interface/interface.ts";
+  takeContractDiagsSince,
+  type EffectiveContract,
+} from "../contract/contract.ts";
 import {
   constraintToEntryAbs,
   type NudoConstraint,
 } from "../constraint.ts";
-import { absToConstraint } from "../interface/projection.ts";
+import { absToConstraint } from "../contract/projection.ts";
 import {
   checkReturnConstraint,
   type ReturnContractSource,
@@ -71,11 +71,11 @@ import {
 import { extractFn, generalizeFromAst } from "../generalize.ts";
 import {
   attachContractFaces,
-  contractFacesFromEffectiveInterface,
+  contractFacesFromEffectiveContract,
   setContractFaceResolver,
   type FnContractFaces,
-} from "../interface/contract-face.ts";
-import { resolveDepPath } from "../interface/sidecar-path.ts";
+} from "../contract/contract-face.ts";
+import { resolveDepPath } from "../contract/sidecar-path.ts";
 import {
   contractParamNameSet,
   formalParamSignatureNames,
@@ -114,9 +114,9 @@ import { listTopFunctions, scanLiteralCalls } from "../scan/scan.ts";
 // `collectTopLevelFunctions` 逐字对齐，不能改它）⇒ 单独取类清单并入入口表。
 import { listClassEntryNames } from "../scan/scan-top-functions.ts";
 import {
-  interfaceDriftIssues,
+  contractDriftIssues,
   type DriftCandidate,
-} from "./check-interface-drift.ts";
+} from "./check-contract-drift.ts";
 import {
   estimateEntryParamCount,
   isDefaultExportName,
@@ -219,8 +219,8 @@ function checkSourceInScope(
    *
    * Bug 1124：ambient 侧车的指纹探测是**推测**的（autoBind 关时那份侧车根本
    * 不会被绑定）⇒ 探测失败不得升级成 error 诊断（门禁假红：没有任何依赖或
-   * 启用的契约需要这次读取）。真正的 ambient 侧车读取走 interface.ts 的
-   * 绑定路径（失败 ⇒ nudo:interface-load，真故障照旧可见）。
+   * 启用的契约需要这次读取）。真正的 ambient 侧车读取走 contract.ts 的
+   * 绑定路径（失败 ⇒ nudo:contract-load，真故障照旧可见）。
    */
   let speculativeLoad: ((spec: string, from: string) => string | undefined) | undefined;
   if (opts.loadModule && opts.fromFile) {
@@ -247,15 +247,15 @@ function checkSourceInScope(
     speculativeLoad = cachedLoad;
   }
 
-  // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
+  // 诊断纯缓冲模式：refine/contract 侧车诊断由 checkSource 统一收口进报告
   setRefineDiagCollector(null);
-  setInterfaceDiagCollector(null);
+  setContractDiagCollector(null);
   // #64：侧车加载失败去重表按次分析重置——同一侧车失败只报一次，且下次 check 仍可见
   resetSidecarLoadFailureCache();
   // since 锚：memo 命中路径只排干本次（指纹/侧车加载）产生的增量诊断，
   // 不全量 take——全量 take 会窃取在途 LSP validateText 的待消费诊断
   const refineSince = refineDiagCount();
-  const ifaceSince = interfaceDiagCount();
+  const contractSince = contractDiagCount();
 
   const useMemo = phi.op === "true";
   let memoKey: string | undefined;
@@ -285,7 +285,7 @@ function checkSourceInScope(
   const allowMemo =
     useMemo &&
     !depsFp.truncated &&
-    // 读错误轮键不可信（#135）：错误轮报告（nudo:interface-load）与真 miss 轮
+    // 读错误轮键不可信（#135）：错误轮报告（nudo:contract-load）与真 miss 轮
     // （干净）若共享 miss 键会互为跨次陈旧命中——不读也不写 memo
     !depsFp.readError &&
     // Bug 499：本闸把读失败降级成 miss（指纹面看不到 readError）——但
@@ -298,7 +298,7 @@ function checkSourceInScope(
     const hit = checkMemoGet(memoKey);
     if (hit) {
       takeRefineDiagsSince(refineSince);
-      takeInterfaceDiagsSince(ifaceSince);
+      takeContractDiagsSince(contractSince);
       return cloneCheckReport(hit);
     }
   }
@@ -354,12 +354,12 @@ function checkSourceInScope(
         depsFp,
         sidecarFp,
       );
-      // 侧车诊断 side-channel 收口：nudo:interface-load / interface-cycle 等
+      // 侧车诊断 side-channel 收口：nudo:contract-load / contract-cycle 等
       // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
       // 在途 LSP validateText 的待消费诊断。
       const diagIssues = sidecarDiagIssues([
         ...takeRefineDiagsSince(refineSince),
-        ...takeInterfaceDiagsSince(ifaceSince),
+        ...takeContractDiagsSince(contractSince),
       ]);
       // Bug 499：依赖不可读（EACCES/EIO/…）——降级为一条明确诊断，不再
       // 让异常炸穿整轮 check。诊断码沿用既有的 nudo:module-missing（依赖
@@ -425,10 +425,10 @@ function loadReadFailureIssues(failures: LoadReadFailure[]): CheckIssue[] {
 /**
  * 被分析文件自身的同名契约 → 位置化契约面（按名 memo）。$callNamed 在
  * 同文件调用点消费（跨模块桥接走 $call 的对象注册面）。仅 handwritten；
- * effectiveInterface 解析失败 → undefined（面留空 = 今日行为）。
+ * effectiveContract 解析失败 → undefined（面留空 = 今日行为）。
  *
  * 解析/求值失败折 undefined 是今日授权行为，但**引擎内部异常**不得静默：
- * effectiveInterface 的用户面失败（侧车读失败 / 指令文法 / 侧车环）全部
+ * effectiveContract 的用户面失败（侧车读失败 / 指令文法 / 侧车环）全部
  * 走 diag 通道不抛异常（Bug 334/374/499）——能到 catch 的都是异常路径。
  * 经截断观测通道上报（label 带 `#` 前缀 ⇒ 不可能与函数名撞车，不会
  * 误触 budgetExplained 的 `truncated.has(name)`），且异常轮不落 memo
@@ -452,7 +452,7 @@ function makeSameFileFaceResolver(
     let faces: FnContractFaces | undefined;
     let resolved = false;
     try {
-      const eff = effectiveInterface(source, fnName, {
+      const eff = effectiveContract(source, fnName, {
         ...(loadModule ? { loadModule } : {}),
         fromFile,
         ...(autoBind !== undefined ? { autoBind } : {}),
@@ -460,7 +460,7 @@ function makeSameFileFaceResolver(
       });
       if (eff) {
         const params = extractFn(source, fnName, file)?.params ?? [];
-        faces = contractFacesFromEffectiveInterface(eff, params);
+        faces = contractFacesFromEffectiveContract(eff, params);
       }
       resolved = true;
     } catch {
@@ -475,13 +475,13 @@ function makeSameFileFaceResolver(
 /**
  * 契约形参名 ∉ 形参表面（C4.5 口径）：展示名 ∪ 契约面名（解构顶层绑定名 /
  * rest 裸名 / 嵌套点路径）之外的契约形参名 = 对不上的名字。冲突位（合取
- * 不可满足）不算对不上——它由 nudo:interface-conflict 报。
+ * 不可满足）不算对不上——它由 nudo:contract-conflict 报。
  *
  * **同文件路径与跨模块桥接路径共用这一段计算**（Bug 1023）⇒ 两边口径不再
  * 分叉：跨模块不得「一边报 mismatch 一边静默丢义务」。
  */
 function unmatchedContractParams(
-  eff: EffectiveInterface,
+  eff: EffectiveContract,
   formalDisplay: string[],
   formals: FormalParam[],
 ): string[] {
@@ -499,7 +499,7 @@ function unmatchedContractParams(
     );
 }
 
-/** nudo:interface-param-mismatch 诊断（同文件 / 跨模块共用文案与 severity） */
+/** nudo:contract-param-mismatch 诊断（同文件 / 跨模块共用文案与 severity） */
 function paramMismatchIssue(
   name: string,
   unknownParams: string[],
@@ -512,7 +512,7 @@ function paramMismatchIssue(
     .join(", ");
   return {
     severity: "error",
-    code: DIAG.interfaceParamMismatch,
+    code: DIAG.contractParamMismatch,
     message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
     actual: unknownParams.join(", "),
     expected: surface || formalDisplay.join(", ") || "(no params)",
@@ -530,7 +530,7 @@ function paramMismatchIssue(
  * 进程内长会话不滞留）；loadModule miss（表非 fs 装配）→ 该说明符无面。
  *
  * Bug 1023：跨模块路径与同文件路径**同口径**——契约形参名对不上形参表时
- * 报 nudo:interface-param-mismatch（返回给调用方的诊断列表），不再静默
+ * 报 nudo:contract-param-mismatch（返回给调用方的诊断列表），不再静默
  * 丢参数面（那会让该形参的义务在调用方**蒸发** ⇒ 调用点假绿）。
  */
 function attachCrossModuleContractFaces(
@@ -550,27 +550,27 @@ function attachCrossModuleContractFaces(
   const mismatchIssues: CheckIssue[] = [];
   const facesCache = new Map<
     string,
-    { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined }
+    { faces: FnContractFaces | undefined; eff: EffectiveContract | undefined }
   >();
   const facesFor = (
     depSource: string,
     depPath: string,
     name: string,
     paramNames: string[],
-  ): { faces: FnContractFaces | undefined; eff: EffectiveInterface | undefined } => {
+  ): { faces: FnContractFaces | undefined; eff: EffectiveContract | undefined } => {
     const key = `${depPath}\0${name}`;
     const hit = facesCache.get(key);
     if (hit) return hit;
     let faces: FnContractFaces | undefined;
-    let eff: EffectiveInterface | undefined;
+    let eff: EffectiveContract | undefined;
     try {
-      eff = effectiveInterface(depSource, name, {
+      eff = effectiveContract(depSource, name, {
         loadModule,
         fromFile: depPath,
         ...(autoBind !== undefined ? { autoBind } : {}),
         ...(projectDir !== undefined ? { projectDir } : {}),
       });
-      if (eff) faces = contractFacesFromEffectiveInterface(eff, paramNames);
+      if (eff) faces = contractFacesFromEffectiveContract(eff, paramNames);
     } catch {
       faces = undefined;
       eff = undefined;
@@ -632,9 +632,9 @@ function attachCrossModuleContractFaces(
 }
 
 /**
- * refine/interface 侧车诊断 → CheckIssue（code+message 去重，
+ * refine/contract 侧车诊断 → CheckIssue（code+message 去重，
  * 同一失败侧车会在 generalize / 返回后置 / case 对账多处被重复探测）。
- * severity 按 code 定档：interface-load/cycle = error；contract-syntax = warning。
+ * severity 按 code 定档：contract-load/cycle = error；contract-syntax = warning。
  */
 // ---------------------------------------------------------------------------
 // 门禁编排（sidecar 诊断收集 + checkSourceInner：L0 签名 / L1 契约 / L2 throws）
@@ -695,7 +695,7 @@ function anchorSurfaceOf(
  * `@nudo:assume <param> <= <param>`（`>=` 已在 refine 翻转为 le）：
  * - 文法外形态（`<` / `>` / `==`、字面量界）→ error nudo:assume-invalid（不折）
  * - 引用名不在锚定函数形参 ∪ 函数体顶层局部绑定（#165）→ error
- *   nudo:assume-invalid（消息口径仿 nudo:interface-param-mismatch）；
+ *   nudo:assume-invalid（消息口径仿 nudo:contract-param-mismatch）；
  *   局部绑定 SSA 语义：引理作用于绑定值，从定义点到作用域尾
  * 合法段构造 le(termVar(lhs), termVar(rhs))（param 契约 Abs 同锚定口径），
  * pAnd 成 Phi 供目标函数入口求值种子（withAssumePremises，不随调用链继承）。
@@ -1044,19 +1044,19 @@ function checkSourceInner(
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
-  // autoBind（package.json#nudo.contract）统一透传：effectiveInterface /
+  // autoBind（package.json#nudo.contract）统一透传：effectiveContract /
   // generalize L0 / scan 执法 / case 对账同一开关口径
   const autoBind = opts.autoBind;
   const projectDir = opts.projectDir;
-  // effectiveInterface 文件内 memo：localNamedExports 走 errorRecovery 解析
+  // effectiveContract 文件内 memo：localNamedExports 走 errorRecovery 解析
   // 不进 parse LRU，逐函数重跑会 O(exports × reparse)
-  const eiCache = new Map<string, EffectiveInterface | undefined>();
-  const effectiveInterfaceCached = (
+  const eiCache = new Map<string, EffectiveContract | undefined>();
+  const effectiveContractCached = (
     fnName: string,
-  ): EffectiveInterface | undefined => {
+  ): EffectiveContract | undefined => {
     const key = `${fnName}\0${autoBind === false ? "0" : "1"}`;
     if (eiCache.has(key)) return eiCache.get(key);
-    const eff = effectiveInterface(source, fnName, {
+    const eff = effectiveContract(source, fnName, {
       loadModule: refineLoad,
       fromFile: refineFrom,
       ...(autoBind !== undefined ? { autoBind } : {}),
@@ -1092,19 +1092,19 @@ function checkSourceInner(
   /**
    * L2 **申报集合** = 源码 `@nudo:throws` ∪ 有效接口的 throws（并集口径）。
    *
-   * BUG-210：旧口径 `declaredThrowsForEntry(...) ?? effectiveInterfaceCached(...).throws.kinds`
+   * BUG-210：旧口径 `declaredThrowsForEntry(...) ?? effectiveContractCached(...).throws.kinds`
    * 的 `??` 短路 ⇒ 源码一有声明，侧车 `fn(..., { throws })` **整份被丢弃**
    * ⇒ 已申报的 `RangeError` 仍报「未申报」（假红）+ 加一条声明反而让门禁更红
-   * （非单调）。而 interface.ts 的 `mergedThrows` 算的就是**并集** ⇒ 两个
+   * （非单调）。而 contract.ts 的 `mergedThrows` 算的就是**并集** ⇒ 两个
    * 模型对同一份声明给出相反答案。这里与接口模型同源（并集，`*` 优先）。
    * `declaredThrowsForEntry` 仍参与并集：它额外覆盖**类构造器**作用域
    * （`C.constructor`）的申报，接口模型看不到。
    */
   const declaredThrowsMerged = (fnName: string): string[] | "*" | undefined => {
     const fromSource = declaredThrowsForEntry(source, fnName);
-    const fromInterface = effectiveInterfaceCached(fnName)?.throws?.kinds;
-    if (fromSource === "*" || fromInterface === "*") return "*";
-    const set = new Set<string>([...(fromSource ?? []), ...(fromInterface ?? [])]);
+    const fromContract = effectiveContractCached(fnName)?.throws?.kinds;
+    if (fromSource === "*" || fromContract === "*") return "*";
+    const set = new Set<string>([...(fromSource ?? []), ...(fromContract ?? [])]);
     return set.size > 0 ? [...set] : undefined;
   };
   /**
@@ -1168,11 +1168,11 @@ function checkSourceInner(
   /**
    * BUG-023：**函数体求值期**（generalize 各函数体）的执行态调用记录，单独
    * 留存——只在「顶层执行态对某函数没有任何调用点证据」时作为**回退**证据
-   * 交给漂移闸门（见 interfaceDriftIssues 的 fallback 参数）。
+   * 交给漂移闸门（见 contractDriftIssues 的 fallback 参数）。
    *
    * 默认口径（顶层执行态证据）必须保持不变：兄弟函数体内**从未被调用**的
    * 调用点不得进今日域，否则 fresh emit 后立即误报 drift 且重跑 emit 无法
-   * 消除（`check-interface-drift.test`「执行态证据」回归）。
+   * 消除（`check-contract-drift.test`「执行态证据」回归）。
    */
   const bodyCallRecords: AbsCallRecord[] = [];
   // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
@@ -1205,7 +1205,7 @@ function checkSourceInner(
         name === "default" ||
         (entryNames.has("default") && isDefaultExportName(source, name));
       // 参数位仍按手写契约展示（skip 只停止 body 求值，不解除参数义务）
-      const eff = effectiveInterfaceCached(name);
+      const eff = effectiveContractCached(name);
       const contractParam = new Map<string, Abs>();
       if (eff) {
         for (const p of eff.params) {
@@ -1432,14 +1432,14 @@ function checkSourceInner(
     }
 
     // 有效契约（源码 @nudo:contract/@nudo:contract ∪ 侧车同名手写绑定）：
-    // - conflict（常数界交叉矛盾）→ nudo:interface-conflict，fn 级一次
-    // - 参数名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）
+    // - conflict（常数界交叉矛盾）→ nudo:contract-conflict，fn 级一次
+    // - 参数名对不上形参表 → nudo:contract-param-mismatch（C4.5；不再静默跳过）
     // - 返回后置仅 handwritten 执法（generated = 事实快照，drift 另行）
     if (hasRefineDirective || (exportedNames?.has(name) ?? false)) {
-      const eff = effectiveInterfaceCached(name);
+      const eff = effectiveContractCached(name);
       if (eff?.source === "handwritten") {
         // C4.1：契约面 = formals（默认参名 / rest 裸名 / 解构顶层绑定名）
-        // 形参名对不上形参表 → nudo:interface-param-mismatch（C4.5；不再静默跳过）
+        // 形参名对不上形参表 → nudo:contract-param-mismatch（C4.5；不再静默跳过）
         // ——与跨模块桥接路径共用 unmatchedContractParams（Bug 1023 同口径）
         const unknownParams = unmatchedContractParams(eff, g.params, g.formals ?? []);
         if (unknownParams.length > 0) {
@@ -1464,7 +1464,7 @@ function checkSourceInner(
         if (eff.conflict.params.length > 0) {
           issues.push({
             severity: "error",
-            code: DIAG.interfaceConflict,
+            code: DIAG.contractConflict,
             message: `${name}: handwritten contract conjunction unsatisfiable (${eff.conflict.params.join(", ")})`,
             suggestion: "check whether the source @nudo:contract and the same-name sidecar binding have contradictory constant bounds",
             fn: name,
@@ -1474,7 +1474,7 @@ function checkSourceInner(
         if (eff.conflict.returns) {
           issues.push({
             severity: "error",
-            code: DIAG.interfaceConflict,
+            code: DIAG.contractConflict,
             message: `${name}: handwritten contract conjunction unsatisfiable on the return slot`,
             suggestion:
               "check whether the source @nudo:contract return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
@@ -1491,7 +1491,7 @@ function checkSourceInner(
       if (undecidable !== undefined && undecidable.params.length > 0) {
         issues.push({
           severity: "warning",
-          code: DIAG.interfaceConflict,
+          code: DIAG.contractConflict,
           message: `${name}: contract conjunction not computable (${undecidable.params.join(", ")}) — only one side is enforced`,
           suggestion:
             "structural contracts (shape / array / union / fn) cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
@@ -1502,7 +1502,7 @@ function checkSourceInner(
       if (undecidable?.returns) {
         issues.push({
           severity: "warning",
-          code: DIAG.interfaceConflict,
+          code: DIAG.contractConflict,
           message: `${name}: contract conjunction not computable on the return slot — only one side is enforced`,
           suggestion:
             "structural return constraints cannot be combined in this slot; the other side's obligations are NOT enforced — merge them by hand",
@@ -1881,7 +1881,7 @@ function checkSourceInner(
     issues.push(
       // 返回位今日重算经 B（fail-closed：B 失败/类方法 → undefined = 无证据，
       // 宁缺勿滥不判 drift）——闭包缓存一次 run 避免逐调用点重编译
-      ...interfaceDriftIssues(driftCandidates, driftRecords, (() => {
+      ...contractDriftIssues(driftCandidates, driftRecords, (() => {
         let driftRun: Record<string, unknown> | undefined;
         let driftInit = false;
         return (fnName, args) => {
@@ -1963,8 +1963,8 @@ function checkSourceInner(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// T10a：nudo:interface-drift（固化生成段 ≠ 今日重算，warning）
-// 实现见 check-interface-drift.ts；checkSourceInner 收集 DriftCandidate 后
-// 统一调用 interfaceDriftIssues。
+// T10a：nudo:contract-drift（固化生成段 ≠ 今日重算，warning）
+// 实现见 check-contract-drift.ts；checkSourceInner 收集 DriftCandidate 后
+// 统一调用 contractDriftIssues。
 // ---------------------------------------------------------------------------
 

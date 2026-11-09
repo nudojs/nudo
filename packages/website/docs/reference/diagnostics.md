@@ -102,53 +102,53 @@ A declared `@nudo:case` witness conflicts with an explicit refine. Debug witness
 
 Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [Declared assertions](../guides/test.md#declared-assertions)
 
-### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
+### `nudo:contract-param-mismatch` {#nudo-contract-param-mismatch}
 
-Handwritten contract param name is not on the formal surface. (Diagnostic ID keeps historical `interface` token; product term is **contract**.) Legal names: plain parameter names, destructured binding names (source property keys for renames), and dot-path keys for nested destructuring (`'card.grade'` for `({ card: { grade } })`) — see [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding).
+Handwritten contract param name is not on the formal surface. Legal names: plain parameter names, destructured binding names (source property keys for renames), and dot-path keys for nested destructuring (`'card.grade'` for `({ card: { grade } })`) — see [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding).
 
-Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-conflict` {#nudo-interface-conflict}
+### `nudo:contract-conflict` {#nudo-contract-conflict}
 
 Handwritten contract conjunction is unsatisfiable. Simplify the sidecar / refine.
 
-Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-load` {#nudo-interface-load}
+### `nudo:contract-load` {#nudo-contract-load}
 
 Sidecar file failed to load (parse / import / resolution error). **Error.** Fix the sidecar, or remove the binding if the contract is gone.
 
-Context: [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-name-clash` {#nudo-interface-name-clash}
+### `nudo:contract-name-clash` {#nudo-contract-name-clash}
 
 Sidecar export name collides with a source export, or emit would overwrite a handwritten binding. Handwritten always wins.
 
-Context: [Emit generated segments](../guides/contract.md#emit-generated-segments) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Emit generated segments](../guides/contract.md#emit-generated-segments) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-cycle` {#nudo-interface-cycle}
+### `nudo:contract-cycle` {#nudo-contract-cycle}
 
 Sidecar `@nudo:import` chain forms a cycle. **Error.** Fix: break the sidecar import cycle.
 
-Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-domain-exceeds` {#nudo-interface-domain-exceeds}
+### `nudo:contract-domain-exceeds` {#nudo-contract-domain-exceeds}
 
 Cross-file call-site evidence injected via `nudo check --from` is not within the handwritten contract domain (`⊄`). **Error.** Fix: widen the contract, or correct the usage site.
 
-Context: [Interface diagnostics](../guides/check.md#interface-diagnostics) · [Usage sites (`--from`)](../guides/test.md#usage-sites---from)
+Context: [Contract diagnostics](../guides/check.md#contract-diagnostics) · [Usage sites (`--from`)](../guides/test.md#usage-sites---from)
 
-### `nudo:interface-drift` {#nudo-interface-drift}
+### `nudo:contract-drift` {#nudo-contract-drift}
 
 Persisted `@generated` sidecar segment ≠ today's recomputed call-site domain or return. **Warning** — does not gate exit.
 
-Context: [Emit generated segments](../guides/contract.md#emit-generated-segments) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Emit generated segments](../guides/contract.md#emit-generated-segments) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
-### `nudo:interface-entry-only` {#nudo-interface-entry-only}
+### `nudo:contract-entry-only` {#nudo-contract-entry-only}
 
 Exported function has **no contract root** (no handwritten / generated sidecar or `@nudo:contract`) **and no call-site domain** (only synthesized `entry@` with `any` params). **Info** — coverage/contract gap, not a gate failure. Fix: add a contract (`*.nudo.js` / `@nudo:contract`) or exercise the export from usage sites (`nudo check --from`).
 
-Context: [Observation → draft](../guides/contract.md#observation--draft-logic-first) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
+Context: [Observation → draft](../guides/contract.md#observation--draft-logic-first) · [Contract diagnostics](../guides/check.md#contract-diagnostics)
 
 ### `nudo:dual-entry` {#nudo-dual-entry}
 
@@ -163,7 +163,7 @@ The package ships **browser/node dual entrypoints** (package.json `exports` cond
 
 Context: [Call-site discovery ceiling](../concepts/limits.md#call-site-discovery-ceiling)
 
-### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
+### `nudo:contract-emit-denied` {#nudo-contract-emit-denied}
 
 ```text
 emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
@@ -173,7 +173,7 @@ emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (
 
 Context: [Emit generated segments](../guides/contract.md#emit-generated-segments)
 
-### `nudo:interface-multi-declarator` {#nudo-interface-multi-declarator}
+### `nudo:contract-multi-declarator` {#nudo-contract-multi-declarator}
 
 ```text
 generated section 'a, b' is a hand-merged multi-declarator form; kept verbatim
@@ -183,13 +183,13 @@ A `@generated` section was hand-merged into one multi-declarator export. **Warni
 
 Context: [Emit generated segments](../guides/contract.md#emit-generated-segments)
 
-### `nudo:interface-not-projectable` {#nudo-interface-not-projectable}
+### `nudo:contract-not-projectable` {#nudo-contract-not-projectable}
 
 ```text
 assembled sidecar failed round-trip (path); refusing to write
 ```
 
-The assembled sidecar source failed to re-parse to the derived interface. **Error** — nothing is written. Report as engine debt (round-trip must succeed), and adjust the source until `contract --emit --dry-run` is clean.
+The assembled sidecar source failed to re-parse to the derived contract. **Error** — nothing is written. Report as engine debt (round-trip must succeed), and adjust the source until `contract --emit --dry-run` is clean.
 
 Context: [Emit generated segments](../guides/contract.md#emit-generated-segments)
 
@@ -439,7 +439,7 @@ A handwritten `@nudo:env` module and the `@types` harvest both supply the same m
 
 Context: [Common pitfalls](../guides/env-harvest.md#common-pitfalls)
 
-### `nudo:interface-underivable` {#nudo-interface-underivable}
+### `nudo:contract-underivable` {#nudo-contract-underivable}
 
 A **derived** contract row (root-driven derivation / `nudo contract --draft`) cannot be derived from source evidence (opaque / truncated / no evidence). **Info** — the row is skipped; handwritten contracts are never flagged by this code.
 

@@ -1138,7 +1138,7 @@ describe("glossary headings ⇔ emittable codes (rule 19, reverse direction)", (
       for (const rel of HANDWRITTEN_PAGES) {
         const path = join(root, rel);
         if (!existsSync(path)) continue;
-        // 只认**行内代码**形态（`nudo:xxx`）：散文里的裸串（`nudo:interface-*`
+        // 只认**行内代码**形态（`nudo:xxx`）：散文里的裸串（`nudo:contract-*`
         // 通配、`nudo:check` 命令名、`nudo:return` 前缀）不是诊断码。
         for (const m of readFileSync(path, "utf8").matchAll(/(?<![@\w-])`(nudo:[a-z0-9-]+)`/g)) {
           if (!emittable.has(m[1])) bad.push(`${label}/${rel}: ${m[1]}`);

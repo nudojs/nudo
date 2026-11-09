@@ -13,14 +13,14 @@ import { dirname } from "node:path";
 import {
   defaultLoadModule,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,
   type AnalysisResult,
   type FunctionAnalysis,
 } from "@nudojs/service";
 import { extractDirectives, parse } from "@nudojs/parser";
-import type { Abs, EffectiveInterfaceOpts } from "@nudojs/core";
+import type { Abs, EffectiveContractOpts } from "@nudojs/core";
 
 /** 证据路径：契约面（手写契约）或观测面（case 见证 / 调用点证据）。 */
 export type EvidencePath = "contract" | "observation";
@@ -64,13 +64,13 @@ export function selectPublicFunctions(
 }
 
 /**
- * 契约面装载口径（与 check 签名面同数据源 effectiveInterface：sidecar ∪ inline
+ * 契约面装载口径（与 check 签名面同数据源 effectiveContract：sidecar ∪ inline
  * `@nudo:contract`）：autoBind / projectDir 与 check / iface 面同口径——项目关
  * autoBind 时侧车不做 ambient 加载。
  */
-export function buildEffectiveInterfaceOptions(filePath: string): EffectiveInterfaceOpts {
+export function buildEffectiveContractOptions(filePath: string): EffectiveContractOpts {
   const proj = findProjectConfig(dirname(filePath));
-  const autoBindCfg = interfaceConfig(proj?.config).autoBind;
+  const autoBindCfg = contractConfig(proj?.config).autoBind;
   return {
     loadModule: defaultLoadModule,
     fromFile: filePath,

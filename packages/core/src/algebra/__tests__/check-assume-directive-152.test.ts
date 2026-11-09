@@ -4,7 +4,7 @@
  * 由并行件落地，本套件不钉折叠产物，只钉：
  * - 解析锚定 = AST 最近 Function（多函数不串）
  * - 未知名/非法操作符 → error nudo:assume-invalid（exit 语义 = report.ok false）
- * - 侧车 `.le("max")` 脚枪 → 显式 throw，check 浮出 nudo:interface-load
+ * - 侧车 `.le("max")` 脚枪 → 显式 throw，check 浮出 nudo:contract-load
  * - 前提槽（currentAssumePremises / withAssumePremises）set/restore/嵌套语义
  * - 无 assume → 零 nudo:assume-* 诊断
  */
@@ -336,9 +336,9 @@ describe("number().le(\"max\") 脚枪（constraint builder 守卫）", () => {
     expect(() => number().gt(0).shift(3)).not.toThrow();
   });
 
-  it("侧车里 throw → check 浮出 nudo:interface-load error（非静默；实测面）", () => {
+  it("侧车里 throw → check 浮出 nudo:contract-load error（非静默；实测面）", () => {
     // 实测（2026-10）：throw 经 execNudoModuleCached 原文浮出为
-    // nudo:interface-load "sidecar './assume.nudo.js' failed to load: nudo le(): …"；
+    // nudo:contract-load "sidecar './assume.nudo.js' failed to load: nudo le(): …"；
     // 同时契约失效使参数回退 any → 既有 nudo:entry-may-throw（TypeError）同报
     const sidecar = `export const sim = fn({ d: number().ge(0), max: number().ge(1) }, number().ge(0).le("max"));`;
     const r = checkOf(
@@ -357,7 +357,7 @@ export function sim(d, max) {
     );
     expect(r.ok).toBe(false);
     const err = r.issues.find(
-      (i) => i.code === "nudo:interface-load" && i.message.includes("le()"),
+      (i) => i.code === "nudo:contract-load" && i.message.includes("le()"),
     );
     expect(err).toBeDefined();
     expect(err!.severity).toBe("error");

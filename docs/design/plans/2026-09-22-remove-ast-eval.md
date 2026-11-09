@@ -15,7 +15,7 @@
 | check 门禁本体 | core/check.ts | analyzeFn(L673)、evalProgramAbs(L712)、analyzeFnFull(L933) | runTranspiled（core 内可用）；tryBPathCallFull（service） |
 | 调用点实例化 | core/generalize.ts | PolyFn.instantiate → run → analyzeFn | 无——instantiate 需换引擎 |
 | 模块图 | service/abs-modules-graph.ts | evalProgramAbs（每依赖） | **无**——Abs-only 协议 |
-| 接口推导 | service/interface-derivation.ts | analyzeFn + derivationChain 打点 | 无——打点在求值内部 tag |
+| 契约推导 | service/contract-derivation.ts | analyzeFn + derivationChain 打点 | 无——打点在求值内部 tag |
 | LSP hover/bindings | service/lsp-surface.ts | collectAbsNodeTypes → evalProgramAbs | B-hosted 已有 nodeTypeMap 注入；非 B-hosted 无 |
 | CLI assume | cli/index.ts | algebra.analyzeFn | 可换 tryBPathCall |
 | 测试面 | ~60 测试文件 | analyzeFn/evalProgramAbs 直调 | 需成批迁移 |
@@ -210,7 +210,7 @@ LSP 节点表/case 重放、analyzer 记录通道（B 唯一源）、CLI assume�
 换工具 13 文件（子代理批量）；契约更新（fail-closed 面）。
 
 **终局验证**：core 160 文件 1823 测试 12.85s 全绿；service/cli/parser/
-lsp/vite-plugin 全绿（2026-09-23 曾记 853/854 + `agent-interface-draft`
+lsp/vite-plugin 全绿（2026-09-23 曾记 853/854 + `agent-contract-draft`
 长期 baseline，**后续已绿**，复核 855/855 · 全仓 2718/2718 · 该文件 5 连跑）；
 差分 155、gold 150、real-packages 10（3.17s）、examples 149、lint 全绿。
 

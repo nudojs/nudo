@@ -10,8 +10,8 @@
  *
  * 修法（族 20 · 片 B · **CLI 半**）：判据改成
  * `rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)`
- * —— 与 service 半（`packages/service/src/emit/interface-draft.ts` 的
- * `writeInterfaceDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修）。
+ * —— 与 service 半（`packages/service/src/emit/contract-draft.ts` 的
+ * `writeContractDraft`）**逐字同款**（同一个 bug 的两半 ⇒ 同一片修）。
  *
  * ⚠ 本钉的夹具**全部写在临时目录**里 ⇒ 绝不往仓里写文件。
  * ⚠ 两层钉：

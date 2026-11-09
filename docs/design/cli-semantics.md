@@ -34,7 +34,7 @@ nudo — JavaScript types, computed
   nudo init [path]                 # setup：写 adoption 基线配置进 package.json（幂等）
   nudo check <path> [--watch|-w]   # 门禁 + 签名表（Day 0/CI 唯一终端入口）
   nudo test <path> [--watch|-w]    # 逐 case 调用点真值 + 可选断言（debug；--both-paths 同轮对照指令/调用点见证）
-  nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
+  nudo contract <path>             # 契约：打印 / draft / emit 侧车契约
   nudo export <path>               # 投影：dts | guard | schema | standard | all
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
   nudo migrate <action> [paths]    # 替代 TS 单向门：status|strip|verify|retire
@@ -92,7 +92,7 @@ assertions
 | `nudo init` | setup：写 `package.json#nudo = { check: { profile: "adoption" } }` 基线（幂等：**已有** nudo 键只打印不写；**形状非法**的 nudo 值（null / 标量 / 数组）被替换成基线并告警；祖先 package.json 已有**可继承**的 nudo 配置 ⇒ 拒绝写遮蔽键（exit 1）；最近的 package.json 是 workspace / 容器根 ⇒ 拒绝越界写盘（exit 1）） |
 | `nudo check` | Day 0 / CI 门禁；默认打印 signatures + L2 entry may-throw |
 | `nudo test` | case 报告 + 声明断言；`--from` 注入使用处；`--freeze` 固化见证 |
-| `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
+| `nudo contract` | 打印 / `--draft` / `--emit` 侧车契约；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
 | `nudo export` | 一次性投影：`dts` / `guard` / `schema`（`--dialect zod`）/ `standard` / `all`；`--out` 写出目录 |
 | `nudo health` | 分析错误 + 固化漂移（`--from` 再固化使用处证据并报 drift；`--from` 需显式 paths——不再默认扫 cwd，无 paths 时为 usage error）；`--watch` 可选 |
 | `nudo migrate` | **替代 TS 单向门**：`status` 审计 / `strip` 剥注解 + draft 侧车 / `verify`（唯一允许双跑 tsc）/ `retire` 从 package.json 摘除 tsc 并写 `.nudo/migrate-retired.json` |
@@ -294,13 +294,13 @@ pnpm run nudo -- check path/to/file.js
 | `nudo:assign-mismatch` | 赋值 ⊭ 原有形状（leqAbs） |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配（**不**表示 body 缺 slot） |
 | `nudo:case-inconsistency` | **`@nudo:case` 见证 ⊭ refine** |
-| `nudo:interface-param-mismatch` | 手写契约参数名不在形参表面（默认参名/rest 裸名/解构绑定名合法） |
-| `nudo:interface-conflict` | 手写契约合取不可满足（常数界交叉等） |
-| `nudo:interface-name-clash` | 侧车导出名与源码导出冲突 |
-| `nudo:interface-underivable` | 手写契约无法从源码推导（underivable） |
-| `nudo:interface-load` / `nudo:interface-cycle` | 侧车加载失败 / 侧车环 |
-| `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
-| `nudo:interface-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
+| `nudo:contract-param-mismatch` | 手写契约参数名不在形参表面（默认参名/rest 裸名/解构绑定名合法） |
+| `nudo:contract-conflict` | 手写契约合取不可满足（常数界交叉等） |
+| `nudo:contract-name-clash` | 侧车导出名与源码导出冲突 |
+| `nudo:contract-underivable` | 手写契约无法从源码推导（underivable） |
+| `nudo:contract-load` / `nudo:contract-cycle` | 侧车加载失败 / 侧车环 |
+| `nudo:contract-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
+| `nudo:contract-drift` | `@generated` 段 ≠ 今日重算（warning，不挡 exit） |
 | `nudo:no-signature` | 无法归纳符号 Abs |
 | `nudo:opaque-result` | 求值不透明 |
 | `nudo:recursion-truncated` | 递归预算截断（结果 widen） |
@@ -559,7 +559,7 @@ npx tsx scripts/scan-real-packages.ts commander
 
 **C0.5 `evalMissingSlot`**：默认 `off`。`"warning"` 时对**求值命中**的已知对象缺字段发 `nudo:missing-slot` warning。禁止 body AST 预扫描发明义务；草稿产品路径仍是 `nudo contract --draft`。详见 [`limitations.md`](./limitations.md)。
 
-**惰性 `@nudo:case`**：`analyzeFile(..., caseMode)` 三档——`none`（check / LSP validate / vite：不跑 case，有 case 的函数也走 `entry@` 出签名）/ `all`（`nudo test` / CaseJson / freeze / agent `nudo.test`）/ `selected`（LSP `selectCase` 后只跑选中）。库默认 `all` 保兼容；产品宿主必须显式 `none`。case 是 debug 见证，不是接口产品（CLAUDE.md）。
+**惰性 `@nudo:case`**：`analyzeFile(..., caseMode)` 三档——`none`（check / LSP validate / vite：不跑 case，有 case 的函数也走 `entry@` 出签名）/ `all`（`nudo test` / CaseJson / freeze / agent `nudo.test`）/ `selected`（LSP `selectCase` 后只跑选中）。库默认 `all` 保兼容；产品宿主必须显式 `none`。case 是 debug 见证，不是契约产品（CLAUDE.md）。
 
 ---
 
@@ -568,7 +568,7 @@ npx tsx scripts/scan-real-packages.ts commander
 ```text
 nudo check <path> [--watch]  Gate contracts + entry throws; print signatures (CI)
 nudo test <path> [--watch]   Report every inferred case; assert declared expectations
-nudo contract <path>         Draft / emit interfaces
+nudo contract <path>         Draft / emit contracts
 nudo export <path>           Project dts / guard / schema / standard
 nudo health [paths]          Project health & drift
 

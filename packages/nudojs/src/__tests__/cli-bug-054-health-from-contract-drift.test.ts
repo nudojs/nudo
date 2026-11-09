@@ -1,9 +1,9 @@
 /**
  * BUG-054：`nudo health --from` 的 **contract-drift** 闸门拿不到 `--from` 证据
- * ⇒ 同一份陈旧生成段：`nudo check` 报 `nudo:interface-drift`，`nudo health` 报
+ * ⇒ 同一份陈旧生成段：`nudo check` 报 `nudo:contract-drift`，`nudo health` 报
  * 「0 contract drift」并 exit 0（跨动词结论矛盾 + 假绿）。
  *
- * 修复：`countInterfaceDrift` 把 `--from` 的可归因调用点记录接进
+ * 修复：`countContractDrift` 把 `--from` 的可归因调用点记录接进
  * `checkSource` 的 `opts.from`（与 `nudo check` 的 `checkSourceOptions.from` 同源）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -50,10 +50,10 @@ describe("BUG-054: health --from 的契约漂移判定与 check 同口径", () =
     expect(r.status).toBe(1);
   }, 60_000);
 
-  it("--json 面：summary.interfaceDrift > 0（机器面同源）", () => {
+  it("--json 面：summary.contractDrift > 0（机器面同源）", () => {
     const r = runCliTsx(["health", "--json", p("lib.js"), "--from", p("usage.js")], { cwd: dir });
-    const json = JSON.parse(r.stdout) as { ok: boolean; summary: { interfaceDrift: number } };
+    const json = JSON.parse(r.stdout) as { ok: boolean; summary: { contractDrift: number } };
     expect(json.ok).toBe(false);
-    expect(json.summary.interfaceDrift).toBeGreaterThan(0);
+    expect(json.summary.contractDrift).toBeGreaterThan(0);
   }, 60_000);
 });

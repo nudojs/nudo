@@ -1,6 +1,6 @@
 /**
  * Bug 1023 —— 跨模块桥接路径与同文件路径**同口径**：契约形参名对不上形参表
- * ⇒ 报 nudo:interface-param-mismatch，不再静默丢参数面。
+ * ⇒ 报 nudo:contract-param-mismatch，不再静默丢参数面。
  *
  * 旧行为：跨模块时契约形参名对不上（`fn({ k: … })` vs `function scale(factor)`）
  * ⇒ 该形参的**义务在调用方蒸发**（调用点假绿：负参调用不报违例）。
@@ -56,8 +56,8 @@ function run(side: string) {
 
 describe("Bug 1023 跨模块：契约形参名对不上 ⇒ 报 param-mismatch", () => {
   const r = run(SIDE_MISMATCH);
-  it("调用方看到 nudo:interface-param-mismatch（旧行为：零诊断）", () => {
-    const m = r.issues.filter((i) => i.code === "nudo:interface-param-mismatch");
+  it("调用方看到 nudo:contract-param-mismatch（旧行为：零诊断）", () => {
+    const m = r.issues.filter((i) => i.code === "nudo:contract-param-mismatch");
     expect(m).toHaveLength(1);
     expect(m[0]!.fn).toBe("scale");
     expect(m[0]!.severity).toBe("error");
@@ -70,7 +70,7 @@ describe("Bug 1023 跨模块对照组：契约形参名对得上 ⇒ 不报 mism
   const r = run(SIDE_OK);
   it("无 param-mismatch", () => {
     expect(
-      r.issues.some((i) => i.code === "nudo:interface-param-mismatch"),
+      r.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(false);
   });
   it("调用点的负参违例照旧执法（跨模块 L1 扫描）", () => {
@@ -107,7 +107,7 @@ export const r = grade({ card: { grade: -1 } });
   });
   it("不报 param-mismatch（点路径名在契约面内）", () => {
     expect(
-      r.issues.some((i) => i.code === "nudo:interface-param-mismatch"),
+      r.issues.some((i) => i.code === "nudo:contract-param-mismatch"),
     ).toBe(false);
   });
   it("点路径实参义务照旧执法", () => {

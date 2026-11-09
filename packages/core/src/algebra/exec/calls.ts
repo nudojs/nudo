@@ -47,7 +47,7 @@ import {
   contractFacesOf,
   presentCallResultFace,
   resolveContractFacesByName,
-} from "../interface/contract-face.ts";
+} from "../contract/contract-face.ts";
 
 export type EvalCallRecord = {
   fnName: string;

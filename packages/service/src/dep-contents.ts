@@ -1,5 +1,5 @@
 /**
- * check/iface 磁盘缓存键的依赖内容采集。
+ * check/contract 磁盘缓存键的依赖内容采集。
  * 走 core `loadModuleDepsFingerprint`：覆盖 ESM from / require / dynamic import /
  * `@nudo:import` / ambient 侧车闭包——不只 `@nudo:import` 注释。
  *
@@ -19,7 +19,7 @@ export function collectLoadDepContents(
 ): { depContents: DepContent[]; truncated: boolean } {
   const fp = loadModuleDepsFingerprint(source, loadModule, filePath);
   // Prefer loadModule-resolved content; path is absolute here —
-  // checkCacheKey / ifaceCacheKey relativize via projectDir.
+  // checkCacheKey / contractCacheKey relativize via projectDir.
   const depContents: DepContent[] =
     fp.contents.length > 0
       ? fp.contents

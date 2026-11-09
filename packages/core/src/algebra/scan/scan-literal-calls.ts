@@ -6,7 +6,7 @@
  *
  * ── 族 11 / S0：本文件已重排为**薄壳** ─────────────────────────────────────
  *
- * 职责只剩「**遍历 + 编排**」：AST 走查、契约绑定（effectiveInterface →
+ * 职责只剩「**遍历 + 编排**」：AST 走查、契约绑定（effectiveContract →
  * 形参位索引）、调用点分发（本地 / 跨文件 / 转发）、HOF 实参形状检查。
  * 三块**纯计算**的职责已抽到同包的内部模块（**只在 core 包内相对 import**，
  * **零新增 core 公开导出** —— `src/index.ts` / `algebra/index.ts` /
@@ -32,10 +32,10 @@ import { parseSource as parse } from "../parse-source.ts";
 import type { RefineEntry } from "../refine.ts";
 import { instantiateConstraint } from "../constraint.ts";
 import {
-  effectiveInterface,
-  type EffectiveInterface,
-  type EffectiveInterfaceOpts,
-} from "../interface/interface.ts";
+  effectiveContract,
+  type EffectiveContract,
+  type EffectiveContractOpts,
+} from "../contract/contract.ts";
 import { generalizeFromAst, type PolyFn } from "../generalize.ts";
 import { checkCallSite } from "../diagnostics/diagnostics.ts";
 import { locateContractParam, withOptionalParams, type FormalParam } from "../format/param-surface.ts";
@@ -146,36 +146,36 @@ export function scanLiteralCalls(
   };
 
   /**
-   * effectiveInterface（§11 唯一读取口）调用侧收口：
+   * effectiveContract（§11 唯一读取口）调用侧收口：
    * - 同次扫描内按 (fn, fromFile, autoBind) 缓存——localNamedExports 走
    *   errorRecovery 解析不进 parse LRU，逐调用点重解析会放大开销。
    * - §3.3 执法分档：只有 handwritten 契约执法；generated 段是事实快照
    *   （drift 由后续检查报），implicit 无契约。
    */
-  const eiCache = new Map<string, EffectiveInterface | undefined>();
-  const effectiveInterfaceOf = (
+  const eiCache = new Map<string, EffectiveContract | undefined>();
+  const effectiveContractOf = (
     fnName: string,
     fnSource: string,
-    eiOpts: EffectiveInterfaceOpts,
-  ): EffectiveInterface | undefined => {
+    eiOpts: EffectiveContractOpts,
+  ): EffectiveContract | undefined => {
     // 等长不同内容不得串缓存（跨文件 checkExternalCall 场景）
     const key = `${fnName}\u0000${eiOpts.fromFile ?? ""}\u0000${eiOpts.autoBind === false ? "0" : "1"}\u0000${eiOpts.projectDir ?? "-"}\u0000${hashSource(fnSource)}`;
     if (eiCache.has(key)) return eiCache.get(key);
-    const r = effectiveInterface(fnSource, fnName, eiOpts);
+    const r = effectiveContract(fnSource, fnName, eiOpts);
     eiCache.set(key, r);
     return r;
   };
 
-  /** effectiveInterface → [paramIdx, RefineEntry, fieldPath?, rest?]（C4.1：解构契约带
+  /** effectiveContract → [paramIdx, RefineEntry, fieldPath?, rest?]（C4.1：解构契约带
    *  字段投影；#137：fieldPath 为多段路径，展示用点连接串 = fieldPath.join(".")）
-   *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / interface.ts conflict 注释）
+   *  conflict 位跳过：契约本身不可满足时调用点不该被当成违例（§2.1 / contract.ts conflict 注释）
    *
    *  Bug 400：第 4 位 = **rest 形参**标记。`locateContractParam` 明明算出了
    *  `hit.rest`，此前在 `entries.push` 里被**丢掉** ⇒ 下游（执法侧）无从知道
    *  「这个形参吃的是该位之后的**全部**实参」⇒ rest 形参拿到的是**首个**实参
    *  ⇒ 合法调用被误判（「实参 1 ⊭ array 约束」）。 */
-  const interfaceToIndexed = (
-    ei: EffectiveInterface,
+  const contractToIndexed = (
+    ei: EffectiveContract,
     paramNames: string[],
     formals?: FormalParam[],
   ): Array<
@@ -231,14 +231,14 @@ export function scanLiteralCalls(
    * 的 `.optional()`）是「该位可省略」的**权威**来源（Bug 536 的「三来源」序：
    * 契约级 > 实现签名）⇒ 执法面的元数检查必须同源，否则同一份契约
    * 「产物说可省、check 说必填」⇒ TS 合法调用被判 `nudo:arg-count`（假红，
-   * BUG-197）。位次映射与 `interfaceToIndexed` **同一套规则**（展示名直接命中
+   * BUG-197）。位次映射与 `contractToIndexed` **同一套规则**（展示名直接命中
    * → `locateContractParam`），本地调用与跨文件调用共用本函数 ⇒ 两面同口径。
    *
    * §3.3 执法分档：只有 handwritten 契约执法（generated 段是事实快照、implicit
    * 无契约）⇒ 其它来源返回空集，与 `checkReqs` 的执法面一致。
    */
   const contractOptionalIndexes = (
-    ei: EffectiveInterface | undefined,
+    ei: EffectiveContract | undefined,
     paramNames: string[],
     formals?: FormalParam[],
   ): ReadonlySet<number> => {
@@ -257,7 +257,7 @@ export function scanLiteralCalls(
     return optional;
   };
 
-  // nudo:interface-conflict 只在 check.ts fn 级报告（权威面）：conflict 必然
+  // nudo:contract-conflict 只在 check.ts fn 级报告（权威面）：conflict 必然
   // 蕴含源文件含 @nudo:contract/@nudo:contract，fn 级门恒开且必然已报——
   // 调用点级再报一次只会双报两种消息形态（此处历史上曾重复，已收口）。
 
@@ -375,13 +375,13 @@ export function scanLiteralCalls(
     // schema）同源 ⇒ 元数检查之前先取有效契约。此前 arityFace 只看实现签名
     // （`x?: T` / 默认参）⇒ 契约 `.optional()` 位在 check 面被当必填 ⇒ TS 合法
     // 调用被判 `nudo:arg-count`（假红），而同一契约的 dts 产物写 `b?: number`。
-    const optsR: EffectiveInterfaceOpts = {
+    const optsR: EffectiveContractOpts = {
       loadModule: opts?.loadModule,
       fromFile: opts?.fromFile ?? "",
       ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
       ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
     };
-    const ownEi = effectiveInterfaceOf(fnName, source, optsR);
+    const ownEi = effectiveContractOf(fnName, source, optsR);
     const contractOptional = contractOptionalIndexes(ownEi, g?.params ?? [], g?.formals);
     out.push(
       ...checkCallSite(source, fnName, absArgs, {
@@ -408,7 +408,7 @@ export function scanLiteralCalls(
     const paramNames = g?.params ?? [];
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
-      const ownFull = interfaceToIndexed(ownEi, paramNames, g?.formals);
+      const ownFull = contractToIndexed(ownEi, paramNames, g?.formals);
       // Bug 1114：结构通道先跑 ⇒ 它报过的实参位（「实参不是 object」）传给谓词
       // 通道**让位** ⇒ 同一条违例只报一次。
       const notObject = checkShapeReqs(
@@ -446,8 +446,8 @@ export function scanLiteralCalls(
     if (fwd) {
       const tg = generalizeFromAst(fwd.target, source, file ? { file } : {});
       const tParams = tg?.params ?? [];
-      const tEi = effectiveInterfaceOf(fwd.target, source, optsR);
-      const tFull = tEi?.source === "handwritten" ? interfaceToIndexed(tEi, tParams, tg?.formals) : [];
+      const tEi = effectiveContractOf(fwd.target, source, optsR);
+      const tFull = tEi?.source === "handwritten" ? contractToIndexed(tEi, tParams, tg?.formals) : [];
       if (tFull.length > 0) {
         const wrapperArgOfTarget = new Map<number, number>();
         fwd.map.forEach((wrapperIdx, targetIdx) => {
@@ -536,14 +536,14 @@ export function scanLiteralCalls(
       const g = generalizeFromAst(ext.fnName, ext.source);
       paramNames = g?.params ?? [];
       // 跨文件侧车只在拿到定义文件路径时 ambient 绑定（防误绑到本文件侧车）
-      const eiOpts: EffectiveInterfaceOpts = {
+      const eiOpts: EffectiveContractOpts = {
         loadModule: opts?.loadModule,
         fromFile: ext.fromFile ?? opts?.fromFile ?? "",
         ...(ext.fromFile ? {} : { autoBind: false }),
         ...(ext.fromFile && opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         ...(opts?.projectDir !== undefined ? { projectDir: opts.projectDir } : {}),
       };
-      const ei = effectiveInterfaceOf(ext.fnName, ext.source, eiOpts);
+      const ei = effectiveContractOf(ext.fnName, ext.source, eiOpts);
       // BUG-197：契约级可选位 —— 与本地调用**共用** `contractOptionalIndexes`
       // （同一套位次映射 + 同一 handwritten 档）⇒ 本地 / 跨文件两面同结论。
       const contractOptional = contractOptionalIndexes(ei, paramNames, g?.formals);
@@ -562,7 +562,7 @@ export function scanLiteralCalls(
       );
       // §3.3 执法分档：仅 handwritten 执法；generated 段不执法
       if (ei?.source === "handwritten") {
-        full = interfaceToIndexed(ei, paramNames, g?.formals);
+        full = contractToIndexed(ei, paramNames, g?.formals);
       }
     } catch {
       // 外部被调契约解析失败：不再静默放弃执法——报 warning 便于定位
@@ -666,7 +666,7 @@ export function scanLiteralCalls(
   /**
    * 调用点结构检查。
    *
-   * 契约模型（close-ts-dx-gaps §0.1）：义务只来自显式 interface / HOF 关系；
+   * 契约模型（close-ts-dx-gaps §0.1）：义务只来自显式 contract / HOF 关系；
    * **不做** body AST → 必填 slot 预扫描（collectParamStructReqs 已移除）。
    * 本函数仅保留 HOF 实参（回调可调用性 / arity）检查。
    */
@@ -677,7 +677,7 @@ export function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
     displayName?: string,
     /** 跨文件时 ext 定义文件路径（refine/侧车解析的文件基准）；同文件忽略 */
-    interfaceFromFile?: string,
+    contractFromFile?: string,
   ): void => {
     let gFn: ReturnType<typeof generalizeFromAst>;
     try {
@@ -686,7 +686,7 @@ export function scanLiteralCalls(
       // fromFile ⇒ 被调方的契约解析会去读**调用方**的侧车（同名契约错配、
       // 孤儿导出误报）。跨文件时用 ext 的定义文件路径。
       const refineFromFile =
-        !sameFile && interfaceFromFile ? interfaceFromFile : (opts?.fromFile ?? "");
+        !sameFile && contractFromFile ? contractFromFile : (opts?.fromFile ?? "");
       gFn = generalizeFromAst(
         fnName,
         fnSource,

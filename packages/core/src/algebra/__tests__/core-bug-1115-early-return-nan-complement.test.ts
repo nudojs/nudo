@@ -30,7 +30,7 @@ import {checkSource, pTrue} from "../index.ts";
 import {resetCheckSourceMemo} from "../check/check.ts";
 import {resetGeneralizeMemo} from "../generalize.ts";
 import {resetNudoModuleExecCache, takeRefineDiags} from "../refine.ts";
-import {resetSidecarLoadFailureCache, takeInterfaceDiags} from "../interface/interface.ts";
+import {resetSidecarLoadFailureCache, takeContractDiags} from "../contract/contract.ts";
 import {resetParseSourceCache} from "../parse-source.ts";
 import {resetAbsCallBudget, resetEvalForkBudget} from "../call-budget.ts";
 import {withStdImport, stdOpts} from "./nudo-constraints.ts";
@@ -65,7 +65,7 @@ describe("Bug 1115：早返回的关系补集不再默认「x 不是 NaN」（�
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();

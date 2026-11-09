@@ -274,7 +274,7 @@ function f(x) {
     expect(
       diags.some(
         (d) =>
-          d.code === "nudo:interface-load" &&
+          d.code === "nudo:contract-load" &&
           d.message.includes("has no export 'nope'"),
       ),
     ).toBe(true);
@@ -329,7 +329,7 @@ describe("@nudo:import 原型链名（PR #80 F2）", () => {
     expect(
       takeRefineDiags().some(
         (d) =>
-          d.code === "nudo:interface-load" &&
+          d.code === "nudo:contract-load" &&
           d.message.includes("has no export 'toString'"),
       ),
     ).toBe(true);
@@ -346,7 +346,7 @@ describe("@nudo:import 原型链名（PR #80 F2）", () => {
     expect(
       takeRefineDiags().some(
         (d) =>
-          d.code === "nudo:interface-load" &&
+          d.code === "nudo:contract-load" &&
           d.message.includes("is not an injected builder"),
       ),
     ).toBe(true);

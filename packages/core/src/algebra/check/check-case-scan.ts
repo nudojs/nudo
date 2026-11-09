@@ -7,8 +7,8 @@
  * 一份拷贝漂移的事故）：标量（数字/字符串/布尔/null/undefined）与结构
  * （对象 / 数组字面量）都参与对账；**认不出的实参产可见诊断**
  * （nudo:directive-syntax），不再静默跳过。
- * 有效契约走 effectiveInterface：只执法 handwritten（generated 段 = 事实
- * 快照不执法）；conflict 参数已由 fn 级 nudo:interface-conflict 覆盖，跳过。
+ * 有效契约走 effectiveContract：只执法 handwritten（generated 段 = 事实
+ * 快照不执法）；conflict 参数已由 fn 级 nudo:contract-conflict 覆盖，跳过。
  */
 
 import { parseSource as parse } from "../parse-source.ts";
@@ -31,7 +31,7 @@ import {
 } from "../constraint.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import { generalizeFromAst } from "../generalize.ts";
-import { effectiveInterface, formatConstraint } from "../interface/interface.ts";
+import { effectiveContract, formatConstraint } from "../contract/contract.ts";
 import { locateContractParam } from "../format/param-surface.ts";
 import { getSlot, getProtoAbs } from "../objects.ts";
 import { mayBeUndefinedAbs, nonUndefinedAbsValues } from "../leq.ts";
@@ -467,8 +467,8 @@ function witnessViolations(
 /**
  * case 是契约的见证：`@nudo:case` 实参 ⊄ refine → nudo:case-inconsistency。
  * 只检查字面量实参（数字/字符串/布尔/null）；非字面量跳过，不猜。
- * 有效契约走 effectiveInterface：只执法 handwritten（generated 段 = 事实
- * 快照不执法）；conflict 参数已由 fn 级 nudo:interface-conflict 覆盖，跳过。
+ * 有效契约走 effectiveContract：只执法 handwritten（generated 段 = 事实
+ * 快照不执法）；conflict 参数已由 fn 级 nudo:contract-conflict 覆盖，跳过。
  */
 // ---------------------------------------------------------------------------
 // @nudo:case 见证不一致（scanCaseInconsistency）
@@ -517,7 +517,7 @@ export function scanCaseInconsistency(
     if (!g) return;
     const paramNames = g.params;
     // 有效契约单点读取：只执法 handwritten（generated/implicit 不执法）
-    const eff = effectiveInterface(source, fnName, {
+    const eff = effectiveContract(source, fnName, {
       loadModule: opts.loadModule,
       fromFile: opts.fromFile ?? "",
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),

@@ -1,13 +1,13 @@
 /**
  * BUG-199：`nudo health` 的 contract drift 口径（`checkSource` 的
- * `nudo:interface-drift` = **@generated 槽的内容**）与
+ * `nudo:contract-drift` = **@generated 槽的内容**）与
  * `nudo contract --emit --dry-run --exit-on-diff` 的口径（**整段文本**，含段头
  * 标签 `// derived-from:`）**不同** ⇒ 段头漂移**只对 emit 可见** ⇒ 同一份侧车
  * health「0 contract drift / Result: OK / exit 0」、emit「会变 / exit 1」
  * （两面结论矛盾）。
  *
  * 修复：health 补一条「直写发射器说侧车会变 ⇒ 也是漂移」的**段文本**通道
- * （`emitInterface` + `dryRun`，与 emit 的 `changed` 判据逐字同源）⇒ 两面同结论。
+ * （`emitContract` + `dryRun`，与 emit 的 `changed` 判据逐字同源）⇒ 两面同结论。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

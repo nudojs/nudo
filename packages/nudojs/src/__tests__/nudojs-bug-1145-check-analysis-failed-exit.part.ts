@@ -30,7 +30,7 @@ import {
   resetNudoModuleExecCache,
   resetParseSourceCache,
   resetSidecarLoadFailureCache,
-  takeInterfaceDiags,
+  takeContractDiags,
   takeRefineDiags,
 } from "@nudojs/core";
 import { resetAbsCallBudget, resetEvalForkBudget } from "@nudojs/core/internal";
@@ -75,7 +75,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   takeRefineDiags();
   resetSidecarLoadFailureCache();
-  takeInterfaceDiags();
+  takeContractDiags();
   resetParseSourceCache();
   resetAbsCallBudget();
   resetEvalForkBudget();

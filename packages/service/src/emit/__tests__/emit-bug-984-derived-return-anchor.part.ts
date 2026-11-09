@@ -18,7 +18,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatConstraint } from "@nudojs/core";
-import { deriveFromRoot, emitDerivedFromRoot } from "../interface-derivation.ts";
+import { deriveFromRoot, emitDerivedFromRoot } from "../contract-derivation.ts";
 
 let dir: string;
 

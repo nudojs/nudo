@@ -75,7 +75,7 @@ function upper(s) {
 The lens row is an **observation selector** — contract is one option alongside each case, exactly one active (`●`) at a time:
 
 - **● contract / hw|gen|imp** — the contract option (handwritten / generated / implicit tier); the default. Click to switch back to the contract observation (`nudo.selectContract`); idempotent when already active
-- **⚡ persist interface** / **↻ update interface** — freeze call-site domains into the `*.nudo.js` sidecar
+- **⚡ persist contract** / **↻ update contract** — freeze call-site domains into the `*.nudo.js` sidecar
 - **● / ○ case "name"** — click selects the active case for type replay (`nudo.selectCase`); the contract option flips to `○`
 
 Hover on an exported function name shows the same `● contract / hw\|gen\|imp` line (A7 same-source). The active case is highlighted with a distinct style in VS Code.
@@ -152,9 +152,9 @@ Two more notes:
 | Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
 | Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow; from the palette the function is picked interactively, and the same three-step gate applies |
 
-CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.contract.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
+CodeLens on non-handwritten exports includes `⚡ draft contract` — same path as CLI `--draft` and agent `nudo.contract.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
 
-Run from the command palette, these commands work on the **active editor** (no file argument needed): **Show Contract** and **Draft Contract** are file-granular, while **Persist Contract (@generated)** asks which function to persist with a **QuickPick** over the file's persistable exports — the same set the server's `⚡ persist interface` / `↻ update interface` CodeLens offers. If the file has no persistable function, the command reports that there is none (there is no free-text fallback). The three-step gate is the same on both paths: the dry-run never writes, a failed dry-run offers no write action at all, and the sidecar is written only after you confirm.
+Run from the command palette, these commands work on the **active editor** (no file argument needed): **Show Contract** and **Draft Contract** are file-granular, while **Persist Contract (@generated)** asks which function to persist with a **QuickPick** over the file's persistable exports — the same set the server's `⚡ persist contract` / `↻ update contract` CodeLens offers. If the file has no persistable function, the command reports that there is none (there is no free-text fallback). The three-step gate is the same on both paths: the dry-run never writes, a failed dry-run offers no write action at all, and the sidecar is written only after you confirm.
 
 ---
 
@@ -181,7 +181,7 @@ The Nudo language server is designed to stay small next to your other tooling:
 | Rename Symbol     | Rename symbol and all references (`F2`)                  |
 | Signature Help    | Parameter hints inside function calls                    |
 | Code Actions      | Quick fixes for diagnostics                              |
-| Semantic Tokens   | Type-aware highlighting + interface-tier modifiers       |
+| Semantic Tokens   | Type-aware highlighting + contract-tier modifiers       |
 | Status bar        | "Nudo" indicator when active                             |
 | Command           | `nudo.selectCase` / `nudo.contract` / `nudo.contract.emit` |
 

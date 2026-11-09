@@ -3,7 +3,7 @@
  *
  * 症状：`lib.nudo.js` 里 `export const positive = number().gt(0)`（值模板）
  * 不是引擎消费的契约形态（引擎只消费 `fn({ … }, …)` 形态的导出绑定，
- * 见 packages/core/src/algebra/interface.ts），但 F12 仍跳到它 ⇒ 用户
+ * 见 packages/core/src/algebra/contract.ts），但 F12 仍跳到它 ⇒ 用户
  * 改多少都不会生效（与 hover / codeLens 的 imp、CLI 的 [implicit] 矛盾）。
  */
 import { describe, it, expect, afterEach } from "vitest";

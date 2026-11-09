@@ -22,7 +22,7 @@
  *   ⇒ **有** `nudo:may-throw`（口径不变）；
  * - 负控制：申报 `Error`（Error 族）覆盖实测 `TypeError` ⇒ 无 `nudo:may-throw`
  *   （族覆盖口径与 check 面一致）；
- * - 负控制：坏侧车（加载失败）⇒ `nudo:interface-load` 仍报（memo 化不得吞掉
+ * - 负控制：坏侧车（加载失败）⇒ `nudo:contract-load` 仍报（memo 化不得吞掉
  *   core 的「同 (路径, 原因) 只报一次」去重项）。
  */
 import { describe, it, expect } from "vitest";
@@ -109,13 +109,13 @@ export function f(x) { throw new TypeError("x"); }
     expect(mayThrowCount({ "f.js": src })).toBe(0);
   });
 
-  it("负控制：坏侧车 ⇒ nudo:interface-load 仍报（memo 化不得吞掉加载失败）", () => {
+  it("负控制：坏侧车 ⇒ nudo:contract-load 仍报（memo 化不得吞掉加载失败）", () => {
     const diags = analyzeDiags({
       "f.js": THROWING_CASE,
       "f.nudo.js": `import { fn, number } from "@nudojs/core";
 export const f = fn({ x: number(
 `,
     });
-    expect(diags.filter((d) => d.code === "nudo:interface-load").length).toBeGreaterThan(0);
+    expect(diags.filter((d) => d.code === "nudo:contract-load").length).toBeGreaterThan(0);
   });
 });

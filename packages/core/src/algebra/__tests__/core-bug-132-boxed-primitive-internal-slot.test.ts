@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { call, val, tupleEls } from "./eval-helpers.ts";
 import { BOXED_PRIMITIVE_SLOT, makeBoxedAbs } from "../builtins/error/boxed.ts";
-import { isHiddenInternalSlot } from "../interface/slot-visibility.ts";
+import { isHiddenInternalSlot } from "../contract/slot-visibility.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import type { Slot } from "../objects.ts";
 

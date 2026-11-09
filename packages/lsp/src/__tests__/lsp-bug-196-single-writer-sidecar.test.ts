@@ -3,7 +3,7 @@
  *
  * 症状（改前）：agent 工具仍是旧的「派生 → 直写」双路顺序 ——
  * ① `emitDerivedFromRoot` 先写根侧车（段 = 4 行，含 `// derived-from:` 溯源行）；
- * ② `emitInterface` 随后**整段重写**同一段（段 = 3 行，无溯源行）。
+ * ② `emitContract` 随后**整段重写**同一段（段 = 3 行，无溯源行）。
  * ⇒ 溯源行**永不落盘**，而报告 / 判定 / dry-run 预览仍按「有溯源行」算：
  *   落盘、判定、预览三者不同源（CLI 侧 BUG-196 的同类缺陷，改后单写者）。
  *
@@ -134,7 +134,7 @@ describe("Bug 196（LSP 面）：contract.emit 的根侧车单写者", () => {
       expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
       // 收敛后没有净变化 ⇒ 不写盘（否则就是 BUG-122 的「假 Updated」）
       expect(sidecarWrites(sidecar)).toHaveLength(0);
-      expect(again.content[0].text).toContain("no interface changes");
+      expect(again.content[0].text).toContain("no contract changes");
       expect(again.content[0].text).not.toContain("Updated");
     } finally {
       rmSync(dir, { recursive: true, force: true });

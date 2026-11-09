@@ -1,5 +1,5 @@
 /**
- * Bug 1064 —— 侧车装载失败（`nudo:interface-load`）在 **check 门禁面彻底隐形**
+ * Bug 1064 —— 侧车装载失败（`nudo:contract-load`）在 **check 门禁面彻底隐形**
  * ⇒ 门禁假绿（exit 0）。
  *
  * 根因在 core（`packages/core/src/algebra/refine.ts`）：侧车装载诊断在
@@ -23,7 +23,7 @@ import {
 } from "../refine.ts";
 import { runWithCollectorScope } from "../collector-scope.ts";
 
-/** 侧车 import 了一个非构建器名 ⇒ 装载期报 nudo:interface-load */
+/** 侧车 import 了一个非构建器名 ⇒ 装载期报 nudo:contract-load */
 const BAD_SIDECAR = `import { fn, number, totallyBogus } from "@nudojs/core";
 export const f = fn({ x: number() });
 `;
@@ -33,7 +33,7 @@ function execInScope(fromFile: string): string[] {
   return runWithCollectorScope(() => {
     execNudoModule(BAD_SIDECAR, { fromFile });
     return takeRefineDiags()
-      .filter((d) => d.code === "nudo:interface-load")
+      .filter((d) => d.code === "nudo:contract-load")
       .map((d) => d.message);
   });
 }
@@ -49,14 +49,14 @@ function execInScopeWithExports(fromFile: string): {
   return runWithCollectorScope(() => {
     const exports = execNudoModule(BAD_SIDECAR, { fromFile });
     const msgs = takeRefineDiags()
-      .filter((d) => d.code === "nudo:interface-load")
+      .filter((d) => d.code === "nudo:contract-load")
       .map((d) => d.message);
     return { exports, msgs };
   });
 }
 
 describe("bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重发）", () => {
-  it("第二个分析作用域（exec 缓存命中）仍报 interface-load", () => {
+  it("第二个分析作用域（exec 缓存命中）仍报 contract-load", () => {
     resetNudoModuleExecCache();
     const fromFile = "/tmp/bug1064/lib.nudo.js";
 
@@ -78,7 +78,7 @@ describe("bug 1064: 侧车装载诊断随 exec 结果缓存（缓存命中时重
       execNudoModule(BAD_SIDECAR, { fromFile });
       execNudoModule(BAD_SIDECAR, { fromFile });
       return takeRefineDiags()
-        .filter((d) => d.code === "nudo:interface-load")
+        .filter((d) => d.code === "nudo:contract-load")
         .map((d) => d.message);
     });
     expect(msgs.filter((m) => m.includes("is not an injected builder"))).toHaveLength(1);

@@ -4,7 +4,7 @@
  *
  * 场景：侧车里既有**手写段**（`tag`），源里又有同名导出 ⇒ 派生分支
  * （`emitDerivedFromRoot`，段是 4 行版，含 `// derived-from:`）先写，
- * 主分支（`emitInterface`，段是 3 行版）后写并**整段替换** ⇒ 落盘**净变化 0**
+ * 主分支（`emitContract`，段是 3 行版）后写并**整段替换** ⇒ 落盘**净变化 0**
  * （md5 不变），但
  * ① 报告说「Updated … written: wrap,tag」（审计台账被污染）；
  * ② `--dry-run` 打印一份**永不落盘**的 diff（要求加 `// derived-from:` 行）；
@@ -94,7 +94,7 @@ describe("nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效�
     const r2 = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
     expect(r2.status).toBe(0);
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR_CONVERGED);
-    expect(r2.stdout).toContain("no interface changes");
+    expect(r2.stdout).toContain("no contract changes");
     expect(r2.stdout).not.toContain("Updated");
   }, 60000); // 2 个 CLI 子进程（tsx 冷启动）
 
@@ -124,7 +124,7 @@ describe("nudo contract --emit · BUG-122 · 派生分支 vs 主分支 = 净效�
     });
     expect(r2.status).toBe(0);
     expect(r2.stdout).not.toContain("would update");
-    expect(r2.stdout).toContain("no interface changes");
+    expect(r2.stdout).toContain("no contract changes");
   }, 60000); // 3 个 CLI 子进程
 
   it("对照组：真有净漂移 ⇒ dry-run 打 diff 且 --exit-on-diff exit 1（门禁没被关掉）", () => {

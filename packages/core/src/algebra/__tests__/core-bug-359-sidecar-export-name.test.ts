@@ -6,7 +6,7 @@
  * 源码身份是**本地名**（_c / f）。旧诊断点名源码本地名 ⇒ 用户照着去侧车
  * 里找一个根本不存在的导出。
  *
- * 修法：interface.ts 诊断改用绑定键解析出来的**侧车导出名**
+ * 修法：contract.ts 诊断改用绑定键解析出来的**侧车导出名**
  * （bindingLabel），必要时同时给出源码函数名。
  */
 import { describe, it, expect, beforeEach } from "vitest";
@@ -14,7 +14,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
 describe("Bug 359 侧车形态诊断点名侧车真名", () => {
@@ -34,7 +34,7 @@ describe("Bug 359 侧车形态诊断点名侧车真名", () => {
       loadModule,
       fromFile: "/t/lib.js",
     });
-    const diags = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const diags = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(diags).toHaveLength(1);
     expect(diags[0]!.message).toContain("'class'");
     expect(diags[0]!.message).not.toContain("export '_c'");
@@ -51,7 +51,7 @@ describe("Bug 359 侧车形态诊断点名侧车真名", () => {
       loadModule,
       fromFile: "/t/def.js",
     });
-    const diags = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const diags = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(diags).toHaveLength(1);
     expect(diags[0]!.message).toContain("'default'");
     expect(diags[0]!.message).not.toContain("export 'f'");

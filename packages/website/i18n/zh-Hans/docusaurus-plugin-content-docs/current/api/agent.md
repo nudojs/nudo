@@ -53,13 +53,13 @@ description: "Agent API —— 语言服务器内的 nudo.* 命令：check（Abs
 | `nudo:assign-mismatch` | 赋值 ⊭ 既有绑定形状 |
 | `nudo:arg-structure` | HOF：实参不是可调用 fn / arity 不匹配 |
 | `nudo:case-inconsistency` | `@nudo:case` 见证 ⊭ refine |
-| `nudo:interface-param-mismatch` | 手写契约的形参名不在形参面上 |
-| `nudo:interface-conflict` | 手写契约的合取不可满足 |
-| `nudo:interface-load` / `nudo:interface-cycle` | 侧车装载失败 / 循环 |
-| `nudo:interface-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
-| `nudo:interface-name-clash` | 侧车导出名与源导出重名 |
-| `nudo:interface-underivable` | 派生契约行无法从源证据推导（**info**；手写契约永不触发它） |
-| `nudo:interface-drift` | `@generated` 段 ≠ 重算结果（warning） |
+| `nudo:contract-param-mismatch` | 手写契约的形参名不在形参面上 |
+| `nudo:contract-conflict` | 手写契约的合取不可满足 |
+| `nudo:contract-load` / `nudo:contract-cycle` | 侧车装载失败 / 循环 |
+| `nudo:contract-domain-exceeds` | 跨文件调用证据 ⊄ 手写契约 |
+| `nudo:contract-name-clash` | 侧车导出名与源导出重名 |
+| `nudo:contract-underivable` | 派生契约行无法从源证据推导（**info**；手写契约永不触发它） |
+| `nudo:contract-drift` | `@generated` 段 ≠ 重算结果（warning） |
 | `nudo:no-signature` | 无符号化 Abs 签名（**warning**；L2 仍可能经 entry 回退生效） |
 | `nudo:opaque-result` | 不透明求值 |
 
@@ -232,7 +232,7 @@ Interface 产品面（与 CLI 同一数据源）：
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | 打印 `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | 代码优先草稿模块（`@nudo:draft`）；`write: true` 落盘 `*.nudo.draft.js` / `*.nudo.draft.ts`（从不碰 ambient 绑定）。body 读字段仅作**建议**。`write: true` **无项目根时 fail-closed**（nudo 配置 / `package.json` 祖先）——与 CLI `--draft --write` 同口径（覆盖：`NUDO_DRAFT_FORCE=1`） |
-| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | 通过 `emitInterface` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | 通过 `emitContract` 固化调用点域。`dryRun: true` 只预览不写盘：返回同形结果（路径、would-change、unifiedDiff）与 `[dry-run] would update …` 文本；不会新建/修改侧车文件。VS Code Persist/CodeLens 确认流程先发 `dryRun: true`，确认后再真实写盘 |
 
 `loadModule` 与有效 `autoBind` 由**服务端注入**（buffer-aware 侧车装载 + 项目 `package.json#nudo.contract.autoBind` AND 客户端请求）。它们不是可 JSON 序列化的请求参数——agent 不要发送。
 
@@ -286,12 +286,12 @@ Agent 工具来自 `AGENT_TOOL_SOURCES`（`packages/lsp/src/agent-tools.ts`）�
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
 | <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + mergeCheckIssues + serializeCheckJson | `nudo.check \| nudo/check` |
-| <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeInterfaceLenses + interfaceTierOf | — |
-| <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — interfaceSurface + formatInterfaceSurfaceLine | `nudo.contract \| nudo/contract` |
-| <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftInterface + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
-| <a id="contract.emit"></a>`contract.emit` | fn | nudo.contract.emit / `nudo/contract.emit` — emitInterface | `nudo.contract.emit \| nudo/contract.emit` |
+| <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeContractLenses + contractTierOf | — |
+| <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — contractSurface + formatContractSurfaceLine | `nudo.contract \| nudo/contract` |
+| <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftContract + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
+| <a id="contract.emit"></a>`contract.emit` | fn | nudo.contract.emit / `nudo/contract.emit` — emitContract | `nudo.contract.emit \| nudo/contract.emit` |
 | <a id="getactivecases"></a>`getActiveCases` | fn | nudo.getActiveCases / `nudo/getActiveCases` — editor command (not an agent tool) | `nudo.getActiveCases \| nudo/getActiveCases` |
-| <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + interfaceTierOf | `nudo.hover \| nudo/hover` |
+| <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + contractTierOf | `nudo.hover \| nudo/hover` |
 | <a id="selectcase"></a>`selectCase` | fn | nudo.selectCase / `nudo/selectCase` — editor command (not an agent tool) | `nudo.selectCase \| nudo/selectCase` |
 | <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFileAsync + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
 | <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFileAsync + buildTestReport + serializeCaseJson | `nudo.test \| nudo/test` |

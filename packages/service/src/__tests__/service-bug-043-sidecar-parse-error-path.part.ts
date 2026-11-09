@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../emit/interface-emitter.ts";
+import { emitContract } from "../emit/contract-emitter.ts";
 
 let dir: string;
 
@@ -30,7 +30,7 @@ describe("BUG-043 —— 侧车解析失败必须点名侧车", () => {
     // 语法的确崩：`const x = ;`
     writeFileSync(join(dir, "lib.nudo.js"), `export const x = ;\n`, "utf-8");
 
-    await expect(emitInterface(join(dir, "lib.js"), { mode: "update", all: true })).rejects.toThrow(
+    await expect(emitContract(join(dir, "lib.js"), { mode: "update", all: true })).rejects.toThrow(
       /lib\.nudo\.js.*not parseable/,
     );
   });

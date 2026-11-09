@@ -62,7 +62,7 @@ What lands on disk (namespaced subdirectories under the root):
 
 | Namespace | Content | Serves |
 |---|---|---|
-| `iface` | whole-file effectiveInterface tables (export → contract JSON, or implicit negative cache) | `nudo contract` printing / contract-read cold start |
+| `contract` | whole-file effectiveContract tables (export → contract JSON, or implicit negative cache) | `nudo contract` printing / contract-read cold start |
 | `check` | whole-file `CheckJson` reports | `nudo check` cold path for unchanged files — never with `--from` (live-injected evidence is not reusable as a whole report) |
 
 **Keys are content-addressed:** sha256 over source + sidecar + dependency contents + config dimensions (e.g. `contract.autoBind`), prefixed with the analysis ABI (`nudo-check-cache-v…+<version>`, which includes the TypeScript version — not `package.json#version`). Upgrading `@nudojs/*` changes the prefix → the whole layer misses cleanly. Change source, sidecar, or a dependency → the key changes → natural miss.

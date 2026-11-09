@@ -21,7 +21,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 import { execNudoModule } from "@nudojs/core";
 
 let dir: string;
@@ -51,7 +51,7 @@ describe("Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）",
   it("declares the builders used by the generated section in a .nudo.ts sidecar", async () => {
     const file = join(dir, "lib.ts");
     writeFileSync(file, TS_SRC);
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("sub");
 
     const sidecar = join(dir, "lib.nudo.ts");
@@ -66,10 +66,10 @@ describe("Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）",
   it("the .nudo.ts sidecar is idempotent (second emit reports no change)", async () => {
     const file = join(dir, "lib.ts");
     writeFileSync(file, TS_SRC);
-    await emitInterface(file, { mode: "update", all: true });
+    await emitContract(file, { mode: "update", all: true });
     const sidecar = join(dir, "lib.nudo.ts");
     const after = readFileSync(sidecar, "utf-8");
-    const second = await emitInterface(file, { mode: "update", all: true });
+    const second = await emitContract(file, { mode: "update", all: true });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
   });
@@ -77,7 +77,7 @@ describe("Bug 541 — .ts 侧车带 builder 类型声明（产物可过 tsc）",
   it("negative control: a .js sidecar gets no builder declaration (bare injection suffices)", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, JS_SRC);
-    const r = await emitInterface(file, { mode: "update", all: true });
+    const r = await emitContract(file, { mode: "update", all: true });
     expect(r.written).toContain("sub");
     const sidecar = join(dir, "lib.nudo.js");
     const after = readFileSync(sidecar, "utf-8");

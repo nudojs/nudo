@@ -15,7 +15,7 @@ import { localNamedExports } from "./scan-named-exports.ts";
 // 调用图收集（别名 / 对象属性 / require / 动态 import / 无条件转发）
 // ---------------------------------------------------------------------------
 
-/** 外部模块函数：源码 + 导出名 + 定义文件虚拟路径（interface 侧车解析基；不可得 → 省略） */
+/** 外部模块函数：源码 + 导出名 + 定义文件虚拟路径（contract 侧车解析基；不可得 → 省略） */
 export type ExternalFnRef = { source: string; fnName: string; fromFile?: string };
 
 /**
@@ -736,7 +736,7 @@ function requireExportName(init: Record<string, unknown>): string | undefined {
  * - 匿名 default 导出（`export default function (x) {}` / `export default (x) => x`）
  *   → undefined（调用方回落 "default"）
  *
- * 契约绑定面（interface.ts 的 binding）以**本地声明名**为键（`exports[fnName]`），
+ * 契约绑定面（contract.ts 的 binding）以**本地声明名**为键（`exports[fnName]`），
  * 侧车写 `export const calc = fn(…)` 时只有本地名能绑上 ⇒ 跨文件 default
  * 导入的调用点必须按本地名解析被调方，不能写死导出名 "default"。
  */
@@ -808,7 +808,7 @@ function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
 
 /**
  * 模块源码里找不到 fnName 时，沿 `export { fn } from '../other'` / `export * from` 一跳跟进。
- * 返回定义了该函数的源码及其虚拟路径——interface 侧车绑定按最终定义文件定位。
+ * 返回定义了该函数的源码及其虚拟路径——contract 侧车绑定按最终定义文件定位。
  * 跳转 spec 必须相对**当前中间模块**目录解析（不是原始调用方）：`a.js` →
  * `sub/b.js` → `./c.js` 的目标是 `sub/c.js`，不是与 `a.js` 同目录的 `c.js`。
  */
@@ -993,7 +993,7 @@ export function collectCallResolvers(
     if (!modCache.has(key)) modCache.set(key, loadGuarded(spec, from));
     return modCache.get(key);
   };
-  /** import spec → 被引模块的虚拟路径（interface 侧车解析基；无 fromFile 时不可得） */
+  /** import spec → 被引模块的虚拟路径（contract 侧车解析基；无 fromFile 时不可得） */
   const extFromFile = (spec: string): string | undefined =>
     fromFile ? resolveDepPath(fromFile, spec) : undefined;
   /** 当前走查节点所属作用域的帧（`visit` 每轮更新；`bindExternal` 用它落外部绑定） */
@@ -1128,7 +1128,7 @@ export function collectCallResolvers(
               // Bug 442：绑定名不能写死 "default"——被调方的**契约绑定名**是
               // default 导出的**本地声明名**（`export default function calc` →
               // "calc"；`export default calc` / `export { calc as default }` →
-              // "calc"），侧车按该名绑定（interface.ts 的 binding 走
+              // "calc"），侧车按该名绑定（contract.ts 的 binding 走
               // exports[fnName]）。写死 "default" 时三条绑定分支全部落空
               // ⇒ 具名侧车永远绑不上 ⇒ 跨文件 default 导入的调用点假绿。
               // 匿名 default 导出（`export default function (x) {}`）取不到
@@ -1260,7 +1260,7 @@ export function collectCallResolvers(
         // Bug 441 / 1154：本地类实例（const c = new C()）⇒ c.m ⇒ C.m。
         // 此前 memberToFn 只收**对象字面量**成员 ⇒ `c.m(-1)` 这类成员调用
         // 解析不出被调名 ⇒ 整条调用被跳过 ⇒ 类方法的侧车契约在任何调用点
-        // 都不执法（假绿）；而契约绑定面（interface.ts 的 C_m ↔ C.m）认得。
+        // 都不执法（假绿）；而契约绑定面（contract.ts 的 C_m ↔ C.m）认得。
         //
         // Bug 1154：绑定改由**类 AST 事实**驱动（own 实例方法；静态方法 /
         // 构造器 `this.m = …` / getter-setter / computed 不收）⇒ 不再按

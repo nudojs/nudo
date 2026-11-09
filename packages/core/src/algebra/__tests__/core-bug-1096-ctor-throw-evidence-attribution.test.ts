@@ -39,7 +39,7 @@ import { collectEntryMayThrows, declaredThrowsForEntry } from "../check/check-ma
 import { filterGateThrows } from "../diagnostics/may-throw.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { l2Count, sigOf, stdOpts } from "./nudo-constraints.ts";
 
 /**
@@ -53,7 +53,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   resetSidecarLoadFailureCache();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** 构造器**无条件抛**（可判定事实 ⇒ 必须可见） */

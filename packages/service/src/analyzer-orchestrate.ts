@@ -9,7 +9,7 @@
 import { dirname } from "node:path";
 import { setEvalFallbackCollector, type EvalFallback } from "@nudojs/core";
 import { DIAG, getEvalFallbackStats, runWithCollectorScope } from "@nudojs/core/internal";
-import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
+import { findProjectConfig, contractConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { absolutizeEnvSpec, preloadPathEnvs } from "./evaluator/env-loader.ts";
 import { analysisCacheGet, analysisCacheSet } from "./analysis-file-cache.ts";
@@ -172,7 +172,7 @@ export function analyzeFile(
       Array.isArray(rawProjectEnv) ? rawProjectEnv : [],
       projectEnvBaseDir,
     );
-    const autoBind = interfaceConfig(projectConfig?.config).autoBind;
+    const autoBind = contractConfig(projectConfig?.config).autoBind;
     const k = analysisFileCacheKey(
       filePath,
       source,

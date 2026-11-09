@@ -1,5 +1,5 @@
 /**
- * Bug 765 —— 「⚡ persist interface」不得按**未保存的 buffer** 写侧车。
+ * Bug 765 —— 「⚡ persist contract」不得按**未保存的 buffer** 写侧车。
  *
  * 症状（改前）：侧车守卫只挡了**侧车自己**的脏 buffer；源文件的脏 buffer
  * 没有对称守卫 ⇒ 侧车里落的是**未保存**的代码形状（3 参契约），

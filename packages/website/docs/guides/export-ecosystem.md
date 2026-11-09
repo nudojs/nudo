@@ -180,7 +180,7 @@ nudo export src/api/inline.js --format dts
 export declare function createUser(input: { name: string; age: number }): { id: 123; name: "Ada"; age: 36 };
 ```
 
-With multiple cases the signature stays single — params union and widen across cases; each case's precise result is preserved in the `Case:` JSDoc rows (debug extensional notes, not the interface product). To write `.d.ts` files under a directory: `nudo export <file> --format dts --out <dir>`.
+With multiple cases the signature stays single — params union and widen across cases; each case's precise result is preserved in the `Case:` JSDoc rows (debug extensional notes, not the contract product). To write `.d.ts` files under a directory: `nudo export <file> --format dts --out <dir>`.
 
 `dts` projects the **module export surface** — only `export` / `export default` / CJS `exports` bindings appear; non-exported top-level functions stay internal. Contracts and call-site evidence feed the same signature (same data source as `nudo check`); `@nudo:case` debug witnesses do **not** reach the published face — `nudo export` analyzes with `caseMode: "none"`, exactly like the gate: params with **no** contract/call-site evidence stay `any` — the same value `nudo check` prints for an unconstrained entry param.
 
@@ -259,5 +259,5 @@ Explicit `--entry-throws error|warning|off` overrides the profile. See [nudo che
 
 - [Competitive landscape](./competitive-landscape.md) — where Nudo sits vs schema libs / TS
 - [nudo check](./check.md) — the gate that stays the source of truth
-- [Contracts](./contract.md) — draft / accept / emit sidecar interfaces
+- [Contracts](./contract.md) — draft / accept / emit sidecar contracts
 - [CLI Reference](../api/cli-reference.md#nudo-export)

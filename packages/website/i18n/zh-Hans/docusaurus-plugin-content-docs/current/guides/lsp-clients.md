@@ -14,7 +14,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 
 | 客户端 | 角色 | 预期 |
 |--------|------|------|
-| **VS Code**（`wmzy.nudo-vscode`） | **旗舰** IDE 客户端 | 完整功能面：hover、CodeLens interface 档 + case 切换、inlay hints、装饰、agent 桥 |
+| **VS Code**（`wmzy.nudo-vscode`） | **旗舰** IDE 客户端 | 完整功能面：hover、CodeLens contract 档 + case 切换、inlay hints、装饰、agent 桥 |
 | **Zed** | 尽力而为 | 核心面可用（diagnostics / hover / rename）。CodeLens 需 `code_lens: "on"`；无 active-case 装饰 API |
 | **Helix** | 尽力而为 | Diagnostics / hover / definition / rename。**无 CodeLens UI**——同一数据请用 CLI `nudo contract` / `nudo check` |
 | **Neovim** | 尽力而为 | 核心面可用；CodeLens / semantic tokens / 装饰取决于插件 |
@@ -48,12 +48,12 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 文档 / 工作区符号 | 标准 LSP | |
 | Signature help | `onSignatureHelp` | 触发 `(`、`,`；投影真实 `paramTypes` / 返回（G7） |
 | Code actions（`quickfix`） | `onCodeAction` | 不可达代码清理；契约/参数修复（A6）；action-map quickfix（`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`） |
-| Semantic tokens（full） | `languages.semanticTokens` | 图例含 `contract` / `generated` / `derived` interface modifier（A7） |
+| Semantic tokens（full） | `languages.semanticTokens` | 图例含 `contract` / `generated` / `derived` contract modifier（A7） |
 | Execute command | `nudo.*` | `selectCase`、`contract`、`contract.draft`、`contract.emit`、agent 工具 |
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 完整门禁语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
+**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 完整门禁语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens contract 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
 
 **Zed / Nvim 协议冒烟（B4）：** `pnpm --filter @nudojs/lsp run smoke` 走一遍 stdio `initialize` → `textDocument/hover` → `textDocument/publishDiagnostics`——正是这些编辑器需要的基本面。VS Code 包有自带的 `smoke`（捆绑 server + initialize）。
 
@@ -65,9 +65,9 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 |------|:-------------------------:|:-----------------:|:------------------------:|:-----:|:--------------:|
 | 启动 | 扩展捆绑 `server.js`（IPC） | Zed 托管 npm（`@nudojs/lsp` → `node …/server.js --stdio`） | `cmd = nudo-lsp` | `command = nudo-lsp` | 启动 `nudo-lsp` 或 `node dist/server.js` |
 | Diagnostics | Y | Y | Y | Y | Y |
-| Hover（Abs + interface 档） | Y | Y | Y | Y | Y |
+| Hover（Abs + contract 档） | Y | Y | Y | Y | Y |
 | 补全 | Y | Y | Y | C | Y |
-| CodeLens interface + case | Y | C（`code_lens: "on"`） | C（插件因实现而异） | N | C（视客户端） |
+| CodeLens contract + case | Y | C（`code_lens: "on"`） | C（插件因实现而异） | N | C（视客户端） |
 | Inlay hints | Y | C（`inlay_hints.enabled`） | C | C | C |
 | 定义 / 引用 / 重命名 | Y | Y | Y | Y | Y |
 | 文档符号 | Y | Y | Y | Y | Y |
@@ -78,7 +78,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Active-case 装饰 | Y（扩展） | N | N | N | N |
 | Agent 命令（`nudo.check` / `nudo.hover` / …） | Y（executeCommand / MCP 桥） | Y（agent / custom request） | Y（custom LSP request） | C | Y |
 | 未保存侧车 buffer（A4） | Y | Y | Y | Y | Y |
-| buffer 感知的 interface agent 工具（E5） | Y | Y | Y | Y | Y |
+| buffer 感知的 contract agent 工具（E5） | Y | Y | Y | Y | Y |
 
 ## 配置要点（复制即用默认配置）
 
@@ -201,10 +201,10 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 | 表面 | 共享数据源 |
 |------|------------|
-| CodeLens `● contract` | `interfaceTierOf` |
-| Hover 首行 + 契约展示 | `interfaceTierOf` + `getHoverAtPosition` |
-| Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
-| Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
+| CodeLens `● contract` | `contractTierOf` |
+| Hover 首行 + 契约展示 | `contractTierOf` + `getHoverAtPosition` |
+| Inlay `contractSource` / `derived` | `collectAbsInlays` + `contractTierOf` |
+| Semantic token modifiers | `buildSemanticTokens` + `contractTierOf` |
 | Agent `nudo.check` / `nudo.hover` / `nudo.contract` / test/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
 | CLI `nudo check` / `nudo contract` | 同一 service/core 入口 |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | 同一 dispatch 表；清单钉在 `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |

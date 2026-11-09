@@ -9,7 +9,7 @@ import {
   resetCheckSourceMemo,
   resetGeneralizeMemo,
 } from "../index.ts";
-import { stablePathKey, stablePathKeyGraph } from "../interface/sidecar-path.ts";
+import { stablePathKey, stablePathKeyGraph } from "../contract/sidecar-path.ts";
 
 /**
  * FIX-RESIDUAL-3 项 1：core L0 memo 逐出键与 LSP cacheKey 对齐。

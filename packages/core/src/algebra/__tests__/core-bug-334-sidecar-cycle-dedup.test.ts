@@ -2,25 +2,25 @@
  * Bug 334：同一个物理侧车环被两条通道各报一次 ⇒ 一个环 = 两条同码 error。
  *
  * 两条通道：
- * - ambient 侧车加载通道（interface.ts `loadSidecarBinding` 的 exec catch）
+ * - ambient 侧车加载通道（contract.ts `loadSidecarBinding` 的 exec catch）
  * - `@nudo:import` 通道（refine.ts `collectConstraints` → exec 抛
- *   `NudoSidecarError(nudo:interface-cycle)`）
+ *   `NudoSidecarError(nudo:contract-cycle)`）
  *
  * 两条通道命中的是**同一个物理环**（环链文本相同），但 message 差一个
  * "sidecar '…' failed to load: " 前缀 ⇒ check 层的 code+message 去重抓不住
  * ⇒ 门禁摘要虚增一倍。
  *
- * 修法：interface.ts 按**环链文本**去重（同一物理环 ⇒ 一条诊断）。
+ * 修法：contract.ts 按**环链文本**去重（同一物理环 ⇒ 一条诊断）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
-describe("Bug 334 侧车环只报一条 nudo:interface-cycle", () => {
+describe("Bug 334 侧车环只报一条 nudo:contract-cycle", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
@@ -46,7 +46,7 @@ export function area(x) { return x; }`;
       loadModule,
       fromFile: "/t/cyc.js",
     });
-    const cycles = r.issues.filter((i) => i.code === "nudo:interface-cycle");
+    const cycles = r.issues.filter((i) => i.code === "nudo:contract-cycle");
     expect(cycles).toHaveLength(1);
   });
 
@@ -64,7 +64,7 @@ export function area(x) { return x; }`;
       loadModule,
       fromFile: "/t/cyc2.js",
     });
-    const cycles = r.issues.filter((i) => i.code === "nudo:interface-cycle");
+    const cycles = r.issues.filter((i) => i.code === "nudo:contract-cycle");
     expect(cycles).toHaveLength(1);
     expect(cycles[0]!.message).toContain("sidecar import cycle:");
     expect(cycles[0]!.message).toContain("cyc2.nudo.js");

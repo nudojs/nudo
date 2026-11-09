@@ -219,8 +219,8 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 
 | Change | Migration |
 |--------|-----------|
-| CodeLens is interface-first | Case lenses still work as the debug sub-layer |
-| Hover/inlay/tokens share `interfaceTierOf` (A7) | Clients must render new semantic modifiers `contract`/`generated`/`derived` or ignore unknown modifiers |
+| CodeLens is contract-first | Case lenses still work as the debug sub-layer |
+| Hover/inlay/tokens share `contractTierOf` (A7) | Clients must render new semantic modifiers `contract`/`generated`/`derived` or ignore unknown modifiers |
 | Agent tools honor project `autoBind` (E5) | Clients cannot re-enable sidecars when `nudo.contract.autoBind: false` |
 | Slash-form `nudo/…` is the protocol contract | Dot-form `nudo.*` remains valid for executeCommand + MCP bridges; do not invent a third spelling |
 | Agent executeCommand names | Product names: `nudo.test`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`; slash-form `nudo/test`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit` |
@@ -252,7 +252,7 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 ## See also
 
 - `.changeset/README.md` — changesets tool docs pointer
-- `docs/design/refine-derivation.md` — interface tier semantics
+- `docs/design/refine-derivation.md` — contract tier semantics
 - `docs/design/limitations.md` §1.0b — C0.5 optional eval-driven diagnostics (`nudo.analysis.evalMissingSlot`)
 - Website: `guides/migrating-js.md` — code-first migration walkthrough
 - Website guide: `packages/website/docs/guides/versioning.md`

@@ -2,7 +2,7 @@ import {describe, it, expect} from "vitest";
 import {mkdtempSync, writeFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {draftInterface, collectParamBodyAccesses} from "../interface-draft.ts";
+import {draftContract, collectParamBodyAccesses} from "../contract-draft.ts";
 import {transpileSource} from "@nudojs/core";
 
 describe("Draft Class.method + continue-path", () => {
@@ -17,7 +17,7 @@ describe("Draft Class.method + continue-path", () => {
 }
 `,
       );
-      const r = await draftInterface(file);
+      const r = await draftContract(file);
       const entry = r.entries.find((e) => e.fn === "Counter.inc");
       expect(entry).toBeDefined();
       expect(r.draftSource).toContain("export const Counter_inc = ");

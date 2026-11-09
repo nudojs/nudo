@@ -7,7 +7,7 @@
  * 只返回 6」，而门禁说「f(x: any) => number | string」——**同一份源码，
  * 侧车与门禁互相矛盾**，且没有任何东西会把它清掉。
  *
- * 修法（`packages/service/src/emit/section-provenance.ts` + `interface-emitter.ts`）：
+ * 修法（`packages/service/src/emit/section-provenance.ts` + `contract-emitter.ts`）：
  * update 模式下今天的分析对该导出**没有证据**时，既有生成段必须被**刷新**
  * （无新证据 ⇒ 删段）。但只有**可证**证据已消失的段才删：
  * - 段钉住**单点字面量**（某个顶层槽是 `lit(...)`）⇒ 今天的发射模型里调用点
@@ -33,7 +33,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 
 let dir: string;
 
@@ -92,7 +92,7 @@ function fixture(src: string, sidecar: string): { file: string; sidecarPath: str
 describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删除）", () => {
   it("见证契约段在证据消失后被删（+ 台账 removed + info 诊断）", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, STALE_WITNESS_SECTION);
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     // 段被删 ⇒ 侧车不再承诺「只接受 x = 5」
     expect(readFileSync(sidecarPath, "utf-8")).toBe("");
     expect(r.changed).toBe(true);
@@ -111,7 +111,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
       `${IMPORT}\n${HANDWRITTEN}\n${STALE_WITNESS_SECTION}`,
     );
     const before = readFileSync(sidecarPath, "utf-8");
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     const after = readFileSync(sidecarPath, "utf-8");
     // 手写段逐字不动（import + 手写契约都留着）
     expect(after).toBe(`${IMPORT}\n${HANDWRITTEN}\n`);
@@ -123,10 +123,10 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
 
   it("删段后再跑：逐字节相同（幂等，不产生二次改动）", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, STALE_WITNESS_SECTION);
-    const first = await emitInterface(file, { mode: "update" });
+    const first = await emitContract(file, { mode: "update" });
     expect(first.changed).toBe(true);
     const afterFirst = readFileSync(sidecarPath, "utf-8");
-    const second = await emitInterface(file, { mode: "update" });
+    const second = await emitContract(file, { mode: "update" });
     expect(second.changed).toBe(false);
     expect(second.removed).toBeUndefined();
     expect(readFileSync(sidecarPath, "utf-8")).toBe(afterFirst);
@@ -134,10 +134,10 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
 
   it("新鲜发射（有证据）逐字节相同：同状态两次发射结果一致", async () => {
     const { file, sidecarPath } = fixture(SRC_WITH_CALL, "");
-    const first = await emitInterface(file, { fnNames: ["f"], mode: "add" });
+    const first = await emitContract(file, { fnNames: ["f"], mode: "add" });
     expect(first.written).toEqual(["f"]);
     const bytes = readFileSync(sidecarPath, "utf-8");
-    const second = await emitInterface(file, { fnNames: ["f"], mode: "update" });
+    const second = await emitContract(file, { fnNames: ["f"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
   });
@@ -145,7 +145,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
   it("宽域段（跨文件记录来源）留存：证据缺失 ≠ 证据没了（不误删用户契约）", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, WIDE_SECTION);
     const before = readFileSync(sidecarPath, "utf-8");
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.changed).toBe(false);
     expect(r.removed).toBeUndefined();
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);
@@ -154,7 +154,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
 
   it("证据还在 ⇒ 刷新（改写）而不是删除", async () => {
     const { file, sidecarPath } = fixture(SRC_WITH_CALL, STALE_WITNESS_SECTION);
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
     expect(r.written).toEqual(["f"]);
     const after = readFileSync(sidecarPath, "utf-8");
@@ -170,7 +170,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
       STALE_WITNESS_SECTION,
     );
     const before = readFileSync(sidecarPath, "utf-8");
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);
@@ -184,7 +184,7 @@ describe("BUG-035 残留 —— 证据消失 ⇒ 陈旧生成段被刷新（删�
       STALE_WITNESS_SECTION,
     );
     const before = readFileSync(sidecarPath, "utf-8");
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(before);

@@ -45,7 +45,7 @@ import { classMethodIsStatic, ctorParamCountOf, entrySelfReferenceCount, injectF
 import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $new, withExecPhi } from "../exec/index.ts";
 import { currentEvalRoundEpoch } from "../collector-scope.ts";
-import { stablePathKey } from "../interface/sidecar-path.ts";
+import { stablePathKey } from "../contract/sidecar-path.ts";
 import { $staticInvoke } from "../exec/class/this-member.ts";
 import {
   tryRunTranspiledDetailed,
@@ -64,7 +64,7 @@ import {
 } from "../exec/may-throw.ts";
 import { MAX_CHECK_MEMO } from "./check-memo.ts";
 import { instanceForMethodBridge } from "../bridge-instance.ts";
-import { resolveExportSlotCall } from "../interface/export-slot.ts";
+import { resolveExportSlotCall } from "../contract/export-slot.ts";
 /** 节点跨度 / 装载期判定共用 `fn-fp.ts` 的勘测（`nodeSpan`）与推迟面清单。 */
 import {
   deferredExecutionSpans,
@@ -1180,7 +1180,7 @@ function scopedCtx(ctx: DefiniteCtx): DefiniteCtx {
  * 判 ReferenceError——引擎对自由标识符的既定模型是 fail-closed unknown
  * （宿主/全局注入面：bundler shim、`describe/it/fetch` 一类运行期全局），
  * 把它当「装载期必抛」是假红（`check-shape-gold` 的
- * 「ok: unknown identifier arg (no false positive)」与 interface-drift 的
+ * 「ok: unknown identifier arg (no false positive)」与 contract-drift 的
  * 「无证据（unknown 实参）不判 drift」都钉这条）。必抛证据只保留**值读**
  * 形态（变量初始化 / 表达式语句里的裸读，见 Identifier 臂）与**已知值面**
  * 形态（nullish 成员访问 / 确定不可调用的被调值）。

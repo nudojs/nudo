@@ -2,7 +2,7 @@
  * BUG-039：`nudo health` 的 `contract drift` 摘要数用**文件数**、明细行用
  * **槽数** ⇒ 同一份报告里两个 N 量纲不同（多文件时更明显）。
  *
- * 修复：摘要数 = Σ 各文件的槽数（与明细行、与 `files[].interfaceDrift` 同口径）。
+ * 修复：摘要数 = Σ 各文件的槽数（与明细行、与 `files[].contractDrift` 同口径）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -52,13 +52,13 @@ describe("BUG-039: contract drift 摘要数与明细行同量纲（槽数）", (
     expect(summaryN).toBe(detailN);
   }, 60_000);
 
-  it("--json 面：summary.interfaceDrift == files[].interfaceDrift（同一数字）", () => {
+  it("--json 面：summary.contractDrift == files[].contractDrift（同一数字）", () => {
     const r = runCliTsx(["health", "--json", p("lib.js")], { cwd: dir });
     const json = JSON.parse(r.stdout) as {
-      files: Array<{ interfaceDrift?: number }>;
-      summary: { interfaceDrift: number };
+      files: Array<{ contractDrift?: number }>;
+      summary: { contractDrift: number };
     };
-    expect(json.files[0]?.interfaceDrift).toBeGreaterThan(0);
-    expect(json.summary.interfaceDrift).toBe(json.files[0]?.interfaceDrift);
+    expect(json.files[0]?.contractDrift).toBeGreaterThan(0);
+    expect(json.summary.contractDrift).toBe(json.files[0]?.contractDrift);
   }, 60_000);
 });

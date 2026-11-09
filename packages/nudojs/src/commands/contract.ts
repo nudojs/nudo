@@ -11,8 +11,8 @@
 import { resolve, relative } from "node:path";
 import type { Command } from "commander";
 import {
-  formatInterfaceSurfaceLine,
-  type InterfaceSurfaceEntry,
+  formatContractSurfaceLine,
+  type ContractSurfaceEntry,
 } from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
 import {
@@ -56,12 +56,12 @@ async function runContractPrint(
   records?: CallRecord[],
   opts?: { json?: boolean; fnNames?: string[]; all?: boolean },
 ): Promise<void> {
-  const { interfaceSurface } = await import("@nudojs/service/emit");
+  const { contractSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const rel = relative(process.cwd(), filePath) || filePath;
-  // Bug 80：本次分析产生的装载诊断透出（不再被 interfaceSurface 取走丢弃）。
+  // Bug 80：本次分析产生的装载诊断透出（不再被 contractSurface 取走丢弃）。
   const diagnostics: ContractFaceDiagnostic[] = [];
-  const entries = await interfaceSurface(filePath, { records, diagnostics });
+  const entries = await contractSurface(filePath, { records, diagnostics });
   reportContractFaceDiagnostics(diagnostics);
 
   // Bug 101：`--fn` / `--all` 是 contract 的通用过滤项
@@ -118,7 +118,7 @@ async function runContractPrint(
           file: rel,
           entries: shown.map((e) => ({
             fn: e.fn,
-            signature: formatInterfaceSurfaceLine(e),
+            signature: formatContractSurfaceLine(e),
             // BUG-081：机器面必须带同名字段（此前冲突 / 不可判定在契约面上完全无痕）
             ...(e.conflict !== undefined ? { conflict: e.conflict } : {}),
             ...(e.undecidable !== undefined ? { undecidable: e.undecidable } : {}),
@@ -140,14 +140,14 @@ async function runContractPrint(
     return;
   }
   for (const e of shown) {
-    console.log(formatInterfaceSurfaceLine(e));
+    console.log(formatContractSurfaceLine(e));
   }
   console.log();
   reportContractMarks(shown);
 }
 
 /**
- * BUG-081 —— **结论对齐**：`nudo check` 对无解契约报 `nudo:interface-conflict`
+ * BUG-081 —— **结论对齐**：`nudo check` 对无解契约报 `nudo:contract-conflict`
  * error（exit 1），`nudo export` 拒绝出货（exit 1），而 `nudo contract` 此前把
  * 同一个契约印成**有效契约**并 exit 0 ⇒ 三个一级动词对同一事实给出相反结论。
  *
@@ -160,21 +160,21 @@ async function runContractPrint(
  *   （check 面是 warning，能力边界不是用户代码矛盾）⇒ 只报 warning，不改退出码，
  *   但绝不静默（行尾标记 + `--json` 字段已经透出）。
  *
- * ⚠ 侧车**装载失败**（`nudo:interface-load` 等）是另一条通道：它与
+ * ⚠ 侧车**装载失败**（`nudo:contract-load` 等）是另一条通道：它与
  * check / test / health / export 同裁决 ⇒ 由 `reportContractFaceDiagnostics`
  * 报 error 并改退出码（Bug 80），不能与这里的「数据内容」混为一谈。
  */
-function reportContractMarks(entries: readonly InterfaceSurfaceEntry[]): void {
+function reportContractMarks(entries: readonly ContractSurfaceEntry[]): void {
   for (const e of entries) {
     if (e.conflict !== undefined) {
       if (e.conflict.params.length > 0) {
         console.error(
-          `error: [nudo:interface-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable (${e.conflict.params.join(", ")})`,
+          `error: [nudo:contract-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable (${e.conflict.params.join(", ")})`,
         );
       }
       if (e.conflict.returns === true) {
         console.error(
-          `error: [nudo:interface-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable on the return slot`,
+          `error: [nudo:contract-conflict] ${e.fn}: handwritten contract conjunction unsatisfiable on the return slot`,
         );
       }
       // Bug 34：只读面不因契约**数据内容**改退出码（仅用法 / IO 错误才 exit 1）。
@@ -182,12 +182,12 @@ function reportContractMarks(entries: readonly InterfaceSurfaceEntry[]): void {
     if (e.undecidable !== undefined) {
       if (e.undecidable.params.length > 0) {
         console.error(
-          `warning: [nudo:interface-undecidable] ${e.fn}: contract conjunction not computable (${e.undecidable.params.join(", ")}) — only one side is enforced`,
+          `warning: [nudo:contract-undecidable] ${e.fn}: contract conjunction not computable (${e.undecidable.params.join(", ")}) — only one side is enforced`,
         );
       }
       if (e.undecidable.returns === true) {
         console.error(
-          `warning: [nudo:interface-undecidable] ${e.fn}: contract conjunction not computable on the return slot — only one side is enforced`,
+          `warning: [nudo:contract-undecidable] ${e.fn}: contract conjunction not computable on the return slot — only one side is enforced`,
         );
       }
     }
@@ -301,7 +301,7 @@ async function captureRootDocument(
 export function registerContractCommand(program: Command): void {
   program
     .command("contract")
-    .description("Draft / emit / print contracts (sidecar interfaces)")
+    .description("Draft / emit / print contracts (sidecar contracts)")
     .argument("[paths...]", "File(s) or directory(s)")
     .option("--emit", "Write/update @generated sidecar segments (mode: update)")
     .option("--draft", "Generate a reviewable contract draft from existing code")

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 
 let dir: string;
 
@@ -62,7 +62,7 @@ describe("Bug 523 — emit --fn 不重排既有生成段", () => {
     const sidecar = join(dir, "e.nudo.js");
     writeFileSync(sidecar, SIDECAR);
 
-    const r = await emitInterface(file, { fnNames: ["alpha"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["alpha"], mode: "update" });
     // alpha 段内容未变 → 无改动、无 diff（CI 的 --exit-on-diff 不再假红）
     expect(r.changed).toBe(false);
     expect(r.diff).toBeUndefined();
@@ -88,7 +88,7 @@ export const alpha = fn({ x: lit(99) }, lit(100));
 export const beta = fn({ x: lit(2) }, lit(4));
 `,
     );
-    const r = await emitInterface(file, { fnNames: ["alpha"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["alpha"], mode: "update" });
     expect(r.changed).toBe(true);
     const after = readFileSync(sidecar, "utf-8");
     expect(after).toContain("export const alpha = fn({ x: lit(1) }, lit(2));");
@@ -102,10 +102,10 @@ export const beta = fn({ x: lit(2) }, lit(4));
     writeFileSync(file, SRC);
     const sidecar = join(dir, "e.nudo.js");
     writeFileSync(sidecar, SIDECAR);
-    const first = await emitInterface(file, { fnNames: ["alpha"], mode: "update" });
+    const first = await emitContract(file, { fnNames: ["alpha"], mode: "update" });
     // 第一次也不能是「重排」——段序不变 ⇒ 零改动（修前：beta 段被搬到 alpha 前）
     expect(first.changed).toBe(false);
-    const second = await emitInterface(file, { fnNames: ["alpha"], mode: "update" });
+    const second = await emitContract(file, { fnNames: ["alpha"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(SIDECAR);
   });

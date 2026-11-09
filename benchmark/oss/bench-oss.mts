@@ -26,11 +26,11 @@ const ERROR_CODES = [
   "nudo:assign-mismatch",
   "nudo:arg-structure",
   "nudo:case-inconsistency",
-  "nudo:interface-load",
-  "nudo:interface-cycle",
-  "nudo:interface-conflict",
-  "nudo:interface-domain-exceeds",
-  "nudo:interface-name-clash",
+  "nudo:contract-load",
+  "nudo:contract-cycle",
+  "nudo:contract-conflict",
+  "nudo:contract-domain-exceeds",
+  "nudo:contract-name-clash",
 ] as const;
 
 /**

@@ -1,6 +1,6 @@
 /**
  * Bug 691 — `nudo health` 的**契约漂移判定**不施加 **mock 通道** ⇒ 同一份陈旧
- * 生成段，`nudo check` 报 `nudo:interface-drift`，`nudo health` 报 0 contract
+ * 生成段，`nudo check` 报 `nudo:contract-drift`，`nudo health` 报 0 contract
  * drift / OK / exit 0（假绿 + 跨动词自相矛盾）。
  *
  * 口径：health 的契约漂移判定与 `nudo check` **同口径**（同一注入包装配：
@@ -46,20 +46,20 @@ describe("Bug 691: health 的契约漂移判定必须走 mock 通道", () => {
     expect(r.stdout).toContain("contract drift");
   });
 
-  it("--json 面：interfaceDrift ≥ 1", { timeout: 60_000 }, () => {
+  it("--json 面：contractDrift ≥ 1", { timeout: 60_000 }, () => {
     const r = runCliTsx(["health", "--json", p("m.js")]);
     const parsed = JSON.parse(r.stdout) as {
       ok: boolean;
-      files: Array<{ interfaceDrift?: number }>;
-      summary: { interfaceDrift: number };
+      files: Array<{ contractDrift?: number }>;
+      summary: { contractDrift: number };
     };
     expect(parsed.ok).toBe(false);
-    expect(parsed.files[0].interfaceDrift ?? 0).toBeGreaterThanOrEqual(1);
-    expect(parsed.summary.interfaceDrift).toBeGreaterThanOrEqual(1);
+    expect(parsed.files[0].contractDrift ?? 0).toBeGreaterThanOrEqual(1);
+    expect(parsed.summary.contractDrift).toBeGreaterThanOrEqual(1);
   });
 
-  it("跨动词同口径：nudo check 对同一文件同样报 nudo:interface-drift", { timeout: 60_000 }, () => {
+  it("跨动词同口径：nudo check 对同一文件同样报 nudo:contract-drift", { timeout: 60_000 }, () => {
     const r = runCliTsx(["check", p("m.js")]);
-    expect(r.stdout).toContain("nudo:interface-drift");
+    expect(r.stdout).toContain("nudo:contract-drift");
   });
 });

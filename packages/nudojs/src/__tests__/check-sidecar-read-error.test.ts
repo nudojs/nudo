@@ -17,7 +17,7 @@ const SRC = "export function id(x) { return x; }\n";
 const SIDECAR = "// @generated\nexport const id = fn({ x: any() }, any());\n";
 
 describe.skipIf(isRoot)("check 侧车读失败上屏（不伪装 absent）", () => {
-  it("plain check：EACCES 侧车 → warning 上屏 + 深层 interface-load 挡红", () => {
+  it("plain check：EACCES 侧车 → warning 上屏 + 深层 contract-load 挡红", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-sc-read-"));
     try {
       const file = join(dir, "f.js");
@@ -28,9 +28,9 @@ describe.skipIf(isRoot)("check 侧车读失败上屏（不伪装 absent）", () 
       const r = runCli(["check", file], { env: { NUDO_CACHE_DIR: join(dir, "cache") } });
       expect(r.stderr).toContain("warning: cannot read sidecar contract");
       expect(r.stderr).toContain(sidecar);
-      // 深层分析器独立报 nudo:interface-load → 门禁不假绿
+      // 深层分析器独立报 nudo:contract-load → 门禁不假绿
       expect(r.status).toBe(1);
-      expect(r.stdout + r.stderr).toContain("nudo:interface-load");
+      expect(r.stdout + r.stderr).toContain("nudo:contract-load");
     } finally {
       chmodSync(join(dir, "f.nudo.js"), 0o644);
       rmSync(dir, { recursive: true, force: true });

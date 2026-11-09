@@ -1369,7 +1369,7 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
 }
 
 /**
- * fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。
+ * fn 约束 → 逐参约束表（contract 推导 / 入口签名消费）。
  * 非 fn() 形态 throw——调用方应先判 c.fn。
  */
 export function fnConstraintToEntryReqs(

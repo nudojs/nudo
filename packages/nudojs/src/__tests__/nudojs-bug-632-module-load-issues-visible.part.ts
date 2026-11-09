@@ -6,7 +6,7 @@
  * 根因：模块图装载问题（service `composeEvalModules` → `pushBModuleIssues`）
  * 只走**分析器诊断通道**；core `checkSource` 不装载依赖模块图 ⇒ 这些事实
  * 在 check 面完全没有出口。`domainIssuesFromDiagnostics` 的白名单此前**只**
- * 留 interface 家族两码 ⇒ 分析器产出的 module 族诊断被整条丢弃
+ * 留 contract 家族两码 ⇒ 分析器产出的 module 族诊断被整条丢弃
  * ⇒ 「依赖解析失败」在 CI 门禁上不可见（fail-open）。
  *
  * 钉：
@@ -15,7 +15,7 @@
  * - `--json` 面同码同 severity（JSON 契约面不得比人面更弱）。
  *
  * 回归方向：把 `packages/nudojs/src/check-json-map.ts` 的
- * `CHECK_FACE_DIAG_CODES` 退回「只有 interface 家族两码」⇒ 本钉大面积失败。
+ * `CHECK_FACE_DIAG_CODES` 退回「只有 contract 家族两码」⇒ 本钉大面积失败。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";

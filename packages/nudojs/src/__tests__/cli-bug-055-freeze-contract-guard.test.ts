@@ -4,7 +4,7 @@
  * 且 `--freeze=update` 原样重记 ⇒ 没有自愈路径。
  *
  * 契约：违反被写方**手写契约**的候选见证**不写入**（归因留给调用现场的
- * `nudo:interface-domain-exceeds`）⇒ 固化后 check 仍绿；update 不再重记。
+ * `nudo:contract-domain-exceeds`）⇒ 固化后 check 仍绿；update 不再重记。
  */
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -51,10 +51,10 @@ describe("BUG-055（CLI）— freeze 不得把违反被调方契约的见证写�
 
       const freeze = runCliTsx(["test", lib, "--from", usage, "--freeze"]);
       // 退出码不是本条的判据：调用点上确实存在违反契约的实参 ⇒ 分析面如实报
-      // `nudo:interface-domain-exceeds`（error 级，BUG-014 口径）⇒ exit 1 是**正确**的。
+      // `nudo:contract-domain-exceeds`（error 级，BUG-014 口径）⇒ exit 1 是**正确**的。
       // BUG-055 的判据是「固化不得把该违约搬进被调方」。
       expect(freeze.stdout).toContain("freeze →");
-      expect(freeze.stdout).toContain("nudo:interface-domain-exceeds");
+      expect(freeze.stdout).toContain("nudo:contract-domain-exceeds");
 
       const after = readFileSync(lib, "utf-8");
       expect(after).toContain('@nudo:case "call@usage.js:L2" (5)');

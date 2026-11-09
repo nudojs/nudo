@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { shape, checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -19,7 +19,7 @@ describe("Bug 353 · shape 缺参诊断（宿主原文不得冒泡）", () => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("shape() 抛 Nudo 原生诊断，点名构造器并说明缺参", () => {
@@ -55,7 +55,7 @@ export function f(o) {
 }
 `;
     const r = checkSource("/t/f.js", src, pTrue, { loadModule, fromFile: "/t/f.js" });
-    const load = r.issues.find((i) => i.code === "nudo:interface-load");
+    const load = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(load).toBeDefined();
     expect(load!.message).toContain("nudo shape()");
     expect(load!.message).not.toContain("Cannot convert undefined or null to object");

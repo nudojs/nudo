@@ -43,7 +43,7 @@ function execInScope(
     } catch {
       /* 侧车写坏可能抛错：诊断仍须可见 */
     }
-    return takeRefineDiags().filter((d) => d.code === "nudo:interface-load");
+    return takeRefineDiags().filter((d) => d.code === "nudo:contract-load");
   });
 }
 

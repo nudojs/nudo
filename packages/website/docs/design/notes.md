@@ -1,5 +1,5 @@
 ---
-description: "Index of the repository design notes — architecture truth sources (Abs, CLI semantics, evaluation, interface derivation, caches, limitations) behind the product pages."
+description: "Index of the repository design notes — architecture truth sources (Abs, CLI semantics, evaluation, contract derivation, caches, limitations) behind the product pages."
 ---
 
 # Design notes (repo)
@@ -16,7 +16,7 @@ Architecture truth lives in the repository, not on this site: [`docs/design/`](h
 | [`cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) | CLI product face, L1/L2 gates, `any` vs `unknown`, `test` case reports, check JSON | Truth source |
 | [`directive-scope.md`](https://github.com/nudojs/nudo/blob/main/docs/design/directive-scope.md) | Directive scoping: function-level directives bind the nearest AST Function; single-source extraction contract (parser) | Contract |
 | [`evaluation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/evaluation.md) | Single evaluation engine (transpile → exec), set semantics, fail-closed behavior | Landed |
-| [`refine-derivation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/refine-derivation.md) | Three-tier effective interface: handwritten → generated → implicit; sidecar binding; drift codes | Landed |
+| [`refine-derivation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/refine-derivation.md) | Three-tier effective contract: handwritten → generated → implicit; sidecar binding; drift codes | Landed |
 | [`hof-relations.md`](https://github.com/nudojs/nudo/blob/main/docs/design/hof-relations.md) | HOF relations (`fnRels` / `entryShapes`) instead of a generic language | Implemented (P3 deferred) |
 | [`persistent-cache.md`](https://github.com/nudojs/nudo/blob/main/docs/design/persistent-cache.md) | `.nudo/cache` disk layer + `~/.cache/nudo/deps` harvest; fail-open rules | Landed |
 | [`cache-invalidation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cache-invalidation.md) | In-process session-cache invalidation contract | Contract + regression pins |

@@ -6,7 +6,7 @@
  *   check --abs    → g(any) => any            （旧行为）
  *
  * 修复：`--abs` 面与签名表**同源** —— 有效契约约束的形参真的进求值
- * （core `effectiveInterface` + `constraintToEntryAbs`，与 `checkSource`
+ * （core `effectiveContract` + `constraintToEntryAbs`，与 `checkSource`
  * 的侧车施加点同口径）。
  */
 import { describe, it, expect } from "vitest";

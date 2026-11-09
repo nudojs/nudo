@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import {
   checkSource,
-  interfaceTierOf,
+  contractTierOf,
   localNamedExports,
   pTrue,
   sidecarPathOf,
@@ -289,7 +289,7 @@ connection.onCodeAction((params) => {
         // 不进 DIAG 注册表：从未发射的遗留宽松匹配名（无 glossary 锚点），
         // 仅为旧缓存诊断的兜底匹配保留字面量
         "nudo:domain-exceeds",
-        DIAG.interfaceDomainExceeds,
+        DIAG.contractDomainExceeds,
         "constraint-violated",
         "contract",
       ]);
@@ -434,7 +434,7 @@ connection.onCodeAction((params) => {
       // Bug 743：侧车计划若是**追加一条同名导出**（service 的 `next` 是追加
       // 语义：原侧车 + 新契约行），而侧车里**已经有**该 fn 的导出绑定 ⇒
       // 落盘后是**重复 export** ⇒ 侧车整体 SyntaxError ⇒ 侧车里**所有**契约
-      // 一起失效（`nudo:interface-load`）⇒ 门禁从「有诊断」变成「装载失败」。
+      // 一起失效（`nudo:contract-load`）⇒ 门禁从「有诊断」变成「装载失败」。
       // ⇒ 这种会把侧车写坏的计划**不下发**（宁可少一个 action，也不给一个
       // 落盘即损坏侧车的编辑）。service 的追加语义本族不改。
       if (plan.sidecar && fn && countSidecarExportBindings(plan.sidecar.newText, fn) > 1) {
@@ -806,7 +806,7 @@ function sidecarRelaxClearsTarget(input: {
       loadModule,
       fromFile: input.filePath,
     });
-    if (r.issues.some((i) => i.code === DIAG.interfaceLoad)) return false;
+    if (r.issues.some((i) => i.code === DIAG.contractLoad)) return false;
     return !r.issues.some(
       (i) => codes.includes(i.code) && i.fn === input.fnName,
     );
@@ -865,7 +865,7 @@ function surfaceConstraintTextOf(abs: Abs): string | undefined {
 /**
  * 目标函数是否为「本文件**代码优先**的导出」（BUG-237）。
  *
- * 草稿生成器（`draftInterface`）只从**代码**推导契约，并**按设计跳过**手写
+ * 草稿生成器（`draftContract`）只从**代码**推导契约，并**按设计跳过**手写
  * 契约函数（`@nudo:contract` / `@nudo:import` 模板）⇒ 对这类函数下发
  * 「Create sidecar draft…」必然空转；住在**别的模块**的函数同理（按本文件
  * 生成的草稿里既没有它、也没有要补的字段）。
@@ -877,7 +877,7 @@ function isCodeFirstExport(
 ): boolean {
   try {
     if (!localNamedExports(source).has(fnName)) return false;
-    const tier = interfaceTierOf(source, fnName, filePath, {});
+    const tier = contractTierOf(source, fnName, filePath, {});
     return tier?.source !== "handwritten";
   } catch {
     return false;

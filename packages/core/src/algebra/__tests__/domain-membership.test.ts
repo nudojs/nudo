@@ -188,7 +188,7 @@ describe("literalMeetsConstraint", () => {
     });
 
     it("and(...cs) 合成（源码 refine × 侧车同名合一的有效契约形态）", () => {
-      // R02：effectiveInterface 的 conjoin 产出 and() 合成约束——prim 合并 +
+      // R02：effectiveContract 的 conjoin 产出 and() 合成约束——prim 合并 +
       // preds 拼接 + int 位传播，域判定必须走同一条合取路径
       const both = cAnd(number().gt(0), number().int());
       expect(literalMeetsConstraint(3, both)).toBe(true);

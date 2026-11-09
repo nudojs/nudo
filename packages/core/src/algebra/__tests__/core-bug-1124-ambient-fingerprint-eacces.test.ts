@@ -19,7 +19,7 @@
  * - autoBind:false + 不可读 ambient 侧车 ⇒ 零 error 诊断、门禁绿；
  * - autoBind:false ⇒ 不探测 ambient 侧车（loader 未被调用）；
  * - 真·依赖不可读 ⇒ 仍报 nudo:module-unreadable（不得放宽真故障）；
- * - autoBind 开启且 ambient 侧车**确实需要** ⇒ 仍报 nudo:interface-load
+ * - autoBind 开启且 ambient 侧车**确实需要** ⇒ 仍报 nudo:contract-load
  *   （真故障不被吞）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
@@ -27,7 +27,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 
@@ -40,7 +40,7 @@ beforeEach(() => {
   resetAbsCallBudget();
   resetEvalForkBudget();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** 恒抛 EACCES 的 loader（记录探测到的 spec） */
@@ -90,13 +90,13 @@ describe("Bug 1124: 不可读的 ambient 侧车不得被报成 error（假红）
     expect(r.ok).toBe(false);
   });
 
-  it("autoBind 开启且 ambient 侧车确实被绑定 ⇒ 仍报 nudo:interface-load（真故障不被吞）", () => {
+  it("autoBind 开启且 ambient 侧车确实被绑定 ⇒ 仍报 nudo:contract-load（真故障不被吞）", () => {
     const src = `export function alpha(x) { return x; }\n`;
     const r = checkSource("/t/alpha.js", src, pTrue, {
       fromFile: "/t/alpha.js",
       loadModule: denyingLoader(),
     });
-    const loadErrs = r.issues.filter((i) => i.code === "nudo:interface-load");
+    const loadErrs = r.issues.filter((i) => i.code === "nudo:contract-load");
     expect(loadErrs.length).toBeGreaterThan(0);
     expect(loadErrs[0]!.severity).toBe("error");
     expect(r.ok).toBe(false);

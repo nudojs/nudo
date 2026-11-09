@@ -2,7 +2,7 @@
 
 > **状态**：单引擎终态（2026-09-23 ast-eval 删除后）。历史双引擎对照与移除过程见
 > [`plans/2026-09-22-remove-ast-eval.md`](./plans/2026-09-22-remove-ast-eval.md)。
-> **真源**：架构 → kernel-merge.md；命令面 → cli-semantics.md；接口推导 → refine-derivation.md。
+> **真源**：架构 → kernel-merge.md；命令面 → cli-semantics.md；契约推导 → refine-derivation.md。
 
 ## 集合语义：Abs 就是值域集合
 

@@ -2949,7 +2949,7 @@ export function findWorkspaceExportDefinition(
  * 侧车契约绑定位置 —— **只认引擎真正消费的绑定**：
  * 「导出」且为 `fn({ … }, …)` 形态。
  *
- * 引擎口径（`packages/core/src/algebra/interface.ts`：Phase 1 只消费
+ * 引擎口径（`packages/core/src/algebra/contract.ts`：Phase 1 只消费
  * `fn({ … }, …)` 形态的**导出**绑定；值模板 / 私有绑定会被报
  * `not fn() form` 并**不生效**）—— LSP 若把这类绑定当契约定义指给用户，
  * 用户改多少都不会生效（与 hover / codeLens 的 `imp`、CLI 的 `[implicit]` 矛盾）。

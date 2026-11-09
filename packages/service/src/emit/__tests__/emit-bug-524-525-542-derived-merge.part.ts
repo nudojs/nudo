@@ -16,7 +16,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseSource } from "@nudojs/core";
-import { deriveFromRoot, emitDerivedFromRoot } from "../interface-derivation.ts";
+import { deriveFromRoot, emitDerivedFromRoot } from "../contract-derivation.ts";
 
 let dir: string;
 
@@ -194,7 +194,7 @@ export { _nudo_1 as add2 };
     expect(e.sidecars[0]!.changed).toBe(false);
     expect(e.sidecars[0]!.skipped).toBe("not-projectable");
     expect(
-      e.sidecars[0]!.issues.some((i) => i.code === "nudo:interface-not-projectable"),
+      e.sidecars[0]!.issues.some((i) => i.code === "nudo:contract-not-projectable"),
     ).toBe(true);
     // 盘上内容未被改动
     expect(readFileSync(join(dir, "add.nudo.js"), "utf-8")).toContain("export const add2");
@@ -330,7 +330,7 @@ export const add4 = fn({ x: positive }, positive);
     // 死段被报告出来（不是静默删除）
     expect(
       e2.sidecars[0]!.issues.some(
-        (i) => i.code === "nudo:interface-not-projectable" && i.message.includes("add2"),
+        (i) => i.code === "nudo:contract-not-projectable" && i.message.includes("add2"),
       ),
     ).toBe(true);
 

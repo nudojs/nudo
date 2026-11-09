@@ -11,7 +11,7 @@
  * 根因：`checkCallSite()` 的 `arityFace(g)` 只看实现签名（`x?: T` / 默认参）
  * ⇒ 契约级 `constraint.isOptional` 从未进入元数面。
  *
- * 修法：元数检查前先取 `effectiveInterface`，把 handwritten 契约的
+ * 修法：元数检查前先取 `effectiveContract`，把 handwritten 契约的
  * `constraint.isOptional` 经**同一套位次映射**（`contractOptionalIndexes`）
  * 变成可选位集合 → `arityFace` **优先采用**（与产物面「三来源」序一致：
  * 契约级 > 实现签名）。本地调用与跨文件调用共用该映射 ⇒ 两面同结论。
@@ -24,7 +24,7 @@ import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 
 beforeEach(() => {
   resetCheckSourceMemo();
@@ -35,7 +35,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   resetSidecarLoadFailureCache();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** `b` 契约级可选；`need2` 的两位都必填（对照组） */

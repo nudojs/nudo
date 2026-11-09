@@ -17,14 +17,14 @@
  */
 import { dirname } from "node:path";
 import {
-  effectiveInterface,
-  interfaceDiagCount,
-  takeInterfaceDiagsSince,
+  effectiveContract,
+  contractDiagCount,
+  takeContractDiagsSince,
 } from "@nudojs/core";
 import {
   defaultLoadModule,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   type AnalysisResult,
 } from "@nudojs/service";
 
@@ -40,7 +40,7 @@ export {
 /**
  * 计算 entry@ case 区块尾需要契约注解的函数名集（仅同文件 functions；
  * external 函数的契约绑定在定义模块，不在本面）。判定与 check 门禁同口径：
- * effectiveInterface 返回 handwritten（侧车手写绑定 ∪ 源码 @nudo:contract）；
+ * effectiveContract 返回 handwritten（侧车手写绑定 ∪ 源码 @nudo:contract）；
  * `@generated` 段是事实快照不执法，不触发注解。无契约函数（真 entry-only
  * 回退）不在集内——那是普通回退，不是矛盾。
  */
@@ -56,12 +56,12 @@ export function entryContractNoteFns(
   // 配置同源 check（commands/check.ts loadCheckCache）：autoBind 关闭 /
   // 树外侧车不参与契约判定
   const proj = findProjectConfig(dirname(filePath));
-  const autoBind = interfaceConfig(proj?.config).autoBind;
+  const autoBind = contractConfig(proj?.config).autoBind;
   const fns = new Set<string>();
   for (const fn of candidates) {
-    const since = interfaceDiagCount();
+    const since = contractDiagCount();
     try {
-      const eff = effectiveInterface(source, fn.name, {
+      const eff = effectiveContract(source, fn.name, {
         loadModule: defaultLoadModule,
         fromFile: filePath,
         ...(autoBind === false ? { autoBind: false } : {}),
@@ -71,8 +71,8 @@ export function entryContractNoteFns(
     } catch {
       /* optional: 契约解析失败按无契约处理（不注解） */
     } finally {
-      // 探测诊断就地排干（工具面惯例），不滞留 interface 诊断通道
-      takeInterfaceDiagsSince(since);
+      // 探测诊断就地排干（工具面惯例），不滞留 contract 诊断通道
+      takeContractDiagsSince(since);
     }
   }
   return fns;

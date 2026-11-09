@@ -9,6 +9,7 @@
 > 产品命令面与 L1/L2：[`cli-semantics.md`](./cli-semantics.md)。
 > 执行模型与信任边界：[`kernel-merge.md`](./kernel-merge.md)「执行模型与信任边界」。
 > 现行计划未闭环项：[`plans/2026-09-19-close-remaining-dx-gaps.md`](./plans/2026-09-19-close-remaining-dx-gaps.md)。
+> Abs 改进 16 项：[`plans/2026-11-09-abs-improvement-plan.md`](./plans/2026-11-09-abs-improvement-plan.md)。
 
 > **Executive summary (EN).** This document is the honesty ledger for still-binding design limits and open issues — not a tutorial and not a changelog. It governs what Nudo must **not** claim: L1 obligations come only from explicit contracts (`*.nudo.js` / `@nudo:contract`) or call-site facts; body-AST slot invention is forbidden (C0); HOF `promote` is warning-only, never a check error; entry unconstrained params display as **`any`** (`unknown` = inference failure); env/harvest never replaces mocks. The directive-vs-call@ precision asymmetry recorded in old sessions did **not** reproduce (2026-10 retest, §3: identical exact results for literal args); still-binding: same-run exclusivity (a function whose `@nudo:case` runs gets no `call@` cases that run), recursion deeper than `callSiteBudget` (3) widens the call@ witness to inner records + symbolic while the directive case stays exact, and `check` signatures are case-source-independent. Resolved items are one-line anchors in `../reports/limits-resolved.md`. Product CLI face and L1/L2: `cli-semantics.md`. Trust boundary: `kernel-merge.md`.
 

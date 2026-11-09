@@ -111,7 +111,7 @@ export const Adder_add4 = fn({ x: positive }, positive4);
   });
 
   it("functionParamNames resolves Class.method params", async () => {
-    const { functionParamNames } = await import("../interface-derivation.ts");
+    const { functionParamNames } = await import("../contract-derivation.ts");
     const src = `
 export class Adder {
   add(a, b) { return a + b; }

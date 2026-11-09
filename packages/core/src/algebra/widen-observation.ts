@@ -10,7 +10,7 @@
  * （`union(lit(1), lit(-2))`）不剥——它是真实观测域（见 `isPointConstraint`）。
  * 与契约面（手写 `lit(...)`）无关——手写契约不走本通道。
  *
- * 必须与 `nudo:interface-drift` 的「今日重算」共用同一实现：写盘侧拓宽、
+ * 必须与 `nudo:contract-drift` 的「今日重算」共用同一实现：写盘侧拓宽、
  * 对账侧不拓宽 ⇒ 每次 `contract --emit` 之后 health 立刻报漂移（永不自愈）。
  */
 import { abs as makeAbs, type Abs } from "./abs.ts";
@@ -22,7 +22,7 @@ import { derefConstraint, type NudoConstraint } from "./constraint.ts";
  * `union(lit(1), lit(-2))` 是多次调用观测到的**真实观测域**，不是点 ⇒ 不得
  * 拓宽（拓宽会把它塌成 `number()`，drift 对账从此看不见域变化）。
  *
- * 写盘（`contract --emit`）与对账（`nudo:interface-drift`）必须用同一条判据，
+ * 写盘（`contract --emit`）与对账（`nudo:contract-drift`）必须用同一条判据，
  * 否则 fresh emit 之后 health 立刻报漂移（BUG-199）。
  */
 export function isPointConstraint(

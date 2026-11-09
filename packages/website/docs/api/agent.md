@@ -12,11 +12,11 @@ Reference for the agent-facing surface of `@nudojs/lsp`. All agent commands live
 |---------|---------------------|---------|
 | `nudo.check` | `nudo/check` | Constraint gate — **CheckJson v1** (Abs signatures + actual ⊭ expected) |
 | `nudo.test` | `nudo/test` | Whole-file inference — **CaseJson v1** (intension carries lossless Abs) |
-| `nudo.hover` | `nudo/hover` | Lossless Abs at a source position (+ optional inlays + interface tier) |
+| `nudo.hover` | `nudo/hover` | Lossless Abs at a source position (+ optional inlays + contract tier) |
 | `nudo.whatIf` | `nudo/whatIf` | Apply type assumptions to bindings and read the inferred type of a target |
 | `nudo.suggestCase` | `nudo/suggestCase` | Check `@nudo:case` coverage; when every case is synthesized, return paste-ready directives |
 | `nudo.trace` | `nudo/trace` | List each case's argument types → result type for a function |
-| `nudo.contract` | `nudo/contract` | Print effective interface tiers (`handwritten` / `generated` / `implicit`) |
+| `nudo.contract` | `nudo/contract` | Print effective contract tiers (`handwritten` / `generated` / `implicit`) |
 | `nudo.contract.draft` | `nudo/contract.draft` | **Code-first draft**: reviewable `*.nudo.draft.js` from existing code (same as CLI `--draft`) |
 | `nudo.contract.emit` | `nudo/contract.emit` | Persist call-site domains as `@generated` sidecar segments |
 | `nudo.selectCase` | `nudo/selectCase` | Switch the active case used for hover/diagnostics |
@@ -53,13 +53,13 @@ Constraint gate on **Abs** (type-as-computation). Same contract as CLI `nudo che
 | `nudo:assign-mismatch` | Assignment ⊭ existing shape |
 | `nudo:arg-structure` | HOF argument not callable / arity mismatch |
 | `nudo:case-inconsistency` | `@nudo:case` witness ⊭ refine |
-| `nudo:interface-param-mismatch` | Handwritten contract param name not on formal surface |
-| `nudo:interface-conflict` | Handwritten contract conjunction unsatisfiable |
-| `nudo:interface-load` / `nudo:interface-cycle` | Sidecar load failure / cycle |
-| `nudo:interface-domain-exceeds` | Cross-file call evidence ⊄ handwritten contract |
-| `nudo:interface-name-clash` | Sidecar export name clashes with source export |
-| `nudo:interface-underivable` | Derived contract row cannot be derived from source evidence (**info**; handwritten contracts never trigger it) |
-| `nudo:interface-drift` | `@generated` segment ≠ recomputed (warning) |
+| `nudo:contract-param-mismatch` | Handwritten contract param name not on formal surface |
+| `nudo:contract-conflict` | Handwritten contract conjunction unsatisfiable |
+| `nudo:contract-load` / `nudo:contract-cycle` | Sidecar load failure / cycle |
+| `nudo:contract-domain-exceeds` | Cross-file call evidence ⊄ handwritten contract |
+| `nudo:contract-name-clash` | Sidecar export name clashes with source export |
+| `nudo:contract-underivable` | Derived contract row cannot be derived from source evidence (**info**; handwritten contracts never trigger it) |
+| `nudo:contract-drift` | `@generated` segment ≠ recomputed (warning) |
 | `nudo:no-signature` | No symbolic Abs signature (**warning**; L2 may still apply via entry fallback) |
 | `nudo:opaque-result` | Opaque evaluation |
 
@@ -232,7 +232,7 @@ Interface product surface (same data sources as CLI):
 |---------|------|----------|
 | `nudo.contract` | `{ file, functionName?, source? }` | Print `fn  [handwritten\|generated\|implicit]  (params) → returns` + JSON |
 | `nudo.contract.draft` | `{ file, functionName?, source?, write?, dryRun? }` | Code-first draft module (`@nudo:draft`); `write: true` lands `*.nudo.draft.js` / `*.nudo.draft.ts` (never ambient-bound). Body-read fields appear as **suggestions only**. `write: true` is **fail-closed** without a project root (nudo config / `package.json` ancestor) — same as CLI `--draft --write` (override: `NUDO_DRAFT_FORCE=1`) |
-| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | Persist call-site domains via `emitInterface`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
+| `nudo.contract.emit` | `{ file, functionName, mode: "add"\|"update", dryRun?: boolean, from?: string[] }` | Persist call-site domains via `emitContract`. `dryRun: true` previews without writing: same result shape (paths, would-change, unifiedDiff) with `[dry-run] would update …` text; no sidecar file is created or modified. VS Code Persist/CodeLens confirm sends `dryRun: true` first, then a real write on confirm |
 
 `loadModule` and effective `autoBind` are **server-injected** (buffer-aware sidecar loader + project `package.json#nudo.contract.autoBind` AND client request). They are not JSON-serializable request parameters — do not send them from agents.
 
@@ -286,12 +286,12 @@ Agent tools from `AGENT_TOOL_SOURCES` (`packages/lsp/src/agent-tools.ts`), pinne
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
 | <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + mergeCheckIssues + serializeCheckJson | `nudo.check \| nudo/check` |
-| <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeInterfaceLenses + interfaceTierOf | — |
-| <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — interfaceSurface + formatInterfaceSurfaceLine | `nudo.contract \| nudo/contract` |
-| <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftInterface + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
-| <a id="contract.emit"></a>`contract.emit` | fn | nudo.contract.emit / `nudo/contract.emit` — emitInterface | `nudo.contract.emit \| nudo/contract.emit` |
+| <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeContractLenses + contractTierOf | — |
+| <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — contractSurface + formatContractSurfaceLine | `nudo.contract \| nudo/contract` |
+| <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftContract + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
+| <a id="contract.emit"></a>`contract.emit` | fn | nudo.contract.emit / `nudo/contract.emit` — emitContract | `nudo.contract.emit \| nudo/contract.emit` |
 | <a id="getactivecases"></a>`getActiveCases` | fn | nudo.getActiveCases / `nudo/getActiveCases` — editor command (not an agent tool) | `nudo.getActiveCases \| nudo/getActiveCases` |
-| <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + interfaceTierOf | `nudo.hover \| nudo/hover` |
+| <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + contractTierOf | `nudo.hover \| nudo/hover` |
 | <a id="selectcase"></a>`selectCase` | fn | nudo.selectCase / `nudo/selectCase` — editor command (not an agent tool) | `nudo.selectCase \| nudo/selectCase` |
 | <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFileAsync + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
 | <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFileAsync + buildTestReport + serializeCaseJson | `nudo.test \| nudo/test` |

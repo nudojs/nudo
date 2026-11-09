@@ -17,11 +17,11 @@ import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { parseSource, resetParseSourceCache } from "../parse-source.ts";
 import { listTopFunctions, listClassEntryNames } from "../scan/scan-top-functions.ts";
 import { localNamedExports } from "../scan/scan-named-exports.ts";
-import { resolveExportSlotCall } from "../interface/export-slot.ts";
+import { resolveExportSlotCall } from "../contract/export-slot.ts";
 import { makeFiles, l2Count, sigOf } from "./nudo-constraints.ts";
 
 function run(src: string, file = "/t/mb/k.js", files: Record<string, string> = {}) {
@@ -35,7 +35,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   takeRefineDiags();
   resetSidecarLoadFailureCache();
-  takeInterfaceDiags();
+  takeContractDiags();
   resetParseSourceCache();
 });
 

@@ -1,40 +1,40 @@
 /**
  * `@nudojs/service/emit` — Nudo extensional emit products.
  *
- * Interface / contract face, TypeScript `.d.ts`, schema / Standard Schema
+ * Contract face, TypeScript `.d.ts`, schema / Standard Schema
  * projections, runtime guards, and debug case reports. These are one-way
  * renderings of Abs (plus the `nudo contract` / `nudo export` / `nudo test`
  * product surfaces); nothing here reads a projection back into Abs.
  */
 
-// ─── Interface（contract 侧车 / draft / emit / derive） ──────────────
+// ─── Contract（侧车 / draft / emit / derive） ──────────────
 export {
-  interfaceSurface,
-  formatInterfaceSurfaceLine,
-  type InterfaceSurfaceEntry,
-  type InterfaceSurfaceOpts,
-} from "./interface-surface.ts";
+  contractSurface,
+  formatContractSurfaceLine,
+  type ContractSurfaceEntry,
+  type ContractSurfaceOpts,
+} from "./contract-surface.ts";
 
 export {
-  emitInterface,
+  emitContract,
   formatEmitSummary,
-  type EmitInterfaceOpts,
-  type EmitInterfaceResult,
-  type EmitInterfaceSkipReason,
-} from "./interface-emitter.ts";
+  type EmitContractOpts,
+  type EmitContractResult,
+  type EmitContractSkipReason,
+} from "./contract-emitter.ts";
 
 export {
-  draftInterface,
+  draftContract,
   formatDraftModule,
   formatDraftSummary,
   sidecarDraftPath,
-  writeInterfaceDraft,
+  writeContractDraft,
   type DraftEvidence,
-  type InterfaceDraftEntry,
-  type InterfaceDraftOpts,
-  type InterfaceDraftResult,
+  type ContractDraftEntry,
+  type ContractDraftOpts,
+  type ContractDraftResult,
   type WriteDraftResult,
-} from "./interface-draft.ts";
+} from "./contract-draft.ts";
 
 export {
   deriveFromRoot,
@@ -46,10 +46,10 @@ export {
   type EmitDerivedResult,
   type RootDeriveOpts,
   type RootDeriveResult,
-} from "./interface-derivation.ts";
+} from "./contract-derivation.ts";
 
-// what-if 绑定注入仍住在 analysis 侧（../what-if.ts）；interface 面按
-// 原 `@nudojs/service/interface` 导出名再导出，避免下游断档。
+// what-if 绑定注入仍住在 analysis 侧（../what-if.ts）；contract 面按
+// `@nudojs/service/contract` 导出名再导出，避免下游断档。
 export {
   injectBindings,
   typeExprToDirective,

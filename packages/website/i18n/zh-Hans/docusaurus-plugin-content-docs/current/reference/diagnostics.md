@@ -102,53 +102,53 @@ Context: [nudo check](../guides/check.md#what-it-checks) · [使用处（`--from
 
 Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [声明断言](../guides/test.md#声明断言)
 
-### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
+### `nudo:contract-param-mismatch` {#nudo-contract-param-mismatch}
 
-手写契约参数名不在形式参数面上。（诊断 ID 保留历史 `interface` 词元；产品术语是 **contract**。）合法名：普通参数名、解构绑定名（rename 时用源属性键）、嵌套解构的点路径键（`({ card: { grade } })` 用 `'card.grade'`）——见[侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定)。
+手写契约参数名不在形式参数面上。合法名：普通参数名、解构绑定名（rename 时用源属性键）、嵌套解构的点路径键（`({ card: { grade } })` 用 `'card.grade'`）——见[侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定)。
 
-Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [接口诊断](../guides/check.md#接口诊断)
+Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-conflict` {#nudo-interface-conflict}
+### `nudo:contract-conflict` {#nudo-contract-conflict}
 
 手写契约合取不可满足。简化侧车 / refine。
 
-Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [接口诊断](../guides/check.md#接口诊断)
+Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-load` {#nudo-interface-load}
+### `nudo:contract-load` {#nudo-contract-load}
 
 侧车文件加载失败（解析 / import / 解析路径错误）。**Error。** 修侧车；若契约已废弃则删除绑定。
 
-Context: [侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定) · [接口诊断](../guides/check.md#接口诊断)
+Context: [侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-name-clash` {#nudo-interface-name-clash}
+### `nudo:contract-name-clash` {#nudo-contract-name-clash}
 
 侧车导出名与源码导出冲突，或 emit 会覆盖手写绑定。手写始终优先。
 
-Context: [固化生成段](../guides/contract.md#固化生成段) · [接口诊断](../guides/check.md#接口诊断)
+Context: [固化生成段](../guides/contract.md#固化生成段) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-cycle` {#nudo-interface-cycle}
+### `nudo:contract-cycle` {#nudo-contract-cycle}
 
 侧车 `@nudo:import` 链成环。**Error。** 修复：打破侧车 import 环。
 
-Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [接口诊断](../guides/check.md#接口诊断)
+Context: [@nudo:import](../concepts/directives.md#nudoimport--constraint-templates) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-domain-exceeds` {#nudo-interface-domain-exceeds}
+### `nudo:contract-domain-exceeds` {#nudo-contract-domain-exceeds}
 
 经 `nudo check --from` 注入的跨文件调用点证据不在手写契约域内（`⊄`）。**Error。** 修复：放宽契约，或修正使用处。
 
-Context: [接口诊断](../guides/check.md#接口诊断) · [使用处（`--from`）](../guides/test.md#使用处--from)
+Context: [契约诊断](../guides/check.md#契约诊断) · [使用处（`--from`）](../guides/test.md#使用处--from)
 
-### `nudo:interface-drift` {#nudo-interface-drift}
+### `nudo:contract-drift` {#nudo-contract-drift}
 
 固化的 `@generated` 侧车段 ≠ 今日重算的调用点域或返回。**Warning** —— 不挡 exit。
 
-Context: [固化生成段](../guides/contract.md#固化生成段) · [接口诊断](../guides/check.md#接口诊断)
+Context: [固化生成段](../guides/contract.md#固化生成段) · [契约诊断](../guides/check.md#契约诊断)
 
-### `nudo:interface-entry-only` {#nudo-interface-entry-only}
+### `nudo:contract-entry-only` {#nudo-contract-entry-only}
 
 导出函数**无契约根**（无手写/生成侧车或 `@nudo:contract`）且**无调用点域**（仅合成 `entry@`、参数为 `any`）。**Info** —— 覆盖/契约缺口，不是门禁失败。修复：补契约（`*.nudo.js` / `@nudo:contract`），或从使用现场触达该导出（`nudo check --from`）。
 
-Context: [观察层 → 草稿](../guides/contract.md#观察层--草稿逻辑优先) · [接口诊断](../guides/check.md#接口诊断)
+Context: [观察层 → 草稿](../guides/contract.md#观察层--草稿逻辑优先) · [契约诊断](../guides/check.md#契约诊断)
 
 ### `nudo:dual-entry` {#nudo-dual-entry}
 
@@ -163,7 +163,7 @@ records do not cross files — analysis observes only the browser entry variant
 
 Context: [调用点发现上限](../concepts/limits.md#调用点发现上限)
 
-### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
+### `nudo:contract-emit-denied` {#nudo-contract-emit-denied}
 
 ```text
 emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
@@ -173,7 +173,7 @@ emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (
 
 Context: [固化生成段](../guides/contract.md#固化生成段)
 
-### `nudo:interface-multi-declarator` {#nudo-interface-multi-declarator}
+### `nudo:contract-multi-declarator` {#nudo-contract-multi-declarator}
 
 ```text
 generated section 'a, b' is a hand-merged multi-declarator form; kept verbatim
@@ -183,13 +183,13 @@ generated section 'a, b' is a hand-merged multi-declarator form; kept verbatim
 
 Context: [固化生成段](../guides/contract.md#固化生成段)
 
-### `nudo:interface-not-projectable` {#nudo-interface-not-projectable}
+### `nudo:contract-not-projectable` {#nudo-contract-not-projectable}
 
 ```text
 assembled sidecar failed round-trip (path); refusing to write
 ```
 
-组装的侧车源码无法重新解析回推导出的接口。**Error** —— 不写任何文件。作为引擎债上报（round-trip 必须成功），调整源码直到 `contract --emit --dry-run` 干净。
+组装的侧车源码无法重新解析回推导出的契约。**Error** —— 不写任何文件。作为引擎债上报（round-trip 必须成功），调整源码直到 `contract --emit --dry-run` 干净。
 
 Context: [固化生成段](../guides/contract.md#固化生成段)
 
@@ -434,7 +434,7 @@ handwritten @nudo:env wins over harvest on module "fs"; harvest only fills missi
 
 Context: [常见陷阱](../guides/env-harvest.md#常见陷阱)
 
-### `nudo:interface-underivable` {#nudo-interface-underivable}
+### `nudo:contract-underivable` {#nudo-contract-underivable}
 
 **派生**契约行（root 驱动推导 / `nudo contract --draft`）无法从源码证据推导（opaque / 截断 / 无证据）。**Info** —— 该行被跳过；手写契约从不触发此码。
 

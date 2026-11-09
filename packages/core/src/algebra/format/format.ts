@@ -8,9 +8,9 @@ import type { Term, LiteralValue } from "../term.ts";
 import { termEquals, termToString } from "../term.ts";
 import type { Pred } from "../pred.ts";
 import { predToString } from "../pred.ts";
-import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "../interface/projection-budget.ts";
+import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "../contract/projection-budget.ts";
 import { accessorReadDomain } from "../accessors.ts";
-import { isHiddenInternalSlot } from "../interface/slot-visibility.ts";
+import { isHiddenInternalSlot } from "../contract/slot-visibility.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */

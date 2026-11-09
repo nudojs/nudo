@@ -27,7 +27,7 @@ const URI = "file:///workspace/sample.js";
 /** 服务端为该文件产出的 `nudo.contract.emit` CodeLens（可固化目标）。 */
 const PERSIST_LENS = {
   command: {
-    title: "⚡ persist interface",
+    title: "⚡ persist contract",
     command: "nudo.contract.emit",
     arguments: [URI, "add2", "add"],
   },

@@ -3,7 +3,7 @@
  * 判成 **函数 + 契约档(derived)**，而 `documentSymbol` 判 Variable、
  * CodeLens / hover 判**不在契约档** ⇒ 同一绑定三面互斥。
  *
- * 根因在 core 的**单一读取口** `interfaceTierOf`（`interface.ts`，A7：CodeLens
+ * 根因在 core 的**单一读取口** `contractTierOf`（`contract.ts`，A7：CodeLens
  * / hover / inlay / semantic tokens 共用，保证「同源」）：`implicit` 回落只看
  * `localNamedExports` ⇒ 任何本地具名导出都拿到 implicit 档 ⇒ derived 修饰。
  *
@@ -11,7 +11,7 @@
  * implicit 档；有契约的函数位仍是 handwritten。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { interfaceTierOf, takeInterfaceDiags, resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { contractTierOf, takeContractDiags, resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -30,21 +30,21 @@ export const target = fn({}, number());
 
 function tier(name: string, source = SRC) {
   const { loadModule } = makeFiles({ "/t/a.nudo.js": SIDECAR });
-  return interfaceTierOf(source, name, "/t/a.js", { loadModule, fromFile: "/t/a.js" });
+  return contractTierOf(source, name, "/t/a.js", { loadModule, fromFile: "/t/a.js" });
 }
 
-describe("BUG-223 interface 档单一读取口不为导出别名伪造派生档", () => {
+describe("BUG-223 contract 档单一读取口不为导出别名伪造派生档", () => {
   beforeEach(() => {
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 
-  it("导出别名（无契约）⇒ 不进 interface 档（旧口径给 implicit ⇒ derived）", () => {
+  it("导出别名（无契约）⇒ 不进 contract 档（旧口径给 implicit ⇒ derived）", () => {
     expect(tier("alias")).toBeUndefined();
   });
 
-  it("变量导出（无契约）⇒ 不进 interface 档", () => {
+  it("变量导出（无契约）⇒ 不进 contract 档", () => {
     expect(tier("notAFn")).toBeUndefined();
   });
 

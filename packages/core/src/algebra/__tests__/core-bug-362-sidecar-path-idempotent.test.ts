@@ -9,7 +9,7 @@
  *  无需改动那两个包。）
  */
 import { describe, it, expect } from "vitest";
-import { sidecarPathOf } from "../interface/sidecar-path.ts";
+import { sidecarPathOf } from "../contract/sidecar-path.ts";
 
 describe("Bug 362: 侧车路径幂等", () => {
   it("普通源码路径不变", () => {

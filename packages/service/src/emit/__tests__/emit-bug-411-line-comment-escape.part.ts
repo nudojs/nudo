@@ -17,7 +17,7 @@ import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";
 import { sanitizeCommentText } from "@nudojs/core/internal";
 import { sanitizeLineCommentText } from "../line-comment.ts";
-import { formatDraftModule } from "../interface-draft.ts";
+import { formatDraftModule } from "../contract-draft.ts";
 import { absToZodSchemaModule } from "../schema-generator.ts";
 import { absToStandardSchemaModule } from "../standard-schema.ts";
 import { generateFunctionDtsLines } from "../dts-generator.ts";

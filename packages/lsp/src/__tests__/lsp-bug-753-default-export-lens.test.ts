@@ -3,14 +3,14 @@
  *
  * 症状（真 server 协议面）：
  * - `textDocument/codeLens` 只有 entry@ 观察层，**没有** `● contract / imp`
- *   / `⚡ persist interface` / `⚡ draft interface` 三条 interface 档 lens；
+ *   / `⚡ persist contract` / `⚡ draft contract` 三条 contract 档 lens；
  * - `textDocument/inlayHint` 没有 `● contract / imp` 投影
  *   （CodeLens 不可见的客户端靠它看到契约档）；
  * - 而 hover / documentSymbol / semanticTokens 面**都**能看到 `compute` ——
  *   枚举面与导出面分裂。
  *
  * 根因：`topLevelFunctionSlots`（agent-tools.ts）只认 `ExportNamedDeclaration`
- * 与裸声明，不认 `ExportDefaultDeclaration` —— 默认导出从未进入 interface 档
+ * 与裸声明，不认 `ExportDefaultDeclaration` —— 默认导出从未进入 contract 档
  * 的目标集。
  *
  * 期望：默认导出与具名导出在 CodeLens / inlayHint 面上同形。
@@ -37,16 +37,16 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("Bug 753 — export default function 的 interface 档 lens", () => {
-  it("codeLens 出现默认导出的 interface 档（● contract / imp + 固化动作）", async () => {
+describe("Bug 753 — export default function 的 contract 档 lens", () => {
+  it("codeLens 出现默认导出的 contract 档（● contract / imp + 固化动作）", async () => {
     await withLspServer({ "a.js": DEFAULT_EXPORT_SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
         textDocument: { uri: uri("a.js") },
       }) as Lens[];
       const titles = lenses.map((l) => l.command?.title);
       expect(titles).toContain("● contract / imp");
-      expect(titles).toContain("⚡ persist interface");
-      expect(titles).toContain("⚡ draft interface");
+      expect(titles).toContain("⚡ persist contract");
+      expect(titles).toContain("⚡ draft contract");
 
       const contract = lenses.find((l) => l.command?.title === "● contract / imp")!;
       // 契约身份 = 本地名（core listTopFunctions / localNamedExports 同口径）
@@ -54,12 +54,12 @@ describe("Bug 753 — export default function 的 interface 档 lens", () => {
       // lens 落在函数声明行（1-based 行 1 ⇒ 0-based 行 0）
       expect(contract.range.start.line).toBe(0);
 
-      const draft = lenses.find((l) => l.command?.title === "⚡ draft interface")!;
+      const draft = lenses.find((l) => l.command?.title === "⚡ draft contract")!;
       expect(draft.command?.arguments?.[1]).toBe("compute");
     });
   });
 
-  it("inlayHint 出现默认导出的 interface 档投影（CodeLens 不可见客户端）", async () => {
+  it("inlayHint 出现默认导出的 contract 档投影（CodeLens 不可见客户端）", async () => {
     await withLspServer({ "a.js": DEFAULT_EXPORT_SRC }, async ({ req, uri }) => {
       const hints = req("textDocument/inlayHint")({
         textDocument: { uri: uri("a.js") },

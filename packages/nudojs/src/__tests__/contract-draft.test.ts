@@ -1,6 +1,6 @@
 /**
  * CLI 冒烟：`nudo contract --draft` 输出内联「可直接 uncomment 的建议行」
- * （service/emit/interface-draft.ts 的 formatDraftModule 变更在 CLI 面可见）。
+ * （service/emit/contract-draft.ts 的 formatDraftModule 变更在 CLI 面可见）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

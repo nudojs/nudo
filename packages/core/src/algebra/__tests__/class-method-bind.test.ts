@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { listTopFunctions } from "../scan/scan.ts";
-import { localNamedExports, effectiveInterface, formatConstraint } from "../interface/interface.ts";
+import { localNamedExports, effectiveContract, formatConstraint } from "../contract/contract.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { number, fn } from "../constraint.ts";
 import { makeFiles } from "./nudo-constraints.ts";
@@ -97,7 +97,7 @@ export { Local as Public };
     const { loadModule } = makeFiles({
       "/t/foo.nudo.js": `export const Foo_bar = fn({ x: number() }, number());`,
     });
-    const r = effectiveInterface(LOCAL_EXPORT_LIST, "Foo.bar", {
+    const r = effectiveContract(LOCAL_EXPORT_LIST, "Foo.bar", {
       loadModule,
       fromFile: "/t/foo.js",
     });
@@ -258,7 +258,7 @@ describe("C4.2 sidecar binding for class methods", () => {
     const { loadModule } = makeFiles({
       "/t/store.nudo.js": `export const MemoryStore_set = fn({ key: string() }, boolean());`,
     });
-    const r = effectiveInterface(STORE, "MemoryStore.set", {
+    const r = effectiveContract(STORE, "MemoryStore.set", {
       loadModule,
       fromFile: "/t/store.js",
     });
@@ -271,7 +271,7 @@ describe("C4.2 sidecar binding for class methods", () => {
     const { loadModule } = makeFiles({
       "/t/store.nudo.js": `export const MemoryStore = { set: fn({ key: number() }, boolean()) };`,
     });
-    const r = effectiveInterface(STORE, "MemoryStore.set", {
+    const r = effectiveContract(STORE, "MemoryStore.set", {
       loadModule,
       fromFile: "/t/store.js",
     });
@@ -285,7 +285,7 @@ describe("C4.2 sidecar binding for class methods", () => {
     });
     // 无效侧车 → 不绑（fail-open，不 throw）
     expect(() =>
-      effectiveInterface(STORE, "MemoryStore.set", {
+      effectiveContract(STORE, "MemoryStore.set", {
         loadModule,
         fromFile: "/t/store.js",
       }),
@@ -294,7 +294,7 @@ describe("C4.2 sidecar binding for class methods", () => {
 
   it("no sidecar → class method stays implicit", () => {
     const { loadModule } = makeFiles({});
-    const r = effectiveInterface(STORE, "MemoryStore.set", {
+    const r = effectiveContract(STORE, "MemoryStore.set", {
       loadModule,
       fromFile: "/t/store.js",
     });

@@ -1,10 +1,10 @@
 /**
- * BUG-023：`nudo:interface-drift` 对**函数体内**的调用点恒不触发 ⇒ 陈旧
+ * BUG-023：`nudo:contract-drift` 对**函数体内**的调用点恒不触发 ⇒ 陈旧
  * `@generated` 段零告警（假绿）。
  *
  * 根因：drift 的「今日域」证据（AbsCallRecord）收集窗口只包**模块顶层**
  * 求值 ⇒ 函数体内的调用点（绝大多数真实调用点）从不进证据表
- * ⇒ `check-interface-drift` 的 `evidence.length === 0 → continue` 静默跳过。
+ * ⇒ `check-contract-drift` 的 `evidence.length === 0 → continue` 静默跳过。
  *
  * 本套件钉：同一份陈旧生成段，
  * - 调用点在**函数体内**（`caller(){ return add(1,2) }`）→ 必须报 drift；
@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -37,7 +37,7 @@ describe("BUG-023 drift 的今日域证据包含函数体内的调用点", () =>
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 
@@ -50,7 +50,7 @@ export function caller() {
   return add(1, 2);
 }
 `);
-    const drifts = r.issues.filter((i) => i.code === "nudo:interface-drift");
+    const drifts = r.issues.filter((i) => i.code === "nudo:contract-drift");
     const params = drifts.map((i) => i.message.match(/\[(\w+)\]/)?.[1]);
     // 参数位 a、b 的快照 lit(9) ≠ 今日实参 1 / 2
     expect(params).toContain("a");
@@ -67,7 +67,7 @@ export function add(a, b) {
 }
 add(1, 2);
 `);
-    const drifts = r.issues.filter((i) => i.code === "nudo:interface-drift");
+    const drifts = r.issues.filter((i) => i.code === "nudo:contract-drift");
     expect(drifts.map((i) => i.message.match(/\[(\w+)\]/)?.[1])).toContain("a");
     expect(drifts.map((i) => i.message.match(/\[(\w+)\]/)?.[1])).toContain("b");
   });
@@ -92,6 +92,6 @@ export function caller() {
       pTrue,
       { loadModule, fromFile: "/t/area.js" },
     );
-    expect(r.issues.filter((i) => i.code === "nudo:interface-drift")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-drift")).toEqual([]);
   });
 });

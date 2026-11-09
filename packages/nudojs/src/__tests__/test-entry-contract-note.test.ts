@@ -2,7 +2,7 @@
  * entry@ 回退 × 有效契约注解（DX：`nudo check` 全绿 vs `nudo test` 打
  * `(any) => any throws TypeError` 的表面矛盾）：
  * - 有契约（侧车手写绑定 / 源码 @nudo:contract，与 check 门禁同判定
- *   effectiveInterface handwritten）且打印 case 是 entry@ → case 区块尾
+ *   effectiveContract handwritten）且打印 case 是 entry@ → case 区块尾
  *   加注解行
  * - 无契约（真 entry-only 回退）不注解
  * - --json 机器面 / --abs 输出面不含注解

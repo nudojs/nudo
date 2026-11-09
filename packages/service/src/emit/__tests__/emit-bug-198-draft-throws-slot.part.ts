@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
-import { draftInterface } from "../interface-draft.ts";
+import { draftContract } from "../contract-draft.ts";
 import { tmpProject, writeTmpFiles } from "../../__tests__/tmp-project.ts";
 
 const MAY_THROW = `export function add(a, b) {
@@ -47,7 +47,7 @@ describe("BUG-198 —— contract --draft 必须带抛错证据", () => {
   it("未申报但门禁判「可能抛」⇒ 草稿头给出可照抄的 throws 补救（DSL 不擅自加义务）", async () => {
     const dir = tmpProject("nudo-bug-198-");
     writeTmpFiles(dir, { "lib.js": MAY_THROW });
-    const res = await draftInterface(join(dir, "lib.js"));
+    const res = await draftContract(join(dir, "lib.js"));
     // DSL 形态不变（不把「可能抛」变成草稿义务）
     expect(res.entries[0]?.dsl).toBe("fn({})");
     // 但草稿头必须写明补救（此前完全没有）
@@ -59,7 +59,7 @@ describe("BUG-198 —— contract --draft 必须带抛错证据", () => {
     const dir = tmpProject("nudo-bug-198-rt-");
     writeTmpFiles(dir, { "lib.js": MAY_THROW });
     const file = join(dir, "lib.js");
-    const res = await draftInterface(file);
+    const res = await draftContract(file);
     const dsl = res.entries[0]!.dsl!;
     const kinds = res.entries[0]!.throws!.kinds;
     const slot = `, any(), { throws: ${kinds.map((k) => `"${k}"`).join(", ")} }`;
@@ -70,7 +70,7 @@ describe("BUG-198 —— contract --draft 必须带抛错证据", () => {
   it("源码显式 `@nudo:throws` 原样进草稿（不再凭空消失）", async () => {
     const dir = tmpProject("nudo-bug-198-decl-");
     writeTmpFiles(dir, { "lib.js": DECLARED });
-    const res = await draftInterface(join(dir, "lib.js"));
+    const res = await draftContract(join(dir, "lib.js"));
     expect(res.entries[0]?.dsl).toContain('{ throws: "TypeError" }');
     expect(res.entries[0]?.throws).toEqual({ kinds: ["TypeError"], declared: true });
   });
@@ -86,7 +86,7 @@ export function f(x) {
 }
 `;
     writeTmpFiles(dir, { "lib.js": src });
-    const res = await draftInterface(join(dir, "lib.js"));
+    const res = await draftContract(join(dir, "lib.js"));
     const dsl = res.entries[0]!.dsl!;
     expect(dsl).toContain('union(lit("TypeError"), lit("RangeError"))');
   });
@@ -95,7 +95,7 @@ export function f(x) {
   it("负控制：不抛错的函数草稿里没有 throws 槽", async () => {
     const dir = tmpProject("nudo-bug-198-total-");
     writeTmpFiles(dir, { "lib.js": TOTAL });
-    const res = await draftInterface(join(dir, "lib.js"));
+    const res = await draftContract(join(dir, "lib.js"));
     const dsl = res.entries[0]?.dsl;
     expect(dsl).toBeDefined();
     expect(dsl).not.toContain("throws");

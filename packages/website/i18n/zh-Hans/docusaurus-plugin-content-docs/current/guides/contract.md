@@ -53,7 +53,7 @@ npx nudojs contract --draft --write src/lib.js --fn lineTotal
 
 人工审阅把 `number()` 收紧为 `number().gt(0)` 等。只有被接受的侧车才是 L1。
 
-[Playground 草稿故事](/playground) · 示例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
+[Playground 草稿故事](/playground) · 示例：[`docs/examples/contract-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/contract-draft)
 
 ## 完整一圈：草稿 → 收紧 → 接受 → 门禁
 
@@ -261,13 +261,13 @@ signatures
   wrap(text: number) => string
 
 issues
-  [WARNING L5 wrap] wrap[text]: persisted @generated segment ≠ today's call-site domain  (nudo:interface-drift)
+  [WARNING L5 wrap] wrap[text]: persisted @generated segment ≠ today's call-site domain  (nudo:contract-drift)
       → re-run nudo contract --emit to refresh the generated segment, or check the call sites of text
-  [WARNING L5 wrap] wrap[return]: persisted @generated segment ≠ today's inferred return  (nudo:interface-drift)
+  [WARNING L5 wrap] wrap[return]: persisted @generated segment ≠ today's inferred return  (nudo:contract-drift)
       → re-run nudo contract --emit to refresh the generated segment, or check the return value
 ```
 
-`nudo:interface-drift` 是 **warning —— 不挡 exit**（上面这次运行退出码为 0）。新用法是有意的就刷新（`nudo contract --emit src/tags.js` 打印同样的 `Updated … written: wrap` 摘要，段变为 `fn({ text: lit("hot") }, lit("(hot)"))`）；证据未变时重跑为 no-op（`src/tags.js: no interface changes`）。
+`nudo:contract-drift` 是 **warning —— 不挡 exit**（上面这次运行退出码为 0）。新用法是有意的就刷新（`nudo contract --emit src/tags.js` 打印同样的 `Updated … written: wrap` 摘要，段变为 `fn({ text: lit("hot") }, lit("(hot)"))`）；证据未变时重跑为 no-op（`src/tags.js: no contract changes`）。
 
 ### CI 漂移门禁
 
@@ -290,7 +290,7 @@ npx nudojs contract --emit src/tags.js --dry-run --exit-on-diff
 
 ```
 
-命令退出码为 `1` —— 维护者在本地刷新并提交。`--exit-on-diff` 必须搭配 `--emit --dry-run`（裸传 `--exit-on-diff` 是用法错误）；手写绑定始终优先 —— emit 若会覆盖某条绑定，会报 `nudo:interface-name-clash` 并跳过写入。使用处文件可以供证据：`contract --emit src/lib.js --from test/`（见[调用点发现](./callsite-discovery.md)）。
+命令退出码为 `1` —— 维护者在本地刷新并提交。`--exit-on-diff` 必须搭配 `--emit --dry-run`（裸传 `--exit-on-diff` 是用法错误）；手写绑定始终优先 —— emit 若会覆盖某条绑定，会报 `nudo:contract-name-clash` 并跳过写入。使用处文件可以供证据：`contract --emit src/lib.js --from test/`（见[调用点发现](./callsite-discovery.md)）。
 
 ## 逆向 TypeScript 声明（--from-dts）
 

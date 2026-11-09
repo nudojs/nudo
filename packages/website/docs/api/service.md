@@ -181,7 +181,7 @@ buildSemanticTokens(
 ): number[]
 ```
 
-Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. Top-level **named-export** function bindings also carry an interface-tier modifier (`contract` / `generated` / `derived`) aligned with CodeLens `● contract` via `interfaceTierOf` (A7). Non-export declarations keep `declaration` only. The LSP server's semanticTokens handler consumes this directly.
+Produces LSP-encoded semantic tokens (5-tuples: deltaLine/deltaStartChar/length/tokenType/tokenModifiers) from the analysis result — function bindings typed as `function`, other bindings as `variable`, parameters as `parameter`. Top-level **named-export** function bindings also carry a contract-tier modifier (`contract` / `generated` / `derived`) aligned with CodeLens `● contract` via `contractTierOf` (A7). Non-export declarations keep `declaration` only. The LSP server's semanticTokens handler consumes this directly.
 
 The matching legend and encoder are exported from the same module, and the LSP package re-exports them (`TOKEN_TYPES`/`TOKEN_MODIFIERS`) so the token-type indices can never drift from the extractor:
 
@@ -198,7 +198,7 @@ type SemanticToken = {
 };
 
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
-interfaceTierModifierBit(src: "handwritten" | "generated" | "implicit"): number;
+contractTierModifierBit(src: "handwritten" | "generated" | "implicit"): number;
 ```
 
 `encodeSemanticTokens` delta-encodes `{ line, char, … }` tokens into the flat `number[]` the LSP expects — `buildSemanticTokens` already returns encoded output, so you only need it when building tokens yourself.
@@ -697,7 +697,16 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="computedirtyset"></a>`computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
 | <a id="configignorethrows"></a>`configIgnoreThrows` | fn | package.json#nudo.check.ignoreThrows 的**原始**值 → 与 CLI 同口径的列表 （679：配置面复用本解析器，不再走各面自己的严格 `string[]` 过滤—— 裸字符串 `"TypeError"` 曾被静默丢成空表 ⇒ 门禁假红）。 | `configIgnoreThrows( config: { check?: unknown } \| null \| undefined, ): string[]` |
 | <a id="constraintsourceexpr"></a>`ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
+| <a id="contractcachekey"></a>`contractCacheKey` | fn | effectiveContract 表键（L1 Phase B，design-persistent-cache）。 | `contractCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarSource?: string \| undefined; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; }, ): string` |
+| <a id="contractconfig"></a>`contractConfig` | fn | 归一化 `nudo.contract` 配置段。 | `contractConfig(config: NudoConfig \| null \| undefined): ContractConfig` |
+| <a id="contractconfig"></a>`ContractConfig` | type | — | `ContractConfig = { autoBind: boolean; emit: string[]; }` |
+| <a id="contractdraftentry"></a>`ContractDraftEntry` | type | — | `ContractDraftEntry = { fn: string; identity?: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; project...` |
+| <a id="contractdraftopts"></a>`ContractDraftOpts` | type | — | `ContractDraftOpts = { fnNames?: string[]; records?: CallRecord[]; loadModule?: LoadModule; autoBind?: boolean; bodyAccesses?: boolean; so...` |
+| <a id="contractdraftresult"></a>`ContractDraftResult` | type | — | `ContractDraftResult = { file: string; entries: ContractDraftEntry[]; draftSource: string; sidecarPath: string; }` |
 | <a id="contractdslof"></a>`contractDslOf` | fn | 契约证据 → constraint-builder DSL 文本（`array(shape({ … }))` 等） | `contractDslOf(ev: ParamContractEvidence): string` |
+| <a id="contractsurface"></a>`contractSurface` | fn | 单文件 contract 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveContract 给出契约命中（手写 &gt; 生成段）。 | `contractSurface( filePath: string, opts: ContractSurfaceOpts = {}, ): Promise<ContractSurfaceEntry[]>` |
+| <a id="contractsurfaceentry"></a>`ContractSurfaceEntry` | type | — | `ContractSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: st...` |
+| <a id="contractsurfaceopts"></a>`ContractSurfaceOpts` | type | — | `ContractSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; diagnostics?: ContractFaceD...` |
 | <a id="currentbforkbudgetlimit"></a>`currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
 | <a id="default_analysis_mode"></a>`DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
 | <a id="default_session_cache_limits"></a>`DEFAULT_SESSION_CACHE_LIMITS` | const | 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） | `const DEFAULT_SESSION_CACHE_LIMITS` |
@@ -722,22 +731,22 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="diskcachesignstate"></a>`diskCacheSignState` | fn | — | `diskCacheSignState( config: NudoConfig \| null \| undefined, env: NodeJS.ProcessEnv = process.env, ): DiskCacheSignState` |
 | <a id="diskcachesignstate"></a>`DiskCacheSignState` | type | 磁盘缓存条目签名状态（B3 信任面）： - `{ kind: "off" }`：未开签名（默认）——旧未签名行为原样 - `{ kind: "on", key }`：签名开 + `NUDO_CACHE_KEY` 就绪（key = 原始密钥串， HMAC 密钥材料派生见 disk-cache.ts） - `{ kind: "error", message }`：**配置错误**——`sign: true` 但密钥缺席/空。 | `DiskCacheSignState = \| { kind: "off" } \| { kind: "on"; key: string } \| { kind: "error"; message: string }` |
 | <a id="domainevidencecases"></a>`domainEvidenceCases` | fn | 产物面（dts / zod / standard / guard）的**域证据 case**。 | `domainEvidenceCases(cases: readonly CaseResult[]): CaseResult[]` |
+| <a id="draftcontract"></a>`draftContract` | fn | 为单文件顶层导出生成 contract 草稿（不写盘）。 | `draftContract( filePath: string, opts: ContractDraftOpts = {}, ): Promise<ContractDraftResult>` |
 | <a id="draftevidence"></a>`DraftEvidence` | type | DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。 | `DraftEvidence = "callsite" \| "directive" \| "symbolic" \| "body" \| "none"` |
-| <a id="draftinterface"></a>`draftInterface` | fn | 为单文件顶层导出生成 interface 草稿（不写盘）。 | `draftInterface( filePath: string, opts: InterfaceDraftOpts = {}, ): Promise<InterfaceDraftResult>` |
 | <a id="dtsclasssurface"></a>`DtsClassSurface` | type | 类声明面（成员面 + 导出形态） | `DtsClassSurface extends DtsClassMemberSurface { exportName?: string; exportNames?: string[]; isDefault: boolean; }` |
-| <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs; optional?: boolean }>; return?: Abs; }` |
+| <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveContract 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs; optional?: boolean }>; return?: Abs; }` |
 | <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; exportName?: string; classMember?: { className: s...` |
 | <a id="dtsmoduleextras"></a>`DtsModuleExtras` | type | 模块面合成的**分析面补充证据**（函数入口之外的事实：模块级绑定 Abs）。 | `DtsModuleExtras { values?: ReadonlyMap<string, Abs>; }` |
 | <a id="dtsmoduleprojection"></a>`DtsModuleProjection` | type | 模块面 dts 投影结果 | `DtsModuleProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
 | <a id="dtsmodulesurface"></a>`dtsModuleSurface` | fn | 模块导出面扫描（源文件 → 导出名表 + 类面 + 再导出语句）。 | `dtsModuleSurface(source: string): DtsModuleSurface` |
 | <a id="dtsmodulesurface"></a>`DtsModuleSurface` | type | 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出 + 导入面） | `DtsModuleSurface { exportBindings: Map<string, string>; reexports: string[]; classes: Map<string, DtsClassSurface>; imports?: Map<string,...` |
 | <a id="dtsvaluesurface"></a>`DtsValueSurface` | type | 模块级**值声明**面（BUG-190）：`export const/let/var` 与 TS `enum`。 | `DtsValueSurface { kind: "const" \| "let" \| "var" \| "enum"; enumMembers?: Array<{ name: string; init?: string }>; constEnum?: boolean; type...` |
+| <a id="emitcontract"></a>`emitContract` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitContract( filePath: string, opts: EmitContractOpts, ): Promise<EmitContractResult>` |
+| <a id="emitcontractopts"></a>`EmitContractOpts` | type | — | `EmitContractOpts = { fnNames?: string[]; mode: "add" \| "update"; all?: boolean; dryRun?: boolean; records?: CallRecord[]; source?: string...` |
+| <a id="emitcontractresult"></a>`EmitContractResult` | type | — | `EmitContractResult = { written: string[]; skipped: Array<{ fn: string; reason: EmitContractSkipReason }>; changed: boolean; diff?: string...` |
+| <a id="emitcontractskipreason"></a>`EmitContractSkipReason` | type | — | `EmitContractSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator" \| "expor...` |
 | <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; baseContent?: (sidecarPath: string) => string \| undefined; skipWrite?: string[]; directSections?: Set<string>; directCreatedSections?: Set<string>; }, ): EmitDerivedResult` |
 | <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; writtenNames?: string[]; changed...` |
-| <a id="emitinterface"></a>`emitInterface` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitInterface( filePath: string, opts: EmitInterfaceOpts, ): Promise<EmitInterfaceResult>` |
-| <a id="emitinterfaceopts"></a>`EmitInterfaceOpts` | type | — | `EmitInterfaceOpts = { fnNames?: string[]; mode: "add" \| "update"; all?: boolean; dryRun?: boolean; records?: CallRecord[]; source?: strin...` |
-| <a id="emitinterfaceresult"></a>`EmitInterfaceResult` | type | — | `EmitInterfaceResult = { written: string[]; skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }>; changed: boolean; diff?: stri...` |
-| <a id="emitinterfaceskipreason"></a>`EmitInterfaceSkipReason` | type | — | `EmitInterfaceSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator" \| "expo...` |
 | <a id="emitresult"></a>`EmitResult` | type | — | `EmitResult = { source: string; changed: boolean; written: Array<{ fn: string; cases: string[] }>; skipped: Array<{ fn: string; reason: Em...` |
 | <a id="emitskipreason"></a>`EmitSkipReason` | type | — | `EmitSkipReason = \| "hand-written" \| "already-generated" \| "entry-only" \| "no-serializable-cases" \| "no-declaration" \| "contract-violation...` |
 | <a id="entry_contract_note"></a>`ENTRY_CONTRACT_NOTE` | const | entry@ 回退 case × 有效契约的注解行：解释「check 全绿但 test 打 `(any) => any throws`」的表面矛盾——entry@ 用的是无约束入口 face， 契约作用于 check/export 面；要看到受约束的 case 就加 @nudo:case 或提供调用点。throws 显示保留（那是无约束 face 的诚实结果）。 | `const ENTRY_CONTRACT_NOTE` |
@@ -767,12 +776,12 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="filterdiagnosticsbylevel"></a>`filterDiagnosticsByLevel` | fn | 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。 | `filterDiagnosticsByLevel<T extends { severity: string; code?: string }>( diags: T[], level: DiagnosticsLevel, ): T[]` |
 | <a id="findowningpackage"></a>`findOwningPackage` | fn | Nearest package.json walking up from the file's directory. | `findOwningPackage( fromFile: string, )` |
 | <a id="findprojectconfig"></a>`findProjectConfig` | fn | — | `findProjectConfig( startDir: string, )` |
+| <a id="formatcontractsurfaceline"></a>`formatContractSurfaceLine` | fn | 单条 contract 打印行（CLI runContract 与 LSP agent 面共用） | `formatContractSurfaceLine(e: ContractSurfaceEntry): string` |
 | <a id="formatderivedsection"></a>`formatDerivedSection` | fn | 组装生成段（组合式 + import + prelude）。 | `formatDerivedSection( row: DerivedExport, opts: { rootSidecarDir: string; targetSidecarDir: string; takenNames?: Iterable<string>; }, )` |
-| <a id="formatdraftmodule"></a>`formatDraftModule` | fn | 草稿模块文本（人读 + 可复制到 *.nudo.js / *.nudo.ts） | `formatDraftModule( filePath: string, entries: InterfaceDraftEntry[], sidecarPath?: string, throwsHints?: readonly string[], ): string` |
-| <a id="formatdraftsummary"></a>`formatDraftSummary` | fn | — | `formatDraftSummary( sourceRel: string, draftRel: string, result: InterfaceDraftResult, write?: WriteDraftResult, ): string[]` |
-| <a id="formatemitsummary"></a>`formatEmitSummary` | fn | emit 摘要行（CLI runInterfaceEmit 与 LSP agent 面共用；路径由调用方按 展示口径传入——CLI 传 cwd 相对、agent 传绝对路径）。 | `formatEmitSummary( sourcePath: string, sidecarRel: string, result: EmitInterfaceResult, ): string[]` |
+| <a id="formatdraftmodule"></a>`formatDraftModule` | fn | 草稿模块文本（人读 + 可复制到 *.nudo.js / *.nudo.ts） | `formatDraftModule( filePath: string, entries: ContractDraftEntry[], sidecarPath?: string, throwsHints?: readonly string[], ): string` |
+| <a id="formatdraftsummary"></a>`formatDraftSummary` | fn | — | `formatDraftSummary( sourceRel: string, draftRel: string, result: ContractDraftResult, write?: WriteDraftResult, ): string[]` |
+| <a id="formatemitsummary"></a>`formatEmitSummary` | fn | emit 摘要行（CLI runContractEmit 与 LSP agent 面共用；路径由调用方按 展示口径传入——CLI 传 cwd 相对、agent 传绝对路径）。 | `formatEmitSummary( sourcePath: string, sidecarRel: string, result: EmitContractResult, ): string[]` |
 | <a id="formatexpected"></a>`formatExpected` | fn | 期望值的可读文本（带谓词）：`number (> 0)` / `{ n: number (> 0) }`。 | `formatExpected(expected: Abs): string` |
-| <a id="formatinterfacesurfaceline"></a>`formatInterfaceSurfaceLine` | fn | 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） | `formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string` |
 | <a id="formatpatherrortext"></a>`formatPathErrorText` | fn | 路径错误的**非 JSON 面**文案（CLI 的 usage error 面同口径）： 一行原因 + 一行 `fix:` 提示。 | `formatPathErrorText(errors: PathError[]): string` |
 | <a id="formattestreport"></a>`formatTestReport` | fn | — | `formatTestReport(r: TestReport): string` |
 | <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; declaredReturnType?: string; cases...` |
@@ -790,19 +799,10 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="getpathenvdepcontents"></a>`getPathEnvDepContents` | fn | 已成功预载的 path env 文件（供 check 磁盘缓存指纹纳入 sha）。 | `getPathEnvDepContents(baseDir?: string): Array<{ path: string; content: string \| null }>` |
 | <a id="getpathenvloaderrors"></a>`getPathEnvLoadErrors` | fn | path env 加载失败诊断（check/test 打印 nudo:env-unresolved warning 用）。 | `getPathEnvLoadErrors(baseDir?: string): Array<{ path: string; error: string; baseDir: string }>` |
 | <a id="getsessioncachelimits"></a>`getSessionCacheLimits` | fn | — | `getSessionCacheLimits( env: NodeJS.ProcessEnv = process.env, ): SessionCacheLimits` |
-| <a id="ifacecachekey"></a>`ifaceCacheKey` | fn | effectiveInterface 表键（L1 Phase B，design-persistent-cache）。 | `ifaceCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarSource?: string \| undefined; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; }, ): string` |
 | <a id="inferencefailed"></a>`inferenceFailed` | fn | Bug 950 第三态：**引擎未能推断实测值**（⇒ 无法判定，不是「不匹配」）。 | `inferenceFailed(actual: Abs): boolean` |
 | <a id="injectbindings"></a>`injectBindings` | fn | — | `injectBindings( source: string, bindings: TypeBinding[], )` |
 | <a id="insertcaseoptions"></a>`InsertCaseOptions` | type | 固化写回的宿主接线（BUG-055 / BUG-119）——全部可选： 缺省时行为与改前**逐字一致**（只认源码内指令契约、add 模式的整函数跳过）。 | `InsertCaseOptions = { filePath?: string; loadModule?: (spec: string, fromFile: string) => string \| undefined; autoBind?: boolean; project...` |
 | <a id="insertgeneratedcasedirectives"></a>`insertGeneratedCaseDirectives` | fn | 把 analysis 中的合成 case（source === "callsite"）固化为源码指令： 1. | `insertGeneratedCaseDirectives( source: string, analysis: AnalysisResult, opts: InsertCaseOptions = {}, ): EmitResult` |
-| <a id="interfaceconfig"></a>`interfaceConfig` | fn | 归一化 `nudo.contract` 配置段。 | `interfaceConfig(config: NudoConfig \| null \| undefined): InterfaceConfig` |
-| <a id="interfaceconfig"></a>`InterfaceConfig` | type | — | `InterfaceConfig = { autoBind: boolean; emit: string[]; }` |
-| <a id="interfacedraftentry"></a>`InterfaceDraftEntry` | type | — | `InterfaceDraftEntry = { fn: string; identity?: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; projec...` |
-| <a id="interfacedraftopts"></a>`InterfaceDraftOpts` | type | — | `InterfaceDraftOpts = { fnNames?: string[]; records?: CallRecord[]; loadModule?: LoadModule; autoBind?: boolean; bodyAccesses?: boolean; s...` |
-| <a id="interfacedraftresult"></a>`InterfaceDraftResult` | type | — | `InterfaceDraftResult = { file: string; entries: InterfaceDraftEntry[]; draftSource: string; sidecarPath: string; }` |
-| <a id="interfacesurface"></a>`interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
-| <a id="interfacesurfaceentry"></a>`InterfaceSurfaceEntry` | type | — | `InterfaceSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: s...` |
-| <a id="interfacesurfaceopts"></a>`InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; diagnostics?: ContractFace...` |
 | <a id="isenvtemplatepath"></a>`isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
 | <a id="isnudotargetpath"></a>`isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
 | <a id="isprojectconfigpath"></a>`isProjectConfigPath` | fn | — | `isProjectConfigPath(path: string): boolean` |
@@ -897,8 +897,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） | `typeExprToDirective(expr: string): string` |
 | <a id="unifieddiff"></a>`unifiedDiff` | fn | — | `unifiedDiff(a: string, b: string, path: string): string` |
+| <a id="writecontractdraft"></a>`writeContractDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeContractDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<ContractDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; skipped?: "hand-edit...` |
 | <a id="writefileatomic"></a>`writeFileAtomic` | fn | tmp + rename 原子写（同目录 temp ⇒ 崩溃/磁盘满时目标要么旧要么新，不会 半截）。随机后缀用 `randomBytes`（不是 `Math.random`/`Date.now`）：防可 预测 tmp 路径被预置符号链接劫持。 | `writeFileAtomic(path: string, data: string): void` |
-| <a id="writeinterfacedraft"></a>`writeInterfaceDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeInterfaceDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="zodmoduleprojection"></a>`ZodModuleProjection` | type | — | `ZodModuleProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 <!-- NUDO-API-SKELETON:END -->

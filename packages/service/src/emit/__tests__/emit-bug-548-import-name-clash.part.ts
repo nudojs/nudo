@@ -14,8 +14,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
-import { execNudoModule, effectiveInterface } from "@nudojs/core";
+import { emitContract } from "../contract-emitter.ts";
+import { execNudoModule, effectiveContract } from "@nudojs/core";
 
 let dir: string;
 
@@ -68,7 +68,7 @@ export const other = fn({ n: number().gt(0) }, boolean());
 `,
     );
 
-    const r = await emitInterface(file, { fnNames: ["positive"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["positive"], mode: "update" });
     expect(r.written).toEqual(["positive"]);
     const after = readFileSync(sidecar, "utf-8");
     // 不得出现与 import 局部绑定重名的直发声明
@@ -96,9 +96,9 @@ import { fn, number, boolean } from "@nudojs/core";
 export const other = fn({ n: number().gt(0) }, boolean());
 `,
     );
-    await emitInterface(file, { fnNames: ["positive"], mode: "update" });
+    await emitContract(file, { fnNames: ["positive"], mode: "update" });
     // 手写契约仍在（other 的签名带 n: number().gt(0) ⇒ number）
-    const eff = effectiveInterface(SRC, "other", { loadModule, fromFile: file });
+    const eff = effectiveContract(SRC, "other", { loadModule, fromFile: file });
     expect(eff).toBeDefined();
     expect(eff!.params.map((p) => p.param)).toEqual(["n"]);
   });
@@ -119,9 +119,9 @@ import { fn, number, boolean } from "@nudojs/core";
 export const other = fn({ n: number().gt(0) }, boolean());
 `,
     );
-    await emitInterface(file, { fnNames: ["positive"], mode: "update" });
+    await emitContract(file, { fnNames: ["positive"], mode: "update" });
     const after = readFileSync(sidecar, "utf-8");
-    const second = await emitInterface(file, { fnNames: ["positive"], mode: "update" });
+    const second = await emitContract(file, { fnNames: ["positive"], mode: "update" });
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecar, "utf-8")).toBe(after);
   });
@@ -137,7 +137,7 @@ export const other = fn({ n: number().gt(0) }, boolean());
 export const other = fn({ n: number().gt(0) }, boolean());
 `,
     );
-    const r = await emitInterface(file, { fnNames: ["positive"], mode: "update" });
+    const r = await emitContract(file, { fnNames: ["positive"], mode: "update" });
     expect(r.written).toEqual(["positive"]);
     const after = readFileSync(sidecar, "utf-8");
     expect(after).toContain("export const positive = fn(");

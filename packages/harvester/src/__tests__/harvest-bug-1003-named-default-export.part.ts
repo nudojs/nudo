@@ -10,7 +10,7 @@
  * 产品面取证（改前 vs 改后，同一份侧车 + 同一份源码）：
  * - 改后：侧车 `export { _default as default }` ⇒ `impl(x: number) => string`；
  * - 改前：侧车 `export const helper = …` ⇒ 绑不到 `default` ⇒
- *   `impl(x: any) => string` + `nudo:interface-entry-only`（零义务）。
+ *   `impl(x: any) => string` + `nudo:contract-entry-only`（零义务）。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -67,7 +67,7 @@ describe("Bug 1003 —— --from-dts 的具名 default 导出", () => {
     expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
     // 契约落到 default 导出上 ⇒ 签名带 number / string
     expect(res.stdout).toContain("impl(x: number) => string");
-    // 改前：default 导出没有契约根 ⇒ `nudo:interface-entry-only`
-    expect(res.stdout).not.toContain("nudo:interface-entry-only");
+    // 改前：default 导出没有契约根 ⇒ `nudo:contract-entry-only`
+    expect(res.stdout).not.toContain("nudo:contract-entry-only");
   }, 120_000);
 });

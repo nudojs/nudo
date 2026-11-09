@@ -2,14 +2,14 @@
  * 源文件导出面 AST 扫描：localNamedExports（本地导出名表，侧车自动绑定
  * 边界）/ exportedNameOfLocal（DESIGN-003 本地名→导出名查询）/
  * generatedExportNames（侧车生成段识别）。
- * 自 interface.ts 机械拆出（纯解析层，只依赖 parse-source）；语义未改。
- * interface.ts 头部 re-export 维持其既有导出面（index.ts / internal.ts 不变形）。
+ * 自 contract.ts 机械拆出（纯解析层，只依赖 parse-source）；语义未改。
+ * contract.ts 头部 re-export 维持其既有导出面（index.ts / internal.ts 不变形）。
  */
 
 import { parseSource } from "../parse-source.ts";
 
 // ---------------------------------------------------------------------------
-// 本地导出表 / 导出名查询 / 生成段识别（原 interface.ts「侧车路径 / 本地
+// 本地导出表 / 导出名查询 / 生成段识别（原 contract.ts「侧车路径 / 本地
 // 导出表 / 生成段识别」段的 AST 扫描部分）
 // ---------------------------------------------------------------------------
 
@@ -563,7 +563,7 @@ export function generatedExportNames(sidecarSrc: string): Set<string> {
  * `this is NOT a @generated block`）都算生成标记 ⇒ 手写段的 L1 义务整体消失
  * + emit 侧整段覆盖手写契约（Bug 443）。用户**引用**nudo 的提示语 ≠ nudo 写的段头。
  *
- * 导出供 service emit 面（interface-derivation-emit / interface-emitter）
+ * 导出供 service emit 面（contract-derivation-emit / contract-emitter）
  * 复用——此前两处逐字拷贝靠注释「口径与 core 一致」手工同步。
  */
 export function isGeneratedMarkerLine(line: string): boolean {
@@ -634,8 +634,8 @@ export function collectIdentNames(node: unknown, out: Set<string>): void {
  * 判据收紧为「const 的绑定被 export 引用」（引用集合按链**传递闭包**扩展：
  * 多步 prelude 的中间量只被后一步引用）。
  *
- * 导出供 service emit 面复用（interface-derivation-emit 的 `regionHasGeneratedMarker` /
- * interface-emitter 的段切片）。
+ * 导出供 service emit 面复用（contract-derivation-emit 的 `regionHasGeneratedMarker` /
+ * contract-emitter 的段切片）。
  */
 export type ProgramStmts = ReturnType<typeof parseSource>["program"]["body"];
 
@@ -668,7 +668,7 @@ export function sectionChainIndices(
 }
 
 /**
- * `sectionChainIndices` 的**升序语句数组**形态（interface-emitter 的段切片
+ * `sectionChainIndices` 的**升序语句数组**形态（contract-emitter 的段切片
  * 需要「链首在前」的顺序——import 也入段切片）。
  */
 export function sectionChainList(stmts: ProgramStmts, exportIdx: number): ProgramStmts {

@@ -17,7 +17,7 @@
 import {describe, it, expect} from "vitest";
 import {formatShape, formatAbs} from "../format/format.ts";
 import {denoteGuard} from "../denote.ts";
-import {absToConstraint} from "../interface/projection.ts";
+import {absToConstraint} from "../contract/projection.ts";
 import {checkSource, pTrue} from "../index.ts";
 import {call} from "./eval-helpers.ts";
 import {sidecarOpts} from "./nudo-constraints.ts";

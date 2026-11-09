@@ -8,7 +8,7 @@
  * - `@nudojs/service/analysis`  — file analysis + Abs-native module-graph eval
  * - `@nudojs/service/evaluator` — host API surface (env/config/CallRecord)
  *
- * Emit products (interface/dts/case) live in `@nudojs/service/emit`; IDE surface in
+ * Emit products (contract/dts/case) live in `@nudojs/service/emit`; IDE surface in
  * `@nudojs/lsp`; `@types` harvest in `@nudojs/harvester`. This `.` entry
  * re-exports the analysis face below.
  */
@@ -88,7 +88,7 @@ export {
   type Matcher,
 } from "./glob.ts";
 
-// AI3：what-if 绑定注入（CLI / LSP 同构；emit 的 interface 面再导出）
+// AI3：what-if 绑定注入（CLI / LSP 同构；emit 的 contract 面再导出）
 export {
   injectBindings,
   typeExprToDirective,
@@ -176,7 +176,7 @@ export {
   findProjectConfig,
   evictProjectConfigMemo,
   projectConfigMemoStats,
-  interfaceConfig,
+  contractConfig,
   analysisConfig,
   checkConfig,
   diskCacheRoot,
@@ -188,7 +188,7 @@ export {
   type NudoConfig,
   type NudoCacheConfig,
   type DiskCacheSignState,
-  type InterfaceConfig,
+  type ContractConfig,
   type AnalysisConfig,
   type CheckConfig,
   type AnalysisMode,
@@ -237,7 +237,7 @@ export {
   DiskCache,
   DiskCacheSignError,
   checkCacheKey,
-  ifaceCacheKey,
+  contractCacheKey,
   openDiskCache,
   sha256Hex,
   relativizePath,

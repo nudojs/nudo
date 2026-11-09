@@ -22,7 +22,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftInterface, sidecarDraftPath } from "../interface-draft.ts";
+import { draftContract, sidecarDraftPath } from "../contract-draft.ts";
 import { nodeCheck } from "./draft-artifact.ts";
 
 let dir: string;
@@ -42,7 +42,7 @@ describe("Bug 545 —— 草稿的 import ↔ export 撞名", () => {
       file,
       `/**\n * @nudo:case "n" (1)\n */\nexport function number(x) { return x + 1; }\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const entry = r.entries.find((e) => e.fn === "number");
     expect(entry).toBeDefined();
     // 身份仍是导出名 `number`；绑定换别名 ⇒ 与 import { number } 不撞
@@ -57,7 +57,7 @@ describe("Bug 545 —— 草稿的 import ↔ export 撞名", () => {
       file,
       `/**\n * @nudo:case "n" (1)\n */\nexport function number(x) { return x + 1; }\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     const draftPath = sidecarDraftPath(file);
     writeFileSync(draftPath, r.draftSource, "utf-8");
     const check = nodeCheck(draftPath);
@@ -70,7 +70,7 @@ describe("Bug 545 —— 草稿的 import ↔ export 撞名", () => {
       file,
       `/**\n * @nudo:case "n" (1)\n */\nexport function add(x) { return x + 1; }\n`,
     );
-    const r = await draftInterface(file);
+    const r = await draftContract(file);
     expect(r.draftSource).toContain("export const add = fn({ x: number() });");
     expect(r.draftSource).not.toContain("_nudo_1");
   });

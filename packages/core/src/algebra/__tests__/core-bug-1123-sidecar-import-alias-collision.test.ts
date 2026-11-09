@@ -23,7 +23,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { makeFiles } from "./nudo-constraints.ts";
@@ -37,7 +37,7 @@ beforeEach(() => {
   resetAbsCallBudget();
   resetEvalForkBudget();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** 带 case 的源码：case 违例可见 ⇒ 证明契约真的绑上了（不只是「没报错」） */
@@ -58,8 +58,8 @@ describe("Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名",
         `export const f = fn({ x: string().gt(0) }, number());`,
     });
     const r = checkSource("/t/alias.js", SRC, pTrue, { loadModule, fromFile: "/t/alias.js" });
-    // 装载失败（SyntaxError）会被报成 nudo:interface-load —— 修复后不得出现
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    // 装载失败（SyntaxError）会被报成 nudo:contract-load —— 修复后不得出现
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     // 契约真的绑上了：case 违例可见
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
   });
@@ -73,7 +73,7 @@ describe("Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名",
         `export const f = fn({ x: number }, lit(0));`,
     });
     const r = checkSource("/t/alias2.js", SRC, pTrue, { loadModule, fromFile: "/t/alias2.js" });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
   });
 
@@ -84,7 +84,7 @@ describe("Bug 1123: 侧车 import 别名不得与 ambient builder 声明撞名",
         `export const f = fn({ x: number().gt(0) }, number());`,
     });
     const r = checkSource("/t/plain.js", SRC, pTrue, { loadModule, fromFile: "/t/plain.js" });
-    expect(r.issues.filter((i) => i.code === "nudo:interface-load")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-load")).toEqual([]);
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency").length).toBeGreaterThan(0);
   });
 });

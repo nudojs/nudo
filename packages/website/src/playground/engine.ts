@@ -1,7 +1,7 @@
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
 import {
   checkSource,
-  effectiveInterface,
+  effectiveContract,
   formatConstraint,
   type CheckReport,
 } from '@nudojs/core';
@@ -66,7 +66,7 @@ export const scale = fn({ x: number().gt(0) }, number());
  * 把侧车编辑器内容注册在两个键上——
  * - 侧车文件 basename：主源码显式 `import … from "./calc.nudo.js"` 可命中
  * - 'playground.nudo.js'：PLAYGROUND_FILE（/playground.js）的同名 ambient
- *   绑定键（core interface.ts 的 sidecarPathOf 把 /playground.js 解析为
+ *   绑定键（core contract.ts 的 sidecarPathOf 把 /playground.js 解析为
  *   ./playground.nudo.js 再走 loadModule）
  * 传 null 清除覆盖，恢复静态模板（single / callsite 模式不受影响）。
  */
@@ -146,10 +146,10 @@ export function contractMarkdownForWord(source: string, word: string): string[] 
   }
 
   try {
-    if (typeof effectiveInterface === 'function' && typeof formatConstraint === 'function') {
+    if (typeof effectiveContract === 'function' && typeof formatConstraint === 'function') {
       const fns = extractDirectives(parse(source));
       for (const fn of fns) {
-        const eff = effectiveInterface(source, fn.name, PLAYGROUND_LOAD_OPTS);
+        const eff = effectiveContract(source, fn.name, PLAYGROUND_LOAD_OPTS);
         if (!eff) continue;
         const hit = eff.params.find((p) => p.param === word);
         if (!hit) continue;
@@ -206,16 +206,16 @@ export function buildActiveCases(source: string, caseIndex: number): Map<string,
 export function hoverToMarkdown(hover: HoverInfo, word?: string): string {
   const lines: string[] = [];
   if (word) lines.push(`**${word}**`);
-  if (hover.interfaceSource) {
+  if (hover.contractSource) {
     const contractLabel =
-      hover.interfaceSource === 'handwritten'
+      hover.contractSource === 'handwritten'
         ? 'contract / handwritten'
-        : hover.interfaceSource === 'generated'
+        : hover.contractSource === 'generated'
           ? 'contract / generated'
-          : `contract / ${hover.interfaceSource}`;
+          : `contract / ${hover.contractSource}`;
     lines.push(`\`● ${contractLabel}\``);
-    if (hover.interfaceDisplay && hover.interfaceSource !== 'implicit') {
-      lines.push('```nudo', hover.interfaceDisplay, '```');
+    if (hover.contractDisplay && hover.contractSource !== 'implicit') {
+      lines.push('```nudo', hover.contractDisplay, '```');
     }
   }
   if (hover.absMultiline) {

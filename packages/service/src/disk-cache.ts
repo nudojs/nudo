@@ -58,7 +58,7 @@ export const ANALYSIS_ABI = `nudo-check-cache-v3+${readServiceVersion()}`;
 export type DiskCacheOptions = {
   /** 缓存根目录；undefined = 禁用 */
   root?: string | undefined;
-  /** 命名空间子目录（check / interface …） */
+  /** 命名空间子目录（check / contract …） */
   namespace: string;
   /**
    * 条目签名密钥材料（`nudo.cache.sign: true` + env `NUDO_CACHE_KEY`）。
@@ -468,12 +468,12 @@ export function checkCacheKey(
 }
 
 /**
- * effectiveInterface 表键（L1 Phase B，design-persistent-cache）。
+ * effectiveContract 表键（L1 Phase B，design-persistent-cache）。
  * 维度：相对路径 + 源码 sha256 + autoBind + 侧车内容 sha256 + import 依赖
  * （dep 路径相对化，与 checkCacheKey 同口径）。
  * **不含** emit allowlist（白名单不影响契约读取）。
  */
-export function ifaceCacheKey(
+export function contractCacheKey(
   filePath: string,
   source: string,
   opts: {
@@ -502,7 +502,7 @@ export function ifaceCacheKey(
   return sha256Hex(
     [
       ANALYSIS_ABI,
-      "iface",
+      "contract",
       rel,
       opts.autoBind ? "ab1" : "ab0",
       sha256Hex(source),

@@ -9,7 +9,7 @@ import { checkSource, pTrue, formatShape } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { formalParamSignatureNames, formalParamsFromNodes } from "../format/param-surface.ts";
@@ -22,7 +22,7 @@ describe("#64 P3 destructured param contracts render in signatures", () => {
     resetNudoModuleExecCache();
     resetSidecarLoadFailureCache();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("formalParamSignatureNames renders pattern as { bound }", () => {

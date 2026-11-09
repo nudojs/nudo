@@ -4,15 +4,15 @@
  *
  * 症状（真 server 协议面）：
  * - `textDocument/codeLens` 里 `Counter.inc` 只有 entry@ 观察层，
- *   **没有** `● contract / imp` / `⚡ persist interface` / `⚡ draft interface`；
- * - `textDocument/inlayHint` 里 `Counter.inc` 没有任何提示（既没有 interface
+ *   **没有** `● contract / imp` / `⚡ persist contract` / `⚡ draft contract`；
+ * - `textDocument/inlayHint` 里 `Counter.inc` 没有任何提示（既没有 contract
  *   档投影，也没有 `: by + 1 · derived` 返回 inlay）；
  * - 而 `textDocument/hover` **能**看到 `Counter.inc(by: any) => number | string`
  *   与 `● contract / imp` —— 四面不一致（design §3.2：导出类的实例方法与
  *   顶层导出函数同为消费者可见入口）。
  *
  * 根因：两处枚举都不认类方法——
- * - `topLevelFunctionSlots`（agent-tools.ts，CodeLens / interface inlay 面）；
+ * - `topLevelFunctionSlots`（agent-tools.ts，CodeLens / contract inlay 面）；
  * - core `listFunctions`（algebra/inlay.ts，Abs 返回 inlay 面）。
  *
  * 期望：`Counter.inc` 与顶层导出函数在 CodeLens / inlayHint 面上同形，
@@ -39,8 +39,8 @@ type Lens = {
   command?: { title: string; command: string; arguments?: unknown[] };
 };
 
-describe("Bug 769 — 导出类实例方法的 interface 档 lens", () => {
-  it("codeLens 出现 Counter.inc 的 interface 档（契约键 Class.method）", async () => {
+describe("Bug 769 — 导出类实例方法的 contract 档 lens", () => {
+  it("codeLens 出现 Counter.inc 的 contract 档（契约键 Class.method）", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const lenses = req("textDocument/codeLens")({
         textDocument: { uri: uri("a.js") },
@@ -55,18 +55,18 @@ describe("Bug 769 — 导出类实例方法的 interface 档 lens", () => {
       expect(contract!.range.start.line).toBe(1);
 
       const titles = lenses.map((l) => l.command?.title);
-      expect(titles).toContain("⚡ persist interface");
-      expect(titles).toContain("⚡ draft interface");
+      expect(titles).toContain("⚡ persist contract");
+      expect(titles).toContain("⚡ draft contract");
       const draft = lenses.find(
         (l) =>
-          l.command?.title === "⚡ draft interface" &&
+          l.command?.title === "⚡ draft contract" &&
           l.command?.arguments?.[1] === "Counter.inc",
       );
       expect(draft).toBeDefined();
     });
   });
 
-  it("inlayHint 出现 Counter.inc 的 interface 档 + 返回 inlay", async () => {
+  it("inlayHint 出现 Counter.inc 的 contract 档 + 返回 inlay", async () => {
     await withLspServer({ "a.js": SRC }, async ({ req, uri }) => {
       const hints = req("textDocument/inlayHint")({
         textDocument: { uri: uri("a.js") },
@@ -75,7 +75,7 @@ describe("Bug 769 — 导出类实例方法的 interface 档 lens", () => {
           end: { line: 20, character: 0 },
         },
       }) as Array<{ position: { line: number }; label: string }>;
-      // interface 档投影（CodeLens 不可见客户端）
+      // contract 档投影（CodeLens 不可见客户端）
       const contractHint = hints.find(
         (h) => h.label === "  ● contract / imp" && h.position.line === 1,
       );
@@ -103,7 +103,7 @@ describe("Bug 769 — 导出类实例方法的 interface 档 lens", () => {
     });
   });
 
-  it("export default class 的实例方法同样进 interface 档", async () => {
+  it("export default class 的实例方法同样进 contract 档", async () => {
     const defaultClassSrc = [
       "export default class Counter {",
       "  inc(by) {",

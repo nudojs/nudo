@@ -1,7 +1,7 @@
 /**
  * Bug 1141 —— 契约合取的**结构型义务被静默丢掉** ⇒ 门禁**假绿**。
  *
- * 位置：packages/core/src/algebra/interface.ts 的 `conjoinOrConflict`——任一侧是
+ * 位置：packages/core/src/algebra/contract.ts 的 `conjoinOrConflict`——任一侧是
  * 结构型就直接 `return prev` ⇒ 另一侧的结构义务**整条蒸发**。
  *
  * 现象：源码契约 `shape({id: number()})` + 侧车契约 `shape({id: number(),
@@ -22,7 +22,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 import { makeFiles } from "./nudo-constraints.ts";
@@ -36,7 +36,7 @@ beforeEach(() => {
   resetAbsCallBudget();
   resetEvalForkBudget();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
 });
 
 /** 侧车：同名 fn 约束（p: shape{id,name}）+ 源码指令用的 shape（p: shape{id}） */
@@ -84,7 +84,7 @@ export function f(p) {
 `,
       files,
     );
-    expect(r.issues.filter((i) => i.code === "nudo:interface-conflict")).toEqual([]);
+    expect(r.issues.filter((i) => i.code === "nudo:contract-conflict")).toEqual([]);
   });
 
   it("合法合取（两侧同形）⇒ 义务照常执法（不因合并而失效）", () => {
@@ -128,7 +128,7 @@ export function f(p) {
       files,
     );
     // 结构型组合（union ∧ 标量）合不出来 ⇒ 必须**显式**说出来
-    const reported = r.issues.filter((i) => i.code === "nudo:interface-conflict");
+    const reported = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     expect(reported.length).toBeGreaterThan(0);
   });
 });

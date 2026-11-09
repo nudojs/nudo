@@ -38,7 +38,7 @@ import { primOf } from "./leq.ts";
 import { accessorReadDomain } from "./accessors.ts";
 import { termEquals, termToString } from "./term.ts";
 import { formatAbs } from "./format/format.ts";
-import { formatConstraint } from "./interface/interface.ts";
+import { formatConstraint } from "./contract/contract.ts";
 
 export type PostProof =
   | { status: "proved" }

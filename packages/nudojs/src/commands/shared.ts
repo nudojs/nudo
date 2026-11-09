@@ -207,14 +207,14 @@ export async function emitWiringOf(filePath: string): Promise<{
   autoBind: boolean | undefined;
   projectDir: string | undefined;
 }> {
-  const { defaultLoadModule, findProjectConfig, interfaceConfig } = await import(
+  const { defaultLoadModule, findProjectConfig, contractConfig } = await import(
     "@nudojs/service"
   );
   const proj = findProjectConfig(dirname(filePath));
   return {
     filePath,
     loadModule: defaultLoadModule,
-    autoBind: interfaceConfig(proj?.config).autoBind,
+    autoBind: contractConfig(proj?.config).autoBind,
     projectDir: proj?.projectDir,
   };
 }
@@ -535,7 +535,7 @@ export function collectExternalRecords(
  * `--from` 采集的跨文件调用点记录 → core drift 判定用的 AbsCallRecord
  * （Bug 366 / BUG-054）——check 与 health 共用同一归因实现。
  *
- * core 的 drift 判定（`nudo:interface-drift`）此前只吃**被检查文件自身**求值
+ * core 的 drift 判定（`nudo:contract-drift`）此前只吃**被检查文件自身**求值
  * 产生的调用记录 ⇒ 调用点在别的文件里时，`--from` 写出的生成段永远判不出
  * 陈旧（落盘契约静默陈旧，0 warning 假绿）。本函数把 `--from` 的跨文件证据
  * 接进同一条通道。
@@ -1230,7 +1230,7 @@ export async function runAbsView(
     defaultLoadModule: loadModule,
     tryEvalCall,
     findProjectConfig,
-    interfaceConfig,
+    contractConfig,
   } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
   if (assumeLines.length > 0) {
@@ -1243,7 +1243,7 @@ export async function runAbsView(
   // 同一函数在 `check`（x: number => string）与 `check --abs`（x: any => any）
   // 两个面上给出互斥的类型。
   const proj = findProjectConfig(dirname(filePath));
-  const autoBind = interfaceConfig(proj?.config).autoBind;
+  const autoBind = contractConfig(proj?.config).autoBind;
   const projectDir = proj?.projectDir;
   for (const name of list) {
     if (opts.generalize) {
@@ -1320,7 +1320,7 @@ export async function runAbsView(
 
 /**
  * 有效契约（源码 `@nudo:contract` + 侧车 `*.nudo.js`）—— 与 check 签名表同源
- * （core `effectiveInterface`，opts 与 `checkSource` 的侧车施加点同口径：
+ * （core `effectiveContract`，opts 与 `checkSource` 的侧车施加点同口径：
  * `loadModule` / `fromFile` / `autoBind === false` / `projectDir`）。
  * 解析失败一律降级为「无契约」（不得让观察面崩）。
  */
@@ -1332,9 +1332,9 @@ function contractOf(
   loadModule: (spec: string, fromFile: string) => string | undefined,
   autoBind: boolean | undefined,
   projectDir: string | undefined,
-): import("@nudojs/core").EffectiveInterface | undefined {
+): import("@nudojs/core").EffectiveContract | undefined {
   try {
-    return algebra.effectiveInterface(source, name, {
+    return algebra.effectiveContract(source, name, {
       loadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),

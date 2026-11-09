@@ -101,7 +101,7 @@ describe("nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写�
     const second = runCli(["contract", "lib.js", "--emit", "--all"], { cwd: dir });
     expect(second.status, second.stdout + second.stderr).toBe(0);
 
-    expect(second.stdout).toContain("no interface changes");
+    expect(second.stdout).toContain("no contract changes");
     expect(second.stdout).not.toContain("Updated");
     expect(readFileSync(sidecar, "utf-8")).toBe(afterFirst);
     expect(md5(sidecar)).toBe(md5First);
@@ -119,7 +119,7 @@ describe("nudo contract --emit · BUG-196 · 同一侧车同一段 = 一个写�
     });
     if (dry.status !== 0) throw new Error(`dry-run status=${dry.status}\n${dry.stdout}${dry.stderr}`);
     expect(dry.stdout).not.toContain("would update");
-    expect(dry.stdout).toContain("no interface changes");
+    expect(dry.stdout).toContain("no contract changes");
     // dry-run 不落盘
     expect(readFileSync(sidecar, "utf-8")).toBe(converged);
   }, 60000); // 2 个 CLI 子进程

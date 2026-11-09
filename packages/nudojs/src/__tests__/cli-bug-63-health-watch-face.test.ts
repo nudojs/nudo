@@ -109,7 +109,7 @@ const CLEAN_JSON_BEFORE = `{
   "summary": {
     "files": 1,
     "drift": 0,
-    "interfaceDrift": 0,
+    "contractDrift": 0,
     "errors": 0,
     "uncovered": 1,
     "unknownSignatures": 0,

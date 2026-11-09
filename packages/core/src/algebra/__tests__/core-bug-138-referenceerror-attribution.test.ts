@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 function suggestionOf(src: string): string {
@@ -25,7 +25,7 @@ describe("BUG-138 ReferenceError 建议的真实归因", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

@@ -15,15 +15,15 @@
  * ── 族 20 · 片 C 的修复（944）────────────────────────────────────────────
  * 改前：`--from-dts --write` 的输出路径**以 CWD 为基准**（`resolve(outName)`）
  * ⇒ 同基名的**另一个文件**的草稿被**静默覆盖**（零告警、exit 0）；且写盘
- * **完全绕过** `interface-draft.ts` 的五重保护。
+ * **完全绕过** `contract-draft.ts` 的五重保护。
  *
  * 改后：
  * ① 输出路径**贴着源 `.d.ts`**（`sidecarDraftPath` 口径，与 `--draft --write`
  *    同款）⇒ **不再**以 CWD 为基准；
  * ② 写盘前做**存在性检查**（已存在且内容不同 ⇒ **拒绝覆盖** + 提示；
  *    `opts.force` / `NUDO_DRAFT_FORCE=1` 才覆盖）；
- * ③ 写盘**复用** `packages/service/src/emit/interface-draft.ts` 的
- *    `writeInterfaceDraft`（五重保护：不覆盖正式侧车 / 不写 node_modules /
+ * ③ 写盘**复用** `packages/service/src/emit/contract-draft.ts` 的
+ *    `writeContractDraft`（五重保护：不覆盖正式侧车 / 不写 node_modules /
  *    不越出项目根 / 内容未变不写 / 空草稿不落盘）；
  * ④ 「next」提示**点名目标侧车路径**（`sidecarPathOf` 口径，与 `--draft --write`
  *    的 `formatDraftSummary` 同款）。
@@ -45,7 +45,7 @@ import { createHash } from "node:crypto";
 
 /**
  * 草稿正文指纹（族 20 · Bug 944）—— 与
- * `packages/service/src/emit/interface-draft.ts` 的 `draftFingerprint` **同算法**。
+ * `packages/service/src/emit/contract-draft.ts` 的 `draftFingerprint` **同算法**。
  *
  * 作用：让 `--from-dts` 落盘的草稿带上「机器原稿」标记 ⇒
  * 写盘助手能区分「机器原稿（可按需覆盖）」与「人工改过（永不覆盖）」。
@@ -99,7 +99,7 @@ export async function runContractFromDts(
 ): Promise<void> {
   const { dtsPathToContractDraft, dtsToContractDraft } = await import("@nudojs/harvester");
   const { harvestPackage } = await import("@nudojs/harvester");
-  const { sidecarDraftPath, writeInterfaceDraft, unifiedDiff } = await import(
+  const { sidecarDraftPath, writeContractDraft, unifiedDiff } = await import(
     "@nudojs/service/emit"
   );
   const { sidecarPathOf } = await import("@nudojs/core");
@@ -196,7 +196,7 @@ export async function runContractFromDts(
   const sidecarRel = relative(process.cwd(), sidecarPathOf(anchor)) || sidecarPathOf(anchor);
 
   // ── Bug 54 · 多文件合并草稿的「逐导出接受目标」 ─────────────────────────
-  // 侧车绑定是**按源模块**的（core interface.ts:493-495：
+  // 侧车绑定是**按源模块**的（core contract.ts:493-495：
   // `sidecarPathOf(fromFile)` + `localNamedExports(source).has(fnName)`）。
   // 合并版把 N 个 .d.ts 的导出拼进**一份**草稿，旧实现却只按 dtsFiles[0]
   // 给出单一接受目标 ⇒ 照提示把来自 b.d.ts 的 beta 放进 a.nudo.ts 永不绑定
@@ -258,7 +258,7 @@ export async function runContractFromDts(
       console.error(
         `hint: to overwrite a machine-generated draft, re-run with --force (or NUDO_DRAFT_FORCE=1)`,
       );
-      // 措辞要准：**人工改过的草稿永不被覆盖**（`writeInterfaceDraft` 的
+      // 措辞要准：**人工改过的草稿永不被覆盖**（`writeContractDraft` 的
       // `skipped: "hand-edited"` 通道，与 `--draft --write` 面同款）⇒ 这条
       // 拒绝是**预期行为**，force 也放行不了它 ⇒ 明说，避免用户「加了
       // --force 还是被拒」时以为工具坏了。
@@ -273,7 +273,7 @@ export async function runContractFromDts(
     const projectDir = nearestPackageRoot(dirname(anchor));
     let write;
     try {
-      write = writeInterfaceDraft(anchor, draftSource, {
+      write = writeContractDraft(anchor, draftSource, {
         dryRun: opts.dryRun,
         ...(projectDir ? { projectDir } : {}),
       });

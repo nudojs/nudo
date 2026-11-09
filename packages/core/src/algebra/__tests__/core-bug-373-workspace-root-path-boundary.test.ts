@@ -23,7 +23,7 @@ const report = (file: string): CheckReport => ({
   issues: [
     {
       severity: "info",
-      code: "nudo:interface-entry-only",
+      code: "nudo:contract-entry-only",
       message: "export 'b' has no contract root and no call-site domain (entry-only)",
       line: 1,
       column: 7,

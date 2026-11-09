@@ -25,7 +25,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 import { numLit, abs as makeAbs } from "@nudojs/core";
 
 let dir: string;
@@ -88,7 +88,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
   it("本地调用点来源的宽域段带 `local` 标记；调用点消失 ⇒ 段被删（残差收口）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC_WITH_CALL);
-    const first = await emitInterface(file, { fnNames: ["f"], mode: "add" });
+    const first = await emitContract(file, { fnNames: ["f"], mode: "add" });
     expect(first.written).toEqual(["f"]);
     const sidecarPath = join(dir, "lib.nudo.js");
     const bytes = readFileSync(sidecarPath, "utf-8");
@@ -99,7 +99,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
 
     // 调用点被删 ⇒ 今天的分析完全没有证据；标记 local ⇒ 可证 ⇒ 删段
     writeFileSync(file, SRC_NO_EVIDENCE);
-    const second = await emitInterface(file, { mode: "update" });
+    const second = await emitContract(file, { mode: "update" });
     expect(second.removed).toEqual(["f"]);
     expect(second.changed).toBe(true);
     expect(readFileSync(sidecarPath, "utf-8")).toBe("");
@@ -115,7 +115,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
     writeFileSync(file, SRC_NO_EVIDENCE);
     const sidecarPath = join(dir, "lib.nudo.js");
     // 第一次：域证据全部来自使用现场记录（本文件无调用点）
-    const first = await emitInterface(file, {
+    const first = await emitContract(file, {
       fnNames: ["f"],
       mode: "add",
       records: [rec(file, 4)],
@@ -126,7 +126,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
     expect(bytes).toContain("export const f = fn({ x: number() }, number());");
 
     // 第二次：不再给记录（等价于「本轮没采集使用现场」）⇒ 不得据此删段
-    const second = await emitInterface(file, { mode: "update" });
+    const second = await emitContract(file, { mode: "update" });
     expect(second.removed).toBeUndefined();
     expect(second.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
@@ -134,7 +134,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
 
   it("旧侧车（无 `// evidence:` 行）的宽域段仍然留存 —— 迁移期零回归", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, LEGACY_WIDE);
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(LEGACY_WIDE);
@@ -142,7 +142,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
 
   it("旧侧车的单点字面量见证段仍按旧启发式删除（既有语义不变）", async () => {
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, LEGACY_WITNESS);
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toEqual(["f"]);
     expect(readFileSync(sidecarPath, "utf-8")).toBe("");
   });
@@ -154,7 +154,7 @@ describe("BUG-035 证据范围（`// evidence:`）—— 宽域段也能判定�
 export const f = fn({ x: number() }, number());
 `;
     const { file, sidecarPath } = fixture(SRC_NO_EVIDENCE, derived);
-    const r = await emitInterface(file, { mode: "update" });
+    const r = await emitContract(file, { mode: "update" });
     expect(r.removed).toBeUndefined();
     expect(r.changed).toBe(false);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(derived);
@@ -163,11 +163,11 @@ export const f = fn({ x: number() }, number());
   it("标记是确定性的：连续两次发射逐字节相同，第二次无改动", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC_WITH_CALL);
-    const first = await emitInterface(file, { fnNames: ["f"], mode: "add" });
+    const first = await emitContract(file, { fnNames: ["f"], mode: "add" });
     expect(first.changed).toBe(true);
     const sidecarPath = join(dir, "lib.nudo.js");
     const bytes = readFileSync(sidecarPath, "utf-8");
-    const second = await emitInterface(file, { mode: "update" });
+    const second = await emitContract(file, { mode: "update" });
     expect(second.changed).toBe(false);
     expect(second.written).toEqual([]);
     expect(readFileSync(sidecarPath, "utf-8")).toBe(bytes);
@@ -176,7 +176,7 @@ export const f = fn({ x: number() }, number());
   it("存在边界：有外部记录参与但仍有本地证据 ⇒ 标记 external（保守方向 = 少删）", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, SRC_WITH_CALL);
-    const r = await emitInterface(file, {
+    const r = await emitContract(file, {
       fnNames: ["f"],
       mode: "add",
       records: [rec(file, 4)],

@@ -3,7 +3,7 @@
  * 在 `nudo check` **永不出现**：analyzer 已经产出这条 warning，check 面的
  * 诊断白名单把它整条丢掉 ⇒ 文档承诺 vs 实现冲突。
  *
- * 根因：`domainIssuesFromDiagnostics` 的白名单只留 interface 家族两码
+ * 根因：`domainIssuesFromDiagnostics` 的白名单只留 contract 家族两码
  * ⇒ service `pushBModuleIssues` 产出的 `nudo:env-harvest-conflict`
  * （handwritten `@nudo:env` 胜出 / harvest 冲突）被静默丢弃 ⇒ 用户看不到
  * 「我手写的 @nudo:env 盖掉了 harvest」这个事实。

@@ -276,7 +276,7 @@ pct(150);
     expectOk: false,
     expectCode: "nudo:constraint-violated",
   },
-  // --- T10a：固化生成段 drift（nudo:interface-drift，warning）---
+  // --- T10a：固化生成段 drift（nudo:contract-drift，warning）---
   {
     name: "generated segment param drift warns",
     files: {
@@ -292,7 +292,7 @@ area(-1);
 `,
     // 快照 gt(0)；今日调用域吸收 -1 → 域变宽 ≠ 生成段（warning 不破门禁）
     expectOk: true,
-    expectCode: "nudo:interface-drift",
+    expectCode: "nudo:contract-drift",
   },
   {
     name: "generated segment matching domain is silent",
@@ -385,7 +385,7 @@ function formatIssues(r: { issues: Array<{ severity: string; code: string; messa
 }
 
 // ---------------------------------------------------------------------------
-// T10b：跨文件注入域证据金标（nudo:interface-domain-exceeds，error）
+// T10b：跨文件注入域证据金标（nudo:contract-domain-exceeds，error）
 //
 // domain-exceeds 消费经 `nudo check --from` / analyze 注入的跨文件
 // 调用记录——正/负例走 core 侧唯一检查函数 checkInjectedDomainEvidence
@@ -422,7 +422,7 @@ area(5);
     // 手写 positive 契约；本文件内调用 5 合规（不产生任何 issue），
     // 注入的使用现场证据 "a" 越域 → 恰一条 domain-exceeds error
     argSets: [[strLit("a")]],
-    expectCode: "nudo:interface-domain-exceeds",
+    expectCode: "nudo:contract-domain-exceeds",
   },
   {
     name: "injected evidence within handwritten contract is silent",
@@ -460,7 +460,7 @@ describe("injected domain evidence gold standards", () => {
         },
       );
       const domainIssues = issues.filter(
-        (i) => i.code === "nudo:interface-domain-exceeds",
+        (i) => i.code === "nudo:contract-domain-exceeds",
       );
       if (g.expectCode) {
         expect(domainIssues.length).toBe(g.expectCount ?? 1);

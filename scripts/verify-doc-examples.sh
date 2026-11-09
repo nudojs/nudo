@@ -287,15 +287,15 @@ verify_check quick-start packages/website/docs/getting-started/quick-start.md \
   'formatName(first: string, last: string) => string'
 
 # check: L2 entry may-throw gates; subtract body arith yields number.
-# 摘要计数与两条 `nudo:interface-entry-only` INFO 行也钉住：它们是「CLI 输出面」
+# 摘要计数与两条 `nudo:contract-entry-only` INFO 行也钉住：它们是「CLI 输出面」
 # 的真值锚点 —— 页面输出块抄错时（zh 镜像漂移的根因）这里会红。
 verify_check check packages/website/docs/guides/check.md \
   'nudo:entry-may-throw' \
   'getName(user: any) => any  throws TypeError' \
   'subtract(a: any, b: any) => number' \
   '2 error · 0 warning · 2 info · 3 fn' \
-  "[INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)" \
-  "[INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)"
+  "[INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)" \
+  "[INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)"
 
 # mocking: arrow-function fetch mock resolves to the promised shape; the remaining
 # mock forms on the page (stub().returns, number() builder, virtual module) too.
@@ -374,7 +374,7 @@ verify_check contract packages/website/docs/guides/contract.md \
   'lineTotal(qty: number, price: number) => number' \
   'greet(user: { name: string }) => string' \
   'expected: qty > 0' \
-  'nudo:interface-drift' \
+  'nudo:contract-drift' \
   'wrap[text]: persisted @generated segment ≠ today'\''s call-site domain'
 
 # abs: @nudo:case witnesses across concrete/symbolic/mixed args.

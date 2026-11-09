@@ -195,7 +195,7 @@ describe("docsDiagnosticCodes", () => {
 
 describe("domainIssuesFromDiagnostics", () => {
   const base: DomainDiagnosticLike = {
-    code: "nudo:interface-domain-exceeds",
+    code: "nudo:contract-domain-exceeds",
     severity: "error",
     message: "exceeds",
     range: { start: { line: 2, column: 5 } },
@@ -208,7 +208,7 @@ describe("domainIssuesFromDiagnostics", () => {
     expect(issues).toEqual([
       {
         severity: "error",
-        code: "nudo:interface-domain-exceeds",
+        code: "nudo:contract-domain-exceeds",
         message: "exceeds",
         line: 2,
         column: 5,

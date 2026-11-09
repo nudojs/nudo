@@ -4,7 +4,7 @@
  * `number`/`string` ⇒ 跨产品面自相矛盾，且违反 lsp.md 明写的
  * “check-identical signature” 承诺。
  *
- * 修法（片 C：`hover.ts` 单一 owner）：`HoverInterfaceOpts` 增 `inject`
+ * 修法（片 C：`hover.ts` 单一 owner）：`HoverContractOpts` 增 `inject`
  * 字段并透传给 hover.ts 的 **3 处** `generalizeFromAst`（函数名面 /
  * 形参面 / 无 ident 位的重放面）。装配器在片 F 的
  * `agent-tools.ts#buildLspInjection`（与 CLI 的 `buildCheckInjection`

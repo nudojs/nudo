@@ -52,7 +52,7 @@ Evidence in the draft module (never invents check obligations): `callsite` / `di
 
 Output lands in `src/lib.nudo.draft.js` — **not** ambient-loaded. Copy reviewed lines into `src/lib.nudo.js`.
 
-Worked sample: [`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft).
+Worked sample: [`docs/examples/contract-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/contract-draft).
 
 Runnable demo (temp dir: inventory → draft → accept → check):
 

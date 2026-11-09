@@ -11,7 +11,7 @@ import type { Abs } from "../abs.ts";
 import type { AbsCallRecord } from "../ast-records.ts";
 import { formatAbs } from "../format/format.ts";
 import { hashSource, resetHashSourceCache } from "../key/hash-source.ts";
-import { resetSidecarLoadFailureCache } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache } from "../contract/contract.ts";
 import {
   stablePathKey,
   type LoadDepsFingerprint,

@@ -53,7 +53,7 @@ Every slot in a draft carries an **evidence tag** saying where the constraint ca
 
 Human review tightens `number()` → `number().gt(0)` etc. Only the accepted sidecar is L1.
 
-[Playground draft story](/playground) · worked sample: [`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
+[Playground draft story](/playground) · worked sample: [`docs/examples/contract-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/contract-draft)
 
 ## A full lap: draft → tighten → accept → gate
 
@@ -261,13 +261,13 @@ signatures
   wrap(text: number) => string
 
 issues
-  [WARNING L5 wrap] wrap[text]: persisted @generated segment ≠ today's call-site domain  (nudo:interface-drift)
+  [WARNING L5 wrap] wrap[text]: persisted @generated segment ≠ today's call-site domain  (nudo:contract-drift)
       → re-run nudo contract --emit to refresh the generated segment, or check the call sites of text
-  [WARNING L5 wrap] wrap[return]: persisted @generated segment ≠ today's inferred return  (nudo:interface-drift)
+  [WARNING L5 wrap] wrap[return]: persisted @generated segment ≠ today's inferred return  (nudo:contract-drift)
       → re-run nudo contract --emit to refresh the generated segment, or check the return value
 ```
 
-`nudo:interface-drift` is a **warning — it does not gate exit** (the run above exits 0). Refresh when the new usage is intentional (`nudo contract --emit src/tags.js` prints the same `Updated … written: wrap` summary and the segment becomes `fn({ text: lit("hot") }, lit("(hot)"))`); with unchanged evidence the re-run is a no-op (`src/tags.js: no interface changes`).
+`nudo:contract-drift` is a **warning — it does not gate exit** (the run above exits 0). Refresh when the new usage is intentional (`nudo contract --emit src/tags.js` prints the same `Updated … written: wrap` summary and the segment becomes `fn({ text: lit("hot") }, lit("(hot)"))`); with unchanged evidence the re-run is a no-op (`src/tags.js: no contract changes`).
 
 ### CI drift gate
 
@@ -290,7 +290,7 @@ npx nudojs contract --emit src/tags.js --dry-run --exit-on-diff
 
 ```
 
-The command exits `1` — a maintainer refreshes locally and commits. `--exit-on-diff` requires `--emit --dry-run` (a bare `--exit-on-diff` is a usage error); handwritten bindings always win — emit would overwrite one, it reports `nudo:interface-name-clash` and skips the write. Usage-site files can feed the evidence: `contract --emit src/lib.js --from test/` (see [Call-site discovery](./callsite-discovery.md)).
+The command exits `1` — a maintainer refreshes locally and commits. `--exit-on-diff` requires `--emit --dry-run` (a bare `--exit-on-diff` is a usage error); handwritten bindings always win — emit would overwrite one, it reports `nudo:contract-name-clash` and skips the write. Usage-site files can feed the evidence: `contract --emit src/lib.js --from test/` (see [Call-site discovery](./callsite-discovery.md)).
 
 ## Reverse TypeScript declarations (--from-dts)
 

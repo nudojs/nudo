@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 function check(src: string) {
@@ -36,7 +36,7 @@ describe("BUG-128 may-throw 建议必须与门禁判定同源", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

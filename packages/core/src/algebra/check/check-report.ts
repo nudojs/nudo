@@ -190,7 +190,7 @@ export function checkIssuesFromDiagnostics(
     )
     .map((d) => {
       const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
-      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
+      const isEntryOnly = d.code === DIAG.contractEntryOnly;
       return {
         severity: isEntryOnly
           ? ("info" as const)
@@ -511,7 +511,7 @@ export function actionsForIssue(i: {
         { kind: "info", label: "results widened to unknown — or feed the value in from a call site" },
       ];
     }
-    case DIAG.interfaceDrift:
+    case DIAG.contractDrift:
       return [
         {
           kind: "emit",
@@ -710,7 +710,7 @@ const CONTRACT_FIX_CODES = new Set<string>([
   DIAG.constraintViolated,
   DIAG.assignMismatch,
   DIAG.argStructure,
-  DIAG.interfaceDomainExceeds,
+  DIAG.contractDomainExceeds,
   DIAG.entryMayThrow,
   DIAG.missingSlot,
 ]);

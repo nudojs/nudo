@@ -1,5 +1,5 @@
 /**
- * BUG-029：`nudo:interface-drift` 对「同一域的**嵌套 union 拼写**」报假阳性
+ * BUG-029：`nudo:contract-drift` 对「同一域的**嵌套 union 拼写**」报假阳性
  * ⇒ `nudo health` exit 1 卡 CI。
  *
  * 平铺 `union(lit(1),lit(2),lit(3))` 经 `constraintToEntryAbs` 的
@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -33,7 +33,7 @@ function driftOf(sidecar: string) {
     loadModule,
     fromFile: "/t/lib.js",
   });
-  return r.issues.filter((i) => i.code === "nudo:interface-drift");
+  return r.issues.filter((i) => i.code === "nudo:contract-drift");
 }
 
 // @generated 标记必须落在**该导出声明上方的注释块**里（生成段 = 该导出）
@@ -44,7 +44,7 @@ describe("BUG-029 嵌套 union 拼写不得报假 drift", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

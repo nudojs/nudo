@@ -25,7 +25,7 @@ import {
   isSidecarPath,
   shouldAnalyzeFile,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   analysisConfig,
   type AnalysisConfig,
   type AnalysisMode,
@@ -801,7 +801,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     getDocument: (uri) => documents.get(uri),
     listDocuments: () => documents.all(),
     isNudoFile,
-    // 门禁谓词的**路径层**（同一真源）：codeLens（interface 档）用
+    // 门禁谓词的**路径层**（同一真源）：codeLens（contract 档）用
     isNudoTargetPath,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
@@ -1052,7 +1052,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     const filePath = uriToFilePath(document.uri);
     const sidecarPath = sidecarPathOf(filePath);
     const hasSidecar =
-      interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
+      contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
       !sidecarPath.replace(/\\/g, "/").includes("/node_modules/") &&
       existsSync(sidecarPath);
     if (!isNudoFile(params.textDocument.uri) && !hasSidecar) {

@@ -59,7 +59,7 @@ npx nudojs contract --draft ./src/math.js   # optional code-first draft
 npx nudojs check ./src/math.js
 ```
 
-Sidecar **function** bindings must be first-class `fn({ … }, …)` contracts. Bare `number().gt(0)` is a **value-level template** (e.g. `export const positive = number().gt(0)` in a shared `*.nudo.js`) — used via `@nudo:contract` or as a parameter slot inside `fn`, never as a function export contract. Non-`fn` sidecar bindings for functions are rejected (`nudo:interface-load`).
+Sidecar **function** bindings must be first-class `fn({ … }, …)` contracts. Bare `number().gt(0)` is a **value-level template** (e.g. `export const positive = number().gt(0)` in a shared `*.nudo.js`) — used via `@nudo:contract` or as a parameter slot inside `fn`, never as a function export contract. Non-`fn` sidecar bindings for functions are rejected (`nudo:contract-load`).
 
 Explicit contracts come from:
 - sidecars (`*.nudo.js`) / `@nudo:contract`
@@ -67,7 +67,7 @@ Explicit contracts come from:
 
 Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, and export functions must not carry undigested may-throw (L2). Nudo does **not** invent required slots from body AST scans.
 
-**Contracts takeaway:** the sidecar is the contract product. `nudo check` enforces L1 (explicit contracts) and L2 (entry may-throw). `@nudo:case` is debug / `nudo test` only — not the interface.
+**Contracts takeaway:** the sidecar is the contract product. `nudo check` enforces L1 (explicit contracts) and L2 (entry may-throw). `@nudo:case` is debug / `nudo test` only — not the contract.
 
 ## Advanced — Abs {#advanced-abs}
 

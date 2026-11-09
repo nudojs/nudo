@@ -40,7 +40,7 @@ export function run() {
       expect(names.some((n) => n.startsWith("entry@"))).toBe(false);
       // 调用点域恢复 ⇒ 被调方不再误报 entry-only（调用方 run 仍无调用点域，仍报）
       const entryOnlyMsgs = result.diagnostics
-        .filter((d) => d.code === "nudo:interface-entry-only")
+        .filter((d) => d.code === "nudo:contract-entry-only")
         .map((d) => d.message);
       expect(entryOnlyMsgs.some((m) => m.includes("export 'add'"))).toBe(false);
     }));

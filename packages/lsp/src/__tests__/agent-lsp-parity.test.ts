@@ -2,9 +2,9 @@
  * E5：MCP / agent 工具与 LSP 命令 / CLI 同源
  * - AGENT_TOOL_SOURCES 表钉住共享数据源
  * - check ↔ checkSource+serializeCheckJson（CLI --json 同构）
- * - hover ↔ getHoverAtPosition + interfaceTierOf（CodeLens 同源）
+ * - hover ↔ getHoverAtPosition + contractTierOf（CodeLens 同源）
  * - test ↔ analyzeFileAsync + buildTestReport + serializeCaseJson
- * - contract ↔ interfaceSurface + formatInterfaceSurfaceLine
+ * - contract ↔ contractSurface + formatContractSurfaceLine
  * - whatIf / suggestCase 真注入 / 真分析，不旁路
  * - autoBind：项目配置 AND 客户端（客户端不能打开已关闭项）
  */
@@ -13,8 +13,8 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  interfaceSurface,
-  formatInterfaceSurfaceLine,
+  contractSurface,
+  formatContractSurfaceLine,
   serializeCaseJson,
 } from "@nudojs/service/emit";
 import { getHoverAtPosition } from "../lsp-surface.ts";
@@ -23,8 +23,8 @@ import {
   checkSource,
   serializeCheckJson,
   pTrue,
-  formatInterfaceTierLine,
-  interfaceTierOf,
+  formatContractTierLine,
+  contractTierOf,
 } from "@nudojs/core";
 import {
   AGENT_TOOL_SOURCES,
@@ -35,7 +35,7 @@ import {
   whatIf,
   suggestCase,
   contractTool,
-  computeInterfaceLenses,
+  computeContractLenses,
 } from "../agent-tools.ts";
 
 const HANDWRITTEN = `
@@ -66,19 +66,19 @@ const stdLoader = (spec: string) => (spec.includes("std.nudo") ? STD : undefined
 describe("E5 AGENT_TOOL_SOURCES 共享数据源表", () => {
   it("pins the shared-source contract for every agent tool", () => {
     expect(AGENT_TOOL_SOURCES.check).toBe("checkSource + mergeCheckIssues + serializeCheckJson");
-    expect(AGENT_TOOL_SOURCES.hover).toBe("getHoverAtPosition + interfaceTierOf");
+    expect(AGENT_TOOL_SOURCES.hover).toBe("getHoverAtPosition + contractTierOf");
     expect(AGENT_TOOL_SOURCES.test).toBe(
       "analyzeFileAsync + buildTestReport + serializeCaseJson",
     );
     expect(AGENT_TOOL_SOURCES.contract).toBe(
-      "interfaceSurface + formatInterfaceSurfaceLine",
+      "contractSurface + formatContractSurfaceLine",
     );
     expect(AGENT_TOOL_SOURCES.whatIf).toBe("injectBindings + analyzeFileAsync");
     expect(AGENT_TOOL_SOURCES.suggestCase).toBe("analyzeFileAsync + buildCaseDirective");
     expect(AGENT_TOOL_SOURCES.trace).toBe("analyzeFileAsync cases");
-    expect(AGENT_TOOL_SOURCES["contract.emit"]).toBe("emitInterface");
+    expect(AGENT_TOOL_SOURCES["contract.emit"]).toBe("emitContract");
     expect(AGENT_TOOL_SOURCES.codeLens).toBe(
-      "computeInterfaceLenses + interfaceTierOf",
+      "computeContractLenses + contractTierOf",
     );
   });
 });
@@ -142,7 +142,7 @@ describe("E5 checkTool ↔ CLI checkSource/serializeCheckJson", () => {
 });
 
 describe("E5 hoverTool ↔ getHoverAtPosition / CodeLens", () => {
-  it("payload abs/interfaceSource match getHoverAtPosition + interfaceTierOf", () => {
+  it("payload abs/contractSource match getHoverAtPosition + contractTierOf", () => {
     const file = "/t/lib.js";
     const hoverDirect = getHoverAtPosition(file, ADD_SRC, 1, 16, undefined, {
       loadModule: loader(HANDWRITTEN),
@@ -157,13 +157,13 @@ describe("E5 hoverTool ↔ getHoverAtPosition / CodeLens", () => {
     const payload = JSON.parse(r.content[0].text);
     expect(payload.abs).toBe(hoverDirect?.abs ?? null);
     expect(payload.intension).toBe(hoverDirect?.intension ?? null);
-    expect(payload.interfaceSource).toBe(hoverDirect?.interfaceSource ?? null);
+    expect(payload.contractSource).toBe(hoverDirect?.contractSource ?? null);
 
-    const tier = interfaceTierOf(ADD_SRC, "add", file, {
+    const tier = contractTierOf(ADD_SRC, "add", file, {
       loadModule: loader(HANDWRITTEN),
     });
-    expect(payload.interfaceSource).toBe(tier?.source);
-    expect(payload.interfaceLine).toBe(formatInterfaceTierLine(tier!.source));
+    expect(payload.contractSource).toBe(tier?.source);
+    expect(payload.contractLine).toBe(formatContractTierLine(tier!.source));
   });
 });
 
@@ -187,7 +187,7 @@ describe("E5 testTool ↔ analyzeFileAsync + buildTestReport + serializeCaseJson
   });
 });
 
-describe("E5 contractTool ↔ interfaceSurface / CodeLens / interfaceTierOf", () => {
+describe("E5 contractTool ↔ contractSurface / CodeLens / contractTierOf", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "nudo-e5-"));
@@ -196,17 +196,17 @@ describe("E5 contractTool ↔ interfaceSurface / CodeLens / interfaceTierOf", ()
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("printed lines match formatInterfaceSurfaceLine(interfaceSurface)", async () => {
+  it("printed lines match formatContractSurfaceLine(contractSurface)", async () => {
     const file = join(dir, "lib.js");
     writeFileSync(file, ADD_SRC);
     writeFileSync(join(dir, "lib.nudo.js"), HANDWRITTEN);
 
     const r = await contractTool({ file });
     const text = r.content[0].text;
-    const entries = await interfaceSurface(file, { loadModule: undefined });
+    const entries = await contractSurface(file, { loadModule: undefined });
     // disk truth: default loadModule reads real sidecar
     for (const e of entries) {
-      expect(text).toContain(formatInterfaceSurfaceLine(e));
+      expect(text).toContain(formatContractSurfaceLine(e));
     }
   });
 
@@ -220,10 +220,10 @@ describe("E5 contractTool ↔ interfaceSurface / CodeLens / interfaceTierOf", ()
     const payloadLine = r.content[0].text
       .split("\n")
       .find((l) => l.includes("[handwritten]") || l.includes("[generated]") || l.includes("[implicit]"));
-    const lenses = computeInterfaceLenses(ADD_SRC, file, { loadModule });
-    const lens = lenses.find((l) => l.kind === "interface");
-    expect(lens!.kind === "interface" && lens!.source).toBe("handwritten");
-    expect(payloadLine).toContain(`[${lens!.kind === "interface" ? lens!.source : ""}]`);
+    const lenses = computeContractLenses(ADD_SRC, file, { loadModule });
+    const lens = lenses.find((l) => l.kind === "contract");
+    expect(lens!.kind === "contract" && lens!.source).toBe("handwritten");
+    expect(payloadLine).toContain(`[${lens!.kind === "contract" ? lens!.source : ""}]`);
   });
 });
 

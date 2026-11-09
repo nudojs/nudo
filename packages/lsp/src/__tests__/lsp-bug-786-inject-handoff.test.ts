@@ -14,7 +14,7 @@
  *   加 `inject` 字段并透传给 `generalizeFromAst`（**只改内部函数体**，
  *   零新增 core 导出）；`packages/lsp/src/agent-tools.ts` 新增注入装配器
  *   `buildLspInjection` 并在 agent hover 工具面装配 inject；
- * - 片 C（`hover.ts` 单一 owner）：`HoverInterfaceOpts` 加 `inject` 字段，
+ * - 片 C（`hover.ts` 单一 owner）：`HoverContractOpts` 加 `inject` 字段，
  *   传进 hover.ts 的 **3 处** `generalizeFromAst`。
  *
  * 钉（本片能改的一侧）：

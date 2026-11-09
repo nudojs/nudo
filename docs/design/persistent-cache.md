@@ -5,7 +5,7 @@
 >
 > 产品动词：`check` / `test` / `contract` / `export` / `health`。
 > 相关配置：`package.json#nudo.cache.*`、`package.json#nudo.contract.*`、`package.json#nudo.check.*`；env `NUDO_CACHE*`。
-> 使用现场观察用 **`--from`**；`test --freeze` 与接口固化无关。
+> 使用现场观察用 **`--from`**；`test --freeze` 与契约固化无关。
 
 ---
 
@@ -17,7 +17,7 @@
 |---|---|
 | `DiskCache` | sha256 内容键 + 分析 ABI 前缀；读失败 / 版本不符 / 校验失败 → **fail-open 当 miss** |
 | CheckJson 缓存 | `nudo check` 在**无 `--from`** 时可读写整文件报告；**默认关闭**（投毒面） |
-| effectiveInterface 整文件表 | `iface` 命名空间：导出名 → 契约 JSON 或 implicit 负缓存 `null` |
+| effectiveContract 整文件表 | `contract` 命名空间：导出名 → 契约 JSON 或 implicit 负缓存 `null` |
 | 启用 | `package.json#nudo.cache: true`（→ `.nudo/cache`）/ 自定义目录字符串 / `NUDO_CACHE_DIR`；`false`/`off` 关闭；对象形态 `{ dir?, sign? }`（dir 自定义根 + sign 签名开关） |
 | **条目签名（opt-in）** | `package.json#nudo.cache.sign: true` + 密钥 env `NUDO_CACHE_KEY`：逐条 HMAC-SHA256（域分离派生密钥材料）。验签失败 / 缺 sig → **fail-open 当 miss**（回算覆盖，不 throw）；signed/unsigned **键空间分离**（storage key 再哈希）⇒ 轮换 = 同路径全 miss，无孤儿清理。**sign 开而 key 缺席、或 sign 形状非法 ⇒ 配置错误拒绝运行**（`DiskCacheSignError`；CLI 面 check/contract/health 进各自 usage-error 通道，`--json` 信封非空）——安全旋钮不静默降级 |
 | callSiteBudget | `package.json#nudo.analysis.callSiteBudget`（默认 3）；超限 symbolic `#widened` |
@@ -32,7 +32,7 @@
 
 | 配置 | 键 | 与缓存的关系 |
 |---|---|---|
-| 契约自动绑定 | `package.json#nudo.contract.autoBind` | 进 **L1 iface/check 键**；白名单变更不导致 iface 无谓 miss |
+| 契约自动绑定 | `package.json#nudo.contract.autoBind` | 进 **L1 contract/check 键**；白名单变更不导致 contract 无谓 miss |
 | emit 白名单 | `package.json#nudo.contract.emit` | **不得**被磁盘命中绕过；白名单决策每次现场判定 |
 | check 行为 | `package.json#nudo.check.*`（如 `ignoreThrows`） | 与 L2 entry-may-throw 执法相关；**不是**缓存键的替代品 |
 | 现场调用点 | `--from` | 注入跨文件调用证据（domain 检查）；**跳过 L1 CheckJson 读写**——整报告不可复用 |
@@ -47,7 +47,7 @@
 
 1. **依赖包层收益最大（L2，已落地）**：`node_modules` / `@types` 的 harvest 投影跨项目复用。
 2. **check 冷路径可复用（L1，opt-in）**：未变更文件走磁盘 `CheckJson`。
-3. **契约读取可复用（L1）**：整文件 interface 表服务打印 / surface。
+3. **契约读取可复用（L1）**：整文件 contract 表服务打印 / surface。
 4. **绝不陈旧命中**：键漏维度 = 错诊断；宁可 miss 重算。
 5. **可丢可重建**：损坏 / ABI 变 / 用户删目录均 fail-open。
 6. **与内存 memo 同源语义**，磁盘键用 sha256 + 相对路径化。
@@ -73,7 +73,7 @@ L2 依赖磁盘      ~/.cache/nudo/deps/   node_modules 投影  ← 跨项目（
 
 | 层 | 缓存什么（值形态） | 默认 |
 |---|---|---|
-| L1 iface | 整文件 `fns` 表 + implicit 负缓存（plain JSON） | 随 `nudo.cache` 开启 |
+| L1 contract | 整文件 `fns` 表 + implicit 负缓存（plain JSON） | 随 `nudo.cache` 开启 |
 | L1 derive | 导出约束投影（无 Abs） | 设计已列，随 L1 基建 |
 | L1 check | `CheckJson`（`serializeCheckJson`） | **`false`**，需显式开 |
 | L2 harvest | **HarvestJson**（纯 JSON 签名投影；读回 materialize 为 mock Abs 导出表） | **已落地**（harvest 路径默认走盘） |
@@ -102,7 +102,7 @@ globalPrefix = "nudo-" + kind + "-v" + schema + "@" + analysisAbi
 # analysisAbi 含 typescript 版本（手写语义版本 + ts 版），不是 package.json#version
 
 L2 harvest : prefix + pkg + version + harvestKnobs + dtsClosureHash
-L1 iface   : prefix + relFile + srcSha256 + sidecarFp + diskDepsFp + autoBind
+L1 contract   : prefix + relFile + srcSha256 + sidecarFp + diskDepsFp + autoBind
 L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoBind
 ```
 
@@ -112,7 +112,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 - **磁盘键相对路径化**；相对化失败 → 键作废。
 - **原料禁用进程内 FNV**；`hashSource` 只留在内存 LRU。
 - 任一段 `truncated` / `trunc:` → 整键作废（不读不写）。
-- iface 键**不含** emit allowlist（白名单不影响 effectiveInterface 结果本身）。
+- contract 键**不含** emit allowlist（白名单不影响 effectiveContract 结果本身）。
 - `dtsClosureHash` 必须覆盖实际读到的每个 `.d.ts` 内容，不只 hash 入口。
 
 ---
@@ -123,7 +123,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 |---|---|
 | 源码 / 侧车 / dep 内容变 | 键变 → 自然 miss |
 | `autoBind` 变 | 进 L1 键 → miss |
-| emit 白名单变 | 不进 iface 键；**磁盘命中不得绕过白名单** |
+| emit 白名单变 | 不进 contract 键；**磁盘命中不得绕过白名单** |
 | `analysisAbi` / schema / typescript 升 | 全局前缀变 → 全 miss |
 | 损坏 JSON / 未知节点 | miss，不 throw |
 | 截断 / opaque 证据 | 不读不写 |
@@ -185,7 +185,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 - packages/service/src/harvest-node.ts
 - packages/service/src/__tests__/harvest-disk.test.ts
 - packages/service/src/__tests__/harvest-node-b2.test.ts
-- packages/service/src/interface-surface.ts
+- packages/service/src/emit/contract-surface.ts
 - packages/service/src/evaluator/config.ts
 - packages/service/src/case-json.ts
 - packages/core/src/algebra/check.ts

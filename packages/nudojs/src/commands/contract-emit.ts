@@ -32,7 +32,7 @@ const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
 /**
  * 派生结果的 `fn` 字段是**同一侧车一组导出名的逗号拼接**
- * （`interface-derivation-emit.ts` 按侧车分组后 `rows.map(r => r.fn).join(",")`）
+ * （`contract-derivation-emit.ts` 按侧车分组后 `rows.map(r => r.fn).join(",")`）
  * ⇒ 按名单比对必须先拆开：否则 `--fn wrap` 永远命中不了 `"wrap,tag"`
  * （同一处「名单匹配」缺陷在 draft 面即 BUG-042）。
  */
@@ -59,7 +59,7 @@ export async function runContractEmit(
     json?: boolean;
   },
 ): Promise<void> {
-  const { emitInterface, emitDerivedFromRoot, unifiedDiff } = await import(
+  const { emitContract, emitDerivedFromRoot, unifiedDiff } = await import(
     "@nudojs/service/emit"
   );
   const filePath = resolve(file);
@@ -128,7 +128,7 @@ export async function runContractEmit(
   // -------------------------------------------------------------------------
   // BUG-196 —— 根侧车**只有一个写者**（= 本函数）
   //
-  // 旧实现：派生分支（`emitDerivedFromRoot`）与直写分支（`emitInterface`）
+  // 旧实现：派生分支（`emitDerivedFromRoot`）与直写分支（`emitContract`）
   // **各写一次**同一侧车的同一段 ⇒ 两段格式不同（派生段 4 行、含
   // `// derived-from:` 溯源行；直写段 3 行、无）⇒ 后写者把前者的溯源行
   // **整段抹掉** ⇒
@@ -149,7 +149,7 @@ export async function runContractEmit(
   // -------------------------------------------------------------------------
 
   // ---- ① 直写分支（永远 dry-run：它只算，不写盘）----
-  const result = await emitInterface(filePath, {
+  const result = await emitContract(filePath, {
     // `--fn` 名单**原样**下传（改前：过滤后为空 ⇒ 降级成 undefined ⇒ 作用域放大）
     ...(fnNames ? { fnNames } : {}),
     mode: "update",
@@ -295,7 +295,7 @@ export async function runContractEmit(
         issues: dsc.issues,
       });
     } else if (e.rootOwned) {
-      // 根侧车的净变化由主摘要（`Updated …` / `no interface changes`）报
+      // 根侧车的净变化由主摘要（`Updated …` / `no contract changes`）报
       // ⇒ 这里只保留诊断行，不重复报一次「Updated」。
     } else if (lands) {
       if (opts.dryRun) {

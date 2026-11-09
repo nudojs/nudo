@@ -87,7 +87,7 @@ import {
   type NudoConstraint,
   type NudoField,
 } from "../constraint.ts";
-import { formatConstraint } from "../interface/interface.ts";
+import { formatConstraint } from "../contract/contract.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import type { CheckIssue } from "../check/check-report.ts";
 import type { RefineEntry } from "../refine.ts";

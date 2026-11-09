@@ -20,7 +20,7 @@ export function twice(n) { return n * 2; }
     writeFileSync(file, src);
     clearEvalCache();
     const r = analyzeFile(file, src);
-    // 允许 info 级 nudo:interface-entry-only（导出无根且无域）；不得有 error/warning
+    // 允许 info 级 nudo:contract-entry-only（导出无根且无域）；不得有 error/warning
     expect(r.diagnostics.filter((d) => d.severity === "error" || d.severity === "warning")).toHaveLength(0);
     const fn = r.functions.find((f) => f.name === "twice");
     expect(fn).toBeDefined();

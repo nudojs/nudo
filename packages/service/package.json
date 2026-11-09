@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=22"
   },
-  "description": "Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches",
+  "description": "Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, contract/dts/schema/guard projections, and session caches",
   "type": "module",
   "license": "MIT",
   "keywords": [

@@ -1,10 +1,11 @@
-# Interface 分层推导与契约生成
+# Contract 分层推导与生成
 
 > **状态**：主体已实施——三层有效契约、侧车自动绑定、`contract` 打印/`--draft`/`--emit`、drift/domain 冲突码、隐式依赖边、组合式生成、LSP open-buffer 侧车真值、**项目根 ambient 绑定边界**。`.nudo/cache` 跨会话缓存部分（L2 harvest 已落盘）。
 > **真源**：架构 → kernel-merge.md；命令面/any/unknown/check → cli-semantics.md
 >
 > 产品动词：`check` / `test` / `contract` / `export` / `health`。
 > 配置键：`package.json#nudo.contract.*`（`autoBind` / `emit`）。
+> 术语：全仓统一用 **contract**；仅 TypeScript `interface` 关键字、Babel AST `TSInterface*` 与历史发布记录保留旧词。
 > 相关 flags：`--from`；`test --freeze` 仅 debug 见证固化；`export --format` / `--dialect zod` / `--out`。
 > 序列化 API：`CaseJson`（test 报告面）/ `absToSchemaSource`（schema 投影）。
 
@@ -20,7 +21,7 @@
 | **generated** | root 契约下行 / `--emit` 写入的 `@generated` 段 | **事实快照**：不执法，只 drift | 打印 + IDE hover |
 | **implicit** | 分析会话内推导（未落盘） | 参与判定，不要求已落盘 | `nudo contract` / hover |
 
-单点读取口 `effectiveInterface(fn)` 合并手写 ∪ 生成 ∪ 隐式，并带来源标注；`check` / `scan` / `generalize` / LSP 统一走它。
+单点读取口 `effectiveContract(fn)` 合并手写 ∪ 生成 ∪ 隐式，并带来源标注；`check` / `scan` / `generalize` / LSP 统一走它。
 
 ### 侧车绑定（主路径）
 
@@ -42,7 +43,7 @@
 | `--fn` / `--from` / `--dry-run` / `--exit-on-diff` | 导出过滤 / 域证据注入 / diff·CI |
 | `nudo check` | 聚合契约诊断；签名默认打印 |
 | `nudo health` | 已落盘契约的 drift 门禁 |
-| `nudo test` | case 报告 + 断言；`--freeze` 是 debug 固化，**不是**接口主路径 |
+| `nudo test` | case 报告 + 断言；`--freeze` 是 debug 固化，**不是**契约主路径 |
 
 ### 已落地机制要点
 
@@ -53,7 +54,7 @@
 - emit **永远 root 驱动**；纯下游文件靠生成段 `derived-from` 标注反查根。
 - 隐式依赖边：`foo.js` ↔ `foo.nudo.js` 及递归闭包并入 dep 指纹与 `nudoDepParents`，避免陈旧缓存。
 - 生成物：组合式 + import，依赖与源码同构；手写导出永不覆盖。
-- case：机制保留（`test` / 诊断），产品面是 debug 副层，不是接口产物。
+- case：机制保留（`test` / 诊断），产品面是 debug 副层，不是契约产物。
 
 ### 诊断码（执法面）
 
@@ -62,12 +63,12 @@
 | code | severity | 触发 |
 |---|---|---|
 | `nudo:constraint-violated` | error | 推断 ⊭ **手写**契约 |
-| `nudo:interface-domain-exceeds` | error | 跨文件注入域 ⊄ 手写契约（conf ∈ {exact,path} 且无截断） |
-| `nudo:interface-drift` | warning | 已落盘生成段 ≠ 今日重算 |
-| `nudo:interface-name-clash` | error | 生成段与手写同名（手写优先，跳过写入） |
-| `nudo:interface-conflict` | error | 源码注解与侧车合取不可满足 |
-| `nudo:interface-load` / `nudo:interface-cycle` | error | 侧车加载失败 / 导出形式不识别 / import 环 |
-| `nudo:interface-underivable` | info | 约束传不下来（opaque / 循环） |
+| `nudo:contract-domain-exceeds` | error | 跨文件注入域 ⊄ 手写契约（conf ∈ {exact,path} 且无截断） |
+| `nudo:contract-drift` | warning | 已落盘生成段 ≠ 今日重算 |
+| `nudo:contract-name-clash` | error | 生成段与手写同名（手写优先，跳过写入） |
+| `nudo:contract-conflict` | error | 源码注解与侧车合取不可满足 |
+| `nudo:contract-load` / `nudo:contract-cycle` | error | 侧车加载失败 / 导出形式不识别 / import 环 |
+| `nudo:contract-underivable` | info | 约束传不下来（opaque / 循环） |
 
 分析文件内调用点违例仍走 `constraint-violated`，与 domain-exceeds **按证据来源分流**。
 
@@ -86,18 +87,18 @@
 9. **自动绑定必须登记隐式依赖边**，否则逐出图缺边 → 静默陈旧结果。
 10. **`node_modules` 不自动执行侧车**；`autoBind=false` 退回显式指令模式。
 11. **配置键是 `package.json#nudo.contract.*`**，不另设配置文件。
-12. **`test --freeze` 不是接口固化路径**；接口固化是 `contract --emit`。
-13. gold 门禁：`constraint-violated` 码名与语义不动；`interface-*` 只增夹具。
+12. **`test --freeze` 不是契约固化路径**；契约固化是 `contract --emit`。
+13. gold 门禁：`constraint-violated` 码名与语义不动；`contract-*` 只增夹具。
 14. dts / schema 是 Abs 的**单向有损投影**（`absToSchemaSource` / CaseJson 等），分析从不读回投影。
 
 ---
 
 ## 未决 / 未实施
 
-- **项目根内 ambient 绑定**边界：**已落地**（`CheckOptions`/`EffectiveInterfaceOpts.projectDir`：树外侧车不 ambient 加载；CLI/LSP 从 findProjectConfig 下传）。
+- **项目根内 ambient 绑定**边界：**已落地**（`CheckOptions`/`EffectiveContractOpts.projectDir`：树外侧车不 ambient 加载；CLI/LSP 从 findProjectConfig 下传）。
 - LSP **open-buffer** 侧车真值：**已落地**（`makeBufferAwareLoadModule` buffer 优先于磁盘，validate/hover/agent 同源；见 `sidecar-lsp.test.ts`）。
 - `.nudo/cache` 跨会话隐式契约缓存：L1 部分 + L2 harvest 磁盘（`harvest-disk.ts`）；用户契约文件与引擎缓存严格分离。
-- `nudo:interface-entry-only`（导出无根且无域）：**已落地**（analyzeFile entry@ 合成时 info；无手写/生成契约且无调用点域）。
+- `nudo:contract-entry-only`（导出无根且无域）：**已落地**（analyzeFile entry@ 合成时 info；无手写/生成契约且无调用点域）。
 - 工件 join 后组合式：**已恢复**（多调用点同 root 纯 shift → `union(shift…)`；仍展开式 = 含 join/opaque 链）。
 - 形参名对齐 / class 方法侧车键：param-mismatch 已执法；`Class.method` 近失配（裸 `method`）报 load 提示。嵌套 pattern 名仍走 mismatch。
 
@@ -105,20 +106,20 @@
 
 ## 源码锚点
 
-- packages/core/src/algebra/interface.ts
+- packages/core/src/algebra/contract/contract.ts
 - packages/core/src/algebra/constraint.ts
 - packages/core/src/algebra/refine.ts
 - packages/core/src/algebra/check.ts
 - packages/core/src/algebra/scan.ts
 - packages/core/src/algebra/generalize.ts
 - packages/core/src/algebra/derivation.ts
-- packages/service/src/interface-emitter.ts
-- packages/service/src/interface-derivation.ts
-- packages/service/src/interface-surface.ts
+- packages/service/src/emit/contract-emitter.ts
+- packages/service/src/emit/contract-derivation.ts
+- packages/service/src/emit/contract-surface.ts
 - packages/service/src/evaluator/config.ts
 - packages/service/src/case-json.ts
 - packages/service/src/dts-generator.ts
 - packages/nudojs/src/index.ts
 - packages/lsp/src/agent-tools.ts
 - packages/lsp/src/validation.ts
-- docs/examples/interface-derivation/
+- docs/examples/contract-derivation/

@@ -165,7 +165,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`、`class`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`、`contract`、`generated`、`derived`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`；顶层 named-export 函数绑定额外带与 CodeLens `● contract` 同源的 interface 档 modifier（A7）。类名标为 `class`，类方法键标为 `method`，类字段键标为 `property`，方法形参标为 `parameter`，解构绑定标为 `variable`。
+把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`、`class`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`、`contract`、`generated`、`derived`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`；顶层 named-export 函数绑定额外带与 CodeLens `● contract` 同源的 contract 档 modifier（A7）。类名标为 `class`，类方法键标为 `method`，类字段键标为 `property`，方法形参标为 `parameter`，解构绑定标为 `variable`。
 
 ## 服务器能力
 
@@ -175,14 +175,14 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |------------|---------|----------|
 | 悬停 | `onHover` | 导出函数**名**：`● contract / hw\|gen\|imp` 档线 + 单个代码块**与 check 完全同口径的签名**（`decide({ grade, findings }: { grade: string, findings: { ruleId: string }[] }) => { … }`）——builder 模板、symbolic 多行（`conf:` 细节）与占位符签名在弹层中去重（无损面保留在 `nudo.hover` payload）。**标识符**单行 `name: shape`（`grade: string`）：形参（含 `{ grade, findings }` 解构属性）从 enclosing 函数的 `PolyFn` 入口面投影（契约种子 + 模块图）；调用初始化的体内局部（`const vetos = filter(findings)`）经一次 entry 实参调用的 `EvalCallRecord` 投影；模块级引用（import / 同文件顶层函数）走绑定面——`@nudo:case` 函数体内同样生效。调用 **callee** 保持调用点面。悬停成员属性（`node.value`）读的是**引擎记录的槽位 Abs**（`value: string`） |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft interface`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
+| CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft contract`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
 | 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay（参数提示展示约束的**声明形**——侧车表达式 / 指令名——完整 predicate 作 `tooltip`）+ `●/○ contract / hw\|gen\|imp` 档投影（镜像选择器激活态，供无 CodeLens UI 的客户端）+ 行尾 case `Type` 提示（`· derived` 见证）。**any/unknown 责任区分**：返回位渲染**恰为 unknown**（= 推导失败，引擎债）时 label 挂 `⚠ ` 前缀，tooltip 说明失败原因与修复通道（`@nudo:mock` / `@nudo:env` / `@nudo:contract`）；`any`（无约束参数，开发者责任）**永不挂警示前缀**——存在 `where any()` 提示时其 tooltip 说明 `any = no contract on this param` |
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit。新名会**改坏源码**时拒绝（返回 `null`、零编辑）：非法标识符（保留字 / 空）；**作用域冲突**——目标作用域内重复声明、捕获（把 `x` 改成外层名字且该名字在目标作用域内被引用 / 目标的某条引用落在声明了新名的内层作用域里；跨作用域的纯遮蔽仍允许）；同归属（类 / 对象）内重复成员键；重复 `#private` 名；重复导出名。跨文件改名在**定义文件**的作用域里再做一遍冲突判定。与「歧义接收者拒绝改名」同一哲学：**拒绝优于改坏** |
 | 代码操作（`quickfix`） | `onCodeAction` | `nudo-unreachable` 对应 *Remove unreachable code*；契约/参数修复 |
 | 签名帮助（触发 `(`、`,`） | `onSignatureHelp` | 定位包裹的调用、对被调函数求类型、高亮当前参数 |
-| 语义 token（full） | `languages.semanticTokens` | `buildSemanticTokens` 推断着色；导出函数绑定带 interface 档 modifier（`contract`/`generated`/`derived`） |
+| 语义 token（full） | `languages.semanticTokens` | `buildSemanticTokens` 推断着色；导出函数绑定带 contract 档 modifier（`contract`/`generated`/`derived`） |
 
 跨编辑器支持矩阵：[LSP 客户端矩阵](../guides/lsp-clients.md)。
 
@@ -253,18 +253,18 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
 | <a id="buildsemantictokens"></a>`buildSemanticTokens` | fn | 从源码提取 semantic tokens 并按 LSP 相对编码返回扁平 number[]。 | `buildSemanticTokens( filePath: string, source: string, opts?: BuildSemanticTokensOpts, ): number[]` |
-| <a id="buildsemantictokensopts"></a>`BuildSemanticTokensOpts` | type | — | `BuildSemanticTokensOpts = InterfaceTierOpts & { loadModule?: (spec: string, fromFile: string) => string \| undefined; }` |
+| <a id="buildsemantictokensopts"></a>`BuildSemanticTokensOpts` | type | — | `BuildSemanticTokensOpts = ContractTierOpts & { loadModule?: (spec: string, fromFile: string) => string \| undefined; }` |
 | <a id="caseinfo"></a>`CaseInfo` | type | — | `CaseInfo = { functionName: string; caseName: string; caseIndex: number; }` |
+| <a id="contracttiermodifierbit"></a>`contractTierModifierBit` | fn | A7：contract 档 → semantic token modifier（与 CodeLens 同源） | `contractTierModifierBit(src: ContractSource): number` |
 | <a id="encodesemantictokens"></a>`encodeSemanticTokens` | fn | LSP 标准相对五元组编码：deltaLine/deltaStartChar/length/tokenType/tokenModifiers。 | `encodeSemanticTokens(tokens: SemanticToken[]): number[]` |
 | <a id="getabsatposition"></a>`getAbsAtPosition` | fn | 光标处无损 Abs。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, reuse?: SurfaceReuse, ): Abs \| null` |
 | <a id="getabsatpositionasync"></a>`getAbsAtPositionAsync` | fn | Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） | `getAbsAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
 | <a id="getcasesforfile"></a>`getCasesForFile` | fn | — | `getCasesForFile(filePath: string, source: string)` |
 | <a id="getcompletionsatposition"></a>`getCompletionsAtPosition` | fn | — | `getCompletionsAtPosition( filePath: string, source: string, line: number, column: number, reuse?: SurfaceReuse, context?: CompletionContext, ): CompletionItem[]` |
-| <a id="gethoveratposition"></a>`getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, reuse?: SurfaceReuse, ): HoverInfo \| null` |
+| <a id="gethoveratposition"></a>`getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverContractOpts, reuse?: SurfaceReuse, ): HoverInfo \| null` |
 | <a id="gettypeatposition"></a>`getTypeAtPosition` | fn | 光标处无损 Abs。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, reuse?: SurfaceReuse, ): Abs \| null` |
 | <a id="gettypeatpositionasync"></a>`getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
-| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; signature?: string; interfaceSource?: InterfaceS...` |
-| <a id="interfacetiermodifierbit"></a>`interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |
+| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; signature?: string; contractSource?: ContractSou...` |
 | <a id="nudo_agent_tool_names"></a>`NUDO_AGENT_TOOL_NAMES` | const | Agent-tool names shared by executeCommand / slash requests / AGENT_TOOL_SOURCES. | `const NUDO_AGENT_TOOL_NAMES` |
 | <a id="nudo_execute_commands"></a>`NUDO_EXECUTE_COMMANDS` | const | workspace/executeCommand names (dot form) — declared on initialize | `const NUDO_EXECUTE_COMMANDS` |
 | <a id="nudo_initialize_capabilities"></a>`NUDO_INITIALIZE_CAPABILITIES` | const | Capability keys declared in connection.onInitialize | `const NUDO_INITIALIZE_CAPABILITIES` |
@@ -285,7 +285,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | <a id="nudo.whatif"></a>`nudo.whatIf` | fn | inject `@nudo:as` assumptions | — |
 | <a id="nudo.suggestcase"></a>`nudo.suggestCase` | fn | case coverage / paste-ready directives | — |
 | <a id="nudo.trace"></a>`nudo.trace` | fn | per-case arg→result listing | — |
-| <a id="nudo.contract"></a>`nudo.contract` | fn | interface tiers print | — |
+| <a id="nudo.contract"></a>`nudo.contract` | fn | contract tiers print | — |
 | <a id="nudo.contract.draft"></a>`nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
 | <a id="nudo.contract.emit"></a>`nudo.contract.emit` | fn | persist `@generated` sidecar | — |
 | <a id="nudo.selectcase"></a>`nudo.selectCase` | fn | switch active case (positional or object args) | — |

@@ -1,6 +1,6 @@
 /**
  * Bug 491：`export *` barrel 吞掉 `--from` 采集到的跨文件调用点证据 ⇒
- * `nudo:interface-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。
+ * `nudo:contract-domain-exceeds`（error 级 L1 门禁）静默不报（假绿）。
  *
  * 根因（analyzer-abs-eval.ts 的调用记录归因）：targetModule 填的是**调用方
  * import 的那个模块**——barrel 场景下那是中间 barrel，不是定义文件；归因
@@ -25,7 +25,7 @@ function litOf(a: Abs): unknown {
   return lv.ok ? lv.value : undefined;
 }
 
-const DOMAIN = "nudo:interface-domain-exceeds";
+const DOMAIN = "nudo:contract-domain-exceeds";
 
 const LIB = `export function area(x) {
   return x;

@@ -64,8 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
-  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
-  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:contract-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
@@ -97,18 +97,18 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:arg-count` | L1 | error | Arity mismatch between the call and the generalized parameter face |
 | `nudo:fn-not-found` | L1 | error | Call references a function the analyzer cannot resolve in scope |
 | `nudo:partial-result` | L1 | info | Result Abs carries `#partial` confidence — observation only |
-| `nudo:interface-param-mismatch` | L1 | error | Handwritten contract param name is not on the formal surface |
-| `nudo:interface-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
-| `nudo:interface-load` | L1 | error | Sidecar file failed to load (parse / import / resolution error) |
-| `nudo:interface-name-clash` | L1 | error | Sidecar export name collides with a source export, or emit would overwrite a handwritten binding (handwritten wins, write skipped) |
-| `nudo:interface-cycle` | L1 | error | Sidecar `@nudo:import` chain forms a cycle |
-| `nudo:interface-domain-exceeds` | L1 | error | Call records injected via `--from` ⊄ the handwritten contract domain |
-| `nudo:interface-drift` | L1 | warning | Persisted `@generated` segment ≠ today's recomputed interface (also surfaced by `nudo health`; does not gate exit) |
-| `nudo:interface-entry-only` | L1 | info | Export has no contract root and no call-site domain (only synthesized `entry@`) — coverage gap, not a gate failure |
+| `nudo:contract-param-mismatch` | L1 | error | Handwritten contract param name is not on the formal surface |
+| `nudo:contract-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
+| `nudo:contract-load` | L1 | error | Sidecar file failed to load (parse / import / resolution error) |
+| `nudo:contract-name-clash` | L1 | error | Sidecar export name collides with a source export, or emit would overwrite a handwritten binding (handwritten wins, write skipped) |
+| `nudo:contract-cycle` | L1 | error | Sidecar `@nudo:import` chain forms a cycle |
+| `nudo:contract-domain-exceeds` | L1 | error | Call records injected via `--from` ⊄ the handwritten contract domain |
+| `nudo:contract-drift` | L1 | warning | Persisted `@generated` segment ≠ today's recomputed contract (also surfaced by `nudo health`; does not gate exit) |
+| `nudo:contract-entry-only` | L1 | info | Export has no contract root and no call-site domain (only synthesized `entry@`) — coverage gap, not a gate failure |
 | `nudo:dual-entry` | L1 | info | Browser/node dual entrypoints: call-site records do not cross files — analysis observes only one entry variant |
-| `nudo:interface-emit-denied` | L1 | warning | `contract --emit` target outside the `package.json#nudo.contract.emit` allowlist — write skipped |
-| `nudo:interface-multi-declarator` | L1 | warning | `@generated` section hand-merged into one multi-declarator export — kept verbatim |
-| `nudo:interface-not-projectable` | L1 | error | Assembled sidecar failed round-trip re-parse — nothing written (engine debt) |
+| `nudo:contract-emit-denied` | L1 | warning | `contract --emit` target outside the `package.json#nudo.contract.emit` allowlist — write skipped |
+| `nudo:contract-multi-declarator` | L1 | warning | `@generated` section hand-merged into one multi-declarator export — kept verbatim |
+| `nudo:contract-not-projectable` | L1 | error | Assembled sidecar failed round-trip re-parse — nothing written (engine debt) |
 | **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
 | **`nudo:module-throw`** | **L2** | **error** (default) | The module's top-level code always throws (syntactic unconditional `throw`) ⇒ the module can never be imported and was not analysed — every export is unavailable. Fail-closed; one per module; distinct from `nudo:internal` (engine fallback) and `nudo:unsupported:*` (capability boundary) |
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
@@ -125,7 +125,7 @@ The `onboarding` block is printed only when the whole run is pristine — zero `
 | `nudo:no-method` | engine | error (primitive receivers) / warning | Member access cannot resolve — ``Method 'x' does not exist on type 'T'``. Distinct from `nudo:unknown-recv` |
 | `nudo:mock-invalid` | engine | warning | `@nudo:mock` expression is not a known pattern (stub/spy/mock, arrow, type expression) |
 | `nudo:env-harvest-conflict` | engine | warning | Handwritten `@nudo:env` and `@types` harvest supply the same module key — handwritten wins, harvest fills missing slots only |
-| `nudo:interface-underivable` | engine | info | Derived contract row has no source evidence (opaque / truncated / none) — row skipped; handwritten rows never flagged |
+| `nudo:contract-underivable` | engine | info | Derived contract row has no source evidence (opaque / truncated / none) — row skipped; handwritten rows never flagged |
 | `nudo-unreachable` | info | info | Code after return/throw |
 | `nudo:module-cycle` | module graph | warning | Circular module load — bindings inside the cycle resolve to partially evaluated types |
 | `nudo:module-depth` | module graph | warning | Module load chain too deep — loading truncated, deeper modules typed `unknown` |
@@ -279,12 +279,12 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 | `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
 | `--gitlab` | GitLab Code Quality JSON array on stdout — redirect to `gl-code-quality-report.json` |
 
-## Interface diagnostics
+## Contract diagnostics
 
-The sidecar / contract-plumbing codes (`nudo:interface-*`, `nudo:dual-entry`) are all listed in [What it checks](./check.md#what-it-checks). Two scoping rules:
+The sidecar / contract-plumbing codes (`nudo:contract-*`, `nudo:dual-entry`) are all listed in [What it checks](./check.md#what-it-checks). Two scoping rules:
 
 - Violations written **in the analyzed file** report `nudo:constraint-violated`.
-- `nudo:interface-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
+- `nudo:contract-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
 
 ## CI integration
 

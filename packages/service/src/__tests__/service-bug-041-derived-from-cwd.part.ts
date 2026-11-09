@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitDerivedFromRoot } from "../emit/interface-derivation-emit.ts";
+import { emitDerivedFromRoot } from "../emit/contract-derivation-emit.ts";
 
 let dir: string;
 let prevCwd: string;

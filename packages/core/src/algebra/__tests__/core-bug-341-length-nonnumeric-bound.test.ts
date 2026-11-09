@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { string, checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -18,7 +18,7 @@ describe("Bug 341 · length 界的类型校验（非数值界不得静默废掉�
     resetCheckSourceMemo();
     resetGeneralizeMemo();
     takeRefineDiags();
-    takeInterfaceDiags();
+    takeContractDiags();
   });
 
   it("length(\"3\") / length(null) / length(true) 在构造期抛错", () => {
@@ -52,7 +52,7 @@ export function g() {
 }
 `;
     const r = checkSource("/t/f.js", src, pTrue, { loadModule, fromFile: "/t/f.js" });
-    const load = r.issues.find((i) => i.code === "nudo:interface-load");
+    const load = r.issues.find((i) => i.code === "nudo:contract-load");
     expect(load).toBeDefined();
     expect(load!.message).toContain("finite numeric bound expected");
     // 改前：契约完全失效 ⇒ 门禁 0 error（"abcd" 长度 4 > 3 也不报）

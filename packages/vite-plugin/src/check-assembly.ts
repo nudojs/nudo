@@ -81,7 +81,7 @@
 import {
   defaultLoadModule as loadModule,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   checkConfig,
   configIgnoreThrows,
   collectSkipReturns,
@@ -193,7 +193,7 @@ export function assembleCheckOutcome(id: string, code: string): CheckProjection 
     // ⇒ 项目配置的 `nudo.check.*` 被无视 ⇒ 同一个仓库 `nudo check` 绿、
     // `vite build` 红，`failOnError: true` 时直接中断构建）。
     const projConfig = findProjectConfig(dirname(id))?.config;
-    const autoBind = interfaceConfig(projConfig).autoBind;
+    const autoBind = contractConfig(projConfig).autoBind;
     // L2 门禁档位：`entryThrows` 走 service 的 `checkConfig`（三面同源）；
     // `ignoreThrows` **不走它**——`checkConfig` 的严格 `string[]` 过滤会把
     // 裸字符串 / 逗号写法静默丢成空表 ⇒ 插件面与 CLI / IDE 判不同

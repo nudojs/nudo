@@ -5,7 +5,7 @@
  * 只加三行源码注释就让 drift 警告整条消失（非单调）。
  *
  * 根因：漂移闸门搭在「有效契约」上（`eff.source === "generated"`）而不是
- * 「落盘生成段」上。修法 = `effectiveInterface` 交出与层级解耦的
+ * 「落盘生成段」上。修法 = `effectiveContract` 交出与层级解耦的
  * `generated` 视图，漂移闸门**永远**监督落盘生成段。
  *
  * 钉：源码契约在场时陈旧生成段仍报 drift；对照组（无源码契约）行为不变；
@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -59,14 +59,14 @@ function check(src: string, sidecar: string) {
 }
 
 function drifts(r: ReturnType<typeof check>) {
-  return r.issues.filter((i) => i.code === "nudo:interface-drift");
+  return r.issues.filter((i) => i.code === "nudo:contract-drift");
 }
 
 describe("BUG-251 落盘 @generated 段永远受漂移监督", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

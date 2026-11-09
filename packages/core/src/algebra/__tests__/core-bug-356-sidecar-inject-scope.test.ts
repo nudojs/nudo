@@ -77,6 +77,6 @@ export const g = fn({ x: number() }, number());
     expect(Object.keys(out)).toContain("g");
     const clash = diags.find((d) => d.message.includes("declares 'positive'"));
     expect(clash).toBeDefined();
-    expect(clash?.code).toBe("nudo:interface-load");
+    expect(clash?.code).toBe("nudo:contract-load");
   });
 });

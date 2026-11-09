@@ -430,18 +430,18 @@ pin 'pnpm run test:cli docs/examples/mini-repo/store.js' \
   'MemoryStore.set' 'MemoryStore.get' \
   'entry@'
 
-# interface-derivation/ — layered contract derivation (Phase 2). The root
+# contract-derivation/ — layered contract derivation (Phase 2). The root
 # contract (lib.nudo.js handwritten add4) loads for lib.js; the downstream
 # derived contract (add.nudo.js generated add2) is enforced for add.js.
 # D2: default human report is one-line signatures (term/pred/conf behind --verbose/--abs).
-pin 'pnpm run check docs/examples/interface-derivation/add.js' \
+pin 'pnpm run check docs/examples/contract-derivation/add.js' \
   'add2(x: number) => number'
-pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
+pin 'pnpm run check docs/examples/contract-derivation/lib.js' \
   '0 error · 0 warning' \
   'add4(x: number) => number'
 
-# interface-draft/ — code-first draft promises (F6). Primary verb: contract.
-pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \
+# contract-draft/ — code-first draft promises (F6). Primary verb: contract.
+pin 'pnpm run contract --draft docs/examples/contract-draft/greet.js' \
   '@nudo:draft' \
   'double  [draft callsite/' \
   'greet  [draft body/' \

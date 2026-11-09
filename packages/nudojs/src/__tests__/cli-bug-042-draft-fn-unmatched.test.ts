@@ -1,7 +1,7 @@
 /**
  * BUG-042 —— `nudo contract --draft --fn <写错的名字>` 是**静默 no-op**（空草稿 + exit 0）。
  *
- * 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftInterface`，
+ * 改前（`contract-draft.ts`）：`fnNames` 原样传进 `draftContract`，
  * **没有「一个都没命中」的门禁** ⇒ 发射器把全部条目丢弃 ⇒ 落盘一份只有头部的
  * 空草稿、exit 0 ⇒ 名字拼错在 CI / agent 流程里**不可见**；而同一个 `--fn`
  * 名单在 `--emit` 面是**用法错误 + 列出可用导出名**（`contract-emit.ts`）

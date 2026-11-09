@@ -12,7 +12,7 @@
  * （标注落在表达式之后，不劈开源码行；口径同 TypeScript 自身的返回类型
  * inlay —— 提示落在被标注表达式之后）。
  *
- * 既有 `inlay.test.ts` / `inlay-interface-tier.test.ts` 只断言 label **内容**，
+ * 既有 `inlay.test.ts` / `inlay-contract-tier.test.ts` 只断言 label **内容**，
  * **无任何落点位置断言** ⇒ 本钉补落点断言。
  */
 import { describe, it, expect } from "vitest";

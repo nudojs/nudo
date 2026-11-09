@@ -1,6 +1,6 @@
 # @nudojs/service
 
-Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches.
+Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, contract/dts/schema/guard projections, and session caches.
 
 ## What is Nudo?
 
@@ -18,7 +18,7 @@ Production evaluation is **Abs-native evaluator** (`evalAbsModuleGraph` + `runTr
 | `@nudojs/service/evaluator` | Host API surface (env/config/CallRecord) — not the eval engine |
 | `@nudojs/service` | Full barrel (stable; analysis face) |
 
-Emit products live in `@nudojs/service/emit` (interface/contract, dts, schema, guard, case reports). IDE surface lives in `@nudojs/lsp`; `@types` harvest in `@nudojs/harvester`.
+Emit products live in `@nudojs/service/emit` (contract, dts, schema, guard, case reports). IDE surface lives in `@nudojs/lsp`; `@types` harvest in `@nudojs/harvester`.
 
 Highlights:
 

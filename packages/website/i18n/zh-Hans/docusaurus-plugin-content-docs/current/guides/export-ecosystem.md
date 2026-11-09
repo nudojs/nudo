@@ -180,7 +180,7 @@ nudo export src/api/inline.js --format dts
 export declare function createUser(input: { name: string; age: number }): { id: 123; name: "Ada"; age: 36 };
 ```
 
-多个 case 时签名仍保持单个——参数跨 case 取并集并放宽；每个 case 的精确结果保留在 `Case:` JSDoc 行里（调试用外延笔记，不是接口产品）。写 `.d.ts` 文件到目录：`nudo export <file> --format dts --out <dir>`。
+多个 case 时签名仍保持单个——参数跨 case 取并集并放宽；每个 case 的精确结果保留在 `Case:` JSDoc 行里（调试用外延笔记，不是契约产品）。写 `.d.ts` 文件到目录：`nudo export <file> --format dts --out <dir>`。
 
 `dts` 投影的是**模块导出面**——只有 `export` / `export default` / CJS `exports` 绑定会出现，非导出的顶层函数保持内部。契约与调用点喂同一份签名（与 `nudo check` 同数据源）；`@nudo:case` 调试见证**不进**发布面——`nudo export` 与门禁一样以 `caseMode: "none"` 分析：**没有**契约/调用点证据的参数在 `nudo check` 展示面是 `any`，在 `.d.ts` 投影面输出 TS `unknown`（nudo any ≈ TS unknown，2026-11-06 归一）——两面同源，只是作用域不同。
 
@@ -259,5 +259,5 @@ nudo check src/ --profile strict     # 默认：L1 + L2 error
 
 - [竞争格局](./competitive-landscape.md) —— Nudo 相对 schema 库 / TS 的位置
 - [nudo check](./check.md) —— 保持真理源的那道门
-- [契约](./contract.md) —— 起草 / 接受 / 固化侧车接口
+- [契约](./contract.md) —— 起草 / 接受 / 固化侧车契约
 - [CLI 参考](../api/cli-reference.md#nudo-export)

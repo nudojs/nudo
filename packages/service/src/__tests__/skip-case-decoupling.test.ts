@@ -13,8 +13,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpProject } from "./tmp-project.ts";
 import { generateDts } from "../emit/dts-generator.ts";
-import { draftInterface } from "../emit/interface-draft.ts";
-import { emitInterface } from "../emit/interface-emitter.ts";
+import { draftContract } from "../emit/contract-draft.ts";
+import { emitContract } from "../emit/contract-emitter.ts";
 
 /** tmp 项目内分析（package.json 隔离 findProjectConfig，邻例 eval-hosted-skip 同款） */
 function analyzeTmp(src: string, caseMode?: "all" | "none") {
@@ -139,7 +139,7 @@ export function double(x) { return x * 2; }
 
   it("侧车契约：skip+case 不从见证合成（not-projectable，与对照组相反）", async () => {
     const skipCase = analyzeTmp(SKIP_DECLARED);
-    const emit = await emitInterface(skipCase.path, {
+    const emit = await emitContract(skipCase.path, {
       mode: "add",
       fnNames: ["double"],
       dryRun: true,
@@ -149,7 +149,7 @@ export function double(x) { return x * 2; }
     expect(emit.skipped).toContainEqual({ fn: "double", reason: "not-projectable" });
 
     const ctrl = analyzeTmp(NO_SKIP);
-    const ctrlEmit = await emitInterface(ctrl.path, {
+    const ctrlEmit = await emitContract(ctrl.path, {
       mode: "add",
       fnNames: ["double"],
       dryRun: true,
@@ -158,16 +158,16 @@ export function double(x) { return x * 2; }
     expect(ctrlEmit.written).toEqual(["double"]);
   });
 
-  it("interface 草稿：skip+case 的 case 不作草稿证据（dsl 仍 fn({})）", async () => {
+  it("contract 草稿：skip+case 的 case 不作草稿证据（dsl 仍 fn({})）", async () => {
     const skipCase = analyzeTmp(SKIP_DECLARED);
-    const draft = await draftInterface(skipCase.path, { source: skipCase.src });
+    const draft = await draftContract(skipCase.path, { source: skipCase.src });
     const entry = draft.entries.find((e) => e.fn === "double")!;
     expect(entry).toBeDefined();
     expect(entry.paramEvidence).toBe("none");
     expect(entry.dsl).toBe("fn({})");
 
     const ctrl = analyzeTmp(NO_SKIP);
-    const ctrlDraft = await draftInterface(ctrl.path, { source: ctrl.src });
+    const ctrlDraft = await draftContract(ctrl.path, { source: ctrl.src });
     const ctrlEntry = ctrlDraft.entries.find((e) => e.fn === "double")!;
     expect(ctrlEntry.paramEvidence).toBe("directive");
     expect(ctrlEntry.dsl).toContain("x: number");

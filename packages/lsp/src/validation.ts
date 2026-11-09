@@ -23,7 +23,7 @@ import {
   evictFnAnalysisCacheForFiles,
   evalAbsModuleGraph,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   checkConfig,
   collectCheckSupplementIssues,
   collectSkipReturns,
@@ -75,12 +75,12 @@ export function projectConfigFingerprint(filePath: string): string {
   try {
     const proj = findProjectConfig(dirname(filePath));
     const cfg = proj?.config ?? {};
-    // autoBind 必须取**归一后**的值（service 侧唯一归一点 `interfaceConfig`）：
+    // autoBind 必须取**归一后**的值（service 侧唯一归一点 `contractConfig`）：
     // 分析面读的是归一值，指纹读原始值 ⇒ 两者口径分裂。写 `"autoBind": "false"`
     // （非布尔，非法形状）时归一回落 true ⇒ 有效行为与「不写」完全相同，
     // 但原始指纹不同 ⇒ 用户只改了这处无效写法也会 miss 缓存、全量重算
     // （#487）。谓词形态（函数）无法 JSON 序列化，落一个稳定标记。
-    const autoBind = interfaceConfig(cfg).autoBind;
+    const autoBind = contractConfig(cfg).autoBind;
     return sourceFingerprint(
       JSON.stringify({
         autoBind: typeof autoBind === "function" ? "predicate" : autoBind,
@@ -236,8 +236,8 @@ export function filterCheckLspByLevel(
     DIAG.assignMismatch,
     DIAG.argStructure,
     DIAG.caseInconsistency,
-    DIAG.interfaceParamMismatch,
-    DIAG.interfaceConflict,
+    DIAG.contractParamMismatch,
+    DIAG.contractConflict,
   ]);
   const isGate = (d: LspDiagnostic): boolean => {
     const code = (d as { code?: string | number }).code;
@@ -1076,7 +1076,7 @@ export function checkToLspDiagnostics(
     // package.json#nudo.contract.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
     // —— 与 CLI runCheck 同源（design-cli-semantics §3.4）
     const proj = findProjectConfig(dirname(filePath));
-    const autoBind = interfaceConfig(proj?.config).autoBind;
+    const autoBind = contractConfig(proj?.config).autoBind;
     const cCfg = checkConfig(proj?.config);
     // ignoreThrows 走**配置面解析**（裸字符串 / 数组内逗号都认）⇒ 与 CLI
     // `nudo check` 同口径（service checkConfig 的严格 `string[]` 会把
@@ -1303,12 +1303,12 @@ export async function validateText(
       validateGeneration.get(key) === gen &&
       (deps.getOpenDocumentByPath?.(key)?.version ?? version) === version;
 
-    // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
+    // 零注解文件 gate 放行例外：磁盘上存在同名侧车（contract 档主场景——
     // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
     // autoBind=false 或 node_modules 下不例外（侧车 ambient 整体停用）。
     const sidecarPath = sidecarPathOf(filePath);
     const hasSidecar =
-      interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
+      contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
       !isNodeModulesPath(sidecarPath) &&
       existsSync(sidecarPath);
     if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {

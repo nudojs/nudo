@@ -22,7 +22,7 @@ import { checkSource, resetCheckSourceMemo } from "../check/check.ts";
 import { pTrue } from "../pred.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 
@@ -43,7 +43,7 @@ describe("Bug 1129 — fn arity 按「最后一个必选参数的位置」比较
     resetNudoModuleExecCache();
     takeRefineDiags();
     resetSidecarLoadFailureCache();
-    takeInterfaceDiags();
+    takeContractDiags();
     resetParseSourceCache();
     resetAbsCallBudget();
     resetEvalForkBudget();

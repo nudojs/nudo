@@ -2,7 +2,7 @@
  * 对象解构 `{a: b = 1}` 必须像 `{a: b}` 一样建立 propKey 映射。
  * 回归背景：rename 检查只认 Identifier，AssignmentPattern 直接进
  * collectPatternNames，只推绑定名 b、不写 propKey——契约写 a 时
- * locateContractParam 找不到字段，误报 nudo:interface-param-mismatch。
+ * locateContractParam 找不到字段，误报 nudo:contract-param-mismatch。
  */
 import { describe, it, expect } from "vitest";
 import {

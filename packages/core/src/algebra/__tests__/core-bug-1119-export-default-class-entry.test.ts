@@ -20,7 +20,7 @@ import { listClassEntryNames } from "../scan/scan-top-functions.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache, takeRefineDiags } from "../refine.ts";
-import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface/interface.ts";
+import { resetSidecarLoadFailureCache, takeContractDiags } from "../contract/contract.ts";
 import { resetParseSourceCache } from "../parse-source.ts";
 import { resetAbsCallBudget, resetEvalForkBudget } from "../call-budget.ts";
 
@@ -31,7 +31,7 @@ beforeEach(() => {
   resetNudoModuleExecCache();
   resetSidecarLoadFailureCache();
   takeRefineDiags();
-  takeInterfaceDiags();
+  takeContractDiags();
   resetParseSourceCache();
   resetAbsCallBudget();
   resetEvalForkBudget();

@@ -2,9 +2,9 @@ import type { Node } from "@babel/types";
 import { parse } from "@nudojs/parser";
 import { collectAbsBindingsFromGraph } from "@nudojs/service";
 import {
-  interfaceTierOf,
-  type InterfaceSource,
-  type InterfaceTierOpts,
+  contractTierOf,
+  type ContractSource,
+  type ContractTierOpts,
 } from "@nudojs/core";
 /**
  * 注释 / 字符串掩码 —— **复用 core 的单源实现**（`@nudojs/core/internal`）。
@@ -26,7 +26,7 @@ import { maskCommentsAndStrings } from "@nudojs/core/internal";
  * 与 LSP server capabilities 里声明的 legend 必须逐字对齐——server.ts 直接
  * 导入本常量注册，保证「提取端索引」与「客户端图例」单一来源。
  * 顺序沿用 lsp 包原 legend（function/variable/parameter/property 在前），
- * 末尾追加 method（对象字面量方法键）、class（类名）与 interface 档 modifier（A7），
+ * 末尾追加 method（对象字面量方法键）、class（类名）与 contract 档 modifier（A7），
  * 只追加不重排，客户端索引稳定。
  */
 export const SEMANTIC_TOKEN_TYPES = [
@@ -95,8 +95,8 @@ const MOD_CONTRACT = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("contract");
 const MOD_GENERATED = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("generated");
 const MOD_DERIVED = 1 << SEMANTIC_TOKEN_MODIFIERS.indexOf("derived");
 
-/** A7：interface 档 → semantic token modifier（与 CodeLens 同源） */
-export function interfaceTierModifierBit(src: InterfaceSource): number {
+/** A7：contract 档 → semantic token modifier（与 CodeLens 同源） */
+export function contractTierModifierBit(src: ContractSource): number {
   return src === "handwritten" ? MOD_CONTRACT : src === "generated" ? MOD_GENERATED : MOD_DERIVED;
 }
 
@@ -120,7 +120,7 @@ function collectFunctionBindingNames(filePath: string, source: string, _ast: Nod
   return new Set();
 }
 
-export type BuildSemanticTokensOpts = InterfaceTierOpts & {
+export type BuildSemanticTokensOpts = ContractTierOpts & {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
 };
 
@@ -136,8 +136,8 @@ export type BuildSemanticTokensOpts = InterfaceTierOpts & {
  * - 对象字面量的键：值为函数 → method，否则 property；简写 `{ x }` 是对变量的
  *   **引用** → variable（不带 declaration modifier）。
  *
- * A7：本地 named export 的函数绑定额外带 interface 档 modifier
- * （contract / generated / derived），与 CodeLens `● interface` 同源。
+ * A7：本地 named export 的函数绑定额外带 contract 档 modifier
+ * （contract / generated / derived），与 CodeLens `● contract` 同源。
  * 非导出绑定只带 declaration，不假装进档。
  *
  * 推断优先 Abs 模块图绑定（TypeValue 退出主路径）；失败时复用
@@ -174,13 +174,13 @@ export function buildSemanticTokens(
       }
     }
     // Track top-level FunctionDeclaration nodes by identity — nested same-name
-    // functions must not inherit the exported interface tier modifier.
+    // functions must not inherit the exported contract tier modifier.
     if (decl && decl.type === "FunctionDeclaration" && (decl as { id?: Node }).id) {
       topLevelFnDeclNodes.add(decl);
     }
   }
 
-  const tierOpts: InterfaceTierOpts = {
+  const tierOpts: ContractTierOpts = {
     ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
     ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
   };
@@ -190,8 +190,8 @@ export function buildSemanticTokens(
     if (cached !== undefined) return cached;
     let bit = 0;
     try {
-      const tier = interfaceTierOf(source, name, filePath, tierOpts);
-      if (tier) bit = interfaceTierModifierBit(tier.source);
+      const tier = contractTierOf(source, name, filePath, tierOpts);
+      if (tier) bit = contractTierModifierBit(tier.source);
     } catch {
       bit = 0;
     }
@@ -332,7 +332,7 @@ export function buildSemanticTokens(
           const name = (id as { name: string }).name;
           const isFn = isTopLevel && isFunctionValue(name);
           const typeIndex = isFn ? TYPE_FUNCTION : TYPE_VARIABLE;
-          // 仅顶层函数值导出带 interface 档 modifier（A7）
+          // 仅顶层函数值导出带 contract 档 modifier（A7）
           const extraMod = isFn ? tierModFor(name) : 0;
           pushIdentifier(id, typeIndex, extraMod);
         }
@@ -344,7 +344,7 @@ export function buildSemanticTokens(
         if (id?.type === "Identifier") {
           const name = (id as { name: string }).name;
           // Only top-level FunctionDeclarations (Program / ExportNamed /
-          // ExportDefault) get the interface tier modifier. Nested/local
+          // ExportDefault) get the contract tier modifier. Nested/local
           // declarations stay declaration-only so same-name inner functions
           // do not inherit the exported contract tier.
           const isTopLevelFnDecl =
@@ -356,7 +356,7 @@ export function buildSemanticTokens(
         break;
       }
       // CJS 成员导出：`exports.f = fn` / `module.exports.f = fn` —— 键名即导出名，
-      // 带 interface 档 modifier（与 ESM `export function f` 同口径；Bug 998）
+      // 带 contract 档 modifier（与 ESM `export function f` 同口径；Bug 998）
       case "AssignmentExpression": {
         // 解构**赋值目标**（`({ a } = o)` / `[b] = arr`）：绑定是写目标、
         // 不是声明 ⇒ 不带 declaration 修饰（Bug 36）。父 case 先于子递归

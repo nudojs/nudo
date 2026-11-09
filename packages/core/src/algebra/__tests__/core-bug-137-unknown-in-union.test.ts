@@ -18,7 +18,7 @@ import { $lit } from "../exec/runtime/state.ts";
 import { lit } from "../term.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 
 /**
@@ -51,7 +51,7 @@ describe("BUG-137 union 里的 unknown 同样算引擎债", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 

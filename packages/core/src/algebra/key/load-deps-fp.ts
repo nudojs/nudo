@@ -11,7 +11,7 @@ import {
 } from "../directive-scan.ts";
 import { hashSource } from "./hash-source.ts";
 import { parseSource } from "../parse-source.ts";
-import { normPath, resolveDepPath, sidecarPathOf, stablePathKey, stablePathKeyGraph } from "../interface/sidecar-path.ts";
+import { normPath, resolveDepPath, sidecarPathOf, stablePathKey, stablePathKeyGraph } from "../contract/sidecar-path.ts";
 
 // 单一定义在 sidecar-path.ts（leaf）；此处 re-export 维持公共导出面稳定
 export { normPath, resolveDepPath, stablePathKey, stablePathKeyGraph };
@@ -29,7 +29,7 @@ export type LoadDepsFingerprint = {
   truncated: boolean;
   /**
    * 任一装载 throw（EACCES/EMFILE/…）≠ 真 miss：读错误轮的报告（含
-   * nudo:interface-load）与真 miss 轮（干净）内容不同，折叠成同一 miss 键
+   * nudo:contract-load）与真 miss 轮（干净）内容不同，折叠成同一 miss 键
    * 会互为跨次陈旧命中（#135）。fp 带 `readerr:` 前缀，调用方 fail-open 禁 memo。
    */
   readError: boolean;
@@ -269,7 +269,7 @@ function tryLoadDeps(
  *
  * 注意：本扩展对 autoBind=false 与 /node_modules/ 默认**不** gate（刻意过近似，
  * 只过度失效、绝不陈旧命中——安全方向）；ambient 生效边界由
- * interface.ts 的 sidecarClosureFingerprint 负责，两者职责不同。
+ * contract.ts 的 sidecarClosureFingerprint 负责，两者职责不同。
  *
  * Bug 1124：调用方（check.ts）可传 `opts.ambientAllowed`（ambient 绑定资格）
  * 与 `opts.ambientLoadModule`（推测性探测 loader）——autoBind 关闭时该侧车

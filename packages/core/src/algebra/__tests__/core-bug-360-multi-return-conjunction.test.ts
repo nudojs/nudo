@@ -4,7 +4,7 @@
  *
  * 修法（不改公开返回型，仍是**单条**返回槽）：在 `refine.ts` 的 return 段
  * 提取里把多条 return 段**合成单条合取**——语义 = 合取，与形参位「同形参多
- * 段取合取」的既有语义一致（`interface.ts` 的 `conjoinOrConflict` → `andC`）。
+ * 段取合取」的既有语义一致（`contract.ts` 的 `conjoinOrConflict` → `andC`）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {

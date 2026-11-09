@@ -1,7 +1,7 @@
 /**
  * Bug 1065 —— 侧车约束的**组合式渲染**把 `lit(-0)` 渲成 `lit(0)`。
  *
- * 改前：`litToString`（`packages/core/src/algebra/interface.ts`）用
+ * 改前：`litToString`（`packages/core/src/algebra/contract.ts`）用
  * `String(v)` 序列化 number ⇒ `String(-0) === "0"` ⇒ 负号被抹掉：
  *
  *   - `nudo contract` 回显：`f  [handwritten]  (o: shape({ v: lit(0) })) → lit(0)`
@@ -18,11 +18,11 @@
  * （`./term.ts`：`Object.is(v, -0) ⇒ "-0"`）；`lengthBound` 的常数界渲染
  * （`.length(n)`）同款口径一并改。
  *
- * ⚠ 范围：只改 `interface.ts` 的 `litToString` + `lengthBound` 渲染点；
+ * ⚠ 范围：只改 `contract.ts` 的 `litToString` + `lengthBound` 渲染点；
  * `term.ts` / `format.ts` 是**只读**参考（口径来源），未改动。
  */
 import { describe, it, expect } from "vitest";
-import { formatConstraint } from "../interface/interface.ts";
+import { formatConstraint } from "../contract/contract.ts";
 import { fn, litC, shape, string as str } from "../constraint.ts";
 
 describe("Bug 1065：`-0` 保真（侧车约束的组合式渲染不得抹掉负号）", () => {

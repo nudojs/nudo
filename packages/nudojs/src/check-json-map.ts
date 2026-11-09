@@ -172,7 +172,7 @@ export type { AnalyzerDiagnosticLike as DomainDiagnosticLike } from "@nudojs/cor
  *    `diagnostics` 里（不是 core `checkSource` 独有能力）；
  * 3. **不与 core `checkSource` 的既有诊断重复**：重复 ⇒ 双报。
  *
- * `nudo:interface-entry-only` 固定 **info**（观察面提示，不挡门禁；Bug 461
+ * `nudo:contract-entry-only` 固定 **info**（观察面提示，不挡门禁；Bug 461
  * ——此前白名单漏它 ⇒ CLI 与 `nudo health` 两 verb 口径分裂）。
  *
  * 导出供下游片（4 / 5）复用同一口径，避免各处各写一份白名单。
@@ -285,7 +285,7 @@ function resolveExportName(local: string, bindings: Map<string, string>): string
  * `nudo:constraint-violated` 归因到被调方 ⇒ 判据（只认 plain literal 实参、
  * 契约面来源=侧车、归因=import 绑定表）全部沿用 core，不引入第二套判据。
  *
- * 上屏码用 **`nudo:interface-domain-exceeds`**（与既有 `--from` 执行态通道
+ * 上屏码用 **`nudo:contract-domain-exceeds`**（与既有 `--from` 执行态通道
  * 同码）：core 的 `nudo:constraint-violated` 是**同文件通道**的码（它的报告
  * 面指向调用方文件）；跨文件面归到被调方 ⇒ 用跨文件面的码 ⇒ 两条 `--from`
  * 通道同码、L1 分层一致、文档深链一致。
@@ -321,7 +321,7 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
       const shown = plainEvidence(issue.actual);
       out.push({
         severity: "error",
-        code: DIAG.interfaceDomainExceeds,
+        code: DIAG.contractDomainExceeds,
         message: `${exportName}[${key.param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
         actual: shown,
         ...(issue.expected !== undefined ? { expected: issue.expected } : {}),
@@ -336,7 +336,7 @@ export function staticFromDomainIssues(opts: StaticFromDomainOptions): CheckIssu
 /**
  * `--from` 两条通道的**去重**（Bug 643）。
  *
- * 执行态通道（分析器 `nudo:interface-domain-exceeds`）与静态通道（本模块的
+ * 执行态通道（分析器 `nudo:contract-domain-exceeds`）与静态通道（本模块的
  * `staticFromDomainIssues`）判的是**同一处事实**（被调方某参数位被调用实参
  * 超出）⇒ 同（被调名, 参数位）只报一条，执行态优先（既有 `--from` 面口径）。
  */
@@ -346,7 +346,7 @@ export function dedupeFromStaticIssues(
 ): CheckIssue[] {
   const seen = new Set<string>();
   for (const e of executionIssues) {
-    if (e.code !== DIAG.interfaceDomainExceeds) continue;
+    if (e.code !== DIAG.contractDomainExceeds) continue;
     const key = callSiteKeyOf(e.message);
     if (key) seen.add(key.key);
   }

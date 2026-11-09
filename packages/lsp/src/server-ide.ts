@@ -30,11 +30,11 @@ import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
   shouldAnalyzeFile,
   findProjectConfig,
-  interfaceConfig,
+  contractConfig,
   analyzeFile,
 } from "@nudojs/service";
 import type { LoadModule } from "@nudojs/service";
-import { formatInterfaceTierLine } from "@nudojs/core";
+import { formatContractTierLine } from "@nudojs/core";
 import { generalizeFromAst, type PolyFn, type Abs } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
@@ -57,7 +57,7 @@ import {
 } from "./validation.ts";
 import {
   buildLspInjection,
-  computeInterfaceLenses,
+  computeContractLenses,
   computeObservationLenses,
   type AgentToolDeps,
 } from "./agent-tools.ts";
@@ -79,7 +79,7 @@ export type IdeDeps = {
   isNudoFile: (uri: string) => boolean;
   /**
    * 门禁谓词的**路径层**（`isNudoFile` 的第一层，同一真源）：按**文件路径**
-   * 判定「是否 nudo 推断目标」。codeLens（interface 档）用它——interface 档的
+   * 判定「是否 nudo 推断目标」。codeLens（contract 档）用它——contract 档的
    * 主路径正是**零注解**文件（同名侧车绑定），不能用带 analysis.mode 的
    * `isNudoFile`。⚠ 两者都**排除**侧车契约文件（`*.nudo.js` 等）。
    */
@@ -108,7 +108,7 @@ export function attachHover(deps: IdeDeps): void {
     const line = params.position.line + 1;
     const column = params.position.character;
     const cases = getActiveCasesForUri(params.textDocument.uri);
-    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
 
     try {
       // P-IDE1：先过 getCachedOrAnalyze——同一未变文件的连续 hover 只跑一次
@@ -129,8 +129,8 @@ export function attachHover(deps: IdeDeps): void {
       // 此前只有 agent 面建了 inject，协议 hover 不传 ⇒ 覆盖表缺席 ⇒
       // 推导链塌缩成 `unknown`（= 推断失败）⇒ IDE 显示 unknown、CLI 精确。
       const inject = buildLspInjection(filePath, source);
-      // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
-      // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
+      // A7：contract 档与 CodeLens 同源——default 走 symbolic + entryReqs；
+      // 选 case 时 body 仍走 activeCases 重放，contract 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
         loadModule: activeLoadModule,
         ...(autoBind === false ? { autoBind: false } : {}),
@@ -143,12 +143,12 @@ export function attachHover(deps: IdeDeps): void {
       if (!hover) return null;
 
       const lines: string[] = [];
-      // 与 CodeLens `● interface / <source>` 同源首行（A7 验收）
-      if (hover.interfaceSource) {
+      // 与 CodeLens `● contract / <source>` 同源首行（A7 验收）
+      if (hover.contractSource) {
         // 724：激活态与 CodeLens 同源（选中 case ⇒ 契约档 ○）——不传
         // active 会走默认 true（恒 ●），与同一文件的 CodeLens 打架。
         lines.push(
-          formatInterfaceTierLine(hover.interfaceSource, hover.interfaceActive ?? true),
+          formatContractTierLine(hover.contractSource, hover.contractActive ?? true),
         );
       }
       if (hover.signature) {
@@ -156,8 +156,8 @@ export function attachHover(deps: IdeDeps): void {
         // display 签名不再重复（nudo.hover payload 保留无损面）
         lines.push("```nudo", hover.signature, "```");
       } else if (!hover.linkedText) {
-        if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
-          lines.push("```nudo", hover.interfaceDisplay, "```");
+        if (hover.contractDisplay && hover.contractSource !== "implicit") {
+          lines.push("```nudo", hover.contractDisplay, "```");
         }
         // 无损 Abs 优先（类型即计算本体）
         if (hover.absMultiline) {
@@ -341,7 +341,7 @@ export function attachCompletion(deps: IdeDeps): void {
         ...(ast !== undefined ? { ast } : {}),
         ...(analysisModules ? { modules: analysisModules } : {}),
       };
-      const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+      const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
       // 语法非法 buffer（编辑中间态 `obj.`）上 buildLspInjection 会 parse
       // 原文 ⇒ 抛 ⇒ 整个补全面清零（Bug 698）。注入包只是 signature 面的
       // 增强，装配失败 ⇒ 空注入（signature 面自行 fail-closed），不拖垮补全。
@@ -427,7 +427,7 @@ export function attachCodeLens(deps: IdeDeps): void {
   connection.onCodeLens((params) => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
-    // interface 档的目标场景就是零注解文件（侧车同名绑定，§2.1 主路径），
+    // contract 档的目标场景就是零注解文件（侧车同名绑定，§2.1 主路径），
     // 因此这里放宽为**路径层**门禁（isNudoTargetPath）而非 isNudoFile——case
     // 副层只依赖指令，注解文件行为不变；hover/inlayHint/semanticTokens 仍走
     // isNudoFile。⚠ 两者都排除侧车契约文件（*.nudo.js 等）⇒ 口径一致。
@@ -438,13 +438,13 @@ export function attachCodeLens(deps: IdeDeps): void {
     const cases = getActiveCasesForUri(params.textDocument.uri);
 
     try {
-      // interface 档在前（契约选项 + 固化动作），case 选项跟随其后
+      // contract 档在前（契约选项 + 固化动作），case 选项跟随其后
       // （design-refine-derivation §8）。观察选择器互斥：`●/○ contract / …` 与
       // `●/○ case "…"` 恰好一项激活——点击契约选项（nudo.selectContract）取消
       // 激活 case，点击 case（nudo.selectCase）则契约转 ○。
       const lenses: CodeLens[] = [];
-      const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
-      for (const lens of computeInterfaceLenses(source, filePath, {
+      const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+      for (const lens of computeContractLenses(source, filePath, {
         loadModule: activeLoadModule,
         activeCases: cases,
         ...(autoBind === false ? { autoBind: false } : {}),
@@ -453,12 +453,12 @@ export function attachCodeLens(deps: IdeDeps): void {
           start: { line: lens.line - 1, character: 0 },
           end: { line: lens.line - 1, character: 0 },
         };
-        if (lens.kind === "interface") {
+        if (lens.kind === "contract") {
           lenses.push({
             range,
             // 契约选项：点击切换回契约观察（取消激活 case；无激活时为幂等默认态）
             command: {
-              title: formatInterfaceTierLine(lens.source, lens.active),
+              title: formatContractTierLine(lens.source, lens.active),
               command: "nudo.selectContract",
               arguments: [params.textDocument.uri, lens.fn],
             },
@@ -467,7 +467,7 @@ export function attachCodeLens(deps: IdeDeps): void {
           lenses.push({
             range,
             command: {
-              title: lens.mode === "add" ? "⚡ persist interface" : "↻ update interface",
+              title: lens.mode === "add" ? "⚡ persist contract" : "↻ update contract",
               command: "nudo.contract.emit",
               arguments: [params.textDocument.uri, lens.fn, lens.mode],
             },
@@ -476,7 +476,7 @@ export function attachCodeLens(deps: IdeDeps): void {
           lenses.push({
             range,
             command: {
-              title: "⚡ draft interface",
+              title: "⚡ draft contract",
               command: "nudo.contract.draft",
               arguments: [params.textDocument.uri, lens.fn],
             },
@@ -612,7 +612,7 @@ export function attachInlayHint(deps: IdeDeps): void {
     // 是行内 UTF-16 偏移，行终止符除外）⇒ 切行必须剥掉 `\r`，否则行宽
     // 比客户端的可见行长多 1，end-of-line hint 越界 1 列。
     const lines = source.split(/\r\n|\r|\n/);
-    const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
     const showParamInlays = deps.inlayParamsEnabled(filePath);
 
     try {
@@ -639,7 +639,7 @@ export function attachInlayHint(deps: IdeDeps): void {
       }
 
       // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
-      // A7：default 走 symbolic + entryReqs；与 CodeLens interface 档同源
+      // A7：default 走 symbolic + entryReqs；与 CodeLens contract 档同源
       // modules：缺图时 generalize 看不到跨模块 import → 调用塌缩 unknown
       const analysisModules = evalAnalysisModules(filePath, source);
       // BUG-024：inlayHint 与 hover 同源装配注入包（缺 inject ⇒ 被 mock /
@@ -681,29 +681,29 @@ export function attachInlayHint(deps: IdeDeps): void {
         );
       }
 
-      // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 interface 档
-      // （`●/○ contract / hw|gen|imp`，与 CodeLens 同 computeInterfaceLenses）
+      // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 contract 档
+      // （`●/○ contract / hw|gen|imp`，与 CodeLens 同 computeContractLenses）
       try {
-        for (const lens of computeInterfaceLenses(source, filePath, {
+        for (const lens of computeContractLenses(source, filePath, {
           loadModule: activeLoadModule,
           activeCases: cases,
           ...(autoBind === false ? { autoBind: false } : {}),
         })) {
-          if (lens.kind !== "interface") continue;
+          if (lens.kind !== "contract") continue;
           const lineIdx = lens.line - 1;
           if (lineIdx < 0 || lineIdx >= lines.length) continue;
           const lineLen = (lines[lineIdx] ?? "").length;
           hints.push({
             position: { line: lineIdx, character: lineLen },
-            label: `  ${formatInterfaceTierLine(lens.source, lens.active)}`,
+            label: `  ${formatContractTierLine(lens.source, lens.active)}`,
             kind: InlayHintKind.Type,
             paddingLeft: true,
           });
         }
       } catch (err) {
-        // interface inlay 失败不影响 case/Abs inlay（但必须可观测，不静默吞）
+        // contract inlay 失败不影响 case/Abs inlay（但必须可观测，不静默吞）
         connection.console.error(
-          `nudo interface inlay failed for ${document.uri}: ${(err as Error).message}`,
+          `nudo contract inlay failed for ${document.uri}: ${(err as Error).message}`,
         );
       }
 
@@ -995,7 +995,7 @@ export function attachSemanticTokens(deps: IdeDeps): void {
 
     try {
       const filePath = uriToFilePath(document.uri);
-      const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+      const autoBind = contractConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
       // A7：export 函数绑定带 contract/generated/derived modifier，与 CodeLens 同源
       return {
         data: buildSemanticTokens(filePath, document.getText(), {

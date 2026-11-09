@@ -12,7 +12,7 @@
  * ⇒ 写出来的契约说「f 只接受 x = 5、只返回 6」，门禁说「f 接受任意 x、
  * 返回 number | string」——**同一份源码，emit 产物与门禁结论互相矛盾**。
  *
- * 根因（`packages/service/src/emit/interface-emitter.ts` 的 `projectFunctionDsl`）：
+ * 根因（`packages/service/src/emit/contract-emitter.ts` 的 `projectFunctionDsl`）：
  * 指令来源（`source === "directive"`）与调用点证据（`source === "callsite"`）
  * **平权**当域来源与返回义务来源 ⇒ 纯点观测见证被写成契约。
  *
@@ -31,7 +31,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emitInterface } from "../interface-emitter.ts";
+import { emitContract } from "../contract-emitter.ts";
 import { isDomainDeclarationCase } from "../domain-cases.ts";
 import { abs as makeAbs, numLit } from "@nudojs/core";
 import type { CaseResult } from "../../analyzer.ts";
@@ -55,7 +55,7 @@ async function emit(name: string, src: string): Promise<{
 }> {
   const file = join(dir, `${name}.js`);
   writeFileSync(file, src);
-  const r = await emitInterface(file, { fnNames: [name], mode: "add" });
+  const r = await emitContract(file, { fnNames: [name], mode: "add" });
   const sidecarPath = join(dir, `${name}.nudo.js`);
   const exists = existsSync(sidecarPath);
   return {

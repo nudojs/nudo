@@ -3,7 +3,7 @@
  *
  * 源码契约 `x = 42`（`lit(42)` 模板）∧ 侧车契约 `x ∈ {43,44}`
  * （`union(lit(43),lit(44))`）的合取**为空集**——完全可判定，必须报
- * `nudo:interface-conflict` **error**（docs/design/refine-derivation.md：
+ * `nudo:contract-conflict` **error**（docs/design/refine-derivation.md：
  * 「源码 + 侧车是合取 … 不可满足报冲突码」）。
  *
  * 旧口径 `crossBoundConflict` 只读各侧**顶层** preds（不下钻 `members`）⇒ 矛盾
@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check/check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
-import { takeInterfaceDiags } from "../interface/interface.ts";
+import { takeContractDiags } from "../contract/contract.ts";
 import { takeRefineDiags } from "../refine.ts";
 import { makeFiles } from "./nudo-constraints.ts";
 
@@ -48,15 +48,15 @@ describe("BUG-030 有限字面量集的矛盾 ⇒ error（可判定）", () => {
   beforeEach(() => {
     resetCheckSourceMemo();
     resetGeneralizeMemo();
-    takeInterfaceDiags();
+    takeContractDiags();
     takeRefineDiags();
   });
 
-  it("x = 42 ∧ x ∈ {43,44} → nudo:interface-conflict error + exit≠0", () => {
+  it("x = 42 ∧ x ∈ {43,44} → nudo:contract-conflict error + exit≠0", () => {
     const r = check(
       `import { fn, lit, union } from "@nudojs/core";\nexport const f = fn({ x: union(lit(43), lit(44)) });\n`,
     );
-    const conflicts = r.issues.filter((i) => i.code === "nudo:interface-conflict");
+    const conflicts = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     // 矛盾不是「不可计算」：只有一条 error，不得再印 undecidable warning
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]!.severity).toBe("error");
@@ -69,15 +69,15 @@ describe("BUG-030 有限字面量集的矛盾 ⇒ error（可判定）", () => {
     const withUnion = check(
       `import { fn, lit, union } from "@nudojs/core";\nexport const f = fn({ x: union(lit(43), lit(44)) });\n`,
     );
-    expect(flat.issues.find((i) => i.code === "nudo:interface-conflict")?.severity).toBe("error");
-    expect(withUnion.issues.find((i) => i.code === "nudo:interface-conflict")?.severity).toBe("error");
+    expect(flat.issues.find((i) => i.code === "nudo:contract-conflict")?.severity).toBe("error");
+    expect(withUnion.issues.find((i) => i.code === "nudo:contract-conflict")?.severity).toBe("error");
   });
 
   it("有限集有交集（x = 42 ∧ x ∈ {42,43}）→ 不报矛盾", () => {
     const r = check(
       `import { fn, lit, union } from "@nudojs/core";\nexport const f = fn({ x: union(lit(42), lit(43)) });\n`,
     );
-    const conflicts = r.issues.filter((i) => i.code === "nudo:interface-conflict");
+    const conflicts = r.issues.filter((i) => i.code === "nudo:contract-conflict");
     // 有交集 ⇒ 不是「不可满足」：不得出现 unsatisfiable / error。
     // （合取能力边界仍可印一条 undecidable warning——那是既有的显式留痕。）
     expect(conflicts.filter((i) => i.severity === "error")).toEqual([]);

@@ -1,15 +1,15 @@
 /**
- * T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:interface-domain-exceeds）。
+ * T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:contract-domain-exceeds）。
  *
  * 从 scan.ts 拆出的内聚段：只消费 externalCallRecords 注入的跨文件记录，
  * 不做同文件调用点扫描（那是 scanLiteralCalls 的职责）。
  */
 
 import {
-  effectiveInterface,
+  effectiveContract,
   formatConstraint,
-  type EffectiveInterface,
-} from "../interface/interface.ts";
+  type EffectiveContract,
+} from "../contract/contract.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
 import { litValue } from "../abs.ts";
 import type { Abs } from "../abs.ts";
@@ -83,9 +83,9 @@ export function checkInjectedDomainEvidence(
   const usable = records.filter((r) => !isLeaked(r));
   if (usable.length === 0) return [];
 
-  let ei: EffectiveInterface | undefined;
+  let ei: EffectiveContract | undefined;
   try {
-    ei = effectiveInterface(source, fnName, {
+    ei = effectiveContract(source, fnName, {
       ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
       fromFile: opts.fromFile,
       ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
@@ -95,8 +95,8 @@ export function checkInjectedDomainEvidence(
     return [
       {
         severity: "warning",
-        code: DIAG.interfaceLoad,
-        message: `${fnName}: effective interface load failed (${e instanceof Error ? e.message : String(e)}); skipping domain-exceeds check`,
+        code: DIAG.contractLoad,
+        message: `${fnName}: effective contract load failed (${e instanceof Error ? e.message : String(e)}); skipping domain-exceeds check`,
         fn: fnName,
         line: opts.loc?.line,
         column: opts.loc?.column,
@@ -104,7 +104,7 @@ export function checkInjectedDomainEvidence(
     ];
   }
   // §3.3 执法分档：仅手写契约执法。generated 段是事实快照（过期由
-  // nudo:interface-drift 覆盖）；implicit 无契约。
+  // nudo:contract-drift 覆盖）；implicit 无契约。
   if (!ei || ei.source !== "handwritten") return [];
 
   const out: CheckIssue[] = [];
@@ -123,7 +123,7 @@ export function checkInjectedDomainEvidence(
     const shown = [...new Set(failures)].map(evidenceToString).join(", ");
     out.push({
       severity: "error",
-      code: DIAG.interfaceDomainExceeds,
+      code: DIAG.contractDomainExceeds,
       message: `${fnName}[${param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
       actual: shown,
       expected: formatConstraint(constraint),

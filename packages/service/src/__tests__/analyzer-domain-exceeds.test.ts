@@ -1,5 +1,5 @@
 /**
- * nudo:interface-domain-exceeds 端到端（T10b）：
+ * nudo:contract-domain-exceeds 端到端（T10b）：
  *
  * - analyzer 注入消费区接线：externalCallRecords → 归属守卫 → 手写契约
  *   （源码 @nudo:contract / 侧车同名绑定，defaultLoadModule 真实读盘）→
@@ -20,7 +20,7 @@ import { numLit, strLit } from "@nudojs/core";
 import { withTmpProject } from "./tmp-project.ts";
 import { neverAbs } from "../emit/__tests__/fixtures.ts";
 
-const DOMAIN = "nudo:interface-domain-exceeds";
+const DOMAIN = "nudo:contract-domain-exceeds";
 
 const rec = (over: Partial<CallRecord>): CallRecord => ({
   fnName: "area",
@@ -30,7 +30,7 @@ const rec = (over: Partial<CallRecord>): CallRecord => ({
   ...over,
 });
 
-describe("nudo:interface-domain-exceeds（analyzer 注入消费区接线）", () => {
+describe("nudo:contract-domain-exceeds（analyzer 注入消费区接线）", () => {
   it("手写侧车契约 + 注入 \"a\" 证据 → 恰一条 error，range 在被调函数声明处", () =>
     withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
@@ -103,7 +103,7 @@ export function area(x) {
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
     }));
 
-  it("generated 侧车不执法（过期归 nudo:interface-drift，T10a）", () =>
+  it("generated 侧车不执法（过期归 nudo:contract-drift，T10a）", () =>
     withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
   return x;

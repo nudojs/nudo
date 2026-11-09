@@ -52,7 +52,7 @@ describe("BUG-067 — --fix --write 不写共享侧车路径", () => {
 
       const after = runCliTsx(["check", "foo.mjs"], { cwd });
       expect(errorCount(after.stdout)).toBe(1);
-      expect(after.stdout).not.toContain("nudo:interface-load");
+      expect(after.stdout).not.toContain("nudo:contract-load");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -201,7 +201,7 @@ function unannotatedHeavy(x) {
 
 Attach a refinement contract to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
-The **product name** is **contract** (sidecar `*.nudo.js` / `@nudo:contract`); some diagnostic codes still carry the historical `interface` token (`nudo:interface-param-mismatch`, …).
+The **product name** is **contract** (sidecar `*.nudo.js` / `@nudo:contract`).
 
 ### Main path: sidecar auto-binding
 
@@ -241,7 +241,7 @@ calc.js
   greet  [handwritten]  (name: union(lit("ada"), lit("bob"))) → string()
 ```
 
-Sidecars are real JS modules: they may import builders from `@nudojs/core` and constraints from **other sidecars** via relative imports. Loading failures, import cycles, and unrecognized export forms are **errors** (`nudo:interface-load`, `nudo:interface-cycle`) instead of silent fallbacks.
+Sidecars are real JS modules: they may import builders from `@nudojs/core` and constraints from **other sidecars** via relative imports. Loading failures, import cycles, and unrecognized export forms are **errors** (`nudo:contract-load`, `nudo:contract-cycle`) instead of silent fallbacks.
 
 **Builders** (`@nudojs/core`, also injectable bare):
 
@@ -252,7 +252,7 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `array(c)` | array element constraint | `array(string())` |
 | `lit(v)` | literal domain | `lit(42)` / `lit("ada")` / `lit(true)` |
 | `union(...cs)` | join of domains | `union(lit(42), lit("a"))` |
-| `fn(params, returns?, { throws? })` | first-class function interface | `fn({ x: number() }, number())` |
+| `fn(params, returns?, { throws? })` | first-class function contract | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
 | `.min(n)` `.max(n)` | length bounds — `length(s)` pred (strings/arrays) | `string().min(1)` |
 | `.length(n)` | length equality bound (`length(s) = n`) | `string().length(3)` |
@@ -283,7 +283,7 @@ export const nested = fn({ "card.grade": string() }, string());
 ```
 
 - Sidecars under `node_modules/` are never auto-loaded.
-- Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:interface-conflict`.
+- Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:contract-conflict`.
 - A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo contract` (`[handwritten]` / `[generated]` / `[implicit]`).
 
 ### In-source form
@@ -443,7 +443,7 @@ With `d >= 0` (rawDist), `max >= 1` (maxLen), and the lemma `d <= max`, the `1 -
 | Cross-variable lemma — `d <= max` | `@nudo:assume` (the engine cannot derive it) |
 | Loop-carried bound — `dp[*][*] >= 0` | `@nudo:invariant` (loop joins/widening lose interval evidence) |
 
-`.le("max")` used to be accepted silently, building a **string-literal** predicate (`le(self, lit("max"))`) that never participated in any proof. Numeric-bound builders (`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`) now reject non-numeric, non-finite arguments at load time — the sidecar fails with `nudo:interface-load`:
+`.le("max")` used to be accepted silently, building a **string-literal** predicate (`le(self, lit("max"))`) that never participated in any proof. Numeric-bound builders (`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`) now reject non-numeric, non-finite arguments at load time — the sidecar fails with `nudo:contract-load`:
 
 ```text
 sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected, got "max" — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)

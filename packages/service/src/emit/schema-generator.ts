@@ -1,7 +1,7 @@
 /**
  * Abs → 生态 schema 投影（单向有损）。
  *
- * 优先走 core `absToConstraint`（与 interface/check 同一投影语义），
+ * 优先走 core `absToConstraint`（与 contract/check 同一投影语义），
  * 再转成中间层 SchemaNode；投影失败时退回 shape 尽力提取并记 dropped。
  * Dialect 只负责 Node → 源码字符串；Abs 才是真理源。
  *

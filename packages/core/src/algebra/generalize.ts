@@ -35,12 +35,12 @@ import { withFnBudgetOverride } from "./call-budget.ts";
 import { withEvalBudgetOverride, runEvalCallBudgetTrial } from "./exec/calls.ts";
 import { LAZY_TEMPLATE_DEPTH, constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
-  effectiveInterface,
+  effectiveContract,
 
   sidecarClosureFingerprint,
   sidecarPathOf,
-  type EffectiveInterfaceOpts,
-} from "./interface/interface.ts";
+  type EffectiveContractOpts,
+} from "./contract/contract.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./key/fn-fp.ts";
 import { formalParamsFromNodes, formalParamDisplayNames, formalParamSignatureNames, locateContractParam, type FormalParam } from "./format/param-surface.ts";
 import { resetHashSourceCache } from "./key/hash-source.ts";
@@ -61,8 +61,8 @@ import { asAbsVal, currentAssumePremises, currentInvariantSpecs, litAbsFromJs } 
 import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
-import { resolveExportSlotCall } from "./interface/export-slot.ts";
-import { absShapeForTsTypeText } from "./interface/ts-type-shape.ts";
+import { resolveExportSlotCall } from "./contract/export-slot.ts";
+import { absShapeForTsTypeText } from "./contract/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -575,7 +575,7 @@ function generalizeMemoKey(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    refine?: EffectiveInterfaceOpts;
+    refine?: EffectiveContractOpts;
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：整文件一次指纹，所有 fn 的 L0 共用 */
     depsFp?: LoadDepsFingerprint;
@@ -1267,7 +1267,7 @@ export function generalizeFromAst(
     budget?: LeakBudget;
     label?: string;
     /** 传入则把 @nudo:contract 挂到入口 param Abs */
-    refine?: EffectiveInterfaceOpts;
+    refine?: EffectiveContractOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
     file?: ReturnType<typeof babelParse>;
     /** 预计算 load-deps 指纹（checkSource 整文件一次，避免 per-fn 重读） */
@@ -1394,7 +1394,7 @@ function generalizeFromAstUncached(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    refine?: EffectiveInterfaceOpts;
+    refine?: EffectiveContractOpts;
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
@@ -1487,7 +1487,7 @@ function generalizeFromAstUncached(
           : undefined);
       const eff =
         hasDirective || sc !== undefined
-          ? effectiveInterface(source, fnName, r)
+          ? effectiveContract(source, fnName, r)
           : undefined;
       const reqs = eff?.params ?? [];
       if (reqs.length > 0) {

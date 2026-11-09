@@ -3,7 +3,7 @@
  * health 面**绿灯**（假绿）。
  *
  * 口径（guides/health.md:18）：health 的门 = 「Analysis errors + call-site
- * solidification drift」。坏侧车（`nudo:interface-load`）是**分析错误** ⇒ 必须
+ * solidification drift」。坏侧车（`nudo:contract-load`）是**分析错误** ⇒ 必须
  * 进 health 的判定面（failed / ok / exit 码），不得只在 `nudo check` 面报。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -20,7 +20,7 @@ const MAIN = `export function greet(name) {
 }
 `;
 
-/** 坏侧车：语法错误 ⇒ 侧车加载失败（nudo:interface-load） */
+/** 坏侧车：语法错误 ⇒ 侧车加载失败（nudo:contract-load） */
 const BROKEN_SIDECAR = `export const greet = fn({ name: string()
 `;
 
@@ -39,7 +39,7 @@ describe("Bug 674: health 的分析错误必须进判定面（不得假绿）", 
     expect(r.status).toBe(1);
     expect(r.stdout).not.toContain("Result: OK");
     expect(r.stdout).toContain("error");
-    expect(r.stdout).toContain("nudo:interface-load");
+    expect(r.stdout).toContain("nudo:contract-load");
   });
 
   it("--json 面：ok:false + errors≥1 + 文件级 error 给出原因", { timeout: 60_000 }, () => {
@@ -52,11 +52,11 @@ describe("Bug 674: health 的分析错误必须进判定面（不得假绿）", 
     expect(parsed.ok).toBe(false);
     expect(r.status).toBe(1);
     expect(parsed.summary.errors).toBeGreaterThanOrEqual(1);
-    expect(parsed.files[0].error).toContain("nudo:interface-load");
+    expect(parsed.files[0].error).toContain("nudo:contract-load");
   });
 
-  it("跨动词同口径：nudo check 对同一路径同样报 nudo:interface-load", { timeout: 60_000 }, () => {
+  it("跨动词同口径：nudo check 对同一路径同样报 nudo:contract-load", { timeout: 60_000 }, () => {
     const r = runCliTsx(["check", p("main.js")]);
-    expect(r.stdout).toContain("nudo:interface-load");
+    expect(r.stdout).toContain("nudo:contract-load");
   });
 });

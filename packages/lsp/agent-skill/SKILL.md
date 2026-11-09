@@ -72,15 +72,15 @@ All commands are available as `workspace/executeCommand` (dot form) and as custo
 | `nudo.contract.draft` (`nudo/contract.draft`) | `{ "file": "src/lib.js", "functionName": "add4"? }` | Draft summary — same as CLI `nudo contract --draft` |
 | `nudo.contract.emit` (`nudo/contract.emit`) | `{ "file": "src/lib.js", "functionName": "add4", "mode": "update" }` | Persist the inferred contract as an `@generated` segment in `*.nudo.js` — same as CLI `nudo contract --emit` |
 
-Diagnostics (failed `@nudo:contract` assertions, L2 entry may-throw, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:interface-drift` warnings.
+Diagnostics (failed `@nudo:contract` assertions, L2 entry may-throw, unreachable code, …) are available as LSP diagnostics — push (`textDocument/publishDiagnostics`) and pull (`textDocument/diagnostic`). Persisted-contract drift surfaces as `nudo:contract-drift` warnings.
 
 ## Contract sidecars (`*.nudo.js`)
 
 - **Handwritten root** in `lib.nudo.js` (e.g. `export const add4 = fn({ x: positive }, positive4)`) drives **downstream derivation**: `nudo contract --emit lib.js --fn add2` writes a compositional `@generated` segment into `add.nudo.js` (`fn({ x }, x.shift(2))`), not an expanded dump.
 - Without `--fn`/`--all`, emit only **refreshes existing** `@generated` segments — it does not invent new contracts.
-- Handwritten sidecar bindings always win; emit refuses to overwrite them (`nudo:interface-name-clash`).
-- **Package allowlist**: `package.json` → `"nudo": { "contract": { "emit": ["src/api/**"] } }`. Empty/omitted = no path filter. Paths outside the allowlist are denied (`nudo:interface-emit-denied`).
-- `nudo health` fails CI when a file with `@generated` sidecar segments has persisted-contract drift (`nudo:interface-drift`).
+- Handwritten sidecar bindings always win; emit refuses to overwrite them (`nudo:contract-name-clash`).
+- **Package allowlist**: `package.json` → `"nudo": { "contract": { "emit": ["src/api/**"] } }`. Empty/omitted = no path filter. Paths outside the allowlist are denied (`nudo:contract-emit-denied`).
+- `nudo health` fails CI when a file with `@generated` sidecar segments has persisted-contract drift (`nudo:contract-drift`).
 
 ## What-if workflow
 

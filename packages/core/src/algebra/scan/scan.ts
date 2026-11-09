@@ -27,7 +27,7 @@ export { listTopFunctions } from "./scan-top-functions.ts";
 export { absUnknown, scanLiteralCalls } from "./scan-literal-calls.ts";
 
 // ---------------------------------------------------------------------------
-// T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:interface-domain-exceeds）
+// T10b：跨文件注入调用点域证据 ⊄ 手写契约（nudo:contract-domain-exceeds）
 // 实现见 scan-injected-domain.ts；此处 re-export 保持 scan.ts 对外形状不变。
 // ---------------------------------------------------------------------------
 

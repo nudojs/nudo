@@ -48,7 +48,7 @@ nudo contract --draft --write src/lib.js --fn greet --fn double
 
 产物是 `src/lib.nudo.draft.js` — **不** ambient 加载。审阅后复制进 `src/lib.nudo.js`。
 
-样例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)。
+样例：[`docs/examples/contract-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/contract-draft)。
 
 可运行演示（临时目录：盘点 → draft → 接受 → check）：
 

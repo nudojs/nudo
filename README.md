@@ -77,7 +77,7 @@ assertions
   — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
 ```
 
-Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:contract` — that is the interface product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`).
+Call-site facts (`call@<line>`) are the ground truth from execution. Optional contracts live in sidecars (`*.nudo.js`) or `@nudo:contract` — that is the contract product. Optional `@nudo:case` witnesses are **debug / `nudo test` only** (concrete args or constraint builders such as `number()` / `lit(42)`).
 
 ### Whole-program analysis (no directives needed)
 
@@ -205,7 +205,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) | stable |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
 | [`nudojs`](./packages/nudojs) | Product CLI (bin `nudo`): check / test / contract / export / health / migrate | stable |
-| [`@nudojs/service`](./packages/service) | Analysis core + emit products (Abs-native analysis, evaluator host API, interface/dts/schema/guard projections, session caches) | stable |
+| [`@nudojs/service`](./packages/service) | Analysis core + emit products (Abs-native analysis, evaluator host API, contract/dts/schema/guard projections, session caches) | stable |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
 | [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules | growing |
@@ -239,7 +239,7 @@ Nudo uses structured JSDoc comments to guide analysis. Contracts are the product
 | `@nudo:as` | Override the next statement's inferred type (`// @nudo:as shape({ port: number() })`) |
 | `@nudo:replace` | Replace a sub-expression's type (`// @nudo:replace JSON.parse(x) shape({ id: number() })`) |
 | `@nudo:mock` | Provide mock implementations for external dependencies (plain JS / `stub().returns(...)` / constraint builders) |
-| `@nudo:case` | **Debug witnesses only** — named inputs for `nudo test` / LSP scenarios; not the interface product |
+| `@nudo:case` | **Debug witnesses only** — named inputs for `nudo test` / LSP scenarios; not the contract product |
 | `@nudo:pure` | Mark functions as pure for memoized evaluation |
 | `@nudo:skip` | Skip inference and use manually declared types (`@nudo:skip number()`) |
 | `@nudo:sample` | Control loop iteration sampling |

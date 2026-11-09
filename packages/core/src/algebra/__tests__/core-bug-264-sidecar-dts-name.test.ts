@@ -10,9 +10,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { basename } from "node:path";
-import { sidecarPathOf } from "../interface/sidecar-path.ts";
+import { sidecarPathOf } from "../contract/sidecar-path.ts";
 
-/** service 侧草稿落点的派生口径（interface-draft）：`.nudo.ts` → `.nudo.draft.ts` */
+/** service 侧草稿落点的派生口径（contract-draft）：`.nudo.ts` → `.nudo.draft.ts` */
 function draftPathOf(file: string): string {
   return sidecarPathOf(file).replace(/\.nudo\.ts$/, ".nudo.draft.ts");
 }

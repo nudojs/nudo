@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliTsx as runCli } from "./helpers/run-cli.ts";
+import { runCliTsx as runCli, writeSrcTsconfig } from "./helpers/run-cli.ts";
 
 const STD_SRC = `import { number, fn } from "@nudojs/core";
 export const positive = number().gt(0);
@@ -35,6 +35,7 @@ export const add4 = fn({ x: positive }, positive4);
 describe("contract --emit --dry-run --exit-on-diff (DEC-005)", () => {
   it("exit 1 when derived sidecar has diff even if written is empty", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-dec005-"));
+    writeSrcTsconfig(dir);
     writeFileSync(join(dir, "std.nudo.js"), STD_SRC);
     writeFileSync(join(dir, "add.js"), ADD_JS);
     writeFileSync(join(dir, "lib.js"), LIB_JS);
@@ -55,8 +56,8 @@ describe("contract --emit --dry-run --exit-on-diff (DEC-005)", () => {
     });
     // Derived diff is printed (proof the sidecar would change)
     expect(r2.stdout).toContain("[dry-run] would update");
-    // Main interface has no change (only derived sidecar drifted)
-    expect(r2.stdout).toContain("no interface changes");
+    // Main contract has no change (only derived sidecar drifted)
+    expect(r2.stdout).toContain("no contract changes");
     // Contract §1.3: 将写盘且有 diff → exit 1
     expect(r2.status).toBe(1);
   });

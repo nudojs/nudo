@@ -1,6 +1,6 @@
 /**
  * BUG-081 —— `nudo contract` 把**无解契约**印成**有效契约**并 exit 0，而
- * `nudo check` 报 `nudo:interface-conflict` error（exit 1）、`nudo export` 拒绝
+ * `nudo check` 报 `nudo:contract-conflict` error（exit 1）、`nudo export` 拒绝
  * 出货（exit 1）⇒ 三个一级动词对同一个事实给出**相反结论**。
  *
  * 根因：`effectiveEntry` 打印 `eff.params` / `eff.returns` 时只调
@@ -13,7 +13,7 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { interfaceSurface, formatInterfaceSurfaceLine } from "../interface-surface.ts";
+import { contractSurface, formatContractSurfaceLine } from "../contract-surface.ts";
 import { tmpProject, writeTmpFiles } from "../../__tests__/tmp-project.ts";
 
 const CONFLICT_FILES = {
@@ -57,15 +57,15 @@ function runCli(args: string[]): { status: number; stdout: string; stderr: strin
 
 describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", () => {
   it("契约条目透出 conflict（此前被静默跳过 ⇒ 印成有效契约）", async () => {
-    const entries = await interfaceSurface(conflictProject());
+    const entries = await contractSurface(conflictProject());
     const entry = entries.find((e) => e.fn === "conflict");
     expect(entry).toBeDefined();
     expect(entry!.conflict?.params).toEqual(["n"]);
   });
 
   it("人读行带 `[unsatisfiable: n]` 标记（不再印成「有效契约」）", async () => {
-    const entries = await interfaceSurface(conflictProject());
-    const line = formatInterfaceSurfaceLine(entries.find((e) => e.fn === "conflict")!);
+    const entries = await contractSurface(conflictProject());
+    const line = formatContractSurfaceLine(entries.find((e) => e.fn === "conflict")!);
     expect(line).toContain("[unsatisfiable: n]");
   });
 
@@ -75,7 +75,7 @@ describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", (
     const file = conflictProject();
     const text = runCli(["contract", file]);
     expect(text.status).toBe(0);
-    expect(text.stderr).toContain("nudo:interface-conflict");
+    expect(text.stderr).toContain("nudo:contract-conflict");
     expect(text.stderr).toContain("conflict: handwritten contract conjunction unsatisfiable (n)");
     expect(text.stdout).toContain("[unsatisfiable: n]");
   });
@@ -107,8 +107,8 @@ export function ok(n) {
 `,
     });
     const file = join(dir, "ok.js");
-    const entries = await interfaceSurface(file);
-    const line = formatInterfaceSurfaceLine(entries.find((e) => e.fn === "ok")!);
+    const entries = await contractSurface(file);
+    const line = formatContractSurfaceLine(entries.find((e) => e.fn === "ok")!);
     expect(line).not.toContain("[unsatisfiable");
     expect(line).not.toContain("[conjunction not computable");
     const res = runCli(["contract", file]);

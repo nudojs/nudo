@@ -165,7 +165,7 @@ export function statFingerprint(path: string): { mtimeMs: number; size: number }
 /**
  * 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。
  * 与「无此文件」（loadModule 返回 undefined）必须区分：侧车 auto-bind 在
- * 读失败时静默失效会让约束回落 any，且没有任何 nudo:interface-load。
+ * 读失败时静默失效会让约束回落 any，且没有任何 nudo:contract-load。
  */
 export class ModuleReadError extends Error {
   readonly code: string;

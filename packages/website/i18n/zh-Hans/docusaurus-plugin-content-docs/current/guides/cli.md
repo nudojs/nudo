@@ -13,7 +13,7 @@ nudo — JavaScript types, computed
 
   nudo check <path> [--watch|-w]   # 门禁契约 + 入口 throws；打印 signatures
   nudo test <path> [--watch|-w]    # 报告全部推断用例；断言已声明期望
-  nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
+  nudo contract <path>             # 契约：打印 / draft / emit 侧车契约
   nudo export <path>               # 投影：dts / guard / schema / standard
   nudo health [paths]              # 体检：分析错误 + 固化漂移
 ```
@@ -157,7 +157,7 @@ assertions
 
 ## `nudo contract`
 
-打印、草稿或固化有效接口（handwritten / generated / implicit 分层）。
+打印、草稿或固化有效契约（handwritten / generated / implicit 分层）。
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
@@ -165,7 +165,7 @@ nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
 ```
 
 ```bash
-nudo contract src/lib.js                     # 打印有效接口
+nudo contract src/lib.js                     # 打印有效契约
 nudo contract --draft src/lib.js             # 可审阅的 *.nudo.draft.js
 nudo contract --draft --write src/lib.js     # 写盘草稿
 nudo contract --from-dts ./my-pkg/src/index.ts  # 把 .d.ts / TS 注解逆向为可审阅草稿

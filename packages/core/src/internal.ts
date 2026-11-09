@@ -11,7 +11,7 @@
 // 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
 export { CHECK_FACE_DIAG_CODES, DIAG, type DiagCode } from "./algebra/diagnostics/diag-codes.ts";
 
-// BUG-021/199：调用点观测拓宽（emit 写盘面与 interface-drift 对账面共用）
+// BUG-021/199：调用点观测拓宽（emit 写盘面与 contract-drift 对账面共用）
 export { isPointConstraint, widenObservationAbs } from "./algebra/widen-observation.ts";
 
 // leak / budgets / memo keys
@@ -28,7 +28,7 @@ export {
 } from "./algebra/diagnostics/leak.ts";
 export {
   type ProjectionStopReason, PROJECTION_MAX_DEPTH, ProjectionBudget,
-} from "./algebra/interface/projection-budget.ts";
+} from "./algebra/contract/projection-budget.ts";
 export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
   MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
@@ -92,7 +92,7 @@ export {
   // DESIGN-003：sidecar 契约身份=导出名；emit 层据此把 `export { _c as class }`
   // 的本地名归一到导出名（engine machinery——产品面走 localNamedExports）
   exportedNameOfLocal
-} from "./algebra/interface/interface.ts";
+} from "./algebra/contract/contract.ts";
 
 // derivation sessions + rendering experiments
 export {
@@ -197,7 +197,7 @@ export {
 export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // TS 声明类型文本 → Abs 形状（service 的 dts 产物面复用；此前复刻同表靠
 // drift-gate 测试互钉，见 ts-annotation-core-drift.test.ts 的历史头注释）
-export { absShapeForTsTypeText } from "./algebra/interface/ts-type-shape.ts";
+export { absShapeForTsTypeText } from "./algebra/contract/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
 export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";
