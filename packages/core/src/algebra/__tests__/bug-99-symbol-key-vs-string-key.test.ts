@@ -73,6 +73,26 @@ describe("Bug 99：符号键与字符串 \"@@iterator\" 分态", () => {
     });
   });
 
+  it("调用面同样分态：字符串键 \"@@iterator\"() 不产迭代器、Symbol.iterator() 产迭代器", () => {
+    // `$invokeKey` 把运行时键折成 "@@iterator" 槽名后，必须把**键身份**
+    // 一并透传到 $get：字符串键 "@@iterator" 不是 Symbol.iterator，原生
+    // `[1,2]["@@iterator"]()` 定抛 TypeError。此前调用面把两者合并 ⇒
+    // 字符串键也能拿到迭代器面（Bug 198 / 314 的符号键调用则反过来全塌）。
+    expect(v(`export function f() { return [1,2]["@@iterator"]().next().value; }`)).toEqual({
+      ok: false,
+    });
+    expect(
+      v(`export function f() { const k = "@@iterator"; return [1,2][k]().next().value; }`),
+    ).toEqual({ ok: false });
+    expect(v(`export function f() { return [1,2][Symbol.iterator]().next().value; }`)).toEqual({
+      ok: true,
+      value: 1,
+    });
+    expect(
+      v(`export function f() { return new Map([["a",1]])[Symbol.iterator]().next().value[0]; }`),
+    ).toEqual({ ok: true, value: "a" });
+  });
+
   it("brand 面同样分态：m[\"@@iterator\"] 定缺、m[Symbol.iterator] 折函数", () => {
     expect(v(`export function f() { return new Map()["@@iterator"]; }`)).toEqual({
       ok: true,

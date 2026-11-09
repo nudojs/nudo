@@ -2030,8 +2030,10 @@ function productExtOf(ext: string): string {
     case ".mts":
       return ".mjs";
     case ".cts":
-      // strip 不做 ESM→CJS 转换 ⇒ 产物**不是** CommonJS ⇒ 不谎称 .cjs（Bug 917）
-      return ".js";
+      // Bug 26：与 productPathOf 同口径（`.cts → .cjs`，tsc / Node 解析序）。
+      // 说明符重写必须指向**真实落盘的产物扩展名**，否则 strip 后的相对
+      // import 会指向一个不存在的 .js（ERR_MODULE_NOT_FOUND）。
+      return ".cjs";
     case ".tsx":
       return ".jsx";
     case ".mjs":
@@ -2291,7 +2293,7 @@ function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripOu
   }
   if (!sidecar && ext === ".cts") {
     notes.push(
-      'source is CommonJS TypeScript (.cts) — strip does not transform module systems: the .js product keeps the source\'s import/export syntax (Node parses .js as CommonJS unless the nearest package.json sets "type": "module")',
+      'source is CommonJS TypeScript (.cts) — strip does not transform module systems: the .cjs product keeps the source\'s import/export syntax (Node always parses .cjs as CommonJS; convert the module syntax before loading)',
     );
   }
   return { kind: "plan", file, outFile, code, notes, sidecar };

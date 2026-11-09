@@ -73,7 +73,9 @@ describe("Bug 12A —— 匿名默认类产出合法 ambient 声明", () => {
     const dts = moduleDts(SRC);
     expect(dts).toContain("export default class _default {");
     expect(dts).not.toContain("class default");
-    expect(dts).toMatch(/m\(\): unknown;/);
+    // Bug 39 补齐类方法入口兜底后返回类型从 unknown 变精确值（此处为
+    // number）；本例钉的是匿名默认类的**类名合法性**，不钉返回类型。
+    expect(dts).toMatch(/m\(\): [^;]+;/);
   });
 
   it("产物过 tsc --noEmit --strict（改前 TS1005）", () => {

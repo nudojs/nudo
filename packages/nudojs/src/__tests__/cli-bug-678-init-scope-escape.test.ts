@@ -6,12 +6,14 @@
  * 改前：`findPackageJsonUp` 无条件沿父目录链上溯 ⇒ `nudo init
  * packages/newpkg/src` 把 `"nudo"` 键写进**仓库根**的 package.json。
  * 改后：最近的 package.json 若是 **workspace / 容器根**（`pnpm-workspace.yaml`
- * / `lerna.json` / `package.json#workspaces` / 常规 workspace 目录下的子包）
- * ⇒ **拒绝写盘**（error:/fix: 引导 + exit 1），并提示「先给目标包建
- * package.json」。
+ * / `lerna.json` / `package.json#workspaces`）⇒ **拒绝写盘**（error:/fix:
+ * 引导 + exit 1），并提示「先给目标包建 package.json」。
  *
- * 反向闸：换回 HEAD 只读副本 ⇒ 「exit=1」「根 package.json 未被写」两条断言
- * **必红**（HEAD 往根写 nudo 键并 exit 0）。
+ * Bug 35 口径修订：真源信号**缺失**时，仅凭 `packages/<pkg>/package.json`
+ * 这类常规目录名**不再**反推容器根——普通仓也可能有同样的目录形态，
+ * 据此拒写是假红（且引导用户去造一个并不需要的嵌套 package.json）。
+ * 因此第一个用例从「拒绝」改为「照常写盘」；其余三条真源用例仍钉住
+ * 拒绝行为。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -40,16 +42,18 @@ function monoRepo(extra?: { pnpmWorkspace?: boolean }): { root: string; target: 
 }
 
 describe("Bug 678 — init 不得向上逃逸到仓库根", () => {
-  it("未声明 workspace 的 monorepo（packages/* 形态）⇒ 拒绝写盘（exit 1）", () => {
+  it("未声明 workspace 的 monorepo（packages/* 形态）⇒ 不假拒绝（Bug 35 新口径）", () => {
     const { root, target } = monoRepo();
-    const before = readFileSync(join(root, "package.json"), "utf-8");
     const errors: string[] = [];
     const code = runInit(target, { out: () => {}, err: (l) => errors.push(l) });
-    expect(code).toBe(1);
-    expect(readFileSync(join(root, "package.json"), "utf-8")).toBe(before);
-    expect(errors.join("\n")).toContain("error:");
-    expect(errors.join("\n")).toContain("workspace / container root");
-    expect(errors.join("\n")).toContain("fix:");
+    expect(code).toBe(0);
+    expect(errors.join("\n")).not.toContain("workspace / container root");
+    expect(errors.join("\n")).not.toContain("fix:");
+    const parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed.nudo).toEqual({ check: { profile: "adoption" } });
   });
 
   it("pnpm workspace（pnpm-workspace.yaml）⇒ 同样拒绝写盘", () => {

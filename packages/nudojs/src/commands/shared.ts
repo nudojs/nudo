@@ -662,7 +662,8 @@ function entryKind(entry: Dirent, fullPath: string): "file" | "dir" | undefined 
  * **不变式**（Bug 923 仍然成立）：一个模块 ⇒ **一次**分析（计数不翻倍）。
  *
  * 映射与 `migrate strip` 的产物扩展名同口径：`.ts → .js`、`.mts → .mjs`、
- * `.cts → .js`（strip 只剥类型，不做模块系统转换）。
+ * `.cts → .cjs`（Bug 26：与 tsc / Node 解析序一致；strip 只剥类型，
+ * 不做模块系统转换，故 `.cts` 产物在 strip 计划里另带一条告警）。
  *
  * ⚠ **取舍**（行为变更，已写进 changeset）：同 stem 的 `.js` 若**不是** strip
  * 产物（例如手写的旧模块、或被提交进仓库的编译输出），现在被分析的是 `.js`

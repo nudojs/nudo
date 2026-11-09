@@ -8,28 +8,19 @@
  *
  * 用共享 CLI runner（cwd = 仓库根、目标指向 /tmp 独立夹具），避免落到 dist。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runCliTsx } from "./helpers/run-cli.ts";
+import { tmpProject as mkTmpProject } from "./helpers/tmp-project.ts";
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-
-function tmpProject(): string {
-  const d = mkdtempSync(join(tmpdir(), "nudo-bugtooling-cli-"));
-  dirs.push(d);
-  return d;
-}
+const TMP_PREFIX = "nudo-bugtooling-cli-";
 
 // 缓存开关对 init / migrate 无意义，但显式清空以免继承外部 env 干扰。
 const cleanEnv = { NUDO_CACHE_DIR: "", NUDO_CACHE_KEY: "" };
 
 describe("Bug 14 —— migrate retire 保留 fd 重定向前缀", () => {
-  const dir = tmpProject();
+  const dir = mkTmpProject(TMP_PREFIX);
   writeFileSync(
     join(dir, "package.json"),
     JSON.stringify({
@@ -58,7 +49,7 @@ describe("Bug 14 —— migrate retire 保留 fd 重定向前缀", () => {
   });
 
   it("含数字的正常位置参数不被当 fd 前缀吃掉（仍按项目路径映射）", { timeout: 120_000 }, () => {
-    const dir2 = tmpProject();
+    const dir2 = mkTmpProject(TMP_PREFIX);
     writeFileSync(
       join(dir2, "package.json"),
       JSON.stringify({
@@ -79,7 +70,7 @@ describe("Bug 14 —— migrate retire 保留 fd 重定向前缀", () => {
 
 describe("Bug 35 —— 未声明 workspace 的普通仓 init <dir> 不假拒绝", () => {
   it("仅含 services/api/package.json 的普通仓：init src 写进最近的根 package.json", { timeout: 120_000 }, () => {
-    const dir = tmpProject();
+    const dir = mkTmpProject(TMP_PREFIX);
     writeFileSync(join(dir, "package.json"), '{ "name": "rpt35", "version": "1.0.0" }\n');
     mkdirSync(join(dir, "src"), { recursive: true });
     mkdirSync(join(dir, "services", "api"), { recursive: true });
@@ -99,7 +90,7 @@ describe("Bug 35 —— 未声明 workspace 的普通仓 init <dir> 不假拒绝
   });
 
   it("真声明 workspace 的仓仍拒绝越界写盘（真源判据不回归）", { timeout: 120_000 }, () => {
-    const dir = tmpProject();
+    const dir = mkTmpProject(TMP_PREFIX);
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({ name: "ws35", version: "1.0.0", workspaces: ["packages/*"] }),
