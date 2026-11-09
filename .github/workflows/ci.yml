@@ -23,14 +23,17 @@ concurrency:
 # 经 actions/cache 跨 run 复用——源码未变的 PR 直接命中缓存跳过 tsup）：
 #   push main         → lint / build / test×2 shard（全量，无 --changed）+ benchmark
 #   push dev|ci       → lint / build / test×2 shard（--changed 快速通道）
-#   pull_request      → lint / build / test×2 shard（--changed 快速通道）
-#   schedule/dispatch → build / test:coverage / benchmark / node-matrix（夜间复测）
-# 快速通道细节：test job 按 git diff <since>...HEAD 选测试
+#   pull_request      → lint / build / test-coverage（--changed 子集，唯一测试门禁）
+#   schedule/dispatch → build / test:coverage（全量 + 硬阈值）/ benchmark / node-matrix
+# 快速通道细节：test / test-coverage 按 git diff <since>...HEAD 选测试
 # （vitest --changed，模块图 + forceRerunTriggers 安全网，见
 # vitest.config.ts）；lint job 在无 .ts/.tsx/tsconfig/lockfile 变更时跳过三个 tsc。
 # coverage（v8 插桩 + 阈值聚合，慢 30–60%）：夜间/手动跑全量 + 硬阈值；
 # PR 跑 --changed 子集并关阈值，只把报告交给 codecov，让覆盖率回退在
 # PR 内可见而不是等 ≤24h（子集覆盖率天然低于全量基线，不能用全局阈值判）。
+# PR 不再单跑裸 test job：覆盖率报告必须自跑用例才能产出，同一批
+# --changed 用例双跑只白花两个 runner 的分钟（两 job 并行，墙钟本不叠加）。
+# 代价是 PR 反馈从分片（≈T/2）变单跑插桩（≈1.3–1.6T）——用成本换时长。
 # main push 的发布门禁 = 全量测试（2 shard，无 --changed）+ lint + benchmark。
 # verify:examples / verify:docs 跑真实 CLI（tsx 直连包源码）——输入面含
 # 包源码，ts 或 docs 变更都要跑；两者都没动的 push（version-bump 合并、
@@ -40,7 +43,8 @@ concurrency:
 # @nudojs/* → dist；lint:website 与 verify:* 脚本的 @nudojs/* 解析同样需要 dist。
 # test 分 2 shard 并发（vitest --shard 按文件切分，pool: forks 下文件
 # 间天然隔离）；test-coverage 不分——v8 阈值按全量聚合，分片需 merge
-# coverage 报告，而夜间路径本就不频繁，不值得引入复杂度。
+# coverage 报告，而夜间路径本就不频繁，不值得引入复杂度。PR 也只有
+# 这一路（阈值已关，不分片的报告才是 codecov 能直接消费的完整子集）。
 jobs:
   lint:
     name: Lint (tsc x2) & docs examples
@@ -267,10 +271,12 @@ jobs:
 
   test:
     name: Test (shard ${{ matrix.shard }}/2)
-    # PR 与 dev|ci push 走 --changed 快速通道；main push 全量跑
-    # （发布门禁——Release 复用同 SHA 的 CI 绿结论）。
+    # 仅 push：dev|ci 走 --changed 快速通道，main 全量跑（发布门禁——
+    # Release 复用同 SHA 的 CI 绿结论）。
+    # PR 不跑本 job：test-coverage 用同一批 --changed 用例出覆盖率报告，
+    # 用例失败它同样红，双跑只白花两个 runner 的分钟（详见文件头矩阵）。
     # 2 shard 并发压墙时；fail-fast 关闭以保留双 shard 结果。
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'push' }}
     needs: build
     strategy:
       fail-fast: false
@@ -280,22 +286,20 @@ jobs:
     steps:
       - name: Checkout
         # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
-        # fetch-depth: 0 — --changed 要 diff base.sha（须在本地存在）
+        # fetch-depth: 0 — --changed 要 diff before（须在本地存在）
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
 
-      # PR → base.sha；push → before（新分支 push 的 before 为零值
-      # → 空 since → 全量跑）。main push 是发布门禁：不设 since，
-      # 强制全量（不信任增量选择器覆盖合并结果）。
+      # push → before（新分支 push 的 before 为零值 → 空 since → 全量跑）。
+      # main push 是发布门禁：不设 since，强制全量（不信任增量选择器
+      # 覆盖合并结果）。
       # vitest --changed 即 git diff --name-only <since>...HEAD（三点式）；
       # 零命中时正常空跑退出（vitest 源码显式处理）。
       - name: Resolve changed-since base
         id: changed
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "since=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             :  # main：全量
           else
             before="${{ github.event.before }}"
@@ -348,6 +352,9 @@ jobs:
     # 故不分片、不用 --changed）。
     # PR：--changed 子集 + NUDO_COVERAGE_THRESHOLDS=off，只出报告交 codecov，
     # 让覆盖率回退在 PR 内可见；子集覆盖率天然低于全量基线，开全局阈值会假红。
+    # PR 的测试门禁也在本 job——裸 test job 已不收 PR（同一批用例双跑没有
+    # 增量结论），故用例失败必须让这里红；覆盖率上传本身 advisory
+    # （fail_ci_if_error: false），与「测试是否通过」解耦。
     # main push 不跑（发布门禁 = 全量测试 + lint + benchmark 已足够）。
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
     needs: build
