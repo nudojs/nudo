@@ -37,6 +37,7 @@ import {
   formatConstraint,
   formatShape,
   generalizeFromAst,
+  interfaceDiagCount,
   isIntFlag,
   isNudoConstraint,
   joinThenProject,
@@ -46,6 +47,7 @@ import {
   refineDiagCount,
   scanThrowsDecl,
   sidecarPathOf,
+  takeInterfaceDiagsSince,
   takeRefineDiagsSince,
   type Abs,
   type NudoConstraint,
@@ -62,6 +64,10 @@ import { analyzeFileAsync, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
 import { allocNudoBinding, exportNameRepr } from "./export-binding.ts";
+import {
+  collectContractFaceDiagnostics,
+  type ContractFaceDiagnostic,
+} from "./interface-surface.ts";
 import { sanitizeLineCommentText } from "./line-comment.ts";
 import { walkTopCallables } from "./walk-top-callables.ts";
 import {
@@ -128,6 +134,11 @@ export type InterfaceDraftOpts = {
   bodyAccesses?: boolean;
   /** 打开 buffer 源（E5：与 hover/interface 同口径） */
   source?: string;
+  /**
+   * Bug 80：透出本次分析产生的契约装载诊断（`--draft` 面据此与 check/export
+   * 同裁决）。不传 ⇒ 旧的「不排干 interface 增量」行为不变。
+   */
+  diagnostics?: ContractFaceDiagnostic[];
 };
 
 export type InterfaceDraftResult = {
@@ -538,19 +549,65 @@ function projectDraftReturn(
   return { display: "/* no evidence */", projected: false, evidence: "none" };
 }
 
+/**
+ * 字段**值**的边界：从 `start` 起按 `()[]{}` 配平扫描，深度为 0 时遇到
+ * `,` / `\n` / `}`（本层对象闭合）即结束。
+ *
+ * Bug 50：旧正则把值捕获成 `[^,}\n]+` ⇒ 嵌套 `shape({ … })` 在**第一个 `}`**
+ * 处截断 ⇒ `outer?: shape({ x: number() })` 被改成
+ * `outer: shape({ x: number().optional()})`（可选位内移一层：外层变必填、
+ * 内层变可选，草稿与证据相反）。配平扫描才能取到完整的值表达式。
+ */
+function fieldValueEnd(s: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i]!;
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      if (depth === 0) return i; // 本层对象闭合，不属于值
+      depth--;
+    } else if (depth === 0 && (c === "," || c === "\n")) {
+      return i;
+    }
+  }
+  return s.length;
+}
+
+/** 把 `k?: T` 改写成 `k: T.optional()`；T 内层的 `?:` 递归改写（边界按括号配平）。 */
+function rewriteOptionalFields(s: string): string {
+  // sticky：从当前索引处起匹配（等价于 ^，但无需反复 slice）；局部实例避免递归共享 lastIndex。
+  const optField = /([A-Za-z_$][\w$]*)\?\s*:\s*/y;
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    optField.lastIndex = i;
+    const m = optField.exec(s);
+    if (m) {
+      const name = m[1]!;
+      const valStart = i + m[0].length;
+      const end = fieldValueEnd(s, valStart);
+      const raw = s.slice(valStart, end);
+      // 值末尾的排版空白（本层 `,`/`}` 之前）不属于约束本身 ⇒ 保留在改写
+      // 结果之后，避免把 `number() }` 压成 `number()}`（嵌套层尤其明显）。
+      const trailing = /\s*$/.exec(raw)![0];
+      const value = rewriteOptionalFields(raw.slice(0, raw.length - trailing.length));
+      // 只有**值本身**（顶层链）已 .optional() 才不重复追加；内层 shape 含
+      // .optional() 不代表这个槽可选（否则又会把可选位吞掉一层）。
+      out += `${name}: ${value.endsWith(".optional()") ? value : `${value}.optional()`}${trailing}`;
+      i = end;
+      continue;
+    }
+    out += s[i]!;
+    i++;
+  }
+  return out;
+}
+
 /** draft 用 builder JS：shape 字段可选写成 `k: T.optional()`，不用非法的 `k?: T`。
  * 导出供单测：formatConstraint 显示层可吐 `email?:`，落盘 DSL 不得非法。 */
 export function toDraftBuilderDsl(display: string): string {
   const s = display.replace(/\s*\/\*[\s\S]*?\*\/\s*/g, "").trim();
-  // 仅改写带 ? 的字段：email?: string() → email: string().optional()
-  return s.replace(
-    /([A-Za-z_$][\w$]*)\?\s*:\s*([^,}\n]+)/g,
-    (_m, name: string, val: string) => {
-      const v = val.trim();
-      if (v.includes(".optional()")) return `${name}: ${v}`;
-      return `${name}: ${v}.optional()`;
-    },
-  );
+  return rewriteOptionalFields(s);
 }
 
 /**
@@ -788,6 +845,8 @@ export async function draftInterface(
   filePath: string,
   opts: InterfaceDraftOpts = {},
 ): Promise<InterfaceDraftResult> {
+  // Bug 80：锚定本次草稿分析的 interface 诊断增量（收尾透出给命令层）。
+  const ifaceSince = interfaceDiagCount();
   const source = opts.source ?? readFileSync(filePath, "utf-8");
   // 手写契约探测始终 autoBind:true（见下方 effectiveInterface 调用注释）；
   // 项目 autoBind 只影响 ambient 执法，不影响 draft 是否 skip 已有侧车。
@@ -925,6 +984,12 @@ export async function draftInterface(
   }
 
   const draftSource = formatDraftModule(filePath, entries, sidecarPath, throwsHints);
+  // Bug 80：坏侧车不得按「无契约」起草且静默 exit 0 —— 本次装载诊断透出给
+  // 命令层（与 interfaceSurface 同口径）。只在调用方要时排干增量（默认行为不变）。
+  if (opts.diagnostics) {
+    const ifaceDiags = takeInterfaceDiagsSince(ifaceSince);
+    collectContractFaceDiagnostics(opts.diagnostics, analysis.diagnostics, ifaceDiags);
+  }
   return { file: filePath, entries, draftSource, sidecarPath };
 }
 

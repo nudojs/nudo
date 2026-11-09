@@ -29,6 +29,7 @@ import { isSymbolAbs, evalSymbolStatic } from "../symbol.ts";
 import {
   boolPrim,
   mayCoerceThrowOperand,
+  mayToStringThrowOperand,
   isBigintPrimAbs,
   typedArrayElementOf,
 } from "../shared.ts";
@@ -193,7 +194,7 @@ function evalUrlStatic(method: string, args: Abs[]): Abs | undefined {
     (!!url && url.term?.op !== "lit") || (!!base && base.term?.op !== "lit" && baseFoldable);
   if (argsAbstract) {
     // 抽象 prim（string/number/…）ToString total；obj/fn/any/sum 载体 may
-    if (mayCoerceThrowOperand(url) || mayCoerceThrowOperand(base)) {
+    if (mayToStringThrowOperand(url) || mayToStringThrowOperand(base)) {
       recordMayThrow({ kind: "TypeError", cause: "URL.canParse argument ToString may throw (Symbol)" });
     }
     return boolPrim();

@@ -309,7 +309,12 @@ export { OBJECT_PROTO_NAMES } from "../object-proto-names.ts";
 /** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名）。
  *  `in` 判定（$in tuple 臂：Array.prototype → Object.prototype 原型链）与
  *  值读投影（$get 方法值读通道）共用；host 在此避免 members ↔ containers
- *  循环 import（members 不可引 runtime/containers）。 */
+ *  循环 import（members 不可引 runtime/containers）。
+ *
+ *  注意表内末项 "@@iterator" 是 **Symbol.iterator 的符号投影名**，不是字符串
+ *  键。调用面（exec/class/invoke.ts 的 knownSurfaceMemberAbsent）把本表当
+ *  「Array.prototype 可访问名全集」使用，故必须保留；但 `$get` / `$in` 的
+ *  **键查询面**须用 arrayProtoMemberForKey 按 symbolKey 信号分态（Bug 99）。 */
 export const ARRAY_PROTO_METHOD_NAMES = new Set([
   "at", "concat", "copyWithin", "entries", "every", "fill", "filter", "find",
   "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
@@ -318,6 +323,19 @@ export const ARRAY_PROTO_METHOD_NAMES = new Set([
   "toSorted", "toReversed", "toSpliced", "with",
   "toLocaleString", "toString", "unshift", "values", "@@iterator",
 ]);
+
+/** Symbol.iterator 的内部投影名——**不是字符串键**（Bug 99）。 */
+export const ARRAY_ITERATOR_SLOT_KEY = "@@iterator";
+
+/** Bug 99：按**键身份**查 Array.prototype 可访问名。
+ *  "@@iterator" 只在真符号键（`symbolKey === true`，即 `a[Symbol.iterator]` /
+ *  `Symbol.iterator in a`）下命中；字面量字符串键 "@@iterator" 是另一个
+ *  PropertyKey（原生 `[1,2]["@@iterator"] === undefined`、
+ *  `"@@iterator" in [1,2] === false`），不得命中符号投影。 */
+export function arrayProtoMemberForKey(key: string, symbolKey: boolean): boolean {
+  if (key === ARRAY_ITERATOR_SLOT_KEY) return symbolKey;
+  return ARRAY_PROTO_METHOD_NAMES.has(key);
+}
 
 /**
  * **引擎已为原型面建模**的 brand 名（brand 接收者「确定缺失」判定的排除名单）。

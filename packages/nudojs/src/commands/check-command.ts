@@ -37,11 +37,11 @@ import { shouldEmitGha } from "../check-ci-flags.ts";
 import {
   attachTargetErrors,
   collectExternalRecords,
+  collectTargets,
   diskCacheSignConfigError,
   emitJsonDoc,
   reportPathErrors,
   resolveTargets,
-  resolveTargetsCollect,
   startWatch,
   variadicSwallowError,
   type PathError,
@@ -185,7 +185,11 @@ export function startCheckWatch(
     async (t: string) => {
       // `--json` watch 面（Bug 645）：每轮仍吐机器可读文档（见 runCheckJsonFace）
       if (opts.jsonFace) {
-        await runCheckJsonFace(t, { ...opts.shared, from: roundFrom });
+        // Bug 40：把本轮 `--from` 路径错误交给机器面 ⇒ 信封 ok:false +
+        // pathErrors[]（此前 jsonFace 分支在退出码落点之前就 return，
+        // stderr 已报「Callsite file not found」而信封仍写 ok:true + exit 0）。
+        await runCheckJsonFace(t, { ...opts.shared, from: roundFrom }, roundFromErrors);
+        if (roundFromErrors.length > 0) process.exitCode = 1;
         return;
       }
       await runCheck(t, {
@@ -232,6 +236,7 @@ export function startCheckWatch(
 async function runCheckJsonFace(
   file: string,
   opts: RunCheckOptions,
+  fromErrors: readonly PathError[] = [],
 ): Promise<void> {
   const collected: CheckJson[] = [];
   const gateFlags: GateFlagsChannel = {};
@@ -243,10 +248,13 @@ async function runCheckJsonFace(
   });
   const syntaxErrors = gateFlags.syntaxPathErrors ?? [];
   const injectionFailed = gateFlags.injectionSetupFailed === true;
-  if (collected.length === 0 || syntaxErrors.length > 0) {
+  // Bug 40：`--from` 路径错误与语法错同属「本轮证据/输入缺失」⇒ 一起进
+  // pathErrors[]、一起把 ok 压成 false（非 watch --json 面同形）。
+  const pathErrors = [...syntaxErrors, ...fromErrors];
+  if (collected.length === 0 || pathErrors.length > 0) {
     const envelope = withPathErrorCount(
-      attachPathErrors(serializeCheckJsonMulti(collected), syntaxErrors),
-      syntaxErrors.length,
+      attachPathErrors(serializeCheckJsonMulti(collected), pathErrors),
+      pathErrors.length,
     );
     emitJsonDoc(envelope, true);
     process.exitCode = envelope.ok && !injectionFailed ? 0 : 1;
@@ -554,17 +562,12 @@ export function registerCheckCommand(program: Command): void {
           for (const n of notes) console.log(n);
           return;
         }
-        const targets: string[] = [];
         // 63b：**分析目标闸门**错误（路径不存在 / 空目录 / 非分析目标）——
         // **单独一摊**（`targetErrors`）：`--from` 路径错误**不**进这里
         // （它是**精确入口**，不是副本）；全集仍是 `allPathErrors`
         // （= 闸门错误 + `--from` 错误，顺序不变 ⇒ `pathErrors[]` 逐字不变）。
-        const targetErrors: PathError[] = [];
-        for (const p of paths) {
-          const r = resolveTargetsCollect(p);
-          targets.push(...r.targets);
-          targetErrors.push(...r.errors);
-        }
+        // Bug 79：跨位置参数收敛在 collectTargets 内完成（同一模块只分析一遍）。
+        const { targets, errors: targetErrors } = collectTargets(paths);
         if (opts.json && opts.abs) {
           usageErrorExit(opts.json, "error: --json cannot be combined with --abs");
           return;

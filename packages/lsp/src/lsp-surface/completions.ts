@@ -47,6 +47,13 @@ export type CompletionContext = {
    * 缺省 ⇒ 走 reuseBinding(reuse, name) 的全局绑定面。
    */
   lookupBinding?: (name: string) => Abs | undefined;
+  /**
+   * 函数签名的同源取数（Bug 83）：由 server-ide.ts 用 hover 的
+   * `checkSignatureLine` 装配（与 hover / `nudo check` 同口径）⇒
+   * 补全 detail 与同函数 hover 签名逐字相等。返回 undefined ⇒
+   * 调用方回落绑定面 fn Abs 的签名公式（fnBindingDetail）。
+   */
+  signature?: (name: string) => string | undefined;
 };
 
 /** 补全面分支（member = 成员面 / variable = 变量面）。 */
@@ -88,7 +95,7 @@ export function getCompletionsAtPosition(
   const textBefore = getTextBeforePosition(source, line, column);
   const receiver = parseReceiver(textBefore);
   // 没有成员访问触发点 ⇒ 变量补全面（绑定面）。
-  if (receiver === null) return getVariableCompletions(filePath, source, reuse);
+  if (receiver === null) return getVariableCompletions(filePath, source, reuse, context);
   // 有触发点 ⇒ 成员面。**认不出接收者时给空**，不回落到顶层变量表
   // （那份表与「成员」意图无关；Bug 782 / 787）。
   return getMemberCompletions(filePath, source, receiver, reuse, context);
@@ -580,6 +587,7 @@ function getVariableCompletions(
   filePath: string,
   source: string,
   reuse?: SurfaceReuse,
+  context?: CompletionContext,
 ): CompletionItem[] {
   if (reuse?.result) {
     // 同源绑定面（analyzeFile bindings）：不再 parse + 整文件求值
@@ -591,7 +599,7 @@ function getVariableCompletions(
         // 顶层 fn 绑定 = **函数**（不是某对象的成员）⇒ "function" 档
         // （"method" 只留给成员函数）——Bug 717。
         kind: info.abs.shape.k === "fn" ? "function" : "variable",
-        detail: bindingDetail(name, info.abs),
+        detail: bindingDetail(name, info.abs, context),
       });
     }
     if (completions.length > 0) return completions;
@@ -620,7 +628,7 @@ function getVariableCompletions(
         completions.push({
           label: name,
           kind: absVal.shape.k === "fn" ? "function" : "variable",
-          detail: bindingDetail(name, absVal),
+          detail: bindingDetail(name, absVal, context),
         });
       }
       if (completions.length > 0) return completions;
@@ -744,8 +752,12 @@ function fnBindingDetail(name: string, a: Abs): string | undefined {
   return `${name}(${ps}) => ${ret}`;
 }
 
-/** 绑定面 detail：函数走 check 同形签名，其余走外延渲染（BUG-091） */
-function bindingDetail(name: string, a: Abs): string {
+/** 绑定面 detail：函数优先走同源 check 签名（Bug 83），回落 fnBindingDetail */
+function bindingDetail(name: string, a: Abs, context?: CompletionContext): string {
+  if (a.shape.k === "fn") {
+    const sig = context?.signature?.(name);
+    if (sig !== undefined) return sig;
+  }
   return fnBindingDetail(name, a) ?? absDetail(a);
 }
 

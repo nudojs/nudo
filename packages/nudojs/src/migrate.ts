@@ -16,7 +16,8 @@ import {
   statSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { parseJsonText } from "./read-json.ts";
 import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
 import type { EvalFallback } from "@nudojs/core";
@@ -218,7 +219,7 @@ const TSX_EXT = new Set([".tsx"]);
 
 function readJson(path: string): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    return parseJsonText(readFileSync(path, "utf-8")) as Record<string, unknown>;
   } catch {
     /* optional: package.json unreadable — omit */
     return undefined;
@@ -757,6 +758,48 @@ function isVerifyTargetPath(file: string): boolean {
   return VERIFY_TARGET_EXTS.has(extname(file.toLowerCase()));
 }
 
+/**
+ * 与 `nudo check <dir>` 的目录扫描同口径：**同目录里已存在的产物压掉同 stem
+ * 的 TS 源**（`commands/shared.ts` 的 Bug 1053 规则）。
+ *
+ * Bug 67：`verify` 此前只按扩展名筛（`isVerifyTargetPath`），绿产物 + 红源的
+ * 迁移过渡期会多分析一个门禁**从不看**的文件 ⇒ `nudo check .` 绿而
+ * `migrate verify .` 红、同一模块分析两遍，迁移门被无谓卡住。族 21 Bug 1026
+ * 只对齐了默认排除目录，这条「产物胜出」仲裁没接进扫描面。
+ */
+function dropSupersededSources(files: readonly string[]): string[] {
+  const byDir = new Map<string, string[]>();
+  for (const f of files) {
+    const d = dirname(f);
+    const list = byDir.get(d);
+    if (list) list.push(f);
+    else byDir.set(d, [f]);
+  }
+  const out: string[] = [];
+  for (const [, list] of byDir) {
+    const jsProducts = new Set<string>();
+    const mjsProducts = new Set<string>();
+    for (const f of list) {
+      const name = basename(f).toLowerCase();
+      if (name.endsWith(".mjs")) mjsProducts.add(name.slice(0, -4));
+      else if (name.endsWith(".js")) jsProducts.add(name.slice(0, -3));
+    }
+    for (const f of list) {
+      const name = basename(f).toLowerCase();
+      let stem: string | undefined;
+      if (name.endsWith(".mts") && !name.endsWith(".d.mts")) stem = name.slice(0, -4);
+      else if (name.endsWith(".cts") && !name.endsWith(".d.cts")) stem = name.slice(0, -4);
+      else if (name.endsWith(".ts") && !name.endsWith(".d.ts")) stem = name.slice(0, -3);
+      if (stem !== undefined) {
+        const products = name.endsWith(".mts") ? mjsProducts : jsProducts;
+        if (products.has(stem)) continue;
+      }
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 /** migrate strip 的源门：TS/TSX 实现源，排除 .d.* 声明 */
 function isStripSource(file: string): boolean {
   if (isDeclarationFile(file)) return false;
@@ -1287,6 +1330,15 @@ function consumeTscArgv(cmd: string, start: number): number {
       i += 2; // 转义 / 续行：整对消费
       continue;
     }
+    // Bug 14：fd 前缀（`2>&1` / `1> out.log` / `3>> err.log`）紧贴重定向符，
+    // 数字本身不是 shell 元字符 ⇒ 否则会被当成 tsc 的位置参数整段吞掉，
+    // 短语替换后只剩 `>&1`（重定向语义静默改变）。判据：独立 token 的数字串
+    // 且紧跟 `>` / `<` ⇒ 在此断开 tsc 短语，让整段重定向原样保留。
+    if (c >= "0" && c <= "9" && (i === start || /\s/.test(cmd[i - 1]!))) {
+      let j = i;
+      while (j < n && cmd[j]! >= "0" && cmd[j]! <= "9") j++;
+      if (cmd[j] === ">" || cmd[j] === "<") break;
+    }
     if (isPhraseBoundary(c)) break;
     if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) break;
     i++;
@@ -1655,7 +1707,7 @@ function readJsonObjectDetailed(path: string, label: string): PackageJsonRead {
     return { kind: "unreadable", error: (err as Error).message ?? String(err) };
   }
   try {
-    const value = JSON.parse(text) as unknown;
+    const value = parseJsonText(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return { kind: "invalid", error: `${label} is not a JSON object` };
     }
@@ -1826,7 +1878,14 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       tsFiles,
       tsxFiles,
       nudoScripts,
-      nudoConfig: pkg?.nudo !== undefined,
+      // Bug 100：`nudo` 键**在场但形状无效**（null / 标量 / 数组）在 loader /
+      // config-shape / init 三面一律是「没有配置」（本包不受门禁管辖），
+      // 旧判据只看 `!== undefined` ⇒ 唯一说「有」。与 `init.ts` 的
+      // `readNudoKeyState()` 同口径：有效 = 非 null 的普通对象（非数组）。
+      nudoConfig: (() => {
+        const v = pkg?.nudo;
+        return v !== undefined && v !== null && typeof v === "object" && !Array.isArray(v);
+      })(),
       retired,
       retiring,
       blockers,
@@ -1971,8 +2030,10 @@ function productExtOf(ext: string): string {
     case ".mts":
       return ".mjs";
     case ".cts":
-      // strip 不做 ESM→CJS 转换 ⇒ 产物**不是** CommonJS ⇒ 不谎称 .cjs（Bug 917）
-      return ".js";
+      // Bug 26：与 productPathOf 同口径（`.cts → .cjs`，tsc / Node 解析序）。
+      // 说明符重写必须指向**真实落盘的产物扩展名**，否则 strip 后的相对
+      // import 会指向一个不存在的 .js（ERR_MODULE_NOT_FOUND）。
+      return ".cjs";
     case ".tsx":
       return ".jsx";
     case ".mjs":
@@ -2112,12 +2173,46 @@ function isSidecarSource(file: string): boolean {
   return SIDECAR_TS_RE.test(file);
 }
 
-/** 源 → 产物的扩展名映射（strip 只剥类型，不做模块系统转换） */
+/**
+ * 源 → 产物的扩展名映射（strip 只剥类型，不做模块系统转换）。
+ *
+ * Bug 26：`.cts → .cjs`（与 `tsc --declaration` / Node 的解析口径一致，且与
+ * `.mts → .mjs` 对称）。此前 `.cts` 与 `.ts` 同 stem 时都写 `index.js` ⇒ 同批
+ * 两份计划争用同一路径，后写覆盖先写、两行都报 `written`、exit 0 ⇒ 一个模块
+ * 从产物面静默消失。
+ */
 function productPathOf(file: string): string {
   const ext = extname(file).toLowerCase();
   if (ext === ".mts") return file.replace(/\.mts$/i, ".mjs");
-  if (ext === ".cts") return file.replace(/\.cts$/i, ".js");
+  if (ext === ".cts") return file.replace(/\.cts$/i, ".cjs");
   return file.replace(/\.ts$/i, ".js");
+}
+
+/**
+ * 同批产物路径冲突检测（Bug 26）：两个不同源不能落到同一个产物路径。
+ *
+ * 覆盖守卫（`:2332`）逐 plan 对照**磁盘现状**——同批两份计划都在写盘之前
+ * 被检查，盘上还没有目标文件 ⇒ 谁也发现不了对方。冲突必须在**计划阶段**、
+ * 对整批一起判，且是硬错误（照 `check --fix` 的 `sharedSidecarSibling`
+ * 与 `target exists: … refusing to overwrite` 的先例：同一路径被两个模块争用
+ * 在仓内是显式错误，不是 last-write-wins）。
+ */
+function assertUniqueStripProducts(plans: readonly StripOutcome[]): void {
+  const owners = new Map<string, string>();
+  for (const o of plans) {
+    const product = resolve(o.outFile);
+    const source = resolve(o.file);
+    const prev = owners.get(product);
+    if (prev !== undefined && prev !== source) {
+      throw new Error(
+        `strip product path collision: ${relative(process.cwd(), prev)} and ` +
+          `${relative(process.cwd(), source)} both produce ` +
+          `${relative(process.cwd(), product)} — rename one source so each module ` +
+          `has its own product; nothing was written`,
+      );
+    }
+    owners.set(product, source);
+  }
 }
 
 /** 备份名：<path>.bak 被占用时改用 <path>.1.bak / <path>.2.bak …（绝不静默跳过） */
@@ -2198,7 +2293,7 @@ function makeStripPlan(file: string, outFile: string, sidecar: boolean): StripOu
   }
   if (!sidecar && ext === ".cts") {
     notes.push(
-      'source is CommonJS TypeScript (.cts) — strip does not transform module systems: the .js product keeps the source\'s import/export syntax (Node parses .js as CommonJS unless the nearest package.json sets "type": "module")',
+      'source is CommonJS TypeScript (.cts) — strip does not transform module systems: the .cjs product keeps the source\'s import/export syntax (Node always parses .cjs as CommonJS; convert the module syntax before loading)',
     );
   }
   return { kind: "plan", file, outFile, code, notes, sidecar };
@@ -2262,6 +2357,8 @@ function planStrip(paths: string[]): StripOutcome[] {
       }
     }
   }
+  // Bug 26：整批计划统一判产物路径冲突（覆盖守卫看不见「同批另一个计划」）。
+  assertUniqueStripProducts(plans);
   return plans;
 }
 
@@ -2553,7 +2650,11 @@ export async function migrateVerify(
       // **不是**分析目标，不得当源码分析。**扫描面本身**按 verify 自己的口径
       // （isVerifyTargetPath，见其注释）：额外纳入 `.jsx` / `.tsx` / `.cjs`
       // （JSX 产物 / TSX 源 / CJS 产物此前对 verify **不可见** ⇒ 假绿）。
-      const found = listFiles(abs).filter((f) => isVerifyTargetPath(f));
+      // Bug 67：先按扩展名筛，再套用 `nudo check .` 的「产物压掉同 stem 源」
+      // 仲裁 ⇒ verify 的逐文件集合与退役后装上的门禁**逐字相同**。
+      const found = dropSupersededSources(
+        listFiles(abs).filter((f) => isVerifyTargetPath(f)),
+      );
       if (found.length === 0) {
         // Bug 589：空集 ≠ 验过了（与 check 面的空目录判定一致）
         emptyRows.push({
@@ -2580,9 +2681,19 @@ export async function migrateVerify(
       files.push(abs);
     }
   }
+  // Bug 79：位置参数展开后的**文件集合**也要收敛——`migrate verify src
+  // src/lib.js` 过去把 lib.js 分析两遍（目录展开 + 显式文件），报告里出现
+  // 重复行。与 check / test / contract 的 collectTargets 同口径。
+  const seenVerifyFiles = new Set<string>();
+  const uniqueFiles = files.filter((f) => {
+    const key = resolve(f);
+    if (seenVerifyFiles.has(key)) return false;
+    seenVerifyFiles.add(key);
+    return true;
+  });
   const tscCache = new Map<string, TscRun>();
   const fallbackCwd = opts.root ?? process.cwd();
-  for (const file of files) {
+  for (const file of uniqueFiles) {
     let row: VerifyResult;
     try {
       const source = readFileSync(file, "utf-8");

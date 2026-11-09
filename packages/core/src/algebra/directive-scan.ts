@@ -1214,7 +1214,11 @@ function extractBalancedParensScan(
       if (ch === inString) inString = null;
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    // Bug 94：反引号同样是串定界符（模板字面量）——与 parser
+    // `fn-directives.ts` 的 `stripTrailingComment` 同口径。此前只认 `"` / `'`，
+    // 模板串里的 `(` 被当成实参表开括号 ⇒ `@nudo:case "par" (`a(b`)` 判
+    // 「未闭合实参表」⇒ 整条见证被丢。
+    if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
       continue;
     }
@@ -1523,6 +1527,14 @@ function directiveTagForm(
     : line.startsWith(tag);
   if (!hit) return undefined;
   const rest = line.slice(tag.length);
+  // Bug 52：标签后紧跟 `-`（连字符 + 后续字母）构成的是**另一个标签**——
+  // 诊断码 `@nudo:assume-invalid` / `@nudo:assume-relied`、文件级
+  // `@nudo:mock-module` 等，不是本标签的粘连形态。`startsWith` 的前缀语义
+  // 会把「文档注释里提到的诊断码」误吞成本标签 ⇒ 坏段 ⇒ error 级假红。
+  // 与 parser `fn-directives.ts` 的 `(?!-)` 边界同口径（Bug 838 / 980）：
+  // **只排除连字符**；词字符直接粘连（`@nudo:assumed d <= max`）仍判
+  // `glued`，由 Bug 421 / 1032 的「坏段」通道诊断，不得回归。
+  if (rest.startsWith("-")) return undefined;
   if (rest === "") return { kind: "empty" };
   if (/^\s/.test(rest)) {
     const payload = rest.trim().replace(/\*\/$/, "").trim();

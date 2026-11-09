@@ -18,7 +18,7 @@
  * Scope: git-tracked .ts under packages/ (dist / node_modules excluded).
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
@@ -31,7 +31,9 @@ const files = execFileSync("git", ["ls-files", "packages"], {
 })
   .split("\n")
   .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
-  .filter((f) => !f.includes("/node_modules/") && !f.includes("/dist/"));
+  .filter((f) => !f.includes("/node_modules/") && !f.includes("/dist/"))
+  // git ls-files 仍列出未提交的删除；本地跑 gate 时跳过它们
+  .filter((f) => existsSync(join(repoRoot, f)));
 
 const problems = [];
 

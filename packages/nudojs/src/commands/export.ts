@@ -8,6 +8,7 @@
  * dts-face / diagnostics / io / stdout）。
  */
 import { existsSync, readFileSync } from "node:fs";
+import { parseJsonText } from "../read-json.ts";
 import { resolve, basename, dirname, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect } from "./shared.ts";
@@ -174,7 +175,7 @@ function packageRootOf(startDir: string): string | undefined {
 /** 包名（`package.json#name`，读不到 / 非字符串 ⇒ undefined）。 */
 function packageNameOf(root: string): string | undefined {
   try {
-    const pkg: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+    const pkg: unknown = parseJsonText(readFileSync(join(root, "package.json"), "utf-8"));
     if (pkg !== null && typeof pkg === "object") {
       const name = (pkg as { name?: unknown }).name;
       if (typeof name === "string" && name !== "") return name;
@@ -264,13 +265,26 @@ async function runExport(
   const dtsSurface = dtsModuleSurface(source);
 
   // 空产物的唯一判据：**既无本地函数，也无模块面可发射内容**（BUG-033 的再导出 /
-  // BUG-190 的模块级值导出）。
+  // BUG-190 的模块级值导出；Bug 24：**类与 namespace 同样是模块面可发射内容**）。
+  //
+  // 只需一个 DTO 类（`export class User { constructor(…) { … } }`，没有方法）就
+  // 没有任何函数级分析条目；`dtsSurface.classes` 却已收好整个声明面。纯
+  // `export namespace NS { … }` 同理。旧判据把「模块面」窄化成再导出 + 值声明
+  // 两类 ⇒ 这两类模块整份 .d.ts 早退、`--out` 连目录都不建、exit 0。
   const wantsDtsFace = format === "dts" || format === "all";
   const hasValueExport = [...dtsSurface.exportBindings.values()].some(
     (local) => local !== "" && dtsSurface.values.has(local),
   );
+  const hasClassSurface = dtsSurface.classes.size > 0;
+  const hasNamespaceSurface = (dtsSurface.namespaces?.size ?? 0) > 0;
+  const hasTypeDeclarations = (dtsSurface.typeDeclarations?.length ?? 0) > 0;
   const hasModuleSurface =
-    wantsDtsFace && (dtsSurface.reexports.length > 0 || hasValueExport);
+    wantsDtsFace &&
+    (dtsSurface.reexports.length > 0 ||
+      hasValueExport ||
+      hasClassSurface ||
+      hasNamespaceSurface ||
+      hasTypeDeclarations);
   if (functions.length === 0 && !hasModuleSurface) {
     console.log("No analyzed functions found.");
     return;
@@ -410,7 +424,13 @@ async function runExport(
 
   // 模块无公开面 ⇒ 四个产物面都无产物（Bug 621：四口径统一）——如实说明，
   // 不静默零产物。
-  if (publicFunctions.length === 0 && functions.length > 0) {
+  //
+  // Bug 31：`publicFunctions` 只数**导出函数**，而模块面（`export const` / 再导出 /
+  // 类 / namespace）在此之前已由 `:391` 的 `dtsModuleChunk` 组装进 `dtsChunks`。
+  // 「私有 helper + `export const VERSION = 1`」因此命中过旧的第二道早退，把
+  // 已组装好的 dts 产物整份丢掉 ⇒ 只因多了一个本来就不属于任何产物面的私有
+  // 函数。判据必须看「是否真的零产物」：`dtsChunks` 非空 ⇒ 有模块面 ⇒ 不早退。
+  if (publicFunctions.length === 0 && functions.length > 0 && dtsChunks.length === 0) {
     console.log(
       "No exported declarations found — export projects the module surface (export / export default / CJS exports).",
     );
@@ -425,8 +445,10 @@ async function runExport(
       // 副本，且产物内嵌构建机路径（不可复现构建）。
       moduleKey: moduleIdOf(filePath, source),
       // BUG-232：**另一个**可选字段（模块身份仍与路径无关，BUG-016 不回归）——
-      // 只用于 `--out` 落盘时重基 dts 产物里的相对说明符。
+      // 只用于 `--out` 落盘时重基 dts 产物里的相对说明符与声明扩展名（Bug 32）。
       sourcePath: filePath,
+      // Bug 46：standard / all 面才回收上一轮的陈旧 `<fn>.nudo.standard.ts`。
+      standardFace: format === "standard" || format === "all",
       dialect: effectiveDialect,
       ...(schemaModule !== undefined ? { schemaSource: schemaModule.source } : {}),
       standardChunks,

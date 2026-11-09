@@ -279,6 +279,17 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 良性无操作语句：显式 no-op（不得落 default throw）
       return "";
     default:
+      // Bug 47：非 `declare` 的 namespace 有运行时语义（strip-types 保留），
+      // 但引擎无 namespace 对象模型。此前 default 抛 NudoUnsupportedError
+      // ⇒ **整个模块**求值失败 ⇒ 同模块无关导出全部退化 unknown ⇒ 确定的
+      // 返回契约违例从 error 降成 warning（exit 0 假绿）。降级为**局部**
+      // opaque 绑定：namespace 自身 unknown，其余导出照常求值。
+      if ((stmt as { type: string }).type === "TSModuleDeclaration") {
+        const id = (stmt as unknown as { id?: { type?: string; name?: string; value?: string } }).id;
+        const name = id?.type === "Identifier" ? id.name : id?.type === "StringLiteral" ? id.value : undefined;
+        if (!name) return `${pad}// <namespace skipped>`;
+        return `${pad}const ${name} = $unknown();`;
+      }
       throw new NudoUnsupportedError(
         `statement:${stmt.type}`,
         stmt.loc ? { line: stmt.loc.start.line, column: stmt.loc.start.column } : undefined,

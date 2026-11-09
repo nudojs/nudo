@@ -173,13 +173,23 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
     case "never":
       return "never";
     case "sum": {
+      // Bug 29：`union(...)` 的成员必须是**约束**（构建器或标量字面量），不能
+      // 用 case 实参文法里的结构**字面量**形态。此前成员按字面量模式递归
+      // 序列化 ⇒ 写出 `union([2], { k: 3 })`（成员是数组 / 对象 ⇒ 执行
+      // `union()` 时 `asNestedConstraint` 直接 throw）与 `union(Infinity, -0)`
+      // （`Infinity` 裸标识符进不了解析侧安全白名单）这两类**自己解析不了**的
+      // 指令 ⇒ 见证永久退化 unknown、`--freeze=update` 逐字写回同一段非法文本。
+      // 修法：成员改用约束形态（结构落 array(...) / shape(...)、非有限数落
+      // number()），写出解析器能往返的文本；确实不可表达（bigint / 函数 /
+      // 稀疏洞 / rest）⇒ null ⇒ 整条见证记 `no-serializable-cases` 不写盘
+      // （可表达的成员仍完整写，不靠丢弃见证消症状）。
       const parts: string[] = [];
       for (const member of s.members) {
-        const ser = serializeCaseArgB(member, budget);
+        const ser = serializeCaseArgConstraintB(member, budget);
         if (ser === null) return null;
         parts.push(ser);
       }
-      return `union(${parts.join(", ")})`;
+      return parts.length === 0 ? null : `union(${parts.join(", ")})`;
     }
     case "arr": {
       const el = serializeCaseArgB(s.element, budget);
@@ -216,6 +226,105 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
     }
     default:
       // fn / eff / brand：指令文法不可表达
+      return null;
+  }
+}
+
+/**
+ * `union(...)` 成员专用：序列化成**约束**文本（构建器调用或标量字面量），
+ * 供 Bug 29 的 `sum` 折叠见证写出可往返的指令。
+ *
+ * 与字面量模式（`serializeCaseArgInner`）的差别只在结构与非有限数：
+ * - tuple / obj / arr 落 `array(...)` / `shape({ … })`（构建器，而非 `[…]` /
+ *   `{ … }` 字面量）⇒ `union()` 的 `asNestedConstraint` 收得到约束；
+ * - NaN / ±Infinity 落 `number()`（裸标识符被安全白名单拒绝）；
+ * - bigint / never / fn / eff / brand / 稀疏洞 / rest ⇒ null（整条见证
+ *   记 `no-serializable-cases`，不写盘）。
+ * 递归一律走本模式，保证 `array(...)` / `shape(...)` 的嵌套实参也是约束。
+ */
+function serializeCaseArgConstraintB(a: Abs, budget: ProjectionBudget): string | null {
+  const stop = budget.enter(a);
+  if (stop) return null;
+  try {
+    return serializeCaseArgConstraintInner(a, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function serializeCaseArgConstraintInner(a: Abs, budget: ProjectionBudget): string | null {
+  const s = a.shape;
+  if (a.term?.op === "lit") {
+    const v = a.term.value;
+    if (typeof v === "number") {
+      // 非有限数：裸 `Infinity` / `NaN` 被 isSafeTypeExprNode 拒 ⇒ number()
+      if (!Number.isFinite(v)) return "number()";
+      const n = Object.is(v, -0) ? "-0" : String(v);
+      return NUMBER_LITERAL_REGEX.test(n) ? n : null;
+    }
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (v === null) return "null";
+    if (v === undefined) return "undefined";
+    if (typeof v === "string") return serializeStringLiteral(v);
+    // bigint 字面量（7n）：BigIntLiteral 被安全白名单拒 ⇒ 不可表达
+    return null;
+  }
+  switch (s.k) {
+    case "prim":
+      if (s.type === "number") return "number()";
+      if (s.type === "string") return "string()";
+      if (s.type === "boolean") return "boolean()";
+      return null;
+    case "unknown":
+    case "any":
+      return "any()";
+    case "never":
+      // `never` 是裸标识符，安全白名单不放行 ⇒ 不可作 union 成员
+      return null;
+    case "sum": {
+      const parts: string[] = [];
+      for (const member of s.members) {
+        const ser = serializeCaseArgConstraintB(member, budget);
+        if (ser === null) return null;
+        parts.push(ser);
+      }
+      return parts.length === 0 ? null : `union(${parts.join(", ")})`;
+    }
+    case "arr": {
+      const el = serializeCaseArgConstraintB(s.element, budget);
+      return el === null ? null : `array(${el})`;
+    }
+    case "tuple": {
+      // rest 槽 / 稀疏洞：case 文法无对应约束写法 ⇒ 整条放弃（同字面量模式）
+      if (s.rest) return null;
+      if (s.holes && s.holes.length > 0) return null;
+      const parts: string[] = [];
+      for (const el of s.elements) {
+        const ser = serializeCaseArgConstraintB(el, budget);
+        if (ser === null) return null;
+        parts.push(ser);
+      }
+      // array(...) 只收一个元素约束：多元素折成 union(...)，空元组用 any()
+      const item =
+        parts.length === 0
+          ? "any()"
+          : parts.length === 1
+            ? parts[0]
+            : `union(${parts.join(", ")})`;
+      return `array(${item})`;
+    }
+    case "obj": {
+      const parts: string[] = [];
+      for (const [key, slot] of Object.entries(s.slots)) {
+        const vs = serializeCaseArgConstraintB(slot.value, budget);
+        if (vs === null) return null;
+        const ks = serializeObjectKey(key);
+        if (ks === null) return null;
+        parts.push(`${ks}: ${vs}`);
+      }
+      return parts.length === 0 ? "shape({})" : `shape({ ${parts.join(", ")} })`;
+    }
+    default:
       return null;
   }
 }
@@ -896,6 +1005,15 @@ function formatRange(start: number, count: number): string {
  *   能被 `git apply` 接受（缺标记时 git apply 按「该行有换行」解释 ⇒ 上下文
  *   不匹配 ⇒ 补丁被拒，#564）。
  */
+/** diff 头路径清洗（Bug 27）：绝对路径 / `..` 段一律不得进 `a/` `b/`。 */
+function safeDiffPath(path: string): string {
+  const parts = path
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((s) => s !== "" && s !== "." && s !== "..");
+  return parts.join("/") || "file";
+}
+
 export function unifiedDiff(a: string, b: string, path: string): string {
   if (a === b) return "";
   const oldLines = splitDiffLines(a);
@@ -942,8 +1060,12 @@ export function unifiedDiff(a: string, b: string, path: string): string {
     idx = end;
   }
 
+  // Bug 27：头路径必须是**相对**、不带 `..` 段的路径。调用方若仍传绝对
+  // 路径（其它命令也可能调 unifiedDiff），`a/ + /abs` 会拼出双斜杠且
+  // `git apply -p1` 拒绝 ⇒ 这里做最后一道清洗：去掉根前缀与 `.` / `..` 段。
+  const headerPath = safeDiffPath(path);
   // hunk 头行号：hunk 前累计的 delete+equal 决定旧侧、insert+equal 决定新侧
-  const out: string[] = [`--- a/${path}`, `+++ b/${path}`];
+  const out: string[] = [`--- a/${headerPath}`, `+++ b/${headerPath}`];
   // 末行无终止符的行号（两侧各自算）：末行在 diff 里要带
   // `\ No newline at end of file` 标记。
   const oldLast = oldLines.length - 1;

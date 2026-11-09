@@ -34,6 +34,7 @@ import {
   setRawArgNormalizer,
 } from "../../hof.ts";
 import { privateNameGuard } from "../runtime/containers.ts";
+import { isUrlSpMutator, syncUrlSearchParamsParent } from "../runtime/url-live.ts";
 // setProtoMethodDispatch 的加载期注册已迁 proto-borrow.ts（借用语义域，
 // 注册点直连 hooks 叶子——不经 member.ts / containers barrel 再导出）。
 // 本文件仅 side-effect import 触发其加载：回调体内才消费本模块绑定
@@ -127,6 +128,14 @@ export function $invoke(
    * = 未预读（本函数按既有口径自行预读）。
    */
   preReadGiven?: Abs,
+  /**
+   * 键身份（Bug 99 后续）：计算键调用 `$invokeKey` 的键来自真 symbol 时
+   * `symbolKey: true`。`@@X` 是 symbol 投影名，与字面量字符串键 "@@X" 是
+   * **两个不同的 PropertyKey**；读面（$get）按该信号分态，调用面必须把
+   * 同一信号透传到成员预读，否则 `m[Symbol.iterator]()` 会读成字符串键
+   * 的 undefined（Bug 198 / 314 / 165 的迭代器面全塌）。
+   */
+  keyOpts?: { symbolKey?: boolean },
 ): Abs {
   // Bug 152：实参 thunk（`() => [args]`）——调用点成员**先于实参**求值
   // （原生 CallExpression：引用取值（getter 触发）→ 实参 → 调用）。
@@ -143,7 +152,7 @@ export function $invoke(
   let argList: Abs[];
   if (typeof args === "function") {
     if (thisVal?.shape?.k !== "sum") {
-      preRead = preReadGiven ?? $get(thisVal, method, { silent: true });
+      preRead = preReadGiven ?? $get(thisVal, method, { silent: true, symbolKey: keyOpts?.symbolKey });
     }
     argList = args();
   } else {
@@ -157,7 +166,7 @@ export function $invoke(
   // （thisVal）不动——宿主函数直调路径依赖裸值 apply
   const normArgs = normalizeCallArgs(argList);
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
-  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc, preRead));
+  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc, preRead, keyOpts));
 }
 
 // ---------------------------------------------------------------------------
@@ -250,14 +259,19 @@ export function $invokeKey(
     if (typeof args === "function") args();
     return unknown;
   }
-  if (k === "@@iterator") {
+  // 键身份：well-known symbol 字面量折出的 "@@X" 是真 symbol 键的投影；
+  // 字符串/数字字面量经 propertyKeyOf 折出的 "@@X" 仍是**字符串键**。
+  // 该信号必须一路透传到 $get 的读面（Bug 99 的分态门），否则
+  // `m[Symbol.iterator]()` 会被当成 `m["@@iterator"]()` 读成 undefined。
+  const symbolKey = key.term?.op === "lit" && typeof key.term.value === "symbol";
+  if (k === "@@iterator" && symbolKey) {
     const it = iteratorFaceOf(thisVal);
     if (it !== undefined) {
       if (typeof args === "function") args();
       return it;
     }
   }
-  return $invoke(thisVal, k, args, loc, preReadGiven);
+  return $invoke(thisVal, k, args, loc, preReadGiven, { symbolKey });
 }
 
 /** 可选链计算键调用（a?.[k]() / a[k]?.() 的非链路径）：nullish 接收者
@@ -286,6 +300,8 @@ function $invokeInner(
   /** Bug 152：调用点预读值（成员已在实参之前读过——getter 已触发）；未预读
    *  （非 thunk 实参 / sum 接收者）→ 走既有 $get 读。 */
   preRead?: Abs,
+  /** 键身份（symbol 投影 / 字符串键）——透传到成员读面，见 $invoke。 */
+  keyOpts?: { symbolKey?: boolean },
 ): Abs {
   // 私有方法调用（"#" 键）：foreign-receiver brand check
   // （原生 PrivateCall：接收者必须是声明类实例）
@@ -315,7 +331,7 @@ function $invokeInner(
   // 不应因 Buffer 分支无 split 而整体 unknown）。成员判据 / 缺失诊断见
   // invokeUnionReceiver（Bug 263 / Bug 1045 后续）。
   if (thisVal.shape.k === "sum") {
-    return invokeUnionReceiver(thisVal, method, args, loc);
+    return invokeUnionReceiver(thisVal, method, args, loc, keyOpts);
   }
   // RegExp brand exec/test（字面量 pattern 精确执行）
   {
@@ -325,7 +341,7 @@ function $invokeInner(
   // brand 接收者：装箱 prim → TypedArray HOF → 内建 brand 方法（含内建父链 /
   // Map·Set forEach）→ 类值静态面（先于实例方法面）→ 用户类实例方法面。
   // 分面实现见 invokeBrandReceiver；undefined = 本面未接管（落通用槽位面）。
-  const brandR = invokeBrandReceiver(thisVal, method, args, loc);
+  const brandR = invokeBrandReceiver(thisVal, method, args, loc, keyOpts);
   if (brandR !== undefined) return brandR;
   // prim 接收者（bigint / number / boolean）：字面量精确折叠 + 抽象臂保守；
   // 未接管的其它方法不在此 return（继续后续诊断面）。实现见 invokePrimitive。
@@ -355,7 +371,7 @@ function $invokeInner(
   // 借用调用走 $invoke 的 call/apply 分支（receiver 传递正确）。
   // Bug 152：预读值优先——调用点已在实参之前读过成员（getter 已触发），
   // 复用它不再二次读（getter 只跑一次）。判定与调用记录见 invokePropertyValue。
-  const prop = preRead !== undefined ? preRead : $get(thisVal, method, { silent: true });
+  const prop = preRead !== undefined ? preRead : $get(thisVal, method, { silent: true, symbolKey: keyOpts?.symbolKey });
   const propR = invokePropertyValue(thisVal, method, args, prop, loc);
   if (propR !== undefined) return propR;
   // 缺失方法终判 / may-throw / 成员诊断（顺序与判据见 invokeUnresolvedMember）
@@ -683,6 +699,7 @@ function invokeUnionReceiver(
   method: string,
   args: Abs[],
   loc?: [number, number],
+  keyOpts?: { symbolKey?: boolean },
 ): Abs {
   const s = thisVal.shape;
   // 调用方已按 k === "sum" 分流；此处重述守卫仅为类型收窄（行为不变）。
@@ -690,7 +707,7 @@ function invokeUnionReceiver(
   const results: Abs[] = [];
   for (const m of s.members) {
     if (memberLikelyHasMethod(m, method)) {
-      results.push($invoke(m, method, args, loc));
+      results.push($invoke(m, method, args, loc, undefined, keyOpts));
       continue;
     }
     // 该成员确定没有此方法 ⇒ 原生该分支抛 TypeError（记 throws 域）
@@ -809,7 +826,15 @@ function invokeBuiltinBrandMethod(
   // 此前只对 Map/Set 调 evalBuiltinInstanceMethod，Date.getTime 等落到
   // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
   const viaBuiltin = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
-  if (viaBuiltin !== undefined) return viaBuiltin;
+  if (viaBuiltin !== undefined) {
+    // Bug 65：URLSearchParams 的 set/append/delete/sort 原地改了 @@entries
+    // ⇒ 回写父 URL 的 search / href（live view 同源语义；父指针在
+    // `u.searchParams` 读面登记，见 runtime/url-live.ts）。
+    if (brandName === "URLSearchParams" && isUrlSpMutator(method)) {
+      syncUrlSearchParamsParent(thisVal);
+    }
+    return viaBuiltin;
+  }
   // 含内建父的类链（class MyMap extends Map {}）：实例 brand 名是**派生类名**
   // ⇒ 上面的直查落空 ⇒ `.get` / `.size` / `.has` 折 unknown（族 02 遗留
   // 「含内建父的类链保守不判」——假阴性）。沿类链找首个**内建 owner**（内建
@@ -995,6 +1020,7 @@ function invokeBrandReceiver(
   method: string,
   args: Abs[],
   loc?: [number, number],
+  keyOpts?: { symbolKey?: boolean },
 ): Abs | undefined {
   const s = thisVal.shape;
   if (s.k !== "brand" || !s.name) return undefined;
@@ -1004,7 +1030,7 @@ function invokeBrandReceiver(
   // 折叠与抽象臂全复用；valueOf/toString 原生语义即包装原始值的同名方法）
   const boxedPrim = boxedPrimitiveValue(thisVal);
   if (boxedPrim) {
-    return $invokeInner(boxedPrim, method, args, loc);
+    return $invokeInner(boxedPrim, method, args, loc, undefined, keyOpts);
   }
   const taR = invokeTypedArrayCallback(thisVal, brandName, method, args);
   if (taR !== undefined) return taR;

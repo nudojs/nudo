@@ -54,6 +54,7 @@ import {
   type Term,
   type TypeofName,
 } from "@nudojs/core";
+import { DIAG } from "@nudojs/core/internal";
 import { analyzeFileAsync } from "../analyzer.ts";
 import { type CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
@@ -98,6 +99,60 @@ export type InterfaceSurfaceEntry = {
   undecidable?: { params: string[]; returns?: boolean };
 };
 
+/**
+ * Bug 80：契约只读面必须看到的「契约装载 / 绑定失败」诊断。
+ *
+ * 过去 `interfaceSurface` / `draftInterface` 把本次分析产生的 interface 诊断
+ * 取走后**丢弃** ⇒ 坏侧车被印成 `[implicit]` / 按「无契约」起草，stderr 0
+ * 字节、exit 0，而同树的 check / test / health / export 一律
+ * `nudo:interface-load` + exit 1 ⇒ 契约面在说谎。现在把它透出给命令层，
+ * 由契约面按同一裁决渲染（stderr / `--json` 字段 / 非零退出）。
+ *
+ * ⚠ 只携带「装载失败族」：`nudo:interface-conflict` 是契约的**数据内容**
+ * （Bug 34 / §1.3：只读面只报 stderr、不改退出码），归 `reportContractMarks`
+ * 单独处理，不进这里。
+ */
+export type ContractFaceDiagnostic = {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+};
+
+/** 契约装载 / 绑定失败族（与 export 的 EXPORT_BLOCKING_CODES 同口径，排除 conflict）。 */
+const CONTRACT_FACE_LOAD_CODES = new Set<string>([
+  DIAG.interfaceLoad,
+  DIAG.interfaceCycle,
+  DIAG.interfaceParamMismatch,
+]);
+
+/**
+ * 合并两个诊断来源（analyzer 结果 + interface side-channel 增量），去重后
+ * 透出到 `out`。`interfaceSurface` / `draftInterface` 共用同一口径。
+ */
+export function collectContractFaceDiagnostics(
+  out: ContractFaceDiagnostic[],
+  analysisDiagnostics: readonly { code?: string; severity: string; message: string }[],
+  ifaceDiags: readonly { code: string; message: string }[],
+): void {
+  const seen = new Set<string>();
+  const push = (
+    code: string,
+    severity: ContractFaceDiagnostic["severity"],
+    message: string,
+  ): void => {
+    if (!CONTRACT_FACE_LOAD_CODES.has(code)) return;
+    const key = `${code}|${message}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ code, severity, message });
+  };
+  for (const d of analysisDiagnostics) {
+    if (d.code === undefined) continue;
+    push(d.code, d.severity === "error" ? "error" : "warning", d.message);
+  }
+  for (const d of ifaceDiags) push(d.code, "error", d.message);
+}
+
 export type InterfaceSurfaceOpts = {
   /** 覆盖项目配置的 autoBind（默认 findProjectConfig → interfaceConfig） */
   autoBind?: boolean;
@@ -107,6 +162,11 @@ export type InterfaceSurfaceOpts = {
   records?: CallRecord[];
   /** 打开 buffer 覆盖磁盘源码（E5：agent/LSP 与 hover 同口径） */
   source?: string;
+  /**
+   * Bug 80：透出本次分析产生的契约装载诊断（命令层据此与 check/export 同裁决）。
+   * 不传 ⇒ 保持旧的「取走清理」行为（LSP 长驻进程防跨命令/在途验证互窃）。
+   */
+  diagnostics?: ContractFaceDiagnostic[];
 };
 
 /** 契约参数不属于声明形参表时的显式标注（不顶替形参名） */
@@ -613,8 +673,11 @@ function cachedToEffective(
 
 /**
  * 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示，
- * effectiveInterface 给出契约命中（手写 > 生成段）。诊断 side-channel
- * 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。
+ * effectiveInterface 给出契约命中（手写 > 生成段）。
+ *
+ * Bug 80：诊断 side-channel 在收尾时**取走并透出**给 `opts.diagnostics`
+ * （打印面据此与 check/export 同裁决），仍清理本次增量以防 LSP 长驻进程
+ * 跨命令 / 在途验证互窃；`opts.diagnostics` 未传时保持旧的「取走清理」行为。
  */
 export async function interfaceSurface(
   filePath: string,
@@ -775,7 +838,11 @@ export async function interfaceSurface(
     }
   }
 
-  takeInterfaceDiagsSince(ifaceSince); // 清空本次增量，防跨命令/在途验证互窃
+  // Bug 80：不再丢弃 —— 本次增量透出给调用方（仍 take 清理，防跨命令/在途验证互窃）。
+  const ifaceDiags = takeInterfaceDiagsSince(ifaceSince);
   takeRefineDiagsSince(refineSince);
+  if (opts.diagnostics) {
+    collectContractFaceDiagnostics(opts.diagnostics, analysis.diagnostics, ifaceDiags);
+  }
   return entries;
 }

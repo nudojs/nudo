@@ -14,50 +14,131 @@
 import { parseSource as parse } from "../parse-source.ts";
 import type { Node } from "@babel/types";
 
+/**
+ * 类 / 对象成员键名（Bug 105）：Identifier（非计算）/ 字符串字面量 /
+ * 数字字面量 / **静态计算字面键**（`["mk"]`）都返回稳定名；动态计算键
+ * （`[k]()`，computed + Identifier）没有稳定名 ⇒ undefined。
+ *
+ * `listTopFunctions` 的类方法普查此前只认 `Identifier` ⇒ 把字符串 / 计算 /
+ * 数字键方法整类丢弃（无签名、无 L2、侧车契约照收却零执法）。与
+ * `scan-named-exports.ts` 的 `identName` / service 的 `classMemberKeyName`
+ * 口径对齐（后者返回 `key.name ?? key.value`，含字符串 / 数字）。
+ */
+function memberKeyOf(node: unknown): string | undefined {
+  const m = node as
+    | {
+        key?: { type?: string; name?: string; value?: unknown } | undefined;
+        computed?: boolean;
+      }
+    | undefined;
+  const k = m?.key;
+  if (!k) return undefined;
+  if (k.type === "Identifier") {
+    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
+  }
+  const v = k.value;
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return undefined;
+}
+
+/** 类体成员是否是可登记的方法（跳过 ctor / getter / setter / 类字段） */
+function isClassMethodNode(mem: { type?: string; kind?: string }): boolean {
+  if (
+    mem.type !== "MethodDefinition" &&
+    mem.type !== "ClassMethod" &&
+    mem.type !== "TSDeclareMethod"
+  ) {
+    return false;
+  }
+  return !mem.kind || mem.kind === "method";
+}
+
+/** 本地类名形态的超类名（`extends Base`）；namespace 限定 / 表达式 ⇒ undefined */
+function superClassNameOf(d: unknown): string | undefined {
+  const sc = (d as { superClass?: { type?: string; name?: string } } | undefined)?.superClass;
+  return sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
+}
+
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];
-  /** 本地 ClassDeclaration（含未直接 export 的） */
+  /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
   for (const stmt of f.program.body) {
     if (stmt.type === "ClassDeclaration") {
       const cname = (stmt as { id?: { name?: string } }).id?.name;
       if (cname) localClasses.set(cname, stmt);
+      continue;
+    }
+    // Bug 61：`export const C = class { … }` 的类表达式——求值是完整类值，
+    // 但建表只扫 ClassDeclaration ⇒ 类表达式永远不在 localClasses 里。
+    const vd =
+      stmt.type === "ExportNamedDeclaration" && stmt.declaration?.type === "VariableDeclaration"
+        ? stmt.declaration
+        : undefined;
+    if (vd?.type === "VariableDeclaration") {
+      for (const d of vd.declarations) {
+        if (d.id.type === "Identifier" && d.init?.type === "ClassExpression") {
+          if (!localClasses.has(d.id.name)) localClasses.set(d.id.name, d.init as Node);
+        }
+      }
     }
   }
   /** 经任意 export 形态暴露的 class 本地名 */
   const exportedClassNames = new Set<string>();
   const collectClassMethods = (cname: string, decl: Node) => {
-    const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+    /** 读一个类（声明 / 表达式）的 own 方法 */
+    const readMethods = (
+      d: Node,
+      out: Array<{ key: string; isStatic: boolean }>,
+    ): void => {
+      const body = (d as { body?: { body?: unknown[] } }).body?.body ?? [];
+      for (const m of body) {
+        const mem = m as {
+          type?: string;
+          kind?: string;
+          key?: { type?: string; name?: string; value?: unknown };
+          computed?: boolean;
+          static?: boolean;
+        };
+        if (!isClassMethodNode(mem)) continue; // skip ctor/get/set/field
+        // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
+        const keyName = memberKeyOf(mem);
+        if (!keyName) continue;
+        out.push({ key: keyName, isStatic: mem.static === true });
+      }
+    };
     // Bug 437：静态方法与实例方法**同名**时，普查名不得相同 —— 否则按名字索引
     // 的签名表里两条记录互相顶替（形参取自一个、返回值取自另一个 ⇒ 自信的
     // 错误值）。类方法名是 `Class.method`（`generalize` 的 env.fns 也按这个键
     // 登记方法体）⇒ **不能**给静态方法另起一个名字（那样查不到方法体 ⇒
     // 凭空造出 L2 入口 may-throw 假红）。⇒ 同名时**只登记实例方法**
     // （静态方法在 `nudo check` 签名面不再重复出现；service 侧同口径）。
-    const instanceKeys = new Set<string>();
-    /** 源序的方法（key, isStatic）——静态与实例同名时只登记实例方法 */
     const methods: Array<{ key: string; isStatic: boolean }> = [];
-    for (const m of body) {
-      const mem = m as {
-        type?: string;
-        kind?: string;
-        key?: { type?: string; name?: string };
-        static?: boolean;
-      };
-      const isMethod =
-        mem.type === "MethodDefinition" ||
-        mem.type === "ClassMethod" ||
-        mem.type === "TSDeclareMethod";
-      if (!isMethod) continue;
-      if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
-      const keyName =
-        mem.key?.type === "Identifier" ? mem.key.name : undefined;
-      if (!keyName) continue;
-      const isStatic = mem.static === true;
-      methods.push({ key: keyName, isStatic });
-      if (!isStatic) instanceKeys.add(keyName);
+    readMethods(decl, methods);
+    // Bug 64：未导出的内部基类——`export class Derived extends Base` 的公共面
+    // 包含继承来的原型方法（`new Derived().m()` 可直接调用），Base 是否 export
+    // 不应改变 Derived 的公共成员集合。沿 superClass 链把基类 own 方法映射到
+    // 导出子类名下（子类 own 方法覆盖同名继承方法）。
+    const ownKeys = new Set(methods.map((m) => m.key));
+    const seen = new Set<string>([cname]);
+    let sup = superClassNameOf(decl);
+    while (sup && !seen.has(sup)) {
+      seen.add(sup);
+      const base = localClasses.get(sup);
+      if (!base) break;
+      const inherited: Array<{ key: string; isStatic: boolean }> = [];
+      readMethods(base, inherited);
+      for (const m of inherited) {
+        if (ownKeys.has(m.key)) continue; // 子类 own 方法是权威
+        ownKeys.add(m.key);
+        methods.push(m);
+      }
+      sup = superClassNameOf(base);
     }
+    const instanceKeys = new Set<string>();
+    for (const m of methods) if (!m.isStatic) instanceKeys.add(m.key);
     for (const m of methods) {
       if (m.isStatic && instanceKeys.has(m.key)) continue; // 同名 ⇒ 实例方法占位
       names.push(`${cname}.${m.key}`);
@@ -87,14 +168,42 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       if (!names.includes("default")) names.push("default");
     }
     if (decl.type === "VariableDeclaration") {
+      const isExported = stmt.type === "ExportNamedDeclaration";
       for (const d of decl.declarations) {
-        if (
-          d.id.type === "Identifier" &&
-          d.init &&
-          (d.init.type === "ArrowFunctionExpression" ||
-            d.init.type === "FunctionExpression")
-        ) {
+        if (d.id.type !== "Identifier" || !d.init) continue;
+        const initType = d.init.type;
+        if (initType === "ArrowFunctionExpression" || initType === "FunctionExpression") {
           names.push(d.id.name);
+          continue;
+        }
+        // Bug 61：`export const C = class { … }` 的类表达式——类方法与
+        // ClassDeclaration 同口径进函数普查（`C.m`）；类入口 `C` 由
+        // listClassEntryNames 单独登记。
+        if (initType === "ClassExpression" && isExported) {
+          exportedClassNames.add(d.id.name);
+          collectClassMethods(d.id.name, d.init as Node);
+          continue;
+        }
+        // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——与 CJS
+        // `module.exports = { m(){} }` 同口径（成员键 = 导出槽名 ⇒ 进函数普查）。
+        // 只对 export 包装的声明收集（未导出对象不是模块边界入口 ⇒ 不假红）。
+        if (initType === "ObjectExpression" && isExported) {
+          for (const p of ((d.init as { properties?: unknown[] }).properties ?? [])) {
+            const prop2 = p as {
+              type?: string;
+              kind?: string;
+              value?: { type?: string };
+            };
+            if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
+              // getter / setter 不是可调用入口
+              if (prop2.kind && prop2.kind !== "method") continue;
+            } else if (prop2.type === "ObjectProperty" || prop2.type === "Property") {
+              const v = prop2.value?.type;
+              if (v !== "FunctionExpression" && v !== "ArrowFunctionExpression") continue;
+            } else continue;
+            const keyName = memberKeyOf(p);
+            if (keyName && !names.includes(keyName)) names.push(keyName);
+          }
         }
       }
     }
@@ -162,13 +271,20 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       computed?: boolean;
     } | undefined;
     const right = expr.right;
-    if (!left || left.type !== "MemberExpression" || left.computed) continue;
+    if (!left || left.type !== "MemberExpression") continue;
     const obj = left.object;
     const prop = left.property;
+    // Bug 6：`exports["getName"] = fn` 的 computed 键是**静态字符串字面量**
+    // ⇒ 有稳定名；动态计算键 `exports[k]`（computed + Identifier）无稳定名
+    // ⇒ 跳过（否则会把变量 k 当成导出槽 ⇒ 假红）。
+    if (left.computed) {
+      const pt = prop?.type;
+      if (pt !== "StringLiteral" && pt !== "NumericLiteral" && pt !== "Literal") continue;
+    }
     const propName =
       prop?.type === "Identifier"
         ? prop.name
-        : prop?.type === "StringLiteral" || prop?.type === "NumericLiteral"
+        : prop?.type === "StringLiteral" || prop?.type === "NumericLiteral" || prop?.type === "Literal"
           ? String(prop.value)
           : undefined;
     const isExportsIdent = !!obj && obj.type === "Identifier" && obj.name === "exports";
@@ -192,7 +308,19 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     };
 
     if (isModuleExportsIdent) {
-      pushFnFromInit(undefined, right);
+      // Bug 6：`module.exports = <fn>` 是 CJS 的默认导出（ESM default 类比）。
+      // - **匿名**函数表达式没有绑定名 ⇒ 普查名取导出槽 "default"（f1）；
+      // - **具名**函数表达式（`function getName(){}`）保留内层 id：指令面
+      //   （directive-scan，Bug 428）的 scope 名是内层 id，普查面必须对齐，
+      //   否则 `@nudo:contract` / `@nudo:throws` / `@nudo:case` 全部蒸发。
+      //   本地名 → default 槽的一跳交给 interface/export-slot.ts（同口径
+      //   于 `export { f as default }` 的别名映射），让签名 / L2 照样取到
+      //   真实函数值，不再塌 unknown + nudo:opaque-result。
+      const init = right as { type?: string; id?: { name?: string } } | undefined;
+      const isNamedFn =
+        (init?.type === "FunctionExpression" || init?.type === "ArrowFunctionExpression") &&
+        !!init.id?.name;
+      pushFnFromInit(isNamedFn ? undefined : "default", right);
       const objLit = right as { type?: string; properties?: unknown[] } | undefined;
       if (objLit?.type === "ObjectExpression") {
         for (const p of objLit.properties ?? []) {
@@ -301,6 +429,21 @@ export function listClassEntryNames(
         push(d.id?.name);
         continue;
       }
+      // Bug 61：`export const C = class { … }` 的类表达式——导出值是一个完整
+      // 类值，`new C()` 是真实入口 ⇒ 构造器必抛必须进 L2（此前 dts 落 unknown，
+      // check 报 0 fn / OK）。
+      if (d.type === "VariableDeclaration" && stmt.type === "ExportNamedDeclaration") {
+        for (const raw of ((d as { declarations?: unknown[] }).declarations ?? [])) {
+          const dd = raw as {
+            id?: { type?: string; name?: string };
+            init?: { type?: string };
+          };
+          if (dd.id?.type === "Identifier" && dd.init?.type === "ClassExpression") {
+            push(dd.id.name);
+          }
+        }
+        continue;
+      }
       // export default C（本地类）
       // ⚠ Bug 1119：Babel 的 `Identifier` 节点字段是 **`name`**（`id` 是
       // `Identifier` 上的 `id` 字段，**不存在**）⇒ 旧式读 `d.id?.name` 恒为
@@ -309,6 +452,39 @@ export function listClassEntryNames(
       if (stmt.type === "ExportDefaultDeclaration" && d.type === "Identifier") {
         const localName = d.name;
         if (localName && localClasses.has(localName)) push(localName);
+      }
+      continue;
+    }
+    // Bug 6：CJS `module.exports = class C { … }` 的默认导出类——`new C()` 是
+    // 真实入口，构造器无条件抛是 L2 必须看见的事实。此前类入口面**没有 CJS
+    // 分支** ⇒ f3.cjs 连「无条件抛」都看不见。
+    if (stmt.type === "ExpressionStatement") {
+      const expr = (stmt as { expression?: unknown }).expression as
+        | {
+            type?: string;
+            left?: {
+              type?: string;
+              computed?: boolean;
+              object?: { type?: string; name?: string };
+              property?: { type?: string; name?: string };
+            };
+            right?: { type?: string };
+          }
+        | undefined;
+      if (!expr || expr.type !== "AssignmentExpression") continue;
+      const left = expr.left;
+      const right = expr.right;
+      if (!left || left.type !== "MemberExpression" || left.computed) continue;
+      const isModuleExports =
+        left.object?.type === "Identifier" &&
+        left.object?.name === "module" &&
+        left.property?.type === "Identifier" &&
+        left.property?.name === "exports";
+      if (
+        isModuleExports &&
+        (right?.type === "ClassExpression" || right?.type === "ClassDeclaration")
+      ) {
+        push("default");
       }
       continue;
     }

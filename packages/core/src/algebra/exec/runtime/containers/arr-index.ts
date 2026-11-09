@@ -55,6 +55,7 @@ import {
   asAbsVal,
   $lit,
 } from "../state.ts";
+import { NudoSilentWrite } from "../state.ts";
 import { markDomainShared, isDomainShared } from "../../../len-sharing.ts";
 import { $call } from "../../call.ts";
 import { widenTupleToArr } from "./arr-make.ts";
@@ -307,6 +308,16 @@ export function $idx(
 
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
+  // Bug 82：sloppy 源对不可变目标的下标写原生静默失败（返回原接收者）。
+  try {
+    return $idxSetInner(a, i, value);
+  } catch (e) {
+    if (e instanceof NudoSilentWrite) return a;
+    throw e;
+  }
+}
+
+function $idxSetInner(a: Abs, i: Abs, value: Abs): Abs {
   // DEC-006 B/C：非 Abs 目标 fail-closed（与 $set 同口径）
   if (!isAbsLike(a)) {
     return a;

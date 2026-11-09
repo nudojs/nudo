@@ -178,10 +178,12 @@ export function scanLiteralCalls(
     ei: EffectiveInterface,
     paramNames: string[],
     formals?: FormalParam[],
-  ): Array<[number, RefineEntry, string[] | undefined, boolean | undefined]> => {
+  ): Array<
+    [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
+  > => {
     const conflict = new Set(ei.conflict?.params ?? []);
     const entries: Array<
-      [number, RefineEntry, string[] | undefined, boolean | undefined]
+      [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
     > = [];
     for (const { param, constraint } of ei.params) {
       if (!param || conflict.has(param)) continue;
@@ -194,6 +196,7 @@ export function scanLiteralCalls(
           { param, pred: instantiateConstraint(constraint, param), constraint },
           undefined,
           fp?.kind === "rest" ? true : undefined,
+          undefined,
         ]);
         continue;
       }
@@ -205,8 +208,15 @@ export function scanLiteralCalls(
           entries.push([
             hit.index,
             { param, pred: instantiateConstraint(constraint, param), constraint },
-            hit.fieldPath ?? (hit.field !== undefined ? [hit.field] : undefined),
+            // Bug 8：数组解构命中带 `fieldIndex`（元素下标）⇒ **不能**把
+            // `hit.field`（展示名）当对象槽路径退回；否则每个调用都投影失败
+            // ⇒ `missing field x` 假红。`fieldPath` 只对对象解构 / 点路径成立。
+            hit.fieldPath ??
+              (hit.field !== undefined && hit.fieldIndex === undefined
+                ? [hit.field]
+                : undefined),
             hit.rest === true ? true : undefined,
+            hit.fieldIndex,
           ]);
         }
       }
@@ -262,17 +272,41 @@ export function scanLiteralCalls(
     resolve,
   };
 
+  /**
+   * Bug 9：函数体内 `const` 声明的静态值（按作用域 id 分桶）。
+   *
+   * `varAbs` 只由**模块级**求值绑定表构造 ⇒ `const v = -1; f(v)` 的
+   * `Identifier` 实参退化成 `absUnknown()` ⇒ `hasInfo === false` ⇒
+   * `checkOneCall` 整条跳过（假绿），而同一形态写在字面量 / 模块级 const
+   * 下都报。执行态实参回退（`bCalls`）只覆盖顶层语句 ⇒ 补不了函数体内。
+   *
+   * 这里在 AST 走查时把局部 const 的**静态可判**值补进实参解析的绑定表；
+   * 求不出来的（复杂表达式 / 函数引用）保持无信息（fail-closed，不发明义务）。
+   */
+  const localBindings = new Map<string, Map<string, Abs>>();
+  const scopedCtx = (chain: ScopeChain): LiteralScanCtx => {
+    if (localBindings.size === 0) return ctx;
+    const merged = new Map(varAbs);
+    // 外层 → 内层（内层同名遮蔽外层，与词法作用域同口径）
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const bucket = localBindings.get(chain[i]!);
+      if (bucket) for (const [k, v] of bucket) merged.set(k, v);
+    }
+    return { ...ctx, varAbs: merged };
+  };
+
   const checkOneCall = (
     fnName: string,
     args: Array<Record<string, unknown>>,
     loc?: { start: { line: number; column: number } },
+    chain: ScopeChain = [""],
   ): void => {
     if (!scanKnownFns.includes(fnName)) return;
 
     // 传参结构：实参字面量 Abs ≤ 形参必填 slot
     checkArgStructures(fnName, source, args, loc);
 
-    const parsed = parseCallArgs(ctx, args);
+    const parsed = parseCallArgs(scopedCtx(chain), args);
     // Bug 364：实参个数按**语法实参个数**判定（parseCallArgs 每个语法
     // 实参产出一项）——默认值补齐后的 absArgs 长度不是调用点实参个数。
     //
@@ -390,13 +424,14 @@ export function scanLiteralCalls(
         ctx,
         fnName,
         ownFull.map(
-          ([i, e, f, r]) =>
-            [i, e.pred, f, e.param, r] as [
+          ([i, e, f, r, fi]) =>
+            [i, e.pred, f, e.param, r, fi] as [
               number,
               Pred,
               string[] | undefined,
               string | undefined,
               boolean | undefined,
+              number | undefined,
             ],
         ),
         paramNames,
@@ -432,13 +467,14 @@ export function scanLiteralCalls(
           ctx,
           `${fnName}→${fwd.target}`,
           tFull.map(
-            ([i, e, f, r]) =>
-              [i, e.pred, f, e.param, r] as [
+            ([i, e, f, r, fi]) =>
+              [i, e.pred, f, e.param, r, fi] as [
                 number,
                 Pred,
                 string[] | undefined,
                 string | undefined,
                 boolean | undefined,
+                number | undefined,
               ],
           ),
           tParams,
@@ -456,9 +492,10 @@ export function scanLiteralCalls(
     args: Array<Record<string, unknown>>,
     displayName: string,
     loc?: { start: { line: number; column: number } },
+    chain: ScopeChain = [""],
   ): void => {
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
-    const parsedExt = parseCallArgs(ctx, args);
+    const parsedExt = parseCallArgs(scopedCtx(chain), args);
     // Bug 364：实参个数按**语法实参个数**判定（同 checkOneCall）
     // Bug 1105：非字面量展开 ⇒ 个数不可判 ⇒ 元数检查跳过（NaN）。
     const syntacticArgCount = parsedExt.argCount;
@@ -491,7 +528,9 @@ export function scanLiteralCalls(
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
-    let full: Array<[number, RefineEntry, string[] | undefined, boolean | undefined]> = [];
+    let full: Array<
+      [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
+    > = [];
     let paramNames: string[] = [];
     try {
       const g = generalizeFromAst(ext.fnName, ext.source);
@@ -553,13 +592,14 @@ export function scanLiteralCalls(
       ctx,
       displayName,
       full.map(
-        ([i, e, f, r]) =>
-          [i, e.pred, f, e.param, r] as [
+        ([i, e, f, r, fi]) =>
+          [i, e.pred, f, e.param, r, fi] as [
             number,
             Pred,
             string[] | undefined,
             string | undefined,
             boolean | undefined,
+            number | undefined,
           ],
       ),
       paramNames,
@@ -700,10 +740,33 @@ export function scanLiteralCalls(
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
       const resolved = resolveCalleeFn(callee, resolve, knownSet, chain);
       if (typeof resolved === "string") {
-        checkOneCall(resolved, args, obj.loc);
+        checkOneCall(resolved, args, obj.loc, chain);
       } else if (resolved?.external) {
         const name = resolved.external.fnName || "require()";
-        checkExternalCall(resolved.external, args, name, obj.loc);
+        checkExternalCall(resolved.external, args, name, obj.loc, chain);
+      }
+    }
+    // Bug 9：收集**本作用域**的 const 声明值，供后续调用点的 `Identifier`
+    // 实参解析（前序遍历 ⇒ 声明在使用之前已入表）。只收静态可判的字面量 /
+    // 复合值；求不出 ⇒ 不入表（保持无信息，不发明义务）。
+    if (obj.type === "VariableDeclaration" && obj.kind === "const") {
+      const sid = chain[0] ?? "";
+      let bucket = localBindings.get(sid);
+      if (!bucket) {
+        bucket = new Map<string, Abs>();
+        localBindings.set(sid, bucket);
+      }
+      const probe = scopedCtx(chain);
+      for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+        const id = d.id as { type?: string; name?: string } | undefined;
+        const init = d.init as Record<string, unknown> | null | undefined;
+        if (id?.type !== "Identifier" || !id.name || !init) continue;
+        const parsed = parseCallArgs(probe, [init]);
+        const abs = parsed.absArgs[0];
+        if (!abs || !isInformativeArg(abs)) continue;
+        // 函数 / 联合值不当「确定实参值」登记（避免把引用当值 ⇒ 假红）
+        if (abs.shape.k === "fn" || abs.shape.k === "sum") continue;
+        bucket.set(id.name, abs);
       }
     }
     const childChain = scopeChainChild(chain, obj);

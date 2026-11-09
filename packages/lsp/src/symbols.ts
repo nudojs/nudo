@@ -776,6 +776,12 @@ export type RenameTarget = {
    */
   kind: "binding" | "method" | "private" | "export";
   /**
+   * 方法身份的 static / 实例维度（kind === "method" 且可判定时，Bug 102）。
+   * 同一归属里同名 static / 实例方法是**两个符号** ⇒ rename / references
+   * 只收集与光标所指方法同一身份的定义位与使用位。
+   */
+  access?: "static" | "instance";
+  /**
    * 方法归属（kind === "method" 时给出）：类方法 → 所属类；对象字面量方法 → 绑定变量名。
    *
    * 「同名」不等于「同一个符号」：两个类可以各有 `run()`，对象字面量也可以有同名的
@@ -811,14 +817,25 @@ type ReceiverOwner = {
   access: "instance" | "static" | "any";
 };
 
+/** 一条方法定义（含 static / 实例身份） */
+type MethodDef = { key: Node; isStatic: boolean };
+
 /** 归属表：一个归属（类 / 对象字面量）拥有哪些方法、哪些成员 */
 type OwnerTable = {
   owner: MethodOwner;
-  /** 方法名 → 定义位点（key 节点） */
-  methods: Map<string, { key: Node; isStatic: boolean }>;
+  /** 方法名 → 定义位点（同名 static / 实例各一条，Bug 102）——
+   *  键不纳入 static 维度会让后定义覆盖先定义，rename / references 只认最后一个。 */
+  methods: Map<string, MethodDef[]>;
   /** 全部成员名（含数据属性）——「同名冲突」判定用 */
   members: Set<string>;
 };
+
+/** 追加方法定义（同名 static / 实例方法并存，不互相覆盖，Bug 102）。 */
+function addMethod(table: OwnerTable, name: string, def: MethodDef): void {
+  const arr = table.methods.get(name);
+  if (arr) arr.push(def);
+  else table.methods.set(name, [def]);
+}
 
 function ownerKeyOf(owner: MethodOwner): string {
   return `${owner.kind}:${owner.name}`;
@@ -879,7 +896,7 @@ function collectMethodOwners(ast: Node): Map<string, OwnerTable> {
       table.members.add(key.name);
       // getter / setter / 普通方法都是方法；字段（ClassProperty）只是成员
       if (m.type === "ClassMethod") {
-        table.methods.set(key.name, { key, isStatic: m.static === true });
+        addMethod(table, key.name, { key, isStatic: m.static === true });
       }
     }
   };
@@ -901,7 +918,7 @@ function collectMethodOwners(ast: Node): Map<string, OwnerTable> {
             const key = prop.key;
             if (key.type !== "Identifier") continue;
             table.members.add(key.name);
-            table.methods.set(key.name, { key, isStatic: false });
+            addMethod(table, key.name, { key, isStatic: false });
             continue;
           }
           if (prop.type === "ObjectProperty") {
@@ -911,7 +928,7 @@ function collectMethodOwners(ast: Node): Map<string, OwnerTable> {
             table.members.add(key.name);
             // `{ m: fn }` 是方法定义位；`{ m: 1 }` 是数据属性（不是方法）
             if (isMethodLikeValue(prop.value, p.scope)) {
-              table.methods.set(key.name, { key, isStatic: false });
+              addMethod(table, key.name, { key, isStatic: false });
             }
           }
         }
@@ -1011,7 +1028,7 @@ export function hasMethodNamed(ast: Node, name: string): boolean {
 export function collectMethodReferences(
   ast: Node,
   name: string,
-  opts?: { owner?: MethodOwner },
+  opts?: { owner?: MethodOwner; access?: "static" | "instance" },
 ): MethodHit[] {
   return scanMethodReferences(ast, name, opts).hits;
 }
@@ -1039,7 +1056,7 @@ export type MethodReferenceScan = {
 export function hasAmbiguousMethodReceiver(
   ast: Node,
   name: string,
-  opts?: { owner?: MethodOwner },
+  opts?: { owner?: MethodOwner; access?: "static" | "instance" },
 ): boolean {
   return scanMethodReferences(ast, name, opts).ambiguous;
 }
@@ -1047,23 +1064,29 @@ export function hasAmbiguousMethodReceiver(
 function scanMethodReferences(
   ast: Node,
   name: string,
-  opts?: { owner?: MethodOwner },
+  opts?: { owner?: MethodOwner; access?: "static" | "instance" },
 ): MethodReferenceScan {
   const owners = collectMethodOwners(ast);
   const candidates = [...owners.values()].filter((t) => t.methods.has(name));
   // 归属范围：显式传入优先；否则「文件内只有一个同名方法归属」时用它（唯一解）
   const scope: MethodOwner | undefined =
     opts?.owner ?? (candidates.length === 1 ? candidates[0]!.owner : undefined);
+  // 方法身份的 static / 实例维度（Bug 102）：光标所指方法定义 / 调用的身份，
+  // 限定定义位与成员访问只收集**同一身份**的符号。
+  const access = opts?.access;
   const out: MethodHit[] = [];
   // 归属歧义：接收者解析不出来 + 文件内存在同名不同归属的成员
   let ambiguous = false;
 
-  // 1) 定义位点：方法键（class method / object method / object 的函数值属性）
+  // 1) 定义位点：方法键（同名 static / 实例方法各一条 ⇒ 按 access 过滤）
   for (const table of owners.values()) {
     if (scope && table.owner.name !== scope.name) continue;
-    const m = table.methods.get(name);
-    if (!m) continue;
-    out.push({ loc: locFromNode(m.key), kind: "key", owner: table.owner });
+    const defs = table.methods.get(name);
+    if (!defs) continue;
+    for (const m of defs) {
+      if (access !== undefined && (m.isStatic ? "static" : "instance") !== access) continue;
+      out.push({ loc: locFromNode(m.key), kind: "key", owner: table.owner });
+    }
   }
 
   // 2) 使用位点：成员访问（接收者归属必须与定义同源）
@@ -1091,11 +1114,23 @@ function scanMethodReferences(
     if (scope && receiver.owner.name !== scope.name) return;
     const table = owners.get(ownerKeyOf(receiver.owner));
     if (table) {
-      const m = table.methods.get(name);
+      const defs = table.methods.get(name);
       // 该归属没有同名方法 ⇒ 不是同一个符号（数据属性 / 别的类的方法）
-      if (!m) return;
-      if (receiver.access === "instance" && m.isStatic) return;
-      if (receiver.access === "static" && !m.isStatic) return;
+      if (!defs || defs.length === 0) return;
+      const rxStatic = receiver.access === "static";
+      const rxInstance = receiver.access === "instance";
+      if (access !== undefined) {
+        // 光标所指方法身份：接收者判得出时必须与该身份一致；判不出（any）
+        // 时该归属须确有该身份的定义（同名 static / 实例方法不能混改，Bug 102）。
+        const accessStatic = access === "static";
+        if (rxStatic && !accessStatic) return;
+        if (rxInstance && accessStatic) return;
+        if (!rxStatic && !rxInstance && !defs.some((d) => d.isStatic === accessStatic)) return;
+      } else {
+        // 旧口径：按接收者 access 与定义身份过滤（单定义场景）
+        if (rxStatic && !defs.some((d) => d.isStatic)) return;
+        if (rxInstance && !defs.some((d) => !d.isStatic)) return;
+      }
     } else if (!scope || receiver.owner.name !== scope.name) {
       // 归属不在本文件（import 来的类）：只有与目标同名才计入
       return;
@@ -1178,6 +1213,8 @@ export function renameTargetFromAst(
     /** 本地 export list 的**导出名**（`export { a as b }` 的 b）（Bug 1066） */
     exportSide: boolean;
     owner?: MethodOwner;
+    /** 方法身份的 static / 实例维度（方法键 / 成员访问，Bug 102） */
+    access?: "static" | "instance";
     receiver: ReceiverOwner | null;
   };
   let hit: Hit | null = null;
@@ -1261,6 +1298,13 @@ export function renameTargetFromAst(
             privateMember: isPrivateMember,
             exportSide: isExportSide,
             owner: isMethod ? ownerOfMethodKey(path) : undefined,
+            // 方法键的 static / 实例身份：ClassMethod.static === true ⇒ static，
+            // ObjectMethod / ObjectProperty / 私有方法 ⇒ instance（Bug 102）。
+            access: isMethod
+              ? (parent as (Node & { static?: boolean }) | null)?.static === true
+                ? "static"
+                : "instance"
+              : undefined,
             receiver: isMemberProp ? receiverOwnerAt(path) : null,
           };
           path.stop();
@@ -1284,13 +1328,28 @@ export function renameTargetFromAst(
     return { name: h.name, loc: h.loc, kind: "export" };
   }
   if (h.methodKey) {
-    return { name: h.name, loc: h.loc, kind: "method", owner: h.owner };
+    return {
+      name: h.name,
+      loc: h.loc,
+      kind: "method",
+      owner: h.owner,
+      ...(h.access ? { access: h.access } : {}),
+    };
   }
   // 成员属性：接收者归属与该方法定义同源时按方法改名
   if (h.memberProp) {
     const info = memberMethodInfo(ast, h);
     if (info.owner) {
-      return { name: h.name, loc: h.loc, kind: "method", owner: info.owner };
+      // 成员访问的光标身份：接收者 access 判得出时即为方法身份（Bug 102）。
+      const ra = h.receiver?.access;
+      const access = ra === "static" || ra === "instance" ? ra : undefined;
+      return {
+        name: h.name,
+        loc: h.loc,
+        kind: "method",
+        owner: info.owner,
+        ...(access ? { access } : {}),
+      };
     }
     if (info.known) {
       // 归属已知但没有同名方法 ⇒ 这是数据属性，不是方法
@@ -1601,11 +1660,28 @@ export function collectMethodReferencesAcrossFiles(
   options: {
     extraFiles?: string[];
     sourceProvider?: SourceProvider;
+    /** 光标位（算 static / 实例方法身份，Bug 102） */
+    at?: { line: number; column: number };
   } = {},
 ): MethodReferenceInfo[] {
   const out: MethodReferenceInfo[] = [];
+  // 方法身份的 static / 实例维度由**光标所在文件**的 rename 目标算出
+  // （Bug 102）：同名 static / 实例方法只收集同一身份的定义位与使用位，
+  // 跨文件扫描沿用同一个身份。
+  let access: "static" | "instance" | undefined;
+  if (options.at) {
+    try {
+      const t = renameTargetFromAst(parse(source), options.at.line, options.at.column);
+      if (t && !("error" in t) && t.kind === "method") access = t.access;
+    } catch {
+      /* fail-closed：算不出身份 ⇒ 不分 static / 实例（旧口径） */
+    }
+  }
   const pushHits = (uri: string, ast: Node): void => {
-    for (const h of collectMethodReferences(ast, target.name, { owner: target.owner })) {
+    for (const h of collectMethodReferences(ast, target.name, {
+      owner: target.owner,
+      access,
+    })) {
       out.push({ name: target.name, loc: h.loc, uri, kind: h.kind });
     }
   };
@@ -1909,6 +1985,55 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
   const out: DocumentSymbolItem[] = [];
   const body = programBody(ast);
 
+  // Bug 93：说明符导出（`export { localFn as publicName }`）是模块边界导出，
+  // 但 unwrapExport 只认**内联**导出（`export function …`）⇒ 本地声明被判
+  // 非导出、公开名整体缺席。预扫描建立「本地名 → 公开名说明符」，供下方
+  // 声明标注 exported 并额外产出公开名条目（outline / 工作区搜索按公开名找）。
+  // 只处理**无 source** 的本地说明符语句（re-export 的本地名不在本文件声明）。
+  type SpecAlias = { publicName: string; specNode: Node; exportedNode: Node };
+  /** 所有被说明符导出的本地名（用于把本地声明标成 exported）。 */
+  const specExportedLocals = new Set<string>();
+  /** 仅**有别名**的说明符（公开名 ≠ 本地名）⇒ 额外产出公开名条目。
+   *  无别名 `export { plain }` 的公开名就是 plain，本地条目已覆盖 ⇒ 不重复。 */
+  const specAliases = new Map<string, SpecAlias[]>();
+  for (const stmt of body) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.declaration || stmt.source) continue;
+    for (const spec of stmt.specifiers ?? []) {
+      if (spec.type !== "ExportSpecifier") continue;
+      const localNode = spec.local as Node & { name?: string; value?: unknown };
+      const localName =
+        localNode?.type === "Identifier"
+          ? localNode.name
+          : localNode?.type === "StringLiteral"
+            ? String(localNode.value)
+            : undefined;
+      const exported = exportSpecifierExportedName(spec);
+      if (!localName || exported === undefined) continue;
+      specExportedLocals.add(localName);
+      const publicName = String(exported);
+      if (publicName === localName) continue;
+      const arr = specAliases.get(localName) ?? [];
+      arr.push({ publicName, specNode: spec, exportedNode: spec.exported as Node });
+      specAliases.set(localName, arr);
+    }
+  }
+  const isSpecExported = (name: string): boolean => specExportedLocals.has(name);
+  const emitSpecExports = (
+    localName: string,
+    kind: DocumentSymbolItem["kind"],
+    params: string[],
+  ): void => {
+    for (const s of specAliases.get(localName) ?? []) {
+      out.push({
+        name: s.publicName,
+        detail: `(${params.join(", ")}) export`,
+        kind,
+        range: rangeOfNode(s.specNode),
+        selectionRange: rangeOfNode(s.exportedNode),
+      });
+    }
+  };
+
   type FnLike =
     | FunctionDeclaration
     | FunctionExpression
@@ -2029,24 +2154,35 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
     const { declaration: decl, exported } = unwrapExport(stmt);
 
     if (decl.type === "FunctionDeclaration") {
-      pushFn(decl, decl.id, exported);
+      pushFn(decl, decl.id, exported || isSpecExported(decl.id?.name ?? ""));
+      if (decl.id) {
+        const params = (decl.params ?? [])
+          .map((p) => paramDisplayName(p))
+          .filter(Boolean);
+        emitSpecExports(decl.id.name, SymbolKind.Function, params);
+      }
       continue;
     }
     if (decl.type === "ClassDeclaration" && decl.id) {
       out.push({
         name: decl.id.name,
-        detail: exported ? "export class" : "class",
+        detail: exported || isSpecExported(decl.id.name) ? "export class" : "class",
         kind: SymbolKind.Class,
         range: rangeOfNode(decl),
         selectionRange: rangeOfNode(decl.id),
         children: classChildren(decl),
       });
+      emitSpecExports(decl.id.name, SymbolKind.Class, []);
       continue;
     }
     if (decl.type === "VariableDeclaration") {
       // detail 必须按声明种类（const / let / var）写，不能一律写 const
       const kindWord = decl.kind === "let" ? "let" : decl.kind === "var" ? "var" : "const";
-      const detail = exported ? `export ${kindWord}` : kindWord;
+      const anySpecExported = getDeclarations(decl).some((d) => {
+        const id = getDeclaratorId(d);
+        return id ? isSpecExported(id.name) : patternBindingIdentifiers(d.id).some((b) => isSpecExported(b.name));
+      });
+      const detail = exported || anySpecExported ? `export ${kindWord}` : kindWord;
       for (const d of getDeclarations(decl)) {
         const id = getDeclaratorId(d);
         if (id) {
@@ -2061,6 +2197,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             range: rangeOfNode(d),
             selectionRange: rangeOfNode(id),
           });
+          emitSpecExports(id.name, isFn ? SymbolKind.Function : SymbolKind.Variable, []);
           continue;
         }
         // 解构声明：每个绑定各出一个符号（否则整条声明从大纲里消失）
@@ -2072,6 +2209,7 @@ export function documentSymbols(ast: Node): DocumentSymbolItem[] {
             range: rangeOfNode(binding),
             selectionRange: rangeOfNode(binding),
           });
+          emitSpecExports(binding.name, SymbolKind.Variable, []);
         }
       }
     }
@@ -3039,6 +3177,7 @@ export function resolveDefinitionLocations(
       const hits = collectMethodReferencesAcrossFiles(fromFile, source, methodTarget, {
         extraFiles: options.extraFiles,
         sourceProvider: options.sourceProvider,
+        at: options.at,
       });
       const defs = hits.filter((h) => h.kind === "key");
       if (defs.length > 0) {
@@ -3217,6 +3356,7 @@ export function resolveReferences(
       const hits = collectMethodReferencesAcrossFiles(fromFile, source, methodTarget, {
         extraFiles: options.extraFiles,
         sourceProvider: options.sourceProvider,
+        at: options.at,
       });
       const refs = hits
         .filter((h) => includeDecl || h.kind !== "key")

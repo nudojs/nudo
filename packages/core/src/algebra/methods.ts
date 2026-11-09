@@ -16,6 +16,7 @@ import { defaultLeakBudget } from "./diagnostics/leak.ts";
 import { isSymbolAbs } from "./key/symbol-id.ts";
 import { regexParts, matchIteratorAbs } from "./exec/regexp-runtime.ts";
 import { isRegExpBrandAbs } from "./builtins/regexp.ts";
+import { mayToStringThrowOperand } from "./builtins/shared.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -138,12 +139,18 @@ function isUndefinedArg(x: Abs | undefined): boolean {
 }
 
 /**
- * ToString 强转实参的 throw 档位（Bug 42/72 共享，shape 先于 lit）：
+ * ToString 强转实参的 throw 档位（Bug 42/72/81，shape 先于 lit）：
  * - symbol-prim（Symbol() 产物，无 lit 项）→ 确定 TypeError（ToString 恒抛）
  * - 字面量 / 抽象 prim（string/number/bool/bigint）→ ToString 恒 total
- * - obj/fn/brand/sum/any/unknown/tuple/arr（term 非 lit）→ may：自定义
- *   toString/valueOf 可能产 Symbol；数组 join 元素可能为 symbol（node 实测
- *   'a'.concat([Symbol()]) 抛 TypeError）
+ * - 其余抽象形态一律走 **ToString 分档判据** `mayToStringThrowOperand`：
+ *   Date/Map/普通闭对象等引擎已知 total ⇒ "ok"；未知 brand / 带 coercer
+ *   槽的 obj / any/unknown/fn/sum ⇒ "may"。
+ *
+ * Bug 81：此前用 `prim ? "ok" : "may"`（**ToNumber-hint** 口径）对 obj/fn/
+ * brand/sum/any/unknown/tuple/arr 一律记 may ⇒ `Date`/`Map`/普通闭对象在
+ * `String.prototype.concat/includes/indexOf/padStart/…` 处被假记 TypeError，
+ * 与 `${x}` / `String(x)` / `"x" + x` 的裁决自相矛盾。统一到 ToString 分档
+ * 判据（`String()` 的既有消费点、ops.ts `$toStr` 同款）⇒ 三种拼写同一裁决。
  */
 export function toStringArgTier(x: Abs | undefined): "ok" | "throw" | "may" {
   if (x === undefined) return "ok";
@@ -155,7 +162,12 @@ export function toStringArgTier(x: Abs | undefined): "ok" | "throw" | "may" {
   }
   if (isSymbolAbs(x)) return "throw";
   if (x.term?.op === "lit") return "ok";
-  return x.shape.k === "prim" ? "ok" : "may";
+  // 抽象 obj（conf 非 exact ⇒ 形状是路径近似，可能隐藏自有 toString /
+  // @@toPrimitive 槽）保守 may——保留既有钉（split 的 obj 分隔符回退路径
+  // ToString 仍记 may：eval-semantic-specials.test.ts Bug 13）。源级具体
+  // `{}`（conf exact、无 coercer 槽）不在该列 ⇒ 落到下方判据折 "ok"。
+  if (x.shape.k === "obj" && x.conf !== "exact") return "may";
+  return mayToStringThrowOperand(x) ? "may" : "ok";
 }
 
 /** ToString 档位落地：throw → NudoThrow（catch 层吸收）；may → recordMayThrow */

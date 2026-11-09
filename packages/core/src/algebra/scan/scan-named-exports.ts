@@ -102,6 +102,25 @@ function computeLocalNamedExports(source: string): Set<string> {
     }
     return undefined;
   };
+  /**
+   * 类 / 对象成员键名（Bug 105）：Identifier（非计算）/ 字符串字面量 /
+   * 数字字面量 / **静态计算字面键**（`["mk"]`）都返回稳定名；动态计算键
+   * （`[k]()`）没有稳定名 ⇒ undefined。导出名表此前用 `identName` 只认
+   * Identifier / 字符串 ⇒ 数字键方法在导出面、普查面、service 面三面全盲。
+   * 与 `scan-top-functions.ts` 的 `memberKeyOf` 同口径。
+   */
+  const classMethodKey = (
+    mem: NodeLike & { key?: NodeLike; computed?: boolean },
+  ): string | undefined => {
+    const k = mem.key;
+    if (!k) return undefined;
+    if (k.type === "Identifier") {
+      return mem.computed === true || typeof k.name !== "string" ? undefined : k.name;
+    }
+    if (typeof k.value === "string") return k.value;
+    if (typeof k.value === "number") return String(k.value);
+    return undefined;
+  };
   /** P1：本地 ClassDeclaration 表（export { Foo } / export default Foo 解析用） */
   const localClasses = new Map<string, NodeLike>();
   for (const stmt of ast.program.body) {
@@ -115,27 +134,57 @@ function computeLocalNamedExports(source: string): Set<string> {
     decl: NodeLike | undefined,
     nameOverride?: string,
   ) => {
-    if (!decl || decl.type !== "ClassDeclaration") return;
+    if (
+      !decl ||
+      (decl.type !== "ClassDeclaration" && decl.type !== "ClassExpression")
+    ) {
+      return;
+    }
     // Bug 1156：匿名 `export default class {}` 没有本地名 ⇒ 成员键前缀用导出
-    // 槽名 "default"（与 generalize / 指令 scope / 类绑定同口径）。
-    const idName = identName(decl.id as NodeLike | undefined) ?? nameOverride;
+    // 槽名 "default"。Bug 61：`export const C = class D {}` 的类表达式自身 id
+    // 是内部名 `D`，导出面身份是变量名 `C` ⇒ nameOverride 优先。
+    const idName = nameOverride ?? identName(decl.id as NodeLike | undefined);
     if (!idName) return;
-    const body = (decl.body as { body?: NodeLike[] } | undefined)?.body ?? [];
-    for (const m of body) {
-      const mem = m as NodeLike & {
-        kind?: string;
-        static?: boolean;
-        key?: NodeLike;
-      };
-      const isMethod =
-        mem.type === "MethodDefinition" ||
-        mem.type === "ClassMethod" ||
-        mem.type === "TSDeclareMethod";
-      if (!isMethod) continue;
-      if (mem.kind && mem.kind !== "method") continue;
-      // static 与实例方法同为消费者可见入口键（design §3.2）
-      const keyName = identName(mem.key as NodeLike);
-      if (keyName) out.add(`${idName}.${keyName}`);
+    /** 已登记的 own 键（子类 own 方法覆盖继承方法；同名 static+instance 去重） */
+    const ownKeys = new Set<string>();
+    const readInto = (d: NodeLike): void => {
+      const body = (d.body as { body?: NodeLike[] } | undefined)?.body ?? [];
+      for (const m of body) {
+        const mem = m as NodeLike & {
+          kind?: string;
+          static?: boolean;
+          key?: NodeLike;
+          computed?: boolean;
+        };
+        const isMethod =
+          mem.type === "MethodDefinition" ||
+          mem.type === "ClassMethod" ||
+          mem.type === "TSDeclareMethod";
+        if (!isMethod) continue;
+        if (mem.kind && mem.kind !== "method") continue;
+        // static 与实例方法同为消费者可见入口键（design §3.2）
+        const keyName = classMethodKey(mem);
+        if (!keyName || ownKeys.has(keyName)) continue;
+        ownKeys.add(keyName);
+        out.add(`${idName}.${keyName}`);
+      }
+    };
+    readInto(decl);
+    // Bug 64：未导出的内部基类——`export class Derived extends Base` 的公共面
+    // 包含继承来的原型方法，Base 是否 export 不应改变 Derived 的成员集合。
+    // 沿 superClass 链把基类 own 方法映射到导出子类名下（子类 own 方法优先）。
+    const superNameOf = (d: NodeLike): string | undefined => {
+      const sc = d.superClass as NodeLike | undefined;
+      return sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
+    };
+    const seen = new Set<string>([idName]);
+    let sup = superNameOf(decl);
+    while (sup && !seen.has(sup)) {
+      seen.add(sup);
+      const base = localClasses.get(sup);
+      if (!base) break;
+      readInto(base);
+      sup = superNameOf(base);
     }
   };
   /**
@@ -204,12 +253,21 @@ function computeLocalNamedExports(source: string): Set<string> {
     }
     return false;
   };
-  /** `exports.a` / `module.exports.a` → "a" */
+  /** `exports.a` / `module.exports.a` / `exports["a"]` → "a" */
   const cjsPropName = (left: NodeLike | undefined): string | undefined => {
     if (!left || left.type !== "MemberExpression") return undefined;
-    if (left.computed === true) return undefined;
     const obj = left.object as NodeLike | undefined;
     if (!isExportsTarget(obj)) return undefined;
+    if (left.computed === true) {
+      // Bug 6：`exports["getName"] = fn` 的 computed 键是**静态字符串 / 数字
+      // 字面量** ⇒ 有稳定名；动态键 `exports[k]`（computed + Identifier）
+      // 没有稳定名 ⇒ 不登记（否则把变量 k 当成导出槽 ⇒ 假红）。
+      const p = left.property as NodeLike | undefined;
+      if (!p || p.type === "Identifier") return undefined;
+      if (typeof p.value === "string") return p.value;
+      if (typeof p.value === "number") return String(p.value);
+      return undefined;
+    }
     return identName(left.property as NodeLike);
   };
 
@@ -276,6 +334,32 @@ function computeLocalNamedExports(source: string): Set<string> {
         for (const decl of decls) {
           const idName = identName(decl.id as NodeLike | undefined);
           if (idName) out.add(idName);
+          const init = decl.init as NodeLike | undefined;
+          // Bug 61：`export const C = class {…}` 的类表达式——类方法键同
+          // ClassDeclaration 口径登记（否则 `C.m` 不在导出名表 ⇒ 无 L2）。
+          if (
+            idName &&
+            (init?.type === "ClassExpression" || init?.type === "ClassDeclaration")
+          ) {
+            addClassMethodKeys(out, init, idName);
+          }
+          // Bug 90：ESM `export const api = { m(){} }` 的对象字面量方法——
+          // 与 CJS `module.exports = {…}` 同口径（成员键 = 导出槽名）。
+          if (init?.type === "ObjectExpression") {
+            for (const raw of (init.properties as NodeLike[] | undefined) ?? []) {
+              const p = raw as NodeLike & { kind?: string; computed?: boolean };
+              if (
+                p.type !== "ObjectProperty" &&
+                p.type !== "Property" &&
+                p.type !== "ObjectMethod"
+              ) {
+                continue;
+              }
+              if (p.kind && p.kind !== "method") continue; // getter/setter 非入口
+              const keyName = classMethodKey(p as NodeLike & { key?: NodeLike; computed?: boolean });
+              if (keyName) out.add(keyName);
+            }
+          }
         }
       } else if (d.type === "TSModuleDeclaration") {
         // BUG-191：`export namespace NS { … }`（Babel：ExportNamedDeclaration
@@ -358,6 +442,23 @@ function computeLocalNamedExports(source: string): Set<string> {
         } else if (right.type === "Identifier") {
           const n = identName(right);
           if (n && !importedLocalNames.has(n)) out.add(n);
+        } else if (
+          right.type === "FunctionExpression" ||
+          right.type === "ArrowFunctionExpression" ||
+          right.type === "ClassExpression" ||
+          right.type === "ClassDeclaration"
+        ) {
+          // Bug 6：`module.exports = <fn|class>` 是 CJS 的**默认导出**
+          // （ESM default 类比）⇒ 导出槽 "default" 必须进本地导出名表，
+          // 否则 check 的 L2 入口集为空 ⇒ 构造器 / 函数必抛全假绿。
+          out.add("default");
+          // 具名函数表达式（`module.exports = function getName(){}`）的普查名 /
+          // 指令绑定名是**内层 id**（与 directive-scan / Bug 428 同口径）⇒
+          // 也登记，让 L2 的 isEntry 按本地名判得到（导出槽映射在 export-slot）。
+          const inner = identName(
+            (right as NodeLike & { id?: NodeLike }).id as NodeLike | undefined,
+          );
+          if (inner) out.add(inner);
         }
       }
     }

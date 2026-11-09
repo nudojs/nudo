@@ -277,6 +277,11 @@ export function emitHardErrorCiAnnotations(
   if (opts.gitlab) {
     const rows = ciRowsForHardErrors(errors, workspaceRoot);
     if (opts.gitlabRowsCollect) opts.gitlabRowsCollect.push(...rows);
+    // Bug 10：`--json` 下 stdout 是**唯一**的 CheckJson/CheckJsonMulti 载荷。
+    // 兄弟函数 emitGitlabAnnotations 按 opts.json 分叉（注解走 stderr），
+    // 硬错误这条此前按「有没有收集器」分叉 ⇒ `--json --gitlab` 把 GitLab
+    // 数组先打到 stdout，信封跟在后面 ⇒ JSON.parse 直接炸（Extra data）。
+    else if (opts.json) console.error(JSON.stringify(rows, null, 2));
     else console.log(JSON.stringify(rows, null, 2));
   }
   if (shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS)) {
@@ -410,6 +415,12 @@ export async function emitCheckReport(
     // BUG-066：本判定必须在 `--abs` **之前**——旧实现 abs 分支排在前面且
     // 自己打完整 report + 3 行 OK 块，完全不 consult quiet ⇒ `--abs --quiet`
     // 静默吞掉 `--quiet`（clean 打 3 行而非 1 行；失败仍打印 signatures 段）。
+    //
+    // Bug 107：`--quiet` 只压**签名表**，`--abs` 是独立的代数观察面。两支
+    // 写成互斥 else-if ⇒ 同时给出时代数面整段蒸发（无 warning / 无 usage
+    // error）。这里让 quiet 分支先照常跑一次代数面，再按 quiet 打印摘要 ⇒
+    // 两个观察面同时生效；单独 `--abs` 仍走下面那条完整分支。
+    if (opts.abs) await runAbsView(filePath, opts.absView ?? {});
     if (report.ok && report.issues.length === 0) {
       console.log(
         `nudo check  ${basename(filePath)}  OK  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,

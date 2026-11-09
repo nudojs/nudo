@@ -506,6 +506,13 @@ export function tryEvalCall(
     loadModule?: LoadModule;
     /** 宿主已计算的依赖指纹（跳过重算）；null = fail-closed 禁缓存 */
     depKey?: string | null;
+    /**
+     * Bug 91：`--abs` 观察面专用。「证明必抛」是**精确结论**
+     * （`result = never` + `throws ≠ never`），不是推断失败；其它消费点
+     * （export 的 dts / contract face）仍按 fail-closed 折成 undefined，
+     * 由调用方回落 unknown。只有显式打开本开关才保留 never Abs。
+     */
+    keepNeverThrows?: boolean;
   } = {},
 ): Abs | undefined {
   // collector 作用域（幂等）：透传 tryEvalCallFull（已开），此处兜底独立入口。
@@ -529,7 +536,11 @@ export function tryEvalCall(
       );
       return undefined;
     }
-    if (r.shape.k === "never" && full.throws.shape.k !== "never") {
+    if (
+      r.shape.k === "never" &&
+      full.throws.shape.k !== "never" &&
+      !opts.keepNeverThrows
+    ) {
       return undefined;
     }
     if (r.shape.k === "unknown" && !r.term) return undefined;

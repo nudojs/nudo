@@ -81,6 +81,11 @@ Because there is no style linter, **reviewers** must watch what the type-checker
   ④ 单跑某条用例用 `pnpm vitest run <聚合入口> -t "<case name>"`；
   ⑤ 脚本会**自动排除**模块级 `vi.mock` / `vi.hoisted` 文件（worker 级注册会
   串到同入口其它 part），这类文件保留独立入口，不要手工塞回。
+  ⑥ 大族入口单个文件耗时过长时，用
+  `node scripts/aggregate-tests.mjs --split <完整 key> --max-parts 10` 拆成
+  多个 `zz-agg-<族>-N.test.ts`（只重排 import，不重命名 part）。Vitest 的
+  `--shard` 按文件 hash + **等文件数**切分，不按时长——一个 400s 的入口会
+  钉死整个 shard。2026-11-09 已对 `nudojs` / `migrate` / `emit` 三个大族启用。
 - **全仓基线对比**（本地 Node 22 / CI Node 24）：20 条已知失败来自宿主面
   （`Float16Array` / ES 全局清单）、`fs.watch` 事件数与临时路径归一化，
   固化在 `docs/reports/test-baseline-failures.json`。全量跑完用

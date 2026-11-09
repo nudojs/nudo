@@ -19,6 +19,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { parseJsonText } from "./read-json.ts";
 
 /**
  * 报告面诊断码（468/936）。
@@ -79,7 +80,7 @@ export function projectConfigShapeIssue(startDir: string): ConfigShapeIssue | nu
     if (exists) {
       let pkg: unknown;
       try {
-        pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        pkg = parseJsonText(readFileSync(pkgPath, "utf-8"));
       } catch {
         return null; // 解析失败：service 侧另有诊断，本探针不重复
       }
@@ -122,7 +123,7 @@ export function projectCacheShapeIssue(projectDir: string | undefined): ConfigSh
   const pkgPath = resolve(projectDir, "package.json");
   let pkg: unknown;
   try {
-    pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    pkg = parseJsonText(readFileSync(pkgPath, "utf8"));
   } catch {
     return null; // 读/解析失败：service 侧另有诊断，本探针不重复
   }

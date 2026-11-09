@@ -8,31 +8,28 @@ const coverageGate = process.env.NUDO_COVERAGE_THRESHOLDS !== "off";
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
-    // CI 的 --changed <base> 走模块图选测试；下图不可见的读取面
-    // （fs 读 fixture / 文档 / 工作流、运行时动态 import）必须在此
-    // 列为强制全量触发器，否则那些 PR 会假绿。覆盖默认值
-    // （['**/package.json', '**/{vitest,vite}.config.*']），故显式保留。
+    // CI 的 --changed <base> 走模块图选测试；模块图看不到的读取面分两类：
+    //   1. 全局配置/依赖（package.json / lockfile / vitest 配置）→ 本列表；
+    //   2. 仓库级 fs 读取（docs / website / root scripts / benchmark /
+    //      workflows）→ 独立的 `pnpm run test:fs-input` 套件（清单见
+    //      scripts/fs-input-tests.mjs，CI 在增量路径上无条件执行）。
+    // 不能把第 2 类按 project 配 trigger：vitest 的 forceRerunTriggers 是
+    // NonProjectOptions，任何匹配都会重跑全部 specs，而不是只跑读取该文件
+    // 的那个 project。故这里只留真正的全局面，避免 docs-only PR 跑 1711 个
+    // 文件。
     // 注意：vitest 把 git diff 输出 resolve 成绝对路径后再做
     // picomatch 匹配——所有 glob 必须以 **/ 开头，否则相对
     // 模式永远匹配不上（默认值即此形态）。
-    //   **/pnpm-lock.yaml      依赖变 → real-package 扫描测试失效
-    //   **/docs/examples/**    check-mini-repo 等经 readFileSync 读金标
-    //   **/packages/website/** docs-coverage / home-stats / seo 等读 md/json
-    //   **/scripts/**          gate-major 等经 execFileSync 调脚本
-    //   **/.github/workflows/** release-tag-whitelist 读 release.yml
+    //   **/pnpm-lock.yaml           依赖变 → real-package 扫描测试失效
+    //   **/packages/*/scripts/**    package-local 脚本被 vscode 测试直接
+    //                               readFileSync（模块图不覆盖）
     // 模块图已覆盖：包源码（env-loader 静态 import @nudojs/env/*）、
     // differential 语料（静态 import corpus/batch*.ts）。
     forceRerunTriggers: [
       "**/package.json",
       "**/{vitest,vite}.config.*",
       "**/pnpm-lock.yaml",
-      "**/docs/examples/**",
-      "**/packages/website/**",
-      "**/scripts/**",
-      // website benchmark-gate-noise 测试经子进程+动态 import 读 benchmark/
-      // 文件（非静态 import，模块图不覆盖）——只改 benchmark/ 的 PR 也须重跑
-      "**/benchmark/**",
-      "**/.github/workflows/**",
+      "**/packages/*/scripts/**",
     ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",

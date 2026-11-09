@@ -11,7 +11,7 @@
  * 人读行有标记、`--json` 有同名字段、`conflict` ⇒ 非零退出。
  */
 import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { interfaceSurface, formatInterfaceSurfaceLine } from "../interface-surface.ts";
 import { tmpProject, writeTmpFiles } from "../../__tests__/tmp-project.ts";
@@ -41,17 +41,18 @@ function conflictProject(): string {
 /** 真跑 CLI（退出码是本条 bug 的另一半，字符串断言抓不到） */
 function runCli(args: string[]): { status: number; stdout: string; stderr: string } {
   const repoRoot = join(import.meta.dirname, "../../../../..");
-  try {
-    const stdout = execFileSync(
-      "npx",
-      ["tsx", join(repoRoot, "packages/nudojs/src/index.ts"), ...args],
-      { cwd: repoRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { status: 0, stdout, stderr: "" };
-  } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
-    return { status: err.status ?? 1, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? "") };
-  }
+  // spawnSync 而非 execFileSync：只读 `contract` 修好 Bug 34 后 exit 0，但
+  // 诊断仍写 stderr；execFileSync 的成功分支拿不到 stderr（只有抛错分支有）。
+  const r = spawnSync(
+    "npx",
+    ["tsx", join(repoRoot, "packages/nudojs/src/index.ts"), ...args],
+    { cwd: repoRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  return {
+    status: r.status ?? 1,
+    stdout: String(r.stdout ?? ""),
+    stderr: String(r.stderr ?? ""),
+  };
 }
 
 describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", () => {
@@ -68,19 +69,21 @@ describe("BUG-081 —— 契约面与门禁面对无解契约给同一结论", (
     expect(line).toContain("[unsatisfiable: n]");
   });
 
-  it("`nudo contract` 与 check 同结论：stderr 报同码 error + exit 1", () => {
+  it("`nudo contract` 与 check 同诊断：stderr 报同码 error + 只读命令 exit 0", () => {
+    // Bug 34：只读 `contract` 的 exit 契约是「仅用法 / IO 错误时 exit 1」；
+    // 契约冲突是被分析代码的状态，诊断照发但不再把进程判失败。
     const file = conflictProject();
     const text = runCli(["contract", file]);
-    expect(text.status).toBe(1);
+    expect(text.status).toBe(0);
     expect(text.stderr).toContain("nudo:interface-conflict");
     expect(text.stderr).toContain("conflict: handwritten contract conjunction unsatisfiable (n)");
     expect(text.stdout).toContain("[unsatisfiable: n]");
   });
 
-  it("`--json` 机器面：同名字段 + 非零退出（stdout 仍是合法 JSON）", () => {
+  it("`--json` 机器面：同名字段 + 只读命令 exit 0（stdout 仍是合法 JSON）", () => {
     const file = conflictProject();
     const res = runCli(["contract", "--json", file]);
-    expect(res.status).toBe(1);
+    expect(res.status).toBe(0);
     const payload = JSON.parse(res.stdout) as Array<{
       entries: Array<{ fn: string; conflict?: { params: string[] } }>;
     }>;

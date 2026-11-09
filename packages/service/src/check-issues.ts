@@ -72,15 +72,28 @@ export function mergeCheckIssues<T extends Summarized>(report: T, issues: CheckI
   };
 }
 
-/** D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit）。 */
+/**
+ * D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit）。
+ *
+ * Bug 84：parser 侧的 `DirectiveDiag.at` 已带位置（行 1-based / 列 0-based），
+ * 分析面 `analyzer-orchestrate-uncached.ts` 早已把它写进 range；这里的形参
+ * 旧类型只有 `{ code, message }` ⇒ `at` 结构性蒸发 ⇒ `--json` 的 line/column
+ * 为 null、`--gha`/`--gitlab` 注解一律落到第 1 行、人类面印不出 `L<n>`，
+ * 且 GitLab 指纹（用 begin 拼）同行同类诊断相撞。
+ */
 export function directiveDiagIssues(
-  diags: Array<{ code: string; message: string }>,
+  diags: Array<{
+    code: string;
+    message: string;
+    at?: { line: number; column: number };
+  }>,
 ): CheckIssue[] {
   return diags.map((d) => ({
     severity: "warning" as const,
     code: d.code,
     message: d.message,
     suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+    ...(d.at ? { line: d.at.line, column: d.at.column } : {}),
   }));
 }
 

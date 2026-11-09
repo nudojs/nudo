@@ -416,6 +416,11 @@ function primShapeOfTypeOf(typeOf: string): { k: "prim"; type: PrimName } | unde
 
 /** `??` / `??=` 测试：确定非 nullish → false；lit nullish → true；否则抽象 boolean */
 export function $nullishTest(v: Abs): Abs {
+  // Bug 16：可选链基值可能是**函数声明绑定**（转译产物里的原生 JS 函数，
+  // 不是 Abs）。短路守卫 `$nullishTest(f)` 把这类值原样传进来 ⇒ 读 `.shape`
+  // 会抛宿主 TypeError，令整个模块求值失败（nudo:internal）。原生函数恒非
+  // nullish ⇒ 折 false，与宿主语义一致（也覆盖 `??` 的裸宿主值面）。
+  if (!isAbsLike(v)) return boolLit(false);
   if (definitelyNotNullishShape(v.shape)) return boolLit(false);
   if (isNullishLitAbs(v)) return boolLit(true);
   const t = v.term;

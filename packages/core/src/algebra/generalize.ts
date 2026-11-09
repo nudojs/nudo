@@ -288,6 +288,44 @@ function ctorFormalsOf(
 }
 
 /**
+ * 类成员键名（Bug 105）：Identifier（非计算）/ 字符串字面量 / 数字字面量 /
+ * **静态计算字面键**（`["mk"]`）都返回稳定名；动态计算键（`[k]`）无稳定名
+ * ⇒ undefined。与 `scan/scan-top-functions.ts` / `scan/scan-named-exports.ts`
+ * 的普查键口径一致（三张表曾因只认 Identifier 而把字符串/数字键方法整类
+ * 丢弃 ⇒ 无签名、无 L2、侧车契约零执法）。
+ */
+function classMemberKeyOf(mem: {
+  key?: { type?: string; name?: string; value?: unknown } | undefined;
+  computed?: boolean;
+}): string | undefined {
+  const k = mem.key;
+  if (!k) return undefined;
+  if (k.type === "Identifier") {
+    // computed Identifier 是变量键（`[k]()`），不是稳定名
+    return mem.computed === true || typeof k.name !== "string" ? undefined : k.name;
+  }
+  const v = k.value;
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return undefined;
+}
+
+/** 类体成员是否为可登记的方法（跳过 ctor / getter / setter / 字段） */
+function isRegistrableClassMethod(mem: {
+  type?: string;
+  kind?: string;
+}): boolean {
+  if (
+    mem.type !== "MethodDefinition" &&
+    mem.type !== "ClassMethod" &&
+    mem.type !== "TSDeclareMethod"
+  ) {
+    return false;
+  }
+  return !mem.kind || mem.kind === "method";
+}
+
+/**
  * 类方法的静态/实例判定（按**源码类声明**；判不出 → undefined = 静态）。
  *
  * BUG-004：值域类方法桥（本文件 runCore）与证据域桥（check-may-throw.ts）
@@ -301,31 +339,71 @@ export function classMethodIsStatic(
   methodName: string,
 ): boolean | undefined {
   if (!file) return undefined;
+  type ClassNode = {
+    type?: string;
+    id?: { name?: string };
+    body?: { body?: unknown[] };
+    superClass?: { type?: string; name?: string };
+  };
+  /** 类名 → 类节点（ClassDeclaration + `export const C = class {}` 的类表达式） */
+  const classes = new Map<string, ClassNode>();
   for (const stmt of file.program.body as unknown[]) {
     const s = stmt as { type?: string; declaration?: unknown };
     let decl: unknown = stmt;
     if (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration") {
       decl = s.declaration;
     }
-    const c = decl as
-      | { type?: string; id?: { name?: string }; body?: { body?: unknown[] } }
-      | undefined;
-    if (!c || c.type !== "ClassDeclaration") continue;
-    if (c.id?.name !== clsName) continue;
-    for (const m of c.body?.body ?? []) {
+    const c = decl as ClassNode | undefined;
+    if (c?.type === "ClassDeclaration" && c.id?.name) {
+      if (!classes.has(c.id.name)) classes.set(c.id.name, c);
+      continue;
+    }
+    // Bug 61：类表达式的导出身份是变量名（不是类表达式自身的内部 id）
+    if (c?.type === "VariableDeclaration") {
+      for (const d of (c as unknown as {
+        declarations?: Array<{ id?: { name?: string }; init?: ClassNode }>;
+      }).declarations ?? []) {
+        const init = d.init;
+        if (
+          d.id?.name &&
+          (init?.type === "ClassExpression" || init?.type === "ClassDeclaration") &&
+          !classes.has(d.id.name)
+        ) {
+          classes.set(d.id.name, init);
+        }
+      }
+    }
+  }
+  // Bug 64：own 方法优先；own 没有该键 ⇒ 沿 superClass 链找**内部基类**的
+  // 继承方法（`new Derived().m()` 直接调到 Base.prototype.m）。Base 是否
+  // export 不应改变 Derived 的公共成员集合。
+  const visited = new Set<string>();
+  let curName: string | undefined = clsName;
+  while (curName && !visited.has(curName)) {
+    visited.add(curName);
+    const cur = classes.get(curName);
+    if (!cur) break;
+    let sawAny = false;
+    let sawInstance = false;
+    for (const m of cur.body?.body ?? []) {
       const mem = m as {
+        type?: string;
         kind?: string;
         static?: boolean;
-        key?: { name?: string; value?: unknown };
+        computed?: boolean;
+        key?: { type?: string; name?: string; value?: unknown };
       };
-      if (mem.kind === "constructor") continue;
-      const key = mem.key;
-      if (!key) continue;
-      const name = key.name ?? (typeof key.value === "string" ? key.value : undefined);
+      if (!isRegistrableClassMethod(mem)) continue;
+      const name = classMemberKeyOf(mem);
       if (name !== methodName) continue;
-      return mem.static === true;
+      sawAny = true;
+      if (mem.static !== true) sawInstance = true;
     }
-    return undefined;
+    // Bug 51：同名 static + 实例方法 ⇒ 普查口径是「实例方法占位」⇒ 求值桥
+    // 也必须用**实例桥**（否则返回位取自 static，签名随成员书写顺序跳变）。
+    if (sawAny) return !sawInstance;
+    const sc = cur.superClass;
+    curName = sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
   }
   return undefined;
 }
@@ -771,24 +849,40 @@ export function extractFn(
       // C4.2：导出 class 实例/静态方法 → `Class.method`
       const cname = (decl as { id?: { name?: string } }).id?.name ?? "default";
       const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+      // Bug 51：同名 static 与实例方法共用 `${cname}.${key}` 键 ⇒ 后写覆盖会把
+      // **形参表**与返回拆到两个方法（且 extractFn 自建 env 供 @nudo:assume
+      // / @nudo:invariant 锚定 ⇒ 引理被判「名字未绑定」= 假 error）。与
+      // scan/scan-top-functions.ts 的普查口径对齐：**同名时实例方法占位**。
+      const instanceKeys = new Set<string>();
+      for (const m of body) {
+        const mm = m as {
+          type?: string;
+          kind?: string;
+          static?: boolean;
+          computed?: boolean;
+          key?: { type?: string; name?: string; value?: unknown };
+          body?: Node;
+        };
+        if (!isRegistrableClassMethod(mm) || !mm.body) continue;
+        const k = classMemberKeyOf(mm);
+        if (k && mm.static !== true) instanceKeys.add(k);
+      }
       for (const m of body) {
         const mem = m as {
           type?: string;
           kind?: string;
           static?: boolean;
-          key?: { type?: string; name?: string };
+          computed?: boolean;
+          key?: { type?: string; name?: string; value?: unknown };
           params?: unknown[];
           body?: Node;
           async?: boolean;
         };
-        const isMethod =
-          mem.type === "MethodDefinition" ||
-          mem.type === "ClassMethod" ||
-          mem.type === "TSDeclareMethod";
-        if (!isMethod || !mem.body) continue;
-        if (mem.kind && mem.kind !== "method") continue;
-        const keyName = mem.key?.type === "Identifier" ? mem.key.name : undefined;
+        if (!isRegistrableClassMethod(mem) || !mem.body) continue;
+        // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
+        const keyName = classMemberKeyOf(mem);
         if (!keyName) continue;
+        if (mem.static === true && instanceKeys.has(keyName)) continue;
         const fullName = `${cname}.${keyName}`;
         const formals = formalParamsFromNodes((mem.params ?? []) as never);
         env.fns.set(fullName, {
@@ -957,6 +1051,135 @@ export function extractFn(
     }
     if (isExportsMember && propName) {
       registerFnNode(propName, right);
+    }
+  }
+
+  // ── Bug 61 / 64 / 90：补充登记「模块边界可见、但无顶层声明位」的方法体 ──
+  // extractFn 主循环只认 FunctionDeclaration / VariableDeclaration 的函数初值 /
+  // 导出 ClassDeclaration 的 own 方法。类表达式（`export const C = class{}`）、
+  // 内部基类的继承方法、ESM 对象字面量方法都不在其中 ⇒ extractFn 对这些普查
+  // 名返回 undefined ⇒ check 面走 synthetic 兜底（打印 `_p0: any` 假形参），
+  // 且 @nudo:assume / @nudo:invariant 的锚定面同样取不到方法体。
+  type ClassLikeNode = {
+    type?: string;
+    id?: { name?: string };
+    body?: { body?: unknown[] };
+    superClass?: { type?: string; name?: string };
+  };
+  /** 类名 → 类节点（ClassDeclaration + 类表达式） */
+  const allClasses = new Map<string, ClassLikeNode>();
+  for (const stmt of file.program.body) {
+    const s = stmt as { type?: string; declaration?: unknown };
+    let decl: unknown = stmt;
+    if (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration") {
+      decl = s.declaration;
+    }
+    const c = decl as ClassLikeNode | undefined;
+    if (c?.type === "ClassDeclaration" && c.id?.name) {
+      if (!allClasses.has(c.id.name)) allClasses.set(c.id.name, c);
+      continue;
+    }
+    if (c?.type === "VariableDeclaration") {
+      for (const dd of (c as unknown as {
+        declarations?: Array<{ id?: { name?: string }; init?: ClassLikeNode }>;
+      }).declarations ?? []) {
+        if (
+          dd.id?.name &&
+          (dd.init?.type === "ClassExpression" || dd.init?.type === "ClassDeclaration") &&
+          !allClasses.has(dd.id.name)
+        ) {
+          allClasses.set(dd.id.name, dd.init);
+        }
+      }
+    }
+  }
+  const methodNodesOf = (
+    d: ClassLikeNode,
+  ): Array<{ key: string; node: unknown; isStatic: boolean }> => {
+    const out: Array<{ key: string; node: unknown; isStatic: boolean }> = [];
+    for (const raw of d.body?.body ?? []) {
+      const mem = raw as {
+        type?: string;
+        kind?: string;
+        static?: boolean;
+        computed?: boolean;
+        key?: { type?: string; name?: string; value?: unknown };
+      };
+      if (!isRegistrableClassMethod(mem)) continue;
+      const k = classMemberKeyOf(mem);
+      if (!k) continue;
+      out.push({ key: k, node: raw, isStatic: mem.static === true });
+    }
+    return out;
+  };
+  const superOf = (d: ClassLikeNode): string | undefined => {
+    const sc = d.superClass;
+    return sc?.type === "Identifier" && typeof sc.name === "string" ? sc.name : undefined;
+  };
+  // 类表达式 / 对象字面量方法（export 包装的 VariableDeclaration）
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration") continue;
+    const vd = (stmt as { declaration?: unknown }).declaration as
+      | {
+          type?: string;
+          declarations?: Array<{
+            id?: { name?: string };
+            init?: (Record<string, unknown> & { type?: string }) | undefined;
+          }>;
+        }
+      | undefined;
+    if (vd?.type !== "VariableDeclaration") continue;
+    for (const dd of vd.declarations ?? []) {
+      const name = dd.id?.name;
+      const init = dd.init;
+      if (!name || !init) continue;
+      if (init.type === "ClassExpression" || init.type === "ClassDeclaration") {
+        const ms = methodNodesOf(init as ClassLikeNode);
+        const instanceKeys = new Set(ms.filter((m) => !m.isStatic).map((m) => m.key));
+        for (const m of ms) {
+          if (m.isStatic && instanceKeys.has(m.key)) continue; // Bug 51 同名裁决
+          registerFnNode(`${name}.${m.key}`, m.node as never);
+        }
+      }
+      if (init.type === "ObjectExpression") {
+        for (const raw of (init.properties as unknown[] | undefined) ?? []) {
+          const p = raw as {
+            type?: string;
+            kind?: string;
+            computed?: boolean;
+            key?: { type?: string; name?: string; value?: unknown };
+            value?: { type?: string };
+          };
+          if (p.kind && p.kind !== "method") continue; // getter / setter 非入口
+          const k = classMemberKeyOf(p);
+          if (!k) continue;
+          if (p.type === "ObjectMethod" || p.type === "ClassMethod") {
+            registerFnNode(k, raw as never);
+          } else if (p.type === "ObjectProperty" || p.type === "Property") {
+            const v = p.value;
+            if (v?.type === "FunctionExpression" || v?.type === "ArrowFunctionExpression") {
+              registerFnNode(k, v as never);
+            }
+          }
+        }
+      }
+    }
+  }
+  // Bug 64：导出子类的继承方法——映射到基类方法体（子类 own 方法优先）
+  for (const [cname, cls] of allClasses) {
+    const ownKeys = new Set(methodNodesOf(cls).map((m) => m.key));
+    const seen = new Set<string>([cname]);
+    let sup = superOf(cls);
+    while (sup && !seen.has(sup)) {
+      seen.add(sup);
+      const base = allClasses.get(sup);
+      if (!base) break;
+      for (const m of methodNodesOf(base)) {
+        if (ownKeys.has(m.key)) continue;
+        ownKeys.add(m.key);
+        registerFnNode(`${cname}.${m.key}`, m.node as never);
+      }
+      sup = superOf(base);
     }
   }
 
@@ -1406,10 +1629,32 @@ function generalizeFromAstUncached(
             sigNames[pIdx] ?? params[pIdx] ?? `_p${pIdx}`,
             [],
           );
+          // Bug 8（签名面残留）：数组解构形参的入口域必须是**数组**。
+          // `locateContractParam` 对 ArrayPattern 给的是 `fieldIndex`（元素
+          // 下标，**不给** fieldPath）——执法侧已按下标投影实参（L1 已修），
+          // 但签名/入口求值这里仍把契约叶子合成**对象槽**
+          // ⇒ `f([ x ]: { x: number })`，且引擎对「对象」做数组解构判必抛
+          // ⇒ 签名塌成 `never throws TypeError` + error 级 may-throw（假红）。
+          // 元素域 = 契约命中槽的 Abs 并集（补齐的 unknown 槽不参与，否则
+          // 整个元素域被拉成 unknown）；一个都没命中 ⇒ any（不猜）。
+          const fp = formals[pIdx];
+          let sigAbs = objAbs;
+          if (fp?.kind === "pattern" && fp.patternKind === "array") {
+            const leaves = Object.values(bag).flatMap((node) =>
+              "abs" in node && node.abs.shape.k !== "unknown" ? [node.abs] : [],
+            );
+            const element =
+              leaves.reduce<Abs | undefined>(
+                (acc, e) => (acc === undefined ? e : joinAbs(acc, e)),
+                undefined,
+              ) ?? abs({ k: "any" }, undefined, pTrue, "path");
+            sigAbs = { ...objAbs, shape: { k: "arr", element } };
+          }
           typeParams[pIdx] = {
             id: typeParams[pIdx]!.id,
-            value: objAbs,
+            value: sigAbs,
           };
+          // refine 入口形状仍用对象槽投影（L1 契约执法侧读这张表，保持原口径）
           refineEntryShapes.set(params[pIdx] ?? `_p${pIdx}`, {
             abs: snapshotAbs(objAbs),
             source: "refine",

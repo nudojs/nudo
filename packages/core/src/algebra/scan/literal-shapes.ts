@@ -175,6 +175,22 @@ function flattenPred(p: Pred): Pred[] {
 }
 
 /**
+ * Bug 8：数组解构契约按**元素下标**投影实参（不是对象 slot 键）。
+ *
+ * `locateContractParam` 对数组 pattern 只给 `fieldIndex`、不给 `fieldPath`
+ * ——`fieldPath` 是对象槽投影路径，对数组无意义。此前执法侧把「没有
+ * `fieldPath`」当成对象 slot ⇒ 退回 `[hit.field]` ⇒
+ * `projectAbsPath(数组实参, ["x"])` 必然取不到 ⇒ 每个调用都报
+ * `missing field x`（合法调用假红，真违例的元素值从未与界比对）。
+ * tuple 才有逐元素槽；`arr`（join 元素）值不可判 ⇒ 不猜（fail-closed）。
+ */
+function projectArrayIndex(arg: Abs, index: number): Abs | undefined {
+  const inner = arg.shape.k === "brand" ? arg.shape.shape : arg;
+  if (inner.shape.k !== "tuple") return undefined;
+  return inner.shape.elements[index];
+}
+
+/**
  * 实参的**形态类型档**（族 11 片 S6 任务②：非标量实参的类型级判定）。
  *
  * - `"number"` / `"string"` / `"boolean"` / `"bigint"` / `"symbol"`：prim 形状
@@ -234,7 +250,16 @@ function predOnVar(p: Pred): boolean {
     case "ge":
     case "lt":
     case "le":
-      return p.a.op === "var";
+      // Bug 7：长度界（`string().min(n)` → ge(length(x), n)，根在 app）与
+      // 结构成员的字段界（get(x,k)，根在 app）虽然不挂在 var 上，但它们
+      // **不是**「结构成员」——结构通道 `checkUnionMembers` 只挑 `fields ||
+      // element` 成员，长度界 / 字段界的标量面仍归谓词通道裁决。若据此把
+      // `orMembersOnVar` 判成 false ⇒ `judgeOrUnion` 的整段域兼容兜底被关掉
+      // ⇒ 含 `.min(n)` / shape 成员的 union 对**任何**实参都不执法（假绿）。
+      return (
+        p.a.op === "var" ||
+        (p.a.op === "app" && (p.a.fn === "length" || p.a.fn === "get"))
+      );
     case "and":
     case "or":
       return p.args.every(predOnVar);
@@ -255,13 +280,59 @@ function orMembersOnVar(or: { op: "or"; args: Pred[] }): boolean {
 }
 
 /**
+ * Bug 7：`or` 成员对该实参是否**确定不可能满足**（形态级判定）。
+ *
+ * `judgeLiteralPred` 只在「值可判」时给 true/false，遇到 `length(x)` /
+ * `get(x,k)` 项或 `and` 合取就返回 undefined。但这两类成员的**语义域**是
+ * 确定的：
+ *   - 长度界只容纳有 length 的值（字符串 / 数组）；实参是数字 / 布尔 /
+ *     nullish / 普通对象且长度不可判 ⇒ 这一支**不可能**为真；
+ *   - 字段界（`get(x,k)` 上的数值界或 `typeof(get(x,k), …)`）只容纳对象；
+ *     实参是标量 / 数组 / nullish ⇒ 这一支**不可能**为真。
+ *
+ * 无信息（unknown / any / never / sum）⇒ 不猜（返回 false 会让 any 实参变
+ * 假红，与「any ≤ 任意目标」口径冲突）。
+ */
+function memberImpossible(
+  q: Pred,
+  arg: Abs,
+  argLen: number | undefined,
+): boolean {
+  const form = argFormOf(arg);
+  if (form === "opaque") return false;
+  const atoms = q.op === "and" ? q.args : [q];
+  for (const atom of atoms) {
+    if (atom.op === "typeof") {
+      if (atom.t.op === "app" && atom.t.fn === "get" && form !== "shape")
+        return true;
+      continue;
+    }
+    if (atom.op !== "gt" && atom.op !== "ge" && atom.op !== "lt" && atom.op !== "le")
+      continue;
+    const a = atom.a;
+    if (a.op !== "app") continue;
+    if (a.fn === "length") {
+      // 长度可判（字符串字数 / tuple 元素个数）时由 judgeLiteralPred 裁决；
+      // 不可判且实参没有 length 语义（form !== "array"）⇒ 该成员不可能满足。
+      if (argLen === undefined && form !== "array") return true;
+    } else if (a.fn === "get" && form !== "shape") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * `or` 成员的三值判定（族 11 片 S6 任务② + ③）。
  *
  * - `judgeLiteralPred`（S1）判得 true / false ⇒ 直接采信；
- * - 判不了（undefined）⇒ **类型级**兜底（仅当 `typeLevel` 开启）：成员是
- *   挂在参数自身的 `eq(var, lit)` 原子、且实参形态**确定**与该字面量端
- *   类型不同 ⇒ **确定违例**（false）；形态不可判定或类型相同 ⇒ 仍 undefined
- *   （不猜）。
+ * - 判不了（undefined）⇒ **形态级**兜底（Bug 7：`memberImpossible`）；
+ * - Bug 96：`.optional()` 把「typeof 原子 + 全部界」包进一个 `and` 成员 ⇒
+ *   按**合取**语义逐原子求值（任一原子确定假 ⇒ 该成员确定假；全部确定真
+ *   ⇒ 该成员确定真；否则未决，不猜）；
+ * - 仍判不了 ⇒ **类型级**兜底（仅当 `typeLevel` 开启）：成员是挂在参数
+ *   自身的 `eq(var, lit)` 原子、且实参形态**确定**与该字面量端类型不同 ⇒
+ *   **确定违例**（false）；形态不可判定或类型相同 ⇒ 仍 undefined（不猜）。
  */
 function judgeOrMember(
   q: Pred,
@@ -271,6 +342,18 @@ function judgeOrMember(
 ): boolean | undefined {
   const r = judgeLiteralPred(q, arg, argLen);
   if (r !== undefined) return r;
+  // Bug 7：形态确定不可能满足该成员 ⇒ 确定假（与 typeLevel 无关）
+  if (memberImpossible(q, arg, argLen)) return false;
+  // Bug 96：合取成员逐原子求值
+  if (q.op === "and") {
+    let undecided = false;
+    for (const atom of q.args) {
+      const ar = judgeLiteralPred(atom, arg, argLen);
+      if (ar === false) return false;
+      if (ar !== true) undecided = true;
+    }
+    return undecided ? undefined : true;
+  }
   if (!typeLevel) return undefined;
   const v = predEqLiteral(q);
   if (v === undefined) return undefined;
@@ -425,6 +508,7 @@ export function checkReqs(
       string[] | undefined,
       string | undefined,
       boolean | undefined,
+      number | undefined,
     ]
   >,
   paramNames: string[],
@@ -439,7 +523,7 @@ export function checkReqs(
   skipParams?: ReadonlySet<number>,
 ): void {
   const out = ctx.out;
-  for (const [idx, pred, fieldPath, contractParam, rest] of reqs) {
+  for (const [idx, pred, fieldPath, contractParam, rest, fieldIndex] of reqs) {
     if (skipParams?.has(idx)) continue;
     const argIdx = argIndexOf(idx);
     if (argIdx === undefined) continue;
@@ -451,7 +535,13 @@ export function checkReqs(
     const paramName = contractParam || paramNames[idx] || `arg${idx}`;
     // C4.1：解构契约字段投影后再判 pred；缺字段不能静默跳过（FN）
     // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
-    if (fieldPath) {
+    // Bug 8：数组 pattern 的 `fieldIndex` 优先（按下标取元素，不是对象槽）
+    if (fieldIndex !== undefined) {
+      const projected = projectArrayIndex(arg, fieldIndex);
+      // 元素不可判（arr / 越界 / 非数组实参）⇒ 不发明义务
+      if (!projected) continue;
+      arg = projected;
+    } else if (fieldPath) {
       const projected = projectAbsPath(arg, fieldPath);
       if (!projected) {
         const k = arg.shape.k;
@@ -535,6 +625,17 @@ export function checkReqs(
       if (p.op === "eq") {
         const nv = predEqNullish(p);
         if (nv !== undefined) {
+          // Bug 5：实参域未知（`any` / 无信息）⇒ 不判违例。与同函数内
+          // typeof 通道（`actualPrim !== undefined`）、eq 字面量通道
+          // （`actual !== undefined`）、shape 通道（跳过 k === "any"）同口径，
+          // 也与 `scan/literal-args.ts` 产出 `anyAbs` 处的「any ≤ 任意目标；
+          // ≠ unknown **不发明义务**」一致。此前 `map[k]` 的 `any #path`
+          // 落到这里被当成「不是 nullish 字面量」⇒ 报假红，而同样的 any
+          // 作形参却不报（自相矛盾）。
+          const k = arg.shape.k;
+          const noInfo =
+            k === "any" || k === "never" || (k === "unknown" && !arg.term);
+          if (noInfo) continue;
           const want = nv.value === null ? "null" : "undefined";
           if (nullishKindOf(arg) !== want) {
             pushPrecondIssue(
@@ -759,6 +860,13 @@ export function checkShapeAgainstAbs(
   // （包装自身 `fields` 为空 ⇒ 不 deref 就被下面的 `!constraint.fields` 丢掉）
   const c = derefDeep(constraint);
   if (!c.fields) return false;
+  // Bug 17：契约级可选位（`shape(...).optional()`）明确允许 `undefined`
+  // ⇒ dts 写 `x?`、guard 接受 undefined、check 签名写 `{…} | undefined`。
+  // `undefined` 的 Abs 是「unknown 形状 + lit term」，会被下面 1021 的
+  // 排除条件当成「有信息但不是 object」⇒ 报 `object shape at x`（假红）。
+  // 「省略该位」已由元数检查放行 ⇒ 这里补齐**显式传 undefined** 的值通道。
+  // 只放行 undefined：`.optional()` 不接纳 null（与 dts 的 `x?: T` 同口径）。
+  if (c.isOptional && nullishKindOf(absArg) === "undefined") return false;
   // Bug 1157：brand 拆壳——`new Date(0)` / `/re/` / boxed prim 的内层是**对象**
   // （`typeof` 为 "object"）。此前这里只认 `shape.k === "obj"` ⇒ 同一个
   // 「对象」实参两种裁决：字面量 `{}` 对 `shape({})` 放行，brand 对象却报
@@ -971,7 +1079,12 @@ export function checkFieldConstraint(
   // 数值界 + 长度界（preds 里可能含 length(t) 比较）
   const lvR = litValue(fieldAbs);
   const lv = lvR.ok ? lvR.value : undefined;
-  const sv = typeof lv === "string" ? lv.length : undefined;
+  // Bug 38：与顶层形参的长度通道（`checkReqs` 的 `argLen`）同口径——
+  // 字符串取字数，**数组 / 元组取元素个数**。此前只抄了字符串半边 ⇒
+  // `shape` 字段 / 数组元素上的 `array(...).min(n)` 长度界在槽位恒为
+  // undefined ⇒ 命中下面的 `continue` ⇒ 该界一次都不裁决（假绿），
+  // 而同一界在顶层形参、guard 面都生效。
+  const sv = typeof lv === "string" ? lv.length : arrayLengthOf(fieldAbs);
   const isStr = fieldAbs.shape.k === "prim" && (fieldAbs.shape as { type: string }).type === "string";
   for (const p of c.preds) {
     const flat = p.op === "and" ? p.args : [p];
@@ -1078,7 +1191,9 @@ export function checkFieldConstraint(
 export function checkShapeReqs(
   ctx: LiteralScanCtx,
   displayName: string,
-  reqs: Array<[number, RefineEntry, string[] | undefined, boolean | undefined]>,
+  reqs: Array<
+    [number, RefineEntry, string[] | undefined, boolean | undefined, number | undefined]
+  >,
   paramNames: string[],
   absArgs: Abs[],
   argIndexOf: (reqIdx: number) => number | undefined,
@@ -1092,7 +1207,7 @@ export function checkShapeReqs(
    * 「x.id > 0」两条（同一条违例报两次）。
    */
   const notObject = new Set<number>();
-  for (const [idx, entry, fieldPath, rest] of reqs) {
+  for (const [idx, entry, fieldPath, rest, fieldIndex] of reqs) {
     // Bug 439：`lazy(() => shape(...))` 的**包装自身**四项（fields / element /
     // int / prim）全空 ⇒ 闸门若只看约束自身，整条结构义务会被 `continue`
     // 掉（假绿）。⇒ **先 deref 再判闸门**（与 `constraintAdmitsNullish` /
@@ -1115,7 +1230,12 @@ export function checkShapeReqs(
     // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
     // Bug 436：「投影失败 → missing field」**只由 checkReqs 报一次**——两条
     // 并行通道各发一份会让同一条违例被上报两次（`nudo check` 错误计数翻倍）。
-    if (fieldPath) {
+    // Bug 8：数组 pattern 的 `fieldIndex` 优先（按下标取元素，不是对象槽）。
+    if (fieldIndex !== undefined) {
+      const projected = projectArrayIndex(arg, fieldIndex);
+      if (!projected) continue;
+      arg = projected;
+    } else if (fieldPath) {
       const projected = projectAbsPath(arg, fieldPath);
       if (!projected) {
         // 缺字段诊断由 checkReqs 独占（同一组 reqs 两条通道都会跑）
@@ -1126,6 +1246,10 @@ export function checkShapeReqs(
     // Bug 433：union 成员的结构义务（消费侧补 union 成员分支）
     if (c.members) {
       checkUnionMembers(ctx, displayName, paramName, c, entry.pred, arg, loc);
+      // Bug 78：union / nullable 成员的 `.int()` 是**数据标志**（不带 pred）
+      // ⇒ 不在 `or` 谓词里；顶层 `isIntFlag(c)` 通道又因 `continue` 被跳过
+      // ⇒ 在消费侧单独补这条义务。
+      checkUnionIntObligation(ctx, displayName, paramName, c, entry.pred, arg, loc);
       continue;
     }
     // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
@@ -1163,8 +1287,12 @@ export function checkShapeReqs(
           );
         });
       } else if (
-        isNullishLitAbs(arg) ||
-        (arg.shape.k !== "unknown" && arg.shape.k !== "any")
+        // Bug 17 / 96：`array(...).optional()` 的契约级可选位明确允许
+        // undefined ⇒ dts / guard / 签名三面放行，L1 不得报 `array at x`
+        // 假红（只放行 undefined；null 仍判违例，与 `x?: T` 同口径）。
+        !(c.isOptional && nullishKindOf(arg) === "undefined") &&
+        (isNullishLitAbs(arg) ||
+          (arg.shape.k !== "unknown" && arg.shape.k !== "any"))
       ) {
         pushPrecondIssue(
           out,
@@ -1265,6 +1393,82 @@ function checkUnionMembers(
     formatAbs(arg),
     shown,
     `use a value satisfying ${shown}`,
+  );
+}
+
+/**
+ * Bug 78：union 成员里有没有「可能接受一个非整数 number」的成员。
+ *
+ * 保守口径：判不准就当「可能接受」（放行，不发明违例）⇒ 只对**确定不接受**
+ * 的成员判 false。int 成员对非整数确定不接受；string / boolean / 结构 /
+ * nullish / 非 number 字面量确定不接受；裸 number() / 数值界 / any() 接受。
+ */
+function unionMemberMayAcceptNumber(m: NudoConstraint): boolean {
+  if (m.lazy) return true; // 判不准 ⇒ 放行（不猜）
+  if (m.members) return m.members.some(unionMemberMayAcceptNumber);
+  if (m.fields || m.element || m.fn) return false;
+  if (isIntFlag(m)) return false;
+  if (m.prim === "number") return true;
+  if (m.prim !== undefined) return false;
+  if (m.preds.length === 0) return true; // any() 接受一切
+  for (const p of m.preds) {
+    for (const atom of flattenPred(p)) {
+      if (atom.op === "eq") {
+        const v = predEqLiteral(atom);
+        if (v === undefined || typeof v !== "number") return false;
+      } else if (
+        atom.op !== "gt" &&
+        atom.op !== "ge" &&
+        atom.op !== "lt" &&
+        atom.op !== "le"
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Bug 78：union / nullable 成员的 `.int()` 在调用点的执法。
+ *
+ * `.int()` 是数据标志（`isIntFlag`），`instantiateOnTerm` 只补 typeof / preds
+ * ⇒ 该义务根本不在 `or` 谓词里；`checkUnionMembers` 又只挑 `fields ||
+ * element` 成员 ⇒ 整条 int 义务在调用点静默（同一契约在返回位、guard /
+ * zod / standard 三面都判违例）。这里在**消费侧**补齐：union 含 int 成员、
+ * 实参是**确定的非整数 number**、且没有任何非 int 成员可能接受它 ⇒
+ * 报 `nudo:constraint-violated`（`expected: <param> is int`）。
+ *
+ * 不改谓词代数：把 int 折进 `or` 成员会把成员变成 `and`，`or` 聚合臂对
+ * `and` 只能判未决 ⇒ 反而把整条 union 压成零义务（与 Bug 96 同源）。
+ */
+function checkUnionIntObligation(
+  ctx: LiteralScanCtx,
+  displayName: string,
+  paramName: string,
+  c: NudoConstraint,
+  pred: Pred,
+  arg: Abs,
+  loc?: { start: { line: number; column: number } },
+): void {
+  const members = (c.members ?? []).map(derefDeep);
+  if (!members.some(isIntFlag)) return;
+  const lvR = litValue(arg);
+  const lv = lvR.ok ? lvR.value : undefined;
+  // 只对「确定的非整数 number」执法（其它形态交由各自通道；不猜）
+  if (typeof lv !== "number" || Number.isInteger(lv)) return;
+  // 谓词通道能自己裁决（全部分支确定假）⇒ 让位，防双报
+  if (unionPredDecides(pred, arg, arrayLengthOf(arg))) return;
+  // 析取：任一非 int 成员可能接受该 number ⇒ 放行
+  if (members.some(unionMemberMayAcceptNumber)) return;
+  pushPrecondIssue(
+    ctx.out,
+    displayName,
+    paramName,
+    loc,
+    formatAbs(arg),
+    `${paramName} is int`,
+    `use an integer`,
   );
 }
 

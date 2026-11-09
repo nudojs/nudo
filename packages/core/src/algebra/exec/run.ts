@@ -26,6 +26,10 @@ import {
   setEvalBindingSink,
 } from "./calls.ts";
 import { withExecPhi, $copy } from "./runtime.ts";
+import { setWriteStrict, isWriteStrict, runWithWriteStrict } from "./runtime/state.ts";
+
+/** Bug 82：导出表上记录本模块 strictness 的非枚举键（调用侧恢复写门口径）。 */
+const WRITE_STRICT_META = Symbol("nudo.writeStrict");
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown, abs, strLit, isAbsLike } from "../abs.ts";
@@ -833,6 +837,9 @@ function runTranspiledInner(
   // 补发前缀；否则块级函数声明走 Annex B 提升（原生 ReferenceError 被折成
   // total）。
   const strictPrefix = sourceStrict ? `"use strict";\n` : "";
+  // Bug 82：源 strictness 同时送进 Abs 层写门（此前只喂宿主 `"use strict"`
+  // 前缀 ⇒ 写门恒按 strict，sloppy 源不可变写被误判确定 TypeError）。
+  setWriteStrict(sourceStrict);
   const fn = compileRuntimeModuleUnit<Record<string, unknown>>(
     `${strictPrefix}${js}\n${ret}`,
     hostArgNames,
@@ -857,6 +864,13 @@ function runTranspiledInner(
       }
     }
     runBindings.set(result, bindings);
+    // Bug 82：把本模块 strictness 记在导出表上（非枚举 Symbol）——
+    // callTranspiledExportFull 调用导出函数体时据此恢复写门口径。
+    try {
+      Object.defineProperty(result, WRITE_STRICT_META, { value: sourceStrict });
+    } catch {
+      /* 冻结 / Proxy 导出表：调用侧回落到当前全局口径 */
+    }
     return result;
   } finally {
     // 模块装载完成 ⇒ 之后的 require 缺失按**调用期**语义抛（Bug 276）
@@ -1160,9 +1174,13 @@ export function callTranspiledExportFull(
   args: Abs[],
   opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean },
 ): TranspiledCallResult {
+  // Bug 82：按导出表所属模块恢复写门 strictness（跨模块导出桥取对侧
+  // 口径）；元数据缺失则保持当前全局值，不改变既有行为。
+  const metaStrict = (exports as Record<PropertyKey, unknown>)[WRITE_STRICT_META];
+  const strict = typeof metaStrict === "boolean" ? metaStrict : isWriteStrict();
   // collector 作用域（幂等）：同 runTranspiled——最外层宿主入口开 store，
   // 嵌套（同一次分析内的逐导出调用 / 导出桥）复用外层。
-  return runWithCollectorScope(() => {
+  return runWithWriteStrict(strict, () => runWithCollectorScope(() => {
     enterEvalCallBudgetSession();
     // G3（BUG-026 epoch 作用域）：入口调用阶段自成求值单元——函数体内
     // 块级同名类正是在此注册（不在 runTranspiled 顶层）。开新 epoch：
@@ -1189,7 +1207,7 @@ export function callTranspiledExportFull(
       exitEvalCallBudgetSession();
       noteDrainedClassCollisions();
     }
-  });
+  }));
 }
 
 /**

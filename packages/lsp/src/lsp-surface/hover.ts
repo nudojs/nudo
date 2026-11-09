@@ -49,9 +49,11 @@ import {
   absNodeAtPosition,
   getAbsAtPosition,
   isUnnarrowedAbs,
+  lookupScopedBinding,
   positionInsideCaseFunction,
   projectLocalAbs,
   reuseBinding,
+  scopeHasDeclaration,
   type SurfaceReuse,
 } from "./replay.ts";
 import { linkTypeVariables, projectParamAbs } from "./resolve.ts";
@@ -185,6 +187,65 @@ function checkSigOf(
 }
 
 /**
+ * **check 同口径签名行**（BUG-034/071/247/775/951 + Bug 83）。
+ *
+ * hover 的 `signature` 字段与补全条目的函数 detail 共用本函数 ⇒ 同一次
+ * LSP 会话里 hover / `nudo check` / 补全三面**逐字相等**（含契约形参类型、
+ * 返回类型与 throws 尾缀）。此前补全面自己拼「绑定面 fn Abs 的空槽填 any」
+ * ⇒ 有契约 / 非 any 返回的函数在补全弹窗里塌成 `f(x: any) => any`。
+ *
+ * `g` 由 hover 传入（其 generalize 已算），省一次泛化；补全面不传 ⇒ 内部
+ * 自算（file / refine / modules / inject 与 hover 同源装配，见 server-ide.ts）。
+ */
+export function checkSignatureLine(
+  filePath: string,
+  source: string,
+  fnName: string,
+  opts: HoverInterfaceOpts | undefined,
+  reuse: SurfaceReuse | undefined,
+  g?: PolyFn,
+): string | undefined {
+  try {
+    const poly =
+      g ??
+      generalizeFromAst(fnName, source, {
+        ...(reuse?.ast ? { file: reuse.ast } : {}),
+        refine: {
+          fromFile: filePath,
+          ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+          ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        },
+        ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        ...(opts?.inject ? { inject: opts.inject } : {}),
+      });
+    if (!poly) return undefined;
+    const names =
+      poly.formals && poly.formals.length > 0
+        ? formalParamSignatureNames(poly.formals)
+        : poly.params;
+    const ps = names
+      .map((p, i) => {
+        const t = poly.typeParams[i]?.value;
+        const text =
+          contractParamTextOf(poly, p, t) ??
+          (!t ? "any" : formatEntryParamShape(t));
+        return `${p}: ${text}`;
+      })
+      .join(", ");
+    const checkSig = checkSigOf(filePath, source, fnName, opts, reuse?.modules);
+    const retText = checkSig ? formatShape(checkSig.abs) : formatShape(poly.symbolic);
+    const tier = interfaceTierOf(source, fnName, filePath, opts ?? {});
+    const throwsDisplay = tier !== undefined ? throwsDisplayOf(reuse?.result, fnName) : undefined;
+    const throwsName = checkSig ? checkSig.throws : throwsDisplay;
+    const throwsSuffix = throwsName ? `  throws ${throwsName}` : "";
+    return `${fnName}(${ps}) => ${retText}${throwsSuffix}`;
+  } catch {
+    // fail-closed：签名面跑不动 ⇒ 调用方回落绑定面签名公式
+    return undefined;
+  }
+}
+
+/**
  * LSP hover：优先无损 Abs（类型即计算本体）。
  * 节点表也是 Abs（collectAbsNodeTypes），不经 bridge。
  *
@@ -258,13 +319,6 @@ export function getHoverAtPosition(
   // `contractActive = !(activeCases?.has(fn.name) ?? false)` 同一公式。
   const interfaceActive = fnName !== undefined ? !(activeCases?.has(fnName) ?? false) : true;
 
-  // throws 证据（911）：只在**导出**函数上取（tier 在场 ⇔ 本地 named
-  // export，与 check 的 isEntry 同口径——CLI 的 L2 throws 只对 entry 生效）。
-  const throwsDisplay =
-    tier !== undefined && fnName !== undefined
-      ? throwsDisplayOf(reuse?.result, fnName)
-      : undefined;
-
   // intension 候选：先算、不早退，最后合并进 evaluator/TypeValue 结果
   let gDisplay: string | undefined;
   let gAbs: string | undefined;
@@ -290,42 +344,10 @@ export function getHoverAtPosition(
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);
         gMulti = formatAbsMultiline(g.symbolic, fnName);
-        // check 同口径签名（check-signatures formatEntrySigLine
-        // 同公式：formalParamSignatureNames + formatShape）。契约参数
-        // 的展示口径见 contractParamTextOf（Bug 775）
-        const names =
-          g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
-        const ps = names
-          .map((p, i) => {
-            const t = g.typeParams[i]?.value;
-            // 契约参数：union 保留声明形态，其余走 check 同口径推断 shape
-            // （Bug 775）；无契约参数：design §2 无约束 any / 真 unknown
-            const text =
-              contractParamTextOf(g, p, t) ??
-              // design §2：无约束 any；真 unknown 不得伪装（core
-              // formatEntryParamShape 同口径：nullish 字面量印自身名，
-              // Bug 348）
-              (!t ? "any" : formatEntryParamShape(t));
-            return `${p}: ${text}`;
-          })
-          .join(", ");
-        // 返回类型与 check 同预算（951）：`formatShape(g.symbolic)` 走共享
-        // 投影预算 PROJECTION_MAX_DEPTH（check-signatures formatEntrySigLine
-        // 同款）——hover 单方面 maxDepth 4 会让同一 Abs 在产品内渲染成
-        // 三种形态（check 签名行 / inlayHint / hover 签名块）。
-        //
-        // **返回位 + throws 尾缀取 check 面**（BUG-034 / BUG-071 / BUG-247）：
-        // check 的签名域是契约种子化 + 公理播种的**唯一**权威（自算的返回位
-        // 看不见用户公理；自算的 throws 读的是无约束入口见证 ⇒ 两套域）。
-        // 不按 interface 档门禁：**类方法**（`C.m`）没有 A7 档，却正是
-        // check 签名行会印 throws 的形态（BUG-034）。
-        const checkSig = checkSigOf(filePath, source, fnName, opts, reuse?.modules);
-        const retText = checkSig ? formatShape(checkSig.abs) : formatShape(g.symbolic);
-        // **check 面拿到就当权威**：它说「不抛」就是「不抛」（`undefined` 不得
-        // 回落到无约束入口见证——那正是 BUG-071 的假 `throws`）
-        const throwsName = checkSig ? checkSig.throws : throwsDisplay;
-        const throwsSuffix = throwsName ? `  throws ${throwsName}` : "";
-        gSig = `${fnName}(${ps}) => ${retText}${throwsSuffix}`;
+        // check 同口径签名（BUG-034/071/247/775/951 + Bug 83）：抽成
+        // checkSignatureLine 同源函数——补全面也走它，避免同一次会话里
+        // hover / check / 补全三面给出不同签名。
+        gSig = checkSignatureLine(filePath, source, fnName, opts, reuse, g);
       }
     } catch {
       // ignore
@@ -416,6 +438,10 @@ export function getHoverAtPosition(
   // intension 面不进这里；fnName 命中但 gDisplay 缺失（导入函数的 callee
   // ——本文件无声明）时放行，绑定面给 fn Abs。
   const ident = findIdentNameAtPosition(source, line, column, file);
+  // Bug 33：ident 被光标所在函数作用域的形参 / 局部量遮蔽 ⇒ 模块级绑定面
+  // 不得再冒充它（求值面 absFromEval 也已同源让位）。
+  const scopeShadowed =
+    ident !== undefined && scopeHasDeclaration(file, line, column, ident);
   const fnFaceMissing = fnName !== undefined && gDisplay === undefined;
   if (ident && (!fnName || fnFaceMissing)) {
     /** 标识符 hover 外延：`grade: string`——内涵（term/pred/conf）
@@ -559,12 +585,38 @@ export function getHoverAtPosition(
         if (paramHit) return attachIntension(identHover(paramHit));
       }
     }
+    // —— A2. 作用域内局部量（Bug 33）：引擎重放声明位 Abs，与补全的绑定
+    // 下沉同源（lookupScopedBinding）。覆盖 `const v = "str"` 这类字面量局部
+    // ——projectLocalAbs 只投影调用初始化 / 再赋值，不含此形态。形参面（A）
+    // 已先返回；这里只在「协议面 + 确实存在模块级同名绑定（遮蔽）」时补齐
+    // 局部量真值，绝不借用模块级同名绑定（求值面 / B 绑定面同源让位）。
+    //
+    // ⚠ 限定 `reuse.result.bindings.has(ident)`：直接调用 getHoverAtPosition
+    //   （无复用载荷）的既有口径要求「非调用初始化局部量 fail-closed null」
+    //   ——那里没有模块级同名绑定可借用，也就不该无中生有地补一个近似值。
+    if (scopeShadowed && file && reuse?.result?.bindings.has(ident)) {
+      const scoped = lookupScopedBinding(
+        filePath,
+        source,
+        line,
+        column,
+        ident,
+        reuse,
+        {
+          ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+          // 与上方 A1（:175）同口径：hover 面的 autoBind 允许「按侧车路径
+          // 判定」的函数形态，而重放面只接受布林档位；函数形态不投影。
+          ...(typeof opts?.autoBind === "boolean" ? { autoBind: opts.autoBind } : {}),
+        },
+      );
+      if (scoped) return attachIntension(identHover(scoped));
+    }
     // —— B. 绑定面（模块级名：import / 顶层声明）。同源绑定优先；
     // 缺失时经模块图（相对 + 裸包）现求——case 函数体内的 import 引用
     // （vetoFindings 等）由此返回。
-    const absBound = reuse?.result ? reuseBinding(reuse, ident) : undefined;
+    const absBound = !scopeShadowed && reuse?.result ? reuseBinding(reuse, ident) : undefined;
     if (absBound) return attachIntension(identHover(absBound));
-    if (file) {
+    if (file && !scopeShadowed) {
       try {
         const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file), {
           fromFile: filePath,

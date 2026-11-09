@@ -195,6 +195,39 @@ export async function runContractFromDts(
   const outRel = relative(process.cwd(), outPath) || outPath;
   const sidecarRel = relative(process.cwd(), sidecarPathOf(anchor)) || sidecarPathOf(anchor);
 
+  // ── Bug 54 · 多文件合并草稿的「逐导出接受目标」 ─────────────────────────
+  // 侧车绑定是**按源模块**的（core interface.ts:493-495：
+  // `sidecarPathOf(fromFile)` + `localNamedExports(source).has(fnName)`）。
+  // 合并版把 N 个 .d.ts 的导出拼进**一份**草稿，旧实现却只按 dtsFiles[0]
+  // 给出单一接受目标 ⇒ 照提示把来自 b.d.ts 的 beta 放进 a.nudo.ts 永不绑定
+  // （静默假绿：beta(1) 查不出违例）。
+  // ⇒ 逐导出标注来源 .d.ts + 它**自己**模块的侧车；单文件模式保持原提示逐字不变。
+  const perFileExport = new Map<string, string>();
+  if (dtsFiles.length > 1) {
+    for (const f of dtsFiles) {
+      // 逐文件重跑同一投影器，只为拿到「导出名 → 来源文件」映射（不写盘、不改 harvester）。
+      for (const e of dtsToContractDraft([f]).exports) {
+        if (!perFileExport.has(e.name)) perFileExport.set(e.name, f);
+      }
+    }
+  }
+  const acceptTargets =
+    dtsFiles.length > 1
+      ? draft.exports
+          .filter((e) => e.dsl !== undefined)
+          .map((e) => {
+            const fromFile = perFileExport.get(e.name);
+            const scRel = fromFile
+              ? relative(process.cwd(), sidecarPathOf(fromFile)) || sidecarPathOf(fromFile)
+              : undefined;
+            return {
+              name: e.name,
+              from: fromFile ? basename(fromFile) : "unknown source",
+              sidecarRel: scRel,
+            };
+          })
+      : [];
+
   if (opts.write) {
     // 族 20 · Bug 944 ②：写盘前做**存在性检查**——已存在且内容不同 ⇒
     // **拒绝覆盖** + 提示（`opts.force` / `NUDO_DRAFT_FORCE=1` 才覆盖）。
@@ -268,10 +301,33 @@ export async function runContractFromDts(
       } else {
         console.log(`${outRel}: draft unchanged`);
       }
-      // 族 20 · Bug 944 ④：「next」提示**点名目标侧车路径**
-      console.log(
-        `next   review, then copy accepted exports into ${sidecarRel} to accept (not enforced until then)`,
-      );
+      // 族 20 · Bug 944 ④：「next」提示**点名目标侧车路径**。
+      // Bug 54：多文件合并草稿**没有**单一正确目标 ⇒ 逐导出点名各自模块侧车，
+      // 不再指向 dtsFiles[0] 的侧车（照旧提示接受会静默零义务）。
+      if (acceptTargets.length > 0) {
+        console.log(
+          `next   this draft merges ${dtsFiles.length} .d.ts sources — no single accept target fits all exports`,
+        );
+        console.log(
+          `       accept each export into the sidecar of the module that DEFINES it (sidecar binding is per source module):`,
+        );
+        for (const t of acceptTargets) {
+          console.log(
+            `         ${t.name}  (from ${t.from}) → ${t.sidecarRel ?? "(source unknown — review before accepting)"}`,
+          );
+        }
+        console.log(
+          `       note: bind in the sidecar beside the module that DEFINES the export at runtime (e.g. b.js → b.nudo.js); ` +
+            `the path above is the .d.ts-relative name`,
+        );
+        console.log(
+          `       hint: an export accepted into a different module's sidecar is never bound (silent green)`,
+        );
+      } else {
+        console.log(
+          `next   review, then copy accepted exports into ${sidecarRel} to accept (not enforced until then)`,
+        );
+      }
     }
   } else {
     console.log(draftSource);
@@ -281,5 +337,15 @@ export async function runContractFromDts(
     console.log(
       `// pass --write to save as ${outRel}; copy into *.nudo.js to enforce`,
     );
+    if (acceptTargets.length > 0) {
+      console.log(
+        `// this draft merges ${dtsFiles.length} .d.ts sources — accept each export into its OWN module sidecar:`,
+      );
+      for (const t of acceptTargets) {
+        console.log(
+          `//   ${t.name}  (from ${t.from}) → ${t.sidecarRel ?? "(source unknown — review before accepting)"}`,
+        );
+      }
+    }
   }
 }

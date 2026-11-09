@@ -431,7 +431,19 @@ function standardSegments(chunks: readonly string[]): StdoutSegment[] {
 const DEFAULT_EXPORT_DECL = /^export default (function|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
 
 /**
- * dts 段 → **普通模块作用域**的合法形态（BUG-074）。
+ * Bug 12B：匿名 default 声明（dts 生成器不给绑定名）在 `.d.ts` 里合法
+ *（`export default function (): T;`），但平铺进 stdout 的**普通 `.ts` 模块**
+ * 就是 TS2391（函数声明缺实现）。形态：`function` / `function*` / 带泛型
+ * `function<T>` / `class` / `class extends …` 之后直接跟签名或类体，没有名字。
+ * 具名形态由 {@link DEFAULT_EXPORT_DECL} 先行接管，本正则只匹配真正的匿名形态。
+ */
+const ANON_DEFAULT_DECL = /^export default (function|class)(\*)?\s*(?=\(|<|\{|extends|implements)/;
+
+/** 匿名 default 在普通 `.ts` 模块里的合成绑定名（与 dts 生成器对匿名类的命名一致）。 */
+const ANON_DEFAULT_NAME = "_default";
+
+/**
+ * dts 段 → **普通模块作用域**的合法形态（BUG-074 / Bug 12B）。
  *
  * dts 生成器写的是 **`.d.ts` 上下文**：具名导出带 `declare`（合法），但
  * `default` 导出写成 `export default function f(…): T;`——**既无实现也无
@@ -442,6 +454,12 @@ const DEFAULT_EXPORT_DECL = /^export default (function|class)\s+([A-Za-z_$][A-Za
  * 改写成 ambient 形态（`export default declare` 不是合法 TS，故拆两步）：
  * - `export default function f(…)` ⇒ `declare function f(…)` + `export { f as default };`
  * - `export default class C {…}`  ⇒ `declare class C {…}`  + `export { C as default };`
+ * - **匿名**（`export default function (…): T;`）⇒ 分配合成名 `_default`：
+ *   `declare function _default(…): T;` + `export { _default as default };`
+ *
+ * 匿名形态**只在 stdout 平铺面**改写；`--out` 的 `.d.ts` 产物仍保留匿名发射
+ * 形态（`export default function (): T;` 在声明文件里合法），core-bug-435 /
+ * emit-bug-514 的发射钉不受影响。
  *
  * 导出语句追加在段尾（同名声明已在该模块作用域内；一个模块至多一个
  * `default` 导出，防御性地逐条追加）。
@@ -452,9 +470,22 @@ function ambientizeDtsSegment(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const m = DEFAULT_EXPORT_DECL.exec(line);
-    if (!m) continue;
-    lines[i] = `declare ${m[1]} ${m[2]}${line.slice(m[0].length)}`;
-    defaultNames.push(m[2]!);
+    // `class extends B {…}` 的 `extends` 会被上面的具名正则当成绑定名
+    // （它是合法标识符但绝不是类名）⇒ 必须落到匿名分支分配 `_default`。
+    if (m && m[2] !== "extends" && m[2] !== "implements") {
+      lines[i] = `declare ${m[1]} ${m[2]}${line.slice(m[0].length)}`;
+      defaultNames.push(m[2]!);
+      continue;
+    }
+    const anon = ANON_DEFAULT_DECL.exec(line);
+    if (!anon) continue;
+    const rest = line.slice(anon[0].length);
+    // `extends` / `implements` 等标识符须与合成名留空格，避免粘成
+    // `_defaultextends`；`(…)` / `<T>` / `{` 直接相接即可。
+    const sep = /^[A-Za-z_$]/.test(rest) ? " " : "";
+    const star = anon[2] ? "*" : ""; // generator：`function* _default(…)`
+    lines[i] = `declare ${anon[1]}${star} ${ANON_DEFAULT_NAME}${sep}${rest}`;
+    defaultNames.push(ANON_DEFAULT_NAME);
   }
   if (defaultNames.length === 0) return text;
   return [...lines, ...defaultNames.map((n) => `export { ${n} as default };`)].join("\n");

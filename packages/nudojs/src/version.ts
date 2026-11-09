@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseJsonText } from "./read-json.ts";
 
 /** 向上（最多 6 层）找 `name` 所属包的目录：命中 = 该目录 package.json
  *  的 name 字段精确等于 name。未命中 / 不可读 → undefined（版本行缺省，
@@ -18,7 +19,7 @@ function findPkgDirUpwards(startDir: string, name: string): string | undefined {
     const pkgPath = join(dir, "package.json");
     if (existsSync(pkgPath)) {
       try {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string };
+        const pkg = parseJsonText(readFileSync(pkgPath, "utf-8")) as { name?: string };
         if (pkg.name === name) return dir;
       } catch {
         /* optional: package.json unreadable — keep walking parent dirs */
@@ -33,7 +34,7 @@ function findPkgDirUpwards(startDir: string, name: string): string | undefined {
 
 function readVersionAt(pkgPath: string): string | undefined {
   try {
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+    const pkg = parseJsonText(readFileSync(pkgPath, "utf-8")) as { version?: string };
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
     /* optional: package.json unreadable — omit version line */

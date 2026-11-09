@@ -114,6 +114,8 @@ import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
 // 未导出该函数，且本分片不改 barrel）。
 import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
 import { urlSearchParamsSizeAbs } from "../../../builtins/error/web.ts";
+import { URL_WRITABLE_COMPONENTS } from "../brand-tables.ts";
+import { registerUrlSearchParamsParent } from "../url-live.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
@@ -127,13 +129,14 @@ import {
   SYMBOL_PROTO_METHODS,
   BIGINT_PROTO_METHODS,
   ARRAY_PROTO_METHOD_NAMES,
+  arrayProtoMemberForKey,
   OBJECT_PROTO_NAMES,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf, classSpecOfAbs, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
 import { markFreshInstance, freshInstanceIdOf } from "../../../key/instance-id.ts";
-import { NudoThrow, undef, isOobUndef, throwStrictWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
+import { NudoThrow, undef, isOobUndef, throwStrictWrite, NudoSilentWrite, clearStaleTermPred, asAbsVal, $lit, noBody, enforceProxyGetInvariant, hostFnKindOf } from "../state.ts";
 import "../ops.ts";
 import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
 import { findClassAccessor, findStaticClassAccessor, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, classChainLinks, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
@@ -1215,8 +1218,21 @@ function getBrandProtoMember(ctx: GetCtx): Abs | undefined {
 
 /** brand 注册面：内建表（方法/访问器/符号/原型值）、类注册表与内层解包。 */
 function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
-  const { o, key } = ctx;
+  const { o, key, opts } = ctx;
   if (o.shape.k === "brand") {
+    // Bug 65：读 `u.searchParams` 时登记父 URL 反向指针——后续对该 brand
+    // 的 set/append/delete/sort 会原地改 @@entries，需回写父 URL 的
+    // search / href（live view 同源语义，见 runtime/url-live.ts）。
+    if (o.shape.name === "URL" && key === "searchParams") {
+      const uInner = o.shape.shape;
+      if (uInner?.shape.k === "obj") {
+        const spSlot = getSlot(
+          (uInner.shape as { slots: Record<string, { value: Abs }> }).slots,
+          key,
+        );
+        if (spSlot) registerUrlSearchParamsParent(spSlot.value, o);
+      }
+    }
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     // Bug 207：内建原型面按**类链**解析——派生类实例（class M extends Set）的
     // brand 名是派生类名（graft 产物），内建方法/访问器表按**内建**名建键
@@ -1237,10 +1253,22 @@ function getRegisteredBrandMember(ctx: GetCtx): Abs | undefined {
     // 形状（迭代协议派发另走，与数组臂同口径）。
     // （class 声明值同名内建时不误伤：类方法走 registry）
     const builtinM = BUILTIN_BRAND_METHODS[builtinHome];
+    // Bug 66：自有数据属性优先于原型方法表（[[Get]]: own → prototype）。
+    // 写入面（setBrandInstanceMember）确实建了自有槽 ⇒ 读面不得再折原型
+    // 方法（此前方法表分支先返回 ⇒ `a.push = 1` 读回函数、typeof 折
+    // "function"）。optional 槽不是确定存在，仍走方法表（保守）。
+    const brandInner = o.shape.shape;
+    const ownDataSlot = brandInner?.shape.k === "obj"
+      ? getSlot(brandInner.shape.slots, key)
+      : undefined;
+    const hasOwnDataSlot = !!ownDataSlot && !ownDataSlot.optional;
     // Bug 40：@@iterator 只对原生可迭代 brand（Map/Set/TA，ITERABLE_BRANDS）
     // 折函数——此前任意有表 brand（Date/WeakMap/Error…）都折 "function"，
     // 非可迭代 brand 原生 undefined（wrong-exact）。
-    if (builtinM && !isClassVal && !userOwnsKey && (builtinM.has(key) || (key === "@@iterator" && ITERABLE_BRANDS.has(builtinHome)))) {
+    // Bug 99：@@iterator 只在**真符号键**（opts.symbolKey）下命中——字符串
+    // "@@iterator" 是另一个 PropertyKey，不得折函数（原生 m["@@iterator"]
+    // === undefined）。
+    if (builtinM && !isClassVal && !userOwnsKey && !hasOwnDataSlot && (builtinM.has(key) || (key === "@@iterator" && opts?.symbolKey === true && ITERABLE_BRANDS.has(builtinHome)))) {
       if (key !== "@@iterator") return protoMethodValueAbs(builtinHome, key);
       // Bug 198（S20）：实例上的 @@iterator 与**原型上是同一个函数对象**
       // （原生 m[Symbol.iterator] === Map.prototype[Symbol.iterator]）⇒ 读值
@@ -1569,8 +1597,31 @@ function getFnMember({ o, key }: GetCtx): Abs | undefined {
 }
 
 /** tuple 形状：length / 字符串下标 / 原型方法面。 */
+/**
+ * Bug 66：数组 expando 自有槽（a.push = 1 / a.zzz = 1）。tuple / arr 形状
+ * 没有 slots 面 ⇒ 用 Abs 身份侧表存自有值；[[Get]] 读取时 **own 优先于
+ * Array.prototype 方法表**（此前表内键恒被原型方法值顶掉，typeof 折
+ * "function"）。与 fn expando 的 userFnSlots 同款引用语义。
+ */
+const arrayExpandoSlots = new WeakMap<Abs, Map<string, Abs>>();
+function setArrayExpando(o: Abs, key: string, value: Abs): void {
+  let m = arrayExpandoSlots.get(o);
+  if (!m) {
+    m = new Map();
+    arrayExpandoSlots.set(o, m);
+  }
+  m.set(key, value);
+}
+function arrayExpandoOf(o: Abs, key: string): Abs | undefined {
+  return arrayExpandoSlots.get(o)?.get(key);
+}
+
 function getTupleMember(ctx: GetCtx): Abs | undefined {
   const { o, key } = ctx;
+  // Bug 66：只对**原型方法表内**的键让 own 遮蔽生效（a.push = 1）；非表内
+  // 键保持既有「数组 expando 读回 unknown、不得假精确」口径（eval-bug-232）。
+  const expando = ARRAY_PROTO_METHOD_NAMES.has(key) ? arrayExpandoOf(o, key) : undefined;
+  if (expando !== undefined) return expando;
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
   if (o.shape.k === "tuple" && key === "length") {
     return $len(o);
@@ -1589,6 +1640,10 @@ function getTupleMember(ctx: GetCtx): Abs | undefined {
 /** arr 形状：length / 原型方法面。 */
 function getArrMember(ctx: GetCtx): Abs | undefined {
   const { o, key } = ctx;
+  // Bug 66：只对**原型方法表内**的键让 own 遮蔽生效（a.push = 1）；非表内
+  // 键保持既有「数组 expando 读回 unknown、不得假精确」口径（eval-bug-232）。
+  const expando = ARRAY_PROTO_METHOD_NAMES.has(key) ? arrayExpandoOf(o, key) : undefined;
+  if (expando !== undefined) return expando;
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
   if (o.shape.k === "arr" && key === "length") {
     return $len(o);
@@ -1639,7 +1694,12 @@ function getPrimMember(ctx: GetCtx): Abs | undefined {
 }
 
 /** tuple/arr/prim 共用的 Object/Array/prim 原型方法值读取。 */
-function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
+function getProtoMethodMember({ o, key, opts }: GetCtx): Abs | undefined {
+  // Bug 99：字符串键 "@@iterator" 不是符号键（Symbol.iterator 是另一键）——
+  // tuple/arr/prim 面上原生 undefined。真符号键（opts.symbolKey）才走下方
+  // Array.prototype 迭代器函数投影；字符串键在此直接定缺，避免穿到
+  // getGenericTail 折 unknown 或被 objectProtoMethodAbs 折成函数。
+  if (key === "@@iterator" && opts?.symbolKey !== true) return undef();
   // 元组/数组/prim 上的 Object.prototype / Array.prototype / prim 原型方法读取
   const primProtoMethods =
     o.shape.k === "prim"
@@ -1648,7 +1708,7 @@ function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
   if (
     (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
     (OBJECT_PROTO_METHOD_NAMES.has(key) ||
-      (o.shape.k !== "prim" && ARRAY_PROTO_METHOD_NAMES.has(key)) ||
+      (o.shape.k !== "prim" && arrayProtoMemberForKey(key, opts?.symbolKey === true)) ||
       primProtoMethods?.has(key) === true)
   ) {
     if ((o.shape.k === "tuple" || o.shape.k === "arr") && (key === "toString" || key === "toLocaleString" || key === "join")) {
@@ -1657,7 +1717,7 @@ function getProtoMethodMember({ o, key }: GetCtx): Abs | undefined {
     // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）。
     // Bug 56：具名方法升级为方法值读通道（apply 钩子转发借用调用
     // [].push.call(a, v)；@@iterator 维持无 impl 形状——迭代协议派发另走）。
-    if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
+    if (o.shape.k !== "prim" && arrayProtoMemberForKey(key, opts?.symbolKey === true)) {
       if (key !== "@@iterator") return protoMethodValueAbs("Array", key);
       return { shape: { k: "fn", params: [], ctor: false }, conf: "path" };
     }
@@ -1924,6 +1984,22 @@ export function $set(
   value: Abs,
   opts?: { internal?: boolean; symbolKey?: boolean },
 ): Abs {
+  // Bug 82：sloppy 源对不可变目标的写原生是**静默失败**（不抛、不写）。
+  // 写门抛 NudoSilentWrite 时在单次写操作边界吞掉，返回原接收者。
+  try {
+    return $setInner(o, key, value, opts);
+  } catch (e) {
+    if (e instanceof NudoSilentWrite) return o;
+    throw e;
+  }
+}
+
+function $setInner(
+  o: Abs,
+  key: string,
+  value: Abs,
+  opts?: { internal?: boolean; symbolKey?: boolean },
+): Abs {
   // 私有名（"#" 键）：foreign-receiver brand check（PrivateFieldSet）
   privateNameGuard(o, key);
   const ctx: SetCtx = { o, key, value, opts };
@@ -2087,7 +2163,15 @@ function setBrandInstanceMember(ctx: SetCtx): Abs | undefined {
     // writable:true 自建数据槽后覆写（原生成功）此处仍抛——descriptor
     // 的 writeInPlace 复用原 Abs 身份不迁移 propFlags 侧表，豁免不可
     // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
-    if (!opts?.internal && BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key)) {
+    if (
+      !opts?.internal &&
+      BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key) &&
+      // Bug 37：URL 的 10 个组件访问器都**带 setter**（可写）。presence 表
+      // 收录它们只为 `$in` 精确判定，不是只读声明——此前整张表被写门当
+      // getter-only ⇒ `u.href = …` 合法写被误判确定 TypeError（假红 +
+      // 签名塌 never）。仅 origin / searchParams 仍是 getter-only。
+      !(o.shape.name === "URL" && URL_WRITABLE_COMPONENTS.has(key))
+    ) {
       throwStrictWrite();
     }
     // Bug 197：类实例的 [[Set]] 原型链写门——receiver **无自有该键**时，
@@ -2296,11 +2380,18 @@ function setNonObjMember({ o, key, value }: SetCtx): Abs {
       noteUnknownMemberMissing(o, key, "property");
       return o;
     }
-    // 数组 expando 属性（a.x = 1）：无槽位模型——tuple 就地降 arr（长度/元素保持）
+    // 数组 expando 属性（a.x = 1）：tuple 就地降 arr（长度/元素保持），
+    // 同时把自有值记进侧表（Bug 66：own 优先于原型方法表）。
     if (sk === "tuple") {
+      setArrayExpando(o, key, asAbsVal(value));
       o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, value);
       o.conf = confJoin(o.conf, "path");
       clearStaleTermPred(o);
+      return o;
+    }
+    // arr 形状（已降级的数组）继续收 expando 自有值。
+    if (sk === "arr") {
+      setArrayExpando(o, key, asAbsVal(value));
       return o;
     }
     // sum：成员含确定非对象 → 写可能 TypeError（软）；否则写成功但无槽位模型

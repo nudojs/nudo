@@ -332,6 +332,10 @@ export function absFromEval(
   try {
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
+      // Bug 33：ident 被光标所在函数作用域的形参 / 局部量**遮蔽** ⇒ 模块级
+      // 绑定表（result.bindings 只遍历顶层语句）里的同名条目不是光标所指符号
+      // ⇒ 让位给 hover 的形参面 / 局部面，不返回外部绑定的类型。
+      if (scopeHasDeclaration(ast, line, column, ident)) return null;
       if (reuse?.result) {
         // 分析结果同源绑定面：命中即返回；无绑定 = 无信息（不再跑全量求值兜底）
         return reuseBinding(reuse, ident) ?? null;
@@ -560,6 +564,26 @@ function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; co
 // ---------------------------------------------------------------------------
 // 作用域绑定面（Bug 789 · 绑定下沉）
 // ---------------------------------------------------------------------------
+
+/**
+ * 光标所在最内层函数作用域是否声明了 name（形参 / 体内局部量）。
+ *
+ * Bug 33：用于区分「作用域内声明了该名字、但它是无约束形参 / 拿不到 Abs」
+ * 与「作用域内根本没这个声明」。前者**不得**回落模块级绑定表——那是另一个
+ * 符号（被遮蔽的外部同名绑定）；只有后者才该回落。`findEnclosingFunction`
+ * 覆盖具名函数、const fn = arrow|function、（Bug 33 新增）裸箭头 / 函数表达式。
+ */
+export function scopeHasDeclaration(
+  ast: Node | undefined,
+  line: number,
+  column: number,
+  name: string,
+): boolean {
+  if (!ast) return false;
+  const enc = findEnclosingFunction(ast, line, column);
+  if (!enc) return false;
+  return scopeDeclaration(enc.node, name) !== undefined;
+}
 
 /**
  * 作用域感知的绑定查询（Bug 789 · 绑定下沉）。

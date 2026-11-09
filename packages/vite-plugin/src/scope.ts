@@ -89,11 +89,21 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { compileAnyMatcher, shouldAnalyzeFile } from "@nudojs/service";
 
 /**
- * 与 isNudoTargetPath 对齐：分析目标仅为 `.js` / `.mjs` / `.ts`。
- * `.cjs` / `.cts` / `.mts` / `.d.ts` / `.tsx` 不是分析目标（exclude
- * 已挡 `.d.ts` 与 `node_modules`；`*.nudo.js` 由 shouldAnalyzeFile 拒绝）。
+ * 与 isNudoTargetPath 对齐：分析目标为 `.js` / `.mjs` / `.cjs` /
+ * `.ts` / `.mts` / `.cts` 六后缀（`packages/service/src/target-path.ts` 单源，
+ * Bug 56：include 表此前停留在扩宽前，`.cjs` / `.mts` / `.cts` 被静默跳过
+ * ⇒ 构建期诊断缺席）。`.tsx` / `.jsx` 不是分析目标；`.d.ts` 与
+ * `node_modules` 由 exclude 挡，`.d.mts` / `.d.cts` 与 `*.nudo.js` 侧车
+ * 由 shouldAnalyzeFile（isNudoTargetPath）拒绝。
  */
-export const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts"];
+export const DEFAULT_INCLUDE = [
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.ts",
+  "**/*.mts",
+  "**/*.cts",
+];
 export const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 /** 插件选项的 scope 面（与 `NudoPluginOptions` 的 include / exclude 同源）。 */

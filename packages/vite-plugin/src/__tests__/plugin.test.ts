@@ -190,11 +190,14 @@ export function getName(user) {
     expect(await wasAnalyzed("/project/src/nested/mod.js")).toBe(true);
   });
 
-  it("default include covers js/mjs/ts but not cjs", async () => {
+  it("默认 include 覆盖 isNudoTargetPath 六后缀（Bug 56：cjs/mts/cts 不再静默跳过）", async () => {
     expect(await wasAnalyzed("/test/file.mjs")).toBe(true);
+    expect(await wasAnalyzed("/test/file.cjs")).toBe(true);
+    expect(await wasAnalyzed("/test/file.mts")).toBe(true);
+    expect(await wasAnalyzed("/test/file.cts")).toBe(true);
     expect(await wasAnalyzed("/test/file.ts")).toBe(true);
-    expect(await wasAnalyzed("/test/file.cjs")).toBe(false);
     expect(await wasAnalyzed("/test/file.d.ts")).toBe(false);
+    expect(await wasAnalyzed("/test/file.d.mts")).toBe(false);
   });
 
   it("supports **/*.mjs include patterns", async () => {

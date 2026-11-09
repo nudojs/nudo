@@ -162,6 +162,9 @@ export {
 } from "./algebra/abs.ts";
 export { type AssumeSeg, extractAssumeSegs } from "./algebra/refine.ts";
 export { LOOP_TRUNCATION_LABEL } from "./algebra/exec/runtime/loop-budget.ts";
+// Bug 103：service 入口兜底为 rest 形参构造符号 rest 哨兵（`$restBind` 直通
+// 开放数组），避免把「一个位置数组值」当 rest 数组造成返回值多一层元组。
+export { makeSymbolicRestAbs } from "./algebra/exec/runtime/containers/arr-make.ts";
 
 // ── 跨包共享原语（service / harvester / parser 复用；此前各包留拷贝靠手工同步） ──
 export { BoundedLruMap } from "./algebra/key/lru-map.ts";

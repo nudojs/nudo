@@ -142,12 +142,48 @@ export function $rawThis(v: unknown): Abs {
 }
 
 /**
+ * Bug 82：源 strictness 是否进入 Abs 层写门。
+ *
+ * `run.ts` 已算出 `sourceStrict`（ESM 或 `"use strict"` 指令），此前只用于
+ * 给 `new Function` 加 `"use strict";` 前缀（宿主 JS 赋值语义），**不进写门**
+ * ⇒ sloppy 源（`type: commonjs` / `.cjs`）的不可变写入被按 strict 判确定
+ * TypeError。引擎有意支持 sloppy（Annex B 提升已钉住），写门必须同源。
+ *
+ * 默认 true = 既有 strict 行为（全部既有钉都是 ESM 源，零回归）。
+ */
+let currentWriteStrict = true;
+export function setWriteStrict(v: boolean): void {
+  currentWriteStrict = v;
+}
+export function isWriteStrict(): boolean {
+  return currentWriteStrict;
+}
+export function runWithWriteStrict<T>(v: boolean, body: () => T): T {
+  const prev = currentWriteStrict;
+  currentWriteStrict = v;
+  try {
+    return body();
+  } finally {
+    currentWriteStrict = prev;
+  }
+}
+
+/**
+ * sloppy 写门的内部信号：由 $set / $idxSet / $arrMutContainer 顶层捕获并
+ * 转成「返回原接收者」（原生 sloppy 对不可变目标的写是**静默失败**：不抛、
+ * 不写、不进 catch）。用独立类而非 NudoThrow——后者是用户可见的 TypeError。
+ */
+export class NudoSilentWrite extends Error {}
+
+/**
  * strict 模块语义下写不可变目标（frozen/sealed 新键/nonext 新键/
  * writable:false/getter-only/non-configurable 删）→ hard TypeError。
  * 抛 NudoThrow 由 catch 转译吸收为 TypeError 绑定；无 catch 时函数中断
  * （never + throws），callTranspiledExportFull 上报 L2 entry-may-throw。
+ * sloppy 源 ⇒ 抛 NudoSilentWrite（写操作边界吞掉 ⇒ 静默失败，Bug 82）。
  */
 export function throwStrictWrite(): never {
+  if (!isWriteStrict()) throw new NudoSilentWrite();
   throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 

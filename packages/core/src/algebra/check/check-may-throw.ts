@@ -319,6 +319,24 @@ export function evalThrowsOutcome(
       const r = call(fnName, args);
       return r ? { kind: "analyzed", result: r } : { kind: "absent" };
     }
+    // Bug 89：`export { local as public }` 的别名说明符——求值导出表按**导出名**
+    // 作键（`const f=…; export {f as h}` ⇒ keys=["h"]），而 check 的普查名是
+    // 本地名 `f` ⇒ 上面 own-property 落空 ⇒ 箭头 / 函数表达式的必抛零 L2。
+    // 复用导出槽解析（与 generalize / classAbsOf 同源）把本地名映射到导出槽。
+    // named = `export { f as h }` / `module.exports = function getName(){}`；
+    // default = `export { f as default }` / CJS 具名函数表达式的内层 id。
+    // cjs-member 交给下方既有 default obj 桥，不重复派发。
+    if (file && !fnName.includes(".")) {
+      const slot = resolveExportSlotCall(file, fnName, exports);
+      if (
+        slot &&
+        (slot.kind === "named" || slot.kind === "default") &&
+        slot.key !== fnName
+      ) {
+        const r = call(slot.key, args);
+        if (r) return { kind: "analyzed", result: r };
+      }
+    }
     // 类方法桥（A.m → 静态 $staticInvoke / 实例 $new + $invoke）
     if (fnName.includes(".")) {
       const [clsName, methodName] = fnName.split(".", 2);
@@ -371,6 +389,21 @@ export function evalThrowsOutcome(
         }
       }
     }
+    // Bug 90：ESM `export const api = { danger(){} }` 的对象字面量方法——
+    // 与 CJS 的 default obj 桥同口径，按导出对象 + 成员键派发（否则 ESM
+    // 同形在 L2 完全不可见 ⇒ 无条件必抛判 OK / exit 0）。
+    if (file && !fnName.includes(".")) {
+      const owner = esmObjectMemberOwnerOf(file, fnName);
+      if (owner !== undefined) {
+        const d = exports[owner];
+        if (isAbsVal(d) && (d as Abs).shape.k === "obj") {
+          return {
+            kind: "analyzed",
+            result: invokeAsThrows(() => $invoke(d as Abs, fnName, args), phi),
+          };
+        }
+      }
+    }
     return { kind: "absent" };
   } catch {
     return { kind: "absent" };
@@ -403,6 +436,66 @@ function classAbsOf(
   const slot = file ? resolveExportSlotCall(file, clsName, exports) : undefined;
   if (slot && slot.kind !== "cjs-member") return exports[slot.key];
   return exports[clsName];
+}
+
+/**
+ * Bug 90：ESM `export const api = { danger() { throw … } }` 的对象字面量方法
+ * ——成员挂在**导出对象** `api` 上，不是顶层导出槽。CJS 同形由 default obj
+ * 桥（`module.exports = {…}`）派发，ESM 没有 default 槽 ⇒ L2 全盲。
+ *
+ * 返回持有 `fnName` 可调用成员的导出对象名（只认方法 / 函数值属性；动态计算
+ * 键没有稳定名 ⇒ 不匹配，避免把别的名字误派发 ⇒ 假红）。
+ */
+function esmObjectMemberOwnerOf(
+  file: ParsedFile | undefined,
+  fnName: string,
+): string | undefined {
+  if (!file) return undefined;
+  for (const stmt of file.program.body as unknown[]) {
+    const s = stmt as { type?: string; declaration?: unknown };
+    if (s.type !== "ExportNamedDeclaration") continue;
+    const d = s.declaration as
+      | { type?: string; declarations?: Array<{ id?: { name?: string }; init?: unknown }> }
+      | undefined;
+    if (d?.type !== "VariableDeclaration") continue;
+    for (const decl of d.declarations ?? []) {
+      const owner = decl.id?.name;
+      const init = decl.init as { type?: string; properties?: unknown[] } | undefined;
+      if (!owner || init?.type !== "ObjectExpression") continue;
+      for (const raw of init.properties ?? []) {
+        const p = raw as {
+          type?: string;
+          kind?: string;
+          computed?: boolean;
+          key?: { type?: string; name?: string; value?: unknown };
+          value?: { type?: string };
+        };
+        if (
+          p.type !== "ObjectMethod" &&
+          p.type !== "ObjectProperty" &&
+          p.type !== "Property"
+        ) {
+          continue;
+        }
+        if (p.kind && p.kind !== "method") continue; // getter / setter 非入口
+        if (p.type !== "ObjectMethod") {
+          const v = p.value?.type;
+          if (v !== "FunctionExpression" && v !== "ArrowFunctionExpression") continue;
+        }
+        const k = p.key;
+        let keyName: string | undefined;
+        if (k?.type === "Identifier") {
+          keyName = p.computed === true ? undefined : typeof k.name === "string" ? k.name : undefined;
+        } else if (k && typeof k.value === "string") {
+          keyName = k.value;
+        } else if (k && typeof k.value === "number") {
+          keyName = String(k.value);
+        }
+        if (keyName === fnName) return owner;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**

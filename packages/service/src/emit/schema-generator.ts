@@ -459,6 +459,76 @@ function syncGeneratorTags(node: SchemaNode, a: Abs): SchemaNode {
 }
 
 /**
+ * Bug 21：core 的 `projectArr` 只把元素域封装成 `array(...)`，**不承载数组
+ * 自身的 preds** ⇒ 契约投影树上任何**嵌套** arr 节点的长度界整段消失。
+ * zod 面把入参恒包成 `obj(...)`（数组必为嵌套），standard 面逐形参投影
+ * （顶层即数组）⇒ 同一次 `--format all` 的两个入参校验器对同一契约给出
+ * 相反接受集，且丢失完全静默（`constraintDropped` 读的 `n.preds` 恒空）。
+ *
+ * 与 `syncGeneratorTags` 同口径：按**原始 Abs 树**把这些位置的数组级 preds
+ * 补挂回节点。顶层-only 补偿（改前）覆盖不到槽内——槽内递归走的是约束树，
+ * 不回 `absToSchemaNodeB` ⇒ 必须单独按 Abs 同步一遍。
+ */
+function syncArrayLengthBounds(node: SchemaNode, a: Abs, dropped: string[]): SchemaNode {
+  const s = a.shape;
+  // 非 promise 的 eff 在约束通道上直接投影内层 ⇒ 继续往下同步。
+  if (s.k === "eff" && s.eff !== "promise") return syncArrayLengthBounds(node, s.inner, dropped);
+  switch (node.k) {
+    case "obj": {
+      if (s.k !== "obj") return node;
+      return {
+        ...node,
+        slots: node.slots.map((slot) => {
+          const child = s.slots[slot.key]?.value;
+          return child ? { ...slot, node: syncArrayLengthBounds(slot.node, child, dropped) } : slot;
+        }),
+      };
+    }
+    case "arr": {
+      let next = node;
+      if (s.k === "arr") {
+        const bounds = arrayLengthBounds(a.pred, a.term);
+        dropped.push(...bounds.dropped);
+        if (bounds.minLen !== undefined || bounds.maxLen !== undefined) {
+          next = {
+            ...next,
+            ...(bounds.minLen !== undefined ? { minLen: bounds.minLen } : {}),
+            ...(bounds.maxLen !== undefined ? { maxLen: bounds.maxLen } : {}),
+          };
+        }
+        return { ...next, element: syncArrayLengthBounds(next.element, s.element, dropped) };
+      }
+      return next;
+    }
+    case "tuple": {
+      if (s.k !== "tuple") return node;
+      return {
+        ...node,
+        elements: node.elements.map((e, i) =>
+          s.elements[i] ? syncArrayLengthBounds(e, s.elements[i]!, dropped) : e,
+        ),
+        ...(node.rest && s.rest ? { rest: syncArrayLengthBounds(node.rest, s.rest, dropped) } : {}),
+      };
+    }
+    case "union": {
+      if (s.k !== "sum") return node;
+      return {
+        ...node,
+        members: node.members.map((m, i) =>
+          s.members[i] ? syncArrayLengthBounds(m, s.members[i]!, dropped) : m,
+        ),
+      };
+    }
+    case "promise": {
+      if (s.k !== "eff") return node;
+      return { ...node, inner: syncArrayLengthBounds(node.inner, s.inner, dropped) };
+    }
+    default:
+      return node;
+  }
+}
+
+/**
  * 生成器身份在**任意层级**投影（2026-11-06 从「顶层-only」补齐）：
  * 递归槽值同样返回 `{k:"generator"}`，与 core `denoteGuardB` 的递归身份
  * 子句、standard 面 `checkNode` 的递归校验同口径 ⇒ 生成器作为对象字段时
@@ -518,39 +588,49 @@ function absToSchemaNodeB(
   const projected = absToConstraint(a, budget);
   if (projected) {
     let node = constraintToSchemaNode(projected);
-    // BUG-094：core 的 `projectArr` 只投影元素域，**不承载数组自身的 preds**
-    // ⇒ 长度界在契约通道上整段消失。这里按 Abs 自身的 preds 补挂长度界，
-    // 并把它表达不了的数组级 pred 记进 dropped（与形状兜底同口径）。
-    if (node.k === "arr" && a.shape.k === "arr") {
-      const bounds = arrayLengthBounds(a.pred, a.term);
-      dropped.push(...bounds.dropped);
-      if (bounds.minLen !== undefined || bounds.maxLen !== undefined) {
-        node = {
-          ...node,
-          ...(bounds.minLen !== undefined ? { minLen: bounds.minLen } : {}),
-          ...(bounds.maxLen !== undefined ? { maxLen: bounds.maxLen } : {}),
-        };
-      }
-    }
     // BUG-130 / BUG-131：core 的约束投影（`projectObj`）只剔 `internal` 槽，
     // **不看 `symbolKey`**、也保留「数字下标」例外 ⇒ symbol 槽与生成器元素槽
     // 仍会以字符串字段进产物（运行时不存在的属性 / 生成器没有任何自有属性）。
     // 这里按 Abs 槽表把不可见槽从节点上摘掉（与形状兜底路径同判据）。
     if (node.k === "obj" && a.shape.k === "obj") {
       const objSlots = a.shape.slots;
+      // Bug 106：core 的 `isHiddenInternalSlot` 现在也认 `symbolKey` ⇒ 用户
+      // symbol 槽可能在**契约投影阶段就已剔除**、根本不进 `node.slots`。若只在
+      // 下面的 filter 里留痕，这类「上游剔除」就是有损却零台账（BUG-131 的
+      // dropped 断言失效）。⇒ 按原始 Abs 槽表补记这些槽（每个键一次）。
+      // 只对**用户自定义 symbol 键**留痕：`internal` 槽是引擎建模的协议/私有
+      // 面，本就不该出现在产物里，把它们写进 dropped 反而会让键名以注释形式
+      // 泄进 zod / standard 模块（Bug 240 明确禁止「内部槽进产物」）。
+      for (const [key, slot] of Object.entries(objSlots)) {
+        if (
+          slot.symbolKey === true &&
+          slot.internal !== true &&
+          isInvisibleObjSlot(key, slot, objSlots)
+        ) {
+          dropped.push(`${key}: hidden symbol-key slot not projected`);
+        }
+      }
       node = {
         ...node,
+        // Bug 41：命名捕获组让 `projectObj` 成功 ⇒ 走契约投影早退分支，
+        // 形状兜底那条补 `arrayView` 的路径不再执行 ⇒ standard 按普通对象判
+        // （"expected object, got array"）、zod 用 `z.object` ⇒ 拒绝函数自己
+        // 的返回值。与形状兜底（`absToSchemaShape` 的 obj 分支）同口径补 facet。
+        ...(a.shape.view === "array" ? { arrayView: true } : {}),
         slots: node.slots.filter((s) => {
           const slot = objSlots[s.key];
           if (!slot) return true;
-          const hidden = isInvisibleObjSlot(s.key, slot, objSlots);
-          if (hidden) dropped.push(`${s.key}: hidden slot not projected (symbol/internal key)`);
-          return !hidden;
+          return !isInvisibleObjSlot(s.key, slot, objSlots);
         }),
       };
     }
     dropped.push(...constraintDropped(projected));
-    return { node: syncGeneratorTags(node, a), dropped };
+    // Bug 21：长度界按**原始 Abs 树递归**补挂（顶层-only 补偿覆盖不到嵌套
+    // 数组——zod `<fn>Input` 恒把形参包成 obj）。生成器身份同步同口径。
+    return {
+      node: syncGeneratorTags(syncArrayLengthBounds(node, a, dropped), a),
+      dropped,
+    };
   }
 
   if (lowConf) {
@@ -1038,8 +1118,22 @@ function renderZod(node: SchemaNode): { source: string; dropped: string[] } {
       // z.custom 的 check 参数由 zod 签名为 unknown ⇒ strict 产物不会 TS7006。
       return { source: `z.custom((v) => ${generatorTagCheckSource("v", node.tag)})`, dropped: [] };
     case "promise": {
+      // Bug 98：zod v4 的 `z.promise(inner)` 是**异步构造器**——
+      // `$ZodPromise.parse` 恒返回 Promise，`safeParse` / `parse` 遇到它直接抛
+      // `$ZodAsyncError`（连函数自己的 Promise 返回值也抛）⇒ 该 `<fn>Output`
+      // 与其它同步面无法用同一套 zod API 消费，产物自带这种"半成品"却零提示。
+      //
+      // 与 standard 面（只判 `instanceof Promise`、从不读 `node.inner`）/ guard
+      // 面（`data instanceof Promise`）同口径：投影成**同步可消费**的 instanceof
+      // 检查，不 unwrap inner（同步无从得知 resolved 值）。注释如实标注原本的
+      // `z.promise(...)` 语义（有损投影必须可观测），也让按文本检索 promise 面
+      // 的消费端仍能看到这一面。
       const inner = renderZod(node.inner);
-      return { source: `z.promise(${inner.source})`, dropped: inner.dropped };
+      return {
+        source:
+          "z.custom((v) => v instanceof Promise) /* z.promise(...) is async-only in zod v4: safeParse throws $ZodAsyncError; sync projection checks instanceof only, inner not unwrapped */",
+        dropped: inner.dropped,
+      };
     }
     case "brand":
       // 防御：brand 节点只允许全局构造器名（z.instanceof 的实参在模块求值期

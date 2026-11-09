@@ -33,6 +33,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { displayPathOf } from "./shared.ts";
+import { parseJsonText } from "../read-json.ts";
 
 /** init 写入的 adoption 基线（profile: L2 entry may-throw → warning，L1 不变） */
 const ADOPTION_BASELINE = { check: { profile: "adoption" } } as const;
@@ -92,7 +93,7 @@ function readPackageJson(pkgPath: string): PkgRead {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonText(raw);
   } catch (err) {
     return { ok: false, kind: "invalid-json", message: errorText(err) };
   }
@@ -138,8 +139,9 @@ function describeValue(value: unknown): string {
  *
  * 真源（不自造）：`pnpm-workspace.yaml` / `lerna.json` /
  * `package.json#workspaces`（族 16 的 `packages/nudojs/src/migrate.ts`
- * 判 workspace 根用的也是这三者）。未声明 workspace 的 monorepo
- * （只有 `packages/*` 目录）另用「常规 workspace 目录」兜底。
+ * 判 workspace 根用的也是这三者）。Bug 35：常规 workspace 目录名只是
+ * 「猜」——普通仓也可能有 `services/<pkg>/package.json`，不能据此判定容器根
+ * ⇒ 仅在真源信号已在场时才把它作为补充信号列出。
  */
 const WORKSPACE_DIR_NAMES = ["packages", "apps", "libs", "modules", "services"] as const;
 
@@ -149,22 +151,27 @@ function containerSignals(dir: string): string[] {
   if (existsSync(join(dir, "lerna.json"))) signals.push("lerna.json");
   const pkg = readJsonObject(join(dir, "package.json"));
   if (pkg && pkg.workspaces !== undefined) signals.push("package.json#workspaces");
-  for (const name of WORKSPACE_DIR_NAMES) {
-    const base = join(dir, name);
-    let entries: Array<{ name: string; isDirectory(): boolean }>;
-    try {
-      entries = readdirSync(base, { withFileTypes: true }).map((entry) => ({
-        name: entry.name,
-        isDirectory: () => entry.isDirectory(),
-      }));
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (existsSync(join(base, entry.name, "package.json"))) {
-        signals.push(`${name}/${entry.name}/package.json`);
-        break;
+  // Bug 35：真源缺失时不再按目录名反推「容器根」——那会把仅含
+  // services/<pkg>/package.json、从未声明 workspace 的普通仓误判为容器根，
+  // `init <dir>` 因此假拒绝（exit 1）并建议造一个嵌套 package.json。
+  if (signals.length > 0) {
+    for (const name of WORKSPACE_DIR_NAMES) {
+      const base = join(dir, name);
+      let entries: Array<{ name: string; isDirectory(): boolean }>;
+      try {
+        entries = readdirSync(base, { withFileTypes: true }).map((entry) => ({
+          name: entry.name,
+          isDirectory: () => entry.isDirectory(),
+        }));
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (existsSync(join(base, entry.name, "package.json"))) {
+          signals.push(`${name}/${entry.name}/package.json`);
+          break;
+        }
       }
     }
   }
@@ -174,7 +181,7 @@ function containerSignals(dir: string): string[] {
 /** 读 + 解析一个 package.json；失败（读不到 / 非法 JSON / 非对象）⇒ null */
 function readJsonObject(path: string): Record<string, unknown> | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    const parsed: unknown = parseJsonText(readFileSync(path, "utf-8"));
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     return parsed as Record<string, unknown>;
   } catch {
@@ -375,7 +382,7 @@ function writeNudoKeyMinimally(
   const scan = scanTopObject(raw);
   if (!scan) {
     // 兜底：理论上到不了（调用方已 JSON.parse 成功）⇒ 退回整文件重排
-    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    const pkg = parseJsonText(raw) as Record<string, unknown>;
     pkg.nudo = baseline;
     return { content: `${JSON.stringify(pkg, null, 2)}\n`, collapsedDuplicates: 0 };
   }

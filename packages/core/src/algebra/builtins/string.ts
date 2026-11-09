@@ -5,7 +5,7 @@ import type { Abs } from "../abs.ts";
 import { strLit, litValue } from "../abs.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
-import { str, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { str, mayCoerceThrowOperand, mayToStringThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { isSymbolAbs } from "./symbol.ts";
 import { isNullishLit } from "./error/error-family.ts";
 
@@ -74,7 +74,7 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
             // Bug 97（raw 内容面）：raw 数组元素过 ToString——symbol 定抛
             // TypeError、抽象元素 may（node 实测 String.raw({raw:[Symbol()]})）
             if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
-            if (mayCoerceThrowOperand(el)) {
+            if (mayToStringThrowOperand(el)) {
               recordMayThrow({ kind: "TypeError", cause: "String.raw raw element ToString may throw (Symbol)" });
             }
             return str("path");
@@ -101,7 +101,7 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
         const sub = args[i + 1]!;
         if (isSymbolAbs(sub)) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (sub.term?.op !== "lit") {
-          if (mayCoerceThrowOperand(sub)) {
+          if (mayToStringThrowOperand(sub)) {
             recordMayThrow({ kind: "TypeError", cause: "String.raw substitution ToString may throw (Symbol)" });
           }
           return str("path");

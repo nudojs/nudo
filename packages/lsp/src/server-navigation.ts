@@ -505,8 +505,8 @@ connection.onRenameRequest((params) => {
       // 也可能指文件内另一个同名归属。改的话只有两种自洽结果：全改（可能改到
       // 无关对象 ⇒ 运行时 undefined）或全不改（**定义改了、调用点没改** ⇒ 同样
       // 改出坏代码）——两者都坏 ⇒ 只能拒绝，不产出任何编辑。
-      if (hasAmbiguousMethodReceiver(ast, target.name, { owner: target.owner })) return null;
-      const hits = collectMethodReferences(ast, target.name, { owner: target.owner });
+      if (hasAmbiguousMethodReceiver(ast, target.name, { owner: target.owner, access: target.access })) return null;
+      const hits = collectMethodReferences(ast, target.name, { owner: target.owner, access: target.access });
       const locations = hits.map((h) => ({
         uri: params.textDocument.uri,
         loc: h.loc,
@@ -522,7 +522,7 @@ connection.onRenameRequest((params) => {
           const extraSrc = sourceProvider(extra) ?? readFileSync(extra, "utf-8");
           const extraAst = parse(extraSrc);
           // 跨文件同样不许有歧义（有 ⇒ 整个改名拒绝）
-          if (hasAmbiguousMethodReceiver(extraAst, target.name, { owner: target.owner })) {
+          if (hasAmbiguousMethodReceiver(extraAst, target.name, { owner: target.owner, access: target.access })) {
             return null;
           }
           // 跨文件的同归属也不得撞名（编辑会落到这个文件 ⇒ 同归属里已有
@@ -530,6 +530,7 @@ connection.onRenameRequest((params) => {
           if (renameNameConflicts(extraAst, target, params.newName)) return null;
           for (const h of collectMethodReferences(extraAst, target.name, {
             owner: target.owner,
+            access: target.access,
           })) {
             locations.push({ uri: filePathToUri(extra), loc: h.loc });
           }
@@ -627,7 +628,7 @@ connection.onPrepareRename((params) => {
   if ("error" in target) return null;
   // 归属歧义的方法改名会被 rename 通道拒绝 ⇒ prepareRename 必须同口径，
   // 否则 IDE 先让用户改、真正改的时候又拒绝（体验自相矛盾）。
-  if (target.kind === "method" && hasAmbiguousMethodReceiver(parse(source), target.name, { owner: target.owner })) {
+  if (target.kind === "method" && hasAmbiguousMethodReceiver(parse(source), target.name, { owner: target.owner, access: target.access })) {
     return null;
   }
   return {

@@ -214,8 +214,20 @@ export function judgeLiteralPred(
     // 实参端用**精确字面量**比（null 与 undefined 是两个域，`===` 天然区分）。
     const nv = predEqNullish(p);
     if (nv !== undefined) {
-      // 实参不是精确字面量 ⇒ 判不了（不猜）
-      if (!lvR.ok) return undefined;
+      // 实参不是精确字面量：
+      // - 形态**确定**（prim / obj / arr / tuple / fn / brand）⇒ 它**确定不是**
+      //   null 或 undefined ⇒ 这条 eq(nullish) 成员确定假。Bug 96：`.optional()`
+      //   的 undefined 臂若对 `[1]` / `{}` / `500` 这类实参只判「不可判定」，
+      //   整个析取保持未决 ⇒ 有界 `.optional()` 契约在调用点零义务（假绿）。
+      // - 无确定形态（unknown / any / never / sum）⇒ 判不了（不猜；any 口径
+      //   「不发明义务」）。
+      if (!lvR.ok) {
+        const k = arg.shape.k;
+        const definite =
+          k === "prim" || k === "obj" || k === "arr" || k === "tuple" ||
+          k === "fn" || k === "brand";
+        return definite ? false : undefined;
+      }
       return sameLiteral(lvRaw, nv.value);
     }
     const v = predEqLiteral(p);

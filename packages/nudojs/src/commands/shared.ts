@@ -11,7 +11,7 @@ import {
   statSync,
   type Dirent,
 } from "node:fs";
-import { resolve, dirname, relative, join, basename } from "node:path";
+import { resolve, dirname, relative, join, basename, sep, isAbsolute } from "node:path";
 import {
   stripGeneratedCaseDirectives,
   insertGeneratedCaseDirectives,
@@ -117,6 +117,28 @@ export function attachTargetErrors<T extends object>(
 export function displayPathOf(p: string): string {
   const rel = relative(process.cwd(), p);
   return rel === "" || rel.startsWith("..") ? p : rel;
+}
+
+/**
+ * `git apply -p1` 可消费的 **diff 头路径**（Bug 27）。
+ *
+ * `displayPathOf` 是给**人**看的：目标越出 cwd 时回落成绝对路径，而
+ * `unifiedDiff` 会把它拼成 `--- a//tmp/proj/lib.js` ⇒ 剥掉 `a/` 后仍是绝对
+ * 路径，`git apply` 一律 `error: invalid path`（exit 128）。`..` 开头的相对
+ * 路径同样被 git 拒绝（树外路径）。
+ *
+ * 因此 diff 头与展示面必须解耦：cwd 内 ⇒ 相对 cwd（与控制组逐字相同）；
+ * 越出 cwd ⇒ **只留文件名**并返回 `outside: true`，由调用方在 `fix:` /
+ * `freeze:` 行说明「须在目标目录里 apply」。这样补丁本身在目标目录下是
+ * 合法可消费的，且 stdout 不再产出损坏的 `a//abs` 头。
+ */
+export function diffPathOf(p: string): { path: string; outside: boolean } {
+  const rel = relative(process.cwd(), p);
+  const posix = rel.split(sep).join("/");
+  if (posix === "" || posix === ".." || posix.startsWith("../") || isAbsolute(posix)) {
+    return { path: basename(p), outside: true };
+  }
+  return { path: posix, outside: false };
 }
 
 /**
@@ -640,7 +662,8 @@ function entryKind(entry: Dirent, fullPath: string): "file" | "dir" | undefined 
  * **不变式**（Bug 923 仍然成立）：一个模块 ⇒ **一次**分析（计数不翻倍）。
  *
  * 映射与 `migrate strip` 的产物扩展名同口径：`.ts → .js`、`.mts → .mjs`、
- * `.cts → .js`（strip 只剥类型，不做模块系统转换）。
+ * `.cts → .cjs`（Bug 26：与 tsc / Node 解析序一致；strip 只剥类型，
+ * 不做模块系统转换，故 `.cts` 产物在 strip 计划里另带一条告警）。
  *
  * ⚠ **取舍**（行为变更，已写进 changeset）：同 stem 的 `.js` 若**不是** strip
  * 产物（例如手写的旧模块、或被提交进仓库的编译输出），现在被分析的是 `.js`
@@ -790,6 +813,37 @@ export function resolveTargets(path: string): string[] {
   const { targets, errors } = resolveTargetsCollect(path);
   reportPathErrors(errors);
   return targets;
+}
+
+/**
+ * 跨位置参数的目标收敛（Bug 79）：位置参数只声明「要分析哪些模块」，
+ * 同一模块只分析一遍。
+ *
+ * `resolveTargetsCollect` 的返回值天然是「**该 path** 的目标列表」，四个一级
+ * 动词过去跨 path 直接 `push` ⇒ 同一文件被完整分析 N 次、`reports[]` N 条、
+ * `summary` 逐次累加；`test` 还用 `targets.length > 1` 判「`--json` 只接受
+ * 单文件」⇒ 只点名了一个文件的命令行被误判成多文件（假 usage error）。
+ * `migrate status` 的 `seenRoots`（Bug 668）早已确立「同一包只列一次」的
+ * 口径，这里把同样的收敛装到所有一级动词的入口。
+ */
+export function collectTargets(
+  paths: readonly string[],
+): { targets: string[]; errors: PathError[] } {
+  const targets: string[] = [];
+  const errors: PathError[] = [];
+  const seen = new Set<string>();
+  for (const p of paths) {
+    const r = resolveTargetsCollect(p);
+    for (const t of r.targets) {
+      // realpath 归一：`src` 与 `./src/lib.js` 与符号链接写法都指向同一模块
+      const key = normalizeRealPath(t);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push(t);
+    }
+    errors.push(...r.errors);
+  }
+  return { targets, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,11 +1299,17 @@ export async function runAbsView(
     );
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
+    // Bug 91：`--abs` 是观察面——引擎证明「必抛」时 result 是精确的 never
+    // （throws ≠ never），`tryEvalCall` 默认按 fail-closed 返回 undefined，
+    // 旧代码把 undefined 一律折成 `algebra.unknown`（`conf: partial`，
+    // 文档定义 = 推断失败）⇒ 同一次运行的签名表与 --json 却是
+    // `never #exact`。打开 keepNeverThrows 让观察面与机器面同源同值。
+    const evalOpts = { phi, keepNeverThrows: true };
     const evalResult =
       premises.length === 0
-        ? tryEvalCall(source, filePath, name, args, { phi })
+        ? tryEvalCall(source, filePath, name, args, evalOpts)
         : withAssumePremises(algebra.and(...premises), () =>
-            tryEvalCall(source, filePath, name, args, { phi }),
+            tryEvalCall(source, filePath, name, args, evalOpts),
           );
     const result = evalResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;

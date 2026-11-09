@@ -26,6 +26,13 @@ import type { PathError } from "./shared.ts";
  */
 const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
+/** Bug 80：契约面透出的装载诊断（与 service 侧 ContractFaceDiagnostic 同形）。 */
+type ContractFaceDiagnostic = {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+};
+
 export async function runContractDraft(
   file: string,
   opts: {
@@ -77,10 +84,20 @@ export async function runContractDraft(
     process.exitCode = 1;
     return;
   }
+  // Bug 80：`--draft` 唯一的分析入口同样会把装载诊断取走丢弃 ⇒ 坏侧车被
+  // 按「无契约」起草、stderr 0 字节、exit 0。透出后与 print / check / export
+  // 同裁决（stderr + error 级非零退出），不吞诊断、不放宽门禁。
+  const diagnostics: ContractFaceDiagnostic[] = [];
   const result = await draftInterface(filePath, {
     ...(opts.fnNames.length > 0 ? { fnNames: opts.fnNames } : {}),
     ...(opts.records ? { records: opts.records } : {}),
+    diagnostics,
   });
+  for (const d of diagnostics) {
+    const label = d.severity === "error" ? "error" : "warning";
+    console.error(`${label}: [${d.code}] ${d.message}`);
+  }
+  if (diagnostics.some((d) => d.severity === "error")) process.exitCode = 1;
   // -------------------------------------------------------------------------
   // BUG-042 —— `--draft --fn <写错的名字>` 改前是**静默 no-op**（空草稿 + exit 0）
   //
@@ -162,6 +179,8 @@ export async function runContractDraft(
                 })),
               }
             : {}),
+          // Bug 80：坏侧车也必须在 --draft 的机器面有承载诊断的字段
+          ...(diagnostics.length > 0 ? { diagnostics } : {}),
         },
         null,
         2,

@@ -5,7 +5,19 @@
 import { readFileSync, statSync, type Stats } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
-import { analyzeFileAsync, inferenceFailed, type CallRecord } from "@nudojs/service";
+import {
+  analyzeFileAsync,
+  defaultLoadModule,
+  inferenceFailed,
+  type CallRecord,
+} from "@nudojs/service";
+import {
+  effectiveInterface,
+  interfaceDiagCount,
+  localNamedExports,
+  resetSidecarLoadFailureCache,
+  takeInterfaceDiagsSince,
+} from "@nudojs/core";
 import type { DirectiveDiag } from "@nudojs/parser";
 import { paintOne } from "../ui.ts";
 import { projectConfigShapeIssue } from "../config-shape.ts";
@@ -231,6 +243,35 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     // 不重置则上一文件（或同进程早先分析）的截断旗标/计数会 latch 进本文件
     // 报告——未截断文件被误标 truncated、counters 与触发预算对不上。
     resetAbsCallBudget();
+    // Bug 55：侧车加载失败是**文件级**事实，但 `nudo:interface-load` 只写在
+    // core 的纯诊断缓冲里，且被「同 (路径, 原因) 只报一次」去重表抑制。
+    // `--from` 的现场采集会先分析 usage 文件、顺带加载目标侧车 ⇒ 这条诊断
+    // 在 healthFile 之前就被消耗/抑制 ⇒ analysis 面 `result.diagnostics`
+    // 里一条都没有 ⇒ 坏侧车被判 OK（--from 只该注入调用点证据，不该改变
+    // 错误判定面）。
+    // 修法：按文件独立探测一次（先清去重表 ⇒ 不受上游采集顺序影响），把
+    // 本次探测产生的 interface-load 诊断接住，与 analysisErrors 合并上屏。
+    // 只在 `--from` 注入路径做独立探测：无 --from 的基线路径 analysis 面
+    // 自己会报 interface-load，不必多加载一次侧车（保持既有性能与输出）。
+    let sidecarLoadDiags: ReturnType<typeof takeInterfaceDiagsSince> = [];
+    if (records !== undefined) {
+      resetSidecarLoadFailureCache();
+      const ifaceSince = interfaceDiagCount();
+      const probeName = [...localNamedExports(source)][0];
+      if (probeName !== undefined) {
+        try {
+          effectiveInterface(source, probeName, {
+            loadModule: defaultLoadModule,
+            fromFile: filePath,
+          });
+        } catch {
+          /* 探测失败不打断体检；analysis 面会给出它自己的诊断 */
+        }
+      }
+      sidecarLoadDiags = takeInterfaceDiagsSince(ifaceSince).filter(
+        (d) => d.code === DIAG.interfaceLoad,
+      );
+    }
     const result = await analyzeFileAsync(
       filePath,
       source,
@@ -275,8 +316,15 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     // health 面绿灯（假绿）；而 `nudo check` 对同一路径报 nudo:interface-load。
     // 口径 = guides/health.md:18 的 health 门（Analysis errors）。
     const analysisErrors = result.diagnostics.filter((d) => d.severity === "error");
-    if (analysisErrors.length > 0) {
-      report.error = analysisErrors.map((d) => `${d.message} (${d.code})`).join("; ");
+    // 与独立探测到的侧车加载失败合并（按文案去重：两条通道可能报同一件事）。
+    const errorParts = [
+      ...new Set([
+        ...analysisErrors.map((d) => `${d.message} (${d.code})`),
+        ...sidecarLoadDiags.map((d) => `${d.message} (${d.code})`),
+      ]),
+    ];
+    if (errorParts.length > 0) {
+      report.error = errorParts.join("; ");
     }
     // BUG-037：漂移判定必须以「**存在待验证的冻结见证**」为门槛——
     // 从未冻结过的文件**没有**可验证的见证 ⇒ 今日多出来的见证**不是漂移**
@@ -654,6 +702,9 @@ async function runHealth(
     : undefined;
 
   const files: string[] = [];
+  // Bug 79：位置参数只声明「要体检哪些模块」⇒ 同一文件只分析一遍
+  //（`health src src/lib.js --json` 过去在 files[] 里出现两次）。
+  const seenFiles = new Set<string>();
   const reports: HealthReport[] = [];
   for (const p of targetPaths) {
     const abs = resolve(p);
@@ -696,7 +747,12 @@ async function runHealth(
     const { targets, errors } = resolveTargetsCollect(p);
     pathErrorSink.push(...errors);
     targetErrors.push(...errors);
-    files.push(...targets);
+    for (const t of targets) {
+      const key = resolve(t);
+      if (seenFiles.has(key)) continue;
+      seenFiles.add(key);
+      files.push(t);
+    }
   }
   // `nudo.cache.sign` 预检（B3 信任面）：签名开但 NUDO_CACHE_KEY 缺席 ⇒
   // 拒绝运行（health 的 drift 面会开 iface 磁盘缓存；安全旋钮不静默降级）。

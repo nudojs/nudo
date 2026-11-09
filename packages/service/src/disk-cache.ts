@@ -93,9 +93,19 @@ function deriveSignKeyMat(secret: string): Buffer {
   return createHash("sha256").update(`${SIGN_DOMAIN}\0${secret}`).digest();
 }
 
-/** 条目签名：覆盖 `abi` 与 value 的规范化 JSON（不含 sig 自身） */
-function entrySig(keyMat: Buffer, abi: string, valueJson: string): string {
-  return createHmac("sha256", keyMat).update(`${SIGN_DOMAIN}\0${abi}\0${valueJson}`).digest("hex");
+/**
+ * 条目签名：覆盖 `abi`、**条目键**与 value 的规范化 JSON（不含 sig 自身）。
+ *
+ * 绑定键（Bug 1）：条目落盘路径由键推导且公开可算 ⇒ 若签名不含键，把一条
+ * 合法签发的条目原样复制到另一键的路径即可伪造「绿」（验签仍过、门禁被绕）。
+ * 把 `key` 纳入 HMAC 输入后，跨键复制的条目在 `get()` 用**被请求的键**重算
+ * 签名时必然不符 ⇒ 当 miss 回算。旧版（不含键）签发的条目同样验签失败 ⇒
+ * 一律当 miss 重算（向后兼容：只 miss，不 throw）。
+ */
+function entrySig(keyMat: Buffer, abi: string, key: string, valueJson: string): string {
+  return createHmac("sha256", keyMat)
+    .update(`${SIGN_DOMAIN}\0${abi}\0${key}\0${valueJson}`)
+    .digest("hex");
 }
 
 /** 常时比较（长度不等直接 false——hex 定长，正常路径恒等长） */
@@ -256,11 +266,12 @@ export class DiskCache {
       const parsed = JSON.parse(raw) as { abi?: string; value?: T; sig?: unknown };
       if (parsed?.abi !== ANALYSIS_ABI) return undefined;
       if (this.keyMat !== undefined) {
-        // 验签失败 / sig 缺席 = miss（fail-open 重算，不 throw）：
-        // 被篡改的条目与密钥轮换后的旧条目走同一条「不可信 ⇒ 重算」路径。
-        // value 重序列化与本工具写盘口径一致（自写自读，插入序/转义稳定）。
+        // 验签失败 / sig 缺席 = miss（fail-open 重算，不 throw）：被篡改的条目、
+        // 密钥轮换后的旧条目、签名未绑定键的旧格式条目，以及**跨键复制**的
+        // 合法条目（Bug 1：键不同 ⇒ 重算签名必不符）都走同一条「不可信 ⇒
+        // 重算」路径。value 重序列化与写盘口径一致（自写自读，插入序稳定）。
         if (typeof parsed.sig !== "string") return undefined;
-        if (!sigEquals(entrySig(this.keyMat, parsed.abi, JSON.stringify(parsed.value)), parsed.sig)) {
+        if (!sigEquals(entrySig(this.keyMat, parsed.abi, key, JSON.stringify(parsed.value)), parsed.sig)) {
           return undefined;
         }
       }
@@ -277,7 +288,8 @@ export class DiskCache {
       mkdirSync(dirname(p), { recursive: true });
       // 同目录 temp + rename 原子写（writeFileAtomic）：崩溃/磁盘满时缓存
       // 条目不会变成半截 JSON；孤儿 tmp 由其内部清理后 rethrow。
-      // 签名覆盖 `abi\0JSON(value)`——对象内嵌序列化与独立序列化同串。
+      // 签名覆盖 `abi\0key\0JSON(value)`——对象内嵌序列化与独立序列化同串，
+      // 且绑定条目键（Bug 1）：跨键复制的条目在别的键下验签必失败。
       if (this.keyMat !== undefined) {
         const valueJson = JSON.stringify(value);
         writeFileAtomic(
@@ -285,7 +297,7 @@ export class DiskCache {
           JSON.stringify({
             abi: ANALYSIS_ABI,
             value,
-            sig: entrySig(this.keyMat, ANALYSIS_ABI, valueJson),
+            sig: entrySig(this.keyMat, ANALYSIS_ABI, key, valueJson),
           }),
         );
       } else {
@@ -341,17 +353,23 @@ export function openDiskCache(opts: {
 }
 
 /**
- * 缓存键路径维：优先稳定逻辑段；无逻辑根且内容已知时用**内容指纹**
- * （`cnt:<sha>`）替代 `ext:` 路径 sha——路径 sha 绑机器绝对路径，跨机 miss-only。
- * 内容未知仍回落 `ext:`（只保证不明文、不脏命中）。
+ * 缓存键路径维：优先稳定逻辑段。
+ *
+ * **依赖路径**（`withProjectIdentity=false`）：无逻辑根且内容已知时用**内容
+ * 指纹**（`cnt:<sha>`）替代 `ext:` 路径 sha——路径 sha 绑机器绝对路径、跨机
+ * miss-only；依赖不进报告 `file` 字段，同内容不同机器路径 ⇒ 同键正是跨机
+ * 复用收益。内容未知仍回落 `ext:`（只保证不明文、不脏命中）。
+ *
+ * **入口文件**（`withProjectIdentity=true`，Bug 2）：相对化失败时**绝不**降级
+ * 为内容指纹，保留 `ext:<路径 sha>` 路径身份——否则「同内容、不同路径」的
+ * 两个入口共用一条缓存，报告 `file` 指错文件。persistent-cache.md「相对化
+ * 失败 → 键作废」：键里保留路径身份、绝不与内容指纹混同 ⇒ 不同路径必不同键，
+ * 不互相串味（最多跨机 miss，绝不脏命中）。
  *
  * **项目身份**（Bug 241）：项目根**内**的**入口**文件只取根相对路径是不够的——
  * 共享 `NUDO_CACHE_DIR` 下两个 checkout 的 `src/a.js` 会得到同一个键 ⇒ 互相
  * 污染（命中另一份 checkout 的报告，`file` 字段还指向那边的文件）。因此入口
  * 文件带根指纹前缀（`p:<sha(root)>`）。
- *
- * 依赖路径（`withProjectIdentity` 未开）**保持跨 checkout 复用**：依赖段另有
- * 内容 sha，键的复用性正是磁盘缓存的收益来源（F-6 的可移植性契约）。
  */
 function cachePathIdentity(
   p: string,
@@ -360,7 +378,9 @@ function cachePathIdentity(
   withProjectIdentity = false,
 ): string {
   const rel = relativizePath(p, root);
-  if (rel.startsWith("ext:") && content != null) {
+  // cnt: 只对依赖段生效（依赖不进 file 字段，disk-cache.test.ts:472 钉住）。
+  // 入口文件相对化失败 ⇒ 保留 ext: 路径身份，绝不与内容指纹混同（Bug 2）。
+  if (!withProjectIdentity && rel.startsWith("ext:") && content != null) {
     return `cnt:${sha256Hex(content).slice(0, 16)}`;
   }
   if (withProjectIdentity && root && !rel.startsWith("ext:") && isInsideRoot(p, root)) {
