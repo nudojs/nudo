@@ -150,6 +150,11 @@ export type AnalysisResult = {
   caseHints: CaseHint[];
   /** functions imported from other modules, synthesized from cross-file call sites observed while analyzing this file */
   externalFunctions?: FunctionAnalysis[];
+  /**
+   * ABS-04：默认互斥下「同时存在 @nudo:case 与调用点记录」的函数名
+   * （观察提示用；消费面提示 `--both-paths`，不改变默认报告）。
+   */
+  bothPathsHint?: string[];
 };
 
 export type CompletionItem = {

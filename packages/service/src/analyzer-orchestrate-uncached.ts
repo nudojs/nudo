@@ -1029,12 +1029,38 @@ export function analyzeFileUncachedInner(
     diagnostics.push(issue);
   }
 
+  // ABS-04：默认互斥（@nudo:case × call@/entry@）的可发现性提示——
+  // 有指令 case 的函数若同时存在调用点记录，默认只报指令面；把函数名
+  // 交出去让 CLI 提示 `--both-paths`（不改变默认输出，只加一行指引）。
+  const bothPathsHint: string[] = [];
+  if (alsoSynthesizeCases === undefined && callRecords.length > 0) {
+    const modulePath = normalizeModulePath(filePath);
+    // 名字路与主流程同口径（fnName / targetExport / targetAliases）；
+    // 模块归属只看 targetModule（缺省 = 本文件）
+    const matchesName = (r: (typeof callRecords)[number], name: string): boolean =>
+      r.fnName === name ||
+      r.targetExport === name ||
+      (r.targetAliases?.includes(name) ?? false);
+    for (const fn of functionResults) {
+      if (!fn.cases.some((c) => c.source === "directive")) continue;
+      const hasRecords = callRecords.some(
+        (r) =>
+          !isLeakedCallRecord(r) &&
+          (r.targetModule === undefined ||
+            normalizeModulePath(r.targetModule) === modulePath) &&
+          matchesName(r, fn.name),
+      );
+      if (hasRecords) bothPathsHint.push(fn.name);
+    }
+  }
+
   return {
     functions: functionResults,
     diagnostics,
     bindings,
     nodeAbsMap,
     caseHints,
+    ...(bothPathsHint.length > 0 ? { bothPathsHint } : {}),
     ...(externalFunctions.length > 0 ? { externalFunctions } : {}),
   };
 }
