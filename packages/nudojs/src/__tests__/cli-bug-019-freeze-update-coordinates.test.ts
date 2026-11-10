@@ -113,8 +113,10 @@ describe("BUG-019 — --freeze=update 的见证坐标", () => {
       const r = runCliTsx(["test", file, "--freeze=update"]);
       expect(r.stdout).toContain(`case "call@L8"`);
       expect(r.stdout).toContain("[unchecked]");
-      // ④ 旧行为：剥离后看不到指令 case ⇒ 只剩 entry@（行号还偏移）
-      expect(r.stdout).not.toContain("entry@");
+      // ④ 旧行为：剥离后看不到指令 case ⇒ 只剩 entry@ 行（行号还偏移）。
+      // 钉「entry@ 见证行」（entry@L<n>），不是 token 任意出现——提示文本里
+      // 可以引用 `call@/entry@` 这类字面。
+      expect(r.stdout).not.toMatch(/entry@L\d/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -157,16 +157,23 @@ export {
 } from "./directive-scan.ts";
 
 export {
-  type ConstraintBuilder, type NudoConstraint, type NudoField,
+  type BinderTable, type ConstraintBuilder, type NudoConstraint, type NudoField,
   type NudoFnConstraint, CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES,
   CONSTRAINT_CHAIN_METHOD_NAMES,
-  CONSTRAINT_EXPR_RE, SELF, andC, any, array, boolean,
-  constraintAdmitsNullish, constraintToEntryAbs, derefConstraint, fn,
+  CONSTRAINT_EXPR_RE, SELF, andC, any, array, bind, boolean,
+  collectBinders, collectUnboundRefs, constraintAdmitsNullish,
+  constraintToEntryAbs, derefConstraint, fn,
   fnConstraintToEntryReqs, getTerm, instantiateConstraint, isIntFlag,
   isNudoConstraint, lazy, lenTerm, litC,
-  nullable, number, omit, partial, pick, shape, string, throwConstraintToKinds,
+  nullable, number, omit, partial, pick, ref, rel, resolveRefChain, shape,
+  string, throwConstraintToKinds,
   union
 } from "./constraint.ts";
+
+export {
+  type AnalysisExplanation, type ExplainInput, type UnknownReason,
+  buildUnknownExplanations, formatUnknownExplanations
+} from "./diagnostics/explain.ts";
 
 export {
   literalMeetsConstraint

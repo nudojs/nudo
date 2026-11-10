@@ -471,6 +471,30 @@ async function runTest(
     }
   }
 
+  // ABS-04：默认互斥（@nudo:case × call@/entry@）的可发现性提示——
+  // 观察面只加指引（不改变默认报告），并标注两路来源。
+  // `--freeze` 下不提示：`--both-paths` 与 `--freeze` 是显式用法错（见
+  // action 里的组合约束），这里的「rerun with --both-paths」在该轮次不可执行。
+  if (
+    !opts.json &&
+    !opts.freeze &&
+    opts.alsoSynthesizeCases === undefined &&
+    result.bothPathsHint?.length
+  ) {
+    console.log("\nboth-paths");
+    const n = result.bothPathsHint.length;
+    console.log(
+      paintOne(
+        `  ${n} function${n === 1 ? "" : "s"} also ${n === 1 ? "has" : "have"} call-site records: ${result.bothPathsHint.join(", ")} (directive cases and call@/entry@ were reported separately)`,
+      ),
+    );
+    console.log(
+      paintOne(
+        "  → rerun with --both-paths to report both paths in one round (sources stay labeled: directive vs callsite)",
+      ),
+    );
+  }
+
   if (opts.freeze && emitOut) {
     const relPath = displayPathOf(filePath);
     // Bug 27：`--freeze --dry-run` 与 `check --fix` 共用 unifiedDiff ⇒ 越出 cwd

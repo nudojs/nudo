@@ -159,6 +159,11 @@ describe("constraint builder name table stays in sync", () => {
     partial: { expr: "partial(shape({ a: number() }))", shapeK: "obj" },
     pick: { expr: "pick(shape({ a: number(), b: string() }), [\"a\"])", shapeK: "obj" },
     omit: { expr: "omit(shape({ a: number(), b: string() }), [\"a\"])", shapeK: "obj" },
+    // ABS-01：契约内 binder / ref / 关系式（case 实参面是**符号见证**：
+    // bind 保留内层域；独立 ref / rel 无同树 binder ⇒ 保守 unknown）
+    bind: { expr: 'bind("a", number())', shapeK: "prim" },
+    ref: { expr: 'ref("a")', shapeK: "unknown" },
+    rel: { expr: 'rel(">", "x")', shapeK: "unknown" },
   };
 
   it("sample table covers every builder in CONSTRAINT_BUILDER_NAMES", () => {

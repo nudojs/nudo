@@ -132,6 +132,7 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
 | `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |
 | `--quiet` | 压 signatures 段（大仓 CI 日志降噪）：issues + summary + 门禁 exit 语义不变；成功且零 issue 时只打一行摘要（`文件 + OK + 计数`）。仅人类文本面——`--json` / `--gitlab` 机器契约不受影响 |
+| `--explain-unknown` | ABS-02：人类报告后追加 `unknown` / `any` 来源清单（预算截断 / 缺 env / 未建模构造 / 求值失败 / 无契约 / 显式 any / 推断失败）。纯观察面（旁路，不进 Abs / 键 / 缓存）：默认输出逐字节不变；`--json` / `--gitlab` 不动 |
 
 语法错文件（解析失败）：人类面打 tsc 风格块 `path:line:col — syntax error: <信息>` + 源码摘录 + `^` 指位（不再暴露 `eval injection setup failed` 内部术语）；`--json` 面并入信封 `pathErrors[]`（`code: "syntax-error"`，`ok:false`）。
 

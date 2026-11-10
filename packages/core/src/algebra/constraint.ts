@@ -35,6 +35,9 @@ import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.
 import type { Abs } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import { joinAbs } from "./objects.ts";
+// ABS-01：binder / ref 的名字文法与源内指令（@nudo:assume 等）同源——
+// codegen-escape 是 leaf 模块，无环。
+import { isJsBindingIdent } from "./format/codegen-escape.ts";
 
 /** 模板占位项；instantiate 时换成真实参数名 */
 export const SELF = "__nudo_self__";
@@ -80,6 +83,25 @@ export type NudoConstraint = {
    * 消费端按 LAZY_TEMPLATE_DEPTH 预算展开；derefConstraint 按 thunk 记忆化。
    */
   readonly lazy?: () => NudoConstraint | ConstraintBuilder;
+  /**
+   * ABS-01 契约内 binder：给本槽位一个契约内别名（`bind("a", any())`），
+   * 供同一条约束树里的 `ref("a")` 复用其域。作用域 = 单条约束树
+   * （一个侧车导出 / 一条指令模板），跨导出不复用；同名二次 bind 保持
+   * 首个绑定的域，但各自槽位的义务仍照常执法。
+   */
+  readonly binder?: string;
+  /**
+   * ABS-01 契约内 ref：复用同树 `bind` 的域；`path` 为字段投影
+   * （`ref("a").at("id")`）。找不到 binder ⇒ fail-closed（加载期诊断 +
+   * 实例化 throw），**不得**退化成 `any()`。
+   */
+  readonly ref?: { readonly name: string; readonly path?: readonly string[] };
+  /**
+   * ABS-01 依赖式关系约束（`@nudo:contract return > x` 的侧车形态
+   * `rel(">", "x")`）：本槽位与外部绑定名（参数 / 顶层局部）的比较义务。
+   * 只承载比较，不引入第二套类型语法。
+   */
+  readonly relational?: { readonly rel: "gt" | "ge" | "lt" | "le"; readonly term: Term };
 };
 
 /** fn(params, returns?, { throws? }) 的一等函数约束形态 */
@@ -122,6 +144,11 @@ export type ConstraintBuilder = NudoConstraint & {
   shift(n: number): ConstraintBuilder;
   /** 字段可选（仅在 shape 内有意义） */
   optional(): ConstraintBuilder;
+  /**
+   * ABS-01：ref 的路径投影（`ref("a").at("id")`）——只对 `ref(...)` 构建器
+   * 合法（其余形态 throw）。路径段是字段名。
+   */
+  at(...path: string[]): ConstraintBuilder;
 };
 
 /** 已链 .int() 的 builder 对象（int 数据标志与链式方法同名，WeakSet 承载） */
@@ -160,6 +187,9 @@ function makeBuilder(
     members?: NudoConstraint[];
     fn?: NudoFnConstraint;
     lazy?: () => NudoConstraint | ConstraintBuilder;
+    binder?: string;
+    ref?: { readonly name: string; readonly path?: readonly string[] };
+    relational?: { readonly rel: "gt" | "ge" | "lt" | "le"; readonly term: Term };
   },
 ): ConstraintBuilder {
   const fields = extra?.fields;
@@ -169,6 +199,9 @@ function makeBuilder(
   const members = extra?.members;
   const fnSlot = extra?.fn;
   const lazySlot = extra?.lazy;
+  const binderSlot = extra?.binder;
+  const refSlot = extra?.ref;
+  const relationalSlot = extra?.relational;
   // base 不携带 int 键（methods-last 下会被同名方法覆盖，信息反而丢失）：
   // int 标志经 intFlaggedBuilders WeakSet 承载，归一化时由 isIntFlag 落回数据
   const base: NudoConstraint = {
@@ -181,6 +214,9 @@ function makeBuilder(
     ...(members ? { members } : {}),
     ...(fnSlot ? { fn: fnSlot } : {}),
     ...(lazySlot ? { lazy: lazySlot } : {}),
+    ...(binderSlot !== undefined ? { binder: binderSlot } : {}),
+    ...(refSlot ? { ref: refSlot } : {}),
+    ...(relationalSlot ? { relational: relationalSlot } : {}),
   };
   const add = (p: Pred): ConstraintBuilder =>
     makeBuilder(prim, [...preds, p], extra);
@@ -295,6 +331,26 @@ function makeBuilder(
         return makeBuilder(prim, shiftBoundPreds(preds, n), extra);
       },
       optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
+      at: (...path: string[]) => {
+        // ABS-01：路径投影只对 ref 有意义；其它链上 `.at()` 是误用 ⇒ 构造期报错
+        if (!refSlot)
+          throw new Error(
+            "nudo at(): only ref(...) builders accept a path projection (e.g. ref(\"a\").at(\"id\"))",
+          );
+        for (const seg of path) {
+          if (!isJsBindingIdent(seg))
+            throw new Error(
+              `nudo at(): path segment must be a property name, got ${JSON.stringify(seg)}`,
+            );
+        }
+        return makeBuilder(prim, preds, {
+          ...extra,
+          ref: {
+            name: refSlot.name,
+            path: [...(refSlot.path ?? []), ...path],
+          },
+        });
+      },
     },
   ) as ConstraintBuilder;
   if (isInt) intFlaggedBuilders.add(builder as object);
@@ -327,12 +383,97 @@ export function number(): ConstraintBuilder {
   return makeBuilder("number", []);
 }
 
+export function boolean(): ConstraintBuilder {
+  return makeBuilder("boolean", []);
+}
+
 export function string(): ConstraintBuilder {
   return makeBuilder("string", []);
 }
 
-export function boolean(): ConstraintBuilder {
-  return makeBuilder("boolean", []);
+/**
+ * bind(name, c)：契约内别名（ABS-01）。`ref(name)` 复用本槽位的域；
+ * 作用域 = 单条约束树。名字按 JS 绑定名文法校验（跨面与 @nudo:assume 同名）。
+ *
+ * 语义：本槽位的义务照常执法（c 的约束原样保留），另外把该槽位的域登记到
+ * 契约内 binder 表，供同树的 ref 复用。
+ */
+export function bind(
+  name: string,
+  c: NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined,
+): ConstraintBuilder {
+  if (typeof name !== "string" || !isJsBindingIdent(name))
+    throw new Error(
+      `nudo bind(): the binder name must be a JS binding name, got ${JSON.stringify(name)}`,
+    );
+  const inner = asNestedConstraint(c, "bind(name, constraint)");
+  return makeBuilder(inner.prim, inner.preds, { ...innerData(inner), binder: name });
+}
+
+/**
+ * ref(name)：复用同树 `bind` 的域（ABS-01）。找不到 binder ⇒ fail-closed
+ * （加载期诊断 + 实例化 throw），**不**退化成 any()。
+ * `ref("a").at("id")` 表达字段投影。
+ */
+export function ref(name: string): ConstraintBuilder {
+  if (typeof name !== "string" || !isJsBindingIdent(name))
+    throw new Error(
+      `nudo ref(): the binder name must be a JS binding name, got ${JSON.stringify(name)}`,
+    );
+  return makeBuilder(undefined, [], { ref: { name } });
+}
+
+/**
+ * rel(op, name)：依赖式关系约束（ABS-01）——本槽位与外部绑定名的比较
+ * （`@nudo:contract return > x` 的侧车形态 `rel(">", "x")`）。
+ * `name` 必须是声明函数的参数 / 顶层局部名（由 check 面校验）。
+ */
+export function rel(
+  op: ">" | ">=" | "<" | "<=" | "gt" | "ge" | "lt" | "le",
+  name: string,
+): ConstraintBuilder {
+  const relOp =
+    op === ">" || op === "gt" ? "gt"
+    : op === ">=" || op === "ge" ? "ge"
+    : op === "<" || op === "lt" ? "lt"
+    : op === "<=" || op === "le" ? "le"
+    : undefined;
+  if (relOp === undefined)
+    throw new Error(
+      `nudo rel(): operator must be one of > >= < <=, got ${JSON.stringify(op)}`,
+    );
+  if (typeof name !== "string" || !isJsBindingIdent(name))
+    throw new Error(
+      `nudo rel(): the referenced name must be a JS binding name, got ${JSON.stringify(name)}`,
+    );
+  return makeBuilder(undefined, [], { relational: { rel: relOp, term: termVar(name) } });
+}
+
+/** 约束的纯数据附加位（binder/ref/relational 的搬运源） */
+function innerData(c: NudoConstraint): {
+  fields?: Record<string, NudoField>;
+  element?: NudoConstraint;
+  int?: boolean;
+  optional?: boolean;
+  members?: NudoConstraint[];
+  fn?: NudoFnConstraint;
+  lazy?: () => NudoConstraint | ConstraintBuilder;
+  binder?: string;
+  ref?: { readonly name: string; readonly path?: readonly string[] };
+  relational?: { readonly rel: "gt" | "ge" | "lt" | "le"; readonly term: Term };
+} {
+  return {
+    ...(c.fields ? { fields: c.fields } : {}),
+    ...(c.element ? { element: c.element } : {}),
+    ...(isIntFlag(c) ? { int: true } : {}),
+    ...(c.isOptional ? { optional: true } : {}),
+    ...(c.members ? { members: c.members } : {}),
+    ...(c.fn ? { fn: c.fn } : {}),
+    ...(c.lazy ? { lazy: c.lazy } : {}),
+    ...(c.binder !== undefined ? { binder: c.binder } : {}),
+    ...(c.ref ? { ref: c.ref } : {}),
+    ...(c.relational ? { relational: c.relational } : {}),
+  };
 }
 
 /** any() —— 无约束；formatConstraint / draft import 与显示同源 */
@@ -453,6 +594,9 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
     ...(c.members ? { members: c.members } : {}),
     ...(c.fn ? { fn: c.fn } : {}),
     ...(c.lazy ? { lazy: c.lazy } : {}),
+    ...(c.binder !== undefined ? { binder: c.binder } : {}),
+    ...(c.ref ? { ref: c.ref } : {}),
+    ...(c.relational ? { relational: c.relational } : {}),
   };
 }
 
@@ -594,10 +738,19 @@ export function constraintAdmitsNullish(
   // （假红），且修复建议把用户引向 `nullable(number().optional())` 绕过
   // ——因为引擎**没读懂** `.optional()`。
   if (c.isOptional) return true;
+  // ABS-01：ref 的域 = 绑定约束的域（不得按「无约束」误判成接受 nullish）
+  if (c.ref) {
+    const bound = collectBinders(c).get(c.ref.name);
+    if (bound) return constraintAdmitsNullish(bound, seen);
+  }
+  if (c.binder !== undefined) {
+    const { binder: _b, ...rest } = c;
+    return constraintAdmitsNullish(rest as NudoConstraint, seen);
+  }
   if (c.members)
     return c.members.some((m) => constraintAdmitsNullish(m, seen));
-  // any()（无 prim、无 preds、无 shape）接受一切含 nullish
-  if (!c.prim && c.preds.length === 0 && !c.fields && !c.element && !c.fn) return true;
+  // any()（无 prim、无 preds、无 shape、无关系义务）接受一切含 nullish
+  if (!c.prim && c.preds.length === 0 && !c.fields && !c.element && !c.fn && !c.relational) return true;
   // eq(self, null) / eq(self, undefined) 谓词
   for (const p of c.preds) {
     for (const flat of p.op === "and" ? p.args : [p]) {
@@ -666,37 +819,223 @@ export function fn(
  * prim 一致（缺省 prim 视为无 prim 约束、可与任意 prim 合并）→ preds 拼接；
  * prim 不一致或任一含 fields/element/members/fn → throw。
  */
+/**
+ * andC(...cs)：合取。
+ *
+ * ABS-11：非标量形态也支持（shape∧shape 字段级、array∧array 元素级、
+ * union∧union 成员交叉、fn∧fn 参数/返回位）。**矛盾才冲突**：
+ * - prim 不一致 / 结构型与非结构型 prim 冲突 / binder 异名 ⇒ throw
+ *   （调用方转 `nudo:contract-conflict`）；
+ * - 合不了的形态（ref / relational）同样显式 throw（不静默丢义务）。
+ * `lazy` 先解一层（issue #120 口径）。
+ */
 export function andC(
   ...cs: (NudoConstraint | ConstraintBuilder)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
     throw new Error("nudo and(): at least one constraint is required");
-  let prim: PrimName | undefined;
-  let isInt = false;
-  let allOptional = true;
-  const preds: Pred[] = [];
-  for (const c0 of cs) {
-    if (!isConstraint(c0))
+  let acc: NudoConstraint | undefined;
+  for (const c of cs) {
+    if (!isConstraint(c))
       throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
-    // lazy 包装先解一层：lazy(() => shape(...)) 与直接 shape 同样 throw，
-    // 不因包装静默并入 preds（issue #120）
-    const c = derefConstraint(c0);
-    if (c.fields || c.element || c.members || c.fn)
-      throw new Error("nudo and(): Phase 1 supports scalar constraint conjunction only (shape/array/union/fn are not supported)");
-    if (c.prim) {
-      if (prim !== undefined && prim !== c.prim)
-        throw new Error(`nudo and(): inconsistent prim (${prim} vs ${c.prim})`);
-      prim = c.prim;
-    }
-    preds.push(...c.preds);
-    // isIntFlag 统一读取：builder（int 是方法）查 WeakSet，纯数据看 === true
-    if (isIntFlag(c)) isInt = true;
-    if (!c.isOptional) allOptional = false;
+    const plain = derefConstraint(c);
+    acc = acc === undefined ? plain : andTwo(acc, plain);
   }
-  return makeBuilder(prim, preds, {
-    ...(isInt ? { int: true } : {}),
-    ...(allOptional ? { optional: true } : {}),
-  });
+  const out = acc!;
+  return makeBuilder(out.prim, [...out.preds], innerData(out));
+}
+
+/**
+ * 两个约束的合取（ABS-11 结构合取核心）。
+ *
+ * 形态分派顺序：binder/ref/relational（不参与合取 → conflict）→
+ * shape / array / union / fn（结构级递归）→ 单侧结构 + 谓词 → 标量。
+ */
+function andTwo(a: NudoConstraint, b: NudoConstraint): NudoConstraint {
+  // binder / ref / relational：合取语义未定义（异名 / 异形态 = conflict）
+  if (
+    a.binder !== undefined ||
+    a.ref !== undefined ||
+    a.relational !== undefined ||
+    b.binder !== undefined ||
+    b.ref !== undefined ||
+    b.relational !== undefined
+  ) {
+    if (
+      a.binder !== undefined &&
+      a.binder === b.binder &&
+      a.ref === undefined &&
+      b.ref === undefined &&
+      a.relational === undefined &&
+      b.relational === undefined
+    ) {
+      const { binder: name, ...restA } = a;
+      const { binder: _b, ...restB } = b;
+      return { ...andTwo(restA as NudoConstraint, restB as NudoConstraint), binder: name };
+    }
+    throw new Error(
+      "nudo and(): bind/ref/rel constraints cannot be conjoined with a different binder form (keep them as standalone slots or reuse the same bind name)",
+    );
+  }
+  // 结构型 × 结构型（不同 kind 不可合取：shape × array / shape × fn …）
+  const kindOf = (c: NudoConstraint): string | undefined =>
+    c.fields ? "shape" : c.element ? "array" : c.members ? "union" : c.fn ? "fn" : undefined;
+  const ka = kindOf(a);
+  const kb = kindOf(b);
+  if (ka !== undefined && kb !== undefined && ka !== kb && ka !== "union" && kb !== "union") {
+    throw new Error(
+      `nudo and(): cannot conjoin structural forms ${ka} × ${kb} (different shapes)`,
+    );
+  }
+  // 结构型 × 结构型
+  if (a.fields || b.fields) {
+    if (a.fields && b.fields) {
+      assertNoPrimOnStructure(a, "shape");
+      assertNoPrimOnStructure(b, "shape");
+      const fields: Record<string, NudoField> = Object.create(null);
+      for (const [k, f] of Object.entries(a.fields)) fields[k] = f;
+      for (const [k, g] of Object.entries(b.fields)) {
+        const prev = fields[k];
+        fields[k] = prev
+          ? {
+              constraint: andTwo(prev.constraint, g.constraint),
+              optional: prev.optional === true || g.optional === true,
+            }
+          : g;
+      }
+      return scalarAnd(
+        { ...a, fields },
+        { ...b, fields: undefined },
+      );
+    }
+    return shapeWithScalar(a.fields ? a : b, a.fields ? b : a);
+  }
+  if (a.element || b.element) {
+    if (a.element && b.element) {
+      assertNoPrimOnStructure(a, "array");
+      assertNoPrimOnStructure(b, "array");
+      return scalarAnd(
+        { ...a, element: andTwo(a.element, b.element) },
+        { ...b, element: undefined },
+      );
+    }
+    return shapeWithScalar(a.element ? a : b, a.element ? b : a);
+  }
+  if (a.members || b.members) {
+    if (a.members && b.members) {
+      if (a.members.length * b.members.length > 16) {
+        throw new Error(
+          "nudo and(): union × union conjunction would exceed 16 members — narrow one side first",
+        );
+      }
+      const members: NudoConstraint[] = [];
+      for (const x of a.members) for (const y of b.members) members.push(andTwo(x, y));
+      return scalarAnd(
+        { ...a, members },
+        { ...b, members: undefined },
+      );
+    }
+    // 单侧 union：把另一侧合到每个成员上（等价于分配律）
+    const u = a.members ? a : b;
+    const other = a.members ? b : a;
+    if (other.prim || other.fields || other.element || other.fn) {
+      throw new Error(
+        "nudo and(): union × non-scalar form is not supported — narrow the union first",
+      );
+    }
+    return {
+      ...u,
+      preds: [...u.preds, ...other.preds],
+      isOptional: u.isOptional === true && other.isOptional === true,
+    };
+  }
+  if (a.fn || b.fn) {
+    if (a.fn && b.fn) {
+      assertNoPrimOnStructure(a, "fn");
+      assertNoPrimOnStructure(b, "fn");
+      const params: Record<string, NudoConstraint> = {};
+      for (const [k, v] of Object.entries(a.fn.params)) params[k] = v;
+      for (const [k, v] of Object.entries(b.fn.params)) {
+        params[k] = params[k] === undefined ? v : andTwo(params[k]!, v);
+      }
+      const returns =
+        a.fn.returns !== undefined && b.fn.returns !== undefined
+          ? andTwo(a.fn.returns, b.fn.returns)
+          : (a.fn.returns ?? b.fn.returns);
+      const throwsC =
+        a.fn.throws !== undefined && b.fn.throws !== undefined
+          ? toPlainConstraint(union(a.fn.throws, b.fn.throws))
+          : (a.fn.throws ?? b.fn.throws);
+      return scalarAnd(
+        {
+          ...a,
+          fn: {
+            params,
+            ...(returns !== undefined ? { returns } : {}),
+            ...(throwsC !== undefined ? { throws: throwsC } : {}),
+          },
+        },
+        { ...b, fn: undefined },
+      );
+    }
+    return shapeWithScalar(a.fn ? a : b, a.fn ? b : a);
+  }
+  return scalarAnd(a, b);
+}
+
+/**
+ * 单侧结构 + 另一侧（标量 / 谓词）的合取：
+ * - 另一侧带 prim 且与结构型不相容（obj/arr/fn）⇒ conflict；
+ * - 另一侧只有 preds / int / optional ⇒ 并到结构节点自身（数组长度界等）。
+ */
+function shapeWithScalar(
+  structural: NudoConstraint,
+  other: NudoConstraint,
+): NudoConstraint {
+  if (other.prim !== undefined) {
+    throw new Error(
+      `nudo and(): structural constraint (shape/array/fn) cannot be conjoined with prim ${other.prim}`,
+    );
+  }
+  if (other.members) {
+    throw new Error(
+      "nudo and(): union × non-scalar form is not supported — narrow the union first",
+    );
+  }
+  return {
+    ...structural,
+    preds: [...structural.preds, ...other.preds],
+    ...(other.isOptional === true ? {} : { isOptional: false }),
+  };
+}
+
+/** 结构型节点不得携带 prim（obj/arr/fn 与 number 矛盾 ⇒ conflict） */
+function assertNoPrimOnStructure(c: NudoConstraint, form: string): void {
+  if (c.prim !== undefined) {
+    throw new Error(
+      `nudo and(): ${form} constraint cannot carry prim ${c.prim} (structurally impossible)`,
+    );
+  }
+}
+
+/** 结构位之外的标量/谓词合并（prim 一致才允许；preds 并集） */
+function scalarAnd(a: NudoConstraint, b: NudoConstraint): NudoConstraint {
+  if (a.prim !== undefined && b.prim !== undefined && a.prim !== b.prim) {
+    throw new Error(`nudo and(): inconsistent prim (${a.prim} vs ${b.prim})`);
+  }
+  return {
+    __nudoConstraint: true,
+    ...(a.prim ?? b.prim ? { prim: a.prim ?? b.prim } : {}),
+    preds: [...a.preds, ...b.preds],
+    ...(a.fields ?? b.fields ? { fields: a.fields ?? b.fields } : {}),
+    ...(a.element ?? b.element ? { element: a.element ?? b.element } : {}),
+    ...(a.members ?? b.members ? { members: a.members ?? b.members } : {}),
+    ...(a.fn ?? b.fn ? { fn: a.fn ?? b.fn } : {}),
+    ...(a.lazy ?? b.lazy ? { lazy: a.lazy ?? b.lazy } : {}),
+    ...(isIntFlag(a) || isIntFlag(b) ? { int: true } : {}),
+    // 合取的可选性：两侧都可省才可省
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
 }
 
 /**
@@ -858,6 +1197,10 @@ export const CONSTRAINT_BUILDERS: Record<string, unknown> = {
   partial,
   pick,
   omit,
+  // ABS-01：契约内 binder / ref / 关系式
+  bind,
+  ref,
+  rel,
 };
 
 /** 构建器表面名（供文法正则 / 测试枚举；顺序即表定义顺序） */
@@ -883,6 +1226,7 @@ export const CONSTRAINT_CHAIN_METHOD_NAMES: readonly string[] = [
   "length",
   "shift",
   "optional",
+  "at",
 ];
 
 /**
@@ -957,10 +1301,6 @@ function substPredOn(p: Pred, target: Term): Pred {
   }
 }
 
-function substPred(p: Pred, paramName: string): Pred {
-  return substPredOn(p, termVar(paramName));
-}
-
 /**
  * Bug 088：`.optional()` 位的**可缺省 / 可为 undefined** 语义折进实例化谓词。
  *
@@ -974,22 +1314,185 @@ function substPred(p: Pred, paramName: string): Pred {
  * ⚠ `base` 恒真（`any()` 之类无义务的约束）时**不**加析取支——无义务的契约
  * 本就接受一切（含 undefined）。
  */
-function optionalizePred(base: Pred, paramName: string): Pred {
+function optionalizePredOn(base: Pred, t: Term): Pred {
   if (base.op === "true") return base;
-  return or(base, eq(termVar(paramName), termLit(undefined)));
+  return or(base, eq(t, termLit(undefined)));
 }
 
-/** 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred（lazy 按 depth 预算展开） */
+/** 契约内 binder 表（ABS-01）：名字 → 绑定的约束（作用域 = 单条约束树） */
+export type BinderTable = ReadonlyMap<string, NudoConstraint>;
+
+/** binder 槽位 term（跨槽统一的稳定身份：dts 泛型投影据此归一） */
+export function binderTerm(name: string): Term {
+  return termVar(`bind:${name}`);
+}
+
+/**
+ * 收集一条约束树里的全部 binder（含 fn 参数 / 返回 / throws、lazy 展开、
+ * union / shape / array 嵌套）。同名保留首个绑定（「同名二次 bind 追加
+ * leq 义务」的保守实现：首个域为准，其余槽位的义务仍各自执法）。
+ */
+export function collectBinders(
+  c: NudoConstraint,
+  out: Map<string, NudoConstraint> = new Map(),
+  seen: Set<object> = new Set(),
+): Map<string, NudoConstraint> {
+  if (c.lazy) {
+    if (seen.has(c.lazy)) return out;
+    seen.add(c.lazy);
+    return collectBinders(derefConstraint(c), out, seen);
+  }
+  if (c.binder !== undefined && !out.has(c.binder)) out.set(c.binder, stripBinder(c));
+  for (const f of Object.values(c.fields ?? {})) collectBinders(f.constraint, out, seen);
+  if (c.element) collectBinders(c.element, out, seen);
+  for (const m of c.members ?? []) collectBinders(m, out, seen);
+  if (c.fn) {
+    for (const p of Object.values(c.fn.params)) collectBinders(p, out, seen);
+    if (c.fn.returns) collectBinders(c.fn.returns, out, seen);
+    if (c.fn.throws) collectBinders(c.fn.throws, out, seen);
+  }
+  return out;
+}
+
+/**
+ * 未绑定 ref 名（ABS-01 fail-closed）：ref 找不到同树 bind ⇒ 加载期诊断。
+ * `extra` = 跨槽表（fn 契约的形参树与返回树分头实例化时由有效契约传入）。
+ */
+export function collectUnboundRefs(
+  c: NudoConstraint,
+  extra?: BinderTable,
+  seen: Set<object> = new Set(),
+): string[] {
+  const own = collectBinders(c);
+  const table = mergeBinderTables(own, extra);
+  const out: string[] = [];
+  const walk = (x: NudoConstraint): void => {
+    if (x.lazy) {
+      if (seen.has(x.lazy)) return;
+      seen.add(x.lazy);
+      walk(derefConstraint(x));
+      return;
+    }
+    if (x.ref && !table.has(x.ref.name) && !out.includes(x.ref.name)) out.push(x.ref.name);
+    for (const f of Object.values(x.fields ?? {})) walk(f.constraint);
+    if (x.element) walk(x.element);
+    for (const m of x.members ?? []) walk(m);
+    if (x.fn) {
+      for (const p of Object.values(x.fn.params)) walk(p);
+      if (x.fn.returns) walk(x.fn.returns);
+    }
+  };
+  walk(c);
+  return out;
+}
+
+function mergeBinderTables(own: BinderTable, extra?: BinderTable): BinderTable {
+  if (!extra || extra.size === 0) return own;
+  const merged = new Map(extra);
+  for (const [k, v] of own) merged.set(k, v);
+  return merged;
+}
+
+/**
+ * ref → 绑定约束（含 `.at(path)` 字段投影），解析到非 ref 形态为止。
+ * 未绑定 / 环 → throw（fail-closed；加载期 `collectUnboundRefs` 已挡常规场景，
+ * 这里是证明通道的兜底）。返回结果已剥掉 binder 标记。
+ */
+export function resolveRefChain(
+  c: NudoConstraint,
+  binders?: BinderTable,
+  depth: number = 8,
+): NudoConstraint {
+  let cur = c;
+  let d = depth;
+  while (cur.ref) {
+    if (d-- <= 0)
+      throw new Error(
+        `nudo ref(${JSON.stringify(cur.ref.name)}): ref chain too deep (cycle in binder definitions?)`,
+      );
+    const bound = binders?.get(cur.ref.name) ?? collectBinders(c).get(cur.ref.name);
+    if (!bound)
+      throw new Error(
+        `nudo ref(${JSON.stringify(cur.ref.name)}): no bind(...) with this name in the same constraint tree`,
+      );
+    let resolved = stripBinder(bound);
+    for (const seg of cur.ref.path ?? []) {
+      const field = resolved.fields?.[seg];
+      if (!field)
+        throw new Error(
+          `nudo ref(${JSON.stringify(cur.ref.name)}).at(${JSON.stringify(seg)}): the binder constraint has no field '${seg}'`,
+        );
+      resolved = stripBinder(field.constraint);
+    }
+    cur = resolved;
+  }
+  return cur;
+}
+
+/** 去掉 binder 标记（义务语义不变，只剥别名包装） */
+function stripBinder(c: NudoConstraint): NudoConstraint {
+  if (c.binder === undefined) return c;
+  const { binder: _drop, ...rest } = c;
+  return rest as NudoConstraint;
+}
+
+/** ref 的路径投影：ref("a").at("id") → get(bindTerm(a), "id") */
+function projectRefTerm(t: Term, c: NudoConstraint): Term {
+  let out = t;
+  for (const seg of c.ref?.path ?? []) out = getTerm(out, seg);
+  return out;
+}
+
+function resolveRef(
+  c: NudoConstraint,
+  table: BinderTable,
+): NudoConstraint | undefined {
+  if (!c.ref) return undefined;
+  const bound = table.get(c.ref.name);
+  if (!bound)
+    throw new Error(
+      `nudo ref(${JSON.stringify(c.ref.name)}): no bind(...) with this name in the same constraint tree`,
+    );
+  return bound;
+}
+
+/**
+ * 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred（lazy 按 depth 预算展开）。
+ * `binders`（ABS-01）：跨槽 binder 表（有效契约把 fn() 形参树 / 返回树分开
+ * 实例化时传入；缺省 = 只看本树）。
+ */
 export function instantiateConstraint(
   c: NudoConstraint,
   paramName: string,
   depth: number = LAZY_TEMPLATE_DEPTH,
+  binders?: BinderTable,
 ): Pred {
+  return instantiateConstraintScoped(
+    c,
+    termVar(paramName),
+    depth,
+    mergeBinderTables(collectBinders(c), binders),
+  );
+}
+
+function instantiateConstraintScoped(
+  c0: NudoConstraint,
+  t: Term,
+  depth: number,
+  binders: BinderTable,
+): Pred {
+  // ABS-01：ref 先解析（复用同树 bind 的域，锚在 ref 自己的项上）
+  const refBound = resolveRef(c0, binders);
+  const c = refBound !== undefined ? refBound : stripBinder(c0);
+  const target = refBound !== undefined ? projectRefTerm(t, c0) : t;
+  if (refBound !== undefined) {
+    return instantiateConstraintScoped(c, target, depth, binders);
+  }
   // lazy（issue #120）：预算内解一层递归；预算耗尽 → 恒真（宽松——
-  // optional 字段本就不进硬 pred，必选 lazy 字段截断处不误报）
+  // optional 字段本就不进硬 pred，必填 lazy 字段截断处不误报）
   if (c.lazy) {
     if (depth <= 0) return pTrue;
-    return instantiateConstraint(derefConstraint(c), paramName, depth - 1);
+    return instantiateConstraintScoped(derefConstraint(c), target, depth - 1, binders);
   }
   // shape：展开为 and(字段 preds)。optional 字段不进硬 pred（缺省可接受）——
   // 与 constraintToEntryAbs 的 slot.optional 对齐，避免缺失可选字段误报。
@@ -997,52 +1500,64 @@ export function instantiateConstraint(
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
       if (field.optional || field.constraint.isOptional) continue;
-      const fieldTerm = getTerm(termVar(paramName), key);
-      parts.push(instantiateOnTerm(field.constraint, fieldTerm, depth));
+      parts.push(
+        instantiateOnTermScoped(field.constraint, getTerm(target, key), depth, binders),
+      );
     }
-    if (c.prim) parts.push(ptypeof(termVar(paramName), primToTypeof(c.prim)));
+    if (c.prim) parts.push(ptypeof(target, primToTypeof(c.prim)));
     const base: Pred =
       parts.length === 0 ? { op: "true" } : parts.length === 1 ? parts[0]! : pAnd(...parts);
     // Bug 17：shape 分支此前在到达标量 / union 的 `optionalizePred` 之前就
     // return ⇒ `shape(...).optional()` 的**契约级可选位**在调用点谓词里没有
     // undefined 臂 ⇒ 显式 `f(undefined)` 被判 L1 假红（而同一契约的 dts /
     // guard / check 签名三面都承认 undefined）。与其余分支同口径补上。
-    return c.isOptional ? optionalizePred(base, paramName) : base;
+    return c.isOptional ? optionalizePredOn(base, target) : base;
   }
 
   // union：各成员实例化后 or 并（节点自身 preds 一并合取；
   // 与标量链同口径——有实质谓词时节点 prim 不再补 typeof）
   if (c.members) {
     const disj = or(
-      ...c.members.map((m) => instantiateOnTerm(m, termVar(paramName), depth)),
+      ...c.members.map((m) => instantiateOnTermScoped(m, target, depth, binders)),
     );
-    const own = c.preds.map((p) => substPred(p, paramName));
+    const own = c.preds.map((p) => substPredOn(p, target));
     const base = own.length === 0 ? disj : pAnd(...own, disj);
     // Bug 088：union 自身 `.optional()` ⇒ 整个位可为 undefined
-    return c.isOptional ? optionalizePred(base, paramName) : base;
+    return c.isOptional ? optionalizePredOn(base, target) : base;
   }
 
   // fn 形态出现在参数位：Phase 1 只展示不执法 → 恒真
   if (c.fn) {
-    const own = c.preds.map((p) => substPred(p, paramName));
+    const own = c.preds.map((p) => substPredOn(p, target));
     return own.length === 0 ? pTrue : pAnd(...own);
   }
 
-  const preds = c.preds.map((p) => substPred(p, paramName));
+  // ABS-01：依赖式关系（return > x）——比较义务锚在本项上
+  if (c.relational) {
+    const other = c.relational.term;
+    const relPred =
+      c.relational.rel === "gt" ? gt(target, other)
+      : c.relational.rel === "ge" ? ge(target, other)
+      : c.relational.rel === "lt" ? lt(target, other)
+      : le(target, other);
+    return relPred;
+  }
+
+  const preds = c.preds.map((p) => substPredOn(p, target));
   // prim 的类型义务与界**合取**（Bug 333/335）：旧口径是「有 preds 就不补
   // typeof」——「prim + 界」契约（number().gt(0) / string().max(3)）实例化后
   // 只剩界，类型义务整条丢失 ⇒ 类型错配的实参被静默放行（假绿），
   // 且报错时给出误导性 expected（把数字当长度比）。
   if (c.prim) {
-    const typePred = ptypeof(termVar(paramName), primToTypeof(c.prim));
+    const typePred = ptypeof(target, primToTypeof(c.prim));
     const base = preds.length === 0 ? typePred : pAnd(typePred, ...preds);
     // Bug 088：顶层标量位 `.optional()` ⇒ 该位可为 undefined（可缺省）
-    return c.isOptional ? optionalizePred(base, paramName) : base;
+    return c.isOptional ? optionalizePredOn(base, target) : base;
   }
   const tail: Pred =
     preds.length === 0 ? pTrue : preds.length === 1 ? preds[0]! : pAnd(...preds);
   // Bug 088：无 prim 的标量位（`lit(null)` 等）`.optional()` ⇒ 同样可为 undefined
-  return c.isOptional ? optionalizePred(tail, paramName) : tail;
+  return c.isOptional ? optionalizePredOn(tail, target) : tail;
 }
 
 /** 在给定项上实例化约束（shape 字段/union 成员递归用；assertImplies 统一证明通道；lazy 按 depth 预算展开） */
@@ -1050,26 +1565,45 @@ export function instantiateOnTerm(
   c: NudoConstraint,
   t: Term,
   depth: number = LAZY_TEMPLATE_DEPTH,
+  binders?: BinderTable,
 ): Pred {
+  return instantiateOnTermScoped(c, t, depth, mergeBinderTables(collectBinders(c), binders));
+}
+
+function instantiateOnTermScoped(
+  c0: NudoConstraint,
+  t: Term,
+  depth: number,
+  binders: BinderTable,
+): Pred {
+  // ABS-01：ref 先解析（复用同树 bind 的域，锚在 ref 自己的项上）
+  const refBound = resolveRef(c0, binders);
+  const c = refBound !== undefined ? refBound : stripBinder(c0);
+  const target = refBound !== undefined ? projectRefTerm(t, c0) : t;
+  if (refBound !== undefined) {
+    return instantiateOnTermScoped(c, target, depth, binders);
+  }
   // lazy（issue #120）：预算内解一层；预算耗尽 → 恒真
   if (c.lazy) {
     if (depth <= 0) return pTrue;
-    return instantiateOnTerm(derefConstraint(c), t, depth - 1);
+    return instantiateOnTermScoped(derefConstraint(c), target, depth - 1, binders);
   }
   // SELF 占位符替换（递归进 app 实参 / or / not 分支——同 instantiateConstraint）
-  const subst = (p: Pred): Pred => substPredOn(p, t);
+  const subst = (p: Pred): Pred => substPredOn(p, target);
   if (c.fields) {
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
       if (field.optional || field.constraint.isOptional) continue;
-      parts.push(instantiateOnTerm(field.constraint, getTerm(t, key), depth));
+      parts.push(
+        instantiateOnTermScoped(field.constraint, getTerm(target, key), depth, binders),
+      );
     }
     if (parts.length === 0) return { op: "true" };
     return parts.length === 1 ? parts[0]! : pAnd(...parts);
   }
   // union：各成员在该项上实例化后 or 并
   if (c.members) {
-    const disj = or(...c.members.map((m) => instantiateOnTerm(m, t, depth)));
+    const disj = or(...c.members.map((m) => instantiateOnTermScoped(m, target, depth, binders)));
     const own = c.preds.map(subst);
     return own.length === 0 ? disj : pAnd(...own, disj);
   }
@@ -1078,6 +1612,14 @@ export function instantiateOnTerm(
     const own = c.preds.map(subst);
     return own.length === 0 ? pTrue : pAnd(...own);
   }
+  // ABS-01：依赖式关系（return > x）——比较义务锚在本项上
+  if (c.relational) {
+    const other = c.relational.term;
+    return c.relational.rel === "gt" ? gt(target, other)
+      : c.relational.rel === "ge" ? ge(target, other)
+      : c.relational.rel === "lt" ? lt(target, other)
+      : le(target, other);
+  }
   const preds = c.preds.map(subst);
   // prim 的类型义务：只在**无其它谓词**时补 typeof（与改前口径一致）。
   // 这里**不能**改成「有 preds 也补 typeof」：
@@ -1085,7 +1627,7 @@ export function instantiateOnTerm(
   //   执法侧 or 分支的 judgeLiteralPred 遇 "and" 返回 unknown ⇒ 整条 union
   //   约束被跳过 ⇒ 假绿（union(lit(1), lit(2)) 的 f(5) 违例丢失）；
   // - shape 字段的类型义务由执法侧的字段 prim 检查单独兜住，不靠本谓词。
-  if (c.prim && c.preds.length === 0) return ptypeof(t, primToTypeof(c.prim));
+  if (c.prim && c.preds.length === 0) return ptypeof(target, primToTypeof(c.prim));
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
@@ -1112,32 +1654,58 @@ export function constraintToEntryAbs(
   c: NudoConstraint,
   paramName: string,
   depth: number = LAZY_TEMPLATE_DEPTH,
+  binders?: BinderTable,
 ): Abs {
-  const t = termVar(paramName);
+  return constraintToEntryAbsOn(
+    c,
+    termVar(paramName),
+    depth,
+    mergeBinderTables(collectBinders(c), binders),
+  );
+}
+
+function constraintToEntryAbsOn(
+  c0: NudoConstraint,
+  t: Term,
+  depth: number,
+  binders: BinderTable,
+): Abs {
+  // ABS-01：ref 复用同树 bind 的域，锚在 binder 的稳定项上（跨槽归一：
+  // 形参位 / 返回位的同一 binder 共享同一 term ⇒ dts 泛型投影可统一）
+  if (c0.ref) {
+    const bound = resolveRef(c0, binders)!;
+    if (depth <= 0) return abs({ k: "any" }, binderTerm(c0.ref.name), undefined, "path");
+    const bt = projectRefTerm(binderTerm(c0.ref.name), c0);
+    const inner = constraintToEntryAbsOn(bound, bt, depth - 1, binders);
+    return c0.isOptional ? joinAbs(inner, undefinedArmAbs(t)) : inner;
+  }
+  const c = stripBinder(c0);
+  // binder：本槽位的项重锚到 binder 的稳定项（同一别名跨槽共享域）
+  const at = c0.binder !== undefined ? binderTerm(c0.binder) : t;
   if (c.fields) {
     const slots: Record<string, { value: Abs; optional?: boolean }> = {};
     for (const [key, field] of Object.entries(c.fields)) {
       // lazy 字段预算耗尽 → 缺席槽（整键不发；不伪造 undefined 值槽）——
       // 与手写有限层模板同语义：缺席键读出 undefined，守卫递归干净剪枝
       if (field.constraint.lazy && depth <= 0) continue;
-      const fieldTerm = getTerm(t, key);
+      const fieldTerm = getTerm(at, key);
       slots[key] = {
-        value: constraintOnTermAbs(field.constraint, fieldTerm, depth),
+        value: constraintOnTermAbs(field.constraint, fieldTerm, depth, binders),
         ...(field.optional || field.constraint.isOptional
           ? { optional: true }
           : {}),
       };
     }
-    const objAbs = abs({ k: "obj", slots }, t, undefined, "path");
+    const objAbs = abs({ k: "obj", slots }, at, undefined, "path");
     return c.isOptional ? joinAbs(objAbs, undefinedArmAbs(t)) : objAbs;
   }
   // lazy（issue #120）：预算内解一层 ⇒ 内层的可选位语义随之而来
   if (c.lazy) {
-    if (depth <= 0) return abs({ k: "any" }, t, undefined, "path");
-    const inner = constraintToEntryAbs(derefConstraint(c), paramName, depth - 1);
+    if (depth <= 0) return abs({ k: "any" }, at, undefined, "path");
+    const inner = constraintToEntryAbsOn(derefConstraint(c), at, depth - 1, binders);
     return c.isOptional ? joinAbs(inner, undefinedArmAbs(t)) : inner;
   }
-  const base = constraintOnTermAbs(c, t, depth);
+  const base = constraintOnTermAbs(c, at, depth, binders);
   return c.isOptional ? joinAbs(base, undefinedArmAbs(t)) : base;
 }
 
@@ -1238,12 +1806,26 @@ function andPreds(a: Pred | undefined, b: Pred | undefined): Pred | undefined {
   return pAnd(a, b);
 }
 
-function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
+function constraintOnTermAbs(
+  c0: NudoConstraint,
+  t: Term,
+  depth: number,
+  binders: BinderTable,
+): Abs {
+  // ABS-01：ref 复用同树 bind 的域（锚在 binder 稳定项上）
+  if (c0.ref) {
+    const bound = resolveRef(c0, binders)!;
+    if (depth <= 0) return abs({ k: "any" }, binderTerm(c0.ref.name), undefined, "path");
+    const bt = projectRefTerm(binderTerm(c0.ref.name), c0);
+    return constraintOnTermAbs(bound, bt, depth - 1, binders);
+  }
+  const c = stripBinder(c0);
+  const at = c0.binder !== undefined ? binderTerm(c0.binder) : t;
   // lazy（issue #120）：预算内解一层递归；值位预算耗尽 → any
   // （参数项保留，conf=path——守卫可继续收窄）
   if (c.lazy) {
-    if (depth <= 0) return abs({ k: "any" }, t, undefined, "path");
-    return constraintOnTermAbs(derefConstraint(c), t, depth - 1);
+    if (depth <= 0) return abs({ k: "any" }, at, undefined, "path");
+    return constraintOnTermAbs(derefConstraint(c), at, depth - 1, binders);
   }
   if (c.fields) {
     const slots: Record<string, { value: Abs; optional?: boolean }> = {};
@@ -1251,22 +1833,22 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
       // lazy 字段预算耗尽 → 缺席槽（同 constraintToEntryAbs）
       if (field.constraint.lazy && depth <= 0) continue;
       slots[key] = {
-        value: constraintOnTermAbs(field.constraint, getTerm(t, key), depth),
+        value: constraintOnTermAbs(field.constraint, getTerm(at, key), depth, binders),
         ...(field.optional || field.constraint.isOptional
           ? { optional: true }
           : {}),
       };
     }
-    return abs({ k: "obj", slots }, t, undefined, "path");
+    return abs({ k: "obj", slots }, at, undefined, "path");
   }
   // union：成员析取
   if (c.members) {
     // 全员同 prim 字面量 → or(eq…) 保留字面量域（见 samePrimLiteralUnionAbs）
-    const litUnion = samePrimLiteralUnionAbs(c.members, t);
+    const litUnion = samePrimLiteralUnionAbs(c.members, at);
     if (litUnion) return litUnion;
     // 混合形态（界 / 跨 prim / shape…）：joinAbs 折叠
     const joined = c.members
-      .map((m) => constraintOnTermAbs(m, t, depth))
+      .map((m) => constraintOnTermAbs(m, at, depth, binders))
       .reduce((a, b) => joinAbs(a, b));
     // 同 prim 非字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
     // typeof，与裸 prim 链（number()/string()）的 entry Abs 同构（drift 双向
@@ -1277,7 +1859,7 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
       c.members.every((m) => m.prim === (joined.shape as { type: unknown }).type)
     ) {
       const type = (joined.shape as { type: PrimName }).type;
-      return abs({ k: "prim", type }, t, ptypeof(t, primToTypeof(type)), "path");
+      return abs({ k: "prim", type }, at, ptypeof(at, primToTypeof(type)), "path");
     }
     return joined;
   }
@@ -1287,34 +1869,34 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
   if (c.fn) {
     const paramNames = Object.keys(c.fn.params);
     const paramTypes = paramNames.map((p, i) =>
-      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`), depth),
+      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`), depth, binders),
     );
     const returnType = c.fn.returns
-      ? constraintOnTermAbs(c.fn.returns, termVar("ret"), depth)
+      ? constraintOnTermAbs(c.fn.returns, termVar("ret"), depth, binders)
       : unknown;
     return abs(
       { k: "fn", params: paramNames, paramTypes, returnType },
-      t,
+      at,
       undefined,
       "path",
     );
   }
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {
-    const elem = constraintOnTermAbs(c.element, termVar("x[]"), depth);
+    const elem = constraintOnTermAbs(c.element, termVar("x[]"), depth, binders);
     // 数组**自身**的长度界（`array(number()).min(3)` → ge(length(self), 3)）
     // 不能随元素投影一起蒸发（Bug 922）：pred 槽承载它（与 prim 分支同款）
     // ⇒ 契约面 / 产物面看得见这条界，执法面也能按数组长度判。
-    const arrPred = instantiateOnTerm(c, t, depth);
+    const arrPred = instantiateOnTerm(c, at, depth, binders);
     return abs(
       { k: "arr", element: elem },
-      t,
+      at,
       arrPred.op === "true" ? undefined : arrPred,
       "path",
     );
   }
-  const pred = instantiateOnTerm(c, t, depth);
-  // int 标志 → 整性 pred（Bug 342）：`.int()` 是**数据标志**，不产 pred ⇒
+  const pred = instantiateOnTerm(c, at, depth, binders);
+  // int 标志 → 整性 pred（Bug 342）。`.int()` 是**数据标志**，不产 pred ⇒
   // 约束 → Abs 投影把整性整条蒸发 ⇒ zod / standard 产物面静默放行 3.5，
   // 而门禁（读约束）仍判红 ⇒ 两道门对同一事实给出相反裁决。编码口径与投影层
   // 解码器 `projection.ts` 的 isIntZeroModOne 一致：eq(self % 1, 0)。
@@ -1323,10 +1905,10 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
   // 只在 `prim === "number"` 时执法 int；这里若对任何 int 位都生成 `x % 1 === 0`
   // ⇒ 非数值约束上出现「域面接受 / Abs 面带整数谓词」的双裁决。`.int()` 已在
   // builder 侧拒绝非数值链（构造期即报错），此处再按域口径收口 ⇒ 两面一致。
-  const intPred = isIntFlag(c) && c.prim === "number" ? intPredOnTerm(t) : undefined;
+  const intPred = isIntFlag(c) && c.prim === "number" ? intPredOnTerm(at) : undefined;
   const predOut = andPreds(pred.op === "true" ? undefined : pred, intPred);
   if (c.prim) {
-    return abs({ k: "prim", type: c.prim }, t, predOut, "path");
+    return abs({ k: "prim", type: c.prim }, at, predOut, "path");
   }
   // lit(null) / lit(undefined)：无 prim 域（prim 缺失 + eq(self, null/undefined)）
   // ——与对象 union 的 nullish 成员同款编码（Bug 24）：shape unknown +
@@ -1361,11 +1943,16 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
     // 执法（假绿），而 dts / zod / standard 三个面各说各话。
     return abs({ k: "unknown" }, termLit(nullish), predOut, "path");
   }
+  // ABS-01：依赖式关系约束（rel(">", "x")）——值域是数值，义务是比较；
+  // 入口 Abs 按 number 域投影（证明通道读 pred）。
+  if (c.relational) {
+    return abs({ k: "prim", type: "number" }, at, predOut, "path");
+  }
   // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）
   if (c.preds.length > 0) {
-    return abs({ k: "prim", type: "number" }, t, predOut, "path");
+    return abs({ k: "prim", type: "number" }, at, predOut, "path");
   }
-  return abs({ k: "any" }, t, undefined, "path");
+  return abs({ k: "any" }, at, undefined, "path");
 }
 
 /**

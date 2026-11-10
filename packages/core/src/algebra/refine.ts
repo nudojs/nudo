@@ -19,7 +19,7 @@
  */
 
 import type { Pred } from "./pred.ts";
-import { v as termVar } from "./term.ts";
+import { v as termVar, lit as termLit, app as termApp, litKeyString, type Term } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./key/hash-source.ts";
 import { stripStringsKeepComments } from "./format/code-text.ts";
@@ -51,6 +51,8 @@ import {
   isNudoConstraint,
   instantiateConstraint,
   andC,
+  collectBinders,
+  collectUnboundRefs,
   CONSTRAINT_BUILDERS,
 } from "./constraint.ts";
 // JS 绑定名文法（Unicode 合法，如 `小数` / `$x`）——Bug 350：三条源码指令
@@ -1520,13 +1522,82 @@ function malformedDirectiveMessage(
 }
 
 /**
+ * 简单算术表达式（ABS-01）：`name` / `number` / 二者以 `+` / `-` 左结合
+ * 串联（无括号 / 无乘除）——足以写 `i + 1 <= n`、`last - 1 >= 0` 这类
+ * 循环 / 引理关系，不引入第二套表达式语言。
+ */
+export type ExprTerm = { term: Term; names: string[]; display: string };
+
+/**
+ * 解析简单算术表达式：operand (('+'|'-') operand)*，operand = JS 绑定名
+ * 或数值字面量（含负号 / 小数）。非法形态 → undefined（调用方发诊断）。
+ *
+ * 手写扫描器（不用正则 split）：`-1` 的首字符是负号，split 语义会先产出
+ * 空段（既有 invariant `dp[*] >= -1` 的真实回归源）。
+ */
+export function parseArithExpr(src: string): ExprTerm | undefined {
+  const s = src.trim();
+  if (s === "") return undefined;
+  let i = 0;
+  const skipWs = (): void => {
+    while (i < s.length && /\s/.test(s[i]!)) i++;
+  };
+  const readOperand = (): ExprTerm | undefined => {
+    skipWs();
+    if (i >= s.length) return undefined;
+    const num = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(s.slice(i));
+    if (num) {
+      i += num[0].length;
+      const value = Number(num[0]);
+      if (!Number.isFinite(value)) return undefined;
+      return { term: termLit(value), names: [], display: litKeyString(value) };
+    }
+    let j = i;
+    while (j < s.length && !/[\s+\-*/()]/.test(s[j]!)) j++;
+    const name = s.slice(i, j);
+    if (!isJsBindingIdent(name)) return undefined;
+    i = j;
+    return { term: termVar(name), names: [name], display: name };
+  };
+  const first = readOperand();
+  if (!first) return undefined;
+  let acc = first;
+  for (;;) {
+    skipWs();
+    if (i >= s.length) break;
+    const op = s[i];
+    if (op !== "+" && op !== "-") return undefined;
+    i++;
+    const rhs = readOperand();
+    if (!rhs) return undefined;
+    acc = {
+      term: termApp(op, [acc.term, rhs.term]),
+      names: [...acc.names, ...rhs.names.filter((n) => !acc.names.includes(n))],
+      display: `${acc.display} ${op} ${rhs.display}`,
+    };
+  }
+  return acc;
+}
+
+/**
  * @nudo:assume 解析段（issue #152 用户引理前提）。
- * ok：lhs ≤ rhs（`>=` 段已在解析时翻转，消费方只见 le）；
- * bad：文法外原文（`<` / `>` / `==`、字面量界等——check 发 nudo:assume-invalid）。
+ * ok：lhs ≤ rhs（`>=` 段已在解析时翻转，消费方只见 le）；lhs / rhs 为
+ * 简单算术表达式（ABS-01：`d <= max` / `i + 1 <= n` / `d <= 10`）；
+ * bad：文法外原文（`<` / `>` / `==` 等——check 发 nudo:assume-invalid）。
  * 锚定 = AST 最近 Function（与 @nudo:contract 同 D6=G2 注释块绑定）。
  */
 export type AssumeSeg =
-  | { kind: "ok"; lhs: string; rhs: string; line?: number; column?: number }
+  | {
+      kind: "ok";
+      lhs: string;
+      rhs: string;
+      lhsTerm: Term;
+      rhsTerm: Term;
+      lhsNames: string[];
+      rhsNames: string[];
+      line?: number;
+      column?: number;
+    }
   | { kind: "bad"; raw: string; line?: number; column?: number };
 
 /**
@@ -1539,12 +1610,12 @@ export type AssumeSeg =
  */
 function parseRelationalSeg(
   seg: string,
-): { lhs: string; rhs: string } | undefined {
+): { lhs: ExprTerm; rhs: ExprTerm } | undefined {
   const m = seg.match(/^(.*?)\s*(<=|>=)\s*(.*)$/);
   if (!m) return undefined;
-  const lhs = m[1]!.trim();
-  const rhs = m[3]!.trim();
-  if (!isJsBindingIdent(lhs) || !isJsBindingIdent(rhs)) return undefined;
+  const lhs = parseArithExpr(m[1]!);
+  const rhs = parseArithExpr(m[3]!);
+  if (!lhs || !rhs) return undefined;
   // `>=` 翻转为 le（消费方只见 le）：lhs/rhs 互换
   return m[2] === ">=" ? { lhs: rhs, rhs: lhs } : { lhs, rhs };
 }
@@ -1563,8 +1634,12 @@ export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
     if (rel) {
       out.push({
         kind: "ok",
-        lhs: rel.lhs,
-        rhs: rel.rhs,
+        lhs: rel.lhs.display,
+        rhs: rel.rhs.display,
+        lhsTerm: rel.lhs.term,
+        rhsTerm: rel.rhs.term,
+        lhsNames: rel.lhs.names,
+        rhsNames: rel.rhs.names,
         ...(loc ? { line: loc.line, ...(loc.column !== undefined ? { column: loc.column } : {}) } : {}),
       });
       continue;
@@ -1592,7 +1667,12 @@ export type InvariantSeg =
       name: string;
       path: Array<{ k: "idx" } | { k: "prop"; name: string }>;
       rel: "ge" | "le" | "gt" | "lt";
-      value: number;
+      /** 常数界的快捷读数（rhs 为数值字面量时）；变量 / 表达式界见 rhsTerm */
+      value?: number;
+      /** ABS-01：右端项（变量 / 简单算术；缺省 = lit(value)） */
+      rhsTerm: Term;
+      /** 右端表达式引用的绑定名（check 面按形参 ∪ 顶层局部校验） */
+      rhsNames: string[];
       display: string;
       line?: number;
       column?: number;
@@ -1634,14 +1714,18 @@ function parseInvariantSeg(seg: string): {
   name: string;
   path: Array<{ k: "idx" } | { k: "prop"; name: string }>;
   rel: "ge" | "le" | "gt" | "lt";
-  value: number;
+  value?: number;
+  rhsTerm: Term;
+  rhsNames: string[];
   display: string;
 } | undefined {
-  const m = seg.match(/^(.*?)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+  const m = seg.match(/^(.*?)\s*(>=|<=|>|<)\s*(.+)$/);
   if (!m) return undefined;
   const head = m[1]!.trim();
   const relTxt = m[2]!;
-  const numTxt = m[3]!;
+  // ABS-01：右端接受常数 / 变量 / 简单算术（`i < n` / `last - 1 >= 0`）
+  const rhs = parseArithExpr(m[3]!);
+  if (!rhs) return undefined;
   // `<name><path>`：名字是最长合法绑定名前缀，路径从第一个 `.` / `[` 起
   const cut = head.search(/[.[]/);
   const name = cut < 0 ? head : head.slice(0, cut);
@@ -1653,8 +1737,12 @@ function parseInvariantSeg(seg: string): {
     name,
     path,
     rel: relTxt === ">=" ? "ge" : relTxt === "<=" ? "le" : relTxt === ">" ? "gt" : "lt",
-    value: Number(numTxt),
-    display: `${name}${pathStr} ${relTxt} ${numTxt}`,
+    ...(rhs.term.op === "lit" && typeof rhs.term.value === "number"
+      ? { value: rhs.term.value }
+      : {}),
+    rhsTerm: rhs.term,
+    rhsNames: rhs.names,
+    display: `${name}${pathStr} ${relTxt} ${rhs.display}`,
   };
 }
 
@@ -1810,6 +1898,18 @@ export function extractRefinesFromSource(
         });
         continue;
       }
+      // ABS-01 fail-closed：ref 找不到同树 bind ⇒ 诊断并跳过该段（不得 any()）
+      const unbound = collectUnboundRefs(c);
+      if (unbound.length > 0) {
+        collectDiag({
+          code: DIAG.contractLoad,
+          message: `Constraint '${cName!}' has ref(${unbound
+            .map((n) => JSON.stringify(n))
+            .join(", ")}) without a matching bind(...) in the same constraint tree`,
+          ...pos,
+        });
+        continue;
+      }
       out.push({
         param: param!,
         pred: instantiateConstraint(c, param!),
@@ -1914,6 +2014,31 @@ export function extractRefineReturnFromSource(
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
+      // ABS-01：依赖式返回契约 `return > x` / `return >= x + 1`
+      // ——证明通道无需改（谓词锚在返回项上，与返回 Abs 的 term 对账）
+      const relMatch = part.match(/^return\s*(>=|<=|>|<)\s*(.+)$/);
+      if (relMatch) {
+        const expr = parseArithExpr(relMatch[2]!);
+        if (!expr) {
+          collectDiag({
+            code: DIAG.contractSyntax,
+            message: `Malformed @nudo:contract return segment '${part}' (expected return <constraintName> or return <rel> <expr>; expr = name / number / name ± number)`,
+          });
+          continue;
+        }
+        const opTxt = relMatch[1]!;
+        const relOp =
+          opTxt === ">" ? "gt" : opTxt === ">=" ? "ge" : opTxt === "<" ? "lt" : "le";
+        hits.push({
+          name: `${opTxt} ${expr.display}`,
+          constraint: {
+            __nudoConstraint: true,
+            preds: [],
+            relational: { rel: relOp, term: expr.term },
+          },
+        });
+        continue;
+      }
       const m = part.match(/^return\s+(\S+)$/);
       if (!m || !m[1]!.split(".").every((p) => isJsBindingIdent(p))) {
         // return 段形态非法（如 `return > 0` / `return number()`）→ 诊断。
@@ -1945,6 +2070,17 @@ export function extractRefineReturnFromSource(
       const obligation = returnObligationOf(c);
       // fn 形态模板没有 returns 声明 ⇒ 没有返回义务（不进返回槽）
       if (obligation === undefined) continue;
+      // fn() 模板的 binder 作用域 = 整条模板（形参树里的 bind 对返回树可见）
+      const unbound = collectUnboundRefs(obligation, collectBinders(c));
+      if (unbound.length > 0) {
+        collectDiag({
+          code: DIAG.contractLoad,
+          message: `Constraint '${cName}' has ref(${unbound
+            .map((n) => JSON.stringify(n))
+            .join(", ")}) without a matching bind(...) in the same constraint tree (bind it in the return constraint)`,
+        });
+        continue;
+      }
       hits.push({ name: cName, constraint: obligation });
     }
   }

@@ -126,7 +126,7 @@ describe("dts contract face — 分支交互", () => {
     expect(p.params).toEqual([]);
   });
 
-  it("契约参数面优先于 HOF 泛型快照（不混投影）", () => {
+  it("契约参数面与 HOF 泛型快照合取（ABS-11：未覆盖位保留泛型）", () => {
     const fn = fnOf("apply2", ["xs", "transform"], [], {
       hof: {
         entryShapes: [
@@ -145,7 +145,8 @@ describe("dts contract face — 分支交互", () => {
     });
     // 无契约：泛型投影（C3.3 既有行为）
     expect(generateFunctionDtsLines(fn).join("\n")).toContain("apply2<");
-    // 有契约：具名契约面，不再泛型
+    // 有契约：契约覆盖位用具名契约面；未覆盖位（xs）保留 HOF 泛型——
+    // ABS-11 起这是**合取**，不是二选一（写契约不得静默丢 β 链接）。
     const p = projectFunctionDts(fn, {
       params: [
         {
@@ -159,7 +160,8 @@ describe("dts contract face — 分支交互", () => {
         },
       ],
     });
-    expect(p.lines.join("\n")).not.toContain("apply2<");
+    expect(p.lines.join("\n")).toContain("apply2<A1>");
+    expect(p.lines.join("\n")).toContain("xs: A1[]");
     expect(p.lines.join("\n")).toContain("transform: (x: number) => string");
   });
 });

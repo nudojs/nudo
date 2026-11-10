@@ -58,6 +58,7 @@ nudo check <paths...> [options]
 | `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
 | `--gitlab` | GitLab Code Quality JSON array for `gl-code-quality-report.json` (emitted on stdout — redirect to the file in CI) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
+| `--explain-unknown` | After the human report, list why values became `unknown` / `any` (budget truncation, missing env, unmodeled construct, eval failure, no contract). Observation-only: default output is byte-identical, and `--json` / `--gitlab` machine contracts are unaffected |
 | `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
 | `--fn <name>` | With `--abs`: restrict to one function |
 | `--assume <pred…>` | With `--abs`: assume constraints, e.g. `x>0 y>=1` |
@@ -166,7 +167,7 @@ nudo test <paths...> [options]
 | `--watch` / `-w` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
 | `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; no value = add mode, keeps existing directives |
-| `--both-paths` | Print directive witnesses **and** synthesized `call@`/`entry@` witnesses for the same function in one round (teaching comparison face; exit semantics unchanged; cannot combine with `--freeze`) |
+| `--both-paths` | Print directive witnesses **and** synthesized `call@`/`entry@` witnesses for the same function in one round (teaching comparison face; exit semantics unchanged; cannot combine with `--freeze`). Default runs are mutually exclusive: when a function has both `@nudo:case` and call-site records, `nudo test` prints a `both-paths` hint naming those functions |
 | `--only <names>` | With `--both-paths`: limit synthesis to the named functions (comma-separated); without `--both-paths` it is a usage error |
 | `--json` | Structured case report (single file; cannot combine with `--abs` or `--freeze`) |
 | `--abs` | Print Abs algebra for cases |

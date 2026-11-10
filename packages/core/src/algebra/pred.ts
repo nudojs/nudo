@@ -398,8 +398,34 @@ export const phiAnd = and;
  * 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。
  * 返回 true=可证；false/undefined=仍不可证（保持 fail-closed）。
  * 默认无 oracle——纯内建区间/线性判定，不引入 solver 依赖。
+ *
+ * **契约**：oracle 必须是**确定性**函数（同一 (phi, pred) 恒同答案）——
+ * ABS-07 按 (phi, pred) 缓存答案（每 oracle 512 条，超出清空）以避免同一
+ * 轮里对同一条义务反复调用 solver。非确定性 oracle 语义不在支持范围。
  */
 export type ImplicationOracle = (phi: Phi, pred: Pred) => boolean | undefined;
+
+/** ABS-07：oracle 答案缓存（按 oracle 身份；键 = phi/pred 的确定性展示串） */
+const oracleAnswerMemo = new WeakMap<object, Map<string, boolean>>();
+
+function oracleAnswer(
+  oracle: ImplicationOracle,
+  phi: Phi,
+  pred: Pred,
+): boolean {
+  let memo = oracleAnswerMemo.get(oracle as object);
+  if (!memo) {
+    memo = new Map<string, boolean>();
+    oracleAnswerMemo.set(oracle as object, memo);
+  }
+  const key = `${predToString(phi)}\u0000${predToString(pred)}`;
+  const hit = memo.get(key);
+  if (hit !== undefined) return hit;
+  const ans = oracle(phi, pred) === true;
+  if (memo.size >= 512) memo.clear();
+  memo.set(key, ans);
+  return ans;
+}
 
 const implicationOracleSlot = createScopedSlot<ImplicationOracle | undefined>(
   () => undefined,
@@ -429,6 +455,16 @@ export function implies(phi: Phi, pred: Pred): boolean {
 
   // Bug 1004：同项比较的**格点（lattice）步进**
   if (sameTermLatticeImplies(phi, pred)) return true;
+
+  // ABS-01：舍入单调偏移规则（`ge(b + c, b)` / `le(b - c, b)`，c >= 0）。
+  // IEEE round 单调且 round(b) = b ⇒ round(b + c) >= b（c >= 0）。
+  // 严格比较（gt/lt）不在此规则内：c 可能小于 b 的 ULP（b = 2^53 时
+  // round(b + 1) = b ⇒ `b + 1 > b` 为假），必须另找界证据。
+  if (roundingOffsetImplies(pred)) return true;
+
+  // ABS-07：合取内嵌析取的 DNF 展开（等价变换，仅减少漏判）
+  const dnf = dnfRewrite(phi);
+  if (dnf && dnf.every((d) => implies(d, pred))) return true;
 
   // 合取目标：Φ ⊢ A∧B  iff 逐支
   if (pred.op === "and") {
@@ -482,9 +518,9 @@ export function implies(phi: Phi, pred: Pred): boolean {
   // 字面量可判定
   if (decideLiteralPred(pred) === true) return true;
 
-  // 可选外部 oracle（SMT 等）：内建证不出时最后一问
+  // 可选外部 oracle（SMT 等）：内建证不出时最后一问（答案按 (phi, pred) 缓存）
   const implicationOracle = implicationOracleSlot.get();
-  if (implicationOracle && implicationOracle(phi, pred) === true) return true;
+  if (implicationOracle && oracleAnswer(implicationOracle, phi, pred)) return true;
   return false;
 }
 
@@ -500,6 +536,38 @@ function impliesNotTypeof(
     }
   }
   return false;
+}
+
+/**
+ * 舍入单调偏移：`a = b + c`（c 为字面量）时
+ * - c >= 0 ⇒ a >= b（`ge(a,b)` / `le(b,a)` 恒真）
+ * - c <= 0 ⇒ a <= b（`le(a,b)` / `ge(b,a)` 恒真）
+ * 依据：IEEE round 单调且 round(b) = b ⇒ round(b + c) >= b（c >= 0）。
+ * 严格比较不覆盖（c < ULP(b) 时 round 折叠，见 2^53 + 1 反例）。
+ */
+function roundingOffsetImplies(pred: Pred): boolean {
+  if (pred.op !== "ge" && pred.op !== "le") return false;
+  // 形态：ge(a,b) 里 a = b + c；le(a,b) 里 b = a + c'（c' >= 0）
+  const offsetOf = (x: Term, base: Term): number | undefined => {
+    if (x.op !== "app" || x.args.length !== 2) return undefined;
+    const [l, r] = x.args as [Term, Term];
+    if (x.fn === "+") {
+      if (termEquals(l, base) && r.op === "lit" && typeof r.value === "number") return r.value;
+      if (termEquals(r, base) && l.op === "lit" && typeof l.value === "number") return l.value;
+      return undefined;
+    }
+    if (x.fn === "-") {
+      if (termEquals(l, base) && r.op === "lit" && typeof r.value === "number") return -r.value;
+      return undefined;
+    }
+    return undefined;
+  };
+  // 有符号偏移：a = b + c ⇒ c；否则 b = a + c' ⇒ -c'（b 与 a 的差）
+  const signed = offsetOf(pred.a, pred.b) ?? (
+    offsetOf(pred.b, pred.a) !== undefined ? -(offsetOf(pred.b, pred.a)!) : undefined
+  );
+  if (signed === undefined) return false;
+  return pred.op === "ge" ? signed >= 0 : signed <= 0;
 }
 
 /**
@@ -623,6 +691,15 @@ type Ctx = {
    * 在场原子允许线性环化简（消去/分配）；缺省 fail-closed。
    */
   finite: Set<string>;
+  /**
+   * ABS-07：**序关系图**（difference / order closure）。
+   *
+   * 只收「两个单原子、系数 ±1、无舍入（rounds===0）、常数 0」的纯序事实
+   * （`x <= y` / `x < y`）——它们是真实值的全序关系，可传递闭包。
+   * 带算术平移 / 舍入的形态（`x + 1 <= y`）**不入图**：`fl(y+1)` 可能等于
+   * y（2^53 吸收），链式推导会造出假事实。
+   */
+  orders: Array<{ from: string; to: string; strict: boolean }>;
 };
 
 function termKey(t: Term): string {
@@ -1024,6 +1101,168 @@ function linMayBeNaN(ctx: Ctx, lin: Lin): boolean {
  * `a>b` 与 `a-b>0` 在 IEEE 上等价）。
  * 反身 a op a：eq/ge/le 在非 NaN 时为真；ne 在恒 NaN 时为真。
  */
+/**
+ * ABS-07：单原子 key（lin = coeff·atom + 0，coeff = 1，无舍入）。
+ * 只认这种形态才能安全地参与序关系闭包。
+ */
+function singleAtomKey(ctx: Ctx, t: Term): string | undefined {
+  const l = linOf(t, ctx.finite);
+  if (!l || !l.ieeeOk || l.rounds !== 0 || l.k !== 0 || l.c.size !== 1) return undefined;
+  const [key, coeff] = [...l.c.entries()][0]!;
+  return coeff === 1 ? key : undefined;
+}
+
+/**
+ * ABS-07：序关系闭包（difference / order logic 的最小 sound 子集）。
+ *
+ * 事实来自 `buildCtx` 的 orders 图（纯 `u ≤ v` / `u < v`，带算术平移或
+ * 舍入的形态**不入图**）。BFS 状态 = (节点, 路径是否含严格边)；0/1 状态 ⇒
+ * 有环也终止。序关系在非 NaN 上是传递的；事实为真即排除 NaN ⇒ 推导健全。
+ */
+function orderReachable(
+  ctx: Ctx,
+  from: string,
+  to: string,
+  needStrict: boolean,
+): boolean {
+  if (ctx.orders.length === 0) return false;
+  if (from === to) return !needStrict;
+  const adj = new Map<string, Array<{ to: string; strict: boolean }>>();
+  for (const e of ctx.orders) {
+    const list = adj.get(e.from) ?? [];
+    list.push({ to: e.to, strict: e.strict });
+    adj.set(e.from, list);
+  }
+  const seen = new Set<string>();
+  const queue: Array<{ node: string; strict: boolean }> = [
+    { node: from, strict: false },
+  ];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const e of adj.get(cur.node) ?? []) {
+      const strict = cur.strict || e.strict;
+      if (e.to === to && (!needStrict || strict)) return true;
+      const id = `${e.to}\u0000${strict ? 1 : 0}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      queue.push({ node: e.to, strict });
+    }
+  }
+  return false;
+}
+
+/** 目标为两个单原子之间的序关系时，用序关系闭包判定。 */
+function proveByOrderClosure(ctx: Ctx, pred: Pred): boolean {
+  if (
+    pred.op !== "le" &&
+    pred.op !== "lt" &&
+    pred.op !== "ge" &&
+    pred.op !== "gt"
+  ) {
+    return false;
+  }
+  const ka = singleAtomKey(ctx, pred.a);
+  const kb = singleAtomKey(ctx, pred.b);
+  if (!ka || !kb) return false;
+  if (pred.op === "le") return orderReachable(ctx, ka, kb, false);
+  if (pred.op === "lt") return orderReachable(ctx, ka, kb, true);
+  if (pred.op === "ge") return orderReachable(ctx, kb, ka, false);
+  return orderReachable(ctx, kb, ka, true);
+}
+
+/** 平方项（同一项自乘）：返回被平方的项；否则 undefined。 */
+function squareOperand(t: Term): Term | undefined {
+  if (t.op === "app" && t.fn === "*" && t.args.length === 2 && termEquals(t.args[0]!, t.args[1]!)) {
+    return t.args[0]!;
+  }
+  return undefined;
+}
+
+/**
+ * ABS-07：简单非线性（平方下界）。
+ *
+ * `A*A >= c`：
+ * - 需要 A **非 NaN** 的证据（`linMayBeNaN` = false：有区间事实 / assumeFinite）；
+ * - `c <= 0` ⇒ 恒真（非 NaN 的平方 ≥ 0）；
+ * - `c > 0` ⇒ 取 A 的**非严格下界** L ≥ 0，舍入单调给出
+ *   `x ≥ L ⇒ fl(x*x) ≥ fl(L*L)` ⇒ `fl(L*L) >= c` 即可证。
+ *
+ * 严格目标（`A*A > 0` / `> c`）不在内：下溢（x = 5e-324 ⇒ x*x = 0）与
+ * 零值都可能，必须另有证据。
+ */
+function squareBoundImplies(ctx: Ctx, pred: Pred): boolean {
+  const litNum = (t: Term): number | undefined =>
+    t.op === "lit" && typeof t.value === "number" ? t.value : undefined;
+  let sq: Term | undefined;
+  let bound: number | undefined;
+  if (pred.op === "ge") {
+    sq = squareOperand(pred.a);
+    bound = litNum(pred.b);
+  } else if (pred.op === "le") {
+    sq = squareOperand(pred.b);
+    bound = litNum(pred.a);
+  }
+  if (!sq || bound === undefined || Number.isNaN(bound)) return false;
+  // squareOperand 已返回**被平方的项**
+  const operand = sq;
+  const l = linOf(operand, ctx.finite);
+  if (!l || !l.ieeeOk || linMayBeNaN(ctx, l)) return false;
+  if (bound <= 0) return true;
+  const iv = linInterval(ctx, l);
+  if (!iv.lo || iv.lo.strict || iv.lo.bound < 0 || !Number.isFinite(iv.lo.bound)) {
+    return false;
+  }
+  // 舍入单调（x ≥ L ≥ 0 ⇒ fl(x*x) ≥ fl(L*L)）——用 JS 除法结果直接比较即可
+  return iv.lo.bound * iv.lo.bound >= bound;
+}
+
+/**
+ * ABS-07：DNF 重写（合取里嵌析取）。
+ *
+ * `(A ∧ (B ∨ C)) ⇒ G` ⟺ `(A∧B) ⇒ G` ∧ `(A∧C) ⇒ G`；只在 phi 是**合取且
+ * 内含 or** 时展开（顶层 or 已由既有 or 分支处理），并给 32 支上限防止
+ * 组合爆炸。展开是等价变换 ⇒ 不新增假绿。
+ */
+function hasOrInConjunction(p: Pred): boolean {
+  if (p.op === "or") return true;
+  if (p.op === "and") return p.args.some(hasOrInConjunction);
+  return false;
+}
+
+function dnfDisjuncts(p: Pred, cap: number): Pred[] | undefined {
+  if (p.op === "or") {
+    const out: Pred[] = [];
+    for (const a of p.args) {
+      const d = dnfDisjuncts(a, cap);
+      if (!d) return undefined;
+      out.push(...d);
+      if (out.length > cap) return undefined;
+    }
+    return out;
+  }
+  if (p.op !== "and") return [p];
+  let acc: Pred[] = [pTrue];
+  for (const a of p.args) {
+    const d = dnfDisjuncts(a, cap);
+    if (!d) return undefined;
+    const next: Pred[] = [];
+    for (const x of acc) {
+      for (const y of d) {
+        next.push(and(x, y));
+        if (next.length > cap) return undefined;
+      }
+    }
+    acc = next;
+  }
+  return acc;
+}
+
+function dnfRewrite(phi: Phi): Pred[] | undefined {
+  if (phi.op !== "and" || !phi.args.some(hasOrInConjunction)) return undefined;
+  const out = dnfDisjuncts(phi, 32);
+  return out && out.length > 1 ? out : undefined;
+}
+
 function proveCmpDirect(
   ctx: Ctx,
   op: "gt" | "ge" | "lt" | "le" | "eq" | "ne",
@@ -1139,6 +1378,7 @@ function buildCtx(phi: Phi): Ctx {
     iv: new Map(),
     atoms: new Map(),
     finite: new Set(),
+    orders: [],
   };
   // 合取原子展平（族 06）：嵌套 `and` 里的原子对上下文同样可见——
   // 合取可结合，`and(and(A,B),C)` ≡ `and(A,B,C)`。
@@ -1205,6 +1445,29 @@ function buildCtx(phi: Phi): Ctx {
         tightenHi(iv, bound + slack, false);
       }
       return;
+    }
+    // ABS-07：纯序事实入图（两单原子、±1、无舍入、常数 0）。
+    // `lin = pos - neg + 0 op 0` 与 `pos op neg` 等价（op ∈ le/lt/ge/gt/eq）。
+    if (lin.c.size === 2 && lin.rounds === 0 && lin.k === 0) {
+      const entries = [...lin.c.entries()];
+      const [k1, c1] = entries[0]!;
+      const [k2, c2] = entries[1]!;
+      if (Math.abs(c1) === 1 && Math.abs(c2) === 1 && c1 + c2 === 0) {
+        const posKey = c1 === 1 ? k1 : k2;
+        const negKey = c1 === 1 ? k2 : k1;
+        const push = (from: string, to: string, strict: boolean): void => {
+          ctx.orders.push({ from, to, strict });
+        };
+        // lin = pos - neg op 0 ⇒ pos op neg
+        if (o === "le") push(posKey, negKey, false);
+        else if (o === "lt") push(posKey, negKey, true);
+        else if (o === "ge") push(negKey, posKey, false);
+        else if (o === "gt") push(negKey, posKey, true);
+        else if (o === "eq") {
+          push(posKey, negKey, false);
+          push(negKey, posKey, false);
+        }
+      }
     }
     // 两原子差/和：x - y 形式记入特殊表——由 prove 时用原子区间合成
     // 这里只把「差 = 常数」收成等式类
@@ -1402,6 +1665,11 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
   // 纯字面量
   const litAns = decideLiteralPred(pred);
   if (litAns !== undefined) return litAns;
+
+  // ABS-07：序关系闭包（difference / octagon 的最小 sound 子集）
+  if (proveByOrderClosure(ctx, pred)) return true;
+  // ABS-07：平方下界（简单非线性）
+  if (squareBoundImplies(ctx, pred)) return true;
 
   // eq/ge/le/ne：不经 a-b op 0 归一（±Inf 上不等价），两侧直接比较
   if (

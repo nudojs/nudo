@@ -40,7 +40,7 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs } from "../../abs.ts";
-import { lit, v as termVar } from "../../term.ts";
+import { lit, v as termVar, type Term } from "../../term.ts";
 import type { Pred } from "../../pred.ts";
 import { and, ge, gt, implies, le, lt, not } from "../../pred.ts";
 import { currentInvariantSpecs } from "./state.ts";
@@ -53,7 +53,13 @@ export type InvariantSpec = {
   /** 下钻路径：`[*]`（元素域）/ `.ident`（obj 槽）；空 = 标量绑定 */
   path: Array<{ k: "idx" } | { k: "prop"; name: string }>;
   rel: "ge" | "le" | "gt" | "lt";
+  /** 常数界的快捷读数（rhs 为字面量时） */
   value: number;
+  /**
+   * ABS-01：右端项（变量 / 简单算术；缺省 = lit(value)）。关系界
+   * （`i < n`）与常数界共用同一条强化通道。
+   */
+  rhs?: Term;
 };
 
 /** mint 序号：模块级（同一进程内 fresh；跨次实施不复用旧 var） */
@@ -82,7 +88,7 @@ function strengthenLeaf(a: Abs, spec: InvariantSpec): Abs {
   // lit 叶子：具体值自带真值（ge(lit(-1), 0) 是假 pred，ex falso 危险）
   if (a.term?.op === "lit") return a;
   const term = a.term ?? termVar(`inv#${mintSeq++}`);
-  const bound = lit(spec.value);
+  const bound = spec.rhs ?? lit(spec.value);
   const rel =
     spec.rel === "ge"
       ? ge(term, bound)

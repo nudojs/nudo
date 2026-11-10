@@ -166,10 +166,18 @@ export function lastLoop(n) {
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
   });
 
-  it("对照（完全无指令）：unproven + 零 nudo:invariant-* 诊断", () => {
+  it("对照（完全无指令）：unproven + 零用户 invariant 诊断（推断候选 info 除外）", () => {
     const r = checkOf(scalarSrc(""), scalarOpts);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
-    expect(r.issues.some((i) => i.code.startsWith("nudo:invariant"))).toBe(false);
+    // ABS-08：宽化循环会带 nudo:invariant-inferred（info 观测，不是用户
+    // 声明诊断）；本用例断言的是「没有用户 invariant 的 invalid/relied」。
+    const userInvariantDiags = r.issues.filter(
+      (i) =>
+        typeof i.code === "string" &&
+        i.code.startsWith("nudo:invariant") &&
+        i.code !== "nudo:invariant-inferred",
+    );
+    expect(userInvariantDiags).toEqual([]);
   });
 });
 
@@ -178,7 +186,8 @@ export function lastLoop(n) {
 // ---------------------------------------------------------------------------
 
 describe("@nudo:invariant 校验诊断（nudo:invariant-invalid）", () => {
-  it.each([["dp[*][*] == 0"], ["dp >= string"], ["dp[0] >= 0"], ["dp >="]])(
+  // ABS-01：文法扩到 `<expr>`（name / number / name ± number）⇒ 诊断文案同步
+  it.each([["dp[*][*] == 0"], ["dp[0] >= 0"], ["dp >="], ["dp >= i * 2"]])(
     "非法文法 %s → warning（非 error，report.ok 不受影响）",
     (seg) => {
       const r = checkOf(`
@@ -192,11 +201,26 @@ export function levenshtein(a, b) {${levenshteinBody}}
       expect(bad!.severity).toBe("warning");
       expect(bad!.fn).toBe("levenshtein");
       expect(bad!.actual).toBe(seg);
-      expect(bad!.expected).toBe("<name><path> <rel> <number>");
+      expect(bad!.expected).toBe("<name><path> <rel> <expr>");
       // warning 级（非 error）：invalid 不影响 report.ok 的 error 语义
       expect(r.issues.some((i) => i.code === "nudo:invariant-invalid" && i.severity === "error")).toBe(false);
     },
   );
+
+  it("ABS-01：`dp >= string` 不再是 malformed——未绑定名走 name-not-bound 归因", () => {
+    const r = checkOf(`
+/**
+ * @nudo:invariant dp >= string
+ */
+export function levenshtein(a, b) {${levenshteinBody}}
+`);
+    const bad = r.issues.find((i) => i.code === "nudo:invariant-invalid");
+    expect(bad).toBeDefined();
+    expect(bad!.severity).toBe("warning");
+    expect(bad!.actual).toBe("string");
+    expect(bad!.message).toContain("not bound");
+    expect(r.issues.some((i) => i.code === "nudo:invariant-invalid" && i.severity === "error")).toBe(false);
+  });
 
   it("行尾残留 `*/` 被剥（JSDoc 块内同形）", () => {
     const r = checkOf(`
@@ -341,10 +365,17 @@ export function caller(k) {
     ).toBe(true);
   });
 
-  it("negLoop 自身（未声明 invariant）零 nudo:invariant-* 诊断", () => {
+  it("negLoop 自身（未声明 invariant）零用户 invariant 诊断（推断候选除外）", () => {
     const r = checkOf(src, opts);
     expect(
-      r.issues.filter((i) => i.code.startsWith("nudo:invariant")).map((i) => i.fn),
+      r.issues
+        .filter(
+          (i) =>
+            typeof i.code === "string" &&
+            i.code.startsWith("nudo:invariant") &&
+            i.code !== "nudo:invariant-inferred",
+        )
+        .map((i) => i.fn),
     ).toEqual([]);
   });
 });

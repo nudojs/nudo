@@ -291,10 +291,13 @@ export const nested = fn({ "card.grade": string() }, string());
 ```text
 @nudo:contract <param> <constraint>
 @nudo:contract return <constraint>
+@nudo:contract return <rel> <expr>
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置
 - **constraint** — 来自 `*.nudo.js` 的导出名，经 `/// @nudo:import` 引入
+- **`return <rel> <expr>`** — **依赖式返回**义务，比较对象是返回项（`return >= x`、`return > x + 1`）。`x ± c` 上的 `>=` / `<=` 可由 IEEE 舍入单调性证明（`c >= 0` 时 `round(b + c) >= b`）；无界操作数上的严格 `>` / `<` 诚实证不出（`2^53 + 1 = 2^53`），报 `nudo:unproven-return`，绝不判违例。
+- **契约内 binder（侧车）** — `bind("a", constraint)` 在单条约束树里给槽位域命名；`ref("a")` 复用，`ref("a").at("field")` 投影字段。作用域 = 单个侧车导出；找不到 binder 的 `ref` fail-closed（`nudo:contract-load`），绝不退化成 `any()`。跨位形态：`fn({ items: array(bind("a", any())), transform: fn({ x: ref("a") }, bind("b", any())) }, array(ref("b")))` 投影为 `<A, B>(items: A[], transform: (x: A) => B) => B[]`。依赖式返回的侧车形态是 `rel(">", "x")`。
 
 ### 示例
 
@@ -347,16 +350,17 @@ function register(u) {
 ### 语法
 
 ```text
-@nudo:assume <name> <= <name>
-@nudo:assume <name> >= <name>
+@nudo:assume <expr> <= <expr>
+@nudo:assume <expr> >= <expr>
 ```
 
+`<expr>` 是 JS 绑定名、数值字面量，或简单算术表达式（`name + number` / `name - number`，左结合；括号、`*`、`/` 不接受）。例：`d <= max`、`i + 1 <= n`、`d <= 10`。
+
 - **函数级**——写在紧邻函数上方的注释块里，与 `@nudo:contract` 同一条扫描路径；锚定到最近的函数。
-- 两个名字都可以是**锚定函数的形参或函数体顶层的 `const`/`let`/`var` 局部绑定**（`d`、`max`）——只收函数体直接子语句中 `VariableDeclaration` 的普通 `Identifier` 声明名；解构、嵌套块、`for` 头声明不接受。否则 error `nudo:assume-invalid`。
+- 表达式里引用的每个名字都必须是**锚定函数的形参或函数体顶层的 `const`/`let`/`var` 局部绑定**（`d`、`max`）——只收函数体直接子语句中 `VariableDeclaration` 的普通 `Identifier` 声明名；解构、嵌套块、`for` 头声明不接受。否则 error `nudo:assume-invalid`。
 - 局部量按 **SSA 语义**锚定——引理作用于绑定值，从定义点生效到作用域尾；重新赋值后相关性保守失效（不折）。
 - 锚定只在目标函数自己的帧激活——callee 帧前提已清空，同名局部不会误匹配。
-- 只接受 `<=` / `>=`（`>=` 归一为 `le`）。`<`、`>`、`==` 与常数界（`d <= 10`）均非法——常数界归侧车契约（`number().le(10)`）。
-- 常数界仍归侧车——但侧车够不到函数自己的局部量：局部量的常数界放在**生产它的 callee 的返回**上（如 levenshtein 侧车 `return number().ge(0)`）。
+- 只接受 `<=` / `>=`（`>=` 归一为 `le`）。`<`、`>`、`==` 非法；常数与简单算术合法（`d <= 10`、`i + 1 <= n`）。侧车够不到函数自己的局部量：局部量的常数界放在**生产它的 callee 的返回**上（如 levenshtein 侧车 `return number().ge(0)`）。
 - 多行可叠加——前提合取。
 
 ### 语义——公理，不是被检验的事实
@@ -460,19 +464,23 @@ sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected
 ### 语法
 
 ```text
-@nudo:invariant <name><path> <rel> <number>
+@nudo:invariant <name><path> <rel> <expr>
 @nudo:invariant dp[*][*] >= 0
 @nudo:invariant last >= 1
+@nudo:invariant i < n
 ```
+
+`<expr>` 是数值字面量、绑定名（形参 / 顶层局部），或 `name ± number`——支持关系式右端（`i < n`）。
 
 - **函数级**——写在紧邻函数上方的注释块里，与 `@nudo:contract` / `@nudo:assume` 同一条扫描路径；多行可叠加。
 - `<name>` 必须是**锚定函数的形参或函数体顶层 `const`/`let`/`var` 局部绑定**；否则 warning `nudo:invariant-invalid`。
 - `<path>` 沿绑定下钻：`[*]` 进数组元素 / tuple 成员 / union 数值臂；`.ident` 进对象槽。空路径即标量本身。非数值叶子（字符串、对象）与结构不匹配静默跳过——写错方向的不变式由证明失败暴露，不上报。
-- `<rel>` 是 `>=` / `<=` / `>` / `<` 配**数值常数**（`==`、`!=`、非数值界非法 → `nudo:invariant-invalid`）。
+- `<rel>` 是 `>=` / `<=` / `>` / `<`（`==`、`!=`、非数值形态如 `dp >= string` 非法 → `nudo:invariant-invalid`）；右端可以是常数、绑定名或 `name ± number`。
 - 强化叶子携带 fresh 符号 term 与声明的 pred（conf `path`）；字面量叶子不动——具体值自带真值。
 
 ### 语义——公理，不是被检验的事实
 
+- **自动推断永不作为证明前提。** 循环携带标量被宽化时，`nudo check` 发 info 候选（`nudo:invariant-inferred`），给出观测界与样本数——观测极值是单侧证据，不是已证不变式；只有显式 `@nudo:invariant` 行才进入证明。
 - **引擎从不验证不变式。** 证明依赖它时，`nudo check` 发 info `nudo:invariant-relied`（`levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0`），并建议用具体 `@nudo:case`（`nudo test`）证伪。错误不变式会让受影响的证明 unsound——不变式要少、要可评审。
 - **不变式不跨调用边界继承。** callee 帧看到的不变式槽为空（函数入口清空、退出恢复）——caller 的 `dp` 引理不会泄漏进 callee 的同名局部。
 - 不变式**不**顺手修的：OOB 读位事实保持诚实。抽象下标读 `dp[m][n]` 仍合成 `undefined`；`if (out === undefined) return 0` 守卫在返回契约看到它之前先窄化。

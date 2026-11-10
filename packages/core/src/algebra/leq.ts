@@ -95,8 +95,20 @@ export function leqAbs(
   opts: { phi?: Phi; env?: AstEnv } = {},
 ): LeqResult {
   const phi = opts.phi ?? pTrue;
-  return leqWithPred(src, tgt, phi, opts.env ?? null, 0);
+  return leqWithPred(src, tgt, phi, opts.env ?? null, 0, new Map());
 }
+
+/**
+ * ABS-09：coinductive 假设集（src → 正在检查的 tgt 集）。
+ *
+ * 递归类型（链表 / 树 / 递归 brand）没有有限展开：古典子类型判定在这种
+ * 结构上会一路展开到深度上限。coinduction 的口径是「正在证明的
+ * (src, tgt) 对再次出现时，假设它成立」——标准 equirecursive subtyping
+ * 的最大不动点语义。**路径纪律**：进入时加入、退出（含失败分支）时移除；
+ * 失败分支里建立的假设不得泄漏给兄弟分支，否则「第一次失败」会被重试
+ * 时的假设改写成成功（假绿）。
+ */
+type LeqAssume = Map<Abs, Set<Abs>>;
 
 function leqWithPred(
   src: Abs,
@@ -104,8 +116,32 @@ function leqWithPred(
   phi: Phi,
   env: AstEnv | null,
   depth: number,
+  assume: LeqAssume,
 ): LeqResult {
-  if (depth > 32) return fail("leq depth exceeded");
+  if (depth > 64) return fail("leq depth exceeded");
+  let assumed = assume.get(src);
+  if (!assumed) {
+    assumed = new Set();
+    assume.set(src, assumed);
+  }
+  if (assumed.has(tgt)) return ok();
+  assumed.add(tgt);
+  try {
+    return leqBody(src, tgt, phi, env, depth, assume);
+  } finally {
+    assumed.delete(tgt);
+    if (assumed.size === 0) assume.delete(src);
+  }
+}
+
+function leqBody(
+  src: Abs,
+  tgt: Abs,
+  phi: Phi,
+  env: AstEnv | null,
+  depth: number,
+  assume: LeqAssume,
+): LeqResult {
 
   // never ≤ 任意
   if (src.shape.k === "never") return ok();
@@ -139,7 +175,7 @@ function leqWithPred(
   // any ≤ 任意（源是任意值，目标收窄时不在此判定失败——由 pred/slot 再卡）
   if (src.shape.k === "any") return ok();
 
-  const shapeR = leqShape(src, tgt, phi, env, depth);
+  const shapeR = leqShape(src, tgt, phi, env, depth, assume);
   if (!shapeR.ok) return shapeR;
 
   // BUG-245：源形状是**并集**（sum）时，成员级 leqPred 已在 leqShape 的 sum
@@ -223,6 +259,7 @@ function leqShape(
   phi: Phi,
   env: AstEnv | null,
   depth: number,
+  assume: LeqAssume,
 ): LeqResult {
   const s = src.shape;
   const t = tgt.shape;
@@ -230,7 +267,7 @@ function leqShape(
   // sum 源：每个成员 ≤ tgt
   if (s.k === "sum") {
     for (const m of s.members) {
-      const r = leqWithPred(m, tgt, phi, env, depth + 1);
+      const r = leqWithPred(m, tgt, phi, env, depth + 1, assume);
       if (!r.ok) return fail(`sum member: ${r.reason}`);
     }
     return ok();
@@ -238,7 +275,7 @@ function leqShape(
   // sum 目标：src ≤ 某个成员
   if (t.k === "sum") {
     for (const m of t.members) {
-      if (leqWithPred(src, m, phi, env, depth + 1).ok) return ok();
+      if (leqWithPred(src, m, phi, env, depth + 1, assume).ok) return ok();
     }
     return fail("src ⊭ sum");
   }
@@ -297,7 +334,7 @@ function leqShape(
         ) {
           continue;
         }
-        const r = leqWithPred(srcValue, slot.value, phi, env, depth + 1);
+        const r = leqWithPred(srcValue, slot.value, phi, env, depth + 1, assume);
         if (!r.ok) return fail(`slot ${key}: ${r.reason}`);
       }
     }
@@ -307,12 +344,12 @@ function leqShape(
   // 数组
   if (t.k === "arr") {
     if (s.k === "arr") {
-      return leqWithPred(s.element, t.element, phi, env, depth + 1);
+      return leqWithPred(s.element, t.element, phi, env, depth + 1, assume);
     }
     if (s.k === "tuple") {
       // rest 槽元素同样必须满足目标元素位：`[1, ...string] ⊭ number[]`
-      const elsOk = s.elements.every((el) => leqWithPred(el, t.element, phi, env, depth + 1).ok);
-      const restOk = !s.rest || leqWithPred(s.rest, t.element, phi, env, depth + 1).ok;
+      const elsOk = s.elements.every((el) => leqWithPred(el, t.element, phi, env, depth + 1, assume).ok);
+      const restOk = !s.rest || leqWithPred(s.rest, t.element, phi, env, depth + 1, assume).ok;
       return elsOk && restOk ? ok() : fail("tuple ⊭ arr");
     }
     return fail(`shape ${s.k} ⊭ arr`);
@@ -347,12 +384,12 @@ function leqShape(
     for (let i = 0; i < s.elements.length; i++) {
       // 源超长元素落目标 rest 位（`[1, 2] ≤ [1, ...number]`）
       const tgt = i < t.elements.length ? t.elements[i]! : t.rest!;
-      const r = leqWithPred(s.elements[i]!, tgt, phi, env, depth + 1);
+      const r = leqWithPred(s.elements[i]!, tgt, phi, env, depth + 1, assume);
       if (!r.ok) return fail(`tuple[${i}]: ${r.reason}`);
     }
     // 源 rest ≤ 目标 rest（rest 元素类型协变：`[1, ...string] ⊭ [1, ...number]`）
     if (s.rest && t.rest) {
-      const r = leqWithPred(s.rest, t.rest, phi, env, depth + 1);
+      const r = leqWithPred(s.rest, t.rest, phi, env, depth + 1, assume);
       if (!r.ok) return fail(`tuple rest: ${r.reason}`);
     }
     return ok();
@@ -383,7 +420,7 @@ function leqShape(
     if (t.returnType !== undefined) {
       const sr = s.returnType;
       if (!sr) return fail("fn return unknown ⊭ target return");
-      const r = leqWithPred(sr, t.returnType, phi, env, depth + 1);
+      const r = leqWithPred(sr, t.returnType, phi, env, depth + 1, assume);
       if (!r.ok) return fail(`fn return: ${r.reason}`);
     }
     // 参数：tgt 参数 ≤ src 参数（逆变）—— 有 paramTypes 时检查
@@ -392,7 +429,7 @@ function leqShape(
         const sp = s.paramTypes[i];
         const tp = t.paramTypes[i];
         if (!sp || !tp) continue;
-        const r = leqWithPred(tp, sp, phi, env, depth + 1);
+        const r = leqWithPred(tp, sp, phi, env, depth + 1, assume);
         if (!r.ok) return fail(`fn param[${i}]: ${r.reason}`);
       }
     }
@@ -413,7 +450,7 @@ function leqShape(
   // eff
   if (t.k === "eff") {
     if (s.k !== "eff" || s.eff !== t.eff) return fail(`shape ${s.k} ⊭ eff ${t.eff}`);
-    return leqWithPred(s.inner, t.inner, phi, env, depth + 1);
+    return leqWithPred(s.inner, t.inner, phi, env, depth + 1, assume);
   }
 
   if (s.k === t.k) return ok();

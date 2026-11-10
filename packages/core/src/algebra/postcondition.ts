@@ -29,6 +29,7 @@ import {
   intPredOnTerm,
   isIntFlag,
   instantiateOnTerm,
+  resolveRefChain,
 } from "./constraint.ts";
 import { isNullishLitAbs } from "./surface.ts";
 import { isOobUndef } from "./exec/runtime/state.ts";
@@ -56,7 +57,15 @@ export type PostProof =
  * （见 `phiSuppliesConstraint`）——Φ 只能把「证不出」升级成「已证明」，
  * **绝不**反向制造「确定违约」（error / 假红）。
  */
-type AssertOpts = { phi?: Phi; seen?: Set<object> };
+type AssertOpts = {
+  phi?: Phi;
+  seen?: Set<object>;
+  /**
+   * ABS-01：契约内 binder 表（fn() 契约的形参树 / 返回树分开实例化时，
+   * ref 需要跨槽找到 binder；缺省 = 只看本树）。
+   */
+  binders?: import("./constraint.ts").BinderTable;
+};
 
 function proved(): PostProof {
   return { status: "proved" };
@@ -246,11 +255,12 @@ export function phiSuppliesConstraint(
   phi: Phi | undefined,
   constraint: NudoConstraint,
   ret: Abs,
+  binders?: import("./constraint.ts").BinderTable,
 ): boolean {
   if (!phi || phi.op === "true") return false;
   const item = retAnchorTerm(ret);
   if (!hasSameItemBoundEvidence(phi, item)) return false;
-  return implies(phi, instantiateOnTerm(constraint, item));
+  return implies(phi, instantiateOnTerm(constraint, item, undefined, binders));
 }
 
 /**
@@ -381,9 +391,14 @@ function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
  */
 export function assertImplies(
   ret: Abs,
-  constraint: NudoConstraint,
+  constraintIn: NudoConstraint,
   opts?: AssertOpts,
 ): PostProof {
+  // ABS-01：ref 先解析成绑定约束（含 .at 投影）——否则 ref 节点会被
+  // "无 prim / 无 preds" 的 any() 判定或字面量域隶属当成无义务（假绿）。
+  const constraint = constraintIn.ref
+    ? resolveRefChain(constraintIn, opts?.binders)
+    : constraintIn;
   // lazy 包装（issue #120）：每次递归入口先解一层——包装自身无 prim/preds/
   // 结构，不 deref 会被 isAnyConstraint 误判成 any()（假证明）或漏进标量分支。
   // 环保护（thunk 身份 seen-set，per-path 副本）：自引用模板
@@ -566,7 +581,7 @@ function assertImpliesSingle(
     //
     // 整体蕴含只**升级**为 proved（证不出时返回 false ⇒ 回落逐成员检查）⇒
     // 不制造新的假绿，也不改变其它 union 形态的判定。
-    if (unionDisjunctionImplies(arm, constraint, phi)) return proved();
+    if (unionDisjunctionImplies(arm, constraint, phi, opts?.binders)) return proved();
     // Bug 006：聚合规则区分「成员**被证伪**」与「成员**不可判定**」——
     // 全部成员证伪 ⇒ `disproved`（error）；存在不可判定成员时该成员**仍可能
     // 成立**（∃-成员语义）⇒ 只能 `unprovable`（warning）。
@@ -590,7 +605,7 @@ function assertImpliesSingle(
     if (r.status !== "proved") return r;
     // Bug 005：`shape(...).min/max(n)` 的长度界住在约束自身的 `preds` 里
     // （`length(self) ≥ n`），结构对账通道不看 preds ⇒ 界整条丢弃（假绿）。
-    return assertStructuralPreds(arm, constraint, phi);
+    return assertStructuralPreds(arm, constraint, phi, opts?.binders);
   }
 
   // --- array 契约 ---
@@ -618,7 +633,7 @@ function assertImpliesSingle(
       }
       if (sawUnprovable) return unprovable("array element: some elements unprovable");
       // Bug 005：`array(...).min/max/length(n)` 的长度界在约束 preds 里 ⇒ 同样须执法
-      return assertStructuralPreds(arm, constraint, phi);
+      return assertStructuralPreds(arm, constraint, phi, opts?.binders);
     }
     const el = (arm.shape as { element: Abs }).element;
     const r = assertImplies(el, constraint.element, opts);
@@ -630,7 +645,7 @@ function assertImpliesSingle(
     if (r.status === "unprovable") return unprovable(`array element: ${r.reason}`);
     // Bug 005：元素域已对账 ⇒ 再评长度界（抽象 arr 无长度事实 ⇒ unprovable，
     // 不得像旧口径那样直接 proved —— 「证不出」≠「已证明」）
-    return assertStructuralPreds(arm, constraint, phi);
+    return assertStructuralPreds(arm, constraint, phi, opts?.binders);
   }
 
   // --- fn 契约：Phase 1 只展示不执法 ---
@@ -646,7 +661,7 @@ function assertImpliesSingle(
   }
 
   // --- 标量：prim + Pred 蕴含（统一证明通道）---
-  return assertScalar(arm, constraint, phi);
+  return assertScalar(arm, constraint, phi, opts?.binders);
 }
 
 /**
@@ -663,10 +678,11 @@ function unionDisjunctionImplies(
   arm: Abs,
   constraint: NudoConstraint,
   phi: Phi,
+  binders?: import("./constraint.ts").BinderTable,
 ): boolean {
   const t = retAnchorTerm(arm);
   // union 契约在返回项上的实例化 = 各成员的析取（`instantiateOnTerm` 的 members 分支）
-  const unionPred = instantiateOnTerm(constraint, t);
+  const unionPred = instantiateOnTerm(constraint, t, undefined, binders);
   if (unionPred.op === "true") return false;
   const armPred = arm.pred && arm.pred.op !== "true" ? arm.pred : undefined;
   const src: Phi = armPred
@@ -688,6 +704,10 @@ function isAnyConstraint(c: NudoConstraint): boolean {
     !c.members &&
     !c.fn &&
     !c.lazy &&
+    // ABS-01：ref / 关系式是真实义务（ref 需解析 binder），不得当成 any()
+    !c.ref &&
+    c.binder === undefined &&
+    !c.relational &&
     !isIntFlag(c)
   );
 }
@@ -750,6 +770,7 @@ function assertStructuralPreds(
   arm: Abs,
   constraint: NudoConstraint,
   phi: Phi,
+  binders?: import("./constraint.ts").BinderTable,
 ): PostProof {
   if (constraint.preds.length === 0) return proved();
   const t = retAnchorTerm(arm);
@@ -766,6 +787,8 @@ function assertStructuralPreds(
       int: undefined,
     },
     t,
+    undefined,
+    binders,
   );
   if (pred.op === "true") return proved();
   const len = knownStructuralLength(arm);
@@ -935,6 +958,7 @@ function assertScalar(
   ret: Abs,
   constraint: NudoConstraint,
   phi: Phi,
+  binders?: import("./constraint.ts").BinderTable,
 ): PostProof {
   // prim 门
   if (constraint.prim) {
@@ -996,7 +1020,7 @@ function assertScalar(
   }
 
   // Pred 蕴含（统一证明通道）：constraint preds 锚定到 ret.term
-  const constraintPred = instantiateOnTerm(constraint, t);
+  const constraintPred = instantiateOnTerm(constraint, t, undefined, binders);
 
   // 契约无 pred 义务（裸 prim / any()）：prim 门已过即 proved
   if (constraint.preds.length === 0 && constraintPred.op === "true") {
@@ -1027,6 +1051,14 @@ function assertScalar(
     // ——Φ 只在这一条上把「证不出」升级成「已证明」；反之（Φ 的界弱于契约）
     // 一律走下面的「证据缺失 ⇒ 证不出」，**不得**落到 disproved（假红）。
     if (phiSuppliesConstraint(phi, constraint, ret)) return proved();
+    // ABS-01：依赖式关系证不出 ⇒ warning（unprovable）——关系义务没有可
+    // 直接消费的同项原子（比较对象是外部项），缺证据 ≠ 确定违约；
+    // 必须挡在字面量域隶属之前（那里会把关系节点当「无域约束」而假证明）。
+    if (constraint.relational) {
+      return unprovable(
+        `cannot prove return satisfies ${formatConstraint(constraint)} (no relational evidence on the return value)`,
+      );
+    }
     // 有界义务但无 pred 证据（bare prim / 无界表达式 vs gt(0)）→ 不可判定
     // 只有 ret.pred 存在却不蕴含时才是「确定不满足」（F3 点 1）
     if (isBoundedEvidenceMissing(ret, constraint, phi)) {
@@ -1052,6 +1084,15 @@ function assertScalar(
         boundDesc ?? `return ${JSON.stringify(lv)} ⊭ ${formatConstraint(constraint)}`,
       );
     }
+  }
+
+  // ABS-01：依赖式关系（return > x）证不出 ⇒ **证不出**（warning），不得落
+  // disproved（error）：关系证据缺失 ≠ 确定违约（没有反例即不能判红）。
+  // 关系式在值域证据里没有可直接消费的原子（比较对象是外部项）。
+  if (constraint.relational) {
+    return unprovable(
+      `cannot prove return satisfies ${formatConstraint(constraint)} (no relational evidence on the return value)`,
+    );
   }
 
   // 非字面量：pred 蕴含失败但值域已知且有 pred 证据 → 后置证不出 = 违约（fail-closed）

@@ -58,6 +58,7 @@ nudo check <paths...> [options]
 | `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用 |
 | `--gitlab` | GitLab Code Quality JSON 数组，用于 `gl-code-quality-report.json`（打到 stdout —— CI 中重定向落盘） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
+| `--explain-unknown` | 人类报告之后列出 `unknown` / `any` 的来源（预算截断 / 缺 env / 未建模构造 / 求值失败 / 无契约）。纯观察面：默认输出逐字节不变，`--json` / `--gitlab` 机器契约不受影响 |
 | `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
 | `--assume <pred…>` | 搭配 `--abs`：假设约束，如 `x>0 y>=1` |
@@ -166,7 +167,7 @@ nudo test <paths...> [options]
 | `--watch` / `-w` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件，其调用合成为 `call@L` 用例 |
 | `--freeze[=mode]` | 把合成用例写回为 `@nudo:case` 指令。模式：`update` 重新同步已生成指令；不给值 = add 模式，保留既有指令 |
-| `--both-paths` | 同一轮并排打印同一函数的指令见证**与**合成 `call@`/`entry@` 见证（教学对照面；退出语义不变；不能与 `--freeze` 组合） |
+| `--both-paths` | 同一轮并排打印同一函数的指令见证**与**合成 `call@`/`entry@` 见证（教学对照面；退出语义不变；不能与 `--freeze` 组合）。默认互斥：函数同时有 `@nudo:case` 与调用点记录时，`nudo test` 会打印 `both-paths` 提示并点名这些函数 |
 | `--only <names>` | 搭配 `--both-paths`：把合成收敛到指定函数（逗号分隔）；不带 `--both-paths` 时为用法错误 |
 | `--json` | 结构化用例报告（单文件；不能与 `--abs` 或 `--freeze` 组合） |
 | `--abs` | 打印用例的 Abs 代数 |

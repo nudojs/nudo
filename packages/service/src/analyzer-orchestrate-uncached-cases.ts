@@ -42,6 +42,7 @@ import {
   contractDiagCount,
   literalMeetsConstraint,
   litValue,
+  collectAbsFreeVars,
   SELF,
   substPred,
   takeContractDiagsSince,
@@ -1147,9 +1148,28 @@ export function synthesizeCallSiteCases(
         if (r.resultAbs.shape.k === "never") return 1;
         return 0;
       };
+      // ABS-04：**最外层见证优先**。递归 / 高阶调用会产生「内部」记录：
+      // 实参里带自由 term 变元（α 名 / 派生表达式）⇒ 那是求值器在函数体
+      // 里看到的一次内部调用，不是用户写的调用点。预算截断只应截掉这些
+      // 内部记录，不得把最外层（具体实参）的精确见证挤出。
+      const hasFreeVars = (r: CallRecord): boolean =>
+        r.argAbs.some((a) => {
+          try {
+            return collectAbsFreeVars(a).size > 0;
+          } catch {
+            return true;
+          }
+        });
+      // 预计算排序键（每条记录只走一次 Abs 遍历；排序比较里反复全图遍历
+      // 在大调用集上会放大到 O(n log n · |Abs|)）
       const ordered = records
-        .map((r, i) => ({ r, i }))
-        .sort((a, b) => informativeness(a.r) - informativeness(b.r) || a.i - b.i)
+        .map((r, i) => ({
+          r,
+          i,
+          info: informativeness(r),
+          free: hasFreeVars(r) ? 1 : 0,
+        }))
+        .sort((a, b) => a.info - b.info || a.free - b.free || a.i - b.i)
         .map(({ r }) => r);
       const precise = ordered.slice(0, callSiteBudget);
       // 见证名 = 调用点身份（Bug 070）：同一行的两个调用点此前都叫 `call@L6`

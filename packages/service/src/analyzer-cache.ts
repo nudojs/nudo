@@ -154,6 +154,8 @@ export function cloneAnalysisResult(r: AnalysisResult): AnalysisResult {
     // Node 键与 AST LRU 共享身份；Map 浅拷贝即可
     nodeAbsMap: new Map(r.nodeAbsMap),
     caseHints: r.caseHints.map((h) => ({ ...h })),
+    // ABS-04：观察提示随结果克隆（缺省会静默丢失 ⇒ 可发现性面失效）
+    ...(r.bothPathsHint ? { bothPathsHint: [...r.bothPathsHint] } : {}),
     ...(r.externalFunctions
       ? { externalFunctions: r.externalFunctions.map(cloneFunctionAnalysis) }
       : {}),

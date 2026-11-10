@@ -1271,8 +1271,14 @@ export async function runAbsView(
     // 同一入口 Abs 语义）覆盖 assume 推导出的入口 Abs。
     const eff = contractOf(algebra, source, name, filePath, loadModule, autoBind, projectDir);
     if (eff) {
+      const binders = eff.binders
+        ? new Map(Object.entries(eff.binders))
+        : undefined;
       const byParam = new Map(
-        eff.params.map((p) => [p.param, algebra.constraintToEntryAbs(p.constraint, p.param)]),
+        eff.params.map((p) => [
+          p.param,
+          algebra.constraintToEntryAbs(p.constraint, p.param, undefined, binders),
+        ]),
       );
       for (let i = 0; i < args.length; i++) {
         const c = byParam.get(formals[i] ?? "");

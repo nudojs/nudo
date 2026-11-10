@@ -356,6 +356,10 @@ export function registerCheckCommand(program: Command): void {
     .option("--gha", "GitHub Actions inline annotations (::error/::warning). Auto when GITHUB_ACTIONS=true")
     .option("--gitlab", "GitLab Code Quality JSON array (write as gl-code-quality-report.json)")
     .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
+    .option(
+      "--explain-unknown",
+      "ABS-02: after the report, list why values became unknown / any (budget, env, unsupported, eval failure, no contract)",
+    )
     .option("--abs", "Algebra face: term/pred/conf per function")
     .option("--fn <name>", "With --abs: only this function")
     .option("--assume <pred...>", "With --abs: assume constraints, e.g. x>0 y>=1")
@@ -394,6 +398,7 @@ export function registerCheckCommand(program: Command): void {
           gha?: boolean;
           gitlab?: boolean;
           verbose?: boolean;
+          explainUnknown?: boolean;
           abs?: boolean;
           fn?: string;
           assume?: string[];
@@ -666,6 +671,7 @@ export function registerCheckCommand(program: Command): void {
            */
           fromPaths?: string[];
           verbose?: boolean;
+          explainUnknown?: boolean;
           abs?: boolean;
           absView?: { fn?: string; assume?: string[]; generalize?: boolean };
           ignoreThrows?: string[];
@@ -681,6 +687,7 @@ export function registerCheckCommand(program: Command): void {
           // `externalRecords` 才是塌缩后的执行态记录。
           fromPaths: opts.from,
           verbose: opts.verbose,
+          ...(opts.explainUnknown ? { explainUnknown: true } : {}),
           gha: opts.gha,
           gitlab: opts.gitlab,
           ...(opts.quiet ? { quiet: true } : {}),

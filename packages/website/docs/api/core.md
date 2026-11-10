@@ -208,30 +208,36 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="absonly"></a>`absOnly` | fn | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `absOnly(r: AbsApplyReturn): AbsApplyNoThrow` |
 | <a id="abstoschemasource"></a>`absToSchemaSource` | const | one-way projections | — |
 | <a id="abstotstype"></a>`absToTSType` | const | one-way projections | — |
-| <a id="and"></a>`and` | fn | `@nudo:contract` builder grammar | `and(...preds: Pred[]): Pred` |
-| <a id="andc"></a>`andC` | fn | `@nudo:contract` builder grammar | `andC( ...cs: (NudoConstraint \| ConstraintBuilder)[] ): ConstraintBuilder` |
+| <a id="analysisexplanation"></a>`AnalysisExplanation` | type | unknown / any origin explanation (observation-only side channel — ABS-02) | `AnalysisExplanation = { fn?: string; reason: UnknownReason; detail: string; suggestion?: string; }` |
+| <a id="and"></a>`and` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `and(...preds: Pred[]): Pred` |
+| <a id="andc"></a>`andC` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `andC( ...cs: (NudoConstraint \| ConstraintBuilder)[] ): ConstraintBuilder` |
 | <a id="any"></a>`any` | fn | Abs constructors / faces | `any(): ConstraintBuilder` |
 | <a id="anyabs"></a>`anyAbs` | const | Abs constructors / faces | `const anyAbs` |
 | <a id="anyvar"></a>`anyVar` | fn | Abs constructors / faces | `anyVar(id: string, conf: Confidence = "path"): Abs` |
 | <a id="app"></a>`app` | const | term / shape builders | `const app` |
 | <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ...rest: unknown[] ): ConstraintBuilder` |
 | <a id="bigintlit"></a>`bigintLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `bigintLit(value: bigint): Abs` |
+| <a id="bind"></a>`bind` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
+| <a id="bindertable"></a>`BinderTable` | type | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="bool"></a>`bool` | fn | Abs constructors / faces | `bool(): Abs` |
-| <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |
+| <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `boolean(): ConstraintBuilder` |
 | <a id="boollit"></a>`boolLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `boolLit(value: boolean): Abs` |
+| <a id="buildunknownexplanations"></a>`buildUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `buildUnknownExplanations(input: ExplainInput): AnalysisExplanation[]` |
 | <a id="calltranspiledexport"></a>`callTranspiledExport` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
 | <a id="calltranspiledexportapply"></a>`callTranspiledExportApply` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportApply( exports: Record<string, unknown> \| (() => Record<string, unknown>), name: string, )` |
 | <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean }, ): TranspiledCallResult` |
 | <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; expectedIssue?: string; tagOffset: number; }` |
-| <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
-| <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
+| <a id="checkarg"></a>`checkArg` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
+| <a id="checkcall"></a>`checkCall` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
 | <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | — |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
+| <a id="collectbinders"></a>`collectBinders` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
+| <a id="collectunboundrefs"></a>`collectUnboundRefs` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="confidence"></a>`Confidence` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Confidence = "exact" \| "path" \| "widened" \| "mock" \| "partial" \| "opaque"` |
 | <a id="confjoin"></a>`confJoin` | fn | assignability / join | `confJoin(a: Confidence, b: Confidence): Confidence` |
-| <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
+| <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
 | <a id="contracttierinfo"></a>`ContractTierInfo` | type | contract tiers | `ContractTierInfo = { source: ContractSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
 | <a id="contracttierof"></a>`contractTierOf` | fn | contract tiers | `contractTierOf( source: string, fnName: string, fromFile: string, opts: ContractTierOpts = {}, ): ContractTierInfo \| undefined` |
 | <a id="createenvironment"></a>`createEnvironment` | fn | env host surface | `createEnvironment( parent?: Environment, bindings: Map<string, Abs> = new Map(), ): Environment` |
@@ -252,9 +258,10 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
+| <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
-| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
+| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
 | <a id="joinabs"></a>`joinAbs` | fn | assignability / join | `joinAbs(a: Abs, b: Abs): Abs` |
@@ -262,7 +269,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="leqabs"></a>`leqAbs` | fn | assignability / join | `leqAbs( src: Abs, tgt: Abs, opts: { phi?: Phi; env?: AstEnv } = {}, ): LeqResult` |
 | <a id="listfndirectivescopes"></a>`listFnDirectiveScopes` | fn | G2 directive scope binding (nearest AST Function, incl. nested / class method) | `listFnDirectiveScopes(file: File): FnDirectiveScope[]` |
 | <a id="lit"></a>`lit` | const | term / shape builders | `const lit` |
-| <a id="litc"></a>`litC` | fn | `@nudo:contract` builder grammar | `litC(v: import("./term.ts").LiteralValue): ConstraintBuilder` |
+| <a id="litc"></a>`litC` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `litC(v: import("./term.ts").LiteralValue): ConstraintBuilder` |
 | <a id="literalvalue"></a>`LiteralValue` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `LiteralValue = string \| number \| boolean \| bigint \| null \| undefined` |
 | <a id="litvalue"></a>`litValue` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `litValue(a: Abs): LitValueResult` |
 | <a id="litvalueresult"></a>`LitValueResult` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `LitValueResult = \| { ok: true; value: LiteralValue } \| { ok: false }` |
@@ -272,10 +279,10 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="mockhelper"></a>`MockHelper` | type | test mock helpers | `MockHelper = { kind: "mock-helper"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; onFirstCallValue?: Abs; onSecondCallValu...` |
 | <a id="mockmodulerecord"></a>`MockModuleRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `MockModuleRecord = { source: string; names?: string[]; fromPath: string; }` |
 | <a id="never"></a>`never` | const | Abs constructors / faces | `const never` |
-| <a id="nudoconstraint"></a>`NudoConstraint` | type | contract checking | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
+| <a id="nudoconstraint"></a>`NudoConstraint` | type | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
 | <a id="nudoimportrecord"></a>`NudoImportRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `NudoImportRecord = { names: string[]; importedOfLocal: Record<string, string>; spec: string; }` |
 | <a id="num"></a>`num` | fn | Abs constructors / faces | `num(): Abs` |
-| <a id="number"></a>`number` | fn | `@nudo:contract` builder grammar | `number(): ConstraintBuilder` |
+| <a id="number"></a>`number` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `number(): ConstraintBuilder` |
 | <a id="numlit"></a>`numLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `numLit(value: number): Abs` |
 | <a id="obj"></a>`obj` | fn | term / shape builders | `obj( slots: Record<string, { value: Abs; optional?: boolean }>, ): Abs` |
 | <a id="objshape"></a>`ObjShape` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `ObjShape = { k: "obj"; slots: Record<string, Slot>; index?: { key: Abs; value: Abs }; open?: boolean; }` |
@@ -286,8 +293,11 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="phi"></a>`Phi` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Phi = Pred` |
 | <a id="pred"></a>`Pred` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Pred = \| { op: "true" } \| { op: "false" } \| { op: "eq"; a: Term; b: Term } \| { op: "ne"; a: Term; b: Term } \| { op: "lt"; a: Term; b: Ter...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | const | one-way projections | — |
+| <a id="ref"></a>`ref` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
 | <a id="refineabsforreltrue"></a>`refineAbsForRelTrue` | fn | refinement gate | `refineAbsForRelTrue( a: Abs, op: "gt" \| "ge" \| "lt" \| "le", k: number, ): Abs` |
+| <a id="rel"></a>`rel` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
 | <a id="resetparsesourcecache"></a>`resetParseSourceCache` | fn | Babel parse + memo | `resetParseSourceCache(): void` |
+| <a id="resolverefchain"></a>`resolveRefChain` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="runtranspiled"></a>`runTranspiled` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `runTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown>` |
 | <a id="scanbudgetdecl"></a>`scanBudgetDecl` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `scanBudgetDecl( lines: string[], )` |
 | <a id="scancasetags"></a>`scanCaseTags` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `scanCaseTags(text: string): CaseTag[]` |
@@ -300,7 +310,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; inherited?: boolean; symbolKey?: boolean; }` |
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
-| <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
+| <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `string(): ConstraintBuilder` |
 | <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string, opts?: StripOptions): T` |
 | <a id="strlit"></a>`strLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `strLit(value: string): Abs` |
 | <a id="stub"></a>`stub` | fn | test mock helpers | `stub(): MockHelper` |
@@ -308,6 +318,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpiledcallresult"></a>`TranspiledCallResult` | type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `TranspiledCallResult = { result: Abs; throws: Abs; }` |
 | <a id="union"></a>`union` | fn | term / shape builders | `union( ...cs: (NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined)[] ): ConstraintBuilder` |
 | <a id="unknown"></a>`unknown` | const | Abs constructors / faces | `const unknown` |
+| <a id="unknownreason"></a>`UnknownReason` | type | unknown / any origin explanation (observation-only side channel — ABS-02) | `UnknownReason = \| "budget" \| "missing-env" \| "unsupported" \| "eval-failure" \| "no-contract" \| "explicit-any" \| "inference-failure"` |
 | <a id="v"></a>`v` | const | term / shape builders | `const v` |
 
 ### Exec runtime ($op, §2.2)
@@ -382,7 +393,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (333)</summary>
+<summary>Additional exports from src/index.ts (334)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -434,7 +445,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="constraint_chain_method_names"></a>`CONSTRAINT_CHAIN_METHOD_NAMES` | const | 链式方法名表（单一真源）：`builder(...).method(...)` 链上允许的方法。 | `const CONSTRAINT_CHAIN_METHOD_NAMES` |
 | <a id="constraint_expr_re"></a>`CONSTRAINT_EXPR_RE` | const | 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成—— 名单只在 CONSTRAINT_BUILDERS 一处维护。 | `const CONSTRAINT_EXPR_RE` |
 | <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
-| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
+| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Abs` |
 | <a id="contract_source_abbr"></a>`CONTRACT_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const CONTRACT_SOURCE_ABBR` |
 | <a id="contractdiag"></a>`ContractDiag` | type | contract 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `ContractDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="contractdiagcount"></a>`contractDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `contractDiagCount(): number` |
@@ -485,6 +496,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evictchecksourcememoforpaths"></a>`evictCheckSourceMemoForPaths` | fn | `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存。查找与索引同走 stablePathKey | `evictCheckSourceMemoForPaths(paths: string[]): number` |
 | <a id="evictgeneralizememoforpaths"></a>`evictGeneralizeMemoForPaths` | fn | LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。 | `evictGeneralizeMemoForPaths(paths: string[]): number` |
 | <a id="execnudomodule"></a>`execNudoModule` | fn | 执行 *.nudo.js（真实 JS + 我们的构建器）。import/export 由 Babel 语句级 改写：多行 named import、注释/字符串里的同形文本不误伤；相对 .nudo 递归 求值；环 → throw NudoSidecarError。结果进 exec 缓存（依赖闭包内容指纹键）。 | `execNudoModule(src: string, opts?: RefineResolveOpts): Record<string, unknown>` |
+| <a id="explaininput"></a>`ExplainInput` | type | 结构化输入（只取观察面已有字段；结构性类型避免与 check 模块成环） | `ExplainInput = { signatures: ReadonlyArray<{ name: string; paramTypes?: readonly string[]; display?: string; detail?: string; conf?: stri...` |
 | <a id="extractbalancedparens"></a>`extractBalancedParens` | fn | 平衡括号摘取（字符串感知；`\` 不是转义——与 case 实参原样 slice 一致）。 | `extractBalancedParens(text: string, startIdx: number): string \| null` |
 | <a id="extractdeclaredthrows"></a>`extractDeclaredThrows` | fn | 申报式抛错（declare throws — L2 豁免）： 与 refine 同扫函数前注释块（D6=G2 同一 scope 绑定）。 | `extractDeclaredThrows( source: string, fnName: string, ): string[]` |
 | <a id="extractfn"></a>`extractFn` | fn | — | `extractFn( source: string, fnName: string, fileAst?: ReturnType<typeof babelParse>, )` |

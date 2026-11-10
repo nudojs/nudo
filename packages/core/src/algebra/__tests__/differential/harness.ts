@@ -169,6 +169,29 @@ function compareBody(body: string, n: string, b: EvalSide): string | null {
   return null;
 }
 
+/**
+ * ABS-06：宿主 oracle 矩阵单条探针。
+ *
+ * 与差分门禁同一执行面（transpile → exec → concrete 折叠），但**只报告**
+ * 两侧观测（native 串 / 引擎具体值 / 形状域 / 抛域），分类交给矩阵消费方。
+ */
+export function probeBody(body: string): {
+  native: string;
+  engineConcrete?: string;
+  engineDomain?: string;
+  engineThrows: boolean;
+  engineNoThrow: boolean;
+} {
+  const b = evalAbs(body);
+  return {
+    native: native(body),
+    ...(b.res !== undefined ? { engineConcrete: b.res } : {}),
+    ...(b.domain !== undefined ? { engineDomain: b.domain } : {}),
+    engineThrows: b.throws,
+    engineNoThrow: b.engineNoThrow === true,
+  };
+}
+
 export function diffBody(body: string): string | null {
   return compareBody(body, native(body), evalAbs(body));
 }

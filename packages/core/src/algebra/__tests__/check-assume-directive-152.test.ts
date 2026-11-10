@@ -135,18 +135,37 @@ export function sim(d, max) {
     }
   });
 
-  it("字面量界（d <= 10）→ 同码 error（常数界属侧车契约）", () => {
-    const r = checkOf(`
+  it("ABS-01：常数 / 简单算术界合法（d <= 10 / i + 1 <= n 不再报错）", () => {
+    for (const seg of ["d <= 10", "i + 1 <= n", "d - 1 >= i"]) {
+      const r = checkOf(`
 /**
- * @nudo:assume d <= 10
+ * @nudo:assume ${seg}
  */
-export function sim(d) {
+export function sim(d, i, n) {
   return d;
 }
 `);
-    const bad = r.issues.find((i) => i.code === "nudo:assume-invalid");
-    expect(bad).toBeDefined();
-    expect(bad!.actual).toBe("d <= 10");
+      expect(
+        r.issues.filter((i) => i.code === "nudo:assume-invalid"),
+        seg,
+      ).toEqual([]);
+    }
+  });
+
+  it("ABS-01：文法外算术（乘除 / 括号 / 空操作数）仍报同码 error", () => {
+    for (const seg of ["i * 2 <= n", "i / 2 <= n", "(i + 1) <= n", "i + <= n"]) {
+      const r = checkOf(`
+/**
+ * @nudo:assume ${seg}
+ */
+export function sim(i, n) {
+  return i;
+}
+`);
+      const bad = r.issues.find((i) => i.code === "nudo:assume-invalid");
+      expect(bad, seg).toBeDefined();
+      expect(bad!.actual, seg).toBe(seg);
+    }
   });
 
   it("无参函数上引用任意名 → error", () => {

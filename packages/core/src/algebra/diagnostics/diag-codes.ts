@@ -32,6 +32,8 @@ export const DIAG = {
   directiveSyntax: "nudo:directive-syntax",
   invariantInvalid: "nudo:invariant-invalid",
   invariantRelied: "nudo:invariant-relied",
+  /** ABS-08：自动推断的循环不变量候选（info；不参与证明） */
+  invariantInferred: "nudo:invariant-inferred",
   mockInvalid: "nudo:mock-invalid",
   // --- case 诊断（debug/test 面） ---
   caseExpected: "nudo:case-expected",

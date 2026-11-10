@@ -251,6 +251,91 @@ export function facetKey(f: AbsFacets): string {
   return parts.join(",");
 }
 
+/**
+ * ABS-05：conf 摘要（与 `absKey` 同一遍历顺序的置信度序列）。
+ *
+ * 为什么键要**完整**包含嵌套 conf：缓存命中的结果继承了被缓存那一轮的
+ * conf。只编码顶层会把「同一结构、不同嵌套置信度」的实参折成同一键 ⇒
+ * 实际精度被另一份输入的置信度顶替（`#exact` 冒充 `#widened`）。
+ */
+function confDigest(a: Abs, out: string[], seen: Set<object>): void {
+  if (seen.has(a)) {
+    out.push("cycle");
+    return;
+  }
+  seen.add(a);
+  try {
+    out.push(a.conf);
+    const s = a.shape;
+    switch (s.k) {
+      case "brand":
+        confDigest(s.shape, out, seen);
+        break;
+      case "eff":
+        confDigest(s.inner, out, seen);
+        if (s.rejected) confDigest(s.rejected, out, seen);
+        break;
+      case "arr":
+        confDigest(s.element, out, seen);
+        break;
+      case "tuple":
+        for (const e of s.elements) confDigest(e, out, seen);
+        if (s.rest) confDigest(s.rest, out, seen);
+        break;
+      case "fn":
+        for (const t of s.paramTypes ?? []) confDigest(t, out, seen);
+        if (s.returnType) confDigest(s.returnType, out, seen);
+        for (const k of Object.keys(s.slots ?? {}).sort()) {
+          confDigest(s.slots![k]!.value, out, seen);
+        }
+        for (const o of s.overloads ?? []) {
+          for (const t of o.paramTypes) confDigest(t, out, seen);
+          confDigest(o.returnType, out, seen);
+        }
+        break;
+      case "sum":
+        for (const m of s.members) confDigest(m, out, seen);
+        break;
+      case "obj":
+        for (const k of Object.keys(s.slots).sort()) {
+          confDigest(s.slots[k]!.value, out, seen);
+        }
+        if (s.index) {
+          confDigest(s.index.key, out, seen);
+          confDigest(s.index.value, out, seen);
+        }
+        break;
+      default:
+        break;
+    }
+    if (a.facets) {
+      if (a.facets.genReturn) confDigest(a.facets.genReturn, out, seen);
+      if (a.facets.genNext) confDigest(a.facets.genNext, out, seen);
+      for (const e of a.facets.genElements ?? []) confDigest(e, out, seen);
+    }
+  } finally {
+    seen.delete(a);
+  }
+}
+
+/**
+ * ABS-05：带置信度的结构键——`absKey` + 结构化 conf 摘要。
+ *
+ * **不替换**默认 `absKey`：默认键的契约是不含 conf / pathNote（结构相等
+ * 口径，`objects.ts` 的 join 去重 / env 去重依赖它）。只有确认「结果继承
+ * 输入 conf」的缓存消费方（如 generalize 的 instantiate memo）才用本键，
+ * 避免跨 conf 共享导致精度被顶替。
+ */
+export function absKeyWithConf(
+  a: Abs,
+  seen: Set<object> = new Set(),
+  rename?: VarRename,
+): string {
+  const confs: string[] = [];
+  confDigest(a, confs, new Set());
+  return `${absKey(a, seen, rename)};c[${confs.join(",")}]`;
+}
+
 export function absKey(
   a: Abs,
   seen: Set<object> = new Set(),

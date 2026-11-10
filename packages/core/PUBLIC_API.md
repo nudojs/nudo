@@ -69,8 +69,9 @@ changing the signature of any row below is **major**.
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
 | `MockHelper`, `stub`, `spy`, `mock` | value/type | test mock helpers | **public** |
 | `stripTypes` | value | AST TS-stripping helper | **public** |
-| `ConstraintBuilder`, `number`, `string`, `boolean`, `litC()` (sidecar key `lit()`), `andC()` (sidecar key `and()`), `shape()`, `union()`, … | value/type | `@nudo:contract` builder grammar | **public** |
-| `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
+| `ConstraintBuilder`, `number`, `string`, `boolean`, `litC()` (sidecar key `lit()`), `andC()` (sidecar key `and()`), `shape()`, `union()`, `bind()`/`ref()`/`rel()` (contract-internal binders — ABS-01), … | value/type | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | **public** |
+| `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall`, `BinderTable`, `collectBinders`, `collectUnboundRefs`, `resolveRefChain` | value/type | contract checking (binder scope = one constraint tree; unbound refs fail closed) | **public** |
+| `buildUnknownExplanations`, `formatUnknownExplanations`, `AnalysisExplanation`, `UnknownReason` | value/type | unknown / any origin explanation (observation-only side channel — ABS-02) | **public** |
 | `contractTierOf`, `effectiveContract`, `EffectiveContract`, `ContractTierInfo` | value/type | contract tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |
 | `listFnDirectiveScopes`, `findFnDirectiveScope`, `fnDirectiveCommentLines`, `FnDirectiveScope` | value/type | G2 directive scope binding (nearest AST Function, incl. nested / class method) | **public** |
