@@ -696,6 +696,7 @@ import {
   fnLevelFields,
   getAbs14FastPathChannels,
   tryFnLevelFastPath,
+  tryDegradedChannel,
 } from "./key/summary-fastpath.ts";
 import { hashSource } from "./key/hash-source.ts";
 
@@ -1966,21 +1967,25 @@ function generalizeFromAstUncached(
       // 其余宿主值 → 包装 Abs），与 $call / 成员读的宿主桥同口径。
       result = asAbsVal(result);
     }
-    // ABS-14 PR3：另两条保守通道（默认关闭）。开启时才会把 fail-closed 的
-    // unknown #opaque 换成摘要结论，与「快路径 ≡ body 路径」门禁口径冲突，
-    // 需独立验证后才允许开启；默认不触发 ⇒ 输出逐字节不变。
+    // ABS-14：降级通道（body 不可用 / 预算截断）。只在 body 路径 fail-closed
+    // 出 unknown #opaque 且两个开关至少一个启用时查摘要；替换与否由
+    // tryDegradedChannel 的全部 sound 检查决定（独立验证见
+    // abs14-degraded-channels.test.ts），绝不在别处静默放宽结论。
+    const degraded = getAbs14FastPathChannels();
     if (
       summaryScope !== undefined &&
       result.shape.k === "unknown" &&
       result.conf === "opaque" &&
-      (getAbs14FastPathChannels().bodyUnavailable ||
-        getAbs14FastPathChannels().budgetTruncated)
+      (degraded.bodyUnavailable || degraded.budgetTruncated)
     ) {
-      const fHit = fnSummaryGetFnLevel(summaryScope);
-      if (fHit !== undefined) {
-        const fast = tryFnLevelFastPath(fHit, args, phi, varOrder);
-        if ("post" in fast) result = fast.post;
-      }
+      const filled = tryDegradedChannel(
+        result,
+        fnSummaryGetFnLevel(summaryScope),
+        args,
+        phi,
+        varOrder,
+      );
+      if ("post" in filled) result = filled.post;
     }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {

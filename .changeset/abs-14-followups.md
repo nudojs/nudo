@@ -1,0 +1,14 @@
+---
+"@nudojs/core": patch
+"@nudojs/service": minor
+---
+
+ABS-14 follow-ups (rest-param soundness, degraded channels, dts bounds).
+
+- **Soundness fix (core)**: rest parameters were emitted as `const name = $restBind(...)`, but fork-arm restoration and member-write lowering rebind that slot (`name = ...`). Real CJS code such as `debug/src/common.js`'s `function debug(...args) { args[0] = ... }` therefore threw V8's native `TypeError: Assignment to constant variable` during module evaluation, making `nudo check` fail closed with `nudo:module-throw`. Both emit sites now use `let` (native rest bindings are mutable). Regressed by `eval-rest-param-rebind.test.ts`; reverting to `const` makes all 9 cases fail.
+- **ABS-14 degraded channels enabled**: `bodyUnavailable` and `budgetTruncated` now default on alongside `crossModule`. The replacement logic is extracted to `key/summary-fastpath.ts#tryDegradedChannel` and verified independently by `abs14-degraded-channels.test.ts` (9 cases): the filled result is byte-identical to the same function's real body result, and no summary / shape mismatch / unproven bound / formal mismatch / unmapped variable stays `unknown #opaque`. The equivalence gate is refined accordingly: `crossModule` ≡ current body path, degraded channels ≡ the same function with an available body.
+- **dts bounds (`extends`)** (service): `emit/dts-generator.ts` now translates expressible contract `Pred` leaves into type-parameter constraints — primitive `typeof` tags, `eq(var, lit)` literals, and fully-expressible `or` unions. Numeric bounds, lengths, negations and `typeof object|function` are honestly omitted; unbound declarations stay byte-identical. Projection reads `contract.params[].abs.pred` directly, so `AnalysisResult` and its cache cloning are untouched. Covered by `abs14-dts-extends.test.ts` including a `tsc --noEmit` round-trip.
+- **Host-drift test baselines**: Node 22 vs v26 globals (`Float16Array`, `Intl.DurationFormat`, `URLPattern`, `CloseEvent`, …) and toolchain-injected `__*_SHIM_LOADED__` names are now handled through the existing `VERSION_SKEW` / declared-reason discipline rather than hard assertions; supported hosts keep full coverage. `fs.promises.stat(throwIfNoEntry:false)` oracle tolerates the Node 22 ENOENT behaviour while engine-side assertions stay strict.
+- **Example docs**: `docs/examples/retire-debug` now states that the return face depends on whether the real `debug` package resolves; `verify:examples` pins only `OK` / `0 error` / export names, not `nudo:opaque-result`.
+
+Known remaining debt (documented, not fixed here): `generalizeFromAst`'s `TypeParam.bounds` is effectively always empty because `entryReqs[].pred` uses argument names while `collectSimpleBounds` validates against alpha names, and `attachHofSnapshot` does not pass `refine`. Fixing it needs a Pred variable-space alignment plus integration tests; the dts `extends` work does not depend on that field.

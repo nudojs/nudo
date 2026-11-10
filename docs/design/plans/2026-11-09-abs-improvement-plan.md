@@ -1,7 +1,7 @@
 # Abs 改进计划（16 项）
 
 > **状态**：~~草案（2026-11-09）。16 项均未作为本计划立项；各项「现状」列出的底层能力可能已部分存在。~~
-> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）**，口径与残余见 §5；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 仍待拍板。
+> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成续作**（两组基线红、三条通道、PR4b、零 FP 复核），口径与残余见 §5；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 仍待拍板。
 > **拍板（2026-11-10）**：立 `ABS-14`，但只准简单条件 + 单向依赖，先走三条保守通道；先建等价性门禁；摘要缓存只留一套。四条约束的落地口径见 §5「决策」。
 > **删除线约定**：`~~…~~` = 已交付。§1 总表项名、§0 / §2 的历史排期、§3 / §4 各节标题已划掉；其下「现状 / 改动 / 验收」保留为**历史正文**（交付后不作现行口径），按 `docs/README.md` 后续删除，证据在测试 / changeset / git。§7 / §8 对已交付项的机制引用仍有效，不划掉。
 > **性质**：排序与验收清单，不是架构契约；真源冲突时以真源为准。
@@ -19,8 +19,8 @@
 - ~~**最先启动（可并行）**：`ABS-01`（约束/引理文法）、`ABS-02`（unknown/any 来源）、`ABS-05`（缓存键 conf 审计）。~~
 - ~~**随后**：`ABS-04`（test 观测面）、`ABS-03`（dts 投影）、`ABS-06`（内建一致性门禁，长跑项可并行）。~~
 - ~~**内核批次**：`ABS-07` → `ABS-08`，并与 `ABS-09` / `ABS-10` / `ABS-11` 分域推进。~~
-- **战略项**：`ABS-14` 已交付（2026-11-10，口径与残余见 §5）；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 先拍板再开工，未拍板不排期。
-- **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（5 个 commit）；等价性门禁两半已接入（见 §5）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
+- **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 先拍板再开工，未拍板不排期。
+- **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（PR0–PR4 共 5 个 commit）；**续作**再修两组基线红、启用另两条保守通道、落地 PR4b、单独复核金标零 FP（见 §5「交付与续作」）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -41,7 +41,7 @@
 | 11 | `ABS-11` | ~~contract 合取与 union 精度~~ | P1 | M | `ABS-01` | [x]（判别式穷尽性 warning 延后：零误报优先） |
 | 12 | `ABS-12` | 沙箱 / 隔离执行 | P2 | L | — | 待拍板 |
 | 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
-| 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；残余见 §5） |
+| 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | 待拍板 |
 
@@ -390,14 +390,16 @@
 
 ### ABS-14 有界参数化摘要
 
-> **状态**：`[x]` 已交付（2026-11-10，5 个 commit，分支 `abs-14`）；等价性门禁两半均已接入。残余见本节末「交付残余」。
+> **状态**：`[x]` 已交付（2026-11-10，5 个 commit，分支 `abs-14`）；续作已完成，等价性门禁两半 + 降级通道独立验证均已接入。残余见本节末「交付与续作」。
 
 **决策（2026-11-10，用户拍板）**：立 `ABS-14`，范围按以下四条收窄；与下方「改动候选 / 验收」冲突时以本节为准。
 
 1. **只准简单条件 + 单向依赖**：`bounds` 只用现有 `Pred` 判得动的词汇（`typeof` / 数值界 / 长度等关系式），秩 1；α–α 只允许按声明序单向依赖；**禁止** β 的界依赖 α 的实例化结果、条件类型 / 映射类型 / `infer` / 高阶多态。必须配负例夹具（改动候选第 2 条按此收窄）。
-2. **先走三条保守通道**：快路径只在 ① body 不可用 ② 预算截断 ③ 跨模块复用 时启用；主路径仍以 body 为准，不得默认替换（改动候选第 4 条按此收窄）。命中率与收益仍由 `ABS-16` 度量。
+2. **先走三条保守通道**：快路径只在 ① body 不可用 ② 预算截断 ③ 跨模块复用 时启用；主路径仍以 body 为准，不得默认替换（改动候选第 4 条按此收窄）。命中率与收益仍由 `ABS-16` 度量。**2026-11-10 续作**：三条已全部默认启用（首版只开 `crossModule`，另两条经独立验证后补齐，见「交付与续作」）。
 3. **等价性门禁是开工前置**：`快路径 ≡ body 路径` 的返回值 Abs 逐字节一致夹具**先于快路径合入**；没有可跑的对照不得写快路径代码。落地顺序：先固化 body 路径基线（`abs10-fn-summary.test.ts` 已有「清空摘要后重跑 body 逐字节一致」的写法，可在其上扩展，不必从零建）→ 快路径同批接入同一夹具 → diff 为空才允许启用任一保守通道。§7 该指标来源在快路径接入前记为「body 半已建 / 快路径 diff 待接」。**2026-11-10 进度**：body 基线半已建 —— `packages/core/src/algebra/__tests__/abs14-equivalence-baseline.ts`（共享夹具：7 个样本 + `runBodyPath` + `diffAgainstBodyBaseline`）与 `abs14-equivalence-baseline.test.ts`（11 用例全过，`lint` / `lint:tests` / `lint:hygiene` 通过）；快路径执行器尚未存在，接入点已预留。**2026-11-10 交付订正**：快路径已在 PR3 落地（`key/summary-fastpath.ts`），`abs14-fastpath.test.ts` 调用 `diffAgainstBodyBaseline` 逐条 `equal`，门禁两半均已接入。
 4. **摘要缓存只留一套**：`key/fn-summary.ts`（`ABS-10` 的「每实例一份 post」Map）与新摘要层**不得并存两个跨实例摘要缓存**。落地方式二选一并在实现 PR 写明：① 把 `fn-summary` 演进为本项摘要的唯一存储（条目扩展为 `⟨formals, bounds, pre, post, eff⟩`，保留其键 / 4096 上限 / `fnSummaryStats` / `resetFnSummaryCache` 失效钩子）；② 以新层替换并删除旧 Map。**倾向 ①**（少一次迁移、失效口径不分裂），但实现时可改选，唯一硬要求是单套。`instMemo` / `pureMemo` / `checkMemo` 属既有分层，不算「第二套摘要」，但不得重复存储 post。
+
+**降级通道门禁口径（2026-11-10 续作细化）**：`crossModule` 仍是「快路径 ≡ **当前** body 路径」（`diffAgainstBodyBaseline`）；降级通道的当前 body 路径本就没有结论，等价对象改为「≡ **同函数 body 可用时的真实结论**」，两者都不得一侧更宽。独立验证 = `abs14-degraded-channels.test.ts`。
 
 **开工条件（2026-11-10 已满足）**：第 3 条门禁两半已接入；第 4 条选型（原地扩展 `fn-summary` 为唯一存储）写在 PR1/PR3 提交说明；`TypeParam.bounds` 的 additive 口径已同步 `PUBLIC_API.md`（快照只记导出符号，无需改 JSON）。
 
@@ -460,7 +462,7 @@
    - **停止条件（硬）**：任一等价 diff 非空、快路径单方面更宽、金标下降、真实包出现 FP、默认输出变化 ⇒ 整批回滚，不合并。
 5. **PR4 · 投影收尾与度量文档**
    - 4a（可与 PR1 / PR2 并行，独立文件）：`dts-generator.ts` 的 HOF 签名构造把 `free` 全量 `typeParams.push`，导致 entry-only 仍投未被使用的 `A2`；改用同文件已有的 `reachableTypeParams` 按 `paramsText + returnType` 过滤，夹具钉住过滤后的变元集。投影单向，不改 Abs 分析结果。
-   - 4b：可表达的界投 `extends`，不可表达诚实省略（`ABS-03` 纪律），依赖 PR2。
+   - 4b：可表达的界投 `extends`，不可表达诚实省略（`ABS-03` 纪律），依赖 PR2。**2026-11-10 续作已落地**：`dts-generator.ts` 从契约参数位 `abs.pred` 逐叶翻译（不经 `AnalysisResult`），夹具 `abs14-dts-extends.test.ts`。
    - 4c：`fnSummaryStats()` 接 `ABS-16` 命中率口径；§7 该行来源改为实测；同步 `kernel-merge.md` / `limitations.md` / `hof-relations.md` / `PUBLIC_API.md` / website API 页。
    - 验收：生成 dts 跑 `tsc --noEmit`；`emit-*` 夹具；`verify:examples`（若 dts 输出变化）；投影不改变 Abs 分析结果。
 
@@ -468,13 +470,23 @@
 
 **全局红线**：单轨 Abs；不新增第二 IR；无用户可写类型参数 / 显式实例化；`unknown` 不当 `any`；`absKey` 默认键逐字节不变；`leqAbs` 与金标零 FP 不放松；界不成立不得静默放宽；摘要缓存只留一套；不做跨进程摘要复用（`ABS-16` 信任模型另议）；更新基线 `expectedPost` 必须独立 PR 说明。
 
-**交付残余（2026-11-10，不隐去）**：
+**交付与续作（2026-11-10，不隐去）**：
 
-- 三条保守通道只**默认启用 `crossModule`**；`bodyUnavailable` / `budgetTruncated` 代码路径已存在但默认关闭 —— 开启会把 fail-closed 的 `unknown #opaque` 换成精确结论，与「快路径 ≡ body 路径」门禁口径冲突，需独立验证后才能开。
-- PR4b「界投 `extends`」**未做**：service 投影面拿不到 `TypeParam.bounds`，按 `ABS-03`「不可表达时诚实省略」纪律留空；待界贯通到 service 分析面后单独做，不伪造。
-- PR4a 已修 dts HOF 签名的悬空 `A2`（`abs14-dts-reachable.test.ts`）；投影单向，不改 Abs 分析结果。
-- 全量 core 回归 **1025 / 1029 文件通过**；4 个失败文件（`builtin-coverage-floor` / `eval-brand-method-presence` / `eval-bug-303-ta-buffer-length-multiple` / `eval-ta-ctors`）全是 `Float16Array` 宿主 Node 漂移，已在 PR2 干净基线复跑确认是**既有红**，非本项引入。金标 / 真实包零 FP 门禁随这些既有红单独跟踪。
-- `verify:examples` **248 项通过 / 3 项失败**，三条都源自同一条既有红：`docs/examples/retire-debug/after/src/logger.js` 的 `check` 报 `module evaluation failed: Assignment to constant variable`；PR2 干净基线复跑同样失败，非本项引入。dts 类 pins 全部通过。
+- **三条保守通道已全部默认启用**。`bodyUnavailable` / `budgetTruncated` 抽出为纯函数 `key/summary-fastpath.ts#tryDegradedChannel`，独立验证 `abs14-degraded-channels.test.ts`（9 用例）：替换结论 ≡ 同函数 body 可用时的真实结论；无摘要 / 形状不符 / 界不成立 / formal 数不符 / 变元未映射一律保持 `unknown #opaque`；预算截断样本仍是 `unknown #opaque` 且不写摘要（无假绿）。等价门禁口径据此细化（见本节「降级通道门禁口径」）。两类降级在引擎里都归一成 `unknown #opaque`，故两开关共用同一触发点，待 body 失败原因可观测后再按原因细分。
+- **PR4b「界投 `extends`」已落地**。`service/src/emit/dts-generator.ts` 新增 `predBoundLeaves` / `contractTypeParamConstraints` / `typeParamDecls`，从契约参数位 `abs.pred` 逐叶翻译可表达的简单界（`typeof` 基元标签、`eq(var,lit)` 字面量、`or` 全可表达时的联合）；数值界 / 长度 / 否定 / `typeof object|function` 诚实省略，输出与无界基线逐字节一致。夹具 `abs14-dts-extends.test.ts`（7 用例，含 `tsc --noEmit`）。**实现路径**：dts 直接读契约 Pred（与 `TypeParam.bounds` 同源的 `instantiateConstraint` 产物），没有把投影信息塞进 `AnalysisResult`，因此不动 analyzer 参数链与缓存克隆；`reachableTypeParams` 仍只看纯名字。
+- **已知缺陷（未修，独立后续项）**：`generalizeFromAst` 的 `TypeParam.bounds` 实测几乎恒空 —— `entryReqs[].pred` 的 self var 是实参名（`x`），而 `collectSimpleBounds` 用 α 名（`A1`）校验，全部被判 unbound 丢弃；`attachHofSnapshot` 也不传 `refine`，`entryReqs` 常为 undefined。修它需统一 Pred 变量空间并补集成测试；本轮 PR4b 未依赖该字段，不影响已投出的 `extends`。
+- **两组基线红已修复（续作）**：
+  - ① `Float16Array` / `Intl.DurationFormat` / `URLPattern` 等 Node 22 vs v26 宿主漂移：core `builtin-coverage-floor` 按 `VERSION_SKEW` 跳过已登记缺席 brand；3 个 eval 夹具用 `hostAvailableNames` / `hostNameAvailable` 按 `globalThis` 能力生成用例；env 侧 4 处 oracle（`env-bug-61` / `863` / `865` / `893`）同样按宿主能力过滤或给版本理由；工具链注入的 `__CODEBUDDY_*_SHIM_LOADED__` / `__vitest_*` 按既有纪律登记理由与豁免。**只豁免已登记漂移，未登记的缺席仍硬失败**，支持的宿主上覆盖不缩水。
+  - ② `retire-debug/after/src/logger.js` 的 `module evaluation failed: Assignment to constant variable`：根因不是依赖解析，而是转译器把 rest 形参发成 `const args = $restBind(...)`，fork 臂恢复与成员写回却发 `args = ...`（V8 原生 TypeError，真实 CJS 包 `debug/src/common.js` 的 `function debug(...args)` 触发）。`transpile/stmt/statement.ts` 与 `transpile/expr/function.ts` 改发 `let`（原生 rest 本就是可变绑定），回归夹具 `eval-rest-param-rebind.test.ts`（9 用例，已反向验证改回 `const` 会 9/9 全红）。示例 pin / README / 头注释同步：返回面随宿主能否解析到真实 `debug` 包而不同，只钉 `OK` / `0 error` / 导出名，不钉死 `nudo:opaque-result`。
+- **PR4a** 已修 dts HOF 签名的悬空 `A2`（`abs14-dts-reachable.test.ts`）；投影单向，不改 Abs 分析结果。
+- **门禁复核（续作）**：金标 + 真实包零 FP 单独重跑 3 文件 / 196 用例通过；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；`verify:examples` 与全仓 vitest 的最终数字见本节末「最终门禁」。全仓剩余失败里 6 个 LSP/CLI 文件（沙箱临时路径相对化 + watch 时序）已在 `c8aac63d` 干净基线复跑确认是**既有红**，非本轮引入；1 个 env `fsp.stat(throwIfNoEntry:false)` 宿主行为差已适配。
+
+**最终门禁（2026-11-10 续作，实测）**：
+
+- `pnpm run verify:examples` **250 项全过 / 0 失败**（exit 0）；此前 248/3 → 修 rest 根因并同步 pin / 文档后归零。
+- 全仓 `vitest run --maxWorkers=4` **1739 / 1746 文件通过、17829 用例通过**；剩 9 个失败全在 LSP / CLI：8 个已在 `c8aac63d` 干净基线复跑确认同样失败（沙箱把 `/var/folders/...` 临时目录相对化成 `../../../../`、`/private/var` 前缀不一致触发 allowed-roots 拒绝，以及 watch 事件时序），第 9 个是同族 watch 时序 flaky。均非本轮引入，不通过改 pins / 断言掩盖。
+- 金标 + 真实包零 FP 单独重跑 **3 文件 / 196 用例通过**（`check-recall-gold` 186、`check-real-packages` 10、`check-real-commander` 1）。
+- `lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；定向夹具：ABS-14 全套 31 + 9 + 7、rest 9、env 317、四个 Float16Array 夹具 130 用例均通过。
 
 ### ABS-15 Shape / facets 治理
 
@@ -533,7 +545,7 @@
 | 金标 recall / precision | `ABS-07` / `ABS-08` / `ABS-09` | core gold suites |
 | time-to-green | DX 回归 | `pnpm run dx-metrics` |
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1` / 真实仓基准 |
-| 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal）；命中计数 `fnSummaryFnLevelStats()` |
+| 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal）；降级通道另见 `abs14-degraded-channels.test.ts`；命中计数 `fnSummaryFnLevelStats()` |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | 缓存层日志 |
 
 ## 8. 不做 / 边界
@@ -556,4 +568,4 @@
 - 完成：状态改 `[x]`，证据写进测试或 CHANGELOG，不写回本表正文。
 - 取消：移入「不做 / 边界」或删除并留一行原因。
 - 与真源冲突：以 `kernel-merge.md` / `limitations.md` / `cli-semantics.md` 为准，并在发现当次订正本文件。
-- **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / PR4；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`。
+- **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts`。
