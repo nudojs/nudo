@@ -9,7 +9,7 @@ import { cloneAbsFacets } from "../abs.ts";
 import type { Term } from "../term.ts";
 import { v as termVar } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
-import { absKey, predKey, termKey, type VarRename } from "./abs-key.ts";
+import { absKey, absKeyWithConf, predKey, termKey, type VarRename } from "./abs-key.ts";
 
 export { termKey, predKey, type VarRename };
 
@@ -236,7 +236,10 @@ export function instantiateMemoKey(
   collectPredVars(phi, acc);
   const varOrder = [...acc].sort();
   const rename = new Map(varOrder.map((id, i) => [id, `α${i}`]));
-  const key = `${args.map((a) => absKeyInner(a, new Set(), rename)).join(";")}#${predKey(phi, rename)}`;
+  // ABS-05：实参键**含 conf 摘要**——instantiate 的结果继承输入置信度
+  // （identity 函数把 #widened 实参跑成 #exact 就是跨 conf 共享的实证）。
+  // 默认 `absKey` 保持不含 conf（结构相等口径）；这里是精度敏感消费方。
+  const key = `${args.map((a) => absKeyWithConf(a, new Set(), rename)).join(";")}#${predKey(phi, rename)}`;
   return { key, varOrder };
 }
 
