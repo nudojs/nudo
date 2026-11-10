@@ -166,10 +166,18 @@ export function lastLoop(n) {
     expect(r.issues.some((i) => i.code === "nudo:invariant-relied")).toBe(false);
   });
 
-  it("对照（完全无指令）：unproven + 零 nudo:invariant-* 诊断", () => {
+  it("对照（完全无指令）：unproven + 零用户 invariant 诊断（推断候选 info 除外）", () => {
     const r = checkOf(scalarSrc(""), scalarOpts);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
-    expect(r.issues.some((i) => i.code.startsWith("nudo:invariant"))).toBe(false);
+    // ABS-08：宽化循环会带 nudo:invariant-inferred（info 观测，不是用户
+    // 声明诊断）；本用例断言的是「没有用户 invariant 的 invalid/relied」。
+    const userInvariantDiags = r.issues.filter(
+      (i) =>
+        typeof i.code === "string" &&
+        i.code.startsWith("nudo:invariant") &&
+        i.code !== "nudo:invariant-inferred",
+    );
+    expect(userInvariantDiags).toEqual([]);
   });
 });
 
@@ -357,10 +365,17 @@ export function caller(k) {
     ).toBe(true);
   });
 
-  it("negLoop 自身（未声明 invariant）零 nudo:invariant-* 诊断", () => {
+  it("negLoop 自身（未声明 invariant）零用户 invariant 诊断（推断候选除外）", () => {
     const r = checkOf(src, opts);
     expect(
-      r.issues.filter((i) => i.code.startsWith("nudo:invariant")).map((i) => i.fn),
+      r.issues
+        .filter(
+          (i) =>
+            typeof i.code === "string" &&
+            i.code.startsWith("nudo:invariant") &&
+            i.code !== "nudo:invariant-inferred",
+        )
+        .map((i) => i.fn),
     ).toEqual([]);
   });
 });

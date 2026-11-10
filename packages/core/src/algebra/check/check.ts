@@ -173,6 +173,10 @@ import {
 export type { CheckOptions } from "./check-types.ts";
 import type { CheckOptions } from "./check-types.ts";
 import { DIAG } from "../diagnostics/diag-codes.ts";
+import {
+  inferredInvariants,
+  resetInferredInvariants,
+} from "../diagnostics/inferred-invariants.ts";
 
 /**
  * 检查一个文件：
@@ -201,6 +205,8 @@ function checkSourceInScope(
   phi: Phi,
   opts: CheckOptions,
 ): CheckReport {
+  // ABS-08：自动循环不变量候选按轮清账（info 观测面；不参与证明）
+  resetInferredInvariants();
   // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
   // Identity for memo keys stays on the caller's raw loadModule — a fresh
   // wrapper each call would make loadModuleId() unique and defeat the memo.
@@ -1987,6 +1993,22 @@ function checkSourceInner(
       message: `assign channel check failed: ${(err as Error).message}`,
       suggestion:
         "this is an internal error; please report it together with the checked source file",
+    });
+  }
+
+  // ABS-08：自动循环不变量**候选**（info；不参与证明 ⇒ 不可能造成假绿）。
+  // 宽化确实发生的循环携带标量给出观测区间，用户可显式写成 @nudo:invariant
+  // 才会进入门禁（届时由 nudo:invariant-relied 归因）。
+  for (const inv of inferredInvariants()) {
+    const observed = `${inv.name} ${inv.rel === "ge" ? ">=" : "<="} ${inv.value}`;
+    issues.push({
+      severity: "info",
+      code: DIAG.invariantInferred,
+      message: `loop-carried '${inv.name}' was widened after ${inv.samples} observed iteration(s) (observed bound: ${observed}; widening dropped it) — an observed extreme is NOT a proved invariant`,
+      actual: observed,
+      expected: `loop invariant over '${inv.name}', if one truly holds`,
+      suggestion:
+        `review the loop: if '${inv.name}' is a real loop-carried bound, declare @nudo:invariant explicitly — observed extremes are one-sided evidence and never participate in proofs`,
     });
   }
 

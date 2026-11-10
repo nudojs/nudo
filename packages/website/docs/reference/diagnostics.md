@@ -283,6 +283,17 @@ A return-contract proof **relied on a user-declared loop invariant** (`@nudo:inv
 
 Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:invariant-inferred` {#nudo-invariant-inferred}
+
+```text
+loop-carried 's' was widened after 9 observed iteration(s) (observed bound: s >= 0; widening dropped it)
+→ an observed extreme is NOT a proved invariant — declare @nudo:invariant only if the bound truly holds
+```
+
+A loop-carried scalar was widened after the engine observed a few iteration snapshots. **Info** — an observation hint, never a proof premise: the reported extreme is one-sided evidence from a bounded number of iterations, so it is **not** an invariant and does not participate in any proof. Declaring `@nudo:invariant` explicitly is the only way to make the engine rely on a bound (audited via `nudo:invariant-relied`).
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.

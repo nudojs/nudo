@@ -25,8 +25,9 @@ import { abs, confJoin, num, str, bool, unknown, never, litValue } from "../../a
 import { joinAbs, joinObjects } from "../../objects.ts";
 import { leqAbs } from "../../leq.ts";
 import { numericBounds } from "../../arithmetic.ts";
-import { oobUndef } from "./state.ts";
+import { oobUndef, currentInvariantSpecs } from "./state.ts";
 import { applyInvariantsToPack } from "./invariant-apply.ts";
+import { noteInferredInvariant } from "../../diagnostics/inferred-invariants.ts";
 
 /** 增长标记树：true=整值增长；slots/els/el=结构内增长路径；null=稳定 */
 type GrowthTree =
@@ -440,17 +441,55 @@ export interface LoopCarriedWidener {
   widenFinal(final: Abs): Abs;
 }
 
+/**
+ * ABS-08：出口快照的数值观测（顶层标量槽）。
+ *
+ * 只记录**观测到**的区间与样本数——候选不参与证明（见
+ * diagnostics/inferred-invariants.ts 的阶段纪律）。`strict` 信息丢弃并
+ * 记成非严格端点：候选文本给用户看的是「观测到的极值」，宁可放宽。
+ */
+type SlotNumericObs = { lo?: number; hi?: number; samples: number };
+
 export function makeLoopWidener(): LoopCarriedWidener {
   let acc: Abs | undefined;
   let growth: GrowthTree = null;
   let interrupted = false;
+  /** 槽名 → 数值观测（仅顶层标量；结构内路径留待后续阶段） */
+  const slotObs = new Map<string, SlotNumericObs>();
+  const observeNumerics = (p: Abs): void => {
+    if (p.shape.k !== "obj") return;
+    for (const [name, slot] of Object.entries(p.shape.slots)) {
+      const v = slot.value;
+      // 只对数值标量观测（prim number；lit number 一并收）
+      const isNum =
+        (v.shape.k === "prim" && v.shape.type === "number") ||
+        (v.term?.op === "lit" && typeof v.term.value === "number");
+      if (!isNum) continue;
+      const b = numericBounds(v);
+      const lit =
+        v.term?.op === "lit" && typeof v.term.value === "number" ? v.term.value : undefined;
+      const lo = b?.lo ? b.lo.value : lit;
+      const hi = b?.hi ? b.hi.value : lit;
+      const entry = slotObs.get(name) ?? { samples: 0 };
+      entry.samples += 1;
+      if (lo !== undefined && Number.isFinite(lo)) {
+        entry.lo = entry.lo === undefined ? lo : Math.min(entry.lo, lo);
+      }
+      if (hi !== undefined && Number.isFinite(hi)) {
+        entry.hi = entry.hi === undefined ? hi : Math.max(entry.hi, hi);
+      }
+      slotObs.set(name, entry);
+    }
+  };
   const observe = (p: Abs): void => {
     if (acc === undefined) {
       acc = p;
+      observeNumerics(p);
       return;
     }
     growth = mergeGrowth(growth, diffGrowth(acc, p));
     acc = joinAbs(acc, p);
+    observeNumerics(p);
   };
   return {
     observe,
@@ -474,7 +513,46 @@ export function makeLoopWidener(): LoopCarriedWidener {
         // 绑定包是 obj（每绑定一槽），sum 藏在槽位里——递归下钻。
         return applyInvariantsToPack(collapseArrSums(base));
       }
-      return applyInvariantsToPack(widenWithPath(normalizeForWiden(base, g), g));
+      const widened = applyInvariantsToPack(widenWithPath(normalizeForWiden(base, g), g));
+      // ABS-08：宽化确实发生 ⇒ 把观测区间记成**候选**（info 面；不进证明）。
+      // 用户已显式声明同名顶层 invariant ⇒ 以用户为准（不重复提示）。
+      if (!interrupted && widened.shape.k === "obj") {
+        const userSpecs = currentInvariantSpecs();
+        for (const [name, obs] of slotObs) {
+          if (obs.samples < 2) continue;
+          const slot = widened.shape.slots[name];
+          const isNum =
+            slot !== undefined &&
+            slot.value.shape.k === "prim" &&
+            slot.value.shape.type === "number";
+          if (!isNum) continue;
+          const userCovered = userSpecs.some(
+            (s) => s.name === name && s.path.length === 0,
+          );
+          if (userCovered) continue;
+          if (obs.lo !== undefined) {
+            noteInferredInvariant({
+              name,
+              path: [],
+              rel: "ge",
+              value: obs.lo,
+              samples: obs.samples,
+              source: "inferred",
+            });
+          }
+          if (obs.hi !== undefined) {
+            noteInferredInvariant({
+              name,
+              path: [],
+              rel: "le",
+              value: obs.hi,
+              samples: obs.samples,
+              source: "inferred",
+            });
+          }
+        }
+      }
+      return widened;
     },
   };
 }

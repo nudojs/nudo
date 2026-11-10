@@ -278,6 +278,17 @@ levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0
 
 Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:invariant-inferred` {#nudo-invariant-inferred}
+
+```text
+loop-carried 's' was widened after 9 observed iteration(s) (observed bound: s >= 0; widening dropped it)
+→ an observed extreme is NOT a proved invariant — declare @nudo:invariant only if the bound truly holds
+```
+
+循环携带标量在宽化后给出**观测界**。**Info**——观测提示，永不作为证明前提：报告的极值来自由有限次迭代的**单侧**证据，**不是**不变量，也不参与任何证明。只有显式声明 `@nudo:invariant` 才会让引擎依赖该界（由 `nudo:invariant-relied` 归因）。
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。
