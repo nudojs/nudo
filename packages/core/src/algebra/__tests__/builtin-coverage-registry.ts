@@ -793,6 +793,10 @@ export const ALLOWED_IMPRECISE: Record<string, string> = {
   "global:__vitest_mocker__": "vitest 运行器注入 mocker 绑定，非产品宿主面，接受 unknown",
   "global:__vitest_required__": "vitest 运行器注入 CJS 桥绑定，非产品宿主面，接受 unknown",
   "global:__vitest_worker__": "vitest worker 注入绑定，非产品宿主面，接受 unknown",
+  // Agent/IDE 工具链注入的 *LOADED* 探针（仅该运行时上下文存在；非 JS 宿主内建）
+  "global:__CODEBUDDY_NODE_BROKERED_FS_SHIM_LOADED__": "工具链 fs 代理探针，非产品宿主面，接受 unknown",
+  "global:__CODEBUDDY_NODE_LANGUAGE_SHIM_LOADED__": "工具链语言服务探针，非产品宿主面，接受 unknown",
+  "global:__CODEBUDDY_NODE_SAFE_DELETE_SHIM_LOADED__": "工具链安全删除探针，非产品宿主面，接受 unknown",
 
   // ---- Object 面 -----------------------------------------------------------
   "Object.proto.__defineGetter__": "Annex B 访问器未建模，接受 unknown",
@@ -1031,17 +1035,56 @@ export const VERSION_SKEW: ReadonlySet<string> = new Set([
   "Intl.Locale.proto.textInfo",
   "Intl.Locale.proto.timeZones",
   "Intl.Locale.proto.weekInfo",
-  // 新版本宿主面：新 Node（≥26）才有，老 Node（24）缺席
+  // 新版本宿主面：新 Node（≥26）才有，老 Node（22/24）缺席
   "global:ErrorEvent",
+  "global:CloseEvent",
+  // Float16 支持（Node ≥26）：DataView 的 Float16 存取器
+  "DataView.proto.getFloat16",
+  "DataView.proto.setFloat16",
+  // ECMA-402 Locale 的 get*/firstDayOfWeek 方法（Node ≥26 / V8 14.x 才作为
+  // prototype 自有名出现；与上段「老 Node 自有、新 Node 缺席」的**无 get 前缀**
+  // 访问器方向相反，勿合并）
+  "Intl.Locale.proto.firstDayOfWeek",
+  "Intl.Locale.proto.getCalendars",
+  "Intl.Locale.proto.getCollations",
+  "Intl.Locale.proto.getHourCycles",
+  "Intl.Locale.proto.getNumberingSystems",
+  "Intl.Locale.proto.getTextInfo",
+  "Intl.Locale.proto.getTimeZones",
+  "Intl.Locale.proto.getWeekInfo",
   // CJS 包装局部：仅 CJS/特定 worker 上下文暴露，ESM(vitest worker)常缺席
   "global:module",
   "global:exports",
   "global:require",
   "global:__dirname",
   "global:__filename",
-  // vitest 运行器注入：名字随 vitest 版本变化，缺席是版本差异非台账腐化
+  // 运行器/工具链注入：名字随版本与运行环境变化，缺席是环境差异非台账腐化
   "global:__vitest_index__",
   "global:__vitest_mocker__",
   "global:__vitest_required__",
   "global:__vitest_worker__",
+  "global:__CODEBUDDY_NODE_BROKERED_FS_SHIM_LOADED__",
+  "global:__CODEBUDDY_NODE_LANGUAGE_SHIM_LOADED__",
+  "global:__CODEBUDDY_NODE_SAFE_DELETE_SHIM_LOADED__",
 ]);
+
+/**
+ * 宿主漂移探针（Node 版本差，如 Float16Array 仅较新 Node 提供）。
+ *
+ * 纪律与 host-global-drift.test.ts 一致：**缺席方向只告警**，新增方向才是
+ * 安全信号。仅对已登记进 VERSION_SKEW 的缺席名豁免；未登记的缺席仍留在
+ * 用例里并失败，避免把真实建模缺陷当成版本差掩盖掉。
+ */
+export function hostHasGlobalCtor(name: string): boolean {
+  return typeof (globalThis as unknown as Record<string, unknown>)[name] === "function";
+}
+
+/** 单个构造器是否可为它生成用例：存在，或「缺席但未被登记为漂移」。 */
+export function hostNameAvailable(name: string): boolean {
+  return hostHasGlobalCtor(name) || !VERSION_SKEW.has(`global:${name}`);
+}
+
+/** 家族列表过滤（同 hostNameAvailable 口径）。 */
+export function hostAvailableNames<T extends string>(names: readonly T[]): T[] {
+  return names.filter(hostNameAvailable);
+}

@@ -322,8 +322,12 @@ pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/a
   'fn({ durationMs: number() }, string())' 'fn({ text: string() }, number())'
 
 # retire-debug/ — real npm dep `debug` (visionmedia/debug)
+# 返回面随宿主能否解析到真实 `debug` 包而不同：解析到 ⇒ 引擎真实求值并给出
+# 精确返回面（修复 rest 形参 const 误发射后）；解析不到 ⇒ 诚实 unknown +
+# nudo:opaque-result。两者都是 0 error，故不钉死 opaque-result，只锁门禁
+# 通过 + 导出名，避免把环境差异误判成引擎回归。
 pin 'pnpm run check docs/examples/retire-debug/after/src/logger.js' \
-  'OK' '0 error' 'createLogger' 'logHello' 'nudo:opaque-result'
+  'OK' '0 error' 'createLogger' 'logHello'
 pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts' \
   'fn({ namespace: string() }, any())' 'fn({ name: string() }, any())'
 pin 'pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json' \

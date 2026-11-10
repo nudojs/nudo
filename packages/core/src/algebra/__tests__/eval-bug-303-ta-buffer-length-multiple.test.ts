@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import { call, val, effects } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 import { checkSource } from "../check/check.ts";
+import { hostNameAvailable } from "./builtin-coverage-registry.ts";
 
 /** 原生：定抛（try/catch 吸收后返回 "caught"） */
 function expectCaught(src: string) {
@@ -74,7 +75,9 @@ describe("Bug 303 负控制：合法 buffer 形态不回退", () => {
     ["Uint8Array / 6 字节 → 6（BPE=1 恒整除）", `const b = new ArrayBuffer(6); return new Uint8Array(b).length;`, 6],
     ["Uint8Array / 3 字节 off 1 → 2", `const b = new ArrayBuffer(3); return new Uint8Array(b, 1).length;`, 2],
     ["BigInt64Array / 16 字节 → 2", `const b = new ArrayBuffer(16); return new BigInt64Array(b).length;`, 2],
-    ["Float16Array / 6 字节 → 3", `const b = new ArrayBuffer(6); return new Float16Array(b).length;`, 3],
+    ...(hostNameAvailable("Float16Array")
+      ? [["Float16Array / 6 字节 → 3", `const b = new ArrayBuffer(6); return new Float16Array(b).length;`, 3] as [string, string, number]]
+      : []),
     ["Int32Array / 0 字节 → 0", `const b = new ArrayBuffer(0); return new Int32Array(b).length;`, 0],
     ["Int32Array / 4 字节 off 4 → 0", `const b = new ArrayBuffer(4); return new Int32Array(b, 4).length;`, 0],
   ])("%s", (_name, body, expected) => {

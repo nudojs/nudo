@@ -443,9 +443,14 @@ function emitFunctionDeclaration(
       ].join("\n")
     : bodyStmts;
   // Bug 44：rest 绑定经 $restBind——真调用按 arguments 切片包 $arr（长度
-  // 保持原生）；签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）
+  // 保持原生）；签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）。
+  // 必须是 let：原生 rest 形参是可变绑定，且 fork 臂恢复 / 成员写回会发
+  // `${rest} = $copy(...)`（emit.ts forkArmThunk / member-path.ts 重绑根）。
+  // 发射 const 会让真实 CJS 包（如 debug 的 `function debug(...args)` +
+  // `args[0] = ...`）在装载期抛 V8 原生 TypeError: Assignment to constant
+  // variable ⇒ 整模块 fail-closed。同 statement.ts Bug 16 的 `__this` 口径。
   const restBind = rest
-    ? `${indent(depth + 1)}const ${rest} = $restBind(arguments, ${named.length});\n`
+    ? `${indent(depth + 1)}let ${rest} = $restBind(arguments, ${named.length});\n`
     : "";
   // function* → $gen 收集 yield。宿主函数是普通 function（transpile 已去
   // generator 化）——__nudoNonCtor 标记由 hoistNonCtorMarkers

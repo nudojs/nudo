@@ -34,7 +34,11 @@ pnpm run nudo -- migrate retire docs/examples/retire-debug/after --dry-run
 ## 诚实边界
 
 - `debug` 无自带 `.d.ts`：before 用最小 `debug.d.ts`（等价 `@types/debug`）。
-- 剥除后 `debug()` 返回在分析里是 **unknown**（native/未 harvest）——这是引擎债告警，不是契约失败。
+- 剥除后 `debug()` 的返回面取决于宿主能否解析到真实 `debug` 包：解析到时引擎
+  真实求值给出精确返回面；解析不到时诚实退化为 **unknown** +
+  `nudo:opaque-result`。两种表现都是引擎债/环境差异，不是契约失败，门禁恒为
+  `0 error`；`verify:examples` 因此只钉 `OK` / `0 error` 与导出名，不钉死
+  `nudo:opaque-result`（见 `scripts/verify-examples.sh` 该行注释）。
 - 有 `@types/debug` 时 harvest 会自动补签名；也可用 `@nudo:mock` / `refine return` 钉住。
 
 公开叙事（含 checkout-demo / `ms`）：网站 [Case study: retire tsc](https://nudojs.github.io/nudo/docs/guides/case-study-retire)。
