@@ -1880,7 +1880,6 @@ function computeHofSignature(
   // α / B:param → 稳定 TS 名；同名冲突加序号
   const typeVars = new Map<string, string>();
   const used = new Set<string>();
-  const typeParams: string[] = [];
   for (const id of [...free].sort()) {
     let n = tsTypeParamName(id);
     if (used.has(n) || !isJsBindingIdent(n)) {
@@ -1890,7 +1889,6 @@ function computeHofSignature(
     }
     used.add(n);
     typeVars.set(id, n);
-    typeParams.push(n);
   }
 
   const params: string[] = [];
@@ -1921,7 +1919,14 @@ function computeHofSignature(
     paramTypes.push(typeStr);
   }
   const returnType = retAbs ? absToTSType(retAbs, typeVars) : "unknown";
-  return { typeParams, params, paramNames, paramTypes, returnType };
+  // ABS-14 PR4a：free 变元全量发射会留下悬空类型参数（entry-only
+  // processItems 的 A2 从未被任何形参/返回位引用）。按签名文本过滤，
+  // 与契约面 reachableTypeParams 同口径；投影单向，不改 Abs 分析结果。
+  const reachable = reachableTypeParams(
+    typeVars,
+    `${params.join(" ")} ${returnType}`,
+  );
+  return { typeParams: reachable, params, paramNames, paramTypes, returnType };
 }
 
 /** projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） */
