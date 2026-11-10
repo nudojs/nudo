@@ -684,8 +684,19 @@ import {
   instantiateMemoKey,
   alphaRenameResult,
 } from "./key/generalize-key.ts";
-import { fnSummaryGet, fnSummarySet, resetFnSummaryCache } from "./key/fn-summary.ts";
+import {
+  fnSummaryGet,
+  fnSummarySet,
+  resetFnSummaryCache,
+  fnSummaryGetFnLevel,
+  fnSummarySetFnLevel,
+} from "./key/fn-summary.ts";
 import { collectSimpleBounds } from "./key/summary-bounds.ts";
+import {
+  fnLevelFields,
+  getAbs14FastPathChannels,
+  tryFnLevelFastPath,
+} from "./key/summary-fastpath.ts";
 import { hashSource } from "./key/hash-source.ts";
 
 export type TypeParam = {
@@ -1900,7 +1911,7 @@ function generalizeFromAstUncached(
 
 
 
-  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
+  const run = (args: Abs[], phi: Phi = pTrue, opts?: { symbolic?: boolean }): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
@@ -1914,6 +1925,22 @@ function generalizeFromAstUncached(
         const out = alphaRenameResult(sHit.post, sHit.varOrder, varOrder);
         instMemo.set(key, { result: out, varOrder });
         return out;
+      }
+    }
+    // ABS-14 PR3：第三层 —— 函数级带界摘要（跨模块复用通道）。
+    // symbolic 一次跑不参与：它的 formals 是展示层 α，不能当具体实参的摘要。
+    if (
+      !opts?.symbolic &&
+      getAbs14FastPathChannels().crossModule &&
+      summaryScope !== undefined
+    ) {
+      const fHit = fnSummaryGetFnLevel(summaryScope);
+      if (fHit !== undefined) {
+        const fast = tryFnLevelFastPath(fHit, args, phi, varOrder);
+        if ("post" in fast) {
+          instMemo.set(key, { result: fast.post, varOrder });
+          return fast.post;
+        }
       }
     }
     let result: Abs | undefined;
@@ -1939,11 +1966,36 @@ function generalizeFromAstUncached(
       // 其余宿主值 → 包装 Abs），与 $call / 成员读的宿主桥同口径。
       result = asAbsVal(result);
     }
+    // ABS-14 PR3：另两条保守通道（默认关闭）。开启时才会把 fail-closed 的
+    // unknown #opaque 换成摘要结论，与「快路径 ≡ body 路径」门禁口径冲突，
+    // 需独立验证后才允许开启；默认不触发 ⇒ 输出逐字节不变。
+    if (
+      summaryScope !== undefined &&
+      result.shape.k === "unknown" &&
+      result.conf === "opaque" &&
+      (getAbs14FastPathChannels().bodyUnavailable ||
+        getAbs14FastPathChannels().budgetTruncated)
+    ) {
+      const fHit = fnSummaryGetFnLevel(summaryScope);
+      if (fHit !== undefined) {
+        const fast = tryFnLevelFastPath(fHit, args, phi, varOrder);
+        if ("post" in fast) result = fast.post;
+      }
+    }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
       // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
       if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
+      // ABS-14 PR3：函数级摘要（每函数一份、覆盖式）；symbolic 跑不写。
+      if (!opts?.symbolic && summaryScope !== undefined) {
+        fnSummarySetFnLevel(
+          summaryScope,
+          result,
+          varOrder,
+          fnLevelFields(args, phi, varOrder),
+        );
+      }
     }
     return result;
   };
@@ -1970,6 +2022,7 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : and(...entryReqs.map((r) => r.pred))
       : pTrue,
+    { symbolic: true },
   );
 
   // opaque = call-budget 截断/泄漏 → 不写关系；

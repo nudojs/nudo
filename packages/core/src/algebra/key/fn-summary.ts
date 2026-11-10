@@ -33,6 +33,8 @@ export type FnSummaryFields = {
   pre?: Pred;
   /** 副作用标签（可观测面，不参与判定） */
   eff?: readonly string[];
+  /** ABS-14 PR3：形成摘要时实参的顶层形状签名（命中前的必要条件） */
+  shapeSig?: string;
 };
 
 export type FnSummaryEntry = { post: Abs; varOrder: string[] } & FnSummaryFields;
@@ -127,7 +129,11 @@ export function fnSummaryStats(): {
   misses: number;
   stores: number;
 } {
-  return { size: store.size, hits, misses, stores };
+  // ABS-14：size 仍是**实例级**摘要口径（函数级条目走 fnSummaryFnLevelStats），
+  // 否则 ABS-10 的「α-同构共享同一条目」断言会被新条目数量带偏。
+  let size = 0;
+  for (const k of store.keys()) if (!k.startsWith("fn\0")) size++;
+  return { size, hits, misses, stores };
 }
 
 /** ABS-14：函数级摘要的独立可观测计数（不进 `fnSummaryStats()` 口径）。 */
