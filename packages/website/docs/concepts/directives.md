@@ -291,10 +291,13 @@ export const nested = fn({ "card.grade": string() }, string());
 ```text
 @nudo:contract <param> <constraint>
 @nudo:contract return <constraint>
+@nudo:contract return <rel> <expr>
 ```
 
 - **param** — Parameter name, or the literal `return` for the postcondition
 - **constraint** — Name exported from a `*.nudo.js` module, imported via `/// @nudo:import`
+- **`return <rel> <expr>`** — a **dependent return** obligation on the return term (`return >= x`, `return > x + 1`). `>=` / `<=` on `x ± c` are IEEE-provably monotone (`round(b + c) >= b` for `c >= 0`); strict `>` / `<` on unbounded operands stay honestly unprovable (`2^53 + 1 = 2^53`), reported as `nudo:unproven-return`, never as a violation.
+- **Contract-internal binders (sidecar)** — `bind("a", constraint)` names a slot's domain inside one constraint tree; `ref("a")` reuses it and `ref("a").at("field")` projects a field. Scope = the single sidecar export; an unbound `ref` fails closed (`nudo:contract-load`) and never degrades to `any()`. Cross-slot form: `fn({ items: array(bind("a", any())), transform: fn({ x: ref("a") }, bind("b", any())) }, array(ref("b")))` projects as `<A, B>(items: A[], transform: (x: A) => B) => B[]`. The sidecar form of a dependent return is `rel(">", "x")`.
 
 ### Examples
 
@@ -347,16 +350,17 @@ Declare a **cross-variable lemma** the engine cannot derive — an algorithmic f
 ### Syntax
 
 ```text
-@nudo:assume <name> <= <name>
-@nudo:assume <name> >= <name>
+@nudo:assume <expr> <= <expr>
+@nudo:assume <expr> >= <expr>
 ```
 
+`<expr>` is a JS binding name, a numeric literal, or a simple arithmetic expression (`name + number` / `name - number`, left-associative; parentheses, `*`, and `/` are rejected). Examples: `d <= max`, `i + 1 <= n`, `d <= 10`.
+
 - **Function-scoped** — the comment block immediately above the function, on the same scan path as `@nudo:contract`; it anchors to the nearest function.
-- Both names must be **parameters of the anchored function or top-level `const`/`let`/`var` locals of its body** (`d`, `max`) — plain `Identifier` declarators among the body's direct statements; destructuring, nested blocks, and `for`-init declarations are not accepted. Otherwise error `nudo:assume-invalid`.
+- Every referenced name must be a **parameter of the anchored function or a top-level `const`/`let`/`var` local of its body** (`d`, `max`) — plain `Identifier` declarators among the body's direct statements; destructuring, nested blocks, and `for`-init declarations are not accepted. Otherwise error `nudo:assume-invalid`.
 - Locals follow **SSA semantics** — the lemma anchors to the bound value at its definition point and applies from definition to the end of the scope; after a reassignment the relevance conservatively lapses (no fold).
 - Anchoring activates only in the target function's own frame — callee frames see an empty premise slot, so same-name locals there cannot mismatch.
-- Only `<=` / `>=` (`>=` is normalized to `le`). `<`, `>`, `==`, and constant bounds (`d <= 10`) are invalid — constant bounds belong to sidecar contracts (`number().le(10)`).
-- Constant bounds still belong to sidecars — but a sidecar cannot reach a function's own locals: put a local's constant bound on the **return of the callee that produces it** (e.g. a levenshtein sidecar `return number().ge(0)`).
+- Only `<=` / `>=` (`>=` is normalized to `le`). `<`, `>`, and `==` are invalid; constants and simple arithmetic are accepted (`d <= 10`, `i + 1 <= n`). A sidecar cannot reach a function's own locals: put a local's constant bound on the **return of the callee that produces it** (e.g. a levenshtein sidecar `return number().ge(0)`).
 - Multiple lines stack — premises are conjoined.
 
 ### Semantics — an axiom, not a checked fact
@@ -460,19 +464,23 @@ Declare a **loop-carried bound** the engine cannot re-derive — the loop-analog
 ### Syntax
 
 ```text
-@nudo:invariant <name><path> <rel> <number>
+@nudo:invariant <name><path> <rel> <expr>
 @nudo:invariant dp[*][*] >= 0
 @nudo:invariant last >= 1
+@nudo:invariant i < n
 ```
+
+`<expr>` is a numeric literal, a binding name (param / top-level local), or `name ± number` — a relational RHS (`i < n`) is supported.
 
 - **Function-scoped** — the comment block immediately above the function, same scan path as `@nudo:contract` / `@nudo:assume`; multiple lines stack.
 - `<name>` must be a **parameter of the anchored function or a top-level `const`/`let`/`var` local of its body**; otherwise warning `nudo:invariant-invalid`.
 - `<path>` drills into the binding: `[*]` steps into array elements / tuple members / union numeric arms; `.ident` steps into an object slot. An empty path means the scalar itself. Non-numeric leaves (strings, objects) and structural mismatches are skipped silently — a wrong-direction invariant surfaces as a proof failure, not a report.
-- `<rel>` is `>=` / `<=` / `>` / `<` with a **numeric constant** (`==`, `!=`, non-numeric bounds are invalid → `nudo:invariant-invalid`).
+- `<rel>` is `>=` / `<=` / `>` / `<` (`==`, `!=`, and non-numeric forms such as `dp >= string` are invalid → `nudo:invariant-invalid`). The RHS may be a constant, a binding name, or `name ± number`.
 - Strengthened leaves carry a fresh symbolic term with the declared pred (conf `path`); literal leaves are left untouched — a concrete value already has its truth.
 
 ### Semantics — an axiom, not a checked fact
 
+- **Automatic inference never becomes a proof premise.** When a loop-carried scalar is widened, `nudo check` reports an info candidate (`nudo:invariant-inferred`) with the observed bound and sample count — an observed extreme is one-sided evidence, not a proved invariant. Only an explicit `@nudo:invariant` line enters the proof.
 - **The engine never verifies the invariant.** When a proof relies on it, `nudo check` emits info `nudo:invariant-relied` (`levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0`) and suggests falsifying it with concrete `@nudo:case` runs (`nudo test`). A wrong invariant makes the affected proof unsound — keep invariants few and reviewable.
 - **Invariants never cross call boundaries.** Callee frames see an empty invariant slot (cleared at function entry, restored on exit) — a lemma about the caller's `dp` cannot leak into a callee's same-name local.
 - What the invariant does **not** fix: out-of-bounds read facts stay honest. An abstract-index read `dp[m][n]` still joins a synthetic `undefined`; the `if (out === undefined) return 0` guard narrows it before the return contract sees it.
