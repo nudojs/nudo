@@ -685,11 +685,14 @@ import {
   alphaRenameResult,
 } from "./key/generalize-key.ts";
 import { fnSummaryGet, fnSummarySet, resetFnSummaryCache } from "./key/fn-summary.ts";
+import { collectSimpleBounds } from "./key/summary-bounds.ts";
 import { hashSource } from "./key/hash-source.ts";
 
 export type TypeParam = {
   id: string;
   value: Abs;
+  /** ABS-14 PR2：该占位符的简单使用条件（只存不读；additive 可选字段） */
+  bounds?: readonly import("./pred.ts").Pred[];
 };
 
 export type PolyFn = {
@@ -2008,6 +2011,19 @@ function generalizeFromAstUncached(
   // #138：参数名槽用签名展示名（解构形参渲染 `{ a, b }`，不落回求值占位
   // `_p0`）；entryReqs 谓词与提升快照查找仍按 params——见 formatPoly 注释。
   const renderNames = formals.length > 0 ? formalParamSignatureNames(formals) : params;
+  // ABS-14 PR2：入口契约里的简单条件登记到 typeParams（只存不读）。
+  // 反向依赖 / 未声明变元 / 复杂 term 由 collectSimpleBounds fail-closed 丢弃。
+  if (entryReqs) {
+    const ids = typeParams.map((t) => t.id);
+    for (const req of entryReqs) {
+      const idx = params.indexOf(req.param);
+      const tp = typeParams[idx];
+      if (idx < 0 || tp === undefined) continue;
+      const picked = collectSimpleBounds(req.pred, ids, idx);
+      if (picked.length > 0) typeParams[idx] = { ...tp, bounds: picked };
+    }
+  }
+
   return {
     name: fnName,
     params,

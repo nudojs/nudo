@@ -64,7 +64,7 @@ changing the signature of any row below is **major**.
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
 | `checkSource`, `CheckJson`, `CheckReport`, `serializeCheckJson`, `serializeCheckJsonMulti` | value/type | `nudo check` gate | **public** |
 | `CheckOptions` (`checkSource` 4th parameter) | type | check options; `from?: readonly AbsCallRecord[]` = **cross-file** call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | **public** |
-| `generalizeFromAst` | value | symbolic α generalization | **public** |
+| `generalizeFromAst` | value | symbolic α generalization; `TypeParam.bounds` = optional simple bounds per formal (ABS-14 PR2 additive, write-only) | **public** |
 | `parseSource`, `resetParseSourceCache`, `getParseSourceCacheSize` | value | Babel parse + memo | **public** |
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
 | `MockHelper`, `stub`, `spy`, `mock` | value/type | test mock helpers | **public** |
