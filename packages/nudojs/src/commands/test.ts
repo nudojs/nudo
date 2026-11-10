@@ -473,7 +473,14 @@ async function runTest(
 
   // ABS-04：默认互斥（@nudo:case × call@/entry@）的可发现性提示——
   // 观察面只加指引（不改变默认报告），并标注两路来源。
-  if (!opts.json && opts.alsoSynthesizeCases === undefined && result.bothPathsHint?.length) {
+  // `--freeze` 下不提示：`--both-paths` 与 `--freeze` 是显式用法错（见
+  // action 里的组合约束），这里的「rerun with --both-paths」在该轮次不可执行。
+  if (
+    !opts.json &&
+    !opts.freeze &&
+    opts.alsoSynthesizeCases === undefined &&
+    result.bothPathsHint?.length
+  ) {
     console.log("\nboth-paths");
     const n = result.bothPathsHint.length;
     console.log(
