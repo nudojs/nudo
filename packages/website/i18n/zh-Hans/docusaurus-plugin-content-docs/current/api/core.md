@@ -208,30 +208,36 @@ createEnvironment(parent?, bindings?)
 | <a id="absonly"></a>`absOnly` | fn | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | `absOnly(r: AbsApplyReturn): AbsApplyNoThrow` |
 | <a id="abstoschemasource"></a>`absToSchemaSource` | const | one-way projections | — |
 | <a id="abstotstype"></a>`absToTSType` | const | one-way projections | — |
-| <a id="and"></a>`and` | fn | `@nudo:contract` builder grammar | `and(...preds: Pred[]): Pred` |
-| <a id="andc"></a>`andC` | fn | `@nudo:contract` builder grammar | `andC( ...cs: (NudoConstraint \| ConstraintBuilder)[] ): ConstraintBuilder` |
+| <a id="analysisexplanation"></a>`AnalysisExplanation` | type | unknown / any origin explanation (observation-only side channel — ABS-02) | `AnalysisExplanation = { fn?: string; reason: UnknownReason; detail: string; suggestion?: string; }` |
+| <a id="and"></a>`and` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `and(...preds: Pred[]): Pred` |
+| <a id="andc"></a>`andC` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `andC( ...cs: (NudoConstraint \| ConstraintBuilder)[] ): ConstraintBuilder` |
 | <a id="any"></a>`any` | fn | Abs constructors / faces | `any(): ConstraintBuilder` |
 | <a id="anyabs"></a>`anyAbs` | const | Abs constructors / faces | `const anyAbs` |
 | <a id="anyvar"></a>`anyVar` | fn | Abs constructors / faces | `anyVar(id: string, conf: Confidence = "path"): Abs` |
 | <a id="app"></a>`app` | const | term / shape builders | `const app` |
 | <a id="array"></a>`array` | fn | term / shape builders | `array( item: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined, ...rest: unknown[] ): ConstraintBuilder` |
 | <a id="bigintlit"></a>`bigintLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `bigintLit(value: bigint): Abs` |
+| <a id="bind"></a>`bind` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
+| <a id="bindertable"></a>`BinderTable` | type | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="bool"></a>`bool` | fn | Abs constructors / faces | `bool(): Abs` |
-| <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |
+| <a id="boolean"></a>`boolean` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `boolean(): ConstraintBuilder` |
 | <a id="boollit"></a>`boolLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `boolLit(value: boolean): Abs` |
+| <a id="buildunknownexplanations"></a>`buildUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `buildUnknownExplanations(input: ExplainInput): AnalysisExplanation[]` |
 | <a id="calltranspiledexport"></a>`callTranspiledExport` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
 | <a id="calltranspiledexportapply"></a>`callTranspiledExportApply` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportApply( exports: Record<string, unknown> \| (() => Record<string, unknown>), name: string, )` |
 | <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean }, ): TranspiledCallResult` |
 | <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; expectedIssue?: string; tagOffset: number; }` |
-| <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
-| <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
+| <a id="checkarg"></a>`checkArg` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
+| <a id="checkcall"></a>`checkCall` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
 | <a id="checkjson"></a>`CheckJson` | type | `nudo check` gate | `CheckJson = { version: 1; file: string; ok: boolean; summary: CheckReport["summary"]; signatures: Array<{ name: string; params: string[];...` |
 | <a id="checkoptions"></a>`CheckOptions` | type | check options; `from?: readonly AbsCallRecord[]` = cross-file call-site evidence (CLI `--from`) fed into the `nudo:contract-drift` judgment (optional field — no new export) | — |
 | <a id="checkreport"></a>`CheckReport` | type | `nudo check` gate | `CheckReport = { file: string; issues: CheckIssue[]; ok: boolean; signatures: NudoSig[]; summary: { errors: number; warnings: number; info...` |
 | <a id="checksource"></a>`checkSource` | fn | `nudo check` gate | `checkSource( filePath: string, source: string, phi: Phi = pTrue, opts: CheckOptions = {}, ): CheckReport` |
+| <a id="collectbinders"></a>`collectBinders` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
+| <a id="collectunboundrefs"></a>`collectUnboundRefs` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="confidence"></a>`Confidence` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Confidence = "exact" \| "path" \| "widened" \| "mock" \| "partial" \| "opaque"` |
 | <a id="confjoin"></a>`confJoin` | fn | assignability / join | `confJoin(a: Confidence, b: Confidence): Confidence` |
-| <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
+| <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
 | <a id="contracttierinfo"></a>`ContractTierInfo` | type | contract tiers | `ContractTierInfo = { source: ContractSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
 | <a id="contracttierof"></a>`contractTierOf` | fn | contract tiers | `contractTierOf( source: string, fnName: string, fromFile: string, opts: ContractTierOpts = {}, ): ContractTierInfo \| undefined` |
 | <a id="createenvironment"></a>`createEnvironment` | fn | env host surface | `createEnvironment( parent?: Environment, bindings: Map<string, Abs> = new Map(), ): Environment` |
@@ -252,9 +258,10 @@ createEnvironment(parent?, bindings?)
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
+| <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
-| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
+| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
 | <a id="joinabs"></a>`joinAbs` | fn | assignability / join | `joinAbs(a: Abs, b: Abs): Abs` |
@@ -262,7 +269,7 @@ createEnvironment(parent?, bindings?)
 | <a id="leqabs"></a>`leqAbs` | fn | assignability / join | `leqAbs( src: Abs, tgt: Abs, opts: { phi?: Phi; env?: AstEnv } = {}, ): LeqResult` |
 | <a id="listfndirectivescopes"></a>`listFnDirectiveScopes` | fn | G2 directive scope binding (nearest AST Function, incl. nested / class method) | `listFnDirectiveScopes(file: File): FnDirectiveScope[]` |
 | <a id="lit"></a>`lit` | const | term / shape builders | `const lit` |
-| <a id="litc"></a>`litC` | fn | `@nudo:contract` builder grammar | `litC(v: import("./term.ts").LiteralValue): ConstraintBuilder` |
+| <a id="litc"></a>`litC` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `litC(v: import("./term.ts").LiteralValue): ConstraintBuilder` |
 | <a id="literalvalue"></a>`LiteralValue` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `LiteralValue = string \| number \| boolean \| bigint \| null \| undefined` |
 | <a id="litvalue"></a>`litValue` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `litValue(a: Abs): LitValueResult` |
 | <a id="litvalueresult"></a>`LitValueResult` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `LitValueResult = \| { ok: true; value: LiteralValue } \| { ok: false }` |
@@ -272,10 +279,10 @@ createEnvironment(parent?, bindings?)
 | <a id="mockhelper"></a>`MockHelper` | type | test mock helpers | `MockHelper = { kind: "mock-helper"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; onFirstCallValue?: Abs; onSecondCallValu...` |
 | <a id="mockmodulerecord"></a>`MockModuleRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `MockModuleRecord = { source: string; names?: string[]; fromPath: string; }` |
 | <a id="never"></a>`never` | const | Abs constructors / faces | `const never` |
-| <a id="nudoconstraint"></a>`NudoConstraint` | type | contract checking | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
+| <a id="nudoconstraint"></a>`NudoConstraint` | type | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
 | <a id="nudoimportrecord"></a>`NudoImportRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `NudoImportRecord = { names: string[]; importedOfLocal: Record<string, string>; spec: string; }` |
 | <a id="num"></a>`num` | fn | Abs constructors / faces | `num(): Abs` |
-| <a id="number"></a>`number` | fn | `@nudo:contract` builder grammar | `number(): ConstraintBuilder` |
+| <a id="number"></a>`number` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `number(): ConstraintBuilder` |
 | <a id="numlit"></a>`numLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `numLit(value: number): Abs` |
 | <a id="obj"></a>`obj` | fn | term / shape builders | `obj( slots: Record<string, { value: Abs; optional?: boolean }>, ): Abs` |
 | <a id="objshape"></a>`ObjShape` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `ObjShape = { k: "obj"; slots: Record<string, Slot>; index?: { key: Abs; value: Abs }; open?: boolean; }` |
@@ -286,8 +293,11 @@ createEnvironment(parent?, bindings?)
 | <a id="phi"></a>`Phi` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Phi = Pred` |
 | <a id="pred"></a>`Pred` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Pred = \| { op: "true" } \| { op: "false" } \| { op: "eq"; a: Term; b: Term } \| { op: "ne"; a: Term; b: Term } \| { op: "lt"; a: Term; b: Ter...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | const | one-way projections | — |
+| <a id="ref"></a>`ref` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
 | <a id="refineabsforreltrue"></a>`refineAbsForRelTrue` | fn | refinement gate | `refineAbsForRelTrue( a: Abs, op: "gt" \| "ge" \| "lt" \| "le", k: number, ): Abs` |
+| <a id="rel"></a>`rel` | const | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | — |
 | <a id="resetparsesourcecache"></a>`resetParseSourceCache` | fn | Babel parse + memo | `resetParseSourceCache(): void` |
+| <a id="resolverefchain"></a>`resolveRefChain` | const | contract checking (binder scope = one constraint tree; unbound refs fail closed) | — |
 | <a id="runtranspiled"></a>`runTranspiled` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `runTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown>` |
 | <a id="scanbudgetdecl"></a>`scanBudgetDecl` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `scanBudgetDecl( lines: string[], )` |
 | <a id="scancasetags"></a>`scanCaseTags` | fn | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `scanCaseTags(text: string): CaseTag[]` |
@@ -300,7 +310,7 @@ createEnvironment(parent?, bindings?)
 | <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; inherited?: boolean; symbolKey?: boolean; }` |
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
-| <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
+| <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar (structural conjunction: shape∧shape / array∧array / union∧union / fn∧fn — ABS-11) | `string(): ConstraintBuilder` |
 | <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string, opts?: StripOptions): T` |
 | <a id="strlit"></a>`strLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `strLit(value: string): Abs` |
 | <a id="stub"></a>`stub` | fn | test mock helpers | `stub(): MockHelper` |
@@ -308,6 +318,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpiledcallresult"></a>`TranspiledCallResult` | type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `TranspiledCallResult = { result: Abs; throws: Abs; }` |
 | <a id="union"></a>`union` | fn | term / shape builders | `union( ...cs: (NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined)[] ): ConstraintBuilder` |
 | <a id="unknown"></a>`unknown` | const | Abs constructors / faces | `const unknown` |
+| <a id="unknownreason"></a>`UnknownReason` | type | unknown / any origin explanation (observation-only side channel — ABS-02) | `UnknownReason = \| "budget" \| "missing-env" \| "unsupported" \| "eval-failure" \| "no-contract" \| "explicit-any" \| "inference-failure"` |
 | <a id="v"></a>`v` | const | term / shape builders | `const v` |
 
 ### Exec 运行时（$op，§2.2）
@@ -382,7 +393,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（338）</summary>
+<summary>src/index.ts 其余导出（334）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -398,7 +409,6 @@ createEnvironment(parent?, bindings?)
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
-| <a id="analysisexplanation"></a>`AnalysisExplanation` | type | — | `AnalysisExplanation = { fn?: string; reason: UnknownReason; detail: string; suggestion?: string; }` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
@@ -414,7 +424,6 @@ createEnvironment(parent?, bindings?)
 | <a id="bitorabs"></a>`bitorAbs` | fn | \| —— ToInt32 两侧后按位或 | `bitorAbs(a: Abs, b: Abs): Abs` |
 | <a id="bitxorabs"></a>`bitxorAbs` | fn | ^ —— ToInt32 两侧后按位异或 | `bitxorAbs(a: Abs, b: Abs): Abs` |
 | <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, bounds?: ReadonlyMap<string, Pred>, ): Abs[]` |
-| <a id="buildunknownexplanations"></a>`buildUnknownExplanations` | fn | 由观察面构造未知来源清单（去重 + 稳定排序）。 | `buildUnknownExplanations(input: ExplainInput): AnalysisExplanation[]` |
 | <a id="builtinctorabs"></a>`builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | <a id="builtinctornameof"></a>`builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
 | <a id="callabsmethod"></a>`callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
@@ -511,7 +520,6 @@ createEnvironment(parent?, bindings?)
 | <a id="formatgitlabcodequality"></a>`formatGitlabCodeQuality` | fn | GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） | `formatGitlabCodeQuality( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): GitlabCodeQualityIssue[]` |
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
-| <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | 稳定文本面（`--explain-unknown` 人类输出；逐字节可快照） | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
 | <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import 链与**被 export 引用**的 const 链）的注释行是 nudo 自己的 `@generated` 标记 → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
 | <a id="genum"></a>`geNum` | fn | — | `geNum(term: Term, n: number): Pred` |
@@ -720,7 +728,6 @@ createEnvironment(parent?, bindings?)
 | <a id="typeofname"></a>`TypeofName` | type | JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 | `TypeofName = \| "undefined" \| "object" \| "boolean" \| "number" \| "bigint" \| "string" \| "symbol" \| "function"` |
 | <a id="typeparam"></a>`TypeParam` | type | — | `TypeParam = { id: string; value: Abs; }` |
 | <a id="undefabs"></a>`undefAbs` | fn | undefined 值的统一 Abs 表示（forEach/find 等） | `undefAbs(): Abs` |
-| <a id="unknownreason"></a>`UnknownReason` | type | 未知来源分类（产品面口径，顺序稳定） | `UnknownReason = \| "budget" \| "missing-env" \| "unsupported" \| "eval-failure" \| "no-contract" \| "explicit-any" \| "inference-failure"` |
 | <a id="ushrabs"></a>`ushrAbs` | fn | &gt;&gt;&gt; —— 逻辑右移（rhs ToUint32 &amp; 31；bigint 无此运算符 → 不可折叠） | `ushrAbs(a: Abs, b: Abs): Abs` |
 | <a id="withexecphi"></a>`withExecPhi` | fn | — | `withExecPhi<T>(p: Phi, body: () => T): T` |
 | <a id="withvar"></a>`withVar` | fn | — | `withVar(env: AstEnv, name: string, value: Abs): AstEnv` |
