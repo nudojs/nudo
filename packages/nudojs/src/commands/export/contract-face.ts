@@ -16,6 +16,7 @@
 import {
   abs as makeAbs,
   constraintToEntryAbs,
+  formatConstraint,
   joinAbs,
   locateContractParam,
   obj,
@@ -57,6 +58,11 @@ export type ParamFace = {
   optional?: boolean;
   /** 剩余参数位（槽值是**数组**：rest 之后的实参合成） */
   isRest?: boolean;
+  /**
+   * ABS-03：契约原文（可读注记；sidecar 表达式原文 / 指令约束名，
+   * 缺省 = pred 全展）。只进 dts 的 `Contract:` JSDoc 行，不参与类型投影。
+   */
+  display?: string;
   /** 契约键的点路径展开（`"card.grade"` ⇒ `["card","grade"]`） */
   fieldPath?: string[];
 };
@@ -88,6 +94,7 @@ export function contractParamFace(eff: EffectiveContract | undefined): ParamFace
     name: p.param,
     abs: constraintToEntryAbs(p.constraint, p.param, undefined, binders),
     optional: p.constraint.isOptional === true,
+    display: p.display ?? formatConstraint(p.constraint),
   }));
 }
 

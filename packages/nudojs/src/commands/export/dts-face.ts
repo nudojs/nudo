@@ -4,7 +4,12 @@
  * dts 只发射**导出面**（export / export default / CJS exports —— 与 check entry
  * 表同源 `localNamedExports`；导出 class 的实例方法按 Class 前缀放行）。
  */
-import { abs as makeAbs, type Abs, type EffectiveContract } from "@nudojs/core";
+import {
+  abs as makeAbs,
+  formatConstraint,
+  type Abs,
+  type EffectiveContract,
+} from "@nudojs/core";
 import {
   projectFunctionDts,
   projectModuleDts,
@@ -76,6 +81,10 @@ export function dtsFaceEntry(
       ? {
           params: contractParams,
           ...(contractReturn !== undefined ? { return: contractReturn } : {}),
+          // ABS-03：契约原文（JSDoc 可读注记；类型面仍由 Abs 投影）
+          ...(eff?.returns
+            ? { returnDisplay: formatConstraint(eff.returns.constraint) }
+            : {}),
         }
       : undefined;
   const projection = projectFunctionDts(fn, contractFace, surface);

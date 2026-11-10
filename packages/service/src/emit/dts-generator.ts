@@ -578,6 +578,19 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
       return `[${parts.join(", ")}]`;
     }
     case "fn": {
+      // A6/ABS-03：重载集 → TS 调用签名对象（声明序 = TS 解析序）。
+      // 逐 arm 发射保留「形参 ↔ 返回」的相关性；无重载集时退回单签名面。
+      const overloads = a.shape.overloads;
+      if (overloads && overloads.length > 0) {
+        const arms = overloads.map((arm) => {
+          const params = arm.paramTypes
+            .map((pt, i) => `a${i}: ${absToTSTypeB(pt, typeVars, budget)}`)
+            .join(", ");
+          const ret = absToTSTypeB(arm.returnType, typeVars, budget);
+          return `(${params}): ${ret}`;
+        });
+        return `{ ${arms.join("; ")} }`;
+      }
       const paramTypes = a.shape.paramTypes;
       const params = a.shape.params
         .map((p, i) => {
@@ -1017,14 +1030,18 @@ function contractLiteralTSType(a: Abs): string | undefined {
   return parts.join(" | ");
 }
 
-function contractReturnTSType(a: Abs): string {
-  return contractLiteralTSType(a) ?? absToTSType(widenTopLevelAbs(a));
+function contractReturnTSType(a: Abs, typeVars?: Map<string, string>): string {
+  return contractLiteralTSType(a) ?? absToTSType(widenTopLevelAbs(a), typeVars);
 }
 
-function restParamType(widened: Abs, isRest: boolean): string {
-  if (!isRest) return absToTSType(widened);
-  if (widened.shape.k === "arr") return absToTSType(widened);
-  const ts = absToTSType(widened);
+function restParamType(
+  widened: Abs,
+  isRest: boolean,
+  typeVars?: Map<string, string>,
+): string {
+  if (!isRest) return absToTSType(widened, typeVars);
+  if (widened.shape.k === "arr") return absToTSType(widened, typeVars);
+  const ts = absToTSType(widened, typeVars);
   return widened.shape.k === "sum" || widened.shape.k === "fn" ? `(${ts})[]` : `${ts}[]`;
 }
 
@@ -1222,8 +1239,10 @@ export interface DtsContractFace {
    *   里没有该信息），故可选性必须由契约面显式带过来；缺省（undefined）=
    *   契约未申报该位 ⇒ 按**必填**处理（契约是用户申报的调用域，权威）。
    */
-  params: Array<{ name: string; abs: Abs; optional?: boolean }>;
+  params: Array<{ name: string; abs: Abs; optional?: boolean; display?: string }>;
   return?: Abs;
+  /** ABS-03：返回契约的可读原文（JSDoc 注记；不参与类型投影） */
+  returnDisplay?: string;
 }
 
 /** 契约参数位（Abs + 可选性标记） */
@@ -1247,12 +1266,16 @@ function contractParamMap(contract: DtsContractFace | undefined): Map<string, Co
  *
  * rest 位不接字面量（rest 必须是数组类型——TS2370）。
  */
-function contractParamType(a: Abs, isRest: boolean): string {
+function contractParamType(
+  a: Abs,
+  isRest: boolean,
+  typeVars?: Map<string, string>,
+): string {
   if (!isRest) {
     const lit = contractLiteralTSType(a);
     if (lit !== undefined) return lit;
   }
-  return restParamType(widenParamAbs(a), isRest);
+  return restParamType(widenParamAbs(a), isRest, typeVars);
 }
 
 /**
@@ -1287,6 +1310,8 @@ type MainSignature = {
   paramTypes: string[];
   /** widen 后的返回类型串 */
   returnType: string;
+  /** ABS-03：契约面推导出的类型形参（只含被形参 / 返回位引用的变元） */
+  typeParams?: string[];
 };
 
 /**
@@ -1539,6 +1564,8 @@ function computeMainSignature(
   ctx?: DtsProjectionCtx,
 ): MainSignature {
   const contractByParam = contractParamMap(contract);
+  // ABS-03：契约面类型形参（与 contractOnlySignature 同源）
+  const typeVars = contractTypeVarsOf(contract);
   const declared = declaredParams(fn);
   const declaredArity = declared.length;
   const observedArity =
@@ -1578,7 +1605,7 @@ function computeMainSignature(
     const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const contractRender = contractParamRenderAbs(contractHit);
     const typeStr = contractRender
-      ? contractParamType(contractRender, isRest)
+      ? contractParamType(contractRender, isRest, typeVars)
       : (annotation ?? paramTypeFromAbs(members, isRest));
     // 声明名：解构形参用**绑定模式**形态 `{ a, b }`（公共 API 声明不该出现
     // 求值占位 `_p0`；Bug 538）。键不全（契约/观测都拿不到该绑定）时回落
@@ -1662,12 +1689,24 @@ function computeMainSignature(
   // standard / check 三面同口径）；观测返回位沿用调用面 widen 口径。
   const returnType = retAbs
     ? contract?.return
-      ? contractReturnTSType(contract.return)
+      ? contractReturnTSType(contract.return, typeVars)
       : absToTSType(
           observedOnly ? widenObservedReturnAbs(widenTopLevelAbs(retAbs)) : widenTopLevelAbs(retAbs),
         )
     : "unknown";
-  return { params, paramNames, paramTypes, returnType };
+  // ABS-03：可达性过滤（与 contractOnlySignature 同源）
+  // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
+  const typeParams = reachableTypeParams(
+    typeVars,
+    `${paramTypes.join(" ")} ${returnType}`,
+  );
+  return {
+    params,
+    paramNames,
+    paramTypes,
+    returnType,
+    ...(typeParams.length > 0 ? { typeParams } : {}),
+  };
 }
 
 function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
@@ -1707,6 +1746,27 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   lines.push(` * @returns ${sanitizeCommentText(sig.returnType)}`);
   lines.push(" */");
   return lines.join("\n");
+}
+
+/**
+ * ABS-03：契约可读注记（JSDoc）。**不改类型面**——契约的权威投影仍是
+ * Abs（参数位 / 返回位）；这里只是把用户写的约束原文留给读者，
+ * `Case:` 行继续只做调试见证，二者不互相冒充。
+ */
+function contractJSDocLines(contract: DtsContractFace | undefined): string[] {
+  if (!contract) return [];
+  const rows: string[] = [];
+  for (const p of contract.params) {
+    if (p.display) {
+      rows.push(` * Contract: ${sanitizeCommentText(`${p.name}: ${p.display}`)}`);
+    }
+  }
+  if (contract.returnDisplay) {
+    rows.push(
+      ` * Contract: ${sanitizeCommentText(`return: ${contract.returnDisplay}`)}`,
+    );
+  }
+  return rows.length > 0 ? ["/**", ...rows, " */"] : [];
 }
 
 /**
@@ -1848,6 +1908,48 @@ export interface DtsFunctionProjection {
   typeRefs?: string[];
 }
 
+/**
+ * ABS-03：契约面自由变元 → TS 类型形参映射（`bind:<name>` ⇒ `<name>`）。
+ * 确定性：按 term id 排序 ⇒ 声明顺序稳定（快照可钉）。
+ */
+function contractTypeVarsOf(
+  contract: DtsContractFace | undefined,
+): Map<string, string> {
+  const freeIds = new Set<string>();
+  for (const p of contract?.params ?? []) {
+    for (const id of collectAbsFreeVars(p.abs)) freeIds.add(id);
+  }
+  if (contract?.return) {
+    for (const id of collectAbsFreeVars(contract.return)) freeIds.add(id);
+  }
+  const typeVars = new Map<string, string>();
+  const usedNames = new Set<string>();
+  for (const id of [...freeIds].sort()) {
+    const bare = id.startsWith("bind:") ? id.slice("bind:".length) : id;
+    let n = tsTypeParamName(bare);
+    if (usedNames.has(n) || !isJsBindingIdent(n)) {
+      let i = 2;
+      while (usedNames.has(`${n}${i}`)) i++;
+      n = `${n}${i}`;
+    }
+    usedNames.add(n);
+    typeVars.set(id, n);
+  }
+  return typeVars;
+}
+
+/** 可达性过滤：类型形参必须在最终签名文本里作为独立词出现 */
+function reachableTypeParams(
+  typeVars: Map<string, string>,
+  typeText: string,
+): string[] {
+  return [...new Set(typeVars.values())].filter((n) =>
+    new RegExp(
+      `(^|[^A-Za-z0-9_$])${n.replace(/[$]/g, "\\$")}([^A-Za-z0-9_$]|$)`,
+    ).test(typeText),
+  );
+}
+
 /** 契约-only 参数签名（skip / 无 case 函数 + 手写契约参数位）：具名参数 + 声明返回 */
 function contractOnlySignature(
   fn: FunctionAnalysis,
@@ -1856,6 +1958,9 @@ function contractOnlySignature(
 ): MainSignature {
   const byName = contractParamMap(contract);
   const declared = declaredParams(fn);
+  // ABS-03：契约面的自由变元（bind/ref 的 `bind:<name>` 项）→ TS 类型形参。
+  // 只发射**被形参 / 返回位引用**的变元（无引用的不产生悬空类型参数）。
+  const typeVars = contractTypeVarsOf(contract);
   const slots: ParamSlot[] = [];
   const paramNames: string[] = [];
   const paramTypes: string[] = [];
@@ -1880,7 +1985,7 @@ function contractOnlySignature(
     const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const hitRender = contractParamRenderAbs(hit);
     const typeStr = hitRender
-      ? contractParamType(hitRender, isRest)
+      ? contractParamType(hitRender, isRest, typeVars)
       : (annotation ?? (isRest ? "unknown[]" : "unknown"));
     // 可选性（与 computeMainSignature 同口径）：契约级 ∪ 声明级（默认值）。
     // BUG-108：契约覆盖该位时旧实现**只看契约级** ⇒ `fn({ a: num })` +
@@ -1909,11 +2014,23 @@ function contractOnlySignature(
   // 契约里多出、形参表对不上的参数名不投影（arity 谎言；check 面报
   // nudo:contract-param-mismatch，export 不执法）
   const returnType = contract.return
-    ? contractReturnTSType(contract.return)
+    ? contractReturnTSType(contract.return, typeVars)
     : fn.combinedAbs
       ? absToTSType(fn.combinedAbs)
       : "unknown";
-  return { params, paramNames, paramTypes, returnType };
+  // 可达性过滤：只发射在最终签名文本里真正出现的类型形参
+  // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
+  const typeParams = reachableTypeParams(
+    typeVars,
+    `${paramTypes.join(" ")} ${returnType}`,
+  );
+  return {
+    params,
+    paramNames,
+    paramTypes,
+    returnType,
+    ...(typeParams.length > 0 ? { typeParams } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2158,12 +2275,23 @@ function dtsFunctionDeclaration(
     if (hasContractParams) {
       const sig = contractOnlySignature(fn, contract!, ctx);
       const plain = `(${sig.params.join(", ")}): ${sig.returnType}`;
+      // ABS-03：契约面类型形参（只含被签名引用的变元）——与源码声明形参
+      // 并存时源码在前、契约推导在后
+      const contractTParams =
+        sig.typeParams && sig.typeParams.length > 0
+          ? `<${sig.typeParams.join(", ")}>`
+          : "";
+      const paramsText = `${srcTypeParams}${contractTParams}${plain}`;
       return {
-        lines: dtsExportDeclaration(
-          form,
-          `${srcTypeParams}${plain}`,
-          srcTypeParams ? plain : undefined,
-        ),
+        lines: [
+          ...contractJSDocLines(contract),
+          ...dtsExportDeclaration(
+            form,
+            paramsText,
+            // compat 行只有源码声明形参可承载（契约变元不在 compat 体里声明）
+            srcTypeParams && !contractTParams ? plain : undefined,
+          ),
+        ],
         params: sig.paramNames.map((name, i) => ({ name, type: sig.paramTypes[i]! })),
       };
     }
@@ -2188,14 +2316,18 @@ function dtsFunctionDeclaration(
 
   const sig = computeMainSignature(fn, contract, ctx);
   const jsdoc = generateJSDoc(fn, sig);
-  const lines: string[] = [];
+  const lines: string[] = [...contractJSDocLines(contract)];
   if (jsdoc) lines.push(jsdoc);
   const plain = `(${sig.params.join(", ")}): ${sig.returnType}`;
+  const sigTParams =
+    sig.typeParams && sig.typeParams.length > 0
+      ? `<${sig.typeParams.join(", ")}>`
+      : "";
   lines.push(
     ...dtsExportDeclaration(
       form,
-      `${srcTypeParams}${plain}`,
-      srcTypeParams ? plain : undefined,
+      `${srcTypeParams}${sigTParams}${plain}`,
+      srcTypeParams && !sigTParams ? plain : undefined,
     ),
   );
   return {
