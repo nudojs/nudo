@@ -1,5 +1,7 @@
 /**
  * ABS-10：函数**后置摘要**缓存（跨 PolyFn 实例复用）。
+ * ABS-14 PR1：条目扩展为可承载「每个函数一份的带界摘要」—— 仍是**同一个
+ * Map、同一套淘汰与失效钩子**，不新增第二个跨实例摘要缓存。
  *
  * 形态（保守起点，计划 §ABS-10 风险段）：
  * - 摘要 = 一次 body 求值的**后置 Abs** + α 变元顺序；前置键 = 函数身份
@@ -12,18 +14,49 @@
  *   报告 / 源码 / 依赖图；PolyFn 实例自己的 instMemo 仍是第一层（命中
  *   更快），本层只在**新实例**上命中。
  * - 有界：4096 条（按插入序淘汰最旧）。
+ *
+ * PR1 边界：`formals` / `bounds` / `pre` / `eff` 全是**可选、只存不读**的
+ * additive 字段；`fnSummarySet` 第 4 参可选，现有调用与默认输出逐字节不变。
+ * 函数级条目用 `fn\0<scope>` 键与实例级条目共存于同一 Map，读写走独立计数，
+ * `fnSummaryStats()` 的返回形状不变。
  */
 import type { Abs } from "../abs.ts";
+import type { Pred } from "../pred.ts";
 
-export type FnSummaryEntry = { post: Abs; varOrder: string[] };
+/** ABS-14：函数级摘要的可选字段（PR1 只定义形状，PR2/PR3 才填与读）。 */
+export type FnSummaryFields = {
+  /** 形参占位符 id（按声明序；α–α 只允许单向依赖） */
+  formals?: readonly string[];
+  /** 使用条件：只用现有 Pred 词汇的简单条件 */
+  bounds?: readonly Pred[];
+  /** 入口条件摘要 */
+  pre?: Pred;
+  /** 副作用标签（可观测面，不参与判定） */
+  eff?: readonly string[];
+};
+
+export type FnSummaryEntry = { post: Abs; varOrder: string[] } & FnSummaryFields;
 
 const MAX_SUMMARIES = 4096;
 const store = new Map<string, FnSummaryEntry>();
 let hits = 0;
 let misses = 0;
 let stores = 0;
+let fnLevelHits = 0;
+let fnLevelMisses = 0;
+let fnLevelStores = 0;
 
-/** 读摘要（命中计数用于可观测性 / 测试）。 */
+const fnLevelKey = (scope: string) => `fn\0${scope}`;
+
+function evict(): void {
+  while (store.size > MAX_SUMMARIES) {
+    const oldest = store.keys().next().value;
+    if (oldest === undefined) break;
+    store.delete(oldest);
+  }
+}
+
+/** 读实例级摘要（命中计数用于可观测性 / 测试）。 */
 export function fnSummaryGet(key: string): FnSummaryEntry | undefined {
   const hit = store.get(key);
   if (hit === undefined) {
@@ -37,16 +70,45 @@ export function fnSummaryGet(key: string): FnSummaryEntry | undefined {
   return hit;
 }
 
-/** 写摘要（有界：超限淘汰最旧）。 */
-export function fnSummarySet(key: string, post: Abs, varOrder: string[]): void {
+/** 写实例级摘要（第 4 参为 ABS-14 additive 字段，可省略）。 */
+export function fnSummarySet(
+  key: string,
+  post: Abs,
+  varOrder: string[],
+  extra?: FnSummaryFields,
+): void {
   stores++;
   store.delete(key);
-  store.set(key, { post, varOrder });
-  while (store.size > MAX_SUMMARIES) {
-    const oldest = store.keys().next().value;
-    if (oldest === undefined) break;
-    store.delete(oldest);
+  store.set(key, { post, varOrder, ...extra });
+  evict();
+}
+
+/** ABS-14：读「每个函数一份」的带界摘要（同一 Map，独立计数）。 */
+export function fnSummaryGetFnLevel(scope: string): FnSummaryEntry | undefined {
+  const key = fnLevelKey(scope);
+  const hit = store.get(key);
+  if (hit === undefined) {
+    fnLevelMisses++;
+    return undefined;
   }
+  fnLevelHits++;
+  store.delete(key);
+  store.set(key, hit);
+  return hit;
+}
+
+/** ABS-14：写函数级摘要（覆盖式：每函数一份）。 */
+export function fnSummarySetFnLevel(
+  scope: string,
+  post: Abs,
+  varOrder: string[],
+  extra?: FnSummaryFields,
+): void {
+  fnLevelStores++;
+  const key = fnLevelKey(scope);
+  store.delete(key);
+  store.set(key, { post, varOrder, ...extra });
+  evict();
 }
 
 export function resetFnSummaryCache(): void {
@@ -54,6 +116,9 @@ export function resetFnSummaryCache(): void {
   hits = 0;
   misses = 0;
   stores = 0;
+  fnLevelHits = 0;
+  fnLevelMisses = 0;
+  fnLevelStores = 0;
 }
 
 export function fnSummaryStats(): {
@@ -63,4 +128,13 @@ export function fnSummaryStats(): {
   stores: number;
 } {
   return { size: store.size, hits, misses, stores };
+}
+
+/** ABS-14：函数级摘要的独立可观测计数（不进 `fnSummaryStats()` 口径）。 */
+export function fnSummaryFnLevelStats(): {
+  hits: number;
+  misses: number;
+  stores: number;
+} {
+  return { hits: fnLevelHits, misses: fnLevelMisses, stores: fnLevelStores };
 }
