@@ -254,7 +254,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
-| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
+| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
 | <a id="joinabs"></a>`joinAbs` | fn | assignability / join | `joinAbs(a: Abs, b: Abs): Abs` |
@@ -382,7 +382,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（333）</summary>
+<summary>src/index.ts 其余导出（338）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -398,6 +398,7 @@ createEnvironment(parent?, bindings?)
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| <a id="analysisexplanation"></a>`AnalysisExplanation` | type | — | `AnalysisExplanation = { fn?: string; reason: UnknownReason; detail: string; suggestion?: string; }` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
@@ -413,6 +414,7 @@ createEnvironment(parent?, bindings?)
 | <a id="bitorabs"></a>`bitorAbs` | fn | \| —— ToInt32 两侧后按位或 | `bitorAbs(a: Abs, b: Abs): Abs` |
 | <a id="bitxorabs"></a>`bitxorAbs` | fn | ^ —— ToInt32 两侧后按位异或 | `bitxorAbs(a: Abs, b: Abs): Abs` |
 | <a id="buildargsfromassume"></a>`buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, bounds?: ReadonlyMap<string, Pred>, ): Abs[]` |
+| <a id="buildunknownexplanations"></a>`buildUnknownExplanations` | fn | 由观察面构造未知来源清单（去重 + 稳定排序）。 | `buildUnknownExplanations(input: ExplainInput): AnalysisExplanation[]` |
 | <a id="builtinctorabs"></a>`builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | <a id="builtinctornameof"></a>`builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
 | <a id="callabsmethod"></a>`callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
@@ -434,7 +436,7 @@ createEnvironment(parent?, bindings?)
 | <a id="constraint_chain_method_names"></a>`CONSTRAINT_CHAIN_METHOD_NAMES` | const | 链式方法名表（单一真源）：`builder(...).method(...)` 链上允许的方法。 | `const CONSTRAINT_CHAIN_METHOD_NAMES` |
 | <a id="constraint_expr_re"></a>`CONSTRAINT_EXPR_RE` | const | 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成—— 名单只在 CONSTRAINT_BUILDERS 一处维护。 | `const CONSTRAINT_EXPR_RE` |
 | <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
-| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
+| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Abs` |
 | <a id="contract_source_abbr"></a>`CONTRACT_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const CONTRACT_SOURCE_ABBR` |
 | <a id="contractdiag"></a>`ContractDiag` | type | contract 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `ContractDiag = { code: string; message: string; file?: string; line?: number; column?: number; }` |
 | <a id="contractdiagcount"></a>`contractDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `contractDiagCount(): number` |
@@ -485,6 +487,7 @@ createEnvironment(parent?, bindings?)
 | <a id="evictchecksourcememoforpaths"></a>`evictCheckSourceMemoForPaths` | fn | `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存。查找与索引同走 stablePathKey | `evictCheckSourceMemoForPaths(paths: string[]): number` |
 | <a id="evictgeneralizememoforpaths"></a>`evictGeneralizeMemoForPaths` | fn | LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。 | `evictGeneralizeMemoForPaths(paths: string[]): number` |
 | <a id="execnudomodule"></a>`execNudoModule` | fn | 执行 *.nudo.js（真实 JS + 我们的构建器）。import/export 由 Babel 语句级 改写：多行 named import、注释/字符串里的同形文本不误伤；相对 .nudo 递归 求值；环 → throw NudoSidecarError。结果进 exec 缓存（依赖闭包内容指纹键）。 | `execNudoModule(src: string, opts?: RefineResolveOpts): Record<string, unknown>` |
+| <a id="explaininput"></a>`ExplainInput` | type | 结构化输入（只取观察面已有字段；结构性类型避免与 check 模块成环） | `ExplainInput = { signatures: ReadonlyArray<{ name: string; paramTypes?: readonly string[]; display?: string; detail?: string; conf?: stri...` |
 | <a id="extractbalancedparens"></a>`extractBalancedParens` | fn | 平衡括号摘取（字符串感知；`\` 不是转义——与 case 实参原样 slice 一致）。 | `extractBalancedParens(text: string, startIdx: number): string \| null` |
 | <a id="extractdeclaredthrows"></a>`extractDeclaredThrows` | fn | 申报式抛错（declare throws — L2 豁免）： 与 refine 同扫函数前注释块（D6=G2 同一 scope 绑定）。 | `extractDeclaredThrows( source: string, fnName: string, ): string[]` |
 | <a id="extractfn"></a>`extractFn` | fn | — | `extractFn( source: string, fnName: string, fileAst?: ReturnType<typeof babelParse>, )` |
@@ -508,6 +511,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formatgitlabcodequality"></a>`formatGitlabCodeQuality` | fn | GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） | `formatGitlabCodeQuality( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): GitlabCodeQualityIssue[]` |
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
+| <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | 稳定文本面（`--explain-unknown` 人类输出；逐字节可快照） | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
 | <a id="generatedexportnames"></a>`generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import 链与**被 export 引用**的 const 链）的注释行是 nudo 自己的 `@generated` 标记 → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
 | <a id="genum"></a>`geNum` | fn | — | `geNum(term: Term, n: number): Pred` |
@@ -716,6 +720,7 @@ createEnvironment(parent?, bindings?)
 | <a id="typeofname"></a>`TypeofName` | type | JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 | `TypeofName = \| "undefined" \| "object" \| "boolean" \| "number" \| "bigint" \| "string" \| "symbol" \| "function"` |
 | <a id="typeparam"></a>`TypeParam` | type | — | `TypeParam = { id: string; value: Abs; }` |
 | <a id="undefabs"></a>`undefAbs` | fn | undefined 值的统一 Abs 表示（forEach/find 等） | `undefAbs(): Abs` |
+| <a id="unknownreason"></a>`UnknownReason` | type | 未知来源分类（产品面口径，顺序稳定） | `UnknownReason = \| "budget" \| "missing-env" \| "unsupported" \| "eval-failure" \| "no-contract" \| "explicit-any" \| "inference-failure"` |
 | <a id="ushrabs"></a>`ushrAbs` | fn | &gt;&gt;&gt; —— 逻辑右移（rhs ToUint32 &amp; 31；bigint 无此运算符 → 不可折叠） | `ushrAbs(a: Abs, b: Abs): Abs` |
 | <a id="withexecphi"></a>`withExecPhi` | fn | — | `withExecPhi<T>(p: Phi, body: () => T): T` |
 | <a id="withvar"></a>`withVar` | fn | — | `withVar(env: AstEnv, name: string, value: Abs): AstEnv` |
