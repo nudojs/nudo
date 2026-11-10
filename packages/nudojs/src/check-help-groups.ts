@@ -27,7 +27,7 @@ const GROUPS: ReadonlyArray<{ heading: string; flags: readonly string[] }> = [
   },
   {
     heading: "Observation options:",
-    flags: ["--abs", "--fn", "--assume", "--generalize", "--verbose", "--from"],
+    flags: ["--abs", "--fn", "--assume", "--generalize", "--verbose", "--from", "--explain-unknown"],
   },
   { heading: "Fix options:", flags: ["--fix", "--only", "--write", "--dry-run"] },
   { heading: "CI options:", flags: ["--gha", "--gitlab"] },

@@ -163,6 +163,7 @@
       "boolLit",
       "boolean",
       "buildArgsFromAssume",
+      "buildUnknownExplanations",
       "builtinCtorAbs",
       "builtinCtorNameOf",
       "callAbsMethod",
@@ -265,6 +266,7 @@
       "formatGitlabCodeQuality",
       "formatShape",
       "formatShapeSlot",
+      "formatUnknownExplanations",
       "ge",
       "geNum",
       "generalizeFromAst",
@@ -516,6 +518,7 @@
       "AbsFnImpl",
       "AbsModuleExports",
       "AbsSigImpl",
+      "AnalysisExplanation",
       "AstEnv",
       "BinderTable",
       "CaseTag",
@@ -539,6 +542,7 @@
       "EvalClassSpec",
       "EvalFallback",
       "EvalPosRecord",
+      "ExplainInput",
       "ExtState",
       "FnAbs",
       "FnDirectiveScope",
@@ -574,7 +578,8 @@
       "TranspileOptions",
       "TranspiledCallResult",
       "TypeParam",
-      "TypeofName"
+      "TypeofName",
+      "UnknownReason"
     ]
   },
   "core": {

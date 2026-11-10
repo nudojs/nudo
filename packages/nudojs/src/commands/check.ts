@@ -348,6 +348,13 @@ export type RunCheckOptions = {
    */
   quiet?: boolean;
   /**
+   * ABS-02：`--explain-unknown` —— 在人类报告之后打印 unknown / any 来源清单
+   * （纯观察面；默认输出零变化；A/B 分支不受影响）。
+   */
+  explainUnknown?: boolean;
+  /** 本轮采集的求值回落（runCheck 现场收集；explain 面只读） */
+  evalFallbacks?: EvalFallback[];
+  /**
    * 人类面批次探针（#1/#9 聚合通道）：action 层仅在人类模式创建
    * （--json / --gitlab / --gha / --fix 的 stdout 与 stderr 都是机器契约面）。
    */
@@ -1217,7 +1224,10 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     if (sourceHasNudoDirectives(source)) opts.batchProbe.filesWithDirectives++;
     if (cache.proj) opts.batchProbe.filesWithConfig++;
   }
-  await emitCheckReport(filePath, report, cache, injectionSetupFailed, opts);
+  await emitCheckReport(filePath, report, cache, injectionSetupFailed, {
+    ...opts,
+    ...(opts.explainUnknown ? { evalFallbacks: evalFailures } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

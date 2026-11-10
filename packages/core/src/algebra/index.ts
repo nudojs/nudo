@@ -171,6 +171,11 @@ export {
 } from "./constraint.ts";
 
 export {
+  type AnalysisExplanation, type ExplainInput, type UnknownReason,
+  buildUnknownExplanations, formatUnknownExplanations
+} from "./diagnostics/explain.ts";
+
+export {
   literalMeetsConstraint
 } from "./domain-membership.ts";
 

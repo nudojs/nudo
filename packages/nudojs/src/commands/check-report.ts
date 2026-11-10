@@ -9,9 +9,11 @@
 import { basename } from "node:path";
 import { paint } from "../ui.ts";
 import {
+  buildUnknownExplanations,
   formatCheckReport,
   formatGithubAnnotations,
   formatGitlabCodeQuality,
+  formatUnknownExplanations,
   serializeCheckJson,
   type CheckIssue,
   type CheckJson,
@@ -453,6 +455,20 @@ export async function emitCheckReport(
   } else {
     console.log(paint(formatCheckReport(report, { verbose: opts.verbose === true })));
     emitCiAnnotations();
+  }
+
+  // ABS-02：`--explain-unknown` —— unknown / any 来源清单（人类面，纯观察）。
+  // 机器面（--json / --gitlab）不受影响；默认（无旗标）逐字节不变。
+  if (opts.explainUnknown && !opts.json && !opts.gitlab) {
+    const explanations = buildUnknownExplanations({
+      signatures: report.signatures,
+      issues: report.issues,
+      budget: report.budget,
+      ...(opts.evalFallbacks ? { evalFallbacks: opts.evalFallbacks } : {}),
+    });
+    console.log("");
+    const text = formatUnknownExplanations(explanations);
+    console.log(text === "" ? "unknown / any origins\n  (none)" : text);
   }
 
   // #1 零配置 onboarding（issues 段之后、docs 段之前）：全部 error 为 L2 入口
