@@ -9,6 +9,7 @@ import {
   termEquals,
   unknown,
   anyAbs,
+  substAbs,
 } from "@nudojs/core";
 import {
   isTemplateLike,
@@ -1564,8 +1565,31 @@ function computeMainSignature(
   ctx?: DtsProjectionCtx,
 ): MainSignature {
   const contractByParam = contractParamMap(contract);
-  // ABS-03：契约面类型形参（与 contractOnlySignature 同源）
-  const typeVars = contractTypeVarsOf(contract);
+  // ABS-11：契约 × HOF 关系合取（与 contractOnlySignature 同源口径）——
+  // 契约覆盖位绑定 HOF α，未覆盖位继续用 HOF 面（写契约不丢 β 链接）。
+  const hofByParam = new Map<string, Abs>();
+  for (const s of fn.hof?.entryShapes ?? []) hofByParam.set(s.param, s.abs);
+  for (const r of fn.hof?.fnRels ?? []) hofByParam.set(r.param, r.abs);
+  const hofSubst = new Map<string, Abs>();
+  for (const [name, hofAbs] of hofByParam) {
+    const c = contract?.params.find((p) => p.name === name)?.abs;
+    if (c) unifyHofWithContract(hofAbs, c, hofSubst);
+  }
+  const contractNames = new Set((contract?.params ?? []).map((p) => p.name));
+  // ABS-03：契约面类型形参（契约 + 未覆盖位的 HOF 变元）
+  const typeVars = ((): Map<string, string> => {
+    if (!contract) return new Map();
+    const merged: DtsContractFace = {
+      params: [
+        ...contract.params,
+        ...[...hofByParam.entries()]
+          .filter(([name]) => !contractNames.has(name))
+          .map(([name, hofAbs]) => ({ name, abs: substAbs(hofAbs, hofSubst) })),
+      ],
+      ...(contract.return ? { return: contract.return } : {}),
+    };
+    return contractTypeVarsOf(merged);
+  })();
   const declared = declaredParams(fn);
   const declaredArity = declared.length;
   const observedArity =
@@ -1604,9 +1628,19 @@ function computeMainSignature(
     //   3. case-widen —— 观测值 join + 逆变 widen（无声明时的既有回落）。
     const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const contractRender = contractParamRenderAbs(contractHit);
+    // 优先级：契约 > 声明注解 > 具体 case 证据 > HOF 关系面。
+    // case 证据是「无信息」（unknown / any）而 HOF 有 β 链接时取 HOF——
+    // 写契约不再让未覆盖位的关系静默退化成 unknown。
+    const caseType = annotation ?? paramTypeFromAbs(members, isRest);
+    const hofAbs = hofByParam.get(rawName) ?? hofByParam.get(decl?.name ?? "");
+    const caseNoInfo =
+      isNoInfoType(caseType.replace(/\[\]$/, "")) ||
+      (isRest && isNoInfoType(caseType.replace(/\[\]$/, "")));
     const typeStr = contractRender
       ? contractParamType(contractRender, isRest, typeVars)
-      : (annotation ?? paramTypeFromAbs(members, isRest));
+      : hofAbs && caseNoInfo && annotation === undefined
+        ? restParamType(substAbs(hofAbs, hofSubst), isRest, typeVars)
+        : caseType;
     // 声明名：解构形参用**绑定模式**形态 `{ a, b }`（公共 API 声明不该出现
     // 求值占位 `_p0`；Bug 538）。键不全（契约/观测都拿不到该绑定）时回落
     // 占位名——模式形态与类型不匹配会产出不可编译的 .d.ts。
@@ -1687,13 +1721,20 @@ function computeMainSignature(
     fn.cases.length > 0 && fn.cases.every((c) => c.source === "callsite");
   // 契约返回位（声明级证据，权威）⇒ 保形（Bug 520：lit(42) → 42，与 zod /
   // standard / check 三面同口径）；观测返回位沿用调用面 widen 口径。
-  const returnType = retAbs
-    ? contract?.return
-      ? contractReturnTSType(contract.return, typeVars)
-      : absToTSType(
-          observedOnly ? widenObservedReturnAbs(widenTopLevelAbs(retAbs)) : widenTopLevelAbs(retAbs),
-        )
+  // ABS-11：契约无返回位且观测返回位无信息时，回落到 HOF 符号返回位
+  // （arr(B) / fn 关系），避免「写契约」把整条关系面静默降级成 unknown。
+  const hofReturn =
+    !contract?.return && fn.hof?.symbolic ? substAbs(fn.hof.symbolic, hofSubst) : undefined;
+  const observedReturnType = retAbs
+    ? absToTSType(
+        observedOnly ? widenObservedReturnAbs(widenTopLevelAbs(retAbs)) : widenTopLevelAbs(retAbs),
+      )
     : "unknown";
+  const returnType = contract?.return
+    ? contractReturnTSType(contract.return, typeVars)
+    : hofReturn && isNoInfoType(observedReturnType.replace(/\[\]$/, ""))
+      ? absToTSType(hofReturn, typeVars)
+      : observedReturnType;
   // ABS-03：可达性过滤（与 contractOnlySignature 同源）
   // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
   const typeParams = reachableTypeParams(
@@ -1909,6 +1950,59 @@ export interface DtsFunctionProjection {
 }
 
 /**
+ * ABS-11：契约 × HOF 关系合取（dts 投影层）。
+ *
+ * 手写契约覆盖的形参位必须保留 HOF 关系面（entryShapes / fnRels）——
+ * 「写契约」不得静默丢掉 β 链接（dts-generator 旧口径 hasContractParams ⇒
+ * hofSig=undefined 的取舍要消除）。这里用结构对齐把 HOF 的 α 变元绑定到
+ * 契约 Abs 的对应子结构（arr 元素 / tuple 位 / obj 槽 / fn 参数与返回），
+ * 未覆盖的形参再用 `substAbs` 实例化 HOF Abs。
+ *
+ * 只做**结构可对齐**的绑定（形状同 kind 才递归）；对不齐的变元保留为
+ * 自由变元（诚实泛型，不伪造具体类型）。
+ */
+function unifyHofWithContract(
+  pattern: Abs,
+  concrete: Abs,
+  out: Map<string, Abs>,
+): void {
+  const ps = pattern.shape;
+  const cs = concrete.shape;
+  if (ps.k === "any" && pattern.term?.op === "var") {
+    const id = pattern.term.id;
+    if (!out.has(id)) out.set(id, concrete);
+    return;
+  }
+  if (ps.k === "arr" && cs.k === "arr") {
+    unifyHofWithContract(ps.element, cs.element, out);
+    return;
+  }
+  if (ps.k === "tuple" && cs.k === "tuple") {
+    ps.elements.forEach((e, i) => {
+      const c = cs.elements[i];
+      if (c) unifyHofWithContract(e, c, out);
+    });
+    return;
+  }
+  if (ps.k === "obj" && cs.k === "obj") {
+    for (const [k, slot] of Object.entries(ps.slots)) {
+      const c = cs.slots[k];
+      if (c) unifyHofWithContract(slot.value, c.value, out);
+    }
+    return;
+  }
+  if (ps.k === "fn" && cs.k === "fn") {
+    (ps.paramTypes ?? []).forEach((t, i) => {
+      const c = (cs.paramTypes ?? [])[i];
+      if (c) unifyHofWithContract(t, c, out);
+    });
+    if (ps.returnType && cs.returnType) {
+      unifyHofWithContract(ps.returnType, cs.returnType, out);
+    }
+  }
+}
+
+/**
  * ABS-03：契约面自由变元 → TS 类型形参映射（`bind:<name>` ⇒ `<name>`）。
  * 确定性：按 term id 排序 ⇒ 声明顺序稳定（快照可钉）。
  */
@@ -1958,9 +2052,31 @@ function contractOnlySignature(
 ): MainSignature {
   const byName = contractParamMap(contract);
   const declared = declaredParams(fn);
-  // ABS-03：契约面的自由变元（bind/ref 的 `bind:<name>` 项）→ TS 类型形参。
-  // 只发射**被形参 / 返回位引用**的变元（无引用的不产生悬空类型参数）。
-  const typeVars = contractTypeVarsOf(contract);
+  // ABS-11：契约 × HOF 关系合取——契约覆盖位把 HOF α 绑定到契约子结构，
+  // 未覆盖位继续用 HOF 关系面（写契约不再静默丢 β 链接）。
+  const hofByParam = new Map<string, Abs>();
+  for (const s of fn.hof?.entryShapes ?? []) hofByParam.set(s.param, s.abs);
+  for (const r of fn.hof?.fnRels ?? []) hofByParam.set(r.param, r.abs);
+  const hofSubst = new Map<string, Abs>();
+  for (const [name, hofAbs] of hofByParam) {
+    const cAbs = contract.params.find((p) => p.name === name)?.abs;
+    if (cAbs) unifyHofWithContract(hofAbs, cAbs, hofSubst);
+  }
+  const contractNames = new Set(contract.params.map((p) => p.name));
+  // ABS-03：契约面的自由变元（bind/ref 的 `bind:<name>` 项）→ TS 类型形参；
+  // ABS-11：未覆盖形参的 HOF 变元同样参与（已代入的从 substAbs 结果收集）。
+  const typeVars = ((): Map<string, string> => {
+    const merged: DtsContractFace = {
+      params: [
+        ...contract.params,
+        ...[...hofByParam.entries()]
+          .filter(([name]) => !contractNames.has(name))
+          .map(([name, hofAbs]) => ({ name, abs: substAbs(hofAbs, hofSubst) })),
+      ],
+      ...(contract.return ? { return: contract.return } : {}),
+    };
+    return contractTypeVarsOf(merged);
+  })();
   const slots: ParamSlot[] = [];
   const paramNames: string[] = [];
   const paramTypes: string[] = [];
@@ -1984,9 +2100,12 @@ function contractOnlySignature(
     usedNames.add(name);
     const annotation = tsParamAnnotation(fn, i, isRest, ctx);
     const hitRender = contractParamRenderAbs(hit);
+    const hofAbs = hofByParam.get(decl.name);
     const typeStr = hitRender
       ? contractParamType(hitRender, isRest, typeVars)
-      : (annotation ?? (isRest ? "unknown[]" : "unknown"));
+      : hofAbs
+        ? restParamType(substAbs(hofAbs, hofSubst), isRest, typeVars)
+        : (annotation ?? (isRest ? "unknown[]" : "unknown"));
     // 可选性（与 computeMainSignature 同口径）：契约级 ∪ 声明级（默认值）。
     // BUG-108：契约覆盖该位时旧实现**只看契约级** ⇒ `fn({ a: num })` +
     // `function f(a = 1)` 的 dts 面把 `a` 印成必填，而 standard 面

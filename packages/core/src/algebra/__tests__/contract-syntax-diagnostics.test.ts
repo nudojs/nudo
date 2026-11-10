@@ -81,8 +81,10 @@ export function f(x) { return x; }`;
 
   it("return segment with bad syntax → diagnostic", () => {
     takeRefineDiags();
+    // ABS-01 起 `return > 0` 是**合法**的依赖式返回契约（常量右端）；
+    // 畸形形态用空右端 / builder 调用（仍必须 fail-closed 诊断）。
     const src = `/**
- * @nudo:contract return > 0
+ * @nudo:contract return >
  */
 export function f(x) { return x; }`;
     extractRefinesFromSource(src, "f"); // skips return segments

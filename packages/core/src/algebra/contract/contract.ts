@@ -1472,6 +1472,14 @@ function fmtConstraint(c: NudoConstraint, depth: number = LAZY_DISPLAY_DEPTH): s
     if (depth <= 0) return "…";
     return fmtConstraint(derefConstraint(c), depth - 1);
   }
+  // ABS-11：结构型的**自身谓词**（长度界等）与可选位必须出现在展示里——
+  // `array(number()).min(2)` 显示成 `array(number())` 会静默丢长度义务。
+  const withChain = (base: string): string => {
+    let out = base;
+    for (const p of c.preds) out += predToChain(p);
+    if (c.isOptional) out += ".optional()";
+    return out;
+  };
   // fn({ p: … }, returns, { throws: … })
   if (c.fn) {
     const args = [
@@ -1481,20 +1489,21 @@ function fmtConstraint(c: NudoConstraint, depth: number = LAZY_DISPLAY_DEPTH): s
     ];
     if (c.fn.returns !== undefined) args.push(fmtConstraint(c.fn.returns, depth));
     if (c.fn.throws !== undefined) args.push(`{ throws: ${fmtConstraint(c.fn.throws, depth)} }`);
-    return `fn(${args.join(", ")})`;
+    return withChain(`fn(${args.join(", ")})`);
   }
   // union(m1, m2, …)
-  if (c.members) return `union(${c.members.map((m) => fmtConstraint(m, depth)).join(", ")})`;
+  if (c.members)
+    return withChain(`union(${c.members.map((m) => fmtConstraint(m, depth)).join(", ")})`);
   // shape({ x: …, y?: … })（isOptional 字段加 ?）
   if (c.fields) {
     const fs = Object.entries(c.fields).map(([k, f]) => {
       const opt = f.optional || f.constraint.isOptional ? "?" : "";
       return `${k}${opt}: ${fmtConstraint(f.constraint, depth)}`;
     });
-    return `shape({ ${fs.join(", ")} })`;
+    return withChain(`shape({ ${fs.join(", ")} })`);
   }
   // array(…)
-  if (c.element) return `array(${fmtConstraint(c.element, depth)})`;
+  if (c.element) return withChain(`array(${fmtConstraint(c.element, depth)})`);
   // lit(v)：prim + 单一 eq(self, v)（lit(null) 无 prim 也识别）
   if (
     c.preds.length === 1 &&

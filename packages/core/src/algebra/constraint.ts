@@ -819,41 +819,223 @@ export function fn(
  * prim 一致（缺省 prim 视为无 prim 约束、可与任意 prim 合并）→ preds 拼接；
  * prim 不一致或任一含 fields/element/members/fn → throw。
  */
+/**
+ * andC(...cs)：合取。
+ *
+ * ABS-11：非标量形态也支持（shape∧shape 字段级、array∧array 元素级、
+ * union∧union 成员交叉、fn∧fn 参数/返回位）。**矛盾才冲突**：
+ * - prim 不一致 / 结构型与非结构型 prim 冲突 / binder 异名 ⇒ throw
+ *   （调用方转 `nudo:contract-conflict`）；
+ * - 合不了的形态（ref / relational）同样显式 throw（不静默丢义务）。
+ * `lazy` 先解一层（issue #120 口径）。
+ */
 export function andC(
   ...cs: (NudoConstraint | ConstraintBuilder)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
     throw new Error("nudo and(): at least one constraint is required");
-  let prim: PrimName | undefined;
-  let isInt = false;
-  let allOptional = true;
-  const preds: Pred[] = [];
-  for (const c0 of cs) {
-    if (!isConstraint(c0))
+  let acc: NudoConstraint | undefined;
+  for (const c of cs) {
+    if (!isConstraint(c))
       throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
-    // lazy 包装先解一层：lazy(() => shape(...)) 与直接 shape 同样 throw，
-    // 不因包装静默并入 preds（issue #120）
-    const c = derefConstraint(c0);
-    if (c.fields || c.element || c.members || c.fn)
-      throw new Error("nudo and(): Phase 1 supports scalar constraint conjunction only (shape/array/union/fn are not supported)");
-    // ABS-01：binder / ref / 关系式不是标量谓词——静默并入会丢别名（假绿），
-    // 明确拒绝（ABS-11 的合取扩展另行设计）
-    if (c.binder !== undefined || c.ref || c.relational)
-      throw new Error("nudo and(): bind/ref/rel constraints cannot be conjoined yet (keep them as standalone slots)");
-    if (c.prim) {
-      if (prim !== undefined && prim !== c.prim)
-        throw new Error(`nudo and(): inconsistent prim (${prim} vs ${c.prim})`);
-      prim = c.prim;
-    }
-    preds.push(...c.preds);
-    // isIntFlag 统一读取：builder（int 是方法）查 WeakSet，纯数据看 === true
-    if (isIntFlag(c)) isInt = true;
-    if (!c.isOptional) allOptional = false;
+    const plain = derefConstraint(c);
+    acc = acc === undefined ? plain : andTwo(acc, plain);
   }
-  return makeBuilder(prim, preds, {
-    ...(isInt ? { int: true } : {}),
-    ...(allOptional ? { optional: true } : {}),
-  });
+  const out = acc!;
+  return makeBuilder(out.prim, [...out.preds], innerData(out));
+}
+
+/**
+ * 两个约束的合取（ABS-11 结构合取核心）。
+ *
+ * 形态分派顺序：binder/ref/relational（不参与合取 → conflict）→
+ * shape / array / union / fn（结构级递归）→ 单侧结构 + 谓词 → 标量。
+ */
+function andTwo(a: NudoConstraint, b: NudoConstraint): NudoConstraint {
+  // binder / ref / relational：合取语义未定义（异名 / 异形态 = conflict）
+  if (
+    a.binder !== undefined ||
+    a.ref !== undefined ||
+    a.relational !== undefined ||
+    b.binder !== undefined ||
+    b.ref !== undefined ||
+    b.relational !== undefined
+  ) {
+    if (
+      a.binder !== undefined &&
+      a.binder === b.binder &&
+      a.ref === undefined &&
+      b.ref === undefined &&
+      a.relational === undefined &&
+      b.relational === undefined
+    ) {
+      const { binder: name, ...restA } = a;
+      const { binder: _b, ...restB } = b;
+      return { ...andTwo(restA as NudoConstraint, restB as NudoConstraint), binder: name };
+    }
+    throw new Error(
+      "nudo and(): bind/ref/rel constraints cannot be conjoined with a different binder form (keep them as standalone slots or reuse the same bind name)",
+    );
+  }
+  // 结构型 × 结构型（不同 kind 不可合取：shape × array / shape × fn …）
+  const kindOf = (c: NudoConstraint): string | undefined =>
+    c.fields ? "shape" : c.element ? "array" : c.members ? "union" : c.fn ? "fn" : undefined;
+  const ka = kindOf(a);
+  const kb = kindOf(b);
+  if (ka !== undefined && kb !== undefined && ka !== kb && ka !== "union" && kb !== "union") {
+    throw new Error(
+      `nudo and(): cannot conjoin structural forms ${ka} × ${kb} (different shapes)`,
+    );
+  }
+  // 结构型 × 结构型
+  if (a.fields || b.fields) {
+    if (a.fields && b.fields) {
+      assertNoPrimOnStructure(a, "shape");
+      assertNoPrimOnStructure(b, "shape");
+      const fields: Record<string, NudoField> = Object.create(null);
+      for (const [k, f] of Object.entries(a.fields)) fields[k] = f;
+      for (const [k, g] of Object.entries(b.fields)) {
+        const prev = fields[k];
+        fields[k] = prev
+          ? {
+              constraint: andTwo(prev.constraint, g.constraint),
+              optional: prev.optional === true || g.optional === true,
+            }
+          : g;
+      }
+      return scalarAnd(
+        { ...a, fields },
+        { ...b, fields: undefined },
+      );
+    }
+    return shapeWithScalar(a.fields ? a : b, a.fields ? b : a);
+  }
+  if (a.element || b.element) {
+    if (a.element && b.element) {
+      assertNoPrimOnStructure(a, "array");
+      assertNoPrimOnStructure(b, "array");
+      return scalarAnd(
+        { ...a, element: andTwo(a.element, b.element) },
+        { ...b, element: undefined },
+      );
+    }
+    return shapeWithScalar(a.element ? a : b, a.element ? b : a);
+  }
+  if (a.members || b.members) {
+    if (a.members && b.members) {
+      if (a.members.length * b.members.length > 16) {
+        throw new Error(
+          "nudo and(): union × union conjunction would exceed 16 members — narrow one side first",
+        );
+      }
+      const members: NudoConstraint[] = [];
+      for (const x of a.members) for (const y of b.members) members.push(andTwo(x, y));
+      return scalarAnd(
+        { ...a, members },
+        { ...b, members: undefined },
+      );
+    }
+    // 单侧 union：把另一侧合到每个成员上（等价于分配律）
+    const u = a.members ? a : b;
+    const other = a.members ? b : a;
+    if (other.prim || other.fields || other.element || other.fn) {
+      throw new Error(
+        "nudo and(): union × non-scalar form is not supported — narrow the union first",
+      );
+    }
+    return {
+      ...u,
+      preds: [...u.preds, ...other.preds],
+      isOptional: u.isOptional === true && other.isOptional === true,
+    };
+  }
+  if (a.fn || b.fn) {
+    if (a.fn && b.fn) {
+      assertNoPrimOnStructure(a, "fn");
+      assertNoPrimOnStructure(b, "fn");
+      const params: Record<string, NudoConstraint> = {};
+      for (const [k, v] of Object.entries(a.fn.params)) params[k] = v;
+      for (const [k, v] of Object.entries(b.fn.params)) {
+        params[k] = params[k] === undefined ? v : andTwo(params[k]!, v);
+      }
+      const returns =
+        a.fn.returns !== undefined && b.fn.returns !== undefined
+          ? andTwo(a.fn.returns, b.fn.returns)
+          : (a.fn.returns ?? b.fn.returns);
+      const throwsC =
+        a.fn.throws !== undefined && b.fn.throws !== undefined
+          ? toPlainConstraint(union(a.fn.throws, b.fn.throws))
+          : (a.fn.throws ?? b.fn.throws);
+      return scalarAnd(
+        {
+          ...a,
+          fn: {
+            params,
+            ...(returns !== undefined ? { returns } : {}),
+            ...(throwsC !== undefined ? { throws: throwsC } : {}),
+          },
+        },
+        { ...b, fn: undefined },
+      );
+    }
+    return shapeWithScalar(a.fn ? a : b, a.fn ? b : a);
+  }
+  return scalarAnd(a, b);
+}
+
+/**
+ * 单侧结构 + 另一侧（标量 / 谓词）的合取：
+ * - 另一侧带 prim 且与结构型不相容（obj/arr/fn）⇒ conflict；
+ * - 另一侧只有 preds / int / optional ⇒ 并到结构节点自身（数组长度界等）。
+ */
+function shapeWithScalar(
+  structural: NudoConstraint,
+  other: NudoConstraint,
+): NudoConstraint {
+  if (other.prim !== undefined) {
+    throw new Error(
+      `nudo and(): structural constraint (shape/array/fn) cannot be conjoined with prim ${other.prim}`,
+    );
+  }
+  if (other.members) {
+    throw new Error(
+      "nudo and(): union × non-scalar form is not supported — narrow the union first",
+    );
+  }
+  return {
+    ...structural,
+    preds: [...structural.preds, ...other.preds],
+    ...(other.isOptional === true ? {} : { isOptional: false }),
+  };
+}
+
+/** 结构型节点不得携带 prim（obj/arr/fn 与 number 矛盾 ⇒ conflict） */
+function assertNoPrimOnStructure(c: NudoConstraint, form: string): void {
+  if (c.prim !== undefined) {
+    throw new Error(
+      `nudo and(): ${form} constraint cannot carry prim ${c.prim} (structurally impossible)`,
+    );
+  }
+}
+
+/** 结构位之外的标量/谓词合并（prim 一致才允许；preds 并集） */
+function scalarAnd(a: NudoConstraint, b: NudoConstraint): NudoConstraint {
+  if (a.prim !== undefined && b.prim !== undefined && a.prim !== b.prim) {
+    throw new Error(`nudo and(): inconsistent prim (${a.prim} vs ${b.prim})`);
+  }
+  return {
+    __nudoConstraint: true,
+    ...(a.prim ?? b.prim ? { prim: a.prim ?? b.prim } : {}),
+    preds: [...a.preds, ...b.preds],
+    ...(a.fields ?? b.fields ? { fields: a.fields ?? b.fields } : {}),
+    ...(a.element ?? b.element ? { element: a.element ?? b.element } : {}),
+    ...(a.members ?? b.members ? { members: a.members ?? b.members } : {}),
+    ...(a.fn ?? b.fn ? { fn: a.fn ?? b.fn } : {}),
+    ...(a.lazy ?? b.lazy ? { lazy: a.lazy ?? b.lazy } : {}),
+    ...(isIntFlag(a) || isIntFlag(b) ? { int: true } : {}),
+    // 合取的可选性：两侧都可省才可省
+    ...(a.isOptional === true && b.isOptional === true ? { isOptional: true } : {}),
+  };
 }
 
 /**
