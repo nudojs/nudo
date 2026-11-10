@@ -540,6 +540,9 @@ export function resetGeneralizeMemo(): void {
   generalizeMemo.reset();
   resetFnFpCache();
   resetHashSourceCache();
+  // ABS-10：跨实例后置摘要同属 generalize 缓存栈（reset 是显式失效钩子；
+  // 不清会让重跑拿到上一轮的共享 Abs 对象 ⇒ 跨轮状态复用）。
+  resetFnSummaryCache();
   // BUG-056：evaluator 的 run 表同样要清（活模块状态，跨轮不可复用）
   evalRunMemo.clear();
 }
@@ -681,6 +684,8 @@ import {
   instantiateMemoKey,
   alphaRenameResult,
 } from "./key/generalize-key.ts";
+import { fnSummaryGet, fnSummarySet, resetFnSummaryCache } from "./key/fn-summary.ts";
+import { hashSource } from "./key/hash-source.ts";
 
 export type TypeParam = {
   id: string;
@@ -1288,8 +1293,19 @@ export function generalizeFromAst(
   // 界的 PolyFn 经 L0 泄漏给无种子调用）。种子仅在目标函数入口求值窗口内
   // 非平凡 ⇒ 该窗口内既不读也不写 L0。
   if (currentAssumePremises().op !== "true" || currentInvariantSpecs().length > 0) {
+    // ABS-10：种子窗口不写/不读跨实例摘要（折后界不得泄漏给无种子调用）
     return generalizeFromAstUncached(fnName, source, opts);
   }
+  /**
+   * ABS-10：跨实例摘要作用域指纹（纯上下文才启用）。
+   * refine / inject / 自定义 budget 会改变 body 语义且闭包身份不可哈希 ⇒
+   * 不进摘要（不进不出）。`label` 只影响预算记账文案，不进指纹。
+   */
+  const summaryScope = ((): string | undefined => {
+    if (opts.refine || opts.inject || opts.budget) return undefined;
+    if (opts.depsFp && (opts.depsFp.truncated || opts.depsFp.readError)) return undefined;
+    return [hashSource(source), fnName, opts.depsFp?.fp ?? "", opts.sidecarFp ?? ""].join("\0");
+  })();
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
   // 截断/读错误指纹不可信：不读也不写 L0
   if (!truncated) {
@@ -1298,7 +1314,12 @@ export function generalizeFromAst(
       return cached;
     }
   }
-  const result = generalizeFromAstUncached(fnName, source, opts);
+  const result = generalizeFromAstUncached(
+    fnName,
+    source,
+    opts,
+    ...(summaryScope !== undefined ? [summaryScope] : []),
+  );
   if (!truncated) {
     generalizeMemoSet(key, result, depPaths);
   }
@@ -1404,6 +1425,8 @@ function generalizeFromAstUncached(
      *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
     inject?: RunTranspiledOptions;
   } = {},
+  /** ABS-10：跨实例摘要作用域指纹（私有通道；由 `generalizeFromAst` 判定） */
+  summaryScope?: string,
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
   if (!extracted) {
@@ -1872,11 +1895,23 @@ function generalizeFromAstUncached(
     }
   };
 
+
+
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
+    }
+    // ABS-10：新实例上先问跨实例摘要（第一层 instMemo 已 miss）
+    const summaryKey = summaryScope === undefined ? undefined : `${summaryScope}\0${key}`;
+    if (summaryKey !== undefined) {
+      const sHit = fnSummaryGet(summaryKey);
+      if (sHit !== undefined) {
+        const out = alphaRenameResult(sHit.post, sHit.varOrder, varOrder);
+        instMemo.set(key, { result: out, varOrder });
+        return out;
+      }
     }
     let result: Abs | undefined;
     if (fnBudget) {
@@ -1904,6 +1939,8 @@ function generalizeFromAstUncached(
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
+      // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
+      if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
     }
     return result;
   };
