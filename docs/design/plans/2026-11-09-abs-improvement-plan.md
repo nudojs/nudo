@@ -1,7 +1,7 @@
 # Abs 改进计划（16 项）
 
 > **状态**：~~草案（2026-11-09）。16 项均未作为本计划立项；各项「现状」列出的底层能力可能已部分存在。~~
-> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 仍待拍板。
+> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-16` 第①步（真实 monorepo 基准）已交付（`[~]`），②③仍待拍板；`ABS-12` / `ABS-13` / `ABS-15` 仍待拍板。
 > **拍板（2026-11-10）**：立 `ABS-14`，但只准简单条件 + 单向依赖，先走三条保守通道；先建等价性门禁；摘要缓存只留一套。四条约束的落地口径见 §5「决策」。
 > **删除线约定**：`~~…~~` = 已交付。§1 总表项名、§0 / §2 的历史排期、§3 / §4 各节标题已划掉；其下「现状 / 改动 / 验收」保留为**历史正文**（交付后不作现行口径），按 `docs/README.md` 后续删除，证据在测试 / changeset / git。§7 / §8 对已交付项的机制引用仍有效，不划掉。
 > **性质**：排序与验收清单，不是架构契约；真源冲突时以真源为准。
@@ -19,7 +19,7 @@
 - ~~**最先启动（可并行）**：`ABS-01`（约束/引理文法）、`ABS-02`（unknown/any 来源）、`ABS-05`（缓存键 conf 审计）。~~
 - ~~**随后**：`ABS-04`（test 观测面）、`ABS-03`（dts 投影）、`ABS-06`（内建一致性门禁，长跑项可并行）。~~
 - ~~**内核批次**：`ABS-07` → `ABS-08`，并与 `ABS-09` / `ABS-10` / `ABS-11` 分域推进。~~
-- **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 先拍板再开工，未拍板不排期。
+- **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-16` 第①步是**纯测量、零风险**，已先做（2026-11-11，见 §5）；`ABS-12` / `ABS-13` / `ABS-15` 与 `ABS-16` 的②③（分析结果落盘 / worker 并行）先拍板再开工。
 - **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（PR0–PR4 共 5 个 commit）；**续作**再修两组基线红、启用另两条保守通道、落地 PR4b、单独复核金标零 FP（见 §5「交付与续作」）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
 - **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
@@ -44,7 +44,7 @@
 | 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
-| 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | 待拍板 |
+| 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -75,7 +75,7 @@
 - `ABS-12` 与 `ABS-13` 是产品级决策，不默认开工。
 - ~~`ABS-14` 在 `ABS-10` 有稳定摘要、`ABS-11` 的契约 × 关系合取定稿后再评估~~ —— **2026-11-10：前置齐备、已拍板并已交付**（简单条件 + 单向依赖 / 三条保守通道 / 等价门禁前置 / 单套摘要缓存，口径见 §5）。
 - `ABS-15` 可增量做治理，不做大重写 —— **2026-11-10 订正：属内部工程质量，建议不卡「产品级拍板」，转常规 backlog**。
-- `ABS-16` 依赖 `ABS-10` 的摘要命中数据与 `ABS-05` 的键口径 —— **2026-11-10 订正：`fnSummaryStats()` 已提供命中数据；L1 条目签名已落地（见 §5 订正）**。
+- `ABS-16` 依赖 `ABS-10` 的摘要命中数据与 `ABS-05` 的键口径 —— **2026-11-10 订正：`fnSummaryStats()` 已提供命中数据；L1 条目签名已落地（见 §5 订正）**。**2026-11-11：第①步真实仓基准已落地并把命中率做成实测口径**（见 §5 / §7）。
 
 ## 3. P0：低风险增强
 
@@ -518,18 +518,44 @@
 
 **现状**：
 
-- S1 基线是 120 文件合成仓（`docs/reports/s1-perf-baseline.md`），不是真实 monorepo。
+- S1 基线是 120 文件合成仓（`docs/reports/s1-perf-baseline.md`），不是真实 monorepo。**2026-11-11 订正**：真实 monorepo 基准已补，见下方「第①步」。
 - `persistent-cache.md` 明确 Abs / AST / evaluator / AnalysisResult 不落盘；CheckJson 默认关（投毒面）。
 - **2026-11-10 订正**：L1 **条目签名已落地** —— `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` 逐条 HMAC-SHA256，验签失败当 miss、signed/unsigned 键空间分离、密钥轮换 = 全 miss、`sign` 开而密钥缺席拒绝运行（`persistent-cache.md` §启用 / §投毒红线）。⇒ 改动候选第 2、4 条的「签名 / 轮换 / 不可信 runner」已有实现；真正待拍板的是「分析结果（Abs / AnalysisResult）落盘」是否放宽「不落盘」纪律，另缺 worker 并行与真实 monorepo 基准。
 
+**第①步已交付（2026-11-11，纯测量 / 零语义改动）**：
+
+- 复用 `benchmark/s1/bench-monorepo.mts` 既有的 `--corpus <path>` 真实语料分支（edit 相纯内存、绝不写用户文件），新增 `benchmark:s1:real` / `benchmark:s1:real:quick` 两个复现命令；报告落 `docs/reports/s1-perf-baseline-real.{md,json}`，**不覆盖**合成基线。
+- 语料 = 本仓真实 pnpm monorepo 检出；> 256 KiB 的打包产物（如 `packages/vscode/server/server.js` 11.9 MB）按「构建输出非源码」跳过并**如实计数**；edit 目标由模块图动态挑 hub / mid / leaf。
+- 新增**主机信息**（node / 平台 / CPU / 核数 / 内存 / 峰值 RSS）与**缓存命中率遥测**：`fnSummaryStats()`（ABS-10 实例级）+ `fnSummaryFnLevelStats()`（ABS-14 函数级）按测量窗口取计数 delta，**中途不 reset 缓存**（避免污染 warm 语义）；只在测量前清一次，让 cold#1 真冷；采样 ≥2 次时后续 cold 轮展示摘要层跨 cold 复用（首测用 `--quick` 只采 1 轮，报告会注明未测跨 cold 复用）。
+- 服务层文件 / AST / evaluator 缓存**没有计数 API**，只能通过 cold→warm 耗时比观察，报告如实标注；不把两层摘要命中率冒充「全引擎命中率」。
+- 新增 `--quick` 低采样档：当前宿主 Node v22 上同一 harness 单次全量 analyze 已达数十秒（v24 基线 1.2s），默认 3/5/3/8/10 次采样要跑 20 分钟以上。默认档采样次数**逐字不变**，quick 只减次数且报告写明各相 `n`。合成语料模式已复跑验证：输出结构（键集合 / 标题 / 段落）零增量。
+- **诚实边界**：本仓 `.js` 子集偏向 benchmark fixtures 与 docs 示例，不是典型企业 monorepo 的生产源码；绝对耗时与 Node v24/v26 的 S1 / OSS 基线**不可比**，只与同一语料同一宿主的重复运行比较。本报告只回答「这个检出在这个宿主上花多久、两层摘要缓存命中多少」，不作产品性能宣称。
+- 数字见 `docs/reports/s1-perf-baseline-real.md`；§7「缓存命中率」来源已从「缓存层日志」改为该实测报告。
+
+**实测结果与结论（2026-11-11，`--quick`）**：
+
+| 项 | 实测 |
+|---|---|
+| 语料 | **310 文件 / 0.46 MB / 637 import edges**；跳过 1 个 > 256 KiB 的 bundle |
+| 主机 | node **v22.22.2** · darwin arm64 · Apple M4 Pro (14 cores) · 48 GiB · 峰值 RSS 3552 MiB |
+| cold / warm / check（中位数） | analyze all cold **102802.63 ms** / warm **34941.39 ms**；check all warm **65936.01 ms** |
+| edit dirty（leaf / mid / hub） | 1 / 3 / 106 文件 → **141.75 / 4095.52 / 10504.13 ms** |
+| live（单文件 analyze / check） | 44.84 / 46.69 ms |
+| 实例级摘要命中（ABS-10） | cold **0 / 1099（0.0%）**；warm #1 **13 / 63（17.1%）**；warm #2/#3 **无查询**；check **3 / 3（50%）** |
+| 函数级摘要命中（ABS-14 快路径） | cold **0 / 188（0.0%）**；warm #1 **0 / 60（0.0%）**；其余相**无查询** —— **全程 0 次命中** |
+
+- **对第③块的直接含义**：重复调用几乎全被 service 会话缓存（文件 / AST / evaluator）消化，core 两层摘要的边际命中很低，函数级快路径在本语料上**没有产生任何命中**。⇒ 目前**没有正向收益证据**支持放宽「Abs / AnalysisResult 不落盘」纪律去做跨进程摘要复用或 worker 并行；要评估落盘价值，需另做**跨进程冷启动 / LSP 会话重启**场景的专门基准，而不是沿用本报告。
+- **诚实边界（不事后修饰语料）**：本仓 `.js` 子集是混合语料 —— 120 个 `benchmark/s1/.corpus` 合成 fixture、96 个 `benchmark/lsp-rounds/starters-oss-semver` 真实 OSS 源码副本、其余为 docs 示例 / `micro/out` / `.docusaurus` 等生成物；hub 目标恰好落在 `.corpus`。它**不是典型企业 monorepo 的生产源码**。为保持报告可复现，本轮**不修改过滤规则、不重跑改语料**，如实记录构成。
+- 采样为 `--quick`（cold 1 / warm 3 / check 2 / edit 3 / live 5），绝对耗时与 Node v24/v26 的 S1 / OSS 基线**不可比**；只与同一语料同一宿主的重复运行比较。当前宿主上同 harness 单次全量 analyze 已达数十秒（v24 基线 1.2s），这是加 `--quick` 的原因，不是引擎回归。
+
 **改动候选**：
 
-1. 真实 monorepo cold / warm / edit 基准；记录 Node/CPU/内存。
+1. ~~真实 monorepo cold / warm / edit 基准；记录 Node/CPU/内存。~~ **已完成（2026-11-11，见上方「第①步」）**
 2. 在可信 runner 上扩展签名分析缓存；键覆盖源码、依赖、配置、分析 ABI。
 3. worker 并行分析；与 LSP 增量缓存分层。
 4. 缓存投毒红线：签名、密钥轮换、不可信 runner 默认关闭。
 
-**验收**：真实仓库基准报告；缓存命中率与正确性；不可信场景拒绝复用。
+**验收**：~~真实仓库基准报告~~ ✅ 已满足（`s1-perf-baseline-real.md`）；~~缓存命中率~~ ✅ 已实测（同报告 `## Cache hit telemetry`）；**「正确性 / 不可信场景拒绝复用」仍待第②③块**（签名面已实现但缺独立拒绝复用夹具；分析结果落盘需先拍板是否放宽「不落盘」纪律）。
 
 **风险**：缓存投毒与陈旧命中；没有签名/信任模型不做。
 
@@ -555,9 +581,9 @@
 | wrong-exact 数量 | `ABS-06` 的正确性 | 一致性矩阵 |
 | 金标 recall / precision | `ABS-07` / `ABS-08` / `ABS-09` | core gold suites |
 | time-to-green | DX 回归 | `pnpm run dx-metrics` |
-| cold / warm / edit | 规模与摘要收益 | `benchmark:s1` / 真实仓基准 |
+| cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real`（**真实 monorepo**，报告 `s1-perf-baseline-real.md`） |
 | 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal）；降级通道另见 `abs14-degraded-channels.test.ts`；命中计数 `fnSummaryFnLevelStats()` |
-| 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | 缓存层日志 |
+| 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | **已实测**：`s1-perf-baseline-real.json#cacheTelemetry` —— `fnSummaryStats()`（实例级）+ `fnSummaryFnLevelStats()`（函数级）按相取 delta；服务层文件/AST 缓存无计数 API，只见于 cold→warm 耗时比 |
 
 ## 8. 不做 / 边界
 
@@ -579,4 +605,5 @@
 - 完成：状态改 `[x]`，证据写进测试或 CHANGELOG，不写回本表正文。
 - 取消：移入「不做 / 边界」或删除并留一行原因。
 - 与真源冲突：以 `kernel-merge.md` / `limitations.md` / `cli-semantics.md` 为准，并在发现当次订正本文件。
+- **2026-11-11 锚点**：`ABS-16` 第①步交付 = `benchmark/s1/bench-monorepo.mts`（`--corpus` + `--quick` + 遥测）+ `docs/reports/s1-perf-baseline-real.{md,json}` + `benchmark/README.md` / `benchmark/s1/README.md`；②③待拍板。
 - **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit + 2026-11-11 界对齐 1 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts` + `abs14-bounds-integration.test.ts`。

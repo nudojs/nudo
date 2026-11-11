@@ -1,0 +1,214 @@
+{
+  "generatedAt": "2026-11-11T16:25:37.641Z",
+  "scale": null,
+  "corpus": {
+    "kind": "real",
+    "source": ".",
+    "files": 310,
+    "bytes": 481843,
+    "importEdges": 637,
+    "truncated": false,
+    "fileCap": 2000,
+    "skippedLarge": 1,
+    "fileMaxBytes": 262144
+  },
+  "graph": {
+    "cold": 888.95,
+    "warm": 782.84,
+    "warmCached": 2.33
+  },
+  "coldAnalyzeAll": {
+    "n": 1,
+    "median": 102802.63,
+    "min": 102802.63,
+    "max": 102802.63
+  },
+  "warmAnalyzeAll": {
+    "n": 3,
+    "median": 34941.39,
+    "min": 34831.46,
+    "max": 35276.7
+  },
+  "warmCheckAll": {
+    "n": 2,
+    "median": 65936.01,
+    "min": 65338.93,
+    "max": 66533.09
+  },
+  "edit": {
+    "leaf": {
+      "label": "leaf",
+      "target": "benchmark/micro/out/command_copy.js",
+      "dirtyCount": 1,
+      "dirty": {
+        "n": 3,
+        "median": 141.75,
+        "min": 135.7,
+        "max": 163.34
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 3.87,
+        "min": 1.81,
+        "max": 5.6
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 528.3,
+        "min": 527.93,
+        "max": 585.38
+      }
+    },
+    "mid": {
+      "label": "mid",
+      "target": "benchmark/lsp-rounds/starters-oss-semver/nudo/lib/ranges/intersects.js",
+      "dirtyCount": 3,
+      "dirty": {
+        "n": 3,
+        "median": 4095.52,
+        "min": 4073.8,
+        "max": 4203.59
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 44.36,
+        "min": 42.92,
+        "max": 45.17
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 47.93,
+        "min": 41.65,
+        "max": 49.71
+      }
+    },
+    "hub": {
+      "label": "hub",
+      "target": "benchmark/s1/.corpus/packages/pkg0-util/mod0.js",
+      "dirtyCount": 106,
+      "dirty": {
+        "n": 3,
+        "median": 10504.13,
+        "min": 10484.42,
+        "max": 10731.59
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 3.07,
+        "min": 2.98,
+        "max": 3.18
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 2.3,
+        "min": 1.94,
+        "max": 2.42
+      }
+    }
+  },
+  "liveEditor": {
+    "analyzeOne": {
+      "n": 5,
+      "median": 44.84,
+      "min": 40.35,
+      "max": 340.79
+    },
+    "checkOne": {
+      "n": 5,
+      "median": 46.69,
+      "min": 40.65,
+      "max": 47.06
+    },
+    "target": "benchmark/lsp-rounds/starters-oss-semver/nudo/lib/ranges/intersects.js"
+  },
+  "host": {
+    "node": "v22.22.2",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro",
+    "cores": 14,
+    "totalMemGiB": 48,
+    "peakRssMiB": 3552.2
+  },
+  "cacheTelemetry": {
+    "note": "fn-summary counters are process-global; deltas are taken per phase without resetting the cache mid-run. One resetFnSummaryCache() before the run makes cold#1 truly cold. Only one cold round was sampled (--quick), so cross-cold reuse is not measured here.",
+    "cold": [
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 1099,
+          "stores": 107
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 188,
+          "stores": 0
+        }
+      }
+    ],
+    "warm": [
+      {
+        "inst": {
+          "hits": 13,
+          "misses": 63,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 60,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      }
+    ],
+    "check": [
+      {
+        "inst": {
+          "hits": 3,
+          "misses": 3,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 3,
+          "misses": 3,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      }
+    ]
+  }
+}
