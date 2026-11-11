@@ -1,7 +1,7 @@
 # Abs 改进计划（16 项）
 
 > **状态**：~~草案（2026-11-09）。16 项均未作为本计划立项；各项「现状」列出的底层能力可能已部分存在。~~
-> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成续作**（两组基线红、三条通道、PR4b、零 FP 复核），口径与残余见 §5；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 仍待拍板。
+> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 仍待拍板。
 > **拍板（2026-11-10）**：立 `ABS-14`，但只准简单条件 + 单向依赖，先走三条保守通道；先建等价性门禁；摘要缓存只留一套。四条约束的落地口径见 §5「决策」。
 > **删除线约定**：`~~…~~` = 已交付。§1 总表项名、§0 / §2 的历史排期、§3 / §4 各节标题已划掉；其下「现状 / 改动 / 验收」保留为**历史正文**（交付后不作现行口径），按 `docs/README.md` 后续删除，证据在测试 / changeset / git。§7 / §8 对已交付项的机制引用仍有效，不划掉。
 > **性质**：排序与验收清单，不是架构契约；真源冲突时以真源为准。
@@ -21,6 +21,7 @@
 - ~~**内核批次**：`ABS-07` → `ABS-08`，并与 `ABS-09` / `ABS-10` / `ABS-11` 分域推进。~~
 - **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-12` / `ABS-13` / `ABS-15` / `ABS-16` 先拍板再开工，未拍板不排期。
 - **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（PR0–PR4 共 5 个 commit）；**续作**再修两组基线红、启用另两条保守通道、落地 PR4b、单独复核金标零 FP（见 §5「交付与续作」）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
+- **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -41,7 +42,7 @@
 | 11 | `ABS-11` | ~~contract 合取与 union 精度~~ | P1 | M | `ABS-01` | [x]（判别式穷尽性 warning 延后：零误报优先） |
 | 12 | `ABS-12` | 沙箱 / 隔离执行 | P2 | L | — | 待拍板 |
 | 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
-| 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP，见 §5） |
+| 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | 待拍板 |
 
@@ -390,7 +391,7 @@
 
 ### ABS-14 有界参数化摘要
 
-> **状态**：`[x]` 已交付（2026-11-10，5 个 commit，分支 `abs-14`）；续作已完成，等价性门禁两半 + 降级通道独立验证均已接入。残余见本节末「交付与续作」。
+> **状态**：`[x]` 已交付（2026-11-10，5 个 commit，分支 `abs-14`）；两轮续作已完成，等价性门禁两半 + 降级通道独立验证 + 界变量空间对齐集成验证均已接入。残余见本节末「交付与续作」。
 
 **决策（2026-11-10，用户拍板）**：立 `ABS-14`，范围按以下四条收窄；与下方「改动候选 / 验收」冲突时以本节为准。
 
@@ -474,7 +475,9 @@
 
 - **三条保守通道已全部默认启用**。`bodyUnavailable` / `budgetTruncated` 抽出为纯函数 `key/summary-fastpath.ts#tryDegradedChannel`，独立验证 `abs14-degraded-channels.test.ts`（9 用例）：替换结论 ≡ 同函数 body 可用时的真实结论；无摘要 / 形状不符 / 界不成立 / formal 数不符 / 变元未映射一律保持 `unknown #opaque`；预算截断样本仍是 `unknown #opaque` 且不写摘要（无假绿）。等价门禁口径据此细化（见本节「降级通道门禁口径」）。两类降级在引擎里都归一成 `unknown #opaque`，故两开关共用同一触发点，待 body 失败原因可观测后再按原因细分。
 - **PR4b「界投 `extends`」已落地**。`service/src/emit/dts-generator.ts` 新增 `predBoundLeaves` / `contractTypeParamConstraints` / `typeParamDecls`，从契约参数位 `abs.pred` 逐叶翻译可表达的简单界（`typeof` 基元标签、`eq(var,lit)` 字面量、`or` 全可表达时的联合）；数值界 / 长度 / 否定 / `typeof object|function` 诚实省略，输出与无界基线逐字节一致。夹具 `abs14-dts-extends.test.ts`（7 用例，含 `tsc --noEmit`）。**实现路径**：dts 直接读契约 Pred（与 `TypeParam.bounds` 同源的 `instantiateConstraint` 产物），没有把投影信息塞进 `AnalysisResult`，因此不动 analyzer 参数链与缓存克隆；`reachableTypeParams` 仍只看纯名字。
-- **已知缺陷（未修，独立后续项）**：`generalizeFromAst` 的 `TypeParam.bounds` 实测几乎恒空 —— `entryReqs[].pred` 的 self var 是实参名（`x`），而 `collectSimpleBounds` 用 α 名（`A1`）校验，全部被判 unbound 丢弃；`attachHofSnapshot` 也不传 `refine`，`entryReqs` 常为 undefined。修它需统一 Pred 变量空间并补集成测试；本轮 PR4b 未依赖该字段，不影响已投出的 `extends`。
+- **遗留缺陷已修复（2026-11-11）**：`TypeParam.bounds` 此前恒空，根因是两套变量空间未对齐 —— `entryReqs[].pred` 由 `instantiateConstraint(c, paramName)` 生成，self var 是**实参名**（`x`），而界登记处拿 `typeParams[].id`（α 名 `A1`）当 formals 校验，每个 var 都被判 unbound 丢弃。修法：`key/summary-bounds.ts` 新增 `alignSimpleBounds`，先按 `params[i] → ids[i]` 用 `renamePred` 重锚到 α 空间，再由 `collectSimpleBounds` 做「简单条件 + 按声明序单向依赖」校验；binder 名 / 未声明变元 / `app` term 保持原样并 fail-closed 丢弃。`entryReqs` 与 Φ **不改原貌**（展示层 `x > 0` 与 body 单调性传播依赖它），因此默认输出逐字节不变。实测：`fn({x: number().gt(0)})` 的 `typeParams[0].bounds` 从 `undefined` 变为 `[typeof A1 = number, A1 > 0]`，双形参各归 `A1` / `A2`。集成夹具 `abs14-bounds-integration.test.ts`（11 用例：端到端 / 纯函数负例 / `implies` 与快路径界检查的可消费性），反向验证去掉重锚会 8 用例失败。
+- **订正一处误判**：上条曾把「`attachHofSnapshot` 不传 `refine`、`entryReqs` 常为 undefined」也列为缺陷，复核后确认是**正确设计**：`service/src/analyzer-abs-eval.ts#attachHofSnapshot` / `tryAttachIntension` 只取 `fnRels` / `entryShapes` / `symbolic` 供 dts 投影与内涵摘要，注入契约会改变 body 语义并破坏 L0 键；无契约时 `entryReqs` 为 undefined、不发明界，符合决策口径。
+- **设计边界（不打通，也不该打通）**：`opts.refine` 会让 `summaryScope` 返回 `undefined`（ABS-10：refine 改变 body 语义、闭包身份不可哈希），故带契约的函数不写函数级摘要 —— `TypeParam.bounds` 是 `PolyFn` 的一等元数据，快路径的界另来自调用点 `phi`（`fnLevelFields`），两者不同源、不合并。强行接通会把契约语义塞进跨实例缓存，打开陈旧命中 / 假绿的口子。修出的界已验证可被 `implies` 与 `tryFnLevelFastPath` 的界检查消费，不是死数据。
 - **两组基线红已修复（续作）**：
   - ① `Float16Array` / `Intl.DurationFormat` / `URLPattern` 等 Node 22 vs v26 宿主漂移：core `builtin-coverage-floor` 按 `VERSION_SKEW` 跳过已登记缺席 brand；3 个 eval 夹具用 `hostAvailableNames` / `hostNameAvailable` 按 `globalThis` 能力生成用例；env 侧 4 处 oracle（`env-bug-61` / `863` / `865` / `893`）同样按宿主能力过滤或给版本理由；工具链注入的 `__CODEBUDDY_*_SHIM_LOADED__` / `__vitest_*` 按既有纪律登记理由与豁免。**只豁免已登记漂移，未登记的缺席仍硬失败**，支持的宿主上覆盖不缩水。
   - ② `retire-debug/after/src/logger.js` 的 `module evaluation failed: Assignment to constant variable`：根因不是依赖解析，而是转译器把 rest 形参发成 `const args = $restBind(...)`，fork 臂恢复与成员写回却发 `args = ...`（V8 原生 TypeError，真实 CJS 包 `debug/src/common.js` 的 `function debug(...args)` 触发）。`transpile/stmt/statement.ts` 与 `transpile/expr/function.ts` 改发 `let`（原生 rest 本就是可变绑定），回归夹具 `eval-rest-param-rebind.test.ts`（9 用例，已反向验证改回 `const` 会 9/9 全红）。示例 pin / README / 头注释同步：返回面随宿主能否解析到真实 `debug` 包而不同，只钉 `OK` / `0 error` / 导出名，不钉死 `nudo:opaque-result`。
@@ -487,6 +490,14 @@
 - 全仓 `vitest run --maxWorkers=4` **1739 / 1746 文件通过、17829 用例通过**；剩 9 个失败全在 LSP / CLI：8 个已在 `c8aac63d` 干净基线复跑确认同样失败（沙箱把 `/var/folders/...` 临时目录相对化成 `../../../../`、`/private/var` 前缀不一致触发 allowed-roots 拒绝，以及 watch 事件时序），第 9 个是同族 watch 时序 flaky。均非本轮引入，不通过改 pins / 断言掩盖。
 - 金标 + 真实包零 FP 单独重跑 **3 文件 / 196 用例通过**（`check-recall-gold` 186、`check-real-packages` 10、`check-real-commander` 1）。
 - `lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；定向夹具：ABS-14 全套 31 + 9 + 7、rest 9、env 317、四个 Float16Array 夹具 130 用例均通过。
+
+**续作二门禁（2026-11-11，界变量空间对齐，实测）**：
+
+- 新夹具 `abs14-bounds-integration.test.ts` **11 / 11 通过**；反向验证（去掉 `renamePred` 重锚还原旧行为）8 用例失败 ⇒ 夹具确实钉住缺陷。
+- 定向回归 **12 文件 / 95 用例全过**（ABS-14 全套 + `generalize` / `load-deps-fp-sidecar` / `core-bug-082` / `hof-review-fixes` + dts `extends` / `reachable`）。
+- 全仓 `vitest run --maxWorkers=4` **1740 / 1747 文件、17840 用例通过**（比上一轮多 1 个文件 / 11 个用例，即新夹具）；剩余 9 个失败与上一轮**逐条一致**，全是已在 `c8aac63d` 干净基线复跑确认的 LSP / CLI 沙箱路径 / watch 时序既有红，**零新增**。
+- `pnpm run verify:examples` **250 / 0**（exit 0）；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿。
+- 输出面未变：`entryReqs` / `display` / `symbolic` 仍是实参名空间，契约路径的 `check` / `export` 输出逐字节不变（定向回归 + 示例验证双重覆盖）。
 
 ### ABS-15 Shape / facets 治理
 
@@ -568,4 +579,4 @@
 - 完成：状态改 `[x]`，证据写进测试或 CHANGELOG，不写回本表正文。
 - 取消：移入「不做 / 边界」或删除并留一行原因。
 - 与真源冲突：以 `kernel-merge.md` / `limitations.md` / `cli-semantics.md` 为准，并在发现当次订正本文件。
-- **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts`。
+- **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit + 2026-11-11 界对齐 1 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts` + `abs14-bounds-integration.test.ts`。
