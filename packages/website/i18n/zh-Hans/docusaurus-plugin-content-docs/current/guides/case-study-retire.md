@@ -212,6 +212,9 @@ signatures
 (no issues)
 ```
 
+在解析不到 `debug` 的环境里，这两行读作 `=> unknown`，并多一行
+`INFO ... conf=opaque  (nudo:opaque-result)` 提示；门禁仍然是 0 error。
+
 有 `@types/debug` 时，harvest 会填满签名；或用 `@nudo:mock` / 声明的返回契约（`@nudo:contract` 或侧车返回槽）钉住。这与 `ms()` 是同一个故事。
 
 ## 摩擦与耗时（示例级）

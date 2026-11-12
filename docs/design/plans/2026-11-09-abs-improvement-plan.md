@@ -871,6 +871,10 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 之后才执行。若用户在此窗口内保存，新指纹被记成基线 ⇒ `filterUnchangedWatchPaths` 判「未变」
 ⇒ **改动被静默吞掉，必须再保存一次**。窗口大小 = `buildModuleGraph` 耗时，随项目规模增长。
 
+**实证（2026-11-13，`--settle` 对照，同一语料同一目标文件）**：
+`--settle 0`（写入紧贴 banner）⇒ **3 轮只有 1 轮触发重算**（另两轮 30s 内无 `incremental`，
+脚本超时退出）；`--settle 800` ⇒ **4/4 全部触发**。⇒ 不是探针时序问题，是产品行为缺陷。
+
 **候选改动（未拍板）**：
 
 1. 把 `recordVersions()` 移到增量开始**之前**（基线 = 本轮已消费的指纹），消除吞改动窗口；

@@ -74,7 +74,8 @@ dist 口径、干净 `NODE_OPTIONS`、`benchmark/lsp-rounds/starters-oss-semver`
   **常驻复用是负收益**，这是接下来唯一值得动的性能点（不在本报告结论内，见 plan §5）。
 - 测量必须避开一个已知窗口：`Watching for changes...` 打印后该轮还有 `buildModuleGraph()`
   未完成，而 `recordVersions()` 在其后才记录指纹基线；在此窗口内写入会被判「未变」而吞掉
-  （探针用 `--settle 800` 主动避让）。这是**产品行为缺陷**，不是探针问题，已记入 plan §5。
+  （探针用 `--settle 800` 主动避让）。这是**产品行为缺陷**，不是探针问题：`--settle 0` 时
+  **3 轮只有 1 轮触发重算**，`--settle 800` 时 4/4 全部触发。已记入 plan §5 `ABS-18`。
 
 ## 最近一次（历史）（2026-11-04，--mode both，dist 为引擎债修复波后全仓重建产物）
 

@@ -215,6 +215,9 @@ signatures
 (no issues)
 ```
 
+In an environment where `debug` cannot be resolved, the same two lines read `=> unknown`, plus an
+`INFO ... conf=opaque  (nudo:opaque-result)` line; the gate is still 0 error.
+
 With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / a declared return contract (`@nudo:contract` or a sidecar return slot). That is the same story as `ms()`.
 
 ## Friction and time (example-scale)

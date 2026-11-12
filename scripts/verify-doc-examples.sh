@@ -274,9 +274,12 @@ verify_example_quote case-study-quotes-retire-real packages/website/docs/guides/
   'formatAge(durationMs: number) => string' \
   'parseAge(text: string) => undefined' \
   'nudo:entry-may-throw'
+# pin 只钉到 `=>` 之前：返回面随宿主能否解析到真实 `debug` 而变
+# （可解析 ⇒ `(() => ?)` / `undefined`；不可解析 ⇒ `unknown` + nudo:opaque-result）。
+# 两种都是 0 error，钉死任一种都会在另一种环境假红（2026-11-13 CI 实测：runner 上解析不到）。
 verify_example_quote case-study-quotes-retire-debug packages/website/docs/guides/case-study-retire.md check docs/examples/retire-debug/after/src/logger.js \
-  'createLogger(namespace: any) => (() => ?)' \
-  'logHello(name: any) => undefined'
+  'createLogger(namespace: any) =>' \
+  'logHello(name: any) =>'
 
 # --- verified pages (pins mirror the output blocks on each page) ---------------
 
