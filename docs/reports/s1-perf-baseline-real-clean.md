@@ -7,11 +7,11 @@
 > Numbers describe **this checkout** (its layout, its dependencies), not the synthetic scale baseline — compare only across runs on the same corpus.
 > **Variant:** `--report clean` — separate report file; does not overwrite the canonical baseline.
 
-- Generated at: 2026-11-12T13:37:38.970Z
+- Generated at: 2026-11-12T15:47:30.176Z
 - Scale: **286 files**, 0.26 MB, 630 import edges (real corpus — no uniform packages × files-per-package shape)
-- Host: node v22.22.2 · darwin arm64 · Apple M4 Pro (14 cores) · 48 GiB RAM · peak RSS 2393.6 MiB
+- Host: node v22.22.2 · darwin arm64 · Apple M4 Pro (14 cores) · 48 GiB RAM · peak RSS 2182.8 MiB
 - Host env: NODE_OPTIONS **unset** · fs-broker shim injected: **no** (values are not recorded — they may contain absolute paths)
-- Corpus filter: **`--clean-corpus`** — skip dirs: `node_modules`, `.git`, `dist`, `coverage`, `.nudo`, `out`, `tmp`, `.docusaurus`
+- Corpus filter: **`--clean-corpus`** — skip dirs: `node_modules`, `.git`, `dist`, `coverage`, `.nudo`, `.bundles`, `out`, `tmp`, `.docusaurus`
 - Skipped **1** file(s) > 256 KiB — bundled build output, not source. The skip count is reported, not silently dropped.
 - **Sampling: `--quick`** — cold 1 / warm 3 / check 2 / edit 3 / live 5 repetitions (fewer than the default S1 profile). Medians use the reported `n`; interpret accordingly.
 
@@ -19,27 +19,27 @@
 
 | Phase | Median (ms) | Notes |
 |---|---:|---|
-| module graph cold | 111.26 | `buildModuleGraph` no cache |
-| module graph warm | 60.31 | re-parse edges |
-| module graph cached | 2.3 | mtime edge-cache hit |
-| **analyze all — cold** | **16929.01** | empty session caches |
-| analyze all — warm | 4399.85 | file cache hits |
-| check all — warm | 449.3 | `checkSource` gate path |
+| module graph cold | 108.92 | `buildModuleGraph` no cache |
+| module graph warm | 54.97 | re-parse edges |
+| module graph cached | 2.25 | mtime edge-cache hit |
+| **analyze all — cold** | **13496.62** | empty session caches |
+| analyze all — warm | 4117.17 | file cache hits |
+| check all — warm | 483.5 | `checkSource` gate path |
 
 ## Edit (dirty-set re-analyze)
 
 | Scenario | Dirty files | dirty median | IDE analyze 1 | IDE check 1 |
 |---|---:|---:|---:|---:|
-| leaf (`benchmark/src/runner.js`) | 1 | 77.2 | 0.78 | 16.52 |
-| mid (`benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js`) | 3 | 259.67 | 4.75 | 4.84 |
-| hub (`benchmark/s1/.corpus/packages/pkg0-util/mod0.js`) | 106 | 873.89 | 1.08 | 2.55 |
+| leaf (`benchmark/src/runner.js`) | 1 | 73.95 | 0.74 | 17.89 |
+| mid (`benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js`) | 3 | 251.36 | 4.22 | 5.72 |
+| hub (`benchmark/s1/.corpus/packages/pkg0-util/mod0.js`) | 106 | 999.74 | 1.09 | 2.83 |
 
 ## Live editor (in-memory buffer edit, no disk)
 
 | Op | Median (ms) | min | max | n |
 |---|---:|---:|---:|---:|
-| analyzeFile (1 file) | 1.63 | 1.57 | 12.01 | 5 |
-| checkSource (1 file) | 5.37 | 3.43 | 6.19 | 5 |
+| analyzeFile (1 file) | 1.7 | 1.37 | 8.37 | 5 |
+| checkSource (1 file) | 3.96 | 3.65 | 6.35 | 5 |
 
 ## Cache hit telemetry (ABS-16)
 

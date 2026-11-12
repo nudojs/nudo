@@ -61,6 +61,10 @@ const corpusArg = corpusArgIdx !== -1 ? process.argv[corpusArgIdx + 1]! : undefi
  * **默认不启用**——2026-11-11 首测把 `packages/vscode/out/extension.js`
  * （15 KiB esbuild bundle，占 cold 44.2%）当源码纳入，旧报告必须保持可复现，
  * 因此过滤规则的修正只走 `--clean-corpus` + 另存报告，不改默认口径。
+ *
+ * `.bundles` 是 2026-11-12 新增的 gitignored `ABS-17` 诊断夹具目录
+ * （`generate-bundle-fixtures.mts` 产物）。它属于基础跳过集：11-11 首测时
+ * 该目录不存在，加入不改变旧报告的可复现文件集合，但能防止本地生成夹具污染基准。
  */
 const cleanCorpus = process.argv.includes("--clean-corpus");
 const CLEAN_SKIP_DIRS = ["out", "tmp", ".docusaurus"];
@@ -71,6 +75,7 @@ const CORPUS_SKIP_DIRS = new Set([
   "dist",
   "coverage",
   ".nudo",
+  ".bundles",
   ...(cleanCorpus ? CLEAN_SKIP_DIRS : []),
 ]);
 

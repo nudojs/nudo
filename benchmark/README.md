@@ -12,6 +12,7 @@
 | **S1 real corpus** (ABS-16) | Same phases on a **real monorepo** + cache hit telemetry | wall-clock + `fn-summary` hit/miss deltas + host info | No (measurement only) | `pnpm run benchmark:s1:real` → `docs/reports/s1-perf-baseline-real.md` ⚠️ 2026-11-12 首测数字失真（语料污染 + 宿主 fs shim），保留但勿引用 |
 | **S1 real corpus — clean** (ABS-16 订正) | Same phases, generated-output dirs skipped and `NODE_OPTIONS` removed | wall-clock + host-env row + skip dirs | No (measurement only) | `pnpm run benchmark:s1:real:clean` → `docs/reports/s1-perf-baseline-real-clean.md` |
 | **S1 per-file profile** (ABS-17) | Where does a full-tree cold run actually spend its time? | per-file ms / `loadModule` calls / CPU self-time | No (diagnostic) | `benchmark/s1/profile-cold.mts` |
+| **S1 bundle fixtures** (ABS-17) | Is getter-style bundler output the pathological input? | 5 export morphologies × export-count gradient, per-file ms | No (negative control) | `benchmark/s1/generate-bundle-fixtures.mts` → `benchmark/s1/.bundles/` (gitignored) |
 | **OSS real packages** | Cold / check / hub-edit + **L1 zero-FP** on real code | wall-clock + FP count (12 packages: commander / yargs / semver / @changesets/cli / …) | **Regression gate** | `pnpm run benchmark:oss` / `benchmark:oss:gate` → `docs/reports/oss-perf-baseline.md` |
 | **micro vs tsc** | Single-file analyze vs `tsc` program cost | median ms | No | `benchmark/micro/` |
 | **agent-dx** | Agent red→green loops Nudo vs TS | detectRate / silentGreen / rounds / tokens | No (DX ops metric) | `pnpm run agent-dx` |

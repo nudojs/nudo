@@ -62,6 +62,8 @@ const SKIP_DIRS = new Set([
   "dist",
   "coverage",
   ".nudo",
+  // ABS-17 诊断夹具目录（gitignored）；作为 corpusRoot 本身时不受影响
+  ".bundles",
   ...(cleanCorpus ? ["out", "tmp", ".docusaurus"] : []),
 ]);
 const FILE_CAP = 2000;
