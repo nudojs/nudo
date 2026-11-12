@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T17:47:56.144Z",
+  "generatedAt": "2026-11-12T18:05:06.699Z",
   "scale": null,
   "corpus": {
     "kind": "real",
@@ -25,27 +25,27 @@
     "cleanCorpus": true
   },
   "graph": {
-    "cold": 101.28,
-    "warm": 51.39,
-    "warmCached": 1.73
+    "cold": 110.95,
+    "warm": 53.81,
+    "warmCached": 1.94
   },
   "coldAnalyzeAll": {
     "n": 1,
-    "median": 12856.14,
-    "min": 12856.14,
-    "max": 12856.14
+    "median": 12977.95,
+    "min": 12977.95,
+    "max": 12977.95
   },
   "warmAnalyzeAll": {
     "n": 3,
-    "median": 3794.72,
-    "min": 3484.39,
-    "max": 4342.33
+    "median": 4316.36,
+    "min": 3828.25,
+    "max": 4805.34
   },
   "warmCheckAll": {
     "n": 2,
-    "median": 415.92,
-    "min": 390.47,
-    "max": 441.38
+    "median": 376.95,
+    "min": 362.95,
+    "max": 390.94
   },
   "edit": {
     "leaf": {
@@ -54,21 +54,21 @@
       "dirtyCount": 1,
       "dirty": {
         "n": 3,
-        "median": 73.84,
-        "min": 71.26,
-        "max": 76.42
+        "median": 72.47,
+        "min": 70.86,
+        "max": 72.73
       },
       "ideAnalyze": {
         "n": 3,
-        "median": 0.88,
-        "min": 0.69,
-        "max": 1.93
+        "median": 0.76,
+        "min": 0.75,
+        "max": 0.76
       },
       "ideCheck": {
         "n": 3,
-        "median": 13.3,
-        "min": 12.82,
-        "max": 18.98
+        "median": 14.03,
+        "min": 13.14,
+        "max": 18.59
       }
     },
     "mid": {
@@ -77,21 +77,21 @@
       "dirtyCount": 3,
       "dirty": {
         "n": 3,
-        "median": 246.04,
-        "min": 233.02,
-        "max": 248.35
+        "median": 260.08,
+        "min": 240.52,
+        "max": 267.93
       },
       "ideAnalyze": {
         "n": 3,
-        "median": 3.54,
-        "min": 3.44,
-        "max": 3.78
+        "median": 4.1,
+        "min": 3.68,
+        "max": 4.28
       },
       "ideCheck": {
         "n": 3,
-        "median": 5.03,
-        "min": 4.31,
-        "max": 7.05
+        "median": 5.07,
+        "min": 4.81,
+        "max": 7.26
       }
     },
     "hub": {
@@ -100,36 +100,36 @@
       "dirtyCount": 106,
       "dirty": {
         "n": 3,
-        "median": 990.91,
-        "min": 856.44,
-        "max": 1168.41
+        "median": 954.76,
+        "min": 771.75,
+        "max": 1065.34
       },
       "ideAnalyze": {
         "n": 3,
-        "median": 1.05,
-        "min": 0.89,
-        "max": 1.06
+        "median": 1.2,
+        "min": 1.14,
+        "max": 1.53
       },
       "ideCheck": {
         "n": 3,
-        "median": 2.27,
-        "min": 1.67,
-        "max": 4.34
+        "median": 3.01,
+        "min": 2.66,
+        "max": 4.75
       }
     }
   },
   "liveEditor": {
     "analyzeOne": {
       "n": 5,
-      "median": 1.62,
-      "min": 1.5,
-      "max": 9.03
+      "median": 1.63,
+      "min": 1.22,
+      "max": 8.25
     },
     "checkOne": {
       "n": 5,
-      "median": 4.46,
-      "min": 4,
-      "max": 6.36
+      "median": 4,
+      "min": 3.65,
+      "max": 5.96
     },
     "target": "benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js"
   },
@@ -140,7 +140,7 @@
     "cpu": "Apple M4 Pro",
     "cores": 14,
     "totalMemGiB": 48,
-    "peakRssMiB": 2635.2,
+    "peakRssMiB": 2638.3,
     "env": {
       "nodeOptions": "unset",
       "fsBrokerShimInjected": false

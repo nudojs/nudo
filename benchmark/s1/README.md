@@ -75,8 +75,9 @@ pnpm exec tsx benchmark/s1/profile-cold.mts \
 `06-esbuild-object-exports.js`（`--objects N`）才是最小复现：导出值是**对象**而不是函数，
 `__copyProps` / `Object.assign` 触发大对象图 `$copy`。干净 env 单文件 N=200
 **619.86ms / 434 MiB**、N=800 **8427.15ms / 2030 MiB**（4× 导出 → 13.6× 耗时），
-CPU 栈 `setSlot` 33.0% + `copyWithMemo` 31.7% + GC 16.2%。`setSlot` 快路径后
-N=800 **5077.20ms**、N=200 **464.38ms**（详见 plan §5 `ABS-17`）。
+CPU 栈 `setSlot` 33.0% + `copyWithMemo` 31.7% + GC 16.2%。两轮优化后
+N=800 **3297.28ms**、N=200 **339.47ms**（`setSlot` 快路径 + `copyWithMemo` 叶子快路径，
+合计 −61% / −45%；剩余 31.6% 是真实副本分配，详见 plan §5 `ABS-17`）。
 
 依赖上下文仍是真实 bundle 的放大器：同一份 `packages/vscode/out/extension.js`
 在原路径可解析 `packages/vscode/node_modules` ⇒ `loadModule` **362 次 / 47.2s / 2743 MiB**；

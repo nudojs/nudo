@@ -34,7 +34,7 @@
 | 文档 | 状态 |
 |------|------|
 | [design/plans/2026-09-19-close-remaining-dx-gaps.md](./design/plans/2026-09-19-close-remaining-dx-gaps.md) | **现行**：未闭环 `[~]` + Backlog；已交付任务不在此保留 evidence |
-| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行**：`ABS-01`…`ABS-11` 已交付（删除线）；`ABS-14` `[x]`；`ABS-16` 第①步 `[~]`（2026-11-12 数字订正 + 两项遗留闭环 + 机制定位与 `termKey` 低风险优化）；`ABS-12/13/15` 待拍板；`ABS-17` `[~]`（单文件最小复现 + `setSlot` 快路径，`copyWithMemo` 仍开放） |
+| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行**：`ABS-01`…`ABS-11` 已交付（删除线）；`ABS-14` `[x]`；`ABS-16` 第①步 `[~]`（2026-11-12 数字订正 + 两项遗留闭环 + 机制定位与 `termKey` 低风险优化）；`ABS-12/13/15` 待拍板；`ABS-17` `[~]`（单文件最小复现 + `setSlot` / 拷贝叶子快路径，夹具 −61%；剩余 31.6% 需写时复制，另立项） |
 
 ## CI 用法与报告（非设计）
 
