@@ -275,7 +275,8 @@ verify_example_quote case-study-quotes-retire-real packages/website/docs/guides/
   'parseAge(text: string) => undefined' \
   'nudo:entry-may-throw'
 verify_example_quote case-study-quotes-retire-debug packages/website/docs/guides/case-study-retire.md check docs/examples/retire-debug/after/src/logger.js \
-  'createLogger(namespace: any) => unknown'
+  'createLogger(namespace: any) => (() => ?)' \
+  'logHello(name: any) => undefined'
 
 # --- verified pages (pins mirror the output blocks on each page) ---------------
 
