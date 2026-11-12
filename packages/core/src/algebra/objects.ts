@@ -377,12 +377,22 @@ export function setSlot<S extends { value: Abs }>(
   key: string,
   slot: S,
 ): void {
-  Object.defineProperty(slots, key, {
-    value: slot,
-    enumerable: true,
-    writable: true,
-    configurable: true,
-  });
+  // `__proto__` 必须走 defineProperty：普通赋值会改写原型而不是建自有槽。
+  // 其余键普通赋值即可——它与「enumerable/writable/configurable 全 true 的
+  // 自有数据属性」语义一致（槽表是引擎自有的普通 Record，不冻结、不挂
+  // accessor；访问器在 accessorTable 侧表），却避开了 defineProperty 的慢
+  // 路径。整图拷贝（copyWithMemo → setSlot）实测 `setSlot` 占 self-time
+  // 33%，是对象导出型 bundle 的主要成本。
+  if (key === "__proto__") {
+    Object.defineProperty(slots, key, {
+      value: slot,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    return;
+  }
+  slots[key] = slot;
 }
 
 /**
