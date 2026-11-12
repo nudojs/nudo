@@ -9,7 +9,9 @@
 | **check gold** (in `packages/core`) | Can `nudo check` classify known violations? | 178 hand-labeled rows, **recall=precision=1.0** | **Yes** (CI) | `pnpm vitest run packages/core/src/algebra/__tests__/check-recall-gold.test.ts` |
 | **real-package zero-FP** | Does `check` stay quiet on real OSS JS? | 0 error on commander / lodash / … | **Yes** (CI) | `check-real-packages.test.ts` |
 | **S1 monorepo** | Cold / warm / edit latency at repo scale | wall-clock (synthetic 120-file corpus) | No (baseline report) | `pnpm run benchmark:s1` → `docs/reports/s1-perf-baseline.md` |
-| **S1 real corpus** (ABS-16) | Same phases on a **real monorepo** + cache hit telemetry | wall-clock + `fn-summary` hit/miss deltas + host info | No (measurement only) | `pnpm run benchmark:s1:real` → `docs/reports/s1-perf-baseline-real.md` |
+| **S1 real corpus** (ABS-16) | Same phases on a **real monorepo** + cache hit telemetry | wall-clock + `fn-summary` hit/miss deltas + host info | No (measurement only) | `pnpm run benchmark:s1:real` → `docs/reports/s1-perf-baseline-real.md` ⚠️ 2026-11-12 首测数字失真（语料污染 + 宿主 fs shim），保留但勿引用 |
+| **S1 real corpus — clean** (ABS-16 订正) | Same phases, generated-output dirs skipped and `NODE_OPTIONS` removed | wall-clock + host-env row + skip dirs | No (measurement only) | `pnpm run benchmark:s1:real:clean` → `docs/reports/s1-perf-baseline-real-clean.md` |
+| **S1 per-file profile** (ABS-17) | Where does a full-tree cold run actually spend its time? | per-file ms / `loadModule` calls / CPU self-time | No (diagnostic) | `benchmark/s1/profile-cold.mts` |
 | **OSS real packages** | Cold / check / hub-edit + **L1 zero-FP** on real code | wall-clock + FP count (12 packages: commander / yargs / semver / @changesets/cli / …) | **Regression gate** | `pnpm run benchmark:oss` / `benchmark:oss:gate` → `docs/reports/oss-perf-baseline.md` |
 | **micro vs tsc** | Single-file analyze vs `tsc` program cost | median ms | No | `benchmark/micro/` |
 | **agent-dx** | Agent red→green loops Nudo vs TS | detectRate / silentGreen / rounds / tokens | No (DX ops metric) | `pnpm run agent-dx` |

@@ -17,6 +17,11 @@
  * ABS-16（真实 monorepo 基准）：`pnpm run benchmark:s1:real` = `--corpus .`
  * 额外产出主机信息（node/CPU/内存/峰值 RSS）与**摘要缓存命中率遥测**。
  * 遥测只跑真实语料分支；合成语料模式的报告逐字节不变。
+ *
+ * 2026-11-12 订正（不改默认行为，保证旧报告可复现）：
+ *   --clean-corpus   额外跳过构建/生成物目录 out / tmp / .docusaurus
+ *   --report <suffix> 报告另存 `<base>-<suffix>.{md,json}`，不覆盖既有基线
+ *   pnpm run benchmark:s1:real:clean = 干净 NODE_OPTIONS + 上面两个开关
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join, relative as pathRelative, resolve as pathResolve } from "node:path";
@@ -51,8 +56,34 @@ if (corpusArgIdx !== -1) {
 }
 const corpusArg = corpusArgIdx !== -1 ? process.argv[corpusArgIdx + 1]! : undefined;
 
+/**
+ * 干净语料（opt-in）：额外跳过构建输出 / 生成物目录。
+ * **默认不启用**——2026-11-11 首测把 `packages/vscode/out/extension.js`
+ * （15 KiB esbuild bundle，占 cold 44.2%）当源码纳入，旧报告必须保持可复现，
+ * 因此过滤规则的修正只走 `--clean-corpus` + 另存报告，不改默认口径。
+ */
+const cleanCorpus = process.argv.includes("--clean-corpus");
+const CLEAN_SKIP_DIRS = ["out", "tmp", ".docusaurus"];
 /** 真实语料采集：跳过依赖产物目录；.nudo.js 是契约模板不是分析目标 */
-const CORPUS_SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".nudo"]);
+const CORPUS_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "coverage",
+  ".nudo",
+  ...(cleanCorpus ? CLEAN_SKIP_DIRS : []),
+]);
+
+/** `--report <suffix>`：另存报告，绝不覆盖既有基线（suffix 只做安全字符白名单） */
+const reportArgIdx = process.argv.indexOf("--report");
+const reportSuffix = reportArgIdx === -1 ? undefined : process.argv[reportArgIdx + 1];
+if (
+  reportArgIdx !== -1 &&
+  (reportSuffix === undefined || !/^[a-z0-9][a-z0-9-]*$/i.test(reportSuffix))
+) {
+  console.error("--report requires a safe suffix (letters/digits/hyphen), e.g. `--report clean`");
+  process.exit(2);
+}
 const CORPUS_FILE_CAP = 2000;
 /**
  * ABS-16：跳过明显的打包产物（本仓 `packages/vscode/server/server.js` 是
@@ -399,6 +430,12 @@ async function main() {
           cores: coreCount,
           totalMemGiB: +(totalmem() / 1024 ** 3).toFixed(1),
           peakRssMiB: +(rssPeak / 1024 ** 2).toFixed(1),
+          // 宿主注入的 NODE_OPTIONS（如 WorkBuddy 的 fs-broker shim）会让磁盘
+          // 密集的基准放大约 2×。只记录「有无」，不落值（值可能含本机绝对路径）。
+          env: {
+            nodeOptions: process.env.NODE_OPTIONS ? "set" : "unset",
+            fsBrokerShimInjected: /shim|broker/i.test(process.env.NODE_OPTIONS ?? ""),
+          },
         }
       : undefined;
 
@@ -418,6 +455,8 @@ async function main() {
             fileCap: CORPUS_FILE_CAP,
             skippedLarge: corpusSkippedLarge,
             fileMaxBytes: CORPUS_FILE_MAX_BYTES,
+            skipDirs: [...CORPUS_SKIP_DIRS],
+            cleanCorpus,
           }
         : { ...cstats, importEdges: edgeCount, dir: "benchmark/s1/.corpus (generated, gitignored)" },
     graph: { cold: +coldGraph.toFixed(2), warm: +warmGraph.toFixed(2), warmCached: +cachedGraph.toFixed(2) },
@@ -446,8 +485,11 @@ async function main() {
       : {}),
   };
 
-  // 报告分流：真实语料落独立文件（-real 后缀），绝不覆盖生成式基线
-  const reportBase = realCorpusRoot !== undefined ? "s1-perf-baseline-real" : "s1-perf-baseline";
+  // 报告分流：真实语料落独立文件（-real 后缀），绝不覆盖生成式基线；
+  // --report <suffix> 再追加后缀，用于另存 A/B / clean 报告，同样不覆盖。
+  const reportBase =
+    (realCorpusRoot !== undefined ? "s1-perf-baseline-real" : "s1-perf-baseline") +
+    (reportSuffix !== undefined ? `-${reportSuffix}` : "");
   mkdirSync(REPORT_DIR, { recursive: true });
   writeFileSync(join(REPORT_DIR, `${reportBase}.json`), JSON.stringify(payload, null, 2) + "\n");
 
@@ -465,11 +507,23 @@ async function main() {
   // --- ABS-16 报告增量（全部只在真实语料模式下有内容） ---
   const title =
     realCorpusRoot !== undefined
-      ? "ABS-16 real-monorepo baseline"
+      ? `ABS-16 real-monorepo baseline${cleanCorpus ? " (clean corpus)" : ""}`
       : "S1 performance baseline";
   const hostLine =
     host !== undefined
       ? `\n- Host: node ${host.node} · ${host.platform} ${host.arch} · ${host.cpu} (${host.cores} cores) · ${host.totalMemGiB} GiB RAM · peak RSS ${host.peakRssMiB} MiB`
+      : "";
+  const hostEnvLine =
+    host !== undefined
+      ? `\n- Host env: NODE_OPTIONS **${host.env.nodeOptions}** · fs-broker shim injected: **${host.env.fsBrokerShimInjected ? "yes" : "no"}** (values are not recorded — they may contain absolute paths)`
+      : "";
+  const corpusFilterLine =
+    realCorpusRoot !== undefined
+      ? `\n- Corpus filter: **${cleanCorpus ? "`--clean-corpus`" : "legacy (2026-11-11)"}** — skip dirs: ${[...CORPUS_SKIP_DIRS].map((d) => `\`${d}\``).join(", ")}`
+      : "";
+  const variantLine =
+    reportSuffix !== undefined
+      ? `\n> **Variant:** \`--report ${reportSuffix}\` — separate report file; does not overwrite the canonical baseline.\n`
       : "";
   const skippedLine =
     corpusSkippedLarge > 0
@@ -509,18 +563,21 @@ ${telemetryRows}
 `;
   const realBoundaryExtra =
     realCorpusRoot !== undefined
-      ? `- **Cache telemetry** covers the two process-global \`fn-summary\` layers only; it is not a whole-engine cache hit rate.\n`
+      ? `- **Cache telemetry** covers the two process-global \`fn-summary\` layers only; it is not a whole-engine cache hit rate.\n` +
+        `- **Host env matters**: a \`NODE_OPTIONS\` fs-broker shim can roughly double wall-clock on this fs-heavy harness; the clean runner (\`benchmark:s1:real:clean\`) spawns the measurement process with \`NODE_OPTIONS\` removed. Compare only runs with the same host-env row.\n` +
+        (cleanCorpus
+          ? `- **Not comparable to the 2026-11-11 report**: that run included \`out/\` build artifacts (one esbuild bundle alone was 44.2% of cold) and had a fs-broker shim injected via \`NODE_OPTIONS\`. It is kept for reproducibility only — do not quote its numbers.\n`
+          : "")
       : "";
 
   const md = `# ${title} — monorepo cold / warm / edit
 
-> **Generated** by \`benchmark/s1/bench-monorepo.mts\` (\`pnpm run benchmark:s1\`).
+> **Generated** by \`benchmark/s1/bench-monorepo.mts\` (\`pnpm run ${cleanCorpus ? "benchmark:s1:real:clean" : "benchmark:s1"}\`).
 > Do not hand-edit numbers — regenerate the report.
 >
-${corpusHeader}
-
+${corpusHeader}${variantLine}
 - Generated at: ${payload.generatedAt}
-${scaleLine}${hostLine}${skippedLine}${samplingLine}
+${scaleLine}${hostLine}${hostEnvLine}${corpusFilterLine}${skippedLine}${samplingLine}
 
 ## Summary
 
