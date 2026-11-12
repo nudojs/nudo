@@ -482,14 +482,23 @@
   - ① `Float16Array` / `Intl.DurationFormat` / `URLPattern` 等 Node 22 vs v26 宿主漂移：core `builtin-coverage-floor` 按 `VERSION_SKEW` 跳过已登记缺席 brand；3 个 eval 夹具用 `hostAvailableNames` / `hostNameAvailable` 按 `globalThis` 能力生成用例；env 侧 4 处 oracle（`env-bug-61` / `863` / `865` / `893`）同样按宿主能力过滤或给版本理由；工具链注入的 `__CODEBUDDY_*_SHIM_LOADED__` / `__vitest_*` 按既有纪律登记理由与豁免。**只豁免已登记漂移，未登记的缺席仍硬失败**，支持的宿主上覆盖不缩水。
   - ② `retire-debug/after/src/logger.js` 的 `module evaluation failed: Assignment to constant variable`：根因不是依赖解析，而是转译器把 rest 形参发成 `const args = $restBind(...)`，fork 臂恢复与成员写回却发 `args = ...`（V8 原生 TypeError，真实 CJS 包 `debug/src/common.js` 的 `function debug(...args)` 触发）。`transpile/stmt/statement.ts` 与 `transpile/expr/function.ts` 改发 `let`（原生 rest 本就是可变绑定），回归夹具 `eval-rest-param-rebind.test.ts`（9 用例，已反向验证改回 `const` 会 9/9 全红）。示例 pin / README / 头注释同步：返回面随宿主能否解析到真实 `debug` 包而不同，只钉 `OK` / `0 error` / 导出名，不钉死 `nudo:opaque-result`。
 - **PR4a** 已修 dts HOF 签名的悬空 `A2`（`abs14-dts-reachable.test.ts`）；投影单向，不改 Abs 分析结果。
-- **门禁复核（续作）**：金标 + 真实包零 FP 单独重跑 3 文件 / 196 用例通过；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；`verify:examples` 与全仓 vitest 的最终数字见本节末「最终门禁」。全仓剩余失败里 6 个 LSP/CLI 文件（沙箱临时路径相对化 + watch 时序）已在 `c8aac63d` 干净基线复跑确认是**既有红**，非本轮引入；1 个 env `fsp.stat(throwIfNoEntry:false)` 宿主行为差已适配。
+- **门禁复核（续作）**：金标 + 真实包零 FP 单独重跑 3 文件 / 196 用例通过；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；`verify:examples` 与全仓 vitest 的最终数字见本节末「最终门禁」。全仓剩余失败里 6 个 LSP/CLI 文件（沙箱临时路径相对化 + watch 时序）已在 `c8aac63d` 干净基线复跑确认是**既有红**，非本轮引入；1 个 env `fsp.stat(throwIfNoEntry:false)` 宿主行为差已适配。**2026-11-12 续作：这两组既有红已全部修复并清零**（见本节末「既有红清零」）。
 
 **最终门禁（2026-11-10 续作，实测）**：
 
 - `pnpm run verify:examples` **250 项全过 / 0 失败**（exit 0）；此前 248/3 → 修 rest 根因并同步 pin / 文档后归零。
-- 全仓 `vitest run --maxWorkers=4` **1739 / 1746 文件通过、17829 用例通过**；剩 9 个失败全在 LSP / CLI：8 个已在 `c8aac63d` 干净基线复跑确认同样失败（沙箱把 `/var/folders/...` 临时目录相对化成 `../../../../`、`/private/var` 前缀不一致触发 allowed-roots 拒绝，以及 watch 事件时序），第 9 个是同族 watch 时序 flaky。均非本轮引入，不通过改 pins / 断言掩盖。
+- 全仓 `vitest run --maxWorkers=4` **1739 / 1746 文件通过、17829 用例通过**；剩 9 个失败全在 LSP / CLI：8 个已在 `c8aac63d` 干净基线复跑确认同样失败（沙箱把 `/var/folders/...` 临时目录相对化成 `../../../../`、`/private/var` 前缀不一致触发 allowed-roots 拒绝，以及 watch 事件时序），第 9 个是同族 watch 时序 flaky。均非本轮引入，不通过改 pins / 断言掩盖。**2026-11-12 续作已把这 9 个清零**（见本节末「既有红清零」）。
 - 金标 + 真实包零 FP 单独重跑 **3 文件 / 196 用例通过**（`check-recall-gold` 186、`check-real-packages` 10、`check-real-commander` 1）。
 - `lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；定向夹具：ABS-14 全套 31 + 9 + 7、rest 9、env 317、四个 Float16Array 夹具 130 用例均通过。
+
+**既有红清零（2026-11-12）**：
+
+- **根因统一**：macOS `os.tmpdir()` 返回 `/var/folders/...`，是 `/private/var/folders/...` 的符号链接；内核给 `process.cwd()` / `realpathSync()` 的是 **realpath 形态**，而用户参数与测试夹具拼出的是 `/var/...` 字面值。三类失败都是「两个路径空间混用」。
+- **LSP emit 边界**：`assertEmitTargetAllowed` / `resolvedWorkspaceRoots` / `derivedSidecarAllowed` 只对**存在**的路径 realpath，尚未落盘的源文件 / 下游侧车退回 `/var/...` 字面值，与 `/private/...` 的 root 相减被误判「逃出工作区」。三处统一改用 service 的 `normalizeRealPath`（不存在的目标回落「父目录 realpath + basename」）。Bug 766 的 symlink 逃逸夹具仍为红，防护未放松；762 / 765 三个用例转绿。
+- **CLI 相对展示**：`relative(process.cwd(), resolve(userArg))` 产出 `../../../../../../../var/.../syn.js`，污染 JSON `file` 字段与人类面文案。新增 `shared.ts#relFromCwd`（先归一目标再相减），contract 的 print / draft / emit / from-dts 四族与 watch 错误行统一走它。`displayPathOf` / `diffPathOf` **故意不动**（承诺「逃出 cwd 回落用户给的绝对路径」），63b 的 check / test / contract 基线逐字不变；661 / 663 / 664 / 63b 四个用例转绿。
+- **watch FSEvents 噪声**：macOS 目录级 watcher 会顺带报告同批次**未被触碰**的文件，改 `a.js` 时 `sub/b.js` 也进 `pendingChanged` ⇒ 增量轮重跑两个文件，684 / 685 的「只重跑被改的那个」断言约 1/3 概率失败。去抖窗口按 `(size, mtimeMs)` 指纹过滤（抽为可测的 `watchPathVersion` / `filterUnchangedWatchPaths`）；删除、新建、非 tracked（配置 / 侧车 / env 模板）一律放行。新夹具 `cli-watch-noise-filter.test.ts`（7 用例）；反向验证去掉过滤后 8 次里复现 1 次失败，带过滤 8/8 稳定，全部 12 个 watch 测试文件 / 33 用例通过。
+- **诚实边界**：`export/io.ts` 的 `writtenPathLines` / `removed stale` 与 `migrate.ts` 的 workflow 扫描列表仍用裸 `relative(process.cwd(), ...)`；它们不在失败清单，改动会牵动 export pins，本轮**未动**，列为同类待办。指纹过滤的极小概率局限（同毫秒同尺寸二次写入）已写在代码注释里，如实不隐去。
+- **最终门禁（串行、无并行构建竞态）**：全仓 `vitest run --maxWorkers=4` **1748 / 1748 文件通过、17856 用例通过（exit 0，1 expected fail / 7 todo 照旧）**；`verify:examples` **250 / 0**；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿。changeset `.changeset/macos-symlink-path-boundaries.md`（`@nudojs/lsp` / `nudojs` patch）。
 
 **续作二门禁（2026-11-11，界变量空间对齐，实测）**：
 
