@@ -12,7 +12,7 @@
  * CLI runCheck / LSP validate / CodeLens 同口径。测试钉住语义一致。
  */
 import type { ClassDeclaration } from "@babel/types";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import {
   buildCaseDirective,
@@ -47,6 +47,8 @@ import {
   collectSkipReturns,
   collectCallsiteRecords,
   isNudoTargetPath,
+  // macOS /var → /private/var 等 symlink：emit 边界两侧必须同空间归一
+  normalizeRealPath,
   // A1：check 补充诊断通道 + test 断言汇总 + 路径错误通道（自 service 共用）
   mergeCheckIssues,
   collectCheckSupplementIssues,
@@ -181,13 +183,19 @@ export function normalizeFilePath(file: string): string {
   return resolve(path);
 }
 
-function tryRealpath(p: string): string | undefined {
-  try {
-    return realpathSync(p);
-  } catch {
-    return undefined;
-  }
-}
+/**
+ * emit 边界的路径身份归一（符号链接 / macOS `/var` → `/private/var`）。
+ *
+ * 改前用 `tryRealpath`：目标**不存在**时（新建未保存的源文件、尚未写出的
+ * 下游侧车）返回 undefined ⇒ 保留 `/var/...` 字面值；而 workspace root 是
+ * 已存在目录，会被 realpath 成 `/private/...` ⇒ `pathInsideRoot` 拿两个不同
+ * 空间的路径相减，合法写盘被误判成「逃出工作区」（Bug 762 / 765 在 macOS
+ * 临时目录上因此长期红）。
+ *
+ * `normalizeRealPath`（service 单一实现）对不存在的目标回落到
+ * 「父目录 realpath + basename」，与 root 同一空间；文件真实存在时仍是完整
+ * realpath ⇒ **symlink 逃逸防护不变**（Bug 766 的回归夹具仍须为红）。
+ */
 
 /**
  * 目标是否落在 root 内（**按路径分量**判定逃逸）。
@@ -230,7 +238,7 @@ export function assertEmitTargetAllowed(
   }
   if (workspaceRoots === undefined) return undefined;
 
-  const realFile = tryRealpath(filePath) ?? filePath;
+  const realFile = normalizeRealPath(filePath);
   const roots = resolvedWorkspaceRoots(workspaceRoots);
   // fail-closed：有 bound 却没有任何可用 root（或 root 不含目标）→ 拒
   if (roots.length === 0) {
@@ -250,8 +258,7 @@ export function assertEmitTargetAllowed(
 function resolvedWorkspaceRoots(workspaceRoots: string[]): string[] {
   const roots: string[] = [];
   for (const r of workspaceRoots) {
-    const abs = resolve(r);
-    const real = tryRealpath(abs) ?? abs;
+    const real = normalizeRealPath(r);
     if (!roots.includes(real)) roots.push(real);
   }
   return roots;
@@ -269,7 +276,7 @@ function derivedSidecarAllowed(sidecarPath: string, workspaceRoots?: string[]): 
   if (workspaceRoots === undefined) return true;
   const roots = resolvedWorkspaceRoots(workspaceRoots);
   if (roots.length === 0) return false;
-  const real = tryRealpath(sidecarPath) ?? sidecarPath;
+  const real = normalizeRealPath(sidecarPath);
   return roots.some((root) => pathInsideRoot(root, real));
 }
 

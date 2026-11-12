@@ -21,6 +21,7 @@ import {
   diskCacheSignConfigError,
   pathErrorEntry,
   reportPathErrors,
+  relFromCwd,
   variadicSwallowError,
   type PathError,
 } from "./shared.ts";
@@ -58,7 +59,7 @@ async function runContractPrint(
 ): Promise<void> {
   const { contractSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
-  const rel = relative(process.cwd(), filePath) || filePath;
+  const rel = relFromCwd(filePath) || filePath;
   // Bug 80：本次分析产生的装载诊断透出（不再被 contractSurface 取走丢弃）。
   const diagnostics: ContractFaceDiagnostic[] = [];
   const entries = await contractSurface(filePath, { records, diagnostics });
@@ -535,7 +536,7 @@ export function registerContractCommand(program: Command): void {
         // --json：跨文件聚合层（Bug 658）——每个 root 一项，循环后**一次**打印
         const jsonEntries: ContractJsonEntry[] = [];
         for (const t of roots) {
-          const rel = relative(process.cwd(), t) || t;
+          const rel = relFromCwd(t) || t;
           const runRoot = async (): Promise<void> => {
             if (opts.draft) {
               await runContractDraft(t, {
@@ -572,7 +573,7 @@ export function registerContractCommand(program: Command): void {
             try {
               await runRoot();
             } catch (err) {
-              console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);
+              console.error(`Error analyzing ${relFromCwd(t)}: ${(err as Error).message}`);
               process.exitCode = 1;
             }
             continue;
@@ -582,7 +583,7 @@ export function registerContractCommand(program: Command): void {
             jsonEntries.push(captured.doc as ContractJsonEntry);
           } else {
             // Bug 664：失败的 root 也必须进载荷（否则机器面看不到哪个文件失败）
-            const shown = relative(process.cwd(), t);
+            const shown = relFromCwd(t);
             if (captured.code === CONTRACT_ANALYSIS_FAILED_CODE) {
               console.error(`Error analyzing ${shown}: ${captured.message}`);
             } else {

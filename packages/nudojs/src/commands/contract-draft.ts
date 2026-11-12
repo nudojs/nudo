@@ -16,7 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, join, isAbsolute, sep } from "node:path";
 import { unifiedDiff } from "@nudojs/service/emit";
 import { normalizeRealPath, type CallRecord } from "@nudojs/service";
-import type { PathError } from "./shared.ts";
+import { relFromCwd, type PathError } from "./shared.ts";
 
 /**
  * 机器面**用法错误**码（族 20 · Bug 663）。
@@ -48,7 +48,7 @@ export async function runContractDraft(
   const { draftContract, formatDraftSummary, writeContractDraft, sidecarDraftPath } =
     await import("@nudojs/service/emit");
   const filePath = resolve(file);
-  const rel = relative(process.cwd(), filePath) || filePath;
+  const rel = relFromCwd(filePath) || filePath;
   // -------------------------------------------------------------------------
   // 族 20 · Bug 663 —— `--draft --json --write`：**显式拒绝**（不静默吞 `--write`）
   //
@@ -144,7 +144,7 @@ export async function runContractDraft(
     process.exitCode = 1;
     return;
   }
-  const draftRel = relative(process.cwd(), sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
+  const draftRel = relFromCwd(sidecarDraftPath(filePath)) || sidecarDraftPath(filePath);
   // AI4：--json → draftSource + unified diff（审阅面）
   if (opts.json) {
     let prev = "";

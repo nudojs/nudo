@@ -113,6 +113,27 @@ export function attachTargetErrors<T extends object>(
   return { ...envelope, targetErrors: targetErrors.map(pathErrorEntry) };
 }
 
+/**
+ * CLI **展示/机器面相对路径**：把目标先归一到 cwd 的 realpath 空间再相减。
+ *
+ * macOS 上 `os.tmpdir()` 是 `/var/folders/...`（symlink → `/private/var/...`）。
+ * 内核给 `process.cwd()` 的是 **realpath**（`/private/...`），而用户参数 /
+ * 测试夹具拼出来的是 `/var/...`。裸 `relative(cwd, resolve(userArg))` 于是
+ * 产出 `../../../../../../../var/.../syn.js` 这种逃逸串，污染 JSON 的 `file`
+ * 字段与人类面文案（Bug 661 / 663 / 664 / 63b 在 macOS 临时目录上长期红）。
+ *
+ * `normalizeRealPath` 是 service 的单一身份归一实现（目标不存在时回落到
+ * 「父目录 realpath + basename」）⇒ 两侧同空间，`syn.js` 就还是 `syn.js`。
+ * 非 symlink 宿主 / 仓库内路径上结果与旧式 `relative()` **逐字节相同**。
+ *
+ * 注意 `displayPathOf` 故意**不**走这里：它承诺「逃出 cwd 时回落用户给的
+ * 绝对路径」，改它会动既有 pins。本 helper 只用于 contract 族与 watch 的
+ * 「相对 cwd 展示」计算点。
+ */
+export function relFromCwd(p: string): string {
+  return relative(process.cwd(), normalizeRealPath(p));
+}
+
 /** 产品路径面：相对 cwd 的展示路径（逃出根时回落原值）。 */
 export function displayPathOf(p: string): string {
   const rel = relative(process.cwd(), p);
@@ -905,6 +926,31 @@ function watchBanner(text: string): void {
 }
 
 /**
+ * watch 变更指纹：`size + mtimeMs`。文件不存在（删除 / 竞态）返回 undefined。
+ * 抽成模块级函数是为了让「FSEvents 噪声过滤」可被确定性单测覆盖。
+ */
+export function watchPathVersion(p: string): string | undefined {
+  const st = statSync(p, { throwIfNoEntry: false });
+  return st ? `${st.size}:${st.mtimeMs}` : undefined;
+}
+
+/**
+ * 去抖窗口内只保留**指纹真的变了**的路径。
+ * - tracked 且指纹未变 ⇒ macOS FSEvents 顺带报告的噪声，丢弃；
+ * - 未记录（配置 / 侧车 / env 模板 / 新建文件）或已删除 ⇒ 一律放行，
+ *   保持既有「非 tracked 路径触发全量/依赖驱逐」语义。
+ */
+export function filterUnchangedWatchPaths(
+  candidates: readonly string[],
+  knownVersions: ReadonlyMap<string, string>,
+): string[] {
+  return candidates.filter((f) => {
+    const known = knownVersions.get(stablePathKey(f));
+    return known === undefined || watchPathVersion(f) !== known;
+  });
+}
+
+/**
  * 机器面 JSON 文档落盘（**watch 面 = JSON Lines**，族 63）。
  *
  * - `lines === false`（**非 watch 面**）⇒ 缩进 2 的 pretty 文档——既有形态，
@@ -959,6 +1005,29 @@ export function startWatch(
 
   let graph = buildModuleGraph(getFiles());
 
+  /**
+   * FSEvents 噪声过滤（macOS）：一个 `fs.watch` 根在目录级上常会顺带报告
+   * **同一批次里其他未被触碰的文件**。改 `a.js` 时 `sub/b.js` 也可能进
+   * `pendingChanged` ⇒ 增量轮把两个文件都重跑，Bug 684/685 的「重跑的是
+   * 被改的那个」断言变成概率性（同一夹具重复跑约 1/3 失败）。
+   *
+   * 启动时记下每个 tracked 文件的 `(size, mtimeMs)`；去抖窗口内只保留
+   * **指纹真的变了**的路径。删除（`stat` miss）与非 tracked 路径（配置 /
+   * 侧车 / env 模板 / 新建文件）一律放行，既有语义不变。
+   *
+   * 局限：`mtimeMs` 是浮点毫秒，同一毫秒内**同尺寸**的二次写入可能撞指纹，
+   * 那一轮增量分析会被跳过。概率极低（Node 保留亚毫秒小数），且 watch 只
+   * 重跑分析、不写盘，不制造假绿；下次触碰同一文件仍会正常触发。
+   */
+  const knownVersions = new Map<string, string>();
+  const recordVersions = (): void => {
+    for (const f of getFiles()) {
+      const v = watchPathVersion(f);
+      if (v !== undefined) knownVersions.set(f, v);
+    }
+  };
+  recordVersions();
+
   const runAll = async () => {
     onRoundStart?.();
     console.clear();
@@ -968,7 +1037,7 @@ export function startWatch(
       try {
         await runOne(f);
       } catch (err) {
-        console.error(`Error ${relative(process.cwd(), f)}:`, (err as Error).message);
+        console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
         // Bug 926：单文件分析失败（解析失败 / 装配失败）**必须置红**。
         // 改前这里只打一行 stderr 就吞掉 ⇒ watch 面**保持绿**（exit 0），
         // 而同一目录的 `check --watch` / `health --watch` / 非 watch 的
@@ -1051,7 +1120,7 @@ export function startWatch(
       try {
         await runOne(f);
       } catch (err) {
-        console.error(`Error ${relative(process.cwd(), f)}:`, (err as Error).message);
+        console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
         // Bug 926：增量轮的单文件失败**同样必须置红**（与全量轮同口径）。
         // 改前增量轮只打 stderr 不置红 ⇒ 改坏一个文件后 watch 面仍是绿的。
         process.exitCode = 1;
@@ -1083,15 +1152,20 @@ export function startWatch(
       pendingChanged.add(fullPath);
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const changedFiles = [...pendingChanged];
+        const candidates = [...pendingChanged];
         pendingChanged.clear();
+        // 丢掉 FSEvents 顺带报告的、指纹未变的同批文件（见上方注释）。
+        const changedFiles = filterUnchangedWatchPaths(candidates, knownVersions);
+        if (changedFiles.length === 0) return;
         if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
         // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
         // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
         // 否则该轮无声死掉，用户只看到上一轮结果冻结。
-        runIncremental(changedFiles).catch((err) => {
-          console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
-        });
+        runIncremental(changedFiles)
+          .catch((err) => {
+            console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
+          })
+          .finally(() => recordVersions());
       }, 200);
     }),
   );
