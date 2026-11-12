@@ -23,6 +23,7 @@
 - **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（PR0–PR4 共 5 个 commit）；**续作**再修两组基线红、启用另两条保守通道、落地 PR4b、单独复核金标零 FP（见 §5「交付与续作」）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
 - **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **2026-11-12 订正**：`ABS-16` 第①步的 cold 102.8s **不能当产品数字**——44.2% 来自误纳入语料的 esbuild bundle，宿主 fs 代理再放大约 2×；已另存 clean 报告并做 9/23 代码 A/B。新增 `ABS-17`（病态输入性能项，只立项不改引擎）。见 §5。
+- **2026-11-12 续作（两项遗留闭环）**：`check all warm` 44s = 整文件 memo 容量 256 < 工作集 286 的 LRU 抖动，提到 1024 后 449ms；8.3× cold 差距经 bisect 定位为 9/29 / 10/21 两次**正确性收口**的台阶，`ABS-14` 非主因。见 §5。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -589,6 +590,10 @@
 `tryBrokerFileTokenSync` 占 **43.4% self-time**（磁盘密集 harness）。同一 120 文件语料（64215 B）：
 带 shim v22 25.4s / v24.22.1 23.0s ⇒ **排除 Node 版本**；
 `env -u NODE_OPTIONS` 后 v24 10.6s / v22 13.6s ⇒ **shim ≈2×**。
+同一注入对 `vitest` 的文件加载影响更大：全仓回归在注入下 35 分钟未收口、`packages/core`
+包级回归 10 分钟未收口；`env -u NODE_OPTIONS` 后 core 包 **1m16s / 1058 文件 / 11537 用例全过**、
+全仓 **6m48s / 1748 文件 / 17857 用例全过**
+⇒ **本仓基准与测试都应在干净 `NODE_OPTIONS` 下运行**（不是引擎问题，是宿主 I/O 代理）。
 
 **严格 worktree A/B**（同宿主、`env -u NODE_OPTIONS`、干净 `--regen` 语料、同一 harness cold 口径；
 `generate-corpus.mts` 自 9/23 起无 diff）：
@@ -611,8 +616,26 @@ warm / live 只慢 1.4–2.7× ⇒ 退化集中在「首次全量分析」。9/2
 `term.ts` 9.8% ⇒ **是项/形状键计算与分配，不是 I/O**。9/23 以来 `abs-key.ts` 为新增文件（356 行）、
 `term.ts` +129/−20，键计算层经过重构。
 
-**这不是「回归 bug 已定位」**：9/23→11/12 有 ABS-01…14、缓存键审计、依赖指纹 BFS、契约层等大量
-正确性交付，冷路径变重可能是功能的代价；精确定位需按提交 bisect，本轮只判定归属。
+**按提交 bisect（2026-11-12 续作）**：固定合成语料（主仓 `--regen` 干净 `.corpus`）+ 干净 env +
+单轮 `analyzeFile` 探针（放在临时 worktree 内、语料绝对路径固定）先扫 11 个锚点，再用
+`git bisect run` 在两个跳变区间各收敛到首个 bad commit：
+
+| 台阶 | first bad commit | 日期 / 主题 | cold（探针，ms） |
+|---|---|---|---|
+| 基线 | `6862b180` | 9/23 | 1841 |
+| ① | `d74c0ed3` | 9/29 `fix(missing-export): diagnose missing names and keep export slots`（`abs-modules.ts` / `abs-modules-graph.ts` / `analyzer-orchestrate-uncached.ts`，+356/−33） | 1861 → **5502** |
+| ② | `7fea13a1` | 10/21 `族 01 剩余 33 条缺陷一次收口（Bug 136–191）`（exec/runtime 语义大批量修正） | 8306 → **16166** |
+| 之后 | `c1878fbd` / `98864823` / `6a189701` | 11/05 Abs facets 重构（`abs-key.ts` 新增文件）/ 11/11 `TypeParam.bounds` / HEAD | 12743 / 12534 / 12911（**持平**） |
+
+⇒ 8.3× **不是单点回归，也不是 `ABS-14`**：两次跳变都落在 9/29 与 10/21 的**正确性收口**提交，
+之后（含 ABS-14 全系列）cold 稳定在 12.5–15.6s。`abs-key.ts` 虽是 11/05 新增文件，但只是把既有
+键逻辑拆出（那时成本已在），**不是引入点**。两处改动面与 CPU 栈热点不直接重合 ⇒
+**具体机制仍未定**，但可以明确排除「摘要快路径拖慢冷启动」这一猜测。
+
+**bisect 边界**：探针只跑 1 轮全量 analyze（bench 是 3 轮 median），绝对值不与报告直接比，
+只看同探针下的相对台阶；单次测量有 ±1s 噪声，阈值取 3500ms / 10000ms（远离台阶）；
+worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Array` 在 Node 22 缺席而加载失败
+⇒ bisect skip（历史版本曾假定 Node 24 宿主），不影响两处 first bad 的收敛。
 
 **处置**：
 
@@ -623,9 +646,32 @@ warm / live 只慢 1.4–2.7× ⇒ 退化集中在「首次全量分析」。9/2
   报告头记录 host env（`NODE_OPTIONS` 有无 / shim 是否注入）与 skip dirs。
 - A/B 证据：`docs/reports/s1-perf-baseline-ab-20261112.{md,json}`（当前代码）；9/23 侧在临时 worktree
   内生成，不入库，数字抄录于上表。
-- 干净报告最终数字（`--quick`，286 文件 / 0.26 MB / 630 边）：cold **17364.74ms**、warm 4427.96ms、
-  check all warm **43931.20ms**、live 1.71 / 4.66ms ⇒ cold 相对旧报告的 102802.63ms 降约 5.9×。
-  **`check` 相仍约 44s 是另一个未解释的大头**（`checkSource` gate 路径），本轮不追，如实留作后续项。
+- 干净报告最终数字（**memo 容量修复后复跑**，`--quick`，286 文件 / 0.26 MB / 630 边）：
+  cold **16929.01ms**、warm 4399.85ms、check all warm **449.30ms**、live 1.63 / 5.37ms
+  ⇒ cold 相对旧报告的 102802.63ms 降约 6.1×；`check` 相从 43931.20ms 降到 449.30ms（约 98×），
+  定位与修复见下方「`check all warm` 44s 的定位与修复」。
+
+**`check all warm` 44s 的定位与修复（2026-11-12 续作）**
+
+`profile-cold.mts --mode check` 逐文件计时 + 容量阈值对照（干净 env / clean corpus / 2 轮）：
+
+| 文件数 | `MAX_CHECK_MEMO` | cold round (ms) | warm round (ms) |
+|---:|---:|---:|---:|
+| 200 | 256 | 44410.81 | **433.70** |
+| 260 | 256 | 59332.07 | 40429.15 |
+| 286 | 256 | 58852.30 | 40968.95 |
+| 286 | **1024** | 57551.29 | **436.67** |
+
+根因：整文件 `CheckReport` memo 的 LRU 容量 256 **小于**全量扫描工作集（286）。顺序重扫时
+每次 `set` 恰好逐出「下一个要访问的条目」⇒ 命中率归零、warm 全量重算；工作集只要超容量
+（260 只超 4 个）就触发。修复：`MAX_CHECK_MEMO` 256 → 1024（与同类 L0
+`MAX_GENERALIZE_MEMO = 1024` 对齐，**仍有界**，LSP 长驻防膨胀纪律不放松）；
+`check-may-throw.ts` 的按轮 `evalRunMemo` 拆出独立 256 常量，不连带放大。
+回归钉 `check-source-memo.test.ts`（300 文件顺序重扫）+ changeset `@nudojs/core` patch。
+
+**诚实边界**：修复只作用于**重复扫描**（warm）；首次全量 check 的 cold 仍 ~57s，
+逐文件分布里 20 个文件占 81.6%（各 2–3s），与上面 `abs-key.ts` / `term` 的冷路径退化同源，
+不在本次缓存修复范围内。
 
 **对 ②③ 的影响**：cold 102.8s 不再能作为「分析结果落盘」收益的证据；`fn-level` 摘要全程 0 命中
 仍成立，但重复调用的成本主要落在**分析本体的键计算**（`abs-key.ts` / GC），不是磁盘或跨进程缺失。
@@ -717,4 +763,10 @@ warm / live 只慢 1.4–2.7× ⇒ 退化集中在「首次全量分析」。9/2
 - 与真源冲突：以 `kernel-merge.md` / `limitations.md` / `cli-semantics.md` 为准，并在发现当次订正本文件。
 - **2026-11-11 锚点**：`ABS-16` 第①步交付 = `benchmark/s1/bench-monorepo.mts`（`--corpus` + `--quick` + 遥测）+ `docs/reports/s1-perf-baseline-real.{md,json}` + `benchmark/README.md` / `benchmark/s1/README.md`；②③待拍板。
 - **2026-11-12 锚点**：口径订正 = `bench-monorepo.mts`（`--clean-corpus` / `--report` / host-env 行 / clean 边界）+ `run-clean.mts`（清 `NODE_OPTIONS`）+ `profile-cold.mts`（逐文件诊断）+ `docs/reports/s1-perf-baseline-real-clean.{md,json}` + `s1-perf-baseline-ab-20261112.{md,json}`；9/23 worktree A/B 判定 cold ≈8.3× 来自代码（§5）；`ABS-17` 立项（只交付复现工具、未改引擎）；旧 `s1-perf-baseline-real.{md,json}` 保留不覆盖、数字不再引用；`benchmark:s1:real:clean` 为推荐引用口径。
+- **2026-11-12 续作锚点（两个遗留闭环）**：(a) `MAX_CHECK_MEMO` 256 → 1024（`check-memo.ts`）、
+  `check-may-throw.ts` 拆出独立 256 常量、`check-source-memo.test.ts` 的 300 文件顺序重扫回归钉、
+  changeset `check-memo-capacity.md`；`profile-cold.mts --mode check --limit N` 复现阈值，
+  clean 报告 `check all warm` 43931.20ms → **449.30ms**。(b) 固定语料探针 + `git bisect run`
+  定位 8.3× 的两处台阶 `d74c0ed3`（9/29）/ `7fea13a1`（10/21），排除 `ABS-14`；
+  探针/bisect 脚本放在临时 worktree（用完删除，复现命令与边界见 §5）。
 - **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit + 2026-11-11 界对齐 1 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts` + `abs14-bounds-integration.test.ts`。
