@@ -42,8 +42,21 @@ export function termKey(t: Term, rename?: VarRename): string {
       return `L:${typeof t.value}:${litKeyString(t.value)}`;
     case "var":
       return `V:${rename?.get(t.id) ?? t.id}`;
-    case "app":
-      return `A:${t.fn}(${t.args.map((a) => termKey(a, rename)).join(",")})`;
+    case "app": {
+      // 字符串累加代替 `args.map(...).join(",")`：**逐字节同输出**，每个 app 键
+      // 少一次数组分配。`termKey` 是冷路径最热点（120 文件全量分析实测 6709 万次
+      // 调用；CPU 栈 `termKey`/旧 `termToString` 约 37–41%、GC 约 24%），
+      // 2026-11-12 干净 env 实测 cold 13.3s → 10.0s（≈−25%），RSS 不变。
+      // ⚠ 曾试过 WeakMap 按 Term 身份缓存无 rename 的键（重复率 75% 看似诱人）：
+      // 查找开销 + 常驻字符串反而让 cold 升到 21.6s / RSS 881 MiB ⇒ **不要回退
+      // 到缓存路线**；等价性回归见 term-key-serialization.test.ts。
+      let out = `A:${t.fn}(`;
+      for (let i = 0; i < t.args.length; i++) {
+        if (i > 0) out += ",";
+        out += termKey(t.args[i]!, rename);
+      }
+      return `${out})`;
+    }
   }
 }
 
