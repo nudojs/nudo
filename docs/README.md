@@ -34,7 +34,7 @@
 | 文档 | 状态 |
 |------|------|
 | [design/plans/2026-09-19-close-remaining-dx-gaps.md](./design/plans/2026-09-19-close-remaining-dx-gaps.md) | **现行**：未闭环 `[~]` + Backlog；已交付任务不在此保留 evidence |
-| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行**：`ABS-01`…`ABS-11` 已交付（删除线）；`ABS-14` 已拍板 `[~]`；`ABS-12/13/15/16` 待拍板 |
+| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行**：`ABS-01`…`ABS-11` 已交付（删除线）；`ABS-14` `[x]`；`ABS-16` 第①步 `[~]`（2026-11-12 数字订正）；`ABS-12/13/15/17` 待拍板 |
 
 ## CI 用法与报告（非设计）
 
