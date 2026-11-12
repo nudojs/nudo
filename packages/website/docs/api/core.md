@@ -259,7 +259,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
 | <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
 | <a id="formatunknownexplanations"></a>`formatUnknownExplanations` | fn | unknown / any origin explanation (observation-only side channel — ABS-02) | `formatUnknownExplanations( explanations: readonly AnalysisExplanation[], ): string` |
-| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
+| <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization; `TypeParam.bounds` = optional simple bounds per formal (ABS-14 PR2 additive, write-only) | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveContractOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking (binder scope = one constraint tree; unbound refs fail closed) | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, binders?: BinderTable, ): Pred` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
@@ -726,7 +726,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="typeof_names"></a>`TYPEOF_NAMES` | const | typeof 标签全集（否定展开用；顺序稳定） | `const TYPEOF_NAMES` |
 | <a id="typeofabs"></a>`typeofAbs` | fn | JS typeof：结果域永远是 string | `typeofAbs(a: Abs): Abs` |
 | <a id="typeofname"></a>`TypeofName` | type | JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 | `TypeofName = \| "undefined" \| "object" \| "boolean" \| "number" \| "bigint" \| "string" \| "symbol" \| "function"` |
-| <a id="typeparam"></a>`TypeParam` | type | — | `TypeParam = { id: string; value: Abs; }` |
+| <a id="typeparam"></a>`TypeParam` | type | — | `TypeParam = { id: string; value: Abs; bounds?: readonly import("./pred.ts").Pred[]; }` |
 | <a id="undefabs"></a>`undefAbs` | fn | undefined 值的统一 Abs 表示（forEach/find 等） | `undefAbs(): Abs` |
 | <a id="ushrabs"></a>`ushrAbs` | fn | &gt;&gt;&gt; —— 逻辑右移（rhs ToUint32 &amp; 31；bigint 无此运算符 → 不可折叠） | `ushrAbs(a: Abs, b: Abs): Abs` |
 | <a id="withexecphi"></a>`withExecPhi` | fn | — | `withExecPhi<T>(p: Phi, body: () => T): T` |
