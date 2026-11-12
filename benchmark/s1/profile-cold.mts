@@ -10,6 +10,12 @@
  *   pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --instrument-loader
  *   pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js
  *
+ * check memo 容量回归对照（MAX_CHECK_MEMO 2026-11-12 由 256 → 1024）：
+ *   pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus \
+ *     --mode check --rounds 2 --limit 200 | --limit 260 | --limit 286
+ *   修复前：200 → warm 433.70ms；260 / 286 → 40.4s / 41.0s（LRU 抖动，命中率归零）
+ *   修复后：286 → warm 436.67ms
+ *
  * CPU 栈（ABS-17 复现）：包一层 --cpu-prof，或用 NODE_OPTIONS=--cpu-prof 启动：
  *   node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof \
  *     --cpu-prof-name=ext.cpuprofile benchmark/s1/profile-cold.mts \
@@ -30,6 +36,19 @@ const corpusRoot = pathResolve(arg("--corpus") ?? ".");
 const ROUNDS = Number(arg("--rounds") ?? "1");
 const TOP = Number(arg("--top") ?? "30");
 const instrumentLoader = has("--instrument-loader");
+/** analyze（默认，逐文件 analyzeFile）| check（逐文件 checkSource，测整文件 memo） */
+const mode = arg("--mode") ?? "analyze";
+if (mode !== "analyze" && mode !== "check") {
+  console.error("--mode must be `analyze` or `check`");
+  process.exit(2);
+}
+/** 只取排序后的前 N 个文件（check memo 容量阈值对照） */
+const limitArg = arg("--limit");
+const limit = limitArg === undefined ? undefined : Number(limitArg);
+if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
+  console.error("--limit requires a positive integer");
+  process.exit(2);
+}
 /** 只测相对路径含该子串的文件（配合 NODE_OPTIONS=--cpu-prof 定位单文件栈） */
 const only = arg("--only");
 /** 与 bench 的 `--clean-corpus` 同口径：额外跳 out / tmp / .docusaurus */
@@ -88,10 +107,26 @@ const svc = (await import(join(ROOT, "packages/service/src/index.ts"))) as {
 };
 const { analyzeFile, resetAllAnalysisCaches, defaultLoadModule } = svc;
 
+/**
+ * check 模式单独载入 core 的门禁入口。注意：`checkMemoKey` 用调用方**原始**
+ * `opts.loadModule` 做 identity ⇒ 这里必须传 `defaultLoadModule` 本体，
+ * 不能用 --instrument-loader 的 wrapper（每次新建会让 memo 键永远不命中）。
+ */
+const core =
+  mode === "check"
+    ? ((await import(join(ROOT, "packages/core/src/index.ts"))) as {
+        checkSource: (p: string, src: string, phi: unknown, opts?: Record<string, unknown>) => unknown;
+        pTrue: unknown;
+        resetCheckSourceMemo: () => void;
+      })
+    : undefined;
+core?.resetCheckSourceMemo();
+
 let files = collectJsFiles(corpusRoot);
 if (only !== undefined) files = files.filter((f) => pathRelative(corpusRoot, f).includes(only));
+if (limit !== undefined) files = files.slice(0, limit);
 const sources = new Map(files.map((f) => [f, readFileSync(f, "utf-8")]));
-console.error(`[profile] corpus=${pathRelative(ROOT, corpusRoot) || "."} files=${files.length} rounds=${ROUNDS} instrumentLoader=${instrumentLoader} cleanCorpus=${cleanCorpus} only=${only ?? "-"}`);
+console.error(`[profile] corpus=${pathRelative(ROOT, corpusRoot) || "."} files=${files.length} rounds=${ROUNDS} mode=${mode} limit=${limit ?? "-"} instrumentLoader=${instrumentLoader && mode === "analyze"} cleanCorpus=${cleanCorpus} only=${only ?? "-"}`);
 if (files.length === 0) {
   console.error("[profile] no files matched");
   process.exit(2);
@@ -101,27 +136,38 @@ type Row = { f: string; ms: number; loadCalls: number; loadMs: number };
 const rounds: { total: number; rows: Row[] }[] = [];
 
 for (let r = 0; r < ROUNDS; r++) {
-  if (r === 0 || resetEachRound) resetAllAnalysisCaches();
+  // check 模式**不**在轮间清 memo：这里测的正是「warm 整文件报告是否命中」。
+  // analyze 模式沿用 bench 的每轮 reset 口径。
+  if (mode === "analyze" && (r === 0 || resetEachRound)) resetAllAnalysisCaches();
+  if (mode === "check" && resetEachRound) core?.resetCheckSourceMemo();
   const rows: Row[] = [];
   let total = 0;
   let loadCalls = 0;
   let loadMs = 0;
-  const lm = instrumentLoader
-    ? (spec: string, from: string) => {
-        const t = performance.now();
-        try {
-          return defaultLoadModule(spec, from);
-        } finally {
-          loadCalls++;
-          loadMs += performance.now() - t;
-        }
-      }
-    : defaultLoadModule;
+  const lm =
+    mode === "check" || !instrumentLoader
+      ? defaultLoadModule
+      : (spec: string, from: string) => {
+          const t = performance.now();
+          try {
+            return defaultLoadModule(spec, from);
+          } finally {
+            loadCalls++;
+            loadMs += performance.now() - t;
+          }
+        };
   for (const f of files) {
     const c0 = loadCalls;
     const m0 = loadMs;
     const t = performance.now();
-    analyzeFile(f, sources.get(f)!, undefined, undefined, lm);
+    if (core !== undefined) {
+      core.checkSource(f, sources.get(f)!, core.pTrue, {
+        loadModule: defaultLoadModule,
+        fromFile: f,
+      });
+    } else {
+      analyzeFile(f, sources.get(f)!, undefined, undefined, lm);
+    }
     const ms = performance.now() - t;
     total += ms;
     rows.push({ f, ms: +ms.toFixed(2), loadCalls: loadCalls - c0, loadMs: +(loadMs - m0).toFixed(2) });
@@ -134,7 +180,7 @@ const main = rounds[0]!;
 const byMs = [...main.rows].sort((a, b) => b.ms - a.ms);
 const cum = (n: number) => +byMs.slice(0, n).reduce((s, r) => s + r.ms, 0).toFixed(2);
 const xs = main.rows.map((r) => r.ms);
-console.log(`\n=== round 1 (cold) total ${main.total} ms / ${files.length} files ===`);
+console.log(`\n=== round 1 (${mode} cold) total ${main.total} ms / ${files.length} files ===`);
 console.log(`per-file ms: p50=${pct(xs, 0.5)} p90=${pct(xs, 0.9)} p95=${pct(xs, 0.95)} p99=${pct(xs, 0.99)} max=${pct(xs, 1)}`);
 console.log(`top 1/5/10/20/50 files: ${[1, 5, 10, 20, 50].map((n) => `${n}=${cum(n)}ms (${((cum(n) / main.total) * 100).toFixed(1)}%)`).join("  ")}`);
 console.log(`\n--- top ${TOP} slowest files ---`);

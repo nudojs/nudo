@@ -7,6 +7,7 @@ import {
   pTrue,
 } from "../index.ts";
 import { STD_NUDO_SRC, withStdImport } from "./nudo-constraints.ts";
+import { MAX_CHECK_MEMO, checkMemoSize } from "../check/check-memo.ts";
 
 const SRC = `
 function add(a, b) {
@@ -94,5 +95,19 @@ if (needsPositive(-1)) {}
 `)}`;
     const r = checkSource("/t/scan-if.js", src, pTrue, { loadModule, fromFile: "/t/scan-if.js" });
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("全量扫描 > 256 个文件时最先的条目不被逐出（LRU 抖动回归）", () => {
+    // 2026-11-12：原 MAX_CHECK_MEMO=256 小于中型仓工作集（本仓干净语料 286）。
+    // 顺序重扫时 LRU 恰好逐出「下一个要访问的条目」⇒ 命中率归零、
+    // warm `check all` 41.0s；200 文件（容量内）对照仅 433.70ms。
+    const SIMPLE = "function id(x) { return x; }";
+    const n = 300;
+    expect(MAX_CHECK_MEMO).toBeGreaterThan(n);
+    for (let i = 0; i < n; i++) checkSource(`/t/f${i}.js`, SIMPLE, pTrue, {});
+    expect(checkMemoSize()).toBe(n);
+    // 第二轮完整重扫后仍是同样的 n 条（容量内 ⇒ 顺序重扫不逐出）
+    for (let i = 0; i < n; i++) checkSource(`/t/f${i}.js`, SIMPLE, pTrue, {});
+    expect(checkMemoSize()).toBe(n);
   });
 });

@@ -21,8 +21,22 @@ import type { CheckOptions } from "./check-types.ts";
 import { DependencyMemo } from "../key/memo-store.ts";
 import { loadModuleId, moduleMapId } from "../key/memo-identity.ts";
 
-export const MAX_CHECK_MEMO = 256;
+/**
+ * 整文件 CheckReport memo 容量。
+ *
+ * 2026-11-12：原值 256 **小于**中型仓全量扫描的文件数（本仓干净语料 286）。
+ * 顺序重扫时 LRU 每次都会把「下一个要访问的条目」逐出 ⇒ 命中率归零、
+ * warm 全量重算（实测 `--limit 200` warm 433.70ms vs `--limit 260/286`
+ * warm 40.4s / 41.0s，只差容量边界）。与同类 L0 会话缓存
+ * `MAX_GENERALIZE_MEMO = 1024` 对齐；**仍保持有界**（LSP 长驻防膨胀纪律不放松）。
+ */
+export const MAX_CHECK_MEMO = 1024;
 const checkReportMemo = new DependencyMemo<CheckReport>(MAX_CHECK_MEMO);
+
+/** 测试/诊断用：当前缓存条目数（内部模块，不进公共 API） */
+export function checkMemoSize(): number {
+  return checkReportMemo.size;
+}
 
 export function resetCheckSourceMemo(): void {
   checkReportMemo.reset();

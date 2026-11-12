@@ -45,9 +45,13 @@ pnpm run benchmark:s1:real:clean
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --rounds 1 --top 30
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus   # 与干净报告同口径
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus --mode check --rounds 2 --limit 286
 ```
 
-CPU 栈请加 `node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof ...`（命令见 plan §5 `ABS-17`）。
+- `--mode check` 逐文件跑 `checkSource`（默认 `analyze`），用于整文件 `CheckReport` memo 的
+  冷/暖两轮对照；`--limit N` 取排序后前 N 个文件，用于复现 LRU 容量阈值
+  （2026-11-12：容量 256 时 260 文件就 100% miss，提到 1024 后 286 文件 warm 436.67ms）。
+- CPU 栈请加 `node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof ...`（命令见 plan §5 `ABS-17`）。
 
 - **语料**：`generate-corpus.mts` 确定性生成到 `.corpus/`（gitignore，**不进仓库**）
 - **报告**：`docs/reports/s1-perf-baseline.md` + `.json`（生成物，可提交）
