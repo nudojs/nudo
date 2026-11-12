@@ -39,6 +39,7 @@
     "docs:gen:api": "node scripts/gen-api-docs.mjs",
     "learning-cost": "node scripts/learning-cost.mjs",
     "dx-metrics": "node scripts/dx-metrics.mjs",
+    "edit-loop-metrics": "node scripts/edit-loop-metrics.mjs",
     "agent-eval": "node scripts/agent-eval.mjs",
     "agent-dx": "node benchmark/agent-dx/run.mjs",
     "coverage:env": "tsx scripts/env-coverage-baseline.ts",
