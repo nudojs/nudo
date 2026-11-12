@@ -24,6 +24,7 @@
 - **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **2026-11-12 订正**：`ABS-16` 第①步的 cold 102.8s **不能当产品数字**——44.2% 来自误纳入语料的 esbuild bundle，宿主 fs 代理再放大约 2×；已另存 clean 报告并做 9/23 代码 A/B。新增 `ABS-17`（病态输入性能项，只立项不改引擎）。见 §5。
 - **2026-11-12 续作（两项遗留闭环）**：`check all warm` 44s = 整文件 memo 容量 256 < 工作集 286 的 LRU 抖动，提到 1024 后 449ms；8.3× cold 差距经 bisect 定位为 9/29 / 10/21 两次**正确性收口**的台阶，`ABS-14` 非主因。见 §5。
+- **2026-11-12 续作二（机制 + 低风险优化）**：8.3× 的机制 = Term 递归字符串序列化随两批正确性收口被放大（非算法退化）；`termKey` 改字符串累加，输出逐字节不变，干净 env 单轮全量 analyze **13.3s → 10.0s（约 −25%）**；WeakMap 缓存路线实测更慢已否定。`ABS-17` 补 5 个形态对照夹具并把机制订正为**依赖解析上下文**（同内容换路径 47.2s → 0.20s），getter 假设证伪；引擎除 `termKey` 外未动。见 §5。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -47,7 +48,7 @@
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
-| 17 | `ABS-17` | 抽象对象容器拷贝的病态输入（性能） | P3 | M | `ABS-16` 度量 | 待拍板（2026-11-12 立项，复现工具 `benchmark/s1/profile-cold.mts` 已交付，优化未启动，见 §5） |
+| 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 可解析依赖的大型抽象对象图拷贝（性能） | P3 | M | `ABS-16` 度量 | 待拍板（2026-11-12 立项：`profile-cold.mts` + 5 个形态对照夹具 + 梯度计时已交付；机制订正为依赖解析上下文，getter 假设证伪，最小复现仍缺；优化未启动，见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -629,8 +630,23 @@ warm / live 只慢 1.4–2.7× ⇒ 退化集中在「首次全量分析」。9/2
 
 ⇒ 8.3× **不是单点回归，也不是 `ABS-14`**：两次跳变都落在 9/29 与 10/21 的**正确性收口**提交，
 之后（含 ABS-14 全系列）cold 稳定在 12.5–15.6s。`abs-key.ts` 虽是 11/05 新增文件，但只是把既有
-键逻辑拆出（那时成本已在），**不是引入点**。两处改动面与 CPU 栈热点不直接重合 ⇒
-**具体机制仍未定**，但可以明确排除「摘要快路径拖慢冷启动」这一猜测。
+键逻辑拆出（那时成本已在），**不是引入点**。可以明确排除「摘要快路径拖慢冷启动」这一猜测。
+
+**机制（2026-11-12 续作已定位）**：对 `85d83c11` / `d74c0ed3` / `446914f3` / `7fea13a1`
+各采一次干净 env CPU 栈，热点始终是 **Term 的递归字符串序列化**（旧名
+`term.ts::termToString`，11/05 后重构为 `abs-key.ts::termKey`）：
+自耗时 **449ms → 1835ms → 1761ms → 6429ms**（占比 15.4% → 27.9% → 23.1% → 36.9%），
+GC 同步 266ms → 875ms → 1535ms → 4294ms；`simplifyTerm` / `dedupAbsMembers` /
+`flattenSum` 也同步增长 ⇒ 两批正确性收口让 **Abs / term 的数量与复杂度上升**，
+反复触发同一套键化，不是某个算法退化。当前实现实测：一轮 120 文件全量 analyze
+里 `termKey` 被调用 **6709 万次**、**75% 是同一 Term 的重复序列化**、带 rename 仅 414 次。
+
+**低风险优化（已落地）**：`termKey` 的 `app` 分支改用字符串累加，省掉每条键的
+`args.map(...).join(",")` 数组分配，输出**逐字节不变**（`term-key-serialization.test.ts`
+用改动前的参考实现逐条对照）。干净 env / 120 文件 / 单轮全量 analyze：
+**13.3s → 10.0s（约 −25%）**，RSS 571 → 584 MiB 基本不变。
+曾试 WeakMap 按 Term 身份缓存无 rename 的键：尽管重复率 75%，查找开销 + 常驻字符串
+反而让 cold 升到 **21.6s / RSS 881 MiB** ⇒ **已否定，不要回退到缓存路线**。
 
 **bisect 边界**：探针只跑 1 轮全量 analyze（bench 是 3 轮 median），绝对值不与报告直接比，
 只看同探针下的相对台阶；单次测量有 ±1s 噪声，阈值取 3500ms / 10000ms（远离台阶）；
@@ -642,14 +658,20 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 - 旧报告 `s1-perf-baseline-real.{md,json}` **保留不覆盖**，标注为历史失真数字，不再引用其数值。
 - 新增 `--clean-corpus`（额外跳 `out` / `tmp` / `.docusaurus`，**opt-in**，默认规则逐字不变以保证旧报告可复现）、
   `--report <suffix>`、干净 env 启动器 `benchmark/s1/run-clean.mts`；
+  2026-11-12 续作把 gitignored 的 `ABS-17` 夹具目录 `.bundles` 加入**基础跳过集**
+  （`bench-monorepo.mts` / `profile-cold.mts`）：首测时该目录不存在，不影响旧报告复现，
+  但能防止本地生成夹具把语料从 286 文件撑到 291 文件、污染 cold/warm 数字；
   `pnpm run benchmark:s1:real:clean` 另存 `s1-perf-baseline-real-clean.{md,json}`，
   报告头记录 host env（`NODE_OPTIONS` 有无 / shim 是否注入）与 skip dirs。
 - A/B 证据：`docs/reports/s1-perf-baseline-ab-20261112.{md,json}`（当前代码）；9/23 侧在临时 worktree
   内生成，不入库，数字抄录于上表。
-- 干净报告最终数字（**memo 容量修复后复跑**，`--quick`，286 文件 / 0.26 MB / 630 边）：
-  cold **16929.01ms**、warm 4399.85ms、check all warm **449.30ms**、live 1.63 / 5.37ms
-  ⇒ cold 相对旧报告的 102802.63ms 降约 6.1×；`check` 相从 43931.20ms 降到 449.30ms（约 98×），
+- 干净报告最终数字（**memo 容量修复 + `termKey` 优化后复跑**，`--quick`，286 文件 / 0.26 MB / 630 边）：
+  cold **13496.62ms**、warm 4117.17ms、check all warm **483.50ms**、live 1.70 / 3.96ms
+  ⇒ cold 相对旧报告的 102802.63ms 降约 7.6×；相对仅做 memo 修复时（16929.01ms）再降约 20%，
+  即 `termKey` 字符串累加的收益。`check` 相从 43931.20ms 降到 483.50ms（约 91×），
   定位与修复见下方「`check all warm` 44s 的定位与修复」。
+  ⚠️ 复跑曾因 `.bundles` 夹具混入语料得到 291 文件 / cold 22304ms 的失真数字，
+  已把该目录加入基础跳过集并重跑；报告头 `skip dirs` 可核对。
 
 **`check all warm` 44s 的定位与修复（2026-11-12 续作）**
 
@@ -677,40 +699,78 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 仍成立，但重复调用的成本主要落在**分析本体的键计算**（`abs-key.ts` / GC），不是磁盘或跨进程缺失。
 ⇒ ②③ 继续暂缓；若重启评估，须先做「键计算成本」的专门基准，而不是沿用本报告的冷/暖比。
 
-### ABS-17 抽象对象容器拷贝的病态输入（性能，待拍板）
+### ABS-17 可解析依赖的大型抽象对象图拷贝（性能，待拍板）
 
-**状态**：`[ ]` **只立项与交付复现工具，本轮不改引擎**（2026-11-12）。
+**状态**：`[ ]` **只立项与交付复现/对照夹具，本轮不改引擎**（2026-11-12）。
+原名「抽象对象容器拷贝的病态输入」；2026-11-12 续作把机制订正为
+**依赖可解析时的大规模模块图**，见下方 A/B 证据。
 
 **现象**：排查 `ABS-16` 真实仓 cold 102.8s 时逐文件分解发现，
 `packages/vscode/out/extension.js`（15 KiB / 416 行 esbuild bundle，`.gitignore` 忽略的构建产物）
-单文件 `analyzeFile` **58.9s**，占全量 cold **44.2%**；warm（memo 命中）降到 1.37s。
+单文件 `analyzeFile` **47–59s**，占全量 cold **44.2%**；warm（memo 命中）降到 1.37s。
 该文件**不是源码**，已由 `--clean-corpus` 从基准语料排除 ⇒ **本项不是「产品性能回归」的证据**。
-但同类形态（esbuild / webpack 的 `__export` + `Object.defineProperty` getter 批量导出）
-会出现在用户仓库的打包产物与生成代码里，值得单列跟踪。
+单文件 48.4s CPU 采样的 self-time 占比：`copyWithMemo`（`core/src/algebra/exec/runtime/containers/obj.ts`）**26.4%** /
+GC **19.7%** / `attachFnImpl` 11.4% / `setSlot` 4.4% / `shapeKey` + `absKey` 6.5%；
+调用链是 `copyWithMemo` 的**多层自递归**（深层对象图），不是 I/O。
 
-**证据与复现**（本机 node v22.22.2，同宿主比较相对占比）：
+**机制订正（2026-11-12，决定性 A/B）**：内容逐字节相同，只改「解析上下文」——
+干净 env、`profile-cold.mts --only` 单文件、`--instrument-loader` 计数：
 
-- 诊断工具 `benchmark/s1/profile-cold.mts`（逐文件计时 / 依赖装载计数 / 目录聚合，只读）：
-  `pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --rounds 1 --top 30`
-- CPU 栈：`node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof --cpu-prof-name=ext.cpuprofile benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js --rounds 1`
-- 单文件 48.4s CPU 采样的 self-time 占比：`copyWithMemo`（`core/src/algebra/exec/runtime/containers/obj.ts`）**26.4%** /
-  GC **19.7%** / `attachFnImpl`（`abs-fn.ts`）11.4% / `setSlot` 4.4% / `shapeKey` + `absKey` 6.5% /
-  `readHarvestDisk` 2.3%；`defaultLoadModule` 仅 1.05s / 362 次
-  ⇒ **不是 I/O，是抽象对象容器拷贝与分配压力**。
+| 变体 | `loadModule` | 单文件耗时 | 峰值 RSS |
+|---|---:|---:|---:|
+| A 原文件 / 原路径 `packages/vscode/out/extension.js` | **362** | **47229.54ms** | **2743 MiB** |
+| B 同内容复制到 `benchmark/s1/.bundles/`（依赖不可解析） | 8 | 199.98ms | 309 MiB |
+| C 原路径、三个 `require` 换成 `({})` | 2 | 205.91ms | 313 MiB |
+| D 同内容复制到 `/tmp/nudo-probe/prefix-416.js` | — | 111.31ms | 326 MiB |
+
+⇒ 病态**不是 getter 元编程 / 打包器形态 / 函数数量**：A 在原路径能解析
+`packages/vscode/node_modules`（`vscode-languageclient` 等）⇒ 加载 362 个模块，
+构造出巨大抽象对象图，`$copy` 递归拷贝 + GC 撑到 2.7 GiB；B/C/D 依赖解析失败后
+退回 `unknown`，成本立刻消失。原先「同类生成物形态」的假设已被**证伪**。
+
+**已交付的对照夹具（阴性对照，不是最小复现）**：
+`benchmark/s1/generate-bundle-fixtures.mts` 生成 5 种导出形态到 gitignored `.bundles/`
+（esbuild getter / webpack `d()` / rollup ESM / 纯 CJS / 混合），`--count N` 控制导出数。
+干净 env 单轮全量 analyze（`profile-cold.mts --corpus benchmark/s1/.bundles`）：
+
+| N（导出数） | 5 文件合计 | 最慢单文件 | CPU 栈里 `copyWithMemo` |
+|---:|---:|---:|---:|
+| 40 | 675.75ms | 226.71ms（esbuild getter） | — |
+| 80 | 2084.33ms | 574.69ms（纯 CJS） | — |
+| 120 | 4226.52ms | 1125.55ms（纯 CJS） | — |
+| 160 | 7776.48ms | 2207.82ms（纯 CJS） | **0%** |
+
+⇒ 纯 CJS 反而比 getter 形态更慢，耗时随 N 近似平方增长（40→160 是 4× 导出、约 10× 时间），
+主要落在转译/模块装载；**这 5 个夹具不触发 `copyWithMemo`**，因此排除「形态」维度。
+
+**复现命令**（干净 env，同宿主比较）：
+
+```bash
+pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 160
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus benchmark/s1/.bundles --rounds 1
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . \
+  --only packages/vscode/out/extension.js --rounds 1 --instrument-loader
+node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof --cpu-prof-name=ext.cpuprofile \
+  benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js --rounds 1
+```
 
 **诚实边界**：
 
-- 单样本、单构建器；不代表一般 bundle，也不与产品 SLO 挂钩。
-- 采样绝对值受宿主 `NODE_OPTIONS` fs 代理影响（见 `ABS-16` 订正段），只比较同宿主同 env 的相对占比。
-- 该文件属语料污染，主要处置是**基准过滤**（已做），不是引擎优化。
+- 单样本、单构建器；B/C/D 是同一台机器同一进程的路径/require 对照，绝对耗时受宿主影响
+  （`NODE_OPTIONS` fs shim 见 `ABS-16` 订正段），只比较同宿主同 env 的相对量级。
+- 该文件属语料污染，主要处置是**基准过滤**（已做），不是引擎优化；不与产品 SLO 挂钩。
+- **仍缺最小复现**：目前只有「整份真实 bundle + 其依赖树」，没有把 362 个模块的
+  抽象对象图压缩成几个文件；也不清楚是模块数量、单个模块的槽数，还是两者的乘积。
 
 **改动候选（未拍板）**：
 
-1. 补 3–5 个同类生成物夹具（esbuild / webpack / rollup 导出形态），做最小复现 + 可重复计时；
-2. 量化 `copyWithMemo` 的调用次数与对象规模，判断是 memo 命中率低还是复制粒度过大；
-3. 在不放松零 FP / `abs14-equivalence-baseline` 等价门禁的前提下，评估惰性拷贝或共享不可变视图；**不改语义**。
+1. ~~补 3–5 个同类生成物形态夹具~~ **已交付（本轮）**：结论是阴性对照，形态不是主因；
+2. 补「依赖图规模」梯度夹具：生成可解析的本地模块树，扫描 `loadModule` 次数 / 对象槽数 /
+   `copyWithMemo` 调用次数，找出触发阈值（替代当前缺失的最小复现）；
+3. 量化 `copyWithMemo` 的调用次数与对象规模，判断是 memo 命中率低还是复制粒度过大；
+4. 在不放松零 FP / `abs14-equivalence-baseline` 等价门禁的前提下，评估惰性拷贝或共享不可变视图；**不改语义**。
 
-**验收**：同类夹具 cold 单文件耗时与 GC 占比有同宿主前后对比；等价门禁与全仓金标零 FP 不放松；无新增公共 API。
+**验收**：依赖图夹具能稳定复现 A 量级且可前后对比；等价门禁与全仓金标零 FP 不放松；无新增公共 API。
 
 **风险**：抽象对象容器是内核热路径，牵动 Abs 身份与形状键；没有夹具与门禁不启动。
 
@@ -737,7 +797,8 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 | 金标 recall / precision | `ABS-07` / `ABS-08` / `ABS-09` | core gold suites |
 | time-to-green | DX 回归 | `pnpm run dx-metrics` |
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real`（**真实 monorepo**，报告 `s1-perf-baseline-real.md`）/ `benchmark:s1:real:clean`（干净语料 + 干净 env，报告 `s1-perf-baseline-real-clean.md`） |
-| 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`） |
+| 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`；`--instrument-loader` 计 `loadModule`） |
+| 打包器导出形态 / 规模梯度 | `ABS-17` 阴性对照（证伪 getter 假设） | `benchmark/s1/generate-bundle-fixtures.mts --count N` + `profile-cold.mts --corpus benchmark/s1/.bundles` |
 | 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal）；降级通道另见 `abs14-degraded-channels.test.ts`；命中计数 `fnSummaryFnLevelStats()` |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | **已实测**：`s1-perf-baseline-real.json#cacheTelemetry` —— `fnSummaryStats()`（实例级）+ `fnSummaryFnLevelStats()`（函数级）按相取 delta；服务层文件/AST 缓存无计数 API，只见于 cold→warm 耗时比 |
 
@@ -766,7 +827,18 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 - **2026-11-12 续作锚点（两个遗留闭环）**：(a) `MAX_CHECK_MEMO` 256 → 1024（`check-memo.ts`）、
   `check-may-throw.ts` 拆出独立 256 常量、`check-source-memo.test.ts` 的 300 文件顺序重扫回归钉、
   changeset `check-memo-capacity.md`；`profile-cold.mts --mode check --limit N` 复现阈值，
-  clean 报告 `check all warm` 43931.20ms → **449.30ms**。(b) 固定语料探针 + `git bisect run`
+  clean 报告 `check all warm` 43931.20ms → **483.50ms**（最终复跑值；449.30ms 是 memo 修复后的中间值）。(b) 固定语料探针 + `git bisect run`
   定位 8.3× 的两处台阶 `d74c0ed3`（9/29）/ `7fea13a1`（10/21），排除 `ABS-14`；
   探针/bisect 脚本放在临时 worktree（用完删除，复现命令与边界见 §5）。
+- **2026-11-12 续作二锚点（机制 + 优化 + ABS-17 夹具）**：`abs-key.ts::termKey` 的 `app`
+  分支改字符串累加（输出逐字节不变，`term-key-serialization.test.ts` 用旧实现逐条对照）+
+  changeset `term-key-string-accumulation.md`；干净 env / 120 文件 / 单轮全量 analyze
+  **13279.63ms → 10014ms（≈−25%）**，复跑 2 次稳定，RSS 571 → 584 MiB；
+  WeakMap 缓存路线实测 21603ms / 881 MiB，**已否定**。机制证据是四个提交
+  （`85d83c11` / `d74c0ed3` / `446914f3` / `7fea13a1`）的 CPU 栈：`termToString`→`termKey`
+  自耗时 449 → 1835 → 1761 → 6429ms、GC 266 → 875 → 1535 → 4294ms，`termKey` 单轮
+  6709 万次调用 / 75% 重复。`ABS-17` 交付 `generate-bundle-fixtures.mts`（5 形态 × `--count`
+  梯度）+ `.gitignore` 的 `.bundles`；A/B/C/D 路径对照把机制订正为**依赖解析上下文**
+  （原路径 362 次 `loadModule` / 47.2s / 2743 MiB vs 去 require 2 次 / 0.21s / 313 MiB），
+  getter 假设证伪；最小复现仍缺，引擎未动。
 - **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit + 2026-11-11 界对齐 1 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts` + `abs14-bounds-integration.test.ts`。
