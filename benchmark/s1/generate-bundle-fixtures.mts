@@ -12,8 +12,12 @@
  * 362 次 / 47.2s / RSS 2.74 GiB；复制到本目录（依赖不可解析）只剩 8 次 /
  * 0.20s；在原目录去掉三个 `require` 也回到 0.21s。详见 plan §5 `ABS-17`。
  *
- * 因此本脚本的用途是「排除形态因素 + 提供可重复的规模梯度」，
- * **不是最小复现**；依赖上下文探针用 `profile-cold.mts --only` 的路径/require 对照。
+ * 2026-11-13 补上**真正的最小复现**（`--objects N`）：单模块、无依赖，
+ * N 个对象导出 + esbuild `__copyProps` / `Object.assign`，即可复现同一栈。
+ * 干净 env 单文件：N=200 **619.86ms / 434 MiB**、N=800 **8427.15ms / 2030 MiB**
+ * （4× 导出 → 13.6× 耗时），CPU 栈 `setSlot` 33.0% + `copyWithMemo` 31.7% +
+ * GC 16.2%。⇒ 病态的最小触发面是「大对象图的 `$copy`」，不是依赖数量本身；
+ * 依赖上下文只是把真实 bundle 推到这个面上的放大器。
  *
  * 只读仓库之外：产物落在 gitignored 目录，不进版本库；语料规模由 --count 决定。
  *
@@ -28,6 +32,13 @@ const countIdx = process.argv.indexOf("--count");
 const N = countIdx === -1 ? 40 : Number(process.argv[countIdx + 1]);
 if (!Number.isInteger(N) || N < 1 || N > 500) {
   console.error("--count requires an integer in [1, 500]");
+  process.exit(2);
+}
+/** 最小复现：单模块 N 个对象导出（0 = 不生成） */
+const objectsIdx = process.argv.indexOf("--objects");
+const OBJ = objectsIdx === -1 ? 0 : Number(process.argv[objectsIdx + 1]);
+if (!Number.isInteger(OBJ) || OBJ < 0 || OBJ > 2000) {
+  console.error("--objects requires an integer in [0, 2000]");
   process.exit(2);
 }
 
@@ -105,7 +116,48 @@ ${names
   ],
 ];
 
+// 最小复现（--objects N）：单文件、零依赖，N 个**对象**导出 + esbuild 拷贝助手。
+// 与上面 5 个「函数导出」形态的区别：每个导出是带嵌套槽的对象 ⇒ 整文件
+// `__copyProps` / `Object.assign` 触发 `copyWithMemo` 的大图拷贝；
+// 函数导出不会。这一条把 ABS-17 的病态压到单文件可重复计时。
+if (OBJ > 0) {
+  const objNames = Array.from({ length: OBJ }, (_, i) => `o${i}`);
+  const bigDefs = objNames
+    .map(
+      (n, i) =>
+        `big.${n} = { id: ${i}, label: "${n}", nested: { a: ${i}, b: String(${i}), ok: true } };`,
+    )
+    .join("\n");
+  fixtures.push([
+    "06-esbuild-object-exports.js",
+    `"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var big = {};
+${bigDefs}
+var mod = __toCommonJS(big);
+Object.assign(mod, big);
+module.exports = mod;
+`,
+  ]);
+}
+
 mkdirSync(OUT, { recursive: true });
 for (const [name, src] of fixtures) writeFileSync(join(OUT, name), src);
-console.log(`ABS-17 fixtures → ${OUT} (${fixtures.length} files, ${N} exports each)`);
+console.log(
+  `ABS-17 fixtures → ${OUT} (${fixtures.length} files, ${N} exports each${
+    OBJ > 0 ? `; object-export repro with ${OBJ} exports` : ""
+  })`,
+);
 for (const [name, src] of fixtures) console.log(`  ${name.padEnd(34)} ${src.length} bytes`);

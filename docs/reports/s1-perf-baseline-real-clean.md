@@ -7,9 +7,9 @@
 > Numbers describe **this checkout** (its layout, its dependencies), not the synthetic scale baseline — compare only across runs on the same corpus.
 > **Variant:** `--report clean` — separate report file; does not overwrite the canonical baseline.
 
-- Generated at: 2026-11-12T15:47:30.176Z
+- Generated at: 2026-11-12T17:47:56.144Z
 - Scale: **286 files**, 0.26 MB, 630 import edges (real corpus — no uniform packages × files-per-package shape)
-- Host: node v22.22.2 · darwin arm64 · Apple M4 Pro (14 cores) · 48 GiB RAM · peak RSS 2182.8 MiB
+- Host: node v22.22.2 · darwin arm64 · Apple M4 Pro (14 cores) · 48 GiB RAM · peak RSS 2635.2 MiB
 - Host env: NODE_OPTIONS **unset** · fs-broker shim injected: **no** (values are not recorded — they may contain absolute paths)
 - Corpus filter: **`--clean-corpus`** — skip dirs: `node_modules`, `.git`, `dist`, `coverage`, `.nudo`, `.bundles`, `out`, `tmp`, `.docusaurus`
 - Skipped **1** file(s) > 256 KiB — bundled build output, not source. The skip count is reported, not silently dropped.
@@ -19,27 +19,27 @@
 
 | Phase | Median (ms) | Notes |
 |---|---:|---|
-| module graph cold | 108.92 | `buildModuleGraph` no cache |
-| module graph warm | 54.97 | re-parse edges |
-| module graph cached | 2.25 | mtime edge-cache hit |
-| **analyze all — cold** | **13496.62** | empty session caches |
-| analyze all — warm | 4117.17 | file cache hits |
-| check all — warm | 483.5 | `checkSource` gate path |
+| module graph cold | 101.28 | `buildModuleGraph` no cache |
+| module graph warm | 51.39 | re-parse edges |
+| module graph cached | 1.73 | mtime edge-cache hit |
+| **analyze all — cold** | **12856.14** | empty session caches |
+| analyze all — warm | 3794.72 | file cache hits |
+| check all — warm | 415.92 | `checkSource` gate path |
 
 ## Edit (dirty-set re-analyze)
 
 | Scenario | Dirty files | dirty median | IDE analyze 1 | IDE check 1 |
 |---|---:|---:|---:|---:|
-| leaf (`benchmark/src/runner.js`) | 1 | 73.95 | 0.74 | 17.89 |
-| mid (`benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js`) | 3 | 251.36 | 4.22 | 5.72 |
-| hub (`benchmark/s1/.corpus/packages/pkg0-util/mod0.js`) | 106 | 999.74 | 1.09 | 2.83 |
+| leaf (`benchmark/src/runner.js`) | 1 | 73.84 | 0.88 | 13.3 |
+| mid (`benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js`) | 3 | 246.04 | 3.54 | 5.03 |
+| hub (`benchmark/s1/.corpus/packages/pkg0-util/mod0.js`) | 106 | 990.91 | 1.05 | 2.27 |
 
 ## Live editor (in-memory buffer edit, no disk)
 
 | Op | Median (ms) | min | max | n |
 |---|---:|---:|---:|---:|
-| analyzeFile (1 file) | 1.7 | 1.37 | 8.37 | 5 |
-| checkSource (1 file) | 3.96 | 3.65 | 6.35 | 5 |
+| analyzeFile (1 file) | 1.62 | 1.5 | 9.03 | 5 |
+| checkSource (1 file) | 4.46 | 4 | 6.36 | 5 |
 
 ## Cache hit telemetry (ABS-16)
 

@@ -24,6 +24,7 @@
 - **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **2026-11-12 订正**：`ABS-16` 第①步的 cold 102.8s **不能当产品数字**——44.2% 来自误纳入语料的 esbuild bundle，宿主 fs 代理再放大约 2×；已另存 clean 报告并做 9/23 代码 A/B。新增 `ABS-17`（病态输入性能项，只立项不改引擎）。见 §5。
 - **2026-11-12 续作（两项遗留闭环）**：`check all warm` 44s = 整文件 memo 容量 256 < 工作集 286 的 LRU 抖动，提到 1024 后 449ms；8.3× cold 差距经 bisect 定位为 9/29 / 10/21 两次**正确性收口**的台阶，`ABS-14` 非主因。见 §5。
+- **2026-11-13（copy 路径）**：`check` 冷路径 40.3s 中 20 个文件占 79.6%，全是合成 `.corpus` 模块；真实 OSS（semver ×2、96 文件）check 冷路径仅 **1.89s** ⇒ 不是产品问题，不再追。ABS-17 补**单文件最小复现**（N 个对象导出 + esbuild 拷贝助手：N=800 **8427→5077ms**），`setSlot` 去掉逐槽 `Object.defineProperty`，合成语料 analyze cold **13635→9776ms（−28%）**；`copyWithMemo` 仍约 30%，ABS-17 未关闭。见 §5。
 - **2026-11-12 续作二（机制 + 低风险优化）**：8.3× 的机制 = Term 递归字符串序列化随两批正确性收口被放大（非算法退化）；`termKey` 改字符串累加，输出逐字节不变，干净 env 单轮全量 analyze **13.3s → 10.0s（约 −25%）**；WeakMap 缓存路线实测更慢已否定。`ABS-17` 补 5 个形态对照夹具并把机制订正为**依赖解析上下文**（同内容换路径 47.2s → 0.20s），getter 假设证伪；引擎除 `termKey` 外未动。见 §5。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
@@ -48,7 +49,7 @@
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
-| 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 可解析依赖的大型抽象对象图拷贝（性能） | P3 | M | `ABS-16` 度量 | 待拍板（2026-11-12 立项：`profile-cold.mts` + 5 个形态对照夹具 + 梯度计时已交付；机制订正为依赖解析上下文，getter 假设证伪，最小复现仍缺；优化未启动，见 §5） |
+| 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 交付单文件最小复现 + `setSlot` 快路径 −25%～−40%，合成语料 analyze cold −28%；`copyWithMemo` 仍约 30%，未关闭，见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -648,6 +649,15 @@ GC 同步 266ms → 875ms → 1535ms → 4294ms；`simplifyTerm` / `dedupAbsMemb
 曾试 WeakMap 按 Term 身份缓存无 rename 的键：尽管重复率 75%，查找开销 + 常驻字符串
 反而让 cold 升到 **21.6s / RSS 881 MiB** ⇒ **已否定，不要回退到缓存路线**。
 
+**Abs 级身份缓存（2026-11-13 评估后否决）**：埋点实测一轮 120 文件 `absKey` 被调用
+**90738 次**，其中 **99.8% 是顶层调用**（空 `seen`、无 rename）、**48.8% 是同一 Abs
+对象的重复**——看起来是更划算的缓存点（键大、调用少）。但 Abs 是**按引用可变**的：
+`members.ts` 的 `delete o.shape.slots[keyStr]`（注释明写「就地删槽；identity 不变」）、
+`member.ts` 的就地 `setSlot` 与 `o.conf = confJoin(...)` 都会在键计算后改对象 ⇒
+全局身份缓存会读到**陈旧键**（错误去重 / 错误 memo 命中），要修就得在每个变更点加失效，
+漏一处即为 soundness bug。**不引入这个失效面**；若将来把 Abs 改成写时复制（immutable），
+再重新评估。
+
 **bisect 边界**：探针只跑 1 轮全量 analyze（bench 是 3 轮 median），绝对值不与报告直接比，
 只看同探针下的相对台阶；单次测量有 ±1s 噪声，阈值取 3500ms / 10000ms（远离台阶）；
 worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Array` 在 Node 22 缺席而加载失败
@@ -665,10 +675,11 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
   报告头记录 host env（`NODE_OPTIONS` 有无 / shim 是否注入）与 skip dirs。
 - A/B 证据：`docs/reports/s1-perf-baseline-ab-20261112.{md,json}`（当前代码）；9/23 侧在临时 worktree
   内生成，不入库，数字抄录于上表。
-- 干净报告最终数字（**memo 容量修复 + `termKey` 优化后复跑**，`--quick`，286 文件 / 0.26 MB / 630 边）：
-  cold **13496.62ms**、warm 4117.17ms、check all warm **483.50ms**、live 1.70 / 3.96ms
-  ⇒ cold 相对旧报告的 102802.63ms 降约 7.6×；相对仅做 memo 修复时（16929.01ms）再降约 20%，
-  即 `termKey` 字符串累加的收益。`check` 相从 43931.20ms 降到 483.50ms（约 91×），
+- 干净报告最终数字（**memo 容量 + `termKey` + `setSlot` 优化后复跑**，`--quick`，
+  286 文件 / 0.26 MB / 630 边）：cold **12856.14ms**、warm 3794.72ms、
+  check all warm **415.92ms**、live 1.62 / 4.46ms
+  ⇒ cold 相对旧报告的 102802.63ms 降约 8.0×；相对仅做 memo 修复时（16929.01ms）降约 24%
+  （`termKey` 字符串累加 + `setSlot` 快路径）。`check` 相从 43931.20ms 降到 415.92ms（约 106×），
   定位与修复见下方「`check all warm` 44s 的定位与修复」。
   ⚠️ 复跑曾因 `.bundles` 夹具混入语料得到 291 文件 / cold 22304ms 的失真数字，
   已把该目录加入基础跳过集并重跑；报告头 `skip dirs` 可核对。
@@ -701,9 +712,11 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 
 ### ABS-17 可解析依赖的大型抽象对象图拷贝（性能，待拍板）
 
-**状态**：`[ ]` **只立项与交付复现/对照夹具，本轮不改引擎**（2026-11-12）。
+**状态**：`[ ]`（2026-11-12 立项；2026-11-13 交付最小复现 + `setSlot` 快路径，
+把该夹具从 8.4s 降到 5.1s；**`copyWithMemo` 仍占 30%+，本项未关闭**）。
 原名「抽象对象容器拷贝的病态输入」；2026-11-12 续作把机制订正为
-**依赖可解析时的大规模模块图**，见下方 A/B 证据。
+**依赖可解析时的大规模模块图**；2026-11-13 进一步把病态压到
+**单文件的大对象图 `$copy`**（见下方「最小复现」）。
 
 **现象**：排查 `ABS-16` 真实仓 cold 102.8s 时逐文件分解发现，
 `packages/vscode/out/extension.js`（15 KiB / 416 行 esbuild bundle，`.gitignore` 忽略的构建产物）
@@ -746,31 +759,61 @@ GC **19.7%** / `attachFnImpl` 11.4% / `setSlot` 4.4% / `shapeKey` + `absKey` 6.5
 **复现命令**（干净 env，同宿主比较）：
 
 ```bash
+# 最小复现（单文件，N 个对象导出）
+pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 40 --objects 800
+pnpm exec tsx benchmark/s1/profile-cold.mts \
+  --corpus benchmark/s1/.bundles --only 06-esbuild-object-exports.js --rounds 1
+# 形态/规模对照（5 个函数导出形态）
 pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 160
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus benchmark/s1/.bundles --rounds 1
+# 真实 bundle 的路径/require 对照
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . \
   --only packages/vscode/out/extension.js --rounds 1 --instrument-loader
 node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof --cpu-prof-name=ext.cpuprofile \
   benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js --rounds 1
 ```
 
+**最小复现（2026-11-13）**：`--objects N` 生成**单文件、零依赖**的 N 个**对象**导出
+（每个导出带嵌套槽）+ esbuild `__copyProps` / `Object.assign`。干净 env 单文件：
+
+| N（对象导出） | 优化前 | `setSlot` 快路径后 | 峰值 RSS（前 / 后） |
+|---:|---:|---:|---:|
+| 200 | 619.86ms | **464.38ms**（−25.1%） | 434 / 434 MiB |
+| 800 | 8427.15ms | **5077.20ms**（−40.4%） | 2030 / 2115 MiB |
+
+N=800 优化前 CPU 栈：`setSlot`（`objects.ts`，逐槽 `Object.defineProperty`）**33.0%** +
+`copyWithMemo` **31.7%** + GC **16.2%** = 80.9%。⇒ 最小触发面是「大对象图的 `$copy`」，
+依赖数量只是放大器；先前的「本地依赖图」假设同时被排除：41 个文件 / 395 次 `loadModule`
+的本地模块树只要 **201.65ms**，模块数量本身不是主因。
+
+**已落地的引擎优化（2026-11-13）**：`setSlot` 改为「`__proto__` 走 `defineProperty`、
+其余键普通赋值」——槽表是引擎自有的普通 Record（不冻结、不挂 accessor，访问器在
+`accessorTable` 侧表），普通赋值与「enumerable / writable / configurable 全 true 的
+自有数据属性」语义一致。实测：ABS-17 夹具 −25%～−40%；120 文件合成语料 cold analyze
+**13635.4ms → 9775.5ms（−28.3%）**；clean 语料 check cold 只降 2.4%（该相主成本不在拷贝）。
+等价性钉在 `set-slot-semantics.test.ts`（自有/可枚举/可写/可配置、`__proto__` 不改原型、
+遮蔽 `Object.prototype` 同名成员、null 原型槽表）；金标 186 条、真实包零误报、ABS-14
+等价门禁全绿。`__proto__` 槽必须走 `defineProperty` 的纪律没有放松。
+
 **诚实边界**：
 
 - 单样本、单构建器；B/C/D 是同一台机器同一进程的路径/require 对照，绝对耗时受宿主影响
   （`NODE_OPTIONS` fs shim 见 `ABS-16` 订正段），只比较同宿主同 env 的相对量级。
 - 该文件属语料污染，主要处置是**基准过滤**（已做），不是引擎优化；不与产品 SLO 挂钩。
-- **仍缺最小复现**：目前只有「整份真实 bundle + 其依赖树」，没有把 362 个模块的
-  抽象对象图压缩成几个文件；也不清楚是模块数量、单个模块的槽数，还是两者的乘积。
+- 最小复现是**同形态**（大对象图 + 打包器拷贝助手），不是 `extension.js` 的逐行归约：
+  真实 bundle 只有 2 个导出，它的对象图是 `require` 执行后长出来的。
+- `setSlot` 优化后 `copyWithMemo` 仍是第一热点（约 30%），本项未关闭。
 
 **改动候选（未拍板）**：
 
-1. ~~补 3–5 个同类生成物形态夹具~~ **已交付（本轮）**：结论是阴性对照，形态不是主因；
-2. 补「依赖图规模」梯度夹具：生成可解析的本地模块树，扫描 `loadModule` 次数 / 对象槽数 /
-   `copyWithMemo` 调用次数，找出触发阈值（替代当前缺失的最小复现）；
-3. 量化 `copyWithMemo` 的调用次数与对象规模，判断是 memo 命中率低还是复制粒度过大；
-4. 在不放松零 FP / `abs14-equivalence-baseline` 等价门禁的前提下，评估惰性拷贝或共享不可变视图；**不改语义**。
+1. ~~补 3–5 个同类生成物形态夹具~~ **已交付（2026-11-12）**：阴性对照，形态不是主因；
+2. ~~补「依赖图规模」梯度夹具~~ **已交付（2026-11-13）**：本地模块树 41 文件 / 395 次加载
+   仅 202ms ⇒ 数量本身不触发；触发面是对象图大小；
+3. ~~`setSlot` 逐槽 `Object.defineProperty`~~ **已交付（2026-11-13）**：−25%～−40%；
+4. **下一步候选**：`copyWithMemo` 仍是 30% —— 量化每次 `$copy` 的槽数与递归深度，
+   评估「未变更子树共享」或惰性拷贝；仍须过零 FP 与等价门禁，不改语义。
 
-**验收**：依赖图夹具能稳定复现 A 量级且可前后对比；等价门禁与全仓金标零 FP 不放松；无新增公共 API。
+**验收**：同类夹具 cold 单文件耗时与 GC 占比有同宿主前后对比；等价门禁与全仓金标零 FP 不放松；无新增公共 API。
 
 **风险**：抽象对象容器是内核热路径，牵动 Abs 身份与形状键；没有夹具与门禁不启动。
 
@@ -827,9 +870,19 @@ node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof --cpu-prof-name=ext.cpupro
 - **2026-11-12 续作锚点（两个遗留闭环）**：(a) `MAX_CHECK_MEMO` 256 → 1024（`check-memo.ts`）、
   `check-may-throw.ts` 拆出独立 256 常量、`check-source-memo.test.ts` 的 300 文件顺序重扫回归钉、
   changeset `check-memo-capacity.md`；`profile-cold.mts --mode check --limit N` 复现阈值，
-  clean 报告 `check all warm` 43931.20ms → **483.50ms**（最终复跑值；449.30ms 是 memo 修复后的中间值）。(b) 固定语料探针 + `git bisect run`
+  clean 报告 `check all warm` 43931.20ms → **415.92ms**（最终复跑值；449.30 / 483.50ms 是前两轮的中间值）。(b) 固定语料探针 + `git bisect run`
   定位 8.3× 的两处台阶 `d74c0ed3`（9/29）/ `7fea13a1`（10/21），排除 `ABS-14`；
   探针/bisect 脚本放在临时 worktree（用完删除，复现命令与边界见 §5）。
+- **2026-11-13 锚点（copy 路径）**：(a) `check` 冷路径分解：clean 语料 40.27s，
+  top 20（全是 `benchmark/s1/.corpus` 合成模块）占 79.6%，各 1.5–1.8s；真实 OSS
+  对照 `--corpus benchmark/lsp-rounds/starters-oss-semver --mode check` = **1886.62ms / 96 文件**
+  （p50 3.58ms），`--corpus packages` 只有 1 个 `.js`（39ms）⇒ 40s 是合成负载，不是产品回归，
+  不再投入。(b) `setSlot` 快路径（`objects.ts`）+ `set-slot-semantics.test.ts` +
+  changeset `set-slot-fast-path.md`；ABS-17 夹具加 `--objects N` 最小复现
+  （N=800 8427.15 → 5077.20ms、N=200 619.86 → 464.38ms），CPU 栈 `setSlot` 33% → 噪声、
+  `copyWithMemo` 仍 31.7%。(c) `absKey` 身份缓存**评估后否决**：单轮 90738 次调用、
+  99.8% 顶层、48.8% 重复，但 Abs 按引用可变（`delete o.shape.slots[...]`「就地删槽」、
+  `setSlot` 就地写、`o.conf =`）⇒ 身份缓存会读到陈旧键；不引入失效面。
 - **2026-11-12 续作二锚点（机制 + 优化 + ABS-17 夹具）**：`abs-key.ts::termKey` 的 `app`
   分支改字符串累加（输出逐字节不变，`term-key-serialization.test.ts` 用旧实现逐条对照）+
   changeset `term-key-string-accumulation.md`；干净 env / 120 文件 / 单轮全量 analyze

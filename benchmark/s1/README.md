@@ -54,11 +54,16 @@ pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus --mode che
   （2026-11-12：容量 256 时 260 文件就 100% miss，提到 1024 后 286 文件 warm 436.67ms）。
 - CPU 栈请加 `node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof ...`（命令见 plan §5 `ABS-17`）。
 
-**ABS-17 形态/规模对照夹具**（阴性对照，产物在 gitignored `.bundles/`，不进仓库）：
+**ABS-17 夹具（形态对照 + 最小复现）**（产物在 gitignored `.bundles/`，不进仓库）：
 
 ```bash
 pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 40   # N ∈ [1,500]
 pnpm exec tsx benchmark/s1/profile-cold.mts --corpus benchmark/s1/.bundles --rounds 1
+
+# 最小复现：单文件、零依赖、N 个**对象**导出 + esbuild __copyProps / Object.assign
+pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 40 --objects 800
+pnpm exec tsx benchmark/s1/profile-cold.mts \
+  --corpus benchmark/s1/.bundles --only 06-esbuild-object-exports.js --rounds 1
 ```
 
 5 种导出形态：esbuild `__export` getter / webpack `__webpack_require__.d` / rollup ESM /
@@ -66,8 +71,14 @@ pnpm exec tsx benchmark/s1/profile-cold.mts --corpus benchmark/s1/.bundles --rou
 80 **2084.33ms**、120 **4226.52ms**、160 **7776.48ms**（近似平方增长）；
 **纯 CJS 反而最慢**，N=160 的 CPU 栈里 `copyWithMemo` **0%**。
 
-⚠️ 这组夹具**不是最小复现**，它证伪了「getter 元编程导致 47s」的初始假设。
-真正的触发条件是**模块解析上下文**：同一份 `packages/vscode/out/extension.js`
+⚠️ 这 5 个**函数导出**形态是阴性对照，证伪了「getter 元编程导致 47s」的初始假设。
+`06-esbuild-object-exports.js`（`--objects N`）才是最小复现：导出值是**对象**而不是函数，
+`__copyProps` / `Object.assign` 触发大对象图 `$copy`。干净 env 单文件 N=200
+**619.86ms / 434 MiB**、N=800 **8427.15ms / 2030 MiB**（4× 导出 → 13.6× 耗时），
+CPU 栈 `setSlot` 33.0% + `copyWithMemo` 31.7% + GC 16.2%。`setSlot` 快路径后
+N=800 **5077.20ms**、N=200 **464.38ms**（详见 plan §5 `ABS-17`）。
+
+依赖上下文仍是真实 bundle 的放大器：同一份 `packages/vscode/out/extension.js`
 在原路径可解析 `packages/vscode/node_modules` ⇒ `loadModule` **362 次 / 47.2s / 2743 MiB**；
 复制到 `.bundles/`（依赖不可解析）⇒ 8 次 / **0.20s**；原目录去掉三个 `require` ⇒ 2 次 / **0.21s**。
 依赖上下文探针：
