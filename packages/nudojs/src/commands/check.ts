@@ -30,6 +30,7 @@ import {
 } from "@nudojs/core";
 import {
   analysisConfig,
+  analysisFileCacheKey,
   analyzeFileAsync,
   buildEvalInjection,
   checkCacheKey,
@@ -78,6 +79,7 @@ import {
   reportPathErrors,
   type PathError,
 } from "./shared.ts";
+import type { CheckInjectionCache } from "./check-injection-cache.ts";
 import {
   checkGateFromConfig,
   configIgnoreThrows,
@@ -361,6 +363,17 @@ export type RunCheckOptions = {
   batchProbe?: BatchProbe;
   /** 本轮最后一个目标：#1 onboarding 块在其 issues 段之后打印 */
   onboardingFinal?: boolean;
+  /**
+   * ABS-18：watch 会话的注入对象复用缓存（缺省 = 每次重建，与非 watch 面一致）。
+   *
+   * 键 = **分析输入身份**（`analysisFileCacheKey` 的完整身份：稳定源码 × 依赖
+   * 内容指纹 × env 名/内容 × 预载状态 × autoBind × analysis 配置）。语义编辑 /
+   * 依赖或 env 变更 ⇒ 键变 ⇒ 重建；指纹截断 / 读错误 ⇒ 不查不写（fail-closed）。
+   *
+   * 只由 `startCheckWatch` 传入 —— 一次性 CLI 与 LSP 不共享进程内模块表，
+   * 不承担跨轮陈旧风险。
+   */
+  injectionCache?: CheckInjectionCache;
 };
 
 /** 段1产物：缓存命中态 + 缓存键输入（段3 决定是否回写）；段3 渲染面（check-report.ts）消费 */
@@ -670,6 +683,35 @@ function buildCheckInjection(
 }
 
 /**
+ * ABS-18：注入对象的复用键 = **分析输入身份**（与整文件分析 memo 同源：
+ * 稳定源码 × 依赖内容指纹 × env 名/内容 × 预载状态 × autoBind × analysis 配置）。
+ *
+ * - 语义编辑 / 依赖或 env 变更 ⇒ 键变 ⇒ 重建（注入不能跨输入复用）；
+ * - 指纹截断 / 读错误 ⇒ `null` ⇒ 调用方不查不写（fail-closed，宁冷勿陈旧）；
+ * - `--from` 证据不进键：注入装配不依赖它，喂进去只会过度失效。
+ */
+function checkInjectionCacheKey(
+  filePath: string,
+  source: string,
+  cache: CheckCacheState,
+): string | null {
+  const k = analysisFileCacheKey(
+    filePath,
+    source,
+    undefined,
+    undefined,
+    cache.aCfg,
+    defaultLoadModule,
+    cache.allEnvNames,
+    cache.autoBind !== false,
+    "none",
+    undefined,
+  );
+  if (k.noCache) return null;
+  return `${k.filePath}\0${k.source}\0${k.auxKey}`;
+}
+
+/**
  * 严格解析（按扩展名）是否失败——**只**用于「不吃旧磁盘缓存」判定，不抛错。
  *
  * Bug 633：旧版本（typescript 插件无条件开）曾把 `.js` 里的 TS-only 语法判绿
@@ -961,11 +1003,33 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     const dirDiags: DirectiveDiag[] = [];
     // 段2 buildInjection：eval 注入包（模块图 + mocks + env 全局 + replace/as）
     let inject: RunTranspiledOptions | undefined;
-    try {
+    // ABS-18：watch 会话按「分析输入身份」复用注入对象（缺省不启用）——
+    // `checkMemoKey` 含 `moduleMapId(modules)` 身份键，复用同一模块表对象
+    // 才能让 check memo 命中；语义编辑/依赖或 env 变更 ⇒ 键变 ⇒ 重建。
+    const injectionKey =
+      opts.injectionCache !== undefined
+        ? checkInjectionCacheKey(filePath, source, cache)
+        : null;
+    const cachedInjection =
+      injectionKey !== null ? opts.injectionCache!.get(injectionKey) : undefined;
+    if (cachedInjection !== undefined) {
+      inject = cachedInjection.inject;
+      mockFromErrors = [...cachedInjection.mockFromErrors];
+      // 装配期诊断必须原样重放（报告面不得因复用少诊断）
+      dirDiags.push(...cachedInjection.dirDiags);
+      markCheckPhase("injection (cached)");
+    } else try {
       const built = buildCheckInjection(filePath, source, cache.allEnvNames, dirDiags);
-      markCheckPhase("build-injection");
+      markCheckPhase("injection (built)");
       inject = built.inject;
       mockFromErrors = built.mockFromErrors;
+      if (injectionKey !== null) {
+        opts.injectionCache!.set(injectionKey, {
+          inject,
+          mockFromErrors: [...mockFromErrors],
+          dirDiags: [...dirDiags],
+        });
+      }
     } catch (err) {
       // 语法错文件：checkSource 走同一解析也会 throw（旧行为漏到顶层
       // catch：裸 message、无文件名/摘录/指位且 stdout 全空）——这里

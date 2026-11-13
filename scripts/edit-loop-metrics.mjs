@@ -219,7 +219,7 @@ function report() {
     ).padStart(9)} ${String(avg(val)).padStart(8)}    (ms, ${ok.length}/${rounds} rounds)`,
   );
   if (profile && profileLines.length > 0) {
-    console.log("\n  watch profile（子进程 stderr：每轮分相 + 逐文件 analyze）:");
+    console.log("\n  watch / check profile（子进程 stderr：每轮分相 + 逐文件段耗时）:");
     for (const l of profileLines) console.log(`    ${l}`);
   }
 }
@@ -234,8 +234,8 @@ child.stderr.on("data", (d) => {
 });
 
 function handleErrLine(line) {
-  if (line.startsWith("[watch-profile] ")) {
-    profileLines.push(line.slice("[watch-profile] ".length));
+  if (line.startsWith("[watch-profile] ") || line.startsWith("[check-profile] ")) {
+    profileLines.push(line);
     return;
   }
   if (line.includes("Watching for changes...")) {

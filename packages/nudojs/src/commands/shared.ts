@@ -43,7 +43,12 @@ import {
   type AnalysisResult,
 } from "@nudojs/service";
 import type { AbsCallRecord } from "@nudojs/core";
-import { DIAG, extractAssumeSegs } from "@nudojs/core/internal";
+import {
+  DIAG,
+  beginDepFingerprintEpoch,
+  endDepFingerprintEpoch,
+  extractAssumeSegs,
+} from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
@@ -1062,23 +1067,30 @@ export function startWatch(
     process.exitCode = 0;
     let analyzeMs = 0;
     let n = 0;
-    for (const f of getFiles()) {
-      const tFile = performance.now();
-      n++;
-      try {
-        await runOne(f);
-      } catch (err) {
-        console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
-        // Bug 926：单文件分析失败（解析失败 / 装配失败）**必须置红**。
-        // 改前这里只打一行 stderr 就吞掉 ⇒ watch 面**保持绿**（exit 0），
-        // 而同一目录的 `check --watch` / `health --watch` / 非 watch 的
-        // `test` **全部 exit 1** ⇒ watch 面上唯一的假绿。
-        // 与本文件自陈的「退出码语义 = 最近一轮的门禁状态」一致。
-        // ⚠ **不中断整轮**：一个坏文件不该中止整轮（这是现在的行为，也是对的；
-        //   错的只是「不置红」）。
-        process.exitCode = 1;
+    // ABS-18：轮内依赖指纹 memo——同一入口在「注入复用键 / analyze / print」
+    // 之间只读一次盘。轮内不写盘（`--fix` 与 `--watch` 互斥）。
+    beginDepFingerprintEpoch();
+    try {
+      for (const f of getFiles()) {
+        const tFile = performance.now();
+        n++;
+        try {
+          await runOne(f);
+        } catch (err) {
+          console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
+          // Bug 926：单文件分析失败（解析失败 / 装配失败）**必须置红**。
+          // 改前这里只打一行 stderr 就吞掉 ⇒ watch 面**保持绿**（exit 0），
+          // 而同一目录的 `check --watch` / `health --watch` / 非 watch 的
+          // `test` **全部 exit 1** ⇒ watch 面上唯一的假绿。
+          // 与本文件自陈的「退出码语义 = 最近一轮的门禁状态」一致。
+          // ⚠ **不中断整轮**：一个坏文件不该中止整轮（这是现在的行为，也是对的；
+          //   错的只是「不置红」）。
+          process.exitCode = 1;
+        }
+        analyzeMs += performance.now() - tFile;
       }
-      analyzeMs += performance.now() - tFile;
+    } finally {
+      endDepFingerprintEpoch();
     }
     const tAnalyzed = performance.now();
     graph = buildModuleGraph(getFiles());
@@ -1167,19 +1179,25 @@ export function startWatch(
     getAnalysisSession().evictForDependents([...new Set(changedFiles.map(stablePathKey))]);
     const tEvict = performance.now();
     let analyzeMs = 0;
-    for (const f of ordered) {
-      const tFile = performance.now();
-      try {
-        await runOne(f);
-      } catch (err) {
-        console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
-        // Bug 926：增量轮的单文件失败**同样必须置红**（与全量轮同口径）。
-        // 改前增量轮只打 stderr 不置红 ⇒ 改坏一个文件后 watch 面仍是绿的。
-        process.exitCode = 1;
+    // ABS-18：轮内依赖指纹 memo（见 runAll 同款说明）
+    beginDepFingerprintEpoch();
+    try {
+      for (const f of ordered) {
+        const tFile = performance.now();
+        try {
+          await runOne(f);
+        } catch (err) {
+          console.error(`Error ${relFromCwd(f)}:`, (err as Error).message);
+          // Bug 926：增量轮的单文件失败**同样必须置红**（与全量轮同口径）。
+          // 改前增量轮只打 stderr 不置红 ⇒ 改坏一个文件后 watch 面仍是绿的。
+          process.exitCode = 1;
+        }
+        const dt = performance.now() - tFile;
+        analyzeMs += dt;
+        prof(`round=${profId} file=${relFromCwd(f)} ms=${dt.toFixed(1)}`);
       }
-      const dt = performance.now() - tFile;
-      analyzeMs += dt;
-      prof(`round=${profId} file=${relFromCwd(f)} ms=${dt.toFixed(1)}`);
+    } finally {
+      endDepFingerprintEpoch();
     }
     watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
     const tAnalyzed = performance.now();

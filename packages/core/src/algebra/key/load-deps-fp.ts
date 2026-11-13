@@ -44,6 +44,45 @@ export type LoadDepsFingerprint = {
   readError: boolean;
 };
 
+/**
+ * ABS-18：watch **轮内**的依赖指纹 memo（默认关闭）。
+ *
+ * watch 的增量/全量轮是「顺序分析、轮内不写盘」（`--fix` 与 `--watch` 互斥），
+ * 同一轮里 `analyzeFile` 与注入复用键会对同一个入口各算一次依赖指纹——每次都是
+ * 一次磁盘 BFS（实测 14–25ms/文件）。开一个轮内 memo 把同一 (入口, loader,
+ * 稳定源码) 的指纹只算一次，轮末丢弃。
+ *
+ * 纪律：
+ * - **默认不开启**（`undefined`）⇒ 一次性 CLI / LSP / 所有既有调用方逐字节不变；
+ * - 只有宿主显式 `beginDepFingerprintEpoch()` / `endDepFingerprintEpoch()` 期间生效；
+ *   轮内写盘（如将来出现）必须由宿主先 end 再 begin；
+ * - 只缓存 `opts === undefined` 的调用：带 `ambientAllowed` / `ambientLoadModule`
+ *   的指纹由闭包语义决定（checkSource 的推测性 sidecar 探测），不能按文件身份共享；
+ * - 返回对象按**只读**使用（`contents` / `paths` 数组不得原地修改）。
+ */
+let depFpEpoch: Map<string, LoadDepsFingerprint> | null = null;
+const depFpLoaderIds = new WeakMap<object, number>();
+let depFpLoaderSeq = 0;
+
+function depFpLoaderId(fn: (spec: string, fromFile: string) => string | undefined): number {
+  let id = depFpLoaderIds.get(fn);
+  if (id === undefined) {
+    id = ++depFpLoaderSeq;
+    depFpLoaderIds.set(fn, id);
+  }
+  return id;
+}
+
+/** 开启轮内依赖指纹 memo（watch 宿主在每轮开始前调用）。 */
+export function beginDepFingerprintEpoch(): void {
+  depFpEpoch = new Map();
+}
+
+/** 关闭并丢弃轮内 memo（watch 宿主在每轮结束后调用；异常路径也必须调）。 */
+export function endDepFingerprintEpoch(): void {
+  depFpEpoch = null;
+}
+
 /** 防病态图；seen 已防环，此上限只限制遍历量 */
 const MAX_LOAD_DEP_NODES = 64;
 
@@ -300,6 +339,16 @@ export function loadModuleDepsFingerprint(
    * 不翻转。返回的 content 也是 `contents` 的口径（磁盘缓存键同源）。
    */
   const stableContent = (src: string): string => stableAnalyzeKeySource(src);
+  // ABS-18：轮内 memo（仅 `opts === undefined` 的调用；见上方 epoch 说明）
+  const epoch = depFpEpoch;
+  const epochKey =
+    epoch !== null && opts === undefined
+      ? `${stablePathKey(fromFile)}\0${depFpLoaderId(loadModule)}\0${stableContent(source)}`
+      : null;
+  if (epochKey !== null) {
+    const cached = epoch!.get(epochKey);
+    if (cached !== undefined) return cached;
+  }
   const parts: string[] = [];
   const paths: string[] = [];
   const contents: Array<{ path: string; content: string | null }> = [];
@@ -335,13 +384,15 @@ export function loadModuleDepsFingerprint(
     // trunc:/readerr: 前缀同义：「键不可信」，调用方 fail-open 禁 memo。
     // 两者同时出现时 trunc: 优先（既有前缀语义不变）。
     const prefix = truncated ? "trunc:" : readError ? "readerr:" : "";
-    return {
+    const out: LoadDepsFingerprint = {
       fp: `${prefix}${parts.join(",")}`,
       paths,
       contents,
       truncated,
       readError,
     };
+    if (epochKey !== null) epoch!.set(epochKey, out);
+    return out;
   };
 
   /** 入口文件的 ambient 侧车 + 递归 .nudo 闭包（fromFile 与各 dep 共用） */

@@ -32,6 +32,7 @@ import {
   type GateProfile,
 } from "../check-gate-config.ts";
 import { attachPathErrors } from "../check-json-map.ts";
+import { createCheckInjectionCache } from "./check-injection-cache.ts";
 import { DIAG } from "@nudojs/core/internal";
 import { shouldEmitGha } from "../check-ci-flags.ts";
 import {
@@ -180,6 +181,11 @@ export function startCheckWatch(
 ): () => void {
   let roundFrom: CallRecord[] | undefined;
   let roundFromErrors: PathError[] = [];
+  /**
+   * ABS-18：watch 会话内的注入对象复用（跨轮、跨文件）。键 = 分析输入身份，
+   * 语义编辑/依赖或 env 变更自然换键 ⇒ 重建；常驻上限由 LRU 把住。
+   */
+  const injectionCache = createCheckInjectionCache();
   return startWatch(
     paths,
     async (t: string) => {
@@ -188,13 +194,18 @@ export function startCheckWatch(
         // Bug 40：把本轮 `--from` 路径错误交给机器面 ⇒ 信封 ok:false +
         // pathErrors[]（此前 jsonFace 分支在退出码落点之前就 return，
         // stderr 已报「Callsite file not found」而信封仍写 ok:true + exit 0）。
-        await runCheckJsonFace(t, { ...opts.shared, from: roundFrom }, roundFromErrors);
+        await runCheckJsonFace(
+          t,
+          { ...opts.shared, from: roundFrom, injectionCache },
+          roundFromErrors,
+        );
         if (roundFromErrors.length > 0) process.exitCode = 1;
         return;
       }
       await runCheck(t, {
         ...opts.shared,
         from: roundFrom,
+        injectionCache,
         ...(opts.humanMode
           ? { batchProbe: freshBatchProbe(), onboardingFinal: true }
           : {}),

@@ -86,6 +86,7 @@ export {
 } from "./algebra/key/fn-fp.ts";
 export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
+  beginDepFingerprintEpoch, endDepFingerprintEpoch,
   normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph
 } from "./algebra/key/load-deps-fp.ts";
 export {

@@ -2,6 +2,7 @@
 
 > **状态**：~~草案（2026-11-09）。16 项均未作为本计划立项；各项「现状」列出的底层能力可能已部分存在。~~
 > **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-16` 第①步（真实 monorepo 基准）已交付（`[~]`），②③仍待拍板；`ABS-12` / `ABS-13` 仍待拍板，`ABS-15` 已开工（`[~]`，2026-11-13 登记表 + 漂移门禁，见 §5）。**2026-11-12 订正**：`ABS-16` 首测数字失真（语料污染 + 宿主 fs 代理），另存 clean 报告并做 9/23 代码 A/B；新增 `ABS-17`（病态输入性能项，只立项）。
+> **拍板（2026-11-13）**：`ABS-18` 注入复用立项并已交付（见 §5）；`ABS-16` ② 分析结果落盘 **结案不做**（负证据：函数级摘要 0 命中、真实 OSS check 1.89s、用户口径 374ms）；`ABS-16` ③ worker 并行 **暂不立项**（D1 后 inert 编辑已 929ms；语义编辑 ~3s 属单文件成本，先看 `ABS-17` 触发条件）；`ABS-17` 写时复制 **结案暂缓**（触发条件：真实输入单文件 analyze >5s，或 `$copy` 占比 >30%）；`ABS-12` / `ABS-13` 维持 parked（触发条件：不可信源码分析 / 副作用时序需求）；`ABS-15` 残余与 `ABS-03` / `ABS-11` 小项延后到首次需要。
 > **拍板（2026-11-10）**：立 `ABS-14`，但只准简单条件 + 单向依赖，先走三条保守通道；先建等价性门禁；摘要缓存只留一套。四条约束的落地口径见 §5「决策」。
 > **删除线约定**：`~~…~~` = 已交付。§1 总表项名、§0 / §2 的历史排期、§3 / §4 各节标题已划掉；其下「现状 / 改动 / 验收」保留为**历史正文**（交付后不作现行口径），按 `docs/README.md` 后续删除，证据在测试 / changeset / git。§7 / §8 对已交付项的机制引用仍有效，不划掉。
 > **性质**：排序与验收清单，不是架构契约；真源冲突时以真源为准。
@@ -26,7 +27,7 @@
 - **2026-11-12 续作（两项遗留闭环）**：`check all warm` 44s = 整文件 memo 容量 256 < 工作集 286 的 LRU 抖动，提到 1024 后 449ms；8.3× cold 差距经 bisect 定位为 9/29 / 10/21 两次**正确性收口**的台阶，`ABS-14` 非主因。见 §5。
 - **2026-11-13（copy 路径）**：`check` 冷路径 40.3s 中 20 个文件占 79.6%，全是合成 `.corpus` 模块；真实 OSS（semver ×2、96 文件）check 冷路径仅 **1.89s** ⇒ 不是产品问题，不再追。ABS-17 补**单文件最小复现**（N 个对象导出 + esbuild 拷贝助手），两轮优化：`setSlot` 去掉逐槽 `Object.defineProperty`（N=800 −40%）+ `copyWithMemo` 叶子快路径与免分配遍历（再 −35%），夹具合计 **8427→3297ms（−61%）**；合成语料 analyze cold **13635→9776ms（−28%）**。剩余 31.6% 是真实副本分配，需写时复制（架构级，另立项），ABS-17 未关闭。见 §5。
 - **2026-11-12 续作二（机制 + 低风险优化）**：8.3× 的机制 = Term 递归字符串序列化随两批正确性收口被放大（非算法退化）；`termKey` 改字符串累加，输出逐字节不变，干净 env 单轮全量 analyze **13.3s → 10.0s（约 −25%）**；WeakMap 缓存路线实测更慢已否定。`ABS-17` 补 5 个形态对照夹具并把机制订正为**依赖解析上下文**（同内容换路径 47.2s → 0.20s），getter 假设证伪；引擎除 `termKey` 外未动。见 §5。
-- **2026-11-13（真实入口度量）**：`dx-metrics` 双口径实测 fix-rate **100%（4/4）**；**用户口径 dist time-to-green avg 374ms**（对 2s 目标 5.3× 余量），开发回路 tsx 2184ms（+9%，仍是两次进程启动主导）。新增常驻口径 `scripts/edit-loop-metrics.mjs`：watch 编辑回路典型（leaf/低扇入）**0.75–0.85s 达标**，核心文件 **2.4–2.5s 超 20%**，且与语料总量无关、只与被改文件的依赖链相关 ⇒ **通用性能线到此可停**；仅剩「watch 增量重算整条依赖链」一个值得动的点，另立项。同时发现一个 watch 竞态（写入落在 `recordVersions()` 之前会被吞）。见 §5 与 `docs/reports/dx-metrics.md`。**`ABS-18` 步骤 0（2026-11-13）已交付分相计时**：成本 99%+ 在逐文件 analyze（graph 14–18ms、evict <1ms）⇒ 图增量化否决、「跳过重算」不 sound，详见 §5。
+- **2026-11-13（真实入口度量）**：`dx-metrics` 双口径实测 fix-rate **100%（4/4）**；**用户口径 dist time-to-green avg 374ms**（对 2s 目标 5.3× 余量），开发回路 tsx 2184ms（+9%，仍是两次进程启动主导）。新增常驻口径 `scripts/edit-loop-metrics.mjs`：watch 编辑回路典型（leaf/低扇入）**0.75–0.85s 达标**，核心文件 **2.4–2.5s 超 20%**，且与语料总量无关、只与被改文件的依赖链相关 ⇒ **通用性能线到此可停**；仅剩「watch 增量重算整条依赖链」一个值得动的点，另立项。同时发现一个 watch 竞态（写入落在 `recordVersions()` 之前会被吞）。见 §5 与 `docs/reports/dx-metrics.md`。**`ABS-18`（2026-11-13）已交付**：步骤 0 分相计时 + inert 编辑子项 + 注入对象复用 + 轮内指纹 memo ⇒ **inert 编辑 hub total 929ms / leaf 555ms**（语义编辑仍 ~3s，属 `ABS-17`/`ABS-16`③）；图增量化否决、「跳过重算」不 sound，详见 §5。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -49,9 +50,9 @@
 | 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
-| 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
-| 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配，需写时复制另立项，未关闭，见 §5） |
-| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修；**步骤 0 分相计时已交付**（`NUDO_WATCH_PROFILE=1`）；**inert 编辑子项已交付**（dep 指纹对齐稳定源码 + 只逐出被改文件，hub analyze 3313→2597ms）；发现 `checkSource` 因 module-map 身份键每轮必 miss（~500ms/文件）⇒ 注入复用待拍板（见 §5） |
+| 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行 **2026-11-13 拍板：分别结案不做 / 暂不立项**，见 §5） |
+| 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配；**2026-11-13 拍板：结案暂缓**（触发条件见 §5）） |
+| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修；步骤 0 分相计时、inert 编辑子项、注入对象复用 + 轮内指纹 memo 已交付 ⇒ **inert 编辑 hub total 929ms（<1s 验收达标）/ leaf 555ms**（语义编辑仍 ~3s，属 `ABS-17`/`ABS-16`③）；残余 = `checkSource` gating 语义键（可选），见 §5 |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -583,8 +584,8 @@ facets，故不建该钩子。
 **改动候选**：
 
 1. ~~真实 monorepo cold / warm / edit 基准；记录 Node/CPU/内存。~~ **已完成（2026-11-11，见上方「第①步」）**
-2. 在可信 runner 上扩展签名分析缓存；键覆盖源码、依赖、配置、分析 ABI。
-3. worker 并行分析；与 LSP 增量缓存分层。
+2. ~~在可信 runner 上扩展签名分析缓存；键覆盖源码、依赖、配置、分析 ABI。~~ — **2026-11-13 拍板：结案不做**（分析结果不落盘；负证据见上）。
+3. worker 并行分析；与 LSP 增量缓存分层。— **2026-11-13 拍板：暂不立项**（`ABS-18` 交付后 inert 编辑 hub 929ms；语义编辑 ~3s 回到单文件成本，未证明并行收益 > 架构成本）。
 4. 缓存投毒红线：签名、密钥轮换、不可信 runner 默认关闭。
 
 **验收**：~~真实仓库基准报告~~ ✅ 已满足（`s1-perf-baseline-real.md`）；~~缓存命中率~~ ✅ 已实测（同报告 `## Cache hit telemetry`）；**「正确性 / 不可信场景拒绝复用」仍待第②③块**（签名面已实现但缺独立拒绝复用夹具；分析结果落盘需先拍板是否放宽「不落盘」纪律）。
@@ -732,7 +733,7 @@ worktree 第三方依赖随主仓 lockfile；区间内 4 个提交因 `Float16Ar
 
 ### ABS-17 可解析依赖的大型抽象对象图拷贝（性能，待拍板）
 
-**状态**：`[ ]`（2026-11-12 立项；2026-11-13 交付最小复现 + `setSlot` 快路径 +
+**状态**：`[ ]` **2026-11-13 拍板：结案暂缓**（触发条件 = 真实用户输入单文件 analyze >5s，或再次出现 `$copy` 占比 >30% 的报告；当前只剩合成病态负载）。（2026-11-12 立项；2026-11-13 交付最小复现 + `setSlot` 快路径 +
 `copyWithMemo` 叶子快路径，把该夹具从 **8.4s 降到 3.3s（−61%）**；
 `copyWithMemo` 仍占 31.6%，但已是「640 万次非叶子副本」的真实分配成本，
 下一步需要写时复制/结构共享，属架构级改动，**本项未关闭**）。
@@ -861,7 +862,7 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 
 ### ABS-18 watch 增量重算整条依赖链（性能 + 一个正确性缺陷，待拍板）
 
-**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1：`recordVersions` 前移）；**步骤 0 分相计时**与 **inert 编辑子项已交付**（dep 指纹对齐稳定源码 + 只逐出被改文件）；候选 2「跳过重算」不 sound、候选 3 否决；**剩余 = `checkSource` 注入对象跨轮复用（待拍板）**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
+**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1：`recordVersions` 前移）；**步骤 0 分相计时**、**inert 编辑子项**、**注入对象复用 + 轮内指纹 memo** 均已交付 ⇒ hub 编辑 total **929ms（达到 <1s 验收）**、leaf 555ms；候选 2「跳过重算」不 sound、候选 3 否决；**唯一残余 = `checkSource` 内部指纹的 gating 语义键（可选优化）**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
 
 **背景判断**：`dx-metrics` 显示用户口径（dist 单次 check）time-to-green **374ms**，对 2s 目标有 5.3× 余量
 ⇒ **通用冷路径优化线到此可以停**。继续投入只在一个地方有可感收益：`check --watch` 的增量轮。
@@ -937,11 +938,33 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 的 `[check-profile]`）显示重复跑 `range.js` = build-injection ~22–30ms + `analyzeFileAsync` ~10ms +
 **`checkSource` ~500ms**。`checkMemoKey` 含 `moduleMapId(modules)`（身份键，`memo-identity.ts`
 的信任模型 = 调用方同表对象跨调用），而 watch 每个文件每轮重建注入 ⇒ **check memo 永不命中**。
-这是 inert 编辑收益只能到 −22% 的原因（分析层已命中，check 层仍全算）。**未拍板的下一步**：
-按「文件 × 稳定源码 × dep 指纹」跨轮复用注入对象（指纹变则必须重建）；**不能**只把
-`moduleMapId` 换成 `runTranspiledOptionsMemoKey`（该格式对函数只记 `fn`，会放开假命中）。
-语义编辑的 <1s 目标仍**不可能靠本项独立达成**（需先降单文件成本 `ABS-17` 或 worker `ABS-16` ③）。
+这是当时 inert 编辑收益只能到 −22% 的原因（分析层已命中，check 层仍全算）。**已落地的下一步**：
+按「分析输入身份」跨轮复用注入对象（见下 ③）；当时也确认**不能**只把 `moduleMapId` 换成
+`runTranspiledOptionsMemoKey`（该格式对函数只记 `fn`，会放开假命中）。
 
+
+**③ 注入对象复用 + 轮内依赖指纹 memo（2026-11-13）**：
+
+- `commands/check-injection-cache.ts`：watch 会话内按「**分析输入身份**」复用
+  `buildCheckInjection` 产物（LRU 256；命中重放 `dirDiags` / `mockFromErrors`；键 =
+  `analysisFileCacheKey` 的 `filePath\0source\0auxKey`，指纹截断/读错误不查不写）；
+  `runCheck` 新增可选 `injectionCache`，**只由 `startCheckWatch` 传入**（一次性 CLI / LSP
+  不共享进程内模块表）。
+- `load-deps-fp.ts` 新增**轮内 memo**（`beginDepFingerprintEpoch` / `endDepFingerprintEpoch`，
+  默认关闭；只缓存 `opts === undefined` 的调用；watch 的 `runAll` / `runIncremental` 用
+  try/finally 包裹）。轮内不写盘由 `--fix` 与 `--watch` 互斥保证。
+- 实测（dist / 干净 env / semver 48 文件）：hub `analyze` 2597 → 1145（仅注入复用）→
+  **718ms**（再加轮内 memo）、total 2808 → 1355 → **929ms（首次达到 <1s）**；leaf 875 → **345ms**、
+  total 555ms。逐文件段耗时 ≈ 注入键
+  10–21ms + `analyzeFileAsync` 1–2ms（memo 命中）+ `checkSource` 10–26ms（memo 命中）+ 渲染。
+- 门禁：`abs18-injection-reuse.test.ts`（4：重复命中 / inert 依赖编辑命中且报告不变 /
+  语义编辑换键且报告更新 / LRU）+ `load-deps-fp-epoch.test.ts`（5：默认关闭 / 轮内一次 /
+  稳定源码等价 / 代码变更换键 / loader 与 opts 不共享）。
+- 残余：`checkSource` 内部仍自算一次依赖指纹（其 `ambientAllowed` 闭包没有稳定语义键）——
+  每文件 10–26ms；再压缩需给该 gating 一个稳定键，本轮不做。
+- **口径**：以上 929ms 是探针的 **inert 编辑**（追加尾部注释）；**语义编辑**会让整条依赖链的
+  分析/check 键全部翻转 ⇒ hub 仍 ~3s。后者属单文件成本（`ABS-17`）或 worker 并行
+  （`ABS-16` ③），**不是**本项能解决的。
 
 
 **候选改动**：
@@ -951,15 +974,15 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
    窗口消除方式：分析期间的写入与「开跑前快照」必然不同 ⇒ 下一轮正常触发。
    回归面：`filterUnchangedWatchPaths` 纯函数夹具 + 既有 12 个 watch 文件 / 33 用例；
    **轮末写入竞态暂无确定性 e2e 夹具**（需要可控的慢分析才能稳定复现，留待性能项一并设计）；
-2. ~~增量轮不整条依赖链重算~~ —— **2026-11-13 步骤 0 否决「按签名跳过重算」**（不 sound，见上）；
-   仅剩 **inert 编辑**子项（`load-deps-fp.ts` 的 dep 指纹对齐 `stableAnalyzeKeySource`）待拍板，
-   收益只覆盖注释/空白编辑，语义编辑不受益；
+2. ~~增量轮不整条依赖链重算~~ —— **2026-11-13 步骤 0 否决「按签名跳过重算」**（不 sound）；
+   **inert 编辑子项已交付**（`load-deps-fp` 指纹对齐稳定源码 + 逐出收窄 + 注入复用 + 轮内 memo，
+   见上 ③）。语义编辑仍整条链重算（属单文件成本 / `ABS-17` / `ABS-16`③ 面）；
 3. ~~`buildModuleGraph` 增量化（只重算受影响子图）~~ —— **2026-11-13 否决**：全量重建 14–18ms，
    占 round <0.5%；要做也只值 15ms。
 
-**验收**：语义编辑的 <1s 目标**本项不再宣称可独立达成**（需先降单文件分析成本 `ABS-17` 或 worker 并行 `ABS-16` ③）；
-本项可验收的是：写入永不丢失（竞态测试）、`dx-metrics` fix-rate 保持 100%、不改分析语义、
-分相计时默认零输出（已交付）；inert 编辑若拍板，则按「注释编辑轮次 ≡ 全命中」另行验收。
+**验收**：**inert 编辑（探针口径）hub total 已实测 929ms < 1s、leaf 555ms**；语义编辑仍 ~3s
+（整条链重算，属 `ABS-17` / `ABS-16`③ 面，本项不宣称）。本项其余验收：写入永不丢失（竞态测试）、
+`dx-metrics` fix-rate 保持 100%、不改分析语义、分相计时默认零输出（已交付）。
 
 **风险**：`recordVersions` 语义调整会影响「同批事件去重」，必须与 FSEvents 噪声过滤一起验证。
 
@@ -1066,3 +1089,10 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
   `[check-profile]`：`checkSource` ~500ms/文件，根因 `checkMemoKey` 的 `moduleMapId` 身份键
   （watch 每轮重建注入）⇒ 注入对象跨轮复用是剩余最大项，未拍板。文档同步
   `cache-invalidation.md` / `persistent-cache.md` / `docs/reports/dx-metrics.md`。
+- **2026-11-13 锚点（ABS-18 注入复用 + 轮内指纹 memo）**：`commands/check-injection-cache.ts`
+  （LRU 256；命中重放 `dirDiags` / `mockFromErrors`）+ `runCheck` 可选 `injectionCache`
+  （**只由 `startCheckWatch` 传入**）+ `load-deps-fp.ts` 的 `beginDepFingerprintEpoch` /
+  `endDepFingerprintEpoch`（默认关闭；只缓存 `opts === undefined`；watch 每轮 try/finally）+
+  `edit-loop-metrics.mjs` 收集 `[check-profile]`。实测 hub `analyze` 1145→**718ms**、
+  total 1355→**929ms**；leaf 875→**345ms**、total 555ms。门禁
+  `abs18-injection-reuse.test.ts`（4）+ `load-deps-fp-epoch.test.ts`（5）。
