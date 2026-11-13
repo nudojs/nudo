@@ -924,6 +924,19 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   // - `unsupported:*`（能力边界）与**建模内**的 `NudoThrow`（catch 可吸收）
   //   `gateFatal === false` ⇒ **不收**（进了就是**假红**，大面积误判 ⇒ 用户 CI 卡死）。
   //
+
+  // ABS-18 排障：`NUDO_WATCH_PROFILE=1` 时把本文件 runCheck 的段耗时打到
+  // stderr（build-injection / analyze / checkSource）。默认零输出。watch 面
+  // 用它判断增量轮的成本落在哪一段，避免只看到「逐文件 analyze 总和」。
+  const checkProfile = process.env.NUDO_WATCH_PROFILE === "1";
+  let checkPhaseStart = performance.now();
+  const markCheckPhase = (phase: string): void => {
+    if (!checkProfile) return;
+    const now = performance.now();
+    console.error(`[check-profile] ${phase} file=${filePath} ms=${(now - checkPhaseStart).toFixed(1)}`);
+    checkPhaseStart = now;
+  };
+
   // collector 是**进程级单槽**（core 的 `setEvalFallbackCollector`）：本函数
   // 安装期间覆盖全进程 ⇒ 只能有一个观察者（service 的观测面 API 不在本路径
   // 上调用，见 `analyzer-orchestrate.ts` 的 `analyzeFileWithEvalFailures`）。
@@ -950,6 +963,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     let inject: RunTranspiledOptions | undefined;
     try {
       const built = buildCheckInjection(filePath, source, cache.allEnvNames, dirDiags);
+      markCheckPhase("build-injection");
       inject = built.inject;
       mockFromErrors = built.mockFromErrors;
     } catch (err) {
@@ -1032,6 +1046,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
         undefined,
         "none",
       );
+      markCheckPhase("analyze");
       domainIssues = domainIssuesFromDiagnostics(analysis.diagnostics);
     } catch {
       /* 分析器通道失败不得拖垮 check（诊断面降级，不造门禁） */
@@ -1043,6 +1058,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     const externalAbsRecords = externalAbsCallRecords(filePath, opts.from);
     // 分析输入装配**单源**（checkSourceOptions）——`--fix` 面走同一构造
     // （Bug 640：两条命令喂给分析器的输入集必须一致）。
+    checkPhaseStart = performance.now();
     report = checkSource(
       filePath,
       source,
@@ -1058,6 +1074,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
         from: externalAbsRecords,
       }),
     );
+    markCheckPhase("checkSource");
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
     if (dirDiags.length > 0) {
       report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));

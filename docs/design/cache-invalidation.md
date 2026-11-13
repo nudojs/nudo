@@ -46,6 +46,8 @@
 因此：
 
 - **常规编辑**（含传递依赖编辑；mtime/size/内容任一变）：内容指纹层自然 miss，宿主不逐出也能看到新 dep。
+  依赖内容按 **`stableAnalyzeKeySource`** 投影进键（ABS-18）⇒ 只改依赖**尾部无 `@nudo`
+  的注释/空白**不翻转指纹，依赖链可命中复用；`@nudo` 指令与真实代码变化照旧 miss。
 - **宿主逐出仍是义务**——见 §2 残余缺口与 path-env 投毒。
 
 ### 1.4 `absModuleCache` 子树内容指纹（DESIGN-002 单一失效源）
@@ -145,7 +147,7 @@ path-based `@nudo:env`（`/// @nudo:env ./custom.env.ts`）经 async preload 导
 | 宿主 | 依赖变更时 | 全量重置 | path-env | abs-module | 备注 |
 |---|---|---|---|---|---|
 | **LSP**（`lsp/src/validation.ts` 脏传播循环） | 每个 dependent：`evictEvalCacheForFiles` + `evictAnalysisFileCacheForFiles` + `evictFnAnalysisCacheForFiles([dirty])` + `clearPathEnvCaches()`，再 force 重验；变更文件自身另 `evictAbsModuleCacheFiles([filePath])`（内存回收 + 残余缺口） | `clearValidationState` → `clearAnalysisSessionCaches` | 已清（循环内尾调） | 中间模块靠子树指纹（C9 钉住）；删除事件经 `evictModuleGraphCacheEntries` 同步逐出 | 脏传播算 dependents；本地 `analysisCache` 另清 |
-| **CLI watch**（`nudojs/src/commands/shared.ts`） | `computeDirtySet` 并集 + topo 序，`getAnalysisSession().evictForDependents(ordered)` | 文件删除时 `session.clear()` | 经 `evictAnalysisCachesForFiles` **已清** | 传递闭包顺带逐出；未逐出的中间模块靠子树指纹 | 200ms debounce；topo 序重跑 |
+| **CLI watch**（`nudojs/src/commands/shared.ts`） | `computeDirtySet` 并集 + topo 序；**只逐出事件里真的变了的文件**（`evictForDependents(changedFiles)`，ABS-18）——dependents 靠内容指纹自然 miss/命中 | 文件删除时 `session.clear()` | 经 `evictAnalysisCachesForFiles` **已清** | 传递闭包**不再顺带逐出**；中间模块靠子树指纹 + 被改文件自身逐出 | 200ms debounce；topo 序重跑；`check` 面的 `checkSource` 仍按 module-map 身份键 miss（见 ABS-18 残余） |
 | **vite-plugin** | `watchChange` → `clearAnalysisSessionCaches()` | `buildStart` → `clearAnalysisSessionCaches()` | **已清** | 全清，无缺口 | 最重但最安全 |
 | **一次性 CLI**（`check` / `test` / …） | 无增量（冷进程） | 进程退出即丢 | 不适用 | 不适用 | 不需要逐出 API |
 | **测试隔离** | — | `clearAnalysisSessionCaches()` / `resetAllAnalysisCaches()` | 随 clear | 随 clear | 每用例 afterEach |

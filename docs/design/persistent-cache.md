@@ -121,7 +121,7 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 
 | 事件 | 行为 |
 |---|---|
-| 源码 / 侧车 / dep 内容变 | 键变 → 自然 miss |
+| 源码 / 侧车 / dep 内容变 | 键变 → 自然 miss（dep 内容按 `stableAnalyzeKeySource` 投影：尾部无 `@nudo` 的注释/空白不翻转，ABS-18） |
 | `autoBind` 变 | 进 L1 键 → miss |
 | emit 白名单变 | 不进 contract 键；**磁盘命中不得绕过白名单** |
 | `analysisAbi` / schema / typescript 升 | 全局前缀变 → 全 miss |

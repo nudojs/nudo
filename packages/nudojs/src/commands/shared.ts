@@ -1156,7 +1156,15 @@ export function startWatch(
     console.clear();
     watchBanner(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
     process.exitCode = 0;
-    getAnalysisSession().evictForDependents(ordered);
+    // ABS-18：只逐出**事件里真的变了**的文件，不再连传递 dependents 一起逐出。
+    // dependents 的缓存键都已含依赖内容指纹（整文件 memo 的 `depSeg`、eval memo
+    // 的 `depKey`、fn memo 的 `fp.deps`、abs-module 缓存的依赖复核），而
+    // `load-deps-fp` 的指纹现在是**分析稳定**投影（尾部 inert 注释/空白不翻转）：
+    // - 语义编辑 ⇒ 指纹变 ⇒ dependents 自然 miss 重算（成本与逐出后等价）；
+    // - inert 编辑 ⇒ 指纹不变 ⇒ dependents 命中复用（省掉整条依赖链）。
+    // 逐出本身仍要跑：它负责进程级的 path-env 工厂缓存清理（sync analyze 不
+    // 按 mtime 失效），这是键覆盖不到的一面。
+    getAnalysisSession().evictForDependents([...new Set(changedFiles.map(stablePathKey))]);
     const tEvict = performance.now();
     let analyzeMs = 0;
     for (const f of ordered) {

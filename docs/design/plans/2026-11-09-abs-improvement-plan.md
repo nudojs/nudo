@@ -51,7 +51,7 @@
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
 | 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配，需写时复制另立项，未关闭，见 §5） |
-| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修（`recordVersions` 前移）；**步骤 0 分相计时已交付**（`NUDO_WATCH_PROFILE=1`）：成本 99%+ 在逐文件 analyze（graph 14–18ms、evict <1ms）⇒ 候选 3 否决、候选 2「跳过重算」不 sound；仅剩 inert 编辑子项待拍板（见 §5） |
+| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修；**步骤 0 分相计时已交付**（`NUDO_WATCH_PROFILE=1`）；**inert 编辑子项已交付**（dep 指纹对齐稳定源码 + 只逐出被改文件，hub analyze 3313→2597ms）；发现 `checkSource` 因 module-map 身份键每轮必 miss（~500ms/文件）⇒ 注入复用待拍板（见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -861,7 +861,7 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 
 ### ABS-18 watch 增量重算整条依赖链（性能 + 一个正确性缺陷，待拍板）
 
-**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1，`nudojs/commands/shared.ts`：`recordVersions` 改在过滤通过后、分析开始前记当刻指纹，删除则移除键）；**性能项（2/3）仍待拍板**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
+**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1：`recordVersions` 前移）；**步骤 0 分相计时**与 **inert 编辑子项已交付**（dep 指纹对齐稳定源码 + 只逐出被改文件）；候选 2「跳过重算」不 sound、候选 3 否决；**剩余 = `checkSource` 注入对象跨轮复用（待拍板）**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
 
 **背景判断**：`dx-metrics` 显示用户口径（dist 单次 check）time-to-green **374ms**，对 2s 目标有 5.3× 余量
 ⇒ **通用冷路径优化线到此可以停**。继续投入只在一个地方有可感收益：`check --watch` 的增量轮。
@@ -909,22 +909,38 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 
 **结论（钉死三条）**：
 
-1. **成本 99%+ 在逐文件 analyze**（`analyzeWall ≈ analyzeSum`）。`buildModuleGraph` 全量重建只有
+1. **成本 99%+ 在逐文件 `runCheck`**（`analyzeWall ≈ analyzeSum`；其中 `checkSource` 又占单文件 ~500ms，见下）。`buildModuleGraph` 全量重建只有
    **14–18ms**、`evictForDependents` **<1ms**、dirty 计算 <1.5ms ⇒ **候选 3（图增量化）收益上限 ~0.5%，
    不值得做**。
-2. 脏集 = 「改动文件 + 全部传递 dependents」（17 / 3 个），每个 dirty 文件被 eager 逐出后重算 ⇒
-   leaf 编辑也要付 `acceptance.test.js` 这类重文件的成本，这是 1.0–3.3s 的全部来源。
+2. 脏集 = 「改动文件 + 全部传递 dependents」（17 / 3 个）；**改前**每个 dirty 文件被 eager 逐出后重算 ⇒
+   leaf 编辑也要付 `acceptance.test.js` 这类重文件的成本，这是 1.0–3.3s 的全部来源（改后逐出收窄，
+   dependents 交给指纹，见下「A 子项」）。
 3. **候选 2 的「按签名跳过重算」不 sound**：dependent 的 `call@` 结果内联 callee 求值行为，
    导出签名不变（如 `x+1 → x+2`）仍会改变调用点结果。现行四层缓存（整文件 memo / eval memo /
    fn memo / abs-module 缓存）**都已把依赖内容纳入键**（`analyzer-cache.ts` 的 `depSeg`、
    `eval-cache.ts` 的 `depKey`、`fnAnalysisCache` 的 `fp.deps`、`abs-modules-graph.ts` 的依赖指纹复核）
    ⇒ 语义编辑必然 miss，eager 逐出对它们只是冗余，不是成本主因。
 
-**残余方向（未拍板）**：唯一还有空间的 sound 变体是 **inert 编辑**——入口自身已用
-`stableAnalyzeKeySource`（去尾部无 `@nudo` 注释/空白），但 `load-deps-fp.ts` 对每个 dep 直接
-`hashSource(src)`，两侧不对称 ⇒ 末尾注释编辑也会让整条依赖链 miss。对齐二者的改动面涉及
-check 磁盘键 / eval memo / generalize L0（一次性冷缓存），需单独拍板；语义编辑的 <1s 目标
-**不可能靠本项独立达成**，必须先降单文件分析成本（`ABS-17` 方向）或上 worker 并行（`ABS-16` ③）。
+**A 子项已交付（2026-11-13，inert 编辑；纯缓存键语义，零分析语义改动）**：
+
+- `load-deps-fp.ts` 的依赖内容改为 **`stableAnalyzeKeySource` 投影**（`fp` 与 `contents` 同源 ⇒
+  check 磁盘键 / eval memo / generalize L0 / fn memo 一起稳定）；`@nudo` 指令、真实代码与行号
+  变化照旧翻转（`load-deps-fp-stable.test.ts`，9 例）。
+- watch 增量轮**只逐出事件里真的变了的文件**（`evictForDependents(changedFiles)`），dependents
+  交给内容指纹决定 miss/命中；path-env 清理仍在逐出路径内（`abs18-watch-inert-eviction.test.ts`）。
+- 实测（dist、干净 `NODE_OPTIONS`、semver 48 文件）：hub `analyze` 3313 → **2597ms**、
+  total 3524 → **2808ms**；leaf `analyze` 1009 → **875ms**。单文件探针（`analyzeFileAsync`）：
+  warm hit 9.1ms；inert dep 编辑 + 只逐出被改文件 ⇒ **9.9ms**（改前 watch 内 ~663–734ms）；
+  语义编辑 ⇒ 172ms（正确 miss）。
+
+**新发现（2026-11-13，`check` 面截断收益）**：`runCheck` 逐段计时（`NUDO_WATCH_PROFILE=1`
+的 `[check-profile]`）显示重复跑 `range.js` = build-injection ~22–30ms + `analyzeFileAsync` ~10ms +
+**`checkSource` ~500ms**。`checkMemoKey` 含 `moduleMapId(modules)`（身份键，`memo-identity.ts`
+的信任模型 = 调用方同表对象跨调用），而 watch 每个文件每轮重建注入 ⇒ **check memo 永不命中**。
+这是 inert 编辑收益只能到 −22% 的原因（分析层已命中，check 层仍全算）。**未拍板的下一步**：
+按「文件 × 稳定源码 × dep 指纹」跨轮复用注入对象（指纹变则必须重建）；**不能**只把
+`moduleMapId` 换成 `runTranspiledOptionsMemoKey`（该格式对函数只记 `fn`，会放开假命中）。
+语义编辑的 <1s 目标仍**不可能靠本项独立达成**（需先降单文件成本 `ABS-17` 或 worker `ABS-16` ③）。
 
 
 
@@ -1042,3 +1058,11 @@ check 磁盘键 / eval memo / generalize L0（一次性冷缓存），需单独�
   ⇒ 候选 3（图增量化）否决；候选 2「跳过重算」不 sound（`call@` 内联 callee 求值行为），
   仅剩 inert 编辑子项（`load-deps-fp.ts` 的 dep 指纹对齐 `stableAnalyzeKeySource`）待拍板。
   报告见 `docs/reports/dx-metrics.md`「增量轮分相（2026-11-13 步骤 0）」。
+- **2026-11-13 锚点（ABS-18 inert 编辑）**：`load-deps-fp.ts` dep 内容改
+  `stableAnalyzeKeySource` 投影（`fp`/`contents` 同源）+ watch 增量轮只逐出 `changedFiles`
+  （`shared.ts`）；门禁 `load-deps-fp-stable.test.ts`（9）+ `abs18-watch-inert-eviction.test.ts`（1）。
+  实测 hub analyze 3313→2597ms、leaf 1009→875ms；`analyzeFileAsync` warm hit 9.1ms、inert dep 编辑
+  9.9ms（改前 watch ~663–734ms）、语义编辑 172ms（正确 miss）。`runCheck` 段耗时
+  `[check-profile]`：`checkSource` ~500ms/文件，根因 `checkMemoKey` 的 `moduleMapId` 身份键
+  （watch 每轮重建注入）⇒ 注入对象跨轮复用是剩余最大项，未拍板。文档同步
+  `cache-invalidation.md` / `persistent-cache.md` / `docs/reports/dx-metrics.md`。

@@ -3,6 +3,10 @@
  * 覆盖 @nudo:import / ESM from / require / dynamic import；对每条 spec 做
  * 传递 BFS（seen 防环），直到节点上限。截断时 truncated=true——调用方必须
  * fail-open（不得写入/读取 memo）。
+ *
+ * 内容口径 = `stableAnalyzeKeySource`（分析稳定投影，与入口自身的缓存键同源）：
+ * 尾部无 `@nudo` 的注释/空白编辑不翻转指纹（ABS-18）；`@nudo` 指令与真实
+ * 代码 / 行号变化照旧翻转。
  */
 import { extractNudoImports } from "../refine.ts";
 import {
@@ -10,6 +14,7 @@ import {
   extractMockModuleRecords,
 } from "../directive-scan.ts";
 import { hashSource } from "./hash-source.ts";
+import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import { parseSource } from "../parse-source.ts";
 import { normPath, resolveDepPath, sidecarPathOf, stablePathKey, stablePathKeyGraph } from "../contract/sidecar-path.ts";
 
@@ -23,6 +28,10 @@ export type LoadDepsFingerprint = {
    * path + loadModule-resolved content（miss → null）。调用方（磁盘缓存键）
    * 必须优先用这里的 content，不得回读磁盘——否则 buffer-aware loadModule
    * 与磁盘不一致时键会分叉。
+   *
+   * **ABS-18**：content 是**分析稳定**投影（`stableAnalyzeKeySource`：去掉
+   * 尾部无 `@nudo` 的注释/空白），与 `fp` 同源；`@nudo` 指令、真实代码与
+   * 行号变化照旧翻转。只用于键，不用于求值。
    */
   contents: Array<{ path: string; content: string | null }>;
   /** BFS 撞到节点上限：剩余 dep 未进指纹，键不可信 */
@@ -282,6 +291,15 @@ export function loadModuleDepsFingerprint(
   fromFile: string,
   opts?: LoadDepsFingerprintOpts,
 ): LoadDepsFingerprint {
+  /**
+   * 指纹 / 磁盘键用的**分析稳定**内容（ABS-18）。
+   *
+   * 入口自身的缓存键早就用 `stableAnalyzeKeySource`（尾部注释/空白不进键），
+   * 依赖侧此前却直接 hash 原始字节 ⇒ 只改依赖末尾注释也会让整条依赖链 miss。
+   * 两侧对齐后：`@nudo` 指令、真实代码、行号变化仍翻转；尾部 inert 注释/空白
+   * 不翻转。返回的 content 也是 `contents` 的口径（磁盘缓存键同源）。
+   */
+  const stableContent = (src: string): string => stableAnalyzeKeySource(src);
   const parts: string[] = [];
   const paths: string[] = [];
   const contents: Array<{ path: string; content: string | null }> = [];
@@ -351,9 +369,10 @@ export function loadModuleDepsFingerprint(
     }
     seen.add(sidecarPath);
     n++;
-    parts.push(`sidecar:${sidecarPath}=${hashSource(sidecarSrc)}`);
+    const stableSidecar = stableContent(sidecarSrc);
+    parts.push(`sidecar:${sidecarPath}=${hashSource(stableSidecar)}`);
     paths.push(sidecarPath);
-    contents.push({ path: sidecarPath, content: sidecarSrc });
+    contents.push({ path: sidecarPath, content: stableSidecar });
     const sidecarQueue: Array<{ spec: string; from: string }> = sidecarSpecsOf(
       sidecarSrc,
     ).map((spec) => ({ spec, from: sidecarPath }));
@@ -368,9 +387,10 @@ export function loadModuleDepsFingerprint(
       seen.add(path);
       n++;
       const src = ambientLoad(cur.spec, cur.from).src;
-      parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
+      const stableSrc = src === undefined ? undefined : stableContent(src);
+      parts.push(`sidecar:${path}=${stableSrc === undefined ? "miss" : hashSource(stableSrc)}`);
       paths.push(path);
-      contents.push({ path, content: src ?? null });
+      contents.push({ path, content: stableSrc ?? null });
       if (src === undefined) continue;
       for (const next of sidecarSpecsOf(src)) {
         const nextPath = resolveDepPath(path, next);
@@ -390,9 +410,10 @@ export function loadModuleDepsFingerprint(
     seen.add(path);
     n++;
     const src = load(cur.spec, cur.from).src;
-    parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
+    const stableSrc = src === undefined ? undefined : stableContent(src);
+    parts.push(`${path}=${stableSrc === undefined ? "miss" : hashSource(stableSrc)}`);
     paths.push(path);
-    contents.push({ path, content: src ?? null });
+    contents.push({ path, content: stableSrc ?? null });
     if (src === undefined) continue;
     for (const next of extractAllLoadSpecs(src)) {
       const nextPath = resolveDepPath(path, next);

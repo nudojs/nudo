@@ -92,11 +92,24 @@ stderr（默认零输出）。同一语料同一目标（本机、dist、干净 
 `ranges/subset.js` ~231–236ms、`lib/index.js` ~181–225ms，其余 13 个 ~100–140ms；
 leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–277ms、`gtr` 自身 ~249–293ms。
 
-⇒ 增量延迟 ≈ **逐文件 analyze 之和**：`buildModuleGraph` 全量重建 14–18ms、`evictForDependents`
+⇒ 增量延迟 ≈ **逐文件 `runCheck` 之和**：`buildModuleGraph` 全量重建 14–18ms、`evictForDependents`
 <1ms ⇒ **图增量化没有价值**（上限 ~0.5%）。按签名/导出面跳过 dependents **不 sound**
 （dependent 的 `call@` 结果内联 callee 求值行为），且四层缓存都已把依赖内容纳入键 ⇒
 语义编辑必须重算；缩短延迟只能靠降单文件分析成本（`ABS-17`）或 worker 并行（`ABS-16` ③），
 不是 watch 逐出粒度。上一条「唯一值得动的性能点」按此订正。
+
+**inert 编辑子项交付后（2026-11-13）**：依赖内容按 `stableAnalyzeKeySource` 投影进指纹 +
+增量轮只逐出被改文件（dependents 靠指纹自然 miss/命中）：
+
+| 目标 | analyze 改前 | analyze 改后 | 单文件探针 |
+|---|---:|---:|---|
+| hub `classes/comparator.js` | 3313ms | **2597ms**（−22%） | `analyzeFileAsync` warm hit **9.1ms**；inert dep 编辑 + 只逐出被改文件 **9.9ms**（改前 watch 内 ~663–734ms）；语义编辑 172ms（正确 miss） |
+| leaf `ranges/gtr.js` | 1009ms | **875ms**（−13%） | 同上（dependents 命中） |
+
+**剩余成本在 `check` 面**：`NUDO_WATCH_PROFILE=1` 的 `[check-profile]` 逐段显示重复跑
+`range.js` = build-injection ~22–30ms + `analyzeFileAsync` ~10ms + **`checkSource` ~500ms**。
+`checkMemoKey` 含 `moduleMapId(modules)` 身份键，watch 每文件每轮重建注入 ⇒ check memo 永不命中。
+按「文件 × 稳定源码 × dep 指纹」跨轮复用注入对象是剩余最大可动项（未实施）。
 
 ## 最近一次（历史）（2026-11-04，--mode both，dist 为引擎债修复波后全仓重建产物）
 
