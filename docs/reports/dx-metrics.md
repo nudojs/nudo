@@ -77,6 +77,27 @@ dist 口径、干净 `NODE_OPTIONS`、`benchmark/lsp-rounds/starters-oss-semver`
   （探针用 `--settle 800` 主动避让）。这是**产品行为缺陷**，不是探针问题：`--settle 0` 时
   **3 轮只有 1 轮触发重算**，`--settle 800` 时 4/4 全部触发。已记入 plan §5 `ABS-18`。
 
+### 增量轮分相（2026-11-13 步骤 0）
+
+`NUDO_WATCH_PROFILE=1`（或 `edit-loop-metrics.mjs --profile`）让 watch 进程把增量轮拆相打到
+stderr（默认零输出）。同一语料同一目标（本机、dist、干净 `NODE_OPTIONS`，3 轮）：
+
+| 目标 | dirty | getFiles | dirtyCalc | evict | analyzeSum | graph | round |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `lib/classes/comparator.js` | 17 | 7.4–8.4 | 0.4–1.3 | 0.2–0.7 | 3317–3324 | 14.2–14.7 | 3341–3350 |
+| `lib/ranges/gtr.js` | 3 | 7.7–8.3 | 0.4–1.3 | 0.2–0.6 | 1020–1026 | 15.0–17.5 | 1044–1053 |
+| 冷启动（48 文件） | 48 | — | — | — | 4733–4788 | 12.5–12.7 | 4759–4814 |
+
+逐文件（hub 轮）：`classes/range.js` **~820ms**、`test/acceptance.test.js` **~425–461ms**、
+`ranges/subset.js` ~231–236ms、`lib/index.js` ~181–225ms，其余 13 个 ~100–140ms；
+leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–277ms、`gtr` 自身 ~249–293ms。
+
+⇒ 增量延迟 ≈ **逐文件 analyze 之和**：`buildModuleGraph` 全量重建 14–18ms、`evictForDependents`
+<1ms ⇒ **图增量化没有价值**（上限 ~0.5%）。按签名/导出面跳过 dependents **不 sound**
+（dependent 的 `call@` 结果内联 callee 求值行为），且四层缓存都已把依赖内容纳入键 ⇒
+语义编辑必须重算；缩短延迟只能靠降单文件分析成本（`ABS-17`）或 worker 并行（`ABS-16` ③），
+不是 watch 逐出粒度。上一条「唯一值得动的性能点」按此订正。
+
 ## 最近一次（历史）（2026-11-04，--mode both，dist 为引擎债修复波后全仓重建产物）
 
 ```

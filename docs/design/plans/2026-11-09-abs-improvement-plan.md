@@ -26,7 +26,7 @@
 - **2026-11-12 续作（两项遗留闭环）**：`check all warm` 44s = 整文件 memo 容量 256 < 工作集 286 的 LRU 抖动，提到 1024 后 449ms；8.3× cold 差距经 bisect 定位为 9/29 / 10/21 两次**正确性收口**的台阶，`ABS-14` 非主因。见 §5。
 - **2026-11-13（copy 路径）**：`check` 冷路径 40.3s 中 20 个文件占 79.6%，全是合成 `.corpus` 模块；真实 OSS（semver ×2、96 文件）check 冷路径仅 **1.89s** ⇒ 不是产品问题，不再追。ABS-17 补**单文件最小复现**（N 个对象导出 + esbuild 拷贝助手），两轮优化：`setSlot` 去掉逐槽 `Object.defineProperty`（N=800 −40%）+ `copyWithMemo` 叶子快路径与免分配遍历（再 −35%），夹具合计 **8427→3297ms（−61%）**；合成语料 analyze cold **13635→9776ms（−28%）**。剩余 31.6% 是真实副本分配，需写时复制（架构级，另立项），ABS-17 未关闭。见 §5。
 - **2026-11-12 续作二（机制 + 低风险优化）**：8.3× 的机制 = Term 递归字符串序列化随两批正确性收口被放大（非算法退化）；`termKey` 改字符串累加，输出逐字节不变，干净 env 单轮全量 analyze **13.3s → 10.0s（约 −25%）**；WeakMap 缓存路线实测更慢已否定。`ABS-17` 补 5 个形态对照夹具并把机制订正为**依赖解析上下文**（同内容换路径 47.2s → 0.20s），getter 假设证伪；引擎除 `termKey` 外未动。见 §5。
-- **2026-11-13（真实入口度量）**：`dx-metrics` 双口径实测 fix-rate **100%（4/4）**；**用户口径 dist time-to-green avg 374ms**（对 2s 目标 5.3× 余量），开发回路 tsx 2184ms（+9%，仍是两次进程启动主导）。新增常驻口径 `scripts/edit-loop-metrics.mjs`：watch 编辑回路典型（leaf/低扇入）**0.75–0.85s 达标**，核心文件 **2.4–2.5s 超 20%**，且与语料总量无关、只与被改文件的依赖链相关 ⇒ **通用性能线到此可停**；仅剩「watch 增量重算整条依赖链」一个值得动的点，另立项。同时发现一个 watch 竞态（写入落在 `recordVersions()` 之前会被吞）。见 §5 与 `docs/reports/dx-metrics.md`。
+- **2026-11-13（真实入口度量）**：`dx-metrics` 双口径实测 fix-rate **100%（4/4）**；**用户口径 dist time-to-green avg 374ms**（对 2s 目标 5.3× 余量），开发回路 tsx 2184ms（+9%，仍是两次进程启动主导）。新增常驻口径 `scripts/edit-loop-metrics.mjs`：watch 编辑回路典型（leaf/低扇入）**0.75–0.85s 达标**，核心文件 **2.4–2.5s 超 20%**，且与语料总量无关、只与被改文件的依赖链相关 ⇒ **通用性能线到此可停**；仅剩「watch 增量重算整条依赖链」一个值得动的点，另立项。同时发现一个 watch 竞态（写入落在 `recordVersions()` 之前会被吞）。见 §5 与 `docs/reports/dx-metrics.md`。**`ABS-18` 步骤 0（2026-11-13）已交付分相计时**：成本 99%+ 在逐文件 analyze（graph 14–18ms、evict <1ms）⇒ 图增量化否决、「跳过重算」不 sound，详见 §5。
 - **多态分工**：手写契约面只用 `ABS-01` 的 binder / ref；引擎侧 α 与界归 `ABS-14`；两者都不引入用户可写的类型参数。
 - **不做**：从 body AST 发明契约义务、把 `unknown` 当 `any`、追完整 TS 泛型/HM、无隔离宣称 sandbox、追求内建 100% 覆盖、无指标重写 Shape。
 
@@ -51,7 +51,7 @@
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
 | 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配，需写时复制另立项，未关闭，见 §5） |
-| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修（`recordVersions` 前移）；hub 编辑 2.4–2.5s 增量重算仍待拍板（与语料总量无关，见 §5） |
+| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修（`recordVersions` 前移）；**步骤 0 分相计时已交付**（`NUDO_WATCH_PROFILE=1`）：成本 99%+ 在逐文件 analyze（graph 14–18ms、evict <1ms）⇒ 候选 3 否决、候选 2「跳过重算」不 sound；仅剩 inert 编辑子项待拍板（见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -891,19 +891,59 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 `--settle 0`（写入紧贴 banner）⇒ **3 轮只有 1 轮触发重算**（另两轮 30s 内无 `incremental`，
 脚本超时退出）；`--settle 800` ⇒ **4/4 全部触发**。⇒ 不是探针时序问题，是产品行为缺陷。
 
-**候选改动（未拍板）**：
+**步骤 0 已交付（2026-11-13，纯测量 / 零语义改动）**：watch 增量轮新增 **opt-in 分相计时**
+（`NUDO_WATCH_PROFILE=1`，`commands/shared.ts`；`scripts/edit-loop-metrics.mjs --profile` 负责收集与展示），
+输出走 **stderr**，默认（未设 env）**零输出、零行为变化**（stdout 的 JSON Lines 机器面不受影响）。
+实测（dist、干净 `NODE_OPTIONS`、semver 48 文件语料、本机）：
+
+| round | dirty | getFiles | dirtyCalc | evict | analyzeSum | graph | round |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| hub `classes/comparator.js` | 17 | 7.4–8.4 | 0.4–1.3 | 0.2–0.7 | 3317–3324 | 14.2–14.7 | 3341–3350 |
+| leaf `ranges/gtr.js` | 3 | 7.7–8.3 | 0.4–1.3 | 0.2–0.6 | 1020–1026 | 15.0–17.5 | 1044–1053 |
+| 冷启动 all | 48 | — | — | — | 4733–4788 | 12.5–12.7 | 4759–4814 |
+
+逐文件（hub 轮，三轮稳定）：`classes/range.js` **~820ms**、`test/acceptance.test.js` **~425–461ms**、
+`ranges/subset.js` ~231–236ms、`lib/index.js` ~181–225ms，其余 13 个 ~100–140ms；
+leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–277ms、`gtr` 自身 ~249–293ms。
+（与本机 2026-11-13 早前记录的 2223ms 差异属宿主/机器因子；相对分布同口径。）
+
+**结论（钉死三条）**：
+
+1. **成本 99%+ 在逐文件 analyze**（`analyzeWall ≈ analyzeSum`）。`buildModuleGraph` 全量重建只有
+   **14–18ms**、`evictForDependents` **<1ms**、dirty 计算 <1.5ms ⇒ **候选 3（图增量化）收益上限 ~0.5%，
+   不值得做**。
+2. 脏集 = 「改动文件 + 全部传递 dependents」（17 / 3 个），每个 dirty 文件被 eager 逐出后重算 ⇒
+   leaf 编辑也要付 `acceptance.test.js` 这类重文件的成本，这是 1.0–3.3s 的全部来源。
+3. **候选 2 的「按签名跳过重算」不 sound**：dependent 的 `call@` 结果内联 callee 求值行为，
+   导出签名不变（如 `x+1 → x+2`）仍会改变调用点结果。现行四层缓存（整文件 memo / eval memo /
+   fn memo / abs-module 缓存）**都已把依赖内容纳入键**（`analyzer-cache.ts` 的 `depSeg`、
+   `eval-cache.ts` 的 `depKey`、`fnAnalysisCache` 的 `fp.deps`、`abs-modules-graph.ts` 的依赖指纹复核）
+   ⇒ 语义编辑必然 miss，eager 逐出对它们只是冗余，不是成本主因。
+
+**残余方向（未拍板）**：唯一还有空间的 sound 变体是 **inert 编辑**——入口自身已用
+`stableAnalyzeKeySource`（去尾部无 `@nudo` 注释/空白），但 `load-deps-fp.ts` 对每个 dep 直接
+`hashSource(src)`，两侧不对称 ⇒ 末尾注释编辑也会让整条依赖链 miss。对齐二者的改动面涉及
+check 磁盘键 / eval memo / generalize L0（一次性冷缓存），需单独拍板；语义编辑的 <1s 目标
+**不可能靠本项独立达成**，必须先降单文件分析成本（`ABS-17` 方向）或上 worker 并行（`ABS-16` ③）。
+
+
+
+**候选改动**：
 
 1. ~~把 `recordVersions()` 移到增量开始**之前**（基线 = 本轮已消费的指纹），消除吞改动窗口~~
    —— **2026-11-13 已落地**（只记本轮 `changedFiles` 的当刻指纹；删除路径移除键）。
    窗口消除方式：分析期间的写入与「开跑前快照」必然不同 ⇒ 下一轮正常触发。
    回归面：`filterUnchangedWatchPaths` 纯函数夹具 + 既有 12 个 watch 文件 / 33 用例；
    **轮末写入竞态暂无确定性 e2e 夹具**（需要可控的慢分析才能稳定复现，留待性能项一并设计）；
-2. 增量轮不整条依赖链重算：区分「内容变了要重算」与「只是被 import、缓存仍有效」，
-   评估 `evictForDependents` 的逐出粒度是否过宽；
-3. `buildModuleGraph` 增量化（只重算受影响子图），而不是每轮全量重建。
+2. ~~增量轮不整条依赖链重算~~ —— **2026-11-13 步骤 0 否决「按签名跳过重算」**（不 sound，见上）；
+   仅剩 **inert 编辑**子项（`load-deps-fp.ts` 的 dep 指纹对齐 `stableAnalyzeKeySource`）待拍板，
+   收益只覆盖注释/空白编辑，语义编辑不受益；
+3. ~~`buildModuleGraph` 增量化（只重算受影响子图）~~ —— **2026-11-13 否决**：全量重建 14–18ms，
+   占 round <0.5%；要做也只值 15ms。
 
-**验收**：hub 文件编辑 total < 1s（同宿主前后对比）；写入永不丢失（竞态测试）；
-`dx-metrics` fix-rate 保持 100%；不改分析语义。
+**验收**：语义编辑的 <1s 目标**本项不再宣称可独立达成**（需先降单文件分析成本 `ABS-17` 或 worker 并行 `ABS-16` ③）；
+本项可验收的是：写入永不丢失（竞态测试）、`dx-metrics` fix-rate 保持 100%、不改分析语义、
+分相计时默认零输出（已交付）；inert 编辑若拍板，则按「注释编辑轮次 ≡ 全命中」另行验收。
 
 **风险**：`recordVersions` 语义调整会影响「同批事件去重」，必须与 FSEvents 噪声过滤一起验证。
 
@@ -994,3 +1034,11 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
   `never` 兜底（新增 kind 强制双端实现）。改前 / 改后同一夹具 dump `facetKey` / `absKey` /
   `cloneAbsFacets` **逐字节相同**；门禁 `algebra/__tests__/abs15-facet-registry.test.ts`（14 例）。
   残余：候选 2（提升规则）与候选 3（facet 键版本化）。
+- **2026-11-13 锚点（ABS-18 步骤 0）**：`NUDO_WATCH_PROFILE=1` 分相计时
+  （`nudojs/src/commands/shared.ts`，输出走 stderr、默认零输出）+ `scripts/edit-loop-metrics.mjs --profile`
+  （收集 `[watch-profile]`，人读报告与 `--json` 的 `profile` 字段同源）。实测（dist / 干净 `NODE_OPTIONS` /
+  semver 48 文件）：hub 轮 dirty=17、`analyzeSum` 3317–3324ms、`graph` 14–18ms、`evict` <1ms、
+  `getFiles`/`dirtyCalc` <1.5ms；逐文件 `classes/range.js` ~820ms、`test/acceptance.test.js` ~425–461ms。
+  ⇒ 候选 3（图增量化）否决；候选 2「跳过重算」不 sound（`call@` 内联 callee 求值行为），
+  仅剩 inert 编辑子项（`load-deps-fp.ts` 的 dep 指纹对齐 `stableAnalyzeKeySource`）待拍板。
+  报告见 `docs/reports/dx-metrics.md`「增量轮分相（2026-11-13 步骤 0）」。

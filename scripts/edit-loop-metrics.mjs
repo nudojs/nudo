@@ -47,6 +47,12 @@ if (!Number.isInteger(rounds) || rounds < 1 || rounds > 20) {
 const corpus = argValue("--corpus") ?? join(root, "benchmark", "lsp-rounds", "starters-oss-semver", "nudo");
 const keep = has("--keep");
 const jsonMode = has("--json");
+/**
+ * `--profile`：给 watch 进程设 `NUDO_WATCH_PROFILE=1`，把增量轮的分相计时
+ * （getFiles / dirtyCalc / evict / 逐文件 analyze / graph）与逐文件耗时
+ * 收集起来。默认不开启 ⇒ 子进程输出与计时行为完全不变。
+ */
+const profile = has("--profile") || process.env.NUDO_WATCH_PROFILE === "1";
 
 if (!existsSync(corpus) || !statSync(corpus).isDirectory()) {
   console.error(`corpus not found: ${corpus}`);
@@ -105,7 +111,7 @@ const el = () => performance.now() - t0;
 const child = spawn(process.execPath, [...nodeFlags, ...entry, "check", "--watch", corpus], {
   cwd: root,
   stdio: ["ignore", "pipe", "pipe"],
-  env: process.env,
+  env: profile ? { ...process.env, NUDO_WATCH_PROFILE: "1" } : process.env,
 });
 
 let firstReady = false;
@@ -113,6 +119,9 @@ let waitingFirst = null;
 let waitingIncremental = null;
 let waitingDone = null;
 let bufErr = "";
+
+/** `[watch-profile]` 行（仅在 `--profile` 时被打印；始终收集以便 JSON 面一致） */
+const profileLines = [];
 
 /** 每轮：writeAt → incrementalAt → doneAt */
 const samples = [];
@@ -164,6 +173,7 @@ function report() {
           files: collectJs(corpus).length,
           rounds,
           samples,
+          ...(profile ? { profile: profileLines } : {}),
           summary:
             ok.length === 0
               ? null
@@ -208,6 +218,10 @@ function report() {
       avg(ok.map((s) => s.doneAt - s.incrementalAt)),
     ).padStart(9)} ${String(avg(val)).padStart(8)}    (ms, ${ok.length}/${rounds} rounds)`,
   );
+  if (profile && profileLines.length > 0) {
+    console.log("\n  watch profile（子进程 stderr：每轮分相 + 逐文件 analyze）:");
+    for (const l of profileLines) console.log(`    ${l}`);
+  }
 }
 
 // stdout 只丢弃但必须消费：不读管道会让子进程写满缓冲后阻塞，把延迟测成死锁
@@ -220,6 +234,10 @@ child.stderr.on("data", (d) => {
 });
 
 function handleErrLine(line) {
+  if (line.startsWith("[watch-profile] ")) {
+    profileLines.push(line.slice("[watch-profile] ".length));
+    return;
+  }
   if (line.includes("Watching for changes...")) {
     if (!firstReady) {
       firstReady = true;

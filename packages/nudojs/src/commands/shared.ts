@@ -1037,12 +1037,34 @@ export function startWatch(
   };
   recordVersions(getFiles());
 
+  /**
+   * ABS-18 · 增量轮分相计时（**opt-in**，`NUDO_WATCH_PROFILE=1`）。
+   *
+   * 目的：把 watch 增量轮的 `getFiles` / dirty 计算 / `evictForDependents` /
+   * 逐文件 `runOne`（analyze） / `buildModuleGraph` 拆开，判断「整条依赖链
+   * 重算」的成本落在哪一段，而不是靠猜。
+   *
+   * 纪律：默认（未设 env）**零输出、零行为变化**；输出走 stderr —— watch 的
+   * stdout 在 `--json` 面必须是纯机器面（JSON Lines），横幅也走 stderr
+   * （Bug 693）。
+   */
+  const watchProfile = process.env.NUDO_WATCH_PROFILE === "1";
+  const prof = (msg: string): void => {
+    if (watchProfile) console.error(`[watch-profile] ${msg}`);
+  };
+  let profRound = 0;
+
   const runAll = async () => {
+    const tStart = performance.now();
     onRoundStart?.();
     console.clear();
     watchBanner(`[${new Date().toLocaleTimeString()}] nudo ${label}...\n`);
     process.exitCode = 0;
+    let analyzeMs = 0;
+    let n = 0;
     for (const f of getFiles()) {
+      const tFile = performance.now();
+      n++;
       try {
         await runOne(f);
       } catch (err) {
@@ -1056,13 +1078,22 @@ export function startWatch(
         //   错的只是「不置红」）。
         process.exitCode = 1;
       }
+      analyzeMs += performance.now() - tFile;
     }
+    const tAnalyzed = performance.now();
     graph = buildModuleGraph(getFiles());
+    const tGraph = performance.now();
+    prof(
+      `round=all files=${n} analyzeSum=${analyzeMs.toFixed(1)} graph=${(tGraph - tAnalyzed).toFixed(1)} round=${(tGraph - tStart).toFixed(1)}`,
+    );
     watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
   };
 
   const runIncremental = async (changedFiles: string[]) => {
+    const profId = ++profRound;
+    const tProfStart = performance.now();
     const files = getFiles();
+    const tFiles = performance.now();
     const tracked = new Set(files);
     const dirtyUnion = new Set<string>();
     let forceFull = false;
@@ -1120,12 +1151,16 @@ export function startWatch(
     const dirty = forceFull ? files : [...dirtyUnion].filter((f) => tracked.has(f));
     if (dirty.length === 0) return;
     const ordered = topoSortDirty(graph.imports, dirty);
+    const tDirty = performance.now();
     onRoundStart?.();
     console.clear();
     watchBanner(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
     process.exitCode = 0;
     getAnalysisSession().evictForDependents(ordered);
+    const tEvict = performance.now();
+    let analyzeMs = 0;
     for (const f of ordered) {
+      const tFile = performance.now();
       try {
         await runOne(f);
       } catch (err) {
@@ -1134,9 +1169,17 @@ export function startWatch(
         // 改前增量轮只打 stderr 不置红 ⇒ 改坏一个文件后 watch 面仍是绿的。
         process.exitCode = 1;
       }
+      const dt = performance.now() - tFile;
+      analyzeMs += dt;
+      prof(`round=${profId} file=${relFromCwd(f)} ms=${dt.toFixed(1)}`);
     }
     watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
+    const tAnalyzed = performance.now();
     graph = buildModuleGraph(getFiles());
+    const tGraph = performance.now();
+    prof(
+      `round=${profId} dirty=${ordered.length} getFiles=${(tFiles - tProfStart).toFixed(1)} dirtyCalc=${(tDirty - tFiles).toFixed(1)} evict=${(tEvict - tDirty).toFixed(1)} analyzeSum=${analyzeMs.toFixed(1)} analyzeWall=${(tAnalyzed - tEvict).toFixed(1)} graph=${(tGraph - tAnalyzed).toFixed(1)} round=${(tGraph - tProfStart).toFixed(1)}`,
+    );
   };
 
   runAll().catch((err) => {
