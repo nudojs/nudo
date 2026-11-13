@@ -114,7 +114,10 @@ describe("A1 步骤 3 · 生成器跨函数消费（R3-b 验收）", () => {
     expect(formatAbs(r.result)).toEqual("0 | 5  #exact");
   });
 
-  it("步骤 4 sound 守卫：yield* 委托体同样回退到 join", () => {
+  it("步骤 4：**线性对齐**的 yield* 委托保留时间轴（挂起点精确）", () => {
+    // ABS-13：A1 守卫从「含委托整帧禁用」收窄为「逐元素同一 Abs、无区间
+    // 重叠、下标在界内」——对齐委托的外层快照仍可信 ⇒ 首个委托 yield 处
+    // 的 n 精确为 1（native），不再回退 join(0,5)。fork 合并致漂移仍禁用。
     const r = call(`export function f() {
       let n = 0;
       function* g() { n = 1; yield* [1, 2]; n = 5; }
@@ -122,7 +125,7 @@ describe("A1 步骤 3 · 生成器跨函数消费（R3-b 验收）", () => {
       it.next();
       return n;
     }`);
-    expect(formatAbs(r.result)).toEqual("0 | 5  #exact");
+    expect(formatAbs(r.result)).toEqual("1  #exact");
   });
 
   it("步骤 4 · .return() 落在未启动生成器上不推进时间轴（保留 sound join）", () => {

@@ -488,13 +488,15 @@ thunk 并让异常按 native 上抛（`"rejected"` 而非误报正常完成）�
 新增 leaf 注册表 `runtime/gen-return-at.ts`，每个生成器对象挂 `returnAt(k)`（把消费指针
 拨回第 k 个 yield → 快照恢复 + finalizer 重放 + 委托转发），trigger 合并时注册表随协议方法
 一起迁移到 shell。`for…of { break }` 穿 finally 现精确 `true`（f5b）。**async generator replay 异常已接**：finalizer 重放抛错走 `rejectedPromiseAbs`（不再二次
-`deliver` 包一层）⇒ `.return()` 交付 `promise<"rejected">`（native 对齐，f15）。剩余：
-**`yield*` 委托内 break 根因已定位**——`collectGenBody` 的 A1 sound 守卫对「含委托」的
-生成器**整帧 `enabled = false`**（时间轴不可信，见 `generator-laziness.md` §5.4），因此
-`returnAt(k)`/`suspensionFinals` 一律返回 undefined ⇒ 回退 C。要精确必须重估该守卫（证明
-委托元素区间的挂起点快照与最终器重放仍可信），风险高于收益，**暂不做**。其次：finalizer 含
-`yield`/`return`/`throw` 语句的形态（需真挂起）。夹具 `abs13-abrupt-completion.test.ts`
-（14 例：含 async `.return/.throw` 的 rejected promise）。
+`deliver` 包一层）⇒ `.return()` 交付 `promise<"rejected">`（native 对齐，f15）。**`yield*` 委托内 break 已交付**：A1 守卫从「含委托整帧禁用」收窄为「**线性对齐**的委托
+保留时间轴」（逐元素同一 Abs、无区间重叠、下标在界内；fork 合并致漂移仍禁用），外层
+挂起点快照在 yield* 期间本就等价；`returnAt(k)` 对无 hooks（无外层自由写）的生成器也允许
+直接重放。`for-of { break }` 穿 `yield*` 的 finally 现精确 `true`（f7）。
+**finalizer 含 `throw` 语句**：条件性抛出在 replay 中精确传播（f21 → `"rejected"`）；
+无法 replay（如 eager 期已抛 / 帧禁用）时记 `may-throw`（`YIELD_FINALLY_THROWS`），不再把
+「可能抛出」折成确定的正常完成。**仅剩** finalizer 含 `yield` / `return` 语句的形态——
+需要真挂起/续体（XL 边界）。夹具 `abs13-abrupt-completion.test.ts`
+（15 例：含 async rejected promise 与 finalizer 条件抛错）。
 
 **不做**：全量 continuation/CPS（无证据表明需要；宿主调用与 may-throw 时序仍按首次消费点整体发生，属既有边界）。
 

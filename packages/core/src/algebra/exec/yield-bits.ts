@@ -26,3 +26,6 @@ export const YIELD_CATCH_RETHROWS = 64;
  *  等无 throw() 方法的内层：原生 TypeError 回注外层帧 → 外层 catch 吸收
  *  （可折），不置位。 */
 export const YIELD_DELEGATED_GEN = 128;
+/** ABS-13：finalizer 含 `throw` 语句（abrupt completion 时可覆盖原完成——
+ *  无法精确重放时至少记 may-throw，不得把可能抛出当成正常完成）。 */
+export const YIELD_FINALLY_THROWS = 256;

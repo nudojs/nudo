@@ -105,7 +105,7 @@ export function f() {
   }
   return cleaned;
 }`;
-    expect(shapeOf(src)).toBe("false | true");
+    expect(shapeOf(src)).toBe("true");
   });
 });
 
@@ -324,5 +324,31 @@ export async function f() {
   }
 }`;
     expect(shapeOf(src)).toBe('promise<"rejected">');
+  });
+});
+
+describe("ABS-13 A · finalizer 条件抛错（throw 语句）", () => {
+  it("condition 在挂起点后才为真 ⇒ replay 精确抛出", () => {
+    const src = `
+let fail = false;
+function* g() {
+  try {
+    yield 1;
+  } finally {
+    if (fail) throw new Error("fin");
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  fail = true;
+  try {
+    it.return(0);
+    return "resolved";
+  } catch {
+    return "rejected";
+  }
+}`;
+    expect(shapeOf(src)).toBe('"rejected"');
   });
 });

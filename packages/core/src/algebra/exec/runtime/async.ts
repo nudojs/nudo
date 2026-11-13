@@ -28,7 +28,7 @@ import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, er
 import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, userIterOf, fireGenTrigger, registerGenTrigger, copyMatchIterTables, notePendingGen, type GenDeferred } from "../match-iter.ts";
 import { thenableAdoption, queuePromiseMicro, registerPendingPromise, isPendingPromiseShape, onPromiseSettled, flushPromiseWaiters } from "../../builtins/promise.ts";
 import { currentYieldStack, getGenJoinOverride, getGenPathSensitive, type GenYieldCollector, setGenJoinOverride, bumpGenPathSensitive } from "./control.ts";
-import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
+import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS, YIELD_FINALLY_THROWS, YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN } from "../yield-bits.ts";
 import { $arr, $yieldStarElems, $get } from "./containers.ts";
 import { $call } from "../call.ts";
 import { loopExitsAls } from "./state.ts";
@@ -945,6 +945,14 @@ function makeGenObject(
   /** .return(v) 的收尾分级（try/finally 事实——同既有口径） */
   const finishReturn = (v: Abs, ctx: number): Abs => {
     if (ctx & YIELD_TRY_FINALLY) {
+      if (ctx & YIELD_FINALLY_THROWS) {
+        // ABS-13：finalizer 含 throw 且未精确重放 ⇒ .return 可能抛出；
+        // 返回值 v 只是非抛臂，不得把「必抛」折成正常完成。
+        recordMayThrow({
+          kind: "Error",
+          cause: "generator finalizer contains throw; abrupt completion may throw instead",
+        });
+      }
       // ABS-13 C：abrupt completion 会跑 finalizer ⇒ 外层绑定不能停在挂起点
       // 快照（否则可能 give wrong-exact）。先 join，再按既有分支返回。
       joinGenSuspendTerminal(genSelf);
@@ -1099,7 +1107,15 @@ function makeGenObject(
         if (asyncMode) return rejectedPromiseAbs(throwPayloadOf(err) ?? e);
         throw err;
       }
-    } else if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
+    } else if (ctx & YIELD_TRY_FINALLY) {
+      if (ctx & YIELD_FINALLY_THROWS) {
+        recordMayThrow({
+          kind: "Error",
+          cause: "generator finalizer may throw and override abrupt completion",
+        });
+      }
+      joinGenSuspendTerminal(genSelf);
+    }
     // Bug 141：async generator 的 .throw() 返回**拒绝 promise**（原生不同步抛）
     if (asyncMode) return deliver(rejectedPromiseAbs(e));
     throw new NudoThrow(e);
@@ -1132,14 +1148,18 @@ function makeGenObject(
   registerGenReturnAt(g, (k: number, v: Abs): Abs | undefined => {
     fireOnce();
     const frame = genSuspendTables.get(g as object);
-    if (!frame || !frame.enabled) return undefined;
+    // 无 frame = 体没有外层自由写（genOuterFreeWriteNames 为空）⇒ 不需要
+    // 快照即可重放；frame 存在但被 sound 守卫禁用 ⇒ 回退 C。
+    if (frame !== undefined && !frame.enabled) return undefined;
     if (state.poisoned) return iterResultUnknown();
     const kk = Math.max(1, Math.min(Math.floor(k), full.length));
     state.done = false;
     state.i = kk;
     // 终态 → 挂起点的回溯：时间轴是单调前进的，先归零再 apply
-    frame.lastApplied = 0;
-    applyGenSuspend(genSelf, kk);
+    if (frame) {
+      frame.lastApplied = 0;
+      applyGenSuspend(genSelf, kk);
+    }
     return $call(ret, [v], g);
   });
   // A11 · 槽位启用：生成器对象身份从「按 next / @@iterator 槽启发式」升级为
@@ -1349,9 +1369,28 @@ function collectGenBody(
   const joined = getGenJoinOverride();
   const pathSensitive = joined !== null || getGenPathSensitive() > marker;
   // A1 步骤 4 sound 守卫：fork 臂序列是 join（不是线性时间轴）、体内延迟
-  // 异常、yield* 委托三类形态下挂起点时间轴不可信 ⇒ 整帧禁用，严格回退
-  // 到步骤 1 的 join(事前, 事后) 过近似，不产「自信的错值」。
-  if (frame && (pathSensitive || thrown !== undefined || delegations.length > 0)) {
+  // 异常 ⇒ 整帧禁用，严格回退到步骤 1 的 join(事前, 事后) 过近似。
+  //
+  // ABS-13：`yield*` 委托**不再无条件禁用**——线性、可对齐的委托
+  // （每个委托元素与收集序列逐项同一 Abs、无区间重叠、下标在界内）在
+  // 外层每个挂起点记录的是**外层**绑定（yield* 期间外层体本就暂停），
+  // 恢复/重放仍可信；只有对齐校验失败（fork 合并致下标漂移）才禁用。
+  const delegationAligned =
+    delegations.length === 0 ||
+    (() => {
+      const seen = new Set<number>();
+      for (const d of delegations) {
+        for (let i = 0; i < d.count; i++) {
+          const idx = d.start + i;
+          if (idx < 0 || idx >= ys.els.length) return false;
+          if (ys.els[idx] !== d.els[i]) return false;
+          if (seen.has(idx)) return false;
+          seen.add(idx);
+        }
+      }
+      return true;
+    })();
+  if (frame && (pathSensitive || thrown !== undefined || !delegationAligned)) {
     frame.enabled = false;
   }
   const emit = (gen: Abs): { gen: Abs; frame: GenSuspendFrame | undefined } => {

@@ -29,6 +29,7 @@ import {
   YIELD_CATCH_RETURNS,
   YIELD_CATCH_YIELDS,
   YIELD_CATCH_RETHROWS,
+  YIELD_FINALLY_THROWS,
 } from "../../yield-bits.ts";
 import { transpileStatement } from "./statement.ts";
 
@@ -77,8 +78,10 @@ function hasLocalYield(node: Node | undefined | null): boolean {
 /**
  * ABS-13 A：finalizer 是否能安全抽成**可重放 thunk**。
  *
- * 排除会改变完成语义的控制流（yield / return / throw / break / continue /
- * await）与函数级 var（thunk 会改变提升边界）。嵌套函数体内部不算（它们
+ * 排除会改变完成语义的控制流（yield / return / break / continue / await）
+ * 与函数级 var（thunk 会改变提升边界）。`throw` **允许**：thunk 在挂起点
+ * 快照上执行，条件性抛出与 native 同源；抛出时由 replay 按完成语义上抛
+ * （async generator 走 rejected promise）。嵌套函数体内部不算（它们
  * 有自己的作用域）；这样的 finalizer 在重放时只做纯副作用 + 局部逻辑，
  * 用挂起点快照执行即可精确复现 native 的 finally。
  */
@@ -89,7 +92,6 @@ function finalizerReplaySafe(finalizer: Node): boolean {
     if (
       type === "YieldExpression" ||
       type === "ReturnStatement" ||
-      type === "ThrowStatement" ||
       type === "BreakStatement" ||
       type === "ContinueStatement" ||
       type === "AwaitExpression" ||
@@ -153,8 +155,20 @@ export function emitTryStatement(
   const fin = stmt.finalizer
     ? finalizerBits(stmt.finalizer as Node)
     : undefined;
+  let finalizerThrows = false;
+  if (stmt.finalizer) {
+    walkLocalNodes(stmt.finalizer as Node, (n) => {
+      if ((n as { type?: string }).type === "ThrowStatement") {
+        finalizerThrows = true;
+        return false;
+      }
+    });
+  }
   const finBits = stmt.finalizer
-    ? YIELD_TRY_FINALLY | (fin!.yields ? YIELD_FINALLY_YIELDS : 0) | (fin!.returns ? YIELD_FINALLY_RETURNS : 0)
+    ? YIELD_TRY_FINALLY |
+      (fin!.yields ? YIELD_FINALLY_YIELDS : 0) |
+      (fin!.returns ? YIELD_FINALLY_RETURNS : 0) |
+      (finalizerThrows ? YIELD_FINALLY_THROWS : 0)
     : 0;
   // R1a：catch 静态事实（finalizerBits 同口径：含 yield / 含 return /
   // 可能 rethrow）——描述**最近** enclosing catch 的吸收结局，故本 try
