@@ -445,7 +445,36 @@ CLI 开关夹具 `abs12-capabilities-flag.test.ts`（4 例）；docs（EN + zh-H
 
 **方案 C（已交付，2026-11-13）**：abrupt completion 时把「挂起点快照」与「终态格」逐绑定 `join`（`exec/runtime/async.ts::joinGenSuspendTerminal`，并封锁后续时间轴回放）。sound，但精度只到 `false | true`；门禁 `abs13-abrupt-completion.test.ts`（6 例，含「无 finally 时 `.return()` 仍停在挂起点」与「正常耗尽 = join(事前,事后)」两条不扩大化对照）。
 
-**方案 A（待实现，精度）**：按 ES `GeneratorResumeAbrupt` 语义**重放**挂起点外围的 `finally`（finalizer 需由转译器发射为可复用 thunk，带捕获绑定；finalizer 内的 `yield` 作为同一 yield 流的后续步）。C 保留为 A 未覆盖路径的兜底。**验收**：上表五行的 case 结果与 native 一致；嵌套 finally / finally 内 throw / `yield*` 链；现有 generator 套件零回归。
+**方案 A（待实现，精度）**：按 ES `GeneratorResumeAbrupt` 语义**重放**挂起点外围的 `finally`。C 保留为 A 未覆盖路径的兜底。
+
+**native 语义基线（2026-11-13 实测，A 的验收表）**：
+
+| # | 形态 | native |
+|---|---|---|
+| 1 | `.return(0)` + side-effect finally | `{value:0,done:true}`，finally 已执行 |
+| 2 | `.return(0)` + finally `return 42` | **`{value:42,done:true}`**（finally 覆盖注入值） |
+| 3 | `.return(0)` + finally `yield 2` | 先 `{value:2,done:false}`，再 `.next()` → `{value:0,done:true}` |
+| 4 | `.throw(e)` + finally | finally 执行后**原异常**上抛 |
+| 5 | finally 内 `throw` | finally 的异常**覆盖**原完成 |
+| 6 | `for…of` 提前 `break` | 调用迭代器 `.return()`，finally 执行 |
+| 7 | `yield*` + `.return(0)` | 先内层 finally、后外层 finally，最后 `{value:0,done:true}` |
+| 8 | `.throw(e)` 被内层 catch 吸收 + finally | catch 吸收后 finally 执行，`{done:true}` |
+
+**实现计划（A-narrow → 全量）**：
+
+1. **finalizer thunk（转译器）**：`$gen` 体（4 个发射点）标 `inGenBody`；`try/finally` 在体可安全抽成
+   thunk 时（finalizer 无 `yield` / `return` / `throw` / `break` / `continue` / `await` / `var`）
+   在 try 前声明 `const <fin> = () => { … }`，正常路径 `finally { <fin>(); }`，并把活动 finalizer
+   列表经 `opts.yieldFinalizers` 传给 `$yield` / `$yieldStar` 的**第三实参**（闭包数组）。
+2. **运行时（`exec/runtime/async.ts`）**：collector 按 yield 下标存 `finals`；`.return()` / 无 catch
+   的 `.throw()` 先 `applyGenSuspend(state.i)` 回到挂起点快照，再按**内→外**调用 finalizer，随后按
+   native 完成/抛错（覆盖/抛出按上表）；`yield*` 转发先内后外；**只有 finals 缺失**（yield-in-finally /
+   路径敏感 / 委托不可分类）才走 C 的 `join` 兜底。
+3. **for-of close（独立子项）**：`$forOf` 在 `break` / 异常退出时调用迭代器 `.return()`（当前未建模，
+   这是表中第 6 行仍不精确的原因）。
+4. **陷阱记录**：不能用「推进到终态格」代替重放——终态格含 try **之后**的语句（`.return()` 原生会跳过），
+   会 reintroduce wrong-exact；必须有可执行 finalizer。
+5. **验收**：上表 8 行 native 对照 + 现有 generator 套件零回归；不支持形态保持 C（`false | true`）。
 
 **不做**：全量 continuation/CPS（无证据表明需要；宿主调用与 may-throw 时序仍按首次消费点整体发生，属既有边界）。
 
