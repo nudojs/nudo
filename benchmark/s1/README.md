@@ -5,7 +5,91 @@
 ```bash
 pnpm run benchmark:s1
 pnpm run benchmark:s1 -- --regen   # 强制重建语料
+pnpm run benchmark:s1 -- --quick   # 低采样档（慢宿主；默认采样次数不变）
 ```
+
+**ABS-16 真实 monorepo 基准**（语料 = 本仓自身，纯内存 edit，不写你的文件）：
+
+```bash
+pnpm run benchmark:s1:real          # 完整采样
+pnpm run benchmark:s1:real:quick    # 低采样档（首测用）
+# 任意真实仓库：pnpm run benchmark:s1 -- --corpus /path/to/repo
+```
+
+- 报告：`docs/reports/s1-perf-baseline-real.{md,json}`（**不覆盖**生成式基线）
+  ⚠️ **2026-11-12 口径订正**：该首测的 cold 102.8s 里 44.2% 来自误纳入语料的
+  `packages/vscode/out/extension.js`（15 KiB esbuild bundle），宿主 `NODE_OPTIONS` 注入的
+  fs-broker shim 又让磁盘密集的 harness 放大约 2×。**旧文件保留不覆盖、不再引用其数字**，
+  结论与 A/B 见 `docs/design/plans/2026-11-09-abs-improvement-plan.md` §5。
+- 额外产出：主机信息（node / CPU / 内存 / 峰值 RSS）、`fn-summary` 两层缓存的
+  **命中率遥测**、以及被跳过的 bundle 文件数（> 256 KiB 视为构建产物，如实计数）
+- `--quick` 只减少重复次数，报告会写明各相的 `n`；默认档的 3/5/3/8/10 次采样不变
+- edit 目标从模块图动态挑（hub = 最大扇入 / mid = 中位数 / leaf = 零扇入）
+
+**干净口径（2026-11-12，推荐引用）**：
+
+```bash
+pnpm run benchmark:s1:real:clean
+# = 清掉 NODE_OPTIONS 后起测量进程 + --clean-corpus（额外跳 out / tmp / .docusaurus）
+#   + --report clean；报告另存，不覆盖任何既有基线
+```
+
+- 报告：`docs/reports/s1-perf-baseline-real-clean.{md,json}`，头部记录 **host env**
+  （`NODE_OPTIONS` 有无、fs shim 是否注入）与 **skip dirs / corpus filter**。
+- `--clean-corpus` 是 **opt-in**：默认过滤规则逐字不变，保证 2026-11-11 首测可复现。
+  `.bundles`（`ABS-17` 夹具）属**基础跳过集**，两种口径都排除；首测时该目录不存在，不影响复现。
+- `--report <suffix>` 另存任意 A/B 报告（如 `--report ab-20261112`）；suffix 只接受字母/数字/连字符。
+
+**逐文件诊断**（`ABS-17` 复现工具，只读，不写仓库文件）：
+
+```bash
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --rounds 1 --top 30
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus   # 与干净报告同口径
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --only packages/vscode/out/extension.js
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . --clean-corpus --mode check --rounds 2 --limit 286
+```
+
+- `--mode check` 逐文件跑 `checkSource`（默认 `analyze`），用于整文件 `CheckReport` memo 的
+  冷/暖两轮对照；`--limit N` 取排序后前 N 个文件，用于复现 LRU 容量阈值
+  （2026-11-12：容量 256 时 260 文件就 100% miss，提到 1024 后 286 文件 warm 436.67ms）。
+- CPU 栈请加 `node --import tsx --cpu-prof --cpu-prof-dir=/tmp/prof ...`（命令见 plan §5 `ABS-17`）。
+
+**ABS-17 夹具（形态对照 + 最小复现）**（产物在 gitignored `.bundles/`，不进仓库）：
+
+```bash
+pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 40   # N ∈ [1,500]
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus benchmark/s1/.bundles --rounds 1
+
+# 最小复现：单文件、零依赖、N 个**对象**导出 + esbuild __copyProps / Object.assign
+pnpm exec tsx benchmark/s1/generate-bundle-fixtures.mts --count 40 --objects 800
+pnpm exec tsx benchmark/s1/profile-cold.mts \
+  --corpus benchmark/s1/.bundles --only 06-esbuild-object-exports.js --rounds 1
+```
+
+5 种导出形态：esbuild `__export` getter / webpack `__webpack_require__.d` / rollup ESM /
+纯 CJS `exports.f = f` / 混合。干净 env 单轮 5 文件合计：N=40 **675.75ms**、
+80 **2084.33ms**、120 **4226.52ms**、160 **7776.48ms**（近似平方增长）；
+**纯 CJS 反而最慢**，N=160 的 CPU 栈里 `copyWithMemo` **0%**。
+
+⚠️ 这 5 个**函数导出**形态是阴性对照，证伪了「getter 元编程导致 47s」的初始假设。
+`06-esbuild-object-exports.js`（`--objects N`）才是最小复现：导出值是**对象**而不是函数，
+`__copyProps` / `Object.assign` 触发大对象图 `$copy`。干净 env 单文件 N=200
+**619.86ms / 434 MiB**、N=800 **8427.15ms / 2030 MiB**（4× 导出 → 13.6× 耗时），
+CPU 栈 `setSlot` 33.0% + `copyWithMemo` 31.7% + GC 16.2%。两轮优化后
+N=800 **3297.28ms**、N=200 **339.47ms**（`setSlot` 快路径 + `copyWithMemo` 叶子快路径，
+合计 −61% / −45%；剩余 31.6% 是真实副本分配，详见 plan §5 `ABS-17`）。
+
+依赖上下文仍是真实 bundle 的放大器：同一份 `packages/vscode/out/extension.js`
+在原路径可解析 `packages/vscode/node_modules` ⇒ `loadModule` **362 次 / 47.2s / 2743 MiB**；
+复制到 `.bundles/`（依赖不可解析）⇒ 8 次 / **0.20s**；原目录去掉三个 `require` ⇒ 2 次 / **0.21s**。
+依赖上下文探针：
+
+```bash
+pnpm exec tsx benchmark/s1/profile-cold.mts --corpus . \
+  --only packages/vscode/out/extension.js --rounds 1 --instrument-loader
+```
+
+结论与仍未完成的最小复现见 plan §5 `ABS-17`。
 
 - **语料**：`generate-corpus.mts` 确定性生成到 `.corpus/`（gitignore，**不进仓库**）
 - **报告**：`docs/reports/s1-perf-baseline.md` + `.json`（生成物，可提交）

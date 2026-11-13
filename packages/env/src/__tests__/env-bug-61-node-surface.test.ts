@@ -480,6 +480,18 @@ const UNDECLARED_REASONS: Record<string, string> = {
 };
 
 /**
+ * 运行器 / 工具链注入的全局探针（非 JS 宿主内建）——**与
+ * `packages/core/src/algebra/__tests__/builtin-coverage-registry.ts#isInjectedHostGlobal`
+ * 同一判定，两处必须同步**。
+ *
+ * 形态：vitest 的 `__vitest_*`，以及各 agent/IDE 工具链的 `*_LOADED__` 标记。
+ * 它们随运行环境出现/消失，既不进 env 声明面、也不该逐厂商名登记进仓库台账。
+ */
+function isInjectedHostGlobal(name: string): boolean {
+  return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);
+}
+
+/**
  * env **声明了**、但**较旧宿主**的 ESM 上下文里还没有的名字 —— env 的 node 面
  * 按**最新宿主**（v26）声明，所以旧宿主上这些是「超前声明」：引擎对存在性更乐观，
  * 只会少报错（不会制造假红），故允许；但**新增**必须先在这里写理由（漂移闸）。
@@ -489,6 +501,13 @@ const DECLARED_AHEAD_OF_HOST: Record<string, string> = {
   Storage: "Node 26 的 Web Storage 构造器全局（v24.11 只在 web env 面建模）",
   QuotaExceededError: "Node 26 的 Web Storage 错误类型（v24.11 没有）",
   ErrorEvent: "Node 26 的 Web 事件类型（v24.11 没有）",
+  // Node 26 才进入 ESM 全局面的 ES2025/ES2026 构造器与事件类型（Node 22 缺席）
+  Float16Array: "Node 26 的 Float16 TypedArray（v24.11 / v22 没有）",
+  CloseEvent: "Node 26 的 Web 事件类型（v24.11 没有）",
+  SuppressedError: "Node 26 的显式资源管理错误类型（v24.11 没有）",
+  URLPattern: "Node 26 的 URL Pattern 构造器（v24.11 没有）",
+  DisposableStack: "Node 26 的显式资源管理构造器（v24.11 没有）",
+  AsyncDisposableStack: "Node 26 的异步显式资源管理构造器（v24.11 没有）",
   localStorage: "Node 22.4+ 需 --experimental-webstorage；v24.11 的 ESM 上下文默认没有",
   sessionStorage: "同上（--experimental-webstorage）",
 };
@@ -756,7 +775,9 @@ function hostEsmGlobals(): string[] {
       ["--input-type=module", "-e", "console.log(JSON.stringify(Object.getOwnPropertyNames(globalThis)))"],
       { encoding: "utf-8" },
     );
-    esmGlobalsCache = JSON.parse(out.trim()) as string[];
+    esmGlobalsCache = (JSON.parse(out.trim()) as string[]).filter(
+      (g) => !isInjectedHostGlobal(g),
+    );
   }
   return esmGlobalsCache;
 }

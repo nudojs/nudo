@@ -53,7 +53,17 @@ describe("Bug 893 · statSync / fs.promises.stat 的返回域（含 undefined �
   });
 
   it("5. promise 族同口径：兑现值含 undefined", async () => {
-    expect(await fsp.stat("/nope/nope.txt", { throwIfNoEntry: false })).toBeUndefined();
+    // 宿主版本差：Node 22 的 fs.promises.stat 对 throwIfNoEntry:false 仍 reject
+    // ENOENT（Node 26 才兑现 undefined）。原生 oracle 两边都给确定断言；
+    // 下方**引擎声明面**的断言不受宿主行为影响，仍严格钉住 undefined 分支。
+    const native = await fsp
+      .stat("/nope/nope.txt", { throwIfNoEntry: false })
+      .then(
+        (v) => ({ resolved: v as unknown }),
+        (e: NodeJS.ErrnoException) => ({ rejected: e.code }),
+      );
+    if ("resolved" in native) expect(native.resolved).toBeUndefined();
+    else expect(native.rejected).toBe("ENOENT");
     const site = callSite(envMember("node:fs/promises", "stat"), [strLit("/nope/nope.txt"), NO_ENTRY]);
     const inner = promiseInner(site.value);
     expect(inner, "兑现值应有内层").toBeDefined();

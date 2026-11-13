@@ -258,7 +258,9 @@ export function transpileFunctionExpr(
       // SyntaxError，或遮蔽外层绑定）。实际名经分配器；无碰撞时逐字不变。
       const restRaw = rest && !useArgsSlot ? internalTmpName("__rest_raw", opts) : rest;
       const restPrologue = rest && !useArgsSlot && restRaw
-        ? [`  const ${rest} = $restBind(${restRaw}, 0);`]
+        // let 而非 const：fork 臂 / 成员写回会重绑 rest 根（见 stmt/statement.ts
+        // Bug 44 注释）；原生 rest 形参本就是可变绑定。
+        ? [`  let ${rest} = $restBind(${restRaw}, 0);`]
         : [];
       const paramParts = restRaw ? [...sig, `...${restRaw}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），

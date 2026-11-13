@@ -1,0 +1,230 @@
+{
+  "generatedAt": "2026-11-12T18:05:06.699Z",
+  "scale": null,
+  "corpus": {
+    "kind": "real",
+    "source": ".",
+    "files": 286,
+    "bytes": 269787,
+    "importEdges": 630,
+    "truncated": false,
+    "fileCap": 2000,
+    "skippedLarge": 1,
+    "fileMaxBytes": 262144,
+    "skipDirs": [
+      "node_modules",
+      ".git",
+      "dist",
+      "coverage",
+      ".nudo",
+      ".bundles",
+      "out",
+      "tmp",
+      ".docusaurus"
+    ],
+    "cleanCorpus": true
+  },
+  "graph": {
+    "cold": 110.95,
+    "warm": 53.81,
+    "warmCached": 1.94
+  },
+  "coldAnalyzeAll": {
+    "n": 1,
+    "median": 12977.95,
+    "min": 12977.95,
+    "max": 12977.95
+  },
+  "warmAnalyzeAll": {
+    "n": 3,
+    "median": 4316.36,
+    "min": 3828.25,
+    "max": 4805.34
+  },
+  "warmCheckAll": {
+    "n": 2,
+    "median": 376.95,
+    "min": 362.95,
+    "max": 390.94
+  },
+  "edit": {
+    "leaf": {
+      "label": "leaf",
+      "target": "benchmark/src/runner.js",
+      "dirtyCount": 1,
+      "dirty": {
+        "n": 3,
+        "median": 72.47,
+        "min": 70.86,
+        "max": 72.73
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 0.76,
+        "min": 0.75,
+        "max": 0.76
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 14.03,
+        "min": 13.14,
+        "max": 18.59
+      }
+    },
+    "mid": {
+      "label": "mid",
+      "target": "benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js",
+      "dirtyCount": 3,
+      "dirty": {
+        "n": 3,
+        "median": 260.08,
+        "min": 240.52,
+        "max": 267.93
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 4.1,
+        "min": 3.68,
+        "max": 4.28
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 5.07,
+        "min": 4.81,
+        "max": 7.26
+      }
+    },
+    "hub": {
+      "label": "hub",
+      "target": "benchmark/s1/.corpus/packages/pkg0-util/mod0.js",
+      "dirtyCount": 106,
+      "dirty": {
+        "n": 3,
+        "median": 954.76,
+        "min": 771.75,
+        "max": 1065.34
+      },
+      "ideAnalyze": {
+        "n": 3,
+        "median": 1.2,
+        "min": 1.14,
+        "max": 1.53
+      },
+      "ideCheck": {
+        "n": 3,
+        "median": 3.01,
+        "min": 2.66,
+        "max": 4.75
+      }
+    }
+  },
+  "liveEditor": {
+    "analyzeOne": {
+      "n": 5,
+      "median": 1.63,
+      "min": 1.22,
+      "max": 8.25
+    },
+    "checkOne": {
+      "n": 5,
+      "median": 4,
+      "min": 3.65,
+      "max": 5.96
+    },
+    "target": "benchmark/lsp-rounds/starters-oss-semver/typescript/lib/functions/diff.js"
+  },
+  "host": {
+    "node": "v22.22.2",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro",
+    "cores": 14,
+    "totalMemGiB": 48,
+    "peakRssMiB": 2638.3,
+    "env": {
+      "nodeOptions": "unset",
+      "fsBrokerShimInjected": false
+    }
+  },
+  "cacheTelemetry": {
+    "note": "fn-summary counters are process-global; deltas are taken per phase without resetting the cache mid-run. One resetFnSummaryCache() before the run makes cold#1 truly cold. Only one cold round was sampled (--quick), so cross-cold reuse is not measured here.",
+    "cold": [
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 408,
+          "stores": 92
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 183,
+          "stores": 0
+        }
+      }
+    ],
+    "warm": [
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      }
+    ],
+    "check": [
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      },
+      {
+        "inst": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        },
+        "fn": {
+          "hits": 0,
+          "misses": 0,
+          "stores": 0
+        }
+      }
+    ]
+  }
+}

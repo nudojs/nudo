@@ -36,6 +36,7 @@ packages/vscode/server/
 benchmark/results
 benchmark/micro/out
 benchmark/s1/.corpus
+benchmark/s1/.bundles
 
 .wrangler/
 

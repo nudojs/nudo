@@ -684,12 +684,28 @@ import {
   instantiateMemoKey,
   alphaRenameResult,
 } from "./key/generalize-key.ts";
-import { fnSummaryGet, fnSummarySet, resetFnSummaryCache } from "./key/fn-summary.ts";
+import {
+  fnSummaryGet,
+  fnSummarySet,
+  resetFnSummaryCache,
+  fnSummaryGetFnLevel,
+  fnSummarySetFnLevel,
+  noteFnLevelApplied,
+} from "./key/fn-summary.ts";
+import { alignSimpleBounds } from "./key/summary-bounds.ts";
+import {
+  fnLevelFields,
+  getAbs14FastPathChannels,
+  tryFnLevelFastPath,
+  tryDegradedChannel,
+} from "./key/summary-fastpath.ts";
 import { hashSource } from "./key/hash-source.ts";
 
 export type TypeParam = {
   id: string;
   value: Abs;
+  /** ABS-14 PR2：该占位符的简单使用条件（只存不读；additive 可选字段） */
+  bounds?: readonly import("./pred.ts").Pred[];
 };
 
 export type PolyFn = {
@@ -1897,7 +1913,7 @@ function generalizeFromAstUncached(
 
 
 
-  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
+  const run = (args: Abs[], phi: Phi = pTrue, opts?: { symbolic?: boolean }): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
@@ -1911,6 +1927,23 @@ function generalizeFromAstUncached(
         const out = alphaRenameResult(sHit.post, sHit.varOrder, varOrder);
         instMemo.set(key, { result: out, varOrder });
         return out;
+      }
+    }
+    // ABS-14 PR3：第三层 —— 函数级带界摘要（跨模块复用通道）。
+    // symbolic 一次跑不参与：它的 formals 是展示层 α，不能当具体实参的摘要。
+    if (
+      !opts?.symbolic &&
+      getAbs14FastPathChannels().crossModule &&
+      summaryScope !== undefined
+    ) {
+      const fHit = fnSummaryGetFnLevel(summaryScope);
+      if (fHit !== undefined) {
+        const fast = tryFnLevelFastPath(fHit, args, phi);
+        if ("post" in fast) {
+          noteFnLevelApplied();
+          instMemo.set(key, { result: fast.post, varOrder });
+          return fast.post;
+        }
       }
     }
     let result: Abs | undefined;
@@ -1936,11 +1969,55 @@ function generalizeFromAstUncached(
       // 其余宿主值 → 包装 Abs），与 $call / 成员读的宿主桥同口径。
       result = asAbsVal(result);
     }
+    // ABS-14：降级通道（body 不可用 / 预算截断）。只在 body 路径 fail-closed
+    // 出 unknown #opaque 且两个开关至少一个启用时查摘要；替换与否由
+    // tryDegradedChannel 的全部 sound 检查决定（独立验证见
+    // abs14-degraded-channels.test.ts），绝不在别处静默放宽结论。
+    //
+    // symbolic 一次跑同样不参与：写侧（fnSummarySetFnLevel）与 crossModule
+    // 通道都排除 symbolic，读侧必须同口径 —— 否则同进程里先有一次真实
+    // instantiate，就会把 symbolic 的诚实 unknown 换成摘要结论，静默改变
+    // 签名 / dts 投影的输入（展示面越权）。
+    const degraded = getAbs14FastPathChannels();
+    let derived = false;
+    if (
+      !opts?.symbolic &&
+      summaryScope !== undefined &&
+      result.shape.k === "unknown" &&
+      result.conf === "opaque" &&
+      (degraded.bodyUnavailable || degraded.budgetTruncated)
+    ) {
+      const filled = tryDegradedChannel(
+        result,
+        fnSummaryGetFnLevel(summaryScope),
+        args,
+        phi,
+      );
+      if ("post" in filled) {
+        noteFnLevelApplied();
+        result = filled.post;
+        derived = true;
+      }
+    }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
-      // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
-      if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
+      // 降级通道填出来的结果是**代换产物**（不是这次 body 求值），只留在
+      // 实例 memo 里：跨实例层维持「摘要来自真实 body 求值」的出处纪律，
+      // 不让派生结论在进程内扩散成新的摘要源（2026-11-13）。
+      if (!derived) {
+        // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
+        if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
+        // ABS-14 PR3：函数级摘要（每函数一份、覆盖式）；symbolic 跑不写。
+        if (!opts?.symbolic && summaryScope !== undefined) {
+          fnSummarySetFnLevel(
+            summaryScope,
+            result,
+            varOrder,
+            fnLevelFields(args, phi, varOrder),
+          );
+        }
+      }
     }
     return result;
   };
@@ -1967,6 +2044,7 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : and(...entryReqs.map((r) => r.pred))
       : pTrue,
+    { symbolic: true },
   );
 
   // opaque = call-budget 截断/泄漏 → 不写关系；
@@ -2008,6 +2086,23 @@ function generalizeFromAstUncached(
   // #138：参数名槽用签名展示名（解构形参渲染 `{ a, b }`，不落回求值占位
   // `_p0`）；entryReqs 谓词与提升快照查找仍按 params——见 formatPoly 注释。
   const renderNames = formals.length > 0 ? formalParamSignatureNames(formals) : params;
+  // ABS-14 PR2：入口契约里的简单条件登记到 typeParams（一等元数据，α 空间）。
+  // 2026-11-11 续修：entryReqs[].pred 用实参名（`x`），formals 却是 α 名
+  // （`A1`）——直接校验会把每个 var 判 unbound，bounds 恒空。统一由
+  // alignSimpleBounds 先重锚再校验；反向依赖 / 未声明变元 / 复杂 term
+  // 仍由 collectSimpleBounds fail-closed 丢弃。entryReqs 与 Φ 不改原貌，
+  // 因此展示面与 body 单调性传播逐字节不变。
+  if (entryReqs) {
+    const ids = typeParams.map((t) => t.id);
+    for (const req of entryReqs) {
+      const idx = params.indexOf(req.param);
+      const tp = typeParams[idx];
+      if (idx < 0 || tp === undefined) continue;
+      const picked = alignSimpleBounds(req.pred, params, ids, idx);
+      if (picked.length > 0) typeParams[idx] = { ...tp, bounds: picked };
+    }
+  }
+
   return {
     name: fnName,
     params,

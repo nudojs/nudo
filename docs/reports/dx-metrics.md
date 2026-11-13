@@ -31,7 +31,53 @@
 “skipped — … run `pnpm run build` first”，不伪造数字，退出码只由实际执行的样本决定；
 显式 `--mode dist` 在 dist 缺失时直接报错退出（无法测量，不假绿）。
 
-## 最近一次（2026-11-04，本机，--mode both，dist 为引擎债修复波后全仓重建产物）
+## 最近一次（2026-11-13，本机，--mode both，dist 为 ABS 性能改动后重建产物）
+
+```
+tsx:  fix-callsite   fixRate=1  timeToGreen≈2253ms（red 1217ms + fix 1036ms）
+tsx:  relax-contract fixRate=1  timeToGreen≈2115ms（red 1081ms + fix 1034ms）
+dist: fix-callsite   fixRate=1  timeToGreen≈376ms （red 209ms + fix 167ms）
+dist: relax-contract fixRate=1  timeToGreen≈371ms （red 195ms + fix 175ms）
+fix-rate: 100%（4/4：两口径 × 两场景）
+tsx avg 2184ms / max 2253ms · dist avg 374ms / max 376ms
+```
+
+- **用户口径（dist）达标且余量很大**：avg 374ms，对 rev 5 的 2000ms 目标有 **5.3×** 余量。
+- **开发回路（tsx）仍由进程冷启动主导**：2184ms 略超 2s（+9%），而 red/fix 各约 1.0–1.2s ≈ 两次
+  tsx 冷启动 ⇒ 与引擎分析无关（同场景 dist 单次仅 0.2s）。这与「杠杆在常驻面而非把单次调快」的
+  判断一致，见 `docs/design/persistent-cache.md`。
+- 与 2026-11-04（tsx 2637 / dist 543）的差异是**机器与代码版本共同作用**，跨机器只钉 fix-rate。
+
+## 常驻口径（watch 编辑回路，2026-11-13 新增）
+
+`dx-metrics` 测的是「每次新起一个 CLI 进程」；真实编辑循环走 `check --watch`，进程不重启、
+只重算脏集。用 `scripts/edit-loop-metrics.mjs` 测「保存 → 结果刷新」，并拆成两段：
+
+- `debounce` = 写入 → `incremental` banner（**200ms 去抖** + fs 事件调度，见 `shared.ts`）
+- `analyze` = `incremental` → `Watching again`（真实增量重算）
+
+dist 口径、干净 `NODE_OPTIONS`、`benchmark/lsp-rounds/starters-oss-semver` 语料：
+
+| 语料 | 被改文件 | debounce | analyze | total |
+|---|---|---|---:|---:|---:|
+| 单文件 probe | 唯一文件 | 222ms | ~16ms | **~238ms** |
+| semver 48 文件 | `lib/index.js`（零扇入） | 221ms | 531ms | **752ms** |
+| semver 48 文件 | `lib/ranges/gtr.js`（扇入 3） | 224ms | 620ms | **844ms** |
+| semver 48 文件 | `lib/classes/comparator.js` | 222ms | 2223ms | **2445ms** |
+| semver 96 文件 | 同上 | 234ms | 2289ms | **2523ms** |
+
+结论：
+
+- **典型编辑（leaf / 低扇入）0.75–0.85s，达标**；**核心文件 2.4–2.5s，超 2s 目标约 20%**。
+- 48 与 96 文件的 `analyze` 几乎相同（2223 vs 2289ms）⇒ **与语料总量无关**，由被改文件的
+  **依赖链**决定。同一 harness 下「新起进程跑一次 dist check」只要 376ms ⇒ 在最坏路径上
+  **常驻复用是负收益**，这是接下来唯一值得动的性能点（不在本报告结论内，见 plan §5）。
+- 测量必须避开一个已知窗口：`Watching for changes...` 打印后该轮还有 `buildModuleGraph()`
+  未完成，而 `recordVersions()` 在其后才记录指纹基线；在此窗口内写入会被判「未变」而吞掉
+  （探针用 `--settle 800` 主动避让）。这是**产品行为缺陷**，不是探针问题：`--settle 0` 时
+  **3 轮只有 1 轮触发重算**，`--settle 800` 时 4/4 全部触发。已记入 plan §5 `ABS-18`。
+
+## 最近一次（历史）（2026-11-04，--mode both，dist 为引擎债修复波后全仓重建产物）
 
 ```
 tsx:  fix-callsite   fixRate=1  timeToGreen≈2637ms avg / 2644ms max（单次 check ≈1.3s，tsx 冷启动主导）
@@ -50,7 +96,8 @@ fix-rate: 100%（4/4：两口径 × 两场景）
 | 脚本 | 回答 |
 |------|------|
 | `learning-cost` | 新手 Day0→Day1 路径要多久 |
-| `dx-metrics` | **看到红 → 修绿** 要多久、文档路径是否闭环 |
+| `dx-metrics` | **看到红 → 修绿** 要多久、文档路径是否闭环（每步新起进程） |
+| `edit-loop-metrics` | **保存 → 结果刷新** 要多久（`check --watch` 常驻，只重算脏集） |
 
 ## 发布面（vs-typescript.md 生成块）
 
@@ -85,5 +132,11 @@ pnpm run dx-metrics -- --md --lang both                             # 再生 en+
                                                                     #   packages/website/docs/guides/vs-typescript.md
                                                                     #   packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/vs-typescript.md
 pnpm vitest run packages/website/tests/dx-metrics-publication.test.ts   # 钉面复核
+node scripts/edit-loop-metrics.mjs --rounds 3                        # 常驻口径（watch 编辑回路）
+node scripts/edit-loop-metrics.mjs --target <file> --rounds 3        # 指定编辑对象（如 hub 文件）
 # 若要同步本报告数字：更新上方「最近一次」小节的实测值
 ```
+
+`edit-loop-metrics.mjs` 用追加注释的方式驱动「文件变了」（语义与错误面都不变），
+结束时**还原语料**；`--keep` 保留改动、`--cpu-prof-dir <dir>` 采集 watch 进程栈、
+`--settle <ms>` 调整轮次间隔（默认 800，用于避开上面那个 `recordVersions` 窗口）。

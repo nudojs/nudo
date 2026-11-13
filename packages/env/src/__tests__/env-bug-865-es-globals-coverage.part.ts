@@ -99,7 +99,13 @@ describe("Bug 865 · ES 规范全局的「已被覆盖」判定", () => {
   });
 
   it("2. core 已建模的全局不再被报「未被覆盖」（白名单按建模能力推导）", () => {
-    const src = CORE_MODELED_ES_GLOBALS.map(
+    // 宿主缺席的全局（如 Node 22 无 Float16Array）不该进断言：源码里
+    // `typeof Float16Array` 在该宿主上必然被报「未被覆盖」，那是版本差不是
+    // 建模回归。支持的宿主上仍全量覆盖。声明面（用例 1）不受此过滤影响。
+    const available = CORE_MODELED_ES_GLOBALS.filter(
+      (n) => typeof (globalThis as Record<string, unknown>)[n] !== "undefined",
+    );
+    const src = available.map(
       (n, i) => `export function f${i}() { return typeof ${n}; }`,
     ).join("\n");
     const reported = collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);

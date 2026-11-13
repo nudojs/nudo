@@ -202,17 +202,18 @@ npx nudojs check docs/examples/retire-debug/after/src/logger.js
 npx nudojs migrate retire docs/examples/retire-debug/after --dry-run
 ```
 
-**诚实边缘：** `debug()` 是 native 入口。strip 之后，返回仍是 **`unknown`** / `conf=opaque`（引擎债的脸，不是契约失败）：
+**诚实边缘：** `debug()` 是 native 入口。宿主能解析到真实 `debug` 包时，引擎会真实求值并给出精确返回面（函数探针 `() => ?`，内部仍是开放的）；解析不到时诚实退化为 `unknown` + `nudo:opaque-result`。**两者都不是契约失败**——门禁恒为 0 error：
 
 ```text
 signatures
-  createLogger(namespace: any) => unknown
-  logHello(name: any) => unknown
+  createLogger(namespace: any) => (() => ?)
+  logHello(name: any) => undefined
 
-issues
-  [INFO createLogger] createLogger(...): conf=opaque (path not covered, or native)  (nudo:opaque-result)
-      → add @nudo:case or a call site
+(no issues)
 ```
+
+在解析不到 `debug` 的环境里，这两行读作 `=> unknown`，并多一行
+`INFO ... conf=opaque  (nudo:opaque-result)` 提示；门禁仍然是 0 error。
 
 有 `@types/debug` 时，harvest 会填满签名；或用 `@nudo:mock` / 声明的返回契约（`@nudo:contract` 或侧车返回槽）钉住。这与 `ms()` 是同一个故事。
 

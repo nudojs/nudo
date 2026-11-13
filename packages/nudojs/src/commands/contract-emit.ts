@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { formatEmitSummary } from "@nudojs/service/emit";
 import { writeFileAtomic, type CallRecord } from "@nudojs/service";
+import { relFromCwd } from "./shared.ts";
 
 /**
  * 机器面**用法错误**码（族 20 · Bug 657）。
@@ -63,7 +64,7 @@ export async function runContractEmit(
     "@nudojs/service/emit"
   );
   const filePath = resolve(file);
-  const rel = relative(process.cwd(), filePath) || filePath;
+  const rel = relFromCwd(filePath) || filePath;
   const fnNames = opts.fnNames.length > 0 ? opts.fnNames : undefined;
   const jsonMode = opts.json === true;
 
@@ -157,7 +158,7 @@ export async function runContractEmit(
     dryRun: true,
     records: opts.records,
   });
-  const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
+  const sc = relFromCwd(result.sidecarPath) || result.sidecarPath;
   /**
    * 直写分支的产物文本 = 发射器回报的**最终写盘文本**（含 BOM）。
    * BUG-196：不再从 `diff` 反解自身产物 —— 合并基底与落盘内容必须同源。
@@ -200,7 +201,7 @@ export async function runContractEmit(
   if (derived.hasRoot) {
     for (const i of derived.issues ?? []) derivedIssues.push(i);
     for (const sc of derived.sidecars) {
-      const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
+      const scRel = relFromCwd(sc.sidecarPath) || sc.sidecarPath;
       // `sc.fn` 是**同侧车一组导出名的逗号拼接** ⇒ 按名单比对必须先拆开
       for (const n of splitDerivedFns(sc.fn)) {
         if (fnNames && fnNames.includes(n)) derivedMatched.push(n);

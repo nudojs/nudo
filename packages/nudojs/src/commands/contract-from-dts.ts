@@ -42,6 +42,7 @@
 import { readFileSync, existsSync, statSync, type Stats } from "node:fs";
 import { resolve, relative, basename, dirname, join, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
+import { relFromCwd } from "./shared.ts";
 
 /**
  * 草稿正文指纹（族 20 · Bug 944）—— 与
@@ -192,8 +193,8 @@ export async function runContractFromDts(
   // 多文件模式锚定**第一个** `.d.ts`（dtsFiles 的确定性顺序）。
   const anchor = dtsFiles[0];
   const outPath = sidecarDraftPath(anchor);
-  const outRel = relative(process.cwd(), outPath) || outPath;
-  const sidecarRel = relative(process.cwd(), sidecarPathOf(anchor)) || sidecarPathOf(anchor);
+  const outRel = relFromCwd(outPath) || outPath;
+  const sidecarRel = relFromCwd(sidecarPathOf(anchor)) || sidecarPathOf(anchor);
 
   // ── Bug 54 · 多文件合并草稿的「逐导出接受目标」 ─────────────────────────
   // 侧车绑定是**按源模块**的（core contract.ts:493-495：
@@ -218,7 +219,7 @@ export async function runContractFromDts(
           .map((e) => {
             const fromFile = perFileExport.get(e.name);
             const scRel = fromFile
-              ? relative(process.cwd(), sidecarPathOf(fromFile)) || sidecarPathOf(fromFile)
+              ? relFromCwd(sidecarPathOf(fromFile)) || sidecarPathOf(fromFile)
               : undefined;
             return {
               name: e.name,

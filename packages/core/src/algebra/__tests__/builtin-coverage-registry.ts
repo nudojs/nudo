@@ -788,11 +788,9 @@ export const ALLOWED_IMPRECISE: Record<string, string> = {
   "global:exports": "CJS 包装局部，接受 unknown",
   "global:module": "CJS 包装局部，接受 unknown",
   "global:require": "CJS 互操作面未建模（ESM 分析面 require 不适用），接受 unknown",
-  // vitest 测试运行器注入（仅测试上下文存在；非产品宿主面）
-  "global:__vitest_index__": "vitest 运行器注入索引绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_mocker__": "vitest 运行器注入 mocker 绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_required__": "vitest 运行器注入 CJS 桥绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_worker__": "vitest worker 注入绑定，非产品宿主面，接受 unknown",
+  // 运行器 / 工具链注入的探针全局**不逐名登记**（见 isInjectedHostGlobal）：
+  // 名字随工具链版本与环境变化，逐个厂商名写进仓库台账 = 换环境就要改仓库。
+  // 枚举侧按形态统一跳过；未登记的**真实**宿主全局仍然硬失败。
 
   // ---- Object 面 -----------------------------------------------------------
   "Object.proto.__defineGetter__": "Annex B 访问器未建模，接受 unknown",
@@ -1031,17 +1029,62 @@ export const VERSION_SKEW: ReadonlySet<string> = new Set([
   "Intl.Locale.proto.textInfo",
   "Intl.Locale.proto.timeZones",
   "Intl.Locale.proto.weekInfo",
-  // 新版本宿主面：新 Node（≥26）才有，老 Node（24）缺席
+  // 新版本宿主面：新 Node（≥26）才有，老 Node（22/24）缺席
   "global:ErrorEvent",
+  "global:CloseEvent",
+  // Float16 支持（Node ≥26）：DataView 的 Float16 存取器
+  "DataView.proto.getFloat16",
+  "DataView.proto.setFloat16",
+  // ECMA-402 Locale 的 get*/firstDayOfWeek 方法（Node ≥26 / V8 14.x 才作为
+  // prototype 自有名出现；与上段「老 Node 自有、新 Node 缺席」的**无 get 前缀**
+  // 访问器方向相反，勿合并）
+  "Intl.Locale.proto.firstDayOfWeek",
+  "Intl.Locale.proto.getCalendars",
+  "Intl.Locale.proto.getCollations",
+  "Intl.Locale.proto.getHourCycles",
+  "Intl.Locale.proto.getNumberingSystems",
+  "Intl.Locale.proto.getTextInfo",
+  "Intl.Locale.proto.getTimeZones",
+  "Intl.Locale.proto.getWeekInfo",
   // CJS 包装局部：仅 CJS/特定 worker 上下文暴露，ESM(vitest worker)常缺席
   "global:module",
   "global:exports",
   "global:require",
   "global:__dirname",
   "global:__filename",
-  // vitest 运行器注入：名字随 vitest 版本变化，缺席是版本差异非台账腐化
-  "global:__vitest_index__",
-  "global:__vitest_mocker__",
-  "global:__vitest_required__",
-  "global:__vitest_worker__",
 ]);
+
+/**
+ * 运行器 / 工具链注入的全局探针（非 JS 宿主内建）。
+ *
+ * 形态：vitest 的 `__vitest_*`，以及各 agent/IDE 工具链的 `*_LOADED__` 标记
+ * （fs 代理 / 语言服务 / safe-delete shim）。它们随运行环境出现或消失，既不是
+ * 产品宿主面，也不该**逐厂商名**登记进台账（否则换一个工具链就要改仓库）。
+ *
+ * 口径：只在**枚举侧**跳过；未登记的**真实**宿主全局仍然硬失败。`env` 包的
+ * 宿主面对账（`env-bug-61-node-surface.test.ts`）有同一判定，两处必须同步。
+ */
+export function isInjectedHostGlobal(name: string): boolean {
+  return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);
+}
+
+/**
+ * 宿主漂移探针（Node 版本差，如 Float16Array 仅较新 Node 提供）。
+ *
+ * 纪律与 host-global-drift.test.ts 一致：**缺席方向只告警**，新增方向才是
+ * 安全信号。仅对已登记进 VERSION_SKEW 的缺席名豁免；未登记的缺席仍留在
+ * 用例里并失败，避免把真实建模缺陷当成版本差掩盖掉。
+ */
+export function hostHasGlobalCtor(name: string): boolean {
+  return typeof (globalThis as unknown as Record<string, unknown>)[name] === "function";
+}
+
+/** 单个构造器是否可为它生成用例：存在，或「缺席但未被登记为漂移」。 */
+export function hostNameAvailable(name: string): boolean {
+  return hostHasGlobalCtor(name) || !VERSION_SKEW.has(`global:${name}`);
+}
+
+/** 家族列表过滤（同 hostNameAvailable 口径）。 */
+export function hostAvailableNames<T extends string>(names: readonly T[]): T[] {
+  return names.filter(hostNameAvailable);
+}

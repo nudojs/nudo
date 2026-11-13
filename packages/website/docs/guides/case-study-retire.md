@@ -202,17 +202,21 @@ npx nudojs check docs/examples/retire-debug/after/src/logger.js
 npx nudojs migrate retire docs/examples/retire-debug/after --dry-run
 ```
 
-**Honest edge:** `debug()` is a native entry. After strip, returns stay **`unknown`** / `conf=opaque` (engine-debt face, not a contract failure):
+**Honest edge:** `debug()` is a native entry. With the real `debug` package resolvable, the engine
+evaluates the module for real and reports a precise return face (a function-shaped probe, `() => ?`,
+still open inside); if it cannot be resolved, the return honestly degrades to `unknown` +
+`nudo:opaque-result`. **Neither is a contract failure** — the gate stays 0 error:
 
 ```text
 signatures
-  createLogger(namespace: any) => unknown
-  logHello(name: any) => unknown
+  createLogger(namespace: any) => (() => ?)
+  logHello(name: any) => undefined
 
-issues
-  [INFO createLogger] createLogger(...): conf=opaque (path not covered, or native)  (nudo:opaque-result)
-      → add @nudo:case or a call site
+(no issues)
 ```
+
+In an environment where `debug` cannot be resolved, the same two lines read `=> unknown`, plus an
+`INFO ... conf=opaque  (nudo:opaque-result)` line; the gate is still 0 error.
 
 With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / a declared return contract (`@nudo:contract` or a sidecar return slot). That is the same story as `ms()`.
 

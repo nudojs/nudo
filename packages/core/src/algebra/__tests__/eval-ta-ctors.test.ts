@@ -22,6 +22,7 @@ import {
   type MayThrowEffect,
 } from "../diagnostics/may-throw.ts";
 import { call, isNever, val } from "./eval-helpers.ts";
+import { hostNameAvailable } from "./builtin-coverage-registry.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 const numParam = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
@@ -78,7 +79,7 @@ describe("Bug 21: TypedArray constructor ToIndex validation", () => {
       `export function f() { return new Float64Array(-1); }`,
       `export function f() { return new BigInt64Array(-1); }`,
       `export function f() { return new Uint8ClampedArray(-1); }`,
-      `export function f() { return new Float16Array(-1); }`,
+      ...(hostNameAvailable("Float16Array") ? [`export function f() { return new Float16Array(-1); }`] : []),
     ]) {
       const r = call(src);
       expect(isNever(r.result), src).toBe(true);
@@ -145,7 +146,7 @@ describe("Bug 27: TypedArray static from/of validation", () => {
       `export function f() { return Int16Array.from(null); }`,
       `export function f() { return Float64Array.from(undefined); }`,
       `export function f() { return BigInt64Array.from(null); }`,
-      `export function f() { return Float16Array.from(null); }`,
+      ...(hostNameAvailable("Float16Array") ? [`export function f() { return Float16Array.from(null); }`] : []),
     ]) {
       const r = call(src);
       expect(isNever(r.result), src).toBe(true);
@@ -158,7 +159,7 @@ describe("Bug 27: TypedArray static from/of validation", () => {
       `export function f() { return Uint8Array.of(Symbol()); }`,
       `export function f() { return Uint8Array.of(1n); }`,
       `export function f() { return Float64Array.of(Symbol()); }`,
-      `export function f() { return Float16Array.of(Symbol()); }`,
+      ...(hostNameAvailable("Float16Array") ? [`export function f() { return Float16Array.of(Symbol()); }`] : []),
       `export function f() { return Uint8Array.of(1, 2, Symbol()); }`,
     ]) {
       const r = call(src);

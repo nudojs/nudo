@@ -18,6 +18,8 @@ import {
   INTL_SUB_CTORS,
   MODELED,
   VERSION_SKEW,
+  hostHasGlobalCtor,
+  isInjectedHostGlobal,
 } from "./builtin-coverage-registry.ts";
 
 /** 静态面跳过的函数元属性（所有构造器均匀自有；统一不追踪，见台账头注） */
@@ -36,10 +38,23 @@ function enumerateSurface(): Set<string> {
     keys.add(k);
   };
 
-  for (const g of ownNames(globalThis)) add(`global:${g}`);
+  for (const g of ownNames(globalThis)) {
+    // 运行器 / 工具链注入的探针（__vitest_* / *_LOADED__）不是产品宿主面：
+    // 按形态跳过，不逐厂商名登台账（换工具链不该改仓库）。见
+    // isInjectedHostGlobal 注释。
+    if (isInjectedHostGlobal(g)) continue;
+    add(`global:${g}`);
+  }
 
   for (const { name, kind } of CURATED_BRANDS) {
     const v = (globalThis as unknown as Record<string, unknown>)[name];
+    // 宿主版本漂移（Float16Array 仅较新 Node 提供）：已登记 VERSION_SKEW 的
+    // 缺席 brand 跳过枚举，不判失败；未登记的缺席仍是台账腐化信号，硬失败。
+    // 与 host-global-drift.test.ts「缺失方向仅告警」同口径。
+    if (v === undefined && VERSION_SKEW.has(`global:${name}`)) {
+      expect(hostHasGlobalCtor(name), `已登记漂移的缺席 brand: ${name}`).toBe(false);
+      continue;
+    }
     expect(v, `策展 brand 在运行时缺失: ${name}`).toBeDefined();
 
     if (name === "Intl") {
@@ -47,6 +62,9 @@ function enumerateSurface(): Set<string> {
       for (const p of ownNames(v as object)) add(`Intl.ns.${p}`);
       for (const sub of INTL_SUB_CTORS) {
         const sv = (Intl as unknown as Record<string, unknown>)[sub];
+        // 同一漂移纪律：Intl 子构造器（如 DurationFormat）在老 Node 缺席，
+        // 已登记 VERSION_SKEW 时跳过枚举；未登记的缺席仍硬失败。
+        if (sv === undefined && VERSION_SKEW.has(`Intl.ns.${sub}`)) continue;
         expect(sv, `Intl 子构造器在运行时缺失: ${sub}`).toBeDefined();
         for (const p of ownNames(sv as object)) {
           if (FN_META.has(p)) continue;

@@ -31,6 +31,7 @@ import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue, anyAbs, type Abs } from "../abs.ts";
 import { formatShape } from "../format/format.ts";
+import { hostAvailableNames } from "./builtin-coverage-registry.ts";
 
 /** 无参入口：返回结果渲染（字面量 → JSON 值；域 → formatShape） */
 function val(src: string): string {
@@ -109,11 +110,14 @@ describe("Bug 40: Date / RegExp / Map / Set 家族冷门方法", () => {
 });
 
 describe("Bug 40: TA 家族抽样（12 家族共用 %TypedArray%.prototype 面）", () => {
-  const fams = [
+  // 宿主缺席的家族（VERSION_SKEW 已登记，如 Node 22 无 Float16Array）不生成
+  // 用例：源码 `new Float16Array(2)` 在该宿主上是 ReferenceError，不属于建模回归。
+  // 支持的宿主上仍逐家族全量抽样，覆盖不缩水。
+  const fams = hostAvailableNames([
     "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
     "Int32Array", "Uint32Array", "Float16Array", "Float32Array", "Float64Array",
     "BigInt64Array", "BigUint64Array",
-  ];
+  ]);
   for (const fam of fams) {
     it(`typeof new ${fam}(2).sort / fill / entries → function；"join" in → true`, () => {
       expect(val(`function f() { return typeof new ${fam}(2).sort; }`)).toBe('"function"');

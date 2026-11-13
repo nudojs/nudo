@@ -62,7 +62,12 @@ import {
   throwAbsToKinds,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-import { MAX_CHECK_MEMO } from "./check-memo.ts";
+/**
+ * `evalRunMemoForRound()` 是**按轮作废**的短期 memo，容量需求与整文件
+ * CheckReport memo 不同 ⇒ 不复用 `MAX_CHECK_MEMO`（后者 2026-11-12 从 256
+ * 提到 1024 以覆盖全量扫描工作集，这里保持原值即可）。
+ */
+const MAX_EVAL_RUN_MEMO = 256;
 import { instanceForMethodBridge } from "../bridge-instance.ts";
 import { resolveExportSlotCall } from "../contract/export-slot.ts";
 /** 节点跨度 / 装载期判定共用 `fn-fp.ts` 的勘测（`nodeSpan`）与推迟面清单。 */
@@ -263,7 +268,7 @@ export function evalThrowsOutcome(
   const pathKey = opts.fromFile ? stablePathKey(opts.fromFile) : "";
   const runKey = `${currentEvalRoundEpoch()}#${pathKey}|${source}|${runTranspiledOptionsMemoKey(opts.inject)}|${runTranspiledOptionsMemoKey(opts.modules ? { modules: opts.modules } : undefined)}`;
   const memo = evalRunMemoForRound();
-  if (memo.size >= MAX_CHECK_MEMO) {
+  if (memo.size >= MAX_EVAL_RUN_MEMO) {
     const oldest = memo.keys().next().value;
     if (oldest !== undefined) memo.delete(oldest);
   }

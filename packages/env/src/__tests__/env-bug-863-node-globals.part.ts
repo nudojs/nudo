@@ -55,28 +55,25 @@ function check(src: string) {
 describe("Bug 863 — node env 全局清单补齐（未建模构造器不再铸空 brand）", () => {
   it("原生 oracle：报告点名的 17 个构造器在真实 Node 上确实存在", () => {
     // 报告的 17 个构造器（可构造的）+ 真实 Node 上确实可 new
-    for (const [name, ctor] of [
-      ["AbortController", AbortController],
-      ["Blob", Blob],
-      ["BroadcastChannel", BroadcastChannel],
-      ["CustomEvent", CustomEvent],
-      ["DOMException", DOMException],
-      ["Event", Event],
-      ["EventTarget", EventTarget],
-      ["File", File],
-      ["MessageChannel", MessageChannel],
-      ["ReadableStream", ReadableStream],
-      ["Request", Request],
-      ["Response", Response],
-      ["TransformStream", TransformStream],
-      ["URLPattern", URLPattern],
-      ["WritableStream", WritableStream],
+    // 宿主版本漂移：直接引用标识符在缺席宿主上是 ReferenceError（URLPattern
+    // 仅 Node 26 有）⇒ 统一从 globalThis 取值；缺席方向只跳过（不是建模缺陷），
+    // 存在的构造器仍逐个钉 typeof === "function"。
+    for (const name of [
+      "AbortController", "Blob", "BroadcastChannel", "CustomEvent",
+      "DOMException", "Event", "EventTarget", "File", "MessageChannel",
+      "ReadableStream", "Request", "Response", "TransformStream",
+      "URLPattern", "WritableStream",
     ] as const) {
+      const ctor = (globalThis as Record<string, unknown>)[name];
+      if (ctor === undefined) continue;
       expect(typeof ctor, name).toBe("function");
     }
     // 原生不可构造的（Illegal constructor / 不能 new）——引擎须同口径
-    expect(() => new AbortSignal()).toThrow(TypeError);
-    expect(() => new MessagePort()).toThrow(TypeError);
+    for (const name of ["AbortSignal", "MessagePort"] as const) {
+      const ctor = (globalThis as Record<string, unknown>)[name];
+      if (ctor === undefined) continue;
+      expect(() => new (ctor as new () => unknown)()).toThrow(TypeError);
+    }
   });
 
   it("env：17 个构造器全部声明，且可构造的带 ctor:true + 实例面", () => {

@@ -1313,6 +1313,8 @@ type MainSignature = {
   returnType: string;
   /** ABS-03：契约面推导出的类型形参（只含被形参 / 返回位引用的变元） */
   typeParams?: string[];
+  /** ABS-14 PR4b：类型形参名 → TS `extends` 约束（只含可表达的简单界） */
+  constraints?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -1741,12 +1743,16 @@ function computeMainSignature(
     typeVars,
     `${paramTypes.join(" ")} ${returnType}`,
   );
+  // ABS-14 PR4b：契约 Pred 的可表达简单界 → 类型形参 extends。
+  // 只登记契约位的界；调用方仅对**被发射**的变元使用（见 typeParamDecls）。
+  const constraints = contractTypeParamConstraints(contract, typeVars);
   return {
     params,
     paramNames,
     paramTypes,
     returnType,
     ...(typeParams.length > 0 ? { typeParams } : {}),
+    ...(constraints.size > 0 ? { constraints } : {}),
   };
 }
 
@@ -1880,7 +1886,6 @@ function computeHofSignature(
   // α / B:param → 稳定 TS 名；同名冲突加序号
   const typeVars = new Map<string, string>();
   const used = new Set<string>();
-  const typeParams: string[] = [];
   for (const id of [...free].sort()) {
     let n = tsTypeParamName(id);
     if (used.has(n) || !isJsBindingIdent(n)) {
@@ -1890,7 +1895,6 @@ function computeHofSignature(
     }
     used.add(n);
     typeVars.set(id, n);
-    typeParams.push(n);
   }
 
   const params: string[] = [];
@@ -1921,7 +1925,14 @@ function computeHofSignature(
     paramTypes.push(typeStr);
   }
   const returnType = retAbs ? absToTSType(retAbs, typeVars) : "unknown";
-  return { typeParams, params, paramNames, paramTypes, returnType };
+  // ABS-14 PR4a：free 变元全量发射会留下悬空类型参数（entry-only
+  // processItems 的 A2 从未被任何形参/返回位引用）。按签名文本过滤，
+  // 与契约面 reachableTypeParams 同口径；投影单向，不改 Abs 分析结果。
+  const reachable = reachableTypeParams(
+    typeVars,
+    `${params.join(" ")} ${returnType}`,
+  );
+  return { typeParams: reachable, params, paramNames, paramTypes, returnType };
 }
 
 /** projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） */
@@ -2044,6 +2055,102 @@ function reachableTypeParams(
   );
 }
 
+// ---------------------------------------------------------------------------
+// ABS-14 PR4b：契约的简单界 → TS 类型形参 `extends`
+//
+// 口径（计划 §5 实现拆分 4b + ABS-03「不可表达时诚实省略」）：
+// - 只翻译 TS 有对应类型的叶：`typeof` 的基元标签、`eq(var, lit)` 的字面量；
+// - 数值界（gt/ge/lt/le）、长度、`not` / `ne`、`assumeFinite`、含 `app` term
+//   的关系 TS 无类型 ⇒ 跳过该叶，不整条丢弃、也不静默放宽；
+// - `and` 逐叶展平；`or` 只有所有臂都可表达且指向同一 var 时才联合
+//   （只投半边会把契约域错误收窄 ⇒ 整条省略）；
+// - `typeof "object" / "function"` 与 TS 的 `object` / `Function` 语义有偏差
+//   （null、可调用签名）⇒ 诚实省略；
+// - 投影单向：不改 Abs 分析结果，不回写分析结果对象。
+// ---------------------------------------------------------------------------
+
+type BoundLeaf = { id: string; type: string };
+
+/** `typeof` 标签 → TS 约束类型；语义有偏差的标签返回 undefined（省略）。 */
+function typeofExtendsType(t: string): string | undefined {
+  switch (t) {
+    case "number":
+    case "string":
+    case "boolean":
+    case "bigint":
+    case "symbol":
+    case "undefined":
+      return t;
+    default:
+      return undefined;
+  }
+}
+
+/** 逐叶抽取可表达界（var id 保持 Pred 空间，由 typeVars 映射到 TS 名）。 */
+function predBoundLeaves(pred: Pred | undefined): BoundLeaf[] {
+  if (pred === undefined) return [];
+  switch (pred.op) {
+    case "and":
+      return pred.args.flatMap(predBoundLeaves);
+    case "or": {
+      const arms = pred.args.map(predBoundLeaves);
+      if (arms.length === 0 || arms.some((a) => a.length !== 1)) return [];
+      const id = arms[0]![0]!.id;
+      if (arms.some((a) => a[0]!.id !== id)) return [];
+      return [
+        { id, type: [...new Set(arms.map((a) => a[0]!.type))].join(" | ") },
+      ];
+    }
+    case "typeof": {
+      const ts = typeofExtendsType(pred.type);
+      return pred.t.op === "var" && ts !== undefined
+        ? [{ id: pred.t.id, type: ts }]
+        : [];
+    }
+    case "eq": {
+      const { a, b } = pred;
+      if (a.op === "var" && b.op === "lit") {
+        return [{ id: a.id, type: tsLiteralType(b.value) }];
+      }
+      if (b.op === "var" && a.op === "lit") {
+        return [{ id: b.id, type: tsLiteralType(a.value) }];
+      }
+      return [];
+    }
+    default:
+      return [];
+  }
+}
+
+/** 契约参数位 → TS 类型形参名 → 约束串。 */
+function contractTypeParamConstraints(
+  contract: DtsContractFace | undefined,
+  typeVars: Map<string, string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of contract?.params ?? []) {
+    for (const leaf of predBoundLeaves(p.abs.pred)) {
+      const name = typeVars.get(leaf.id);
+      if (name !== undefined && !out.has(name)) out.set(name, leaf.type);
+    }
+  }
+  return out;
+}
+
+/** `<A extends number, B>` 的声明元素；无约束时与旧输出逐字节一致。 */
+function typeParamDecls(
+  names: readonly string[],
+  constraints?: ReadonlyMap<string, string>,
+): string {
+  if (constraints === undefined || constraints.size === 0) return names.join(", ");
+  return names
+    .map((n) => {
+      const c = constraints.get(n);
+      return c === undefined ? n : `${n} extends ${c}`;
+    })
+    .join(", ");
+}
+
 /** 契约-only 参数签名（skip / 无 case 函数 + 手写契约参数位）：具名参数 + 声明返回 */
 function contractOnlySignature(
   fn: FunctionAnalysis,
@@ -2143,12 +2250,16 @@ function contractOnlySignature(
     typeVars,
     `${paramTypes.join(" ")} ${returnType}`,
   );
+  // ABS-14 PR4b：契约 Pred 的可表达简单界 → 类型形参 extends。
+  // 只登记契约位的界；调用方仅对**被发射**的变元使用（见 typeParamDecls）。
+  const constraints = contractTypeParamConstraints(contract, typeVars);
   return {
     params,
     paramNames,
     paramTypes,
     returnType,
     ...(typeParams.length > 0 ? { typeParams } : {}),
+    ...(constraints.size > 0 ? { constraints } : {}),
   };
 }
 
@@ -2398,7 +2509,7 @@ function dtsFunctionDeclaration(
       // 并存时源码在前、契约推导在后
       const contractTParams =
         sig.typeParams && sig.typeParams.length > 0
-          ? `<${sig.typeParams.join(", ")}>`
+          ? `<${typeParamDecls(sig.typeParams, sig.constraints)}>`
           : "";
       const paramsText = `${srcTypeParams}${contractTParams}${plain}`;
       return {
@@ -2440,7 +2551,7 @@ function dtsFunctionDeclaration(
   const plain = `(${sig.params.join(", ")}): ${sig.returnType}`;
   const sigTParams =
     sig.typeParams && sig.typeParams.length > 0
-      ? `<${sig.typeParams.join(", ")}>`
+      ? `<${typeParamDecls(sig.typeParams, sig.constraints)}>`
       : "";
   lines.push(
     ...dtsExportDeclaration(
