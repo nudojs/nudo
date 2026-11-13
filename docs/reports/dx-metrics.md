@@ -117,6 +117,26 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 `/proc/<pid>/stat` 的 CPU/wall ≈ **1.10–1.28** ⇒ CPU-bound（不是 I/O），且 17 个文件彼此独立
 ⇒ 这是 worker 并行（`ABS-16` ③）唯一还有理论收益的场景；是否值得 L 级架构成本仍待拍板。
 
+### worker 并行可行性 spike（2026-11-13，纯测量）
+
+问：语义编辑的整链重算（17 文件 / ~2s）是否值得 `ABS-16` ③（worker 并行）。数据：
+
+- 逐文件 warm 耗时（真实 watch 增量轮，`[watch-profile]`）：**69–378ms**；
+  top：`classes/range.js` **378**、`ranges/simplify.js` 148、`ranges/subset.js` 130、
+  `test/acceptance.test.js` 127、`lib/index.js` 126、`classes/comparator.js` 124，其余 ≤99。
+  串行 `analyze` = 1908ms；进程 CPU/wall **1.10–1.28** ⇒ CPU-bound。
+- **冷态单价**（新进程单文件 `check` 减 242ms 基线）：`range.js` 1475ms（warm 378，**3.9×**）、
+  `comparator.js` 307（2.5×）、`ranges/gtr.js` 386（4.7×）、`lib/index.js` 512（4.1×）
+  ⇒ 当前单价里约 **60–80% 来自共享热缓存**（模块图 / eval / abs-module / 注入）。
+- LPT 估算（按 warm 单价、假设完美共享）：W=2 **983ms** / W=4 **487ms** / W=8 **378ms**
+  （下限 = 最大单文件）；若按 cold×3（无共享缓存）计：W=4 1461ms / W=8 1134ms。
+
+⇒ 收益上限存在（W=4 约 0.5s），但前提是**每个 worker 跨轮持有自己的热缓存**，否则首轮有
+3–5× 惩罚；随之而来的是模块图/缓存的 N 份复制、逐轮失效同步与 worker 生命周期/取消/输出
+契约的复杂度。当前 inert 编辑 0.67s、语义编辑 2.2s，**暂不立项**；触发条件：
+真实用户仓库的语义编辑轮 >3s，或出现第二个需要并行分析的消费者（LSP 批量校验）。
+
+
 **剩余成本**：`[check-profile]` 逐文件显示注入键 **0.1ms** + `analyzeFileAsync` **0.4–0.8ms** +
 `checkSource` **0.3–3.8ms**；每文件 12–39ms 的差额主要是 `loadCheckCache`（配置/磁盘缓存装配）
 与报告渲染/打印。被改文件自身仍是全量重算（~170ms）。
