@@ -1,5 +1,86 @@
 # @nudojs/lsp
 
+## 1.10.0
+
+### Minor Changes
+
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 7152d84: Feat: LSP rename scope-conflict detection + inlay any/unknown responsibility split.
+  
+  - rename: the new name now goes through a scope-conflict check (`renameNameConflicts` in `symbols.ts`) on top of the existing syntax-level validation (Bug 750). A rename is rejected (`null`, no edits) when the new name would break the source: duplicate declaration in the target scope, outer capture (renaming `x` to an outer name referenced inside the target scope), inner-scope capture (a target reference sits inside a scope that declares the new name), duplicate member key within the same class/object owner, duplicate `#private` name, or duplicate export name. Plain cross-scope shadowing stays allowed. Cross-file renames re-run the check in the defining file's scope (import / re-export scenarios). Same philosophy as ambiguous-receiver rejection (Bug 712): refuse rather than break.
+  - inlay: return-position hints that render exactly `unknown` (= inference failure, engine debt) now carry a `⚠ ` label prefix and a tooltip naming the failure and the fix channels (`@nudo:mock` / `@nudo:env` / `@nudo:contract`); `any` (unconstrained param — developer responsibility) never gets the warning prefix, and its `where any()` tooltip gains a responsibility note while preserving the existing predicate expansion. The display contract is unchanged: unconstrained params still render `any`, never `unknown`.
+
+### Patch Changes
+
+- 38eedd0: Fix the macOS `/var` → `/private/var` path-space mismatch behind the 9 long-standing LSP/CLI baseline failures, and remove watch FSEvents noise.
+  
+  On macOS `os.tmpdir()` returns `/var/folders/...`, a symlink to `/private/var/folders/...`. The kernel gives `process.cwd()` / `realpathSync()` the **realpath** form, while user arguments and test fixtures keep the `/var/...` literal. Two product faces mixed those spaces:
+  
+  - **LSP emit boundary** (`agent-tools.ts`): `assertEmitTargetAllowed` / `resolvedWorkspaceRoots` / `derivedSidecarAllowed` realpathed only *existing* paths. A not-yet-written source file or downstream sidecar fell back to the `/var/...` literal and was compared against a `/private/...` root, so legitimate writes were rejected as "outside allowed roots" (Bug 762 derived emit, Bug 765 unsaved-buffer guard). All three now use the shared `normalizeRealPath` from `@nudojs/service`, which falls back to `realpath(dirname) + basename` for missing targets. Real symlink-escape protection is unchanged (Bug 766's escape case still fails closed).
+  - **CLI relative display**: `relative(process.cwd(), resolve(userArg))` produced `../../../../../../../var/.../syn.js`, polluting the JSON `file` field and human-facing text (Bug 661 / 663 / 664 / 63b). New `relFromCwd()` normalizes the target into the cwd's realpath space before subtracting; the contract command family (print / draft / emit / from-dts) and watch error lines now use it. `displayPathOf` is deliberately untouched, so the check/test/health baselines stay byte-identical. On non-symlink hosts and in-repo paths output is byte-identical.
+  
+  The same watch loop also stops swallowing edits: fingerprint baselines are recorded **when a round's changed paths are accepted, before analysis** (and dropped for deleted files), not after the incremental round resolves. The old ordering re-baselined any write that landed while the round was running, so `filterUnchangedWatchPaths` saw it as unchanged and the edit was silently skipped until the next save. `startWatch` now filters FSEvents noise: macOS directory watchers report untouched files from the same batch, so changing `a.js` could also re-run `sub/b.js` and made the Bug 684/685 "re-run exactly the changed file" assertions flaky (~1/3 of runs). The debounce window keeps only paths whose `(size, mtimeMs)` fingerprint actually changed; deletions, new files and non-tracked paths (config / sidecar / env templates) always pass through. Extracted as testable `watchPathVersion` / `filterUnchangedWatchPaths`, covered by `cli-watch-noise-filter.test.ts` (7 cases). Reverting the filter reproduces the flake; with it, 8/8 repeated runs and all 12 watch test files / 33 cases pass. The lose-an-edit race has no deterministic e2e fixture yet (it needs a controllably slow analysis); the pure filter plus the existing watch suites are the regression surface.
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [1a4cabd]
+- Updated dependencies [b57d1d2]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/service@1.12.0
+  - @nudojs/parser@1.5.8
+
 ## 1.9.0
 
 ### Minor Changes

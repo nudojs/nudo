@@ -11,2109 +11,1002 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.18.0 |
-| `@nudojs/service` | 1.11.0 |
-| `nudojs (CLI)` | 1.8.0 |
-| `@nudojs/parser` | 1.5.7 |
-| `@nudojs/lsp` | 1.9.0 |
-| `@nudojs/env` | 0.5.7 |
-| `@nudojs/harvester` | 0.5.0 |
-| `vite-plugin-nudo` | 0.7.0 |
-| `nudo-vscode` | 0.3.55 |
+| `@nudojs/core` | 1.19.0 |
+| `@nudojs/service` | 1.12.0 |
+| `nudojs (CLI)` | 1.9.0 |
+| `@nudojs/parser` | 1.5.8 |
+| `@nudojs/lsp` | 1.10.0 |
+| `@nudojs/env` | 0.5.8 |
+| `@nudojs/harvester` | 0.6.0 |
+| `vite-plugin-nudo` | 0.7.1 |
+| `nudo-vscode` | 0.3.56 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.18.0 {#pkg-core}
+## @nudojs/core 1.19.0 {#pkg-core}
 
-## 1.18.0
-
-### Minor Changes
-
-- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
-  cross-file / cross-package copies that were pinned together by comments or
-  mirror tests instead of code.
-  
-  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
-    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
-    `@nudojs/core/internal`): the check face (case-arg split) and the parser
-    directive face each kept verbatim copies — Bug 1009 was exactly this pair
-    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
-    silently skipped). `scanWithStrings` was dead after the move and is gone.
-  - **bigint operand predicates** (`isNullishLitOperand` /
-    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
-    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
-    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
-    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
-    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
-    deterministically.
-  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
-    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
-    `1 - x` with `x: number | []` no longer records a false TypeError
-    may-throw (native never throws; the old member scan dragged arr members
-    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
-    the Bug 946 suite, including the sound positive control (`1n + x` on the
-    same union still records may-throw: the number member genuinely throws).
-  - **`collectNestedBodyRanges` wiring completed**: core exported it via
-    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
-    still ran a full local copy. `file-directives.ts` now consumes the single
-    source.
-  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
-    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
-    verbatim copy and the LSP test suite used that copy as a mirror oracle.
-    nudojs now re-exports from `@nudojs/service`; the tautological mirror
-    assertion is replaced by direct-value assertions.
-  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
-    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
-    drift-gate test holding the two copies together; both the replica body and
-    the drift-gate file are gone.
-  - **emit section extraction**: `interface-derivation-emit.ts` and
-    `interface-emitter.ts` duplicated the export-statement →
-    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
-    both now share `service/emit/export-section-scan.ts`.
-  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
-    was a documented structural mirror of the named interface; the shell now
-    consumes the interface directly.
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
-  
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
-  
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
-  
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
-  
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- 7d7abe4: Dedup batch 4 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the three
-  remaining comment-pinned manual-sync pairs and the largest in-file twins.
-  Pure refactor — outputs byte-identical (vitest --changed 15548 passed,
-  verify:examples 251 checks, public-api freeze 9/9).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - lsp hover `formatEntryParamShapeLike` → core `formatEntryParamShape` via
-    `@nudojs/core/internal` (the old comment claimed "core adds no export";
-    the internal face is the sanctioned route).
-  - lsp `server-code-actions` `norm`/`resolveRel` copy of the synthesized-sidecar
-    base (already drifted: lsp had an extra direct-equality check + loader
-    fallback) → `@nudojs/service/emit` exports `normPosixPath` /
-    `resolveRelativeSpec`; the lsp-only extensions stay at the call site.
-  - standard-schema brand ctor list: `GLOBAL_BRAND_CTOR_NAMES` local array +
-    Set → schema-generator `RUNTIME_GLOBAL_CTOR_NAME_LIST` (single array
-    source; Set + `isRuntimeGlobalCtorName` predicate derive from it; the
-    embedded validator serializes the same array, byte-identical).
-  
-  In-file twins single-sourced:
-  
-  - core `hof.ts`: `predUsesMappedVars` / `mapHasShapeOnlyVar` → parameterized
-    `predAnyVar` walker.
-  - core `scan/literal-shapes.ts`: 21 structurally identical
-    `constraintViolated` issue pushes → `pushPrecondIssue` (message/suggestion
-    templates byte-identical).
-  - core `builtins/promise.ts`: then/catch rejected-arm microtask twins →
-    `definiteRecoveryPromise` / `unsettledRecoveryPromise`; then-microtask dual
-    reject arms → `joinRejectedArm`; `Promise.all` dual reject faces →
-    `allRejectFace`.
-  - core `check.ts`: handwritten return-contract recording block (skip branch +
-    main branch) → `recordReturnContract`.
-  - core `leq.ts`/`postcondition.ts`: duplicate `primOf` single-sourced in leq.
-  - core `builtins/object/methods.ts`: TA own-keys tuple (keys/gOPN faces) →
-    `taOwnKeysTuple`; gOPD class/Error/`.prototype` slot→descriptor arms →
-    `ownSlotDescriptor`; 8 identical nullish-receiver guards →
-    `throwIfNullishRecv`.
-  - core `builtins/array.ts` + `template.ts`: tuple join folding loops →
-    `tupleJoinParts(recv, onSymbol)` (symbol element: throw vs abstract —
-    the real semantic fork, parameterized).
-  - core exec runtime: `$whileSeq`/`$forOf` `applyExitJoin` closures → new pure
-    `loop-exit-join.ts` `applyLoopExitJoin` (the discovered `exhausted && widen`
-    gate difference is an explicit parameter; `$forOf` passes `exhausted: true`,
-    provably equivalent).
-  - core `directive-scan.ts` ↔ parser `fn-directives.ts`: `CASE_TAG_REGEX` scan
-    loop → core `iterCaseTags(text, caseArgSpans)` via `@nudojs/core/internal`
-    (Bug 978 diagnostic actions and downstream regexes stay consumer-side).
-  - service `dts-generator.ts`: `DtsClassMemberSurface` base interface —
-    `scanClassSurface` return type no longer re-declares the member fields
-    (BUG-168/151 docs live once).
-  - lsp: `replay.ts` async env-preload twins share `preloadEnvsThen`, function
-    scope walkers share `walkFnScope`; `server-navigation.ts` references/rename
-    share the gate+parse prologue; `hover.ts` generalize blocks share
-    `tryGeneralizeEnclosing`.
-  
-  Skipped as intentional parallel data or non-identical semantics: env
-  node/web table clones (MessagePort ports, dual Storage, exec options),
-  dts obj-slot widen pair (Bug 240 selective flags vs whole-slot spread),
-  object methods string char-tuple pair (values vs entries elements).
-- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
-  remaining comment-pinned manual-sync obligations and the seven whole-function
-  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
-  verify:examples 251 checks, lint + lint:tests clean).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
-    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
-    `control.ts` YIELD_* constants) → new zero-dependency leaf
-    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
-    and transpile (`statement.ts`) both import the named constants.
-  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
-    whitelist ("须与 core makeBuilder 同步") → core exports
-    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
-    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
-    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
-  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
-    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
-    module-level re-export is removed; no public face change).
-  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
-    error-family.ts imports promise.ts, so no direct import) stays local but is
-    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
-    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
-  
-  Whole-function twins single-sourced:
-  
-  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
-    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
-    resizable/growable slot key, diagnostic labels; slot insertion order
-    preserved).
-  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
-    shared `memberWriteIfeImpl` (only real difference: return written value vs
-    new root).
-  - nudojs `version.ts` three walk-up-to-package.json loops →
-    `findPkgDirUpwards` + `readVersionAt`.
-  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
-    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
-    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
-    invalid / unreadable / ok grading unchanged).
-  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
-    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
-    codes)` (Bug 556 dual-code gate preserved).
-  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
-    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
-    lives once; count still raw param length, formals still
-    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
-  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
-    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
-    `resolveCaseTarget` (error strings byte-identical).
-- 6eaf219: Engine review batch: harden the transpile↔runtime ABI, converge class-graph
-  identity, and add compile/emit guard rails. No public API changes.
-  
-  ABI single-sourcing (#1): `$`-prefix semantics (rt.ts module param face +
-  analyze-strip strip-keep predicate) now consume one explicit table
-  (`isRuntimeOpName` / `MODULE_FACE_ONLY_OPS` in transpile/runtime-import.ts);
-  a drift guard pins the binding-table `$`-key set ≡ truth table (the 4
-  internal helpers that accidentally rode the prefix filter are now explicit).
-  
-  Runtime state (#2/#8/#9/#12): state.ts split into phi.ts / host-bridge.ts /
-  exit-stacks.ts with state.ts kept as a byte-identical re-export facade
-  (75 value exports + type face verified unchanged); load-time setter
-  injections for the member/class dispatch cycle converge into exec/hooks.ts
-  (removes the `var`-hoisting TDZ defense); may-throw's AsyncLocalStorage +
-  module-level syncCtx dual-write and the bare newTargetStack now run on
-  collector-scope slots; isHostGeneratorFn checks the Bug 325 fnKind stamp
-  before the source-shape regex (regex kept as hoisting-window fallback,
-  documented); narrow.ts sum-filter boilerplate ×5 collapsed into
-  filterSumMembers; guardedPrologueEntry factory covers $in/$del/$delRes;
-  toIOIArg no longer routes through toIOI's absent-folding (private
-  ioiNumberOf core, both helpers derived).
-  
-  Class graph (#3/#4): inheritance-chain walks (statics/method lookup, super
-  family, error-family and JSON-face walks) prefer the per-value `superSpec`
-  reference resolved at definition time — multi-module same-name parent
-  classes no longer cross-contaminate via the last-wins bare-name registry
-  (name table kept for display/builtin fallback, collision observation
-  unchanged); all brand-rebranding sites ($super, $new exit) route through a
-  single `rebrandClassAbs` primitive that transfers the full side-table set
-  (inventory + per-table rationale in rebrand.ts header).
-  
-  Transpile (#5/#6/#7): TranspileOptions' 44 fields regrouped into
-  BaseEmitOpts/FlowCtx/NamingCtx/InjectCtx (type-level only, zero call-site
-  churn); new transpile-output-hygiene test parses generated output for the
-  full differential corpus and asserts every `__`-prefixed binding comes from
-  the allocator whitelist (9.5k bodies / 7.8k declaration sites); new
-  async-gen compile guard transpiles+compiles all 39 await-position shapes
-  without the disableAsyncGen retry (pins the Bug 1139 false-green class).
-  
-  Service (#10/#11): eval-cache 6-dim key comparison unified into a single
-  evalCacheEntryMatches predicate (read-hit + write-back shared); CJS member
-  dispatch exception handling pinned by a drift-gate test (shares no skeleton
-  with core's export-slot path — rationale documented); stale TypeValue /
-  ast-eval "fallback path" comments rewritten to describe the actual
-  single-engine behavior, write-only dead sets removed.
-- c48fd48: Engine review batch (evaluation-engine design audit; 3 concurrent domains,
-  behavior-preserving except where noted). Full suite green (2113 files /
-  16579 tests), `verify:examples` 251 checks green, build + lint + lint:tests
-  clean, `public-api-freeze` green (internal face +1: `isAbsLike`).
-  
-  core transpile:
-  - Per-unit emit state: the five module-level mutable counters/stacks in
-    `stmt/statement.ts` (`switchBodySeq` / `switchBreakSeq` /
-    `curSwitchBreakLabel` / `forInRecvSeq` / `forLoopVarSeq`) moved into
-    `TranspileOptions.stmtEmit` (`StmtEmitState`), created fresh per
-    transpile unit. Fixes cross-unit counter bleed: transpiling the same
-    source twice in one process now yields byte-identical output (was 5/6
-    samples drifting on second pass). Single-module first-transpile output
-    byte-identical vs HEAD (6-sample corpus, `cmp` clean; `__nudoLv*` /
-    `__nudoSw*` / `__fir*` / `__swBody*` base names unchanged).
-  - PrivateName key extraction unified: new `privateNameKeyOf` (bare `#name`
-    or null) is the single extraction point; `privateNameKeySrc` builds on
-    it. The three inlined copies (`expr/call.ts`, `expr/optional-chain.ts`,
-    `class-emit.ts` `keyOf`) now call it. The dead `|| undefined` branch in
-    optional-chain (`#${… ?? ""}` is always truthy) deleted.
-  - `transpile/stmt-predicates.ts` → `transpile/stmt/predicates.ts`
-    (statement-domain file now lives under `stmt/`).
-  - `userIdentCache`: whole-table clear at 64 → `BoundedLruMap(64)`.
-  
-  core runtime:
-  - `isAbsLike` (shape+conf) added to `abs.ts`, exported via
-    `@nudojs/core/internal`; DEC-006 fail-closed fallback table documented
-    at the definition. ~40 inline `"shape" in …` guards across exec/**
-    replaced (branch bodies and fallbacks verbatim); `check-may-throw.ts`'s
-    local `isAbsVal` re-definition now aliases it. Behavior delta (bugfix):
-    host objects that merely carry a `shape` data property are no longer
-    misdetected as Abs values — they now take the host branch as DEC-006
-    intends. The one inline check inside `run.ts:712` generated-code string
-    is intentionally kept (not a TS-surface check; changing it would alter
-    the runtime injection face).
-  - Collector dual-track residue closed: `yieldStack` / `genPathSensitive`
-    / `genJoinOverride` (`runtime/control.ts`) and `callLocStack` /
-    `absOrigins` (`member-diag.ts`) migrated to `createScopedSlot` +
-    `registerCollectorScopeParticipant`; module-global fallback behavior
-    unchanged (generator evaluation is synchronous, push/pop paired).
-  - `$assumeAnchor` (≈80 lines) moved out of `runtime/ops.ts` into
-    `runtime/assume.ts`; ops.ts back to pure arithmetic delegation.
-    Export surface unchanged.
-  - `runtime/containers.ts` is a pure re-export barrel again: the five
-    isomorphic guard wrappers (`$idx`/`$idxSet`/`$get`/`$set`/
-    `$iterCheck`) collapsed into `guarded-entry.ts`'s `guardedEntry`
-    factory (BUG-173 this-access gate / BUG-217 accessor split / BUG-215
-    iterator-slot guard moved verbatim).
-  
-  service:
-  - Three hand-rolled LRU caches (`analysis-file-cache.ts`,
-    `fn-analysis-cache.ts`, eval-run's `evalRunByFile`) replaced with
-    `BoundedLruMap`; the three "matches BoundedLruMap.set" sync comments
-    deleted. Key semantics (stablePathKey / fn-cache prefix / file×mode
-    slot keys) unchanged.
-  - Dead dual-engine capability flag removed: `absModulesOk` (constant
-    true since the single-engine merge) deleted from
-    `analyzer-abs-eval.ts` and the `@nudojs/service` export face; its four
-    call sites constant-folded. **This is the only public-API removal in
-    this batch.**
-  - Parallel assembly sequences unified: `buildEvalInjection`'s
-    graph-assembly segment (the historical 5→2 leftover) now parameterizes
-    and calls `composeEvalModules`; the real differences (mock seeds enter
-    the graph on the analyzer face vs runtime injection on the inject
-    face, fileDirectives vs from-source, structured `mockModuleErrors`)
-    are explicit parameters. Deep-structure probe diff vs HEAD: zero.
-  - `eval-run.ts` (922 lines) split: env/harvest merging → `env-modules.ts`
-    (pure data face), eval LRU + fingerprints → `eval-cache.ts`; eval-run
-    keeps `tryRunEval`/`tryEvalCall*`/cjs dispatch + re-exports. Public
-    face unchanged (no package imports eval-run directly outside service).
-  - Mock fingerprint write-side single source: `mockFingerprint(kind,
-    payload)` factory in `mock-abs.ts`; all five stamping sites go through
-    it, seed-fn entries now stamped too; the reader (`absSeedPart`)
-    consumes `impl.fingerprint` only (single `"nofp"` marker when absent,
-    no format-string reconstruction). Cache keys change once (harmless
-    miss).
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
-  
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
-
-### Patch Changes
-
-- 01a550b: Dedup batch 6 (same-file fragment twins from the jscpd `--min-tokens 70`
-  audit; batch 5 closed the cross-file sync obligations and whole-function
-  twins). Pure refactor — outputs byte-identical (vitest --changed green,
-  verify:examples 251 checks, lint + lint:tests clean, defineEnv deep
-  structural dump parity vs HEAD for the env change).
-  
-  - transpile `expr/optional-chain.ts`: `invoke` / `invokeKey` hop arms share
-    the emission tail (contOf IIFE wrap, fnOptional double fork with
-    Bug 187 whole-chain short-circuit + BUG-216 single-Get preRead,
-    recvOptional short-circuit, bare tail) — extracted `emitInvokeTail`;
-    the two arms now only define `callOf` (`$invoke` vs `$invokeKey`) and the
-    method-value read (`$get` vs `$idx`). Emitted code text unchanged.
-  - `algebra/term.ts`: `surviveMulOne` / `surviveSubZero` verbatim-twin
-    closures → shared `toNumberDomainTerm` (Bug 010 number-domain guard for
-    x*1 / x-0 identities, bigint mixed-type preservation).
-  - `algebra/check.ts`: assume / invariant segment processing shares
-    `anchorSurfaceOf` (#165 anchorable surface: contract formals ∪ AST params
-    ∪ top-level locals); the two L2 entry-may-throw issue constructions
-    (no-signature fallback vs generalized success) share
-    `pushEntryMayThrowIssue` — only the `actual` line differs.
-  - transpile `stmt/statement.ts`: for-loop fallback path and init-declaration
-    path share the body-prep block (`forBodyPrep`: body local decls → body
-    opts with alias filtering → body statements → loop-carried assignment
-    names); paths inject constScope shadowing and the initName exclusion.
-    Emitted code text unchanged.
-  - `builtins/json.ts`: tuple and arrayView branches of the stringify walker
-    share `mapElements` (index-keyed element mapping, abstract child folds to
-    null with partial/unseen accounting, tuple holes).
-  - `builtins/object/methods.ts`: `Object.keys` / `Object.entries` string-
-    literal receiver arms share `stringIndexTupleAbs` (code-unit indexing,
-    exact conf; element construction injected).
-  - `algebra/promote-scan.ts`: ForOf's binding-window child walk and the
-    generic tail walk share `walkChildren`.
-  - `arithmetic/muldiv.ts`: `div` / `mod` share the numeric leading
-    (`divModLead`: builtin-brand ToPrimitive re-entry, Symbol TypeError,
-    bigint fold + abstract-bigint domain with 0n RangeError per Bug 106);
-    0-divisor semantics after the leading remain per-op.
-  - `env/src/node.ts`: the three verbatim MessagePort slot tables
-    (MessageChannel.port1 / port2 / standalone MessagePort brand) single-
-    sourced as `messagePortSlots` (same cross-brand sharing pattern as the
-    existing `streamSlots`); defineEnv deep structural dump verified
-    byte-identical vs HEAD.
-  - `lsp/src/symbols.ts`: `FunctionDeclaration` / `FunctionExpression`
-    visitor bodies merged into a single `"FunctionDeclaration|FunctionExpression"`
-    visitor key (babel traverse alias syntax), bodies were verbatim twins.
-- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
-  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
-  defineEnv deep structural dump (sorted + insertion-order preserving)
-  byte-identical vs HEAD, verify:examples 251 checks green, lint +
-  lint:tests clean.
-  
-  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
-    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
-    exec-family options obj (execSync / execFileSync / spawnSync) → shared
-    `execSyncOptions`; Request / Response body-mixin slots
-    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
-    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
-    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
-    and the `process` global object.
-  - env `node.ts` path family — the drifted manual-sync pair: the top-level
-    `pathModule` inlined the whole member table next to the
-    `platformPathMethods(posix/win32)` factory and had already drifted
-    (`join.required` only on the top-level copy). `pathModule` now consumes
-    the factory; member order canonicalized to the top-level key order;
-    `join`'s required-arity enforcement is now identical across
-    path/posix/win32 (Bug 877 case 6's claimed parity now real).
-  - env `web.ts`: URL `.searchParams` slot table and the global
-    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
-    iterator face / size stay per-site; insertion order preserved).
-  - core `builtins/error/binary.ts`: DataView ctor and
-    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
-    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
-    number-domain item enforcement now calls `enforceTaItem` (the `.of`
-    cause variant is unified into the shared text — no pins).
-  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
-    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
-    undefined, closed → counted tuple).
-  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
-    walk (assignment / update / stateful-call faces, ×3) →
-    `markFreeMemberRoot`.
-  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
-    destructure binding loops → `bindPatternImports`; top-level class scans
-    (`findClassDecl` + module-frame class bindings) share
-    `unwrapExportDecl`.
-  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
-    namespace resolution loop (qualified arm + short-name arm) →
-    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
-    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
-    untouched).
-  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
-    enforcers (literal face / predicate face) share `actualSlotTable`
-    (obj direct / brand inner-obj unwrap).
-  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
-    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
-    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
-    comment kept.
-  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
-    `analyzeToolFile` preamble (resolveToolFile → readSource →
-    analyzeFileAsync "all", Bug 993 async preload).
-
-更早版本（58）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.11.0 {#pkg-service}
-
-## 1.11.0
+## 1.19.0
 
 ### Minor Changes
 
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
+- 09d49af: Feat: architecture debt A6 — fn shapes carry an optional overload set, and calls dispatch by argument shape (closes the Bug 827 / A5 false red).
   
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
+  - `Shape` fn branch gains optional `overloads?: FnOverload[]` (`{ paramTypes, returnType }[]`, declaration order = TS resolution order). Absent ⇒ every existing shape, key, and projection is byte-identical.
+  - `instantiateReturn` dispatches on overloads: first arm in declaration order whose arity matches and whose params accept the arguments (per-param `leqAbs`, α bound/substituted per arm) supplies the return face; zero hits fall back to the union return face (no invented may-throw). Union face (`paramTypes`/`returnType`) stays the authoritative extensional face — `leqAbs`, `formatShape`, dts/schema/guard read only it; overloads are a dispatch refinement, not assignability.
+  - Harvester: top-level function overloads and interface/class method overloads both snapshot arms **before** the union-face merge (shared `collectOverloadArms`; Bug 807 two-path parity preserved). `HarvestSig` gains `overloads` so disk-cache round-trips keep the dispatch face; `HARVEST_DISK_ABI` v13 → v14 (old entries miss cleanly instead of silently losing overloads).
+  - `absKey` includes overloads (distinct overload sets no longer share memo/fingerprint); `substShape` substitutes arm Abs data; `snapshotAbs` deep-copies overloads and now carries the fn impl side table (A7 mirror — snapshots no longer degrade to shape-only).
+  - Evidence: types-only package with `convert(x: string): string; convert(x: number): number;` — `nudo check` goes from 2 L2 `entry-may-throw` false reds (`method 'toFixed' missing on string receiver` / symmetric) to OK, matching `tsc --strict` exit 0; `useNum() => string` / `useStr() => string` exact. Gold/recall/real-package gates 223 green; harvest + emit + differential 1434 green.
+- e1e6892: ABS-01: constraint / lemma grammar — arithmetic relations, dependent return contracts, and contract-internal binders.
   
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
+  - `@nudo:assume` and `@nudo:invariant` accept simple arithmetic expressions (`name`, `number`, `name ± number`): `@nudo:assume i + 1 <= n`, `@nudo:invariant i < n`. Multiplication / division / parentheses stay malformed with the existing fail-closed diagnostics.
+  - `@nudo:contract return <rel> <expr>` builds a dependent return obligation on the return term (`return > x`). IEEE-sound proof rule added for non-strict offset comparisons (`round(b + c) >= b`, `c >= 0`); strict `>` / `<` on unbounded operands report an honest unprovable warning (2^53 + 1 = 2^53 is a real counterexample), never a false red.
+  - Contract-internal binders: `bind(name, constraint)`, `ref(name)`, `ref(name).at(path)` with scope = one constraint tree. `EffectiveContract` carries a cross-slot binder table so `fn({...}, array(ref("b")))` can reference a binder declared in a callback slot. Unbound refs fail closed (`nudo:contract-load`) and never degrade to `any()`.
+  - Refs are resolved before proofs / instantiation / entry-Abs projection, so a ref slot cannot pass as an obligation-free `any()`.
+  - Public surface additive: `bind` / `ref` / `rel` builders plus `BinderTable` and resolver helpers (public API snapshot updated).
+- ca8005b: ABS-02: explain where `unknown` / `any` came from (observation-only side channel).
   
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
+  - New `buildUnknownExplanations` / `formatUnknownExplanations` (core) derive a stable, deduped reason list from existing observation faces (signatures, issues, budget, eval fallbacks) — no Abs field, no cache-key or `leqAbs` change; cold/warm results are untouched by construction.
+  - Reasons: `budget` / `missing-env` / `unsupported` / `eval-failure` / `no-contract` / `explicit-any` / `inference-failure`, each with an actionable suggestion. Cycle truncation says explicitly that `@nudo:budget` cannot help.
+  - `nudo check --explain-unknown` prints the list after the human report; default output is byte-identical and `--json` / `--gitlab` machine contracts are unaffected.
+- 869f22d: ABS-07: sound implication upgrades — order closure, square lower bounds, DNF, oracle caching.
   
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- 7d7abe4: Dedup batch 4 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the three
-  remaining comment-pinned manual-sync pairs and the largest in-file twins.
-  Pure refactor — outputs byte-identical (vitest --changed 15548 passed,
-  verify:examples 251 checks, public-api freeze 9/9).
+  - Order closure (the provable difference fragment): pure order facts between single atoms (`x <= y` / `x < y`, no arithmetic shift, no rounding) are stored as a graph and closed with a BFS that tracks strictness. Transitive goals (`x<=y ∧ y<=z ⇒ x<=z`), strict chains, and dual directions now prove; unsound directions stay unproven.
+  - Simple non-linearity: `A*A >= c` proves when `A` has non-NaN evidence (`c <= 0`), or a non-strict lower bound `L >= 0` with `fl(L*L) >= c` (monotone rounding). Strict targets stay unproven — `x > 0 ⇒ x*x > 0` is false at `x = 5e-324` (underflow).
+  - DNF rewrite for conjunctions with nested disjunctions (`A ∧ (B ∨ C)`) is an equivalence-preserving expansion (cap 32) — only fewer misses, no new proofs of invalid goals.
+  - IEEE counterexamples are pinned as must-stay-unproven: `x <= y ⊬ x-y <= 0` (`Inf - Inf = NaN`) and `x >= y+1 ⊬ x-y >= 1` (`2^53 + 1 = 2^53`).
+  - Optional implication oracle: answers are cached per oracle identity and `(phi, pred)` (512 entries, deterministic-oracle contract). Default remains fail-closed with no oracle.
+  - Gold suites (recall = precision, real-package zero-FP) stay green.
+- 09f5ff8: ABS-08: automatic loop-invariant candidates (phase 1 — observation only).
   
-  Comment-confessed sync pairs now single-sourced:
+  - The loop widener records numeric bounds of scalar loop-carried bindings across observed iteration snapshots. When widening actually happens, these become **candidates** surfaced as `nudo:invariant-inferred` info diagnostics with the observed bound and sample count.
+  - Candidates never participate in proofs: an observed extreme over a bounded number of iterations is one-sided evidence, not a proved invariant. Only an explicit `@nudo:invariant` declaration enters the proof (audited via `nudo:invariant-relied`) — so inference cannot introduce false greens.
+  - User declarations override candidates for the same binding (no duplicate hints).
+  - Bounded loops that never widen produce no candidates (no noise).
+  - Diagnostics docs updated (EN + zh).
+- df56e83: ABS-09: coinductive `leqAbs` for recursive types.
   
-  - lsp hover `formatEntryParamShapeLike` → core `formatEntryParamShape` via
-    `@nudojs/core/internal` (the old comment claimed "core adds no export";
-    the internal face is the sanctioned route).
-  - lsp `server-code-actions` `norm`/`resolveRel` copy of the synthesized-sidecar
-    base (already drifted: lsp had an extra direct-equality check + loader
-    fallback) → `@nudojs/service/emit` exports `normPosixPath` /
-    `resolveRelativeSpec`; the lsp-only extensions stay at the call site.
-  - standard-schema brand ctor list: `GLOBAL_BRAND_CTOR_NAMES` local array +
-    Set → schema-generator `RUNTIME_GLOBAL_CTOR_NAME_LIST` (single array
-    source; Set + `isRuntimeGlobalCtorName` predicate derive from it; the
-    embedded validator serializes the same array, byte-identical).
+  - `leqAbs` now keeps a path-scoped `(src, tgt)` assumption set: a pair already being checked is assumed to hold, which is the maximal-fixpoint semantics of equirecursive subtyping. Recursive lists/trees, mutually recursive shapes, and recursive brands no longer fail with `leq depth exceeded`.
+  - Assumptions are removed on exit (including failed branches), so a failure in one branch can never be rewritten as success on retry (no false greens).
+  - Genuine mismatches still report the shortest field path (`field value: ...`), not a depth failure.
+  - The depth guard stays as a bounded safety net for non-recursive deep structures (raised 32 → 64, since real recursion now terminates coinductively).
+  - New fixtures: isomorphic-but-distinct recursive lists, value-domain mismatch, mutual A/B recursion, recursive brand inner, and the deep-nesting safety net.
+- af8173b: ABS-10: cross-instance post-summaries for function instantiation (conservative phase).
   
-  In-file twins single-sourced:
+  - New summary layer (`key/fn-summary.ts`): the post `Abs` of a body evaluation plus its α variable order, keyed by function identity (source hash + name + deps fingerprint + sidecar fingerprint) × instance key (α-normalized args + Φ, including the conf digest).
+  - A new `PolyFn` instance (same function/context, e.g. re-generalized with a different display label) can hit the summary instead of re-running the body; results are α-renamed back to the caller's names and are byte-identical to the body path. The instance-level memo stays the first layer.
+  - Only pure contexts participate: `refine` / `inject` / custom budgets (unhashable closures that change body semantics) bypass the store entirely; seeded analysis windows neither read nor write it.
+  - `resetGeneralizeMemo()` clears the summary layer too (explicit invalidation hook; no cross-round object reuse).
+  - Bounded at 4096 entries (oldest evicted); stats exposed on the internal module for observability.
+- 61c22d5: ABS-11: contract conjunction and projection precision.
   
-  - core `hof.ts`: `predUsesMappedVars` / `mapHasShapeOnlyVar` → parameterized
-    `predAnyVar` walker.
-  - core `scan/literal-shapes.ts`: 21 structurally identical
-    `constraintViolated` issue pushes → `pushPrecondIssue` (message/suggestion
-    templates byte-identical).
-  - core `builtins/promise.ts`: then/catch rejected-arm microtask twins →
-    `definiteRecoveryPromise` / `unsettledRecoveryPromise`; then-microtask dual
-    reject arms → `joinRejectedArm`; `Promise.all` dual reject faces →
-    `allRejectFace`.
-  - core `check.ts`: handwritten return-contract recording block (skip branch +
-    main branch) → `recordReturnContract`.
-  - core `leq.ts`/`postcondition.ts`: duplicate `primOf` single-sourced in leq.
-  - core `builtins/object/methods.ts`: TA own-keys tuple (keys/gOPN faces) →
-    `taOwnKeysTuple`; gOPD class/Error/`.prototype` slot→descriptor arms →
-    `ownSlotDescriptor`; 8 identical nullish-receiver guards →
-    `throwIfNullishRecv`.
-  - core `builtins/array.ts` + `template.ts`: tuple join folding loops →
-    `tupleJoinParts(recv, onSymbol)` (symbol element: throw vs abstract —
-    the real semantic fork, parameterized).
-  - core exec runtime: `$whileSeq`/`$forOf` `applyExitJoin` closures → new pure
-    `loop-exit-join.ts` `applyLoopExitJoin` (the discovered `exhausted && widen`
-    gate difference is an explicit parameter; `$forOf` passes `exhausted: true`,
-    provably equivalent).
-  - core `directive-scan.ts` ↔ parser `fn-directives.ts`: `CASE_TAG_REGEX` scan
-    loop → core `iterCaseTags(text, caseArgSpans)` via `@nudojs/core/internal`
-    (Bug 978 diagnostic actions and downstream regexes stay consumer-side).
-  - service `dts-generator.ts`: `DtsClassMemberSurface` base interface —
-    `scanClassSurface` return type no longer re-declares the member fields
-    (BUG-168/151 docs live once).
-  - lsp: `replay.ts` async env-preload twins share `preloadEnvsThen`, function
-    scope walkers share `walkFnScope`; `server-navigation.ts` references/rename
-    share the gate+parse prologue; `hover.ts` generalize blocks share
-    `tryGeneralizeEnclosing`.
+  - `and()` (`andC`) now conjoins structural forms: shape ∧ shape (field-level, missing fields preserved, same-field constraints recursively conjoined), array ∧ array (element-level; node preds such as length bounds kept), union ∧ union (member cross-product, capped at 16), and fn ∧ fn (per-parameter and return conjunction; throws merged as a union). Contradictory forms stay fail-closed: prim mismatch, structural × incompatible prim, different structural kinds, and binder/ref/rel conjunction conflicts throw the same conflict path as before.
+  - `formatConstraint` renders structural nodes' own predicates and optional flags (`array(number()).min(2)`, `shape(...).optional()`), so length obligations are no longer invisible in diagnostics/derivation output.
+  - dts projection treats contract and derived HOF relations as a **conjunction**: when a hand-written contract covers some parameters, HOF α variables are structurally unified with the contract Abs (elements / tuple slots / object slots / fn params+returns) and uncovered parameters plus the return position keep their β links instead of degrading to `unknown` (e.g. `processItems<B_transform>(items: number[], transform: (x0: number) => B_transform): B_transform[]`).
+  - Discriminant exhaustiveness warnings are intentionally deferred: the plan requires zero false positives, and no low-noise heuristic is available in this batch (documented in the test header).
+- c8aac63: ABS-14: bounded function-level summaries (5 commits on branch `abs-14`, soundness gate revised 2026-11-13).
   
-  Skipped as intentional parallel data or non-identical semantics: env
-  node/web table clones (MessagePort ports, dual Storage, exec options),
-  dts obj-slot widen pair (Bug 240 selective flags vs whole-slot spread),
-  object methods string char-tuple pair (values vs entries elements).
-- c48fd48: Engine review batch (evaluation-engine design audit; 3 concurrent domains,
-  behavior-preserving except where noted). Full suite green (2113 files /
-  16579 tests), `verify:examples` 251 checks green, build + lint + lint:tests
-  clean, `public-api-freeze` green (internal face +1: `isAbsLike`).
+  - Single summary cache: `key/fn-summary.ts` now carries optional `formals` / `argKeys` / `bounds` / `pre` / `eff` and a per-function entry (`fn\0<scope>`) on the SAME Map; `fnSummaryStats()` keeps its instance-level meaning, function-level hits/rejections are exposed by `fnSummaryFnLevelStats()` (`hits` = entry found, `applied` = actually substituted).
+  - Simple bounds with one-way alpha dependency (`key/summary-bounds.ts`): reverse deps, unbound vars and complex app terms fail closed; `TypeParam.bounds` is additive and write-only in this phase (no product consumer yet).
+  - Fast path (`key/summary-fastpath.ts`): a hit requires all of
+    - **positional formals** (`formals[j]` = the top-level var of the j-th argument; non-var or aliased arguments fail closed) — storing the sorted `varOrder` used to transpose arguments (`f(z,y)` → `f(p,q)` returned `q - p`);
+    - **arg isomorphism**: per-position α-normalized `absKeyWithConf` keys (shape × term × pred × conf) — a kind-only signature used to reuse `{x:1}` summaries for `{y:"s"}`, length-2 summaries for length-3 tuples, and `Date` summaries for `RegExp`;
+    - **full precondition**: the formation-time Φ (`pre`, renamed formals → current argument vars) must be implied by the current Φ — checking only the simple `bounds` projection dropped `app`-term conjuncts, so `x % 2 === 0`-formed summaries leaked to unconstrained calls.
+    Then `substAbs(post, map)` is applied instead of re-running the body. `bounds` stays as observable metadata only.
+  - All three conservative channels are on by default (`crossModule`, `bodyUnavailable`, `budgetTruncated`); the degraded channels are verified independently (`abs14-degraded-channels.test.ts`), gated off `symbolic` runs on the read side as well, and their substituted results stay in the instance memo only (cross-instance summaries keep "came from a real body evaluation" provenance).
+  - Equivalence gate: `abs14-equivalence-baseline.test.ts` (7 pinned body-path samples) plus `abs14-fastpath.test.ts` calling `diffAgainstBodyBaseline`. The fast side now clears the cache stack, uses a fresh PolyFn and a witness Φ (`ABS14_GATE_PHI`), so layers 1/2 must miss and the test asserts `applied` grew — the earlier version re-read the same memo entry and never exercised the function-level path.
+  - dts projection: HOF signatures no longer emit type parameters that are not referenced by any parameter or return position (`abs14-dts-reachable.test.ts`).
+- 897b19f: > **版本定性（2026-11-05 产品裁决）**：本批**不判定为 breaking 变更** ⇒
+  > changeset 不写 BREAKING / Migration 标注；下方「兼容性」段落只是升级时的
+  > 注意点，不是迁移要求。发布级别仍按此前决定走 **minor**（additive 能力 +
+  > 暂无外部用户），不占 major、不触发 `scripts/gate-major.mjs`。
   
-  core transpile:
-  - Per-unit emit state: the five module-level mutable counters/stacks in
-    `stmt/statement.ts` (`switchBodySeq` / `switchBreakSeq` /
-    `curSwitchBreakLabel` / `forInRecvSeq` / `forLoopVarSeq`) moved into
-    `TranspileOptions.stmtEmit` (`StmtEmitState`), created fresh per
-    transpile unit. Fixes cross-unit counter bleed: transpiling the same
-    source twice in one process now yields byte-identical output (was 5/6
-    samples drifting on second pass). Single-module first-transpile output
-    byte-identical vs HEAD (6-sample corpus, `cmp` clean; `__nudoLv*` /
-    `__nudoSw*` / `__fir*` / `__swBody*` base names unchanged).
-  - PrivateName key extraction unified: new `privateNameKeyOf` (bare `#name`
-    or null) is the single extraction point; `privateNameKeySrc` builds on
-    it. The three inlined copies (`expr/call.ts`, `expr/optional-chain.ts`,
-    `class-emit.ts` `keyOf`) now call it. The dead `|| undefined` branch in
-    optional-chain (`#${… ?? ""}` is always truthy) deleted.
-  - `transpile/stmt-predicates.ts` → `transpile/stmt/predicates.ts`
-    (statement-domain file now lives under `stmt/`).
-  - `userIdentCache`: whole-table clear at 64 → `BoundedLruMap(64)`.
+  `Abs` 现在携带可选 `facets` 槽位容器（`callable` / `protoOwnKeys` / `brand`），三个槽位均已在引擎内启用。缺省不出现 ⇒ 旧 `Abs` 的键、投影与 `leqAbs` 接受集逐字节不变；但**带上槽位的值**在以下面给出比以前更精确的判定：
   
-  core runtime:
-  - `isAbsLike` (shape+conf) added to `abs.ts`, exported via
-    `@nudojs/core/internal`; DEC-006 fail-closed fallback table documented
-    at the definition. ~40 inline `"shape" in …` guards across exec/**
-    replaced (branch bodies and fallbacks verbatim); `check-may-throw.ts`'s
-    local `isAbsVal` re-definition now aliases it. Behavior delta (bugfix):
-    host objects that merely carry a `shape` data property are no longer
-    misdetected as Abs values — they now take the host branch as DEC-006
-    intends. The one inline check inside `run.ts:712` generated-code string
-    is intentionally kept (not a TS-surface check; changing it would alter
-    the runtime injection face).
-  - Collector dual-track residue closed: `yieldStack` / `genPathSensitive`
-    / `genJoinOverride` (`runtime/control.ts`) and `callLocStack` /
-    `absOrigins` (`member-diag.ts`) migrated to `createScopedSlot` +
-    `registerCollectorScopeParticipant`; module-global fallback behavior
-    unchanged (generator evaluation is synchronous, push/pop paired).
-  - `$assumeAnchor` (≈80 lines) moved out of `runtime/ops.ts` into
-    `runtime/assume.ts`; ops.ts back to pure arithmetic delegation.
-    Export surface unchanged.
-  - `runtime/containers.ts` is a pure re-export barrel again: the five
-    isomorphic guard wrappers (`$idx`/`$idxSet`/`$get`/`$set`/
-    `$iterCheck`) collapsed into `guarded-entry.ts`'s `guardedEntry`
-    factory (BUG-173 this-access gate / BUG-217 accessor split / BUG-215
-    iterator-slot guard moved verbatim).
+  - `callable`：类值裸调用判据不再只靠 `class-mark.ts` 的 WeakMap 与 `_rest` 形参启发式 ⇒ 快照 / `substAbs` / 重铸后的类值仍定抛 `TypeError`。该槽位表达「无 `new` 的 [[Call]] 定抛」，**不是**规范 `IsCallable`。
+  - `protoOwnKeys`：原型对象的自有键集随值携带（`Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols`），不再只能按 brand 名查固定表。
+  - `brand`：生成器对象身份随值携带，dts 的 `iteratorTSType` 不再只靠 `next` / `@@iterator` 槽启发式 ⇒ 丢了内部协议槽的重建产物仍投影 `Generator<T>`（泛型实参照旧推导，不输出裸名以免 TS2314）。
   
-  service:
-  - Three hand-rolled LRU caches (`analysis-file-cache.ts`,
-    `fn-analysis-cache.ts`, eval-run's `evalRunByFile`) replaced with
-    `BoundedLruMap`; the three "matches BoundedLruMap.set" sync comments
-    deleted. Key semantics (stablePathKey / fn-cache prefix / file×mode
-    slot keys) unchanged.
-  - Dead dual-engine capability flag removed: `absModulesOk` (constant
-    true since the single-engine merge) deleted from
-    `analyzer-abs-eval.ts` and the `@nudojs/service` export face; its four
-    call sites constant-folded. **This is the only public-API removal in
-    this batch.**
-  - Parallel assembly sequences unified: `buildEvalInjection`'s
-    graph-assembly segment (the historical 5→2 leftover) now parameterizes
-    and calls `composeEvalModules`; the real differences (mock seeds enter
-    the graph on the analyzer face vs runtime injection on the inject
-    face, fileDirectives vs from-source, structured `mockModuleErrors`)
-    are explicit parameters. Deep-structure probe diff vs HEAD: zero.
-  - `eval-run.ts` (922 lines) split: env/harvest merging → `env-modules.ts`
-    (pure data face), eval LRU + fingerprints → `eval-cache.ts`; eval-run
-    keeps `tryRunEval`/`tryEvalCall*`/cjs dispatch + re-exports. Public
-    face unchanged (no package imports eval-run directly outside service).
-  - Mock fingerprint write-side single source: `mockFingerprint(kind,
-    payload)` factory in `mock-abs.ts`; all five stamping sites go through
-    it, seed-fn entries now stamped too; the reader (`absSeedPart`)
-    consumes `impl.fingerprint` only (single `"nofp"` marker when absent,
-    no format-string reconstruction). Cache keys change once (harmless
-    miss).
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
+  兼容性：直接构造 `Abs` 字面量 / 只读取既有字段的代码无需改动 —— `facets` 缺省即旧行为。用 `Object.keys(abs)`、结构化克隆或自有实现的序列化器枚举 `Abs` 全部字段的内部代码，需容忍新增的可选 `facets`（不读它即与旧行为一致）。`absKey` 只对**非空**容器进键 ⇒ 带槽位的值会自然得到不同的 memo / 指纹，无需手工清缓存。core `formatShape` 的展示面**不发布**生成器身份（既有契约，逐字不变）。
   
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
+  **残余批次（同批发布）**：
+  - **A2 声明/收割面**：`declare class` 类值挂 `callable:false`；`JSON.stringify(obj, 类构造器)` 由 `may-throw` 升为确定抛 TypeError。`HarvestSig.fn` 新增 `callable` 字段、**`HARVEST_DISK_ABI` v14 → v15**（`~/.cache/nudo/deps/` 旧收割缓存会干净 miss，无需手工清理）；`harvestedValueToAbs` 的 `absFunction` mock 重建也整包搬运槽位。
+  - **A10 内建原型**：`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等的 `Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols` 由保守 `string[]` / `boolean` / `symbol[]` 升为与宿主**动态对拍**的精确面（键集随 Node 版本给出各自真实值，不写死清单）。
+  - **A10 用户类原型交错定义序**：`EvalClassSpec` 新增可选 `protoMemberOrder`（`transpile/class-emit.ts` 按类体源码序登记、`declare.ts::rekey` 同步换名）。`Object.getOwnPropertyNames(用户类.prototype)` 对「方法与访问器交错定义」的类由保守 `string[]` 升为与宿主对拍的**精确有序表**；静态 / 私有成员不列入。手写 spec / mock 桥 / 旧产物无该字段 ⇒ 回落旧保守域（零回归兜底）。
+  - **A11 TReturn / TNext**：`AbsFacets` 新增可选 `genReturn` / `genNext`，dts 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`（恒带类型实参，无 TS2314）。本轮进一步接通 **TNext 保守域**：`makeGenObject` 填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 该类型形参默认值等价，**不是精度承诺**），`iteratorTSType` **仅当** `facets.genNext` 存在才输出第 3 实参 ⇒ `Generator<T, TReturn, unknown>`；三实参仍恒带 `<…>`，无 TS2314。手工构造 / 无 `genReturn` 的旧 Abs 输出逐字不变；填真实 v 域依赖 A1 步骤 4 真挂起（明确停点）。
+  - **A1 步骤 2 骨架（零语义）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表，生产侧不登记 ⇒ eager 时序与全部值面逐字不变；不进任何 barrel，公共 API 冻结不变。为后续「首消费点触发」预置接线，不改变任何对外行为。
+  - **schema / standard / guard 生成器身份投影：已实施，另立 patch changeset**（`.changeset/generator-identity-validator-fix.md`）。产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧；`emit-bug-130` 的无 brand 夹具仍逐字不变（负控制）。`z.instanceof` 路径经运行时实证仍不可行。实施记录见 `docs/design/architecture-debt.md`，生产接线回归见 `emit-generator-identity-poc.test.ts`。
+  
+  兼容性（补充）：① 自行解析磁盘收割 JSON 或依赖 `HARVEST_DISK_ABI` 的下游需接受 `HarvestSig.fn.callable` 新字段（旧缓存按 v15 自动失效）；② 枚举 `Abs.facets` 全部字段的代码需容忍新增的 `genReturn` / `genNext`（不读即旧行为）；③ 曾断言内建原型 `gOPN` 为 `string[]` / `hasOwn` 为 `boolean` 的内部测试需改为与宿主对拍的精确断言；④ 解析生成器 dts 类型实参的下游需容忍**三实参** `Generator<T, TReturn, unknown>`（无 `genNext` 的旧手工 Abs 仍两实参 / 一实参，逐字不变）；⑤ 自行构造 `EvalClassSpec` 的下游可忽略新增的可选 `protoMemberOrder`（缺省即旧两表拼接口径），但曾断言交错类 `gOPN` 为 `string[]` 的内部测试需改为精确有序断言。
+  
+  Evidence: 三槽各独立全仓回归 0 新增失败；最终 2159 文件 / 17191 用例 0 新增失败；金标 1.0/1.0、真包 0 FP、差分语料 0 回退、公共 API 冻结未变。发布级别按 2026-11-05 产品裁决：整批不判定为 breaking 变更 ⇒ 不写 BREAKING / Migration 标注，仍以 **minor** 发布（`scripts/gate-major.mjs` 不触发）；一旦有外部用户依赖这些包面，即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」。
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 533c8c6: **A1 步骤 3 落地：生成器体从构造期挪到首个消费点**（`docs/design/generator-laziness.md` §5.3）。此前 `$gen` 在构造期一次性跑完整个体收集 yield 序列；现在构造期只产一个空壳并登记一次「待跑体」触发器，`next()` / `.return()` / `.throw()` 与 7 个元素面读出任一先触达才跑体，把完整结果 in-place 合并回壳。
+  
+  - **值面收益**：body thunk 捕获活绑定（实验 D）⇒ 跨函数消费读到**消费时刻**的外层绑定，与原生一致（`yield n` 在 `n = 9` 后消费得 `9`，此前给 `0`）。构造点 c1/c2 从步骤 1 的 `0 | 1` / `"" | "ab"` 过近似收敛为精确的 `0` / `""`；容器 mutator 的长度域过近似也收敛为精确 `0`。
+  - **副作用只跑一次**：触发按 Abs 身份幂等 + 同一延迟体族的 `ensureFresh` 缓存 ⇒ 绕开实验 E 的「重跑重复副作用」；`n++` 在构造 + 多次消费后仍只加一次。
+  - **两条不变量保障**：① core 求值入口 `callTranspiledExportFull` 在收口时排空未触发的壳 ⇒ 「构造后从不消费」的既有 eager 值面契约（Bug 212 / 族 01 数字下标）与 service 侧 `.d.ts` 纯投影的元素域**都不退化**（端到端 `Generator<number | string>` 等与改前逐字一致）；② 触发器按族广播到 `snapshotAbs` / `$copy` 的所有别名，副本先消费时原对象与副本的元素面 / `genElements` 都完整。
+  - **改动面**：`runtime/async.ts`（`collectGenBody` 抽出 + 空壳 `$gen` + `mergeDeferredBody` + 协议三方法首调转发）、`exec/match-iter.ts`（触发器带目标身份、别名广播、pending 排空）、`exec/run.ts`（求值收口排空）。公共导出形状未变，`registerGenTrigger` / `fireGenTrigger` / `drainPendingGens` 均不进任何 barrel。
+  - **已知边界**：步骤 4「真挂起」未做 ⇒ 首 yield 之后的写仍在首次消费时一次跑到底（§5.5 的 c3/c4 不逐点精确）；`eval-generator-cross-function-consume.test.ts` 保留 1 条 `it.todo` 作验收清单。
+  
+  回归：新增 `exec/__tests__/gen-deferred-body.test.ts`（5 例，直接钉构造期零体求值 / 只跑一次 / 幂等 / 别名广播 / async 同编）；`eval-generator-cross-function-consume.test.ts` 由「现状钉 + 3 todo」升级为 4 例 R3-b 验收；Bug 212 的 5 条精确断言与步骤 2 骨架的 2 条负控制按新语义重订（全部为精度提升或契约前提变更，**无精度回退**）。全仓结果见当日工作日志。按整批裁决发 **minor**，不写 BREAKING / Migration 标注。
+- 951b256: **静态元素域通道（「第三种」）**：把生成器的元素域从「隐式编码在 `shape`
+  数字下标槽、dts 靠 `CANONICAL_INDEX` 正则反推」升级为随 `Abs` 值携带的
+  显式承载位，并把源码返回类型注解从「可覆盖观测」降级为**一致性校验**。
+  
+  **core**
+  - `AbsFacets.genElements?: Abs[]`：`makeGenObject` 填 `$gen` 的**完整 yield
+    序列**（`full`，不是 `$arr` 之后可能 widen 的 `els`；Bug 53 点名前者才是
+    权威数据）。`shape` 数字槽**并存不替换**，消费点 / 族 01 口径不变。
+  - `cloneAbsFacets` 拷贝数组（Abs 元素按引用共享）⇒ `snapshotAbs` /
+    `substAbs` / `renameAbs` / `join` 四处经统一 clone 自动搬运，副本不串台。
+  - `facetKey` 新增 `ge:` 段（逐项 `absKey`）⇒ 元素域不同的生成器不共享
+    memo / 指纹；无 `genElements` 的旧键逐字节不变。
+  
+  **service**
+  - `iteratorTSType` 优先读 `genElements`，**严格 fallback**：字段为
+    `undefined`（手工构造 / 静态收割 / 旧 Abs）时仍扫数字槽 ⇒ 旧产物逐字不变。
+    端到端实测 fork 分支 `if (f) yield 1; else yield "s"` 从
+    `Generator<unknown>` 恢复为 **`Generator<number | string>`**；只有
+    `genElements`、无数字槽的手工 Abs 也能投影出精确元素类型。
+  - `FunctionAnalysis.declaredReturnType` 透传 `nudoReturnTypeText`（此前全仓
+    只有写入、无读取点）；新增 `nudo:return-annotation-mismatch` 台账：
+    声明与观测同为单一基类型且互斥时留痕，**产物恒用观测口径**（不覆盖、
+    不用声明兜底）⇒ 不重演 BUG-168 在形参位修掉的「两面相反裁决」。
+    联合 / 泛型 / 字面量 / `unknown` 一律不判，避免 widen 口径差异被误报。
+  
+  兼容性：`genElements` 是可缺省槽位；静态声明收割（harvest）不构造生成器
+  运行时值 ⇒ 不进 `HARVEST_DISK_ABI`，冷 / 热产物一致。公共导出符号名不变
+  ⇒ 公共 API 冻结不受影响。
+  
+  **已知边界**：**不解锁 A1 步骤 3** —— `genElements` 仍由构造期跑体填充，
+  体延后到首消费点 ⇒ 字段也空，而 dts 是纯投影、导出期无消费点。本变更
+  只预置了承载位与「未填充」语义；步骤 3 仍需静态 yield 域推断通道或产品
+  接受 `Generator<unknown>` 降级。详见 `docs/design/generator-laziness.md`
+  「dts 元素域通道 · 第三种已落地」。
+  
+  版本定性：新增诊断码 + additive API ⇒ **minor**；按整批裁决不判定
+  breaking，无 BREAKING / Migration 标注。
+  
+  回归：`gen-elements-facet.test.ts`（7 例）/ `emit-gen-elements-facet.test.ts`
+  （9 例）；全仓 `1658 入口`，`20 失败 = 基线 20`，**0 新增 / 0 消失**。
+- 0331e00: **A1 步骤 4 落地：生成器挂起点绑定回放（Bug 212 c3/c4 逐点精确）**（`docs/design/generator-laziness.md` 文末「步骤 4 实施记录」）。步骤 3 把体延到首个消费点后，体仍一次跑到底 ⇒ 首个 `yield` 之后的写会在首次 `next()` 时提前落地（native `1` / `"a"`，引擎 `0 | 5` / `"" | "ab"`）。本步把 native 的挂起点语义在**外层自由写绑定的值面**精确复现。
+  
+  - **机制**：四个 `$gen` 发射点在自由写名集非空时追加**可选第三实参** `{ capture, restore }`；`capture` 用 `$copy` + 共享 memo 读快照（容器深拷贝、const 别名组身份不分裂），`restore` 用 `$rebindable` 守卫写回。`$yield` / `$yieldStar` 在每个挂起点把快照推进帧的 `timeline`；`next()` 交付第 k 个 yield 后回放到 `timeline[k-1]`；`next()` 耗尽与迭代 drain 推进到**终态格**（体跑完、步骤 1 的 join 已折回）⇒ 最后一个 yield 之后的写不被抹成 wrong-exact。回放**单调**（`lastApplied`）⇒ 耗尽后的 `next()` 不回卷。`collectGenBody` 每次调用都压帧（无钩子时压 `undefined` 哨兵）⇒ 嵌在外层体里的内层生成器不会污染外层时间轴。名集为空时零发射 ⇒ 绝大多数生成器的转译产物逐字不变。
+  - **值面收益**：c3 `1  #exact`、c4 `"a"  #exact`；连续两次 `next()` 得 `5` / `"ab"`；分段读取 `"1:1:2:5"`；与步骤 3 的消费期活绑定叠加得 `"9:9:5"`；迭代整体 drain 得 `"5:2"`。§1.6 四行 native 值全部精确。
+  - **sound 守卫**：路径敏感（fork 臂序列是 join 而非线性时间轴）、体内延迟异常、`yield*` 委托三类形态整帧禁用回退，严格保留步骤 1 的 `join(事前, 事后)` 过近似；未启动生成器上的 `.return()` / `.throw()` **不推进**时间轴（原生体根本不跑，推进会产 wrong-exact）。三类实测均 `0 | 5  #exact`，无「自信的错值」。
+  - **不变量**：体仍只跑一次、只捕获一次序列（步骤 3 的幂等 + 缓存不动）；元素面 / `genElements` / `.d.ts` 投影与改前一致；`$gen` 只新增可选形参，公共导出形状未变，无新增导出符号。
+  
+  **已知边界（诚实台账）**：这是**绑定值面**的挂起点精确化，不是把体降成真 JS generator。转译产物的分支/循环臂是宿主箭头（真 `yield` 进去即 SyntaxError），抽象 fork 一次跑完双臂又无法只挂一臂 ⇒ 字面方案要求 `$fork` / `$whileSeq` / `$for` / `$switch` / `$try*` 全改 generator 变体并跨 `next()` 续接 ALS 帧，属求值模型 CPS 级改造。故宿主调用、may-throw 收集、容器外部引用等**非自由写绑定类副作用**的时序仍整体落在首次消费点。求值隔离按约定搁置。
+  
+  回归：新增 `exec/__tests__/gen-suspend-replay.test.ts`（8 例机制钉，含嵌套帧隔离与终态格）；`eval-bug-212-generator-body-eager.test.ts` c3/c4 断言重订 + 2 例推进用例（14 例全绿）；`eval-generator-cross-function-consume.test.ts` 的步骤 4 `it.todo` 升级为 5 例验收（9 例全绿）。按整批裁决发 **minor**，不写 BREAKING / Migration 标注。
 
 ### Patch Changes
 
-- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
-  cross-file / cross-package copies that were pinned together by comments or
-  mirror tests instead of code.
+- 9a087f9: Fix: architecture debt A1 (Bug 212, step 1) — generator bodies no longer write outer bindings to values that hold at no native observation point.
   
-  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
-    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
-    `@nudojs/core/internal`): the check face (case-arg split) and the parser
-    directive face each kept verbatim copies — Bug 1009 was exactly this pair
-    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
-    silently skipped). `scanWithStrings` was dead after the move and is gone.
-  - **bigint operand predicates** (`isNullishLitOperand` /
-    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
-    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
-    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
-    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
-    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
-    deterministically.
-  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
-    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
-    `1 - x` with `x: number | []` no longer records a false TypeError
-    may-throw (native never throws; the old member scan dragged arr members
-    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
-    the Bug 946 suite, including the sound positive control (`1n + x` on the
-    same union still records may-throw: the number member genuinely throws).
-  - **`collectNestedBodyRanges` wiring completed**: core exported it via
-    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
-    still ran a full local copy. `file-directives.ts` now consumes the single
-    source.
-  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
-    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
-    verbatim copy and the LSP test suite used that copy as a mirror oracle.
-    nudojs now re-exports from `@nudojs/service`; the tautological mirror
-    assertion is replaced by direct-value assertions.
-  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
-    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
-    drift-gate test holding the two copies together; both the replica body and
-    the drift-gate file are gone.
-  - **emit section extraction**: `interface-derivation-emit.ts` and
-    `interface-emitter.ts` duplicated the export-statement →
-    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
-    both now share `service/emit/export-section-scan.ts`.
-  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
-    was a documented structural mirror of the named interface; the shell now
-    consumes the interface directly.
-- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
-  remaining comment-pinned manual-sync obligations and the seven whole-function
-  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
-  verify:examples 251 checks, lint + lint:tests clean).
+  - Transpile-side free-write isolation around the `$gen` body (all four emission sites: declaration, function expression, object method, class method): snapshot the outer free-written bindings (`$copy` with a shared identity memo) before the eagerly-collected body, fold back `n = $join(before, after)` in a `finally` (body throws fold too). Reuses `collectFreeAssignedNames` (same analysis as the fork protocol, minus param pattern names and body `var` hoist names — those are generator-local) plus `expandAliasNames` (const alias partners snapshot together). `$copy`/`$join` are existing runtime exports — no public-surface change.
+  - Symptom rows go from wrong-exact to sound over-approximation: construction-point `n` `1` → `0 | 1`, `log` `"ab"` → `"" | "ab"` (native construction values `0`/`""` are in the join); same for the `it.next()` observations (`5` → `0 | 5`, `"ab"` → `"" | "ab"`). Residual (needs true suspension, doc §5.4): the first-yield suspension-point intermediates (native `1`/`"a"`) are still not in the join — the Abs domain has no timeline axis.
+  - Load-bearing eager collection untouched: element face and `conf` still baked at construction (generator object pins `{ "0": 1, "1": 5 } #exact` unchanged) — `Generator<any | number>` signature face does not degrade. Generators that write no outer bindings transpile byte-identical; body-local `var`/`let`/params never enter the snapshot set (no TDZ).
+  - One pinned expectation updated: `exec-generator-consumption.test.ts` nested-generator Bug 52 case — the `leak` carrier is now the sound join `undefined | 77` (native: `undefined` at construction, `77` after drain) instead of exact `77`; the semantic point (inner bare `.return(77)` not polluted by the outer try context, no `"f"` leak) is preserved and re-pinned.
+  - New regression nails in `eval-bug-212-generator-body-eager.test.ts`: the four symptom rows as exact `formatAbs` pins, all four emission sites, element-face preservation, and negative controls (protocol/yield sequence, destructuring lowering, no-outer-write, body-local var/param).
+- c6cf8fa: Fix: `substAbs` no longer drops the fn impl side-table when rebuilding a fn shape (architecture debt A7, engine half of Bug 810).
   
-  Comment-confessed sync pairs now single-sourced:
+  - α instantiation (interface type-argument substitution in the harvester, and `instantiateReturn`'s return-type instantiation in the engine) rebuilt fn shapes without carrying the `attachFnImpl` side-table, silently degrading every substituted fn to a shape-only relation: the D path lost impl-exclusive data (`relation.inferFrom` / `condFallback` / `throws` / `fingerprint`), so generic method calls folded to `any`/`unknown` where the un-substituted signature was precise.
+  - Carrying discipline (`substFnImpl` in `hof.ts`): behavior facets (`apply` / `body` / closure env) and scalar facets (`params` / `kind` / `fnKind` / `length` / `optionalParams` / `bindThis` / `strict` / `effectFree` / `closed` / `pureName` / `fingerprint`) are α-independent and carried verbatim (`fingerprint` sharing matches the documented same-signature budget-key semantics); the `relation` slot is Abs data and is substituted by the map, sharing references with the substituted shape slots (the `relationFn` double-write discipline).
+  - The whole-α replacement path (map value is itself an impl-carrying fn) also keeps the impl instead of degrading to shape-only.
+  - The fn shape rebuild no longer drops `optionalParams` (Bug 399 per-position optionality) and `slots` (dual-facet callable-with-members), matching the `snapshotAbs` fn-branch discipline; slot values are substituted by the map.
+- fb54d1a: ABS-05: `conf` and cache-key audit — instantiate memo no longer shares results across confidence levels.
   
-  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
-    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
-    `control.ts` YIELD_* constants) → new zero-dependency leaf
-    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
-    and transpile (`statement.ts`) both import the named constants.
-  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
-    whitelist ("须与 core makeBuilder 同步") → core exports
-    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
-    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
-    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
-  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
-    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
-    module-level re-export is removed; no public face change).
-  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
-    error-family.ts imports promise.ts, so no direct import) stays local but is
-    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
-    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
+  - Added `absKeyWithConf` (internal): the default `absKey` plus a recursive `conf` digest over the same traversal order. The default `absKey` stays conf-free (structural equality / join dedupe / env dedupe depend on that and are byte-identical).
+  - Audited key faces and documented them in `abs05-conf-key-audit.test.ts`: `absKey`, `relationFingerprint`, `checkMemoKey`, `pureValueKey`, `analysisFileCacheKey` do not depend on `conf`; `instantiateMemoKey` does.
+  - Fixed the consumer instead of widening the default key: `instantiateMemoKey` now includes the conf digest, so an identity function instantiated with a `#widened` argument returns `#widened` instead of inheriting a cached `#exact` result. Same-conf calls still share (memo hit by object identity).
+  - Cold/warm equivalence pinned: a repeated `checkSource` run produces byte-identical `CheckJson`.
+- 9886482: Fix ABS-14's `TypeParam.bounds` always being empty.
   
-  Whole-function twins single-sourced:
+  `entryReqs[].pred` comes from `instantiateConstraint(c, paramName)` and therefore uses **argument names** (`typeof x = number`, `x > 0`), while the bound registration validated it against `TypeParam.id` / formals in **alpha space** (`A1`, `A2`). Every variable was rejected as unbound, so `bounds` was never written.
   
-  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
-    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
-    resizable/growable slot key, diagnostic labels; slot insertion order
-    preserved).
-  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
-    shared `memberWriteIfeImpl` (only real difference: return written value vs
-    new root).
-  - nudojs `version.ts` three walk-up-to-package.json loops →
-    `findPkgDirUpwards` + `readVersionAt`.
-  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
-    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
-    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
-    invalid / unreadable / ok grading unchanged).
-  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
-    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
-    codes)` (Bug 556 dual-code gate preserved).
-  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
-    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
-    lives once; count still raw param length, formals still
-    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
-  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
-    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
-    `resolveCaseTarget` (error strings byte-identical).
-- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
-  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
-  defineEnv deep structural dump (sorted + insertion-order preserving)
-  byte-identical vs HEAD, verify:examples 251 checks green, lint +
-  lint:tests clean.
+  - `key/summary-bounds.ts` gains `alignSimpleBounds`: rename `params[i] -> ids[i]` via `renamePred`, then apply the existing `collectSimpleBounds` simple-condition / one-way-dependency checks. Unmapped names (binders, undeclared vars) and `app` terms stay fail-closed and are dropped.
+  - `generalize.ts` now registers bounds through that helper. `entryReqs` and Phi keep their original argument-name space (display and body monotonicity propagation depend on it), so `display`, `symbolic`, `check` and `export` output are byte-identical.
+  - With `fn({ x: number().gt(0) })`, `typeParams[0].bounds` goes from `undefined` to `[typeof A1 = number, A1 > 0]`; with two parameters the bounds land on `A1` and `A2` respectively.
+  - Covered by `abs14-bounds-integration.test.ts` (11 cases: end-to-end generalize, pure-function negative cases, and proof that the bounds are well-formed α-space `Pred`s that `implies` can decide directly and that behave correctly when used as a summary entry's `pre`). Reverting the rename makes 8 cases fail.
   
-  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
-    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
-    exec-family options obj (execSync / execFileSync / spawnSync) → shared
-    `execSyncOptions`; Request / Response body-mixin slots
-    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
-    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
-    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
-    and the `process` global object.
-  - env `node.ts` path family — the drifted manual-sync pair: the top-level
-    `pathModule` inlined the whole member table next to the
-    `platformPathMethods(posix/win32)` factory and had already drifted
-    (`join.required` only on the top-level copy). `pathModule` now consumes
-    the factory; member order canonicalized to the top-level key order;
-    `join`'s required-arity enforcement is now identical across
-    path/posix/win32 (Bug 877 case 6's claimed parity now real).
-  - env `web.ts`: URL `.searchParams` slot table and the global
-    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
-    iterator face / size stay per-site; insertion order preserved).
-  - core `builtins/error/binary.ts`: DataView ctor and
-    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
-    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
-    number-domain item enforcement now calls `enforceTaItem` (the `.of`
-    cause variant is unified into the shared text — no pins).
-  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
-    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
-    undefined, closed → counted tuple).
-  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
-    walk (assignment / update / stateful-call faces, ×3) →
-    `markFreeMemberRoot`.
-  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
-    destructure binding loops → `bindPatternImports`; top-level class scans
-    (`findClassDecl` + module-frame class bindings) share
-    `unwrapExportDecl`.
-  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
-    namespace resolution loop (qualified arm + short-name arm) →
-    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
-    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
-    untouched).
-  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
-    enforcers (literal face / predicate face) share `actualSlotTable`
-    (obj direct / brand inner-obj unwrap).
-  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
-    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
-    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
-    comment kept.
-  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
-    `analyzeToolFile` preamble (resolveToolFile → readSource →
-    analyzeFileAsync "all", Bug 993 async preload).
-- 6eaf219: Engine review batch: harden the transpile↔runtime ABI, converge class-graph
-  identity, and add compile/emit guard rails. No public API changes.
+  `TypeParam.bounds` is **write-only** in this phase — no product consumer reads it. The fast path is gated on the full formation-time Φ recorded in the summary entry, not on these bounds; the fixture above only proves the metadata is well-formed and directly consumable by a future consumer. Design boundary, intentionally not changed: `opts.refine` still disables `summaryScope` (ABS-10), so contract-bearing functions do not write function-level summaries. `attachHofSnapshot` not passing `refine` is correct design, not a defect.
+- 3ddcb81: ABS-14 follow-ups (rest-param soundness, degraded channels, dts bounds).
   
-  ABI single-sourcing (#1): `$`-prefix semantics (rt.ts module param face +
-  analyze-strip strip-keep predicate) now consume one explicit table
-  (`isRuntimeOpName` / `MODULE_FACE_ONLY_OPS` in transpile/runtime-import.ts);
-  a drift guard pins the binding-table `$`-key set ≡ truth table (the 4
-  internal helpers that accidentally rode the prefix filter are now explicit).
+  - **Soundness fix (core)**: rest parameters were emitted as `const name = $restBind(...)`, but fork-arm restoration and member-write lowering rebind that slot (`name = ...`). Real CJS code such as `debug/src/common.js`'s `function debug(...args) { args[0] = ... }` therefore threw V8's native `TypeError: Assignment to constant variable` during module evaluation, making `nudo check` fail closed with `nudo:module-throw`. Both emit sites now use `let` (native rest bindings are mutable). Regressed by `eval-rest-param-rebind.test.ts`; reverting to `const` makes all 9 cases fail.
+  - **ABS-14 degraded channels enabled**: `bodyUnavailable` and `budgetTruncated` now default on alongside `crossModule`. The replacement logic is extracted to `key/summary-fastpath.ts#tryDegradedChannel` and verified independently by `abs14-degraded-channels.test.ts` (10 cases): the filled result is byte-identical to the same function's real body result, and no summary / non-isomorphic args / unproven full precondition / formal mismatch / unmapped variable stays `unknown #opaque`. The read side is gated off `symbolic` runs (same as the write side and the cross-module channel, so a prior `instantiate` can never rewrite a signature/dts input), and substituted results stay in the instance memo — cross-instance summaries only ever hold results of a real body evaluation. The equivalence gate is refined accordingly: `crossModule` ≡ current body path, degraded channels ≡ the same function with an available body.
+  - **dts bounds (`extends`)** (service): `emit/dts-generator.ts` now translates expressible contract `Pred` leaves into type-parameter constraints — primitive `typeof` tags, `eq(var, lit)` literals, and fully-expressible `or` unions. Numeric bounds, lengths, negations and `typeof object|function` are honestly omitted; unbound declarations stay byte-identical. Projection reads `contract.params[].abs.pred` directly, so `AnalysisResult` and its cache cloning are untouched. Covered by `abs14-dts-extends.test.ts` including a `tsc --noEmit` round-trip.
+  - **Host-drift test baselines**: Node 22 vs v26 globals (`Float16Array`, `Intl.DurationFormat`, `URLPattern`, `CloseEvent`, …) and toolchain-injected `__*_SHIM_LOADED__` names are now handled through the existing `VERSION_SKEW` / declared-reason discipline rather than hard assertions; supported hosts keep full coverage. `fs.promises.stat(throwIfNoEntry:false)` oracle tolerates the Node 22 ENOENT behaviour while engine-side assertions stay strict.
+  - **Example docs**: `docs/examples/retire-debug` now states that the return face depends on whether the real `debug` package resolves; `verify:examples` pins only `OK` / `0 error` / export names, not `nudo:opaque-result`.
   
-  Runtime state (#2/#8/#9/#12): state.ts split into phi.ts / host-bridge.ts /
-  exit-stacks.ts with state.ts kept as a byte-identical re-export facade
-  (75 value exports + type face verified unchanged); load-time setter
-  injections for the member/class dispatch cycle converge into exec/hooks.ts
-  (removes the `var`-hoisting TDZ defense); may-throw's AsyncLocalStorage +
-  module-level syncCtx dual-write and the bare newTargetStack now run on
-  collector-scope slots; isHostGeneratorFn checks the Bug 325 fnKind stamp
-  before the source-shape regex (regex kept as hoisting-window fallback,
-  documented); narrow.ts sum-filter boilerplate ×5 collapsed into
-  filterSumMembers; guardedPrologueEntry factory covers $in/$del/$delRes;
-  toIOIArg no longer routes through toIOI's absent-folding (private
-  ioiNumberOf core, both helpers derived).
+  The `TypeParam.bounds` empty-field debt noted in this changeset was fixed in a follow-up commit (Pred variable-space alignment via `alignSimpleBounds` + `abs14-bounds-integration.test.ts`); `attachHofSnapshot` not passing `refine` was re-checked and confirmed to be correct design, not a defect.
+- 53d8248: Fix async-generator replay rejection. When a replayed `finally` throws during `.return()`/`.throw()` on an async generator, the runtime now returns the rejected promise directly instead of wrapping it again in `deliver`, so awaiting the call rejects like native. Fixture: `async function* g() { try { yield 1 } finally { null.x } }` + `await it.return(0)` now yields `promise<"rejected">` instead of `promise<"resolved">`. Side-effect finalizers keep resolving (`promise<true>`), pinned by `abs13-abrupt-completion.test.ts` (13 cases).
+- 792eb79: Fix: engine module loads in browsers without `SharedArrayBuffer` (Playground crash).
   
-  Class graph (#3/#4): inheritance-chain walks (statics/method lookup, super
-  family, error-family and JSON-face walks) prefer the per-value `superSpec`
-  reference resolved at definition time — multi-module same-name parent
-  classes no longer cross-contaminate via the last-wins bare-name registry
-  (name table kept for display/builtin fallback, collision observation
-  unchanged); all brand-rebranding sites ($super, $new exit) route through a
-  single `rebrandClassAbs` primitive that transfers the full side-table set
-  (inventory + per-table rationale in rebrand.ts header).
+  - Two module-level tables referenced the bare global identifier `SharedArrayBuffer` at evaluation: `NAMESPACE_ONLY_HOST_CTORS` (`exec/runtime/members.ts`) and `NAMESPACE_GLOBALS` (`exec/runtime/containers/member.ts`). In non-crossOriginIsolated contexts Chrome does not expose it ⇒ `ReferenceError: SharedArrayBuffer is not defined` at import time ⇒ the whole engine bundle failed to load and the Playground error boundary rendered “This page crashed”.
+  - Fix: both tables now use the existing `Float16Array` guard pattern (`typeof SharedArrayBuffer !== "undefined"` ⇒ entry included, otherwise omitted; lookups stay fail-closed for that name). Verified in headless Chromium against a production build served **without** COOP/COEP headers: `/playground/` loads, presets run with precise cases, share links and the tsc panel work (worker chunks emitted via relative-path entries); with isolation headers behavior is unchanged.
+- 949ddce: Restore call-site scan cost: one dependency fingerprint per scan instead of one per call site. `scanLiteralCalls` asked `generalizeFromAst` for the same function once per literal call site, and each call recomputed `refineDepsFingerprint` (a disk BFS over `loadModule` deps + full-AST spec walk + per-dep hash) to build the L0 memo key. On real packages that is ~100 full BFS passes for a single 87 KB file — `commander` `checkSource` regressed 601ms → 2475ms since the call-site enforcement batch, which is what kept the OSS baseline gate red (`commander: check all` 3.0–3.8x the envelope). The same-file `(source, loadModule, fromFile)` triple is constant within one scan, so the fingerprint is now computed lazily once and passed as `depsFp` to the own-call and inline same-file `generalizeFromAst` sites; cross-file callees keep computing their own (their refine basis is the definition file). Memo keys are unchanged — same function, same arguments, only the redundant recomputation is gone. `commander` `checkSource` returns to 678–881ms (baseline 601ms) and the OSS `check all` total ratio drops from 1.73x to 1.00x of the envelope.
   
-  Transpile (#5/#6/#7): TranspileOptions' 44 fields regrouped into
-  BaseEmitOpts/FlowCtx/NamingCtx/InjectCtx (type-level only, zero call-site
-  churn); new transpile-output-hygiene test parses generated output for the
-  full differential corpus and asserts every `__`-prefixed binding comes from
-  the allocator whitelist (9.5k bodies / 7.8k declaration sites); new
-  async-gen compile guard transpiles+compiles all 39 await-position shapes
-  without the disableAsyncGen retry (pins the Bug 1139 false-green class).
+  Also classify Node 24's legacy `_stream_*` internals (`_stream_duplex` / `passthrough` / `readable` / `transform` / `wrap` / `writable`) as denied node builtins: they are in `module.builtinModules` on the CI runtime but were absent from the manifest snapshot, so the drift gate failed on Node 24 while passing on Node 26.
+- 56d8227: Add the `nudo:capability-denied` diagnostic (ABS-12 R12-D, strict by default). Host globals and `node:` modules classified as denied now report this code — values stay `unknown` and are never executed natively — instead of `nudo:builtin-unknown`; denied modules are reported at the import/require site. Module classification only covers builtins (`node:` prefix or `module.builtinModules`), so relative paths and npm packages keep their existing missing-module channel. `NUDO_CAPABILITIES=trusted` (or `setCapabilityMode("trusted")`) restores the previous `builtin-unknown` surface and limits runtime identity blocking to the hand-written high-risk list; unclassified names (typos) remain `builtin-unknown` in both modes. Docs updated (EN + zh-Hans). Pinned by `capability-diagnostics.test.ts` (strict/trusted, globals/modules/typos).
+- 14cf89a: Add an explicit host **capability manifest** (ABS-12 R12-D, first slice) and use it for runtime identity blocking. `exec/capabilities.ts` classifies 188 host globals and all `node:` builtins as allowed/denied with default-deny, plus snapshots for drift gates; `neverExecHostName` now blocks every denied host function by identity (aliases such as `const f = BroadcastChannel` included), not just the hand-written fetch/timer list. Denied values still degrade to `unknown` (no native execution), and allowed values (e.g. `Array`, `Buffer`, `structuredClone`) are untouched. A new drift test fails when a Node upgrade or runner injects an unclassified global/builtin, forcing explicit review. Remaining for the capability work: the `nudo:capability-denied` diagnostic code, module-resolution denial, and the `--capabilities trusted` opt-out.
+- 49cdb00: Fix whole-file `checkSource` memo thrashing on medium monorepos: raise `MAX_CHECK_MEMO` from 256 to 1024 (aligned with `MAX_GENERALIZE_MEMO`). A sequential full scan over more files than the LRU capacity evicts the very next entry to be read, dropping the hit rate to zero — warm `check all` degenerated into a full recompute (real corpus: 43.9s; a 200-file control run inside the old capacity was 433.7ms). The per-round `evalRunMemo` keeps its own 256 bound. The cache stays bounded: the LSP resident-session memory discipline is unchanged.
+- 4e986cd: Speed up snapshot copies on object-heavy graphs. `copyWithMemo` now checks the leaf shapes (`prim` / `never` / `any` / `unknown`) before the memo lookup: leaves are immutable and are never stored in the memo, so the result is identical but one `WeakMap` query is saved on every leaf (71.4% of calls in the ABS-17 reproducer). The `obj` / `fn` slot loops also switch from `Object.entries` to `Object.keys` + indexed reads (own-enumerable only, so inherited properties are never picked up) and reuse leaf slot values directly, removing one `[k, v]` array and one recursive call per leaf slot. In the ABS-17 object-export reproducer (single file, N object exports) N=800 drops from 5077ms to 3297ms and N=200 from 464ms to 339ms; combined with the earlier `setSlot` fast path the same file goes from 8524ms to 3297ms (-61%). Copy semantics (leaf sharing, fresh non-leaf copies, alias preservation, slot flags) are pinned by `copy-abs-leaf-sharing.test.ts`; gold recall/precision, real-package zero-FP and the ABS-14 equivalence gate are unchanged.
+- 47463ae: DX: truncation / host-effect diagnostics now carry concrete fix values and pasteable mock skeletons (suggestion/action text only — severity and exit semantics unchanged).
   
-  Service (#10/#11): eval-cache 6-dim key comparison unified into a single
-  evalCacheEntryMatches predicate (read-hit + write-back shared); CJS member
-  dispatch exception handling pinned by a drift-gate test (shares no skeleton
-  with core's export-slot path — rationale documented); stale TypeValue /
-  ast-eval "fallback path" comments rewritten to describe the actual
-  single-engine behavior, write-only dead sets removed.
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-  - @nudojs/parser@1.5.7
-  - @nudojs/harvester@0.5.0
-  - @nudojs/env@0.5.7
+  - `nudo:fork-truncated`: suggestion now carries a computed ceiling from the observed fork count — `fix: package.json#nudo.analysis.maxForks=<N> (observed <K> forks this run), or @nudo:budget forks=<N> on the function — non-blocking`, with `N = max(20000, observed × 1.5 rounded up to the next thousand)` (20000 default when stats are unavailable). Still Info / non-blocking. The ceiling helpers (`suggestedForkCeiling` / `suggestedDepthCeiling` / `suggestedCallsCeiling`) are exported on `@nudojs/core/internal` so the analyzer-side truncation diagnostics consume the same formula instead of a hand-copied one.
+  - `nudo:host-effect-blocked`: suggestion now embeds a pasteable single-line `@nudo:mock` skeleton per host family — `fetch` gets `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })`, the timer/scheduling family gets `@nudo:mock <name> = stub().returns(0)`, and the constructor family (`WebSocket` / `EventSource` / `XMLHttpRequest`) gets `stub().returns({ … })` (an arrow mock is not constructible — `new` on it would trade the Info for a `throws TypeError` may-throw). All skeletons verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision. The structured `mock` action in `check --json` carries the same skeleton.
+  - `nudo:recursion-truncated`: the depth/calls arms of the suggestion (and the `@nudo:budget` quickfix in `nudo check --fix` / LSP code actions) now carry concrete values derived from the observed depth/call counts — `@nudo:budget depth=128` / `calls=40000` floors (defaults ×2), e.g. `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`. The cycle arm keeps the code-level guidance (arguments must vary per level / narrow the base case / `@nudo:contract`; raising the budget cannot lift it) and never points at `@nudo:budget`. Legacy cache entries without a `reason` keep the old `forks=64` quickfix shape.
+- 018bc20: Refactor: engine review clean-up batch — consolidate duplicated logic and add drift guards, zero behavior change.
+  
+  - runtime: route `$for` exit-join through the shared `applyLoopExitJoin` entry (container-widen hook parameterized); extract `arrayFamilyElementDomain` as the single source for the #156 element-domain convention (4 call sites); drop a dead rethrow arm in `$for`'s catch chain; delete the hooks setter re-export relays (`containers/member.ts`, `runtime/state.ts`, `runtime/containers.ts`) so the "registrants must import hooks.ts directly" invariant is structural.
+  - transpile: unify the five guard arm-shadow-binding emitters in `stmt/predicates.ts` onto one parameterized skeleton; split `stmt/statement.ts` (2619 lines) into module-stmt / loop-stmt / switch-stmt / try-stmt domain files; converge the `emitMemberTargetAssign` fallback arm onto a `member-path.ts` planning function.
+  - class: extract `resolveChainSpec` cursor primitive (replaces 6 hand-copied BUG-172 chain walks); table-drive the Number/BigInt prototype radix/precision domains; split `class/invoke.ts` (2283 lines) into `prim-methods.ts` + `proto-borrow.ts`; drop the dead no-`hasExtends` legacy arm of `$class`.
+  - guards: new `nudo-injection-names` drift gate pinning the 12 `__nudo*` host injection names against emitted code; new `invoke-arr-method-parity` test pinning the Array.prototype generic-borrow path against `invokeArrMethod`.
+  - docs: kernel-merge.md collector-scope table — move yieldStack / genPathSensitive / genJoinOverride to the scoped row (matches `createScopedSlot` reality).
+- b4435ae: Refactor: engine review follow-up — file reorganization and naming hygiene, zero behavior change.
+  
+  - transpile: rename `emitArrMutatorRebinds` (historical name; array-mutator / defineProperty / delete rebinds have all moved off the statement pass — `$invoke` in-place mutation under Bug 49/51, expression-position self-contained IIFEs) to `emitStmtWritebackRebinds`; its sole remaining duty is the Bug 96 statement-position RegExp state write-back (`$reStateCall`). Split `transpile/helpers.ts` (2016 lines) into domain leaf files under `transpile/helper/` behind the unchanged `helpers.ts` facade barrel (all existing import paths keep working).
+  - class: split `class/declare.ts` into definition-time (`$class` spec + registration) and construction/lookup-time (`$new` / `constructClass` / `findMethod` family) modules; lift the ten duplicated `validateCallableArg(args[0], …)` preflight checks in `invoke-arr.ts` callback-family methods into one shared wrapper with byte-identical diagnostics; fix the stale `registerClassDecl` reference in the class-registry header comment (current names: `$class` / `registerEvalClass`).
+  - runtime: extract the brand static tables (`BUILTIN_BRAND_METHODS`, typed-array / iterable / accessor tables, proto brand key faces) from `runtime/members.ts` into `runtime/brand-tables.ts` with re-exports preserving the import face.
+  - deprecations: `registerEvalClass` on the public face is marked `@deprecated` — the registry is internal machinery (core consumers import `exec/class-registry.ts` directly); the public export is retained for compatibility only.
+  - docs: kernel-merge.md collector-scope table — classify the synchronous save/restore-paired flags `awaitUnsettledHit` and `loopSignalFromAbstractArm` under the retained row (finally-restored before any await window, no cross-analysis leak).
+- e4dc7df: Surface finalizer throws on generator abrupt completion. When a safely extractable `finally` thunk throws during `.return()`/`.throw()` replay and the generator body has no outer free writes (no snapshot hooks), the exception now propagates like native instead of being skipped — e.g. `try { yield 1 } finally { null.x }` no longer reports a normal completion (pinned by `abs13-abrupt-completion.test.ts`). Async generators wrap replay errors into a rejected promise where the runtime path reaches it. Remaining follow-ups: finalizers with `yield`/`return`/`throw` statements, `for-of break` replay by iteration index (the eager collector drains the generator before the loop), and the async-generator replay path.
+- 7ddd831: Let `checkSource`'s ambient-gated dependency fingerprint reuse the ungated fingerprint computed earlier in the same watch round. `LoadDepsFingerprint` now exposes the existing root sidecars the `ambientAllowed` gate could prune (`gatedSidecars`), and `LoadDepsFingerprintOpts` accepts `loaderIdentity` / `ambientLoaderIdentity` so per-call guard/cache wrappers participate in the round memo through their underlying loader. When no sidecar is filtered out, the gated and ungated fingerprints are byte-identical and the extra disk BFS is skipped; custom loaders with different content keep their own identity and never share, and fingerprints are only memoized for `opts === undefined` calls (a gated result can never leak into an ungated key). `check --watch` hub rounds drop from 718ms to 456ms `analyze` (total 667ms) on the 48-file semver corpus, leaf 345ms -> 210ms. Default (no epoch) behavior is unchanged; pinned by `load-deps-fp-epoch.test.ts`.
+- 06bd8ee: Stop reporting native-impossible fixed values for generator **abrupt completion**. When `.return()`, `.throw()`, `for-of break` or `yield*` forwarding terminates a generator inside `try/finally`, the enclosing `finally` runs natively; the eager model left outer bindings at the suspension snapshot, so reading a binding written by the finalizer could return a precise value native never produces (e.g. `false` where native is `true`). Abrupt completion now joins the suspension snapshot with the terminal frame per captured binding (`joinGenSuspendTerminal`), which is sound: case results widen from `false` to `false | true`. Precision (replaying the finalizer itself) remains a follow-up; no-finally generators and normal exhaustion are unchanged, pinned by `abs13-abrupt-completion.test.ts`.
+- f7d105a: Replay safely extractable `finally` blocks on generator **abrupt completion** (ABS-13 plan A-narrow). The transpiler now emits a finalizer thunk when the try/catch body contains a yield and the finalizer has no control flow of its own (no yield/return/throw/break/continue/await/var); the thunk runs on the normal path as before, and active thunks travel to `$yield`/`$yieldStar` so `.return()` / non-catch `.throw()` can restore the suspension snapshot and execute them innermost→outermost. Results tighten from the sound `false | true` guard to native-exact values for `.return()` and `.throw()` through side-effect `finally`, including nested finalizers (`[true, true]`), `yield*` outer finalizers, and repeated `.return()` (finalizer runs once). Unsupported finalizers (control flow / `var`) and catch-absorbed throws keep the plan-C `join` fallback. `for-of` iterator close and async-generator finalizer throws remain follow-ups. Pinned by `abs13-abrupt-completion.test.ts` (11 cases).
+- fdc0a5a: Replay `finally` for `for…of` exits over generator objects. `$forOf` eagerly drains a generator's elements before the loop, so a `break` (or `throw`/`return` in the body) previously closed an already-done generator and the finalizer never ran at the suspension point. A leaf registry (`runtime/gen-return-at.ts`) now attaches `returnAt(k)` to each generator object: it rewinds the consumption cursor to the k-th yield, restores the suspension snapshot, replays the finalizer (and forwards through `yield*`), and falls back to the sound join when the timeline frame is unavailable. The registry is carried over when the lazy trigger upgrades the shell to the freshly evaluated body. Result: `for (const v of g()) break` across `try/finally` now yields the native-exact cleanup value; `yield*`-delegated breaks and finalizers with their own control flow keep the plan-C over-approximation. Pinned by `abs13-abrupt-completion.test.ts`.
+- c9c39e8: Fix: analysis never mutates host globals (B1/B2) — fork/switch/generator fold-back and member-write root rebinds are gated on the runtime `$rebindable` predicate.
+  
+  - Free identifiers (host globals that were not env-injected: `process`, `Math`, `Error`, host functions…) hold **host values** in transpiled units, while local bindings always hold Abs (including `let x = $lit(void 0)`). The fork/switch/generator **binding join** (`$join($copy(host), …)`) and the member-write **root rebind** used to write an `asAbsVal` wrapper back into `globalThis`: `debug/src/node.js` (top-level `Object.keys(process.env)` + `save()`'s `process.env.DEBUG = …` inside if/else) replaced the host `process` object (`process.exit` / `prependListener` gone → tsx preflight crash), and `@changesets/cli`'s lazy error-code classes (`Error.stackTraceLimit`-style host-function member writes) replaced `globalThis.Error` with a facade Abs (every later `err instanceof Error` crashed).
+  - Fix: emit `name = $rebindable("name", name) ? <join / rebind> : name` at every binding join (fork, switch pack, generator free-write fold-back) and at member-write root rebinds (single-layer, propagation, read-modify-write, delete). `$rebindable` is exact at runtime: Abs bindings (locals, env-injected globals) and **local host functions** (function declarations/expressions hold real JS functions until bridged — `F.prototype = {}` must still rebind, Bug 205) are rebindable; values identical to `globalThis[name]` (host globals) are not — self-assignment no-op. No static scope analysis needed.
+  - New runtime op `$rebindable` (`exec/runtime/ops.ts`, facade + `RUNTIME_IMPORT_NAMES` + `exec/index.ts` + public-api snapshot); runtime-import-surface corpus/must-cover extended; Bug 59 transpile pins updated to the guarded emission (rebind channel preserved). Regression pins: `host-global-purity.test.ts` (4 — host `process`/`Error` identity & shape unchanged across top-level if/else member writes, host-function member writes, generator bodies; local fork join still applies).
+  - Evidence: `analyzeFile` over all of `debug` (4 files) and `@changesets/cli` (22 files) leaves `process`/`Error` intact (previously corrupted after the first file).
+- b6cdf66: Stop invalidating the whole dependency chain for inert edits. Dependency contents now enter every cache key through the same `stableAnalyzeKeySource` projection the entry file already used: trailing comments/whitespace that carry no `@nudo` directive no longer flip the dependency fingerprint (check disk keys, evaluator memo, generalize L0, per-fn memo), while real code, line shifts and `@nudo` directives still do. `check --watch` now evicts only the files that actually changed; dependents rely on the content fingerprints to miss (semantic edit) or hit (inert edit).
+  
+  Measured on the 48-file semver corpus (dist, clean `NODE_OPTIONS`): hub edit `analyze` 3313ms → 2597ms, leaf 1009ms → 875ms. A single dependent's `analyzeFileAsync` drops from ~663–734ms to 9.9ms after an inert dependency edit, while a semantic edit still misses (172ms). The residual watch cost is the `check` verb's own `checkSource` (~500ms/file, memo keyed by module-map identity), tracked as the next ABS-18 item. Pinned by `load-deps-fp-stable.test.ts` and `abs18-watch-inert-eviction.test.ts`.
+- 1316e42: Fix: frozen/sealed array-like receivers now enforce the mutator integrity gate; add async-plan drift gate.
+  
+  - `$arrMutContainer` (arr-methods.ts): hoist the extState integrity gate (frozen → TypeError on any mutator; sealed/non-extensible → TypeError on structural extension) ahead of the tuple/arr vs array-like dispatch — the generic-borrow path (`Array.prototype.push.call(frozenArrayLike, …)`) previously bypassed it and silently succeeded where native semantics throw. Extend the Bug 223 sealed pop/shift analysis with an array-like obj arm (own-slot analysis mirroring the tuple formula; unmodelable shapes record a conservative may-throw). Parity test pins updated from "documents the gap" to "asserts the gate".
+  - New `async-plan-drift` test (92 cases): pins every row of the async-plan gen/thunk classification table and uses the V8 compiler itself as the emitter-alignment oracle — bodies classified all-safe must produce host-form output that compiles under `new Function` (a mis-classified await yields inside a nested arrow ⇒ SyntaxError, the Bug 1139 failure mode); thunk bodies pin the sync fallback path stays compilable. All four `asyncBodyPlan` consumers covered (function / object method / class method / top-level await).
+- 4ea0cbc: Speed up slot writes on the object-copy hot path. `setSlot` no longer calls `Object.defineProperty` for every key: plain assignment has the same semantics for an engine-owned slot record (own, enumerable, writable, configurable data property), and `__proto__` keeps the `defineProperty` path so it still creates an own slot instead of rewriting the prototype. In the ABS-17 object-export reproducer a single module drops from 8427ms to 5077ms at N=800 (-40%) and from 620ms to 464ms at N=200 (-25%); the 120-file synthetic corpus cold analyze drops from 13635ms to 9776ms (-28%). `setSlot` self-time in that stack falls from 33% to noise. Semantics are pinned by `set-slot-semantics.test.ts` (own/enumerable/writable/configurable, `__proto__`, prototype-shadowing keys, null-proto tables).
+- ead77d6: **Bug 修复（非 breaking）**：`snapshotAbs` 重建 Abs 时只搬了 fn impl 侧表，漏掉
+  `exec/match-iter.ts` 的身份侧表 ⇒ 生成器 / 模板标签 / matchAll 迭代器 / 用户
+  迭代器 / Proxy 的**迭代元素、drain 视图、延迟异常**在快照副本上整体丢失：
+  副本消费点查不到条目，元素面折空、definite 体异常被静默丢弃（L2 假阴）。
+  `$copy`（fork / switch 臂重绑）早有 `copyMatchIterTables`，本次把同一迁移补到
+  `snapshotAbs`（A7「重建不得静默抹掉侧表面」纪律的同口径延伸）。
+  
+  - `algebra/hof.ts` 末尾调 `copyMatchIterTables(a, out)`；`match-iter.ts` 只依赖
+    algebra 顶层叶子（abs / objects / may-throw）、不依赖 `hof.ts` ⇒ 无环。
+  - 与 `$copy` 同口径**共享视图引用**，不是深拷贝 ⇒ 副本消费会推进原对象状态
+    （生成器是「一次消费」的有状态值，副本代表同一次创建事件；负控钉已固定该行为）。
+  - 公共 API 形状不变、不新增导出；无 BREAKING / Migration 标注。
+  
+  回归：`snapshot-match-iter-tables.test.ts`（6 例：元素面 / drain / 延迟异常 /
+  手工登记 / 共享视图负控 / 非生成器零开销）；全仓 `1656 入口`，`20 失败 =
+  基线 20`，**0 新增 / 0 消失**。
+  
+  > 备注：本次修的是 **WeakMap 侧表迁移**，不等于 A1 步骤 3 的「首消费点补写
+  > `shape.slots` 对快照副本失效」——`snapshotAbs` 对 obj 槽仍是深拷贝，后者
+  > 仍是架构债（见 `docs/design/generator-laziness.md` 的 2026-11-06 前置复核）。
+- cd7c6e2: Fix: symbolic execution normalizes non-Abs results at the boundary (B3) — `checkSource` no longer crashes on bundles that return host globals.
+  
+  - `generalize`'s symbolic `run` declared `Abs` but could return a leaked host value (a function body `return process` / `return JSON` / a host object flowing out of the transpiled unit) ⇒ `formatPoly` → `formatShapeSlot` read `.shape` of a non-Abs and crashed (`Cannot read properties of undefined (reading 'k')`, reproduced by `checkSource` on `@babel/types/lib/index.js`).
+  - Fix: after `runCore`, non-Abs results go through `asAbsVal` (host functions → stable facade Abs, other host values → wrapper Abs) — the same host-bridge normalization already used by `$call` / member reads. `undefined` keeps the existing fail-closed `unknown`+opaque path.
+  - Regression: `checkSource` over the full `@babel/types` bundle completes; covered by the OSS-corpus candidate re-check.
+- f66e104: Speed up Abs key serialization on cold full-tree analysis: `termKey` now accumulates `app` arguments in a loop instead of allocating an intermediate array with `map().join(",")`. Output is byte-for-byte identical, pinned by `term-key-serialization.test.ts`. On the synthetic 120-file corpus with a clean host env, one cold `analyzeFile` pass drops from ~13.3s to ~10.0s (about 25% faster) with unchanged RSS. A WeakMap memo of term keys was evaluated and rejected: despite a 75% repeat-call rate, lookup cost plus resident strings made it slower (21.6s) and raised RSS to 881 MiB.
+- 5267658: Fix: architecture debt A3+A4 — the declared throws face now survives the relation face (no apply) and the construct paths (`new X()` / bind products).
+  
+  - A3 (relation throws channel): `relationFn` gains an optional `throws` carrier (`impl.relation.throws` — same representation as `AbsApplyResult.throws`, `never`/absent = no throw; not written into the fn shape, which has no throws consumer). The `$call` relation arm routes it through the single `routeApplyThrows` entry (may-throw → `pushThrowExit` into the caller frame; `returnType = never` + throws → `NudoThrow`). env declarations whose host throws but which declare no apply no longer read as "never throws" (false green) — `envFn`'s no-apply branch passes `opts.throws` through (opt-in; no existing declaration changes behavior).
+  - A4 (construct paths dropped the apply throws slot): the two bare-unpack sites — `$new`'s `impl.apply` branch (`exec/class/construct.ts`) and the bind-product `[[Construct]]` facet (`exec/class/invoke.ts`) — now route through `routeApplyThrows` instead of peeling `.abs`, so constructor-declared throws take effect on `new X()` too (previously call-face only). Under `@nudo:env node`, `new URL(<invalid or abstract>)` now records may-throw `TypeError` instead of silently succeeding; definite always-throw constructor applies surface as `NudoThrow` at the construct point. A source gate forbids reintroducing `isAbsApplyResult(x) ? x.abs : x` peeling in the class dispatch layer.
+  - Regression pins: `abs-apply-throws-channel.test.ts` (A3/A4 sections + cross-module gold + source gate), `env-bug-s0-mechanism.test.ts` (A3 env-face section incl. ctor-shape relation), and the former false-green pin `env-bug-64` 2.4 rewritten as a positive assertion.
+- 21ffc28: Tighten generator abrupt completion around delegations and finalizer throws.
+  
+  - The A1 timeline guard no longer disables the suspension timeline for every generator containing `yield*`; aligned delegations (same Abs per delegated element, no overlapping ranges, indices in bounds) keep the timeline, while fork-drifted ones still fall back. `returnAt(k)` also works for generators without snapshot hooks (no outer free writes). `for (const v of outer()) break` across `yield*`/`finally` now yields the native-exact cleanup value.
+  - Finalizers containing `throw` are replay-safe: conditional throws observed at the suspension point propagate exactly (sync throw / rejected promise for async generators). When replay is unavailable the runtime records `may-throw` (`YIELD_FINALLY_THROWS`) instead of folding a possibly-throwing finalizer into a definite normal completion.
+  Remaining: finalizers with their own `yield`/`return` statements still need true suspension. Pinned by `abs13-abrupt-completion.test.ts`.
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（59）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.8.0 {#pkg-nudojs}
+## @nudojs/service 1.12.0 {#pkg-service}
 
-## 1.8.0
+## 1.12.0
 
 ### Minor Changes
 
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
+- 1a4cabd: ABS-03: dts projection completion — contract generics, readable contract notes, overload arms.
   
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
+  - Contract-side type parameters are now derived from binder vars (`bind:<name>`) and emitted only when referenced by a parameter or the return type: the entry-only HOF contract projects as `export declare function processItems<a, b>(items: a[], transform: (x: a) => b): b[];` (element domain and callback parameter share the same variable; unreferenced vars are dropped).
+  - `.d.ts` JSDoc gains readable `Contract:` rows (sidecar expression text / constraint rendering). They are notes only — the type face still comes from Abs, and `Case:` rows keep their debug-witness role.
+  - Function Abs with a declared overload set now projects as a TS object type with per-arm call signatures (declaration order = TS resolution order) instead of collapsing to the union face.
+  - Schema projection already emits numeric `gt/ge/lt/le` bounds; new tests pin bounded output and the honest omission of non-expressible relations (`x > y`).
+- b57d1d2: ABS-04: test observation face — outermost witnesses survive the budget, and the two paths are discoverable.
+  
+  - Call-site witness selection now prefers the **outermost** records (concrete arguments) over internal records whose arguments carry free term variables (α names / derived expressions from recursive or higher-order evaluation). A `sumTo(3)`-style top-level witness is no longer pushed out of `callSiteBudget` by internal records.
+  - When a function has both `@nudo:case` and call-site records, the default run keeps the mutual-exclusion report and prints a `both-paths` hint naming those functions, pointing at `--both-paths` (sources stay labeled: directive vs callsite). `--json` is unaffected; truncation reasons and their next actions keep flowing through the existing `nudo:*-truncated` diagnostics. Under `--freeze` the hint is suppressed: `--both-paths` combined with `--freeze` is a usage error, so the suggestion is not actionable in that run.
+- 61c22d5: ABS-11: contract conjunction and projection precision.
+  
+  - `and()` (`andC`) now conjoins structural forms: shape ∧ shape (field-level, missing fields preserved, same-field constraints recursively conjoined), array ∧ array (element-level; node preds such as length bounds kept), union ∧ union (member cross-product, capped at 16), and fn ∧ fn (per-parameter and return conjunction; throws merged as a union). Contradictory forms stay fail-closed: prim mismatch, structural × incompatible prim, different structural kinds, and binder/ref/rel conjunction conflicts throw the same conflict path as before.
+  - `formatConstraint` renders structural nodes' own predicates and optional flags (`array(number()).min(2)`, `shape(...).optional()`), so length obligations are no longer invisible in diagnostics/derivation output.
+  - dts projection treats contract and derived HOF relations as a **conjunction**: when a hand-written contract covers some parameters, HOF α variables are structurally unified with the contract Abs (elements / tuple slots / object slots / fn params+returns) and uncovered parameters plus the return position keep their β links instead of degrading to `unknown` (e.g. `processItems<B_transform>(items: number[], transform: (x0: number) => B_transform): B_transform[]`).
+  - Discriminant exhaustiveness warnings are intentionally deferred: the plan requires zero false positives, and no low-noise heuristic is available in this batch (documented in the test header).
+- c8aac63: ABS-14: bounded function-level summaries (5 commits on branch `abs-14`, soundness gate revised 2026-11-13).
+  
+  - Single summary cache: `key/fn-summary.ts` now carries optional `formals` / `argKeys` / `bounds` / `pre` / `eff` and a per-function entry (`fn\0<scope>`) on the SAME Map; `fnSummaryStats()` keeps its instance-level meaning, function-level hits/rejections are exposed by `fnSummaryFnLevelStats()` (`hits` = entry found, `applied` = actually substituted).
+  - Simple bounds with one-way alpha dependency (`key/summary-bounds.ts`): reverse deps, unbound vars and complex app terms fail closed; `TypeParam.bounds` is additive and write-only in this phase (no product consumer yet).
+  - Fast path (`key/summary-fastpath.ts`): a hit requires all of
+    - **positional formals** (`formals[j]` = the top-level var of the j-th argument; non-var or aliased arguments fail closed) — storing the sorted `varOrder` used to transpose arguments (`f(z,y)` → `f(p,q)` returned `q - p`);
+    - **arg isomorphism**: per-position α-normalized `absKeyWithConf` keys (shape × term × pred × conf) — a kind-only signature used to reuse `{x:1}` summaries for `{y:"s"}`, length-2 summaries for length-3 tuples, and `Date` summaries for `RegExp`;
+    - **full precondition**: the formation-time Φ (`pre`, renamed formals → current argument vars) must be implied by the current Φ — checking only the simple `bounds` projection dropped `app`-term conjuncts, so `x % 2 === 0`-formed summaries leaked to unconstrained calls.
+    Then `substAbs(post, map)` is applied instead of re-running the body. `bounds` stays as observable metadata only.
+  - All three conservative channels are on by default (`crossModule`, `bodyUnavailable`, `budgetTruncated`); the degraded channels are verified independently (`abs14-degraded-channels.test.ts`), gated off `symbolic` runs on the read side as well, and their substituted results stay in the instance memo only (cross-instance summaries keep "came from a real body evaluation" provenance).
+  - Equivalence gate: `abs14-equivalence-baseline.test.ts` (7 pinned body-path samples) plus `abs14-fastpath.test.ts` calling `diffAgainstBodyBaseline`. The fast side now clears the cache stack, uses a fresh PolyFn and a witness Φ (`ABS14_GATE_PHI`), so layers 1/2 must miss and the test asserts `applied` grew — the earlier version re-read the same memo entry and never exercised the function-level path.
+  - dts projection: HOF signatures no longer emit type parameters that are not referenced by any parameter or return position (`abs14-dts-reachable.test.ts`).
+- 3ddcb81: ABS-14 follow-ups (rest-param soundness, degraded channels, dts bounds).
+  
+  - **Soundness fix (core)**: rest parameters were emitted as `const name = $restBind(...)`, but fork-arm restoration and member-write lowering rebind that slot (`name = ...`). Real CJS code such as `debug/src/common.js`'s `function debug(...args) { args[0] = ... }` therefore threw V8's native `TypeError: Assignment to constant variable` during module evaluation, making `nudo check` fail closed with `nudo:module-throw`. Both emit sites now use `let` (native rest bindings are mutable). Regressed by `eval-rest-param-rebind.test.ts`; reverting to `const` makes all 9 cases fail.
+  - **ABS-14 degraded channels enabled**: `bodyUnavailable` and `budgetTruncated` now default on alongside `crossModule`. The replacement logic is extracted to `key/summary-fastpath.ts#tryDegradedChannel` and verified independently by `abs14-degraded-channels.test.ts` (10 cases): the filled result is byte-identical to the same function's real body result, and no summary / non-isomorphic args / unproven full precondition / formal mismatch / unmapped variable stays `unknown #opaque`. The read side is gated off `symbolic` runs (same as the write side and the cross-module channel, so a prior `instantiate` can never rewrite a signature/dts input), and substituted results stay in the instance memo — cross-instance summaries only ever hold results of a real body evaluation. The equivalence gate is refined accordingly: `crossModule` ≡ current body path, degraded channels ≡ the same function with an available body.
+  - **dts bounds (`extends`)** (service): `emit/dts-generator.ts` now translates expressible contract `Pred` leaves into type-parameter constraints — primitive `typeof` tags, `eq(var, lit)` literals, and fully-expressible `or` unions. Numeric bounds, lengths, negations and `typeof object|function` are honestly omitted; unbound declarations stay byte-identical. Projection reads `contract.params[].abs.pred` directly, so `AnalysisResult` and its cache cloning are untouched. Covered by `abs14-dts-extends.test.ts` including a `tsc --noEmit` round-trip.
+  - **Host-drift test baselines**: Node 22 vs v26 globals (`Float16Array`, `Intl.DurationFormat`, `URLPattern`, `CloseEvent`, …) and toolchain-injected `__*_SHIM_LOADED__` names are now handled through the existing `VERSION_SKEW` / declared-reason discipline rather than hard assertions; supported hosts keep full coverage. `fs.promises.stat(throwIfNoEntry:false)` oracle tolerates the Node 22 ENOENT behaviour while engine-side assertions stay strict.
+  - **Example docs**: `docs/examples/retire-debug` now states that the return face depends on whether the real `debug` package resolves; `verify:examples` pins only `OK` / `0 error` / export names, not `nudo:opaque-result`.
+  
+  The `TypeParam.bounds` empty-field debt noted in this changeset was fixed in a follow-up commit (Pred variable-space alignment via `alignSimpleBounds` + `abs14-bounds-integration.test.ts`); `attachHofSnapshot` not passing `refine` was re-checked and confirmed to be correct design, not a defect.
+- 897b19f: > **版本定性（2026-11-05 产品裁决）**：本批**不判定为 breaking 变更** ⇒
+  > changeset 不写 BREAKING / Migration 标注；下方「兼容性」段落只是升级时的
+  > 注意点，不是迁移要求。发布级别仍按此前决定走 **minor**（additive 能力 +
+  > 暂无外部用户），不占 major、不触发 `scripts/gate-major.mjs`。
+  
+  `Abs` 现在携带可选 `facets` 槽位容器（`callable` / `protoOwnKeys` / `brand`），三个槽位均已在引擎内启用。缺省不出现 ⇒ 旧 `Abs` 的键、投影与 `leqAbs` 接受集逐字节不变；但**带上槽位的值**在以下面给出比以前更精确的判定：
+  
+  - `callable`：类值裸调用判据不再只靠 `class-mark.ts` 的 WeakMap 与 `_rest` 形参启发式 ⇒ 快照 / `substAbs` / 重铸后的类值仍定抛 `TypeError`。该槽位表达「无 `new` 的 [[Call]] 定抛」，**不是**规范 `IsCallable`。
+  - `protoOwnKeys`：原型对象的自有键集随值携带（`Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols`），不再只能按 brand 名查固定表。
+  - `brand`：生成器对象身份随值携带，dts 的 `iteratorTSType` 不再只靠 `next` / `@@iterator` 槽启发式 ⇒ 丢了内部协议槽的重建产物仍投影 `Generator<T>`（泛型实参照旧推导，不输出裸名以免 TS2314）。
+  
+  兼容性：直接构造 `Abs` 字面量 / 只读取既有字段的代码无需改动 —— `facets` 缺省即旧行为。用 `Object.keys(abs)`、结构化克隆或自有实现的序列化器枚举 `Abs` 全部字段的内部代码，需容忍新增的可选 `facets`（不读它即与旧行为一致）。`absKey` 只对**非空**容器进键 ⇒ 带槽位的值会自然得到不同的 memo / 指纹，无需手工清缓存。core `formatShape` 的展示面**不发布**生成器身份（既有契约，逐字不变）。
+  
+  **残余批次（同批发布）**：
+  - **A2 声明/收割面**：`declare class` 类值挂 `callable:false`；`JSON.stringify(obj, 类构造器)` 由 `may-throw` 升为确定抛 TypeError。`HarvestSig.fn` 新增 `callable` 字段、**`HARVEST_DISK_ABI` v14 → v15**（`~/.cache/nudo/deps/` 旧收割缓存会干净 miss，无需手工清理）；`harvestedValueToAbs` 的 `absFunction` mock 重建也整包搬运槽位。
+  - **A10 内建原型**：`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等的 `Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols` 由保守 `string[]` / `boolean` / `symbol[]` 升为与宿主**动态对拍**的精确面（键集随 Node 版本给出各自真实值，不写死清单）。
+  - **A10 用户类原型交错定义序**：`EvalClassSpec` 新增可选 `protoMemberOrder`（`transpile/class-emit.ts` 按类体源码序登记、`declare.ts::rekey` 同步换名）。`Object.getOwnPropertyNames(用户类.prototype)` 对「方法与访问器交错定义」的类由保守 `string[]` 升为与宿主对拍的**精确有序表**；静态 / 私有成员不列入。手写 spec / mock 桥 / 旧产物无该字段 ⇒ 回落旧保守域（零回归兜底）。
+  - **A11 TReturn / TNext**：`AbsFacets` 新增可选 `genReturn` / `genNext`，dts 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`（恒带类型实参，无 TS2314）。本轮进一步接通 **TNext 保守域**：`makeGenObject` 填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 该类型形参默认值等价，**不是精度承诺**），`iteratorTSType` **仅当** `facets.genNext` 存在才输出第 3 实参 ⇒ `Generator<T, TReturn, unknown>`；三实参仍恒带 `<…>`，无 TS2314。手工构造 / 无 `genReturn` 的旧 Abs 输出逐字不变；填真实 v 域依赖 A1 步骤 4 真挂起（明确停点）。
+  - **A1 步骤 2 骨架（零语义）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表，生产侧不登记 ⇒ eager 时序与全部值面逐字不变；不进任何 barrel，公共 API 冻结不变。为后续「首消费点触发」预置接线，不改变任何对外行为。
+  - **schema / standard / guard 生成器身份投影：已实施，另立 patch changeset**（`.changeset/generator-identity-validator-fix.md`）。产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧；`emit-bug-130` 的无 brand 夹具仍逐字不变（负控制）。`z.instanceof` 路径经运行时实证仍不可行。实施记录见 `docs/design/architecture-debt.md`，生产接线回归见 `emit-generator-identity-poc.test.ts`。
+  
+  兼容性（补充）：① 自行解析磁盘收割 JSON 或依赖 `HARVEST_DISK_ABI` 的下游需接受 `HarvestSig.fn.callable` 新字段（旧缓存按 v15 自动失效）；② 枚举 `Abs.facets` 全部字段的代码需容忍新增的 `genReturn` / `genNext`（不读即旧行为）；③ 曾断言内建原型 `gOPN` 为 `string[]` / `hasOwn` 为 `boolean` 的内部测试需改为与宿主对拍的精确断言；④ 解析生成器 dts 类型实参的下游需容忍**三实参** `Generator<T, TReturn, unknown>`（无 `genNext` 的旧手工 Abs 仍两实参 / 一实参，逐字不变）；⑤ 自行构造 `EvalClassSpec` 的下游可忽略新增的可选 `protoMemberOrder`（缺省即旧两表拼接口径），但曾断言交错类 `gOPN` 为 `string[]` 的内部测试需改为精确有序断言。
+  
+  Evidence: 三槽各独立全仓回归 0 新增失败；最终 2159 文件 / 17191 用例 0 新增失败；金标 1.0/1.0、真包 0 FP、差分语料 0 回退、公共 API 冻结未变。发布级别按 2026-11-05 产品裁决：整批不判定为 breaking 变更 ⇒ 不写 BREAKING / Migration 标注，仍以 **minor** 发布（`scripts/gate-major.mjs` 不触发）；一旦有外部用户依赖这些包面，即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」。
+- 4361e2e: DX: `nudo test --both-paths` (directive + synthesized witnesses in one round) and opt-in HMAC-signed disk cache entries.
+  
+  - `nudo test <path> --both-paths [--only <names>]`: functions with `@nudo:case` directives now *can* also synthesize `call@`/`entry@` witnesses in the same round (teaching comparison face; default exclusivity unchanged). `--json` separates the paths via `source: "directive" | "callsite"`; exit semantics unchanged (synthetic cases never fail the run). `--only` without `--both-paths`, and `--both-paths --freeze`, are usage errors.
+  - Signed disk cache: `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` signs every entry (HMAC-SHA256, domain-separated key derivation). Verification failure = miss (recompute, never trust) — a forged CheckJson can no longer pass the gate; signed/unsigned key spaces are separate, so key rotation is a clean full miss. Fail-closed config: sign without a key, or a non-boolean sign, refuses to run (`check` / `contract` / `health`, machine-readable on `--json`) instead of silently running unsigned. `nudo.cache` also accepts an object form `{ dir?, sign? }`; typo'd keys surface as `config-shape` report entries.
+  - truncation suggestions: fork/recursion-budget fix values in the analyzer now consume the single-sourced `suggested{Fork,Depth,Calls}Ceiling` helpers from `@nudojs/core/internal` (same wording as the check face, concrete numbers instead of `@nudo:budget depth=…` placeholders).
+  - benchmark: `bench-monorepo.mts --corpus <path>` runs the S1 benchmark against a real monorepo directory (dynamic hub/mid/leaf targets from the module graph, in-memory edits only — user files are never written; report lands in `s1-perf-baseline-real.{md,json}` with an honest corpus header).
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 951b256: **静态元素域通道（「第三种」）**：把生成器的元素域从「隐式编码在 `shape`
+  数字下标槽、dts 靠 `CANONICAL_INDEX` 正则反推」升级为随 `Abs` 值携带的
+  显式承载位，并把源码返回类型注解从「可覆盖观测」降级为**一致性校验**。
+  
+  **core**
+  - `AbsFacets.genElements?: Abs[]`：`makeGenObject` 填 `$gen` 的**完整 yield
+    序列**（`full`，不是 `$arr` 之后可能 widen 的 `els`；Bug 53 点名前者才是
+    权威数据）。`shape` 数字槽**并存不替换**，消费点 / 族 01 口径不变。
+  - `cloneAbsFacets` 拷贝数组（Abs 元素按引用共享）⇒ `snapshotAbs` /
+    `substAbs` / `renameAbs` / `join` 四处经统一 clone 自动搬运，副本不串台。
+  - `facetKey` 新增 `ge:` 段（逐项 `absKey`）⇒ 元素域不同的生成器不共享
+    memo / 指纹；无 `genElements` 的旧键逐字节不变。
+  
+  **service**
+  - `iteratorTSType` 优先读 `genElements`，**严格 fallback**：字段为
+    `undefined`（手工构造 / 静态收割 / 旧 Abs）时仍扫数字槽 ⇒ 旧产物逐字不变。
+    端到端实测 fork 分支 `if (f) yield 1; else yield "s"` 从
+    `Generator<unknown>` 恢复为 **`Generator<number | string>`**；只有
+    `genElements`、无数字槽的手工 Abs 也能投影出精确元素类型。
+  - `FunctionAnalysis.declaredReturnType` 透传 `nudoReturnTypeText`（此前全仓
+    只有写入、无读取点）；新增 `nudo:return-annotation-mismatch` 台账：
+    声明与观测同为单一基类型且互斥时留痕，**产物恒用观测口径**（不覆盖、
+    不用声明兜底）⇒ 不重演 BUG-168 在形参位修掉的「两面相反裁决」。
+    联合 / 泛型 / 字面量 / `unknown` 一律不判，避免 widen 口径差异被误报。
+  
+  兼容性：`genElements` 是可缺省槽位；静态声明收割（harvest）不构造生成器
+  运行时值 ⇒ 不进 `HARVEST_DISK_ABI`，冷 / 热产物一致。公共导出符号名不变
+  ⇒ 公共 API 冻结不受影响。
+  
+  **已知边界**：**不解锁 A1 步骤 3** —— `genElements` 仍由构造期跑体填充，
+  体延后到首消费点 ⇒ 字段也空，而 dts 是纯投影、导出期无消费点。本变更
+  只预置了承载位与「未填充」语义；步骤 3 仍需静态 yield 域推断通道或产品
+  接受 `Generator<unknown>` 降级。详见 `docs/design/generator-laziness.md`
+  「dts 元素域通道 · 第三种已落地」。
+  
+  版本定性：新增诊断码 + additive API ⇒ **minor**；按整批裁决不判定
+  breaking，无 BREAKING / Migration 标注。
+  
+  回归：`gen-elements-facet.test.ts`（7 例）/ `emit-gen-elements-facet.test.ts`
+  （9 例）；全仓 `1658 入口`，`20 失败 = 基线 20`，**0 新增 / 0 消失**。
+- a9638c2: Feat: precision-cliff UX — `nudo test` call@symbolic hint + `nudo health` precision counts.
+  
+  - `nudo test`: when a report contains `call@symbolic` (the symbolic aggregate witness folded from call sites beyond `callSiteBudget`), the report tail now appends one actionable note (`SYMBOLIC_BUDGET_NOTE`, same "fact — action A or action B" shape as the `nudo:recursion-truncated` advice): raise `package.json#nudo.analysis.callSiteBudget` (1–64, default 3) or pin exact witnesses with `@nudo:case` (limitations §3.2.2 wording — for recursion pin `@nudo:case`, don't rely on call@). Display-face only: no assertion counting, no exit-code change. Reports without `call@symbolic` stay byte-identical.
+  - `nudo health`: the Summary line and the `--json` summary (same source) now carry precision counts — `unknownSignatures` (functions whose return the engine could not infer; renders `unknown`, counted via the shared `inferenceFailed` predicate; `@nudo:skip` functions are declared faces and not counted) and `widenedWitnesses` (occurrences of `#widened`, i.e. witnesses with `conf === "widened"` — budget-folded symbolic aggregates / loop widening). Informational only, like `uncovered`: never gates the exit code. Text Summary reads `… · N unknown signature(s) · M #widened witness(es)`; `--json` summary gains additive keys `unknownSignatures` / `widenedWitnesses`.
+  - `@nudojs/service` exports `SYMBOLIC_BUDGET_NOTE` (single source for the note text; CLI and tests consume the same constant). Regressions pinned in `packages/nudojs/src/__tests__/precision-hints.test.ts`; family-63 health baselines and the e2e health golden updated for the Summary extension (their fixtures now pin src tsconfig per the `writeSrcTsconfig` convention, so they no longer silently test a stale `dist/`).
 
 ### Patch Changes
 
-- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
-  cross-file / cross-package copies that were pinned together by comments or
-  mirror tests instead of code.
+- 56d8227: Add the `nudo:capability-denied` diagnostic (ABS-12 R12-D, strict by default). Host globals and `node:` modules classified as denied now report this code — values stay `unknown` and are never executed natively — instead of `nudo:builtin-unknown`; denied modules are reported at the import/require site. Module classification only covers builtins (`node:` prefix or `module.builtinModules`), so relative paths and npm packages keep their existing missing-module channel. `NUDO_CAPABILITIES=trusted` (or `setCapabilityMode("trusted")`) restores the previous `builtin-unknown` surface and limits runtime identity blocking to the hand-written high-risk list; unclassified names (typos) remain `builtin-unknown` in both modes. Docs updated (EN + zh-Hans). Pinned by `capability-diagnostics.test.ts` (strict/trusted, globals/modules/typos).
+- 47463ae: DX: truncation / host-effect diagnostics now carry concrete fix values and pasteable mock skeletons (suggestion/action text only — severity and exit semantics unchanged).
   
-  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
-    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
-    `@nudojs/core/internal`): the check face (case-arg split) and the parser
-    directive face each kept verbatim copies — Bug 1009 was exactly this pair
-    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
-    silently skipped). `scanWithStrings` was dead after the move and is gone.
-  - **bigint operand predicates** (`isNullishLitOperand` /
-    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
-    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
-    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
-    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
-    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
-    deterministically.
-  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
-    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
-    `1 - x` with `x: number | []` no longer records a false TypeError
-    may-throw (native never throws; the old member scan dragged arr members
-    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
-    the Bug 946 suite, including the sound positive control (`1n + x` on the
-    same union still records may-throw: the number member genuinely throws).
-  - **`collectNestedBodyRanges` wiring completed**: core exported it via
-    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
-    still ran a full local copy. `file-directives.ts` now consumes the single
-    source.
-  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
-    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
-    verbatim copy and the LSP test suite used that copy as a mirror oracle.
-    nudojs now re-exports from `@nudojs/service`; the tautological mirror
-    assertion is replaced by direct-value assertions.
-  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
-    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
-    drift-gate test holding the two copies together; both the replica body and
-    the drift-gate file are gone.
-  - **emit section extraction**: `interface-derivation-emit.ts` and
-    `interface-emitter.ts` duplicated the export-statement →
-    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
-    both now share `service/emit/export-section-scan.ts`.
-  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
-    was a documented structural mirror of the named interface; the shell now
-    consumes the interface directly.
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
+  - `nudo:fork-truncated`: suggestion now carries a computed ceiling from the observed fork count — `fix: package.json#nudo.analysis.maxForks=<N> (observed <K> forks this run), or @nudo:budget forks=<N> on the function — non-blocking`, with `N = max(20000, observed × 1.5 rounded up to the next thousand)` (20000 default when stats are unavailable). Still Info / non-blocking. The ceiling helpers (`suggestedForkCeiling` / `suggestedDepthCeiling` / `suggestedCallsCeiling`) are exported on `@nudojs/core/internal` so the analyzer-side truncation diagnostics consume the same formula instead of a hand-copied one.
+  - `nudo:host-effect-blocked`: suggestion now embeds a pasteable single-line `@nudo:mock` skeleton per host family — `fetch` gets `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })`, the timer/scheduling family gets `@nudo:mock <name> = stub().returns(0)`, and the constructor family (`WebSocket` / `EventSource` / `XMLHttpRequest`) gets `stub().returns({ … })` (an arrow mock is not constructible — `new` on it would trade the Info for a `throws TypeError` may-throw). All skeletons verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision. The structured `mock` action in `check --json` carries the same skeleton.
+  - `nudo:recursion-truncated`: the depth/calls arms of the suggestion (and the `@nudo:budget` quickfix in `nudo check --fix` / LSP code actions) now carry concrete values derived from the observed depth/call counts — `@nudo:budget depth=128` / `calls=40000` floors (defaults ×2), e.g. `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`. The cycle arm keeps the code-level guidance (arguments must vary per level / narrow the base case / `@nudo:contract`; raising the budget cannot lift it) and never points at `@nudo:budget`. Legacy cache entries without a `reason` keep the old `forks=64` quickfix shape.
+- 1aab8ff: **Bug 修复（非 breaking）**：导出的运行时校验器没有执行 `.d.ts` 已经声明的生成器类型。`zod` / `standard` / `guard` 三个面此前只判「是个对象」，于是把 `{}`、`{ next(){} }` 当成合法的 `Generator<T>` 返回值放行。现在按 `Abs.facets.brand` 投影身份，三面同时收紧：真同步 / 异步生成器放行，普通对象拒绝。声明面、公共 API 形状、`SchemaNode` 既有成员都没变（只新增一个联合成员），变的是校验器有没有真正执行既有契约 ⇒ 按 soundness patch 发布，**不写 BREAKING / Migration 标注**（与全批口径一致）。该 changeset 自身不抬级；与同批 minor changeset 合并发布时，包版本取最高的 minor。
   
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
+  - 判据单一真源 `service/src/emit/generator-identity.ts`：只认随值携带的 `Generator` / `AsyncGenerator` 两个 brand；无 brand 的旧 Abs / 手工构造逐字不变 ⇒ 既有产物不需要迁移。**2026-11-06 补齐递归**：生成器作为对象字段 / 数组元素 / union 臂时同样收紧，由 core `denoteGuardB` 的递归身份子句与 `schema-generator.ts::syncGeneratorTags`（约束投影通道丢 facets 后按原始 Abs 树同步）共同保证，四面不再相反裁决。
+  - zod 面内联 `z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")`；standard 面库版 `checkNode` 与产物内联 `__nudoCheck` 两份实现同口径；guard 面的身份子句由 core `denoteGuardB` 递归入口生成（2026-11-06 从顶层前置改为递归，service 不再重复注入）。**core 展示面 `format.ts` 始终未改**（避免 A11 曾致 4 条回归的展示面路径）；`Shape` 判别联合、`projection.ts` 约束面也未动。
+  - 已知边界：`Symbol.toStringTag` 可伪造（换取跨 realm 可判，与 `z.instanceof(Date)` 可改原型伪造同类）。2026-11-06 用 `node:vm` 实测对比原型链判据：后者不可伪造，但会误拒跨 realm 的真生成器 ⇒ **结论保留 toStringTag 口径**。`z.instanceof` 路线仍不可行（无全局 `GeneratorFunction`）。
+  - 回归：`emit-generator-identity-poc.test.ts` 由决策 PoC 升级为 16 例生产接线回归（四面逐值同裁决、真跑、`tsc --noEmit --strict`、伪造边界、嵌套递归、跨 realm 判据实测）；emit 族 502 例全绿，全仓 0 新增失败。
   
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
+  依据：`docs/versioning.md` 的「判例（2026-11-05）」与 `docs/design/architecture-debt.md` 的「schema / guard / standard 生成器身份投影 · 实施记录」。
+- b060986: **Bug 修复（翻译口径订正，非 breaking）**：产品裁定「nudo 的 `any` 含义更接近 TS 的 `unknown`」——nudo `any` 是「任意 JS 值、无约束」，对应 TS 的 `unknown`（top，消费方须先收窄），**不是** TS 的 `any`（关闭类型检查的逃生舱）。此前 `.d.ts` 是唯一把 nudo any 直译成 TS `any` 的产物面，而 zod / standard / guard 三面运行时校验器早已把 any / unknown 同映为 `unknown`。现在 TS 投影面归一，四面同口径。
   
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
+  - `dts-generator.ts::absToTSTypeB` 的 `case "any"` 由 `return "any"` 改为 `return "unknown"`；另补齐三处绕过该函数的硬编码：`classParamDecl`（类构造器 / 静态方法形参）、无签名导出的 `(...args: unknown[]): any` fallback、泛型基类实参占位。源码注解原文解析的 `any` token 白名单、守卫体内部故意的 `Record<string, any>`、`case-json` / contract draft / `formatAbs` 等 **nudo 展示面**均不变。
+  - `abs.md`（en / zh）的「unconstrained entry parameters display as `any`」规则**作用域澄清**：它只管 Nudo 自己的展示 / CLI 输出，不管辖 TypeScript 声明产物；`nudo check` / `nudo contract` 签名面继续区分 any（无约束）与 unknown（推导失败）。`docs/design/cli-semantics.md` §2 与导出指南 en / zh 同步订正。
+  - 实测收益：生成器宿主调用退化档 `Generator<any>` → **`Generator<unknown>`**；BUG-076 记录的「导出指南承诺 `unknown` + 点名提示，实现却给 `any` 且无提示」矛盾**彻底关闭** —— 归一后按「渲染为 unknown」触发的 stderr 提示自动覆盖主路径。
+  - 兼容性：`.d.ts` 消费方对未收窄的无约束返回值会遇到 TS2571。按产品裁定性为**正确的类型安全提示**（引擎确实不知道返回值是什么），先做 `typeof` / 判别收窄即可；Bug 544 的 tsc 实证已从「假红」改判并保留正反映证。按 `docs/versioning.md` 的 soundness 判例走 **patch**，不写 BREAKING / Migration 标注；该 changeset 自身不抬级，与同批 minor changeset 合并发布时包版本取最高的 minor。
+  - Evidence：全仓独立改前基线 1659 入口 / 20 失败 = 基线 20；归一实验暴露 26 条新增失败，**全部**为 TS 产物精确串断言（无功能失败），已按新口径逐条重订；BUG-544 / BUG-076 两个语义级测试整份重写，BUG-003 / BUG-079 / BUG-044 / BUG-168 / BUG-514 / BUG-520 / dts-contract-face / export-dts-evidence 等同步。最终全仓 0 新增失败。
   
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
-  remaining comment-pinned manual-sync obligations and the seven whole-function
-  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
-  verify:examples 251 checks, lint + lint:tests clean).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
-    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
-    `control.ts` YIELD_* constants) → new zero-dependency leaf
-    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
-    and transpile (`statement.ts`) both import the named constants.
-  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
-    whitelist ("须与 core makeBuilder 同步") → core exports
-    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
-    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
-    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
-  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
-    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
-    module-level re-export is removed; no public face change).
-  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
-    error-family.ts imports promise.ts, so no direct import) stays local but is
-    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
-    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
-  
-  Whole-function twins single-sourced:
-  
-  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
-    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
-    resizable/growable slot key, diagnostic labels; slot insertion order
-    preserved).
-  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
-    shared `memberWriteIfeImpl` (only real difference: return written value vs
-    new root).
-  - nudojs `version.ts` three walk-up-to-package.json loops →
-    `findPkgDirUpwards` + `readVersionAt`.
-  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
-    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
-    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
-    invalid / unreadable / ok grading unchanged).
-  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
-    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
-    codes)` (Bug 556 dual-code gate preserved).
-  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
-    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
-    lives once; count still raw param length, formals still
-    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
-  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
-    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
-    `resolveCaseTarget` (error strings byte-identical).
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-  - @nudojs/parser@1.5.7
-  - @nudojs/service@1.11.0
-  - @nudojs/harvester@0.5.0
-  - @nudojs/env@0.5.7
+  依据：`docs/versioning.md`「判例（2026-11-06）」、`docs/design/cli-semantics.md` §2、`packages/website/docs/concepts/abs.md`。
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/harvester@0.6.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
 
-更早版本（57）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.5.7 {#pkg-parser}
-
-## 1.5.7
-
-### Patch Changes
-
-- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
-  cross-file / cross-package copies that were pinned together by comments or
-  mirror tests instead of code.
-  
-  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
-    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
-    `@nudojs/core/internal`): the check face (case-arg split) and the parser
-    directive face each kept verbatim copies — Bug 1009 was exactly this pair
-    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
-    silently skipped). `scanWithStrings` was dead after the move and is gone.
-  - **bigint operand predicates** (`isNullishLitOperand` /
-    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
-    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
-    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
-    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
-    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
-    deterministically.
-  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
-    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
-    `1 - x` with `x: number | []` no longer records a false TypeError
-    may-throw (native never throws; the old member scan dragged arr members
-    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
-    the Bug 946 suite, including the sound positive control (`1n + x` on the
-    same union still records may-throw: the number member genuinely throws).
-  - **`collectNestedBodyRanges` wiring completed**: core exported it via
-    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
-    still ran a full local copy. `file-directives.ts` now consumes the single
-    source.
-  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
-    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
-    verbatim copy and the LSP test suite used that copy as a mirror oracle.
-    nudojs now re-exports from `@nudojs/service`; the tautological mirror
-    assertion is replaced by direct-value assertions.
-  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
-    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
-    drift-gate test holding the two copies together; both the replica body and
-    the drift-gate file are gone.
-  - **emit section extraction**: `interface-derivation-emit.ts` and
-    `interface-emitter.ts` duplicated the export-statement →
-    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
-    both now share `service/emit/export-section-scan.ts`.
-  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
-    was a documented structural mirror of the named interface; the shell now
-    consumes the interface directly.
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
-  
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
-  
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
-  
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
-  
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- 7d7abe4: Dedup batch 4 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the three
-  remaining comment-pinned manual-sync pairs and the largest in-file twins.
-  Pure refactor — outputs byte-identical (vitest --changed 15548 passed,
-  verify:examples 251 checks, public-api freeze 9/9).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - lsp hover `formatEntryParamShapeLike` → core `formatEntryParamShape` via
-    `@nudojs/core/internal` (the old comment claimed "core adds no export";
-    the internal face is the sanctioned route).
-  - lsp `server-code-actions` `norm`/`resolveRel` copy of the synthesized-sidecar
-    base (already drifted: lsp had an extra direct-equality check + loader
-    fallback) → `@nudojs/service/emit` exports `normPosixPath` /
-    `resolveRelativeSpec`; the lsp-only extensions stay at the call site.
-  - standard-schema brand ctor list: `GLOBAL_BRAND_CTOR_NAMES` local array +
-    Set → schema-generator `RUNTIME_GLOBAL_CTOR_NAME_LIST` (single array
-    source; Set + `isRuntimeGlobalCtorName` predicate derive from it; the
-    embedded validator serializes the same array, byte-identical).
-  
-  In-file twins single-sourced:
-  
-  - core `hof.ts`: `predUsesMappedVars` / `mapHasShapeOnlyVar` → parameterized
-    `predAnyVar` walker.
-  - core `scan/literal-shapes.ts`: 21 structurally identical
-    `constraintViolated` issue pushes → `pushPrecondIssue` (message/suggestion
-    templates byte-identical).
-  - core `builtins/promise.ts`: then/catch rejected-arm microtask twins →
-    `definiteRecoveryPromise` / `unsettledRecoveryPromise`; then-microtask dual
-    reject arms → `joinRejectedArm`; `Promise.all` dual reject faces →
-    `allRejectFace`.
-  - core `check.ts`: handwritten return-contract recording block (skip branch +
-    main branch) → `recordReturnContract`.
-  - core `leq.ts`/`postcondition.ts`: duplicate `primOf` single-sourced in leq.
-  - core `builtins/object/methods.ts`: TA own-keys tuple (keys/gOPN faces) →
-    `taOwnKeysTuple`; gOPD class/Error/`.prototype` slot→descriptor arms →
-    `ownSlotDescriptor`; 8 identical nullish-receiver guards →
-    `throwIfNullishRecv`.
-  - core `builtins/array.ts` + `template.ts`: tuple join folding loops →
-    `tupleJoinParts(recv, onSymbol)` (symbol element: throw vs abstract —
-    the real semantic fork, parameterized).
-  - core exec runtime: `$whileSeq`/`$forOf` `applyExitJoin` closures → new pure
-    `loop-exit-join.ts` `applyLoopExitJoin` (the discovered `exhausted && widen`
-    gate difference is an explicit parameter; `$forOf` passes `exhausted: true`,
-    provably equivalent).
-  - core `directive-scan.ts` ↔ parser `fn-directives.ts`: `CASE_TAG_REGEX` scan
-    loop → core `iterCaseTags(text, caseArgSpans)` via `@nudojs/core/internal`
-    (Bug 978 diagnostic actions and downstream regexes stay consumer-side).
-  - service `dts-generator.ts`: `DtsClassMemberSurface` base interface —
-    `scanClassSurface` return type no longer re-declares the member fields
-    (BUG-168/151 docs live once).
-  - lsp: `replay.ts` async env-preload twins share `preloadEnvsThen`, function
-    scope walkers share `walkFnScope`; `server-navigation.ts` references/rename
-    share the gate+parse prologue; `hover.ts` generalize blocks share
-    `tryGeneralizeEnclosing`.
-  
-  Skipped as intentional parallel data or non-identical semantics: env
-  node/web table clones (MessagePort ports, dual Storage, exec options),
-  dts obj-slot widen pair (Bug 240 selective flags vs whole-slot spread),
-  object methods string char-tuple pair (values vs entries elements).
-- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
-  remaining comment-pinned manual-sync obligations and the seven whole-function
-  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
-  verify:examples 251 checks, lint + lint:tests clean).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
-    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
-    `control.ts` YIELD_* constants) → new zero-dependency leaf
-    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
-    and transpile (`statement.ts`) both import the named constants.
-  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
-    whitelist ("须与 core makeBuilder 同步") → core exports
-    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
-    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
-    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
-  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
-    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
-    module-level re-export is removed; no public face change).
-  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
-    error-family.ts imports promise.ts, so no direct import) stays local but is
-    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
-    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
-  
-  Whole-function twins single-sourced:
-  
-  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
-    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
-    resizable/growable slot key, diagnostic labels; slot insertion order
-    preserved).
-  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
-    shared `memberWriteIfeImpl` (only real difference: return written value vs
-    new root).
-  - nudojs `version.ts` three walk-up-to-package.json loops →
-    `findPkgDirUpwards` + `readVersionAt`.
-  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
-    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
-    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
-    invalid / unreadable / ok grading unchanged).
-  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
-    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
-    codes)` (Bug 556 dual-code gate preserved).
-  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
-    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
-    lives once; count still raw param length, formals still
-    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
-  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
-    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
-    `resolveCaseTarget` (error strings byte-identical).
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-
-更早版本（57）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.9.0 {#pkg-lsp}
+## nudojs (CLI) 1.9.0 {#pkg-nudojs}
 
 ## 1.9.0
 
 ### Minor Changes
 
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
+- e1e6892: ABS-01: constraint / lemma grammar — arithmetic relations, dependent return contracts, and contract-internal binders.
   
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
+  - `@nudo:assume` and `@nudo:invariant` accept simple arithmetic expressions (`name`, `number`, `name ± number`): `@nudo:assume i + 1 <= n`, `@nudo:invariant i < n`. Multiplication / division / parentheses stay malformed with the existing fail-closed diagnostics.
+  - `@nudo:contract return <rel> <expr>` builds a dependent return obligation on the return term (`return > x`). IEEE-sound proof rule added for non-strict offset comparisons (`round(b + c) >= b`, `c >= 0`); strict `>` / `<` on unbounded operands report an honest unprovable warning (2^53 + 1 = 2^53 is a real counterexample), never a false red.
+  - Contract-internal binders: `bind(name, constraint)`, `ref(name)`, `ref(name).at(path)` with scope = one constraint tree. `EffectiveContract` carries a cross-slot binder table so `fn({...}, array(ref("b")))` can reference a binder declared in a callback slot. Unbound refs fail closed (`nudo:contract-load`) and never degrade to `any()`.
+  - Refs are resolved before proofs / instantiation / entry-Abs projection, so a ref slot cannot pass as an obligation-free `any()`.
+  - Public surface additive: `bind` / `ref` / `rel` builders plus `BinderTable` and resolver helpers (public API snapshot updated).
+- ca8005b: ABS-02: explain where `unknown` / `any` came from (observation-only side channel).
+  
+  - New `buildUnknownExplanations` / `formatUnknownExplanations` (core) derive a stable, deduped reason list from existing observation faces (signatures, issues, budget, eval fallbacks) — no Abs field, no cache-key or `leqAbs` change; cold/warm results are untouched by construction.
+  - Reasons: `budget` / `missing-env` / `unsupported` / `eval-failure` / `no-contract` / `explicit-any` / `inference-failure`, each with an actionable suggestion. Cycle truncation says explicitly that `@nudo:budget` cannot help.
+  - `nudo check --explain-unknown` prints the list after the human report; default output is byte-identical and `--json` / `--gitlab` machine contracts are unaffected.
+- 1a4cabd: ABS-03: dts projection completion — contract generics, readable contract notes, overload arms.
+  
+  - Contract-side type parameters are now derived from binder vars (`bind:<name>`) and emitted only when referenced by a parameter or the return type: the entry-only HOF contract projects as `export declare function processItems<a, b>(items: a[], transform: (x: a) => b): b[];` (element domain and callback parameter share the same variable; unreferenced vars are dropped).
+  - `.d.ts` JSDoc gains readable `Contract:` rows (sidecar expression text / constraint rendering). They are notes only — the type face still comes from Abs, and `Case:` rows keep their debug-witness role.
+  - Function Abs with a declared overload set now projects as a TS object type with per-arm call signatures (declaration order = TS resolution order) instead of collapsing to the union face.
+  - Schema projection already emits numeric `gt/ge/lt/le` bounds; new tests pin bounded output and the honest omission of non-expressible relations (`x > y`).
+- b57d1d2: ABS-04: test observation face — outermost witnesses survive the budget, and the two paths are discoverable.
+  
+  - Call-site witness selection now prefers the **outermost** records (concrete arguments) over internal records whose arguments carry free term variables (α names / derived expressions from recursive or higher-order evaluation). A `sumTo(3)`-style top-level witness is no longer pushed out of `callSiteBudget` by internal records.
+  - When a function has both `@nudo:case` and call-site records, the default run keeps the mutual-exclusion report and prints a `both-paths` hint naming those functions, pointing at `--both-paths` (sources stay labeled: directive vs callsite). `--json` is unaffected; truncation reasons and their next actions keep flowing through the existing `nudo:*-truncated` diagnostics. Under `--freeze` the hint is suppressed: `--both-paths` combined with `--freeze` is a usage error, so the suggestion is not actionable in that run.
+- 09f5ff8: ABS-08: automatic loop-invariant candidates (phase 1 — observation only).
+  
+  - The loop widener records numeric bounds of scalar loop-carried bindings across observed iteration snapshots. When widening actually happens, these become **candidates** surfaced as `nudo:invariant-inferred` info diagnostics with the observed bound and sample count.
+  - Candidates never participate in proofs: an observed extreme over a bounded number of iterations is one-sided evidence, not a proved invariant. Only an explicit `@nudo:invariant` declaration enters the proof (audited via `nudo:invariant-relied`) — so inference cannot introduce false greens.
+  - User declarations override candidates for the same binding (no duplicate hints).
+  - Bounded loops that never widen produce no candidates (no noise).
+  - Diagnostics docs updated (EN + zh).
+- 4361e2e: DX: `nudo test --both-paths` (directive + synthesized witnesses in one round) and opt-in HMAC-signed disk cache entries.
+  
+  - `nudo test <path> --both-paths [--only <names>]`: functions with `@nudo:case` directives now *can* also synthesize `call@`/`entry@` witnesses in the same round (teaching comparison face; default exclusivity unchanged). `--json` separates the paths via `source: "directive" | "callsite"`; exit semantics unchanged (synthetic cases never fail the run). `--only` without `--both-paths`, and `--both-paths --freeze`, are usage errors.
+  - Signed disk cache: `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` signs every entry (HMAC-SHA256, domain-separated key derivation). Verification failure = miss (recompute, never trust) — a forged CheckJson can no longer pass the gate; signed/unsigned key spaces are separate, so key rotation is a clean full miss. Fail-closed config: sign without a key, or a non-boolean sign, refuses to run (`check` / `contract` / `health`, machine-readable on `--json`) instead of silently running unsigned. `nudo.cache` also accepts an object form `{ dir?, sign? }`; typo'd keys surface as `config-shape` report entries.
+  - truncation suggestions: fork/recursion-budget fix values in the analyzer now consume the single-sourced `suggested{Fork,Depth,Calls}Ceiling` helpers from `@nudojs/core/internal` (same wording as the check face, concrete numbers instead of `@nudo:budget depth=…` placeholders).
+  - benchmark: `bench-monorepo.mts --corpus <path>` runs the S1 benchmark against a real monorepo directory (dynamic hub/mid/leaf targets from the module graph, in-memory edits only — user files are never written; report lands in `s1-perf-baseline-real.{md,json}` with an honest corpus header).
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 09d88d6: Feat: `nudo init` coexistence pointer + copy-paste default client configs (LSP-G4 DX).
+  
+  - init: after writing the adoption baseline, when the target package has `tsconfig.json` / `jsconfig.json`, init appends a coexistence hint block — the VS Code command `nudo.coexistence.apply` ("Nudo: Apply coexistence settings") and the coexistence-guide recipe URL (`include`/`exclude` / `mode: "directives"`). Print-only: no tsconfig / editor settings are rewritten; the minimal-write discipline (Bug 681) and the existing init boundaries (B676/677/678/680, Bug 1144, Bug 229) are unchanged, and the idempotent no-write path prints no hint.
+  - website (EN + zh-Hans mirrors): lsp-clients Setup notes upgraded to copy-paste default config blocks — the Zed `settings.json` block now ships `semantic_tokens: "combined"` inline (previously prose-only); Neovim lspconfig and Helix `languages.toml` blocks are labeled as complete copy-whole defaults. zed.md Settings gets the same semantic_tokens fold. Known-gaps G4 rows (both locales) note the init pointer; `docs/design/lsp-client-gaps.md` G4 status records it.
+- a9638c2: Feat: precision-cliff UX — `nudo test` call@symbolic hint + `nudo health` precision counts.
+  
+  - `nudo test`: when a report contains `call@symbolic` (the symbolic aggregate witness folded from call sites beyond `callSiteBudget`), the report tail now appends one actionable note (`SYMBOLIC_BUDGET_NOTE`, same "fact — action A or action B" shape as the `nudo:recursion-truncated` advice): raise `package.json#nudo.analysis.callSiteBudget` (1–64, default 3) or pin exact witnesses with `@nudo:case` (limitations §3.2.2 wording — for recursion pin `@nudo:case`, don't rely on call@). Display-face only: no assertion counting, no exit-code change. Reports without `call@symbolic` stay byte-identical.
+  - `nudo health`: the Summary line and the `--json` summary (same source) now carry precision counts — `unknownSignatures` (functions whose return the engine could not infer; renders `unknown`, counted via the shared `inferenceFailed` predicate; `@nudo:skip` functions are declared faces and not counted) and `widenedWitnesses` (occurrences of `#widened`, i.e. witnesses with `conf === "widened"` — budget-folded symbolic aggregates / loop widening). Informational only, like `uncovered`: never gates the exit code. Text Summary reads `… · N unknown signature(s) · M #widened witness(es)`; `--json` summary gains additive keys `unknownSignatures` / `widenedWitnesses`.
+  - `@nudojs/service` exports `SYMBOLIC_BUDGET_NOTE` (single source for the note text; CLI and tests consume the same constant). Regressions pinned in `packages/nudojs/src/__tests__/precision-hints.test.ts`; family-63 health baselines and the e2e health golden updated for the Summary extension (their fixtures now pin src tsconfig per the `writeSrcTsconfig` convention, so they no longer silently test a stale `dist/`).
 
 ### Patch Changes
 
-- 5cd4106: Dedup batch 2 (jscpd + hand-sync-comment audit): single-source the remaining
-  cross-file / cross-package copies that were pinned together by comments or
-  mirror tests instead of code.
+- 67ece35: Add `--capabilities strict|trusted` to `check`, `test` and `health` (ABS-12 R12-D). `strict` (default, same as `NUDO_CAPABILITIES=strict`) hides side-effectful host globals and `node:` modules: values stay `unknown`, denied names report `nudo:capability-denied`, and the canary suite proves no socket/file/process side effects. `trusted` restores the legacy `builtin-unknown` surface while the hand-written high-risk host-function blocklist stays active. Invalid values fail with a usage error. Docs updated (EN + zh-Hans).
+- 46719cb: Speed up `check --watch` incremental rounds by reusing the evaluator injection object per file across rounds and by memoizing dependency fingerprints within a round. `checkMemoKey` keys on `moduleMapId(modules)` (identity), so rebuilding the injection for every file on every round made the check memo miss; the injection is now cached under the exact analysis-input identity (stable source × dependency fingerprints × env names/contents × preload state × autoBind × analysis config), and dependency fingerprints computed by the injection key, `analyzeFile` and the printer are shared inside a round. On the 48-file semver corpus an inert edit round drops from 2600ms to 718ms for a hub file (`total` 929ms, under the 1s target) and to 345ms / 555ms for a leaf; semantic edits still recompute the dependency chain. Diagnostics collected during injection assembly are replayed on a cache hit, and truncated / read-error fingerprints opt out of the cache (fail-closed).
+- b6cdf66: Stop invalidating the whole dependency chain for inert edits. Dependency contents now enter every cache key through the same `stableAnalyzeKeySource` projection the entry file already used: trailing comments/whitespace that carry no `@nudo` directive no longer flip the dependency fingerprint (check disk keys, evaluator memo, generalize L0, per-fn memo), while real code, line shifts and `@nudo` directives still do. `check --watch` now evicts only the files that actually changed; dependents rely on the content fingerprints to miss (semantic edit) or hit (inert edit).
   
-  - **String-aware scanners** (`splitTopLevelArgs` / `findTopLevelColon` /
-    `stripJsdocContinuation` → new `core/algebra/text-scan.ts`, exported via
-    `@nudojs/core/internal`): the check face (case-arg split) and the parser
-    directive face each kept verbatim copies — Bug 1009 was exactly this pair
-    drifting (check face treated `\` as an escape ⇒ one arg fewer ⇒ L2 witness
-    silently skipped). `scanWithStrings` was dead after the move and is gone.
-  - **bigint operand predicates** (`isNullishLitOperand` /
-    `isKnownNonBigintNumeric` / `isMaybeBigintOperand`): `surface.ts` carried a
-    forked copy of `arithmetic/coerce.ts` — its `isMaybeBigintOperand` lacked
-    the Bug 946 `arr`/`tuple` arms and only stayed sound by accident of the
-    catch-all throw. Single source in coerce; `foldNumericBinOp` now mirrors
-    foldBigintBinOp's explicit arr/tuple hard-throw so `1n & []` still throws
-    deterministically.
-  - **Bug 946 member-level fix** (behavior): `isMaybeCoercionThrowOperand` now
-    recurses into `sum` members and skips `arr`/`tuple` members — `x & 1` /
-    `1 - x` with `x: number | []` no longer records a false TypeError
-    may-throw (native never throws; the old member scan dragged arr members
-    into the may-throw channel ⇒ potential L2 false red). Regression-pinned in
-    the Bug 946 suite, including the sound positive control (`1n + x` on the
-    same union still records may-throw: the number member genuinely throws).
-  - **`collectNestedBodyRanges` wiring completed**: core exported it via
-    `@nudojs/core/internal` and its comment claimed parser reuse, but parser
-    still ran a full local copy. `file-directives.ts` now consumes the single
-    source.
-  - **`parseIgnoreThrows`/`configIgnoreThrows`**: service is the declared
-    single implementation (CLI / LSP / vite-plugin); the CLI kept its own
-    verbatim copy and the LSP test suite used that copy as a mirror oracle.
-    nudojs now re-exports from `@nudojs/service`; the tautological mirror
-    assertion is replaced by direct-value assertions.
-  - **`absShapeForTsTypeText` via `@nudojs/core/internal`**: service's
-    `tsAnnotationShape` was a hand-synced table replica ("勿单边扩表") with a
-    drift-gate test holding the two copies together; both the replica body and
-    the drift-gate file are gone.
-  - **emit section extraction**: `interface-derivation-emit.ts` and
-    `interface-emitter.ts` duplicated the export-statement →
-    `{names, bindings}` extraction (31 lines) and `stripSections` (14 lines);
-    both now share `service/emit/export-section-scan.ts`.
-  - **`ScanLiteralCallsOptions`**: the thin shell's inline opts literal type
-    was a documented structural mirror of the named interface; the shell now
-    consumes the interface directly.
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
+  Measured on the 48-file semver corpus (dist, clean `NODE_OPTIONS`): hub edit `analyze` 3313ms → 2597ms, leaf 1009ms → 875ms. A single dependent's `analyzeFileAsync` drops from ~663–734ms to 9.9ms after an inert dependency edit, while a semantic edit still misses (172ms). The residual watch cost is the `check` verb's own `checkSource` (~500ms/file, memo keyed by module-map identity), tracked as the next ABS-18 item. Pinned by `load-deps-fp-stable.test.ts` and `abs18-watch-inert-eviction.test.ts`.
+- 38eedd0: Fix the macOS `/var` → `/private/var` path-space mismatch behind the 9 long-standing LSP/CLI baseline failures, and remove watch FSEvents noise.
   
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
+  On macOS `os.tmpdir()` returns `/var/folders/...`, a symlink to `/private/var/folders/...`. The kernel gives `process.cwd()` / `realpathSync()` the **realpath** form, while user arguments and test fixtures keep the `/var/...` literal. Two product faces mixed those spaces:
   
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
+  - **LSP emit boundary** (`agent-tools.ts`): `assertEmitTargetAllowed` / `resolvedWorkspaceRoots` / `derivedSidecarAllowed` realpathed only *existing* paths. A not-yet-written source file or downstream sidecar fell back to the `/var/...` literal and was compared against a `/private/...` root, so legitimate writes were rejected as "outside allowed roots" (Bug 762 derived emit, Bug 765 unsaved-buffer guard). All three now use the shared `normalizeRealPath` from `@nudojs/service`, which falls back to `realpath(dirname) + basename` for missing targets. Real symlink-escape protection is unchanged (Bug 766's escape case still fails closed).
+  - **CLI relative display**: `relative(process.cwd(), resolve(userArg))` produced `../../../../../../../var/.../syn.js`, polluting the JSON `file` field and human-facing text (Bug 661 / 663 / 664 / 63b). New `relFromCwd()` normalizes the target into the cwd's realpath space before subtracting; the contract command family (print / draft / emit / from-dts) and watch error lines now use it. `displayPathOf` is deliberately untouched, so the check/test/health baselines stay byte-identical. On non-symlink hosts and in-repo paths output is byte-identical.
   
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
-  
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- 7d7abe4: Dedup batch 4 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the three
-  remaining comment-pinned manual-sync pairs and the largest in-file twins.
-  Pure refactor — outputs byte-identical (vitest --changed 15548 passed,
-  verify:examples 251 checks, public-api freeze 9/9).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - lsp hover `formatEntryParamShapeLike` → core `formatEntryParamShape` via
-    `@nudojs/core/internal` (the old comment claimed "core adds no export";
-    the internal face is the sanctioned route).
-  - lsp `server-code-actions` `norm`/`resolveRel` copy of the synthesized-sidecar
-    base (already drifted: lsp had an extra direct-equality check + loader
-    fallback) → `@nudojs/service/emit` exports `normPosixPath` /
-    `resolveRelativeSpec`; the lsp-only extensions stay at the call site.
-  - standard-schema brand ctor list: `GLOBAL_BRAND_CTOR_NAMES` local array +
-    Set → schema-generator `RUNTIME_GLOBAL_CTOR_NAME_LIST` (single array
-    source; Set + `isRuntimeGlobalCtorName` predicate derive from it; the
-    embedded validator serializes the same array, byte-identical).
-  
-  In-file twins single-sourced:
-  
-  - core `hof.ts`: `predUsesMappedVars` / `mapHasShapeOnlyVar` → parameterized
-    `predAnyVar` walker.
-  - core `scan/literal-shapes.ts`: 21 structurally identical
-    `constraintViolated` issue pushes → `pushPrecondIssue` (message/suggestion
-    templates byte-identical).
-  - core `builtins/promise.ts`: then/catch rejected-arm microtask twins →
-    `definiteRecoveryPromise` / `unsettledRecoveryPromise`; then-microtask dual
-    reject arms → `joinRejectedArm`; `Promise.all` dual reject faces →
-    `allRejectFace`.
-  - core `check.ts`: handwritten return-contract recording block (skip branch +
-    main branch) → `recordReturnContract`.
-  - core `leq.ts`/`postcondition.ts`: duplicate `primOf` single-sourced in leq.
-  - core `builtins/object/methods.ts`: TA own-keys tuple (keys/gOPN faces) →
-    `taOwnKeysTuple`; gOPD class/Error/`.prototype` slot→descriptor arms →
-    `ownSlotDescriptor`; 8 identical nullish-receiver guards →
-    `throwIfNullishRecv`.
-  - core `builtins/array.ts` + `template.ts`: tuple join folding loops →
-    `tupleJoinParts(recv, onSymbol)` (symbol element: throw vs abstract —
-    the real semantic fork, parameterized).
-  - core exec runtime: `$whileSeq`/`$forOf` `applyExitJoin` closures → new pure
-    `loop-exit-join.ts` `applyLoopExitJoin` (the discovered `exhausted && widen`
-    gate difference is an explicit parameter; `$forOf` passes `exhausted: true`,
-    provably equivalent).
-  - core `directive-scan.ts` ↔ parser `fn-directives.ts`: `CASE_TAG_REGEX` scan
-    loop → core `iterCaseTags(text, caseArgSpans)` via `@nudojs/core/internal`
-    (Bug 978 diagnostic actions and downstream regexes stay consumer-side).
-  - service `dts-generator.ts`: `DtsClassMemberSurface` base interface —
-    `scanClassSurface` return type no longer re-declares the member fields
-    (BUG-168/151 docs live once).
-  - lsp: `replay.ts` async env-preload twins share `preloadEnvsThen`, function
-    scope walkers share `walkFnScope`; `server-navigation.ts` references/rename
-    share the gate+parse prologue; `hover.ts` generalize blocks share
-    `tryGeneralizeEnclosing`.
-  
-  Skipped as intentional parallel data or non-identical semantics: env
-  node/web table clones (MessagePort ports, dual Storage, exec options),
-  dts obj-slot widen pair (Bug 240 selective flags vs whole-slot spread),
-  object methods string char-tuple pair (values vs entries elements).
-- 5769211: Dedup batch 5 (jscpd `--min-tokens 70` audit of code-level clones; website
-  EN↔zh mirrors and CHANGELOGs excluded as mechanism products): close the four
-  remaining comment-pinned manual-sync obligations and the seven whole-function
-  twins. Pure refactor — outputs byte-identical (vitest --changed 16815 passed,
-  verify:examples 251 checks, lint + lint:tests clean).
-  
-  Comment-confessed sync pairs now single-sourced:
-  
-  - transpile `stmt/statement.ts` yield try-context bits (raw `1|4|8` / `& 2` /
-    `~(16|32|64)` literals pinned by a "钉死同步" comment to runtime
-    `control.ts` YIELD_* constants) → new zero-dependency leaf
-    `exec/yield-bits.ts`; runtime (`control.ts` re-export removed, `async.ts`)
-    and transpile (`statement.ts`) both import the named constants.
-  - parser `case-arg.ts` `TYPE_EXPR_CHAIN_METHODS` hand-maintained chain-method
-    whitelist ("须与 core makeBuilder 同步") → core exports
-    `CONSTRAINT_CHAIN_METHOD_NAMES` (public barrel, next to
-    `CONSTRAINT_BUILDER_NAMES`); parity pinned by
-    `constraint-chain-methods.test.ts` (method-face drift ⇒ CI red).
-  - service `builtin-prototype.ts` `BUILTIN_ERROR_CLASSES` verbatim 8-name copy
-    of core `ERROR_CTOR_NAMES` → imported via `@nudojs/core/internal` (the dead
-    module-level re-export is removed; no public face change).
-  - core `promise.ts` `aggregateErrorAbs` local error-brand construction (cycle:
-    error-family.ts imports promise.ts, so no direct import) stays local but is
-    now drift-gated in `eval-bug-293-promise-combinator-settle.test.ts`
-    (slot-key set / non-enumerable flags / inherited name vs `errorBrandAbs`).
-  
-  Whole-function twins single-sourced:
-  
-  - core `builtins/error/binary.ts` `makeArrayBufferAbs` /
-    `makeSharedArrayBufferAbs` → parameterized `makeBufferAbs` (brand name,
-    resizable/growable slot key, diagnostic labels; slot insertion order
-    preserved).
-  - core `transpile/member-path.ts` `memberWriteIfe` / `memberWriteRootIfe` →
-    shared `memberWriteIfeImpl` (only real difference: return written value vs
-    new root).
-  - nudojs `version.ts` three walk-up-to-package.json loops →
-    `findPkgDirUpwards` + `readVersionAt`.
-  - nudojs `migrate.ts` `planWorkflowRewrites` → delegates to
-    `planWorkflowRewritesIn(findWorkflowDir(from))`; `readPackageJsonDetailed` /
-    `readMarkerFile` → shared `readJsonObjectDetailed(path, label)` (missing /
-    invalid / unreadable / ok grading unchanged).
-  - service `emit/quickfix-edits.ts` `sidecarClearsEntryThrow` /
-    `sidecarClearsConstraintViolation` → shared `sidecarClearsDiags(input,
-    codes)` (Bug 556 dual-code gate preserved).
-  - core `generalize.ts` `ctorParamCountOf` / `ctorFormalsOf` twin class-ctor
-    walkers → single `ctorParamNodesOf` walker (Bug 1031 null-declaration skip
-    lives once; count still raw param length, formals still
-    `formalParamsFromNodes` — the `this`-param skip semantics unchanged).
-  - lsp `server-commands.ts` `handleSelectCase` / `handleSelectContract`
-    ~20-line resolve→read→caseTargets→knownFunctionNames preamble →
-    `resolveCaseTarget` (error strings byte-identical).
-- 01a550b: Dedup batch 6 (same-file fragment twins from the jscpd `--min-tokens 70`
-  audit; batch 5 closed the cross-file sync obligations and whole-function
-  twins). Pure refactor — outputs byte-identical (vitest --changed green,
-  verify:examples 251 checks, lint + lint:tests clean, defineEnv deep
-  structural dump parity vs HEAD for the env change).
-  
-  - transpile `expr/optional-chain.ts`: `invoke` / `invokeKey` hop arms share
-    the emission tail (contOf IIFE wrap, fnOptional double fork with
-    Bug 187 whole-chain short-circuit + BUG-216 single-Get preRead,
-    recvOptional short-circuit, bare tail) — extracted `emitInvokeTail`;
-    the two arms now only define `callOf` (`$invoke` vs `$invokeKey`) and the
-    method-value read (`$get` vs `$idx`). Emitted code text unchanged.
-  - `algebra/term.ts`: `surviveMulOne` / `surviveSubZero` verbatim-twin
-    closures → shared `toNumberDomainTerm` (Bug 010 number-domain guard for
-    x*1 / x-0 identities, bigint mixed-type preservation).
-  - `algebra/check.ts`: assume / invariant segment processing shares
-    `anchorSurfaceOf` (#165 anchorable surface: contract formals ∪ AST params
-    ∪ top-level locals); the two L2 entry-may-throw issue constructions
-    (no-signature fallback vs generalized success) share
-    `pushEntryMayThrowIssue` — only the `actual` line differs.
-  - transpile `stmt/statement.ts`: for-loop fallback path and init-declaration
-    path share the body-prep block (`forBodyPrep`: body local decls → body
-    opts with alias filtering → body statements → loop-carried assignment
-    names); paths inject constScope shadowing and the initName exclusion.
-    Emitted code text unchanged.
-  - `builtins/json.ts`: tuple and arrayView branches of the stringify walker
-    share `mapElements` (index-keyed element mapping, abstract child folds to
-    null with partial/unseen accounting, tuple holes).
-  - `builtins/object/methods.ts`: `Object.keys` / `Object.entries` string-
-    literal receiver arms share `stringIndexTupleAbs` (code-unit indexing,
-    exact conf; element construction injected).
-  - `algebra/promote-scan.ts`: ForOf's binding-window child walk and the
-    generic tail walk share `walkChildren`.
-  - `arithmetic/muldiv.ts`: `div` / `mod` share the numeric leading
-    (`divModLead`: builtin-brand ToPrimitive re-entry, Symbol TypeError,
-    bigint fold + abstract-bigint domain with 0n RangeError per Bug 106);
-    0-divisor semantics after the leading remain per-op.
-  - `env/src/node.ts`: the three verbatim MessagePort slot tables
-    (MessageChannel.port1 / port2 / standalone MessagePort brand) single-
-    sourced as `messagePortSlots` (same cross-brand sharing pattern as the
-    existing `streamSlots`); defineEnv deep structural dump verified
-    byte-identical vs HEAD.
-  - `lsp/src/symbols.ts`: `FunctionDeclaration` / `FunctionExpression`
-    visitor bodies merged into a single `"FunctionDeclaration|FunctionExpression"`
-    visitor key (babel traverse alias syntax), bodies were verbatim twins.
-- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
-  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
-  defineEnv deep structural dump (sorted + insertion-order preserving)
-  byte-identical vs HEAD, verify:examples 251 checks green, lint +
-  lint:tests clean.
-  
-  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
-    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
-    exec-family options obj (execSync / execFileSync / spawnSync) → shared
-    `execSyncOptions`; Request / Response body-mixin slots
-    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
-    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
-    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
-    and the `process` global object.
-  - env `node.ts` path family — the drifted manual-sync pair: the top-level
-    `pathModule` inlined the whole member table next to the
-    `platformPathMethods(posix/win32)` factory and had already drifted
-    (`join.required` only on the top-level copy). `pathModule` now consumes
-    the factory; member order canonicalized to the top-level key order;
-    `join`'s required-arity enforcement is now identical across
-    path/posix/win32 (Bug 877 case 6's claimed parity now real).
-  - env `web.ts`: URL `.searchParams` slot table and the global
-    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
-    iterator face / size stay per-site; insertion order preserved).
-  - core `builtins/error/binary.ts`: DataView ctor and
-    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
-    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
-    number-domain item enforcement now calls `enforceTaItem` (the `.of`
-    cause variant is unified into the shared text — no pins).
-  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
-    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
-    undefined, closed → counted tuple).
-  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
-    walk (assignment / update / stateful-call faces, ×3) →
-    `markFreeMemberRoot`.
-  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
-    destructure binding loops → `bindPatternImports`; top-level class scans
-    (`findClassDecl` + module-frame class bindings) share
-    `unwrapExportDecl`.
-  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
-    namespace resolution loop (qualified arm + short-name arm) →
-    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
-    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
-    untouched).
-  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
-    enforcers (literal face / predicate face) share `actualSlotTable`
-    (obj direct / brand inner-obj unwrap).
-  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
-    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
-    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
-    comment kept.
-  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
-    `analyzeToolFile` preamble (resolveToolFile → readSource →
-    analyzeFileAsync "all", Bug 993 async preload).
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-  - @nudojs/parser@1.5.7
-  - @nudojs/service@1.11.0
+  The same watch loop also stops swallowing edits: fingerprint baselines are recorded **when a round's changed paths are accepted, before analysis** (and dropped for deleted files), not after the incremental round resolves. The old ordering re-baselined any write that landed while the round was running, so `filterUnchangedWatchPaths` saw it as unchanged and the edit was silently skipped until the next save. `startWatch` now filters FSEvents noise: macOS directory watchers report untouched files from the same batch, so changing `a.js` could also re-run `sub/b.js` and made the Bug 684/685 "re-run exactly the changed file" assertions flaky (~1/3 of runs). The debounce window keeps only paths whose `(size, mtimeMs)` fingerprint actually changed; deletions, new files and non-tracked paths (config / sidecar / env templates) always pass through. Extracted as testable `watchPathVersion` / `filterUnchangedWatchPaths`, covered by `cli-watch-noise-filter.test.ts` (7 cases). Reverting the filter reproduces the flake; with it, 8/8 repeated runs and all 12 watch test files / 33 cases pass. The lose-an-edit race has no deterministic e2e fixture yet (it needs a controllably slow analysis); the pure filter plus the existing watch suites are the regression surface.
+- 83c1ed2: **Chore:** expand the OSS real-package benchmark corpus from 3 to 10 packages (`commander` / `yargs` / `semver` + `eventemitter3` / `kleur` / `ms` / `is-plain-obj` / `escape-string-regexp` / `p-limit` / `yocto-queue`) and regenerate `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}`. Every package is L1 zero-FP on the new corpus. Candidate packages that could not join honestly are documented in `benchmark/oss/packages.mts`: `debug` and `@changesets/cli` crash on the analyze path (evaluating them clobbers host `process.env` / `globalThis.Error` — engine debt, not gate-threshold material), `lodash` blows the wall-clock budget, `@babel/types` crashes `checkSource`, and `@babel/parser` / `@babel/traverse` single-file bundles dominate a bench round. Benchmark-only change — no engine code touched.
+- 05b7b82: **Chore:** re-admit `debug` and `@changesets/cli` to the OSS real-package benchmark corpus (10 → 12 packages, 120 files) after the host-global-purity fix (B1/B2: fork/member-write rebinds gated on `$rebindable` — analysis no longer clobbers host `process` / `globalThis.Error`). Both are L1 zero-FP across 4 trusted runs; `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}` regenerated (envelope = observed max of 4 quiet runs ×1.10, same convention as the previous expansion). `@babel/types` stays excluded for wall-clock only (single ~3 MB bundle, one `checkSource` pass ≈ 4 min past the per-round budget) — its earlier crash is fixed (B3).
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [1a4cabd]
+- Updated dependencies [b57d1d2]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/harvester@0.6.0
+  - @nudojs/service@1.12.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
 
-更早版本（61）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（58）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/env 0.5.7 {#pkg-env}
+## @nudojs/parser 1.5.8 {#pkg-parser}
 
-## 0.5.7
+## 1.5.8
 
 ### Patch Changes
 
-- 01a550b: Dedup batch 6 (same-file fragment twins from the jscpd `--min-tokens 70`
-  audit; batch 5 closed the cross-file sync obligations and whole-function
-  twins). Pure refactor — outputs byte-identical (vitest --changed green,
-  verify:examples 251 checks, lint + lint:tests clean, defineEnv deep
-  structural dump parity vs HEAD for the env change).
-  
-  - transpile `expr/optional-chain.ts`: `invoke` / `invokeKey` hop arms share
-    the emission tail (contOf IIFE wrap, fnOptional double fork with
-    Bug 187 whole-chain short-circuit + BUG-216 single-Get preRead,
-    recvOptional short-circuit, bare tail) — extracted `emitInvokeTail`;
-    the two arms now only define `callOf` (`$invoke` vs `$invokeKey`) and the
-    method-value read (`$get` vs `$idx`). Emitted code text unchanged.
-  - `algebra/term.ts`: `surviveMulOne` / `surviveSubZero` verbatim-twin
-    closures → shared `toNumberDomainTerm` (Bug 010 number-domain guard for
-    x*1 / x-0 identities, bigint mixed-type preservation).
-  - `algebra/check.ts`: assume / invariant segment processing shares
-    `anchorSurfaceOf` (#165 anchorable surface: contract formals ∪ AST params
-    ∪ top-level locals); the two L2 entry-may-throw issue constructions
-    (no-signature fallback vs generalized success) share
-    `pushEntryMayThrowIssue` — only the `actual` line differs.
-  - transpile `stmt/statement.ts`: for-loop fallback path and init-declaration
-    path share the body-prep block (`forBodyPrep`: body local decls → body
-    opts with alias filtering → body statements → loop-carried assignment
-    names); paths inject constScope shadowing and the initName exclusion.
-    Emitted code text unchanged.
-  - `builtins/json.ts`: tuple and arrayView branches of the stringify walker
-    share `mapElements` (index-keyed element mapping, abstract child folds to
-    null with partial/unseen accounting, tuple holes).
-  - `builtins/object/methods.ts`: `Object.keys` / `Object.entries` string-
-    literal receiver arms share `stringIndexTupleAbs` (code-unit indexing,
-    exact conf; element construction injected).
-  - `algebra/promote-scan.ts`: ForOf's binding-window child walk and the
-    generic tail walk share `walkChildren`.
-  - `arithmetic/muldiv.ts`: `div` / `mod` share the numeric leading
-    (`divModLead`: builtin-brand ToPrimitive re-entry, Symbol TypeError,
-    bigint fold + abstract-bigint domain with 0n RangeError per Bug 106);
-    0-divisor semantics after the leading remain per-op.
-  - `env/src/node.ts`: the three verbatim MessagePort slot tables
-    (MessageChannel.port1 / port2 / standalone MessagePort brand) single-
-    sourced as `messagePortSlots` (same cross-brand sharing pattern as the
-    existing `streamSlots`); defineEnv deep structural dump verified
-    byte-identical vs HEAD.
-  - `lsp/src/symbols.ts`: `FunctionDeclaration` / `FunctionExpression`
-    visitor bodies merged into a single `"FunctionDeclaration|FunctionExpression"`
-    visitor key (babel traverse alias syntax), bodies were verbatim twins.
-- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
-  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
-  defineEnv deep structural dump (sorted + insertion-order preserving)
-  byte-identical vs HEAD, verify:examples 251 checks green, lint +
-  lint:tests clean.
-  
-  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
-    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
-    exec-family options obj (execSync / execFileSync / spawnSync) → shared
-    `execSyncOptions`; Request / Response body-mixin slots
-    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
-    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
-    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
-    and the `process` global object.
-  - env `node.ts` path family — the drifted manual-sync pair: the top-level
-    `pathModule` inlined the whole member table next to the
-    `platformPathMethods(posix/win32)` factory and had already drifted
-    (`join.required` only on the top-level copy). `pathModule` now consumes
-    the factory; member order canonicalized to the top-level key order;
-    `join`'s required-arity enforcement is now identical across
-    path/posix/win32 (Bug 877 case 6's claimed parity now real).
-  - env `web.ts`: URL `.searchParams` slot table and the global
-    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
-    iterator face / size stay per-site; insertion order preserved).
-  - core `builtins/error/binary.ts`: DataView ctor and
-    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
-    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
-    number-domain item enforcement now calls `enforceTaItem` (the `.of`
-    cause variant is unified into the shared text — no pins).
-  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
-    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
-    undefined, closed → counted tuple).
-  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
-    walk (assignment / update / stateful-call faces, ×3) →
-    `markFreeMemberRoot`.
-  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
-    destructure binding loops → `bindPatternImports`; top-level class scans
-    (`findClassDecl` + module-frame class bindings) share
-    `unwrapExportDecl`.
-  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
-    namespace resolution loop (qualified arm + short-name arm) →
-    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
-    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
-    untouched).
-  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
-    enforcers (literal face / predicate face) share `actualSlotTable`
-    (obj direct / brand inner-obj unwrap).
-  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
-    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
-    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
-    comment kept.
-  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
-    `analyzeToolFile` preamble (resolveToolFile → readSource →
-    analyzeFileAsync "all", Bug 993 async preload).
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
 
-更早版本（57）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（58）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/harvester 0.5.0 {#pkg-harvester}
+## @nudojs/lsp 1.10.0 {#pkg-lsp}
 
-## 0.5.0
+## 1.10.0
 
 ### Minor Changes
 
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
   
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 7152d84: Feat: LSP rename scope-conflict detection + inlay any/unknown responsibility split.
+  
+  - rename: the new name now goes through a scope-conflict check (`renameNameConflicts` in `symbols.ts`) on top of the existing syntax-level validation (Bug 750). A rename is rejected (`null`, no edits) when the new name would break the source: duplicate declaration in the target scope, outer capture (renaming `x` to an outer name referenced inside the target scope), inner-scope capture (a target reference sits inside a scope that declares the new name), duplicate member key within the same class/object owner, duplicate `#private` name, or duplicate export name. Plain cross-scope shadowing stays allowed. Cross-file renames re-run the check in the defining file's scope (import / re-export scenarios). Same philosophy as ambiguous-receiver rejection (Bug 712): refuse rather than break.
+  - inlay: return-position hints that render exactly `unknown` (= inference failure, engine debt) now carry a `⚠ ` label prefix and a tooltip naming the failure and the fix channels (`@nudo:mock` / `@nudo:env` / `@nudo:contract`); `any` (unconstrained param — developer responsibility) never gets the warning prefix, and its `where any()` tooltip gains a responsibility note while preserving the existing predicate expansion. The display contract is unchanged: unconstrained params still render `any`, never `unknown`.
 
 ### Patch Changes
 
-- 01463d8: Dedup batch 3 (jscpd + dead-export + doc-drift audit): single-source the
-  remaining cross-package and in-package copies, remove dead exports, and fix
-  doc drift.
+- 38eedd0: Fix the macOS `/var` → `/private/var` path-space mismatch behind the 9 long-standing LSP/CLI baseline failures, and remove watch FSEvents noise.
   
-  Single-sourcing (comment-pinned manual-sync pairs now share one
-  implementation):
+  On macOS `os.tmpdir()` returns `/var/folders/...`, a symlink to `/private/var/folders/...`. The kernel gives `process.cwd()` / `realpathSync()` the **realpath** form, while user arguments and test fixtures keep the `/var/...` literal. Two product faces mixed those spaces:
   
-  - env WHATWG globals: new `env/src/whatwg.ts` shared factory consumed by both
-    `node.ts` and `web.ts` (Headers/FormData/URLPattern/Blob/stream
-    readers/writers/DisposableStack family). Byte-identical parity verified via
-    before/after brand-slot dumps; intentionally divergent declarations
-    (Request/Response/fetch/…, see whatwg.ts header) stay per-env with pointer
-    comments.
-  - atomic writes: new `@nudojs/service` `writeFileAtomic` (randomBytes tmp
-    suffix) replaces 6 hand-copied variants across lsp/nudojs (contract-emit,
-    migrate) / service (emit ×2, disk-cache).
-  - analyzer-diagnostics → CheckIssue mapping: core
-    `checkIssuesFromDiagnostics` (+`AnalyzerDiagnosticLike`) via
-    `@nudojs/core/internal`; nudojs keeps a `domainIssuesFromDiagnostics`
-    alias, lsp `agent-tools` drops its copy (Bug 632/1038 drift class closed).
-  - ESM AST detection: core `isEsmProgram` exported via internal; service
-    `abs-modules-graph` deletes its verbatim copy.
-  - dependency collection: core `collectDependencySpecsWithMode` (import/require
-    mode labels, Bug 238) replaces service's `importSpecs`/`collectRequireSpecs`
-    copy; `collectDependencySpecs` stays a thin shell.
-  - string-aware scan skeleton: core `text-scan` grows `findTopLevelChar` /
-    `walkTopLevelChars` primitives; parser `findReplaceSeparator` /
-    `literalNestingDepth` / `outerParensWrapAll` / `findTrailingCommentStart`
-    consume them (Bug 1009 copy-drift class).
-  - core arithmetic: bigint mixed-operand tail shared via coerce.ts helpers
-    (Bug 946 matrix re-verified); sub/mul/div/mod numeric tail shared via
-    `arithmetic/shared.ts` `numericOpTail`; AST walk skeleton unified in
-    `algebra/ast-walk.ts` (skip-key differences parameterized);
-    `errorTypeAbs` leaf module (`algebra/error-type-abs.ts`) breaks the fake
-    cycle that forced `super-access.ts` to keep a copy; brand slot reads shared
-    via `builtins/brand-slot.ts`.
-  - harvester: `dts-contract-draft` memberKey delegates to exported
-    `computedMemberName`.
-  - LSP stdio framing: shared `scripts/lib/lsp-framing.mjs` frame reader for
-    both smoke scripts.
+  - **LSP emit boundary** (`agent-tools.ts`): `assertEmitTargetAllowed` / `resolvedWorkspaceRoots` / `derivedSidecarAllowed` realpathed only *existing* paths. A not-yet-written source file or downstream sidecar fell back to the `/var/...` literal and was compared against a `/private/...` root, so legitimate writes were rejected as "outside allowed roots" (Bug 762 derived emit, Bug 765 unsaved-buffer guard). All three now use the shared `normalizeRealPath` from `@nudojs/service`, which falls back to `realpath(dirname) + basename` for missing targets. Real symlink-escape protection is unchanged (Bug 766's escape case still fails closed).
+  - **CLI relative display**: `relative(process.cwd(), resolve(userArg))` produced `../../../../../../../var/.../syn.js`, polluting the JSON `file` field and human-facing text (Bug 661 / 663 / 664 / 63b). New `relFromCwd()` normalizes the target into the cwd's realpath space before subtracting; the contract command family (print / draft / emit / from-dts) and watch error lines now use it. `displayPathOf` is deliberately untouched, so the check/test/health baselines stay byte-identical. On non-symlink hosts and in-repo paths output is byte-identical.
   
-  Dead exports removed (zero product consumers): `bodyReadFieldsFor`
-  (service-emit), `paramName` (parser ast-guards), `loadHarvestEnvFromDisk` /
-  `harvestToAbsModules` / `summarizeNodeEnv` (harvester), plus `streamOptions`
-  dead block in env node.ts; service-emit
-  barrel narrowed to externally-consumed symbols (16 removals, api docs
-  regenerated en+zh). `generateDts` stays exported (cross-package test use).
-  
-  Docs: `api/harvester.md` (en+zh) no longer claims `autoHarvestModules` /
-  `harvestNodeTypes` are exported from `@nudojs/service` (they live in
-  `@nudojs/harvester`).
-- fd0fb09: Dedup batch 7 (jscpd `--min-tokens 70` re-audit after batch 6: residual
-  same-file fragment twins + one drifted manual-sync pair). Pure refactor —
-  defineEnv deep structural dump (sorted + insertion-order preserving)
-  byte-identical vs HEAD, verify:examples 251 checks green, lint +
-  lint:tests clean.
-  
-  - env `node.ts`: Storage slot table ×3 (ctor brand + localStorage +
-    sessionStorage) → single `storageObj` const (messagePortSlots pattern);
-    exec-family options obj (execSync / execFileSync / spawnSync) → shared
-    `execSyncOptions`; Request / Response body-mixin slots
-    (clone/arrayBuffer/blob/formData/json/text, clone returns the respective
-    brand) → `bodyMixinSlots(self)` factory; EventEmitter core
-    on/once/off/emit → `emitterCoreSlots` shared by the EventEmitter brand
-    and the `process` global object.
-  - env `node.ts` path family — the drifted manual-sync pair: the top-level
-    `pathModule` inlined the whole member table next to the
-    `platformPathMethods(posix/win32)` factory and had already drifted
-    (`join.required` only on the top-level copy). `pathModule` now consumes
-    the factory; member order canonicalized to the top-level key order;
-    `join`'s required-arity enforcement is now identical across
-    path/posix/win32 (Bug 877 case 6's claimed parity now real).
-  - env `web.ts`: URL `.searchParams` slot table and the global
-    URLSearchParams constructor share `searchParamsCoreSlots` (toString /
-    iterator face / size stay per-site; insertion order preserved).
-  - core `builtins/error/binary.ts`: DataView ctor and
-    `makeTypedArrayFromBuffer` share `bufferByteLengthLiteral` (brand→inner
-    obj→byteLength slot fold); `TypedArray.of`'s inlined copy of the
-    number-domain item enforcement now calls `enforceTaItem` (the `.of`
-    cause variant is unified into the shared text — no pins).
-  - core `builtins/object/methods.ts`: `getOwnPropertySymbols` obj arm and
-    brand-inner arm share the `ownSymbolsTuple` tail (open/index →
-    undefined, closed → counted tuple).
-  - core `exec/transpile/helpers.ts`: the MemberExpression root-identifier
-    walk (assignment / update / stateful-call faces, ×3) →
-    `markFreeMemberRoot`.
-  - core `scan-call-graph.ts`: dynamic-import and require ObjectPattern
-    destructure binding loops → `bindPatternImports`; top-level class scans
-    (`findClassDecl` + module-frame class bindings) share
-    `unwrapExportDecl`.
-  - harvester `harvest-dts.ts`: `resolveIfaceDecls` inner-first relative
-    namespace resolution loop (qualified arm + short-name arm) →
-    `addRelativeNsHit`; `absExtends`' two `es.k === "sum"` member folds →
-    `foldSumFlags` (the `cs.k === "sum"` fold is intentionally different and
-    untouched).
-  - service `analyzer-orchestrate-uncached-cases.ts`: the two expected-slot
-    enforcers (literal face / predicate face) share `actualSlotTable`
-    (obj direct / brand inner-obj unwrap).
-  - lsp `server-navigation.ts`: `onDefinition` now uses the shared
-    `navigationIdentAt` preamble (documents.get → isNudoFile → parse →
-    ident-at-position) like onReferences / onPrepareRename; Bug 751 gate
-    comment kept.
-  - lsp `agent-tools.ts`: `suggestCase` / `trace` share the
-    `analyzeToolFile` preamble (resolveToolFile → readSource →
-    analyzeFileAsync "all", Bug 993 async preload).
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-  - @nudojs/parser@1.5.7
-  - @nudojs/env@0.5.7
+  The same watch loop also stops swallowing edits: fingerprint baselines are recorded **when a round's changed paths are accepted, before analysis** (and dropped for deleted files), not after the incremental round resolves. The old ordering re-baselined any write that landed while the round was running, so `filterUnchangedWatchPaths` saw it as unchanged and the edit was silently skipped until the next save. `startWatch` now filters FSEvents noise: macOS directory watchers report untouched files from the same batch, so changing `a.js` could also re-run `sub/b.js` and made the Bug 684/685 "re-run exactly the changed file" assertions flaky (~1/3 of runs). The debounce window keeps only paths whose `(size, mtimeMs)` fingerprint actually changed; deletions, new files and non-tracked paths (config / sidecar / env templates) always pass through. Extracted as testable `watchPathVersion` / `filterUnchangedWatchPaths`, covered by `cli-watch-noise-filter.test.ts` (7 cases). Reverting the filter reproduces the flake; with it, 8/8 repeated runs and all 12 watch test files / 33 cases pass. The lose-an-edit race has no deterministic e2e fixture yet (it needs a controllably slow analysis); the pure filter plus the existing watch suites are the regression surface.
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [1a4cabd]
+- Updated dependencies [b57d1d2]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/service@1.12.0
+  - @nudojs/parser@1.5.8
 
-更早版本（57）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（62）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## vite-plugin-nudo 0.7.0 {#pkg-vite-plugin}
+## @nudojs/env 0.5.8 {#pkg-env}
 
-## 0.7.0
+## 0.5.8
+
+### Patch Changes
+
+- 5267658: Fix: architecture debt A3+A4 — the declared throws face now survives the relation face (no apply) and the construct paths (`new X()` / bind products).
+  
+  - A3 (relation throws channel): `relationFn` gains an optional `throws` carrier (`impl.relation.throws` — same representation as `AbsApplyResult.throws`, `never`/absent = no throw; not written into the fn shape, which has no throws consumer). The `$call` relation arm routes it through the single `routeApplyThrows` entry (may-throw → `pushThrowExit` into the caller frame; `returnType = never` + throws → `NudoThrow`). env declarations whose host throws but which declare no apply no longer read as "never throws" (false green) — `envFn`'s no-apply branch passes `opts.throws` through (opt-in; no existing declaration changes behavior).
+  - A4 (construct paths dropped the apply throws slot): the two bare-unpack sites — `$new`'s `impl.apply` branch (`exec/class/construct.ts`) and the bind-product `[[Construct]]` facet (`exec/class/invoke.ts`) — now route through `routeApplyThrows` instead of peeling `.abs`, so constructor-declared throws take effect on `new X()` too (previously call-face only). Under `@nudo:env node`, `new URL(<invalid or abstract>)` now records may-throw `TypeError` instead of silently succeeding; definite always-throw constructor applies surface as `NudoThrow` at the construct point. A source gate forbids reintroducing `isAbsApplyResult(x) ? x.abs : x` peeling in the class dispatch layer.
+  - Regression pins: `abs-apply-throws-channel.test.ts` (A3/A4 sections + cross-module gold + source gate), `env-bug-s0-mechanism.test.ts` (A3 env-face section incl. ctor-shape relation), and the former false-green pin `env-bug-64` 2.4 rewritten as a positive assertion.
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+
+更早版本（58）→ [完整发布历史](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.6.0 {#pkg-harvester}
+
+## 0.6.0
 
 ### Minor Changes
 
-- 00ba198: Dedup / fail-closed / dead-code batch (repo-wide review): single-source the
-  cross-face copies and stop folding read errors into silent misses.
+- 897b19f: > **版本定性（2026-11-05 产品裁决）**：本批**不判定为 breaking 变更** ⇒
+  > changeset 不写 BREAKING / Migration 标注；下方「兼容性」段落只是升级时的
+  > 注意点，不是迁移要求。发布级别仍按此前决定走 **minor**（additive 能力 +
+  > 暂无外部用户），不占 major、不触发 `scripts/gate-major.mjs`。
   
-  - **Cross-face single sources** (previously hand-synced copies that had already
-    drifted): eval injection assembly (`buildEvalInjection` in `@nudojs/service`;
-    CLI check/migrate/health, LSP agent tools, and vite-plugin all consume it —
-    the `health` copy still used the object-spread env merge that Bug 1037 fixed
-    everywhere else, hand-rolled env absolutization, and dropped
-    `mockFromErrors`); `parseIgnoreThrows`/`configIgnoreThrows` (service; CLI /
-    LSP / vite-plugin); `CHECK_FACE_DIAG_CODES` and `CHECK_ISSUE_OPTIONAL_KEYS`
-    (`@nudojs/core/internal`); `normalizeRealPath` (service; replaces 6
-    realpath-fallback micro-copies with two divergent identity-key 口径);
-    `Object.prototype` name list now derived instead of hand-synced;
-    `normalizeModulePath`/`externalAbsCallRecords`/`stripIssuesByCode` shared
-    within the CLI package.
-  - **Fail-closed fixes** (read errors no longer fold into "miss"): harvester
-    disk cache fingerprint carries a `readerr:` sentinel and skips the disk
-    layer when a dts closure read fails; transient harvest failures are no
-    longer pinned as `null` in the process cache; unreadable dts entries count
-    into `stats.skipped`; `nudo migrate` enumeration surfaces non-ENOENT
-    failures instead of silently skipping (a chmod-000 package could silently
-    vanish from `retire --all`); `nudo export --out` refuses to overwrite an
-    existing target it cannot read (EISDIR still routes to the write-failure
-    channel, which cannot clobber); LSP sidecar read failures surface as
-    structured `nudo:path-io` path errors instead of "no sidecar"; core's
-    same-file contract-face resolver notes engine exceptions
-    (`nudo:internal`) instead of silently memoizing "no contract face".
-  - **Removed zero-consumer aliases** (no production consumers in-repo or in
-    the published docs matrix): `transpile` (use `transpileSource`) from
-    `@nudojs/core`, `generateGuardFunction` (use
-    `generateGuardFunctionFromAbs`) from `@nudojs/service/emit`,
-    `maybeLeak`/`leakIfNeeded`/`resetLeakCounter` from `@nudojs/core/internal`.
-  - **Behavior notes**: `nudo health` now merges env modules via
-    `mergeHarvestUnderEnv` (same-name env+harvest packages keep harvest's
-    non-conflicting exports) and can fail red on error-level mock-load
-    problems; the check face may surface `nudo:internal` info issues for
-    engine exceptions that were previously swallowed.
-  - **Internal refactors, byte-identical output**: class-emit / computed-key
-    assignment / destructure emitters deduplicated via shared helpers (verified
-    by a 56-corpus byte-diff plus the pinned emission suites);
-    `analyzeFileUncachedInner` module-issue mapping is table-driven; `runHealth`
-    split into print/json helpers.
+  `Abs` 现在携带可选 `facets` 槽位容器（`callable` / `protoOwnKeys` / `brand`），三个槽位均已在引擎内启用。缺省不出现 ⇒ 旧 `Abs` 的键、投影与 `leqAbs` 接受集逐字节不变；但**带上槽位的值**在以下面给出比以前更精确的判定：
+  
+  - `callable`：类值裸调用判据不再只靠 `class-mark.ts` 的 WeakMap 与 `_rest` 形参启发式 ⇒ 快照 / `substAbs` / 重铸后的类值仍定抛 `TypeError`。该槽位表达「无 `new` 的 [[Call]] 定抛」，**不是**规范 `IsCallable`。
+  - `protoOwnKeys`：原型对象的自有键集随值携带（`Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols`），不再只能按 brand 名查固定表。
+  - `brand`：生成器对象身份随值携带，dts 的 `iteratorTSType` 不再只靠 `next` / `@@iterator` 槽启发式 ⇒ 丢了内部协议槽的重建产物仍投影 `Generator<T>`（泛型实参照旧推导，不输出裸名以免 TS2314）。
+  
+  兼容性：直接构造 `Abs` 字面量 / 只读取既有字段的代码无需改动 —— `facets` 缺省即旧行为。用 `Object.keys(abs)`、结构化克隆或自有实现的序列化器枚举 `Abs` 全部字段的内部代码，需容忍新增的可选 `facets`（不读它即与旧行为一致）。`absKey` 只对**非空**容器进键 ⇒ 带槽位的值会自然得到不同的 memo / 指纹，无需手工清缓存。core `formatShape` 的展示面**不发布**生成器身份（既有契约，逐字不变）。
+  
+  **残余批次（同批发布）**：
+  - **A2 声明/收割面**：`declare class` 类值挂 `callable:false`；`JSON.stringify(obj, 类构造器)` 由 `may-throw` 升为确定抛 TypeError。`HarvestSig.fn` 新增 `callable` 字段、**`HARVEST_DISK_ABI` v14 → v15**（`~/.cache/nudo/deps/` 旧收割缓存会干净 miss，无需手工清理）；`harvestedValueToAbs` 的 `absFunction` mock 重建也整包搬运槽位。
+  - **A10 内建原型**：`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等的 `Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols` 由保守 `string[]` / `boolean` / `symbol[]` 升为与宿主**动态对拍**的精确面（键集随 Node 版本给出各自真实值，不写死清单）。
+  - **A10 用户类原型交错定义序**：`EvalClassSpec` 新增可选 `protoMemberOrder`（`transpile/class-emit.ts` 按类体源码序登记、`declare.ts::rekey` 同步换名）。`Object.getOwnPropertyNames(用户类.prototype)` 对「方法与访问器交错定义」的类由保守 `string[]` 升为与宿主对拍的**精确有序表**；静态 / 私有成员不列入。手写 spec / mock 桥 / 旧产物无该字段 ⇒ 回落旧保守域（零回归兜底）。
+  - **A11 TReturn / TNext**：`AbsFacets` 新增可选 `genReturn` / `genNext`，dts 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`（恒带类型实参，无 TS2314）。本轮进一步接通 **TNext 保守域**：`makeGenObject` 填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 该类型形参默认值等价，**不是精度承诺**），`iteratorTSType` **仅当** `facets.genNext` 存在才输出第 3 实参 ⇒ `Generator<T, TReturn, unknown>`；三实参仍恒带 `<…>`，无 TS2314。手工构造 / 无 `genReturn` 的旧 Abs 输出逐字不变；填真实 v 域依赖 A1 步骤 4 真挂起（明确停点）。
+  - **A1 步骤 2 骨架（零语义）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表，生产侧不登记 ⇒ eager 时序与全部值面逐字不变；不进任何 barrel，公共 API 冻结不变。为后续「首消费点触发」预置接线，不改变任何对外行为。
+  - **schema / standard / guard 生成器身份投影：已实施，另立 patch changeset**（`.changeset/generator-identity-validator-fix.md`）。产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧；`emit-bug-130` 的无 brand 夹具仍逐字不变（负控制）。`z.instanceof` 路径经运行时实证仍不可行。实施记录见 `docs/design/architecture-debt.md`，生产接线回归见 `emit-generator-identity-poc.test.ts`。
+  
+  兼容性（补充）：① 自行解析磁盘收割 JSON 或依赖 `HARVEST_DISK_ABI` 的下游需接受 `HarvestSig.fn.callable` 新字段（旧缓存按 v15 自动失效）；② 枚举 `Abs.facets` 全部字段的代码需容忍新增的 `genReturn` / `genNext`（不读即旧行为）；③ 曾断言内建原型 `gOPN` 为 `string[]` / `hasOwn` 为 `boolean` 的内部测试需改为与宿主对拍的精确断言；④ 解析生成器 dts 类型实参的下游需容忍**三实参** `Generator<T, TReturn, unknown>`（无 `genNext` 的旧手工 Abs 仍两实参 / 一实参，逐字不变）；⑤ 自行构造 `EvalClassSpec` 的下游可忽略新增的可选 `protoMemberOrder`（缺省即旧两表拼接口径），但曾断言交错类 `gOPN` 为 `string[]` 的内部测试需改为精确有序断言。
+  
+  Evidence: 三槽各独立全仓回归 0 新增失败；最终 2159 文件 / 17191 用例 0 新增失败；金标 1.0/1.0、真包 0 FP、差分语料 0 回退、公共 API 冻结未变。发布级别按 2026-11-05 产品裁决：整批不判定为 breaking 变更 ⇒ 不写 BREAKING / Migration 标注，仍以 **minor** 发布（`scripts/gate-major.mjs` 不触发）；一旦有外部用户依赖这些包面，即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」。
 
 ### Patch Changes
 
-- Updated dependencies [5cd4106]
-- Updated dependencies [01463d8]
-- Updated dependencies [7d7abe4]
-- Updated dependencies [5769211]
-- Updated dependencies [01a550b]
-- Updated dependencies [fd0fb09]
-- Updated dependencies [6eaf219]
-- Updated dependencies [c48fd48]
-- Updated dependencies [00ba198]
-  - @nudojs/core@1.18.0
-  - @nudojs/service@1.11.0
+- 09d49af: Feat: architecture debt A6 — fn shapes carry an optional overload set, and calls dispatch by argument shape (closes the Bug 827 / A5 false red).
+  
+  - `Shape` fn branch gains optional `overloads?: FnOverload[]` (`{ paramTypes, returnType }[]`, declaration order = TS resolution order). Absent ⇒ every existing shape, key, and projection is byte-identical.
+  - `instantiateReturn` dispatches on overloads: first arm in declaration order whose arity matches and whose params accept the arguments (per-param `leqAbs`, α bound/substituted per arm) supplies the return face; zero hits fall back to the union return face (no invented may-throw). Union face (`paramTypes`/`returnType`) stays the authoritative extensional face — `leqAbs`, `formatShape`, dts/schema/guard read only it; overloads are a dispatch refinement, not assignability.
+  - Harvester: top-level function overloads and interface/class method overloads both snapshot arms **before** the union-face merge (shared `collectOverloadArms`; Bug 807 two-path parity preserved). `HarvestSig` gains `overloads` so disk-cache round-trips keep the dispatch face; `HARVEST_DISK_ABI` v13 → v14 (old entries miss cleanly instead of silently losing overloads).
+  - `absKey` includes overloads (distinct overload sets no longer share memo/fingerprint); `substShape` substitutes arm Abs data; `snapshotAbs` deep-copies overloads and now carries the fn impl side table (A7 mirror — snapshots no longer degrade to shape-only).
+  - Evidence: types-only package with `convert(x: string): string; convert(x: number): number;` — `nudo check` goes from 2 L2 `entry-may-throw` false reds (`method 'toFixed' missing on string receiver` / symmetric) to OK, matching `tsc --strict` exit 0; `useNum() => string` / `useStr() => string` exact. Gold/recall/real-package gates 223 green; harvest + emit + differential 1434 green.
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
 
-更早版本（60）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（58）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.7.1 {#pkg-vite-plugin}
+
+## 0.7.1
+
+### Patch Changes
+
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [1a4cabd]
+- Updated dependencies [b57d1d2]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/service@1.12.0
+
+更早版本（61）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

@@ -1,7 +1,0 @@
----
-"@nudojs/core": patch
----
-
-Restore call-site scan cost: one dependency fingerprint per scan instead of one per call site. `scanLiteralCalls` asked `generalizeFromAst` for the same function once per literal call site, and each call recomputed `refineDepsFingerprint` (a disk BFS over `loadModule` deps + full-AST spec walk + per-dep hash) to build the L0 memo key. On real packages that is ~100 full BFS passes for a single 87 KB file — `commander` `checkSource` regressed 601ms → 2475ms since the call-site enforcement batch, which is what kept the OSS baseline gate red (`commander: check all` 3.0–3.8x the envelope). The same-file `(source, loadModule, fromFile)` triple is constant within one scan, so the fingerprint is now computed lazily once and passed as `depsFp` to the own-call and inline same-file `generalizeFromAst` sites; cross-file callees keep computing their own (their refine basis is the definition file). Memo keys are unchanged — same function, same arguments, only the redundant recomputation is gone. `commander` `checkSource` returns to 678–881ms (baseline 601ms) and the OSS `check all` total ratio drops from 1.73x to 1.00x of the envelope.
-
-Also classify Node 24's legacy `_stream_*` internals (`_stream_duplex` / `passthrough` / `readable` / `transform` / `wrap` / `writable`) as denied node builtins: they are in `module.builtinModules` on the CI runtime but were absent from the manifest snapshot, so the drift gate failed on Node 24 while passing on Node 26.

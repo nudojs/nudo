@@ -1,5 +1,204 @@
 # @nudojs/service
 
+## 1.12.0
+
+### Minor Changes
+
+- 1a4cabd: ABS-03: dts projection completion — contract generics, readable contract notes, overload arms.
+  
+  - Contract-side type parameters are now derived from binder vars (`bind:<name>`) and emitted only when referenced by a parameter or the return type: the entry-only HOF contract projects as `export declare function processItems<a, b>(items: a[], transform: (x: a) => b): b[];` (element domain and callback parameter share the same variable; unreferenced vars are dropped).
+  - `.d.ts` JSDoc gains readable `Contract:` rows (sidecar expression text / constraint rendering). They are notes only — the type face still comes from Abs, and `Case:` rows keep their debug-witness role.
+  - Function Abs with a declared overload set now projects as a TS object type with per-arm call signatures (declaration order = TS resolution order) instead of collapsing to the union face.
+  - Schema projection already emits numeric `gt/ge/lt/le` bounds; new tests pin bounded output and the honest omission of non-expressible relations (`x > y`).
+- b57d1d2: ABS-04: test observation face — outermost witnesses survive the budget, and the two paths are discoverable.
+  
+  - Call-site witness selection now prefers the **outermost** records (concrete arguments) over internal records whose arguments carry free term variables (α names / derived expressions from recursive or higher-order evaluation). A `sumTo(3)`-style top-level witness is no longer pushed out of `callSiteBudget` by internal records.
+  - When a function has both `@nudo:case` and call-site records, the default run keeps the mutual-exclusion report and prints a `both-paths` hint naming those functions, pointing at `--both-paths` (sources stay labeled: directive vs callsite). `--json` is unaffected; truncation reasons and their next actions keep flowing through the existing `nudo:*-truncated` diagnostics. Under `--freeze` the hint is suppressed: `--both-paths` combined with `--freeze` is a usage error, so the suggestion is not actionable in that run.
+- 61c22d5: ABS-11: contract conjunction and projection precision.
+  
+  - `and()` (`andC`) now conjoins structural forms: shape ∧ shape (field-level, missing fields preserved, same-field constraints recursively conjoined), array ∧ array (element-level; node preds such as length bounds kept), union ∧ union (member cross-product, capped at 16), and fn ∧ fn (per-parameter and return conjunction; throws merged as a union). Contradictory forms stay fail-closed: prim mismatch, structural × incompatible prim, different structural kinds, and binder/ref/rel conjunction conflicts throw the same conflict path as before.
+  - `formatConstraint` renders structural nodes' own predicates and optional flags (`array(number()).min(2)`, `shape(...).optional()`), so length obligations are no longer invisible in diagnostics/derivation output.
+  - dts projection treats contract and derived HOF relations as a **conjunction**: when a hand-written contract covers some parameters, HOF α variables are structurally unified with the contract Abs (elements / tuple slots / object slots / fn params+returns) and uncovered parameters plus the return position keep their β links instead of degrading to `unknown` (e.g. `processItems<B_transform>(items: number[], transform: (x0: number) => B_transform): B_transform[]`).
+  - Discriminant exhaustiveness warnings are intentionally deferred: the plan requires zero false positives, and no low-noise heuristic is available in this batch (documented in the test header).
+- c8aac63: ABS-14: bounded function-level summaries (5 commits on branch `abs-14`, soundness gate revised 2026-11-13).
+  
+  - Single summary cache: `key/fn-summary.ts` now carries optional `formals` / `argKeys` / `bounds` / `pre` / `eff` and a per-function entry (`fn\0<scope>`) on the SAME Map; `fnSummaryStats()` keeps its instance-level meaning, function-level hits/rejections are exposed by `fnSummaryFnLevelStats()` (`hits` = entry found, `applied` = actually substituted).
+  - Simple bounds with one-way alpha dependency (`key/summary-bounds.ts`): reverse deps, unbound vars and complex app terms fail closed; `TypeParam.bounds` is additive and write-only in this phase (no product consumer yet).
+  - Fast path (`key/summary-fastpath.ts`): a hit requires all of
+    - **positional formals** (`formals[j]` = the top-level var of the j-th argument; non-var or aliased arguments fail closed) — storing the sorted `varOrder` used to transpose arguments (`f(z,y)` → `f(p,q)` returned `q - p`);
+    - **arg isomorphism**: per-position α-normalized `absKeyWithConf` keys (shape × term × pred × conf) — a kind-only signature used to reuse `{x:1}` summaries for `{y:"s"}`, length-2 summaries for length-3 tuples, and `Date` summaries for `RegExp`;
+    - **full precondition**: the formation-time Φ (`pre`, renamed formals → current argument vars) must be implied by the current Φ — checking only the simple `bounds` projection dropped `app`-term conjuncts, so `x % 2 === 0`-formed summaries leaked to unconstrained calls.
+    Then `substAbs(post, map)` is applied instead of re-running the body. `bounds` stays as observable metadata only.
+  - All three conservative channels are on by default (`crossModule`, `bodyUnavailable`, `budgetTruncated`); the degraded channels are verified independently (`abs14-degraded-channels.test.ts`), gated off `symbolic` runs on the read side as well, and their substituted results stay in the instance memo only (cross-instance summaries keep "came from a real body evaluation" provenance).
+  - Equivalence gate: `abs14-equivalence-baseline.test.ts` (7 pinned body-path samples) plus `abs14-fastpath.test.ts` calling `diffAgainstBodyBaseline`. The fast side now clears the cache stack, uses a fresh PolyFn and a witness Φ (`ABS14_GATE_PHI`), so layers 1/2 must miss and the test asserts `applied` grew — the earlier version re-read the same memo entry and never exercised the function-level path.
+  - dts projection: HOF signatures no longer emit type parameters that are not referenced by any parameter or return position (`abs14-dts-reachable.test.ts`).
+- 3ddcb81: ABS-14 follow-ups (rest-param soundness, degraded channels, dts bounds).
+  
+  - **Soundness fix (core)**: rest parameters were emitted as `const name = $restBind(...)`, but fork-arm restoration and member-write lowering rebind that slot (`name = ...`). Real CJS code such as `debug/src/common.js`'s `function debug(...args) { args[0] = ... }` therefore threw V8's native `TypeError: Assignment to constant variable` during module evaluation, making `nudo check` fail closed with `nudo:module-throw`. Both emit sites now use `let` (native rest bindings are mutable). Regressed by `eval-rest-param-rebind.test.ts`; reverting to `const` makes all 9 cases fail.
+  - **ABS-14 degraded channels enabled**: `bodyUnavailable` and `budgetTruncated` now default on alongside `crossModule`. The replacement logic is extracted to `key/summary-fastpath.ts#tryDegradedChannel` and verified independently by `abs14-degraded-channels.test.ts` (10 cases): the filled result is byte-identical to the same function's real body result, and no summary / non-isomorphic args / unproven full precondition / formal mismatch / unmapped variable stays `unknown #opaque`. The read side is gated off `symbolic` runs (same as the write side and the cross-module channel, so a prior `instantiate` can never rewrite a signature/dts input), and substituted results stay in the instance memo — cross-instance summaries only ever hold results of a real body evaluation. The equivalence gate is refined accordingly: `crossModule` ≡ current body path, degraded channels ≡ the same function with an available body.
+  - **dts bounds (`extends`)** (service): `emit/dts-generator.ts` now translates expressible contract `Pred` leaves into type-parameter constraints — primitive `typeof` tags, `eq(var, lit)` literals, and fully-expressible `or` unions. Numeric bounds, lengths, negations and `typeof object|function` are honestly omitted; unbound declarations stay byte-identical. Projection reads `contract.params[].abs.pred` directly, so `AnalysisResult` and its cache cloning are untouched. Covered by `abs14-dts-extends.test.ts` including a `tsc --noEmit` round-trip.
+  - **Host-drift test baselines**: Node 22 vs v26 globals (`Float16Array`, `Intl.DurationFormat`, `URLPattern`, `CloseEvent`, …) and toolchain-injected `__*_SHIM_LOADED__` names are now handled through the existing `VERSION_SKEW` / declared-reason discipline rather than hard assertions; supported hosts keep full coverage. `fs.promises.stat(throwIfNoEntry:false)` oracle tolerates the Node 22 ENOENT behaviour while engine-side assertions stay strict.
+  - **Example docs**: `docs/examples/retire-debug` now states that the return face depends on whether the real `debug` package resolves; `verify:examples` pins only `OK` / `0 error` / export names, not `nudo:opaque-result`.
+  
+  The `TypeParam.bounds` empty-field debt noted in this changeset was fixed in a follow-up commit (Pred variable-space alignment via `alignSimpleBounds` + `abs14-bounds-integration.test.ts`); `attachHofSnapshot` not passing `refine` was re-checked and confirmed to be correct design, not a defect.
+- 897b19f: > **版本定性（2026-11-05 产品裁决）**：本批**不判定为 breaking 变更** ⇒
+  > changeset 不写 BREAKING / Migration 标注；下方「兼容性」段落只是升级时的
+  > 注意点，不是迁移要求。发布级别仍按此前决定走 **minor**（additive 能力 +
+  > 暂无外部用户），不占 major、不触发 `scripts/gate-major.mjs`。
+  
+  `Abs` 现在携带可选 `facets` 槽位容器（`callable` / `protoOwnKeys` / `brand`），三个槽位均已在引擎内启用。缺省不出现 ⇒ 旧 `Abs` 的键、投影与 `leqAbs` 接受集逐字节不变；但**带上槽位的值**在以下面给出比以前更精确的判定：
+  
+  - `callable`：类值裸调用判据不再只靠 `class-mark.ts` 的 WeakMap 与 `_rest` 形参启发式 ⇒ 快照 / `substAbs` / 重铸后的类值仍定抛 `TypeError`。该槽位表达「无 `new` 的 [[Call]] 定抛」，**不是**规范 `IsCallable`。
+  - `protoOwnKeys`：原型对象的自有键集随值携带（`Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols`），不再只能按 brand 名查固定表。
+  - `brand`：生成器对象身份随值携带，dts 的 `iteratorTSType` 不再只靠 `next` / `@@iterator` 槽启发式 ⇒ 丢了内部协议槽的重建产物仍投影 `Generator<T>`（泛型实参照旧推导，不输出裸名以免 TS2314）。
+  
+  兼容性：直接构造 `Abs` 字面量 / 只读取既有字段的代码无需改动 —— `facets` 缺省即旧行为。用 `Object.keys(abs)`、结构化克隆或自有实现的序列化器枚举 `Abs` 全部字段的内部代码，需容忍新增的可选 `facets`（不读它即与旧行为一致）。`absKey` 只对**非空**容器进键 ⇒ 带槽位的值会自然得到不同的 memo / 指纹，无需手工清缓存。core `formatShape` 的展示面**不发布**生成器身份（既有契约，逐字不变）。
+  
+  **残余批次（同批发布）**：
+  - **A2 声明/收割面**：`declare class` 类值挂 `callable:false`；`JSON.stringify(obj, 类构造器)` 由 `may-throw` 升为确定抛 TypeError。`HarvestSig.fn` 新增 `callable` 字段、**`HARVEST_DISK_ABI` v14 → v15**（`~/.cache/nudo/deps/` 旧收割缓存会干净 miss，无需手工清理）；`harvestedValueToAbs` 的 `absFunction` mock 重建也整包搬运槽位。
+  - **A10 内建原型**：`Array` / `Object` / `Map` / `Set` / `Promise` / `String` / `Number` / `Date` / `RegExp` 等的 `Object.getOwnPropertyNames` / `Object.hasOwn` / `getOwnPropertySymbols` 由保守 `string[]` / `boolean` / `symbol[]` 升为与宿主**动态对拍**的精确面（键集随 Node 版本给出各自真实值，不写死清单）。
+  - **A10 用户类原型交错定义序**：`EvalClassSpec` 新增可选 `protoMemberOrder`（`transpile/class-emit.ts` 按类体源码序登记、`declare.ts::rekey` 同步换名）。`Object.getOwnPropertyNames(用户类.prototype)` 对「方法与访问器交错定义」的类由保守 `string[]` 升为与宿主对拍的**精确有序表**；静态 / 私有成员不列入。手写 spec / mock 桥 / 旧产物无该字段 ⇒ 回落旧保守域（零回归兜底）。
+  - **A11 TReturn / TNext**：`AbsFacets` 新增可选 `genReturn` / `genNext`，dts 输出 `Generator<T, TReturn>` / `AsyncGenerator<T, TReturn>`（恒带类型实参，无 TS2314）。本轮进一步接通 **TNext 保守域**：`makeGenObject` 填 `unknown`（引擎不建模 `.next(v)` 入参 ⇒ 与 TS 该类型形参默认值等价，**不是精度承诺**），`iteratorTSType` **仅当** `facets.genNext` 存在才输出第 3 实参 ⇒ `Generator<T, TReturn, unknown>`；三实参仍恒带 `<…>`，无 TS2314。手工构造 / 无 `genReturn` 的旧 Abs 输出逐字不变；填真实 v 域依赖 A1 步骤 4 真挂起（明确停点）。
+  - **A1 步骤 2 骨架（零语义）**：`exec/match-iter.ts` 把 7 个元素面读出函数收口到模块私有的幂等触发器表，生产侧不登记 ⇒ eager 时序与全部值面逐字不变；不进任何 barrel，公共 API 冻结不变。为后续「首消费点触发」预置接线，不改变任何对外行为。
+  - **schema / standard / guard 生成器身份投影：已实施，另立 patch changeset**（`.changeset/generator-identity-validator-fix.md`）。产品裁决「收紧是 bug、不判定为 breaking 变更」⇒ 三面按 `facets.brand` 统一收紧；`emit-bug-130` 的无 brand 夹具仍逐字不变（负控制）。`z.instanceof` 路径经运行时实证仍不可行。实施记录见 `docs/design/architecture-debt.md`，生产接线回归见 `emit-generator-identity-poc.test.ts`。
+  
+  兼容性（补充）：① 自行解析磁盘收割 JSON 或依赖 `HARVEST_DISK_ABI` 的下游需接受 `HarvestSig.fn.callable` 新字段（旧缓存按 v15 自动失效）；② 枚举 `Abs.facets` 全部字段的代码需容忍新增的 `genReturn` / `genNext`（不读即旧行为）；③ 曾断言内建原型 `gOPN` 为 `string[]` / `hasOwn` 为 `boolean` 的内部测试需改为与宿主对拍的精确断言；④ 解析生成器 dts 类型实参的下游需容忍**三实参** `Generator<T, TReturn, unknown>`（无 `genNext` 的旧手工 Abs 仍两实参 / 一实参，逐字不变）；⑤ 自行构造 `EvalClassSpec` 的下游可忽略新增的可选 `protoMemberOrder`（缺省即旧两表拼接口径），但曾断言交错类 `gOPN` 为 `string[]` 的内部测试需改为精确有序断言。
+  
+  Evidence: 三槽各独立全仓回归 0 新增失败；最终 2159 文件 / 17191 用例 0 新增失败；金标 1.0/1.0、真包 0 FP、差分语料 0 回退、公共 API 冻结未变。发布级别按 2026-11-05 产品裁决：整批不判定为 breaking 变更 ⇒ 不写 BREAKING / Migration 标注，仍以 **minor** 发布（`scripts/gate-major.mjs` 不触发）；一旦有外部用户依赖这些包面，即刻回到 `docs/versioning.md` 的「1.x + API/schema break ⇒ major」。
+- 4361e2e: DX: `nudo test --both-paths` (directive + synthesized witnesses in one round) and opt-in HMAC-signed disk cache entries.
+  
+  - `nudo test <path> --both-paths [--only <names>]`: functions with `@nudo:case` directives now *can* also synthesize `call@`/`entry@` witnesses in the same round (teaching comparison face; default exclusivity unchanged). `--json` separates the paths via `source: "directive" | "callsite"`; exit semantics unchanged (synthetic cases never fail the run). `--only` without `--both-paths`, and `--both-paths --freeze`, are usage errors.
+  - Signed disk cache: `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` signs every entry (HMAC-SHA256, domain-separated key derivation). Verification failure = miss (recompute, never trust) — a forged CheckJson can no longer pass the gate; signed/unsigned key spaces are separate, so key rotation is a clean full miss. Fail-closed config: sign without a key, or a non-boolean sign, refuses to run (`check` / `contract` / `health`, machine-readable on `--json`) instead of silently running unsigned. `nudo.cache` also accepts an object form `{ dir?, sign? }`; typo'd keys surface as `config-shape` report entries.
+  - truncation suggestions: fork/recursion-budget fix values in the analyzer now consume the single-sourced `suggested{Fork,Depth,Calls}Ceiling` helpers from `@nudojs/core/internal` (same wording as the check face, concrete numbers instead of `@nudo:budget depth=…` placeholders).
+  - benchmark: `bench-monorepo.mts --corpus <path>` runs the S1 benchmark against a real monorepo directory (dynamic hub/mid/leaf targets from the module graph, in-memory edits only — user files are never written; report lands in `s1-perf-baseline-real.{md,json}` with an honest corpus header).
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 951b256: **静态元素域通道（「第三种」）**：把生成器的元素域从「隐式编码在 `shape`
+  数字下标槽、dts 靠 `CANONICAL_INDEX` 正则反推」升级为随 `Abs` 值携带的
+  显式承载位，并把源码返回类型注解从「可覆盖观测」降级为**一致性校验**。
+  
+  **core**
+  - `AbsFacets.genElements?: Abs[]`：`makeGenObject` 填 `$gen` 的**完整 yield
+    序列**（`full`，不是 `$arr` 之后可能 widen 的 `els`；Bug 53 点名前者才是
+    权威数据）。`shape` 数字槽**并存不替换**，消费点 / 族 01 口径不变。
+  - `cloneAbsFacets` 拷贝数组（Abs 元素按引用共享）⇒ `snapshotAbs` /
+    `substAbs` / `renameAbs` / `join` 四处经统一 clone 自动搬运，副本不串台。
+  - `facetKey` 新增 `ge:` 段（逐项 `absKey`）⇒ 元素域不同的生成器不共享
+    memo / 指纹；无 `genElements` 的旧键逐字节不变。
+  
+  **service**
+  - `iteratorTSType` 优先读 `genElements`，**严格 fallback**：字段为
+    `undefined`（手工构造 / 静态收割 / 旧 Abs）时仍扫数字槽 ⇒ 旧产物逐字不变。
+    端到端实测 fork 分支 `if (f) yield 1; else yield "s"` 从
+    `Generator<unknown>` 恢复为 **`Generator<number | string>`**；只有
+    `genElements`、无数字槽的手工 Abs 也能投影出精确元素类型。
+  - `FunctionAnalysis.declaredReturnType` 透传 `nudoReturnTypeText`（此前全仓
+    只有写入、无读取点）；新增 `nudo:return-annotation-mismatch` 台账：
+    声明与观测同为单一基类型且互斥时留痕，**产物恒用观测口径**（不覆盖、
+    不用声明兜底）⇒ 不重演 BUG-168 在形参位修掉的「两面相反裁决」。
+    联合 / 泛型 / 字面量 / `unknown` 一律不判，避免 widen 口径差异被误报。
+  
+  兼容性：`genElements` 是可缺省槽位；静态声明收割（harvest）不构造生成器
+  运行时值 ⇒ 不进 `HARVEST_DISK_ABI`，冷 / 热产物一致。公共导出符号名不变
+  ⇒ 公共 API 冻结不受影响。
+  
+  **已知边界**：**不解锁 A1 步骤 3** —— `genElements` 仍由构造期跑体填充，
+  体延后到首消费点 ⇒ 字段也空，而 dts 是纯投影、导出期无消费点。本变更
+  只预置了承载位与「未填充」语义；步骤 3 仍需静态 yield 域推断通道或产品
+  接受 `Generator<unknown>` 降级。详见 `docs/design/generator-laziness.md`
+  「dts 元素域通道 · 第三种已落地」。
+  
+  版本定性：新增诊断码 + additive API ⇒ **minor**；按整批裁决不判定
+  breaking，无 BREAKING / Migration 标注。
+  
+  回归：`gen-elements-facet.test.ts`（7 例）/ `emit-gen-elements-facet.test.ts`
+  （9 例）；全仓 `1658 入口`，`20 失败 = 基线 20`，**0 新增 / 0 消失**。
+- a9638c2: Feat: precision-cliff UX — `nudo test` call@symbolic hint + `nudo health` precision counts.
+  
+  - `nudo test`: when a report contains `call@symbolic` (the symbolic aggregate witness folded from call sites beyond `callSiteBudget`), the report tail now appends one actionable note (`SYMBOLIC_BUDGET_NOTE`, same "fact — action A or action B" shape as the `nudo:recursion-truncated` advice): raise `package.json#nudo.analysis.callSiteBudget` (1–64, default 3) or pin exact witnesses with `@nudo:case` (limitations §3.2.2 wording — for recursion pin `@nudo:case`, don't rely on call@). Display-face only: no assertion counting, no exit-code change. Reports without `call@symbolic` stay byte-identical.
+  - `nudo health`: the Summary line and the `--json` summary (same source) now carry precision counts — `unknownSignatures` (functions whose return the engine could not infer; renders `unknown`, counted via the shared `inferenceFailed` predicate; `@nudo:skip` functions are declared faces and not counted) and `widenedWitnesses` (occurrences of `#widened`, i.e. witnesses with `conf === "widened"` — budget-folded symbolic aggregates / loop widening). Informational only, like `uncovered`: never gates the exit code. Text Summary reads `… · N unknown signature(s) · M #widened witness(es)`; `--json` summary gains additive keys `unknownSignatures` / `widenedWitnesses`.
+  - `@nudojs/service` exports `SYMBOLIC_BUDGET_NOTE` (single source for the note text; CLI and tests consume the same constant). Regressions pinned in `packages/nudojs/src/__tests__/precision-hints.test.ts`; family-63 health baselines and the e2e health golden updated for the Summary extension (their fixtures now pin src tsconfig per the `writeSrcTsconfig` convention, so they no longer silently test a stale `dist/`).
+
+### Patch Changes
+
+- 56d8227: Add the `nudo:capability-denied` diagnostic (ABS-12 R12-D, strict by default). Host globals and `node:` modules classified as denied now report this code — values stay `unknown` and are never executed natively — instead of `nudo:builtin-unknown`; denied modules are reported at the import/require site. Module classification only covers builtins (`node:` prefix or `module.builtinModules`), so relative paths and npm packages keep their existing missing-module channel. `NUDO_CAPABILITIES=trusted` (or `setCapabilityMode("trusted")`) restores the previous `builtin-unknown` surface and limits runtime identity blocking to the hand-written high-risk list; unclassified names (typos) remain `builtin-unknown` in both modes. Docs updated (EN + zh-Hans). Pinned by `capability-diagnostics.test.ts` (strict/trusted, globals/modules/typos).
+- 47463ae: DX: truncation / host-effect diagnostics now carry concrete fix values and pasteable mock skeletons (suggestion/action text only — severity and exit semantics unchanged).
+  
+  - `nudo:fork-truncated`: suggestion now carries a computed ceiling from the observed fork count — `fix: package.json#nudo.analysis.maxForks=<N> (observed <K> forks this run), or @nudo:budget forks=<N> on the function — non-blocking`, with `N = max(20000, observed × 1.5 rounded up to the next thousand)` (20000 default when stats are unavailable). Still Info / non-blocking. The ceiling helpers (`suggestedForkCeiling` / `suggestedDepthCeiling` / `suggestedCallsCeiling`) are exported on `@nudojs/core/internal` so the analyzer-side truncation diagnostics consume the same formula instead of a hand-copied one.
+  - `nudo:host-effect-blocked`: suggestion now embeds a pasteable single-line `@nudo:mock` skeleton per host family — `fetch` gets `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1 }) })`, the timer/scheduling family gets `@nudo:mock <name> = stub().returns(0)`, and the constructor family (`WebSocket` / `EventSource` / `XMLHttpRequest`) gets `stub().returns({ … })` (an arrow mock is not constructible — `new` on it would trade the Info for a `throws TypeError` may-throw). All skeletons verified end-to-end: pasted verbatim into the calling function's JSDoc, the diagnostic disappears and the result regains precision. The structured `mock` action in `check --json` carries the same skeleton.
+  - `nudo:recursion-truncated`: the depth/calls arms of the suggestion (and the `@nudo:budget` quickfix in `nudo check --fix` / LSP code actions) now carry concrete values derived from the observed depth/call counts — `@nudo:budget depth=128` / `calls=40000` floors (defaults ×2), e.g. `raise the function budget with @nudo:budget depth=128 (or narrow the recursion base case / declare @nudo:contract return)`. The cycle arm keeps the code-level guidance (arguments must vary per level / narrow the base case / `@nudo:contract`; raising the budget cannot lift it) and never points at `@nudo:budget`. Legacy cache entries without a `reason` keep the old `forks=64` quickfix shape.
+- 1aab8ff: **Bug 修复（非 breaking）**：导出的运行时校验器没有执行 `.d.ts` 已经声明的生成器类型。`zod` / `standard` / `guard` 三个面此前只判「是个对象」，于是把 `{}`、`{ next(){} }` 当成合法的 `Generator<T>` 返回值放行。现在按 `Abs.facets.brand` 投影身份，三面同时收紧：真同步 / 异步生成器放行，普通对象拒绝。声明面、公共 API 形状、`SchemaNode` 既有成员都没变（只新增一个联合成员），变的是校验器有没有真正执行既有契约 ⇒ 按 soundness patch 发布，**不写 BREAKING / Migration 标注**（与全批口径一致）。该 changeset 自身不抬级；与同批 minor changeset 合并发布时，包版本取最高的 minor。
+  
+  - 判据单一真源 `service/src/emit/generator-identity.ts`：只认随值携带的 `Generator` / `AsyncGenerator` 两个 brand；无 brand 的旧 Abs / 手工构造逐字不变 ⇒ 既有产物不需要迁移。**2026-11-06 补齐递归**：生成器作为对象字段 / 数组元素 / union 臂时同样收紧，由 core `denoteGuardB` 的递归身份子句与 `schema-generator.ts::syncGeneratorTags`（约束投影通道丢 facets 后按原始 Abs 树同步）共同保证，四面不再相反裁决。
+  - zod 面内联 `z.custom((v) => Object.prototype.toString.call(v) === "[object Generator]")`；standard 面库版 `checkNode` 与产物内联 `__nudoCheck` 两份实现同口径；guard 面的身份子句由 core `denoteGuardB` 递归入口生成（2026-11-06 从顶层前置改为递归，service 不再重复注入）。**core 展示面 `format.ts` 始终未改**（避免 A11 曾致 4 条回归的展示面路径）；`Shape` 判别联合、`projection.ts` 约束面也未动。
+  - 已知边界：`Symbol.toStringTag` 可伪造（换取跨 realm 可判，与 `z.instanceof(Date)` 可改原型伪造同类）。2026-11-06 用 `node:vm` 实测对比原型链判据：后者不可伪造，但会误拒跨 realm 的真生成器 ⇒ **结论保留 toStringTag 口径**。`z.instanceof` 路线仍不可行（无全局 `GeneratorFunction`）。
+  - 回归：`emit-generator-identity-poc.test.ts` 由决策 PoC 升级为 16 例生产接线回归（四面逐值同裁决、真跑、`tsc --noEmit --strict`、伪造边界、嵌套递归、跨 realm 判据实测）；emit 族 502 例全绿，全仓 0 新增失败。
+  
+  依据：`docs/versioning.md` 的「判例（2026-11-05）」与 `docs/design/architecture-debt.md` 的「schema / guard / standard 生成器身份投影 · 实施记录」。
+- b060986: **Bug 修复（翻译口径订正，非 breaking）**：产品裁定「nudo 的 `any` 含义更接近 TS 的 `unknown`」——nudo `any` 是「任意 JS 值、无约束」，对应 TS 的 `unknown`（top，消费方须先收窄），**不是** TS 的 `any`（关闭类型检查的逃生舱）。此前 `.d.ts` 是唯一把 nudo any 直译成 TS `any` 的产物面，而 zod / standard / guard 三面运行时校验器早已把 any / unknown 同映为 `unknown`。现在 TS 投影面归一，四面同口径。
+  
+  - `dts-generator.ts::absToTSTypeB` 的 `case "any"` 由 `return "any"` 改为 `return "unknown"`；另补齐三处绕过该函数的硬编码：`classParamDecl`（类构造器 / 静态方法形参）、无签名导出的 `(...args: unknown[]): any` fallback、泛型基类实参占位。源码注解原文解析的 `any` token 白名单、守卫体内部故意的 `Record<string, any>`、`case-json` / contract draft / `formatAbs` 等 **nudo 展示面**均不变。
+  - `abs.md`（en / zh）的「unconstrained entry parameters display as `any`」规则**作用域澄清**：它只管 Nudo 自己的展示 / CLI 输出，不管辖 TypeScript 声明产物；`nudo check` / `nudo contract` 签名面继续区分 any（无约束）与 unknown（推导失败）。`docs/design/cli-semantics.md` §2 与导出指南 en / zh 同步订正。
+  - 实测收益：生成器宿主调用退化档 `Generator<any>` → **`Generator<unknown>`**；BUG-076 记录的「导出指南承诺 `unknown` + 点名提示，实现却给 `any` 且无提示」矛盾**彻底关闭** —— 归一后按「渲染为 unknown」触发的 stderr 提示自动覆盖主路径。
+  - 兼容性：`.d.ts` 消费方对未收窄的无约束返回值会遇到 TS2571。按产品裁定性为**正确的类型安全提示**（引擎确实不知道返回值是什么），先做 `typeof` / 判别收窄即可；Bug 544 的 tsc 实证已从「假红」改判并保留正反映证。按 `docs/versioning.md` 的 soundness 判例走 **patch**，不写 BREAKING / Migration 标注；该 changeset 自身不抬级，与同批 minor changeset 合并发布时包版本取最高的 minor。
+  - Evidence：全仓独立改前基线 1659 入口 / 20 失败 = 基线 20；归一实验暴露 26 条新增失败，**全部**为 TS 产物精确串断言（无功能失败），已按新口径逐条重订；BUG-544 / BUG-076 两个语义级测试整份重写，BUG-003 / BUG-079 / BUG-044 / BUG-168 / BUG-514 / BUG-520 / dts-contract-face / export-dts-evidence 等同步。最终全仓 0 新增失败。
+  
+  依据：`docs/versioning.md`「判例（2026-11-06）」、`docs/design/cli-semantics.md` §2、`packages/website/docs/concepts/abs.md`。
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/harvester@0.6.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
+
 ## 1.11.0
 
 ### Minor Changes

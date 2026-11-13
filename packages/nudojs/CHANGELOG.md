@@ -1,5 +1,135 @@
 # nudojs
 
+## 1.9.0
+
+### Minor Changes
+
+- e1e6892: ABS-01: constraint / lemma grammar — arithmetic relations, dependent return contracts, and contract-internal binders.
+  
+  - `@nudo:assume` and `@nudo:invariant` accept simple arithmetic expressions (`name`, `number`, `name ± number`): `@nudo:assume i + 1 <= n`, `@nudo:invariant i < n`. Multiplication / division / parentheses stay malformed with the existing fail-closed diagnostics.
+  - `@nudo:contract return <rel> <expr>` builds a dependent return obligation on the return term (`return > x`). IEEE-sound proof rule added for non-strict offset comparisons (`round(b + c) >= b`, `c >= 0`); strict `>` / `<` on unbounded operands report an honest unprovable warning (2^53 + 1 = 2^53 is a real counterexample), never a false red.
+  - Contract-internal binders: `bind(name, constraint)`, `ref(name)`, `ref(name).at(path)` with scope = one constraint tree. `EffectiveContract` carries a cross-slot binder table so `fn({...}, array(ref("b")))` can reference a binder declared in a callback slot. Unbound refs fail closed (`nudo:contract-load`) and never degrade to `any()`.
+  - Refs are resolved before proofs / instantiation / entry-Abs projection, so a ref slot cannot pass as an obligation-free `any()`.
+  - Public surface additive: `bind` / `ref` / `rel` builders plus `BinderTable` and resolver helpers (public API snapshot updated).
+- ca8005b: ABS-02: explain where `unknown` / `any` came from (observation-only side channel).
+  
+  - New `buildUnknownExplanations` / `formatUnknownExplanations` (core) derive a stable, deduped reason list from existing observation faces (signatures, issues, budget, eval fallbacks) — no Abs field, no cache-key or `leqAbs` change; cold/warm results are untouched by construction.
+  - Reasons: `budget` / `missing-env` / `unsupported` / `eval-failure` / `no-contract` / `explicit-any` / `inference-failure`, each with an actionable suggestion. Cycle truncation says explicitly that `@nudo:budget` cannot help.
+  - `nudo check --explain-unknown` prints the list after the human report; default output is byte-identical and `--json` / `--gitlab` machine contracts are unaffected.
+- 1a4cabd: ABS-03: dts projection completion — contract generics, readable contract notes, overload arms.
+  
+  - Contract-side type parameters are now derived from binder vars (`bind:<name>`) and emitted only when referenced by a parameter or the return type: the entry-only HOF contract projects as `export declare function processItems<a, b>(items: a[], transform: (x: a) => b): b[];` (element domain and callback parameter share the same variable; unreferenced vars are dropped).
+  - `.d.ts` JSDoc gains readable `Contract:` rows (sidecar expression text / constraint rendering). They are notes only — the type face still comes from Abs, and `Case:` rows keep their debug-witness role.
+  - Function Abs with a declared overload set now projects as a TS object type with per-arm call signatures (declaration order = TS resolution order) instead of collapsing to the union face.
+  - Schema projection already emits numeric `gt/ge/lt/le` bounds; new tests pin bounded output and the honest omission of non-expressible relations (`x > y`).
+- b57d1d2: ABS-04: test observation face — outermost witnesses survive the budget, and the two paths are discoverable.
+  
+  - Call-site witness selection now prefers the **outermost** records (concrete arguments) over internal records whose arguments carry free term variables (α names / derived expressions from recursive or higher-order evaluation). A `sumTo(3)`-style top-level witness is no longer pushed out of `callSiteBudget` by internal records.
+  - When a function has both `@nudo:case` and call-site records, the default run keeps the mutual-exclusion report and prints a `both-paths` hint naming those functions, pointing at `--both-paths` (sources stay labeled: directive vs callsite). `--json` is unaffected; truncation reasons and their next actions keep flowing through the existing `nudo:*-truncated` diagnostics. Under `--freeze` the hint is suppressed: `--both-paths` combined with `--freeze` is a usage error, so the suggestion is not actionable in that run.
+- 09f5ff8: ABS-08: automatic loop-invariant candidates (phase 1 — observation only).
+  
+  - The loop widener records numeric bounds of scalar loop-carried bindings across observed iteration snapshots. When widening actually happens, these become **candidates** surfaced as `nudo:invariant-inferred` info diagnostics with the observed bound and sample count.
+  - Candidates never participate in proofs: an observed extreme over a bounded number of iterations is one-sided evidence, not a proved invariant. Only an explicit `@nudo:invariant` declaration enters the proof (audited via `nudo:invariant-relied`) — so inference cannot introduce false greens.
+  - User declarations override candidates for the same binding (no duplicate hints).
+  - Bounded loops that never widen produce no candidates (no noise).
+  - Diagnostics docs updated (EN + zh).
+- 4361e2e: DX: `nudo test --both-paths` (directive + synthesized witnesses in one round) and opt-in HMAC-signed disk cache entries.
+  
+  - `nudo test <path> --both-paths [--only <names>]`: functions with `@nudo:case` directives now *can* also synthesize `call@`/`entry@` witnesses in the same round (teaching comparison face; default exclusivity unchanged). `--json` separates the paths via `source: "directive" | "callsite"`; exit semantics unchanged (synthetic cases never fail the run). `--only` without `--both-paths`, and `--both-paths --freeze`, are usage errors.
+  - Signed disk cache: `package.json#nudo.cache.sign: true` + `NUDO_CACHE_KEY` signs every entry (HMAC-SHA256, domain-separated key derivation). Verification failure = miss (recompute, never trust) — a forged CheckJson can no longer pass the gate; signed/unsigned key spaces are separate, so key rotation is a clean full miss. Fail-closed config: sign without a key, or a non-boolean sign, refuses to run (`check` / `contract` / `health`, machine-readable on `--json`) instead of silently running unsigned. `nudo.cache` also accepts an object form `{ dir?, sign? }`; typo'd keys surface as `config-shape` report entries.
+  - truncation suggestions: fork/recursion-budget fix values in the analyzer now consume the single-sourced `suggested{Fork,Depth,Calls}Ceiling` helpers from `@nudojs/core/internal` (same wording as the check face, concrete numbers instead of `@nudo:budget depth=…` placeholders).
+  - benchmark: `bench-monorepo.mts --corpus <path>` runs the S1 benchmark against a real monorepo directory (dynamic hub/mid/leaf targets from the module graph, in-memory edits only — user files are never written; report lands in `s1-perf-baseline-real.{md,json}` with an honest corpus header).
+- 4fc7e19: Rename the remaining Nudo `interface` terminology to `contract` end to end.
+  
+  - Core: `effectiveInterface` → `effectiveContract`, `InterfaceSource` → `ContractSource`, `InterfaceTierInfo` → `ContractTierInfo`, `interfaceTierOf` → `contractTierOf`, `takeInterfaceDiags*` → `takeContractDiags*`, and the `algebra/interface/` directory → `algebra/contract/`.
+  - Service: `emitInterface` / `draftInterface` / `interfaceSurface` → `emitContract` / `draftContract` / `contractSurface`; `interface-*.ts` files → `contract-*.ts`; `ifaceCacheKey` → `contractCacheKey` and the disk-cache namespace `iface` → `contract`.
+  - Diagnostics: `nudo:interface-*` → `nudo:contract-*` (no alias layer).
+  - CLI/LSP: CodeLens titles `⚡ persist contract` / `↻ update contract` / `⚡ draft contract`; agent messages `no contract found` / `no contract changes`; `CheckIssue` actions and hover/inlay fields use `contractSource` / `contractDisplay` / `contractActive`.
+  - Docs, examples (`contract-derivation/`, `contract-draft/`), API snapshots, and website references updated.
+  
+  TypeScript's `interface` keyword, Babel AST `TSInterface*`, and historical release notes are intentionally unchanged.
+- 09d88d6: Feat: `nudo init` coexistence pointer + copy-paste default client configs (LSP-G4 DX).
+  
+  - init: after writing the adoption baseline, when the target package has `tsconfig.json` / `jsconfig.json`, init appends a coexistence hint block — the VS Code command `nudo.coexistence.apply` ("Nudo: Apply coexistence settings") and the coexistence-guide recipe URL (`include`/`exclude` / `mode: "directives"`). Print-only: no tsconfig / editor settings are rewritten; the minimal-write discipline (Bug 681) and the existing init boundaries (B676/677/678/680, Bug 1144, Bug 229) are unchanged, and the idempotent no-write path prints no hint.
+  - website (EN + zh-Hans mirrors): lsp-clients Setup notes upgraded to copy-paste default config blocks — the Zed `settings.json` block now ships `semantic_tokens: "combined"` inline (previously prose-only); Neovim lspconfig and Helix `languages.toml` blocks are labeled as complete copy-whole defaults. zed.md Settings gets the same semantic_tokens fold. Known-gaps G4 rows (both locales) note the init pointer; `docs/design/lsp-client-gaps.md` G4 status records it.
+- a9638c2: Feat: precision-cliff UX — `nudo test` call@symbolic hint + `nudo health` precision counts.
+  
+  - `nudo test`: when a report contains `call@symbolic` (the symbolic aggregate witness folded from call sites beyond `callSiteBudget`), the report tail now appends one actionable note (`SYMBOLIC_BUDGET_NOTE`, same "fact — action A or action B" shape as the `nudo:recursion-truncated` advice): raise `package.json#nudo.analysis.callSiteBudget` (1–64, default 3) or pin exact witnesses with `@nudo:case` (limitations §3.2.2 wording — for recursion pin `@nudo:case`, don't rely on call@). Display-face only: no assertion counting, no exit-code change. Reports without `call@symbolic` stay byte-identical.
+  - `nudo health`: the Summary line and the `--json` summary (same source) now carry precision counts — `unknownSignatures` (functions whose return the engine could not infer; renders `unknown`, counted via the shared `inferenceFailed` predicate; `@nudo:skip` functions are declared faces and not counted) and `widenedWitnesses` (occurrences of `#widened`, i.e. witnesses with `conf === "widened"` — budget-folded symbolic aggregates / loop widening). Informational only, like `uncovered`: never gates the exit code. Text Summary reads `… · N unknown signature(s) · M #widened witness(es)`; `--json` summary gains additive keys `unknownSignatures` / `widenedWitnesses`.
+  - `@nudojs/service` exports `SYMBOLIC_BUDGET_NOTE` (single source for the note text; CLI and tests consume the same constant). Regressions pinned in `packages/nudojs/src/__tests__/precision-hints.test.ts`; family-63 health baselines and the e2e health golden updated for the Summary extension (their fixtures now pin src tsconfig per the `writeSrcTsconfig` convention, so they no longer silently test a stale `dist/`).
+
+### Patch Changes
+
+- 67ece35: Add `--capabilities strict|trusted` to `check`, `test` and `health` (ABS-12 R12-D). `strict` (default, same as `NUDO_CAPABILITIES=strict`) hides side-effectful host globals and `node:` modules: values stay `unknown`, denied names report `nudo:capability-denied`, and the canary suite proves no socket/file/process side effects. `trusted` restores the legacy `builtin-unknown` surface while the hand-written high-risk host-function blocklist stays active. Invalid values fail with a usage error. Docs updated (EN + zh-Hans).
+- 46719cb: Speed up `check --watch` incremental rounds by reusing the evaluator injection object per file across rounds and by memoizing dependency fingerprints within a round. `checkMemoKey` keys on `moduleMapId(modules)` (identity), so rebuilding the injection for every file on every round made the check memo miss; the injection is now cached under the exact analysis-input identity (stable source × dependency fingerprints × env names/contents × preload state × autoBind × analysis config), and dependency fingerprints computed by the injection key, `analyzeFile` and the printer are shared inside a round. On the 48-file semver corpus an inert edit round drops from 2600ms to 718ms for a hub file (`total` 929ms, under the 1s target) and to 345ms / 555ms for a leaf; semantic edits still recompute the dependency chain. Diagnostics collected during injection assembly are replayed on a cache hit, and truncated / read-error fingerprints opt out of the cache (fail-closed).
+- b6cdf66: Stop invalidating the whole dependency chain for inert edits. Dependency contents now enter every cache key through the same `stableAnalyzeKeySource` projection the entry file already used: trailing comments/whitespace that carry no `@nudo` directive no longer flip the dependency fingerprint (check disk keys, evaluator memo, generalize L0, per-fn memo), while real code, line shifts and `@nudo` directives still do. `check --watch` now evicts only the files that actually changed; dependents rely on the content fingerprints to miss (semantic edit) or hit (inert edit).
+  
+  Measured on the 48-file semver corpus (dist, clean `NODE_OPTIONS`): hub edit `analyze` 3313ms → 2597ms, leaf 1009ms → 875ms. A single dependent's `analyzeFileAsync` drops from ~663–734ms to 9.9ms after an inert dependency edit, while a semantic edit still misses (172ms). The residual watch cost is the `check` verb's own `checkSource` (~500ms/file, memo keyed by module-map identity), tracked as the next ABS-18 item. Pinned by `load-deps-fp-stable.test.ts` and `abs18-watch-inert-eviction.test.ts`.
+- 38eedd0: Fix the macOS `/var` → `/private/var` path-space mismatch behind the 9 long-standing LSP/CLI baseline failures, and remove watch FSEvents noise.
+  
+  On macOS `os.tmpdir()` returns `/var/folders/...`, a symlink to `/private/var/folders/...`. The kernel gives `process.cwd()` / `realpathSync()` the **realpath** form, while user arguments and test fixtures keep the `/var/...` literal. Two product faces mixed those spaces:
+  
+  - **LSP emit boundary** (`agent-tools.ts`): `assertEmitTargetAllowed` / `resolvedWorkspaceRoots` / `derivedSidecarAllowed` realpathed only *existing* paths. A not-yet-written source file or downstream sidecar fell back to the `/var/...` literal and was compared against a `/private/...` root, so legitimate writes were rejected as "outside allowed roots" (Bug 762 derived emit, Bug 765 unsaved-buffer guard). All three now use the shared `normalizeRealPath` from `@nudojs/service`, which falls back to `realpath(dirname) + basename` for missing targets. Real symlink-escape protection is unchanged (Bug 766's escape case still fails closed).
+  - **CLI relative display**: `relative(process.cwd(), resolve(userArg))` produced `../../../../../../../var/.../syn.js`, polluting the JSON `file` field and human-facing text (Bug 661 / 663 / 664 / 63b). New `relFromCwd()` normalizes the target into the cwd's realpath space before subtracting; the contract command family (print / draft / emit / from-dts) and watch error lines now use it. `displayPathOf` is deliberately untouched, so the check/test/health baselines stay byte-identical. On non-symlink hosts and in-repo paths output is byte-identical.
+  
+  The same watch loop also stops swallowing edits: fingerprint baselines are recorded **when a round's changed paths are accepted, before analysis** (and dropped for deleted files), not after the incremental round resolves. The old ordering re-baselined any write that landed while the round was running, so `filterUnchangedWatchPaths` saw it as unchanged and the edit was silently skipped until the next save. `startWatch` now filters FSEvents noise: macOS directory watchers report untouched files from the same batch, so changing `a.js` could also re-run `sub/b.js` and made the Bug 684/685 "re-run exactly the changed file" assertions flaky (~1/3 of runs). The debounce window keeps only paths whose `(size, mtimeMs)` fingerprint actually changed; deletions, new files and non-tracked paths (config / sidecar / env templates) always pass through. Extracted as testable `watchPathVersion` / `filterUnchangedWatchPaths`, covered by `cli-watch-noise-filter.test.ts` (7 cases). Reverting the filter reproduces the flake; with it, 8/8 repeated runs and all 12 watch test files / 33 cases pass. The lose-an-edit race has no deterministic e2e fixture yet (it needs a controllably slow analysis); the pure filter plus the existing watch suites are the regression surface.
+- 83c1ed2: **Chore:** expand the OSS real-package benchmark corpus from 3 to 10 packages (`commander` / `yargs` / `semver` + `eventemitter3` / `kleur` / `ms` / `is-plain-obj` / `escape-string-regexp` / `p-limit` / `yocto-queue`) and regenerate `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}`. Every package is L1 zero-FP on the new corpus. Candidate packages that could not join honestly are documented in `benchmark/oss/packages.mts`: `debug` and `@changesets/cli` crash on the analyze path (evaluating them clobbers host `process.env` / `globalThis.Error` — engine debt, not gate-threshold material), `lodash` blows the wall-clock budget, `@babel/types` crashes `checkSource`, and `@babel/parser` / `@babel/traverse` single-file bundles dominate a bench round. Benchmark-only change — no engine code touched.
+- 05b7b82: **Chore:** re-admit `debug` and `@changesets/cli` to the OSS real-package benchmark corpus (10 → 12 packages, 120 files) after the host-global-purity fix (B1/B2: fork/member-write rebinds gated on `$rebindable` — analysis no longer clobbers host `process` / `globalThis.Error`). Both are L1 zero-FP across 4 trusted runs; `benchmark/oss/baseline.json` + `docs/reports/oss-perf-baseline.{md,json}` regenerated (envelope = observed max of 4 quiet runs ×1.10, same convention as the previous expansion). `@babel/types` stays excluded for wall-clock only (single ~3 MB bundle, one `checkSource` pass ≈ 4 min past the per-round budget) — its earlier crash is fixed (B3).
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [1a4cabd]
+- Updated dependencies [b57d1d2]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [4361e2e]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [1aab8ff]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [a9638c2]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [b060986]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+  - @nudojs/harvester@0.6.0
+  - @nudojs/service@1.12.0
+  - @nudojs/env@0.5.8
+  - @nudojs/parser@1.5.8
+
 ## 1.8.0
 
 ### Minor Changes
