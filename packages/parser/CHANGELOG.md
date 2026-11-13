@@ -1,6 +1,55 @@
 # @nudojs/parser
 
 
+## 1.5.8
+
+### Patch Changes
+
+- Updated dependencies [9a087f9]
+- Updated dependencies [09d49af]
+- Updated dependencies [c6cf8fa]
+- Updated dependencies [e1e6892]
+- Updated dependencies [ca8005b]
+- Updated dependencies [fb54d1a]
+- Updated dependencies [869f22d]
+- Updated dependencies [09f5ff8]
+- Updated dependencies [df56e83]
+- Updated dependencies [af8173b]
+- Updated dependencies [61c22d5]
+- Updated dependencies [c8aac63]
+- Updated dependencies [9886482]
+- Updated dependencies [3ddcb81]
+- Updated dependencies [897b19f]
+- Updated dependencies [53d8248]
+- Updated dependencies [792eb79]
+- Updated dependencies [949ddce]
+- Updated dependencies [56d8227]
+- Updated dependencies [14cf89a]
+- Updated dependencies [49cdb00]
+- Updated dependencies [4fc7e19]
+- Updated dependencies [4e986cd]
+- Updated dependencies [47463ae]
+- Updated dependencies [018bc20]
+- Updated dependencies [b4435ae]
+- Updated dependencies [e4dc7df]
+- Updated dependencies [7ddd831]
+- Updated dependencies [06bd8ee]
+- Updated dependencies [533c8c6]
+- Updated dependencies [951b256]
+- Updated dependencies [0331e00]
+- Updated dependencies [f7d105a]
+- Updated dependencies [fdc0a5a]
+- Updated dependencies [c9c39e8]
+- Updated dependencies [b6cdf66]
+- Updated dependencies [1316e42]
+- Updated dependencies [4ea0cbc]
+- Updated dependencies [ead77d6]
+- Updated dependencies [cd7c6e2]
+- Updated dependencies [f66e104]
+- Updated dependencies [5267658]
+- Updated dependencies [21ffc28]
+  - @nudojs/core@1.19.0
+
 ## 1.5.7
 
 ### Patch Changes
