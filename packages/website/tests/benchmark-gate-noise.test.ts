@@ -9,7 +9,7 @@
 //    阈值本身远大于 10~13% 机器因子，见 gate.js 头注）。
 import { describe, it, expect, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -246,5 +246,57 @@ describe("src gate — 单计时指标不构成均匀证据，旗标下 3.5x 仍
     const r = runGate(SRC_GATE, ["--allow-uniform-shift"], { cwd: writeSrcFixture(900) });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Benchmark gate passed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 小绝对值的测量分辨率下限（CI 专属）：单文件包 2–8ms 的计时点无法按倍率
+// 比较——共享 runner 的固定开销就在 15–20ms 量级。下限只抬升 < 30ms 的
+// 指标；大指标（百毫秒级以上）仍由 3x 倍率把关。
+// ---------------------------------------------------------------------------
+
+/** 5ms 量级的单包 envelope + 4x 报告（同一个 fixture 走两种环境）。 */
+function writeTinyMetricFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), "nudo-oss-floor-"));
+  temps.push(root);
+  const tiny = { name: "tiny", minFiles: 1, maxFpCount: 0, maxColdAnalyzeMs: 5, maxCheckAllMs: 5, maxHubDirtyMedianMs: 5 };
+  const report = {
+    totals: { files: 1, fpCount: 0, coldAnalyzeMs: 6000, checkAllMs: 1800 },
+    packages: [{ name: "tiny", files: 1, fpCount: 0, coldAnalyzeMs: 20, checkAllMs: 20, hub: { dirtyMedianMs: 20 } }],
+  };
+  mkdirSync(join(root, "docs", "reports"), { recursive: true });
+  mkdirSync(join(root, "benchmark", "oss"), { recursive: true });
+  writeFileSync(join(root, "docs", "reports", "oss-perf-baseline.json"), JSON.stringify(report));
+  writeFileSync(
+    join(root, "benchmark", "oss", "baseline.json"),
+    JSON.stringify({ totals: { maxFpCount: 0, maxColdAnalyzeMs: 6000, maxCheckAllMs: 1800 }, packages: [tiny] }),
+  );
+  return root;
+}
+
+describe("oss gate — CI 小指标绝对下限", () => {
+  it("5ms envelope 的 4x 报告：CI 下放行（固定开销主导，非代码回退）", () => {
+    const root = writeTinyMetricFixture();
+    const r = runGate(OSS_GATE, [], { env: { GITHUB_ACTIONS: "true", OSS_GATE_ROOT: root } });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("OSS baseline gate OK");
+  });
+
+  it("同一报告在本地（无下限）仍红：下限只在 CI 生效", () => {
+    const root = writeTinyMetricFixture();
+    const r = runGate(OSS_GATE, [], { env: { OSS_GATE_ROOT: root } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("tiny: check all 20ms > 5ms");
+  });
+
+  it("大指标不受下限影响：CI 下 4x 仍红（commander check 400 → 1600）", () => {
+    const root = writeOssFixture({ coldMul: 1.0, checkMul: 1.0, hubMul: 1.0 });
+    const reportPath = join(root, "docs", "reports", "oss-perf-baseline.json");
+    const report = JSON.parse(readFileSync(reportPath, "utf-8"));
+    report.packages[0].checkAllMs = 1200; // baseline 300 → limit 900
+    writeFileSync(reportPath, JSON.stringify(report));
+    const r = runGate(OSS_GATE, [], { env: { GITHUB_ACTIONS: "true", OSS_GATE_ROOT: root } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("commander: check all 1200ms > 900ms");
   });
 });
