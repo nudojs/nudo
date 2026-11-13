@@ -23,7 +23,15 @@ const COMMON_HEADING = "Common options:";
 const GROUPS: ReadonlyArray<{ heading: string; flags: readonly string[] }> = [
   {
     heading: COMMON_HEADING,
-    flags: ["--watch", "--json", "--quiet", "--profile", "--entry-throws", "--ignore-throws"],
+    flags: [
+      "--watch",
+      "--json",
+      "--quiet",
+      "--profile",
+      "--entry-throws",
+      "--ignore-throws",
+      "--capabilities",
+    ],
   },
   {
     heading: "Observation options:",

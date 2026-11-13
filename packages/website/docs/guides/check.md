@@ -276,6 +276,7 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |
 | `--profile adoption\|strict` | Gate profile (default `strict`); `adoption` ≡ L2 entry-throws `warning`, L1 stays error — see [Profiles](./check.md#profiles-adoption-vs-strict) |
+| `--capabilities strict\|trusted` | Capability policy for untrusted source (default `strict`): side-effectful host globals and `node:` modules are hidden (`nudo:capability-denied`, value `unknown`); `trusted` restores the legacy `builtin-unknown` surface. Not a sandbox. |
 | `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
 | `--gitlab` | GitLab Code Quality JSON array on stdout — redirect to `gl-code-quality-report.json` |
 

@@ -276,6 +276,7 @@ L2 entry-throws 严重级按首个命中解析：
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型 |
 | `--entry-throws error\|warning\|off` | L2 严重级别（默认 `error`） |
 | `--profile adoption\|strict` | 门禁档（默认 `strict`）；`adoption` ≡ L2 entry-throws `warning`，L1 仍 error —— 见[门禁 profile](./check.md#profiles-adoption-vs-strict) |
+| `--capabilities strict\|trusted` | 不可信源码的能力档（默认 `strict`）：有副作用的宿主全局与 `node:` 模块被隐藏（`nudo:capability-denied`，值 `unknown`）；`trusted` 退回旧 `builtin-unknown` 面。不是 sandbox。 |
 | `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动开 |
 | `--gitlab` | stdout 输出 GitLab Code Quality JSON 数组 —— 重定向到 `gl-code-quality-report.json` |
 

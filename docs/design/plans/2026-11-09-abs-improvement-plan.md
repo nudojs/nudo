@@ -46,7 +46,7 @@
 | 9 | `ABS-09` | ~~递归类型 coinductive `leq`~~ | P1 | M | — | [x] |
 | 10 | `ABS-10` | ~~摘要式模块化分析~~ | P1 | L | `ABS-05` | [x]（保守起点：纯上下文跨实例后置摘要） |
 | 11 | `ABS-11` | ~~contract 合取与 union 精度~~ | P1 | M | `ABS-01` | [x]（判别式穷尽性 warning 延后：零误报优先） |
-| 12 | `ABS-12` | 能力面裁剪（capability surface） | P2 | M–L | — | `[~]` 2026-11-13 拍板：执行不可避，隐藏副作用 API/模块；denied = `unknown` + `nudo:capability-denied`；默认 strict、`--capabilities trusted` 可退出；不叫 sandbox（见 §5） |
+| 12 | `ABS-12` | 能力面裁剪（capability surface） | P2 | M–L | — | `[x]` 2026-11-13 交付：能力清单（188 全局 + 67 builtin，default-deny + 漂移门禁）、运行期身份拦截、`nudo:capability-denied`、`--capabilities strict\|trusted` / `NUDO_CAPABILITIES`、canary e2e（零宿主副作用）；denied 集合维护是持续动作；**不宣称 sandbox**（见 §5） |
 | 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[~]` 2026-11-13：样例搜索完成（`return/throw/break/yield*` 穿 `finally` 的 wrong-exact 已复现）；**方案 C 护栏已交付**（join 终态，`false \| true`）；方案 A（finalizer 重放）待实现，见 §5 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
@@ -420,8 +420,14 @@ strict 默认需要一次全仓回归确认精度不回退。
 `NUDO_CAPABILITIES=trusted`（或 `setCapabilityMode("trusted")`）退回旧面（运行时身份拦截也
 只保留手写高危名单）；未分类名字（typo）两档都是 `builtin-unknown`。夹具
 `capability-diagnostics.test.ts`（5 例）+ 更新 `eval-diagnostics.test.ts` 的 dynamic require；
-docs（EN + zh-Hans）已登记。**未做**：CLI `--capabilities` 显式开关（当前只有 env）、
-canary e2e（fs/net/spawn/worker/timer/fetch/process 的「零宿主副作用」端到端）——下一步。
+docs（EN + zh-Hans）已登记。**Slice 3 已交付（2026-11-13）**：CLI `--capabilities strict|trusted`（`check` / `test` / `health`；
+非法值 usage error），与 `NUDO_CAPABILITIES` env 同源；canary e2e
+`capability-canary.test.ts`——fetch（本地 TCP 零连接）、setTimeout、`process.exitCode = 7`、
+静态 `require("node:fs").writeFileSync(canary)`、`eval` 全部不执行且 canary 文件不存在；
+trusted 档仍保留手写 high-risk 名单（fetch 依旧拦，诊断回 `builtin-unknown`）。
+CLI 开关夹具 `abs12-capabilities-flag.test.ts`（4 例）；docs（EN + zh-Hans）补
+`--capabilities` 行。至此 R12-D 的**当前范围**收口：剩余仅「扩展 denied 集合 / 新宿主名字的
+持续分类」这一日常维护项（漂移门禁会强制复核）。
 
 ### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
 

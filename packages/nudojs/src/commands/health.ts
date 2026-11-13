@@ -23,6 +23,7 @@ import { paintOne } from "../ui.ts";
 import { projectConfigShapeIssue } from "../config-shape.ts";
 import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
+  applyCapabilitiesOption,
   collectExternalRecords,
   emitJsonDoc,
   externalAbsCallRecords,
@@ -939,9 +940,22 @@ export function registerHealthCommand(program: Command): void {
     .description("Project health & drift: uncovered functions, witness drift, contract drift, analysis errors")
     .argument("[paths...]", "File(s) or directory(s) (default: current directory; with --from, pass paths explicitly — e.g. `nudo health . --from usage.js`)")
     .option("--watch, -w", "Watch and re-run health on change")
+    .option(
+      "--capabilities <mode>",
+      "Capability policy for untrusted source: strict (default) | trusted (legacy surface)",
+    )
     .option("--from <paths...>", "Usage-site files for freeze-drift detection")
     .option("--json", "Output as JSON")
-    .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; json?: boolean }) => {
+    .action(
+      async (
+        paths: string[],
+        opts: { watch?: boolean; from?: string[]; json?: boolean; capabilities?: string },
+      ) => {
+      // ABS-12：能力档在分析前定档（进程级）
+      if (!applyCapabilitiesOption(opts.capabilities)) {
+        process.exitCode = 1;
+        return;
+      }
       // 688：--from 的多值语义与 check / contract **同口径**——
       //  - 多文件 --from（`nudo health lib.js --from a.js b.js`）：**接受**。
       //    「多 from 文件」不是「variadic 吞噬位置参数」：目标路径写在旗标

@@ -48,9 +48,27 @@ import {
   beginDepFingerprintEpoch,
   endDepFingerprintEpoch,
   extractAssumeSegs,
+  setCapabilityMode,
 } from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
+
+/**
+ * ABS-12：`--capabilities <mode>` —— strict（默认能力面裁剪）/ trusted（旧行为）。
+ * 非法值 → usage error（返回 false；调用方置 exit 并返回）。
+ */
+export function applyCapabilitiesOption(mode: string | undefined): boolean {
+  if (mode === undefined) return true;
+  if (mode === "strict" || mode === "trusted") {
+    setCapabilityMode(mode);
+    return true;
+  }
+  usageError(
+    `error: --capabilities expects "strict" or "trusted" (got "${mode}")`,
+    "use --capabilities strict|trusted",
+  );
+  return false;
+}
 
 /** Usage-error face: one-line reason + a product-style `fix:` hint (same face as check diagnostics). */
 function usageError(message: string, fix: string): void {

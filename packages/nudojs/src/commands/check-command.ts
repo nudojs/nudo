@@ -43,6 +43,7 @@ import {
   emitJsonDoc,
   reportPathErrors,
   resolveTargets,
+  applyCapabilitiesOption,
   startWatch,
   variadicSwallowError,
   type PathError,
@@ -368,6 +369,10 @@ export function registerCheckCommand(program: Command): void {
     .option("--gitlab", "GitLab Code Quality JSON array (write as gl-code-quality-report.json)")
     .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
     .option(
+      "--capabilities <mode>",
+      "Capability policy for untrusted source: strict (default) hides side-effectful host APIs/modules; trusted restores the legacy surface",
+    )
+    .option(
       "--explain-unknown",
       "ABS-02: after the report, list why values became unknown / any (budget, env, unsupported, eval failure, no contract)",
     )
@@ -425,8 +430,14 @@ export function registerCheckCommand(program: Command): void {
           write?: boolean;
           dryRun?: boolean;
           quiet?: boolean;
+          capabilities?: string;
         },
       ) => {
+        // ABS-12：能力档必须在任何分析之前定档（进程级；缓存不含该维度）
+        if (!applyCapabilitiesOption(opts.capabilities)) {
+          process.exitCode = 1;
+          return;
+        }
         // BUG-024：variadic 旗标（--from/--assume/--what-if/--only）
         // 吞噬其后的位置参数——paths 空且任一 variadic 非空时
         // 定向 usage error（直指旗标 + `--` 终止符解法；

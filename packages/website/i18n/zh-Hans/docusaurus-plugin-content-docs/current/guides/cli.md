@@ -44,7 +44,7 @@ nudo — JavaScript types, computed
 ```bash
 nudo check <path> [--watch|-w] [--json] [--quiet] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
-           [--profile adoption|strict] [--gha] [--gitlab] [--what-if name:type… [--target name]]
+           [--profile adoption|strict] [--capabilities strict|trusted] [--gha] [--gitlab] [--what-if name:type… [--target name]]
 ```
 
 其余旗标各一句（完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)）：

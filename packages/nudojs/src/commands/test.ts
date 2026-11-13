@@ -32,6 +32,7 @@ import {
   syntaxErrorInfo,
 } from "./check-report.ts";
 import {
+  applyCapabilitiesOption,
   attachTargetErrors,
   collectExternalRecords,
   collectTargets,
@@ -537,6 +538,10 @@ export function registerTestCommand(program: Command): void {
     .description("Report every inferred case (call@/entry@ + debug witnesses); assert declared expectations")
     .argument("[paths...]", "File(s) or directory(s)")
     .option("--watch, -w", "Watch files and re-run test on change")
+    .option(
+      "--capabilities <mode>",
+      "Capability policy for untrusted source: strict (default) | trusted (legacy surface)",
+    )
     .option("--from <paths...>", "Usage-site files whose calls become synthesized cases")
     .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | add; add is the default when the value is omitted)")
     .option("--dry-run", "With --freeze: print a unified diff instead of writing")
@@ -564,8 +569,14 @@ export function registerTestCommand(program: Command): void {
           abs?: boolean;
           bothPaths?: boolean;
           only?: string;
+          capabilities?: string;
         },
       ) => {
+        // ABS-12：能力档在分析前定档（进程级）
+        if (!applyCapabilitiesOption(opts.capabilities)) {
+          process.exitCode = 1;
+          return;
+        }
         // BUG-018：`--freeze` 是 CLI 上**唯一**的「可选取值」选项
         // （`.option("--freeze [mode]")`）⇒ commander 把紧跟其后的**非选项
         // 参数当成该选项的取值** ⇒ `nudo test --freeze <path>` 的路径被吞成

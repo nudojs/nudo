@@ -44,7 +44,7 @@ Gate contracts and entry throws. On success **and** failure, `check` prints sign
 ```bash
 nudo check <path> [--watch|-w] [--json] [--quiet] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
-           [--profile adoption|strict] [--gha] [--gitlab] [--what-if name:type… [--target name]]
+           [--profile adoption|strict] [--capabilities strict|trusted] [--gha] [--gitlab] [--what-if name:type… [--target name]]
 ```
 
 Further flags, one line each (full tables in the [CLI Reference](../api/cli-reference.md#nudo-check)):
