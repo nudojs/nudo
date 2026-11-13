@@ -32,6 +32,7 @@ import { YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY
 import { $arr, $yieldStarElems, $get } from "./containers.ts";
 import { $call } from "../call.ts";
 import { loopExitsAls } from "./state.ts";
+import { genReturnAtOf, registerGenReturnAt } from "./gen-return-at.ts";
 
 export function wrapPromiseAbs(inner: Abs): Abs {
   inner = asAbsVal(inner);
@@ -877,19 +878,20 @@ function makeGenObject(
     state.i > 0 && !state.done && !state.poisoned ? (ctxs[state.i - 1] ?? 0) : 0;
   // Bug 229：挂起点 → 委托对象映射（yield* 委托的元素区间；fork 合并致下标
   // 漂移 → 校验失败 → 不转发，保守不猜）
-  const delegationAt = ((): ((i: number) => Abs | undefined) | undefined => {
+  type DelegationTarget = { delegate: Abs; start: number };
+  const delegationAt = ((): ((i: number) => DelegationTarget | undefined) | undefined => {
     if (delegations.length === 0) return undefined;
-    const map = new Map<number, Abs>();
+    const map = new Map<number, DelegationTarget>();
     for (const d of delegations) {
       for (let i = 0; i < d.count; i++) {
         const idx = d.start + i;
         if (idx < 0 || idx >= full.length) return undefined;
         if (full[idx] !== d.els[i]) return undefined;
         if (map.has(idx)) return undefined;
-        map.set(idx, d.delegate);
+        map.set(idx, { delegate: d.delegate, start: d.start });
       }
     }
-    return (i: number): Abs | undefined => map.get(i);
+    return (i: number): DelegationTarget | undefined => map.get(i);
   })();
   /**
    * Bug 229：`.return(v)` 转发给挂起点的委托迭代器（原生 DelegateYield 的
@@ -900,6 +902,8 @@ function makeGenObject(
   const forwardReturnToDelegate = (
     delegate: Abs,
     v: Abs,
+    /** 委托内已消费的 yield 数（eager 排空后按挂起点回放用；<=0 = 未知） */
+    innerConsumed: number,
   ): { done: boolean | undefined; value?: Abs } | undefined => {
     const iter = genDrainViewOf(delegate) !== undefined ? delegate : userIterOf(delegate);
     if (iter === undefined) return undefined;
@@ -918,9 +922,16 @@ function makeGenObject(
       // 原生：return 存在但不可调用 → TypeError
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
-    let r: Abs;
+    // ABS-13：委托生成器已被 eager 排空 ⇒ 直接 `.return()` 只会得到已耗尽
+    // 结局；优先按**已消费下标**回到挂起点（快照 + finalizer 重放）。
+    const innerReturnAt =
+      genDrainViewOf(delegate) !== undefined ? genReturnAtOf(delegate) : undefined;
+    let r: Abs | undefined =
+      innerReturnAt !== undefined && innerConsumed > 0
+        ? innerReturnAt(innerConsumed, v)
+        : undefined;
     try {
-      r = $call(retFn, [v], iter);
+      if (r === undefined) r = $call(retFn, [v], iter);
     } catch (e) {
       if (isNudoThrow(e)) throw e;
       throw new NudoThrow(errorTypeAbs("Error"));
@@ -991,7 +1002,7 @@ function makeGenObject(
         ? delegationAt(state.i - 1)
         : undefined;
     if (deleg !== undefined) {
-      const fwd = forwardReturnToDelegate(deleg, v);
+      const fwd = forwardReturnToDelegate(deleg.delegate, v, state.i - deleg.start);
       if (fwd !== undefined) {
         if (fwd.done === false) {
           state.done = false;
@@ -1112,6 +1123,25 @@ function makeGenObject(
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
   // 协议三方法闭包在 g 落地后才能被外部调用 ⇒ 此刻回填触发身份是安全的。
   genSelf = g;
+  /**
+   * ABS-13：`$forOf` 先 eager 排空元素，循环体 break 时生成器已 done——
+   * 按「已消费 i+1 个 yield」把消费指针拨回挂起点，再走 `.return()` 的既有
+   * 语义（快照恢复 / finalizer 重放 / `yield*` 委托转发）。帧不可用
+   * （路径敏感 / 延迟异常 / 无快照）⇒ 返回 undefined，调用方回退 sound 面。
+   */
+  registerGenReturnAt(g, (k: number, v: Abs): Abs | undefined => {
+    fireOnce();
+    const frame = genSuspendTables.get(g as object);
+    if (!frame || !frame.enabled) return undefined;
+    if (state.poisoned) return iterResultUnknown();
+    const kk = Math.max(1, Math.min(Math.floor(k), full.length));
+    state.done = false;
+    state.i = kk;
+    // 终态 → 挂起点的回溯：时间轴是单调前进的，先归零再 apply
+    frame.lastApplied = 0;
+    applyGenSuspend(genSelf, kk);
+    return $call(ret, [v], g);
+  });
   // A11 · 槽位启用：生成器对象身份从「按 next / @@iterator 槽启发式」升级为
   // 随 Abs 值携带的 brand。形状仍是闭 obj（**不动** Shape 判别联合），
   // subst / snapshot / join / absKey 整包搬运；dts 的 `Generator<T>` 泛型
@@ -1417,6 +1447,11 @@ function mergeDeferredBody(shell: Abs, fresh: Abs): void {
   // A1 步骤 4：挂起点帧随 fresh 一起挂到每个别名（共享同一时间轴）。
   const frame = genSuspendTables.get(fresh as object);
   if (frame) genSuspendTables.set(shell as object, frame);
+  // ABS-13：returnAt 闭包属于 fresh 的状态（shell 的 ret 只是转发壳）——
+  // 注册表随协议方法一起迁移，否则 $forOf 拿到 shell 的空体 returnAt ⇒
+  // 恢复快照后又被 fresh 的「已 done」结局覆盖（f5b 曾退化为 false）。
+  const freshReturnAt = genReturnAtOf(fresh);
+  if (freshReturnAt) registerGenReturnAt(shell, freshReturnAt);
   copyMatchIterTables(fresh, shell);
 }
 

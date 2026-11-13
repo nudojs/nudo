@@ -78,6 +78,7 @@ import { markDomainShared } from "../../../len-sharing.ts";
 import { getFnImpl } from "../../../abs-fn.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf } from "../../class-registry.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "../loop-budget.ts";
+import { genReturnAtOf } from "../gen-return-at.ts";
 import { makeLoopWidener } from "../loop-widen.ts";
 // Bug 215（S10 转来）：for-of 的出口 join 须实施 @nudo:invariant 公理——
 // 实施收口在 loop-exit-join.ts（无公理时不取绑定包，零行为变化，见
@@ -1328,6 +1329,17 @@ export function $forOf(
   // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
   // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
   const unbounded = knownLen === undefined;
+  /**
+   * ABS-13：生成器被 `$elems` 提前排空 ⇒ 非正常出口不能只调 `.return()`
+   * （已 done）。按「已消费 consumed 个 yield」回到挂起点重放 finalizer；
+   * 帧不可用 / 代表迭代（位置不可知）⇒ false，调用方回退既有 sound 面。
+   */
+  const closeGeneratorAt = (consumed: number): boolean => {
+    if (unbounded || closeTarget === undefined) return false;
+    const fn = genReturnAtOf(closeTarget);
+    if (fn === undefined) return false;
+    return fn(consumed, undef()) !== undefined;
+  };
   // Bug 198：Map/Set 的 for-of 必须是接收者的 **live 视图**——原生迭代器
   // 持有条目指针：迭代期间新增的条目被访问、删除的条目被跳过
   // （`for (const [k] of m) { out.push(k); m.set("b",2) }` 原生 "a,b"，
@@ -1409,7 +1421,8 @@ export function $forOf(
     } catch (e) {
       if (isNudoBreak(e, opts?.label)) {
         // Bug 199：break 是 abrupt completion ⇒ IteratorClose（调 return()）
-        iteratorClose(closeTarget);
+        // ABS-13：生成器按已消费下标回到挂起点重放 finalizer（否则已排空）
+        if (!closeGeneratorAt(i + 1)) iteratorClose(closeTarget);
         // break 打断代表体（fork 的 break 臂冒泡，后续语句丢失）——完整
         // 迭代效应不可观测，「先跑任意次再 break」的累加器域必须整体宽化
         if (unbounded && e.abstract) widen?.markInterrupted();
@@ -1425,7 +1438,7 @@ export function $forOf(
       // 其余 abrupt completion（return / throw / 指向外层标签的 break 或
       // continue）——循环退出 ⇒ IteratorClose（原生规范：任何 abrupt
       // completion 都关闭迭代器）。close 内的异常取代原完成值。
-      iteratorClose(closeTarget);
+      if (!closeGeneratorAt(i + 1)) iteratorClose(closeTarget);
       throw e;
     } finally {
       if (unbounded) leavePromiseForkArm();

@@ -83,7 +83,7 @@ export function f() {
   }
   return cleaned;
 }`;
-    expect(shapeOf(src)).toBe("false | true");
+    expect(shapeOf(src)).toBe("true");
   });
 
   it("yield* 委托 + break 穿过内层 finally", () => {

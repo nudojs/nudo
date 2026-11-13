@@ -484,11 +484,13 @@ break/continue/await/var，且 try/catch 体内有 yield）发射为 thunk，正
 嵌套 finalizer **`[true, true]`**；try 之后语句不执行；`var` finalizer 与 catch 吸收形态保持
 C 的 sound 过近似（`false \| true`）。**finalizer 抛错**（如 `null.x`）：无外层自由写时执行
 thunk 并让异常按 native 上抛（`"rejected"` 而非误报正常完成）；有外层写时仍 C 兜底。
-`for-of` 的 IteratorClose 现已对生成器对象调用 `.return()`，但 `$forOf` 在**进循环前已
-eager 排空**元素，break 时生成器已 done ⇒ 无法按挂起点索引重放（需按迭代下标调用
-`returnAt(k)`，另立项）。剩余：finalizer 含 `yield`/`return`/`throw` 语句的形态（需真挂起）、
-`for-of break` 的索引重放、async generator 的 replay 异常（f15 仍 `promise<"resolved">`，
-async 路径未接）。夹具 `abs13-abrupt-completion.test.ts`（12 例）。
+**`for-of break` 索引重放已交付**：`$forOf` 在进循环前 eager 排空元素 ⇒ 生成器已 done；
+新增 leaf 注册表 `runtime/gen-return-at.ts`，每个生成器对象挂 `returnAt(k)`（把消费指针
+拨回第 k 个 yield → 快照恢复 + finalizer 重放 + 委托转发），trigger 合并时注册表随协议方法
+一起迁移到 shell。`for…of { break }` 穿 finally 现精确 `true`（f5b）。剩余：`yield*` 委托内
+break（内层 registry/委托命中在 eager 排空后仍返回 C）、finalizer 含 `yield`/`return`/`throw`
+语句的形态（需真挂起）、async generator 的 replay 路径（f15 仍 `promise<"resolved">`）。
+夹具 `abs13-abrupt-completion.test.ts`（12 例）。
 
 **不做**：全量 continuation/CPS（无证据表明需要；宿主调用与 may-throw 时序仍按首次消费点整体发生，属既有边界）。
 
