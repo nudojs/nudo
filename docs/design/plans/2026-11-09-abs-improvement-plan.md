@@ -51,7 +51,7 @@
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
 | 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配，需写时复制另立项，未关闭，见 §5） |
-| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | 待拍板（2026-11-13 立项：hub 编辑 2.4–2.5s 超目标、且与语料总量无关；另发现 `recordVersions` 窗口内写入被静默吞掉，见 §5） |
+| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修（`recordVersions` 前移）；hub 编辑 2.4–2.5s 增量重算仍待拍板（与语料总量无关，见 §5） |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -480,14 +480,20 @@
 
 **交付与续作（2026-11-10，不隐去）**：
 
-- **三条保守通道已全部默认启用**。`bodyUnavailable` / `budgetTruncated` 抽出为纯函数 `key/summary-fastpath.ts#tryDegradedChannel`，独立验证 `abs14-degraded-channels.test.ts`（9 用例）：替换结论 ≡ 同函数 body 可用时的真实结论；无摘要 / 形状不符 / 界不成立 / formal 数不符 / 变元未映射一律保持 `unknown #opaque`；预算截断样本仍是 `unknown #opaque` 且不写摘要（无假绿）。等价门禁口径据此细化（见本节「降级通道门禁口径」）。两类降级在引擎里都归一成 `unknown #opaque`，故两开关共用同一触发点，待 body 失败原因可观测后再按原因细分。
+- **三条保守通道已全部默认启用**。`bodyUnavailable` / `budgetTruncated` 抽出为纯函数 `key/summary-fastpath.ts#tryDegradedChannel`，独立验证 `abs14-degraded-channels.test.ts`（10 用例）：替换结论 ≡ 同函数 body 可用时的真实结论；无摘要 / 实参不同构 / 完整前置不被蕴含 / formal 数不符 / 变元未映射一律保持 `unknown #opaque`；预算截断样本仍是 `unknown #opaque` 且不写摘要（无假绿）。两类降级在引擎里都归一成 `unknown #opaque`，故两开关共用同一触发点，待 body 失败原因可观测后再按原因细分。
+- **2026-11-13 复审收口（soundness 与门禁）**：命中门禁曾有三处可复现的放宽，均已修复并把对抗样本钉进 `abs14-fastpath.test.ts`：
+  - **实参置换**：`formals` 曾存**字典序** `varOrder`，命中侧按位置配对 ⇒ 形成 `f(z, y)` 后复用 `f(p, q)` 得到 `(q - p)`。现在按**实参位置**记录 `formals[j]`，任一实参非顶层 var、或出现同名实参即 fail-closed。
+  - **前置被截断**：判定曾只查 `bounds`（`collectSimpleBounds` 丢弃含 `app` term 的合取支），形成时强 Φ 可在弱 Φ 下复用（`branch` 在 `x % 2 === 0` 下形成 `"even"`，再在 `pTrue` 下错误复用）。现在判定用**完整 `pre`**（经 formals→当前实参位置重命名后 `implies`）；`bounds` 降级为可观测投影，不参与命中。
+  - **形状签名过粗**：`shapeSig` 只看 shape kind（obj 槽集 / 元组长度 / brand / arr 元素 / conf 全不比）⇒ 同 kind 异形误命中。现改为逐位 `argKeys`（`absKeyWithConf` 的 α-归一结构键）相等。
+  - 附：降级通道读侧补齐 `!opts?.symbolic`（与写侧 / `crossModule` 同口径，避免先有 `instantiate` 后改写 `symbolic` 的签名输入）；降级填出的**派生**结果只留实例 memo，不回流跨实例摘要层（出处纪律：摘要必须来自真实 body 求值）；`fnSummaryFnLevelStats()` 新增 `applied`（`hits` 只表示「查到条目」，被后续门槛拒绝的同样是 hit）。
+- **等价门禁真正覆盖被测特性（同日修订）**：旧 `fastPathPost` 同实参同 Φ 跑两遍，第二遍命中第 1 层 `instMemo` / 第 2 层 ABS-10 实例摘要 ⇒ 7 样本 `applied` 恒为 0，门禁测的是 memo 回读。现在 `runBodyPath(c, phi)` 支持见证 Φ（`ABS14_GATE_PHI`），快路径侧先清缓存栈、再用新实例 + 见证 Φ 命中第 3 层；用例断言 `applied` 增长（≥3 个全变量实参样本）。
 - **PR4b「界投 `extends`」已落地**。`service/src/emit/dts-generator.ts` 新增 `predBoundLeaves` / `contractTypeParamConstraints` / `typeParamDecls`，从契约参数位 `abs.pred` 逐叶翻译可表达的简单界（`typeof` 基元标签、`eq(var,lit)` 字面量、`or` 全可表达时的联合）；数值界 / 长度 / 否定 / `typeof object|function` 诚实省略，输出与无界基线逐字节一致。夹具 `abs14-dts-extends.test.ts`（7 用例，含 `tsc --noEmit`）。**实现路径**：dts 直接读契约 Pred（与 `TypeParam.bounds` 同源的 `instantiateConstraint` 产物），没有把投影信息塞进 `AnalysisResult`，因此不动 analyzer 参数链与缓存克隆；`reachableTypeParams` 仍只看纯名字。
-- **遗留缺陷已修复（2026-11-11）**：`TypeParam.bounds` 此前恒空，根因是两套变量空间未对齐 —— `entryReqs[].pred` 由 `instantiateConstraint(c, paramName)` 生成，self var 是**实参名**（`x`），而界登记处拿 `typeParams[].id`（α 名 `A1`）当 formals 校验，每个 var 都被判 unbound 丢弃。修法：`key/summary-bounds.ts` 新增 `alignSimpleBounds`，先按 `params[i] → ids[i]` 用 `renamePred` 重锚到 α 空间，再由 `collectSimpleBounds` 做「简单条件 + 按声明序单向依赖」校验；binder 名 / 未声明变元 / `app` term 保持原样并 fail-closed 丢弃。`entryReqs` 与 Φ **不改原貌**（展示层 `x > 0` 与 body 单调性传播依赖它），因此默认输出逐字节不变。实测：`fn({x: number().gt(0)})` 的 `typeParams[0].bounds` 从 `undefined` 变为 `[typeof A1 = number, A1 > 0]`，双形参各归 `A1` / `A2`。集成夹具 `abs14-bounds-integration.test.ts`（11 用例：端到端 / 纯函数负例 / `implies` 与快路径界检查的可消费性），反向验证去掉重锚会 8 用例失败。
+- **遗留缺陷已修复（2026-11-11）**：`TypeParam.bounds` 此前恒空，根因是两套变量空间未对齐 —— `entryReqs[].pred` 由 `instantiateConstraint(c, paramName)` 生成，self var 是**实参名**（`x`），而界登记处拿 `typeParams[].id`（α 名 `A1`）当 formals 校验，每个 var 都被判 unbound 丢弃。修法：`key/summary-bounds.ts` 新增 `alignSimpleBounds`，先按 `params[i] → ids[i]` 用 `renamePred` 重锚到 α 空间，再由 `collectSimpleBounds` 做「简单条件 + 按声明序单向依赖」校验；binder 名 / 未声明变元 / `app` term 保持原样并 fail-closed 丢弃。`entryReqs` 与 Φ **不改原貌**（展示层 `x > 0` 与 body 单调性传播依赖它），因此默认输出逐字节不变。实测：`fn({x: number().gt(0)})` 的 `typeParams[0].bounds` 从 `undefined` 变为 `[typeof A1 = number, A1 > 0]`，双形参各归 `A1` / `A2`。集成夹具 `abs14-bounds-integration.test.ts`（11 用例：端到端 / 纯函数负例 / 界作为 α 空间 `Pred` 的良构性与 `implies` 可判定性），反向验证去掉重锚会 8 用例失败。
 - **订正一处误判**：上条曾把「`attachHofSnapshot` 不传 `refine`、`entryReqs` 常为 undefined」也列为缺陷，复核后确认是**正确设计**：`service/src/analyzer-abs-eval.ts#attachHofSnapshot` / `tryAttachIntension` 只取 `fnRels` / `entryShapes` / `symbolic` 供 dts 投影与内涵摘要，注入契约会改变 body 语义并破坏 L0 键；无契约时 `entryReqs` 为 undefined、不发明界，符合决策口径。
-- **设计边界（不打通，也不该打通）**：`opts.refine` 会让 `summaryScope` 返回 `undefined`（ABS-10：refine 改变 body 语义、闭包身份不可哈希），故带契约的函数不写函数级摘要 —— `TypeParam.bounds` 是 `PolyFn` 的一等元数据，快路径的界另来自调用点 `phi`（`fnLevelFields`），两者不同源、不合并。强行接通会把契约语义塞进跨实例缓存，打开陈旧命中 / 假绿的口子。修出的界已验证可被 `implies` 与 `tryFnLevelFastPath` 的界检查消费，不是死数据。
+- **设计边界（不打通，也不该打通）**：`opts.refine` 会让 `summaryScope` 返回 `undefined`（ABS-10：refine 改变 body 语义、闭包身份不可哈希），故带契约的函数不写函数级摘要 —— `TypeParam.bounds` 是 `PolyFn` 的元数据，快路径的门槛另来自形成时的完整 Φ（`fnLevelFields` 记录的 `pre`），两者不同源、不合并。强行接通会把契约语义塞进跨实例缓存，打开陈旧命中 / 假绿的口子。**2026-11-13 订正**：`TypeParam.bounds` 目前是 **write-only**（全仓无读者）；`abs14-bounds-integration.test.ts` 只证明它良构、`implies` 可直接判定、作为条目 `pre` 时门槛行为正确 —— 不再宣称快路径已消费它（旧表述把测试里手拷进 entry 的写法当成了产品接线）。
 - **两组基线红已修复（续作）**：
-  - ① `Float16Array` / `Intl.DurationFormat` / `URLPattern` 等 Node 22 vs v26 宿主漂移：core `builtin-coverage-floor` 按 `VERSION_SKEW` 跳过已登记缺席 brand；3 个 eval 夹具用 `hostAvailableNames` / `hostNameAvailable` 按 `globalThis` 能力生成用例；env 侧 4 处 oracle（`env-bug-61` / `863` / `865` / `893`）同样按宿主能力过滤或给版本理由；工具链注入的 `__CODEBUDDY_*_SHIM_LOADED__` / `__vitest_*` 按既有纪律登记理由与豁免。**只豁免已登记漂移，未登记的缺席仍硬失败**，支持的宿主上覆盖不缩水。
-  - ② `retire-debug/after/src/logger.js` 的 `module evaluation failed: Assignment to constant variable`：根因不是依赖解析，而是转译器把 rest 形参发成 `const args = $restBind(...)`，fork 臂恢复与成员写回却发 `args = ...`（V8 原生 TypeError，真实 CJS 包 `debug/src/common.js` 的 `function debug(...args)` 触发）。`transpile/stmt/statement.ts` 与 `transpile/expr/function.ts` 改发 `let`（原生 rest 本就是可变绑定），回归夹具 `eval-rest-param-rebind.test.ts`（9 用例，已反向验证改回 `const` 会 9/9 全红）。示例 pin / README / 头注释同步：返回面随宿主能否解析到真实 `debug` 包而不同，只钉 `OK` / `0 error` / 导出名，不钉死 `nudo:opaque-result`。
+  - ① `Float16Array` / `Intl.DurationFormat` / `URLPattern` 等 Node 22 vs v26 宿主漂移：core `builtin-coverage-floor` 按 `VERSION_SKEW` 跳过已登记缺席 brand；3 个 eval 夹具用 `hostAvailableNames` / `hostNameAvailable` 按 `globalThis` 能力生成用例；env 侧 4 处 oracle（`env-bug-61` / `863` / `865` / `893`）同样按宿主能力过滤或给版本理由；运行器 / 工具链注入的探针全局（`__vitest_*` / `*_LOADED__`）改由 `isInjectedHostGlobal` **按形态统一跳过**（2026-11-13：不再逐厂商名写进仓库台账），env 侧同一判定过滤宿主面。**只豁免已登记漂移，未登记的缺席仍硬失败**，支持的宿主上覆盖不缩水。
+  - ② `retire-debug/after/src/logger.js` 的 `module evaluation failed: Assignment to constant variable`：根因不是依赖解析，而是转译器把 rest 形参发成 `const args = $restBind(...)`，fork 臂恢复与成员写回却发 `args = ...`（V8 原生 TypeError，真实 CJS 包 `debug/src/common.js` 的 `function debug(...args)` 触发）。`transpile/stmt/statement.ts` 与 `transpile/expr/function.ts` 改发 `let`（原生 rest 本就是可变绑定），回归夹具 `eval-rest-param-rebind.test.ts`（9 用例，已反向验证改回 `const` 会 9/9 全红）。示例 pin / README / 头注释同步：返回面随宿主能否解析到真实 `debug` 包而不同，具体返回面不钉；`verify:examples` 改钉 **`unknown` ⟺ `nudo:opaque-result`** 的一致性（任一方向破缺 = 无声降精度或精确却报 opaque，都是精度回归信号）。
 - **PR4a** 已修 dts HOF 签名的悬空 `A2`（`abs14-dts-reachable.test.ts`）；投影单向，不改 Abs 分析结果。
 - **门禁复核（续作）**：金标 + 真实包零 FP 单独重跑 3 文件 / 196 用例通过；`lint` / `lint:tests` / `lint:hygiene` / `build` 全绿；`verify:examples` 与全仓 vitest 的最终数字见本节末「最终门禁」。全仓剩余失败里 6 个 LSP/CLI 文件（沙箱临时路径相对化 + watch 时序）已在 `c8aac63d` 干净基线复跑确认是**既有红**，非本轮引入；1 个 env `fsp.stat(throwIfNoEntry:false)` 宿主行为差已适配。**2026-11-12 续作：这两组既有红已全部修复并清零**（见本节末「既有红清零」）。
 
@@ -845,7 +851,7 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 
 ### ABS-18 watch 增量重算整条依赖链（性能 + 一个正确性缺陷，待拍板）
 
-**状态**：`[ ]` 2026-11-13 立项，**未动代码**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
+**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1，`nudojs/commands/shared.ts`：`recordVersions` 改在过滤通过后、分析开始前记当刻指纹，删除则移除键）；**性能项（2/3）仍待拍板**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
 
 **背景判断**：`dx-metrics` 显示用户口径（dist 单次 check）time-to-green **374ms**，对 2s 目标有 5.3× 余量
 ⇒ **通用冷路径优化线到此可以停**。继续投入只在一个地方有可感收益：`check --watch` 的增量轮。
@@ -877,8 +883,11 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 
 **候选改动（未拍板）**：
 
-1. 把 `recordVersions()` 移到增量开始**之前**（基线 = 本轮已消费的指纹），消除吞改动窗口；
-   补一个「写入落在轮末」的回归测试；
+1. ~~把 `recordVersions()` 移到增量开始**之前**（基线 = 本轮已消费的指纹），消除吞改动窗口~~
+   —— **2026-11-13 已落地**（只记本轮 `changedFiles` 的当刻指纹；删除路径移除键）。
+   窗口消除方式：分析期间的写入与「开跑前快照」必然不同 ⇒ 下一轮正常触发。
+   回归面：`filterUnchangedWatchPaths` 纯函数夹具 + 既有 12 个 watch 文件 / 33 用例；
+   **轮末写入竞态暂无确定性 e2e 夹具**（需要可控的慢分析才能稳定复现，留待性能项一并设计）；
 2. 增量轮不整条依赖链重算：区分「内容变了要重算」与「只是被 import、缓存仍有效」，
    评估 `evictForDependents` 的逐出粒度是否过宽；
 3. `buildModuleGraph` 增量化（只重算受影响子图），而不是每轮全量重建。
@@ -913,7 +922,7 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real`（**真实 monorepo**，报告 `s1-perf-baseline-real.md`）/ `benchmark:s1:real:clean`（干净语料 + 干净 env，报告 `s1-perf-baseline-real-clean.md`） |
 | 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`；`--instrument-loader` 计 `loadModule`） |
 | 打包器导出形态 / 规模梯度 | `ABS-17` 阴性对照（证伪 getter 假设） | `benchmark/s1/generate-bundle-fixtures.mts --count N` + `profile-cold.mts --corpus benchmark/s1/.bundles` |
-| 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal）；降级通道另见 `abs14-degraded-channels.test.ts`；命中计数 `fnSummaryFnLevelStats()` |
+| 快路径 / body 路径逐字节 diff | `ABS-14` 的等价性门禁（**开工前置**） | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（7 样本逐条 equal；快路径侧用见证 Φ 绕开第 1/2 层，**必须**核实 `applied` 增长）；降级通道另见 `abs14-degraded-channels.test.ts`；计数 `fnSummaryFnLevelStats()` 的 `hits`（查到条目）/ `applied`（被采纳）分列 |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | **已实测**：`s1-perf-baseline-real.json#cacheTelemetry` —— `fnSummaryStats()`（实例级）+ `fnSummaryFnLevelStats()`（函数级）按相取 delta；服务层文件/AST 缓存无计数 API，只见于 cold→warm 耗时比 |
 
 ## 8. 不做 / 边界
