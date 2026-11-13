@@ -186,6 +186,10 @@
 `subst` / `snapshot` / `absKey` / 磁盘缓存 ABI 同步搬运；`leqAbs` / `formatShape` /
 dts / schema / guard **只读既有外延面**，新槽位只参与运行期精化与投影增强。
 A6 的 `overloads?: FnOverload[]` 即此形态（金标 223 全绿、e2e 假红消失）。
+**ABS-15（2026-11-13）**：新增槽位还必须登记到 `key/facet-specs.ts::FACET_SPECS`
+（`satisfies Record<keyof AbsFacets, FacetSpec>` ⇒ 漏登记编译红）；`kind` 单源决定
+`facetKey` 编码与 `cloneAbsFacets` 搬运策略，门禁 `abs15-facet-registry.test.ts`
+（14 例）。
 > 该句是**步骤 1 当时**的口径；步骤 4 之后 service 的 dts / zod / standard /
 > guard 已按 `facets.brand` 消费生成器身份（见下方实施记录），core 展示面
 > 仍恒不发布。`leqAbs` 的既有接受集始终未动。

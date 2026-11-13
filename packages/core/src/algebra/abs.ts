@@ -15,6 +15,7 @@ import {
   type Phi,
 } from "./pred.ts";
 import { ProjectionBudget } from "./contract/projection-budget.ts";
+import { cloneFacets } from "./key/facet-specs.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 
@@ -131,6 +132,9 @@ export type Shape =
  * - 新槽位只加字段，不再改 Shape 判别联合；未来无需为每种能力动 `leqAbs`。
  * - `substAbs` / `snapshotAbs` / `renameAbs` / `absKey` 必须**整包搬运**（A7
  *   的教训：重建只搬四件套会把侧表面静默抹掉）。
+ * - **新槽位必须在 `key/facet-specs.ts::FACET_SPECS` 登记**（ABS-15）：
+ *   `satisfies Record<keyof AbsFacets, FacetSpec>` 让漏登记在编译期红；
+ *   `kind` 统一决定 `facetKey` 编码与 `cloneAbsFacets` 的搬运策略。
  * - 槽位只参与运行期精化与投影增强；`leqAbs` / `formatShape` / dts / schema /
  *   guard 在槽位启用前**不读**它。
  */
@@ -179,23 +183,14 @@ export type AbsFacets = {
 
 /**
  * 等价副本用的深拷贝（不共享数组；缺省不出现时返回 undefined）。
- * `genReturn` / `genNext` 是**只读投影面**：按引用共享（与 shape 槽值同
- * 口径），不在本叶子模块做 Abs 深拷贝 —— 那会反向依赖 `hof.ts` 成环。
+ * 逐槽位搬运策略由 `key/facet-specs.ts` 的登记表声明（ABS-15）：
+ * `protoOwnKeys` / `genElements` 拷贝容器，`genReturn` / `genNext` 是
+ * **只读投影面** ⇒ 按引用共享（与 shape 槽值同口径），不在本模块做 Abs
+ * 深拷贝 —— 那会反向依赖 `hof.ts` 成环。
  */
 export function cloneAbsFacets(f: AbsFacets | undefined): AbsFacets | undefined {
   if (f === undefined) return undefined;
-  const out: AbsFacets = { ...f };
-  if (f.protoOwnKeys) {
-    out.protoOwnKeys = {
-      strings: [...f.protoOwnKeys.strings],
-      ...(f.protoOwnKeys.symbols ? { symbols: [...f.protoOwnKeys.symbols] } : {}),
-    };
-  }
-  // 静态元素域：数组必须拷贝（否则 snapshotAbs / renameAbs / substAbs /
-  // join 的所有副本共享同一数组，任一侧 push/splice 会串台）；Abs 元素本身
-  // 是只读投影面 ⇒ 按引用共享，与 genReturn / genNext 同口径。
-  if (f.genElements) out.genElements = [...f.genElements];
-  return out;
+  return cloneFacets(f);
 }
 
 export type Abs = {

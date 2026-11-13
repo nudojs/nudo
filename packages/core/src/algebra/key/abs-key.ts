@@ -27,6 +27,7 @@ import type { Abs, AbsFacets, Shape } from "../abs.ts";
 import type { Term } from "../term.ts";
 import { litKeyString } from "../term.ts";
 import type { Pred } from "../pred.ts";
+import { FACET_SPECS, facetKeys } from "./facet-specs.ts";
 
 /** α-rename 映射（term 变元 id → 规范名） */
 export type VarRename = ReadonlyMap<string, string>;
@@ -241,25 +242,46 @@ export function shapeKey(
  * 槽位容器的稳定键。字段顺序固定（不依赖对象属性顺序），键集数组按声明序
  * 保留（键集语义本身有序）；缺省不出现 ⇒ 旧键逐字节不变。
  * 与 A6 的 `overloads` 同纪律：槽位是**可观察面**，不同槽位不得共享 memo。
+ *
+ * ABS-15：逐槽位编码由 `key/facet-specs.ts::FACET_SPECS` 的 `kind` 决定
+ * （新增槽位不登记即编译红）；本函数只保留「kind → 片段」的解释器，新增
+ * kind 的打红点在这里的 `never` 兜底。
  */
 export function facetKey(f: AbsFacets): string {
   const parts: string[] = [];
-  if (f.callable !== undefined) parts.push(`c:${f.callable ? 1 : 0}`);
-  if (f.protoOwnKeys) {
-    parts.push(
-      `k:${JSON.stringify(f.protoOwnKeys.strings)}:${JSON.stringify(f.protoOwnKeys.symbols ?? [])}`,
-    );
-  }
-  if (f.brand !== undefined) parts.push(`b:${JSON.stringify(f.brand)}`);
-  // A11 残余：TReturn / TNext 是 Abs ⇒ 必须走结构键（JSON.stringify 会撞环
-  // 且丢 term/pred），否则不同返回域的生成器共享 memo / 指纹。
-  if (f.genReturn) parts.push(`gr:${absKey(f.genReturn)}`);
-  if (f.genNext) parts.push(`gn:${absKey(f.genNext)}`);
-  // 静态元素域：Abs[] 必须逐项走结构键（同 gr/gn 的纪律）；只编长度会让
-  // 「同形但元素域不同」的生成器共享 memo / 指纹 ⇒ 产物随缓存冷暖翻转。
-  // 缺省不出现 ⇒ 无槽位旧键逐字节不变。
-  if (f.genElements) {
-    parts.push(`ge:${f.genElements.map((e) => absKey(e)).join("|")}`);
+  for (const key of facetKeys()) {
+    const spec = FACET_SPECS[key];
+    const value = f[key];
+    if (value === undefined) continue;
+    switch (spec.kind) {
+      case "flag":
+        parts.push(`${spec.prefix}:${value ? 1 : 0}`);
+        break;
+      case "string":
+        parts.push(`${spec.prefix}:${JSON.stringify(value)}`);
+        break;
+      case "string-array-record": {
+        const rec = value as NonNullable<AbsFacets["protoOwnKeys"]>;
+        parts.push(
+          `${spec.prefix}:${JSON.stringify(rec.strings)}:${JSON.stringify(rec.symbols ?? [])}`,
+        );
+        break;
+      }
+      // A11 残余：TReturn / TNext / 静态元素域是 Abs ⇒ 必须走结构键
+      // （JSON.stringify 会撞环且丢 term/pred），否则不同返回域 / 元素域的
+      // 生成器共享 memo / 指纹。
+      case "abs-ref":
+        parts.push(`${spec.prefix}:${absKey(value as Abs)}`);
+        break;
+      case "abs-list":
+        parts.push(`${spec.prefix}:${(value as Abs[]).map((e) => absKey(e)).join("|")}`);
+        break;
+      default: {
+        // 新增 FacetSpec kind 未实现 ⇒ 编译期红（不得静默漏编槽位）。
+        const unhandled: never = spec;
+        throw new Error(`unregistered facet kind: ${String(unhandled)}`);
+      }
+    }
   }
   return parts.join(",");
 }

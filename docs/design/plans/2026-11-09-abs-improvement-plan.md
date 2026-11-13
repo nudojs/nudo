@@ -1,7 +1,7 @@
 # Abs 改进计划（16 项）
 
 > **状态**：~~草案（2026-11-09）。16 项均未作为本计划立项；各项「现状」列出的底层能力可能已部分存在。~~
-> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-16` 第①步（真实 monorepo 基准）已交付（`[~]`），②③仍待拍板；`ABS-12` / `ABS-13` / `ABS-15` 仍待拍板。**2026-11-12 订正**：`ABS-16` 首测数字失真（语料污染 + 宿主 fs 代理），另存 clean 报告并做 9/23 代码 A/B；新增 `ABS-17`（病态输入性能项，只立项）。
+> **现行（2026-11-10）**：`ABS-01`…`ABS-11` 已交付（每项独立提交 + 测试 + changeset）；**`ABS-14` 已交付（`[x]`）并完成两轮续作**（两组基线红、三条通道、PR4b、零 FP 复核；2026-11-11 修复 `TypeParam.bounds` 变量空间），口径与残余见 §5；`ABS-16` 第①步（真实 monorepo 基准）已交付（`[~]`），②③仍待拍板；`ABS-12` / `ABS-13` 仍待拍板，`ABS-15` 已开工（`[~]`，2026-11-13 登记表 + 漂移门禁，见 §5）。**2026-11-12 订正**：`ABS-16` 首测数字失真（语料污染 + 宿主 fs 代理），另存 clean 报告并做 9/23 代码 A/B；新增 `ABS-17`（病态输入性能项，只立项）。
 > **拍板（2026-11-10）**：立 `ABS-14`，但只准简单条件 + 单向依赖，先走三条保守通道；先建等价性门禁；摘要缓存只留一套。四条约束的落地口径见 §5「决策」。
 > **删除线约定**：`~~…~~` = 已交付。§1 总表项名、§0 / §2 的历史排期、§3 / §4 各节标题已划掉；其下「现状 / 改动 / 验收」保留为**历史正文**（交付后不作现行口径），按 `docs/README.md` 后续删除，证据在测试 / changeset / git。§7 / §8 对已交付项的机制引用仍有效，不划掉。
 > **性质**：排序与验收清单，不是架构契约；真源冲突时以真源为准。
@@ -19,7 +19,7 @@
 - ~~**最先启动（可并行）**：`ABS-01`（约束/引理文法）、`ABS-02`（unknown/any 来源）、`ABS-05`（缓存键 conf 审计）。~~
 - ~~**随后**：`ABS-04`（test 观测面）、`ABS-03`（dts 投影）、`ABS-06`（内建一致性门禁，长跑项可并行）。~~
 - ~~**内核批次**：`ABS-07` → `ABS-08`，并与 `ABS-09` / `ABS-10` / `ABS-11` 分域推进。~~
-- **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-16` 第①步是**纯测量、零风险**，已先做（2026-11-11，见 §5）；`ABS-12` / `ABS-13` / `ABS-15` 与 `ABS-16` 的②③（分析结果落盘 / worker 并行）先拍板再开工。
+- **战略项**：`ABS-14` 已交付并完成续作（2026-11-10，口径与残余见 §5）；`ABS-16` 第①步是**纯测量、零风险**，已先做（2026-11-11，见 §5）；`ABS-15` 已开工（2026-11-13，最小面：登记表 + 漂移门禁，见 §5）；`ABS-12` / `ABS-13` 与 `ABS-16` 的②③（分析结果落盘 / worker 并行）先拍板再开工。
 - **本轮（2026-11-10）**：`ABS-14` 已交付、状态 `[x]`（PR0–PR4 共 5 个 commit）；**续作**再修两组基线红、启用另两条保守通道、落地 PR4b、单独复核金标零 FP（见 §5「交付与续作」）；剩余 4 项待拍板；另需归口已交付项在状态列备注中明确延后的子项（见 §1）。
 - **续作二（2026-11-11）**：修掉上一轮如实留下的 `TypeParam.bounds` 恒空缺陷（Pred 变量空间对齐 + 集成验证），并订正 `attachHofSnapshot` 的误判；见 §5「交付与续作」末段。
 - **2026-11-12 订正**：`ABS-16` 第①步的 cold 102.8s **不能当产品数字**——44.2% 来自误纳入语料的 esbuild bundle，宿主 fs 代理再放大约 2×；已另存 clean 报告并做 9/23 代码 A/B。新增 `ABS-17`（病态输入性能项，只立项不改引擎）。见 §5。
@@ -48,7 +48,7 @@
 | 12 | `ABS-12` | 沙箱 / 隔离执行 | P2 | L | — | 待拍板 |
 | 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
-| 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | 待拍板 |
+| 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行仍待拍板，见 §5） |
 | 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配，需写时复制另立项，未关闭，见 §5） |
 | 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修（`recordVersions` 前移）；hub 编辑 2.4–2.5s 增量重算仍待拍板（与语料总量无关，见 §5） |
@@ -523,6 +523,16 @@
 
 ### ABS-15 Shape / facets 治理
 
+**状态**：`[~]` 2026-11-13 开工，只做候选 1 的最小面 ——
+`key/facet-specs.ts::FACET_SPECS` 成为槽位**单一登记表**（`satisfies Record<keyof AbsFacets, FacetSpec>`
+⇒ 新增槽位不登记即编译红），`kind` 同时决定两件事：`facetKey` 的键编码（`key/abs-key.ts`）
+与等价副本搬运（`abs.ts::cloneAbsFacets` → `cloneFacets`，覆盖 snapshot / subst / rename / join
+的全部重建点）；两端各留 `never` 兜底，新增 kind 强制双端实现。改前 / 改后对同批夹具 dump
+`facetKey` / `absKey` / `cloneAbsFacets`，**逐字节 diff 为空**；门禁 `abs15-facet-registry.test.ts`
+（14 例：槽位覆盖性、声明序、逐槽位进键、clone 语义）。**残余**：候选 2（值语义进 Shape /
+观察能力进 facets 的提升规则）与候选 3（facet 键版本化）未做；`format` 按既有契约不读
+facets，故不建该钩子。
+
 **现状**：`AbsFacets` 是扩展槽，A2 / A8 / A10 / A11 都走它；新能力要么改 Shape 联合，要么加 facet，缺少统一登记。历史上有 `substAbs` 丢 fn impl 的 A7 事故。
 
 **改动候选**：
@@ -978,3 +988,9 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
   （原路径 362 次 `loadModule` / 47.2s / 2743 MiB vs 去 require 2 次 / 0.21s / 313 MiB），
   getter 假设证伪；最小复现仍缺，引擎未动。
 - **2026-11-10 决策锚点**：`ABS-14` 状态 `[x]`，口径 = §5「决策」段，实现拆分 = §5「实现拆分」，续作 = §5「交付与续作」；提交 `6b5b8d05` / `2ef6211a` / `531c7f2d` / `37c89135` / `c8aac63d` + 续作 3 个 commit + 2026-11-11 界对齐 1 个 commit；门禁 = `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts` + `abs14-degraded-channels.test.ts` + `abs14-dts-extends.test.ts` + `eval-rest-param-rebind.test.ts` + `abs14-bounds-integration.test.ts`。
+- **2026-11-13 锚点（ABS-15 开工）**：`key/facet-specs.ts` 是 `AbsFacets` 槽位唯一登记表
+  （`FACET_SPECS satisfies Record<keyof AbsFacets, FacetSpec>` + `facetKeys` + `cloneFacets`），
+  `abs.ts::cloneAbsFacets` 委派给它，`key/abs-key.ts::facetKey` 改为按 `kind` 表驱动；两端各留
+  `never` 兜底（新增 kind 强制双端实现）。改前 / 改后同一夹具 dump `facetKey` / `absKey` /
+  `cloneAbsFacets` **逐字节相同**；门禁 `algebra/__tests__/abs15-facet-registry.test.ts`（14 例）。
+  残余：候选 2（提升规则）与候选 3（facet 键版本化）。
