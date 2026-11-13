@@ -52,7 +52,7 @@
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | [~]（2026-11-11 第①步真实 monorepo 基准 + 命中率实测已交付；2026-11-12 订正：首测 cold 102.8s 受语料污染与宿主 fs 代理影响，另存 clean 报告；②分析结果落盘 / ③worker 并行 **2026-11-13 拍板：分别结案不做 / 暂不立项**，见 §5） |
 | 17 | `ABS-17` | ~~抽象对象容器拷贝的病态输入~~ → 大对象图 `$copy` 的病态输入（性能） | P3 | M | `ABS-16` 度量 | `[~]`（2026-11-12 立项 + 形态对照夹具；2026-11-13 单文件最小复现 + `setSlot` + `copyWithMemo` 叶子快路径，夹具 **−61%**、合成语料 analyze cold −28%；剩余 31.6% 是真实副本分配；**2026-11-13 拍板：结案暂缓**（触发条件见 §5）） |
-| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[~]` 2026-11-13：吞改动竞态已修；步骤 0 分相计时、inert 编辑子项、注入对象复用 + 轮内指纹 memo 已交付 ⇒ **inert 编辑 hub total 929ms（<1s 验收达标）/ leaf 555ms**（语义编辑仍 ~3s，属 `ABS-17`/`ABS-16`③）；残余 = `checkSource` gating 语义键（可选），见 §5 |
+| 18 | `ABS-18` | watch 增量重算整条依赖链 + 写入被吞竞态 | P2 | M | — | `[x]` 2026-11-13 交付：吞改动竞态已修 + **确定性 e2e 夹具**；步骤 0 分相计时、inert 编辑子项、注入对象复用 + 轮内指纹 memo ⇒ **inert 编辑 hub total 929ms（<1s 达标）/ leaf 555ms**（语义编辑仍 ~3s，属 `ABS-17`/`ABS-16`③）；可选残余 = `checkSource` gating 语义键，见 §5 |
 
 规模为工程体量标签（S / M / L / XL），不是时间承诺。
 
@@ -862,7 +862,7 @@ GC 17.0% / `setSlot` **7.9%** / `migrateInvariants` 3.7% / `copyMatchIterTables`
 
 ### ABS-18 watch 增量重算整条依赖链（性能 + 一个正确性缺陷，待拍板）
 
-**状态**：`[~]` 2026-11-13 立项。**正确性缺陷已修**（候选改动 1：`recordVersions` 前移）；**步骤 0 分相计时**、**inert 编辑子项**、**注入对象复用 + 轮内指纹 memo** 均已交付 ⇒ hub 编辑 total **929ms（达到 <1s 验收）**、leaf 555ms；候选 2「跳过重算」不 sound、候选 3 否决；**唯一残余 = `checkSource` 内部指纹的 gating 语义键（可选优化）**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
+**状态**：`[x]` 2026-11-13 交付。**正确性缺陷已修**（候选改动 1：`recordVersions` 前移 + 确定性 e2e 夹具 `abs18-watch-write-race.test.ts`）；**步骤 0 分相计时**、**inert 编辑子项**、**注入对象复用 + 轮内指纹 memo** 均已交付 ⇒ hub 编辑 total **929ms（达到 <1s 验收）**、leaf 555ms；候选 2「跳过重算」不 sound、候选 3 否决；**唯一残余 = `checkSource` 内部指纹的 gating 语义键（可选优化）**。来自「真实入口可感缺口」度量（`docs/reports/dx-metrics.md`）。
 
 **背景判断**：`dx-metrics` 显示用户口径（dist 单次 check）time-to-green **374ms**，对 2s 目标有 5.3× 余量
 ⇒ **通用冷路径优化线到此可以停**。继续投入只在一个地方有可感收益：`check --watch` 的增量轮。
@@ -972,8 +972,12 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 1. ~~把 `recordVersions()` 移到增量开始**之前**（基线 = 本轮已消费的指纹），消除吞改动窗口~~
    —— **2026-11-13 已落地**（只记本轮 `changedFiles` 的当刻指纹；删除路径移除键）。
    窗口消除方式：分析期间的写入与「开跑前快照」必然不同 ⇒ 下一轮正常触发。
-   回归面：`filterUnchangedWatchPaths` 纯函数夹具 + 既有 12 个 watch 文件 / 33 用例；
-   **轮末写入竞态暂无确定性 e2e 夹具**（需要可控的慢分析才能稳定复现，留待性能项一并设计）；
+   回归面：`filterUnchangedWatchPaths` 纯函数夹具 + 既有 watch 用例 +
+   **确定性 e2e 夹具 `abs18-watch-write-race.test.ts`**（fake 分析器在增量轮内阻塞 →
+   写入第二次内容 → 立即放行；旧实现把这次写入记成基线 ⇒ 事件被判「未变」⇒ 等不到第二轮；
+   新实现轮前记基线 ⇒ 必触发第二轮且读到新内容）；
+   反向验证（2026-11-13 手工）：把 `recordVersions` 挪回 `runIncremental(...).finally(...)`，
+   夹具 15s 超时红 ⇒ 夹具确实咬住该竞态；
 2. ~~增量轮不整条依赖链重算~~ —— **2026-11-13 步骤 0 否决「按签名跳过重算」**（不 sound）；
    **inert 编辑子项已交付**（`load-deps-fp` 指纹对齐稳定源码 + 逐出收窄 + 注入复用 + 轮内 memo，
    见上 ③）。语义编辑仍整条链重算（属单文件成本 / `ABS-17` / `ABS-16`③ 面）；
@@ -1096,3 +1100,7 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
   `edit-loop-metrics.mjs` 收集 `[check-profile]`。实测 hub `analyze` 1145→**718ms**、
   total 1355→**929ms**；leaf 875→**345ms**、total 555ms。门禁
   `abs18-injection-reuse.test.ts`（4）+ `load-deps-fp-epoch.test.ts`（5）。
+- **2026-11-13 锚点（ABS-18 收尾）**：确定性竞态夹具
+  `algebra/__tests__/abs18-watch-write-race.test.ts`（fake 分析器在增量轮内阻塞 →
+  写入 → 立即放行 ⇒ 必须再触发一轮并读到新内容）；反向验证把 `recordVersions`
+  挪回 `.finally` 后夹具 15s 超时红。`ABS-18` 状态改 `[x]`。
