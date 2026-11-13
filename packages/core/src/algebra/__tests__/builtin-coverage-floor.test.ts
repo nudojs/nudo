@@ -19,6 +19,7 @@ import {
   MODELED,
   VERSION_SKEW,
   hostHasGlobalCtor,
+  isInjectedHostGlobal,
 } from "./builtin-coverage-registry.ts";
 
 /** 静态面跳过的函数元属性（所有构造器均匀自有；统一不追踪，见台账头注） */
@@ -37,7 +38,13 @@ function enumerateSurface(): Set<string> {
     keys.add(k);
   };
 
-  for (const g of ownNames(globalThis)) add(`global:${g}`);
+  for (const g of ownNames(globalThis)) {
+    // 运行器 / 工具链注入的探针（__vitest_* / *_LOADED__）不是产品宿主面：
+    // 按形态跳过，不逐厂商名登台账（换工具链不该改仓库）。见
+    // isInjectedHostGlobal 注释。
+    if (isInjectedHostGlobal(g)) continue;
+    add(`global:${g}`);
+  }
 
   for (const { name, kind } of CURATED_BRANDS) {
     const v = (globalThis as unknown as Record<string, unknown>)[name];

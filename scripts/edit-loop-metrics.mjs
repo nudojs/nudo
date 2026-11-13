@@ -122,7 +122,11 @@ let roundIdx = 0;
 const FIRST_TIMEOUT = 120_000;
 const ROUND_TIMEOUT = 30_000;
 
+let finished = false;
+
 function finish(code) {
+  if (finished) return;
+  finished = true;
   try {
     // SIGINT 而非 SIGTERM：让 Node 有机会把 --cpu-prof 的 profile 落盘
     child.kill("SIGINT");
@@ -134,6 +138,18 @@ function finish(code) {
   const wait = profDir !== undefined ? 1500 : 0;
   setTimeout(() => process.exit(code), wait);
 }
+
+/**
+ * 父进程被杀（Ctrl-C / CI 取消 / SIGHUP）也必须还原语料：
+ * `finish` 只在正常收尾/超时路径被调用，探针注释若残留会污染语料与
+ * 后续基准（脚本约定「语料在结束时还原」）。
+ */
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => finish(1));
+}
+process.on("exit", () => {
+  if (!finished && !keep) writeFileSync(target, original, "utf-8");
+});
 
 function report() {
   const ok = samples.filter((s) => s.doneAt !== null);

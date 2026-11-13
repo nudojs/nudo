@@ -12,6 +12,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { abs as makeAbs, v, type Abs, type Pred } from "@nudojs/core";
 import { analyzeFile } from "@nudojs/service";
 import { projectFunctionDts, type DtsContractFace } from "../dts-generator.ts";
@@ -21,6 +22,9 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
+/** 本仓 devDependency 的 tsc 入口（不经 `pnpm exec`：那会触发 install/锁文件检查）。 */
+const tscBin = createRequire(import.meta.url).resolve("typescript/bin/tsc");
+
 function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
   const dir = mkdtempSync(join(tmpdir(), "nudo-abs14-extends-"));
   dirs.push(dir);
@@ -28,8 +32,8 @@ function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
   writeFileSync(p, dts.endsWith("\n") ? dts : dts + "\n", "utf-8");
   try {
     execFileSync(
-      "pnpm",
-      ["exec", "tsc", "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
+      process.execPath,
+      [tscBin, "--noEmit", "--strict", "--skipLibCheck", "--ignoreConfig", p],
       { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
     );
     return { ok: true, stderr: "" };

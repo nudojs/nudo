@@ -217,11 +217,14 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     const slots: Record<string, Slot> = {};
     const next = objOf(slots, { open: s.open });
     memo.set(a, next);
-    // for...in 而非 Object.entries：槽表是引擎自有的普通 Record（Object.prototype
-    // 无可枚举成员），遍历语义相同，但每次 obj 副本少分配一个 [k, v] 数组
-    //（ABS-17 夹具 N=800 实测 obj 槽共写 2266 万次）。叶子槽在循环里直接
-    // 复用，省掉函数调用（其中 71.5% 的槽值是叶子）。
-    for (const k in s.slots) {
+    // `Object.keys`（own + enumerable）+ 下标取值，而不是 `Object.entries`：
+    // 每次 obj 副本少分配一个 [k, v] 数组（ABS-17 夹具 N=800 实测 obj 槽共写
+    // 2266 万次）。**不用 `for...in`**：它会枚举继承的可枚举属性，与旧实现的
+    // own-only 语义不完全等价（槽表是引擎自有 Record，但把「Object.prototype
+    // 必须无污染」变成隐式前提不值得）。叶子槽在循环里直接复用，省掉函数调用
+    //（其中 71.5% 的槽值是叶子）。
+    const keys = Object.keys(s.slots);
+    for (const k of keys) {
       const v = s.slots[k]!;
       const vv = v.value;
       setSlot(slots, k, { ...v, value: isLeafShape(vv.shape) ? vv : copyWithMemo(vv, memo) });
@@ -264,8 +267,9 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     if (s.optionalParams) shape.optionalParams = [...s.optionalParams];
     if (s.slots) {
       const slots: NonNullable<Extract<Shape, { k: "fn" }>["slots"]> = {};
-      // 同 obj 分支：for...in + 叶子槽直接复用，避免 [k, v] 数组与函数调用
-      for (const k in s.slots) {
+      // 同 obj 分支：Object.keys（own-only）+ 叶子槽直接复用，避免 [k, v]
+      // 数组与函数调用；不用 for...in（会枚举继承属性）。
+      for (const k of Object.keys(s.slots)) {
         const slot = s.slots[k]!;
         const vv = slot.value;
         setSlot(slots, k, { ...slot, value: isLeafShape(vv.shape) ? vv : copyWithMemo(vv, memo) });

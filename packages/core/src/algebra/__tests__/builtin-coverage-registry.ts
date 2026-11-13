@@ -788,15 +788,9 @@ export const ALLOWED_IMPRECISE: Record<string, string> = {
   "global:exports": "CJS 包装局部，接受 unknown",
   "global:module": "CJS 包装局部，接受 unknown",
   "global:require": "CJS 互操作面未建模（ESM 分析面 require 不适用），接受 unknown",
-  // vitest 测试运行器注入（仅测试上下文存在；非产品宿主面）
-  "global:__vitest_index__": "vitest 运行器注入索引绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_mocker__": "vitest 运行器注入 mocker 绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_required__": "vitest 运行器注入 CJS 桥绑定，非产品宿主面，接受 unknown",
-  "global:__vitest_worker__": "vitest worker 注入绑定，非产品宿主面，接受 unknown",
-  // Agent/IDE 工具链注入的 *LOADED* 探针（仅该运行时上下文存在；非 JS 宿主内建）
-  "global:__CODEBUDDY_NODE_BROKERED_FS_SHIM_LOADED__": "工具链 fs 代理探针，非产品宿主面，接受 unknown",
-  "global:__CODEBUDDY_NODE_LANGUAGE_SHIM_LOADED__": "工具链语言服务探针，非产品宿主面，接受 unknown",
-  "global:__CODEBUDDY_NODE_SAFE_DELETE_SHIM_LOADED__": "工具链安全删除探针，非产品宿主面，接受 unknown",
+  // 运行器 / 工具链注入的探针全局**不逐名登记**（见 isInjectedHostGlobal）：
+  // 名字随工具链版本与环境变化，逐个厂商名写进仓库台账 = 换环境就要改仓库。
+  // 枚举侧按形态统一跳过；未登记的**真实**宿主全局仍然硬失败。
 
   // ---- Object 面 -----------------------------------------------------------
   "Object.proto.__defineGetter__": "Annex B 访问器未建模，接受 unknown",
@@ -1058,15 +1052,21 @@ export const VERSION_SKEW: ReadonlySet<string> = new Set([
   "global:require",
   "global:__dirname",
   "global:__filename",
-  // 运行器/工具链注入：名字随版本与运行环境变化，缺席是环境差异非台账腐化
-  "global:__vitest_index__",
-  "global:__vitest_mocker__",
-  "global:__vitest_required__",
-  "global:__vitest_worker__",
-  "global:__CODEBUDDY_NODE_BROKERED_FS_SHIM_LOADED__",
-  "global:__CODEBUDDY_NODE_LANGUAGE_SHIM_LOADED__",
-  "global:__CODEBUDDY_NODE_SAFE_DELETE_SHIM_LOADED__",
 ]);
+
+/**
+ * 运行器 / 工具链注入的全局探针（非 JS 宿主内建）。
+ *
+ * 形态：vitest 的 `__vitest_*`，以及各 agent/IDE 工具链的 `*_LOADED__` 标记
+ * （fs 代理 / 语言服务 / safe-delete shim）。它们随运行环境出现或消失，既不是
+ * 产品宿主面，也不该**逐厂商名**登记进台账（否则换一个工具链就要改仓库）。
+ *
+ * 口径：只在**枚举侧**跳过；未登记的**真实**宿主全局仍然硬失败。`env` 包的
+ * 宿主面对账（`env-bug-61-node-surface.test.ts`）有同一判定，两处必须同步。
+ */
+export function isInjectedHostGlobal(name: string): boolean {
+  return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);
+}
 
 /**
  * 宿主漂移探针（Node 版本差，如 Float16Array 仅较新 Node 提供）。

@@ -477,13 +477,19 @@ const UNDECLARED_REASONS: Record<string, string> = {
   URL: "宿主路径已同样精确（实测逐字一致）⇒ 声明无收益；且 env 的 url 模块面会吞非法 URL 的异常",
   URLSearchParams: "宿主路径已同样精确（实测逐字一致）⇒ 声明无收益",
   TextDecoder: "宿主路径（core 的 makeTextDecoderAbs）比 env 面**更精确**（utf-8 vs string）⇒ 声明会降精度",
-  // Agent/IDE 工具链注入的 *LOADED* 探针全局：不是 JS 宿主内建，也不该进
-  // env 声明面（声明会把它伪装成产品宿主能力）。名字随工具链版本变化，
-  // 缺席的宿主由 5.3 的 host.includes 过滤自动排除，不影响逐名对账。
-  __CODEBUDDY_NODE_BROKERED_FS_SHIM_LOADED__: "工具链 fs 代理探针，非产品宿主面，不声明",
-  __CODEBUDDY_NODE_LANGUAGE_SHIM_LOADED__: "工具链语言服务探针，非产品宿主面，不声明",
-  __CODEBUDDY_NODE_SAFE_DELETE_SHIM_LOADED__: "工具链安全删除探针，非产品宿主面，不声明",
 };
+
+/**
+ * 运行器 / 工具链注入的全局探针（非 JS 宿主内建）——**与
+ * `packages/core/src/algebra/__tests__/builtin-coverage-registry.ts#isInjectedHostGlobal`
+ * 同一判定，两处必须同步**。
+ *
+ * 形态：vitest 的 `__vitest_*`，以及各 agent/IDE 工具链的 `*_LOADED__` 标记。
+ * 它们随运行环境出现/消失，既不进 env 声明面、也不该逐厂商名登记进仓库台账。
+ */
+function isInjectedHostGlobal(name: string): boolean {
+  return name.startsWith("__vitest_") || /^__[A-Za-z0-9_]*_LOADED__$/.test(name);
+}
 
 /**
  * env **声明了**、但**较旧宿主**的 ESM 上下文里还没有的名字 —— env 的 node 面
@@ -769,7 +775,9 @@ function hostEsmGlobals(): string[] {
       ["--input-type=module", "-e", "console.log(JSON.stringify(Object.getOwnPropertyNames(globalThis)))"],
       { encoding: "utf-8" },
     );
-    esmGlobalsCache = JSON.parse(out.trim()) as string[];
+    esmGlobalsCache = (JSON.parse(out.trim()) as string[]).filter(
+      (g) => !isInjectedHostGlobal(g),
+    );
   }
   return esmGlobalsCache;
 }

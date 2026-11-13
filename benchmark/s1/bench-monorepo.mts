@@ -223,15 +223,22 @@ async function main() {
   // 摘要缓存是**进程级** Map，`resetAllAnalysisCaches()` 不清它 ⇒ 用计数
   // delta 采集、绝不中途 reset 缓存（否则会污染 warm 语义）。测量前清一次，
   // 让 cold#1 成为「摘要层也空」的真冷，cold#2/3 自然展示跨 cold 复用。
+  // `fn.hits` = 查到条目；`fn.applied` = 真的被采纳（`substAbs` 替换了结论）。
+  // 两者分开记，才能区分「没查」与「查了但被完整前置 / 实参同构门槛拒掉」。
   type Telemetry = {
     inst: { hits: number; misses: number; stores: number };
-    fn: { hits: number; misses: number; stores: number };
+    fn: { hits: number; misses: number; stores: number; applied: number };
   };
   const summaryMod =
     realCorpusRoot !== undefined
       ? ((await import(join(ROOT, "packages/core/src/algebra/key/fn-summary.ts"))) as {
           fnSummaryStats: () => { hits: number; misses: number; stores: number; size: number };
-          fnSummaryFnLevelStats: () => { hits: number; misses: number; stores: number };
+          fnSummaryFnLevelStats: () => {
+            hits: number;
+            misses: number;
+            stores: number;
+            applied: number;
+          };
           resetFnSummaryCache: () => void;
         })
       : undefined;
@@ -245,7 +252,7 @@ async function main() {
     const f = summaryMod.fnSummaryFnLevelStats();
     return {
       inst: { hits: i.hits, misses: i.misses, stores: i.stores },
-      fn: { hits: f.hits, misses: f.misses, stores: f.stores },
+      fn: { hits: f.hits, misses: f.misses, stores: f.stores, applied: f.applied },
     };
   };
   const delta = (from: Telemetry, to: Telemetry): Telemetry => ({
@@ -258,6 +265,7 @@ async function main() {
       hits: to.fn.hits - from.fn.hits,
       misses: to.fn.misses - from.fn.misses,
       stores: to.fn.stores - from.fn.stores,
+      applied: to.fn.applied - from.fn.applied,
     },
   });
   /** 计时 + 该窗口的摘要缓存计数增量（合成模式只计时）。 */

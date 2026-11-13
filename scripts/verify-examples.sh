@@ -78,6 +78,31 @@ pin_empty() {
   fi
 }
 
+# pin_implies <command> <if-string> <then-string> — if the first string appears,
+# the second must too. For environment-dependent output: either shape is fine,
+# an inconsistent pairing is not.
+pin_implies() {
+  local cmd=$1 a=$2 b=$3 f
+  f=$(outfile "$cmd")
+  if [ ! -f "$f" ]; then
+    fail=$((fail + 1))
+    printf 'FAIL  [pin] no captured output for: %s\n' "$cmd"
+    return
+  fi
+  if ! grep -qF -- "$a" "$f"; then
+    pass=$((pass + 1))
+    printf 'OK    [pin] (absent) %s\n' "$a"
+    return
+  fi
+  if grep -qF -- "$b" "$f"; then
+    pass=$((pass + 1))
+    printf 'OK    [pin] %s ⇒ %s\n' "$a" "$b"
+  else
+    fail=$((fail + 1))
+    printf 'FAIL  [pin] %s present but %s missing (output of: %s)\n' "$a" "$b" "$cmd"
+  fi
+}
+
 # pin_file <file> <fixed-string>... — every string must appear in a
 # generated artifact (e.g. the .d.ts written by `export --format dts --out`), not in
 # the command's stdout.
@@ -324,10 +349,17 @@ pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/a
 # retire-debug/ — real npm dep `debug` (visionmedia/debug)
 # 返回面随宿主能否解析到真实 `debug` 包而不同：解析到 ⇒ 引擎真实求值并给出
 # 精确返回面（修复 rest 形参 const 误发射后）；解析不到 ⇒ 诚实 unknown +
-# nudo:opaque-result。两者都是 0 error，故不钉死 opaque-result，只锁门禁
-# 通过 + 导出名，避免把环境差异误判成引擎回归。
-pin 'pnpm run check docs/examples/retire-debug/after/src/logger.js' \
-  'OK' '0 error' 'createLogger' 'logHello'
+# nudo:opaque-result。两种都是 0 error。
+#
+# 不钉具体返回面（宿主解析差异，不是引擎回归），但把**一致性**钉住：
+# unknown ⟺ 对应函数的 opaque-result 说明。任一方向破缺都说明引擎在
+# 「无声降精度」或「精确却报 opaque」，这正是精度回归信号。
+LOGGER='pnpm run check docs/examples/retire-debug/after/src/logger.js'
+pin "$LOGGER" 'OK' '0 error' 'createLogger' 'logHello'
+pin_implies "$LOGGER" 'createLogger(namespace: any) => unknown' '[INFO createLogger]'
+pin_implies "$LOGGER" '[INFO createLogger]' 'createLogger(namespace: any) => unknown'
+pin_implies "$LOGGER" 'logHello(name: any) => unknown' '[INFO logHello]'
+pin_implies "$LOGGER" '[INFO logHello]' 'logHello(name: any) => unknown'
 pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts' \
   'fn({ namespace: string() }, any())' 'fn({ name: string() }, any())'
 pin 'pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json' \
