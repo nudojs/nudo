@@ -232,4 +232,29 @@ export function pushEvalStaticDiagnostics(args: {
       ],
     });
   }
+  // ABS-12：strict 能力档下的 denied 面（默认 unknown，不执行宿主）
+  for (const b of evalDiag.capabilityDenied) {
+    diagnostics.push({
+      range: b.range,
+      severity: "warning",
+      message: `Capability denied: host global "${b.name}" is disabled for untrusted analysis`,
+      code: DIAG.capabilityDenied,
+      suggestions: [
+        `Mock it if the analysis needs its shape: @nudo:mock ${b.name} = stub().returns(...)`,
+        `Or run with NUDO_CAPABILITIES=trusted when the source is trusted`,
+      ],
+    });
+  }
+  for (const m of evalDiag.deniedModules) {
+    diagnostics.push({
+      range: m.range,
+      severity: "warning",
+      message: `Capability denied: module "${m.spec}" is disabled for untrusted analysis`,
+      code: DIAG.capabilityDenied,
+      suggestions: [
+        `Use @nudo:mock-module to provide an abstract surface for ${m.spec}`,
+        `Or run with NUDO_CAPABILITIES=trusted when the source is trusted`,
+      ],
+    });
+  }
 }

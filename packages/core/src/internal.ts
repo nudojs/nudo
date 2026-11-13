@@ -85,6 +85,22 @@ export {
   generalizeSourceKeyPart, getFnNameAndBodies, resetFnFpCache
 } from "./algebra/key/fn-fp.ts";
 export {
+  type CapabilityClass,
+  type CapabilityMode,
+  ALLOWED_HOST_GLOBALS,
+  ALLOWED_NODE_BUILTINS,
+  DENIED_HOST_GLOBALS,
+  DENIED_NODE_BUILTINS,
+  HOST_GLOBAL_SNAPSHOT,
+  NODE_BUILTIN_SNAPSHOT,
+  getCapabilityMode,
+  hostGlobalCapability,
+  isCapabilityDeniedHostGlobal,
+  isCapabilityDeniedNodeModule,
+  nodeModuleCapability,
+  setCapabilityMode,
+} from "./algebra/exec/capabilities.ts";
+export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
   beginDepFingerprintEpoch, endDepFingerprintEpoch,
   normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph

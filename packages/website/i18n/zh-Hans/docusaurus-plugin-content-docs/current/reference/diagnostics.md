@@ -301,6 +301,12 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 Context: [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment) · [依赖类型](../guides/env-harvest.md)
 
+### `nudo:capability-denied` {#nudo-capability-denied}
+
+被分类为有副作用的宿主全局或 `node:` 模块在不可信分析下被禁用（strict 能力档，默认）。值退化为 `unknown`，绝不执行宿主实现；需要其形状时用 `@nudo:mock` / `@nudo:mock-module`，分析可信代码可设 `NUDO_CAPABILITIES=trusted`。这是防御纵深，不宣称 sandbox。
+
+Context: [执行模型与信任边界](../concepts/semantics.md)
+
 ### `nudo:opaque-result` {#nudo-opaque-result}
 
 求值返回 opaque / 无信息 Abs。

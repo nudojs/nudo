@@ -53,6 +53,12 @@ export const DIAG = {
   noSignature: "nudo:no-signature",
   // --- 求值精度 / 截断归因 ---
   builtinUnknown: "nudo:builtin-unknown",
+  /**
+   * ABS-12：strict 能力档下，**已分类为 denied** 的宿主全局 / `node:` 模块被
+   * 触达（默认 unknown 继续分析；`NUDO_CAPABILITIES=trusted` 退回
+   * `nudo:builtin-unknown` 旧面）。不是安全边界，仅显式化「副作用面已裁剪」。
+   */
+  capabilityDenied: "nudo:capability-denied",
   forkTruncated: "nudo:fork-truncated",
   hostEffectBlocked: "nudo:host-effect-blocked",
   loopTruncated: "nudo:loop-truncated",

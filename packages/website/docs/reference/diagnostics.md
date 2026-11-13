@@ -306,6 +306,12 @@ API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / m
 
 Context: [@nudo:env](../concepts/directives.md#nudoenv--runtime-environment) · [Dependency types](../guides/env-harvest.md)
 
+### `nudo:capability-denied` {#nudo-capability-denied}
+
+A host global or `node:` module classified as side-effectful is disabled for untrusted analysis (strict capability mode — the default). The value degrades to `unknown` and never executes natively; mock it (`@nudo:mock` / `@nudo:mock-module`) when its shape is needed, or analyze trusted code with `NUDO_CAPABILITIES=trusted`. This is defense in depth, not a sandbox claim.
+
+Context: [Execution model and trust boundary](../concepts/semantics.md)
+
 ### `nudo:opaque-result` {#nudo-opaque-result}
 
 Evaluation returned opaque / uninformative Abs.

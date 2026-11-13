@@ -86,11 +86,14 @@ describe("ABS-12 · node: 内建模块能力清单", () => {
     expect(neither, `neither: ${neither.join(", ")}`).toEqual([]);
   });
 
-  it("node: 前缀与裸名同口径；未列名默认 denied", () => {
+  it("node: 前缀与裸名同口径；只有内建模块 default-deny", () => {
     expect(nodeModuleCapability("node:fs")).toBe("denied");
     expect(nodeModuleCapability("fs")).toBe("denied");
     expect(nodeModuleCapability("node:path")).toBe("allowed");
-    expect(nodeModuleCapability("__nudo_not_a_builtin__")).toBe("denied");
+    // 未列名的“内建形状” default-deny；相对路径 / npm 包不是能力面
+    expect(nodeModuleCapability("node:__nudo_not_a_builtin__")).toBe("denied");
+    expect(nodeModuleCapability("./local.js")).toBe("allowed");
+    expect(nodeModuleCapability("lodash")).toBe("allowed");
   });
 });
 

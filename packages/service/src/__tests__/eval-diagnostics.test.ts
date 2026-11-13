@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { collectEvalDiagnostics } from "@nudojs/service";
+import { setCapabilityMode } from "@nudojs/core/internal";
 
 describe("evaluator static diagnostics", () => {
   it("marks statements after return as unreachable", () => {
@@ -89,7 +90,7 @@ function f() { return a; }
     expect(d.builtinUnknown).toHaveLength(0);
   });
 
-  it("dynamic require / require.resolve stay honest builtin-unknown", () => {
+  it("dynamic require：strict 档 capability-denied；trusted 档回到 builtin-unknown", () => {
     const src = `
 function f(name) {
   const m = require(name);
@@ -97,8 +98,18 @@ function f(name) {
   return m;
 }
 `;
-    const d = collectEvalDiagnostics(src);
-    expect(d.builtinUnknown.map((b) => b.name)).toContain("require");
+    const strict = collectEvalDiagnostics(src);
+    expect(strict.builtinUnknown.map((b) => b.name)).not.toContain("require");
+    expect(strict.capabilityDenied.map((b) => b.name)).toContain("require");
+
+    setCapabilityMode("trusted");
+    try {
+      const trusted = collectEvalDiagnostics(src);
+      expect(trusted.builtinUnknown.map((b) => b.name)).toContain("require");
+      expect(trusted.capabilityDenied).toHaveLength(0);
+    } finally {
+      setCapabilityMode(undefined);
+    }
   });
 
   it("does not flag rest / default / destructured bindings", () => {

@@ -6,7 +6,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, litValue, unknown, isAbsLike } from "../abs.ts";
-import { DENIED_HOST_GLOBALS } from "./capabilities.ts";
+import { DENIED_HOST_GLOBALS, getCapabilityMode } from "./capabilities.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
@@ -295,6 +295,8 @@ export function neverExecHostName(fn: unknown): string | null {
   for (const n of NEVER_EXEC_HOST_FN_NAMES) {
     if (fn === g[n]) return n;
   }
+  // trusted 档保留旧行为（只拦手写高危名单）
+  if (getCapabilityMode() !== "strict") return null;
   ensureDeniedHostFnTable();
   return deniedHostFnNames.get(fn) ?? null;
 }

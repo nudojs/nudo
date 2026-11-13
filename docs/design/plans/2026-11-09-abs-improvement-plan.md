@@ -414,9 +414,14 @@ strict 默认需要一次全仓回归确认精度不回退。
 漂移门禁（新名字未分类 ⇒ 测试红），运行期**身份拦截**从手写名单扩展到全部 denied 函数
 （`neverExecHostName`，别名 `const f = BroadcastChannel` 同样命中）。夹具
 `capability-manifest.test.ts`（9 例：快照覆盖 / 恰好一类 / default-deny / `node:` 前缀 /
-身份拦截 / allowed 不误伤）。**未做**：`nudo:capability-denied` 诊断码（denied 全局目前仍报
-`nudo:builtin-unknown`）、模块解析拒绝、`--capabilities trusted` 开关——下一步同批补齐后
-再做全仓 strict 回归。
+身份拦截 / allowed 不误伤）。**Slice 2 已交付（2026-11-13）**：新增 `nudo:capability-denied` 诊断——strict 档把
+**已分类 denied** 的宿主全局与 `node:` 模块从 `builtin-unknown` 拆出（模块在 import/require
+位报告；模块分类只覆盖内建，相对路径 / npm 包不误伤）；values 仍为 `unknown`、不执行宿主。
+`NUDO_CAPABILITIES=trusted`（或 `setCapabilityMode("trusted")`）退回旧面（运行时身份拦截也
+只保留手写高危名单）；未分类名字（typo）两档都是 `builtin-unknown`。夹具
+`capability-diagnostics.test.ts`（5 例）+ 更新 `eval-diagnostics.test.ts` 的 dynamic require；
+docs（EN + zh-Hans）已登记。**未做**：CLI `--capabilities` 显式开关（当前只有 env）、
+canary e2e（fs/net/spawn/worker/timer/fetch/process 的「零宿主副作用」端到端）——下一步。
 
 ### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
 

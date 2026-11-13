@@ -17,6 +17,10 @@ import {
   evalGlobalFn,
   isErrorCtorName,
 } from "@nudojs/core";
+import {
+  isCapabilityDeniedHostGlobal,
+  isCapabilityDeniedNodeModule,
+} from "@nudojs/core/internal";
 import type { File, Node, Statement, Identifier } from "@babel/types";
 
 export type EvalLoc = {
@@ -26,10 +30,16 @@ export type EvalLoc = {
 
 export type EvalUnreachable = { range: EvalLoc };
 export type EvalBuiltinUnknown = { name: string; range: EvalLoc };
+/** ABS-12：strict 能力档下被拒绝的 `node:` 模块说明符 */
+export type EvalDeniedModule = { spec: string; range: EvalLoc };
 
 export type EvalDiagnostics = {
   unreachable: EvalUnreachable[];
   builtinUnknown: EvalBuiltinUnknown[];
+  /** ABS-12：已分类 denied 的宿主全局（strict 档；否则为空） */
+  capabilityDenied: EvalBuiltinUnknown[];
+  /** ABS-12：已分类 denied 的 `node:` 模块（strict 档；否则为空） */
+  deniedModules: EvalDeniedModule[];
 };
 
 function locOf(node: Node): EvalLoc | null {
@@ -336,6 +346,8 @@ function walkBuiltinUnknown(
   out: EvalBuiltinUnknown[],
   seen: Set<string>,
   known: Set<string>,
+  specs: Array<{ spec: string; range: EvalLoc }>,
+  seenSpecs: Set<string>,
   namePosition = false,
 ): void {
   const n = node as {
@@ -354,6 +366,25 @@ function walkBuiltinUnknown(
     }
   };
 
+  const flagSpec = (raw: unknown, rangeNode: Node): void => {
+    if (typeof raw !== "string" || seenSpecs.has(raw)) return;
+    const range = locOf(rangeNode);
+    if (!range) return;
+    seenSpecs.add(raw);
+    specs.push({ spec: raw, range });
+  };
+  if (
+    n.type === "ImportDeclaration" ||
+    n.type === "ExportNamedDeclaration" ||
+    n.type === "ExportAllDeclaration"
+  ) {
+    const src = (n as { source?: { value?: unknown } | null }).source;
+    if (src) flagSpec(src.value, node);
+  } else if (n.type === "ImportExpression") {
+    const src = (n as { source?: Node }).source;
+    if (src?.type === "StringLiteral") flagSpec((src as { value?: unknown }).value, src);
+  }
+
   if (n.type === "MetaProperty") {
     // import.meta / new.target：meta/property 是关键字位置（Identifier 形状），
     // 不是标识符引用——new.target 不得报 builtin-unknown "new"（Bug 79）
@@ -366,7 +397,9 @@ function walkBuiltinUnknown(
     const args = (n as { arguments?: unknown[] }).arguments ?? [];
     if (callee?.type === "Identifier" && callee.name === "require") {
       // 静态 spec 由 transpile → __nudoRequire 接管；真动态才报
+      const a0 = args[0] as { type?: string; value?: unknown } | undefined;
       if (!isStaticStringExpr(args[0])) flag(n.callee!, "require");
+      else if (a0?.type === "StringLiteral") flagSpec(a0.value, a0 as Node);
     } else if (
       callee?.type === "MemberExpression" &&
       callee.object?.type === "Identifier" &&
@@ -413,11 +446,11 @@ function walkBuiltinUnknown(
     if (Array.isArray(v)) {
       v.forEach((x) => {
         if (x && typeof x === "object" && "type" in (x as object)) {
-          walkBuiltinUnknown(x as Node, declared, out, seen, known, childIsName);
+          walkBuiltinUnknown(x as Node, declared, out, seen, known, specs, seenSpecs, childIsName);
         }
       });
     } else if (v && typeof v === "object" && "type" in (v as object)) {
-      walkBuiltinUnknown(v as Node, declared, out, seen, known, childIsName);
+      walkBuiltinUnknown(v as Node, declared, out, seen, known, specs, seenSpecs, childIsName);
     }
   }
 }
@@ -435,7 +468,7 @@ export function collectEvalDiagnostics(
   try {
     file = parseSource(source);
   } catch {
-    return { unreachable: [], builtinUnknown: [] };
+    return { unreachable: [], builtinUnknown: [], capabilityDenied: [], deniedModules: [] };
   }
   const unreachable: EvalUnreachable[] = [];
   // File → program
@@ -447,8 +480,25 @@ export function collectEvalDiagnostics(
   if (extraKnown) {
     for (const n of extraKnown) known.add(n);
   }
-  const builtinUnknown: EvalBuiltinUnknown[] = [];
-  walkBuiltinUnknown(file, declared, builtinUnknown, new Set(), known);
+  const allBuiltinUnknown: EvalBuiltinUnknown[] = [];
+  const specs: Array<{ spec: string; range: EvalLoc }> = [];
+  walkBuiltinUnknown(
+    file,
+    declared,
+    allBuiltinUnknown,
+    new Set(),
+    known,
+    specs,
+    new Set(),
+  );
 
-  return { unreachable, builtinUnknown };
+  // ABS-12：strict 档把「已分类 denied」的宿主全局/模块从 builtin-unknown
+  // 拆出（trusted 档保持旧面）。未分类名字仍是 typo 面，留在 builtin-unknown。
+  const capabilityDenied = allBuiltinUnknown.filter((b) => isCapabilityDeniedHostGlobal(b.name));
+  const builtinUnknown = allBuiltinUnknown.filter((b) => !isCapabilityDeniedHostGlobal(b.name));
+  const deniedModules = specs
+    .filter((s) => isCapabilityDeniedNodeModule(s.spec))
+    .map((s) => ({ spec: s.spec, range: s.range }));
+
+  return { unreachable, builtinUnknown, capabilityDenied, deniedModules };
 }

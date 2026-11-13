@@ -18,6 +18,10 @@
  * **诚实边界**：同 realm 的隐藏是防御纵深，不是安全边界；硬隔离需子进程/容器
  * （见 plan ABS-12 R12-B，另行拍板）。
  */
+import { builtinModules } from "node:module";
+
+const NODE_BUILTIN_SET: ReadonlySet<string> = new Set(builtinModules.map((n) => n.replace(/^node:/, "")));
+
 export type CapabilityClass = "allowed" | "denied";
 
 /** 显式允许的宿主全局（按值暴露无副作用，或由 env 建模） */
@@ -477,11 +481,47 @@ export function hostGlobalCapability(name: string): CapabilityClass {
   return "denied";
 }
 
-/** 模块说明符（允许 `node:` 前缀）是否被拒；未列名 ⇒ denied。 */
+/**
+ * 模块说明符（允许 `node:` 前缀）的能力分类。
+ *
+ * 只有**内建模块**参与 default-deny：`node:` 前缀 / `module.builtinModules`
+ * 命中 / 快照已分类的裸名。相对路径与 npm 包不是能力面（未解析 ⇒ 走既有
+ * module-missing 通道）。
+ */
 export function nodeModuleCapability(spec: string): CapabilityClass {
   const name = spec.replace(/^node:/, "");
+  const isBuiltin = spec.startsWith("node:") || NODE_BUILTIN_SET.has(name);
+  if (!isBuiltin) return "allowed";
   if (DENIED_NODE_BUILTINS.has(name)) return "denied";
   if (ALLOWED_NODE_BUILTINS.has(name)) return "allowed";
   return "denied";
 }
 
+/** 能力档：`strict`（默认）裁掉 denied 面；`trusted` 保留旧行为。 */
+export type CapabilityMode = "strict" | "trusted";
+
+let explicitCapabilityMode: CapabilityMode | undefined;
+
+/**
+ * 显式设置能力档（测试 / 宿主用）。进程级设置，**必须在分析开始前**调用；
+ * 分析结果缓存不含该维度（CLI 由 `NUDO_CAPABILITIES` 在进程启动时确定）。
+ */
+export function setCapabilityMode(mode: CapabilityMode | undefined): void {
+  explicitCapabilityMode = mode;
+}
+
+/** 当前能力档：显式设置 > `NUDO_CAPABILITIES` env > strict（默认）。 */
+export function getCapabilityMode(): CapabilityMode {
+  if (explicitCapabilityMode !== undefined) return explicitCapabilityMode;
+  return process.env.NUDO_CAPABILITIES === "trusted" ? "trusted" : "strict";
+}
+
+/** strict 档下该宿主全局是否属于 denied 面（未列名不算——那是 typo 面）。 */
+export function isCapabilityDeniedHostGlobal(name: string): boolean {
+  return getCapabilityMode() === "strict" && DENIED_HOST_GLOBALS.has(name);
+}
+
+/** strict 档下该模块说明符是否属于 denied 面。 */
+export function isCapabilityDeniedNodeModule(spec: string): boolean {
+  return getCapabilityMode() === "strict" && nodeModuleCapability(spec) === "denied";
+}
