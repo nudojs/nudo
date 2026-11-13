@@ -1015,18 +1015,27 @@ export function startWatch(
    * **指纹真的变了**的路径。删除（`stat` miss）与非 tracked 路径（配置 /
    * 侧车 / env 模板 / 新建文件）一律放行，既有语义不变。
    *
+   * **记基线的时机**（2026-11-13 修复「吞改动」竞态）：通过过滤、**开始分析
+   * 之前**就记下这些路径当前的指纹，而不是等 `runIncremental` 结束后再记。
+   * 旧写法把分析期间的二次保存也记成基线 ⇒ 下一次事件比对「未变」⇒ 改动被
+   * 静默吞掉（用户得再保存一次）。分析期间的文件写入与「开跑前快照」必然
+   * 不同 ⇒ 下一轮正常触发。
+   *
    * 局限：`mtimeMs` 是浮点毫秒，同一毫秒内**同尺寸**的二次写入可能撞指纹，
    * 那一轮增量分析会被跳过。概率极低（Node 保留亚毫秒小数），且 watch 只
    * 重跑分析、不写盘，不制造假绿；下次触碰同一文件仍会正常触发。
    */
   const knownVersions = new Map<string, string>();
-  const recordVersions = (): void => {
-    for (const f of getFiles()) {
+  /** 记下这些路径**当下**的指纹；删除/暂不可 stat ⇒ 移除键（重建后不算「未变」）。 */
+  const recordVersions = (files: Iterable<string>): void => {
+    for (const f of files) {
+      const key = stablePathKey(f);
       const v = watchPathVersion(f);
-      if (v !== undefined) knownVersions.set(f, v);
+      if (v === undefined) knownVersions.delete(key);
+      else knownVersions.set(key, v);
     }
   };
-  recordVersions();
+  recordVersions(getFiles());
 
   const runAll = async () => {
     onRoundStart?.();
@@ -1157,15 +1166,15 @@ export function startWatch(
         // 丢掉 FSEvents 顺带报告的、指纹未变的同批文件（见上方注释）。
         const changedFiles = filterUnchangedWatchPaths(candidates, knownVersions);
         if (changedFiles.length === 0) return;
+        // **先**记基线再分析：分析期间的二次保存必须与基线不同（否则被吞）。
+        recordVersions(changedFiles);
         if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
         // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
         // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
         // 否则该轮无声死掉，用户只看到上一轮结果冻结。
-        runIncremental(changedFiles)
-          .catch((err) => {
-            console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
-          })
-          .finally(() => recordVersions());
+        runIncremental(changedFiles).catch((err) => {
+          console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
+        });
       }, 200);
     }),
   );
