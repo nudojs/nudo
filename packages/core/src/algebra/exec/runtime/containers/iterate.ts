@@ -1319,6 +1319,11 @@ export function $forOf(
   // IteratorClose（调 return()）取用。采集后立即捕获：嵌套迭代同一接收者
   // 时内层会覆盖侧表，外层必须握住自己那一个。
   const userIter = userIterOf(iterable);
+  // ABS-13：引擎生成器对象自身就是迭代器（`g[Symbol.iterator]()` 返回 g）——
+  // 非正常出口的 IteratorClose 必须调到它的 `return()`（native 语义），
+  // 否则 `.return()` 的 finalizer 重放与 yield* 转发都不会发生。
+  const closeTarget =
+    userIter ?? (genDrainViewOf(iterable) !== undefined ? iterable : undefined);
   // 非具体容器：长度未知（可能空、可能更长）→ 单代表元素只跑一次
   // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
   // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
@@ -1404,7 +1409,7 @@ export function $forOf(
     } catch (e) {
       if (isNudoBreak(e, opts?.label)) {
         // Bug 199：break 是 abrupt completion ⇒ IteratorClose（调 return()）
-        iteratorClose(userIter);
+        iteratorClose(closeTarget);
         // break 打断代表体（fork 的 break 臂冒泡，后续语句丢失）——完整
         // 迭代效应不可观测，「先跑任意次再 break」的累加器域必须整体宽化
         if (unbounded && e.abstract) widen?.markInterrupted();
@@ -1420,7 +1425,7 @@ export function $forOf(
       // 其余 abrupt completion（return / throw / 指向外层标签的 break 或
       // continue）——循环退出 ⇒ IteratorClose（原生规范：任何 abrupt
       // completion 都关闭迭代器）。close 内的异常取代原完成值。
-      iteratorClose(userIter);
+      iteratorClose(closeTarget);
       throw e;
     } finally {
       if (unbounded) leavePromiseForkArm();

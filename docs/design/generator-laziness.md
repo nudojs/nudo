@@ -771,9 +771,10 @@ abrupt 完成时把「挂起点快照」与终态格**逐绑定 join**（`exec/r
 throw/break/continue/await/var）由转译器发射为 thunk，经 `$yield`/`$yieldStar`
 第三实参传到 runtime；`.return()` / 无 catch 的 `.throw()` 回到挂起点快照后按
 内→外重放 ⇒ `try { yield } finally { cleanup }` 的清理值精确（嵌套 `[true,true]`）。
-剩余：finalizer 含 yield/return/throw、`for-of` close、async generator 的
-finalizer 抛错（应走 rejected promise）。夹具 `abs13-abrupt-completion.test.ts`
-（11 例，含无 finally / 正常耗尽 / 不扩大化对照）。
+finalizer 抛错（无外层自由写）按 native 上抛；`for-of` 的 IteratorClose 已对生成器调用
+`.return()`，但 eager 排空使 break 时已 done ⇒ 需要按迭代下标的 `returnAt(k)` 才能精确。
+剩余：finalizer 含 yield/return/throw 语句、`for-of break` 索引重放、async generator 的
+replay 异常（async 路径未接）。夹具 `abs13-abrupt-completion.test.ts`（12 例）。
 
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
 `conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +

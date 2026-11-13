@@ -256,3 +256,27 @@ export function f() {
     expect(shapeOf(src)).toBe("false | true");
   });
 });
+
+describe("ABS-13 A · finalizer 抛错（无外层自由写，无需快照）", () => {
+  it(".return() 触发 finalizer 异常：异常上抛，不误报正常完成", () => {
+    const src = `
+function* g() {
+  try {
+    yield 1;
+  } finally {
+    null.x;
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  try {
+    it.return(0);
+    return "resolved";
+  } catch {
+    return "rejected";
+  }
+}`;
+    expect(shapeOf(src)).toBe('"rejected"');
+  });
+});

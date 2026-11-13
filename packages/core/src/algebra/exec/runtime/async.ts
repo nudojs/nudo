@@ -958,10 +958,14 @@ function makeGenObject(
    */
   const suspensionFinals = (i: number): readonly (() => void)[] | undefined => {
     if (i <= 0 || state.poisoned) return undefined;
-    const frame = genSelf ? genSuspendTables.get(genSelf as object) : undefined;
-    if (!frame || !frame.enabled) return undefined;
     const list = finals[i - 1];
-    return list !== undefined && list.length > 0 ? list : undefined;
+    if (list === undefined || list.length === 0) return undefined;
+    const frame = genSelf ? genSuspendTables.get(genSelf as object) : undefined;
+    // 无 hooks = 生成器体没有外层自由写（genOuterFreeWriteNames 为空）⇒
+    // 不需要快照：finalizer 不可能改外层绑定，任何时刻执行都等价。
+    if (frame === undefined) return list;
+    if (!frame.enabled) return undefined;
+    return list;
   };
   /** 内→外执行（列表按进入顺序外层在前）。finalizer 抛错按 native 覆盖完成。 */
   const replayFinals = (list: readonly (() => void)[]): void => {
@@ -999,7 +1003,12 @@ function makeGenObject(
           if (replayDelegate !== undefined) {
             // ABS-13 A：先内层（delegate 的 .return 已跑）后外层 finally
             applyGenSuspend(genSelf, state.i);
-            replayFinals(replayDelegate);
+            try {
+              replayFinals(replayDelegate);
+            } catch (err) {
+              if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error")));
+              throw err;
+            }
             return deliver(genIterResult(fwd.value ?? v, true));
           }
           return deliver(finishReturn(fwd.value ?? v, ctx));
@@ -1015,7 +1024,13 @@ function makeGenObject(
     state.done = true;
     if (replay !== undefined) {
       applyGenSuspend(genSelf, state.i);
-      replayFinals(replay);
+      try {
+        replayFinals(replay);
+      } catch (err) {
+        // async generator：finalizer 抛错 ⇒ rejected promise（native 不同步抛）
+        if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error")));
+        throw err;
+      }
       return deliver(genIterResult(v, true));
     }
     return deliver(finishReturn(v, ctx));
@@ -1066,7 +1081,13 @@ function makeGenObject(
     // 重放（内→外）；否则退回 C 的 join 过近似，避免 wrong-exact。
     if (replayThrow !== undefined) {
       applyGenSuspend(genSelf, state.i);
-      replayFinals(replayThrow);
+      try {
+        replayFinals(replayThrow);
+      } catch (err) {
+        // async generator：finalizer 抛错覆盖原 throw，交付 rejected promise
+        if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? e));
+        throw err;
+      }
     } else if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
     // Bug 141：async generator 的 .throw() 返回**拒绝 promise**（原生不同步抛）
     if (asyncMode) return deliver(rejectedPromiseAbs(e));
