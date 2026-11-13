@@ -280,3 +280,49 @@ export function f() {
     expect(shapeOf(src)).toBe('"rejected"');
   });
 });
+
+describe("ABS-13 A · async generator 的 replay 异常", () => {
+  it(".throw() 时 finalizer 抛错 ⇒ rejected promise（native 的 finalizer 覆盖）", () => {
+    const src = `
+async function* g() {
+  try {
+    yield 1;
+  } finally {
+    null.x;
+  }
+}
+export async function f() {
+  const it = g();
+  await it.next();
+  try {
+    await it.throw(new Error("orig"));
+    return "resolved";
+  } catch {
+    return "rejected";
+  }
+}`;
+    expect(shapeOf(src)).toBe('promise<"rejected">');
+  });
+
+  it(".return() 时 finalizer 抛错 ⇒ rejected promise（native）", () => {
+    const src = `
+async function* g() {
+  try {
+    yield 1;
+  } finally {
+    null.x;
+  }
+}
+export async function f() {
+  const it = g();
+  await it.next();
+  try {
+    await it.return(0);
+    return "resolved";
+  } catch {
+    return "rejected";
+  }
+}`;
+    expect(shapeOf(src)).toBe('promise<"rejected">');
+  });
+});

@@ -1017,7 +1017,7 @@ function makeGenObject(
             try {
               replayFinals(replayDelegate);
             } catch (err) {
-              if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error")));
+              if (asyncMode) return rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error"));
               throw err;
             }
             return deliver(genIterResult(fwd.value ?? v, true));
@@ -1039,7 +1039,7 @@ function makeGenObject(
         replayFinals(replay);
       } catch (err) {
         // async generator：finalizer 抛错 ⇒ rejected promise（native 不同步抛）
-        if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error")));
+        if (asyncMode) return rejectedPromiseAbs(throwPayloadOf(err) ?? errorTypeAbs("Error"));
         throw err;
       }
       return deliver(genIterResult(v, true));
@@ -1096,7 +1096,7 @@ function makeGenObject(
         replayFinals(replayThrow);
       } catch (err) {
         // async generator：finalizer 抛错覆盖原 throw，交付 rejected promise
-        if (asyncMode) return deliver(rejectedPromiseAbs(throwPayloadOf(err) ?? e));
+        if (asyncMode) return rejectedPromiseAbs(throwPayloadOf(err) ?? e);
         throw err;
       }
     } else if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
