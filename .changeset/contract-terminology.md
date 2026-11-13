@@ -1,8 +1,8 @@
 ---
-"@nudojs/core": major
-"@nudojs/service": major
-"nudojs": major
-"@nudojs/lsp": major
+"@nudojs/core": minor
+"@nudojs/service": minor
+"nudojs": minor
+"@nudojs/lsp": minor
 "vite-plugin-nudo": patch
 ---
 
