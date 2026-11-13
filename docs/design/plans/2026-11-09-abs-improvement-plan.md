@@ -409,6 +409,15 @@
 **风险**：同 realm 逃逸面（引擎 bug / mock 宿主闭包）仍存在——**不宣称 sandbox**；denied 集合维护成本；
 strict 默认需要一次全仓回归确认精度不回退。
 
+**Slice 1 已交付（2026-11-13）**：`exec/capabilities.ts` —— 188 个宿主全局 + 67 个 `node:` 内建的
+**显式** allowed/denied 清单（未列名 default-deny），`HOST_GLOBAL_SNAPSHOT` / `NODE_BUILTIN_SNAPSHOT`
+漂移门禁（新名字未分类 ⇒ 测试红），运行期**身份拦截**从手写名单扩展到全部 denied 函数
+（`neverExecHostName`，别名 `const f = BroadcastChannel` 同样命中）。夹具
+`capability-manifest.test.ts`（9 例：快照覆盖 / 恰好一类 / default-deny / `node:` 前缀 /
+身份拦截 / allowed 不误伤）。**未做**：`nudo:capability-denied` 诊断码（denied 全局目前仍报
+`nudo:builtin-unknown`）、模块解析拒绝、`--capabilities trusted` 开关——下一步同批补齐后
+再做全仓 strict 回归。
+
 ### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
 
 **状态**：`[~]` 2026-11-13 立项（样例搜索完成；**方案 C 护栏已交付**，方案 A 待实现）。不做全量 CPS：样例搜索表明已发现的错误类集中在 **abrupt completion 的 `finally` 语义**，不需要 continuation 化整个求值器。

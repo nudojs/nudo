@@ -6,6 +6,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, litValue, unknown, isAbsLike } from "../abs.ts";
+import { DENIED_HOST_GLOBALS } from "./capabilities.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
@@ -268,6 +269,25 @@ export const NEVER_EXEC_HOST_FN_NAMES = [
   "requestIdleCallback",
 ] as const;
 
+/**
+ * ABS-12 R12-D：`DENIED_HOST_GLOBALS` 中**函数值**的身份表（懒建）。
+ *
+ * 显式名单只覆盖已知高危面；本表把「清单里所有 denied 函数」都纳入身份拦截
+ * （别名同样命中）。未列名全局由 default-deny 兜住（runtime 对非 Abs 值
+ * fail-closed），并由漂移门禁强制先分类。
+ */
+const deniedHostFnNames = new Map<unknown, string>();
+let deniedHostFnTableBuilt = false;
+function ensureDeniedHostFnTable(): void {
+  if (deniedHostFnTableBuilt) return;
+  deniedHostFnTableBuilt = true;
+  const g = globalThis as Record<string, unknown>;
+  for (const n of DENIED_HOST_GLOBALS) {
+    const v = g[n];
+    if (typeof v === "function") deniedHostFnNames.set(v, n);
+  }
+}
+
 /** 身份校验（含 `const f = fetch` 别名）：命中返回宿主名，否则 null */
 export function neverExecHostName(fn: unknown): string | null {
   if (typeof fn !== "function") return null;
@@ -275,7 +295,8 @@ export function neverExecHostName(fn: unknown): string | null {
   for (const n of NEVER_EXEC_HOST_FN_NAMES) {
     if (fn === g[n]) return n;
   }
-  return null;
+  ensureDeniedHostFnTable();
+  return deniedHostFnNames.get(fn) ?? null;
 }
 
 /**
