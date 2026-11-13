@@ -968,9 +968,10 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
   `injection 0.1ms + analyze 0.4–0.8ms + checkSource 0.3–3.8ms`（gated 指纹 0 次额外读盘）；hub `analyze` 456–473ms / total 667–684ms。
   门禁：`load-deps-fp-epoch.test.ts` 扩到 10 例（allow-all 复用 / deny 重算且条目消失 /
   ambientLoadModule 不共享 / 包装器 + 底层身份复用 / 自定义 loader 身份不共享）。
-- **口径**：以上 929ms 是探针的 **inert 编辑**（追加尾部注释）；**语义编辑**会让整条依赖链的
-  分析/check 键全部翻转 ⇒ hub 仍 ~3s。后者属单文件成本（`ABS-17`）或 worker 并行
-  （`ABS-16` ③），**不是**本项能解决的。
+- **口径**：探针的 **inert 编辑**（追加尾部注释）是 456–473ms analyze；**语义编辑**（追加真实导出）
+  会让整条依赖链的分析/check 键全部翻转 ⇒ 2026-11-13 实测 hub **analyze 1995ms / total 2205ms**
+  （`/proc` 采样 CPU/wall ≈ **1.10–1.28** ⇒ CPU-bound，不是 I/O）。后者属单文件成本（`ABS-17`）
+  或 worker 并行（`ABS-16` ③），**不是**本项能解决的。
 
 
 **候选改动**：

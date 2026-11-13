@@ -112,6 +112,11 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 （`loaderIdentity` 让 per-call guard/缓存包装参与 memo）；逐文件段耗时变为
 注入键 0.1ms + analyze 0.4–0.8ms + checkSource 0.3–3.8ms。
 
+**语义编辑（2026-11-13 实测）**：把「追加尾部注释」换成「追加一条真实导出」后，hub 轮的
+整条依赖链键全部翻转：**analyze 1995ms / total 2205ms**（3 轮 1.9–2.0s）；子进程
+`/proc/<pid>/stat` 的 CPU/wall ≈ **1.10–1.28** ⇒ CPU-bound（不是 I/O），且 17 个文件彼此独立
+⇒ 这是 worker 并行（`ABS-16` ③）唯一还有理论收益的场景；是否值得 L 级架构成本仍待拍板。
+
 **剩余成本**：`[check-profile]` 逐文件显示注入键 **0.1ms** + `analyzeFileAsync` **0.4–0.8ms** +
 `checkSource` **0.3–3.8ms**；每文件 12–39ms 的差额主要是 `loadCheckCache`（配置/磁盘缓存装配）
 与报告渲染/打印。被改文件自身仍是全量重算（~170ms）。
