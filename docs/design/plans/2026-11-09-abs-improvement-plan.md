@@ -47,7 +47,7 @@
 | 10 | `ABS-10` | ~~摘要式模块化分析~~ | P1 | L | `ABS-05` | [x]（保守起点：纯上下文跨实例后置摘要） |
 | 11 | `ABS-11` | ~~contract 合取与 union 精度~~ | P1 | M | `ABS-01` | [x]（判别式穷尽性 warning 延后：零误报优先） |
 | 12 | `ABS-12` | 能力面裁剪（capability surface） | P2 | M–L | — | `[x]` 2026-11-13 交付：能力清单（188 全局 + 67 builtin，default-deny + 漂移门禁）、运行期身份拦截、`nudo:capability-denied`、`--capabilities strict\|trusted` / `NUDO_CAPABILITIES`、canary e2e（零宿主副作用）；denied 集合维护是持续动作；**不宣称 sandbox**（见 §5） |
-| 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[~]` 2026-11-13：样例搜索完成（`return/throw/break/yield*` 穿 `finally` 的 wrong-exact 已复现）；**方案 C 护栏已交付**（join 终态，`false \| true`）；方案 A（finalizer 重放）待实现，见 §5 |
+| 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[~]` 2026-11-13：wrong-exact 已复现并消灭；**C 护栏 + A-narrow（finalizer 重放）已交付**——`.return()/.throw()` 穿 side-effect finally 精确 `true`、嵌套 `[true,true]`；剩余 finalizer 含 yield/return/throw、`for-of` close、async throw 覆盖，见 §5 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | `[x]`（2026-11-11 第①步基准交付；2026-11-12 订正首测失真；②分析结果落盘 **结案不做**；③worker 并行 **spike 后暂不立项**（warm W=4≈487ms 但 cold 2.5–4.7×，触发条件见 §5）） |
@@ -431,7 +431,7 @@ CLI 开关夹具 `abs12-capabilities-flag.test.ts`（4 例）；docs（EN + zh-H
 
 ### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
 
-**状态**：`[~]` 2026-11-13 立项（样例搜索完成；**方案 C 护栏已交付**，方案 A 待实现）。不做全量 CPS：样例搜索表明已发现的错误类集中在 **abrupt completion 的 `finally` 语义**，不需要 continuation 化整个求值器。
+**状态**：`[~]` 2026-11-13 立项（样例搜索完成；**方案 C 护栏 + 方案 A-narrow 已交付**；A 的剩余形态见下）。不做全量 CPS：样例搜索表明已发现的错误类集中在 **abrupt completion 的 `finally` 语义**，不需要 continuation 化整个求值器。
 
 **样例搜索（2026-11-13，native-vs-nudo 对照）**：
 
@@ -475,6 +475,16 @@ CLI 开关夹具 `abs12-capabilities-flag.test.ts`（4 例）；docs（EN + zh-H
 4. **陷阱记录**：不能用「推进到终态格」代替重放——终态格含 try **之后**的语句（`.return()` 原生会跳过），
    会 reintroduce wrong-exact；必须有可执行 finalizer。
 5. **验收**：上表 8 行 native 对照 + 现有 generator 套件零回归；不支持形态保持 C（`false | true`）。
+
+**A-narrow 已交付（2026-11-13）**：转译器把**可安全抽取**的 finalizer（无 yield/return/throw/
+break/continue/await/var，且 try/catch 体内有 yield）发射为 thunk，正常路径 `finally { <fin>(); }`，
+活动 thunk 经 `$yield`/`$yieldStar` 第三实参传递；runtime 在 `.return()` / 无 catch 的 `.throw()`
+时回到挂起点快照、按**内→外**重放（`yield*` 委托先内后外；第二次 `.return` 不重跑）。
+实测：`.return()` / `.throw()` + side-effect finally 从 `false \| true` 收紧为 **`true`**；
+嵌套 finalizer **`[true, true]`**；try 之后语句不执行；`var` finalizer 与 catch 吸收形态保持
+C 的 sound 过近似（`false \| true`）。剩余：finalizer 含 `yield`/`return`/`throw` 的形态、
+`for-of` close（`$forOf` 不调用迭代器 `.return()`）、async generator 的 finalizer 抛错应走
+rejected promise。夹具 `abs13-abrupt-completion.test.ts`（11 例）。
 
 **不做**：全量 continuation/CPS（无证据表明需要；宿主调用与 may-throw 时序仍按首次消费点整体发生，属既有边界）。
 

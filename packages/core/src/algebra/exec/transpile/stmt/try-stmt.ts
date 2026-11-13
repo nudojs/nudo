@@ -32,6 +32,76 @@ import {
 } from "../../yield-bits.ts";
 import { transpileStatement } from "./statement.ts";
 
+/** 嵌套函数/方法体：其 yield/return/throw 属于自身作用域，不算 finalizer 的。 */
+function isNestedFunctionLike(n: { type?: string }): boolean {
+  return (
+    n.type === "FunctionDeclaration" ||
+    n.type === "FunctionExpression" ||
+    n.type === "ArrowFunctionExpression" ||
+    n.type === "ObjectMethod" ||
+    n.type === "ClassMethod" ||
+    n.type === "ClassPrivateMethod"
+  );
+}
+
+function walkLocalNodes(node: Node, visit: (n: Node) => boolean | void): void {
+  if (visit(node) === false) return;
+  if (isNestedFunctionLike(node as { type?: string })) return;
+  const n = node as unknown as Record<string, unknown>;
+  for (const key of Object.keys(n)) {
+    if (key === "loc" || key === "start" || key === "end") continue;
+    const v = n[key];
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        if (x && typeof x === "object" && "type" in (x as object)) walkLocalNodes(x as Node, visit);
+      }
+    } else if (v && typeof v === "object" && "type" in (v as object)) {
+      walkLocalNodes(v as Node, visit);
+    }
+  }
+}
+
+/** try 块 / catch 体内是否有 yield（不含嵌套函数体）。 */
+function hasLocalYield(node: Node | undefined | null): boolean {
+  if (!node) return false;
+  let found = false;
+  walkLocalNodes(node, (n) => {
+    if ((n as { type?: string }).type === "YieldExpression") {
+      found = true;
+      return false;
+    }
+  });
+  return found;
+}
+
+/**
+ * ABS-13 A：finalizer 是否能安全抽成**可重放 thunk**。
+ *
+ * 排除会改变完成语义的控制流（yield / return / throw / break / continue /
+ * await）与函数级 var（thunk 会改变提升边界）。嵌套函数体内部不算（它们
+ * 有自己的作用域）；这样的 finalizer 在重放时只做纯副作用 + 局部逻辑，
+ * 用挂起点快照执行即可精确复现 native 的 finally。
+ */
+function finalizerReplaySafe(finalizer: Node): boolean {
+  let safe = true;
+  walkLocalNodes(finalizer, (n) => {
+    const type = (n as { type?: string }).type;
+    if (
+      type === "YieldExpression" ||
+      type === "ReturnStatement" ||
+      type === "ThrowStatement" ||
+      type === "BreakStatement" ||
+      type === "ContinueStatement" ||
+      type === "AwaitExpression" ||
+      (type === "VariableDeclaration" && (n as { kind?: string }).kind === "var")
+    ) {
+      safe = false;
+      return false;
+    }
+  });
+  return safe;
+}
+
 export function emitTryStatement(
   stmt: TryStatement,
   depth: number,
@@ -98,6 +168,34 @@ export function emitTryStatement(
         return YIELD_TRY_CATCH | (cb.returns ? YIELD_CATCH_RETURNS : 0) | (cb.yields ? YIELD_CATCH_YIELDS : 0) | (rethrows ? YIELD_CATCH_RETHROWS : 0);
       })()
     : 0;
+  // ABS-13 A：try/catch 体内有 yield 且 finalizer 可安全重放 ⇒ 抽成 thunk，
+  // 让 abrupt completion 回到挂起点快照后精确执行 finally（内→外）。
+  const replayFin =
+    stmt.finalizer != null &&
+    (hasLocalYield(stmt.block) || hasLocalYield(stmt.handler?.body)) &&
+    finalizerReplaySafe(stmt.finalizer as Node);
+  const finVar = replayFin ? internalTmpName(`__nudoFin_${tmpNo}`, opts) : undefined;
+  // finalizer 体提前生成（closure 声明必须出现在 try 之前；否则体内 yield 点
+  // 拿不到活动 thunk 名）。finalizer 无 yield（replayFin 条件）⇒ 不递归。
+  let finBody: string | undefined;
+  if (stmt.finalizer) {
+    const finScopeOpts: TranspileOptions = {
+      ...opts,
+      inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
+      constNames: computeConstScope(
+        stmt.finalizer.type === "BlockStatement" ? stmt.finalizer.body : [],
+        opts.constNames,
+      ),
+    };
+    finBody =
+      stmt.finalizer.type === "BlockStatement"
+        ? transpileFnBodyStmts(stmt.finalizer.body, depth + 1, finScopeOpts)
+        : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, finScopeOpts);
+  }
+  const activeFinals =
+    finVar !== undefined
+      ? [...(opts.yieldFinalizers ?? []), finVar]
+      : opts.yieldFinalizers;
   const innerYieldCtx =
     ((opts.yieldTryCtx ?? 0) & ~(YIELD_CATCH_RETURNS | YIELD_CATCH_YIELDS | YIELD_CATCH_RETHROWS)) | finBits | catchFacts;
   const tryOpts: TranspileOptions = {
@@ -110,6 +208,7 @@ export function emitTryStatement(
     hasTryHandler: !!stmt.handler,
     tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
     yieldTryCtx: innerYieldCtx,
+    ...(activeFinals !== undefined ? { yieldFinalizers: activeFinals } : {}),
   };
   // Bug 148：try 体是**块作用域**——其内声明的 const 在本作用域内不可再赋
   // （此前名单缺失 ⇒ 赋值直写不抛 + throws 域折 never ⇒ L2 假绿）。
@@ -125,6 +224,9 @@ export function emitTryStatement(
       ? transpileFnBodyStmts(stmt.block.body, depth + 1, tryScopeOpts)
       : transpileStatement(stmt.block as unknown as Statement, depth + 1, tryScopeOpts);
   const lines = [
+    ...(finVar !== undefined && finBody !== undefined
+      ? [`${pad}const ${finVar} = () => {`, finBody, `${pad}};`]
+      : []),
     `${pad}const ${markName} = $tryMark();`,
     `${pad}try {`,
     tryBody,
@@ -162,6 +264,7 @@ export function emitTryStatement(
   const catchOpts: TranspileOptions = {
     ...opts,
     yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
+    ...(activeFinals !== undefined ? { yieldFinalizers: activeFinals } : {}),
     // 族 65 · BC #28：catch 体完成 ≠ 函数尾（catch 跑完函数继续）⇒ 体内
     // 早退提升走控制流协议。
     inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
@@ -244,22 +347,12 @@ export function emitTryStatement(
       ? "$tryReleaseSoftCatch();"
       : "$tryDigestSoftCatch();";
   if (stmt.finalizer) {
-    // Bug 148：finally 体是块作用域——其内声明的 const 不可再赋（名单自算）
-    const finScopeOpts: TranspileOptions = {
-      ...opts,
-      // 族 65 · BC #28：finally 体完成 ≠ 函数尾 ⇒ 体内早退提升走控制流协议
-      inCtrlBlock: (opts.inCtrlBlock ?? 0) + 1,
-      constNames: computeConstScope(
-        stmt.finalizer.type === "BlockStatement" ? stmt.finalizer.body : [],
-        opts.constNames,
-      ),
-    };
-    const finBody =
-      stmt.finalizer.type === "BlockStatement"
-        ? transpileFnBodyStmts(stmt.finalizer.body, depth + 1, finScopeOpts)
-        : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, finScopeOpts);
     lines.push(`${pad}finally {`);
-    lines.push(finBody);
+    lines.push(
+      finVar !== undefined
+        ? `${indent(depth + 1)}${finVar}();`
+        : (finBody ?? ""),
+    );
     // finally 内收口 soft + mark（catch 与 finally 之间不得插入语句）
     lines.push(`${indent(depth + 1)}${softExit}`);
     lines.push(`${indent(depth + 1)}$tryPopMark();`);

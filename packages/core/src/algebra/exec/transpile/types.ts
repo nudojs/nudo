@@ -206,6 +206,13 @@ export interface FlowCtx {
    *  return，32 = 含 yield，64 = 可能 rethrow 进外层 catch（结局不可分类）。
    *  发射为 $yield/$yieldStar 第二实参；函数/方法体边界重置为 0。 */
   yieldTryCtx?: number;
+  /**
+   * ABS-13 A：当前包住本语句的**可重放 finalizer thunk 名**（外→内）。
+   * `$yield` / `$yieldStar` 把它作为第三实参传下去；abrupt completion 时由
+   * runtime 回到挂起点快照后按内→外调用（精确复现 `finally` 的副作用）。
+   * 只在生成器体内的 try/finally（finalizer 无控制流）里非空。
+   */
+  yieldFinalizers?: readonly string[];
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
   conditionalFlow?: number;
   /**

@@ -42,7 +42,7 @@ export function f() {
   it.return(0);
   return cleaned;
 }`;
-    expect(shapeOf(src)).toBe("false | true");
+    expect(shapeOf(src)).toBe("true");
   });
 
   it(".throw() 穿过 try/finally：cleaned 不再是确定的 false", () => {
@@ -63,7 +63,7 @@ export function f() {
   } catch {}
   return cleaned;
 }`;
-    expect(shapeOf(src)).toBe("false | true");
+    expect(shapeOf(src)).toBe("true");
   });
 
   it("for-of 提前 break（隐式 .return()）穿过 finally", () => {
@@ -144,5 +144,115 @@ export function f() {
 }`;
     // 终态格 = join(事前, 事后) ⇒ 0 | 2（A1 步骤 4 口径；不是 wrong-exact）
     expect(shapeOf(src)).toBe("0 | 2");
+  });
+});
+
+describe("ABS-13 A · finalizer 重放（可安全抽取的 finally）", () => {
+  it("嵌套 finally：内→外重放，精确 [true, true]", () => {
+    const src = `
+let a = false;
+let b = false;
+function* g() {
+  try {
+    try {
+      yield 1;
+    } finally {
+      a = true;
+    }
+  } finally {
+    b = true;
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  it.return(0);
+  return [a, b];
+}`;
+    expect(shapeOf(src)).toBe("[true, true]");
+  });
+
+  it("try 之后的语句不执行（重放而非推进终态）", () => {
+    const src = `
+let cleaned = false;
+function* g() {
+  try {
+    yield 1;
+  } finally {
+    cleaned = true;
+  }
+  cleaned = false;
+}
+export function f() {
+  const it = g();
+  it.next();
+  it.return(0);
+  return cleaned;
+}`;
+    expect(shapeOf(src)).toBe("true");
+  });
+
+  it("第二次 .return() 不重跑 finalizer", () => {
+    const src = `
+let n = 0;
+function* g() {
+  try {
+    yield 1;
+  } finally {
+    n = n + 1;
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  it.return(0);
+  it.return(0);
+  return n;
+}`;
+    expect(shapeOf(src)).toBe("1");
+  });
+
+  it("不可安全抽取的 finalizer（含 var）退回 C：sound 过近似", () => {
+    const src = `
+let cleaned = false;
+function* g() {
+  try {
+    yield 1;
+  } finally {
+    var local = 1;
+    cleaned = true;
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  it.return(0);
+  return cleaned;
+}`;
+    expect(shapeOf(src)).toBe("false | true");
+  });
+
+  it(".throw() 被内层 catch 吸收 + finally：C 兜底（不误用 finalizer 单侧状态）", () => {
+    const src = `
+let cleaned = false;
+function* g() {
+  try {
+    try {
+      yield 1;
+    } catch {
+      cleaned = false;
+    } finally {
+      cleaned = true;
+    }
+  } finally {
+  }
+}
+export function f() {
+  const it = g();
+  it.next();
+  it.throw(new Error("x"));
+  return cleaned;
+}`;
+    expect(shapeOf(src)).toBe("false | true");
   });
 });

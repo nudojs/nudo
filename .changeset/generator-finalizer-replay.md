@@ -1,0 +1,5 @@
+---
+"@nudojs/core": patch
+---
+
+Replay safely extractable `finally` blocks on generator **abrupt completion** (ABS-13 plan A-narrow). The transpiler now emits a finalizer thunk when the try/catch body contains a yield and the finalizer has no control flow of its own (no yield/return/throw/break/continue/await/var); the thunk runs on the normal path as before, and active thunks travel to `$yield`/`$yieldStar` so `.return()` / non-catch `.throw()` can restore the suspension snapshot and execute them innermost→outermost. Results tighten from the sound `false | true` guard to native-exact values for `.return()` and `.throw()` through side-effect `finally`, including nested finalizers (`[true, true]`), `yield*` outer finalizers, and repeated `.return()` (finalizer runs once). Unsupported finalizers (control flow / `var`) and catch-absorbed throws keep the plan-C `join` fallback. `for-of` iterator close and async-generator finalizer throws remain follow-ups. Pinned by `abs13-abrupt-completion.test.ts` (11 cases).

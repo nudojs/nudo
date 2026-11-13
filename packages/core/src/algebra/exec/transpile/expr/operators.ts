@@ -402,14 +402,21 @@ export function transpileOperatorExpr(
       // Bug 52：try 上下文位随 yield 点发射（$yield 第二实参；0 不发射，
       // 保持既有输出面不变）
       const yctx = opts.yieldTryCtx ?? 0;
-      const yctxArg = yctx !== 0 ? `, ${yctx}` : "";
+      // ABS-13 A：活动 finalizer thunk（外→内）——`$yield`/`$yieldStar` 第三实参；
+      // 第二实参缺省用 0 占位（abrupt completion 时按内→外重放）。
+      const finals = opts.yieldFinalizers;
+      let extra = "";
+      if (yctx !== 0 || (finals !== undefined && finals.length > 0)) extra = `, ${yctx}`;
+      if (finals !== undefined && finals.length > 0) {
+        extra += `, [${finals.join(", ")}]`;
+      }
       if (expr.delegate) {
-        return `$yieldStar(${transpileExpression(expr.argument as Expression, opts)}${yctxArg})`;
+        return `$yieldStar(${transpileExpression(expr.argument as Expression, opts)}${extra})`;
       }
       const arg = expr.argument
         ? transpileExpression(expr.argument as Expression, opts)
         : "$lit(void 0)";
-      return `$yield(${arg}${yctxArg})`;
+      return `$yield(${arg}${extra})`;
     }
     case "SequenceExpression":
       // 顶层逗号序列必须整体加括号：任何嵌套位（对象属性值 / 数组元素 /

@@ -53,6 +53,12 @@ export type ForkArm =
 export interface GenYieldCollector {
   els: Abs[];
   ctxs: number[];
+  /**
+   * ABS-13 A：每个 yield 点的**活动 finalizer thunk**（外→内；转译器只在
+   * finalizer 可安全重放时发射）。消费端 abruptly terminates 时按内→外执行，
+   * 用挂起点快照的绑定重放 `finally` 的副作用。
+   */
+  finals: Array<readonly (() => void)[]>;
 }
 
 /** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货。
@@ -87,7 +93,7 @@ export function withIsolatedYields<T>(fn: () => T): { v: T; ys: GenYieldCollecto
   const top = yieldStack[yieldStack.length - 1];
   // 无收集器：不换槽、不建 armYs（fork 热路径常态）
   if (!top) return { v: fn(), ys: null };
-  const armYs: GenYieldCollector = { els: [], ctxs: [] };
+  const armYs: GenYieldCollector = { els: [], ctxs: [], finals: [] };
   yieldStack[yieldStack.length - 1] = armYs;
   try {
     return { v: fn(), ys: armYs };

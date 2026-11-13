@@ -813,6 +813,8 @@ function makeGenObject(
   asyncMode = false,
   /** Bug 229：体内 yield* 委托记录（.return(v) 转发用） */
   delegations: GenDelegation[] = [],
+  /** ABS-13 A：每个 yield 点的活动 finalizer thunk（外→内；可为空） */
+  finals: ReadonlyArray<readonly (() => void)[]> = [],
 ): Abs {
   // A1 步骤 2 旁路补齐（2026-11-06）：协议三方法读的是闭包 `full`，
   // 不经过 `match-iter.ts` 的 7 个读出面。给它们也接上「该跑了」触发点
@@ -950,6 +952,22 @@ function makeGenObject(
     }
     return genIterResult(v, true);
   };
+  /**
+   * ABS-13 A：挂起点 i 的活动 finalizer（外→内；转译器只在可安全重放时发射）。
+   * 需要时间轴帧 enabled（路径敏感 / 延迟异常 / 委托帧禁用 ⇒ 回退方案 C）。
+   */
+  const suspensionFinals = (i: number): readonly (() => void)[] | undefined => {
+    if (i <= 0 || state.poisoned) return undefined;
+    const frame = genSelf ? genSuspendTables.get(genSelf as object) : undefined;
+    if (!frame || !frame.enabled) return undefined;
+    const list = finals[i - 1];
+    return list !== undefined && list.length > 0 ? list : undefined;
+  };
+  /** 内→外执行（列表按进入顺序外层在前）。finalizer 抛错按 native 覆盖完成。 */
+  const replayFinals = (list: readonly (() => void)[]): void => {
+    for (let i = list.length - 1; i >= 0; i--) list[i]!();
+  };
+
   const ret = $fnVal([], (...args: Abs[]): Abs => {
     fireOnce();
     const upgraded = genSelf && genSelf.shape.k === "obj"
@@ -975,8 +993,15 @@ function makeGenObject(
           state.done = false;
           return deliver(genIterResult(v, false));
         }
+        const replayDelegate = state.done ? undefined : suspensionFinals(state.i);
         state.done = true;
         if (fwd.done === true) {
+          if (replayDelegate !== undefined) {
+            // ABS-13 A：先内层（delegate 的 .return 已跑）后外层 finally
+            applyGenSuspend(genSelf, state.i);
+            replayFinals(replayDelegate);
+            return deliver(genIterResult(fwd.value ?? v, true));
+          }
           return deliver(finishReturn(fwd.value ?? v, ctx));
         }
         // done 不可判 → 结局不可判
@@ -984,7 +1009,15 @@ function makeGenObject(
         return deliver(iterResultUnknown());
       }
     }
+    // ABS-13 A：未委托挂起点 → 回到快照、重放 finalizer（内→外），精确完成
+    // （已完成 / 已重放过 ⇒ 不再执行，native 第二次 .return 不重跑 finalizer）
+    const replay = state.done ? undefined : suspensionFinals(state.i);
     state.done = true;
+    if (replay !== undefined) {
+      applyGenSuspend(genSelf, state.i);
+      replayFinals(replay);
+      return deliver(genIterResult(v, true));
+    }
     return deliver(finishReturn(v, ctx));
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
@@ -996,8 +1029,15 @@ function makeGenObject(
     // A1 步骤 4：同 .return()——不推进时间轴，保留 join 过近似（见上方注释）
     const e = args.length > 0 ? args[0]! : undef();
     const ctx = suspendedCtx();
+    // ABS-13 A：无 catch 吸收时 finalizer 会执行——在把 state 标 done 前取列表
+    const replayThrow =
+      (ctx & YIELD_TRY_CATCH) !== 0 ? undefined : suspensionFinals(state.i);
     state.done = true;
     if (ctx & YIELD_TRY_CATCH) {
+      // ABS-13：catch 吸收后 finally 仍执行；catch 体未建模（无注入源）⇒
+      // 绑定退回 C 的 join 过近似（不能只留挂起点快照：finalizer 副作用会
+      // 形成 native 不可能的定值，见 f10）。
+      if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
       // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行（无注入源）。
       // catch 重抛面恒记 may-throw（不给出定值抛出）。
       recordMayThrow({
@@ -1022,9 +1062,12 @@ function makeGenObject(
       state.poisoned = true;
       return deliver(iterResultUnknown());
     }
-    // ABS-13 C：.throw() 未被 catch 吸收 ⇒ 外围 finalizer 仍会执行；外层
-    // 绑定 join 终态（sound），避免 finalizer 副作用处出现 wrong-exact。
-    if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
+    // ABS-13：无 catch 吸收 ⇒ 外围 finalizer 执行。有可重放 thunk 时精确
+    // 重放（内→外）；否则退回 C 的 join 过近似，避免 wrong-exact。
+    if (replayThrow !== undefined) {
+      applyGenSuspend(genSelf, state.i);
+      replayFinals(replayThrow);
+    } else if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
     // Bug 141：async generator 的 .throw() 返回**拒绝 promise**（原生不同步抛）
     if (asyncMode) return deliver(rejectedPromiseAbs(e));
     throw new NudoThrow(e);
@@ -1189,7 +1232,7 @@ function collectGenBody(
   asyncMode: boolean,
   hooks?: GenSuspendHooks,
 ): { gen: Abs; frame: GenSuspendFrame | undefined } {
-  const ys: GenYieldCollector = { els: [], ctxs: [] };
+  const ys: GenYieldCollector = { els: [], ctxs: [], finals: [] };
   const marker = getGenPathSensitive();
   const prevOverride = getGenJoinOverride();
   setGenJoinOverride(null);
@@ -1284,6 +1327,7 @@ function collectGenBody(
       false,
       asyncMode,
       delegations,
+      ys.finals,
     ));
   }
   setGenJoinOverride(prevOverride);
@@ -1301,11 +1345,12 @@ function collectGenBody(
       false,
       asyncMode,
       delegations,
+      ys.finals,
     ));
   }
   // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
   // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
-  return emit(makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode, delegations));
+  return emit(makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode, delegations, ys.finals));
 }
 
 /**
@@ -1358,12 +1403,17 @@ function mergeDeferredBody(shell: Abs, fresh: Abs): void {
  *  tryCtx（Bug 52）= transpile 静态标注的 yield 点 try 上下文位
  *  （YIELD_TRY_FINALLY / YIELD_TRY_CATCH），.return()/.throw() 挂起点
  *  语义用（见 makeGenObject）。 */
-export function $yield(v: Abs, tryCtx = 0): Abs {
+export function $yield(
+  v: Abs,
+  tryCtx = 0,
+  finals: readonly (() => void)[] = [],
+): Abs {
   const yieldStack = currentYieldStack();
   const top = yieldStack[yieldStack.length - 1];
   if (top) {
     top.els.push(v);
     top.ctxs.push(tryCtx);
+    top.finals.push(finals);
     // A1 步骤 4：记录该挂起点处的外层自由写绑定状态（时间轴）
     noteGenSuspendPoint();
   }
@@ -1377,7 +1427,11 @@ export function $yield(v: Abs, tryCtx = 0): Abs {
  *  iterator 的 done 值，不可判）→ 保守 unknown。长度不可判的接收者
  *  （arr/any/…）单代表元素过近似并入 + bumpGenPathSensitive 压 conf
  *  （mergeArmYields 同口径，禁 exact 元组出货）。 */
-export function $yieldStar(v: unknown, tryCtx = 0): Abs {
+export function $yieldStar(
+  v: unknown,
+  tryCtx = 0,
+  finals: readonly (() => void)[] = [],
+): Abs {
   const a = asAbsVal(v);
   const { els, lengthKnown } = $yieldStarElems(a);
   const yieldStack = currentYieldStack();
@@ -1394,7 +1448,10 @@ export function $yieldStar(v: unknown, tryCtx = 0): Abs {
     // 分类 → makeGenObject 吸收结局不折 done（数组等无 throw() 内层回注
     // 外层帧，可折，不标）
     const ctx = tryCtx | (genDrainViewOf(a) !== undefined ? YIELD_DELEGATED_GEN : 0);
-    for (let i = 0; i < els.length; i++) top.ctxs.push(ctx);
+    for (let i = 0; i < els.length; i++) {
+      top.ctxs.push(ctx);
+      top.finals.push(finals);
+    }
     // A1 步骤 4：委托并出的每个元素占一个挂起点（同态快照；委托帧最终
     // 由 collectGenBody 的 delegations 守卫整帧禁用，此处只保时间轴对齐）
     noteGenSuspendPoint(els.length);

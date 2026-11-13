@@ -767,9 +767,13 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
 cleaned = true }` 的 `.return()` 后读到 `false`，native 为 `true`）。方案 C 在
 abrupt 完成时把「挂起点快照」与终态格**逐绑定 join**（`exec/runtime/async.ts`
 的 `joinGenSuspendTerminal`，并封锁后续时间轴回放）⇒ sound，但精度只到
-`false | true`。方案 A（把 finalizer 发射为可重放 thunk、按 `GeneratorResumeAbrupt`
-语义执行）仍待实现；夹具 `abs13-abrupt-completion.test.ts`（6 例，含无 finally
-与正常耗尽的「不扩大化」对照）。
+`false | true`。**方案 A-narrow（2026-11-13）已交付**：可安全抽取的 `finally`（无 yield/return/
+throw/break/continue/await/var）由转译器发射为 thunk，经 `$yield`/`$yieldStar`
+第三实参传到 runtime；`.return()` / 无 catch 的 `.throw()` 回到挂起点快照后按
+内→外重放 ⇒ `try { yield } finally { cleanup }` 的清理值精确（嵌套 `[true,true]`）。
+剩余：finalizer 含 yield/return/throw、`for-of` close、async generator 的
+finalizer 抛错（应走 rejected promise）。夹具 `abs13-abrupt-completion.test.ts`
+（11 例，含无 finally / 正常耗尽 / 不扩大化对照）。
 
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
 `conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
