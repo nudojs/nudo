@@ -756,6 +756,28 @@ function noteGenSuspendPoint(count = 1): void {
   for (let i = 0; i < count; i++) f.timeline.push(snap);
 }
 
+/**
+ * ABS-13 护栏（方案 C）：abrupt completion（`.return()` / `.throw()`）会执行
+ * 外围 `finally`，但 eager 模型的外层绑定停在**挂起点快照**上（finalizer 的
+ * 副作用只体现在终态格）⇒ 直读可能得到 native 不可能的值（wrong-exact，
+ * 例：`try { yield } finally { cleaned = true }` 后读到 `false`）。
+ *
+ * 这里把「当前挂起点快照」与「终态格」逐绑定 `join`（sound 过近似），并封锁
+ * 后续时间轴回放（lastApplied → 终态）；精确重放 finalizer 属 ABS-13 方案 A
+ * （需 finalizer thunk），另行立项。
+ */
+function joinGenSuspendTerminal(g: Abs | undefined): void {
+  if (!g) return;
+  const f = genSuspendTables.get(g as object);
+  if (!f || !f.enabled || f.timeline.length === 0) return;
+  const term = f.timeline[f.timeline.length - 1]!;
+  const cur = f.lastApplied > 0 ? f.timeline[f.lastApplied - 1] : undefined;
+  const merged =
+    cur === undefined ? term.slice() : term.map((v, i) => joinAbs(v, cur[i]!));
+  f.lastApplied = f.timeline.length;
+  f.hooks.restore(merged);
+}
+
 /** 消费推进到第 k 个 yield：把外层绑定单调回放到该挂起点。 */
 function applyGenSuspend(g: Abs | undefined, k: number): void {
   if (!g || k <= 0) return;
@@ -910,6 +932,9 @@ function makeGenObject(
   /** .return(v) 的收尾分级（try/finally 事实——同既有口径） */
   const finishReturn = (v: Abs, ctx: number): Abs => {
     if (ctx & YIELD_TRY_FINALLY) {
+      // ABS-13 C：abrupt completion 会跑 finalizer ⇒ 外层绑定不能停在挂起点
+      // 快照（否则可能 give wrong-exact）。先 join，再按既有分支返回。
+      joinGenSuspendTerminal(genSelf);
       if (ctx & YIELD_FINALLY_YIELDS) {
         // finally 可再交付（yield）或覆盖（return）→ 值并 unknown、
         // done 并 boolean；续体不可判（poisoned）
@@ -997,6 +1022,9 @@ function makeGenObject(
       state.poisoned = true;
       return deliver(iterResultUnknown());
     }
+    // ABS-13 C：.throw() 未被 catch 吸收 ⇒ 外围 finalizer 仍会执行；外层
+    // 绑定 join 终态（sound），避免 finalizer 副作用处出现 wrong-exact。
+    if (ctx & YIELD_TRY_FINALLY) joinGenSuspendTerminal(genSelf);
     // Bug 141：async generator 的 .throw() 返回**拒绝 promise**（原生不同步抛）
     if (asyncMode) return deliver(rejectedPromiseAbs(e));
     throw new NudoThrow(e);

@@ -761,6 +761,16 @@ brief 要求判定：「能否先做一个 fail-closed 收窄——生成器体�
 4 例 R3-b 验收 + 1 条步骤 4 todo；Bug 212 的 5 条精确断言、步骤 2 骨架
 2 条负控制、`snapshot-match-iter-tables` 的 `gen()` 夹具按新语义重订。
 
+**abrupt completion（2026-11-13，ABS-13 方案 C）**：`.return()` / `.throw()` /
+`for-of break` / `yield*` 委托会执行外围 `finally`。此前外层绑定停在挂起点快照
+⇒ finalizer 写过的绑定可能是 native 不可能的定值（`try { yield 1 } finally {
+cleaned = true }` 的 `.return()` 后读到 `false`，native 为 `true`）。方案 C 在
+abrupt 完成时把「挂起点快照」与终态格**逐绑定 join**（`exec/runtime/async.ts`
+的 `joinGenSuspendTerminal`，并封锁后续时间轴回放）⇒ sound，但精度只到
+`false | true`。方案 A（把 finalizer 发射为可重放 thunk、按 `GeneratorResumeAbrupt`
+语义执行）仍待实现；夹具 `abs13-abrupt-completion.test.ts`（6 例，含无 finally
+与正常耗尽的「不扩大化」对照）。
+
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；
 `conf` 可提升机制与 `snapshotAbs` shape 槽补写失效前置，因求值收口排空 +
 别名广播已让可观察面不退化，本轮未单独实施。**c3/c4 的中间值已由

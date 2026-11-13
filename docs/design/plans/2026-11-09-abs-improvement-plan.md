@@ -46,8 +46,8 @@
 | 9 | `ABS-09` | ~~递归类型 coinductive `leq`~~ | P1 | M | — | [x] |
 | 10 | `ABS-10` | ~~摘要式模块化分析~~ | P1 | L | `ABS-05` | [x]（保守起点：纯上下文跨实例后置摘要） |
 | 11 | `ABS-11` | ~~contract 合取与 union 精度~~ | P1 | M | `ABS-01` | [x]（判别式穷尽性 warning 延后：零误报优先） |
-| 12 | `ABS-12` | 沙箱 / 隔离执行 | P2 | L | — | 待拍板 |
-| 13 | `ABS-13` | 真挂起 / CPS | P2 | XL | — | 待拍板 |
+| 12 | `ABS-12` | 能力面裁剪（capability surface） | P2 | M–L | — | `[~]` 2026-11-13 拍板：执行不可避，隐藏副作用 API/模块；denied = `unknown` + `nudo:capability-denied`；默认 strict、`--capabilities trusted` 可退出；不叫 sandbox（见 §5） |
+| 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[~]` 2026-11-13：样例搜索完成（`return/throw/break/yield*` 穿 `finally` 的 wrong-exact 已复现）；**方案 C 护栏已交付**（join 终态，`false \| true`）；方案 A（finalizer 重放）待实现，见 §5 |
 | 14 | `ABS-14` | ~~有界参数化摘要~~ | P2 | L | `ABS-10`、`ABS-11` | [x]（2026-11-10 交付：PR0–PR4 共 5 个 commit；续作已完成两组基线红 / 三条通道 / PR4b / 零 FP；2026-11-11 补齐 `TypeParam.bounds`，见 §5） |
 | 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`（2026-11-13 登记表 + 漂移门禁：`key/facet-specs.ts` 单源 `facetKey` / `cloneAbsFacets`，编译期强制新增槽位登记；提升规则与键版本化仍待做，见 §5） |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | `[x]`（2026-11-11 第①步基准交付；2026-11-12 订正首测失真；②分析结果落盘 **结案不做**；③worker 并行 **spike 后暂不立项**（warm W=4≈487ms 但 cold 2.5–4.7×，触发条件见 §5）） |
@@ -372,30 +372,62 @@
 > **2026-11-10 review**：5 项现状已逐项复核；`ABS-14` 前置解锁、`ABS-16` 签名面已落地（订正见对应现状段）、`ABS-15` 建议转常规治理。评审意见不写回正文（按 §9 纪律）。
 > **2026-11-10 决策**：`ABS-14` 已拍板，四条约束落在 §5「决策」段；其余 4 项状态不变。
 
-### ABS-12 沙箱 / 隔离执行
+### ABS-12 能力面裁剪（capability surface，`[~]` 立项）
 
-**现状**：`docs/design/kernel-merge.md`「执行模型与信任边界」明确：分析即执行，没有隔离进程；预算不是安全边界。
+> **拍板（2026-11-13）**：执行是基本机制、**不做** `--no-exec`；目标是「把有副作用的 API/模块隐藏起来」；
+> denied 语义 = **`unknown` + `nudo:capability-denied`**（分析继续）；**默认 strict**（`--capabilities trusted`
+> 可退出）；**明确不叫 sandbox**（同 realm 隐藏是防御纵深，不是安全边界；硬隔离需子进程/容器，另议）。
 
-**改动候选**：
+**现状实测（2026-11-13，dist CLI + canary）**：
 
-1. 子进程 + Node permission model（限制 fs / net / child_process）。
-2. worker + capability allowlist；只读宿主、禁网络。
-3. `--no-exec` 声明式模式：只解析 + env/harvest，不做执行式求值。
-4. 明确信任级别：`trusted` / `sandboxed` / `static`，报告标注。
+| 面 | 现状 | 机制 |
+|---|---|---|
+| `fetch` / `WebSocket` / `EventSource` / 定时器 / 调度 | **不执行**（unknown + 诊断） | 身份比对的 `NEVER_EXEC_HOST_FN_NAMES`（别名也拦） |
+| `structuredClone` / `Buffer` / `crypto` / `setTimeout` 裸读→调用 | **不执行**（unknown） | 非 Abs 宿主值 fail-closed |
+| `require("node:fs")` | **不执行**（未绑定 → `never throws Error`） | 生成码无 `require` |
+| `eval` / `globalThis.process` | **不执行**（unknown + `builtin-unknown`） | 未建模全局拦截 |
+| 契约侧车 `.nudo.js` 内 `require("fs").writeFileSync(canary)` | **canary 不存在** | 侧车在引擎内求值 |
 
-**验收**：不可信夹具无法读文件/发网络；性能可接受；默认行为不变。
+⇒ 今天已「事实上看不见」大部分宿主副作用 API，但这是三个机制的**副产物**，不是一条不变量：
+名单手写、`node:*` 无分类、无用户可配 allowlist、无 `capability-denied` 诊断、无漂移门禁。
 
-**风险**：高工程成本与平台差异；**没有真正隔离不得宣称 sandbox**。
+**设计（R12-D）**：
 
-### ABS-13 真挂起 / CPS
+1. **能力清单**：启动时枚举 `Object.getOwnPropertyNames(globalThis)`（函数作用域口径，排除 CJS wrapper 名）
+   与 `module.builtinModules`，逐名分类 `modeled`（env 已建模）/ `pure`（可安全执行）/ `denied`；**default-deny**。
+2. **值面**：strict 模式下 denied 名字一律注入 shadow 绑定（unknown Abs；`eval`/`arguments` 等不可绑定名走
+   既有拦截通道）；宿主副作用拦截名单从手写扩展到 denied 集（身份匹配，别名同样拦）。
+3. **模块面**：denied `node:*` / bare 模块的解析返回 denial Abs + `nudo:capability-denied`；env 已建模的模块
+   （`fs` / `path` …）归 `modeled`，不误伤。
+4. **漂移门禁**：未分类的新 Node 全局 / builtin ⇒ 测试红（默认-deny，不许静默可执行）。
+5. **退出档**：`--capabilities trusted` 逐字节恢复旧行为；报告/JSON 标注当前档位。
 
-**现状**：生成器体仍一次跑完；绑定回放已精确，但宿主调用、may-throw 收集等副作用时序未建模；`generator-laziness.md` 明确需要 CPS 级改造。
+**验收**（canary）：fs 读/写、net、child_process、worker、定时器、fetch、process 写 → **零宿主副作用**
+（canary 文件/套接字/退出码不变）+ `nudo:capability-denied`；trusted 模式输出逐字节不变；allowlist 内模块正常；
+漂移门禁对新增全局/builtin 红。
 
-**改动候选**：continuation-based evaluator 或显式 suspension 协议；先做 effect 时序夹具，再决定是否投入。
+**风险**：同 realm 逃逸面（引擎 bug / mock 宿主闭包）仍存在——**不宣称 sandbox**；denied 集合维护成本；
+strict 默认需要一次全仓回归确认精度不回退。
 
-**验收**：生成器/async 的副作用顺序与原生一致；现有值域精度不降。
+### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
 
-**风险**：XL；只有当日志/IO 顺序成为真实需求时才启动。
+**状态**：`[~]` 2026-11-13 立项（样例搜索完成；**方案 C 护栏已交付**，方案 A 待实现）。不做全量 CPS：样例搜索表明已发现的错误类集中在 **abrupt completion 的 `finally` 语义**，不需要 continuation 化整个求值器。
+
+**样例搜索（2026-11-13，native-vs-nudo 对照）**：
+
+| 场景 | native | 旧引擎（wrong-exact） | 现在（C 护栏） |
+|---|---|---|---|
+| `it.return(0)` 穿 `try/finally` | `true` | **`false`** | `false \| true` |
+| `it.throw(e)` 穿 `try/finally` | `true` | **`false`** | `false \| true` |
+| `for…of` 提前 `break`（隐式 return） | `true` | `false \| true` | `false \| true` |
+| `yield*` 委托 + `break` | `true` | `false \| true` | `false \| true` |
+| `finally` 内含 `yield`，`it.return()` | `2` | `0 \| unknown` | `0 \| unknown` |
+
+**方案 C（已交付，2026-11-13）**：abrupt completion 时把「挂起点快照」与「终态格」逐绑定 `join`（`exec/runtime/async.ts::joinGenSuspendTerminal`，并封锁后续时间轴回放）。sound，但精度只到 `false | true`；门禁 `abs13-abrupt-completion.test.ts`（6 例，含「无 finally 时 `.return()` 仍停在挂起点」与「正常耗尽 = join(事前,事后)」两条不扩大化对照）。
+
+**方案 A（待实现，精度）**：按 ES `GeneratorResumeAbrupt` 语义**重放**挂起点外围的 `finally`（finalizer 需由转译器发射为可复用 thunk，带捕获绑定；finalizer 内的 `yield` 作为同一 yield 流的后续步）。C 保留为 A 未覆盖路径的兜底。**验收**：上表五行的 case 结果与 native 一致；嵌套 finally / finally 内 throw / `yield*` 链；现有 generator 套件零回归。
+
+**不做**：全量 continuation/CPS（无证据表明需要；宿主调用与 may-throw 时序仍按首次消费点整体发生，属既有边界）。
 
 ### ABS-14 有界参数化摘要
 
