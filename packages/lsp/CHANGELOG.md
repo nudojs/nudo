@@ -1,5 +1,14 @@
 # @nudojs/lsp
 
+## 1.10.1
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/parser@1.5.9
+  - @nudojs/service@1.12.1
+
 ## 1.10.0
 
 ### Minor Changes

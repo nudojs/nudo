@@ -11,19 +11,33 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.19.0 |
-| `@nudojs/service` | 1.12.0 |
-| `nudojs (CLI)` | 1.9.0 |
-| `@nudojs/parser` | 1.5.8 |
-| `@nudojs/lsp` | 1.10.0 |
-| `@nudojs/env` | 0.5.8 |
-| `@nudojs/harvester` | 0.6.0 |
-| `vite-plugin-nudo` | 0.7.1 |
-| `nudo-vscode` | 0.3.56 |
+| `@nudojs/core` | 1.19.1 |
+| `@nudojs/service` | 1.12.1 |
+| `nudojs (CLI)` | 1.9.1 |
+| `@nudojs/parser` | 1.5.9 |
+| `@nudojs/lsp` | 1.10.1 |
+| `@nudojs/env` | 0.5.9 |
+| `@nudojs/harvester` | 0.6.1 |
+| `vite-plugin-nudo` | 0.7.2 |
+| `nudo-vscode` | 0.3.57 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.19.0 {#pkg-core}
+## @nudojs/core 1.19.1 {#pkg-core}
+
+## 1.19.1
+
+### Patch Changes
+
+- 86bc56e: Fix: conjunctive guard facts now accumulate across parameters (issue #185), without weakening the NaN complement red line.
+  
+  - `matchRelIdentLitComposite` keeps **every** guarded name in a relational conjunction (`x >= 1 && y >= 2`), exposing the non-first names as `RelGuard.others`; `narrowRelArmThunk` applies them all as `$refineRel` shadow rebindings in the fact arm. Same-name bounds stay in `extra` (tightest per operator, unchanged).
+  - `&&` short-circuit cons arm (right operand) now receives the left operand's relational guard (`relGuardOf(expr.left)`) — `x >= 1 && (y >= 2 ? x + y : 3)` keeps `x`'s bound inside the right side.
+  - New `relGuardOfNegation` / `narrowRelNegationArmThunk`: when the test is `!(A ∧ …)`, the **false** arm (early-return rest path, `if` else arm, ternary alternate, `||` right operand) soundly asserts every relational conjunct of `A` — `!` is exact boolean negation, so NaN cannot slip through (`!(x < k)` false ⟺ `x < k` true). Bare relational complements (`if (x < k) return …;` rest path) remain un-narrowed per Bug 1115.
+  - Result: `x >= 1 && y >= 2 ? x + y : 3`, `if (x >= 1 && y >= 2) { return x + y } return 3`, and `if (!(x >= 1 && y >= 2)) return 3; return x + y` now discharge `return number().ge(3)`; the sequential guard-clause and De Morgan spellings stay `nudo:unproven-return` because `number()` admits NaN (`add6(NaN, 5) = NaN`), which is the correct verdict.
+
+<details>
+<summary>历史版本 (60)</summary>
 
 ## 1.19.0
 
@@ -314,9 +328,6 @@ slug: /releases-history
   - The A1 timeline guard no longer disables the suspension timeline for every generator containing `yield*`; aligned delegations (same Abs per delegated element, no overlapping ranges, indices in bounds) keep the timeline, while fork-drifted ones still fall back. `returnAt(k)` also works for generators without snapshot hooks (no outer free writes). `for (const v of outer()) break` across `yield*`/`finally` now yields the native-exact cleanup value.
   - Finalizers containing `throw` are replay-safe: conditional throws observed at the suspension point propagate exactly (sync throw / rejected promise for async generators). When replay is unavailable the runtime records `may-throw` (`YIELD_FINALLY_THROWS`) instead of folding a possibly-throwing finalizer into a definite normal completion.
   Remaining: finalizers with their own `yield`/`return` statements still need true suspension. Pinned by `abs13-abrupt-completion.test.ts`.
-
-<details>
-<summary>历史版本 (59)</summary>
 
 ## 1.18.0
 
@@ -7121,7 +7132,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.12.0 {#pkg-service}
+## @nudojs/service 1.12.1 {#pkg-service}
+
+## 1.12.1
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/env@0.5.9
+  - @nudojs/harvester@0.6.1
+  - @nudojs/parser@1.5.9
+
+<details>
+<summary>历史版本 (62)</summary>
 
 ## 1.12.0
 
@@ -7321,9 +7345,6 @@ slug: /releases-history
   - @nudojs/harvester@0.6.0
   - @nudojs/env@0.5.8
   - @nudojs/parser@1.5.8
-
-<details>
-<summary>历史版本 (61)</summary>
 
 ## 1.11.0
 
@@ -12096,7 +12117,21 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.9.0 {#pkg-nudojs}
+## nudojs (CLI) 1.9.1 {#pkg-nudojs}
+
+## 1.9.1
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/env@0.5.9
+  - @nudojs/harvester@0.6.1
+  - @nudojs/parser@1.5.9
+  - @nudojs/service@1.12.1
+
+<details>
+<summary>历史版本 (59)</summary>
 
 ## 1.9.0
 
@@ -12227,9 +12262,6 @@ slug: /releases-history
   - @nudojs/service@1.12.0
   - @nudojs/env@0.5.8
   - @nudojs/parser@1.5.8
-
-<details>
-<summary>历史版本 (58)</summary>
 
 ## 1.8.0
 
@@ -16172,7 +16204,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.5.8 {#pkg-parser}
+## @nudojs/parser 1.5.9 {#pkg-parser}
+
+## 1.5.9
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+
+<details>
+<summary>历史版本 (59)</summary>
 
 ## 1.5.8
 
@@ -16222,9 +16264,6 @@ slug: /releases-history
 - Updated dependencies [5267658]
 - Updated dependencies [21ffc28]
   - @nudojs/core@1.19.0
-
-<details>
-<summary>历史版本 (58)</summary>
 
 ## 1.5.7
 
@@ -17840,7 +17879,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.10.0 {#pkg-lsp}
+## @nudojs/lsp 1.10.1 {#pkg-lsp}
+
+## 1.10.1
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/parser@1.5.9
+  - @nudojs/service@1.12.1
+
+<details>
+<summary>历史版本 (63)</summary>
 
 ## 1.10.0
 
@@ -17922,9 +17973,6 @@ slug: /releases-history
   - @nudojs/core@1.19.0
   - @nudojs/service@1.12.0
   - @nudojs/parser@1.5.8
-
-<details>
-<summary>历史版本 (62)</summary>
 
 ## 1.9.0
 
@@ -20867,7 +20915,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.5.8 {#pkg-env}
+## @nudojs/env 0.5.9 {#pkg-env}
+
+## 0.5.9
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+
+<details>
+<summary>历史版本 (59)</summary>
 
 ## 0.5.8
 
@@ -20922,9 +20980,6 @@ slug: /releases-history
 - Updated dependencies [5267658]
 - Updated dependencies [21ffc28]
   - @nudojs/core@1.19.0
-
-<details>
-<summary>历史版本 (58)</summary>
 
 ## 0.5.7
 
@@ -22301,7 +22356,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.6.0 {#pkg-harvester}
+## @nudojs/harvester 0.6.1 {#pkg-harvester}
+
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/env@0.5.9
+  - @nudojs/parser@1.5.9
+
+<details>
+<summary>历史版本 (59)</summary>
 
 ## 0.6.0
 
@@ -22387,9 +22454,6 @@ slug: /releases-history
   - @nudojs/core@1.19.0
   - @nudojs/env@0.5.8
   - @nudojs/parser@1.5.8
-
-<details>
-<summary>历史版本 (58)</summary>
 
 ## 0.5.0
 
@@ -23858,7 +23922,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.7.1 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.7.2 {#pkg-vite-plugin}
+
+## 0.7.2
+
+### Patch Changes
+
+- Updated dependencies [86bc56e]
+  - @nudojs/core@1.19.1
+  - @nudojs/service@1.12.1
+
+<details>
+<summary>历史版本 (62)</summary>
 
 ## 0.7.1
 
@@ -23924,9 +23999,6 @@ slug: /releases-history
 - Updated dependencies [21ffc28]
   - @nudojs/core@1.19.0
   - @nudojs/service@1.12.0
-
-<details>
-<summary>历史版本 (61)</summary>
 
 ## 0.7.0
 
