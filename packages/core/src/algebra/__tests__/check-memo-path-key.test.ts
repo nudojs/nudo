@@ -14,6 +14,7 @@ const deps: LoadDepsFingerprint = {
   contents: [],
   truncated: false,
   readError: false,
+  gatedSidecars: [],
 };
 const opts: CheckOptions = {};
 

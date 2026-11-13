@@ -567,7 +567,7 @@ type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
  */
 function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): LoadDepsFingerprint {
   if (!refine?.loadModule || !refine.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
+    return { fp: "-", paths: [], contents: [], truncated: false, readError: false, gatedSidecars: [] };
   }
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
@@ -595,7 +595,7 @@ function generalizeMemoKey(
   const budget = opts.budget ?? defaultLeakBudget;
   const deps =
     opts.depsFp ??
-    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false, readError: false });
+    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false, readError: false, gatedSidecars: [] });
   // ambient 侧车闭包进键：侧车内容变更 → L0 失效；路径登记供定向逐出。
   // 截断（trunc:）/ 读错误（readerr:）→ 键不可信，调用方 fail-open。
   const sc =

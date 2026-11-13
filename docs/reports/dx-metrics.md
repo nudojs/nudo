@@ -102,16 +102,19 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 投影进指纹；② 增量轮只逐出被改文件（dependents 靠指纹自然 miss/命中）；③ watch 会话内
 **复用注入对象**（键 = 分析输入身份）+ **轮内依赖指纹 memo**（同一入口每轮只读一次盘）：
 
-| 目标 | analyze 改前 | ①+② 后 | ①+②+③ 后 | 单文件探针 |
-|---|---:|---:|---:|---|
-| hub `classes/comparator.js` | 3313ms | 2597ms | **718ms** | `analyzeFileAsync` warm hit 9.1ms；inert dep 编辑 + 只逐出被改文件 9.9ms；语义编辑 172ms（正确 miss） |
-| leaf `ranges/gtr.js` | 1009ms | 875ms | **345ms** | dependents 命中 |
-| hub **total**（含 210ms debounce） | 3524ms | 2808ms | **929ms**（达标 <1s） | — |
+| 目标 | analyze 改前 | ①+② 后 | ③ 后 | ④ gating 复用后 | 单文件探针 |
+|---|---:|---:|---:|---:|---|
+| hub `classes/comparator.js` | 3313ms | 2597ms | 718ms | **456–473ms** | `analyzeFileAsync` warm hit 9.1ms；inert dep 编辑 + 只逐出被改文件 9.9ms；语义编辑 172ms（正确 miss） |
+| leaf `ranges/gtr.js` | 1009ms | 875ms | 345ms | **210ms** | dependents 命中 |
+| hub **total**（含 210ms debounce） | 3524ms | 2808ms | 929ms | **667–684ms** | — |
 
-**剩余成本**：`[check-profile]` 逐文件显示 ≈ 注入键 10–21ms + `analyzeFileAsync` ~1–2ms（轮内
-memo 命中）+ `checkSource` ~10–26ms（memo 命中；其内部仍自算一次依赖指纹 + 重放报告）+
-渲染/打印；被改文件自身仍是全量重算（~170ms）。进一步压缩需要把 checkSource 的指纹也接进
-轮内 memo（需给 core 的 ambient gating 闭包一个稳定语义键），本轮未做。
+④ = `checkSource` 的 gated 依赖指纹在没有侧车被 gating 剪掉时直接复用轮内 ungated 指纹
+（`loaderIdentity` 让 per-call guard/缓存包装参与 memo）；逐文件段耗时变为
+注入键 0.1ms + analyze 0.4–0.8ms + checkSource 0.3–3.8ms。
+
+**剩余成本**：`[check-profile]` 逐文件显示注入键 **0.1ms** + `analyzeFileAsync` **0.4–0.8ms** +
+`checkSource` **0.3–3.8ms**；每文件 12–39ms 的差额主要是 `loadCheckCache`（配置/磁盘缓存装配）
+与报告渲染/打印。被改文件自身仍是全量重算（~170ms）。
 
 ## 最近一次（历史）（2026-11-04，--mode both，dist 为引擎债修复波后全仓重建产物）
 

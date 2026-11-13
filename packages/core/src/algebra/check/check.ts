@@ -276,8 +276,13 @@ function checkSourceInScope(
           ...(speculativeLoad ? { ambientLoadModule: speculativeLoad } : {}),
           ambientAllowed: (sidecarPath) =>
             sidecarAutoBindAllowed(sidecarPath, opts.autoBind, opts.projectDir),
+          // ABS-18：轮内 memo 用**底层** loader 身份（`callOpts.loadModule` 是
+          // per-call 的 guard/缓存包装，内容等价但身份不稳定）；ambient 探测
+          // 走同一底层 loader ⇒ 给出同一身份，gated 调用可复用 ungated 指纹。
+          loaderIdentity: opts.loadModule,
+          ...(speculativeLoad ? { ambientLoaderIdentity: opts.loadModule } : {}),
         })
-      : { fp: "-", paths: [], contents: [], truncated: false, readError: false };
+      : { fp: "-", paths: [], contents: [], truncated: false, readError: false, gatedSidecars: [] };
   // ambient 侧车闭包指纹：进 memo 键（侧车变更 → 报告失效）+ 存在性门控 +
   // 逐出登记（evictCheckSourceMemoForPaths）；截断前缀 → 键不可信 fail-open。
   // 纯指纹用途 ⇒ 探测用推测性 loader（读失败不上报为分析错误，Bug 1124）。

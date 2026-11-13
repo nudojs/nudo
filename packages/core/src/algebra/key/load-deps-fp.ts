@@ -37,6 +37,15 @@ export type LoadDepsFingerprint = {
   /** BFS 撞到节点上限：剩余 dep 未进指纹，键不可信 */
   truncated: boolean;
   /**
+   * ABS-18：gating 可能剪掉的**实际存在**的根侧车路径（每个被吸收模块一个；
+   * 递归 `.nudo` 依赖不经过 gating，故不在此列；无侧车文件不进来）。
+   *
+   * 用途：轮内 memo 里，若一条 ungated 指纹的所有根侧车都通过 gating，则
+   * 「gated 指纹」与它**同值** ⇒ 可直接复用（省一次磁盘 BFS）。只影响键，
+   * 不参与展示 / 缓存语义。
+   */
+  gatedSidecars: string[];
+  /**
    * 任一装载 throw（EACCES/EMFILE/…）≠ 真 miss：读错误轮的报告（含
    * nudo:contract-load）与真 miss 轮（干净）内容不同，折叠成同一 miss 键
    * 会互为跨次陈旧命中（#135）。fp 带 `readerr:` 前缀，调用方 fail-open 禁 memo。
@@ -102,6 +111,23 @@ export type LoadDepsFingerprintOpts = {
    * 不记入分析错误。缺省 = 用 `loadModule`（旧行为）。
    */
   ambientLoadModule?: (spec: string, fromFile: string) => string | undefined;
+  /**
+   * ABS-18：轮内 memo 的 **loader 身份**——内容等价的底层 loader。
+   *
+   * 调用方可能传一个每次调用新建的包装器（`guardLoadModule` / per-call 缓存），
+   * 其内容与底层 loader 相同、但对象身份不稳定 ⇒ 轮内 memo 无法命中。给出
+   * `loaderIdentity`（底层 loader 对象）后，memo 键与「直接用底层 loader 的
+   * 调用」共享。**契约**：`loaderIdentity` 装载的内容必须与 `loadModule` 一致；
+   * 任何内容覆写（buffer-aware / 虚拟 FS）不得省略自己的身份。
+   *
+   * 只影响轮内 memo（默认关闭），不改变指纹值。
+   */
+  loaderIdentity?: object;
+  /**
+   * ABS-18：`ambientLoadModule` 的底层 loader 身份。给出且与生效的 loader 身份
+   * 相同 ⇒ gated 调用可参与轮内同值复用（侧车内容与主 loader 一致）。
+   */
+  ambientLoaderIdentity?: object;
   /**
    * ambient 绑定资格（autoBind / projectDir / node_modules）。
    * 返回 false ⇒ 该侧车不会被 ambient 绑定 ⇒ 探测无意义 ⇒ 跳过
@@ -339,20 +365,44 @@ export function loadModuleDepsFingerprint(
    * 不翻转。返回的 content 也是 `contents` 的口径（磁盘缓存键同源）。
    */
   const stableContent = (src: string): string => stableAnalyzeKeySource(src);
-  // ABS-18：轮内 memo（仅 `opts === undefined` 的调用；见上方 epoch 说明）
+  // ABS-18：轮内 memo（见上方 epoch 说明）。
   const epoch = depFpEpoch;
+  // loader 身份：包装器（per-call guard / cache）用调用方给的底层 loader 身份，
+  // 否则用本函数收到的 loader 对象。
+  const loaderIdentity = (opts?.loaderIdentity ?? loadModule) as object;
   const epochKey =
-    epoch !== null && opts === undefined
-      ? `${stablePathKey(fromFile)}\0${depFpLoaderId(loadModule)}\0${stableContent(source)}`
+    epoch !== null
+      ? `${stablePathKey(fromFile)}\0${depFpLoaderId(loaderIdentity as (spec: string, from: string) => string | undefined)}\0${stableContent(source)}`
       : null;
-  if (epochKey !== null) {
+  if (epochKey !== null && opts === undefined) {
     const cached = epoch!.get(epochKey);
     if (cached !== undefined) return cached;
+  }
+  // ABS-18：gated 调用的**同值复用**——若本轮已算过 ungated 指纹，且它的所有
+  // gating 询问点都 passes `ambientAllowed`，则 gated 指纹与 ungated 逐字节同值
+  // （同样的 loader / 同样的侧车集合 / 同样的递归），直接复用，省一次磁盘 BFS。
+  // 带 `ambientLoadModule`（推测性 loader，内容可能 ≠ 磁盘）时不共享。
+  if (
+    epochKey !== null &&
+    opts !== undefined &&
+    (opts.ambientLoadModule === undefined ||
+      (opts.ambientLoaderIdentity !== undefined && opts.ambientLoaderIdentity === loaderIdentity))
+  ) {
+    const ungated = epoch!.get(epochKey);
+    if (ungated !== undefined) {
+      const allowed = opts.ambientAllowed;
+      if (allowed === undefined || ungated.gatedSidecars.every((p) => allowed(p))) {
+        return ungated;
+      }
+    }
   }
   const parts: string[] = [];
   const paths: string[] = [];
   const contents: Array<{ path: string; content: string | null }> = [];
   const seen = new Set<string>();
+  /** gating 会询问的根侧车（顺序 = 吸收顺序；去重） */
+  const gatedSidecars: string[] = [];
+  const gatedSidecarSet = new Set<string>();
   const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source).map(
     (spec) => ({ spec, from: fromFile }),
   );
@@ -390,8 +440,11 @@ export function loadModuleDepsFingerprint(
       contents,
       truncated,
       readError,
+      gatedSidecars: [...gatedSidecars],
     };
-    if (epochKey !== null) epoch!.set(epochKey, out);
+    // 只登记 **ungated** 指纹：gated 指纹可能少条目（denied sidecar），
+    // 存进同一键会被后续 ungated 调用复用 ⇒ 少看依赖。
+    if (epochKey !== null && opts === undefined) epoch!.set(epochKey, out);
     return out;
   };
 
@@ -413,6 +466,13 @@ export function loadModuleDepsFingerprint(
       return;
     }
     if (root.src === undefined) return; // 无侧车文件：零回归
+    // ABS-18：记录**实际存在**的根侧车（递归 .nudo 依赖不经过 gating）。
+    // 只有存在的侧车才会产生 `sidecar:` 条目 ⇒ gating 剪枝是否改变指纹
+    // 只需看这张表；不存在的路径不进来，避免「被拒但本来就没有」的假剪枝。
+    if (!gatedSidecarSet.has(sidecarPath)) {
+      gatedSidecarSet.add(sidecarPath);
+      gatedSidecars.push(sidecarPath);
+    }
     const sidecarSrc = root.src;
     if (n >= MAX_LOAD_DEP_NODES) {
       truncated = true;

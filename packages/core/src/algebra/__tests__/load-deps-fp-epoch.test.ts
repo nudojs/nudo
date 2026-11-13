@@ -93,3 +93,86 @@ describe("ABS-18 · 轮内依赖指纹 memo", () => {
     expect(calls.filter((p) => p === "/proj/dep.js")).toHaveLength(2);
   });
 });
+
+const SIDECAR_FILES = {
+  "/proj/dep.js": "export function f(x) {\n  return x + 1;\n}\n",
+  "/proj/dep.nudo.js": "export const c = (x) => x;\n",
+  "/proj/entry.nudo.js": "export const e = () => 1;\n",
+};
+
+describe("ABS-18 · gated 指纹与 ungated 同值时轮内复用", () => {
+  it("gating 全通过 ⇒ 直接复用 ungated 指纹（零额外读盘）", () => {
+    const { load, calls } = makeLoader(SIDECAR_FILES);
+    beginDepFingerprintEpoch();
+    const ungated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js");
+    expect(ungated.gatedSidecars.sort()).toEqual(
+      ["/proj/dep.nudo.js", "/proj/entry.nudo.js"].sort(),
+    );
+    const reads = calls.length;
+    const gated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js", {
+      ambientAllowed: () => true,
+    });
+    expect(gated).toBe(ungated);
+    expect(calls.length).toBe(reads);
+  });
+
+  it("gating 拒绝某个侧车 ⇒ 重算，且 gated 指纹确实少了该条目", () => {
+    const { load } = makeLoader(SIDECAR_FILES);
+    beginDepFingerprintEpoch();
+    const ungated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js");
+    const gated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js", {
+      ambientAllowed: (p) => p !== "/proj/dep.nudo.js",
+    });
+    expect(gated).not.toBe(ungated);
+    expect(gated.fp).not.toBe(ungated.fp);
+    expect(gated.fp).not.toContain("/proj/dep.nudo.js");
+    expect(gated.fp).toContain("/proj/entry.nudo.js");
+  });
+
+  it("带 ambientLoadModule（推测性 loader）不共享", () => {
+    const { load, calls } = makeLoader(SIDECAR_FILES);
+    beginDepFingerprintEpoch();
+    const ungated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js");
+    const reads = calls.length;
+    const gated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js", {
+      ambientAllowed: () => true,
+      ambientLoadModule: load,
+    });
+    expect(calls.length).toBeGreaterThan(reads);
+    expect(gated.fp).toBe(ungated.fp); // 内容相同 ⇒ 指纹相同，但确实重算了
+  });
+});
+
+describe("ABS-18 · 包装器 loader 的轮内复用（loaderIdentity）", () => {
+  it("per-call 包装器给出底层 loader 身份 ⇒ 仍复用 ungated 指纹", () => {
+    const { load, calls } = makeLoader(SIDECAR_FILES);
+    beginDepFingerprintEpoch();
+    const ungated = loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js");
+    const reads = calls.length;
+    // 模拟 checkSource：per-call 缓存 + guard 包装（内容等价、身份不稳定）
+    const wrapped = (spec: string, from: string): string | undefined => load(spec, from);
+    const gated = loadModuleDepsFingerprint(ENTRY, wrapped, "/proj/entry.js", {
+      ambientLoadModule: wrapped,
+      ambientAllowed: () => true,
+      loaderIdentity: load,
+      ambientLoaderIdentity: load,
+    });
+    expect(gated).toBe(ungated);
+    expect(calls.length).toBe(reads);
+  });
+
+  it("底层 loader 身份不同（自定义 loader）⇒ 不共享", () => {
+    const { load, calls } = makeLoader(SIDECAR_FILES);
+    beginDepFingerprintEpoch();
+    loadModuleDepsFingerprint(ENTRY, load, "/proj/entry.js");
+    const reads = calls.length;
+    const other = (spec: string, from: string): string | undefined => load(spec, from);
+    loadModuleDepsFingerprint(ENTRY, other, "/proj/entry.js", {
+      ambientLoadModule: other,
+      ambientAllowed: () => true,
+      loaderIdentity: other,
+      ambientLoaderIdentity: other,
+    });
+    expect(calls.length).toBeGreaterThan(reads);
+  });
+});

@@ -954,14 +954,20 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
   默认关闭；只缓存 `opts === undefined` 的调用；watch 的 `runAll` / `runIncremental` 用
   try/finally 包裹）。轮内不写盘由 `--fix` 与 `--watch` 互斥保证。
 - 实测（dist / 干净 env / semver 48 文件）：hub `analyze` 2597 → 1145（仅注入复用）→
-  **718ms**（再加轮内 memo）、total 2808 → 1355 → **929ms（首次达到 <1s）**；leaf 875 → **345ms**、
-  total 555ms。逐文件段耗时 ≈ 注入键
+  718（轮内 memo）→ **456–473ms**（gating 同值复用，含宿主抖动）；total 2808 → 1355 → 929 → **667–684ms**；
+  leaf 875 → 345 → **210ms**、total 421ms。逐文件段耗时 ≈ 注入键
   10–21ms + `analyzeFileAsync` 1–2ms（memo 命中）+ `checkSource` 10–26ms（memo 命中）+ 渲染。
 - 门禁：`abs18-injection-reuse.test.ts`（4：重复命中 / inert 依赖编辑命中且报告不变 /
   语义编辑换键且报告更新 / LRU）+ `load-deps-fp-epoch.test.ts`（5：默认关闭 / 轮内一次 /
   稳定源码等价 / 代码变更换键 / loader 与 opts 不共享）。
-- 残余：`checkSource` 内部仍自算一次依赖指纹（其 `ambientAllowed` 闭包没有稳定语义键）——
-  每文件 10–26ms；再压缩需给该 gating 一个稳定键，本轮不做。
+- **gating 同值复用（loaderIdentity，追加交付）**：`LoadDepsFingerprint` 增 `gatedSidecars`
+  （gating 的询问点）与 `LoadDepsFingerprintOpts.loaderIdentity` / `ambientLoaderIdentity`。
+  轮内若已有 ungated 指纹、且所有询问点都通过 `ambientAllowed` ⇒ gated 与 ungated **逐字节同值**，
+  直接复用；`checkSource` 的 per-call guard/缓存包装用**底层 loader 身份**参与 memo。
+  带内容覆写的自定义 loader（buffer-aware）身份不同 ⇒ 不共享。复用后逐文件
+  `injection 0.1ms + analyze 0.4–0.8ms + checkSource 0.3–3.8ms`（gated 指纹 0 次额外读盘）；hub `analyze` 456–473ms / total 667–684ms。
+  门禁：`load-deps-fp-epoch.test.ts` 扩到 10 例（allow-all 复用 / deny 重算且条目消失 /
+  ambientLoadModule 不共享 / 包装器 + 底层身份复用 / 自定义 loader 身份不共享）。
 - **口径**：以上 929ms 是探针的 **inert 编辑**（追加尾部注释）；**语义编辑**会让整条依赖链的
   分析/check 键全部翻转 ⇒ hub 仍 ~3s。后者属单文件成本（`ABS-17`）或 worker 并行
   （`ABS-16` ③），**不是**本项能解决的。
