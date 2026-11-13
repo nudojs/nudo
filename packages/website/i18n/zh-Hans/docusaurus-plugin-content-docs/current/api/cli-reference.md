@@ -67,6 +67,7 @@ nudo check <paths...> [options]
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
 | `--profile adoption\|strict` | 门禁 profile（默认 `strict`）。`adoption` = L2 入口 may-throw 降为 warning；L1 仍为 error。显式 `--entry-throws` 值覆盖 profile |
+| `--capabilities strict\|trusted` | 不可信源码的能力策略（默认 `strict`）：有副作用的宿主全局与 `node:` 模块被隐藏（`nudo:capability-denied`，值降为 `unknown`）；`trusted` 恢复旧表面。不是沙箱 |
 | `--what-if <binding...>` | AI3：假设 `name:type` 绑定并报告 `--target`（与 LSP `nudo.whatIf` 同语义） |
 | `--target <name>` | 搭配 `--what-if`：要打印其推导类型的绑定名 |
 | `--fix` | 每个 issue 物化一条 fix/adjust 编辑（默认 dry-run：打印 unified diff）。silence/review 不会自动落地 |
@@ -351,7 +352,7 @@ nudo export src/api.js --format all --out dist
 健康检查：分析错误与调用点固化漂移。
 
 ```bash
-nudo health [paths...] [--watch] [--from <paths...>] [--json]
+nudo health [paths...] [--watch] [--from <paths...>] [--capabilities strict|trusted] [--json]
 ```
 
 **选项：**
@@ -360,6 +361,7 @@ nudo health [paths...] [--watch] [--from <paths...>] [--json]
 |------|------|
 | `--watch` | 变更时重跑 |
 | `--from <paths…>` | 使用处文件；health 重跑与 `test --freeze=update` 相同的重新固化链路，生成 `call@` 指令会变化时报告漂移 |
+| `--capabilities strict\|trusted` | 不可信源码的能力策略（默认 `strict`）：有副作用的宿主全局与 `node:` 模块被隐藏（`nudo:capability-denied`）；`trusted` 恢复旧表面。不是沙箱 |
 | `--json` | 结构化健康报告 |
 
 **示例：**

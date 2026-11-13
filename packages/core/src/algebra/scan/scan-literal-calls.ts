@@ -37,6 +37,10 @@ import {
   type EffectiveContractOpts,
 } from "../contract/contract.ts";
 import { generalizeFromAst, type PolyFn } from "../generalize.ts";
+import {
+  loadModuleDepsFingerprint,
+  type LoadDepsFingerprint,
+} from "../key/load-deps-fp.ts";
 import { checkCallSite } from "../diagnostics/diagnostics.ts";
 import { locateContractParam, withOptionalParams, type FormalParam } from "../format/param-surface.ts";
 import type { Abs } from "../abs.ts";
@@ -164,6 +168,32 @@ export function scanLiteralCalls(
     const r = effectiveContract(fnSource, fnName, eiOpts);
     eiCache.set(key, r);
     return r;
+  };
+
+  /**
+   * 同文件调用点共用的依赖内容指纹（**一次扫描一个**）。
+   *
+   * `generalizeFromAst` 的 memo 键含 `refineDepsFingerprint(source, refine)`
+   * ——每次调用点都在 generalize 内部重算（一次磁盘 BFS + 全 AST 走查 +
+   * 逐依赖 hash）。command.js 这类大文件有 ~100 个调用点 ⇒ 100 次全量 BFS
+   * （实测 601ms → 2475ms 的 check 回退，OSS baseline gate 因此连续红）。
+   * 同一次扫描里 `(source, opts.loadModule, opts.fromFile)` 恒定 ⇒ 指纹同值，
+   * 只需算一次；跨文件被调方（`ext.fromFile`）不共用（loader/基准不同，
+   * 由 generalize 按自己的 refine 现算）。
+   *
+   * 只省计算，不改键值：与 `generalizeMemoKey` 内 `refineDepsFingerprint`
+   * 同一函数、同一实参（含 `fromFile === ""` 时其自身的 `"-"` 短路）。
+   */
+  let sameFileDepsFp: LoadDepsFingerprint | undefined | null = null;
+  const depsFpOfSameFile = (): LoadDepsFingerprint | undefined => {
+    if (sameFileDepsFp !== null) return sameFileDepsFp;
+    const loadModule = opts?.loadModule;
+    const fromFile = opts?.fromFile;
+    sameFileDepsFp =
+      loadModule && fromFile
+        ? loadModuleDepsFingerprint(source, loadModule, fromFile)
+        : undefined;
+    return sameFileDepsFp;
   };
 
   /** effectiveContract → [paramIdx, RefineEntry, fieldPath?, rest?]（C4.1：解构契约带
@@ -355,6 +385,7 @@ export function scanLiteralCalls(
     // 放在「实参无信息」早退**之前**：实参个数与实参信息量无关。
     const g = generalizeFromAst(fnName, source, {
       file,
+      depsFp: depsFpOfSameFile(),
       refine: {
         loadModule: opts?.loadModule,
         fromFile: opts?.fromFile ?? "",
@@ -692,6 +723,9 @@ export function scanLiteralCalls(
         fnSource,
         {
           ...(sameFile && file ? { file } : {}),
+          // 同文件实参的依赖指纹与本次扫描共用（一次 BFS 而非每调用点一次）；
+          // 跨文件被调方的 refine 基准是定义文件 ⇒ 由 generalize 现算。
+          ...(sameFile ? { depsFp: depsFpOfSameFile() } : {}),
           // refine 侧车/源码契约必须进 generalize——否则 fnRels 只剩 promote，
           // refine→error 路径永远打不开（source 永远是 warning）。
           refine: {

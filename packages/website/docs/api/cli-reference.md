@@ -67,6 +67,7 @@ nudo check <paths...> [options]
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
 | `--profile adoption\|strict` | Gate profile (default `strict`). `adoption` = L2 entry may-throw demoted to warning; L1 stays error. An explicit `--entry-throws` value overrides the profile |
+| `--capabilities strict\|trusted` | Capability policy for untrusted source (default `strict`): side-effectful host globals and `node:` modules are hidden (`nudo:capability-denied`, value `unknown`); `trusted` restores the legacy surface. Not a sandbox |
 | `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
 | `--target <name>` | With `--what-if`: binding whose inferred type to print |
 | `--fix` | Materialize one fix/adjust edit per issue (default dry-run: print unified diff). Silence/review actions are never auto-applied |
@@ -351,7 +352,7 @@ nudo export src/api.js --format all --out dist
 Health-check source files: analysis errors and call-site solidification drift.
 
 ```bash
-nudo health [paths...] [--watch] [--from <paths...>] [--json]
+nudo health [paths...] [--watch] [--from <paths...>] [--capabilities strict|trusted] [--json]
 ```
 
 **Options:**
@@ -360,6 +361,7 @@ nudo health [paths...] [--watch] [--from <paths...>] [--json]
 |--------|-------------|
 | `--watch` | Re-run on file changes |
 | `--from <paths…>` | Usage-site files; health re-runs the same re-solidify chain as `test --freeze=update` and reports drift when generated `call@` directives would change |
+| `--capabilities strict\|trusted` | Capability policy for untrusted source (default `strict`): side-effectful host globals and `node:` modules are hidden (`nudo:capability-denied`); `trusted` restores the legacy surface. Not a sandbox |
 | `--json` | Structured health report |
 
 **Example:**
