@@ -1301,11 +1301,49 @@ export type RelGuard = {
    * （事实臂同时持有两个界 ⇒ 契约朝任一方向都能证得）。
    */
   extra?: Array<{ op: "gt" | "ge" | "lt" | "le"; k: number }>;
+  /**
+   * 复合守卫的其余合取项界（**异名**变量；只用于**事实臂**）。
+   * `x >= 1 && y >= 2` ⇒ 主守卫 `x` + `others: [{ name: "y", … }]`——
+   * 合取为真 ⇒ 每一项为真 ⇒ 事实臂同时持有全部名字的界（issue #185：
+   * 旧实现只留先到的一个名字 ⇒ `x + y` 只折一侧 ⇒ 合取守卫下的和契约
+   * 证不出）。补集方向与 `composite` 同禁（`¬(A ∧ B)` 不是单事实）。
+   */
+  others?: Array<{ name: string; op: "gt" | "ge" | "lt" | "le"; k: number }>;
 };
 
 export function relGuardOf(test: unknown): RelGuard | undefined {
   // 单一关系式优先（行为逐字不变）；复合式（合取）才走复合匹配。
   return matchRelIdentLit(test) ?? matchRelIdentLitComposite(test);
+}
+
+/**
+ * 否定测试（`!(R…)`）的**否定臂**事实（issue #185）：`!(A ∧ …)` 为**假**
+ * ⇒ `A ∧ …` 为真（布尔取反是精确的，NaN 无关）⇒ 每个关系合取项都成立。
+ *
+ * 与裸关系守卫的补集**不同**：`¬(x < k)` 只断得 `x ≥ k ∨ x is NaN`
+ * （Bug 1115，不可断言 `x ≥ k`）；而 `!(x < k)` 为假 ⇒ `x < k` 为真
+ * ⇒ 事实精确、NaN 不可达。故该事实集只允许用于「测试为假」的臂
+ * （else / early-return 后续路径 / `||` 右臂）——见
+ * `narrowRelNegationArmThunk`。
+ */
+export function relGuardOfNegation(test: unknown): RelGuard | undefined {
+  const t = test as { type?: string; operator?: string; argument?: unknown } | null | undefined;
+  if (t?.type !== "UnaryExpression" || t.operator !== "!" || t.argument == null) return undefined;
+  return relGuardOf(t.argument);
+}
+
+/** 关系守卫事实集 → 影子重绑槽（主界在内、其余界按序在外；seq 嵌套顺序
+ *  与既有「主界最内」口径一致）。 */
+function relGuardBindings(guard: RelGuard): ArmShadowBinding[] {
+  const facts = [
+    { name: guard.name, op: guard.op, k: guard.k },
+    ...(guard.extra ?? []).map((b) => ({ name: guard.name, op: b.op, k: b.k })),
+    ...(guard.others ?? []),
+  ];
+  return facts.map((f) => ({
+    name: f.name,
+    arg: `$refineRel(${f.name}, ${JSON.stringify(f.op)}, ${f.k})`,
+  }));
 }
 
 /** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
@@ -1318,16 +1356,21 @@ export function narrowRelArmThunk(
   forkBindingNames: ReadonlySet<string> | readonly string[],
 ): string {
   if (!guard || arm !== "cons") return thunk;
-  // 复合守卫（合取）的**其余**合取项界一并接上（同名变量）——
+  // 复合守卫（合取）的**其余**合取项界一并接上（同名 + 异名）——
   // 合取为真 ⇒ 每一合取项为真 ⇒ 事实臂同时持有全部界
   // （只接一个界会在契约朝**另一**方向时把「证不出」变成「证反了」⇒ 假红）。
-  return narrowArmShadowWrap(
-    thunk,
-    [{ op: guard.op, k: guard.k }, ...(guard.extra ?? [])].map((b) => ({
-      name: guard.name,
-      arg: `$refineRel(${guard.name}, ${JSON.stringify(b.op)}, ${b.k})`,
-    })),
-    forkBindingNames,
-    "seq",
-  );
+  return narrowArmShadowWrap(thunk, relGuardBindings(guard), forkBindingNames, "seq");
+}
+
+/** **否定臂**关系剪影（`relGuardOfNegation` 派生的事实集，issue #185）：
+ *  只用于测试为假的臂（else / early-return 后续路径 / `||` 右臂）——
+ *  `!(A ∧ …)` 为假 ⇒ 每个关系合取项为真，断言健全（见
+ *  `relGuardOfNegation`）。不可拿来处理裸关系守卫的补集（NaN 面）。 */
+export function narrowRelNegationArmThunk(
+  thunk: string,
+  guard: RelGuard | undefined,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guard) return thunk;
+  return narrowArmShadowWrap(thunk, relGuardBindings(guard), forkBindingNames, "seq");
 }

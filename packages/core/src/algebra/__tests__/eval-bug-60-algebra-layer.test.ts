@@ -137,6 +137,21 @@ describe("族 60 · 第 4 条：复合关系式接关系守卫", () => {
     expect(guard!.extra).toEqual([{ op: "lt", k: 10 }]);
   });
 
+  it("relGuardOf 异名合取：每个名字各自保留自己的界（issue #185 others）", () => {
+    const guard = relGuardOf(testNode("x >= 1 && y >= 2"));
+    expect(guard).toBeDefined();
+    expect(guard!.name).toBe("x");
+    expect(guard!.op).toBe("ge");
+    expect(guard!.k).toBe(1);
+    expect(guard!.composite).toBe(true);
+    // 旧实现只取先到的名字 ⇒ 后名 facts 丢失 ⇒ x+y 只折一侧
+    expect(guard!.others).toEqual([{ name: "y", op: "ge", k: 2 }]);
+    // 同名 + 异名混排：同名其余界进 extra，异名进 others
+    const mixed = relGuardOf(testNode("x > 0 && x < 10 && y >= 2"));
+    expect(mixed!.extra).toEqual([{ op: "lt", k: 10 }]);
+    expect(mixed!.others).toEqual([{ name: "y", op: "ge", k: 2 }]);
+  });
+
   it("负控：单一关系式的守卫逐字不变（无 composite / extra 标记）", () => {
     expect(relGuardOf(testNode("x > 0"))).toEqual({ name: "x", op: "gt", k: 0 });
     expect(relGuardOf(testNode("0 < x"))).toEqual({ name: "x", op: "gt", k: 0 });

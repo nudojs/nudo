@@ -24,6 +24,7 @@ import {
   nullishRemoveCallOf,
   narrowDiscriminantArmThunks,
   narrowRelArmThunk,
+  narrowRelNegationArmThunk,
 } from "../stmt/predicates.ts";
 import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
 import { emitStmtWritebackRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
@@ -105,6 +106,10 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   discGuards?: readonly DiscriminantGuard[];
   /** 关系守卫（Bug 1）：事实臂内 $refineRel 影子重绑（`x >= 0 ? x : 0`） */
   relGuard?: RelGuard;
+  /** 否定臂关系事实（issue #185）：`!(A ∧ …)` 为假 ⇒ 各关系项为真——
+   *  只用于 **alt 臂**（测试为假路径；裸关系补集仍不可用，见
+   *  relGuardOfNegation） */
+  altRelGuard?: RelGuard;
 }): string {
   // Bug 1149：引擎内部临时名避开用户标识符词形（臂 IIFE 在自身作用域求值
   // 用户表达式 ⇒ 写死名会遮蔽用户同名绑定 / 撞 TDZ ReferenceError）。
@@ -186,6 +191,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     altExpr = applyDisc(altExpr, "alt");
     // 关系守卫（Bug 1）：事实臂影子重绑（与 stmt.ts IfStatement 同源）
     consExpr = narrowRelArmThunk(consExpr, parts.relGuard, "cons", []);
+    // 否定臂关系事实（issue #185）：alt 臂 = 测试为假的路径（同源）
+    altExpr = narrowRelNegationArmThunk(altExpr, parts.altRelGuard, []);
     const forkCall = `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
     // 绑定形态：左操作数作实参求值一次（IIFE 箭头参数——表达式位合法）
     return bindLeft ? `((${sc0Name}) => ${forkCall})(${parts.alwaysSrc})` : forkCall;
@@ -224,10 +231,14 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     "cons",
     names,
   );
-  const altFinal = narrowDiscriminantArmThunks(
-    narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
-    parts.discGuards,
-    "alt",
+  const altFinal = narrowRelNegationArmThunk(
+    narrowDiscriminantArmThunks(
+      narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
+      parts.discGuards,
+      "alt",
+      names,
+    ),
+    parts.altRelGuard,
     names,
   );
   return [

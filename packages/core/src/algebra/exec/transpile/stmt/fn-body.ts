@@ -34,7 +34,9 @@ import {
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
   relGuardOf,
+  relGuardOfNegation,
   narrowRelArmThunk,
+  narrowRelNegationArmThunk,
 } from "./predicates.ts";
 import {
   isExpression,
@@ -380,15 +382,24 @@ export function transpileFnBodyStmts(
     //   判 `unproven-return` ⇒ 两种等价写法结论不一致。
     // ⇒ 后续路径**不断言否定界**（与三元路径同口径）：事实臂窄化
     //   （narrowRelArmThunk）只管「测试为真」的方向（那侧 NaN 不可达）。
-    const altNarrowed = narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-        earlyTGuard,
+    //
+    // issue #185：唯一可健全断言的后续路径事实 = **否定测试** `!(A ∧ …)`
+    // 为假 ⇒ `A ∧ …` 为真（`!` 是精确布尔取反，NaN 无关——`!(x < k)` 为假
+    // 当且仅当 `x < k` 为真）⇒ 该形态的关系合取项全部接上（与裸 `x < k`
+    // 的补集不同，后者仍按 Bug 1115 不窄化）。
+    const altNarrowed = narrowRelNegationArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+          earlyTGuard,
+          "alt",
+          recvSet,
+        ),
+        earlyDGuards,
         "alt",
         recvSet,
       ),
-      earlyDGuards,
-      "alt",
+      relGuardOfNegation(stmt.test),
       recvSet,
     );
     const alt = forkArmThunkExpr(altNarrowed, 1, names, padIn, scopedOpts);
@@ -436,6 +447,11 @@ export function transpileFnBodyStmts(
  *
  * ⇒ 后续路径**不断言否定界**（事实臂 `narrowRelArmThunk` 保留：那一侧
  * 「测试为真」⇒ NaN 不可达，断言是健全的）。
+ *
+ * 例外（issue #185）：**否定测试** `!(A ∧ …)` 为假 ⇒ `A ∧ …` 为真（`!` 是
+ * 精确布尔取反）⇒ 该形态的关系合取项在后续路径上**可**断言
+ * （`relGuardOfNegation` → `narrowRelNegationArmThunk`）。裸 `x < k` 的补集
+ * 不在例外内（上文的 NaN 反例仍成立）。
  */
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {

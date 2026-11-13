@@ -349,7 +349,11 @@ type RelOp = "gt" | "ge" | "lt" | "le";
  *   事实臂同时持有 `x > 0` 与 `x < 10`）——只接其中一个会在**方向相反**时
  *   把「证不出」变成「证反了」（如契约 `number().gt(0)` vs 首项 `x < 10`
  *   ⇒ 假红）。
- * - 不同变量 ⇒ 只取**先到**的那个变量（守卫影子重绑只作用于一个名字）。
+ * - 不同变量 ⇒ **各自**保留（`x >= 1 && y >= 2` ⇒ x 的界进 `name`/`extra`，
+ *   其余名字的界进 `others`）。合取整体为真 ⇒ 每个合取项都为真 ⇒ 事实臂
+ *   同时持有全部名字的界（旧实现「只取先到的那个变量」会丢掉后名的界
+ *   ⇒ `x + y` 区间只折一侧 ⇒ 合取守卫下的和契约证不出，issue #185）。
+ *   补集方向依旧不可用（见上）。
  */
 export function matchRelIdentLitComposite(
   test: unknown,
@@ -359,11 +363,13 @@ export function matchRelIdentLitComposite(
   k: number;
   composite: true;
   extra?: Array<{ op: RelOp; k: number }>;
+  /** 其余被守卫变量的界（异名合取项；只用于事实臂） */
+  others?: Array<{ name: string; op: RelOp; k: number }>;
 } | undefined {
   const parts = conjunctsOf(test);
   // 合取项 < 2 ⇒ 不是复合式（单一关系式走 matchRelIdentLit —— 行为不变）
   if (parts.length < 2) return undefined;
-  // 同名合取项按关系分组（每组取**最紧**的界）；不同名只取**先到**的那个变量
+  // 同名合取项按关系分组（每组取**最紧**的界）；不同名各自成组
   const byName = new Map<string, Map<RelOp, number>>();
   const nameOrder: string[] = [];
   for (const part of parts) {
@@ -391,12 +397,19 @@ export function matchRelIdentLitComposite(
   if (!first) return undefined;
   const [op, k] = first;
   const extra = bounds.slice(1).map(([o, kk]) => ({ op: o, k: kk }));
+  const others: Array<{ name: string; op: RelOp; k: number }> = [];
+  for (const other of nameOrder.slice(1)) {
+    for (const [o, kk] of byName.get(other) ?? new Map<RelOp, number>()) {
+      others.push({ name: other, op: o, k: kk });
+    }
+  }
   return {
     name,
     op,
     k,
     composite: true,
     ...(extra.length > 0 ? { extra } : {}),
+    ...(others.length > 0 ? { others } : {}),
   };
 }
 

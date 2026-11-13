@@ -27,7 +27,7 @@ import type {
   SequenceExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "../stmt/predicates.ts";
+import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf, relGuardOfNegation } from "../stmt/predicates.ts";
 import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -118,6 +118,10 @@ export function transpileOperatorExpr(
             narrowGuards: leftGuards.filter((g) => g.arm === "cons"),
             typeGuard: andTypeGuard,
             discGuards: leftDiscGuards.filter((g) => g.arm === "cons"),
+            // 关系守卫（issue #185）：右操作数在 left 为真下求值 ⇒ left 的
+            // 关系合取项全部成立（`x >= 1 && (y >= 2 ? x + y : …)` 的右臂
+            // 拿到 x 的界；补集/假臂不可用，见 narrowRelArmThunk）
+            relGuard: relGuardOf(expr.left),
           })
         : transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
@@ -129,6 +133,9 @@ export function transpileOperatorExpr(
             narrowGuards: leftGuards.filter((g) => g.arm === "alt"),
             typeGuard: andTypeGuard,
             discGuards: leftDiscGuards.filter((g) => g.arm === "alt"),
+            // 否定臂事实（issue #185）：`!(A ∧ …)` 为假 ⇒ 各关系合取项为真
+            // ⇒ `||` 右臂（left 假值路径）接得上（裸关系补集仍不可用）
+            altRelGuard: relGuardOfNegation(expr.left),
           });
     }
     case "ConditionalExpression": {
@@ -154,6 +161,9 @@ export function transpileOperatorExpr(
         discGuards: discriminantGuardsOf(expr.test),
         // 关系守卫（Bug 1）：`x >= 0 ? x : 0` 事实臂影子重绑
         relGuard: relGuardOf(expr.test),
+        // 否定臂事实（issue #185）：`!(A ∧ …) ? 3 : x + y` 的 else 臂成立
+        // `A ∧ …`（`!` 假），各关系合取项一并接上
+        altRelGuard: relGuardOfNegation(expr.test),
       });
     }
     case "BinaryExpression": {

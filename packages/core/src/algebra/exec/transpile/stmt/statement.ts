@@ -83,7 +83,9 @@ import {
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
   relGuardOf,
+  relGuardOfNegation,
   narrowRelArmThunk,
+  narrowRelNegationArmThunk,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -818,6 +820,11 @@ function emitIfStatement(
     ...collectForkBindingNames(stmt.alternate),
   ]);
   const testRebinds = emitStmtWritebackRebinds(stmt.test as Node, opts, pad);
+  // 关系守卫剪影的跳过集：臂内写（recvSet）∪ **测试自身写**——测试里的
+  // `(y = f(), …)` 会改掉被守卫绑定，影子参数会吞掉这次写（宁缺毋假；
+  // 无写时与原口径逐字相同）。issue #185 的异名事实集把该风险面扩大到了
+  // 全部合取名，故单独收此跳过集（快照/join 仍只用 recvSet）。
+  const narrowSkip = new Set<string>([...recvSet, ...collectForkBindingNames(stmt.test)]);
   const names = expandAliasNames(recvSet, opts);
   const padIn = indent(depth + 1);
   // 块级作用域：同一函数内多个 if 都改 errors 时，__fk0_* 不得重复声明
@@ -864,21 +871,28 @@ function emitIfStatement(
     ),
     rguard,
     "cons",
-    recvSet,
+    narrowSkip,
   );
   const altNarrowed =
     altRaw === null
       ? null
-      : narrowDiscriminantArmThunks(
-          narrowTypeArmThunk(
-            narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-            tguard,
+      : narrowRelNegationArmThunk(
+          narrowDiscriminantArmThunks(
+            narrowTypeArmThunk(
+              narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+              tguard,
+              "alt",
+              recvSet,
+            ),
+            dguards,
             "alt",
             recvSet,
           ),
-          dguards,
-          "alt",
-          recvSet,
+          // 否定臂事实（issue #185）：`if (!(A ∧ …)) … else <这里>` 的 else
+          // 臂成立 `A ∧ …`（`!` 为假）⇒ 各关系合取项一并接上（裸关系补集
+          // 仍不可用——NaN，见 relGuardOfNegation）
+          relGuardOfNegation(stmt.test),
+          narrowSkip,
         );
   const cons = forkArmThunkExpr(consNarrowed, 0, names, padIn, opts);
   // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
