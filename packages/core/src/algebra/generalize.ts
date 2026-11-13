@@ -690,6 +690,7 @@ import {
   resetFnSummaryCache,
   fnSummaryGetFnLevel,
   fnSummarySetFnLevel,
+  noteFnLevelApplied,
 } from "./key/fn-summary.ts";
 import { alignSimpleBounds } from "./key/summary-bounds.ts";
 import {
@@ -1937,8 +1938,9 @@ function generalizeFromAstUncached(
     ) {
       const fHit = fnSummaryGetFnLevel(summaryScope);
       if (fHit !== undefined) {
-        const fast = tryFnLevelFastPath(fHit, args, phi, varOrder);
+        const fast = tryFnLevelFastPath(fHit, args, phi);
         if ("post" in fast) {
+          noteFnLevelApplied();
           instMemo.set(key, { result: fast.post, varOrder });
           return fast.post;
         }
@@ -1971,8 +1973,15 @@ function generalizeFromAstUncached(
     // 出 unknown #opaque 且两个开关至少一个启用时查摘要；替换与否由
     // tryDegradedChannel 的全部 sound 检查决定（独立验证见
     // abs14-degraded-channels.test.ts），绝不在别处静默放宽结论。
+    //
+    // symbolic 一次跑同样不参与：写侧（fnSummarySetFnLevel）与 crossModule
+    // 通道都排除 symbolic，读侧必须同口径 —— 否则同进程里先有一次真实
+    // instantiate，就会把 symbolic 的诚实 unknown 换成摘要结论，静默改变
+    // 签名 / dts 投影的输入（展示面越权）。
     const degraded = getAbs14FastPathChannels();
+    let derived = false;
     if (
+      !opts?.symbolic &&
       summaryScope !== undefined &&
       result.shape.k === "unknown" &&
       result.conf === "opaque" &&
@@ -1983,23 +1992,31 @@ function generalizeFromAstUncached(
         fnSummaryGetFnLevel(summaryScope),
         args,
         phi,
-        varOrder,
       );
-      if ("post" in filled) result = filled.post;
+      if ("post" in filled) {
+        noteFnLevelApplied();
+        result = filled.post;
+        derived = true;
+      }
     }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
-      // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
-      if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
-      // ABS-14 PR3：函数级摘要（每函数一份、覆盖式）；symbolic 跑不写。
-      if (!opts?.symbolic && summaryScope !== undefined) {
-        fnSummarySetFnLevel(
-          summaryScope,
-          result,
-          varOrder,
-          fnLevelFields(args, phi, varOrder),
-        );
+      // 降级通道填出来的结果是**代换产物**（不是这次 body 求值），只留在
+      // 实例 memo 里：跨实例层维持「摘要来自真实 body 求值」的出处纪律，
+      // 不让派生结论在进程内扩散成新的摘要源（2026-11-13）。
+      if (!derived) {
+        // ABS-10：同一条后置摘要进跨实例层（键已含函数身份 + 实例键）
+        if (summaryKey !== undefined) fnSummarySet(summaryKey, result, varOrder);
+        // ABS-14 PR3：函数级摘要（每函数一份、覆盖式）；symbolic 跑不写。
+        if (!opts?.symbolic && summaryScope !== undefined) {
+          fnSummarySetFnLevel(
+            summaryScope,
+            result,
+            varOrder,
+            fnLevelFields(args, phi, varOrder),
+          );
+        }
       }
     }
     return result;

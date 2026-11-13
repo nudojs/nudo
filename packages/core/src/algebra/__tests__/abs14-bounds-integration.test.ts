@@ -8,7 +8,8 @@
  * - 多形参界各归其位；无契约不发明界；
  * - `entryReqs` / `display` 保持实参名空间原貌（零行为变化）；
  * - 简单条件 + 单向依赖校验在重锚后仍生效（反向 / binder / app 一律丢）；
- * - 修出来的界**可被消费**：`implies` 与快路径界检查都能用上，不是死数据。
+ * - 界是良构元数据：`implies` 可直接判定，作为条目 `pre` 时门槛行为正确。
+ *   **当前无产品消费方**（write-only）——快路径的门槛是形成时的完整 Φ。
  *
  * 设计边界（不在此打通，也不该打通）：`opts.refine` 会让 `summaryScope`
  * 返回 undefined（ABS-10：refine 改变 body 语义且闭包身份不可哈希），所以
@@ -212,10 +213,15 @@ describe("ABS-14 alignSimpleBounds 重锚 + 校验", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 语义可用性：修出来的界不是死数据
+// 元数据可用性：界是良构的 α 空间 Pred（**当前无产品消费方**）
+//
+// 2026-11-13 订正：`TypeParam.bounds` 是 write-only 元数据，产品路径没有读者 ——
+// 快路径的门槛是 `FnSummaryEntry.pre`（形成时的完整 Φ），不是这里的简单界。
+// 本节只证明（a）界能被 `implies` 直接判定，（b）把它作为条目 `pre` 时门槛
+// 行为正确（即数据形态可被未来消费方直接使用），不再宣称产品已接线。
 // ---------------------------------------------------------------------------
 
-describe("ABS-14 修出的界可被消费", () => {
+describe("ABS-14 界的元数据形态（write-only，无产品消费方）", () => {
   const numVar = (id: string): Abs =>
     makeAbs({ k: "prim", type: "number" }, v(id), undefined, "path");
 
@@ -235,19 +241,19 @@ describe("ABS-14 修出的界可被消费", () => {
     expect(implies(pTrue, bounds[0]!)).toBe(false);
   });
 
-  it("快路径界检查能消费这些界：满足才命中，不满足 fail-closed", () => {
+  it("作为条目 `pre` 时门槛行为正确：蕴含才命中，否则 fail-closed", () => {
     const g = contractFn();
     expect(g).toBeDefined();
     if (!g) return;
     const bounds = g.typeParams[0]!.bounds!;
+    const pre: Pred = { op: "and", args: [...bounds] };
     const args = [numVar("A1")];
     const order = ["A1"];
-    const post = numVar("A1");
     const entry: FnSummaryEntry = {
-      post,
+      post: numVar("A1"),
       varOrder: [...order],
       ...fnLevelFields(args, pTrue, order),
-      bounds,
+      pre,
     };
     const satisfied: Phi = {
       op: "and",
@@ -256,10 +262,7 @@ describe("ABS-14 修出的界可被消费", () => {
         { op: "gt", a: v("A1"), b: lit(0) },
       ],
     };
-    const hit = tryFnLevelFastPath(entry, args, satisfied, order);
-    expect("post" in hit).toBe(true);
-    expect(tryFnLevelFastPath(entry, args, pTrue, order)).toEqual({
-      miss: "bounds",
-    });
+    expect("post" in tryFnLevelFastPath(entry, args, satisfied)).toBe(true);
+    expect(tryFnLevelFastPath(entry, args, pTrue)).toEqual({ miss: "pre" });
   });
 });

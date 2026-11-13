@@ -14,8 +14,9 @@
  * - 样本清单同样是门禁面：删样本会让门禁变薄，新增/删除都要显式改测试。
  */
 import { abs as makeAbs, type Abs } from "../abs.ts";
-import { v } from "../term.ts";
+import { lit, v } from "../term.ts";
 import { formatAbs } from "../format/format.ts";
+import { ge, pTrue, type Phi } from "../pred.ts";
 import { anyVar, relationFn } from "../index.ts";
 import { generalizeFromAst, resetGeneralizeMemo } from "../generalize.ts";
 import { fnSummaryStats, resetFnSummaryCache } from "../key/fn-summary.ts";
@@ -103,13 +104,24 @@ export type BodyPathRun = {
   summaryStores: number;
 };
 
+/**
+ * 门禁**见证 Φ**：与样本语义无关，但其 `predKey` 与形成摘要时用的 `pTrue`
+ * 不同 ⇒ 第 2 层实例摘要（键含 Φ）必 miss，`diffAgainstBodyBaseline` 才会
+ * 真正落到第 3 层函数级摘要上。
+ *
+ * 背景（2026-11-13 复审）：此前的门禁用同一份实参 + 同一 Φ 跑两遍，第二遍
+ * 命中第 1 层 instMemo / 第 2 层 ABS-10 实例摘要，函数级快路径 `applied`
+ * 恒为 0 —— 门禁测的是 memo 回读，不是被测特性。
+ */
+export const ABS14_GATE_PHI: Phi = ge(v("__abs14_gate"), lit(0));
+
 /** 在干净缓存栈上跑一次 body 路径，返回可逐字节比较的显示串。 */
-export function runBodyPath(c: Abs14BaselineCase): BodyPathRun {
+export function runBodyPath(c: Abs14BaselineCase, phi: Phi = pTrue): BodyPathRun {
   resetGeneralizeMemo();
   resetFnSummaryCache();
   const g = generalizeFromAst(c.fnName, c.source);
   if (!g) throw new Error(`[abs14 baseline] generalizeFromAst returned undefined: ${c.id}`);
-  const post = g.instantiate(c.args());
+  const post = g.instantiate(c.args(), phi);
   const stats = fnSummaryStats();
   return {
     post,
@@ -130,21 +142,29 @@ export type EquivalenceDiff = {
  * 快路径落地时接入同一个夹具：`diffAgainstBodyBaseline(fastPathPost)`，
  * 逐条 `equal === true` 才允许启用三条保守通道。
  *
- * `equal` 同时钉住两件事：快路径输出 ≡ body 输出，且 body 输出 ≡ 基线硬钉值
- * （防止引擎或基线本身悄悄漂移后被当成「等价」放行）。
- * 快路径执行器需自行管理缓存状态；本函数先跑 body 再跑快路径。
+ * 2026-11-13 修订（门禁真正覆盖被测特性）：
+ * - **body 侧**在同一条目上用 `ABS14_GATE_PHI` 跑（pinned body 用 `pTrue`
+ *   单独跑一次保持既有硬钉）；
+ * - **fast 侧**回调收到同一个见证 Φ，必须自行绕开第 1/2 层（新 PolyFn 实例 +
+ *   与形成时不同的 Φ），否则测到的是 memo 回读；
+ * - `equal` 同时钉住三件事：fast(见证 Φ) ≡ body(见证 Φ)、body(pTrue) ≡
+ *   基线硬钉值、body(pTrue) 的摘要命中为 0（防止引擎或基线悄悄漂移）。
  */
 export function diffAgainstBodyBaseline(
-  fastPathPost: (c: Abs14BaselineCase) => Abs,
+  fastPathPost: (c: Abs14BaselineCase, phi: Phi) => Abs,
 ): EquivalenceDiff[] {
   return ABS14_BASELINE_CASES.map((c) => {
-    const body = runBodyPath(c);
-    const fast = formatAbs(fastPathPost(c));
+    const pinned = runBodyPath(c);
+    const body = runBodyPath(c, ABS14_GATE_PHI);
+    const fast = formatAbs(fastPathPost(c, ABS14_GATE_PHI));
     return {
       id: c.id,
       body: body.printed,
       fast,
-      equal: body.printed === fast && body.printed === c.expectedPost && body.summaryHits === 0,
+      equal:
+        body.printed === fast &&
+        pinned.printed === c.expectedPost &&
+        pinned.summaryHits === 0,
     };
   });
 }

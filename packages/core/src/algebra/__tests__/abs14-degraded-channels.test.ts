@@ -8,15 +8,15 @@
  * 本夹具逐条钉住：
  * - 替换结果 ≡ `runBodyPath` 的真实 body 结论（逐字节）；
  * - 只有 `unknown #opaque` 会被碰，已有结论不许被覆盖；
- * - 无摘要 / 形状不符 / 界不成立 / formal 数不符 / 变元未映射 ⇒ 一律
- *   fail-closed，绝不静默放宽；
+ * - 无摘要 / 实参不同构 / 完整前置不被蕴含 / formal 数不符 / 变元未映射 ⇒
+ *   一律 fail-closed，绝不静默放宽；
  * - 预算截断样本在通道开启下仍是 `unknown #opaque` 且不写摘要（无假绿）；
  * - 三条通道默认全启用。
  */
 import { describe, it, expect } from "vitest";
 import { abs as makeAbs, type Abs } from "../abs.ts";
-import { v } from "../term.ts";
-import { pTrue } from "../pred.ts";
+import { lit, v } from "../term.ts";
+import { ge, pTrue } from "../pred.ts";
 import { formatAbs } from "../format/format.ts";
 import {
   ABS14_BASELINE_CASES,
@@ -24,10 +24,10 @@ import {
   type Abs14BaselineCase,
 } from "./abs14-equivalence-baseline.ts";
 import {
+  ABS14_DEFAULT_CHANNELS,
   fnLevelFields,
   getAbs14FastPathChannels,
   tryDegradedChannel,
-  shapeSigOf,
 } from "../key/summary-fastpath.ts";
 import type { FnSummaryEntry } from "../key/fn-summary.ts";
 
@@ -57,15 +57,11 @@ function entry(overrides: Partial<FnSummaryEntry> = {}): FnSummaryEntry {
 
 describe("ABS-14 降级通道独立验证", () => {
   it("三条保守通道默认全部启用", () => {
-    expect(getAbs14FastPathChannels()).toEqual({
-      crossModule: true,
-      bodyUnavailable: true,
-      budgetTruncated: true,
-    });
+    expect(getAbs14FastPathChannels()).toEqual(ABS14_DEFAULT_CHANNELS);
   });
 
   it("替换结论 ≡ 同函数 body 可用时的真实结论（逐字节）", () => {
-    const r = tryDegradedChannel(opaque(), entry(), args(), pTrue, order);
+    const r = tryDegradedChannel(opaque(), entry(), args(), pTrue);
     expect("miss" in r).toBe(false);
     if ("miss" in r) return;
     expect(formatAbs(r.post)).toBe(bodyRun.printed);
@@ -73,45 +69,53 @@ describe("ABS-14 降级通道独立验证", () => {
   });
 
   it("纯函数：重复调用结果一致（冷/暖缓存不产生分歧）", () => {
-    const a = tryDegradedChannel(opaque(), entry(), args(), pTrue, order);
-    const b = tryDegradedChannel(opaque(), entry(), args(), pTrue, order);
+    const a = tryDegradedChannel(opaque(), entry(), args(), pTrue);
+    const b = tryDegradedChannel(opaque(), entry(), args(), pTrue);
     expect(a).toEqual(b);
   });
 
   it("不是 unknown #opaque 时不碰（已有结论不许被覆盖）", () => {
-    expect(tryDegradedChannel(bodyRun.post, entry(), args(), pTrue, order)).toEqual({
+    expect(tryDegradedChannel(bodyRun.post, entry(), args(), pTrue)).toEqual({
       miss: "not-degraded",
     });
   });
 
   it("无摘要 ⇒ 保持无信息（不编造、不放宽）", () => {
-    expect(tryDegradedChannel(opaque(), undefined, args(), pTrue, order)).toEqual({
+    expect(tryDegradedChannel(opaque(), undefined, args(), pTrue)).toEqual({
       miss: "no-summary",
     });
   });
 
-  it("形状签名不符 ⇒ fail-closed", () => {
-    const e = entry({ shapeSig: "prim:string" });
-    expect(shapeSigOf(args())).toBe("prim:number");
-    expect(tryDegradedChannel(opaque(), e, args(), pTrue, order)).toEqual({
-      miss: "shape",
-    });
+  it("实参不同构 ⇒ fail-closed（同 kind 异形不复用）", () => {
+    const e = entry({ argKeys: ["prim:string=c[exact]"] });
+    expect(tryDegradedChannel(opaque(), e, args(), pTrue)).toEqual({ miss: "args" });
   });
 
-  it("界不被当前 Φ 蕴含 ⇒ fail-closed", () => {
-    const e = entry({
-      bounds: [{ op: "ge", a: v("q"), b: { op: "lit", value: 10 } }],
+  it("完整前置不被当前 Φ 蕴含 ⇒ fail-closed", () => {
+    const e = entry({ pre: ge(v("q"), lit(10)) });
+    expect(tryDegradedChannel(opaque(), e, args(), pTrue)).toEqual({ miss: "pre" });
+  });
+
+  it("缺完整前置 / 缺实参同构键 ⇒ fail-closed", () => {
+    expect(tryDegradedChannel(opaque(), entry({ pre: undefined }), args(), pTrue)).toEqual({
+      miss: "no-pre",
     });
-    expect(tryDegradedChannel(opaque(), e, args(), pTrue, order)).toEqual({
-      miss: "bounds",
-    });
+    expect(
+      tryDegradedChannel(opaque(), entry({ argKeys: undefined }), args(), pTrue),
+    ).toEqual({ miss: "no-arg-keys" });
   });
 
   it("formal 数不符 / 变元未映射 ⇒ fail-closed", () => {
     expect(
-      tryDegradedChannel(opaque(), entry({ formals: ["q", "r"] }), args(), pTrue, order),
+      tryDegradedChannel(
+        opaque(),
+        entry({ formals: ["q", "r"], argKeys: ["a", "b"] }),
+        args(),
+        pTrue,
+      ),
     ).toEqual({ miss: "formal-arity" });
-    expect(tryDegradedChannel(opaque(), entry(), args(), pTrue, ["z"])).toEqual({
+    const noVarTerm = makeAbs({ k: "prim", type: "number" }, undefined, undefined, "path");
+    expect(tryDegradedChannel(opaque(), entry(), [noVarTerm], pTrue)).toEqual({
       miss: "unmapped",
     });
   });

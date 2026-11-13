@@ -49,7 +49,7 @@ describe("ABS-14 等价性门禁 · body 路径基线", () => {
 
   it("diffAgainstBodyBaseline 自比对通过（快路径接入模板可用）", () => {
     // 快路径尚不存在，用 body 路径自己充当「快路径」验证断言接口可跑。
-    const diffs = diffAgainstBodyBaseline((c) => runBodyPath(c).post);
+    const diffs = diffAgainstBodyBaseline((c, phi) => runBodyPath(c, phi).post);
     expect(diffs.filter((d) => !d.equal)).toEqual([]);
   });
 });
