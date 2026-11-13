@@ -774,7 +774,8 @@ throw/break/continue/await/var）由转译器发射为 thunk，经 `$yield`/`$yi
 finalizer 抛错（无外层自由写）按 native 上抛；`for-of` 的生成器 break 经
 `runtime/gen-return-at.ts` 的 `returnAt(k)` 回到已消费挂起点重放（f5b 精确 `true`）。
 async generator 的 replay 异常交付 rejected promise（不再二次包裹）。剩余：`yield*`
-委托内 break、finalizer 含 yield/return/throw 语句。夹具
+委托内 break（根因：本文件 §5.4 的 sound 守卫对含委托的生成器整帧禁用时间轴 ⇒
+`returnAt` 回退 C；要精确需重估该守卫）、finalizer 含 yield/return/throw 语句。夹具
 `abs13-abrupt-completion.test.ts`（14 例）。
 
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；

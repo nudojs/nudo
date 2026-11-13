@@ -489,7 +489,10 @@ thunk 并让异常按 native 上抛（`"rejected"` 而非误报正常完成）�
 拨回第 k 个 yield → 快照恢复 + finalizer 重放 + 委托转发），trigger 合并时注册表随协议方法
 一起迁移到 shell。`for…of { break }` 穿 finally 现精确 `true`（f5b）。**async generator replay 异常已接**：finalizer 重放抛错走 `rejectedPromiseAbs`（不再二次
 `deliver` 包一层）⇒ `.return()` 交付 `promise<"rejected">`（native 对齐，f15）。剩余：
-`yield*` 委托内 break（内层 registry/委托命中在 eager 排空后仍返回 C）、finalizer 含
+**`yield*` 委托内 break 根因已定位**——`collectGenBody` 的 A1 sound 守卫对「含委托」的
+生成器**整帧 `enabled = false`**（时间轴不可信，见 `generator-laziness.md` §5.4），因此
+`returnAt(k)`/`suspensionFinals` 一律返回 undefined ⇒ 回退 C。要精确必须重估该守卫（证明
+委托元素区间的挂起点快照与最终器重放仍可信），风险高于收益，**暂不做**。其次：finalizer 含
 `yield`/`return`/`throw` 语句的形态（需真挂起）。夹具 `abs13-abrupt-completion.test.ts`
 （14 例：含 async `.return/.throw` 的 rejected promise）。
 
