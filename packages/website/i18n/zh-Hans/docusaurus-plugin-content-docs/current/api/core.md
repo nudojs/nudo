@@ -373,7 +373,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$tpl"></a>`$tpl` | const | object / member runtime | — |
 | <a id="$typeof"></a>`$typeof` | fn | operator runtime | `$typeof(a: Abs): Abs` |
 | <a id="$whileseq"></a>`$whileSeq` | fn | control-flow lowering | `$whileSeq( test: () => Abs, body: () => void, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): void` |
-| <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs, tryCtx = 0): Abs` |
+| <a id="$yield"></a>`$yield` | fn | async / generator | `$yield( v: Abs, tryCtx = 0, finals: readonly (() => void)[] = [], ): Abs` |
 | <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
 | <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; depth?: number; }` |

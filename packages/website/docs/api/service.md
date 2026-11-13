@@ -762,7 +762,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="envunresolvedissues"></a>`envUnresolvedIssues` | fn | path env 未解析 → CheckIssue（warning）。 | `envUnresolvedIssues( filePath: string, source: string, baseDir = dirname(filePath), ): CheckIssue[]` |
 | <a id="evalabsmodulegraph"></a>`evalAbsModuleGraph` | fn | 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。 | `evalAbsModuleGraph( entrySource: string, entryFile: string, opts: AbsGraphOptions = {}, ): AbsModuleGraphResult` |
 | <a id="evalbuiltinunknown"></a>`EvalBuiltinUnknown` | type | — | `EvalBuiltinUnknown = { name: string; range: EvalLoc }` |
-| <a id="evaldiagnostics"></a>`EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; }` |
+| <a id="evaldiagnostics"></a>`EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; capabilityDenied: EvalBuiltinUnknown[]; deniedM...` |
 | <a id="evalrunresult"></a>`EvalRunResult` | type | — | `EvalRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: EvalMemberDiag[]; moduleIssu...` |
 | <a id="evalunreachable"></a>`EvalUnreachable` | type | — | `EvalUnreachable = { range: EvalLoc }` |
 | <a id="evictabsmodulecachefiles"></a>`evictAbsModuleCacheFiles` | fn | 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 | `evictAbsModuleCacheFiles(paths: string[]): void` |
