@@ -148,7 +148,7 @@ async function main() {
   };
   const { checkSource, pTrue, resetCheckSourceMemo } = core as {
     checkSource: (p: string, src: string, phi: unknown, opts?: Record<string, unknown>) => {
-      issues: Array<{ severity: string; code: string; message: string; line?: number }>;
+      issues: Array<{ severity: string; code: string; message: string; line?: number; column?: number }>;
     };
     pTrue: unknown;
     resetCheckSourceMemo: () => void;
@@ -189,7 +189,15 @@ async function main() {
       scanned++;
       for (const i of r.issues) {
         if (i.severity === "error" && (ERROR_CODES as readonly string[]).includes(i.code)) {
-          violations.push(`${f.label} [${i.code}] ${i.message}`);
+          // 带上点位与源码行：假红排查必须能直接落到被报的那一行，否则只有
+          // 「n: assignment ⊭ existing shape」时无从定位（minified 包同名
+          // 短变量极多，且该诊断可随 evaluate 完成度在 run 间翻转）。
+          const ln = i.line ?? 0;
+          const srcLine =
+            ln > 0 ? (f.source.split("\n")[ln - 1] ?? "").trim().slice(0, 160) : "";
+          violations.push(
+            `${f.label}:${ln}:${i.column ?? 0} [${i.code}] ${i.message}${srcLine ? `  ⟨${srcLine}⟩` : ""}`,
+          );
         }
       }
     }
