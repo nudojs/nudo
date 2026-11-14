@@ -423,6 +423,8 @@ export function classSpecOf(
       // 有绑定——this 走 __this（类值），类名引用保持自由（原生 TDZ）。
       const blkOpts: TranspileOptions = {
         ...methodOptsBase,
+        // 静态块是新作用域：外层 NaN 守卫别名不继承
+        nanAliases: undefined,
         thisParam: stmt.id?.name ?? thisSlot,
         ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
       };

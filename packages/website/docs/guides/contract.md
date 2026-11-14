@@ -168,9 +168,11 @@ With `number().finite()` (or any numeric bound, which already excludes `NaN`), t
 evaluator refines the fall-through path (`x >= 1`) at runtime; without it the same
 code stays `unproven`. `.finite()` is valid only on numeric chains.
 
-NaN guards provide the same evidence: `Number.isNaN(x)`, `x !== x`, `x === x`, and
-`!Number.isNaN(x)` establish that `x` is not `NaN` on the arm where that holds
-(including `if (!Number.isNaN(x)) { … }`).
+NaN guards provide the same evidence: `Number.isNaN(x)`, `x !== x`, `x === x`,
+`Number.isFinite(x)` (true arm only), and `!Number.isNaN(x)` establish that `x`
+is not `NaN` on the arm where that holds (including
+`if (!Number.isNaN(x)) { … }`). A `const` alias works too:
+`const ok = Number.isNaN(x); if (!ok) { … }`.
 
 In-source form:
 

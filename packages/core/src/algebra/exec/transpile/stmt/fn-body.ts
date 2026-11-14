@@ -37,6 +37,7 @@ import {
   relGuardOfNegation,
   relGuardComplementFactsOf,
   nanGuardOf,
+  type NanGuard,
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
   narrowRelComplementArmThunk,
@@ -62,6 +63,82 @@ import { emitStmtWritebackRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinB
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
+/**
+ * 本层语句对 NaN 守卫别名的增量（只处理**本层**；嵌套块在自己的
+ * `transpileFnBodyStmts` 调用里维护）。
+ *
+ * - `const X = <guard expr>` 登记别名（初始化式可以是 `Number.isNaN(x)` /
+ *   `Number.isFinite(x)` / `x === x` / `!…`，也可引用先前别名）；
+ * - 任何同名声明（let/var/function/class/解构）删除别名；
+ * - 被守卫变量在本层有自由写（`writtenOf()`，来自整段语句的
+ *   `collectForkBindingNames`）⇒ 不登记：`const ok = Number.isNaN(x); x = …;
+ *   if (ok)` 的 `ok` 说的是旧值，不能拿来窄化新值。
+ */
+function nanAliasesAfterStmt(
+  stmt: Statement,
+  base: ReadonlyMap<string, NanGuard> | undefined,
+  shadowed: ReadonlySet<string> | undefined,
+  writtenOf: () => ReadonlySet<string>,
+): ReadonlyMap<string, NanGuard> | undefined {
+  const s = stmt as {
+    type?: string;
+    kind?: string;
+    id?: { type?: string; name?: string } | null;
+    declarations?: Array<{ id?: unknown; init?: unknown }>;
+  };
+  if (s.type === "VariableDeclaration") {
+    // 无别名且无同名声明可删时**不分配**（守卫-free 代码的 transpile 热路径
+    // 与旧实现逐字节/同分配量）
+    let next: Map<string, NanGuard> | undefined;
+    const map = (): Map<string, NanGuard> => (next ??= new Map(base ?? []));
+    for (const d of s.declarations ?? []) {
+      const names = new Set<string>();
+      collectPatternNames(d.id, names);
+      for (const n of names) {
+        if (next) next.delete(n);
+        else if (base?.has(n)) map().delete(n);
+      }
+    }
+    if (s.kind === "const") {
+      for (const d of s.declarations ?? []) {
+        const id = d.id as { type?: string; name?: string } | undefined;
+        if (id?.type !== "Identifier" || typeof id.name !== "string" || !d.init) continue;
+        const g = nanGuardOf(d.init, shadowed, next ?? base);
+        if (!g || writtenOf().has(g.name)) continue;
+        map().set(id.name, g);
+      }
+    }
+    return next ?? base;
+  }
+  if (s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") {
+    if (!s.id?.name) return base;
+    if (!base?.has(s.id.name)) return base;
+    const next = new Map(base);
+    next.delete(s.id.name);
+    return next;
+  }
+  return base;
+}
+
+/** 本层是否有 const 声明（无 ⇒ 别名机制可整体跳过，保持旧路径零开销） */
+function hasConstDeclaration(stmts: readonly Statement[]): boolean {
+  return stmts.some((s) => {
+    const n = s as { type?: string; kind?: string };
+    return n.type === "VariableDeclaration" && n.kind === "const";
+  });
+}
+
+function nanAliasesBefore(
+  stmts: readonly Statement[],
+  base: ReadonlyMap<string, NanGuard> | undefined,
+  shadowed: ReadonlySet<string> | undefined,
+  writtenOf: () => ReadonlySet<string>,
+): ReadonlyMap<string, NanGuard> | undefined {
+  let cur = base;
+  for (const s of stmts) cur = nanAliasesAfterStmt(s, cur, shadowed, writtenOf);
+  return cur;
+}
+
 /**
  * 方法/函数体统一发射：早退 if 提升（transpileFnBodyStmts）+ 可选隐式 return。
  * ObjectMethod / ClassMethod / 属性位 FunctionExpression 必须走本入口——
@@ -281,17 +358,51 @@ export function transpileFnBodyStmts(
     // 断开（自信错值）。恒覆写保证「本层看到的组」= 本层算出的组。
     aliasGroups,
   };
+  // NaN 守卫别名（`const ok = Number.isNaN(x)`）：本层按语句顺序维护；
+  // 写集只在需要时懒算一次（整层语句的自由写）。
+  const baseNanAliases = scopedOpts.nanAliases;
+  let writtenNames: Set<string> | undefined;
+  const writtenOf = (): ReadonlySet<string> =>
+    (writtenNames ??= new Set(collectForkBindingNames(...stmts)));
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
     if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
     if (!stmtReturns(stmt.consequent)) continue;
     const rest = stmts.slice(i + 1);
     if (rest.length === 0) continue;
-    const head = stmts
-      .slice(0, i)
-      .map((s) => transpileStatement(s, depth, scopedOpts))
-      .join("\n");
-    const test = emitTranspileExpression(stmt.test, scopedOpts);
+    const headStmts = stmts.slice(0, i);
+    const headHasConst = hasConstDeclaration(headStmts);
+    const aliasesBefore = headHasConst
+      ? nanAliasesBefore(
+          headStmts,
+          baseNanAliases,
+          scopedOpts.shadowedIntrinsics,
+          writtenOf,
+        )
+      : baseNanAliases;
+    const armOpts = aliasesBefore
+      ? { ...scopedOpts, nanAliases: aliasesBefore }
+      : scopedOpts;
+    // head 逐句按**当时**已声明的别名发射（声明前的使用不得提前获得事实）；
+    // 无 const 声明时保持旧的单 opts 路径（零额外开销）。
+    const head = headHasConst
+      ? headStmts
+          .map((s, j) => {
+            const pre = nanAliasesBefore(
+              headStmts.slice(0, j),
+              baseNanAliases,
+              scopedOpts.shadowedIntrinsics,
+              writtenOf,
+            );
+            return transpileStatement(
+              s,
+              depth,
+              pre ? { ...scopedOpts, nanAliases: pre } : scopedOpts,
+            );
+          })
+          .join("\n")
+      : headStmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+    const test = emitTranspileExpression(stmt.test, armOpts);
     // P0.1：早退提升同样必须隔离臂间 mutator/普通绑定
     const recvSet = new Set<string>([
       ...collectForkBindingNames(stmt.consequent),
@@ -322,13 +433,17 @@ export function transpileFnBodyStmts(
     // 关系守卫（Bug 1）：早退提升路径与 IfStatement 分叉路径同口径——
     // cons 臂裸 `return x` 携带守卫界（缺省时 return-constraint 假阳）
     const earlyRGuard = relGuardOf(stmt.test);
-    const earlyNaNGuard = nanGuardOf(stmt.test, scopedOpts.shadowedIntrinsics);
+    const earlyNaNGuard = nanGuardOf(
+      stmt.test,
+      scopedOpts.shadowedIntrinsics,
+      aliasesBefore,
+    );
     const consNarrowed = narrowNotNaNArmThunk(
       narrowRelArmThunk(
         narrowDiscriminantArmThunks(
           narrowTypeArmThunk(
             narrowNullishArmThunks(
-              transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
+              transpileBlockAsThunk(stmt.consequent, depth, armOpts),
               earlyGuards,
               "cons",
               recvSet,
@@ -376,7 +491,7 @@ export function transpileFnBodyStmts(
       : consNarrowed;
     const cons = forkArmThunkExpr(consMarked, 0, names, padIn, scopedOpts);
     const altBody = transpileFnBodyStmts(rest, depth + 1, {
-      ...scopedOpts,
+      ...armOpts,
       inLoop: inCtrl ? (opts.inLoop ?? 0) + 1 : opts.inLoop,
     });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
@@ -453,7 +568,28 @@ export function transpileFnBodyStmts(
     ].join("\n");
     return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
   }
-  return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+  // 逐句发射：NaN 守卫别名按语句顺序累积（只在本层；嵌套块经 opts 继承）。
+  // 无继承别名且本层无 const 声明时走旧路径（产物 / 分配量与改前一致）。
+  let emitted: string;
+  if (baseNanAliases || hasConstDeclaration(stmts)) {
+    let nanAliases = baseNanAliases;
+    emitted = stmts
+      .map((s) => {
+        const stepOpts = nanAliases ? { ...scopedOpts, nanAliases } : scopedOpts;
+        const out = transpileStatement(s, depth, stepOpts);
+        nanAliases = nanAliasesAfterStmt(
+          s,
+          nanAliases,
+          scopedOpts.shadowedIntrinsics,
+          writtenOf,
+        );
+        return out;
+      })
+      .join("\n");
+  } else {
+    emitted = stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+  }
+  return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts, depth) + emitted;
 }
 
 /**
@@ -483,6 +619,8 @@ export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
   // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
   let unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
+  // body-fn 是独立转译单元：调用方注入的别名表不进入（作用域边界）
+  if (unitOpts.nanAliases) unitOpts = { ...unitOpts, nanAliases: undefined };
   // 语句发射序号袋同口径：外层（同一转译单元的嵌套 body）未传时新建，
   // 保证单元内 `__nudoSw`/`__fir`/`__nudoLv` 等序号不撞名且跨单元不残留
   if (!unitOpts.stmtEmit) {

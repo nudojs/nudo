@@ -364,6 +364,8 @@ function emitFunctionDeclaration(
   const thisSlot = thisCarrierOf(opts);
   const fnOpts: TranspileOptions = {
     ...opts,
+    // 函数体是新作用域：外层 const 别名（NaN 守卫）不进入（形参可同名遮蔽）
+    nanAliases: undefined,
     inLoop: 0,
     // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
     conditionalFlow: 0,
@@ -861,7 +863,7 @@ function emitIfStatement(
   // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
   // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
   const rguard = relGuardOf(stmt.test);
-  const nguard = nanGuardOf(stmt.test, opts.shadowedIntrinsics);
+  const nguard = nanGuardOf(stmt.test, opts.shadowedIntrinsics, opts.nanAliases);
   const consNarrowed = narrowNotNaNArmThunk(
     narrowRelArmThunk(
       narrowDiscriminantArmThunks(

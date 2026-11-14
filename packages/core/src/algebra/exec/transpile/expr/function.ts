@@ -232,6 +232,8 @@ export function transpileFunctionExpr(
       const asyncGen = asyncPlan !== undefined && asyncPlan.hasAwait && asyncPlan.allSafe;
       const fnBodyOpts: TranspileOptions = {
         ...opts,
+        // 函数体作用域边界：外层 NaN 守卫别名不继承（形参可同名遮蔽）
+        nanAliases: undefined,
         inLoop: 0,
         // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
         conditionalFlow: 0,

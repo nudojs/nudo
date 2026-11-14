@@ -170,7 +170,7 @@ export function transpileOperatorExpr(
         altRelComplement: relGuardComplementFactsOf(expr.test),
         // NaN 守卫：非 NaN 臂挂 `ne(x, NaN)`（`Number.isNaN(x) ? … : …` /
         // `x === x ? … : …`），为 else 臂的关系补集提供证据
-        nanGuard: nanGuardOf(expr.test, opts.shadowedIntrinsics),
+        nanGuard: nanGuardOf(expr.test, opts.shadowedIntrinsics, opts.nanAliases),
       });
     }
     case "BinaryExpression": {

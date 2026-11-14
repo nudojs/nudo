@@ -185,13 +185,40 @@ describe("NaN 守卫为补集提供非 NaN 证据（issue #185 残余）", () =>
     ).toEqual([]);
   });
 
-  it("已知边界：把 NaN 检查存进 boolean 变量后不携带关系事实", () => {
-    // `Number.isNaN` 的返回 Abs 不带 `ne(x, NaN)` 谓词（内建返回值面），
-    // 因此 `const ok = !Number.isNaN(x); if (ok) …` 仍无法证得（可证伪）。
+  it("boolean 变量形态：const ok = Number.isNaN(x); if (!ok) 携带事实", () => {
     const c = ` * @nudo:contract x num
  * @nudo:contract return nonNeg`;
     expect(
+      issues1(" const ok = Number.isNaN(x); if (!ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+    expect(
       issues1(" const ok = !Number.isNaN(x); if (ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+  });
+
+  it("boolean 变量形态：if (ok) 是 NaN 臂，不产生非 NaN 事实", () => {
+    const c = ` * @nudo:contract x num
+ * @nudo:contract return nonNeg`;
+    // ok 为真 ⇒ x 就是 NaN；补集事实只对「非 NaN 臂」成立 ⇒ 保持可证伪。
+    expect(
+      issues1(" const ok = Number.isNaN(x); if (ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual(["error:nudo:constraint-violated"]);
+  });
+
+  it("Number.isFinite 单边事实：真臂可用、取反不可用", () => {
+    const c = ` * @nudo:contract x num
+ * @nudo:contract return nonNeg`;
+    expect(
+      issues1(" if (Number.isFinite(x)) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+    expect(
+      issues1(" if (!Number.isFinite(x)) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual(["error:nudo:constraint-violated"]);
+    expect(
+      issues1(" const ok = Number.isFinite(x); if (ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+    expect(
+      issues1(" const ok = Number.isFinite(x); if (!ok) { if (x < 0) return 0; return x; } return 0;", c),
     ).toEqual(["error:nudo:constraint-violated"]);
   });
 });
@@ -239,5 +266,19 @@ describe("NaN 守卫的遮蔽门禁（soundness）", () => {
       "function f(x){ const Number = { isNaN: () => false }; if (Number.isNaN(x)) return 0; return x; }",
     );
     expect(viaDecl).not.toContain("$refineNotNaN(x)");
+  });
+
+  it("别名只对未改写的被守卫变量生效（x 被写 ⇒ 不登记）", () => {
+    const reassigned = transpileSource(
+      "function f(x){ const ok = Number.isNaN(x); x = 1; if (!ok) { if (x < 0) return 0; return x; } return 0; }",
+    );
+    expect(reassigned).not.toContain("$refineNotNaN(x)");
+  });
+
+  it("同名 let 重声明删除别名（作用域遮蔽）", () => {
+    const shadowed = transpileSource(
+      "function f(x){ const ok = Number.isNaN(x); { let ok = true; if (!ok) { if (x < 0) return 0; return x; } } return 0; }",
+    );
+    expect(shadowed).not.toContain("$refineNotNaN(x)");
   });
 });

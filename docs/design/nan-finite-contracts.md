@@ -44,7 +44,7 @@ return x + y;   // 契约 ge(3)
 |---|---|---|
 | `assumeFinite(t)` Pred | `pred.ts:132`、`pred.ts:153` | 已有一等谓词：`t` 是有限数（非 NaN/±Inf），开启线性环化简 |
 | 非 NaN 判定 | `arithmetic/bounds.ts::isNonNaN` | 已消费字面量 / `sum` 成员 / 数值界 / `ne(t, NaN)` / `assumeFinite` |
-| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | 合取（`others`）+ 否定臂 + **补集事实集**（`relGuardComplementFactsOf`，支持 `\|\|` 逐项）+ **NaN 守卫**（`nanGuardOf`：`Number.isNaN(x)` / `x === x` / `x !== x` / `!`） |
+| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | 合取（`others`）+ 否定臂 + **补集事实集**（`relGuardComplementFactsOf`，支持 `\|\|` 逐项）+ **NaN 守卫**（`nanGuardOf`：`Number.isNaN(x)` / `Number.isFinite(x)` / `x === x` / `x !== x` / `!`）+ **const 别名**（`const ok = Number.isNaN(x); if (!ok)`） |
 | 关系补集 | `exec/runtime/narrow.ts::$refineRelComplement` | **已实施**：`isNonNaN(a, currentExecPhi())` 门（绑定 pred ∪ 臂 Φ）+ `REL_COMPLEMENT_OPS` 单源映射；`$refineNotNaN` 生产 `ne(x, NaN)` |
 | 契约 builder | `constraint.ts` | `number().finite()`（+ `gt/ge/lt/le/int/min/max/length/shift/optional/at`） |
 
@@ -124,6 +124,9 @@ return x + y;   // 契约 ge(3)
 | `if (Number.isNaN(x)) return …;` / `if (x !== x) return …;` 的后续路径 | `ne(x, NaN)`（`$refineNotNaN`） |
 | `if (x === x)` / `if (!Number.isNaN(x))` 的真臂 | `ne(x, NaN)` |
 | `const ok = x === x; if (ok) …` | Φ 提供 `eq(x, x)` ⇒ 非 NaN 证据（无需绑定 pred） |
+| `if (Number.isFinite(x)) { … }` | 真臂 `ne(x, NaN)`（单边事实；取反不可用） |
+| `const ok = Number.isNaN(x); if (!ok) …` / `const ok = !Number.isNaN(x); if (ok) …` | 别名解析后挂 `ne(x, NaN)`（`const` 才登记） |
+| `const ok = Number.isFinite(x); if (ok) …` | 真臂 `ne(x, NaN)`；`if (!ok)` 不成立（单边） |
 | `add6(1, 2)` | 精确 `3` |
 | `number().finite()` 参数 ⇒ 返回值也有限 | **否**：有限数相加可溢出到 `±Infinity`；返回位需单独的 `.finite()` / 数值界契约（`add6` 的 `ge(3)` 不受影响） |
 | 非字面量实参（`any` / 未知全局） | 调用点不猜（既有边界：`judgeLiteralPred` 三值判定） |
@@ -143,15 +146,17 @@ return x + y;   // 契约 ge(3)
 - 金标：`check-recall-gold` + `check-real-packages` + `check-real-commander`
   **3 文件 / 200 用例通过**（1 expected fail 照旧）。
 - 未使用 `.finite()` 的既有侧车输出与断言逐字不变（`--changed` 套件）。
-- 回归：`check-guard-finite-185.test.ts`（19 例：首创/负控/数值界/builder/运行时门/NaN 守卫/Φ）。
+- 回归：`check-guard-finite-185.test.ts`（25 例：首创/负控/数值界/builder/运行时门/NaN 守卫/Φ/别名/单边事实）。
 - changeset：`@nudojs/core` minor（新增 builder 方法）+ `@nudojs/env` patch
   （`NaN` / `±Infinity` 字面量化）。
 
 ## 7. 残余与未决
 
-1. **boolean 变量边界**：`const ok = !Number.isNaN(x); if (ok) …` 不携带关系
-   事实（`Number.isNaN` 的返回 Abs 无 `ne(x, NaN)` 谓词）；内联守卫形态已覆盖，
-   存变量形态保持 fail-closed（测试钉住）。
+1. **别名边界**：只支持**函数体本层**的 `const` 别名（`const ok =
+   Number.isNaN(x)`）；`let` / `var` 别名不登记（可被改写），模块顶层
+   `const` 暂不登记（模块体不经 `transpileFnBodyStmts`，无顺序别名链）。
+   被守卫变量在本层有任何自由写（含嵌套闭包写）即不登记；同名声明删除
+   别名；函数 / 方法体边界清空（形参可同名遮蔽）。
 2. **非早退 fall-through 未覆盖**：`if (x < 1) { log(); }` 之后继续执行的语句
    没有臂 thunk 可挂补集。把剩余语句包成 thunk 可避免复制，但会改变 `var` /
    函数声明提升与生成器 `yield` 的作用域（REST 出现在两个臂 ⇒ 复制则有指数

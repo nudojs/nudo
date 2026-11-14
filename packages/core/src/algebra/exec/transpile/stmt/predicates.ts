@@ -1454,11 +1454,18 @@ export function narrowRelComplementArmThunk(
 export type NanGuard = {
   name: string;
   truthyMeansNaN: boolean;
+  /**
+   * 单边事实：只有「测试为真」一侧蕴含非 NaN（`Number.isFinite(x)`）；
+   * 假侧不蕴含 NaN（`"abc"` 也不 finite）⇒ **禁止**布尔取反后复用，
+   * 也禁止用于 NaN 臂。
+   */
+  oneSided?: boolean;
 };
 
 export function nanGuardOf(
   test: unknown,
   shadowed?: ReadonlySet<string>,
+  aliases?: ReadonlyMap<string, NanGuard>,
 ): NanGuard | undefined {
   // 用户遮蔽了 `Number`（形参 / 声明 / mock 注入）⇒ `Number.isNaN` 不是内建，
   // 不得产出 `ne(x, NaN)` 事实（fail-closed）。
@@ -1466,6 +1473,7 @@ export function nanGuardOf(
   const t = test as
     | {
         type?: string;
+        name?: string;
         operator?: string;
         argument?: unknown;
         callee?: {
@@ -1480,11 +1488,15 @@ export function nanGuardOf(
       }
     | null
     | undefined;
+  if (t?.type === "Identifier" && typeof t.name === "string") {
+    const alias = aliases?.get(t.name);
+    return alias ? { ...alias } : undefined;
+  }
   if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument != null) {
-    const inner = nanGuardOf(t.argument, shadowed);
-    return inner
-      ? { name: inner.name, truthyMeansNaN: !inner.truthyMeansNaN }
-      : undefined;
+    const inner = nanGuardOf(t.argument, shadowed, aliases);
+    // 单边事实不可取反（`!Number.isFinite(x)` 假侧不蕴含 NaN）
+    if (!inner || inner.oneSided) return undefined;
+    return { name: inner.name, truthyMeansNaN: !inner.truthyMeansNaN };
   }
   if (
     t?.type === "CallExpression" &&
@@ -1493,16 +1505,18 @@ export function nanGuardOf(
     t.callee.object?.type === "Identifier" &&
     t.callee.object.name === "Number" &&
     t.callee.property?.type === "Identifier" &&
-    t.callee.property.name === "isNaN" &&
+    (t.callee.property.name === "isNaN" || t.callee.property.name === "isFinite") &&
     t.arguments?.length === 1 &&
     (t.arguments[0] as { type?: string; name?: string } | undefined)?.type ===
       "Identifier" &&
     typeof (t.arguments[0] as { name?: string }).name === "string"
   ) {
-    return {
-      name: (t.arguments[0] as { name: string }).name,
-      truthyMeansNaN: true,
-    };
+    const name = (t.arguments[0] as { name: string }).name;
+    // isFinite 为真 ⇒ 有限数 ⇒ 非 NaN；为假 ⇒ 非有限（含非数字）**不**蕴含 NaN。
+    if (t.callee.property.name === "isFinite") {
+      return { name, truthyMeansNaN: false, oneSided: true };
+    }
+    return { name, truthyMeansNaN: true };
   }
   if (
     t?.type === "BinaryExpression" &&

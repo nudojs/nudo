@@ -139,6 +139,17 @@ export interface BaseEmitOpts {
    */
   shadowedIntrinsics?: ReadonlySet<string>;
   /**
+   * 函数体作用域内的 **NaN 守卫别名**：`const ok = Number.isNaN(x);` ⇒
+   * `ok → { name: "x", truthyMeansNaN: true }`。只由
+   * `transpileFnBodyStmts` 按语句顺序维护（`const` 声明才登记，重声明即
+   * 删除，被守卫变量在本层有任何自由写则不登记）；函数 / 箭头 / 方法体
+   * 入口必须清空（形参可同名遮蔽）。不是跨函数事实表。
+   */
+  nanAliases?: ReadonlyMap<
+    string,
+    { readonly name: string; readonly truthyMeansNaN: boolean; readonly oneSided?: boolean }
+  >;
+  /**
    * 本文件**真实**的静态声明导出名（源 AST：`export function|class|const|let`
    * / `var`，多声明符全收；解构声明不收内部名）。
    *
