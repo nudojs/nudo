@@ -86,12 +86,14 @@ Because there is no style linter, **reviewers** must watch what the type-checker
   多个 `zz-agg-<族>-N.test.ts`（只重排 import，不重命名 part）。Vitest 的
   `--shard` 按文件 hash + **等文件数**切分，不按时长——一个 400s 的入口会
   钉死整个 shard。2026-11-09 已对 `nudojs` / `migrate` / `emit` 三个大族启用。
-- **全仓基线对比**（本地 Node 22 / CI Node 24）：20 条已知失败来自宿主面
-  （`Float16Array` / ES 全局清单）、`fs.watch` 事件数与临时路径归一化，
-  固化在 `docs/reports/test-baseline-failures.json`。全量跑完用
-  `pnpm run test:baseline -- /tmp/nudo-test.log` 对比：**新增失败一律判红**，
+- **全仓基线对比（按宿主）**：宿主面（`Float16Array` / ES 全局清单）、`fs.watch`
+  事件数与临时路径归一化会随平台 / Node 大版本漂移，基线按
+  `<platform>/<node major>`（如 `darwin/22`、`linux/24`）分桶，固化在
+  `docs/reports/test-baseline-failures.json`。全量跑完用
+  `pnpm run test:baseline -- /tmp/nudo-test.log` 对比**当前宿主**的桶：**新增失败一律判红**，
   基线项偶尔不出现只告警（flaky 不制造假红）。修好某条或聚合改了文件名后
-  跑 `pnpm run test:baseline -- --update /tmp/nudo-test.log` 收紧基线。
+  跑 `pnpm run test:baseline -- --update /tmp/nudo-test.log` 只重写当前宿主条目；
+  未登记宿主当空基线（任何失败都是新增，先跑全量再 `--update`）。
 - **金标不合并**：`check-recall-gold` / real-package zero-FP / 差分语料保持独立——
   它们是产品精度门禁，不是回归钉。
 - **harness 只走共享入口**：service 用 `__tests__/tmp-project.ts`，nudojs 用

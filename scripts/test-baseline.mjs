@@ -1,20 +1,21 @@
 /**
- * 全仓测试「已知失败集合」的固化与机器对比（本地 Node 22 / CI Node 24）。
+ * 全仓测试「已知失败集合」的**按宿主**固化与机器对比。
  *
- *   pnpm exec vitest run --reporter=dot > /tmp/nudo-test.log 2>&1 || true
- *   pnpm run test:baseline -- /tmp/nudo-test.log          # 对比（0 新增才算过）
- *   pnpm run test:baseline -- --update /tmp/nudo-test.log # 重新固化基线
+ * 宿主键 = `<platform>/<node major>`（如 linux/26、darwin/22）。本地与 CI 的
+ * 宿主面不同（Float16Array / ES 全局清单 / fs.watch 事件数 / 临时目录归一化
+ * 等），单一扁平清单会随宿主漂移：换机器后旧条目全部「消失」、真问题全报
+ * 「新增」。按宿主分桶后，每个宿主只对比自己的集合。
  *
- * 背景：本地 Node 22.22.2 与 CI Node 24 的**宿主面**不同（Float16Array /
- * ES 全局清单等），另有 fs.watch 事件数、临时目录路径归一化、LSP 侧车写入
- * 这类环境相关钉。全仓 20 条失败与代码回归无关，此前只存在 /tmp 的一份
- * 文件清单里，且是**测试聚合之前**的路径 ⇒ 既不可复核也不匹配当前入口。
- * 这里按「失败用例全名」（文件 > describe > it）固化，聚合改文件名时会显式
- * 报「新增 + 消失」，提示人工更新基线。
+ *   pnpm exec vitest run --maxWorkers=4 > /tmp/nudo-test.log 2>&1 || true
+ *   pnpm run test:baseline -- /tmp/nudo-test.log          # 对比当前宿主
+ *   pnpm run test:baseline -- --update /tmp/nudo-test.log # 只重写当前宿主条目
  *
  * 判据：**新增失败一律判红**（exit 1）；基线里的用例偶尔不出现只告警不判红
  * （watch / fs 事件本来就可能 flaky，硬要求「0 消失」会制造假红）。
- * CI 用 Node 24 ⇒ 期望 0 条失败；若 CI 出现失败，本脚本会全部报成新增。
+ * 未登记宿主当空基线：任何失败都是新增 —— 先跑一次全量再 `--update`。
+ *
+ * 记录键是「失败用例全名」（文件 > describe > it），聚合改文件名时会显式报
+ * 「新增 + 消失」，提示人工更新基线。
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -23,6 +24,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const baselinePath = join(repoRoot, "docs/reports/test-baseline-failures.json");
 const ANSI = /\x1b\[[0-9;]*m/g;
+const HOST_KEY = `${process.platform}/${process.versions.node.split(".")[0]}`;
 
 function failedTestsFromLog(log) {
   const out = new Set();
@@ -32,6 +34,18 @@ function failedTestsFromLog(log) {
     if (m) out.add(m[1].trim());
   }
   return out;
+}
+
+function readBaseline() {
+  if (!existsSync(baselinePath)) return { hosts: {} };
+  const doc = JSON.parse(readFileSync(baselinePath, "utf8"));
+  if (!doc.hosts || typeof doc.hosts !== "object" || Array.isArray(doc.hosts)) {
+    console.error(
+      `malformed baseline: ${baselinePath} — expected { hosts: { "<platform>/<node-major>": { expectedFailedTests: [...] } } }`,
+    );
+    process.exit(2);
+  }
+  return doc;
 }
 
 const args = process.argv.slice(2);
@@ -52,30 +66,36 @@ const actual = failedTestsFromLog(readFileSync(logPath, "utf8"));
 if (update) {
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const doc = {
-    note:
-      "本地 Node 22 全量基线；CI 用 Node 24。仅含宿主面/环境相关的已知失败，" +
-      "不含任何代码回归。用 scripts/test-baseline.mjs --update 重新固化。",
-    host: "darwin / Node 22.22.2 (CI: ubuntu-latest / Node 24)",
-    updated: today,
-    expectedFailedTests: [...actual].sort(),
-  };
+  const doc = readBaseline();
+  doc.note =
+    "按宿主（<platform>/<node major>）固化的已知失败集合；只含宿主面/环境相关项，" +
+    "不含代码回归。用 scripts/test-baseline.mjs --update 重写**当前宿主**条目，" +
+    "其它宿主原样保留。";
+  doc.hosts[HOST_KEY] = { updated: today, expectedFailedTests: [...actual].sort() };
+  doc.hosts = Object.fromEntries(
+    Object.entries(doc.hosts).sort(([a], [b]) => a.localeCompare(b)),
+  );
   writeFileSync(baselinePath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
-  console.log(`baseline updated: ${actual.size} failed tests → ${baselinePath}`);
+  console.log(`baseline updated: ${actual.size} failed tests → ${HOST_KEY} (${baselinePath})`);
   process.exit(0);
 }
 
-if (!existsSync(baselinePath)) {
-  console.error(`missing baseline: ${baselinePath} — run with --update once`);
+const doc = readBaseline();
+const entry = doc.hosts[HOST_KEY];
+if (entry && !Array.isArray(entry.expectedFailedTests)) {
+  console.error(`malformed baseline entry for ${HOST_KEY} — expectedFailedTests must be an array`);
   process.exit(2);
 }
-const expectedSet = new Set(
-  JSON.parse(readFileSync(baselinePath, "utf8")).expectedFailedTests,
-);
+const expectedSet = new Set(entry?.expectedFailedTests ?? []);
 const added = [...actual].filter((t) => !expectedSet.has(t)).sort();
 const missing = [...expectedSet].filter((t) => !actual.has(t)).sort();
 
-console.log(`failed ${actual.size} = baseline ${expectedSet.size} · ${added.length} 新增 / ${missing.length} 消失`);
+if (!entry) {
+  console.log(`host ${HOST_KEY}: no baseline entry — treating as empty (run --update after a full run)`);
+}
+console.log(
+  `host ${HOST_KEY}: failed ${actual.size} = baseline ${expectedSet.size} · ${added.length} 新增 / ${missing.length} 消失`,
+);
 for (const t of added) console.log(`  + ${t}`);
 for (const t of missing) console.log(`  - ${t} (基线项本次未出现：flaky 或已修复，人工确认后 --update)`);
 if (missing.length > 0) {
