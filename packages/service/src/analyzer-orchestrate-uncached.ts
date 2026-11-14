@@ -30,6 +30,7 @@ import {
   suggestedCallsCeiling,
   suggestedDepthCeiling,
   suggestedForkCeiling,
+  semanticIndexEntryFaceSegment,
 } from "@nudojs/core/internal";
 import {
   parse,
@@ -85,6 +86,7 @@ import {
   resolveFunctionNode,
   fnNameLoc,
   collectTopLevelFunctions,
+  recordServiceEntryFace,
   findSingleModuleExportsFunction,
   collectBindings,
   buildNodeTypeMap,
@@ -526,6 +528,9 @@ export function analyzeFileUncachedInner(
   // noDeclaration 分类（类方法作用域名 "C.m" 落到 dts 投影上 → 产出
   // `export declare function C.m(...)` 这种非法 TS，#494）。
   const topLevelFns = collectTopLevelFunctions(ast);
+  // ADR 0001 阶段 1 · 切片 2：与 core 绑定索引做只读对照（默认关闭、零开销）。
+  // 普查结果本身不改写 ⇒ 分析面门禁结论不变。
+  recordServiceEntryFace(ast, topLevelFns);
   const noDeclByNode = new Map<Node, boolean>();
   const noDeclByName = new Map<string, boolean>();
   for (const t of topLevelFns) {
@@ -640,6 +645,8 @@ export function analyzeFileUncachedInner(
             analysisFnKey,
             fnDepSeg ?? "-",
             `cm=${caseMode}`,
+            // ADR 0001 切片 3：索引面 / 旧面两档互不回放（文件级键同纪律）。
+            `face=${semanticIndexEntryFaceSegment()}`,
           ].join("\0")
         : undefined;
     const dLen0 = diagnostics.length;

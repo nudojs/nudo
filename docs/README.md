@@ -30,6 +30,12 @@
 | [design/persistent-cache.md](./design/persistent-cache.md) | 持久化分析缓存（`.nudo/cache` / `~/.cache/nudo/deps`） | 摘要（L2 harvest 已落地） |
 | [design/nan-finite-contracts.md](./design/nan-finite-contracts.md) | NaN 感知的契约词汇（`number().finite()`）与关系补集累积（issue #185） | 已实施（2026-11-14；残余见文末） |
 
+### 决策记录（ADR）
+
+| 文档 | 内容 | 状态 |
+|------|------|------|
+| [design/adr-0001-semantic-index-and-evidence.md](./design/adr-0001-semantic-index-and-evidence.md) | 分析面事实一致性：单一绑定索引（`SemanticIndex`）+ 显式降级证据（`Evidence<T>`），审计批次 34 条 bug 的根因方案 | 已接受 · 阶段 1 切片 4.1 已落地 |
+
 ### 计划
 
 | 文档 | 状态 |

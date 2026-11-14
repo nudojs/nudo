@@ -12,6 +12,7 @@
 
 import { isBuiltin } from "node:module";
 import { parseSource as parse } from "../parse-source.ts";
+import { recordSemanticIndexShadow, resolveEntryFace } from "../scan/entry-face-shadow.ts";
 import { identBoundaryRegex, stripStringsKeepComments } from "../format/code-text.ts";
 import { extractFileEnvNames } from "../directive-scan.ts";
 import {
@@ -320,10 +321,15 @@ function checkSourceInScope(
   const file = parse(source);
   // Bug 1096：类导出入口（`new C()`）并入 L2 入口表——构造器必抛有了真实
   // 归因落点（此前构造器证据被丢弃 ⇒ 闸门假绿）。
-  const names = [
+  const oldNames = [
     ...listTopFunctions(source, file),
     ...listClassEntryNames(source, file),
   ];
+  // ADR 0001 阶段 1：入口面影子双读（切片 1，只记录分歧），再经索引普查面
+  // （切片 2 引入、切片 3 起默认开启；`setSemanticIndexEntryFace(false)` 可
+  // 一键回退旧面）。索引面状态已进 checkMemoKey，两档结论互不回放。
+  recordSemanticIndexShadow(file, oldNames);
+  const names = resolveEntryFace(file, oldNames);
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =

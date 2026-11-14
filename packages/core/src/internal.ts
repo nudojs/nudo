@@ -221,3 +221,41 @@ export { formatEntryParamShape } from "./algebra/check/check-signatures.ts";
 // JS Error 家族构造器名（service 补全近似表 builtin-prototype 的错误类
 // 判定复用；此前 8 名复刻 BUILTIN_ERROR_CLASSES 靠"保持同步"注释互钉）
 export { ERROR_CTOR_NAMES } from "./algebra/diagnostics/error-names.ts";
+// ADR 0001 绑定索引层：经 internal 供 service / lsp 消费；`.` 产品面不泄漏
+// （见 kernel-merge.md「绑定索引层」）。阶段 1 切片 1 只暴露最小只读面。
+export {
+  buildSemanticIndex,
+  type SemanticIndex,
+  type SymbolId,
+} from "./algebra/scan/semantic-index.ts";
+export {
+  compareEntryFaces,
+  recordSemanticIndexShadow,
+  resolveEntryFace,
+  semanticIndexEntryFaceSegment,
+  semanticIndexShadowActive,
+  setSemanticIndexEntryFace,
+  setSemanticIndexShadow,
+  takeSemanticIndexShadow,
+  type EntryFaceDiff,
+} from "./algebra/scan/entry-face-shadow.ts";
+// ADR 0001 阶段 1 切片 4.1：Evidence 只读面 + 发布门影子双读。
+// 仍经 internal 通道；`.` 产品面不泄漏（§10 决议 3）。
+export {
+  declaredOf,
+  degradedOf,
+  observedOf,
+  publishBlockedBy,
+  resolvePublicType,
+  type Evidence,
+  type ModuleForm,
+  type PublicName,
+} from "./algebra/diagnostics/evidence.ts";
+export {
+  comparePublishGates,
+  recordPublishGateShadow,
+  setPublishGateShadow,
+  takePublishGateShadow,
+  type PublishGateShadow,
+  type RawDiagnostic,
+} from "./algebra/diagnostics/evidence-shadow.ts";

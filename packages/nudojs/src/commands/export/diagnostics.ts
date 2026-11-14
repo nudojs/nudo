@@ -11,7 +11,7 @@
  * 更坏）。
  */
 import { checkSource, pTrue, type EffectiveContractOpts } from "@nudojs/core";
-import { DIAG } from "@nudojs/core/internal";
+import { DIAG, recordPublishGateShadow } from "@nudojs/core/internal";
 import { collectSkipReturns, type AnalysisResult } from "@nudojs/service";
 
 /** export 面的一条诊断（码 + 严重级 + 消息 [+ 关联函数]）。 */
@@ -94,7 +94,10 @@ function toExportDiagnostic(d: {
  * L2 入口 may-throw 与导出面的契约诊断无关 ⇒ `entryThrows: "off"`（不评估函数
  * 体）。check 面自身抛错 ⇒ fail-open 返回空（诊断面不得反过来炸导出）。
  */
-function checkFaceIssues(opts: ExportDiagnosticOptions): ExportDiagnostic[] {
+function checkFaceIssues(opts: ExportDiagnosticOptions): {
+  entries: ExportDiagnostic[];
+  raw: readonly { readonly code?: string }[];
+} {
   const out: ExportDiagnostic[] = [];
   const autoBind =
     typeof opts.effOpts.autoBind === "boolean" ? opts.effOpts.autoBind : undefined;
@@ -111,10 +114,11 @@ function checkFaceIssues(opts: ExportDiagnosticOptions): ExportDiagnostic[] {
       const entry = toExportDiagnostic(issue);
       if (entry !== undefined) out.push(entry);
     }
+    // 原始诊断（过滤前）只供影子双读使用；开关关闭时不复制、不构造 Evidence。
+    return { entries: out, raw: report.issues };
   } catch {
-    return [];
+    return { entries: [], raw: [] };
   }
-  return out;
 }
 
 /**
@@ -141,7 +145,8 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
     return opts.onExportFace(fn);
   };
 
-  for (const issue of checkFaceIssues(opts)) {
+  const checkFace = checkFaceIssues(opts);
+  for (const issue of checkFace.entries) {
     if (!inScope(issue.fn)) continue;
     push(issue);
   }
@@ -150,6 +155,10 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
     if (entry === undefined) continue;
     push(entry);
   }
+  // ADR 0001 阶段 1 切片 4.1：发布门影子双读。默认关闭 ⇒ 一次布尔判断、
+  // 零行为变更；开启后把「按码白名单 vs 语义判据」的分歧输出成清单，
+  // 为切片 4.2 切换判据留基线（不设白名单，§10 决议 4）。
+  recordPublishGateShadow([checkFace.raw, opts.result.diagnostics], EXPORT_BLOCKING_CODES);
 
   return {
     entries,

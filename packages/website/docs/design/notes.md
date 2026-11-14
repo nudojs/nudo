@@ -26,6 +26,12 @@ Architecture truth lives in the repository, not on this site: [`docs/design/`](h
 | [`generator-laziness.md`](https://github.com/nudojs/nudo/blob/main/docs/design/generator-laziness.md) | Generator bodies still run eagerly (Bug 212): why lazy generators are not implementable inside the current eager-snapshot model, the affected consumers, and the minimal transpile-side path to a sound over-approximation | Architecture debt (documented) |
 | [`architecture-debt.md`](https://github.com/nudojs/nudo/blob/main/docs/design/architecture-debt.md) | The 10 items blocked at the evaluation-model / `Abs`-representation layer (eager generator bodies, missing throws channel on relation/apply results, union dispatch by member name, no overload slot on fn shapes) — why they need dedicated scheduling | Architecture debt (ledger) |
 
+## Decision records
+
+| ADR | Covers | Status |
+|---|---|---|
+| [`adr-0001-semantic-index-and-evidence.md`](https://github.com/nudojs/nudo/blob/main/docs/design/adr-0001-semantic-index-and-evidence.md) | Analysis-face consistency: one binding index (`SemanticIndex`) + typed evidence with fail-closed degradation (`Evidence<T>`); root-cause plan for the 34-bug audit (2026-11-14) | Accepted (stage 1 slice 4.1) |
+
 ## Process notes
 
 | Note | Covers |
