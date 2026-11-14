@@ -146,7 +146,7 @@ return x + y;   // 契约 ge(3)
 - 金标：`check-recall-gold` + `check-real-packages` + `check-real-commander`
   **3 文件 / 200 用例通过**（1 expected fail 照旧）。
 - 未使用 `.finite()` 的既有侧车输出与断言逐字不变（`--changed` 套件）。
-- 回归：`check-guard-finite-185.test.ts`（35 例：首创/负控/数值界/builder/运行时门/NaN 守卫/Φ/别名/单边事实/循环·catch 遮蔽/模块顶层/switch 臂）。
+- 回归：`check-guard-finite-185.test.ts`（37 例：首创/负控/数值界/builder/运行时门/NaN 守卫/Φ/别名/单边事实/循环·catch 遮蔽/模块顶层/switch 臂 + fallthrough）。
 - changeset：`@nudojs/core` minor（新增 builder 方法）+ `@nudojs/env` patch
   （`NaN` / `±Infinity` 字面量化）。
 
@@ -157,8 +157,10 @@ return x + y;   // 契约 ge(3)
    左值）即不登记。继承别名在新作用域入口按写名过滤；循环体按头声明/头写名
    + 体内写名剔除；catch 形参遮蔽外层同名别名；函数/方法/箭头/静态块
    边界清空；`switch` 臂的 case consequent 也按语句顺序登记（2026-11-14）。
-   **未登记**（精度缺口，非 soundness 缺口）：`switch` 不同 case 之间不传播
-   （只在本臂内），非块状循环体里的 `var` 声明、解构声明。
+   **不传播**（有意，soundness）：`switch` 不同 case 之间（直接命中后一 case
+   时前一 case 的 `const` 处于 TDZ）；**精度缺口**：非块状循环体里的 `var`
+   声明（`for (;;) var ok = …` 后的使用不登记）。`switch` fallthrough 的
+   合并臂按同一语句列表登记（已覆盖）。
 2. **非早退 fall-through 未覆盖**：`if (x < 1) { log(); }` 之后继续执行的语句
    没有臂 thunk 可挂补集。把剩余语句包成 thunk 可避免复制，但会改变 `var` /
    函数声明提升与生成器 `yield` 的作用域（REST 出现在两个臂 ⇒ 复制则有指数

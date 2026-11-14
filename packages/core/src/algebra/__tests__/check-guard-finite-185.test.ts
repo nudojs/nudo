@@ -374,6 +374,22 @@ describe("switch 臂内的别名（残余收口）", () => {
     ).toBe(false);
   });
 
+  it("fallthrough 合并臂内别名可见（同一臂体顺序链）", () => {
+    expect(
+      gate(
+        "function f(x){ switch (1) { case 1: const ok = Number.isNaN(x); case 2: if (!ok) { if (x < 0) return 0; return x; } } return 0; }",
+      ),
+    ).toBe(true);
+  });
+
+  it("不同 case 之间不传播（直接命中 case 2 时 case 1 的 const 处于 TDZ）", () => {
+    expect(
+      gate(
+        "function f(x){ switch (1) { case 1: const ok = Number.isNaN(x); break; case 2: if (!ok) { if (x < 0) return 0; return x; } } return 0; }",
+      ),
+    ).toBe(false);
+  });
+
   it("块状 case 体由 fn-body 自己维护别名链", () => {
     expect(
       gate(
