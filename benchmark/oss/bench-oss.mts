@@ -126,6 +126,10 @@ function pickHubLeaf(graph: DepGraph, files: OssFile[]): { hub: OssFile; leaf: O
   return { hub, leaf, hubDependents: hubN, leafDependents: graph.dependents.get(leaf.path)?.size ?? 0 };
 }
 
+/** 小包采样门槛 / 样本数：共享 runner 的单次噪声对小绝对值的 3× 包络不友好 */
+const SMALL_PKG_FILES = 8;
+const SMALL_PKG_SAMPLES = 3;
+
 async function main() {
   const svc = await import(join(ROOT, "packages/service/src/index.ts"));
   const core = await import(join(ROOT, "packages/core/src/index.ts"));
@@ -167,46 +171,64 @@ async function main() {
       sources.set(f.path, f.source);
     }
 
-    // --- precision: L1 zero-FP on this package ---
+    // 小包（≤8 文件）的 check/cold 绝对值只有几十 ms，共享 runner 的一次
+    // 噪声尖峰就能把 3× 包络顶破——2026-11-13 两次 main 失败分别是
+    // kleur check 287.69ms（同级 cold 正常 164.73）与 kleur cold 300.48ms
+    // （同级 check 正常 86.31）；同包历史正常值 check 74.88/83.36、
+    // cold 127.32/152.93。⇒ 小包取 3 次样本的 **min**（重置 memo / 缓存），
+    // 大包保持单次（噪声占比小，且避免拖长 benchmark）。
+    const smallPkg = pkg.files.length <= SMALL_PKG_FILES;
+    const sampleCount = smallPkg ? SMALL_PKG_SAMPLES : 1;
     const violations: string[] = [];
     const scanErrors: string[] = [];
     let scanned = 0;
-    let checkMs = 0;
-    for (const f of pkg.files) {
-      let r;
-      const t0 = performance.now();
-      try {
-        r = checkSource(f.label, f.source, pTrue, {
-          entryThrows: "off",
-          loadModule: defaultLoadModule,
-          fromFile: f.path,
-        });
-      } catch (e) {
-        scanErrors.push(`${f.label}: ${(e as Error).message}`);
-        continue;
-      }
-      checkMs += performance.now() - t0;
-      scanned++;
-      for (const i of r.issues) {
-        if (i.severity === "error" && (ERROR_CODES as readonly string[]).includes(i.code)) {
-          // 带上点位与源码行：假红排查必须能直接落到被报的那一行，否则只有
-          // 「n: assignment ⊭ existing shape」时无从定位（minified 包同名
-          // 短变量极多，且该诊断可随 evaluate 完成度在 run 间翻转）。
-          const ln = i.line ?? 0;
-          const srcLine =
-            ln > 0 ? (f.source.split("\n")[ln - 1] ?? "").trim().slice(0, 160) : "";
-          violations.push(
-            `${f.label}:${ln}:${i.column ?? 0} [${i.code}] ${i.message}${srcLine ? `  ⟨${srcLine}⟩` : ""}`,
-          );
+    let checkMs = Number.POSITIVE_INFINITY;
+    for (let sample = 0; sample < sampleCount; sample++) {
+      if (smallPkg) resetCheckSourceMemo();
+      let sampleMs = 0;
+      for (const f of pkg.files) {
+        let r;
+        const t0 = performance.now();
+        try {
+          r = checkSource(f.label, f.source, pTrue, {
+            entryThrows: "off",
+            loadModule: defaultLoadModule,
+            fromFile: f.path,
+          });
+        } catch (e) {
+          if (sample === 0) scanErrors.push(`${f.label}: ${(e as Error).message}`);
+          continue;
+        }
+        sampleMs += performance.now() - t0;
+        if (sample !== 0) continue;
+        scanned++;
+        for (const i of r.issues) {
+          if (i.severity === "error" && (ERROR_CODES as readonly string[]).includes(i.code)) {
+            // 带上点位与源码行：假红排查必须能直接落到被报的那一行，否则只有
+            // 「n: assignment ⊭ existing shape」时无从定位（minified 包同名
+            // 短变量极多，且该诊断可随 evaluate 完成度在 run 间翻转）。
+            const ln = i.line ?? 0;
+            const srcLine =
+              ln > 0 ? (f.source.split("\n")[ln - 1] ?? "").trim().slice(0, 160) : "";
+            violations.push(
+              `${f.label}:${ln}:${i.column ?? 0} [${i.code}] ${i.message}${srcLine ? `  ⟨${srcLine}⟩` : ""}`,
+            );
+          }
         }
       }
+      checkMs = Math.min(checkMs, sampleMs);
     }
 
     // --- per-package cold / warm analyze ---
-    resetAllAnalysisCaches();
-    let t = performance.now();
-    for (const f of pkg.files) analyzeFile(f.path, f.source, undefined, undefined, defaultLoadModule);
-    const cold = performance.now() - t;
+    // 小包同样取 min（每次先清分析缓存，保证每个样本都是 cold）。
+    let cold = Number.POSITIVE_INFINITY;
+    for (let sample = 0; sample < sampleCount; sample++) {
+      resetAllAnalysisCaches();
+      const t0 = performance.now();
+      for (const f of pkg.files) analyzeFile(f.path, f.source, undefined, undefined, defaultLoadModule);
+      cold = Math.min(cold, performance.now() - t0);
+    }
+    let t;
 
     const warmSamples: number[] = [];
     for (let i = 0; i < 5; i++) {
