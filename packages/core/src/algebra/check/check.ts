@@ -1056,7 +1056,12 @@ function checkSourceInner(
   const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
   // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数；
   // ambient 侧车同名绑定与入口表同源（localNamedExports），复用同一次 parse
-  const entryNames = localNamedExports(source);
+  // ADR 0001 D1：入口名面与普查名表同源。`names` 已由 resolveEntryFace 切到
+  // SemanticIndex.entries（默认开启），此处并入旧 localNamedExports ⇒ 新登记
+  // 的导出槽形态（default 对象成员 / 匿名 default 类 / CJS·ESM 类表达式）也
+  // 是 L2 门禁候选，不再出现「入口在签名面、却不被执法」的假绿。
+  // 合并而非替换：localNamedExports 还含常量等非函数导出，既有口径不变。
+  const entryNames = new Set<string>([...localNamedExports(source), ...names]);
   const exportedNames = sidecarFp !== undefined ? entryNames : undefined;
   const entryThrowsMode = opts.entryThrows ?? "error";
   const ignoreThrows = opts.ignoreThrows;
