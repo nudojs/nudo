@@ -78,8 +78,10 @@ import {
   withImplicitReturn,
   narrowNullishArmThunks,
   narrowTypeArmThunk,
+  narrowTypeArmThunks,
   nullishGuardsOf,
   typeGuardOf,
+  typeGuardsOf,
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
   relGuardOf,
@@ -859,6 +861,10 @@ function emitIfStatement(
   // nullishGuardsOf 一臂多事实齐用。
   const guards = nullishGuardsOf(stmt.test, undefinedIsIntrinsicOf(opts));
   const tguard = typeGuardOf(stmt.test);
+  // BUG-011：cons 臂用合取聚合（`typeof x === "string" && …` 与单守卫等价）；
+  // alt 臂保持单守卫口径——整体为假时无法断定哪个合取项不成立，补集窄化
+  // 不得应用到复合测试式（否则假红）。
+  const consTypeGuards = typeGuardsOf(stmt.test).filter((g) => g.arm === "cons");
   const dguards = discriminantGuardsOf(stmt.test);
   // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
   // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
@@ -867,9 +873,9 @@ function emitIfStatement(
   const consNarrowed = narrowNotNaNArmThunk(
     narrowRelArmThunk(
       narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
+        narrowTypeArmThunks(
           narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-          tguard,
+          consTypeGuards,
           "cons",
           recvSet,
         ),

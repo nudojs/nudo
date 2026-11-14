@@ -698,6 +698,32 @@ export function typeGuardOf(test: unknown): TypeGuard | undefined {
   return { name, typeOf: litSide.value, arm: op === "===" || op === "==" ? "cons" : "alt" };
 }
 
+/**
+ * BUG-011：`&&` 合取测试式里的 typeof 事实要一起进 `if` 体。
+ *
+ * `typeof x === "string" && true` 在语义上恒等于单守卫，但 `typeGuardOf`
+ * 对 LogicalExpression 直接返回 undefined ⇒ cons 臂不窄化 ⇒ 体内读属性
+ * 被判 `nudo:entry-may-throw`（合法代码假红）。短路右操作数已有单守卫
+ * 通道（operators.ts），缺的是 `if` 臂的合取聚合入口。
+ *
+ * 只聚合 `&&` 的 cons 事实：整体为真时两侧都成立。对 `||` 保守返回空
+ * （任一臂都可能为真 ⇒ 无法断定某个 typeof 事实），不制造假绿/假红。
+ * 同名保留首条，与 nullishGuardsOf 的合并粒度一致。
+ */
+export function typeGuardsOf(test: unknown): TypeGuard[] {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type === "LogicalExpression" && t.operator === "&&") {
+    const out: TypeGuard[] = [];
+    for (const g of [...typeGuardsOf(t.left), ...typeGuardsOf(t.right)]) {
+      if (g.arm !== "cons") continue;
+      if (!out.some((o) => o.name === g.name)) out.push(g);
+    }
+    return out;
+  }
+  const g = typeGuardOf(test);
+  return g ? [g] : [];
+}
+
 /** nullish 守卫的臂 thunk 剪影运行时助手调用串（按粒度/成员形态分发） */
 export function nullishRemoveCallOf(guard: NullishGuard): string {
   if (guard.memberKey !== undefined) {
@@ -780,6 +806,29 @@ export function narrowNullishArmThunks(
 /** typeof 类型守卫臂 thunk 的剪影包装：`((v) => THUNK)($narrowTypeOf(v, T, keep))`。
  *  事实臂（arm）保留匹配成员，对侧臂绑补集；守卫名在 fork 绑定集时跳过
  *  （与 nullish 剪影同规则）。 */
+/**
+ * typeof 通道的多名版本：narrowArmShadowWrap 的 "multi" 模式本就为
+ * 「全部事实同层生效」设计，合取守卫必须一次性传入，逐条嵌套会让
+ * 同名/异名影子重绑的 fork 绑定裁决不一致。
+ */
+export function narrowTypeArmThunks(
+  thunk: string,
+  guards: readonly TypeGuard[],
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (guards.length === 0) return thunk;
+  return narrowArmShadowWrap(
+    thunk,
+    guards.map((g) => ({
+      name: g.name,
+      arg: `$narrowTypeOf(${g.name}, ${JSON.stringify(g.typeOf)}, ${arm === g.arm})`,
+    })),
+    forkBindingNames,
+    "multi",
+  );
+}
+
 export function narrowTypeArmThunk(thunk: string, guard: TypeGuard | undefined, arm: "cons" | "alt", forkBindingNames: ReadonlySet<string> | readonly string[]): string {
   if (!guard) return thunk;
   const keep = arm === guard.arm;
