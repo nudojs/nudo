@@ -11,19 +11,85 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.19.1 |
-| `@nudojs/service` | 1.12.1 |
-| `nudojs (CLI)` | 1.9.1 |
-| `@nudojs/parser` | 1.5.9 |
-| `@nudojs/lsp` | 1.10.1 |
-| `@nudojs/env` | 0.5.9 |
-| `@nudojs/harvester` | 0.6.1 |
-| `vite-plugin-nudo` | 0.7.2 |
-| `nudo-vscode` | 0.3.57 |
+| `@nudojs/core` | 1.20.0 |
+| `@nudojs/service` | 1.12.2 |
+| `nudojs (CLI)` | 1.9.2 |
+| `@nudojs/parser` | 1.5.10 |
+| `@nudojs/lsp` | 1.10.2 |
+| `@nudojs/env` | 0.5.10 |
+| `@nudojs/harvester` | 0.6.2 |
+| `vite-plugin-nudo` | 0.7.3 |
+| `nudo-vscode` | 0.3.58 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.19.1 {#pkg-core}
+## @nudojs/core 1.20.0 {#pkg-core}
+
+## 1.20.0
+
+### Minor Changes
+
+- aff6b7c: Add `number().finite()` and sound relation-complement narrowing.
+  
+  `number()` includes `NaN` and `±Infinity`, so a sequential guard such as
+  `if (x < 1) return 0; return x + y;` cannot assume `x >= 1` on the fall-through
+  path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
+  when it (or any numeric bound) is present, the evaluator refines the
+  fall-through / else arm with the complement of the relation guard at runtime
+  (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
+  `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
+  `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
+  where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
+  `var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
+  the same function body or at module top level (a written alias name or guarded
+  variable, loop-header shadowing/assignment, catch parameters and function
+  boundaries drop the alias). A user-shadowed `Number` disables the builtin
+  guard fact (fail-closed). De Morgan spellings
+  (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
+  for bare `number()` are unchanged.
+  
+  Literal `NaN` / `±Infinity` arguments (including `0/0`, `Number.NaN`,
+  `Number.POSITIVE_INFINITY`) now violate a `finite` precondition instead of
+  passing silently; `NaN` and `±Infinity` globals are modeled as literals.
+  
+  兼容性：新增 builder 方法与非 NaN 证据下的精度收紧；未使用 `.finite()` 的
+  既有契约输出逐字节不变。
+
+### Patch Changes
+
+- c93a32d: Cache directive-scope scanning per AST and version facet keys.
+  
+  `listFnDirectiveScopes` was re-walking the whole AST for every function query
+  (`findFnDirectiveScope` is called per function by `checkSource`), i.e.
+  O(functions × nodes). A WeakMap keyed by the parsed AST makes it one walk per
+  file: `@babel/parser/lib/index.js` (0.49 MB) check
+  13,179ms → 4,675ms (-64%). The AST is immutable during analysis and
+  `parseSource` returns the same object for the same source, so caching cannot
+  change results; a regression test pins the identity.
+  
+  `facetKey` now carries a `v1:` prefix (`FACET_KEY_VERSION = 1`) so future
+  kind/prefix/order semantics changes get a fresh key space; empty facets still
+  encode as `""`. Facets are also pinned as observation-only (not part of
+  `leqAbs` / `formatShape`) — promoting a slot to value semantics requires the
+  Shape migration gate (gold + real-package zero-FP + differential corpus).
+  
+  兼容性：内部缓存键与性能变化；未使用 facets 的 Abs 键逐字节不变。
+- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+  
+  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
+  (structurally a no-op there), but service / transpile / module-graph / fingerprint
+  / directive-scan call sites omitted the filename, so JS sources were parsed in
+  ts mode and paid two extra full-AST walks. Threading `filename` from
+  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
+  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
+  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
+  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  
+  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
+  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
+
+<details>
+<summary>Version history (61)</summary>
 
 ## 1.19.1
 
@@ -35,9 +101,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - `&&` short-circuit cons arm (right operand) now receives the left operand's relational guard (`relGuardOf(expr.left)`) — `x >= 1 && (y >= 2 ? x + y : 3)` keeps `x`'s bound inside the right side.
   - New `relGuardOfNegation` / `narrowRelNegationArmThunk`: when the test is `!(A ∧ …)`, the **false** arm (early-return rest path, `if` else arm, ternary alternate, `||` right operand) soundly asserts every relational conjunct of `A` — `!` is exact boolean negation, so NaN cannot slip through (`!(x < k)` false ⟺ `x < k` true). Bare relational complements (`if (x < k) return …;` rest path) remain un-narrowed per Bug 1115.
   - Result: `x >= 1 && y >= 2 ? x + y : 3`, `if (x >= 1 && y >= 2) { return x + y } return 3`, and `if (!(x >= 1 && y >= 2)) return 3; return x + y` now discharge `return number().ge(3)`; the sequential guard-clause and De Morgan spellings stay `nudo:unproven-return` because `number()` admits NaN (`add6(NaN, 5) = NaN`), which is the correct verdict.
-
-<details>
-<summary>Version history (60)</summary>
 
 ## 1.19.0
 
@@ -7132,7 +7195,35 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.12.1 {#pkg-service}
+## @nudojs/service 1.12.2 {#pkg-service}
+
+## 1.12.2
+
+### Patch Changes
+
+- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+  
+  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
+  (structurally a no-op there), but service / transpile / module-graph / fingerprint
+  / directive-scan call sites omitted the filename, so JS sources were parsed in
+  ts mode and paid two extra full-AST walks. Threading `filename` from
+  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
+  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
+  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
+  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  
+  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
+  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+  - @nudojs/parser@1.5.10
+  - @nudojs/env@0.5.10
+  - @nudojs/harvester@0.6.2
+
+<details>
+<summary>Version history (63)</summary>
 
 ## 1.12.1
 
@@ -7143,9 +7234,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.5.9
   - @nudojs/harvester@0.6.1
   - @nudojs/parser@1.5.9
-
-<details>
-<summary>Version history (62)</summary>
 
 ## 1.12.0
 
@@ -12117,7 +12205,23 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.9.1 {#pkg-nudojs}
+## nudojs (CLI) 1.9.2 {#pkg-nudojs}
+
+## 1.9.2
+
+### Patch Changes
+
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+  - @nudojs/parser@1.5.10
+  - @nudojs/service@1.12.2
+  - @nudojs/env@0.5.10
+  - @nudojs/harvester@0.6.2
+
+<details>
+<summary>Version history (60)</summary>
 
 ## 1.9.1
 
@@ -12129,9 +12233,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.6.1
   - @nudojs/parser@1.5.9
   - @nudojs/service@1.12.1
-
-<details>
-<summary>Version history (59)</summary>
 
 ## 1.9.0
 
@@ -16204,7 +16305,32 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.5.9 {#pkg-parser}
+## @nudojs/parser 1.5.10 {#pkg-parser}
+
+## 1.5.10
+
+### Patch Changes
+
+- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+  
+  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
+  (structurally a no-op there), but service / transpile / module-graph / fingerprint
+  / directive-scan call sites omitted the filename, so JS sources were parsed in
+  ts mode and paid two extra full-AST walks. Threading `filename` from
+  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
+  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
+  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
+  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  
+  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
+  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+
+<details>
+<summary>Version history (60)</summary>
 
 ## 1.5.9
 
@@ -16212,9 +16338,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [86bc56e]
   - @nudojs/core@1.19.1
-
-<details>
-<summary>Version history (59)</summary>
 
 ## 1.5.8
 
@@ -17879,7 +18002,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.10.1 {#pkg-lsp}
+## @nudojs/lsp 1.10.2 {#pkg-lsp}
+
+## 1.10.2
+
+### Patch Changes
+
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+  - @nudojs/parser@1.5.10
+  - @nudojs/service@1.12.2
+
+<details>
+<summary>Version history (64)</summary>
 
 ## 1.10.1
 
@@ -17889,9 +18026,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.19.1
   - @nudojs/parser@1.5.9
   - @nudojs/service@1.12.1
-
-<details>
-<summary>Version history (63)</summary>
 
 ## 1.10.0
 
@@ -20915,7 +21049,44 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.5.9 {#pkg-env}
+## @nudojs/env 0.5.10 {#pkg-env}
+
+## 0.5.10
+
+### Patch Changes
+
+- aff6b7c: Add `number().finite()` and sound relation-complement narrowing.
+  
+  `number()` includes `NaN` and `±Infinity`, so a sequential guard such as
+  `if (x < 1) return 0; return x + y;` cannot assume `x >= 1` on the fall-through
+  path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
+  when it (or any numeric bound) is present, the evaluator refines the
+  fall-through / else arm with the complement of the relation guard at runtime
+  (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
+  `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
+  `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
+  where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
+  `var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
+  the same function body or at module top level (a written alias name or guarded
+  variable, loop-header shadowing/assignment, catch parameters and function
+  boundaries drop the alias). A user-shadowed `Number` disables the builtin
+  guard fact (fail-closed). De Morgan spellings
+  (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
+  for bare `number()` are unchanged.
+  
+  Literal `NaN` / `±Infinity` arguments (including `0/0`, `Number.NaN`,
+  `Number.POSITIVE_INFINITY`) now violate a `finite` precondition instead of
+  passing silently; `NaN` and `±Infinity` globals are modeled as literals.
+  
+  兼容性：新增 builder 方法与非 NaN 证据下的精度收紧；未使用 `.finite()` 的
+  既有契约输出逐字节不变。
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+
+<details>
+<summary>Version history (60)</summary>
 
 ## 0.5.9
 
@@ -20923,9 +21094,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [86bc56e]
   - @nudojs/core@1.19.1
-
-<details>
-<summary>Version history (59)</summary>
 
 ## 0.5.8
 
@@ -22356,7 +22524,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.6.1 {#pkg-harvester}
+## @nudojs/harvester 0.6.2 {#pkg-harvester}
+
+## 0.6.2
+
+### Patch Changes
+
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+  - @nudojs/parser@1.5.10
+  - @nudojs/env@0.5.10
+
+<details>
+<summary>Version history (60)</summary>
 
 ## 0.6.1
 
@@ -22366,9 +22548,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.19.1
   - @nudojs/env@0.5.9
   - @nudojs/parser@1.5.9
-
-<details>
-<summary>Version history (59)</summary>
 
 ## 0.6.0
 
@@ -23922,7 +24101,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.7.2 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.7.3 {#pkg-vite-plugin}
+
+## 0.7.3
+
+### Patch Changes
+
+- Updated dependencies [c93a32d]
+- Updated dependencies [190761e]
+- Updated dependencies [aff6b7c]
+  - @nudojs/core@1.20.0
+  - @nudojs/service@1.12.2
+
+<details>
+<summary>Version history (63)</summary>
 
 ## 0.7.2
 
@@ -23931,9 +24123,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [86bc56e]
   - @nudojs/core@1.19.1
   - @nudojs/service@1.12.1
-
-<details>
-<summary>Version history (62)</summary>
 
 ## 0.7.1
 
