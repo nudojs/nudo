@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "debug": "^4.4.3",
     "escape-string-regexp": "^5.0.0",
     "eventemitter3": "^5.0.4",
