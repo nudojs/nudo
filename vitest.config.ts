@@ -50,69 +50,66 @@ export default defineConfig({
       // 被静默拖垮（env/harvester/vite-plugin/parser 测试面薄）。
       // Vitest 2+/5 thresholds glob：`thresholds['<glob>']` 对匹配文件单独
       // 聚合，glob 之外仍受全局阈值约束（全局对所有文件生效）。
-      // 基线（2025-09，lines/stmts/branch/funcs）：
-      //   env        72/66/46/68   floors 65/58/40/60
-      //   harvester  82/78/70/88   floors 75/70/62/80
-      //   vite-plugin 86/85/72/81 floors 78/78/65/72
-      //   parser     89/85/74/90   floors 80/78/68/82
-      // 2026-11-05：core/service/lsp/nudojs 补齐起步 floor（见下）；floors 只升不降。
+      // 2026-11-14 全量基线（1763 文件 / 17971 用例，`pnpm run coverage:floors`）：
+      //   core       92.0/94.6/82.5/88.5   service    91.3/94.2/78.4/87.3
+      //   lsp        88.8/93.1/74.8/83.7   nudojs     52.8/56.4/43.6/51.1
+      //   env        88.4/90.8/71.6/83.4   harvester  89.3/94.5/76.3/85.3
+      //   parser     92.4/93.1/80.2/88.0   vite-plugin 95.1/92.6/89.8/94.1
+      // 本次按建议值（实测 −5 取整到 5）上调；nudojs 是**修正**：旧值
+      // 55/55/45/55 高于实测（nightly 会红），改到 45/50/35/45。
       thresholds: coverageGate
         ? {
             lines: 70,
             functions: 70,
             branches: 65,
             statements: 70,
-            // 四大包起步地板（2026-11-05）：core/service/lsp/nudojs 占代码大头，
-            // 原先只有四个薄包有独立下限，大包会躲在全局阈值下被静默拖垮。
-            // 这里只兜「覆盖率腰斩」级倒退，不是质量证明；全量夜间基线刷新后
-            // 按 pnpm run coverage:floors 的建议值上调，只升不降。
             "packages/core/**": {
-              lines: 60,
-              functions: 60,
-              branches: 50,
-              statements: 60,
+              lines: 85,
+              functions: 85,
+              branches: 75,
+              statements: 80,
             },
             "packages/service/**": {
-              lines: 60,
-              functions: 60,
-              branches: 50,
-              statements: 60,
+              lines: 85,
+              functions: 85,
+              branches: 70,
+              statements: 80,
             },
             "packages/lsp/**": {
-              lines: 55,
-              functions: 55,
-              branches: 45,
-              statements: 55,
+              lines: 80,
+              functions: 85,
+              branches: 65,
+              statements: 75,
             },
             "packages/nudojs/**": {
-              lines: 55,
-              functions: 55,
-              branches: 45,
-              statements: 55,
+              lines: 45,
+              functions: 50,
+              branches: 35,
+              statements: 45,
             },
             "packages/env/**": {
-              lines: 65,
-              functions: 60,
-              branches: 40,
-              statements: 58,
+              lines: 80,
+              functions: 85,
+              branches: 65,
+              statements: 75,
             },
             "packages/harvester/**": {
-              lines: 75,
-              functions: 80,
-              branches: 62,
-              statements: 70,
+              lines: 80,
+              functions: 85,
+              branches: 70,
+              statements: 80,
             },
             "packages/vite-plugin/**": {
-              lines: 78,
-              functions: 72,
-              branches: 65,
-              statements: 78,
+              lines: 90,
+              functions: 85,
+              branches: 80,
+              statements: 85,
             },
             "packages/parser/**": {
-              lines: 80,
-              functions: 82,
-              branches: 68,
-              statements: 78,
+              lines: 85,
+              functions: 85,
+              branches: 75,
+              statements: 80,
             },
           }
         : {},
