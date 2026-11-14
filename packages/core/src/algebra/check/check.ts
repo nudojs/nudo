@@ -330,6 +330,11 @@ function checkSourceInScope(
   // 一键回退旧面）。索引面状态已进 checkMemoKey，两档结论互不回放。
   recordSemanticIndexShadow(file, oldNames);
   const names = resolveEntryFace(file, oldNames);
+  // D1：只有「索引相对旧普查面**新增**」的名字才是新的导出槽形态。
+  // 整个 names 含顶层非导出函数声明，全量并入会让内部函数的 any 操作被
+  // 当导出入口执法（check-recall-gold 17 条假红）⇒ 只传增量。
+  const oldNameSet = new Set(oldNames);
+  const addedNames = names.filter((n) => !oldNameSet.has(n));
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =
@@ -370,6 +375,7 @@ function checkSourceInScope(
         opts,
         depsFp,
         sidecarFp,
+        addedNames,
       );
       // 侧车诊断 side-channel 收口：nudo:contract-load / contract-cycle 等
       // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
@@ -1050,18 +1056,18 @@ function checkSourceInner(
   identityOpts: CheckOptions = opts,
   depsFp?: LoadDepsFingerprint,
   sidecarFp?: string,
+  addedNames: readonly string[] = [],
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
   // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
   const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
   // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数；
   // ambient 侧车同名绑定与入口表同源（localNamedExports），复用同一次 parse
-  // ADR 0001 D1：入口名面与普查名表同源。`names` 已由 resolveEntryFace 切到
-  // SemanticIndex.entries（默认开启），此处并入旧 localNamedExports ⇒ 新登记
-  // 的导出槽形态（default 对象成员 / 匿名 default 类 / CJS·ESM 类表达式）也
-  // 是 L2 门禁候选，不再出现「入口在签名面、却不被执法」的假绿。
+  // ADR 0001 D1：把索引相对旧普查面新增的导出槽形态并入门禁候选。
+  // 这些名字在签名面可见却不执法（假绿）；**不并整个 names**——它含顶层
+  // 非导出函数声明，全量并入会把内部函数的 any 操作当导出入口判红。
   // 合并而非替换：localNamedExports 还含常量等非函数导出，既有口径不变。
-  const entryNames = new Set<string>([...localNamedExports(source), ...names]);
+  const entryNames = new Set<string>([...localNamedExports(source), ...addedNames]);
   const exportedNames = sidecarFp !== undefined ? entryNames : undefined;
   const entryThrowsMode = opts.entryThrows ?? "error";
   const ignoreThrows = opts.ignoreThrows;
