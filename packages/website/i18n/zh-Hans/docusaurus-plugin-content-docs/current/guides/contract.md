@@ -167,6 +167,10 @@ export const amount = number().finite().ge(0);
 运行时收紧后续路径（`x >= 1`）；没有证据时同样的代码保持 `unproven`。
 `.finite()` 只对数值链合法。
 
+NaN 守卫提供同一类证据：`Number.isNaN(x)`、`x !== x`、`x === x` 与
+`!Number.isNaN(x)` 在成立的那一臂上确立 `x` 不是 `NaN`
+（含 `if (!Number.isNaN(x)) { … }`）。
+
 源码内形态：
 
 ```javascript verify

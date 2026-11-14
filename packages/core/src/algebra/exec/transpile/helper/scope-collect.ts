@@ -188,25 +188,27 @@ export function collectDeclaredBindingNames(node: unknown, acc: Set<string> = ne
 }
 
 /**
- * 本转译单元**遮蔽宿主内建**的名字集（undefined / NaN / Infinity 的子集）。
+ * 本转译单元**遮蔽宿主内建**的名字集（undefined / NaN / Infinity 的子集，
+ * 外加 `Number`：NaN 守卫 `Number.isNaN(x)` 的识别依赖它未被遮蔽）。
  *
  * 判据 = 声明绑定扫描命中 ∪ 调用方补给（`extra`：mock/env 注入名、body-fn
  * 的形参 / 闭包绑定名）。无命中 → undefined（调用方不写 opts 字段，产物逐
  * 字节不变）。
+ *
+ * 说明：`Number` 不在 `HOST_INTRINSIC_SET`（它不是字面量折叠面），但
+ * `stmt/predicates.ts::nanGuardOf` 必须知道用户是否用同名绑定/形参遮蔽了它，
+ * 否则会把自定义 `Number.isNaN` 当成内建 ⇒ 假 `ne(x, NaN)` 事实。
  */
 export function shadowedIntrinsicsOf(
   node: unknown,
   extra?: ReadonlySet<string>,
 ): ReadonlySet<string> | undefined {
   let out: Set<string> | undefined;
-  for (const name of collectDeclaredBindingNames(node)) {
-    if (HOST_INTRINSIC_SET.has(name)) (out ??= new Set()).add(name);
-  }
-  if (extra) {
-    for (const name of extra) {
-      if (HOST_INTRINSIC_SET.has(name)) (out ??= new Set()).add(name);
-    }
-  }
+  const track = (name: string): void => {
+    if (HOST_INTRINSIC_SET.has(name) || name === "Number") (out ??= new Set()).add(name);
+  };
+  for (const name of collectDeclaredBindingNames(node)) track(name);
+  if (extra) for (const name of extra) track(name);
   return out;
 }
 

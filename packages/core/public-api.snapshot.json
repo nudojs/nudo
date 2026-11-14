@@ -1247,6 +1247,7 @@
       "$reStateCall",
       "$rebindable",
       "$recordBinding",
+      "$refineNotNaN",
       "$refineRel",
       "$refineRelComplement",
       "$regex",

@@ -17,7 +17,7 @@
  */
 import type { Node } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import type { DiscriminantGuard, NullishGuard, TypeGuard, RelGuard } from "../stmt/predicates.ts";
+import type { DiscriminantGuard, NullishGuard, TypeGuard, RelGuard, NanGuard } from "../stmt/predicates.ts";
 import {
   narrowNullishArmThunks,
   narrowTypeArmThunk,
@@ -26,6 +26,7 @@ import {
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
   narrowRelComplementArmThunk,
+  narrowNotNaNArmThunk,
 } from "../stmt/predicates.ts";
 import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
 import { emitStmtWritebackRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
@@ -115,6 +116,9 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
    *  按非 NaN 证据决定是否收紧（见 `$refineRelComplement`）。三元表达式
    *  else 臂使用（`A ∨ B` 逐项）；`&&` / `||` 的短路返回值不需要。 */
   altRelComplement?: readonly RelGuard[];
+  /** NaN 守卫（`Number.isNaN(x)` / `x === x`）：非 NaN 臂以 `$refineNotNaN`
+   *  影子重绑，供随后的关系补集消费。三元 / `&&` / `||` 均可传。 */
+  nanGuard?: NanGuard;
 }): string {
   // Bug 1149：引擎内部临时名避开用户标识符词形（臂 IIFE 在自身作用域求值
   // 用户表达式 ⇒ 写死名会遮蔽用户同名绑定 / 撞 TDZ ReferenceError）。
@@ -200,6 +204,9 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     altExpr = narrowRelNegationArmThunk(altExpr, parts.altRelGuard, []);
     // 裸关系补集（issue #185 + `.finite()`）：运行时按非 NaN 证据收紧
     altExpr = narrowRelComplementArmThunk(altExpr, parts.altRelComplement, []);
+    // NaN 守卫：非 NaN 臂挂 `ne(x, NaN)`（事实臂 / 补集臂各按语义）
+    consExpr = narrowNotNaNArmThunk(consExpr, parts.nanGuard, "cons", []);
+    altExpr = narrowNotNaNArmThunk(altExpr, parts.nanGuard, "alt", []);
     const forkCall = `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
     // 绑定形态：左操作数作实参求值一次（IIFE 箭头参数——表达式位合法）
     return bindLeft ? `((${sc0Name}) => ${forkCall})(${parts.alwaysSrc})` : forkCall;
@@ -227,29 +234,39 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   // nullish 守卫臂剪影与 stmt.ts IfStatement 同源（#97 / #118 v3 多名）：
   // 任一守卫名在 fork 绑定集（mutator 重绑/臂内写）时不收窄——影子参数会
   // 吞掉臂内写（narrowNullishArmThunks 内统一跳过）
-  const consFinal = narrowRelArmThunk(
-    narrowDiscriminantArmThunks(
-      narrowNullishArmThunks(forkArmThunk(consLines, 0, names, opts), guards, "cons", names),
-      parts.discGuards,
+  const consFinal = narrowNotNaNArmThunk(
+    narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowNullishArmThunks(forkArmThunk(consLines, 0, names, opts), guards, "cons", names),
+        parts.discGuards,
+        "cons",
+        names,
+      ),
+      parts.relGuard,
       "cons",
       names,
     ),
-    parts.relGuard,
+    parts.nanGuard,
     "cons",
     names,
   );
-  const altFinal = narrowRelComplementArmThunk(
-    narrowRelNegationArmThunk(
-      narrowDiscriminantArmThunks(
-        narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
-        parts.discGuards,
-        "alt",
+  const altFinal = narrowNotNaNArmThunk(
+    narrowRelComplementArmThunk(
+      narrowRelNegationArmThunk(
+        narrowDiscriminantArmThunks(
+          narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
+          parts.discGuards,
+          "alt",
+          names,
+        ),
+        parts.altRelGuard,
         names,
       ),
-      parts.altRelGuard,
+      parts.altRelComplement,
       names,
     ),
-    parts.altRelComplement,
+    parts.nanGuard,
+    "alt",
     names,
   );
   return [

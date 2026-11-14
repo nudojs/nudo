@@ -94,7 +94,7 @@ changing the signature of any row below is **major**.
 | `$async`, `$await`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
 | `$throw`, `$catchVal`, `$loopReturn`, `$loopBreak`, `$loopContinue`, `NudoReturn`, `NudoLoopSignal`, `NudoThrow` | control-signal / throw | **public** |
 | `$callNamed`, `$assignRecord`, `$recordBinding`, `EvalCallRecord`, `setEvalCallCollector` | call-site recording for analyze | **public** (additive) |
-| `$refineRel`, `$refineRelComplement`, `$narrowTypeOf`, `$narrowMemberEq`, `$nullishTest`, `$removeNullish`, `$removeNull`, `$removeUndefined`, `$removeMemberNullish` | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | **public** |
+| `$refineRel`, `$refineRelComplement`, `$refineNotNaN`, `$narrowTypeOf`, `$narrowMemberEq`, `$nullishTest`, `$removeNullish`, `$removeNull`, `$removeUndefined`, `$removeMemberNullish` | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | **public** |
 | `runTranspiled`, `runtimeImportOf` | execution entry | **public** |
 
 `./exec` is a **published, frozen surface**: its export names are pinned in

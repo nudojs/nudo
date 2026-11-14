@@ -247,6 +247,10 @@ export function isNonNaN(a: Abs, phi: Phi): boolean {
         return true;
       }
     }
+    if (p.op === "eq" && a.term && termEquals(p.a, p.b) && termEquals(p.a, a.term)) {
+      // 自等 `x === x` 为真 ⇒ x 不是 NaN（NaN !== NaN）；对象恒等同样排除 NaN
+      return true;
+    }
     if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
       // 数值界排除 NaN（NaN 比较全假）
       if (a.term && (termEquals(p.a, a.term) || termEquals(p.b, a.term))) return true;
@@ -272,6 +276,9 @@ export function isNonNaN(a: Abs, phi: Phi): boolean {
         ) {
           return true;
         }
+      }
+      if (p.op === "eq" && a.term && termEquals(p.a, p.b) && termEquals(p.a, a.term)) {
+        return true;
       }
       if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
         const sides = [p.a, p.b];

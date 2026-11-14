@@ -44,8 +44,8 @@ return x + y;   // 契约 ge(3)
 |---|---|---|
 | `assumeFinite(t)` Pred | `pred.ts:132`、`pred.ts:153` | 已有一等谓词：`t` 是有限数（非 NaN/±Inf），开启线性环化简 |
 | 非 NaN 判定 | `arithmetic/bounds.ts::isNonNaN` | 已消费字面量 / `sum` 成员 / 数值界 / `ne(t, NaN)` / `assumeFinite` |
-| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | 合取（`others`）+ 否定臂 + **补集事实集**（`relGuardComplementFactsOf`，支持 `\|\|` 逐项） |
-| 关系补集 | `exec/runtime/narrow.ts::$refineRelComplement` | **已实施**：`isNonNaN(a, pTrue)` 门 + `REL_COMPLEMENT_OPS` 单源映射 |
+| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | 合取（`others`）+ 否定臂 + **补集事实集**（`relGuardComplementFactsOf`，支持 `\|\|` 逐项）+ **NaN 守卫**（`nanGuardOf`：`Number.isNaN(x)` / `x === x` / `x !== x` / `!`） |
+| 关系补集 | `exec/runtime/narrow.ts::$refineRelComplement` | **已实施**：`isNonNaN(a, currentExecPhi())` 门（绑定 pred ∪ 臂 Φ）+ `REL_COMPLEMENT_OPS` 单源映射；`$refineNotNaN` 生产 `ne(x, NaN)` |
 | 契约 builder | `constraint.ts` | `number().finite()`（+ `gt/ge/lt/le/int/min/max/length/shift/optional/at`） |
 
 ## 3. 实现
@@ -73,9 +73,9 @@ return x + y;   // 契约 ge(3)
 ```
 
 - 落点 = `exec/runtime/narrow.ts::$refineRelComplement(a, op, k)`：拿到当前
-  `Abs`，先 `isNonNaN(a, pTrue)` 判定（当前实现只读 `a.pred` 的证据——契约
-  `.finite()` / 数值界 / `ne(x, NaN)`；作用域守卫事实未接入，缺证据即不收紧），
-  成立才按 `REL_COMPLEMENT_OPS[op]` 挂界，否则**原样返回**（fail-closed）。
+  `Abs`，先 `isNonNaN(a, currentExecPhi())` 判定（绑定 pred：契约 `.finite()` /
+  数值界 / `ne(x, NaN)`；臂 Φ：`$fork` 压入的 `x === x` 等事实），成立才按
+  `REL_COMPLEMENT_OPS[op]` 挂界，否则**原样返回**（fail-closed）。
 - 转译器只在 fall-through / else 臂发射该调用（与 `$refineRel` 的事实臂对称），
   不自行决定是否收紧；`A \|\| B` 形态由 `relGuardComplementFactsOf` 逐项收集，
   合取（`composite`）不收集（`¬(A ∧ B)` 是析取）。
@@ -96,8 +96,8 @@ return x + y;   // 契约 ge(3)
    把 builder 的 `preds` 原样注入，无需特判（`assumeFinite` 已是 Pred 联合成员）。
 3. `predicates.ts`：fall-through / else 臂发射 `$refineRelComplement`（或
    `negated` 形式）；语法层只决定**在哪一侧**发射，不决定是否收紧。
-4. `exec/runtime/narrow.ts`：补集入口按 `isNonNaN(a, pTrue)` fail-closed——
-   当前只消费 `a.pred`（契约 pred / 数值界）；作用域守卫事实（phi）未接入。
+4. `exec/runtime/narrow.ts`：补集入口按 `isNonNaN(a, currentExecPhi())`
+   fail-closed；`$refineNotNaN` 给 NaN 守卫的非 NaN 臂挂 `ne(x, NaN)`。
 5. `cmp.ts`：`implies` 的补集规则**保持现状**（它没有 Abs 上下文，不能看到
    `assumeFinite`）；补集只发生在运行时事实臂。
 6. 诊断/展示：`check-report.ts` 的 `assumeFinite` 分支已有格式化，确认
@@ -109,6 +109,9 @@ return x + y;   // 契约 ge(3)
 - `leqAbs` 不接受集不变；不新增 Shape 判别成员；`formatShape` 不变。
 - `.finite()` 是**契约侧**词汇，不是 `any()`/`unknown` 的替代；入口无约束参数仍显示 `any`。
 - 不给 `unknown` 参数自动加 finite 假设（fail-closed）。
+- `Number` 被用户遮蔽（形参 / 声明 / mock 注入）时**不得**把
+  `Number.isNaN(x)` 当内建 ⇒ 不产出 `ne(x, NaN)` 事实（`shadowedIntrinsics`
+  现在跟踪 `Number`；源码门禁钉住）。
 
 ## 5. 语义边界（诚实声明）
 
@@ -118,6 +121,9 @@ return x + y;   // 契约 ge(3)
 | `number()`（无 `.finite()`）+ 同上 | 否（NaN 可达，保持 unproven / 可证伪） |
 | `number().ge(0)` + `¬(x < 1)` | 是（数值界已排除 NaN） |
 | 字面量 `NaN` / `+Infinity` / `Number.NaN` 实参 + `.finite()` | 契约违反（`judgeLiteralPred` + env 字面量化） |
+| `if (Number.isNaN(x)) return …;` / `if (x !== x) return …;` 的后续路径 | `ne(x, NaN)`（`$refineNotNaN`） |
+| `if (x === x)` / `if (!Number.isNaN(x))` 的真臂 | `ne(x, NaN)` |
+| `const ok = x === x; if (ok) …` | Φ 提供 `eq(x, x)` ⇒ 非 NaN 证据（无需绑定 pred） |
 | `add6(1, 2)` | 精确 `3` |
 | `number().finite()` 参数 ⇒ 返回值也有限 | **否**：有限数相加可溢出到 `±Infinity`；返回位需单独的 `.finite()` / 数值界契约（`add6` 的 `ge(3)` 不受影响） |
 | 非字面量实参（`any` / 未知全局） | 调用点不猜（既有边界：`judgeLiteralPred` 三值判定） |
@@ -128,22 +134,28 @@ return x + y;   // 契约 ge(3)
 - **#185 矩阵**：顺序早退 / De Morgan / 三元 else 在 `number().finite()` 下转 proved；
   无 `.finite()` 时负控保持逐字 unproven（`check-guard-conjunction-185.test.ts`
   现有断言未改宽）。
+- **NaN 守卫**：`Number.isNaN(x)` / `x !== x` 早退；内联 `!Number.isNaN(x)` /
+  `x === x` 真臂；`const ok = x === x; if (ok)` 经 Φ——均把 `ne(x, NaN)` 接入补集。
+- **遮蔽门禁**：`function f(Number, x)` / 局部 `const Number = …` 时转译产物
+  不含 `$refineNotNaN(x)` 调用（传输层 `shadowedIntrinsics` 跟踪 `Number`）。
 - **NaN 反例**：`0/0`（NaN）/ `1/0`（Infinity）在 `.finite()` 契约下报
   `nudo:constraint-violated`；`f(1)` 放行（`check-guard-finite-185.test.ts`）。
 - 金标：`check-recall-gold` + `check-real-packages` + `check-real-commander`
   **3 文件 / 200 用例通过**（1 expected fail 照旧）。
 - 未使用 `.finite()` 的既有侧车输出与断言逐字不变（`--changed` 套件）。
-- 回归：`check-guard-finite-185.test.ts`（12 例：首创/负控/数值界/builder/运行时门）。
+- 回归：`check-guard-finite-185.test.ts`（19 例：首创/负控/数值界/builder/运行时门/NaN 守卫/Φ）。
 - changeset：`@nudojs/core` minor（新增 builder 方法）+ `@nudojs/env` patch
   （`NaN` / `±Infinity` 字面量化）。
 
 ## 7. 残余与未决
 
-1. **守护事实（phi）未接入**：`$refineRelComplement` 只看 `a.pred`，函数体内
-   `if (Number.isNaN(x)) return …` 之类守卫建立的证据不会传给补集；需要把
-   作用域 phi 传到影子重绑点（当前 fail-closed，不会假绿）。
+1. **boolean 变量边界**：`const ok = !Number.isNaN(x); if (ok) …` 不携带关系
+   事实（`Number.isNaN` 的返回 Abs 无 `ne(x, NaN)` 谓词）；内联守卫形态已覆盖，
+   存变量形态保持 fail-closed（测试钉住）。
 2. **非早退 fall-through 未覆盖**：`if (x < 1) { log(); }` 之后继续执行的语句
-   没有臂 thunk 可挂补集；#185 的早退 / else / 三元两类已覆盖。
+   没有臂 thunk 可挂补集。把剩余语句包成 thunk 可避免复制，但会改变 `var` /
+   函数声明提升与生成器 `yield` 的作用域（REST 出现在两个臂 ⇒ 复制则有指数
+   膨胀风险）⇒ 暂不做，保持现状。
 3. **命名**：采用 `.finite()`（`Number.isFinite` 语义，同时排除 ±Inf）。
    `.notNaN()` 会暗示 `Infinity` 合法，不采用。
 4. **`.nan()`**：不暴露（当前无需求）。

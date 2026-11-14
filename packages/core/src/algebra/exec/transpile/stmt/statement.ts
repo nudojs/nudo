@@ -85,9 +85,11 @@ import {
   relGuardOf,
   relGuardOfNegation,
   relGuardComplementFactsOf,
+  nanGuardOf,
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
   narrowRelComplementArmThunk,
+  narrowNotNaNArmThunk,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -859,47 +861,59 @@ function emitIfStatement(
   // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
   // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
   const rguard = relGuardOf(stmt.test);
-  const consNarrowed = narrowRelArmThunk(
-    narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-        tguard,
+  const nguard = nanGuardOf(stmt.test, opts.shadowedIntrinsics);
+  const consNarrowed = narrowNotNaNArmThunk(
+    narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
+          tguard,
+          "cons",
+          recvSet,
+        ),
+        dguards,
         "cons",
         recvSet,
       ),
-      dguards,
+      rguard,
       "cons",
-      recvSet,
+      narrowSkip,
     ),
-    rguard,
+    nguard,
     "cons",
     narrowSkip,
   );
   const altNarrowed =
     altRaw === null
       ? null
-      : narrowRelComplementArmThunk(
-          narrowRelNegationArmThunk(
-            narrowDiscriminantArmThunks(
-              narrowTypeArmThunk(
-                narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-                tguard,
+      : narrowNotNaNArmThunk(
+          narrowRelComplementArmThunk(
+            narrowRelNegationArmThunk(
+              narrowDiscriminantArmThunks(
+                narrowTypeArmThunk(
+                  narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+                  tguard,
+                  "alt",
+                  recvSet,
+                ),
+                dguards,
                 "alt",
                 recvSet,
               ),
-              dguards,
-              "alt",
-              recvSet,
+              // 否定臂事实（issue #185）：`if (!(A ∧ …)) … else <这里>` 的 else
+              // 臂成立 `A ∧ …`（`!` 为假）⇒ 各关系合取项一并接上（裸关系补集
+              // 仍不可用——NaN，见 relGuardOfNegation）
+              relGuardOfNegation(stmt.test),
+              narrowSkip,
             ),
-            // 否定臂事实（issue #185）：`if (!(A ∧ …)) … else <这里>` 的 else
-            // 臂成立 `A ∧ …`（`!` 为假）⇒ 各关系合取项一并接上（裸关系补集
-            // 仍不可用——NaN，见 relGuardOfNegation）
-            relGuardOfNegation(stmt.test),
+            // 裸关系守卫的补集：运行时按非 NaN 证据（`.finite()` / 数值界 /
+            // NaN 守卫）决定是否收紧；`A ∥ B` 逐项取补集，缺证据原样返回。
+            relGuardComplementFactsOf(stmt.test),
             narrowSkip,
           ),
-          // 裸关系守卫的补集：运行时按非 NaN 证据（`.finite()` / 数值界）
-          // 决定是否收紧；`A ∨ B` 逐项取补集，缺证据原样返回。
-          relGuardComplementFactsOf(stmt.test),
+          // NaN 守卫的非 NaN 臂（`Number.isNaN(x) === false` / `x === x`）。
+          nguard,
+          "alt",
           narrowSkip,
         );
   const cons = forkArmThunkExpr(consNarrowed, 0, names, padIn, opts);

@@ -1435,3 +1435,106 @@ export function narrowRelComplementArmThunk(
     "seq",
   );
 }
+
+// --- NaN 守卫（issue #185 残余） ------------------------------------------
+
+/**
+ * NaN 守卫：测试为真是否意味着「该值是 NaN」。
+ *
+ * 可识别形态（严格、无强制转换）：
+ * - `Number.isNaN(x)`（truthy ⇒ NaN）
+ * - `x !== x`（truthy ⇒ NaN；NaN 是唯一 `!==` 自身的值）
+ * - `x === x`（truthy ⇒ 非 NaN）
+ * - 以上任意一项的 `!` 取反（truthy 语义翻转）
+ *
+ * `isNaN(x)`（全局，会强制转换）与 `x != x`（宽松，ToPrimitive 可返回 NaN）
+ * **不识别**：truthy 不保证 `x` 自身是 NaN。补集侧只加 `ne(x, NaN)`，
+ * 因此只消费「非 NaN」那一臂；NaN 那一臂保持不剪影（宁缺毋假）。
+ */
+export type NanGuard = {
+  name: string;
+  truthyMeansNaN: boolean;
+};
+
+export function nanGuardOf(
+  test: unknown,
+  shadowed?: ReadonlySet<string>,
+): NanGuard | undefined {
+  // 用户遮蔽了 `Number`（形参 / 声明 / mock 注入）⇒ `Number.isNaN` 不是内建，
+  // 不得产出 `ne(x, NaN)` 事实（fail-closed）。
+  if (shadowed?.has("Number")) return undefined;
+  const t = test as
+    | {
+        type?: string;
+        operator?: string;
+        argument?: unknown;
+        callee?: {
+          type?: string;
+          computed?: boolean;
+          object?: { type?: string; name?: string };
+          property?: { type?: string; name?: string };
+        };
+        arguments?: unknown[];
+        left?: { type?: string; name?: string };
+        right?: { type?: string; name?: string };
+      }
+    | null
+    | undefined;
+  if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument != null) {
+    const inner = nanGuardOf(t.argument, shadowed);
+    return inner
+      ? { name: inner.name, truthyMeansNaN: !inner.truthyMeansNaN }
+      : undefined;
+  }
+  if (
+    t?.type === "CallExpression" &&
+    t.callee?.type === "MemberExpression" &&
+    !t.callee.computed &&
+    t.callee.object?.type === "Identifier" &&
+    t.callee.object.name === "Number" &&
+    t.callee.property?.type === "Identifier" &&
+    t.callee.property.name === "isNaN" &&
+    t.arguments?.length === 1 &&
+    (t.arguments[0] as { type?: string; name?: string } | undefined)?.type ===
+      "Identifier" &&
+    typeof (t.arguments[0] as { name?: string }).name === "string"
+  ) {
+    return {
+      name: (t.arguments[0] as { name: string }).name,
+      truthyMeansNaN: true,
+    };
+  }
+  if (
+    t?.type === "BinaryExpression" &&
+    (t.operator === "!==" || t.operator === "===") &&
+    t.left?.type === "Identifier" &&
+    t.right?.type === "Identifier" &&
+    typeof t.left.name === "string" &&
+    t.left.name === t.right.name
+  ) {
+    return { name: t.left.name!, truthyMeansNaN: t.operator === "!==" };
+  }
+  return undefined;
+}
+
+/**
+ * NaN 守卫的**非 NaN 臂**剪影：`Number.isNaN(x) === false` / `x === x` 成立
+ * ⇒ `$refineNotNaN(x)`（挂 `ne(x, NaN)`），供关系补集与内建判定采信。
+ * 另一臂（x 确为 NaN）不剪影——`$refineNotNaN` 没有对偶事实。
+ */
+export function narrowNotNaNArmThunk(
+  thunk: string,
+  guard: NanGuard | undefined,
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guard) return thunk;
+  const notNanArm = guard.truthyMeansNaN ? "alt" : "cons";
+  if (arm !== notNanArm) return thunk;
+  return narrowArmShadowWrap(
+    thunk,
+    [{ name: guard.name, arg: `$refineNotNaN(${guard.name})` }],
+    forkBindingNames,
+    "seq",
+  );
+}

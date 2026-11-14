@@ -10,7 +10,11 @@ Add `number().finite()` and sound relation-complement narrowing.
 path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
 when it (or any numeric bound) is present, the evaluator refines the
 fall-through / else arm with the complement of the relation guard at runtime
-(`$refineRelComplement`, fail-closed without evidence). De Morgan spellings
+(`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
+`$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
+`x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
+where that holds. A user-shadowed `Number` disables the builtin guard fact
+(fail-closed). De Morgan spellings
 (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
 for bare `number()` are unchanged.
 

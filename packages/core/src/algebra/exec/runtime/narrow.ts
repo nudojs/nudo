@@ -21,13 +21,14 @@
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
-import { pTrue, and, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
+import { pTrue, and, ne, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
 import { migrateNullProto, type ObjShape } from "../../objects.ts";
 import { refineAbsForRelTrue, isNonNaN } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
 import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
+import { currentExecPhi } from "./phi.ts";
 
 /**
  * sum 成员过滤共享尾（#12 收敛）：`step` 逐成员分类——返回 null 剔除该
@@ -299,8 +300,25 @@ export function $refineRelComplement(
 ): Abs {
   if (!isAbsLike(a)) return a;
   if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
-  if (!isNonNaN(a, pTrue)) return a;
+  // 证据 = 当前绑定 pred（契约 `.finite()` / 数值界 / `ne(x, NaN)`）∪
+  // 臂作用域 Φ（`$fork` 压入的测试事实，如 `const ok = x === x; if (ok)`）。
+  if (!isNonNaN(a, currentExecPhi())) return a;
   return refineAbsForRelTrue(a, REL_COMPLEMENT_OPS[op], k);
+}
+
+/**
+ * 非 NaN 剪影（issue #185 残余）：`if (Number.isNaN(x)) return …;` /
+ * `if (x !== x) return …;` 的**后续路径**成立 `x !== NaN`。把该事实挂进
+ * Abs.pred（`ne(x, NaN)`），`isNonNaN` 才会在随后的关系补集/内建判定中采信。
+ *
+ * 只加 pred、不改 shape / term / conf（保留 facets）；字面量接收者的域由
+ * 字面量判定负责，原样返回。
+ */
+export function $refineNotNaN(a: Abs): Abs {
+  if (!isAbsLike(a) || !a.term || a.term.op === "lit") return a;
+  const fact = ne(a.term, lit(NaN));
+  const pred = a.pred && a.pred.op !== "true" ? and(a.pred, fact) : fact;
+  return { ...a, pred };
 }
 
 /**

@@ -9,11 +9,12 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
 import { sidecarOpts } from "./nudo-constraints.ts";
-import { $refineRelComplement } from "../exec/index.ts";
+import { $refineRelComplement, $refineNotNaN, withExecPhi, transpileSource } from "../exec/index.ts";
 import { number, string, shape, derefConstraint } from "../constraint.ts";
 import { abs, litValue } from "../abs.ts";
 import { v as termVar, lit } from "../term.ts";
-import { assumeFinite, ge, implies } from "../pred.ts";
+import { assumeFinite, eq, ge, implies, ne } from "../pred.ts";
+import { isNonNaN } from "../arithmetic.ts";
 
 const SIDECAR = `
 export const num = number();
@@ -133,5 +134,110 @@ describe("$refineRelComplement：运行时非 NaN 门", () => {
     const litNum = abs({ k: "prim", type: "number" }, lit(0), assumeFinite(t), "exact");
     expect($refineRelComplement(litNum, "lt", 1)).toBe(litNum);
     expect(litValue($refineRelComplement(finiteNum, "lt", 1)).ok).toBe(false);
+  });
+});
+
+function issues1(body: string, contracts: string): string[] {
+  const src = `/// @nudo:import { num, fin, ge3, nonNeg, geNeg5 } from "./issue185-finite.nudo.js"
+/**
+${contracts}
+ */
+function g(x) {${body}}
+`;
+  return checkSource(FILE, src, pTrue, opts).issues
+    .filter(
+      (i) => i.code === "nudo:unproven-return" || i.code === "nudo:constraint-violated",
+    )
+    .map((i) => `${i.severity}:${i.code}`);
+}
+
+const C_NUM_2 = ` * @nudo:contract x num
+ * @nudo:contract y num
+ * @nudo:contract return ge3`;
+
+describe("NaN 守卫为补集提供非 NaN 证据（issue #185 残余）", () => {
+  it("Number.isNaN(x/y) 早退守卫 ⇒ fall-through 挂 ne(x, NaN)", () => {
+    expect(
+      issuesOf(
+        " if (Number.isNaN(x)) return 3; if (Number.isNaN(y)) return 3; if (x < 1) return 3; if (y < 2) return 3; return x + y;",
+        C_NUM_2,
+      ),
+    ).toEqual([]);
+  });
+
+  it("x !== x 自比较守卫同样可用", () => {
+    expect(
+      issuesOf(
+        " if (x !== x) return 3; if (y !== y) return 3; if (x < 1) return 3; if (y < 2) return 3; return x + y;",
+        C_NUM_2,
+      ),
+    ).toEqual([]);
+  });
+
+  it("内联 !Number.isNaN(x) / x === x 真臂同样可用", () => {
+    const c = ` * @nudo:contract x num
+ * @nudo:contract return nonNeg`;
+    expect(
+      issues1(" if (!Number.isNaN(x)) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+    expect(
+      issues1(" if (x === x) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+  });
+
+  it("已知边界：把 NaN 检查存进 boolean 变量后不携带关系事实", () => {
+    // `Number.isNaN` 的返回 Abs 不带 `ne(x, NaN)` 谓词（内建返回值面），
+    // 因此 `const ok = !Number.isNaN(x); if (ok) …` 仍无法证得（可证伪）。
+    const c = ` * @nudo:contract x num
+ * @nudo:contract return nonNeg`;
+    expect(
+      issues1(" const ok = !Number.isNaN(x); if (ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual(["error:nudo:constraint-violated"]);
+  });
+});
+
+describe("$refineNotNaN / Φ 证据（运行时）", () => {
+  const t = termVar("x");
+  const plainNum = abs({ k: "prim", type: "number" }, t, undefined, "exact");
+
+  it("$refineNotNaN 挂 ne(x, NaN) 且保留其它 pred", () => {
+    const out = $refineNotNaN(plainNum);
+    expect(implies(out.pred!, ne(t, lit(NaN)))).toBe(true);
+    expect(isNonNaN(out, pTrue)).toBe(true);
+    const bounded = abs({ k: "prim", type: "number" }, t, ge(t, lit(0)), "exact");
+    const both = $refineNotNaN(bounded);
+    expect(implies(both.pred!, ge(t, lit(0)))).toBe(true);
+    expect(implies(both.pred!, ne(t, lit(NaN)))).toBe(true);
+  });
+
+  it("字面量接收者原样返回", () => {
+    const litNum = abs({ k: "prim", type: "number" }, lit(0), undefined, "exact");
+    expect($refineNotNaN(litNum)).toBe(litNum);
+  });
+
+  it("Φ 中的自等事实 x === x 让补集生效（不依赖绑定 pred）", () => {
+    const narrowed = withExecPhi(eq(t, t), () => $refineRelComplement(plainNum, "lt", 1));
+    expect(implies(narrowed.pred!, ge(t, lit(1)))).toBe(true);
+  });
+});
+
+describe("NaN 守卫的遮蔽门禁（soundness）", () => {
+  it("Number 未被遮蔽 ⇒ Number.isNaN(x) 发射 $refineNotNaN", () => {
+    const out = transpileSource(
+      "function f(x){ if (Number.isNaN(x)) return 0; return x; }",
+    );
+    // 转译头部的 `import { … $refineNotNaN … }` 恒在；断言**调用点**。
+    expect(out).toContain("$refineNotNaN(x)");
+  });
+
+  it("用户遮蔽 Number（形参/声明）⇒ 不产出一个 ne(x, NaN) 事实", () => {
+    const viaParam = transpileSource(
+      "function f(Number, x){ if (Number.isNaN(x)) return 0; return x; }",
+    );
+    expect(viaParam).not.toContain("$refineNotNaN(x)");
+    const viaDecl = transpileSource(
+      "function f(x){ const Number = { isNaN: () => false }; if (Number.isNaN(x)) return 0; return x; }",
+    );
+    expect(viaDecl).not.toContain("$refineNotNaN(x)");
   });
 });

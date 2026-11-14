@@ -27,7 +27,7 @@ import type {
   SequenceExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf, relGuardOfNegation, relGuardComplementFactsOf } from "../stmt/predicates.ts";
+import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf, relGuardOfNegation, relGuardComplementFactsOf, nanGuardOf } from "../stmt/predicates.ts";
 import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -168,6 +168,9 @@ export function transpileOperatorExpr(
         // 在非 NaN 证据下断言 `x >= 0`；`A ∨ B` 逐项（运行时判定，缺证据
         // 不收紧）
         altRelComplement: relGuardComplementFactsOf(expr.test),
+        // NaN 守卫：非 NaN 臂挂 `ne(x, NaN)`（`Number.isNaN(x) ? … : …` /
+        // `x === x ? … : …`），为 else 臂的关系补集提供证据
+        nanGuard: nanGuardOf(expr.test, opts.shadowedIntrinsics),
       });
     }
     case "BinaryExpression": {

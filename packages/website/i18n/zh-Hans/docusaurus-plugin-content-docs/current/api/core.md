@@ -368,6 +368,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
+| <a id="$refinenotnan"></a>`$refineNotNaN` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
 | <a id="$refinerel"></a>`$refineRel` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
 | <a id="$refinerelcomplement"></a>`$refineRelComplement` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
 | <a id="$removemembernullish"></a>`$removeMemberNullish` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |

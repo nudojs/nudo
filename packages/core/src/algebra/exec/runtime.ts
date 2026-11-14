@@ -163,6 +163,7 @@ export {
   $nullishTest,
   $refineRel,
   $refineRelComplement,
+  $refineNotNaN,
   $removeMemberNullish,
   $removeNull,
   $removeNullish,
