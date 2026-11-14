@@ -504,8 +504,11 @@ export function nodeModuleCapability(spec: string): CapabilityClass {
   const name = spec.replace(/^node:/, "");
   const isBuiltin = spec.startsWith("node:") || NODE_BUILTIN_SET.has(name);
   if (!isBuiltin) return "allowed";
-  if (DENIED_NODE_BUILTINS.has(name)) return "denied";
-  if (ALLOWED_NODE_BUILTINS.has(name)) return "allowed";
+  // BUG-010：清单里混有**带前缀**的新内建名（`module.builtinModules` 原样），
+  // 而这里剥掉前缀再查表 ⇒ 显式 allow 的 `node:test/reporters` 两边都查不到
+  // ⇒ 落 default-deny（清单与实现自相矛盾）。两种拼写都查，denied 优先。
+  if (DENIED_NODE_BUILTINS.has(name) || DENIED_NODE_BUILTINS.has(spec)) return "denied";
+  if (ALLOWED_NODE_BUILTINS.has(name) || ALLOWED_NODE_BUILTINS.has(spec)) return "allowed";
   return "denied";
 }
 
