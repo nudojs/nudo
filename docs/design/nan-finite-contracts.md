@@ -119,6 +119,7 @@ return x + y;   // 契约 ge(3)
 | `number().ge(0)` + `¬(x < 1)` | 是（数值界已排除 NaN） |
 | 字面量 `NaN` / `+Infinity` / `Number.NaN` 实参 + `.finite()` | 契约违反（`judgeLiteralPred` + env 字面量化） |
 | `add6(1, 2)` | 精确 `3` |
+| `number().finite()` 参数 ⇒ 返回值也有限 | **否**：有限数相加可溢出到 `±Infinity`；返回位需单独的 `.finite()` / 数值界契约（`add6` 的 `ge(3)` 不受影响） |
 | 非字面量实参（`any` / 未知全局） | 调用点不猜（既有边界：`judgeLiteralPred` 三值判定） |
 | `.int()` | 已隐含有限（整数），不新增语义 |
 
