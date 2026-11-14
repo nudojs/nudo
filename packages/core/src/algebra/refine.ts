@@ -65,8 +65,8 @@ import { DIAG } from "./diagnostics/diag-codes.ts";
 export type NamedImport = { names: string[]; spec: string };
 
 /** default / 未识别 `@nudo:import` 形态 → nudo:contract-syntax（不再静默丢弃） */
-function diagnoseMalformedNudoImports(source: string): void {
-  for (const bad of scanMalformedNudoImports(source)) {
+function diagnoseMalformedNudoImports(source: string, filename?: string): void {
+  for (const bad of scanMalformedNudoImports(source, filename)) {
     if (bad === "malformed-default") {
       collectDiag({
         code: DIAG.contractSyntax,
@@ -86,9 +86,9 @@ function diagnoseMalformedNudoImports(source: string): void {
  * `names` 是本地绑定名（契约引用名）；别名→导出名的映射留在
  * `NudoImportRecord.importedOfLocal`（查表口 collectConstraints 消费）。
  */
-export function extractNudoImports(source: string): NamedImport[] {
-  diagnoseMalformedNudoImports(source);
-  return extractNudoImportRecords(source).map((rec) => ({
+export function extractNudoImports(source: string, filename?: string): NamedImport[] {
+  diagnoseMalformedNudoImports(source, filename);
+  return extractNudoImportRecords(source, filename).map((rec) => ({
     names: rec.names,
     spec: rec.spec,
   }));

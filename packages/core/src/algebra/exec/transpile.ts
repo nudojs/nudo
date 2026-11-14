@@ -51,7 +51,7 @@ export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
 
 export function transpileSource(source: string, opts: TranspileOptions = {}): string {
-  const file = parseSource(source);
+  const file = parseSource(source, opts.filename ? { filename: opts.filename } : undefined);
   return transpileFile(file, { ...opts, source: opts.source ?? source });
 }
 
@@ -65,7 +65,7 @@ export function transpileModule(
   source: string,
   opts: TranspileOptions = {},
 ): { code: string; meta: TranspileMeta } {
-  const file = parseSource(source);
+  const file = parseSource(source, opts.filename ? { filename: opts.filename } : undefined);
   return transpileFileDetailed(file, { ...opts, source: opts.source ?? source }, true);
 }
 

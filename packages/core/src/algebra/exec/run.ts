@@ -86,6 +86,8 @@ export type RunTranspiledOptions = {
   recordPositions?: boolean;
   /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
   lenientGlobals?: boolean;
+  /** 源文件路径：parse 模式选择（.js 跳过 strip-types），透传 transpile */
+  filename?: string;
   /**
    * **关闭** async 体的生成器路径（`$async` 同步路径）——安全网。
    *
@@ -504,6 +506,7 @@ function runTranspiledInner(
   const transpiled = transpileModule(source, {
     target: "host",
     runtimeImport: null,
+    ...(opts.filename ? { filename: opts.filename } : {}),
     mockNames,
     mode: opts.mode,
     userIdents: new Set([

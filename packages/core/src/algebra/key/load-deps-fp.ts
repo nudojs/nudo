@@ -206,11 +206,13 @@ function foldStaticSpecString(node: unknown): string | undefined {
  * **正则集与 AST 集取并集**（并集 ⊇ 正则集 ⇒ 不比现状更少；并集 ⊇ AST 集
  * ⇒ 与模块图口径对齐）⇒ **只多 miss，绝不陈旧命中**。
  */
-function astLoadSpecs(source: string): string[] {
+function astLoadSpecs(source: string, filename?: string): string[] {
   const specs: string[] = [];
   let program: unknown;
   try {
-    program = parseSource(source).program;
+    // filename 决定 parse 模式：`.js/.mjs/.cjs/.jsx` 跳过 strip-types
+    // （纯 JS 源结构性 no-op 的两趟全 AST 遍历；9 MB JS 文件实测占 analyze 24%）
+    program = parseSource(source, filename ? { filename } : undefined).program;
   } catch {
     return specs; // 解析失败 ⇒ AST 零贡献（正则集仍在 ⇒ 不引入新的低估）
   }
@@ -265,9 +267,9 @@ function mayHaveModuleSpec(source: string): boolean {
  * （仅副作用 import / 模板字符串 require）⇒ 正则集**并**AST 集（Bug 452）：
  * 并集只可能比现状**多**（more misses），不会比现状**少**（never a stale hit）。
  */
-export function extractAllLoadSpecs(source: string): string[] {
+export function extractAllLoadSpecs(source: string, filename?: string): string[] {
   const specs = new Set<string>();
-  for (const imp of extractNudoImports(source)) specs.add(imp.spec);
+  for (const imp of extractNudoImports(source, filename)) specs.add(imp.spec);
   // @nudo:env 路径模板（/// @nudo:env ./custom.env.ts）与
   // @nudo:mock-module "mod" from "./mock.js" 的 from 路径会改变分析结果。
   // 命名 env（es/node/web）不是 loadModule 可解析文件，只收 path-like。
@@ -277,10 +279,10 @@ export function extractAllLoadSpecs(source: string): string[] {
     spec.startsWith("../") ||
     spec.startsWith("/") ||
     /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(spec);
-  for (const name of extractFileEnvNames(source)) {
+  for (const name of extractFileEnvNames(source, filename)) {
     if (isPathLikeSpec(name)) specs.add(name);
   }
-  for (const rec of extractMockModuleRecords(source)) {
+  for (const rec of extractMockModuleRecords(source, filename)) {
     if (rec.fromPath) specs.add(rec.fromPath);
   }
   const patterns = [
@@ -294,7 +296,7 @@ export function extractAllLoadSpecs(source: string): string[] {
   }
   // Bug 452：AST 侧补齐正则漏掉的形态（仅副作用 import / 模板字符串 require）
   if (mayHaveModuleSpec(source)) {
-    for (const spec of astLoadSpecs(source)) specs.add(spec);
+    for (const spec of astLoadSpecs(source, filename)) specs.add(spec);
   }
   return [...specs];
 }
@@ -403,7 +405,7 @@ export function loadModuleDepsFingerprint(
   /** gating 会询问的根侧车（顺序 = 吸收顺序；去重） */
   const gatedSidecars: string[] = [];
   const gatedSidecarSet = new Set<string>();
-  const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source).map(
+  const queue: Array<{ spec: string; from: string }> = extractAllLoadSpecs(source, fromFile).map(
     (spec) => ({ spec, from: fromFile }),
   );
   let n = 0;
@@ -526,7 +528,7 @@ export function loadModuleDepsFingerprint(
     paths.push(path);
     contents.push({ path, content: stableSrc ?? null });
     if (src === undefined) continue;
-    for (const next of extractAllLoadSpecs(src)) {
+    for (const next of extractAllLoadSpecs(src, path)) {
       const nextPath = resolveDepPath(path, next);
       if (!seen.has(nextPath)) queue.push({ spec: next, from: path });
     }

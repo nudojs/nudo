@@ -195,7 +195,7 @@ export function analyzeFileUncachedInner(
   caseMode: DirectiveCaseMode = "all",
   alsoSynthesizeCases?: AlsoSynthesizeCases,
 ): AnalysisResult {
-  const ast = parse(source);
+  const ast = parse(source, { filename: filePath });
   // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics。
   // 显式通道：诊断直接落局部数组，不碰模块级 buffer（无 seq 锚 / 在途窃取窗口）
   const dirDiags: DirectiveDiag[] = [];
@@ -460,7 +460,7 @@ export function analyzeFileUncachedInner(
 
   // 求值引擎静态诊断接管 unreachable + builtin-unknown（env/mock 已覆盖的
   // 全局不在 builtin-unknown 之列）→ modules 文件
-  pushEvalStaticDiagnostics({ source, envNames, seeds, diagnostics });
+  pushEvalStaticDiagnostics({ source, envNames, seeds, diagnostics, filePath });
 
   // case 合成 / entry 分析共享求值环境（模块图产物 + 诊断通道按引用共享）
   const caseEnv: UncachedCaseEnv = {
@@ -554,7 +554,7 @@ export function analyzeFileUncachedInner(
   // 本地命名导出集合（**入口面口径** = 导出函数）：hover 的 throws 段与 check
   // 的 L2 throws 都只对导出函数生效（hover：tier ⇔ 本地 named export）⇒
   // 函数级 throws 证据只补给导出函数（非导出函数没有入口面）。
-  const exportedFnNames = localNamedExports(source);
+  const exportedFnNames = localNamedExports(source, filePath);
 
   for (const fn of functions) {
     const skipDirective = fn.directives.find((d) => d.kind === "skip");

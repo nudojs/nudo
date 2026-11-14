@@ -108,7 +108,7 @@ describe("1145 · service 观测面：模块级求值失败按文件可见", () 
 
   it("假红防线：unsupported:* 回落**不**进失败信号", () => {
     const dir = tmpProject("nudo-1145-unsupported-");
-    const file = `${dir}/unsupported.js`;
+    const file = `${dir}/unsupported.ts`;
     const { evalFailures } = analyzeFileWithEvalFailures(file, UNSUPPORTED_ONLY);
     expect(evalFailures).toEqual([]);
   });

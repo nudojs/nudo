@@ -63,15 +63,17 @@ function memoizedLocalExports(source: string, compute: () => Set<string>): Set<s
  * 结果按源码文本 memo（见 `memoizedLocalExports`）——本函数在逐候选循环里
  * 被反复调用，没有 memo 时每次都是整文件 reparse + strip。
  */
-export function localNamedExports(source: string): Set<string> {
-  return memoizedLocalExports(source, () => computeLocalNamedExports(source));
+export function localNamedExports(source: string, filename?: string): Set<string> {
+  // 缓存键含 filename（parse 模式）：同一源码在 js / ts 模式下是两棵 AST。
+  const key = filename ? `${filename}\u0000${source}` : source;
+  return memoizedLocalExports(key, () => computeLocalNamedExports(source, filename));
 }
 
-function computeLocalNamedExports(source: string): Set<string> {
+function computeLocalNamedExports(source: string, filename?: string): Set<string> {
   const out = new Set<string>();
   let ast: ReturnType<typeof parseSource>;
   try {
-    ast = parseSource(source, { errorRecovery: true });
+    ast = parseSource(source, { errorRecovery: true, ...(filename ? { filename } : {}) });
   } catch {
     return out; // 解析失败：无本地导出信息，不阻断（refine 行走 regex 路径）
   }

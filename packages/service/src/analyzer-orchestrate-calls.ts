@@ -42,7 +42,7 @@ import type { CallRecord } from "./evaluator/call-record.ts";
 export type CallSiteRecord = CallRecord & { callSiteFile?: string };
 
 export function collectEnvNames(filePath: string, source: string, includeProject: boolean): string[] {
-  const ast = parse(source);
+  const ast = parse(source, { filename: filePath });
   const fileDirectives = extractFileDirectives(ast);
   const fileEnvNames = fileDirectives
     .filter((d) => d.kind === "env")
@@ -88,7 +88,7 @@ export function collectCallRecords(filePath: string, source: string): CallSiteRe
         // 注释行），并与现场文件自己的调用**撞名**。
         // 判据改为**核对 AST**：本文件在该位置确实有调用表达式才贴；
         // 核不上 ⇒ 不贴（宁可不加来源限定，也不贴错文件）。
-        const sites = callSiteKeys(source);
+        const sites = callSiteKeys(source, filePath);
         return expandTestCallbacks(run.calls).map((r): CallSiteRecord => {
           const rec = callRecordFromAbsCall(r, importLocals);
           if (rec.callLoc === undefined) return rec;
@@ -109,7 +109,7 @@ export function collectCallRecords(filePath: string, source: string): CallSiteRe
  * `CallRecord.callLoc` 同口径）。同时收调用表达式起点与 callee 起点——
  * 记录里的 loc 两者都可能是。解析失败 ⇒ 空集（全部不贴，保守）。
  */
-function callSiteKeys(source: string): Set<string> {
+function callSiteKeys(source: string, filename?: string): Set<string> {
   const out = new Set<string>();
   const add = (n: unknown): void => {
     const loc = (n as { loc?: { start?: { line?: number; column?: number } } } | null)?.loc;
@@ -133,7 +133,7 @@ function callSiteKeys(source: string): Set<string> {
     }
   };
   try {
-    visit(parse(source));
+    visit(parse(source, filename ? { filename } : undefined));
   } catch {
     /* 解析失败 ⇒ 空集 */
   }

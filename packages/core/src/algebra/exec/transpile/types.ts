@@ -368,6 +368,11 @@ export interface InjectCtx {
   mockNames?: ReadonlySet<string>;
   /** 原始源码（@nudo:replace 按节点文本匹配） */
   source?: string;
+  /**
+   * 源文件路径：只用于 `parseSource` 的**模式选择**（`.js/.mjs/.cjs/.jsx`
+   * 跳过 strip-types 的两趟全 AST 遍历）。缺省 = ts 模式（保守）。
+   */
+  filename?: string;
   /** 替换表：归一化目标文本 → 注入变量名；可选语句范围 */
   replacements?: Array<{
     target: string;

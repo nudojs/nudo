@@ -244,7 +244,7 @@ export function tryRunEval(
         const modules = composed.modules;
         // 一次 parse 两用：行内指令注入表（@nudo:as / @nudo:replace）
         // + 纯函数名（@nudo:pure）——同源同次，避免重复 parse。
-        const ast = parse(source);
+        const ast = parse(source, { filename: filePath });
         const { targets, values, asTargets, asValues } = collectEvalReplacementsFromProgram(
           ast.program,
           source,
@@ -274,6 +274,7 @@ export function tryRunEval(
           envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
           mocks: Object.keys(mocks).length ? mocks : undefined,
           lenientGlobals: opts.lenientGlobals,
+          filename: filePath,
         });
         // 纯度标记落在**刚诞生的这个实例**上（Bug 462 + 分片 J 的 fresh
         // 语义）：memo 实例与 fresh 实例都带标记 ⇒ 标记与调用点解析到

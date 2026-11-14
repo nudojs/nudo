@@ -897,9 +897,9 @@ function fileDirectiveVisibleText(source: string): string {
  *
  * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
  */
-function functionBodyRanges(source: string): [number, number][] {
+function functionBodyRanges(source: string, filename?: string): [number, number][] {
   try {
-    return listFnDirectiveScopes(parseSource(source)).map((scope) => [
+    return listFnDirectiveScopes(parseSource(source, filename ? { filename } : undefined)).map((scope) => [
       scope.node.start ?? 0,
       scope.node.end ?? 0,
     ]);
@@ -988,9 +988,9 @@ export function collectNestedBodyRanges(ast: unknown): [number, number][] {
   return out;
 }
 
-function nestedBodyRanges(source: string): [number, number][] {
+function nestedBodyRanges(source: string, filename?: string): [number, number][] {
   try {
-    return collectNestedBodyRanges(parseSource(source));
+    return collectNestedBodyRanges(parseSource(source, filename ? { filename } : undefined));
   } catch {
     return [];
   }
@@ -1020,11 +1020,14 @@ const bodyGateRangesCache = new BoundedLruMap<[number, number][]>(
  * Bug 847（函数体）+ Bug 1088（class / object 体）+ Bug 1101（array / pattern 体）
  * 三条同源洞的合流口径。
  */
-function bodyGateRanges(source: string): [number, number][] {
-  const hit = bodyGateRangesCache.get(source);
+function bodyGateRanges(source: string, filename?: string): [number, number][] {
+  // 缓存键含 parse 模式来源（filename）：同一源码在 js / ts 模式下是两棵
+  // 不同 AST（js 模式跳过 strip-types），区间表不得串用。
+  const key = `${filename ?? ""}\u0000${source}`;
+  const hit = bodyGateRangesCache.get(key);
   if (hit !== undefined) return hit;
-  const out = [...functionBodyRanges(source), ...nestedBodyRanges(source)];
-  bodyGateRangesCache.set(source, out);
+  const out = [...functionBodyRanges(source, filename), ...nestedBodyRanges(source, filename)];
+  bodyGateRangesCache.set(key, out);
   return out;
 }
 
@@ -1033,14 +1036,14 @@ function inBodyRange(ranges: [number, number][], offset: number): boolean {
   return ranges.some(([s, e]) => offset >= s && offset < e);
 }
 
-export function extractFileEnvNames(source: string): string[] {
+export function extractFileEnvNames(source: string, filename?: string): string[] {
   const text = fileDirectiveVisibleText(source);
   // S4-004 同族：标签/载荷同行分隔——`\s*`/`\s+` 跨行会把非注释行的
   // `@nudo:env` 或下一行载荷粘进上一条行注释
   const re = new RegExp(`${LINE_COMMENT_PREFIX}[ \\t]*@nudo:env[ \\t]+([^\\n*]+)`, "g");
   // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
   // 数组体 / 解构模式体里的文件级 env 不再对整份文件生效
-  const bodyRanges = bodyGateRanges(source);
+  const bodyRanges = bodyGateRanges(source, filename);
   const out: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
@@ -1051,7 +1054,7 @@ export function extractFileEnvNames(source: string): string[] {
   return out;
 }
 
-export function extractMockModuleRecords(source: string): MockModuleRecord[] {
+export function extractMockModuleRecords(source: string, filename?: string): MockModuleRecord[] {
   const text = fileDirectiveVisibleText(source);
   const re = new RegExp(
     `${LINE_COMMENT_PREFIX}[ \\t]*@nudo:mock-module[ \\t]+([^\\n]+)`,
@@ -1059,7 +1062,7 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
   );
   // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
   // 数组体 / 解构模式体里的文件级 mock-module 不再对整份文件生效
-  const bodyRanges = bodyGateRanges(source);
+  const bodyRanges = bodyGateRanges(source, filename);
   const out: MockModuleRecord[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
@@ -1085,13 +1088,14 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
  */
 function directiveCommentLinesRaw(
   source: string,
+  filename?: string,
 ): Array<{ text: string; inHeader: boolean; kind: "line" | "block" }> {
   // 等长掩码（字符串→空格、注释原文保留）：下标与原文一一对应 ⇒ 位置闸门可比
   const src = maskStringsKeepComments(source);
   const out: Array<{ text: string; inHeader: boolean; kind: "line" | "block" }> = [];
   // Bug 847 / Bug 1088 / Bug 1101：位置闸门——函数体 / 类体 / 对象体 /
   // 数组体 / 解构模式体里的文件级指令不再对整份文件生效
-  const bodyRanges = bodyGateRanges(source);
+  const bodyRanges = bodyGateRanges(source, filename);
   // 行注释（// 或 ///；排除 ////——Babel 值以 // 开头时 cleanDirectiveLine 不剥）
   const lineRe = /(?:^|[^/:])\/\/\/?([^\n]*)/g;
   let m: RegExpExecArray | null;
@@ -1122,8 +1126,8 @@ function directiveCommentLinesRaw(
  * Bug 422：标签命中但**载荷为空**也必须产出一条载荷（空串）⇒ 畸形扫描器
  * 看得到它 ⇒ 发 `nudo:contract-syntax`（不再静默丢弃）。
  */
-function nudoImportPayloads(source: string): string[] {
-  const lines = directiveCommentLinesRaw(source);
+function nudoImportPayloads(source: string, filename?: string): string[] {
+  const lines = directiveCommentLinesRaw(source, filename);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const entry = lines[i]!;
@@ -1169,9 +1173,9 @@ function nudoImportPayloads(source: string): string[] {
 }
 
 /** `@nudo:import` 命名/namespace 记录（refine 与 load-deps 共用单源） */
-export function extractNudoImportRecords(source: string): NudoImportRecord[] {
+export function extractNudoImportRecords(source: string, filename?: string): NudoImportRecord[] {
   const out: NudoImportRecord[] = [];
-  for (const payload of nudoImportPayloads(source)) {
+  for (const payload of nudoImportPayloads(source, filename)) {
     const rec = parseNudoImportPayload(payload);
     if (rec && rec !== "malformed" && rec !== "malformed-default") out.push(rec);
   }
@@ -1181,9 +1185,10 @@ export function extractNudoImportRecords(source: string): NudoImportRecord[] {
 /** 未识别的 `@nudo:import` 形态（default 等）——供消费方发诊断 */
 export function scanMalformedNudoImports(
   source: string,
+  filename?: string,
 ): Array<"malformed-default" | "malformed"> {
   const out: Array<"malformed-default" | "malformed"> = [];
-  for (const payload of nudoImportPayloads(source)) {
+  for (const payload of nudoImportPayloads(source, filename)) {
     const rec = parseNudoImportPayload(payload);
     if (rec === "malformed-default" || rec === "malformed") out.push(rec);
   }

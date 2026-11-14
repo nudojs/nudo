@@ -201,15 +201,21 @@ export function pushEvalStaticDiagnostics(args: {
   envNames: string[];
   seeds: AbsMockSeeds;
   diagnostics: Diagnostic[];
+  /** 源文件路径：决定 parse 模式（.js 跳过 strip-types） */
+  filePath?: string;
 }): void {
-  const { source, envNames, seeds, diagnostics } = args;
+  const { source, envNames, seeds, diagnostics, filePath } = args;
   // 求值引擎静态诊断接管 unreachable + builtin-unknown
   // env/mock 已覆盖的全局不在 builtin-unknown 之列（eval 注入后不再是裸原生调用）
   const evalKnownGlobals = new Set<string>([
     ...Object.keys(collectEnvGlobals(envNames)),
     ...Object.keys(mockSeedsToAbsMocks(seeds)),
   ]);
-  const evalDiag = collectEvalDiagnostics(source, evalKnownGlobals);
+  const evalDiag = collectEvalDiagnostics(
+    source,
+    evalKnownGlobals,
+    filePath,
+  );
   for (const ur of evalDiag.unreachable) {
     diagnostics.push({
       range: ur.range,

@@ -119,10 +119,10 @@ function resolveRel(spec: string, fromFile: string): string | null {
  * （`NpmLoadMode` 与 core 的 `DependencySpecMode` 同为 "import" | "require"。） */
 type ImportSpec = DependencySpecEntry;
 
-function importSpecs(source: string): ImportSpec[] {
+function importSpecs(source: string, filename?: string): ImportSpec[] {
   try {
     // 逐 stmt 交织顺序（import/re-export 与 require 混排）由 core 单源保证
-    return collectDependencySpecsWithMode(parse(source));
+    return collectDependencySpecsWithMode(parse(source, filename ? { filename } : undefined));
   } catch {
     return [];
   }
@@ -142,7 +142,7 @@ function buildModulesForFile(
   localDepsOut?: string[],
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
-  for (const { spec, mode } of importSpecs(source)) {
+  for (const { spec, mode } of importSpecs(source, fromFile)) {
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
       if (!childPath) {
@@ -567,7 +567,7 @@ function applyDependencyScopedMocks(
   loadModule?: AbsGraphOptions["loadModule"],
 ): void {
   try {
-    const directives = extractDirectivesQuiet(parse(source));
+    const directives = extractDirectivesQuiet(parse(source, { filename: absPath }));
     if (directives.length === 0) return;
     const seeds = mockDirectivesToAbsSeeds(directives, {
       fromFile: absPath,
@@ -715,7 +715,7 @@ export function collectMissingExportIssues(
   const issues: AbsModuleLoadIssue[] = [];
   let file: Node;
   try {
-    file = parse(source);
+    file = parse(source, { filename: fromFile });
   } catch {
     return issues;
   }
@@ -1105,7 +1105,7 @@ export function evalAbsModuleGraph(
         // P1：evaluator 优先——转译执行收集导出（specifier/re-export/star/default
         // 全量进 __nudoExport 动态表）；unsupported/internal 回落见
         // tryRunTranspiled（回落事件入收集器）。
-        exports = evalExportsToModuleExports(evalRun, parse(source), `eval:${absPath}`);
+        exports = evalExportsToModuleExports(evalRun, parse(source, { filename: absPath }), `eval:${absPath}`);
       } else {
         // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
         // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
@@ -1120,7 +1120,7 @@ export function evalAbsModuleGraph(
       // 引擎不得给确定值 ⇒ 剔除后导入方走 missing-export。
       // 只在 **JS 模块**分支做（JSON 源不是 JS，`parse` 会抛）。
       try {
-        dropAmbiguousStarExports(parse(source), modules, exports);
+        dropAmbiguousStarExports(parse(source, { filename: absPath }), modules, exports);
       } catch {
         /* 解析失败（非常规源）⇒ 不做歧义剪枝（fail-open：保留既有导出表） */
       }
@@ -1237,11 +1237,12 @@ export function evalAbsModuleGraph(
 function importLocalBindings(
   source: string,
   modules: Record<string, AbsModuleExports>,
+  filename?: string,
 ): Map<string, Abs> {
   const out = new Map<string, Abs>();
   let file: Node;
   try {
-    file = parse(source);
+    file = parse(source, filename ? { filename } : undefined);
   } catch {
     return out;
   }
@@ -1309,6 +1310,7 @@ export function collectAbsBindingsFromGraph(
     const run = tryRunTranspiled(source, {
       mode: "analyze",
       modules,
+      filename: filePath,
       // Bug 274（service 侧剩余半边）：seed 造的 mock 走 `mocks` 形参，
       // **不再**混进 `envGlobals`——core 的注入面按两张表分别过滤，
       // 「不遮蔽宿主内建」跳过表只作用于 env 全局 ⇒ 宿主内建名的 mock
@@ -1318,7 +1320,7 @@ export function collectAbsBindingsFromGraph(
       ...inj,
     });
     if (!run) return out;
-    const file = parse(source);
+    const file = parse(source, { filename: filePath });
     // 顶层 const/let（$recordBinding 通道，Abs 值）+ 私有顶层函数声明
     // （宿主 JS 函数，见 core bindingsOf）
     const binds = bindingsOf(run);
@@ -1349,7 +1351,7 @@ export function collectAbsBindingsFromGraph(
       if (!out.has(name)) out.set(name, v);
     }
     // import 本地名 → 依赖模块导出
-    for (const [local, absVal] of importLocalBindings(source, modules)) {
+    for (const [local, absVal] of importLocalBindings(source, modules, filePath)) {
       if (!out.has(local)) out.set(local, absVal);
     }
   } catch {

@@ -345,11 +345,13 @@ function buildModuleExportIndex(
   source: string,
   mtimeMs: number,
   size: number,
+  filename?: string,
 ): ModuleExportIndex {
   const idx: ModuleExportIndex = {
     mtimeMs,
     size,
-    local: localNamedExports(source),
+    // filename 决定 parse 模式（.js 跳过 strip-types）
+    local: localNamedExports(source, filename),
     reExport: new Map(),
     exportList: new Map(),
     starSpecs: [],
@@ -414,7 +416,7 @@ function moduleExportIndex(modulePath: string): ModuleExportIndex | undefined {
   } catch {
     return undefined;
   }
-  const idx = buildModuleExportIndex(source, st.mtimeMs, st.size);
+  const idx = buildModuleExportIndex(source, st.mtimeMs, st.size, modulePath);
   if (moduleIndexCache.size >= MODULE_INDEX_MAX) moduleIndexCache.clear();
   moduleIndexCache.set(modulePath, idx);
   return idx;

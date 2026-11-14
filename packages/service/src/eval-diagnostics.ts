@@ -463,10 +463,13 @@ function walkBuiltinUnknown(
 export function collectEvalDiagnostics(
   source: string,
   extraKnown?: Iterable<string>,
+  filename?: string,
 ): EvalDiagnostics {
   let file: File;
   try {
-    file = parseSource(source);
+    // filename 决定 parse 模式：`.js/.mjs/.cjs/.jsx` 直接跳过 strip-types
+    // （纯 JS 源结构性 no-op 的两趟全 AST 遍历）。缺省仍按 ts 模式，保守。
+    file = parseSource(source, filename ? { filename } : undefined);
   } catch {
     return { unreachable: [], builtinUnknown: [], capabilityDenied: [], deniedModules: [] };
   }

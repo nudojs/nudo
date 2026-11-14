@@ -13,8 +13,17 @@
 2. **`@babel/types/lib/index.js` 的 >3 min 不是单文件成本**：入口 0.33 MB，
    但 `defaultLoadModule` 会拉起整包依赖图（数百模块）⇒ 时间花在模块图
    加载/求值，属 [`ABS-17`](../design/plans/2026-11-09-abs-improvement-plan.md)
-   的「依赖解析上下文」形态，不是 AST 遍历。
-3. **已修复一个真实的 O(函数数 × 节点数) 热点**：`listFnDirectiveScopes`
+   的「依赖解析上下文」形态，不是 AST 遍历。JS 模式接线后 check 仍 >180 s
+   ⇒ 该入口不作为单文件性能结论；与 `typescript.js`（9.14 MB 自包含，
+   check 16.3 s / analyze 14.6 s）分开看。
+3. **纯 JS 源此前在多个解析入口按 ts 模式跑 strip-types**：`parseSource` 的
+   模式由 filename 决定（`.js/.mjs/.cjs/.jsx` 跳过两趟全 AST 遍历），但
+   service/transpile/module-graph 的多条路径调用时**未传 filename** ⇒
+   `typescript.js` analyze 20.8s 中 strip 占 24%。把 filename 从
+   `analyzeFile` / `transpileModule` / 模块图 / 指纹 / 指令抽取一路透传后
+   **20,755 → 14,594 ms（−29.7%）**，strip 占比降到 ~2%（`checkSource`
+   路径同样只剩 1.7%）。
+4. **已修复一个真实的 O(函数数 × 节点数) 热点**：`listFnDirectiveScopes`
    原先每个函数查询都全量遍历 AST；`checkSource` 对每个函数调用
    `findFnDirectiveScope` ⇒ `@babel/parser` 文件 13.2 s 中 **54.1%**
    （7098/13126 CPU 样本）落在该递归访问器。按 AST 对象 WeakMap 缓存后
@@ -27,8 +36,9 @@
 | `@babel/parser/lib/index.js`（修复前） | 0.49 MB / 14,613 | — | **13,179 ms**（98 issues） | 637 MiB | CPU 热点 54% = directive-scan 访问器 |
 | `@babel/parser/lib/index.js`（修复后） | 0.49 MB / 14,613 | — | **4,675 ms**（98 issues） | 646 MiB | 同一宿主、同一进程口径 |
 | `typescript/lib/typescript.js`（check） | 9.14 MB / 201,040 | — | **16,277 ms**（0 issues） | 2,059 MiB | 自包含 bundle |
-| `typescript/lib/typescript.js`（analyze） | 9.14 MB / 201,040 | **20,755 ms** | 11,347 ms（同进程随后） | 2,408 MiB | analyze 热点见下 |
-| `@babel/types/lib/index.js` | 0.33 MB / 10,759 | > 298 s（300 s 超时） | > 180 s（超时） | — | 单文件小，但依赖图数百模块 ⇒ ABS-17 形态 |
+| `typescript/lib/typescript.js`（analyze，修复前） | 9.14 MB / 201,040 | **20,755 ms** | 11,347 ms（同进程随后） | 2,408 MiB | strip-types 24% |
+| `typescript/lib/typescript.js`（analyze，JS 模式接线后） | 9.14 MB / 201,040 | **14,594 ms** | — | 2,568 MiB | strip 占比 → ~2% |
+| `@babel/types/lib/index.js` | 0.33 MB / 10,759 | > 298 s（300 s 超时） | > 180 s（超时；JS 模式接线后仍超时） | — | 单文件小，但依赖图数百模块 ⇒ ABS-17 形态；非单文件优化面 |
 
 `@babel/parser` 的 analyze 未单列：check 的 CPU 样本已足够定位；`@babel/types`
 的 analyze 在 300 s 墙钟超时前未完成（未取得可信数字，如实不填）。
@@ -62,6 +72,9 @@
 
 修复后（总 5,320）：GC 6.2%、`extractFn` 4.5%、`identitySuffix` 4.3%、
 `shapeKey` 3.6%，**无单点 >5%** —— 剩余成本是逐函数分析的正常分布。
+
+JS 模式接线后 `typescript.js` analyze 的 strip 只剩 ~2%，热点回到
+GC / `extractFn` / 结构键等逐函数分析面。
 
 ## 修复
 

@@ -14,6 +14,11 @@ import type { File } from "@babel/types";
  *
  * errorRecovery 走 core 的非缓存路径，避免污染会话 AST。
  */
-export function parse(source: string, opts?: { errorRecovery?: boolean }): File {
+export function parse(
+  source: string,
+  opts?: { errorRecovery?: boolean; filename?: string },
+): File {
+  // filename 只用于 core parseSource 的**模式选择**（`.js` 跳过 strip-types）；
+  // 缺省仍是 ts 模式（向后兼容、对未知扩展名保守）。
   return parseSource(source, opts);
 }
