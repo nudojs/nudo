@@ -1438,7 +1438,19 @@ export function resolveCalleeFn(
     if (knownFns.has(name)) return name;
     return undefined;
   }
-  if (callee.type === "MemberExpression") {
+  // BUG-004：无表达式的静态模板字面量键 `` c[`m`]() `` 与 `c["m"]()` /
+  // `c.m()` 语义等价；BUG-032：`c?.m()` 的 callee 是 OptionalMemberExpression。
+  // 两者都走同一条成员调用义务路径，不得当成动态键守卫掉。
+  const staticTemplateKey = (p: Record<string, unknown> | undefined): string | undefined => {
+    if (p?.type !== "TemplateLiteral") return undefined;
+    const expressions = p.expressions as unknown[] | undefined;
+    const quasis = p.quasis as Array<{ value?: { cooked?: string; raw?: string } }> | undefined;
+    if (!Array.isArray(expressions) || expressions.length !== 0) return undefined;
+    if (!Array.isArray(quasis) || quasis.length !== 1) return undefined;
+    const v = quasis[0]?.value;
+    return v?.cooked ?? v?.raw;
+  };
+  if (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") {
     const obj = callee.object as
       | { type?: string; name?: string; callee?: { type?: string; name?: string } }
       | undefined;
@@ -1451,11 +1463,12 @@ export function resolveCalleeFn(
     const propName =
       !callee.computed && prop?.type === "Identifier" && typeof prop.name === "string"
         ? prop.name
-        : callee.computed === true &&
-            prop?.type === "StringLiteral" &&
+        : callee.computed === true && prop?.type === "StringLiteral" &&
             typeof prop.value === "string"
           ? String(prop.value)
-          : undefined;
+          : callee.computed === true
+            ? staticTemplateKey(prop as Record<string, unknown> | undefined)
+            : undefined;
     const propOk = propName !== undefined;
     // Bug 1154：`new K().m(…)`（构造 + 实例方法调用同表达式）⇒ 与
     // `const c = new K(); c.m(…)` 同一条 obligation 路径（本地类走 knownFns，

@@ -546,6 +546,11 @@ function buildIndex(file: File): SemanticIndex {
           collectClassDef(right, id, cname, true);
         } else if (isFunctionValue(right)) {
           addEntry(cname === "default" ? "default" : cname);
+        } else if (right.type === "Identifier" && slot.startsWith("exports.")) {
+          // BUG-002：`exports.greet = boom` 的公共入口名是**槽名** greet，
+          // 不是本地函数名 boom。右值是标识符时不登记 ⇒ 该导出在门禁
+          // 候选里完全缺席（槽映射解析得到也无人执法）。
+          addEntry(cname);
         }
       }
     }

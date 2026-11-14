@@ -17,10 +17,6 @@ const sigs = (path: string, source: string): string[] =>
   run(path, source).signatures.map((s) => s.name);
 
 describe("audit 34 · 入口面单一事实来源（ADR 0001 D1）", () => {
-  // BUG-002 归「导出槽 → 本地名映射」类修复（resolveExportSlotCall 成员赋值形态），
-  // 在 audit-export-slot.test.ts 落地；此处不靠入口名面合并偶然命中。
-  it.todo("BUG-002 exports.greet = boom 进 L2 执法");
-
   it("BUG-015 解构导出 export const { a } = … 进普查与 L2 执法", () => {
     const source = `export const { a } = { a: () => null.x };`;
     expect(errors("/t/audit-b015.js", source)).toContain("nudo:entry-may-throw");

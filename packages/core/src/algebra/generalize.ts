@@ -354,6 +354,14 @@ export function classMethodIsStatic(
       decl = s.declaration;
     }
     const c = decl as ClassNode | undefined;
+    // BUG-017 / Bug 1156：匿名 `export default class { … }` 的导出槽名就是
+    // "default"，方法键前缀也是 `default.m`。classes 表里若没有 "default"
+    // 条目，`classMethodIsStatic` 会返回 undefined ⇒ 求值桥按静态方法走，
+    // 实例方法体的必抛被折成 unknown（假绿）。
+    if (s.type === "ExportDefaultDeclaration" && c?.type === "ClassDeclaration" && !c.id?.name) {
+      classes.set("default", c);
+      continue;
+    }
     if (c?.type === "ClassDeclaration" && c.id?.name) {
       if (!classes.has(c.id.name)) classes.set(c.id.name, c);
       continue;

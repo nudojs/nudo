@@ -769,7 +769,10 @@ export function scanLiteralCalls(
       type?: string;
       loc?: { start: { line: number; column: number } };
     };
-    if (obj.type === "CallExpression") {
+    // BUG-032：可选链调用在原生里与同名非可选调用完全等价（f?.() / c?.m() /
+    // c.m?.() 都真正执行），AST 层是 OptionalCallExpression ⇒ 必须与
+    // CallExpression 共用同一条调用点义务路径。
+    if (obj.type === "CallExpression" || obj.type === "OptionalCallExpression") {
       const callee = obj.callee as Record<string, unknown>;
       const args = (obj.arguments as Array<Record<string, unknown>>) ?? [];
       const resolved = resolveCalleeFn(callee, resolve, knownSet, chain);
