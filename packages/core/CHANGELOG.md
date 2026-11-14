@@ -1,5 +1,68 @@
 # @nudojs/core
 
+## 1.20.0
+
+### Minor Changes
+
+- aff6b7c: Add `number().finite()` and sound relation-complement narrowing.
+  
+  `number()` includes `NaN` and `±Infinity`, so a sequential guard such as
+  `if (x < 1) return 0; return x + y;` cannot assume `x >= 1` on the fall-through
+  path (`NaN < 1` is false). `number().finite()` adds the missing non-NaN evidence;
+  when it (or any numeric bound) is present, the evaluator refines the
+  fall-through / else arm with the complement of the relation guard at runtime
+  (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
+  `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
+  `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
+  where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
+  `var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
+  the same function body or at module top level (a written alias name or guarded
+  variable, loop-header shadowing/assignment, catch parameters and function
+  boundaries drop the alias). A user-shadowed `Number` disables the builtin
+  guard fact (fail-closed). De Morgan spellings
+  (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results
+  for bare `number()` are unchanged.
+  
+  Literal `NaN` / `±Infinity` arguments (including `0/0`, `Number.NaN`,
+  `Number.POSITIVE_INFINITY`) now violate a `finite` precondition instead of
+  passing silently; `NaN` and `±Infinity` globals are modeled as literals.
+  
+  兼容性：新增 builder 方法与非 NaN 证据下的精度收紧；未使用 `.finite()` 的
+  既有契约输出逐字节不变。
+
+### Patch Changes
+
+- c93a32d: Cache directive-scope scanning per AST and version facet keys.
+  
+  `listFnDirectiveScopes` was re-walking the whole AST for every function query
+  (`findFnDirectiveScope` is called per function by `checkSource`), i.e.
+  O(functions × nodes). A WeakMap keyed by the parsed AST makes it one walk per
+  file: `@babel/parser/lib/index.js` (0.49 MB) check
+  13,179ms → 4,675ms (-64%). The AST is immutable during analysis and
+  `parseSource` returns the same object for the same source, so caching cannot
+  change results; a regression test pins the identity.
+  
+  `facetKey` now carries a `v1:` prefix (`FACET_KEY_VERSION = 1`) so future
+  kind/prefix/order semantics changes get a fresh key space; empty facets still
+  encode as `""`. Facets are also pinned as observation-only (not part of
+  `leqAbs` / `formatShape`) — promoting a slot to value semantics requires the
+  Shape migration gate (gold + real-package zero-FP + differential corpus).
+  
+  兼容性：内部缓存键与性能变化；未使用 facets 的 Abs 键逐字节不变。
+- 190761e: Propagate the source filename into parse-mode selection for pure-JS paths.
+  
+  `parseSource` already skips the strip-types pass for `.js/.mjs/.cjs/.jsx`
+  (structurally a no-op there), but service / transpile / module-graph / fingerprint
+  / directive-scan call sites omitted the filename, so JS sources were parsed in
+  ts mode and paid two extra full-AST walks. Threading `filename` from
+  `analyzeFile`, `transpileModule`/`runTranspiled`, the abs module graph, load-deps
+  fingerprints, directive extractors and `localNamedExports` drops a 9.14 MB
+  self-contained JS file from 20,755ms to 14,594ms (-29.7%); the remaining
+  strip-types share in the profile is ~2% (`checkSource` path 1.7%).
+  
+  兼容性：解析模式由文件扩展名决定（缺省仍为 ts 模式，未知扩展名行为不变）；
+  `.js` 里的 TS-only 语法仍是 syntax-error（Bug 114 / Bug 451 口径不变）。
+
 ## 1.19.1
 
 ### Patch Changes
