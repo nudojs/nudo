@@ -12,7 +12,9 @@
 import { describe, it, expect } from "vitest";
 import { abs, cloneAbsFacets, numLit, strLit, type Abs, type AbsFacets } from "../abs.ts";
 import { absKey, facetKey } from "../key/abs-key.ts";
-import { FACET_SPECS, facetKeys } from "../key/facet-specs.ts";
+import { FACET_KEY_VERSION, FACET_SPECS, facetKeys } from "../key/facet-specs.ts";
+import { formatShape } from "../format/format.ts";
+import { leqAbs } from "../leq.ts";
 
 const base = (): Abs => abs({ k: "prim", type: "number" }, undefined, undefined, "exact");
 
@@ -60,13 +62,13 @@ describe("ABS-15 · 登记表覆盖与声明序", () => {
 
 describe("ABS-15 · facetKey 编码逐字节稳定", () => {
   it("标量 / 键集槽位：前缀 + JSON 引号自定界", () => {
-    expect(facetKey({ callable: true })).toBe("c:1");
-    expect(facetKey({ callable: false })).toBe("c:0");
-    expect(facetKey({ protoOwnKeys: { strings: ["a", "b"] } })).toBe('k:["a","b"]:[]');
+    expect(facetKey({ callable: true })).toBe("v1:c:1");
+    expect(facetKey({ callable: false })).toBe("v1:c:0");
+    expect(facetKey({ protoOwnKeys: { strings: ["a", "b"] } })).toBe('v1:k:["a","b"]:[]');
     expect(
       facetKey({ protoOwnKeys: { strings: ["constructor"], symbols: ["Symbol.iterator"] } }),
-    ).toBe('k:["constructor"]:["Symbol.iterator"]');
-    expect(facetKey({ brand: "Generator" })).toBe('b:"Generator"');
+    ).toBe('v1:k:["constructor"]:["Symbol.iterator"]');
+    expect(facetKey({ brand: "Generator" })).toBe('v1:b:"Generator"');
   });
 
   it("组合槽位：顺序与分隔符（声明序，不依赖对象属性插入序）", () => {
@@ -76,15 +78,15 @@ describe("ABS-15 · facetKey 编码逐字节稳定", () => {
         protoOwnKeys: { strings: ["a"], symbols: ["s"] },
         callable: false,
       }),
-    ).toBe('c:0,k:["a"]:["s"],b:"B"');
+    ).toBe('v1:c:0,k:["a"]:["s"],b:"B"');
   });
 
   it("Abs 槽位逐项编结构键（同值同键、异值异键）", () => {
     const one = numLit(1);
     const two = numLit(2);
-    expect(facetKey({ genReturn: one })).toBe(`gr:${absKey(one)}`);
-    expect(facetKey({ genNext: one })).toBe(`gn:${absKey(one)}`);
-    expect(facetKey({ genElements: [one, two] })).toBe(`ge:${absKey(one)}|${absKey(two)}`);
+    expect(facetKey({ genReturn: one })).toBe(`v1:gr:${absKey(one)}`);
+    expect(facetKey({ genNext: one })).toBe(`v1:gn:${absKey(one)}`);
+    expect(facetKey({ genElements: [one, two] })).toBe(`v1:ge:${absKey(one)}|${absKey(two)}`);
     expect(absKey(withFacets({ genReturn: one }))).not.toBe(absKey(withFacets({ genReturn: two })));
     expect(absKey(withFacets({ genElements: [one] }))).not.toBe(
       absKey(withFacets({ genElements: [two] })),
@@ -103,6 +105,21 @@ describe("ABS-15 · facetKey 编码逐字节稳定", () => {
     expect(facetKey({})).toBe("");
     expect(absKey(withFacets({}))).toBe(absKey(base()));
     expect(cloneAbsFacets({})).toEqual({});
+  });
+
+  it("键版本固定；语义变化必须显式升版（旧键不再命中）", () => {
+    expect(FACET_KEY_VERSION).toBe(1);
+    expect(facetKey({ callable: true })).toMatch(/^v\d+:/);
+  });
+});
+
+describe("ABS-15 · 提升规则（值语义不得进 facets）", () => {
+  it("facets 不参与 formatShape / leqAbs（提升须走 Shape 迁移门禁）", () => {
+    const bare = base();
+    const faceted = withFacets(SAMPLE);
+    expect(formatShape(faceted)).toBe(formatShape(bare));
+    expect(leqAbs(bare, faceted).ok).toBe(true);
+    expect(leqAbs(faceted, bare).ok).toBe(true);
   });
 });
 

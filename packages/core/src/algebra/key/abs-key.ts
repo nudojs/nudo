@@ -27,7 +27,7 @@ import type { Abs, AbsFacets, Shape } from "../abs.ts";
 import type { Term } from "../term.ts";
 import { litKeyString } from "../term.ts";
 import type { Pred } from "../pred.ts";
-import { FACET_SPECS, facetKeys } from "./facet-specs.ts";
+import { FACET_KEY_VERSION, FACET_SPECS, facetKeys } from "./facet-specs.ts";
 
 /** α-rename 映射（term 变元 id → 规范名） */
 export type VarRename = ReadonlyMap<string, string>;
@@ -283,7 +283,8 @@ export function facetKey(f: AbsFacets): string {
       }
     }
   }
-  return parts.join(",");
+  // 候选 3：版本前缀。空容器恒 ""（空 ≡ 缺省的既有不变量）。
+  return parts.length === 0 ? "" : `v${FACET_KEY_VERSION}:${parts.join(",")}`;
 }
 
 /**
