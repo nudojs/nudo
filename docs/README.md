@@ -28,13 +28,14 @@
 | [design/refine-derivation.md](./design/refine-derivation.md) | 契约分层推导 / 侧车 / `contract --draft`·`--emit` | 摘要 |
 | [design/hof-relations.md](./design/hof-relations.md) | HOF 关系 Abs（非 TS 泛型语言） | 摘要 |
 | [design/persistent-cache.md](./design/persistent-cache.md) | 持久化分析缓存（`.nudo/cache` / `~/.cache/nudo/deps`） | 摘要（L2 harvest 已落地） |
+| [design/nan-finite-contracts.md](./design/nan-finite-contracts.md) | NaN 感知的契约词汇（`number().finite()`）与关系补集累积 | 草案（issue #185 需求锚点；未实施） |
 
 ### 计划
 
 | 文档 | 状态 |
 |------|------|
 | [design/plans/2026-09-19-close-remaining-dx-gaps.md](./design/plans/2026-09-19-close-remaining-dx-gaps.md) | **现行**：未闭环 `[~]` + Backlog；已交付任务不在此保留 evidence |
-| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行**：`ABS-01`…`ABS-11` 已交付（删除线）；`ABS-14` `[x]`；`ABS-16` 第①步 `[~]`（2026-11-12 数字订正 + 两项遗留闭环 + 机制定位与 `termKey` 低风险优化）；`ABS-12/13/15` 待拍板；`ABS-17` `[~]`（单文件最小复现 + `setSlot` / 拷贝叶子快路径，夹具 −61%；剩余 31.6% 需写时复制，另立项）；`ABS-18` 待拍板（watch 增量重算整条依赖链 + 写入被吞竞态） |
+| [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行 backlog**（2026-11-14 生命周期清算，已交付正文删除）：开放 `ABS-13`（finalizer 含 yield/return）、`ABS-15`（提升规则 / 键版本化）、`ABS-16`③（worker 并行，触发条件在 §5）、`ABS-17`（写时复制，暂缓）；`ABS-01`…`ABS-12` / `ABS-14` / `ABS-16`① / `ABS-18` 已交付，证据在测试 / changeset / git |
 
 ## CI 用法与报告（非设计）
 
@@ -45,6 +46,7 @@
 | [feasibility-npm-package.md](./feasibility-npm-package.md) | 替换 TypeScript 可行性报告 | 报告 |
 | [versioning.md](./versioning.md) | 发布与 breaking 策略 | 现行 |
 | [reports/limits-resolved.md](./reports/limits-resolved.md) | 已解决限制归档（一行锚，自 design/limitations.md 迁出） | 报告 |
+| [reports/test-baseline-failures.json](./reports/test-baseline-failures.json) | 按宿主（`<platform>/<node major>`）固化的已知测试失败基线（`pnpm run test:baseline`） | 报告 |
 | [reports/env-coverage-baseline.md](./reports/env-coverage-baseline.md) | env 覆盖基线 | 报告 |
 
 ## 示例

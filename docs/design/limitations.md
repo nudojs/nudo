@@ -54,6 +54,7 @@
 | 项 | 状态 | 说明 |
 |----|------|------|
 | Pred 蕴含（D2） | **已扩展** | 线性形（`+`/`-`/`*const`）· 跨项区间合成 · 等式类（`x=y`）· `ne` 收紧为严格界 · 合取目标分解 · and/or 交换律相等。非线性 / 量词仍故意不完整；可选 `setImplicationOracle` 外接 SMT（默认无依赖，仅内建证不出时调用、返回 `true` 才抬升，fail-closed） |
+| NaN 感知契约词汇（issue #185） | **草案** | 顺序早退 / De Morgan 拼写的 fall-through 补集断言需**非 NaN 证据**（`NaN` 使 `x < k` 为假）；契约侧尚无 `finite()` / `notNaN()` 词汇。提案与边界见 [`nan-finite-contracts.md`](./nan-finite-contracts.md)（未实施） |
 | 闭包跨调用状态合流 | **已建模** | evaluator 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`）；首次调用后渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
