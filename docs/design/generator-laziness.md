@@ -774,8 +774,10 @@ throw/break/continue/await/var）由转译器发射为 thunk，经 `$yield`/`$yi
 finalizer 抛错（无外层自由写）按 native 上抛；`for-of` 的生成器 break 经
 `runtime/gen-return-at.ts` 的 `returnAt(k)` 回到已消费挂起点重放（f5b 精确 `true`）。
 async generator 的 replay 异常交付 rejected promise（不再二次包裹）。`yield*` 委托内 break 已精确（A1 守卫收窄为「线性对齐的委托保留时间轴」）；finalizer 的
-条件 `throw` 在 replay 中精确传播，不可 replay 时记 may-throw。剩余：finalizer 含
-`yield` / `return` 语句（需真挂起/续体）。夹具
+条件 `throw` 在 replay 中精确传播，不可 replay 时记 may-throw。**finalizer 含
+`yield` / `return` 的残余已于 2026-11-14 结案不做**：`yield` 需真挂起/续体；`return`
+需正常/重放双发射的 tagged-return 协议，收益仅覆盖低频形态且无需求证据 ⇒ 保持 C 的
+sound 过近似（`false | true`），见 ABS 计划 §5/§8。夹具
 `abs13-abrupt-completion.test.ts`（15 例）。
 
 **剩余（本轮时点）**：步骤 4 全量真挂起（含非绑定类副作用时序）；

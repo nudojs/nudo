@@ -15,8 +15,8 @@
 ## 0. 现状
 
 - **已交付**：`ABS-01`…`ABS-12`、`ABS-14`、`ABS-16` 第①步、`ABS-18`。正文删除，状态见 §1。
-- **仍开放**：`ABS-13`（finalizer 含 `yield`/`return` 的 abrupt completion）、`ABS-15`
-  （facet 提升规则 / 键版本化）、`ABS-16`③（worker 并行，parked）、`ABS-17`（写时复制，暂缓）。
+- **仍开放**：`ABS-16`③（worker 并行，parked）、`ABS-17`（写时复制，暂缓）。
+  `ABS-13` 残余已结案不做（见 §8）；`ABS-15` 已交付。
 - **性能线判定**：通用冷路径到此可停 —— 用户口径 `dist` time-to-green 374ms（2s 目标 5.3× 余量，
   `docs/reports/dx-metrics.md`）；watch 典型编辑 total 667–929ms 达标；语义编辑 hub ≈2.2s
   （CPU-bound），属单文件成本（`ABS-17`）或 worker 并行（`ABS-16`③），不在通用优化面。
@@ -39,9 +39,9 @@
 | 10 | `ABS-10` | 摘要式模块化分析 | P1 | L | `ABS-05` | `[x]`（保守起点：纯上下文跨实例后置摘要） |
 | 11 | `ABS-11` | contract 合取与 union 精度 | P1 | M | `ABS-01` | `[x]`（判别式穷尽性 warning 延后：零误报优先） |
 | 12 | `ABS-12` | 能力面裁剪（capability surface） | P2 | M–L | — | `[x]` 2026-11-13：能力清单（188 全局 + 67 builtin，default-deny + 漂移门禁）、运行期身份拦截、`nudo:capability-denied`、`--capabilities strict\|trusted` / `NUDO_CAPABILITIES`、canary e2e；**不宣称 sandbox**；denied 集合维护是持续动作 |
-| 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[~]`：C 护栏 + A-narrow 已交付；**残余 = finalizer 含 `yield`/`return` 的形态**（需真挂起/续体） |
+| 13 | `ABS-13` | 生成器 abrupt completion / 真挂起 | P2 | M（C）+ L（A） | — | `[x]`：C 护栏 + A-narrow 已交付；**finalizer 含 `yield`/`return` 的残余判定不做**（需真挂起/CPS 或重复发射协议；无需求证据，2026-11-14 结案，见 §8） |
 | 14 | `ABS-14` | 有界参数化摘要 | P2 | L | `ABS-10`、`ABS-11` | `[x]`（决策锚见 §5；`TypeParam.bounds` 目前 write-only，不宣称被快路径消费） |
-| 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[~]`：登记表 + 漂移门禁已落地；**剩余候选 2（提升规则）/ 3（键版本化）** |
+| 15 | `ABS-15` | Shape / facets 治理 | P2 | M–L | — | `[x]`：登记表 + 漂移门禁 + 提升规则门禁（facets 不参与 `formatShape`/`leqAbs`）+ 键版本化（`FACET_KEY_VERSION=1`，`v1:` 前缀）已交付 |
 | 16 | `ABS-16` | 规模验证与签名缓存 | P2 | L | `ABS-05`、`ABS-10` | `[x]`：①真实仓基准交付；②分析结果落盘**结案不做**；③worker 并行**暂不立项**（触发条件见 §5） |
 | 17 | `ABS-17` | 大对象图 `$copy` 病态输入（性能） | P3 | M | `ABS-16` 度量 | `[ ]` **结案暂缓**（触发条件见 §5；已交付夹具与两条快路径，剩余 31.6% 需写时复制） |
 | 18 | `ABS-18` | watch 增量重算整条依赖链 | P2 | M | — | `[x]` 2026-11-13：吞改动竞态 + inert 编辑（hub total 929ms / leaf 555ms）；剩余可选 = `checkSource` gating 语义键 |
@@ -64,7 +64,7 @@
   `nudo:capability-denied`；`--capabilities strict|trusted` / `NUDO_CAPABILITIES`；canary e2e（零宿主副作用）。
 - **不宣称 sandbox**（准入控制不是隔离）；denied 集合维护是持续动作。
 
-### ABS-13 生成器 abrupt completion / 真挂起（`[~]`）
+### ABS-13 生成器 abrupt completion / 真挂起（`[x]` 2026-11-14 结案）
 
 **已交付**：方案 C（abrupt completion 时挂起点快照与终态格逐绑定 `join`，sound 过近似）
 + 方案 A-narrow（可安全抽取的 finalizer thunk 在 `.return()` / 无 catch 的 `.throw()` 时
@@ -72,9 +72,12 @@
 `[true, true]`；`for-of` break 穿 `finally` / `yield*` 委托精确 `true`；async 走 rejected promise；
 finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（15 例）。
 
-**残余（唯一未覆盖形态）**：finalizer 含 **`yield` / `return` 语句** —— 需要真挂起/续体
-（XL 边界）；当前保持 C 的 `false | true`。不做全量 CPS：已发现的错误类集中在 abrupt
-completion 的 `finally` 语义，不等于需要 continuation 化整个求值器。
+**残余（2026-11-14 结案不做）**：finalizer 含 **`yield` / `return` 语句**。
+`yield` 需要真挂起/续体（CPS，XL）；`return` 即使不含 yield 也需要
+「正常路径保留原生 return + 重放路径 tagged-return」的重复发射协议，收益仅覆盖
+一个低频形态，无需求证据。当前保持 C 的 `false | true`（sound 过近似）。
+不做全量 CPS：已发现的错误类集中在 abrupt completion 的 `finally` 语义，不等于
+需要 continuation 化整个求值器。
 
 | 场景 | native | 现状 |
 |---|---|---|
@@ -105,11 +108,15 @@ completion 的 `finally` 语义，不等于需要 continuation 化整个求值�
 `kind` 同时决定 `facetKey` 编码与 `cloneAbsFacets` 搬运策略；改前后
 `facetKey` / `absKey` / `cloneAbsFacets` 逐字节 diff 为空；门禁 `abs15-facet-registry.test.ts`（14 例）。
 
-**剩余候选**：
+**候选（全部已交付）**：
 
 1. ~~capability registry~~ ✅（登记表即最小面）。
-2. **提升规则**：值语义进 Shape、派生/观察能力进 facets；成熟后再评估逐槽提升。
-3. **facet 键版本化**：避免未来语义变化导致旧缓存串台。
+2. ~~提升规则~~ ✅ 2026-11-14：规则写入 `facet-specs.ts` 头注释；门禁用例
+   「facets 不参与 `formatShape` / `leqAbs`」钉住——提升任一槽位必须先走
+   Shape 迁移门禁（金标 + 真包零 FP + 差分 + 全仓基线）。
+3. ~~facet 键版本化~~ ✅ 2026-11-14：`FACET_KEY_VERSION = 1`，`facetKey`
+   非空输出带 `v1:` 前缀；空容器仍 `""`（空 ≡ 缺省不变量不变）；升版 =
+   进程内 memo 新键空间（Abs 不落盘）。
 
 **验收**：每个 facet 有搬运/键/join 覆盖；公共 API 快照只做 additive 变更。
 **风险**：重构成本 —— 只增量治理新增 facet，不做无指标的全量 Shape 重写。
@@ -146,6 +153,10 @@ LPT 上限 warm W=4 ≈487ms / W=8 ≈378ms，cold×3 时 W=4 ≈1461ms。
 **触发条件**：真实用户输入单文件 `analyze` >5s，或再次出现 `$copy` 占比 >30% 的报告。
 当前只剩合成病态负载（产物路径可解析时 47–59s，依赖不可解析时 0.2s —— 机制是
 依赖解析上下文构造出的巨大抽象对象图，不是打包器形态）。
+**2026-11-14 单文件复测**：自包含 `typescript.js`（9.14 MB）`check` 16.3s；
+`@babel/parser`（0.49 MB）check 修掉 directive-scan O(n²) 后 4.7s（13.2→4.7s）；
+`@babel/types` 入口 0.33 MB 仍 >180s 是**依赖图**成本，不是单文件 AST 规模。
+`docs/reports/large-file-profile.md`；文件内分段**不立项**。
 
 **已交付**：`benchmark/s1/generate-bundle-fixtures.mts`（5 形态梯度 + gitignored `.bundles`）、
 单文件最小复现（N 个对象导出）、`setSlot` 去 `defineProperty`、`copyWithMemo` 叶子快路径与
@@ -206,6 +217,8 @@ total **667–684ms**；leaf analyze 210ms / total **421ms**（早期批次为 h
 - 不做「项间同质」（homogeneity）契约：跨位共享用 `ABS-01` 的 binder，不用 `same`。
 - 不在契约层引入用户可写类型参数 / 显式实例化（`<T>`、`f<number>(…)`）。
 - 没有真正隔离不宣称 sandbox。
+- 不实现 finalizer 含 `yield` / `return` 的 abrupt completion 精确语义（需真挂起/CPS
+  或重复发射协议；保持 C 的 `false | true` sound 过近似，见 §5 `ABS-13`）。
 - 不以内建 API 100% 覆盖为目标；优先消灭 wrong-exact。
 - 无指标不重写 Shape 联合。
 - 不为 `--from` 注入路径做整报告复用（`persistent-cache.md` 既有边界）。
