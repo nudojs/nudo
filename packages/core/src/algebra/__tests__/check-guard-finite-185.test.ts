@@ -354,3 +354,31 @@ describe("let/var 别名与模块级别名（残余收口）", () => {
     ).toBe(false);
   });
 });
+
+describe("switch 臂内的别名（残余收口）", () => {
+  const gate = (src: string): boolean => transpileSource(src).includes("$refineNotNaN(x)");
+
+  it("case consequent 内新声明的别名按语句顺序登记", () => {
+    expect(
+      gate(
+        "function f(x){ switch (1) { case 1: const ok = Number.isNaN(x); if (!ok) { if (x < 0) return 0; return x; } } return 0; }",
+      ),
+    ).toBe(true);
+  });
+
+  it("臂内写掉外层别名 ⇒ 不继承（外层登记已按写名拒绝）", () => {
+    expect(
+      gate(
+        "function f(x){ let ok = Number.isNaN(x); switch (1) { case 1: ok = false; break; } if (!ok) { if (x < 0) return 0; return x; } return 0; }",
+      ),
+    ).toBe(false);
+  });
+
+  it("块状 case 体由 fn-body 自己维护别名链", () => {
+    expect(
+      gate(
+        "function f(x){ switch (1) { case 1: { const ok = Number.isNaN(x); if (!ok) { if (x < 0) return 0; return x; } } } return 0; }",
+      ),
+    ).toBe(true);
+  });
+});

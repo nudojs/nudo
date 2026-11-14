@@ -30,6 +30,12 @@ import {
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement, undefinedIsIntrinsicOf } from "./statement.ts";
+import {
+  aliasWriteNames,
+  filterWrittenAliases,
+  hasVariableDeclaration,
+  nanAliasesAfterStmt,
+} from "./fn-body.ts";
 
 export function emitSwitchStatement(
   stmt: SwitchStatement,
@@ -245,10 +251,35 @@ export function emitSwitchStatement(
       const armBodyOpts: TranspileOptions = armAliasGroups
         ? { ...armOpts, aliasGroups: armAliasGroups }
         : armOpts;
-      const body =
-        arm.stmts.length === 0
-          ? ""
-          : arm.stmts.map((s) => transpileStatement(s, depth + 2, armBodyOpts)).join("\n");
+      // NaN 守卫别名：臂体是块作用域；继承别名先按臂内写名过滤，臂内
+      // `const/let/var ok = …` 按语句顺序登记（case 之间不传播——精度缺口，
+      // 但不跨 case 猜事实）。无别名且无变量声明时保持旧路径零开销。
+      let armWritten: Set<string> | undefined;
+      const armWrittenOf = (): ReadonlySet<string> =>
+        (armWritten ??= aliasWriteNames(arm.stmts));
+      let armAliases = armBodyOpts.nanAliases
+        ? filterWrittenAliases(armBodyOpts.nanAliases, armWrittenOf())
+        : undefined;
+      let body: string;
+      if (arm.stmts.length === 0) {
+        body = "";
+      } else if (armAliases || hasVariableDeclaration(arm.stmts)) {
+        body = arm.stmts
+          .map((s) => {
+            const stepOpts = armAliases ? { ...armBodyOpts, nanAliases: armAliases } : armBodyOpts;
+            const out = transpileStatement(s, depth + 2, stepOpts);
+            armAliases = nanAliasesAfterStmt(
+              s,
+              armAliases,
+              armBodyOpts.shadowedIntrinsics,
+              armWrittenOf,
+            );
+            return out;
+          })
+          .join("\n");
+      } else {
+        body = arm.stmts.map((s) => transpileStatement(s, depth + 2, armBodyOpts)).join("\n");
+      }
       // Bug 184：case 标签窄化——命中 / 排除事实影子重绑进臂体
       const rawThunk = narrowCaseLabelArmThunk(
         `() => {\n${body}\n${indent(depth + 1)}}`,
