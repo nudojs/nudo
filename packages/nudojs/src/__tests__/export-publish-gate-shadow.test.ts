@@ -62,11 +62,20 @@ describe("ADR 0001 阶段 1 · export 发布门基线", () => {
     expect(after.conflicts).toEqual(before.conflicts);
   });
 
-  it("白名单本身仍是三族，影子不扩张它（决议 2 不新增码）", () => {
+  it("清单含契约四族，contract-syntax 不再被静默丢弃（BUG-021）", () => {
+    expect(EXPORT_BLOCKING_CODES).toContain(DIAG.contractSyntax);
+    const SYNTAX = { severity: "warning", code: DIAG.contractSyntax, message: "malformed" };
+    const diags = collectExportDiagnostics(makeOpts([SYNTAX]));
+    expect(diags.entries.map((d) => d.code)).toContain(DIAG.contractSyntax);
+    expect(diags.blocking).toBe(true);
+  });
+
+  it("白名单本身不扩张到非契约族（决议 2 不新增码）", () => {
     expect(EXPORT_BLOCKING_CODES).toEqual([
       DIAG.contractLoad,
       DIAG.contractParamMismatch,
       DIAG.contractConflict,
+      DIAG.contractSyntax,
     ]);
   });
 });

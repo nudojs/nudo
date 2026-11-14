@@ -11,7 +11,14 @@
  * 更坏）。
  */
 import { checkSource, pTrue, type EffectiveContractOpts } from "@nudojs/core";
-import { DIAG, recordPublishGateShadow } from "@nudojs/core/internal";
+import {
+  DIAG,
+  recordPublishGateShadow,
+  publishBlockedBy,
+  degradedOf,
+  stripStringsKeepComments,
+  type DiagCode,
+} from "@nudojs/core/internal";
 import { collectSkipReturns, type AnalysisResult } from "@nudojs/service";
 
 /** export 面的一条诊断（码 + 严重级 + 消息 [+ 关联函数]）。 */
@@ -64,6 +71,10 @@ export const EXPORT_BLOCKING_CODES: readonly string[] = [
   DIAG.contractLoad,
   DIAG.contractParamMismatch,
   DIAG.contractConflict,
+  // BUG-021：`nudo:contract-syntax` 同样是「整条契约丢失」，check 面是
+  // warning（合规），但 export 按码枚举时漏了这一族 ⇒ 发布「接受一切」的
+  // 校验器且 exit 0、零诊断。与另外三族同口径上屏并阻断。
+  DIAG.contractSyntax,
 ];
 
 /** 诊断条目化：非阻断族诊断一律丢弃（导出面只关心契约面三族）。 */
@@ -160,16 +171,25 @@ export function collectExportDiagnostics(opts: ExportDiagnosticOptions): ExportD
   // 为切片 4.2 切换判据留基线（不设白名单，§10 决议 4）。
   recordPublishGateShadow([checkFace.raw, opts.result.diagnostics], EXPORT_BLOCKING_CODES);
 
+  // ADR 0001 切片 4.2：阻断判据改由 Evidence 的语义门给出（决议 2 不按码
+  // 枚举）。「用户申报过契约」的真值：源码含手写 @nudo:contract 指令，或
+  // 诊断里已出现契约族（这些诊断只可能由契约解析产生，本身就是申报证据）。
+  // 迁移期保留 EXPORT_BLOCKING_CODES 作为上屏过滤清单（阶段 3 删旧）。
+  const declaredContract =
+    stripStringsKeepComments(opts.source).includes("@nudo:contract") ||
+    entries.some((d) => EXPORT_BLOCKING_CODES.includes(d.code));
+  const semanticBlocking = entries.some(
+    (d) =>
+      publishBlockedBy(degradedOf<unknown>(d.code as DiagCode), declaredContract) !== undefined,
+  );
+
   return {
     entries,
     contractLoad: entries.filter((d) => d.code === DIAG.contractLoad),
     conflicts: entries.filter((d) => d.code === DIAG.contractConflict),
-    // BUG-233：阻断判据必须与 `EXPORT_BLOCKING_CODES` **按码**对齐（`toExportDiagnostic`
-    // 已把非阻断族丢弃）——只看 `severity === "error"` 会放过 warning 级的
-    // `nudo:contract-conflict` ⇒ 已收集的诊断既不上屏也不阻断（产物只编码了一半契约）。
-    blocking: entries.some(
-      (d) => d.severity === "error" || EXPORT_BLOCKING_CODES.includes(d.code),
-    ),
+    // BUG-233：severity === "error" 不足以覆盖 warning 级 contract-conflict；
+    // 语义门对「申报过契约 + degraded」一律阻断，不靠码表逐条枚举。
+    blocking: entries.some((d) => d.severity === "error") || semanticBlocking,
   };
 }
 

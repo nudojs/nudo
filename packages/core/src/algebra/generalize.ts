@@ -1537,6 +1537,12 @@ function generalizeFromAstUncached(
           ? effectiveContract(source, fnName, r)
           : undefined;
       const reqs = eff?.params ?? [];
+      // BUG-018：跨槽 `ref("a")` 的 binder 表由 effectiveContract 统一算出，
+      // 但逐位投影时若不传，`resolveRef` 在别的槽位的树里找不到 binder ⇒
+      // 抛错被外层裸 catch 吞掉 ⇒ 该形参静默退成无约束 any（check 判假红、
+      // dts 面却精确）。check 的 @nudo:skip 分支与 dts/export 面都传了第 4 参，
+      // 这里必须同口径。
+      const binderTable = new Map(Object.entries(eff?.binders ?? {}));
       if (reqs.length > 0) {
         entryReqs = reqs.map((e) => ({
           param: e.param,
@@ -1560,7 +1566,7 @@ function generalizeFromAstUncached(
             // BUG-082：默认值初始化式的类型并入定义域（契约域 ∪ 默认值类型）
             // ——否则 `s = "abc"` 配 `s: number()` 在被调方 L1 面判绿（假绿）。
             const entryAbs = contractDomainOf(
-              constraintToEntryAbs(e.constraint, e.param),
+              constraintToEntryAbs(e.constraint, e.param, undefined, binderTable),
               e.param,
               idx,
             );
@@ -1582,7 +1588,7 @@ function generalizeFromAstUncached(
               bag = {};
               patternFields.set(hit.index, bag);
             }
-            const fieldAbs = constraintToEntryAbs(e.constraint, e.param);
+            const fieldAbs = constraintToEntryAbs(e.constraint, e.param, undefined, binderTable);
             const leaf: PatternFieldNode = {
               abs: fieldAbs,
               ...(e.constraint.isOptional ? { optional: true } : {}),
