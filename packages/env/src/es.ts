@@ -493,9 +493,9 @@ export function defineEnv(): EnvDefinition {
           MIN_SAFE_INTEGER: prim.num(),
           MAX_VALUE: prim.num(),
           MIN_VALUE: prim.num(),
-          POSITIVE_INFINITY: prim.num(),
-          NEGATIVE_INFINITY: prim.num(),
-          NaN: prim.num(),
+          POSITIVE_INFINITY: numLit(Infinity),
+          NEGATIVE_INFINITY: numLit(-Infinity),
+          NaN: numLit(NaN),
           EPSILON: prim.num(),
         },
       }),
@@ -616,8 +616,11 @@ export function defineEnv(): EnvDefinition {
 
       globalThis: prim.unknown,
       undefined: undef(),
-      NaN: prim.num(),
-      Infinity: prim.num(),
+      // NaN / Infinity 是**确定的字面量值**（不是任意 number）：调用点契约
+      // 判定（`judgeLiteralPred` 的 assumeFinite / 数值界）与 `.finite()` 的
+      // 反例（`f(NaN)`）都依赖这一点。
+      NaN: numLit(NaN),
+      Infinity: numLit(Infinity),
 
       // ---- ES 规范全局补齐（族 29 Bug 865）--------------------------------
       //

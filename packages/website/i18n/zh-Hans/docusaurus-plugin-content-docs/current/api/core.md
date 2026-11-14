@@ -358,6 +358,8 @@ createEnvironment(parent?, bindings?)
 | <a id="$loopbreak"></a>`$loopBreak` | fn | control-signal / throw | `$loopBreak(label?: string): never` |
 | <a id="$loopcontinue"></a>`$loopContinue` | fn | control-signal / throw | `$loopContinue(label?: string): never` |
 | <a id="$loopreturn"></a>`$loopReturn` | fn | control-signal / throw | `$loopReturn(v: Abs): never` |
+| <a id="$narrowmembereq"></a>`$narrowMemberEq` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$narrowtypeof"></a>`$narrowTypeOf` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
 | <a id="$neg"></a>`$neg` | fn | operator runtime | `$neg(a: Abs): Abs` |
 | <a id="$not"></a>`$not` | fn | operator runtime | `$not(a: Abs): Abs` |
 | <a id="$nullishtest"></a>`$nullishTest` | fn | control-flow lowering | `$nullishTest(v: Abs): Abs` |
@@ -366,6 +368,12 @@ createEnvironment(parent?, bindings?)
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
+| <a id="$refinerel"></a>`$refineRel` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$refinerelcomplement"></a>`$refineRelComplement` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$removemembernullish"></a>`$removeMemberNullish` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$removenull"></a>`$removeNull` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$removenullish"></a>`$removeNullish` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
+| <a id="$removeundefined"></a>`$removeUndefined` | const | guard-arm narrowing (relation facts / non-NaN-gated complements / typeof / discriminant / nullish) | — |
 | <a id="$set"></a>`$set` | fn | object / member runtime | `$set: ( o: Abs, key: string, value: Abs, opts?: Parameters<typeof $setInner>[3], ) => ReturnType<typeof $setInner>` |
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |

@@ -162,6 +162,7 @@ export {
   $narrowTypeOf,
   $nullishTest,
   $refineRel,
+  $refineRelComplement,
   $removeMemberNullish,
   $removeNull,
   $removeNullish,

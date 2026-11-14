@@ -236,6 +236,12 @@ export function judgeLiteralPred(
     if (!lvR.ok) return undefined;
     return sameLiteral(lvRaw, v);
   }
+  // 有限数原子（`number().finite()`）：NaN / ±Infinity / 非 number 字面量
+  // 确定违反；非字面量实参判不了（不猜）。
+  if (p.op === "assumeFinite") {
+    if (!lvR.ok) return undefined;
+    return typeof lvRaw === "number" && Number.isFinite(lvRaw);
+  }
   // typeof 原子（`ptypeof` 构造器产物）：union 的 prim 成员实例化成它。
   if (p.op === "typeof") {
     if (p.t.op !== "var") return undefined;

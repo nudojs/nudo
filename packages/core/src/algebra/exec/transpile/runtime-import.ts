@@ -140,6 +140,7 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$nullishTest",
   "$assumeAnchor",
   "$refineRel",
+  "$refineRelComplement",
   "$removeNullish",
   "$removeNull",
   "$removeUndefined",

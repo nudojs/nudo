@@ -607,6 +607,24 @@ export function checkReqs(
         }
         continue;
       }
+      // 有限数义务（`number().finite()`）：NaN / ±Infinity / 非 number 字面量
+      // 确定违反。类型已由 typeof 通道报过 ⇒ 让位（Bug 1114 同口径，避免
+      // 同一实参位两条诊断）；非字面量实参判不了（不猜）。
+      if (p.op === "assumeFinite") {
+        if (typeofReported || !lvR.ok) continue;
+        if (!(typeof lv === "number" && Number.isFinite(lv))) {
+          pushPrecondIssue(
+            out,
+            displayName,
+            paramName,
+            loc,
+            formatAbs(arg),
+            `finite(${paramName})`,
+            `use a finite number, or relax the precondition on ${paramName}`,
+          );
+        }
+        continue;
+      }
       // Bug 1114：**数值界**通道在 typeof 通道已报时让位 —— 类型都不对时，
       // 「x > 0」这类界判据对实参**没有意义**（布尔 / 字符串不可能 > 0）
       // ⇒ 与「typeof x = "number"」是同一条违例的两种说法 ⇒ 只报一次。

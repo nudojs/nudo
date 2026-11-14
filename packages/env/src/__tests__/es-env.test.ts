@@ -161,11 +161,18 @@ describe("es env load + key builtins", () => {
     for (const name of [
       "MAX_SAFE_INTEGER",
       "MIN_SAFE_INTEGER",
-      "NaN",
       "EPSILON",
     ] as const) {
       expect(shapeOf(walk(Number_, name), `Number.${name}`)).toContain("number");
     }
+    // Number.NaN / ±Infinity 是确定字面量（`.finite()` 的调用点反例依赖）
+    expect(shapeOf(walk(Number_, "NaN"), "Number.NaN")).toBe("NaN");
+    expect(shapeOf(walk(Number_, "POSITIVE_INFINITY"), "Number.POSITIVE_INFINITY")).toBe(
+      "Infinity",
+    );
+    expect(shapeOf(walk(Number_, "NEGATIVE_INFINITY"), "Number.NEGATIVE_INFINITY")).toBe(
+      "-Infinity",
+    );
   });
 
   it("Promise statics return promise-shaped results", () => {
@@ -247,8 +254,10 @@ describe("es env load + key builtins", () => {
       const s = shapeOf(globalOf(env, name), name);
       expect(s).toContain("=>");
     }
-    expect(shapeOf(globalOf(env, "NaN"), "NaN")).toContain("number");
-    expect(shapeOf(globalOf(env, "Infinity"), "Infinity")).toContain("number");
+    // NaN / Infinity 是确定字面量（不是任意 number）：`.finite()` 的调用点
+    // 反例（`f(NaN)`）依赖它们可判。
+    expect(shapeOf(globalOf(env, "NaN"), "NaN")).toBe("NaN");
+    expect(shapeOf(globalOf(env, "Infinity"), "Infinity")).toBe("Infinity");
   });
 
   it("Boolean/String coercions fold on literals", () => {

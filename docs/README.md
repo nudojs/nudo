@@ -28,7 +28,7 @@
 | [design/refine-derivation.md](./design/refine-derivation.md) | 契约分层推导 / 侧车 / `contract --draft`·`--emit` | 摘要 |
 | [design/hof-relations.md](./design/hof-relations.md) | HOF 关系 Abs（非 TS 泛型语言） | 摘要 |
 | [design/persistent-cache.md](./design/persistent-cache.md) | 持久化分析缓存（`.nudo/cache` / `~/.cache/nudo/deps`） | 摘要（L2 harvest 已落地） |
-| [design/nan-finite-contracts.md](./design/nan-finite-contracts.md) | NaN 感知的契约词汇（`number().finite()`）与关系补集累积 | 草案（issue #185 需求锚点；未实施） |
+| [design/nan-finite-contracts.md](./design/nan-finite-contracts.md) | NaN 感知的契约词汇（`number().finite()`）与关系补集累积（issue #185） | 已实施（2026-11-14；残余见文末） |
 
 ### 计划
 

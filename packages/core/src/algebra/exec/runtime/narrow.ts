@@ -21,9 +21,9 @@
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
-import { pTrue, and, implies, type Pred, type PrimName } from "../../pred.ts";
+import { pTrue, and, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
 import { migrateNullProto, type ObjShape } from "../../objects.ts";
-import { refineAbsForRelTrue } from "../../arithmetic.ts";
+import { refineAbsForRelTrue, isNonNaN } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
 import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
@@ -277,6 +277,30 @@ export function $refineRel(a: Abs, op: "gt" | "ge" | "lt" | "le", k: number): Ab
   if (!isAbsLike(a)) return a;
   if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
   return refineAbsForRelTrue(a, op, k);
+}
+
+/**
+ * 关系守卫**补集**臂剪影（issue #185）：`if (x < k) return …;` 的后续路径
+ * 断言 `x ≥ k`——但只在 `x` 可证**非 NaN** 时。
+ *
+ * JS 里 NaN 与任何比较皆假 ⇒ `¬(x < k)` 只断得 `x ≥ k ∨ x is NaN`
+ * （Bug 1115）。无证据断言 `x ≥ k` 会排除 NaN（`if (x < 0) return 0;
+ * return x;` + `nonNeg` 假绿）。证据来源 = `isNonNaN`（字面量 / 数值界 /
+ * `ne(t, NaN)` / 契约 `number().finite()` 的 `assumeFinite`）；缺证据时
+ * **原样返回**（fail-closed，行为与撤销补集时逐字相同）。
+ *
+ * `op` 是**原守卫**的算子（`lt` / `le` / `gt` / `ge`），补集映射走
+ * `REL_COMPLEMENT_OPS` 单源表。
+ */
+export function $refineRelComplement(
+  a: Abs,
+  op: "gt" | "ge" | "lt" | "le",
+  k: number,
+): Abs {
+  if (!isAbsLike(a)) return a;
+  if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
+  if (!isNonNaN(a, pTrue)) return a;
+  return refineAbsForRelTrue(a, REL_COMPLEMENT_OPS[op], k);
 }
 
 /**

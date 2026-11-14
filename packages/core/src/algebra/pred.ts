@@ -248,6 +248,21 @@ export function totalOrderDual(p: Pred): Pred | undefined {
   return undefined;
 }
 
+/**
+ * 关系补集算子映射（`¬(x < k)` ⇒ `x ≥ k` …）——**只在有非 NaN 证据时**
+ * 可用（`NaN < k` / `NaN ≥ k` 全为假 ⇒ 无证据的补集断言会排除 NaN）。
+ *
+ * 转译侧（`narrowRelComplementArmThunk` 发射）与运行时
+ * （`$refineRelComplement` 判定）共用同一张表，防止两处手写映射漂移；
+ * 与 `totalOrderDual` 同源（那里是 Pred 形态，这里只要算子名）。
+ */
+export const REL_COMPLEMENT_OPS = {
+  gt: "le",
+  ge: "lt",
+  lt: "ge",
+  le: "gt",
+} as const satisfies Record<"gt" | "ge" | "lt" | "le", "gt" | "ge" | "lt" | "le">;
+
 export function predEquals(a: Pred, b: Pred): boolean {
   if (a === b) return true;
   if (a.op !== b.op) return false;

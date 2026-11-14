@@ -153,6 +153,21 @@ export const add2 = fn({ x: number().gt(0) }, number());
 
 Function bindings in a sidecar **must** be first-class `fn({ params }, returns?)`. Bare `number().gt(0)` is a value-level template (for `@nudo:contract` / shared slots), not a function export contract — `positive` above is a template, `add2` is a binding.
 
+### Finite numbers (`number().finite()`)
+
+`number()` includes `NaN` and `±Infinity`. A sequential guard such as
+`if (x < 1) return 0; return x + 1;` therefore cannot assume `x >= 1`: `NaN < 1` is
+false, so the fall-through path can compute `NaN`. When the body's arithmetic relies
+on the guard's complement, make that evidence explicit:
+
+```javascript verify-sidecar
+export const amount = number().finite().ge(0);
+```
+
+With `number().finite()` (or any numeric bound, which already excludes `NaN`), the
+evaluator refines the fall-through path (`x >= 1`) at runtime; without it the same
+code stays `unproven`. `.finite()` is valid only on numeric chains.
+
 In-source form:
 
 ```javascript verify

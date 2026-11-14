@@ -84,8 +84,10 @@ import {
   narrowDiscriminantArmThunks,
   relGuardOf,
   relGuardOfNegation,
+  relGuardComplementFactsOf,
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
+  narrowRelComplementArmThunk,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -876,22 +878,28 @@ function emitIfStatement(
   const altNarrowed =
     altRaw === null
       ? null
-      : narrowRelNegationArmThunk(
-          narrowDiscriminantArmThunks(
-            narrowTypeArmThunk(
-              narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-              tguard,
+      : narrowRelComplementArmThunk(
+          narrowRelNegationArmThunk(
+            narrowDiscriminantArmThunks(
+              narrowTypeArmThunk(
+                narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+                tguard,
+                "alt",
+                recvSet,
+              ),
+              dguards,
               "alt",
               recvSet,
             ),
-            dguards,
-            "alt",
-            recvSet,
+            // 否定臂事实（issue #185）：`if (!(A ∧ …)) … else <这里>` 的 else
+            // 臂成立 `A ∧ …`（`!` 为假）⇒ 各关系合取项一并接上（裸关系补集
+            // 仍不可用——NaN，见 relGuardOfNegation）
+            relGuardOfNegation(stmt.test),
+            narrowSkip,
           ),
-          // 否定臂事实（issue #185）：`if (!(A ∧ …)) … else <这里>` 的 else
-          // 臂成立 `A ∧ …`（`!` 为假）⇒ 各关系合取项一并接上（裸关系补集
-          // 仍不可用——NaN，见 relGuardOfNegation）
-          relGuardOfNegation(stmt.test),
+          // 裸关系守卫的补集：运行时按非 NaN 证据（`.finite()` / 数值界）
+          // 决定是否收紧；`A ∨ B` 逐项取补集，缺证据原样返回。
+          relGuardComplementFactsOf(stmt.test),
           narrowSkip,
         );
   const cons = forkArmThunkExpr(consNarrowed, 0, names, padIn, opts);

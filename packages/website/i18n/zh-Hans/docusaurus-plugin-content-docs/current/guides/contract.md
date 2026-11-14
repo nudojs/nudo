@@ -153,6 +153,20 @@ export const add2 = fn({ x: number().gt(0) }, number());
 
 侧车中的函数绑定**必须**是一等 `fn({ params }, returns?)`。裸的 `number().gt(0)` 是值级模板（供 `@nudo:contract` / 共享槽使用），不是函数导出契约——上面 `positive` 是模板，`add2` 是绑定。
 
+### 有限数（`number().finite()`）
+
+`number()` 包含 `NaN` 与 `±Infinity`。因此顺序守卫
+`if (x < 1) return 0; return x + 1;` 不能假设 `x >= 1`：`NaN < 1` 为假，
+后续路径可能算出 `NaN`。当函数体的算术依赖守卫的补集时，把这条证据显式写出来：
+
+```javascript verify-sidecar
+export const amount = number().finite().ge(0);
+```
+
+有 `number().finite()`（或任意数值界——它本身就排除 `NaN`）时，求值器会在
+运行时收紧后续路径（`x >= 1`）；没有证据时同样的代码保持 `unproven`。
+`.finite()` 只对数值链合法。
+
 源码内形态：
 
 ```javascript verify

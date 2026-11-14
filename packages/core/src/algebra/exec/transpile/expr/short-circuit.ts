@@ -25,6 +25,7 @@ import {
   narrowDiscriminantArmThunks,
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
+  narrowRelComplementArmThunk,
 } from "../stmt/predicates.ts";
 import { collectForkBindingNames, expandAliasNames, internalTmpNameSet } from "../helpers.ts";
 import { emitStmtWritebackRebinds, forkArmThunk, forkBindingDecls, forkJoinBindings } from "../emit.ts";
@@ -110,6 +111,10 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
    *  只用于 **alt 臂**（测试为假路径；裸关系补集仍不可用，见
    *  relGuardOfNegation） */
   altRelGuard?: RelGuard;
+  /** 裸关系守卫的补集（issue #185 + `.finite()`）：只用于 alt 臂；运行时
+   *  按非 NaN 证据决定是否收紧（见 `$refineRelComplement`）。三元表达式
+   *  else 臂使用（`A ∨ B` 逐项）；`&&` / `||` 的短路返回值不需要。 */
+  altRelComplement?: readonly RelGuard[];
 }): string {
   // Bug 1149：引擎内部临时名避开用户标识符词形（臂 IIFE 在自身作用域求值
   // 用户表达式 ⇒ 写死名会遮蔽用户同名绑定 / 撞 TDZ ReferenceError）。
@@ -193,6 +198,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     consExpr = narrowRelArmThunk(consExpr, parts.relGuard, "cons", []);
     // 否定臂关系事实（issue #185）：alt 臂 = 测试为假的路径（同源）
     altExpr = narrowRelNegationArmThunk(altExpr, parts.altRelGuard, []);
+    // 裸关系补集（issue #185 + `.finite()`）：运行时按非 NaN 证据收紧
+    altExpr = narrowRelComplementArmThunk(altExpr, parts.altRelComplement, []);
     const forkCall = `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
     // 绑定形态：左操作数作实参求值一次（IIFE 箭头参数——表达式位合法）
     return bindLeft ? `((${sc0Name}) => ${forkCall})(${parts.alwaysSrc})` : forkCall;
@@ -231,14 +238,18 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     "cons",
     names,
   );
-  const altFinal = narrowRelNegationArmThunk(
-    narrowDiscriminantArmThunks(
-      narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
-      parts.discGuards,
-      "alt",
+  const altFinal = narrowRelComplementArmThunk(
+    narrowRelNegationArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowNullishArmThunks(forkArmThunk(altLines, 1, names, opts), guards, "alt", names),
+        parts.discGuards,
+        "alt",
+        names,
+      ),
+      parts.altRelGuard,
       names,
     ),
-    parts.altRelGuard,
+    parts.altRelComplement,
     names,
   );
   return [

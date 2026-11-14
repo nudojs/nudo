@@ -35,8 +35,10 @@ import {
   narrowDiscriminantArmThunks,
   relGuardOf,
   relGuardOfNegation,
+  relGuardComplementFactsOf,
   narrowRelArmThunk,
   narrowRelNegationArmThunk,
+  narrowRelComplementArmThunk,
 } from "./predicates.ts";
 import {
   isExpression,
@@ -387,19 +389,27 @@ export function transpileFnBodyStmts(
     // 为假 ⇒ `A ∧ …` 为真（`!` 是精确布尔取反，NaN 无关——`!(x < k)` 为假
     // 当且仅当 `x < k` 为真）⇒ 该形态的关系合取项全部接上（与裸 `x < k`
     // 的补集不同，后者仍按 Bug 1115 不窄化）。
-    const altNarrowed = narrowRelNegationArmThunk(
-      narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-          earlyTGuard,
+    const altNarrowed = narrowRelComplementArmThunk(
+      narrowRelNegationArmThunk(
+        narrowDiscriminantArmThunks(
+          narrowTypeArmThunk(
+            narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+            earlyTGuard,
+            "alt",
+            recvSet,
+          ),
+          earlyDGuards,
           "alt",
           recvSet,
         ),
-        earlyDGuards,
-        "alt",
+        relGuardOfNegation(stmt.test),
         recvSet,
       ),
-      relGuardOfNegation(stmt.test),
+      // 裸关系守卫的补集：`x < k` 为假 ⇒ `x >= k ∨ x is NaN`；`A ∨ B`
+      // 逐项取补集。运行时 `$refineRelComplement` 只在非 NaN 证据
+      // （契约 `.finite()` / 数值界）下收紧，缺证据原样返回（Bug 1115 的
+      // 假绿红线不变）。
+      relGuardComplementFactsOf(stmt.test),
       recvSet,
     );
     const alt = forkArmThunkExpr(altNarrowed, 1, names, padIn, scopedOpts);

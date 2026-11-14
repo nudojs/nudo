@@ -1374,3 +1374,64 @@ export function narrowRelNegationArmThunk(
   if (!guard) return thunk;
   return narrowArmShadowWrap(thunk, relGuardBindings(guard), forkBindingNames, "seq");
 }
+
+/**
+ * 关系守卫**补集**臂的事实集（issue #185 + 契约 `number().finite()`）。
+ *
+ * `¬(x < k)` / `¬(x < k ∨ y < m)` 的后续路径：
+ * - 单一关系 `x < k` 为假 ⇒ 候选事实 `x ≥ k`；
+ * - 析取 `A ∨ B` 为假 ⇒ `¬A ∧ ¬B`，每个**裸关系**析取项都可独立断言；
+ * - 合取 `A ∧ B`（`composite`）**不在内**：`¬(A ∧ B)` 是析取，不是单一事实。
+ *
+ * 这里只收集候选事实；是否真正收紧由运行时 `$refineRelComplement` 按
+ * `isNonNaN` 判定（缺证据原样返回，Bug 1115 的假绿红线不变）。
+ */
+export function relGuardComplementFactsOf(test: unknown): RelGuard[] {
+  const single = matchRelIdentLit(test);
+  if (single) return [single];
+  return flattenBareRelDisjuncts(test) ?? [];
+}
+
+/** `||` 链上的裸关系析取项；任一项不是单关系（合取 / 别的表达式）⇒ 放弃整条 */
+function flattenBareRelDisjuncts(test: unknown): RelGuard[] | undefined {
+  const t = test as
+    | { type?: string; operator?: string; left?: unknown; right?: unknown }
+    | null
+    | undefined;
+  if (t?.type === "LogicalExpression" && t.operator === "||") {
+    const left = flattenBareRelDisjuncts(t.left);
+    if (!left) return undefined;
+    const right = flattenBareRelDisjuncts(t.right);
+    if (!right) return undefined;
+    return [...left, ...right];
+  }
+  const g = matchRelIdentLit(test);
+  return g ? [g] : undefined;
+}
+
+/**
+ * 关系守卫**补集**臂剪影（issue #185 + 契约 `number().finite()`）：
+ * `if (x < k) return …;` 的后续路径 / `x < k ? a : b` 的 else 臂在 `x` 可证
+ * **非 NaN** 时断言 `x ≥ k`；`A ∨ B` 形态逐项断言。
+ *
+ * 转译器只负责发射调用：是否真正收紧由运行时 `$refineRelComplement` 按
+ * `isNonNaN` 判定（拿不到 Abs 的语法层不得自行决定，缺证据即原样返回）。
+ * 合取守卫不在内（`¬(A ∧ B)` 是析取，不是单一事实）。
+ */
+export function narrowRelComplementArmThunk(
+  thunk: string,
+  guards: readonly RelGuard[] | undefined,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  const facts = (guards ?? []).filter((g) => !g.composite);
+  if (facts.length === 0) return thunk;
+  return narrowArmShadowWrap(
+    thunk,
+    facts.map((g) => ({
+      name: g.name,
+      arg: `$refineRelComplement(${g.name}, ${JSON.stringify(g.op)}, ${g.k})`,
+    })),
+    forkBindingNames,
+    "seq",
+  );
+}

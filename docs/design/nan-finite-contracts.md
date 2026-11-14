@@ -1,9 +1,14 @@
-# NaN 感知的契约词汇与关系补集累积（草案）
+# NaN 感知的契约词汇与关系补集累积
 
-> **状态**：草案（2026-11-14）。未实施；实施前先按本文件第 6 节建负控与等价门禁。
+> **状态**：**已实施**（2026-11-14）。`.finite()` + 运行时 `$refineRelComplement`
+> 已落地，验收见 §6；残余与边界见 §7。
 > **需求锚点**：[issue #185](https://github.com/nudojs/nudo/issues/185)（顺序早退 / De Morgan
 > 两种拼写的 `add6` 仍 unproven）。已交付的 `86bc56e1` 只放开了**可健全证明**的合取形态，
 > 负控见 `packages/core/src/algebra/__tests__/check-guard-conjunction-185.test.ts:109-124`。
+> **实施锚点**：`constraint.ts`（builder）、`exec/runtime/narrow.ts`（`$refineRelComplement`）、
+> `exec/transpile/stmt/predicates.ts`（事实集）、`scan/literal-preds.ts` + `scan/literal-shapes.ts`
+> （字面前置）、`env/src/es.ts`（`NaN` / `±Infinity` 字面量化）；回归
+> `check-guard-finite-185.test.ts`（12 例）。
 > **真源**：契约文法 → `refine.ts` / `constraint.ts`；Pred 代数 → `pred.ts`；
 > 守卫事实 → `exec/transpile/stmt/predicates.ts`、`arithmetic/cmp.ts`。
 
@@ -22,28 +27,28 @@ return x + y;   // 契约 ge(3)
 引擎在 fall-through 路径上**不能**断言 `x ≥ 1 ∧ y ≥ 2`。原因不是区间机器不会算
 （嵌套 if 能证），而是**补集断言对 NaN 不成立**：
 
-| 拼写 | 现状 | 原因 |
-|---|---|---|
-| `if (x >= 1 && y >= 2) return x + y;`（合取事实臂） | 证得 | 合取为真 ⇒ 每项为真，NaN 不可达 |
-| `if (x < 1) return 3; … return x + y;` | unproven | `NaN < 1` 为假 ⇒ 落入 fall-through；`x + y = NaN ⊭ ge(3)` |
-| `if (x < 1 \|\| y < 2) return 3; …`（De Morgan） | unproven | 同上 |
-| `if (!(x < 1 && y < 2)) return 3; …`（否定合取臂） | 证得 | 布尔取反精确；`!(A ∧ B)` 为假 ⇒ 合取为真 |
+| 拼写 | 无 finite 证据 | `.finite()` / 数值界证据后 | 原因 |
+|---|---|---|---|
+| `if (x >= 1 && y >= 2) return x + y;`（合取事实臂） | 证得 | 证得 | 合取为真 ⇒ 每项为真，NaN 不可达 |
+| `if (x < 1) return 3; … return x + y;` | unproven | **证得** | 补集 `x ≥ 1` 在非 NaN 证据下健全；无证据仍 unproven |
+| `if (x < 1 \|\| y < 2) return 3; …`（De Morgan） | unproven | **证得** | `¬(A ∨ B) = ¬A ∧ ¬B`，逐项取补集 |
+| `if (!(x < 1 && y < 2)) return 3; …`（否定合取臂） | 证得 | 证得 | 布尔取反精确；`!(A ∧ B)` 为假 ⇒ 合取为真 |
 
 `predicates.ts::relGuardOfNegation` 的注释把这条钉死了：`¬(x < k)` 只断得
 `x ≥ k ∨ x is NaN`（Bug 1115），**不得**当 `x ≥ k` 用。要把这两行从 unproven
 翻成 proved，缺的不是推理能力，而是一个**用户可写的「非 NaN」证据**。
 
-## 2. 现有机制（都已存在，缺的是接线）
+## 2. 机制与落点
 
 | 机制 | 位置 | 现状 |
 |---|---|---|
 | `assumeFinite(t)` Pred | `pred.ts:132`、`pred.ts:153` | 已有一等谓词：`t` 是有限数（非 NaN/±Inf），开启线性环化简 |
 | 非 NaN 判定 | `arithmetic/bounds.ts::isNonNaN` | 已消费字面量 / `sum` 成员 / 数值界 / `ne(t, NaN)` / `assumeFinite` |
-| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | #185 已支持异名合取项（`others`）与否定臂；补集仍禁 |
-| 关系补集 | `arithmetic/cmp.ts::matchRelIdentLit*` | 注释明确「补集方向依旧不可用」 |
-| 契约 builder | `constraint.ts:127-151` | 只有 `gt/ge/lt/le/int/min/max/length/shift/optional/at`；**无** `finite` / `notNaN` |
+| 守卫事实累积 | `exec/transpile/stmt/predicates.ts` | 合取（`others`）+ 否定臂 + **补集事实集**（`relGuardComplementFactsOf`，支持 `\|\|` 逐项） |
+| 关系补集 | `exec/runtime/narrow.ts::$refineRelComplement` | **已实施**：`isNonNaN(a, pTrue)` 门 + `REL_COMPLEMENT_OPS` 单源映射 |
+| 契约 builder | `constraint.ts` | `number().finite()`（+ `gt/ge/lt/le/int/min/max/length/shift/optional/at`） |
 
-## 3. 提案
+## 3. 实现
 
 ### 3.1 契约词汇：`number().finite()`
 
@@ -67,11 +72,13 @@ return x + y;   // 契约 ge(3)
 ¬(x ≥ k)  ∧  isNonNaN(x, phi)  ⇒  x < k
 ```
 
-- 落点 = `exec/runtime/narrow.ts`：新增 `$refineRelComplement(a, op, k)`
-  （或给 `$refineRel` 加 `negated` 参数）——它拿到当前 `Abs`，先 `isNonNaN(a, phi)`
-  判定，成立才挂 `ge/gt/le/lt`，否则**原样返回**（fail-closed）。
+- 落点 = `exec/runtime/narrow.ts::$refineRelComplement(a, op, k)`：拿到当前
+  `Abs`，先 `isNonNaN(a, pTrue)` 判定（当前实现只读 `a.pred` 的证据——契约
+  `.finite()` / 数值界 / `ne(x, NaN)`；作用域守卫事实未接入，缺证据即不收紧），
+  成立才按 `REL_COMPLEMENT_OPS[op]` 挂界，否则**原样返回**（fail-closed）。
 - 转译器只在 fall-through / else 臂发射该调用（与 `$refineRel` 的事实臂对称），
-  不自行决定是否收紧。
+  不自行决定是否收紧；`A \|\| B` 形态由 `relGuardComplementFactsOf` 逐项收集，
+  合取（`composite`）不收集（`¬(A ∧ B)` 是析取）。
 - `isNonNaN` 已经是「字面量 / 数值界 / `ne(t, NaN)` / `assumeFinite`」的单一判据
   （`bounds.ts:214`），直接复用，不另造谓词。数值界自身排除 NaN
   （`NaN < k` 为假），所以 `number().ge(0)` 这类既有契约会自动获得补集能力；
@@ -89,9 +96,8 @@ return x + y;   // 契约 ge(3)
    把 builder 的 `preds` 原样注入，无需特判（`assumeFinite` 已是 Pred 联合成员）。
 3. `predicates.ts`：fall-through / else 臂发射 `$refineRelComplement`（或
    `negated` 形式）；语法层只决定**在哪一侧**发射，不决定是否收紧。
-4. `exec/runtime/narrow.ts`：补集入口按 `isNonNaN(a, phi)` fail-closed；
-   `phi` 取当前求值环境可见的证据（入口 Abs pred / 作用域守卫事实），
-   取不到时只看 `a.pred`，仍取不到即不收紧。
+4. `exec/runtime/narrow.ts`：补集入口按 `isNonNaN(a, pTrue)` fail-closed——
+   当前只消费 `a.pred`（契约 pred / 数值界）；作用域守卫事实（phi）未接入。
 5. `cmp.ts`：`implies` 的补集规则**保持现状**（它没有 Abs 上下文，不能看到
    `assumeFinite`）；补集只发生在运行时事实臂。
 6. 诊断/展示：`check-report.ts` 的 `assumeFinite` 分支已有格式化，确认
@@ -104,37 +110,43 @@ return x + y;   // 契约 ge(3)
 - `.finite()` 是**契约侧**词汇，不是 `any()`/`unknown` 的替代；入口无约束参数仍显示 `any`。
 - 不给 `unknown` 参数自动加 finite 假设（fail-closed）。
 
-## 5. 语义边界（要写进文档的诚实声明）
+## 5. 语义边界（诚实声明）
 
-| 形态 | `.finite()` 后是否可证 |
+| 形态 | 结果 |
 |---|---|
-| `number().finite()` + `¬(x < 1)` ⇒ `x ≥ 1` | 是 |
-| `number()`（无 `.finite()`）+ 同上 | 否（NaN 可达，保持 unproven） |
+| `number().finite()` + `¬(x < 1)` ⇒ `x ≥ 1` | 是（`$refineRelComplement`） |
+| `number()`（无 `.finite()`）+ 同上 | 否（NaN 可达，保持 unproven / 可证伪） |
 | `number().ge(0)` + `¬(x < 1)` | 是（数值界已排除 NaN） |
-| `x = NaN` 字面量实参 + `.finite()` | 契约违反（`.finite()` 被违反，报 `unproven`/`violated` 中与现有一致的一侧） |
-| `x = +Infinity` 字面量实参 + `.finite()` | 契约违反（`.finite()` 排除 ±Inf） |
+| 字面量 `NaN` / `+Infinity` / `Number.NaN` 实参 + `.finite()` | 契约违反（`judgeLiteralPred` + env 字面量化） |
+| `add6(1, 2)` | 精确 `3` |
+| 非字面量实参（`any` / 未知全局） | 调用点不猜（既有边界：`judgeLiteralPred` 三值判定） |
 | `.int()` | 已隐含有限（整数），不新增语义 |
 
-## 6. 验收（实施时）
+## 6. 验收（已通过，2026-11-14）
 
-- **#185 矩阵四行**：顺序早退 / De Morgan 在 `number().finite()` 下转 proved；
-  无 `.finite()` 时两条负控保持逐字 unproven（`check-guard-conjunction-185.test.ts`
-  现有断言不得改宽）。
-- **NaN 反例**：`add6(NaN, 5)` / `add6(Infinity, 5)` 在 `.finite()` 契约下必须报
-  （不得假绿）；`add6(1, 2)` 精确 `3`。
-- 金标：`check-recall-gold` recall = precision = 1.0；`check-real-packages` 零 FP。
-- 等价门禁：未使用 `.finite()` 的侧车输出逐字节不变；`absKey` 对同一契约逐字节不变。
-- `nudo check` / `test` / `export --format dts` 三条产品面各跑一次；dts 只输出 `number`。
-- changeset：`@nudojs/core` minor（新增 builder 方法）。
+- **#185 矩阵**：顺序早退 / De Morgan / 三元 else 在 `number().finite()` 下转 proved；
+  无 `.finite()` 时负控保持逐字 unproven（`check-guard-conjunction-185.test.ts`
+  现有断言未改宽）。
+- **NaN 反例**：`0/0`（NaN）/ `1/0`（Infinity）在 `.finite()` 契约下报
+  `nudo:constraint-violated`；`f(1)` 放行（`check-guard-finite-185.test.ts`）。
+- 金标：`check-recall-gold` + `check-real-packages` + `check-real-commander`
+  **3 文件 / 200 用例通过**（1 expected fail 照旧）。
+- 未使用 `.finite()` 的既有侧车输出与断言逐字不变（`--changed` 套件）。
+- 回归：`check-guard-finite-185.test.ts`（12 例：首创/负控/数值界/builder/运行时门）。
+- changeset：`@nudojs/core` minor（新增 builder 方法）+ `@nudojs/env` patch
+  （`NaN` / `±Infinity` 字面量化）。
 
-## 7. 未决
+## 7. 残余与未决
 
-1. 命名：`.finite()` vs `.notNaN()`。推荐 `.finite()`——它同时排除 ±Inf，语义可用
-   `Number.isFinite` 一句话说清；`.notNaN()` 会暗示 `Infinity` 合法，但对
-   `le(100)` 类契约没有帮助。
-2. 是否同时暴露 `.nan()`（`NaN` 专属域）。当前无需求，不做；等真实用例。
-3. schema / guard 投影是否要表达有限性。默认不表达（运行时校验器按 `z.number()`），
-   避免投影面出现「校验通过但契约未满足」的假绿。
-4. 组合子 `.finite().ge(0)` 的展示顺序与去重：沿用 `preds` 声明序，`and()` 已去重。
-5. 是否需要 `@nudo:assume finite(x)` 的指令级拼写（与 `.finite()` 同义）。
-   等 1 落地后看是否有人需要在函数体上假定。
+1. **守护事实（phi）未接入**：`$refineRelComplement` 只看 `a.pred`，函数体内
+   `if (Number.isNaN(x)) return …` 之类守卫建立的证据不会传给补集；需要把
+   作用域 phi 传到影子重绑点（当前 fail-closed，不会假绿）。
+2. **非早退 fall-through 未覆盖**：`if (x < 1) { log(); }` 之后继续执行的语句
+   没有臂 thunk 可挂补集；#185 的早退 / else / 三元两类已覆盖。
+3. **命名**：采用 `.finite()`（`Number.isFinite` 语义，同时排除 ±Inf）。
+   `.notNaN()` 会暗示 `Infinity` 合法，不采用。
+4. **`.nan()`**：不暴露（当前无需求）。
+5. **schema / guard 投影**：默认不表达有限性（运行时校验器按 `z.number()`），
+   避免「校验通过但契约未满足」的假绿；需要时另立投影增强。
+6. **`.finite().ge(0)` 展示顺序**：沿用 `preds` 声明序，`and()` 去重。
+7. **`@nudo:assume finite(x)`**：未提供；`.finite()` 已覆盖契约面需求。

@@ -30,6 +30,7 @@ import {
   primToTypeof,
   ptypeof,
   pTrue,
+  assumeFinite,
 } from "./pred.ts";
 import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.ts";
 import type { Abs } from "./abs.ts";
@@ -131,6 +132,15 @@ export type ConstraintBuilder = NudoConstraint & {
   le(n: number): ConstraintBuilder;
   /** number：要求整数 */
   int(): ConstraintBuilder;
+  /**
+   * number：要求有限数（非 NaN / ±Infinity）。
+   *
+   * 也是关系**补集**断言的证据门：`if (x < 1) return …` 的后续路径只有在
+   * `x` 可证非 NaN 时才能断言 `x >= 1`（否则会排除 `x = NaN`，假绿）。
+   * 数值界（`.ge()` / `.le()` …）本身就排除 NaN，因此 `.finite()` 只对
+   * 无界 `number()` 是必需的。语义 = `Number.isFinite`（Issue #185）。
+   */
+  finite(): ConstraintBuilder;
   /** string：长度下界 */
   min(n: number): ConstraintBuilder;
   /** string：长度上界 */
@@ -307,6 +317,17 @@ function makeBuilder(
         if (prim !== undefined && prim !== "number")
           throw new Error(`nudo int(): only numeric chains are allowed (prim=${prim})`);
         return makeBuilder(prim ?? "number", preds, { ...extra, int: true });
+      },
+      finite: () => {
+        // 与 .int() / .shift() 同口径：只在数值标量链上成立。字符串 /
+        // 布尔 / 结构链上的「有限数」恒假（构造期拒绝，避免假红）。
+        if (fields || element || members || fnSlot || lazySlot)
+          throw new Error(
+            "nudo finite(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)",
+          );
+        if (prim !== undefined && prim !== "number")
+          throw new Error(`nudo finite(): only numeric chains are allowed (prim=${prim})`);
+        return add(assumeFinite(selfTerm()));
       },
       min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(lengthBound("min", n)))),
       max: (n: number) => add(le(lenTerm(selfTerm()), termLit(lengthBound("max", n)))),
@@ -1221,6 +1242,7 @@ export const CONSTRAINT_CHAIN_METHOD_NAMES: readonly string[] = [
   "lt",
   "le",
   "int",
+  "finite",
   "min",
   "max",
   "length",
@@ -1289,6 +1311,12 @@ function substPredOn(p: Pred, target: Term): Pred {
     }
     case "typeof": {
       return { op: "typeof", t: substSelf(p.t, target), type: p.type };
+    }
+    case "assumeFinite": {
+      // `number().finite()`：SELF 必须重锚到实际项，否则入口 Abs 带着
+      // `assumeFinite(__nudo_self__)` ⇒ 运行时 `isNonNaN` 永远对不上（补集
+      // 断言静默失效）。
+      return { op: "assumeFinite", t: substSelf(p.t, target) };
     }
     case "and":
       return pAnd(...p.args.map((x) => substPredOn(x, target)));

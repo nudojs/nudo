@@ -27,7 +27,7 @@ import type {
   SequenceExpression,
 } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf, relGuardOfNegation } from "../stmt/predicates.ts";
+import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf, relGuardOfNegation, relGuardComplementFactsOf } from "../stmt/predicates.ts";
 import { isExpression, privateNameKeySrc, isConstAssignTarget, internalTmpName, internalTmpNameSet } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -164,6 +164,10 @@ export function transpileOperatorExpr(
         // 否定臂事实（issue #185）：`!(A ∧ …) ? 3 : x + y` 的 else 臂成立
         // `A ∧ …`（`!` 假），各关系合取项一并接上
         altRelGuard: relGuardOfNegation(expr.test),
+        // 裸关系补集（issue #185 + `.finite()`）：`x < 0 ? 0 : x` 的 else 臂
+        // 在非 NaN 证据下断言 `x >= 0`；`A ∨ B` 逐项（运行时判定，缺证据
+        // 不收紧）
+        altRelComplement: relGuardComplementFactsOf(expr.test),
       });
     }
     case "BinaryExpression": {
