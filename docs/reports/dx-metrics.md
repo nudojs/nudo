@@ -136,6 +136,13 @@ leaf 轮三文件：`acceptance.test.js` ~464–488ms、`lib/index.js` ~263–27
 契约的复杂度。当前 inert 编辑 0.67s、语义编辑 2.2s，**暂不立项**；触发条件：
 真实用户仓库的语义编辑轮 >3s，或出现第二个需要并行分析的消费者（LSP 批量校验）。
 
+**语义编辑自动化复测（2026-11-14）**：`scripts/edit-loop-metrics.mjs --semantic`
+（新旗标）让脚本按语义编辑驱动——每轮追加一条真实 `export const` 而非注释，
+结束时还原。默认语料 48 文件 / hub `classes/comparator.js`：debounce **211ms** ·
+analyze **2002ms** · total **2213ms**（3/3 轮）。仍低于 3s 触发线 ⇒ `ABS-16` ③
+继续 parked；复测命令：
+`pnpm run edit-loop-metrics -- --semantic --rounds 3 --profile`。
+
 
 **剩余成本**：`[check-profile]` 逐文件显示注入键 **0.1ms** + `analyzeFileAsync` **0.4–0.8ms** +
 `checkSource` **0.3–3.8ms**；每文件 12–39ms 的差额主要是 `loadCheckCache`（配置/磁盘缓存装配）

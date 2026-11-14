@@ -26,11 +26,26 @@
 |---|---|---:|---:|---:|---|
 | `@babel/parser/lib/index.js`（修复前） | 0.49 MB / 14,613 | — | **13,179 ms**（98 issues） | 637 MiB | CPU 热点 54% = directive-scan 访问器 |
 | `@babel/parser/lib/index.js`（修复后） | 0.49 MB / 14,613 | — | **4,675 ms**（98 issues） | 646 MiB | 同一宿主、同一进程口径 |
-| `typescript/lib/typescript.js` | 9.14 MB / 201,040 | — | **16,277 ms**（0 issues） | 2,059 MiB | 自包含 bundle，单文件规模的真实上界 |
+| `typescript/lib/typescript.js`（check） | 9.14 MB / 201,040 | — | **16,277 ms**（0 issues） | 2,059 MiB | 自包含 bundle |
+| `typescript/lib/typescript.js`（analyze） | 9.14 MB / 201,040 | **20,755 ms** | 11,347 ms（同进程随后） | 2,408 MiB | analyze 热点见下 |
 | `@babel/types/lib/index.js` | 0.33 MB / 10,759 | > 298 s（300 s 超时） | > 180 s（超时） | — | 单文件小，但依赖图数百模块 ⇒ ABS-17 形态 |
 
 `@babel/parser` 的 analyze 未单列：check 的 CPU 样本已足够定位；`@babel/types`
 的 analyze 在 300 s 墙钟超时前未完成（未取得可信数字，如实不填）。
+
+### `typescript.js` analyze 热点（CPU profile，总 21,148 samples）
+
+| 占比 | 位置 | 说明 |
+|---:|---|---|
+| **24%** | `strip-types.ts`（匿名 + `transformNode` + `transformValue` + `deleteTypeSyntaxFields`） | TS 语法剥离一次全树改写 |
+| 11.2% | GC | 9 MB AST + 改写产物 |
+| 5.0% | `directive-scan.ts` 访问器 | 单次全量扫描（已按 AST 缓存） |
+| 3.2% | `@babel/parser::readWord` | 解析 |
+| ≤2% | scope-collect / load-deps-fp / eval-diagnostics / code-text | 长尾 |
+
+**`$copy` / `copyWithMemo` 不在前 25 名**（<0.5%）。⇒ ABS-17 的触发
+「单文件 analyze >5s」虽被本文件满足，但成本主体是 strip-types + GC，
+不是大对象图拷贝；写时复制不会改善这个输入。
 
 ## CPU 热点（`@babel/parser` check，修复前）
 

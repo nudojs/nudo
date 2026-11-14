@@ -147,16 +147,24 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
 逐文件 69–378ms，CPU/wall 1.10–1.28；冷态单价是 warm 的 2.5–4.7×（依赖共享热缓存）；
 LPT 上限 warm W=4 ≈487ms / W=8 ≈378ms，cold×3 时 W=4 ≈1461ms。
 **触发条件**：真实用户仓库语义编辑轮 >3s，或出现第二个并行分析消费者。
+**2026-11-14 复测**（`edit-loop-metrics --semantic`，48 文件 / hub comparator）：
+debounce 211ms · analyze **2002ms** · total **2213ms**（3/3）⇒ 触发未命中，维持 parked。
+复测命令：`pnpm run edit-loop-metrics -- --semantic --rounds 3 --profile`。
 
 ### ABS-17 大对象图 `$copy`（`[ ]` 结案暂缓）
 
-**触发条件**：真实用户输入单文件 `analyze` >5s，或再次出现 `$copy` 占比 >30% 的报告。
+**触发条件（2026-11-14 细化）**：单文件 `analyze` >5s **且** profile 中 `$copy` 占比
+>30%（或再次出现 >30% 的报告）。只看耗时不够：`typescript.js` 9.14 MB
+analyze 20.8s 已满足耗时，但热点是 strip-types 24% + GC 11%，`$copy` <0.5%
+⇒ 写时复制不解决该输入。
 当前只剩合成病态负载（产物路径可解析时 47–59s，依赖不可解析时 0.2s —— 机制是
 依赖解析上下文构造出的巨大抽象对象图，不是打包器形态）。
 **2026-11-14 单文件复测**：自包含 `typescript.js`（9.14 MB）`check` 16.3s；
 `@babel/parser`（0.49 MB）check 修掉 directive-scan O(n²) 后 4.7s（13.2→4.7s）；
 `@babel/types` 入口 0.33 MB 仍 >180s 是**依赖图**成本，不是单文件 AST 规模。
-`docs/reports/large-file-profile.md`；文件内分段**不立项**。
+自包含 `typescript.js` analyze 20.8s 的热点是 `strip-types`（24%）与 GC（11%），
+`$copy` 不在前 25 名 ⇒ 写时复制（本项）不解决；文件内分段也不立项。
+见 `docs/reports/large-file-profile.md`。
 
 **已交付**：`benchmark/s1/generate-bundle-fixtures.mts`（5 形态梯度 + gitignored `.bundles`）、
 单文件最小复现（N 个对象导出）、`setSlot` 去 `defineProperty`、`copyWithMemo` 叶子快路径与

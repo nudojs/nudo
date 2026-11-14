@@ -15,7 +15,10 @@
  *
  * Usage:
  *   node scripts/edit-loop-metrics.mjs [--corpus <dir>] [--target <file>]
- *        [--rounds 3] [--mode dist|tsx] [--json] [--keep]
+ *        [--rounds 3] [--mode dist|tsx] [--json] [--keep] [--semantic]
+ *
+ * `--semantic`：每轮追加一条真实 `export const`（而不是注释）——测 ABS-16③
+ * 的触发口径「语义编辑轮」。默认仍追加注释（inert 编辑，只驱动文件变更）。
  *
  * 退出码：0 = 全部轮次拿到结果；1 = 有轮次超时或首轮未起来（不假绿）。
  */
@@ -53,6 +56,8 @@ const jsonMode = has("--json");
  * 收集起来。默认不开启 ⇒ 子进程输出与计时行为完全不变。
  */
 const profile = has("--profile") || process.env.NUDO_WATCH_PROFILE === "1";
+/** 语义编辑（新增真实导出）而非注释；ABS-16③ 的触发口径 */
+const semantic = has("--semantic");
 
 if (!existsSync(corpus) || !statSync(corpus).isDirectory()) {
   console.error(`corpus not found: ${corpus}`);
@@ -282,7 +287,10 @@ function nextRound() {
   setTimeout(() => {
     current = { round: roundIdx, writeAt: el(), incrementalAt: null, doneAt: null };
     // 追加一行注释：语义与错误面都不变，只驱动「文件变了」
-    writeFileSync(target, `${original}\n// edit-loop probe round ${roundIdx} ${Date.now()}\n`, "utf-8");
+    const editLine = semantic
+      ? `\nexport const __nudoEditProbe${roundIdx} = ${roundIdx};\n`
+      : `\n// edit-loop probe round ${roundIdx} ${Date.now()}\n`;
+    writeFileSync(target, `${original}${editLine}`, "utf-8");
     waitingIncremental = setTimeout(() => finish(1), ROUND_TIMEOUT);
   }, SETTLE_MS);
 }
