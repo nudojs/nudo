@@ -236,7 +236,26 @@ type WalkCtx = {
  * 全量 Function 站点：nested function、class method、object method 均可见。
  * 函数级指令绑「其前导注释块」；注释若带在非函数语句上则不绑（不留孤儿指令）。
  */
+/**
+ * 每个 Babel AST 只算一次函数指令作用域。
+ *
+ * `checkSource` 对**每个函数**都要 `findFnDirectiveScope(file, name)` ⇒ 旧实现
+ * 每个函数都全量遍历一次 AST（O(函数数 × 节点数)）。实测 @babel/parser
+ * `lib/index.js`（0.49 MB / 1259 scopes）单次遍历 52 ms，check 13 s 里约 54%
+ * 落在该递归访问器上；缓存后同一 AST 只付一次。AST 在分析期不被改写
+ * （parseSource 的 LRU 返回同一对象），WeakMap 随 AST 一起回收。
+ */
+const fnScopeCache = new WeakMap<object, FnDirectiveScope[]>();
+
 export function listFnDirectiveScopes(file: File): FnDirectiveScope[] {
+  const cached = fnScopeCache.get(file);
+  if (cached !== undefined) return cached;
+  const scopes = listFnDirectiveScopesUncached(file);
+  fnScopeCache.set(file, scopes);
+  return scopes;
+}
+
+function listFnDirectiveScopesUncached(file: File): FnDirectiveScope[] {
   const out: FnDirectiveScope[] = [];
 
   const pushNamedFn = (
