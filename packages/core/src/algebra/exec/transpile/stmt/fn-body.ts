@@ -63,6 +63,89 @@ import { emitStmtWritebackRebinds, forkArmThunkExpr, forkBindingDecls, forkJoinB
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { transpileStatement } from "./statement.ts";
 import { transpileBlockAsThunk } from "./block.ts";
+/** AST 扫描跳过的元数据键（避免把 loc/comments 当节点递归） */
+const ALIAS_SCAN_SKIP = new Set([
+  "loc",
+  "start",
+  "end",
+  "range",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "tokens",
+]);
+
+/**
+ * 本层可见的**写名集**（NaN 守卫别名的失效判据）：赋值 / 自增 / for-of·in
+ * 的非声明左值（`collectForkBindingNames` 不识别后者）+ 递归到嵌套块 /
+ * 闭包（闭包写外层绑定同样使守卫别名失效）。
+ *
+ * 只服务别名表，不改 `collectForkBindingNames` 的 fork 语义。
+ */
+export function aliasWriteNames(node: unknown, acc: Set<string> = new Set()): Set<string> {
+  if (!node || typeof node !== "object") return acc;
+  if (Array.isArray(node)) {
+    for (const c of node) aliasWriteNames(c, acc);
+    return acc;
+  }
+  const n = node as {
+    type?: string;
+    left?: unknown;
+    argument?: unknown;
+    [k: string]: unknown;
+  };
+  if (n.type === "AssignmentExpression") collectPatternNames(n.left, acc);
+  if (n.type === "UpdateExpression") collectPatternNames(n.argument, acc);
+  if (
+    (n.type === "ForOfStatement" || n.type === "ForInStatement") &&
+    (n.left as { type?: string } | undefined)?.type !== "VariableDeclaration"
+  ) {
+    collectPatternNames(n.left, acc);
+  }
+  for (const key of Object.keys(n)) {
+    if (ALIAS_SCAN_SKIP.has(key)) continue;
+    const v = n[key];
+    if (v && typeof v === "object") aliasWriteNames(v, acc);
+  }
+  return acc;
+}
+
+/** 移除指定名字的别名（循环头声明/赋值、catch 形参等内层绑定遮蔽） */
+export function aliasesWithout(
+  aliases: ReadonlyMap<string, NanGuard> | undefined,
+  names: ReadonlySet<string> | readonly string[],
+): ReadonlyMap<string, NanGuard> | undefined {
+  if (!aliases || aliases.size === 0) return aliases;
+  let out: Map<string, NanGuard> | undefined;
+  for (const [name, guard] of aliases) {
+    const drop = typeof names === "string" ? names === name : (names as ReadonlySet<string>).has(name);
+    if (drop) {
+      out ??= new Map(aliases);
+      out.delete(name);
+    }
+  }
+  if (!out) return aliases;
+  return out.size > 0 ? out : undefined;
+}
+
+/** 删除「被写名字」对应的别名（继承进新作用域时的过滤） */
+export function filterWrittenAliases(
+  aliases: ReadonlyMap<string, NanGuard> | undefined,
+  written: ReadonlySet<string>,
+): ReadonlyMap<string, NanGuard> | undefined {
+  if (!aliases || aliases.size === 0) return aliases;
+  let out: Map<string, NanGuard> | undefined;
+  for (const [name, guard] of aliases) {
+    if (!written.has(name)) continue;
+    out ??= new Map(aliases);
+    out.delete(name);
+  }
+  if (!out) return aliases;
+  return out.size > 0 ? out : undefined;
+}
+
 /**
  * 本层语句对 NaN 守卫别名的增量（只处理**本层**；嵌套块在自己的
  * `transpileFnBodyStmts` 调用里维护）。
@@ -74,18 +157,26 @@ import { transpileBlockAsThunk } from "./block.ts";
  *   `collectForkBindingNames`）⇒ 不登记：`const ok = Number.isNaN(x); x = …;
  *   if (ok)` 的 `ok` 说的是旧值，不能拿来窄化新值。
  */
-function nanAliasesAfterStmt(
+export function nanAliasesAfterStmt(
   stmt: Statement,
   base: ReadonlyMap<string, NanGuard> | undefined,
   shadowed: ReadonlySet<string> | undefined,
   writtenOf: () => ReadonlySet<string>,
 ): ReadonlyMap<string, NanGuard> | undefined {
-  const s = stmt as {
+  const outer = stmt as {
     type?: string;
-    kind?: string;
+    declaration?: unknown;
     id?: { type?: string; name?: string } | null;
+    kind?: string;
     declarations?: Array<{ id?: unknown; init?: unknown }>;
   };
+  // `export const ok = …` / `export function …`：按内部声明处理
+  const s =
+    (outer.type === "ExportNamedDeclaration" || outer.type === "ExportDefaultDeclaration") &&
+    outer.declaration &&
+    typeof outer.declaration === "object"
+      ? (outer.declaration as typeof outer)
+      : outer;
   if (s.type === "VariableDeclaration") {
     // 无别名且无同名声明可删时**不分配**（守卫-free 代码的 transpile 热路径
     // 与旧实现逐字节/同分配量）
@@ -99,14 +190,16 @@ function nanAliasesAfterStmt(
         else if (base?.has(n)) map().delete(n);
       }
     }
-    if (s.kind === "const") {
-      for (const d of s.declarations ?? []) {
-        const id = d.id as { type?: string; name?: string } | undefined;
-        if (id?.type !== "Identifier" || typeof id.name !== "string" || !d.init) continue;
-        const g = nanGuardOf(d.init, shadowed, next ?? base);
-        if (!g || writtenOf().has(g.name)) continue;
-        map().set(id.name, g);
-      }
+    // const / let / var 都登记；可变性由「别名名或被守卫名在本层有写即不
+    // 登记」保证（见文件头注释），因此不需要逐语句失效。
+    for (const d of s.declarations ?? []) {
+      const id = d.id as { type?: string; name?: string } | undefined;
+      if (id?.type !== "Identifier" || typeof id.name !== "string" || !d.init) continue;
+      const g = nanGuardOf(d.init, shadowed, next ?? base);
+      if (!g) continue;
+      const written = writtenOf();
+      if (written.has(id.name) || written.has(g.name)) continue;
+      map().set(id.name, g);
     }
     return next ?? base;
   }
@@ -120,11 +213,15 @@ function nanAliasesAfterStmt(
   return base;
 }
 
-/** 本层是否有 const 声明（无 ⇒ 别名机制可整体跳过，保持旧路径零开销） */
-function hasConstDeclaration(stmts: readonly Statement[]): boolean {
+/** 本层是否有变量声明（const/let/var；无 ⇒ 别名机制可整体跳过，保持旧路径零开销） */
+export function hasVariableDeclaration(stmts: readonly Statement[]): boolean {
   return stmts.some((s) => {
-    const n = s as { type?: string; kind?: string };
-    return n.type === "VariableDeclaration" && n.kind === "const";
+    const n = s as { type?: string; declaration?: { type?: string } | null };
+    const d =
+      n.type === "ExportNamedDeclaration" || n.type === "ExportDefaultDeclaration"
+        ? n.declaration
+        : n;
+    return d?.type === "VariableDeclaration";
   });
 }
 
@@ -152,13 +249,15 @@ export function emitFnBlockBody(
   o: { implicitReturn?: boolean; varParams?: ReadonlySet<string> } = {},
 ): string {
   const implicitReturn = o.implicitReturn !== false;
+  // 方法/函数体是作用域边界：外层 NaN 守卫别名不继承（形参可同名遮蔽）
+  const bodyOpts = opts.nanAliases ? { ...opts, nanAliases: undefined } : opts;
   if (!body) {
     return implicitReturn ? `${indent(depth)}return $lit(void 0);` : "";
   }
   if (body.type !== "BlockStatement") {
-    return `${indent(depth)}return ${emitTranspileExpression(body as Expression, opts)};`;
+    return `${indent(depth)}return ${emitTranspileExpression(body as Expression, bodyOpts)};`;
   }
-  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts, {
+  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, bodyOpts, {
     // Bug 21：方法体 var 提升边界（varParams = 方法参数模式名）
     skip: o.varParams ?? new Set(),
   });
@@ -358,12 +457,17 @@ export function transpileFnBodyStmts(
     // 断开（自信错值）。恒覆写保证「本层看到的组」= 本层算出的组。
     aliasGroups,
   };
-  // NaN 守卫别名（`const ok = Number.isNaN(x)`）：本层按语句顺序维护；
-  // 写集只在需要时懒算一次（整层语句的自由写）。
-  const baseNanAliases = scopedOpts.nanAliases;
+  // NaN 守卫别名（`const/let/var ok = Number.isNaN(x)`）：本层按语句顺序
+  // 维护；写集只在需要时懒算一次（整层语句的赋值 / for-of·in 左值，含嵌套
+  // 块与闭包）。继承别名先按本层写名过滤——被写的名字在后续迭代/分支里
+  // 已不是原守卫值。
   let writtenNames: Set<string> | undefined;
-  const writtenOf = (): ReadonlySet<string> =>
-    (writtenNames ??= new Set(collectForkBindingNames(...stmts)));
+  const writtenOf = (): ReadonlySet<string> => (writtenNames ??= aliasWriteNames(stmts));
+  const inheritedNanAliases = scopedOpts.nanAliases;
+  const baseNanAliases =
+    inheritedNanAliases && inheritedNanAliases.size
+      ? filterWrittenAliases(inheritedNanAliases, writtenOf())
+      : inheritedNanAliases;
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
     if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
@@ -371,7 +475,7 @@ export function transpileFnBodyStmts(
     const rest = stmts.slice(i + 1);
     if (rest.length === 0) continue;
     const headStmts = stmts.slice(0, i);
-    const headHasConst = hasConstDeclaration(headStmts);
+    const headHasConst = hasVariableDeclaration(headStmts);
     const aliasesBefore = headHasConst
       ? nanAliasesBefore(
           headStmts,
@@ -571,7 +675,7 @@ export function transpileFnBodyStmts(
   // 逐句发射：NaN 守卫别名按语句顺序累积（只在本层；嵌套块经 opts 继承）。
   // 无继承别名且本层无 const 声明时走旧路径（产物 / 分配量与改前一致）。
   let emitted: string;
-  if (baseNanAliases || hasConstDeclaration(stmts)) {
+  if (baseNanAliases || hasVariableDeclaration(stmts)) {
     let nanAliases = baseNanAliases;
     emitted = stmts
       .map((s) => {

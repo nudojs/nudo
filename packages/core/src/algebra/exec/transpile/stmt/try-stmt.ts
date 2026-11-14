@@ -20,7 +20,7 @@ import {
   matchOptionalRequire,
   catchMayRethrow,
 } from "../emit.ts";
-import { transpileFnBodyStmts } from "./fn-body.ts";
+import { transpileFnBodyStmts, aliasesWithout } from "./fn-body.ts";
 import {
   YIELD_TRY_FINALLY,
   YIELD_TRY_CATCH,
@@ -277,6 +277,9 @@ export function emitTryStatement(
   if (stmt.handler?.param) collectPatternNames(stmt.handler.param, catchShadow);
   const catchOpts: TranspileOptions = {
     ...opts,
+    // catch 形参是本作用域新绑定：同名 NaN 守卫别名不得进入（`catch (ok)`
+    // 的 ok 不是外层的 boolean 别名）
+    nanAliases: aliasesWithout(opts.nanAliases, catchShadow),
     yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
     ...(activeFinals !== undefined ? { yieldFinalizers: activeFinals } : {}),
     // 族 65 · BC #28：catch 体完成 ≠ 函数尾（catch 跑完函数继续）⇒ 体内

@@ -282,3 +282,75 @@ describe("NaN 守卫的遮蔽门禁（soundness）", () => {
     expect(shadowed).not.toContain("$refineNotNaN(x)");
   });
 });
+
+describe("let/var 别名与模块级别名（残余收口）", () => {
+  const c = ` * @nudo:contract x num
+ * @nudo:contract return nonNeg`;
+  const gate = (src: string): boolean => transpileSource(src).includes("$refineNotNaN(x)");
+
+  it("let / var 别名可用（未被写）", () => {
+    expect(
+      issues1(" let ok = Number.isNaN(x); if (!ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+    expect(
+      issues1(" var ok = Number.isNaN(x); if (!ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual([]);
+  });
+
+  it("别名被写 ⇒ 不登记（可变绑定）", () => {
+    expect(
+      issues1(" let ok = Number.isNaN(x); ok = false; if (!ok) { if (x < 0) return 0; return x; } return 0;", c),
+    ).toEqual(["error:nudo:constraint-violated"]);
+    expect(
+      gate("function f(x){ let ok = Number.isNaN(x); ok = false; if (!ok) { if (x<0) return 0; return x; } return 0; }"),
+    ).toBe(false);
+  });
+
+  it("循环体继承未写别名；头声明/头写名剔除", () => {
+    expect(
+      issues1(
+        " const ok = Number.isNaN(x); for (let i = 0; i < 1; i++) { if (!ok) { if (x < 0) return 0; return x; } } return 0;",
+        c,
+      ),
+    ).toEqual([]);
+    expect(
+      gate("function f(x){ const ok = Number.isNaN(x); for (let ok of [true]) { if (ok) { if (x<0) return 0; return x; } } return 0; }"),
+    ).toBe(false);
+    expect(
+      gate("function f(x){ const ok = Number.isNaN(x); for (ok of [false]) { if (!ok) { if (x<0) return 0; return x; } } return 0; }"),
+    ).toBe(false);
+  });
+
+  it("方法形参遮蔽外层别名（函数边界清空）", () => {
+    expect(
+      gate("const x = 1; const ok = Number.isNaN(x); const o = { m(ok) { if (!ok) { x.toString(); } } };"),
+    ).toBe(false);
+    expect(
+      gate("const x = 1; const ok = Number.isNaN(x); class C { m(ok) { if (!ok) { x.toString(); } } }"),
+    ).toBe(false);
+  });
+
+  it("catch 形参遮蔽外层别名", () => {
+    expect(
+      gate("function f(x){ const ok = Number.isNaN(x); try { } catch (ok) { if (!ok) { if (x<0) return 0; return x; } } return 0; }"),
+    ).toBe(false);
+  });
+
+  it("模块顶层 const / export const 别名登记", () => {
+    expect(gate("const x = 1; const ok = Number.isNaN(x); if (!ok) { x.toString(); }")).toBe(true);
+    expect(gate("let x = 1; export const ok = Number.isNaN(x); if (!ok) { x.toString(); }")).toBe(true);
+    // export-only 模块（没有其他变量声明）也要进入别名链
+    expect(
+      gate("import { x } from 'm'; export const ok = Number.isNaN(x); if (!ok) { x.toString(); }"),
+    ).toBe(true);
+  });
+
+  it("模块顶层别名名/被守卫名被写 ⇒ 不登记", () => {
+    expect(
+      gate("let x = 1; const ok = Number.isNaN(x); x = 2; if (!ok) { x.toString(); }"),
+    ).toBe(false);
+    expect(
+      gate("let x = 1; let ok = Number.isNaN(x); ok = false; if (!ok) { x.toString(); }"),
+    ).toBe(false);
+  });
+});

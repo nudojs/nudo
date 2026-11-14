@@ -169,8 +169,8 @@ export const amount = number().finite().ge(0);
 
 NaN 守卫提供同一类证据：`Number.isNaN(x)`、`x !== x`、`x === x`、
 `Number.isFinite(x)`（仅真臂）与 `!Number.isNaN(x)` 在成立的那一臂上确立
-`x` 不是 `NaN`（含 `if (!Number.isNaN(x)) { … }`）。`const` 别名同样可用：
-`const ok = Number.isNaN(x); if (!ok) { … }`。
+`x` 不是 `NaN`（含 `if (!Number.isNaN(x)) { … }`）。`const` / `let` / `var` 别名同样可用（别名与被守卫变量都不得被改写）：
+`const ok = Number.isNaN(x); if (!ok) { … }`。模块顶层的别名同样解析。
 
 源码内形态：
 

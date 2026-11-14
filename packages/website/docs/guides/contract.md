@@ -171,8 +171,9 @@ code stays `unproven`. `.finite()` is valid only on numeric chains.
 NaN guards provide the same evidence: `Number.isNaN(x)`, `x !== x`, `x === x`,
 `Number.isFinite(x)` (true arm only), and `!Number.isNaN(x)` establish that `x`
 is not `NaN` on the arm where that holds (including
-`if (!Number.isNaN(x)) { … }`). A `const` alias works too:
-`const ok = Number.isNaN(x); if (!ok) { … }`.
+`if (!Number.isNaN(x)) { … }`). A `const` / `let` / `var` alias works too (the alias and the guarded
+variable must not be reassigned): `const ok = Number.isNaN(x); if (!ok) { … }`.
+Module-top-level aliases are resolved the same way.
 
 In-source form:
 

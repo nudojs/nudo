@@ -18,6 +18,12 @@ import { transpileStatement } from "./transpile/stmt.ts";
 import type { TranspileMeta, TranspileOptions } from "./transpile/types.ts";
 import { computeTranspileMeta } from "./transpile/meta.ts";
 import { analyzeTopLevelStatements } from "./transpile/analyze-strip.ts";
+import {
+  aliasWriteNames,
+  filterWrittenAliases,
+  hasVariableDeclaration,
+  nanAliasesAfterStmt,
+} from "./transpile/stmt/fn-body.ts";
 
 export type { TranspileOptions, TranspileMeta } from "./transpile/types.ts";
 export {
@@ -209,8 +215,33 @@ function transpileFileDetailed(
     lines.push(`let __nudoRefreshKeep;`);
   }
   if (varHoistLine) lines.push(varHoistLine);
-  for (const stmt of emitBody) {
-    lines.push(transpileStatement(stmt, 0, scopedOpts));
+  // 模块顶层 NaN 守卫别名：与函数体同构的顺序链（模块体逐语句发射）。
+  // 无变量声明且无继承别名时走旧路径（产物 / 分配量与改前一致）。
+  const moduleHasVarDecl = hasVariableDeclaration(emitBody);
+  let moduleNanAliases = scopedOpts.nanAliases;
+  let moduleWritten: Set<string> | undefined;
+  const moduleWrittenOf = (): ReadonlySet<string> =>
+    (moduleWritten ??= aliasWriteNames(emitBody));
+  if (moduleNanAliases && moduleNanAliases.size) {
+    moduleNanAliases = filterWrittenAliases(moduleNanAliases, moduleWrittenOf());
+  }
+  if (moduleHasVarDecl || moduleNanAliases) {
+    for (const stmt of emitBody) {
+      const stepOpts = moduleNanAliases
+        ? { ...scopedOpts, nanAliases: moduleNanAliases }
+        : scopedOpts;
+      lines.push(transpileStatement(stmt, 0, stepOpts));
+      moduleNanAliases = nanAliasesAfterStmt(
+        stmt,
+        moduleNanAliases,
+        scopedOpts.shadowedIntrinsics,
+        moduleWrittenOf,
+      );
+    }
+  } else {
+    for (const stmt of emitBody) {
+      lines.push(transpileStatement(stmt, 0, scopedOpts));
+    }
   }
   return { code: lines.join("\n") + "\n", meta };
 }

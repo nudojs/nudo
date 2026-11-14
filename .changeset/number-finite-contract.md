@@ -13,9 +13,10 @@ fall-through / else arm with the complement of the relation guard at runtime
 (`$refineRelComplement`, fail-closed without evidence; the arm's Phi and
 `$refineNotNaN` also count as evidence). NaN guards (`Number.isNaN(x)`,
 `x !== x`, `x === x`, `!Number.isNaN(x)`) establish `ne(x, NaN)` on the arm
-where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const`
-alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in the
-same function body (redeclared names, written guarded variables and function
+where that holds; `Number.isFinite(x)` is one-sided (true arm only). A `const` / `let` /
+`var` alias such as `const ok = Number.isNaN(x); if (!ok) { … }` is resolved in
+the same function body or at module top level (a written alias name or guarded
+variable, loop-header shadowing/assignment, catch parameters and function
 boundaries drop the alias). A user-shadowed `Number` disables the builtin
 guard fact (fail-closed). De Morgan spellings
 (`x < 1 || y < 2`) are complemented per disjunct. The previous unproven results

@@ -38,6 +38,7 @@ import {
   computeConstScope,
   copyConstScope,
 } from "../helpers.ts";
+import { aliasWriteNames, aliasesWithout, filterWrittenAliases } from "./fn-body.ts";
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { emitDestructure } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
@@ -158,16 +159,55 @@ function narrowLoopBody(
  * 热路径约束：只是把各发射器原有的对象字面量搬进函数体——不新增任何
  * 分配（bodyLocalDecls 由调用方持有）或闭包。
  */
+/** 循环头部的别名遮蔽/写名：`for (let ok of …)` 遮蔽、`for (ok of …)` 改写、test/update 写 */
+function loopHeaderAliasNames(stmt: Statement): Set<string> {
+  const out = new Set<string>();
+  const s = stmt as {
+    type?: string;
+    init?: { type?: string; declarations?: Array<{ id?: unknown }> } | null;
+    left?: { type?: string; declarations?: Array<{ id?: unknown }> } | null;
+    test?: unknown;
+    update?: unknown;
+  };
+  if (s.type === "ForStatement") {
+    if (s.init?.type === "VariableDeclaration") {
+      for (const d of s.init.declarations ?? []) collectPatternNames(d.id, out);
+    }
+    aliasWriteNames(s.init, out);
+    aliasWriteNames(s.test, out);
+    aliasWriteNames(s.update, out);
+  } else if (s.type === "ForInStatement" || s.type === "ForOfStatement") {
+    if (s.left?.type === "VariableDeclaration") {
+      for (const d of s.left.declarations ?? []) collectPatternNames(d.id, out);
+    } else {
+      collectPatternNames(s.left, out);
+    }
+  } else if (s.type === "WhileStatement" || s.type === "DoWhileStatement") {
+    aliasWriteNames(s.test, out);
+  }
+  return out;
+}
+
 function loopBodyOptsOf(
   body: Statement,
   opts: TranspileOptions,
   parentConsts: ReadonlySet<string> | undefined,
   bodyLocalDecls: Set<string>,
+  headerAliasNames?: ReadonlySet<string> | readonly string[],
 ): TranspileOptions {
   collectLoopBodyTopLevelDeclNames(body, bodyLocalDecls);
   const bodyAliasGroups = filterAliasGroups(opts.aliasGroups, bodyLocalDecls);
+  // NaN 守卫别名：循环头声明/写名遮蔽；体内任意写名也剔除（循环体每轮
+  // 重进 ⇒ 被写的别名在后续轮次不再是原守卫值）。
+  const loopAliases = opts.nanAliases
+    ? filterWrittenAliases(
+        aliasesWithout(opts.nanAliases, headerAliasNames ?? []),
+        aliasWriteNames(body),
+      )
+    : undefined;
   return {
     ...opts,
+    nanAliases: loopAliases,
     inLoop: (opts.inLoop ?? 0) + 1,
     loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
     // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
@@ -203,7 +243,13 @@ function forBodyPrep(
   names: string[];
 } {
   const bodyLocalDecls = new Set<string>();
-  const forBodyOpts = loopBodyOptsOf(stmt.body, opts, constScope, bodyLocalDecls);
+  const forBodyOpts = loopBodyOptsOf(
+    stmt.body,
+    opts,
+    constScope,
+    bodyLocalDecls,
+    loopHeaderAliasNames(stmt),
+  );
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
@@ -593,7 +639,13 @@ export function emitForInStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  const bodyOpts = loopBodyOptsOf(stmt.body, opts, loopConstNames, bodyLocalDecls);
+  const bodyOpts = loopBodyOptsOf(
+    stmt.body,
+    opts,
+    loopConstNames,
+    bodyLocalDecls,
+    loopHeaderAliasNames(stmt),
+  );
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, bodyOpts)).join("\n")
@@ -697,7 +749,13 @@ export function emitWhileStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  const bodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
+  const bodyOpts = loopBodyOptsOf(
+    stmt.body,
+    opts,
+    opts.constNames,
+    bodyLocalDecls,
+    loopHeaderAliasNames(stmt),
+  );
   const body =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
@@ -757,7 +815,13 @@ export function emitDoWhileStatement(
   // 绑定 ⇒ 别名组按体顶层声明过滤（体内 fork 不得把外层别名伙伴拉进绑定
   // 集）。pack/unpack 发射在**外层**作用域 ⇒ 用未过滤的组。
   const bodyLocalDecls = new Set<string>();
-  const bodyOpts = loopBodyOptsOf(stmt.body, opts, opts.constNames, bodyLocalDecls);
+  const bodyOpts = loopBodyOptsOf(
+    stmt.body,
+    opts,
+    opts.constNames,
+    bodyLocalDecls,
+    loopHeaderAliasNames(stmt),
+  );
   const bodyStmts =
     stmt.body.type === "BlockStatement"
       ? stmt.body.body.map((s) => transpileStatement(s, depth + 1, bodyOpts)).join("\n")
