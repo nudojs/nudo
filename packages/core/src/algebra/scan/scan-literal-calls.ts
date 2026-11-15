@@ -325,6 +325,166 @@ export function scanLiteralCalls(
     return { ...ctx, varAbs: merged };
   };
 
+  /** 作用域 id → 绑定桶（不存在则建） */
+  const bucketOf = (scopeId: string): Map<string, Abs> => {
+    let b = localBindings.get(scopeId);
+    if (!b) {
+      b = new Map<string, Abs>();
+      localBindings.set(scopeId, b);
+    }
+    return b;
+  };
+  /** 子作用域桶（`chain[0]` = 最内层） */
+  const childBucket = (child: ScopeChain): Map<string, Abs> =>
+    bucketOf(child[0] ?? "");
+  /** 有声明但值不可判 ⇒ 登记明确的「无信息」（不得回落外层） */
+  const registerName = (bucket: Map<string, Abs>, name: string, abs: Abs | undefined): void => {
+    // 函数 / 联合值不当「确定实参值」登记（避免把引用当值 ⇒ 假红）
+    if (abs && isInformativeArg(abs) && abs.shape.k !== "fn" && abs.shape.k !== "sum") {
+      bucket.set(name, abs);
+      return;
+    }
+    bucket.set(name, absUnknown());
+  };
+  /** 模式里某个键 / 下标对应的 Abs（解构取值） */
+  const slotAbsOf = (abs: Abs | undefined, key: string | number): Abs | undefined => {
+    if (!abs) return undefined;
+    const sh = abs.shape;
+    if (typeof key === "number") {
+      if (sh.k === "tuple") return (sh as { elements?: Abs[] }).elements?.[key];
+      if (sh.k === "arr") return (sh as { element?: Abs }).element;
+      return undefined;
+    }
+    if (sh.k === "obj") {
+      return (sh as { slots?: Record<string, { value: Abs }> }).slots?.[key]?.value;
+    }
+    return undefined;
+  };
+  /** 声明模式 → 绑定名（解构 / 重命名 / rest / 默认值都算） */
+  const collectPatternNames = (n: Record<string, unknown> | undefined, out: string[]): void => {
+    if (!n || typeof n !== "object") return;
+    const t = n.type as string | undefined;
+    if (t === "Identifier") {
+      if (typeof n.name === "string") out.push(n.name);
+      return;
+    }
+    if (t === "AssignmentPattern") {
+      collectPatternNames(n.left as Record<string, unknown> | undefined, out);
+      return;
+    }
+    if (t === "RestElement") {
+      collectPatternNames(n.argument as Record<string, unknown> | undefined, out);
+      return;
+    }
+    if (t === "ObjectPattern") {
+      for (const p of (n.properties as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (p.type === "RestElement") collectPatternNames(p, out);
+        else collectPatternNames(p.value as Record<string, unknown> | undefined, out);
+      }
+      return;
+    }
+    if (t === "ArrayPattern") {
+      for (const e of (n.elements as Array<Record<string, unknown> | null> | undefined) ?? []) {
+        if (e) collectPatternNames(e, out);
+      }
+    }
+  };
+  /** 声明模式 → 逐名登记（`const` 且能取值时登记真值，其余 unknown） */
+  const registerPatternBindings = (
+    id: Record<string, unknown> | undefined,
+    abs: Abs | undefined,
+    bucket: Map<string, Abs>,
+  ): void => {
+    if (!id || typeof id !== "object") return;
+    const t = id.type as string | undefined;
+    if (t === "Identifier") {
+      if (typeof id.name === "string") registerName(bucket, id.name, abs);
+      return;
+    }
+    if (t === "AssignmentPattern") {
+      registerPatternBindings(id.left as Record<string, unknown> | undefined, abs, bucket);
+      return;
+    }
+    if (t === "RestElement") {
+      registerPatternBindings(id.argument as Record<string, unknown> | undefined, undefined, bucket);
+      return;
+    }
+    if (t === "ObjectPattern") {
+      for (const p of (id.properties as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (p.type === "RestElement") {
+          registerPatternBindings(p, undefined, bucket);
+          continue;
+        }
+        const key = p.key as Record<string, unknown> | undefined;
+        const keyName =
+          typeof key?.name === "string"
+            ? key.name
+            : typeof key?.value === "string"
+              ? key.value
+              : undefined;
+        registerPatternBindings(
+          p.value as Record<string, unknown> | undefined,
+          keyName === undefined ? undefined : slotAbsOf(abs, keyName),
+          bucket,
+        );
+      }
+      return;
+    }
+    if (t === "ArrayPattern") {
+      ((id.elements as Array<Record<string, unknown> | null> | undefined) ?? []).forEach(
+        (e, i) => {
+          if (e) registerPatternBindings(e, slotAbsOf(abs, i), bucket);
+        },
+      );
+      return;
+    }
+    // 兜底：能算出名字的一律登记 unknown（遮蔽成立、值不猜）
+    const names: string[] = [];
+    collectPatternNames(id, names);
+    for (const n of names) registerName(bucket, n, undefined);
+  };
+  /** 形参 / catch / for-of·in 左值的声明名 */
+  const declaredNamesOf = (node: Record<string, unknown>): string[] => {
+    const out: string[] = [];
+    const t = node.type as string | undefined;
+    if (t === "CatchClause") {
+      const p = node.param as Record<string, unknown> | undefined;
+      if (p) collectPatternNames(p, out);
+      return out;
+    }
+    if (
+      t === "FunctionDeclaration" ||
+      t === "FunctionExpression" ||
+      t === "ArrowFunctionExpression" ||
+      t === "ObjectMethod" ||
+      t === "ClassMethod"
+    ) {
+      for (const p of (node.params as Array<Record<string, unknown>> | undefined) ?? []) {
+        collectPatternNames(p, out);
+      }
+      return out;
+    }
+    if (t === "ForOfStatement" || t === "ForInStatement") {
+      const left = node.left as Record<string, unknown> | undefined;
+      if (left?.type === "VariableDeclaration") {
+        for (const d of (left.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
+          collectPatternNames(d.id as Record<string, unknown> | undefined, out);
+        }
+      }
+      return out;
+    }
+    return out;
+  };
+  const isScopeDeclNode = (t: string | undefined): boolean =>
+    t === "CatchClause" ||
+    t === "FunctionDeclaration" ||
+    t === "FunctionExpression" ||
+    t === "ArrowFunctionExpression" ||
+    t === "ObjectMethod" ||
+    t === "ClassMethod" ||
+    t === "ForOfStatement" ||
+    t === "ForInStatement";
+
   const checkOneCall = (
     fnName: string,
     args: Array<Record<string, unknown>>,
@@ -783,30 +943,38 @@ export function scanLiteralCalls(
         checkExternalCall(resolved.external, args, name, obj.loc, chain);
       }
     }
-    // Bug 9：收集**本作用域**的 const 声明值，供后续调用点的 `Identifier`
-    // 实参解析（前序遍历 ⇒ 声明在使用之前已入表）。只收静态可判的字面量 /
-    // 复合值；求不出 ⇒ 不入表（保持无信息，不发明义务）。
-    if (obj.type === "VariableDeclaration" && obj.kind === "const") {
-      const sid = chain[0] ?? "";
-      let bucket = localBindings.get(sid);
-      if (!bucket) {
-        bucket = new Map<string, Abs>();
-        localBindings.set(sid, bucket);
-      }
+    // BUG-003：局部绑定表的**声明面**。此前只登记 `const` + 纯标识符声明符，
+    // 于是 (a) `let` / `var` / 形参 / `catch` / `for-of` 的遮蔽不可见 ⇒ 实参
+    // 解析回落到**模块级**同名 const（读到外层值 = 假红）；(b) 解构声明根本不
+    // 入表 ⇒ 违规调用被整条跳过（假绿）。两处缺口同一张表，一起补。
+    //
+    // 口径：**有声明但值不可判** ⇒ 登记 `absUnknown()`（明确的「无信息」），
+    // 而不是不登记——不登记会让外层绑定泄漏进来。`const` 且值静态可判才登记
+    // 真值；其余（含 `let`/`var`，可被重绑）一律 unknown。
+    const sid = chain[0] ?? "";
+    let bucket = localBindings.get(sid);
+    if (!bucket) {
+      bucket = new Map<string, Abs>();
+      localBindings.set(sid, bucket);
+    }
+    const ownBucket = bucket;
+    if (obj.type === "VariableDeclaration") {
       const probe = scopedCtx(chain);
+      const isConst = obj.kind === "const";
       for (const d of (obj.declarations as Array<Record<string, unknown>> | undefined) ?? []) {
-        const id = d.id as { type?: string; name?: string } | undefined;
+        const id = d.id as Record<string, unknown> | undefined;
         const init = d.init as Record<string, unknown> | null | undefined;
-        if (id?.type !== "Identifier" || !id.name || !init) continue;
-        const parsed = parseCallArgs(probe, [init]);
-        const abs = parsed.absArgs[0];
-        if (!abs || !isInformativeArg(abs)) continue;
-        // 函数 / 联合值不当「确定实参值」登记（避免把引用当值 ⇒ 假红）
-        if (abs.shape.k === "fn" || abs.shape.k === "sum") continue;
-        bucket.set(id.name, abs);
+        const abs =
+          isConst && init ? parseCallArgs(probe, [init]).absArgs[0] : undefined;
+        registerPatternBindings(id, abs, ownBucket);
       }
     }
     const childChain = scopeChainChild(chain, obj);
+    if (isScopeDeclNode(obj.type)) {
+      // 形参 / catch 参数 / for-of·in 的声明左值：在本层（或子层）遮蔽外层
+      const target = obj.type === "CatchClause" ? ownBucket : childBucket(childChain);
+      for (const n of declaredNamesOf(obj)) target.set(n, absUnknown());
+    }
     for (const key of Object.keys(obj)) {
       if (key === "loc" || key === "start" || key === "end") continue;
       const val = obj[key];

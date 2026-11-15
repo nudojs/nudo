@@ -159,4 +159,7 @@ export const CHECK_FACE_DIAG_CODES: readonly DiagCode[] = [
   DIAG.exportsUnresolved,
   // env 家族（Bug 1038）
   DIAG.envHarvestConflict,
+  // 能力档（BUG-026）：strict 档下被拒的宿主全局 / 内置模块是 unknown 的**成因**。
+  // `nudo test` 一直报它，`check` 漏 ⇒ 同一份源码两面结论不同、门禁看不到成因。
+  DIAG.capabilityDenied,
 ];

@@ -37,6 +37,7 @@ import {
   filterAliasGroups,
   computeConstScope,
   copyConstScope,
+  isConstAssignTarget,
 } from "../helpers.ts";
 import { aliasWriteNames, aliasesWithout, filterWrittenAliases } from "./fn-body.ts";
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
@@ -267,6 +268,42 @@ function forBodyPrep(
   return { bodyLocalDecls, forBodyOpts, bodyStmts, max, names };
 }
 
+/**
+ * BUG-001：经典 `for (const i = 0; …; …)` 的头绑定。
+ *
+ * `computeConstScope` 刻意**不进入循环头**（它只收块级声明），而 for-of / for-in
+ * 车道显式把 `const` 头名加回 `loopConstNames` ⇒ 只有经典 `for` 的头 const 从未
+ * 进入 const 面 ⇒ 步进 `i++`（原生 100% TypeError）在 L2 门禁里是绿的。
+ * 这里把经典 `for` 车道的口径补齐。
+ */
+function headConstNamesOf(init: Node | null | undefined): Set<string> {
+  const out = new Set<string>();
+  const decl = init as { type?: string; kind?: string; declarations?: unknown[] } | null;
+  if (decl?.type !== "VariableDeclaration" || decl.kind !== "const") return out;
+  for (const d of (decl.declarations ?? []) as Array<{ id?: Node }>) {
+    if (d?.id) collectPatternNames(d.id as never, out);
+  }
+  return out;
+}
+
+/** 把名字并入 const 面（`copyConstScope` 只能删，扩面要新建集合） */
+function withConstNames(
+  scope: ReadonlySet<string> | undefined,
+  add: ReadonlySet<string>,
+): ReadonlySet<string> | undefined {
+  if (add.size === 0) return scope;
+  return new Set<string>([...(scope ?? []), ...add]);
+}
+
+/**
+ * 步进赋值的发射（BUG-001）：`const` 头绑定要落 `$throwConstAssign()`——原生
+ * `for (const i = 0; i < 4; i++)` 第一轮就 TypeError，不得被静默当成 let。
+ */
+function stepUpdateSrc(name: string, operator: string | undefined, isConst: boolean): string {
+  const assign = `${name} = ${operator === "++" ? "$updateAdd" : "$updateSub"}(${name})`;
+  return isConst ? `($throwConstAssign(), ${assign})` : assign;
+}
+
 export function emitForStatement(
   stmt: ForStatement,
   depth: number,
@@ -291,12 +328,20 @@ export function emitForStatement(
     // ⇒ test / update / body 都须用**扣除这些名字后**的 const 面，否则步进
     // 里的 `s+=1` 命中 isConstAssignTarget ⇒ 误报确定 TypeError。
     const fallbackShadow = new Set<string>();
-    if (stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.kind !== "var") {
+    // BUG-001：`const` 头绑定**不是**遮蔽源——它是 const 面本身，扣掉就漏判必抛。
+    const headConsts = headConstNamesOf(stmt.init as never);
+    if (
+      stmt.init &&
+      stmt.init.type === "VariableDeclaration" &&
+      stmt.init.kind !== "var" &&
+      headConsts.size === 0
+    ) {
       for (const d of stmt.init.declarations) collectPatternNames(d.id, fallbackShadow);
     }
-    const fallbackConsts = opts.constNames
-      ? copyConstScope(opts.constNames, fallbackShadow)
-      : opts.constNames;
+    const fallbackConsts = withConstNames(
+      opts.constNames ? copyConstScope(opts.constNames, fallbackShadow) : opts.constNames,
+      headConsts,
+    );
     const fallbackOpts: TranspileOptions =
       fallbackConsts === opts.constNames ? opts : { ...opts, constNames: fallbackConsts };
     const testSrc = stmt.test ? emitTranspileExpression(stmt.test, fallbackOpts) : "$lit(true)";
@@ -314,7 +359,11 @@ export function emitForStatement(
     const stepPart = (u: Node): string => {
       const upd = u as { type?: string; operator?: string; argument?: { type?: string; name?: string }; expressions?: unknown[] };
       if (upd.type === "UpdateExpression" && upd.argument?.type === "Identifier" && upd.argument.name) {
-        return `${upd.argument.name} = ${upd.operator === "++" ? "$updateAdd" : "$updateSub"}(${upd.argument.name})`;
+        return stepUpdateSrc(
+          upd.argument.name,
+          upd.operator,
+          isConstAssignTarget(upd.argument.name, updateOpts),
+        );
       }
       if (upd.type === "SequenceExpression") {
         return (upd.expressions ?? []).map((e) => stepPart(e as Node)).join(", ");
@@ -385,10 +434,16 @@ export function emitForStatement(
   // isConstAssignTarget ⇒ `$throwConstAssign()`（误报确定 TypeError、签名
   // 塌成 never）。原实现把 loopParentConsts 算在 testSrc/updateSrc **之后**
   //（只喂给循环体），头两段仍用未去影的 opts。
-  const loopParentConsts =
-    opts.constNames && opts.constNames.has(initName)
-      ? copyConstScope(opts.constNames, new Set([initName]))
-      : opts.constNames;
+  // BUG-001：`const` 头保持 const 语义（不扣 initName），并并入 const 面。
+  const headConsts = headConstNamesOf(stmt.init as never);
+  const loopParentConsts = withConstNames(
+    headConsts.size > 0
+      ? opts.constNames
+      : opts.constNames && opts.constNames.has(initName)
+        ? copyConstScope(opts.constNames, new Set([initName]))
+        : opts.constNames,
+    headConsts,
+  );
   const loopHeadOpts: TranspileOptions =
     loopParentConsts === opts.constNames ? opts : { ...opts, constNames: loopParentConsts };
   const testSrc = stmt.test ? emitTranspileExpression(stmt.test, loopHeadOpts) : "$lit(true)";
@@ -405,7 +460,11 @@ export function emitForStatement(
   const updateSrc =
     stmt.update && stmt.update.type === "UpdateExpression" &&
     stmt.update.argument.type === "Identifier"
-      ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$updateAdd" : "$updateSub"}(${stmt.update.argument.name})`
+      ? stepUpdateSrc(
+          stmt.update.argument.name,
+          stmt.update.operator,
+          isConstAssignTarget(stmt.update.argument.name, loopHeadOpts),
+        )
       : stmt.update
         ? emitTranspileExpression(stmt.update, {
             ...loopHeadOpts,
