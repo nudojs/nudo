@@ -1715,10 +1715,14 @@ function computeMainSignature(
     // 求值占位 `_p0`；Bug 538）。键不全（契约/观测都拿不到该绑定）时回落
     // 占位名——模式形态与类型不匹配会产出不可编译的 .d.ts。
     const patternKeys = contractHit.abs ? contractHit.keys : patternObservedKeys(members);
+    // 绑定被覆盖 = 契约键正好是该绑定名，或该绑定是内层路径的**中间对象**
+    // （`{ card }` + `card.grade` ⇒ `card` 还是模式里的名字，类型自带嵌套）。
+    const coveredBy = (b: string): boolean => {
+      const key = decl.propKey[b] ?? b;
+      return patternKeys.includes(key) || patternKeys.some((k) => k.startsWith(`${key}.`));
+    };
     const boundCovered =
-      decl?.isPattern === true &&
-      decl.bound.length > 0 &&
-      decl.bound.every((b) => patternKeys.includes(decl.propKey[b] ?? b));
+      decl?.isPattern === true && decl.bound.length > 0 && decl.bound.every(coveredBy);
     // BUG-029：契约只覆盖内层点路径（`card.grade`）时，按路径还原模式名。
     const pathPattern =
       decl?.isPattern === true && !boundCovered && contractHit.abs

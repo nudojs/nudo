@@ -121,7 +121,8 @@ describe("D6 · dts 模块面投影", () => {
     });
     const out = dts(dir, "dot.js");
     expect(out).not.toContain("_p0");
-    expect(out).toContain("{ card: { grade } }: { card: { grade: string } }");
+    // 形参名 = 模式里写得出来的键（`card`）；嵌套形状由**类型**承载
+    expect(out).toContain("({ card }: { card: { grade: string } })");
   }, 60000);
 
   it("BUG-030：`<fn>Input` 的顶层键是解构字段名（不是内部占位 `_p0`）", () => {

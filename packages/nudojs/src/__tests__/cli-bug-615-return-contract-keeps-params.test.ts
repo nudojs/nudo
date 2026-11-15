@@ -16,11 +16,20 @@ import { runCliNode as runCli } from "./helpers/run-cli.ts";
 
 /** 有返回契约 + 一个形参的导出函数。 */
 function writeReturnContractFixture(dir: string): void {
+  // 契约段必须是**合法**约束名（`num`）；`number()` 是调用式，会被判
+  // `nudo:contract-syntax`，而 BUG-021 之后那条诊断会阻断 export（本用例的
+  // 意图是参数面，不是非法契约，所以给一份合法契约 + 侧车定义）。
+  writeFileSync(
+    join(dir, "withRet.nudo.js"),
+    "export const num = number();\n",
+    "utf-8",
+  );
   writeFileSync(
     join(dir, "withRet.js"),
-    `/**
+    `/// @nudo:import { num } from "./withRet.nudo.js"
+/**
  * @nudo:case "one" (1) => number()
- * @nudo:contract return number()
+ * @nudo:contract return num
  */
 export function withRet(a) {
   return a;
