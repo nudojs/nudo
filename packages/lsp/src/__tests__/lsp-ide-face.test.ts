@@ -36,7 +36,7 @@ import { configIgnoreThrows, parseIgnoreThrows } from "../gate-config.ts";
 import { cacheKey, checkToLspDiagnostics, handleNudoDepFileChanged } from "../validation.ts";
 import { createNudoServer } from "../server.ts";
 import { createMockConnection, withLspServer } from "./helpers.ts";
-import { openLspDocument, requestCompletion } from "./lsp-harness-d4.ts";
+import { openLspDocument, requestCompletion } from "./lsp-harness-semantic-tokens.ts";
 
 /* ───────────────────────── 夹具 ───────────────────────── */
 

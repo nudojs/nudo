@@ -47,7 +47,7 @@ export type FacetSpec =
  * ABS-15 候选 2（提升规则）：**值语义进 `Shape`，派生/观察能力进 facets**。
  * 当前六个槽位全部是观察面（`callable` / `protoOwnKeys` / `brand` /
  * `genReturn` / `genNext` / `genElements`）：它们不参与 `leqAbs` 接受集与
- * `formatShape` 展示（`abs15-facet-registry.test.ts` 的不变量用例是漂移
+ * `formatShape` 展示（`facet-registry.test.ts` 的不变量用例是漂移
  * 门禁）。要把某个槽位提升为值语义，必须先走 Shape 迁移门禁（金标 +
  * 真包零 FP + 差分语料 + 全仓回归基线），不能直接在这里加字段。
  */
@@ -63,7 +63,7 @@ export const FACET_SPECS = {
 /**
  * ABS-15 候选 3（键版本化）：`facetKey` 编码版本。`kind` / 前缀 / 声明序
  * 发生语义变化时 +1 —— 进程内 memo / 指纹按新键空间重新填充，旧键不再
- * 命中（Abs 不落盘，无需缓存迁移）。`abs15-facet-registry.test.ts` 钉住
+ * 命中（Abs 不落盘，无需缓存迁移）。`facet-registry.test.ts` 钉住
  * 当前版本与 `facetKey` 的字面前缀。
  */
 export const FACET_KEY_VERSION = 1;

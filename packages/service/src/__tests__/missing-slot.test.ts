@@ -87,7 +87,7 @@ greet({ id: 1 });
       setEvalMissingSlotEnabled(false);
       const r = analyzeFile(file, SRC);
       // ALS per-analysis：配置在分析期间生效（诊断取决于 evaluator 是否 hosted）；
-      // 返回后外层 flag 必须被恢复，不粘滞。完整接线断言见 c05-isolation.test.ts。
+      // 返回后外层 flag 必须被恢复，不粘滞。完整接线断言见 eval-missing-slot-isolation.test.ts。
       expect(isEvalMissingSlotEnabled()).toBe(false);
       // 分析结果可正常返回；若 evaluator hosted 则可能带 missing-slot warning
       expect(r).toBeDefined();

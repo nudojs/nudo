@@ -7,7 +7,7 @@ import { collectEvalDiagnostics } from "@nudojs/service";
 import { defineEnv, defineEnv as defineEsEnv } from "../es.ts";
 import { defineEnv as defineWebEnv } from "../web.ts";
 import { execFileSync } from "node:child_process";
-import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf } from "./env-helpers-s1.ts";
+import { checkWeb, webEnvGlobals, ctorFlagOf, instanceSlotOf, slotOf, displayOf } from "./env-helpers-globals.ts";
 import { checkNode, instanceFaceOf, slotOfAbs } from "./env-member-tables-helpers.ts";
 
 // ---------------------------------------------------------------------------

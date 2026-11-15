@@ -7,7 +7,7 @@
  * ⚠ **闸④（反向闸）不适用于本文件**：`scope.ts` / `check-assembly.ts` /
  * `report.ts` 在 **HEAD（重构前）上不存在** ⇒ 本文件在 HEAD 上**无法加载**
  * （这是「新增面」的必然结果，与「假阳性钉」不同）。可反向闸的那一面在
- * `vite-s0-thin-shell.test.ts`（只经由公共面断言 ⇒ HEAD 上必须通过）。
+ * `vite-thin-shell.test.ts`（只经由公共面断言 ⇒ HEAD 上必须通过）。
  *
  * 覆盖：
  * - `scope.ts`：`normalizeModuleId` / `isVirtualModuleId` / `setProjectRoot` /

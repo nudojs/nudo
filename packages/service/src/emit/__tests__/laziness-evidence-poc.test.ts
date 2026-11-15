@@ -4,7 +4,7 @@
  * 台账 `docs/design/generator-laziness.md` §5.3 停点此前只是文档推断；本文件
  * 把两组受控实验固化为可执行钉，用**真实生产函数**（`snapshotAbs` /
  * `absToTSType`）复核，供后续拍板时不必重做实验。core 侧的三组（A / D / E）
- * 见 `core/src/algebra/exec/__tests__/a1-laziness-evidence-core.test.ts`。
+ * 见 `core/src/algebra/exec/__tests__/laziness-evidence-core.test.ts`。
  *
  * | 实验 | 结论 | 对应钉 |
  * |---|---|---|

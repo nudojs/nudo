@@ -15,8 +15,8 @@ import { createMockConnection, withLspServer, withTempDir } from "./helpers.ts";
 import { pathToFileURL } from "node:url";
 import { defaultLoadModule } from "@nudojs/service";
 import { checkToLspDiagnostics } from "../validation.ts";
-import { applyEdits, type CodeActionEdit } from "./lsp-harness-r90a.ts";
-import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-harness-d3.ts";
+import { applyEdits, type CodeActionEdit } from "./lsp-harness-code-actions.ts";
+import { startLspWithFiles, locationsOf, editsOf, type LspHarness } from "./lsp-harness-navigation.ts";
 
 // ---------------------------------------------------------------------------
 // 方法改名以「归属」为界

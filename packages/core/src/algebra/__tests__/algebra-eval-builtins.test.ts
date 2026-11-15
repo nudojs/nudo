@@ -1674,7 +1674,7 @@ describe("JSON.parse 的 callable reviver 副作用通道", () => {
  * "" 也算一次；holder = 根对象（this 恒为它）。
  *
  * 值域仍保守 unknown（逐键变换未建模——既有回归 eval-json.test.ts 与
- * eval-object-json-w9.test.ts 钉此口径）；本条钉的是**副作用通道**。
+ * object-json.test.ts 钉此口径）；本条钉的是**副作用通道**。
  *
  * 锚定值均为 node 原生实测（见各断言）。
  */

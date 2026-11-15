@@ -2,7 +2,7 @@
  * 模块套件：semanticTokens 面（层级 / 字符串掩码 / 简写 / 类解构 / 转义长度）。
  */
 import { describe, expect, it } from "vitest";
-import { openLspDocument, requestSemanticTokens, decodeSemanticTokens } from "./lsp-harness-d4.ts";
+import { openLspDocument, requestSemanticTokens, decodeSemanticTokens } from "./lsp-harness-semantic-tokens.ts";
 import { SEMANTIC_TOKEN_TYPES, buildSemanticTokens, SEMANTIC_TOKEN_MODIFIERS, contractTierModifierBit } from "../semantic-tokens.ts";
 
 // ---------------------------------------------------------------------------

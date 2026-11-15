@@ -32,7 +32,7 @@ import {
   ABS14_GATE_PHI,
   diffAgainstBodyBaseline,
   type Abs14BaselineCase,
-} from "./abs14-equivalence-baseline.ts";
+} from "./equivalence-baseline.ts";
 
 const numVar = (id: string, pred?: Phi): Abs =>
   makeAbs({ k: "prim", type: "number" }, v(id), pred, "path");

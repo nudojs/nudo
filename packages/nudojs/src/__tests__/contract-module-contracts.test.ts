@@ -7,7 +7,7 @@
  *
  * ⚠ 本文件**直接 import 三个新内部模块**（它们在 HEAD 上**不存在**）
  * ⇒ 在 HEAD（重构前）上本文件**必然失败** ⇒ 参与**反向闸（闸④）**。
- * 「重构前后行为不变」那一面在 `cli-s0-contract-thin-shell.test.ts`
+ * 「重构前后行为不变」那一面在 `contract-thin-shell.test.ts`
  * （只经由**公共面**断言 ⇒ 在 HEAD 上原样跑通）。
  *
  * 锁住：

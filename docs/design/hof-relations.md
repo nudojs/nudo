@@ -129,6 +129,6 @@ impl.apply → impl.body → impl.relation → isRelFn(shape-only) → unknown
 - packages/core/src/algebra/__tests__/hof.test.ts
 - packages/core/src/algebra/__tests__/hof-relation.test.ts
 - packages/core/src/algebra/__tests__/hof-relation-paths.test.ts
-- packages/core/src/algebra/__tests__/hof-p2-generalize.test.ts
-- packages/core/src/algebra/__tests__/hof-p4-check.test.ts
+- packages/core/src/algebra/__tests__/hof-generalize.test.ts
+- packages/core/src/algebra/__tests__/hof-check.test.ts
 - packages/core/src/algebra/__tests__/hof-review-fixes.test.ts

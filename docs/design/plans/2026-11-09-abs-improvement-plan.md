@@ -4,7 +4,7 @@
 > 本文件只保留**现行项、决策锚与触发条件**；已交付项的立项正文已删除，证据在
 > 测试、changeset 与 git（`git log --grep 'ABS-'`）。
 > **编号保留**：`§5` 与各 `ABS-*` 编号不复用 —— `benchmark/s1/README.md` 与
-> `core/src/algebra/__tests__/abs14-equivalence-baseline.test.ts` 直接引用 `§5`。
+> `core/src/algebra/__tests__/equivalence-baseline.test.ts` 直接引用 `§5`。
 > **真源**：架构 → [`../kernel-merge.md`](../kernel-merge.md)；限制 → [`../limitations.md`](../limitations.md)；
 > 求值 → [`../evaluation.md`](../evaluation.md)；缓存 → [`../persistent-cache.md`](../persistent-cache.md)。
 > **纪律**：单轨 Abs；不新增第二 IR；不改变 C0 / L2 / `unknown` 语义；任何影响 `leqAbs` / check 的改动
@@ -70,7 +70,7 @@
 + 方案 A-narrow（可安全抽取的 finalizer thunk 在 `.return()` / 无 catch 的 `.throw()` 时
 按内→外重放）。实测：`.return()` / `.throw()` 穿 side-effect finally 精确 `true`、嵌套
 `[true, true]`；`for-of` break 穿 `finally` / `yield*` 委托精确 `true`；async 走 rejected promise；
-finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（15 例）。
+finalizer 条件抛错精确传播。夹具 `abrupt-completion.test.ts`（15 例）。
 
 **残余（2026-11-14 结案不做）**：finalizer 含 **`yield` / `return` 语句**。
 `yield` 需要真挂起/续体（CPS，XL）；`return` 即使不含 yield 也需要
@@ -93,8 +93,8 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
    秩 1；α–α 只允许按声明序单向依赖；禁止条件类型 / 映射类型 / `infer` / 高阶多态。
 2. **先走三条保守通道**：`bodyUnavailable` / `budgetTruncated` / `crossModule`；主路径仍以 body 为准。
 3. **等价性门禁是开工前置**：快路径 ≡ body 路径的返回值 Abs 逐字节一致
-   （`abs14-equivalence-baseline.ts` / `abs14-fastpath.test.ts`，用见证 Φ 绕开 memo 层）；
-   降级通道另见 `abs14-degraded-channels.test.ts`。
+   （`equivalence-baseline.ts` / `fastpath.test.ts`，用见证 Φ 绕开 memo 层）；
+   降级通道另见 `degraded-channels.test.ts`。
 4. **摘要缓存只留一套**：`key/fn-summary.ts` 是唯一跨实例摘要存储。
 
 **边界**：`TypeParam.bounds` 是 `PolyFn` 元数据且目前 **write-only**（全仓无读者）；
@@ -106,7 +106,7 @@ finalizer 条件抛错精确传播。夹具 `abs13-abrupt-completion.test.ts`（
 **已落地**：`key/facet-specs.ts::FACET_SPECS` 是 `AbsFacets` 槽位唯一登记表
 （`satisfies Record<keyof AbsFacets, FacetSpec>`，新增槽位不登记即编译红）；
 `kind` 同时决定 `facetKey` 编码与 `cloneAbsFacets` 搬运策略；改前后
-`facetKey` / `absKey` / `cloneAbsFacets` 逐字节 diff 为空；门禁 `abs15-facet-registry.test.ts`（14 例）。
+`facetKey` / `absKey` / `cloneAbsFacets` 逐字节 diff 为空；门禁 `facet-registry.test.ts`（14 例）。
 
 **候选（全部已交付）**：
 
@@ -174,7 +174,7 @@ analyze 20.8s 已满足耗时，但热点是 strip-types 24% + GC 11%，`$copy` 
 
 ### ABS-18 watch 增量重算（`[x]` 2026-11-13）
 
-**已交付**：① 吞改动竞态（`recordVersions` 前移 + 确定性 e2e `abs18-watch-write-race.test.ts`）；
+**已交付**：① 吞改动竞态（`recordVersions` 前移 + 确定性 e2e `watch-write-race.test.ts`）；
 ② inert 编辑（`load-deps-fp` 指纹对齐 `stableAnalyzeKeySource` + 只逐出 `changedFiles`）；
 ③ 注入对象复用（`check-injection-cache.ts`，LRU 256，仅 watch 传入）+ 轮内依赖指纹 memo
 （`beginDepFingerprintEpoch`）+ gating 同值复用（`loaderIdentity`）。
@@ -210,7 +210,7 @@ total **667–684ms**；leaf analyze 210ms / total **421ms**（早期批次为 h
 | cold / warm / edit | 规模与摘要收益 | `benchmark:s1`（合成 120 文件）/ `benchmark:s1:real:clean`（真实仓，干净 env） |
 | 逐文件耗时 / 依赖装载 / CPU 栈 | `ABS-16` 口径核查、`ABS-17` 复现 | `benchmark/s1/profile-cold.mts`（`--corpus . --rounds 1 --top 30`；CPU 栈加 `--only` + `node --cpu-prof`） |
 | 打包器导出形态 / 规模梯度 | `ABS-17` 阴性对照 | `benchmark/s1/generate-bundle-fixtures.mts --count N` + `profile-cold.mts --corpus benchmark/s1/.bundles` |
-| 快路径 / body 路径逐字节 diff | `ABS-14` 等价门禁 | `abs14-equivalence-baseline.test.ts` + `abs14-fastpath.test.ts`（`applied` 必须增长）；降级通道 `abs14-degraded-channels.test.ts` |
+| 快路径 / body 路径逐字节 diff | `ABS-14` 等价门禁 | `equivalence-baseline.test.ts` + `fastpath.test.ts`（`applied` 必须增长）；降级通道 `degraded-channels.test.ts` |
 | 缓存命中率 | `ABS-05` / `ABS-10` / `ABS-16` | `s1-perf-baseline-real.json#cacheTelemetry`（实例级 + 函数级分列；服务层无计数 API） |
 | watch 增量轮分相 | `ABS-18` | `NUDO_WATCH_PROFILE=1` + `scripts/edit-loop-metrics.mjs --profile` |
 

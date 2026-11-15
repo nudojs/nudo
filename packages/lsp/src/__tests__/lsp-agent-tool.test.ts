@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { withLspServer, withTempDir, createMockConnection } from "./helpers.ts";
 import { join } from "node:path";
 import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { codeActionParams, missingFieldDiag, mountCodeActions } from "./lsp-harness-r90a.ts";
+import { codeActionParams, missingFieldDiag, mountCodeActions } from "./lsp-harness-code-actions.ts";
 import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------

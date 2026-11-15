@@ -11,9 +11,9 @@ import { projectConfigFingerprint, clearValidationState, makeBufferAwareLoadModu
 import { parse } from "@nudojs/parser";
 import { checkSource } from "@nudojs/core";
 import { defaultLoadModule } from "@nudojs/service";
-import { applyEdits, codeActionParams, entryMayThrowDiag, mountCodeActions, sidecarEdits } from "./lsp-harness-r90a.ts";
+import { applyEdits, codeActionParams, entryMayThrowDiag, mountCodeActions, sidecarEdits } from "./lsp-harness-code-actions.ts";
 import { withTempDir, withLspServer } from "./helpers.ts";
-import { startLspWithFiles, locationsOf, type LspHarness } from "./lsp-harness-d3.ts";
+import { startLspWithFiles, locationsOf, type LspHarness } from "./lsp-harness-navigation.ts";
 import { contractEmitTool } from "../agent-tools.ts";
 import { findFnContractInsertPos } from "../sidecar-insert.ts";
 import { resolveDefinitionLocations, findIdentifierAtPosition } from "../symbols.ts";

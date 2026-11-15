@@ -15,7 +15,8 @@ const bad = files.filter((f) => {
   return (
     /(?:^|[-_])bug[-_]?\d/i.test(b) ||
     /^bug-/i.test(b) ||
-    /bug-report/i.test(b)
+    /bug-report/i.test(b) ||
+    /(?:^|[-_.])(?:abs|p|a|s|d|w|wave|c|g|h|r|ai|m|phase|example)\d+[a-z]?(?=[-_.])/i.test(b)
   );
 });
 

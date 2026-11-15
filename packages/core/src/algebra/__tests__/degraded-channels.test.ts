@@ -22,7 +22,7 @@ import {
   ABS14_BASELINE_CASES,
   runBodyPath,
   type Abs14BaselineCase,
-} from "./abs14-equivalence-baseline.ts";
+} from "./equivalence-baseline.ts";
 import {
   ABS14_DEFAULT_CHANNELS,
   fnLevelFields,

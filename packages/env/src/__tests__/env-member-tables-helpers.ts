@@ -4,7 +4,7 @@
  * 只用 `@nudojs/core` 的 `checkSource` + 本包自己的 `defineEnv()`
  * （不引 `@nudojs/service`——那是 service→env 的反向依赖）。
  *
- * web 侧**复用**族 29 S1 的共享探针（`./env-helpers-s1.ts` 的
+ * web 侧**复用**族 29 S1 的共享探针（`./env-helpers-globals.ts` 的
  * `checkWeb` / `slotOf` / `displayOf`），本文件只补 node 侧与宿主实测。
  */
 import { execFileSync } from "node:child_process";

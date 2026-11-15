@@ -13,7 +13,7 @@
  *   任一不满足 => 回退 body（fail-closed）；
  * - `bounds` 是 `pre` 的简单投影（可观测 / 展示用），**不参与判定**：只查简单
  *   合取支会漏掉含 `app` term 的支，把强 Φ 下的结论放到弱 Φ 上复用
- *   （2026-11-13 修复的缺陷类，见 `abs14-fastpath.test.ts` 的对抗样本）；
+ *   （2026-11-13 修复的缺陷类，见 `fastpath.test.ts` 的对抗样本）；
  * - 命中用 `substAbs(post, map)` 把 formals 整 Abs 换成当前实参，而不是
  *   改名了事；结果必须 ≡ body 路径逐字节一致（等价性门禁）。
  *
@@ -21,7 +21,7 @@
  * - `crossModule`：新 PolyFn 实例首次实例化时复用函数级摘要；
  * - `bodyUnavailable` / `budgetTruncated`：body 路径 fail-closed 出
  *   `unknown #opaque` 时，用同函数**之前真实 body 求值**写下的摘要补上结论。
- *   独立验证见 `abs14-degraded-channels.test.ts`：替换结果 ≡ 同函数 body
+ *   独立验证见 `degraded-channels.test.ts`：替换结果 ≡ 同函数 body
  *   可用时的真实结论，且无摘要 / 形状不符 / 界不成立 / 变元未映射时一律
  *   保持 `unknown #opaque`（fail-closed），绝不静默放宽。
  *

@@ -3,14 +3,14 @@
  */
 import { describe, it, expect } from "vitest";
 import { type Abs, checkSource, pTrue, formatShape, numLit, strLit, resetGeneralizeMemo, type AbsModuleExports } from "@nudojs/core";
-import { checkWeb, displayOf, slotOf, webEnvGlobals } from "./env-helpers-s1.ts";
+import { checkWeb, displayOf, slotOf, webEnvGlobals } from "./env-helpers-globals.ts";
 import { checkNode, hostOwnMembers, hostProtoMembers, instanceFaceOf, memberNames, nodeSlotOf, returnTypeOf, staticSlotOf, slotOfAbs } from "./env-member-tables-helpers.ts";
 import { defineEnv, defineEnv as defineNodeEnv } from "../node.ts";
 import { execFileSync } from "node:child_process";
-import { envMember } from "./env-helpers-s3.ts";
+import { envMember } from "./env-helpers-builtin-calls.ts";
 import { createHash as nodeCreateHash, pbkdf2Sync as nodePbkdf2Sync, randomBytes as nodeRandomBytes, randomInt as nodeRandomInt, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
 import { prim } from "../abs-helpers.ts";
-import { brandName, callSite } from "./env-helpers-s4.ts";
+import { brandName, callSite } from "./env-helpers-call-site.ts";
 import { defineEnv as defineWebEnv } from "../web.ts";
 import { defineEnv as defineEnv_____es_ts } from "../es.ts";
 

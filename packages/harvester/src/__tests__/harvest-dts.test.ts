@@ -8,12 +8,12 @@ import { join } from "node:path";
 import { formatShape, literalMeetsConstraint, type Abs, getFnImpl, isNudoConstraint, $get, instantiateReturn, $new, numLit, type Slot } from "@nudojs/core";
 import { dtsToContractDraft, formatDtsContractDraft } from "../dts-contract-draft.ts";
 import { harvestDts, emitEnvModule } from "../harvest-dts.ts";
-import { asConstraint, fnParam, loadDraftExports, makeWorkDir, removeWorkDir, runNudoCheck, writeSidecar, fnReturns } from "./harvest-helpers-h8a.ts";
+import { asConstraint, fnParam, loadDraftExports, makeWorkDir, removeWorkDir, runNudoCheck, writeSidecar, fnReturns } from "./harvest-helpers-draft-types.ts";
 import { absToHarvestSig, harvestSigToAbs } from "../harvest-json.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "@nudojs/core/internal";
 import { harvestedValueToAbs } from "../harvest-to-abs.ts";
 import { execFileSync } from "node:child_process";
-import { makeWorkDir as makeWorkDir____harvest_bug_h8b_helpers_ts, removeWorkDir as removeWorkDir____harvest_bug_h8b_helpers_ts, runNudoCheck as runNudoCheck____harvest_bug_h8b_helpers_ts, writeSidecar as writeSidecar____harvest_bug_h8b_helpers_ts } from "./harvest-helpers-h8b.ts";
+import { makeWorkDir as makeWorkDir____harvest_bug_h8b_helpers_ts, removeWorkDir as removeWorkDir____harvest_bug_h8b_helpers_ts, runNudoCheck as runNudoCheck____harvest_bug_h8b_helpers_ts, writeSidecar as writeSidecar____harvest_bug_h8b_helpers_ts } from "./harvest-helpers-product-face.ts";
 
 // ---------------------------------------------------------------------------
 // 草稿面：同文件的 type 别名**被解析**（不再零义务）

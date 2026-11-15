@@ -4,7 +4,7 @@
  * 台账 `docs/design/generator-laziness.md` §5.3 停点此前只是文档推断；本文件
  * 把三组受控实验固化为可执行钉，用**真实 `$gen`** 复核。service 侧的两组
  * （B / C：dts 元素面退化、快照副本丢补写）见
- * `service/src/emit/__tests__/a1-laziness-evidence-poc.test.ts`。
+ * `service/src/emit/__tests__/laziness-evidence-poc.test.ts`。
  *
  * | 实验 | 结论 | 本文件 |
  * |---|---|---|

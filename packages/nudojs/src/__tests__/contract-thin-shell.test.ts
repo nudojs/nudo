@@ -7,7 +7,7 @@
  * 本文件**只 import `../commands/contract.ts`（公共面）+ 跑 CLI**
  * ⇒ 在 **HEAD（重构前）**上**原样跑通** ⇒ **反向闸（闸④）在本文件上必须通过**
  * （本片唯一的闸④例外面：钉的是「等价」而不是「修好的行为」）。
- * 三个新内部模块的**签名契约**在 `cli-s0-contract-module-contracts.test.ts`
+ * 三个新内部模块的**签名契约**在 `contract-module-contracts.test.ts`
  * （那三个模块在 HEAD 上**不存在** ⇒ 那一面是**前向锁**，参与反向闸）。
  *
  * 锁住：

@@ -11,7 +11,7 @@ import {
   ABS14_BASELINE_CASES,
   diffAgainstBodyBaseline,
   runBodyPath,
-} from "./abs14-equivalence-baseline.ts";
+} from "./equivalence-baseline.ts";
 
 describe("ABS-14 等价性门禁 · body 路径基线", () => {
   it("样本清单是门禁面：新增或删除都必须显式改这份断言", () => {

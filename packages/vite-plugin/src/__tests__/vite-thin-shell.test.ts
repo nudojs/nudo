@@ -20,7 +20,7 @@
  * 3. **一条端到端构建行为**（真 `vite build`）：契约违例经 vite logger 上屏、
  * 构建成功、产物落盘。
  *
- * ⚠ 三个内部模块的**签名契约**在 `vite-s0-module-contracts.test.ts` 里
+ * ⚠ 三个内部模块的**签名契约**在 `vite-module-contracts.test.ts` 里
  * （那三个模块在 HEAD 上**不存在** ⇒ 那一面是**前向锁**，不参与反向闸）。
  */
 import { describe, it, expect, vi } from "vitest";

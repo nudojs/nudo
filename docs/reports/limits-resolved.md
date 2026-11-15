@@ -8,14 +8,14 @@
 
 | 曾记限制 | 现状锚 |
 |----------|--------|
-| 形参表面默认/rest/解构 | `param-surface.test.ts` · `c41-destructure-enforce.test.ts` |
+| 形参表面默认/rest/解构 | `param-surface.test.ts` · `destructure-enforce.test.ts` |
 | 数组 reduce / forEach / for-of push | `hof.test.ts` · `docs/examples/algebra/h-array-boundary.js` |
 | Map / Set 字面量条目 | `collections.test.ts` |
 | 动态 key 投影 | 槽位并集（`$idx`）；`e-index-proj.js` |
-| HOF concrete 消费 / dts 投影 | `c3-hof-closure.test.ts` · `hof-dts-projection.test.ts` |
+| HOF concrete 消费 / dts 投影 | `hof-closure.test.ts` · `hof-dts-projection.test.ts` |
 | `this` / 全局标识符 / `==` 折叠 | evaluator env + `looseEqAbs`；`eval-env` / `loose-eq-fold` tests |
 | 顶层 `this.x=1` ESM TypeError | B 托管：读 undefined、写硬抛 TypeError（模块装载失败）；`eval-topthis.test.ts` |
-| LSP open-buffer 侧车真值 | `makeBufferAwareLoadModule` buffer 优先于磁盘；`sidecar-lsp.test.ts` · `p0-fix-review-buffer-loader.test.ts` |
+| LSP open-buffer 侧车真值 | `makeBufferAwareLoadModule` buffer 优先于磁盘；`sidecar-lsp.test.ts` · `buffer-loader.test.ts` |
 | 确定条件三元 / 循环 return / catch 形参 | `$fork` / `$loopReturn` / `$catchVal`；loop/try-catch tests |
 | CLI class × 顶层调用栈溢出 | 已修复；`nudo test` / `check` 现 exit 0 |
 
